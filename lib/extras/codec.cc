@@ -97,15 +97,12 @@ Status SetFromBytes(const Span<const uint8_t> bytes,
 
   Codec codec;
   bool skip_ppf_conversion = false;
-  if (extras::DecodeImagePNG(bytes, color_hints, io->constraints, &ppf)) {
-    codec = Codec::kPNG;
-  }
 #if JPEGXL_ENABLE_APNG
-  else if (extras::DecodeImageAPNG(bytes, color_hints, io->constraints, &ppf)) {
+  if (extras::DecodeImageAPNG(bytes, color_hints, io->constraints, &ppf)) {
     codec = Codec::kPNG;
-  }
+  } else
 #endif
-  else if (extras::DecodeImagePGX(bytes, color_hints, io->constraints, &ppf)) {
+      if (extras::DecodeImagePGX(bytes, color_hints, io->constraints, &ppf)) {
     codec = Codec::kPGX;
   } else if (extras::DecodeImagePNM(bytes, color_hints, io->constraints,
                                     &ppf)) {

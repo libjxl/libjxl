@@ -20,6 +20,7 @@
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/enc_adaptive_quantization.h"
+#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_transforms.h"
 #include "lib/jxl/enc_xyb.h"
 #include "lib/jxl/image.h"
@@ -275,7 +276,7 @@ int HBDJPEGMain(int argc, const char* argv[]) {
   jxl::Image3F opsin(jxl::RoundUpToBlockDim(io.xsize()),
                      jxl::RoundUpToBlockDim(io.ysize()));
   opsin.ShrinkTo(io.xsize(), io.ysize());
-  jxl::ToXYB(io.Main(), nullptr, &opsin);
+  jxl::ToXYB(io.Main(), nullptr, &opsin, jxl::GetJxlCms());
   PadImageToBlockMultipleInPlace(&opsin);
   jxl::ImageF mask;
   jxl::ImageF qf =

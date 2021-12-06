@@ -256,7 +256,7 @@ void SRGBToXYBAndLinear(const Image3F& srgb,
 // This is different from Butteraugli's OpsinDynamicsImage() in the sense that
 // it does not contain a sensitivity multiplier based on the blurred image.
 const ImageBundle* ToXYB(const ImageBundle& in, ThreadPool* pool,
-                         Image3F* JXL_RESTRICT xyb,
+                         Image3F* JXL_RESTRICT xyb, const JxlCmsInterface& cms,
                          ImageBundle* const JXL_RESTRICT linear) {
   PROFILER_FUNC;
 
@@ -323,8 +323,8 @@ const ImageBundle* ToXYB(const ImageBundle& in, ThreadPool* pool,
   }
 
   const ImageBundle* ptr;
-  JXL_CHECK(
-      TransformIfNeeded(in, c_linear_srgb, pool, linear_storage_ptr, &ptr));
+  JXL_CHECK(TransformIfNeeded(in, c_linear_srgb, cms, pool, linear_storage_ptr,
+                              &ptr));
   // If no transform was necessary, should have taken the above codepath.
   JXL_ASSERT(ptr == linear_storage_ptr);
 
@@ -402,9 +402,9 @@ HWY_AFTER_NAMESPACE();
 namespace jxl {
 HWY_EXPORT(ToXYB);
 const ImageBundle* ToXYB(const ImageBundle& in, ThreadPool* pool,
-                         Image3F* JXL_RESTRICT xyb,
+                         Image3F* JXL_RESTRICT xyb, const JxlCmsInterface& cms,
                          ImageBundle* JXL_RESTRICT linear_storage) {
-  return HWY_DYNAMIC_DISPATCH(ToXYB)(in, pool, xyb, linear_storage);
+  return HWY_DYNAMIC_DISPATCH(ToXYB)(in, pool, xyb, cms, linear_storage);
 }
 
 HWY_EXPORT(RgbToYcbcr);
@@ -419,18 +419,18 @@ HWY_EXPORT(TestCubeRoot);
 void TestCubeRoot() { return HWY_DYNAMIC_DISPATCH(TestCubeRoot)(); }
 
 // DEPRECATED
-Image3F OpsinDynamicsImage(const Image3B& srgb8) {
+Image3F OpsinDynamicsImage(const Image3B& srgb8, const JxlCmsInterface& cms) {
   ImageMetadata metadata;
   metadata.SetUintSamples(8);
   metadata.color_encoding = ColorEncoding::SRGB();
   ImageBundle ib(&metadata);
   ib.SetFromImage(ConvertToFloat(srgb8), metadata.color_encoding);
-  JXL_CHECK(ib.TransformTo(ColorEncoding::LinearSRGB(ib.IsGray())));
+  JXL_CHECK(ib.TransformTo(ColorEncoding::LinearSRGB(ib.IsGray()), cms));
   ThreadPool* null_pool = nullptr;
   Image3F xyb(srgb8.xsize(), srgb8.ysize());
 
   ImageBundle linear_storage(&metadata);
-  (void)ToXYB(ib, null_pool, &xyb, &linear_storage);
+  (void)ToXYB(ib, null_pool, &xyb, cms, &linear_storage);
   return xyb;
 }
 

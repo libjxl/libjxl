@@ -39,6 +39,7 @@
 #include "lib/jxl/color_management.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/enc_butteraugli_pnorm.h"
+#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
@@ -214,9 +215,10 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
         if (fabs(params.intensity_target - 255.0f) < 1e-3) {
           params.intensity_target = 80.0;
         }
-        distance = ButteraugliDistance(ib1, ib2, params, &distmap, inner_pool);
+        distance = ButteraugliDistance(ib1, ib2, params, GetJxlCms(), &distmap,
+                                       inner_pool);
         // Ensure pixels in range 0-1
-        s->distance_2 += ComputeDistance2(ib1, ib2);
+        s->distance_2 += ComputeDistance2(ib1, ib2, GetJxlCms());
       } else {
         // TODO(veluca): re-upsample and compute proper distance.
         distance = 1e+4f;
@@ -285,7 +287,7 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
       if (Args()->mul_output != 0.0) {
         fprintf(stderr, "WARNING: scaling outputs by %f\n", Args()->mul_output);
         JXL_CHECK(ib2.TransformTo(ColorEncoding::LinearSRGB(ib2.IsGray()),
-                                  inner_pool));
+                                  GetJxlCms(), inner_pool));
         ScaleImage(static_cast<float>(Args()->mul_output), ib2.color());
       }
 
@@ -960,7 +962,8 @@ class Benchmark {
           if (!Args()->decode_only && all_color_aware) {
             const bool is_gray = loaded_images[i].Main().IsGray();
             const ColorEncoding& c_desired = ColorEncoding::LinearSRGB(is_gray);
-            if (!loaded_images[i].TransformTo(c_desired, /*pool=*/nullptr)) {
+            if (!loaded_images[i].TransformTo(c_desired, GetJxlCms(),
+                                              /*pool=*/nullptr)) {
               JXL_ABORT("Failed to transform to lin. sRGB %s",
                         fnames[i].c_str());
             }

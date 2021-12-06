@@ -304,13 +304,11 @@ Status ModularFrameDecoder::DecodeGroup(
   if (gi.channel.empty()) return true;
   ModularOptions options;
   if (!zerofill) {
-    if (!ModularGenericDecompress(reader, gi, /*header=*/nullptr,
-                                  stream.ID(frame_dim), &options,
-                                  /*undo_transforms=*/true, &tree, &code,
-                                  &context_map, allow_truncated) &&
-        !allow_truncated) {
-      return JXL_FAILURE("Failed to decode modular group");
-    }
+    auto status = ModularGenericDecompress(
+        reader, gi, /*header=*/nullptr, stream.ID(frame_dim), &options,
+        /*undo_transforms=*/true, &tree, &code, &context_map, allow_truncated);
+    if (!allow_truncated) JXL_RETURN_IF_ERROR(status);
+    if (status.IsFatalError()) return status;
   }
   // Undo global transforms that have been pushed to the group level
   if (!use_full_image) {
@@ -470,9 +468,12 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
     return true;
   }
   JXL_DASSERT(rect.IsInside(decoded));
+  JXL_CHECK(gi.transform.empty());
 
   size_t c = 0;
   if (do_color) {
+    // TODO(veluca): adapt this code to output to the rendering pipeline.
+    JXL_CHECK(!dec_state->render_pipeline);
     const bool rgb_from_gray =
         metadata->m.color_encoding.IsGray() &&
         frame_header.color_transform == ColorTransform::kNone;
@@ -496,6 +497,7 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
       if (ch_in.w == 0 || ch_in.h == 0) {
         return JXL_FAILURE("Empty image");
       }
+      JXL_CHECK(ch_in.hshift <= 3 && ch_in.vshift <= 3);
       size_t xsize_shifted = DivCeil(xsize, 1 << ch_in.hshift);
       size_t ysize_shifted = DivCeil(ysize, 1 << ch_in.vshift);
       Rect r(rect.x0() >> ch_in.hshift, rect.y0() >> ch_in.vshift,
@@ -560,6 +562,8 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
     }
   }
   for (size_t ec = 0; ec < dec_state->extra_channels.size(); ec++, c++) {
+    // TODO(veluca): adapt this code to output to the rendering pipeline.
+    JXL_CHECK(!dec_state->render_pipeline);
     const ExtraChannelInfo& eci = output->metadata()->extra_channel_info[ec];
     int bits = eci.bit_depth.bits_per_sample;
     int exp_bits = eci.bit_depth.exponent_bits_per_sample;

@@ -10,6 +10,7 @@
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/dec_file.h"
 #include "lib/jxl/enc_cache.h"
+#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_file.h"
 
 extern "C" {
@@ -27,8 +28,8 @@ uint8_t* jxlCompress(const uint8_t* data, size_t size) {
   }
   jxl::CompressParams params;
   jxl::PassesEncoderState passes_encoder_state;
-  if (!jxl::EncodeFile(params, &io, &passes_encoder_state, &compressed, nullptr,
-                       nullptr)) {
+  if (!jxl::EncodeFile(params, &io, &passes_encoder_state, &compressed,
+                       jxl::GetJxlCms(), nullptr, nullptr)) {
     return nullptr;
   }
   size_t compressed_size = compressed.size();

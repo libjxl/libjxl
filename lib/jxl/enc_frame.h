@@ -44,7 +44,8 @@ struct FrameInfo {
 Status EncodeFrame(const CompressParams& cparams_orig,
                    const FrameInfo& frame_info, const CodecMetadata* metadata,
                    const ImageBundle& ib, PassesEncoderState* passes_enc_state,
-                   ThreadPool* pool, BitWriter* writer, AuxOut* aux_out);
+                   const JxlCmsInterface& cms, ThreadPool* pool,
+                   BitWriter* writer, AuxOut* aux_out);
 
 }  // namespace jxl
 

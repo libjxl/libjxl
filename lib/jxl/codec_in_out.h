@@ -135,13 +135,13 @@ class CodecInOut {
   }
 
   // Calls TransformTo for each ImageBundle (preview/frames).
-  Status TransformTo(const ColorEncoding& c_desired,
+  Status TransformTo(const ColorEncoding& c_desired, const JxlCmsInterface& cms,
                      ThreadPool* pool = nullptr) {
     if (metadata.m.have_preview) {
-      JXL_RETURN_IF_ERROR(preview_frame.TransformTo(c_desired, pool));
+      JXL_RETURN_IF_ERROR(preview_frame.TransformTo(c_desired, cms, pool));
     }
     for (ImageBundle& ib : frames) {
-      JXL_RETURN_IF_ERROR(ib.TransformTo(c_desired, pool));
+      JXL_RETURN_IF_ERROR(ib.TransformTo(c_desired, cms, pool));
     }
     return true;
   }

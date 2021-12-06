@@ -191,9 +191,21 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
   const YCbCrChromaSubsampling& cs =
       dec_state->shared->frame_header.chroma_subsampling;
 
-  const size_t idct_stride = dec_state->EagerFinalizeImageRect()
-                                 ? dec_state->group_data[thread].PixelsPerRow()
-                                 : dec_state->decoded.PixelsPerRow();
+  RenderPipelineInput render_pipeline_input;
+  if (dec_state->render_pipeline) {
+    render_pipeline_input =
+        dec_state->render_pipeline->GetInputBuffers(group_idx, thread);
+  }
+  size_t idct_stride[3];
+  for (size_t c = 0; c < 3; c++) {
+    if (dec_state->render_pipeline) {
+      idct_stride[c] = render_pipeline_input.GetBuffer(c).first->PixelsPerRow();
+    } else {
+      idct_stride[c] = dec_state->EagerFinalizeImageRect()
+                           ? dec_state->group_data[thread].PixelsPerRow()
+                           : dec_state->decoded.PixelsPerRow();
+    }
+  }
 
   HWY_ALIGN int32_t scaled_qtable[64 * 3];
 
@@ -278,7 +290,10 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
     float* JXL_RESTRICT idct_row[3];
     int16_t* JXL_RESTRICT jpeg_row[3];
     for (size_t c = 0; c < 3; c++) {
-      if (dec_state->EagerFinalizeImageRect()) {
+      if (dec_state->render_pipeline) {
+        idct_row[c] = render_pipeline_input.GetBuffer(c).second.Row(
+            render_pipeline_input.GetBuffer(c).first, sby[c] * kBlockDim);
+      } else if (dec_state->EagerFinalizeImageRect()) {
         idct_row[c] = dec_state->group_data[thread].PlaneRow(
                           c, sby[c] * kBlockDim + kGroupDataYBorder) +
                       kGroupDataXBorder;
@@ -427,7 +442,7 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
             // IDCT
             float* JXL_RESTRICT idct_pos = idct_row[c] + sbx[c] * kBlockDim;
             TransformToPixels(acs.Strategy(), block + c * size, idct_pos,
-                              idct_stride, group_dec_cache->scratch_space);
+                              idct_stride[c], group_dec_cache->scratch_space);
           }
         }
         bx += llf_x;
@@ -700,6 +715,9 @@ Status DecodeGroup(BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
                       : kDontDraw;
 
   if (draw == kDraw && num_passes == 0 && first_pass == 0) {
+    // TODO(veluca): adapt this code to output to (or possibly use) the
+    // rendering pipeline.
+    JXL_CHECK(!dec_state->render_pipeline);
     const YCbCrChromaSubsampling& cs =
         dec_state->shared->frame_header.chroma_subsampling;
     for (size_t c : {0, 1, 2}) {

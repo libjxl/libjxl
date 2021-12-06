@@ -9,6 +9,7 @@
 
 #include <string>
 
+#include "lib/extras/codec_apng.h"
 #include "lib/extras/codec_png.h"
 #include "lib/extras/packed_image.h"
 #include "lib/extras/packed_image_convert.h"
@@ -55,8 +56,8 @@ class PNGCodec : public ImageCodec {
                     jpegxl::tools::SpeedStats* speed_stats) override {
     extras::PackedPixelFile ppf;
     const double start = Now();
-    JXL_RETURN_IF_ERROR(extras::DecodeImagePNG(compressed, ColorHints(),
-                                               SizeConstraints(), &ppf));
+    JXL_RETURN_IF_ERROR(extras::DecodeImageAPNG(compressed, ColorHints(),
+                                                SizeConstraints(), &ppf));
     const double end = Now();
     speed_stats->NotifyElapsed(end - start);
     JXL_RETURN_IF_ERROR(ConvertPackedPixelFileToCodecInOut(ppf, pool, io));

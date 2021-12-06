@@ -18,6 +18,7 @@
 #include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/convolve.h"
 #include "lib/jxl/dec_noise.h"
+#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_photon_noise.h"
 #include "lib/jxl/enc_xyb.h"
 
@@ -40,7 +41,7 @@ int main(int argc, const char** argv) {
   JXL_CHECK(jxl::SetFromFile(argv[2], jxl::ColorHints(), &io, &pool));
 
   jxl::Image3F xyb(io.Main().xsize(), io.Main().ysize());
-  jxl::ToXYB(io.Main(), &pool, &xyb);
+  jxl::ToXYB(io.Main(), &pool, &xyb, jxl::GetJxlCms());
 
   jxl::Image3F noise_image(xyb.xsize(), xyb.ysize());
   {

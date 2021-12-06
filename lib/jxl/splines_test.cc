@@ -11,6 +11,7 @@
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/dec_file.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
+#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_splines.h"
 #include "lib/jxl/image_test_utils.h"
 #include "lib/jxl/testdata.h"
@@ -307,7 +308,8 @@ TEST(SplinesTest, Drawing) {
 
   CodecInOut io_actual;
   io_actual.SetFromImage(CopyImage(image), ColorEncoding::LinearSRGB());
-  ASSERT_TRUE(io_actual.TransformTo(io_expected.Main().c_current()));
+  ASSERT_TRUE(
+      io_actual.TransformTo(io_expected.Main().c_current(), GetJxlCms()));
 
   VerifyRelativeError(*io_expected.Main().color(), *io_actual.Main().color(),
                       1e-2f, 1e-1f);
@@ -324,7 +326,7 @@ TEST(SplinesTest, ClearedEveryFrame) {
       ReadTestData("jxl/spline_on_first_frame.jxl");
   ASSERT_TRUE(DecodeFile(DecompressParams(), bytes_actual, &io_actual,
                          /*pool=*/nullptr));
-  ASSERT_TRUE(io_actual.TransformTo(ColorEncoding::SRGB()));
+  ASSERT_TRUE(io_actual.TransformTo(ColorEncoding::SRGB(), GetJxlCms()));
   for (size_t c = 0; c < 3; ++c) {
     for (size_t y = 0; y < io_actual.ysize(); ++y) {
       float* const JXL_RESTRICT row = io_actual.Main().color()->PlaneRow(c, y);
