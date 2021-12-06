@@ -74,10 +74,10 @@ typedef struct {
 
 /** The intrinsic size header */
 typedef struct {
-  /** Preview width in pixels */
+  /** Intrinsic width in pixels */
   uint32_t xsize;
 
-  /** Preview height in pixels */
+  /** Intrinsic height in pixels */
   uint32_t ysize;
 } JxlIntrinsicSizeHeader;
 
@@ -191,7 +191,10 @@ typedef struct {
   JXL_BOOL have_animation;
 
   /** Indicates if an intrinsic size is present in the codestream.
-   * Its dimensions are not included in the basic info.
+   * If JXL_TRUE, the intrinsic image size is given by intrinsic_size.
+   * The intrinsic size can be different from the actual size in pixels (as given by xsize and ysize)
+   * and it denotes the recommended dimensions for displaying the image,
+   * i.e. applications are advised to resample the decoded image to the intrinsic dimensions.
    */
   JXL_BOOL have_intrinsic_size;
 
