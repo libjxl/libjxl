@@ -2128,7 +2128,7 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
 }
 
 // To ensure ABI forward-compatibility, this struct has a constant size.
-static_assert(sizeof(JxlBasicInfo) == 204,
+static_assert(sizeof(JxlBasicInfo) == 216,
               "JxlBasicInfo struct size should remain constant");
 
 JxlDecoderStatus JxlDecoderGetBasicInfo(const JxlDecoder* dec,
@@ -2148,7 +2148,7 @@ JxlDecoderStatus JxlDecoderGetBasicInfo(const JxlDecoder* dec,
 
     info->have_preview = meta.have_preview;
     info->have_animation = meta.have_animation;
-    // TODO(janwas): intrinsic_size
+    info->have_intrinsic_size = meta.have_intrinsic_size;
     info->orientation = static_cast<JxlOrientation>(meta.orientation);
 
     if (!dec->keep_orientation) {
@@ -2190,6 +2190,11 @@ JxlDecoderStatus JxlDecoderGetBasicInfo(const JxlDecoder* dec,
           dec->metadata.m.animation.tps_denominator;
       info->animation.num_loops = dec->metadata.m.animation.num_loops;
       info->animation.have_timecodes = dec->metadata.m.animation.have_timecodes;
+    }
+
+    if (info->have_intrinsic_size) {
+      info->intrinsic_size.xsize = dec->metadata.m.intrinsic_size.xsize();
+      info->intrinsic_size.ysize = dec->metadata.m.intrinsic_size.ysize();
     }
   }
 

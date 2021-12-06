@@ -72,6 +72,15 @@ typedef struct {
   uint32_t ysize;
 } JxlPreviewHeader;
 
+/** The intrinsic size header */
+typedef struct {
+  /** Preview width in pixels */
+  uint32_t xsize;
+
+  /** Preview height in pixels */
+  uint32_t ysize;
+} JxlIntrinsicSizeHeader;
+
 /** The codestream animation header, optionally present in the beginning of
  * the codestream, and if it is it applies to all animation frames, unlike
  * JxlFrameHeader which applies to an individual frame.
@@ -181,6 +190,11 @@ typedef struct {
    */
   JXL_BOOL have_animation;
 
+  /** Indicates if an intrinsic size is present in the codestream.
+   * Its dimensions are not included in the basic info.
+   */
+  JXL_BOOL have_intrinsic_size;
+
   /** Image orientation, value 1-8 matching the values used by JEITA CP-3451C
    * (Exif version 2.3).
    */
@@ -231,6 +245,11 @@ typedef struct {
    * used if have_animation is JXL_TRUE.
    */
   JxlAnimationHeader animation;
+
+  /** Dimensions of the intrinsic size, only used if have_intrinsic_size is
+   * JXL_TRUE.
+   */
+  JxlIntrinsicSizeHeader intrinsic_size;
 
   /** Padding for forwards-compatibility, in case more fields are exposed
    * in a future version of the library.
