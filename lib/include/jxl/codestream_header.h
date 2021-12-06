@@ -243,9 +243,10 @@ typedef struct {
 
   /** Indicates if an intrinsic size is present in the codestream.
    * If JXL_TRUE, the intrinsic image size is given by intrinsic_size.
-   * The intrinsic size can be different from the actual size in pixels (as given by xsize and ysize)
-   * and it denotes the recommended dimensions for displaying the image,
-   * i.e. applications are advised to resample the decoded image to the intrinsic dimensions.
+   * The intrinsic size can be different from the actual size in pixels
+   * (as given by xsize and ysize) and it denotes the recommended dimensions
+   * for displaying the image, i.e. applications are advised to resample the
+   * decoded image to the intrinsic dimensions.
    */
   JXL_BOOL have_intrinsic_size;
 
