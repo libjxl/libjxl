@@ -121,18 +121,33 @@ std::vector<RenderPipelineTestInputSettings> GeneratePipelineTests() {
     settings.xsize = size;
     settings.ysize = size;
 
+    // Base settings.
     settings.cparams.butteraugli_distance = 1.0;
     settings.cparams.patches = Override::kOff;
     settings.cparams.dots = Override::kOff;
     settings.cparams.gaborish = Override::kOff;
     settings.cparams.epf = 0;
     settings.cparams.color_transform = ColorTransform::kXYB;
-    settings.cparams_descr = "NoGabNoEpfNoPatches";
-    all_tests.push_back(settings);
 
-    settings.cparams.color_transform = ColorTransform::kNone;
-    settings.cparams_descr = "NoGabNoEpfNoPatchesNoXYB";
-    all_tests.push_back(settings);
+    {
+      auto s = settings;
+      s.cparams_descr = "NoGabNoEpfNoPatches";
+      all_tests.push_back(s);
+    }
+
+    {
+      auto s = settings;
+      s.cparams.color_transform = ColorTransform::kNone;
+      s.cparams_descr = "NoGabNoEpfNoPatchesNoXYB";
+      all_tests.push_back(s);
+    }
+
+    {
+      auto s = settings;
+      s.cparams.gaborish = Override::kOn;
+      s.cparams_descr = "GabNoEpfNoPatches";
+      all_tests.push_back(s);
+    }
   }
 
   return all_tests;

@@ -53,6 +53,7 @@
 #include "lib/jxl/passes_state.h"
 #include "lib/jxl/quant_weights.h"
 #include "lib/jxl/quantizer.h"
+#include "lib/jxl/render_pipeline/stage_gaborish.h"
 #include "lib/jxl/render_pipeline/stage_write_to_ib.h"
 #include "lib/jxl/render_pipeline/stage_xyb.h"
 #include "lib/jxl/sanitizers.h"
@@ -675,7 +676,7 @@ void FrameDecoder::PreparePipeline() {
   }
 
   if (frame_header_.loop_filter.gab) {
-    JXL_ABORT("Not implemented: Gaborish");
+    builder.AddStage(GetGaborishStage(frame_header_.loop_filter));
   }
   if (frame_header_.loop_filter.epf_iters != 0) {
     JXL_ABORT("Not implemented: EPF");
