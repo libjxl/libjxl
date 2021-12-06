@@ -665,8 +665,7 @@ void FrameDecoder::PreparePipeline() {
     JXL_ABORT("Not implemented: chroma subsampling");
   }
 
-  RenderPipeline::Builder builder(
-      std::vector<std::pair<size_t, size_t>>{{0, 0}, {0, 0}, {0, 0}});
+  RenderPipeline::Builder builder(/*num_c=*/3);
 
   if (use_slow_rendering_pipeline_) {
     builder.UseSimpleImplementation();
