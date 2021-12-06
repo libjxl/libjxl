@@ -121,9 +121,10 @@ endif()
 if(JPEGXL_ENABLE_TOOLS)
   list(APPEND TOOL_BINARIES
     cjxl
+    cjxl_ng    
     djxl
     cjpeg_hdr
-  )
+  )        
 
   # Main compressor.
   add_executable(cjxl
@@ -136,6 +137,20 @@ if(JPEGXL_ENABLE_TOOLS)
       jxl-static
       jxl_extras-static
       jxl_threads-static
+  )
+
+  add_library(fetch_encoded SHARED fetch_encoded.c fetch_encoded.h)
+  set_property(TARGET fetch_encoded PROPERTY C_STANDARD 99)
+  target_link_libraries(fetch_encoded jxl)
+
+  add_executable(cjxl_ng
+    cjxl_ng_main.cc
+  )
+  target_link_libraries(cjxl_ng
+    fetch_encoded
+    jxl
+    absl::flags
+    absl::flags_parse
   )
 
 add_executable(cjpeg_hdr
@@ -380,6 +395,7 @@ endif()
 
 add_subdirectory(box)
 add_subdirectory(conformance)
+
 
 if ("${JPEGXL_EMSCRIPTEN}")
 # WASM API facade.

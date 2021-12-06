@@ -19,6 +19,6 @@
 [submodule "third_party/highway"]
 	path = third_party/highway
 	url = https://github.com/google/highway
-[submodule "abseil-cpp"]
-	path = abseil-cpp
+[submodule "third_party/abseil-cpp"]
+	path = third_party/abseil-cpp
 	url = https://github.com/abseil/abseil-cpp
