@@ -129,8 +129,9 @@ class CustomCodec : public ImageCodec {
               std::vector<std::string>{encoded_filename, png_filename});
         },
         png_filename, speed_stats));
-    io->target_nits = saved_intensity_target_;
-    return SetFromFile(png_filename, ColorHints(), io, pool);
+    JXL_RETURN_IF_ERROR(SetFromFile(png_filename, ColorHints(), io, pool));
+    io->metadata.m.SetIntensityTarget(saved_intensity_target_);
+    return true;
   }
 
  private:
