@@ -2149,7 +2149,6 @@ JxlDecoderStatus JxlDecoderGetBasicInfo(const JxlDecoder* dec,
 
     info->have_preview = meta.have_preview;
     info->have_animation = meta.have_animation;
-    // TODO(janwas): intrinsic_size
     info->orientation = static_cast<JxlOrientation>(meta.orientation);
 
     if (!dec->keep_orientation) {
@@ -2191,6 +2190,14 @@ JxlDecoderStatus JxlDecoderGetBasicInfo(const JxlDecoder* dec,
           dec->metadata.m.animation.tps_denominator;
       info->animation.num_loops = dec->metadata.m.animation.num_loops;
       info->animation.have_timecodes = dec->metadata.m.animation.have_timecodes;
+    }
+
+    if (meta.have_intrinsic_size) {
+      info->intrinsic_xsize = dec->metadata.m.intrinsic_size.xsize();
+      info->intrinsic_ysize = dec->metadata.m.intrinsic_size.ysize();
+    } else {
+      info->intrinsic_xsize = info->xsize;
+      info->intrinsic_ysize = info->ysize;
     }
   }
 

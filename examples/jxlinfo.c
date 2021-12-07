@@ -106,6 +106,8 @@ int PrintBasicInfo(FILE* file) {
         printf("num_loops: %u\n", info.animation.num_loops);
         printf("have_timecodes: %d\n", info.animation.have_timecodes);
       }
+      printf("intrinsic xsize: %u\n", info.intrinsic_xsize);
+      printf("intrinsic ysize: %u\n", info.intrinsic_ysize);
       const char* const orientation_string[8] = {
           "Normal",          "Flipped horizontally",
           "Upside down",     "Flipped vertically",

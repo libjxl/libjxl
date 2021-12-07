@@ -178,8 +178,8 @@ void AppendTestBox(const char* type, const char* contents, size_t contents_size,
 PaddedBytes CreateTestJXLCodestream(
     Span<const uint8_t> pixels, size_t xsize, size_t ysize, size_t num_channels,
     const CompressParams& cparams, CodeStreamBoxFormat add_container,
-    JxlOrientation orientation, bool add_preview, bool add_icc_profile = false,
-    PaddedBytes* jpeg_codestream = nullptr) {
+    JxlOrientation orientation, bool add_preview, bool add_intrinsic_size,
+    bool add_icc_profile = false, PaddedBytes* jpeg_codestream = nullptr) {
   // Compress the pixels with JPEG XL.
   bool grayscale = (num_channels <= 2);
   bool include_alpha = !(num_channels & 1) && jpeg_codestream == nullptr;
@@ -229,6 +229,9 @@ PaddedBytes CreateTestJXLCodestream(
     io.metadata.m.have_preview = true;
     EXPECT_TRUE(io.metadata.m.preview_size.Set(io.preview_frame.xsize(),
                                                io.preview_frame.ysize()));
+  }
+  if (add_intrinsic_size) {
+    EXPECT_TRUE(io.metadata.m.intrinsic_size.Set(xsize / 3, ysize / 3));
   }
   io.metadata.m.orientation = orientation;
   AuxOut aux_out;
@@ -1151,6 +1154,7 @@ struct PixelTestConfig {
   size_t xsize;
   size_t ysize;
   bool add_preview;
+  bool add_intrinsic_size;
   // Output format.
   JxlEndianness endianness;
   JxlDataType data_type;
@@ -1192,7 +1196,7 @@ TEST_P(DecodeTestParam, PixelTest) {
   jxl::PaddedBytes compressed = jxl::CreateTestJXLCodestream(
       jxl::Span<const uint8_t>(pixels.data(), pixels.size()), config.xsize,
       config.ysize, orig_channels, cparams, config.add_container,
-      config.orientation, config.add_preview);
+      config.orientation, config.add_preview, config.add_intrinsic_size);
 
   JxlPixelFormat format = {config.output_channels, config.data_type,
                            config.endianness, 0};
@@ -1282,14 +1286,16 @@ std::vector<PixelTestConfig> GeneratePixelTests() {
   };
 
   auto make_test = [&](ChannelInfo ch, size_t xsize, size_t ysize, bool preview,
-                       CodeStreamBoxFormat box, JxlOrientation orientation,
-                       bool keep_orientation, OutputFormat format,
-                       bool use_callback, bool set_buffer_early,
-                       bool resizable_runner, size_t upsampling) {
+                       bool intrinsic_size, CodeStreamBoxFormat box,
+                       JxlOrientation orientation, bool keep_orientation,
+                       OutputFormat format, bool use_callback,
+                       bool set_buffer_early, bool resizable_runner,
+                       size_t upsampling) {
     PixelTestConfig c;
     c.grayscale = ch.grayscale;
     c.include_alpha = ch.include_alpha;
     c.add_preview = preview;
+    c.add_intrinsic_size = intrinsic_size;
     c.xsize = xsize;
     c.ysize = ysize;
     c.add_container = (CodeStreamBoxFormat)box;
@@ -1311,6 +1317,7 @@ std::vector<PixelTestConfig> GeneratePixelTests() {
       for (size_t upsampling : {1, 2, 4, 8}) {
         for (OutputFormat fmt : out_formats) {
           make_test(ch, 301, 33, /*add_preview=*/false,
+                    /*add_intrinsic_size=*/false,
                     CodeStreamBoxFormat::kCSBF_None, JXL_ORIENT_IDENTITY,
                     /*keep_orientation=*/false, fmt, use_callback,
                     /*set_buffer_early=*/false, /*resizable_runner=*/false,
@@ -1322,21 +1329,33 @@ std::vector<PixelTestConfig> GeneratePixelTests() {
   // Test codestream formats.
   for (size_t box = 1; box < kCSBF_NUM_ENTRIES; ++box) {
     make_test(ch_info[0], 77, 33, /*add_preview=*/false,
-              (CodeStreamBoxFormat)box, JXL_ORIENT_IDENTITY,
+              /*add_intrinsic_size=*/false, (CodeStreamBoxFormat)box,
+              JXL_ORIENT_IDENTITY,
               /*keep_orientation=*/false, out_formats[0],
               /*use_callback=*/false,
               /*set_buffer_early=*/false, /*resizable_runner=*/false, 1);
   }
   // Test previews.
   for (int add_preview = 0; add_preview <= 1; add_preview++) {
-    make_test(ch_info[0], 77, 33, add_preview, CodeStreamBoxFormat::kCSBF_None,
-              JXL_ORIENT_IDENTITY, /*keep_orientation=*/false, out_formats[0],
+    make_test(ch_info[0], 77, 33, add_preview, /*add_intrinsic_size=*/false,
+              CodeStreamBoxFormat::kCSBF_None, JXL_ORIENT_IDENTITY,
+              /*keep_orientation=*/false, out_formats[0],
+              /*use_callback=*/false, /*set_buffer_early=*/false,
+              /*resizable_runner=*/false, 1);
+  }
+  // Test intrinsic sizes.
+  for (int add_intrinsic_size = 0; add_intrinsic_size <= 1;
+       add_intrinsic_size++) {
+    make_test(ch_info[0], 55, 34, /*add_preview=*/false, add_intrinsic_size,
+              CodeStreamBoxFormat::kCSBF_None, JXL_ORIENT_IDENTITY,
+              /*keep_orientation=*/false, out_formats[0],
               /*use_callback=*/false, /*set_buffer_early=*/false,
               /*resizable_runner=*/false, 1);
   }
   // Test setting buffers early.
   make_test(ch_info[0], 300, 33, /*add_preview=*/false,
-            CodeStreamBoxFormat::kCSBF_None, JXL_ORIENT_IDENTITY,
+            /*add_intrinsic_size=*/false, CodeStreamBoxFormat::kCSBF_None,
+            JXL_ORIENT_IDENTITY,
             /*keep_orientation=*/false, out_formats[0],
             /*use_callback=*/false, /*set_buffer_early=*/true,
             /*resizable_runner=*/false, 1);
@@ -1344,7 +1363,8 @@ std::vector<PixelTestConfig> GeneratePixelTests() {
   // Test using the resizable runner
   for (size_t i = 0; i < 4; i++) {
     make_test(ch_info[0], 300 << i, 33 << i, /*add_preview=*/false,
-              CodeStreamBoxFormat::kCSBF_None, JXL_ORIENT_IDENTITY,
+              /*add_intrinsic_size=*/false, CodeStreamBoxFormat::kCSBF_None,
+              JXL_ORIENT_IDENTITY,
               /*keep_orientation=*/false, out_formats[0],
               /*use_callback=*/false, /*set_buffer_early=*/false,
               /*resizable_runner=*/true, 1);
@@ -1353,13 +1373,13 @@ std::vector<PixelTestConfig> GeneratePixelTests() {
   // Test orientations.
   for (int orientation = 1; orientation <= 8; ++orientation) {
     make_test(ch_info[0], 280, 12, /*add_preview=*/false,
-              CodeStreamBoxFormat::kCSBF_None,
+              /*add_intrinsic_size=*/false, CodeStreamBoxFormat::kCSBF_None,
               static_cast<JxlOrientation>(orientation),
               /*keep_orientation=*/false, out_formats[0],
               /*use_callback=*/false, /*set_buffer_early=*/true,
               /*resizable_runner=*/false, 1);
     make_test(ch_info[0], 280, 12, /*add_preview=*/false,
-              CodeStreamBoxFormat::kCSBF_None,
+              /*add_intrinsic_size=*/false, CodeStreamBoxFormat::kCSBF_None,
               static_cast<JxlOrientation>(orientation),
               /*keep_orientation=*/true, out_formats[0],
               /*use_callback=*/false, /*set_buffer_early=*/true,
@@ -1409,6 +1429,7 @@ std::ostream& operator<<(std::ostream& os, const PixelTestConfig& c) {
     os << (size_t)c.add_container;
   }
   if (c.add_preview) os << "Preview";
+  if (c.add_intrinsic_size) os << "IntrinicSize";
   if (c.use_callback) os << "Callback";
   if (c.set_buffer_early) os << "EarlyBuffer";
   if (c.use_resizable_runner) os << "ResizableRunner";
@@ -1443,7 +1464,7 @@ TEST(DecodeTest, PixelTestWithICCProfileLossless) {
   // and no container.
   jxl::PaddedBytes compressed = jxl::CreateTestJXLCodestream(
       jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 4,
-      cparams, kCSBF_None, JXL_ORIENT_IDENTITY, false, true);
+      cparams, kCSBF_None, JXL_ORIENT_IDENTITY, false, false, true);
 
   for (uint32_t channels = 3; channels <= 4; ++channels) {
     {
@@ -1503,6 +1524,7 @@ TEST(DecodeTest, PixelTestWithICCProfileLossy) {
   jxl::PaddedBytes compressed = jxl::CreateTestJXLCodestream(
       jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 3,
       cparams, kCSBF_None, JXL_ORIENT_IDENTITY, /*add_preview=*/false,
+      /*add_intrinsic_size=*/false,
       /*add_icc_profile=*/true);
   uint32_t channels = 3;
 
@@ -1561,6 +1583,7 @@ TEST(DecodeTest, PixelTestOpaqueSrgbLossy) {
     jxl::PaddedBytes compressed = jxl::CreateTestJXLCodestream(
         jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 3,
         cparams, kCSBF_None, JXL_ORIENT_IDENTITY, /*add_preview=*/false,
+        /*add_intrinsic_size=*/false,
         /*add_icc_profile=*/false);
 
     JxlPixelFormat format = {channels, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0};
@@ -1629,6 +1652,7 @@ TEST(DecodeTest, PixelTestOpaqueSrgbLossyNoise) {
     jxl::PaddedBytes compressed = jxl::CreateTestJXLCodestream(
         jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 3,
         cparams, kCSBF_None, JXL_ORIENT_IDENTITY, /*add_preview=*/false,
+        /*add_intrinsic_size=*/false,
         /*add_icc_profile=*/false);
 
     JxlPixelFormat format = {channels, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0};
@@ -1714,6 +1738,7 @@ void TestPartialStream(bool reconstructible_jpeg) {
         jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize,
         channels, cparams, add_container, JXL_ORIENT_IDENTITY,
         /*add_preview=*/true,
+        /*add_intrinsic_size=*/false,
         /*add_icc_profile=*/false,
         reconstructible_jpeg ? &jpeg_codestreams[i] : nullptr);
   }
@@ -1878,7 +1903,8 @@ TEST(DecodeTest, PreviewTest) {
   jxl::CompressParams cparams;
   jxl::PaddedBytes compressed = jxl::CreateTestJXLCodestream(
       jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 3,
-      cparams, kCSBF_Multi, JXL_ORIENT_IDENTITY, /*add_preview=*/true);
+      cparams, kCSBF_Multi, JXL_ORIENT_IDENTITY, /*add_preview=*/true,
+      /*add_intrinsic_size=*/false);
 
   JxlPixelFormat format = {3, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0};
 
@@ -1965,7 +1991,7 @@ TEST(DecodeTest, AlignTest) {
   cparams.speed_tier = jxl::SpeedTier::kThunder;
   jxl::PaddedBytes compressed = jxl::CreateTestJXLCodestream(
       jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 4,
-      cparams, kCSBF_None, JXL_ORIENT_IDENTITY, false);
+      cparams, kCSBF_None, JXL_ORIENT_IDENTITY, false, false);
 
   size_t align = 17;
   JxlPixelFormat format = {3, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, align};
@@ -2233,7 +2259,7 @@ TEST(DecodeTest, ExtraChannelTest) {
   cparams.speed_tier = jxl::SpeedTier::kThunder;
   jxl::PaddedBytes compressed = jxl::CreateTestJXLCodestream(
       jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 4,
-      cparams, kCSBF_None, JXL_ORIENT_IDENTITY, false);
+      cparams, kCSBF_None, JXL_ORIENT_IDENTITY, false, false);
 
   size_t align = 17;
   JxlPixelFormat format = {3, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, align};
@@ -3103,7 +3129,7 @@ TEST(DecodeTest, FlushTest) {
   jxl::CompressParams cparams;
   jxl::PaddedBytes data = jxl::CreateTestJXLCodestream(
       jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize,
-      num_channels, cparams, kCSBF_None, JXL_ORIENT_IDENTITY, true);
+      num_channels, cparams, kCSBF_None, JXL_ORIENT_IDENTITY, true, false);
   JxlPixelFormat format = {num_channels, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
 
   std::vector<uint8_t> pixels2;
@@ -3177,7 +3203,7 @@ TEST(DecodeTest, FlushTestLossyProgressiveAlpha) {
   jxl::CompressParams cparams;
   jxl::PaddedBytes data = jxl::CreateTestJXLCodestream(
       jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize,
-      num_channels, cparams, kCSBF_None, JXL_ORIENT_IDENTITY, true);
+      num_channels, cparams, kCSBF_None, JXL_ORIENT_IDENTITY, true, false);
   JxlPixelFormat format = {num_channels, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
 
   std::vector<uint8_t> pixels2;
@@ -3248,7 +3274,7 @@ TEST(DecodeTest, FlushTestLossyProgressiveAlphaUpsampling) {
   cparams.ec_resampling = 4;
   jxl::PaddedBytes data = jxl::CreateTestJXLCodestream(
       jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize,
-      num_channels, cparams, kCSBF_None, JXL_ORIENT_IDENTITY, true);
+      num_channels, cparams, kCSBF_None, JXL_ORIENT_IDENTITY, true, false);
   JxlPixelFormat format = {num_channels, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
 
   std::vector<uint8_t> pixels2;
@@ -3322,7 +3348,7 @@ TEST(DecodeTest, FlushTestLosslessProgressiveAlpha) {
   cparams.responsive = 1;
   jxl::PaddedBytes data = jxl::CreateTestJXLCodestream(
       jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize,
-      num_channels, cparams, kCSBF_None, JXL_ORIENT_IDENTITY, true);
+      num_channels, cparams, kCSBF_None, JXL_ORIENT_IDENTITY, true, false);
   JxlPixelFormat format = {num_channels, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
 
   std::vector<uint8_t> pixels2;
@@ -3427,6 +3453,7 @@ TEST(DecodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGReconstructTestCodestream)) {
       jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize,
       channels, cparams, kCSBF_Single, JXL_ORIENT_IDENTITY,
       /*add_preview=*/true,
+      /*add_intrinsic_size=*/false,
       /*add_icc_profile=*/false, &jpeg_codestream);
   VerifyJPEGReconstruction(compressed, jpeg_codestream);
 }
@@ -3480,7 +3507,8 @@ TEST(DecodeTest, ContinueFinalNonEssentialBoxTest) {
   // Lossless to verify pixels exactly after roundtrip.
   jxl::PaddedBytes compressed = jxl::CreateTestJXLCodestream(
       jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 4,
-      cparams, kCSBF_Multi_Other_Terminated, JXL_ORIENT_IDENTITY, false, true);
+      cparams, kCSBF_Multi_Other_Terminated, JXL_ORIENT_IDENTITY, false, false,
+      true);
 
   // The non-essential final box size including 8-byte header
   size_t final_box_size = unk3_box_size + 8;
@@ -3541,7 +3569,8 @@ TEST(DecodeTest, BoxTest) {
   jxl::CompressParams cparams;
   jxl::PaddedBytes compressed = jxl::CreateTestJXLCodestream(
       jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 4,
-      cparams, kCSBF_Multi_Other_Terminated, JXL_ORIENT_IDENTITY, false, true);
+      cparams, kCSBF_Multi_Other_Terminated, JXL_ORIENT_IDENTITY, false, false,
+      true);
 
   JxlDecoder* dec = JxlDecoderCreate(nullptr);
 
@@ -3604,7 +3633,7 @@ TEST(DecodeTest, ExifBrobBoxTest) {
   cparams.SetLossless();  // Lossless to verify pixels exactly after roundtrip.
   jxl::PaddedBytes compressed = jxl::CreateTestJXLCodestream(
       jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 4,
-      cparams, kCSBF_Brob_Exif, JXL_ORIENT_IDENTITY, false, true);
+      cparams, kCSBF_Brob_Exif, JXL_ORIENT_IDENTITY, false, false, true);
 
   // Test raw brob box, not brotli-decompressing
   for (int streaming = 0; streaming < 2; ++streaming) {
@@ -3787,7 +3816,7 @@ TEST(DecodeTest, PartialCodestreamBoxTest) {
   cparams.speed_tier = jxl::SpeedTier::kThunder;
   jxl::PaddedBytes compressed = jxl::CreateTestJXLCodestream(
       jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 4,
-      cparams, kCSBF_Multi, JXL_ORIENT_IDENTITY, false, true);
+      cparams, kCSBF_Multi, JXL_ORIENT_IDENTITY, false, false, true);
 
   std::vector<uint8_t> extracted_codestream;
 
