@@ -515,6 +515,7 @@ TEST(RoundtripTest, Uint16FrameRoundtripTest) {
 TEST(RoundtripTest, Uint8FrameRoundtripTest) {
   std::vector<std::vector<std::pair<JxlExtraChannelType, std::string>>>
       extra_channels_cases = {{},
+                              {{JXL_CHANNEL_THERMAL, "temperature"}},
                               {{JXL_CHANNEL_ALPHA, "my extra alpha channel"}},
                               {{JXL_CHANNEL_CFA, "my cfa channel"}},
                               {{JXL_CHANNEL_CFA, "my cfa channel"},
