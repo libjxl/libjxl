@@ -3,13 +3,11 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Defined by build system; this avoids IDE warnings. Must come before
-// color_management.h (affects header definitions).
+#include "lib/jxl/enc_color_management.h"
+
 #ifndef JPEGXL_ENABLE_SKCMS
 #define JPEGXL_ENABLE_SKCMS 0
 #endif
-
-#include "lib/jxl/enc_color_management.h"
 
 #include <math.h>
 #include <stdint.h>
@@ -66,6 +64,8 @@ struct JxlCms {
   // Y component of the primaries.
   std::array<float, 3> hlg_ootf_luminances;
 
+  size_t channels_src;
+  size_t channels_dst;
   ImageF buf_src;
   ImageF buf_dst;
   float intensity_target;
@@ -90,7 +90,8 @@ const size_t kX = 0;  // pixel index, multiplied by 3 for RGB
 #endif
 
 // xform_src = UndoGammaCompression(buf_src).
-Status BeforeTransform(JxlCms* t, const float* buf_src, float* xform_src) {
+Status BeforeTransform(JxlCms* t, const float* buf_src, float* xform_src,
+                       size_t buf_size) {
   switch (t->preprocess) {
     case ExtraTF::kNone:
       JXL_DASSERT(false);  // unreachable
@@ -103,7 +104,7 @@ Status BeforeTransform(JxlCms* t, const float* buf_src, float* xform_src) {
       const auto multiplier = Set(df, t->intensity_target == 10000.f
                                           ? 1.0f
                                           : 10000.f / t->intensity_target);
-      for (size_t i = 0; i < t->buf_src.xsize(); i += Lanes(df)) {
+      for (size_t i = 0; i < buf_size; i += Lanes(df)) {
         const auto val = Load(df, buf_src + i);
         const auto result = multiplier * TF_PQ().DisplayFromEncoded(df, val);
         Store(result, df, xform_src + i);
@@ -117,13 +118,13 @@ Status BeforeTransform(JxlCms* t, const float* buf_src, float* xform_src) {
     }
 
     case ExtraTF::kHLG:
-      for (size_t i = 0; i < t->buf_src.xsize(); ++i) {
+      for (size_t i = 0; i < buf_size; ++i) {
         xform_src[i] = static_cast<float>(
             TF_HLG().DisplayFromEncoded(static_cast<double>(buf_src[i])));
       }
       if (t->apply_hlg_ootf) {
         JXL_RETURN_IF_ERROR(
-            ApplyHlgOotf(t, xform_src, t->buf_src.xsize(), /*forward=*/true));
+            ApplyHlgOotf(t, xform_src, buf_size, /*forward=*/true));
       }
 #if JXL_CMS_VERBOSE >= 2
       printf("pre in %.4f %.4f %.4f undoHLG %.4f %.4f %.4f\n", buf_src[3 * kX],
@@ -134,7 +135,7 @@ Status BeforeTransform(JxlCms* t, const float* buf_src, float* xform_src) {
 
     case ExtraTF::kSRGB:
       HWY_FULL(float) df;
-      for (size_t i = 0; i < t->buf_src.xsize(); i += Lanes(df)) {
+      for (size_t i = 0; i < buf_size; i += Lanes(df)) {
         const auto val = Load(df, buf_src + i);
         const auto result = TF_SRGB().DisplayFromEncoded(val);
         Store(result, df, xform_src + i);
@@ -150,7 +151,7 @@ Status BeforeTransform(JxlCms* t, const float* buf_src, float* xform_src) {
 }
 
 // Applies gamma compression in-place.
-Status AfterTransform(JxlCms* t, float* JXL_RESTRICT buf_dst) {
+Status AfterTransform(JxlCms* t, float* JXL_RESTRICT buf_dst, size_t buf_size) {
   switch (t->postprocess) {
     case ExtraTF::kNone:
       JXL_DASSERT(false);  // unreachable
@@ -160,7 +161,7 @@ Status AfterTransform(JxlCms* t, float* JXL_RESTRICT buf_dst) {
       const auto multiplier =
           Set(df, t->intensity_target == 10000.f ? 1.0f
                                                  : t->intensity_target * 1e-4f);
-      for (size_t i = 0; i < t->buf_dst.xsize(); i += Lanes(df)) {
+      for (size_t i = 0; i < buf_size; i += Lanes(df)) {
         const auto val = Load(df, buf_dst + i);
         const auto result = TF_PQ().EncodedFromDisplay(df, multiplier * val);
         Store(result, df, buf_dst + i);
@@ -174,9 +175,9 @@ Status AfterTransform(JxlCms* t, float* JXL_RESTRICT buf_dst) {
     case ExtraTF::kHLG:
       if (t->apply_hlg_ootf) {
         JXL_RETURN_IF_ERROR(
-            ApplyHlgOotf(t, buf_dst, t->buf_dst.xsize(), /*forward=*/false));
+            ApplyHlgOotf(t, buf_dst, buf_size, /*forward=*/false));
       }
-      for (size_t i = 0; i < t->buf_dst.xsize(); ++i) {
+      for (size_t i = 0; i < buf_size; ++i) {
         buf_dst[i] = static_cast<float>(
             TF_HLG().EncodedFromDisplay(static_cast<double>(buf_dst[i])));
       }
@@ -187,7 +188,7 @@ Status AfterTransform(JxlCms* t, float* JXL_RESTRICT buf_dst) {
       break;
     case ExtraTF::kSRGB:
       HWY_FULL(float) df;
-      for (size_t i = 0; i < t->buf_dst.xsize(); i += Lanes(df)) {
+      for (size_t i = 0; i < buf_size; i += Lanes(df)) {
         const auto val = Load(df, buf_dst + i);
         const auto result =
             TF_SRGB().EncodedFromDisplay(HWY_FULL(float)(), val);
@@ -211,9 +212,24 @@ Status DoColorSpaceTransform(void* cms_data, const size_t thread,
   const float* xform_src = buf_src;  // Read-only.
   if (t->preprocess != ExtraTF::kNone) {
     float* mutable_xform_src = t->buf_src.Row(thread);  // Writable buffer.
-    JXL_RETURN_IF_ERROR(BeforeTransform(t, buf_src, mutable_xform_src));
+    JXL_RETURN_IF_ERROR(BeforeTransform(t, buf_src, mutable_xform_src,
+                                        xsize * t->channels_src));
     xform_src = mutable_xform_src;
   }
+
+#if JPEGXL_ENABLE_SKCMS
+  if (t->channels_src == 1 && !t->skip_lcms) {
+    // Expand from 1 to 3 channels, starting from the end in case
+    // xform_src == t->buf_src.Row(thread).
+    float* mutable_xform_src = t->buf_src.Row(thread);
+    for (size_t i = 0; i < xsize; ++i) {
+      const size_t x = xsize - i - 1;
+      mutable_xform_src[x * 3] = mutable_xform_src[x * 3 + 1] =
+          mutable_xform_src[x * 3 + 2] = xform_src[x];
+    }
+    xform_src = mutable_xform_src;
+  }
+#endif
 
 #if JXL_CMS_VERBOSE >= 2
   // Save inputs for printing before in-place transforms overwrite them.
@@ -224,7 +240,7 @@ Status DoColorSpaceTransform(void* cms_data, const size_t thread,
 
   if (t->skip_lcms) {
     if (buf_dst != xform_src) {
-      memcpy(buf_dst, xform_src, t->buf_dst.xsize() * sizeof(*buf_dst));
+      memcpy(buf_dst, xform_src, xsize * t->channels_src * sizeof(*buf_dst));
     }  // else: in-place, no need to copy
   } else {
 #if JPEGXL_ENABLE_SKCMS
@@ -243,8 +259,19 @@ Status DoColorSpaceTransform(void* cms_data, const size_t thread,
          buf_dst[3 * kX + 1], buf_dst[3 * kX + 2]);
 #endif
 
+#if JPEGXL_ENABLE_SKCMS
+  if (t->channels_dst == 1 && !t->skip_lcms) {
+    // Contract back from 3 to 1 channel, this time forward.
+    float* grayscale_buf_dst = t->buf_dst.Row(thread);
+    for (size_t x = 0; x < xsize; ++x) {
+      grayscale_buf_dst[x] = buf_dst[x * 3];
+    }
+    buf_dst = grayscale_buf_dst;
+  }
+#endif
+
   if (t->postprocess != ExtraTF::kNone) {
-    JXL_RETURN_IF_ERROR(AfterTransform(t, buf_dst));
+    JXL_RETURN_IF_ERROR(AfterTransform(t, buf_dst, xsize * t->channels_dst));
   }
   return true;
 }
@@ -1045,6 +1072,8 @@ void* JxlCmsInit(void* init_data, size_t num_threads, size_t xsize,
   // buffers. To avoid separate allocations, we use the rows of an image.
   // Because LCMS apparently also cannot handle <= 16 bit inputs and 32-bit
   // outputs (or vice versa), we use floating point input/output.
+  t->channels_src = channels_src;
+  t->channels_dst = channels_dst;
 #if JPEGXL_ENABLE_SKCMS
   // SkiaCMS doesn't support grayscale float buffers, so we create space for RGB
   // float buffers anyway.

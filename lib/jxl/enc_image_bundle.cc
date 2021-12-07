@@ -30,11 +30,7 @@ Status CopyToT(const ImageMetadata* metadata, const ImageBundle* ib,
   ColorSpaceTransform c_transform(cms);
   // Changing IsGray is probably a bug.
   JXL_CHECK(ib->IsGray() == c_desired.IsGray());
-#if JPEGXL_ENABLE_SKCMS
-  bool is_gray = false;
-#else
   bool is_gray = ib->IsGray();
-#endif
   if (out->xsize() < rect.xsize() || out->ysize() < rect.ysize()) {
     *out = Image3F(rect.xsize(), rect.ysize());
   } else {
