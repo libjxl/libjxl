@@ -130,8 +130,8 @@ Status SetFromBytes(const Span<const uint8_t> bytes,
     skip_ppf_conversion = true;
   }
 #if JPEGXL_ENABLE_EXR
-  else if (extras::DecodeImageEXR(bytes, color_hints, io->constraints,
-                                  io->target_nits, pool, &ppf)) {
+  else if (extras::DecodeImageEXR(bytes, color_hints, io->constraints, pool,
+                                  &ppf)) {
     codec = Codec::kEXR;
   }
 #endif

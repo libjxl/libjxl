@@ -107,7 +107,6 @@ void TestRoundTrip(Codec codec, const size_t xsize, const size_t ysize,
 
   CodecInOut io2;
   ColorHints color_hints;
-  io2.target_nits = io.metadata.m.IntensityTarget();
   // Only for PNM because PNG will warn about ignoring them.
   if (codec == Codec::kPNM) {
     color_hints.Add("color_space", Description(c_external));

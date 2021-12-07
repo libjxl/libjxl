@@ -361,8 +361,7 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, CodecInOut* io) {
   io->Main().color_transform =
       (!is_rgb || nbcomp == 1) ? ColorTransform::kYCbCr : ColorTransform::kNone;
 
-  io->metadata.m.SetIntensityTarget(
-      io->target_nits != 0 ? io->target_nits : kDefaultIntensityTarget);
+  io->metadata.m.SetIntensityTarget(kDefaultIntensityTarget);
   io->metadata.m.SetUintSamples(BITS_IN_JSAMPLE);
   io->SetFromImage(Image3F(jpeg_data->width, jpeg_data->height),
                    io->metadata.m.color_encoding);
