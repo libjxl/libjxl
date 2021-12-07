@@ -289,8 +289,11 @@ typedef enum {
    * this point, the flushed image will correspond exactly to this point in
    * decoding, and not yet contain partial results (such as partially more fine
    * detail) of a next step. By default, this event will trigger maximum once
-   * per frame, when a 8x8th resolution (DC) image is ready. Use @ref
-   * JxlDecoderSetProgressiveDetail to configure more fine-grainedness.
+   * per frame, when a 8x8th resolution (DC) image is ready (the image data is
+   * still returned at full resolution, giving upscaled DC). Use @ref
+   * JxlDecoderSetProgressiveDetail to configure more fine-grainedness. The
+   * event is not guaranteed to trigger, not all images have progressive steps
+   * or DC encoded.
    */
   JXL_DEC_FRAME_PROGRESSION = 0x8000,
 } JxlDecoderStatus;

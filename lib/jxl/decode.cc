@@ -1370,6 +1370,9 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec, const uint8_t* in,
           /*use_slow_rendering_pipeline=*/false));
       dec->frame_dec->SetRenderSpotcolors(dec->render_spotcolors);
       dec->frame_dec->SetCoalescing(dec->coalescing);
+      if (dec->events_wanted & JXL_DEC_FRAME_PROGRESSION) {
+        dec->frame_dec->SetPauseAtProgressive();
+      }
 
       // If JPEG reconstruction is wanted and possible, set the jpeg_data of
       // the ImageBundle.
@@ -1479,8 +1482,17 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec, const uint8_t* in,
       // TODO(lode): allow next_in to move forward if sections from the
       // beginning of the stream have been processed
 
-      if (status.code() == StatusCode::kNotEnoughBytes ||
-          dec->sections->section_info.size() < dec->frame_dec->NumSections()) {
+      bool all_sections_done = !!status && dec->frame_dec->HasDecodedAll();
+
+      bool got_dc_only =
+          !!status && !all_sections_done && dec->frame_dec->HasDecodedDC();
+
+      if ((dec->events_wanted & JXL_DEC_FRAME_PROGRESSION) && got_dc_only) {
+        dec->events_wanted &= ~JXL_DEC_FRAME_PROGRESSION;
+        return JXL_DEC_FRAME_PROGRESSION;
+      }
+
+      if (!all_sections_done) {
         // Not all sections have been processed yet
         return JXL_DEC_NEED_MORE_INPUT;
       }
@@ -1515,7 +1527,8 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec, const uint8_t* in,
         // Frame finished, restore the events_wanted with the per-frame events
         // from orig_events_wanted, in case there is a next frame.
         dec->events_wanted |=
-            (dec->orig_events_wanted & (JXL_DEC_FULL_IMAGE | JXL_DEC_FRAME));
+            (dec->orig_events_wanted &
+             (JXL_DEC_FULL_IMAGE | JXL_DEC_FRAME | JXL_DEC_FRAME_PROGRESSION));
 
         // If no output buffer was set, we merely return the JXL_DEC_FULL_IMAGE
         // status without outputting pixels.

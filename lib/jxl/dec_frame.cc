@@ -361,6 +361,7 @@ Status FrameDecoder::InitFrame(BitReader* JXL_RESTRICT br, ImageBundle* decoded,
   decoded_ac_global_ = false;
   is_finalized_ = false;
   finalized_dc_ = false;
+  num_sections_done_ = 0;
   decoded_dc_groups_.clear();
   decoded_dc_groups_.resize(frame_dim_.num_dc_groups);
   decoded_passes_per_ac_group_.clear();
@@ -719,6 +720,18 @@ void FrameDecoder::PreparePipeline() {
   dec_state_->render_pipeline = std::move(builder).Finalize(frame_dim_);
 }
 
+void FrameDecoder::MarkSections(const SectionInfo* sections, size_t num,
+                                SectionStatus* section_status) {
+  num_sections_done_ = num;
+  for (size_t i = 0; i < num; i++) {
+    if (section_status[i] == SectionStatus::kSkipped ||
+        section_status[i] == SectionStatus::kPartial) {
+      processed_section_[sections[i].id] = false;
+      num_sections_done_--;
+    }
+  }
+}
+
 Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
                                      SectionStatus* section_status) {
   if (num == 0) return true;  // Nothing to process
@@ -730,7 +743,9 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
       frame_dim_.num_groups,
       std::vector<size_t>(frame_header_.passes.num_passes, num));
   std::vector<size_t> num_ac_passes(frame_dim_.num_groups);
-  if (frame_dim_.num_groups == 1 && frame_header_.passes.num_passes == 1) {
+  bool single_section =
+      frame_dim_.num_groups == 1 && frame_header_.passes.num_passes == 1;
+  if (single_section) {
     JXL_ASSERT(num == 1);
     JXL_ASSERT(sections[0].id == 0);
     if (processed_section_[0] == false) {
@@ -816,6 +831,34 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
     }
     FinalizeDC();
     AllocateOutput();
+    if (pause_at_progressive_ && !single_section) {
+      bool can_return_dc = true;
+      if (single_section) {
+        // If there's only one group and one pass, there is no separate section
+        // for DC and the entire full resolution image is available at once.
+        can_return_dc = false;
+      }
+      if (!decoded_->metadata()->extra_channel_info.empty()) {
+        // If extra channels are encoded with modular without squeeze, they
+        // don't support DC. If the are encoded with squeeze, DC works in theory
+        // but the implementation may not yet correctly support this for Flush.
+        // Therefore, can't correctly pause for a progressive step if there is
+        // an extra channel (including alpha channel)
+        can_return_dc = false;
+      }
+      if (frame_header_.encoding != FrameEncoding::kVarDCT) {
+        // DC is not guaranteed to be available in modular mode and may be a
+        // black image. If squeeze is used, it may be available depending on the
+        // current implementation.
+        // TODO(lode): do return DC if it's known that flushing at this point
+        // will produce a valid 1/8th downscaled image with modular encoding.
+        can_return_dc = false;
+      }
+      if (can_return_dc) {
+        MarkSections(sections, num, section_status);
+        return true;
+      }
+    }
   }
 
   if (finalized_dc_) dec_state_->EnsureBordersStorage();
@@ -874,12 +917,7 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
   }
   if (has_error) return JXL_FAILURE("Error in AC group");
 
-  for (size_t i = 0; i < num; i++) {
-    if (section_status[i] == SectionStatus::kSkipped ||
-        section_status[i] == SectionStatus::kPartial) {
-      processed_section_[sections[i].id] = false;
-    }
-  }
+  MarkSections(sections, num, section_status);
   return true;
 }
 
