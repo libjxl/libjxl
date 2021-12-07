@@ -45,6 +45,7 @@ Please add missing software to this list.
 
 - [XnView](https://www.xnview.com/en/)
 - [ImageGlass](https://imageglass.org/)
+- [IrfanView](https://www.irfanview.com/); supported since 4.59 - requires a [plugin](https://www.irfanview.com/plugins.htm) to be downloaded and enabled.
 - Any viewer based on Qt, KDE, GDK-pixbuf, ImageMagick, libvips or imlib2 (see above)
   - Qt viewers: gwenview, digiKam, KolourPaint, KPhotoAlbum, LXImage-Qt, qimgv, qView, nomacs, VookiImageViewer, PhotoQt
   - GTK viewers: Eye of Gnome (eog), gThumb, Geeqie
