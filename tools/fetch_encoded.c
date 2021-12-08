@@ -1,4 +1,3 @@
-
 #include "jxl/encode.h"
 #include "fetch_encoded.h"
 
@@ -6,76 +5,70 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define DEBUG_BUFFER_REALLOCATION 0
 
-/* Fetches the encoded data from `jxl_encoder` and sets
-   `*compressed_out` to a pointer to that freshly allocated data,
-   transfering ownership to caller. Data size is returned via
-   `compressed_size_out`. On success, returns JXL_TRUE.
-   On failure, returns JXL_FALSE and sets `*compressed_out`
-   to NULL.
- */
+
 JXL_BOOL fetch_jxl_encoded_image(JxlEncoder *jxl_encoder,
-                                 uint8_t **compressed_out,
-                                 size_t *compressed_size_out) {
-  JXL_BOOL success = JXL_TRUE;  
-  uint8_t *compressed = NULL, *compressed2 = NULL, *compressed_ptr = NULL;
-  size_t compressed_size = 64, compressed2_size = 0;
-  size_t compressed_available = compressed_size;
-  size_t compressed_used = 0;
-  const size_t max_ok_size = (~(size_t)0) / 2;
-  
-  *compressed_out = NULL;
-  *compressed_size_out = 0;
-  
-  if (NULL == (compressed = compressed_ptr = malloc(compressed_size))) {
-    goto cleanup;
-  }
-  
+                                 uint8_t **compressed_buffer,
+                                 size_t *compressed_buffer_size,
+                                 size_t *compressed_buffer_used) {
+  JXL_BOOL success = JXL_FALSE;
+  uint8_t *compressed_buffer2 = NULL, *compressed_ptr = NULL;
+  size_t compressed_buffer2_size = 0;
+  size_t compressed_available;
   JxlEncoderStatus process_result;
+
+  /* `max_ok_buffer_size` is half the maximal size_t value, rounded down:
+     we do not grow buffers this large or larger.
+   */
+  const size_t max_ok_buffer_size = (~(size_t)0) / 2;
+
+  if (*compressed_buffer == NULL) {
+    /* Caller did not pass us a buffer to use, so we need to allocate one. */
+    *compressed_buffer_size = 64;
+    if (NULL == (*compressed_buffer = malloc(*compressed_buffer_size))) {
+      goto cleanup;
+    }
+  }
+  *compressed_buffer_used = 0;
+  compressed_available = *compressed_buffer_size;
+  compressed_ptr = *compressed_buffer;  
   do {
     process_result = JxlEncoderProcessOutput(jxl_encoder,
                                              &compressed_ptr,
                                              &compressed_available);
-    compressed_used = compressed_ptr - compressed;
+    *compressed_buffer_used = compressed_ptr - *compressed_buffer;
     if (process_result == JXL_ENC_NEED_MORE_OUTPUT) {
-      if (compressed_used >= max_ok_size) {
-        success = JXL_FALSE;
+      if (*compressed_buffer_size >= max_ok_buffer_size) {
         goto cleanup;
       }
-      compressed2_size = 2 * compressed_size;
-      if (NULL == (compressed2 = malloc(compressed2_size))) {
-        success = JXL_FALSE;
+      compressed_buffer2_size = 2 * *compressed_buffer_size;
+      if (NULL == (compressed_buffer2 = malloc(compressed_buffer2_size))) {
         goto cleanup;
       }
-      memcpy(compressed2, compressed, compressed_used);
-      free(compressed);
-      compressed = compressed2;
-      compressed_size = compressed2_size;
-      compressed2 = NULL;
-      compressed_ptr = &compressed[compressed_used];
-      compressed_available = compressed_size - compressed_used;
+      memcpy(compressed_buffer2, *compressed_buffer, *compressed_buffer_used);
+      free(*compressed_buffer);
+      *compressed_buffer = compressed_buffer2;
+      *compressed_buffer_size = compressed_buffer2_size;
+      compressed_buffer2 = NULL;
+      compressed_ptr = &(*compressed_buffer)[*compressed_buffer_used];
+      compressed_available = *compressed_buffer_size - *compressed_buffer_used;
+#if DEBUG_BUFFER_REALLOCATION
       fprintf(stderr, "Re-allocated to %zu bytes, %zu used.\n",
-              compressed_size, compressed_used);
+              *compressed_buffer_size, *compressed_buffer_used);
+#endif
     }
   } while (process_result == JXL_ENC_NEED_MORE_OUTPUT);
-
-  if (JXL_ENC_SUCCESS != process_result) {
-    fprintf(stderr, "JxlEncoderProcessOutput failed\n");
-    goto cleanup;
-  }
   
-  *compressed_out = compressed;
-  compressed = NULL;
-  *compressed_size_out = compressed_used;
+  if (JXL_ENC_SUCCESS != process_result) {
+    goto cleanup;
+  } else {
+    success = JXL_TRUE;
+  }
   
  cleanup:
-  if (compressed) {
-    free(compressed);
-    compressed = NULL;
-  }
-  if (compressed2) {
-    free(compressed2);
-    compressed2 = NULL;
+  if (compressed_buffer2 != NULL) {
+    free(compressed_buffer2);
   }
   return success;
 }

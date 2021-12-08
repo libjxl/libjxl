@@ -271,16 +271,16 @@ public:
 int main(int argc, char **argv) {
   /* TODO(tfish): Replace allocating dummy-data here with actual image data. */
   float* dummy_src = NULL;
-  uint8_t *compressed = NULL;
-  size_t compressed_size;
+  uint8_t *compressed_buffer = NULL;
+  size_t compressed_buffer_size = 0, compressed_buffer_used = 0;
   
   const std::vector<char*>& rest_args = absl::ParseCommandLine(argc, argv);
 
-  int success = EXIT_SUCCESS;
+  int success = EXIT_FAILURE;
   JxlPixelFormat pixel_format = {3, JXL_TYPE_FLOAT, JXL_NATIVE_ENDIAN, 0};
   /* This is owned by the encoder. */
 
-  if (rest_args.size() != 3) {
+  if (rest_args.size() != 3) {  /* XXX make abseil positional args */
     fprintf(stderr,
             "Usage: %s {input_jpeg_filename} {output_jxl_filename}\n",
             rest_args[0]);
@@ -298,7 +298,7 @@ int main(int argc, char **argv) {
   JXL_RETURN_IF_ERROR(ReadFile(rest_args[1], &jpeg_data));
   fprintf(stderr, "DDD loaded jpeg, size=%zu\n", jpeg_data.size());
 
-  if (absl::GetFlag(FLAGS_dummy_testonly)) {  
+  if (absl::GetFlag(FLAGS_dummy_testonly)) {  /* "Dummy Mode", for debugging. */
     JxlBasicInfo jxl_basic_info;
     JxlBasicInfoInit(&jxl_basic_info);
     jxl_basic_info.xsize = DDD_DUMMY_WIDTH;
@@ -345,11 +345,14 @@ int main(int argc, char **argv) {
     fprintf(stderr, "JxlEncoderAddJPEGFrame done.\n");    
   }
 
-  if (!fetch_jxl_encoded_image(jxl_encoder, &compressed, &compressed_size)) {
+  if (!fetch_jxl_encoded_image(jxl_encoder,
+                               &compressed_buffer,
+                               &compressed_buffer_size,
+                               &compressed_buffer_used)) {
     goto cleanup;
   }
 
-  if(!write_jxl_file(compressed, compressed_size, rest_args[2])) {
+  if(!write_jxl_file(compressed_buffer, compressed_buffer_used, rest_args[2])) {
     fprintf(stderr, "Writing output file failed: %s\n", rest_args[2]);
     success = EXIT_FAILURE;
   }
@@ -359,9 +362,9 @@ int main(int argc, char **argv) {
     free(dummy_src);
     dummy_src = NULL;
   }
-  if (compressed) {
-    free(compressed);
-    compressed = NULL;
+  if (compressed_buffer) {
+    free(compressed_buffer);
+    compressed_buffer = NULL;
   }
   return success;
 }
