@@ -374,7 +374,10 @@ int processing_finish(png_structp png_ptr, png_infop info_ptr,
   msan::UnpoisonMemory(&num_text, sizeof(num_text));
   msan::UnpoisonMemory(&text_ptr, sizeof(text_ptr));
   for (int i = 0; i < num_text; i++) {
-    msan::UnpoisonMemory(text_ptr[i].text, text_ptr[i].text_length + 1);
+    size_t textlen = text_ptr[i].compression < 1 ? text_ptr[i].text_length
+                                                 : text_ptr[i].itxt_length;
+    msan::UnpoisonMemory(text_ptr[i].text, textlen + 1);
+    JXL_ASSERT(strlen(text_ptr[i].text) == textlen);
     msan::UnpoisonCStr(text_ptr[i].key);
     (void)BlobsReaderPNG::Decode(text_ptr[i], metadata);
   }
@@ -439,10 +442,7 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
     }
 
     // default settings in case e.g. only gAMA is given
-    ppf->color_encoding.white_point = JXL_WHITE_POINT_D65;
-    ppf->color_encoding.primaries = JXL_PRIMARIES_SRGB;
-    ppf->color_encoding.transfer_function = JXL_TRANSFER_FUNCTION_SRGB;
-    ppf->color_encoding.rendering_intent = JXL_RENDERING_INTENT_PERCEPTUAL;
+    JxlColorEncodingSetToSRGB(&ppf->color_encoding, false);
 
     if (!processing_start(png_ptr, info_ptr, (void*)&frameRaw, hasInfo,
                           chunkIHDR, chunksInfo)) {
@@ -569,7 +569,9 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
           } else {
             ppf->info.alpha_bits = 0;
           }
-
+          ppf->color_encoding.color_space =
+              (ppf->info.num_color_channels == 1 ? JXL_COLOR_SPACE_GRAY
+                                                 : JXL_COLOR_SPACE_RGB);
           ppf->info.xsize = w;
           ppf->info.ysize = h;
           JXL_RETURN_IF_ERROR(VerifyDimensions(&constraints, w, h));
