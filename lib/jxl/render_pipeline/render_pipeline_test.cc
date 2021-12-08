@@ -148,6 +148,35 @@ std::vector<RenderPipelineTestInputSettings> GeneratePipelineTests() {
       s.cparams_descr = "GabNoEpfNoPatches";
       all_tests.push_back(s);
     }
+
+    {
+      auto s = settings;
+      s.cparams.epf = 1;
+      s.cparams_descr = "NoGabEpf1NoPatches";
+      all_tests.push_back(s);
+    }
+
+    {
+      auto s = settings;
+      s.cparams.epf = 2;
+      s.cparams_descr = "NoGabEpf2NoPatches";
+      all_tests.push_back(s);
+    }
+
+    {
+      auto s = settings;
+      s.cparams.epf = 3;
+      s.cparams_descr = "NoGabEpf3NoPatches";
+      all_tests.push_back(s);
+    }
+
+    {
+      auto s = settings;
+      s.cparams.gaborish = Override::kOn;
+      s.cparams.epf = 3;
+      s.cparams_descr = "GabEpf3NoPatches";
+      all_tests.push_back(s);
+    }
   }
 
   return all_tests;
