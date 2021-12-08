@@ -20,6 +20,9 @@
 #include "jxl/encode.h"
 #include "jxl/types.h"
 
+#include "jxl/thread_parallel_runner.h"
+
+
 #include "fetch_encoded.h"
 
 
@@ -100,7 +103,9 @@ ABSL_FLAG(int64_t, center_y, 0,
           "Put center groups first in the compressed file.");
 
 ABSL_FLAG(int64_t, num_threads, 0,
-          "number of worker threads (zero = none).");
+          // TODO(tfish): Sync with team about changed meaning of 0 -
+          // was: No multithreaded workers. Is: use default number.
+          "number of worker threads (zero = default).");
 
 ABSL_FLAG(int64_t, num_reps, 1,
           // TODO(tfish): Clarify meaning of this docstring.
@@ -144,13 +149,20 @@ namespace {
 // RAII-wraps the C-API encoder.
 class ManagedJxlEncoder {
 public:    
-  ManagedJxlEncoder() :
+  ManagedJxlEncoder(size_t num_worker_threads) :
     encoder_(JxlEncoderCreate(NULL)),
-    encoder_options_(JxlEncoderOptionsCreate(encoder_, NULL)) {}
+    encoder_options_(JxlEncoderOptionsCreate(encoder_, NULL)) {
+    if (num_worker_threads > 1) {
+      parallel_runner_ = JxlThreadParallelRunnerCreate(
+          /*memory_manager=*/nullptr, num_worker_threads);
+    }
+    
+  }
   ~ManagedJxlEncoder() {
+    if (parallel_runner_ != nullptr) {
+      JxlThreadParallelRunnerDestroy(parallel_runner_);
+    }
     JxlEncoderDestroy(encoder_);
-    encoder_ = nullptr;
-    encoder_options_ = nullptr;
     if (compressed_buffer_) {
       free(compressed_buffer_);
     }
@@ -161,7 +173,9 @@ public:
   uint8_t *compressed_buffer_ = nullptr;
   size_t compressed_buffer_size_ = 0;
   size_t compressed_buffer_used_ = 0;
+  void* parallel_runner_ = nullptr;  // TODO(tfish): fix type.
 };
+
   
 }  // namespace
 
@@ -180,8 +194,25 @@ int main(int argc, char **argv) {
   }
   const char* filename_in = positional_args[1];
   const char* filename_out = positional_args[2];
+
+  size_t num_worker_threads = JxlThreadParallelRunnerDefaultNumWorkerThreads();
+  {
+    int64_t flags_num_worker_threads = absl::GetFlag(FLAGS_num_threads);
+    if (flags_num_worker_threads != 0) {
+      num_worker_threads = flags_num_worker_threads;
+    }
+  }
+  ManagedJxlEncoder managed_jxl_encoder = ManagedJxlEncoder(num_worker_threads);
+  if (managed_jxl_encoder.parallel_runner_ != nullptr) {
+    std::cerr << "DDD num_threads=" << num_worker_threads << std::endl;
+    if (JXL_ENC_SUCCESS != JxlEncoderSetParallelRunner(managed_jxl_encoder.encoder_,
+                                                       JxlThreadParallelRunner,
+                                                       managed_jxl_encoder.parallel_runner_)) {
+      std::cerr << "JxlEncoderSetParallelRunner failed\n";
+      return EXIT_FAILURE;
+    }
+  }
   
-  ManagedJxlEncoder managed_jxl_encoder = ManagedJxlEncoder();
   JxlEncoder* jxl_encoder = managed_jxl_encoder.encoder_;
   JxlEncoderOptions *jxl_encoder_options = managed_jxl_encoder.encoder_options_;
 
