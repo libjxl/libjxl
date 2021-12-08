@@ -310,7 +310,11 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
     ib.duration = input_frame->option_values.header.duration;
     ib.timecode = input_frame->option_values.header.timecode;
 
-    if (!jxl::EncodeFrame(input_frame->option_values.cparams, jxl::FrameInfo{},
+    jxl::FrameInfo frame_info;
+    bool last_frame = frames_closed && !num_queued_frames;
+    frame_info.is_last = last_frame;
+
+    if (!jxl::EncodeFrame(input_frame->option_values.cparams, frame_info,
                           &metadata, input_frame->frame, &enc_state, cms,
                           thread_pool.get(), &writer,
                           /*aux_out=*/nullptr)) {
@@ -322,7 +326,6 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
     bytes.append(std::move(writer).TakeBytes());
 
     if (MustUseContainer()) {
-      bool last_frame = frames_closed && !num_queued_frames;
       if (last_frame && jxlp_counter == 0) {
         // If this is the last frame and no jxlp boxes were used yet, it's
         // slighly more efficient to write a jxlc box since it has 4 bytes less
