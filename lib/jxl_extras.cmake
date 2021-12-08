@@ -73,6 +73,24 @@ if(JPEG_FOUND)
   endif()  # JPEGXL_DEP_LICENSE_DIR
 endif()
 
+if ("${JPEGXL_EMSCRIPTEN}")
+include(FetchContent)
+
+FetchContent_Declare(
+  zlib
+  GIT_REPOSITORY https://github.com/emscripten-ports/zlib.git
+  GIT_TAG        69f24a21cab163b09c81f85857ef1b2c850f8707
+)
+
+FetchContent_Declare(
+  libpng
+  GIT_REPOSITORY https://github.com/emscripten-ports/libpng.git
+  GIT_TAG        918d23f658cb31e6db539ee0411d212408a9fcea
+)
+
+FetchContent_MakeAvailable(zlib libpng)
+endif()  # JPEGXL_EMSCRIPTEN
+
 find_package(ZLIB)  # dependency of PNG
 find_package(PNG)
 if(PNG_FOUND AND ZLIB_FOUND)
