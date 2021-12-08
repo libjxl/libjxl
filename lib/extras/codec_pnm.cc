@@ -22,6 +22,7 @@
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_management.h"
 #include "lib/jxl/dec_external_image.h"
+#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_image_bundle.h"
 #include "lib/jxl/fields.h"  // AllDefault
@@ -410,8 +411,8 @@ Status EncodeImagePNM(const CodecInOut* io, const ColorEncoding& c_desired,
   ImageMetadata metadata = io->metadata.m;
   ImageBundle store(&metadata);
   const ImageBundle* transformed;
-  JXL_RETURN_IF_ERROR(TransformIfNeeded(*to_color_transform, c_desired, pool,
-                                        &store, &transformed));
+  JXL_RETURN_IF_ERROR(TransformIfNeeded(
+      *to_color_transform, c_desired, GetJxlCms(), pool, &store, &transformed));
   size_t stride = ib.oriented_xsize() *
                   (c_desired.Channels() * bits_per_sample) / kBitsPerByte;
   PaddedBytes pixels(stride * ib.oriented_ysize());

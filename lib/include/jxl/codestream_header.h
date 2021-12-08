@@ -72,6 +72,15 @@ typedef struct {
   uint32_t ysize;
 } JxlPreviewHeader;
 
+/** The intrinsic size header */
+typedef struct {
+  /** Intrinsic width in pixels */
+  uint32_t xsize;
+
+  /** Intrinsic height in pixels */
+  uint32_t ysize;
+} JxlIntrinsicSizeHeader;
+
 /** The codestream animation header, optionally present in the beginning of
  * the codestream, and if it is it applies to all animation frames, unlike
  * JxlFrameHeader which applies to an individual frame.
@@ -232,10 +241,26 @@ typedef struct {
    */
   JxlAnimationHeader animation;
 
+  /** Intrinsic width of the image.
+   * The intrinsic size can be different from the actual size in pixels
+   * (as given by xsize and ysize) and it denotes the recommended dimensions
+   * for displaying the image, i.e. applications are advised to resample the
+   * decoded image to the intrinsic dimensions.
+   */
+  uint32_t intrinsic_xsize;
+
+  /** Intrinsic heigth of the image.
+   * The intrinsic size can be different from the actual size in pixels
+   * (as given by xsize and ysize) and it denotes the recommended dimensions
+   * for displaying the image, i.e. applications are advised to resample the
+   * decoded image to the intrinsic dimensions.
+   */
+  uint32_t intrinsic_ysize;
+
   /** Padding for forwards-compatibility, in case more fields are exposed
    * in a future version of the library.
    */
-  uint8_t padding[108];
+  uint8_t padding[100];
 } JxlBasicInfo;
 
 /** Information for a single extra channel.
@@ -369,11 +394,17 @@ typedef struct {
   uint32_t timecode;
 
   /** Length of the frame name in bytes, or 0 if no name.
-   * Excludes null termination character.
+   * Excludes null termination character. This value is set by the decoder.
+   * For the encoder, this value is ignored and @ref
+   * JxlEncoderFrameSettingsSetName is used instead to set the name and the
+   * length.
    */
   uint32_t name_length;
 
-  /** Indicates this is the last animation frame.
+  /** Indicates this is the last animation frame. This value is set by the
+   * decoder to indicate no further frames follow. For the encoder, it is not
+   * required to set this value and it is ignored, @ref JxlEncoderCloseFrames is
+   * used to indicate the last frame to the encoder instead.
    */
   JXL_BOOL is_last;
 

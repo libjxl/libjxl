@@ -34,8 +34,8 @@
 
 namespace jxl {
 
-void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
-                             PassesEncoderState* enc_state,
+void InitializePassesEncoder(const Image3F& opsin, const JxlCmsInterface& cms,
+                             ThreadPool* pool, PassesEncoderState* enc_state,
                              ModularFrameEncoder* modular_frame_encoder,
                              AuxOut* aux_out) {
   PROFILER_FUNC;
@@ -136,7 +136,8 @@ void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
     // case of dc_level >= 3, since EncodeFrame may output multiple frames
     // to the bitwriter, while DecodeFrame reads only one.
     JXL_CHECK(EncodeFrame(cparams, dc_frame_info, shared.metadata, ib,
-                          state.get(), pool, special_frame.get(), nullptr));
+                          state.get(), cms, pool, special_frame.get(),
+                          nullptr));
     const Span<const uint8_t> encoded = special_frame->GetSpan();
     enc_state->special_frames.emplace_back(std::move(special_frame));
 

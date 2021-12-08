@@ -444,8 +444,8 @@ bool do_transform(Image& image, const Transform& tr,
 Status ModularFrameEncoder::ComputeEncodingData(
     const FrameHeader& frame_header, const ImageMetadata& metadata,
     Image3F* JXL_RESTRICT color, const std::vector<ImageF>& extra_channels,
-    PassesEncoderState* JXL_RESTRICT enc_state, ThreadPool* pool,
-    AuxOut* aux_out, bool do_color) {
+    PassesEncoderState* JXL_RESTRICT enc_state, const JxlCmsInterface& cms,
+    ThreadPool* pool, AuxOut* aux_out, bool do_color) {
   const FrameDimensions& frame_dim = enc_state->shared.frame_dim;
 
   if (do_color && frame_header.loop_filter.gab) {
@@ -454,7 +454,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
 
   if (do_color && metadata.bit_depth.bits_per_sample <= 16 &&
       cparams.speed_tier < SpeedTier::kCheetah) {
-    FindBestPatchDictionary(*color, enc_state, nullptr, aux_out,
+    FindBestPatchDictionary(*color, enc_state, cms, nullptr, aux_out,
                             cparams.color_transform == ColorTransform::kXYB);
     PatchDictionaryEncoder::SubtractFrom(
         enc_state->shared.image_features.patches, color);

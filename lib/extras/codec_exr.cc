@@ -15,6 +15,7 @@
 #include "lib/jxl/alpha.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/color_management.h"
+#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_image_bundle.h"
 
 namespace jxl {
@@ -268,8 +269,8 @@ Status EncodeImageEXR(const CodecInOut* io, const ColorEncoding& c_desired,
   ImageMetadata metadata = io->metadata.m;
   ImageBundle store(&metadata);
   const ImageBundle* linear;
-  JXL_RETURN_IF_ERROR(
-      TransformIfNeeded(io->Main(), c_linear, pool, &store, &linear));
+  JXL_RETURN_IF_ERROR(TransformIfNeeded(io->Main(), c_linear, GetJxlCms(), pool,
+                                        &store, &linear));
 
   const bool has_alpha = io->Main().HasAlpha();
   const bool alpha_is_premultiplied = io->Main().AlphaIsPremultiplied();

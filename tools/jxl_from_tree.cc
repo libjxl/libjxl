@@ -12,6 +12,7 @@
 
 #include "lib/jxl/base/file_io.h"
 #include "lib/jxl/enc_cache.h"
+#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_file.h"
 #include "lib/jxl/enc_frame.h"
 #include "lib/jxl/enc_heuristics.h"
@@ -444,7 +445,8 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
     io.frames[0].origin.y0 = y0;
 
     JXL_RETURN_IF_ERROR(EncodeFrame(cparams, info, metadata.get(), io.frames[0],
-                                    &enc_state, nullptr, &writer, nullptr));
+                                    &enc_state, GetJxlCms(), nullptr, &writer,
+                                    nullptr));
     if (!have_next) break;
     tree.clear();
     spline_data.splines.clear();

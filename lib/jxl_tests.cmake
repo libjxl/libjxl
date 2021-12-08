@@ -53,6 +53,7 @@ set(TEST_FILES
   jxl/quant_weights_test.cc
   jxl/quantizer_test.cc
   jxl/rational_polynomial_test.cc
+  jxl/render_pipeline/render_pipeline_test.cc
   jxl/roundtrip_test.cc
   jxl/speed_tier_test.cc
   jxl/splines_test.cc
@@ -103,6 +104,7 @@ foreach (TESTFILE IN LISTS TEST_FILES)
     # wasm-opt step when using -O2 optimization level
     set_target_properties(${TESTNAME} PROPERTIES LINK_FLAGS "\
       -O1 \
+      -s USE_LIBPNG=1 \
       -s TOTAL_MEMORY=1536MB \
       -s SINGLE_FILE=1 \
     ")

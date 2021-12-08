@@ -53,6 +53,9 @@
 #include "lib/jxl/passes_state.h"
 #include "lib/jxl/quant_weights.h"
 #include "lib/jxl/quantizer.h"
+#include "lib/jxl/render_pipeline/stage_gaborish.h"
+#include "lib/jxl/render_pipeline/stage_write_to_ib.h"
+#include "lib/jxl/render_pipeline/stage_xyb.h"
 #include "lib/jxl/sanitizers.h"
 #include "lib/jxl/splines.h"
 #include "lib/jxl/toc.h"
@@ -143,7 +146,8 @@ Status DecodeFrame(const DecompressParams& dparams,
                    const SizeConstraints* constraints, bool is_preview) {
   PROFILER_ZONE("DecodeFrame uninstrumented");
 
-  FrameDecoder frame_decoder(dec_state, metadata, pool);
+  FrameDecoder frame_decoder(dec_state, metadata, pool,
+                             dparams.use_slow_render_pipeline);
 
   frame_decoder.SetFrameSizeLimits(constraints);
 
@@ -358,6 +362,7 @@ Status FrameDecoder::InitFrame(BitReader* JXL_RESTRICT br, ImageBundle* decoded,
   decoded_ac_global_ = false;
   is_finalized_ = false;
   finalized_dc_ = false;
+  num_sections_done_ = 0;
   decoded_dc_groups_.clear();
   decoded_dc_groups_.resize(frame_dim_.num_dc_groups);
   decoded_passes_per_ac_group_.clear();
@@ -651,6 +656,83 @@ Status FrameDecoder::ProcessACGroup(size_t ac_group_id,
   return true;
 }
 
+void FrameDecoder::PreparePipeline() {
+  if (frame_header_.nonserialized_metadata->m.num_extra_channels != 0) {
+    JXL_ABORT("Not implemented: extra channels");
+  }
+  if (frame_header_.upsampling != 1) {
+    JXL_ABORT("Not implemented: upsampling");
+  }
+  if (!frame_header_.chroma_subsampling.Is444()) {
+    JXL_ABORT("Not implemented: chroma subsampling");
+  }
+
+  RenderPipeline::Builder builder(/*num_c=*/3);
+
+  if (use_slow_rendering_pipeline_) {
+    builder.UseSimpleImplementation();
+  } else {
+    JXL_ABORT("Not implemented: fast pipeline");
+  }
+
+  if (frame_header_.loop_filter.gab) {
+    builder.AddStage(GetGaborishStage(frame_header_.loop_filter));
+  }
+  if (frame_header_.loop_filter.epf_iters != 0) {
+    JXL_ABORT("Not implemented: EPF");
+  }
+  if ((frame_header_.flags & FrameHeader::kPatches) != 0) {
+    JXL_ABORT("Not implemented: patches");
+  }
+  if ((frame_header_.flags & FrameHeader::kSplines) != 0) {
+    JXL_ABORT("Not implemented: splines");
+  }
+  if ((frame_header_.flags & FrameHeader::kNoise) != 0) {
+    JXL_ABORT("Not implemented: noise");
+  }
+  if (frame_header_.dc_level != 0) {
+    JXL_ABORT("Not implemented: save as dc frames");
+  }
+  if (!coalescing_) {
+    JXL_ABORT("Not implemented: skip coalescing");
+  }
+  if (dec_state_->shared->frame_header.CanBeReferenced()) {
+    JXL_ABORT("Not implemented: save as reference");
+  }
+
+  if (frame_header_.color_transform == ColorTransform::kYCbCr) {
+    JXL_ABORT("Not implemented: YCbCr");
+  } else if (frame_header_.color_transform == ColorTransform::kXYB) {
+    builder.AddStage(GetXYBStage(dec_state_->output_encoding_info));
+  }  // Nothing to do for kNone.
+
+  if (ImageBlender::NeedsBlending(dec_state_)) {
+    JXL_ABORT("Not implemented: blending");
+  }
+  if (dec_state_->pixel_callback) {
+    JXL_ABORT("Not implemented: pixel callback");
+  } else if (dec_state_->fast_xyb_srgb8_conversion) {
+    JXL_ABORT("Not implemented: fast xyb->srgb conversion");
+  } else if (dec_state_->rgb_output) {
+    JXL_ABORT("Not implemented: u8 output");
+  } else {
+    builder.AddStage(GetWriteToImageBundleStage(decoded_));
+  }
+  dec_state_->render_pipeline = std::move(builder).Finalize(frame_dim_);
+}
+
+void FrameDecoder::MarkSections(const SectionInfo* sections, size_t num,
+                                SectionStatus* section_status) {
+  num_sections_done_ = num;
+  for (size_t i = 0; i < num; i++) {
+    if (section_status[i] == SectionStatus::kSkipped ||
+        section_status[i] == SectionStatus::kPartial) {
+      processed_section_[sections[i].id] = false;
+      num_sections_done_--;
+    }
+  }
+}
+
 Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
                                      SectionStatus* section_status) {
   if (num == 0) return true;  // Nothing to process
@@ -662,7 +744,9 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
       frame_dim_.num_groups,
       std::vector<size_t>(frame_header_.passes.num_passes, num));
   std::vector<size_t> num_ac_passes(frame_dim_.num_groups);
-  if (frame_dim_.num_groups == 1 && frame_header_.passes.num_passes == 1) {
+  bool single_section =
+      frame_dim_.num_groups == 1 && frame_header_.passes.num_passes == 1;
+  if (single_section) {
     JXL_ASSERT(num == 1);
     JXL_ASSERT(sections[0].id == 0);
     if (processed_section_[0] == false) {
@@ -743,11 +827,43 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
   if (*std::min_element(decoded_dc_groups_.begin(), decoded_dc_groups_.end()) ==
           true &&
       !finalized_dc_) {
+    if (use_slow_rendering_pipeline_) {
+      PreparePipeline();
+    }
     FinalizeDC();
     AllocateOutput();
+    if (pause_at_progressive_ && !single_section) {
+      bool can_return_dc = true;
+      if (single_section) {
+        // If there's only one group and one pass, there is no separate section
+        // for DC and the entire full resolution image is available at once.
+        can_return_dc = false;
+      }
+      if (!decoded_->metadata()->extra_channel_info.empty()) {
+        // If extra channels are encoded with modular without squeeze, they
+        // don't support DC. If the are encoded with squeeze, DC works in theory
+        // but the implementation may not yet correctly support this for Flush.
+        // Therefore, can't correctly pause for a progressive step if there is
+        // an extra channel (including alpha channel)
+        can_return_dc = false;
+      }
+      if (frame_header_.encoding != FrameEncoding::kVarDCT) {
+        // DC is not guaranteed to be available in modular mode and may be a
+        // black image. If squeeze is used, it may be available depending on the
+        // current implementation.
+        // TODO(lode): do return DC if it's known that flushing at this point
+        // will produce a valid 1/8th downscaled image with modular encoding.
+        can_return_dc = false;
+      }
+      if (can_return_dc) {
+        MarkSections(sections, num, section_status);
+        return true;
+      }
+    }
   }
 
   if (finalized_dc_) dec_state_->EnsureBordersStorage();
+
   if (finalized_dc_ && ac_global_sec != num && !decoded_ac_global_) {
     JXL_RETURN_IF_ERROR(ProcessACGlobal(sections[ac_global_sec].br));
     section_status[ac_global_sec] = SectionStatus::kDone;
@@ -802,12 +918,7 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
   }
   if (has_error) return JXL_FAILURE("Error in AC group");
 
-  for (size_t i = 0; i < num; i++) {
-    if (section_status[i] == SectionStatus::kSkipped ||
-        section_status[i] == SectionStatus::kPartial) {
-      processed_section_[sections[i].id] = false;
-    }
-  }
+  MarkSections(sections, num, section_status);
   return true;
 }
 

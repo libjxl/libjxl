@@ -351,8 +351,8 @@ namespace jxl {
 HWY_EXPORT(Heuristics);
 Status FastEncoderHeuristics::LossyFrameHeuristics(
     PassesEncoderState* enc_state, ModularFrameEncoder* modular_frame_encoder,
-    const ImageBundle* linear, Image3F* opsin, ThreadPool* pool,
-    AuxOut* aux_out) {
+    const ImageBundle* linear, Image3F* opsin, const JxlCmsInterface& cms,
+    ThreadPool* pool, AuxOut* aux_out) {
   return HWY_DYNAMIC_DISPATCH(Heuristics)(enc_state, modular_frame_encoder,
                                           linear, opsin, pool, aux_out);
 }
