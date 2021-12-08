@@ -55,6 +55,8 @@ QImage loadImage(const QString& filename, const QByteArray& targetIccProfile,
   if (!loadFromFile(filename, color_hints, &decoded, &pool)) {
     return QImage();
   }
+  // TODO(sboukortt): make this configurable.
+  decoded.metadata.m.SetIntensityTarget(kDefaultIntensityTarget);
   const ImageBundle& ib = decoded.Main();
 
   ColorEncoding targetColorSpace;
