@@ -309,10 +309,29 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
     ib.name = input_frame->option_values.frame_name;
     ib.duration = input_frame->option_values.header.duration;
     ib.timecode = input_frame->option_values.header.timecode;
+    ib.blendmode = static_cast<jxl::BlendMode>(
+        input_frame->option_values.header.layer_info.blend_info.blendmode);
+    ib.blend =
+        input_frame->option_values.header.layer_info.blend_info.blendmode !=
+        JXL_BLEND_REPLACE;
+
+    size_t save_as_reference =
+        input_frame->option_values.header.layer_info.save_as_reference;
+    if (save_as_reference > 1 || (ib.duration == 0 && save_as_reference != 0)) {
+      // The encoder implementation does not yet support custom
+      // save_as_reference, only 0 or 1 to indicate saving or no saving in case
+      // of animation duration.
+      return JXL_API_ERROR("unsupported save_as_reference value");
+    }
+    ib.use_for_next_frame = !!save_as_reference;
 
     jxl::FrameInfo frame_info;
     bool last_frame = frames_closed && !num_queued_frames;
     frame_info.is_last = last_frame;
+    frame_info.save_as_reference = save_as_reference;
+
+    // TODO(lode): also handle have_crop and the cropping dimensions, this
+    // requires getting the pixel data from the user as a smaller image.
 
     if (!jxl::EncodeFrame(input_frame->option_values.cparams, frame_info,
                           &metadata, input_frame->frame, &enc_state, cms,
@@ -449,6 +468,7 @@ void JxlEncoderInitFrameHeader(JxlFrameHeader* frame_header) {
   // for the decoder to set) since last frame is determined by usage of
   // JxlEncoderCloseFrames instead.
   frame_header->is_last = JXL_TRUE;
+  frame_header->layer_info.have_crop = JXL_FALSE;
   frame_header->layer_info.crop_x0 = 0;
   frame_header->layer_info.crop_y0 = 0;
   // These must be set if have_crop is enabled, but the default value has
@@ -1251,8 +1271,6 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetInfo(
   // Setting the frame header resets the frame name, it must be set again with
   // JxlEncoderFrameSettingsSetName if desired.
   frame_settings->values.frame_name = "";
-
-  // TODO(lode): also set and handle blending fields
 
   return JXL_ENC_SUCCESS;
 }
