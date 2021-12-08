@@ -1007,6 +1007,7 @@ TEST(EncodeTest, AnimationHeaderTest) {
   JxlEncoderInitFrameHeader(&header);
   header.duration = 50;
   header.timecode = 800;
+  header.layer_info.blend_info.blendmode = JXL_BLEND_BLEND;
   JxlEncoderFrameSettingsSetInfo(frame_settings, &header);
   JxlEncoderFrameSettingsSetName(frame_settings, frame_name.c_str());
 
@@ -1022,6 +1023,10 @@ TEST(EncodeTest, AnimationHeaderTest) {
   // Decode to verify the boxes, we don't decode to pixels, only the boxes.
   JxlDecoderPtr dec = JxlDecoderMake(nullptr);
   EXPECT_NE(nullptr, dec.get());
+
+  // To test the blend_info fields, coalescing must be set to false in the
+  // decoder.
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetCoalescing(dec.get(), JXL_FALSE));
   EXPECT_EQ(JXL_DEC_SUCCESS,
             JxlDecoderSubscribeEvents(dec.get(), JXL_DEC_FRAME));
   JxlDecoderSetInput(dec.get(), compressed.data(), compressed.size());
@@ -1041,6 +1046,8 @@ TEST(EncodeTest, AnimationHeaderTest) {
       EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetFrameHeader(dec.get(), &header2));
       EXPECT_EQ(header.duration, header2.duration);
       EXPECT_EQ(header.timecode, header2.timecode);
+      EXPECT_EQ(header.layer_info.blend_info.blendmode,
+                header2.layer_info.blend_info.blendmode);
       EXPECT_EQ(frame_name.size(), header2.name_length);
       if (header2.name_length > 0) {
         std::string frame_name2(header2.name_length + 1, '\0');
