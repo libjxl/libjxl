@@ -71,7 +71,8 @@ typedef enum {
    */
   JXL_ENC_NEED_MORE_OUTPUT = 2,
 
-  /** The encoder doesn't (yet) support this.
+  /** DEPRECATED: the encoder does not return this status and there is no need
+   * to handle or expect it.
    */
   JXL_ENC_NOT_SUPPORTED = 3,
 

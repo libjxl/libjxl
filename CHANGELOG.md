@@ -49,6 +49,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - encoder API: `JxlEncoderOptionsSetDecodingSpeed`: use
   `JxlEncoderFrameSettingsSetOption(frame_settings,
   JXL_ENC_FRAME_SETTING_DECODING_SPEED, tier)` instead.
+- encoder API: deprecated `JXL_ENC_NOT_SUPPORTED`, the encoder returns
+  `JXL_ENC_ERROR` instead and there is no need to handle
+  `JXL_ENC_NOT_SUPPORTED`.
 
 ## [0.6.1] - 2021-10-29
 ### Changed
