@@ -438,6 +438,7 @@ jobs:
   wasm32_build:
     name: WASM wasm32/${{ matrix.variant }}
     runs-on: ubuntu-latest
+    if: false
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
       EM_VERSION: 2.0.23
