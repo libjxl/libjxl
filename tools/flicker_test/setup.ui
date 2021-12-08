@@ -15,71 +15,67 @@
    <set>QWizard::NoBackButtonOnStartPage</set>
   </property>
   <widget class="QWizardPage" name="pathsPage">
-   <layout class="QVBoxLayout" name="verticalLayout">
-    <item>
-     <layout class="QFormLayout" name="formLayout">
-      <item row="0" column="0">
-       <widget class="QLabel" name="originalFolderPromptLabel">
+   <layout class="QFormLayout" name="formLayout">
+    <item row="0" column="0">
+     <widget class="QLabel" name="originalFolderPromptLabel">
+      <property name="text">
+       <string>Folder with the original images:</string>
+      </property>
+     </widget>
+    </item>
+    <item row="0" column="1">
+     <layout class="QHBoxLayout" name="horizontalLayout" stretch="1,0">
+      <item>
+       <widget class="QLineEdit" name="originalFolder"/>
+      </item>
+      <item>
+       <widget class="QToolButton" name="originalFolderBrowseButton">
         <property name="text">
-         <string>Folder with the original images:</string>
+         <string>Browse…</string>
         </property>
        </widget>
       </item>
-      <item row="0" column="1">
-       <layout class="QHBoxLayout" name="horizontalLayout" stretch="1,0">
-        <item>
-         <widget class="QLineEdit" name="originalFolder"/>
-        </item>
-        <item>
-         <widget class="QToolButton" name="originalFolderBrowseButton">
-          <property name="text">
-           <string>Browse…</string>
-          </property>
-         </widget>
-        </item>
-       </layout>
+     </layout>
+    </item>
+    <item row="1" column="0">
+     <widget class="QLabel" name="alteredFolderPromptLabel">
+      <property name="text">
+       <string>Folder with the altered images:</string>
+      </property>
+     </widget>
+    </item>
+    <item row="1" column="1">
+     <layout class="QHBoxLayout" name="horizontalLayout_2" stretch="1,0">
+      <item>
+       <widget class="QLineEdit" name="alteredFolder"/>
       </item>
-      <item row="1" column="0">
-       <widget class="QLabel" name="alteredFolderPromptLabel">
+      <item>
+       <widget class="QToolButton" name="alteredFolderBrowseButton">
         <property name="text">
-         <string>Folder with the altered images:</string>
+         <string>Browse…</string>
         </property>
        </widget>
       </item>
-      <item row="1" column="1">
-       <layout class="QHBoxLayout" name="horizontalLayout_2" stretch="1,0">
-        <item>
-         <widget class="QLineEdit" name="alteredFolder"/>
-        </item>
-        <item>
-         <widget class="QToolButton" name="alteredFolderBrowseButton">
-          <property name="text">
-           <string>Browse…</string>
-          </property>
-         </widget>
-        </item>
-       </layout>
+     </layout>
+    </item>
+    <item row="2" column="0">
+     <widget class="QLabel" name="outputFilePromptLabel">
+      <property name="text">
+       <string>CSV file in which to save the results:</string>
+      </property>
+     </widget>
+    </item>
+    <item row="2" column="1">
+     <layout class="QHBoxLayout" name="horizontalLayout_4" stretch="1,0">
+      <item>
+       <widget class="QLineEdit" name="outputFile"/>
       </item>
-      <item row="2" column="0">
-       <widget class="QLabel" name="outputFilePromptLabel">
+      <item>
+       <widget class="QToolButton" name="outputFileBrowseButton">
         <property name="text">
-         <string>CSV file in which to save the results:</string>
+         <string>Browse…</string>
         </property>
        </widget>
-      </item>
-      <item row="2" column="1">
-       <layout class="QHBoxLayout" name="horizontalLayout_4" stretch="1,0">
-        <item>
-         <widget class="QLineEdit" name="outputFile"/>
-        </item>
-        <item>
-         <widget class="QToolButton" name="outputFileBrowseButton">
-          <property name="text">
-           <string>Browse…</string>
-          </property>
-         </widget>
-        </item>
-       </layout>
       </item>
      </layout>
     </item>
@@ -271,6 +267,57 @@
     </item>
     <item>
      <spacer name="horizontalSpacer_2">
+      <property name="orientation">
+       <enum>Qt::Horizontal</enum>
+      </property>
+     </spacer>
+    </item>
+   </layout>
+  </widget>
+  <widget class="QWizardPage" name="intensityTargetPage">
+   <layout class="QHBoxLayout" name="horizontalLayout_6" stretch="1,0,1">
+    <item>
+     <spacer name="horizontalSpacer_3">
+      <property name="orientation">
+       <enum>Qt::Horizontal</enum>
+      </property>
+     </spacer>
+    </item>
+    <item>
+     <layout class="QFormLayout" name="formLayout_5">
+      <item row="0" column="0">
+       <widget class="QLabel" name="intensityTargetPromptLabel">
+        <property name="text">
+         <string>Display peak luminance:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QSpinBox" name="intensityTarget">
+        <property name="correctionMode">
+         <enum>QAbstractSpinBox::CorrectToNearestValue</enum>
+        </property>
+        <property name="suffix">
+         <string> cd/m²</string>
+        </property>
+        <property name="minimum">
+         <number>20</number>
+        </property>
+        <property name="maximum">
+         <number>10000</number>
+        </property>
+        <property name="stepType">
+         <enum>QAbstractSpinBox::AdaptiveDecimalStepType</enum>
+        </property>
+        <property name="value">
+         <number>250</number>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </item>
+    <item>
+     <spacer name="horizontalSpacer_4">
       <property name="orientation">
        <enum>Qt::Horizontal</enum>
       </property>
