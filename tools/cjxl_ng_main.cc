@@ -46,9 +46,6 @@ ABSL_FLAG(bool, qprogressive_ac, false,
 ABSL_FLAG(bool, progressive_dc, false,
           "Use progressive mode for DC.");
 
-ABSL_FLAG(bool, modular, false,
-          "Use modular mode (lossy / lossless).");
-
 ABSL_FLAG(bool, use_experimental_encoder_heuristics, false,
           "Use new and not yet ready encoder heuristics");
 
@@ -93,6 +90,12 @@ ABSL_FLAG(std::string, photon_noise, "ISO3200",
 // --colortransform, --mquality, --iterations, --colorspace, --group-size,
 // --predictor, --extra-properties, --lossy-palette, --pre-compact,
 // --post-compact, --responsive, --version, --quiet, --print_profile,
+
+
+ABSL_FLAG(int32_t, modular, -1,
+          // TODO(tfish): Flag up parameter meaning change.
+          "Use modular mode (-1 = encoder chooses, 0 = enforce VarDCT, "
+          "1 = enforce modular mode).");
 
 ABSL_FLAG(int64_t, center_x, 0,
           // TODO(tfish): Clarify if this is really the comment we want here.
@@ -151,7 +154,7 @@ class ManagedJxlEncoder {
 public:    
   ManagedJxlEncoder(size_t num_worker_threads) :
     encoder_(JxlEncoderCreate(NULL)),
-    encoder_options_(JxlEncoderOptionsCreate(encoder_, NULL)) {
+    encoder_frame_settings_(JxlEncoderFrameSettingsCreate(encoder_, NULL)) {
     if (num_worker_threads > 1) {
       parallel_runner_ = JxlThreadParallelRunnerCreate(
           /*memory_manager=*/nullptr, num_worker_threads);
@@ -169,7 +172,7 @@ public:
   }
   
   JxlEncoder* encoder_;
-  JxlEncoderOptions *encoder_options_;
+  JxlEncoderFrameSettings *encoder_frame_settings_;
   uint8_t *compressed_buffer_ = nullptr;
   size_t compressed_buffer_size_ = 0;
   size_t compressed_buffer_used_ = 0;
@@ -204,18 +207,34 @@ int main(int argc, char **argv) {
   }
   ManagedJxlEncoder managed_jxl_encoder = ManagedJxlEncoder(num_worker_threads);
   if (managed_jxl_encoder.parallel_runner_ != nullptr) {
-    std::cerr << "DDD num_threads=" << num_worker_threads << std::endl;
-    if (JXL_ENC_SUCCESS != JxlEncoderSetParallelRunner(managed_jxl_encoder.encoder_,
-                                                       JxlThreadParallelRunner,
-                                                       managed_jxl_encoder.parallel_runner_)) {
+    if (JXL_ENC_SUCCESS !=
+        JxlEncoderSetParallelRunner(
+            managed_jxl_encoder.encoder_,
+            // TODO(tfish): Flag up the need to have the parameter below
+            // documented better in the encode.h API docs.
+            JxlThreadParallelRunner,
+            managed_jxl_encoder.parallel_runner_)) {
       std::cerr << "JxlEncoderSetParallelRunner failed\n";
       return EXIT_FAILURE;
     }
   }
   
   JxlEncoder* jxl_encoder = managed_jxl_encoder.encoder_;
-  JxlEncoderOptions *jxl_encoder_options = managed_jxl_encoder.encoder_options_;
+  JxlEncoderFrameSettings *jxl_encoder_frame_settings =
+    managed_jxl_encoder.encoder_frame_settings_;
 
+  {  // Processing flags.
+    if (absl::GetFlag(FLAGS_container)) {
+      JxlEncoderUseContainer(jxl_encoder, true);
+    }
+    const int32_t flags_modular = absl::GetFlag(FLAGS_modular);
+    if (flags_modular != -1) {
+      JxlEncoderFrameSettingsSetOption(
+          jxl_encoder_frame_settings,
+          JXL_ENC_FRAME_SETTING_MODULAR,
+          flags_modular);
+    }
+  }  // Processing flags.
 
   jxl::PaddedBytes jpeg_data;
   JXL_RETURN_IF_ERROR(ReadFile(filename_in, &jpeg_data));
@@ -225,7 +244,7 @@ int main(int argc, char **argv) {
   }
   
   if (JXL_ENC_SUCCESS !=
-      JxlEncoderAddJPEGFrame(jxl_encoder_options,
+      JxlEncoderAddJPEGFrame(jxl_encoder_frame_settings,
                              jpeg_data.data(), jpeg_data.size())) {
     std::cerr << "JxlEncoderAddJPEGFrame() failed.\n";
     return EXIT_FAILURE;
