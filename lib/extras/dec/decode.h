@@ -36,21 +36,6 @@ enum class Codec : uint32_t {
   kEXR
 };
 
-static inline constexpr uint64_t EnumBits(Codec /*unused*/) {
-  // Return only fully-supported codecs (kGIF is decode-only).
-  return MakeBit(Codec::kPNM)
-#if JPEGXL_ENABLE_APNG
-         | MakeBit(Codec::kPNG)
-#endif
-#if JPEGXL_ENABLE_JPEG
-         | MakeBit(Codec::kJPG)
-#endif
-#if JPEGXL_ENABLE_EXR
-         | MakeBit(Codec::kEXR)
-#endif
-      ;
-}
-
 // Lower case ASCII including dot, e.g. ".png".
 std::string ExtensionFromCodec(Codec codec, bool is_gray,
                                size_t bits_per_sample);

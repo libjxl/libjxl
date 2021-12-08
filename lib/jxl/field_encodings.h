@@ -89,42 +89,16 @@ class U32Enc {
   U32Distr d_[4];
 };
 
-// Returns bit with the given `index` (0 = least significant).
-template <typename T>
-static inline constexpr uint64_t MakeBit(T index) {
-  return 1ULL << static_cast<uint32_t>(index);
-}
-
-// Returns vector of all possible values of an Enum type. Relies on each Enum
-// providing an overload of EnumBits() that returns a bit array of its values,
-// which implies values must be in [0, 64).
-template <typename Enum>
-std::vector<Enum> Values() {
-  uint64_t bits = EnumBits(Enum());
-
-  std::vector<Enum> values;
-  values.reserve(hwy::PopCount(bits));
-
-  // For each 1-bit in bits: add its index as value
-  while (bits != 0) {
-    const int index = Num0BitsBelowLS1Bit_Nonzero(bits);
-    values.push_back(static_cast<Enum>(index));
-    bits &= bits - 1;  // clear least-significant bit
-  }
-  return values;
-}
-
-// Returns true if value is one of Values<Enum>().
+// Returns true if value is within the valid range for this Enum.
+// The convention is that kLastEnumVal indicates where the valid Enum values
+// stop
 template <class Enum>
 Status EnumValid(const Enum value) {
-  if (static_cast<uint32_t>(value) >= 64) {
-    return JXL_FAILURE("Value %u too large for %s\n",
-                       static_cast<uint32_t>(value), EnumName(Enum()));
-  }
-  const uint64_t bit = MakeBit(value);
-  if ((EnumBits(Enum()) & bit) == 0) {
-    return JXL_FAILURE("Invalid value %u for %s\n",
-                       static_cast<uint32_t>(value), EnumName(Enum()));
+  static_assert(static_cast<int>(Enum::kLastEnumVal) < 64,
+                "Enum has too many values");
+  if (value >= Enum::kLastEnumVal) {
+    return JXL_FAILURE("Value %u too large for enumerator\n",
+                       static_cast<uint32_t>(value));
   }
   return true;
 }

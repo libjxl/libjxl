@@ -33,9 +33,9 @@ std::string ToString(ColorSpace color_space) {
       return "XYB";
     case ColorSpace::kUnknown:
       return "CS?";
+    default:
+      JXL_ABORT("Invalid ColorSpace %u", static_cast<uint32_t>(color_space));
   }
-  // Should not happen - visitor fails if enum is invalid.
-  JXL_ABORT("Invalid ColorSpace %u", static_cast<uint32_t>(color_space));
 }
 
 std::string ToString(WhitePoint white_point) {
@@ -48,9 +48,9 @@ std::string ToString(WhitePoint white_point) {
       return "EER";
     case WhitePoint::kDCI:
       return "DCI";
+    default:
+      JXL_ABORT("Invalid WhitePoint %u", static_cast<uint32_t>(white_point));
   }
-  // Should not happen - visitor fails if enum is invalid.
-  JXL_ABORT("Invalid WhitePoint %u", static_cast<uint32_t>(white_point));
 }
 
 std::string ToString(Primaries primaries) {
@@ -63,9 +63,9 @@ std::string ToString(Primaries primaries) {
       return "DCI";
     case Primaries::kCustom:
       return "Cst";
+    default:
+      JXL_ABORT("Invalid Primaries %u", static_cast<uint32_t>(primaries));
   }
-  // Should not happen - visitor fails if enum is invalid.
-  JXL_ABORT("Invalid Primaries %u", static_cast<uint32_t>(primaries));
 }
 
 std::string ToString(TransferFunction transfer_function) {
@@ -84,10 +84,10 @@ std::string ToString(TransferFunction transfer_function) {
       return "DCI";
     case TransferFunction::kUnknown:
       return "TF?";
+    default:
+      JXL_ABORT("Invalid TransferFunction %u",
+                static_cast<uint32_t>(transfer_function));
   }
-  // Should not happen - visitor fails if enum is invalid.
-  JXL_ABORT("Invalid TransferFunction %u",
-            static_cast<uint32_t>(transfer_function));
 }
 
 std::string ToString(RenderingIntent rendering_intent) {
@@ -100,10 +100,10 @@ std::string ToString(RenderingIntent rendering_intent) {
       return "Sat";
     case RenderingIntent::kAbsolute:
       return "Abs";
+    default:
+      JXL_ABORT("Invalid RenderingIntent %u",
+                static_cast<uint32_t>(rendering_intent));
   }
-  // Should not happen - visitor fails if enum is invalid.
-  JXL_ABORT("Invalid RenderingIntent %u",
-            static_cast<uint32_t>(rendering_intent));
 }
 
 static double F64FromCustomxyI32(const int32_t i) { return i * 1E-6; }
@@ -130,8 +130,9 @@ Status ConvertExternalToInternalWhitePoint(const JxlWhitePoint external,
     case JXL_WHITE_POINT_DCI:
       *internal = WhitePoint::kDCI;
       return true;
+    default:
+      return JXL_FAILURE("Invalid WhitePoint enum value");
   }
-  return JXL_FAILURE("Invalid WhitePoint enum value");
 }
 
 Status ConvertExternalToInternalPrimaries(const JxlPrimaries external,
@@ -149,8 +150,9 @@ Status ConvertExternalToInternalPrimaries(const JxlPrimaries external,
     case JXL_PRIMARIES_P3:
       *internal = Primaries::kP3;
       return true;
+    default:
+      return JXL_FAILURE("Invalid Primaries enum value");
   }
-  return JXL_FAILURE("Invalid Primaries enum value");
 }
 
 Status ConvertExternalToInternalTransferFunction(
@@ -179,8 +181,9 @@ Status ConvertExternalToInternalTransferFunction(
       return true;
     case JXL_TRANSFER_FUNCTION_GAMMA:
       return JXL_FAILURE("Gamma should be handled separately");
+    default:
+      return JXL_FAILURE("Invalid TransferFunction enum value");
   }
-  return JXL_FAILURE("Invalid TransferFunction enum value");
 }
 
 Status ConvertExternalToInternalRenderingIntent(
@@ -198,8 +201,9 @@ Status ConvertExternalToInternalRenderingIntent(
     case JXL_RENDERING_INTENT_ABSOLUTE:
       *internal = RenderingIntent::kAbsolute;
       return true;
+    default:
+      return JXL_FAILURE("Invalid RenderingIntent enum value");
   }
-  return JXL_FAILURE("Invalid RenderingIntent enum value");
 }
 
 }  // namespace
@@ -313,8 +317,10 @@ CIExy ColorEncoding::GetWhitePoint() const {
     case WhitePoint::kE:
       xy.x = xy.y = 1.0 / 3;
       return xy;
+
+    default:
+      JXL_ABORT("Invalid WhitePoint %u", static_cast<uint32_t>(white_point));
   }
-  JXL_ABORT("Invalid WhitePoint %u", static_cast<uint32_t>(white_point));
 }
 
 Status ColorEncoding::SetWhitePoint(const CIExy& xy) {
@@ -375,8 +381,9 @@ PrimariesCIExy ColorEncoding::GetPrimaries() const {
       xy.b.x = 0.150;
       xy.b.y = 0.060;
       return xy;
+    default:
+      JXL_ABORT("Invalid Primaries %u", static_cast<uint32_t>(primaries));
   }
-  JXL_ABORT("Invalid Primaries %u", static_cast<uint32_t>(primaries));
 }
 
 Status ColorEncoding::SetPrimaries(const PrimariesCIExy& xy) {
@@ -533,6 +540,12 @@ Status ColorEncoding::VisitFields(Visitor* JXL_RESTRICT visitor) {
       JXL_QUIET_RETURN_IF_ERROR(visitor->Enum(WhitePoint::kD65, &white_point));
       if (visitor->Conditional(white_point == WhitePoint::kCustom)) {
         JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&white_));
+      } else {
+        if (white_point != WhitePoint::kD65 && white_point != WhitePoint::kE &&
+            white_point != WhitePoint::kDCI) {
+          return JXL_FAILURE("Invalid WhitePoint: %u",
+                             static_cast<unsigned int>(white_point));
+        }
       }
     }
 
@@ -542,6 +555,12 @@ Status ColorEncoding::VisitFields(Visitor* JXL_RESTRICT visitor) {
         JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&red_));
         JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&green_));
         JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&blue_));
+      } else {
+        if (primaries != Primaries::kSRGB && primaries != Primaries::k2100 &&
+            primaries != Primaries::kP3) {
+          return JXL_FAILURE("Invalid Primaries: %u",
+                             static_cast<unsigned int>(primaries));
+        }
       }
     }
 

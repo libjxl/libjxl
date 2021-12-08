@@ -504,10 +504,9 @@ void DetectTransferFunction(const skcms_ICCProfile& profile,
                             ColorEncoding* JXL_RESTRICT c) {
   if (c->tf.SetImplicit()) return;
 
-  for (TransferFunction tf : Values<TransferFunction>()) {
-    // Can only create profile from known transfer function.
-    if (tf == TransferFunction::kUnknown) continue;
-
+  for (TransferFunction tf : {TransferFunction::k709, TransferFunction::kLinear,
+                              TransferFunction::kSRGB, TransferFunction::kPQ,
+                              TransferFunction::kDCI, TransferFunction::kHLG}) {
     c->tf.SetTransferFunction(tf);
 
     skcms_ICCProfile profile_test;
@@ -994,7 +993,7 @@ void* JxlCmsInit(void* init_data, size_t num_threads, size_t xsize,
     if (MaybeCreateProfile(c_linear_src, &icc_src) &&
 #if JPEGXL_ENABLE_SKCMS
         DecodeProfile(icc_src.data(), icc_src.size(), &new_src)) {
-#else   // JPEGXL_ENABLE_SKCMS
+#else  // JPEGXL_ENABLE_SKCMS
         DecodeProfile(context, icc_src, &new_src)) {
 #endif  // JPEGXL_ENABLE_SKCMS
 #if JXL_CMS_VERBOSE
