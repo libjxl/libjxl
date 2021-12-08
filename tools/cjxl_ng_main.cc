@@ -59,10 +59,6 @@ ABSL_FLAG(bool, jpeg_transcode_disable_cfl, false,
 ABSL_FLAG(bool, premultiply, false,
           "Force premultiplied (associated) alpha.");
 
-ABSL_FLAG(bool, keep_invisible, false,
-          "force disable/enable preserving color of invisible "
-          "pixels..");
-
 ABSL_FLAG(bool, centerfirst, false,
           "Put center groups first in the compressed file.");
 
@@ -96,6 +92,10 @@ ABSL_FLAG(int32_t, modular, -1,
           // TODO(tfish): Flag up parameter meaning change.
           "Use modular mode (-1 = encoder chooses, 0 = enforce VarDCT, "
           "1 = enforce modular mode).");
+
+ABSL_FLAG(int32_t, keep_invisible, -1,
+          "force disable/enable preserving color of invisible "
+          "pixels. (-1 = default, 0 = disable, 1 = enable).");
 
 ABSL_FLAG(int64_t, center_x, 0,
           // TODO(tfish): Clarify if this is really the comment we want here.
@@ -232,16 +232,23 @@ int main(int argc, char **argv) {
       JxlEncoderFrameSettingsSetOption(
           jxl_encoder_frame_settings,
           JXL_ENC_FRAME_SETTING_MODULAR,
-          flags_modular);
+          // TODO(tfish): Use absl features to only allow permitted values
+          // for flags like this instead.
+          flags_modular == 0 ? 0 : 1);
+    }
+    const int32_t flags_keep_invisible = absl::GetFlag(FLAGS_keep_invisible);
+    if (flags_keep_invisible != -1) {
+      JxlEncoderFrameSettingsSetOption(
+          jxl_encoder_frame_settings,
+          JXL_ENC_FRAME_SETTING_KEEP_INVISIBLE,
+          // TODO(tfish): Use absl features to only allow permitted values
+          // for flags like this instead.
+          flags_keep_invisible == 0 ? 0 : 1);
     }
   }  // Processing flags.
 
   jxl::PaddedBytes jpeg_data;
   JXL_RETURN_IF_ERROR(ReadFile(filename_in, &jpeg_data));
-
-  if (absl::GetFlag(FLAGS_container)) {
-    std::cout << "TODO(tfish): container=true.\n";
-  }
   
   if (JXL_ENC_SUCCESS !=
       JxlEncoderAddJPEGFrame(jxl_encoder_frame_settings,
