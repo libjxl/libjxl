@@ -22,17 +22,16 @@ class WriteToImageBundleStage : public RenderPipelineStage {
                   float* JXL_RESTRICT temp) const final {
     for (size_t c = 0; c < 3; c++) {
       memcpy(image_bundle_->color()->PlaneRow(c, ypos) + xpos - xextra,
-             GetInputRow(input_rows, c, 0) + kRenderPipelineXOffset - xextra,
+             GetInputRow(input_rows, c, 0) - xextra,
              sizeof(float) * (xsize + 2 * xextra));
     }
     for (size_t ec = 0; ec < image_bundle_->extra_channels().size(); ec++) {
       JXL_ASSERT(ec < image_bundle_->extra_channels().size());
       JXL_ASSERT(image_bundle_->extra_channels()[ec].xsize() <=
                  xpos + xsize + xextra);
-      memcpy(
-          image_bundle_->extra_channels()[ec].Row(ypos) + xpos - xextra,
-          GetInputRow(input_rows, 3 + ec, 0) + kRenderPipelineXOffset - xextra,
-          sizeof(float) * (xsize + 2 * xextra));
+      memcpy(image_bundle_->extra_channels()[ec].Row(ypos) + xpos - xextra,
+             GetInputRow(input_rows, 3 + ec, 0) - xextra,
+             sizeof(float) * (xsize + 2 * xextra));
     }
   }
 

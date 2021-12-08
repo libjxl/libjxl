@@ -132,9 +132,9 @@ class XYBStage : public RenderPipelineStage {
     msan::UnpoisonMemory(row1 + xsize, sizeof(float) * (xsize_v - xsize));
     msan::UnpoisonMemory(row2 + xsize, sizeof(float) * (xsize_v - xsize));
     for (int64_t x = -xextra; x < (int64_t)(xsize + xextra); x += Lanes(d)) {
-      const auto in_opsin_x = Load(d, row0 + x + kRenderPipelineXOffset);
-      const auto in_opsin_y = Load(d, row1 + x + kRenderPipelineXOffset);
-      const auto in_opsin_b = Load(d, row2 + x + kRenderPipelineXOffset);
+      const auto in_opsin_x = Load(d, row0 + x);
+      const auto in_opsin_y = Load(d, row1 + x);
+      const auto in_opsin_b = Load(d, row2 + x);
       JXL_COMPILER_FENCE;
       auto r = Undefined(d);
       auto g = Undefined(d);
@@ -142,9 +142,9 @@ class XYBStage : public RenderPipelineStage {
       XybToRgb(d, in_opsin_x, in_opsin_y, in_opsin_b, opsin_params_, &r, &g,
                &b);
       op_.Transform(d, &r, &g, &b);
-      Store(r, d, row0 + x + kRenderPipelineXOffset);
-      Store(g, d, row1 + x + kRenderPipelineXOffset);
-      Store(b, d, row2 + x + kRenderPipelineXOffset);
+      Store(r, d, row0 + x);
+      Store(g, d, row1 + x);
+      Store(b, d, row2 + x);
     }
     msan::PoisonMemory(row0 + xsize, sizeof(float) * (xsize_v - xsize));
     msan::PoisonMemory(row1 + xsize, sizeof(float) * (xsize_v - xsize));
