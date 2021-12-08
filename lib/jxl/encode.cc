@@ -483,10 +483,12 @@ JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
              info->exponent_bits_per_sample == 5) {
     enc->metadata.m.SetFloat16Samples();
   } else {
-    return JXL_ENC_NOT_SUPPORTED;
+    return JXL_API_ERROR(
+        "other exponent bits per sample combinations than IEEE binary32 and "
+        "binary16 not (yet) supported");
   }
   if (info->alpha_bits > 0 && info->alpha_exponent_bits > 0) {
-    return JXL_ENC_NOT_SUPPORTED;
+    return JXL_API_ERROR("floating point alpha not (yet) supported");
   }
 
   switch (info->alpha_bits) {
