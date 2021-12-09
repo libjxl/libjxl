@@ -67,6 +67,8 @@ struct RenderPipelineTestInputSettings {
   CompressParams cparams;
   // Short name for the encoder settings.
   std::string cparams_descr;
+
+  Splines splines;
 };
 
 class RenderPipelineTestParam
@@ -88,6 +90,7 @@ TEST_P(RenderPipelineTestParam, PipelineTest) {
   PaddedBytes compressed;
 
   PassesEncoderState enc_state;
+  enc_state.shared.image_features.splines = config.splines;
   ASSERT_TRUE(EncodeFile(config.cparams, &io, &enc_state, &compressed,
                          GetJxlCms(), /*aux_out=*/nullptr, &pool));
 
@@ -110,6 +113,27 @@ TEST_P(RenderPipelineTestParam, PipelineTest) {
                           1e-5);
     }
   }
+}
+
+Splines CreateTestSplines() {
+  const ColorCorrelationMap cmap;
+  std::vector<Spline::Point> control_points{{9, 54},  {118, 159}, {97, 3},
+                                            {10, 40}, {150, 25},  {120, 300}};
+  const Spline spline{
+      control_points,
+      /*color_dct=*/
+      {{0.03125f, 0.00625f, 0.003125f}, {1.f, 0.321875f}, {1.f, 0.24375f}},
+      /*sigma_dct=*/{0.3125f, 0.f, 0.f, 0.0625f}};
+  std::vector<Spline> spline_data = {spline};
+  std::vector<QuantizedSpline> quantized_splines;
+  std::vector<Spline::Point> starting_points;
+  for (const Spline& spline : spline_data) {
+    quantized_splines.emplace_back(spline, /*quantization_adjustment=*/0,
+                                   cmap.YtoXRatio(0), cmap.YtoBRatio(0));
+    starting_points.push_back(spline.control_points.front());
+  }
+  return Splines(/*quantization_adjustment=*/0, std::move(quantized_splines),
+                 std::move(starting_points));
 }
 
 std::vector<RenderPipelineTestInputSettings> GeneratePipelineTests() {
@@ -175,6 +199,13 @@ std::vector<RenderPipelineTestInputSettings> GeneratePipelineTests() {
       s.cparams.gaborish = Override::kOn;
       s.cparams.epf = 3;
       s.cparams_descr = "GabEpf3NoPatches";
+      all_tests.push_back(s);
+    }
+
+    {
+      auto s = settings;
+      s.cparams_descr = "Splines";
+      s.splines = CreateTestSplines();
       all_tests.push_back(s);
     }
 

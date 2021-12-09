@@ -55,6 +55,7 @@
 #include "lib/jxl/quantizer.h"
 #include "lib/jxl/render_pipeline/stage_epf.h"
 #include "lib/jxl/render_pipeline/stage_gaborish.h"
+#include "lib/jxl/render_pipeline/stage_splines.h"
 #include "lib/jxl/render_pipeline/stage_upsampling.h"
 #include "lib/jxl/render_pipeline/stage_write_to_ib.h"
 #include "lib/jxl/render_pipeline/stage_xyb.h"
@@ -695,7 +696,8 @@ void FrameDecoder::PreparePipeline() {
     JXL_ABORT("Not implemented: patches");
   }
   if ((frame_header_.flags & FrameHeader::kSplines) != 0) {
-    JXL_ABORT("Not implemented: splines");
+    builder.AddStage(
+        GetSplineStage(&dec_state_->shared->image_features.splines));
   }
   // TODO(veluca): extra channels will need some handling too.
   if (frame_header_.upsampling != 1) {
