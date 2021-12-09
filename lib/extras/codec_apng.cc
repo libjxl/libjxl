@@ -321,12 +321,13 @@ int processing_start(png_structp& png_ptr, png_infop& info_ptr, void* frame_ptr,
   png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
   info_ptr = png_create_info_struct(png_ptr);
   if (!png_ptr || !info_ptr) return 1;
-
+#if !(defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
+      defined(THREAD_SANITIZER))
   if (setjmp(png_jmpbuf(png_ptr))) {
     png_destroy_read_struct(&png_ptr, &info_ptr, 0);
     return 1;
   }
-
+#endif
   png_set_crc_action(png_ptr, PNG_CRC_QUIET_USE, PNG_CRC_QUIET_USE);
   png_set_progressive_read_fn(png_ptr, frame_ptr, info_fn, row_fn, NULL);
 
