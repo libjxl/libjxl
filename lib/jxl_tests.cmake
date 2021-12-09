@@ -55,6 +55,7 @@ set(TEST_FILES
   jxl/rational_polynomial_test.cc
   jxl/render_pipeline/render_pipeline_test.cc
   jxl/roundtrip_test.cc
+  jxl/simd_util_test.cc
   jxl/speed_tier_test.cc
   jxl/splines_test.cc
   jxl/toc_test.cc
