@@ -206,6 +206,7 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/render_pipeline/stage_xyb.h
   jxl/render_pipeline/test_render_pipeline_stages.h
   jxl/sanitizers.h
+  jxl/simd_util-inl.h
   jxl/splines.cc
   jxl/splines.h
   jxl/toc.cc
