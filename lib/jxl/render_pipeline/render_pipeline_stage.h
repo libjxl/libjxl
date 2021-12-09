@@ -125,7 +125,6 @@ class RenderPipelineStage {
     return output_rows[c][offset] + kRenderPipelineXOffset;
   }
 
- private:
   const Settings settings_;
   friend class RenderPipeline;
   friend class SimpleRenderPipeline;
