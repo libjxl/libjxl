@@ -107,23 +107,22 @@ class RenderPipelineStage {
   // Returns a pointer to the input row of channel `c` with offset `y`.
   // `y` must be in [-settings_.border_y, settings_.border_y]. `c` must be such
   // that `GetChannelMode(c) != kIgnored`. The returned pointer points to the
-  // *beginning* of the row (i.e. the caller still needs to apply
-  // kRenderPipelineXOffset).
+  // offset-ed row (i.e. kRenderPipelineXOffset has been applied).
   float* GetInputRow(const RowInfo& input_rows, size_t c, int offset) const {
     JXL_DASSERT(GetChannelMode(c) != RenderPipelineChannelMode::kIgnored);
     JXL_DASSERT(-offset <= static_cast<int>(settings_.border_y));
     JXL_DASSERT(offset <= static_cast<int>(settings_.border_y));
-    return input_rows[c][settings_.border_y + offset];
+    return input_rows[c][settings_.border_y + offset] + kRenderPipelineXOffset;
   }
   // Similar to `GetInputRow`, but can only be used if `GetChannelMode(c) ==
   // kInOut`. Offset must be less than `1<<settings_.shift_y`.. The returned
-  // pointer points to the *beginning* of the row (i.e. the caller still needs
-  // to apply kRenderPipelineXOffset).
+  // pointer points to the offset-ed row (i.e. kRenderPipelineXOffset has been
+  // applied).
   float* GetOutputRow(const RowInfo& output_rows, size_t c,
                       size_t offset) const {
     JXL_DASSERT(GetChannelMode(c) == RenderPipelineChannelMode::kInOut);
     JXL_DASSERT(offset <= 1 << settings_.shift_y);
-    return output_rows[c][offset];
+    return output_rows[c][offset] + kRenderPipelineXOffset;
   }
 
  private:

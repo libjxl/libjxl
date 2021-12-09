@@ -967,65 +967,98 @@ void* JxlCmsInit(void* init_data, size_t num_threads, size_t xsize,
     }
   }
 
-  // Special-case SRGB <=> linear and when PQ or HLG is involved:
-  const bool src_linear = c_src.tf.IsLinear();
+  // Special-case SRGB <=> linear if the primaries / white point are the same,
+  // or any conversion where PQ or HLG is involved:
+  bool src_linear = c_src.tf.IsLinear();
   const bool dst_linear = c_dst.tf.IsLinear();
-  if (c_src.tf.IsPQ() || c_src.tf.IsHLG() || c_dst.tf.IsPQ() ||
-      c_dst.tf.IsHLG() || (c_src.tf.IsSRGB() && dst_linear) ||
-      (c_dst.tf.IsSRGB() && src_linear)) {
-    // Construct new profiles as if the data were already/still linear.
+
+  if (c_src.tf.IsPQ() || c_src.tf.IsHLG() ||
+      (c_src.tf.IsSRGB() && dst_linear && c_src.SameColorSpace(c_dst))) {
+    // Construct new profile as if the data were already/still linear.
     ColorEncoding c_linear_src = c_src;
-    ColorEncoding c_linear_dst = c_dst;
     c_linear_src.tf.SetTransferFunction(TransferFunction::kLinear);
-    c_linear_dst.tf.SetTransferFunction(TransferFunction::kLinear);
 #if JPEGXL_ENABLE_SKCMS
-    skcms_ICCProfile new_src, new_dst;
+    skcms_ICCProfile new_src;
 #else  // JPEGXL_ENABLE_SKCMS
-    Profile new_src, new_dst;
+    Profile new_src;
 #endif  // JPEGXL_ENABLE_SKCMS
         // Only enable ExtraTF if profile creation succeeded.
     if (MaybeCreateProfile(c_linear_src, &icc_src) &&
-        MaybeCreateProfile(c_linear_dst, &icc_dst) &&
 #if JPEGXL_ENABLE_SKCMS
-        DecodeProfile(icc_src.data(), icc_src.size(), &new_src) &&
-        DecodeProfile(icc_dst.data(), icc_dst.size(), &new_dst)) {
+        DecodeProfile(icc_src.data(), icc_src.size(), &new_src)) {
 #else   // JPEGXL_ENABLE_SKCMS
-        DecodeProfile(context, icc_src, &new_src) &&
-        DecodeProfile(context, icc_dst, &new_dst)) {
+        DecodeProfile(context, icc_src, &new_src)) {
 #endif  // JPEGXL_ENABLE_SKCMS
-      if (c_linear_src.SameColorSpace(c_linear_dst)) {
-        t->skip_lcms = true;
-      }
 #if JXL_CMS_VERBOSE
-      printf("Special linear <-> HLG/PQ/sRGB; skip=%d\n", t->skip_lcms);
+      printf("Special HLG/PQ/sRGB -> linear\n");
 #endif
 #if JPEGXL_ENABLE_SKCMS
       t->icc_src = std::move(icc_src);
       t->profile_src = new_src;
-      t->icc_dst = std::move(icc_dst);
-      t->profile_dst = new_dst;
 #else   // JPEGXL_ENABLE_SKCMS
       profile_src.swap(new_src);
-      profile_dst.swap(new_dst);
 #endif  // JPEGXL_ENABLE_SKCMS
-      if (!c_src.tf.IsLinear()) {
-        t->preprocess = c_src.tf.IsSRGB()
-                            ? ExtraTF::kSRGB
-                            : (c_src.tf.IsPQ() ? ExtraTF::kPQ : ExtraTF::kHLG);
-      }
-      if (!c_dst.tf.IsLinear()) {
-        t->postprocess = c_dst.tf.IsSRGB()
-                             ? ExtraTF::kSRGB
-                             : (c_dst.tf.IsPQ() ? ExtraTF::kPQ : ExtraTF::kHLG);
-      }
+      t->preprocess = c_src.tf.IsSRGB()
+                          ? ExtraTF::kSRGB
+                          : (c_src.tf.IsPQ() ? ExtraTF::kPQ : ExtraTF::kHLG);
+      c_src = c_linear_src;
+      src_linear = true;
     } else {
       if (t->apply_hlg_ootf) {
         JXL_NOTIFY_ERROR(
-            "Failed to create extra linear profiles, and HLG OOTF required");
+            "Failed to create extra linear source profile, and HLG OOTF "
+            "required");
         return nullptr;
       }
-      JXL_WARNING("Failed to create extra linear profiles");
+      JXL_WARNING("Failed to create extra linear destination profile");
     }
+  }
+
+  if (c_dst.tf.IsPQ() || c_dst.tf.IsHLG() ||
+      (c_dst.tf.IsSRGB() && src_linear && c_src.SameColorSpace(c_dst))) {
+    ColorEncoding c_linear_dst = c_dst;
+    c_linear_dst.tf.SetTransferFunction(TransferFunction::kLinear);
+#if JPEGXL_ENABLE_SKCMS
+    skcms_ICCProfile new_dst;
+#else   // JPEGXL_ENABLE_SKCMS
+    Profile new_dst;
+#endif  // JPEGXL_ENABLE_SKCMS
+    // Only enable ExtraTF if profile creation succeeded.
+    if (MaybeCreateProfile(c_linear_dst, &icc_dst) &&
+#if JPEGXL_ENABLE_SKCMS
+        DecodeProfile(icc_dst.data(), icc_dst.size(), &new_dst)) {
+#else   // JPEGXL_ENABLE_SKCMS
+        DecodeProfile(context, icc_dst, &new_dst)) {
+#endif  // JPEGXL_ENABLE_SKCMS
+#if JXL_CMS_VERBOSE
+      printf("Special linear -> HLG/PQ/sRGB\n");
+#endif
+#if JPEGXL_ENABLE_SKCMS
+      t->icc_dst = std::move(icc_dst);
+      t->profile_dst = new_dst;
+#else   // JPEGXL_ENABLE_SKCMS
+      profile_dst.swap(new_dst);
+#endif  // JPEGXL_ENABLE_SKCMS
+      t->postprocess = c_dst.tf.IsSRGB()
+                           ? ExtraTF::kSRGB
+                           : (c_dst.tf.IsPQ() ? ExtraTF::kPQ : ExtraTF::kHLG);
+      c_dst = c_linear_dst;
+    } else {
+      if (t->apply_hlg_ootf) {
+        JXL_NOTIFY_ERROR(
+            "Failed to create extra linear destination profile, and inverse "
+            "HLG OOTF required");
+        return nullptr;
+      }
+      JXL_WARNING("Failed to create extra linear destination profile");
+    }
+  }
+
+  if (c_src.SameColorEncoding(c_dst)) {
+#if JXL_CMS_VERBOSE
+    printf("Same intermediary linear profiles, skipping CMS\n");
+#endif
+    t->skip_lcms = true;
   }
 
 #if JPEGXL_ENABLE_SKCMS

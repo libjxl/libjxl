@@ -39,6 +39,7 @@ bool canLoadImageWithExtension(QString extension) {
 }
 
 QImage loadImage(const QString& filename, const QByteArray& targetIccProfile,
+                 const float intensityTarget,
                  const QString& sourceColorSpaceHint) {
   qint64 elapsed;
   QImage img = loadJxlImage(filename, targetIccProfile, &elapsed);
@@ -55,6 +56,7 @@ QImage loadImage(const QString& filename, const QByteArray& targetIccProfile,
   if (!loadFromFile(filename, color_hints, &decoded, &pool)) {
     return QImage();
   }
+  decoded.metadata.m.SetIntensityTarget(intensityTarget);
   const ImageBundle& ib = decoded.Main();
 
   ColorEncoding targetColorSpace;

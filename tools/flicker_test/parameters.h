@@ -20,6 +20,7 @@ struct FlickerTestParameters {
   bool gray;
   int grayFadingTimeMSecs;
   int grayTimeMSecs;
+  int intensityTarget;
   int spacing;
 
   static FlickerTestParameters loadFrom(QSettings* settings);

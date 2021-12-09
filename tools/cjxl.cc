@@ -733,7 +733,6 @@ jxl::Status LoadAll(CompressArgs& args, jxl::ThreadPoolInternal* pool,
                     jxl::CodecInOut* io, double* decode_mps) {
   const double t0 = jxl::Now();
 
-  io->target_nits = args.intensity_target;
   io->dec_target = (args.jpeg_transcode ? jxl::DecodeTarget::kQuantizedCoeffs
                                         : jxl::DecodeTarget::kPixels);
   jxl::Codec input_codec;
@@ -741,6 +740,9 @@ jxl::Status LoadAll(CompressArgs& args, jxl::ThreadPoolInternal* pool,
                    &input_codec)) {
     fprintf(stderr, "Failed to read image %s.\n", args.params.file_in);
     return false;
+  }
+  if (args.intensity_target != 0) {
+    io->metadata.m.SetIntensityTarget(args.intensity_target);
   }
   if (input_codec != jxl::Codec::kJPG) args.jpeg_transcode = false;
   if (args.jpeg_transcode) args.params.butteraugli_distance = 0;

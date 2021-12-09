@@ -315,7 +315,7 @@ typedef struct {
 } JxlHeaderExtensions;
 
 /** Frame blend modes.
- * If coalescing is enabled (default), this can be ignored.
+ * When decoding, if coalescing is enabled (default), this can be ignored.
  */
 typedef enum {
   JXL_BLEND_REPLACE = 0,
@@ -326,11 +326,12 @@ typedef enum {
 } JxlBlendMode;
 
 /** The information about blending the color channels or a single extra channel.
- * If coalescing is enabled (default), this can be ignored.
+ * When decoding, if coalescing is enabled (default), this can be ignored and
+ * the blend mode is considered to be JXL_BLEND_REPLACE.
+ * When encoding, these settings apply to the pixel data given to the encoder.
  */
 typedef struct {
   /** Blend mode.
-   * Always equal to JXL_BLEND_REPLACE if coalescing is enabled.
    */
   JxlBlendMode blendmode;
   /** Reference frame ID to use as the 'bottom' layer (0-3).
@@ -346,32 +347,43 @@ typedef struct {
 } JxlBlendInfo;
 
 /** The information about layers.
- * If coalescing is enabled (default), this can be ignored.
+ * When decoding, if coalescing is enabled (default), this can be ignored.
+ * When encoding, these settings apply to the pixel data given to the encoder,
+ * the encoder could choose an internal representation that differs.
  */
 typedef struct {
-  /** Horizontal offset of the frame (can be negative, always zero if coalescing
-   * is enabled)
+  /** Whether cropping is applied for this frame. When decoding, if false,
+   * crop_x0 and crop_y0 are set to zero, and xsize and ysize to the main
+   * image dimensions. When encoding and this is false, those fields are
+   * ignored. When decoding, if coalescing is enabled (default), this is always
+   * false, regardless of the internal encoding in the JPEG XL codestream.
+   */
+  JXL_BOOL have_crop;
+
+  /** Horizontal offset of the frame (can be negative).
    */
   int32_t crop_x0;
-  /** Vertical offset of the frame (can be negative, always zero if coalescing
-   * is enabled)
+
+  /** Vertical offset of the frame (can be negative).
    */
   int32_t crop_y0;
-  /** Width of the frame (number of columns, always equal to image width if
-   * coalescing is enabled)
+
+  /** Width of the frame (number of columns).
    */
   uint32_t xsize;
-  /** Height of the frame (number of rows, always equal to image height if
-   * coalescing is enabled)
+
+  /** Height of the frame (number of rows).
    */
   uint32_t ysize;
+
   /** The blending info for the color channels. Blending info for extra channels
    * has to be retrieved separately using JxlDecoderGetExtraChannelBlendInfo.
    */
   JxlBlendInfo blend_info;
+
   /** After blending, save the frame as reference frame with this ID (0-3).
    * Special case: if the frame duration is nonzero, ID 0 means "will not be
-   * referenced in the future".
+   * referenced in the future". This value is not used for the last frame.
    */
   uint32_t save_as_reference;
 } JxlLayerInfo;

@@ -56,12 +56,20 @@ int main(int argc, char** argv) {
       "[<middle-image>]");
 
   QCommandLineOption colorSpaceOption(
-      {"color-space", "c"},
+      {"color-space", "color_space", "c"},
       QCoreApplication::translate(
           "compare_images",
           "The color space to use for untagged images (typically PNM)."),
       QCoreApplication::translate("compare_images", "color-space"));
   parser.addOption(colorSpaceOption);
+
+  QCommandLineOption intensityTargetOption(
+      {"intensity-target", "intensity_target", "i"},
+      QCoreApplication::translate("compare_images",
+                                  "The peak luminance of the display."),
+      QCoreApplication::translate("compare_images", "nits"),
+      QString::number(jxl::kDefaultIntensityTarget));
+  parser.addOption(intensityTargetOption);
 
   parser.process(application);
 
@@ -72,13 +80,20 @@ int main(int argc, char** argv) {
     parser.showHelp(EXIT_FAILURE);
   }
 
+  bool ok;
+  const float intensityTarget =
+      parser.value(intensityTargetOption).toFloat(&ok);
+  if (!ok) {
+    parser.showHelp(EXIT_FAILURE);
+  }
+
   jxl::SplitImageView view;
 
   const QByteArray monitorIccProfile = jxl::GetMonitorIccProfile(&view);
 
   const QString leftImagePath = arguments.takeFirst();
-  QImage leftImage =
-      jxl::loadImage(leftImagePath, monitorIccProfile, colorSpaceHint);
+  QImage leftImage = jxl::loadImage(leftImagePath, monitorIccProfile,
+                                    intensityTarget, colorSpaceHint);
   if (leftImage.isNull()) {
     displayLoadingError(leftImagePath);
     return EXIT_FAILURE;
@@ -86,8 +101,8 @@ int main(int argc, char** argv) {
   view.setLeftImage(std::move(leftImage));
 
   const QString rightImagePath = arguments.takeFirst();
-  QImage rightImage =
-      jxl::loadImage(rightImagePath, monitorIccProfile, colorSpaceHint);
+  QImage rightImage = jxl::loadImage(rightImagePath, monitorIccProfile,
+                                     intensityTarget, colorSpaceHint);
   if (rightImage.isNull()) {
     displayLoadingError(rightImagePath);
     return EXIT_FAILURE;
@@ -96,8 +111,8 @@ int main(int argc, char** argv) {
 
   if (!arguments.empty()) {
     const QString middleImagePath = arguments.takeFirst();
-    QImage middleImage =
-        jxl::loadImage(middleImagePath, monitorIccProfile, colorSpaceHint);
+    QImage middleImage = jxl::loadImage(middleImagePath, monitorIccProfile,
+                                        intensityTarget, colorSpaceHint);
     if (middleImage.isNull()) {
       displayLoadingError(middleImagePath);
       return EXIT_FAILURE;

@@ -22,8 +22,8 @@ namespace extras {
 
 // Decodes `bytes` into `io`. color_hints are ignored.
 Status DecodeImageEXR(Span<const uint8_t> bytes, const ColorHints& color_hints,
-                      const SizeConstraints& constraints, float target_nits,
-                      ThreadPool* pool, PackedPixelFile* ppf);
+                      const SizeConstraints& constraints, ThreadPool* pool,
+                      PackedPixelFile* ppf);
 
 // Transforms from io->c_current to `c_desired` (with the transfer function set
 // to linear as that is the OpenEXR convention) and encodes into `bytes`.

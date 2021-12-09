@@ -53,6 +53,7 @@
 #include "lib/jxl/passes_state.h"
 #include "lib/jxl/quant_weights.h"
 #include "lib/jxl/quantizer.h"
+#include "lib/jxl/render_pipeline/stage_epf.h"
 #include "lib/jxl/render_pipeline/stage_gaborish.h"
 #include "lib/jxl/render_pipeline/stage_write_to_ib.h"
 #include "lib/jxl/render_pipeline/stage_xyb.h"
@@ -678,9 +679,20 @@ void FrameDecoder::PreparePipeline() {
   if (frame_header_.loop_filter.gab) {
     builder.AddStage(GetGaborishStage(frame_header_.loop_filter));
   }
-  if (frame_header_.loop_filter.epf_iters != 0) {
-    JXL_ABORT("Not implemented: EPF");
+
+  {
+    const LoopFilter& lf = frame_header_.loop_filter;
+    if (lf.epf_iters >= 3) {
+      builder.AddStage(GetEPFStage(lf, dec_state_->filter_weights.sigma, 0));
+    }
+    if (lf.epf_iters >= 1) {
+      builder.AddStage(GetEPFStage(lf, dec_state_->filter_weights.sigma, 1));
+    }
+    if (lf.epf_iters >= 2) {
+      builder.AddStage(GetEPFStage(lf, dec_state_->filter_weights.sigma, 2));
+    }
   }
+
   if ((frame_header_.flags & FrameHeader::kPatches) != 0) {
     JXL_ABORT("Not implemented: patches");
   }

@@ -24,6 +24,7 @@ constexpr char kGrayFadingTimeKey[] = "fadingTimeMSecs";
 constexpr char kGrayTimeKey[] = "timeMSecs";
 
 constexpr char kDisplayGroup[] = "display";
+constexpr char kIntensityTargetKey[] = "intensityTarget";
 constexpr char kSpacingKey[] = "spacing";
 
 }  // namespace
@@ -51,6 +52,8 @@ FlickerTestParameters FlickerTestParameters::loadFrom(
   settings->endGroup();
 
   settings->beginGroup(kDisplayGroup);
+  parameters.intensityTarget =
+      settings->value(kIntensityTargetKey, 250).toInt();
   parameters.spacing = settings->value(kSpacingKey, 50).toInt();
   settings->endGroup();
 
@@ -76,6 +79,7 @@ void FlickerTestParameters::saveTo(QSettings* const settings) const {
   settings->endGroup();
 
   settings->beginGroup(kDisplayGroup);
+  settings->setValue(kIntensityTargetKey, intensityTarget);
   settings->setValue(kSpacingKey, spacing);
   settings->endGroup();
 }

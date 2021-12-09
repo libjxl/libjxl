@@ -309,8 +309,31 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
     ib.name = input_frame->option_values.frame_name;
     ib.duration = input_frame->option_values.header.duration;
     ib.timecode = input_frame->option_values.header.timecode;
+    ib.blendmode = static_cast<jxl::BlendMode>(
+        input_frame->option_values.header.layer_info.blend_info.blendmode);
+    ib.blend =
+        input_frame->option_values.header.layer_info.blend_info.blendmode !=
+        JXL_BLEND_REPLACE;
 
-    if (!jxl::EncodeFrame(input_frame->option_values.cparams, jxl::FrameInfo{},
+    size_t save_as_reference =
+        input_frame->option_values.header.layer_info.save_as_reference;
+    if (save_as_reference > 1 || (ib.duration == 0 && save_as_reference != 0)) {
+      // The encoder implementation does not yet support custom
+      // save_as_reference, only 0 or 1 to indicate saving or no saving in case
+      // of animation duration.
+      return JXL_API_ERROR("unsupported save_as_reference value");
+    }
+    ib.use_for_next_frame = !!save_as_reference;
+
+    jxl::FrameInfo frame_info;
+    bool last_frame = frames_closed && !num_queued_frames;
+    frame_info.is_last = last_frame;
+    frame_info.save_as_reference = save_as_reference;
+
+    // TODO(lode): also handle have_crop and the cropping dimensions, this
+    // requires getting the pixel data from the user as a smaller image.
+
+    if (!jxl::EncodeFrame(input_frame->option_values.cparams, frame_info,
                           &metadata, input_frame->frame, &enc_state, cms,
                           thread_pool.get(), &writer,
                           /*aux_out=*/nullptr)) {
@@ -322,7 +345,6 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
     bytes.append(std::move(writer).TakeBytes());
 
     if (MustUseContainer()) {
-      bool last_frame = frames_closed && !num_queued_frames;
       if (last_frame && jxlp_counter == 0) {
         // If this is the last frame and no jxlp boxes were used yet, it's
         // slighly more efficient to write a jxlc box since it has 4 bytes less
@@ -446,6 +468,7 @@ void JxlEncoderInitFrameHeader(JxlFrameHeader* frame_header) {
   // for the decoder to set) since last frame is determined by usage of
   // JxlEncoderCloseFrames instead.
   frame_header->is_last = JXL_TRUE;
+  frame_header->layer_info.have_crop = JXL_FALSE;
   frame_header->layer_info.crop_x0 = 0;
   frame_header->layer_info.crop_y0 = 0;
   // These must be set if have_crop is enabled, but the default value has
@@ -483,29 +506,39 @@ JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
              info->exponent_bits_per_sample == 5) {
     enc->metadata.m.SetFloat16Samples();
   } else {
-    return JXL_ENC_NOT_SUPPORTED;
+    return JXL_API_ERROR(
+        "other exponent bits per sample combinations than IEEE binary32 and "
+        "binary16 not (yet) supported");
   }
   if (info->alpha_bits > 0 && info->alpha_exponent_bits > 0) {
-    return JXL_ENC_NOT_SUPPORTED;
+    return JXL_API_ERROR("floating point alpha not (yet) supported");
   }
 
-  switch (info->alpha_bits) {
-    case 0:
-      break;
-    case 32:
-    case 16:
-      enc->metadata.m.SetAlphaBits(16);
-      break;
-    case 8:
-      enc->metadata.m.SetAlphaBits(info->alpha_bits);
-      break;
-    default:
-      return JXL_ENC_ERROR;
+  if (!(info->alpha_bits == 0 || info->alpha_bits == 8 ||
+        info->alpha_bits == 16 || info->alpha_bits == 32)) {
+    return JXL_API_ERROR("invalid number alpha_bits");
   }
   // The number of extra channels includes the alpha channel, so for example and
   // RGBA with no other extra channels, has exactly num_extra_channels == 1
   enc->metadata.m.num_extra_channels = info->num_extra_channels;
   enc->metadata.m.extra_channel_info.resize(enc->metadata.m.num_extra_channels);
+  if (info->num_extra_channels == 0 && info->alpha_bits) {
+    return JXL_API_ERROR(
+        "when alpha_bits is non-zero, the number of channels must be at least "
+        "1");
+  }
+  // If the user provides non-zero alpha_bits, we make the channel info at index
+  // zero the appropriate alpha channel.
+  if (info->alpha_bits) {
+    JxlExtraChannelInfo channel_info;
+    JxlEncoderInitExtraChannelInfo(JXL_CHANNEL_ALPHA, &channel_info);
+    channel_info.bits_per_sample = info->alpha_bits;
+    channel_info.exponent_bits_per_sample = info->alpha_exponent_bits;
+    if (JxlEncoderSetExtraChannelInfo(enc, 0, &channel_info)) {
+      return JXL_ENC_ERROR;
+    }
+  }
+
   enc->metadata.m.xyb_encoded = !info->uses_original_profile;
   if (info->orientation > 0 && info->orientation <= 8) {
     enc->metadata.m.orientation = info->orientation;
@@ -557,6 +590,7 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelInfo(
   if (index >= enc->metadata.m.num_extra_channels) {
     return JXL_API_ERROR("Invalid value for the index of extra channel");
   }
+
   jxl::ExtraChannelInfo& channel = enc->metadata.m.extra_channel_info[index];
   channel.type = static_cast<jxl::ExtraChannel>(info->type);
   channel.bit_depth.bits_per_sample = info->bits_per_sample;
@@ -1237,8 +1271,6 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetInfo(
   // Setting the frame header resets the frame name, it must be set again with
   // JxlEncoderFrameSettingsSetName if desired.
   frame_settings->values.frame_name = "";
-
-  // TODO(lode): also set and handle blending fields
 
   return JXL_ENC_SUCCESS;
 }

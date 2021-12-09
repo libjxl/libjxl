@@ -71,7 +71,8 @@ typedef enum {
    */
   JXL_ENC_NEED_MORE_OUTPUT = 2,
 
-  /** The encoder doesn't (yet) support this.
+  /** DEPRECATED: the encoder does not return this status and there is no need
+   * to handle or expect it.
    */
   JXL_ENC_NOT_SUPPORTED = 3,
 
@@ -347,6 +348,12 @@ JxlEncoderSetParallelRunner(JxlEncoder* enc, JxlParallelRunner parallel_runner,
  * When the return value is not JXL_ENC_ERROR or JXL_ENC_SUCCESS, the encoding
  * requires more JxlEncoderProcessOutput calls to continue.
  *
+ * This encodes the frames and/or boxes added so far. If the last frame or last
+ * box has been added, @ref JxlEncoderCloseInput, @ref JxlEncoderCloseFrames
+ * and/or @ref JxlEncoderCloseBoxes must be called before the next
+ * @ref JxlEncoderProcessOutput call, or the codestream won't be encoded
+ * correctly.
+ *
  * @param enc encoder object.
  * @param next_out pointer to next bytes to write to.
  * @param avail_out amount of bytes available starting from *next_out.
@@ -432,6 +439,10 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderFrameSettingsSetName(
  * JxlEncoderStoreJPEGMetadata and a single JPEG frame is added, it will be
  * possible to losslessly reconstruct the JPEG codestream.
  *
+ * If this is the last frame, @ref JxlEncoderCloseInput or @ref
+ * JxlEncoderCloseFrames must be called before the next
+ * @ref JxlEncoderProcessOutput call.
+ *
  * @param frame_settings set of options and metadata for this frame. Also
  * includes reference to the encoder object.
  * @param buffer bytes to read JPEG from. Owned by the caller and its contents
@@ -483,6 +494,10 @@ JxlEncoderAddJPEGFrame(const JxlEncoderFrameSettings* frame_settings,
  * nominal range, e.g. to represent out-of-sRGB-gamut colors in the
  * uses_original_profile=false case. They are however not allowed to be NaN or
  * +-infinity.
+ *
+ * If this is the last frame, @ref JxlEncoderCloseInput or @ref
+ * JxlEncoderCloseFrames must be called before the next
+ * @ref JxlEncoderProcessOutput call.
  *
  * @param frame_settings set of options and metadata for this frame. Also
  * includes reference to the encoder object.
@@ -658,7 +673,7 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderUseBoxes(JxlEncoder* enc);
  * @ref JxlEncoderUseBoxes is not used. Further frames may still be added.
  *
  * Must be called between JxlEncoderAddBox of the last box
- * and the next call to JxlEncoderProcessOutput, or JxlEncoderProcessOutput
+ * and the next call to JxlEncoderProcessOutput, or @ref JxlEncoderProcessOutput
  * won't output the last box correctly.
  *
  * NOTE: if you don't need to close frames and boxes at separate times, you can
@@ -671,7 +686,9 @@ JXL_EXPORT void JxlEncoderCloseBoxes(JxlEncoder* enc);
 /**
  * Declares that no frames will be added and @ref JxlEncoderAddImageFrame and
  * @ref JxlEncoderAddJPEGFrame won't be called anymore. Further metadata boxes
- * may still be added.
+ * may still be added. This function or @ref JxlEncoderCloseInput must be called
+ * after adding the last frame and the next call to
+ * @ref JxlEncoderProcessOutput, or the frame won't be properly marked as last.
  *
  * NOTE: if you don't need to close frames and boxes at separate times, you can
  * use @ref JxlEncoderCloseInput instead to close both at once.
@@ -687,7 +704,10 @@ JXL_EXPORT void JxlEncoderCloseFrames(JxlEncoder* enc);
  * calls should be done to create the final output.
  *
  * The requirements of both @ref JxlEncoderCloseFrames and @ref
- * JxlEncoderCloseBoxes apply to this function.
+ * JxlEncoderCloseBoxes apply to this function. Either this function or the
+ * other two must be called after the final frame and/or box, and the next
+ * @ref JxlEncoderProcessOutput call, or the codestream won't be encoded
+ * correctly.
  *
  * @param enc encoder object.
  */

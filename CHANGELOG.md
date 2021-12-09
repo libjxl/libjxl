@@ -29,6 +29,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
    and blending parameters of the frame.
  - decoder/encoder API: add two fields to `JXLBasicInfo`: `intrinsic_xsize`
    and `intrinsic_ysize` to signal the intrinsic size.
+ - encoder API: ability to encode arbitrary extra channels:
+  `JxlEncoderInitExtraChannelInfo`, `JxlEncoderSetExtraChannelInfo`,
+  `JxlEncoderSetExtraChannelName` and `JxlEncoderSetExtraChannelBuffer`.
 
 ### Changed
 - decoder API: using `JxlDecoderCloseInput` at the end of all input is required
@@ -49,6 +52,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - encoder API: `JxlEncoderOptionsSetDecodingSpeed`: use
   `JxlEncoderFrameSettingsSetOption(frame_settings,
   JXL_ENC_FRAME_SETTING_DECODING_SPEED, tier)` instead.
+- encoder API: deprecated `JXL_ENC_NOT_SUPPORTED`, the encoder returns
+  `JXL_ENC_ERROR` instead and there is no need to handle
+  `JXL_ENC_NOT_SUPPORTED`.
 
 ## [0.6.1] - 2021-10-29
 ### Changed

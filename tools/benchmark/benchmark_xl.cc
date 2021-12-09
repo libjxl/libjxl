@@ -945,12 +945,15 @@ class Benchmark {
           const size_t i = static_cast<size_t>(task);
           Status ok = true;
 
-          loaded_images[i].target_nits = Args()->intensity_target;
           loaded_images[i].dec_target = jpeg_transcoding_requested
                                             ? DecodeTarget::kQuantizedCoeffs
                                             : DecodeTarget::kPixels;
           if (!Args()->decode_only) {
             ok = SetFromFile(fnames[i], Args()->color_hints, &loaded_images[i]);
+            if (ok && Args()->intensity_target != 0) {
+              loaded_images[i].metadata.m.SetIntensityTarget(
+                  Args()->intensity_target);
+            }
           }
           if (!ok) {
             if (!Args()->silent_errors) {
