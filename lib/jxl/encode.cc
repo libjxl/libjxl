@@ -181,6 +181,21 @@ int VerifyLevelSettings(const JxlEncoder* enc, std::string* debug_string) {
   // All level 5 checks passes, so can return the more compatible level 5
   return 5;
 }
+JxlEncoderStatus CheckValidBitdepth(uint32_t bits_per_sample,
+                                    uint32_t exponent_bits_per_sample) {
+  if (!exponent_bits_per_sample) {
+    // The spec allows up to 31 for bits_per_sample here, but
+    // the code does not (yet) support it.
+    if (!(bits_per_sample > 0 && bits_per_sample <= 24)) {
+      return JXL_API_ERROR("Invalid value for bits_per_sample");
+    }
+  } else if ((exponent_bits_per_sample > 8) ||
+             (bits_per_sample > 24 + exponent_bits_per_sample)) {
+    return JXL_API_ERROR("Invalid float description");
+  }
+  return JXL_ENC_SUCCESS;
+}
+
 }  // namespace
 
 JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
@@ -493,31 +508,18 @@ JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
   if (!enc->metadata.size.Set(info->xsize, info->ysize)) {
     return JXL_ENC_ERROR;
   }
-  if (!info->exponent_bits_per_sample) {
-    if (info->bits_per_sample > 0 && info->bits_per_sample <= 24) {
-      enc->metadata.m.SetUintSamples(info->bits_per_sample);
-    } else {
-      return JXL_ENC_ERROR;
-    }
-  } else if (info->bits_per_sample == 32 &&
-             info->exponent_bits_per_sample == 8) {
-    enc->metadata.m.SetFloat32Samples();
-  } else if (info->bits_per_sample == 16 &&
-             info->exponent_bits_per_sample == 5) {
-    enc->metadata.m.SetFloat16Samples();
-  } else {
-    return JXL_API_ERROR(
-        "other exponent bits per sample combinations than IEEE binary32 and "
-        "binary16 not (yet) supported");
+  if (JXL_ENC_SUCCESS != CheckValidBitdepth(info->bits_per_sample,
+                                            info->exponent_bits_per_sample)) {
+    return JXL_ENC_ERROR;
   }
-  if (info->alpha_bits > 0 && info->alpha_exponent_bits > 0) {
-    return JXL_API_ERROR("floating point alpha not (yet) supported");
-  }
+  enc->metadata.m.bit_depth.bits_per_sample = info->bits_per_sample;
+  enc->metadata.m.bit_depth.exponent_bits_per_sample =
+      info->exponent_bits_per_sample;
+  enc->metadata.m.bit_depth.floating_point_sample =
+      (info->exponent_bits_per_sample != 0u);
+  enc->metadata.m.modular_16_bit_buffer_sufficient =
+      (info->exponent_bits_per_sample == 0u) && info->bits_per_sample <= 12;
 
-  if (!(info->alpha_bits == 0 || info->alpha_bits == 8 ||
-        info->alpha_bits == 16 || info->alpha_bits == 32)) {
-    return JXL_API_ERROR("invalid number alpha_bits");
-  }
   // The number of extra channels includes the alpha channel, so for example and
   // RGBA with no other extra channels, has exactly num_extra_channels == 1
   enc->metadata.m.num_extra_channels = info->num_extra_channels;
@@ -589,6 +591,10 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelInfo(
     JxlEncoder* enc, size_t index, const JxlExtraChannelInfo* info) {
   if (index >= enc->metadata.m.num_extra_channels) {
     return JXL_API_ERROR("Invalid value for the index of extra channel");
+  }
+  if (JXL_ENC_SUCCESS != CheckValidBitdepth(info->bits_per_sample,
+                                            info->exponent_bits_per_sample)) {
+    return JXL_ENC_ERROR;
   }
 
   jxl::ExtraChannelInfo& channel = enc->metadata.m.extra_channel_info[index];
