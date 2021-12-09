@@ -102,8 +102,8 @@ class RenderPipeline {
   enum GroupStatus { kUninitialized, kInitializing, kDone };
   std::vector<GroupStatus> group_status_;
 
-  // Indexed by [thread_id][stage]
-  std::vector<std::vector<CacheAlignedUniquePtr>> temp_buffers_;
+  // Indexed by thread_id
+  std::vector<CacheAlignedUniquePtr> temp_buffers_;
 
   friend class RenderPipelineInput;
 

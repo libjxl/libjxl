@@ -111,11 +111,13 @@ void RenderPipeline::InputReady(
 
 void RenderPipeline::PrepareForThreads(size_t num) {
   temp_buffers_.resize(num);
-  for (auto& thread_buffers : temp_buffers_) {
-    thread_buffers.reserve(stages_.size());
+  for (auto& thread_buffer : temp_buffers_) {
+    size_t size = 0;
     for (const auto& stage : stages_) {
-      thread_buffers.push_back(
-          AllocateArray(sizeof(float) * stage->settings_.temp_buffer_size));
+      size = std::max(stage->settings_.temp_buffer_size, size);
+    }
+    if (size) {
+      thread_buffer = AllocateArray(sizeof(float) * size);
     }
   }
   PrepareForThreadsInternal(num);

@@ -53,25 +53,24 @@ class GaborishStage : public RenderPipelineStage {
       const auto w0 = Set(d, weights_[3 * c + 0]);
       const auto w1 = Set(d, weights_[3 * c + 1]);
       const auto w2 = Set(d, weights_[3 * c + 2]);
-      // Since GetInputRow(input_rows, c, {-1, 0, 1}) + kRenderPipelineXOffset
-      // is aligned, rounding xextra up to Lanes(d) doesn't access anything
-      // problematic.
+      // Since GetInputRow(input_rows, c, {-1, 0, 1}) is aligned, rounding
+      // xextra up to Lanes(d) doesn't access anything problematic.
       for (int64_t x = -RoundUpTo(xextra, Lanes(d));
            x < (int64_t)(xsize + xextra); x += Lanes(d)) {
-        const auto t = Load(d, row_t + kRenderPipelineXOffset + x);
-        const auto tl = LoadU(d, row_t + kRenderPipelineXOffset + x - 1);
-        const auto tr = LoadU(d, row_t + kRenderPipelineXOffset + x + 1);
-        const auto m = Load(d, row_m + kRenderPipelineXOffset + x);
-        const auto l = LoadU(d, row_m + kRenderPipelineXOffset + x - 1);
-        const auto r = LoadU(d, row_m + kRenderPipelineXOffset + x + 1);
-        const auto b = Load(d, row_b + kRenderPipelineXOffset + x);
-        const auto bl = LoadU(d, row_b + kRenderPipelineXOffset + x - 1);
-        const auto br = LoadU(d, row_b + kRenderPipelineXOffset + x + 1);
+        const auto t = Load(d, row_t + x);
+        const auto tl = LoadU(d, row_t + x - 1);
+        const auto tr = LoadU(d, row_t + x + 1);
+        const auto m = Load(d, row_m + x);
+        const auto l = LoadU(d, row_m + x - 1);
+        const auto r = LoadU(d, row_m + x + 1);
+        const auto b = Load(d, row_b + x);
+        const auto bl = LoadU(d, row_b + x - 1);
+        const auto br = LoadU(d, row_b + x + 1);
         const auto sum0 = m;
         const auto sum1 = (l + r) + (t + b);
         const auto sum2 = (tl + tr) + (bl + br);
         auto pixels = MulAdd(sum2, w2, MulAdd(sum1, w1, sum0 * w0));
-        Store(pixels, d, row_out + kRenderPipelineXOffset + x);
+        Store(pixels, d, row_out + x);
       }
     }
   }

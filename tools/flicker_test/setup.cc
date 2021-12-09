@@ -45,6 +45,7 @@ FlickerTestWizard::FlickerTestWizard(QWidget* const parent)
   ui_.grayFlickering->setChecked(parameters.gray);
   ui_.grayFadingTime->setValue(parameters.grayFadingTimeMSecs);
   ui_.grayTime->setValue(parameters.grayTimeMSecs);
+  ui_.intensityTarget->setValue(parameters.intensityTarget);
   ui_.spacing->setValue(parameters.spacing);
 
   QImage white(256, 256, QImage::Format_RGB32);
@@ -67,6 +68,7 @@ FlickerTestParameters FlickerTestWizard::parameters() const {
   result.gray = ui_.grayFlickering->isChecked();
   result.grayFadingTimeMSecs = ui_.grayFadingTime->value();
   result.grayTimeMSecs = ui_.grayTime->value();
+  result.intensityTarget = ui_.intensityTarget->value();
   result.spacing = ui_.spacing->value();
   return result;
 }

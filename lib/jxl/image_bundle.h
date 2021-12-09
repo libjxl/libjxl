@@ -222,9 +222,13 @@ class ImageBundle {
   uint32_t duration = 0;
   uint32_t timecode = 0;
 
+  // TODO(lode): these fields do not match the JXL frame header, it should be
+  // possible to specify up to 4 (3 if nonzero duration) slots to save this
+  // frame as reference (see save_as_reference).
   bool use_for_next_frame = false;
   bool blend = false;
   BlendMode blendmode = BlendMode::kBlend;
+
   std::string name;
 
  private:

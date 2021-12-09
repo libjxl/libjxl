@@ -165,8 +165,8 @@ TEST(JxlTest, RoundtripSmallD1) {
     // And then, with a lower intensity target than the default, the bitrate
     // should be smaller.
     CodecInOut io_dim;
-    io_dim.target_nits = 100;
     ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io_dim, pool));
+    io_dim.metadata.m.SetIntensityTarget(100);
     io_dim.ShrinkTo(io_dim.xsize() / 8, io_dim.ysize() / 8);
     EXPECT_LT(Roundtrip(&io_dim, cparams, dparams, pool, &io_out),
               compressed_size);

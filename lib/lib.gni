@@ -214,6 +214,8 @@ libjxl_dec_sources = [
     "jxl/render_pipeline/render_pipeline_stage.h",
     "jxl/render_pipeline/simple_render_pipeline.cc",
     "jxl/render_pipeline/simple_render_pipeline.h",
+    "jxl/render_pipeline/stage_epf.cc",
+    "jxl/render_pipeline/stage_epf.h",
     "jxl/render_pipeline/stage_gaborish.cc",
     "jxl/render_pipeline/stage_gaborish.h",
     "jxl/render_pipeline/stage_write_to_ib.cc",

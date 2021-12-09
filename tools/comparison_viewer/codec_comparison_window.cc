@@ -60,8 +60,12 @@ void restoreCodecSelection(
 
 }  // namespace
 
-CodecComparisonWindow::CodecComparisonWindow(QWidget* const parent)
-    : QMainWindow(parent), monitorIccProfile_(GetMonitorIccProfile(this)) {
+CodecComparisonWindow::CodecComparisonWindow(const QString& directory,
+                                             const float intensityTarget,
+                                             QWidget* const parent)
+    : QMainWindow(parent),
+      intensityTarget_(intensityTarget),
+      monitorIccProfile_(GetMonitorIccProfile(this)) {
   ui_.setupUi(this);
 
   connect(ui_.imageSetComboBox, &QComboBox::currentTextChanged, this,
@@ -114,11 +118,7 @@ CodecComparisonWindow::CodecComparisonWindow(QWidget* const parent)
             break;
         }
       });
-}
 
-CodecComparisonWindow::CodecComparisonWindow(const QString& directory,
-                                             QWidget* const parent)
-    : CodecComparisonWindow(parent) {
   loadDirectory(directory);
 }
 
@@ -145,8 +145,9 @@ void CodecComparisonWindow::handleImageSetSelection(
 
 void CodecComparisonWindow::handleImageSelection(const QString& imageName) {
   const QString imageSetName = ui_.imageSetComboBox->currentText();
-  ui_.splitImageView->setMiddleImage(loadImage(
-      pathToOriginalImage(imageSetName, imageName), monitorIccProfile_));
+  ui_.splitImageView->setMiddleImage(
+      loadImage(pathToOriginalImage(imageSetName, imageName),
+                monitorIccProfile_, intensityTarget_));
 
   const auto selection = currentCodecSelection(ui_);
   QStringList codecs = imageSets_.value(imageSetName).value(imageName).keys();
@@ -188,7 +189,8 @@ void CodecComparisonWindow::handleCodecChange(const Side side) {
 void CodecComparisonWindow::updateSideImage(const Side side) {
   const ComparableImage& imageInfo = currentlySelectedImage(side);
   if (imageInfo.decodedImagePath.isEmpty()) return;
-  QImage image = loadImage(imageInfo.decodedImagePath, monitorIccProfile_);
+  QImage image = loadImage(imageInfo.decodedImagePath, monitorIccProfile_,
+                           intensityTarget_);
   const int pixels = image.width() * image.height();
   QLabel* const sizeInfoLabel =
       side == Side::LEFT ? ui_.size1Label : ui_.size2Label;
