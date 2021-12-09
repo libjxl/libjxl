@@ -109,6 +109,8 @@ class Splines {
 
   void AddTo(Image3F* opsin, const Rect& opsin_rect,
              const Rect& image_rect) const;
+  void AddToRow(float* JXL_RESTRICT row_x, float* JXL_RESTRICT row_y,
+                float* JXL_RESTRICT row_b, const Rect& image_row) const;
   void SubtractFrom(Image3F* opsin) const;
 
   const std::vector<QuantizedSpline>& QuantizedSplines() const {
@@ -124,6 +126,9 @@ class Splines {
                              const ColorCorrelationMap& cmap);
 
  private:
+  template <bool>
+  void ApplyToRow(float* JXL_RESTRICT row_x, float* JXL_RESTRICT row_y,
+                  float* JXL_RESTRICT row_b, const Rect& image_row) const;
   template <bool>
   void Apply(Image3F* opsin, const Rect& opsin_rect,
              const Rect& image_rect) const;

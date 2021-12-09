@@ -781,7 +781,10 @@ Status DefaultEncoderHeuristics::LossyFrameHeuristics(
 
   // Find and subtract splines.
   if (cparams.speed_tier <= SpeedTier::kSquirrel) {
-    shared.image_features.splines = FindSplines(*opsin);
+    // If we do already have them, they were passed upstream to EncodeFile.
+    if (!shared.image_features.splines.HasAny()) {
+      shared.image_features.splines = FindSplines(*opsin);
+    }
     JXL_RETURN_IF_ERROR(shared.image_features.splines.InitializeDrawCache(
         opsin->xsize(), opsin->ysize(), shared.cmap));
     shared.image_features.splines.SubtractFrom(opsin);

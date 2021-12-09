@@ -137,16 +137,14 @@ void ComputeSegments(const Spline::Point& center, const float intensity,
   segments.push_back(segment);
 }
 
-void DrawSegments(Image3F* const opsin, const Rect& opsin_rect,
-                  const Rect& image_rect, bool add,
+void DrawSegments(float* JXL_RESTRICT row_x, float* JXL_RESTRICT row_y,
+                  float* JXL_RESTRICT row_b, const Rect& image_rect, bool add,
                   const SplineSegment* segments, const size_t* segment_indices,
                   const size_t* segment_y_start) {
   JXL_ASSERT(image_rect.ysize() == 1);
-  float* JXL_RESTRICT rows[3] = {
-      opsin_rect.PlaneRow(opsin, 0, 0) - image_rect.x0(),
-      opsin_rect.PlaneRow(opsin, 1, 0) - image_rect.x0(),
-      opsin_rect.PlaneRow(opsin, 2, 0) - image_rect.x0(),
-  };
+  float* JXL_RESTRICT rows[3] = {row_x - image_rect.x0(),
+                                 row_y - image_rect.x0(),
+                                 row_b - image_rect.x0()};
   size_t y = image_rect.y0();
   for (size_t i = segment_y_start[y]; i < segment_y_start[y + 1]; i++) {
     DrawSegment(segments[segment_indices[i]], add, y, image_rect.x0(),
@@ -494,6 +492,10 @@ void Splines::AddTo(Image3F* const opsin, const Rect& opsin_rect,
                     const Rect& image_rect) const {
   return Apply</*add=*/true>(opsin, opsin_rect, image_rect);
 }
+void Splines::AddToRow(float* JXL_RESTRICT row_x, float* JXL_RESTRICT row_y,
+                       float* JXL_RESTRICT row_b, const Rect& image_row) const {
+  return ApplyToRow</*add=*/true>(row_x, row_y, row_b, image_row);
+}
 
 void Splines::SubtractFrom(Image3F* const opsin) const {
   return Apply</*add=*/false>(opsin, Rect(*opsin), Rect(*opsin));
@@ -550,13 +552,27 @@ Status Splines::InitializeDrawCache(size_t image_xsize, size_t image_ysize,
 }
 
 template <bool add>
+void Splines::ApplyToRow(float* JXL_RESTRICT row_x, float* JXL_RESTRICT row_y,
+                         float* JXL_RESTRICT row_b,
+                         const Rect& image_row) const {
+  if (segments_.empty()) return;
+  JXL_ASSERT(image_row.ysize() == 1);
+  for (size_t iy = 0; iy < image_row.ysize(); iy++) {
+    HWY_DYNAMIC_DISPATCH(DrawSegments)
+    (row_x, row_y, row_b, image_row.Line(iy), add, segments_.data(),
+     segment_indices_.data(), segment_y_start_.data());
+  }
+}
+
+template <bool add>
 void Splines::Apply(Image3F* const opsin, const Rect& opsin_rect,
                     const Rect& image_rect) const {
   if (segments_.empty()) return;
   for (size_t iy = 0; iy < image_rect.ysize(); iy++) {
-    HWY_DYNAMIC_DISPATCH(DrawSegments)
-    (opsin, opsin_rect.Line(iy), image_rect.Line(iy), add, segments_.data(),
-     segment_indices_.data(), segment_y_start_.data());
+    const size_t y0 = opsin_rect.Line(iy).y0();
+    const size_t x0 = opsin_rect.x0();
+    ApplyToRow<add>(opsin->PlaneRow(0, y0) + x0, opsin->PlaneRow(1, y0) + x0,
+                    opsin->PlaneRow(2, y0) + x0, image_rect.Line(iy));
   }
 }
 
