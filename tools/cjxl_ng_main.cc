@@ -71,6 +71,10 @@ ABSL_FLAG(bool, verbose, false,
           // but with absl, we do that differently...?
           "Verbose output.");
 
+ABSL_FLAG(bool, already_downsampled, false,
+          "Do not downsample the given input before encoding, "
+          "but still signal that the decoder should upsample.");
+
 
 ABSL_FLAG(std::string, photon_noise, "ISO3200",
           "Set the noise to approximately what it would be at a given nominal "
@@ -79,14 +83,33 @@ ABSL_FLAG(std::string, photon_noise, "ISO3200",
           "equivalence ratio squared, for example by 2.25 for an APS-C "
           "camera.");
 
-// TODO(tfish): --dots, --patches, --resampling, --ec_resampling,
-// --already_downsampled, --epf, --gaborish, --intensity_target,
+// TODO(tfish): --dots, --patches,
+// --epf, --gaborish, --intensity_target,
 // --saliency_num_progressive_steps, --saliency_map_filename,
 // --saliency_threshold, --dec-hints, --override_bitdepth,
 // --colortransform, --mquality, --iterations, --colorspace, --group-size,
 // --predictor, --extra-properties, --lossy-palette, --pre-compact,
 // --post-compact, --responsive, --version, --quiet, --print_profile,
 
+
+ABSL_FLAG(int32_t, faster_decoding, 0,
+          "Favour higher decoding speed. 0 = default, higher "
+          "values give higher speed at the expense of quality");
+
+ABSL_FLAG(int32_t, resampling, -1,
+          // TODO(tfish): Discuss with team. The new docstring is from the C API
+          // documentation. This differs from what the old docstring said.
+          "Resampling. Default of -1 applies resampling only for low quality. "
+          "Value 1 does no downsampling (1x1), 2 does 2x2 downsampling, "
+          "4 is for 4x4 downsampling, and 8 for 8x8 downsampling.");
+
+ABSL_FLAG(int32_t, ec_resampling, -1,
+          // TODO(tfish): Discuss with team. The new docstring is from the C API
+          // documentation. This differs from what the old docstring said.
+          "Resampling for extra channels. Default of -1 applies resampling only "
+          "for low quality. Value 1 does no downsampling (1x1), 2 does 2x2 "
+          "downsampling, 4 is for 4x4 downsampling, and 8 for 8x8 downsampling."
+          );
 
 ABSL_FLAG(int32_t, modular, -1,
           // TODO(tfish): Flag up parameter meaning change.
@@ -140,11 +163,12 @@ ABSL_FLAG(float, quality, 100.0,
           "quality.");
 
 ABSL_FLAG(int64_t, effort, 7,
+          // TODO(tfish): Clarify discrepancy with team:
+          // Documentation says default==squirrel(7) here:
+          // https://libjxl.readthedocs.io/en/latest/api_encoder.html#_CPPv424JxlEncoderFrameSettingId
+          // but enc_params.h has kFalcon=7.
           "Encoder effort setting. Range: 1 .. 9.\n"
           "    Default: 7. Higher number is more effort (slower).");
-
-// TODO(tfish): --speed, --faster_decoding
-
 
 
 namespace {
@@ -245,6 +269,60 @@ int main(int argc, char **argv) {
           // for flags like this instead.
           flags_keep_invisible == 0 ? 0 : 1);
     }
+    const int32_t flags_effort = absl::GetFlag(FLAGS_effort);
+    if (! (1 <= flags_effort && flags_effort <= 9)) {
+      // Strictly speaking, custom absl flags-parsing would integrate
+      // more nicely with abseil flags, but the boilerplate cost of
+      // handling invalid calls is substantially higher than
+      // this lightweight approach here.
+      std::cerr << "Invalid --effort. Valid range is {1, 2, ..., 9}.\n";
+      return EXIT_FAILURE;
+    }
+    JxlEncoderFrameSettingsSetOption(
+        jxl_encoder_frame_settings,
+        JXL_ENC_FRAME_SETTING_EFFORT,
+        flags_effort);
+
+    const int32_t flags_faster_decoding = absl::GetFlag(FLAGS_faster_decoding);
+    if (! (0 <= flags_faster_decoding && flags_faster_decoding <= 4)) {
+      std::cerr << "Invalid --faster_decoding. Valid range is {0, 1, 2, 3, 4}.\n";
+      return EXIT_FAILURE;
+    }
+    JxlEncoderFrameSettingsSetOption(
+        jxl_encoder_frame_settings,
+        JXL_ENC_FRAME_SETTING_DECODING_SPEED,
+        flags_faster_decoding);
+
+    const int32_t flags_resampling = absl::GetFlag(FLAGS_resampling);
+    if (! (-1 == flags_resampling ||
+           (((flags_resampling & (flags_resampling - 1)) == 0) &&
+            flags_resampling <= 8))) {
+      std::cerr << "Invalid --resampling. Valid values are {-1, 1, 2, 4, 8}.\n";
+      return EXIT_FAILURE;
+    }
+    JxlEncoderFrameSettingsSetOption(
+        jxl_encoder_frame_settings,
+        JXL_ENC_FRAME_SETTING_RESAMPLING,
+        flags_resampling);
+
+    const int32_t flags_ec_resampling = absl::GetFlag(FLAGS_ec_resampling);
+    if (! (-1 == flags_ec_resampling ||
+           (((flags_ec_resampling & (flags_ec_resampling - 1)) == 0) &&
+            flags_resampling <= 8))) {
+      std::cerr << "Invalid --ec_resampling. Valid values are {-1, 1, 2, 4, 8}.\n";
+      return EXIT_FAILURE;
+    }
+    JxlEncoderFrameSettingsSetOption(
+        jxl_encoder_frame_settings,
+        JXL_ENC_FRAME_SETTING_EXTRA_CHANNEL_RESAMPLING,
+        flags_ec_resampling);
+
+    const bool flags_already_downsampled = absl::GetFlag(FLAGS_already_downsampled);
+    JxlEncoderFrameSettingsSetOption(
+        jxl_encoder_frame_settings,
+        JXL_ENC_FRAME_SETTING_ALREADY_DOWNSAMPLED,
+        flags_aready_downsampled);    
+    
   }  // Processing flags.
 
   jxl::PaddedBytes jpeg_data;
