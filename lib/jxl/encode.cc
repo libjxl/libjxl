@@ -494,23 +494,31 @@ JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
     return JXL_API_ERROR("floating point alpha not (yet) supported");
   }
 
-  switch (info->alpha_bits) {
-    case 0:
-      break;
-    case 32:
-    case 16:
-      enc->metadata.m.SetAlphaBits(16);
-      break;
-    case 8:
-      enc->metadata.m.SetAlphaBits(info->alpha_bits);
-      break;
-    default:
-      return JXL_ENC_ERROR;
+  if (!(info->alpha_bits == 0 || info->alpha_bits == 8 ||
+        info->alpha_bits == 16 || info->alpha_bits == 32)) {
+    return JXL_API_ERROR("invalid number alpha_bits");
   }
   // The number of extra channels includes the alpha channel, so for example and
   // RGBA with no other extra channels, has exactly num_extra_channels == 1
   enc->metadata.m.num_extra_channels = info->num_extra_channels;
   enc->metadata.m.extra_channel_info.resize(enc->metadata.m.num_extra_channels);
+  if (info->num_extra_channels == 0 && info->alpha_bits) {
+    return JXL_API_ERROR(
+        "when alpha_bits is non-zero, the number of channels must be at least "
+        "1");
+  }
+  // If the user provides non-zero alpha_bits, we make the channel info at index
+  // zero the appropriate alpha channel.
+  if (info->alpha_bits) {
+    JxlExtraChannelInfo channel_info;
+    JxlEncoderInitExtraChannelInfo(JXL_CHANNEL_ALPHA, &channel_info);
+    channel_info.bits_per_sample = info->alpha_bits;
+    channel_info.exponent_bits_per_sample = info->alpha_exponent_bits;
+    if (JxlEncoderSetExtraChannelInfo(enc, 0, &channel_info)) {
+      return JXL_ENC_ERROR;
+    }
+  }
+
   enc->metadata.m.xyb_encoded = !info->uses_original_profile;
   if (info->orientation > 0 && info->orientation <= 8) {
     enc->metadata.m.orientation = info->orientation;
@@ -562,6 +570,7 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelInfo(
   if (index >= enc->metadata.m.num_extra_channels) {
     return JXL_API_ERROR("Invalid value for the index of extra channel");
   }
+
   jxl::ExtraChannelInfo& channel = enc->metadata.m.extra_channel_info[index];
   channel.type = static_cast<jxl::ExtraChannel>(info->type);
   channel.bit_depth.bits_per_sample = info->bits_per_sample;
