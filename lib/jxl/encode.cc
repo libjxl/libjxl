@@ -492,23 +492,13 @@ JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
                                             info->exponent_bits_per_sample)) {
     return JXL_ENC_ERROR;
   }
-  if (!info->exponent_bits_per_sample) {
-    if (info->bits_per_sample > 0 && info->bits_per_sample <= 24) {
-      enc->metadata.m.SetUintSamples(info->bits_per_sample);
-    } else {
-      return JXL_ENC_ERROR;
-    }
-  } else if (info->bits_per_sample == 32 &&
-             info->exponent_bits_per_sample == 8) {
-    enc->metadata.m.SetFloat32Samples();
-  } else if (info->bits_per_sample == 16 &&
-             info->exponent_bits_per_sample == 5) {
-    enc->metadata.m.SetFloat16Samples();
-  } else {
-    return JXL_API_ERROR(
-        "other exponent bits per sample combinations than IEEE binary32 and "
-        "binary16 not (yet) supported");
-  }
+  enc->metadata.m.bit_depth.bits_per_sample = info->bits_per_sample;
+  enc->metadata.m.bit_depth.exponent_bits_per_sample =
+      info->exponent_bits_per_sample;
+  enc->metadata.m.bit_depth.floating_point_sample =
+      (info->exponent_bits_per_sample != 0u);
+  enc->metadata.m.modular_16_bit_buffer_sufficient =
+      (info->exponent_bits_per_sample == 0u) && info->bits_per_sample <= 12;
 
   // The number of extra channels includes the alpha channel, so for example and
   // RGBA with no other extra channels, has exactly num_extra_channels == 1
