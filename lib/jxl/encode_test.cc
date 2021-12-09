@@ -1008,6 +1008,8 @@ TEST(EncodeTest, AnimationHeaderTest) {
   header.duration = 50;
   header.timecode = 800;
   header.layer_info.blend_info.blendmode = JXL_BLEND_BLEND;
+  header.layer_info.blend_info.source = 2;
+  header.layer_info.blend_info.clamp = 1;
   JxlEncoderFrameSettingsSetInfo(frame_settings, &header);
   JxlEncoderFrameSettingsSetName(frame_settings, frame_name.c_str());
 
@@ -1048,6 +1050,10 @@ TEST(EncodeTest, AnimationHeaderTest) {
       EXPECT_EQ(header.timecode, header2.timecode);
       EXPECT_EQ(header.layer_info.blend_info.blendmode,
                 header2.layer_info.blend_info.blendmode);
+      EXPECT_EQ(header.layer_info.blend_info.clamp,
+                header2.layer_info.blend_info.clamp);
+      EXPECT_EQ(header.layer_info.blend_info.source,
+                header2.layer_info.blend_info.source);
       EXPECT_EQ(frame_name.size(), header2.name_length);
       if (header2.name_length > 0) {
         std::string frame_name2(header2.name_length + 1, '\0');
