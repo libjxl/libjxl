@@ -200,6 +200,8 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/render_pipeline/stage_epf.h
   jxl/render_pipeline/stage_gaborish.cc
   jxl/render_pipeline/stage_gaborish.h
+  jxl/render_pipeline/stage_upsampling.cc
+  jxl/render_pipeline/stage_upsampling.h
   jxl/render_pipeline/stage_write_to_ib.cc
   jxl/render_pipeline/stage_write_to_ib.h
   jxl/render_pipeline/stage_xyb.cc
