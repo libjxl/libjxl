@@ -155,8 +155,8 @@ int PrintBasicInfo(FILE* file) {
             free(name);
             break;
           }
-          free(name);
           printf("  name: %s\n", name);
+          free(name);
         }
         if (extra.type == JXL_CHANNEL_ALPHA)
           printf("  alpha_premultiplied: %d (%s)\n", extra.alpha_premultiplied,
@@ -270,8 +270,8 @@ int PrintBasicInfo(FILE* file) {
           free(name);
           break;
         }
-        free(name);
         printf("  name: %s\n", name);
+        free(name);
       }
       float ms = frame_header.duration * 1000.f *
                  info.animation.tps_denominator / info.animation.tps_numerator;
