@@ -220,8 +220,6 @@ if(${JPEGXL_ENABLE_BENCHMARK})
     benchmark/benchmark_codec_custom.h
     benchmark/benchmark_codec_jxl.cc
     benchmark/benchmark_codec_jxl.h
-    benchmark/benchmark_codec_png.cc
-    benchmark/benchmark_codec_png.h
     speed_stats.cc
     speed_stats.h
     ../third_party/dirent.cc
@@ -242,6 +240,16 @@ if(${JPEGXL_ENABLE_BENCHMARK})
     target_include_directories(benchmark_xl PRIVATE ${JPEG_INCLUDE_DIR})
     target_link_libraries(benchmark_xl ${JPEG_LIBRARIES})
   endif ()
+
+  if(NOT JPEGXL_BUNDLE_LIBPNG)
+    find_package(PNG)
+  endif()
+  if(PNG_FOUND)
+    target_sources(benchmark_xl PRIVATE
+      "${CMAKE_CURRENT_LIST_DIR}/benchmark/benchmark_codec_png.cc"
+      "${CMAKE_CURRENT_LIST_DIR}/benchmark/benchmark_codec_png.h"
+    )
+  endif()
 
   find_package(PkgConfig)
   pkg_check_modules(WebP IMPORTED_TARGET libwebp)

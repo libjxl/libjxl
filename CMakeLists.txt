@@ -73,6 +73,12 @@ endif()
 
 set(WARNINGS_AS_ERRORS_DEFAULT false)
 
+if(SANITIZER STREQUAL "msan")
+  set(BUNDLE_LIBPNG_DEFAULT YES)
+else()
+  set(BUNDLE_LIBPNG_DEFAULT NO)
+endif()
+
 # Standard cmake naming for building shared libraries.
 option(BUILD_SHARED_LIBS "Build shared libraries instead of static ones" ON)
 
@@ -88,6 +94,8 @@ set(JPEGXL_ENABLE_BENCHMARK true CACHE BOOL
     "Build JPEGXL benchmark tools.")
 set(JPEGXL_ENABLE_EXAMPLES true CACHE BOOL
     "Build JPEGXL library usage examples.")
+set(JPEGXL_BUNDLE_LIBPNG ${BUNDLE_LIBPNG_DEFAULT} CACHE BOOL
+    "Build libpng from source and link it statically.")
 set(JPEGXL_ENABLE_JNI true CACHE BOOL
     "Build JPEGXL JNI Java wrapper, if Java dependencies are installed.")
 set(JPEGXL_ENABLE_SJPEG true CACHE BOOL
