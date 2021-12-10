@@ -33,39 +33,40 @@ ABSL_FLAG(bool, container, false,
 
 ABSL_FLAG(bool, strip, false,
           "Do not encode using container format (strips "
-          "Exif/XMP/JPEG bitstream reconstruction data)");
+          "Exif/XMP/JPEG bitstream reconstruction data).");
 
-ABSL_FLAG(bool, progressive, false,
+ABSL_FLAG(bool, progressive, false,  // TODO(tfish): Wire this up.
           "Enable progressive/responsive decoding.");
 
-ABSL_FLAG(bool, progressive_ac, false,
+ABSL_FLAG(bool, progressive_ac, false,  // TODO(tfish): Wire this up.
           "Use progressive mode for AC.");
 
-ABSL_FLAG(bool, qprogressive_ac, false,
+ABSL_FLAG(bool, qprogressive_ac, false,  // TODO(tfish): Wire this up.
           // TODO(tfish): Clarify what this flag is about.
           "Use progressive mode for AC.");
 
-ABSL_FLAG(bool, progressive_dc, false,
+ABSL_FLAG(bool, progressive_dc, false,  // TODO(tfish): Wire this up.
           "Use progressive mode for DC.");
 
-ABSL_FLAG(bool, use_experimental_encoder_heuristics, false,
+ABSL_FLAG(bool, use_experimental_encoder_heuristics, false,  // TODO(tfish): Wire this up.
           "Use new and not yet ready encoder heuristics");
 
-ABSL_FLAG(bool, jpeg_transcode, false,
+ABSL_FLAG(bool, jpeg_transcode, false,  // TODO(tfish): Wire this up.
           "Do lossy transcode of input JPEG file (decode to "
           "pixels instead of doing lossless transcode).");
 
-ABSL_FLAG(bool, jpeg_transcode_disable_cfl, false,
+ABSL_FLAG(bool, jpeg_transcode_disable_cfl, false,  // TODO(tfish): Wire this up.
           "Disable CFL for lossless JPEG recompression");
 
-ABSL_FLAG(bool, premultiply, false,
+ABSL_FLAG(bool, premultiply, false,  // TODO(tfish): Wire this up.
           "Force premultiplied (associated) alpha.");
 
-ABSL_FLAG(bool, centerfirst, false,
+ABSL_FLAG(bool, centerfirst, false,  // TODO(tfish): Wire this up.
           "Put center groups first in the compressed file.");
 
-ABSL_FLAG(bool, noise, false,
-          "force disable/enable noise generation.");
+// TODO(tfish): Clarify if this is indeed deprecated. Remove if it is.
+// ABSL_FLAG(bool, noise, false,
+//           "force disable/enable noise generation.");
 
 ABSL_FLAG(bool, verbose, false,
           // TODO(tfish): Should be a verbosity-level.
@@ -136,8 +137,7 @@ ABSL_FLAG(int32_t, group_order, -1,
 
 ABSL_FLAG(int32_t, epf, -1,
           "Edge preserving filter level, -1 to 3. "
-          "Value -1 means: default (encoder chooses), 0 to 3 set a strength."
-          );
+          "Value -1 means: default (encoder chooses), 0 to 3 set a strength.");
 
 ABSL_FLAG(int64_t, center_x, -1,
           // TODO(tfish): Clarify if this is really the comment we want here.
@@ -240,16 +240,15 @@ public:
 bool ProcessTristateFlag(const char* flag_name, int32_t absl_flag_value,
                          JxlEncoderFrameSettings* frame_settings,
                          JxlEncoderFrameSettingId encoder_option) {
-  if (! (absl_flag_value == -1 || absl_flag_value == 0 || absl_flag_value == 1)) {
+  if (! (absl_flag_value == -1 || absl_flag_value == 0 ||
+         absl_flag_value == 1)) {
     std::cerr << "Invalid flag --" << flag_name <<
       ". Should be one of: -1, 0, 1.\n";
     return false;
   }
   if (absl_flag_value != -1) {
-    JxlEncoderFrameSettingsSetOption(
-                                     frame_settings,
-                                     encoder_option,
-                                     absl_flag_value);
+    JxlEncoderFrameSettingsSetOption(frame_settings, encoder_option,
+        absl_flag_value);
   }
   return true;
 }
@@ -261,10 +260,10 @@ int main(int argc, char **argv) {
   absl::SetProgramUsageMessage(
       absl::StrCat("JPEG XL-encodes an image.  Sample usage:\n", argv[0],
                    " <source_image_filename> <target_image_filename>"));
-
   const std::vector<char*>& positional_args =
       absl::ParseCommandLine(argc, argv);
 
+  // Handle --version.
   if (absl::GetFlag(FLAGS_version)) {
     uint32_t version = JxlEncoderVersion();
     std::cout << version / 1000000 << "." << (version / 1000) % 1000 <<
@@ -304,7 +303,7 @@ int main(int argc, char **argv) {
   JxlEncoderFrameSettings* jxl_encoder_frame_settings =
     managed_jxl_encoder.encoder_frame_settings_;
 
-  {  // Processing flags.
+  {  // Processing tuning flags.
     bool use_container = absl::GetFlag(FLAGS_container);
     // TODO(tfish): Set use_container according to need of encoded data.
     // This will likely require moving this piece out of flags-processing.
@@ -359,7 +358,8 @@ int main(int argc, char **argv) {
 
     const int32_t flag_faster_decoding = absl::GetFlag(FLAGS_faster_decoding);
     if (! (0 <= flag_faster_decoding && flag_faster_decoding <= 4)) {
-      std::cerr << "Invalid --faster_decoding. Valid range is {0, 1, 2, 3, 4}.\n";
+      std::cerr << "Invalid --faster_decoding. "
+          "Valid range is {0, 1, 2, 3, 4}.\n";
       return EXIT_FAILURE;
     }
     JxlEncoderFrameSettingsSetOption(
@@ -371,7 +371,8 @@ int main(int argc, char **argv) {
     if (flag_resampling != -1) {
       if (! (((flag_resampling & (flag_resampling - 1)) == 0) &&
              flag_resampling <= 8)) {
-        std::cerr << "Invalid --resampling. Valid values are {-1, 1, 2, 4, 8}.\n";
+        std::cerr << "Invalid --resampling. "
+            "Valid values are {-1, 1, 2, 4, 8}.\n";
         return EXIT_FAILURE;
       }
       JxlEncoderFrameSettingsSetOption(
@@ -383,7 +384,8 @@ int main(int argc, char **argv) {
     if (flag_ec_resampling != -1) {
       if (! (((flag_ec_resampling & (flag_ec_resampling - 1)) == 0) &&
              flag_ec_resampling <= 8)) {
-        std::cerr << "Invalid --ec_resampling. Valid values are {-1, 1, 2, 4, 8}.\n";
+        std::cerr << "Invalid --ec_resampling. "
+            "Valid values are {-1, 1, 2, 4, 8}.\n";
         return EXIT_FAILURE;
       }
       JxlEncoderFrameSettingsSetOption(
