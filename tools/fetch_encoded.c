@@ -32,7 +32,7 @@ JXL_BOOL fetch_jxl_encoded_image(JxlEncoder *jxl_encoder,
   }
   *compressed_buffer_used = 0;
   compressed_available = *compressed_buffer_size;
-  compressed_ptr = *compressed_buffer;  
+  compressed_ptr = *compressed_buffer;
   do {
     process_result = JxlEncoderProcessOutput(jxl_encoder,
                                              &compressed_ptr,
@@ -59,13 +59,13 @@ JXL_BOOL fetch_jxl_encoded_image(JxlEncoder *jxl_encoder,
 #endif
     }
   } while (process_result == JXL_ENC_NEED_MORE_OUTPUT);
-  
+
   if (JXL_ENC_SUCCESS != process_result) {
     goto cleanup;
   } else {
     success = JXL_TRUE;
   }
-  
+
  cleanup:
   if (compressed_buffer2 != NULL) {
     free(compressed_buffer2);

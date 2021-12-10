@@ -46,7 +46,7 @@ JXL_BOOL fetch_jxl_encoded_image(JxlEncoder *jxl_encoder,
 JXL_BOOL write_jxl_file(const uint8_t* bytes,
                         size_t size,
                         const char* filename);
-  
+
 #if defined(__cplusplus) || defined(c_plusplus)
 }
 #endif
