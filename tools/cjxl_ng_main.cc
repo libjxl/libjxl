@@ -25,7 +25,8 @@
 #include "fetch_encoded.h"
 
 
-ABSL_FLAG(bool, version, false,
+// The flag --version is owned by Abseil itself.
+ABSL_FLAG(bool, encoder_version, false,
           "Print encoder library version number and exit.");
 
 ABSL_FLAG(bool, container, false,
@@ -264,7 +265,7 @@ int main(int argc, char **argv) {
       absl::ParseCommandLine(argc, argv);
 
   // Handle --version.
-  if (absl::GetFlag(FLAGS_version)) {
+  if (absl::GetFlag(FLAGS_encoder_version)) {
     uint32_t version = JxlEncoderVersion();
     std::cout << version / 1000000 << "." << (version / 1000) % 1000 <<
       "." << version % 1000 << std::endl;
