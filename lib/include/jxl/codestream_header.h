@@ -407,9 +407,8 @@ typedef struct {
 
   /** Length of the frame name in bytes, or 0 if no name.
    * Excludes null termination character. This value is set by the decoder.
-   * For the encoder, this value is ignored and @ref
-   * JxlEncoderFrameSettingsSetName is used instead to set the name and the
-   * length.
+   * For the encoder, this value is ignored and @ref JxlEncoderSetFrameName is
+   * used instead to set the name and the length.
    */
   uint32_t name_length;
 
