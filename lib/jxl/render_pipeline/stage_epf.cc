@@ -40,7 +40,7 @@ class EPF0Stage : public RenderPipelineStage {
         sigma_(&sigma) {}
 
   template <bool aligned>
-  JXL_INLINE void AddPixel(int row, const RowInfo& input_rows, size_t x,
+  JXL_INLINE void AddPixel(int row, const RowInfo& input_rows, ssize_t x,
                            Vec<DF> sad, Vec<DF> inv_sigma,
                            Vec<DF>* JXL_RESTRICT X, Vec<DF>* JXL_RESTRICT Y,
                            Vec<DF>* JXL_RESTRICT B,
@@ -170,7 +170,7 @@ class EPF1Stage : public RenderPipelineStage {
         sigma_(&sigma) {}
 
   template <bool aligned>
-  JXL_INLINE void AddPixel(int row, const RowInfo& input_rows, size_t x,
+  JXL_INLINE void AddPixel(int row, const RowInfo& input_rows, ssize_t x,
                            Vec<DF> sad, Vec<DF> inv_sigma,
                            Vec<DF>* JXL_RESTRICT X, Vec<DF>* JXL_RESTRICT Y,
                            Vec<DF>* JXL_RESTRICT B,
@@ -341,7 +341,7 @@ class EPF2Stage : public RenderPipelineStage {
         sigma_(&sigma) {}
 
   template <bool aligned>
-  JXL_INLINE void AddPixel(int row, const RowInfo& input_rows, size_t x,
+  JXL_INLINE void AddPixel(int row, const RowInfo& input_rows, ssize_t x,
                            Vec<DF> rx, Vec<DF> ry, Vec<DF> rb,
                            Vec<DF> inv_sigma, Vec<DF>* JXL_RESTRICT X,
                            Vec<DF>* JXL_RESTRICT Y, Vec<DF>* JXL_RESTRICT B,
