@@ -52,6 +52,12 @@ struct FrameInfo {
   // -1 to automatically choose it as the index of the first extra channel of
   // type alpha.
   int alpha_channel = -1;
+
+  // If non-empty, uses this blending info for the extra channels, otherwise
+  // automatically chooses it. The encoder API will fill this vector with the
+  // extra channel info and allows more options. The non-API cjxl leaves it
+  // empty and relies on the default behavior.
+  std::vector<BlendingInfo> extra_channel_blending_info;
 };
 
 // Encodes a single frame (including its header) into a byte stream.  Groups may
