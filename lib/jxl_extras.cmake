@@ -91,9 +91,10 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(zlib libpng)
 endif()  # JPEGXL_EMSCRIPTEN
 
-find_package(ZLIB)  # dependency of PNG
-find_package(PNG)
-if(PNG_FOUND AND ZLIB_FOUND)
+if(NOT JPEGXL_BUNDLE_LIBPNG)
+  find_package(PNG)
+endif()
+if(PNG_FOUND)
   target_sources(jxl_extras-static PRIVATE
     extras/codec_apng.cc
     extras/codec_apng.h
@@ -101,12 +102,6 @@ if(PNG_FOUND AND ZLIB_FOUND)
   target_include_directories(jxl_extras-static PUBLIC "${PNG_INCLUDE_DIRS}")
   target_link_libraries(jxl_extras-static PUBLIC ${PNG_LIBRARIES})
   target_compile_definitions(jxl_extras-static PUBLIC -DJPEGXL_ENABLE_APNG=1)
-  if(JPEGXL_DEP_LICENSE_DIR)
-    configure_file("${JPEGXL_DEP_LICENSE_DIR}/zlib1g-dev/copyright"
-                   ${PROJECT_BINARY_DIR}/LICENSE.zlib COPYONLY)
-    configure_file("${JPEGXL_DEP_LICENSE_DIR}/libpng-dev/copyright"
-                   ${PROJECT_BINARY_DIR}/LICENSE.libpng COPYONLY)
-  endif()  # JPEGXL_DEP_LICENSE_DIR
 endif()
 
 if (JPEGXL_ENABLE_SJPEG)
