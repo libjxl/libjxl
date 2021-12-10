@@ -76,15 +76,8 @@ ABSL_FLAG(bool, already_downsampled, false,
           "but still signal that the decoder should upsample.");
 
 
-ABSL_FLAG(std::string, photon_noise, "ISO3200",
-          "Set the noise to approximately what it would be at a given nominal "
-          "exposure on a 35mm camera. For formats other than 35mm, or when the "
-          "whole sensor was not used, you can multiply the ISO value by the "
-          "equivalence ratio squared, for example by 2.25 for an APS-C "
-          "camera.");
-
-// TODO(tfish): --dots, --patches,
-// --epf, --gaborish, --intensity_target,
+// TODO(tfish):
+// --intensity_target,
 // --saliency_num_progressive_steps, --saliency_map_filename,
 // --saliency_threshold, --dec-hints, --override_bitdepth,
 // --colortransform, --mquality, --iterations, --colorspace, --group-size,
@@ -117,16 +110,49 @@ ABSL_FLAG(int32_t, modular, -1,
           "1 = enforce modular mode).");
 
 ABSL_FLAG(int32_t, keep_invisible, -1,
-          "force disable/enable preserving color of invisible "
+          "Force disable/enable preserving color of invisible "
           "pixels. (-1 = default, 0 = disable, 1 = enable).");
 
-ABSL_FLAG(int64_t, center_x, 0,
-          // TODO(tfish): Clarify if this is really the comment we want here.
-          "Put center groups first in the compressed file.");
+ABSL_FLAG(int32_t, dots, -1,
+          "Force disable/enable dots generation. "
+          "(-1 = default, 0 = disable, 1 = enable).");
 
-ABSL_FLAG(int64_t, center_y, 0,
+ABSL_FLAG(int32_t, patches, -1,
+          "Force disable/enable patches generation. "
+          "(-1 = default, 0 = disable, 1 = enable).");
+
+ABSL_FLAG(int32_t, gaborish, -1,
+          "Force disable/enable the gaborish filter. "
+          "(-1 = default, 0 = disable, 1 = enable).");
+
+ABSL_FLAG(int32_t, group_order, -1,
+          // TODO(tfish): This is a new flag. Check with team.
+          "Determines the order in which 256x256 regions are stored "
+          "in the codestream for progressive rendering. "
+          "Use -1 for the encoder default, 0 for scanline order, "
+          "1 for center-first order.");
+
+
+ABSL_FLAG(int32_t, epf, -1,
+          "Edge preserving filter level, -1 to 3. "
+          "Use -1 for the default (encoder chooses), 0 to 3 to set a strength."
+          );
+
+ABSL_FLAG(int64_t, center_x, -1,
           // TODO(tfish): Clarify if this is really the comment we want here.
-          "Put center groups first in the compressed file.");
+          "Determines the horizontal position of center for the center-first "
+          "group order. The value -1 means 'use the middle of the image', "
+          // TODO(tfish): Clarify if encode.h has an off-by-one in the
+          // upper limit here.
+          "other values 0..(xsize-1) set this to a particular coordinate.");
+
+ABSL_FLAG(int64_t, center_y, -1,
+          // TODO(tfish): Clarify if this is really the comment we want here.
+          "Determines the vertical position of center for the center-first "
+          "group order. The value -1 means 'use the middle of the image', "
+          // TODO(tfish): Clarify if encode.h has an off-by-one in the
+          // upper limit here.
+          "other values 0..(ysize-1) set this to a particular coordinate.");
 
 ABSL_FLAG(int64_t, num_threads, 0,
           // TODO(tfish): Sync with team about changed meaning of 0 -
@@ -138,7 +164,13 @@ ABSL_FLAG(int64_t, num_reps, 1,
           // Is this simply for benchmarking?
           "how many times to compress.");
 
-
+ABSL_FLAG(int32_t, photon_noise, 0,
+          // TODO(tfish): Discuss docstring change with team.
+          // Also: This now is an int, no longer a float.
+          "Adds noise to the image emulating photographic film noise. "
+          "The higher the given number, the grainier the image will be. "
+          "As an example, a value of 100 gives low noise whereas a value "
+          "of 3200 gives a lot of noise. The default value is 0.");
 
 ABSL_FLAG(float, distance, 1.0,
           "Max. butteraugli distance, lower = higher quality. Range: 0 .. 25.\n"
@@ -203,7 +235,24 @@ public:
   void* parallel_runner_ = nullptr;  // TODO(tfish): fix type.
 };
 
-  
+
+bool ProcessTristateFlag(const char* flag_name, int32_t absl_flag_value,
+                         JxlEncoderFrameSettings* frame_settings,
+                         JxlEncoderFrameSettingId encoder_option) {
+  if (! (absl_flag_value == -1 || absl_flag_value == 0 || absl_flag_value == 1)) {
+    std::cerr << "Invalid flag --" << flag_name <<
+      ". Should be one of: -1, 0, 1.\n";
+    return false;
+  }
+  if (absl_flag_value != -1) {
+    JxlEncoderFrameSettingsSetOption(
+                                     frame_settings,
+                                     encoder_option,
+                                     absl_flag_value);
+  }
+  return true;
+}
+
 }  // namespace
 
 
@@ -224,9 +273,9 @@ int main(int argc, char **argv) {
 
   size_t num_worker_threads = JxlThreadParallelRunnerDefaultNumWorkerThreads();
   {
-    int64_t flags_num_worker_threads = absl::GetFlag(FLAGS_num_threads);
-    if (flags_num_worker_threads != 0) {
-      num_worker_threads = flags_num_worker_threads;
+    int64_t flag_num_worker_threads = absl::GetFlag(FLAGS_num_threads);
+    if (flag_num_worker_threads != 0) {
+      num_worker_threads = flag_num_worker_threads;
     }
   }
   ManagedJxlEncoder managed_jxl_encoder = ManagedJxlEncoder(num_worker_threads);
@@ -244,33 +293,34 @@ int main(int argc, char **argv) {
   }
   
   JxlEncoder* jxl_encoder = managed_jxl_encoder.encoder_;
-  JxlEncoderFrameSettings *jxl_encoder_frame_settings =
+  JxlEncoderFrameSettings* jxl_encoder_frame_settings =
     managed_jxl_encoder.encoder_frame_settings_;
 
   {  // Processing flags.
     if (absl::GetFlag(FLAGS_container)) {
       JxlEncoderUseContainer(jxl_encoder, true);
     }
-    const int32_t flags_modular = absl::GetFlag(FLAGS_modular);
-    if (flags_modular != -1) {
-      JxlEncoderFrameSettingsSetOption(
-          jxl_encoder_frame_settings,
-          JXL_ENC_FRAME_SETTING_MODULAR,
-          // TODO(tfish): Use absl features to only allow permitted values
-          // for flags like this instead.
-          flags_modular == 0 ? 0 : 1);
-    }
-    const int32_t flags_keep_invisible = absl::GetFlag(FLAGS_keep_invisible);
-    if (flags_keep_invisible != -1) {
-      JxlEncoderFrameSettingsSetOption(
-          jxl_encoder_frame_settings,
-          JXL_ENC_FRAME_SETTING_KEEP_INVISIBLE,
-          // TODO(tfish): Use absl features to only allow permitted values
-          // for flags like this instead.
-          flags_keep_invisible == 0 ? 0 : 1);
-    }
-    const int32_t flags_effort = absl::GetFlag(FLAGS_effort);
-    if (! (1 <= flags_effort && flags_effort <= 9)) {
+    ProcessTristateFlag("modular", absl::GetFlag(FLAGS_modular),
+                        jxl_encoder_frame_settings,
+                        JXL_ENC_FRAME_SETTING_MODULAR);
+    ProcessTristateFlag("keep_invisible", absl::GetFlag(FLAGS_keep_invisible),
+                        jxl_encoder_frame_settings,
+                        JXL_ENC_FRAME_SETTING_KEEP_INVISIBLE);
+    ProcessTristateFlag("dots", absl::GetFlag(FLAGS_dots),
+                        jxl_encoder_frame_settings,
+                        JXL_ENC_FRAME_SETTING_DOTS);
+    ProcessTristateFlag("patches", absl::GetFlag(FLAGS_patches),
+                        jxl_encoder_frame_settings,
+                        JXL_ENC_FRAME_SETTING_PATCHES);
+    ProcessTristateFlag("gaborish", absl::GetFlag(FLAGS_gaborish),
+                        jxl_encoder_frame_settings,
+                        JXL_ENC_FRAME_SETTING_GABORISH);
+    ProcessTristateFlag("group_order", absl::GetFlag(FLAGS_group_order),
+                        jxl_encoder_frame_settings,
+                        JXL_ENC_FRAME_SETTING_GROUP_ORDER);
+    
+    const int32_t flag_effort = absl::GetFlag(FLAGS_effort);
+    if (! (1 <= flag_effort && flag_effort <= 9)) {
       // Strictly speaking, custom absl flags-parsing would integrate
       // more nicely with abseil flags, but the boilerplate cost of
       // handling invalid calls is substantially higher than
@@ -281,47 +331,87 @@ int main(int argc, char **argv) {
     JxlEncoderFrameSettingsSetOption(
         jxl_encoder_frame_settings,
         JXL_ENC_FRAME_SETTING_EFFORT,
-        flags_effort);
+        flag_effort);
 
-    const int32_t flags_faster_decoding = absl::GetFlag(FLAGS_faster_decoding);
-    if (! (0 <= flags_faster_decoding && flags_faster_decoding <= 4)) {
+    const int32_t flag_epf = absl::GetFlag(FLAGS_epf);
+    if (! (-1 <= flag_epf && flag_epf <= 3)) {
+      std::cerr << "Invalid --epf. Valid range is {-1, 0, 1, 2, 3}.\n";
+      return EXIT_FAILURE;
+    }
+    if (flag_epf != -1) {
+      JxlEncoderFrameSettingsSetOption(
+        jxl_encoder_frame_settings,
+        JXL_ENC_FRAME_SETTING_EPF,
+        flag_epf);
+    }
+    
+    const int32_t flag_faster_decoding = absl::GetFlag(FLAGS_faster_decoding);
+    if (! (0 <= flag_faster_decoding && flag_faster_decoding <= 4)) {
       std::cerr << "Invalid --faster_decoding. Valid range is {0, 1, 2, 3, 4}.\n";
       return EXIT_FAILURE;
     }
     JxlEncoderFrameSettingsSetOption(
         jxl_encoder_frame_settings,
         JXL_ENC_FRAME_SETTING_DECODING_SPEED,
-        flags_faster_decoding);
+        flag_faster_decoding);
 
-    const int32_t flags_resampling = absl::GetFlag(FLAGS_resampling);
-    if (! (-1 == flags_resampling ||
-           (((flags_resampling & (flags_resampling - 1)) == 0) &&
-            flags_resampling <= 8))) {
-      std::cerr << "Invalid --resampling. Valid values are {-1, 1, 2, 4, 8}.\n";
-      return EXIT_FAILURE;
+    const int32_t flag_resampling = absl::GetFlag(FLAGS_resampling);
+    if (flag_resampling != -1) {
+      if (! (((flag_resampling & (flag_resampling - 1)) == 0) &&
+             flag_resampling <= 8)) {
+        std::cerr << "Invalid --resampling. Valid values are {-1, 1, 2, 4, 8}.\n";
+        return EXIT_FAILURE;
+      }
+      JxlEncoderFrameSettingsSetOption(
+          jxl_encoder_frame_settings,
+          JXL_ENC_FRAME_SETTING_RESAMPLING,
+          flag_resampling);
     }
-    JxlEncoderFrameSettingsSetOption(
-        jxl_encoder_frame_settings,
-        JXL_ENC_FRAME_SETTING_RESAMPLING,
-        flags_resampling);
-
-    const int32_t flags_ec_resampling = absl::GetFlag(FLAGS_ec_resampling);
-    if (! (-1 == flags_ec_resampling ||
-           (((flags_ec_resampling & (flags_ec_resampling - 1)) == 0) &&
-            flags_resampling <= 8))) {
-      std::cerr << "Invalid --ec_resampling. Valid values are {-1, 1, 2, 4, 8}.\n";
-      return EXIT_FAILURE;
+    const int32_t flag_ec_resampling = absl::GetFlag(FLAGS_ec_resampling);
+    if (flag_ec_resampling != -1) {
+      if (! (((flag_ec_resampling & (flag_ec_resampling - 1)) == 0) &&
+             flag_ec_resampling <= 8)) {
+        std::cerr << "Invalid --ec_resampling. Valid values are {-1, 1, 2, 4, 8}.\n";
+        return EXIT_FAILURE;
+      }
+      JxlEncoderFrameSettingsSetOption(
+          jxl_encoder_frame_settings,
+          JXL_ENC_FRAME_SETTING_EXTRA_CHANNEL_RESAMPLING,
+          flag_ec_resampling);
     }
-    JxlEncoderFrameSettingsSetOption(
-        jxl_encoder_frame_settings,
-        JXL_ENC_FRAME_SETTING_EXTRA_CHANNEL_RESAMPLING,
-        flags_ec_resampling);
 
-    const bool flags_already_downsampled = absl::GetFlag(FLAGS_already_downsampled);
     JxlEncoderFrameSettingsSetOption(
         jxl_encoder_frame_settings,
         JXL_ENC_FRAME_SETTING_ALREADY_DOWNSAMPLED,
-        flags_aready_downsampled);    
+        absl::GetFlag(FLAGS_already_downsampled));
+
+    JxlEncoderFrameSettingsSetOption(
+        jxl_encoder_frame_settings,
+        JXL_ENC_FRAME_SETTING_PHOTON_NOISE,
+        absl::GetFlag(FLAGS_photon_noise));
+    // Removed: --noise (superseded by: --photon_noise).
+    
+    JxlEncoderSetFrameDistance(
+        jxl_encoder_frame_settings,
+        absl::GetFlag(FLAGS_distance));
+
+    const int32_t flag_center_x = absl::GetFlag(FLAGS_center_x);
+    if (flag_center_x != -1) {
+      JxlEncoderFrameSettingsSetOption(
+          jxl_encoder_frame_settings,
+          JXL_ENC_FRAME_SETTING_GROUP_ORDER_CENTER_X,
+          flag_center_x);
+    }
+    const int32_t flag_center_y = absl::GetFlag(FLAGS_center_y);
+    if (flag_center_y != -1) {
+      JxlEncoderFrameSettingsSetOption(
+          jxl_encoder_frame_settings,
+          JXL_ENC_FRAME_SETTING_GROUP_ORDER_CENTER_Y,
+          flag_center_y);
+    }
+    
+
+
     
   }  // Processing flags.
 
