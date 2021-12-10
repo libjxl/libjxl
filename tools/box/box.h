@@ -92,9 +92,7 @@ struct JpegXlContainer {
   size_t jpeg_reconstruction_size = 0;
 
   // The main JPEG XL codestream, of which there must be 1 in the container.
-  // TODO(lode): support split codestream: there may be multiple jxlp boxes.
-  const uint8_t* codestream = nullptr;  // Not owned
-  size_t codestream_size = 0;
+  jxl::PaddedBytes codestream;
 };
 
 // Returns whether `data` starts with a container header; definitely returns

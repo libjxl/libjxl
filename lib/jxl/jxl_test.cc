@@ -1408,8 +1408,7 @@ jxl::Status DecompressJxlToJPEGForTest(
     const jpegxl::tools::JpegXlContainer& container, jxl::ThreadPool* pool,
     jxl::PaddedBytes* output) {
   output->clear();
-  jxl::Span<const uint8_t> compressed(container.codestream,
-                                      container.codestream_size);
+  jxl::Span<const uint8_t> compressed(container.codestream);
 
   JXL_RETURN_IF_ERROR(compressed.size() >= 2);
 
@@ -1444,8 +1443,7 @@ size_t RoundtripJpeg(const PaddedBytes& jpeg_in, ThreadPool* pool) {
                          GetJxlCms(),
                          /*aux_out=*/nullptr, pool));
   jpegxl::tools::JpegXlContainer enc_container;
-  enc_container.codestream = codestream.data();
-  enc_container.codestream_size = codestream.size();
+  enc_container.codestream = std::move(codestream);
   jpeg::JPEGData data_in = *io.Main().jpeg_data;
   jxl::PaddedBytes jpeg_data;
   EXPECT_TRUE(EncodeJPEGData(data_in, &jpeg_data));

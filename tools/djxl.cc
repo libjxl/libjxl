@@ -192,8 +192,7 @@ jxl::Status DecompressJxlToJPEG(const JpegXlContainer& container,
   output->clear();
   const double t0 = jxl::Now();
 
-  jxl::Span<const uint8_t> compressed(container.codestream,
-                                      container.codestream_size);
+  jxl::Span<const uint8_t> compressed(container.codestream);
 
   JXL_RETURN_IF_ERROR(compressed.size() >= 2);
 
