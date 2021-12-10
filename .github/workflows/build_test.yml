@@ -278,6 +278,7 @@ jobs:
           grep -v -E '^#' "${bkplist}" |
             sed -E "s;^deb (http[^ ]+) (.*)\$;deb [arch=${main_list}] \\1 \\2\ndeb-src [arch=${main_list}] \\1 \\2;" \
             | sudo tee -a "${newlist}"
+          cat ${newlist}
         fi
 
     - name: Install build deps
@@ -318,8 +319,8 @@ jobs:
           libgtk2.0-dev
 
           # QT
-          libqt5x11extras5-dev
-          qtbase5-dev
+          libqt5x11extras5-dev:${{ matrix.arch }}
+          qtbase5-dev:${{ matrix.arch }}
         )
         if [[ "${{ matrix.build_target }}" != "x86_64-linux-gnu" ]]; then
           pkgs+=(
