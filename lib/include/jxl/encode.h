@@ -399,13 +399,13 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderProcessOutput(JxlEncoder* enc,
  * @return JXL_ENC_SUCCESS on success, JXL_ENC_ERROR on error
  */
 JXL_EXPORT JxlEncoderStatus
-JxlEncoderFrameSettingsSetInfo(JxlEncoderFrameSettings* frame_settings,
-                               const JxlFrameHeader* frame_header);
+JxlEncoderSetFrameHeader(JxlEncoderFrameSettings* frame_settings,
+                         const JxlFrameHeader* frame_header);
 
 /**
  * Sets blend info of an extra channel. The blend info of extra channels is set
  * separately from that of the color channels, the color channels are set with
- * @ref JxlEncoderFrameSettingsSetInfo.
+ * @ref JxlEncoderSetFrameHeader.
  *
  * @param frame_settings set of options and metadata for this frame. Also
  * includes reference to the encoder object.
@@ -413,21 +413,21 @@ JxlEncoderFrameSettingsSetInfo(JxlEncoderFrameSettings* frame_settings,
  * @param blend_info blend info to set for the extra channel
  * @return JXL_ENC_SUCCESS on success, JXL_ENC_ERROR on error
  */
-JXL_EXPORT JxlEncoderStatus JxlEncoderFrameSettingsSetExtraChannelBlendInfo(
+JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelBlendInfo(
     JxlEncoderFrameSettings* frame_settings, size_t index,
     const JxlBlendInfo* blend_info);
 
 /**
  * Sets the name of the animation frame. This function is optional, frames are
  * not required to have a name. This setting is a part of the frame header, and
- * the same principles as for @ref JxlEncoderFrameSettingsSetInfo apply. The
+ * the same principles as for @ref JxlEncoderSetFrameHeader apply. The
  * name_length field of JxlFrameHeader is ignored by the encoder, this function
  * determines the name length instead as the length in bytes of the C string.
  *
  * The maximum possible name length is 1071 bytes (excluding terminating null
  * character).
  *
- * Calling @ref JxlEncoderFrameSettingsSetInfo clears any name that was
+ * Calling @ref JxlEncoderSetFrameHeader clears any name that was
  * previously set.
  *
  * @param frame_settings set of options and metadata for this frame. Also

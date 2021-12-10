@@ -1013,9 +1013,9 @@ TEST(EncodeTest, AnimationHeaderTest) {
   JxlBlendInfo extra_channel_blend_info;
   JxlEncoderInitBlendInfo(&extra_channel_blend_info);
   extra_channel_blend_info.blendmode = JXL_BLEND_MULADD;
-  JxlEncoderFrameSettingsSetInfo(frame_settings, &header);
-  JxlEncoderFrameSettingsSetExtraChannelBlendInfo(frame_settings, 0,
-                                                  &extra_channel_blend_info);
+  JxlEncoderSetFrameHeader(frame_settings, &header);
+  JxlEncoderSetExtraChannelBlendInfo(frame_settings, 0,
+                                     &extra_channel_blend_info);
   JxlEncoderFrameSettingsSetName(frame_settings, frame_name.c_str());
 
   std::vector<uint8_t> compressed = std::vector<uint8_t>(64);

@@ -1299,8 +1299,8 @@ JxlEncoderStatus JxlEncoderProcessOutput(JxlEncoder* enc, uint8_t** next_out,
   return JXL_ENC_SUCCESS;
 }
 
-JxlEncoderStatus JxlEncoderFrameSettingsSetInfo(
-    JxlEncoderOptions* frame_settings, const JxlFrameHeader* frame_header) {
+JxlEncoderStatus JxlEncoderSetFrameHeader(JxlEncoderOptions* frame_settings,
+                                          const JxlFrameHeader* frame_header) {
   if (frame_header->layer_info.blend_info.source > 3) {
     return JXL_API_ERROR("invalid blending source index");
   }
@@ -1319,7 +1319,7 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetInfo(
   return JXL_ENC_SUCCESS;
 }
 
-JxlEncoderStatus JxlEncoderFrameSettingsSetExtraChannelBlendInfo(
+JxlEncoderStatus JxlEncoderSetExtraChannelBlendInfo(
     JxlEncoderOptions* frame_settings, size_t index,
     const JxlBlendInfo* blend_info) {
   if (index >= frame_settings->enc->metadata.m.num_extra_channels) {
