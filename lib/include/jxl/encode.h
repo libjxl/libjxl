@@ -388,9 +388,9 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderProcessOutput(JxlEncoder* enc,
  *
  * The is_last and name_length fields of the JxlFrameHeader are ignored, use
  * @ref JxlEncoderCloseFrames to indicate last frame, and @ref
- * JxlEncoderFrameSettingsSetName to indicate the name and its length instead.
+ * JxlEncoderSetFrameName to indicate the name and its length instead.
  * Calling this function will clear any name that was previously set with @ref
- * JxlEncoderFrameSettingsSetName.
+ * JxlEncoderSetFrameName.
  *
  * @param frame_settings set of options and metadata for this frame. Also
  * includes reference to the encoder object.
@@ -436,7 +436,7 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelBlendInfo(
  * string (zero terminated). Owned by the caller, and copied internally.
  * @return JXL_ENC_SUCCESS on success, JXL_ENC_ERROR on error
  */
-JXL_EXPORT JxlEncoderStatus JxlEncoderFrameSettingsSetName(
+JXL_EXPORT JxlEncoderStatus JxlEncoderSetFrameName(
     JxlEncoderFrameSettings* frame_settings, const char* frame_name);
 
 /**
@@ -841,7 +841,7 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelInfo(
  * must be smaller than the num_extra_channels in the associated JxlBasicInfo.
  *
  * TODO(lode): remove size parameter for consistency with
- * JxlEncoderFrameSettingsSetName
+ * JxlEncoderSetFrameName
  *
  * @param enc encoder object
  * @param index index of the extra channel to set.

@@ -1313,7 +1313,7 @@ JxlEncoderStatus JxlEncoderSetFrameHeader(JxlEncoderOptions* frame_settings,
 
   frame_settings->values.header = *frame_header;
   // Setting the frame header resets the frame name, it must be set again with
-  // JxlEncoderFrameSettingsSetName if desired.
+  // JxlEncoderSetFrameName if desired.
   frame_settings->values.frame_name = "";
 
   return JXL_ENC_SUCCESS;
@@ -1337,8 +1337,8 @@ JxlEncoderStatus JxlEncoderSetExtraChannelBlendInfo(
   return JXL_ENC_SUCCESS;
 }
 
-JxlEncoderStatus JxlEncoderFrameSettingsSetName(
-    JxlEncoderFrameSettings* frame_settings, const char* frame_name) {
+JxlEncoderStatus JxlEncoderSetFrameName(JxlEncoderFrameSettings* frame_settings,
+                                        const char* frame_name) {
   std::string str = frame_name;
   if (str.size() > 1071) {
     return JXL_API_ERROR("frame name can be max 1071 bytes long");
