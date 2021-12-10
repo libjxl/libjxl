@@ -1010,7 +1010,12 @@ TEST(EncodeTest, AnimationHeaderTest) {
   header.layer_info.blend_info.blendmode = JXL_BLEND_BLEND;
   header.layer_info.blend_info.source = 2;
   header.layer_info.blend_info.clamp = 1;
+  JxlBlendInfo extra_channel_blend_info;
+  JxlEncoderInitBlendInfo(&extra_channel_blend_info);
+  extra_channel_blend_info.blendmode = JXL_BLEND_MULADD;
   JxlEncoderFrameSettingsSetInfo(frame_settings, &header);
+  JxlEncoderFrameSettingsSetExtraChannelBlendInfo(frame_settings, 0,
+                                                  &extra_channel_blend_info);
   JxlEncoderFrameSettingsSetName(frame_settings, frame_name.c_str());
 
   std::vector<uint8_t> compressed = std::vector<uint8_t>(64);
@@ -1055,6 +1060,11 @@ TEST(EncodeTest, AnimationHeaderTest) {
       EXPECT_EQ(header.layer_info.blend_info.source,
                 header2.layer_info.blend_info.source);
       EXPECT_EQ(frame_name.size(), header2.name_length);
+      JxlBlendInfo extra_channel_blend_info2;
+      JxlDecoderGetExtraChannelBlendInfo(dec.get(), 0,
+                                         &extra_channel_blend_info2);
+      EXPECT_EQ(extra_channel_blend_info.blendmode,
+                extra_channel_blend_info2.blendmode);
       if (header2.name_length > 0) {
         std::string frame_name2(header2.name_length + 1, '\0');
         EXPECT_EQ(JXL_DEC_SUCCESS,

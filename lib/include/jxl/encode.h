@@ -403,6 +403,21 @@ JxlEncoderFrameSettingsSetInfo(JxlEncoderFrameSettings* frame_settings,
                                const JxlFrameHeader* frame_header);
 
 /**
+ * Sets blend info of an extra channel. The blend info of extra channels is set
+ * separately from that of the color channels, the color channels are set with
+ * @ref JxlEncoderFrameSettingsSetInfo.
+ *
+ * @param frame_settings set of options and metadata for this frame. Also
+ * includes reference to the encoder object.
+ * @param index index of the extra channel to use.
+ * @param blend_info blend info to set for the extra channel
+ * @return JXL_ENC_SUCCESS on success, JXL_ENC_ERROR on error
+ */
+JXL_EXPORT JxlEncoderStatus JxlEncoderFrameSettingsSetExtraChannelBlendInfo(
+    JxlEncoderFrameSettings* frame_settings, size_t index,
+    const JxlBlendInfo* blend_info);
+
+/**
  * Sets the name of the animation frame. This function is optional, frames are
  * not required to have a name. This setting is a part of the frame header, and
  * the same principles as for @ref JxlEncoderFrameSettingsSetInfo apply. The
@@ -754,6 +769,7 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetICCProfile(JxlEncoder* enc,
  * @param info global image metadata. Object owned by the caller.
  */
 JXL_EXPORT void JxlEncoderInitBasicInfo(JxlBasicInfo* info);
+
 /**
  * Initializes a JxlFrameHeader struct to default values.
  * For forwards-compatibility, this function has to be called before values
@@ -765,6 +781,15 @@ JXL_EXPORT void JxlEncoderInitBasicInfo(JxlBasicInfo* info);
  * @param frame_header frame metadata. Object owned by the caller.
  */
 JXL_EXPORT void JxlEncoderInitFrameHeader(JxlFrameHeader* frame_header);
+
+/**
+ * Initializes a JxlBlendInfo struct to default values.
+ * For forwards-compatibility, this function has to be called before values
+ * are assigned to the struct fields.
+ *
+ * @param blend_info blending info. Object owned by the caller.
+ */
+JXL_EXPORT void JxlEncoderInitBlendInfo(JxlBlendInfo* blend_info);
 
 /**
  * Sets the global metadata of the image encoded by this encoder.

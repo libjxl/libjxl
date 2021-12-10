@@ -384,16 +384,21 @@ Status MakeFrameHeader(const CompressParams& cparams,
         ib.blend ? ib.blendmode : BlendMode::kReplace;
     frame_header->blending_info.source = frame_info.source;
     frame_header->blending_info.clamp = frame_info.clamp;
+    const auto& extra_channel_info = frame_info.extra_channel_blending_info;
     for (size_t i = 0; i < extra_channels.size(); i++) {
-      frame_header->extra_channel_blending_info[i].alpha_channel = index;
-      BlendMode default_blend = ib.blendmode;
-      if (extra_channels[i].type != ExtraChannel::kBlack && i != index) {
-        // K needs to be blended, spot colors and other stuff gets added
-        default_blend = BlendMode::kAdd;
+      if (i < extra_channel_info.size()) {
+        frame_header->extra_channel_blending_info[i] = extra_channel_info[i];
+      } else {
+        frame_header->extra_channel_blending_info[i].alpha_channel = index;
+        BlendMode default_blend = ib.blendmode;
+        if (extra_channels[i].type != ExtraChannel::kBlack && i != index) {
+          // K needs to be blended, spot colors and other stuff gets added
+          default_blend = BlendMode::kAdd;
+        }
+        frame_header->extra_channel_blending_info[i].mode =
+            ib.blend ? default_blend : BlendMode::kReplace;
+        frame_header->extra_channel_blending_info[i].source = 1;
       }
-      frame_header->extra_channel_blending_info[i].mode =
-          ib.blend ? default_blend : BlendMode::kReplace;
-      frame_header->extra_channel_blending_info[i].source = 1;
     }
   }
 

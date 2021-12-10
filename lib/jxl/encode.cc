@@ -353,6 +353,21 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
         input_frame->option_values.header.layer_info.blend_info.clamp;
     frame_info.alpha_channel =
         input_frame->option_values.header.layer_info.blend_info.alpha;
+    frame_info.extra_channel_blending_info.resize(
+        metadata.m.num_extra_channels);
+    // If extra channel blend info has not been set, use the default values.
+    JxlBlendInfo default_blend_info;
+    JxlEncoderInitBlendInfo(&default_blend_info);
+    for (size_t i = 0; i < metadata.m.num_extra_channels; ++i) {
+      auto& to = frame_info.extra_channel_blending_info[i];
+      const auto& from =
+          i < input_frame->option_values.extra_channel_blend_info.size()
+              ? input_frame->option_values.extra_channel_blend_info[i]
+              : default_blend_info;
+      to.mode = static_cast<jxl::BlendMode>(from.blendmode);
+      to.source = from.source;
+      to.alpha_channel = from.alpha;
+    }
 
     // TODO(lode): also handle have_crop and the cropping dimensions, this
     // requires getting the pixel data from the user as a smaller image.
@@ -500,16 +515,20 @@ void JxlEncoderInitFrameHeader(JxlFrameHeader* frame_header) {
   // desired size after enabling have_crop (which is not yet implemented).
   frame_header->layer_info.xsize = 0;
   frame_header->layer_info.ysize = 0;
+  JxlEncoderInitBlendInfo(&frame_header->layer_info.blend_info);
+  frame_header->layer_info.save_as_reference = 0;
+}
+
+void JxlEncoderInitBlendInfo(JxlBlendInfo* blend_info) {
   // Default blend mode in the specification is 0. Note that combining
   // blend mode of replace with a duration is not useful, but the user has to
   // manually set duration in case of animation, or manually change the blend
   // mode in case of composite stills, so initing to a combination that is not
   // useful on its own is not an issue.
-  frame_header->layer_info.blend_info.blendmode = JXL_BLEND_REPLACE;
-  frame_header->layer_info.blend_info.source = 0;
-  frame_header->layer_info.blend_info.alpha = 0;
-  frame_header->layer_info.blend_info.clamp = 0;
-  frame_header->layer_info.save_as_reference = 0;
+  blend_info->blendmode = JXL_BLEND_REPLACE;
+  blend_info->source = 0;
+  blend_info->alpha = 0;
+  blend_info->clamp = 0;
 }
 
 JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
@@ -1297,6 +1316,24 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetInfo(
   // JxlEncoderFrameSettingsSetName if desired.
   frame_settings->values.frame_name = "";
 
+  return JXL_ENC_SUCCESS;
+}
+
+JxlEncoderStatus JxlEncoderFrameSettingsSetExtraChannelBlendInfo(
+    JxlEncoderOptions* frame_settings, size_t index,
+    const JxlBlendInfo* blend_info) {
+  if (index >= frame_settings->enc->metadata.m.num_extra_channels) {
+    return JXL_API_ERROR("Invalid value for the index of extra channel");
+  }
+
+  if (frame_settings->values.extra_channel_blend_info.size() !=
+      frame_settings->enc->metadata.m.num_extra_channels) {
+    JxlBlendInfo default_blend_info;
+    JxlEncoderInitBlendInfo(&default_blend_info);
+    frame_settings->values.extra_channel_blend_info.resize(
+        frame_settings->enc->metadata.m.num_extra_channels, default_blend_info);
+  }
+  frame_settings->values.extra_channel_blend_info[index] = *blend_info;
   return JXL_ENC_SUCCESS;
 }
 
