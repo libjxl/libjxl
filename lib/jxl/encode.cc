@@ -322,8 +322,17 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
     // these.
     jxl::ImageBundle& ib = input_frame->frame;
     ib.name = input_frame->option_values.frame_name;
-    ib.duration = input_frame->option_values.header.duration;
-    ib.timecode = input_frame->option_values.header.timecode;
+    if (metadata.m.have_animation) {
+      ib.duration = input_frame->option_values.header.duration;
+      ib.timecode = input_frame->option_values.header.timecode;
+    } else {
+      // If have_animation is false, the encoder should ignore the duration and
+      // timecode values. However, assigning them to ib will cause the encoder
+      // to write an invalid frame header that can't be decoded so ensure
+      // they're the default value of 0 here.
+      ib.duration = 0;
+      ib.timecode = 0;
+    }
     ib.blendmode = static_cast<jxl::BlendMode>(
         input_frame->option_values.header.layer_info.blend_info.blendmode);
     ib.blend =
@@ -332,18 +341,18 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
 
     size_t save_as_reference =
         input_frame->option_values.header.layer_info.save_as_reference;
-    if (save_as_reference > 1 || (ib.duration == 0 && save_as_reference != 0)) {
-      // The encoder implementation does not yet support custom
-      // save_as_reference, only 0 or 1 to indicate saving or no saving in case
-      // of animation duration.
-      return JXL_API_ERROR("unsupported save_as_reference value");
-    }
     ib.use_for_next_frame = !!save_as_reference;
 
     jxl::FrameInfo frame_info;
     bool last_frame = frames_closed && !num_queued_frames;
     frame_info.is_last = last_frame;
     frame_info.save_as_reference = save_as_reference;
+    frame_info.source =
+        input_frame->option_values.header.layer_info.blend_info.source;
+    frame_info.clamp =
+        input_frame->option_values.header.layer_info.blend_info.clamp;
+    frame_info.alpha_channel =
+        input_frame->option_values.header.layer_info.blend_info.alpha;
 
     // TODO(lode): also handle have_crop and the cropping dimensions, this
     // requires getting the pixel data from the user as a smaller image.
@@ -1273,6 +1282,16 @@ JxlEncoderStatus JxlEncoderProcessOutput(JxlEncoder* enc, uint8_t** next_out,
 
 JxlEncoderStatus JxlEncoderFrameSettingsSetInfo(
     JxlEncoderOptions* frame_settings, const JxlFrameHeader* frame_header) {
+  if (frame_header->layer_info.blend_info.source > 3) {
+    return JXL_API_ERROR("invalid blending source index");
+  }
+  // If there are no extra channels, it's ok for the value to be 0.
+  if (frame_header->layer_info.blend_info.alpha != 0 &&
+      frame_header->layer_info.blend_info.alpha >=
+          frame_settings->enc->metadata.m.extra_channel_info.size()) {
+    return JXL_API_ERROR("alpha blend channel index out of bounds");
+  }
+
   frame_settings->values.header = *frame_header;
   // Setting the frame header resets the frame name, it must be set again with
   // JxlEncoderFrameSettingsSetName if desired.

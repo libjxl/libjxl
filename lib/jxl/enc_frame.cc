@@ -366,19 +366,24 @@ Status MakeFrameHeader(const CompressParams& cparams,
     // encoded in case a blend mode involving alpha is used and there are more
     // than one extra channels.
     size_t index = 0;
-    if (extra_channels.size() > 1) {
-      for (size_t i = 0; i < extra_channels.size(); i++) {
-        if (extra_channels[i].type == ExtraChannel::kAlpha) {
-          index = i;
-          break;
+    if (frame_info.alpha_channel == -1) {
+      if (extra_channels.size() > 1) {
+        for (size_t i = 0; i < extra_channels.size(); i++) {
+          if (extra_channels[i].type == ExtraChannel::kAlpha) {
+            index = i;
+            break;
+          }
         }
       }
+    } else {
+      index = static_cast<size_t>(frame_info.alpha_channel);
+      JXL_ASSERT(index == 0 || index < extra_channels.size());
     }
     frame_header->blending_info.alpha_channel = index;
     frame_header->blending_info.mode =
         ib.blend ? ib.blendmode : BlendMode::kReplace;
-    // previous frames are saved with ID 1.
-    frame_header->blending_info.source = 1;
+    frame_header->blending_info.source = frame_info.source;
+    frame_header->blending_info.clamp = frame_info.clamp;
     for (size_t i = 0; i < extra_channels.size(); i++) {
       frame_header->extra_channel_blending_info[i].alpha_channel = index;
       BlendMode default_blend = ib.blendmode;
