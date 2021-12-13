@@ -42,7 +42,7 @@ std::vector<std::pair<ImageF*, Rect>> SimpleRenderPipeline::PrepareBuffers(
                                 1 << channel_shifts_[0][c].first),
                     kRenderPipelineXOffset +
                         DivCeil(frame_dimensions_.ysize_upsampled_padded,
-                                1 << channel_shifts_[0][c].first));
+                                1 << channel_shifts_[0][c].second));
     ret.emplace_back(&channel_data_[c], rect);
   }
   return ret;
