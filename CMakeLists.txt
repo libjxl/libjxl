@@ -76,8 +76,10 @@ set(WARNINGS_AS_ERRORS_DEFAULT false)
 
 if(SANITIZER STREQUAL "msan")
   set(BUNDLE_LIBPNG_DEFAULT YES)
+  set(BUNDLE_ABSL_DEFAULT YES)
 else()
   set(BUNDLE_LIBPNG_DEFAULT NO)
+  set(BUNDLE_ABSL_DEFAULT NO)
 endif()
 
 # Standard cmake naming for building shared libraries.
@@ -97,6 +99,8 @@ set(JPEGXL_ENABLE_EXAMPLES true CACHE BOOL
     "Build JPEGXL library usage examples.")
 set(JPEGXL_BUNDLE_LIBPNG ${BUNDLE_LIBPNG_DEFAULT} CACHE BOOL
     "Build libpng from source and link it statically.")
+set(JPEGXL_BUNDLE_ABSL ${BUNDLE_ABSL_DEFAULT} CACHE BOOL
+    "Build abseil-cpp from source and link it statically.")
 set(JPEGXL_ENABLE_JNI true CACHE BOOL
     "Build JPEGXL JNI Java wrapper, if Java dependencies are installed.")
 set(JPEGXL_ENABLE_SJPEG true CACHE BOOL
@@ -132,6 +136,8 @@ set(JPEGXL_FORCE_NEON false CACHE BOOL
 
 
 # Force system dependencies.
+set(JPEGXL_FORCE_SYSTEM_ABSL false CACHE BOOL
+    "Force using system installed abseil-cpp instead of third_party/abseil-cpp source.")
 set(JPEGXL_FORCE_SYSTEM_BROTLI false CACHE BOOL
     "Force using system installed brotli instead of third_party/brotli source.")
 set(JPEGXL_FORCE_SYSTEM_GTEST false CACHE BOOL

@@ -102,6 +102,27 @@ else()
   endif()  # JPEGXL_DEP_LICENSE_DIR
 endif()
 
+# abseil-cpp
+if (JPEGXL_BUNDLE_ABSL)
+  # Compile abseil-cpp from sources
+  set(ABSL_BUILD_TESTING OFF CACHE BOOL "Build tests")
+  add_subdirectory(abseil-cpp)
+  configure_file("${CMAKE_CURRENT_SOURCE_DIR}/abseil-cpp/LICENSE"
+                 ${PROJECT_BINARY_DIR}/LICENSE.abseil-cpp COPYONLY)
+else()
+  find_package(absl COMPONENTS flags)
+  if (NOT absl_FOUND)
+   message(FATAL_ERROR
+        "Abseil not found, install libabsl-dev or download absel-cpp source to"
+        "third_party/abseil-cpp from https://github.com/abseil/abseil-cpp. You"
+        " can use ${PROJECT_SOURCE_DIR}/deps.sh to download the dependency.")
+  endif()
+  if(JPEGXL_DEP_LICENSE_DIR)
+    configure_file("${JPEGXL_DEP_LICENSE_DIR}/libabsl-dev/copyright"
+                   ${PROJECT_BINARY_DIR}/LICENSE.abseil-cpp COPYONLY)
+  endif()  # JPEGXL_DEP_LICENSE_DIR
+endif()
+
 # brotli
 if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/brotli/c/include/brotli/decode.h" OR
     JPEGXL_FORCE_SYSTEM_BROTLI)

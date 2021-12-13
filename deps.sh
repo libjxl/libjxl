@@ -18,6 +18,7 @@ THIRD_PARTY_SKCMS="64374756e03700d649f897dbd98c95e78c30c7da"
 THIRD_PARTY_SJPEG="868ab558fad70fcbe8863ba4e85179eeb81cc840"
 THIRD_PARTY_ZLIB="cacf7f1d4e3d44d871b605da3b647f07d718623f"
 THIRD_PARTY_LIBPNG="a40189cf881e9f0db80511c382292a5604c3c3d1"
+THIRD_PARTY_ABSEIL_CPP="fb7dd24b18e82893e5922be5d1c8ae0f3fe3c9fa"
 
 # Download the target revision from GitHub.
 download_github() {
@@ -76,6 +77,7 @@ EOF
     "https://skia.googlesource.com/skcms/+archive/"
   download_github third_party/zlib madler/zlib
   download_github third_party/libpng glennrp/libpng
+  download_github third_party/abseil-cpp abseil/abseil-cpp
   echo "Done."
 }
 

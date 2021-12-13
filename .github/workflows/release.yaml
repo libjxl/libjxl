@@ -336,6 +336,7 @@ jobs:
         cp third_party/skcms/LICENSE prefix/bin/LICENSE.skcms
         cp third_party/highway/LICENSE prefix/bin/LICENSE.highway
         cp third_party/brotli/LICENSE prefix/bin/LICENSE.brotli
+        cp third_party/abseil-cpp/LICENSE prefix/bin/LICENSE.abseil-cpp
         cp LICENSE prefix/bin/LICENSE.libjxl
     - name: Upload artifacts
       uses: actions/upload-artifact@v2

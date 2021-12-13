@@ -52,7 +52,7 @@ Required dependencies for compiling the code, in a Debian/Ubuntu based
 distribution run:
 
 ```bash
-sudo apt install cmake pkg-config libbrotli-dev
+sudo apt install cmake pkg-config libbrotli-dev libabsl-dev
 ```
 
 Optional dependencies for supporting other formats in the `cjxl`/`djxl` tools,
