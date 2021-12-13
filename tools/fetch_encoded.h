@@ -10,8 +10,8 @@
  * function interface.
  */
 
-#ifndef JXL_FETCH_ENCODED_H_
-#define JXL_FETCH_ENCODED_H_
+#ifndef TOOLS_FETCH_ENCODED_H_
+#define TOOLS_FETCH_ENCODED_H_
 
 
 #if defined(__cplusplus) || defined(c_plusplus)
@@ -51,4 +51,4 @@ JXL_BOOL write_jxl_file(const uint8_t* bytes,
 }
 #endif
 
-#endif /* JXL_FETCH_ENCODED_H_ */
+#endif /* TOOLS_FETCH_ENCODED_H_ */
