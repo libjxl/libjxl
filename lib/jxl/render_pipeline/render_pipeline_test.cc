@@ -177,6 +177,30 @@ std::vector<RenderPipelineTestInputSettings> GeneratePipelineTests() {
       s.cparams_descr = "GabEpf3NoPatches";
       all_tests.push_back(s);
     }
+
+    for (size_t ups : {2, 4, 8}) {
+      {
+        auto s = settings;
+        s.cparams.resampling = ups;
+        s.cparams_descr = "Ups" + std::to_string(ups);
+        all_tests.push_back(s);
+      }
+      {
+        auto s = settings;
+        s.cparams.resampling = ups;
+        s.cparams.epf = 1;
+        s.cparams_descr = "Ups" + std::to_string(ups) + "EPF1";
+        all_tests.push_back(s);
+      }
+      {
+        auto s = settings;
+        s.cparams.resampling = ups;
+        s.cparams.gaborish = Override::kOn;
+        s.cparams.epf = 1;
+        s.cparams_descr = "Ups" + std::to_string(ups) + "GabEPF1";
+        all_tests.push_back(s);
+      }
+    }
   }
 
   return all_tests;

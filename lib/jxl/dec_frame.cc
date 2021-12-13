@@ -55,6 +55,7 @@
 #include "lib/jxl/quantizer.h"
 #include "lib/jxl/render_pipeline/stage_epf.h"
 #include "lib/jxl/render_pipeline/stage_gaborish.h"
+#include "lib/jxl/render_pipeline/stage_upsampling.h"
 #include "lib/jxl/render_pipeline/stage_write_to_ib.h"
 #include "lib/jxl/render_pipeline/stage_xyb.h"
 #include "lib/jxl/sanitizers.h"
@@ -661,9 +662,6 @@ void FrameDecoder::PreparePipeline() {
   if (frame_header_.nonserialized_metadata->m.num_extra_channels != 0) {
     JXL_ABORT("Not implemented: extra channels");
   }
-  if (frame_header_.upsampling != 1) {
-    JXL_ABORT("Not implemented: upsampling");
-  }
   if (!frame_header_.chroma_subsampling.Is444()) {
     JXL_ABORT("Not implemented: chroma subsampling");
   }
@@ -698,6 +696,14 @@ void FrameDecoder::PreparePipeline() {
   }
   if ((frame_header_.flags & FrameHeader::kSplines) != 0) {
     JXL_ABORT("Not implemented: splines");
+  }
+  // TODO(veluca): extra channels will need some handling too.
+  if (frame_header_.upsampling != 1) {
+    for (size_t c = 0; c < 3; c++) {
+      builder.AddStage(GetUpsamplingStage(
+          frame_header_.nonserialized_metadata->transform_data, c,
+          CeilLog2Nonzero(frame_header_.upsampling)));
+    }
   }
   if ((frame_header_.flags & FrameHeader::kNoise) != 0) {
     JXL_ABORT("Not implemented: noise");

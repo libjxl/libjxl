@@ -88,8 +88,7 @@ int CompressJpegXlMain(int argc, const char* argv[]) {
   int ret = CjxlRetCode::OK;
   if (args.use_container) {
     JpegXlContainer container;
-    container.codestream = compressed.data();
-    container.codestream_size = compressed.size();
+    container.codestream = std::move(compressed);
     if (!io.blobs.exif.empty()) {
       container.exif = io.blobs.exif.data();
       container.exif_size = io.blobs.exif.size();
@@ -114,12 +113,11 @@ int CompressJpegXlMain(int argc, const char* argv[]) {
         ret = CjxlRetCode::DROPPED_JBRD;
       }
     }
-    jxl::PaddedBytes container_file;
-    if (!EncodeJpegXlContainerOneShot(container, &container_file)) {
+    compressed.clear();
+    if (!EncodeJpegXlContainerOneShot(container, &compressed)) {
       fprintf(stderr, "Failed to encode container format\n");
       return CjxlRetCode::ERR_CONTAINER;
     }
-    compressed.swap(container_file);
     if (!args.quiet) {
       const size_t pixels = io.xsize() * io.ysize();
       const double bpp =

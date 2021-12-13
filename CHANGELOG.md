@@ -25,8 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
    the blending information for extra channels in the non-coalesced case.
  - encoder API: added ability to set several encoder options to frames using
    `JxlEncoderFrameSettingsSetOption`
- - encoder API: new function `JxlEncoderFrameSettingsSetInfo` to set animation
-   and blending parameters of the frame.
+ - encoder API: new functions `JxlEncoderSetFrameHeader` and
+   `JxlEncoderSetExtraChannelBlendInfo` to set animation
+   and blending parameters of the frame, and `JxlEncoderInitFrameHeader` and
+   `JxlEncoderInitBlendInfo` to initialize the structs to set.
  - decoder/encoder API: add two fields to `JXLBasicInfo`: `intrinsic_xsize`
    and `intrinsic_ysize` to signal the intrinsic size.
  - encoder API: ability to encode arbitrary extra channels:

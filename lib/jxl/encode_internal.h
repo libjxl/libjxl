@@ -27,6 +27,7 @@ typedef struct JxlEncoderFrameSettingsValuesStruct {
   bool lossless;
   CompressParams cparams;
   JxlFrameHeader header;
+  std::vector<JxlBlendInfo> extra_channel_blend_info;
   std::string frame_name;
 } JxlEncoderFrameSettingsValues;
 
