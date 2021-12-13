@@ -59,6 +59,7 @@
 #include "lib/jxl/render_pipeline/stage_upsampling.h"
 #include "lib/jxl/render_pipeline/stage_write_to_ib.h"
 #include "lib/jxl/render_pipeline/stage_xyb.h"
+#include "lib/jxl/render_pipeline/stage_ycbcr.h"
 #include "lib/jxl/sanitizers.h"
 #include "lib/jxl/splines.h"
 #include "lib/jxl/toc.h"
@@ -721,7 +722,7 @@ void FrameDecoder::PreparePipeline() {
   }
 
   if (frame_header_.color_transform == ColorTransform::kYCbCr) {
-    JXL_ABORT("Not implemented: YCbCr");
+    builder.AddStage(GetYCbCrStage());
   } else if (frame_header_.color_transform == ColorTransform::kXYB) {
     builder.AddStage(GetXYBStage(dec_state_->output_encoding_info));
   }  // Nothing to do for kNone.
