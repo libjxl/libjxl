@@ -838,6 +838,28 @@ JxlDecoderStatus JxlDecoderSetCoalescing(JxlDecoder* dec, JXL_BOOL coalescing) {
   return JXL_DEC_SUCCESS;
 }
 
+namespace {
+// helper function to get the dimensions of the current image buffer
+void GetCurrentDimensions(const JxlDecoder* dec, size_t& xsize, size_t& ysize,
+                          bool oriented) {
+  if (dec->frame_header->nonserialized_is_preview) {
+    xsize = dec->metadata.oriented_preview_xsize(dec->keep_orientation);
+    ysize = dec->metadata.oriented_preview_ysize(dec->keep_orientation);
+    return;
+  }
+  xsize = dec->metadata.oriented_xsize(dec->keep_orientation || !oriented);
+  ysize = dec->metadata.oriented_ysize(dec->keep_orientation || !oriented);
+  if (!dec->coalescing) {
+    xsize = dec->frame_header->ToFrameDimensions().xsize;
+    ysize = dec->frame_header->ToFrameDimensions().ysize;
+    if (!dec->keep_orientation && oriented &&
+        static_cast<int>(dec->metadata.m.GetOrientation()) > 4) {
+      std::swap(xsize, ysize);
+    }
+  }
+}
+}  // namespace
+
 namespace jxl {
 namespace {
 
@@ -1008,15 +1030,9 @@ JxlDecoderStatus JxlDecoderReadAllHeaders(JxlDecoder* dec, const uint8_t* in,
   return JXL_DEC_SUCCESS;
 }
 
-static size_t GetStride(const JxlDecoder* dec, const JxlPixelFormat& format,
-                        const jxl::ImageBundle* frame = nullptr) {
-  size_t xsize = dec->metadata.xsize();
-  if (!dec->keep_orientation && dec->metadata.m.orientation > 4) {
-    xsize = dec->metadata.ysize();
-  }
-  if (frame) {
-    xsize = dec->keep_orientation ? frame->xsize() : frame->oriented_xsize();
-  }
+static size_t GetStride(const JxlDecoder* dec, const JxlPixelFormat& format) {
+  size_t xsize, ysize;
+  GetCurrentDimensions(dec, xsize, ysize, true);
   size_t stride = xsize * (BitsPerChannel(format.data_type) *
                            format.num_channels / jxl::kBitsPerByte);
   if (format.align > 1) {
@@ -1038,7 +1054,7 @@ static JxlDecoderStatus ConvertImageInternal(
     JxlImageOutCallback out_callback, void* out_opaque) {
   // TODO(lode): handle mismatch of RGB/grayscale color profiles and pixel data
   // color/grayscale format
-  const size_t stride = GetStride(dec, format, &frame);
+  const size_t stride = GetStride(dec, format);
 
   bool float_format = format.data_type == JXL_TYPE_FLOAT ||
                       format.data_type == JXL_TYPE_FLOAT16;
@@ -2387,21 +2403,6 @@ JxlDecoderStatus PrepareSizeCheck(const JxlDecoder* dec,
   return JXL_DEC_SUCCESS;
 }
 
-// helper function to get the dimensions of the current image buffer
-void GetCurrentDimensions(const JxlDecoder* dec, size_t& xsize, size_t& ysize,
-                          bool oriented) {
-  xsize = dec->metadata.oriented_xsize(dec->keep_orientation || !oriented);
-  ysize = dec->metadata.oriented_ysize(dec->keep_orientation || !oriented);
-  if (!dec->coalescing) {
-    xsize = dec->frame_header->ToFrameDimensions().xsize;
-    ysize = dec->frame_header->ToFrameDimensions().ysize;
-    if (!dec->keep_orientation && oriented &&
-        static_cast<int>(dec->metadata.m.GetOrientation()) > 4) {
-      std::swap(xsize, ysize);
-    }
-  }
-}
-
 }  // namespace
 
 JxlDecoderStatus JxlDecoderFlushImage(JxlDecoder* dec) {
@@ -2457,10 +2458,11 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderPreviewOutBufferSize(
 
   size_t row_size =
       jxl::DivCeil(xsize * format->num_channels * bits, jxl::kBitsPerByte);
+  size_t last_row_size = row_size;
   if (format->align > 1) {
     row_size = jxl::DivCeil(row_size, format->align) * format->align;
   }
-  *size = row_size * ysize;
+  *size = row_size * (ysize - 1) + last_row_size;
   return JXL_DEC_SUCCESS;
 }
 
@@ -2504,10 +2506,11 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderDCOutBufferSize(
 
   size_t row_size =
       jxl::DivCeil(xsize * format->num_channels * bits, jxl::kBitsPerByte);
+  size_t last_row_size = row_size;
   if (format->align > 1) {
     row_size = jxl::DivCeil(row_size, format->align) * format->align;
   }
-  *size = row_size * ysize;
+  *size = row_size * (ysize - 1) + last_row_size;
   return JXL_DEC_SUCCESS;
 }
 

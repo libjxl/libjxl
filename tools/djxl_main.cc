@@ -84,18 +84,17 @@ int DecompressMain(int argc, const char* argv[]) {
       return 1;
     }
   } else {
-    container.codestream = compressed.data();
-    container.codestream_size = compressed.size();
+    container.codestream = std::move(compressed);
   }
 
   jxl::ThreadPoolInternal pool(args.num_threads);
   SpeedStats stats;
 
   // Quick test that this looks like a valid JXL file.
-  JxlSignature signature =
-      JxlSignatureCheck(container.codestream, container.codestream_size);
+  JxlSignature signature = JxlSignatureCheck(container.codestream.data(),
+                                             container.codestream.size());
   if (signature == JXL_SIG_NOT_ENOUGH_BYTES || signature == JXL_SIG_INVALID) {
-    fprintf(stderr, "Unknown compressed image format\n");
+    fprintf(stderr, "Unknown compressed image format (%u)\n", signature);
     return 1;
   }
 
@@ -161,10 +160,8 @@ int DecompressMain(int argc, const char* argv[]) {
 
     // Decode to pixels.
     for (size_t i = 0; i < args.num_reps; ++i) {
-      if (!DecompressJxlToPixels(
-              jxl::Span<const uint8_t>(container.codestream,
-                                       container.codestream_size),
-              args.params, &pool, &io, &stats)) {
+      if (!DecompressJxlToPixels(jxl::Span<const uint8_t>(container.codestream),
+                                 args.params, &pool, &io, &stats)) {
         // Error is already reported by DecompressJxlToPixels.
         return 1;
       }

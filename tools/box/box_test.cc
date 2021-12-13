@@ -41,8 +41,7 @@ TEST(BoxTest, BoxTest) {
   container.xmlc.emplace_back(xml1.data(), xml1.size());
   container.jumb = jumb.data();
   container.jumb_size = jumb.size();
-  container.codestream = codestream.data();
-  container.codestream_size = codestream.size();
+  container.codestream = std::move(codestream);
 
   jxl::PaddedBytes file;
   EXPECT_EQ(true,
@@ -71,7 +70,7 @@ TEST(BoxTest, BoxTest) {
   }
   EXPECT_EQ(jumb.size(), container2.jumb_size);
   EXPECT_EQ(0, memcmp(jumb.data(), container2.jumb, container2.jumb_size));
-  EXPECT_EQ(codestream.size(), container2.codestream_size);
-  EXPECT_EQ(0, memcmp(codestream.data(), container2.codestream,
-                      container2.codestream_size));
+  EXPECT_EQ(container.codestream.size(), container2.codestream.size());
+  EXPECT_EQ(0, memcmp(container.codestream.data(), container2.codestream.data(),
+                      container2.codestream.size()));
 }

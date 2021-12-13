@@ -121,11 +121,11 @@ static inline bool ParsePredictor(const char* arg, jxl::Predictor* out) {
     fprintf(stderr, "Invalid predictor: %s.\n", arg);
     return JXL_FAILURE("Args");
   }
-  if (p >= jxl::kNumModularPredictors) {
+  if (p >= jxl::kNumModularEncoderPredictors) {
     fprintf(stderr,
             "Invalid predictor value %" PRIu64 ", must be less than %" PRIu64
             ".\n",
-            p, static_cast<uint64_t>(jxl::kNumModularPredictors));
+            p, static_cast<uint64_t>(jxl::kNumModularEncoderPredictors));
     return JXL_FAILURE("Args");
   }
   *out = static_cast<jxl::Predictor>(p);

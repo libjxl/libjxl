@@ -366,29 +366,39 @@ Status MakeFrameHeader(const CompressParams& cparams,
     // encoded in case a blend mode involving alpha is used and there are more
     // than one extra channels.
     size_t index = 0;
-    if (extra_channels.size() > 1) {
-      for (size_t i = 0; i < extra_channels.size(); i++) {
-        if (extra_channels[i].type == ExtraChannel::kAlpha) {
-          index = i;
-          break;
+    if (frame_info.alpha_channel == -1) {
+      if (extra_channels.size() > 1) {
+        for (size_t i = 0; i < extra_channels.size(); i++) {
+          if (extra_channels[i].type == ExtraChannel::kAlpha) {
+            index = i;
+            break;
+          }
         }
       }
+    } else {
+      index = static_cast<size_t>(frame_info.alpha_channel);
+      JXL_ASSERT(index == 0 || index < extra_channels.size());
     }
     frame_header->blending_info.alpha_channel = index;
     frame_header->blending_info.mode =
         ib.blend ? ib.blendmode : BlendMode::kReplace;
-    // previous frames are saved with ID 1.
-    frame_header->blending_info.source = 1;
+    frame_header->blending_info.source = frame_info.source;
+    frame_header->blending_info.clamp = frame_info.clamp;
+    const auto& extra_channel_info = frame_info.extra_channel_blending_info;
     for (size_t i = 0; i < extra_channels.size(); i++) {
-      frame_header->extra_channel_blending_info[i].alpha_channel = index;
-      BlendMode default_blend = ib.blendmode;
-      if (extra_channels[i].type != ExtraChannel::kBlack && i != index) {
-        // K needs to be blended, spot colors and other stuff gets added
-        default_blend = BlendMode::kAdd;
+      if (i < extra_channel_info.size()) {
+        frame_header->extra_channel_blending_info[i] = extra_channel_info[i];
+      } else {
+        frame_header->extra_channel_blending_info[i].alpha_channel = index;
+        BlendMode default_blend = ib.blendmode;
+        if (extra_channels[i].type != ExtraChannel::kBlack && i != index) {
+          // K needs to be blended, spot colors and other stuff gets added
+          default_blend = BlendMode::kAdd;
+        }
+        frame_header->extra_channel_blending_info[i].mode =
+            ib.blend ? default_blend : BlendMode::kReplace;
+        frame_header->extra_channel_blending_info[i].source = 1;
       }
-      frame_header->extra_channel_blending_info[i].mode =
-          ib.blend ? default_blend : BlendMode::kReplace;
-      frame_header->extra_channel_blending_info[i].source = 1;
     }
   }
 

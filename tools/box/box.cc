@@ -135,8 +135,7 @@ jxl::Status DecodeJpegXlContainerOneShot(const uint8_t* data, size_t size,
   container->xmlc.clear();
   container->jumb = nullptr;
   container->jumb_size = 0;
-  container->codestream = nullptr;
-  container->codestream_size = 0;
+  container->codestream.clear();
   container->jpeg_reconstruction = nullptr;
   container->jpeg_reconstruction_size = 0;
 
@@ -174,12 +173,15 @@ jxl::Status DecodeJpegXlContainerOneShot(const uint8_t* data, size_t size,
       if (memcmp(expected, in, 12) != 0) return JXL_FAILURE("Invalid ftyp");
     } else if (!memcmp("jxli", box.type, 4)) {
       // TODO(lode): parse JXL frame index box
-      if (container->codestream) {
+      if (container->codestream.size() > 0) {
         return JXL_FAILURE("frame index must come before codestream");
       }
     } else if (!memcmp("jxlc", box.type, 4)) {
-      container->codestream = in;
-      container->codestream_size = data_size;
+      container->codestream.append(in, in + data_size);
+    } else if (!memcmp("jxlp", box.type, 4)) {
+      if (data_size < 4) return JXL_FAILURE("Invalid jxlp");
+      // TODO(jon): don't just ignore the counter
+      container->codestream.append(in + 4, in + data_size);
     } else if (!memcmp("Exif", box.type, 4)) {
       if (data_size < 4) return JXL_FAILURE("Invalid Exif");
       uint32_t tiff_header_offset = LoadBE32(in);
@@ -263,9 +265,9 @@ jxl::Status EncodeJpegXlContainerOneShot(const JpegXlContainer& container,
                                          out));
   }
 
-  if (container.codestream) {
-    JXL_RETURN_IF_ERROR(AppendBoxAndData("jxlc", container.codestream,
-                                         container.codestream_size, out));
+  if (container.codestream.size() > 0) {
+    JXL_RETURN_IF_ERROR(AppendBoxAndData("jxlc", container.codestream.data(),
+                                         container.codestream.size(), out));
   } else {
     return JXL_FAILURE("must have primary image frame");
   }
@@ -324,9 +326,7 @@ jxl::Status DecodeJpegXlToJpeg(jxl::DecompressParams params,
   }
 
   JXL_RETURN_IF_ERROR(DecodeFile(
-      params,
-      jxl::Span<const uint8_t>(container.codestream, container.codestream_size),
-      io, pool));
+      params, jxl::Span<const uint8_t>(container.codestream), io, pool));
   return true;
 }
 
