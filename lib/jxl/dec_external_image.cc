@@ -315,11 +315,14 @@ Status ConvertChannelsToExternal(const ImageF* channels[], size_t num_channels,
   // First channel may not be nullptr.
   size_t xsize = channels[0]->xsize();
   size_t ysize = channels[0]->ysize();
-
   if (stride < bytes_per_pixel * xsize) {
     return JXL_FAILURE("stride is smaller than scanline width in bytes: %" PRIuS
                        " vs %" PRIuS,
                        stride, bytes_per_pixel * xsize);
+  }
+  if (!out_callback &&
+      out_size < (ysize - 1) * stride + bytes_per_pixel * xsize) {
+    return JXL_FAILURE("out_size is too small to store image");
   }
 
   const bool little_endian =
