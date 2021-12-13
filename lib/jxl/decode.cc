@@ -2457,10 +2457,11 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderPreviewOutBufferSize(
 
   size_t row_size =
       jxl::DivCeil(xsize * format->num_channels * bits, jxl::kBitsPerByte);
+  size_t last_row_size = row_size;
   if (format->align > 1) {
     row_size = jxl::DivCeil(row_size, format->align) * format->align;
   }
-  *size = row_size * ysize;
+  *size = row_size * (ysize - 1) + last_row_size;
   return JXL_DEC_SUCCESS;
 }
 
@@ -2504,10 +2505,11 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderDCOutBufferSize(
 
   size_t row_size =
       jxl::DivCeil(xsize * format->num_channels * bits, jxl::kBitsPerByte);
+  size_t last_row_size = row_size;
   if (format->align > 1) {
     row_size = jxl::DivCeil(row_size, format->align) * format->align;
   }
-  *size = row_size * ysize;
+  *size = row_size * (ysize - 1) + last_row_size;
   return JXL_DEC_SUCCESS;
 }
 
