@@ -55,7 +55,7 @@ ImageF SumOfSquareDifferences(const Image3F& forig, const Image3F& smooth,
   ImageF sum_of_squares(forig.xsize(), forig.ysize());
   RunOnPool(
       pool, 0, forig.ysize(), ThreadPool::SkipInit(),
-      [&](const int task, const int thread) {
+      [&](const uint32_t task, size_t thread) {
         const size_t y = static_cast<size_t>(task);
         const float* JXL_RESTRICT orig_row0 = forig.Plane(0).ConstRow(y);
         const float* JXL_RESTRICT orig_row1 = forig.Plane(1).ConstRow(y);

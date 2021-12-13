@@ -280,6 +280,7 @@ class FrameDecoder {
   std::vector<uint8_t> decoded_dc_groups_;
   bool decoded_dc_global_;
   bool decoded_ac_global_;
+  bool HasEverything() const;
   bool finalized_dc_ = true;
   size_t num_sections_done_ = 0;
   bool is_finalized_ = true;

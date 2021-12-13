@@ -80,7 +80,7 @@ Status InvRCT(Image& input, size_t begin_c, size_t rct_type, ThreadPool* pool) {
       InvRCTRow<4>, InvRCTRow<5>, InvRCTRow<6>};
   RunOnPool(
       pool, 0, h, ThreadPool::SkipInit(),
-      [&](const int task, const int thread) {
+      [&](const uint32_t task, size_t /* thread */) {
         const size_t y = task;
         const pixel_type* in0 = input.channel[m].Row(y);
         const pixel_type* in1 = input.channel[m + 1].Row(y);

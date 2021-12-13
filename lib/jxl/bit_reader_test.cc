@@ -54,7 +54,7 @@ struct Symbol {
 TEST(BitReaderTest, TestRoundTrip) {
   ThreadPoolInternal pool(8);
   pool.Run(0, 1000, ThreadPool::SkipInit(),
-           [](const int task, const int /* thread */) {
+           [](const uint32_t task, size_t /* thread */) {
              constexpr size_t kMaxBits = 8000;
              BitWriter writer;
              BitWriter::Allotment allotment(&writer, kMaxBits);
@@ -86,14 +86,14 @@ TEST(BitReaderTest, TestRoundTrip) {
 TEST(BitReaderTest, TestSkip) {
   ThreadPoolInternal pool(8);
   pool.Run(0, 96, ThreadPool::SkipInit(),
-           [](const int task, const int /* thread */) {
+           [](const uint32_t task, size_t /* thread */) {
              constexpr size_t kSize = 100;
 
              for (size_t skip = 0; skip < 128; ++skip) {
                BitWriter writer;
                BitWriter::Allotment allotment(&writer, kSize * kBitsPerByte);
                // Start with "task" 1-bits.
-               for (int i = 0; i < task; ++i) {
+               for (size_t i = 0; i < task; ++i) {
                  writer.Write(1, 1);
                }
 
@@ -113,7 +113,7 @@ TEST(BitReaderTest, TestSkip) {
                BitReader reader1(writer.GetSpan());
                BitReader reader2(writer.GetSpan());
                // Verify initial 1-bits
-               for (int i = 0; i < task; ++i) {
+               for (size_t i = 0; i < task; ++i) {
                  EXPECT_EQ(1u, reader1.ReadBits(1));
                  EXPECT_EQ(1u, reader2.ReadBits(1));
                }

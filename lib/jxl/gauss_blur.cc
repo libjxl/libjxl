@@ -594,7 +594,7 @@ void FastGaussianHorizontal(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
   const intptr_t xsize = in.xsize();
   RunOnPool(
       pool, 0, in.ysize(), ThreadPool::SkipInit(),
-      [&](const int task, const int /*thread*/) {
+      [&](const uint32_t task, size_t /*thread*/) {
         const size_t y = task;
         const float* row_in = in.ConstRow(y);
         float* JXL_RESTRICT row_out = out->Row(y);

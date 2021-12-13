@@ -535,7 +535,8 @@ class LossyFrameEncoder {
       group_caches_.resize(num_threads);
       return true;
     };
-    const auto tokenize_group = [&](const int group_index, const int thread) {
+    const auto tokenize_group = [&](const uint32_t group_index,
+                                    const size_t thread) {
       // Tokenize coefficients.
       const Rect rect = shared.BlockGroupRect(group_index);
       for (size_t idx_pass = 0; idx_pass < enc_state_->passes.size();
@@ -659,7 +660,7 @@ class LossyFrameEncoder {
             kScale * kZeroBiasDefault[c] *
             0.9999f;  // just epsilon less for better rounding
 
-        auto process_row = [&](int task, int thread) {
+        auto process_row = [&](const uint32_t task, const size_t thread) {
           size_t ty = task;
           int8_t* JXL_RESTRICT row_out = map->Row(ty);
           for (size_t tx = 0; tx < map->xsize(); ++tx) {
@@ -856,7 +857,8 @@ class LossyFrameEncoder {
 
     // disable DC frame for now
     shared.frame_header.UpdateFlag(false, FrameHeader::kUseDcFrame);
-    auto compute_dc_coeffs = [&](int group_index, int /* thread */) {
+    auto compute_dc_coeffs = [&](const uint32_t group_index,
+                                 size_t /* thread */) {
       modular_frame_encoder->AddVarDCTDC(dc, group_index, /*nl_dc=*/false,
                                          enc_state_, /*jpeg_transcode=*/true);
       modular_frame_encoder->AddACMetadata(group_index, /*jpeg_transcode=*/true,
@@ -883,7 +885,8 @@ class LossyFrameEncoder {
       group_caches_.resize(num_threads);
       return true;
     };
-    const auto tokenize_group = [&](const int group_index, const int thread) {
+    const auto tokenize_group = [&](const uint32_t group_index,
+                                    const size_t thread) {
       // Tokenize coefficients.
       const Rect rect = shared.BlockGroupRect(group_index);
       for (size_t idx_pass = 0; idx_pass < enc_state_->passes.size();
@@ -1132,7 +1135,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
   // lambda type by making LossyFrameEncoder a template instead, but this is
   // simpler.
   const std::function<Status(size_t)> resize_aux_outs =
-      [&aux_outs, aux_out](size_t num_threads) -> Status {
+      [&aux_outs, aux_out](const size_t num_threads) -> Status {
     if (aux_out != nullptr) {
       size_t old_size = aux_outs.size();
       for (size_t i = num_threads; i < old_size; i++) {
@@ -1296,7 +1299,8 @@ Status EncodeFrame(const CompressParams& cparams_orig,
   JXL_RETURN_IF_ERROR(modular_frame_encoder->EncodeStream(
       get_output(0), aux_out, kLayerModularGlobal, ModularStreamId::Global()));
 
-  const auto process_dc_group = [&](const int group_index, const int thread) {
+  const auto process_dc_group = [&](const uint32_t group_index,
+                                    const size_t thread) {
     AuxOut* my_aux_out = aux_out ? &aux_outs[thread] : nullptr;
     BitWriter* output = get_output(group_index + 1);
     if (frame_header->encoding == FrameEncoding::kVarDCT &&
@@ -1335,7 +1339,8 @@ Status EncodeFrame(const CompressParams& cparams_orig,
   }
 
   std::atomic<int> num_errors{0};
-  const auto process_group = [&](const int group_index, const int thread) {
+  const auto process_group = [&](const uint32_t group_index,
+                                 const size_t thread) {
     AuxOut* my_aux_out = aux_out ? &aux_outs[thread] : nullptr;
 
     for (size_t i = 0; i < num_passes; i++) {

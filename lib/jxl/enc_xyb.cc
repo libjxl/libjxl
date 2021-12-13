@@ -167,7 +167,7 @@ void LinearSRGBToXYB(const Image3F& linear,
   const HWY_FULL(float) d;
   RunOnPool(
       pool, 0, static_cast<uint32_t>(linear.ysize()), ThreadPool::SkipInit(),
-      [&](const int task, const int /*thread*/) {
+      [&](const uint32_t task, size_t /*thread*/) {
         const size_t y = static_cast<size_t>(task);
         const float* JXL_RESTRICT row_in0 = linear.ConstPlaneRow(0, y);
         const float* JXL_RESTRICT row_in1 = linear.ConstPlaneRow(1, y);
@@ -194,7 +194,7 @@ void SRGBToXYB(const Image3F& srgb, const float* JXL_RESTRICT premul_absorb,
   const HWY_FULL(float) d;
   RunOnPool(
       pool, 0, static_cast<uint32_t>(srgb.ysize()), ThreadPool::SkipInit(),
-      [&](const int task, const int /*thread*/) {
+      [&](const uint32_t task, size_t /*thread*/) {
         const size_t y = static_cast<size_t>(task);
         const float* JXL_RESTRICT row_srgb0 = srgb.ConstPlaneRow(0, y);
         const float* JXL_RESTRICT row_srgb1 = srgb.ConstPlaneRow(1, y);
@@ -223,7 +223,7 @@ void SRGBToXYBAndLinear(const Image3F& srgb,
   const HWY_FULL(float) d;
   RunOnPool(
       pool, 0, static_cast<uint32_t>(srgb.ysize()), ThreadPool::SkipInit(),
-      [&](const int task, const int /*thread*/) {
+      [&](const uint32_t task, size_t /*thread*/) {
         const size_t y = static_cast<size_t>(task);
         const float* JXL_RESTRICT row_srgb0 = srgb.ConstPlaneRow(0, y);
         const float* JXL_RESTRICT row_srgb1 = srgb.ConstPlaneRow(1, y);
