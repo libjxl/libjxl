@@ -53,6 +53,7 @@
 #include "lib/jxl/passes_state.h"
 #include "lib/jxl/quant_weights.h"
 #include "lib/jxl/quantizer.h"
+#include "lib/jxl/render_pipeline/stage_chroma_upsampling.h"
 #include "lib/jxl/render_pipeline/stage_epf.h"
 #include "lib/jxl/render_pipeline/stage_gaborish.h"
 #include "lib/jxl/render_pipeline/stage_splines.h"
@@ -664,9 +665,6 @@ void FrameDecoder::PreparePipeline() {
   if (frame_header_.nonserialized_metadata->m.num_extra_channels != 0) {
     JXL_ABORT("Not implemented: extra channels");
   }
-  if (!frame_header_.chroma_subsampling.Is444()) {
-    JXL_ABORT("Not implemented: chroma subsampling");
-  }
 
   RenderPipeline::Builder builder(/*num_c=*/3);
 
@@ -674,6 +672,17 @@ void FrameDecoder::PreparePipeline() {
     builder.UseSimpleImplementation();
   } else {
     JXL_ABORT("Not implemented: fast pipeline");
+  }
+
+  if (!frame_header_.chroma_subsampling.Is444()) {
+    for (size_t c = 0; c < 3; c++) {
+      if (frame_header_.chroma_subsampling.HShift(c) != 0) {
+        builder.AddStage(GetChromaUpsamplingStage(c, /*horizontal=*/true));
+      }
+      if (frame_header_.chroma_subsampling.VShift(c) != 0) {
+        builder.AddStage(GetChromaUpsamplingStage(c, /*horizontal=*/false));
+      }
+    }
   }
 
   if (frame_header_.loop_filter.gab) {

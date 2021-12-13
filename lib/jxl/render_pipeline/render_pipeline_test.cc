@@ -240,7 +240,10 @@ std::vector<RenderPipelineTestInputSettings> GeneratePipelineTests() {
 
 #if JPEGXL_ENABLE_TRANSCODE_JPEG
   for (const char* input :
-       {"imagecompression.info/flower_foveon.png.im_q85_444.jpg"}) {
+       {"imagecompression.info/flower_foveon.png.im_q85_444.jpg",
+        "imagecompression.info/flower_foveon.png.im_q85_420.jpg",
+        "imagecompression.info/flower_foveon.png.im_q85_422.jpg",
+        "imagecompression.info/flower_foveon.png.im_q85_440.jpg"}) {
     RenderPipelineTestInputSettings settings;
     settings.input_path = input;
     settings.jpeg_transcode = true;
