@@ -288,12 +288,16 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes,
                  bytes.size());
     jpeg_save_markers(&cinfo, kICCMarker, 0xFFFF);
     jpeg_save_markers(&cinfo, kExifMarker, 0xFFFF);
-    jpeg_read_header(&cinfo, TRUE);
     const auto failure = [&cinfo](const char* str) -> Status {
       jpeg_abort_decompress(&cinfo);
       jpeg_destroy_decompress(&cinfo);
       return JXL_FAILURE("%s", str);
     };
+    int read_header_result = jpeg_read_header(&cinfo, TRUE);
+    // TODO(eustas): what about JPEG_HEADER_TABLES_ONLY?
+    if (read_header_result == JPEG_SUSPENDED) {
+      return failure("truncated JPEG input");
+    }
     if (!VerifyDimensions(&constraints, cinfo.image_width,
                           cinfo.image_height)) {
       return failure("image too big");
