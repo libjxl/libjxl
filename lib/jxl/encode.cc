@@ -369,9 +369,10 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
       to.alpha_channel = from.alpha;
     }
 
-    // TODO(lode): also handle have_crop and the cropping dimensions, this
-    // requires getting the pixel data from the user as a smaller image.
-
+    if (input_frame->option_values.header.layer_info.have_crop) {
+      ib.origin.x0 = input_frame->option_values.header.layer_info.crop_x0;
+      ib.origin.y0 = input_frame->option_values.header.layer_info.crop_y0;
+    }
     if (!jxl::EncodeFrame(input_frame->option_values.cparams, frame_info,
                           &metadata, input_frame->frame, &enc_state, cms,
                           thread_pool.get(), &writer,
@@ -1168,22 +1169,27 @@ JxlEncoderStatus JxlEncoderAddImageFrame(
       frame_settings->enc->metadata.m.num_extra_channels) {
     return JXL_API_ERROR("number of extra channels mismatch");
   }
-  std::vector<jxl::ImageF> extra_channels(
-      frame_settings->enc->metadata.m.num_extra_channels -
-      has_interleaved_alpha);
-  for (auto& extra_channel : extra_channels) {
-    extra_channel = jxl::ImageF(frame_settings->enc->metadata.xsize(),
-                                frame_settings->enc->metadata.ysize());
-  }
-  queued_frame->frame.SetExtraChannels(std::move(extra_channels));
-
   size_t xsize = frame_settings->enc->metadata.xsize();
   size_t ysize = frame_settings->enc->metadata.ysize();
+  if (frame_settings->values.header.layer_info.have_crop) {
+    xsize = frame_settings->values.header.layer_info.xsize;
+    ysize = frame_settings->values.header.layer_info.ysize;
+  }
   if (frame_settings->values.cparams.already_downsampled) {
     size_t factor = frame_settings->values.cparams.resampling;
     xsize = jxl::DivCeil(xsize, factor);
     ysize = jxl::DivCeil(ysize, factor);
   }
+  if (xsize == 0 || ysize == 0) {
+    return JXL_API_ERROR("zero-sized frame is not allowed");
+  }
+  std::vector<jxl::ImageF> extra_channels(
+      frame_settings->enc->metadata.m.num_extra_channels -
+      has_interleaved_alpha);
+  for (auto& extra_channel : extra_channels) {
+    extra_channel = jxl::ImageF(xsize, ysize);
+  }
+  queued_frame->frame.SetExtraChannels(std::move(extra_channels));
 
   if (!jxl::BufferToImageBundle(*pixel_format, xsize, ysize, buffer, size,
                                 frame_settings->enc->thread_pool.get(),

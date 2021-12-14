@@ -1080,6 +1080,90 @@ TEST(EncodeTest, AnimationHeaderTest) {
 
   EXPECT_EQ(true, seen_frame);
 }
+TEST(EncodeTest, CroppedFrameTest) {
+  JxlEncoderPtr enc = JxlEncoderMake(nullptr);
+  EXPECT_NE(nullptr, enc.get());
+
+  JxlEncoderFrameSettings* frame_settings =
+      JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+  size_t xsize = 300;
+  size_t ysize = 300;
+  JxlPixelFormat pixel_format = {4, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
+  std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 4, 0);
+  std::vector<uint8_t> pixels2(pixels.size());
+  JxlBasicInfo basic_info;
+  jxl::test::JxlBasicInfoSetFromPixelFormat(&basic_info, &pixel_format);
+  // Encoding a 300x300 frame in an image that is only 100x100
+  basic_info.xsize = 100;
+  basic_info.ysize = 100;
+  basic_info.uses_original_profile = JXL_TRUE;
+  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
+  JxlColorEncoding color_encoding;
+  JxlColorEncodingSetToSRGB(&color_encoding, /*is_gray=*/false);
+  EXPECT_EQ(JXL_ENC_SUCCESS,
+            JxlEncoderSetColorEncoding(enc.get(), &color_encoding));
+
+  JxlFrameHeader header;
+  JxlEncoderInitFrameHeader(&header);
+  header.layer_info.have_crop = JXL_TRUE;
+  header.layer_info.xsize = xsize;
+  header.layer_info.ysize = ysize;
+  header.layer_info.crop_x0 = -50;
+  header.layer_info.crop_y0 = -250;
+  JxlEncoderSetFrameLossless(frame_settings, JXL_TRUE);
+  JxlEncoderSetFrameHeader(frame_settings, &header);
+  JxlEncoderFrameSettingsSetOption(frame_settings, JXL_ENC_FRAME_SETTING_EFFORT,
+                                   1);
+
+  std::vector<uint8_t> compressed = std::vector<uint8_t>(100);
+  uint8_t* next_out = compressed.data();
+  size_t avail_out = compressed.size() - (next_out - compressed.data());
+  EXPECT_EQ(JXL_ENC_SUCCESS,
+            JxlEncoderAddImageFrame(frame_settings, &pixel_format,
+                                    pixels.data(), pixels.size()));
+  JxlEncoderCloseFrames(enc.get());
+  ProcessEncoder(enc.get(), compressed, next_out, avail_out);
+
+  JxlDecoderPtr dec = JxlDecoderMake(nullptr);
+  EXPECT_NE(nullptr, dec.get());
+  // Non-coalesced decoding so we can get the full uncropped frame
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetCoalescing(dec.get(), JXL_FALSE));
+  EXPECT_EQ(
+      JXL_DEC_SUCCESS,
+      JxlDecoderSubscribeEvents(dec.get(), JXL_DEC_FRAME | JXL_DEC_FULL_IMAGE));
+  JxlDecoderSetInput(dec.get(), compressed.data(), compressed.size());
+  JxlDecoderCloseInput(dec.get());
+
+  bool seen_frame = false;
+  bool checked_frame = false;
+  for (;;) {
+    JxlDecoderStatus status = JxlDecoderProcessInput(dec.get());
+    if (status == JXL_DEC_ERROR) {
+      FAIL();
+    } else if (status == JXL_DEC_SUCCESS) {
+      break;
+    } else if (status == JXL_DEC_FRAME) {
+      seen_frame = true;
+      JxlFrameHeader header2;
+      EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetFrameHeader(dec.get(), &header2));
+      EXPECT_EQ(header.layer_info.xsize, header2.layer_info.xsize);
+      EXPECT_EQ(header.layer_info.ysize, header2.layer_info.ysize);
+      EXPECT_EQ(header.layer_info.crop_x0, header2.layer_info.crop_x0);
+      EXPECT_EQ(header.layer_info.crop_y0, header2.layer_info.crop_y0);
+    } else if (status == JXL_DEC_NEED_IMAGE_OUT_BUFFER) {
+      EXPECT_EQ(JXL_DEC_SUCCESS,
+                JxlDecoderSetImageOutBuffer(dec.get(), &pixel_format,
+                                            pixels2.data(), pixels2.size()));
+    } else if (status == JXL_DEC_FULL_IMAGE) {
+      EXPECT_EQ(0, memcmp(pixels.data(), pixels2.data(), pixels.size()));
+      checked_frame = true;
+    } else {
+      FAIL();  // unexpected status
+    }
+  }
+  EXPECT_EQ(true, checked_frame);
+  EXPECT_EQ(true, seen_frame);
+}
 
 TEST(EncodeTest, BoxTest) {
   // Test with uncompressed boxes and with brob boxes
