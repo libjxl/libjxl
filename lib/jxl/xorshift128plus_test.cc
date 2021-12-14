@@ -287,9 +287,9 @@ void TestFloat() {
   ThreadPoolInternal pool(8);
 
 #ifdef JXL_DISABLE_SLOW_TESTS
-  const uint32_t kMaxSeed = 2048;
+  const uint32_t kMaxSeed = 256;
 #else   // JXL_DISABLE_SLOW_TESTS
-  const uint32_t kMaxSeed = 16384;  // All 14-bit seeds
+  const uint32_t kMaxSeed = 4096;
 #endif  // JXL_DISABLE_SLOW_TESTS
   pool.Run(0, kMaxSeed, ThreadPool::SkipInit(),
            [](const uint32_t seed, size_t /*thread*/) {
