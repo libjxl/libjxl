@@ -168,7 +168,7 @@ if (JPEGXL_BUNDLE_LIBPNG)
     message(FATAL_ERROR "Please run ${PROJECT_SOURCE_DIR}/deps.sh to fetch the "
             "build dependencies.")
   endif()
-  add_subdirectory(zlib EXCLUDE_FROM_ALL)
+  add_subdirectory(zlib)
   set(PNG_BUILD_ZLIB ON CACHE BOOL "")
   set(PNG_STATIC ON CACHE BOOL "")
   set(PNG_EXECUTABLES OFF CACHE BOOL "")
