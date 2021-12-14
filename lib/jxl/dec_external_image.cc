@@ -132,7 +132,7 @@ void UndoOrientation(jxl::Orientation undo_orientation, const Plane<T>& image,
     out = Plane<T>(xsize, ysize);
     RunOnPool(
         pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
-        [&](const int task, int /*thread*/) {
+        [&](const uint32_t task, size_t /*thread*/) {
           const int64_t y = task;
           const T* JXL_RESTRICT row_in = image.Row(y);
           T* JXL_RESTRICT row_out = out.Row(y);
@@ -145,7 +145,7 @@ void UndoOrientation(jxl::Orientation undo_orientation, const Plane<T>& image,
     out = Plane<T>(xsize, ysize);
     RunOnPool(
         pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
-        [&](const int task, int /*thread*/) {
+        [&](const uint32_t task, size_t /*thread*/) {
           const int64_t y = task;
           const T* JXL_RESTRICT row_in = image.Row(y);
           T* JXL_RESTRICT row_out = out.Row(ysize - y - 1);
@@ -158,7 +158,7 @@ void UndoOrientation(jxl::Orientation undo_orientation, const Plane<T>& image,
     out = Plane<T>(xsize, ysize);
     RunOnPool(
         pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
-        [&](const int task, int /*thread*/) {
+        [&](const uint32_t task, size_t /*thread*/) {
           const int64_t y = task;
           const T* JXL_RESTRICT row_in = image.Row(y);
           T* JXL_RESTRICT row_out = out.Row(ysize - y - 1);
@@ -171,7 +171,7 @@ void UndoOrientation(jxl::Orientation undo_orientation, const Plane<T>& image,
     out = Plane<T>(ysize, xsize);
     RunOnPool(
         pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
-        [&](const int task, int /*thread*/) {
+        [&](const uint32_t task, size_t /*thread*/) {
           const int64_t y = task;
           const T* JXL_RESTRICT row_in = image.Row(y);
           for (size_t x = 0; x < xsize; ++x) {
@@ -183,7 +183,7 @@ void UndoOrientation(jxl::Orientation undo_orientation, const Plane<T>& image,
     out = Plane<T>(ysize, xsize);
     RunOnPool(
         pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
-        [&](const int task, int /*thread*/) {
+        [&](const uint32_t task, size_t /*thread*/) {
           const int64_t y = task;
           const T* JXL_RESTRICT row_in = image.Row(y);
           for (size_t x = 0; x < xsize; ++x) {
@@ -195,7 +195,7 @@ void UndoOrientation(jxl::Orientation undo_orientation, const Plane<T>& image,
     out = Plane<T>(ysize, xsize);
     RunOnPool(
         pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
-        [&](const int task, int /*thread*/) {
+        [&](const uint32_t task, size_t /*thread*/) {
           const int64_t y = task;
           const T* JXL_RESTRICT row_in = image.Row(y);
           for (size_t x = 0; x < xsize; ++x) {
@@ -207,7 +207,7 @@ void UndoOrientation(jxl::Orientation undo_orientation, const Plane<T>& image,
     out = Plane<T>(ysize, xsize);
     RunOnPool(
         pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
-        [&](const int task, int /*thread*/) {
+        [&](const uint32_t task, size_t /*thread*/) {
           const int64_t y = task;
           const T* JXL_RESTRICT row_in = image.Row(y);
           for (size_t x = 0; x < xsize; ++x) {
@@ -352,7 +352,7 @@ Status ConvertChannelsToExternal(const ImageF* channels[], size_t num_channels,
             InitOutCallback(num_threads);
             return true;
           },
-          [&](const int task, int thread) {
+          [&](const uint32_t task, const size_t thread) {
             const int64_t y = task;
             const float* JXL_RESTRICT row_in[kConvertMaxChannels];
             for (size_t c = 0; c < num_channels; c++) {
@@ -394,7 +394,7 @@ Status ConvertChannelsToExternal(const ImageF* channels[], size_t num_channels,
             InitOutCallback(num_threads);
             return true;
           },
-          [&](const int task, int thread) {
+          [&](const uint32_t task, const size_t thread) {
             const int64_t y = task;
             uint8_t* row_out =
                 out_callback
@@ -429,7 +429,7 @@ Status ConvertChannelsToExternal(const ImageF* channels[], size_t num_channels,
           InitOutCallback(num_threads);
           return true;
         },
-        [&](const int task, int thread) {
+        [&](const uint32_t task, const size_t thread) {
           const int64_t y = task;
           uint8_t* row_out =
               out_callback

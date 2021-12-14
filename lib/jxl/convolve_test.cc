@@ -138,7 +138,7 @@ void TestConvolve() {
 
   ThreadPoolInternal pool(4);
   pool.Run(kConvolveMaxRadius, 40, ThreadPool::SkipInit(),
-           [](const int task, int /*thread*/) {
+           [](const uint32_t task, size_t /*thread*/) {
              const size_t xsize = task;
              Rng rng(129 + 13 * xsize);
 

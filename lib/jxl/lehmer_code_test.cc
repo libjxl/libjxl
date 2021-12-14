@@ -73,13 +73,13 @@ void RoundtripSizeRange(ThreadPool* pool, uint32_t begin, uint32_t end) {
 
   RunOnPool(
       pool, begin, end,
-      [&working_sets, end](size_t num_threads) {
+      [&working_sets, end](const size_t num_threads) {
         for (size_t i = 0; i < num_threads; i++) {
           working_sets.emplace_back(end - 1);
         }
         return true;
       },
-      [&working_sets](int n, int thread) {
+      [&working_sets](const uint32_t n, const size_t thread) {
         Roundtrip(n, &working_sets[thread]);
       },
       "lehmer test");

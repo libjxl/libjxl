@@ -454,7 +454,7 @@ Status FrameDecoder::ProcessDCGroup(size_t dc_group_id, BitReader* br) {
     FillImage(kInvSigmaNum / lf.epf_sigma_for_modular,
               &dec_state_->filter_weights.sigma);
   }
-  decoded_dc_groups_[dc_group_id] = true;
+  decoded_dc_groups_[dc_group_id] = uint8_t{true};
   return true;
 }
 
@@ -854,8 +854,7 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
   }
   if (has_error) return JXL_FAILURE("Error in DC group");
 
-  if (*std::min_element(decoded_dc_groups_.begin(), decoded_dc_groups_.end()) ==
-          true &&
+  if (*std::min_element(decoded_dc_groups_.begin(), decoded_dc_groups_.end()) &&
       !finalized_dc_) {
     if (use_slow_rendering_pipeline_) {
       PreparePipeline();
@@ -988,11 +987,11 @@ Status FrameDecoder::Flush() {
     std::atomic<bool> has_error{false};
     RunOnPool(
         pool_, 0, decoded_passes_per_ac_group_.size(),
-        [this](size_t num_threads) {
+        [this](const size_t num_threads) {
           PrepareStorage(num_threads, decoded_passes_per_ac_group_.size());
           return true;
         },
-        [this, &has_error](size_t g, size_t thread) {
+        [this, &has_error](const uint32_t g, size_t thread) {
           if (decoded_passes_per_ac_group_[g] ==
               frame_header_.passes.num_passes) {
             // This group was drawn already, nothing to do.
@@ -1036,17 +1035,23 @@ int FrameDecoder::SavedAs(const FrameHeader& header) {
   return 0;
 }
 
+bool FrameDecoder::HasEverything() const {
+  if (!decoded_dc_global_) return false;
+  if (!decoded_ac_global_) return false;
+  for (auto& have_dc_group : decoded_dc_groups_) {
+    if (!have_dc_group) return false;
+  }
+  for (auto& nb_passes : decoded_passes_per_ac_group_) {
+    if (nb_passes < max_passes_) return false;
+  }
+  return true;
+}
+
 int FrameDecoder::References() const {
   if (is_finalized_) {
     return 0;
   }
-  if ((!decoded_dc_global_ || !decoded_ac_global_ ||
-       *std::min_element(decoded_dc_groups_.begin(),
-                         decoded_dc_groups_.end()) != 1 ||
-       *std::min_element(decoded_passes_per_ac_group_.begin(),
-                         decoded_passes_per_ac_group_.end()) < max_passes_)) {
-    return 0;
-  }
+  if (!HasEverything()) return 0;
 
   int result = 0;
 
@@ -1095,12 +1100,7 @@ Status FrameDecoder::FinalizeFrame() {
     // particularly useful anyway on upsampling results), so we disable it.
     dec_state_->shared_storage.frame_header.loop_filter.epf_iters = 0;
   }
-  if ((!decoded_dc_global_ || !decoded_ac_global_ ||
-       *std::min_element(decoded_dc_groups_.begin(),
-                         decoded_dc_groups_.end()) != 1 ||
-       *std::min_element(decoded_passes_per_ac_group_.begin(),
-                         decoded_passes_per_ac_group_.end()) < max_passes_) &&
-      !allow_partial_frames_) {
+  if (!HasEverything() && !allow_partial_frames_) {
     return JXL_FAILURE(
         "FinalizeFrame called before the frame was fully decoded");
   }
