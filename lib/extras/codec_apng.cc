@@ -371,14 +371,7 @@ int processing_finish(png_structp png_ptr, png_infop info_ptr,
   png_textp text_ptr;
   int num_text;
   png_get_text(png_ptr, info_ptr, &text_ptr, &num_text);
-  msan::UnpoisonMemory(&num_text, sizeof(num_text));
-  msan::UnpoisonMemory(&text_ptr, sizeof(text_ptr));
   for (int i = 0; i < num_text; i++) {
-    size_t textlen = text_ptr[i].compression < 1 ? text_ptr[i].text_length
-                                                 : text_ptr[i].itxt_length;
-    msan::UnpoisonMemory(text_ptr[i].text, textlen + 1);
-    JXL_ASSERT(strlen(text_ptr[i].text) == textlen);
-    msan::UnpoisonCStr(text_ptr[i].key);
     (void)BlobsReaderPNG::Decode(text_ptr[i], metadata);
   }
 
@@ -492,7 +485,6 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
               frame->blend = bop != 0;
 
               for (size_t y = 0; y < h0; ++y) {
-                msan::UnpoisonMemory(frameRaw.rows[y], bytes_per_pixel * w0);
                 memcpy(static_cast<uint8_t*>(frame->color.pixels()) +
                            frame->color.stride * y,
                        frameRaw.rows[y], bytes_per_pixel * w0);
@@ -617,7 +609,6 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
           png_uint_32 proflen;
           png_get_iCCP(png_ptr, info_ptr, &name, &compression_type, &profile,
                        &proflen);
-          msan::UnpoisonMemory(&proflen, sizeof(proflen));
           ppf->icc.resize(proflen);
           memcpy(ppf->icc.data(), profile, proflen);
           have_color = true;
