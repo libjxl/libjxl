@@ -88,6 +88,11 @@ class UpsamplingStage : public RenderPipelineStage {
   void ProcessRowImpl(const RowInfo& input_rows, const RowInfo& output_rows,
                       size_t xextra, size_t xsize) const {
     static HWY_FULL(float) df;
+    const size_t xsize_v = RoundUpTo(xsize, Lanes(df));
+    for (ssize_t iy = -2; iy <= 2; iy++) {
+      msan::UnpoisonMemory(GetInputRow(input_rows, c_, iy) + xsize + 2,
+                           sizeof(float) * (xsize_v - xsize));
+    }
     for (size_t oy = 0; oy < N; oy++) {
       float* dst_row = GetOutputRow(output_rows, c_, oy);
       for (ssize_t x = -xextra; x < static_cast<ssize_t>(xsize + xextra);
@@ -119,6 +124,8 @@ class UpsamplingStage : public RenderPipelineStage {
                            ups[6], ups[7], dst_row + x * N);
         }
       }
+      msan::PoisonMemory(dst_row + xsize * N,
+                         sizeof(float) * (xsize_v - xsize) * N);
     }
   }
 
