@@ -288,8 +288,8 @@ std::vector<PatchInfo> FindTextLikePatches(
       has_screenshot_areas = true;
     }
   };
-  RunOnPool(pool, 0, opsin.ysize() / kPatchSide, ThreadPool::SkipInit(),
-            process_row, "IsScreenshotLike");
+  JXL_CHECK(RunOnPool(pool, 0, opsin.ysize() / kPatchSide, ThreadPool::NoInit,
+                      process_row, "IsScreenshotLike"));
 
   // TODO(veluca): also parallelize the rest of this function.
   if (WantDebugOutput(aux_out)) {

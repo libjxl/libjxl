@@ -208,7 +208,7 @@ class FrameDecoder {
   Status ProcessDCGlobal(BitReader* br);
   Status ProcessDCGroup(size_t dc_group_id, BitReader* br);
   void FinalizeDC();
-  void AllocateOutput();
+  Status AllocateOutput();
   void PreparePipeline();
   Status ProcessACGlobal(BitReader* br);
   Status ProcessACGroup(size_t ac_group_id, BitReader* JXL_RESTRICT* br,

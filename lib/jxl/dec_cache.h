@@ -284,7 +284,7 @@ struct PassesDecoderState {
   }
 
   // Initialize the decoder state after all of DC is decoded.
-  void InitForAC(ThreadPool* pool) {
+  Status InitForAC(ThreadPool* pool) {
     shared_storage.coeff_order_size = 0;
     for (uint8_t o = 0; o < AcStrategy::kNumValidStrategies; ++o) {
       if (((1 << o) & used_acs) == 0) continue;
@@ -314,8 +314,9 @@ struct PassesDecoderState {
                   noise.xsize(), noise.ysize());
         RandomImage3(noise_seed + group_index, rect, &noise);
       };
-      RunOnPool(pool, 0, num_x_groups * num_y_groups, ThreadPool::SkipInit(),
-                generate_noise, "Generate noise");
+      JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, num_x_groups * num_y_groups,
+                                    ThreadPool::NoInit, generate_noise,
+                                    "Generate noise"));
       {
         PROFILER_ZONE("High pass noise");
         // 4 * (1 - box kernel)
@@ -344,6 +345,7 @@ struct PassesDecoderState {
     // Avoid errors due to loading vectors on the outermost padding.
     FillImage(msan::kSanitizerSentinel, &decoded);
 #endif
+    return true;
   }
 
   void EnsureBordersStorage();

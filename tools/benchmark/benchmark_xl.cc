@@ -939,9 +939,9 @@ class Benchmark {
     PROFILER_FUNC;
     std::vector<CodecInOut> loaded_images;
     loaded_images.resize(fnames.size());
-    RunOnPool(
-        pool, 0, static_cast<int>(fnames.size()), ThreadPool::SkipInit(),
-        [&](const int task, int /*thread*/) {
+    JXL_CHECK(RunOnPool(
+        pool, 0, static_cast<uint32_t>(fnames.size()), ThreadPool::NoInit,
+        [&](const uint32_t task, size_t /*thread*/) {
           const size_t i = static_cast<size_t>(task);
           Status ok = true;
 
@@ -981,7 +981,7 @@ class Benchmark {
             }
           }
         },
-        "Load images");
+        "Load images"));
     return loaded_images;
   }
 
@@ -1030,14 +1030,14 @@ class Benchmark {
     }
 
     std::vector<uint64_t> errors_thread;
-    RunOnPool(
+    JXL_CHECK(RunOnPool(
         pool, 0, tasks->size(),
-        [&](size_t num_threads) {
+        [&](const size_t num_threads) {
           // Reduce false sharing by only writing every 8th slot (64 bytes).
           errors_thread.resize(8 * num_threads);
           return true;
         },
-        [&](const int i, const int thread) {
+        [&](const uint32_t i, const size_t thread) {
           Task& t = (*tasks)[i];
           const CodecInOut& image = loaded_images[t.idx_image];
           t.image = &image;
@@ -1048,7 +1048,7 @@ class Benchmark {
           printer.TaskDone(i, t);
           errors_thread[8 * thread] += t.stats.total_errors;
         },
-        "Benchmark tasks");
+        "Benchmark tasks"));
     if (Args()->show_progress) fprintf(stderr, "\n");
     return std::accumulate(errors_thread.begin(), errors_thread.end(), 0);
   }

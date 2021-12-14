@@ -37,7 +37,7 @@ Status CopyToT(const ImageMetadata* metadata, const ImageBundle* ib,
     out->ShrinkTo(rect.xsize(), rect.ysize());
   }
   std::atomic<bool> ok{true};
-  RunOnPool(
+  JXL_RETURN_IF_ERROR(RunOnPool(
       pool, 0, rect.ysize(),
       [&](const size_t num_threads) {
         return c_transform.Init(ib->c_current(), c_desired,
@@ -86,7 +86,7 @@ Status CopyToT(const ImageMetadata* metadata, const ImageBundle* ib,
           }
         }
       },
-      "Colorspace transform");
+      "Colorspace transform"));
   return ok.load();
 }
 

@@ -520,8 +520,8 @@ class LossyFrameEncoder {
         enc_state_, modular_frame_encoder, linear, opsin, cms_, pool_,
         aux_out_));
 
-    InitializePassesEncoder(*opsin, cms, pool_, enc_state_,
-                            modular_frame_encoder, aux_out_);
+    JXL_RETURN_IF_ERROR(InitializePassesEncoder(
+        *opsin, cms, pool_, enc_state_, modular_frame_encoder, aux_out_));
 
     enc_state_->passes.resize(enc_state_->progressive_splitter.GetNumPasses());
     for (PassesEncoderState::PassData& pass : enc_state_->passes) {
@@ -558,8 +558,9 @@ class LossyFrameEncoder {
             enc_state_->shared.block_ctx_map);
       }
     };
-    RunOnPool(pool_, 0, shared.frame_dim.num_groups, tokenize_group_init,
-              tokenize_group, "TokenizeGroup");
+    JXL_RETURN_IF_ERROR(RunOnPool(pool_, 0, shared.frame_dim.num_groups,
+                                  tokenize_group_init, tokenize_group,
+                                  "TokenizeGroup"));
 
     *frame_header = shared.frame_header;
     return true;
@@ -727,8 +728,9 @@ class LossyFrameEncoder {
           }
         };
 
-        RunOnPool(pool_, 0, map->ysize(), ThreadPool::SkipInit(), process_row,
-                  "FindCorrelation");
+        JXL_RETURN_IF_ERROR(RunOnPool(pool_, 0, map->ysize(),
+                                      ThreadPool::NoInit, process_row,
+                                      "FindCorrelation"));
       }
     }
     if (!frame_header->chroma_subsampling.Is444()) {
@@ -864,8 +866,9 @@ class LossyFrameEncoder {
       modular_frame_encoder->AddACMetadata(group_index, /*jpeg_transcode=*/true,
                                            enc_state_);
     };
-    RunOnPool(pool_, 0, shared.frame_dim.num_dc_groups, ThreadPool::SkipInit(),
-              compute_dc_coeffs, "Compute DC coeffs");
+    JXL_RETURN_IF_ERROR(RunOnPool(pool_, 0, shared.frame_dim.num_dc_groups,
+                                  ThreadPool::NoInit, compute_dc_coeffs,
+                                  "Compute DC coeffs"));
 
     // Must happen before WriteFrameHeader!
     shared.frame_header.UpdateFlag(true, FrameHeader::kSkipAdaptiveDCSmoothing);
@@ -908,8 +911,9 @@ class LossyFrameEncoder {
             enc_state_->shared.block_ctx_map);
       }
     };
-    RunOnPool(pool_, 0, shared.frame_dim.num_groups, tokenize_group_init,
-              tokenize_group, "TokenizeGroup");
+    JXL_RETURN_IF_ERROR(RunOnPool(pool_, 0, shared.frame_dim.num_groups,
+                                  tokenize_group_init, tokenize_group,
+                                  "TokenizeGroup"));
     *frame_header = shared.frame_header;
     doing_jpeg_recompression = true;
     return true;
@@ -1330,8 +1334,9 @@ Status EncodeFrame(const CompressParams& cparams_orig,
           ModularStreamId::ACMetadata(group_index)));
     }
   };
-  RunOnPool(pool, 0, frame_dim.num_dc_groups, resize_aux_outs, process_dc_group,
-            "EncodeDCGroup");
+  JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, frame_dim.num_dc_groups,
+                                resize_aux_outs, process_dc_group,
+                                "EncodeDCGroup"));
 
   if (frame_header->encoding == FrameEncoding::kVarDCT) {
     JXL_RETURN_IF_ERROR(lossy_frame_encoder.EncodeGlobalACInfo(
@@ -1360,8 +1365,8 @@ Status EncodeFrame(const CompressParams& cparams_orig,
       }
     }
   };
-  RunOnPool(pool, 0, num_groups, resize_aux_outs, process_group,
-            "EncodeGroupCoefficients");
+  JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, num_groups, resize_aux_outs,
+                                process_group, "EncodeGroupCoefficients"));
 
   // Resizing aux_outs to 0 also Assimilates the array.
   static_cast<void>(resize_aux_outs(0));

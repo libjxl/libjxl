@@ -587,7 +587,7 @@ ImageF AdaptiveQuantizationMap(const float butteraugli_target,
   AdaptiveQuantizationImpl impl;
   impl.Init(xyb);
   *mask = ImageF(frame_dim.xsize_blocks, frame_dim.ysize_blocks);
-  RunOnPool(
+  JXL_CHECK(RunOnPool(
       pool, 0,
       DivCeil(frame_dim.xsize_blocks, kEncTileDimInBlocks) *
           DivCeil(frame_dim.ysize_blocks, kEncTileDimInBlocks),
@@ -609,7 +609,7 @@ ImageF AdaptiveQuantizationMap(const float butteraugli_target,
         Rect r(bx0, by0, bx1 - bx0, by1 - by0);
         impl.ComputeTile(butteraugli_target, scale, xyb, r, thread, mask);
       },
-      "AQ DiffPrecompute");
+      "AQ DiffPrecompute"));
 
   return std::move(impl).aq_map;
 }
@@ -1061,10 +1061,10 @@ ImageBundle RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
   std::unique_ptr<ModularFrameEncoder> modular_frame_encoder =
       jxl::make_unique<ModularFrameEncoder>(enc_state->shared.frame_header,
                                             enc_state->cparams);
-  InitializePassesEncoder(opsin, cms, pool, enc_state,
-                          modular_frame_encoder.get(), nullptr);
+  JXL_CHECK(InitializePassesEncoder(opsin, cms, pool, enc_state,
+                                    modular_frame_encoder.get(), nullptr));
   JXL_CHECK(dec_state->Init());
-  dec_state->InitForAC(pool);
+  JXL_CHECK(dec_state->InitForAC(pool));
 
   ImageBundle decoded(&enc_state->shared.metadata->m);
   decoded.origin = enc_state->shared.frame_header.frame_origin;
@@ -1106,7 +1106,8 @@ ImageBundle RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
         enc_state->coeffs, group_index, dec_state.get(),
         &group_dec_caches[thread], thread, &decoded, nullptr));
   };
-  RunOnPool(pool, 0, num_groups, allocate_storage, process_group, "AQ loop");
+  JXL_CHECK(RunOnPool(pool, 0, num_groups, allocate_storage, process_group,
+                      "AQ loop"));
 
   // Fine to do a JXL_ASSERT instead of error handling, since this only happens
   // on the encoder side where we can't be fed with invalid data.
