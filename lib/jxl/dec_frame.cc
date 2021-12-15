@@ -480,29 +480,38 @@ void FrameDecoder::AllocateOutput() {
                                    frame_dim_.ysize_upsampled_padded),
                            dec_state_->output_encoding_info.color_encoding);
   }
-  dec_state_->extra_channels.clear();
-  if (metadata.m.num_extra_channels > 0) {
+  if (dec_state_->render_pipeline) {
+    // TODO(veluca): consider not reallocating ECs if not needed.
+    decoded_->extra_channels().clear();
     for (size_t i = 0; i < metadata.m.num_extra_channels; i++) {
-      uint32_t ecups = frame_header_.extra_channel_upsampling[i];
-      dec_state_->extra_channels.emplace_back(
-          DivCeil(frame_dim_.xsize_upsampled_padded, ecups),
-          DivCeil(frame_dim_.ysize_upsampled_padded, ecups));
+      decoded_->extra_channels().emplace_back(
+          frame_dim_.xsize_upsampled_padded, frame_dim_.ysize_upsampled_padded);
+    }
+  } else {
+    dec_state_->extra_channels.clear();
+    if (metadata.m.num_extra_channels > 0) {
+      for (size_t i = 0; i < metadata.m.num_extra_channels; i++) {
+        uint32_t ecups = frame_header_.extra_channel_upsampling[i];
+        dec_state_->extra_channels.emplace_back(
+            DivCeil(frame_dim_.xsize_upsampled_padded, ecups),
+            DivCeil(frame_dim_.ysize_upsampled_padded, ecups));
 #if JXL_MEMORY_SANITIZER
-      // Avoid errors due to loading vectors on the outermost padding.
-      // Upsample of extra channels requires this padding to be initialized.
-      // TODO(deymo): Remove this and use rects up to {x,y}size_upsampled
-      // instead of the padded one.
-      for (size_t y = 0; y < DivCeil(frame_dim_.ysize_upsampled_padded, ecups);
-           y++) {
-        for (size_t x = (y < DivCeil(frame_dim_.ysize_upsampled, ecups)
-                             ? DivCeil(frame_dim_.xsize_upsampled, ecups)
-                             : 0);
-             x < DivCeil(frame_dim_.xsize_upsampled_padded, ecups); x++) {
-          dec_state_->extra_channels.back().Row(y)[x] =
-              msan::kSanitizerSentinel;
+        // Avoid errors due to loading vectors on the outermost padding.
+        // Upsample of extra channels requires this padding to be initialized.
+        // TODO(deymo): Remove this and use rects up to {x,y}size_upsampled
+        // instead of the padded one.
+        for (size_t y = 0;
+             y < DivCeil(frame_dim_.ysize_upsampled_padded, ecups); y++) {
+          for (size_t x = (y < DivCeil(frame_dim_.ysize_upsampled, ecups)
+                               ? DivCeil(frame_dim_.xsize_upsampled, ecups)
+                               : 0);
+               x < DivCeil(frame_dim_.xsize_upsampled_padded, ecups); x++) {
+            dec_state_->extra_channels.back().Row(y)[x] =
+                msan::kSanitizerSentinel;
+          }
         }
-      }
 #endif
+      }
     }
   }
   decoded_->origin = dec_state_->shared->frame_header.frame_origin;
@@ -674,11 +683,9 @@ Status FrameDecoder::ProcessACGroup(size_t ac_group_id,
 }
 
 void FrameDecoder::PreparePipeline() {
-  if (frame_header_.nonserialized_metadata->m.num_extra_channels != 0) {
-    JXL_ABORT("Not implemented: extra channels");
-  }
-
-  RenderPipeline::Builder builder(/*num_c=*/3, frame_header_.passes.num_passes);
+  RenderPipeline::Builder builder(
+      /*num_c=*/3 + frame_header_.nonserialized_metadata->m.num_extra_channels,
+      frame_header_.passes.num_passes);
 
   if (use_slow_rendering_pipeline_) {
     builder.UseSimpleImplementation();
@@ -714,6 +721,26 @@ void FrameDecoder::PreparePipeline() {
     }
   }
 
+  bool late_ec_upsample = frame_header_.upsampling != 1;
+  for (auto ecups : frame_header_.extra_channel_upsampling) {
+    if (ecups != frame_header_.upsampling) {
+      // If patches are applied, either frame_header.upsampling == 1 or
+      // late_ec_upsample is true.
+      late_ec_upsample = false;
+    }
+  }
+
+  if (!late_ec_upsample) {
+    for (size_t ec = 0; ec < frame_header_.extra_channel_upsampling.size();
+         ec++) {
+      if (frame_header_.extra_channel_upsampling[ec] != 1) {
+        builder.AddStage(GetUpsamplingStage(
+            frame_header_.nonserialized_metadata->transform_data, 3 + ec,
+            CeilLog2Nonzero(frame_header_.extra_channel_upsampling[ec])));
+      }
+    }
+  }
+
   if ((frame_header_.flags & FrameHeader::kPatches) != 0) {
     JXL_ABORT("Not implemented: patches");
   }
@@ -721,14 +748,18 @@ void FrameDecoder::PreparePipeline() {
     builder.AddStage(
         GetSplineStage(&dec_state_->shared->image_features.splines));
   }
-  // TODO(veluca): extra channels will need some handling too.
+
   if (frame_header_.upsampling != 1) {
-    for (size_t c = 0; c < 3; c++) {
+    size_t nb_channels =
+        3 +
+        (late_ec_upsample ? frame_header_.extra_channel_upsampling.size() : 0);
+    for (size_t c = 0; c < nb_channels; c++) {
       builder.AddStage(GetUpsamplingStage(
           frame_header_.nonserialized_metadata->transform_data, c,
           CeilLog2Nonzero(frame_header_.upsampling)));
     }
   }
+
   if ((frame_header_.flags & FrameHeader::kNoise) != 0) {
     JXL_ABORT("Not implemented: noise");
   }
@@ -750,6 +781,10 @@ void FrameDecoder::PreparePipeline() {
 
   if (ImageBlender::NeedsBlending(dec_state_)) {
     JXL_ABORT("Not implemented: blending");
+  }
+  if (render_spotcolors_ &&
+      frame_header_.nonserialized_metadata->m.Find(ExtraChannel::kSpotColor)) {
+    JXL_ABORT("Not implemented: rendering spot colors");
   }
   if (dec_state_->pixel_callback) {
     JXL_ABORT("Not implemented: pixel callback");
@@ -1124,46 +1159,49 @@ Status FrameDecoder::FinalizeFrame() {
 
   JXL_RETURN_IF_ERROR(Flush());
 
-  if (dec_state_->shared->frame_header.CanBeReferenced() &&
-      (frame_header_.frame_type != kRegularFrame || coalescing_)) {
-    size_t id = dec_state_->shared->frame_header.save_as_reference;
-    auto& reference_frame = dec_state_->shared_storage.reference_frames[id];
-    if (dec_state_->pre_color_transform_frame.xsize() == 0) {
-      reference_frame.storage = decoded_->Copy();
-    } else {
-      reference_frame.storage = ImageBundle(decoded_->metadata());
-      reference_frame.storage.SetFromImage(
-          CopyImage(dec_state_->pre_color_transform_frame),
-          decoded_->c_current());
-      if (decoded_->HasExtraChannels()) {
-        const std::vector<ImageF>* ecs = &dec_state_->pre_color_transform_ec;
-        if (ecs->empty()) ecs = &decoded_->extra_channels();
-        std::vector<ImageF> extra_channels;
-        for (const auto& ec : *ecs) {
-          extra_channels.push_back(CopyImage(ec));
+  if (!dec_state_->render_pipeline) {
+    if (dec_state_->shared->frame_header.CanBeReferenced() &&
+        (frame_header_.frame_type != kRegularFrame || coalescing_)) {
+      size_t id = dec_state_->shared->frame_header.save_as_reference;
+      auto& reference_frame = dec_state_->shared_storage.reference_frames[id];
+      if (dec_state_->pre_color_transform_frame.xsize() == 0) {
+        reference_frame.storage = decoded_->Copy();
+      } else {
+        reference_frame.storage = ImageBundle(decoded_->metadata());
+        reference_frame.storage.SetFromImage(
+            CopyImage(dec_state_->pre_color_transform_frame),
+            decoded_->c_current());
+        if (decoded_->HasExtraChannels()) {
+          const std::vector<ImageF>* ecs = &dec_state_->pre_color_transform_ec;
+          if (ecs->empty()) ecs = &decoded_->extra_channels();
+          std::vector<ImageF> extra_channels;
+          for (const auto& ec : *ecs) {
+            extra_channels.push_back(CopyImage(ec));
+          }
+          reference_frame.storage.SetExtraChannels(std::move(extra_channels));
         }
-        reference_frame.storage.SetExtraChannels(std::move(extra_channels));
       }
-    }
-    reference_frame.frame = &reference_frame.storage;
-    reference_frame.ib_is_in_xyb =
-        dec_state_->shared->frame_header.save_before_color_transform;
-    if (!dec_state_->shared->frame_header.save_before_color_transform) {
-      const CodecMetadata* metadata =
-          dec_state_->shared->frame_header.nonserialized_metadata;
-      if (reference_frame.frame->xsize() < metadata->xsize() ||
-          reference_frame.frame->ysize() < metadata->ysize()) {
-        return JXL_FAILURE(
-            "trying to save a reference frame that is too small: %" PRIuS
-            "x%" PRIuS
-            " "
-            "instead of %" PRIuS "x%" PRIuS,
-            reference_frame.frame->xsize(), reference_frame.frame->ysize(),
-            metadata->xsize(), metadata->ysize());
+      reference_frame.frame = &reference_frame.storage;
+      reference_frame.ib_is_in_xyb =
+          dec_state_->shared->frame_header.save_before_color_transform;
+      if (!dec_state_->shared->frame_header.save_before_color_transform) {
+        const CodecMetadata* metadata =
+            dec_state_->shared->frame_header.nonserialized_metadata;
+        if (reference_frame.frame->xsize() < metadata->xsize() ||
+            reference_frame.frame->ysize() < metadata->ysize()) {
+          return JXL_FAILURE(
+              "trying to save a reference frame that is too small: %" PRIuS
+              "x%" PRIuS
+              " "
+              "instead of %" PRIuS "x%" PRIuS,
+              reference_frame.frame->xsize(), reference_frame.frame->ysize(),
+              metadata->xsize(), metadata->ysize());
+        }
+        reference_frame.storage.ShrinkTo(metadata->xsize(), metadata->ysize());
       }
-      reference_frame.storage.ShrinkTo(metadata->xsize(), metadata->ysize());
     }
   }
+
   if (frame_header_.nonserialized_is_preview) {
     // Fix possible larger image size (multiple of kBlockDim)
     // TODO(lode): verify if and when that happens.
@@ -1186,7 +1224,7 @@ Status FrameDecoder::FinalizeFrame() {
     }
   }
 
-  if (render_spotcolors_) {
+  if (render_spotcolors_ && !dec_state_->render_pipeline) {
     for (size_t i = 0; i < decoded_->extra_channels().size(); i++) {
       // Don't use Find() because there may be multiple spot color channels.
       const ExtraChannelInfo& eci = decoded_->metadata()->extra_channel_info[i];

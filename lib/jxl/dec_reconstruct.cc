@@ -1155,6 +1155,9 @@ Status FinalizeImageRect(
 Status FinalizeFrameDecoding(ImageBundle* decoded,
                              PassesDecoderState* dec_state, ThreadPool* pool,
                              bool force_fir, bool skip_blending, bool move_ec) {
+  if (dec_state->render_pipeline) {
+    return true;
+  }
   const FrameHeader& frame_header = dec_state->shared->frame_header;
   const FrameDimensions& frame_dim = dec_state->shared->frame_dim;
 

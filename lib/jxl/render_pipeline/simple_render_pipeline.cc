@@ -13,10 +13,12 @@ void SimpleRenderPipeline::PrepareForThreadsInternal(size_t num) {
   auto ch_size = [](size_t frame_size, size_t shift) {
     return DivCeil(frame_size, 1 << shift) + kRenderPipelineXOffset * 2;
   };
-  for (auto ch_shifts : channel_shifts_[0]) {
-    channel_data_.push_back(ImageF(
-        ch_size(frame_dimensions_.xsize_upsampled_padded, ch_shifts.first),
-        ch_size(frame_dimensions_.ysize_upsampled_padded, ch_shifts.second)));
+  for (size_t c = 0; c < channel_shifts_[0].size(); c++) {
+    channel_data_.push_back(
+        ImageF(ch_size(frame_dimensions_.GetUpsampledXSize(c),
+                       channel_shifts_[0][c].first),
+               ch_size(frame_dimensions_.GetUpsampledYSize(c),
+                       channel_shifts_[0][c].second)));
     msan::PoisonImage(channel_data_.back());
   }
 }
@@ -34,15 +36,13 @@ std::vector<std::pair<ImageF*, Rect>> SimpleRenderPipeline::PrepareBuffers(
                        channel_shifts_[0][c].first;
     size_t ygroupdim = (frame_dimensions_.group_dim << base_color_shift) >>
                        channel_shifts_[0][c].second;
-    const Rect rect(kRenderPipelineXOffset + gx * xgroupdim,
-                    kRenderPipelineXOffset + gy * ygroupdim, xgroupdim,
-                    ygroupdim,
-                    kRenderPipelineXOffset +
-                        DivCeil(frame_dimensions_.xsize_upsampled_padded,
-                                1 << channel_shifts_[0][c].first),
-                    kRenderPipelineXOffset +
-                        DivCeil(frame_dimensions_.ysize_upsampled_padded,
-                                1 << channel_shifts_[0][c].second));
+    const Rect rect(
+        kRenderPipelineXOffset + gx * xgroupdim,
+        kRenderPipelineXOffset + gy * ygroupdim, xgroupdim, ygroupdim,
+        kRenderPipelineXOffset + DivCeil(frame_dimensions_.GetUpsampledXSize(c),
+                                         1 << channel_shifts_[0][c].first),
+        kRenderPipelineXOffset + DivCeil(frame_dimensions_.GetUpsampledYSize(c),
+                                         1 << channel_shifts_[0][c].second));
     ret.emplace_back(&channel_data_[c], rect);
   }
   return ret;
@@ -50,6 +50,7 @@ std::vector<std::pair<ImageF*, Rect>> SimpleRenderPipeline::PrepareBuffers(
 
 void SimpleRenderPipeline::ProcessBuffers(size_t group_id, size_t thread_id) {
   if (!ReceivedAllInput()) return;
+
   for (const auto& ch : channel_data_) {
     (void)ch;
     JXL_CHECK_IMAGE_INITIALIZED(
@@ -116,22 +117,18 @@ void SimpleRenderPipeline::ProcessBuffers(size_t group_id, size_t thread_id) {
       }
     }
 
-    // All non-ignored channels should have the same size.
-    constexpr size_t kInf = size_t(-1);
-    size_t ysize = kInf;
-    size_t xsize = kInf;
+    size_t ysize = 0;
+    size_t xsize = 0;
     for (size_t c = 0; c < channel_data_.size(); c++) {
       if (stage->GetChannelMode(c) == RenderPipelineChannelMode::kIgnored) {
         continue;
       }
-      JXL_ASSERT(ysize == input_sizes[c].second || ysize == kInf);
-      ysize = input_sizes[c].second;
-      JXL_ASSERT(xsize == input_sizes[c].first || xsize == kInf);
-      xsize = input_sizes[c].first;
+      ysize = std::max(input_sizes[c].second, ysize);
+      xsize = std::max(input_sizes[c].first, xsize);
     }
 
-    JXL_ASSERT(ysize != kInf);
-    JXL_ASSERT(xsize != kInf);
+    JXL_ASSERT(ysize != 0);
+    JXL_ASSERT(xsize != 0);
 
     RenderPipelineStage::RowInfo input_rows(channel_data_.size());
     RenderPipelineStage::RowInfo output_rows(channel_data_.size());

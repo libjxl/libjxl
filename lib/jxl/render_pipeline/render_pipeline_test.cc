@@ -107,6 +107,9 @@ TEST_P(RenderPipelineTestParam, PipelineTest) {
   dparams.use_slow_render_pipeline = true;
   ASSERT_TRUE(DecodeFile(dparams, compressed, &io_slow_pipeline, &pool));
 
+  JXL_CHECK(EncodeToFile(io_default, "/tmp/default.png"));
+  JXL_CHECK(EncodeToFile(io_slow_pipeline, "/tmp/pipeline.png"));
+
   ASSERT_EQ(io_default.frames.size(), io_slow_pipeline.frames.size());
   for (size_t i = 0; i < io_default.frames.size(); i++) {
     VerifyRelativeError(*io_default.frames[i].color(),
@@ -251,6 +254,30 @@ std::vector<RenderPipelineTestInputSettings> GeneratePipelineTests() {
       s.cparams_descr = "ModularLossy";
       s.cparams.modular_mode = true;
       s.cparams.quality_pair = {90, 90};
+      all_tests.push_back(s);
+    }
+
+    {
+      auto s = settings;
+      s.input_path = "wide-gamut-tests/R2020-sRGB-blue.png";
+      s.cparams_descr = "AlphaVarDCT";
+      all_tests.push_back(s);
+    }
+
+    {
+      auto s = settings;
+      s.cparams.modular_mode = true;
+      s.cparams.butteraugli_distance = 0;
+      s.input_path = "wide-gamut-tests/R2020-sRGB-blue.png";
+      s.cparams_descr = "AlphaLossless";
+      all_tests.push_back(s);
+    }
+
+    {
+      auto s = settings;
+      s.input_path = "wide-gamut-tests/R2020-sRGB-blue.png";
+      s.cparams_descr = "AlphaDownsample";
+      s.cparams.ec_resampling = 2;
       all_tests.push_back(s);
     }
   }
