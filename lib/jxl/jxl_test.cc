@@ -863,7 +863,7 @@ TEST(JxlTest, RoundtripAlphaResamplingOnlyAlpha) {
   CodecInOut io2;
   EXPECT_TRUE(DecodeFile(dparams, compressed, &io2, pool));
 
-  EXPECT_LE(compressed.size(), 34000u);
+  EXPECT_LE(compressed.size(), 34200u);
 
   EXPECT_THAT(ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
                                   /*distmap=*/nullptr, pool),

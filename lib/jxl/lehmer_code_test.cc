@@ -50,7 +50,7 @@ void Roundtrip(size_t n, WorkingSet<PermutationT>* ws) {
   std::iota(ws->permutation.begin(), ws->permutation.begin() + n, 0);
 
   // For various random permutations:
-  for (size_t rep = 0; rep < 100; ++rep) {
+  for (size_t rep = 0; rep < 3; ++rep) {
     rng.Shuffle(ws->permutation.data(), n);
 
     // Must decode to the same permutation
