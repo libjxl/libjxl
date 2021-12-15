@@ -45,7 +45,7 @@ void InvHSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
 
   RunOnPool(
       pool, 0, chin.h, ThreadPool::SkipInit(),
-      [&](const int task, const int thread) {
+      [&](const uint32_t task, size_t /* thread */) {
         const size_t y = task;
         const pixel_type *JXL_RESTRICT p_residual = chin_residual.Row(y);
         const pixel_type *JXL_RESTRICT p_avg = chin.Row(y);
@@ -115,7 +115,7 @@ void InvVSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
   constexpr int kColsPerThread = 64;
   RunOnPool(
       pool, 0, DivCeil(chin.w, kColsPerThread), ThreadPool::SkipInit(),
-      [&](const int task, const int thread) {
+      [&](const uint32_t task, size_t /* thread */) {
         const size_t x0 = task * kColsPerThread;
         const size_t x1 = std::min((size_t)(task + 1) * kColsPerThread, chin.w);
         // We only iterate up to std::min(chin_residual.h, chin.h) which is

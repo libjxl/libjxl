@@ -841,7 +841,7 @@ class ConvolveT {
     const int64_t stride = in.PixelsPerRow();
     RunOnPool(
         pool, ybegin, yend, ThreadPool::SkipInit(),
-        [&](const int y, int /*thread*/) HWY_ATTR {
+        [&](const uint32_t y, size_t /*thread*/) HWY_ATTR {
           RunRow<kSizeModN>(rect.ConstRow(in, y), rect.xsize(), stride,
                             WrapRowUnchanged(), weights, out->Row(y));
         },
@@ -858,7 +858,7 @@ class ConvolveT {
     const int64_t stride = in.PixelsPerRow();
     RunOnPool(
         pool, ybegin, yend, ThreadPool::SkipInit(),
-        [&](const int y, int /*thread*/) HWY_ATTR {
+        [&](const uint32_t y, size_t /*thread*/) HWY_ATTR {
           for (size_t c = 0; c < 3; ++c) {
             RunRow<kSizeModN>(rect.ConstPlaneRow(in, c, y), rect.xsize(),
                               stride, WrapRowUnchanged(), weights,
@@ -951,7 +951,7 @@ void Symmetric5(const ImageF& in, const Rect& rect,
   const size_t ysize = rect.ysize();
   RunOnPool(
       pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
-      [&](const int task, int /*thread*/) {
+      [&](const uint32_t task, size_t /*thread*/) {
         const int64_t iy = task;
 
         if (iy < 2 || iy >= static_cast<ssize_t>(ysize) - 2) {
@@ -971,7 +971,7 @@ void Symmetric5_3(const Image3F& in, const Rect& rect,
   const size_t ysize = rect.ysize();
   RunOnPool(
       pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
-      [&](const int task, int /*thread*/) {
+      [&](const uint32_t task, size_t /*thread*/) {
         const size_t iy = task;
 
         if (iy < 2 || iy >= ysize - 2) {
@@ -1154,7 +1154,7 @@ void SlowSymmetric3(const ImageF& in, const Rect& rect,
 
   RunOnPool(
       pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
-      [&](const int task, int /*thread*/) {
+      [&](const uint32_t task, size_t /*thread*/) {
         const int64_t iy = task;
         float* JXL_RESTRICT out_row = out->Row(static_cast<size_t>(iy));
 
@@ -1179,7 +1179,7 @@ void SlowSymmetric3(const Image3F& in, const Rect& rect,
 
   RunOnPool(
       pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
-      [&](const int task, int /*thread*/) {
+      [&](const uint32_t task, size_t /*thread*/) {
         const int64_t iy = task;
         const size_t oy = static_cast<size_t>(iy);
 
@@ -1237,7 +1237,7 @@ void SlowSeparable5(const ImageF& in, const Rect& rect,
   const size_t ysize = rect.ysize();
   RunOnPool(
       pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
-      [&](const int task, int /*thread*/) {
+      [&](const uint32_t task, size_t /*thread*/) {
         const int64_t y = task;
 
         float* const JXL_RESTRICT row_out = out->Row(y);
@@ -1267,7 +1267,7 @@ void SlowSeparable7(const ImageF& in, const Rect& rect,
   const size_t ysize = rect.ysize();
   RunOnPool(
       pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
-      [&](const int task, int /*thread*/) {
+      [&](const uint32_t task, size_t /*thread*/) {
         const int64_t y = task;
 
         float* const JXL_RESTRICT row_out = out->Row(y);
@@ -1298,7 +1298,7 @@ void SlowLaplacian5(const ImageF& in, const Rect& rect, ThreadPool* pool,
 
   RunOnPool(
       pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
-      [&](const int task, int /*thread*/) {
+      [&](const uint32_t task, size_t /*thread*/) {
         const int64_t y = task;
 
         const float* const JXL_RESTRICT row_t =

@@ -162,6 +162,38 @@ if (JPEGXL_ENABLE_VIEWERS OR NOT JPEGXL_ENABLE_SKCMS)
   endif()
 endif()
 
+# libpng
+if (JPEGXL_BUNDLE_LIBPNG)
+  if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/libpng/CMakeLists.txt")
+    message(FATAL_ERROR "Please run ${PROJECT_SOURCE_DIR}/deps.sh to fetch the "
+            "build dependencies.")
+  endif()
+  add_subdirectory(zlib)
+  set(PNG_BUILD_ZLIB ON CACHE BOOL "")
+  set(PNG_STATIC ON CACHE BOOL "")
+  set(PNG_EXECUTABLES OFF CACHE BOOL "")
+  set(PNG_TESTS OFF CACHE BOOL "")
+  set(SKIP_INSTALL_ALL ON CACHE BOOL "")
+  set(ZLIB_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/zlib/")
+  set(ZLIB_LIBRARY zlibstatic)
+  add_subdirectory(libpng EXCLUDE_FROM_ALL)
+  set(PNG_FOUND YES PARENT_SCOPE)
+  set(PNG_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/libpng/" PARENT_SCOPE)
+  set(PNG_LIBRARIES png_static PARENT_SCOPE)
+  if(JPEGXL_DEP_LICENSE_DIR)
+    configure_file("${CMAKE_CURRENT_SOURCE_DIR}/libpng/LICENSE"
+                   ${PROJECT_BINARY_DIR}/LICENSE.libpng COPYONLY)
+  endif()
+else()
+  find_package(PNG)
+  if(PNG_FOUND AND JPEGXL_DEP_LICENSE_DIR)
+    configure_file("${JPEGXL_DEP_LICENSE_DIR}/zlib1g-dev/copyright"
+                   ${PROJECT_BINARY_DIR}/LICENSE.zlib COPYONLY)
+    configure_file("${JPEGXL_DEP_LICENSE_DIR}/libpng-dev/copyright"
+                   ${PROJECT_BINARY_DIR}/LICENSE.libpng COPYONLY)
+  endif()  # JPEGXL_DEP_LICENSE_DIR
+endif()
+
 # sjpeg
 if (JPEGXL_ENABLE_SJPEG)
   if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/sjpeg/CMakeLists.txt")

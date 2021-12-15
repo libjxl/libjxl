@@ -805,7 +805,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
 
   RunOnPool(
       pool, 0, stream_params.size(), ThreadPool::SkipInit(),
-      [&](size_t i, size_t _) {
+      [&](const uint32_t i, size_t /* thread */) {
         stream_options[stream_params[i].id.ID(frame_dim)] = cparams.options;
         JXL_CHECK(PrepareStreamParams(
             stream_params[i].rect, cparams, stream_params[i].minShift,
@@ -928,7 +928,7 @@ Status ModularFrameEncoder::PrepareEncoding(ThreadPool* pool,
     std::vector<Tree> trees(useful_splits.size() - 1);
     RunOnPool(
         pool, 0, useful_splits.size() - 1, ThreadPool::SkipInit(),
-        [&](size_t chunk, size_t _) {
+        [&](const uint32_t chunk, size_t /* thread */) {
           // TODO(veluca): parallelize more.
           size_t total_pixels = 0;
           uint32_t start = useful_splits[chunk];
@@ -1024,7 +1024,7 @@ Status ModularFrameEncoder::PrepareEncoding(ThreadPool* pool,
   image_widths.resize(num_streams);
   RunOnPool(
       pool, 0, num_streams, ThreadPool::SkipInit(),
-      [&](size_t stream_id, size_t _) {
+      [&](const uint32_t stream_id, size_t /* thread */) {
         AuxOut my_aux_out;
         if (aux_out) {
           my_aux_out.dump_image = aux_out->dump_image;

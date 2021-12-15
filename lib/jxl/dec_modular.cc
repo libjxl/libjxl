@@ -515,7 +515,7 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
         JXL_ASSERT(!fp);
         RunOnPool(
             pool, 0, ysize_shifted, jxl::ThreadPool::SkipInit(),
-            [&](const int task, const int thread) {
+            [&](const uint32_t task, size_t /* thread */) {
               const size_t y = task;
               const pixel_type* const JXL_RESTRICT row_in = ch_in.Row(y);
               const pixel_type* const JXL_RESTRICT row_in_Y =
@@ -530,7 +530,7 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
         int exp_bits = metadata->m.bit_depth.exponent_bits_per_sample;
         RunOnPool(
             pool, 0, ysize_shifted, jxl::ThreadPool::SkipInit(),
-            [&](const int task, const int thread) {
+            [&](const uint32_t task, size_t /* thread */) {
               const size_t y = task;
               const pixel_type* const JXL_RESTRICT row_in = ch_in.Row(y);
               float* const JXL_RESTRICT row_out = r.PlaneRow(&decoded, c, y);
@@ -540,7 +540,7 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
       } else {
         RunOnPool(
             pool, 0, ysize_shifted, jxl::ThreadPool::SkipInit(),
-            [&](const int task, const int thread) {
+            [&](const uint32_t task, size_t /* thread */) {
               const size_t y = task;
               const pixel_type* const JXL_RESTRICT row_in = ch_in.Row(y);
               if (rgb_from_gray) {

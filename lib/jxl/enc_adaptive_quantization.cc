@@ -591,11 +591,11 @@ ImageF AdaptiveQuantizationMap(const float butteraugli_target,
       pool, 0,
       DivCeil(frame_dim.xsize_blocks, kEncTileDimInBlocks) *
           DivCeil(frame_dim.ysize_blocks, kEncTileDimInBlocks),
-      [&](size_t num_threads) {
+      [&](const size_t num_threads) {
         impl.PrepareBuffers(num_threads);
         return true;
       },
-      [&](const int tid, int thread) {
+      [&](const uint32_t tid, const size_t thread) {
         size_t n_enc_tiles =
             DivCeil(frame_dim.xsize_blocks, kEncTileDimInBlocks);
         size_t tx = tid % n_enc_tiles;
@@ -1091,12 +1091,13 @@ ImageBundle RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
   }
 
   hwy::AlignedUniquePtr<GroupDecCache[]> group_dec_caches;
-  const auto allocate_storage = [&](size_t num_threads) {
+  const auto allocate_storage = [&](const size_t num_threads) {
     dec_state->EnsureStorage(num_threads);
     group_dec_caches = hwy::MakeUniqueAlignedArray<GroupDecCache>(num_threads);
     return true;
   };
-  const auto process_group = [&](const int group_index, const int thread) {
+  const auto process_group = [&](const uint32_t group_index,
+                                 const size_t thread) {
     if (dec_state->shared->frame_header.loop_filter.epf_iters > 0) {
       ComputeSigma(dec_state->shared->BlockGroupRect(group_index),
                    dec_state.get());

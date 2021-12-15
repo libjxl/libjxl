@@ -39,12 +39,12 @@ Status CopyToT(const ImageMetadata* metadata, const ImageBundle* ib,
   std::atomic<bool> ok{true};
   RunOnPool(
       pool, 0, rect.ysize(),
-      [&](size_t num_threads) {
+      [&](const size_t num_threads) {
         return c_transform.Init(ib->c_current(), c_desired,
                                 metadata->IntensityTarget(), rect.xsize(),
                                 num_threads);
       },
-      [&](const int y, const int thread) {
+      [&](const uint32_t y, const size_t thread) {
         float* mutable_src_buf = c_transform.BufSrc(thread);
         const float* src_buf = mutable_src_buf;
         // Interleave input.

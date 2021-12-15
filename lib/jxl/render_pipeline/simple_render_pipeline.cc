@@ -34,11 +34,15 @@ std::vector<std::pair<ImageF*, Rect>> SimpleRenderPipeline::PrepareBuffers(
                        channel_shifts_[0][c].first;
     size_t ygroupdim = (frame_dimensions_.group_dim << base_color_shift) >>
                        channel_shifts_[0][c].second;
-    const Rect rect(
-        kRenderPipelineXOffset + gx * xgroupdim,
-        kRenderPipelineXOffset + gy * ygroupdim, xgroupdim, ygroupdim,
-        kRenderPipelineXOffset + frame_dimensions_.xsize_upsampled_padded,
-        kRenderPipelineXOffset + frame_dimensions_.ysize_upsampled_padded);
+    const Rect rect(kRenderPipelineXOffset + gx * xgroupdim,
+                    kRenderPipelineXOffset + gy * ygroupdim, xgroupdim,
+                    ygroupdim,
+                    kRenderPipelineXOffset +
+                        DivCeil(frame_dimensions_.xsize_upsampled_padded,
+                                1 << channel_shifts_[0][c].first),
+                    kRenderPipelineXOffset +
+                        DivCeil(frame_dimensions_.ysize_upsampled_padded,
+                                1 << channel_shifts_[0][c].second));
     ret.emplace_back(&channel_data_[c], rect);
   }
   return ret;

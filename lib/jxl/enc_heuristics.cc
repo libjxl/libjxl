@@ -781,7 +781,10 @@ Status DefaultEncoderHeuristics::LossyFrameHeuristics(
 
   // Find and subtract splines.
   if (cparams.speed_tier <= SpeedTier::kSquirrel) {
-    shared.image_features.splines = FindSplines(*opsin);
+    // If we do already have them, they were passed upstream to EncodeFile.
+    if (!shared.image_features.splines.HasAny()) {
+      shared.image_features.splines = FindSplines(*opsin);
+    }
     JXL_RETURN_IF_ERROR(shared.image_features.splines.InitializeDrawCache(
         opsin->xsize(), opsin->ysize(), shared.cmap));
     shared.image_features.splines.SubtractFrom(opsin);
@@ -866,7 +869,7 @@ Status DefaultEncoderHeuristics::LossyFrameHeuristics(
   cfl_heuristics.Init(*opsin);
   acs_heuristics.Init(*opsin, enc_state);
 
-  auto process_tile = [&](size_t tid, size_t thread) {
+  auto process_tile = [&](const uint32_t tid, const size_t thread) {
     size_t n_enc_tiles =
         DivCeil(enc_state->shared.frame_dim.xsize_blocks, kEncTileDimInBlocks);
     size_t tx = tid % n_enc_tiles;

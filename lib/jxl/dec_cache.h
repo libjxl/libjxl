@@ -306,7 +306,8 @@ struct PassesDecoderState {
       size_t num_x_groups = DivCeil(noise.xsize(), kGroupDim);
       size_t num_y_groups = DivCeil(noise.ysize(), kGroupDim);
       PROFILER_ZONE("GenerateNoise");
-      auto generate_noise = [&](int group_index, int _) {
+      auto generate_noise = [&](const uint32_t group_index,
+                                size_t /* thread */) {
         size_t gx = group_index % num_x_groups;
         size_t gy = group_index / num_x_groups;
         Rect rect(gx * kGroupDim, gy * kGroupDim, kGroupDim, kGroupDim,

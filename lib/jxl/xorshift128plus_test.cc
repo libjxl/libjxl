@@ -287,12 +287,12 @@ void TestFloat() {
   ThreadPoolInternal pool(8);
 
 #ifdef JXL_DISABLE_SLOW_TESTS
-  const uint32_t kMaxSeed = 2048;
+  const uint32_t kMaxSeed = 256;
 #else   // JXL_DISABLE_SLOW_TESTS
-  const uint32_t kMaxSeed = 16384;  // All 14-bit seeds
+  const uint32_t kMaxSeed = 4096;
 #endif  // JXL_DISABLE_SLOW_TESTS
   pool.Run(0, kMaxSeed, ThreadPool::SkipInit(),
-           [](const int seed, const int /*thread*/) {
+           [](const uint32_t seed, size_t /*thread*/) {
              HWY_ALIGN Xorshift128Plus rng(seed);
 
              const HWY_FULL(uint32_t) du;
@@ -336,7 +336,7 @@ void TestNotZero() {
   const uint32_t kMaxSeed = 2000;
 #endif  // JXL_DISABLE_SLOW_TESTS
   pool.Run(0, kMaxSeed, ThreadPool::SkipInit(),
-           [](const int task, const int /*thread*/) {
+           [](const uint32_t task, size_t /*thread*/) {
              HWY_ALIGN uint64_t lanes[Xorshift128Plus::N];
 
              HWY_ALIGN Xorshift128Plus rng(task);

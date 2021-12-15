@@ -37,7 +37,7 @@ void OpsinToLinearInplace(Image3F* JXL_RESTRICT inout, ThreadPool* pool,
   const size_t xsize = inout->xsize();  // not padded
   RunOnPool(
       pool, 0, inout->ysize(), ThreadPool::SkipInit(),
-      [&](const int task, const int thread) {
+      [&](const uint32_t task, size_t /* thread */) {
         const size_t y = task;
 
         // Faster than adding via ByteOffset at end of loop.
@@ -77,7 +77,7 @@ void OpsinToLinear(const Image3F& opsin, const Rect& rect, ThreadPool* pool,
 
   RunOnPool(
       pool, 0, static_cast<int>(rect.ysize()), ThreadPool::SkipInit(),
-      [&](const int task, int /*thread*/) {
+      [&](const uint32_t task, size_t /*thread*/) {
         const size_t y = static_cast<size_t>(task);
 
         // Faster than adding via ByteOffset at end of loop.
