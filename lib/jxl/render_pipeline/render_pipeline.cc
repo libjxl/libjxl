@@ -53,8 +53,8 @@ std::unique_ptr<RenderPipeline> RenderPipeline::Builder::Finalize(
         *std::max_element(channel_border.begin(), channel_border.end());
   }
   res->frame_dimensions_ = frame_dimensions;
-  res->group_status_.resize(frame_dimensions.num_groups,
-                            RenderPipeline::kUninitialized);
+  res->group_completed_passes_.resize(frame_dimensions.num_groups);
+  res->num_passes_ = num_passes_;
   res->channel_shifts_.resize(stages_.size());
   res->channel_shifts_[0].resize(num_c_);
   for (size_t i = 1; i < stages_.size(); i++) {
@@ -85,9 +85,7 @@ std::unique_ptr<RenderPipeline> RenderPipeline::Builder::Finalize(
 RenderPipelineInput RenderPipeline::GetInputBuffers(size_t group_id,
                                                     size_t thread_id) {
   RenderPipelineInput ret;
-  JXL_DASSERT(group_id < group_status_.size());
-  JXL_DASSERT(group_status_[group_id] == kUninitialized);
-  group_status_[group_id] = kInitializing;
+  JXL_DASSERT(group_id < group_completed_passes_.size());
   ret.group_id_ = group_id;
   ret.thread_id_ = thread_id;
   ret.pipeline_ = this;
@@ -98,9 +96,8 @@ RenderPipelineInput RenderPipeline::GetInputBuffers(size_t group_id,
 void RenderPipeline::InputReady(
     size_t group_id, size_t thread_id,
     const std::vector<std::pair<ImageF*, Rect>>& buffers) {
-  JXL_DASSERT(group_id < group_status_.size());
-  JXL_DASSERT(group_status_[group_id] == kInitializing);
-  group_status_[group_id] = kDone;
+  JXL_DASSERT(group_id < group_completed_passes_.size());
+  group_completed_passes_[group_id]++;
   for (const auto& buf : buffers) {
     (void)buf;
     JXL_CHECK_IMAGE_INITIALIZED(*buf.first, buf.second);
@@ -123,10 +120,9 @@ void RenderPipeline::PrepareForThreads(size_t num) {
   PrepareForThreadsInternal(num);
 }
 
-RenderPipelineInput::~RenderPipelineInput() {
-  if (pipeline_) {
-    pipeline_->InputReady(group_id_, thread_id_, buffers_);
-  }
+void RenderPipelineInput::Done() {
+  JXL_ASSERT(pipeline_);
+  pipeline_->InputReady(group_id_, thread_id_, buffers_);
 }
 
 }  // namespace jxl

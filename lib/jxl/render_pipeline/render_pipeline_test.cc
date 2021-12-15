@@ -25,7 +25,7 @@ namespace jxl {
 namespace {
 
 TEST(RenderPipelineTest, Build) {
-  RenderPipeline::Builder builder(/*num_c=*/1);
+  RenderPipeline::Builder builder(/*num_c=*/1, /*num_passes=*/1);
   builder.AddStage(jxl::make_unique<UpsampleXSlowStage>());
   builder.AddStage(jxl::make_unique<UpsampleYSlowStage>());
   builder.AddStage(jxl::make_unique<Check0FinalStage>());
@@ -38,7 +38,7 @@ TEST(RenderPipelineTest, Build) {
 }
 
 TEST(RenderPipelineTest, CallAllGroups) {
-  RenderPipeline::Builder builder(/*num_c=*/1);
+  RenderPipeline::Builder builder(/*num_c=*/1, /*num_passes=*/1);
   builder.AddStage(jxl::make_unique<UpsampleXSlowStage>());
   builder.AddStage(jxl::make_unique<UpsampleYSlowStage>());
   builder.AddStage(jxl::make_unique<Check0FinalStage>());
@@ -51,9 +51,10 @@ TEST(RenderPipelineTest, CallAllGroups) {
   pipeline->PrepareForThreads(1);
 
   for (size_t i = 0; i < frame_dimensions.num_groups; i++) {
-    const auto& input_buffers = pipeline->GetInputBuffers(i, 0);
+    auto input_buffers = pipeline->GetInputBuffers(i, 0);
     FillPlane(0.0f, input_buffers.GetBuffer(0).first,
               input_buffers.GetBuffer(0).second);
+    input_buffers.Done();
   }
 
   EXPECT_TRUE(pipeline->ReceivedAllInput());
@@ -235,6 +236,22 @@ std::vector<RenderPipelineTestInputSettings> GeneratePipelineTests() {
         s.cparams_descr = "Ups" + std::to_string(ups) + "GabEPF1";
         all_tests.push_back(s);
       }
+    }
+
+    {
+      auto s = settings;
+      s.cparams_descr = "ModularLossless";
+      s.cparams.modular_mode = true;
+      s.cparams.butteraugli_distance = 0;
+      all_tests.push_back(s);
+    }
+
+    {
+      auto s = settings;
+      s.cparams_descr = "ModularLossy";
+      s.cparams.modular_mode = true;
+      s.cparams.quality_pair = {90, 90};
+      all_tests.push_back(s);
     }
   }
 

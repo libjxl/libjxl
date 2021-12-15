@@ -446,7 +446,7 @@ Status FrameDecoder::ProcessDCGroup(size_t dc_group_id, BitReader* br) {
                    frame_dim_.dc_group_dim, frame_dim_.dc_group_dim);
   JXL_RETURN_IF_ERROR(modular_frame_decoder_.DecodeGroup(
       mrect, br, 3, 1000, ModularStreamId::ModularDC(dc_group_id),
-      /*zerofill=*/false, nullptr, nullptr, allow_partial_frames_));
+      /*zerofill=*/false, nullptr, nullptr, nullptr, allow_partial_frames_));
   if (frame_header_.encoding == FrameEncoding::kVarDCT) {
     JXL_RETURN_IF_ERROR(
         modular_frame_decoder_.DecodeAcMetadata(dc_group_id, br, dec_state_));
@@ -629,13 +629,21 @@ Status FrameDecoder::ProcessACGroup(size_t ac_group_id,
   const size_t x = gx * frame_dim_.group_dim;
   const size_t y = gy * frame_dim_.group_dim;
 
+  RenderPipelineInput render_pipeline_input_storage;
+  RenderPipelineInput* render_pipeline_input = nullptr;
+  if (dec_state_->render_pipeline) {
+    render_pipeline_input_storage =
+        dec_state_->render_pipeline->GetInputBuffers(ac_group_id, thread);
+    render_pipeline_input = &render_pipeline_input_storage;
+  }
+
   if (frame_header_.encoding == FrameEncoding::kVarDCT) {
     group_dec_caches_[thread].InitOnce(frame_header_.passes.num_passes,
                                        dec_state_->used_acs);
     JXL_RETURN_IF_ERROR(DecodeGroup(
         br, num_passes, ac_group_id, dec_state_, &group_dec_caches_[thread],
-        thread, decoded_, decoded_passes_per_ac_group_[ac_group_id], force_draw,
-        dc_only));
+        thread, render_pipeline_input, decoded_,
+        decoded_passes_per_ac_group_[ac_group_id], force_draw, dc_only));
   }
 
   // don't limit to image dimensions here (is done in DecodeGroup)
@@ -648,16 +656,20 @@ Status FrameDecoder::ProcessACGroup(size_t ac_group_id,
       JXL_RETURN_IF_ERROR(modular_frame_decoder_.DecodeGroup(
           mrect, br[i - decoded_passes_per_ac_group_[ac_group_id]], minShift,
           maxShift, ModularStreamId::ModularAC(ac_group_id, i),
-          /*zerofill=*/false, dec_state_, decoded_, allow_partial_frames_));
+          /*zerofill=*/false, dec_state_, render_pipeline_input, decoded_,
+          allow_partial_frames_));
     } else if (i >= decoded_passes_per_ac_group_[ac_group_id] + num_passes &&
                force_draw) {
       JXL_RETURN_IF_ERROR(modular_frame_decoder_.DecodeGroup(
           mrect, nullptr, minShift, maxShift,
           ModularStreamId::ModularAC(ac_group_id, i), /*zerofill=*/true,
-          dec_state_, decoded_, allow_partial_frames_));
+          dec_state_, render_pipeline_input, decoded_, allow_partial_frames_));
     }
   }
   decoded_passes_per_ac_group_[ac_group_id] += num_passes;
+  if (render_pipeline_input && !modular_frame_decoder_.UsesFullImage()) {
+    render_pipeline_input->Done();
+  }
   return true;
 }
 
@@ -666,7 +678,7 @@ void FrameDecoder::PreparePipeline() {
     JXL_ABORT("Not implemented: extra channels");
   }
 
-  RenderPipeline::Builder builder(/*num_c=*/3);
+  RenderPipeline::Builder builder(/*num_c=*/3, frame_header_.passes.num_passes);
 
   if (use_slow_rendering_pipeline_) {
     builder.UseSimpleImplementation();
