@@ -270,7 +270,7 @@ typedef enum {
    * configuring which data to get. Decompressing requires
    * Brotli. JxlDecoderGetBoxType has a flag to get the compressed box
    * type, which can be "brob", or the decompressed box type. If a box
-   * is not compressed (its compressed type is not "brob"), then 
+   * is not compressed (its compressed type is not "brob"), then
    * the output decompressed box type and data is independent of what
    * setting is configured.
    *
@@ -624,8 +624,8 @@ typedef enum {
  * It is often possible to use JxlDecoderGetColorAsICCProfile as an
  * alternative anyway. The following scenarios are possible:
  * - The JPEG XL image has an attached ICC Profile, in that case, the encoded
- *   structured data is not available, this function will return an error status.
- *   JxlDecoderGetColorAsICCProfile should be called instead.
+ *   structured data is not available, this function will return an error
+ *   status. JxlDecoderGetColorAsICCProfile should be called instead.
  * - The JPEG XL image has an encoded structured color profile, and it
  *   represents an RGB or grayscale color space. This function will return it.
  *   You can still use JxlDecoderGetColorAsICCProfile as well as an
