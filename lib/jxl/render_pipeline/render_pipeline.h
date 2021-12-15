@@ -32,7 +32,7 @@ class RenderPipelineInput {
   }
 
   RenderPipelineInput() = default;
-  ~RenderPipelineInput();
+  void Done();
 
   const std::pair<ImageF*, Rect>& GetBuffer(size_t c) const {
     JXL_ASSERT(c < buffers_.size());
@@ -51,7 +51,11 @@ class RenderPipeline {
  public:
   class Builder {
    public:
-    explicit Builder(size_t num_c) : num_c_(num_c) { JXL_ASSERT(num_c > 0); }
+    explicit Builder(size_t num_c, size_t num_passes)
+        : num_c_(num_c), num_passes_(num_passes) {
+      JXL_ASSERT(num_c > 0);
+      JXL_ASSERT(num_passes > 0);
+    }
 
     // Adds a stage to the pipeline. Must be called at least once; the last
     // added stage cannot have kInOut channels.
@@ -69,6 +73,7 @@ class RenderPipeline {
    private:
     std::vector<std::unique_ptr<RenderPipelineStage>> stages_;
     size_t num_c_;
+    size_t num_passes_;
     bool use_simple_implementation_ = false;
   };
 
@@ -86,9 +91,8 @@ class RenderPipeline {
   RenderPipelineInput GetInputBuffers(size_t group_id, size_t thread_id);
 
   bool ReceivedAllInput() const {
-    return std::find_if(group_status_.begin(), group_status_.end(),
-                        [](GroupStatus s) { return s != kDone; }) ==
-           group_status_.end();
+    return *std::min_element(group_completed_passes_.begin(),
+                             group_completed_passes_.end()) == num_passes_;
   }
 
  protected:
@@ -99,11 +103,12 @@ class RenderPipeline {
   std::vector<size_t> padding_;
   FrameDimensions frame_dimensions_;
 
-  enum GroupStatus { kUninitialized, kInitializing, kDone };
-  std::vector<GroupStatus> group_status_;
+  std::vector<uint8_t> group_completed_passes_;
 
   // Indexed by thread_id
   std::vector<CacheAlignedUniquePtr> temp_buffers_;
+
+  size_t num_passes_;
 
   friend class RenderPipelineInput;
 
