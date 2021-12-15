@@ -190,7 +190,8 @@ JxlEncoderStatus CheckValidBitdepth(uint32_t bits_per_sample,
       return JXL_API_ERROR("Invalid value for bits_per_sample");
     }
   } else if ((exponent_bits_per_sample > 8) ||
-             (bits_per_sample > 24 + exponent_bits_per_sample)) {
+             (bits_per_sample > 24 + exponent_bits_per_sample) ||
+             (bits_per_sample < 3 + exponent_bits_per_sample)) {
     return JXL_API_ERROR("Invalid float description");
   }
   return JXL_ENC_SUCCESS;
