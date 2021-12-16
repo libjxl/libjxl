@@ -14,11 +14,10 @@ namespace jxl {
 
 namespace {
 void FillChannel(Channel& ch, Rng& rng) {
-  auto p = &ch.plane;
   const size_t w = ch.w;
   const size_t h = ch.h;
   for (size_t y = 0; y < h; ++y) {
-    pixel_type* row = p->Row(y);
+    pixel_type* row = ch.Row(y);
     for (size_t x = 0; x < w; ++x) {
       row[x] = rng.UniformU(0, 0x80000000);
     }

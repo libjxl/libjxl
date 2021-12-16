@@ -215,9 +215,9 @@ void DequantDC(const Rect& r, Image3F* dc, ImageB* quant_dc, const Image& in,
       float* dec_row_x = r.PlaneRow(dc, 0, y);
       float* dec_row_y = r.PlaneRow(dc, 1, y);
       float* dec_row_b = r.PlaneRow(dc, 2, y);
-      const int32_t* quant_row_x = in.channel[1].plane.Row(y);
-      const int32_t* quant_row_y = in.channel[0].plane.Row(y);
-      const int32_t* quant_row_b = in.channel[2].plane.Row(y);
+      const int32_t* quant_row_x = in.channel[1].Row(y);
+      const int32_t* quant_row_y = in.channel[0].Row(y);
+      const int32_t* quant_row_b = in.channel[2].Row(y);
       for (size_t x = 0; x < r.xsize(); x += Lanes(di)) {
         const auto in_q_x = Load(di, quant_row_x + x);
         const auto in_q_y = Load(di, quant_row_y + x);
@@ -239,7 +239,7 @@ void DequantDC(const Rect& r, Image3F* dc, ImageB* quant_dc, const Image& in,
       const auto fac = Set(df, dc_factors[c] * mul);
       const Channel& ch = in.channel[c < 2 ? c ^ 1 : c];
       for (size_t y = 0; y < rect.ysize(); y++) {
-        const int32_t* quant_row = ch.plane.Row(y);
+        const int32_t* quant_row = ch.Row(y);
         float* row = rect.PlaneRow(dc, c, y);
         for (size_t x = 0; x < rect.xsize(); x += Lanes(di)) {
           const auto in_q = Load(di, quant_row + x);
@@ -258,11 +258,11 @@ void DequantDC(const Rect& r, Image3F* dc, ImageB* quant_dc, const Image& in,
     for (size_t y = 0; y < r.ysize(); y++) {
       uint8_t* qdc_row_val = r.Row(quant_dc, y);
       const int32_t* quant_row_x =
-          in.channel[1].plane.Row(y >> chroma_subsampling.VShift(0));
+          in.channel[1].Row(y >> chroma_subsampling.VShift(0));
       const int32_t* quant_row_y =
-          in.channel[0].plane.Row(y >> chroma_subsampling.VShift(1));
+          in.channel[0].Row(y >> chroma_subsampling.VShift(1));
       const int32_t* quant_row_b =
-          in.channel[2].plane.Row(y >> chroma_subsampling.VShift(2));
+          in.channel[2].Row(y >> chroma_subsampling.VShift(2));
       for (size_t x = 0; x < r.xsize(); x++) {
         int bucket_x = 0, bucket_y = 0, bucket_b = 0;
         for (int t : bctx.dc_thresholds[0]) {

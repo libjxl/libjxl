@@ -233,7 +233,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
     } else if (predictor == Predictor::Gradient && offset == 0 &&
                multiplier == 1) {
       JXL_DEBUG_V(8, "Gradient very fast track.");
-      const intptr_t onerow = channel.plane.PixelsPerRow();
+      const intptr_t onerow = channel.PixelsPerRow();
       for (size_t y = 0; y < channel.h; y++) {
         pixel_type *JXL_RESTRICT r = channel.Row(y);
         for (size_t x = 0; x < channel.w; x++) {
@@ -248,7 +248,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
     } else if (predictor != Predictor::Weighted) {
       // special optimized case: no wp
       JXL_DEBUG_V(8, "Quite fast track.");
-      const intptr_t onerow = channel.plane.PixelsPerRow();
+      const intptr_t onerow = channel.PixelsPerRow();
       for (size_t y = 0; y < channel.h; y++) {
         pixel_type *JXL_RESTRICT r = channel.Row(y);
         for (size_t x = 0; x < channel.w; x++) {
@@ -262,7 +262,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
       }
     } else {
       JXL_DEBUG_V(8, "Somewhat fast track.");
-      const intptr_t onerow = channel.plane.PixelsPerRow();
+      const intptr_t onerow = channel.PixelsPerRow();
       weighted::State wp_state(wp_header, channel.w, channel.h);
       for (size_t y = 0; y < channel.h; y++) {
         pixel_type *JXL_RESTRICT r = channel.Row(y);
@@ -296,7 +296,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
 
   if (is_gradient_only) {
     JXL_DEBUG_V(8, "Gradient fast track.");
-    const intptr_t onerow = channel.plane.PixelsPerRow();
+    const intptr_t onerow = channel.PixelsPerRow();
     for (size_t y = 0; y < channel.h; y++) {
       pixel_type *JXL_RESTRICT r = channel.Row(y);
       for (size_t x = 0; x < channel.w; x++) {
@@ -317,7 +317,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
     }
   } else if (is_wp_only) {
     JXL_DEBUG_V(8, "WP fast track.");
-    const intptr_t onerow = channel.plane.PixelsPerRow();
+    const intptr_t onerow = channel.PixelsPerRow();
     weighted::State wp_state(wp_header, channel.w, channel.h);
     Properties properties(1);
     for (size_t y = 0; y < channel.h; y++) {
@@ -349,7 +349,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
     JXL_DEBUG_V(8, "Slow track.");
     MATreeLookup tree_lookup(tree);
     Properties properties = Properties(num_props);
-    const intptr_t onerow = channel.plane.PixelsPerRow();
+    const intptr_t onerow = channel.PixelsPerRow();
     Channel references(properties.size() - kNumNonrefProperties, channel.w);
     for (size_t y = 0; y < channel.h; y++) {
       pixel_type *JXL_RESTRICT p = channel.Row(y);
@@ -367,7 +367,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
     JXL_DEBUG_V(8, "Slowest track.");
     MATreeLookup tree_lookup(tree);
     Properties properties = Properties(num_props);
-    const intptr_t onerow = channel.plane.PixelsPerRow();
+    const intptr_t onerow = channel.PixelsPerRow();
     Channel references(properties.size() - kNumNonrefProperties, channel.w);
     weighted::State wp_state(wp_header, channel.w, channel.h);
     for (size_t y = 0; y < channel.h; y++) {
@@ -461,7 +461,7 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
     // Do not do anything if truncated groups are not allowed.
     if (!allow_truncated_group) return;
     for (size_t c = next_channel; c < nb_channels; c++) {
-      ZeroFillImage(&image.channel[c].plane);
+      image.channel[c].ZeroFill();
     }
   });
 

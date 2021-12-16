@@ -111,8 +111,8 @@ Status InvVSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
     return true;
   }
 
-  intptr_t onerow_in = chin.plane.PixelsPerRow();
-  intptr_t onerow_out = chout.plane.PixelsPerRow();
+  intptr_t onerow_in = chin.PixelsPerRow();
+  intptr_t onerow_out = chout.PixelsPerRow();
   constexpr int kColsPerThread = 64;
   JXL_RETURN_IF_ERROR(RunOnPool(
       pool, 0, DivCeil(chin.w, kColsPerThread), ThreadPool::NoInit,

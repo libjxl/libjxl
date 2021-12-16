@@ -361,10 +361,10 @@ inline pixel_type_w Select(pixel_type_w a, pixel_type_w b, pixel_type_w c) {
 inline void PrecomputeReferences(const Channel &ch, size_t y,
                                  const Image &image, uint32_t i,
                                  Channel *references) {
-  ZeroFillImage(&references->plane);
+  references->ZeroFill();
   uint32_t offset = 0;
   size_t num_extra_props = references->w;
-  intptr_t onerow = references->plane.PixelsPerRow();
+  intptr_t onerow = references->PixelsPerRow();
   for (int32_t j = static_cast<int32_t>(i) - 1;
        j >= 0 && offset < num_extra_props; j--) {
     if (image.channel[j].w != image.channel[i].w ||

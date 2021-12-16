@@ -33,11 +33,25 @@ struct Header;
 
 class Channel {
  public:
-  jxl::Plane<pixel_type> plane;
   size_t w, h;
   int hshift, vshift;  // w ~= image.w >> hshift;  h ~= image.h >> vshift
   Channel(size_t iw, size_t ih, int hsh = 0, int vsh = 0)
-      : plane(iw, ih), w(iw), h(ih), hshift(hsh), vshift(vsh) {}
+      : w(iw),
+        h(ih),
+        hshift(hsh),
+        vshift(vsh),
+        plane(iw, ih),
+        ref_plane(nullptr),
+        ref_rect() {}
+
+  Channel(Plane<pixel_type>* ref, Rect& rect, int hsh = 0, int vsh = 0)
+      : w(rect.xsize()),
+        h(rect.ysize()),
+        hshift(hsh),
+        vshift(vsh),
+        plane(0, 0),
+        ref_plane(ref),
+        ref_rect(rect) {}
 
   Channel(const Channel& other) = delete;
   Channel& operator=(const Channel& other) = delete;
@@ -49,6 +63,9 @@ class Channel {
     hshift = other.hshift;
     vshift = other.vshift;
     plane = std::move(other.plane);
+    ref_plane = other.ref_plane;
+    other.ref_plane = nullptr;
+    ref_rect = other.ref_rect;
     return *this;
   }
 
@@ -56,6 +73,7 @@ class Channel {
   Channel(Channel&& other) noexcept = default;
 
   void shrink() {
+    JXL_ASSERT(ref_plane == nullptr);
     if (plane.xsize() == w && plane.ysize() == h) return;
     jxl::Plane<pixel_type> resizedplane(w, h);
     plane = std::move(resizedplane);
@@ -65,11 +83,36 @@ class Channel {
     h = nh;
     shrink();
   }
-
-  JXL_INLINE pixel_type* Row(const size_t y) { return plane.Row(y); }
-  JXL_INLINE const pixel_type* Row(const size_t y) const {
+  intptr_t PixelsPerRow() const {
+    if (ref_plane)
+      return ref_plane->PixelsPerRow();
+    else
+      return plane.PixelsPerRow();
+  }
+  void ZeroFill() {
+    JXL_ASSERT(ref_plane == nullptr);
+    ZeroFillImage(&plane);
+  }
+  Plane<pixel_type>* GetPlane() {
+    JXL_ASSERT(ref_plane == nullptr);
+    return &plane;
+  }
+  JXL_INLINE pixel_type* Row(const size_t y) {
+    if (ref_plane) return ref_rect.Row(ref_plane, y);
     return plane.Row(y);
   }
+  JXL_INLINE const pixel_type* Row(const size_t y) const {
+    if (ref_plane) return ref_rect.ConstRow(*ref_plane, y);
+    return plane.Row(y);
+  }
+
+ private:
+  // Twp options: 1) Self-owned plane
+  Plane<pixel_type> plane;
+
+  // 2) Not self-owned plane (to avoid unnecessary copying)
+  Plane<pixel_type>* ref_plane;
+  Rect ref_rect;
 };
 
 class Transform;

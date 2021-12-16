@@ -210,9 +210,9 @@ void MergeTrees(const std::vector<Tree>& trees,
 
 void QuantizeChannel(Channel& ch, const int q) {
   if (q == 1) return;
-  for (size_t y = 0; y < ch.plane.ysize(); y++) {
-    pixel_type* row = ch.plane.Row(y);
-    for (size_t x = 0; x < ch.plane.xsize(); x++) {
+  for (size_t y = 0; y < ch.h; y++) {
+    pixel_type* row = ch.Row(y);
+    for (size_t x = 0; x < ch.w; x++) {
       if (row[x] < 0) {
         row[x] = -((-row[x] + q / 2) / q) * q;
       } else {
@@ -566,13 +566,13 @@ Status ModularFrameEncoder::ComputeEncodingData(
     float factor = (fp ? 1 : ((1u << eci.bit_depth.bits_per_sample) - 1));
     std::atomic<bool> has_error{false};
     JXL_RETURN_IF_ERROR(RunOnPool(
-        pool, 0, gi.channel[c].plane.ysize(), ThreadPool::NoInit,
+        pool, 0, gi.channel[c].h, ThreadPool::NoInit,
         [&](const int task, const int thread) {
           const size_t y = task;
           const float* const JXL_RESTRICT row_in = extra_channels[ec].Row(y);
           pixel_type* const JXL_RESTRICT row_out = gi.channel[c].Row(y);
-          if (!float_to_int(row_in, row_out, gi.channel[c].plane.xsize(), bits,
-                            exp_bits, fp, factor)) {
+          if (!float_to_int(row_in, row_out, gi.channel[c].w, bits, exp_bits,
+                            fp, factor)) {
             has_error = true;
           };
         },
@@ -829,18 +829,6 @@ Status ModularFrameEncoder::ComputeEncodingData(
             stream_params[i].maxShift, stream_params[i].id, do_color));
       },
       "ChooseParams"));
-  {
-    // Clear out channels that have been copied to groups.
-    Image& full_image = stream_images[0];
-    size_t c = full_image.nb_meta_channels;
-    for (; c < full_image.channel.size(); c++) {
-      Channel& fc = full_image.channel[c];
-      if (fc.w > frame_dim.group_dim || fc.h > frame_dim.group_dim) break;
-    }
-    for (; c < full_image.channel.size(); c++) {
-      full_image.channel[c].plane = ImageI();
-    }
-  }
 
   if (!quants.empty()) {
     for (uint32_t stream_id = 0; stream_id < stream_images.size();
@@ -1141,7 +1129,7 @@ float EstimateWPCost(const Image& img, size_t i) {
   weighted::Header wp_header;
   PredictorMode(i, &wp_header);
   for (const Channel& ch : img.channel) {
-    const intptr_t onerow = ch.plane.PixelsPerRow();
+    const intptr_t onerow = ch.PixelsPerRow();
     weighted::State wp_state(wp_header, ch.w, ch.h);
     Properties properties(1);
     for (size_t y = 0; y < ch.h; y++) {
@@ -1187,7 +1175,7 @@ float EstimateCost(const Image& img) {
   constexpr size_t nc = sizeof(cutoffs) / sizeof(*cutoffs) + 1;
   Histogram histo[nc] = {};
   for (const Channel& ch : img.channel) {
-    const intptr_t onerow = ch.plane.PixelsPerRow();
+    const intptr_t onerow = ch.PixelsPerRow();
     for (size_t y = 0; y < ch.h; y++) {
       const pixel_type* JXL_RESTRICT r = ch.Row(y);
       for (size_t x = 0; x < ch.w; x++) {
@@ -1244,13 +1232,7 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
              rect.xsize() >> fc.hshift, rect.ysize() >> fc.vshift, fc.w, fc.h);
       if (r.xsize() == 0 || r.ysize() == 0) continue;
       gi_channel[stream_id].push_back(c);
-      Channel gc(r.xsize(), r.ysize());
-      gc.hshift = fc.hshift;
-      gc.vshift = fc.vshift;
-      for (size_t y = 0; y < r.ysize(); ++y) {
-        memcpy(gc.Row(y), r.ConstRow(fc.plane, y),
-               r.xsize() * sizeof(pixel_type));
-      }
+      Channel gc(fc.GetPlane(), r, fc.hshift, fc.vshift);
       gi.channel.emplace_back(std::move(gc));
     }
 
@@ -1461,10 +1443,9 @@ void ModularFrameEncoder::AddVarDCTDC(const Image3F& dc, size_t group_index,
       float cfl_factor = enc_state->shared.cmap.DCFactors()[c];
       for (size_t y = 0; y < r.ysize(); y++) {
         int32_t* quant_row =
-            stream_images[stream_id].channel[c < 2 ? c ^ 1 : c].plane.Row(y);
-        size_t stride = stream_images[stream_id]
-                            .channel[c < 2 ? c ^ 1 : c]
-                            .plane.PixelsPerRow();
+            stream_images[stream_id].channel[c < 2 ? c ^ 1 : c].Row(y);
+        size_t stride =
+            stream_images[stream_id].channel[c < 2 ? c ^ 1 : c].PixelsPerRow();
         const float* row = r.ConstPlaneRow(dc, c, y);
         if (c == 1) {
           for (size_t x = 0; x < r.xsize(); x++) {
@@ -1472,8 +1453,7 @@ void ModularFrameEncoder::AddVarDCTDC(const Image3F& dc, size_t group_index,
                                             r.xsize(), row[x], inv_factor);
           }
         } else {
-          int32_t* quant_row_y =
-              stream_images[stream_id].channel[0].plane.Row(y);
+          int32_t* quant_row_y = stream_images[stream_id].channel[0].Row(y);
           for (size_t x = 0; x < r.xsize(); x++) {
             quant_row[x] = QuantizeGradient(
                 quant_row, stride, c, x, y, r.xsize(),
@@ -1492,10 +1472,9 @@ void ModularFrameEncoder::AddVarDCTDC(const Image3F& dc, size_t group_index,
       weighted::State wp_state(header, r.xsize(), r.ysize());
       for (size_t y = 0; y < r.ysize(); y++) {
         int32_t* quant_row =
-            stream_images[stream_id].channel[c < 2 ? c ^ 1 : c].plane.Row(y);
-        size_t stride = stream_images[stream_id]
-                            .channel[c < 2 ? c ^ 1 : c]
-                            .plane.PixelsPerRow();
+            stream_images[stream_id].channel[c < 2 ? c ^ 1 : c].Row(y);
+        size_t stride =
+            stream_images[stream_id].channel[c < 2 ? c ^ 1 : c].PixelsPerRow();
         const float* row = r.ConstPlaneRow(dc, c, y);
         if (c == 1) {
           for (size_t x = 0; x < r.xsize(); x++) {
@@ -1504,8 +1483,7 @@ void ModularFrameEncoder::AddVarDCTDC(const Image3F& dc, size_t group_index,
             wp_state.UpdateErrors(quant_row[x], x, y, r.xsize());
           }
         } else {
-          int32_t* quant_row_y =
-              stream_images[stream_id].channel[0].plane.Row(y);
+          int32_t* quant_row_y = stream_images[stream_id].channel[0].Row(y);
           for (size_t x = 0; x < r.xsize(); x++) {
             quant_row[x] = QuantizeWP(
                 quant_row, stride, c, x, y, r.xsize(), &wp_state,
@@ -1522,15 +1500,14 @@ void ModularFrameEncoder::AddVarDCTDC(const Image3F& dc, size_t group_index,
       float cfl_factor = enc_state->shared.cmap.DCFactors()[c];
       for (size_t y = 0; y < r.ysize(); y++) {
         int32_t* quant_row =
-            stream_images[stream_id].channel[c < 2 ? c ^ 1 : c].plane.Row(y);
+            stream_images[stream_id].channel[c < 2 ? c ^ 1 : c].Row(y);
         const float* row = r.ConstPlaneRow(dc, c, y);
         if (c == 1) {
           for (size_t x = 0; x < r.xsize(); x++) {
             quant_row[x] = roundf(row[x] * inv_factor);
           }
         } else {
-          int32_t* quant_row_y =
-              stream_images[stream_id].channel[0].plane.Row(y);
+          int32_t* quant_row_y = stream_images[stream_id].channel[0].Row(y);
           for (size_t x = 0; x < r.xsize(); x++) {
             quant_row[x] =
                 roundf((row[x] - quant_row_y[x] * (y_factor * cfl_factor)) *
@@ -1556,7 +1533,7 @@ void ModularFrameEncoder::AddVarDCTDC(const Image3F& dc, size_t group_index,
       ch.h = ys;
       ch.shrink();
       for (size_t y = 0; y < ys; y++) {
-        int32_t* quant_row = ch.plane.Row(y);
+        int32_t* quant_row = ch.Row(y);
         const float* row = rect.ConstPlaneRow(dc, c, y);
         for (size_t x = 0; x < xs; x++) {
           quant_row[x] = roundf(row[x] * inv_factor);
@@ -1602,17 +1579,19 @@ void ModularFrameEncoder::AddACMetadata(size_t group_index, bool jpeg_transcode,
   image.channel[1] = Channel(cr.xsize(), cr.ysize(), 3, 3);
   image.channel[2] = Channel(r.xsize() * r.ysize(), 2, 0, 0);
   ConvertPlaneAndClamp(cr, enc_state->shared.cmap.ytox_map,
-                       Rect(image.channel[0].plane), &image.channel[0].plane);
+                       Rect(0, 0, cr.xsize(), cr.ysize()),
+                       image.channel[0].GetPlane());
   ConvertPlaneAndClamp(cr, enc_state->shared.cmap.ytob_map,
-                       Rect(image.channel[1].plane), &image.channel[1].plane);
+                       Rect(0, 0, cr.xsize(), cr.ysize()),
+                       image.channel[1].GetPlane());
   size_t num = 0;
   for (size_t y = 0; y < r.ysize(); y++) {
     AcStrategyRow row_acs = enc_state->shared.ac_strategy.ConstRow(r, y);
     const int* row_qf = r.ConstRow(enc_state->shared.raw_quant_field, y);
     const uint8_t* row_epf = r.ConstRow(enc_state->shared.epf_sharpness, y);
-    int* out_acs = image.channel[2].plane.Row(0);
-    int* out_qf = image.channel[2].plane.Row(1);
-    int* row_out_epf = image.channel[3].plane.Row(y);
+    int* out_acs = image.channel[2].Row(0);
+    int* out_qf = image.channel[2].Row(1);
+    int* row_out_epf = image.channel[3].Row(y);
     for (size_t x = 0; x < r.xsize(); x++) {
       row_out_epf[x] = row_epf[x];
       if (!row_acs[x].IsFirstBlock()) continue;
