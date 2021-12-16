@@ -13,8 +13,6 @@ set(JPEGXL_EXTRAS_SOURCES
   extras/codec_jpg.h
   extras/codec_pgx.cc
   extras/codec_pgx.h
-  extras/codec_png.cc
-  extras/codec_png.h
   extras/codec_pnm.cc
   extras/codec_pnm.h
   extras/codec_psd.cc
@@ -44,7 +42,6 @@ set_property(TARGET jxl_extras-static PROPERTY POSITION_INDEPENDENT_CODE ON)
 target_include_directories(jxl_extras-static PUBLIC "${PROJECT_SOURCE_DIR}")
 target_link_libraries(jxl_extras-static PUBLIC
   jxl-static
-  lodepng
 )
 
 find_package(GIF 5.1)

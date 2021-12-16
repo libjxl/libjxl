@@ -17,7 +17,6 @@
 #endif
 #include "lib/extras/codec_jpg.h"
 #include "lib/extras/codec_pgx.h"
-#include "lib/extras/codec_png.h"
 #include "lib/extras/codec_pnm.h"
 #include "lib/extras/codec_psd.h"
 #include "lib/extras/packed_image_convert.h"
@@ -170,8 +169,12 @@ Status Encode(const CodecInOut& io, const Codec codec,
 
   switch (codec) {
     case Codec::kPNG:
-      return extras::EncodeImagePNG(&io, c_desired, bits_per_sample, pool,
-                                    bytes);
+#if JPEGXL_ENABLE_APNG
+      return extras::EncodeImageAPNG(&io, c_desired, bits_per_sample, pool,
+                                     bytes);
+#else
+      return JXL_FAILURE("JPEG XL was built without (A)PNG support");
+#endif
     case Codec::kJPG:
       if (io.Main().IsJPEG()) {
         return extras::EncodeImageJPGCoefficients(&io, bytes);

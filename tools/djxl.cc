@@ -271,17 +271,17 @@ jxl::Status WriteJxlOutput(const DecompressArgs& args, const char* file_out,
     }
   }
 
-  if (!io.metadata.m.have_animation) {
+  const char* extension = strrchr(file_out, '.');
+  std::string base = extension == nullptr
+                         ? std::string(file_out)
+                         : std::string(file_out, extension - file_out);
+  if (extension == nullptr) extension = "";
+  if (!io.metadata.m.have_animation || !strcmp(extension, ".png")) {
     if (!EncodeToFile(io, c_out, bits_per_sample, file_out, pool)) {
       fprintf(stderr, "Failed to write decoded image.\n");
       return false;
     }
   } else {
-    const char* extension = strrchr(file_out, '.');
-    std::string base = extension == nullptr
-                           ? std::string(file_out)
-                           : std::string(file_out, extension - file_out);
-    if (extension == nullptr) extension = "";
     const int digits = 1 + static_cast<int>(std::log10(std::max(
                                1, static_cast<int>(io.frames.size() - 1))));
     std::vector<char> output_filename;

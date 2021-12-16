@@ -1,9 +1,6 @@
 [submodule "third_party/brotli"]
 	path = third_party/brotli
 	url = https://github.com/google/brotli
-[submodule "third_party/lodepng"]
-	path = third_party/lodepng
-	url = https://github.com/lvandeve/lodepng
 [submodule "third_party/lcms"]
 	path = third_party/lcms
 	url = https://github.com/mm2/Little-CMS

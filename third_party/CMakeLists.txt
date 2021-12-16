@@ -102,15 +102,6 @@ else()
   endif()  # JPEGXL_DEP_LICENSE_DIR
 endif()
 
-# lodepng
-if( NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/lodepng/lodepng.h" )
-  message(FATAL_ERROR "Please run ${PROJECT_SOURCE_DIR}/deps.sh to fetch the "
-          "build dependencies.")
-endif()
-include(lodepng.cmake)
-configure_file("${CMAKE_CURRENT_SOURCE_DIR}/lodepng/LICENSE"
-               ${PROJECT_BINARY_DIR}/LICENSE.lodepng COPYONLY)
-
 # brotli
 if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/brotli/c/include/brotli/decode.h" OR
     JPEGXL_FORCE_SYSTEM_BROTLI)

@@ -441,8 +441,6 @@ libjxl_extras_sources = [
     "extras/codec_jpg.h",
     "extras/codec_pgx.cc",
     "extras/codec_pgx.h",
-    "extras/codec_png.cc",
-    "extras/codec_png.h",
     "extras/codec_pnm.cc",
     "extras/codec_pnm.h",
     "extras/codec_psd.cc",

@@ -300,6 +300,8 @@ Status FrameDecoder::InitFrame(BitReader* JXL_RESTRICT br, ImageBundle* decoded,
   decoded->RemoveColor();
   decoded->ClearExtraChannels();
 
+  decoded->duration = frame_header_.animation_frame.duration;
+
   // Read TOC.
   uint64_t groups_total_size;
   const bool has_ac_global = true;
