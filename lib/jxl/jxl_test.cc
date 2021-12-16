@@ -13,7 +13,6 @@
 
 #include "gtest/gtest.h"
 #include "lib/extras/codec.h"
-#include "lib/extras/codec_jpg.h"
 #include "lib/jxl/aux_out.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
@@ -37,6 +36,7 @@
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/image_test_utils.h"
+#include "lib/jxl/jpeg/dec_jpeg_data_writer.h"
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
 #include "lib/jxl/modular/options.h"
 #include "lib/jxl/test_utils.h"
@@ -1382,8 +1382,6 @@ TEST(JxlTest, RoundtripAnimationPatches) {
 
 #endif  // JPEGXL_ENABLE_GIF
 
-#if JPEGXL_ENABLE_JPEG
-
 namespace {
 
 jxl::Status DecompressJxlToJPEGForTest(
@@ -1402,8 +1400,7 @@ jxl::Status DecompressJxlToJPEGForTest(
   if (!jpegxl::tools::DecodeJpegXlToJpeg(params, container, &io, pool)) {
     return JXL_FAILURE("Failed to decode JXL to JPEG");
   }
-  io.jpeg_quality = 95;
-  if (!extras::EncodeImageJPGCoefficients(&io, output)) {
+  if (!jpeg::EncodeImageJPGCoefficients(&io, output)) {
     return JXL_FAILURE("Failed to generate JPEG");
   }
   return true;
@@ -1413,8 +1410,7 @@ jxl::Status DecompressJxlToJPEGForTest(
 
 size_t RoundtripJpeg(const PaddedBytes& jpeg_in, ThreadPool* pool) {
   CodecInOut io;
-  io.dec_target = jxl::DecodeTarget::kQuantizedCoeffs;
-  EXPECT_TRUE(SetFromBytes(Span<const uint8_t>(jpeg_in), &io, pool));
+  EXPECT_TRUE(jpeg::DecodeImageJPG(Span<const uint8_t>(jpeg_in), &io));
   CompressParams cparams;
   cparams.color_transform = jxl::ColorTransform::kYCbCr;
 
@@ -1460,13 +1456,14 @@ TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression444)) {
   EXPECT_LE(RoundtripJpeg(orig, &pool), 256000u);
 }
 
+#if JPEGXL_ENABLE_JPEG
+
 TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionToPixels)) {
   ThreadPoolInternal pool(8);
   const PaddedBytes orig =
       ReadTestData("imagecompression.info/flower_foveon.png.im_q85_444.jpg");
   CodecInOut io;
-  io.dec_target = jxl::DecodeTarget::kQuantizedCoeffs;
-  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
+  ASSERT_TRUE(jpeg::DecodeImageJPG(Span<const uint8_t>(orig), &io));
 
   CodecInOut io2;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io2, &pool));
@@ -1490,8 +1487,7 @@ TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionToPixels420)) {
   const PaddedBytes orig =
       ReadTestData("imagecompression.info/flower_foveon.png.im_q85_420.jpg");
   CodecInOut io;
-  io.dec_target = jxl::DecodeTarget::kQuantizedCoeffs;
-  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
+  ASSERT_TRUE(jpeg::DecodeImageJPG(Span<const uint8_t>(orig), &io));
 
   CodecInOut io2;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io2, &pool));
@@ -1514,8 +1510,7 @@ TEST(JxlTest,
   const PaddedBytes orig =
       ReadTestData("imagecompression.info/flower_foveon.png.im_q85_420.jpg");
   CodecInOut io;
-  io.dec_target = jxl::DecodeTarget::kQuantizedCoeffs;
-  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
+  ASSERT_TRUE(jpeg::DecodeImageJPG(Span<const uint8_t>(orig), &io));
 
   CodecInOut io2;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io2, &pool));
@@ -1539,8 +1534,7 @@ TEST(JxlTest,
   const PaddedBytes orig =
       ReadTestData("imagecompression.info/flower_foveon_cropped.jpg");
   CodecInOut io;
-  io.dec_target = jxl::DecodeTarget::kQuantizedCoeffs;
-  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
+  ASSERT_TRUE(jpeg::DecodeImageJPG(Span<const uint8_t>(orig), &io));
 
   CodecInOut io2;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io2, &pool));
@@ -1563,8 +1557,7 @@ TEST(JxlTest,
   const PaddedBytes orig = ReadTestData(
       "imagecompression.info/flower_foveon.png.im_q85_asymmetric.jpg");
   CodecInOut io;
-  io.dec_target = jxl::DecodeTarget::kQuantizedCoeffs;
-  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
+  ASSERT_TRUE(jpeg::DecodeImageJPG(Span<const uint8_t>(orig), &io));
 
   CodecInOut io2;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io2, &pool));
@@ -1580,6 +1573,8 @@ TEST(JxlTest,
   EXPECT_THAT(ComputeDistance2(io2.Main(), io3.Main(), GetJxlCms()),
               IsSlightlyBelow(10));
 }
+
+#endif
 
 TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionGray)) {
   ThreadPoolInternal pool(8);
@@ -1647,8 +1642,6 @@ TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression420Progr)) {
       "imagecompression.info/flower_foveon.png.im_q85_420_progr.jpg");
   EXPECT_LE(RoundtripJpeg(orig, &pool), 181000u);
 }
-
-#endif  // JPEGXL_ENABLE_JPEG
 
 TEST(JxlTest, RoundtripProgressive) {
   ThreadPoolInternal pool(4);

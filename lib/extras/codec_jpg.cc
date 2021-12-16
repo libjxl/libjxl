@@ -8,12 +8,10 @@
 #include <stddef.h>
 #include <stdio.h>
 
-#if JPEGXL_ENABLE_JPEG
 // After stddef/stdio
 #include <jpeglib.h>
 #include <setjmp.h>
 #include <stdint.h>
-#endif  // JPEGXL_ENABLE_JPEG
 
 #include <algorithm>
 #include <iterator>
@@ -44,7 +42,6 @@
 namespace jxl {
 namespace extras {
 
-#if JPEGXL_ENABLE_JPEG
 namespace {
 
 constexpr float kJPEGSampleMultiplier = MAXJSAMPLE;
@@ -59,6 +56,12 @@ constexpr int kExifMarker = JPEG_APP0 + 1;
 
 constexpr float kJPEGSampleMin = 0;
 constexpr float kJPEGSampleMax = MAXJSAMPLE;
+
+static inline bool IsJPG(const Span<const uint8_t> bytes) {
+  if (bytes.size() < 2) return false;
+  if (bytes[0] != 0xFF || bytes[1] != 0xD8) return false;
+  return true;
+}
 
 bool MarkerIsICC(const jpeg_saved_marker_ptr marker) {
   return marker->marker == kICCMarker &&
@@ -237,17 +240,6 @@ void MyOutputMessage(j_common_ptr cinfo) {
 }
 
 }  // namespace
-#endif  // JPEGXL_ENABLE_JPEG
-
-Status DecodeImageJPGCoefficients(Span<const uint8_t> bytes, CodecInOut* io) {
-  if (!IsJPG(bytes)) return false;
-  // Use brunsli JPEG decoder to read quantized coefficients.
-  if (!jpeg::DecodeImageJPG(bytes, io)) {
-    fprintf(stderr, "Corrupt or CMYK JPEG.\n");
-    return false;
-  }
-  return true;
-}
 
 Status DecodeImageJPG(const Span<const uint8_t> bytes,
                       const ColorHints& color_hints,
@@ -256,7 +248,6 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes,
   // Don't do anything for non-JPEG files (no need to report an error)
   if (!IsJPG(bytes)) return false;
 
-#if JPEGXL_ENABLE_JPEG
   // TODO(veluca): use JPEGData also for pixels?
 
   // We need to declare all the non-trivial destructor local variables before
@@ -374,12 +365,8 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes,
   };
 
   return try_catch_block();
-#else   // JPEGXL_ENABLE_JPEG
-  return JXL_FAILURE("JPEG decoding not enabled at build time.");
-#endif  // JPEGXL_ENABLE_JPEG
 }
 
-#if JPEGXL_ENABLE_JPEG
 Status EncodeWithLibJpeg(const ImageBundle* ib, const CodecInOut* io,
                          size_t quality,
                          const YCbCrChromaSubsampling& chroma_subsampling,
@@ -488,15 +475,6 @@ Status EncodeWithSJpeg(const ImageBundle* ib, size_t quality,
   return true;
 #endif
 }
-#endif  // JPEGXL_ENABLE_JPEG
-
-Status EncodeImageJPGCoefficients(const CodecInOut* io, PaddedBytes* bytes) {
-  auto write = [&bytes](const uint8_t* buf, size_t len) {
-    bytes->append(buf, buf + len);
-    return len;
-  };
-  return jpeg::WriteJpeg(*io->Main().jpeg_data, write);
-}
 
 Status EncodeImageJPG(const CodecInOut* io, JpegEncoder encoder, size_t quality,
                       YCbCrChromaSubsampling chroma_subsampling,
@@ -508,7 +486,6 @@ Status EncodeImageJPG(const CodecInOut* io, JpegEncoder encoder, size_t quality,
     return JXL_FAILURE("please specify a 0-100 JPEG quality");
   }
 
-#if JPEGXL_ENABLE_JPEG
   const ImageBundle* ib;
   ImageMetadata metadata = io->metadata.m;
   ImageBundle ib_store(&metadata);
@@ -530,9 +507,6 @@ Status EncodeImageJPG(const CodecInOut* io, JpegEncoder encoder, size_t quality,
   }
 
   return true;
-#else   // JPEGXL_ENABLE_JPEG
-  return JXL_FAILURE("JPEG pixel encoding not enabled at build time");
-#endif  // JPEGXL_ENABLE_JPEG
 }
 
 }  // namespace extras

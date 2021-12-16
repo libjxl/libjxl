@@ -69,11 +69,6 @@ struct Blobs {
   PaddedBytes xmp;
 };
 
-// For Codec::kJPG, convert between JPEG and pixels or between JPEG and
-// quantized DCT coefficients
-// For pixel data, the nominal range is 0..1.
-enum class DecodeTarget { kPixels, kQuantizedCoeffs };
-
 // Holds a preview, a main image or one or more frames, plus the inputs/outputs
 // to/from decoding/encoding.
 class CodecInOut {
@@ -162,8 +157,6 @@ class CodecInOut {
   // -- DECODER INPUT:
 
   SizeConstraints constraints;
-  // Decode to pixels or keep JPEG as quantized DCT coefficients
-  DecodeTarget dec_target = DecodeTarget::kPixels;
 
   // -- DECODER OUTPUT:
 

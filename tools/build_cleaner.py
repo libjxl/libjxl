@@ -70,7 +70,7 @@ def SplitLibFiles(repo_files):
                        if fn.endswith('_gbench.cc'))
   lib_srcs = [fn for fn in lib_srcs if fn not in gbench_srcs]
   # Exclude optional codecs from extras.
-  exclude_extras = ['/codec_gif', '/codec_apng', '/codec_exr']
+  exclude_extras = ['/codec_gif', '/codec_apng', '/codec_exr', '/codec_jpg']
   extras_srcs = [fn for fn in extras_srcs if fn not in gbench_srcs and
                  not any(patt in fn for patt in testonly) and
                  not any(patt in fn for patt in exclude_extras)]
