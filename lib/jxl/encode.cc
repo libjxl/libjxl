@@ -1095,7 +1095,7 @@ JxlEncoderStatus JxlEncoderAddJPEGFrame(
   if (frame_settings->enc->store_jpeg_metadata) {
     jxl::jpeg::JPEGData data_in = *io.Main().jpeg_data;
     jxl::PaddedBytes jpeg_data;
-    if (!EncodeJPEGData(data_in, &jpeg_data)) {
+    if (!jxl::jpeg::EncodeJPEGData(data_in, &jpeg_data)) {
       return JXL_ENC_ERROR;
     }
     frame_settings->enc->jpeg_metadata = std::vector<uint8_t>(

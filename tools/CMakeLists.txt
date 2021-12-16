@@ -236,9 +236,6 @@ if(${JPEGXL_ENABLE_BENCHMARK})
       "${CMAKE_CURRENT_LIST_DIR}/benchmark/benchmark_codec_jpeg.cc"
       "${CMAKE_CURRENT_LIST_DIR}/benchmark/benchmark_codec_jpeg.h"
     )
-    target_compile_definitions(benchmark_xl PRIVATE -DBENCHMARK_JPEG)
-    target_include_directories(benchmark_xl PRIVATE ${JPEG_INCLUDE_DIR})
-    target_link_libraries(benchmark_xl ${JPEG_LIBRARIES})
   endif ()
 
   if(NOT JPEGXL_BUNDLE_LIBPNG)

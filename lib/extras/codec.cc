@@ -5,6 +5,8 @@
 
 #include "lib/extras/codec.h"
 
+#include <locale>
+
 #include "lib/jxl/base/file_io.h"
 #if JPEGXL_ENABLE_APNG
 #include "lib/extras/codec_apng.h"
@@ -15,6 +17,7 @@
 #if JPEGXL_ENABLE_GIF
 #include "lib/extras/codec_gif.h"
 #endif
+
 #include "lib/extras/codec_jpg.h"
 #include "lib/extras/codec_pgx.h"
 #include "lib/extras/codec_pnm.h"
@@ -55,8 +58,11 @@ std::string ExtensionFromCodec(Codec codec, const bool is_gray,
   return std::string();
 }
 
-Codec CodecFromExtension(const std::string& extension,
+Codec CodecFromExtension(std::string extension,
                          size_t* JXL_RESTRICT bits_per_sample) {
+  std::transform(
+      extension.begin(), extension.end(), extension.begin(),
+      [](char c) { return std::tolower(c, std::locale::classic()); });
   if (extension == ".png") return Codec::kPNG;
 
   if (extension == ".jpg") return Codec::kJPG;
@@ -65,13 +71,13 @@ Codec CodecFromExtension(const std::string& extension,
   if (extension == ".pgx") return Codec::kPGX;
 
   if (extension == ".pbm") {
-    *bits_per_sample = 1;
+    if (bits_per_sample != nullptr) *bits_per_sample = 1;
     return Codec::kPNM;
   }
   if (extension == ".pgm") return Codec::kPNM;
   if (extension == ".ppm") return Codec::kPNM;
   if (extension == ".pfm") {
-    *bits_per_sample = 32;
+    if (bits_per_sample != nullptr) *bits_per_sample = 32;
     return Codec::kPNM;
   }
 
@@ -112,18 +118,12 @@ Status SetFromBytes(const Span<const uint8_t> bytes,
     codec = Codec::kGIF;
   }
 #endif
-  else if (io->dec_target == DecodeTarget::kQuantizedCoeffs &&
-           extras::DecodeImageJPGCoefficients(bytes, io)) {
-    // TODO(deymo): In this case the tools should use a different API to
-    // transcode the input JPEG to JXL instead of expressing it as a
-    // PackedPixelFile.
+#if JPEGXL_ENABLE_JPEG
+  else if (extras::DecodeImageJPG(bytes, color_hints, io->constraints, &ppf)) {
     codec = Codec::kJPG;
-    skip_ppf_conversion = true;
-  } else if (io->dec_target == DecodeTarget::kPixels &&
-             extras::DecodeImageJPG(bytes, color_hints, io->constraints,
-                                    &ppf)) {
-    codec = Codec::kJPG;
-  } else if (extras::DecodeImagePSD(bytes, color_hints, pool, io)) {
+  }
+#endif
+  else if (extras::DecodeImagePSD(bytes, color_hints, pool, io)) {
     // TODO(deymo): Migrate PSD codec too.
     codec = Codec::kPSD;
     skip_ppf_conversion = true;
@@ -161,10 +161,8 @@ Status Encode(const CodecInOut& io, const Codec codec,
   JXL_CHECK(!io.Main().c_current().ICC().empty());
   JXL_CHECK(!c_desired.ICC().empty());
   io.CheckMetadata();
-  if (io.Main().IsJPEG() && codec != Codec::kJPG) {
-    return JXL_FAILURE(
-        "Output format has to be JPEG for losslessly recompressed JPEG "
-        "reconstruction");
+  if (io.Main().IsJPEG()) {
+    JXL_WARNING("Writing JPEG data as pixels");
   }
 
   switch (codec) {
@@ -176,19 +174,15 @@ Status Encode(const CodecInOut& io, const Codec codec,
       return JXL_FAILURE("JPEG XL was built without (A)PNG support");
 #endif
     case Codec::kJPG:
-      if (io.Main().IsJPEG()) {
-        return extras::EncodeImageJPGCoefficients(&io, bytes);
-      } else {
 #if JPEGXL_ENABLE_JPEG
-        return EncodeImageJPG(&io,
-                              io.use_sjpeg ? extras::JpegEncoder::kSJpeg
-                                           : extras::JpegEncoder::kLibJpeg,
-                              io.jpeg_quality, YCbCrChromaSubsampling(), pool,
-                              bytes);
+      return EncodeImageJPG(&io,
+                            io.use_sjpeg ? extras::JpegEncoder::kSJpeg
+                                         : extras::JpegEncoder::kLibJpeg,
+                            io.jpeg_quality, YCbCrChromaSubsampling(), pool,
+                            bytes);
 #else
-        return JXL_FAILURE("JPEG XL was built without JPEG support");
+      return JXL_FAILURE("JPEG XL was built without JPEG support");
 #endif
-      }
     case Codec::kPNM:
       return extras::EncodeImagePNM(&io, c_desired, bits_per_sample, pool,
                                     bytes);

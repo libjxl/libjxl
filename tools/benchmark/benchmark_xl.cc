@@ -43,6 +43,7 @@
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
+#include "lib/jxl/jpeg/enc_jpeg_data.h"
 #include "tools/benchmark/benchmark_args.h"
 #include "tools/benchmark/benchmark_codec.h"
 #include "tools/benchmark/benchmark_file_io.h"
@@ -946,11 +947,14 @@ class Benchmark {
           const size_t i = static_cast<size_t>(task);
           Status ok = true;
 
-          loaded_images[i].dec_target = jpeg_transcoding_requested
-                                            ? DecodeTarget::kQuantizedCoeffs
-                                            : DecodeTarget::kPixels;
           if (!Args()->decode_only) {
-            ok = SetFromFile(fnames[i], Args()->color_hints, &loaded_images[i]);
+            PaddedBytes encoded;
+            ok = ReadFile(fnames[i], &encoded) &&
+                 (jpeg_transcoding_requested
+                      ? jpeg::DecodeImageJPG(Span<const uint8_t>(encoded),
+                                             &loaded_images[i])
+                      : SetFromBytes(Span<const uint8_t>(encoded),
+                                     Args()->color_hints, &loaded_images[i]));
             if (ok && Args()->intensity_target != 0) {
               loaded_images[i].metadata.m.SetIntensityTarget(
                   Args()->intensity_target);

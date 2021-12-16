@@ -17,6 +17,7 @@
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/fake_parallel_runner_testonly.h"
 #include "lib/jxl/image_test_utils.h"
+#include "lib/jxl/jpeg/enc_jpeg_data.h"
 #include "lib/jxl/render_pipeline/test_render_pipeline_stages.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testdata.h"
@@ -87,9 +88,10 @@ TEST_P(RenderPipelineTestParam, PipelineTest) {
 
   CodecInOut io;
   if (config.jpeg_transcode) {
-    io.dec_target = DecodeTarget::kQuantizedCoeffs;
+    ASSERT_TRUE(jpeg::DecodeImageJPG(Span<const uint8_t>(orig), &io));
+  } else {
+    ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
   }
-  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
   io.ShrinkTo(config.xsize, config.ysize);
 
   PaddedBytes compressed;

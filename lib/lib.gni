@@ -437,8 +437,6 @@ libjxl_testlib_sources = [
 libjxl_extras_sources = [
     "extras/codec.cc",
     "extras/codec.h",
-    "extras/codec_jpg.cc",
-    "extras/codec_jpg.h",
     "extras/codec_pgx.cc",
     "extras/codec_pgx.h",
     "extras/codec_pnm.cc",

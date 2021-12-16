@@ -3,14 +3,9 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
-# codec_jpg is included always for loading of lossless reconstruction but
-# decoding to pixels is only supported if libjpeg is found and
-# JPEGXL_ENABLE_JPEG=1.
 set(JPEGXL_EXTRAS_SOURCES
   extras/codec.cc
   extras/codec.h
-  extras/codec_jpg.cc
-  extras/codec_jpg.h
   extras/codec_pgx.cc
   extras/codec_pgx.h
   extras/codec_pnm.cc
@@ -61,6 +56,10 @@ endif()
 
 find_package(JPEG)
 if(JPEG_FOUND)
+  target_sources(jxl_extras-static PRIVATE
+    extras/codec_jpg.cc
+    extras/codec_jpg.h
+  )
   target_include_directories(jxl_extras-static PUBLIC "${JPEG_INCLUDE_DIRS}")
   target_link_libraries(jxl_extras-static PUBLIC ${JPEG_LIBRARIES})
   target_compile_definitions(jxl_extras-static PUBLIC -DJPEGXL_ENABLE_JPEG=1)
