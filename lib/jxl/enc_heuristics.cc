@@ -916,7 +916,7 @@ Status DefaultEncoderHeuristics::LossyFrameHeuristics(
           &enc_state->shared.cmap);
     }
   };
-  RunOnPool(
+  JXL_RETURN_IF_ERROR(RunOnPool(
       pool, 0,
       DivCeil(enc_state->shared.frame_dim.xsize_blocks, kEncTileDimInBlocks) *
           DivCeil(enc_state->shared.frame_dim.ysize_blocks,
@@ -926,7 +926,7 @@ Status DefaultEncoderHeuristics::LossyFrameHeuristics(
         cfl_heuristics.PrepareForThreads(num_threads);
         return true;
       },
-      process_tile, "Enc Heuristics");
+      process_tile, "Enc Heuristics"));
 
   acs_heuristics.Finalize(aux_out);
   if (cparams.speed_tier <= SpeedTier::kHare) {

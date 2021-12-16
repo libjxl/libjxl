@@ -462,13 +462,13 @@ HWY_EXPORT(DoYCbCrUpsampling);
 void UndoXYB(const Image3F& src, Image3F* dst,
              const OutputEncodingInfo& output_info, ThreadPool* pool) {
   CopyImageTo(src, dst);
-  RunOnPool(
-      pool, 0, src.ysize(), ThreadPool::SkipInit(),
+  JXL_CHECK(RunOnPool(
+      pool, 0, src.ysize(), ThreadPool::NoInit,
       [&](const uint32_t y, size_t /*thread*/) {
         JXL_CHECK(HWY_DYNAMIC_DISPATCH(UndoXYBInPlace)(dst, Rect(*dst).Line(y),
                                                        output_info));
       },
-      "UndoXYB");
+      "UndoXYB"));
 }
 
 namespace {
@@ -1249,8 +1249,9 @@ Status FinalizeFrameDecoding(ImageBundle* decoded,
       }
     };
 
-    RunOnPool(pool, 0, rects_to_process.size(), allocate_storage,
-              run_apply_features, "ApplyFeatures");
+    JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, rects_to_process.size(),
+                                  allocate_storage, run_apply_features,
+                                  "ApplyFeatures"));
 
     if (!apply_features_ok) {
       return JXL_FAILURE("FinalizeImageRect failed");
@@ -1305,7 +1306,7 @@ Status FinalizeFrameDecoding(ImageBundle* decoded,
 
     std::atomic<bool> blending_ok{true};
     JXL_RETURN_IF_ERROR(RunOnPool(
-        pool, 0, rects_to_process.size(), ThreadPool::SkipInit(),
+        pool, 0, rects_to_process.size(), ThreadPool::NoInit,
         [&](const uint32_t i, size_t /*thread*/) {
           const Rect& rect = rects_to_process[i];
           auto rect_blender = blender.PrepareRect(

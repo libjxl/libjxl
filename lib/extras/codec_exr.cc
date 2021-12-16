@@ -37,14 +37,13 @@ constexpr int kExrAlphaBits = 16;
 
 size_t GetNumThreads(ThreadPool* pool) {
   size_t exr_num_threads = 1;
-  RunOnPool(
+  JXL_CHECK(RunOnPool(
       pool, 0, 1,
       [&](size_t num_threads) {
         exr_num_threads = num_threads;
         return true;
       },
-      [&](const int /* task */, const int /*thread*/) {},
-      "DecodeImageEXRThreads");
+      [&](uint32_t /* task */, size_t /*thread*/) {}, "DecodeImageEXRThreads"));
   return exr_num_threads;
 }
 
@@ -183,9 +182,9 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, const ColorHints& color_hints,
         input_rows.data() - input.dataWindow().min.x - start_y * row_size,
         /*xStride=*/1, /*yStride=*/row_size);
     input.readPixels(start_y, end_y);
-    RunOnPool(
-        pool, start_y, end_y + 1, ThreadPool::SkipInit(),
-        [&](const int exr_y, const int /*thread*/) {
+    JXL_RETURN_IF_ERROR(RunOnPool(
+        pool, start_y, end_y + 1, ThreadPool::NoInit,
+        [&](const uint32_t exr_y, size_t /* thread */) {
           const int image_y = exr_y - input.displayWindow().min.y;
           const OpenEXR::Rgba* const JXL_RESTRICT input_row =
               &input_rows[(exr_y - start_y) * row_size];
@@ -203,7 +202,7 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, const ColorHints& color_hints,
                    input_row + (exr_x - input.dataWindow().min.x), pixel_size);
           }
         },
-        "DecodeImageEXR");
+        "DecodeImageEXR"));
   }
 
   ppf->color_encoding.transfer_function = JXL_TRANSFER_FUNCTION_LINEAR;
@@ -284,9 +283,9 @@ Status EncodeImageEXR(const CodecInOut* io, const ColorEncoding& c_desired,
           std::min(start_y + y_chunk_size - 1, io->ysize() - 1);
       output.setFrameBuffer(output_rows.data() - start_y * io->xsize(),
                             /*xStride=*/1, /*yStride=*/io->xsize());
-      RunOnPool(
-          pool, start_y, end_y + 1, ThreadPool::SkipInit(),
-          [&](const int y, const int /*thread*/) {
+      JXL_RETURN_IF_ERROR(RunOnPool(
+          pool, start_y, end_y + 1, ThreadPool::NoInit,
+          [&](const uint32_t y, size_t /* thread */) {
             const float* const JXL_RESTRICT input_rows[] = {
                 linear->color().ConstPlaneRow(0, y),
                 linear->color().ConstPlaneRow(1, y),
@@ -318,7 +317,7 @@ Status EncodeImageEXR(const CodecInOut* io, const ColorEncoding& c_desired,
               }
             }
           },
-          "EncodeImageEXR");
+          "EncodeImageEXR"));
       output.writePixels(/*numScanLines=*/end_y - start_y + 1);
     }
   }

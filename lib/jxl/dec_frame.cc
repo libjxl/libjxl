@@ -473,8 +473,8 @@ void FrameDecoder::FinalizeDC() {
   finalized_dc_ = true;
 }
 
-void FrameDecoder::AllocateOutput() {
-  if (allocated_) return;
+Status FrameDecoder::AllocateOutput() {
+  if (allocated_) return true;
   const CodecMetadata& metadata = *frame_header_.nonserialized_metadata;
   if (dec_state_->rgb_output == nullptr && !dec_state_->pixel_callback) {
     modular_frame_decoder_.MaybeDropFullImage();
@@ -517,8 +517,9 @@ void FrameDecoder::AllocateOutput() {
     }
   }
   decoded_->origin = dec_state_->shared->frame_header.frame_origin;
-  dec_state_->InitForAC(nullptr);
+  JXL_RETURN_IF_ERROR(dec_state_->InitForAC(nullptr));
   allocated_ = true;
+  return true;
 }
 
 Status FrameDecoder::ProcessACGlobal(BitReader* br) {
@@ -887,8 +888,8 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
 
   std::atomic<bool> has_error{false};
   if (decoded_dc_global_) {
-    RunOnPool(
-        pool_, 0, dc_group_sec.size(), ThreadPool::SkipInit(),
+    JXL_RETURN_IF_ERROR(RunOnPool(
+        pool_, 0, dc_group_sec.size(), ThreadPool::NoInit,
         [this, &dc_group_sec, &num, &sections, &section_status, &has_error](
             size_t i, size_t thread) {
           if (dc_group_sec[i] != num) {
@@ -899,7 +900,7 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
             }
           }
         },
-        "DecodeDCGroup");
+        "DecodeDCGroup"));
   }
   if (has_error) return JXL_FAILURE("Error in DC group");
 
@@ -909,7 +910,7 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
       PreparePipeline();
     }
     FinalizeDC();
-    AllocateOutput();
+    JXL_RETURN_IF_ERROR(AllocateOutput());
     if (pause_at_progressive_ && !single_section) {
       bool can_return_dc = true;
       if (single_section) {
@@ -963,7 +964,7 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
       dec_state_->group_border_assigner.ClearDone(i);
     }
 
-    RunOnPool(
+    JXL_RETURN_IF_ERROR(RunOnPool(
         pool_, 0, ac_group_sec.size(),
         [this](size_t num_threads) {
           PrepareStorage(num_threads, decoded_passes_per_ac_group_.size());
@@ -992,7 +993,7 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
             }
           }
         },
-        "DecodeGroup");
+        "DecodeGroup"));
   }
   if (has_error) return JXL_FAILURE("Error in AC group");
 
@@ -1021,7 +1022,7 @@ Status FrameDecoder::Flush() {
     // Nothing to do.
     return true;
   }
-  AllocateOutput();
+  JXL_RETURN_IF_ERROR(AllocateOutput());
 
   uint32_t completely_decoded_ac_pass = *std::min_element(
       decoded_passes_per_ac_group_.begin(), decoded_passes_per_ac_group_.end());
@@ -1034,7 +1035,7 @@ Status FrameDecoder::Flush() {
       dec_state_->group_border_assigner.ClearDone(i);
     }
     std::atomic<bool> has_error{false};
-    RunOnPool(
+    JXL_RETURN_IF_ERROR(RunOnPool(
         pool_, 0, decoded_passes_per_ac_group_.size(),
         [this](const size_t num_threads) {
           PrepareStorage(num_threads, decoded_passes_per_ac_group_.size());
@@ -1052,7 +1053,7 @@ Status FrameDecoder::Flush() {
               /*force_draw=*/true, /*dc_only=*/!decoded_ac_global_);
           if (!ok) has_error = true;
         },
-        "ForceDrawGroup");
+        "ForceDrawGroup"));
     if (has_error) {
       return JXL_FAILURE("Drawing groups failed");
     }
@@ -1156,7 +1157,7 @@ Status FrameDecoder::FinalizeFrame() {
 
   if (!finalized_dc_) {
     JXL_ASSERT(allow_partial_frames_);
-    AllocateOutput();
+    JXL_RETURN_IF_ERROR(AllocateOutput());
   }
 
   JXL_RETURN_IF_ERROR(Flush());

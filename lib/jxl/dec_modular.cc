@@ -522,8 +522,8 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
       }
       if (frame_header.color_transform == ColorTransform::kXYB && c == 2) {
         JXL_ASSERT(!fp);
-        RunOnPool(
-            pool, 0, ysize_shifted, jxl::ThreadPool::SkipInit(),
+        JXL_RETURN_IF_ERROR(RunOnPool(
+            pool, 0, ysize_shifted, ThreadPool::NoInit,
             [&](const uint32_t task, size_t /* thread */) {
               const size_t y = task;
               const pixel_type* const JXL_RESTRICT row_in =
@@ -534,12 +534,12 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
               HWY_DYNAMIC_DISPATCH(MultiplySum)
               (xsize_shifted, row_in, row_in_Y, factor, row_out);
             },
-            "ModularIntToFloat");
+            "ModularIntToFloat"));
       } else if (fp) {
         int bits = metadata->m.bit_depth.bits_per_sample;
         int exp_bits = metadata->m.bit_depth.exponent_bits_per_sample;
-        RunOnPool(
-            pool, 0, ysize_shifted, jxl::ThreadPool::SkipInit(),
+        JXL_RETURN_IF_ERROR(RunOnPool(
+            pool, 0, ysize_shifted, ThreadPool::NoInit,
             [&](const uint32_t task, size_t /* thread */) {
               const size_t y = task;
               const pixel_type* const JXL_RESTRICT row_in =
@@ -547,10 +547,10 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
               float* const JXL_RESTRICT row_out = get_row(r, c, y);
               int_to_float(row_in, row_out, xsize_shifted, bits, exp_bits);
             },
-            "ModularIntToFloat_losslessfloat");
+            "ModularIntToFloat_losslessfloat"));
       } else {
-        RunOnPool(
-            pool, 0, ysize_shifted, jxl::ThreadPool::SkipInit(),
+        JXL_RETURN_IF_ERROR(RunOnPool(
+            pool, 0, ysize_shifted, ThreadPool::NoInit,
             [&](const uint32_t task, size_t /* thread */) {
               const size_t y = task;
               const pixel_type* const JXL_RESTRICT row_in =
@@ -565,7 +565,7 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
                 (xsize_shifted, row_in, factor, row_out);
               }
             },
-            "ModularIntToFloat");
+            "ModularIntToFloat"));
       }
       if (rgb_from_gray) {
         break;

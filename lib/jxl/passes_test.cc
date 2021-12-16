@@ -200,7 +200,8 @@ TEST(PassesTest, AllDownsampleFeasible) {
               target_butteraugli[downsampling])
         << "downsampling: " << downsampling;
   };
-  pool.Run(0, downsamplings.size(), ThreadPool::SkipInit(), check);
+  EXPECT_TRUE(RunOnPool(&pool, 0, downsamplings.size(), ThreadPool::NoInit,
+                        check, "TestDownsampling"));
 }
 
 TEST(PassesTest, AllDownsampleFeasibleQProgressive) {
@@ -246,7 +247,8 @@ TEST(PassesTest, AllDownsampleFeasibleQProgressive) {
               target_butteraugli[downsampling])
         << "downsampling: " << downsampling;
   };
-  pool.Run(0, downsamplings.size(), ThreadPool::SkipInit(), check);
+  EXPECT_TRUE(RunOnPool(&pool, 0, downsamplings.size(), ThreadPool::NoInit,
+                        check, "TestQProgressive"));
 }
 
 TEST(PassesTest, ProgressiveDownsample2DegradesCorrectlyGrayscale) {

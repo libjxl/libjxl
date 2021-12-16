@@ -35,8 +35,8 @@ void OpsinToLinearInplace(Image3F* JXL_RESTRICT inout, ThreadPool* pool,
   JXL_CHECK_IMAGE_INITIALIZED(*inout, Rect(*inout));
 
   const size_t xsize = inout->xsize();  // not padded
-  RunOnPool(
-      pool, 0, inout->ysize(), ThreadPool::SkipInit(),
+  JXL_CHECK(RunOnPool(
+      pool, 0, inout->ysize(), ThreadPool::NoInit,
       [&](const uint32_t task, size_t /* thread */) {
         const size_t y = task;
 
@@ -63,7 +63,7 @@ void OpsinToLinearInplace(Image3F* JXL_RESTRICT inout, ThreadPool* pool,
           Store(linear_b, d, row2 + x);
         }
       },
-      "OpsinToLinear");
+      "OpsinToLinear"));
 }
 
 // Same, but not in-place.
@@ -75,8 +75,8 @@ void OpsinToLinear(const Image3F& opsin, const Rect& rect, ThreadPool* pool,
   JXL_ASSERT(SameSize(rect, *linear));
   JXL_CHECK_IMAGE_INITIALIZED(opsin, rect);
 
-  RunOnPool(
-      pool, 0, static_cast<int>(rect.ysize()), ThreadPool::SkipInit(),
+  JXL_CHECK(RunOnPool(
+      pool, 0, static_cast<int>(rect.ysize()), ThreadPool::NoInit,
       [&](const uint32_t task, size_t /*thread*/) {
         const size_t y = static_cast<size_t>(task);
 
@@ -106,7 +106,7 @@ void OpsinToLinear(const Image3F& opsin, const Rect& rect, ThreadPool* pool,
           Store(linear_b, d, row_linear_2 + x);
         }
       },
-      "OpsinToLinear(Rect)");
+      "OpsinToLinear(Rect)"));
   JXL_CHECK_IMAGE_INITIALIZED(*linear, rect);
 }
 

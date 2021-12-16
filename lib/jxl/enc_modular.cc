@@ -803,15 +803,15 @@ Status ModularFrameEncoder::ComputeEncodingData(
   }
   gi_channel.resize(stream_images.size());
 
-  RunOnPool(
-      pool, 0, stream_params.size(), ThreadPool::SkipInit(),
+  JXL_RETURN_IF_ERROR(RunOnPool(
+      pool, 0, stream_params.size(), ThreadPool::NoInit,
       [&](const uint32_t i, size_t /* thread */) {
         stream_options[stream_params[i].id.ID(frame_dim)] = cparams.options;
         JXL_CHECK(PrepareStreamParams(
             stream_params[i].rect, cparams, stream_params[i].minShift,
             stream_params[i].maxShift, stream_params[i].id, do_color));
       },
-      "ChooseParams");
+      "ChooseParams"));
   {
     // Clear out channels that have been copied to groups.
     Image& full_image = stream_images[0];
@@ -926,8 +926,8 @@ Status ModularFrameEncoder::PrepareEncoding(ThreadPool* pool,
     std::atomic_flag invalid_force_wp = ATOMIC_FLAG_INIT;
 
     std::vector<Tree> trees(useful_splits.size() - 1);
-    RunOnPool(
-        pool, 0, useful_splits.size() - 1, ThreadPool::SkipInit(),
+    JXL_RETURN_IF_ERROR(RunOnPool(
+        pool, 0, useful_splits.size() - 1, ThreadPool::NoInit,
         [&](const uint32_t chunk, size_t /* thread */) {
           // TODO(veluca): parallelize more.
           size_t total_pixels = 0;
@@ -987,7 +987,7 @@ Status ModularFrameEncoder::PrepareEncoding(ThreadPool* pool,
               LearnTree(std::move(tree_samples), total_pixels,
                         stream_options[start], local_multiplier_info, range);
         },
-        "LearnTrees");
+        "LearnTrees"));
     if (invalid_force_wp.test_and_set(std::memory_order_acq_rel)) {
       return JXL_FAILURE("PrepareEncoding: force_no_wp with {Weighted}");
     }
@@ -1022,8 +1022,8 @@ Status ModularFrameEncoder::PrepareEncoding(ThreadPool* pool,
   }
 
   image_widths.resize(num_streams);
-  RunOnPool(
-      pool, 0, num_streams, ThreadPool::SkipInit(),
+  JXL_RETURN_IF_ERROR(RunOnPool(
+      pool, 0, num_streams, ThreadPool::NoInit,
       [&](const uint32_t stream_id, size_t /* thread */) {
         AuxOut my_aux_out;
         if (aux_out) {
@@ -1040,7 +1040,7 @@ Status ModularFrameEncoder::PrepareEncoding(ThreadPool* pool,
             /*tokens=*/&tokens[stream_id],
             /*widths=*/&image_widths[stream_id]));
       },
-      "ComputeTokens");
+      "ComputeTokens"));
   return true;
 }
 

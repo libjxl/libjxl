@@ -25,8 +25,8 @@ Status HlgOOTF(ImageBundle* ib, const float gamma, ThreadPool* pool) {
   JXL_RETURN_IF_ERROR(linear_rec2020.CreateICC());
   JXL_RETURN_IF_ERROR(ib->TransformTo(linear_rec2020, GetJxlCms(), pool));
 
-  return RunOnPool(
-      pool, 0, ib->ysize(), ThreadPool::SkipInit(),
+  JXL_RETURN_IF_ERROR(RunOnPool(
+      pool, 0, ib->ysize(), ThreadPool::NoInit,
       [&](const int y, const int thread) {
         float* const JXL_RESTRICT rows[3] = {ib->color()->PlaneRow(0, y),
                                              ib->color()->PlaneRow(1, y),
@@ -45,7 +45,8 @@ Status HlgOOTF(ImageBundle* ib, const float gamma, ThreadPool* pool) {
           }
         }
       },
-      "HlgOOTF");
+      "HlgOOTF"));
+  return true;
 }
 
 Status HlgInverseOOTF(ImageBundle* ib, const float gamma, ThreadPool* pool) {

@@ -447,12 +447,17 @@ int main(int argc, const char** argv) {
     specs.back().override_decoder_spec = 0;
 
     jxl::ThreadPoolInternal pool{num_threads};
-    pool.Run(0, specs.size(), jxl::ThreadPool::SkipInit(),
-             [&specs, dest_dir, regenerate, quiet](const int task,
-                                                   const int /* thread */) {
-               const ImageSpec& spec = specs[task];
-               GenerateFile(dest_dir, spec, regenerate, quiet);
-             });
+    if (!RunOnPool(
+            &pool, 0, specs.size(), jxl::ThreadPool::NoInit,
+            [&specs, dest_dir, regenerate, quiet](const uint32_t task,
+                                                  size_t /* thread */) {
+              const ImageSpec& spec = specs[task];
+              GenerateFile(dest_dir, spec, regenerate, quiet);
+            },
+            "FuzzerCorpus")) {
+      std::cerr << "Error generating fuzzer corpus" << std::endl;
+      return 1;
+    }
   }
   std::cerr << "Finished generating fuzzer corpus" << std::endl;
   return 0;
