@@ -666,19 +666,18 @@ static void PngWrite(png_structp png_ptr, png_bytep data, png_size_t length) {
   bytes->append(data, data + length);
 }
 
-// Stores XMP and EXIF/IPTC into itext and text.
+// Stores XMP and EXIF/IPTC into key/value strings for PNG
 class BlobsWriterPNG {
  public:
-  static Status Encode(const Blobs& blobs, std::vector<png_text>* info,
-                       std::vector<std::string>* strings) {
+  static Status Encode(const Blobs& blobs, std::vector<std::string>* strings) {
     if (!blobs.exif.empty()) {
-      JXL_RETURN_IF_ERROR(EncodeBase16("exif", blobs.exif, info, strings));
+      JXL_RETURN_IF_ERROR(EncodeBase16("exif", blobs.exif, strings));
     }
     if (!blobs.iptc.empty()) {
-      JXL_RETURN_IF_ERROR(EncodeBase16("iptc", blobs.iptc, info, strings));
+      JXL_RETURN_IF_ERROR(EncodeBase16("iptc", blobs.iptc, strings));
     }
     if (!blobs.xmp.empty()) {
-      JXL_RETURN_IF_ERROR(EncodeBase16("xmp", blobs.xmp, info, strings));
+      JXL_RETURN_IF_ERROR(EncodeBase16("xmp", blobs.xmp, strings));
     }
     return true;
   }
@@ -690,7 +689,6 @@ class BlobsWriterPNG {
   }
 
   static Status EncodeBase16(const std::string& type, const PaddedBytes& bytes,
-                             std::vector<png_text>* info,
                              std::vector<std::string>* strings) {
     // Encoding: base16 with newline after 72 chars.
     const size_t base16_size =
@@ -713,12 +711,7 @@ class BlobsWriterPNG {
              bytes.size());
 
     strings->push_back(std::string(key));
-    png_text text;
-    text.key = const_cast<png_charp>(strings->back().data());
     strings->push_back(std::string(header) + base16);
-    text.text = const_cast<png_charp>(strings->back().data());
-    text.compression = PNG_TEXT_COMPRESSION_zTXt;
-    info->push_back(text);
     return true;
   }
 };
@@ -783,17 +776,22 @@ Status EncodeImageAPNG(const CodecInOut* io, const ColorEncoding& c_desired,
     if (count == 0) {
       W = width;
       H = height;
-      std::vector<png_text> textinfo;
-      std::vector<std::string> textstrings;
-      JXL_RETURN_IF_ERROR(
-          BlobsWriterPNG::Encode(io->blobs, &textinfo, &textstrings));
+
       // TODO(jon): instead of always setting an iCCP, could try to avoid that
       // have to avoid warnings on the ICC profile becoming fatal
       png_set_benign_errors(png_ptr, 1);
       png_set_iCCP(png_ptr, info_ptr, "1", 0, c_desired.ICC().data(),
                    c_desired.ICC().size());
 
-      png_set_text(png_ptr, info_ptr, textinfo.data(), textinfo.size());
+      std::vector<std::string> textstrings;
+      JXL_RETURN_IF_ERROR(BlobsWriterPNG::Encode(io->blobs, &textstrings));
+      for (size_t i = 0; i + 1 < textstrings.size(); i += 2) {
+        png_text text;
+        text.key = const_cast<png_charp>(textstrings[i].c_str());
+        text.text = const_cast<png_charp>(textstrings[i + 1].c_str());
+        text.compression = PNG_TEXT_COMPRESSION_zTXt;
+        png_set_text(png_ptr, info_ptr, &text, 1);
+      }
 
       png_write_info(png_ptr, info_ptr);
     } else {
