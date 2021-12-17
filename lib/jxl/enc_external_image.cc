@@ -419,6 +419,12 @@ Status ConvertFromExternal(Span<const uint8_t> bytes, size_t xsize,
     }
 
     ib->SetAlpha(std::move(alpha), alpha_is_premultiplied);
+  } else if (!has_alpha && ib->HasAlpha()) {
+    // if alpha is not passed, but it is expected, then assume
+    // it is all-opaque
+    ImageF alpha(xsize, ysize);
+    FillImage(1.0f, &alpha);
+    ib->SetAlpha(std::move(alpha), alpha_is_premultiplied);
   }
 
   return true;

@@ -509,6 +509,8 @@ JxlEncoderAddJPEGFrame(const JxlEncoderFrameSettings* frame_settings,
  *
  * Extra channels not handled here need to be set by @ref
  * JxlEncoderSetExtraChannelBuffer.
+ * If the image has alpha, and alpha is not passed here, it will implicitly be
+ * set to all-opaque (an alpha value of 1.0 everywhere).
  *
  * The color profile of the pixels depends on the value of uses_original_profile
  * in the JxlBasicInfo. If true, the pixels are assumed to be encoded in the
