@@ -298,9 +298,7 @@ struct PassesDecoderState {
     if (sz > shared_storage.coeff_orders.size()) {
       shared_storage.coeff_orders.resize(sz);
     }
-    if (shared->frame_header.flags & FrameHeader::kNoise) {
-      // TODO(veluca): adapt this code to output to the rendering pipeline.
-      JXL_CHECK(!render_pipeline);
+    if (shared->frame_header.flags & FrameHeader::kNoise && !render_pipeline) {
       noise = Image3F(shared->frame_dim.xsize_upsampled_padded,
                       shared->frame_dim.ysize_upsampled_padded);
       size_t num_x_groups = DivCeil(noise.xsize(), kGroupDim);

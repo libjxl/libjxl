@@ -3,27 +3,16 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include "lib/jxl/dec_noise.h"
-
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-
-#include <algorithm>
-#include <numeric>
-#include <utility>
+#include "lib/jxl/render_pipeline/stage_noise.h"
 
 #undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "lib/jxl/dec_noise.cc"
+#define HWY_TARGET_INCLUDE "lib/jxl/render_pipeline/stage_noise.cc"
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 
-#include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/chroma_from_luma.h"
-#include "lib/jxl/image_ops.h"
-#include "lib/jxl/opsin_params.h"
-#include "lib/jxl/sanitizers.h"
-#include "lib/jxl/xorshift128plus-inl.h"
+#include "lib/jxl/fast_math-inl.h"
+#include "lib/jxl/transfer_functions-inl.h"
+
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
@@ -35,56 +24,6 @@ using hwy::HWY_NAMESPACE::Vec;
 using D = HWY_CAPPED(float, kBlockDim);
 using DI = hwy::HWY_NAMESPACE::Rebind<int, D>;
 using DI8 = hwy::HWY_NAMESPACE::Repartition<uint8_t, D>;
-
-// Converts one vector's worth of random bits to floats in [1, 2).
-// NOTE: as the convolution kernel sums to 0, it doesn't matter if inputs are in
-// [0, 1) or in [1, 2).
-void BitsToFloat(const uint32_t* JXL_RESTRICT random_bits,
-                 float* JXL_RESTRICT floats) {
-  const HWY_FULL(float) df;
-  const HWY_FULL(uint32_t) du;
-
-  const auto bits = Load(du, random_bits);
-  // 1.0 + 23 random mantissa bits = [1, 2)
-  const auto rand12 = BitCast(df, ShiftRight<9>(bits) | Set(du, 0x3F800000));
-  Store(rand12, df, floats);
-}
-
-void RandomImage(Xorshift128Plus* rng, const Rect& rect,
-                 ImageF* JXL_RESTRICT noise) {
-  const size_t xsize = rect.xsize();
-  const size_t ysize = rect.ysize();
-
-  // May exceed the vector size, hence we have two loops over x below.
-  constexpr size_t kFloatsPerBatch =
-      Xorshift128Plus::N * sizeof(uint64_t) / sizeof(float);
-  HWY_ALIGN uint64_t batch[Xorshift128Plus::N];
-
-  const HWY_FULL(float) df;
-  const size_t N = Lanes(df);
-
-  for (size_t y = 0; y < ysize; ++y) {
-    float* JXL_RESTRICT row = rect.Row(noise, y);
-
-    size_t x = 0;
-    // Only entire batches (avoids exceeding the image padding).
-    for (; x + kFloatsPerBatch <= xsize; x += kFloatsPerBatch) {
-      rng->Fill(batch);
-      for (size_t i = 0; i < kFloatsPerBatch; i += Lanes(df)) {
-        BitsToFloat(reinterpret_cast<const uint32_t*>(batch) + i, row + x + i);
-      }
-    }
-
-    // Any remaining pixels, rounded up to vectors (safe due to padding).
-    rng->Fill(batch);
-    size_t batch_pos = 0;  // < kFloatsPerBatch
-    for (; x < xsize; x += N) {
-      BitsToFloat(reinterpret_cast<const uint32_t*>(batch) + batch_pos,
-                  row + x);
-      batch_pos += N;
-    }
-  }
-}
 
 // [0, max_value]
 template <class D, class V>
@@ -197,34 +136,45 @@ void AddNoiseToRGB(const D d, const Vec<D> rnd_noise_r,
   Store(vb, d, out_b);
 }
 
-void AddNoise(const NoiseParams& noise_params, const Rect& noise_rect,
-              const Image3F& noise, const Rect& opsin_rect,
-              const ColorCorrelationMap& cmap, Image3F* opsin) {
-  if (!noise_params.HasAny()) return;
-  const StrengthEvalLut noise_model(noise_params);
-  D d;
-  const auto half = Set(d, 0.5f);
+class AddNoiseStage : public RenderPipelineStage {
+ public:
+  AddNoiseStage(const NoiseParams& noise_params,
+                const ColorCorrelationMap& cmap, size_t first_c)
+      : RenderPipelineStage(RenderPipelineStage::Settings::Symmetric(
+            /*shift=*/0, /*border=*/2)),
+        noise_params_(noise_params),
+        cmap_(cmap),
+        first_c_(first_c) {}
 
-  const size_t xsize = opsin_rect.xsize();
-  const size_t ysize = opsin_rect.ysize();
+  void ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
+                  size_t xextra, size_t xsize, size_t xpos, size_t ypos,
+                  float* JXL_RESTRICT temp) const final {
+    PROFILER_ZONE("Noise apply");
 
-  // With the prior subtract-random Laplacian approximation, rnd_* ranges were
-  // about [-1.5, 1.6]; Laplacian3 about doubles this to [-3.6, 3.6], so the
-  // normalizer is half of what it was before (0.5).
-  const auto norm_const = Set(d, 0.22f);
+    if (!noise_params_.HasAny()) return;
+    const StrengthEvalLut noise_model(noise_params_);
+    D d;
+    const auto half = Set(d, 0.5f);
 
-  float ytox = cmap.YtoXRatio(0);
-  float ytob = cmap.YtoBRatio(0);
+    // With the prior subtract-random Laplacian approximation, rnd_* ranges were
+    // about [-1.5, 1.6]; Laplacian3 about doubles this to [-3.6, 3.6], so the
+    // normalizer is half of what it was before (0.5).
+    const auto norm_const = Set(d, 0.22f);
 
-  const size_t xsize_v = RoundUpTo(xsize, Lanes(d));
+    float ytox = cmap_.YtoXRatio(0);
+    float ytob = cmap_.YtoBRatio(0);
 
-  for (size_t y = 0; y < ysize; ++y) {
-    float* JXL_RESTRICT row_x = opsin_rect.PlaneRow(opsin, 0, y);
-    float* JXL_RESTRICT row_y = opsin_rect.PlaneRow(opsin, 1, y);
-    float* JXL_RESTRICT row_b = opsin_rect.PlaneRow(opsin, 2, y);
-    const float* JXL_RESTRICT row_rnd_r = noise_rect.ConstPlaneRow(noise, 0, y);
-    const float* JXL_RESTRICT row_rnd_g = noise_rect.ConstPlaneRow(noise, 1, y);
-    const float* JXL_RESTRICT row_rnd_c = noise_rect.ConstPlaneRow(noise, 2, y);
+    const size_t xsize_v = RoundUpTo(xsize, Lanes(d));
+
+    float* JXL_RESTRICT row_x = GetInputRow(input_rows, 0, 0);
+    float* JXL_RESTRICT row_y = GetInputRow(input_rows, 1, 0);
+    float* JXL_RESTRICT row_b = GetInputRow(input_rows, 2, 0);
+    const float* JXL_RESTRICT row_rnd_r =
+        GetInputRow(input_rows, first_c_ + 0, 0);
+    const float* JXL_RESTRICT row_rnd_g =
+        GetInputRow(input_rows, first_c_ + 1, 0);
+    const float* JXL_RESTRICT row_rnd_c =
+        GetInputRow(input_rows, first_c_ + 2, 0);
     // Needed by the calls to Floor() in StrengthEvalLut. Only arithmetic and
     // shuffles are otherwise done on the data, so this is safe.
     msan::UnpoisonMemory(row_x + xsize, (xsize_v - xsize) * sizeof(float));
@@ -249,22 +199,77 @@ void AddNoise(const NoiseParams& noise_params, const Rect& noise_rect,
     msan::PoisonMemory(row_y + xsize, (xsize_v - xsize) * sizeof(float));
     msan::PoisonMemory(row_b + xsize, (xsize_v - xsize) * sizeof(float));
   }
+
+  RenderPipelineChannelMode GetChannelMode(size_t c) const final {
+    return c >= first_c_ ? RenderPipelineChannelMode::kInput
+           : c < 3       ? RenderPipelineChannelMode::kInPlace
+                         : RenderPipelineChannelMode::kIgnored;
+  }
+
+ private:
+  const NoiseParams& noise_params_;
+  const ColorCorrelationMap& cmap_;
+  size_t first_c_;
+};
+
+std::unique_ptr<RenderPipelineStage> GetAddNoiseStage(
+    const NoiseParams& noise_params, const ColorCorrelationMap& cmap,
+    size_t noise_c_start) {
+  return jxl::make_unique<AddNoiseStage>(noise_params, cmap, noise_c_start);
 }
 
-void RandomImage3(size_t seed, const Rect& rect, Image3F* JXL_RESTRICT noise) {
-  HWY_ALIGN Xorshift128Plus rng(seed);
-  RandomImage(&rng, rect, &noise->Plane(0));
-  RandomImage(&rng, rect, &noise->Plane(1));
-  RandomImage(&rng, rect, &noise->Plane(2));
-}
+class ConvolveNoiseStage : public RenderPipelineStage {
+ public:
+  explicit ConvolveNoiseStage(size_t first_c)
+      : RenderPipelineStage(RenderPipelineStage::Settings::Symmetric(
+            /*shift=*/0, /*border=*/2)),
+        first_c_(first_c) {}
 
-void Random3Planes(size_t seed, const std::pair<ImageF*, Rect>& plane0,
-                   const std::pair<ImageF*, Rect>& plane1,
-                   const std::pair<ImageF*, Rect>& plane2) {
-  HWY_ALIGN Xorshift128Plus rng(seed);
-  RandomImage(&rng, plane0.second, plane0.first);
-  RandomImage(&rng, plane1.second, plane1.first);
-  RandomImage(&rng, plane2.second, plane2.first);
+  void ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
+                  size_t xextra, size_t xsize, size_t xpos, size_t ypos,
+                  float* JXL_RESTRICT temp) const final {
+    PROFILER_ZONE("Noise convolve");
+
+    const HWY_FULL(float) d;
+    for (size_t c = first_c_; c < first_c_ + 3; c++) {
+      float* JXL_RESTRICT rows[5];
+      for (size_t i = 0; i < 5; i++) {
+        rows[i] = GetInputRow(input_rows, c, i - 2);
+      }
+      float* JXL_RESTRICT row_out = GetOutputRow(output_rows, c, 0);
+      for (int64_t x = -RoundUpTo(xextra, Lanes(d));
+           x < (int64_t)(xsize + xextra); x += Lanes(d)) {
+        const auto p00 = Load(d, rows[2] + x);
+        auto others = Zero(d);
+        for (ssize_t i = -2; i <= 2; i++) {
+          others += LoadU(d, rows[0] + x + i);
+          others += LoadU(d, rows[1] + x + i);
+          others += LoadU(d, rows[3] + x + i);
+          others += LoadU(d, rows[4] + x + i);
+        }
+        others += LoadU(d, rows[2] + x - 2);
+        others += LoadU(d, rows[2] + x - 1);
+        others += LoadU(d, rows[2] + x + 1);
+        others += LoadU(d, rows[2] + x + 2);
+        // 4 * (1 - box kernel)
+        auto pixels = MulAdd(others, Set(d, 0.16), p00 * Set(d, -3.84));
+        Store(pixels, d, row_out + x);
+      }
+    }
+  }
+
+  RenderPipelineChannelMode GetChannelMode(size_t c) const final {
+    return c >= first_c_ ? RenderPipelineChannelMode::kInOut
+                         : RenderPipelineChannelMode::kIgnored;
+  }
+
+ private:
+  size_t first_c_;
+};
+
+std::unique_ptr<RenderPipelineStage> GetConvolveNoiseStage(
+    size_t noise_c_start) {
+  return jxl::make_unique<ConvolveNoiseStage>(noise_c_start);
 }
 
 // NOLINTNEXTLINE(google-readability-namespace-comments)
@@ -275,37 +280,20 @@ HWY_AFTER_NAMESPACE();
 #if HWY_ONCE
 namespace jxl {
 
-HWY_EXPORT(AddNoise);
-void AddNoise(const NoiseParams& noise_params, const Rect& noise_rect,
-              const Image3F& noise, const Rect& opsin_rect,
-              const ColorCorrelationMap& cmap, Image3F* opsin) {
-  return HWY_DYNAMIC_DISPATCH(AddNoise)(noise_params, noise_rect, noise,
-                                        opsin_rect, cmap, opsin);
+HWY_EXPORT(GetAddNoiseStage);
+HWY_EXPORT(GetConvolveNoiseStage);
+
+std::unique_ptr<RenderPipelineStage> GetAddNoiseStage(
+    const NoiseParams& noise_params, const ColorCorrelationMap& cmap,
+    size_t noise_c_start) {
+  return HWY_DYNAMIC_DISPATCH(GetAddNoiseStage)(noise_params, cmap,
+                                                noise_c_start);
 }
 
-HWY_EXPORT(RandomImage3);
-void RandomImage3(size_t seed, const Rect& rect, Image3F* JXL_RESTRICT noise) {
-  return HWY_DYNAMIC_DISPATCH(RandomImage3)(seed, rect, noise);
-}
-
-HWY_EXPORT(Random3Planes);
-void Random3Planes(size_t seed, const std::pair<ImageF*, Rect>& plane0,
-                   const std::pair<ImageF*, Rect>& plane1,
-                   const std::pair<ImageF*, Rect>& plane2) {
-  return HWY_DYNAMIC_DISPATCH(Random3Planes)(seed, plane0, plane1, plane2);
-}
-
-void DecodeFloatParam(float precision, float* val, BitReader* br) {
-  const int absval_quant = br->ReadFixedBits<10>();
-  *val = absval_quant / precision;
-}
-
-Status DecodeNoise(BitReader* br, NoiseParams* noise_params) {
-  for (float& i : noise_params->lut) {
-    DecodeFloatParam(kNoisePrecision, &i, br);
-  }
-  return true;
+std::unique_ptr<RenderPipelineStage> GetConvolveNoiseStage(
+    size_t noise_c_start) {
+  return HWY_DYNAMIC_DISPATCH(GetConvolveNoiseStage)(noise_c_start);
 }
 
 }  // namespace jxl
-#endif  // HWY_ONCE
+#endif

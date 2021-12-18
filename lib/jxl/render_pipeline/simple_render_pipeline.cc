@@ -14,10 +14,12 @@ void SimpleRenderPipeline::PrepareForThreadsInternal(size_t num) {
     return DivCeil(frame_size, 1 << shift) + kRenderPipelineXOffset * 2;
   };
   for (size_t c = 0; c < channel_shifts_[0].size(); c++) {
+    bool is_color_c =
+        c < 3 || (uses_noise_ && c >= channel_shifts_[0].size() - 3);
     channel_data_.push_back(
-        ImageF(ch_size(frame_dimensions_.GetUpsampledXSize(c),
+        ImageF(ch_size(frame_dimensions_.GetUpsampledXSize(is_color_c),
                        channel_shifts_[0][c].first),
-               ch_size(frame_dimensions_.GetUpsampledYSize(c),
+               ch_size(frame_dimensions_.GetUpsampledYSize(is_color_c),
                        channel_shifts_[0][c].second)));
     msan::PoisonImage(channel_data_.back());
   }
@@ -36,13 +38,17 @@ std::vector<std::pair<ImageF*, Rect>> SimpleRenderPipeline::PrepareBuffers(
                        channel_shifts_[0][c].first;
     size_t ygroupdim = (frame_dimensions_.group_dim << base_color_shift) >>
                        channel_shifts_[0][c].second;
-    const Rect rect(
-        kRenderPipelineXOffset + gx * xgroupdim,
-        kRenderPipelineXOffset + gy * ygroupdim, xgroupdim, ygroupdim,
-        kRenderPipelineXOffset + DivCeil(frame_dimensions_.GetUpsampledXSize(c),
-                                         1 << channel_shifts_[0][c].first),
-        kRenderPipelineXOffset + DivCeil(frame_dimensions_.GetUpsampledYSize(c),
-                                         1 << channel_shifts_[0][c].second));
+    bool is_color_c =
+        c < 3 || (uses_noise_ && c >= channel_shifts_[0].size() - 3);
+    const Rect rect(kRenderPipelineXOffset + gx * xgroupdim,
+                    kRenderPipelineXOffset + gy * ygroupdim, xgroupdim,
+                    ygroupdim,
+                    kRenderPipelineXOffset +
+                        DivCeil(frame_dimensions_.GetUpsampledXSize(is_color_c),
+                                1 << channel_shifts_[0][c].first),
+                    kRenderPipelineXOffset +
+                        DivCeil(frame_dimensions_.GetUpsampledYSize(is_color_c),
+                                1 << channel_shifts_[0][c].second));
     ret.emplace_back(&channel_data_[c], rect);
   }
   return ret;

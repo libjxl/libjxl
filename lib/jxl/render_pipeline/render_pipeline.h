@@ -65,6 +65,10 @@ class RenderPipeline {
     // the pipeline.
     void UseSimpleImplementation() { use_simple_implementation_ = true; }
 
+    // Marks the 3 last channels as being noise input channels, which use the
+    // same size as color channels.
+    void UsesNoise() { uses_noise_ = true; }
+
     // Finalizes setup of the pipeline. Shifts for all channels should be 0 at
     // this point.
     std::unique_ptr<RenderPipeline> Finalize(
@@ -75,6 +79,7 @@ class RenderPipeline {
     size_t num_c_;
     size_t num_passes_;
     bool use_simple_implementation_ = false;
+    bool uses_noise_ = false;
   };
 
   friend class Builder;
@@ -102,6 +107,7 @@ class RenderPipeline {
   // Amount of (cumulative) padding required by each stage.
   std::vector<size_t> padding_;
   FrameDimensions frame_dimensions_;
+  bool uses_noise_;
 
   std::vector<uint8_t> group_completed_passes_;
 
