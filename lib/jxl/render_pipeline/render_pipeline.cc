@@ -53,6 +53,7 @@ std::unique_ptr<RenderPipeline> RenderPipeline::Builder::Finalize(
         *std::max_element(channel_border.begin(), channel_border.end());
   }
   res->frame_dimensions_ = frame_dimensions;
+  res->uses_noise_ = uses_noise_;
   res->group_completed_passes_.resize(frame_dimensions.num_groups);
   res->num_passes_ = num_passes_;
   res->channel_shifts_.resize(stages_.size());

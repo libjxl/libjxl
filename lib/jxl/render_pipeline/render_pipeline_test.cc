@@ -243,6 +243,21 @@ std::vector<RenderPipelineTestInputSettings> GeneratePipelineTests() {
 
     {
       auto s = settings;
+      s.cparams_descr = "Noise";
+      s.cparams.photon_noise_iso = 3200;
+      all_tests.push_back(s);
+    }
+
+    {
+      auto s = settings;
+      s.cparams_descr = "NoiseUps";
+      s.cparams.photon_noise_iso = 3200;
+      s.cparams.resampling = 2;
+      all_tests.push_back(s);
+    }
+
+    {
+      auto s = settings;
       s.cparams_descr = "ModularLossless";
       s.cparams.modular_mode = true;
       s.cparams.butteraugli_distance = 0;

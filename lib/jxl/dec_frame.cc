@@ -56,6 +56,7 @@
 #include "lib/jxl/render_pipeline/stage_chroma_upsampling.h"
 #include "lib/jxl/render_pipeline/stage_epf.h"
 #include "lib/jxl/render_pipeline/stage_gaborish.h"
+#include "lib/jxl/render_pipeline/stage_noise.h"
 #include "lib/jxl/render_pipeline/stage_splines.h"
 #include "lib/jxl/render_pipeline/stage_upsampling.h"
 #include "lib/jxl/render_pipeline/stage_write_to_ib.h"
@@ -678,6 +679,39 @@ Status FrameDecoder::ProcessACGroup(size_t ac_group_id,
     }
   }
   decoded_passes_per_ac_group_[ac_group_id] += num_passes;
+
+  if ((frame_header_.flags & FrameHeader::kNoise) != 0 &&
+      render_pipeline_input) {
+    PROFILER_ZONE("GenerateNoise");
+    size_t num_x_groups = DivCeil(frame_dim_.xsize_upsampled_padded, kGroupDim);
+    size_t noise_c_start =
+        3 + frame_header_.nonserialized_metadata->m.num_extra_channels;
+    // When the color channels are downsampled, we need to generate more noise
+    // input for the current group than just the group dimensions.
+    std::pair<ImageF*, Rect> rects[3];
+    for (size_t iy = 0; iy < frame_header_.upsampling; iy++) {
+      for (size_t ix = 0; ix < frame_header_.upsampling; ix++) {
+        for (size_t c = 0; c < 3; c++) {
+          auto r = render_pipeline_input->GetBuffer(noise_c_start + c);
+          rects[c].first = r.first;
+          size_t x1 = r.second.x0() + r.second.xsize();
+          size_t y1 = r.second.y0() + r.second.ysize();
+          if (frame_header_.encoding == FrameEncoding::kVarDCT) {
+            x1 = RoundUpTo(x1, kBlockDim * frame_header_.upsampling);
+            y1 = RoundUpTo(y1, kBlockDim * frame_header_.upsampling);
+          }
+          rects[c].second = Rect(r.second.x0() + ix * kGroupDim,
+                                 r.second.y0() + iy * kGroupDim, kGroupDim,
+                                 kGroupDim, x1, y1);
+        }
+        Random3Planes(dec_state_->noise_seed +
+                          (gx * frame_header_.upsampling + ix) +
+                          (gy * frame_header_.upsampling + iy) * num_x_groups,
+                      rects[0], rects[1], rects[2]);
+      }
+    }
+  }
+
   if (render_pipeline_input && !modular_frame_decoder_.UsesFullImage()) {
     render_pipeline_input->Done();
   }
@@ -685,9 +719,12 @@ Status FrameDecoder::ProcessACGroup(size_t ac_group_id,
 }
 
 void FrameDecoder::PreparePipeline() {
-  RenderPipeline::Builder builder(
-      /*num_c=*/3 + frame_header_.nonserialized_metadata->m.num_extra_channels,
-      frame_header_.passes.num_passes);
+  size_t num_c = 3 + frame_header_.nonserialized_metadata->m.num_extra_channels;
+  if ((frame_header_.flags & FrameHeader::kNoise) != 0) {
+    num_c += 3;
+  }
+
+  RenderPipeline::Builder builder(num_c, frame_header_.passes.num_passes);
 
   if (use_slow_rendering_pipeline_) {
     builder.UseSimpleImplementation();
@@ -763,7 +800,11 @@ void FrameDecoder::PreparePipeline() {
   }
 
   if ((frame_header_.flags & FrameHeader::kNoise) != 0) {
-    JXL_ABORT("Not implemented: noise");
+    builder.AddStage(GetConvolveNoiseStage(num_c - 3));
+    builder.AddStage(
+        GetAddNoiseStage(dec_state_->shared->image_features.noise_params,
+                         dec_state_->shared->cmap, num_c - 3));
+    builder.UsesNoise();
   }
   if (frame_header_.dc_level != 0) {
     JXL_ABORT("Not implemented: save as dc frames");

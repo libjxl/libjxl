@@ -117,11 +117,11 @@ struct FrameDimensions {
     num_dc_groups = xsize_dc_groups * ysize_dc_groups;
   }
 
-  size_t GetUpsampledXSize(size_t c) {
-    return c < 3 ? xsize_upsampled_padded : xsize_upsampled;
+  size_t GetUpsampledXSize(bool is_color_c) {
+    return is_color_c ? xsize_upsampled_padded : xsize_upsampled;
   }
-  size_t GetUpsampledYSize(size_t c) {
-    return c < 3 ? ysize_upsampled_padded : ysize_upsampled;
+  size_t GetUpsampledYSize(bool is_color_c) {
+    return is_color_c ? ysize_upsampled_padded : ysize_upsampled;
   }
 
   // Image size without any upsampling, i.e. original_size / upsampling.
