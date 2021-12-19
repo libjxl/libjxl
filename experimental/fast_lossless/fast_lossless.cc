@@ -105,39 +105,13 @@ constexpr size_t kHistoBits = 153;
 constexpr size_t kLZ77Offset = 224;
 constexpr size_t kLZ77MinLength = 3;
 
-struct HybridUintConfig {
-  uint32_t split_exponent;
-  uint32_t split_token;
-  uint32_t msb_in_token;
-  uint32_t lsb_in_token;
-  void Encode(uint32_t value, uint32_t* token, uint32_t* nbits,
-              uint32_t* bits) const {
-    if (value < split_token) {
-      *token = value;
-      *nbits = 0;
-      *bits = 0;
-    } else {
-      uint32_t n = 31 - __builtin_clz(value);
-      uint32_t m = value - (1 << n);
-      *token = split_token +
-               ((n - split_exponent) << (msb_in_token + lsb_in_token)) +
-               ((m >> (n - msb_in_token)) << lsb_in_token) +
-               (m & ((1 << lsb_in_token) - 1));
-      *nbits = n - msb_in_token - lsb_in_token;
-      *bits = (value >> lsb_in_token) & ((1UL << *nbits) - 1);
-    }
-  }
-
-  explicit HybridUintConfig(uint32_t split_exponent = 4,
-                            uint32_t msb_in_token = 2,
-                            uint32_t lsb_in_token = 0)
-      : split_exponent(split_exponent),
-        split_token(1 << split_exponent),
-        msb_in_token(msb_in_token),
-        lsb_in_token(lsb_in_token) {
-    assert(split_exponent >= msb_in_token + lsb_in_token);
-  }
-};
+void EncodeHybridUint000(uint32_t value, uint32_t* token, uint32_t* nbits,
+                         uint32_t* bits) {
+  uint32_t n = 31 - __builtin_clz(value);
+  *token = value ? n + 1 : 0;
+  *nbits = value ? n : 0;
+  *bits = value ? value - (1 << n) : 0;
+}
 
 constexpr uint32_t PackSigned(int32_t value) {
   return (static_cast<uint32_t>(value) << 1) ^
@@ -176,8 +150,13 @@ struct BitWriter {
 void AssembleFrame(size_t width, size_t height,
                    const std::vector<BitWriter>& group_data,
                    BitWriter* output) {
+  std::vector<size_t> group_offsets(group_data.size());
   size_t total_size_groups = 0;
-  for (const auto& writer : group_data) {
+  for (size_t i = 0; i < group_offsets.size(); i++) {
+    const auto& writer = group_data[i];
+    if (i != group_offsets.size() - 1) {
+      group_offsets[i + 1] = group_offsets[i] + writer.bytes_written;
+    }
     assert(writer.bits_in_buffer == 0);
     total_size_groups += 8 * writer.bytes_written;
   }
@@ -271,11 +250,12 @@ void AssembleFrame(size_t width, size_t height,
   }
   output->ZeroPadToByte();  // Groups are byte-aligned.
 
-  for (const auto& writer : group_data) {
-    memcpy(output->data.get() + output->bytes_written, writer.data.get(),
-           writer.bytes_written);
-    output->bytes_written += writer.bytes_written;
+  for (size_t i = 0; i < group_offsets.size(); i++) {
+    const auto& writer = group_data[i];
+    memcpy(output->data.get() + output->bytes_written + group_offsets[i],
+           writer.data.get(), writer.bytes_written);
   }
+  output->bytes_written += total_size_groups / 8;
 }
 
 void PrepareDCGlobal(BitWriter* output) {
@@ -341,25 +321,24 @@ __attribute__((always_inline)) void EncodeRle(uint16_t residual, size_t count,
                                               size_t rle_count,
                                               BitWriter* output) {
   if (count == 0) return;
-  HybridUintConfig huc(0, 0, 0);
   unsigned token, nbits, bits;
-  huc.Encode(residual, &token, &nbits, &bits);
-  output->Write(kRawNBits[token], kRawBits[token]);
-  output->Write(nbits, bits);
+  EncodeHybridUint000(residual, &token, &nbits, &bits);
+  output->Write(kRawNBits[token] + nbits,
+                (bits << kRawNBits[token]) | kRawBits[token]);
   count -= 1;
   if (rle_count >= kLZ77MinLength + 1) {
     rle_count -= 1;
     count -= rle_count;
     rle_count -= kLZ77MinLength;
     unsigned token, nbits, bits;
-    huc.Encode(rle_count, &token, &nbits, &bits);
-    output->Write(kLZ77NBits[token], kLZ77Bits[token]);
-    output->Write(nbits, bits);
+    EncodeHybridUint000(rle_count, &token, &nbits, &bits);
+    output->Write(kLZ77NBits[token] + nbits,
+                  (bits << kLZ77NBits[token]) | kLZ77Bits[token]);
     // No need to encode distance: it uses 0 bits.
   }
   for (int i = 0; i < count; i++) {
-    output->Write(kRawNBits[token], kRawBits[token]);
-    output->Write(nbits, bits);
+    output->Write(kRawNBits[token] + nbits,
+                  (bits << kRawNBits[token]) | kRawBits[token]);
   }
 };
 
@@ -420,12 +399,11 @@ void WriteACSection(const unsigned char* rgba, size_t x0, size_t y0, size_t xs,
           run = 0;
         }
 
-        HybridUintConfig huc(0, 0, 0);
         unsigned token, nbits, bits;
-        huc.Encode(residual, &token, &nbits, &bits);
+        EncodeHybridUint000(residual, &token, &nbits, &bits);
 
-        output->Write(kRawNBits[token], kRawBits[token]);
-        output->Write(nbits, bits);
+        output->Write(kRawNBits[token] + nbits,
+                      kRawBits[token] | bits << kRawNBits[token]);
       }
     }
     EncodeRle(last, run, run, output);
@@ -457,17 +435,15 @@ size_t FastLosslessEncode(const unsigned char* rgba, size_t width,
 
   PrepareDCGlobal(&group_data[0]);
 
-  for (size_t yg = 0; yg < num_groups_y; yg++) {
-    for (size_t xg = 0; xg < num_groups_x; xg++) {
-      size_t group_id = num_groups == 0
-                            ? 0
-                            : (2 + num_dc_groups_x * num_dc_groups_y +
-                               num_groups_x * yg + xg);
-      WriteACSection(rgba, xg * 256, yg * 256,
-                     std::min<size_t>(width - xg * 256, 256),
-                     std::min<size_t>(height - yg * 256, 256), row_stride,
-                     &group_data[group_id]);
-    }
+  for (size_t g = 0; g < num_groups_y * num_groups_x; g++) {
+    size_t xg = g % num_groups_x;
+    size_t yg = g / num_groups_x;
+    size_t group_id =
+        num_groups == 0 ? 0 : (2 + num_dc_groups_x * num_dc_groups_y + g);
+    WriteACSection(rgba, xg * 256, yg * 256,
+                   std::min<size_t>(width - xg * 256, 256),
+                   std::min<size_t>(height - yg * 256, 256), row_stride,
+                   &group_data[group_id]);
   }
 
   AssembleFrame(width, height, group_data, &writer);
