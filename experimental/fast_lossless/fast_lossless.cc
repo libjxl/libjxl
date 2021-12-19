@@ -376,6 +376,51 @@ __attribute__((always_inline)) void EncodeRle(uint16_t residual, size_t count,
   }
 };
 
+struct ChannelRowEncoder {
+  template <bool xs_mul_16>
+  void ProcessRow(const int16_t* row, const int16_t* row_left,
+                  const int16_t* row_top, const int16_t* row_topleft, size_t xs,
+                  BitWriter& output) {
+    for (size_t x = 0; x < xs; x++) {
+      int16_t px = row[x];
+      int16_t left = row_left[x];
+      int16_t top = row_top[x];
+      int16_t topleft = row_topleft[x];
+
+      int16_t m = std::min(top, left);
+      int16_t M = std::max(top, left);
+      int16_t grad = static_cast<int32_t>(static_cast<uint32_t>(top) +
+                                          static_cast<uint32_t>(left) -
+                                          static_cast<uint32_t>(topleft));
+      int16_t grad_clamp_M = (topleft < m) ? M : grad;
+      int16_t pred = (topleft > M) ? m : grad_clamp_M;
+      uint16_t residual = PackSigned(px - pred);
+
+      if (idx % 16 == 0 && run == 0) {
+        last = residual;
+      }
+      idx++;
+      if (residual == last) {
+        run++;
+        continue;
+      } else {
+        EncodeRle(last, run, run / 16 * 16, output);
+        run = 0;
+      }
+
+      unsigned token, nbits, bits;
+      EncodeHybridUint000(residual, &token, &nbits, &bits);
+
+      output.Write(kRawNBits[token] + nbits,
+                   kRawBits[token] | bits << kRawNBits[token]);
+    }
+  }
+  void Finalize(BitWriter& output) { EncodeRle(last, run, run, output); }
+  size_t run = 0;
+  size_t idx = 0;
+  uint16_t last = 0;
+};
+
 void WriteACSection(const unsigned char* rgba, size_t x0, size_t y0, size_t xs,
                     size_t ys, size_t row_stride,
                     std::array<BitWriter, 4>& output) {
@@ -391,9 +436,8 @@ void WriteACSection(const unsigned char* rgba, size_t x0, size_t y0, size_t xs,
 
   int16_t group_data[4][2][256 + kPadding * 2] = {};
 
-  size_t run[4] = {};
-  size_t idx = 0;
-  size_t last[4] = {};
+  ChannelRowEncoder row_encoders[4];
+
   for (size_t y = 0; y < ys; y++) {
     // Pre-fill rows with YCoCg converted pixels.
     for (size_t x = 0; x < xs; x++) {
@@ -422,43 +466,17 @@ void WriteACSection(const unsigned char* rgba, size_t x0, size_t y0, size_t xs,
       const int16_t* row_topleft =
           y == 0 ? row_left : &group_data[c][(y - 1) & 1][kPadding - 1];
 
-      for (size_t x = 0; x < xs; x++) {
-        int16_t px = row[x];
-        int16_t left = row_left[x];
-        int16_t top = row_top[x];
-        int16_t topleft = row_topleft[x];
-
-        int16_t m = std::min(top, left);
-        int16_t M = std::max(top, left);
-        int16_t grad = static_cast<int32_t>(static_cast<uint32_t>(top) +
-                                            static_cast<uint32_t>(left) -
-                                            static_cast<uint32_t>(topleft));
-        int16_t grad_clamp_M = (topleft < m) ? M : grad;
-        int16_t pred = (topleft > M) ? m : grad_clamp_M;
-        uint16_t residual = PackSigned(px - pred);
-
-        if (idx % 16 == 0 && run[c] == 0) {
-          last[c] = residual;
-        }
-        if (residual == last[c]) {
-          run[c]++;
-          continue;
-        } else {
-          EncodeRle(last[c], run[c], run[c] / 16 * 16, output[c]);
-          run[c] = 0;
-        }
-
-        unsigned token, nbits, bits;
-        EncodeHybridUint000(residual, &token, &nbits, &bits);
-
-        output[c].Write(kRawNBits[token] + nbits,
-                        kRawBits[token] | bits << kRawNBits[token]);
+      if (xs % 16 == 0) {
+        row_encoders[c].ProcessRow</*xs_mul_16=*/true>(
+            row, row_left, row_top, row_topleft, xs, output[c]);
+      } else {
+        row_encoders[c].ProcessRow</*xs_mul_16=*/false>(
+            row, row_left, row_top, row_topleft, xs, output[c]);
       }
-      idx++;
     }
   }
   for (size_t c = 0; c < 4; c++) {
-    EncodeRle(last[c], run[c], run[c], output[c]);
+    row_encoders[c].Finalize(output[c]);
   }
 }
 
