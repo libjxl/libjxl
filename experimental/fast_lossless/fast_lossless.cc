@@ -118,11 +118,6 @@ void EncodeHybridUint000(uint32_t value, uint32_t* token, uint32_t* nbits,
   *bits = value ? value - (1 << n) : 0;
 }
 
-constexpr uint32_t PackSigned(int32_t value) {
-  return (static_cast<uint32_t>(value) << 1) ^
-         ((static_cast<uint32_t>(~value) >> 31) - 1);
-}
-
 struct BitWriter {
   void Allocate(size_t maximum_bit_size) {
     assert(data == nullptr);
@@ -351,73 +346,93 @@ void PrepareDCGlobal(BitWriter* output) {
   output->ZeroPadToByte();
 }
 
-__attribute__((always_inline)) void EncodeRle(uint16_t residual, size_t count,
-                                              size_t rle_count,
-                                              BitWriter& output) {
+void EncodeRle(uint16_t residual, size_t count, BitWriter& output) {
   if (count == 0) return;
-  unsigned token, nbits, bits;
-  EncodeHybridUint000(residual, &token, &nbits, &bits);
-  output.Write(kRawNBits[token] + nbits,
-               (bits << kRawNBits[token]) | kRawBits[token]);
-  count -= 1;
-  if (rle_count >= kLZ77MinLength + 1) {
-    rle_count -= 1;
-    count -= rle_count;
-    rle_count -= kLZ77MinLength;
+  // Long enough for RLE. Always true in the hot loop.
+  if (count >= kLZ77MinLength + 1) {
     unsigned token, nbits, bits;
-    EncodeHybridUint000(rle_count, &token, &nbits, &bits);
+    EncodeHybridUint000(residual, &token, &nbits, &bits);
+    output.Write(kRawNBits[token] + nbits,
+                 (bits << kRawNBits[token]) | kRawBits[token]);
+    count -= kLZ77MinLength + 1;
+    EncodeHybridUint000(count, &token, &nbits, &bits);
     output.Write(kLZ77NBits[token] + nbits,
                  (bits << kLZ77NBits[token]) | kLZ77Bits[token]);
     // No need to encode distance: it uses 0 bits.
-  }
-  for (int i = 0; i < count; i++) {
-    output.Write(kRawNBits[token] + nbits,
-                 (bits << kRawNBits[token]) | kRawBits[token]);
+  } else {
+    // Encode tail, one element at a time.
+    for (int i = 0; i < count; i++) {
+      unsigned token, nbits, bits;
+      EncodeHybridUint000(residual, &token, &nbits, &bits);
+      output.Write(kRawNBits[token] + nbits,
+                   (bits << kRawNBits[token]) | kRawBits[token]);
+    }
   }
 };
 
+constexpr uint16_t PackSigned(int16_t value) {
+  return (static_cast<uint16_t>(value) << 1) ^
+         ((static_cast<uint16_t>(~value) >> 15) - 1);
+}
+
 struct ChannelRowEncoder {
-  template <bool xs_mul_16>
-  void ProcessRow(const int16_t* row, const int16_t* row_left,
-                  const int16_t* row_top, const int16_t* row_topleft, size_t xs,
-                  BitWriter& output) {
-    for (size_t x = 0; x < xs; x++) {
-      int16_t px = row[x];
-      int16_t left = row_left[x];
-      int16_t top = row_top[x];
-      int16_t topleft = row_topleft[x];
+  inline void ProcessChunk(const int16_t* row, const int16_t* row_left,
+                           const int16_t* row_top, const int16_t* row_topleft,
+                           size_t chunk_size, BitWriter& output) {
+    uint16_t residuals[16] = {};
+    for (size_t ix = 0; ix < chunk_size; ix++) {
+      int16_t px = row[ix];
+      int16_t left = row_left[ix];
+      int16_t top = row_top[ix];
+      int16_t topleft = row_topleft[ix];
 
       int16_t m = std::min(top, left);
       int16_t M = std::max(top, left);
-      int16_t grad = static_cast<int32_t>(static_cast<uint32_t>(top) +
-                                          static_cast<uint32_t>(left) -
-                                          static_cast<uint32_t>(topleft));
+      int16_t grad = static_cast<int16_t>(static_cast<uint16_t>(top) +
+                                          static_cast<uint16_t>(left) -
+                                          static_cast<uint16_t>(topleft));
       int16_t grad_clamp_M = (topleft < m) ? M : grad;
       int16_t pred = (topleft > M) ? m : grad_clamp_M;
-      uint16_t residual = PackSigned(px - pred);
+      residuals[ix] = PackSigned(px - pred);
+    }
+    if (run == 0) {
+      last = residuals[0];
+    }
+    bool continue_rle = true;
+    for (size_t ix = 0; ix < chunk_size; ix++) {
+      continue_rle &= residuals[ix] == last;
+    }
+    // Run continues, nothing to do.
+    if (continue_rle) {
+      run += chunk_size;
+    } else {
+      // Run is broken. Encode the run and encode the individual vector.
+      EncodeRle(last, run, output);
+      run = 0;
+      for (size_t ix = 0; ix < chunk_size; ix++) {
+        unsigned token, nbits, bits;
+        EncodeHybridUint000(residuals[ix], &token, &nbits, &bits);
 
-      if (idx % 16 == 0 && run == 0) {
-        last = residual;
+        output.Write(kRawNBits[token] + nbits,
+                     kRawBits[token] | bits << kRawNBits[token]);
       }
-      idx++;
-      if (residual == last) {
-        run++;
-        continue;
-      } else {
-        EncodeRle(last, run, run / 16 * 16, output);
-        run = 0;
-      }
-
-      unsigned token, nbits, bits;
-      EncodeHybridUint000(residual, &token, &nbits, &bits);
-
-      output.Write(kRawNBits[token] + nbits,
-                   kRawBits[token] | bits << kRawNBits[token]);
     }
   }
-  void Finalize(BitWriter& output) { EncodeRle(last, run, run, output); }
+  void ProcessRow(const int16_t* row, const int16_t* row_left,
+                  const int16_t* row_top, const int16_t* row_topleft, size_t xs,
+                  BitWriter& output) {
+    size_t x = 0;
+    for (; x + 16 <= xs; x += 16) {
+      ProcessChunk(row + x, row_left + x, row_top + x, row_topleft + x, 16,
+                   output);
+    }
+    // Tail
+    ProcessChunk(row + x, row_left + x, row_top + x, row_topleft + x, xs - x,
+                 output);
+  }
+
+  void Finalize(BitWriter& output) { EncodeRle(last, run, output); }
   size_t run = 0;
-  size_t idx = 0;
   uint16_t last = 0;
 };
 
@@ -466,13 +481,8 @@ void WriteACSection(const unsigned char* rgba, size_t x0, size_t y0, size_t xs,
       const int16_t* row_topleft =
           y == 0 ? row_left : &group_data[c][(y - 1) & 1][kPadding - 1];
 
-      if (xs % 16 == 0) {
-        row_encoders[c].ProcessRow</*xs_mul_16=*/true>(
-            row, row_left, row_top, row_topleft, xs, output[c]);
-      } else {
-        row_encoders[c].ProcessRow</*xs_mul_16=*/false>(
-            row, row_left, row_top, row_topleft, xs, output[c]);
-      }
+      row_encoders[c].ProcessRow(row, row_left, row_top, row_topleft, xs,
+                                 output[c]);
     }
   }
   for (size_t c = 0; c < 4; c++) {
