@@ -147,18 +147,47 @@ struct BitWriter {
   uint64_t buffer = 0;
 };
 
-void AssembleFrame(size_t width, size_t height,
-                   const std::vector<BitWriter>& group_data,
-                   BitWriter* output) {
-  std::vector<size_t> group_offsets(group_data.size());
-  size_t total_size_groups = 0;
-  for (size_t i = 0; i < group_offsets.size(); i++) {
-    const auto& writer = group_data[i];
-    if (i != group_offsets.size() - 1) {
-      group_offsets[i + 1] = group_offsets[i] + writer.bytes_written;
+void AppendWriter(BitWriter* dest, const BitWriter* src) {
+  if (dest->bits_in_buffer == 0) {
+    memcpy(dest->data.get() + dest->bytes_written, src->data.get(),
+           src->bytes_written);
+    dest->bytes_written += src->bytes_written;
+  } else {
+    size_t i = 0;
+    uint64_t buf = dest->buffer;
+    uint64_t bits_in_buffer = dest->bits_in_buffer;
+    uint8_t* dest_buf = dest->data.get() + dest->bytes_written;
+    // Copy 8 bytes at a time until we reach the border.
+    for (; i + 8 < src->bytes_written; i += 8) {
+      uint64_t chunk;
+      memcpy(&chunk, src->data.get() + i, 8);
+      uint64_t out = buf | (chunk << bits_in_buffer);
+      memcpy(dest_buf + i, &out, 8);
+      buf = chunk >> (64 - bits_in_buffer);
     }
-    assert(writer.bits_in_buffer == 0);
-    total_size_groups += 8 * writer.bytes_written;
+    dest->buffer = buf;
+    dest->bytes_written += i;
+    for (; i < src->bytes_written; i++) {
+      dest->Write(8, src->data[i]);
+    }
+  }
+  dest->Write(src->bits_in_buffer, src->buffer);
+}
+
+void AssembleFrame(size_t width, size_t height,
+                   const std::vector<std::array<BitWriter, 4>>& group_data,
+                   BitWriter* output) {
+  size_t total_size_groups = 0;
+  std::vector<size_t> group_sizes(group_data.size());
+  for (size_t i = 0; i < group_data.size(); i++) {
+    size_t sz = 0;
+    for (size_t j = 0; j < 4; j++) {
+      const auto& writer = group_data[i][j];
+      sz += writer.bytes_written * 8 + writer.bits_in_buffer;
+    }
+    sz = (sz + 7) / 8;
+    group_sizes[i] = sz;
+    total_size_groups += sz * 8;
   }
   output->Allocate(1000 + group_data.size() * 32 + total_size_groups);
 
@@ -233,7 +262,7 @@ void AssembleFrame(size_t width, size_t height,
   output->Write(1, 0);      // No TOC permutation
   output->ZeroPadToByte();  // TOC is byte-aligned.
   for (size_t i = 0; i < group_data.size(); i++) {
-    size_t sz = group_data[i].bytes_written;
+    size_t sz = group_sizes[i];
     if (sz < (1 << 10)) {
       output->Write(2, 0b00);
       output->Write(10, sz);
@@ -250,12 +279,12 @@ void AssembleFrame(size_t width, size_t height,
   }
   output->ZeroPadToByte();  // Groups are byte-aligned.
 
-  for (size_t i = 0; i < group_offsets.size(); i++) {
-    const auto& writer = group_data[i];
-    memcpy(output->data.get() + output->bytes_written + group_offsets[i],
-           writer.data.get(), writer.bytes_written);
+  for (size_t i = 0; i < group_data.size(); i++) {
+    for (size_t j = 0; j < 4; j++) {
+      AppendWriter(output, &group_data[i][j]);
+    }
+    output->ZeroPadToByte();
   }
-  output->bytes_written += total_size_groups / 8;
 }
 
 void PrepareDCGlobal(BitWriter* output) {
@@ -319,12 +348,12 @@ void PrepareDCGlobal(BitWriter* output) {
 
 __attribute__((always_inline)) void EncodeRle(uint16_t residual, size_t count,
                                               size_t rle_count,
-                                              BitWriter* output) {
+                                              BitWriter& output) {
   if (count == 0) return;
   unsigned token, nbits, bits;
   EncodeHybridUint000(residual, &token, &nbits, &bits);
-  output->Write(kRawNBits[token] + nbits,
-                (bits << kRawNBits[token]) | kRawBits[token]);
+  output.Write(kRawNBits[token] + nbits,
+               (bits << kRawNBits[token]) | kRawBits[token]);
   count -= 1;
   if (rle_count >= kLZ77MinLength + 1) {
     rle_count -= 1;
@@ -332,23 +361,26 @@ __attribute__((always_inline)) void EncodeRle(uint16_t residual, size_t count,
     rle_count -= kLZ77MinLength;
     unsigned token, nbits, bits;
     EncodeHybridUint000(rle_count, &token, &nbits, &bits);
-    output->Write(kLZ77NBits[token] + nbits,
-                  (bits << kLZ77NBits[token]) | kLZ77Bits[token]);
+    output.Write(kLZ77NBits[token] + nbits,
+                 (bits << kLZ77NBits[token]) | kLZ77Bits[token]);
     // No need to encode distance: it uses 0 bits.
   }
   for (int i = 0; i < count; i++) {
-    output->Write(kRawNBits[token] + nbits,
-                  (bits << kRawNBits[token]) | kRawBits[token]);
+    output.Write(kRawNBits[token] + nbits,
+                 (bits << kRawNBits[token]) | kRawBits[token]);
   }
 };
 
 void WriteACSection(const unsigned char* rgba, size_t x0, size_t y0, size_t xs,
-                    size_t ys, size_t row_stride, BitWriter* output) {
-  output->Allocate(15 * xs * ys * 4 + 4);
+                    size_t ys, size_t row_stride,
+                    std::array<BitWriter, 4>& output) {
+  for (size_t i = 0; i < 4; i++) {
+    output[i].Allocate(15 * xs * ys + 4);
+  }
   // Group header for modular image.
-  output->Write(1, 1);     // Global tree
-  output->Write(1, 1);     // All default wp
-  output->Write(2, 0b00);  // 0 transforms
+  output[0].Write(1, 1);     // Global tree
+  output[0].Write(1, 1);     // All default wp
+  output[0].Write(2, 0b00);  // 0 transforms
 
   int16_t group_data[4][256][256];
 
@@ -395,21 +427,19 @@ void WriteACSection(const unsigned char* rgba, size_t x0, size_t y0, size_t xs,
           run++;
           continue;
         } else {
-          EncodeRle(last, run, run / 16 * 16, output);
+          EncodeRle(last, run, run / 16 * 16, output[c]);
           run = 0;
         }
 
         unsigned token, nbits, bits;
         EncodeHybridUint000(residual, &token, &nbits, &bits);
 
-        output->Write(kRawNBits[token] + nbits,
-                      kRawBits[token] | bits << kRawNBits[token]);
+        output[c].Write(kRawNBits[token] + nbits,
+                        kRawBits[token] | bits << kRawNBits[token]);
       }
     }
-    EncodeRle(last, run, run, output);
+    EncodeRle(last, run, run, output[c]);
   }
-
-  output->ZeroPadToByte();
 }
 
 size_t FastLosslessEncode(const unsigned char* rgba, size_t width,
@@ -431,9 +461,9 @@ size_t FastLosslessEncode(const unsigned char* rgba, size_t width,
                           : (2 + num_dc_groups_x * num_dc_groups_y +
                              num_groups_x * num_groups_y);
 
-  std::vector<BitWriter> group_data(num_groups);
+  std::vector<std::array<BitWriter, 4>> group_data(num_groups);
 
-  PrepareDCGlobal(&group_data[0]);
+  PrepareDCGlobal(&group_data[0][0]);
 
   for (size_t g = 0; g < num_groups_y * num_groups_x; g++) {
     size_t xg = g % num_groups_x;
@@ -443,7 +473,7 @@ size_t FastLosslessEncode(const unsigned char* rgba, size_t width,
     WriteACSection(rgba, xg * 256, yg * 256,
                    std::min<size_t>(width - xg * 256, 256),
                    std::min<size_t>(height - yg * 256, 256), row_stride,
-                   &group_data[group_id]);
+                   group_data[group_id]);
   }
 
   AssembleFrame(width, height, group_data, &writer);
