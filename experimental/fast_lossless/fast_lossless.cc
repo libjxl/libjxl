@@ -1,3 +1,8 @@
+// Copyright (c) the JPEG XL Project Authors. All rights reserved.
+//
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
 #include "fast_lossless.h"
 
 #include <assert.h>
@@ -382,33 +387,46 @@ void WriteACSection(const unsigned char* rgba, size_t x0, size_t y0, size_t xs,
   output[0].Write(1, 1);     // All default wp
   output[0].Write(2, 0b00);  // 0 transforms
 
-  int16_t group_data[4][256][256];
+  constexpr size_t kPadding = 16;
 
+  int16_t group_data[4][2][256 + kPadding * 2] = {};
+
+  size_t run[4] = {};
+  size_t idx = 0;
+  size_t last[4] = {};
   for (size_t y = 0; y < ys; y++) {
+    // Pre-fill rows with YCoCg converted pixels.
     for (size_t x = 0; x < xs; x++) {
       int16_t r = rgba[row_stride * (y0 + y) + (x0 + x) * 4 + 0];
       int16_t g = rgba[row_stride * (y0 + y) + (x0 + x) * 4 + 1];
       int16_t b = rgba[row_stride * (y0 + y) + (x0 + x) * 4 + 2];
       int16_t a = rgba[row_stride * (y0 + y) + (x0 + x) * 4 + 3];
-      group_data[3][y][x] = a;
-      group_data[1][y][x] = r - b;
-      int16_t tmp = b + (group_data[1][y][x] >> 1);
-      group_data[2][y][x] = g - tmp;
-      group_data[0][y][x] = tmp + (group_data[2][y][x] >> 1);
+      group_data[3][y & 1][x + kPadding] = a;
+      group_data[1][y & 1][x + kPadding] = r - b;
+      int16_t tmp = b + (group_data[1][y & 1][x + kPadding] >> 1);
+      group_data[2][y & 1][x + kPadding] = g - tmp;
+      group_data[0][y & 1][x + kPadding] =
+          tmp + (group_data[2][y & 1][x + kPadding] >> 1);
     }
-  }
+    // Deal with x == 0.
+    for (size_t c = 0; c < 4; c++) {
+      group_data[c][y & 1][kPadding - 1] =
+          y > 0 ? group_data[c][(y - 1) & 1][kPadding] : 0;
+    }
+    for (size_t c = 0; c < 4; c++) {
+      // Get pointers to px/left/top/topleft data to speedup loop.
+      const int16_t* row = &group_data[c][y & 1][kPadding];
+      const int16_t* row_left = &group_data[c][y & 1][kPadding - 1];
+      const int16_t* row_top =
+          y == 0 ? row_left : &group_data[c][(y - 1) & 1][kPadding];
+      const int16_t* row_topleft =
+          y == 0 ? row_left : &group_data[c][(y - 1) & 1][kPadding - 1];
 
-  for (size_t c = 0; c < 4; c++) {
-    size_t run = 0;
-    size_t idx = 0;
-    size_t last = 0;
-    for (size_t y = 0; y < ys; y++) {
       for (size_t x = 0; x < xs; x++) {
-        int16_t px = group_data[c][y][x];
-        int16_t left = x > 0 ? group_data[c][y][x - 1]
-                             : (y > 0 ? group_data[c][y - 1][x] : 0);
-        int16_t top = y > 0 ? group_data[c][y - 1][x] : left;
-        int16_t topleft = x > 0 && y > 0 ? group_data[c][y - 1][x - 1] : left;
+        int16_t px = row[x];
+        int16_t left = row_left[x];
+        int16_t top = row_top[x];
+        int16_t topleft = row_topleft[x];
 
         int16_t m = std::min(top, left);
         int16_t M = std::max(top, left);
@@ -419,16 +437,15 @@ void WriteACSection(const unsigned char* rgba, size_t x0, size_t y0, size_t xs,
         int16_t pred = (topleft > M) ? m : grad_clamp_M;
         uint16_t residual = PackSigned(px - pred);
 
-        if (idx % 16 == 0 && run == 0) {
-          last = residual;
+        if (idx % 16 == 0 && run[c] == 0) {
+          last[c] = residual;
         }
-        idx++;
-        if (residual == last) {
-          run++;
+        if (residual == last[c]) {
+          run[c]++;
           continue;
         } else {
-          EncodeRle(last, run, run / 16 * 16, output[c]);
-          run = 0;
+          EncodeRle(last[c], run[c], run[c] / 16 * 16, output[c]);
+          run[c] = 0;
         }
 
         unsigned token, nbits, bits;
@@ -437,8 +454,11 @@ void WriteACSection(const unsigned char* rgba, size_t x0, size_t y0, size_t xs,
         output[c].Write(kRawNBits[token] + nbits,
                         kRawBits[token] | bits << kRawNBits[token]);
       }
+      idx++;
     }
-    EncodeRle(last, run, run, output[c]);
+  }
+  for (size_t c = 0; c < 4; c++) {
+    EncodeRle(last[c], run[c], run[c], output[c]);
   }
 }
 

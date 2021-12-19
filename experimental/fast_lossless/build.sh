@@ -1,4 +1,11 @@
 #!/bin/bash -e
+# Copyright (c) the JPEG XL Project Authors. All rights reserved.
+#
+# Use of this source code is governed by a BSD-style
+# license that can be found in the LICENSE file.
+
+# Tests implemented in bash. These typically will run checks about the source
+# code rather than the compiled one.
 
 
 mkdir -p build
