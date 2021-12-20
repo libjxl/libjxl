@@ -88,10 +88,10 @@ __attribute__((constructor)) void f() {
 }
 */
 
-constexpr uint8_t kRawNBits[11] = {
+constexpr uint8_t kRawNBits[16] = {
     2, 3, 3, 3, 3, 4, 4, 5, 5, 5, 6,
 };
-constexpr uint8_t kRawBits[11] = {
+constexpr uint8_t kRawBits[16] = {
     0x0, 0x2, 0x6, 0x1, 0x5, 0x3, 0xb, 0x7, 0x17, 0xf, 0x1f,
 };
 constexpr uint8_t kLZ77NBits[17] = {
@@ -368,7 +368,135 @@ void EncodeRle(uint16_t residual, size_t count, BitWriter& output) {
                    (bits << kRawNBits[token]) | kRawBits[token]);
     }
   }
-};
+}
+
+#ifdef FASTLL_ENABLE_AVX2_INTRINSICS
+#include <immintrin.h>
+__attribute__((noinline)) void EncodeChunk(const uint16_t* residuals,
+                                           size_t chunk_size,
+                                           BitWriter& output) {
+  constexpr uint16_t kLaneMask[32] = {
+      0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
+      0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
+      0,      0,      0,      0,      0,      0,      0,      0,
+      0,      0,      0,      0,      0,      0,      0,      0,
+  };
+  auto value = _mm256_load_si256((__m256i*)residuals);
+
+  // we know that residuals[i] has at most 12 bits, so we just need 3 nibbles
+  // and don't need to mask the third. However we do need to set the high
+  // byte to 0xFF, which will make table lookups return 0.
+  auto lo_nibble =
+      _mm256_or_si256(_mm256_and_si256(value, _mm256_set1_epi16(0xF)),
+                      _mm256_set1_epi16(0xFF00));
+  auto mi_nibble = _mm256_or_si256(
+      _mm256_and_si256(_mm256_srli_epi16(value, 4), _mm256_set1_epi16(0xF)),
+      _mm256_set1_epi16(0xFF00));
+  auto hi_nibble =
+      _mm256_or_si256(_mm256_srli_epi16(value, 8), _mm256_set1_epi16(0xFF00));
+
+  auto lo_lut = _mm256_broadcastsi128_si256(
+      _mm_setr_epi8(0, 1, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4));
+  auto mi_lut = _mm256_broadcastsi128_si256(
+      _mm_setr_epi8(0, 5, 6, 6, 7, 7, 7, 7, 8, 8, 8, 8, 8, 8, 8, 8));
+  auto hi_lut = _mm256_broadcastsi128_si256(_mm_setr_epi8(
+      0, 9, 10, 10, 11, 11, 11, 11, 12, 12, 12, 12, 12, 12, 12, 12));
+
+  auto lo_token = _mm256_shuffle_epi8(lo_lut, lo_nibble);
+  auto mi_token = _mm256_shuffle_epi8(mi_lut, mi_nibble);
+  auto hi_token = _mm256_shuffle_epi8(hi_lut, hi_nibble);
+
+  auto token = _mm256_max_epi16(lo_token, _mm256_max_epi16(mi_token, hi_token));
+  auto nbits = _mm256_subs_epu16(token, _mm256_set1_epi16(1));
+
+  // Compute 1<<nbits.
+  auto pow2_lo_lut = _mm256_broadcastsi128_si256(
+      _mm_setr_epi8(1 << 0, 1 << 1, 1 << 2, 1 << 3, 1 << 4, 1 << 5, 1 << 6,
+                    1u << 7, 0, 0, 0, 0, 0, 0, 0, 0));
+  auto pow2_hi_lut = _mm256_broadcastsi128_si256(
+      _mm_setr_epi8(0, 0, 0, 0, 0, 0, 0, 0, 1 << 0, 1 << 1, 1 << 2, 1 << 3,
+                    1 << 4, 1 << 5, 1 << 6, 1u << 7));
+
+  auto nbits_masked = _mm256_or_si256(nbits, _mm256_set1_epi16(0xFF00));
+
+  auto nbits_pow2_lo = _mm256_shuffle_epi8(pow2_lo_lut, nbits_masked);
+  auto nbits_pow2_hi = _mm256_shuffle_epi8(pow2_hi_lut, nbits_masked);
+
+  auto nbits_pow2 =
+      _mm256_or_si256(_mm256_slli_epi16(nbits_pow2_hi, 8), nbits_pow2_lo);
+
+  auto bits = _mm256_subs_epu16(value, nbits_pow2);
+
+  auto token_masked = _mm256_or_si256(token, _mm256_set1_epi16(0xFF00));
+
+  // huff_nbits <= 6.
+  auto huff_nbits = _mm256_shuffle_epi8(
+      _mm256_broadcastsi128_si256(_mm_load_si128((__m128i*)kRawNBits)),
+      token_masked);
+
+  auto huff_bits = _mm256_shuffle_epi8(
+      _mm256_broadcastsi128_si256(_mm_load_si128((__m128i*)kRawBits)),
+      token_masked);
+
+  auto huff_nbits_masked =
+      _mm256_or_si256(huff_nbits, _mm256_set1_epi16(0xFF00));
+
+  auto bits_shifted = _mm256_mullo_epi16(
+      bits, _mm256_shuffle_epi8(pow2_lo_lut, huff_nbits_masked));
+
+  nbits = _mm256_add_epi16(nbits, huff_nbits);
+  bits = _mm256_or_si256(bits_shifted, huff_bits);
+
+  if (chunk_size != 16) {
+    auto mask =
+        _mm256_loadu_si256((const __m256i*)(kLaneMask + (16 - chunk_size)));
+    nbits = _mm256_and_si256(nbits, mask);
+    bits = _mm256_and_si256(bits, mask);
+  }
+
+  // Merge nbits and bits from 16-bit to 32-bit lanes.
+  auto nbits_hi16 = _mm256_srli_epi32(nbits, 16);
+  auto nbits_lo16 = _mm256_and_si256(nbits, _mm256_set1_epi32(0xFFFF));
+  auto bits_hi16 = _mm256_srli_epi32(bits, 16);
+  auto bits_lo16 = _mm256_and_si256(bits, _mm256_set1_epi32(0xFFFF));
+
+  nbits = _mm256_add_epi32(nbits_hi16, nbits_lo16);
+  bits = _mm256_or_si256(_mm256_sllv_epi32(bits_hi16, nbits_lo16), bits_lo16);
+
+  // Merge 32 -> 64 bit lanes.
+  auto nbits_hi32 = _mm256_srli_epi64(nbits, 32);
+  auto nbits_lo32 = _mm256_and_si256(nbits, _mm256_set1_epi64x(0xFFFFFFFF));
+  auto bits_hi32 = _mm256_srli_epi64(bits, 32);
+  auto bits_lo32 = _mm256_and_si256(bits, _mm256_set1_epi64x(0xFFFFFFFF));
+
+  nbits = _mm256_add_epi64(nbits_hi32, nbits_lo32);
+  bits = _mm256_or_si256(_mm256_sllv_epi64(bits_hi32, nbits_lo32), bits_lo32);
+
+  alignas(32) uint64_t nbits_simd[4] = {};
+  alignas(32) uint64_t bits_simd[4] = {};
+
+  _mm256_store_si256((__m256i*)nbits_simd, nbits);
+  _mm256_store_si256((__m256i*)bits_simd, bits);
+
+  // Manually merge the buffer bits with the SIMD bits.
+  // Necessary because Write() is only guaranteed to work with <=56 bits.
+  {
+    alignas(32) uint64_t out_buf[4] = {};
+    out_buf[0] = output.buffer;
+    uint64_t nbits = output.bits_in_buffer;
+    for (size_t i = 0; i < 4; i++) {
+      uint64_t next_bits = bits_simd[i];
+      out_buf[nbits / 64] |= bits_simd[i] << (nbits % 64);
+      out_buf[nbits / 64 + 1] = (bits_simd[i] >> (63 - (nbits % 64))) >> 1;
+      nbits += nbits_simd[i];
+    }
+    memcpy(output.data.get() + output.bytes_written, out_buf, sizeof(out_buf));
+    output.bytes_written += nbits / 8;
+    memcpy(&output.buffer, ((uint8_t*)out_buf) + nbits / 8, 1);
+    output.bits_in_buffer = nbits % 8;
+  }
+}
+#endif
 
 constexpr uint16_t PackSigned(int16_t value) {
   return (static_cast<uint16_t>(value) << 1) ^
@@ -379,7 +507,7 @@ struct ChannelRowEncoder {
   inline void ProcessChunk(const int16_t* row, const int16_t* row_left,
                            const int16_t* row_top, const int16_t* row_topleft,
                            size_t chunk_size, BitWriter& output) {
-    uint16_t residuals[16] = {};
+    alignas(32) uint16_t residuals[16] = {};
     for (size_t ix = 0; ix < chunk_size; ix++) {
       int16_t px = row[ix];
       int16_t left = row_left[ix];
@@ -409,6 +537,9 @@ struct ChannelRowEncoder {
       // Run is broken. Encode the run and encode the individual vector.
       EncodeRle(last, run, output);
       run = 0;
+#ifdef FASTLL_ENABLE_AVX2_INTRINSICS
+      EncodeChunk(residuals, chunk_size, output);
+#else
       for (size_t ix = 0; ix < chunk_size; ix++) {
         unsigned token, nbits, bits;
         EncodeHybridUint000(residuals[ix], &token, &nbits, &bits);
@@ -416,6 +547,7 @@ struct ChannelRowEncoder {
         output.Write(kRawNBits[token] + nbits,
                      kRawBits[token] | bits << kRawNBits[token]);
       }
+#endif
     }
   }
   void ProcessRow(const int16_t* row, const int16_t* row_left,
