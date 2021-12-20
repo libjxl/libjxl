@@ -368,11 +368,14 @@ void EncodeRle(uint16_t residual, size_t count, BitWriter& output) {
   }
 }
 
+constexpr size_t kChunkSize = 16;
+
 #ifdef FASTLL_ENABLE_AVX2_INTRINSICS
 #include <immintrin.h>
 __attribute__((noinline)) void EncodeChunk(const uint16_t* residuals,
                                            size_t chunk_size,
                                            BitWriter& output) {
+  static_assert(kChunkSize == 16, "Chunk size must be 16");
   constexpr uint16_t kLaneMask[32] = {
       0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
       0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
@@ -514,7 +517,7 @@ struct ChannelRowEncoder {
                            size_t chunk_size, BitWriter& output) {
     if (chunk_size == 0) return;
     bool continue_rle = true;
-    alignas(32) uint16_t residuals[16] = {};
+    alignas(32) uint16_t residuals[kChunkSize] = {};
     for (size_t ix = 0; ix < chunk_size; ix++) {
       int16_t px = row[ix];
       int16_t left = row_left[ix];
@@ -556,9 +559,9 @@ struct ChannelRowEncoder {
                   const int16_t* row_top, const int16_t* row_topleft, size_t xs,
                   BitWriter& output) {
     size_t x = 0;
-    for (; x + 16 <= xs; x += 16) {
-      ProcessChunk(row + x, row_left + x, row_top + x, row_topleft + x, 16,
-                   output);
+    for (; x + kChunkSize <= xs; x += kChunkSize) {
+      ProcessChunk(row + x, row_left + x, row_top + x, row_topleft + x,
+                   kChunkSize, output);
     }
     // Tail
     ProcessChunk(row + x, row_left + x, row_top + x, row_topleft + x, xs - x,
