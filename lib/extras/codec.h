@@ -39,7 +39,10 @@ enum class Codec : uint32_t {
 
 static inline constexpr uint64_t EnumBits(Codec /*unused*/) {
   // Return only fully-supported codecs (kGIF is decode-only).
-  return MakeBit(Codec::kPNM) | MakeBit(Codec::kPNG)
+  return MakeBit(Codec::kPNM)
+#if JPEGXL_ENABLE_APNG
+         | MakeBit(Codec::kPNG)
+#endif
 #if JPEGXL_ENABLE_JPEG
          | MakeBit(Codec::kJPG)
 #endif
