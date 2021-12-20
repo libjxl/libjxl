@@ -30,7 +30,7 @@ jobs:
             env_stack_size: 1
             max_stack: 3000
             # Conformance tooling test requires numpy.
-            apt_pkgs: python3-numpy
+            apt_pkgs: python3-numpy libabsl-dev
           - name: debug
             # Runs on AVX3 CPUs require more stack than others. Make sure to
             # test on AVX3-enabled CPUs when changing this value.
@@ -38,6 +38,7 @@ jobs:
           # Build scalar-only hwy instructions.
           - name: scalar
             mode: release
+            apt_pkgs: libabsl-dev
             cxxflags: -DHWY_DISABLED_TARGETS=~HWY_SCALAR
           # Disabling optional features to speed up msan build a little bit.
           - name: msan
@@ -54,6 +55,7 @@ jobs:
           # smaller build if only decoding to pixels is needed.
           - name: release-nojpeg
             mode: release
+            apt_pkgs: libabsl-dev
             cxxflags: -DJXL_DEBUG_ON_ABORT=0
             cmake_args: >-
               -DJPEGXL_ENABLE_TRANSCODE_JPEG=OFF
@@ -62,7 +64,7 @@ jobs:
           # Builds with gcc in release mode
           - name: release:gcc8
             mode: release
-            apt_pkgs: gcc-8 g++-8
+            apt_pkgs: gcc-8 g++-8 libabsl-dev
             cmake_args: >-
               -DCMAKE_C_COMPILER=gcc-8 -DCMAKE_CXX_COMPILER=g++-8
           # Builds with clang-5 in release mode
