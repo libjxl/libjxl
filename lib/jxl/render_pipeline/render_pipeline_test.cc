@@ -107,9 +107,6 @@ TEST_P(RenderPipelineTestParam, PipelineTest) {
   dparams.use_slow_render_pipeline = true;
   ASSERT_TRUE(DecodeFile(dparams, compressed, &io_slow_pipeline, &pool));
 
-  JXL_CHECK(EncodeToFile(io_default, "/tmp/default.png"));
-  JXL_CHECK(EncodeToFile(io_slow_pipeline, "/tmp/pipeline.png"));
-
   ASSERT_EQ(io_default.frames.size(), io_slow_pipeline.frames.size());
   for (size_t i = 0; i < io_default.frames.size(); i++) {
     VerifyRelativeError(*io_default.frames[i].color(),
