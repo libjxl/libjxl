@@ -15,7 +15,7 @@ cd build
 [ -f lodepng.h ] || wget https://raw.githubusercontent.com/lvandeve/lodepng/8c6a9e30576f07bf470ad6f09458a2dcd7a6a84a/lodepng.h
 [ -f lodepng.o ] || g++ lodepng.cpp -O3 -mavx2 -o lodepng.o -c
 
-clang++ -O3 -mavx2 -g -DFASTLL_ENABLE_AVX2_INTRINSICS \
+clang++ -O3 -mavx2 -g -DFASTLL_ENABLE_AVX2_INTRINSICS -fopenmp \
   -Ibuild/ -I. -I../../../ -I../../../third_party/highway/ \
   lodepng.o \
   ../fast_lossless.cc ../fast_lossless_main.cc \

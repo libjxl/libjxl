@@ -480,20 +480,27 @@ __attribute__((noinline)) void EncodeChunk(const uint16_t* residuals,
 
   // Manually merge the buffer bits with the SIMD bits.
   // Necessary because Write() is only guaranteed to work with <=56 bits.
+  // Trying to SIMD-fy this code results in slower speed (and definitely less
+  // clarity).
   {
-    alignas(32) uint64_t out_buf[4] = {};
-    out_buf[0] = output.buffer;
-    uint64_t nbits = output.bits_in_buffer;
     for (size_t i = 0; i < 4; i++) {
-      uint64_t next_bits = bits_simd[i];
-      out_buf[nbits / 64] |= bits_simd[i] << (nbits % 64);
-      out_buf[nbits / 64 + 1] = (bits_simd[i] >> (63 - (nbits % 64))) >> 1;
-      nbits += nbits_simd[i];
+      output.buffer |= bits_simd[i] << output.bits_in_buffer;
+      memcpy(output.data.get() + output.bytes_written, &output.buffer, 8);
+      // If >> 64, next_buffer is unused.
+      uint64_t next_buffer = bits_simd[i] >> (64 - output.bits_in_buffer);
+      output.bits_in_buffer += nbits_simd[i];
+      // This `if` seems to be faster than using ternaries.
+      if (output.bits_in_buffer >= 64) {
+        output.buffer = next_buffer;
+        output.bits_in_buffer -= 64;
+        output.bytes_written += 8;
+      }
     }
-    memcpy(output.data.get() + output.bytes_written, out_buf, sizeof(out_buf));
-    output.bytes_written += nbits / 8;
-    memcpy(&output.buffer, ((uint8_t*)out_buf) + nbits / 8, 1);
-    output.bits_in_buffer = nbits % 8;
+    memcpy(output.data.get() + output.bytes_written, &output.buffer, 8);
+    size_t bytes_in_buffer = output.bits_in_buffer / 8;
+    output.bits_in_buffer -= bytes_in_buffer * 8;
+    output.buffer >>= bytes_in_buffer * 8;
+    output.bytes_written += bytes_in_buffer;
   }
 }
 #endif
@@ -623,7 +630,7 @@ void WriteACSection(const unsigned char* rgba, size_t x0, size_t y0, size_t xs,
 }
 
 size_t FastLosslessEncode(const unsigned char* rgba, size_t width,
-                          size_t row_stride, size_t height, size_t num_threads,
+                          size_t row_stride, size_t height,
                           unsigned char** output) {
   assert(width != 0);
   assert(height != 0);
@@ -645,6 +652,7 @@ size_t FastLosslessEncode(const unsigned char* rgba, size_t width,
 
   PrepareDCGlobal(&group_data[0][0]);
 
+#pragma omp parallel for
   for (size_t g = 0; g < num_groups_y * num_groups_x; g++) {
     size_t xg = g % num_groups_x;
     size_t yg = g / num_groups_x;

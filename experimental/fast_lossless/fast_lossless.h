@@ -8,7 +8,7 @@
 #include <stdlib.h>
 
 size_t FastLosslessEncode(const unsigned char* rgba, size_t width,
-                          size_t row_stride, size_t height, size_t num_threads,
+                          size_t row_stride, size_t height,
                           unsigned char** output);
 
 #endif
