@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <array>
 #include <memory>
 #include <vector>
 
@@ -372,9 +373,8 @@ constexpr size_t kChunkSize = 16;
 
 #ifdef FASTLL_ENABLE_AVX2_INTRINSICS
 #include <immintrin.h>
-__attribute__((noinline)) void EncodeChunk(const uint16_t* residuals,
-                                           size_t chunk_size,
-                                           BitWriter& output) {
+void EncodeChunk(const uint16_t* residuals, size_t chunk_size,
+                 BitWriter& output) {
   static_assert(kChunkSize == 16, "Chunk size must be 16");
   constexpr uint16_t kLaneMask[32] = {
       0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
@@ -506,6 +506,56 @@ __attribute__((noinline)) void EncodeChunk(const uint16_t* residuals,
 }
 #endif
 
+#ifdef FASTLL_ENABLE_NEON_INTRINSICS
+#include <arm_neon.h>
+
+void EncodeChunk(const uint16_t* residuals, size_t chunk_size,
+                 BitWriter& output) {
+  constexpr uint16_t kLaneMask[16] = {
+      0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
+      0,      0,      0,      0,      0,      0,      0,      0,
+  };
+  uint16x8_t res = vld1q_u16(residuals);
+  uint16x8_t token = vsubq_u16(vdupq_n_u16(16), vclzq_u16(res));
+  uint16x8_t nbits = vqsubq_u16(token, vdupq_n_u16(1));
+  uint16x8_t bits = vqsubq_u16(res, vshlq_s16(vdupq_n_s16(1), nbits));
+  uint16x8_t huff_bits =
+      vandq_u16(vdupq_n_u16(0xFF), vqtbl1q_u8(vld1q_u8(kRawBits), token));
+  uint16x8_t huff_nbits =
+      vandq_u16(vdupq_n_u16(0xFF), vqtbl1q_u8(vld1q_u8(kRawNBits), token));
+  bits = vorrq_u16(vshlq_u16(bits, huff_nbits), huff_bits);
+  nbits = vaddq_u16(nbits, huff_nbits);
+
+  if (chunk_size != 8) {
+    auto mask = vld1q_u16(kLaneMask + 8 - chunk_size);
+    nbits = vandq_u16(nbits, mask);
+    bits = vandq_u16(bits, mask);
+  }
+
+  // Merge nbits and bits from 16-bit to 32-bit lanes.
+  uint32x4_t nbits_lo16 = vandq_u32(nbits, vdupq_n_u32(0xFFFF));
+  uint32x4_t bits_hi16 = vshlq_u32(vshrq_n_u32(bits, 16), nbits_lo16);
+  uint32x4_t bits_lo16 = vandq_u32(bits, vdupq_n_u32(0xFFFF));
+
+  uint32x4_t nbits32 = vsraq_n_u32(nbits_lo16, nbits, 16);
+  uint32x4_t bits32 = vorrq_u32(bits_hi16, bits_lo16);
+
+  // Merging up to 64 bits is not faster.
+
+  // Manually merge the buffer bits with the SIMD bits.
+  // A bit faster.
+  for (size_t i = 0; i < 4; i++) {
+    output.buffer |= bits32[i] << output.bits_in_buffer;
+    memcpy(output.data.get() + output.bytes_written, &output.buffer, 8);
+    output.bits_in_buffer += nbits32[i];
+    size_t bytes_in_buffer = output.bits_in_buffer / 8;
+    output.bits_in_buffer -= bytes_in_buffer * 8;
+    output.buffer >>= bytes_in_buffer * 8;
+    output.bytes_written += bytes_in_buffer;
+  }
+}
+#endif
+
 constexpr uint16_t PackSigned(int16_t value) {
   return (static_cast<uint16_t>(value) << 1) ^
          ((static_cast<uint16_t>(~value) >> 15) - 1);
@@ -543,6 +593,11 @@ struct ChannelRowEncoder {
       run = 0;
 #ifdef FASTLL_ENABLE_AVX2_INTRINSICS
       EncodeChunk(residuals, chunk_size, output);
+#elif FASTLL_ENABLE_NEON_INTRINSICS
+      EncodeChunk(residuals, std::min<size_t>(chunk_size, 8), output);
+      if (chunk_size > 8) {
+        EncodeChunk(residuals + 8, chunk_size - 8, output);
+      }
 #else
       for (size_t ix = 0; ix < chunk_size; ix++) {
         unsigned token, nbits, bits;
