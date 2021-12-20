@@ -224,7 +224,7 @@ if ("${CXX_MACRO_PREFIX_MAP}")
 endif()
 
 if (CXX_NO_RTTI_SUPPORTED)
-  add_compile_options(-fno-rtti)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-rtti")
 endif()
 
 if (MSVC)
