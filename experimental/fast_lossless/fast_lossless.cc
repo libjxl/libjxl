@@ -349,12 +349,9 @@ void PrepareDCGlobal(BitWriter* output) {
 void EncodeRle(uint16_t residual, size_t count, BitWriter& output) {
   if (count == 0) return;
   // Long enough for RLE. Always true in the hot loop.
-  if (count >= kLZ77MinLength + 1) {
+  if (count >= kLZ77MinLength) {
+    count -= kLZ77MinLength;
     unsigned token, nbits, bits;
-    EncodeHybridUint000(residual, &token, &nbits, &bits);
-    output.Write(kRawNBits[token] + nbits,
-                 (bits << kRawNBits[token]) | kRawBits[token]);
-    count -= kLZ77MinLength + 1;
     EncodeHybridUint000(count, &token, &nbits, &bits);
     output.Write(kLZ77NBits[token] + nbits,
                  (bits << kLZ77NBits[token]) | kLZ77Bits[token]);
@@ -514,6 +511,8 @@ struct ChannelRowEncoder {
   inline void ProcessChunk(const int16_t* row, const int16_t* row_left,
                            const int16_t* row_top, const int16_t* row_topleft,
                            size_t chunk_size, BitWriter& output) {
+    if (chunk_size == 0) return;
+    bool continue_rle = true;
     alignas(32) uint16_t residuals[16] = {};
     for (size_t ix = 0; ix < chunk_size; ix++) {
       int16_t px = row[ix];
@@ -529,12 +528,6 @@ struct ChannelRowEncoder {
       int16_t grad_clamp_M = (topleft < m) ? M : grad;
       int16_t pred = (topleft > M) ? m : grad_clamp_M;
       residuals[ix] = PackSigned(px - pred);
-    }
-    if (run == 0) {
-      last = residuals[0];
-    }
-    bool continue_rle = true;
-    for (size_t ix = 0; ix < chunk_size; ix++) {
       continue_rle &= residuals[ix] == last;
     }
     // Run continues, nothing to do.
@@ -556,6 +549,7 @@ struct ChannelRowEncoder {
       }
 #endif
     }
+    last = residuals[chunk_size - 1];
   }
   void ProcessRow(const int16_t* row, const int16_t* row_left,
                   const int16_t* row_top, const int16_t* row_topleft, size_t xs,
@@ -572,7 +566,7 @@ struct ChannelRowEncoder {
 
   void Finalize(BitWriter& output) { EncodeRle(last, run, output); }
   size_t run = 0;
-  uint16_t last = 0;
+  uint16_t last = 0xFFFF;  // Can never appear
 };
 
 void WriteACSection(const unsigned char* rgba, size_t x0, size_t y0, size_t xs,
