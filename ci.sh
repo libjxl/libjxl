@@ -697,7 +697,7 @@ cmd_msan() {
   strip_dead_code
   cmake_configure "$@" \
     -DCMAKE_CROSSCOMPILING=1 -DRUN_HAVE_STD_REGEX=0 -DRUN_HAVE_POSIX_REGEX=0 \
-    -DJPEGXL_ENABLE_TCMALLOC=OFF
+    -DJPEGXL_ENABLE_TCMALLOC=OFF -DJPEGXL_WARNINGS_AS_ERRORS=OFF
   cmake_build_and_test
 }
 
