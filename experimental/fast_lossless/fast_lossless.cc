@@ -287,8 +287,9 @@ void AssembleFrame(size_t width, size_t height,
   }
 }
 
-void PrepareDCGlobal(BitWriter* output) {
-  output->Allocate(1000);
+void PrepareDCGlobal(bool is_single_group, size_t width, size_t height,
+                     BitWriter* output) {
+  output->Allocate(1000 + (is_single_group ? width * height * 15 : 0));
   // No patches, spline or noise.
   output->Write(1, 1);  // default DC dequantization factors (?)
   output->Write(1, 1);  // use global tree / histograms
@@ -570,9 +571,10 @@ struct ChannelRowEncoder {
 };
 
 void WriteACSection(const unsigned char* rgba, size_t x0, size_t y0, size_t xs,
-                    size_t ys, size_t row_stride,
+                    size_t ys, size_t row_stride, bool is_single_group,
                     std::array<BitWriter, 4>& output) {
   for (size_t i = 0; i < 4; i++) {
+    if (is_single_group && i == 0) continue;
     output[i].Allocate(15 * xs * ys + 4);
   }
   // Group header for modular image.
@@ -637,25 +639,26 @@ size_t FastLosslessEncode(const unsigned char* rgba, size_t width,
   size_t num_dc_groups_x = (width + 2047) / 2048;
   size_t num_dc_groups_y = (height + 2047) / 2048;
 
-  size_t num_groups = num_groups_x == 1 && num_groups_y == 1
-                          ? 1
-                          : (2 + num_dc_groups_x * num_dc_groups_y +
-                             num_groups_x * num_groups_y);
+  bool is_single_group = num_groups_x == 1 && num_groups_y == 1;
+
+  size_t num_groups = is_single_group ? 1
+                                      : (2 + num_dc_groups_x * num_dc_groups_y +
+                                         num_groups_x * num_groups_y);
 
   std::vector<std::array<BitWriter, 4>> group_data(num_groups);
 
-  PrepareDCGlobal(&group_data[0][0]);
+  PrepareDCGlobal(is_single_group, width, height, &group_data[0][0]);
 
 #pragma omp parallel for
   for (size_t g = 0; g < num_groups_y * num_groups_x; g++) {
     size_t xg = g % num_groups_x;
     size_t yg = g / num_groups_x;
     size_t group_id =
-        num_groups == 0 ? 0 : (2 + num_dc_groups_x * num_dc_groups_y + g);
+        is_single_group ? 0 : (2 + num_dc_groups_x * num_dc_groups_y + g);
     WriteACSection(rgba, xg * 256, yg * 256,
                    std::min<size_t>(width - xg * 256, 256),
                    std::min<size_t>(height - yg * 256, 256), row_stride,
-                   group_data[group_id]);
+                   is_single_group, group_data[group_id]);
   }
 
   AssembleFrame(width, height, group_data, &writer);
