@@ -74,7 +74,8 @@ jobs:
             apt_pkgs: clang-5.0
             cmake_args: >-
               -DCMAKE_C_COMPILER=clang-5.0 -DCMAKE_CXX_COMPILER=clang++-5.0
-              -DJPEGXL_ENABLE_PLUGINS=OFF
+              -DJPEGXL_ENABLE_PLUGINS=OFF -DJPEGXL_WARNINGS_AS_ERRORS=OFF
+
 
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
@@ -230,14 +231,15 @@ jobs:
         include:
           - arch: arm64
             build_target: aarch64-linux-gnu
-            cmake_args: -DCMAKE_CROSSCOMPILING_EMULATOR=/usr/bin/qemu-aarch64-static
+            cmake_args: -DCMAKE_CROSSCOMPILING_EMULATOR=/usr/bin/qemu-aarch64-static  -DJPEGXL_WARNINGS_AS_ERRORS=OFF
 
           - arch: armhf
             build_target: arm-linux-gnueabihf
-            cmake_args: -DCMAKE_CROSSCOMPILING_EMULATOR=/usr/bin/qemu-arm-static
+            cmake_args: -DCMAKE_CROSSCOMPILING_EMULATOR=/usr/bin/qemu-arm-static  -DJPEGXL_WARNINGS_AS_ERRORS=OFF
 
           - arch: i386
             build_target: i686-linux-gnu
+            cmake_args: -DJPEGXL_WARNINGS_AS_ERRORS=OFF
 
     env:
       BUILD_DIR: build
