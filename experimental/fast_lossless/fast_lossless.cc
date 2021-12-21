@@ -22,7 +22,7 @@
 // Run this in the libjxl codebase to compute the prefix code tables and code:
 #include "lib/jxl/enc_huffman.h"
 __attribute__((constructor)) void f() {
-  uint32_t histo[256] = {};
+  uint32_t histo[512] = {};
   histo[0] = 103741937;
   histo[1] = 63368045;
   histo[2] = 95396302;
@@ -37,46 +37,46 @@ __attribute__((constructor)) void f() {
   histo[10] = 20004000;
 
   for (size_t i = 0; i < 17; i++) {
-    histo[kLZ77Offset + i] = 1;
+    histo[kLZ77Offset + i * 16] = 1;
   }
-  histo[228] = 176674;
-  histo[229] = 69920;
-  histo[230] = 53489;
-  histo[231] = 37537;
-  histo[232] = 28236;
-  histo[233] = 1107;
-  histo[234] = 371;
-  histo[235] = 293;
-  histo[236] = 181;
-  histo[237] = 147;
-  histo[238] = 208;
-  histo[239] = 87;
-  histo[240] = 2374;
+  histo[kLZ77Offset + 0 * 16] = 119345;
+  histo[kLZ77Offset + 1 * 16] = 51104;
+  histo[kLZ77Offset + 2 * 16] = 44302;
+  histo[kLZ77Offset + 3 * 16] = 33556;
+  histo[kLZ77Offset + 4 * 16] = 26230;
+  histo[kLZ77Offset + 5 * 16] = 1059;
+  histo[kLZ77Offset + 6 * 16] = 364;
+  histo[kLZ77Offset + 7 * 16] = 288;
+  histo[kLZ77Offset + 8 * 16] = 183;
+  histo[kLZ77Offset + 9 * 16] = 146;
+  histo[kLZ77Offset + 10 * 16] = 210;
+  histo[kLZ77Offset + 11 * 16] = 87;
+  histo[kLZ77Offset + 12 * 16] = 2374;
 
-  uint8_t depth[256] = {};
-  uint16_t bits[256] = {};
+  uint8_t depth[512] = {};
+  uint16_t bits[512] = {};
   BitWriter w;
   BitWriter::Allotment allotment(&w, 1000);
-  BuildAndStoreHuffmanTree(histo, 256, depth, bits, &w);
+  BuildAndStoreHuffmanTree(histo, 512, depth, bits, &w);
   ReclaimAndCharge(&w, &allotment, 0, nullptr);
 
   unsigned wbits = w.BitsWritten();
   w.ZeroPadToByte();
-  fprintf(stderr, "constexpr uint8_t kRawNBits[11] = {\n");
+  fprintf(stderr, "constexpr uint8_t kRawNBits[16] = {\n");
   for (size_t i = 0; i < 11; i++) {
     fprintf(stderr, "%d,", depth[i]);
   }
-  fprintf(stderr, "};\nconstexpr uint8_t kRawBits[11] = {\n");
+  fprintf(stderr, "};\nconstexpr uint8_t kRawBits[16] = {\n");
   for (size_t i = 0; i < 11; i++) {
     fprintf(stderr, "0x%x,", bits[i]);
   }
   fprintf(stderr, "};\nconstexpr uint8_t kLZ77NBits[17] = {\n");
   for (size_t i = 0; i < 17; i++) {
-    fprintf(stderr, "%d,", depth[kLZ77Offset + i]);
+    fprintf(stderr, "%d,", depth[kLZ77Offset + i * 16]);
   }
   fprintf(stderr, "};\nconstexpr uint16_t kLZ77Bits[17] = {\n");
   for (size_t i = 0; i < 17; i++) {
-    fprintf(stderr, "0x%x,", bits[kLZ77Offset + i]);
+    fprintf(stderr, "0x%x,", bits[kLZ77Offset + i * 16]);
   }
   fprintf(stderr, "};\nconstexpr uint8_t kHistoCode[] = {");
   auto wspan = w.GetSpan();
@@ -86,6 +86,7 @@ __attribute__((constructor)) void f() {
   fprintf(stderr, "};\nconstexpr size_t kHistoBits = %u;\n", wbits);
   exit(1);
 }
+
 */
 
 constexpr uint8_t kRawNBits[16] = {
@@ -95,20 +96,22 @@ constexpr uint8_t kRawBits[16] = {
     0x0, 0x2, 0x6, 0x1, 0x5, 0x3, 0xb, 0x7, 0x17, 0xf, 0x1f,
 };
 constexpr uint8_t kLZ77NBits[17] = {
-    15, 15, 15, 15, 7, 9, 9, 9, 10, 13, 14, 14, 15, 15, 15, 15, 11,
+    7, 9, 9, 9, 10, 13, 14, 14, 15, 15, 15, 15, 11, 15, 15, 15, 15,
 };
 constexpr uint16_t kLZ77Bits[17] = {
-    0xfff, 0x4fff, 0x2fff, 0x6fff, 0x3f,   0x7f,   0x17f,  0xff,  0x1ff,
-    0x7ff, 0x17ff, 0x37ff, 0x1fff, 0x5fff, 0x3fff, 0x7fff, 0x3ff,
+    0x3f,   0x7f,   0x17f,  0xff,  0x1ff,  0x7ff,  0x17ff, 0x37ff, 0xfff,
+    0x4fff, 0x2fff, 0x6fff, 0x3ff, 0x1fff, 0x5fff, 0x3fff, 0x7fff,
 };
 constexpr uint8_t kHistoCode[] = {
-    0x50, 0xa1, 0xf9, 0xf8, 0xcf, 0x57, 0xa4, 0xa8, 0x2,  0xd0,
-    0x96, 0x63, 0xad, 0x38, 0x24, 0xef, 0x9f, 0x59, 0xf1, 0x0,
+    0xf0, 0x3d, 0x7f, 0xcf, 0xf3, 0xff, 0xfc, 0xdb, 0xaa, 0xaa,
+    0x7a, 0x1f, 0x63, 0x4c, 0x12, 0x5a, 0x80, 0x1b, 0x70, 0x3,
+    0x6e, 0xc0, 0x3,  0xf8, 0x0,  0x3f, 0xe0, 0x7,  0xc,  0x60,
+    0x0,  0x3,  0x18, 0xc0, 0xb,  0x18, 0xc0, 0x0,  0x6,  0x30,
 };
-constexpr size_t kHistoBits = 153;
+constexpr size_t kHistoBits = 320;
 
 constexpr size_t kLZ77Offset = 224;
-constexpr size_t kLZ77MinLength = 3;
+constexpr size_t kLZ77MinLength = 16;
 
 constexpr size_t kChunkSize = 16;
 
@@ -336,9 +339,11 @@ void PrepareDCGlobal(bool is_single_group, size_t width, size_t height,
   output->Write(1, 1);     // Enable lz77 for the main bitstream
   output->Write(2, 0b00);  // lz77 offset 224
   static_assert(kLZ77Offset == 224, "");
-  output->Write(2, 0b00);  // lz77 min length 3 (TODO)
-  static_assert(kLZ77MinLength == 3, "");
-  output->Write(4, 0);  // 000 hybrid uint config for lz77
+  output->Write(10, 0b0000011111);  // lz77 min length 16
+  static_assert(kLZ77MinLength == 16, "");
+  output->Write(4, 4);  // 404 hybrid uint config for lz77: 4
+  output->Write(3, 0);  // 0
+  output->Write(3, 4);  // 4
   output->Write(1, 1);  // simple code for the context map
   output->Write(2, 1);  // two clusters
   output->Write(1, 1);  // raw/lz77 length histogram last
@@ -350,8 +355,8 @@ void PrepareDCGlobal(bool is_single_group, size_t width, size_t height,
   output->Write(5, 0b00001);  // 2: just need 1 for RLE (i.e. distance 1)
   // Symbol + LZ77 alphabet size:
   output->Write(1, 1);    // > 1
-  output->Write(4, 7);    // <= 256
-  output->Write(7, 127);  // == 256
+  output->Write(4, 8);    // <= 512
+  output->Write(8, 255);  // == 512
 
   // Distance histogram:
   output->Write(2, 1);  // simple prefix code
@@ -374,25 +379,22 @@ void PrepareDCGlobal(bool is_single_group, size_t width, size_t height,
   output->ZeroPadToByte();
 }
 
+void EncodeHybridUint404_Mul16(uint32_t value, uint32_t* token_div16,
+                               uint32_t* nbits, uint32_t* bits) {
+  // NOTE: token in libjxl is actually << 4.
+  uint32_t n = 31 - __builtin_clz(value);
+  *token_div16 = value < 16 ? 0 : n - 3;
+  *nbits = value < 16 ? 0 : n - 4;
+  *bits = value < 16 ? 0 : (value >> 4) - (1 << *nbits);
+}
+
 void EncodeRle(uint16_t residual, size_t count, BitWriter& output) {
   if (count == 0) return;
-  // Long enough for RLE. Always true in the hot loop.
-  if (count >= kLZ77MinLength) {
-    count -= kLZ77MinLength;
-    unsigned token, nbits, bits;
-    EncodeHybridUint000(count, &token, &nbits, &bits);
-    output.Write(kLZ77NBits[token] + nbits,
-                 (bits << kLZ77NBits[token]) | kLZ77Bits[token]);
-    // No need to encode distance: it uses 0 bits.
-  } else {
-    // Encode tail, one element at a time.
-    for (int i = 0; i < count; i++) {
-      unsigned token, nbits, bits;
-      EncodeHybridUint000(residual, &token, &nbits, &bits);
-      output.Write(kRawNBits[token] + nbits,
-                   (bits << kRawNBits[token]) | kRawBits[token]);
-    }
-  }
+  count -= kLZ77MinLength;
+  unsigned token_div16, nbits, bits;
+  EncodeHybridUint404_Mul16(count, &token_div16, &nbits, &bits);
+  output.Write(kLZ77NBits[token_div16] + nbits,
+               (bits << kLZ77NBits[token_div16]) | kLZ77Bits[token_div16]);
 }
 
 #ifdef FASTLL_ENABLE_AVX2_INTRINSICS
