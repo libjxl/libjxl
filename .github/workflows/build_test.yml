@@ -89,8 +89,10 @@ jobs:
     steps:
     - name: Install build deps
       run: |
+        sudo add-apt-repository ppa:savoury1/build-tools
         sudo apt update
         sudo apt install -y \
+          abseil \
           ccache \
           clang-7 \
           cmake \
