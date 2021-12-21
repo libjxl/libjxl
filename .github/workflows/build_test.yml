@@ -30,7 +30,7 @@ jobs:
             env_stack_size: 1
             max_stack: 3000
             # Conformance tooling test requires numpy.
-            apt_pkgs: python3-numpy libabsl-dev
+            apt_pkgs: python3-numpy 
           - name: debug
             # Runs on AVX3 CPUs require more stack than others. Make sure to
             # test on AVX3-enabled CPUs when changing this value.
@@ -38,7 +38,6 @@ jobs:
           # Build scalar-only hwy instructions.
           - name: scalar
             mode: release
-            apt_pkgs: libabsl-dev
             cxxflags: -DHWY_DISABLED_TARGETS=~HWY_SCALAR
           # Disabling optional features to speed up msan build a little bit.
           - name: msan
