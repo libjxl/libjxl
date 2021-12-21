@@ -110,6 +110,8 @@ constexpr size_t kHistoBits = 153;
 constexpr size_t kLZ77Offset = 224;
 constexpr size_t kLZ77MinLength = 3;
 
+constexpr size_t kChunkSize = 16;
+
 void EncodeHybridUint000(uint32_t value, uint32_t* token, uint32_t* nbits,
                          uint32_t* bits) {
   uint32_t n = 31 - __builtin_clz(value);
@@ -238,6 +240,22 @@ void AssembleFrame(size_t width, size_t height,
   // No ICC, no preview. Frame should start at byte boundery.
   output->ZeroPadToByte();
 
+  auto wsz_fh = [output](size_t size) {
+    if (size < (1 << 8)) {
+      output->Write(2, 0b00);
+      output->Write(8, size);
+    } else if (size - 256 < (1 << 11)) {
+      output->Write(2, 0b01);
+      output->Write(11, size - 256);
+    } else if (size - 2304 < (1 << 14)) {
+      output->Write(2, 0b10);
+      output->Write(14, size - 2304);
+    } else {
+      output->Write(2, 0b11);
+      output->Write(30, size - 18688);
+    }
+  };
+
   // Handcrafted frame header.
   output->Write(1, 0);     // all_default
   output->Write(2, 0b00);  // regular frame
@@ -248,7 +266,16 @@ void AssembleFrame(size_t width, size_t height,
   output->Write(2, 0b00);  // no alpha upsampling
   output->Write(2, 0b01);  // default group size
   output->Write(2, 0b00);  // exactly one pass
-  output->Write(1, 0);     // no custom size or origin
+  if (width % kChunkSize == 0) {
+    output->Write(1, 0);  // no custom size or origin
+  } else {
+    output->Write(1, 1);  // custom size
+    wsz_fh(0);            // x0 = 0
+    wsz_fh(0);            // y0 = 0
+    wsz_fh((width + kChunkSize - 1) / kChunkSize *
+           kChunkSize);  // xsize rounded up to chunk size
+    wsz_fh(height);      // ysize same
+  }
   output->Write(2, 0b00);  // kReplace blending mode
   output->Write(2, 0b00);  // kReplace blending mode for alpha channel
   output->Write(1, 1);     // is_last
@@ -368,19 +395,10 @@ void EncodeRle(uint16_t residual, size_t count, BitWriter& output) {
   }
 }
 
-constexpr size_t kChunkSize = 16;
-
 #ifdef FASTLL_ENABLE_AVX2_INTRINSICS
 #include <immintrin.h>
-void EncodeChunk(const uint16_t* residuals, size_t chunk_size,
-                 BitWriter& output) {
+void EncodeChunk(const uint16_t* residuals, BitWriter& output) {
   static_assert(kChunkSize == 16, "Chunk size must be 16");
-  constexpr uint16_t kLaneMask[32] = {
-      0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
-      0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
-      0,      0,      0,      0,      0,      0,      0,      0,
-      0,      0,      0,      0,      0,      0,      0,      0,
-  };
   auto value = _mm256_load_si256((__m256i*)residuals);
 
   // we know that residuals[i] has at most 12 bits, so we just need 3 nibbles
@@ -447,13 +465,6 @@ void EncodeChunk(const uint16_t* residuals, size_t chunk_size,
   nbits = _mm256_add_epi16(nbits, huff_nbits);
   bits = _mm256_or_si256(bits_shifted, huff_bits);
 
-  if (chunk_size != 16) {
-    auto mask =
-        _mm256_loadu_si256((const __m256i*)(kLaneMask + (16 - chunk_size)));
-    nbits = _mm256_and_si256(nbits, mask);
-    bits = _mm256_and_si256(bits, mask);
-  }
-
   // Merge nbits and bits from 16-bit to 32-bit lanes.
   auto nbits_hi16 = _mm256_srli_epi32(nbits, 16);
   auto nbits_lo16 = _mm256_and_si256(nbits, _mm256_set1_epi32(0xFFFF));
@@ -508,12 +519,7 @@ void EncodeChunk(const uint16_t* residuals, size_t chunk_size,
 #ifdef FASTLL_ENABLE_NEON_INTRINSICS
 #include <arm_neon.h>
 
-void EncodeChunk(const uint16_t* residuals, size_t chunk_size,
-                 BitWriter& output) {
-  constexpr uint16_t kLaneMask[16] = {
-      0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
-      0,      0,      0,      0,      0,      0,      0,      0,
-  };
+void EncodeChunk(const uint16_t* residuals, BitWriter& output) {
   uint16x8_t res = vld1q_u16(residuals);
   uint16x8_t token = vsubq_u16(vdupq_n_u16(16), vclzq_u16(res));
   uint16x8_t nbits = vqsubq_u16(token, vdupq_n_u16(1));
@@ -524,12 +530,6 @@ void EncodeChunk(const uint16_t* residuals, size_t chunk_size,
       vandq_u16(vdupq_n_u16(0xFF), vqtbl1q_u8(vld1q_u8(kRawNBits), token));
   bits = vorrq_u16(vshlq_u16(bits, huff_nbits), huff_bits);
   nbits = vaddq_u16(nbits, huff_nbits);
-
-  if (chunk_size != 8) {
-    auto mask = vld1q_u16(kLaneMask + 8 - chunk_size);
-    nbits = vandq_u16(nbits, mask);
-    bits = vandq_u16(bits, mask);
-  }
 
   // Merge nbits and bits from 16-bit to 32-bit lanes.
   uint32x4_t nbits_lo16 = vandq_u32(nbits, vdupq_n_u32(0xFFFF));
@@ -563,11 +563,10 @@ constexpr uint16_t PackSigned(int16_t value) {
 struct ChannelRowEncoder {
   inline void ProcessChunk(const int16_t* row, const int16_t* row_left,
                            const int16_t* row_top, const int16_t* row_topleft,
-                           size_t chunk_size, BitWriter& output) {
-    if (chunk_size == 0) return;
+                           BitWriter& output) {
     bool continue_rle = true;
     alignas(32) uint16_t residuals[kChunkSize] = {};
-    for (size_t ix = 0; ix < chunk_size; ix++) {
+    for (size_t ix = 0; ix < kChunkSize; ix++) {
       int16_t px = row[ix];
       int16_t left = row_left[ix];
       int16_t top = row_top[ix];
@@ -585,20 +584,20 @@ struct ChannelRowEncoder {
     }
     // Run continues, nothing to do.
     if (continue_rle) {
-      run += chunk_size;
+      run += kChunkSize;
     } else {
       // Run is broken. Encode the run and encode the individual vector.
       EncodeRle(last, run, output);
       run = 0;
 #ifdef FASTLL_ENABLE_AVX2_INTRINSICS
-      EncodeChunk(residuals, chunk_size, output);
+      EncodeChunk(residuals, output);
 #elif FASTLL_ENABLE_NEON_INTRINSICS
-      EncodeChunk(residuals, std::min<size_t>(chunk_size, 8), output);
-      if (chunk_size > 8) {
-        EncodeChunk(residuals + 8, chunk_size - 8, output);
+      EncodeChunk(residuals, output);
+      if (kChunkSize > 8) {
+        EncodeChunk(residuals + 8, output);
       }
 #else
-      for (size_t ix = 0; ix < chunk_size; ix++) {
+      for (size_t ix = 0; ix < kChunkSize; ix++) {
         unsigned token, nbits, bits;
         EncodeHybridUint000(residuals[ix], &token, &nbits, &bits);
 
@@ -607,19 +606,15 @@ struct ChannelRowEncoder {
       }
 #endif
     }
-    last = residuals[chunk_size - 1];
+    last = residuals[kChunkSize - 1];
   }
   void ProcessRow(const int16_t* row, const int16_t* row_left,
                   const int16_t* row_top, const int16_t* row_topleft, size_t xs,
                   BitWriter& output) {
     size_t x = 0;
     for (; x + kChunkSize <= xs; x += kChunkSize) {
-      ProcessChunk(row + x, row_left + x, row_top + x, row_topleft + x,
-                   kChunkSize, output);
+      ProcessChunk(row + x, row_left + x, row_top + x, row_topleft + x, output);
     }
-    // Tail
-    ProcessChunk(row + x, row_left + x, row_top + x, row_topleft + x, xs - x,
-                 output);
   }
 
   void Finalize(BitWriter& output) { EncodeRle(last, run, output); }
@@ -627,9 +622,10 @@ struct ChannelRowEncoder {
   uint16_t last = 0xFFFF;  // Can never appear
 };
 
-void WriteACSection(const unsigned char* rgba, size_t x0, size_t y0, size_t xs,
+void WriteACSection(const unsigned char* rgba, size_t x0, size_t y0, size_t oxs,
                     size_t ys, size_t row_stride, bool is_single_group,
                     std::array<BitWriter, 4>& output) {
+  size_t xs = (oxs + kChunkSize - 1) / kChunkSize * kChunkSize;
   for (size_t i = 0; i < 4; i++) {
     if (is_single_group && i == 0) continue;
     output[i].Allocate(15 * xs * ys + 4);
@@ -647,7 +643,7 @@ void WriteACSection(const unsigned char* rgba, size_t x0, size_t y0, size_t xs,
 
   for (size_t y = 0; y < ys; y++) {
     // Pre-fill rows with YCoCg converted pixels.
-    for (size_t x = 0; x < xs; x++) {
+    for (size_t x = 0; x < oxs; x++) {
       int16_t r = rgba[row_stride * (y0 + y) + (x0 + x) * 4 + 0];
       int16_t g = rgba[row_stride * (y0 + y) + (x0 + x) * 4 + 1];
       int16_t b = rgba[row_stride * (y0 + y) + (x0 + x) * 4 + 2];
@@ -663,6 +659,13 @@ void WriteACSection(const unsigned char* rgba, size_t x0, size_t y0, size_t xs,
     for (size_t c = 0; c < 4; c++) {
       group_data[c][y & 1][kPadding - 1] =
           y > 0 ? group_data[c][(y - 1) & 1][kPadding] : 0;
+    }
+    // Fill in padding.
+    for (size_t c = 0; c < 4; c++) {
+      for (size_t x = oxs; x < xs; x++) {
+        group_data[c][y & 1][kPadding + x] =
+            group_data[c][y & 1][kPadding + oxs - 1];
+      }
     }
     for (size_t c = 0; c < 4; c++) {
       // Get pointers to px/left/top/topleft data to speedup loop.
@@ -691,6 +694,8 @@ size_t FastLosslessEncode(const unsigned char* rgba, size_t width,
 
   BitWriter writer;
 
+  // Width gets padded to kChunkSize, but this computation doesn't change
+  // because of that.
   size_t num_groups_x = (width + 255) / 256;
   size_t num_groups_y = (height + 255) / 256;
   size_t num_dc_groups_x = (width + 2047) / 2048;
