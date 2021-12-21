@@ -6,7 +6,6 @@
 #include "fast_lossless.h"
 
 #include <assert.h>
-#include <endian.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -15,8 +14,8 @@
 #include <memory>
 #include <vector>
 
-#if __BYTE_ORDER != __LITTLE_ENDIAN
-#error "little endian only"
+#if (!defined(__BYTE_ORDER__) || (__BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__))
+#error "system not known to be little endian"
 #endif
 
 /*
