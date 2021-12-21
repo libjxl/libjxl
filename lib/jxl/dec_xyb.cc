@@ -51,7 +51,6 @@ void OpsinToLinearInplace(Image3F* JXL_RESTRICT inout, ThreadPool* pool,
           const auto in_opsin_x = Load(d, row0 + x);
           const auto in_opsin_y = Load(d, row1 + x);
           const auto in_opsin_b = Load(d, row2 + x);
-          JXL_COMPILER_FENCE;
           auto linear_r = Undefined(d);
           auto linear_g = Undefined(d);
           auto linear_b = Undefined(d);
@@ -94,7 +93,6 @@ void OpsinToLinear(const Image3F& opsin, const Rect& rect, ThreadPool* pool,
           const auto in_opsin_x = Load(d, row_opsin_0 + x);
           const auto in_opsin_y = Load(d, row_opsin_1 + x);
           const auto in_opsin_b = Load(d, row_opsin_2 + x);
-          JXL_COMPILER_FENCE;
           auto linear_r = Undefined(d);
           auto linear_g = Undefined(d);
           auto linear_b = Undefined(d);

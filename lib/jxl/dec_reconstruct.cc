@@ -59,7 +59,6 @@ void DoUndoXYBInPlace(Image3F* idct, const Rect& rect, Op op,
       const auto in_opsin_x = Load(d, row0 + x);
       const auto in_opsin_y = Load(d, row1 + x);
       const auto in_opsin_b = Load(d, row2 + x);
-      JXL_COMPILER_FENCE;
       auto r = Undefined(d);
       auto g = Undefined(d);
       auto b = Undefined(d);
