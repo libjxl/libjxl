@@ -286,6 +286,10 @@ endif()  # JPEGXL_ENABLE_BENCHMARK
 foreach(BINARY IN LISTS TOOL_BINARIES)
   target_include_directories("${BINARY}" PRIVATE "${PROJECT_SOURCE_DIR}")
   target_link_libraries("${BINARY}" box jxl-static jxl_extras-static jxl_threads-static jxl_tool)
+  if(JPEGXL_EMSCRIPTEN)
+    set_target_properties(${BINARY} PROPERTIES LINK_FLAGS "-s USE_LIBPNG=1")
+  endif()
+
 endforeach()
 install(TARGETS ${TOOL_BINARIES} RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
 message(STATUS "Building tools: ${TOOL_BINARIES}")
@@ -374,8 +378,7 @@ set_target_properties(jxl_emcc PROPERTIES LINK_FLAGS "\
   -O3\
   --closure 1 \
   -s ALLOW_MEMORY_GROWTH=1 \
-  -flto \
-  --llvm-lto 1 \
+  -s USE_LIBPNG=1 \
   -s DISABLE_EXCEPTION_CATCHING=1 \
   -s MODULARIZE=1 \
   -s FILESYSTEM=0 \

@@ -438,7 +438,6 @@ jobs:
   wasm32_build:
     name: WASM wasm32/${{ matrix.variant }}
     runs-on: ubuntu-latest
-    if: false
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
       EM_VERSION: 2.0.23
@@ -511,6 +510,7 @@ jobs:
         emconfigure ./ci.sh release \
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
           -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+          -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON \
           -DBUILD_SHARED_LIBS=OFF \
           -DJPEGXL_ENABLE_JNI=OFF
       env:
