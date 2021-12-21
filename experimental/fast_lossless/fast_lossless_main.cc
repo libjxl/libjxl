@@ -56,7 +56,7 @@ int main(int argc, char** argv) {
     encoded_size = FastLosslessEncode(png, width, width * 4, height, &encoded);
   }
 
-  FILE* o = fopen(out, "w");
+  FILE* o = fopen(out, "wb");
   if (!o) {
     fprintf(stderr, "error opening %s: %s\n", out, strerror(errno));
     return 1;
