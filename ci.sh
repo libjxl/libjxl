@@ -363,11 +363,6 @@ cmake_configure() {
     # We always use libfuzzer in the ci.sh wrapper.
     -DJPEGXL_FUZZER_LINK_FLAGS="-fsanitize=fuzzer"
   )
-  if [[ "${BUILD_TARGET}" != *mingw32 ]]; then
-    args+=(
-      -DJPEGXL_WARNINGS_AS_ERRORS=ON
-    )
-  fi
   if [[ -n "${BUILD_TARGET}" ]]; then
     local system_name="Linux"
     if [[ "${BUILD_TARGET}" == *mingw32 ]]; then
