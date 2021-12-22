@@ -386,7 +386,8 @@ int main(int argc, char **argv) {
       absl::ParseCommandLine(argc, argv);
 
   if (absl::GetFlag(FLAGS_ddd)) {
-    std::cerr << "LoadInput() is at: " << reinterpret_cast<void*>(LoadInput) << std::endl;
+    std::cerr << "LoadInput() is at: " <<
+      reinterpret_cast<void*>(LoadInput) << std::endl;
   }
   
   // Handle --version.
