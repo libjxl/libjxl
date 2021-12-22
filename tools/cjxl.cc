@@ -735,11 +735,17 @@ jxl::Status LoadAll(CompressArgs& args, jxl::ThreadPoolInternal* pool,
 
   jxl::PaddedBytes encoded;
   JXL_RETURN_IF_ERROR(jxl::ReadFile(args.params.file_in, &encoded));
-  jxl::Codec input_codec = jxl::Codec::kJPG;
-  if (!(args.jpeg_transcode
-            ? jxl::jpeg::DecodeImageJPG(jxl::Span<const uint8_t>(encoded), io)
-            : jxl::SetFromBytes(jxl::Span<const uint8_t>(encoded),
-                                args.color_hints, io, nullptr, &input_codec))) {
+  jxl::Codec input_codec;
+  bool ok;
+  if (args.jpeg_transcode && encoded.size() >= 2 && encoded[0] == 0xFF &&
+      encoded[1] == 0xD8) {
+    input_codec = jxl::Codec::kJPG;
+    ok = jxl::jpeg::DecodeImageJPG(jxl::Span<const uint8_t>(encoded), io);
+  } else {
+    ok = jxl::SetFromBytes(jxl::Span<const uint8_t>(encoded), args.color_hints,
+                           io, nullptr, &input_codec);
+  }
+  if (!ok) {
     fprintf(stderr, "Failed to read image %s.\n", args.params.file_in);
     return false;
   }
