@@ -39,7 +39,10 @@ enum class Codec : uint32_t {
 
 static inline constexpr uint64_t EnumBits(Codec /*unused*/) {
   // Return only fully-supported codecs (kGIF is decode-only).
-  return MakeBit(Codec::kPNM) | MakeBit(Codec::kPNG)
+  return MakeBit(Codec::kPNM)
+#if JPEGXL_ENABLE_APNG
+         | MakeBit(Codec::kPNG)
+#endif
 #if JPEGXL_ENABLE_JPEG
          | MakeBit(Codec::kJPG)
 #endif
@@ -55,14 +58,14 @@ std::string ExtensionFromCodec(Codec codec, bool is_gray,
 
 // If and only if extension is ".pfm", *bits_per_sample is updated to 32 so
 // that Encode() would encode to PFM instead of PPM.
-Codec CodecFromExtension(const std::string& extension,
-                         size_t* JXL_RESTRICT bits_per_sample);
+Codec CodecFromExtension(std::string extension,
+                         size_t* JXL_RESTRICT bits_per_sample = nullptr);
 
 // Decodes "bytes" and sets io->metadata.m.
 // color_space_hint may specify the color space, otherwise, defaults to sRGB.
 Status SetFromBytes(const Span<const uint8_t> bytes,
                     const ColorHints& color_hints, CodecInOut* io,
-                    ThreadPool* pool, Codec* orig_codec);
+                    ThreadPool* pool = nullptr, Codec* orig_codec = nullptr);
 // Helper function to use no color_space_hint.
 JXL_INLINE Status SetFromBytes(const Span<const uint8_t> bytes, CodecInOut* io,
                                ThreadPool* pool = nullptr,

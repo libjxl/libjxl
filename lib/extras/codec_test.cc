@@ -184,8 +184,7 @@ TEST(CodecTest, TestRoundTrip) {
 }
 #endif
 
-CodecInOut DecodeRoundtrip(const std::string& pathname, Codec expected_codec,
-                           ThreadPool* pool,
+CodecInOut DecodeRoundtrip(const std::string& pathname, ThreadPool* pool,
                            const ColorHints& color_hints = ColorHints()) {
   CodecInOut io;
   const PaddedBytes orig = ReadTestData(pathname);
@@ -195,7 +194,7 @@ CodecInOut DecodeRoundtrip(const std::string& pathname, Codec expected_codec,
 
   // Encode/Decode again to make sure Encode carries through all metadata.
   PaddedBytes encoded;
-  JXL_CHECK(Encode(io, expected_codec, io.metadata.m.color_encoding,
+  JXL_CHECK(Encode(io, Codec::kPNG, io.metadata.m.color_encoding,
                    io.metadata.m.bit_depth.bits_per_sample, &encoded, pool));
 
   CodecInOut io2;
@@ -345,7 +344,7 @@ TEST(CodecTest, TestPNGSuite) {
 
 void VerifyWideGamutMetadata(const std::string& relative_pathname,
                              const Primaries primaries, ThreadPool* pool) {
-  const CodecInOut io = DecodeRoundtrip(relative_pathname, Codec::kPNG, pool);
+  const CodecInOut io = DecodeRoundtrip(relative_pathname, pool);
 
   EXPECT_EQ(8u, io.metadata.m.bit_depth.bits_per_sample);
   EXPECT_FALSE(io.metadata.m.bit_depth.floating_point_sample);

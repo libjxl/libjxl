@@ -14,7 +14,6 @@
 #include <hwy/highway.h>
 
 #include "lib/extras/codec.h"
-#include "lib/extras/codec_jpg.h"
 #include "lib/jxl/base/file_io.h"
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/codec_in_out.h"
@@ -27,7 +26,7 @@
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_metadata.h"
 #include "lib/jxl/image_ops.h"
-#include "lib/jxl/jpeg/jpeg_data.h"
+#include "lib/jxl/jpeg/dec_jpeg_data_writer.h"
 #include "lib/jxl/quant_weights.h"
 
 HWY_BEFORE_NAMESPACE();
@@ -288,7 +287,7 @@ int HBDJPEGMain(int argc, const char* argv[]) {
   (ycbcr, io.metadata.m.color_encoding.ICC(), qf, frame_dim,
    out.Main().jpeg_data.get());
   jxl::PaddedBytes output;
-  if (!jxl::extras::EncodeImageJPGCoefficients(&out, &output)) {
+  if (!jxl::jpeg::EncodeImageJPGCoefficients(&out, &output)) {
     return 1;
   }
   if (!jxl::WriteFile(output, argv[2])) {

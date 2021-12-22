@@ -235,8 +235,6 @@ if(${JPEGXL_ENABLE_BENCHMARK})
     benchmark/benchmark_codec_custom.h
     benchmark/benchmark_codec_jxl.cc
     benchmark/benchmark_codec_jxl.h
-    benchmark/benchmark_codec_png.cc
-    benchmark/benchmark_codec_png.h
     speed_stats.cc
     speed_stats.h
     ../third_party/dirent.cc
@@ -253,10 +251,17 @@ if(${JPEGXL_ENABLE_BENCHMARK})
       "${CMAKE_CURRENT_LIST_DIR}/benchmark/benchmark_codec_jpeg.cc"
       "${CMAKE_CURRENT_LIST_DIR}/benchmark/benchmark_codec_jpeg.h"
     )
-    target_compile_definitions(benchmark_xl PRIVATE -DBENCHMARK_JPEG)
-    target_include_directories(benchmark_xl PRIVATE ${JPEG_INCLUDE_DIR})
-    target_link_libraries(benchmark_xl ${JPEG_LIBRARIES})
   endif ()
+
+  if(NOT JPEGXL_BUNDLE_LIBPNG)
+    find_package(PNG)
+  endif()
+  if(PNG_FOUND)
+    target_sources(benchmark_xl PRIVATE
+      "${CMAKE_CURRENT_LIST_DIR}/benchmark/benchmark_codec_png.cc"
+      "${CMAKE_CURRENT_LIST_DIR}/benchmark/benchmark_codec_png.h"
+    )
+  endif()
 
   find_package(PkgConfig)
   pkg_check_modules(WebP IMPORTED_TARGET libwebp)
@@ -296,6 +301,10 @@ endif()  # JPEGXL_ENABLE_BENCHMARK
 foreach(BINARY IN LISTS TOOL_BINARIES)
   target_include_directories("${BINARY}" PRIVATE "${PROJECT_SOURCE_DIR}")
   target_link_libraries("${BINARY}" box jxl-static jxl_extras-static jxl_threads-static jxl_tool)
+  if(JPEGXL_EMSCRIPTEN)
+    set_target_properties(${BINARY} PROPERTIES LINK_FLAGS "-s USE_LIBPNG=1")
+  endif()
+
 endforeach()
 install(TARGETS ${TOOL_BINARIES} RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
 message(STATUS "Building tools: ${TOOL_BINARIES}")
@@ -405,8 +414,7 @@ set_target_properties(jxl_emcc PROPERTIES LINK_FLAGS "\
   -O3\
   --closure 1 \
   -s ALLOW_MEMORY_GROWTH=1 \
-  -flto \
-  --llvm-lto 1 \
+  -s USE_LIBPNG=1 \
   -s DISABLE_EXCEPTION_CATCHING=1 \
   -s MODULARIZE=1 \
   -s FILESYSTEM=0 \

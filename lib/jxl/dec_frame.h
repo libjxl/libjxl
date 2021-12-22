@@ -208,7 +208,7 @@ class FrameDecoder {
   Status ProcessDCGlobal(BitReader* br);
   Status ProcessDCGroup(size_t dc_group_id, BitReader* br);
   void FinalizeDC();
-  void AllocateOutput();
+  Status AllocateOutput();
   void PreparePipeline();
   Status ProcessACGlobal(BitReader* br);
   Status ProcessACGroup(size_t ac_group_id, BitReader* JXL_RESTRICT* br,
@@ -280,6 +280,7 @@ class FrameDecoder {
   std::vector<uint8_t> decoded_dc_groups_;
   bool decoded_dc_global_;
   bool decoded_ac_global_;
+  bool HasEverything() const;
   bool finalized_dc_ = true;
   size_t num_sections_done_ = 0;
   bool is_finalized_ = true;

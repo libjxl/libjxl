@@ -19,7 +19,9 @@
 #include "lib/jxl/color_management.h"
 #include "tools/benchmark/benchmark_codec_jpeg.h"  // for AddCommand..
 #include "tools/benchmark/benchmark_codec_jxl.h"
+#if JPEGXL_ENABLE_APNG
 #include "tools/benchmark/benchmark_codec_png.h"
+#endif
 
 #ifdef BENCHMARK_WEBP
 #include "tools/benchmark/benchmark_codec_webp.h"
@@ -212,7 +214,9 @@ Status BenchmarkArgs::AddCommandLineOptions() {
 #ifdef BENCHMARK_JPEG
   if (!AddCommandLineOptionsJPEGCodec(this)) return false;
 #endif  // BENCHMARK_JPEG
+#if JPEGXL_ENABLE_APNG
   if (!AddCommandLineOptionsPNGCodec(this)) return false;
+#endif
 #ifdef BENCHMARK_WEBP
   if (!AddCommandLineOptionsWebPCodec(this)) return false;
 #endif  // BENCHMARK_WEBP

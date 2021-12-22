@@ -187,7 +187,7 @@ TEST(PassesTest, AllDownsampleFeasible) {
   // TODO(veluca): re-enable downsampling 16.
   std::vector<size_t> downsamplings = {1, 2, 4, 8};  //, 16};
 
-  auto check = [&](uint32_t task, uint32_t /* thread */) -> void {
+  auto check = [&](const uint32_t task, size_t /* thread */) -> void {
     const size_t downsampling = downsamplings[task];
     DecompressParams dparams;
     dparams.max_downsampling = downsampling;
@@ -200,7 +200,8 @@ TEST(PassesTest, AllDownsampleFeasible) {
               target_butteraugli[downsampling])
         << "downsampling: " << downsampling;
   };
-  pool.Run(0, downsamplings.size(), ThreadPool::SkipInit(), check);
+  EXPECT_TRUE(RunOnPool(&pool, 0, downsamplings.size(), ThreadPool::NoInit,
+                        check, "TestDownsampling"));
 }
 
 TEST(PassesTest, AllDownsampleFeasibleQProgressive) {
@@ -233,7 +234,7 @@ TEST(PassesTest, AllDownsampleFeasibleQProgressive) {
   // factors achievable.
   std::vector<size_t> downsamplings = {1, 2, 4, 8};
 
-  auto check = [&](uint32_t task, uint32_t /* thread */) -> void {
+  auto check = [&](const uint32_t task, size_t /* thread */) -> void {
     const size_t downsampling = downsamplings[task];
     DecompressParams dparams;
     dparams.max_downsampling = downsampling;
@@ -246,7 +247,8 @@ TEST(PassesTest, AllDownsampleFeasibleQProgressive) {
               target_butteraugli[downsampling])
         << "downsampling: " << downsampling;
   };
-  pool.Run(0, downsamplings.size(), ThreadPool::SkipInit(), check);
+  EXPECT_TRUE(RunOnPool(&pool, 0, downsamplings.size(), ThreadPool::NoInit,
+                        check, "TestQProgressive"));
 }
 
 TEST(PassesTest, ProgressiveDownsample2DegradesCorrectlyGrayscale) {

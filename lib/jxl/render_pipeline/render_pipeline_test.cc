@@ -17,6 +17,7 @@
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/fake_parallel_runner_testonly.h"
 #include "lib/jxl/image_test_utils.h"
+#include "lib/jxl/jpeg/enc_jpeg_data.h"
 #include "lib/jxl/render_pipeline/test_render_pipeline_stages.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testdata.h"
@@ -25,7 +26,7 @@ namespace jxl {
 namespace {
 
 TEST(RenderPipelineTest, Build) {
-  RenderPipeline::Builder builder(/*num_c=*/1);
+  RenderPipeline::Builder builder(/*num_c=*/1, /*num_passes=*/1);
   builder.AddStage(jxl::make_unique<UpsampleXSlowStage>());
   builder.AddStage(jxl::make_unique<UpsampleYSlowStage>());
   builder.AddStage(jxl::make_unique<Check0FinalStage>());
@@ -38,7 +39,7 @@ TEST(RenderPipelineTest, Build) {
 }
 
 TEST(RenderPipelineTest, CallAllGroups) {
-  RenderPipeline::Builder builder(/*num_c=*/1);
+  RenderPipeline::Builder builder(/*num_c=*/1, /*num_passes=*/1);
   builder.AddStage(jxl::make_unique<UpsampleXSlowStage>());
   builder.AddStage(jxl::make_unique<UpsampleYSlowStage>());
   builder.AddStage(jxl::make_unique<Check0FinalStage>());
@@ -51,9 +52,10 @@ TEST(RenderPipelineTest, CallAllGroups) {
   pipeline->PrepareForThreads(1);
 
   for (size_t i = 0; i < frame_dimensions.num_groups; i++) {
-    const auto& input_buffers = pipeline->GetInputBuffers(i, 0);
+    auto input_buffers = pipeline->GetInputBuffers(i, 0);
     FillPlane(0.0f, input_buffers.GetBuffer(0).first,
               input_buffers.GetBuffer(0).second);
+    input_buffers.Done();
   }
 
   EXPECT_TRUE(pipeline->ReceivedAllInput());
@@ -63,10 +65,13 @@ struct RenderPipelineTestInputSettings {
   // Input image.
   std::string input_path;
   size_t xsize, ysize;
+  bool jpeg_transcode = false;
   // Encoding settings.
   CompressParams cparams;
   // Short name for the encoder settings.
   std::string cparams_descr;
+
+  Splines splines;
 };
 
 class RenderPipelineTestParam
@@ -82,12 +87,17 @@ TEST_P(RenderPipelineTestParam, PipelineTest) {
   const PaddedBytes orig = ReadTestData(config.input_path);
 
   CodecInOut io;
-  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
+  if (config.jpeg_transcode) {
+    ASSERT_TRUE(jpeg::DecodeImageJPG(Span<const uint8_t>(orig), &io));
+  } else {
+    ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
+  }
   io.ShrinkTo(config.xsize, config.ysize);
 
   PaddedBytes compressed;
 
   PassesEncoderState enc_state;
+  enc_state.shared.image_features.splines = config.splines;
   ASSERT_TRUE(EncodeFile(config.cparams, &io, &enc_state, &compressed,
                          GetJxlCms(), /*aux_out=*/nullptr, &pool));
 
@@ -110,6 +120,27 @@ TEST_P(RenderPipelineTestParam, PipelineTest) {
                           1e-5);
     }
   }
+}
+
+Splines CreateTestSplines() {
+  const ColorCorrelationMap cmap;
+  std::vector<Spline::Point> control_points{{9, 54},  {118, 159}, {97, 3},
+                                            {10, 40}, {150, 25},  {120, 300}};
+  const Spline spline{
+      control_points,
+      /*color_dct=*/
+      {{0.03125f, 0.00625f, 0.003125f}, {1.f, 0.321875f}, {1.f, 0.24375f}},
+      /*sigma_dct=*/{0.3125f, 0.f, 0.f, 0.0625f}};
+  std::vector<Spline> spline_data = {spline};
+  std::vector<QuantizedSpline> quantized_splines;
+  std::vector<Spline::Point> starting_points;
+  for (const Spline& spline : spline_data) {
+    quantized_splines.emplace_back(spline, /*quantization_adjustment=*/0,
+                                   cmap.YtoXRatio(0), cmap.YtoBRatio(0));
+    starting_points.push_back(spline.control_points.front());
+  }
+  return Splines(/*quantization_adjustment=*/0, std::move(quantized_splines),
+                 std::move(starting_points));
 }
 
 std::vector<RenderPipelineTestInputSettings> GeneratePipelineTests() {
@@ -178,6 +209,13 @@ std::vector<RenderPipelineTestInputSettings> GeneratePipelineTests() {
       all_tests.push_back(s);
     }
 
+    {
+      auto s = settings;
+      s.cparams_descr = "Splines";
+      s.splines = CreateTestSplines();
+      all_tests.push_back(s);
+    }
+
     for (size_t ups : {2, 4, 8}) {
       {
         auto s = settings;
@@ -201,7 +239,64 @@ std::vector<RenderPipelineTestInputSettings> GeneratePipelineTests() {
         all_tests.push_back(s);
       }
     }
+
+    {
+      auto s = settings;
+      s.cparams_descr = "ModularLossless";
+      s.cparams.modular_mode = true;
+      s.cparams.butteraugli_distance = 0;
+      all_tests.push_back(s);
+    }
+
+    {
+      auto s = settings;
+      s.cparams_descr = "ModularLossy";
+      s.cparams.modular_mode = true;
+      s.cparams.quality_pair = {90, 90};
+      all_tests.push_back(s);
+    }
+
+    {
+      auto s = settings;
+      s.input_path = "wide-gamut-tests/R2020-sRGB-blue.png";
+      s.cparams_descr = "AlphaVarDCT";
+      all_tests.push_back(s);
+    }
+
+    {
+      auto s = settings;
+      s.cparams.modular_mode = true;
+      s.cparams.butteraugli_distance = 0;
+      s.input_path = "wide-gamut-tests/R2020-sRGB-blue.png";
+      s.cparams_descr = "AlphaLossless";
+      all_tests.push_back(s);
+    }
+
+    {
+      auto s = settings;
+      s.input_path = "wide-gamut-tests/R2020-sRGB-blue.png";
+      s.cparams_descr = "AlphaDownsample";
+      s.cparams.ec_resampling = 2;
+      all_tests.push_back(s);
+    }
   }
+
+#if JPEGXL_ENABLE_TRANSCODE_JPEG
+  for (const char* input :
+       {"imagecompression.info/flower_foveon.png.im_q85_444.jpg",
+        "imagecompression.info/flower_foveon.png.im_q85_420.jpg",
+        "imagecompression.info/flower_foveon.png.im_q85_422.jpg",
+        "imagecompression.info/flower_foveon.png.im_q85_440.jpg"}) {
+    RenderPipelineTestInputSettings settings;
+    settings.input_path = input;
+    settings.jpeg_transcode = true;
+    settings.xsize = 2268;
+    settings.ysize = 1512;
+    settings.cparams_descr = "Default";
+    all_tests.push_back(settings);
+  }
+
+#endif
 
   return all_tests;
 }
@@ -218,7 +313,8 @@ std::ostream& operator<<(std::ostream& os,
   std::replace_if(
       filename.begin(), filename.end(), [](char c) { return !isalnum(c); },
       '_');
-  os << filename << "_" << c.xsize << "x" << c.ysize << "_" << c.cparams_descr;
+  os << filename << "_" << (c.jpeg_transcode ? "JPEG_" : "") << c.xsize << "x"
+     << c.ysize << "_" << c.cparams_descr;
   return os;
 }
 

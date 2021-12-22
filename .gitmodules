@@ -1,9 +1,6 @@
 [submodule "third_party/brotli"]
 	path = third_party/brotli
 	url = https://github.com/google/brotli
-[submodule "third_party/lodepng"]
-	path = third_party/lodepng
-	url = https://github.com/lvandeve/lodepng
 [submodule "third_party/lcms"]
 	path = third_party/lcms
 	url = https://github.com/mm2/Little-CMS
@@ -22,3 +19,9 @@
 [submodule "third_party/abseil-cpp"]
 	path = third_party/abseil-cpp
 	url = https://github.com/abseil/abseil-cpp
+[submodule "third_party/libpng"]
+	path = third_party/libpng
+	url = https://github.com/glennrp/libpng.git
+[submodule "third_party/zlib"]
+	path = third_party/zlib
+	url = https://github.com/madler/zlib.git

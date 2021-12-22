@@ -114,9 +114,9 @@ JXL_EXPORT void JxlDecoderDestroy(JxlDecoder* dec);
 
 /**
  * Return value for JxlDecoderProcessInput.
- * The values from JXL_DEC_EXTENSIONS onwards are optional informal events
- * that can be subscribed to, they are never returned if they have not been
- * registered with JxlDecoderSubscribeEvents.
+ * The values from JXL_DEC_BASIC_INFO onwards are optional informative
+ * events that can be subscribed to, they are never returned if they
+ * have not been registered with JxlDecoderSubscribeEvents.
  */
 typedef enum {
   /** Function call finished successfully, or decoding is finished and there is
@@ -270,7 +270,7 @@ typedef enum {
    * configuring which data to get. Decompressing requires
    * Brotli. JxlDecoderGetBoxType has a flag to get the compressed box
    * type, which can be "brob", or the decompressed box type. If a box
-   * is not compressed (its compressed type is not "brob"), then 
+   * is not compressed (its compressed type is not "brob"), then
    * the output decompressed box type and data is independent of what
    * setting is configured.
    *
@@ -412,8 +412,8 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSubscribeEvents(JxlDecoder* dec,
  * transformation, but can cause wrong display of the image if the orientation
  * tag is not correctly taken into account by the user.
  *
- * By default, this option is disabled, and the decoder respects the
- * orientation setting provided by the image.
+ * By default, this option is disabled, and the returned pixel data is
+ * re-oriented according to the image's Orientation setting.
  *
  * This function must be called at the beginning, before decoding is performed.
  *
@@ -624,8 +624,8 @@ typedef enum {
  * It is often possible to use JxlDecoderGetColorAsICCProfile as an
  * alternative anyway. The following scenarios are possible:
  * - The JPEG XL image has an attached ICC Profile, in that case, the encoded
- *   structured data is not available, this function will return an error status.
- *   JxlDecoderGetColorAsICCProfile should be called instead.
+ *   structured data is not available, this function will return an error
+ *   status. JxlDecoderGetColorAsICCProfile should be called instead.
  * - The JPEG XL image has an encoded structured color profile, and it
  *   represents an RGB or grayscale color space. This function will return it.
  *   You can still use JxlDecoderGetColorAsICCProfile as well as an

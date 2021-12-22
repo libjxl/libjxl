@@ -135,9 +135,9 @@ Status ConvertFromExternal(Span<const uint8_t> bytes, size_t xsize,
 
   const uint8_t* const in = bytes.data();
   if (float_in) {
-    RunOnPool(
-        pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
-        [&](const int task, int /*thread*/) {
+    JXL_RETURN_IF_ERROR(RunOnPool(
+        pool, 0, static_cast<uint32_t>(ysize), ThreadPool::NoInit,
+        [&](const uint32_t task, size_t /*thread*/) {
           const size_t y = task;
           size_t i = row_size * task;
           float* JXL_RESTRICT row_out = channel->Row(y);
@@ -167,12 +167,12 @@ Status ConvertFromExternal(Span<const uint8_t> bytes, size_t xsize,
             }
           }
         },
-        "ConvertExtraChannelFloat");
+        "ConvertExtraChannelFloat"));
   } else {
     float mul = 1. / ((1ull << bits_per_sample) - 1);
-    RunOnPool(
-        pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
-        [&](const int task, int /*thread*/) {
+    JXL_RETURN_IF_ERROR(RunOnPool(
+        pool, 0, static_cast<uint32_t>(ysize), ThreadPool::NoInit,
+        [&](const uint32_t task, size_t /*thread*/) {
           const size_t y = task;
           size_t i = row_size * task;
           float* JXL_RESTRICT row_out = channel->Row(y);
@@ -198,7 +198,7 @@ Status ConvertFromExternal(Span<const uint8_t> bytes, size_t xsize,
             }
           }
         },
-        "ConvertExtraChannelUint");
+        "ConvertExtraChannelUint"));
   }
 
   return true;
@@ -249,9 +249,9 @@ Status ConvertFromExternal(Span<const uint8_t> bytes, size_t xsize,
 
   if (float_in) {
     for (size_t c = 0; c < color_channels; ++c) {
-      RunOnPool(
-          pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
-          [&](const int task, int /*thread*/) {
+      JXL_RETURN_IF_ERROR(RunOnPool(
+          pool, 0, static_cast<uint32_t>(ysize), ThreadPool::NoInit,
+          [&](const uint32_t task, size_t /*thread*/) {
             const size_t y = get_y(task);
             size_t i =
                 row_size * task + (c * bits_per_sample / jxl::kBitsPerByte);
@@ -282,15 +282,15 @@ Status ConvertFromExternal(Span<const uint8_t> bytes, size_t xsize,
               }
             }
           },
-          "ConvertRGBFloat");
+          "ConvertRGBFloat"));
     }
   } else {
     // Multiplier to convert from the integer range to floating point 0-1 range.
     float mul = 1. / ((1ull << bits_per_sample) - 1);
     for (size_t c = 0; c < color_channels; ++c) {
-      RunOnPool(
-          pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
-          [&](const int task, int /*thread*/) {
+      JXL_RETURN_IF_ERROR(RunOnPool(
+          pool, 0, static_cast<uint32_t>(ysize), ThreadPool::NoInit,
+          [&](const uint32_t task, size_t /*thread*/) {
             const size_t y = get_y(task);
             size_t i = row_size * task + c * bytes_per_channel;
             float* JXL_RESTRICT row_out = color.PlaneRow(c, y);
@@ -316,7 +316,7 @@ Status ConvertFromExternal(Span<const uint8_t> bytes, size_t xsize,
               }
             }
           },
-          "ConvertRGBUint");
+          "ConvertRGBUint"));
     }
   }
 
@@ -333,9 +333,9 @@ Status ConvertFromExternal(Span<const uint8_t> bytes, size_t xsize,
     ImageF alpha(xsize, ysize);
 
     if (float_in) {
-      RunOnPool(
-          pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
-          [&](const int task, int /*thread*/) {
+      JXL_RETURN_IF_ERROR(RunOnPool(
+          pool, 0, static_cast<uint32_t>(ysize), ThreadPool::NoInit,
+          [&](const uint32_t task, size_t /*thread*/) {
             const size_t y = get_y(task);
             size_t i = row_size * task +
                        (color_channels * bits_per_sample / jxl::kBitsPerByte);
@@ -366,12 +366,12 @@ Status ConvertFromExternal(Span<const uint8_t> bytes, size_t xsize,
               }
             }
           },
-          "ConvertAlphaFloat");
+          "ConvertAlphaFloat"));
     } else {
       float mul = 1. / ((1ull << bits_per_sample) - 1);
-      RunOnPool(
-          pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
-          [&](const int task, int /*thread*/) {
+      JXL_RETURN_IF_ERROR(RunOnPool(
+          pool, 0, static_cast<uint32_t>(ysize), ThreadPool::NoInit,
+          [&](const uint32_t task, size_t /*thread*/) {
             const size_t y = get_y(task);
             size_t i = row_size * task + color_channels * bytes_per_channel;
             float* JXL_RESTRICT row_out = alpha.Row(y);
@@ -397,7 +397,7 @@ Status ConvertFromExternal(Span<const uint8_t> bytes, size_t xsize,
               }
             }
           },
-          "ConvertAlphaUint");
+          "ConvertAlphaUint"));
     }
 
     ib->SetAlpha(std::move(alpha), alpha_is_premultiplied);

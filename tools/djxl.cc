@@ -8,7 +8,6 @@
 #include <stdio.h>
 
 #include "lib/extras/codec.h"
-#include "lib/extras/codec_jpg.h"
 #include "lib/extras/color_description.h"
 #include "lib/extras/time.h"
 #include "lib/extras/tone_mapping.h"
@@ -24,6 +23,7 @@
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
+#include "lib/jxl/jpeg/dec_jpeg_data_writer.h"
 #include "tools/args.h"
 #include "tools/box/box.h"
 
@@ -209,7 +209,7 @@ jxl::Status DecompressJxlToJPEG(const JpegXlContainer& container,
   if (!DecodeJpegXlToJpeg(args.params, container, &io, pool)) {
     return JXL_FAILURE("Failed to decode JXL to JPEG");
   }
-  if (!jxl::extras::EncodeImageJPGCoefficients(&io, output)) {
+  if (!jxl::jpeg::EncodeImageJPGCoefficients(&io, output)) {
     return JXL_FAILURE("Failed to generate JPEG");
   }
   stats->SetImageSize(io.xsize(), io.ysize());
@@ -271,17 +271,26 @@ jxl::Status WriteJxlOutput(const DecompressArgs& args, const char* file_out,
     }
   }
 
-  if (!io.metadata.m.have_animation) {
-    if (!EncodeToFile(io, c_out, bits_per_sample, file_out, pool)) {
+  const char* extension = strrchr(file_out, '.');
+  std::string base = extension == nullptr
+                         ? std::string(file_out)
+                         : std::string(file_out, extension - file_out);
+  if (extension == nullptr) extension = "";
+  const jxl::Codec codec = jxl::CodecFromExtension(extension);
+  if (!io.metadata.m.have_animation || codec == jxl::Codec::kPNG) {
+    bool ok;
+    if (io.Main().IsJPEG() && codec == jxl::Codec::kJPG) {
+      jxl::PaddedBytes encoded;
+      ok = jxl::jpeg::EncodeImageJPGCoefficients(&io, &encoded) &&
+           jxl::WriteFile(encoded, file_out);
+    } else {
+      ok = jxl::EncodeToFile(io, c_out, bits_per_sample, file_out, pool);
+    }
+    if (!ok) {
       fprintf(stderr, "Failed to write decoded image.\n");
       return false;
     }
   } else {
-    const char* extension = strrchr(file_out, '.');
-    std::string base = extension == nullptr
-                           ? std::string(file_out)
-                           : std::string(file_out, extension - file_out);
-    if (extension == nullptr) extension = "";
     const int digits = 1 + static_cast<int>(std::log10(std::max(
                                1, static_cast<int>(io.frames.size() - 1))));
     std::vector<char> output_filename;

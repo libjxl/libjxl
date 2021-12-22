@@ -19,7 +19,7 @@
 
 #include "jxl/decode.h"
 #include "lib/extras/codec.h"
-#include "lib/extras/codec_png.h"
+#include "lib/extras/codec_apng.h"
 #include "lib/extras/color_hints.h"
 #include "lib/extras/time.h"
 #include "lib/jxl/alpha.h"
@@ -43,6 +43,7 @@
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
+#include "lib/jxl/jpeg/enc_jpeg_data.h"
 #include "tools/benchmark/benchmark_args.h"
 #include "tools/benchmark/benchmark_codec.h"
 #include "tools/benchmark/benchmark_file_io.h"
@@ -54,16 +55,13 @@
 namespace jxl {
 namespace {
 
-Status WritePNG(Image3F&& image, ThreadPool* pool,
-                const std::string& filename) {
+Status WriteImage(Image3F&& image, ThreadPool* pool,
+                  const std::string& filename) {
   CodecInOut io;
   io.metadata.m.SetUintSamples(8);
   io.metadata.m.color_encoding = ColorEncoding::SRGB();
   io.SetFromImage(std::move(image), io.metadata.m.color_encoding);
-  PaddedBytes compressed;
-  JXL_CHECK(
-      extras::EncodeImagePNG(&io, io.Main().c_current(), 8, pool, &compressed));
-  return WriteFile(compressed, filename);
+  return EncodeToFile(io, filename, pool);
 }
 
 Status ReadPNG(const std::string& filename, Image3F* image) {
@@ -274,7 +272,11 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
     std::replace(codec_name.begin(), codec_name.end(), ':', '_');
     std::string compressed_fn = outdir + "/" + name + "." + codec_name;
     std::string decompressed_fn = compressed_fn + Args()->output_extension;
+#if JPEGXL_ENABLE_APNG
     std::string heatmap_fn = compressed_fn + ".heatmap.png";
+#else
+    std::string heatmap_fn = compressed_fn + ".heatmap.ppm";
+#endif
     JXL_CHECK(MakeDir(outdir));
     if (Args()->save_compressed) {
       std::string compressed_str(
@@ -299,8 +301,8 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
                                                  : ButteraugliFuzzyInverse(1.5);
         float bad = Args()->heatmap_bad > 0.0f ? Args()->heatmap_bad
                                                : ButteraugliFuzzyInverse(0.5);
-        JXL_CHECK(WritePNG(CreateHeatMapImage(distmap, good, bad), inner_pool,
-                           heatmap_fn));
+        JXL_CHECK(WriteImage(CreateHeatMapImage(distmap, good, bad), inner_pool,
+                             heatmap_fn));
       }
     }
   }
@@ -908,7 +910,7 @@ class Benchmark {
           StringPrintf("%s/%s.crop_%dx%d+%d+%d.png", sample_tmp_dir.c_str(),
                        FileBaseName(fnames[idx]).c_str(), size, size, x0, y0);
       ThreadPool* null_pool = nullptr;
-      JXL_CHECK(WritePNG(std::move(sample), null_pool, fn_output));
+      JXL_CHECK(WriteImage(std::move(sample), null_pool, fn_output));
       fnames_out.push_back(fn_output);
     }
     fprintf(stderr, "Created %d sample tiles\n", num_samples);
@@ -939,17 +941,20 @@ class Benchmark {
     PROFILER_FUNC;
     std::vector<CodecInOut> loaded_images;
     loaded_images.resize(fnames.size());
-    RunOnPool(
-        pool, 0, static_cast<int>(fnames.size()), ThreadPool::SkipInit(),
-        [&](const int task, int /*thread*/) {
+    JXL_CHECK(RunOnPool(
+        pool, 0, static_cast<uint32_t>(fnames.size()), ThreadPool::NoInit,
+        [&](const uint32_t task, size_t /*thread*/) {
           const size_t i = static_cast<size_t>(task);
           Status ok = true;
 
-          loaded_images[i].dec_target = jpeg_transcoding_requested
-                                            ? DecodeTarget::kQuantizedCoeffs
-                                            : DecodeTarget::kPixels;
           if (!Args()->decode_only) {
-            ok = SetFromFile(fnames[i], Args()->color_hints, &loaded_images[i]);
+            PaddedBytes encoded;
+            ok = ReadFile(fnames[i], &encoded) &&
+                 (jpeg_transcoding_requested
+                      ? jpeg::DecodeImageJPG(Span<const uint8_t>(encoded),
+                                             &loaded_images[i])
+                      : SetFromBytes(Span<const uint8_t>(encoded),
+                                     Args()->color_hints, &loaded_images[i]));
             if (ok && Args()->intensity_target != 0) {
               loaded_images[i].metadata.m.SetIntensityTarget(
                   Args()->intensity_target);
@@ -981,7 +986,7 @@ class Benchmark {
             }
           }
         },
-        "Load images");
+        "Load images"));
     return loaded_images;
   }
 
@@ -1030,14 +1035,14 @@ class Benchmark {
     }
 
     std::vector<uint64_t> errors_thread;
-    RunOnPool(
+    JXL_CHECK(RunOnPool(
         pool, 0, tasks->size(),
-        [&](size_t num_threads) {
+        [&](const size_t num_threads) {
           // Reduce false sharing by only writing every 8th slot (64 bytes).
           errors_thread.resize(8 * num_threads);
           return true;
         },
-        [&](const int i, const int thread) {
+        [&](const uint32_t i, const size_t thread) {
           Task& t = (*tasks)[i];
           const CodecInOut& image = loaded_images[t.idx_image];
           t.image = &image;
@@ -1048,7 +1053,7 @@ class Benchmark {
           printer.TaskDone(i, t);
           errors_thread[8 * thread] += t.stats.total_errors;
         },
-        "Benchmark tasks");
+        "Benchmark tasks"));
     if (Args()->show_progress) fprintf(stderr, "\n");
     return std::accumulate(errors_thread.begin(), errors_thread.end(), 0);
   }

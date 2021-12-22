@@ -39,8 +39,8 @@ int main(int argc, const char** argv) {
 
   jxl::Image3F image(N * N, N);
   JXL_CHECK(jxl::RunOnPool(
-      &pool, 0, N, jxl::ThreadPool::SkipInit(),
-      [&](const int y, const int thread_id) {
+      &pool, 0, N, jxl::ThreadPool::NoInit,
+      [&](const uint32_t y, size_t /* thread */) {
         const float g = static_cast<float>(y) / (N - 1);
         float* const JXL_RESTRICT rows[3] = {
             image.PlaneRow(0, y), image.PlaneRow(1, y), image.PlaneRow(2, y)};

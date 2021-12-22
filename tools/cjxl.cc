@@ -15,15 +15,12 @@
 #include <vector>
 
 #include "lib/extras/codec.h"
-#if JPEGXL_ENABLE_JPEG
-#include "lib/extras/codec_jpg.h"
-#endif
-
 #include "lib/extras/time.h"
 #include "lib/jxl/aux_out.h"
 #include "lib/jxl/base/cache_aligned.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/file_io.h"
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/profiler.h"
@@ -38,6 +35,7 @@
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
+#include "lib/jxl/jpeg/enc_jpeg_data.h"
 #include "lib/jxl/modular/encoding/encoding.h"
 #include "tools/args.h"
 #include "tools/box/box.h"
@@ -281,6 +279,8 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
 #endif
 #if JPEGXL_ENABLE_JPEG
                                "JPEG, "
+#else
+                               "JPEG (lossless recompression only), "
 #endif
 #if JPEGXL_ENABLE_EXR
                                "EXR, "
@@ -733,11 +733,13 @@ jxl::Status LoadAll(CompressArgs& args, jxl::ThreadPoolInternal* pool,
                     jxl::CodecInOut* io, double* decode_mps) {
   const double t0 = jxl::Now();
 
-  io->dec_target = (args.jpeg_transcode ? jxl::DecodeTarget::kQuantizedCoeffs
-                                        : jxl::DecodeTarget::kPixels);
-  jxl::Codec input_codec;
-  if (!SetFromFile(args.params.file_in, args.color_hints, io, nullptr,
-                   &input_codec)) {
+  jxl::PaddedBytes encoded;
+  JXL_RETURN_IF_ERROR(jxl::ReadFile(args.params.file_in, &encoded));
+  jxl::Codec input_codec = jxl::Codec::kJPG;
+  if (!(args.jpeg_transcode
+            ? jxl::jpeg::DecodeImageJPG(jxl::Span<const uint8_t>(encoded), io)
+            : jxl::SetFromBytes(jxl::Span<const uint8_t>(encoded),
+                                args.color_hints, io, nullptr, &input_codec))) {
     fprintf(stderr, "Failed to read image %s.\n", args.params.file_in);
     return false;
   }
