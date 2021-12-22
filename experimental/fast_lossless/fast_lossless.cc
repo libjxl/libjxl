@@ -18,6 +18,35 @@
 #error "system not known to be little endian"
 #endif
 
+struct BitWriter {
+  void Allocate(size_t maximum_bit_size) {
+    assert(data == nullptr);
+    // Leave some padding.
+    data.reset((uint8_t*)malloc(maximum_bit_size / 8 + 32));
+  }
+
+  void Write(uint32_t count, uint64_t bits) {
+    buffer |= bits << bits_in_buffer;
+    bits_in_buffer += count;
+    memcpy(data.get() + bytes_written, &buffer, 8);
+    size_t bytes_in_buffer = bits_in_buffer / 8;
+    bits_in_buffer -= bytes_in_buffer * 8;
+    buffer >>= bytes_in_buffer * 8;
+    bytes_written += bytes_in_buffer;
+  }
+
+  void ZeroPadToByte() {
+    if (bits_in_buffer != 0) {
+      Write(8 - bits_in_buffer, 0);
+    }
+  }
+
+  std::unique_ptr<uint8_t[], void (*)(void*)> data = {nullptr, free};
+  size_t bytes_written = 0;
+  size_t bits_in_buffer = 0;
+  uint64_t buffer = 0;
+};
+
 /*
 // Run this in the libjxl codebase to compute the prefix code tables and code:
 #include "lib/jxl/enc_huffman.h"
@@ -89,19 +118,67 @@ __attribute__((constructor)) void f() {
 
 */
 
-constexpr uint8_t kRawNBits[16] = {
-    2, 3, 3, 3, 3, 4, 4, 5, 5, 5, 6,
+struct PrefixCode {
+  alignas(32) uint8_t raw_nbits[16] = {
+      2, 3, 3, 3, 3, 4, 4, 5, 5, 5, 6,
+  };
+  alignas(32) uint8_t raw_bits[16] = {};
+  alignas(32) uint8_t lz77_nbits[17] = {
+      7, 9, 9, 9, 10, 13, 14, 14, 15, 15, 15, 15, 11, 15, 15, 15, 15,
+  };
+
+  alignas(32) uint16_t lz77_bits[17] = {};
+
+  uint16_t BitReverse(size_t nbits, uint16_t bits) {
+    constexpr uint16_t kNibbleLookup[16] = {
+        0b0000, 0b1000, 0b0100, 0b1100, 0b0010, 0b1010, 0b0110, 0b1110,
+        0b0001, 0b1001, 0b0101, 0b1101, 0b0011, 0b1011, 0b0111, 0b1111,
+    };
+    uint16_t rev16 = (kNibbleLookup[bits & 0xF] << 12) |
+                     (kNibbleLookup[(bits >> 4) & 0xF] << 8) |
+                     (kNibbleLookup[(bits >> 8) & 0xF] << 4) |
+                     (kNibbleLookup[bits >> 12]);
+    return rev16 >> (16 - nbits);
+  }
+
+  PrefixCode() {
+    constexpr size_t kNumRaw = 11;
+    constexpr size_t kNumLZ77 = 17;
+
+    // Create the prefix codes given the code lengths.
+    {
+      uint8_t code_length_counts[16] = {};
+      for (size_t i = 0; i < kNumRaw; i++) {
+        code_length_counts[raw_nbits[i]]++;
+        assert(raw_nbits[i] <= 7);
+        assert(raw_nbits[i] > 0);
+      }
+      for (size_t i = 0; i < kNumLZ77; i++) {
+        code_length_counts[lz77_nbits[i]]++;
+      }
+
+      uint16_t next_code[16] = {};
+
+      uint16_t code = 0;
+      for (size_t i = 1; i < 16; i++) {
+        code = (code + code_length_counts[i - 1]) << 1;
+        next_code[i] = code;
+      }
+
+      for (size_t i = 0; i < kNumRaw; i++) {
+        raw_bits[i] = BitReverse(raw_nbits[i], next_code[raw_nbits[i]]++);
+      }
+      for (size_t i = 0; i < kNumLZ77; i++) {
+        lz77_bits[i] = BitReverse(lz77_nbits[i], next_code[lz77_nbits[i]]++);
+      }
+    }
+  }
+
+  void WriteTo(BitWriter* writer) {
+    // TODO
+  }
 };
-constexpr uint8_t kRawBits[16] = {
-    0x0, 0x2, 0x6, 0x1, 0x5, 0x3, 0xb, 0x7, 0x17, 0xf, 0x1f,
-};
-constexpr uint8_t kLZ77NBits[17] = {
-    7, 9, 9, 9, 10, 13, 14, 14, 15, 15, 15, 15, 11, 15, 15, 15, 15,
-};
-constexpr uint16_t kLZ77Bits[17] = {
-    0x3f,   0x7f,   0x17f,  0xff,  0x1ff,  0x7ff,  0x17ff, 0x37ff, 0xfff,
-    0x4fff, 0x2fff, 0x6fff, 0x3ff, 0x1fff, 0x5fff, 0x3fff, 0x7fff,
-};
+
 constexpr uint8_t kHistoCode[] = {
     0xf0, 0x3d, 0x7f, 0xcf, 0xf3, 0xff, 0xfc, 0xdb, 0xaa, 0xaa,
     0x7a, 0x1f, 0x63, 0x4c, 0x12, 0x5a, 0x80, 0x1b, 0x70, 0x3,
@@ -122,35 +199,6 @@ void EncodeHybridUint000(uint32_t value, uint32_t* token, uint32_t* nbits,
   *nbits = value ? n : 0;
   *bits = value ? value - (1 << n) : 0;
 }
-
-struct BitWriter {
-  void Allocate(size_t maximum_bit_size) {
-    assert(data == nullptr);
-    // Leave some padding.
-    data.reset((uint8_t*)malloc(maximum_bit_size / 8 + 32));
-  }
-
-  void Write(uint32_t count, uint64_t bits) {
-    buffer |= bits << bits_in_buffer;
-    bits_in_buffer += count;
-    memcpy(data.get() + bytes_written, &buffer, 8);
-    size_t bytes_in_buffer = bits_in_buffer / 8;
-    bits_in_buffer -= bytes_in_buffer * 8;
-    buffer >>= bytes_in_buffer * 8;
-    bytes_written += bytes_in_buffer;
-  }
-
-  void ZeroPadToByte() {
-    if (bits_in_buffer != 0) {
-      Write(8 - bits_in_buffer, 0);
-    }
-  }
-
-  std::unique_ptr<uint8_t[], void (*)(void*)> data = {nullptr, free};
-  size_t bytes_written = 0;
-  size_t bits_in_buffer = 0;
-  uint64_t buffer = 0;
-};
 
 void AppendWriter(BitWriter* dest, const BitWriter* src) {
   if (dest->bits_in_buffer == 0) {
@@ -318,7 +366,7 @@ void AssembleFrame(size_t width, size_t height,
 }
 
 void PrepareDCGlobal(bool is_single_group, size_t width, size_t height,
-                     BitWriter* output) {
+                     const PrefixCode& code, BitWriter* output) {
   output->Allocate(1000 + (is_single_group ? width * height * 15 : 0));
   // No patches, spline or noise.
   output->Write(1, 1);  // default DC dequantization factors (?)
@@ -390,18 +438,21 @@ void EncodeHybridUint404_Mul16(uint32_t value, uint32_t* token_div16,
   *bits = value < 16 ? 0 : (value >> 4) - (1 << *nbits);
 }
 
-void EncodeRle(uint16_t residual, size_t count, BitWriter& output) {
+void EncodeRle(uint16_t residual, size_t count, const PrefixCode& code,
+               BitWriter& output) {
   if (count == 0) return;
   count -= kLZ77MinLength;
   unsigned token_div16, nbits, bits;
   EncodeHybridUint404_Mul16(count, &token_div16, &nbits, &bits);
-  output.Write(kLZ77NBits[token_div16] + nbits,
-               (bits << kLZ77NBits[token_div16]) | kLZ77Bits[token_div16]);
+  output.Write(
+      code.lz77_nbits[token_div16] + nbits,
+      (bits << code.lz77_nbits[token_div16]) | code.lz77_bits[token_div16]);
 }
 
 #ifdef FASTLL_ENABLE_AVX2_INTRINSICS
 #include <immintrin.h>
-void EncodeChunk(const uint16_t* residuals, BitWriter& output) {
+void EncodeChunk(const uint16_t* residuals, const PrefixCode& prefix_code,
+                 BitWriter& output) {
   static_assert(kChunkSize == 16, "Chunk size must be 16");
   auto value = _mm256_load_si256((__m256i*)residuals);
 
@@ -452,13 +503,15 @@ void EncodeChunk(const uint16_t* residuals, BitWriter& output) {
   auto token_masked = _mm256_or_si256(token, _mm256_set1_epi16(0xFF00));
 
   // huff_nbits <= 6.
-  auto huff_nbits = _mm256_shuffle_epi8(
-      _mm256_broadcastsi128_si256(_mm_load_si128((__m128i*)kRawNBits)),
-      token_masked);
+  auto huff_nbits =
+      _mm256_shuffle_epi8(_mm256_broadcastsi128_si256(
+                              _mm_load_si128((__m128i*)prefix_code.raw_nbits)),
+                          token_masked);
 
-  auto huff_bits = _mm256_shuffle_epi8(
-      _mm256_broadcastsi128_si256(_mm_load_si128((__m128i*)kRawBits)),
-      token_masked);
+  auto huff_bits =
+      _mm256_shuffle_epi8(_mm256_broadcastsi128_si256(
+                              _mm_load_si128((__m128i*)prefix_code.raw_bits)),
+                          token_masked);
 
   auto huff_nbits_masked =
       _mm256_or_si256(huff_nbits, _mm256_set1_epi16(0xFF00));
@@ -523,15 +576,16 @@ void EncodeChunk(const uint16_t* residuals, BitWriter& output) {
 #ifdef FASTLL_ENABLE_NEON_INTRINSICS
 #include <arm_neon.h>
 
-void EncodeChunk(const uint16_t* residuals, BitWriter& output) {
+void EncodeChunk(const uint16_t* residuals, const PrefixCode& code,
+                 BitWriter& output) {
   uint16x8_t res = vld1q_u16(residuals);
   uint16x8_t token = vsubq_u16(vdupq_n_u16(16), vclzq_u16(res));
   uint16x8_t nbits = vqsubq_u16(token, vdupq_n_u16(1));
   uint16x8_t bits = vqsubq_u16(res, vshlq_s16(vdupq_n_s16(1), nbits));
   uint16x8_t huff_bits =
-      vandq_u16(vdupq_n_u16(0xFF), vqtbl1q_u8(vld1q_u8(kRawBits), token));
+      vandq_u16(vdupq_n_u16(0xFF), vqtbl1q_u8(vld1q_u8(code.raw_bits), token));
   uint16x8_t huff_nbits =
-      vandq_u16(vdupq_n_u16(0xFF), vqtbl1q_u8(vld1q_u8(kRawNBits), token));
+      vandq_u16(vdupq_n_u16(0xFF), vqtbl1q_u8(vld1q_u8(code.raw_nbits), token));
   bits = vorrq_u16(vshlq_u16(bits, huff_nbits), huff_bits);
   nbits = vaddq_u16(nbits, huff_nbits);
 
@@ -567,7 +621,7 @@ constexpr uint16_t PackSigned(int16_t value) {
 struct ChannelRowEncoder {
   inline void ProcessChunk(const int16_t* row, const int16_t* row_left,
                            const int16_t* row_top, const int16_t* row_topleft,
-                           BitWriter& output) {
+                           const PrefixCode& code, BitWriter& output) {
     bool continue_rle = true;
     alignas(32) uint16_t residuals[kChunkSize] = {};
     for (size_t ix = 0; ix < kChunkSize; ix++) {
@@ -591,22 +645,22 @@ struct ChannelRowEncoder {
       run += kChunkSize;
     } else {
       // Run is broken. Encode the run and encode the individual vector.
-      EncodeRle(last, run, output);
+      EncodeRle(last, run, code, output);
       run = 0;
 #ifdef FASTLL_ENABLE_AVX2_INTRINSICS
-      EncodeChunk(residuals, output);
+      EncodeChunk(residuals, code, output);
 #elif FASTLL_ENABLE_NEON_INTRINSICS
-      EncodeChunk(residuals, output);
+      EncodeChunk(residuals, code, output);
       if (kChunkSize > 8) {
-        EncodeChunk(residuals + 8, output);
+        EncodeChunk(residuals + 8, code, output);
       }
 #else
       for (size_t ix = 0; ix < kChunkSize; ix++) {
         unsigned token, nbits, bits;
         EncodeHybridUint000(residuals[ix], &token, &nbits, &bits);
 
-        output.Write(kRawNBits[token] + nbits,
-                     kRawBits[token] | bits << kRawNBits[token]);
+        output.Write(code.raw_nbits[token] + nbits,
+                     code.raw_bits[token] | bits << code->raw_nbits[token]);
       }
 #endif
     }
@@ -614,21 +668,24 @@ struct ChannelRowEncoder {
   }
   void ProcessRow(const int16_t* row, const int16_t* row_left,
                   const int16_t* row_top, const int16_t* row_topleft, size_t xs,
-                  BitWriter& output) {
+                  const PrefixCode& code, BitWriter& output) {
     size_t x = 0;
     for (; x + kChunkSize <= xs; x += kChunkSize) {
-      ProcessChunk(row + x, row_left + x, row_top + x, row_topleft + x, output);
+      ProcessChunk(row + x, row_left + x, row_top + x, row_topleft + x, code,
+                   output);
     }
   }
 
-  void Finalize(BitWriter& output) { EncodeRle(last, run, output); }
+  void Finalize(const PrefixCode& code, BitWriter& output) {
+    EncodeRle(last, run, code, output);
+  }
   size_t run = 0;
   uint16_t last = 0xFFFF;  // Can never appear
 };
 
 void WriteACSection(const unsigned char* rgba, size_t x0, size_t y0, size_t oxs,
                     size_t ys, size_t row_stride, bool is_single_group,
-                    std::array<BitWriter, 4>& output) {
+                    const PrefixCode& code, std::array<BitWriter, 4>& output) {
   size_t xs = (oxs + kChunkSize - 1) / kChunkSize * kChunkSize;
   for (size_t i = 0; i < 4; i++) {
     if (is_single_group && i == 0) continue;
@@ -684,12 +741,12 @@ void WriteACSection(const unsigned char* rgba, size_t x0, size_t y0, size_t oxs,
       const int16_t* row_topleft =
           y == 0 ? row_left : &group_data[c][(y - 1) & 1][kPadding - 1];
 
-      row_encoders[c].ProcessRow(row, row_left, row_top, row_topleft, xs,
+      row_encoders[c].ProcessRow(row, row_left, row_top, row_topleft, xs, code,
                                  output[c]);
     }
   }
   for (size_t c = 0; c < 4; c++) {
-    row_encoders[c].Finalize(output[c]);
+    row_encoders[c].Finalize(code, output[c]);
   }
 }
 
@@ -699,6 +756,8 @@ size_t FastLosslessEncode(const unsigned char* rgba, size_t width,
   assert(width != 0);
   assert(height != 0);
   assert(row_stride >= 4 * width);
+
+  alignas(32) PrefixCode prefix_code;
 
   BitWriter writer;
 
@@ -717,7 +776,8 @@ size_t FastLosslessEncode(const unsigned char* rgba, size_t width,
 
   std::vector<std::array<BitWriter, 4>> group_data(num_groups);
 
-  PrepareDCGlobal(is_single_group, width, height, &group_data[0][0]);
+  PrepareDCGlobal(is_single_group, width, height, prefix_code,
+                  &group_data[0][0]);
 
 #pragma omp parallel for
   for (size_t g = 0; g < num_groups_y * num_groups_x; g++) {
@@ -728,7 +788,7 @@ size_t FastLosslessEncode(const unsigned char* rgba, size_t width,
     WriteACSection(rgba, xg * 256, yg * 256,
                    std::min<size_t>(width - xg * 256, 256),
                    std::min<size_t>(height - yg * 256, 256), row_stride,
-                   is_single_group, group_data[group_id]);
+                   is_single_group, prefix_code, group_data[group_id]);
   }
 
   AssembleFrame(width, height, group_data, &writer);
