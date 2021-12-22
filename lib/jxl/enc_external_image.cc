@@ -128,6 +128,8 @@ Status ConvertFromExternal(Span<const uint8_t> bytes, size_t xsize,
   if (ysize && bytes.size() / ysize < row_size) {
     return JXL_FAILURE("Buffer size is too small");
   }
+  JXL_ASSERT(channel->xsize() == xsize);
+  JXL_ASSERT(channel->ysize() == ysize);
 
   const bool little_endian =
       endianness == JXL_LITTLE_ENDIAN ||
