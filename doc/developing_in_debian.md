@@ -12,8 +12,8 @@ Apart from the dependencies in `third_party`, some of the tools use external
 dependencies that need to be installed on your system first:
 
 ```bash
-sudo apt install cmake clang doxygen g++ extra-cmake-modules libgif-dev \
-  libjpeg-dev ninja-build libgoogle-perftools-dev
+sudo apt install cmake clang doxygen g++ extra-cmake-modules libgflags-dev \
+  libgif-dev libjpeg-dev ninja-build libgoogle-perftools-dev
 ```
 
 Make sure your default `clang` compiler is at least version 6 by running
