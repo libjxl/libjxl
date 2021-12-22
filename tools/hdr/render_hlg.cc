@@ -69,7 +69,7 @@ int main(int argc, const char** argv) {
   }
 
   jxl::CodecInOut image;
-  jxl::ColorHints color_hints;
+  jxl::extras::ColorHints color_hints;
   color_hints.Add("color_space", "RGB_D65_202_Rel_HLG");
   JXL_CHECK(jxl::SetFromFile(input_filename, color_hints, &image, &pool));
   const float gamma = jxl::GetHlgGamma(target_nits, surround_nits);

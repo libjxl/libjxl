@@ -3,10 +3,10 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include "lib/extras/color_hints.h"
+#include "lib/extras/dec/color_hints.h"
 
 #include "jxl/encode.h"
-#include "lib/extras/color_description.h"
+#include "lib/extras/dec/color_description.h"
 #include "lib/jxl/base/file_io.h"
 
 namespace jxl {
@@ -54,7 +54,11 @@ Status ApplyColorHints(const ColorHints& color_hints,
 
   if (!got_color_space) {
     JXL_WARNING("No color_space/icc_pathname given, assuming sRGB");
-    JxlColorEncodingSetToSRGB(&ppf->color_encoding, is_gray);
+    ppf->color_encoding.color_space =
+        is_gray ? JXL_COLOR_SPACE_GRAY : JXL_COLOR_SPACE_RGB;
+    ppf->color_encoding.white_point = JXL_WHITE_POINT_D65;
+    ppf->color_encoding.primaries = JXL_PRIMARIES_SRGB;
+    ppf->color_encoding.transfer_function = JXL_TRANSFER_FUNCTION_SRGB;
   }
 
   return true;

@@ -10,7 +10,7 @@
 #include <vector>
 
 #include "lib/extras/codec.h"
-#include "lib/extras/color_hints.h"
+#include "lib/extras/dec/color_hints.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/file_io.h"
 #include "lib/jxl/base/padded_bytes.h"
@@ -44,7 +44,7 @@ Status RunButteraugli(const char* pathname1, const char* pathname2,
                       const std::string& distmap_filename,
                       const std::string& colorspace_hint, double p,
                       float intensity_target) {
-  ColorHints color_hints;
+  extras::ColorHints color_hints;
   if (!colorspace_hint.empty()) {
     color_hints.Add("color_space", colorspace_hint);
   }

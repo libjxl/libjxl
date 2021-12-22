@@ -13,11 +13,11 @@
 #include <numeric>  // partial_sum
 #include <string>
 
-#include "lib/extras/codec_jpg.h"
+#include "lib/extras/dec/jpg.h"
+#include "lib/extras/enc/jpg.h"
 #include "lib/extras/packed_image.h"
 #include "lib/extras/packed_image_convert.h"
 #include "lib/extras/time.h"
-#include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/thread_pool_internal.h"
@@ -105,8 +105,8 @@ class JPEGCodec : public ImageCodec {
                     jpegxl::tools::SpeedStats* speed_stats) override {
     extras::PackedPixelFile ppf;
     const double start = Now();
-    JXL_RETURN_IF_ERROR(
-        DecodeImageJPG(compressed, ColorHints(), SizeConstraints(), &ppf));
+    JXL_RETURN_IF_ERROR(DecodeImageJPG(compressed, extras::ColorHints(),
+                                       SizeConstraints(), &ppf));
     const double end = Now();
     speed_stats->NotifyElapsed(end - start);
     JXL_RETURN_IF_ERROR(ConvertPackedPixelFileToCodecInOut(ppf, pool, io));

@@ -16,7 +16,7 @@
 #include <string>
 #include <vector>
 
-#include "lib/extras/color_hints.h"
+#include "lib/extras/dec/color_hints.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/codec_in_out.h"  // DecoderHints
@@ -102,7 +102,7 @@ static inline bool ParseDouble(const char* arg, double* out) {
 }
 
 static inline bool ParseAndAppendKeyValue(const char* arg,
-                                          jxl::ColorHints* out) {
+                                          jxl::extras::ColorHints* out) {
   const char* eq = strchr(arg, '=');
   if (!eq) {
     fprintf(stderr, "Expected argument as 'key=value' but received '%s'\n",

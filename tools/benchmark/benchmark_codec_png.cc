@@ -12,16 +12,15 @@
 
 #include <string>
 
-#include "lib/extras/codec_apng.h"
+#include "lib/extras/dec/apng.h"
+#include "lib/extras/enc/apng.h"
 #include "lib/extras/packed_image.h"
 #include "lib/extras/packed_image_convert.h"
 #include "lib/extras/time.h"
-#include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/codec_in_out.h"
-#include "lib/jxl/image_bundle.h"
 
 namespace jxl {
 
@@ -58,8 +57,8 @@ class PNGCodec : public ImageCodec {
                     jpegxl::tools::SpeedStats* speed_stats) override {
     extras::PackedPixelFile ppf;
     const double start = Now();
-    JXL_RETURN_IF_ERROR(extras::DecodeImageAPNG(compressed, ColorHints(),
-                                                SizeConstraints(), &ppf));
+    JXL_RETURN_IF_ERROR(extras::DecodeImageAPNG(
+        compressed, extras::ColorHints(), SizeConstraints(), &ppf));
     const double end = Now();
     speed_stats->NotifyElapsed(end - start);
     JXL_RETURN_IF_ERROR(ConvertPackedPixelFileToCodecInOut(ppf, pool, io));

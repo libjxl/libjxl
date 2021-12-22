@@ -19,8 +19,7 @@
 
 #include "jxl/decode.h"
 #include "lib/extras/codec.h"
-#include "lib/extras/codec_apng.h"
-#include "lib/extras/color_hints.h"
+#include "lib/extras/dec/color_hints.h"
 #include "lib/extras/time.h"
 #include "lib/jxl/alpha.h"
 #include "lib/jxl/base/cache_aligned.h"
@@ -36,7 +35,6 @@
 #include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
-#include "lib/jxl/color_management.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/enc_butteraugli_pnorm.h"
 #include "lib/jxl/enc_color_management.h"
@@ -66,7 +64,7 @@ Status WriteImage(Image3F&& image, ThreadPool* pool,
 
 Status ReadPNG(const std::string& filename, Image3F* image) {
   CodecInOut io;
-  JXL_CHECK(SetFromFile(filename, ColorHints(), &io));
+  JXL_CHECK(SetFromFile(filename, extras::ColorHints(), &io));
   *image = CopyImage(*io.Main().color());
   return true;
 }

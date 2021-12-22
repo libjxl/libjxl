@@ -42,7 +42,8 @@ int main(int argc, const char** argv) {
   }
 
   jxl::CodecInOut image;
-  JXL_CHECK(jxl::SetFromFile(input_filename, jxl::ColorHints(), &image, &pool));
+  JXL_CHECK(jxl::SetFromFile(input_filename, jxl::extras::ColorHints(), &image,
+                             &pool));
 
   JXL_CHECK(image.xsize() == image.ysize() * image.ysize());
   const unsigned N = image.ysize();

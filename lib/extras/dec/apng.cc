@@ -3,7 +3,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include "lib/extras/codec_apng.h"
+#include "lib/extras/dec/apng.h"
 
 // Parts of this code are taken from apngdis, which has the following license:
 /* APNG Disassembler 2.8
@@ -39,7 +39,6 @@
 #include <stdio.h>
 #include <string.h>
 
-#include <algorithm>
 #include <string>
 #include <utility>
 #include <vector>
@@ -47,16 +46,7 @@
 #include "jxl/encode.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/printf_macros.h"
-#include "lib/jxl/color_encoding_internal.h"
-#include "lib/jxl/color_management.h"
-#include "lib/jxl/dec_external_image.h"
-#include "lib/jxl/enc_color_management.h"
-#include "lib/jxl/enc_image_bundle.h"
-#include "lib/jxl/frame_header.h"
-#include "lib/jxl/headers.h"
-#include "lib/jxl/image.h"
-#include "lib/jxl/image_bundle.h"
-#include "lib/jxl/luminance.h"
+#include "lib/jxl/common.h"
 #include "lib/jxl/sanitizers.h"
 #include "png.h" /* original (unpatched) libpng is ok */
 
@@ -246,7 +236,6 @@ class BlobsReaderPNG {
 constexpr bool isAbc(char c) {
   return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
 }
-#define notabc(c) ((c) < 65 || (c) > 122 || ((c) > 90 && (c) < 97))
 
 constexpr uint32_t kId_IHDR = 0x52444849;
 constexpr uint32_t kId_acTL = 0x4C546361;
@@ -438,7 +427,10 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
     }
 
     // default settings in case e.g. only gAMA is given
-    JxlColorEncodingSetToSRGB(&ppf->color_encoding, false);
+    ppf->color_encoding.color_space = JXL_COLOR_SPACE_RGB;
+    ppf->color_encoding.white_point = JXL_WHITE_POINT_D65;
+    ppf->color_encoding.primaries = JXL_PRIMARIES_SRGB;
+    ppf->color_encoding.transfer_function = JXL_TRANSFER_FUNCTION_SRGB;
 
     if (!processing_start(png_ptr, info_ptr, (void*)&frameRaw, hasInfo,
                           chunkIHDR, chunksInfo)) {
@@ -715,155 +707,6 @@ class BlobsWriterPNG {
     return true;
   }
 };
-
-Status EncodeImageAPNG(const CodecInOut* io, const ColorEncoding& c_desired,
-                       size_t bits_per_sample, ThreadPool* pool,
-                       PaddedBytes* bytes) {
-  if (bits_per_sample > 8) {
-    bits_per_sample = 16;
-  } else if (bits_per_sample < 8) {
-    // PNG can also do 4, 2, and 1 bits per sample, but it isn't implemented
-    bits_per_sample = 8;
-  }
-
-  size_t count = 0;
-  bool have_anim = io->metadata.m.have_animation;
-  size_t anim_chunks = 0;
-  int W = 0, H = 0;
-
-  for (auto& frame : io->frames) {
-    png_structp png_ptr;
-    png_infop info_ptr;
-
-    png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
-
-    if (!png_ptr) return JXL_FAILURE("Could not init png encoder");
-
-    info_ptr = png_create_info_struct(png_ptr);
-    if (!info_ptr) return JXL_FAILURE("Could not init png info struct");
-
-    png_set_write_fn(png_ptr, bytes, PngWrite, NULL);
-    png_set_flush(png_ptr, 0);
-
-    ImageBundle ib = frame.Copy();
-    const size_t alpha_bits = ib.HasAlpha() ? bits_per_sample : 0;
-    ImageMetadata metadata = io->metadata.m;
-    ImageBundle store(&metadata);
-    const ImageBundle* transformed;
-    JXL_RETURN_IF_ERROR(TransformIfNeeded(ib, c_desired, GetJxlCms(), pool,
-                                          &store, &transformed));
-    size_t stride = ib.oriented_xsize() *
-                    DivCeil(c_desired.Channels() * bits_per_sample + alpha_bits,
-                            kBitsPerByte);
-    PaddedBytes raw_bytes(stride * ib.oriented_ysize());
-    JXL_RETURN_IF_ERROR(ConvertToExternal(
-        *transformed, bits_per_sample, /*float_out=*/false,
-        c_desired.Channels() + (ib.HasAlpha() ? 1 : 0), JXL_BIG_ENDIAN, stride,
-        pool, raw_bytes.data(), raw_bytes.size(), /*out_callback=*/nullptr,
-        /*out_opaque=*/nullptr, metadata.GetOrientation()));
-
-    int width = ib.oriented_xsize();
-    int height = ib.oriented_ysize();
-
-    png_byte color_type =
-        (c_desired.Channels() == 3 ? PNG_COLOR_TYPE_RGB : PNG_COLOR_TYPE_GRAY);
-    if (ib.HasAlpha()) color_type |= PNG_COLOR_MASK_ALPHA;
-    png_byte bit_depth = bits_per_sample;
-
-    png_set_IHDR(png_ptr, info_ptr, width, height, bit_depth, color_type,
-                 PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_BASE,
-                 PNG_FILTER_TYPE_BASE);
-    if (count == 0) {
-      W = width;
-      H = height;
-
-      // TODO(jon): instead of always setting an iCCP, could try to avoid that
-      // have to avoid warnings on the ICC profile becoming fatal
-      png_set_benign_errors(png_ptr, 1);
-      png_set_iCCP(png_ptr, info_ptr, "1", 0, c_desired.ICC().data(),
-                   c_desired.ICC().size());
-
-      std::vector<std::string> textstrings;
-      JXL_RETURN_IF_ERROR(BlobsWriterPNG::Encode(io->blobs, &textstrings));
-      for (size_t i = 0; i + 1 < textstrings.size(); i += 2) {
-        png_text text;
-        text.key = const_cast<png_charp>(textstrings[i].c_str());
-        text.text = const_cast<png_charp>(textstrings[i + 1].c_str());
-        text.compression = PNG_TEXT_COMPRESSION_zTXt;
-        png_set_text(png_ptr, info_ptr, &text, 1);
-      }
-
-      png_write_info(png_ptr, info_ptr);
-    } else {
-      // fake writing a header, otherwise libpng gets confused
-      size_t pos = bytes->size();
-      png_write_info(png_ptr, info_ptr);
-      bytes->resize(pos);
-    }
-
-    if (have_anim) {
-      if (count == 0) {
-        png_byte adata[8];
-        png_save_uint_32(adata, io->frames.size());
-        png_save_uint_32(adata + 4, io->metadata.m.animation.num_loops);
-        png_byte actl[5] = "acTL";
-        png_write_chunk(png_ptr, actl, adata, 8);
-      }
-      png_byte fdata[26];
-      JXL_ASSERT(W == width);
-      JXL_ASSERT(H == height);
-      // TODO(jon): also make this work for the non-coalesced case
-      png_save_uint_32(fdata, anim_chunks++);
-      png_save_uint_32(fdata + 4, width);
-      png_save_uint_32(fdata + 8, height);
-      png_save_uint_32(fdata + 12, 0);
-      png_save_uint_32(fdata + 16, 0);
-      png_save_uint_16(
-          fdata + 20,
-          frame.duration * io->metadata.m.animation.tps_denominator);
-      png_save_uint_16(fdata + 22, io->metadata.m.animation.tps_numerator);
-      fdata[24] = 1;
-      fdata[25] = 0;
-      png_byte fctl[5] = "fcTL";
-      png_write_chunk(png_ptr, fctl, fdata, 26);
-    }
-
-    std::vector<uint8_t*> rows(height);
-    for (int y = 0; y < height; ++y) {
-      rows[y] = raw_bytes.data() + y * stride;
-    }
-
-    png_write_flush(png_ptr);
-    const size_t pos = bytes->size();
-    png_write_image(png_ptr, &rows[0]);
-    png_write_flush(png_ptr);
-    if (count > 0) {
-      PaddedBytes fdata(4);
-      png_save_uint_32(fdata.data(), anim_chunks++);
-      size_t p = pos;
-      while (p + 8 < bytes->size()) {
-        size_t len = png_get_uint_32(bytes->data() + p);
-        JXL_ASSERT(bytes->operator[](p + 4) == 'I');
-        JXL_ASSERT(bytes->operator[](p + 5) == 'D');
-        JXL_ASSERT(bytes->operator[](p + 6) == 'A');
-        JXL_ASSERT(bytes->operator[](p + 7) == 'T');
-        fdata.append(bytes->data() + p + 8, bytes->data() + p + 8 + len);
-        p += len + 12;
-      }
-      bytes->resize(pos);
-
-      png_byte fdat[5] = "fdAT";
-      png_write_chunk(png_ptr, fdat, fdata.data(), fdata.size());
-    }
-
-    count++;
-    if (count == io->frames.size()) png_write_end(png_ptr, NULL);
-
-    png_destroy_write_struct(&png_ptr, &info_ptr);
-  }
-
-  return true;
-}
 
 }  // namespace extras
 }  // namespace jxl

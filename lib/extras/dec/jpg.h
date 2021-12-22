@@ -3,15 +3,15 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#ifndef LIB_EXTRAS_CODEC_JPG_H_
-#define LIB_EXTRAS_CODEC_JPG_H_
+#ifndef LIB_EXTRAS_DEC_JPG_H_
+#define LIB_EXTRAS_DEC_JPG_H_
 
-// Encodes JPG pixels and metadata in memory.
+// Decodes JPG pixels and metadata in memory.
 
 #include <stdint.h>
 
 #include "lib/extras/codec.h"
-#include "lib/extras/color_hints.h"
+#include "lib/extras/dec/color_hints.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/span.h"
@@ -21,23 +21,13 @@
 namespace jxl {
 namespace extras {
 
-enum class JpegEncoder {
-  kLibJpeg,
-  kSJpeg,
-};
-
-// Decodes `bytes` into `io`. color_hints are ignored.
+// Decodes `bytes` into `ppf`. color_hints are ignored.
 // `elapsed_deinterleave`, if non-null, will be set to the time (in seconds)
 // that it took to deinterleave the raw JSAMPLEs to planar floats.
 Status DecodeImageJPG(Span<const uint8_t> bytes, const ColorHints& color_hints,
                       const SizeConstraints& constraints, PackedPixelFile* ppf);
 
-// Encodes into `bytes`.
-Status EncodeImageJPG(const CodecInOut* io, JpegEncoder encoder, size_t quality,
-                      YCbCrChromaSubsampling chroma_subsampling,
-                      ThreadPool* pool, PaddedBytes* bytes);
-
 }  // namespace extras
 }  // namespace jxl
 
-#endif  // LIB_EXTRAS_CODEC_JPG_H_
+#endif  // LIB_EXTRAS_DEC_JPG_H_

@@ -13,8 +13,8 @@
 #include <vector>
 
 #include "gtest/gtest.h"
-#include "lib/extras/codec_pgx.h"
-#include "lib/extras/codec_pnm.h"
+#include "lib/extras/dec/pgx.h"
+#include "lib/extras/dec/pnm.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/random.h"
 #include "lib/jxl/base/thread_pool_internal.h"
@@ -23,7 +23,6 @@
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_test_utils.h"
-#include "lib/jxl/luminance.h"
 #include "lib/jxl/testdata.h"
 
 namespace jxl {

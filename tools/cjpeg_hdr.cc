@@ -239,7 +239,7 @@ int HBDJPEGMain(int argc, const char* argv[]) {
   }
   fprintf(stderr, "Compressing %s to %s\n", argv[1], argv[2]);
   jxl::CodecInOut io;
-  if (!jxl::SetFromFile(argv[1], jxl::ColorHints{}, &io)) {
+  if (!jxl::SetFromFile(argv[1], jxl::extras::ColorHints{}, &io)) {
     fprintf(stderr, "Failed to read image %s.\n", argv[1]);
     return 1;
   }

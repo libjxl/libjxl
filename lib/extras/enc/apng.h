@@ -3,15 +3,11 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#ifndef LIB_EXTRAS_CODEC_APNG_H_
-#define LIB_EXTRAS_CODEC_APNG_H_
+#ifndef LIB_EXTRAS_ENC_APNG_H_
+#define LIB_EXTRAS_ENC_APNG_H_
 
-// Decodes APNG images in memory.
+// Encodes APNG images in memory.
 
-#include <stdint.h>
-
-#include "lib/extras/color_hints.h"
-#include "lib/extras/packed_image.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/span.h"
@@ -21,12 +17,6 @@
 namespace jxl {
 namespace extras {
 
-// Decodes `bytes` into `ppf`.
-Status DecodeImageAPNG(const Span<const uint8_t> bytes,
-                       const ColorHints& color_hints,
-                       const SizeConstraints& constraints,
-                       PackedPixelFile* ppf);
-
 // Encodes `io` into `bytes`.
 Status EncodeImageAPNG(const CodecInOut* io, const ColorEncoding& c_desired,
                        size_t bits_per_sample, ThreadPool* pool,
@@ -35,4 +25,4 @@ Status EncodeImageAPNG(const CodecInOut* io, const ColorEncoding& c_desired,
 }  // namespace extras
 }  // namespace jxl
 
-#endif  // LIB_EXTRAS_CODEC_APNG_H_
+#endif  // LIB_EXTRAS_ENC_APNG_H_
