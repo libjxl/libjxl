@@ -74,14 +74,11 @@ EOF
   download_github third_party/highway google/highway
   download_github third_party/sjpeg webmproject/sjpeg
   download_github third_party/skcms \
-<<<<<<< HEAD
                   "https://skia.googlesource.com/skcms/+archive/"
   download_github third_party/abseil-cpp abseil/abseil-cpp
-=======
     "https://skia.googlesource.com/skcms/+archive/"
   download_github third_party/zlib madler/zlib
   download_github third_party/libpng glennrp/libpng
->>>>>>> 9767c3862c237c4c3e32a75fe191feb8b097fb1c
   echo "Done."
 }
 
