@@ -13,7 +13,7 @@
 #include <vector>
 
 #include "lib/extras/codec.h"
-#include "lib/extras/color_description.h"
+#include "lib/extras/dec/color_description.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/color_management.h"
@@ -233,8 +233,8 @@ Status BenchmarkArgs::ValidateArgs() {
     fprintf(stderr, "Missing --input filename(s).\n");
     return false;
   }
-  if (CodecFromExtension(output_extension, &bits_per_sample) ==
-      Codec::kUnknown) {
+  if (extras::CodecFromExtension(output_extension, &bits_per_sample) ==
+      extras::Codec::kUnknown) {
     JXL_WARNING("Unrecognized output_extension %s, try .png",
                 output_extension.c_str());
     return false;  // already warned

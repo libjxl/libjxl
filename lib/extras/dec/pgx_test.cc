@@ -3,9 +3,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include "lib/extras/codec_pgx.h"
-
-#include <stddef.h>
+#include "lib/extras/dec/pgx.h"
 
 #include "gtest/gtest.h"
 #include "lib/extras/packed_image_convert.h"

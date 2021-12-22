@@ -21,7 +21,7 @@ extern "C" {
 uint8_t* jxlCompress(const uint8_t* data, size_t size) {
   jxl::PaddedBytes compressed;
   jxl::CodecInOut io;
-  jxl::Codec input_codec;
+  jxl::extras::Codec input_codec;
   if (!jxl::SetFromBytes(jxl::Span<const uint8_t>(data, size), &io, nullptr,
                          &input_codec)) {
     return nullptr;
@@ -51,7 +51,7 @@ uint8_t* jxlDecompress(const uint8_t* data, size_t size) {
   }
   io.use_sjpeg = false;
   io.jpeg_quality = 100;
-  if (!jxl::Encode(io, jxl::Codec::kJPG, io.Main().c_current(), 8,
+  if (!jxl::Encode(io, jxl::extras::Codec::kJPG, io.Main().c_current(), 8,
                    &decompressed, nullptr)) {
     return nullptr;
   }

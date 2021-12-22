@@ -72,7 +72,8 @@ static double ApproximateDistanceForBPP(double bpp) {
 jxl::Status LoadSaliencyMap(const std::string& filename_heatmap,
                             jxl::ThreadPool* pool, jxl::ImageF* out_map) {
   jxl::CodecInOut io_heatmap;
-  if (!SetFromFile(filename_heatmap, jxl::ColorHints(), &io_heatmap, pool)) {
+  if (!SetFromFile(filename_heatmap, jxl::extras::ColorHints(), &io_heatmap,
+                   pool)) {
     return JXL_FAILURE("Could not load heatmap.");
   }
   *out_map = std::move(io_heatmap.Main().color()->Plane(0));
@@ -735,11 +736,11 @@ jxl::Status LoadAll(CompressArgs& args, jxl::ThreadPoolInternal* pool,
 
   jxl::PaddedBytes encoded;
   JXL_RETURN_IF_ERROR(jxl::ReadFile(args.params.file_in, &encoded));
-  jxl::Codec input_codec;
+  jxl::extras::Codec input_codec;
   bool ok;
   if (args.jpeg_transcode && encoded.size() >= 2 && encoded[0] == 0xFF &&
       encoded[1] == 0xD8) {
-    input_codec = jxl::Codec::kJPG;
+    input_codec = jxl::extras::Codec::kJPG;
     ok = jxl::jpeg::DecodeImageJPG(jxl::Span<const uint8_t>(encoded), io);
   } else {
     ok = jxl::SetFromBytes(jxl::Span<const uint8_t>(encoded), args.color_hints,
@@ -752,10 +753,10 @@ jxl::Status LoadAll(CompressArgs& args, jxl::ThreadPoolInternal* pool,
   if (args.intensity_target != 0) {
     io->metadata.m.SetIntensityTarget(args.intensity_target);
   }
-  if (input_codec != jxl::Codec::kJPG) args.jpeg_transcode = false;
+  if (input_codec != jxl::extras::Codec::kJPG) args.jpeg_transcode = false;
   if (args.jpeg_transcode) args.params.butteraugli_distance = 0;
 
-  if (input_codec == jxl::Codec::kGIF && args.default_settings) {
+  if (input_codec == jxl::extras::Codec::kGIF && args.default_settings) {
     args.params.modular_mode = true;
     args.params.quality_pair.first = args.params.quality_pair.second = 100;
   }

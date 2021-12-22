@@ -5,7 +5,7 @@
 
 #include <string>
 
-#include "lib/extras/color_description.h"
+#include "lib/extras/dec/color_description.h"
 
 namespace jxl {
 

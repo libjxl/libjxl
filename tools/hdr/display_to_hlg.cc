@@ -65,7 +65,8 @@ int main(int argc, const char** argv) {
   }
 
   jxl::CodecInOut image;
-  JXL_CHECK(jxl::SetFromFile(input_filename, jxl::ColorHints(), &image, &pool));
+  JXL_CHECK(jxl::SetFromFile(input_filename, jxl::extras::ColorHints(), &image,
+                             &pool));
   image.metadata.m.SetIntensityTarget(max_nits);
   JXL_CHECK(jxl::HlgInverseOOTF(
       &image.Main(), jxl::GetHlgGamma(max_nits, surround_nits), &pool));

@@ -13,7 +13,7 @@
 #include <fstream>
 
 #include "lib/extras/codec.h"
-#include "lib/extras/codec_apng.h"
+#include "lib/extras/enc/apng.h"
 #include "lib/extras/time.h"
 #include "lib/jxl/base/file_io.h"
 #include "lib/jxl/base/thread_pool_internal.h"
@@ -129,7 +129,8 @@ class CustomCodec : public ImageCodec {
               std::vector<std::string>{encoded_filename, png_filename});
         },
         png_filename, speed_stats));
-    JXL_RETURN_IF_ERROR(SetFromFile(png_filename, ColorHints(), io, pool));
+    JXL_RETURN_IF_ERROR(
+        SetFromFile(png_filename, extras::ColorHints(), io, pool));
     io->metadata.m.SetIntensityTarget(saved_intensity_target_);
     return true;
   }

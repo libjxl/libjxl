@@ -3,24 +3,15 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include "lib/extras/codec_gif.h"
+#include "lib/extras/dec/gif.h"
 
 #include <gif_lib.h>
 #include <string.h>
 
-#include <algorithm>
-#include <string>
 #include <utility>
 #include <vector>
 
 #include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/color_encoding_internal.h"
-#include "lib/jxl/frame_header.h"
-#include "lib/jxl/headers.h"
-#include "lib/jxl/image.h"
-#include "lib/jxl/image_bundle.h"
-#include "lib/jxl/image_ops.h"
-#include "lib/jxl/luminance.h"
 #include "lib/jxl/sanitizers.h"
 
 namespace jxl {

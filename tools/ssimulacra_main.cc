@@ -35,8 +35,8 @@ int Run(int argc, char** argv) {
 
   jxl::CodecInOut io1;
   jxl::CodecInOut io2;
-  JXL_CHECK(SetFromFile(argv[input_arg], jxl::ColorHints(), &io1));
-  JXL_CHECK(SetFromFile(argv[input_arg + 1], jxl::ColorHints(), &io2));
+  JXL_CHECK(SetFromFile(argv[input_arg], jxl::extras::ColorHints(), &io1));
+  JXL_CHECK(SetFromFile(argv[input_arg + 1], jxl::extras::ColorHints(), &io2));
   JXL_CHECK(io1.TransformTo(jxl::ColorEncoding::LinearSRGB(io1.Main().IsGray()),
                             jxl::GetJxlCms()));
   JXL_CHECK(io2.TransformTo(jxl::ColorEncoding::LinearSRGB(io2.Main().IsGray()),

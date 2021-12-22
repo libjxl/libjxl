@@ -3,7 +3,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include "lib/extras/color_description.h"
+#include "lib/extras/dec/color_description.h"
 
 #include "gtest/gtest.h"
 #include "lib/jxl/color_encoding_internal.h"

@@ -23,7 +23,7 @@
 #include <vector>
 
 #if JPEGXL_ENABLE_JPEG
-#include "lib/extras/codec_jpg.h"
+#include "lib/extras/enc/jpg.h"
 #endif
 #include "lib/jxl/aux_out.h"
 #include "lib/jxl/base/data_parallel.h"

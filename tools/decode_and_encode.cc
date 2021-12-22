@@ -28,7 +28,7 @@ int Convert(int argc, char** argv) {
   const std::string& pathname_out = argv[3];
 
   CodecInOut io;
-  ColorHints color_hints;
+  extras::ColorHints color_hints;
   ThreadPoolInternal pool(4);
   color_hints.Add("color_space", desc);
   if (!SetFromFile(pathname_in, color_hints, &io, &pool)) {

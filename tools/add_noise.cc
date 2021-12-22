@@ -38,7 +38,7 @@ int main(int argc, const char** argv) {
   jxl::ThreadPoolInternal pool;
 
   jxl::CodecInOut io;
-  JXL_CHECK(jxl::SetFromFile(argv[2], jxl::ColorHints(), &io, &pool));
+  JXL_CHECK(jxl::SetFromFile(argv[2], jxl::extras::ColorHints(), &io, &pool));
 
   jxl::Image3F xyb(io.Main().xsize(), io.Main().ysize());
   jxl::ToXYB(io.Main(), &pool, &xyb, jxl::GetJxlCms());

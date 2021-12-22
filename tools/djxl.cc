@@ -8,7 +8,7 @@
 #include <stdio.h>
 
 #include "lib/extras/codec.h"
-#include "lib/extras/color_description.h"
+#include "lib/extras/dec/color_description.h"
 #include "lib/extras/time.h"
 #include "lib/extras/tone_mapping.h"
 #include "lib/jxl/alpha.h"
@@ -157,9 +157,9 @@ jxl::Status DecompressArgs::ValidateArgs(const CommandLineParser& cmdline) {
 #endif
   if (file_out) {
     const std::string extension = jxl::Extension(file_out);
-    const jxl::Codec codec =
-        jxl::CodecFromExtension(extension, &bits_per_sample);
-    if (codec != jxl::Codec::kJPG) {
+    const jxl::extras::Codec codec =
+        jxl::extras::CodecFromExtension(extension, &bits_per_sample);
+    if (codec != jxl::extras::Codec::kJPG) {
       // when decoding to anything-but-JPEG, we'll need pixels
       decode_to_pixels = true;
     }
@@ -276,10 +276,10 @@ jxl::Status WriteJxlOutput(const DecompressArgs& args, const char* file_out,
                          ? std::string(file_out)
                          : std::string(file_out, extension - file_out);
   if (extension == nullptr) extension = "";
-  const jxl::Codec codec = jxl::CodecFromExtension(extension);
-  if (!io.metadata.m.have_animation || codec == jxl::Codec::kPNG) {
+  const jxl::extras::Codec codec = jxl::extras::CodecFromExtension(extension);
+  if (!io.metadata.m.have_animation || codec == jxl::extras::Codec::kPNG) {
     bool ok;
-    if (io.Main().IsJPEG() && codec == jxl::Codec::kJPG) {
+    if (io.Main().IsJPEG() && codec == jxl::extras::Codec::kJPG) {
       jxl::PaddedBytes encoded;
       ok = jxl::jpeg::EncodeImageJPGCoefficients(&io, &encoded) &&
            jxl::WriteFile(encoded, file_out);

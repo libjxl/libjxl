@@ -21,6 +21,7 @@
 #include "lib/jxl/base/status.h"
 
 namespace jxl {
+namespace extras {
 
 class ColorHints {
  public:
@@ -58,8 +59,6 @@ class ColorHints {
 
   std::vector<KeyValue> kv_;
 };
-
-namespace extras {
 
 // Apply the color hints to the decoded image in PackedPixelFile if any.
 // color_already_set tells whether the color encoding was already set, in which
