@@ -7,7 +7,6 @@
 #include <stddef.h>
 #include <stdio.h>
 // After stddef/stdio
-#include <jpeglib.h>
 #include <stdint.h>
 #include <string.h>
 

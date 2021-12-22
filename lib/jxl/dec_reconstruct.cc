@@ -59,7 +59,6 @@ void DoUndoXYBInPlace(Image3F* idct, const Rect& rect, Op op,
       const auto in_opsin_x = Load(d, row0 + x);
       const auto in_opsin_y = Load(d, row1 + x);
       const auto in_opsin_b = Load(d, row2 + x);
-      JXL_COMPILER_FENCE;
       auto r = Undefined(d);
       auto g = Undefined(d);
       auto b = Undefined(d);
@@ -462,13 +461,13 @@ HWY_EXPORT(DoYCbCrUpsampling);
 void UndoXYB(const Image3F& src, Image3F* dst,
              const OutputEncodingInfo& output_info, ThreadPool* pool) {
   CopyImageTo(src, dst);
-  RunOnPool(
-      pool, 0, src.ysize(), ThreadPool::SkipInit(),
-      [&](int y, int /*thread*/) {
+  JXL_CHECK(RunOnPool(
+      pool, 0, src.ysize(), ThreadPool::NoInit,
+      [&](const uint32_t y, size_t /*thread*/) {
         JXL_CHECK(HWY_DYNAMIC_DISPATCH(UndoXYBInPlace)(dst, Rect(*dst).Line(y),
                                                        output_info));
       },
-      "UndoXYB");
+      "UndoXYB"));
 }
 
 namespace {
@@ -1155,6 +1154,9 @@ Status FinalizeImageRect(
 Status FinalizeFrameDecoding(ImageBundle* decoded,
                              PassesDecoderState* dec_state, ThreadPool* pool,
                              bool force_fir, bool skip_blending, bool move_ec) {
+  if (dec_state->render_pipeline) {
+    return true;
+  }
   const FrameHeader& frame_header = dec_state->shared->frame_header;
   const FrameDimensions& frame_dim = dec_state->shared->frame_dim;
 
@@ -1169,7 +1171,7 @@ Status FinalizeFrameDecoding(ImageBundle* decoded,
         rects_to_process.push_back(rect);
       }
     }
-    const auto allocate_storage = [&](size_t num_threads) {
+    const auto allocate_storage = [&](const size_t num_threads) {
       dec_state->EnsureStorage(num_threads);
       return true;
     };
@@ -1193,7 +1195,7 @@ Status FinalizeFrameDecoding(ImageBundle* decoded,
     }
 
     std::atomic<bool> apply_features_ok{true};
-    auto run_apply_features = [&](size_t rect_id, size_t thread) {
+    auto run_apply_features = [&](const uint32_t rect_id, size_t thread) {
       size_t xstart = PassesDecoderState::kGroupDataXBorder;
       size_t ystart = PassesDecoderState::kGroupDataYBorder;
       for (size_t c = 0; c < 3; c++) {
@@ -1246,8 +1248,9 @@ Status FinalizeFrameDecoding(ImageBundle* decoded,
       }
     };
 
-    RunOnPool(pool, 0, rects_to_process.size(), allocate_storage,
-              run_apply_features, "ApplyFeatures");
+    JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, rects_to_process.size(),
+                                  allocate_storage, run_apply_features,
+                                  "ApplyFeatures"));
 
     if (!apply_features_ok) {
       return JXL_FAILURE("FinalizeImageRect failed");
@@ -1302,8 +1305,8 @@ Status FinalizeFrameDecoding(ImageBundle* decoded,
 
     std::atomic<bool> blending_ok{true};
     JXL_RETURN_IF_ERROR(RunOnPool(
-        pool, 0, rects_to_process.size(), ThreadPool::SkipInit(),
-        [&](size_t i, size_t /*thread*/) {
+        pool, 0, rects_to_process.size(), ThreadPool::NoInit,
+        [&](const uint32_t i, size_t /*thread*/) {
           const Rect& rect = rects_to_process[i];
           auto rect_blender = blender.PrepareRect(
               rect, *foreground.color(), foreground.extra_channels(), rect);

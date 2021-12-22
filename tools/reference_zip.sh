@@ -28,7 +28,6 @@ main() {
   local deps=(
     third_party/brotli
     third_party/highway
-    third_party/lodepng
     third_party/skcms
   )
 

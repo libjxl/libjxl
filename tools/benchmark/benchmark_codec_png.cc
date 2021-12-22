@@ -2,6 +2,9 @@
 //
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
+
+#if JPEGXL_ENABLE_APNG
+
 #include "tools/benchmark/benchmark_codec_png.h"
 
 #include <stddef.h>
@@ -10,7 +13,6 @@
 #include <string>
 
 #include "lib/extras/codec_apng.h"
-#include "lib/extras/codec_png.h"
 #include "lib/extras/packed_image.h"
 #include "lib/extras/packed_image_convert.h"
 #include "lib/extras/time.h"
@@ -43,8 +45,8 @@ class PNGCodec : public ImageCodec {
                   jpegxl::tools::SpeedStats* speed_stats) override {
     const size_t bits = io->metadata.m.bit_depth.bits_per_sample;
     const double start = Now();
-    JXL_RETURN_IF_ERROR(extras::EncodeImagePNG(io, io->Main().c_current(), bits,
-                                               pool, compressed));
+    JXL_RETURN_IF_ERROR(extras::EncodeImageAPNG(io, io->Main().c_current(),
+                                                bits, pool, compressed));
     const double end = Now();
     speed_stats->NotifyElapsed(end - start);
     return true;
@@ -70,3 +72,5 @@ ImageCodec* CreateNewPNGCodec(const BenchmarkArgs& args) {
 }
 
 }  // namespace jxl
+
+#endif

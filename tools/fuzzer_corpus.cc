@@ -22,7 +22,9 @@
 #include <random>
 #include <vector>
 
+#if JPEGXL_ENABLE_JPEG
 #include "lib/extras/codec_jpg.h"
+#endif
 #include "lib/jxl/aux_out.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/file_io.h"
@@ -221,6 +223,7 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
     io.frames.push_back(std::move(ib));
   }
 
+#if JPEGXL_ENABLE_JPEG
   if (spec.is_reconstructible_jpeg) {
     // If this image is supposed to be a reconstructible JPEG, collect the JPEG
     // metadata and encode it in the beginning of the compressed bytes.
@@ -242,6 +245,7 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
     jxl::AppendBoxHeader(jxl::MakeBoxType("jxlc"), 0, true, &header);
     compressed.append(header);
   }
+#endif
 
   jxl::CompressParams params;
   params.speed_tier = spec.params.speed_tier;
@@ -447,12 +451,17 @@ int main(int argc, const char** argv) {
     specs.back().override_decoder_spec = 0;
 
     jxl::ThreadPoolInternal pool{num_threads};
-    pool.Run(0, specs.size(), jxl::ThreadPool::SkipInit(),
-             [&specs, dest_dir, regenerate, quiet](const int task,
-                                                   const int /* thread */) {
-               const ImageSpec& spec = specs[task];
-               GenerateFile(dest_dir, spec, regenerate, quiet);
-             });
+    if (!RunOnPool(
+            &pool, 0, specs.size(), jxl::ThreadPool::NoInit,
+            [&specs, dest_dir, regenerate, quiet](const uint32_t task,
+                                                  size_t /* thread */) {
+              const ImageSpec& spec = specs[task];
+              GenerateFile(dest_dir, spec, regenerate, quiet);
+            },
+            "FuzzerCorpus")) {
+      std::cerr << "Error generating fuzzer corpus" << std::endl;
+      return 1;
+    }
   }
   std::cerr << "Finished generating fuzzer corpus" << std::endl;
   return 0;

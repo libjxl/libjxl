@@ -3,18 +3,11 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
-# codec_jpg is included always for loading of lossless reconstruction but
-# decoding to pixels is only supported if libjpeg is found and
-# JPEGXL_ENABLE_JPEG=1.
 set(JPEGXL_EXTRAS_SOURCES
   extras/codec.cc
   extras/codec.h
-  extras/codec_jpg.cc
-  extras/codec_jpg.h
   extras/codec_pgx.cc
   extras/codec_pgx.h
-  extras/codec_png.cc
-  extras/codec_png.h
   extras/codec_pnm.cc
   extras/codec_pnm.h
   extras/codec_psd.cc
@@ -44,7 +37,6 @@ set_property(TARGET jxl_extras-static PROPERTY POSITION_INDEPENDENT_CODE ON)
 target_include_directories(jxl_extras-static PUBLIC "${PROJECT_SOURCE_DIR}")
 target_link_libraries(jxl_extras-static PUBLIC
   jxl-static
-  lodepng
 )
 
 find_package(GIF 5.1)
@@ -64,6 +56,10 @@ endif()
 
 find_package(JPEG)
 if(JPEG_FOUND)
+  target_sources(jxl_extras-static PRIVATE
+    extras/codec_jpg.cc
+    extras/codec_jpg.h
+  )
   target_include_directories(jxl_extras-static PUBLIC "${JPEG_INCLUDE_DIRS}")
   target_link_libraries(jxl_extras-static PUBLIC ${JPEG_LIBRARIES})
   target_compile_definitions(jxl_extras-static PUBLIC -DJPEGXL_ENABLE_JPEG=1)
@@ -73,27 +69,10 @@ if(JPEG_FOUND)
   endif()  # JPEGXL_DEP_LICENSE_DIR
 endif()
 
-if ("${JPEGXL_EMSCRIPTEN}")
-include(FetchContent)
-
-FetchContent_Declare(
-  zlib
-  GIT_REPOSITORY https://github.com/emscripten-ports/zlib.git
-  GIT_TAG        69f24a21cab163b09c81f85857ef1b2c850f8707
-)
-
-FetchContent_Declare(
-  libpng
-  GIT_REPOSITORY https://github.com/emscripten-ports/libpng.git
-  GIT_TAG        918d23f658cb31e6db539ee0411d212408a9fcea
-)
-
-FetchContent_MakeAvailable(zlib libpng)
-endif()  # JPEGXL_EMSCRIPTEN
-
-find_package(ZLIB)  # dependency of PNG
-find_package(PNG)
-if(PNG_FOUND AND ZLIB_FOUND)
+if(NOT JPEGXL_BUNDLE_LIBPNG)
+  find_package(PNG)
+endif()
+if(PNG_FOUND)
   target_sources(jxl_extras-static PRIVATE
     extras/codec_apng.cc
     extras/codec_apng.h
@@ -101,12 +80,6 @@ if(PNG_FOUND AND ZLIB_FOUND)
   target_include_directories(jxl_extras-static PUBLIC "${PNG_INCLUDE_DIRS}")
   target_link_libraries(jxl_extras-static PUBLIC ${PNG_LIBRARIES})
   target_compile_definitions(jxl_extras-static PUBLIC -DJPEGXL_ENABLE_APNG=1)
-  if(JPEGXL_DEP_LICENSE_DIR)
-    configure_file("${JPEGXL_DEP_LICENSE_DIR}/zlib1g-dev/copyright"
-                   ${PROJECT_BINARY_DIR}/LICENSE.zlib COPYONLY)
-    configure_file("${JPEGXL_DEP_LICENSE_DIR}/libpng-dev/copyright"
-                   ${PROJECT_BINARY_DIR}/LICENSE.libpng COPYONLY)
-  endif()  # JPEGXL_DEP_LICENSE_DIR
 endif()
 
 if (JPEGXL_ENABLE_SJPEG)

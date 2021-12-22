@@ -196,16 +196,22 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/render_pipeline/render_pipeline_stage.h
   jxl/render_pipeline/simple_render_pipeline.cc
   jxl/render_pipeline/simple_render_pipeline.h
+  jxl/render_pipeline/stage_chroma_upsampling.cc
+  jxl/render_pipeline/stage_chroma_upsampling.h
   jxl/render_pipeline/stage_epf.cc
   jxl/render_pipeline/stage_epf.h
   jxl/render_pipeline/stage_gaborish.cc
   jxl/render_pipeline/stage_gaborish.h
+  jxl/render_pipeline/stage_splines.cc
+  jxl/render_pipeline/stage_splines.h
   jxl/render_pipeline/stage_upsampling.cc
   jxl/render_pipeline/stage_upsampling.h
   jxl/render_pipeline/stage_write_to_ib.cc
   jxl/render_pipeline/stage_write_to_ib.h
   jxl/render_pipeline/stage_xyb.cc
   jxl/render_pipeline/stage_xyb.h
+  jxl/render_pipeline/stage_ycbcr.cc
+  jxl/render_pipeline/stage_ycbcr.h
   jxl/render_pipeline/test_render_pipeline_stages.h
   jxl/sanitizers.h
   jxl/simd_util-inl.h

@@ -6,6 +6,8 @@
 #ifndef TOOLS_BENCHMARK_BENCHMARK_CODEC_PNG_H_
 #define TOOLS_BENCHMARK_BENCHMARK_CODEC_PNG_H_
 
+#if JPEGXL_ENABLE_APNG
+
 #include <string>
 
 #include "lib/jxl/base/status.h"
@@ -18,5 +20,7 @@ ImageCodec* CreateNewPNGCodec(const BenchmarkArgs& args);
 // Registers the png-specific command line options.
 Status AddCommandLineOptionsPNGCodec(BenchmarkArgs* args);
 }  // namespace jxl
+
+#endif
 
 #endif  // TOOLS_BENCHMARK_BENCHMARK_CODEC_PNG_H_
