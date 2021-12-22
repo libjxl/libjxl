@@ -102,23 +102,13 @@ else()
   endif()  # JPEGXL_DEP_LICENSE_DIR
 endif()
 
-# lodepng
-# XXX-TODO-TFISH-XXX We probably now can/should remove lodepng.
-if( NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/lodepng/lodepng.h" )
-  message(FATAL_ERROR "Please run ${PROJECT_SOURCE_DIR}/deps.sh to fetch the "
-          "build dependencies.")
-endif()
-include(lodepng.cmake)
-configure_file("${CMAKE_CURRENT_SOURCE_DIR}/lodepng/LICENSE"
-               ${PROJECT_BINARY_DIR}/LICENSE.lodepng COPYONLY)
-
 # abseil-cpp
 if( NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/abseil-cpp/absl/base/options.h" )
   message(FATAL_ERROR "Please run ${PROJECT_SOURCE_DIR}/deps.sh to fetch the "
           "build dependencies.")
 endif()
 
-set(BUILD_TESTING OFF CACHE BOOL "Build tests")
+set(BUILD_TESTING OFF CACHE BOOL "Build tests" FORCE)
 add_subdirectory(abseil-cpp)
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/abseil-cpp/LICENSE"
                ${PROJECT_BINARY_DIR}/LICENSE.abseil-cpp COPYONLY)
