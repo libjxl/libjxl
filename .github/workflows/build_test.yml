@@ -314,8 +314,8 @@ jobs:
           libopenexr-dev:${{ matrix.arch }}
 
           # GTK plugins
-          libgdk-pixbuf2.0-dev
-          libgtk2.0-dev
+          libgdk-pixbuf2.0-dev:${{ matrix.arch }}
+          libgtk2.0-dev:${{ matrix.arch }}
 
           # QT
           libqt5x11extras5-dev:${{ matrix.arch }}
