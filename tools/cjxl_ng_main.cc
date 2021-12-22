@@ -45,6 +45,10 @@ ABSL_FLAG(bool, ddd, false,
 ABSL_FLAG(bool, encoder_version, false,
           "Print encoder library version number and exit.");
 
+ABSL_FLAG(bool, add_jpeg_frame, false,
+          "Use JxlEncoderAddJPEGFrame to add a JPEG frame, "
+          "rather than JxlEncoderAddImageFrame.");
+
 ABSL_FLAG(bool, container, false,
           "Force using container format (default: use only if needed).");
 
@@ -104,6 +108,10 @@ ABSL_FLAG(bool, already_downsampled, false,
 // --predictor, --extra-properties, --lossy-palette, --pre-compact,
 // --post-compact, --responsive, --quiet, --print_profile,
 
+
+ABSL_FLAG(int32_t, store_jpeg_metadata, -1,
+          "Store JPEG reconstruction metadata in the JPEG XL container. "
+          "(-1 = default, 0 = disable, 1 = enable).");
 
 ABSL_FLAG(int32_t, faster_decoding, 0,
           "Favour higher decoding speed. 0 = default, higher "
@@ -321,36 +329,6 @@ jxl::Status LoadInput(const char* filename_in, jxl::extras::PackedPixelFile& ppf
     codec = jxl::Codec::kGIF;
   }
 #endif
-  // XXX-FIXME: io->
-  /*
-    The story here is:
-    - Original SetFromBytes code:
-
-      else if (io->dec_target == DecodeTarget::kQuantizedCoeffs &&
-               extras::DecodeImageJPGCoefficients(bytes, io)) {
-        // TODO(deymo): In this case the tools should use a different API to
-        // transcode the input JPEG to JXL instead of expressing it as a
-        // PackedPixelFile.
-        codec = Codec::kJPG;
-        skip_ppf_conversion = true;
-      } else if (io->dec_target == DecodeTarget::kPixels &&
-                 extras::DecodeImageJPG(bytes, color_hints, io->constraints,
-                                        &ppf)) {
-        codec = Codec::kJPG;
-
-    - extras::DecodeImageJPGCoefficients() is a thin wrapper around
-      extras::DecodeImageJPG() that re-checks IsJPG() yet once more,
-      and replaces the Status when this fails. We likely do not need this.
-
-    - codec_jpg.cc has:
-      Status DecodeImageJPG(const Span<const uint8_t> bytes,
-                            const ColorHints& color_hints,
-                            const SizeConstraints& constraints,
-                            PackedPixelFile* ppf) {
-
-    - 
-
-   */
   else if (jxl::extras::DecodeImageJPG(encoded, color_hints, size_constraints, &ppf)) {
     codec = jxl::Codec::kJPG;
   } else {  // TODO(tfish): Bring back EXR and PSD.
@@ -379,9 +357,9 @@ int main(int argc, char **argv) {
 #if JPEGXL_ENABLE_JPEG
                    "JPEG, "
 #endif
-                   "PPM, PFM, PGX."
-                   "  Sample usage:\n", argv[0],
-                   "    <source_image_filename> <target_image_filename>"));
+                   "PPM, PFM, PGX.\n"
+                   "  Sample usage:\n    ", argv[0],
+                   " <source_image_filename> <target_jxl_image_filename>"));
   const std::vector<char*>& positional_args =
       absl::ParseCommandLine(argc, argv);
 
@@ -390,7 +368,7 @@ int main(int argc, char **argv) {
       reinterpret_cast<void*>(LoadInput) << std::endl;
   }
   
-  // Handle --version.
+  // Handle --encoder_version flag.
   if (absl::GetFlag(FLAGS_encoder_version)) {
     uint32_t version = JxlEncoderVersion();
     std::cout << version / 1000000 << "." << (version / 1000) % 1000 <<
@@ -413,6 +391,21 @@ int main(int argc, char **argv) {
     }
   }
   ManagedJxlEncoder managed_jxl_encoder = ManagedJxlEncoder(num_worker_threads);
+  JxlEncoder* jxl_encoder = managed_jxl_encoder.encoder_;
+
+  const int32_t store_jpeg_metadata = absl::GetFlag(FLAGS_store_jpeg_metadata);
+  if (! (-1 <= store_jpeg_metadata && store_jpeg_metadata <= 1)) {
+    std::cerr << "Invalid --store_jpeg_metadata. Valid values are {-1, 0, 1}.\n";
+    return EXIT_FAILURE;
+  }
+  if (store_jpeg_metadata != -1) {
+    if (JXL_ENC_SUCCESS != JxlEncoderStoreJPEGMetadata(
+            jxl_encoder, store_jpeg_metadata != 0)) {
+      std::cerr << "JxlEncoderStoreJPEGMetadata failed\n";
+      return EXIT_FAILURE;
+    }
+  }
+  
   if (managed_jxl_encoder.parallel_runner_ != nullptr) {
     if (JXL_ENC_SUCCESS !=
         JxlEncoderSetParallelRunner(
@@ -426,7 +419,6 @@ int main(int argc, char **argv) {
     }
   }
 
-  JxlEncoder* jxl_encoder = managed_jxl_encoder.encoder_;
   JxlEncoderFrameSettings* jxl_encoder_frame_settings =
     managed_jxl_encoder.encoder_frame_settings_;
 
@@ -552,18 +544,53 @@ int main(int argc, char **argv) {
     }
   }  // Processing flags.
 
-  jxl::PaddedBytes jpeg_data;
-  if (!ReadFile(filename_in, &jpeg_data)) {
-    std::cerr << "Reading image data failed.\n";
-    return EXIT_FAILURE;
+  if (absl::GetFlag(FLAGS_add_jpeg_frame)) {
+    jxl::PaddedBytes jpeg_data;
+    if (!ReadFile(filename_in, &jpeg_data)) {
+      std::cerr << "Reading image data failed.\n";
+      return EXIT_FAILURE;
+    }
+    if (JXL_ENC_SUCCESS !=
+        JxlEncoderAddJPEGFrame(jxl_encoder_frame_settings,
+                               jpeg_data.data(), jpeg_data.size())) {
+      std::cerr << "JxlEncoderAddJPEGFrame() failed.\n";
+      return EXIT_FAILURE;
+    }
+  } else {  // Do JxlEncoderAddImageFrame().
+    jxl::extras::PackedPixelFile ppf;
+    jxl::Status status = LoadInput(filename_in, ppf);
+    if (!status) {
+      // TODO(tfish): Fix such status handling throughout.  We should
+      // have more detail available about what went wrong than what we
+      // currently share with the caller.
+      std::cerr << "Loading input file failed.\n";
+      return EXIT_FAILURE;
+    }
+    if (ppf.frames.size() < 1) {
+      std::cerr << "No frames on input file.\n";
+      return EXIT_FAILURE;
+    }
+    const jxl::extras::PackedFrame& pframe = ppf.frames[0];
+    const jxl::extras::PackedImage& pimage = pframe.color;
+    JxlPixelFormat ppixelformat = pimage.format;
+    std::cerr << "DDD JxlEncoderAddImageFrame() - input frames=" <<
+      ppf.frames.size() <<
+      ", xsize=" << pimage.xsize << ", ysize=" << pimage.ysize <<
+      std::endl;
+    jxl::Status enc_status = JxlEncoderAddImageFrame(
+      jxl_encoder_frame_settings,
+      &ppixelformat,
+      pimage.pixels(),
+      pimage.pixels_size);
+    if (!enc_status) {
+      // TODO(tfish): Fix such status handling throughout.  We should
+      // have more detail available about what went wrong than what we
+      // currently share with the caller.
+      std::cerr << "JxlEncoderAddImageFrame() failed.\n";
+      return EXIT_FAILURE;
+    }
   }
-  if (JXL_ENC_SUCCESS !=
-      JxlEncoderAddJPEGFrame(jxl_encoder_frame_settings,
-                             jpeg_data.data(), jpeg_data.size())) {
-    std::cerr << "JxlEncoderAddJPEGFrame() failed.\n";
-    return EXIT_FAILURE;
-  }
-
+  JxlEncoderCloseInput(jxl_encoder);
   if (!fetch_jxl_encoded_image(jxl_encoder,
                                &managed_jxl_encoder.compressed_buffer_,
                                &managed_jxl_encoder.compressed_buffer_size_,
@@ -571,7 +598,10 @@ int main(int argc, char **argv) {
     std::cerr << "Fetching encoded image failed.\n";
     return EXIT_FAILURE;
   }
-
+  std::cerr << "DDD fetched image. Buffer size=" <<
+    managed_jxl_encoder.compressed_buffer_size_ <<
+    ", used=" <<
+    managed_jxl_encoder.compressed_buffer_used_ << std::endl;
   if(!write_jxl_file(managed_jxl_encoder.compressed_buffer_,
                      managed_jxl_encoder.compressed_buffer_used_,
                      filename_out)) {
