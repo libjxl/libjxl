@@ -117,15 +117,13 @@ if( NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/abseil-cpp/absl/base/options.h" )
   message(FATAL_ERROR "Please run ${PROJECT_SOURCE_DIR}/deps.sh to fetch the "
           "build dependencies.")
 endif()
-# XXX-TODO-TFISH-XXX
-set(BUILD_TESTING OFF CACHE BOOL "Build tests" FORCE)
+
+set(BUILD_TESTING OFF CACHE BOOL "Build tests")
 add_subdirectory(abseil-cpp)
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/abseil-cpp/LICENSE"
                ${PROJECT_BINARY_DIR}/LICENSE.abseil-cpp COPYONLY)
 
 
-=======
->>>>>>> 9767c3862c237c4c3e32a75fe191feb8b097fb1c
 # brotli
 if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/brotli/c/include/brotli/decode.h" OR
     JPEGXL_FORCE_SYSTEM_BROTLI)
