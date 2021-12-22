@@ -14,7 +14,19 @@
 #include "absl/strings/str_cat.h"
 
 #include "lib/jxl/base/file_io.h"
+#include "lib/jxl/base/span.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/base/padded_bytes.h"
+#include "lib/extras/codec.h"
+#include "lib/extras/codec_apng.h"
+#include "lib/extras/codec_pgx.h"
+#include "lib/extras/codec_pnm.h"
+#include "lib/extras/codec_gif.h"
+#include "lib/extras/codec_jpg.h"
+
+#include "lib/extras/color_hints.h"
+#include "lib/extras/packed_image.h"
+
 #include "jxl/codestream_header.h"
 #include "jxl/color_encoding.h"
 #include "jxl/encode.h"
@@ -24,6 +36,10 @@
 
 #include "fetch_encoded.h"
 
+
+// Debug. TODO(tfish): Remove once everything is wired up.
+ABSL_FLAG(bool, ddd, false,
+          "Set debug.");
 
 // The flag --version is owned by Abseil itself.
 ABSL_FLAG(bool, encoder_version, false,
@@ -254,16 +270,125 @@ bool ProcessTristateFlag(const char* flag_name, int32_t absl_flag_value,
   return true;
 }
 
+// TODO(tfish): Clean this up once we can properly break the codec_in_out.h
+// dependency. This is binary-compatible to `struct SizeConstraints` in that
+// header file.
+struct SizeConstraints1 {
+  // Upper limit on pixel dimensions/area, enforced by VerifyDimensions
+  // (called from decoders). Fuzzers set smaller values to limit memory use.
+  uint32_t dec_max_xsize = 0xFFFFFFFFu;
+  uint32_t dec_max_ysize = 0xFFFFFFFFu;
+  uint64_t dec_max_pixels = 0xFFFFFFFFu;  // Might be up to ~0ull
+};
+  
+
+// XXX this mimicks SetFromBytes in cjxl.cc
+jxl::Status LoadInput(const char* filename_in, jxl::extras::PackedPixelFile& ppf) {
+  // Any valid encoding is larger (ensures codecs can read the first few bytes).
+  constexpr size_t kMinBytes = 9;
+
+  jxl::PaddedBytes image_data;
+  jxl::Status status = ReadFile(filename_in, &image_data);
+  if (!status) {
+    return status;
+  }
+  if (image_data.size() < kMinBytes) return JXL_FAILURE("Input too small.");
+  jxl::Span<const uint8_t> encoded(image_data);
+
+  // Default values when not set by decoders.
+  ppf.info.uses_original_profile = true;
+  ppf.info.orientation = JXL_ORIENT_IDENTITY;
+  jxl::ColorHints color_hints;
+  // TODO(tfish): Fix size_constraints1 hack once SizeConstraints moved out of
+  // lib/jxl/codec_in_out.h
+  SizeConstraints1 size_constraints1;
+  auto size_constraints = *(reinterpret_cast<jxl::SizeConstraints*>(&size_constraints1));
+  
+  jxl::Codec codec;
+#if JPEGXL_ENABLE_APNG
+  if (jxl::extras::DecodeImageAPNG(encoded, color_hints, size_constraints, &ppf)) {
+    codec = jxl::Codec::kPNG;
+  } else
+#endif
+  if (jxl::extras::DecodeImagePGX(encoded, color_hints, size_constraints, &ppf)) {
+    codec = jxl::Codec::kPGX;
+  } else if (jxl::extras::DecodeImagePNM(encoded, color_hints, size_constraints,
+                                    &ppf)) {
+    codec = jxl::Codec::kPNM;
+  }
+#if JPEGXL_ENABLE_GIF
+  else if (jxl::extras::DecodeImageGIF(encoded, color_hints, size_constraints, &ppf)) {
+    codec = jxl::Codec::kGIF;
+  }
+#endif
+  // XXX-FIXME: io->
+  /*
+    The story here is:
+    - Original SetFromBytes code:
+
+      else if (io->dec_target == DecodeTarget::kQuantizedCoeffs &&
+               extras::DecodeImageJPGCoefficients(bytes, io)) {
+        // TODO(deymo): In this case the tools should use a different API to
+        // transcode the input JPEG to JXL instead of expressing it as a
+        // PackedPixelFile.
+        codec = Codec::kJPG;
+        skip_ppf_conversion = true;
+      } else if (io->dec_target == DecodeTarget::kPixels &&
+                 extras::DecodeImageJPG(bytes, color_hints, io->constraints,
+                                        &ppf)) {
+        codec = Codec::kJPG;
+
+    - extras::DecodeImageJPGCoefficients() is a thin wrapper around
+      extras::DecodeImageJPG() that re-checks IsJPG() yet once more,
+      and replaces the Status when this fails. We likely do not need this.
+
+    - codec_jpg.cc has:
+      Status DecodeImageJPG(const Span<const uint8_t> bytes,
+                            const ColorHints& color_hints,
+                            const SizeConstraints& constraints,
+                            PackedPixelFile* ppf) {
+
+    - 
+
+   */
+  else if (jxl::extras::DecodeImageJPG(encoded, color_hints, size_constraints, &ppf)) {
+    codec = jxl::Codec::kJPG;
+  } else {  // TODO(tfish): Bring back EXR and PSD.
+    return JXL_FAILURE("Codecs failed to decode input.");
+  }
+  // TODO(tfish): Migrate this:
+  // if (!skip_ppf_conversion) {
+  //   JXL_RETURN_IF_ERROR(ConvertPackedPixelFileToCodecInOut(ppf, pool, io));
+  // }
+  return true;
+}
+  
 }  // namespace
 
 
 int main(int argc, char **argv) {
   absl::SetProgramUsageMessage(
-      absl::StrCat("JPEG XL-encodes an image.  Sample usage:\n", argv[0],
-                   " <source_image_filename> <target_image_filename>"));
+      absl::StrCat("JPEG XL-encodes an image.\n"
+                   "  Input format can be one of: "
+#if JPEGXL_ENABLE_APNG
+                   "PNG, APNG, "
+#endif
+#if JPEGXL_ENABLE_GIF
+                   "GIF, "
+#endif
+#if JPEGXL_ENABLE_JPEG
+                   "JPEG, "
+#endif
+                   "PPM, PFM, PGX."
+                   "  Sample usage:\n", argv[0],
+                   "    <source_image_filename> <target_image_filename>"));
   const std::vector<char*>& positional_args =
       absl::ParseCommandLine(argc, argv);
 
+  if (absl::GetFlag(FLAGS_ddd)) {
+    std::cerr << "LoadInput() is at: " << reinterpret_cast<void*>(LoadInput) << std::endl;
+  }
+  
   // Handle --version.
   if (absl::GetFlag(FLAGS_encoder_version)) {
     uint32_t version = JxlEncoderVersion();
@@ -427,8 +552,10 @@ int main(int argc, char **argv) {
   }  // Processing flags.
 
   jxl::PaddedBytes jpeg_data;
-  JXL_RETURN_IF_ERROR(ReadFile(filename_in, &jpeg_data));
-
+  if (!ReadFile(filename_in, &jpeg_data)) {
+    std::cerr << "Reading image data failed.\n";
+    return EXIT_FAILURE;
+  }
   if (JXL_ENC_SUCCESS !=
       JxlEncoderAddJPEGFrame(jxl_encoder_frame_settings,
                              jpeg_data.data(), jpeg_data.size())) {
