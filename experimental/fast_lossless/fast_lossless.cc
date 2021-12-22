@@ -376,7 +376,9 @@ void PrepareDCGlobal(bool is_single_group, size_t width, size_t height,
   output->Write(5, 0b00000);  // Starting from ch 0
   output->Write(2, 0b00);     // YCoCg
 
-  output->ZeroPadToByte();
+  if (!is_single_group) {
+    output->ZeroPadToByte();
+  }
 }
 
 void EncodeHybridUint404_Mul16(uint32_t value, uint32_t* token_div16,
@@ -632,10 +634,14 @@ void WriteACSection(const unsigned char* rgba, size_t x0, size_t y0, size_t oxs,
     if (is_single_group && i == 0) continue;
     output[i].Allocate(15 * xs * ys + 4);
   }
-  // Group header for modular image.
-  output[0].Write(1, 1);     // Global tree
-  output[0].Write(1, 1);     // All default wp
-  output[0].Write(2, 0b00);  // 0 transforms
+  if (!is_single_group) {
+    // Group header for modular image.
+    // When the image is single-group, the global modular image is the one that
+    // contains the pixel data, and there is no group header.
+    output[0].Write(1, 1);     // Global tree
+    output[0].Write(1, 1);     // All default wp
+    output[0].Write(2, 0b00);  // 0 transforms
+  }
 
   constexpr size_t kPadding = 16;
 
