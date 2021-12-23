@@ -12,6 +12,7 @@
 
 #include <array>
 #include <memory>
+#include <queue>
 #include <vector>
 
 #if (!defined(__BYTE_ORDER__) || (__BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__))
@@ -188,10 +189,67 @@ struct PrefixCode {
                          kNumLZ77);
   }
 
+  static void ComputeCodeLengths(uint64_t* freqs, size_t n, size_t limit,
+                                 uint8_t* nbits) {
+    if (n <= 1) return;
+    assert(n <= (1 << limit));
+    assert(n <= 32);
+    int parent[64] = {};
+    int height[64] = {};
+    using QElem = std::pair<uint64_t, size_t>;
+    std::priority_queue<QElem, std::vector<QElem>, std::greater<QElem>> q;
+    // Standard Huffman code construction. On failure (i.e. if going beyond the
+    // length limit), try again with halved frequencies.
+    while (true) {
+      size_t num_nodes = 0;
+      for (size_t i = 0; i < n; i++) {
+        if (freqs[i] == 0) continue;
+        q.emplace(freqs[i], num_nodes++);
+      }
+      if (num_nodes <= 1) return;
+      while (q.size() > 1) {
+        QElem n1 = q.top();
+        q.pop();
+        QElem n2 = q.top();
+        q.pop();
+        size_t next = num_nodes++;
+        parent[n1.second] = next;
+        parent[n2.second] = next;
+        q.emplace(n1.first + n2.first, next);
+      }
+      assert(q.size() == 1);
+      q.pop();
+      bool is_ok = true;
+      for (size_t i = num_nodes - 1; i-- > 0;) {
+        height[i] = height[parent[i]] + 1;
+        is_ok &= height[i] <= limit;
+      }
+      if (is_ok) {
+        num_nodes = 0;
+        for (size_t i = 0; i < n; i++) {
+          if (freqs[i] == 0) continue;
+          nbits[i] = height[num_nodes++];
+        }
+        break;
+      } else {
+        for (size_t i = 0; i < n; i++) {
+          freqs[i] = (freqs[i] + 1) >> 1;
+        }
+      }
+    }
+  }
+
   void WriteTo(BitWriter* writer) const {
-    // TODO: decide this from frequencies.
-    uint8_t code_length_nbits[18] = {5, 5, 5, 5, 5, 5, 5, 5, 5,
-                                     5, 5, 5, 5, 5, 5, 5, 0, 1};
+    uint64_t code_length_counts[18] = {};
+    code_length_counts[17] = 3 + 2 * (kNumLZ77 - 1);
+    for (size_t i = 0; i < kNumRaw; i++) {
+      code_length_counts[raw_nbits[i]]++;
+    }
+    for (size_t i = 0; i < kNumLZ77; i++) {
+      code_length_counts[lz77_nbits[i]]++;
+    }
+    uint8_t code_length_nbits[18] = {};
+    ComputeCodeLengths(code_length_counts, 18, 5, code_length_nbits);
     writer->Write(2, 0b00);  // HSKIP = 0, i.e. don't skip code lengths.
 
     // As per Brotli RFC.
