@@ -48,7 +48,7 @@ jobs:
         fetch-depth: 2
     - name: Build
       run: |
-        ./ci.sh $(echo ${{ github.ref }} | sed 's_refs/heads/ci-\([a-z]*\)-debug_\1_') \
+        ./ci.sh $(echo ${{ github.ref }} | sed 's_refs/heads/ci-\([a-z_]*\)-debug_\1_') \
           -DJPEGXL_FORCE_SYSTEM_BROTLI=ON
       env:
         SKIP_TEST: 1
