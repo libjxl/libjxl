@@ -850,8 +850,8 @@ void GetCurrentDimensions(const JxlDecoder* dec, size_t& xsize, size_t& ysize,
   xsize = dec->metadata.oriented_xsize(dec->keep_orientation || !oriented);
   ysize = dec->metadata.oriented_ysize(dec->keep_orientation || !oriented);
   if (!dec->coalescing) {
-    xsize = dec->frame_header->ToFrameDimensions().xsize;
-    ysize = dec->frame_header->ToFrameDimensions().ysize;
+    xsize = dec->frame_header->ToFrameDimensions().xsize_upsampled;
+    ysize = dec->frame_header->ToFrameDimensions().ysize_upsampled;
     if (!dec->keep_orientation && oriented &&
         static_cast<int>(dec->metadata.m.GetOrientation()) > 4) {
       std::swap(xsize, ysize);
