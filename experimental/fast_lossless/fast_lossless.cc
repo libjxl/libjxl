@@ -118,18 +118,24 @@ __attribute__((constructor)) void f() {
 
 */
 
+constexpr size_t kLZ77Offset = 224;
+constexpr size_t kLZ77MinLength = 16;
+
 struct PrefixCode {
+  static constexpr size_t kNumLZ77 = 17;
+  static constexpr size_t kNumRaw = 11;
+
   alignas(32) uint8_t raw_nbits[16] = {
       2, 3, 3, 3, 3, 4, 4, 5, 5, 5, 6,
   };
   alignas(32) uint8_t raw_bits[16] = {};
-  alignas(32) uint8_t lz77_nbits[17] = {
+  uint8_t lz77_nbits[kNumLZ77] = {
       7, 9, 9, 9, 10, 13, 14, 14, 15, 15, 15, 15, 11, 15, 15, 15, 15,
   };
 
-  alignas(32) uint16_t lz77_bits[17] = {};
+  uint16_t lz77_bits[kNumLZ77] = {};
 
-  uint16_t BitReverse(size_t nbits, uint16_t bits) {
+  static uint16_t BitReverse(size_t nbits, uint16_t bits) {
     constexpr uint16_t kNibbleLookup[16] = {
         0b0000, 0b1000, 0b0100, 0b1100, 0b0010, 0b1010, 0b0110, 0b1110,
         0b0001, 0b1001, 0b0101, 0b1101, 0b0011, 0b1011, 0b0111, 0b1111,
@@ -141,54 +147,99 @@ struct PrefixCode {
     return rev16 >> (16 - nbits);
   }
 
-  PrefixCode() {
-    constexpr size_t kNumRaw = 11;
-    constexpr size_t kNumLZ77 = 17;
+  // Create the prefix codes given the code lengths.
+  // Supports the code lengths being split into two halves.
+  static void ComputeCanonicalCode(const uint8_t* first_chunk_nbits,
+                                   uint8_t* first_chunk_bits,
+                                   size_t first_chunk_size,
+                                   const uint8_t* second_chunk_nbits,
+                                   uint16_t* second_chunk_bits,
+                                   size_t second_chunk_size) {
+    uint8_t code_length_counts[16] = {};
+    for (size_t i = 0; i < first_chunk_size; i++) {
+      code_length_counts[first_chunk_nbits[i]]++;
+      assert(first_chunk_nbits[i] <= 7);
+      assert(first_chunk_nbits[i] > 0);
+    }
+    for (size_t i = 0; i < second_chunk_size; i++) {
+      code_length_counts[second_chunk_nbits[i]]++;
+    }
 
-    // Create the prefix codes given the code lengths.
-    {
-      uint8_t code_length_counts[16] = {};
-      for (size_t i = 0; i < kNumRaw; i++) {
-        code_length_counts[raw_nbits[i]]++;
-        assert(raw_nbits[i] <= 7);
-        assert(raw_nbits[i] > 0);
-      }
-      for (size_t i = 0; i < kNumLZ77; i++) {
-        code_length_counts[lz77_nbits[i]]++;
-      }
+    uint16_t next_code[16] = {};
 
-      uint16_t next_code[16] = {};
+    uint16_t code = 0;
+    for (size_t i = 1; i < 16; i++) {
+      code = (code + code_length_counts[i - 1]) << 1;
+      next_code[i] = code;
+    }
 
-      uint16_t code = 0;
-      for (size_t i = 1; i < 16; i++) {
-        code = (code + code_length_counts[i - 1]) << 1;
-        next_code[i] = code;
-      }
-
-      for (size_t i = 0; i < kNumRaw; i++) {
-        raw_bits[i] = BitReverse(raw_nbits[i], next_code[raw_nbits[i]]++);
-      }
-      for (size_t i = 0; i < kNumLZ77; i++) {
-        lz77_bits[i] = BitReverse(lz77_nbits[i], next_code[lz77_nbits[i]]++);
-      }
+    for (size_t i = 0; i < first_chunk_size; i++) {
+      first_chunk_bits[i] =
+          BitReverse(first_chunk_nbits[i], next_code[first_chunk_nbits[i]]++);
+    }
+    for (size_t i = 0; i < second_chunk_size; i++) {
+      second_chunk_bits[i] =
+          BitReverse(second_chunk_nbits[i], next_code[second_chunk_nbits[i]]++);
     }
   }
 
-  void WriteTo(BitWriter* writer) {
-    // TODO
+  PrefixCode() {
+    ComputeCanonicalCode(raw_nbits, raw_bits, kNumRaw, lz77_nbits, lz77_bits,
+                         kNumLZ77);
+  }
+
+  void WriteTo(BitWriter* writer) const {
+    // TODO: decide this from frequencies.
+    uint8_t code_length_nbits[18] = {5, 5, 5, 5, 5, 5, 5, 5, 5,
+                                     5, 5, 5, 5, 5, 5, 5, 0, 1};
+    writer->Write(2, 0b00);  // HSKIP = 0, i.e. don't skip code lengths.
+
+    // As per Brotli RFC.
+    uint8_t code_length_order[18] = {1, 2, 3, 4,  0,  5,  17, 6,  16,
+                                     7, 8, 9, 10, 11, 12, 13, 14, 15};
+    uint8_t code_length_length_nbits[] = {2, 4, 3, 2, 2, 4};
+    uint8_t code_length_length_bits[] = {0, 7, 3, 2, 1, 15};
+
+    // Encode lengths of code lengths.
+    for (size_t i = 0; i < 18; i++) {
+      int symbol = code_length_nbits[code_length_order[i]];
+      writer->Write(code_length_length_nbits[symbol],
+                    code_length_length_bits[symbol]);
+    }
+
+    // Compute the canonical codes for the codes that represent the lengths of
+    // the actual codes for data.
+    uint16_t code_length_bits[18] = {};
+    ComputeCanonicalCode(nullptr, nullptr, 0, code_length_nbits,
+                         code_length_bits, 18);
+    // Encode raw bit code lengths.
+    for (size_t i = 0; i < kNumRaw; i++) {
+      writer->Write(code_length_nbits[raw_nbits[i]],
+                    code_length_bits[raw_nbits[i]]);
+    }
+    // Encode 0s until 224 (start of LZ77 symbols). This is in total 224-11 =
+    // 213.
+    static_assert(kLZ77Offset == 224, "");
+    writer->Write(code_length_nbits[17], code_length_bits[17]);
+    writer->Write(3, 0b010);  // 5
+    writer->Write(code_length_nbits[17], code_length_bits[17]);
+    writer->Write(3, 0b001);  // (5-2)*8 + 4 = 28
+    writer->Write(code_length_nbits[17], code_length_bits[17]);
+    writer->Write(3, 0b010);  // (28-2)*8 + 5 = 213
+    // Encode LZ77 symbols, with values 224+i*16.
+    for (size_t i = 0; i < kNumLZ77; i++) {
+      writer->Write(code_length_nbits[lz77_nbits[i]],
+                    code_length_bits[lz77_nbits[i]]);
+      if (i != kNumLZ77 - 1) {
+        // Encode gap between LZ77 symbols: 15 zeros.
+        writer->Write(code_length_nbits[17], code_length_bits[17]);
+        writer->Write(3, 0b000);  // 3
+        writer->Write(code_length_nbits[17], code_length_bits[17]);
+        writer->Write(3, 0b100);  // (3-2)*8+7 = 15
+      }
+    }
   }
 };
-
-constexpr uint8_t kHistoCode[] = {
-    0xf0, 0x3d, 0x7f, 0xcf, 0xf3, 0xff, 0xfc, 0xdb, 0xaa, 0xaa,
-    0x7a, 0x1f, 0x63, 0x4c, 0x12, 0x5a, 0x80, 0x1b, 0x70, 0x3,
-    0x6e, 0xc0, 0x3,  0xf8, 0x0,  0x3f, 0xe0, 0x7,  0xc,  0x60,
-    0x0,  0x3,  0x18, 0xc0, 0xb,  0x18, 0xc0, 0x0,  0x6,  0x30,
-};
-constexpr size_t kHistoBits = 320;
-
-constexpr size_t kLZ77Offset = 224;
-constexpr size_t kLZ77MinLength = 16;
 
 constexpr size_t kChunkSize = 16;
 
@@ -367,7 +418,7 @@ void AssembleFrame(size_t width, size_t height,
 
 void PrepareDCGlobal(bool is_single_group, size_t width, size_t height,
                      const PrefixCode& code, BitWriter* output) {
-  output->Allocate(1000 + (is_single_group ? width * height * 15 : 0));
+  output->Allocate(1000 + (is_single_group ? width * height * 16 : 0));
   // No patches, spline or noise.
   output->Write(1, 1);  // default DC dequantization factors (?)
   output->Write(1, 1);  // use global tree / histograms
@@ -412,9 +463,7 @@ void PrepareDCGlobal(bool is_single_group, size_t width, size_t height,
   output->Write(1, 1);  // 1
 
   // Symbol + lz77 histogram:
-  for (size_t i = 0; i < (kHistoBits + 7) / 8 * 8; i += 8) {
-    output->Write(std::min<size_t>(kHistoBits - i, 8), kHistoCode[i / 8]);
-  }
+  code.WriteTo(output);
 
   // Group header for global modular image.
   output->Write(1, 1);        // Global tree
@@ -689,7 +738,7 @@ void WriteACSection(const unsigned char* rgba, size_t x0, size_t y0, size_t oxs,
   size_t xs = (oxs + kChunkSize - 1) / kChunkSize * kChunkSize;
   for (size_t i = 0; i < 4; i++) {
     if (is_single_group && i == 0) continue;
-    output[i].Allocate(15 * xs * ys + 4);
+    output[i].Allocate(16 * xs * ys + 4);
   }
   if (!is_single_group) {
     // Group header for modular image.
