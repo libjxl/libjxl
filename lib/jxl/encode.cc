@@ -1123,6 +1123,28 @@ JxlEncoderStatus JxlEncoderAddJPEGFrame(
   return JXL_ENC_SUCCESS;
 }
 
+namespace {
+JxlEncoderStatus GetCurrentDimensions(
+    const JxlEncoderFrameSettings* frame_settings, size_t& xsize,
+    size_t& ysize) {
+  xsize = frame_settings->enc->metadata.xsize();
+  ysize = frame_settings->enc->metadata.ysize();
+  if (frame_settings->values.header.layer_info.have_crop) {
+    xsize = frame_settings->values.header.layer_info.xsize;
+    ysize = frame_settings->values.header.layer_info.ysize;
+  }
+  if (frame_settings->values.cparams.already_downsampled) {
+    size_t factor = frame_settings->values.cparams.resampling;
+    xsize = jxl::DivCeil(xsize, factor);
+    ysize = jxl::DivCeil(ysize, factor);
+  }
+  if (xsize == 0 || ysize == 0) {
+    return JXL_API_ERROR("zero-sized frame is not allowed");
+  }
+  return JXL_ENC_SUCCESS;
+}
+}  // namespace
+
 JxlEncoderStatus JxlEncoderAddImageFrame(
     const JxlEncoderFrameSettings* frame_settings,
     const JxlPixelFormat* pixel_format, const void* buffer, size_t size) {
@@ -1170,23 +1192,12 @@ JxlEncoderStatus JxlEncoderAddImageFrame(
       frame_settings->enc->metadata.m.num_extra_channels) {
     return JXL_API_ERROR("number of extra channels mismatch");
   }
-  size_t xsize = frame_settings->enc->metadata.xsize();
-  size_t ysize = frame_settings->enc->metadata.ysize();
-  if (frame_settings->values.header.layer_info.have_crop) {
-    xsize = frame_settings->values.header.layer_info.xsize;
-    ysize = frame_settings->values.header.layer_info.ysize;
-  }
-  if (frame_settings->values.cparams.already_downsampled) {
-    size_t factor = frame_settings->values.cparams.resampling;
-    xsize = jxl::DivCeil(xsize, factor);
-    ysize = jxl::DivCeil(ysize, factor);
-  }
-  if (xsize == 0 || ysize == 0) {
-    return JXL_API_ERROR("zero-sized frame is not allowed");
+  size_t xsize, ysize;
+  if (GetCurrentDimensions(frame_settings, xsize, ysize) != JXL_ENC_SUCCESS) {
+    return JXL_API_ERROR("bad dimensions");
   }
   std::vector<jxl::ImageF> extra_channels(
-      frame_settings->enc->metadata.m.num_extra_channels -
-      has_interleaved_alpha);
+      frame_settings->enc->metadata.m.num_extra_channels);
   for (auto& extra_channel : extra_channels) {
     extra_channel = jxl::ImageF(xsize, ysize);
   }
@@ -1262,8 +1273,11 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelBuffer(
   if (frame_settings->enc->frames_closed) {
     return JXL_ENC_ERROR;
   }
-  if (!jxl::BufferToImageF(*pixel_format, frame_settings->enc->metadata.xsize(),
-                           frame_settings->enc->metadata.ysize(), buffer, size,
+  size_t xsize, ysize;
+  if (GetCurrentDimensions(frame_settings, xsize, ysize) != JXL_ENC_SUCCESS) {
+    return JXL_API_ERROR("bad dimensions");
+  }
+  if (!jxl::BufferToImageF(*pixel_format, xsize, ysize, buffer, size,
                            frame_settings->enc->thread_pool.get(),
                            &frame_settings->enc->input_queue.back()
                                 .frame->frame.extra_channels()[index])) {
