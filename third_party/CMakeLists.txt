@@ -82,6 +82,9 @@ endif()  # BUILD_TESTING
 
 # Highway
 set(HWY_SYSTEM_GTEST ON CACHE INTERNAL "")
+if((SANITIZER STREQUAL "asan") OR (SANITIZER STREQUAL "msan"))
+  set(HWY_EXAMPLES_TESTS_INSTALL OFF CACHE INTERNAL "")
+endif()
 if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/highway/CMakeLists.txt" AND
     NOT JPEGXL_FORCE_SYSTEM_HWY)
   add_subdirectory(highway)
