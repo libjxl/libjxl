@@ -275,6 +275,33 @@ class ANSSymbolReader {
     return static_cast<uint32_t>(ret);
   }
 
+  // Takes a *clustered* idx. Can only use if HuffRleOnly() is true.
+  void ReadHybridUintClusteredHuffRleOnly(size_t ctx,
+                                          BitReader* JXL_RESTRICT br,
+                                          uint32_t* value, uint32_t* run) {
+    JXL_DASSERT(HuffRleOnly());
+    br->Refill();  // covers ReadSymbolWithoutRefill + PeekBits
+    size_t token = ReadSymbolHuffWithoutRefill(ctx, br);
+    if (JXL_UNLIKELY(token >= lz77_threshold_)) {
+      *run =
+          ReadHybridUintConfig(lz77_length_uint_, token - lz77_threshold_, br) +
+          lz77_min_length_ - 1;
+      return;
+    }
+    *value = ReadHybridUintConfig(configs[ctx], token, br);
+    return;
+  }
+  bool HuffRleOnly() {
+    if (lz77_window_ == nullptr) return false;
+    if (!use_prefix_code_) return false;
+    for (size_t i = 0; i < kHuffmanTableBits; i++) {
+      if (huffman_data_[lz77_ctx_].table_[i].bits) return false;
+      if (huffman_data_[lz77_ctx_].table_[i].value != 1) return false;
+    }
+    if (configs[lz77_ctx_].split_token > 1) return false;
+    return true;
+  }
+
   // Takes a *clustered* idx.
   size_t ReadHybridUintClustered(size_t ctx, BitReader* JXL_RESTRICT br) {
     if (JXL_UNLIKELY(num_to_copy_ > 0)) {

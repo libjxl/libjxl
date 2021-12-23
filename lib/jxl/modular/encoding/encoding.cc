@@ -197,6 +197,39 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
         }
       }
     } else if (predictor == Predictor::Gradient && offset == 0 &&
+               multiplier == 1 && reader->HuffRleOnly()) {
+      JXL_DEBUG_V(8, "Gradient RLE (fjxl) very fast track.");
+      uint32_t run = 0;
+      uint32_t v = 0;
+      pixel_type_w sv = 0;
+      for (size_t y = 0; y < channel.h; y++) {
+        pixel_type *JXL_RESTRICT r = channel.Row(y);
+        const pixel_type *JXL_RESTRICT rtop = (y ? channel.Row(y - 1) : r - 1);
+        const pixel_type *JXL_RESTRICT rtopleft =
+            (y ? channel.Row(y - 1) - 1 : r - 1);
+        pixel_type_w guess = (y ? rtop[0] : 0);
+        if (run == 0) {
+          reader->ReadHybridUintClusteredHuffRleOnly(ctx_id, br, &v, &run);
+          sv = UnpackSigned(v);
+        } else {
+          run--;
+        }
+        r[0] = sv + guess;
+        for (size_t x = 1; x < channel.w; x++) {
+          pixel_type left = r[x - 1];
+          pixel_type top = rtop[x];
+          pixel_type topleft = rtopleft[x];
+          pixel_type_w guess = ClampedGradient(top, left, topleft);
+          if (!run) {
+            reader->ReadHybridUintClusteredHuffRleOnly(ctx_id, br, &v, &run);
+            sv = UnpackSigned(v);
+          } else {
+            run--;
+          }
+          r[x] = sv + guess;
+        }
+      }
+    } else if (predictor == Predictor::Gradient && offset == 0 &&
                multiplier == 1) {
       JXL_DEBUG_V(8, "Gradient very fast track.");
       const intptr_t onerow = channel.plane.PixelsPerRow();
