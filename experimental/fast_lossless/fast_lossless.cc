@@ -48,77 +48,6 @@ struct BitWriter {
   uint64_t buffer = 0;
 };
 
-/*
-// Run this in the libjxl codebase to compute the prefix code tables and code:
-#include "lib/jxl/enc_huffman.h"
-__attribute__((constructor)) void f() {
-  uint32_t histo[512] = {};
-  histo[0] = 103741937;
-  histo[1] = 63368045;
-  histo[2] = 95396302;
-  histo[3] = 82611295;
-  histo[4] = 56681795;
-  histo[5] = 27357516;
-  // These are bumped up as they otherwise go above the maximum bit count.
-  histo[6] = 30602258;
-  histo[7] = 20354502;
-  histo[8] = 20042520;
-  histo[9] = 20059400;
-  histo[10] = 20004000;
-
-  for (size_t i = 0; i < 17; i++) {
-    histo[kLZ77Offset + i * 16] = 1;
-  }
-  histo[kLZ77Offset + 0 * 16] = 119345;
-  histo[kLZ77Offset + 1 * 16] = 51104;
-  histo[kLZ77Offset + 2 * 16] = 44302;
-  histo[kLZ77Offset + 3 * 16] = 33556;
-  histo[kLZ77Offset + 4 * 16] = 26230;
-  histo[kLZ77Offset + 5 * 16] = 1059;
-  histo[kLZ77Offset + 6 * 16] = 364;
-  histo[kLZ77Offset + 7 * 16] = 288;
-  histo[kLZ77Offset + 8 * 16] = 183;
-  histo[kLZ77Offset + 9 * 16] = 146;
-  histo[kLZ77Offset + 10 * 16] = 210;
-  histo[kLZ77Offset + 11 * 16] = 87;
-  histo[kLZ77Offset + 12 * 16] = 2374;
-
-  uint8_t depth[512] = {};
-  uint16_t bits[512] = {};
-  BitWriter w;
-  BitWriter::Allotment allotment(&w, 1000);
-  BuildAndStoreHuffmanTree(histo, 512, depth, bits, &w);
-  ReclaimAndCharge(&w, &allotment, 0, nullptr);
-
-  unsigned wbits = w.BitsWritten();
-  w.ZeroPadToByte();
-  fprintf(stderr, "constexpr uint8_t kRawNBits[16] = {\n");
-  for (size_t i = 0; i < 11; i++) {
-    fprintf(stderr, "%d,", depth[i]);
-  }
-  fprintf(stderr, "};\nconstexpr uint8_t kRawBits[16] = {\n");
-  for (size_t i = 0; i < 11; i++) {
-    fprintf(stderr, "0x%x,", bits[i]);
-  }
-  fprintf(stderr, "};\nconstexpr uint8_t kLZ77NBits[17] = {\n");
-  for (size_t i = 0; i < 17; i++) {
-    fprintf(stderr, "%d,", depth[kLZ77Offset + i * 16]);
-  }
-  fprintf(stderr, "};\nconstexpr uint16_t kLZ77Bits[17] = {\n");
-  for (size_t i = 0; i < 17; i++) {
-    fprintf(stderr, "0x%x,", bits[kLZ77Offset + i * 16]);
-  }
-  fprintf(stderr, "};\nconstexpr uint8_t kHistoCode[] = {");
-  auto wspan = w.GetSpan();
-  for (size_t i = 0; i * 8 < w.BitsWritten(); i++) {
-    fprintf(stderr, "0x%x, ", wspan[i]);
-  }
-  fprintf(stderr, "};\nconstexpr size_t kHistoBits = %u;\n", wbits);
-  exit(1);
-}
-
-*/
-
 constexpr size_t kLZ77Offset = 224;
 constexpr size_t kLZ77MinLength = 16;
 
@@ -126,13 +55,9 @@ struct PrefixCode {
   static constexpr size_t kNumLZ77 = 17;
   static constexpr size_t kNumRaw = 11;
 
-  alignas(32) uint8_t raw_nbits[16] = {
-      2, 3, 3, 3, 3, 4, 4, 5, 5, 5, 6,
-  };
+  alignas(32) uint8_t raw_nbits[16] = {};
   alignas(32) uint8_t raw_bits[16] = {};
-  uint8_t lz77_nbits[kNumLZ77] = {
-      7, 9, 9, 9, 10, 13, 14, 14, 15, 15, 15, 15, 11, 15, 15, 15, 15,
-  };
+  uint8_t lz77_nbits[kNumLZ77] = {};
 
   uint16_t lz77_bits[kNumLZ77] = {};
 
@@ -184,7 +109,29 @@ struct PrefixCode {
     }
   }
 
-  PrefixCode() {
+  PrefixCode(uint64_t* raw_counts, uint64_t* lz77_counts) {
+    // "merge" together all the lz77 counts in a single symbol for the level 1
+    // table (containing just the raw symbols, up to length 7).
+    uint64_t level1_counts[kNumRaw + 1];
+    memcpy(level1_counts, raw_counts, kNumRaw * sizeof(uint64_t));
+    level1_counts[kNumRaw] = 0;
+    for (size_t i = 0; i < kNumLZ77; i++) {
+      level1_counts[kNumRaw] += lz77_counts[i];
+    }
+    uint8_t level1_nbits[kNumRaw + 1] = {};
+    ComputeCodeLengths(level1_counts, kNumRaw + 1, 7, level1_nbits);
+
+    uint8_t level2_nbits[kNumLZ77] = {};
+    ComputeCodeLengths(lz77_counts, kNumLZ77, 15 - level1_nbits[kNumRaw],
+                       level2_nbits);
+    for (size_t i = 0; i < kNumRaw; i++) {
+      raw_nbits[i] = level1_nbits[i];
+    }
+    for (size_t i = 0; i < kNumLZ77; i++) {
+      lz77_nbits[i] =
+          level2_nbits[i] ? level1_nbits[kNumRaw] + level2_nbits[i] : 0;
+    }
+
     ComputeCanonicalCode(raw_nbits, raw_bits, kNumRaw, lz77_nbits, lz77_bits,
                          kNumLZ77);
   }
@@ -275,6 +222,10 @@ struct PrefixCode {
       writer->Write(code_length_nbits[raw_nbits[i]],
                     code_length_bits[raw_nbits[i]]);
     }
+    size_t num_lz77 = kNumLZ77;
+    while (lz77_nbits[num_lz77 - 1] == 0) {
+      num_lz77--;
+    }
     // Encode 0s until 224 (start of LZ77 symbols). This is in total 224-11 =
     // 213.
     static_assert(kLZ77Offset == 224, "");
@@ -285,10 +236,10 @@ struct PrefixCode {
     writer->Write(code_length_nbits[17], code_length_bits[17]);
     writer->Write(3, 0b010);  // (28-2)*8 + 5 = 213
     // Encode LZ77 symbols, with values 224+i*16.
-    for (size_t i = 0; i < kNumLZ77; i++) {
+    for (size_t i = 0; i < num_lz77; i++) {
       writer->Write(code_length_nbits[lz77_nbits[i]],
                     code_length_bits[lz77_nbits[i]]);
-      if (i != kNumLZ77 - 1) {
+      if (i != num_lz77 - 1) {
         // Encode gap between LZ77 symbols: 15 zeros.
         writer->Write(code_length_nbits[17], code_length_bits[17]);
         writer->Write(3, 0b000);  // 3
@@ -767,7 +718,7 @@ struct ChannelRowEncoder {
         EncodeHybridUint000(residuals[ix], &token, &nbits, &bits);
 
         output.Write(code.raw_nbits[token] + nbits,
-                     code.raw_bits[token] | bits << code->raw_nbits[token]);
+                     code.raw_bits[token] | bits << code.raw_nbits[token]);
       }
 #endif
     }
@@ -864,7 +815,14 @@ size_t FastLosslessEncode(const unsigned char* rgba, size_t width,
   assert(height != 0);
   assert(row_stride >= 4 * width);
 
-  alignas(32) PrefixCode prefix_code;
+  uint64_t raw_counts[11] = {106226226, 63368080, 95396405, 82611295,
+                             56681795,  27357516, 7602258,  1354502,
+                             234252,    27594,    1004};
+  uint64_t lz77_counts[17] = {
+      119345, 51104, 44302, 33556, 26230, 1059, 364,
+      288,    183,   146,   210,   87,    2374,
+  };
+  alignas(32) PrefixCode prefix_code(raw_counts, lz77_counts);
 
   BitWriter writer;
 
