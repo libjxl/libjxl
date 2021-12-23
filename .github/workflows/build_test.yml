@@ -41,9 +41,12 @@ jobs:
             cxxflags: -DHWY_DISABLED_TARGETS=~HWY_SCALAR
           # Disabling optional features to speed up msan build a little bit.
           - name: msan
+            skip_install: true
             cmake_args: >-
               -DJPEGXL_ENABLE_DEVTOOLS=OFF -DJPEGXL_ENABLE_PLUGINS=OFF
               -DJPEGXL_ENABLE_VIEWERS=OFF
+          - name: asan
+            skip_install: true
           - name: coverage
             apt_pkgs: gcovr
             # Coverage builds require a bit more RAM.
