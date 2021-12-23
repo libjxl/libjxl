@@ -23,7 +23,6 @@
 #include "lib/extras/codec_pnm.h"
 #include "lib/extras/codec_gif.h"
 #include "lib/extras/codec_jpg.h"
-
 #include "lib/extras/color_hints.h"
 #include "lib/extras/packed_image.h"
 
@@ -421,7 +420,6 @@ int main(int argc, char **argv) {
 
   JxlEncoderFrameSettings* jxl_encoder_frame_settings =
     managed_jxl_encoder.encoder_frame_settings_;
-
   {  // Processing tuning flags.
     bool use_container = absl::GetFlag(FLAGS_container);
     // TODO(tfish): Set use_container according to need of encoded data.
@@ -577,12 +575,36 @@ int main(int argc, char **argv) {
       ppf.frames.size() <<
       ", xsize=" << pimage.xsize << ", ysize=" << pimage.ysize <<
       std::endl;
+
+    {  // JxlEncoderSetBasicInfo
+      JxlBasicInfo basic_info;
+      JxlEncoderInitBasicInfo(&basic_info);
+      basic_info.xsize = pimage.xsize;
+      basic_info.ysize = pimage.ysize;
+      basic_info.bits_per_sample = 32;
+      basic_info.exponent_bits_per_sample = 8;
+      basic_info.uses_original_profile = JXL_FALSE;
+      if (JXL_ENC_SUCCESS != JxlEncoderSetBasicInfo(jxl_encoder, &basic_info)) {
+        std::cerr << "JxlEncoderSetBasicInfo() failed.\n";
+        return EXIT_FAILURE;
+      }
+    }
+    {  // JxlEncoderSetColorEncoding
+      JxlColorEncoding color_encoding = {};
+      JxlColorEncodingSetToSRGB(&color_encoding,
+                                /*is_gray=*/ppixelformat.num_channels < 3);
+      if (JXL_ENC_SUCCESS !=
+          JxlEncoderSetColorEncoding(jxl_encoder, &color_encoding)) {
+        std::cerr << "JxlEncoderSetColorEncoding() failed.\n";
+        return EXIT_FAILURE;
+      }
+    }
     jxl::Status enc_status = JxlEncoderAddImageFrame(
       jxl_encoder_frame_settings,
       &ppixelformat,
       pimage.pixels(),
       pimage.pixels_size);
-    if (!enc_status) {
+    if (JXL_ENC_SUCCESS != enc_status) {
       // TODO(tfish): Fix such status handling throughout.  We should
       // have more detail available about what went wrong than what we
       // currently share with the caller.
