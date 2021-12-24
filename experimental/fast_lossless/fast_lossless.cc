@@ -206,7 +206,11 @@ struct PrefixCode {
     uint8_t code_length_length_bits[] = {0, 7, 3, 2, 1, 15};
 
     // Encode lengths of code lengths.
-    for (size_t i = 0; i < 18; i++) {
+    size_t num_code_lengths = 18;
+    while (code_length_nbits[code_length_order[num_code_lengths - 1]] == 0) {
+      num_code_lengths--;
+    }
+    for (size_t i = 0; i < num_code_lengths; i++) {
       int symbol = code_length_nbits[code_length_order[i]];
       writer->Write(code_length_length_nbits[symbol],
                     code_length_length_bits[symbol]);
@@ -727,8 +731,7 @@ struct ChannelRowEncoder {
   void ProcessRow(const int16_t* row, const int16_t* row_left,
                   const int16_t* row_top, const int16_t* row_topleft, size_t xs,
                   const PrefixCode& code, BitWriter& output) {
-    size_t x = 0;
-    for (; x + kChunkSize <= xs; x += kChunkSize) {
+    for (size_t x = 0; x + kChunkSize <= xs; x += kChunkSize) {
       ProcessChunk(row + x, row_left + x, row_top + x, row_topleft + x, code,
                    output);
     }
@@ -763,7 +766,6 @@ void WriteACSection(const unsigned char* rgba, size_t x0, size_t y0, size_t oxs,
   int16_t group_data[4][2][256 + kPadding * 2] = {};
 
   ChannelRowEncoder row_encoders[4];
-
   for (size_t y = 0; y < ys; y++) {
     // Pre-fill rows with YCoCg converted pixels.
     for (size_t x = 0; x < oxs; x++) {
@@ -808,6 +810,114 @@ void WriteACSection(const unsigned char* rgba, size_t x0, size_t y0, size_t oxs,
   }
 }
 
+struct ChannelRowStatsCollector {
+  void Rle(size_t count, uint64_t* lz77_counts) {
+    if (count == 0) return;
+    count -= kLZ77MinLength;
+    unsigned token_div16, nbits, bits;
+    EncodeHybridUint404_Mul16(count, &token_div16, &nbits, &bits);
+    lz77_counts[token_div16]++;
+  }
+
+  inline void ProcessChunk(const int16_t* row, const int16_t* row_left,
+                           const int16_t* row_top, const int16_t* row_topleft,
+                           uint64_t* raw_counts, uint64_t* lz77_counts) {
+    bool continue_rle = true;
+    alignas(32) uint16_t residuals[kChunkSize] = {};
+    for (size_t ix = 0; ix < kChunkSize; ix++) {
+      int16_t px = row[ix];
+      int16_t left = row_left[ix];
+      int16_t top = row_top[ix];
+      int16_t topleft = row_topleft[ix];
+
+      int16_t m = std::min(top, left);
+      int16_t M = std::max(top, left);
+      int16_t grad = static_cast<int16_t>(static_cast<uint16_t>(top) +
+                                          static_cast<uint16_t>(left) -
+                                          static_cast<uint16_t>(topleft));
+      int16_t grad_clamp_M = (topleft < m) ? M : grad;
+      int16_t pred = (topleft > M) ? m : grad_clamp_M;
+      residuals[ix] = PackSigned(px - pred);
+      continue_rle &= residuals[ix] == last;
+    }
+    // Run continues, nothing to do.
+    if (continue_rle) {
+      run += kChunkSize;
+    } else {
+      // Run is broken. Encode the run and encode the individual vector.
+      Rle(run, lz77_counts);
+      run = 0;
+      for (size_t ix = 0; ix < kChunkSize; ix++) {
+        unsigned token, nbits, bits;
+        EncodeHybridUint000(residuals[ix], &token, &nbits, &bits);
+        raw_counts[token]++;
+      }
+    }
+    last = residuals[kChunkSize - 1];
+  }
+  void ProcessRow(const int16_t* row, const int16_t* row_left,
+                  const int16_t* row_top, const int16_t* row_topleft,
+                  uint64_t* raw_counts, uint64_t* lz77_counts) {
+    for (size_t x = 0; x + kChunkSize <= 256; x += kChunkSize) {
+      ProcessChunk(row + x, row_left + x, row_top + x, row_topleft + x,
+                   raw_counts, lz77_counts);
+    }
+  }
+
+  void Finalize(uint64_t* raw_counts, uint64_t* lz77_counts) {
+    Rle(run, lz77_counts);
+  }
+  size_t run = 0;
+  uint16_t last = 0xFFFF;  // Can never appear
+};
+
+void CollectSamples(const unsigned char* rgba, size_t x0, size_t y0,
+                    size_t row_stride, uint64_t* raw_counts,
+                    uint64_t* lz77_counts) {
+  constexpr size_t kPadding = 16;
+
+  int16_t group_data[4][2][256 + kPadding * 2] = {};
+
+  ChannelRowStatsCollector row_collector[4];
+
+  for (size_t y = 0; y < 9; y++) {
+    // Pre-fill rows with YCoCg converted pixels.
+    for (size_t x = 0; x < 256; x++) {
+      int16_t r = rgba[row_stride * (y0 + y) + (x0 + x) * 4 + 0];
+      int16_t g = rgba[row_stride * (y0 + y) + (x0 + x) * 4 + 1];
+      int16_t b = rgba[row_stride * (y0 + y) + (x0 + x) * 4 + 2];
+      int16_t a = rgba[row_stride * (y0 + y) + (x0 + x) * 4 + 3];
+      group_data[3][y & 1][x + kPadding] = a;
+      group_data[1][y & 1][x + kPadding] = r - b;
+      int16_t tmp = b + (group_data[1][y & 1][x + kPadding] >> 1);
+      group_data[2][y & 1][x + kPadding] = g - tmp;
+      group_data[0][y & 1][x + kPadding] =
+          tmp + (group_data[2][y & 1][x + kPadding] >> 1);
+    }
+    // Deal with x == 0.
+    for (size_t c = 0; c < 4; c++) {
+      group_data[c][y & 1][kPadding - 1] =
+          y > 0 ? group_data[c][(y - 1) & 1][kPadding] : 0;
+    }
+    if (y == 0) continue;
+    for (size_t c = 0; c < 4; c++) {
+      // Get pointers to px/left/top/topleft data to speedup loop.
+      const int16_t* row = &group_data[c][y & 1][kPadding];
+      const int16_t* row_left = &group_data[c][y & 1][kPadding - 1];
+      const int16_t* row_top =
+          y == 0 ? row_left : &group_data[c][(y - 1) & 1][kPadding];
+      const int16_t* row_topleft =
+          y == 0 ? row_left : &group_data[c][(y - 1) & 1][kPadding - 1];
+
+      row_collector[c].ProcessRow(row, row_left, row_top, row_topleft,
+                                  raw_counts, lz77_counts);
+    }
+  }
+  for (size_t c = 0; c < 4; c++) {
+    row_collector[c].Finalize(raw_counts, lz77_counts);
+  }
+}
+
 size_t FastLosslessEncode(const unsigned char* rgba, size_t width,
                           size_t row_stride, size_t height,
                           unsigned char** output) {
@@ -815,13 +925,42 @@ size_t FastLosslessEncode(const unsigned char* rgba, size_t width,
   assert(height != 0);
   assert(row_stride >= 4 * width);
 
-  uint64_t raw_counts[11] = {106226226, 63368080, 95396405, 82611295,
-                             56681795,  27357516, 7602258,  1354502,
-                             234252,    27594,    1004};
-  uint64_t lz77_counts[17] = {
-      119345, 51104, 44302, 33556, 26230, 1059, 364,
-      288,    183,   146,   210,   87,    2374,
+  uint64_t raw_counts[11] = {};
+  uint64_t lz77_counts[17] = {};
+
+  if (height > 16 && width > 272) {
+    const uint64_t kRandom[10] = {
+        0x297a2f04566e200e, 0x3e7d6cd07ac02d16, 0xf870b4bc5f05d12d,
+        0xb5afcde5c00d5df7, 0x5dc0736c7218f765, 0x547b55bcc9e6dccb,
+        0xd3bb7fb442b07b53, 0xe21d31bf5d110091, 0xa3d6edd3514f0cd4,
+        0xf53bd2868a44efc0,
+    };
+    size_t width_limit = (width - 256) / 16;
+    size_t height_limit = height - 16;
+    // Collect samples from random locations in the image.
+    for (size_t i = 0; i < 5; i++) {
+      CollectSamples(rgba, (kRandom[2 * i] % width_limit) * 16,
+                     kRandom[2 * i + 1] % height_limit, row_stride, raw_counts,
+                     lz77_counts);
+    }
+  }
+
+  // This should be tuned for screen content, as photo content is typically
+  // large enough to trigger the sampling.
+  uint64_t base_raw_counts[11] = {
+      1024, 64, 64, 128, 128, 128, 128, 196, 64, 4, 1,
   };
+  uint64_t base_lz77_counts[17] = {
+      12, 12, 8, 4, 2, 1, 1, 1, 1, 1, 1, 1, 1,
+  };
+  for (size_t i = 0; i < 11; i++) {
+    raw_counts[i] = (raw_counts[i] << 8) + base_raw_counts[i];
+  }
+
+  for (size_t i = 0; i < 17; i++) {
+    lz77_counts[i] = (lz77_counts[i] << 8) + base_lz77_counts[i];
+  }
+
   alignas(32) PrefixCode prefix_code(raw_counts, lz77_counts);
 
   BitWriter writer;
