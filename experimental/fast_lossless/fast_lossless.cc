@@ -500,17 +500,6 @@ void EncodeHybridUint404_Mul16(uint32_t value, uint32_t* token_div16,
   *bits = value < 16 ? 0 : (value >> 4) - (1 << *nbits);
 }
 
-void EncodeRle(uint16_t residual, size_t count, const PrefixCode& code,
-               BitWriter& output) {
-  if (count == 0) return;
-  count -= kLZ77MinLength;
-  unsigned token_div16, nbits, bits;
-  EncodeHybridUint404_Mul16(count, &token_div16, &nbits, &bits);
-  output.Write(
-      code.lz77_nbits[token_div16] + nbits,
-      (bits << code.lz77_nbits[token_div16]) | code.lz77_bits[token_div16]);
-}
-
 #ifdef FASTLL_ENABLE_AVX2_INTRINSICS
 #include <immintrin.h>
 void EncodeChunk(const uint16_t* residuals, const PrefixCode& prefix_code,
@@ -675,15 +664,80 @@ void EncodeChunk(const uint16_t* residuals, const PrefixCode& code,
 }
 #endif
 
+struct ChunkEncoder {
+  static void EncodeRle(size_t count, const PrefixCode& code,
+                        BitWriter& output) {
+    if (count == 0) return;
+    count -= kLZ77MinLength;
+    unsigned token_div16, nbits, bits;
+    EncodeHybridUint404_Mul16(count, &token_div16, &nbits, &bits);
+    output.Write(
+        code.lz77_nbits[token_div16] + nbits,
+        (bits << code.lz77_nbits[token_div16]) | code.lz77_bits[token_div16]);
+  }
+
+  inline void Chunk(size_t run, uint16_t* residuals) {
+    EncodeRle(run, *code, *output);
+#if defined(FASTLL_ENABLE_AVX2_INTRINSICS) && FASTLL_ENABLE_AVX2_INTRINSICS
+    EncodeChunk(residuals, *code, *output);
+#elif defined(FASTLL_ENABLE_NEON_INTRINSICS) && FASTLL_ENABLE_NEON_INTRINSICS
+    EncodeChunk(residuals, *code, *output);
+    if (kChunkSize > 8) {
+      EncodeChunk(residuals + 8, *code, *output);
+    }
+#else
+    for (size_t ix = 0; ix < kChunkSize; ix++) {
+      unsigned token, nbits, bits;
+      EncodeHybridUint000(residuals[ix], &token, &nbits, &bits);
+
+      output->Write(code->raw_nbits[token] + nbits,
+                    code->raw_bits[token] | bits << code->raw_nbits[token]);
+    }
+#endif
+  }
+
+  inline void Finalize(size_t run) { EncodeRle(run, *code, *output); }
+
+  const PrefixCode* code;
+  BitWriter* output;
+};
+
+struct ChunkSampleCollector {
+  void Rle(size_t count, uint64_t* lz77_counts) {
+    if (count == 0) return;
+    count -= kLZ77MinLength;
+    unsigned token_div16, nbits, bits;
+    EncodeHybridUint404_Mul16(count, &token_div16, &nbits, &bits);
+    lz77_counts[token_div16]++;
+  }
+
+  inline void Chunk(size_t run, uint16_t* residuals) {
+    // Run is broken. Encode the run and encode the individual vector.
+    Rle(run, lz77_counts);
+    run = 0;
+    for (size_t ix = 0; ix < kChunkSize; ix++) {
+      unsigned token, nbits, bits;
+      EncodeHybridUint000(residuals[ix], &token, &nbits, &bits);
+      raw_counts[token]++;
+    }
+  }
+
+  void Finalize(size_t run) { Rle(run, lz77_counts); }
+
+  uint64_t* raw_counts;
+  uint64_t* lz77_counts;
+};
+
 constexpr uint16_t PackSigned(int16_t value) {
   return (static_cast<uint16_t>(value) << 1) ^
          ((static_cast<uint16_t>(~value) >> 15) - 1);
 }
 
-struct ChannelRowEncoder {
+template <typename T>
+struct ChannelRowProcessor {
+  T* t;
   inline void ProcessChunk(const int16_t* row, const int16_t* row_left,
-                           const int16_t* row_top, const int16_t* row_topleft,
-                           const PrefixCode& code, BitWriter& output) {
+                           const int16_t* row_top, const int16_t* row_topleft) {
     bool continue_rle = true;
     alignas(32) uint16_t residuals[kChunkSize] = {};
     for (size_t ix = 0; ix < kChunkSize; ix++) {
@@ -707,65 +761,32 @@ struct ChannelRowEncoder {
       run += kChunkSize;
     } else {
       // Run is broken. Encode the run and encode the individual vector.
-      EncodeRle(last, run, code, output);
+      t->Chunk(run, residuals);
       run = 0;
-#ifdef FASTLL_ENABLE_AVX2_INTRINSICS
-      EncodeChunk(residuals, code, output);
-#elif FASTLL_ENABLE_NEON_INTRINSICS
-      EncodeChunk(residuals, code, output);
-      if (kChunkSize > 8) {
-        EncodeChunk(residuals + 8, code, output);
-      }
-#else
-      for (size_t ix = 0; ix < kChunkSize; ix++) {
-        unsigned token, nbits, bits;
-        EncodeHybridUint000(residuals[ix], &token, &nbits, &bits);
-
-        output.Write(code.raw_nbits[token] + nbits,
-                     code.raw_bits[token] | bits << code.raw_nbits[token]);
-      }
-#endif
     }
     last = residuals[kChunkSize - 1];
   }
   void ProcessRow(const int16_t* row, const int16_t* row_left,
-                  const int16_t* row_top, const int16_t* row_topleft, size_t xs,
-                  const PrefixCode& code, BitWriter& output) {
+                  const int16_t* row_top, const int16_t* row_topleft,
+                  size_t xs) {
     for (size_t x = 0; x + kChunkSize <= xs; x += kChunkSize) {
-      ProcessChunk(row + x, row_left + x, row_top + x, row_topleft + x, code,
-                   output);
+      ProcessChunk(row + x, row_left + x, row_top + x, row_topleft + x);
     }
   }
 
-  void Finalize(const PrefixCode& code, BitWriter& output) {
-    EncodeRle(last, run, code, output);
-  }
+  void Finalize() { t->Finalize(run); }
   size_t run = 0;
   uint16_t last = 0xFFFF;  // Can never appear
 };
 
-void WriteACSection(const unsigned char* rgba, size_t x0, size_t y0, size_t oxs,
-                    size_t ys, size_t row_stride, bool is_single_group,
-                    const PrefixCode& code, std::array<BitWriter, 4>& output) {
-  size_t xs = (oxs + kChunkSize - 1) / kChunkSize * kChunkSize;
-  for (size_t i = 0; i < 4; i++) {
-    if (is_single_group && i == 0) continue;
-    output[i].Allocate(16 * xs * ys + 4);
-  }
-  if (!is_single_group) {
-    // Group header for modular image.
-    // When the image is single-group, the global modular image is the one that
-    // contains the pixel data, and there is no group header.
-    output[0].Write(1, 1);     // Global tree
-    output[0].Write(1, 1);     // All default wp
-    output[0].Write(2, 0b00);  // 0 transforms
-  }
-
+template <typename Processor>
+void ProcessImageArea(const unsigned char* rgba, size_t x0, size_t y0,
+                      size_t oxs, size_t xs, size_t yskip, size_t ys,
+                      size_t row_stride, Processor* processors) {
   constexpr size_t kPadding = 16;
 
   int16_t group_data[4][2][256 + kPadding * 2] = {};
 
-  ChannelRowEncoder row_encoders[4];
   for (size_t y = 0; y < ys; y++) {
     // Pre-fill rows with YCoCg converted pixels.
     for (size_t x = 0; x < oxs; x++) {
@@ -792,6 +813,7 @@ void WriteACSection(const unsigned char* rgba, size_t x0, size_t y0, size_t oxs,
             group_data[c][y & 1][kPadding + oxs - 1];
       }
     }
+    if (y < yskip) continue;
     for (size_t c = 0; c < 4; c++) {
       // Get pointers to px/left/top/topleft data to speedup loop.
       const int16_t* row = &group_data[c][y & 1][kPadding];
@@ -801,121 +823,53 @@ void WriteACSection(const unsigned char* rgba, size_t x0, size_t y0, size_t oxs,
       const int16_t* row_topleft =
           y == 0 ? row_left : &group_data[c][(y - 1) & 1][kPadding - 1];
 
-      row_encoders[c].ProcessRow(row, row_left, row_top, row_topleft, xs, code,
-                                 output[c]);
+      processors[c].ProcessRow(row, row_left, row_top, row_topleft, xs);
     }
   }
   for (size_t c = 0; c < 4; c++) {
-    row_encoders[c].Finalize(code, output[c]);
+    processors[c].Finalize();
   }
 }
 
-struct ChannelRowStatsCollector {
-  void Rle(size_t count, uint64_t* lz77_counts) {
-    if (count == 0) return;
-    count -= kLZ77MinLength;
-    unsigned token_div16, nbits, bits;
-    EncodeHybridUint404_Mul16(count, &token_div16, &nbits, &bits);
-    lz77_counts[token_div16]++;
+void WriteACSection(const unsigned char* rgba, size_t x0, size_t y0, size_t oxs,
+                    size_t ys, size_t row_stride, bool is_single_group,
+                    const PrefixCode& code, std::array<BitWriter, 4>& output) {
+  size_t xs = (oxs + kChunkSize - 1) / kChunkSize * kChunkSize;
+  for (size_t i = 0; i < 4; i++) {
+    if (is_single_group && i == 0) continue;
+    output[i].Allocate(16 * xs * ys + 4);
+  }
+  if (!is_single_group) {
+    // Group header for modular image.
+    // When the image is single-group, the global modular image is the one that
+    // contains the pixel data, and there is no group header.
+    output[0].Write(1, 1);     // Global tree
+    output[0].Write(1, 1);     // All default wp
+    output[0].Write(2, 0b00);  // 0 transforms
   }
 
-  inline void ProcessChunk(const int16_t* row, const int16_t* row_left,
-                           const int16_t* row_top, const int16_t* row_topleft,
-                           uint64_t* raw_counts, uint64_t* lz77_counts) {
-    bool continue_rle = true;
-    alignas(32) uint16_t residuals[kChunkSize] = {};
-    for (size_t ix = 0; ix < kChunkSize; ix++) {
-      int16_t px = row[ix];
-      int16_t left = row_left[ix];
-      int16_t top = row_top[ix];
-      int16_t topleft = row_topleft[ix];
-
-      int16_t m = std::min(top, left);
-      int16_t M = std::max(top, left);
-      int16_t grad = static_cast<int16_t>(static_cast<uint16_t>(top) +
-                                          static_cast<uint16_t>(left) -
-                                          static_cast<uint16_t>(topleft));
-      int16_t grad_clamp_M = (topleft < m) ? M : grad;
-      int16_t pred = (topleft > M) ? m : grad_clamp_M;
-      residuals[ix] = PackSigned(px - pred);
-      continue_rle &= residuals[ix] == last;
-    }
-    // Run continues, nothing to do.
-    if (continue_rle) {
-      run += kChunkSize;
-    } else {
-      // Run is broken. Encode the run and encode the individual vector.
-      Rle(run, lz77_counts);
-      run = 0;
-      for (size_t ix = 0; ix < kChunkSize; ix++) {
-        unsigned token, nbits, bits;
-        EncodeHybridUint000(residuals[ix], &token, &nbits, &bits);
-        raw_counts[token]++;
-      }
-    }
-    last = residuals[kChunkSize - 1];
+  ChunkEncoder encoders[4];
+  ChannelRowProcessor<ChunkEncoder> row_encoders[4];
+  for (size_t c = 0; c < 4; c++) {
+    row_encoders[c].t = &encoders[c];
+    encoders[c].output = &output[c];
+    encoders[c].code = &code;
   }
-  void ProcessRow(const int16_t* row, const int16_t* row_left,
-                  const int16_t* row_top, const int16_t* row_topleft,
-                  uint64_t* raw_counts, uint64_t* lz77_counts) {
-    for (size_t x = 0; x + kChunkSize <= 256; x += kChunkSize) {
-      ProcessChunk(row + x, row_left + x, row_top + x, row_topleft + x,
-                   raw_counts, lz77_counts);
-    }
-  }
-
-  void Finalize(uint64_t* raw_counts, uint64_t* lz77_counts) {
-    Rle(run, lz77_counts);
-  }
-  size_t run = 0;
-  uint16_t last = 0xFFFF;  // Can never appear
-};
+  ProcessImageArea(rgba, x0, y0, oxs, xs, 0, ys, row_stride, row_encoders);
+}
 
 void CollectSamples(const unsigned char* rgba, size_t x0, size_t y0,
                     size_t row_stride, uint64_t* raw_counts,
                     uint64_t* lz77_counts) {
-  constexpr size_t kPadding = 16;
-
-  int16_t group_data[4][2][256 + kPadding * 2] = {};
-
-  ChannelRowStatsCollector row_collector[4];
-
-  for (size_t y = 0; y < 9; y++) {
-    // Pre-fill rows with YCoCg converted pixels.
-    for (size_t x = 0; x < 256; x++) {
-      int16_t r = rgba[row_stride * (y0 + y) + (x0 + x) * 4 + 0];
-      int16_t g = rgba[row_stride * (y0 + y) + (x0 + x) * 4 + 1];
-      int16_t b = rgba[row_stride * (y0 + y) + (x0 + x) * 4 + 2];
-      int16_t a = rgba[row_stride * (y0 + y) + (x0 + x) * 4 + 3];
-      group_data[3][y & 1][x + kPadding] = a;
-      group_data[1][y & 1][x + kPadding] = r - b;
-      int16_t tmp = b + (group_data[1][y & 1][x + kPadding] >> 1);
-      group_data[2][y & 1][x + kPadding] = g - tmp;
-      group_data[0][y & 1][x + kPadding] =
-          tmp + (group_data[2][y & 1][x + kPadding] >> 1);
-    }
-    // Deal with x == 0.
-    for (size_t c = 0; c < 4; c++) {
-      group_data[c][y & 1][kPadding - 1] =
-          y > 0 ? group_data[c][(y - 1) & 1][kPadding] : 0;
-    }
-    if (y == 0) continue;
-    for (size_t c = 0; c < 4; c++) {
-      // Get pointers to px/left/top/topleft data to speedup loop.
-      const int16_t* row = &group_data[c][y & 1][kPadding];
-      const int16_t* row_left = &group_data[c][y & 1][kPadding - 1];
-      const int16_t* row_top =
-          y == 0 ? row_left : &group_data[c][(y - 1) & 1][kPadding];
-      const int16_t* row_topleft =
-          y == 0 ? row_left : &group_data[c][(y - 1) & 1][kPadding - 1];
-
-      row_collector[c].ProcessRow(row, row_left, row_top, row_topleft,
-                                  raw_counts, lz77_counts);
-    }
-  }
+  ChunkSampleCollector sample_collectors[4];
+  ChannelRowProcessor<ChunkSampleCollector> row_sample_collectors[4];
   for (size_t c = 0; c < 4; c++) {
-    row_collector[c].Finalize(raw_counts, lz77_counts);
+    row_sample_collectors[c].t = &sample_collectors[c];
+    sample_collectors[c].raw_counts = raw_counts;
+    sample_collectors[c].lz77_counts = lz77_counts;
   }
+  ProcessImageArea(rgba, x0, y0, 256, 256, 1, 9, row_stride,
+                   row_sample_collectors);
 }
 
 size_t FastLosslessEncode(const unsigned char* rgba, size_t width,
