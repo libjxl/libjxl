@@ -805,6 +805,9 @@ void ProcessImageArea(const unsigned char* rgba, size_t x0, size_t y0,
     for (size_t c = 0; c < 4; c++) {
       group_data[c][y & 1][kPadding - 1] =
           y > 0 ? group_data[c][(y - 1) & 1][kPadding] : 0;
+      // Fix topleft.
+      group_data[c][(y - 1) & 1][kPadding - 1] =
+          y > 0 ? group_data[c][(y - 1) & 1][kPadding] : 0;
     }
     // Fill in padding.
     for (size_t c = 0; c < 4; c++) {
@@ -902,11 +905,12 @@ size_t FastLosslessEncode(const unsigned char* rgba, size_t width,
   // This should be tuned for screen content, as photo content is typically
   // large enough to trigger the sampling.
   uint64_t base_raw_counts[11] = {
-      1024, 64, 64, 128, 128, 128, 128, 196, 64, 4, 1,
+      1598, 315, 463, 374, 276, 208, 148, 98, 56, 20, 1,
   };
   uint64_t base_lz77_counts[17] = {
-      12, 12, 8, 4, 2, 1, 1, 1, 1, 1, 1, 1, 1,
+      11, 6, 6, 5, 1, 1, 1, 1, 1, 1, 1, 1, 1,
   };
+
   for (size_t i = 0; i < 11; i++) {
     raw_counts[i] = (raw_counts[i] << 8) + base_raw_counts[i];
   }
