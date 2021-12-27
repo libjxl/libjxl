@@ -965,9 +965,9 @@ Status FinalizeImageRect(
             extra_channels_for_patches[i].first, available_y);
       }
     }
-    JXL_RETURN_IF_ERROR(image_features.patches.AddTo(
+    image_features.patches.AddTo(
         storage_for_if, rect_for_if_storage.Line(available_y),
-        ec_ptrs_for_patches.data(), rect_for_if.Line(available_y)));
+        ec_ptrs_for_patches.data(), rect_for_if.Line(available_y));
     image_features.splines.AddTo(storage_for_if,
                                  rect_for_if_storage.Line(available_y),
                                  rect_for_if.Line(available_y));

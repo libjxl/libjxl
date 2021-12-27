@@ -57,6 +57,7 @@
 #include "lib/jxl/render_pipeline/stage_epf.h"
 #include "lib/jxl/render_pipeline/stage_gaborish.h"
 #include "lib/jxl/render_pipeline/stage_noise.h"
+#include "lib/jxl/render_pipeline/stage_patches.h"
 #include "lib/jxl/render_pipeline/stage_splines.h"
 #include "lib/jxl/render_pipeline/stage_upsampling.h"
 #include "lib/jxl/render_pipeline/stage_write_to_ib.h"
@@ -792,7 +793,8 @@ void FrameDecoder::PreparePipeline() {
   }
 
   if ((frame_header_.flags & FrameHeader::kPatches) != 0) {
-    JXL_ABORT("Not implemented: patches");
+    builder.AddStage(
+        GetPatchesStage(&dec_state_->shared->image_features.patches));
   }
   if ((frame_header_.flags & FrameHeader::kSplines) != 0) {
     builder.AddStage(
