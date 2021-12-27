@@ -320,6 +320,15 @@ std::vector<RenderPipelineTestInputSettings> GeneratePipelineTests() {
 
 #endif
 
+  {
+    RenderPipelineTestInputSettings settings;
+    settings.input_path = "jxl/grayscale_patches.png";
+    settings.xsize = 1011;
+    settings.ysize = 277;
+    settings.cparams_descr = "Patches";
+    all_tests.push_back(settings);
+  }
+
   return all_tests;
 }
 

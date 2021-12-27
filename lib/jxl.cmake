@@ -204,6 +204,8 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/render_pipeline/stage_gaborish.h
   jxl/render_pipeline/stage_noise.cc
   jxl/render_pipeline/stage_noise.h
+  jxl/render_pipeline/stage_patches.cc
+  jxl/render_pipeline/stage_patches.h
   jxl/render_pipeline/stage_splines.cc
   jxl/render_pipeline/stage_splines.h
   jxl/render_pipeline/stage_upsampling.cc
