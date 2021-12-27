@@ -356,7 +356,7 @@ void PerformBlending(const float* const* bg, const float* const* fg,
   for (size_t i = 0; i < num_ec; i++) {
     if (ec_blending[i].mode == PatchBlendMode::kAdd) {
       for (size_t x = 0; x < xsize; x++) {
-        tmp.Row(3 + i)[x] = bg[3 + i][x] + fg[3 + i][x];
+        tmp.Row(3 + i)[x] = bg[3 + i][x + x0] + fg[3 + i][x + x0];
       }
     } else if (ec_blending[i].mode == PatchBlendMode::kBlendAbove) {
       size_t alpha = ec_blending[i].alpha_channel;
