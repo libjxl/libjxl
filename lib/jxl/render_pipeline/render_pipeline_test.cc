@@ -265,6 +265,13 @@ std::vector<RenderPipelineTestInputSettings> GeneratePipelineTests() {
 
     {
       auto s = settings;
+      s.cparams_descr = "ProgressiveDC";
+      s.cparams.progressive_dc = 1;
+      all_tests.push_back(s);
+    }
+
+    {
+      auto s = settings;
       s.cparams_descr = "ModularLossy";
       s.cparams.modular_mode = true;
       s.cparams.quality_pair = {90, 90};
