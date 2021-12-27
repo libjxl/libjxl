@@ -315,7 +315,7 @@ std::vector<Spline::Point> DrawCentripetalCatmullRomSpline(
 // to the previous point (which will always be kDesiredRenderingDistance except
 // possibly for the very last point).
 template <typename Points, typename Functor>
-void ForEachEquallySpacedPoint(const Points& points, const Functor& functor) {
+bool ForEachEquallySpacedPoint(const Points& points, const Functor& functor) {
   JXL_ASSERT(!points.empty());
   Spline::Point current = points.front();
   functor(current, kDesiredRenderingDistance);
@@ -325,8 +325,7 @@ void ForEachEquallySpacedPoint(const Points& points, const Functor& functor) {
     float arclength_from_previous = 0.f;
     for (;;) {
       if (next == points.end()) {
-        functor(*previous, arclength_from_previous);
-        return;
+        return functor(*previous, arclength_from_previous);
       }
       const float arclength_to_next =
           std::sqrt((*next - *previous).SquaredNorm());
@@ -336,7 +335,9 @@ void ForEachEquallySpacedPoint(const Points& points, const Functor& functor) {
             *previous + ((kDesiredRenderingDistance - arclength_from_previous) /
                          arclength_to_next) *
                             (*next - *previous);
-        functor(current, kDesiredRenderingDistance);
+        if (!functor(current, kDesiredRenderingDistance)) {
+          return false;
+        }
         break;
       }
       arclength_from_previous += arclength_to_next;
@@ -344,6 +345,7 @@ void ForEachEquallySpacedPoint(const Points& points, const Functor& functor) {
       ++next;
     }
   }
+  return true;
 }
 
 }  // namespace
@@ -576,11 +578,16 @@ Status Splines::InitializeDrawCache(const size_t image_xsize,
           "identical successive control points in spline %" PRIuS, i);
     }
     std::vector<std::pair<Spline::Point, float>> points_to_draw;
-    ForEachEquallySpacedPoint(
-        DrawCentripetalCatmullRomSpline(spline.control_points),
-        [&](const Spline::Point& point, const float multiplier) {
-          points_to_draw.emplace_back(point, multiplier);
-        });
+    const auto add_point = [&](const Spline::Point& point,
+                               const float multiplier) -> bool {
+      points_to_draw.emplace_back(point, multiplier);
+      return (points_to_draw.size() <= px_limit);
+    };
+    if (!ForEachEquallySpacedPoint(
+            DrawCentripetalCatmullRomSpline(spline.control_points),
+            add_point)) {
+      return JXL_FAILURE("Too many pixels covered with splines");
+    }
     const float arc_length =
         (points_to_draw.size() - 2) * kDesiredRenderingDistance +
         points_to_draw.back().second;
