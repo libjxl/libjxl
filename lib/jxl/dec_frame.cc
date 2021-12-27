@@ -490,6 +490,16 @@ Status FrameDecoder::AllocateOutput() {
       decoded_->extra_channels().emplace_back(
           frame_dim_.xsize_upsampled_padded, frame_dim_.ysize_upsampled_padded);
     }
+    if (frame_header_.dc_level != 0) {
+      dec_state_->shared_storage.dc_frames[frame_header_.dc_level - 1] =
+          Image3F(frame_dim_.xsize, frame_dim_.ysize);
+    }
+    if (frame_header_.CanBeReferenced()) {
+      // TODO(veluca): this will need to be adapted for RGB output.
+      JXL_ASSERT(dec_state_->rgb_output == nullptr &&
+                 !dec_state_->pixel_callback);
+      dec_state_->frame_storage_for_referencing = decoded_->Copy();
+    }
   } else {
     dec_state_->extra_channels.clear();
     if (metadata.m.num_extra_channels > 0) {
@@ -808,13 +818,17 @@ void FrameDecoder::PreparePipeline() {
     builder.UsesNoise();
   }
   if (frame_header_.dc_level != 0) {
-    JXL_ABORT("Not implemented: save as dc frames");
+    builder.AddStage(GetWriteToImage3FStage(
+        &dec_state_->shared_storage.dc_frames[frame_header_.dc_level - 1]));
   }
   if (!coalescing_) {
     JXL_ABORT("Not implemented: skip coalescing");
   }
-  if (dec_state_->shared->frame_header.CanBeReferenced()) {
-    JXL_ABORT("Not implemented: save as reference");
+
+  if (frame_header_.CanBeReferenced() &&
+      frame_header_.save_before_color_transform) {
+    builder.AddStage(
+        GetWriteToImageBundleStage(&dec_state_->frame_storage_for_referencing));
   }
 
   if (frame_header_.color_transform == ColorTransform::kYCbCr) {
@@ -826,6 +840,13 @@ void FrameDecoder::PreparePipeline() {
   if (ImageBlender::NeedsBlending(dec_state_)) {
     JXL_ABORT("Not implemented: blending");
   }
+
+  if (frame_header_.CanBeReferenced() &&
+      !frame_header_.save_before_color_transform) {
+    builder.AddStage(
+        GetWriteToImageBundleStage(&dec_state_->frame_storage_for_referencing));
+  }
+
   if (render_spotcolors_ &&
       frame_header_.nonserialized_metadata->m.Find(ExtraChannel::kSpotColor)) {
     JXL_ABORT("Not implemented: rendering spot colors");
@@ -1298,11 +1319,19 @@ Status FrameDecoder::FinalizeFrame() {
       }
     }
   }
-  if (dec_state_->shared->frame_header.dc_level != 0) {
+  if (dec_state_->shared->frame_header.dc_level != 0 &&
+      !dec_state_->render_pipeline) {
     dec_state_->shared_storage
         .dc_frames[dec_state_->shared->frame_header.dc_level - 1] =
         std::move(*decoded_->color());
     decoded_->RemoveColor();
+  }
+  if (dec_state_->render_pipeline && frame_header_.CanBeReferenced()) {
+    auto& info = dec_state_->shared_storage
+                     .reference_frames[frame_header_.save_as_reference];
+    info.storage = std::move(dec_state_->frame_storage_for_referencing);
+    info.ib_is_in_xyb = frame_header_.save_before_color_transform;
+    info.frame = &info.storage;
   }
   return true;
 }

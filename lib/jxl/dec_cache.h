@@ -111,6 +111,9 @@ struct PassesDecoderState {
   // most of the state in this struct.
   std::unique_ptr<RenderPipeline> render_pipeline;
 
+  // Storage for the current frame if it can be referenced by future frames.
+  ImageBundle frame_storage_for_referencing;
+
   // TODO(veluca): this should eventually become "iff no global modular
   // transform was applied".
   bool EagerFinalizeImageRect() const {
