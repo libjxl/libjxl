@@ -390,11 +390,21 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
   bool isAnimated = false;
   bool skipFirst = false;
   bool hasInfo = false;
-  bool all_dispose_bg = true;
   APNGFrame frameRaw = {};
   uint32_t num_channels;
   JxlPixelFormat format;
   unsigned int bytes_per_pixel = 0;
+
+  struct FrameInfo {
+    PackedImage data;
+    uint32_t duration;
+    size_t x0, xsize;
+    size_t y0, ysize;
+    uint32_t dispose_op;
+    uint32_t blend_op;
+  };
+
+  std::vector<FrameInfo> frames;
 
   r = {bytes.data(), bytes.data() + bytes.size()};
   // Not a PNG => not an error
@@ -434,7 +444,6 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
 
     if (!processing_start(png_ptr, info_ptr, (void*)&frameRaw, hasInfo,
                           chunkIHDR, chunksInfo)) {
-      bool last_base_was_none = true;
       while (!r.Eof()) {
         id = read_chunk(&r, &chunk);
         if (!id) break;
@@ -450,38 +459,12 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
           if (hasInfo) {
             if (!processing_finish(png_ptr, info_ptr, &ppf->metadata)) {
               // Allocates the frame buffer.
-              ppf->frames.emplace_back(w0, h0, format);
-              auto* frame = &ppf->frames.back();
-
-              frame->frame_info.duration = delay_num * 1000 / delay_den;
-              frame->x0 = x0;
-              frame->y0 = y0;
-              // TODO(veluca): this could in principle be implemented.
-              if (last_base_was_none && !all_dispose_bg &&
-                  (x0 != 0 || y0 != 0 || w0 != w || h0 != h || bop != 0)) {
-                return JXL_FAILURE(
-                    "APNG with dispose-to-0 is not supported for non-full or "
-                    "blended frames");
-              }
-              switch (dop) {
-                case 0:
-                  frame->use_for_next_frame = true;
-                  last_base_was_none = false;
-                  all_dispose_bg = false;
-                  break;
-                case 2:
-                  frame->use_for_next_frame = false;
-                  all_dispose_bg = false;
-                  break;
-                default:
-                  frame->use_for_next_frame = false;
-                  last_base_was_none = true;
-              }
-              frame->blend = bop != 0;
-
+              uint32_t duration = delay_num * 1000 / delay_den;
+              frames.push_back(FrameInfo{PackedImage(w0, h0, format), duration,
+                                         x0, w0, y0, h0, dop, bop});
+              auto& frame = frames.back().data;
               for (size_t y = 0; y < h0; ++y) {
-                memcpy(static_cast<uint8_t*>(frame->color.pixels()) +
-                           frame->color.stride * y,
+                memcpy(static_cast<uint8_t*>(frame.pixels()) + frame.stride * y,
                        frameRaw.rows[y], bytes_per_pixel * w0);
               }
             } else {
@@ -650,6 +633,109 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
   }
 
   if (errorstate) return false;
+
+  bool has_nontrivial_background = false;
+  bool previous_frame_should_be_cleared = false;
+  enum {
+    DISPOSE_OP_NONE = 0,
+    DISPOSE_OP_BACKGROUND = 1,
+    DISPOSE_OP_PREVIOUS = 2,
+  };
+  enum {
+    BLEND_OP_SOURCE = 0,
+    BLEND_OP_OVER = 1,
+  };
+  for (size_t i = 0; i < frames.size(); i++) {
+    auto& frame = frames[i];
+    JXL_ASSERT(frame.data.xsize == frame.xsize);
+    JXL_ASSERT(frame.data.ysize == frame.ysize);
+
+    // Before encountering a DISPOSE_OP_NONE frame, the canvas is filled with 0,
+    // so DISPOSE_OP_BACKGROUND and DISPOSE_OP_PREVIOUS are equivalent.
+    if (frame.dispose_op == DISPOSE_OP_NONE) {
+      has_nontrivial_background = true;
+    }
+    bool should_blend = frame.blend_op == BLEND_OP_OVER;
+    bool use_for_next_frame =
+        has_nontrivial_background && frame.dispose_op != DISPOSE_OP_PREVIOUS;
+    size_t x0 = frame.x0;
+    size_t y0 = frame.y0;
+
+    if (previous_frame_should_be_cleared) {
+      size_t xs = frame.data.xsize;
+      size_t ys = frame.data.ysize;
+      size_t px0 = frames[i - 1].x0;
+      size_t py0 = frames[i - 1].y0;
+      size_t pxs = frames[i - 1].xsize;
+      size_t pys = frames[i - 1].ysize;
+      if (px0 >= x0 && py0 >= y0 && px0 + pxs <= x0 + xs &&
+          py0 + pys <= y0 + ys && frame.blend_op == BLEND_OP_SOURCE &&
+          use_for_next_frame) {
+        // If the previous frame is entirely contained in the current frame and
+        // we are using BLEND_OP_SOURCE, nothing special needs to be done.
+        ppf->frames.emplace_back(std::move(frame.data));
+      } else if (px0 == x0 && py0 == y0 && px0 + pxs == x0 + xs &&
+                 py0 + pys == y0 + ys && use_for_next_frame) {
+        // If the new frame has the same size as the old one, but we are
+        // blending, we can instead just not blend.
+        should_blend = false;
+        ppf->frames.emplace_back(std::move(frame.data));
+      } else if (px0 <= x0 && py0 <= y0 && px0 + pxs >= x0 + xs &&
+                 py0 + pys >= y0 + ys && use_for_next_frame) {
+        // If the new frame is contained within the old frame, we can pad the
+        // new frame with zeros and not blend.
+        PackedImage new_data(pxs, pys, frame.data.format);
+        memset(new_data.pixels(), 0, new_data.pixels_size);
+        for (size_t y = 0; y < ys; y++) {
+          size_t bytes_per_pixel =
+              PackedImage::BitsPerChannel(new_data.format.data_type) *
+              new_data.format.num_channels / 8;
+          memcpy(static_cast<uint8_t*>(new_data.pixels()) +
+                     new_data.stride * (y + y0 - py0) +
+                     bytes_per_pixel * (x0 - px0),
+                 static_cast<const uint8_t*>(frame.data.pixels()) +
+                     frame.data.stride * y,
+                 xs * bytes_per_pixel);
+        }
+
+        x0 = px0;
+        y0 = py0;
+        should_blend = false;
+        ppf->frames.emplace_back(std::move(new_data));
+      } else {
+        // If all else fails, insert a dummy blank frame with kReplace.
+        PackedImage blank(pxs, pys, frame.data.format);
+        memset(blank.pixels(), 0, blank.pixels_size);
+        ppf->frames.emplace_back(std::move(blank));
+        auto& pframe = ppf->frames.back();
+        pframe.x0 = px0;
+        pframe.y0 = py0;
+        pframe.frame_info.duration = 0;
+        pframe.blend = false;
+        pframe.use_for_next_frame = true;
+
+        ppf->frames.emplace_back(std::move(frame.data));
+      }
+    } else {
+      ppf->frames.emplace_back(std::move(frame.data));
+    }
+
+    auto& pframe = ppf->frames.back();
+    pframe.x0 = x0;
+    pframe.y0 = y0;
+    pframe.frame_info.duration = frame.duration;
+    pframe.blend = should_blend;
+    pframe.use_for_next_frame = use_for_next_frame;
+
+    if (has_nontrivial_background &&
+        frame.dispose_op == DISPOSE_OP_BACKGROUND) {
+      previous_frame_should_be_cleared = true;
+    } else {
+      previous_frame_should_be_cleared = false;
+    }
+  }
+  ppf->frames.back().frame_info.is_last = true;
+
   return true;
 }
 

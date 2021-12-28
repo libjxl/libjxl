@@ -69,7 +69,6 @@ class PackedImage {
   JxlPixelFormat format;
   size_t pixels_size;
 
- private:
   static size_t BitsPerChannel(JxlDataType data_type) {
     switch (data_type) {
       case JXL_TYPE_BOOLEAN:
@@ -89,6 +88,7 @@ class PackedImage {
     return 0;  // Indicate invalid data type.
   }
 
+ private:
   static size_t CalcStride(const JxlPixelFormat& format, size_t xsize) {
     size_t stride = xsize * (BitsPerChannel(format.data_type) *
                              format.num_channels / jxl::kBitsPerByte);
@@ -108,7 +108,7 @@ class PackedImage {
 class PackedFrame {
  public:
   template <typename... Args>
-  PackedFrame(Args... args) : color(args...) {}
+  explicit PackedFrame(Args&&... args) : color(std::forward<Args>(args)...) {}
 
   // The Frame metadata.
   JxlFrameHeader frame_info = {};
