@@ -84,6 +84,7 @@ jobs:
       # Whether we track the stack size.
       STACK_SIZE: ${{ matrix.env_stack_size }}
       TEST_STACK_LIMIT: ${{ matrix.env_test_stack_size }}
+      WILL_RUN_TESTS: ${{ github.event_name == 'push' || (github.event_name == 'pull_request' && (matrix.test_in_pr || contains(github.event.pull_request.labels.*.names, 'CI:full'))) }}
 
     steps:
     - name: Install build deps
@@ -143,10 +144,12 @@ jobs:
         mkdir -p ${CCACHE_DIR}
         echo "max_size = 200M" > ${CCACHE_DIR}/ccache.conf
         mode="${{ matrix.mode }}"
+        build_tests=$([ "$WILL_RUN_TESTS" == "true" ] && echo "ON" || echo "OFF")
         [[ -n "${mode}" ]] || mode="${{ matrix.name }}"
         ./ci.sh ${mode} -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
           -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+          -DBUILD_TESTING=${build_tests} \
           ${{ matrix.cmake_args }}
       env:
         SKIP_TEST: 1
@@ -181,11 +184,7 @@ jobs:
         build-example/decode_oneshot_static test.jxl dec-static.pfm dec-static.icc
     # Run the tests on push and when requested in pull_request.
     - name: Test ${{ matrix.mode }}
-      if: |
-        github.event_name == 'push' ||
-        (github.event_name == 'pull_request' && (
-         matrix.test_in_pr ||
-         contains(github.event.pull_request.labels.*.names, 'CI:full')))
+      if: env.WILL_RUN_TESTS == 'true'
       run: |
         ./ci.sh test ${{ matrix.ctest_args }}
     # Print the running time summary for the slowest tests.
