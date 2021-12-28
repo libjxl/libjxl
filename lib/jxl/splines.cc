@@ -272,12 +272,16 @@ Vector operator-(const Spline::Point& a, const Spline::Point& b) {
   return {a.x - b.x, a.y - b.y};
 }
 
-std::vector<Spline::Point> DrawCentripetalCatmullRomSpline(
-    std::vector<Spline::Point> points) {
-  if (points.size() <= 1) return points;
+// TODO(eustas): avoid making a copy of "points".
+void DrawCentripetalCatmullRomSpline(std::vector<Spline::Point> points,
+                                     std::vector<Spline::Point>& result) {
+  if (points.empty()) return;
+  if (points.size() == 1) {
+    result.push_back(points[0]);
+    return;
+  }
   // Number of points to compute between each control point.
   static constexpr int kNumPoints = 16;
-  std::vector<Spline::Point> result;
   result.reserve((points.size() - 1) * kNumPoints + 1);
   points.insert(points.begin(), points[0] + (points[0] - points[1]));
   points.push_back(points[points.size() - 1] +
@@ -287,33 +291,38 @@ std::vector<Spline::Point> DrawCentripetalCatmullRomSpline(
     // 4 of them are used, and we draw from p[1] to p[2].
     const Spline::Point* const p = &points[start];
     result.push_back(p[1]);
-    float t[4] = {0};
-    for (int k = 1; k < 4; ++k) {
-      t[k] = std::sqrt(hypotf(p[k].x - p[k - 1].x, p[k].y - p[k - 1].y)) +
-             t[k - 1];
+    float d[3];
+    float t[4];
+    t[0] = 0;
+    for (int k = 0; k < 3; ++k) {
+      // TODO(eustas): for each segment delta is calculated 3 times...
+      // TODO(eustas): restrict d[k] with reasonable limit and spec it.
+      d[k] = std::sqrt(hypotf(p[k + 1].x - p[k].x, p[k + 1].y - p[k].y));
+      t[k + 1] = t[k] + d[k];
     }
     for (int i = 1; i < kNumPoints; ++i) {
-      const float tt =
-          t[1] + (static_cast<float>(i) / kNumPoints) * (t[2] - t[1]);
+      const float tt = d[0] + (static_cast<float>(i) / kNumPoints) * d[1];
       Spline::Point a[3];
       for (int k = 0; k < 3; ++k) {
-        a[k] = p[k] + ((tt - t[k]) / (t[k + 1] - t[k])) * (p[k + 1] - p[k]);
+        // TODO(eustas): reciprocal multiplication would be faster.
+        a[k] = p[k] + ((tt - t[k]) / d[k]) * (p[k + 1] - p[k]);
       }
       Spline::Point b[2];
       for (int k = 0; k < 2; ++k) {
-        b[k] = a[k] + ((tt - t[k]) / (t[k + 2] - t[k])) * (a[k + 1] - a[k]);
+        b[k] = a[k] + ((tt - t[k]) / (d[k] + d[k + 1])) * (a[k + 1] - a[k]);
       }
-      result.push_back(b[0] + ((tt - t[1]) / (t[2] - t[1])) * (b[1] - b[0]));
+      result.push_back(b[0] + ((tt - t[1]) / d[1]) * (b[1] - b[0]));
     }
   }
   result.push_back(points[points.size() - 2]);
-  return result;
 }
 
 // Move along the line segments defined by `points`, `kDesiredRenderingDistance`
 // pixels at a time, and call `functor` with each point and the actual distance
 // to the previous point (which will always be kDesiredRenderingDistance except
 // possibly for the very last point).
+// TODO(eustas): this method always adds the last point, but never the first
+//               (unless those are one); I believe both ends matter.
 template <typename Points, typename Functor>
 bool ForEachEquallySpacedPoint(const Points& points, const Functor& functor) {
   JXL_ASSERT(!points.empty());
@@ -567,6 +576,7 @@ Status Splines::InitializeDrawCache(const size_t image_xsize,
   size_t px_limit = (pixel_limit < static_cast<float>(kHardPixelLimit))
                         ? static_cast<size_t>(pixel_limit)
                         : kHardPixelLimit;
+  std::vector<Spline::Point> intermediate_points;
   for (size_t i = 0; i < splines_.size(); ++i) {
     JXL_RETURN_IF_ERROR(
         splines_[i].Dequantize(starting_points_[i], quantization_adjustment_,
@@ -574,6 +584,8 @@ Status Splines::InitializeDrawCache(const size_t image_xsize,
     if (std::adjacent_find(spline.control_points.begin(),
                            spline.control_points.end()) !=
         spline.control_points.end()) {
+      // Otherwise division by zero might occur. Once control points coincide,
+      // the direction of curve is undefined...
       return JXL_FAILURE(
           "identical successive control points in spline %" PRIuS, i);
     }
@@ -583,9 +595,9 @@ Status Splines::InitializeDrawCache(const size_t image_xsize,
       points_to_draw.emplace_back(point, multiplier);
       return (points_to_draw.size() <= px_limit);
     };
-    if (!ForEachEquallySpacedPoint(
-            DrawCentripetalCatmullRomSpline(spline.control_points),
-            add_point)) {
+    intermediate_points.clear();
+    DrawCentripetalCatmullRomSpline(spline.control_points, intermediate_points);
+    if (!ForEachEquallySpacedPoint(intermediate_points, add_point)) {
       return JXL_FAILURE("Too many pixels covered with splines");
     }
     const float arc_length =
