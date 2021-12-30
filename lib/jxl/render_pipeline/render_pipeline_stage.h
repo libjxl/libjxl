@@ -125,7 +125,7 @@ class RenderPipelineStage {
     return output_rows[c][offset] + kRenderPipelineXOffset;
   }
 
-  const Settings settings_;
+  Settings settings_;
   friend class RenderPipeline;
   friend class SimpleRenderPipeline;
   friend class LowMemoryRenderPipeline;

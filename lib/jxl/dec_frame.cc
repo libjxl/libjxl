@@ -61,7 +61,7 @@
 #include "lib/jxl/render_pipeline/stage_splines.h"
 #include "lib/jxl/render_pipeline/stage_spot.h"
 #include "lib/jxl/render_pipeline/stage_upsampling.h"
-#include "lib/jxl/render_pipeline/stage_write_to_ib.h"
+#include "lib/jxl/render_pipeline/stage_write.h"
 #include "lib/jxl/render_pipeline/stage_xyb.h"
 #include "lib/jxl/render_pipeline/stage_ycbcr.h"
 #include "lib/jxl/sanitizers.h"
@@ -834,6 +834,10 @@ void FrameDecoder::PreparePipeline() {
         GetWriteToImageBundleStage(&dec_state_->frame_storage_for_referencing));
   }
 
+  if (dec_state_->fast_xyb_srgb8_conversion) {
+    JXL_ABORT("Not implemented: fast xyb->srgb conversion");
+  }
+
   if (frame_header_.color_transform == ColorTransform::kYCbCr) {
     builder.AddStage(GetYCbCrStage());
   } else if (frame_header_.color_transform == ColorTransform::kXYB) {
@@ -861,12 +865,30 @@ void FrameDecoder::PreparePipeline() {
       }
     }
   }
+
+  bool has_alpha = false;
+  size_t alpha_c = 0;
+  for (size_t i = 0; i < decoded_->metadata()->extra_channel_info.size(); i++) {
+    if (decoded_->metadata()->extra_channel_info[i].type ==
+        ExtraChannel::kAlpha) {
+      has_alpha = true;
+      alpha_c = 3 + i;
+      break;
+    }
+  }
+  // TODO(veluca): double-check when blending/no coalescing is enabled.
+  size_t width = coalescing_ ? frame_header_.nonserialized_metadata->xsize()
+                             : frame_dim_.xsize_upsampled;
+  size_t height = coalescing_ ? frame_header_.nonserialized_metadata->ysize()
+                              : frame_dim_.ysize_upsampled;
   if (dec_state_->pixel_callback) {
-    JXL_ABORT("Not implemented: pixel callback");
-  } else if (dec_state_->fast_xyb_srgb8_conversion) {
-    JXL_ABORT("Not implemented: fast xyb->srgb conversion");
+    builder.AddStage(GetWriteToPixelCallbackStage(
+        dec_state_->pixel_callback, width, height,
+        dec_state_->rgb_output_is_rgba, has_alpha, alpha_c));
   } else if (dec_state_->rgb_output) {
-    JXL_ABORT("Not implemented: u8 output");
+    builder.AddStage(GetWriteToU8Stage(
+        dec_state_->rgb_output, dec_state_->rgb_stride, width, height,
+        dec_state_->rgb_output_is_rgba, has_alpha, alpha_c));
   } else {
     builder.AddStage(GetWriteToImageBundleStage(decoded_));
   }
