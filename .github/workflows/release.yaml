@@ -297,6 +297,7 @@ jobs:
       run: |
         set -x
         ${VCPKG_ROOT}/vcpkg --triplet ${{ matrix.triplet }} install \
+          gflags \
           giflib \
           libjpeg-turbo \
           libpng \
