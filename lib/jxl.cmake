@@ -208,6 +208,8 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/render_pipeline/stage_patches.h
   jxl/render_pipeline/stage_splines.cc
   jxl/render_pipeline/stage_splines.h
+  jxl/render_pipeline/stage_spot.cc
+  jxl/render_pipeline/stage_spot.h
   jxl/render_pipeline/stage_upsampling.cc
   jxl/render_pipeline/stage_upsampling.h
   jxl/render_pipeline/stage_write_to_ib.cc

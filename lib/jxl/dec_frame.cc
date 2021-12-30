@@ -59,6 +59,7 @@
 #include "lib/jxl/render_pipeline/stage_noise.h"
 #include "lib/jxl/render_pipeline/stage_patches.h"
 #include "lib/jxl/render_pipeline/stage_splines.h"
+#include "lib/jxl/render_pipeline/stage_spot.h"
 #include "lib/jxl/render_pipeline/stage_upsampling.h"
 #include "lib/jxl/render_pipeline/stage_write_to_ib.h"
 #include "lib/jxl/render_pipeline/stage_xyb.h"
@@ -851,7 +852,14 @@ void FrameDecoder::PreparePipeline() {
 
   if (render_spotcolors_ &&
       frame_header_.nonserialized_metadata->m.Find(ExtraChannel::kSpotColor)) {
-    JXL_ABORT("Not implemented: rendering spot colors");
+    for (size_t i = 0; i < decoded_->metadata()->extra_channel_info.size();
+         i++) {
+      // Don't use Find() because there may be multiple spot color channels.
+      const ExtraChannelInfo& eci = decoded_->metadata()->extra_channel_info[i];
+      if (eci.type == ExtraChannel::kSpotColor) {
+        builder.AddStage(GetSpotColorStage(3 + i, eci.spot_color));
+      }
+    }
   }
   if (dec_state_->pixel_callback) {
     JXL_ABORT("Not implemented: pixel callback");
@@ -1297,13 +1305,6 @@ Status FrameDecoder::FinalizeFrame() {
       const ExtraChannelInfo& eci = decoded_->metadata()->extra_channel_info[i];
       if (eci.type == ExtraChannel::kOptional) {
         continue;
-      }
-      if (eci.type == ExtraChannel::kUnknown ||
-          (int(ExtraChannel::kReserved0) <= int(eci.type) &&
-           int(eci.type) <= int(ExtraChannel::kReserved7))) {
-        return JXL_FAILURE(
-            "Unknown extra channel (bits %u, shift %u, name '%s')\n",
-            eci.bit_depth.bits_per_sample, eci.dim_shift, eci.name.c_str());
       }
       if (eci.type == ExtraChannel::kSpotColor) {
         float scale = eci.spot_color[3];

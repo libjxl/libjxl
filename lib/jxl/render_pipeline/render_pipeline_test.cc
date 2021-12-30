@@ -71,6 +71,8 @@ struct RenderPipelineTestInputSettings {
   // Short name for the encoder settings.
   std::string cparams_descr;
 
+  bool add_spot_color = false;
+
   Splines splines;
 };
 
@@ -94,6 +96,31 @@ TEST_P(RenderPipelineTestParam, PipelineTest) {
   }
   io.ShrinkTo(config.xsize, config.ysize);
 
+  if (config.add_spot_color) {
+    jxl::ImageF spot(config.xsize, config.ysize);
+    jxl::ZeroFillImage(&spot);
+
+    for (size_t y = 0; y < config.ysize; y++) {
+      float* JXL_RESTRICT row = spot.Row(y);
+      for (size_t x = 0; x < config.xsize; x++) {
+        row[x] = ((x ^ y) & 255) * (1.f / 255.f);
+      }
+    }
+    ExtraChannelInfo info;
+    info.bit_depth.bits_per_sample = 8;
+    info.dim_shift = 0;
+    info.type = jxl::ExtraChannel::kSpotColor;
+    info.spot_color[0] = 0.5f;
+    info.spot_color[1] = 0.2f;
+    info.spot_color[2] = 1.f;
+    info.spot_color[3] = 0.5f;
+
+    io.metadata.m.extra_channel_info.push_back(info);
+    std::vector<jxl::ImageF> ec;
+    ec.push_back(std::move(spot));
+    io.frames[0].SetExtraChannels(std::move(ec));
+  }
+
   PaddedBytes compressed;
 
   PassesEncoderState enc_state;
@@ -102,6 +129,8 @@ TEST_P(RenderPipelineTestParam, PipelineTest) {
                          GetJxlCms(), /*aux_out=*/nullptr, &pool));
 
   DecompressParams dparams;
+
+  dparams.render_spotcolors = true;
 
   CodecInOut io_default;
   ASSERT_TRUE(DecodeFile(dparams, compressed, &io_default, &pool));
@@ -299,6 +328,13 @@ std::vector<RenderPipelineTestInputSettings> GeneratePipelineTests() {
       s.input_path = "wide-gamut-tests/R2020-sRGB-blue.png";
       s.cparams_descr = "AlphaDownsample";
       s.cparams.ec_resampling = 2;
+      all_tests.push_back(s);
+    }
+
+    {
+      auto s = settings;
+      s.cparams_descr = "SpotColor";
+      s.add_spot_color = true;
       all_tests.push_back(s);
     }
   }
