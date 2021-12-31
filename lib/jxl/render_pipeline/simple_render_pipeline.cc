@@ -55,7 +55,8 @@ std::vector<std::pair<ImageF*, Rect>> SimpleRenderPipeline::PrepareBuffers(
 }
 
 void SimpleRenderPipeline::ProcessBuffers(size_t group_id, size_t thread_id) {
-  if (!ReceivedAllInput()) return;
+  if (PassesWithAllInput() <= processed_passes_) return;
+  processed_passes_++;
 
   for (const auto& ch : channel_data_) {
     (void)ch;

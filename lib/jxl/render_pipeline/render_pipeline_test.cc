@@ -26,7 +26,7 @@ namespace jxl {
 namespace {
 
 TEST(RenderPipelineTest, Build) {
-  RenderPipeline::Builder builder(/*num_c=*/1, /*num_passes=*/1);
+  RenderPipeline::Builder builder(/*num_c=*/1);
   builder.AddStage(jxl::make_unique<UpsampleXSlowStage>());
   builder.AddStage(jxl::make_unique<UpsampleYSlowStage>());
   builder.AddStage(jxl::make_unique<Check0FinalStage>());
@@ -39,7 +39,7 @@ TEST(RenderPipelineTest, Build) {
 }
 
 TEST(RenderPipelineTest, CallAllGroups) {
-  RenderPipeline::Builder builder(/*num_c=*/1, /*num_passes=*/1);
+  RenderPipeline::Builder builder(/*num_c=*/1);
   builder.AddStage(jxl::make_unique<UpsampleXSlowStage>());
   builder.AddStage(jxl::make_unique<UpsampleYSlowStage>());
   builder.AddStage(jxl::make_unique<Check0FinalStage>());
@@ -58,7 +58,7 @@ TEST(RenderPipelineTest, CallAllGroups) {
     input_buffers.Done();
   }
 
-  EXPECT_TRUE(pipeline->ReceivedAllInput());
+  EXPECT_TRUE(pipeline->PassesWithAllInput() == 1);
 }
 
 struct RenderPipelineTestInputSettings {
