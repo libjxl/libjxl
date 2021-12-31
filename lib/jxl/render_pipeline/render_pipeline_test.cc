@@ -175,11 +175,15 @@ Splines CreateTestSplines() {
 std::vector<RenderPipelineTestInputSettings> GeneratePipelineTests() {
   std::vector<RenderPipelineTestInputSettings> all_tests;
 
-  for (size_t size : {128, 256, 258, 777}) {
+  std::pair<size_t, size_t> sizes[] = {
+      {128, 128}, {256, 256}, {258, 258}, {533, 401}, {777, 777},
+  };
+
+  for (auto size : sizes) {
     RenderPipelineTestInputSettings settings;
     settings.input_path = "imagecompression.info/flower_foveon.png";
-    settings.xsize = size;
-    settings.ysize = size;
+    settings.xsize = size.first;
+    settings.ysize = size.second;
 
     // Base settings.
     settings.cparams.butteraugli_distance = 1.0;
@@ -311,6 +315,15 @@ std::vector<RenderPipelineTestInputSettings> GeneratePipelineTests() {
       auto s = settings;
       s.input_path = "wide-gamut-tests/R2020-sRGB-blue.png";
       s.cparams_descr = "AlphaVarDCT";
+      all_tests.push_back(s);
+    }
+
+    {
+      auto s = settings;
+      s.input_path = "wide-gamut-tests/R2020-sRGB-blue.png";
+      s.cparams_descr = "AlphaVarDCTUpsamplingEPF";
+      s.cparams.epf = 1;
+      s.cparams.ec_resampling = 2;
       all_tests.push_back(s);
     }
 
