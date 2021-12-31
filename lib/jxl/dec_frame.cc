@@ -737,7 +737,7 @@ void FrameDecoder::PreparePipeline() {
     num_c += 3;
   }
 
-  RenderPipeline::Builder builder(num_c, frame_header_.passes.num_passes);
+  RenderPipeline::Builder builder(num_c);
 
   if (use_slow_rendering_pipeline_) {
     builder.UseSimpleImplementation();

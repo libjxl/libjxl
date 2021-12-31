@@ -51,11 +51,7 @@ class RenderPipeline {
  public:
   class Builder {
    public:
-    explicit Builder(size_t num_c, size_t num_passes)
-        : num_c_(num_c), num_passes_(num_passes) {
-      JXL_ASSERT(num_c > 0);
-      JXL_ASSERT(num_passes > 0);
-    }
+    explicit Builder(size_t num_c) : num_c_(num_c) { JXL_ASSERT(num_c > 0); }
 
     // Adds a stage to the pipeline. Must be called at least once; the last
     // added stage cannot have kInOut channels.
@@ -77,7 +73,6 @@ class RenderPipeline {
    private:
     std::vector<std::unique_ptr<RenderPipelineStage>> stages_;
     size_t num_c_;
-    size_t num_passes_;
     bool use_simple_implementation_ = false;
     bool uses_noise_ = false;
   };
@@ -95,9 +90,9 @@ class RenderPipeline {
   // different threads, provided that a different `thread_id` is given.
   RenderPipelineInput GetInputBuffers(size_t group_id, size_t thread_id);
 
-  bool ReceivedAllInput() const {
+  size_t PassesWithAllInput() const {
     return *std::min_element(group_completed_passes_.begin(),
-                             group_completed_passes_.end()) == num_passes_;
+                             group_completed_passes_.end());
   }
 
  protected:
@@ -113,8 +108,6 @@ class RenderPipeline {
 
   // Indexed by thread_id
   std::vector<CacheAlignedUniquePtr> temp_buffers_;
-
-  size_t num_passes_;
 
   friend class RenderPipelineInput;
 

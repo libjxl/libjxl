@@ -29,6 +29,7 @@ class SimpleRenderPipeline : public RenderPipeline {
   // Full frame buffers. Both X and Y dimensions are padded by
   // kRenderPipelineXOffset.
   std::vector<ImageF> channel_data_;
+  size_t processed_passes_ = 0;
 };
 
 }  // namespace jxl
