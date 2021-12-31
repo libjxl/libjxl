@@ -109,14 +109,14 @@ void SimpleRenderPipeline::ProcessBuffers(size_t group_id, size_t thread_id) {
         }
       }
       // Vertical mirroring.
-      for (int iy = 0; iy < static_cast<int>(stage->settings_.border_y); iy++) {
-        memcpy(get_row(c, -iy - 1) - stage->settings_.border_x,
-               get_row(c, iy) - stage->settings_.border_x,
+      for (int y = 0; y < static_cast<int>(stage->settings_.border_y); y++) {
+        memcpy(get_row(c, -y - 1) - stage->settings_.border_x,
+               get_row(c, y) - stage->settings_.border_x,
                sizeof(float) *
                    (input_sizes[c].first + 2 * stage->settings_.border_x));
         memcpy(
-            get_row(c, input_sizes[c].second + iy) - stage->settings_.border_x,
-            get_row(c, input_sizes[c].second - iy - 1) -
+            get_row(c, input_sizes[c].second + y) - stage->settings_.border_x,
+            get_row(c, input_sizes[c].second - y - 1) -
                 stage->settings_.border_x,
             sizeof(float) *
                 (input_sizes[c].first + 2 * stage->settings_.border_x));
@@ -145,6 +145,9 @@ void SimpleRenderPipeline::ProcessBuffers(size_t group_id, size_t thread_id) {
       for (size_t y = 0; y < ysize; y++) {
         // Prepare input rows.
         for (size_t c = 0; c < channel_data_.size(); c++) {
+          if (stage->GetChannelMode(c) == RenderPipelineChannelMode::kIgnored) {
+            continue;
+          }
           input_rows[c].resize(2 * border_y + 1);
           for (int iy = -border_y; iy <= border_y; iy++) {
             input_rows[c][iy + border_y] =
