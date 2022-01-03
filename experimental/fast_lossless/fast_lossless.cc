@@ -786,6 +786,8 @@ void ProcessImageArea(const unsigned char* rgba, size_t x0, size_t y0,
   constexpr size_t kPadding = 16;
 
   int16_t group_data[4][2][256 + kPadding * 2] = {};
+  int16_t allzero[4] = {};
+  int16_t allone[4] = {0xff, 0xff, 0xff, 0xff};
 
   for (size_t y = 0; y < ys; y++) {
     // Pre-fill rows with YCoCg converted pixels.
@@ -795,11 +797,15 @@ void ProcessImageArea(const unsigned char* rgba, size_t x0, size_t y0,
       int16_t b = rgba[row_stride * (y0 + y) + (x0 + x) * 4 + 2];
       int16_t a = rgba[row_stride * (y0 + y) + (x0 + x) * 4 + 3];
       group_data[3][y & 1][x + kPadding] = a;
-      group_data[1][y & 1][x + kPadding] = r - b;
+      group_data[1][y & 1][x + kPadding] = a ? r - b : 0;
       int16_t tmp = b + (group_data[1][y & 1][x + kPadding] >> 1);
-      group_data[2][y & 1][x + kPadding] = g - tmp;
+      group_data[2][y & 1][x + kPadding] = a ? g - tmp : 0;
       group_data[0][y & 1][x + kPadding] =
-          tmp + (group_data[2][y & 1][x + kPadding] >> 1);
+          a ? tmp + (group_data[2][y & 1][x + kPadding] >> 1) : 0;
+      for (size_t c = 0; c < 4; c++) {
+        allzero[c] |= group_data[c][y & 1][x + kPadding];
+        allone[c] &= group_data[c][y & 1][x + kPadding];
+      }
     }
     // Deal with x == 0.
     for (size_t c = 0; c < 4; c++) {
@@ -818,6 +824,11 @@ void ProcessImageArea(const unsigned char* rgba, size_t x0, size_t y0,
     }
     if (y < yskip) continue;
     for (size_t c = 0; c < 4; c++) {
+      if (y > 0 && (allzero[c] == 0 || allone[c] == 0xff)) {
+        processors[c].run += xs;
+        continue;
+      }
+
       // Get pointers to px/left/top/topleft data to speedup loop.
       const int16_t* row = &group_data[c][y & 1][kPadding];
       const int16_t* row_left = &group_data[c][y & 1][kPadding - 1];
