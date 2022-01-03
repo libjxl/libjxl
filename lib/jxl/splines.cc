@@ -51,7 +51,7 @@ float ContinuousIDCT(const float dct[32], const float t) {
     auto cos_arg = LoadU(df, kMultipliers + i) * tandhalf;
     auto cos = FastCosf(df, cos_arg);
     auto local_res = LoadU(df, dct + i) * cos;
-    result = MulAdd(Set(df, square_root<2>::value), local_res, result);
+    result = MulAdd(Set(df, kSqrt2), local_res, result);
   }
   return GetLane(SumOfLanes(df, result));
 }
@@ -215,16 +215,18 @@ namespace {
 constexpr size_t kMaxNumControlPoints = 1u << 20u;
 constexpr size_t kMaxNumControlPointsPerPixelRatio = 2;
 
-// X, Y, B, sigma.
-float ColorQuantizationWeight(const int32_t adjustment, const int channel,
-                              const int i) {
-  const float multiplier = adjustment >= 0 ? 1.f + .125f * adjustment
-                                           : 1.f / (1.f + .125f * -adjustment);
-
-  static constexpr float kChannelWeight[] = {0.0042f, 0.075f, 0.07f, .3333f};
-
-  return multiplier / kChannelWeight[channel];
+float AdjustedQuant(const int32_t adjustment) {
+  return (adjustment >= 0) ? (1.f + .125f * adjustment)
+                           : 1.f / (1.f - .125f * adjustment);
 }
+
+float InvAdjustedQuant(const int32_t adjustment) {
+  return (adjustment >= 0) ? 1.f / (1.f + .125f * adjustment)
+                           : (1.f - .125f * adjustment);
+}
+
+// X, Y, B, sigma.
+static constexpr float kChannelWeight[] = {0.0042f, 0.075f, 0.07f, .3333f};
 
 Status DecodeAllStartingPoints(std::vector<Spline::Point>* const points,
                                BitReader* const br, ANSSymbolReader* reader,
@@ -361,7 +363,7 @@ bool ForEachEquallySpacedPoint(const Points& points, const Functor& functor) {
 
 QuantizedSpline::QuantizedSpline(const Spline& original,
                                  const int32_t quantization_adjustment,
-                                 const float ytox, const float ytob) {
+                                 const float y_to_x, const float y_to_b) {
   JXL_ASSERT(!original.control_points.empty());
   control_points_.reserve(original.control_points.size() - 1);
   const Spline::Point& starting_point = original.control_points.front();
@@ -382,28 +384,34 @@ QuantizedSpline::QuantizedSpline(const Spline& original,
     previous_y = new_y;
   }
 
-  for (int c = 0; c < 3; ++c) {
-    float factor = c == 0 ? ytox : c == 1 ? 0 : ytob;
+  const auto to_int = [](float v) -> int {
+    return static_cast<int>(roundf(v));
+  };
+
+  const auto quant = AdjustedQuant(quantization_adjustment);
+  const auto inv_quant = InvAdjustedQuant(quantization_adjustment);
+  for (int c : {1, 0, 2}) {
+    float factor = (c == 0) ? y_to_x : (c == 1) ? 0 : y_to_b;
     for (int i = 0; i < 32; ++i) {
-      const float coefficient =
-          original.color_dct[c][i] -
-          factor * color_dct_[1][i] /
-              ColorQuantizationWeight(quantization_adjustment, 1, i);
-      color_dct_[c][i] = static_cast<int>(
-          roundf(coefficient *
-                 ColorQuantizationWeight(quantization_adjustment, c, i)));
+      const float dct_factor = (i == 0) ? kSqrt2 : 1.0f;
+      const float inv_dct_factor = (i == 0) ? kSqrt0_5 : 1.0f;
+      auto restored_y =
+          color_dct_[1][i] * inv_dct_factor * kChannelWeight[1] * inv_quant;
+      auto decorellated = original.color_dct[c][i] - factor * restored_y;
+      color_dct_[c][i] =
+          to_int(decorellated * dct_factor * quant / kChannelWeight[c]);
     }
   }
   for (int i = 0; i < 32; ++i) {
-    sigma_dct_[i] = static_cast<int>(
-        roundf(original.sigma_dct[i] *
-               ColorQuantizationWeight(quantization_adjustment, 3, i)));
+    const float dct_factor = (i == 0) ? kSqrt2 : 1.0f;
+    sigma_dct_[i] =
+        to_int(original.sigma_dct[i] * dct_factor * quant / kChannelWeight[3]);
   }
 }
 
 Status QuantizedSpline::Dequantize(const Spline::Point& starting_point,
                                    const int32_t quantization_adjustment,
-                                   const float ytox, const float ytob,
+                                   const float y_to_x, const float y_to_b,
                                    Spline& result) const {
   result.control_points.clear();
   result.control_points.reserve(control_points_.size() + 1);
@@ -435,21 +443,22 @@ Status QuantizedSpline::Dequantize(const Spline::Point& starting_point,
         static_cast<float>(current_x), static_cast<float>(current_y)});
   }
 
+  const auto inv_quant = InvAdjustedQuant(quantization_adjustment);
   for (int c = 0; c < 3; ++c) {
     for (int i = 0; i < 32; ++i) {
+      const float inv_dct_factor = (i == 0) ? kSqrt0_5 : 1.0f;
       result.color_dct[c][i] =
-          color_dct_[c][i] * (i == 0 ? 1.0f / square_root<2>::value : 1.0f) /
-          ColorQuantizationWeight(quantization_adjustment, c, i);
+          color_dct_[c][i] * inv_dct_factor * kChannelWeight[c] * inv_quant;
     }
   }
   for (int i = 0; i < 32; ++i) {
-    result.color_dct[0][i] += ytox * result.color_dct[1][i];
-    result.color_dct[2][i] += ytob * result.color_dct[1][i];
+    result.color_dct[0][i] += y_to_x * result.color_dct[1][i];
+    result.color_dct[2][i] += y_to_b * result.color_dct[1][i];
   }
   for (int i = 0; i < 32; ++i) {
+    const float inv_dct_factor = (i == 0) ? kSqrt0_5 : 1.0f;
     result.sigma_dct[i] =
-        sigma_dct_[i] * (i == 0 ? 1.0f / square_root<2>::value : 1.0f) /
-        ColorQuantizationWeight(quantization_adjustment, 3, i);
+        sigma_dct_[i] * inv_dct_factor * kChannelWeight[3] * inv_quant;
   }
 
   return true;
