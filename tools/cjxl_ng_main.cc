@@ -79,7 +79,7 @@ DEFINE_bool(centerfirst, false,  // TODO(tfish): Wire this up.
 DEFINE_bool(verbose, false,
             // TODO(tfish): Should be a verbosity-level.
             // Original cjxl also makes --help more verbose if this is on,
-            // but with absl, we do that differently...?
+            // but with gflags, we do that differently...?
             "Verbose output.");
 
 DEFINE_bool(already_downsampled, false,
@@ -187,8 +187,8 @@ DEFINE_int32(photon_noise, 0,
              "As an example, a value of 100 gives low noise whereas a value "
              "of 3200 gives a lot of noise. The default value is 0.");
 
-DEFINE_string(
-    distance, "1.0",  // TODO(tfish): wire this up.
+DEFINE_double(
+    distance, 1.0,  // TODO(tfish): wire this up.
     "Max. butteraugli distance, lower = higher quality. Range: 0 .. 25.\n"
     "    0.0 = mathematically lossless. Default for already-lossy input "
     "(JPEG/GIF).\n"
@@ -262,10 +262,6 @@ bool ProcessTristateFlag(const char* flag_name, const bool flag_value,
   }
   return true;
 }
-// TODO(tfish): Clean this up once we can properly break the codec_in_out.h
-// dependency. This is binary-compatible to `struct SizeConstraints` in that
-// header file.
-
 // XXX this mimicks SetFromBytes in cjxl.cc
 jxl::Status LoadInput(const char* filename_in,
                       jxl::extras::PackedPixelFile& ppf) {
@@ -284,8 +280,6 @@ jxl::Status LoadInput(const char* filename_in,
   ppf.info.uses_original_profile = true;
   ppf.info.orientation = JXL_ORIENT_IDENTITY;
   jxl::extras::ColorHints color_hints;
-  // TODO(tfish): Fix size_constraints1 hack once SizeConstraints moved out of
-  // lib/jxl/codec_in_out.h
   jxl::SizeConstraints size_constraints;
 
   jxl::extras::Codec codec;
@@ -332,26 +326,25 @@ int main(int argc, char** argv) {
   std::cerr << "Warning: This is work in progress, consider using cjxl "
                "instead!\n";
   gflags::SetUsageMessage(
-      std::string("JPEG XL-encodes an image.\n") +
-      std::string(" Input format can be one of: ") +
+      "JPEG XL-encodes an image.\n"
+      " Input format can be one of: "
 #if JPEGXL_ENABLE_APNG
-      std::string("PNG, APNG, ") +
+      "PNG, APNG, "
 #endif
 #if JPEGXL_ENABLE_GIF
-      std::string("GIF, ") +
+      "GIF, "
 #endif
 #if JPEGXL_ENABLE_JPEG
-      std::string("JPEG, ") +
+      "JPEG, "
 #endif
-      std::string("PPM, PFM, PGX.\n") + std::string("  Sample usage:\n") +
+      "PPM, PFM, PGX.\n  Sample usage:\n" +
       std::string(argv[0]) +
-      std::string(" <source_image_filename> <target_image_filename>"));
+      " <source_image_filename> <target_image_filename>");
   uint32_t version = JxlEncoderVersion();
-  std::stringstream version_string;
-  version_string << version / 1000000 << "." << (version / 1000) % 1000 << "."
-                 << version % 1000 << std::endl;
 
-  gflags::SetVersionString(version_string.str());
+  gflags::SetVersionString(std::to_string(version / 1000000) + "." +
+                           std::to_string((version / 1000) % 1000) + "." +
+                           std::to_string(version % 1000));
   // TODO(firsching): rethink --help handling
   gflags::ParseCommandLineNonHelpFlags(&argc, &argv, /*remove_flags=*/true);
   if (FLAGS_help) {
@@ -434,8 +427,8 @@ int main(int argc, char** argv) {
 
     const int32_t flag_effort = FLAGS_effort;
     if (!(1 <= flag_effort && flag_effort <= 9)) {
-      // Strictly speaking, custom absl flags-parsing would integrate
-      // more nicely with abseil flags, but the boilerplate cost of
+      // Strictly speaking, custom gflags parsing would integrate
+      // more nicely with gflags, but the boilerplate cost of
       // handling invalid calls is substantially higher than
       // this lightweight approach here.
       std::cerr << "Invalid --effort. Valid range is {1, 2, ..., 9}.\n";
@@ -498,8 +491,7 @@ int main(int argc, char** argv) {
                                      FLAGS_photon_noise);
     // Removed: --noise (superseded by: --photon_noise).
 
-    JxlEncoderSetFrameDistance(jxl_encoder_frame_settings,
-                               std::stof(FLAGS_distance));
+    JxlEncoderSetFrameDistance(jxl_encoder_frame_settings, FLAGS_distance);
 
     const int32_t flag_center_x = FLAGS_center_x;
     if (flag_center_x != -1) {
@@ -544,9 +536,6 @@ int main(int argc, char** argv) {
     const jxl::extras::PackedFrame& pframe = ppf.frames[0];
     const jxl::extras::PackedImage& pimage = pframe.color;
     JxlPixelFormat ppixelformat = pimage.format;
-    std::cerr << "DDD JxlEncoderAddImageFrame() - input frames="
-              << ppf.frames.size() << ", xsize=" << pimage.xsize
-              << ", ysize=" << pimage.ysize << std::endl;
 
     {  // JxlEncoderSetBasicInfo
       JxlBasicInfo basic_info;

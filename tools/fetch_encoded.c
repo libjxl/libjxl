@@ -11,6 +11,7 @@
  */
 #include "fetch_encoded.h"
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -94,8 +95,9 @@ JXL_BOOL write_jxl_file(const uint8_t *bytes, size_t size,
   if (bytes_written != size) {
     fprintf(stderr,
             "Failure: Wanted to write %d bytes, "
-            "but did write %d bytes to file: %s\n",
-            (int)size, (int)bytes_written, filename);
+            "but did write %d bytes to file: %s\n"
+            "Error: %s\n",
+            (int)size, (int)bytes_written, filename, strerror(errno));
     return JXL_FALSE;
   }
   if (fclose(file)) {
