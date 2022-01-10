@@ -273,6 +273,30 @@ TEST(JxlTest, RoundtripOutOfOrderProcessing) {
                                      /*distmap=*/nullptr, &pool));
 }
 
+TEST(JxlTest, RoundtripOutOfOrderProcessingBorder) {
+  FakeParallelRunner fake_pool(/*order_seed=*/47, /*num_threads=*/8);
+  ThreadPool pool(&JxlFakeParallelRunner, &fake_pool);
+  const PaddedBytes orig =
+      ReadTestData("imagecompression.info/flower_foveon.png");
+  CodecInOut io;
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
+  // Image size is selected so that the block border needed is larger than the
+  // amount of pixels available on the next block.
+  io.ShrinkTo(513, 515);
+
+  CompressParams cparams;
+  // Force epf so we end up needing a lot of border.
+  cparams.epf = 3;
+  cparams.resampling = 2;
+
+  DecompressParams dparams;
+  CodecInOut io2;
+  Roundtrip(&io, cparams, dparams, &pool, &io2);
+
+  EXPECT_GE(2.5, ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
+                                     /*distmap=*/nullptr, &pool));
+}
+
 TEST(JxlTest, RoundtripResample4) {
   ThreadPool* pool = nullptr;
   const PaddedBytes orig =
