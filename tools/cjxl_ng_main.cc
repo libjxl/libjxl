@@ -368,8 +368,7 @@ int main(int argc, char** argv) {
   // managed_jxl_encoder.encoder_;
   auto enc = JxlEncoderMake(/*memory_manager=*/nullptr);
   auto runner = JxlThreadParallelRunnerMake(
-      /*memory_manager=*/nullptr,
-      JxlThreadParallelRunnerDefaultNumWorkerThreads());
+      /*memory_manager=*/nullptr, num_worker_threads);
   if (JXL_ENC_SUCCESS != JxlEncoderSetParallelRunner(enc.get(),
                                                      JxlThreadParallelRunner,
                                                      runner.get())) {
