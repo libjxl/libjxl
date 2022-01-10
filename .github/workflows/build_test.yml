@@ -14,6 +14,10 @@ on:
   pull_request:
     types: [opened, reopened, labeled, synchronize]
 
+concurrency: 
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   ubuntu_build:
     name: Ubuntu Build ${{ matrix.name }}
