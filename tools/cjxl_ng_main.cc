@@ -200,12 +200,12 @@ DEFINE_int64(target_size, 0,  // TODO(tfish): wire this up.
              "    Compresses to 1 % of the target size in ideal conditions.\n"
              "    Runs the same algorithm as --target_bpp");
 
-DEFINE_string(target_bpp, "0",  // TODO(tfish): wire this up.
+DEFINE_double(target_bpp, 0.0,  // TODO(tfish): wire this up.
               "Aim at file size that has N bits per pixel.\n"
               "    Compresses to 1 % of the target BPP in ideal conditions.");
 
-DEFINE_string(
-    quality, "100.0",  // TODO(tfish): wire this up.
+DEFINE_double(
+    quality, 100.0,  // TODO(tfish): wire this up.
     "Quality setting (is remapped to --distance). Range: -inf .. 100.\n"
     "    100 = mathematically lossless. Default for already-lossy input "
     "(JPEG/GIF).\n    Positive quality values roughly match libjpeg "
