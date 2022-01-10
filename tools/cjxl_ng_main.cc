@@ -230,16 +230,25 @@ namespace {
 bool WriteFile(const std::vector<uint8_t>& bytes, const char* filename) {
   FILE* file = fopen(filename, "wb");
   if (!file) {
-    fprintf(stderr, "Could not open %s for writing\n", filename);
+    fprintf(stderr,
+            "Could not open %s for writing\n"
+            "Error: %s",
+            filename, strerror(errno));
     return false;
   }
   if (fwrite(bytes.data(), sizeof(uint8_t), bytes.size(), file) !=
       bytes.size()) {
-    fprintf(stderr, "Could not write bytes to %s\n", filename);
+    fprintf(stderr,
+            "Could not write bytes to %s\n"
+            "Error: %s",
+            filename, strerror(errno));
     return false;
   }
   if (fclose(file) != 0) {
-    fprintf(stderr, "Could not close %s\n", filename);
+    fprintf(stderr,
+            "Could not close %s\n"
+            "Error: %s",
+            filename, strerror(errno));
     return false;
   }
   return true;
@@ -314,8 +323,6 @@ jxl::Status LoadInput(const char* filename_in,
 }
 
 }  // namespace
-// tristate flag not necessary, because we can use
-// gflags::GetCommandLineFlagInfoOrDie(const char* name).is_default
 int main(int argc, char** argv) {
   std::cerr << "Warning: This is work in progress, consider using cjxl "
                "instead!\n";
@@ -419,6 +426,8 @@ int main(int argc, char** argv) {
                         JXL_ENC_FRAME_SETTING_GROUP_ORDER);
 
     const int32_t flag_effort = FLAGS_effort;
+    // TODO(firsching): rethink if we might want to have a validator with a
+    // (template?) parameter for the list of valid values.
     if (!(1 <= flag_effort && flag_effort <= 9)) {
       // Strictly speaking, custom gflags parsing would integrate
       // more nicely with gflags, but the boilerplate cost of
