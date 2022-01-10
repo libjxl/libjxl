@@ -139,15 +139,11 @@ if(JPEGXL_ENABLE_TOOLS)
       jxl_threads-static
   )
 
-  add_library(fetch_encoded SHARED fetch_encoded.c fetch_encoded.h)
-  set_property(TARGET fetch_encoded PROPERTY C_STANDARD 99)
-  target_link_libraries(fetch_encoded jxl)
 
   add_executable(cjxl_ng
     cjxl_ng_main.cc
   )
   target_link_libraries(cjxl_ng
-    fetch_encoded
     jxl
     gflags
   )

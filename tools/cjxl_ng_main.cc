@@ -4,14 +4,17 @@
 // license that can be found in the LICENSE file.
 #include <stdint.h>
 
+#include <cstdlib>
 #include <iostream>
 #include <sstream>
+#include <string>
 #include <vector>
 
-#include "fetch_encoded.h"
 #include "gflags/gflags.h"
 #include "jxl/encode.h"
+#include "jxl/encode_cxx.h"
 #include "jxl/thread_parallel_runner.h"
+#include "jxl/thread_parallel_runner_cxx.h"
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/apng.h"
 #include "lib/extras/dec/color_hints.h"
@@ -221,35 +224,26 @@ DEFINE_int64(
     "    Default: 7. Higher number is more effort (slower).");
 
 namespace {
-
-// RAII-wraps the C-API encoder.
-class ManagedJxlEncoder {
- public:
-  explicit ManagedJxlEncoder(size_t num_worker_threads)
-      : encoder_(JxlEncoderCreate(NULL)),
-        encoder_frame_settings_(JxlEncoderFrameSettingsCreate(encoder_, NULL)) {
-    if (num_worker_threads > 1) {
-      parallel_runner_ = JxlThreadParallelRunnerCreate(
-          /*memory_manager=*/nullptr, num_worker_threads);
-    }
+/**
+ * Writes bytes to file.
+ */
+bool WriteFile(const std::vector<uint8_t>& bytes, const char* filename) {
+  FILE* file = fopen(filename, "wb");
+  if (!file) {
+    fprintf(stderr, "Could not open %s for writing\n", filename);
+    return false;
   }
-  ~ManagedJxlEncoder() {
-    if (parallel_runner_ != nullptr) {
-      JxlThreadParallelRunnerDestroy(parallel_runner_);
-    }
-    JxlEncoderDestroy(encoder_);
-    if (compressed_buffer_) {
-      free(compressed_buffer_);
-    }
+  if (fwrite(bytes.data(), sizeof(uint8_t), bytes.size(), file) !=
+      bytes.size()) {
+    fprintf(stderr, "Could not write bytes to %s\n", filename);
+    return false;
   }
-
-  JxlEncoder* encoder_;
-  JxlEncoderFrameSettings* encoder_frame_settings_;
-  uint8_t* compressed_buffer_ = nullptr;
-  size_t compressed_buffer_size_ = 0;
-  size_t compressed_buffer_used_ = 0;
-  void* parallel_runner_ = nullptr;  // TODO(tfish): fix type.
-};
+  if (fclose(file) != 0) {
+    fprintf(stderr, "Could not close %s\n", filename);
+    return false;
+  }
+  return true;
+}
 
 bool ProcessTristateFlag(const char* flag_name, const bool flag_value,
                          JxlEncoderFrameSettings* frame_settings,
@@ -369,8 +363,20 @@ int main(int argc, char** argv) {
       num_worker_threads = flag_num_worker_threads;
     }
   }
-  ManagedJxlEncoder managed_jxl_encoder = ManagedJxlEncoder(num_worker_threads);
-  JxlEncoder* jxl_encoder = managed_jxl_encoder.encoder_;
+  // ManagedJxlEncoder managed_jxl_encoder =
+  //  ManagedJxlEncoder(num_worker_threads);
+  // managed_jxl_encoder.encoder_;
+  auto enc = JxlEncoderMake(/*memory_manager=*/nullptr);
+  auto runner = JxlThreadParallelRunnerMake(
+      /*memory_manager=*/nullptr,
+      JxlThreadParallelRunnerDefaultNumWorkerThreads());
+  if (JXL_ENC_SUCCESS != JxlEncoderSetParallelRunner(enc.get(),
+                                                     JxlThreadParallelRunner,
+                                                     runner.get())) {
+    fprintf(stderr, "JxlEncoderSetParallelRunner failed\n");
+    return EXIT_FAILURE;
+  }
+  JxlEncoder* jxl_encoder = enc.get();
 
   const int32_t store_jpeg_metadata = FLAGS_store_jpeg_metadata;
   if (!(-1 <= store_jpeg_metadata && store_jpeg_metadata <= 1)) {
@@ -386,20 +392,8 @@ int main(int argc, char** argv) {
     }
   }
 
-  if (managed_jxl_encoder.parallel_runner_ != nullptr) {
-    if (JXL_ENC_SUCCESS !=
-        JxlEncoderSetParallelRunner(
-            managed_jxl_encoder.encoder_,
-            // TODO(tfish): Flag up the need to have the parameter below
-            // documented better in the encode.h API docs.
-            JxlThreadParallelRunner, managed_jxl_encoder.parallel_runner_)) {
-      std::cerr << "JxlEncoderSetParallelRunner failed\n";
-      return EXIT_FAILURE;
-    }
-  }
-
   JxlEncoderFrameSettings* jxl_encoder_frame_settings =
-      managed_jxl_encoder.encoder_frame_settings_;
+      JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
 
   {  // Processing tuning flags.
     bool use_container = FLAGS_container;
@@ -572,21 +566,32 @@ int main(int argc, char** argv) {
     }
   }
   JxlEncoderCloseInput(jxl_encoder);
-  if (!fetch_jxl_encoded_image(jxl_encoder,
-                               &managed_jxl_encoder.compressed_buffer_,
-                               &managed_jxl_encoder.compressed_buffer_size_,
-                               &managed_jxl_encoder.compressed_buffer_used_)) {
-    std::cerr << "Fetching encoded image failed.\n";
+
+  // Reading compressed output
+  std::vector<uint8_t> compressed;
+  compressed.resize(64);
+  uint8_t* next_out = compressed.data();
+  size_t avail_out = compressed.size() - (next_out - compressed.data());
+  JxlEncoderStatus process_result = JXL_ENC_NEED_MORE_OUTPUT;
+  while (process_result == JXL_ENC_NEED_MORE_OUTPUT) {
+    process_result = JxlEncoderProcessOutput(enc.get(), &next_out, &avail_out);
+    if (process_result == JXL_ENC_NEED_MORE_OUTPUT) {
+      size_t offset = next_out - compressed.data();
+      compressed.resize(compressed.size() * 2);
+      next_out = compressed.data() + offset;
+      avail_out = compressed.size() - offset;
+    }
+  }
+  compressed.resize(next_out - compressed.data());
+  if (JXL_ENC_SUCCESS != process_result) {
+    fprintf(stderr, "JxlEncoderProcessOutput failed\n");
     return EXIT_FAILURE;
   }
-  std::cerr << "DDD fetched image. Buffer size="
-            << managed_jxl_encoder.compressed_buffer_size_
-            << ", used=" << managed_jxl_encoder.compressed_buffer_used_
-            << std::endl;
-  if (!write_jxl_file(managed_jxl_encoder.compressed_buffer_,
-                      managed_jxl_encoder.compressed_buffer_used_,
-                      filename_out)) {
-    std::cerr << "Writing output file failed: " << filename_out << std::endl;
+
+  // TODO(firsching): print info about compressed size and other image stats
+  // here and in the beginning, like is done in current cjxl.
+  if (!WriteFile(compressed, filename_out)) {
+    fprintf(stderr, "Couldn't write jxl file\n");
     return EXIT_FAILURE;
   }
   return EXIT_SUCCESS;
