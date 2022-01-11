@@ -121,6 +121,7 @@ endif()
 if(JPEGXL_ENABLE_TOOLS)
   list(APPEND TOOL_BINARIES
     cjxl
+    cjxl_ng
     djxl
     cjpeg_hdr
   )
@@ -136,6 +137,15 @@ if(JPEGXL_ENABLE_TOOLS)
       jxl-static
       jxl_extras-static
       jxl_threads-static
+  )
+
+
+  add_executable(cjxl_ng
+    cjxl_ng_main.cc
+  )
+  target_link_libraries(cjxl_ng
+    jxl
+    gflags
   )
 
 add_executable(cjpeg_hdr
@@ -358,6 +368,7 @@ endif()  # NOT WIN32
 endif()  # NOT MSVC
 
 add_test(NAME LibraryCLinkageTest COMMAND libjxl_test)
+
 endif()  # BUILD_TESTING AND TARGET jxl AND NOT JPEGXL_EMSCRIPTEN
 
 # Tools defined in subdirectories.
@@ -369,6 +380,7 @@ endif()
 
 add_subdirectory(box)
 add_subdirectory(conformance)
+
 
 if ("${JPEGXL_EMSCRIPTEN}")
 # WASM API facade.
