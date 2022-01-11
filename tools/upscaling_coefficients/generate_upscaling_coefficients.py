@@ -8,8 +8,7 @@
 """Generates coefficients used in upscaling.
 
 Given an upscaling factor which can be 2, 4 or 8, we generate coefficients and
-indices for lib/jxl/dec_upsample.cc and lib/jxl/frame_header.cc in the format
-needed there.
+indices for lib/jxl/image_metadata.cc in the format needed there.
 """
 
 import argparse
@@ -22,8 +21,8 @@ def compute_kernel(sigma):
   # This controls the length of the kernel.
   m = 2.5
   diff = int(max(1, m * abs(sigma)))
-  kernel = np.exp(-np.arange(-diff, diff + 1)**2 
-  return kernel / (2 * sigma * sigma))
+  kernel = np.exp(-np.arange(-diff, diff + 1)**2 /(2 * sigma * sigma))
+  return kernel
 
 
 def convolution(pixels, kernel):
