@@ -370,9 +370,6 @@ int main(int argc, char** argv) {
       num_worker_threads = flag_num_worker_threads;
     }
   }
-  // ManagedJxlEncoder managed_jxl_encoder =
-  //  ManagedJxlEncoder(num_worker_threads);
-  // managed_jxl_encoder.encoder_;
   auto enc = JxlEncoderMake(/*memory_manager=*/nullptr);
   auto runner = JxlThreadParallelRunnerMake(
       /*memory_manager=*/nullptr, num_worker_threads);
