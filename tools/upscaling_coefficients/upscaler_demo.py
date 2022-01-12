@@ -735,7 +735,7 @@ scaling_kernels = {
 
 def convolution(pixels, kernel):
   """
-  Returns the convulion of `pixels` with `kernel`.
+  Returns the convolution of `pixels` with `kernel`.
 
   Uses padding such that the shape of the returned convoluted array is the
   same as the shape of `pixels`.
