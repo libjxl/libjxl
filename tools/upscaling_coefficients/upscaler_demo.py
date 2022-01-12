@@ -738,7 +738,8 @@ def convolution(pixels, kernel):
   Returns the convolution of `pixels` with `kernel`.
 
   Uses padding such that the shape of the returned convoluted array is the
-  same as the shape of `pixels`.
+  same as the shape of `pixels`, scaled by the upscaling_factor implied by the
+  `kernel`.
 
   Args:
     pixels: A [heigth, width]- or [height, width, num_channels]-array
@@ -748,22 +749,26 @@ def convolution(pixels, kernel):
      kernel_size]-array used for the convolution.
 
   Returns:
-    A [heigth, width]- or [height, width, num_channels]-array representing the
-    convoluted image.
+    A [upscaling_factor*heigth, upscaling_factor*width]- or
+    [upscaling_factor*height, upscaling_factor*width, num_channels]-array representing the
+    convoluted upscaled image.
   """
-  kernel_size = kernel.shape[2]
+  upscaling_factor, _, kernel_size, _ = kernel.shape
+  output_shape = list(pixels.shape)
+  output_shape[0] *= upscaling_factor
+  output_shape[1] *= upscaling_factor
+  shaped_pixels = pixels.reshape(pixels.shape[:2] + (-1,))
   pad_width = kernel_size//2
-  is_multi_channel = len(pixels.shape) > 2
   padded_pixels = np.pad(
-      pixels, 2*[2*[pad_width]] + int(is_multi_channel)*[[0, 0]], mode='edge')
-  x, y, *_ = pixels.shape
+      shaped_pixels, 2*[2*[pad_width]] + [[0, 0]], mode='edge')
+  x, y, _ = shaped_pixels.shape
   convoluted = np.block([[np.einsum('rc...,RCrc->...RC',
                                     padded_pixels[i - pad_width: i + pad_width + 1,
                                                   j - pad_width: j + pad_width + 1],
                                     kernel)
                           for j in range(pad_width, pad_width + y)]
                          for i in range(pad_width, pad_width + x)])
-  return np.moveaxis(convoluted, 0, -1) if is_multi_channel else convoluted
+  return np.moveaxis(convoluted, 0, -1).reshape(output_shape)
 
 
 def main():
