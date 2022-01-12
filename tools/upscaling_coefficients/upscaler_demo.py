@@ -733,22 +733,37 @@ scaling_kernels = {
 }
 
 
-def convolution(pixels, coeffs, kernel_size):
+def convolution(pixels, kernel):
+  """
+  Returns the convulion of `pixels` with `kernel`.
+
+  Uses padding such that the shape of the returned convoluted array is the
+  same as the shape of `pixels`.
+
+  Args:
+    pixels: A [heigth, width]- or [height, width, num_channels]-array
+    representing an image.
+
+    kernel: A [upscaling_factor, upscaling_factor, kernel_size,
+     kernel_size]-array used for the convolution.
+
+  Returns:
+    A [heigth, width]- or [height, width, num_channels]-array representing the
+    convoluted image.
+  """
+  kernel_size = kernel.shape[2]
   pad_width = kernel_size//2
   is_multi_channel = len(pixels.shape) > 2
   padded_pixels = np.pad(
       pixels, 2*[2*[pad_width]] + int(is_multi_channel)*[[0, 0]], mode='edge')
-  x, y,  = pixels.shape[:2]
+  x, y, *_ = pixels.shape
   convoluted = np.block([[np.einsum('rc...,RCrc->...RC',
-                                    padded_pixels[i-pad_width: i + pad_width + 1,
+                                    padded_pixels[i - pad_width: i + pad_width + 1,
                                                   j - pad_width: j + pad_width + 1],
-                                    coeffs)
+                                    kernel)
                           for j in range(pad_width, pad_width + y)]
                          for i in range(pad_width, pad_width + x)])
-  if is_multi_channel:
-    return np.moveaxis(convoluted, 0, -1)
-  else:
-    return convoluted
+  return np.moveaxis(convoluted, 0, -1) if is_multi_channel else convoluted
 
 
 def main():
@@ -776,16 +791,17 @@ def main():
     args = parser.parse_args()
     upscaling_factor = args.upscaling_factor[0]
     kernel_size = 5
-    assert upscaling_factor in [2, 4, 8]
+    if upscaling_factor not in (2, 4, 8):
+        raise ValueError("upscaling_factor must be 2, 4 or 8.")
     kernel = np.array(scaling_kernels[upscaling_factor])
     assert kernel.shape == (
         upscaling_factor, upscaling_factor, kernel_size, kernel_size)
-    orig = Image.open(args.input_filename)
-    if orig.mode == 'P':
-        orig = orig.convert('RGB')
-    upscaled_float = convolution(np.array(orig), kernel, kernel_size)
+    orig_raw = Image.open(args.input_filename)
+    orig = orig_raw.convert('RGB') if orig_raw.mode == 'P' else orig_raw
+    upscaled_float = convolution(np.array(orig), kernel)
+
     upscaled = Image.fromarray(
-        np.clip(upscaled_float, 0, 255).astype(np.uint8), orig.mode)
+        np.rint(np.clip(upscaled_float, 0, 255)).astype(np.uint8), orig.mode)
     upscaled.save(args.output_filename)
 
 
