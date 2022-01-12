@@ -14,6 +14,7 @@
 #include <array>
 #include <memory>
 #include <queue>
+#include <random>
 #include <vector>
 
 #if (!defined(__BYTE_ORDER__) || (__BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__))
@@ -878,47 +879,34 @@ void WriteACSection(const unsigned char* rgba, size_t x0, size_t y0, size_t oxs,
   ProcessImageArea(rgba, x0, y0, oxs, xs, 0, ys, row_stride, row_encoders);
 }
 
-constexpr uint32_t kMaxColors = 4096;
+constexpr int kHashExp = 16;
+constexpr uint32_t kHashSize = 1 << kHashExp;
+constexpr uint32_t kHashMultiplier = 2654435761;
+constexpr int kMaxColors = 512;
 
-// can be any function that returns a value in 0 .. kMaxColors-1
+// can be any function that returns a value in 0 .. kHashSize-1
 // has to map 0 to 0
 inline uint32_t pixel_hash(uint32_t p) {
-  return ((p >> 3) + (p >> 22)) % kMaxColors;
+  return (p * kHashMultiplier) >> (32 - kHashExp);
 }
 
-void WriteACSectionPalette(const unsigned char* rgba, size_t x0, size_t y0,
-                           size_t oxs, size_t ys, size_t row_stride,
-                           bool is_single_group, const PrefixCode& code,
-                           const int16_t* lookup, BitWriter& output) {
-  size_t xs = (oxs + kChunkSize - 1) / kChunkSize * kChunkSize;
-
-  if (!is_single_group) {
-    output.Allocate(16 * xs * ys + 4);
-    // Group header for modular image.
-    // When the image is single-group, the global modular image is the one that
-    // contains the pixel data, and there is no group header.
-    output.Write(1, 1);     // Global tree
-    output.Write(1, 1);     // All default wp
-    output.Write(2, 0b00);  // 0 transforms
-  }
-
-  ChunkEncoder encoder;
-  ChannelRowProcessor<ChunkEncoder> row_encoder;
-
-  row_encoder.t = &encoder;
-  encoder.output = &output;
-  encoder.code = &code;
-
+template <typename Processor>
+void ProcessImageAreaPalette(const unsigned char* rgba, size_t x0, size_t y0,
+                             size_t oxs, size_t xs, size_t yskip, size_t ys,
+                             size_t row_stride, const int16_t* lookup,
+                             Processor* processors) {
   constexpr size_t kPadding = 16;
 
   int16_t group_data[2][256 + kPadding * 2] = {};
+  Processor& row_encoder = processors[0];
 
   for (size_t y = 0; y < ys; y++) {
     // Pre-fill rows with palette converted pixels.
-    const uint32_t* p = reinterpret_cast<const uint32_t*>(
-        rgba + row_stride * (y0 + y) + x0 * 4);
+    const unsigned char* inrow = rgba + row_stride * (y0 + y) + x0 * 4;
     for (size_t x = 0; x < oxs; x++) {
-      group_data[y & 1][x + kPadding] = lookup[pixel_hash(p[x])];
+      uint32_t p;
+      memcpy(&p, inrow + x * 4, 4);
+      group_data[y & 1][x + kPadding] = lookup[pixel_hash(p)];
     }
     // Deal with x == 0.
     group_data[y & 1][kPadding - 1] =
@@ -943,9 +931,36 @@ void WriteACSectionPalette(const unsigned char* rgba, size_t x0, size_t y0,
   row_encoder.Finalize();
 }
 
+void WriteACSectionPalette(const unsigned char* rgba, size_t x0, size_t y0,
+                           size_t oxs, size_t ys, size_t row_stride,
+                           bool is_single_group, const PrefixCode& code,
+                           const int16_t* lookup, BitWriter& output) {
+  size_t xs = (oxs + kChunkSize - 1) / kChunkSize * kChunkSize;
+
+  if (!is_single_group) {
+    output.Allocate(16 * xs * ys + 4);
+    // Group header for modular image.
+    // When the image is single-group, the global modular image is the one that
+    // contains the pixel data, and there is no group header.
+    output.Write(1, 1);     // Global tree
+    output.Write(1, 1);     // All default wp
+    output.Write(2, 0b00);  // 0 transforms
+  }
+
+  ChunkEncoder encoder;
+  ChannelRowProcessor<ChunkEncoder> row_encoder;
+
+  row_encoder.t = &encoder;
+  encoder.output = &output;
+  encoder.code = &code;
+  ProcessImageAreaPalette(rgba, x0, y0, oxs, xs, 0, ys, row_stride, lookup,
+                          &row_encoder);
+}
+
 void CollectSamples(const unsigned char* rgba, size_t x0, size_t y0,
                     size_t row_stride, uint64_t* raw_counts,
-                    uint64_t* lz77_counts) {
+                    uint64_t* lz77_counts, bool palette,
+                    const int16_t* lookup) {
   ChunkSampleCollector sample_collectors[4];
   ChannelRowProcessor<ChunkSampleCollector> row_sample_collectors[4];
   for (size_t c = 0; c < 4; c++) {
@@ -953,8 +968,13 @@ void CollectSamples(const unsigned char* rgba, size_t x0, size_t y0,
     sample_collectors[c].raw_counts = raw_counts;
     sample_collectors[c].lz77_counts = lz77_counts;
   }
-  ProcessImageArea(rgba, x0, y0, 256, 256, 1, 9, row_stride,
-                   row_sample_collectors);
+  if (palette) {
+    ProcessImageAreaPalette(rgba, x0, y0, 256, 256, 1, 9, row_stride, lookup,
+                            row_sample_collectors);
+  } else {
+    ProcessImageArea(rgba, x0, y0, 256, 256, 1, 9, row_stride,
+                     row_sample_collectors);
+  }
 }
 
 void PrepareDCGlobalPalette(bool is_single_group, size_t width, size_t height,
@@ -985,35 +1005,31 @@ void PrepareDCGlobalPalette(bool is_single_group, size_t width, size_t height,
   row_encoder.t = &encoder;
   encoder.output = output;
   encoder.code = &code;
-  int16_t pdata[4][32 + 1024] = {};
-  const uint8_t* prgba;
+  int16_t p[4][32 + 1024] = {};
+  uint8_t prgba[4];
   int i = 0;
   int have_zero = 0;
   if (palette[pcolors_real - 1] == 0) have_zero = 1;
   for (; i < pcolors; i++) {
     if (i < pcolors_real) {
-      prgba = reinterpret_cast<const uint8_t*>(&palette[i]);
+      memcpy(prgba, &palette[i], 4);
     }
-    pdata[0][16 + i + have_zero] = prgba[0];
-    pdata[1][16 + i + have_zero] = prgba[1];
-    pdata[2][16 + i + have_zero] = prgba[2];
-    pdata[3][16 + i + have_zero] = prgba[3];
+    p[0][16 + i + have_zero] = prgba[0];
+    p[1][16 + i + have_zero] = prgba[1];
+    p[2][16 + i + have_zero] = prgba[2];
+    p[3][16 + i + have_zero] = prgba[3];
   }
-  pdata[0][15] = 0;
-  row_encoder.ProcessRow(pdata[0] + 16, pdata[0] + 15, pdata[0] + 15,
-                         pdata[0] + 15, pcolors);
-  pdata[1][15] = pdata[0][16];
-  pdata[0][15] = pdata[0][16];
-  row_encoder.ProcessRow(pdata[1] + 16, pdata[1] + 15, pdata[0] + 16,
-                         pdata[0] + 15, pcolors);
-  pdata[2][15] = pdata[1][16];
-  pdata[1][15] = pdata[1][16];
-  row_encoder.ProcessRow(pdata[2] + 16, pdata[2] + 15, pdata[1] + 16,
-                         pdata[1] + 15, pcolors);
-  pdata[3][15] = pdata[2][16];
-  pdata[2][15] = pdata[2][16];
-  row_encoder.ProcessRow(pdata[3] + 16, pdata[3] + 15, pdata[2] + 16,
-                         pdata[2] + 15, pcolors);
+  p[0][15] = 0;
+  row_encoder.ProcessRow(p[0] + 16, p[0] + 15, p[0] + 15, p[0] + 15, pcolors);
+  p[1][15] = p[0][16];
+  p[0][15] = p[0][16];
+  row_encoder.ProcessRow(p[1] + 16, p[1] + 15, p[0] + 16, p[0] + 15, pcolors);
+  p[2][15] = p[1][16];
+  p[1][15] = p[1][16];
+  row_encoder.ProcessRow(p[2] + 16, p[2] + 15, p[1] + 16, p[1] + 15, pcolors);
+  p[3][15] = p[2][16];
+  p[2][15] = p[2][16];
+  row_encoder.ProcessRow(p[3] + 16, p[3] + 15, p[2] + 16, p[2] + 15, pcolors);
   row_encoder.Finalize();
 
   if (!is_single_group) {
@@ -1029,30 +1045,28 @@ size_t FastLosslessEncode(const unsigned char* rgba, size_t width,
   assert(row_stride >= 4 * width);
 
   // Count colors to try palette
-  std::vector<uint32_t> palette(kMaxColors);
+  std::vector<uint32_t> palette(kHashSize);
   palette[0] = 1;
-  int16_t lookup[kMaxColors] = {};
+  int16_t lookup[kHashSize];
+  lookup[0] = 0;
   int pcolors = 0;
   bool collided = false;
   for (size_t y = 0; y < height && !collided; y++) {
     const unsigned char* r = rgba + row_stride * y;
     size_t x = 0;
     // this is just an unrolling of the next loop
-    for (; x + 3 < width; x += 4) {
-      uint32_t p[4], index[4];
-      memcpy(p, r + x * 4, 16);
-      for (int i = 0; i < 4; i++) {
-        index[i] = pixel_hash(p[i]);
-      }
-      for (int i = 0; i < 4; i++) {
+    for (; x + 7 < width; x += 8) {
+      uint32_t p[8], index[8];
+      memcpy(p, r + x * 4, 32);
+      for (int i = 0; i < 8; i++) index[i] = pixel_hash(p[i]);
+      for (int i = 0; i < 8; i++) {
         uint32_t init_entry = index[i] ? 0 : 1;
         if (init_entry != palette[index[i]] && p[i] != palette[index[i]]) {
           collided = true;
         }
       }
-      for (int i = 0; i < 4; i++) palette[index[i]] = p[i];
+      for (int i = 0; i < 8; i++) palette[index[i]] = p[i];
     }
-
     for (; x < width; x++) {
       uint32_t p;
       memcpy(&p, r + x * 4, 4);
@@ -1065,61 +1079,67 @@ size_t FastLosslessEncode(const unsigned char* rgba, size_t width,
     }
   }
 
+  int nb_entries = 0;
   if (!collided) {
-    int k = 0;
     if (palette[0] == 0) pcolors = 1;
     if (palette[0] == 1) palette[0] = 0;
-    std::sort(palette.begin(), palette.end(), [](uint32_t a, uint32_t b) {
-      if (a == 0) return false;
-      if (b == 0) return true;
-      uint8_t a_rgba[4];
-      uint8_t b_rgba[4];
-      memcpy(a_rgba, &a, 4);
-      memcpy(b_rgba, &b, 4);
-      float a_y =
-          (0.299 * a_rgba[0] + 0.587 * a_rgba[1] + 0.114 * a_rgba[2] + 0.01) *
-          a_rgba[3];
-      float b_y =
-          (0.299 * b_rgba[0] + 0.587 * b_rgba[1] + 0.114 * b_rgba[2] + 0.01) *
-          b_rgba[3];
-      return a_y < b_y;  // sort on luma
-    });
     bool have_color = false;
     uint8_t minG = 255, maxG = 0;
-    for (; k < kMaxColors; k++) {
-      if (palette[k] == 0) break;
-      uint8_t* rgba = reinterpret_cast<uint8_t*>(&palette[k]);
-      if (rgba[0] != rgba[1] || rgba[0] != rgba[2]) have_color = true;
-      lookup[pixel_hash(palette[k])] = pcolors++;
-      if (rgba[1] < minG) minG = rgba[1];
-      if (rgba[1] > maxG) maxG = rgba[1];
-      // printf("Palette entry %i : %08X\n",k,palette[k]);
+    for (int k = 0; k < kHashSize; k++) {
+      if (palette[k] == 0) continue;
+      uint8_t p[4];
+      memcpy(p, &palette[k], 4);
+      // move entries to front so sort has less work
+      palette[nb_entries] = palette[k];
+      if (p[0] != p[1] || p[0] != p[2]) have_color = true;
+      if (p[1] < minG) minG = p[1];
+      if (p[1] > maxG) maxG = p[1];
+      nb_entries++;
+      // don't do palette if too many colors are needed
+      if (nb_entries + pcolors > kMaxColors) {
+        collided = true;
+        break;
+      }
     }
     if (!have_color) {
       // don't do palette if it's just grayscale without many holes
-      if (maxG - minG < k * 1.3f) collided = true;
+      if (maxG - minG < nb_entries * 1.4f) collided = true;
     }
-    // don't do palette if too many colors are needed
-    if (pcolors > 510) collided = true;
+  }
+  if (!collided) {
+    std::sort(
+        palette.begin(), palette.begin() + nb_entries,
+        [](uint32_t ap, uint32_t bp) {
+          if (ap == 0) return false;
+          if (bp == 0) return true;
+          uint8_t a[4], b[4];
+          memcpy(a, &ap, 4);
+          memcpy(b, &bp, 4);
+          float ay, by;
+          ay = (0.299f * a[0] + 0.587f * a[1] + 0.114f * a[2] + 0.01f) * a[3];
+          by = (0.299f * b[0] + 0.587f * b[1] + 0.114f * b[2] + 0.01f) * b[3];
+          return ay < by;  // sort on alpha*luma
+        });
+    for (int k = 0; k < nb_entries; k++) {
+      if (palette[k] == 0) break;
+      lookup[pixel_hash(palette[k])] = pcolors++;
+    }
   }
 
   uint64_t raw_counts[11] = {};
   uint64_t lz77_counts[17] = {};
 
-  if (height > 16 && width > 272 && collided) {
-    const uint64_t kRandom[10] = {
-        0x297a2f04566e200e, 0x3e7d6cd07ac02d16, 0xf870b4bc5f05d12d,
-        0xb5afcde5c00d5df7, 0x5dc0736c7218f765, 0x547b55bcc9e6dccb,
-        0xd3bb7fb442b07b53, 0xe21d31bf5d110091, 0xa3d6edd3514f0cd4,
-        0xf53bd2868a44efc0,
-    };
+  if (height > 16 && width > 272) {
     size_t width_limit = (width - 256) / 16;
     size_t height_limit = height - 16;
+    // about one sample per group, i.e. look at 1/16th of the pixels
+    size_t nb_samples = 1 + width * height / 256 / 256;
+    std::mt19937 mt_rand(0);
     // Collect samples from random locations in the image.
-    for (size_t i = 0; i < 5; i++) {
-      CollectSamples(rgba, (kRandom[2 * i] % width_limit) * 16,
-                     kRandom[2 * i + 1] % height_limit, row_stride, raw_counts,
-                     lz77_counts);
+    for (size_t i = 0; i < nb_samples; i++) {
+      CollectSamples(rgba, (mt_rand() % width_limit) * 16,
+                     mt_rand() % height_limit, row_stride, raw_counts,
+                     lz77_counts, !collided, lookup);
     }
   }
 
