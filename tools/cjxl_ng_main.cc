@@ -44,7 +44,10 @@ DEFINE_bool(strip, false,
             "Do not encode using container format (strips "
             "Exif/XMP/JPEG bitstream reconstruction data).");
 
-DEFINE_bool(progressive, false,  // TODO(tfish): Wire this up.
+DEFINE_bool(responsive, false,
+            "[modular encoding] do Squeeze transform");
+
+DEFINE_bool(progressive, false,
             "Enable progressive/responsive decoding.");
 
 DEFINE_bool(progressive_ac, false,  // TODO(tfish): Wire this up.
@@ -54,9 +57,6 @@ DEFINE_bool(qprogressive_ac,
             false,  // TODO(tfish): Wire this up.
                     // TODO(tfish): Clarify what this flag is about.
             "Use progressive mode for AC.");
-
-DEFINE_bool(progressive_dc, false,  // TODO(tfish): Wire this up.
-            "Use progressive mode for DC.");
 
 DEFINE_bool(use_experimental_encoder_heuristics,
             false,  // TODO(tfish): Wire this up.
@@ -125,6 +125,10 @@ DEFINE_bool(
 // --colortransform, --mquality, --iterations, --colorspace, --group-size,
 // --predictor, --extra-properties, --lossy-palette, --pre-compact,
 // --post-compact, --responsive, --quiet, --print_profile,
+
+
+DEFINE_int32(progressive_dc, -1,
+            "Progressive-DC setting. Valid values are: -1, 0, 1, 2.");
 
 DEFINE_int32(store_jpeg_metadata, -1,
              "Store JPEG reconstruction metadata in the JPEG XL container. "
@@ -503,6 +507,65 @@ int main(int argc, char** argv) {
       JxlEncoderFrameSettingsSetOption(
           jxl_encoder_frame_settings,
           JXL_ENC_FRAME_SETTING_GROUP_ORDER_CENTER_Y, flag_center_y);
+    }
+
+    // Progressive/responsive mode settings.
+    {
+      // Are the corresponding flag-values explicitly or implicitly set?
+      bool progressive_set = !gflags::GetCommandLineFlagInfoOrDie(
+          "progressive").is_default;
+      bool progressive_ac_set = !gflags::GetCommandLineFlagInfoOrDie(
+          "progressive_ac").is_default;
+      bool qprogressive_ac_set = !gflags::GetCommandLineFlagInfoOrDie(
+          "qprogressive_ac").is_default;
+      bool progressive_dc_set = !gflags::GetCommandLineFlagInfoOrDie(
+          "progressive_dc").is_default;
+      bool responsive_set = !gflags::GetCommandLineFlagInfoOrDie(
+          "responsive").is_default;
+
+      // Progressive mode.
+      int32_t progressive_dc = FLAGS_progressive_dc ? 1 : 0;      
+      int32_t progressive_ac = FLAGS_progressive_ac ? 1 : 0;
+      // Quantized-progressive mode.
+      int32_t qprogressive_ac = FLAGS_qprogressive_ac ? 1 : 0;
+      int32_t progressive = FLAGS_progressive ? 1 : 0;
+      int32_t responsive = FLAGS_responsive ? 1 : 0;
+      
+      if (!(-1 <= FLAGS_progressive_dc && FLAGS_progressive_dc <= 2)) {
+        std::cerr << "Invalid --progressive_dc. "
+          "Valid range is {-1, 0, 1, 2}.\n";
+        return EXIT_FAILURE;
+      }
+      JxlEncoderFrameSettingsSetOption(jxl_encoder_frame_settings,
+                                       JXL_ENC_FRAME_SETTING_PROGRESSIVE_DC,
+                                       FLAG_progressive_dc);
+      
+      if (FLAGS_progressive) {
+        qprogressive_ac = 1;
+        qprogressive_ac_set = true;
+        responsive = 1;
+        responsive_set = true;
+      }
+      if (progressive_dc_set) {
+        JxlEncoderFrameSettingsSetOption(jxl_encoder_frame_settings,
+                                         JXL_ENC_FRAME_SETTING_PROGRESSIVE_AC,
+                                         progressive_dc);
+      }      
+      if (progressive_ac_set) {
+        JxlEncoderFrameSettingsSetOption(jxl_encoder_frame_settings,
+                                         JXL_ENC_FRAME_SETTING_PROGRESSIVE_AC,
+                                         progressive_ac);
+      }
+      if (responsive_set) {
+        JxlEncoderFrameSettingsSetOption(jxl_encoder_frame_settings,
+                                         JXL_ENC_FRAME_SETTING_RESPONSIVE,
+                                         responsive);      
+      }
+      if (qprogressive_ac_set) {
+        JxlEncoderFrameSettingsSetOption(jxl_encoder_frame_settings,
+                                         JXL_ENC_FRAME_SETTING_QPROGRESSIVE_AC,
+                                         qprogressive_ac);
+      }
     }
   }  // Processing flags.
 
