@@ -27,8 +27,86 @@ from PIL import Image
 import argparse
 import numpy as np
 
-scaling_kernels = {
-    2: [[[[-0.017162003089909145, -0.0345230259724203, -0.04022174342753632,
+
+def convolution(pixels, kernel):
+  """
+  Returns the convolution of `pixels` with `kernel`.
+
+  Uses padding such that the shape of the returned convoluted array is the
+  same as the shape of `pixels`, scaled by the upscaling_factor implied by the
+  `kernel`.
+
+  Args:
+    pixels: A [heigth, width]- or [height, width, num_channels]-array
+    representing an image.
+
+    kernel: A [upscaling_factor, upscaling_factor, kernel_size,
+     kernel_size]-array used for the convolution.
+
+  Returns:
+    A [upscaling_factor*heigth, upscaling_factor*width]- or
+    [upscaling_factor*height, upscaling_factor*width, num_channels]-array representing the
+    convoluted upscaled image.
+  """
+  upscaling_factor, _, kernel_size, _ = kernel.shape
+  output_shape = list(pixels.shape)
+  output_shape[0] *= upscaling_factor
+  output_shape[1] *= upscaling_factor
+  shaped_pixels = pixels.reshape(pixels.shape[:2] + (-1,))
+  pad_width = kernel_size//2
+  padded_pixels = np.pad(
+      shaped_pixels, 2*[2*[pad_width]] + [[0, 0]], mode='edge')
+  x, y, _ = shaped_pixels.shape
+  convoluted = np.block([[np.einsum('rc...,RCrc->...RC',
+                                    padded_pixels[i - pad_width: i + pad_width + 1,
+                                                  j - pad_width: j + pad_width + 1],
+                                    kernel)
+                          for j in range(pad_width, pad_width + y)]
+                         for i in range(pad_width, pad_width + x)])
+  return np.moveaxis(convoluted, 0, -1).reshape(output_shape)
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Upscaling of an image by a factor of 2, 4 or 8.")
+    parser.add_argument(
+        "--upscaling_factor",
+        type=int,
+        help="where N must be  2, 4 (default) or 8.",
+        nargs=1,
+        default=[4],
+        metavar='N')
+
+    parser.add_argument(
+        "input_filename",
+        type=str,
+        help="of the PNG image to be upscaled."
+    )
+    parser.add_argument(
+        "output_filename",
+        type=str,
+        help="where the upscaled image is written as PNG."
+    )
+
+    args = parser.parse_args()
+    upscaling_factor = args.upscaling_factor[0]
+    kernel_size = 5
+    if upscaling_factor not in (2, 4, 8):
+        raise ValueError("upscaling_factor must be 2, 4 or 8.")
+    kernel = np.array(_get_scaling_kernels()[upscaling_factor])
+    assert kernel.shape == (
+        upscaling_factor, upscaling_factor, kernel_size, kernel_size)
+    orig_raw = Image.open(args.input_filename)
+    orig = orig_raw.convert('RGB') if orig_raw.mode == 'P' else orig_raw
+    upscaled_float = convolution(np.array(orig), kernel)
+
+    upscaled = Image.fromarray(
+        np.rint(np.clip(upscaled_float, 0, 255)).astype(np.uint8), orig.mode)
+    upscaled.save(args.output_filename)
+
+
+def _get_scaling_kernels():
+    return {2: [[[[-0.017162003089909145, -0.0345230259724203, -0.04022174342753632,
     -0.029210135410064335, -0.006246448474415789], [-0.0345230259724203,
     0.14111091126932612, 0.28896754962953114, 0.0027871809188615613,
     -0.016102674925096382], [-0.04022174342753632, 0.28896754962953114,
@@ -731,84 +809,6 @@ scaling_kernels = {
     [-0.00447631814814665, -0.03324558280295302, -0.0378381168526885,
     -0.03706352644207269, -0.029286133281073243]]]]
 }
-
-
-def convolution(pixels, kernel):
-  """
-  Returns the convolution of `pixels` with `kernel`.
-
-  Uses padding such that the shape of the returned convoluted array is the
-  same as the shape of `pixels`, scaled by the upscaling_factor implied by the
-  `kernel`.
-
-  Args:
-    pixels: A [heigth, width]- or [height, width, num_channels]-array
-    representing an image.
-
-    kernel: A [upscaling_factor, upscaling_factor, kernel_size,
-     kernel_size]-array used for the convolution.
-
-  Returns:
-    A [upscaling_factor*heigth, upscaling_factor*width]- or
-    [upscaling_factor*height, upscaling_factor*width, num_channels]-array representing the
-    convoluted upscaled image.
-  """
-  upscaling_factor, _, kernel_size, _ = kernel.shape
-  output_shape = list(pixels.shape)
-  output_shape[0] *= upscaling_factor
-  output_shape[1] *= upscaling_factor
-  shaped_pixels = pixels.reshape(pixels.shape[:2] + (-1,))
-  pad_width = kernel_size//2
-  padded_pixels = np.pad(
-      shaped_pixels, 2*[2*[pad_width]] + [[0, 0]], mode='edge')
-  x, y, _ = shaped_pixels.shape
-  convoluted = np.block([[np.einsum('rc...,RCrc->...RC',
-                                    padded_pixels[i - pad_width: i + pad_width + 1,
-                                                  j - pad_width: j + pad_width + 1],
-                                    kernel)
-                          for j in range(pad_width, pad_width + y)]
-                         for i in range(pad_width, pad_width + x)])
-  return np.moveaxis(convoluted, 0, -1).reshape(output_shape)
-
-
-def main():
-    parser = argparse.ArgumentParser(
-        description="Upscaling of an image by a factor of 2, 4 or 8.")
-    parser.add_argument(
-        "--upscaling_factor",
-        type=int,
-        help="where N must be  2, 4 (default) or 8.",
-        nargs=1,
-        default=[4],
-        metavar='N')
-
-    parser.add_argument(
-        "input_filename",
-        type=str,
-        help="of the PNG image to be upscaled."
-    )
-    parser.add_argument(
-        "output_filename",
-        type=str,
-        help="where the upscaled image is written as PNG."
-    )
-
-    args = parser.parse_args()
-    upscaling_factor = args.upscaling_factor[0]
-    kernel_size = 5
-    if upscaling_factor not in (2, 4, 8):
-        raise ValueError("upscaling_factor must be 2, 4 or 8.")
-    kernel = np.array(scaling_kernels[upscaling_factor])
-    assert kernel.shape == (
-        upscaling_factor, upscaling_factor, kernel_size, kernel_size)
-    orig_raw = Image.open(args.input_filename)
-    orig = orig_raw.convert('RGB') if orig_raw.mode == 'P' else orig_raw
-    upscaled_float = convolution(np.array(orig), kernel)
-
-    upscaled = Image.fromarray(
-        np.rint(np.clip(upscaled_float, 0, 255)).astype(np.uint8), orig.mode)
-    upscaled.save(args.output_filename)
-
 
 if __name__ == "__main__":
     main()
