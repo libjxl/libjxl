@@ -207,6 +207,12 @@ DEFINE_int32(modular_colorspace, -1,
              "[modular encoding] color transform: 0=RGB, 1=YCoCg, "
              "2-37=RCT (default: try several, depending on speed)");
 
+DEFINE_int32(modular_nb_prev_channels, -1,
+             // TODO(tfish): Clarify renaming (from --extra-properties),
+             // as for --modular_group_size. Is this actually the
+             // correct parameter?
+             "[modular encoding] number of extra MA tree properties to use");
+
 DEFINE_int32(photon_noise, 0,
              // TODO(tfish): Discuss docstring change with team.
              // Also: This now is an int, no longer a float.
@@ -602,6 +608,8 @@ int main(int argc, char** argv) {
           "modular_predictor").is_default;
       bool modular_colorspace_set = !gflags::GetCommandLineFlagInfoOrDie(
           "modular_colorspace").is_default;
+      bool modular_nb_prev_channels_set = !gflags::GetCommandLineFlagInfoOrDie(
+          "modular_nb_prev_channels").is_default;
       
       if (modular_group_size_set) {
         if !(FLAGS_modular_group_size == -1 ||
@@ -615,7 +623,7 @@ int main(int argc, char** argv) {
                                          FLAGS_modular_group_size);
       }
       if (modular_predictor_set) {
-        if !(0 <= FLAGS_modular_predictor && FLAGS_modular_predictor <= 3)) {
+        if !(0 <= FLAGS_modular_predictor && FLAGS_modular_predictor <= 3) {
             std::cerr << "Invalid --modular_predictor: " << FLAGS_modular_predictor <<
               std::endl;
             return EXIT_FAILURE;
@@ -624,22 +632,36 @@ int main(int argc, char** argv) {
                                          JXL_ENC_FRAME_SETTING_MODULAR_PREDICTOR,
                                          FLAGS_modular_predictor);
       }
-    if (modular_colorspace) {
-        if !(-1 <= FLAGS_modular_colorspace && FLAGS_modular_colorspace <= 35) {
-            std::cerr << "Invalid --modular_colorspace: " <<
-              FLAGS_modular_colorspace << std::endl;
-            return EXIT_FAILURE;
-          }
+      if (modular_colorspace_set) {
+        if (!(-1 <= FLAGS_modular_colorspace &&
+              FLAGS_modular_colorspace <= 35)) {
+          std::cerr << "Invalid --modular_colorspace: " <<
+            FLAGS_modular_colorspace << std::endl;
+          return EXIT_FAILURE;
+        }
         JxlEncoderFrameSettingsSetOption(
             jxl_encoder_frame_settings,
             JXL_ENC_FRAME_SETTING_MODULAR_COLOR_SPACE,
             FLAGS_modular_color_space);
-    }
-    // Color related (not for modular-mode)
-    {
-      // TODO(tfish): Clarify with team - old `cjxl` had some extra
-      // "if quality is 100%" logic which has not been ported here.
-      // Overall, the new rule "set it if provided" is more
+      }
+      if (modular_nb_prev_channels_set) {
+        if !(-1 <= FLAGS_modular_nb_prev_channels &&
+             FLAGS_modular_nb_prev_channels <= 11) {
+            std::cerr << "Invalid --modular_nb_prev_channels: " <<
+              FLAGS_modular_modular_nb_prev_channels << std::endl;
+            return EXIT_FAILURE;
+          }
+        JxlEncoderFrameSettingsSetOption(
+            jxl_encoder_frame_settings,
+            JXL_ENC_FRAME_SETTING_MODULAR_NB_PREV_CHANNELS,
+            FLAGS_modular_nb_prev_channels);
+      }
+  }
+  // Color related (not for modular-mode)
+  {
+    // TODO(tfish): Clarify with team - old `cjxl` had some extra
+    // "if quality is 100%" logic which has not been ported here.
+    // Overall, the new rule "set it if provided" is more
       // straightforward than the old one, which needed the caller to
       // understand subtle dependencies of the "this flag is ignored
       // if those other flags are as follows" dependencies.
