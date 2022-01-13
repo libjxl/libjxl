@@ -545,8 +545,6 @@ int main(int argc, char** argv) {
     // Progressive/responsive mode settings.
     {
       // Are the corresponding flag-values explicitly or implicitly set?
-      bool progressive_set = !gflags::GetCommandLineFlagInfoOrDie(
-          "progressive").is_default;
       bool progressive_ac_set = !gflags::GetCommandLineFlagInfoOrDie(
           "progressive_ac").is_default;
       bool qprogressive_ac_set = !gflags::GetCommandLineFlagInfoOrDie(
@@ -557,21 +555,21 @@ int main(int argc, char** argv) {
           "responsive").is_default;
 
       // Progressive mode.
-      int32_t progressive_dc = FLAGS_progressive_dc ? 1 : 0;      
       int32_t progressive_ac = FLAGS_progressive_ac ? 1 : 0;
       // Quantized-progressive mode.
       int32_t qprogressive_ac = FLAGS_qprogressive_ac ? 1 : 0;
-      int32_t progressive = FLAGS_progressive ? 1 : 0;
       int32_t responsive = FLAGS_responsive ? 1 : 0;
-      
-      if (!(-1 <= FLAGS_progressive_dc && FLAGS_progressive_dc <= 2)) {
-        std::cerr << "Invalid --progressive_dc. "
-          "Valid range is {-1, 0, 1, 2}.\n";
-        return EXIT_FAILURE;
+
+      if (progressive_dc_set) {
+        if (!(-1 <= FLAGS_progressive_dc && FLAGS_progressive_dc <= 2)) {
+          std::cerr << "Invalid --progressive_dc. "
+            "Valid range is {-1, 0, 1, 2}.\n";
+          return EXIT_FAILURE;
+        }
+        JxlEncoderFrameSettingsSetOption(jxl_encoder_frame_settings,
+                                         JXL_ENC_FRAME_SETTING_PROGRESSIVE_DC,
+                                         FLAGS_progressive_dc);
       }
-      JxlEncoderFrameSettingsSetOption(jxl_encoder_frame_settings,
-                                       JXL_ENC_FRAME_SETTING_PROGRESSIVE_DC,
-                                       FLAG_progressive_dc);
       
       if (FLAGS_progressive) {
         qprogressive_ac = 1;
@@ -579,10 +577,10 @@ int main(int argc, char** argv) {
         responsive = 1;
         responsive_set = true;
       }
-      if (progressive_dc_set) {
+      if (progressive_ac_set) {
         JxlEncoderFrameSettingsSetOption(jxl_encoder_frame_settings,
                                          JXL_ENC_FRAME_SETTING_PROGRESSIVE_AC,
-                                         progressive_dc);
+                                         FLAGS_progressive_ac);
       }      
       if (progressive_ac_set) {
         JxlEncoderFrameSettingsSetOption(jxl_encoder_frame_settings,
@@ -612,8 +610,8 @@ int main(int argc, char** argv) {
           "modular_nb_prev_channels").is_default;
       
       if (modular_group_size_set) {
-        if !(FLAGS_modular_group_size == -1 ||
-             (0 <= FLAGS_modular_group_size && FLAGS_modular_group_size <= 3)) {
+        if (!(FLAGS_modular_group_size == -1 ||
+              (0 <= FLAGS_modular_group_size && FLAGS_modular_group_size <= 3))) {
             std::cerr << "Invalid --modular_group_size: " << FLAGS_modular_group_size <<
               std::endl;
             return EXIT_FAILURE;
@@ -623,7 +621,7 @@ int main(int argc, char** argv) {
                                          FLAGS_modular_group_size);
       }
       if (modular_predictor_set) {
-        if !(0 <= FLAGS_modular_predictor && FLAGS_modular_predictor <= 3) {
+        if (!(0 <= FLAGS_modular_predictor && FLAGS_modular_predictor <= 3)) {
             std::cerr << "Invalid --modular_predictor: " << FLAGS_modular_predictor <<
               std::endl;
             return EXIT_FAILURE;
@@ -642,13 +640,13 @@ int main(int argc, char** argv) {
         JxlEncoderFrameSettingsSetOption(
             jxl_encoder_frame_settings,
             JXL_ENC_FRAME_SETTING_MODULAR_COLOR_SPACE,
-            FLAGS_modular_color_space);
+            FLAGS_modular_colorspace);
       }
       if (modular_nb_prev_channels_set) {
-        if !(-1 <= FLAGS_modular_nb_prev_channels &&
-             FLAGS_modular_nb_prev_channels <= 11) {
+        if (!(-1 <= FLAGS_modular_nb_prev_channels &&
+              FLAGS_modular_nb_prev_channels <= 11)) {
             std::cerr << "Invalid --modular_nb_prev_channels: " <<
-              FLAGS_modular_modular_nb_prev_channels << std::endl;
+              FLAGS_modular_nb_prev_channels << std::endl;
             return EXIT_FAILURE;
           }
         JxlEncoderFrameSettingsSetOption(
