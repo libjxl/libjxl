@@ -122,7 +122,7 @@ DEFINE_bool(
 // --intensity_target,
 // --saliency_num_progressive_steps, --saliency_map_filename,
 // --saliency_threshold, --dec-hints, --override_bitdepth,
-// --colortransform, --mquality, --iterations, --colorspace, --group-size,
+// --mquality, --iterations, --colorspace, --group-size,
 // --predictor, --extra-properties, --lossy-palette, --pre-compact,
 // --post-compact, --responsive, --quiet, --print_profile,
 
@@ -226,6 +226,12 @@ DEFINE_int64(
     // but enc_params.h has kFalcon=7.
     "Encoder effort setting. Range: 1 .. 9.\n"
     "    Default: 7. Higher number is more effort (slower).");
+
+DEFINE_string(
+     // TODO(tfish): Clarify with team whether changing from int-param to string is OK here.
+    colortransform, "",
+    "The color transform to use. Valid values are: '' (= \"use default\"), "
+    "'RGB', 'XYB', 'YCbCr'.");
 
 namespace {
 /**
@@ -565,6 +571,36 @@ int main(int argc, char** argv) {
         JxlEncoderFrameSettingsSetOption(jxl_encoder_frame_settings,
                                          JXL_ENC_FRAME_SETTING_QPROGRESSIVE_AC,
                                          qprogressive_ac);
+      }
+    }
+    // Color related
+    {
+      // TODO(tfish): Clarify with team - old `cjxl` had some extra
+      // "if quality is 100%" logic which has not been ported here.
+      // Overall, the new rule "set it if provided" is more
+      // straightforward than the old one, which needed the caller to
+      // understand subtle dependencies of the "this flag is ignored
+      // if those other flags are as follows" dependencies.
+      // Should we nevertheless introduce the old logic?
+      bool colortransform_set = !gflags::GetCommandLineFlagInfoOrDie(
+          "colortransform").is_default;
+
+      if (colortransform_set) {
+        int32_t colortransform = -1;
+        if (FLAGS_colortransform == "XYB") {
+          colortransform = 0;
+        } else if (FLAGS_colortransform == "RGB") {
+          colortransform = 1;
+        } else if (FLAGS_colortransform == "YCbCr") {
+          colortransform = 2;
+        } else {
+          std::cerr << "Invalid --colortransform: " << FLAGS_colortransform <<
+            std::endl;
+          return EXIT_FAILURE;
+        }
+        JxlEncoderFrameSettingsSetOption(jxl_encoder_frame_settings,
+                                         JXL_ENC_FRAME_SETTING_COLOR_TRANSFORM,
+                                         colortransform);
       }
     }
   }  // Processing flags.
