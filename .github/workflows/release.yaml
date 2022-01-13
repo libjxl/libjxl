@@ -319,6 +319,7 @@ jobs:
           -DJPEGXL_ENABLE_TCMALLOC=OFF \
           -DJPEGXL_ENABLE_VIEWERS=OFF \
           -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} \
+          -DJPEGXL_BUNDLE_GFLAGS=ON \
         #
     - name: Build
       shell: 'bash'
