@@ -165,7 +165,7 @@ if (JPEGXL_BUNDLE_GFLAGS)
                  ${PROJECT_BINARY_DIR}/LICENSE.gflags COPYONLY)
 else()
   # Use sytem libgflags-dev
-  find_package(gflags REQUIRED)
+  find_package(gflags COMPONENTS nothreads_static)
   if (NOT gflags_FOUND)
     message(FATAL_ERROR
       "Gflags not found, install libgflags-dev or download gflags source to"
