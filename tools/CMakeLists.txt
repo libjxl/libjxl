@@ -123,6 +123,7 @@ if(JPEGXL_ENABLE_TOOLS)
     cjxl
     cjxl_ng
     djxl
+    djxl_ng
     cjpeg_hdr
   )
 
@@ -144,6 +145,14 @@ if(JPEGXL_ENABLE_TOOLS)
     cjxl_ng_main.cc
   )
   target_link_libraries(cjxl_ng
+    jxl
+    gflags
+  )
+
+  add_executable(djxl_ng
+    djxl_ng_main.cc
+  )
+  target_link_libraries(djxl_ng
     jxl
     gflags
   )

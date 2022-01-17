@@ -66,7 +66,7 @@ Current directory is a git repository, downloading dependencies via git:
   git submodule update --init --recursive
 
 EOF
-    git -C "${MYDIR}" submodule update --init --recursive
+    git -C "${MYDIR}" submodule update --init --recursive --depth 1 --recommend-shallow
     return 0
   fi
 
