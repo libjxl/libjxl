@@ -582,11 +582,6 @@ int main(int argc, char** argv) {
                                          JXL_ENC_FRAME_SETTING_PROGRESSIVE_AC,
                                          FLAGS_progressive_ac);
       }      
-      if (progressive_ac_set) {
-        JxlEncoderFrameSettingsSetOption(jxl_encoder_frame_settings,
-                                         JXL_ENC_FRAME_SETTING_PROGRESSIVE_AC,
-                                         progressive_ac);
-      }
       if (responsive_set) {
         JxlEncoderFrameSettingsSetOption(jxl_encoder_frame_settings,
                                          JXL_ENC_FRAME_SETTING_RESPONSIVE,
@@ -608,7 +603,7 @@ int main(int argc, char** argv) {
           "modular_colorspace").is_default;
       bool modular_nb_prev_channels_set = !gflags::GetCommandLineFlagInfoOrDie(
           "modular_nb_prev_channels").is_default;
-      
+
       if (modular_group_size_set) {
         if (!(FLAGS_modular_group_size == -1 ||
               (0 <= FLAGS_modular_group_size && FLAGS_modular_group_size <= 3))) {
