@@ -44,8 +44,9 @@ DEFINE_bool(strip, false,
             "Do not encode using container format (strips "
             "Exif/XMP/JPEG bitstream reconstruction data).");
 
-DEFINE_bool(progressive, false,  // TODO(tfish): Wire this up.
-            "Enable progressive/responsive decoding.");
+DEFINE_bool(responsive, false, "[modular encoding] do Squeeze transform");
+
+DEFINE_bool(progressive, false, "Enable progressive/responsive decoding.");
 
 DEFINE_bool(progressive_ac, false,  // TODO(tfish): Wire this up.
             "Use progressive mode for AC.");
@@ -54,9 +55,6 @@ DEFINE_bool(qprogressive_ac,
             false,  // TODO(tfish): Wire this up.
                     // TODO(tfish): Clarify what this flag is about.
             "Use progressive mode for AC.");
-
-DEFINE_bool(progressive_dc, false,  // TODO(tfish): Wire this up.
-            "Use progressive mode for DC.");
 
 DEFINE_bool(use_experimental_encoder_heuristics,
             false,  // TODO(tfish): Wire this up.
@@ -122,9 +120,12 @@ DEFINE_bool(
 // --intensity_target,
 // --saliency_num_progressive_steps, --saliency_map_filename,
 // --saliency_threshold, --dec-hints, --override_bitdepth,
-// --colortransform, --mquality, --iterations, --colorspace, --group-size,
-// --predictor, --extra-properties, --lossy-palette, --pre-compact,
-// --post-compact, --responsive, --quiet, --print_profile,
+// --mquality, --iterations,
+// --extra-properties, --lossy-palette, --pre-compact,
+// --post-compact, --quiet, --print_profile,
+
+DEFINE_int32(progressive_dc, -1,
+             "Progressive-DC setting. Valid values are: -1, 0, 1, 2.");
 
 DEFINE_int32(store_jpeg_metadata, -1,
              "Store JPEG reconstruction metadata in the JPEG XL container. "
@@ -182,6 +183,33 @@ DEFINE_int64(num_reps, 1,  // TODO(tfish): wire this up.
                            // Is this simply for benchmarking?
              "How many times to compress.");
 
+DEFINE_int32(modular_group_size, -1,
+             // TODO(tfish): Clarify with team if renaming group_size
+             // -> modular_group_size (to align with C API names) is
+             // ok.
+             "[modular encoding] group size: -1 == default. 0 => 128, "
+             "1 => 256, 2 => 512, 3 => 1024");
+
+DEFINE_int32(modular_predictor, 15,
+             // TODO(tfish): Clarify renaming, as for modular_group_size
+             "[modular encoding] predictor(s) to use: 0=zero, "
+             "1=left, 2=top, 3=avg0, 4=select, 5=gradient, 6=weighted, "
+             "7=topright, 8=topleft, 9=leftleft, 10=avg1, 11=avg2, 12=avg3, "
+             "13=toptop predictive average "
+             "14=mix 5 and 6, 15=mix everything. Default 14, at slowest speed "
+             "default 15");
+
+DEFINE_int32(modular_colorspace, -1,
+             // TODO(tfish): Clarify renaming, as for modular_group_size
+             "[modular encoding] color transform: 0=RGB, 1=YCoCg, "
+             "2-37=RCT (default: try several, depending on speed)");
+
+DEFINE_int32(modular_nb_prev_channels, -1,
+             // TODO(tfish): Clarify renaming (from --extra-properties),
+             // as for --modular_group_size. Is this actually the
+             // correct parameter?
+             "[modular encoding] number of extra MA tree properties to use");
+
 DEFINE_int32(photon_noise, 0,
              // TODO(tfish): Discuss docstring change with team.
              // Also: This now is an int, no longer a float.
@@ -222,6 +250,13 @@ DEFINE_int64(
     // but enc_params.h has kFalcon=7.
     "Encoder effort setting. Range: 1 .. 9.\n"
     "    Default: 7. Higher number is more effort (slower).");
+
+DEFINE_string(
+    // TODO(tfish): Clarify with team whether changing from int-param to string
+    // is OK here.
+    colortransform, "",
+    "The color transform to use. Valid values are: '' (= \"use default\"), "
+    "'RGB', 'XYB', 'YCbCr'.");
 
 namespace {
 /**
@@ -265,7 +300,7 @@ bool ProcessTristateFlag(const char* flag_name, const bool flag_value,
   }
   return true;
 }
-// XXX this mimicks SetFromBytes in cjxl.cc
+
 jxl::Status LoadInput(const char* filename_in,
                       jxl::extras::PackedPixelFile& ppf) {
   // Any valid encoding is larger (ensures codecs can read the first few bytes).
@@ -323,6 +358,7 @@ jxl::Status LoadInput(const char* filename_in,
 }
 
 }  // namespace
+
 int main(int argc, char** argv) {
   std::cerr << "Warning: This is work in progress, consider using cjxl "
                "instead!\n";
@@ -455,32 +491,28 @@ int main(int argc, char** argv) {
     JxlEncoderFrameSettingsSetOption(jxl_encoder_frame_settings,
                                      JXL_ENC_FRAME_SETTING_DECODING_SPEED,
                                      flag_faster_decoding);
-
-    const int32_t flag_resampling = FLAGS_resampling;
-    if (flag_resampling != -1) {
-      if (!(((flag_resampling & (flag_resampling - 1)) == 0) &&
-            flag_resampling <= 8)) {
+    if (FLAGS_resampling != -1) {
+      if (!(((FLAGS_resampling & (FLAGS_resampling - 1)) == 0) &&
+            FLAGS_resampling <= 8)) {
         std::cerr << "Invalid --resampling. "
                      "Valid values are {-1, 1, 2, 4, 8}.\n";
         return EXIT_FAILURE;
       }
       JxlEncoderFrameSettingsSetOption(jxl_encoder_frame_settings,
                                        JXL_ENC_FRAME_SETTING_RESAMPLING,
-                                       flag_resampling);
+                                       FLAGS_resampling);
     }
-    const int32_t flag_ec_resampling = FLAGS_ec_resampling;
-    if (flag_ec_resampling != -1) {
-      if (!(((flag_ec_resampling & (flag_ec_resampling - 1)) == 0) &&
-            flag_ec_resampling <= 8)) {
+    if (FLAGS_ec_resampling != -1) {
+      if (!(((FLAGS_ec_resampling & (FLAGS_ec_resampling - 1)) == 0) &&
+            FLAGS_ec_resampling <= 8)) {
         std::cerr << "Invalid --ec_resampling. "
                      "Valid values are {-1, 1, 2, 4, 8}.\n";
         return EXIT_FAILURE;
       }
       JxlEncoderFrameSettingsSetOption(
           jxl_encoder_frame_settings,
-          JXL_ENC_FRAME_SETTING_EXTRA_CHANNEL_RESAMPLING, flag_ec_resampling);
+          JXL_ENC_FRAME_SETTING_EXTRA_CHANNEL_RESAMPLING, FLAGS_ec_resampling);
     }
-
     JxlEncoderFrameSettingsSetOption(jxl_encoder_frame_settings,
                                      JXL_ENC_FRAME_SETTING_ALREADY_DOWNSAMPLED,
                                      FLAGS_already_downsampled);
@@ -491,18 +523,148 @@ int main(int argc, char** argv) {
     // Removed: --noise (superseded by: --photon_noise).
 
     JxlEncoderSetFrameDistance(jxl_encoder_frame_settings, FLAGS_distance);
-
-    const int32_t flag_center_x = FLAGS_center_x;
-    if (flag_center_x != -1) {
+    if (FLAGS_center_x != -1) {
       JxlEncoderFrameSettingsSetOption(
           jxl_encoder_frame_settings,
-          JXL_ENC_FRAME_SETTING_GROUP_ORDER_CENTER_X, flag_center_x);
+          JXL_ENC_FRAME_SETTING_GROUP_ORDER_CENTER_X, FLAGS_center_x);
     }
-    const int32_t flag_center_y = FLAGS_center_y;
-    if (flag_center_y != -1) {
+    if (FLAGS_center_y != -1) {
       JxlEncoderFrameSettingsSetOption(
           jxl_encoder_frame_settings,
-          JXL_ENC_FRAME_SETTING_GROUP_ORDER_CENTER_Y, flag_center_y);
+          JXL_ENC_FRAME_SETTING_GROUP_ORDER_CENTER_Y, FLAGS_center_y);
+    }
+  }
+  // Progressive/responsive mode settings.
+  {
+    // Are the corresponding flag-values explicitly or implicitly set?
+    bool progressive_ac_set =
+        !gflags::GetCommandLineFlagInfoOrDie("progressive_ac").is_default;
+    bool qprogressive_ac_set =
+        !gflags::GetCommandLineFlagInfoOrDie("qprogressive_ac").is_default;
+    bool progressive_dc_set =
+        !gflags::GetCommandLineFlagInfoOrDie("progressive_dc").is_default;
+    bool responsive_set =
+        !gflags::GetCommandLineFlagInfoOrDie("responsive").is_default;
+    // Quantized-progressive mode.
+    int32_t qprogressive_ac = FLAGS_qprogressive_ac ? 1 : 0;
+    int32_t responsive = FLAGS_responsive ? 1 : 0;
+
+    if (progressive_dc_set) {
+      if (!(-1 <= FLAGS_progressive_dc && FLAGS_progressive_dc <= 2)) {
+        std::cerr << "Invalid --progressive_dc. "
+                     "Valid range is {-1, 0, 1, 2}.\n";
+        return EXIT_FAILURE;
+      }
+      JxlEncoderFrameSettingsSetOption(jxl_encoder_frame_settings,
+                                       JXL_ENC_FRAME_SETTING_PROGRESSIVE_DC,
+                                       FLAGS_progressive_dc);
+    }
+    if (FLAGS_progressive) {
+      qprogressive_ac = 1;
+      qprogressive_ac_set = true;
+      responsive = 1;
+      responsive_set = true;
+    }
+    if (progressive_ac_set) {
+      JxlEncoderFrameSettingsSetOption(jxl_encoder_frame_settings,
+                                       JXL_ENC_FRAME_SETTING_PROGRESSIVE_AC,
+                                       FLAGS_progressive_ac);
+    }
+    if (responsive_set) {
+      JxlEncoderFrameSettingsSetOption(jxl_encoder_frame_settings,
+                                       JXL_ENC_FRAME_SETTING_RESPONSIVE,
+                                       responsive);
+    }
+    if (qprogressive_ac_set) {
+      JxlEncoderFrameSettingsSetOption(jxl_encoder_frame_settings,
+                                       JXL_ENC_FRAME_SETTING_QPROGRESSIVE_AC,
+                                       qprogressive_ac);
+    }
+  }
+  // Modular mode related
+  {
+    bool modular_group_size_set =
+        !gflags::GetCommandLineFlagInfoOrDie("modular_group_size").is_default;
+    bool modular_predictor_set =
+        !gflags::GetCommandLineFlagInfoOrDie("modular_predictor").is_default;
+    bool modular_colorspace_set =
+        !gflags::GetCommandLineFlagInfoOrDie("modular_colorspace").is_default;
+    bool modular_nb_prev_channels_set =
+        !gflags::GetCommandLineFlagInfoOrDie("modular_nb_prev_channels")
+             .is_default;
+
+    if (modular_group_size_set) {
+      if (!(FLAGS_modular_group_size == -1 ||
+            (0 <= FLAGS_modular_group_size && FLAGS_modular_group_size <= 3))) {
+        std::cerr << "Invalid --modular_group_size: "
+                  << FLAGS_modular_group_size << std::endl;
+        return EXIT_FAILURE;
+      }
+      JxlEncoderFrameSettingsSetOption(jxl_encoder_frame_settings,
+                                       JXL_ENC_FRAME_SETTING_MODULAR_GROUP_SIZE,
+                                       FLAGS_modular_group_size);
+    }
+    if (modular_predictor_set) {
+      if (!(0 <= FLAGS_modular_predictor && FLAGS_modular_predictor <= 3)) {
+        std::cerr << "Invalid --modular_predictor: " << FLAGS_modular_predictor
+                  << std::endl;
+        return EXIT_FAILURE;
+      }
+      JxlEncoderFrameSettingsSetOption(jxl_encoder_frame_settings,
+                                       JXL_ENC_FRAME_SETTING_MODULAR_PREDICTOR,
+                                       FLAGS_modular_predictor);
+    }
+    if (modular_colorspace_set) {
+      if (!(-1 <= FLAGS_modular_colorspace && FLAGS_modular_colorspace <= 35)) {
+        std::cerr << "Invalid --modular_colorspace: "
+                  << FLAGS_modular_colorspace << std::endl;
+        return EXIT_FAILURE;
+      }
+      JxlEncoderFrameSettingsSetOption(
+          jxl_encoder_frame_settings, JXL_ENC_FRAME_SETTING_MODULAR_COLOR_SPACE,
+          FLAGS_modular_colorspace);
+    }
+    if (modular_nb_prev_channels_set) {
+      if (!(-1 <= FLAGS_modular_nb_prev_channels &&
+            FLAGS_modular_nb_prev_channels <= 11)) {
+        std::cerr << "Invalid --modular_nb_prev_channels: "
+                  << FLAGS_modular_nb_prev_channels << std::endl;
+        return EXIT_FAILURE;
+      }
+      JxlEncoderFrameSettingsSetOption(
+          jxl_encoder_frame_settings,
+          JXL_ENC_FRAME_SETTING_MODULAR_NB_PREV_CHANNELS,
+          FLAGS_modular_nb_prev_channels);
+    }
+  }
+  // Color related (not for modular-mode)
+  {
+    // TODO(tfish): Clarify with team - old `cjxl` had some extra
+    // "if quality is 100%" logic which has not been ported here.
+    // Overall, the new rule "set it if provided" is more
+    // straightforward than the old one, which needed the caller to
+    // understand subtle dependencies of the "this flag is ignored
+    // if those other flags are as follows" dependencies.
+    // Should we nevertheless introduce the old logic?
+    bool colortransform_set =
+        !gflags::GetCommandLineFlagInfoOrDie("colortransform").is_default;
+
+    if (colortransform_set) {
+      int32_t colortransform = -1;
+      if (FLAGS_colortransform == "XYB") {
+        colortransform = 0;
+      } else if (FLAGS_colortransform == "RGB") {
+        colortransform = 1;
+      } else if (FLAGS_colortransform == "YCbCr") {
+        colortransform = 2;
+      } else {
+        std::cerr << "Invalid --colortransform: " << FLAGS_colortransform
+                  << std::endl;
+        return EXIT_FAILURE;
+      }
+      JxlEncoderFrameSettingsSetOption(jxl_encoder_frame_settings,
+                                       JXL_ENC_FRAME_SETTING_COLOR_TRANSFORM,
+                                       colortransform);
     }
   }  // Processing flags.
 
