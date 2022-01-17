@@ -151,7 +151,7 @@ bool WriteFile(const char* filename, const std::vector<uint8_t>& bytes) {
   return true;
 }
 
-int DecompressJxlReconstructJPEG(const char* filename,
+int DecompressJxlReconstructJPEG(const std::vector<uint8_t>& compressed,
                                  std::vector<uint8_t>& jpeg_bytes,
                                  JxlDecoderPtr dec,
                                  JxlThreadParallelRunnerPtr runner,
@@ -170,13 +170,6 @@ int DecompressJxlReconstructJPEG(const char* filename,
     return EXIT_FAILURE;
   }
 
-  // Reading compressed JPEG XL input and decoding to pixels
-  std::vector<uint8_t> compressed;
-  if (!ReadFile(filename, &compressed)) {
-    fprintf(stderr, "couldn't load %s\n", filename);
-    return EXIT_FAILURE;
-  }
-  ReadFile(filename, &compressed);
   bool can_reconstruct_jpeg = false;
   std::vector<uint8_t> jpeg_data_chunk(16384);
   jpeg_bytes.resize(0);
@@ -219,8 +212,9 @@ int DecompressJxlReconstructJPEG(const char* filename,
                                                      jpeg_data_chunk.size())) {
         fprintf(stderr, "Decoder failed to set JPEG Buffer\n");
         return EXIT_FAILURE;
-      };
+      }
     } else if (status == JXL_DEC_SUCCESS) {
+      // Decoding finished successfully.
       break;
     } else if (status == JXL_DEC_FULL_IMAGE) {
     } else if (status == JXL_DEC_NEED_IMAGE_OUT_BUFFER) {
@@ -273,6 +267,13 @@ int main(int argc, char** argv) {
   if (extension == nullptr) extension = "";
   const jxl::extras::Codec codec = jxl::extras::CodecFromExtension(extension);
 
+  std::vector<uint8_t> compressed;
+  // Reading compressed JPEG XL input
+  if (!ReadFile(filename_in, &compressed)) {
+    fprintf(stderr, "couldn't load %s\n", filename_in);
+    return EXIT_FAILURE;
+  }
+
   size_t num_worker_threads = JxlThreadParallelRunnerDefaultNumWorkerThreads();
   {
     int64_t flag_num_worker_threads = FLAGS_num_threads;
@@ -291,7 +292,7 @@ int main(int argc, char** argv) {
   ) {
     std::vector<uint8_t> jpeg_bytes;
     for (size_t i = 0; i < num_reps; ++i) {
-      if (DecompressJxlReconstructJPEG(filename_in, jpeg_bytes, std::move(dec),
+      if (DecompressJxlReconstructJPEG(compressed, jpeg_bytes, std::move(dec),
                                        std::move(runner), &info) != 0) {
         return EXIT_FAILURE;
       }
@@ -303,6 +304,5 @@ int main(int argc, char** argv) {
   } else {
     // TODO(firsching): handle other formats
   }
-
   return EXIT_SUCCESS;
 }
