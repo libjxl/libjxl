@@ -3107,8 +3107,6 @@ TEST(DecodeTest, OrientedCroppedFrameTest) {
       }
     }
 
-    // TODO(eustas): investigate why manual merge is not the same as built-in.
-    if (resampling != 1) return;
     EXPECT_EQ(0u, jxl::test::ComparePixels(frames[0].data(), frames[4].data(),
                                            oxsize, oysize, format, format));
   };
