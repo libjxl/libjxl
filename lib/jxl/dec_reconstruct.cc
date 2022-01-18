@@ -1297,7 +1297,8 @@ Status FinalizeFrameDecoding(ImageBundle* decoded,
     std::vector<Rect> rects_to_process;
     for (size_t y = 0; y < frame_dim.ysize; y += kGroupDim) {
       for (size_t x = 0; x < frame_dim.xsize; x += kGroupDim) {
-        Rect rect(x, y, kGroupDim, kGroupDim, frame_dim.xsize, frame_dim.ysize);
+        Rect rect(x, y, kGroupDim, kGroupDim, frame_dim.xsize_upsampled,
+                  frame_dim.ysize_upsampled);
         if (rect.xsize() == 0 || rect.ysize() == 0) continue;
         rects_to_process.push_back(rect);
       }
