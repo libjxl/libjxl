@@ -81,6 +81,8 @@ class RenderPipelineStage {
   virtual ~RenderPipelineStage() = default;
 
  protected:
+  virtual Status IsInitialized() const { return true; }
+
   // Processes one row of input, producing the appropriate number of rows of
   // output. Input/output rows can be obtained by calls to
   // `GetInputRow`/`GetOutputRow`. `xsize+2*xextra` represents the total number

@@ -53,6 +53,7 @@
 #include "lib/jxl/passes_state.h"
 #include "lib/jxl/quant_weights.h"
 #include "lib/jxl/quantizer.h"
+#include "lib/jxl/render_pipeline/stage_blending.h"
 #include "lib/jxl/render_pipeline/stage_chroma_upsampling.h"
 #include "lib/jxl/render_pipeline/stage_epf.h"
 #include "lib/jxl/render_pipeline/stage_gaborish.h"
@@ -731,7 +732,7 @@ Status FrameDecoder::ProcessACGroup(size_t ac_group_id,
   return true;
 }
 
-void FrameDecoder::PreparePipeline() {
+Status FrameDecoder::PreparePipeline() {
   size_t num_c = 3 + frame_header_.nonserialized_metadata->m.num_extra_channels;
   if ((frame_header_.flags & FrameHeader::kNoise) != 0) {
     num_c += 3;
@@ -867,7 +868,8 @@ void FrameDecoder::PreparePipeline() {
     }  // Nothing to do for kNone.
 
     if (ImageBlender::NeedsBlending(dec_state_)) {
-      JXL_ABORT("Not implemented: blending");
+      builder.AddStage(GetBlendingStage(
+          dec_state_, dec_state_->output_encoding_info.color_encoding));
     }
 
     if (frame_header_.CanBeReferenced() &&
@@ -902,6 +904,7 @@ void FrameDecoder::PreparePipeline() {
     }
   }
   dec_state_->render_pipeline = std::move(builder).Finalize(frame_dim_);
+  return dec_state_->render_pipeline->IsInitialized();
 }
 
 void FrameDecoder::MarkSections(const SectionInfo* sections, size_t num,
@@ -1010,7 +1013,7 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
   if (*std::min_element(decoded_dc_groups_.begin(), decoded_dc_groups_.end()) &&
       !finalized_dc_) {
     if (use_slow_rendering_pipeline_) {
-      PreparePipeline();
+      JXL_RETURN_IF_ERROR(PreparePipeline());
     }
     FinalizeDC();
     JXL_RETURN_IF_ERROR(AllocateOutput());
