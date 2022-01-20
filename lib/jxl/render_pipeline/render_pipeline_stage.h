@@ -121,7 +121,7 @@ class RenderPipelineStage {
   float* GetOutputRow(const RowInfo& output_rows, size_t c,
                       size_t offset) const {
     JXL_DASSERT(GetChannelMode(c) == RenderPipelineChannelMode::kInOut);
-    JXL_DASSERT(offset <= 1 << settings_.shift_y);
+    JXL_DASSERT(offset <= 1ul << settings_.shift_y);
     return output_rows[c][offset] + kRenderPipelineXOffset;
   }
 

@@ -157,25 +157,27 @@ if (JPEGXL_ENABLE_VIEWERS OR NOT JPEGXL_ENABLE_SKCMS)
 endif()
 
 # gflags
-if (JPEGXL_BUNDLE_GFLAGS)
-  # Compile gflags from sources.
-  set(GFLAGS_BUILD_TESTING OFF)
-  add_subdirectory(gflags)
-  configure_file("${CMAKE_CURRENT_SOURCE_DIR}/gflags/COPYING.txt"
-                 ${PROJECT_BINARY_DIR}/LICENSE.gflags COPYONLY)
-else()
-  # Use sytem libgflags-dev
-  find_package(gflags)
-  if (NOT gflags_FOUND)
-    message(FATAL_ERROR
-      "Gflags not found, install libgflags-dev or download gflags source to"
-      "third_party/gflags from https://github.com/gflags/gflags. You can use"
-      " ${PROJECT_SOURCE_DIR}/deps.sh to download the dependency.")
-  endif()
-  if(JPEGXL_DEP_LICENSE_DIR)
-    configure_file("${JPEGXL_DEP_LICENSE_DIR}/libgflags-dev/copyright"
+if(JPEGXL_ENABLE_TOOLS)
+  if (JPEGXL_BUNDLE_GFLAGS)
+    # Compile gflags from sources.
+    set(GFLAGS_BUILD_TESTING OFF)
+    add_subdirectory(gflags)
+    configure_file("${CMAKE_CURRENT_SOURCE_DIR}/gflags/COPYING.txt"
                    ${PROJECT_BINARY_DIR}/LICENSE.gflags COPYONLY)
-  endif()  # JPEGXL_DEP_LICENSE_DIR
+  else()
+    # Use sytem libgflags-dev
+    find_package(gflags REQUIRED)
+    if (NOT gflags_FOUND)
+      message(FATAL_ERROR
+        "Gflags not found, install libgflags-dev or download gflags source to"
+        "third_party/gflags from https://github.com/gflags/gflags. You can use"
+        " ${PROJECT_SOURCE_DIR}/deps.sh to download the dependency.")
+    endif()
+    if(JPEGXL_DEP_LICENSE_DIR)
+      configure_file("${JPEGXL_DEP_LICENSE_DIR}/libgflags-dev/copyright"
+                     ${PROJECT_BINARY_DIR}/LICENSE.gflags COPYONLY)
+    endif()  # JPEGXL_DEP_LICENSE_DIR
+  endif()
 endif()
 
 # libpng
