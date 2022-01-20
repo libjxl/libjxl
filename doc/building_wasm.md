@@ -72,6 +72,10 @@ source $OPT/emsdk/emsdk_env.sh
 # Specify JS engine binary
 export V8=$OPT/.jsvu/v8
 
+# If building using the jpegxl-builder docker container prefix the following commands with:
+# CMAKE_FLAGS=-I/usr/wasm32/include
+# ex. CMAKE_FLAGS=-I/usr/wasm32/include BUILD_TARGET=wasm32 emconfigure ./ci.sh release
+
 # Either build with regular WASM:
 BUILD_TARGET=wasm32 emconfigure ./ci.sh release
 # or with SIMD WASM:
