@@ -14,7 +14,6 @@
 #include <array>
 #include <memory>
 #include <queue>
-#include <random>
 #include <vector>
 
 #if (!defined(__BYTE_ORDER__) || (__BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__))
@@ -729,7 +728,8 @@ struct ChunkSampleCollector {
     }
   }
 
-  void Finalize(size_t run) { Rle(run, lz77_counts); }
+  // don't count final run since we don't know how long it really is
+  void Finalize(size_t run) {}
 
   uint64_t* raw_counts;
   uint64_t* lz77_counts;
@@ -957,8 +957,8 @@ void WriteACSectionPalette(const unsigned char* rgba, size_t x0, size_t y0,
                           &row_encoder);
 }
 
-void CollectSamples(const unsigned char* rgba, size_t x0, size_t y0,
-                    size_t row_stride, uint64_t* raw_counts,
+void CollectSamples(const unsigned char* rgba, size_t x0, size_t y0, size_t xs,
+                    size_t row_stride, size_t row_count, uint64_t* raw_counts,
                     uint64_t* lz77_counts, bool palette,
                     const int16_t* lookup) {
   ChunkSampleCollector sample_collectors[4];
@@ -969,10 +969,10 @@ void CollectSamples(const unsigned char* rgba, size_t x0, size_t y0,
     sample_collectors[c].lz77_counts = lz77_counts;
   }
   if (palette) {
-    ProcessImageAreaPalette(rgba, x0, y0, 256, 256, 1, 9, row_stride, lookup,
-                            row_sample_collectors);
+    ProcessImageAreaPalette(rgba, x0, y0, xs, xs, 1, 1 + row_count, row_stride,
+                            lookup, row_sample_collectors);
   } else {
-    ProcessImageArea(rgba, x0, y0, 256, 256, 1, 9, row_stride,
+    ProcessImageArea(rgba, x0, y0, xs, xs, 1, 1 + row_count, row_stride,
                      row_sample_collectors);
   }
 }
@@ -988,7 +988,9 @@ void PrepareDCGlobalPalette(bool is_single_group, size_t width, size_t height,
   output->Write(5, 0b00000);  // Starting from ch 0
   output->Write(2, 0b10);     // 4-channel palette (RGBA)
   size_t pcolors = (pcolors_real + kChunkSize - 1) / kChunkSize * kChunkSize;
-  // pcolors > 0 and pcolors <= 1024
+  // pcolors <= kMaxColors + kChunkSize - 1
+  static_assert(kMaxColors + kChunkSize < 1281,
+                "add code to signal larger palette sizes");
   if (pcolors < 256) {
     output->Write(2, 0b00);
     output->Write(8, pcolors);
@@ -1038,7 +1040,7 @@ void PrepareDCGlobalPalette(bool is_single_group, size_t width, size_t height,
 }
 
 size_t FastLosslessEncode(const unsigned char* rgba, size_t width,
-                          size_t row_stride, size_t height,
+                          size_t row_stride, size_t height, int effort,
                           unsigned char** output) {
   assert(width != 0);
   assert(height != 0);
@@ -1050,7 +1052,7 @@ size_t FastLosslessEncode(const unsigned char* rgba, size_t width,
   int16_t lookup[kHashSize];
   lookup[0] = 0;
   int pcolors = 0;
-  bool collided = false;
+  bool collided = effort < 2;
   for (size_t y = 0; y < height && !collided; y++) {
     const unsigned char* r = rgba + row_stride * y;
     size_t x = 0;
@@ -1126,31 +1128,37 @@ size_t FastLosslessEncode(const unsigned char* rgba, size_t width,
     }
   }
 
+  // Width gets padded to kChunkSize, but this computation doesn't change
+  // because of that.
+  size_t num_groups_x = (width + 255) / 256;
+  size_t num_groups_y = (height + 255) / 256;
+  size_t num_dc_groups_x = (width + 2047) / 2048;
+  size_t num_dc_groups_y = (height + 2047) / 2048;
+
   uint64_t raw_counts[11] = {};
   uint64_t lz77_counts[17] = {};
 
-  if (height > 16 && width > 272) {
-    size_t width_limit = (width - 256) / 16;
-    size_t height_limit = height - 16;
-    // about one sample per group, i.e. look at 1/16th of the pixels
-    size_t nb_samples = 1 + width * height / 256 / 256;
-    std::mt19937 mt_rand(0);
-    // Collect samples from random locations in the image.
-    for (size_t i = 0; i < nb_samples; i++) {
-      CollectSamples(rgba, (mt_rand() % width_limit) * 16,
-                     mt_rand() % height_limit, row_stride, raw_counts,
-                     lz77_counts, !collided, lookup);
-    }
+  // sample the middle (effort * 2) rows of every group
+  for (size_t g = 0; g < num_groups_y * num_groups_x; g++) {
+    size_t xg = g % num_groups_x;
+    size_t yg = g / num_groups_x;
+    int y_offset = yg * 256;
+    int y_max = std::min<size_t>(height - yg * 256, 256);
+    int y_begin = y_offset + std::max<int>(0, y_max - 2 * effort) / 2;
+    int y_count =
+        std::min<int>(2 * effort * y_max / 256, y_offset + y_max - y_begin - 1);
+    int x_max =
+        std::min<size_t>(width - xg * 256, 256) / kChunkSize * kChunkSize;
+    CollectSamples(rgba, xg * 256, y_begin, x_max, row_stride, y_count,
+                   raw_counts, lz77_counts, !collided, lookup);
   }
 
-  // This should be tuned for screen content, as photo content is typically
-  // large enough to trigger the sampling.
-  uint64_t base_raw_counts[11] = {
-      1598, 315, 463, 374, 276, 208, 148, 98, 56, 20, 1,
-  };
+  uint64_t base_raw_counts[11] = {3843, 852, 1270, 1214, 1014, 727,
+                                  481,  300, 159,  51,   5};
   uint64_t base_lz77_counts[17] = {
-      11, 6, 6, 5, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-  };
+      // short runs will be sampled, but long ones won't.
+      // near full-group run is quite common (e.g. all-opaque alpha)
+      18, 12, 9, 11, 15, 2, 2, 1, 1, 1, 1, 2, 300, 0, 0, 0, 0};
 
   for (size_t i = 0; i < 11; i++) {
     raw_counts[i] = (raw_counts[i] << 8) + base_raw_counts[i];
@@ -1163,17 +1171,9 @@ size_t FastLosslessEncode(const unsigned char* rgba, size_t width,
   for (size_t i = 0; i < 17; i++) {
     lz77_counts[i] = (lz77_counts[i] << 8) + base_lz77_counts[i];
   }
-
   alignas(32) PrefixCode prefix_code(raw_counts, lz77_counts);
 
   BitWriter writer;
-
-  // Width gets padded to kChunkSize, but this computation doesn't change
-  // because of that.
-  size_t num_groups_x = (width + 255) / 256;
-  size_t num_groups_y = (height + 255) / 256;
-  size_t num_dc_groups_x = (width + 2047) / 2048;
-  size_t num_dc_groups_y = (height + 2047) / 2048;
 
   bool is_single_group = num_groups_x == 1 && num_groups_y == 1;
 
