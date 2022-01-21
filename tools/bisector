@@ -4,37 +4,37 @@ r"""General-purpose bisector
 Usage examples:
 
 # Finding the square root of 200 via bisection:
-bisect.py --var=BB --range=0.0,100.0 --target=200 --maxiter=100 \
-          --atol_val=1e-12 --rtol_val=0 --cmd='echo "$BB * $BB" | bc'
+bisector --var=BB --range=0.0,100.0 --target=200 --maxiter=100 \
+         --atol_val=1e-12 --rtol_val=0 --cmd='echo "$BB * $BB" | bc'
 # => 1 14.142135623730923 199.99999999999923 14.142135623731633 200.0000000000193
 
 # Finding an integer approximation to sqrt(200) via bisection:
-bisect.py --var=BB --range=0,100 --target=200 --maxiter=100 \
-          --atol_arg=1 --cmd='echo "$BB * $BB" | bc'
+bisector --var=BB --range=0,100 --target=200 --maxiter=100 \
+         --atol_arg=1 --cmd='echo "$BB * $BB" | bc'
 # => 1 14 196.0 15 225.0
 
 # Finding a change-id that broke something via bisection:
-bisect.py --var=BB --range=0,1000000 --target=0.5 --maxiter=100 \
-          --atol_arg=1 \
-          --cmd='test $BB -gt 123456 && echo 1 || echo 0' --verbosity=3
+bisector --var=BB --range=0,1000000 --target=0.5 --maxiter=100 \
+         --atol_arg=1 \
+         --cmd='test $BB -gt 123456 && echo 1 || echo 0' --verbosity=3
 # => 1 123456 0.0 123457 1.0
 
 # Finding settings that compress /usr/share/dict/words to a given target size:
-bisect.py --var=BB --range=1,9 --target=250000 --atol_arg=1 \
+bisector --var=BB --range=1,9 --target=250000 --atol_arg=1 \
   --cmd='gzip -$BB </usr/share/dict/words >/tmp/w_$BB.gz; wc -c /tmp/w_$BB.gz' \
   --final='mv /tmp/w_$BB.gz /tmp/words.gz; rm /tmp/w_*.gz' \
   --verbosity=1
 # => 1 3 263170.0 4 240043.0
 
 # JXL-encoding with bisection-for-size (tolerance 0.5%):
-bisect.py --var=BB --range=0.1,3.0 --target=3500 --rtol_val=0.005 \
+bisector --var=BB --range=0.1,3.0 --target=3500 --rtol_val=0.005 \
   --cmd='(build/tools/cjxl --distance=$BB /tmp/baseball.png /tmp/baseball_$BB.jxl && wc -c /tmp/baseball_$BB.jxl)' \
   --final='mv /tmp/baseball_$BB.jxl /tmp/baseball.jxl; rm -f /tmp/baseball_*.jxl' \
   --verbosity=1
 # => 1 1.1875 3573.0 1.278125 3481.0
 
 # JXL-encoding with bisection-for-bits-per-pixel (tolerance 0.5%), using helper:
-bisect.py --var=BB --range=0.1,3.0 --target=1.2 --rtol_val=0.005 \
+bisector --var=BB --range=0.1,3.0 --target=1.2 --rtol_val=0.005 \
   --cmd='(build/tools/cjxl --distance=$BB /tmp/baseball.png /tmp/baseball_$BB.jxl && get_bpp /tmp/baseball_$BB.jxl)' \
   --final='mv /tmp/baseball_$BB.jxl /tmp/baseball.jxl; rm -f /tmp/baseball_*.jxl' \
   --verbosity=1
