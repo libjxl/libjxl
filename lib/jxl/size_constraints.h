@@ -19,5 +19,5 @@ struct SizeConstraints {
 };
 
 }  // namespace jxl
- 
+
 #endif  // LIB_JXL_SIZE_CONSTRAINTS_H_
