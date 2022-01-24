@@ -154,6 +154,8 @@ class EPF0Stage : public RenderPipelineStage {
                  : RenderPipelineChannelMode::kIgnored;
   }
 
+  const char* GetName() const override { return "EPF0"; }
+
  private:
   LoopFilter lf_;
   const ImageF* sigma_;
@@ -325,6 +327,8 @@ class EPF1Stage : public RenderPipelineStage {
                  : RenderPipelineChannelMode::kIgnored;
   }
 
+  const char* GetName() const override { return "EPF1"; }
+
  private:
   LoopFilter lf_;
   const ImageF* sigma_;
@@ -437,6 +441,8 @@ class EPF2Stage : public RenderPipelineStage {
     return c < 3 ? RenderPipelineChannelMode::kInOut
                  : RenderPipelineChannelMode::kIgnored;
   }
+
+  const char* GetName() const override { return "EPF2"; }
 
  private:
   LoopFilter lf_;

@@ -302,8 +302,8 @@ struct PassesDecoderState {
       shared_storage.coeff_orders.resize(sz);
     }
     if (shared->frame_header.flags & FrameHeader::kNoise && !render_pipeline) {
-      noise = Image3F(shared->frame_dim.xsize_upsampled_padded,
-                      shared->frame_dim.ysize_upsampled_padded);
+      noise = Image3F(shared->frame_dim.xsize_upsampled,
+                      shared->frame_dim.ysize_upsampled);
       size_t num_x_groups = DivCeil(noise.xsize(), kGroupDim);
       size_t num_y_groups = DivCeil(noise.ysize(), kGroupDim);
       PROFILER_ZONE("GenerateNoise");

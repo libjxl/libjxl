@@ -49,6 +49,8 @@ class HorizontalChromaUpsamplingStage : public RenderPipelineStage {
                    : RenderPipelineChannelMode::kIgnored;
   }
 
+  const char* GetName() const override { return "HChromaUps"; }
+
  private:
   size_t c_;
 };
@@ -88,6 +90,8 @@ class VerticalChromaUpsamplingStage : public RenderPipelineStage {
     return c == c_ ? RenderPipelineChannelMode::kInOut
                    : RenderPipelineChannelMode::kIgnored;
   }
+
+  const char* GetName() const override { return "VChromaUps"; }
 
  private:
   size_t c_;

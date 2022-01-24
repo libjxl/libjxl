@@ -426,7 +426,7 @@ Status FrameDecoder::ProcessDCGlobal(BitReader* br) {
   // Splines' draw cache uses the color correlation map.
   if (shared.frame_header.flags & FrameHeader::kSplines) {
     JXL_RETURN_IF_ERROR(shared.image_features.splines.InitializeDrawCache(
-        frame_dim_.xsize_upsampled_padded, frame_dim_.ysize_upsampled_padded,
+        frame_dim_.xsize_upsampled, frame_dim_.ysize_upsampled,
         dec_state_->shared->cmap));
   }
   Status dec_status = modular_frame_decoder_.DecodeGlobalInfo(
@@ -482,16 +482,16 @@ Status FrameDecoder::AllocateOutput() {
   const CodecMetadata& metadata = *frame_header_.nonserialized_metadata;
   if (dec_state_->rgb_output == nullptr && !dec_state_->pixel_callback) {
     modular_frame_decoder_.MaybeDropFullImage();
-    decoded_->SetFromImage(Image3F(frame_dim_.xsize_upsampled_padded,
-                                   frame_dim_.ysize_upsampled_padded),
-                           dec_state_->output_encoding_info.color_encoding);
+    decoded_->SetFromImage(
+        Image3F(frame_dim_.xsize_upsampled, frame_dim_.ysize_upsampled),
+        dec_state_->output_encoding_info.color_encoding);
   }
   if (dec_state_->render_pipeline) {
     // TODO(veluca): consider not reallocating ECs if not needed.
     decoded_->extra_channels().clear();
     for (size_t i = 0; i < metadata.m.num_extra_channels; i++) {
-      decoded_->extra_channels().emplace_back(
-          frame_dim_.xsize_upsampled_padded, frame_dim_.ysize_upsampled_padded);
+      decoded_->extra_channels().emplace_back(frame_dim_.xsize_upsampled,
+                                              frame_dim_.ysize_upsampled);
     }
     if (frame_header_.dc_level != 0) {
       dec_state_->shared_storage.dc_frames[frame_header_.dc_level - 1] =
@@ -509,24 +509,8 @@ Status FrameDecoder::AllocateOutput() {
       for (size_t i = 0; i < metadata.m.num_extra_channels; i++) {
         uint32_t ecups = frame_header_.extra_channel_upsampling[i];
         dec_state_->extra_channels.emplace_back(
-            DivCeil(frame_dim_.xsize_upsampled_padded, ecups),
-            DivCeil(frame_dim_.ysize_upsampled_padded, ecups));
-#if JXL_MEMORY_SANITIZER
-        // Avoid errors due to loading vectors on the outermost padding.
-        // Upsample of extra channels requires this padding to be initialized.
-        // TODO(deymo): Remove this and use rects up to {x,y}size_upsampled
-        // instead of the padded one.
-        for (size_t y = 0;
-             y < DivCeil(frame_dim_.ysize_upsampled_padded, ecups); y++) {
-          for (size_t x = (y < DivCeil(frame_dim_.ysize_upsampled, ecups)
-                               ? DivCeil(frame_dim_.xsize_upsampled, ecups)
-                               : 0);
-               x < DivCeil(frame_dim_.xsize_upsampled_padded, ecups); x++) {
-            dec_state_->extra_channels.back().Row(y)[x] =
-                msan::kSanitizerSentinel;
-          }
-        }
-#endif
+            DivCeil(frame_dim_.xsize_upsampled, ecups),
+            DivCeil(frame_dim_.ysize_upsampled, ecups));
       }
     }
   }
@@ -710,10 +694,6 @@ Status FrameDecoder::ProcessACGroup(size_t ac_group_id,
           rects[c].first = r.first;
           size_t x1 = r.second.x0() + r.second.xsize();
           size_t y1 = r.second.y0() + r.second.ysize();
-          if (frame_header_.encoding == FrameEncoding::kVarDCT) {
-            x1 = RoundUpTo(x1, kBlockDim * frame_header_.upsampling);
-            y1 = RoundUpTo(y1, kBlockDim * frame_header_.upsampling);
-          }
           rects[c].second = Rect(r.second.x0() + ix * kGroupDim,
                                  r.second.y0() + iy * kGroupDim, kGroupDim,
                                  kGroupDim, x1, y1);
@@ -1055,15 +1035,6 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
   }
 
   if (decoded_ac_global_) {
-    // The decoded image requires padding for filtering. ProcessACGlobal added
-    // the padding, however when Flush is used, the image is shrunk to the
-    // output size. Add the padding back here. This is a cheap operation
-    // since the image has the original allocated size. The memory and original
-    // size are already there, but for safety we require the indicated xsize and
-    // ysize dimensions match the working area, see PlaneRowBoundsCheck.
-    decoded_->ShrinkTo(frame_dim_.xsize_upsampled_padded,
-                       frame_dim_.ysize_upsampled_padded);
-
     // Mark all the AC groups that we received as not complete yet.
     for (size_t i = 0; i < ac_group_sec.size(); i++) {
       if (num_ac_passes[i] == 0) continue;
