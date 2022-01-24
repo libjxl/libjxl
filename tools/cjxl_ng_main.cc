@@ -46,17 +46,11 @@ DEFINE_bool(responsive, false, "[modular encoding] do Squeeze transform");
 
 DEFINE_bool(progressive, false, "Enable progressive/responsive decoding.");
 
-DEFINE_bool(progressive_ac, false,  // TODO(tfish): Wire this up.
-            "Use progressive mode for AC.");
+DEFINE_bool(progressive_ac, false, "Use progressive mode for AC.");
 
-DEFINE_bool(qprogressive_ac,
-            false,  // TODO(tfish): Wire this up.
-                    // TODO(tfish): Clarify what this flag is about.
-            "Use progressive mode for AC.");
+DEFINE_bool(qprogressive_ac, false, "Use progressive mode for AC.");
 
-DEFINE_bool(use_experimental_encoder_heuristics,
-            false,  // TODO(tfish): Wire this up.
-            "Use new and not yet ready encoder heuristics");
+DEFINE_bool(modular_lossy_palette, false, "Use delta-palette.");
 
 DEFINE_bool(jpeg_transcode, false,  // TODO(tfish): Wire this up.
             "Do lossy transcode of input JPEG file (decode to "
@@ -67,13 +61,6 @@ DEFINE_bool(jpeg_transcode_disable_cfl, false,  // TODO(tfish): Wire this up.
 
 DEFINE_bool(premultiply, false,  // TODO(tfish): Wire this up.
             "Force premultiplied (associated) alpha.");
-
-DEFINE_bool(centerfirst, false,  // TODO(tfish): Wire this up.
-            "Put center groups first in the compressed file.");
-
-// TODO(tfish): Clarify if this is indeed deprecated. Remove if it is.
-// DEFINE_bool(noise, false,
-//           "force disable/enable noise generation.");
 
 DEFINE_bool(verbose, false,
             // TODO(tfish): Should be a verbosity-level.
@@ -120,7 +107,7 @@ DEFINE_bool(
 // --saliency_threshold, --dec-hints, --override_bitdepth,
 // --mquality, --iterations,
 // --extra-properties, --lossy-palette, --pre-compact,
-// --post-compact, --quiet, --print_profile,
+// --post-compact
 
 DEFINE_int32(progressive_dc, -1,
              "Progressive-DC setting. Valid values are: -1, 0, 1, 2.");
@@ -216,6 +203,8 @@ DEFINE_int32(photon_noise, 0,
              "As an example, a value of 100 gives low noise whereas a value "
              "of 3200 gives a lot of noise. The default value is 0.");
 
+DEFINE_int32(codestream_level, 5, "The codestream level. Either `5` or `10`.");
+
 DEFINE_double(
     distance, 1.0,  // TODO(tfish): wire this up.
     "Max. butteraugli distance, lower = higher quality. Range: 0 .. 25.\n"
@@ -255,6 +244,11 @@ DEFINE_string(
     colortransform, "",
     "The color transform to use. Valid values are: '' (= \"use default\"), "
     "'RGB', 'XYB', 'YCbCr'.");
+
+DEFINE_mquality(
+    mquality, "",  // TODO(tfish): Wire this up.
+    "[modular encoding] lossy 'quality', in the form luma_q[,chroma_q] "
+    "(100=lossless, lower is more lossy)");
 
 namespace {
 /**
@@ -407,13 +401,13 @@ int main(int argc, char** argv) {
   auto enc = JxlEncoderMake(/*memory_manager=*/nullptr);
   auto runner = JxlThreadParallelRunnerMake(
       /*memory_manager=*/nullptr, num_worker_threads);
-  if (JXL_ENC_SUCCESS != JxlEncoderSetParallelRunner(enc.get(),
+  JxlEncoder* jxl_encoder = enc.get();
+  if (JXL_ENC_SUCCESS != JxlEncoderSetParallelRunner(jxl_encoder,
                                                      JxlThreadParallelRunner,
                                                      runner.get())) {
     fprintf(stderr, "JxlEncoderSetParallelRunner failed\n");
     return EXIT_FAILURE;
   }
-  JxlEncoder* jxl_encoder = enc.get();
 
   const int32_t store_jpeg_metadata = FLAGS_store_jpeg_metadata;
   if (!(-1 <= store_jpeg_metadata && store_jpeg_metadata <= 1)) {
@@ -430,7 +424,7 @@ int main(int argc, char** argv) {
   }
 
   JxlEncoderFrameSettings* jxl_encoder_frame_settings =
-      JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
+      JxlEncoderFrameSettingsCreate(jxl_encoder, nullptr);
 
   {  // Processing tuning flags.
     bool use_container = FLAGS_container;
@@ -455,6 +449,10 @@ int main(int argc, char** argv) {
     ProcessTristateFlag("group_order", FLAGS_group_order,
                         jxl_encoder_frame_settings,
                         JXL_ENC_FRAME_SETTING_GROUP_ORDER);
+
+    if (!gflags::GetCommandLineFlagInfoOrDie("codestream_level").is_default) {
+      JxlEncoderSetCodestreamLevel(jxl_encoder, FLAGS_codestream_level);
+    }
 
     const int32_t flag_effort = FLAGS_effort;
     // TODO(firsching): rethink if we might want to have a validator with a
@@ -518,7 +516,6 @@ int main(int argc, char** argv) {
     JxlEncoderFrameSettingsSetOption(jxl_encoder_frame_settings,
                                      JXL_ENC_FRAME_SETTING_PHOTON_NOISE,
                                      FLAGS_photon_noise);
-    // Removed: --noise (superseded by: --photon_noise).
 
     JxlEncoderSetFrameDistance(jxl_encoder_frame_settings, FLAGS_distance);
     if (FLAGS_center_x != -1) {
@@ -590,6 +587,9 @@ int main(int argc, char** argv) {
     bool modular_nb_prev_channels_set =
         !gflags::GetCommandLineFlagInfoOrDie("modular_nb_prev_channels")
              .is_default;
+    bool modular_lossy_palette =
+        !gflags::GetCommandLineFlagInfoOrDie("modular_lossy_palette")
+             .is_default;
 
     if (modular_group_size_set) {
       if (!(FLAGS_modular_group_size == -1 ||
@@ -633,6 +633,11 @@ int main(int argc, char** argv) {
           jxl_encoder_frame_settings,
           JXL_ENC_FRAME_SETTING_MODULAR_NB_PREV_CHANNELS,
           FLAGS_modular_nb_prev_channels);
+    }
+    if (modular_lossy_palette_set) {
+      JxlEncoderFrameSettingsSetOption(jxl_encoder_frame_settings,
+                                       JXL_ENC_FRAME_SETTING_LOSSY_PALETTE,
+                                       FLAGS_modular_lossy_palette);
     }
   }
   // Color related (not for modular-mode)
@@ -739,7 +744,8 @@ int main(int argc, char** argv) {
   size_t avail_out = compressed.size() - (next_out - compressed.data());
   JxlEncoderStatus process_result = JXL_ENC_NEED_MORE_OUTPUT;
   while (process_result == JXL_ENC_NEED_MORE_OUTPUT) {
-    process_result = JxlEncoderProcessOutput(enc.get(), &next_out, &avail_out);
+    process_result =
+        JxlEncoderProcessOutput(jxl_encoder, &next_out, &avail_out);
     if (process_result == JXL_ENC_NEED_MORE_OUTPUT) {
       size_t offset = next_out - compressed.data();
       compressed.resize(compressed.size() * 2);
