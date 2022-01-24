@@ -148,6 +148,8 @@ class BlendingStage : public RenderPipelineStage {
     return RenderPipelineChannelMode::kInPlace;
   }
 
+  const char* GetName() const override { return "Blending"; }
+
  private:
   const PassesSharedState& state_;
   BlendingInfo info_;
