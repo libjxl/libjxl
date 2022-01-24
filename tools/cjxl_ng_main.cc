@@ -23,9 +23,7 @@
 #include "lib/extras/dec/pgx.h"
 #include "lib/extras/dec/pnm.h"
 #include "lib/jxl/base/file_io.h"
-// TODO(firsching): Remove this include once not needed for SizeConstraints
-// anymore
-#include "lib/jxl/codec_in_out.h"
+#include "lib/jxl/size_constraints.h"
 
 DECLARE_bool(help);
 DECLARE_bool(helpshort);
