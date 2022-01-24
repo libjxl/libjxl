@@ -75,6 +75,10 @@ std::unique_ptr<RenderPipeline> RenderPipeline::Builder::Finalize(
             res->channel_shifts_[i - 1][c].first - stage->settings_.shift_x;
         res->channel_shifts_[i][c].second =
             res->channel_shifts_[i - 1][c].second - stage->settings_.shift_y;
+      } else {
+        res->channel_shifts_[i][c].first = res->channel_shifts_[i - 1][c].first;
+        res->channel_shifts_[i][c].second =
+            res->channel_shifts_[i - 1][c].second;
       }
     }
   }

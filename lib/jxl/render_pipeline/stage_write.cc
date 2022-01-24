@@ -133,6 +133,8 @@ class WriteToU8Stage : public RenderPipelineStage {
                : RenderPipelineChannelMode::kIgnored;
   }
 
+  const char* GetName() const override { return "WriteToU8"; }
+
  private:
   uint8_t* rgb_;
   size_t stride_;
@@ -193,6 +195,8 @@ class WriteToImageBundleStage : public RenderPipelineStage {
                : RenderPipelineChannelMode::kIgnored;
   }
 
+  const char* GetName() const override { return "WriteIB"; }
+
  private:
   ImageBundle* image_bundle_;
 };
@@ -216,6 +220,8 @@ class WriteToImage3FStage : public RenderPipelineStage {
     return c < 3 ? RenderPipelineChannelMode::kInput
                  : RenderPipelineChannelMode::kIgnored;
   }
+
+  const char* GetName() const override { return "WriteI3F"; }
 
  private:
   Image3F* image_;
@@ -273,6 +279,8 @@ class WriteToPixelCallbackStage : public RenderPipelineStage {
                ? RenderPipelineChannelMode::kInput
                : RenderPipelineChannelMode::kIgnored;
   }
+
+  const char* GetName() const override { return "WritePixelCB"; }
 
  private:
   static constexpr size_t kMaxPixelsPerCall = 1024;

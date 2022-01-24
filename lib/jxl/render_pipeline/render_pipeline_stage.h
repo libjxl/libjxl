@@ -127,6 +127,8 @@ class RenderPipelineStage {
     return output_rows[c][offset] + kRenderPipelineXOffset;
   }
 
+  virtual const char* GetName() const = 0;
+
   Settings settings_;
   friend class RenderPipeline;
   friend class SimpleRenderPipeline;

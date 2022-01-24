@@ -179,7 +179,7 @@ class AddNoiseStage : public RenderPipelineStage {
     // shuffles are otherwise done on the data, so this is safe.
     msan::UnpoisonMemory(row_x + xsize, (xsize_v - xsize) * sizeof(float));
     msan::UnpoisonMemory(row_y + xsize, (xsize_v - xsize) * sizeof(float));
-    for (size_t x = 0; x < xsize; x += Lanes(d)) {
+    for (size_t x = 0; x < xsize_v; x += Lanes(d)) {
       const auto vx = Load(d, row_x + x);
       const auto vy = Load(d, row_y + x);
       const auto in_g = vy - vx;
@@ -205,6 +205,8 @@ class AddNoiseStage : public RenderPipelineStage {
            : c < 3       ? RenderPipelineChannelMode::kInPlace
                          : RenderPipelineChannelMode::kIgnored;
   }
+
+  const char* GetName() const override { return "AddNoise"; }
 
  private:
   const NoiseParams& noise_params_;
@@ -262,6 +264,8 @@ class ConvolveNoiseStage : public RenderPipelineStage {
     return c >= first_c_ ? RenderPipelineChannelMode::kInOut
                          : RenderPipelineChannelMode::kIgnored;
   }
+
+  const char* GetName() const override { return "ConvNoise"; }
 
  private:
   size_t first_c_;
