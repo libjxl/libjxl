@@ -32,7 +32,7 @@ class SimpleRenderPipeline : public RenderPipeline {
   size_t processed_passes_ = 0;
 
  private:
-  Rect MakeChannelRect(size_t group_id, size_t channel, bool is_color);
+  Rect MakeChannelRect(size_t group_id, size_t channel);
 };
 
 }  // namespace jxl

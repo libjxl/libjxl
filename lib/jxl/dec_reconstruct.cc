@@ -334,16 +334,16 @@ void DoYCbCrUpsampling(size_t hs, size_t vs, ImageF* plane_in, const Rect& rect,
   // All the pixels in the [x0, x1) x [y0, y1) range must be defined in the
   // plane_out output at the end.
   const size_t y0 = rect.y0() - std::min<size_t>(lf.Padding(), frame_rect.y0());
-  const size_t y1 = rect.y0() +
-                    std::min(frame_rect.y0() + rect.ysize() + lf.Padding(),
-                             frame_dim.ysize_padded) -
-                    frame_rect.y0();
+  const size_t y1 =
+      rect.y0() +
+      std::min(frame_rect.y0() + rect.ysize() + lf.Padding(), frame_dim.ysize) -
+      frame_rect.y0();
 
   const size_t x0 = rect.x0() - std::min<size_t>(lf.Padding(), frame_rect.x0());
-  const size_t x1 = rect.x0() +
-                    std::min(frame_rect.x0() + rect.xsize() + lf.Padding(),
-                             frame_dim.xsize_padded) -
-                    frame_rect.x0();
+  const size_t x1 =
+      rect.x0() +
+      std::min(frame_rect.x0() + rect.xsize() + lf.Padding(), frame_dim.xsize) -
+      frame_rect.x0();
 
   if (hs == 0 && vs == 0) {
     Rect r(x0, y0, x1 - x0, y1 - y0);
@@ -359,7 +359,7 @@ void DoYCbCrUpsampling(size_t hs, size_t vs, ImageF* plane_in, const Rect& rect,
       plane_in->Row(y)[rect.x0() - 1] = plane_in->Row(y)[rect.x0()];
     }
   }
-  if (frame_rect.x0() + x1 - rect.x0() >= frame_dim.xsize_padded) {
+  if (frame_rect.x0() + x1 - rect.x0() >= frame_dim.xsize) {
     ssize_t borderx = static_cast<ssize_t>(x1 - xoff + hs) / (1 << hs) + xoff;
     for (size_t y = 0; y < plane_in->ysize(); y++) {
       plane_in->Row(y)[borderx] = plane_in->Row(y)[borderx - 1];
@@ -369,7 +369,7 @@ void DoYCbCrUpsampling(size_t hs, size_t vs, ImageF* plane_in, const Rect& rect,
     memcpy(plane_in->Row(rect.y0() - 1), plane_in->Row(rect.y0()),
            plane_in->xsize() * sizeof(float));
   }
-  if (frame_rect.y0() + y1 - rect.y0() >= frame_dim.ysize_padded) {
+  if (frame_rect.y0() + y1 - rect.y0() >= frame_dim.ysize) {
     ssize_t bordery = static_cast<ssize_t>(y1 - yoff + vs) / (1 << vs) + yoff;
     memcpy(plane_in->Row(bordery), plane_in->Row(bordery - 1),
            plane_in->xsize() * sizeof(float));
@@ -640,8 +640,7 @@ Status FinalizeImageRect(
   JXL_DASSERT(input_rect.ysize() == frame_rect.ysize());
   JXL_DASSERT(frame_rect.x0() % GroupBorderAssigner::kPaddingXRound == 0);
   JXL_DASSERT(frame_rect.xsize() % GroupBorderAssigner::kPaddingXRound == 0 ||
-              frame_rect.xsize() + frame_rect.x0() == frame_dim.xsize ||
-              frame_rect.xsize() + frame_rect.x0() == frame_dim.xsize_padded);
+              frame_rect.xsize() + frame_rect.x0() == frame_dim.xsize);
 
   // +----------------------------- STEP 1 ------------------------------+
   // | Compute the rects on which patches and splines will be applied.   |
@@ -691,13 +690,13 @@ Status FinalizeImageRect(
     }
     for (size_t extra : {1, 2}) {
       if (frame_rect.x0() + frame_rect.xsize() + extra <=
-          dec_state->shared->frame_dim.xsize_padded) {
+          dec_state->shared->frame_dim.xsize) {
         JXL_DASSERT(input_rect.x0() + input_rect.xsize() + extra <=
                     input_image->xsize());
         ifbx1 = extra;
       }
       if (frame_rect.y0() + frame_rect.ysize() + extra <=
-          dec_state->shared->frame_dim.ysize_padded) {
+          dec_state->shared->frame_dim.ysize) {
         JXL_DASSERT(input_rect.y0() + input_rect.ysize() + extra <=
                     input_image->ysize());
         extra_rows_b = ifby1 = extra;
@@ -814,10 +813,10 @@ Status FinalizeImageRect(
   if (frame_header.upsampling != 1) {
     color_upsampler =
         &dec_state->upsamplers[CeilLog2Nonzero(frame_header.upsampling) - 1];
-    ensure_padding_upsampling.Init(
-        storage_for_if, rect_for_upsampling, frame_rect, frame_dim.xsize_padded,
-        frame_dim.ysize_padded, 2, 2, &ensure_padding_upsampling_y0,
-        &ensure_padding_upsampling_y1);
+    ensure_padding_upsampling.Init(storage_for_if, rect_for_upsampling,
+                                   frame_rect, frame_dim.xsize, frame_dim.ysize,
+                                   2, 2, &ensure_padding_upsampling_y0,
+                                   &ensure_padding_upsampling_y1);
   }
 
   std::vector<std::pair<ImageF*, Rect>> extra_channels_for_patches;
@@ -848,7 +847,6 @@ Status FinalizeImageRect(
       }
       ssize_t ensure_padding_y0, ensure_padding_y1;
       EnsurePaddingInPlaceRowByRow ensure_padding;
-      // frame_rect can go up to frame_dim.xsize_padded, in VarDCT mode.
       Rect ec_image_rect = ScaleRectForEC(
           frame_rect.Crop(frame_dim.xsize, frame_dim.ysize), frame_header, ec);
       size_t ecxs = DivCeil(frame_dim.xsize_upsampled,
@@ -893,7 +891,7 @@ Status FinalizeImageRect(
              extra_channels[ec].second.ysize() + rect_for_if_storage.ysize() -
                  rect_for_upsampling.ysize());
       extra_channels_for_patches.emplace_back(extra_channels[ec].first, r);
-      // frame_rect can go up to frame_dim.xsize_padded, in VarDCT mode.
+      // frame_rect can go up to frame_dim.xsize, in VarDCT mode.
       ec_padding[ec].Init(extra_channels[ec].first, extra_channels[ec].second,
                           frame_rect.Crop(frame_dim.xsize, frame_dim.ysize),
                           frame_dim.xsize, frame_dim.ysize, 2, 2,
@@ -911,14 +909,14 @@ Status FinalizeImageRect(
   // | Set up the filter pipeline.                                       |
   // +-------------------------------------------------------------------+
   if (fp) {
-    ensure_padding_filter.Init(
-        input, rect_for_if_input, rect_for_if, frame_dim.xsize_padded,
-        frame_dim.ysize_padded, lf.Padding(), lf.Padding(),
-        &ensure_padding_filter_y0, &ensure_padding_filter_y1);
+    ensure_padding_filter.Init(input, rect_for_if_input, rect_for_if,
+                               frame_dim.xsize, frame_dim.ysize, lf.Padding(),
+                               lf.Padding(), &ensure_padding_filter_y0,
+                               &ensure_padding_filter_y1);
 
     fp = PrepareFilterPipeline(dec_state, rect_for_if, *input,
-                               rect_for_if_input, frame_dim.ysize_padded,
-                               thread, storage_for_if, rect_for_if_storage);
+                               rect_for_if_input, frame_dim.ysize, thread,
+                               storage_for_if, rect_for_if_storage);
   }
 
   // +----------------------------- STEP 5 ------------------------------+
@@ -1004,7 +1002,7 @@ Status FinalizeImageRect(
           static_cast<size_t>(y) + 1 == lf.Padding() + rect_for_if.ysize()) {
         num_input_rows = 3;
       }
-      num_input_rows = std::min(num_input_rows, frame_dim.ysize_padded);
+      num_input_rows = std::min(num_input_rows, frame_dim.ysize);
       num_ys = num_input_rows * frame_header.upsampling;
 
       if (static_cast<size_t>(upsampled_available_y) >=
@@ -1023,7 +1021,7 @@ Status FinalizeImageRect(
           upsampled_frame_rect_for_storage.Lines(upsampled_available_y, num_ys),
           static_cast<ssize_t>(frame_rect.y0()) -
               static_cast<ssize_t>(rect_for_upsampling.y0()),
-          frame_dim.ysize_padded, dec_state->upsampler_storage[thread].get());
+          frame_dim.ysize, dec_state->upsampler_storage[thread].get());
       if (late_ec_upsample) {
         for (size_t ec = 0; ec < extra_channels.size(); ec++) {
           // Upsampler takes care of mirroring, and checks "physical"
@@ -1177,10 +1175,9 @@ Status FinalizeFrameDecoding(ImageBundle* decoded,
   // FinalizeImageRect was not yet run, or we are forcing a run.
   if (!dec_state->EagerFinalizeImageRect() || force_fir) {
     std::vector<Rect> rects_to_process;
-    for (size_t y = 0; y < frame_dim.ysize_padded; y += kGroupDim) {
-      for (size_t x = 0; x < frame_dim.xsize_padded; x += kGroupDim) {
-        Rect rect(x, y, kGroupDim, kGroupDim, frame_dim.xsize_padded,
-                  frame_dim.ysize_padded);
+    for (size_t y = 0; y < frame_dim.ysize; y += kGroupDim) {
+      for (size_t x = 0; x < frame_dim.xsize; x += kGroupDim) {
+        Rect rect(x, y, kGroupDim, kGroupDim, frame_dim.xsize, frame_dim.ysize);
         if (rect.xsize() == 0 || rect.ysize() == 0) continue;
         rects_to_process.push_back(rect);
       }
@@ -1201,8 +1198,8 @@ Status FinalizeFrameDecoding(ImageBundle* decoded,
             ecs.push_back(CopyImage(dec_state->extra_channels[i]));
           }
         } else {
-          ecs.emplace_back(frame_dim.xsize_upsampled_padded,
-                           frame_dim.ysize_upsampled_padded);
+          ecs.emplace_back(frame_dim.xsize_upsampled,
+                           frame_dim.ysize_upsampled);
         }
       }
       decoded->SetExtraChannels(std::move(ecs));

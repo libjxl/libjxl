@@ -155,6 +155,8 @@ class XYBStage : public RenderPipelineStage {
                  : RenderPipelineChannelMode::kIgnored;
   }
 
+  const char* GetName() const override { return "XYB"; }
+
  private:
   OpsinParams opsin_params_;
   Op op_;
@@ -243,6 +245,8 @@ class FastXYBStage : public RenderPipelineStage {
                ? RenderPipelineChannelMode::kInput
                : RenderPipelineChannelMode::kIgnored;
   }
+
+  const char* GetName() const override { return "FastXYB"; }
 
  private:
   uint8_t* rgb_;
