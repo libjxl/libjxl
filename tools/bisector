@@ -1,6 +1,9 @@
 #!/usr/bin/env python
 r"""General-purpose bisector
 
+Prints a space-separated list of values to stdout:
+1_if_success_0_otherwise left_x left_f(x) right_x right_f(x)
+
 Usage examples:
 
 # Finding the square root of 200 via bisection:
@@ -55,10 +58,10 @@ def _expandvars(vardef, env,
   """os.path.expandvars() variant using parameter env rather than os.environ."""
   current_expanded = vardef
   for num_recursions in range(max_recursion):
-    if verbosity >= 4:
+    if verbosity >= 3:
       print(f'_expandvars(): num_recursions={num_recursions}, '
             f'len={len(current_expanded)}' +
-            (', current: ' + current_expanded if verbosity >= 5 else ''))
+            (', current: ' + current_expanded if verbosity >= 4 else ''))
     if len > max_length:
         break
     current_expanded, num_replacements = re.subn(
@@ -157,7 +160,7 @@ def _bisect(*,
       delta_arg = bisect_right - bisect_left
       # Also check whether the argument is "within tolerance".
       # Here, we have to be careful if bisect_left and bisect_right
-      # have different sign: Then, their absolute magnitude
+      # have different signs: Then, their absolute magnitude
       # "sets the relevant scale".
       if abs(delta_arg) <= atol_arg + (
               rtol_arg * 0.5 * (abs(bisect_left) + abs(bisect_right))):
