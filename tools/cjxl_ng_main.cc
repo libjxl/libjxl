@@ -32,8 +32,18 @@ DEFINE_bool(encoder_version, false,
             "Print encoder library version number and exit.");
 
 DEFINE_bool(add_jpeg_frame, false,
+            // This supersedes --jpeg_transcode
             "Use JxlEncoderAddJPEGFrame to add a JPEG frame, "
             "rather than JxlEncoderAddImageFrame.");
+
+DEFINE_bool(jpeg_store_metadata, false,
+            "If --add_jpeg_frame is set, store JPEG reconstruction "
+            "metadata in the JPEG XL container "
+            "(for lossless reconstruction of the JPEG codestream).");
+
+DEFINE_bool(jpeg_reconstruction_cfl, true,
+            "Enable/disable chroma-from-luma (CFL) for lossless "
+            "JPEG reconstruction.");
 
 DEFINE_bool(container, false,
             "Force using container format (default: use only if needed).");
@@ -55,9 +65,6 @@ DEFINE_bool(modular_lossy_palette, false, "Use delta-palette.");
 DEFINE_bool(jpeg_transcode, false,  // TODO(tfish): Wire this up.
             "Do lossy transcode of input JPEG file (decode to "
             "pixels instead of doing lossless transcode).");
-
-DEFINE_bool(jpeg_transcode_disable_cfl, false,  // TODO(tfish): Wire this up.
-            "Disable CFL for lossless JPEG recompression");
 
 DEFINE_bool(premultiply, false,  // TODO(tfish): Wire this up.
             "Force premultiplied (associated) alpha.");
@@ -111,10 +118,6 @@ DEFINE_bool(
 
 DEFINE_int32(progressive_dc, -1,
              "Progressive-DC setting. Valid values are: -1, 0, 1, 2.");
-
-DEFINE_int32(store_jpeg_metadata, -1,
-             "Store JPEG reconstruction metadata in the JPEG XL container. "
-             "(-1 = default, 0 = disable, 1 = enable).");
 
 DEFINE_int32(faster_decoding, 0,
              "Favour higher decoding speed. 0 = default, higher "
@@ -245,7 +248,7 @@ DEFINE_string(
     "The color transform to use. Valid values are: '' (= \"use default\"), "
     "'RGB', 'XYB', 'YCbCr'.");
 
-DEFINE_mquality(
+DEFINE_string(
     mquality, "",  // TODO(tfish): Wire this up.
     "[modular encoding] lossy 'quality', in the form luma_q[,chroma_q] "
     "(100=lossless, lower is more lossy)");
@@ -407,20 +410,6 @@ int main(int argc, char** argv) {
                                                      runner.get())) {
     fprintf(stderr, "JxlEncoderSetParallelRunner failed\n");
     return EXIT_FAILURE;
-  }
-
-  const int32_t store_jpeg_metadata = FLAGS_store_jpeg_metadata;
-  if (!(-1 <= store_jpeg_metadata && store_jpeg_metadata <= 1)) {
-    std::cerr
-        << "Invalid --store_jpeg_metadata. Valid values are {-1, 0, 1}.\n";
-    return EXIT_FAILURE;
-  }
-  if (store_jpeg_metadata != -1) {
-    if (JXL_ENC_SUCCESS !=
-        JxlEncoderStoreJPEGMetadata(jxl_encoder, store_jpeg_metadata != 0)) {
-      std::cerr << "JxlEncoderStoreJPEGMetadata failed\n";
-      return EXIT_FAILURE;
-    }
   }
 
   JxlEncoderFrameSettings* jxl_encoder_frame_settings =
@@ -587,7 +576,7 @@ int main(int argc, char** argv) {
     bool modular_nb_prev_channels_set =
         !gflags::GetCommandLineFlagInfoOrDie("modular_nb_prev_channels")
              .is_default;
-    bool modular_lossy_palette =
+    bool modular_lossy_palette_set =
         !gflags::GetCommandLineFlagInfoOrDie("modular_lossy_palette")
              .is_default;
 
@@ -676,6 +665,15 @@ int main(int argc, char** argv) {
     if (!ReadFile(filename_in, &jpeg_data)) {
       std::cerr << "Reading image data failed.\n";
       return EXIT_FAILURE;
+    }
+    if (FLAGS_jpeg_store_metadata) {
+      JxlEncoderStoreJPEGMetadata(jxl_encoder, true);
+    }
+    if (!gflags::GetCommandLineFlagInfoOrDie("jpeg_reconstruction_cfl")
+             .is_default) {
+      JxlEncoderFrameSettingsSetOption(jxl_encoder_frame_settings,
+                                       JXL_ENC_FRAME_SETTING_JPEG_RECON_CFL,
+                                       FLAGS_jpeg_reconstruction_cfl ? 1 : 0);
     }
     if (JXL_ENC_SUCCESS != JxlEncoderAddJPEGFrame(jxl_encoder_frame_settings,
                                                   jpeg_data.data(),
