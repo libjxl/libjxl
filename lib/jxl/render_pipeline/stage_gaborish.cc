@@ -80,6 +80,8 @@ class GaborishStage : public RenderPipelineStage {
                  : RenderPipelineChannelMode::kIgnored;
   }
 
+  const char* GetName() const override { return "Gab"; }
+
  private:
   float weights_[9];
 };

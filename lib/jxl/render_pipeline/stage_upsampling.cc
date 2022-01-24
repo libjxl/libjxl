@@ -63,6 +63,8 @@ class UpsamplingStage : public RenderPipelineStage {
                    : RenderPipelineChannelMode::kIgnored;
   }
 
+  const char* GetName() const override { return "Upsample"; }
+
  private:
   template <size_t N>
   JXL_INLINE float Kernel(size_t x, size_t y, ssize_t ix, ssize_t iy) const {
