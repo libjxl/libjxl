@@ -10,27 +10,6 @@
 namespace jxl {
 namespace extras {
 
-namespace {
-size_t BitsPerSample(JxlDataType data_type) {
-  switch (data_type) {
-    case JXL_TYPE_BOOLEAN:
-      return 1;
-    case JXL_TYPE_UINT8:
-      return 8;
-    case JXL_TYPE_UINT16:
-      return 16;
-    case JXL_TYPE_UINT32:
-      return 32;
-    case JXL_TYPE_FLOAT:
-      return 32;
-    case JXL_TYPE_FLOAT16:
-      return 16;
-      // No default, give compiler error if new type not handled.
-  }
-  return 0;
-}
-}  // namespace
-
 Status ConvertPackedPixelFileToCodecInOut(const PackedPixelFile& ppf,
                                           ThreadPool* pool, CodecInOut* io) {
   const bool has_alpha = ppf.info.alpha_bits != 0;
@@ -97,7 +76,8 @@ Status ConvertPackedPixelFileToCodecInOut(const PackedPixelFile& ppf,
   io->frames.clear();
   for (const auto& frame : ppf.frames) {
     JXL_ASSERT(frame.color.pixels() != nullptr);
-    size_t frame_bits_per_sample = BitsPerSample(frame.color.format.data_type);
+    size_t frame_bits_per_sample =
+        frame.color.BitsPerChannel(frame.color.format.data_type);
     JXL_ASSERT(frame_bits_per_sample != 0);
     // It is ok for the frame.color.format.num_channels to not match the
     // number of channels on the image.
