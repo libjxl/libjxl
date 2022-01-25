@@ -474,6 +474,12 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
             errorstate = false;
             break;
           }
+          if (chunk.size() < 34) {
+            png_destroy_read_struct(&png_ptr, &info_ptr, 0);
+            return JXL_FAILURE("Received a chunk that is too small (%" PRIuS
+                               "B)",
+                               chunk.size());
+          }
           // At this point the old frame is done. Let's start a new one.
           w0 = png_get_uint_32(chunk.data() + 12);
           h0 = png_get_uint_32(chunk.data() + 16);
