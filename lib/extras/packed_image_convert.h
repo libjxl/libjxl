@@ -21,6 +21,11 @@ namespace extras {
 Status ConvertPackedPixelFileToCodecInOut(const PackedPixelFile& ppf,
                                           ThreadPool* pool, CodecInOut* io);
 
+// Converts an internal CodecInOut for use with internal function to an axternal
+// PackedPixelFile.
+Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
+                                          ThreadPool* pool,
+                                          PackedPixelFile* ppf);
 }  // namespace extras
 }  // namespace jxl
 

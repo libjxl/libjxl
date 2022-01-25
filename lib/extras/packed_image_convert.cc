@@ -5,6 +5,13 @@
 
 #include "lib/extras/packed_image_convert.h"
 
+#include <cstdint>
+
+#include "jxl/color_encoding.h"
+#include "jxl/types.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/color_encoding_internal.h"
+#include "lib/jxl/dec_external_image.h"
 #include "lib/jxl/enc_external_image.h"
 
 namespace jxl {
@@ -136,5 +143,106 @@ Status ConvertPackedPixelFileToCodecInOut(const PackedPixelFile& ppf,
   return true;
 }
 
+Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
+                                          ThreadPool* pool,
+                                          PackedPixelFile* ppf) {
+  const bool has_alpha = io.metadata.m.HasAlpha();
+  bool alpha_premultiplied = false;
+  JXL_ASSERT(!io.frames.empty());
+
+  if (has_alpha) {
+    JXL_ASSERT(io.metadata.m.GetAlphaBits() ==
+               io.metadata.m.bit_depth.bits_per_sample);
+    const auto* alpha_channel = io.metadata.m.Find(ExtraChannel::kAlpha);
+    JXL_ASSERT(alpha_channel->bit_depth.exponent_bits_per_sample ==
+               io.metadata.m.bit_depth.exponent_bits_per_sample);
+    alpha_premultiplied = alpha_channel->alpha_associated;
+  }
+  const bool is_gray = io.metadata.m.color_encoding.IsGray();
+  (void)is_gray;
+  // TODO(firsching) Seems a bit superflous..
+  JXL_ASSERT(io.metadata.m.color_encoding.Channels() == 1 ||
+             io.metadata.m.color_encoding.Channels() == 3);
+
+  // Convert the image metadata
+  ppf->info.xsize = io.metadata.size.xsize();
+  ppf->info.ysize = io.metadata.size.ysize();
+  ppf->info.bits_per_sample = io.metadata.m.bit_depth.bits_per_sample;
+  ppf->info.exponent_bits_per_sample =
+      io.metadata.m.bit_depth.exponent_bits_per_sample;
+
+  ppf->info.alpha_bits = io.metadata.m.GetAlphaBits();
+  ppf->info.alpha_premultiplied = alpha_premultiplied;
+
+  ppf->info.uses_original_profile = !io.metadata.m.xyb_encoded;
+  JXL_ASSERT(0 < io.metadata.m.orientation && io.metadata.m.orientation <= 8);
+  ppf->info.orientation =
+      static_cast<JxlOrientation>(io.metadata.m.orientation);
+
+  // Convert animation metadata
+  JXL_ASSERT(io.frames.size() == 1 || io.metadata.m.have_animation);
+  ppf->info.have_animation = io.metadata.m.have_animation;
+  ppf->info.animation.tps_numerator = io.metadata.m.animation.tps_numerator;
+  ppf->info.animation.tps_denominator = io.metadata.m.animation.tps_denominator;
+  ppf->info.animation.num_loops = io.metadata.m.animation.num_loops;
+
+  // Convert the color encoding
+  // TODO(firsching): do specific ICC profiles need special treatment here?
+  ConvertInternalToExternalColorEncoding(io.metadata.m.color_encoding,
+                                         &ppf->color_encoding);
+  io.metadata.m.color_encoding.IsSRGB();
+
+  // Convert the extra blobs
+  ppf->metadata.exif.clear();
+  ppf->metadata.exif.assign(io.blobs.exif.begin(), io.blobs.exif.end());
+  ppf->metadata.iptc.clear();
+  ppf->metadata.iptc.assign(io.blobs.iptc.begin(), io.blobs.iptc.end());
+  ppf->metadata.jumbf.clear();
+  ppf->metadata.jumbf.assign(io.blobs.jumbf.begin(), io.blobs.jumbf.end());
+  ppf->metadata.xmp.clear();
+  ppf->metadata.xmp.assign(io.blobs.xmp.begin(), io.blobs.xmp.end());
+
+  // Convert the pixels
+  ppf->frames.clear();
+  for (const auto& frame : io.frames) {
+    size_t frame_bits_per_sample = frame.metadata()->bit_depth.bits_per_sample;
+    JXL_ASSERT(frame_bits_per_sample != 0);
+    // It is ok for the frame.color.format.num_channels to not match the
+    // number of channels on the image.
+    // const bool frame_is_gray = frame.metadata()->color_encoding.IsGray();
+
+    const bool float_out = frame.metadata()->bit_depth.floating_point_sample;
+    // TODO(firsching): make those actually meaningful, or take format as
+    // argument?
+    const JxlEndianness endianness = JXL_NATIVE_ENDIAN;
+    const JxlDataType data_type = JXL_TYPE_UINT8;
+    const uint32_t num_channels = 4u;
+    const JxlPixelFormat format{
+        /*num_channels=*/num_channels,
+        /*data_type=*/data_type,
+        /*endianness=*/endianness,
+        /*align=*/0,
+    };
+
+    PackedFrame packed_frame(frame.xsize(), frame.ysize(), format);
+    packed_frame.name = frame.name;
+    packed_frame.frame_info.name_length = frame.name.size();
+    JXL_RETURN_IF_ERROR(ConvertToExternal(
+        frame.Copy(), frame_bits_per_sample, float_out, format.num_channels,
+        format.endianness,
+        /* stride_out=*/packed_frame.color.stride, pool,
+        packed_frame.color.pixels(), packed_frame.color.pixels_size,
+        /*out_callback=*/nullptr, /*out_opaque=*/nullptr,
+        frame.metadata()->GetOrientation()));
+
+    // PackedImage packed_image = packed_frame.color;
+
+    // TODO(firsching): Convert the extra channels. FIXME!
+    JXL_CHECK(frame.extra_channels().empty());
+    ppf->frames.push_back(std::move(packed_frame));
+  }
+
+  return true;
+}
 }  // namespace extras
 }  // namespace jxl
