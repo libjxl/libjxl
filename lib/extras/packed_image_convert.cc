@@ -143,7 +143,9 @@ Status ConvertPackedPixelFileToCodecInOut(const PackedPixelFile& ppf,
   return true;
 }
 
+// Allows converting from internal CodecInOut to external PackedPixelFile
 Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
+                                          const JxlPixelFormat pixel_format,
                                           ThreadPool* pool,
                                           PackedPixelFile* ppf) {
   const bool has_alpha = io.metadata.m.HasAlpha();
@@ -160,10 +162,6 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
   }
   const bool is_gray = io.metadata.m.color_encoding.IsGray();
   (void)is_gray;
-  // TODO(firsching) Seems a bit superflous..
-  JXL_ASSERT(io.metadata.m.color_encoding.Channels() == 1 ||
-             io.metadata.m.color_encoding.Channels() == 3);
-
   // Convert the image metadata
   ppf->info.xsize = io.metadata.size.xsize();
   ppf->info.ysize = io.metadata.size.ysize();
@@ -193,13 +191,9 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
   io.metadata.m.color_encoding.IsSRGB();
 
   // Convert the extra blobs
-  ppf->metadata.exif.clear();
   ppf->metadata.exif.assign(io.blobs.exif.begin(), io.blobs.exif.end());
-  ppf->metadata.iptc.clear();
   ppf->metadata.iptc.assign(io.blobs.iptc.begin(), io.blobs.iptc.end());
-  ppf->metadata.jumbf.clear();
   ppf->metadata.jumbf.assign(io.blobs.jumbf.begin(), io.blobs.jumbf.end());
-  ppf->metadata.xmp.clear();
   ppf->metadata.xmp.assign(io.blobs.xmp.begin(), io.blobs.xmp.end());
 
   // Convert the pixels
@@ -207,22 +201,14 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
   for (const auto& frame : io.frames) {
     size_t frame_bits_per_sample = frame.metadata()->bit_depth.bits_per_sample;
     JXL_ASSERT(frame_bits_per_sample != 0);
-    // It is ok for the frame.color.format.num_channels to not match the
+    // It is ok for the frame.color().kNumPlanes to not match the
     // number of channels on the image.
-    // const bool frame_is_gray = frame.metadata()->color_encoding.IsGray();
-
     const bool float_out = frame.metadata()->bit_depth.floating_point_sample;
-    // TODO(firsching): make those actually meaningful, or take format as
-    // argument?
-    const JxlEndianness endianness = JXL_NATIVE_ENDIAN;
-    const JxlDataType data_type = JXL_TYPE_UINT8;
-    const uint32_t num_channels = 4u;
-    const JxlPixelFormat format{
-        /*num_channels=*/num_channels,
-        /*data_type=*/data_type,
-        /*endianness=*/endianness,
-        /*align=*/0,
-    };
+    const uint32_t num_channels = frame.color().kNumPlanes;
+    JxlPixelFormat format{/*num_channels=*/num_channels,
+                          /*data_type=*/pixel_format.data_type,
+                          /*endianness=*/pixel_format.endianness,
+                          /*align=*/pixel_format.align};
 
     PackedFrame packed_frame(frame.xsize(), frame.ysize(), format);
     packed_frame.name = frame.name;
@@ -234,8 +220,6 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
         packed_frame.color.pixels(), packed_frame.color.pixels_size,
         /*out_callback=*/nullptr, /*out_opaque=*/nullptr,
         frame.metadata()->GetOrientation()));
-
-    // PackedImage packed_image = packed_frame.color;
 
     // TODO(firsching): Convert the extra channels. FIXME!
     JXL_CHECK(frame.extra_channels().empty());
