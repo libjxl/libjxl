@@ -556,8 +556,7 @@ JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
   enc->metadata.m.extra_channel_info.resize(enc->metadata.m.num_extra_channels);
   if (info->num_extra_channels == 0 && info->alpha_bits) {
     return JXL_API_ERROR(
-        "when alpha_bits is non-zero, the number of channels must be at least "
-        "1");
+        "When alpha_bits is non-zero, num_extra_channels must be >= 1.");
   }
   // If the user provides non-zero alpha_bits, we make the channel info at index
   // zero the appropriate alpha channel.
