@@ -696,6 +696,27 @@ int main(int argc, char** argv) {
       return EXIT_FAILURE;
     }
 
+    {  // JxlEncoderSetBasicInfo
+      JxlBasicInfo basic_info;
+      const JxlBasicInfo& ppf_info = ppf.info;
+      JxlEncoderInitBasicInfo(&basic_info);
+      basic_info.xsize = ppf_info.xsize;
+      basic_info.ysize = ppf_info.ysize;
+      basic_info.bits_per_sample = ppf_info.bits_per_sample;
+      basic_info.exponent_bits_per_sample = ppf_info.exponent_bits_per_sample;
+      basic_info.have_animation = ppf_info.have_animation;
+      basic_info.num_extra_channels =
+          (ppf.frames[0].color.format.num_channels == 2 ||
+           ppf.frames[0].color.format.num_channels == 4)
+              ? 1
+              : 0;
+      basic_info.uses_original_profile = JXL_TRUE;
+      if (JXL_ENC_SUCCESS != JxlEncoderSetBasicInfo(jxl_encoder, &basic_info)) {
+        std::cerr << "JxlEncoderSetBasicInfo() failed.\n";
+        return EXIT_FAILURE;
+      }
+    }
+
     if (ppf.icc.size() > 0) {
       JxlEncoderStatus enc_status =
           JxlEncoderSetICCProfile(jxl_encoder, ppf.icc.data(), ppf.icc.size());
@@ -714,25 +735,6 @@ int main(int argc, char** argv) {
     for (const jxl::extras::PackedFrame& pframe : ppf.frames) {
       const jxl::extras::PackedImage& pimage = pframe.color;
       JxlPixelFormat ppixelformat = pimage.format;
-
-      {  // JxlEncoderSetBasicInfo
-        JxlBasicInfo basic_info;
-        JxlEncoderInitBasicInfo(&basic_info);
-        basic_info.xsize = pimage.xsize;
-        basic_info.ysize = pimage.ysize;
-        basic_info.bits_per_sample = 32;
-        basic_info.exponent_bits_per_sample = 8;
-        basic_info.num_extra_channels =
-            (pimage.format.num_channels == 2 || pimage.format.num_channels == 4)
-                ? 1
-                : 0;
-        basic_info.uses_original_profile = JXL_FALSE;
-        if (JXL_ENC_SUCCESS !=
-            JxlEncoderSetBasicInfo(jxl_encoder, &basic_info)) {
-          std::cerr << "JxlEncoderSetBasicInfo() failed.\n";
-          return EXIT_FAILURE;
-        }
-      }
       {
         jxl::Status enc_status = JxlEncoderSetFrameHeader(
             jxl_encoder_frame_settings, &pframe.frame_info);
@@ -759,7 +761,7 @@ int main(int argc, char** argv) {
 
   // Reading compressed output
   std::vector<uint8_t> compressed;
-  compressed.resize(64);
+  compressed.resize(4096);
   uint8_t* next_out = compressed.data();
   size_t avail_out = compressed.size() - (next_out - compressed.data());
   JxlEncoderStatus process_result = JXL_ENC_NEED_MORE_OUTPUT;
@@ -782,7 +784,7 @@ int main(int argc, char** argv) {
   // TODO(firsching): print info about compressed size and other image stats
   // here and in the beginning, like is done in current cjxl.
   if (!WriteFile(compressed, filename_out)) {
-    fprintf(stderr, "Couldn't write jxl file\n");
+    fprintf(stderr, "Could not write jxl file.\n");
     return EXIT_FAILURE;
   }
   return EXIT_SUCCESS;
