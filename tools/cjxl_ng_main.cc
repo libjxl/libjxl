@@ -705,6 +705,10 @@ int main(int argc, char** argv) {
       basic_info.bits_per_sample = ppf_info.bits_per_sample;
       basic_info.exponent_bits_per_sample = ppf_info.exponent_bits_per_sample;
       basic_info.have_animation = ppf_info.have_animation;
+      basic_info.animation.tps_numerator = ppf_info.animation.tps_numerator;
+      basic_info.animation.tps_denominator = ppf_info.animation.tps_denominator;
+      basic_info.animation.num_loops = ppf_info.animation.num_loops;
+      
       basic_info.num_extra_channels =
           (ppf.frames[0].color.format.num_channels == 2 ||
            ppf.frames[0].color.format.num_channels == 4)
