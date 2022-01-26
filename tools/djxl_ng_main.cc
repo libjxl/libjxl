@@ -19,7 +19,9 @@
 #include "jxl/resizable_parallel_runner_cxx.h"
 #include "jxl/thread_parallel_runner.h"
 #include "jxl/thread_parallel_runner_cxx.h"
+#include "jxl/types.h"
 #include "lib/extras/dec/decode.h"
+#include "lib/extras/packed_image.h"
 #include "lib/jxl/base/printf_macros.h"
 
 DECLARE_bool(help);
@@ -228,6 +230,108 @@ int DecompressJxlReconstructJPEG(const std::vector<uint8_t>& compressed,
       jpeg_data_chunk.size() - JxlDecoderReleaseJPEGBuffer(dec.get());
   jpeg_bytes.insert(jpeg_bytes.end(), jpeg_data_chunk.data(),
                     jpeg_data_chunk.data() + used_jpeg_output);
+  return EXIT_SUCCESS;
+}
+
+int DecompressJxlToPackedPixelFile(const std::vector<uint8_t>& compressed,
+                                   jxl::extras::PackedPixelFile& pixels,
+                                   JxlPixelFormat& format, JxlDecoderPtr dec,
+                                   JxlThreadParallelRunnerPtr runner) {
+  if (JXL_DEC_SUCCESS != JxlDecoderSetParallelRunner(dec.get(),
+                                                     JxlThreadParallelRunner,
+                                                     runner.get())) {
+    fprintf(stderr, "JxlEncoderSetParallelRunner failed\n");
+    return EXIT_FAILURE;
+  }
+  if (JXL_DEC_SUCCESS !=
+      JxlDecoderSubscribeEvents(dec.get(),
+                                JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING |
+                                    JXL_DEC_FRAME | JXL_DEC_FULL_IMAGE)) {
+    fprintf(stderr, "JxlDecoderSubscribeEvents failed\n");
+    return EXIT_FAILURE;
+  }
+
+  // Reading compressed JPEG XL input and decoding to pixels
+  std::vector<uint8_t> icc_profile;
+  if (JXL_DEC_SUCCESS !=
+      JxlDecoderSetInput(dec.get(), compressed.data(), compressed.size())) {
+    fprintf(stderr, "Decoder failed to set input\n");
+    return EXIT_FAILURE;
+  }
+  // TODO(firsching): handle boxes as well (exif, iptc, jumbf and xmp).
+  for (;;) {
+    JxlDecoderStatus status = JxlDecoderProcessInput(dec.get());
+    if (status == JXL_DEC_ERROR) {
+      fprintf(stderr, "Failed to decode image\n");
+      return EXIT_FAILURE;
+    } else if (status == JXL_DEC_NEED_MORE_INPUT) {
+      fprintf(stderr, "Error, already provided all input\n");
+      return EXIT_FAILURE;
+    } else if (status == JXL_DEC_BASIC_INFO) {
+      if (JXL_DEC_SUCCESS != JxlDecoderGetBasicInfo(dec.get(), &pixels.info)) {
+        fprintf(stderr, "JxlDecoderGetBasicInfo failed\n");
+        break;
+      }
+      // TODO(firsching): handle extra channels
+    } else if (status == JXL_DEC_COLOR_ENCODING) {
+      size_t icc_size = 0;
+      // TODO(firsching) handle other targets as well.
+      JxlColorProfileTarget target = JXL_COLOR_PROFILE_TARGET_ORIGINAL;
+      if (JXL_DEC_SUCCESS !=
+          JxlDecoderGetICCProfileSize(dec.get(), &format, target, &icc_size)) {
+        fprintf(stderr, "JxlDecoderGetICCProfileSize failed\n");
+      }
+      if (icc_size != 0) {
+        pixels.icc.resize(icc_size);
+        if (JXL_DEC_SUCCESS !=
+            JxlDecoderGetColorAsICCProfile(dec.get(), &format, target,
+                                           icc_profile.data(), icc_size)) {
+          fprintf(stderr, "JxlDecoderGetColorAsICCProfile failed\n");
+        }
+      } else {
+        if (JXL_DEC_SUCCESS !=
+            JxlDecoderGetColorAsEncodedProfile(dec.get(), &format, target,
+                                               &pixels.color_encoding)) {
+          fprintf(stderr, "JxlDecoderGetColorAsEncodedProfile failed\n");
+        }
+      }
+    } else if (status == JXL_DEC_FRAME) {
+      jxl::extras::PackedFrame frame(pixels.info.xsize, pixels.info.ysize,
+                                     format);
+      pixels.frames.push_back(std::move(frame));
+    } else if (status == JXL_DEC_NEED_IMAGE_OUT_BUFFER) {
+      size_t buffer_size;
+      if (JXL_DEC_SUCCESS !=
+          JxlDecoderImageOutBufferSize(dec.get(), &format, &buffer_size)) {
+        fprintf(stderr, "JxlDecoderImageOutBufferSize failed\n");
+        break;
+      }
+      if (buffer_size != pixels.frames.back().color.pixels_size) {
+        fprintf(stderr, "Invalid out buffer size %" PRIuS " %" PRIuS "\n",
+                buffer_size, pixels.frames.back().color.pixels_size);
+        break;
+      }
+
+      void* pixels_buffer = pixels.frames.back().color.pixels();
+      size_t pixels_buffer_size = pixels.frames.back().color.pixels_size;
+      if (JXL_DEC_SUCCESS != JxlDecoderSetImageOutBuffer(dec.get(), &format,
+                                                         pixels_buffer,
+                                                         pixels_buffer_size)) {
+        fprintf(stderr, "JxlDecoderSetImageOutBuffer failed\n");
+        break;
+      }
+    } else if (status == JXL_DEC_SUCCESS) {
+      // Decoding finished successfully.
+      break;
+    } else if (status == JXL_DEC_FULL_IMAGE) {
+    } else if (status == JXL_DEC_NEED_IMAGE_OUT_BUFFER) {
+      break;
+    } else {
+      fprintf(stderr, "Error: unexpected status: %d\n",
+              static_cast<int>(status));
+      return EXIT_FAILURE;
+    }
+  }
   return EXIT_SUCCESS;
 }
 
