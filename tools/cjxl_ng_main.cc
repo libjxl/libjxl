@@ -695,42 +695,64 @@ int main(int argc, char** argv) {
       std::cerr << "No frames on input file.\n";
       return EXIT_FAILURE;
     }
-    const jxl::extras::PackedFrame& pframe = ppf.frames[0];
-    const jxl::extras::PackedImage& pimage = pframe.color;
-    JxlPixelFormat ppixelformat = pimage.format;
 
-    {  // JxlEncoderSetBasicInfo
-      JxlBasicInfo basic_info;
-      JxlEncoderInitBasicInfo(&basic_info);
-      basic_info.xsize = pimage.xsize;
-      basic_info.ysize = pimage.ysize;
-      basic_info.bits_per_sample = 32;
-      basic_info.exponent_bits_per_sample = 8;
-      basic_info.uses_original_profile = JXL_FALSE;
-      if (JXL_ENC_SUCCESS != JxlEncoderSetBasicInfo(jxl_encoder, &basic_info)) {
-        std::cerr << "JxlEncoderSetBasicInfo() failed.\n";
+    if (ppf.icc.size() > 0) {
+      JxlEncoderStatus enc_status =
+          JxlEncoderSetICCProfile(jxl_encoder, ppf.icc.data(), ppf.icc.size());
+      if (JXL_ENC_SUCCESS != enc_status) {
+        std::cerr << "JxlEncoderSetICCProfile() failed.\n";
         return EXIT_FAILURE;
       }
-    }
-    {  // JxlEncoderSetColorEncoding
-      JxlColorEncoding color_encoding = {};
-      JxlColorEncodingSetToSRGB(&color_encoding,
-                                /*is_gray=*/ppixelformat.num_channels < 3);
+    } else {
       if (JXL_ENC_SUCCESS !=
-          JxlEncoderSetColorEncoding(jxl_encoder, &color_encoding)) {
+          JxlEncoderSetColorEncoding(jxl_encoder, &ppf.color_encoding)) {
         std::cerr << "JxlEncoderSetColorEncoding() failed.\n";
         return EXIT_FAILURE;
       }
     }
-    jxl::Status enc_status =
-        JxlEncoderAddImageFrame(jxl_encoder_frame_settings, &ppixelformat,
-                                pimage.pixels(), pimage.pixels_size);
-    if (JXL_ENC_SUCCESS != enc_status) {
-      // TODO(tfish): Fix such status handling throughout.  We should
-      // have more detail available about what went wrong than what we
-      // currently share with the caller.
-      std::cerr << "JxlEncoderAddImageFrame() failed.\n";
-      return EXIT_FAILURE;
+
+    for (const jxl::extras::PackedFrame& pframe : ppf.frames) {
+      const jxl::extras::PackedImage& pimage = pframe.color;
+      JxlPixelFormat ppixelformat = pimage.format;
+
+      {  // JxlEncoderSetBasicInfo
+        JxlBasicInfo basic_info;
+        JxlEncoderInitBasicInfo(&basic_info);
+        basic_info.xsize = pimage.xsize;
+        basic_info.ysize = pimage.ysize;
+        basic_info.bits_per_sample = 32;
+        basic_info.exponent_bits_per_sample = 8;
+        basic_info.num_extra_channels =
+            (pimage.format.num_channels == 2 || pimage.format.num_channels == 4)
+                ? 1
+                : 0;
+        basic_info.uses_original_profile = JXL_FALSE;
+        if (JXL_ENC_SUCCESS !=
+            JxlEncoderSetBasicInfo(jxl_encoder, &basic_info)) {
+          std::cerr << "JxlEncoderSetBasicInfo() failed.\n";
+          return EXIT_FAILURE;
+        }
+      }
+      {
+        jxl::Status enc_status = JxlEncoderSetFrameHeader(
+            jxl_encoder_frame_settings, &pframe.frame_info);
+        if (JXL_ENC_SUCCESS != enc_status) {
+          std::cerr << "JxlEncoderSetFrameHeader() failed.\n";
+          return EXIT_FAILURE;
+        }
+      }
+      {
+        jxl::Status enc_status =
+            JxlEncoderAddImageFrame(jxl_encoder_frame_settings, &ppixelformat,
+                                    pimage.pixels(), pimage.pixels_size);
+        if (JXL_ENC_SUCCESS != enc_status) {
+          // TODO(tfish): Fix such status handling throughout.  We should
+          // have more detail available about what went wrong than what we
+          // currently share with the caller.
+          std::cerr << "JxlEncoderAddImageFrame() failed.\n";
+          return EXIT_FAILURE;
+        }
+      }
     }
   }
   JxlEncoderCloseInput(jxl_encoder);
