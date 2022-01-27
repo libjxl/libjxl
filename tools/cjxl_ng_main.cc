@@ -265,7 +265,7 @@ DEFINE_int64(
     "    Default: 7. Higher number is more effort (slower).");
 
 DEFINE_string(frame_indexing, "",
-              "If non-empty, a string matching '^[01]*'. If this string has a "
+              "If non-empty, a string matching '^[01]*$'. If this string has a "
               "'1' in i-th position, then the i-th frame will be indexed in "
               "the frame index box.");
 
@@ -469,6 +469,23 @@ int main(int argc, char** argv) {
 
     if (!gflags::GetCommandLineFlagInfoOrDie("codestream_level").is_default) {
       JxlEncoderSetCodestreamLevel(jxl_encoder, FLAGS_codestream_level);
+    }
+
+    if (FLAGS_frame_indexing.size() > 0) {
+      bool must_be_all_zeros = FLAGS_frame_indexing[0] != '1';
+      for (char c : FLAGS_frame_indexing) {
+        if (c == '1') {
+          if (must_be_all_zeros) {
+            std::cerr << "Invalid --frame_indexing. If the first character is "
+                         "'0', all must be 0.'.\n";
+            return EXIT_FAILURE;
+          }
+        } else if (c != '0') {
+          std::cerr << "Invalid --frame_indexing. Must match the pattern "
+                       "'^[01]*$'.\n";
+          return EXIT_FAILURE;
+        }
+      }
     }
 
     const int32_t flag_effort = FLAGS_effort;
@@ -741,7 +758,7 @@ int main(int argc, char** argv) {
                                        JXL_ENC_FRAME_SETTING_COLOR_TRANSFORM,
                                        colortransform);
     }
-  }  // Processing flags.
+  }
 
   if (FLAGS_add_jpeg_frame) {
     jxl::PaddedBytes jpeg_data;
