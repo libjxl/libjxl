@@ -891,7 +891,7 @@ TEST(JxlTest, RoundtripAlphaResamplingOnlyAlpha) {
 
   EXPECT_THAT(ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
                                   /*distmap=*/nullptr, pool),
-              IsSlightlyBelow(1.8));
+              IsSlightlyBelow(1.85));
 }
 
 TEST(JxlTest, RoundtripAlphaNonMultipleOf8) {
