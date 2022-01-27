@@ -1558,7 +1558,7 @@ TEST(DecodeTest, PixelTestWithICCProfileLossy) {
   jxl::ButteraugliParams ba;
   EXPECT_THAT(ButteraugliDistance(io0, io1, ba, jxl::GetJxlCms(),
                                   /*distmap=*/nullptr, nullptr),
-              IsSlightlyBelow(0.75f));
+              IsSlightlyBelow(0.77f));
 
   JxlDecoderDestroy(dec);
 }
@@ -1969,9 +1969,9 @@ TEST(DecodeTest, PreviewTest) {
   // smaller than 8x8, but jxl's ButteraugliDistance does not. Perhaps move
   // butteraugli's <8x8 handling from ButteraugliDiffmap to
   // ButteraugliComparator::Diffmap in butteraugli.cc.
-  EXPECT_THAT(ButteraugliDistance(io0, io1, ba, jxl::GetJxlCms(),
-                                  /*distmap=*/nullptr, nullptr),
-              IsSlightlyBelow(0.6f));
+  EXPECT_LE(ButteraugliDistance(io0, io1, ba, jxl::GetJxlCms(),
+                                /*distmap=*/nullptr, nullptr),
+            0.6f);
 
   JxlDecoderDestroy(dec);
 }
