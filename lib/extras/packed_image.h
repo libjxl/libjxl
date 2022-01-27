@@ -142,7 +142,29 @@ class PackedMetadata {
 // Helper class representing a JXL image file as decoded to pixels from the API.
 class PackedPixelFile {
  public:
-  JxlBasicInfo info = {};
+  JxlBasicInfo info = {JXL_FALSE,
+                       0,
+                       0,
+                       8,
+                       0,
+                       255.f,
+                       0.f,
+                       JXL_FALSE,
+                       0.f,
+                       JXL_FALSE,
+                       JXL_FALSE,
+                       JXL_FALSE,
+                       JXL_ORIENT_IDENTITY,
+                       3,
+                       0,
+                       0,
+                       0,
+                       JXL_FALSE,
+                       {0, 0},
+                       {10, 1, 0, JXL_FALSE},
+                       0,
+                       0,
+                       {}};
 
   // The extra channel metadata information.
   struct PackedExtraChannel {
