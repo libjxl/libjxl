@@ -245,7 +245,7 @@ TEST(JxlTest, RoundtripResample2MT) {
   // file size.
   EXPECT_LE(Roundtrip(&io, cparams, dparams, &pool, &io2), 64500u);
   EXPECT_THAT(ComputeDistance2(io.Main(), io2.Main(), GetJxlCms()),
-              IsSlightlyBelow(300));
+              IsSlightlyBelow(320));
 }
 
 // Roundtrip the image using a parallel runner that executes single-threaded but
@@ -293,7 +293,7 @@ TEST(JxlTest, RoundtripOutOfOrderProcessingBorder) {
   CodecInOut io2;
   Roundtrip(&io, cparams, dparams, &pool, &io2);
 
-  EXPECT_GE(2.5, ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
+  EXPECT_GE(2.8, ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
                                      /*distmap=*/nullptr, &pool));
 }
 
@@ -595,7 +595,7 @@ TEST(JxlTest, RoundtripSmallPatchesAlpha) {
   EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 2000u);
   EXPECT_THAT(ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
                                   /*distmap=*/nullptr, pool),
-              IsSlightlyBelow(0.22f));
+              IsSlightlyBelow(0.24f));
 }
 
 TEST(JxlTest, RoundtripSmallPatches) {
@@ -623,7 +623,7 @@ TEST(JxlTest, RoundtripSmallPatches) {
   EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 2000u);
   EXPECT_THAT(ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
                                   /*distmap=*/nullptr, pool),
-              IsSlightlyBelow(0.22f));
+              IsSlightlyBelow(0.24f));
 }
 
 // Test header encoding of original bits per sample
@@ -859,7 +859,7 @@ TEST(JxlTest, RoundtripAlphaResampling) {
 
   EXPECT_THAT(ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
                                   /*distmap=*/nullptr, pool),
-              IsSlightlyBelow(4.6));
+              IsSlightlyBelow(4.7));
 }
 
 TEST(JxlTest, RoundtripAlphaResamplingOnlyAlpha) {
