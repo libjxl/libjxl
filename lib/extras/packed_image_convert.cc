@@ -160,8 +160,7 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
                io.metadata.m.bit_depth.exponent_bits_per_sample);
     alpha_premultiplied = alpha_channel->alpha_associated;
   }
-  const bool is_gray = io.metadata.m.color_encoding.IsGray();
-  (void)is_gray;
+
   // Convert the image metadata
   ppf->info.xsize = io.metadata.size.xsize();
   ppf->info.ysize = io.metadata.size.ysize();
@@ -185,10 +184,12 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
   ppf->info.animation.num_loops = io.metadata.m.animation.num_loops;
 
   // Convert the color encoding
-  // TODO(firsching): do specific ICC profiles need special treatment here?
-  ConvertInternalToExternalColorEncoding(io.metadata.m.color_encoding,
-                                         &ppf->color_encoding);
-  io.metadata.m.color_encoding.IsSRGB();
+  ppf->icc.assign(io.metadata.m.color_encoding.ICC().begin(),
+                  io.metadata.m.color_encoding.ICC().end());
+  if (ppf->icc.empty()) {
+    ConvertInternalToExternalColorEncoding(io.metadata.m.color_encoding,
+                                           &ppf->color_encoding);
+  }
 
   // Convert the extra blobs
   ppf->metadata.exif.assign(io.blobs.exif.begin(), io.blobs.exif.end());
