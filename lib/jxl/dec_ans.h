@@ -403,9 +403,9 @@ class ANSSymbolReader {
   bool use_prefix_code_;
   uint32_t state_ = ANS_SIGNATURE << 16u;
   const HybridUintConfig* JXL_RESTRICT configs;
-  uint32_t log_alpha_size_;
-  uint32_t log_entry_size_;
-  uint32_t entry_size_minus_1_;
+  uint32_t log_alpha_size_{};
+  uint32_t log_entry_size_{};
+  uint32_t entry_size_minus_1_{};
 
   // LZ77 structures and constants.
   static constexpr size_t kWindowMask = kWindowSize - 1;
@@ -418,8 +418,8 @@ class ANSSymbolReader {
   uint32_t lz77_min_length_ = 0;
   uint32_t lz77_threshold_ = 1 << 20;  // bigger than any symbol.
   HybridUintConfig lz77_length_uint_;
-  uint32_t special_distances_[kNumSpecialDistances];
-  uint32_t num_special_distances_;
+  uint32_t special_distances_[kNumSpecialDistances]{};
+  uint32_t num_special_distances_{};
 };
 
 Status DecodeHistograms(BitReader* br, size_t num_contexts, ANSCode* code,
