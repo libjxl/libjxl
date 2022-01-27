@@ -836,7 +836,7 @@ int main(int argc, char** argv) {
       }
     }
 
-    for (int num_frame = 0; num_frame < ppf.frames.size(); ++num_frame) {
+    for (size_t num_frame = 0; num_frame < ppf.frames.size(); ++num_frame) {
       const jxl::extras::PackedFrame& pframe = ppf.frames[num_frame];
       const jxl::extras::PackedImage& pimage = pframe.color;
       JxlPixelFormat ppixelformat = pimage.format;
