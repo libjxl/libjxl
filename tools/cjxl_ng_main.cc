@@ -337,8 +337,9 @@ jxl::Status LoadInput(const char* filename_in,
   if (image_data.size() < kMinBytes) return JXL_FAILURE("Input too small.");
   jxl::Span<const uint8_t> encoded(image_data);
 
-  // Default values when not set by decoders.
-  ppf.info.uses_original_profile = true;
+  // Manually fix intensity target 0 problem, decoder should set a
+  // reasonable default, but at least apng doesn't:
+  ppf.info.intensity_target = 255.f;
   ppf.info.orientation = JXL_ORIENT_IDENTITY;
   jxl::extras::ColorHints color_hints;
   jxl::SizeConstraints size_constraints;
@@ -797,24 +798,11 @@ int main(int argc, char** argv) {
     }
 
     {  // JxlEncoderSetBasicInfo
-      JxlBasicInfo basic_info;
-      const JxlBasicInfo& ppf_info = ppf.info;
-      JxlEncoderInitBasicInfo(&basic_info);
-      basic_info.xsize = ppf_info.xsize;
-      basic_info.ysize = ppf_info.ysize;
-      basic_info.bits_per_sample = ppf_info.bits_per_sample;
-      basic_info.exponent_bits_per_sample = ppf_info.exponent_bits_per_sample;
-      basic_info.have_animation = ppf_info.have_animation;
-      basic_info.animation.tps_numerator = ppf_info.animation.tps_numerator;
-      basic_info.animation.tps_denominator = ppf_info.animation.tps_denominator;
-      basic_info.animation.num_loops = ppf_info.animation.num_loops;
-
-      basic_info.num_extra_channels =
-          (ppf.frames[0].color.format.num_channels == 2 ||
-           ppf.frames[0].color.format.num_channels == 4)
-              ? 1
-              : 0;
-      basic_info.uses_original_profile = JXL_TRUE;
+      JxlBasicInfo basic_info = ppf.info;
+      size_t has_alpha = (basic_info.alpha_bits > 0 ? 1 : 0);
+      basic_info.num_extra_channels = has_alpha;
+      basic_info.num_color_channels = ppf.info.num_color_channels + has_alpha;
+      basic_info.uses_original_profile = JXL_FALSE;
       if (JXL_ENC_SUCCESS != JxlEncoderSetBasicInfo(jxl_encoder, &basic_info)) {
         std::cerr << "JxlEncoderSetBasicInfo() failed.\n";
         return EXIT_FAILURE;
