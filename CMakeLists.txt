@@ -191,6 +191,12 @@ endif()  # JPEGXL_STATIC
 set(THREADS_PREFER_PTHREAD_FLAG YES)
 find_package(Threads REQUIRED)
 
+# These settings are important to drive check_cxx_source_compiles
+# See CMP0067 (min cmake version is 3.10 anyway)
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_CXX_STANDARD_REQUIRED YES)
+
 if(JPEGXL_STATIC)
   if (MINGW)
     # In MINGW libstdc++ uses pthreads directly. When building statically a
@@ -297,10 +303,6 @@ endif ()
 endif ()  # !MSVC
 
 include(GNUInstallDirs)
-
-set(CMAKE_CXX_STANDARD 11)
-set(CMAKE_CXX_EXTENSIONS OFF)
-set(CMAKE_CXX_STANDARD_REQUIRED YES)
 
 add_subdirectory(third_party)
 
