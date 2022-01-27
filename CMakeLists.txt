@@ -197,6 +197,9 @@ set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD_REQUIRED YES)
 
+# Atomics
+find_package(Atomics REQUIRED)
+
 if(JPEGXL_STATIC)
   if (MINGW)
     # In MINGW libstdc++ uses pthreads directly. When building statically a
