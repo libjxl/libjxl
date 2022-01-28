@@ -731,6 +731,7 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
       previous_frame_should_be_cleared = false;
     }
   }
+  if (ppf->frames.empty()) return JXL_FAILURE("No frames decoded");
   ppf->frames.back().frame_info.is_last = true;
 
   return true;
