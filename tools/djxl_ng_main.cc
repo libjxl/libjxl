@@ -252,7 +252,6 @@ int DecompressJxlToPackedPixelFile(const std::vector<uint8_t>& compressed,
   }
 
   // Reading compressed JPEG XL input and decoding to pixels
-  std::vector<uint8_t> icc_profile;
   if (JXL_DEC_SUCCESS !=
       JxlDecoderSetInput(dec.get(), compressed.data(), compressed.size())) {
     fprintf(stderr, "Decoder failed to set input\n");
@@ -285,7 +284,7 @@ int DecompressJxlToPackedPixelFile(const std::vector<uint8_t>& compressed,
         pixels.icc.resize(icc_size);
         if (JXL_DEC_SUCCESS !=
             JxlDecoderGetColorAsICCProfile(dec.get(), &format, target,
-                                           icc_profile.data(), icc_size)) {
+                                           pixels.icc.data(), icc_size)) {
           fprintf(stderr, "JxlDecoderGetColorAsICCProfile failed\n");
         }
       } else {
