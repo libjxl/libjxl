@@ -46,6 +46,7 @@
 #include "jxl/encode.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/printf_macros.h"
+#include "lib/jxl/base/scope_guard.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/sanitizers.h"
 #include "png.h" /* original (unpatched) libpng is ok */
@@ -315,7 +316,6 @@ int processing_start(png_structp& png_ptr, png_infop& info_ptr, void* frame_ptr,
   if (!png_ptr || !info_ptr) return 1;
 
   if (setjmp(png_jmpbuf(png_ptr))) {
-    png_destroy_read_struct(&png_ptr, &info_ptr, 0);
     return 1;
   }
 
@@ -339,7 +339,6 @@ int processing_data(png_structp png_ptr, png_infop info_ptr, unsigned char* p,
   if (!png_ptr || !info_ptr) return 1;
 
   if (setjmp(png_jmpbuf(png_ptr))) {
-    png_destroy_read_struct(&png_ptr, &info_ptr, 0);
     return 1;
   }
 
@@ -354,7 +353,6 @@ int processing_finish(png_structp png_ptr, png_infop info_ptr,
   if (!png_ptr || !info_ptr) return 1;
 
   if (setjmp(png_jmpbuf(png_ptr))) {
-    png_destroy_read_struct(&png_ptr, &info_ptr, 0);
     return 1;
   }
 
@@ -366,8 +364,6 @@ int processing_finish(png_structp png_ptr, png_infop info_ptr,
   for (int i = 0; i < num_text; i++) {
     (void)BlobsReaderPNG::Decode(text_ptr[i], metadata);
   }
-
-  png_destroy_read_struct(&png_ptr, &info_ptr, 0);
 
   return 0;
 }
@@ -382,8 +378,8 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
   unsigned int id, j, w, h, w0, h0, x0, y0;
   unsigned int delay_num, delay_den, dop, bop, rowbytes, imagesize;
   unsigned char sig[8];
-  png_structp png_ptr;
-  png_infop info_ptr;
+  png_structp png_ptr = nullptr;
+  png_infop info_ptr = nullptr;
   PaddedBytes chunk;
   PaddedBytes chunkIHDR;
   std::vector<PaddedBytes> chunksInfo;
@@ -404,6 +400,14 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
   };
 
   std::vector<FrameInfo> frames;
+
+  // Make sure png memory is released in any case.
+  auto scope_guard = MakeScopeGuard([&]() {
+    png_destroy_read_struct(&png_ptr, &info_ptr, 0);
+    // Just in case. Not all versions on libpng wipe-out the pointers.
+    png_ptr = nullptr;
+    info_ptr = nullptr;
+  });
 
   r = {bytes.data(), bytes.data() + bytes.size()};
   // Not a PNG => not an error
@@ -475,7 +479,6 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
             break;
           }
           if (chunk.size() < 34) {
-            png_destroy_read_struct(&png_ptr, &info_ptr, 0);
             return JXL_FAILURE("Received a chunk that is too small (%" PRIuS
                                "B)",
                                chunk.size());

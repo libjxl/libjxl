@@ -39,6 +39,7 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/base/profiler.h
   jxl/base/random.cc
   jxl/base/random.h
+  jxl/base/scope_guard.h
   jxl/base/span.h
   jxl/base/status.cc
   jxl/base/status.h
