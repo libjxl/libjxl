@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "jxl/codestream_header.h"
+#include "jxl/encode.h"
 #include "jxl/types.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/common.h"
@@ -142,29 +143,7 @@ class PackedMetadata {
 // Helper class representing a JXL image file as decoded to pixels from the API.
 class PackedPixelFile {
  public:
-  JxlBasicInfo info = {JXL_FALSE,
-                       0,
-                       0,
-                       8,
-                       0,
-                       255.f,
-                       0.f,
-                       JXL_FALSE,
-                       0.f,
-                       JXL_FALSE,
-                       JXL_FALSE,
-                       JXL_FALSE,
-                       JXL_ORIENT_IDENTITY,
-                       3,
-                       0,
-                       0,
-                       0,
-                       JXL_FALSE,
-                       {0, 0},
-                       {10, 1, 0, JXL_FALSE},
-                       0,
-                       0,
-                       {}};
+  JxlBasicInfo info = {};
 
   // The extra channel metadata information.
   struct PackedExtraChannel {
@@ -185,6 +164,7 @@ class PackedPixelFile {
   std::vector<PackedFrame> frames;
 
   PackedMetadata metadata;
+  PackedPixelFile() { JxlEncoderInitBasicInfo(&info); };
 };
 
 }  // namespace extras
