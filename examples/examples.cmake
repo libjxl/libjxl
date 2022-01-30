@@ -13,6 +13,9 @@ target_link_libraries(encode_oneshot jxl jxl_threads)
 add_executable(jxlinfo ${CMAKE_CURRENT_LIST_DIR}/jxlinfo.c)
 target_link_libraries(jxlinfo jxl)
 
+add_executable(macro_definitions_example ${CMAKE_CURRENT_LIST_DIR}/macro_definitions_example.cc)
+target_link_libraries(macro_definitions_example jxl)
+
 if(NOT ${SANITIZER} STREQUAL "none")
   # Linking a C test binary with the C++ JPEG XL implementation when using
   # address sanitizer is not well supported by clang 9, so force using clang++
