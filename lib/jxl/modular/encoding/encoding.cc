@@ -11,6 +11,7 @@
 #include <queue>
 
 #include "lib/jxl/base/printf_macros.h"
+#include "lib/jxl/base/scope_guard.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
 #include "lib/jxl/modular/options.h"
 
@@ -422,6 +423,15 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
   }
   if (num_chans == 0) return true;
 
+  size_t next_channel = 0;
+  auto scope_guard = MakeScopeGuard([&]() {
+    // Do not do anything if truncated groups are not allowed.
+    if (!allow_truncated_group) return;
+    for (size_t c = next_channel; c < nb_channels; c++) {
+      ZeroFillImage(&image.channel[c].plane);
+    }
+  });
+
   // Read tree.
   Tree tree_storage;
   std::vector<uint8_t> context_map_storage;
@@ -463,26 +473,29 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
 
   // Read channels
   ANSSymbolReader reader(code, br, distance_multiplier);
-  for (size_t i = 0; i < nb_channels; i++) {
-    Channel &channel = image.channel[i];
+  for (; next_channel < nb_channels; next_channel++) {
+    Channel &channel = image.channel[next_channel];
     if (!channel.w || !channel.h) {
       continue;  // skip empty channels
     }
-    if (i >= image.nb_meta_channels && (channel.w > options->max_chan_size ||
-                                        channel.h > options->max_chan_size)) {
+    if (next_channel >= image.nb_meta_channels &&
+        (channel.w > options->max_chan_size ||
+         channel.h > options->max_chan_size)) {
       break;
     }
-    JXL_RETURN_IF_ERROR(DecodeModularChannelMAANS(br, &reader, *context_map,
-                                                  *tree, header.wp_header, i,
-                                                  group_id, &image));
+    JXL_RETURN_IF_ERROR(DecodeModularChannelMAANS(
+        br, &reader, *context_map, *tree, header.wp_header, next_channel,
+        group_id, &image));
     // Truncated group.
     if (!br->AllReadsWithinBounds()) {
       if (!allow_truncated_group) return JXL_FAILURE("Truncated input");
-      ZeroFillImage(&channel.plane);
-      while (++i < nb_channels) ZeroFillImage(&image.channel[i].plane);
       return Status(StatusCode::kNotEnoughBytes);
     }
   }
+
+  // Make sure no zero-filling happens even if next_channel < nb_channels.
+  scope_guard.Disarm();
+
   if (!reader.CheckANSFinalState()) {
     return JXL_FAILURE("ANS decode final state failed");
   }
