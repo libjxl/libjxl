@@ -154,8 +154,7 @@ bool WriteFile(const char* filename, const std::vector<uint8_t>& bytes) {
 int DecompressJxlReconstructJPEG(const std::vector<uint8_t>& compressed,
                                  std::vector<uint8_t>& jpeg_bytes,
                                  JxlDecoderPtr dec,
-                                 JxlThreadParallelRunnerPtr runner,
-                                 JxlBasicInfo* info) {
+                                 JxlThreadParallelRunnerPtr runner) {
   if (JXL_DEC_SUCCESS != JxlDecoderSetParallelRunner(dec.get(),
                                                      JxlThreadParallelRunner,
                                                      runner.get())) {
@@ -169,7 +168,6 @@ int DecompressJxlReconstructJPEG(const std::vector<uint8_t>& compressed,
     fprintf(stderr, "JxlDecoderSubscribeEvents failed\n");
     return EXIT_FAILURE;
   }
-
   bool can_reconstruct_jpeg = false;
   std::vector<uint8_t> jpeg_data_chunk(16384);
   jpeg_bytes.resize(0);
@@ -284,7 +282,6 @@ int main(int argc, char** argv) {
   auto dec = JxlDecoderMake(/*memory_manager=*/nullptr);
   auto runner = JxlThreadParallelRunnerMake(
       /*memory_manager=*/nullptr, num_worker_threads);
-  JxlBasicInfo info;
   if (codec == jxl::extras::Codec::kJPG
 #if JPEGXL_ENABLE_JPEG
       && !FLAGS_pixels_to_jpeg
@@ -293,7 +290,7 @@ int main(int argc, char** argv) {
     std::vector<uint8_t> jpeg_bytes;
     for (size_t i = 0; i < num_reps; ++i) {
       if (DecompressJxlReconstructJPEG(compressed, jpeg_bytes, std::move(dec),
-                                       std::move(runner), &info) != 0) {
+                                       std::move(runner)) != 0) {
         return EXIT_FAILURE;
       }
     }
