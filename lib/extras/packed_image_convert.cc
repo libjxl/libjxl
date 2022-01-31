@@ -164,6 +164,7 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
   // Convert the image metadata
   ppf->info.xsize = io.metadata.size.xsize();
   ppf->info.ysize = io.metadata.size.ysize();
+  ppf->info.num_color_channels = io.metadata.m.color_encoding.Channels();
   ppf->info.bits_per_sample = io.metadata.m.bit_depth.bits_per_sample;
   ppf->info.exponent_bits_per_sample =
       io.metadata.m.bit_depth.exponent_bits_per_sample;
