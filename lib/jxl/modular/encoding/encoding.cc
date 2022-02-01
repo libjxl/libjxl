@@ -388,7 +388,19 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
   if (image.channel.empty()) return true;
 
   // decode transforms
-  JXL_RETURN_IF_ERROR(Bundle::Read(br, &header));
+  Status status = Bundle::Read(br, &header);
+  if (!allow_truncated_group) JXL_RETURN_IF_ERROR(status);
+  if (status.IsFatalError()) return status;
+  if (!br->AllReadsWithinBounds()) {
+    // Don't do/undo transforms if header is incomplete.
+    header.transforms.clear();
+    image.transform = header.transforms;
+    for (size_t c = 0; c < image.channel.size(); c++) {
+      ZeroFillImage(&image.channel[c].plane);
+    }
+    return Status(StatusCode::kNotEnoughBytes);
+  }
+
   JXL_DEBUG_V(3, "Image data underwent %" PRIuS " transformations: ",
               header.transforms.size());
   image.transform = header.transforms;
@@ -398,10 +410,7 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
   if (image.error) {
     return JXL_FAILURE("Corrupt file. Aborting.");
   }
-  if (br->AllReadsWithinBounds()) {
-    // Only check if the transforms list is complete.
-    JXL_RETURN_IF_ERROR(ValidateChannelDimensions(image, *options));
-  }
+  JXL_RETURN_IF_ERROR(ValidateChannelDimensions(image, *options));
 
   size_t nb_channels = image.channel.size();
 
