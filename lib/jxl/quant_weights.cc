@@ -318,8 +318,8 @@ Status ComputeQuantTable(const QuantEncoding& encoding,
   HWY_CAPPED(float, 64) d;
   for (size_t i = 0; i < num * 3; i += Lanes(d)) {
     auto inv_val = LoadU(d, weights.data() + i);
-    if (JXL_UNLIKELY(!AllFalse(inv_val >= Set(d, 1.0f / kAlmostZero)) |
-                     !AllFalse(inv_val < Set(d, kAlmostZero)))) {
+    if (JXL_UNLIKELY(!AllFalse(d, inv_val >= Set(d, 1.0f / kAlmostZero)) ||
+                     !AllFalse(d, inv_val < Set(d, kAlmostZero)))) {
       return JXL_FAILURE("Invalid quantization table");
     }
     auto val = Set(d, 1.0f) / inv_val;
