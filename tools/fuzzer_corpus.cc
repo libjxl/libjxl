@@ -199,10 +199,12 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
   for (uint32_t frame = 0; frame < spec.num_frames; frame++) {
     jxl::ImageBundle ib(&io.metadata.m);
     const bool has_alpha = spec.alpha_bit_depth != 0;
-    size_t row_size = jxl::RowSize(
-        spec.width, io.metadata.m.color_encoding.Channels() + has_alpha,
-        io.metadata.m.bit_depth.bits_per_sample);
-    size_t bytes_per_pixel = row_size / spec.width;
+    const size_t bytes_per_sample =
+        jxl::DivCeil(io.metadata.m.bit_depth.bits_per_sample, 8);
+    const size_t bytes_per_pixel =
+        bytes_per_sample *
+        (io.metadata.m.color_encoding.Channels() + has_alpha);
+    const size_t row_size = spec.width * bytes_per_pixel;
     std::vector<uint8_t> img_data(row_size * spec.height, 0);
     for (size_t y = 0; y < spec.height; y++) {
       size_t pos = row_size * y;
@@ -219,7 +221,7 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
         /*has_alpha=*/has_alpha,
         /*alpha_is_premultiplied=*/spec.alpha_is_premultiplied,
         io.metadata.m.bit_depth.bits_per_sample, JXL_LITTLE_ENDIAN,
-        false /* flipped_y */, nullptr, &ib, /*float_in=*/false));
+        false /* flipped_y */, nullptr, &ib, /*float_in=*/false, /*align=*/0));
     io.frames.push_back(std::move(ib));
   }
 
