@@ -1088,7 +1088,7 @@ Status FinalizeImageRect(
                 *output_pixel_data_storage, 2, available_y + iy),
             nullptr};
         if (alpha) {
-          xyba[3] = alpha_rect.ConstRow(*alpha, iy);
+          xyba[3] = alpha_rect.ConstRow(*alpha, available_y + iy);
         }
         uint8_t* out_buf =
             dec_state->rgb_output +
