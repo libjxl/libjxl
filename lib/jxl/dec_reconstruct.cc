@@ -1079,13 +1079,14 @@ Status FinalizeImageRect(
                              .Crop(Rect(0, 0, frame_dim.xsize_upsampled,
                                         frame_dim.ysize_upsampled));
       for (size_t iy = 0; iy < output_rect.ysize(); iy++) {
-        const float* xyba[4] = {upsampled_frame_rect_for_storage.ConstPlaneRow(
-                                    *output_pixel_data_storage, 0, iy),
-                                upsampled_frame_rect_for_storage.ConstPlaneRow(
-                                    *output_pixel_data_storage, 1, iy),
-                                upsampled_frame_rect_for_storage.ConstPlaneRow(
-                                    *output_pixel_data_storage, 2, iy),
-                                nullptr};
+        const float* xyba[4] = {
+            upsampled_frame_rect_for_storage.ConstPlaneRow(
+                *output_pixel_data_storage, 0, available_y + iy),
+            upsampled_frame_rect_for_storage.ConstPlaneRow(
+                *output_pixel_data_storage, 1, available_y + iy),
+            upsampled_frame_rect_for_storage.ConstPlaneRow(
+                *output_pixel_data_storage, 2, available_y + iy),
+            nullptr};
         if (alpha) {
           xyba[3] = alpha_rect.ConstRow(*alpha, iy);
         }
