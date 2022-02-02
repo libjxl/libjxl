@@ -18,6 +18,7 @@
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/padded_bytes.h"
+#include "lib/jxl/base/random.h"
 #include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
@@ -33,6 +34,7 @@
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/image_test_utils.h"
+#include "lib/jxl/modular/encoding/context_predict.h"
 #include "lib/jxl/modular/encoding/enc_encoding.h"
 #include "lib/jxl/modular/encoding/encoding.h"
 #include "lib/jxl/test_utils.h"
@@ -320,6 +322,24 @@ TEST(ModularTest, RoundtripLosslessCustomFloat) {
   EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 23000u);
   EXPECT_EQ(0.0, ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
                                      /*distmap=*/nullptr, pool));
+}
+
+TEST(ModularTest, ClampedGradientTest) {
+  Rng rng(0);
+  constexpr int max_bits = 29;
+  for (size_t i = 0; i < 100000; i++) {
+    int32_t a = rng.UniformI(-(1 << max_bits), 1 << max_bits);
+    int32_t b = rng.UniformI(-(1 << max_bits), 1 << max_bits);
+    int32_t c = rng.UniformI(-(1 << max_bits), 1 << max_bits);
+    int32_t cg = ClampedGradient(a, b, c);
+    int64_t la = a, lb = b, lc = c;
+    int64_t g = la + lb - lc;
+    int32_t M = (a > b ? a : b);
+    int32_t m = (a > b ? b : a);
+    if (g > M) g = M;
+    if (g < m) g = m;
+    EXPECT_EQ(cg, g);
+  }
 }
 
 }  // namespace
