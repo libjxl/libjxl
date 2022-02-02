@@ -535,7 +535,13 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
           if (colortype & 4 ||
               png_get_valid(png_ptr, info_ptr, PNG_INFO_tRNS)) {
             ppf->info.alpha_bits = ppf->info.bits_per_sample;
-            if (sigbits) ppf->info.alpha_bits = sigbits->alpha;
+            if (sigbits) {
+              if (sigbits->alpha &&
+                  sigbits->alpha != ppf->info.bits_per_sample) {
+                return JXL_FAILURE("Unsupported alpha bit-depth");
+              }
+              ppf->info.alpha_bits = sigbits->alpha;
+            }
           } else {
             ppf->info.alpha_bits = 0;
           }
