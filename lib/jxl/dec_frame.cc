@@ -480,23 +480,15 @@ void FrameDecoder::FinalizeDC() {
 Status FrameDecoder::AllocateOutput() {
   if (allocated_) return true;
   const CodecMetadata& metadata = *frame_header_.nonserialized_metadata;
-  if (dec_state_->rgb_output == nullptr && !dec_state_->pixel_callback) {
+  if (dec_state_->rgb_output == nullptr && !dec_state_->pixel_callback &&
+      !dec_state_->render_pipeline) {
     modular_frame_decoder_.MaybeDropFullImage();
     decoded_->SetFromImage(
         Image3F(frame_dim_.xsize_upsampled, frame_dim_.ysize_upsampled),
         dec_state_->output_encoding_info.color_encoding);
   }
   if (dec_state_->render_pipeline) {
-    // TODO(veluca): consider not reallocating ECs if not needed.
-    decoded_->extra_channels().clear();
-    for (size_t i = 0; i < metadata.m.num_extra_channels; i++) {
-      decoded_->extra_channels().emplace_back(frame_dim_.xsize_upsampled,
-                                              frame_dim_.ysize_upsampled);
-    }
-    if (frame_header_.dc_level != 0) {
-      dec_state_->shared_storage.dc_frames[frame_header_.dc_level - 1] =
-          Image3F(frame_dim_.xsize, frame_dim_.ysize);
-    }
+    modular_frame_decoder_.MaybeDropFullImage();
     if (frame_header_.CanBeReferenced()) {
       // TODO(veluca): this will need to be adapted for RGB output.
       JXL_ASSERT(dec_state_->rgb_output == nullptr &&
@@ -522,8 +514,6 @@ Status FrameDecoder::AllocateOutput() {
 
 Status FrameDecoder::ProcessACGlobal(BitReader* br) {
   JXL_CHECK(finalized_dc_);
-  JXL_CHECK(decoded_->HasColor() || dec_state_->rgb_output != nullptr ||
-            !!dec_state_->pixel_callback);
 
   // Decode AC group.
   if (frame_header_.encoding == FrameEncoding::kVarDCT) {
@@ -811,8 +801,9 @@ Status FrameDecoder::PreparePipeline() {
 
   if (frame_header_.CanBeReferenced() &&
       frame_header_.save_before_color_transform) {
-    builder.AddStage(
-        GetWriteToImageBundleStage(&dec_state_->frame_storage_for_referencing));
+    builder.AddStage(GetWriteToImageBundleStage(
+        &dec_state_->frame_storage_for_referencing,
+        dec_state_->output_encoding_info.color_encoding));
   }
 
   bool has_alpha = false;
@@ -855,7 +846,8 @@ Status FrameDecoder::PreparePipeline() {
     if (frame_header_.CanBeReferenced() &&
         !frame_header_.save_before_color_transform) {
       builder.AddStage(GetWriteToImageBundleStage(
-          &dec_state_->frame_storage_for_referencing));
+          &dec_state_->frame_storage_for_referencing,
+          dec_state_->output_encoding_info.color_encoding));
     }
 
     if (render_spotcolors_ && frame_header_.nonserialized_metadata->m.Find(
@@ -880,7 +872,8 @@ Status FrameDecoder::PreparePipeline() {
           dec_state_->rgb_output, dec_state_->rgb_stride, width, height,
           dec_state_->rgb_output_is_rgba, has_alpha, alpha_c));
     } else {
-      builder.AddStage(GetWriteToImageBundleStage(decoded_));
+      builder.AddStage(GetWriteToImageBundleStage(
+          decoded_, dec_state_->output_encoding_info.color_encoding));
     }
   }
   dec_state_->render_pipeline = std::move(builder).Finalize(frame_dim_);

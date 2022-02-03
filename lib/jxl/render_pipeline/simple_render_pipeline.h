@@ -22,8 +22,6 @@ class SimpleRenderPipeline : public RenderPipeline {
 
   void ProcessBuffers(size_t group_id, size_t thread_id) override;
 
-  void RunPipeline();
-
   void PrepareForThreadsInternal(size_t num) override;
 
   // Full frame buffers. Both X and Y dimensions are padded by
