@@ -167,9 +167,30 @@ HWY_EXPORT(GetWriteToU8Stage);
 namespace {
 class WriteToImageBundleStage : public RenderPipelineStage {
  public:
-  explicit WriteToImageBundleStage(ImageBundle* image_bundle)
+  explicit WriteToImageBundleStage(ImageBundle* image_bundle,
+                                   ColorEncoding color_encoding)
       : RenderPipelineStage(RenderPipelineStage::Settings()),
-        image_bundle_(image_bundle) {}
+        image_bundle_(image_bundle),
+        color_encoding_(std::move(color_encoding)) {}
+
+  void SetInputSizes(
+      const std::vector<std::pair<size_t, size_t>>& input_sizes) override {
+#if JXL_ENABLE_ASSERT
+    JXL_ASSERT(input_sizes.size() >= 3);
+    for (size_t c = 1; c < input_sizes.size(); c++) {
+      JXL_ASSERT(input_sizes[c].first == input_sizes[0].first);
+      JXL_ASSERT(input_sizes[c].second == input_sizes[0].second);
+    }
+#endif
+    image_bundle_->SetFromImage(
+        Image3F(input_sizes[0].first, input_sizes[0].second), color_encoding_);
+    // TODO(veluca): consider not reallocating ECs if not needed.
+    image_bundle_->extra_channels().clear();
+    for (size_t c = 3; c < input_sizes.size(); c++) {
+      image_bundle_->extra_channels().emplace_back(input_sizes[c].first,
+                                                   input_sizes[c].second);
+    }
+  }
 
   void ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
                   size_t xextra, size_t xsize, size_t xpos, size_t ypos,
@@ -190,21 +211,32 @@ class WriteToImageBundleStage : public RenderPipelineStage {
   }
 
   RenderPipelineChannelMode GetChannelMode(size_t c) const final {
-    return c < 3 + image_bundle_->extra_channels().size()
-               ? RenderPipelineChannelMode::kInput
-               : RenderPipelineChannelMode::kIgnored;
+    return RenderPipelineChannelMode::kInput;
   }
 
   const char* GetName() const override { return "WriteIB"; }
 
  private:
   ImageBundle* image_bundle_;
+  ColorEncoding color_encoding_;
 };
 
 class WriteToImage3FStage : public RenderPipelineStage {
  public:
   explicit WriteToImage3FStage(Image3F* image)
       : RenderPipelineStage(RenderPipelineStage::Settings()), image_(image) {}
+
+  void SetInputSizes(
+      const std::vector<std::pair<size_t, size_t>>& input_sizes) override {
+#if JXL_ENABLE_ASSERT
+    JXL_ASSERT(input_sizes.size() >= 3);
+    for (size_t c = 1; c < 3; ++c) {
+      JXL_ASSERT(input_sizes[c].first == input_sizes[0].first);
+      JXL_ASSERT(input_sizes[c].second == input_sizes[0].second);
+    }
+#endif
+    *image_ = Image3F(input_sizes[0].first, input_sizes[0].second);
+  }
 
   void ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
                   size_t xextra, size_t xsize, size_t xpos, size_t ypos,
@@ -297,8 +329,9 @@ class WriteToPixelCallbackStage : public RenderPipelineStage {
 }  // namespace
 
 std::unique_ptr<RenderPipelineStage> GetWriteToImageBundleStage(
-    ImageBundle* image_bundle) {
-  return jxl::make_unique<WriteToImageBundleStage>(image_bundle);
+    ImageBundle* image_bundle, ColorEncoding color_encoding) {
+  return jxl::make_unique<WriteToImageBundleStage>(image_bundle,
+                                                   std::move(color_encoding));
 }
 
 std::unique_ptr<RenderPipelineStage> GetWriteToImage3FStage(Image3F* image) {
