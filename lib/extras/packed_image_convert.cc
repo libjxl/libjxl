@@ -206,7 +206,7 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
     // It is ok for the frame.color().kNumPlanes to not match the
     // number of channels on the image.
     const bool float_out = frame.metadata()->bit_depth.floating_point_sample;
-    const uint32_t num_channels = frame.color().kNumPlanes;
+    const uint32_t num_channels = frame.color().kNumPlanes + has_alpha;
     JxlPixelFormat format{/*num_channels=*/num_channels,
                           /*data_type=*/pixel_format.data_type,
                           /*endianness=*/pixel_format.endianness,
@@ -223,8 +223,9 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
         /*out_callback=*/nullptr, /*out_opaque=*/nullptr,
         frame.metadata()->GetOrientation()));
 
-    // TODO(firsching): Convert the extra channels. FIXME!
-    JXL_CHECK(frame.extra_channels().empty());
+    // TODO(firsching): Convert the extra channels, beside one potential alpha
+    // channel. FIXME!
+    JXL_CHECK(frame.extra_channels().size() <= has_alpha);
     ppf->frames.push_back(std::move(packed_frame));
   }
 
