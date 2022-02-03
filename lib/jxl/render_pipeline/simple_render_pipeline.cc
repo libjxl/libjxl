@@ -140,6 +140,7 @@ void SimpleRenderPipeline::ProcessBuffers(size_t group_id, size_t thread_id) {
 
     // Run the pipeline.
     {
+      stage->SetInputSizes(input_sizes);
       int border_y = stage->settings_.border_y;
       for (size_t y = 0; y < ysize; y++) {
         // Prepare input rows.
@@ -187,6 +188,59 @@ void SimpleRenderPipeline::ProcessBuffers(size_t group_id, size_t thread_id) {
       JXL_CHECK_IMAGE_INITIALIZED(
           channel_data_[c],
           Rect(kRenderPipelineXOffset, kRenderPipelineXOffset, xsize, ysize));
+    }
+
+    if (stage->SwitchToImageDimensions()) {
+      size_t image_xsize, image_ysize;
+      FrameOrigin frame_origin;
+      stage->GetImageDimensions(&image_xsize, &image_ysize, &frame_origin);
+      frame_dimensions_.Set(image_xsize, image_ysize, 0, 0, 0, false, 1);
+      std::vector<ImageF> old_channels = std::move(channel_data_);
+      channel_data_.clear();
+      channel_data_.reserve(old_channels.size());
+      for (size_t c = 0; c < old_channels.size(); c++) {
+        channel_data_.emplace_back(2 * kRenderPipelineXOffset + image_xsize,
+                                   2 * kRenderPipelineXOffset + image_ysize);
+      }
+      for (size_t y = 0; y < image_ysize; ++y) {
+        for (size_t c = 0; c < channel_data_.size(); c++) {
+          output_rows[c].resize(1);
+          output_rows[c][0] = channel_data_[c].Row(kRenderPipelineXOffset + y);
+        }
+        // TODO(sboukortt): consider doing this only on the parts of the
+        // background that won't be occluded.
+        stage->ProcessPaddingRow(output_rows, image_xsize, 0, y);
+      }
+      ssize_t x0 = frame_origin.x0;
+      ssize_t y0 = frame_origin.y0;
+      size_t x0_fg = 0;
+      size_t y0_fg = 0;
+      if (x0 < 0) {
+        xsize += x0;
+        x0_fg -= x0;
+        x0 = 0;
+      }
+      if (x0 + xsize > image_xsize) {
+        xsize = image_xsize - x0;
+      }
+      if (y0 < 0) {
+        ysize += y0;
+        y0_fg -= x0;
+        y0 = 0;
+      }
+      if (y0 + ysize > image_ysize) {
+        ysize = image_ysize - y0;
+      }
+      const Rect rect_fg_relative_to_image =
+          Rect(x0, y0, xsize, ysize)
+              .Translate(kRenderPipelineXOffset, kRenderPipelineXOffset);
+      const Rect rect_fg =
+          Rect(x0_fg, y0_fg, xsize, ysize)
+              .Translate(kRenderPipelineXOffset, kRenderPipelineXOffset);
+      for (size_t c = 0; c < channel_data_.size(); c++) {
+        CopyImageTo(rect_fg, old_channels[c], rect_fg_relative_to_image,
+                    &channel_data_[c]);
+      }
     }
   }
 }

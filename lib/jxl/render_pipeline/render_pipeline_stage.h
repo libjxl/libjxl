@@ -9,6 +9,7 @@
 #include <stdint.h>
 
 #include "lib/jxl/filters.h"
+#include "lib/jxl/frame_header.h"
 
 namespace jxl {
 
@@ -81,7 +82,14 @@ class RenderPipelineStage {
   virtual ~RenderPipelineStage() = default;
 
  protected:
+  explicit RenderPipelineStage(Settings settings) : settings_(settings) {}
+
   virtual Status IsInitialized() const { return true; }
+
+  // Informs the stage about the total size of each channel. Few stages will
+  // actually need to use this information.
+  virtual void SetInputSizes(
+      const std::vector<std::pair<size_t, size_t>>& input_sizes) {}
 
   // Processes one row of input, producing the appropriate number of rows of
   // output. Input/output rows can be obtained by calls to
@@ -104,8 +112,6 @@ class RenderPipelineStage {
   // color channels (always 3) and followed by all other channels.
   virtual RenderPipelineChannelMode GetChannelMode(size_t c) const = 0;
 
-  explicit RenderPipelineStage(Settings settings) : settings_(settings) {}
-
   // Returns a pointer to the input row of channel `c` with offset `y`.
   // `y` must be in [-settings_.border_y, settings_.border_y]. `c` must be such
   // that `GetChannelMode(c) != kIgnored`. The returned pointer points to the
@@ -126,6 +132,22 @@ class RenderPipelineStage {
     JXL_DASSERT(offset <= 1ul << settings_.shift_y);
     return output_rows[c][offset] + kRenderPipelineXOffset;
   }
+
+  // Indicates whether, from this stage on, the pipeline will operate on an
+  // image- rather than frame-sized buffer. Only one stage in the pipeline
+  // should return true, and it should implement ProcessPaddingRow below too.
+  virtual bool SwitchToImageDimensions() const { return false; }
+
+  // If SwitchToImageDimensions returns true, then this should set xsize and
+  // ysize to the image size, and frame_origin to the location of the frame
+  // within the image. Otherwise, this is not called at all.
+  virtual void GetImageDimensions(size_t* xsize, size_t* ysize,
+                                  FrameOrigin* frame_origin) const {}
+
+  // Produces the appropriate output data outside of the frame dimensions. xpos
+  // and ypos are now relative to the full image.
+  virtual void ProcessPaddingRow(const RowInfo& output_rows, size_t xsize,
+                                 size_t xpos, size_t ypos) const {}
 
   virtual const char* GetName() const = 0;
 

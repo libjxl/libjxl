@@ -575,9 +575,9 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
       c = 1;
     }
   }
-  size_t num_extra_channels = render_pipeline_input
-                                  ? output->extra_channels().size()
-                                  : dec_state->extra_channels.size();
+  size_t num_extra_channels =
+      render_pipeline_input ? output->metadata()->extra_channel_info.size()
+                            : dec_state->extra_channels.size();
   for (size_t ec = 0; ec < num_extra_channels; ec++, c++) {
     const ExtraChannelInfo& eci = output->metadata()->extra_channel_info[ec];
     int bits = eci.bit_depth.bits_per_sample;
