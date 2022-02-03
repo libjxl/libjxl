@@ -148,6 +148,29 @@ class BlendingStage : public RenderPipelineStage {
     return RenderPipelineChannelMode::kInPlace;
   }
 
+  bool SwitchToImageDimensions() const override { return true; }
+
+  void GetImageDimensions(size_t* xsize, size_t* ysize,
+                          FrameOrigin* frame_origin) const override {
+    *xsize = image_xsize_;
+    *ysize = image_ysize_;
+    *frame_origin = state_.frame_header.frame_origin;
+  }
+
+  void ProcessPaddingRow(const RowInfo& output_rows, size_t xsize, size_t xpos,
+                         size_t ypos) const override {
+    for (size_t c = 0; c < 3; ++c) {
+      memcpy(GetInputRow(output_rows, c, 0),
+             bg_->color()->ConstPlaneRow(c, ypos) + xpos,
+             xsize * sizeof(float));
+    }
+    for (size_t ec = 0; ec < bg_->extra_channels().size(); ++ec) {
+      memcpy(GetInputRow(output_rows, 3 + ec, 0),
+             bg_->extra_channels()[ec].ConstRow(ypos) + xpos,
+             xsize * sizeof(float));
+    }
+  }
+
   const char* GetName() const override { return "Blending"; }
 
  private:
