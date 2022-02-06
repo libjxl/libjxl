@@ -81,6 +81,13 @@ class RenderPipeline {
 
   virtual ~RenderPipeline() = default;
 
+  Status IsInitialized() const {
+    for (const auto& stage : stages_) {
+      JXL_RETURN_IF_ERROR(stage->IsInitialized());
+    }
+    return true;
+  }
+
   // Allocates storage to run with `num` threads.
   void PrepareForThreads(size_t num);
 

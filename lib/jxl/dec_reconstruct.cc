@@ -1075,15 +1075,28 @@ Status FinalizeImageRect(
     // the frame is not supposed to be displayed.
 
     if (dec_state->fast_xyb_srgb8_conversion) {
-      FastXYBTosRGB8(
-          *output_pixel_data_storage,
-          upsampled_frame_rect_for_storage.Lines(available_y, num_ys),
-          upsampled_frame_rect.Lines(available_y, num_ys)
-              .Crop(Rect(0, 0, frame_dim.xsize_upsampled,
-                         frame_dim.ysize_upsampled)),
-          alpha, alpha_rect.Lines(available_y, num_ys),
-          dec_state->rgb_output_is_rgba, dec_state->rgb_output, frame_dim.xsize,
-          dec_state->rgb_stride);
+      Rect output_rect = upsampled_frame_rect.Lines(available_y, num_ys)
+                             .Crop(Rect(0, 0, frame_dim.xsize_upsampled,
+                                        frame_dim.ysize_upsampled));
+      for (size_t iy = 0; iy < output_rect.ysize(); iy++) {
+        const float* xyba[4] = {
+            upsampled_frame_rect_for_storage.ConstPlaneRow(
+                *output_pixel_data_storage, 0, available_y + iy),
+            upsampled_frame_rect_for_storage.ConstPlaneRow(
+                *output_pixel_data_storage, 1, available_y + iy),
+            upsampled_frame_rect_for_storage.ConstPlaneRow(
+                *output_pixel_data_storage, 2, available_y + iy),
+            nullptr};
+        if (alpha) {
+          xyba[3] = alpha_rect.ConstRow(*alpha, available_y + iy);
+        }
+        uint8_t* out_buf =
+            dec_state->rgb_output +
+            (iy + output_rect.y0()) * dec_state->rgb_stride +
+            (dec_state->rgb_output_is_rgba ? 4 : 3) * output_rect.x0();
+        FastXYBTosRGB8(xyba, out_buf, dec_state->rgb_output_is_rgba,
+                       output_rect.xsize());
+      }
     } else {
       if (frame_header.needs_color_transform()) {
         if (frame_header.color_transform == ColorTransform::kXYB) {

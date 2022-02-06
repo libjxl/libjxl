@@ -114,7 +114,7 @@ Status ConvertPackedPixelFileToCodecInOut(const PackedPixelFile& ppf,
         /*alpha_is_premultiplied=*/ppf.info.alpha_premultiplied,
         frame_bits_per_sample, frame.color.format.endianness,
         /*flipped_y=*/frame.color.flipped_y, pool, &bundle,
-        /*float_in=*/float_in));
+        /*float_in=*/float_in, /*align=*/0));
 
     // TODO(deymo): Convert the extra channels. FIXME!
     JXL_CHECK(frame.extra_channels.empty());

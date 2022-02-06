@@ -140,13 +140,19 @@ TEST_P(RenderPipelineTestParam, PipelineTest) {
 
   ASSERT_EQ(io_default.frames.size(), io_slow_pipeline.frames.size());
   for (size_t i = 0; i < io_default.frames.size(); i++) {
+#if JXL_HIGH_PRECISION
+    constexpr float kMaxError = 1e-5;
+#else
+    constexpr float kMaxError = 1e-4;
+#endif
     VerifyRelativeError(*io_default.frames[i].color(),
-                        *io_slow_pipeline.frames[i].color(), 1e-5, 1e-5);
+                        *io_slow_pipeline.frames[i].color(), kMaxError,
+                        kMaxError);
     for (size_t ec = 0; ec < io_default.frames[i].extra_channels().size();
          ec++) {
       VerifyRelativeError(io_default.frames[i].extra_channels()[ec],
-                          io_slow_pipeline.frames[i].extra_channels()[ec], 1e-5,
-                          1e-5);
+                          io_slow_pipeline.frames[i].extra_channels()[ec],
+                          kMaxError, kMaxError);
     }
   }
 }
