@@ -27,45 +27,72 @@
  * 10-20x higher when using std::async, and ~200x for a queue-based thread
  */
 
-#ifndef JXL_THREAD_PARALLEL_RUNNER_H_
-#define JXL_THREAD_PARALLEL_RUNNER_H_
 
-#include <stddef.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
+#if !defined(JXL_THREAD_PARALLEL_RUNNER_H_) || defined(CUSTOM_GENERATOR)
 
-#include "jxl/jxl_threads_export.h"
-#include "jxl/memory_manager.h"
-#include "jxl/parallel_runner.h"
-
-#if defined(__cplusplus) || defined(c_plusplus)
-extern "C" {
+#ifndef CUSTOM_GENERATOR
+#   ifndef DOC_GENERATOR
+#       define JXL_THREAD_PARALLEL_RUNNER_H_
+#       include <stddef.h>
+#       include <stdint.h>
+#       include <stdio.h>
+#       include <stdlib.h>
+#       include "jxl/jxl_threads_export.h"
+#       include "jxl/memory_manager.h"
+#       include "jxl/parallel_runner.h"
+#       define CLEAR_GENERATOR true
+#       include "typebuilder/type_generator.h"
+#   else
+    ESCAPE(#ifndef JXL_THREAD_PARALLEL_RUNNER_H_)
+    ESCAPE(#define JXL_THREAD_PARALLEL_RUNNER_H_)
+    ESCAPE(#include <stddef.h>)
+    ESCAPE(#include <stdint.h>)
+    ESCAPE(#include <stdio.h>)
+    ESCAPE(#include <stdlib.h>)
+    ESCAPE(#include "jxl/jxl_threads_export.h")
+    ESCAPE(#include "jxl/memory_manager.h")
+    ESCAPE(#include "jxl/parallel_runner.h")
+#   endif
 #endif
 
-/** Parallel runner internally using std::thread. Use as JxlParallelRunner.
- */
-JXL_THREADS_EXPORT JxlParallelRetCode JxlThreadParallelRunner(
-    void* runner_opaque, void* jpegxl_opaque, JxlParallelRunInit init,
-    JxlParallelRunFunction func, uint32_t start_range, uint32_t end_range);
+EXTERN_C(
+    /** Parallel runner internally using std::thread. Use as JxlParallelRunner.
+     */
+    Threads_Export Method(JxlParallelRetCode, JxlThreadParallelRunner,
+        (
+            void* runner_opaque,
+            void* jpegxl_opaque,
+            JxlParallelRunInit init,
+            JxlParallelRunFunction func,
+            uint32_t start_range,
+            uint32_t end_range
+        )
+    )
 
-/** Creates the runner for JxlThreadParallelRunner. Use as the opaque
- * runner.
- */
-JXL_THREADS_EXPORT void* JxlThreadParallelRunnerCreate(
-    const JxlMemoryManager* memory_manager, size_t num_worker_threads);
+    /** Creates the runner for JxlThreadParallelRunner. Use as the opaque
+     * runner.
+     */
+    Threads_Export Method(void*, JxlThreadParallelRunnerCreate,
+        (const JxlMemoryManager* memory_manager, size_t num_worker_threads)
+    )
 
-/** Destroys the runner created by JxlThreadParallelRunnerCreate.
- */
-JXL_THREADS_EXPORT void JxlThreadParallelRunnerDestroy(void* runner_opaque);
+    /** Destroys the runner created by JxlThreadParallelRunnerCreate.
+     */
+    Threads_Export Method(void, JxlThreadParallelRunnerDestroy, (void* runner_opaque))
 
-/** Returns a default num_worker_threads value for
- * JxlThreadParallelRunnerCreate.
- */
-JXL_THREADS_EXPORT size_t JxlThreadParallelRunnerDefaultNumWorkerThreads();
+    /** Returns a default num_worker_threads value for
+     * JxlThreadParallelRunnerCreate.
+     */
+    Threads_Export Method(size_t, JxlThreadParallelRunnerDefaultNumWorkerThreads, ())
+)
 
-#if defined(__cplusplus) || defined(c_plusplus)
-}
+#if CLEAR_GENERATOR
+#   undef CLEAR_GENERATOR
+#   include "typebuilder/clear_generator.h"
+#endif
+
+#ifdef DOC_GENERATOR
+    ESCAPE(#endif)
 #endif
 
 #endif /* JXL_THREAD_PARALLEL_RUNNER_H_ */
