@@ -27,32 +27,33 @@
 #	endif
 #endif
 
+/**
+ * A portable @c bool replacement.
+ *
+ * ::JXL_BOOL is a "documentation" type: actually it is @c int, but in API it
+ * denotes a type, whose only values are ::JXL_TRUE and ::JXL_FALSE.
+ */
+#ifndef DOC_GENERATOR
+	#define JXL_BOOL int
+#else
+	ESCAPE(#define JXL_BOOL int)
+#endif
+
+/** Portable @c true replacement. */
+#ifndef DOC_GENERATOR
+	#define JXL_TRUE 1
+#else
+	ESCAPE(#define JXL_TRUE 1)
+#endif
+
+/** Portable @c false replacement. */
+#ifndef DOC_GENERATOR
+	#define JXL_FALSE 0
+#else
+	ESCAPE(#define JXL_FALSE 0)
+#endif
+
 EXTERN_C(
-	/**
-	 * A portable @c bool replacement.
-	 *
-	 * ::JXL_BOOL is a "documentation" type: actually it is @c int, but in API it
-	 * denotes a type, whose only values are ::JXL_TRUE and ::JXL_FALSE.
-	 */
-	#ifndef DOC_GENERATOR
-		#define JXL_BOOL int
-	#else
-		ESCAPE(#define JXL_BOOL int)
-	#endif
-
-	/** Portable @c true replacement. */
-	#ifndef DOC_GENERATOR
-		#define JXL_TRUE 1
-	#else
-		ESCAPE(#define JXL_TRUE 1)
-	#endif
-
-	/** Portable @c false replacement. */
-	#ifndef DOC_GENERATOR
-		#define JXL_FALSE 0
-	#else
-		ESCAPE(#define JXL_FALSE 0)
-	#endif
 
 	/** Data type for the sample values per channel per pixel.
 	 */
@@ -143,6 +144,10 @@ EXTERN_C(
 #if CLEAR_GENERATOR
 #	undef CLEAR_GENERATOR
 #	include "typebuilder/clear_generator.h"
+#endif
+
+#ifdef DOC_GENERATOR
+	ESCAPE(#endif)
 #endif
 
 #endif /* JXL_TYPES_H_ */

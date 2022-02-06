@@ -51,6 +51,16 @@
 #	endif
 #endif
 
+/**
+ * General error returned by the JxlParallelRunInit function to indicate
+ * an error.
+ */
+#ifndef DOC_GENERATOR
+	#define JXL_PARALLEL_RET_RUNNER_ERROR (-1)
+#else
+	ESCAPE(#define JXL_PARALLEL_RET_RUNNER_ERROR (-1))
+#endif
+
 EXTERN_C(
 	/** Return code used in the JxlParallel* functions as return value. A value
 	 * of 0 means success and any other value means error. The special value
@@ -58,12 +68,6 @@ EXTERN_C(
 	 * other error.
 	 */
 	TypeDef(JxlParallelRetCode, int)
-
-	/**
-	 * General error returned by the JxlParallelRunInit function to indicate
-	 * an error.
-	 */
-	#define JXL_PARALLEL_RET_RUNNER_ERROR (-1)
 
 	/**
 	 * Parallel run initialization callback. See JxlParallelRunner for details.

@@ -1,7 +1,9 @@
-// Copyright (c) the JPEG XL Project Authors. All rights reserved.
-//
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
+/* Copyright (c) the JPEG XL Project Authors. All rights reserved.
+ *
+ * Use of this source code is governed by a BSD-style
+ * license that can be found in the LICENSE file.
+ */
+
 
 /** @addtogroup libjxl_threads
  *  @{
@@ -26,7 +28,7 @@
     		"sources."
 #		endif
 #		define CLEAR_GENERATOR true
-#		include "typebuilder/code_generator.h"
+#		include "typebuilder/type_generator.h"
 #	else
 	ESCAPE(#ifndef JXL_THREAD_PARALLEL_RUNNER_CXX_H_)
 	ESCAPE(#define JXL_THREAD_PARALLEL_RUNNER_CXX_H_)

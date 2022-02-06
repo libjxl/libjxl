@@ -42,6 +42,7 @@
 #endif
 
 EXTERN_C(
+    
     /**
      * Decoder library version.
      *

@@ -1,7 +1,8 @@
-// Copyright (c) the JPEG XL Project Authors. All rights reserved.
-//
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
+/* Copyright (c) the JPEG XL Project Authors. All rights reserved.
+ *
+ * Use of this source code is governed by a BSD-style
+ * license that can be found in the LICENSE file.
+ */
 
 /** @addtogroup libjxl_decoder
  * @{
@@ -30,7 +31,7 @@
 	ESCAPE(#include <memory>)
 	ESCAPE(#include "jxl/decode.h")
 	ESCAPE(#if !(defined(__cplusplus) || defined(c_plusplus)))
-	ESCAPE(		#error "This a C++ only header. Use jxl/decode.h from C sources.")
+	ESCAPE(#error "This a C++ only header. Use jxl/decode.h from C sources.")
 	ESCAPE(#endif)
 #	endif
 #endif

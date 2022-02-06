@@ -24,11 +24,11 @@
 #undef EXTERN_C
 #define EXTERN_C(code...) \
     IF defined(__cplusplus) || defined(c_plusplus) \
-    extern "C" { \
+        extern "C" { \
     ENDIF \
-    \
     code \
-    \
     IF defined(__cplusplus) || defined(c_plusplus) \
-    } \
-    ENDIF
+        } \
+    ENDIF \
+    /**/
+
