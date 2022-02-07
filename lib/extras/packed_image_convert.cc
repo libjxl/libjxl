@@ -11,8 +11,11 @@
 #include "jxl/types.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
+#include "lib/jxl/color_management.h"
 #include "lib/jxl/dec_external_image.h"
+#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_external_image.h"
+#include "lib/jxl/enc_image_bundle.h"
 
 namespace jxl {
 namespace extras {
@@ -145,7 +148,8 @@ Status ConvertPackedPixelFileToCodecInOut(const PackedPixelFile& ppf,
 
 // Allows converting from internal CodecInOut to external PackedPixelFile
 Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
-                                          const JxlPixelFormat pixel_format,
+                                          const JxlPixelFormat& pixel_format,
+                                          const ColorEncoding& c_desired,
                                           ThreadPool* pool,
                                           PackedPixelFile* ppf) {
   const bool has_alpha = io.metadata.m.HasAlpha();
@@ -176,6 +180,7 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
   JXL_ASSERT(0 < io.metadata.m.orientation && io.metadata.m.orientation <= 8);
   ppf->info.orientation =
       static_cast<JxlOrientation>(io.metadata.m.orientation);
+  ppf->info.num_color_channels = io.metadata.m.color_encoding.Channels();
 
   // Convert animation metadata
   JXL_ASSERT(io.frames.size() == 1 || io.metadata.m.have_animation);
@@ -197,7 +202,8 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
   ppf->metadata.iptc.assign(io.blobs.iptc.begin(), io.blobs.iptc.end());
   ppf->metadata.jumbf.assign(io.blobs.jumbf.begin(), io.blobs.jumbf.end());
   ppf->metadata.xmp.assign(io.blobs.xmp.begin(), io.blobs.xmp.end());
-
+  const bool float_out = pixel_format.data_type == JXL_TYPE_FLOAT ||
+                         pixel_format.data_type == JXL_TYPE_FLOAT16;
   // Convert the pixels
   ppf->frames.clear();
   for (const auto& frame : io.frames) {
@@ -205,18 +211,36 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
     JXL_ASSERT(frame_bits_per_sample != 0);
     // It is ok for the frame.color().kNumPlanes to not match the
     // number of channels on the image.
-    const bool float_out = frame.metadata()->bit_depth.floating_point_sample;
-    const uint32_t num_channels = frame.color().kNumPlanes + has_alpha;
+    const uint32_t num_channels =
+        frame.metadata()->color_encoding.Channels() + has_alpha;
     JxlPixelFormat format{/*num_channels=*/num_channels,
                           /*data_type=*/pixel_format.data_type,
                           /*endianness=*/pixel_format.endianness,
                           /*align=*/pixel_format.align};
 
-    PackedFrame packed_frame(frame.xsize(), frame.ysize(), format);
+    PackedFrame packed_frame(frame.oriented_xsize(), frame.oriented_ysize(),
+                             format);
+    const size_t bits_per_sample =
+        packed_frame.color.BitsPerChannel(pixel_format.data_type);
     packed_frame.name = frame.name;
     packed_frame.frame_info.name_length = frame.name.size();
+    // Color transform
+    ImageBundle ib = frame.Copy();
+    const ImageBundle* to_color_transform = &ib;
+    ImageMetadata metadata = io.metadata.m;
+    ImageBundle store(&metadata);
+    const ImageBundle* transformed;
+    // TODO(firsching): handle the transform here.
+    JXL_RETURN_IF_ERROR(TransformIfNeeded(*to_color_transform, c_desired,
+                                          GetJxlCms(), pool, &store,
+                                          &transformed));
+    size_t stride = ib.oriented_xsize() *
+                    (c_desired.Channels() * ppf->info.bits_per_sample) /
+                    kBitsPerByte;
+    PaddedBytes pixels(stride * ib.oriented_ysize());
+
     JXL_RETURN_IF_ERROR(ConvertToExternal(
-        frame.Copy(), frame_bits_per_sample, float_out, format.num_channels,
+        *transformed, bits_per_sample, float_out, format.num_channels,
         format.endianness,
         /* stride_out=*/packed_frame.color.stride, pool,
         packed_frame.color.pixels(), packed_frame.color.pixels_size,
