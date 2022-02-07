@@ -190,11 +190,9 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
   ppf->info.animation.num_loops = io.metadata.m.animation.num_loops;
 
   // Convert the color encoding
-  ppf->icc.assign(io.metadata.m.color_encoding.ICC().begin(),
-                  io.metadata.m.color_encoding.ICC().end());
+  ppf->icc.assign(c_desired.ICC().begin(), c_desired.ICC().end());
   if (ppf->icc.empty()) {
-    ConvertInternalToExternalColorEncoding(io.metadata.m.color_encoding,
-                                           &ppf->color_encoding);
+    ConvertInternalToExternalColorEncoding(c_desired, &ppf->color_encoding);
   }
 
   // Convert the extra blobs
