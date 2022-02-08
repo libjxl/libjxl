@@ -346,6 +346,7 @@ set(JPEGXL_DEC_INTERNAL_LIBS
   brotlidec-static
   brotlicommon-static
   hwy
+  Threads::Threads
 )
 
 if(JPEGXL_ENABLE_PROFILER)
@@ -355,7 +356,6 @@ endif()
 set(JPEGXL_INTERNAL_LIBS
   ${JPEGXL_DEC_INTERNAL_LIBS}
   brotlienc-static
-  Threads::Threads
   ${ATOMICS_LIBRARIES}
 )
 
