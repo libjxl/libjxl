@@ -107,7 +107,6 @@ Status EncodeImagePNM(const PackedPixelFile& ppf, size_t bits_per_sample,
     JXL_WARNING("PNM encoder ignoring metadata - use a different codec");
   }
 
-
   char header[kMaxHeaderSize];
   int header_size = 0;
   bool is_little_endian = endianness == JXL_LITTLE_ENDIAN ||
