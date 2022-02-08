@@ -80,7 +80,7 @@ Span<const uint8_t> MakeSpan(const char* str) {
 // Flip the image vertically for loading/saving PFM files which have the
 // scanlines inverted.
 void VerticallyFlipImage(float* const float_image, const size_t xsize,
-                         const size_t ysize, size_t num_channels) {
+                         const size_t ysize, const size_t num_channels) {
   for (size_t y = 0; y < ysize / 2; y++) {
     float* first_row = &float_image[y * num_channels * xsize];
     float* other_row = &float_image[(ysize - y - 1) * num_channels * xsize];
