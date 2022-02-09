@@ -7,7 +7,8 @@
 
 namespace jxl {
 
-void SimpleRenderPipeline::PrepareForThreadsInternal(size_t num) {
+void SimpleRenderPipeline::PrepareForThreadsInternal(size_t num,
+                                                     bool use_group_ids) {
   if (!channel_data_.empty()) {
     return;
   }
@@ -102,20 +103,26 @@ void SimpleRenderPipeline::ProcessBuffers(size_t group_id, size_t thread_id) {
       for (size_t y = 0; y < input_sizes[c].second; y++) {
         float* row = get_row(c, y);
         for (size_t ix = 0; ix < stage->settings_.border_x; ix++) {
-          *(row - ix - 1) = *(row + ix);
+          *(row - ix - 1) = row[Mirror(-ssize_t(ix) - 1, input_sizes[c].first)];
+        }
+        for (size_t ix = 0; ix < stage->settings_.border_x; ix++) {
           *(row + ix + input_sizes[c].first) =
-              *(row + input_sizes[c].first - ix - 1);
+              row[Mirror(ix + input_sizes[c].first, input_sizes[c].first)];
         }
       }
       // Vertical mirroring.
       for (int y = 0; y < static_cast<int>(stage->settings_.border_y); y++) {
         memcpy(get_row(c, -y - 1) - stage->settings_.border_x,
-               get_row(c, y) - stage->settings_.border_x,
+               get_row(c, Mirror(-ssize_t(y) - 1, input_sizes[c].second)) -
+                   stage->settings_.border_x,
                sizeof(float) *
                    (input_sizes[c].first + 2 * stage->settings_.border_x));
+      }
+      for (int y = 0; y < static_cast<int>(stage->settings_.border_y); y++) {
         memcpy(
             get_row(c, input_sizes[c].second + y) - stage->settings_.border_x,
-            get_row(c, input_sizes[c].second - y - 1) -
+            get_row(c,
+                    Mirror(input_sizes[c].second + y, input_sizes[c].second)) -
                 stage->settings_.border_x,
             sizeof(float) *
                 (input_sizes[c].first + 2 * stage->settings_.border_x));

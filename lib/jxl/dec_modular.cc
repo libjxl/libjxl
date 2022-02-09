@@ -544,8 +544,15 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
               const size_t y = task;
               const pixel_type* const JXL_RESTRICT row_in =
                   mr.Row(&ch_in.plane, y);
-              float* const JXL_RESTRICT row_out = get_row(r, c, y);
-              int_to_float(row_in, row_out, xsize_shifted, bits, exp_bits);
+              if (rgb_from_gray) {
+                for (size_t cc = 0; cc < 3; cc++) {
+                  float* const JXL_RESTRICT row_out = get_row(r, cc, y);
+                  int_to_float(row_in, row_out, xsize_shifted, bits, exp_bits);
+                }
+              } else {
+                float* const JXL_RESTRICT row_out = get_row(r, c, y);
+                int_to_float(row_in, row_out, xsize_shifted, bits, exp_bits);
+              }
             },
             "ModularIntToFloat_losslessfloat"));
       } else {
@@ -658,7 +665,10 @@ Status ModularFrameDecoder::FinalizeDecoding(PassesDecoderState* dec_state,
     JXL_RETURN_IF_ERROR(RunOnPool(
         pool, 0, dec_state->shared->frame_dim.num_groups,
         [&](size_t num_threads) {
-          dec_state->render_pipeline->PrepareForThreads(num_threads);
+          dec_state->render_pipeline->PrepareForThreads(
+              num_threads,
+              /*use_group_ids=*/dec_state->shared->frame_header.encoding ==
+                  FrameEncoding::kVarDCT);
           return true;
         },
         [&](const uint32_t group, size_t thread_id) {

@@ -448,7 +448,8 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
     return true;
   }
   // No ApplyImageFeatures in JPEG mode or when we need to delay it.
-  if (!decoded->IsJPEG() && dec_state->EagerFinalizeImageRect()) {
+  if (!decoded->IsJPEG() && dec_state->EagerFinalizeImageRect() &&
+      !render_pipeline_input) {
     JXL_RETURN_IF_ERROR(dec_state->FinalizeGroup(
         group_idx, thread, &dec_state->group_data[thread], decoded));
   }
@@ -701,7 +702,7 @@ Status DecodeGroup(BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
                    GroupDecCache* JXL_RESTRICT group_dec_cache, size_t thread,
                    RenderPipelineInput* render_pipeline_input,
                    ImageBundle* JXL_RESTRICT decoded, size_t first_pass,
-                   bool force_draw, bool dc_only) {
+                   bool force_draw, bool dc_only, bool* should_run_pipeline) {
   PROFILER_FUNC;
 
   DrawMode draw = (num_passes + first_pass ==
@@ -752,6 +753,10 @@ Status DecodeGroup(BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
           dec_state->upsampler_storage[thread].get());
     }
     draw = kOnlyImageFeatures;
+  }
+
+  if (should_run_pipeline) {
+    *should_run_pipeline = draw != kDontDraw;
   }
 
   size_t histo_selector_bits = 0;

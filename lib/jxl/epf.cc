@@ -49,8 +49,8 @@ using hwy::HWY_NAMESPACE::Vec;
 // The EPF logic treats 8x8 blocks as one unit, each with their own sigma.
 // It should be possible to do two blocks at a time in AVX3 vectors, at some
 // increase in complexity (broadcasting sigma0/1 to lanes 0..7 and 8..15).
-using DF = HWY_CAPPED(float, GroupBorderAssigner::kPaddingXRound);
-using DU = HWY_CAPPED(uint32_t, GroupBorderAssigner::kPaddingXRound);
+using DF = HWY_CAPPED(float, kBlockDim);
+using DU = HWY_CAPPED(uint32_t, kBlockDim);
 
 DF df;
 
@@ -656,16 +656,12 @@ FilterPipeline* PrepareFilterPipeline(
   const LoopFilter& lf = dec_state->shared->frame_header.loop_filter;
   // image_rect, input and output must all have the same kPaddingXRound
   // alignment for SIMD, but it doesn't need to be 0.
-  JXL_DASSERT(image_rect.x0() % GroupBorderAssigner::kPaddingXRound ==
-              input_rect.x0() % GroupBorderAssigner::kPaddingXRound);
-  JXL_DASSERT(image_rect.x0() % GroupBorderAssigner::kPaddingXRound ==
-              output_rect.x0() % GroupBorderAssigner::kPaddingXRound);
+  JXL_DASSERT(image_rect.x0() % kBlockDim == input_rect.x0() % kBlockDim);
+  JXL_DASSERT(image_rect.x0() % kBlockDim == output_rect.x0() % kBlockDim);
 
   // We need enough pixels to access the padding and the rounding to
   // GroupBorderAssigner::kPaddingXRound to the left of the image.
-  JXL_DASSERT(input_rect.x0() >=
-              input_rect.x0() % GroupBorderAssigner::kPaddingXRound +
-                  lf.Padding());
+  JXL_DASSERT(input_rect.x0() >= input_rect.x0() % kBlockDim + lf.Padding());
 
   JXL_DASSERT(image_rect.xsize() == input_rect.xsize());
   JXL_DASSERT(image_rect.xsize() == output_rect.xsize());

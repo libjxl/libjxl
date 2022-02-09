@@ -22,7 +22,7 @@ class SimpleRenderPipeline : public RenderPipeline {
 
   void ProcessBuffers(size_t group_id, size_t thread_id) override;
 
-  void PrepareForThreadsInternal(size_t num) override;
+  void PrepareForThreadsInternal(size_t num, bool use_group_ids) override;
 
   // Full frame buffers. Both X and Y dimensions are padded by
   // kRenderPipelineXOffset.

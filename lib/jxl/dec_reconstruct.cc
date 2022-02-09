@@ -41,7 +41,7 @@ template <typename Op>
 void DoUndoXYBInPlace(Image3F* idct, const Rect& rect, Op op,
                       const OutputEncodingInfo& output_encoding_info) {
   // TODO(eustas): should it still be capped?
-  const HWY_CAPPED(float, GroupBorderAssigner::kPaddingXRound) d;
+  const HWY_CAPPED(float, kBlockDim) d;
   const size_t xsize = rect.xsize();
   const size_t xsize_v = RoundUpTo(xsize, Lanes(d));
   // The size of `rect` might not be a multiple of Lanes(d), but is guaranteed
@@ -638,8 +638,8 @@ Status FinalizeImageRect(
   JXL_DASSERT(frame_rect.ysize() <= kApplyImageFeaturesTileDim);
   JXL_DASSERT(input_rect.xsize() == frame_rect.xsize());
   JXL_DASSERT(input_rect.ysize() == frame_rect.ysize());
-  JXL_DASSERT(frame_rect.x0() % GroupBorderAssigner::kPaddingXRound == 0);
-  JXL_DASSERT(frame_rect.xsize() % GroupBorderAssigner::kPaddingXRound == 0 ||
+  JXL_DASSERT(frame_rect.x0() % kBlockDim == 0);
+  JXL_DASSERT(frame_rect.xsize() % kBlockDim == 0 ||
               frame_rect.xsize() + frame_rect.x0() == frame_dim.xsize);
 
   // +----------------------------- STEP 1 ------------------------------+
@@ -707,14 +707,13 @@ Status FinalizeImageRect(
                        frame_rect.ysize() + ifby0 + ifby1);
     // Storage for pixel data does not necessarily start at (0, 0) as we need to
     // have the left border of upsampling_rect aligned to a multiple of
-    // GroupBorderAssigner::kPaddingXRound.
+    // a block.
     rect_for_if_storage =
-        Rect(kBlockDim + RoundUpTo(ifbx0, GroupBorderAssigner::kPaddingXRound) -
-                 ifbx0,
-             kBlockDim, rect_for_if.xsize(), rect_for_if.ysize());
+        Rect(kBlockDim + RoundUpTo(ifbx0, kBlockDim) - ifbx0, kBlockDim,
+             rect_for_if.xsize(), rect_for_if.ysize());
     rect_for_upsampling =
-        Rect(kBlockDim + RoundUpTo(ifbx0, GroupBorderAssigner::kPaddingXRound),
-             kBlockDim + ifby0, frame_rect.xsize(), frame_rect.ysize());
+        Rect(kBlockDim + RoundUpTo(ifbx0, kBlockDim), kBlockDim + ifby0,
+             frame_rect.xsize(), frame_rect.ysize());
     rect_for_if_input =
         Rect(input_rect.x0() - ifbx0, input_rect.y0() - ifby0,
              rect_for_if_storage.xsize(), rect_for_if_storage.ysize());
