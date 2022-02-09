@@ -141,7 +141,7 @@ class AddNoiseStage : public RenderPipelineStage {
   AddNoiseStage(const NoiseParams& noise_params,
                 const ColorCorrelationMap& cmap, size_t first_c)
       : RenderPipelineStage(RenderPipelineStage::Settings::Symmetric(
-            /*shift=*/0, /*border=*/2)),
+            /*shift=*/0, /*border=*/0)),
         noise_params_(noise_params),
         cmap_(cmap),
         first_c_(first_c) {}

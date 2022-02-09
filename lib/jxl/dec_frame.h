@@ -230,7 +230,10 @@ class FrameDecoder {
     dec_state_->EnsureStorage(storage_size);
     use_task_id_ = num_threads > num_tasks;
     if (dec_state_->render_pipeline) {
-      dec_state_->render_pipeline->PrepareForThreads(storage_size);
+      dec_state_->render_pipeline->PrepareForThreads(
+          storage_size,
+          /*use_group_ids=*/modular_frame_decoder_.UsesFullImage() &&
+              frame_header_.encoding == FrameEncoding::kVarDCT);
     }
   }
 
