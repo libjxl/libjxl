@@ -13,7 +13,7 @@ void PassesDecoderState::EnsureBordersStorage() {
   if (!EagerFinalizeImageRect()) return;
   size_t padding = FinalizeRectPadding();
   size_t bordery = 2 * padding;
-  size_t borderx = padding + group_border_assigner.PaddingX(padding);
+  size_t borderx = padding + RoundUpToBlockDim(padding);
   Rect horizontal = Rect(0, 0, shared->frame_dim.xsize_padded,
                          bordery * shared->frame_dim.ysize_groups * 2);
   if (!SameSize(horizontal, borders_horizontal)) {
@@ -42,7 +42,7 @@ void SaveBorders(const Rect& block_rect, size_t hshift, size_t vshift,
   size_t gx = block_rect.x0() / kGroupDimInBlocks;
   // TODO(veluca): this is too much with chroma upsampling. It's just
   // inefficient though.
-  size_t borderx = GroupBorderAssigner::PaddingX(padding);
+  size_t borderx = RoundUpToBlockDim(padding);
   size_t bordery = padding;
   size_t borderx_write = padding + borderx;
   size_t bordery_write = padding + bordery;
@@ -80,7 +80,7 @@ void LoadBorders(const Rect& block_rect, size_t hshift, size_t vshift,
       DivCeil((block_rect.y0() + block_rect.ysize()) * kBlockDim, 1 << vshift);
   size_t gy = block_rect.y0() / kGroupDimInBlocks;
   size_t gx = block_rect.x0() / kGroupDimInBlocks;
-  size_t borderx = GroupBorderAssigner::PaddingX(padding);
+  size_t borderx = RoundUpToBlockDim(padding);
   size_t bordery = padding;
   size_t borderx_write = padding + borderx;
   size_t bordery_write = padding + bordery;
@@ -155,8 +155,9 @@ Status PassesDecoderState::FinalizeGroup(size_t group_idx, size_t thread,
   }
   Rect fir_rects[GroupBorderAssigner::kMaxToFinalize];
   size_t num_fir_rects = 0;
-  group_border_assigner.GroupDone(group_idx, FinalizeRectPadding(), fir_rects,
-                                  &num_fir_rects);
+  group_border_assigner.GroupDone(
+      group_idx, RoundUpToBlockDim(FinalizeRectPadding()),
+      FinalizeRectPadding(), fir_rects, &num_fir_rects);
   for (size_t i = 0; i < num_fir_rects; i++) {
     const Rect& r = fir_rects[i];
     for (size_t c = 0; c < 3; c++) {

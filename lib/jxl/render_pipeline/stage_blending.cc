@@ -137,7 +137,7 @@ class BlendingStage : public RenderPipelineStage {
           (c < 3 ? bg_->color()->ConstPlaneRow(c, bg_ypos)
                  : bg_->extra_channels()[c - 3].ConstRow(bg_ypos)) +
           bg_xpos;
-      fg_row_ptrs_[c] = GetInputRow(input_rows, c, offset);
+      fg_row_ptrs_[c] = GetInputRow(input_rows, c, 0) + offset;
     }
     PerformBlending(bg_row_ptrs_.data(), fg_row_ptrs_.data(),
                     fg_row_ptrs_.data(), 0, xsize, blending_info_[0],

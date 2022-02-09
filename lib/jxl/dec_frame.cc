@@ -471,12 +471,6 @@ Status FrameDecoder::AllocateOutput() {
   }
   if (dec_state_->render_pipeline) {
     modular_frame_decoder_.MaybeDropFullImage();
-    if (frame_header_.CanBeReferenced()) {
-      // TODO(veluca): this will need to be adapted for RGB output.
-      JXL_ASSERT(dec_state_->rgb_output == nullptr &&
-                 !dec_state_->pixel_callback);
-      dec_state_->frame_storage_for_referencing = decoded_->Copy();
-    }
   } else {
     dec_state_->extra_channels.clear();
     if (metadata.m.num_extra_channels > 0) {
@@ -615,19 +609,23 @@ Status FrameDecoder::ProcessACGroup(size_t ac_group_id,
 
   RenderPipelineInput render_pipeline_input_storage;
   RenderPipelineInput* render_pipeline_input = nullptr;
+
   if (dec_state_->render_pipeline) {
     render_pipeline_input_storage =
         dec_state_->render_pipeline->GetInputBuffers(ac_group_id, thread);
     render_pipeline_input = &render_pipeline_input_storage;
   }
 
+  bool should_run_pipeline = true;
+
   if (frame_header_.encoding == FrameEncoding::kVarDCT) {
     group_dec_caches_[thread].InitOnce(frame_header_.passes.num_passes,
                                        dec_state_->used_acs);
-    JXL_RETURN_IF_ERROR(DecodeGroup(
-        br, num_passes, ac_group_id, dec_state_, &group_dec_caches_[thread],
-        thread, render_pipeline_input, decoded_,
-        decoded_passes_per_ac_group_[ac_group_id], force_draw, dc_only));
+    JXL_RETURN_IF_ERROR(DecodeGroup(br, num_passes, ac_group_id, dec_state_,
+                                    &group_dec_caches_[thread], thread,
+                                    render_pipeline_input, decoded_,
+                                    decoded_passes_per_ac_group_[ac_group_id],
+                                    force_draw, dc_only, &should_run_pipeline));
   }
 
   // don't limit to image dimensions here (is done in DecodeGroup)
@@ -680,7 +678,8 @@ Status FrameDecoder::ProcessACGroup(size_t ac_group_id,
     }
   }
 
-  if (render_pipeline_input && !modular_frame_decoder_.UsesFullImage()) {
+  if (render_pipeline_input && !modular_frame_decoder_.UsesFullImage() &&
+      !decoded_->IsJPEG() && should_run_pipeline) {
     render_pipeline_input->Done();
   }
   return true;
@@ -692,12 +691,16 @@ Status FrameDecoder::PreparePipeline() {
     num_c += 3;
   }
 
+  if (frame_header_.CanBeReferenced()) {
+    // Necessary so that SetInputSizes() can allocate output buffers as needed.
+    dec_state_->frame_storage_for_referencing =
+        ImageBundle(decoded_->metadata());
+  }
+
   RenderPipeline::Builder builder(num_c);
 
   if (use_slow_rendering_pipeline_) {
     builder.UseSimpleImplementation();
-  } else {
-    JXL_ABORT("Not implemented: fast pipeline");
   }
 
   if (!frame_header_.chroma_subsampling.Is444()) {
@@ -773,14 +776,10 @@ Status FrameDecoder::PreparePipeline() {
     builder.AddStage(
         GetAddNoiseStage(dec_state_->shared->image_features.noise_params,
                          dec_state_->shared->cmap, num_c - 3));
-    builder.UsesNoise();
   }
   if (frame_header_.dc_level != 0) {
     builder.AddStage(GetWriteToImage3FStage(
         &dec_state_->shared_storage.dc_frames[frame_header_.dc_level - 1]));
-  }
-  if (!coalescing_) {
-    JXL_ABORT("Not implemented: skip coalescing");
   }
 
   if (frame_header_.CanBeReferenced() &&
@@ -801,7 +800,6 @@ Status FrameDecoder::PreparePipeline() {
     }
   }
 
-  // TODO(veluca): double-check when blending/no coalescing is enabled.
   size_t width = coalescing_ ? frame_header_.nonserialized_metadata->xsize()
                              : frame_dim_.xsize_upsampled;
   size_t height = coalescing_ ? frame_header_.nonserialized_metadata->ysize()
@@ -811,7 +809,8 @@ Status FrameDecoder::PreparePipeline() {
     JXL_ASSERT(!ImageBlender::NeedsBlending(dec_state_));
     JXL_ASSERT(!frame_header_.CanBeReferenced() ||
                frame_header_.save_before_color_transform);
-    JXL_ASSERT(!render_spotcolors_);
+    JXL_ASSERT(!render_spotcolors_ ||
+               !decoded_->metadata()->Find(ExtraChannel::kSpotColor));
     builder.AddStage(GetFastXYBTosRGB8Stage(
         dec_state_->rgb_output, dec_state_->rgb_stride, width, height,
         dec_state_->rgb_output_is_rgba, has_alpha, alpha_c));
@@ -822,12 +821,12 @@ Status FrameDecoder::PreparePipeline() {
       builder.AddStage(GetXYBStage(dec_state_->output_encoding_info));
     }  // Nothing to do for kNone.
 
-    if (ImageBlender::NeedsBlending(dec_state_)) {
+    if (coalescing_ && ImageBlender::NeedsBlending(dec_state_)) {
       builder.AddStage(GetBlendingStage(
           dec_state_, dec_state_->output_encoding_info.color_encoding));
     }
 
-    if (frame_header_.CanBeReferenced() &&
+    if (coalescing_ && frame_header_.CanBeReferenced() &&
         !frame_header_.save_before_color_transform) {
       builder.AddStage(GetWriteToImageBundleStage(
           &dec_state_->frame_storage_for_referencing,
@@ -969,9 +968,7 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
 
   if (*std::min_element(decoded_dc_groups_.begin(), decoded_dc_groups_.end()) &&
       !finalized_dc_) {
-    if (use_slow_rendering_pipeline_) {
-      JXL_RETURN_IF_ERROR(PreparePipeline());
-    }
+    JXL_RETURN_IF_ERROR(PreparePipeline());
     FinalizeDC();
     JXL_RETURN_IF_ERROR(AllocateOutput());
     if (pause_at_progressive_ && !single_section) {
@@ -1014,8 +1011,13 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
   if (decoded_ac_global_) {
     // Mark all the AC groups that we received as not complete yet.
     for (size_t i = 0; i < ac_group_sec.size(); i++) {
-      if (num_ac_passes[i] == 0) continue;
+      if (num_ac_passes[i] == 0 && !modular_frame_decoder_.UsesFullImage()) {
+        continue;
+      }
       dec_state_->group_border_assigner.ClearDone(i);
+      if (dec_state_->render_pipeline) {
+        dec_state_->render_pipeline->ClearDone(i);
+      }
     }
 
     JXL_RETURN_IF_ERROR(RunOnPool(
@@ -1087,6 +1089,9 @@ Status FrameDecoder::Flush() {
       if (decoded_passes_per_ac_group_[i] == frame_header_.passes.num_passes)
         continue;
       dec_state_->group_border_assigner.ClearDone(i);
+      if (dec_state_->render_pipeline) {
+        dec_state_->render_pipeline->ClearDone(i);
+      }
     }
     std::atomic<bool> has_error{false};
     JXL_RETURN_IF_ERROR(RunOnPool(
@@ -1259,25 +1264,27 @@ Status FrameDecoder::FinalizeFrame() {
     }
   }
 
-  if (frame_header_.nonserialized_is_preview) {
-    // Fix possible larger image size (multiple of kBlockDim)
-    // TODO(lode): verify if and when that happens.
-    decoded_->ShrinkTo(frame_dim_.xsize, frame_dim_.ysize);
-  } else if (!decoded_->IsJPEG()) {
-    // A kRegularFrame is blended with the other frames, and thus results in a
-    // coalesced frame of size equal to image dimensions. Other frames are not
-    // blended, thus their final size is the size that was defined in the
-    // frame_header.
-    if (coalescing_ && (frame_header_.frame_type == kRegularFrame ||
-                        frame_header_.frame_type == kSkipProgressive)) {
-      decoded_->ShrinkTo(
-          dec_state_->shared->frame_header.nonserialized_metadata->xsize(),
-          dec_state_->shared->frame_header.nonserialized_metadata->ysize());
-    } else {
-      // xsize_upsampled is the actual frame size, after any upsampling has been
-      // applied.
-      decoded_->ShrinkTo(frame_dim_.xsize_upsampled,
-                         frame_dim_.ysize_upsampled);
+  if (!dec_state_->render_pipeline) {
+    if (frame_header_.nonserialized_is_preview) {
+      // Fix possible larger image size (multiple of kBlockDim)
+      // TODO(lode): verify if and when that happens.
+      decoded_->ShrinkTo(frame_dim_.xsize, frame_dim_.ysize);
+    } else if (!decoded_->IsJPEG()) {
+      // A kRegularFrame is blended with the other frames, and thus results in a
+      // coalesced frame of size equal to image dimensions. Other frames are not
+      // blended, thus their final size is the size that was defined in the
+      // frame_header.
+      if (coalescing_ && (frame_header_.frame_type == kRegularFrame ||
+                          frame_header_.frame_type == kSkipProgressive)) {
+        decoded_->ShrinkTo(
+            dec_state_->shared->frame_header.nonserialized_metadata->xsize(),
+            dec_state_->shared->frame_header.nonserialized_metadata->ysize());
+      } else {
+        // xsize_upsampled is the actual frame size, after any upsampling has
+        // been applied.
+        decoded_->ShrinkTo(frame_dim_.xsize_upsampled,
+                           frame_dim_.ysize_upsampled);
+      }
     }
   }
 

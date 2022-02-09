@@ -8,6 +8,7 @@
 
 #include <stdint.h>
 
+#include "lib/jxl/base/arch_macros.h"
 #include "lib/jxl/filters.h"
 #include "lib/jxl/frame_header.h"
 
@@ -15,7 +16,14 @@ namespace jxl {
 
 // The first pixel in the input to RenderPipelineStage will be located at
 // this position. Pixels before this position may be accessed as padding.
+// This should be at least the RoundUpTo(maximum padding / 2, maximum vector
+// size) times 2: this is realized when using Gaborish + EPF + upsampling +
+// chroma subsampling.
+#if JXL_ARCH_ARM
 constexpr size_t kRenderPipelineXOffset = 16;
+#else
+constexpr size_t kRenderPipelineXOffset = 32;
+#endif
 
 enum class RenderPipelineChannelMode {
   // This channel is not modified by this stage.
