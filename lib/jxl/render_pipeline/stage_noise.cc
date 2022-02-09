@@ -141,7 +141,7 @@ class AddNoiseStage : public RenderPipelineStage {
   AddNoiseStage(const NoiseParams& noise_params,
                 const ColorCorrelationMap& cmap, size_t first_c)
       : RenderPipelineStage(RenderPipelineStage::Settings::Symmetric(
-            /*shift=*/0, /*border=*/2)),
+            /*shift=*/0, /*border=*/0)),
         noise_params_(noise_params),
         cmap_(cmap),
         first_c_(first_c) {}
@@ -239,8 +239,8 @@ class ConvolveNoiseStage : public RenderPipelineStage {
         rows[i] = GetInputRow(input_rows, c, i - 2);
       }
       float* JXL_RESTRICT row_out = GetOutputRow(output_rows, c, 0);
-      for (int64_t x = -RoundUpTo(xextra, Lanes(d));
-           x < (int64_t)(xsize + xextra); x += Lanes(d)) {
+      for (ssize_t x = -RoundUpTo(xextra, Lanes(d));
+           x < (ssize_t)(xsize + xextra); x += Lanes(d)) {
         const auto p00 = Load(d, rows[2] + x);
         auto others = Zero(d);
         for (ssize_t i = -2; i <= 2; i++) {
