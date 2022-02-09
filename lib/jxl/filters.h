@@ -154,9 +154,7 @@ class FilterPipeline {
  public:
   FilterPipeline() : FilterPipeline(kApplyImageFeaturesTileDim) {}
   explicit FilterPipeline(size_t max_rect_xsize)
-      : storage{max_rect_xsize + 2 * kMaxFilterPadding +
-                    GroupBorderAssigner::kPaddingXRound,
-                kTotalStorageRows} {
+      : storage{max_rect_xsize + 2 * kMaxFilterPadding + 8, kTotalStorageRows} {
 #if MEMORY_SANITIZER
     // The padding of the storage may be used uninitialized since we process
     // multiple SIMD lanes at a time, aligned to a multiple of lanes.
@@ -195,8 +193,7 @@ class FilterPipeline {
     // input/output row since they might have a different alignment, instead we
     // keep the alignment modulo kPaddingXRound.
     static size_t MaxLeftPadding(size_t image_rect_x0) {
-      return kMaxFilterPadding +
-             image_rect_x0 % GroupBorderAssigner::kPaddingXRound;
+      return kMaxFilterPadding + image_rect_x0 % 8;
     }
 
     // Sets the input of the filter step as an image region.

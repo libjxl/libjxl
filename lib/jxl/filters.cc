@@ -72,9 +72,7 @@ void FilterPipeline::ApplyFiltersRow(const LoopFilter& lf,
   //     (image_rect.x0() - image_rect.x0() % kBlockDim))) / kBlockDim
   // x_in_sigma_row =
   //   x - image_rect.x0() % kPaddingXRound + image_rect.x0() % kBlockDim
-  const size_t sigma_x_offset =
-      image_rect.x0() % kBlockDim -
-      image_rect.x0() % GroupBorderAssigner::kPaddingXRound;
+  const size_t sigma_x_offset = 0;
 
   for (size_t i = 0; i < num_filters; i++) {
     const FilterStep& filter = filters[i];

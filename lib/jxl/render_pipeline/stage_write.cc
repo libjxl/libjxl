@@ -89,6 +89,7 @@ class WriteToU8Stage : public RenderPipelineStage {
                   size_t xextra, size_t xsize, size_t xpos, size_t ypos,
                   float* JXL_RESTRICT temp) const final {
     if (ypos >= height_) return;
+    JXL_DASSERT(xextra == 0);
     size_t bytes = rgba_ ? 4 : 3;
     const float* JXL_RESTRICT row_in_r = GetInputRow(input_rows, 0, 0);
     const float* JXL_RESTRICT row_in_g = GetInputRow(input_rows, 1, 0);
@@ -103,10 +104,16 @@ class WriteToU8Stage : public RenderPipelineStage {
     auto one = Set(d, 1.0f);
     auto mul = Set(d, 255.0f);
 
-    ssize_t x0 = -RoundUpTo(xextra, Lanes(d));
-    ssize_t x1 = RoundUpTo(xsize + xextra, Lanes(d));
+    ssize_t x1 = RoundUpTo(xsize, Lanes(d));
 
-    for (ssize_t x = x0; x < x1; x += Lanes(d)) {
+    msan::UnpoisonMemory(row_in_r + xsize, sizeof(float) * (x1 - xsize));
+    msan::UnpoisonMemory(row_in_g + xsize, sizeof(float) * (x1 - xsize));
+    msan::UnpoisonMemory(row_in_b + xsize, sizeof(float) * (x1 - xsize));
+    if (row_in_a) {
+      msan::UnpoisonMemory(row_in_a + xsize, sizeof(float) * (x1 - xsize));
+    }
+
+    for (ssize_t x = 0; x < x1; x += Lanes(d)) {
       auto rf = Clamp(zero, Load(d, row_in_r + x), one) * mul;
       auto gf = Clamp(zero, Load(d, row_in_g + x), one) * mul;
       auto bf = Clamp(zero, Load(d, row_in_b + x), one) * mul;
@@ -201,8 +208,7 @@ class WriteToImageBundleStage : public RenderPipelineStage {
              sizeof(float) * (xsize + 2 * xextra));
     }
     for (size_t ec = 0; ec < image_bundle_->extra_channels().size(); ec++) {
-      JXL_ASSERT(ec < image_bundle_->extra_channels().size());
-      JXL_ASSERT(image_bundle_->extra_channels()[ec].xsize() <=
+      JXL_ASSERT(image_bundle_->extra_channels()[ec].xsize() >=
                  xpos + xsize + xextra);
       memcpy(image_bundle_->extra_channels()[ec].Row(ypos) + xpos - xextra,
              GetInputRow(input_rows, 3 + ec, 0) - xextra,
