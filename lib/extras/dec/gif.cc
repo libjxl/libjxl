@@ -52,6 +52,21 @@ bool AllOpaque(const PackedImage& color) {
   return true;
 }
 
+void ensure_have_alpha(PackedFrame* frame) {
+  if (!frame->extra_channels.empty()) return;
+  const JxlPixelFormat alpha_format{
+      /*num_channels=*/1u,
+      /*data_type=*/JXL_TYPE_UINT8,
+      /*endianness=*/JXL_NATIVE_ENDIAN,
+      /*align=*/0,
+  };
+  frame->extra_channels.emplace_back(frame->color.xsize, frame->color.ysize,
+                                     alpha_format);
+  // We need to set opaque-by-default.
+  std::fill_n(static_cast<uint8_t*>(frame->extra_channels[0].pixels()),
+              frame->color.xsize * frame->color.ysize, 255u);
+}
+
 }  // namespace
 
 Status DecodeImageGIF(Span<const uint8_t> bytes, const ColorHints& color_hints,
@@ -218,33 +233,17 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, const ColorHints& color_hints,
     // Allocates the frame buffer.
     ppf->frames.emplace_back(total_rect.xsize(), total_rect.ysize(),
                              packed_frame_format);
-    auto* frame = &ppf->frames.back();
+    PackedFrame* frame = &ppf->frames.back();
 
     // We cannot tell right from the start whether there will be a
     // need for an alpha channel. This is discovered only as soon as
     // we see a transparent pixel. We hence initialize alpha lazily.
-    auto have_alpha = [&frame]() { return !frame->extra_channels.empty(); };
-    auto ensure_have_alpha = [&frame, &have_alpha]() {
-      if (have_alpha()) return;
-      const JxlPixelFormat alpha_format{
-          /*num_channels=*/1u,
-          /*data_type=*/JXL_TYPE_UINT8,
-          /*endianness=*/JXL_NATIVE_ENDIAN,
-          /*align=*/0,
-      };
-      frame->extra_channels.emplace_back(frame->color.xsize, frame->color.ysize,
-                                         alpha_format);
-      // We need to set opaque-by-default.
-      std::fill_n(static_cast<uint8_t*>(frame->extra_channels[0].pixels()),
-                  frame->color.xsize * frame->color.ysize, 255u);
-    };
-    auto set_pixel_alpha = [&frame, &have_alpha, &ensure_have_alpha](
-                               size_t x, size_t y, uint8_t a) {
+    auto set_pixel_alpha = [&frame](size_t x, size_t y, uint8_t a) {
       // If we do not have an alpha-channel and a==255 (fully opaque),
       // we can skip setting this pixel-value and rely on
       // "no alpha channel = no transparency".
-      if (a == 255 && !have_alpha()) return;
-      ensure_have_alpha();
+      if (a == 255 && !frame->extra_channels.empty()) return;
+      ensure_have_alpha(frame);
       static_cast<uint8_t*>(
           frame->extra_channels[0].pixels())[y * frame->color.xsize + x] = a;
     };
@@ -358,7 +357,7 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, const ColorHints& color_hints,
       }
     }
 
-    if (have_alpha()) {
+    if (!frame->extra_channels.empty()) {
       ppf->info.alpha_bits = 8;
     }
 
@@ -382,7 +381,20 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, const ColorHints& color_hints,
                     canvas.color.xsize * canvas.color.ysize, background_rgba);
     }
   }
-
+  // Finally, if any frame has an alpha-channel, every frame will need
+  // to have an alpha-channel.
+  bool seen_alpha = false;
+  for (const PackedFrame& frame : ppf->frames) {
+    if (!frame.extra_channels.empty()) {
+      seen_alpha = true;
+      break;
+    }
+  }
+  if (seen_alpha) {
+    for (PackedFrame& frame : ppf->frames) {
+      ensure_have_alpha(&frame);
+    }
+  }
   return true;
 }
 
