@@ -234,7 +234,7 @@ Status DoColorSpaceTransform(void* cms_data, const size_t thread,
     // LCMS does CMYK in a weird way: 0 = white, 100 = max ink
     float* mutable_xform_src = t->buf_src.Row(thread);
     for (size_t x = 0; x < xsize * 4; ++x) {
-      mutable_xform_src[x] = 100.f - 100.f * mutable_xform_src[x]
+      mutable_xform_src[x] = 100.f - 100.f * mutable_xform_src[x];
     }
     xform_src = mutable_xform_src;
   }

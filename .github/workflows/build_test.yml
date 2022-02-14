@@ -34,7 +34,7 @@ jobs:
             env_stack_size: 1
             max_stack: 3000
             # Conformance tooling test requires numpy.
-            apt_pkgs: python3-numpy
+            apt_pkgs: graphviz python3-numpy
           - name: lowprecision
             mode: release
             test_in_pr: true
