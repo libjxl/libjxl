@@ -70,6 +70,8 @@ extensions = [
     'breathe',
     # sphinx readthedocs theme.
     'sphinx_rtd_theme',
+    # Do we use it?
+    'sphinx.ext.graphviz',
 ]
 
 breathe_default_project = 'libjxl'
