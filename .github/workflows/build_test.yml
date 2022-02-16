@@ -14,7 +14,7 @@ on:
   pull_request:
     types: [opened, reopened, labeled, synchronize]
 
-concurrency: 
+concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
@@ -34,7 +34,11 @@ jobs:
             env_stack_size: 1
             max_stack: 3000
             # Conformance tooling test requires numpy.
-            apt_pkgs: python3-numpy
+            apt_pkgs: graphviz python3-numpy
+          - name: lowprecision
+            mode: release
+            test_in_pr: true
+            cmake_args: -DCMAKE_CXX_FLAGS=-DJXL_HIGH_PRECISION=0
           - name: debug
             # Runs on AVX3 CPUs require more stack than others. Make sure to
             # test on AVX3-enabled CPUs when changing this value.
@@ -230,20 +234,28 @@ jobs:
 
 
   cross_compile_ubuntu:
-    name: Cross-compiling ${{ matrix.build_target }}
+    name: Cross-compiling ${{ matrix.build_target }} ${{ matrix.lowprecision }}
     runs-on: [ubuntu-18.04]
     strategy:
       matrix:
         include:
           - arch: arm64
+            lowprecision:
             build_target: aarch64-linux-gnu
             cmake_args: -DCMAKE_CROSSCOMPILING_EMULATOR=/usr/bin/qemu-aarch64-static
 
+          - arch: arm64
+            lowprecision: lowprecision
+            build_target: aarch64-linux-gnu
+            cmake_args: -DCMAKE_CROSSCOMPILING_EMULATOR=/usr/bin/qemu-aarch64-static -DCMAKE_CXX_FLAGS=-DJXL_HIGH_PRECISION=0
+
           - arch: armhf
+            lowprecision:
             build_target: arm-linux-gnueabihf
             cmake_args: -DCMAKE_CROSSCOMPILING_EMULATOR=/usr/bin/qemu-arm-static
 
           - arch: i386
+            lowprecision:
             build_target: i686-linux-gnu
 
     env:

@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "jxl/codestream_header.h"
+#include "jxl/encode.h"
 #include "jxl/types.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/common.h"
@@ -163,6 +164,7 @@ class PackedPixelFile {
   std::vector<PackedFrame> frames;
 
   PackedMetadata metadata;
+  PackedPixelFile() { JxlEncoderInitBasicInfo(&info); };
 };
 
 }  // namespace extras

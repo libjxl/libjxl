@@ -829,7 +829,6 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
  * @param type type of the extra channel.
  * @param info global extra channel metadata. Object owned by the caller and its
  * contents are copied internally.
- * @return JXL_ENC_SUCCESS on success, JXL_ENC_ERROR on error
  */
 JXL_EXPORT void JxlEncoderInitExtraChannelInfo(JxlExtraChannelType type,
                                                JxlExtraChannelInfo* info);

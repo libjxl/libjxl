@@ -226,8 +226,11 @@ jxl::Status WriteJxlOutput(const DecompressArgs& args, const char* file_out,
   // (Writing large PNGs is slow, so allow skipping it for benchmarks.)
   if (file_out == nullptr) return true;
 
-  // Override original color space with arg if specified.
+  // Stay in original color space unless something else is needed.
   jxl::ColorEncoding c_out = io.metadata.m.color_encoding;
+  // Override original color space with sRGB if input is CMYK.
+  if (io.Main().HasBlack()) c_out = jxl::ColorEncoding::SRGB(false);
+  // Override original color space with arg if specified.
   if (!args.color_space.empty()) {
     bool color_space_applied = false;
     JxlColorEncoding c_out_external;

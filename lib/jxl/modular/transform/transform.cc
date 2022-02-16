@@ -68,8 +68,8 @@ Status Transform::MetaApply(Image &input) {
                   "Transform: kPalette, begin_c=%" PRIu32 ", num_c=%" PRIu32
                   ", nb_colors=%" PRIu32 ", nb_deltas=%" PRIu32,
                   begin_c, num_c, nb_colors, nb_deltas);
-      if ((input.bitdepth > 24) && (predictor != Predictor::Zero)) {
-        return JXL_FAILURE("Only zero predictor is allowed for bitdepth > 24");
+      if (input.bitdepth > 24) {
+        return JXL_FAILURE("Palette is not allowed for bitdepth > 24");
       }
       return MetaPalette(input, begin_c, begin_c + num_c - 1, nb_colors,
                          nb_deltas, lossy_palette);
