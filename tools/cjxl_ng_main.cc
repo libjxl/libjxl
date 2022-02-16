@@ -339,7 +339,6 @@ jxl::Status LoadInput(const char* filename_in,
 
   // Manually fix intensity target 0 problem, decoder should set a
   // reasonable default, but at least apng doesn't:
-  //  ppf.info.uses_original_profile = true;    // XXX
   ppf.info.intensity_target = 255.f;
   ppf.info.orientation = JXL_ORIENT_IDENTITY;
   jxl::extras::ColorHints color_hints;
