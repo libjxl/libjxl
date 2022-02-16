@@ -505,12 +505,17 @@ class LossyFrameEncoder {
     PassesSharedState& shared = enc_state_->shared;
 
     if (!enc_state_->cparams.max_error_mode) {
-      float x_qm_scale_steps[3] = {0.65f, 1.25f, 9.0f};
-      shared.frame_header.x_qm_scale = 1;
+      float x_qm_scale_steps[2] = {1.25f, 9.0f};
+      shared.frame_header.x_qm_scale = 2;
       for (float x_qm_scale_step : x_qm_scale_steps) {
         if (enc_state_->cparams.butteraugli_distance > x_qm_scale_step) {
           shared.frame_header.x_qm_scale++;
         }
+      }
+      if (enc_state_->cparams.butteraugli_distance < 0.299f) {
+        // Favor chromacity preservation for making images appear more
+        // faithful to original even with extreme (5-10x) zooming.
+        shared.frame_header.x_qm_scale++;
       }
     }
 
