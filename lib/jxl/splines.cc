@@ -418,7 +418,7 @@ Status QuantizedSpline::Dequantize(const Spline::Point& starting_point,
   int current_x = static_cast<int>(roundf(starting_point.x)),
       current_y = static_cast<int>(roundf(starting_point.y));
   // It is not in spec, but reasonable limit to avoid overflows.
-  constexpr int kPosLimit = 1u << 30;
+  constexpr int kPosLimit = 1u << 23;
   if ((current_x >= kPosLimit) || (current_x <= -kPosLimit) ||
       (current_y >= kPosLimit) || (current_y <= -kPosLimit)) {
     return JXL_FAILURE("Spline coordinates out of bounds");
