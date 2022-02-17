@@ -27,51 +27,80 @@
  * for example ARM CPUs with big.LITTLE computation models.
  */
 
-#ifndef JXL_RESIZABLE_PARALLEL_RUNNER_H_
-#define JXL_RESIZABLE_PARALLEL_RUNNER_H_
+#if !defined(JXL_RESIZABLE_PARALLEL_RUNNER_H_) || defined(CUSTOM_GENERATOR)
 
-#include <stddef.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-
-#include "jxl/jxl_threads_export.h"
-#include "jxl/memory_manager.h"
-#include "jxl/parallel_runner.h"
-
-#if defined(__cplusplus) || defined(c_plusplus)
-extern "C" {
+#ifndef CUSTOM_GENERATOR
+#   ifndef DOC_GENERATOR
+#       define JXL_RESIZABLE_PARALLEL_RUNNER_H_
+#       include <stddef.h>
+#       include <stdint.h>
+#       include <stdio.h>
+#       include <stdlib.h>
+#       include "jxl/jxl_threads_export.h"
+#       include "jxl/memory_manager.h"
+#       include "jxl/parallel_runner.h"
+#       define CLEAR_GENERATOR true
+#       include "typebuilder/type_generator.h"
+#   else
+    ESCAPE(#ifndef JXL_RESIZABLE_PARALLEL_RUNNER_H_)
+    ESCAPE(#define JXL_RESIZABLE_PARALLEL_RUNNER_H_)
+    ESCAPE(#include <stddef.h>)
+    ESCAPE(#include <stdint.h>)
+    ESCAPE(#include <stdio.h>)
+    ESCAPE(#include <stdlib.h>)
+    ESCAPE(#include "jxl/jxl_threads_export.h")
+    ESCAPE(#include "jxl/memory_manager.h")
+    ESCAPE(#include "jxl/parallel_runner.h")
+#   endif
 #endif
 
-/** Parallel runner internally using std::thread. Use as JxlParallelRunner.
- */
-JXL_THREADS_EXPORT JxlParallelRetCode JxlResizableParallelRunner(
-    void* runner_opaque, void* jpegxl_opaque, JxlParallelRunInit init,
-    JxlParallelRunFunction func, uint32_t start_range, uint32_t end_range);
+EXTERN_C(
 
-/** Creates the runner for JxlResizableParallelRunner. Use as the opaque
- * runner. The runner will execute tasks on the calling thread until
- * @ref JxlResizableParallelRunnerSetThreads is called.
- */
-JXL_THREADS_EXPORT void* JxlResizableParallelRunnerCreate(
-    const JxlMemoryManager* memory_manager);
+    /** Parallel runner internally using std::thread. Use as JxlParallelRunner.
+     */
+    Threads_Export Method(JxlParallelRetCode, JxlResizableParallelRunner,
+        (
+            void* runner_opaque,
+            void* jpegxl_opaque,
+            JxlParallelRunInit init,
+            JxlParallelRunFunction func,
+            uint32_t start_range,
+            uint32_t end_range
+        )
+    )
 
-/** Changes the number of threads for JxlResizableParallelRunner.
- */
-JXL_THREADS_EXPORT void JxlResizableParallelRunnerSetThreads(
-    void* runner_opaque, size_t num_threads);
+    /** Creates the runner for JxlResizableParallelRunner. Use as the opaque
+     * runner. The runner will execute tasks on the calling thread until
+     * @ref JxlResizableParallelRunnerSetThreads is called.
+     */
+    Threads_Export Method(void*, JxlResizableParallelRunnerCreate,
+        (const JxlMemoryManager* memory_manager)
+    )
 
-/** Suggests a number of threads to use for an image of given size.
- */
-JXL_THREADS_EXPORT uint32_t
-JxlResizableParallelRunnerSuggestThreads(uint64_t xsize, uint64_t ysize);
+    /** Changes the number of threads for JxlResizableParallelRunner.
+     */
+    Threads_Export Method(void, JxlResizableParallelRunnerSetThreads,
+        (void* runner_opaque, size_t num_threads)
+    )
 
-/** Destroys the runner created by JxlResizableParallelRunnerCreate.
- */
-JXL_THREADS_EXPORT void JxlResizableParallelRunnerDestroy(void* runner_opaque);
+    /** Suggests a number of threads to use for an image of given size.
+     */
+    Threads_Export Method(uint32_t, JxlResizableParallelRunnerSuggestThreads,
+        (uint64_t xsize, uint64_t ysize)
+    )
 
-#if defined(__cplusplus) || defined(c_plusplus)
-}
+    /** Destroys the runner created by JxlResizableParallelRunnerCreate.
+     */
+    Threads_Export Method(void, JxlResizableParallelRunnerDestroy, (void* runner_opaque))
+)
+
+#if CLEAR_GENERATOR
+#   undef CLEAR_GENERATOR
+#   include "typebuilder/clear_generator.h"
+#endif
+
+#ifdef DOC_GENERATOR
+    ESCAPE(#endif)
 #endif
 
 #endif /* JXL_RESIZABLE_PARALLEL_RUNNER_H_ */
