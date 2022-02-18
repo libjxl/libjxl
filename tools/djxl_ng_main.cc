@@ -433,7 +433,7 @@ int main(int argc, char** argv) {
       }
       if (num_channels == 3 && ppf.info.num_color_channels == 1) {
         JXL_WARNING(
-            "For grayscale images, the filename should not end with .ppm.\n");
+            "For grayscale images, the filename should end with .pgm.\n");
       }
       if (ppf.info.bits_per_sample > 16) {
         JXL_WARNING("PPM only supports up to 16 bits per sample");
