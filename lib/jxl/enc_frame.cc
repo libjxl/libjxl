@@ -114,7 +114,6 @@ void ClusterGroups(PassesEncoderState* enc_state) {
     return token_cost(tokens, num_contexts) - costs[i] - costs[j];
   };
   std::vector<size_t> out{max};
-  std::vector<size_t> old_map(ac.size());
   std::vector<float> dists(ac.size());
   size_t farthest = 0;
   for (size_t i = 0; i < ac.size(); i++) {
@@ -133,7 +132,6 @@ void ClusterGroups(PassesEncoderState* enc_state) {
       float d = dist(out.back(), i);
       if (d < dists[i]) {
         dists[i] = d;
-        old_map[i] = enc_state->histogram_idx[i];
         enc_state->histogram_idx[i] = out.size() - 1;
       }
       if (dists[i] > dists[farthest]) {

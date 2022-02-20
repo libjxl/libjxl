@@ -456,7 +456,6 @@ void WriteHtmlReport(const std::string& codec_desc,
 )";
   std::string out_html;
   std::string outdir;
-  std::string toggleall = "function(e) {if(e.keyCode == 32 { ";
   out_html += "<body bgcolor=\"#000\">\n";
   out_html += "<style>img { image-rendering: pixelated; }</style>\n";
   std::string codec_name = codec_desc;

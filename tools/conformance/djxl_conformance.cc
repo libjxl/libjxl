@@ -373,7 +373,6 @@ bool DecodeJXL(const DecodeOptions& opts) {
   std::vector<uint8_t> preview_pixels;
 
   std::vector<JxlExtraChannelInfo> extra_channels;
-  std::vector<std::string> extra_channel_names;
   std::vector<std::vector<uint8_t>> extra_channel_pixels;
 
   std::vector<JxlFrameHeader> frame_headers;
@@ -401,7 +400,6 @@ bool DecodeJXL(const DecodeOptions& opts) {
         std::vector<char> name(extra_channels[i].name_length + 1);
         EXPECT_SUCCESS(JxlDecoderGetExtraChannelName(dec.get(), i, name.data(),
                                                      name.size()));
-        extra_channel_names.emplace_back(name.begin(), name.end() - 1);
       }
 
       // Select the output pixel format based on the basic info.
