@@ -2425,6 +2425,10 @@ JxlDecoderStatus JxlDecoderFlushImage(JxlDecoder* dec) {
     return JXL_DEC_ERROR;
   }
 
+  if (dec->jpeg_decoder.IsOutputSet() && dec->ib->jpeg_data != nullptr) {
+    return JXL_DEC_SUCCESS;
+  }
+
   if (dec->frame_dec->HasRGBBuffer()) {
     return JXL_DEC_SUCCESS;
   }
