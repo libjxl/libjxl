@@ -225,6 +225,9 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
     io.frames.push_back(std::move(ib));
   }
 
+  jxl::CompressParams params;
+  params.speed_tier = spec.params.speed_tier;
+
 #if JPEGXL_ENABLE_JPEG
   if (spec.is_reconstructible_jpeg) {
     // If this image is supposed to be a reconstructible JPEG, collect the JPEG
@@ -236,7 +239,8 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
     JXL_RETURN_IF_ERROR(jxl::jpeg::DecodeImageJPG(
         jxl::Span<const uint8_t>(jpeg_bytes.data(), jpeg_bytes.size()), &io));
     jxl::PaddedBytes jpeg_data;
-    JXL_RETURN_IF_ERROR(EncodeJPEGData(*io.Main().jpeg_data, &jpeg_data));
+    JXL_RETURN_IF_ERROR(
+        EncodeJPEGData(*io.Main().jpeg_data, &jpeg_data, params));
     std::vector<uint8_t> header;
     header.insert(header.end(), jxl::kContainerHeader,
                   jxl::kContainerHeader + sizeof(jxl::kContainerHeader));
@@ -249,8 +253,6 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
   }
 #endif
 
-  jxl::CompressParams params;
-  params.speed_tier = spec.params.speed_tier;
   params.modular_mode = spec.params.modular_mode;
   params.color_transform = spec.params.color_transform;
   params.butteraugli_distance = spec.params.butteraugli_distance;

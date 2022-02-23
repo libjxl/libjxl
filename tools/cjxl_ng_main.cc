@@ -265,6 +265,10 @@ DEFINE_int64(
     "Encoder effort setting. Range: 1 .. 9.\n"
     "    Default: 7. Higher number is more effort (slower).");
 
+DEFINE_int32(brotli_effort, 9,
+             "Brotli effort setting. Range: 0 .. 11.\n"
+             "    Default: 9. Higher number is more effort (slower).");
+
 DEFINE_string(frame_indexing, "",
               "If non-empty, a string matching '^[01]*$'. If this string has a "
               "'1' in i-th position, then the i-th frame will be indexed in "
@@ -500,6 +504,16 @@ int main(int argc, char** argv) {
     }
     JxlEncoderFrameSettingsSetOption(jxl_encoder_frame_settings,
                                      JXL_ENC_FRAME_SETTING_EFFORT, flag_effort);
+
+    const int32_t flag_brotli_effort = FLAGS_brotli_effort;
+    if (!(-1 <= flag_brotli_effort && flag_brotli_effort <= 11)) {
+      std::cerr
+          << "Invalid --brotli_effort. Valid range is {-1, 0, 1, ..., 11}.\n";
+      return EXIT_FAILURE;
+    }
+    JxlEncoderFrameSettingsSetOption(jxl_encoder_frame_settings,
+                                     JXL_ENC_FRAME_SETTING_BROTLI_EFFORT,
+                                     flag_brotli_effort);
 
     const int32_t flag_epf = FLAGS_epf;
     if (!(-1 <= flag_epf && flag_epf <= 3)) {

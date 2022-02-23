@@ -1448,7 +1448,7 @@ size_t RoundtripJpeg(const PaddedBytes& jpeg_in, ThreadPool* pool) {
   enc_container.codestream = std::move(codestream);
   jpeg::JPEGData data_in = *io.Main().jpeg_data;
   jxl::PaddedBytes jpeg_data;
-  EXPECT_TRUE(EncodeJPEGData(data_in, &jpeg_data));
+  EXPECT_TRUE(EncodeJPEGData(data_in, &jpeg_data, cparams));
   enc_container.jpeg_reconstruction = jpeg_data.data();
   enc_container.jpeg_reconstruction_size = jpeg_data.size();
   EXPECT_TRUE(EncodeJpegXlContainerOneShot(enc_container, &compressed));

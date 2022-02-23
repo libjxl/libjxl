@@ -105,7 +105,7 @@ int CompressJpegXlMain(int argc, const char* argv[]) {
     jxl::PaddedBytes jpeg_data;
     if (args.store_jpeg_metadata && io.Main().IsJPEG()) {
       jxl::jpeg::JPEGData data_in = *io.Main().jpeg_data;
-      if (EncodeJPEGData(data_in, &jpeg_data)) {
+      if (EncodeJPEGData(data_in, &jpeg_data, args.params)) {
         container.jpeg_reconstruction = jpeg_data.data();
         container.jpeg_reconstruction_size = jpeg_data.size();
       } else {
