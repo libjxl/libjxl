@@ -53,18 +53,6 @@
 #include "lib/jxl/passes_state.h"
 #include "lib/jxl/quant_weights.h"
 #include "lib/jxl/quantizer.h"
-#include "lib/jxl/render_pipeline/stage_blending.h"
-#include "lib/jxl/render_pipeline/stage_chroma_upsampling.h"
-#include "lib/jxl/render_pipeline/stage_epf.h"
-#include "lib/jxl/render_pipeline/stage_gaborish.h"
-#include "lib/jxl/render_pipeline/stage_noise.h"
-#include "lib/jxl/render_pipeline/stage_patches.h"
-#include "lib/jxl/render_pipeline/stage_splines.h"
-#include "lib/jxl/render_pipeline/stage_spot.h"
-#include "lib/jxl/render_pipeline/stage_upsampling.h"
-#include "lib/jxl/render_pipeline/stage_write.h"
-#include "lib/jxl/render_pipeline/stage_xyb.h"
-#include "lib/jxl/render_pipeline/stage_ycbcr.h"
 #include "lib/jxl/sanitizers.h"
 #include "lib/jxl/splines.h"
 #include "lib/jxl/toc.h"
@@ -685,184 +673,6 @@ Status FrameDecoder::ProcessACGroup(size_t ac_group_id,
   return true;
 }
 
-Status FrameDecoder::PreparePipeline() {
-  size_t num_c = 3 + frame_header_.nonserialized_metadata->m.num_extra_channels;
-  if ((frame_header_.flags & FrameHeader::kNoise) != 0) {
-    num_c += 3;
-  }
-
-  if (frame_header_.CanBeReferenced()) {
-    // Necessary so that SetInputSizes() can allocate output buffers as needed.
-    dec_state_->frame_storage_for_referencing =
-        ImageBundle(decoded_->metadata());
-  }
-
-  RenderPipeline::Builder builder(num_c);
-
-  if (use_slow_rendering_pipeline_) {
-    builder.UseSimpleImplementation();
-  }
-
-  if (!frame_header_.chroma_subsampling.Is444()) {
-    for (size_t c = 0; c < 3; c++) {
-      if (frame_header_.chroma_subsampling.HShift(c) != 0) {
-        builder.AddStage(GetChromaUpsamplingStage(c, /*horizontal=*/true));
-      }
-      if (frame_header_.chroma_subsampling.VShift(c) != 0) {
-        builder.AddStage(GetChromaUpsamplingStage(c, /*horizontal=*/false));
-      }
-    }
-  }
-
-  if (frame_header_.loop_filter.gab) {
-    builder.AddStage(GetGaborishStage(frame_header_.loop_filter));
-  }
-
-  {
-    const LoopFilter& lf = frame_header_.loop_filter;
-    if (lf.epf_iters >= 3) {
-      builder.AddStage(GetEPFStage(lf, dec_state_->filter_weights.sigma, 0));
-    }
-    if (lf.epf_iters >= 1) {
-      builder.AddStage(GetEPFStage(lf, dec_state_->filter_weights.sigma, 1));
-    }
-    if (lf.epf_iters >= 2) {
-      builder.AddStage(GetEPFStage(lf, dec_state_->filter_weights.sigma, 2));
-    }
-  }
-
-  bool late_ec_upsample = frame_header_.upsampling != 1;
-  for (auto ecups : frame_header_.extra_channel_upsampling) {
-    if (ecups != frame_header_.upsampling) {
-      // If patches are applied, either frame_header.upsampling == 1 or
-      // late_ec_upsample is true.
-      late_ec_upsample = false;
-    }
-  }
-
-  if (!late_ec_upsample) {
-    for (size_t ec = 0; ec < frame_header_.extra_channel_upsampling.size();
-         ec++) {
-      if (frame_header_.extra_channel_upsampling[ec] != 1) {
-        builder.AddStage(GetUpsamplingStage(
-            frame_header_.nonserialized_metadata->transform_data, 3 + ec,
-            CeilLog2Nonzero(frame_header_.extra_channel_upsampling[ec])));
-      }
-    }
-  }
-
-  if ((frame_header_.flags & FrameHeader::kPatches) != 0) {
-    builder.AddStage(
-        GetPatchesStage(&dec_state_->shared->image_features.patches));
-  }
-  if ((frame_header_.flags & FrameHeader::kSplines) != 0) {
-    builder.AddStage(
-        GetSplineStage(&dec_state_->shared->image_features.splines));
-  }
-
-  if (frame_header_.upsampling != 1) {
-    size_t nb_channels =
-        3 +
-        (late_ec_upsample ? frame_header_.extra_channel_upsampling.size() : 0);
-    for (size_t c = 0; c < nb_channels; c++) {
-      builder.AddStage(GetUpsamplingStage(
-          frame_header_.nonserialized_metadata->transform_data, c,
-          CeilLog2Nonzero(frame_header_.upsampling)));
-    }
-  }
-
-  if ((frame_header_.flags & FrameHeader::kNoise) != 0) {
-    builder.AddStage(GetConvolveNoiseStage(num_c - 3));
-    builder.AddStage(
-        GetAddNoiseStage(dec_state_->shared->image_features.noise_params,
-                         dec_state_->shared->cmap, num_c - 3));
-  }
-  if (frame_header_.dc_level != 0) {
-    builder.AddStage(GetWriteToImage3FStage(
-        &dec_state_->shared_storage.dc_frames[frame_header_.dc_level - 1]));
-  }
-
-  if (frame_header_.CanBeReferenced() &&
-      frame_header_.save_before_color_transform) {
-    builder.AddStage(GetWriteToImageBundleStage(
-        &dec_state_->frame_storage_for_referencing,
-        dec_state_->output_encoding_info.color_encoding));
-  }
-
-  bool has_alpha = false;
-  size_t alpha_c = 0;
-  for (size_t i = 0; i < decoded_->metadata()->extra_channel_info.size(); i++) {
-    if (decoded_->metadata()->extra_channel_info[i].type ==
-        ExtraChannel::kAlpha) {
-      has_alpha = true;
-      alpha_c = 3 + i;
-      break;
-    }
-  }
-
-  size_t width = coalescing_ ? frame_header_.nonserialized_metadata->xsize()
-                             : frame_dim_.xsize_upsampled;
-  size_t height = coalescing_ ? frame_header_.nonserialized_metadata->ysize()
-                              : frame_dim_.ysize_upsampled;
-
-  if (dec_state_->fast_xyb_srgb8_conversion) {
-    JXL_ASSERT(!ImageBlender::NeedsBlending(dec_state_));
-    JXL_ASSERT(!frame_header_.CanBeReferenced() ||
-               frame_header_.save_before_color_transform);
-    JXL_ASSERT(!render_spotcolors_ ||
-               !decoded_->metadata()->Find(ExtraChannel::kSpotColor));
-    builder.AddStage(GetFastXYBTosRGB8Stage(
-        dec_state_->rgb_output, dec_state_->rgb_stride, width, height,
-        dec_state_->rgb_output_is_rgba, has_alpha, alpha_c));
-  } else {
-    if (frame_header_.color_transform == ColorTransform::kYCbCr) {
-      builder.AddStage(GetYCbCrStage());
-    } else if (frame_header_.color_transform == ColorTransform::kXYB) {
-      builder.AddStage(GetXYBStage(dec_state_->output_encoding_info));
-    }  // Nothing to do for kNone.
-
-    if (coalescing_ && ImageBlender::NeedsBlending(dec_state_)) {
-      builder.AddStage(GetBlendingStage(
-          dec_state_, dec_state_->output_encoding_info.color_encoding));
-    }
-
-    if (coalescing_ && frame_header_.CanBeReferenced() &&
-        !frame_header_.save_before_color_transform) {
-      builder.AddStage(GetWriteToImageBundleStage(
-          &dec_state_->frame_storage_for_referencing,
-          dec_state_->output_encoding_info.color_encoding));
-    }
-
-    if (render_spotcolors_ && frame_header_.nonserialized_metadata->m.Find(
-                                  ExtraChannel::kSpotColor)) {
-      for (size_t i = 0; i < decoded_->metadata()->extra_channel_info.size();
-           i++) {
-        // Don't use Find() because there may be multiple spot color channels.
-        const ExtraChannelInfo& eci =
-            decoded_->metadata()->extra_channel_info[i];
-        if (eci.type == ExtraChannel::kSpotColor) {
-          builder.AddStage(GetSpotColorStage(3 + i, eci.spot_color));
-        }
-      }
-    }
-
-    if (dec_state_->pixel_callback) {
-      builder.AddStage(GetWriteToPixelCallbackStage(
-          dec_state_->pixel_callback, width, height,
-          dec_state_->rgb_output_is_rgba, has_alpha, alpha_c));
-    } else if (dec_state_->rgb_output) {
-      builder.AddStage(GetWriteToU8Stage(
-          dec_state_->rgb_output, dec_state_->rgb_stride, width, height,
-          dec_state_->rgb_output_is_rgba, has_alpha, alpha_c));
-    } else {
-      builder.AddStage(GetWriteToImageBundleStage(
-          decoded_, dec_state_->output_encoding_info.color_encoding));
-    }
-  }
-  dec_state_->render_pipeline = std::move(builder).Finalize(frame_dim_);
-  return dec_state_->render_pipeline->IsInitialized();
-}
-
 void FrameDecoder::MarkSections(const SectionInfo* sections, size_t num,
                                 SectionStatus* section_status) {
   num_sections_done_ = num;
@@ -968,7 +778,12 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
 
   if (*std::min_element(decoded_dc_groups_.begin(), decoded_dc_groups_.end()) &&
       !finalized_dc_) {
-    JXL_RETURN_IF_ERROR(PreparePipeline());
+    PassesDecoderState::PipelineOptions pipeline_options;
+    pipeline_options.use_slow_render_pipeline = use_slow_rendering_pipeline_;
+    pipeline_options.coalescing = coalescing_;
+    pipeline_options.render_spotcolors = render_spotcolors_;
+    JXL_RETURN_IF_ERROR(
+        dec_state_->PreparePipeline(decoded_, pipeline_options));
     FinalizeDC();
     JXL_RETURN_IF_ERROR(AllocateOutput());
     if (pause_at_progressive_ && !single_section) {

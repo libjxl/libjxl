@@ -5,7 +5,20 @@
 
 #include "lib/jxl/dec_cache.h"
 
+#include "lib/jxl/blending.h"
 #include "lib/jxl/dec_reconstruct.h"
+#include "lib/jxl/render_pipeline/stage_blending.h"
+#include "lib/jxl/render_pipeline/stage_chroma_upsampling.h"
+#include "lib/jxl/render_pipeline/stage_epf.h"
+#include "lib/jxl/render_pipeline/stage_gaborish.h"
+#include "lib/jxl/render_pipeline/stage_noise.h"
+#include "lib/jxl/render_pipeline/stage_patches.h"
+#include "lib/jxl/render_pipeline/stage_splines.h"
+#include "lib/jxl/render_pipeline/stage_spot.h"
+#include "lib/jxl/render_pipeline/stage_upsampling.h"
+#include "lib/jxl/render_pipeline/stage_write.h"
+#include "lib/jxl/render_pipeline/stage_xyb.h"
+#include "lib/jxl/render_pipeline/stage_ycbcr.h"
 
 namespace jxl {
 
@@ -173,6 +186,182 @@ Status PassesDecoderState::FinalizeGroup(size_t group_idx, size_t thread,
                                           thread, output, r));
   }
   return true;
+}
+
+Status PassesDecoderState::PreparePipeline(ImageBundle* decoded,
+                                           PipelineOptions options) {
+  const FrameHeader& frame_header = shared->frame_header;
+  size_t num_c = 3 + frame_header.nonserialized_metadata->m.num_extra_channels;
+  if ((frame_header.flags & FrameHeader::kNoise) != 0) {
+    num_c += 3;
+  }
+
+  if (frame_header.CanBeReferenced()) {
+    // Necessary so that SetInputSizes() can allocate output buffers as needed.
+    frame_storage_for_referencing = ImageBundle(decoded->metadata());
+  }
+
+  RenderPipeline::Builder builder(num_c);
+
+  if (options.use_slow_render_pipeline) {
+    builder.UseSimpleImplementation();
+  }
+
+  if (!frame_header.chroma_subsampling.Is444()) {
+    for (size_t c = 0; c < 3; c++) {
+      if (frame_header.chroma_subsampling.HShift(c) != 0) {
+        builder.AddStage(GetChromaUpsamplingStage(c, /*horizontal=*/true));
+      }
+      if (frame_header.chroma_subsampling.VShift(c) != 0) {
+        builder.AddStage(GetChromaUpsamplingStage(c, /*horizontal=*/false));
+      }
+    }
+  }
+
+  if (frame_header.loop_filter.gab) {
+    builder.AddStage(GetGaborishStage(frame_header.loop_filter));
+  }
+
+  {
+    const LoopFilter& lf = frame_header.loop_filter;
+    if (lf.epf_iters >= 3) {
+      builder.AddStage(GetEPFStage(lf, filter_weights.sigma, 0));
+    }
+    if (lf.epf_iters >= 1) {
+      builder.AddStage(GetEPFStage(lf, filter_weights.sigma, 1));
+    }
+    if (lf.epf_iters >= 2) {
+      builder.AddStage(GetEPFStage(lf, filter_weights.sigma, 2));
+    }
+  }
+
+  bool late_ec_upsample = frame_header.upsampling != 1;
+  for (auto ecups : frame_header.extra_channel_upsampling) {
+    if (ecups != frame_header.upsampling) {
+      // If patches are applied, either frame_header.upsampling == 1 or
+      // late_ec_upsample is true.
+      late_ec_upsample = false;
+    }
+  }
+
+  if (!late_ec_upsample) {
+    for (size_t ec = 0; ec < frame_header.extra_channel_upsampling.size();
+         ec++) {
+      if (frame_header.extra_channel_upsampling[ec] != 1) {
+        builder.AddStage(GetUpsamplingStage(
+            frame_header.nonserialized_metadata->transform_data, 3 + ec,
+            CeilLog2Nonzero(frame_header.extra_channel_upsampling[ec])));
+      }
+    }
+  }
+
+  if ((frame_header.flags & FrameHeader::kPatches) != 0) {
+    builder.AddStage(GetPatchesStage(&shared->image_features.patches));
+  }
+  if ((frame_header.flags & FrameHeader::kSplines) != 0) {
+    builder.AddStage(GetSplineStage(&shared->image_features.splines));
+  }
+
+  if (frame_header.upsampling != 1) {
+    size_t nb_channels =
+        3 +
+        (late_ec_upsample ? frame_header.extra_channel_upsampling.size() : 0);
+    for (size_t c = 0; c < nb_channels; c++) {
+      builder.AddStage(GetUpsamplingStage(
+          frame_header.nonserialized_metadata->transform_data, c,
+          CeilLog2Nonzero(frame_header.upsampling)));
+    }
+  }
+
+  if ((frame_header.flags & FrameHeader::kNoise) != 0) {
+    builder.AddStage(GetConvolveNoiseStage(num_c - 3));
+    builder.AddStage(GetAddNoiseStage(shared->image_features.noise_params,
+                                      shared->cmap, num_c - 3));
+  }
+  if (frame_header.dc_level != 0) {
+    builder.AddStage(GetWriteToImage3FStage(
+        &shared_storage.dc_frames[frame_header.dc_level - 1]));
+  }
+
+  if (frame_header.CanBeReferenced() &&
+      frame_header.save_before_color_transform) {
+    builder.AddStage(GetWriteToImageBundleStage(
+        &frame_storage_for_referencing, output_encoding_info.color_encoding));
+  }
+
+  bool has_alpha = false;
+  size_t alpha_c = 0;
+  for (size_t i = 0; i < decoded->metadata()->extra_channel_info.size(); i++) {
+    if (decoded->metadata()->extra_channel_info[i].type ==
+        ExtraChannel::kAlpha) {
+      has_alpha = true;
+      alpha_c = 3 + i;
+      break;
+    }
+  }
+
+  size_t width = options.coalescing
+                     ? frame_header.nonserialized_metadata->xsize()
+                     : shared->frame_dim.xsize_upsampled;
+  size_t height = options.coalescing
+                      ? frame_header.nonserialized_metadata->ysize()
+                      : shared->frame_dim.ysize_upsampled;
+
+  if (fast_xyb_srgb8_conversion) {
+    JXL_ASSERT(!ImageBlender::NeedsBlending(this));
+    JXL_ASSERT(!frame_header.CanBeReferenced() ||
+               frame_header.save_before_color_transform);
+    JXL_ASSERT(!options.render_spotcolors ||
+               !decoded->metadata()->Find(ExtraChannel::kSpotColor));
+    builder.AddStage(GetFastXYBTosRGB8Stage(rgb_output, rgb_stride, width,
+                                            height, rgb_output_is_rgba,
+                                            has_alpha, alpha_c));
+  } else {
+    if (frame_header.color_transform == ColorTransform::kYCbCr) {
+      builder.AddStage(GetYCbCrStage());
+    } else if (frame_header.color_transform == ColorTransform::kXYB) {
+      builder.AddStage(GetXYBStage(output_encoding_info));
+    }  // Nothing to do for kNone.
+
+    if (options.coalescing && ImageBlender::NeedsBlending(this)) {
+      builder.AddStage(
+          GetBlendingStage(this, output_encoding_info.color_encoding));
+    }
+
+    if (options.coalescing && frame_header.CanBeReferenced() &&
+        !frame_header.save_before_color_transform) {
+      builder.AddStage(GetWriteToImageBundleStage(
+          &frame_storage_for_referencing, output_encoding_info.color_encoding));
+    }
+
+    if (options.render_spotcolors &&
+        frame_header.nonserialized_metadata->m.Find(ExtraChannel::kSpotColor)) {
+      for (size_t i = 0; i < decoded->metadata()->extra_channel_info.size();
+           i++) {
+        // Don't use Find() because there may be multiple spot color channels.
+        const ExtraChannelInfo& eci =
+            decoded->metadata()->extra_channel_info[i];
+        if (eci.type == ExtraChannel::kSpotColor) {
+          builder.AddStage(GetSpotColorStage(3 + i, eci.spot_color));
+        }
+      }
+    }
+
+    if (pixel_callback) {
+      builder.AddStage(GetWriteToPixelCallbackStage(pixel_callback, width,
+                                                    height, rgb_output_is_rgba,
+                                                    has_alpha, alpha_c));
+    } else if (rgb_output) {
+      builder.AddStage(GetWriteToU8Stage(rgb_output, rgb_stride, width, height,
+                                         rgb_output_is_rgba, has_alpha,
+                                         alpha_c));
+    } else {
+      builder.AddStage(GetWriteToImageBundleStage(
+          decoded, output_encoding_info.color_encoding));
+    }
+  }
+  render_pipeline = std::move(builder).Finalize(shared->frame_dim);
+  return render_pipeline->IsInitialized();
 }
 
 }  // namespace jxl

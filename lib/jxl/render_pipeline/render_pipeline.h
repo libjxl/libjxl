@@ -84,7 +84,9 @@ class RenderPipeline {
   }
 
   // Allocates storage to run with `num` threads. If `use_group_ids` is true,
-  // storage is allocated for each group, not each thread.
+  // storage is allocated for each group, not each thread. The behaviour is
+  // undefined if calling this function multiple times with a different value
+  // for `use_group_ids`.
   void PrepareForThreads(size_t num, bool use_group_ids);
 
   // Retrieves a buffer where input data should be stored by the callee. When

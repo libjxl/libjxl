@@ -357,6 +357,7 @@ int main(int argc, const char** argv) {
   }
 
   struct stat st;
+  memset(&st, 0, sizeof(st));
   if (stat(dest_dir, &st) != 0 || !S_ISDIR(st.st_mode)) {
     fprintf(stderr, "Output path \"%s\" is not a directory.\n", dest_dir);
     Usage();

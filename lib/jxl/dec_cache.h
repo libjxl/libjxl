@@ -119,6 +119,14 @@ struct PassesDecoderState {
   // Storage for the current frame if it can be referenced by future frames.
   ImageBundle frame_storage_for_referencing;
 
+  struct PipelineOptions {
+    bool use_slow_render_pipeline;
+    bool coalescing;
+    bool render_spotcolors;
+  };
+
+  Status PreparePipeline(ImageBundle* decoded, PipelineOptions options);
+
   // TODO(veluca): this should eventually become "iff no global modular
   // transform was applied".
   bool EagerFinalizeImageRect() const {
