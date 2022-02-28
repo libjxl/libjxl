@@ -42,9 +42,9 @@ class RenderPipelineStage {
  protected:
   using Row = float*;
   using ChannelRows = std::vector<Row>;
-  using RowInfo = std::vector<ChannelRows>;
 
  public:
+  using RowInfo = std::vector<ChannelRows>;
   struct Settings {
     // Amount of padding required in the various directions by all channels
     // that have kInOut mode.
@@ -89,16 +89,6 @@ class RenderPipelineStage {
 
   virtual ~RenderPipelineStage() = default;
 
- protected:
-  explicit RenderPipelineStage(Settings settings) : settings_(settings) {}
-
-  virtual Status IsInitialized() const { return true; }
-
-  // Informs the stage about the total size of each channel. Few stages will
-  // actually need to use this information.
-  virtual void SetInputSizes(
-      const std::vector<std::pair<size_t, size_t>>& input_sizes) {}
-
   // Processes one row of input, producing the appropriate number of rows of
   // output. Input/output rows can be obtained by calls to
   // `GetInputRow`/`GetOutputRow`. `xsize+2*xextra` represents the total number
@@ -115,6 +105,16 @@ class RenderPipelineStage {
   virtual void ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
                           size_t xextra, size_t xsize, size_t xpos, size_t ypos,
                           float* JXL_RESTRICT temp) const = 0;
+
+ protected:
+  explicit RenderPipelineStage(Settings settings) : settings_(settings) {}
+
+  virtual Status IsInitialized() const { return true; }
+
+  // Informs the stage about the total size of each channel. Few stages will
+  // actually need to use this information.
+  virtual void SetInputSizes(
+      const std::vector<std::pair<size_t, size_t>>& input_sizes) {}
 
   // How each channel will be processed. Channels are numbered starting from
   // color channels (always 3) and followed by all other channels.
