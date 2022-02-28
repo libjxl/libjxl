@@ -37,12 +37,9 @@
 #include "lib/jxl/dec_modular.h"
 #include "lib/jxl/dec_params.h"
 #include "lib/jxl/dec_patch_dictionary.h"
-#include "lib/jxl/dec_reconstruct.h"
-#include "lib/jxl/dec_upsample.h"
 #include "lib/jxl/dec_xyb.h"
 #include "lib/jxl/epf.h"
 #include "lib/jxl/fields.h"
-#include "lib/jxl/filters.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
@@ -427,8 +424,7 @@ Status FrameDecoder::ProcessDCGroup(size_t dc_group_id, BitReader* br) {
     JXL_RETURN_IF_ERROR(
         modular_frame_decoder_.DecodeAcMetadata(dc_group_id, br, dec_state_));
   } else if (lf.epf_iters > 0) {
-    FillImage(kInvSigmaNum / lf.epf_sigma_for_modular,
-              &dec_state_->filter_weights.sigma);
+    FillImage(kInvSigmaNum / lf.epf_sigma_for_modular, &dec_state_->sigma);
   }
   decoded_dc_groups_[dc_group_id] = uint8_t{true};
   return true;
@@ -449,27 +445,7 @@ void FrameDecoder::FinalizeDC() {
 
 Status FrameDecoder::AllocateOutput() {
   if (allocated_) return true;
-  const CodecMetadata& metadata = *frame_header_.nonserialized_metadata;
-  if (dec_state_->rgb_output == nullptr && !dec_state_->pixel_callback &&
-      !dec_state_->render_pipeline) {
-    modular_frame_decoder_.MaybeDropFullImage();
-    decoded_->SetFromImage(
-        Image3F(frame_dim_.xsize_upsampled, frame_dim_.ysize_upsampled),
-        dec_state_->output_encoding_info.color_encoding);
-  }
-  if (dec_state_->render_pipeline) {
-    modular_frame_decoder_.MaybeDropFullImage();
-  } else {
-    dec_state_->extra_channels.clear();
-    if (metadata.m.num_extra_channels > 0) {
-      for (size_t i = 0; i < metadata.m.num_extra_channels; i++) {
-        uint32_t ecups = frame_header_.extra_channel_upsampling[i];
-        dec_state_->extra_channels.emplace_back(
-            DivCeil(frame_dim_.xsize_upsampled, ecups),
-            DivCeil(frame_dim_.ysize_upsampled, ecups));
-      }
-    }
-  }
+  modular_frame_decoder_.MaybeDropFullImage();
   decoded_->origin = dec_state_->shared->frame_header.frame_origin;
   JXL_RETURN_IF_ERROR(dec_state_->InitForAC(nullptr));
   allocated_ = true;
@@ -571,16 +547,6 @@ Status FrameDecoder::ProcessACGlobal(BitReader* br) {
       }
     }
   }
-  // Set memory buffer for pre-color-transform frame, if needed.
-  if (frame_header_.needs_color_transform() &&
-      frame_header_.save_before_color_transform) {
-    dec_state_->pre_color_transform_frame =
-        Image3F(frame_dim_.xsize_upsampled, frame_dim_.ysize_upsampled);
-  } else {
-    // clear pre_color_transform_frame to ensure that previously moved-from
-    // images are not used.
-    dec_state_->pre_color_transform_frame = Image3F();
-  }
   decoded_ac_global_ = true;
   return true;
 }
@@ -595,14 +561,8 @@ Status FrameDecoder::ProcessACGroup(size_t ac_group_id,
   const size_t x = gx * frame_dim_.group_dim;
   const size_t y = gy * frame_dim_.group_dim;
 
-  RenderPipelineInput render_pipeline_input_storage;
-  RenderPipelineInput* render_pipeline_input = nullptr;
-
-  if (dec_state_->render_pipeline) {
-    render_pipeline_input_storage =
-        dec_state_->render_pipeline->GetInputBuffers(ac_group_id, thread);
-    render_pipeline_input = &render_pipeline_input_storage;
-  }
+  RenderPipelineInput render_pipeline_input =
+      dec_state_->render_pipeline->GetInputBuffers(ac_group_id, thread);
 
   bool should_run_pipeline = true;
 
@@ -626,20 +586,19 @@ Status FrameDecoder::ProcessACGroup(size_t ac_group_id,
       JXL_RETURN_IF_ERROR(modular_frame_decoder_.DecodeGroup(
           mrect, br[i - decoded_passes_per_ac_group_[ac_group_id]], minShift,
           maxShift, ModularStreamId::ModularAC(ac_group_id, i),
-          /*zerofill=*/false, dec_state_, render_pipeline_input, decoded_,
+          /*zerofill=*/false, dec_state_, &render_pipeline_input, decoded_,
           allow_partial_frames_));
     } else if (i >= decoded_passes_per_ac_group_[ac_group_id] + num_passes &&
                force_draw) {
       JXL_RETURN_IF_ERROR(modular_frame_decoder_.DecodeGroup(
           mrect, nullptr, minShift, maxShift,
           ModularStreamId::ModularAC(ac_group_id, i), /*zerofill=*/true,
-          dec_state_, render_pipeline_input, decoded_, allow_partial_frames_));
+          dec_state_, &render_pipeline_input, decoded_, allow_partial_frames_));
     }
   }
   decoded_passes_per_ac_group_[ac_group_id] += num_passes;
 
-  if ((frame_header_.flags & FrameHeader::kNoise) != 0 &&
-      render_pipeline_input) {
+  if ((frame_header_.flags & FrameHeader::kNoise) != 0) {
     PROFILER_ZONE("GenerateNoise");
     size_t noise_c_start =
         3 + frame_header_.nonserialized_metadata->m.num_extra_channels;
@@ -649,7 +608,7 @@ Status FrameDecoder::ProcessACGroup(size_t ac_group_id,
     for (size_t iy = 0; iy < frame_header_.upsampling; iy++) {
       for (size_t ix = 0; ix < frame_header_.upsampling; ix++) {
         for (size_t c = 0; c < 3; c++) {
-          auto r = render_pipeline_input->GetBuffer(noise_c_start + c);
+          auto r = render_pipeline_input.GetBuffer(noise_c_start + c);
           rects[c].first = r.first;
           size_t x1 = r.second.x0() + r.second.xsize();
           size_t y1 = r.second.y0() + r.second.ysize();
@@ -666,9 +625,9 @@ Status FrameDecoder::ProcessACGroup(size_t ac_group_id,
     }
   }
 
-  if (render_pipeline_input && !modular_frame_decoder_.UsesFullImage() &&
-      !decoded_->IsJPEG() && should_run_pipeline) {
-    render_pipeline_input->Done();
+  if (!modular_frame_decoder_.UsesFullImage() && !decoded_->IsJPEG() &&
+      should_run_pipeline) {
+    render_pipeline_input.Done();
   }
   return true;
 }
@@ -816,8 +775,6 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
     }
   }
 
-  if (finalized_dc_) dec_state_->EnsureBordersStorage();
-
   if (finalized_dc_ && ac_global_sec != num && !decoded_ac_global_) {
     JXL_RETURN_IF_ERROR(ProcessACGlobal(sections[ac_global_sec].br));
     section_status[ac_global_sec] = SectionStatus::kDone;
@@ -829,10 +786,7 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
       if (num_ac_passes[i] == 0 && !modular_frame_decoder_.UsesFullImage()) {
         continue;
       }
-      dec_state_->group_border_assigner.ClearDone(i);
-      if (dec_state_->render_pipeline) {
-        dec_state_->render_pipeline->ClearDone(i);
-      }
+      dec_state_->render_pipeline->ClearDone(i);
     }
 
     JXL_RETURN_IF_ERROR(RunOnPool(
@@ -903,10 +857,7 @@ Status FrameDecoder::Flush() {
     for (size_t i = 0; i < decoded_passes_per_ac_group_.size(); i++) {
       if (decoded_passes_per_ac_group_[i] == frame_header_.passes.num_passes)
         continue;
-      dec_state_->group_border_assigner.ClearDone(i);
-      if (dec_state_->render_pipeline) {
-        dec_state_->render_pipeline->ClearDone(i);
-      }
+      dec_state_->render_pipeline->ClearDone(i);
     }
     std::atomic<bool> has_error{false};
     JXL_RETURN_IF_ERROR(RunOnPool(
@@ -932,16 +883,10 @@ Status FrameDecoder::Flush() {
       return JXL_FAILURE("Drawing groups failed");
     }
   }
-  // TODO(veluca): the rest of this function should be removed once we have full
-  // support for per-group decoding.
 
   // undo global modular transforms and copy int pixel buffers to float ones
   JXL_RETURN_IF_ERROR(modular_frame_decoder_.FinalizeDecoding(
       dec_state_, pool_, decoded_, is_finalized_));
-  JXL_RETURN_IF_ERROR(FinalizeFrameDecoding(decoded_, dec_state_, pool_,
-                                            /*force_fir=*/false,
-                                            /*skip_blending=*/!coalescing_,
-                                            /*move_ec=*/is_finalized_));
 
   num_renders_++;
   return true;
@@ -1036,104 +981,7 @@ Status FrameDecoder::FinalizeFrame() {
 
   JXL_RETURN_IF_ERROR(Flush());
 
-  if (!dec_state_->render_pipeline) {
-    if (dec_state_->shared->frame_header.CanBeReferenced() &&
-        (frame_header_.frame_type != kRegularFrame || coalescing_)) {
-      size_t id = dec_state_->shared->frame_header.save_as_reference;
-      auto& reference_frame = dec_state_->shared_storage.reference_frames[id];
-      if (dec_state_->pre_color_transform_frame.xsize() == 0) {
-        reference_frame.storage = decoded_->Copy();
-      } else {
-        reference_frame.storage = ImageBundle(decoded_->metadata());
-        reference_frame.storage.SetFromImage(
-            CopyImage(dec_state_->pre_color_transform_frame),
-            decoded_->c_current());
-        if (decoded_->HasExtraChannels()) {
-          const std::vector<ImageF>* ecs = &dec_state_->pre_color_transform_ec;
-          if (ecs->empty()) ecs = &decoded_->extra_channels();
-          std::vector<ImageF> extra_channels;
-          for (const auto& ec : *ecs) {
-            extra_channels.push_back(CopyImage(ec));
-          }
-          reference_frame.storage.SetExtraChannels(std::move(extra_channels));
-        }
-      }
-      reference_frame.frame = &reference_frame.storage;
-      reference_frame.ib_is_in_xyb =
-          dec_state_->shared->frame_header.save_before_color_transform;
-      if (!dec_state_->shared->frame_header.save_before_color_transform) {
-        const CodecMetadata* metadata =
-            dec_state_->shared->frame_header.nonserialized_metadata;
-        if (reference_frame.frame->xsize() < metadata->xsize() ||
-            reference_frame.frame->ysize() < metadata->ysize()) {
-          return JXL_FAILURE(
-              "trying to save a reference frame that is too small: %" PRIuS
-              "x%" PRIuS
-              " "
-              "instead of %" PRIuS "x%" PRIuS,
-              reference_frame.frame->xsize(), reference_frame.frame->ysize(),
-              metadata->xsize(), metadata->ysize());
-        }
-        reference_frame.storage.ShrinkTo(metadata->xsize(), metadata->ysize());
-      }
-    }
-  }
-
-  if (!dec_state_->render_pipeline) {
-    if (frame_header_.nonserialized_is_preview) {
-      // Fix possible larger image size (multiple of kBlockDim)
-      // TODO(lode): verify if and when that happens.
-      decoded_->ShrinkTo(frame_dim_.xsize, frame_dim_.ysize);
-    } else if (!decoded_->IsJPEG()) {
-      // A kRegularFrame is blended with the other frames, and thus results in a
-      // coalesced frame of size equal to image dimensions. Other frames are not
-      // blended, thus their final size is the size that was defined in the
-      // frame_header.
-      if (coalescing_ && (frame_header_.frame_type == kRegularFrame ||
-                          frame_header_.frame_type == kSkipProgressive)) {
-        decoded_->ShrinkTo(
-            dec_state_->shared->frame_header.nonserialized_metadata->xsize(),
-            dec_state_->shared->frame_header.nonserialized_metadata->ysize());
-      } else {
-        // xsize_upsampled is the actual frame size, after any upsampling has
-        // been applied.
-        decoded_->ShrinkTo(frame_dim_.xsize_upsampled,
-                           frame_dim_.ysize_upsampled);
-      }
-    }
-  }
-
-  if (render_spotcolors_ && !dec_state_->render_pipeline) {
-    for (size_t i = 0; i < decoded_->extra_channels().size(); i++) {
-      // Don't use Find() because there may be multiple spot color channels.
-      const ExtraChannelInfo& eci = decoded_->metadata()->extra_channel_info[i];
-      if (eci.type == ExtraChannel::kOptional) {
-        continue;
-      }
-      if (eci.type == ExtraChannel::kSpotColor) {
-        float scale = eci.spot_color[3];
-        for (size_t c = 0; c < 3; c++) {
-          for (size_t y = 0; y < decoded_->ysize(); y++) {
-            float* JXL_RESTRICT p = decoded_->color()->Plane(c).Row(y);
-            const float* JXL_RESTRICT s =
-                decoded_->extra_channels()[i].ConstRow(y);
-            for (size_t x = 0; x < decoded_->xsize(); x++) {
-              float mix = scale * s[x];
-              p[x] = mix * eci.spot_color[c] + (1.0 - mix) * p[x];
-            }
-          }
-        }
-      }
-    }
-  }
-  if (dec_state_->shared->frame_header.dc_level != 0 &&
-      !dec_state_->render_pipeline) {
-    dec_state_->shared_storage
-        .dc_frames[dec_state_->shared->frame_header.dc_level - 1] =
-        std::move(*decoded_->color());
-    decoded_->RemoveColor();
-  }
-  if (dec_state_->render_pipeline && frame_header_.CanBeReferenced()) {
+  if (frame_header_.CanBeReferenced()) {
     auto& info = dec_state_->shared_storage
                      .reference_frames[frame_header_.save_as_reference];
     info.storage = std::move(dec_state_->frame_storage_for_referencing);

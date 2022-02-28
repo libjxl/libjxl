@@ -7,6 +7,7 @@
 
 #include "lib/jxl/common.h"
 #include "lib/jxl/image_bundle.h"
+#include "lib/jxl/sanitizers.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/render_pipeline/stage_write.cc"
