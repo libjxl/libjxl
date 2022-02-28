@@ -375,7 +375,6 @@ libjxl_gbench_sources = [
 
 libjxl_tests_sources = [
     "jxl/ac_strategy_test.cc",
-    "jxl/adaptive_reconstruction_test.cc",
     "jxl/alpha_test.cc",
     "jxl/ans_common_test.cc",
     "jxl/ans_test.cc",
@@ -387,7 +386,6 @@ libjxl_tests_sources = [
     "jxl/coeff_order_test.cc",
     "jxl/color_encoding_internal_test.cc",
     "jxl/color_management_test.cc",
-    "jxl/compressed_image_test.cc",
     "jxl/convolve_test.cc",
     "jxl/data_parallel_test.cc",
     "jxl/dct_test.cc",

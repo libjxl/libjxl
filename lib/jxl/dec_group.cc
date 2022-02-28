@@ -807,7 +807,9 @@ Status DecodeGroupForRoundtrip(const std::vector<std::unique_ptr<ACImage>>& ac,
                                size_t group_idx,
                                PassesDecoderState* JXL_RESTRICT dec_state,
                                GroupDecCache* JXL_RESTRICT group_dec_cache,
-                               size_t thread, ImageBundle* JXL_RESTRICT decoded,
+                               size_t thread,
+                               RenderPipelineInput* render_pipeline_input,
+                               ImageBundle* JXL_RESTRICT decoded,
                                AuxOut* aux_out) {
   PROFILER_FUNC;
 
@@ -817,9 +819,9 @@ Status DecodeGroupForRoundtrip(const std::vector<std::unique_ptr<ACImage>>& ac,
       /*num_passes=*/0,
       /*used_acs=*/(1u << AcStrategy::kNumValidStrategies) - 1);
 
-  return HWY_DYNAMIC_DISPATCH(DecodeGroupImpl)(&get_block, group_dec_cache,
-                                               dec_state, thread, group_idx,
-                                               nullptr, decoded, kDraw);
+  return HWY_DYNAMIC_DISPATCH(DecodeGroupImpl)(
+      &get_block, group_dec_cache, dec_state, thread, group_idx,
+      render_pipeline_input, decoded, kDraw);
 }
 
 }  // namespace jxl
