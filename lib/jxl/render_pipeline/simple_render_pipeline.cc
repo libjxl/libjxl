@@ -5,6 +5,9 @@
 
 #include "lib/jxl/render_pipeline/simple_render_pipeline.h"
 
+#include "lib/jxl/image_ops.h"
+#include "lib/jxl/sanitizers.h"
+
 namespace jxl {
 
 void SimpleRenderPipeline::PrepareForThreadsInternal(size_t num,

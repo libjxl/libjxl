@@ -221,7 +221,6 @@ class FrameDecoder {
     if (storage_size > group_dec_caches_.size()) {
       group_dec_caches_.resize(storage_size);
     }
-    dec_state_->EnsureStorage(storage_size);
     use_task_id_ = num_threads > num_tasks;
     if (dec_state_->render_pipeline) {
       dec_state_->render_pipeline->PrepareForThreads(
