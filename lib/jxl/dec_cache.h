@@ -23,6 +23,7 @@
 #include "lib/jxl/passes_state.h"
 #include "lib/jxl/quant_weights.h"
 #include "lib/jxl/render_pipeline/render_pipeline.h"
+#include "lib/jxl/render_pipeline/stage_upsampling.h"
 #include "lib/jxl/sanitizers.h"
 
 namespace jxl {
@@ -36,6 +37,9 @@ struct PassesDecoderState {
 
   // Upsamplers for all the possible upsampling factors (2 to 8).
   Upsampler upsamplers[3];
+
+  // 8x upsampling stage for DC.
+  std::unique_ptr<RenderPipelineStage> upsampler8x;
 
   // Storage for RNG output for noise synthesis.
   Image3F noise;
@@ -284,6 +288,7 @@ struct PassesDecoderState {
     for (size_t i = 0; i < 3; i++) {
       upsamplers[i].Init(2 << i, shared->metadata->transform_data);
     }
+    upsampler8x = GetUpsamplingStage(shared->metadata->transform_data, 0, 3);
     return true;
   }
 
@@ -397,6 +402,13 @@ struct GroupDecCache {
     dec_group_qblock16 = int16_memory_.get();
   }
 
+  void InitDCBufferOnce() {
+    if (dc_buffer.xsize() == 0) {
+      dc_buffer = ImageF(kGroupDimInBlocks + kRenderPipelineXOffset * 2,
+                         kGroupDimInBlocks + 4);
+    }
+  }
+
   // Scratch space used by DecGroupImpl().
   float* dec_group_block;
   int32_t* dec_group_qblock;
@@ -410,6 +422,9 @@ struct GroupDecCache {
 
   // AC decoding
   Image3I num_nzeroes[kMaxNumPasses];
+
+  // Buffer for DC upsampling.
+  ImageF dc_buffer;
 
  private:
   hwy::AlignedFreeUniquePtr<float[]> float_memory_;
