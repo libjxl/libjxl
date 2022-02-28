@@ -9,7 +9,6 @@
 #include <stdint.h>
 
 #include "lib/jxl/base/arch_macros.h"
-#include "lib/jxl/filters.h"
 #include "lib/jxl/frame_header.h"
 
 namespace jxl {

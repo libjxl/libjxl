@@ -8,7 +8,6 @@
 
 #include <stdint.h>
 
-#include "lib/jxl/filters.h"
 #include "lib/jxl/render_pipeline/render_pipeline.h"
 
 namespace jxl {
