@@ -31,7 +31,6 @@
 #include "lib/jxl/convolve.h"
 #include "lib/jxl/dct_scales.h"
 #include "lib/jxl/dec_cache.h"
-#include "lib/jxl/dec_reconstruct.h"
 #include "lib/jxl/dec_transforms-inl.h"
 #include "lib/jxl/dec_xyb.h"
 #include "lib/jxl/entropy_coder.h"
@@ -61,9 +60,6 @@ enum DrawMode {
   kDraw = 0,
   // Don't render to pixels.
   kDontDraw = 1,
-  // Don't do IDCT or dequantization, but just postprocessing. Used for
-  // progressive DC.
-  kOnlyImageFeatures = 2,
 };
 
 }  // namespace jxl
@@ -168,13 +164,10 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
                        GroupDecCache* JXL_RESTRICT group_dec_cache,
                        PassesDecoderState* JXL_RESTRICT dec_state,
                        size_t thread, size_t group_idx,
-                       RenderPipelineInput* render_pipeline_input,
+                       RenderPipelineInput& render_pipeline_input,
                        ImageBundle* decoded, DrawMode draw) {
   // TODO(veluca): investigate cache usage in this function.
   PROFILER_FUNC;
-  constexpr size_t kGroupDataXBorder = PassesDecoderState::kGroupDataXBorder;
-  constexpr size_t kGroupDataYBorder = PassesDecoderState::kGroupDataYBorder;
-
   const Rect block_rect = dec_state->shared->BlockGroupRect(group_idx);
   const AcStrategyImage& ac_strategy = dec_state->shared->ac_strategy;
 
@@ -190,14 +183,7 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
 
   size_t idct_stride[3];
   for (size_t c = 0; c < 3; c++) {
-    if (render_pipeline_input) {
-      idct_stride[c] =
-          render_pipeline_input->GetBuffer(c).first->PixelsPerRow();
-    } else {
-      idct_stride[c] = dec_state->EagerFinalizeImageRect()
-                           ? dec_state->group_data[thread].PixelsPerRow()
-                           : dec_state->decoded.PixelsPerRow();
-    }
+    idct_stride[c] = render_pipeline_input.GetBuffer(c).first->PixelsPerRow();
   }
 
   HWY_ALIGN int32_t scaled_qtable[64 * 3];
@@ -260,7 +246,6 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
   }
 
   for (size_t by = 0; by < ysize_blocks; ++by) {
-    if (draw == kOnlyImageFeatures) break;
     get_block->StartRow(by);
     size_t sby[3] = {by >> vshift[0], by >> vshift[1], by >> vshift[2]};
 
@@ -285,18 +270,8 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
     float* JXL_RESTRICT idct_row[3];
     int16_t* JXL_RESTRICT jpeg_row[3];
     for (size_t c = 0; c < 3; c++) {
-      if (render_pipeline_input) {
-        idct_row[c] = render_pipeline_input->GetBuffer(c).second.Row(
-            render_pipeline_input->GetBuffer(c).first, sby[c] * kBlockDim);
-      } else if (dec_state->EagerFinalizeImageRect()) {
-        idct_row[c] = dec_state->group_data[thread].PlaneRow(
-                          c, sby[c] * kBlockDim + kGroupDataYBorder) +
-                      kGroupDataXBorder;
-      } else {
-        idct_row[c] =
-            dec_state->decoded.PlaneRow(c, (r[c].y0() + sby[c]) * kBlockDim) +
-            r[c].x0() * kBlockDim;
-      }
+      idct_row[c] = render_pipeline_input.GetBuffer(c).second.Row(
+          render_pipeline_input.GetBuffer(c).first, sby[c] * kBlockDim);
       if (decoded->IsJPEG()) {
         auto& component = decoded->jpeg_data->components[jpeg_c_map[c]];
         jpeg_row[c] =
@@ -446,12 +421,6 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
   }
   if (draw == kDontDraw) {
     return true;
-  }
-  // No ApplyImageFeatures in JPEG mode or when we need to delay it.
-  if (!decoded->IsJPEG() && dec_state->EagerFinalizeImageRect() &&
-      !render_pipeline_input) {
-    JXL_RETURN_IF_ERROR(dec_state->FinalizeGroup(
-        group_idx, thread, &dec_state->group_data[thread], decoded));
   }
   return true;
 }
@@ -700,7 +669,7 @@ Status DecodeGroup(BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
                    size_t num_passes, size_t group_idx,
                    PassesDecoderState* JXL_RESTRICT dec_state,
                    GroupDecCache* JXL_RESTRICT group_dec_cache, size_t thread,
-                   RenderPipelineInput* render_pipeline_input,
+                   RenderPipelineInput& render_pipeline_input,
                    ImageBundle* JXL_RESTRICT decoded, size_t first_pass,
                    bool force_draw, bool dc_only, bool* should_run_pipeline) {
   PROFILER_FUNC;
@@ -710,6 +679,10 @@ Status DecodeGroup(BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
                           force_draw
                       ? kDraw
                       : kDontDraw;
+
+  if (should_run_pipeline) {
+    *should_run_pipeline = draw != kDontDraw;
+  }
 
   if (draw == kDraw && num_passes == 0 && first_pass == 0) {
     group_dec_cache->InitDCBufferOnce();
@@ -745,8 +718,8 @@ Status DecodeGroup(BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
           }
         }
       }
-      Rect dst_rect = render_pipeline_input->GetBuffer(c).second;
-      ImageF* upsampling_dst = render_pipeline_input->GetBuffer(c).first;
+      Rect dst_rect = render_pipeline_input.GetBuffer(c).second;
+      ImageF* upsampling_dst = render_pipeline_input.GetBuffer(c).first;
       JXL_ASSERT(dst_rect.IsInside(*upsampling_dst));
 
       RenderPipelineStage::RowInfo input_rows(1, std::vector<float*>(5));
@@ -770,11 +743,7 @@ Status DecodeGroup(BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
                                            nullptr);
       }
     }
-    draw = kOnlyImageFeatures;
-  }
-
-  if (should_run_pipeline) {
-    *should_run_pipeline = draw != kDontDraw;
+    return true;
   }
 
   size_t histo_selector_bits = 0;
@@ -808,7 +777,7 @@ Status DecodeGroupForRoundtrip(const std::vector<std::unique_ptr<ACImage>>& ac,
                                PassesDecoderState* JXL_RESTRICT dec_state,
                                GroupDecCache* JXL_RESTRICT group_dec_cache,
                                size_t thread,
-                               RenderPipelineInput* render_pipeline_input,
+                               RenderPipelineInput& render_pipeline_input,
                                ImageBundle* JXL_RESTRICT decoded,
                                AuxOut* aux_out) {
   PROFILER_FUNC;

@@ -33,7 +33,6 @@
 #include "lib/jxl/convolve.h"
 #include "lib/jxl/dec_cache.h"
 #include "lib/jxl/dec_group.h"
-#include "lib/jxl/dec_reconstruct.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_group.h"
@@ -1104,7 +1103,6 @@ ImageBundle RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
 
   hwy::AlignedUniquePtr<GroupDecCache[]> group_dec_caches;
   const auto allocate_storage = [&](const size_t num_threads) {
-    dec_state->EnsureStorage(num_threads);
     dec_state->render_pipeline->PrepareForThreads(num_threads,
                                                   /*use_group_ids=*/false);
     group_dec_caches = hwy::MakeUniqueAlignedArray<GroupDecCache>(num_threads);
@@ -1120,7 +1118,7 @@ ImageBundle RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
         dec_state->render_pipeline->GetInputBuffers(group_index, thread);
     JXL_CHECK(DecodeGroupForRoundtrip(
         enc_state->coeffs, group_index, dec_state.get(),
-        &group_dec_caches[thread], thread, &input, &decoded, nullptr));
+        &group_dec_caches[thread], thread, input, &decoded, nullptr));
     for (size_t c = 0; c < metadata.num_extra_channels; c++) {
       std::pair<ImageF*, Rect> ri = input.GetBuffer(3 + c);
       FillPlane(0.0f, ri.first, ri.second);
