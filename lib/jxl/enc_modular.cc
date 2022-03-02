@@ -102,7 +102,8 @@ Tree MakeFixedTree(int property, const std::vector<int32_t>& cutoffs,
 }
 
 Tree PredefinedTree(ModularOptions::TreeKind tree_kind, size_t total_pixels) {
-  if (tree_kind == ModularOptions::TreeKind::kJpegTranscodeACMeta) {
+  if (tree_kind == ModularOptions::TreeKind::kJpegTranscodeACMeta ||
+      tree_kind == ModularOptions::TreeKind::kTrivialTreeNoPredictor) {
     // All the data is 0, so no need for a fancy tree.
     return {PropertyDecisionNode::Leaf(Predictor::Zero)};
   }
@@ -320,6 +321,12 @@ ModularFrameEncoder::ModularFrameEncoder(const FrameHeader& frame_header,
       }
     }
   }
+  if (cparams.decoding_speed_tier >= 1 && cparams.responsive &&
+      cparams.quality_pair == std::make_pair(100.f, 100.f)) {
+    cparams.options.tree_kind =
+        ModularOptions::TreeKind::kTrivialTreeNoPredictor;
+    cparams.options.nb_repeats = 0;
+  }
   stream_images.resize(num_streams);
   if (cquality > 100) cquality = quality;
 
@@ -453,7 +460,8 @@ Status ModularFrameEncoder::ComputeEncodingData(
   }
 
   if (do_color && metadata.bit_depth.bits_per_sample <= 16 &&
-      cparams.speed_tier < SpeedTier::kCheetah) {
+      cparams.speed_tier < SpeedTier::kCheetah &&
+      cparams.decoding_speed_tier < 2) {
     FindBestPatchDictionary(*color, enc_state, cms, nullptr, aux_out,
                             cparams.color_transform == ColorTransform::kXYB);
     PatchDictionaryEncoder::SubtractFrom(
@@ -1103,6 +1111,17 @@ Status ModularFrameEncoder::EncodeGlobalInfo(BitWriter* writer,
   if (cparams.decoding_speed_tier >= 1) {
     params.max_histograms = 12;
   }
+  if (cparams.decoding_speed_tier >= 1 && cparams.responsive) {
+    params.lz77_method = cparams.speed_tier >= SpeedTier::kCheetah
+                             ? HistogramParams::LZ77Method::kRLE
+                         : cparams.speed_tier >= SpeedTier::kKitten
+                             ? HistogramParams::LZ77Method::kLZ77
+                             : HistogramParams::LZ77Method::kOptimal;
+  }
+  if (cparams.decoding_speed_tier >= 2 && cparams.responsive) {
+    params.uint_method = HistogramParams::HybridUintMethod::k000;
+    params.force_huffman = true;
+  }
   BuildAndEncodeHistograms(params, kNumTreeContexts, tree_tokens, &code,
                            &context_map, writer, kLayerModularTree, aux_out);
   WriteTokens(tree_tokens[0], code, context_map, writer, kLayerModularTree,
@@ -1291,7 +1310,8 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
 
     // Local channel palette
     if (cparams.channel_colors_percent > 0 && quality == 100 &&
-        !cparams.lossy_palette && cparams.speed_tier < SpeedTier::kCheetah) {
+        !cparams.lossy_palette && cparams.speed_tier < SpeedTier::kCheetah &&
+        !(cparams.responsive && cparams.decoding_speed_tier >= 1)) {
       // single channel palette (like FLIF's ChannelCompact)
       size_t nb_channels = gi.channel.size() - gi.nb_meta_channels;
       for (size_t i = 0; i < nb_channels; i++) {
