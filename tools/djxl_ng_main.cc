@@ -278,7 +278,7 @@ int DecompressJxlToPackedPixelFile(const std::vector<uint8_t>& compressed,
       if (ppf.info.num_color_channels != format.num_channels) {
         format.num_channels = ppf.info.num_color_channels;
       }
-      if (ppf.info.bits_per_sample >= 16 &&
+      if (ppf.info.bits_per_sample > 8 &&
           ppf.info.exponent_bits_per_sample == 0) {
         format.data_type = JXL_TYPE_UINT16;
       }
