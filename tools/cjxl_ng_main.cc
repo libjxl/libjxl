@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "gflags/gflags.h"
+#include "jxl/codestream_header.h"
 #include "jxl/encode.h"
 #include "jxl/encode_cxx.h"
 #include "jxl/thread_parallel_runner.h"
