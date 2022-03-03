@@ -47,7 +47,7 @@ enum class ExtraChannel : uint32_t {
   kSpotColor = JXL_CHANNEL_SPOT_COLOR,
   kSelectionMask = JXL_CHANNEL_SELECTION_MASK,
   kBlack = JXL_CHANNEL_BLACK,  // for CMYK
-  kCFA = JXL_CHANNEL_CFA,    // Bayer channel
+  kCFA = JXL_CHANNEL_CFA,      // Bayer channel
   kThermal = JXL_CHANNEL_THERMAL,
   kReserved0 = JXL_CHANNEL_RESERVED0,
   kReserved1 = JXL_CHANNEL_RESERVED1,
