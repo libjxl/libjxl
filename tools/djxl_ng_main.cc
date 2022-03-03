@@ -374,6 +374,9 @@ int main(int argc, char** argv) {
   size_t num_reps = FLAGS_num_reps;
 
   const char* extension = strrchr(filename_out, '.');
+  std::string base = extension == nullptr
+                         ? std::string(filename_out)
+                         : std::string(filename_out, extension - filename_out);
   if (extension == nullptr) extension = "";
   const jxl::extras::Codec codec = jxl::extras::CodecFromExtension(extension);
 
