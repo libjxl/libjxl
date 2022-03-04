@@ -388,9 +388,12 @@ void LowMemoryRenderPipeline::PrepareForThreadsInternal(size_t num,
     out_of_frame_data_.resize(num);
     size_t out_of_frame_xsize =
         2 * kRenderPipelineXOffset +
-        std::max<size_t>(frame_origin_.x0,
-                         full_image_xsize_ - frame_origin_.x0 -
-                             frame_dimensions_.xsize_upsampled);
+        std::max<ssize_t>(
+            0,
+            std::max<ssize_t>(
+                frame_origin_.x0,
+                static_cast<ssize_t>(full_image_xsize_) - frame_origin_.x0 -
+                    static_cast<ssize_t>(frame_dimensions_.xsize_upsampled)));
     out_of_frame_xsize = std::max(out_of_frame_xsize, stage_buffer_xsize);
     for (size_t t = 0; t < num; t++) {
       out_of_frame_data_[t] = ImageF(out_of_frame_xsize, shifts.size());
