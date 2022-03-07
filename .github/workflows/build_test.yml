@@ -261,6 +261,7 @@ jobs:
 
     env:
       BUILD_DIR: build
+      WILL_RUN_TESTS: ${{ github.event_name == 'push' || (github.event_name == 'pull_request' && (matrix.test_in_pr || contains(github.event.pull_request.labels.*.names, 'CI:full'))) }}
 
     steps:
     - name: Setup apt
