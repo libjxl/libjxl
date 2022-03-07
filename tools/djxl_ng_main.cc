@@ -323,12 +323,25 @@ int DecompressJxlToPackedPixelFile(const std::vector<uint8_t>& compressed,
         return EXIT_FAILURE;
       }
 
-      void* pixels_buffer = ppf.frames.back().color.pixels();
-      size_t pixels_buffer_size = ppf.frames.back().color.pixels_size;
-      if (JXL_DEC_SUCCESS != JxlDecoderSetImageOutBuffer(dec.get(), &format,
-                                                         pixels_buffer,
-                                                         pixels_buffer_size)) {
-        fprintf(stderr, "JxlDecoderSetImageOutBuffer failed\n");
+      auto callback = [](void* opaque, size_t x, size_t y, size_t num_pixels,
+                         const void* pixels) {
+        jxl::extras::PackedPixelFile* ppf =
+            reinterpret_cast<jxl::extras::PackedPixelFile*>(opaque);
+        uint8_t* pixels_buffer =
+            reinterpret_cast<uint8_t*>(ppf->frames.back().color.pixels());
+        size_t sample_size = ppf->frames.back().color.format.num_channels *
+                             ppf->frames.back().color.BitsPerChannel(
+                                 ppf->frames.back().color.format.data_type) /
+                             8;
+        // TODO(firsching): take color profile into account and transform if
+        // needed here.
+        memcpy(pixels_buffer +
+                   (ppf->frames.back().color.stride * y + sample_size * x),
+               pixels, num_pixels * sample_size);
+      };
+      if (JXL_DEC_SUCCESS !=
+          JxlDecoderSetImageOutCallback(dec.get(), &format, callback, &ppf)) {
+        fprintf(stderr, "JxlDecoderSetImageOutCallback failed\n");
         return EXIT_FAILURE;
       }
     } else if (status == JXL_DEC_SUCCESS) {
@@ -442,8 +455,6 @@ int main(int argc, char** argv) {
         JXL_WARNING("PPM only supports up to 16 bits per sample");
       }
     }
-    // TODO(firsching): take color profile into account and transform if needed
-    // here.
     const int digits = 1 + static_cast<int>(std::log10(std::max(
                                1, static_cast<int>(ppf.frames.size() - 1))));
     std::vector<char> output_filename;
