@@ -1230,7 +1230,6 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec, const uint8_t* in,
                                           size - dec->frame_start);
       auto reader = GetBitReader(compressed);
       jxl::DecompressParams dparams;
-      dparams.preview = want_preview ? jxl::Override::kOn : jxl::Override::kOff;
       dparams.render_spotcolors = dec->render_spotcolors;
       dparams.coalescing = true;
       jxl::ImageBundle ib(&dec->metadata.m);
