@@ -452,6 +452,9 @@ JxlEncoderStatus JxlEncoderSetColorEncoding(JxlEncoder* enc,
     return JXL_ENC_ERROR;
   }
   enc->color_encoding_set = true;
+  if (!enc->intensity_target_set) {
+    jxl::SetIntensityTarget(&enc->metadata.m);
+  }
   return JXL_ENC_SUCCESS;
 }
 
@@ -468,6 +471,9 @@ JxlEncoderStatus JxlEncoderSetICCProfile(JxlEncoder* enc,
     return JXL_ENC_ERROR;
   }
   enc->color_encoding_set = true;
+  if (!enc->intensity_target_set) {
+    jxl::SetIntensityTarget(&enc->metadata.m);
+  }
   return JXL_ENC_SUCCESS;
 }
 
@@ -477,7 +483,7 @@ void JxlEncoderInitBasicInfo(JxlBasicInfo* info) {
   info->ysize = 0;
   info->bits_per_sample = 8;
   info->exponent_bits_per_sample = 0;
-  info->intensity_target = 255.f;
+  info->intensity_target = 0.f;
   info->min_nits = 0.f;
   info->relative_to_max_display = JXL_FALSE;
   info->linear_below = 0.f;
@@ -582,7 +588,16 @@ JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
   } else {
     return JXL_API_ERROR("Invalid value for orientation field");
   }
-  enc->metadata.m.SetIntensityTarget(info->intensity_target);
+  if (info->intensity_target != 0) {
+    enc->metadata.m.SetIntensityTarget(info->intensity_target);
+    enc->intensity_target_set = true;
+  } else if (enc->color_encoding_set || enc->metadata.m.xyb_encoded) {
+    // If both conditions are false, JxlEncoderSetColorEncoding will be called
+    // later and we will get one more chance to call jxl::SetIntensityTarget,
+    // after the color encoding is indeed set.
+    jxl::SetIntensityTarget(&enc->metadata.m);
+    enc->intensity_target_set = true;
+  }
   enc->metadata.m.tone_mapping.min_nits = info->min_nits;
   enc->metadata.m.tone_mapping.relative_to_max_display =
       info->relative_to_max_display;
@@ -1002,6 +1017,7 @@ void JxlEncoderReset(JxlEncoder* enc) {
   enc->boxes_closed = false;
   enc->basic_info_set = false;
   enc->color_encoding_set = false;
+  enc->intensity_target_set = false;
   enc->use_container = false;
   enc->use_boxes = false;
   enc->codestream_level = 5;

@@ -338,9 +338,6 @@ jxl::Status LoadInput(const char* filename_in,
   if (image_data.size() < kMinBytes) return JXL_FAILURE("Input too small.");
   jxl::Span<const uint8_t> encoded(image_data);
 
-  // Manually fix intensity target 0 problem, decoder should set a
-  // reasonable default, but at least apng doesn't:
-  ppf.info.intensity_target = 255.f;
   ppf.info.orientation = JXL_ORIENT_IDENTITY;
   jxl::extras::ColorHints color_hints;
   jxl::SizeConstraints size_constraints;
