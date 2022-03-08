@@ -334,35 +334,21 @@ constexpr size_t kGradientProp = 9;
 // Clamps gradient to the min/max of n, w (and l, implicitly).
 static JXL_INLINE int32_t ClampedGradient(const int32_t n, const int32_t w,
                                           const int32_t l) {
-  const int32_t ab =
-      static_cast<int32_t>(static_cast<uint32_t>(w) - static_cast<uint32_t>(n));
-  const int32_t ac =
-      static_cast<int32_t>(static_cast<uint32_t>(w) - static_cast<uint32_t>(l));
-  const int32_t bc =
-      static_cast<int32_t>(static_cast<uint32_t>(n) - static_cast<uint32_t>(l));
-
-  // grad == W + N - NW
-  const int32_t grad = static_cast<int32_t>(static_cast<uint32_t>(ac) +
-                                            static_cast<uint32_t>(n));
-  // d is negative iff (W >= N && N < NW) || (W < N && N >= NW)
-  int32_t d = ab ^ bc;
-  int32_t clamp = d < 0 ? n : w;
-  // if clamping has to be done, then the clamped value will be clamp:
-  //  if grad < min(N,W) == N: W >= N, -grad > -N so NW > W >= N, clamp is N
-  //  if grad < min(N,W) == W < N: -grad > -W so NW > N > W, clamp is W
-  //  if grad > max(N,W) == W: W >= N, -grad < -W so NW < N, clamp is W
-  //  if grad > max(N,W) == N > W: W < N, -grad < -N so NW < W < N, clamp is N
-
-  // s is negative iff (W >= NW && N < NW) || (W < NW && N >= NW)
-  int32_t s = ac ^ bc;
-  int32_t pred = s < 0 ? grad : clamp;
-  // no clamping has to be done
-  //  iff max(N,W) >= grad >= min(N,W)
-  //  iff W+N-min(N,W) >= W+N-NW >= W+N-max(N,W)
-  //  iff -min(N,W) >= NW >= -max(N,W)
-  //  iff min(N,W) <= NW <= max(N,W)
-  //  iff s is negative
-  return pred;
+  const int32_t m = std::min(n, w);
+  const int32_t M = std::max(n, w);
+  // The end result of this operation doesn't overflow or underflow if the
+  // result is between m and M, but the intermediate value may overflow, so we
+  // do the intermediate operations in uint32_t and check later if we had an
+  // overflow or underflow condition comparing m, M and l directly.
+  // grad = M + m - l = n + w - l
+  const int32_t grad =
+      static_cast<int32_t>(static_cast<uint32_t>(n) + static_cast<uint32_t>(w) -
+                           static_cast<uint32_t>(l));
+  // We use two sets of ternary operators to force the evaluation of them in
+  // any case, allowing the compiler to avoid branches and use cmovl/cmovg in
+  // x86.
+  const int32_t grad_clamp_M = (l < m) ? M : grad;
+  return (l > M) ? m : grad_clamp_M;
 }
 
 inline pixel_type_w Select(pixel_type_w a, pixel_type_w b, pixel_type_w c) {

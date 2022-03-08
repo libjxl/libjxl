@@ -22,21 +22,7 @@ struct HuffmanDecodingData {
   // Returns false if the Huffman code lengths can not de decoded.
   bool ReadFromBitStream(size_t alphabet_size, BitReader* br);
 
-  // Decodes the next Huffman coded symbol from the bit-stream.
-  uint16_t ReadSymbol(BitReader* br) const {
-    size_t n_bits;
-    const HuffmanCode* table = table_.data();
-    table += br->PeekBits(kHuffmanTableBits);
-    n_bits = table->bits;
-    if (JXL_UNLIKELY(n_bits > kHuffmanTableBits)) {
-      br->Consume(kHuffmanTableBits);
-      n_bits -= kHuffmanTableBits;
-      table += table->value;
-      table += br->PeekBits(n_bits);
-    }
-    br->Consume(table->bits);
-    return table->value;
-  }
+  uint16_t ReadSymbol(BitReader* br) const;
 
   std::vector<HuffmanCode> table_;
 };
