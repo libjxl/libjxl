@@ -279,6 +279,15 @@ Status FrameDecoder::InitFrame(BitReader* JXL_RESTRICT br, ImageBundle* decoded,
 
   decoded->duration = frame_header_.animation_frame.duration;
 
+  if (!frame_header_.nonserialized_is_preview &&
+      (frame_header_.frame_type == kRegularFrame ||
+       frame_header_.frame_type == kSkipProgressive)) {
+    ++dec_state_->visible_frame_index;
+    dec_state_->nonvisible_frame_index = 1;
+  } else {
+    ++dec_state_->nonvisible_frame_index;
+  }
+
   // Read TOC.
   uint64_t groups_total_size;
   const bool has_ac_global = true;
@@ -672,7 +681,6 @@ Status FrameDecoder::ProcessACGroup(size_t ac_group_id,
   if ((frame_header_.flags & FrameHeader::kNoise) != 0 &&
       render_pipeline_input) {
     PROFILER_ZONE("GenerateNoise");
-    size_t num_x_groups = DivCeil(frame_dim_.xsize_upsampled_padded, kGroupDim);
     size_t noise_c_start =
         3 + frame_header_.nonserialized_metadata->m.num_extra_channels;
     // When the color channels are downsampled, we need to generate more noise
@@ -693,9 +701,10 @@ Status FrameDecoder::ProcessACGroup(size_t ac_group_id,
                                  r.second.y0() + iy * kGroupDim, kGroupDim,
                                  kGroupDim, x1, y1);
         }
-        Random3Planes(dec_state_->noise_seed +
-                          (gx * frame_header_.upsampling + ix) +
-                          (gy * frame_header_.upsampling + iy) * num_x_groups,
+        Random3Planes(dec_state_->visible_frame_index,
+                      dec_state_->nonvisible_frame_index,
+                      (gx * frame_header_.upsampling + ix) * kGroupDim,
+                      (gy * frame_header_.upsampling + iy) * kGroupDim,
                       rects[0], rects[1], rects[2]);
       }
     }

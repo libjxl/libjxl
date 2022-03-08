@@ -46,7 +46,7 @@ int main(int argc, const char** argv) {
   jxl::Image3F noise_image(xyb.xsize(), xyb.ysize());
   {
     // TODO(sboukortt): perhaps add a flag to set the seed.
-    jxl::RandomImage3(1337, jxl::Rect(noise_image), &noise_image);
+    jxl::RandomImage3(0, 0, 0, 0, jxl::Rect(noise_image), &noise_image);
     // TODO(sboukortt): and maybe one to use Gaussian noise instead of our
     // high-pass-filtered uniform noise.
     jxl::WeightsSymmetric5 weights{{HWY_REP4(-3.84)}, {HWY_REP4(0.16)},
