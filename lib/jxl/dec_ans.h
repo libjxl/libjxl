@@ -275,36 +275,25 @@ class ANSSymbolReader {
     return static_cast<uint32_t>(ret);
   }
 
-  // Takes a *clustered* idx, implicit ctx==1. Can only use if FJXLFastPath() is
-  // true.
-  void JXL_INLINE ReadHybridUintFJXLFastPath(BitReader* JXL_RESTRICT br,
-                                             uint32_t* value, uint32_t* run) {
-    JXL_DASSERT(FJXLFastPath());
+  // Takes a *clustered* idx. Can only use if HuffRleOnly() is true.
+  void ReadHybridUintClusteredHuffRleOnly(size_t ctx,
+                                          BitReader* JXL_RESTRICT br,
+                                          uint32_t* value, uint32_t* run) {
+    JXL_DASSERT(HuffRleOnly());
     br->Refill();  // covers ReadSymbolWithoutRefill + PeekBits
-    uint32_t token = ReadSymbolHuffWithoutRefill(1, br);
+    size_t token = ReadSymbolHuffWithoutRefill(ctx, br);
     if (JXL_UNLIKELY(token >= lz77_threshold_)) {
       *run =
           ReadHybridUintConfig(lz77_length_uint_, token - lz77_threshold_, br) +
           lz77_min_length_ - 1;
       return;
     }
-    // faster specialization of this:
-    // *value = ReadHybridUintConfig(configs[ctx], token, br);
-    JXL_DASSERT(token < 31);
-    uint32_t nbits = token ? token - 1 : 0;
-    uint32_t offset = token ? 1 << nbits : 0;
-    const size_t bits = br->PeekBits(nbits);
-    br->Consume(nbits);
-    *value = offset | bits;
+    *value = ReadHybridUintConfig(configs[ctx], token, br);
     return;
   }
-  // True if RLE-only Huffman coding is used, with HybridUintConfig 000.
-  bool FJXLFastPath() {
+  bool HuffRleOnly() {
     if (lz77_window_ == nullptr) return false;
     if (!use_prefix_code_) return false;
-    if (configs[1].split_token != 1) return false;
-    if (configs[1].msb_in_token) return false;
-    if (configs[1].lsb_in_token) return false;
     for (size_t i = 0; i < kHuffmanTableBits; i++) {
       if (huffman_data_[lz77_ctx_].table_[i].bits) return false;
       if (huffman_data_[lz77_ctx_].table_[i].value != 1) return false;
