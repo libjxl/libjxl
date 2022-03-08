@@ -87,8 +87,9 @@ struct PassesDecoderState {
   // One row per thread
   std::vector<std::vector<float>> pixel_callback_rows;
 
-  // Seed for noise, to have different noise per-frame.
-  size_t noise_seed = 0;
+  // Used for seeding noise.
+  size_t visible_frame_index = 0;
+  size_t nonvisible_frame_index = 0;
 
   // Keep track of the transform types used.
   std::atomic<uint32_t> used_acs{0};
@@ -313,7 +314,8 @@ struct PassesDecoderState {
         size_t gy = group_index / num_x_groups;
         Rect rect(gx * kGroupDim, gy * kGroupDim, kGroupDim, kGroupDim,
                   noise.xsize(), noise.ysize());
-        RandomImage3(noise_seed + group_index, rect, &noise);
+        RandomImage3(visible_frame_index, nonvisible_frame_index, rect.x0(),
+                     rect.y0(), rect, &noise);
       };
       JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, num_x_groups * num_y_groups,
                                     ThreadPool::NoInit, generate_noise,
@@ -331,7 +333,6 @@ struct PassesDecoderState {
           Symmetric5(noise.Plane(c), Rect(noise), weights, pool, &noise_tmp);
           std::swap(noise.Plane(c), noise_tmp);
         }
-        noise_seed += shared->frame_dim.num_groups;
       }
     }
     EnsureBordersStorage();
