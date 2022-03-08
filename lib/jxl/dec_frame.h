@@ -44,11 +44,6 @@ Status DecodeFrame(const DecompressParams& dparams,
                    const CodecMetadata& metadata,
                    const SizeConstraints* constraints, bool is_preview = false);
 
-// Leaves reader in the same state as DecodeFrame would. Used to skip preview.
-// Also updates `dec_state` with the new frame header.
-Status SkipFrame(const CodecMetadata& metadata, BitReader* JXL_RESTRICT reader,
-                 bool is_preview = false);
-
 // TODO(veluca): implement "forced drawing".
 class FrameDecoder {
  public:

@@ -99,33 +99,6 @@ Status DecodeFrameHeader(BitReader* JXL_RESTRICT reader,
   return true;
 }
 
-Status SkipFrame(const CodecMetadata& metadata, BitReader* JXL_RESTRICT reader,
-                 bool is_preview) {
-  FrameHeader header(&metadata);
-  header.nonserialized_is_preview = is_preview;
-  JXL_RETURN_IF_ERROR(DecodeFrameHeader(reader, &header));
-
-  // Read TOC.
-  std::vector<uint64_t> group_offsets;
-  std::vector<uint32_t> group_sizes;
-  uint64_t groups_total_size;
-  const bool has_ac_global = true;
-  const FrameDimensions frame_dim = header.ToFrameDimensions();
-  const size_t toc_entries =
-      NumTocEntries(frame_dim.num_groups, frame_dim.num_dc_groups,
-                    header.passes.num_passes, has_ac_global);
-  JXL_RETURN_IF_ERROR(ReadGroupOffsets(toc_entries, reader, &group_offsets,
-                                       &group_sizes, &groups_total_size));
-
-  // Pretend all groups are read.
-  reader->SkipBits(groups_total_size * kBitsPerByte);
-  if (reader->TotalBitsConsumed() > reader->TotalBytes() * kBitsPerByte) {
-    return JXL_FAILURE("Group code extends after stream end");
-  }
-
-  return true;
-}
-
 static BitReader* GetReaderForSection(
     size_t num_groups, size_t num_passes, size_t group_codes_begin,
     const std::vector<uint64_t>& group_offsets,
