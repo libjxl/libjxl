@@ -255,7 +255,8 @@ void PrintMode(jxl::ThreadPoolInternal* pool, const jxl::CodecInOut& io,
           (args.use_container ? "Container | " : ""), mode, quality.c_str(),
           speed);
   if (args.use_container) {
-    if (args.jpeg_transcode) fprintf(stderr, " | JPEG reconstruction data");
+    if (args.jpeg_transcode && args.store_jpeg_metadata)
+      fprintf(stderr, " | JPEG reconstruction data");
     if (!io.blobs.exif.empty())
       fprintf(stderr, " | %" PRIuS "-byte Exif", io.blobs.exif.size());
     if (!io.blobs.xmp.empty())
@@ -306,6 +307,10 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
                          "Do not encode using container format (strips "
                          "Exif/XMP/JPEG bitstream reconstruction data)",
                          &no_container, &SetBooleanTrue, 2);
+
+  cmdline->AddOptionFlag('\0', "strip_jpeg_metadata",
+                         "Do not encode JPEG bitstream reconstruction data",
+                         &store_jpeg_metadata, &SetBooleanFalse, 2);
 
   // Target distance/size/bpp
   opt_distance_id = cmdline->AddOptionValue(
@@ -709,7 +714,8 @@ jxl::Status CompressArgs::ValidateArgsAfterLoad(
     }
   }
   if (!io.blobs.exif.empty() || !io.blobs.xmp.empty() ||
-      !io.blobs.jumbf.empty() || !io.blobs.iptc.empty() || jpeg_transcode) {
+      !io.blobs.jumbf.empty() || !io.blobs.iptc.empty() ||
+      (jpeg_transcode && store_jpeg_metadata)) {
     use_container = true;
   }
   if (no_container) use_container = false;

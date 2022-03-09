@@ -73,6 +73,8 @@ struct CompressArgs {
   // Reset to false if input image is not a JPEG.
   bool jpeg_transcode = true;
 
+  bool store_jpeg_metadata = true;
+
   float quality = -1001.f;  // Default to lossless if input is already lossy,
                             // or to VarDCT otherwise.
   bool progressive = false;
