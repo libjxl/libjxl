@@ -71,6 +71,7 @@ int main(int argc, const char** argv) {
   JXL_CHECK(jxl::HlgInverseOOTF(
       &image.Main(), jxl::GetHlgGamma(max_nits, surround_nits), &pool));
   JXL_CHECK(jxl::GamutMap(&image, preserve_saturation, &pool));
+  image.metadata.m.SetIntensityTarget(301);
 
   jxl::ColorEncoding hlg;
   hlg.SetColorSpace(jxl::ColorSpace::kRGB);
