@@ -147,6 +147,7 @@ struct JxlEncoderStruct {
   bool boxes_closed;
   bool basic_info_set;
   bool color_encoding_set;
+  bool intensity_target_set;
 
   // Takes the first frame in the input_queue, encodes it, and appends
   // the bytes to the output_byte_queue.
