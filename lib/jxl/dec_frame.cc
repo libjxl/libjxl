@@ -283,7 +283,7 @@ Status FrameDecoder::InitFrame(BitReader* JXL_RESTRICT br, ImageBundle* decoded,
       (frame_header_.frame_type == kRegularFrame ||
        frame_header_.frame_type == kSkipProgressive)) {
     ++dec_state_->visible_frame_index;
-    dec_state_->nonvisible_frame_index = 1;
+    dec_state_->nonvisible_frame_index = 0;
   } else {
     ++dec_state_->nonvisible_frame_index;
   }
