@@ -72,6 +72,9 @@ int main(int argc, const char** argv) {
   jxl::extras::ColorHints color_hints;
   color_hints.Add("color_space", "RGB_D65_202_Rel_HLG");
   JXL_CHECK(jxl::SetFromFile(input_filename, color_hints, &image, &pool));
+  // Ensures that conversions to linear by JxlCms will not apply the OOTF as we
+  // apply it ourselves to control the subsequent gamut mapping.
+  image.metadata.m.SetIntensityTarget(301);
   const float gamma = jxl::GetHlgGamma(target_nits, surround_nits);
   fprintf(stderr, "Using a system gamma of %g\n", gamma);
   JXL_CHECK(jxl::HlgOOTF(&image.Main(), gamma, &pool));

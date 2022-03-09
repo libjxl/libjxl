@@ -63,6 +63,10 @@ int main(int argc, const char** argv) {
   JXL_CHECK(jxl::ToneMapTo({0, 1000}, &image, &pool));
   JXL_CHECK(jxl::HlgInverseOOTF(&image.Main(), 1.2f, &pool));
   JXL_CHECK(jxl::GamutMap(&image, preserve_saturation, &pool));
+  // Peak luminance at which the system gamma is 1, since we are now in scene
+  // light, having applied the inverse OOTF ourselves to control the subsequent
+  // gamut mapping instead of leaving it to JxlCms below.
+  image.metadata.m.SetIntensityTarget(301);
 
   jxl::ColorEncoding hlg;
   hlg.SetColorSpace(jxl::ColorSpace::kRGB);
