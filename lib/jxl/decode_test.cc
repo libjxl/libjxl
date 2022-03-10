@@ -367,8 +367,9 @@ std::vector<uint8_t> DecodeWithAPI(JxlDecoder* dec,
     runner = runner_resizable.get();
     runner_fn = JxlResizableParallelRunner;
   } else {
-    runner_fixed = JxlThreadParallelRunnerMake(
-        nullptr, JxlThreadParallelRunnerDefaultNumWorkerThreads());
+    size_t hw_threads = JxlThreadParallelRunnerDefaultNumWorkerThreads();
+    runner_fixed =
+        JxlThreadParallelRunnerMake(nullptr, std::min<size_t>(hw_threads, 16));
     runner = runner_fixed.get();
     runner_fn = JxlThreadParallelRunner;
   }
