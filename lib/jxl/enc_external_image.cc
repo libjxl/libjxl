@@ -212,7 +212,7 @@ Status ConvertFromExternal(Span<const uint8_t> bytes, size_t xsize,
 }
 Status ConvertFromExternal(Span<const uint8_t> bytes, size_t xsize,
                            size_t ysize, const ColorEncoding& c_current,
-                           bool has_alpha, bool alpha_is_premultiplied,
+                           size_t channels, bool alpha_is_premultiplied,
                            size_t bits_per_sample, JxlEndianness endianness,
                            bool flipped_y, ThreadPool* pool, ImageBundle* ib,
                            bool float_in, size_t align) {
@@ -227,7 +227,12 @@ Status ConvertFromExternal(Span<const uint8_t> bytes, size_t xsize,
   }
 
   const size_t color_channels = c_current.Channels();
-  const size_t channels = color_channels + has_alpha;
+  bool has_alpha = channels == 2 || channels == 4;
+  if (channels < color_channels) {
+    return JXL_FAILURE("Expected %" PRIuS
+                       " color channels, received only %" PRIuS " channels",
+                       color_channels, channels);
+  }
 
   // bytes_per_channel and bytes_per_pixel are only valid for
   // bits_per_sample > 1.
@@ -351,7 +356,7 @@ Status ConvertFromExternal(Span<const uint8_t> bytes, size_t xsize,
           [&](const uint32_t task, size_t /*thread*/) {
             const size_t y = get_y(task);
             size_t i = row_size * task +
-                       (color_channels * bits_per_sample / jxl::kBitsPerByte);
+                       ((channels - 1) * bits_per_sample / jxl::kBitsPerByte);
             float* JXL_RESTRICT row_out = alpha.Row(y);
             if (bits_per_sample <= 16) {
               if (little_endian) {
@@ -386,7 +391,7 @@ Status ConvertFromExternal(Span<const uint8_t> bytes, size_t xsize,
           pool, 0, static_cast<uint32_t>(ysize), ThreadPool::NoInit,
           [&](const uint32_t task, size_t /*thread*/) {
             const size_t y = get_y(task);
-            size_t i = row_size * task + color_channels * bytes_per_channel;
+            size_t i = row_size * task + (channels - 1) * bytes_per_channel;
             float* JXL_RESTRICT row_out = alpha.Row(y);
             // TODO(deymo): add bits_per_sample == 1 case here. Also maybe
             // implement masking if bits_per_sample is not a multiple of 8.
@@ -448,9 +453,7 @@ Status BufferToImageBundle(const JxlPixelFormat& pixel_format, uint32_t xsize,
 
   JXL_RETURN_IF_ERROR(ConvertFromExternal(
       jxl::Span<const uint8_t>(static_cast<const uint8_t*>(buffer), size),
-      xsize, ysize, c_current,
-      /*has_alpha=*/pixel_format.num_channels == 2 ||
-          pixel_format.num_channels == 4,
+      xsize, ysize, c_current, pixel_format.num_channels,
       /*alpha_is_premultiplied=*/false, bitdepth, pixel_format.endianness,
       /*flipped_y=*/false, pool, ib, float_in, pixel_format.align));
   ib->VerifyMetadata();

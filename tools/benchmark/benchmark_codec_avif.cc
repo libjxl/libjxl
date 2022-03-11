@@ -309,7 +309,7 @@ class AvifCodec : public ImageCodec {
           JXL_RETURN_IF_ERROR(ConvertFromExternal(
               Span<const uint8_t>(rgb_image.pixels,
                                   rgb_image.height * rgb_image.rowBytes),
-              rgb_image.width, rgb_image.height, color, has_alpha,
+              rgb_image.width, rgb_image.height, color, (has_alpha ? 4 : 3),
               /*alpha_is_premultiplied=*/false, rgb_image.depth,
               JXL_NATIVE_ENDIAN, /*flipped_y=*/false, pool, &ib,
               /*float_in=*/false, /*align=*/0));
