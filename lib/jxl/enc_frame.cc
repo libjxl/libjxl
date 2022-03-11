@@ -1052,6 +1052,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
   passes_enc_state->special_frames.clear();
 
   CompressParams cparams = cparams_orig;
+  cparams.PostInit();
 
   if (cparams.progressive_dc < 0) {
     if (cparams.progressive_dc != -1) {

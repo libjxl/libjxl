@@ -795,9 +795,6 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetOption(
       if (value != -1 && value != 1 && value != 2 && value != 4 && value != 8) {
         return JXL_ENC_ERROR;
       }
-      // The implementation doesn't support the default choice between 1x1 and
-      // 2x2 for extra channels, so 1x1 is set as the default.
-      if (value == -1) value = 1;
       frame_settings->values.cparams.ec_resampling = value;
       return JXL_ENC_SUCCESS;
     case JXL_ENC_FRAME_SETTING_ALREADY_DOWNSAMPLED:
