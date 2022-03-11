@@ -348,8 +348,6 @@ int DecompressJxlToPackedPixelFile(const std::vector<uint8_t>& compressed,
       // Decoding finished successfully.
       break;
     } else if (status == JXL_DEC_FULL_IMAGE) {
-    } else if (status == JXL_DEC_NEED_IMAGE_OUT_BUFFER) {
-      break;
     } else {
       fprintf(stderr, "Error: unexpected status: %d\n",
               static_cast<int>(status));
