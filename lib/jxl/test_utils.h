@@ -440,7 +440,7 @@ size_t GetPrecision(JxlDataType data_type) {
     case JXL_TYPE_UINT16:
       return 16;
     case JXL_TYPE_UINT32:
-      return 32;
+      return 24;  // not 32, since we convert to float
     case JXL_TYPE_FLOAT:
       // Floating point mantissa precision
       return 24;
@@ -556,13 +556,13 @@ std::vector<double> ConvertToRGBA32(const uint8_t* pixels, size_t xsize,
           r = LoadBE32(pixels + i);
           g = gray ? r : LoadBE32(pixels + i + 4);
           b = gray ? r : LoadBE32(pixels + i + 8);
-          a = alpha ? LoadBE32(pixels + i + num_channels * 2 - 4) : 4294967295;
+          a = alpha ? LoadBE32(pixels + i + num_channels * 4 - 4) : 4294967295;
 
         } else {
           r = LoadLE32(pixels + i);
           g = gray ? r : LoadLE32(pixels + i + 4);
           b = gray ? r : LoadLE32(pixels + i + 8);
-          a = alpha ? LoadLE32(pixels + i + num_channels * 2 - 4) : 4294967295;
+          a = alpha ? LoadLE32(pixels + i + num_channels * 4 - 4) : 4294967295;
         }
         result[j + 0] = r * mul;
         result[j + 1] = g * mul;

@@ -2391,9 +2391,6 @@ JxlDecoderStatus PrepareSizeCheck(const JxlDecoder* dec,
   if (format->data_type == JXL_TYPE_BOOLEAN) {
     return JXL_API_ERROR("Boolean data type not yet supported");
   }
-  if (format->data_type == JXL_TYPE_UINT32) {
-    return JXL_API_ERROR("uint32 data type not yet supported");
-  }
 
   *bits = BitsPerChannel(format->data_type);
 
