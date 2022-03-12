@@ -348,6 +348,9 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     spline_data.splines.push_back(std::move(spline));
   } else if (t == "Gaborish") {
     cparams.gaborish = jxl::Override::kOn;
+  } else if (t == "DeltaPalette") {
+    cparams.lossy_palette = true;
+    cparams.palette_colors = 0;
   } else if (t == "EPF") {
     t = tok();
     size_t num = 0;
@@ -355,6 +358,28 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     if (num != t.size() || cparams.epf > 3) {
       fprintf(stderr, "Invalid EPF: %s\n", t.c_str());
       return false;
+    }
+  } else if (t == "Noise") {
+    cparams.manual_noise.resize(8);
+    for (size_t i = 0; i < 8; i++) {
+      t = tok();
+      size_t num = 0;
+      cparams.manual_noise[i] = std::stof(t, &num);
+      if (num != t.size()) {
+        fprintf(stderr, "Invalid noise entry: %s\n", t.c_str());
+        return false;
+      }
+    }
+  } else if (t == "XYBFactors") {
+    cparams.manual_xyb_factors.resize(3);
+    for (size_t i = 0; i < 3; i++) {
+      t = tok();
+      size_t num = 0;
+      cparams.manual_xyb_factors[i] = std::stof(t, &num);
+      if (num != t.size()) {
+        fprintf(stderr, "Invalid XYB factor: %s\n", t.c_str());
+        return false;
+      }
     }
   } else {
     fprintf(stderr, "Unexpected node type: %s\n", t.c_str());
@@ -387,6 +412,8 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
   size_t width = 1024, height = 1024;
   int x0 = 0, y0 = 0;
   cparams.color_transform = ColorTransform::kNone;
+  cparams.resampling = 1;
+  cparams.ec_resampling = 1;
   cparams.modular_group_size_shift = 3;
   CodecInOut io;
   int have_next = 0;
