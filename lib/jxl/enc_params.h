@@ -270,6 +270,9 @@ struct CompressParams {
       ec_resampling = resampling;
     }
   }
+
+  std::vector<float> manual_noise;
+  std::vector<float> manual_xyb_factors;
 };
 
 static constexpr float kMinButteraugliForDynamicAR = 0.5f;

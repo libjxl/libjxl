@@ -441,9 +441,14 @@ ModularFrameEncoder::ModularFrameEncoder(const FrameHeader& frame_header,
 
 bool do_transform(Image& image, const Transform& tr,
                   const weighted::Header& wp_header,
-                  jxl::ThreadPool* pool = nullptr) {
+                  jxl::ThreadPool* pool = nullptr, bool force_jxlart = false) {
   Transform t = tr;
-  bool did_it = TransformForward(t, image, wp_header, pool);
+  bool did_it = true;
+  if (force_jxlart) {
+    if (!t.MetaApply(image)) return false;
+  } else {
+    did_it = TransformForward(t, image, wp_header, pool);
+  }
   if (did_it) image.transform.push_back(t);
   return did_it;
 }
@@ -500,7 +505,12 @@ Status ModularFrameEncoder::ComputeEncodingData(
   if (cparams.color_transform == ColorTransform::kXYB &&
       cparams.modular_mode == true) {
     static const float enc_factors[3] = {32768.0f, 2048.0f, 2048.0f};
-    DequantMatricesSetCustomDC(&enc_state->shared.matrices, enc_factors);
+    if (cparams.manual_xyb_factors.size() == 3) {
+      DequantMatricesSetCustomDC(&enc_state->shared.matrices,
+                                 cparams.manual_xyb_factors.data());
+    } else {
+      DequantMatricesSetCustomDC(&enc_state->shared.matrices, enc_factors);
+    }
   }
   pixel_type maxval = gi.bitdepth < 32 ? (1u << gi.bitdepth) - 1 : 0;
   if (do_color) {
@@ -673,7 +683,8 @@ Status ModularFrameEncoder::ComputeEncodingData(
       }
       // TODO(veluca): use a custom weighted header if using the weighted
       // predictor.
-      do_transform(gi, maybe_palette, weighted::Header(), pool);
+      do_transform(gi, maybe_palette, weighted::Header(), pool,
+                   cparams.options.zero_tokens);
     }
     // all-minus-one-channel palette (RGB with separate alpha, or CMY with
     // separate K)
@@ -688,7 +699,8 @@ Status ModularFrameEncoder::ComputeEncodingData(
       if (maybe_palette_3.lossy_palette) {
         maybe_palette_3.predictor = delta_pred;
       }
-      do_transform(gi, maybe_palette_3, weighted::Header(), pool);
+      do_transform(gi, maybe_palette_3, weighted::Header(), pool,
+                   cparams.options.zero_tokens);
     }
   }
 
