@@ -255,22 +255,6 @@ struct CompressParams {
   // Skip the downsampling before encoding if this is true.
   bool already_downsampled = false;
 
-  void PostInit() {
-    if (resampling <= 0) {
-      resampling = 1;
-      // For very low bit rates, using 2x2 resampling gives better results on
-      // most photographic images, with an adjusted butteraugli score chosen to
-      // give roughly the same amount of bits per pixel.
-      if (!already_downsampled && butteraugli_distance >= 20) {
-        resampling = 2;
-        butteraugli_distance = 6 + ((butteraugli_distance - 20) * 0.25);
-      }
-    }
-    if (ec_resampling <= 0) {
-      ec_resampling = resampling;
-    }
-  }
-
   std::vector<float> manual_noise;
   std::vector<float> manual_xyb_factors;
 };
