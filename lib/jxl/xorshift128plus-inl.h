@@ -49,8 +49,8 @@ class Xorshift128Plus {
     s1_[0] = SplitMix64(((static_cast<uint64_t>(seed3) << 32) + seed4) +
                         0x9E3779B97F4A7C15ull);
     for (size_t i = 1; i < N; ++i) {
-      s0_[i] = SplitMix64(s1_[i - 1]);
-      s1_[i] = SplitMix64(s0_[i]);
+      s0_[i] = SplitMix64(s0_[i - 1]);
+      s1_[i] = SplitMix64(s1_[i - 1]);
     }
   }
 
