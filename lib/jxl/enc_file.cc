@@ -185,14 +185,14 @@ Status WriteHeaders(CodecMetadata* metadata, BitWriter* writer,
   return true;
 }
 
-Status EncodeFile(const CompressParams& cparams_orig, const CodecInOut* io,
+Status EncodeFile(const CompressParams& params, const CodecInOut* io,
                   PassesEncoderState* passes_enc_state, PaddedBytes* compressed,
                   const JxlCmsInterface& cms, AuxOut* aux_out,
                   ThreadPool* pool) {
   io->CheckMetadata();
   BitWriter writer;
 
-  CompressParams cparams = cparams_orig;
+  CompressParams cparams = params;
   if (io->Main().color_transform != ColorTransform::kNone) {
     // Set the color transform to YCbCr or XYB if the original image is such.
     cparams.color_transform = io->Main().color_transform;

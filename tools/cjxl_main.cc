@@ -113,7 +113,7 @@ int CompressJpegXlMain(int argc, const char* argv[]) {
         ret = CjxlRetCode::DROPPED_JBRD;
       }
     }
-    compressed.clear();
+    compressed = {};
     if (!EncodeJpegXlContainerOneShot(container, &compressed)) {
       fprintf(stderr, "Failed to encode container format\n");
       return CjxlRetCode::ERR_CONTAINER;

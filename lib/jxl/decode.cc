@@ -1758,15 +1758,14 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
 
     if (dec->recon_output_jpeg == JpegReconStage::kSettingMetadata &&
         !dec->JbrdNeedMoreBoxes()) {
-      using namespace jxl;
-      jpeg::JPEGData* jpeg_data = dec->ib->jpeg_data.get();
+      jxl::jpeg::JPEGData* jpeg_data = dec->ib->jpeg_data.get();
       if (dec->recon_exif_size) {
-        JxlDecoderStatus status = JxlToJpegDecoder::SetExif(
+        JxlDecoderStatus status = jxl::JxlToJpegDecoder::SetExif(
             dec->exif_metadata.data(), dec->exif_metadata.size(), jpeg_data);
         if (status != JXL_DEC_SUCCESS) return status;
       }
       if (dec->recon_xmp_size) {
-        JxlDecoderStatus status = JxlToJpegDecoder::SetXmp(
+        JxlDecoderStatus status = jxl::JxlToJpegDecoder::SetXmp(
             dec->xmp_metadata.data(), dec->xmp_metadata.size(), jpeg_data);
         if (status != JXL_DEC_SUCCESS) return status;
       }
@@ -1775,7 +1774,6 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
 
     if (dec->recon_output_jpeg == JpegReconStage::kOutputting &&
         !dec->JbrdNeedMoreBoxes()) {
-      using namespace jxl;
       JxlDecoderStatus status =
           dec->jpeg_decoder.WriteOutput(*dec->ib->jpeg_data);
       if (status != JXL_DEC_SUCCESS) return status;

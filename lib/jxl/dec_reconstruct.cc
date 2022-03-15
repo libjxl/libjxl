@@ -1289,6 +1289,7 @@ Status FinalizeFrameDecoding(ImageBundle* decoded,
     }
     ImageBlender blender;
     ImageBundle foreground = std::move(*decoded);
+    *decoded = ImageBundle(foreground.metadata());
     decoded->SetFromImage(Image3F(frame_header.nonserialized_metadata->xsize(),
                                   frame_header.nonserialized_metadata->ysize()),
                           foreground.c_current());

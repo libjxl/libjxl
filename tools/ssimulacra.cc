@@ -3,7 +3,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Re-implementation of //third_party/ssimulacra/ssimulacra.cpp using jxl's
+// Re-implementation of //tools/ssimulacra.tct using jxl's
 // ImageF library instead of opencv.
 
 #include "tools/ssimulacra.h"
@@ -255,8 +255,10 @@ inline void PrintItem(const char* name, int scale, const double* vals,
 
 void Ssimulacra::PrintDetails() const {
   for (size_t s = 0; s < scales.size(); ++s) {
-    PrintItem("avg ssim", s, scales[s].avg_ssim, &kScaleWeights[s][0]);
-    PrintItem("min ssim", s, scales[s].min_ssim, &kMinScaleWeights[s][0]);
+    if (s < kNumScales) {
+      PrintItem("avg ssim", s, scales[s].avg_ssim, kScaleWeights[s]);
+      PrintItem("min ssim", s, scales[s].min_ssim, kMinScaleWeights[s]);
+    }
     if (s == 0 && !simple) {
       PrintItem("avg edif", s, avg_edgediff, kEdgeWeight);
       PrintItem("rp2 ssim", s, &row_p2[0][0], kGridWeight);
