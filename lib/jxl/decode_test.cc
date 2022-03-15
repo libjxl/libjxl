@@ -2272,13 +2272,6 @@ TEST(DecodeTest, ExtraChannelTest) {
 
   std::vector<uint8_t> image(buffer_size);
   std::vector<uint8_t> extra(extra_size);
-  size_t bytes_per_pixel = format.num_channels *
-                           jxl::test::GetDataBits(format.data_type) /
-                           jxl::kBitsPerByte;
-  size_t stride = bytes_per_pixel * info.xsize;
-  if (format.align > 1) {
-    stride = jxl::DivCeil(stride, format.align) * format.align;
-  }
 
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetImageOutBuffer(
                                  dec, &format, image.data(), image.size()));
@@ -2782,10 +2775,11 @@ TEST(DecodeTest, SkipFrameWithAlphaBlendingTest) {
         size_t buffer_size;
         EXPECT_EQ(JXL_DEC_SUCCESS,
                   JxlDecoderImageOutBufferSize(dec, &format, &buffer_size));
-        if (coalescing)
+        if (coalescing) {
           EXPECT_EQ(xsize * ysize * 8, buffer_size);
-        else
+        } else {
           EXPECT_EQ(frame_xsize[i] * frame_ysize[i] * 8, buffer_size);
+        }
         frames[i].resize(buffer_size);
         EXPECT_EQ(JXL_DEC_SUCCESS,
                   JxlDecoderSetImageOutBuffer(dec, &format, frames[i].data(),
@@ -2840,14 +2834,16 @@ TEST(DecodeTest, SkipFrameWithAlphaBlendingTest) {
                                             pixels.size()));
 
       EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec));
-      if (coalescing)
+      if (coalescing) {
         EXPECT_EQ(frame_header.layer_info.xsize, xsize);
-      else
+      } else {
         EXPECT_EQ(frame_header.layer_info.xsize, frame_xsize[i]);
-      if (coalescing)
+      }
+      if (coalescing) {
         EXPECT_EQ(frame_header.layer_info.ysize, ysize);
-      else
+      } else {
         EXPECT_EQ(frame_header.layer_info.ysize, frame_ysize[i]);
+      }
       EXPECT_EQ(0u, jxl::test::ComparePixels(frames[i].data(), pixels.data(),
                                              frame_header.layer_info.xsize,
                                              frame_header.layer_info.ysize,
@@ -3806,7 +3802,6 @@ TEST(DecodeTest, ExifBrobBoxTest) {
           EXPECT_EQ(false, seen_brob_begin);
           seen_brob_begin = true;
           box_buffer.resize(8);
-          box_num_output = 0;
           JxlDecoderSetBoxBuffer(dec, box_buffer.data(), box_buffer.size());
         }
       } else if (status == JXL_DEC_BOX_NEED_MORE_OUTPUT) {
@@ -3895,7 +3890,6 @@ TEST(DecodeTest, ExifBrobBoxTest) {
           EXPECT_EQ(false, seen_exif_begin);
           seen_exif_begin = true;
           box_buffer.resize(8);
-          box_num_output = 0;
           JxlDecoderSetBoxBuffer(dec, box_buffer.data(), box_buffer.size());
         }
       } else if (status == JXL_DEC_BOX_NEED_MORE_OUTPUT) {
@@ -3983,7 +3977,6 @@ TEST(DecodeTest, PartialCodestreamBoxTest) {
         if (BoxTypeEquals("jxlp", type)) {
           num_jxlp++;
           box_buffer.resize(8);
-          box_num_output = 0;
           JxlDecoderSetBoxBuffer(dec, box_buffer.data(), box_buffer.size());
         }
       } else if (status == JXL_DEC_BOX_NEED_MORE_OUTPUT) {

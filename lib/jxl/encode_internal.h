@@ -62,7 +62,7 @@ struct JxlEncoderQueuedBox {
 
 // Either a frame, or a box, not both.
 struct JxlEncoderQueuedInput {
-  JxlEncoderQueuedInput(const JxlMemoryManager& memory_manager)
+  explicit JxlEncoderQueuedInput(const JxlMemoryManager& memory_manager)
       : frame(nullptr, jxl::MemoryManagerDeleteHelper(&memory_manager)),
         box(nullptr, jxl::MemoryManagerDeleteHelper(&memory_manager)) {}
   MemoryManagerUniquePtr<JxlEncoderQueuedFrame> frame;

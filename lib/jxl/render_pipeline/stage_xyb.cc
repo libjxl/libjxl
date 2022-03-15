@@ -62,7 +62,7 @@ struct OpPq {
 
 struct OpHlg {
   explicit OpHlg(const float luminances[3], const float intensity_target)
-      : luminances(luminances) {
+      : luminances(luminances), exponent(1.0f) {
     if (295 <= intensity_target && intensity_target <= 305) {
       apply_inverse_ootf = false;
       return;

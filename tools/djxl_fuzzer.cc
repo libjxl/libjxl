@@ -116,7 +116,6 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
   bool seen_preview = false;
   bool seen_need_image_out = false;
   bool seen_full_image = false;
-  bool seen_success = false;
   bool seen_frame = false;
   uint32_t num_frames = 0;
   bool seen_jpeg_reconstruction = false;
@@ -462,8 +461,6 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
       // full frames may be decoded. This example only keeps the last one.
     } else if (status == JXL_DEC_SUCCESS) {
       if (!seen_full_image) abort();  // expected full image before finishing
-      if (seen_success) abort();      // already seen success
-      seen_success = true;
 
       // When decoding we may not get seen_need_image_out unless we were
       // decoding the image to pixels.

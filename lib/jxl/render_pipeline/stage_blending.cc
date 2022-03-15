@@ -122,7 +122,6 @@ class BlendingStage : public RenderPipelineStage {
       return;
     }
     if (bg_xpos < 0) {
-      xpos -= bg_xpos;
       offset -= bg_xpos;
       xsize += bg_xpos;
       bg_xpos = 0;

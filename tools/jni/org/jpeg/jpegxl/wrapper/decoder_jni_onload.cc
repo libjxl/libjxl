@@ -11,14 +11,23 @@
 extern "C" {
 #endif
 
+static char* kGetBasicInfoName = const_cast<char*>("nativeGetBasicInfo");
+static char* kGetBasicInfoSig = const_cast<char*>("([ILjava/nio/Buffer;)V");
+static char* kGetPixelsName = const_cast<char*>("nativeGetPixels");
+static char* kGetPixelsInfoSig = const_cast<char*>(
+    "([ILjava/nio/Buffer;Ljava/nio/Buffer;Ljava/nio/Buffer;)V");
+
+#define JXL_JNI_METHOD(NAME) \
+  (reinterpret_cast<void*>(  \
+      Java_org_jpeg_jpegxl_wrapper_DecoderJni_native##NAME))
+
 static const JNINativeMethod kDecoderMethods[] = {
-    {"nativeGetBasicInfo", "([ILjava/nio/Buffer;)V",
-     reinterpret_cast<void*>(
-         Java_org_jpeg_jpegxl_wrapper_DecoderJni_nativeGetBasicInfo)},
-    {"nativeGetPixels",
-     "([ILjava/nio/Buffer;Ljava/nio/Buffer;Ljava/nio/Buffer;)V",
-     reinterpret_cast<void*>(
-         Java_org_jpeg_jpegxl_wrapper_DecoderJni_nativeGetPixels)}};
+    {kGetBasicInfoName, kGetBasicInfoSig, JXL_JNI_METHOD(GetBasicInfo)},
+    {kGetPixelsName, kGetPixelsInfoSig, JXL_JNI_METHOD(GetPixels)}};
+
+static const size_t kNumDecoderMethods = 2;
+
+#undef JXL_JNI_METHOD
 
 JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void* reserved) {
   JNIEnv* env;
@@ -31,9 +40,7 @@ JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void* reserved) {
     return -1;
   }
 
-  if (env->RegisterNatives(
-          clazz, kDecoderMethods,
-          sizeof(kDecoderMethods) / sizeof(kDecoderMethods[0])) < 0) {
+  if (env->RegisterNatives(clazz, kDecoderMethods, kNumDecoderMethods) < 0) {
     return -1;
   }
 
