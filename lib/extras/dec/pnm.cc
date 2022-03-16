@@ -215,7 +215,12 @@ class Parser {
           return JXL_FAILURE("PAM: unknown TUPLTYPE");
         }
       } else {
-        return JXL_FAILURE("PAM: unknown header keyword: %s", pos_);
+        constexpr size_t kMaxHeaderLength = 20;
+        char unknown_header[kMaxHeaderLength + 1];
+        size_t len = std::min<size_t>(kMaxHeaderLength, end_ - pos_);
+        strncpy(unknown_header, reinterpret_cast<const char*>(pos_), len);
+        unknown_header[len] = 0;
+        return JXL_FAILURE("PAM: unknown header keyword: %s", unknown_header);
       }
     }
     size_t num_channels = header->is_gray ? 1 : 3;
