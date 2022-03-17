@@ -7,6 +7,7 @@
 #ifndef LIB_JXL_ENCODE_INTERNAL_H_
 #define LIB_JXL_ENCODE_INTERNAL_H_
 
+#include <deque>
 #include <vector>
 
 #include "jxl/encode.h"
@@ -69,14 +70,6 @@ struct JxlEncoderQueuedInput {
   MemoryManagerUniquePtr<JxlEncoderQueuedBox> box;
 };
 
-namespace {
-template <typename T>
-uint8_t* Extend(T* vec, size_t size) {
-  vec->resize(vec->size() + size, 0);
-  return vec->data() + vec->size() - size;
-}
-}  // namespace
-
 // Appends a JXL container box header with given type, size, and unbounded
 // properties to output.
 template <typename T>
@@ -91,14 +84,20 @@ void AppendBoxHeader(const jxl::BoxType& type, size_t size, bool unbounded,
     }
   }
 
-  StoreBE32(large_size ? 1 : box_size, Extend(output, 4));
-
+  {
+    const uint64_t store = large_size ? 1 : box_size;
+    for (size_t i = 0; i < 4; i++) {
+      output->push_back(store >> (8 * (3 - i)) & 0xff);
+    }
+  }
   for (size_t i = 0; i < 4; i++) {
-    output->push_back(*(type.data() + i));
+    output->push_back(type[i]);
   }
 
   if (large_size) {
-    StoreBE64(box_size, Extend(output, 8));
+    for (size_t i = 0; i < 8; i++) {
+      output->push_back(box_size >> (8 * (7 - i)) & 0xff);
+    }
   }
 }
 
@@ -117,7 +116,7 @@ struct JxlEncoderStruct {
   size_t num_queued_frames;
   size_t num_queued_boxes;
   std::vector<jxl::JxlEncoderQueuedInput> input_queue;
-  std::vector<uint8_t> output_byte_queue;
+  std::deque<uint8_t> output_byte_queue;
 
   // Force using the container even if not needed
   bool use_container;
