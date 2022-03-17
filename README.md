@@ -8,7 +8,7 @@ https://github.com/libjxl/libjxl/actions/workflows/release.yaml)
 https://libjxl.readthedocs.io/en/latest/?badge=latest)
 [![codecov](https://codecov.io/gh/libjxl/libjxl/branch/main/graph/badge.svg)](
 https://codecov.io/gh/libjxl/libjxl)
-
+ 
 <img src="doc/jxl.svg" width="100" align="right" alt="JXL logo">
 
 This repository contains a reference implementation of JPEG XL (encoder and
