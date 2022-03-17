@@ -197,6 +197,18 @@ class AvifCodec : public ImageCodec {
       decoder_ = AVIF_CODEC_CHOICE_DAV1D;
       return true;
     }
+    if (param.compare(0, 2, "a=") == 0) {
+      std::string subparam = param.substr(2);
+      size_t pos = subparam.find('=');
+      if (pos == std::string::npos) {
+        codec_specific_options_.emplace_back(subparam, "");
+      } else {
+        std::string key = subparam.substr(0, pos);
+        std::string value = subparam.substr(pos + 1);
+        codec_specific_options_.emplace_back(key, value);
+      }
+      return true;
+    }
     return ImageCodec::ParseParam(param);
   }
 
@@ -212,14 +224,16 @@ class AvifCodec : public ImageCodec {
           avifEncoderCreate(), &avifEncoderDestroy);
       encoder->codecChoice = encoder_;
       // TODO(sboukortt): configure this separately.
-      encoder->minQuantizer = encoder->maxQuantizer =
-          AVIF_QUANTIZER_BEST_QUALITY +
-          (AVIF_QUANTIZER_WORST_QUALITY - AVIF_QUANTIZER_BEST_QUALITY) *
-              (1 - 0.01 * q_target_);
+      encoder->minQuantizer = 0;
+      encoder->maxQuantizer = 63;
       encoder->tileColsLog2 = log2_cols;
       encoder->tileRowsLog2 = log2_rows;
       encoder->speed = speed_;
       encoder->maxThreads = pool->NumThreads();
+      for (const auto& opts : codec_specific_options_) {
+        avifEncoderSetCodecSpecificOption(encoder.get(), opts.first.c_str(),
+                                          opts.second.c_str());
+      }
       avifAddImageFlags add_image_flags = AVIF_ADD_IMAGE_FLAG_SINGLE;
       if (io->metadata.m.have_animation) {
         encoder->timescale = std::lround(
@@ -335,6 +349,7 @@ class AvifCodec : public ImageCodec {
   int speed_ = AVIF_SPEED_DEFAULT;
   int log2_cols = 0;
   int log2_rows = 0;
+  std::vector<std::pair<std::string, std::string>> codec_specific_options_;
 };
 
 ImageCodec* CreateNewAvifCodec(const BenchmarkArgs& args) {
