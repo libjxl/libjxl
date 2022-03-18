@@ -173,7 +173,7 @@ jxl::Status DecodeJpegXlContainerOneShot(const uint8_t* data, size_t size,
       if (memcmp(expected, in, 12) != 0) return JXL_FAILURE("Invalid ftyp");
     } else if (!memcmp("jxli", box.type, 4)) {
       // TODO(lode): parse JXL frame index box
-      if (container->codestream.size() > 0) {
+      if (!container->codestream.empty()) {
         return JXL_FAILURE("frame index must come before codestream");
       }
     } else if (!memcmp("jxlc", box.type, 4)) {
@@ -265,7 +265,7 @@ jxl::Status EncodeJpegXlContainerOneShot(const JpegXlContainer& container,
                                          out));
   }
 
-  if (container.codestream.size() > 0) {
+  if (!container.codestream.empty()) {
     JXL_RETURN_IF_ERROR(AppendBoxAndData("jxlc", container.codestream.data(),
                                          container.codestream.size(), out));
   } else {

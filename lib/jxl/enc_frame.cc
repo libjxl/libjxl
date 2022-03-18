@@ -304,7 +304,7 @@ Status MakeFrameHeader(const CompressParams& cparams,
   frame_header->flags = FrameFlagsFromParams(cparams);
   // Non-photon noise is not supported in the Modular encoder for now.
   if (frame_header->encoding != FrameEncoding::kVarDCT &&
-      cparams.photon_noise_iso == 0 && cparams.manual_noise.size() == 0) {
+      cparams.photon_noise_iso == 0 && cparams.manual_noise.empty()) {
     frame_header->UpdateFlag(false, FrameHeader::Flags::kNoise);
   }
 
