@@ -620,7 +620,15 @@ JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
     enc->metadata.m.animation.num_loops = info->animation.num_loops;
     enc->metadata.m.animation.have_timecodes = info->animation.have_timecodes;
   }
-
+  std::string level_message;
+  int required_level = VerifyLevelSettings(enc, &level_message);
+  if (required_level == -1 ||
+      static_cast<int>(enc->codestream_level) < required_level) {
+    return JXL_API_ERROR("%s", ("Codestream level verification for level " +
+                                std::to_string(enc->codestream_level) +
+                                " failed: " + level_message)
+                                   .c_str());
+  }
   return JXL_ENC_SUCCESS;
 }
 
@@ -662,6 +670,15 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelInfo(
   channel.spot_color[1] = info->spot_color[1];
   channel.spot_color[2] = info->spot_color[2];
   channel.spot_color[3] = info->spot_color[3];
+  std::string level_message;
+  int required_level = VerifyLevelSettings(enc, &level_message);
+  if (required_level == -1 ||
+      static_cast<int>(enc->codestream_level) < required_level) {
+    return JXL_API_ERROR("%s", ("Codestream level verification for level " +
+                                std::to_string(enc->codestream_level) +
+                                " failed: " + level_message)
+                                   .c_str());
+  }
   return JXL_ENC_SUCCESS;
 }
 
