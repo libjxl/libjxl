@@ -52,7 +52,7 @@ Image Image::clone() {
   c.transform = transform;
   for (Channel &ch : channel) {
     Channel a(ch.w, ch.h, ch.hshift, ch.vshift);
-    CopyImageTo(ch.plane, &a.plane);
+    CopyImageTo(*ch.GetPlane(), a.GetPlane());
     c.channel.push_back(std::move(a));
   }
   return c;

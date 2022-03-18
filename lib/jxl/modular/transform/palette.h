@@ -137,8 +137,8 @@ static Status InvPalette(Image &input, uint32_t begin_c, uint32_t nb_colors,
   }
   const Channel &palette = input.channel[0];
   const pixel_type *JXL_RESTRICT p_palette = input.channel[0].Row(0);
-  intptr_t onerow = input.channel[0].plane.PixelsPerRow();
-  intptr_t onerow_image = input.channel[c0].plane.PixelsPerRow();
+  intptr_t onerow = input.channel[0].PixelsPerRow();
+  intptr_t onerow_image = input.channel[c0].PixelsPerRow();
   const int bit_depth = input.bitdepth;
 
   if (w == 0) {
@@ -183,7 +183,7 @@ static Status InvPalette(Image &input, uint32_t begin_c, uint32_t nb_colors,
     }
   } else {
     // Parallelized per channel.
-    ImageI indices = CopyImage(input.channel[c0].plane);
+    ImageI indices = CopyImage(*input.channel[c0].GetPlane());
     if (predictor == Predictor::Weighted) {
       JXL_RETURN_IF_ERROR(RunOnPool(
           pool, 0, nb, ThreadPool::NoInit,

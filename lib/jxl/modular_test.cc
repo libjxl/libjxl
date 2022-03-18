@@ -215,11 +215,11 @@ TEST(ModularTest, RoundtripExtraProperties) {
   Rng rng(0);
   for (size_t y = 0; y < kSize; y++) {
     for (size_t x = 0; x < kSize; x++) {
-      image.channel[0].plane.Row(y)[x] = image.channel[2].plane.Row(y)[x] =
+      image.channel[0].Row(y)[x] = image.channel[2].Row(y)[x] =
           rng.UniformU(0, 9);
     }
   }
-  ZeroFillImage(&image.channel[1].plane);
+  image.channel[1].ZeroFill();
   BitWriter writer;
   ASSERT_TRUE(ModularGenericCompress(image, options, &writer));
   writer.ZeroPadToByte();
@@ -238,10 +238,9 @@ TEST(ModularTest, RoundtripExtraProperties) {
   ASSERT_TRUE(status);
   ASSERT_EQ(image.channel.size(), decoded.channel.size());
   for (size_t c = 0; c < image.channel.size(); c++) {
-    for (size_t y = 0; y < image.channel[c].plane.ysize(); y++) {
-      for (size_t x = 0; x < image.channel[c].plane.xsize(); x++) {
-        EXPECT_EQ(image.channel[c].plane.Row(y)[x],
-                  decoded.channel[c].plane.Row(y)[x])
+    for (size_t y = 0; y < image.channel[c].h; y++) {
+      for (size_t x = 0; x < image.channel[c].w; x++) {
+        EXPECT_EQ(image.channel[c].Row(y)[x], decoded.channel[c].Row(y)[x])
             << "c = " << c << ", x = " << x << ",  y = " << y;
       }
     }

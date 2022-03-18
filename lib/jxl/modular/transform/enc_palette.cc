@@ -220,8 +220,8 @@ Status FwdPaletteIteration(Image &input, uint32_t begin_c, uint32_t end_c,
   if (lossy) {
     quantized_input = Image(w, h, input.bitdepth, nb);
     for (size_t c = 0; c < nb; c++) {
-      CopyImageTo(input.channel[begin_c + c].plane,
-                  &quantized_input.channel[c].plane);
+      CopyImageTo(*input.channel[begin_c + c].GetPlane(),
+                  quantized_input.channel[c].GetPlane());
     }
   }
 
@@ -302,8 +302,8 @@ Status FwdPaletteIteration(Image &input, uint32_t begin_c, uint32_t end_c,
   Channel pch(nb_colors, nb);
   pch.hshift = -1;
   pixel_type *JXL_RESTRICT p_palette = pch.Row(0);
-  intptr_t onerow = pch.plane.PixelsPerRow();
-  intptr_t onerow_image = input.channel[begin_c].plane.PixelsPerRow();
+  intptr_t onerow = pch.PixelsPerRow();
+  intptr_t onerow_image = input.channel[begin_c].PixelsPerRow();
   const int bit_depth = input.bitdepth;
 
   if (lossy) {
