@@ -141,7 +141,7 @@ Status PassesDecoderState::PreparePipeline(ImageBundle* decoded,
                       : shared->frame_dim.ysize_upsampled;
 
   if (fast_xyb_srgb8_conversion) {
-    JXL_ASSERT(!ImageBlender::NeedsBlending(this));
+    JXL_ASSERT(!NeedsBlending(this));
     JXL_ASSERT(!frame_header.CanBeReferenced() ||
                frame_header.save_before_color_transform);
     JXL_ASSERT(!options.render_spotcolors ||
@@ -156,7 +156,7 @@ Status PassesDecoderState::PreparePipeline(ImageBundle* decoded,
       builder.AddStage(GetXYBStage(output_encoding_info));
     }  // Nothing to do for kNone.
 
-    if (options.coalescing && ImageBlender::NeedsBlending(this)) {
+    if (options.coalescing && NeedsBlending(this)) {
       builder.AddStage(
           GetBlendingStage(this, output_encoding_info.color_encoding));
     }
