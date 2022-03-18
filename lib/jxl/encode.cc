@@ -282,7 +282,7 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
         bytes.clear();
       }
 
-      if (store_jpeg_metadata && jpeg_metadata.size() > 0) {
+      if (store_jpeg_metadata && !jpeg_metadata.empty()) {
         jxl::AppendBoxHeader(jxl::MakeBoxType("jbrd"), jpeg_metadata.size(),
                              false, &output_byte_queue);
         output_byte_queue.insert(output_byte_queue.end(), jpeg_metadata.begin(),
