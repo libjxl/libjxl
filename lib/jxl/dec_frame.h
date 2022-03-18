@@ -246,7 +246,7 @@ class FrameDecoder {
         decoded_->metadata()->GetOrientation() != Orientation::kIdentity) {
       return false;
     }
-    if (ImageBlender::NeedsBlending(dec_state_)) return false;
+    if (NeedsBlending(dec_state_)) return false;
     if (frame_header_.CanBeReferenced()) return false;
     if (render_spotcolors_ &&
         decoded_->metadata()->Find(ExtraChannel::kSpotColor)) {
