@@ -117,6 +117,12 @@ struct JxlEncoderStruct {
   size_t num_queued_boxes;
   std::vector<jxl::JxlEncoderQueuedInput> input_queue;
   std::deque<uint8_t> output_byte_queue;
+  size_t output_bytes_flushed;
+
+  // Get the current write position in the stream (for indexing use).
+  size_t BytePosition() const {
+    return output_bytes_flushed + output_byte_queue.size();
+  }
 
   // Force using the container even if not needed
   bool use_container;
