@@ -9,7 +9,6 @@
 #include <queue>
 #include <tuple>
 
-#include "lib/extras/codec.h"
 #include "lib/jxl/aux_out.h"
 #include "lib/jxl/base/arch_macros.h"
 
