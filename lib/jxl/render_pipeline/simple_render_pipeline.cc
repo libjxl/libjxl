@@ -5,7 +5,9 @@
 
 #include "lib/jxl/render_pipeline/simple_render_pipeline.h"
 
+#include "hwy/base.h"
 #include "lib/jxl/image_ops.h"
+#include "lib/jxl/render_pipeline/render_pipeline_stage.h"
 #include "lib/jxl/sanitizers.h"
 
 namespace jxl {
@@ -84,11 +86,18 @@ void SimpleRenderPipeline::ProcessBuffers(size_t group_id, size_t thread_id) {
       if (stage->GetChannelMode(c) != RenderPipelineChannelMode::kInOut) {
         continue;
       }
+      // Ensure that the newly allocated channels are large enough to avoid
+      // problems with padding.
       new_channels[c] =
-          ImageF((input_sizes[c].first << stage->settings_.shift_x) +
-                     kRenderPipelineXOffset * 2,
-                 (input_sizes[c].second << stage->settings_.shift_y) +
+          ImageF(frame_dimensions_.xsize_upsampled_padded +
+                     kRenderPipelineXOffset * 2 + hwy::kMaxVectorSize * 8,
+                 frame_dimensions_.ysize_upsampled_padded +
                      kRenderPipelineXOffset * 2);
+      new_channels[c].ShrinkTo(
+          (input_sizes[c].first << stage->settings_.shift_x) +
+              kRenderPipelineXOffset * 2,
+          (input_sizes[c].second << stage->settings_.shift_y) +
+              kRenderPipelineXOffset * 2);
       output_channels[c] = &new_channels[c];
     }
 
