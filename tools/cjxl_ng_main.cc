@@ -470,7 +470,7 @@ int main(int argc, char** argv) {
       JxlEncoderSetCodestreamLevel(jxl_encoder, FLAGS_codestream_level);
     }
 
-    if (FLAGS_frame_indexing.size() > 0) {
+    if (!FLAGS_frame_indexing.empty()) {
       bool must_be_all_zeros = FLAGS_frame_indexing[0] != '1';
       for (char c : FLAGS_frame_indexing) {
         if (c == '1') {
@@ -808,7 +808,7 @@ int main(int argc, char** argv) {
       }
     }
 
-    if (ppf.icc.size() > 0) {
+    if (!ppf.icc.empty()) {
       JxlEncoderStatus enc_status =
           JxlEncoderSetICCProfile(jxl_encoder, ppf.icc.data(), ppf.icc.size());
       if (JXL_ENC_SUCCESS != enc_status) {
