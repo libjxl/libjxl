@@ -1008,6 +1008,7 @@ void JxlEncoderReset(JxlEncoder* enc) {
   enc->num_queued_boxes = 0;
   enc->encoder_options.clear();
   enc->output_byte_queue.clear();
+  enc->output_bytes_flushed = 0;
   enc->wrote_bytes = false;
   enc->jxlp_counter = 0;
   enc->metadata = jxl::CodecMetadata();
@@ -1349,6 +1350,7 @@ JxlEncoderStatus JxlEncoderProcessOutput(JxlEncoder* enc, uint8_t** next_out,
       std::copy_n(enc->output_byte_queue.begin(), to_copy, *next_out);
       *next_out += to_copy;
       *avail_out -= to_copy;
+      enc->output_bytes_flushed += to_copy;
       enc->output_byte_queue.erase(enc->output_byte_queue.begin(),
                                    enc->output_byte_queue.begin() + to_copy);
     } else if (!enc->input_queue.empty()) {
