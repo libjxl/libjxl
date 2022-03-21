@@ -126,7 +126,8 @@ class BlendingStage : public RenderPipelineStage {
     }
     std::vector<const float*> bg_row_ptrs_(input_rows.size());
     std::vector<float*> fg_row_ptrs_(input_rows.size());
-    for (size_t c = 0; c < input_rows.size(); ++c) {
+    size_t num_c = std::min(input_rows.size(), extra_channel_info_->size() + 3);
+    for (size_t c = 0; c < num_c; ++c) {
       fg_row_ptrs_[c] = GetInputRow(input_rows, c, 0) + offset;
       if (c < 3) {
         bg_row_ptrs_[c] =
