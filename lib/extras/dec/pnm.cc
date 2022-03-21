@@ -312,6 +312,9 @@ Status DecodeImagePNM(const Span<const uint8_t> bytes,
     return JXL_FAILURE("PNM: bits_per_sample invalid");
   }
 
+  // PPM specify that in the raster, the sample values are "nonlinear" (BP.709,
+  // with gamma number of 2.2). Deviate from the specification and assume
+  // `sRGB` in our implementation.
   JXL_RETURN_IF_ERROR(ApplyColorHints(color_hints, /*color_already_set=*/false,
                                       header.is_gray, ppf));
 
