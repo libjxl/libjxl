@@ -146,6 +146,10 @@ int VerifyLevelSettings(const JxlEncoder* enc, std::string* debug_string) {
 
   // Level 5 checks
 
+  if (!m.modular_16_bit_buffer_sufficient) {
+    if (debug_string) *debug_string = "Too high modular bit depth";
+    return 10;
+  }
   if (xsize > (1ull << 18ull) || ysize > (1ull << 18ull) ||
       xsize * ysize > (1ull << 28ull)) {
     if (debug_string) *debug_string = "Too large image dimensions";
@@ -563,7 +567,8 @@ JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
   enc->metadata.m.bit_depth.floating_point_sample =
       (info->exponent_bits_per_sample != 0u);
   enc->metadata.m.modular_16_bit_buffer_sufficient =
-      (info->exponent_bits_per_sample == 0u) && info->bits_per_sample <= 12;
+      (!info->uses_original_profile || info->bits_per_sample <= 12) &&
+      info->alpha_bits <= 12;
 
   // The number of extra channels includes the alpha channel, so for example and
   // RGBA with no other extra channels, has exactly num_extra_channels == 1
@@ -654,6 +659,8 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelInfo(
   jxl::ExtraChannelInfo& channel = enc->metadata.m.extra_channel_info[index];
   channel.type = static_cast<jxl::ExtraChannel>(info->type);
   channel.bit_depth.bits_per_sample = info->bits_per_sample;
+  enc->metadata.m.modular_16_bit_buffer_sufficient &=
+      info->bits_per_sample <= 12;
   channel.bit_depth.exponent_bits_per_sample = info->exponent_bits_per_sample;
   channel.bit_depth.floating_point_sample = info->exponent_bits_per_sample != 0;
   channel.dim_shift = info->dim_shift;
@@ -690,6 +697,7 @@ JxlEncoderFrameSettings* JxlEncoderFrameSettingsCreate(
   } else {
     opts->values.lossless = false;
   }
+  opts->values.cparams.level = enc->codestream_level;
   JxlEncoderFrameSettings* ret = opts.get();
   enc->encoder_options.emplace_back(std::move(opts));
   return ret;
@@ -1271,6 +1279,8 @@ JxlEncoderStatus JxlEncoderAddImageFrame(
   if (frame_settings->values.lossless) {
     queued_frame->option_values.cparams.SetLossless();
   }
+  queued_frame->option_values.cparams.level =
+      frame_settings->enc->codestream_level;
 
   QueueFrame(frame_settings, queued_frame);
   return JXL_ENC_SUCCESS;

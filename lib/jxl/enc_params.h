@@ -255,6 +255,10 @@ struct CompressParams {
   // Skip the downsampling before encoding if this is true.
   bool already_downsampled = false;
 
+  // Codestream level to conform to.
+  // -1: don't care
+  int level = -1;
+
   std::vector<float> manual_noise;
   std::vector<float> manual_xyb_factors;
 };
