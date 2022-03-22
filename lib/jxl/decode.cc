@@ -1065,6 +1065,7 @@ static JxlDecoderStatus ConvertImageInternal(
 
   jxl::Status status(true);
   if (want_extra_channel) {
+    JXL_ASSERT(extra_channel_index < frame.extra_channels().size());
     status = jxl::ConvertToExternal(
         frame.extra_channels()[extra_channel_index],
         BitsPerChannel(format.data_type), float_format, format.endianness,
@@ -1563,14 +1564,20 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec, const uint8_t* in,
           }
           dec->image_out_buffer_set = false;
 
+          bool has_ec = !dec->ib->extra_channels().empty();
           for (size_t i = 0; i < dec->extra_channel_output.size(); ++i) {
             void* buffer = dec->extra_channel_output[i].buffer;
             // buffer nullptr indicates this extra channel is not requested
             if (!buffer) continue;
+            if (!has_ec) {
+              JXL_WARNING(
+                  "Extra channels are not supported when callback is used");
+              return JXL_DEC_ERROR;
+            }
             const JxlPixelFormat* format = &dec->extra_channel_output[i].format;
             JxlDecoderStatus status = ConvertImageInternal(
                 dec, *dec->ib, *format,
-                /*want_extra_channel=*/true, i, buffer,
+                /*want_extra_channel=*/true, /*extra_channel_index=*/i, buffer,
                 dec->extra_channel_output[i].buffer_size, nullptr, nullptr);
             if (status != JXL_DEC_SUCCESS) return status;
           }
