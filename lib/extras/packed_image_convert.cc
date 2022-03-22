@@ -144,11 +144,13 @@ Status ConvertPackedPixelFileToCodecInOut(const PackedPixelFile& ppf,
         /*flipped_y=*/frame.color.flipped_y, pool, &bundle,
         /*float_in=*/float_in, /*align=*/0));
 
-    for (const auto& ppf_ec : frame.extra_channels) {
-      bundle.extra_channels().emplace_back(ppf_ec.xsize, ppf_ec.ysize);
+    bundle.extra_channels().resize(io->metadata.m.extra_channel_info.size());
+    for (size_t i = 0; i < frame.extra_channels.size(); i++) {
+      const auto& ppf_ec = frame.extra_channels[i];
+      bundle.extra_channels()[i] = ImageF(ppf_ec.xsize, ppf_ec.ysize);
       JXL_CHECK(BufferToImageF(ppf_ec.format, ppf_ec.xsize, ppf_ec.ysize,
                                ppf_ec.pixels(), ppf_ec.pixels_size, pool,
-                               &bundle.extra_channels().back()));
+                               &bundle.extra_channels()[i]));
     }
 
     io->frames.push_back(std::move(bundle));
