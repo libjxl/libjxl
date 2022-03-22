@@ -16,6 +16,7 @@
 #include "jxl/encode_cxx.h"
 #include "jxl/thread_parallel_runner.h"
 #include "jxl/thread_parallel_runner_cxx.h"
+#include "jxl/types.h"
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/apng.h"
 #include "lib/extras/dec/color_hints.h"
@@ -24,6 +25,7 @@
 #include "lib/extras/dec/pgx.h"
 #include "lib/extras/dec/pnm.h"
 #include "lib/jxl/base/file_io.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/size_constraints.h"
 
 DECLARE_bool(help);
@@ -842,47 +844,54 @@ int main(int argc, char** argv) {
       }
       jxl::Status enc_status(true);
       {
-        enc_status =
-            JxlEncoderAddImageFrame(jxl_encoder_frame_settings, &ppixelformat,
-                                    pimage.pixels(), pimage.pixels_size);
-        if (JXL_ENC_SUCCESS != enc_status) {
-          // TODO(tfish): Fix such status handling throughout.  We should
-          // have more detail available about what went wrong than what we
-          // currently share with the caller.
-          std::cerr << "JxlEncoderAddImageFrame() failed.\n";
-          return EXIT_FAILURE;
-        }
         if (num_alpha_channels > 0) {
           JxlExtraChannelInfo extra_channel_info;
-          // TODO(tfish): Clarify if it is OK to leave some fields in this
-          // struct un-initialized.
-          extra_channel_info.type = JXL_CHANNEL_ALPHA;
-          extra_channel_info.bits_per_sample = 8;
-          extra_channel_info.exponent_bits_per_sample = 0;
-          extra_channel_info.dim_shift = 0;
-          extra_channel_info.name_length = 0;
-          extra_channel_info.alpha_premultiplied = FLAGS_premultiply;
+          JxlEncoderInitExtraChannelInfo(JXL_CHANNEL_ALPHA,
+                                         &extra_channel_info);
           enc_status = JxlEncoderSetExtraChannelInfo(jxl_encoder, 0,
                                                      &extra_channel_info);
           if (JXL_ENC_SUCCESS != enc_status) {
             std::cerr << "JxlEncoderSetExtraChannelInfo() failed.\n";
             return EXIT_FAILURE;
           }
-          enc_status = JxlEncoderSetExtraChannelBuffer(
-              jxl_encoder_frame_settings, &ppixelformat,
-              pframe.extra_channels[0].pixels(),
-              pframe.extra_channels[0].stride * pframe.extra_channels[0].ysize,
-              0);
+          extra_channel_info.alpha_premultiplied = FLAGS_premultiply;
+
+          // We take the extra channel blend info frame_info, but don't do
+          // clamping.
+          JxlBlendInfo extra_channel_blend_info =
+              pframe.frame_info.layer_info.blend_info;
+          extra_channel_blend_info.clamp = JXL_FALSE;
+          JxlEncoderSetExtraChannelBlendInfo(jxl_encoder_frame_settings, 0,
+                                             &extra_channel_blend_info);
+
+          enc_status =
+              JxlEncoderAddImageFrame(jxl_encoder_frame_settings, &ppixelformat,
+                                      pimage.pixels(), pimage.pixels_size);
           if (JXL_ENC_SUCCESS != enc_status) {
-            std::cerr << "JxlEncoderSetExtraChannelBuffer() failed.\n";
+            // TODO(tfish): Fix such status handling throughout.  We should
+            // have more detail available about what went wrong than what we
+            // currently share with the caller.
+            std::cerr << "JxlEncoderAddImageFrame() failed.\n";
             return EXIT_FAILURE;
+          }
+          // Only set extra channel buffer if is is provided non-interleaved
+          if (!pframe.extra_channels.empty()) {
+            enc_status = JxlEncoderSetExtraChannelBuffer(
+                jxl_encoder_frame_settings, &ppixelformat,
+                pframe.extra_channels[0].pixels(),
+                pframe.extra_channels[0].stride *
+                    pframe.extra_channels[0].ysize,
+                0);
+            if (JXL_ENC_SUCCESS != enc_status) {
+              std::cerr << "JxlEncoderSetExtraChannelBuffer() failed.\n";
+              return EXIT_FAILURE;
+            }
           }
         }
       }
     }
   }
   JxlEncoderCloseInput(jxl_encoder);
-
   // Reading compressed output
   std::vector<uint8_t> compressed;
   compressed.resize(4096);
