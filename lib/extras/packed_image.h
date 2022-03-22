@@ -116,16 +116,6 @@ class PackedFrame {
   JxlFrameHeader frame_info = {};
   std::string name;
 
-  // Offset of the frame in the image.
-  // TODO(deymo): Add support in the API for this.
-  size_t x0 = 0;
-  size_t y0 = 0;
-
-  // Whether this frame should be blended with the previous one.
-  // TODO(deymo): Maybe add support for this in the API.
-  bool blend = false;
-  bool use_for_next_frame = false;
-
   // The pixel data for the color (or grayscale) channels.
   PackedImage color;
   // Extra channel image data.

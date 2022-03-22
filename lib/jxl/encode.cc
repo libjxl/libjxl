@@ -363,9 +363,10 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
         input_frame->option_values.header.layer_info.blend_info.alpha;
     frame_info.extra_channel_blending_info.resize(
         metadata.m.num_extra_channels);
-    // If extra channel blend info has not been set, use the default values.
-    JxlBlendInfo default_blend_info;
-    JxlEncoderInitBlendInfo(&default_blend_info);
+    // If extra channel blend info has not been set, use the blend mode from the
+    // layer_info.
+    JxlBlendInfo default_blend_info =
+        input_frame->option_values.header.layer_info.blend_info;
     for (size_t i = 0; i < metadata.m.num_extra_channels; ++i) {
       auto& to = frame_info.extra_channel_blending_info[i];
       const auto& from =
@@ -375,6 +376,7 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
       to.mode = static_cast<jxl::BlendMode>(from.blendmode);
       to.source = from.source;
       to.alpha_channel = from.alpha;
+      to.clamp = (from.clamp != 0);
     }
 
     if (input_frame->option_values.header.layer_info.have_crop) {
@@ -1247,6 +1249,19 @@ JxlEncoderStatus JxlEncoderAddImageFrame(
       queued_frame->ec_initialized.push_back(0);
     }
   }
+  queued_frame->frame.origin.x0 =
+      frame_settings->values.header.layer_info.crop_x0;
+  queued_frame->frame.origin.y0 =
+      frame_settings->values.header.layer_info.crop_y0;
+  queued_frame->frame.use_for_next_frame =
+      (frame_settings->values.header.layer_info.save_as_reference != 0u);
+  queued_frame->frame.blendmode =
+      frame_settings->values.header.layer_info.blend_info.blendmode ==
+              JXL_BLEND_REPLACE
+          ? jxl::BlendMode::kReplace
+          : jxl::BlendMode::kBlend;
+  queued_frame->frame.blend =
+      frame_settings->values.header.layer_info.blend_info.source > 0;
 
   if (!jxl::BufferToImageBundle(*pixel_format, xsize, ysize, buffer, size,
                                 frame_settings->enc->thread_pool.get(),
