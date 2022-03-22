@@ -50,24 +50,31 @@ void LowMemoryRenderPipeline::SaveBorders(size_t group_id, size_t c,
   size_t borderx_write = borders.first;
   size_t bordery_write = borders.second;
 
-  CopyImageTo(
-      Rect(group_data_x_border_, group_data_y_border_, x1 - x0, bordery_write),
-      in, Rect(x0, (gy * 2) * bordery_write, x1 - x0, bordery_write),
-      &borders_horizontal_[c]);
-  CopyImageTo(
-      Rect(group_data_x_border_, group_data_y_border_ + y1 - y0 - bordery_write,
-           x1 - x0, bordery_write),
-      in, Rect(x0, (gy * 2 + 1) * bordery_write, x1 - x0, bordery_write),
-      &borders_horizontal_[c]);
-  CopyImageTo(
-      Rect(group_data_x_border_, group_data_y_border_, borderx_write, y1 - y0),
-      in, Rect((gx * 2) * borderx_write, y0, borderx_write, y1 - y0),
-      &borders_vertical_[c]);
-  CopyImageTo(Rect(group_data_x_border_ + x1 - x0 - borderx_write,
-                   group_data_y_border_, borderx_write, y1 - y0),
-              in,
-              Rect((gx * 2 + 1) * borderx_write, y0, borderx_write, y1 - y0),
-              &borders_vertical_[c]);
+  if (gy > 0) {
+    Rect from(group_data_x_border_, group_data_y_border_, x1 - x0,
+              bordery_write);
+    Rect to(x0, (gy * 2 - 1) * bordery_write, x1 - x0, bordery_write);
+    CopyImageTo(from, in, to, &borders_horizontal_[c]);
+  }
+  if (gy + 1 < frame_dimensions_.ysize_groups) {
+    Rect from(group_data_x_border_,
+              group_data_y_border_ + y1 - y0 - bordery_write, x1 - x0,
+              bordery_write);
+    Rect to(x0, (gy * 2) * bordery_write, x1 - x0, bordery_write);
+    CopyImageTo(from, in, to, &borders_horizontal_[c]);
+  }
+  if (gx > 0) {
+    Rect from(group_data_x_border_, group_data_y_border_, borderx_write,
+              y1 - y0);
+    Rect to((gx * 2 - 1) * borderx_write, y0, borderx_write, y1 - y0);
+    CopyImageTo(from, in, to, &borders_vertical_[c]);
+  }
+  if (gx + 1 < frame_dimensions_.xsize_groups) {
+    Rect from(group_data_x_border_ + x1 - x0 - borderx_write,
+              group_data_y_border_, borderx_write, y1 - y0);
+    Rect to((gx * 2) * borderx_write, y0, borderx_write, y1 - y0);
+    CopyImageTo(from, in, to, &borders_vertical_[c]);
+  }
 }
 
 void LowMemoryRenderPipeline::LoadBorders(size_t group_id, size_t c,
@@ -119,7 +126,7 @@ void LowMemoryRenderPipeline::LoadBorders(size_t group_id, size_t c,
   if (y0src < y0) {
     JXL_DASSERT(gy > 0);
     CopyImageTo(
-        Rect(x0src, (gy * 2 - 1) * bordery_write, x1src - x0src, bordery_write),
+        Rect(x0src, (gy * 2 - 2) * bordery_write, x1src - x0src, bordery_write),
         borders_horizontal_[c],
         Rect(group_data_x_border_ + x0src - x0,
              group_data_y_border_ - bordery_write, x1src - x0src,
@@ -130,7 +137,7 @@ void LowMemoryRenderPipeline::LoadBorders(size_t group_id, size_t c,
     // When copying the bottom border we must not be on the bottom groups.
     JXL_DASSERT(gy + 1 < frame_dimensions_.ysize_groups);
     CopyImageTo(
-        Rect(x0src, (gy * 2 + 2) * bordery_write, x1src - x0src, bordery_write),
+        Rect(x0src, (gy * 2 + 1) * bordery_write, x1src - x0src, bordery_write),
         borders_horizontal_[c],
         Rect(group_data_x_border_ + x0src - x0, group_data_y_border_ + y1 - y0,
              x1src - x0src, bordery_write),
@@ -139,7 +146,7 @@ void LowMemoryRenderPipeline::LoadBorders(size_t group_id, size_t c,
   if (x0src < x0) {
     JXL_DASSERT(gx > 0);
     CopyImageTo(
-        Rect((gx * 2 - 1) * borderx_write, y0src, borderx_write, y1src - y0src),
+        Rect((gx * 2 - 2) * borderx_write, y0src, borderx_write, y1src - y0src),
         borders_vertical_[c],
         Rect(group_data_x_border_ - borderx_write,
              group_data_y_border_ + y0src - y0, borderx_write, y1src - y0src),
@@ -149,7 +156,7 @@ void LowMemoryRenderPipeline::LoadBorders(size_t group_id, size_t c,
     // When copying the right border we must not be on the rightmost groups.
     JXL_DASSERT(gx + 1 < frame_dimensions_.xsize_groups);
     CopyImageTo(
-        Rect((gx * 2 + 2) * borderx_write, y0src, borderx_write, y1src - y0src),
+        Rect((gx * 2 + 1) * borderx_write, y0src, borderx_write, y1src - y0src),
         borders_vertical_[c],
         Rect(group_data_x_border_ + x1 - x0, group_data_y_border_ + y0src - y0,
              borderx_write, y1src - y0src),
@@ -177,16 +184,19 @@ void LowMemoryRenderPipeline::EnsureBordersStorage() {
     auto borders = BorderToStore(c);
     size_t borderx = borders.first;
     size_t bordery = borders.second;
-    Rect horizontal = Rect(
-        0, 0,
-        DivCeil(frame_dimensions_.xsize_upsampled_padded, 1 << shifts[c].first),
-        bordery * frame_dimensions_.ysize_groups * 2);
+    JXL_DASSERT(frame_dimensions_.xsize_groups > 0);
+    size_t num_xborders = (frame_dimensions_.xsize_groups - 1) * 2;
+    JXL_DASSERT(frame_dimensions_.ysize_groups > 0);
+    size_t num_yborders = (frame_dimensions_.ysize_groups - 1) * 2;
+    size_t downsampled_xsize =
+        DivCeil(frame_dimensions_.xsize_upsampled_padded, 1 << shifts[c].first);
+    size_t downsampled_ysize = DivCeil(frame_dimensions_.ysize_upsampled_padded,
+                                       1 << shifts[c].second);
+    Rect horizontal = Rect(0, 0, downsampled_xsize, bordery * num_yborders);
     if (!SameSize(horizontal, borders_horizontal_[c])) {
       borders_horizontal_[c] = ImageF(horizontal.xsize(), horizontal.ysize());
     }
-    Rect vertical = Rect(0, 0, borderx * frame_dimensions_.xsize_groups * 2,
-                         DivCeil(frame_dimensions_.ysize_upsampled_padded,
-                                 1 << shifts[c].second));
+    Rect vertical = Rect(0, 0, borderx * num_xborders, downsampled_ysize);
     if (!SameSize(vertical, borders_vertical_[c])) {
       borders_vertical_[c] = ImageF(vertical.xsize(), vertical.ysize());
     }
