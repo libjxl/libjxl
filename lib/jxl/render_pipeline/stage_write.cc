@@ -190,6 +190,7 @@ class WriteToImageBundleStage : public RenderPipelineStage {
       JXL_ASSERT(input_sizes[c].second == input_sizes[0].second);
     }
 #endif
+    // TODO(eustas): what should we do in the case of "want only ECs"?
     image_bundle_->SetFromImage(
         Image3F(input_sizes[0].first, input_sizes[0].second), color_encoding_);
     // TODO(veluca): consider not reallocating ECs if not needed.
