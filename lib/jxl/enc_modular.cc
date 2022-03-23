@@ -228,11 +228,18 @@ void QuantizeChannel(Channel& ch, const int q) {
 // fit in pixel_type
 Status float_to_int(const float* const row_in, pixel_type* const row_out,
                     size_t xsize, unsigned int bits, unsigned int exp_bits,
-                    bool fp, float factor) {
+                    bool fp, double dfactor) {
   JXL_ASSERT(sizeof(pixel_type) * 8 >= bits);
   if (!fp) {
-    for (size_t x = 0; x < xsize; ++x) {
-      row_out[x] = row_in[x] * factor + (row_in[x] < 0 ? -0.5f : 0.5f);
+    if (bits > 22) {
+      for (size_t x = 0; x < xsize; ++x) {
+        row_out[x] = row_in[x] * dfactor + (row_in[x] < 0 ? -0.5 : 0.5);
+      }
+    } else {
+      float factor = dfactor;
+      for (size_t x = 0; x < xsize; ++x) {
+        row_out[x] = row_in[x] * factor + (row_in[x] < 0 ? -0.5f : 0.5f);
+      }
     }
     return true;
   }
@@ -523,7 +530,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
       // XYB is encoded as YX(B-Y)
       if (cparams.color_transform == ColorTransform::kXYB && c < 2)
         c_out = 1 - c_out;
-      float factor = maxval;
+      double factor = maxval;
       if (cparams.color_transform == ColorTransform::kXYB)
         factor = enc_state->shared.matrices.InvDCQuant(c);
       if (c == 2 && cparams.color_transform == ColorTransform::kXYB) {
@@ -581,7 +588,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
     int bits = eci.bit_depth.bits_per_sample;
     int exp_bits = eci.bit_depth.exponent_bits_per_sample;
     bool fp = eci.bit_depth.floating_point_sample;
-    float factor = (fp ? 1 : ((1u << eci.bit_depth.bits_per_sample) - 1));
+    double factor = (fp ? 1 : ((1u << eci.bit_depth.bits_per_sample) - 1));
     std::atomic<bool> has_error{false};
     JXL_RETURN_IF_ERROR(RunOnPool(
         pool, 0, gi.channel[c].plane.ysize(), ThreadPool::NoInit,

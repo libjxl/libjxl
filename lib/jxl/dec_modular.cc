@@ -89,6 +89,16 @@ HWY_EXPORT(MultiplySum);       // Local function
 HWY_EXPORT(RgbFromSingle);     // Local function
 HWY_EXPORT(SingleFromSingle);  // Local function
 
+// Slow conversion using double precision multiplication, only
+// needed when the bit depth is too high for single precision
+void SingleFromSingleAccurate(const size_t xsize,
+                              const pixel_type* const JXL_RESTRICT row_in,
+                              const double factor, float* row_out) {
+  for (size_t x = 0; x < xsize; x++) {
+    row_out[x] = row_in[x] * factor;
+  }
+}
+
 // convert custom [bits]-bit float (with [exp_bits] exponent bits) stored as int
 // back to binary32 float
 void int_to_float(const pixel_type* const JXL_RESTRICT row_in,
@@ -470,9 +480,9 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
     const bool fp = metadata->m.bit_depth.floating_point_sample &&
                     frame_header.color_transform != ColorTransform::kXYB;
     for (; c < 3; c++) {
-      float factor = full_image.bitdepth < 32
-                         ? 1.f / ((1u << full_image.bitdepth) - 1)
-                         : 0;
+      double factor = full_image.bitdepth < 32
+                          ? 1.0 / ((1u << full_image.bitdepth) - 1)
+                          : 0;
       size_t c_in = c;
       if (frame_header.color_transform == ColorTransform::kXYB) {
         factor = dec_state->shared->matrices.DCQuants()[c];
@@ -546,13 +556,27 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
               const pixel_type* const JXL_RESTRICT row_in =
                   mr.Row(&ch_in.plane, y);
               if (rgb_from_gray) {
-                HWY_DYNAMIC_DISPATCH(RgbFromSingle)
-                (xsize_shifted, row_in, factor, get_row(r, 0, y),
-                 get_row(r, 1, y), get_row(r, 2, y));
+                if (full_image.bitdepth < 23) {
+                  HWY_DYNAMIC_DISPATCH(RgbFromSingle)
+                  (xsize_shifted, row_in, factor, get_row(r, 0, y),
+                   get_row(r, 1, y), get_row(r, 2, y));
+                } else {
+                  SingleFromSingleAccurate(xsize_shifted, row_in, factor,
+                                           get_row(r, 0, y));
+                  SingleFromSingleAccurate(xsize_shifted, row_in, factor,
+                                           get_row(r, 0, y));
+                  SingleFromSingleAccurate(xsize_shifted, row_in, factor,
+                                           get_row(r, 0, y));
+                }
               } else {
                 float* const JXL_RESTRICT row_out = get_row(r, c, y);
-                HWY_DYNAMIC_DISPATCH(SingleFromSingle)
-                (xsize_shifted, row_in, factor, row_out);
+                if (full_image.bitdepth < 23) {
+                  HWY_DYNAMIC_DISPATCH(SingleFromSingle)
+                  (xsize_shifted, row_in, factor, row_out);
+                } else {
+                  SingleFromSingleAccurate(xsize_shifted, row_in, factor,
+                                           row_out);
+                }
               }
             },
             "ModularIntToFloat"));
@@ -572,7 +596,7 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
     int exp_bits = eci.bit_depth.exponent_bits_per_sample;
     bool fp = eci.bit_depth.floating_point_sample;
     JXL_ASSERT(fp || bits < 32);
-    const float mul = fp ? 0 : (1.0f / ((1u << bits) - 1));
+    const double factor = fp ? 0 : (1.0 / ((1u << bits) - 1));
     JXL_ASSERT(c < gi.channel.size());
     Channel& ch_in = gi.channel[c];
     Rect r = render_pipeline_input.GetBuffer(3 + ec).second;
@@ -589,8 +613,11 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
       if (fp) {
         int_to_float(row_in, row_out, r.xsize(), bits, exp_bits);
       } else {
-        for (size_t x = 0; x < r.xsize(); ++x) {
-          row_out[x] = row_in[x] * mul;
+        if (full_image.bitdepth < 23) {
+          HWY_DYNAMIC_DISPATCH(SingleFromSingle)
+          (r.xsize(), row_in, factor, row_out);
+        } else {
+          SingleFromSingleAccurate(r.xsize(), row_in, factor, row_out);
         }
       }
     }
