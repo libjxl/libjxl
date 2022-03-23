@@ -609,6 +609,11 @@ namespace {
 bool CheckSizeLimit(JxlDecoder* dec, size_t xsize, size_t ysize) {
   if (!dec->memory_limit_base) return true;
   if (xsize == 0 || ysize == 0) return true;
+  if (xsize >= dec->memory_limit_base || ysize >= dec->memory_limit_base) {
+    return false;
+  }
+  // Rough estimate of real row length.
+  xsize = jxl::DivCeil(xsize, 32) * 32;
   size_t num_pixels = xsize * ysize;
   if (num_pixels / xsize != ysize) return false;  // overflow
   if (num_pixels > dec->memory_limit_base) return false;
