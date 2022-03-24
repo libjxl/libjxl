@@ -38,6 +38,7 @@ TEST(EncodeTest, AddFrameAfterCloseInputTest) {
   basic_info.xsize = xsize;
   basic_info.ysize = ysize;
   basic_info.uses_original_profile = false;
+  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetCodestreamLevel(enc.get(), 10));
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
   JxlColorEncoding color_encoding;
   JxlColorEncodingSetToSRGB(&color_encoding,
@@ -85,6 +86,7 @@ TEST(EncodeTest, AddFrameBeforeColorEncodingTest) {
   basic_info.xsize = xsize;
   basic_info.ysize = ysize;
   basic_info.uses_original_profile = true;
+  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetCodestreamLevel(enc.get(), 10));
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
   JxlEncoderFrameSettings* frame_settings =
       JxlEncoderFrameSettingsCreate(enc.get(), NULL);

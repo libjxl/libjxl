@@ -47,8 +47,6 @@ std::string ExtensionFromCodec(Codec codec, const bool is_gray,
       return ".gif";
     case Codec::kEXR:
       return ".exr";
-    case Codec::kPSD:
-      return ".psd";
     case Codec::kUnknown:
       return std::string();
   }
@@ -82,8 +80,6 @@ Codec CodecFromExtension(std::string extension,
   if (extension == ".gif") return Codec::kGIF;
 
   if (extension == ".exr") return Codec::kEXR;
-
-  if (extension == ".psd") return Codec::kPSD;
 
   return Codec::kUnknown;
 }
