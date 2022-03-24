@@ -25,6 +25,7 @@
 #include "lib/jxl/dec_file.h"
 #include "lib/jxl/dec_params.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
+#include "lib/jxl/enc_butteraugli_pnorm.h"
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_file.h"
@@ -279,6 +280,105 @@ TEST(ModularTest, RoundtripLosslessCustomSqueeze) {
   EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 265000u);
   EXPECT_EQ(0.0, ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
                                      /*distmap=*/nullptr, pool));
+}
+
+struct RoundtripLosslessConfig {
+  int bitdepth;
+  int responsive;
+};
+class ModularTestParam
+    : public ::testing::TestWithParam<RoundtripLosslessConfig> {};
+
+std::vector<RoundtripLosslessConfig> GenerateLosslessTests() {
+  std::vector<RoundtripLosslessConfig> all;
+  for (int responsive = 0; responsive <= 1; responsive++) {
+    for (int bitdepth = 1; bitdepth < 32; bitdepth++) {
+      if (responsive && bitdepth > 30) continue;
+      all.push_back({bitdepth, responsive});
+    }
+  }
+  return all;
+}
+std::string LosslessTestDescription(
+    const testing::TestParamInfo<ModularTestParam::ParamType>& info) {
+  std::stringstream name;
+  name << info.param.bitdepth << "bit";
+  if (info.param.responsive) name << "Squeeze";
+  return name.str();
+}
+
+JXL_GTEST_INSTANTIATE_TEST_SUITE_P(RoundtripLossless, ModularTestParam,
+                                   testing::ValuesIn(GenerateLosslessTests()),
+                                   LosslessTestDescription);
+
+TEST_P(ModularTestParam, RoundtripLossless) {
+  RoundtripLosslessConfig config = GetParam();
+  int bitdepth = config.bitdepth;
+  int responsive = config.responsive;
+
+  ThreadPool* pool = nullptr;
+  Rng generator(123);
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  CodecInOut io1;
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io1, pool));
+
+  // vary the dimensions a bit, in case of bugs related to
+  // even vs odd width or height.
+  size_t xsize = 423 + bitdepth;
+  size_t ysize = 467 + bitdepth;
+
+  CodecInOut io;
+  io.SetSize(xsize, ysize);
+  io.metadata.m.color_encoding = jxl::ColorEncoding::SRGB(false);
+  io.metadata.m.SetUintSamples(bitdepth);
+
+  double factor = ((1 << bitdepth) - 1);
+  double ifactor = 1.0 / factor;
+  Image3F noise_added(xsize, ysize);
+
+  for (size_t c = 0; c < 3; c++) {
+    for (size_t y = 0; y < ysize; y++) {
+      const float* in = io1.Main().color()->PlaneRow(c, y);
+      float* out = noise_added.PlaneRow(c, y);
+      for (size_t x = 0; x < xsize; x++) {
+        // make the least significant bits random
+        float f = in[x] + generator.UniformF(0.0f, 1.f / 255.f);
+        if (f > 1.f) f = 1.f;
+        // quantize to the bitdepth we're testing
+        unsigned int u = f * factor + 0.5;
+        out[x] = u * ifactor;
+      }
+    }
+  }
+  io.SetFromImage(std::move(noise_added), jxl::ColorEncoding::SRGB(false));
+
+  CompressParams cparams;
+  cparams.modular_mode = true;
+  cparams.color_transform = jxl::ColorTransform::kNone;
+  cparams.quality_pair = {100, 100};
+  cparams.options.predictor = {Predictor::Zero};
+  cparams.speed_tier = SpeedTier::kThunder;
+  cparams.responsive = responsive;
+  DecompressParams dparams;
+  CodecInOut io2;
+  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2),
+            bitdepth * xsize * ysize / 3);
+  EXPECT_LE(0, ComputeDistance2(io.Main(), io2.Main(), GetJxlCms()));
+  size_t different = 0;
+  for (size_t c = 0; c < 3; c++) {
+    for (size_t y = 0; y < ysize; y++) {
+      const float* in = io.Main().color()->PlaneRow(c, y);
+      const float* out = io2.Main().color()->PlaneRow(c, y);
+      for (size_t x = 0; x < xsize; x++) {
+        uint32_t uin = in[x] * factor + 0.5;
+        uint32_t uout = out[x] * factor + 0.5;
+        // check that the integer values are identical
+        if (uin != uout) different++;
+      }
+    }
+  }
+  EXPECT_EQ(different, 0);
 }
 
 TEST(ModularTest, RoundtripLosslessCustomFloat) {
