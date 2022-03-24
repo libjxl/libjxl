@@ -729,6 +729,10 @@ JxlEncoderFrameSettings* JxlEncoderOptionsCreate(
 
 JxlEncoderStatus JxlEncoderSetFrameLossless(
     JxlEncoderFrameSettings* frame_settings, const JXL_BOOL lossless) {
+  if (lossless && frame_settings->enc->basic_info_set &&
+      frame_settings->enc->metadata.m.xyb_encoded) {
+    return JXL_API_ERROR("Set use_original_profile=true for lossless encoding");
+  }
   frame_settings->values.lossless = lossless;
   return JXL_ENC_SUCCESS;
 }
@@ -1304,8 +1308,9 @@ JxlEncoderStatus JxlEncoderAddImageFrame(
                                 c_current, &(queued_frame->frame))) {
     return JXL_ENC_ERROR;
   }
-  if (frame_settings->values.lossless) {
-    queued_frame->option_values.cparams.SetLossless();
+  if (frame_settings->values.lossless &&
+      frame_settings->enc->metadata.m.xyb_encoded) {
+    return JXL_API_ERROR("Set use_original_profile=true for lossless encoding");
   }
   queued_frame->option_values.cparams.level =
       frame_settings->enc->codestream_level;
