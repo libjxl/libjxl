@@ -34,7 +34,8 @@ enum class Codec : uint32_t {
   kJPG,
   kGIF,
   kEXR,
-  kPSD
+  kPSD,
+  kNPY,
 };
 
 static inline constexpr uint64_t EnumBits(Codec /*unused*/) {

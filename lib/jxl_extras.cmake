@@ -14,6 +14,8 @@ set(JPEGXL_EXTRAS_SOURCES
   extras/dec/color_hints.h
   extras/dec/decode.cc
   extras/dec/decode.h
+  extras/dec/npy.cc
+  extras/dec/npy.h
   extras/dec/pgx.cc
   extras/dec/pgx.h
   extras/dec/pnm.cc

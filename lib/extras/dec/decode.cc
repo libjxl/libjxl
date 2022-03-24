@@ -19,6 +19,7 @@
 #if JPEGXL_ENABLE_JPEG
 #include "lib/extras/dec/jpg.h"
 #endif
+#include "lib/extras/dec/npy.h"
 #include "lib/extras/dec/pgx.h"
 #include "lib/extras/dec/pnm.h"
 
@@ -49,6 +50,8 @@ std::string ExtensionFromCodec(Codec codec, const bool is_gray,
       return ".exr";
     case Codec::kPSD:
       return ".psd";
+    case Codec::kNPY:
+      return ".npy";
     case Codec::kUnknown:
       return std::string();
   }
@@ -78,6 +81,8 @@ Codec CodecFromExtension(std::string extension,
     if (bits_per_sample != nullptr) *bits_per_sample = 32;
     return Codec::kPNM;
   }
+
+  if (extension == ".npy") return Codec::kNPY;
 
   if (extension == ".gif") return Codec::kGIF;
 
@@ -111,6 +116,8 @@ Status DecodeBytes(const Span<const uint8_t> bytes,
     codec = Codec::kPGX;
   } else if (DecodeImagePNM(bytes, color_hints, constraints, ppf)) {
     codec = Codec::kPNM;
+  } else if (DecodeImageNPY(bytes, color_hints, constraints, ppf)) {
+    codec = Codec::kNPY;
   }
 #if JPEGXL_ENABLE_GIF
   else if (DecodeImageGIF(bytes, color_hints, constraints, ppf)) {
