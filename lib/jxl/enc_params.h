@@ -127,6 +127,7 @@ struct CompressParams {
   float max_error[3] = {0.0, 0.0, 0.0};
 
   SpeedTier speed_tier = SpeedTier::kSquirrel;
+  int brotli_effort = -1;
 
   // 0 = default.
   // 1 = slightly worse quality.

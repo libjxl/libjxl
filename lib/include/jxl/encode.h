@@ -283,6 +283,13 @@ typedef enum {
    */
   JXL_ENC_FRAME_INDEX_BOX = 31,
 
+  /** Sets brotli encode effort for use in JPEG recompression and compressed
+   * metadata boxes (brob). Can be -1 (default) or 0 (fastest) to 11 (slowest).
+   * Default is based on the general encode effort in case of JPEG
+   * recompression, and 4 for brob boxes.
+   */
+  JXL_ENC_FRAME_SETTING_BROTLI_EFFORT = 32,
+
   /** Enum value not to be used as an option. This value is added to force the
    * C compiler to have the enum to take a known size.
    */
