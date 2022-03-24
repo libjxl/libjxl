@@ -757,16 +757,15 @@ TEST(EncodeTest, CodestreamLevelVerificationTest) {
   // Set an image dimension that is too large for level 5, but fits in level 10
 
   basic_info.xsize = 1ull << 30ull;
+  EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
+  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetCodestreamLevel(enc.get(), 10));
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
-
   EXPECT_EQ(10, JxlEncoderGetRequiredCodestreamLevel(enc.get()));
 
   // Set an image dimension that is too large even for level 10
 
   basic_info.xsize = 1ull << 31ull;
-  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
-
-  EXPECT_EQ(-1, JxlEncoderGetRequiredCodestreamLevel(enc.get()));
+  EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
 }
 
 TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGReconstructionTest)) {
