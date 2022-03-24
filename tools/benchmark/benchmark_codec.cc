@@ -55,9 +55,7 @@ void ImageCodec::ParseParameters(const std::string& parameters) {
 }
 
 Status ImageCodec::ParseParam(const std::string& param) {
-  if (param[0] ==
-      'q') {  // libjpeg-style quality, [0,100]  (or in case of
-              // modular, below 0 is also allowed if you like cubism)
+  if (param[0] == 'q') {  // libjpeg-style quality, [0,100]
     const std::string quality_param = param.substr(1);
     char* end;
     const float q_target = strtof(quality_param.c_str(), &end);

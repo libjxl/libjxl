@@ -4101,7 +4101,7 @@ TEST(DecodeTest, SpotColorTest) {
   cparams.speed_tier = jxl::SpeedTier::kLightning;
   cparams.modular_mode = true;
   cparams.color_transform = jxl::ColorTransform::kNone;
-  cparams.quality_pair = {100, 100};
+  cparams.butteraugli_distance = 0.f;
 
   jxl::PaddedBytes compressed;
   std::unique_ptr<jxl::PassesEncoderState> enc_state =

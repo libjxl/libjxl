@@ -758,29 +758,6 @@ JxlEncoderStatus JxlEncoderSetFrameDistance(
     distance = 0.01f;
   }
   frame_settings->values.cparams.butteraugli_distance = distance;
-  float jpeg_quality;
-  // Formula to translate butteraugli distance roughly into JPEG 0-100 quality.
-  // This is the inverse of the formula in cjxl.cc to translate JPEG quality
-  // into butteraugli distance.
-  if (distance > 6.56f) {
-    jpeg_quality = -5.456783f * std::log(0.0256f * distance - 0.16384f);
-  } else {
-    jpeg_quality = -11.11111f * distance + 101.11111f;
-  }
-  // Translate JPEG quality into the quality_pair setting for modular encoding.
-  // This is the formula also used in cjxl.cc to convert the command line JPEG
-  // quality parameter to the quality_pair setting.
-  // TODO(lode): combine the distance -> quality_pair conversion into a single
-  // formula, possibly altering it to a more suitable heuristic.
-  float quality;
-  if (jpeg_quality < 7.f) {
-    quality = std::min<float>(35.f + (jpeg_quality - 7.f) * 3.0f, 100.0f);
-  } else {
-    quality =
-        std::min<float>(35.f + (jpeg_quality - 7.f) * 65.f / 93.f, 100.0f);
-  }
-  frame_settings->values.cparams.quality_pair.first =
-      frame_settings->values.cparams.quality_pair.second = quality;
   return JXL_ENC_SUCCESS;
 }
 

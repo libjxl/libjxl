@@ -48,9 +48,8 @@ void TestLosslessGroups(size_t group_size_shift) {
   const PaddedBytes orig =
       ReadTestData("imagecompression.info/flower_foveon.png");
   CompressParams cparams;
-  cparams.modular_mode = true;
+  cparams.SetLossless();
   cparams.modular_group_size_shift = group_size_shift;
-  cparams.color_transform = jxl::ColorTransform::kNone;
   DecompressParams dparams;
 
   CodecInOut io_out;
@@ -82,13 +81,12 @@ TEST(ModularTest, RoundtripLosslessCustomWP_PermuteRCT) {
   const PaddedBytes orig =
       ReadTestData("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CompressParams cparams;
-  cparams.modular_mode = true;
+  cparams.SetLossless();
   // 9 = permute to GBR, to test the special case of permutation-only
   cparams.colorspace = 9;
   // slowest speed so different WP modes are tried
   cparams.speed_tier = SpeedTier::kTortoise;
   cparams.options.predictor = {Predictor::Weighted};
-  cparams.color_transform = jxl::ColorTransform::kNone;
   DecompressParams dparams;
 
   CodecInOut io_out;
@@ -136,8 +134,7 @@ TEST(ModularTest, RoundtripLossyDeltaPaletteWP) {
   const PaddedBytes orig =
       ReadTestData("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CompressParams cparams;
-  cparams.modular_mode = true;
-  cparams.color_transform = jxl::ColorTransform::kNone;
+  cparams.SetLossless();
   cparams.lossy_palette = true;
   cparams.palette_colors = 0;
   cparams.options.predictor = jxl::Predictor::Weighted;
@@ -165,7 +162,7 @@ TEST(ModularTest, RoundtripLossy) {
       ReadTestData("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CompressParams cparams;
   cparams.modular_mode = true;
-  cparams.quality_pair = {80.0f, 80.0f};
+  cparams.butteraugli_distance = 2.f;
   DecompressParams dparams;
 
   CodecInOut io_out;
@@ -175,11 +172,11 @@ TEST(ModularTest, RoundtripLossy) {
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
 
   compressed_size = Roundtrip(&io, cparams, dparams, pool, &io_out);
-  EXPECT_LE(compressed_size, 40000u);
+  EXPECT_LE(compressed_size, 30000u);
   cparams.ba_params.intensity_target = 80.0f;
   EXPECT_THAT(ButteraugliDistance(io, io_out, cparams.ba_params, GetJxlCms(),
                                   /*distmap=*/nullptr, pool),
-              IsSlightlyBelow(2.0));
+              IsSlightlyBelow(2.3));
 }
 
 TEST(ModularTest, RoundtripLossy16) {
@@ -188,7 +185,7 @@ TEST(ModularTest, RoundtripLossy16) {
       ReadTestData("raw.pixls/DJI-FC6310-16bit_709_v4_krita.png");
   CompressParams cparams;
   cparams.modular_mode = true;
-  cparams.quality_pair = {80.0f, 80.0f};
+  cparams.butteraugli_distance = 2.f;
   DecompressParams dparams;
 
   CodecInOut io_out;
@@ -200,11 +197,11 @@ TEST(ModularTest, RoundtripLossy16) {
   io.metadata.m.color_encoding = ColorEncoding::SRGB();
 
   compressed_size = Roundtrip(&io, cparams, dparams, pool, &io_out);
-  EXPECT_LE(compressed_size, 400u);
+  EXPECT_LE(compressed_size, 300u);
   cparams.ba_params.intensity_target = 80.0f;
   EXPECT_THAT(ButteraugliDistance(io, io_out, cparams.ba_params, GetJxlCms(),
                                   /*distmap=*/nullptr, pool),
-              IsSlightlyBelow(1.5));
+              IsSlightlyBelow(1.6));
 }
 
 TEST(ModularTest, RoundtripExtraProperties) {
@@ -259,7 +256,7 @@ TEST(ModularTest, RoundtripLosslessCustomSqueeze) {
   CompressParams cparams;
   cparams.modular_mode = true;
   cparams.color_transform = jxl::ColorTransform::kNone;
-  cparams.quality_pair = {100, 100};
+  cparams.butteraugli_distance = 0.f;
   cparams.options.predictor = {Predictor::Zero};
   cparams.speed_tier = SpeedTier::kThunder;
   cparams.responsive = 1;
@@ -333,7 +330,7 @@ TEST_P(ModularTestParam, RoundtripLossless) {
   io.metadata.m.color_encoding = jxl::ColorEncoding::SRGB(false);
   io.metadata.m.SetUintSamples(bitdepth);
 
-  double factor = ((1 << bitdepth) - 1);
+  double factor = ((1lu << bitdepth) - 1lu);
   double ifactor = 1.0 / factor;
   Image3F noise_added(xsize, ysize);
 
@@ -356,7 +353,7 @@ TEST_P(ModularTestParam, RoundtripLossless) {
   CompressParams cparams;
   cparams.modular_mode = true;
   cparams.color_transform = jxl::ColorTransform::kNone;
-  cparams.quality_pair = {100, 100};
+  cparams.butteraugli_distance = 0.f;
   cparams.options.predictor = {Predictor::Zero};
   cparams.speed_tier = SpeedTier::kThunder;
   cparams.responsive = responsive;
@@ -410,7 +407,7 @@ TEST(ModularTest, RoundtripLosslessCustomFloat) {
   CompressParams cparams;
   cparams.modular_mode = true;
   cparams.color_transform = jxl::ColorTransform::kNone;
-  cparams.quality_pair = {100, 100};
+  cparams.butteraugli_distance = 0.f;
   cparams.options.predictor = {Predictor::Zero};
   cparams.speed_tier = SpeedTier::kThunder;
   cparams.decoding_speed_tier = 2;

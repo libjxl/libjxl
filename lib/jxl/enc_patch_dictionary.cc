@@ -712,8 +712,7 @@ void FindBestPatchDictionary(const Image3F& opsin,
   cparams.patches = Override::kOff;
   // TODO(veluca): possibly change heuristics here.
   if (!cparams.modular_mode) {
-    cparams.quality_pair.first = cparams.quality_pair.second =
-        90.f - cparams.butteraugli_distance * 5.f;
+    cparams.butteraugli_distance *= 0.5f;
   }
 
   RoundtripPatchFrame(&reference_frame, state, 0, cparams, cms, pool, true);
