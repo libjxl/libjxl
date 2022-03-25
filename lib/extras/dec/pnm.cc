@@ -363,6 +363,7 @@ Status DecodeImagePNM(const Span<const uint8_t> bytes,
   ppf->frames.emplace_back(header.xsize, header.ysize, format);
   auto* frame = &ppf->frames.back();
 
+  frame->color.bitdepth_from_format = false;
   frame->color.flipped_y = header.bits_per_sample == 32;  // PFMs are flipped
   size_t pnm_remaining_size = bytes.data() + bytes.size() - pos;
   if (pnm_remaining_size < frame->color.pixels_size) {
