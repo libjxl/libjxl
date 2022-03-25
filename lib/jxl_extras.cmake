@@ -6,8 +6,6 @@
 set(JPEGXL_EXTRAS_SOURCES
   extras/codec.cc
   extras/codec.h
-  extras/codec_psd.cc
-  extras/codec_psd.h
   extras/dec/color_description.cc
   extras/dec/color_description.h
   extras/dec/color_hints.cc
