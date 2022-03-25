@@ -373,10 +373,11 @@ void LowMemoryRenderPipeline::PrepareForThreadsInternal(size_t num,
   }
   // TODO(veluca): avoid reallocating buffers if not needed.
   stage_data_.resize(num);
+  size_t upsampling = 1u << base_color_shift_;
   size_t stage_buffer_xsize =
-      (frame_dimensions_.group_dim << base_color_shift_) +
-      2 * group_data_x_border_ +   // maximum size of a rect
-      2 * kRenderPipelineXOffset;  // extra padding for processing
+      frame_dimensions_.group_dim * upsampling +
+      2 * group_data_x_border_ * upsampling +  // maximum size of a rect
+      2 * kRenderPipelineXOffset;              // extra padding for processing
   for (size_t t = 0; t < num; t++) {
     stage_data_[t].resize(shifts.size());
     for (size_t c = 0; c < shifts.size(); c++) {
