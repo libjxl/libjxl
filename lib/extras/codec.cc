@@ -42,7 +42,7 @@ Status SetFromBytes(const Span<const uint8_t> bytes,
   if (bytes.size() < kMinBytes) return JXL_FAILURE("Too few bytes");
 
   extras::PackedPixelFile ppf;
-  if (extras::DecodeBytes(bytes, color_hints, io->constraints, &ppf, pool,
+  if (extras::DecodeBytes(bytes, color_hints, io->constraints, &ppf,
                           orig_codec)) {
     return ConvertPackedPixelFileToCodecInOut(ppf, pool, io);
   }

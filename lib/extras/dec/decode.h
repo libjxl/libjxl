@@ -64,8 +64,7 @@ Codec CodecFromExtension(std::string extension,
 // color_space_hint may specify the color space, otherwise, defaults to sRGB.
 Status DecodeBytes(Span<const uint8_t> bytes, const ColorHints& color_hints,
                    const SizeConstraints& constraints,
-                   extras::PackedPixelFile* ppf, ThreadPool* pool = nullptr,
-                   Codec* orig_codec = nullptr);
+                   extras::PackedPixelFile* ppf, Codec* orig_codec = nullptr);
 
 }  // namespace extras
 }  // namespace jxl
