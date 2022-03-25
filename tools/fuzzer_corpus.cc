@@ -260,7 +260,6 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
   params.lossy_palette = spec.params.lossy_palette;
   if (spec.params.preview) params.preview = jxl::Override::kOn;
   if (spec.params.noise) params.noise = jxl::Override::kOn;
-  params.quality_pair = {100., 100.};
 
   jxl::AuxOut aux_out;
   jxl::PassesEncoderState passes_encoder_state;
@@ -307,6 +306,7 @@ std::vector<ImageSpec::CjxlParams> CompressParamsList() {
     ImageSpec::CjxlParams params;
     params.modular_mode = true;
     params.color_transform = jxl::ColorTransform::kNone;
+    params.butteraugli_distance = 0.f;
     params.modular_predictor = {jxl::Predictor::Weighted};
     ret.push_back(params);
   }

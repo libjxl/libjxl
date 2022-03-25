@@ -219,8 +219,6 @@ struct CompressParams {
   int responsive = -1;
   // empty for default squeeze
   std::vector<SqueezeParams> squeezes;
-  // A pair of <quality, cquality>.
-  std::pair<float, float> quality_pair{100.f, 100.f};
   int colorspace = -1;
   // Use Global channel palette if #colors < this percentage of range
   float channel_colors_pre_transform_percent = 95.f;
@@ -231,16 +229,16 @@ struct CompressParams {
 
   // Returns whether these params are lossless as defined by SetLossless();
   bool IsLossless() const {
-    return modular_mode && quality_pair.first == 100 &&
-           quality_pair.second == 100 &&
-           color_transform == jxl::ColorTransform::kNone;
+    // YCbCr is also considered lossless here since it's intended for
+    // source material that is already YCbCr (we don't do the fwd transform)
+    return modular_mode && butteraugli_distance == 0.0f &&
+           color_transform != jxl::ColorTransform::kXYB;
   }
 
   // Sets the parameters required to make the codec lossless.
   void SetLossless() {
     modular_mode = true;
-    quality_pair.first = 100;
-    quality_pair.second = 100;
+    butteraugli_distance = 0.0f;
     color_transform = jxl::ColorTransform::kNone;
   }
 

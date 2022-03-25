@@ -77,9 +77,7 @@ Status PrepareCodecMetadataFromIO(const CompressParams& cparams,
   // Keep ICC profile in lossless modes because a reconstructed profile may be
   // slightly different (quantization).
   // Also keep ICC in JPEG reconstruction mode as we need byte-exact profiles.
-  const bool lossless_modular =
-      cparams.modular_mode && cparams.quality_pair.first == 100.0f;
-  if (!lossless_modular && !io->Main().IsJPEG()) {
+  if (!cparams.IsLossless() && !io->Main().IsJPEG()) {
     metadata->m.color_encoding.DecideIfWantICC();
   }
 

@@ -348,7 +348,7 @@ std::vector<RenderPipelineTestInputSettings> GeneratePipelineTests() {
       auto s = settings;
       s.cparams_descr = "ModularLossy";
       s.cparams.modular_mode = true;
-      s.cparams.quality_pair = {90, 90};
+      s.cparams.butteraugli_distance = 1.f;
       all_tests.push_back(s);
     }
 

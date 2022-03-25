@@ -595,7 +595,7 @@ TEST(JxlTest, RoundtripSmallPatchesAlpha) {
   EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 2000u);
   EXPECT_THAT(ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
                                   /*distmap=*/nullptr, pool),
-              IsSlightlyBelow(0.2f));
+              IsSlightlyBelow(0.12f));
 }
 
 TEST(JxlTest, RoundtripSmallPatches) {
@@ -623,7 +623,7 @@ TEST(JxlTest, RoundtripSmallPatches) {
   EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 2000u);
   EXPECT_THAT(ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
                                   /*distmap=*/nullptr, pool),
-              IsSlightlyBelow(0.2f));
+              IsSlightlyBelow(0.12f));
 }
 
 // Test header encoding of original bits per sample
@@ -826,7 +826,7 @@ TEST(JxlTest, RoundtripAlphaPremultiplied) {
   EXPECT_THAT(
       ButteraugliDistance(io_nopremul, io2, cparams.ba_params, GetJxlCms(),
                           /*distmap=*/nullptr, pool),
-      IsSlightlyBelow(1.8));
+      IsSlightlyBelow(1.4));
 }
 
 TEST(JxlTest, RoundtripAlphaResampling) {
@@ -922,7 +922,7 @@ TEST(JxlTest, RoundtripAlphaNonMultipleOf8) {
   CodecInOut io2;
   EXPECT_TRUE(DecodeFile(dparams, compressed, &io2, pool));
 
-  EXPECT_LE(compressed.size(), 200u);
+  EXPECT_LE(compressed.size(), 180u);
 
   // TODO(robryk): Fix the following line in presence of different alpha_bits in
   // the two contexts.
@@ -930,7 +930,7 @@ TEST(JxlTest, RoundtripAlphaNonMultipleOf8) {
   // TODO(robryk): Fix the distance estimate used in the encoder.
   EXPECT_THAT(ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
                                   /*distmap=*/nullptr, pool),
-              IsSlightlyBelow(0.8));
+              IsSlightlyBelow(0.9));
 }
 
 TEST(JxlTest, RoundtripAlpha16) {
@@ -965,8 +965,7 @@ TEST(JxlTest, RoundtripAlpha16) {
 
   CompressParams cparams;
   cparams.butteraugli_distance = 0.5;
-  // Prevent the test to be too slow, does not affect alpha
-  cparams.speed_tier = SpeedTier::kSquirrel;
+  cparams.speed_tier = SpeedTier::kWombat;
   DecompressParams dparams;
 
   io.metadata.m.SetUintSamples(16);
@@ -978,8 +977,9 @@ TEST(JxlTest, RoundtripAlpha16) {
                          aux_out, &pool));
   CodecInOut io2;
   EXPECT_TRUE(DecodeFile(dparams, compressed, &io2, &pool));
-
-  EXPECT_TRUE(SamePixels(*io.Main().alpha(), *io2.Main().alpha()));
+  EXPECT_THAT(ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
+                                  /*distmap=*/nullptr, &pool),
+              IsSlightlyBelow(0.8));
 }
 
 namespace {
@@ -987,7 +987,7 @@ CompressParams CParamsForLossless() {
   CompressParams cparams;
   cparams.modular_mode = true;
   cparams.color_transform = jxl::ColorTransform::kNone;
-  cparams.quality_pair = {100, 100};
+  cparams.butteraugli_distance = 0.f;
   cparams.options.predictor = {Predictor::Weighted};
   return cparams;
 }
@@ -1686,7 +1686,7 @@ TEST(JxlTest, RoundtripProgressive) {
   EXPECT_LE(Roundtrip(&io, cparams, dparams, &pool, &io2), 40000u);
   EXPECT_THAT(ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
                                   /*distmap=*/nullptr, &pool),
-              IsSlightlyBelow(2.5f));
+              IsSlightlyBelow(1.1f));
 }
 
 }  // namespace

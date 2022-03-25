@@ -242,9 +242,8 @@ class JxlCodec : public ImageCodec {
     cparams_.ba_params.hf_asymmetry = ba_params_.hf_asymmetry;
     cparams_.ba_params.xmul = static_cast<float>(jxlargs->xmul);
 
-    cparams_.quality_pair.first = q_target_;
-    cparams_.quality_pair.second = q_target_;
-    if (q_target_ != 100 && cparams_.color_transform == ColorTransform::kNone &&
+    if (cparams_.butteraugli_distance > 0.f &&
+        cparams_.color_transform == ColorTransform::kNone &&
         cparams_.modular_mode && !has_ctransform_) {
       cparams_.color_transform = ColorTransform::kXYB;
     }

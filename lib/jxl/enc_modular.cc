@@ -303,8 +303,7 @@ ModularFrameEncoder::ModularFrameEncoder(const FrameHeader& frame_header,
     : frame_dim(frame_header.ToFrameDimensions()), cparams(cparams_orig) {
   size_t num_streams =
       ModularStreamId::Num(frame_dim, frame_header.passes.num_passes);
-  if (cparams.modular_mode &&
-      cparams.quality_pair == std::pair<float, float>{100.0, 100.0}) {
+  if (cparams.IsLossless()) {
     switch (cparams.decoding_speed_tier) {
       case 0:
         break;
@@ -329,18 +328,17 @@ ModularFrameEncoder::ModularFrameEncoder(const FrameHeader& frame_header,
     }
   }
   if (cparams.decoding_speed_tier >= 1 && cparams.responsive &&
-      cparams.quality_pair == std::make_pair(100.f, 100.f)) {
+      cparams.IsLossless()) {
     cparams.options.tree_kind =
         ModularOptions::TreeKind::kTrivialTreeNoPredictor;
     cparams.options.nb_repeats = 0;
   }
   stream_images.resize(num_streams);
-  if (cquality > 100) cquality = quality;
 
   // use a sensible default if nothing explicit is specified:
   // Squeeze for lossy, no squeeze for lossless
   if (cparams.responsive < 0) {
-    if (quality == 100) {
+    if (cparams.IsLossless()) {
       cparams.responsive = 0;
     } else {
       cparams.responsive = 1;
@@ -403,14 +401,14 @@ ModularFrameEncoder::ModularFrameEncoder(const FrameHeader& frame_header,
     // no explicit predictor(s) given, set a good default
     if ((cparams.speed_tier <= SpeedTier::kTortoise ||
          cparams.modular_mode == false) &&
-        quality == 100 && cparams.responsive == false) {
+        cparams.IsLossless() && cparams.responsive == false) {
       // TODO(veluca): allow all predictors that don't break residual
       // multipliers in lossy mode.
       cparams.options.predictor = Predictor::Variable;
     } else if (cparams.responsive || cparams.lossy_palette) {
       // zero predictor for Squeeze residues and lossy palette
       cparams.options.predictor = Predictor::Zero;
-    } else if (quality < 100) {
+    } else if (!cparams.IsLossless()) {
       // If not responsive and lossy. TODO(veluca): use near_lossless instead?
       cparams.options.predictor = Predictor::Gradient;
     } else if (cparams.speed_tier < SpeedTier::kFalcon) {
@@ -426,6 +424,12 @@ ModularFrameEncoder::ModularFrameEncoder(const FrameHeader& frame_header,
   } else {
     delta_pred = cparams.options.predictor;
     if (cparams.lossy_palette) cparams.options.predictor = Predictor::Zero;
+  }
+  if (!cparams.IsLossless()) {
+    if (cparams.options.predictor == Predictor::Weighted ||
+        cparams.options.predictor == Predictor::Variable ||
+        cparams.options.predictor == Predictor::Best)
+      cparams.options.predictor = Predictor::Zero;
   }
   tree_splits.push_back(0);
   if (cparams.modular_mode == false) {
@@ -621,7 +625,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
 
   // Set options and apply transformations
 
-  if (quality < 100) {
+  if (!cparams.IsLossless()) {
     if (cparams.palette_colors != 0) {
       JXL_DEBUG_V(3, "Lossy encode, not doing palette transforms");
     }
@@ -730,7 +734,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
       max_bitdepth + 1 < level_max_bitdepth) {
     if (cparams.colorspace == 1 ||
         (cparams.colorspace < 0 &&
-         (quality < 100 || cparams.speed_tier > SpeedTier::kHare))) {
+         (!cparams.IsLossless() || cparams.speed_tier > SpeedTier::kHare))) {
       Transform ycocg{TransformId::kRCT};
       ycocg.rct_type = 6;
       ycocg.begin_c = gi.nb_meta_channels;
@@ -762,38 +766,21 @@ Status ModularFrameEncoder::ComputeEncodingData(
 
   std::vector<uint32_t> quants;
 
-  if (quality < 100 || cquality < 100) {
+  if (!cparams.IsLossless()) {
     quants.resize(gi.channel.size(), 1);
-    JXL_DEBUG_V(
-        2,
-        "Adding quantization constants corresponding to luma quality %.2f "
-        "and chroma quality %.2f",
-        quality, cquality);
+    float quality = 0.25f * cparams.butteraugli_distance;
+    JXL_DEBUG_V(2,
+                "Adding quantization constants corresponding to distance %.3f ",
+                quality);
     if (!cparams.responsive) {
       JXL_DEBUG_V(1,
                   "Warning: lossy compression without Squeeze "
                   "transform is just color quantization.");
-      quality = (400 + quality) / 5;
-      cquality = (400 + cquality) / 5;
+      quality *= 0.2f;
     }
 
-    // convert 'quality' to quantization scaling factor
-    if (quality > 50) {
-      quality = 200.0 - quality * 2.0;
-    } else {
-      quality = 900.0 - quality * 16.0;
-    }
-    if (cquality > 50) {
-      cquality = 200.0 - cquality * 2.0;
-    } else {
-      cquality = 900.0 - cquality * 16.0;
-    }
     if (cparams.color_transform != ColorTransform::kXYB) {
-      quality *= 0.01f * maxval / 255.f;
-      cquality *= 0.01f * maxval / 255.f;
-    } else {
-      quality *= 0.01f;
-      cquality *= 0.01f;
+      quality *= maxval / 255.f;
     }
 
     if (cparams.options.nb_repeats == 0) {
@@ -806,17 +793,18 @@ Status ModularFrameEncoder::ComputeEncodingData(
       if (shift > 0) shift--;
       int q;
       // assuming default Squeeze here
-      int component = ((i - gi.nb_meta_channels) % nb_chans);
+      int component =
+          (do_color ? 0 : 3) + ((i - gi.nb_meta_channels) % nb_chans);
       // last 4 channels are final chroma residuals
       if (nb_chans > 2 && i >= gi.channel.size() - 4 && cparams.responsive) {
         component = 1;
       }
       if (cparams.color_transform == ColorTransform::kXYB && component < 3) {
-        q = (component == 0 ? quality : cquality) * squeeze_quality_factor_xyb *
+        q = quality * squeeze_quality_factor_xyb *
             squeeze_xyb_qtable[component][shift];
       } else {
         if (cparams.colorspace != 0 && component > 0 && component < 3) {
-          q = cquality * squeeze_quality_factor * squeeze_chroma_qtable[shift];
+          q = quality * squeeze_quality_factor * squeeze_chroma_qtable[shift];
         } else {
           q = quality * squeeze_quality_factor * squeeze_luma_factor *
               squeeze_luma_qtable[shift];
@@ -1321,12 +1309,10 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
     if (gi.channel.empty()) return true;
     // Do some per-group transforms
 
-    float quality = cparams.quality_pair.first;
-
     // Local palette
     // TODO(veluca): make this work with quantize-after-prediction in lossy
     // mode.
-    if (quality == 100 && cparams.palette_colors != 0 &&
+    if (cparams.IsLossless() && cparams.palette_colors != 0 &&
         cparams.speed_tier < SpeedTier::kCheetah) {
       // all-channel palette (e.g. RGBA)
       if (gi.channel.size() - gi.nb_meta_channels > 1) {
@@ -1354,7 +1340,7 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
     }
 
     // Local channel palette
-    if (cparams.channel_colors_percent > 0 && quality == 100 &&
+    if (cparams.channel_colors_percent > 0 && cparams.IsLossless() &&
         !cparams.lossy_palette && cparams.speed_tier < SpeedTier::kCheetah &&
         !(cparams.responsive && cparams.decoding_speed_tier >= 1)) {
       // single channel palette (like FLIF's ChannelCompact)
@@ -1381,8 +1367,9 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
 
   // lossless and no specific color transform specified: try Nothing, YCoCg,
   // and 17 RCTs
-  if (cparams.color_transform == ColorTransform::kNone && quality == 100 &&
-      cparams.colorspace < 0 && gi.channel.size() - gi.nb_meta_channels >= 3 &&
+  if (cparams.color_transform == ColorTransform::kNone &&
+      cparams.IsLossless() && cparams.colorspace < 0 &&
+      gi.channel.size() - gi.nb_meta_channels >= 3 &&
       cparams.responsive == false && do_color &&
       cparams.speed_tier <= SpeedTier::kHare) {
     Transform sg(TransformId::kRCT);

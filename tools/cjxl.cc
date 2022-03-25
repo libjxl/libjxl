@@ -80,79 +80,6 @@ jxl::Status LoadSaliencyMap(const std::string& filename_heatmap,
   return true;
 }
 
-// Search algorithm for modular mode instead of Butteraugli distance.
-void SetModularQualityForBitrate(jxl::ThreadPoolInternal* pool,
-                                 const size_t pixels, const double target_size,
-                                 CompressArgs* args) {
-  JXL_ASSERT(args->params.modular_mode);
-
-  CompressArgs s = *args;  // Args for search.
-  float quality = -100 + target_size * 8.0 / pixels * 50;
-  if (quality > 100.f) quality = 100.f;
-  s.params.target_size = 0;
-  s.params.target_bitrate = 0;
-  double best_loss = 1e99;
-  float best_quality = quality;
-  float best_below = -10000.f;
-  float best_below_size = 0;
-  float best_above = 200.f;
-  float best_above_size = pixels * 15.f;
-
-  jxl::CodecInOut io;
-  double decode_mps = 0;
-
-  if (!LoadAll(*args, pool, &io, &decode_mps)) {
-    s.params.quality_pair = std::make_pair(quality, quality);
-    printf("couldn't load image\n");
-    return;
-  }
-
-  for (int i = 0; i < 10; ++i) {
-    s.params.quality_pair = std::make_pair(quality, quality);
-    jxl::PaddedBytes candidate;
-    bool ok =
-        CompressJxl(io, decode_mps, pool, s, &candidate, /*print_stats=*/false);
-    if (!ok) {
-      printf(
-          "Compression error occurred during the search for best size."
-          " Trying with quality %.1f\n",
-          quality);
-      break;
-    }
-    printf("Quality %.2f yields %6" PRIuS " bytes, %.3f bpp.\n", quality,
-           candidate.size(), candidate.size() * 8.0 / pixels);
-    const double ratio = static_cast<double>(candidate.size()) / target_size;
-    const double loss = std::abs(1.0 - ratio);
-    if (best_loss > loss) {
-      best_quality = quality;
-      best_loss = loss;
-      if (loss < 0.01f) break;
-    }
-    if (quality == 100.f && ratio < 1.f) break;  // can't spend more bits
-    if (ratio > 1.f && quality < best_above) {
-      best_above = quality;
-      best_above_size = candidate.size();
-    }
-    if (ratio < 1.f && quality > best_below) {
-      best_below = quality;
-      best_below_size = candidate.size();
-    }
-    float t =
-        (target_size - best_below_size) / (best_above_size - best_below_size);
-    if (best_above > 100.f && ratio < 1.f) {
-      quality = (quality + 105) / 2;
-    } else if (best_above - best_below > 1000 && ratio > 1.f) {
-      quality -= 1000;
-    } else {
-      quality = best_above * t + best_below * (1.f - t);
-    }
-    if (quality >= 100.f) quality = 100.f;
-  }
-  args->params.quality_pair = std::make_pair(best_quality, best_quality);
-  args->params.target_bitrate = 0;
-  args->params.target_size = 0;
-}
-
 void SetParametersForSizeOrBitrate(jxl::ThreadPoolInternal* pool,
                                    const size_t pixels, CompressArgs* args) {
   CompressArgs s = *args;  // Args for search.
@@ -163,11 +90,6 @@ void SetParametersForSizeOrBitrate(jxl::ThreadPoolInternal* pool,
     s.params.target_size = 0;
   }
   const double target_size = s.params.target_bitrate * (1 / 8.) * pixels;
-
-  if (args->params.modular_mode) {
-    SetModularQualityForBitrate(pool, pixels, target_size, args);
-    return;
-  }
 
   double dist = ApproximateDistanceForBPP(s.params.target_bitrate);
   s.params.target_bitrate = 0;
@@ -225,17 +147,8 @@ std::string QualityFromArgs(const CompressArgs& args) {
   char buf[100];
   if (args.jpeg_transcode) {
     snprintf(buf, sizeof(buf), "lossless transcode");
-  } else if (args.params.modular_mode) {
-    if (args.params.quality_pair.first == 100 &&
-        args.params.quality_pair.second == 100) {
-      snprintf(buf, sizeof(buf), "lossless");
-    } else if (args.params.quality_pair.first !=
-               args.params.quality_pair.second) {
-      snprintf(buf, sizeof(buf), "Q%.2f,%.2f", args.params.quality_pair.first,
-               args.params.quality_pair.second);
-    } else {
-      snprintf(buf, sizeof(buf), "Q%.2f", args.params.quality_pair.first);
-    }
+  } else if (args.params.IsLossless()) {
+    snprintf(buf, sizeof(buf), "lossless");
   } else {
     snprintf(buf, sizeof(buf), "d%.3f", args.params.butteraugli_distance);
   }
@@ -497,11 +410,6 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
 
   // modular mode options
   cmdline->AddOptionValue(
-      'Q', "mquality", "luma_q[,chroma_q]",
-      "[modular encoding] lossy 'quality' (100=lossless, lower is more lossy)",
-      &params.quality_pair, &ParseFloatPair, 1);
-
-  cmdline->AddOptionValue(
       'I', "iterations", "F",
       "[modular encoding] fraction of pixels used to learn MA trees "
       "(default=0.5, try 0 for no MA and fast decode)",
@@ -597,26 +505,18 @@ jxl::Status CompressArgs::ValidateArgs(const CommandLineParser& cmdline) {
   if (got_quality) {
     default_settings = false;
     if (quality < 100) jpeg_transcode = false;
-    // Quality settings roughly match libjpeg qualities.
     if (quality < 7 || quality == 100 || params.modular_mode) {
       if (jpeg_transcode == false) params.modular_mode = true;
-      // Internal modular quality to roughly match VarDCT size.
-      if (quality < 7) {
-        params.quality_pair.first = params.quality_pair.second =
-            std::min(35 + (quality - 7) * 3.0f, 100.0f);
-      } else {
-        params.quality_pair.first = params.quality_pair.second =
-            std::min(35 + (quality - 7) * 65.f / 93.f, 100.0f);
-      }
+    }
+    // Quality settings roughly match libjpeg qualities.
+    if (quality >= 30) {
+      params.butteraugli_distance = 0.1 + (100 - quality) * 0.09;
     } else {
-      if (quality >= 30) {
-        params.butteraugli_distance = 0.1 + (100 - quality) * 0.09;
-      } else {
-        params.butteraugli_distance =
-            6.4 + pow(2.5, (30 - quality) / 5.0f) / 6.25f;
-      }
+      params.butteraugli_distance =
+          6.4 + pow(2.5, (30 - quality) / 5.0f) / 6.25f;
     }
   }
+
   if (params.resampling > 1 && !params.already_downsampled)
     jpeg_transcode = false;
 
@@ -687,8 +587,7 @@ jxl::Status CompressArgs::ValidateArgs(const CommandLineParser& cmdline) {
   if (!cmdline.GetOption(opt_color_id)->matched()) {
     // default to RGB for lossless modular
     if (params.modular_mode) {
-      if (params.quality_pair.first != 100 ||
-          params.quality_pair.second != 100) {
+      if (params.butteraugli_distance > 0.f) {
         params.color_transform = jxl::ColorTransform::kXYB;
       } else {
         params.color_transform = jxl::ColorTransform::kNone;
@@ -773,7 +672,7 @@ jxl::Status LoadAll(CompressArgs& args, jxl::ThreadPoolInternal* pool,
 
   if (input_codec == jxl::extras::Codec::kGIF && args.default_settings) {
     args.params.modular_mode = true;
-    args.params.quality_pair.first = args.params.quality_pair.second = 100;
+    args.params.butteraugli_distance = 0;
   }
   if (args.override_bitdepth != 0) {
     if (args.override_bitdepth == 32) {
