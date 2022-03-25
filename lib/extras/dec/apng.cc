@@ -252,7 +252,7 @@ constexpr uint32_t kId_cHRM = 0x4D524863;
 constexpr uint32_t kId_eXIf = 0x66495865;
 
 struct APNGFrame {
-  PaddedBytes pixels;
+  std::vector<uint8_t> pixels;
   std::vector<uint8_t*> rows;
   unsigned int w, h, delay_num, delay_den;
 };
@@ -289,7 +289,7 @@ void row_fn(png_structp png_ptr, png_bytep new_row, png_uint_32 row_num,
   png_progressive_combine_row(png_ptr, frame->rows[row_num], new_row);
 }
 
-inline unsigned int read_chunk(Reader* r, PaddedBytes* pChunk) {
+inline unsigned int read_chunk(Reader* r, std::vector<uint8_t>* pChunk) {
   unsigned char len[4];
   if (r->Read(&len, 4)) {
     const auto size = png_get_uint_32(len);
@@ -308,8 +308,8 @@ inline unsigned int read_chunk(Reader* r, PaddedBytes* pChunk) {
 }
 
 int processing_start(png_structp& png_ptr, png_infop& info_ptr, void* frame_ptr,
-                     bool hasInfo, PaddedBytes& chunkIHDR,
-                     std::vector<PaddedBytes>& chunksInfo) {
+                     bool hasInfo, std::vector<uint8_t>& chunkIHDR,
+                     std::vector<std::vector<uint8_t>>& chunksInfo) {
   unsigned char header[8] = {137, 80, 78, 71, 13, 10, 26, 10};
 
   png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
@@ -381,9 +381,9 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
   unsigned char sig[8];
   png_structp png_ptr = nullptr;
   png_infop info_ptr = nullptr;
-  PaddedBytes chunk;
-  PaddedBytes chunkIHDR;
-  std::vector<PaddedBytes> chunksInfo;
+  std::vector<uint8_t> chunk;
+  std::vector<uint8_t> chunkIHDR;
+  std::vector<std::vector<uint8_t>> chunksInfo;
   bool isAnimated = false;
   bool hasInfo = false;
   APNGFrame frameRaw = {};
@@ -595,8 +595,7 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
           auto ok = png_get_iCCP(png_ptr, info_ptr, &name, &compression_type,
                                  &profile, &proflen);
           if (ok && proflen) {
-            ppf->icc.resize(proflen);
-            memcpy(ppf->icc.data(), profile, proflen);
+            ppf->icc.assign(profile, profile + proflen);
             have_color = true;
           } else {
             // TODO(eustas): JXL_WARNING?

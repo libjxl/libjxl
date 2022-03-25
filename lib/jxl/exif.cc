@@ -11,7 +11,7 @@ constexpr uint16_t kExifOrientationTag = 274;
 
 // Checks if a blob looks like Exif, and if so, sets bigendian
 // according to the tiff endianness
-bool IsExif(const PaddedBytes& exif, bool* bigendian) {
+bool IsExif(const std::vector<uint8_t>& exif, bool* bigendian) {
   if (exif.size() < 12) return false;  // not enough bytes for a valid exif blob
   const uint8_t* t = exif.data();
   if (LoadLE32(t) == 0x2A004D4D) {
@@ -25,7 +25,7 @@ bool IsExif(const PaddedBytes& exif, bool* bigendian) {
 }
 
 // Finds the position of an Exif tag, or 0 if it is not found
-size_t FindExifTagPosition(const PaddedBytes& exif, uint16_t tagname) {
+size_t FindExifTagPosition(const std::vector<uint8_t>& exif, uint16_t tagname) {
   bool bigendian;
   if (!IsExif(exif, &bigendian)) return 0;
   const uint8_t* t = exif.data() + 4;
@@ -49,7 +49,7 @@ size_t FindExifTagPosition(const PaddedBytes& exif, uint16_t tagname) {
 // "R03"
 // TODO (jon): set intrinsic dimensions according to
 // https://discourse.wicg.io/t/proposal-exif-image-resolution-auto-and-from-image/4326/24
-void InterpretExif(const PaddedBytes& exif, CodecMetadata* metadata) {
+void InterpretExif(const std::vector<uint8_t>& exif, CodecMetadata* metadata) {
   bool bigendian;
   if (!IsExif(exif, &bigendian)) return;
   size_t o_pos = FindExifTagPosition(exif, kExifOrientationTag);
@@ -67,7 +67,7 @@ void InterpretExif(const PaddedBytes& exif, CodecMetadata* metadata) {
   }
 }
 
-void ResetExifOrientation(PaddedBytes& exif) {
+void ResetExifOrientation(std::vector<uint8_t>& exif) {
   bool bigendian;
   if (!IsExif(exif, &bigendian)) return;
   size_t o_pos = FindExifTagPosition(exif, kExifOrientationTag);

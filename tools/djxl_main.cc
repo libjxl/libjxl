@@ -136,7 +136,7 @@ int DecompressMain(int argc, const char* argv[]) {
     args.params.keep_dct = false;
     jxl::CodecInOut io;
     auto assign = [](const uint8_t* bytes, size_t size,
-                     jxl::PaddedBytes& target) {
+                     std::vector<uint8_t>& target) {
       target.assign(bytes, bytes + size);
     };
     if (container.exif_size) {

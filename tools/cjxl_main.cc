@@ -93,7 +93,7 @@ int CompressJpegXlMain(int argc, const char* argv[]) {
       container.exif = io.blobs.exif.data();
       container.exif_size = io.blobs.exif.size();
     }
-    auto append_xml = [&container](const jxl::PaddedBytes& bytes) {
+    auto append_xml = [&container](const std::vector<uint8_t>& bytes) {
       if (bytes.empty()) return;
       container.xml.emplace_back(bytes.data(), bytes.size());
     };
