@@ -107,7 +107,9 @@ Status ConvertPackedPixelFileToCodecInOut(const PackedPixelFile& ppf,
   for (const auto& frame : ppf.frames) {
     JXL_ASSERT(frame.color.pixels() != nullptr);
     size_t frame_bits_per_sample =
-        frame.color.BitsPerChannel(frame.color.format.data_type);
+        (frame.color.bitdepth_from_format
+             ? frame.color.BitsPerChannel(frame.color.format.data_type)
+             : ppf.info.bits_per_sample);
     JXL_ASSERT(frame_bits_per_sample != 0);
     // It is ok for the frame.color.format.num_channels to not match the
     // number of channels on the image.
