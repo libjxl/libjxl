@@ -736,7 +736,7 @@ JxlDecoder* JxlDecoderCreate(const JxlMemoryManager* memory_manager) {
 
 #ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
   if (!memory_manager) {
-    dec->memory_limit_base = 1 << 21;
+    dec->memory_limit_base = 53 << 16;
     // Allow 5 x max_image_size processing units; every frame is accounted
     // as W x H CPU processing units, so there could be numerous small frames
     // or few larger ones.
