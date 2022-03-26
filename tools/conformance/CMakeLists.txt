@@ -4,7 +4,7 @@
 # license that can be found in the LICENSE file.
 
 add_executable(djxl_conformance djxl_conformance.cc)
-target_link_libraries(djxl_conformance jxl_dec)
+target_link_libraries(djxl_conformance jxl_dec -pthread)
 
 if(BUILD_TESTING AND CMAKE_EXECUTABLE_SUFFIX STREQUAL "")
 # Script to validate the tooling.

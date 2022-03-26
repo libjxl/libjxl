@@ -190,6 +190,9 @@ endif()  # JPEGXL_STATIC
 # Threads
 set(THREADS_PREFER_PTHREAD_FLAG YES)
 find_package(Threads REQUIRED)
+if(CMAKE_USE_PTHREADS_INIT)
+	target_link_libraries(Threads::Threads INTERFACE -pthread)
+endif()
 
 if(JPEGXL_STATIC)
   if (MINGW)
