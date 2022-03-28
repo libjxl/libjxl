@@ -65,7 +65,8 @@ void DecompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
   cmdline->AddOptionFlag('V', "version", "print version number and exit",
                          &version, &SetBooleanTrue);
 
-  cmdline->AddOptionValue('\0', "num_reps", "N", nullptr, &num_reps,
+  cmdline->AddOptionValue('\0', "num_reps", "N",
+                          "how many times to decompress.", &num_reps,
                           &ParseUnsigned);
 
   cmdline->AddOptionValue('\0', "num_threads", "N",
