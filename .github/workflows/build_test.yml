@@ -310,7 +310,6 @@ jobs:
           # Build dependencies
           cmake
           doxygen
-          libgtest-dev:${{ matrix.arch }}
           ninja-build
           pkg-config
           qemu-user-static
