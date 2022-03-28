@@ -265,6 +265,7 @@ Status FrameDecoder::InitFrame(BitReader* JXL_RESTRICT br, ImageBundle* decoded,
   decoded->duration = frame_header_.animation_frame.duration;
 
   if (!frame_header_.nonserialized_is_preview &&
+      (frame_header_.is_last || frame_header_.animation_frame.duration > 0) &&
       (frame_header_.frame_type == kRegularFrame ||
        frame_header_.frame_type == kSkipProgressive)) {
     ++dec_state_->visible_frame_index;
