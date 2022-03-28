@@ -99,6 +99,25 @@ $ djxl input.jxl output.png
 $ djxl lossless-jpeg.jxl reconstructed.jpeg
 ----
 
+# Lossless compression
+
+Lossless pixel compression only preserves the pixels losslessly, not the input
+bitstream. To check that the pixels are identical, one can do something like
+the following (if this says 0, then the maximum pixel error is 0, so it's
+lossless):
+
+----
+# Lossless compression of PNG:
+$ cjxl -d 0.0 input.png lossless.png
+
+# Decompress a JPEG XL file to PNG
+$ djxl lossless.jxl lossless.png
+
+$ compare -metric pae input.png lossless.png null:
+0 (0)
+----
+
+
 
 See also
 --------
