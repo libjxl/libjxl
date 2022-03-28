@@ -31,16 +31,8 @@ cjxl input.gif output.jxl
 Options
 -------
 
--h::
---help::
-    Displays the options that `cjxl` supports. On its own, it will only show
-    basic options. It can be combined with `-v` or `-v -v` to show increasingly
-    advanced options as well.
-
--v::
---verbose::
-    Increases verbosity. Can be repeated to increase it further, and also
-    applies to `--help`.
+--container
+    Always encode using container format (default: only if needed)
 
 -d 'distance'::
 --distance='distance'::
@@ -51,6 +43,18 @@ Options
     GIF files are compressed losslessly by default, and in the case of JPEG
     files specifically, the original JPEG can then be reconstructed bit-for-bit.
     For lossless sources, `-d 1` is the default.
+    0.0 = mathematically lossless. Default for already-lossy input (JPEG/GIF).
+    1.0 = visually lossless. Default for other input.
+    Recommended range: 0.5 .. 3.0.
+
+--target_size='N'::
+    Aim at file size of N bytes.
+    Compresses to 1 % of the target size in ideal conditions.
+    Runs the same algorithm as --target_bpp
+
+--target_bpp='BPP'::
+    Aim at file size that has N bits per pixel.
+    Compresses to 1 % of the target BPP in ideal conditions.
 
 -q 'quality'::
 --quality='quality'::
@@ -77,6 +81,157 @@ Recognized effort settings, from fastest to slowest, are:
 - 7 or ``squirrel'' (default)
 - 8 or ``kitten''
 - 9 or ``tortoise''
+
+-p::
+--progressive::
+    Enable progressive/responsive decoding.
+
+--premultiply::
+    Force premultiplied (associated) alpha.
+
+--keep_invisible='0|1'::
+    Force disable/enable preserving color of invisible pixels (default: 1 if
+    lossless, 0 if lossy).
+
+--centerfirst::
+    Put center groups first in the compressed file.
+
+--center_x=0..XSIZE::
+    Put center groups first in the compressed file.
+
+--center_y=0..YSIZE::
+    Put center groups first in the compressed file.
+
+--progressive_ac::
+    Use the progressive mode for AC.
+
+--qprogressive_ac::
+    Use the progressive mode for AC.
+
+--progressive_dc='num_dc_frames'::
+    Use progressive mode for DC.
+
+-m::
+--modular::
+    Use the modular mode (lossy / lossless).
+
+-j::
+--jpeg_transcode::
+    Do lossy transcode of input JPEG file (decode to pixels instead of doing
+    lossless transcode).
+
+--num_threads='N'::
+    number of worker threads (zero = none).
+
+--num_reps='N'::
+    how many times to compress.
+
+--noise='0|1'::
+    force disable/enable noise generation.
+
+--photon_noise='ISO3200'::
+    Set the noise to approximately what it would be at a given nominal exposure
+    on a 35mm camera. For formats other than 35mm, or when the whole sensor was
+    not used, you can multiply the ISO value by the equivalence ratio squared,
+    for example by 2.25 for an APS-C camera.
+
+--dots='0|1'::
+    force disable/enable dots generation.
+
+--patches='0|1'::
+    force disable/enable patches generation.
+
+--resampling='0|1|2|4|8'::
+    Subsample all color channels by this factor, or use 0 to choose the resampling factor based on distance.
+
+--epf='-1..3'::
+    Edge preserving filter level (-1 = choose based on quality, default)
+
+--gaborish='0|1'::
+    force disable/enable gaborish.
+
+--intensity_target='N'::
+    Intensity target of monitor in nits, higher results in higher quality
+    image. Must be strictly positive. Default is 255 for standard images, 4000
+    for input images known to to have PQ or HLG transfer function.
+
+-x 'key=value'::
+--dec-hints='key=value'::
+    color_space indicates the ColorEncoding, see Description(); cc_pathname
+    refers to a binary file containing an ICC profile.
+
+-Q 'luma_q[,chroma_q]'::
+--mquality='luma_q[,chroma_q]'::
+    [modular encoding] lossy 'quality' (100=lossless, lower is more lossy)
+
+-C 'K'::
+--colorspace='K'::
+    [modular encoding] color transform: 0=RGB, 1=YCoCg, 2-37=RCT (default: try
+    several, depending on speed)
+
+-g 'K'::
+--group-size='K'::
+    [modular encoding] set group size to 128 << K (default: 1 or 2)
+
+-P 'K'::
+--predictor='K'::
+    [modular encoding] predictor(s) to use:
++
+- 0=zero,
+- 1=left,
+- 2=top,
+- 3=avg0,
+- 4=select,
+- 5=gradient,
+- 6=weighted,
+- 7=topright,
+- 8=topleft,
+- 9=leftleft,
+- 10=avg1,
+- 11=avg2,
+- 12=avg3,
+- 13=toptop predictive average
+- 14=mix 5 and 6,
+- 15=mix everything.
++
+Default 14, at slowest speed default 15
+
+--palette='K'::
+    [modular encoding] use a palette if image has at most K colors (default:
+    1024)
+
+--lossy-palette::
+    [modular encoding] quantize to a palette that has fewer entries than would
+    be necessary for perfect preservation; for the time being, it is
+    recommended to set --palette=0 with this option to use the default palette only
+
+-R 'K'::
+--responsive='K'::
+    [modular encoding] do Squeeze transform, 0=false, 1=true (default: true if
+    lossy, false if lossless)
+
+-V
+--version::
+    Print version number and exit
+
+--quiet::
+    Be more silent
+
+--print_profile='0|1'::
+    Print timing information before exiting
+
+-v::
+--verbose::
+    Increases verbosity. Can be repeated to increase it further, and also
+    applies to `--help`.
+
+-h::
+--help::
+    Displays the options that `cjxl` supports. On its own, it will only show
+    basic options. It can be combined with `-v` or `-v -v` to show increasingly
+    advanced options as well.
+
+
 
 Examples
 --------
