@@ -24,9 +24,43 @@ produced, with names of the form "'output'-*framenumber*.ext".
 Options
 -------
 
--h::
---help::
-    Displays the options that `djxl` supports.
+-V::
+--version::
+    Print version number and exit
+
+--num_reps='N'::
+    How many times to decompress.
+
+--num_threads='N'::
+    The number of threads to use
+
+--print_profile='0|1'::
+    Print timing information before exiting
+
+--bits_per_sample='N'::
+    Defaults to original (input) bit depth
+
+--tone_map::
+    Tone map the image to the luminance range indicated by --display_nits instead of performing a naive 0-1 -> 0-1 conversion
+
+--display_nits='0.3-250'::
+    Luminance range of the display to which to tone-map; the lower bound can be omitted
+
+--preserve_saturation='0..1'::
+    With --tone_map, how much to favor saturation over luminance
+
+--color_space='RGB_D65_SRG_Rel_Lin'::
+    Defaults to original (input) color space
+
+-s '1,2,4,8,16'::
+--downsampling='1,2,4,8,16'::
+    Maximum permissible downsampling factor (values greater than 16 will return the LQIP if available)
+
+--allow_partial_files::
+    Allow decoding of truncated files
+
+--allow_more_progressive_steps::
+    Allow decoding more progressive steps in truncated files. No effect without --allow_partial_files
 
 -j::
 --pixels_to_jpeg::
@@ -36,11 +70,22 @@ Options
     This flag causes the decoder to instead decode the image to pixels and
     encode a new (lossy) JPEG in this case.
 
-
 -q 'quality'::
 --jpeg_quality='quality'::
     When decoding to `.jpg`, use this output quality. This option implicitly
     enables the --pixels_to_jpeg option.
+
+--print_read_bytes::
+   print total number of decoded bytes
+
+--quiet::
+   silence output (except for errors)
+
+-h::
+--help::
+    Displays the options that `djxl` supports.
+
+
 
 
 Examples
