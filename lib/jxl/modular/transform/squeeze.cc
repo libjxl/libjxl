@@ -5,18 +5,18 @@
 
 #include "lib/jxl/modular/transform/squeeze.h"
 
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "lib/jxl/modular/transform/squeeze.cc"
 #include <stdlib.h>
+
+#include <hwy/foreach_target.h>
+#include <hwy/highway.h>
 
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/modular/modular_image.h"
 #include "lib/jxl/modular/transform/transform.h"
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "lib/jxl/modular/transform/squeeze.cc"
-#include <hwy/foreach_target.h>
-#include <hwy/highway.h>
-
 #include "lib/jxl/simd_util-inl.h"
 
 HWY_BEFORE_NAMESPACE();
