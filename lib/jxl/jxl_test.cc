@@ -786,7 +786,7 @@ TEST(JxlTest, RoundtripAlpha) {
 
   EXPECT_THAT(ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
                                   /*distmap=*/nullptr, pool),
-              IsSlightlyBelow(1.4));
+              IsSlightlyBelow(1.2));
 }
 
 TEST(JxlTest, RoundtripAlphaPremultiplied) {
@@ -821,12 +821,12 @@ TEST(JxlTest, RoundtripAlphaPremultiplied) {
 
   EXPECT_THAT(ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
                                   /*distmap=*/nullptr, pool),
-              IsSlightlyBelow(1.4));
+              IsSlightlyBelow(1.2));
   io2.Main().UnpremultiplyAlpha();
   EXPECT_THAT(
       ButteraugliDistance(io_nopremul, io2, cparams.ba_params, GetJxlCms(),
                           /*distmap=*/nullptr, pool),
-      IsSlightlyBelow(1.4));
+      IsSlightlyBelow(1.35));
 }
 
 TEST(JxlTest, RoundtripAlphaResampling) {
