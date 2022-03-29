@@ -58,7 +58,7 @@ size_t SizeHeader::xsize() const {
 }
 
 Status SizeHeader::Set(size_t xsize64, size_t ysize64) {
-  if (xsize64 > 0xFFFFFFFFull || ysize64 > 0xFFFFFFFFull) {
+  if (xsize64 > 0x40000000ull || ysize64 > 0x40000000ull) {
     return JXL_FAILURE("Image too large");
   }
   const uint32_t xsize32 = static_cast<uint32_t>(xsize64);

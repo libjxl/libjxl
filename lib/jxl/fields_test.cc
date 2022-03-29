@@ -281,7 +281,8 @@ TEST(FieldsTest, TestRoundtripFrame) {
 // Ensure out-of-bounds values cause an error.
 TEST(FieldsTest, TestOutOfRange) {
   SizeHeader h;
-  ASSERT_TRUE(h.Set(0xFFFFFFFFull, 0xFFFFFFFFull));
+  ASSERT_FALSE(h.Set(0x40000001ull, 0x40000001ull));
+  ASSERT_TRUE(h.Set(0x40000000ull, 0x40000000ull));
   size_t extension_bits = 999, total_bits = 999;  // Initialize as garbage.
   ASSERT_FALSE(Bundle::CanEncode(h, &extension_bits, &total_bits));
 }
