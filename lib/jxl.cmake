@@ -347,6 +347,7 @@ set(JPEGXL_DEC_INTERNAL_LIBS
   brotlicommon-static
   hwy
   Threads::Threads
+  ${ATOMICS_LIBRARIES}
 )
 
 if(JPEGXL_ENABLE_PROFILER)
@@ -356,7 +357,6 @@ endif()
 set(JPEGXL_INTERNAL_LIBS
   ${JPEGXL_DEC_INTERNAL_LIBS}
   brotlienc-static
-  ${ATOMICS_LIBRARIES}
 )
 
 # strips the -static suffix from all the elements in LIST
