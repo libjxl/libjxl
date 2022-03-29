@@ -745,7 +745,9 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
     pframe.frame_info.duration = frame.duration;
     pframe.frame_info.layer_info.blend_info.blendmode =
         should_blend ? JXL_BLEND_BLEND : JXL_BLEND_REPLACE;
-    pframe.frame_info.layer_info.have_crop = 1;
+    bool is_full_size = x0 == 0 && y0 == 0 && xsize == ppf->info.xsize &&
+                        ysize == ppf->info.ysize;
+    pframe.frame_info.layer_info.have_crop = is_full_size ? 0 : 1;
     pframe.frame_info.layer_info.blend_info.source = should_blend ? 1 : 0;
     pframe.frame_info.layer_info.blend_info.alpha = 0;
     pframe.frame_info.layer_info.save_as_reference = use_for_next_frame ? 1 : 0;

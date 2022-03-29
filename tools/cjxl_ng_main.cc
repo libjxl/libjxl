@@ -838,7 +838,6 @@ int main(int argc, char** argv) {
         return EXIT_FAILURE;
       }
     }
-
     for (size_t num_frame = 0; num_frame < ppf.frames.size(); ++num_frame) {
       const jxl::extras::PackedFrame& pframe = ppf.frames[num_frame];
       const jxl::extras::PackedImage& pimage = pframe.color;
@@ -877,17 +876,17 @@ int main(int argc, char** argv) {
           extra_channel_blend_info.clamp = JXL_FALSE;
           JxlEncoderSetExtraChannelBlendInfo(jxl_encoder_frame_settings, 0,
                                              &extra_channel_blend_info);
-
-          enc_status =
-              JxlEncoderAddImageFrame(jxl_encoder_frame_settings, &ppixelformat,
-                                      pimage.pixels(), pimage.pixels_size);
-          if (JXL_ENC_SUCCESS != enc_status) {
-            // TODO(tfish): Fix such status handling throughout.  We should
-            // have more detail available about what went wrong than what we
-            // currently share with the caller.
-            std::cerr << "JxlEncoderAddImageFrame() failed.\n";
-            return EXIT_FAILURE;
-          }
+        }
+        enc_status =
+            JxlEncoderAddImageFrame(jxl_encoder_frame_settings, &ppixelformat,
+                                    pimage.pixels(), pimage.pixels_size);
+        if (JXL_ENC_SUCCESS != enc_status) {
+          // TODO(tfish): Fix such status handling throughout.  We should
+          // have more detail available about what went wrong than what we
+          // currently share with the caller.
+          std::cerr << "JxlEncoderAddImageFrame() failed.\n";
+          return EXIT_FAILURE;
+        }
           // Only set extra channel buffer if is is provided non-interleaved
           if (!pframe.extra_channels.empty()) {
             enc_status = JxlEncoderSetExtraChannelBuffer(
@@ -901,7 +900,6 @@ int main(int argc, char** argv) {
               return EXIT_FAILURE;
             }
           }
-        }
       }
     }
   }
