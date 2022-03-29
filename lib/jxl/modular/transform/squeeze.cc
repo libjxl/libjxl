@@ -133,61 +133,60 @@ Status InvHSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
   // 8 rows at a time and treat it as a vertical unsqueeze of a
   // transposed 8x8 block (or 9x8 for one input).
   constexpr size_t kRowsPerThread = 8;
-  JXL_RETURN_IF_ERROR(RunOnPool(
-      pool, 0, DivCeil(chin.h, kRowsPerThread), ThreadPool::NoInit,
-      [&](const uint32_t task, size_t /* thread */) {
-        const size_t y0 = task * kRowsPerThread;
-        const size_t rows = std::min(kRowsPerThread, chin.h - y0);
-        size_t x = 0;
+  const auto unsqueeze_span = [&](const uint32_t task, size_t /* thread */) {
+    const size_t y0 = task * kRowsPerThread;
+    const size_t rows = std::min(kRowsPerThread, chin.h - y0);
+    size_t x = 0;
 
 #if HWY_TARGET != HWY_SCALAR
-        intptr_t onerow_in = chin.plane.PixelsPerRow();
-        intptr_t onerow_inr = chin_residual.plane.PixelsPerRow();
-        intptr_t onerow_out = chout.plane.PixelsPerRow();
-        const pixel_type *JXL_RESTRICT p_residual = chin_residual.Row(y0);
-        const pixel_type *JXL_RESTRICT p_avg = chin.Row(y0);
-        pixel_type *JXL_RESTRICT p_out = chout.Row(y0);
-        HWY_ALIGN pixel_type b_p_avg[9 * kRowsPerThread];
-        HWY_ALIGN pixel_type b_p_residual[8 * kRowsPerThread];
-        HWY_ALIGN pixel_type b_p_out_even[8 * kRowsPerThread];
-        HWY_ALIGN pixel_type b_p_out_odd[8 * kRowsPerThread];
-        HWY_ALIGN pixel_type b_p_out_evenT[8 * kRowsPerThread];
-        HWY_ALIGN pixel_type b_p_out_oddT[8 * kRowsPerThread];
-        const HWY_CAPPED(pixel_type, 8) d;
-        const size_t N = Lanes(d);
-        if (chin_residual.w > 16 && rows == kRowsPerThread) {
-          for (; x < chin_residual.w - 9; x += 8) {
-            Transpose8x8Block(p_residual + x, b_p_residual, onerow_inr);
-            Transpose8x8Block(p_avg + x, b_p_avg, onerow_in);
-            for (size_t y = 0; y < kRowsPerThread; y++) {
-              b_p_avg[8 * 8 + y] = p_avg[x + 8 + onerow_in * y];
-            }
-            for (size_t i = 0; i < 8; i++) {
-              FastUnsqueeze(b_p_residual + 8 * i, b_p_avg + 8 * i,
-                            b_p_avg + 8 * (i + 1),
-                            (x + i ? b_p_out_odd + 8 * ((x + i - 1) & 7)
-                                   : b_p_avg + 8 * i),
-                            b_p_out_even + 8 * i, b_p_out_odd + 8 * i);
-            }
+    intptr_t onerow_in = chin.plane.PixelsPerRow();
+    intptr_t onerow_inr = chin_residual.plane.PixelsPerRow();
+    intptr_t onerow_out = chout.plane.PixelsPerRow();
+    const pixel_type *JXL_RESTRICT p_residual = chin_residual.Row(y0);
+    const pixel_type *JXL_RESTRICT p_avg = chin.Row(y0);
+    pixel_type *JXL_RESTRICT p_out = chout.Row(y0);
+    HWY_ALIGN pixel_type b_p_avg[9 * kRowsPerThread];
+    HWY_ALIGN pixel_type b_p_residual[8 * kRowsPerThread];
+    HWY_ALIGN pixel_type b_p_out_even[8 * kRowsPerThread];
+    HWY_ALIGN pixel_type b_p_out_odd[8 * kRowsPerThread];
+    HWY_ALIGN pixel_type b_p_out_evenT[8 * kRowsPerThread];
+    HWY_ALIGN pixel_type b_p_out_oddT[8 * kRowsPerThread];
+    const HWY_CAPPED(pixel_type, 8) d;
+    const size_t N = Lanes(d);
+    if (chin_residual.w > 16 && rows == kRowsPerThread) {
+      for (; x < chin_residual.w - 9; x += 8) {
+        Transpose8x8Block(p_residual + x, b_p_residual, onerow_inr);
+        Transpose8x8Block(p_avg + x, b_p_avg, onerow_in);
+        for (size_t y = 0; y < kRowsPerThread; y++) {
+          b_p_avg[8 * 8 + y] = p_avg[x + 8 + onerow_in * y];
+        }
+        for (size_t i = 0; i < 8; i++) {
+          FastUnsqueeze(
+              b_p_residual + 8 * i, b_p_avg + 8 * i, b_p_avg + 8 * (i + 1),
+              (x + i ? b_p_out_odd + 8 * ((x + i - 1) & 7) : b_p_avg + 8 * i),
+              b_p_out_even + 8 * i, b_p_out_odd + 8 * i);
+        }
 
-            Transpose8x8Block(b_p_out_even, b_p_out_evenT, 8);
-            Transpose8x8Block(b_p_out_odd, b_p_out_oddT, 8);
-            for (size_t y = 0; y < kRowsPerThread; y++) {
-              for (size_t i = 0; i < kRowsPerThread; i += N) {
-                auto even = Load(d, b_p_out_evenT + 8 * y + i);
-                auto odd = Load(d, b_p_out_oddT + 8 * y + i);
-                StoreInterleaved(d, even, odd,
-                                 p_out + ((x + i) << 1) + onerow_out * y);
-              }
-            }
+        Transpose8x8Block(b_p_out_even, b_p_out_evenT, 8);
+        Transpose8x8Block(b_p_out_odd, b_p_out_oddT, 8);
+        for (size_t y = 0; y < kRowsPerThread; y++) {
+          for (size_t i = 0; i < kRowsPerThread; i += N) {
+            auto even = Load(d, b_p_out_evenT + 8 * y + i);
+            auto odd = Load(d, b_p_out_oddT + 8 * y + i);
+            StoreInterleaved(d, even, odd,
+                             p_out + ((x + i) << 1) + onerow_out * y);
           }
         }
+      }
+    }
 #endif
-        for (size_t y = 0; y < rows; y++) {
-          unsqueeze_row(y0 + y, x);
-        }
-      },
-      "InvHorizontalSqueeze"));
+    for (size_t y = 0; y < rows; y++) {
+      unsqueeze_row(y0 + y, x);
+    }
+  };
+  JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, DivCeil(chin.h, kRowsPerThread),
+                                ThreadPool::NoInit, unsqueeze_span,
+                                "InvHorizontalSqueeze"));
   input.channel[c] = std::move(chout);
   return true;
 }
