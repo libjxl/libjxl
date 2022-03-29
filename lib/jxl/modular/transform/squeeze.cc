@@ -132,7 +132,7 @@ Status InvHSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
   // Horizontal unsqueeze has horizontal data dependencies, so we do
   // 8 rows at a time and treat it as a vertical unsqueeze of a
   // transposed 8x8 block (or 9x8 for one input).
-  constexpr size_t kRowsPerThread = 8;
+  static constexpr const size_t kRowsPerThread = 8;
   const auto unsqueeze_span = [&](const uint32_t task, size_t /* thread */) {
     const size_t y0 = task * kRowsPerThread;
     const size_t rows = std::min(kRowsPerThread, chin.h - y0);
