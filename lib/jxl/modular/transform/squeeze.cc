@@ -220,50 +220,49 @@ Status InvVSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
     return true;
   }
 
-  constexpr int kColsPerThread = 64;
-  JXL_RETURN_IF_ERROR(RunOnPool(
-      pool, 0, DivCeil(chin.w, kColsPerThread), ThreadPool::NoInit,
-      [&](const uint32_t task, size_t /* thread */) {
-        const size_t x0 = task * kColsPerThread;
-        const size_t x1 = std::min((size_t)(task + 1) * kColsPerThread, chin.w);
-        const size_t w = x1 - x0;
-        // We only iterate up to std::min(chin_residual.h, chin.h) which is
-        // always chin_residual.h.
-        for (size_t y = 0; y < chin_residual.h; y++) {
-          const pixel_type *JXL_RESTRICT p_residual = chin_residual.Row(y) + x0;
-          const pixel_type *JXL_RESTRICT p_avg = chin.Row(y) + x0;
-          const pixel_type *JXL_RESTRICT p_navg =
-              chin.Row(y + 1 < chin.h ? y + 1 : y) + x0;
-          pixel_type *JXL_RESTRICT p_out = chout.Row(y << 1) + x0;
-          pixel_type *JXL_RESTRICT p_nout = chout.Row((y << 1) + 1) + x0;
-          const pixel_type *p_pout =
-              y > 0 ? chout.Row((y << 1) - 1) + x0 : p_avg;
-          size_t x = 0;
+  static constexpr const int kColsPerThread = 64;
+  const auto unsqueeze_slice = [&](const uint32_t task, size_t /* thread */) {
+    const size_t x0 = task * kColsPerThread;
+    const size_t x1 = std::min((size_t)(task + 1) * kColsPerThread, chin.w);
+    const size_t w = x1 - x0;
+    // We only iterate up to std::min(chin_residual.h, chin.h) which is
+    // always chin_residual.h.
+    for (size_t y = 0; y < chin_residual.h; y++) {
+      const pixel_type *JXL_RESTRICT p_residual = chin_residual.Row(y) + x0;
+      const pixel_type *JXL_RESTRICT p_avg = chin.Row(y) + x0;
+      const pixel_type *JXL_RESTRICT p_navg =
+          chin.Row(y + 1 < chin.h ? y + 1 : y) + x0;
+      pixel_type *JXL_RESTRICT p_out = chout.Row(y << 1) + x0;
+      pixel_type *JXL_RESTRICT p_nout = chout.Row((y << 1) + 1) + x0;
+      const pixel_type *p_pout = y > 0 ? chout.Row((y << 1) - 1) + x0 : p_avg;
+      size_t x = 0;
 #if HWY_TARGET != HWY_SCALAR
-          for (; x + 7 < w; x += 8) {
-            FastUnsqueeze(p_residual + x, p_avg + x, p_navg + x, p_pout + x,
-                          p_out + x, p_nout + x);
-          }
+      for (; x + 7 < w; x += 8) {
+        FastUnsqueeze(p_residual + x, p_avg + x, p_navg + x, p_pout + x,
+                      p_out + x, p_nout + x);
+      }
 #endif
-          for (; x < w; x++) {
-            pixel_type avg = p_avg[x];
-            pixel_type next_avg = p_navg[x];
-            pixel_type top = p_pout[x];
-            pixel_type tendency = SmoothTendency(top, avg, next_avg);
-            pixel_type diff_minus_tendency = p_residual[x];
-            pixel_type diff = diff_minus_tendency + tendency;
-            pixel_type out =
-                ((avg * 2) + diff + (diff < 0 ? (diff & 1) : -(diff & 1))) >> 1;
+      for (; x < w; x++) {
+        pixel_type avg = p_avg[x];
+        pixel_type next_avg = p_navg[x];
+        pixel_type top = p_pout[x];
+        pixel_type tendency = SmoothTendency(top, avg, next_avg);
+        pixel_type diff_minus_tendency = p_residual[x];
+        pixel_type diff = diff_minus_tendency + tendency;
+        pixel_type out =
+            ((avg * 2) + diff + (diff < 0 ? (diff & 1) : -(diff & 1))) >> 1;
 
-            p_out[x] = out;
-            // If the chin_residual.h == chin.h, the output has an even number
-            // of rows so the next line is fine. Otherwise, this loop won't
-            // write to the last output row which is handled separately.
-            p_nout[x] = out - diff;
-          }
-        }
-      },
-      "InvVertSqueeze"));
+        p_out[x] = out;
+        // If the chin_residual.h == chin.h, the output has an even number
+        // of rows so the next line is fine. Otherwise, this loop won't
+        // write to the last output row which is handled separately.
+        p_nout[x] = out - diff;
+      }
+    }
+  };
+  JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, DivCeil(chin.w, kColsPerThread),
+                                ThreadPool::NoInit, unsqueeze_slice,
+                                "InvVertSqueeze"));
 
   if (chout.h & 1) {
     size_t y = chin.h - 1;
