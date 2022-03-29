@@ -69,6 +69,9 @@ Status ConvertPackedPixelFileToCodecInOut(const PackedPixelFile& ppf,
   } else {
     JXL_RETURN_IF_ERROR(ConvertExternalToInternalColorEncoding(
         ppf.color_encoding, &io->metadata.m.color_encoding));
+    if (io->metadata.m.color_encoding.ICC().empty()) {
+      return JXL_FAILURE("Failed to serialize ICC");
+    }
   }
 
   // Convert the extra blobs
