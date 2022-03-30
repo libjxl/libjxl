@@ -518,7 +518,14 @@ Status ModularFrameEncoder::ComputeEncodingData(
   int c = 0;
   if (cparams.color_transform == ColorTransform::kXYB &&
       cparams.modular_mode == true) {
-    static const float enc_factors[3] = {32768.0f, 2048.0f, 2048.0f};
+    float enc_factors[3] = {32768.0f, 2048.0f, 2048.0f};
+    if (cparams.butteraugli_distance > 0 && !cparams.responsive) {
+      // quantize XYB here and then treat it as a lossless image
+      enc_factors[0] *= 1.f / (1.f + 23.f * cparams.butteraugli_distance);
+      enc_factors[1] *= 1.f / (1.f + 14.f * cparams.butteraugli_distance);
+      enc_factors[2] *= 1.f / (1.f + 14.f * cparams.butteraugli_distance);
+      cparams.butteraugli_distance = 0;
+    }
     if (cparams.manual_xyb_factors.size() == 3) {
       DequantMatricesSetCustomDC(&enc_state->shared.matrices,
                                  cparams.manual_xyb_factors.data());
@@ -551,6 +558,8 @@ Status ModularFrameEncoder::ComputeEncodingData(
           for (size_t x = 0; x < xsize; ++x) {
             row_out[x] = row_in[x] * factor + 0.5f;
             row_out[x] -= row_Y[x];
+            // zero the lsb of B
+            row_out[x] = row_out[x] / 2 * 2;
           }
         }
       } else {
@@ -625,7 +634,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
 
   // Set options and apply transformations
 
-  if (!cparams.IsLossless()) {
+  if (cparams.butteraugli_distance > 0) {
     if (cparams.palette_colors != 0) {
       JXL_DEBUG_V(3, "Lossy encode, not doing palette transforms");
     }
@@ -766,7 +775,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
 
   std::vector<uint32_t> quants;
 
-  if (!cparams.IsLossless()) {
+  if (cparams.butteraugli_distance > 0) {
     quants.resize(gi.channel.size(), 1);
     float quality = 0.25f * cparams.butteraugli_distance;
     JXL_DEBUG_V(2,
@@ -776,13 +785,11 @@ Status ModularFrameEncoder::ComputeEncodingData(
       JXL_DEBUG_V(1,
                   "Warning: lossy compression without Squeeze "
                   "transform is just color quantization.");
-      quality *= 0.2f;
+      quality *= 0.1f;
     }
-
     if (cparams.color_transform != ColorTransform::kXYB) {
       quality *= maxval / 255.f;
     }
-
     if (cparams.options.nb_repeats == 0) {
       return JXL_FAILURE("nb_repeats = 0 not supported with modular lossy!");
     }
@@ -1312,7 +1319,7 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
     // Local palette
     // TODO(veluca): make this work with quantize-after-prediction in lossy
     // mode.
-    if (cparams.IsLossless() && cparams.palette_colors != 0 &&
+    if (cparams.butteraugli_distance == 0.f && cparams.palette_colors != 0 &&
         cparams.speed_tier < SpeedTier::kCheetah) {
       // all-channel palette (e.g. RGBA)
       if (gi.channel.size() - gi.nb_meta_channels > 1) {
@@ -1340,8 +1347,9 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
     }
 
     // Local channel palette
-    if (cparams.channel_colors_percent > 0 && cparams.IsLossless() &&
-        !cparams.lossy_palette && cparams.speed_tier < SpeedTier::kCheetah &&
+    if (cparams.channel_colors_percent > 0 &&
+        cparams.butteraugli_distance == 0.f && !cparams.lossy_palette &&
+        cparams.speed_tier < SpeedTier::kCheetah &&
         !(cparams.responsive && cparams.decoding_speed_tier >= 1)) {
       // single channel palette (like FLIF's ChannelCompact)
       size_t nb_channels = gi.channel.size() - gi.nb_meta_channels;
