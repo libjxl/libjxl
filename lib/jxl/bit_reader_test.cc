@@ -7,13 +7,13 @@
 #include <stdint.h>
 
 #include <array>
-#include <random>
 #include <vector>
 
 #include "gtest/gtest.h"
 #include "lib/jxl/aux_out.h"
 #include "lib/jxl/aux_out_fwd.h"
 #include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/random.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/common.h"
@@ -53,49 +53,50 @@ struct Symbol {
 // Reading from output gives the same values.
 TEST(BitReaderTest, TestRoundTrip) {
   ThreadPoolInternal pool(8);
-  pool.Run(0, 1000, ThreadPool::SkipInit(),
-           [](const int task, const int /* thread */) {
-             constexpr size_t kMaxBits = 8000;
-             BitWriter writer;
-             BitWriter::Allotment allotment(&writer, kMaxBits);
+  EXPECT_TRUE(RunOnPool(
+      &pool, 0, 1000, ThreadPool::NoInit,
+      [](const uint32_t task, size_t /* thread */) {
+        constexpr size_t kMaxBits = 8000;
+        BitWriter writer;
+        BitWriter::Allotment allotment(&writer, kMaxBits);
 
-             std::vector<Symbol> symbols;
-             symbols.reserve(1000);
+        std::vector<Symbol> symbols;
+        symbols.reserve(1000);
 
-             std::mt19937 rng(55537 + 129 * task);
-             std::uniform_int_distribution<> dist(1, 32);  // closed interval
+        Rng rng(55537 + 129 * task);
 
-             for (;;) {
-               const uint32_t num_bits = dist(rng);
-               if (writer.BitsWritten() + num_bits > kMaxBits) break;
-               const uint32_t value = rng() >> (32 - num_bits);
-               symbols.push_back({num_bits, value});
-               writer.Write(num_bits, value);
-             }
+        for (;;) {
+          const uint32_t num_bits = rng.UniformU(1, 33);
+          if (writer.BitsWritten() + num_bits > kMaxBits) break;
+          const uint32_t value = rng.UniformU(0, 1ULL << num_bits);
+          symbols.push_back({num_bits, value});
+          writer.Write(num_bits, value);
+        }
 
-             writer.ZeroPadToByte();
-             ReclaimAndCharge(&writer, &allotment, 0, nullptr);
-             BitReader reader(writer.GetSpan());
-             for (const Symbol& s : symbols) {
-               EXPECT_EQ(s.value, reader.ReadBits(s.num_bits));
-             }
-             EXPECT_TRUE(reader.Close());
-           });
+        writer.ZeroPadToByte();
+        ReclaimAndCharge(&writer, &allotment, 0, nullptr);
+        BitReader reader(writer.GetSpan());
+        for (const Symbol& s : symbols) {
+          EXPECT_EQ(s.value, reader.ReadBits(s.num_bits));
+        }
+        EXPECT_TRUE(reader.Close());
+      },
+      "TestTBitReaderRoundTrip"));
 }
 
 // SkipBits is the same as reading that many bits.
 TEST(BitReaderTest, TestSkip) {
   ThreadPoolInternal pool(8);
-  pool.Run(
-      0, 96, ThreadPool::SkipInit(),
-      [](const int task, const int /* thread */) {
+  EXPECT_TRUE(RunOnPool(
+      &pool, 0, 96, ThreadPool::NoInit,
+      [](const uint32_t task, size_t /* thread */) {
         constexpr size_t kSize = 100;
 
         for (size_t skip = 0; skip < 128; ++skip) {
           BitWriter writer;
           BitWriter::Allotment allotment(&writer, kSize * kBitsPerByte);
           // Start with "task" 1-bits.
-          for (int i = 0; i < task; ++i) {
+          for (size_t i = 0; i < task; ++i) {
             writer.Write(1, 1);
           }
 
@@ -115,7 +116,7 @@ TEST(BitReaderTest, TestSkip) {
           BitReader reader1(writer.GetSpan());
           BitReader reader2(writer.GetSpan());
           // Verify initial 1-bits
-          for (int i = 0; i < task; ++i) {
+          for (size_t i = 0; i < task; ++i) {
             EXPECT_EQ(1u, reader1.ReadBits(1));
             EXPECT_EQ(1u, reader2.ReadBits(1));
           }
@@ -135,7 +136,8 @@ TEST(BitReaderTest, TestSkip) {
           EXPECT_TRUE(reader1.Close());
           EXPECT_TRUE(reader2.Close());
         }
-      });
+      },
+      "TestSkip"));
 }
 
 // Verifies byte order and different groupings of bits.

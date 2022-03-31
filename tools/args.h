@@ -8,13 +8,15 @@
 
 // Helpers for parsing command line arguments. No include guard needed.
 
+#include <inttypes.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
 #include <string>
 #include <vector>
 
-#include "lib/extras/color_hints.h"
+#include "lib/extras/dec/color_hints.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/codec_in_out.h"  // DecoderHints
@@ -100,7 +102,7 @@ static inline bool ParseDouble(const char* arg, double* out) {
 }
 
 static inline bool ParseAndAppendKeyValue(const char* arg,
-                                          jxl::ColorHints* out) {
+                                          jxl::extras::ColorHints* out) {
   const char* eq = strchr(arg, '=');
   if (!eq) {
     fprintf(stderr, "Expected argument as 'key=value' but received '%s'\n",
@@ -114,14 +116,16 @@ static inline bool ParseAndAppendKeyValue(const char* arg,
 
 static inline bool ParsePredictor(const char* arg, jxl::Predictor* out) {
   char* end;
-  size_t p = static_cast<size_t>(strtoull(arg, &end, 0));
+  uint64_t p = static_cast<uint64_t>(strtoull(arg, &end, 0));
   if (end[0] != '\0') {
     fprintf(stderr, "Invalid predictor: %s.\n", arg);
     return JXL_FAILURE("Args");
   }
-  if (p >= jxl::kNumModularPredictors) {
-    fprintf(stderr, "Invalid predictor value %zu, must be less than %zu.\n", p,
-            jxl::kNumModularPredictors);
+  if (p >= jxl::kNumModularEncoderPredictors) {
+    fprintf(stderr,
+            "Invalid predictor value %" PRIu64 ", must be less than %" PRIu64
+            ".\n",
+            p, static_cast<uint64_t>(jxl::kNumModularEncoderPredictors));
     return JXL_FAILURE("Args");
   }
   *out = static_cast<jxl::Predictor>(p);

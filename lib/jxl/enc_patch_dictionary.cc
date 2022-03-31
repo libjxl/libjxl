@@ -10,7 +10,6 @@
 #include <sys/types.h>
 
 #include <algorithm>
-#include <random>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -19,6 +18,7 @@
 #include "lib/jxl/ans_params.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/override.h"
+#include "lib/jxl/base/random.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/chroma_from_luma.h"
 #include "lib/jxl/color_management.h"
@@ -254,7 +254,7 @@ std::vector<PatchInfo> FindTextLikePatches(
   ZeroFillImage(&is_screenshot_like);
   uint8_t* JXL_RESTRICT screenshot_row = is_screenshot_like.Row(0);
   const size_t screenshot_stride = is_screenshot_like.PixelsPerRow();
-  const auto process_row = [&](uint64_t y, int _) {
+  const auto process_row = [&](const uint32_t y, size_t /* thread */) {
     for (uint64_t x = 0; x < opsin.xsize() / kPatchSide; x++) {
       bool all_same = true;
       for (size_t iy = 0; iy < static_cast<size_t>(kPatchSide); iy++) {
@@ -288,8 +288,8 @@ std::vector<PatchInfo> FindTextLikePatches(
       has_screenshot_areas = true;
     }
   };
-  RunOnPool(pool, 0, opsin.ysize() / kPatchSide, ThreadPool::SkipInit(),
-            process_row, "IsScreenshotLike");
+  JXL_CHECK(RunOnPool(pool, 0, opsin.ysize() / kPatchSide, ThreadPool::NoInit,
+                      process_row, "IsScreenshotLike"));
 
   // TODO(veluca): also parallelize the rest of this function.
   if (WantDebugOutput(aux_out)) {
@@ -371,8 +371,7 @@ std::vector<PatchInfo> FindTextLikePatches(
   queue.clear();
 
   ImageF ccs;
-  std::mt19937 rng;
-  std::uniform_real_distribution<float> dist(0.5, 1.0);
+  Rng rng(0);
   bool paint_ccs = false;
   if (WantDebugOutput(aux_out)) {
     aux_out->DumpPlaneNormalized("is_background", is_background);
@@ -506,7 +505,7 @@ std::vector<PatchInfo> FindTextLikePatches(
         continue;
       }
       if (paint_ccs) {
-        float cc_color = dist(rng);
+        float cc_color = rng.UniformF(0.5, 1.0);
         for (std::pair<uint32_t, uint32_t> p : cc) {
           ccs.Row(p.second)[p.first] = cc_color;
         }
@@ -553,47 +552,6 @@ std::vector<PatchInfo> FindTextLikePatches(
   constexpr size_t kMinMaxPatchSize = 20;
   if (max_patch_size < kMinMaxPatchSize) return {};
 
-  // Ensure that the specified set of patches doesn't produce out-of-bounds
-  // pixels.
-  // TODO(veluca): figure out why this is still necessary even with RCTs that
-  // don't depend on bit depth.
-  if (state->cparams.modular_mode && state->cparams.quality_pair.first >= 100) {
-    constexpr size_t kMaxPatchArea = kMaxPatchSize * kMaxPatchSize;
-    std::vector<float> min_then_max_px(2 * kMaxPatchArea);
-    for (size_t i = 0; i < info.size(); i++) {
-      for (size_t c = 0; c < 3; c++) {
-        float* JXL_RESTRICT min_px = min_then_max_px.data();
-        float* JXL_RESTRICT max_px = min_px + kMaxPatchArea;
-        std::fill(min_px, min_px + kMaxPatchArea, 1);
-        std::fill(max_px, max_px + kMaxPatchArea, 0);
-        size_t xsize = info[i].first.xsize;
-        for (size_t j = 0; j < info[i].second.size(); j++) {
-          size_t bx = info[i].second[j].first;
-          size_t by = info[i].second[j].second;
-          for (size_t iy = 0; iy < info[i].first.ysize; iy++) {
-            for (size_t ix = 0; ix < xsize; ix++) {
-              float v = opsin_rows[c][(by + iy) * opsin_stride + bx + ix];
-              if (v < min_px[iy * xsize + ix]) min_px[iy * xsize + ix] = v;
-              if (v > max_px[iy * xsize + ix]) max_px[iy * xsize + ix] = v;
-            }
-          }
-        }
-        for (size_t iy = 0; iy < info[i].first.ysize; iy++) {
-          for (size_t ix = 0; ix < xsize; ix++) {
-            float smallest = min_px[iy * xsize + ix];
-            float biggest = max_px[iy * xsize + ix];
-            JXL_ASSERT(smallest <= biggest);
-            float& out = info[i].first.fpixels[c][iy * xsize + ix];
-            // Clamp fpixels so that subtracting the patch never creates a
-            // negative value, or a value above 1.
-            JXL_ASSERT(biggest - 1 <= smallest);
-            out = std::max(smallest, out);
-            out = std::min(biggest - 1.f, out);
-          }
-        }
-      }
-    }
-  }
   return info;
 }
 
@@ -601,7 +559,8 @@ std::vector<PatchInfo> FindTextLikePatches(
 
 void FindBestPatchDictionary(const Image3F& opsin,
                              PassesEncoderState* JXL_RESTRICT state,
-                             ThreadPool* pool, AuxOut* aux_out, bool is_xyb) {
+                             const JxlCmsInterface& cms, ThreadPool* pool,
+                             AuxOut* aux_out, bool is_xyb) {
   std::vector<PatchInfo> info =
       FindTextLikePatches(opsin, state, pool, aux_out, is_xyb);
 
@@ -751,13 +710,8 @@ void FindBestPatchDictionary(const Image3F& opsin,
   CompressParams cparams = state->cparams;
   // Recursive application of patches could create very weird issues.
   cparams.patches = Override::kOff;
-  // TODO(veluca): possibly change heuristics here.
-  if (!cparams.modular_mode) {
-    cparams.quality_pair.first = cparams.quality_pair.second =
-        90.f - cparams.butteraugli_distance * 5.f;
-  }
 
-  RoundtripPatchFrame(&reference_frame, state, 0, cparams, pool, true);
+  RoundtripPatchFrame(&reference_frame, state, 0, cparams, cms, pool, true);
 
   // TODO(veluca): this assumes that applying patches is commutative, which is
   // not true for all blending modes. This code only produces kAdd patches, so
@@ -769,8 +723,8 @@ void FindBestPatchDictionary(const Image3F& opsin,
 
 void RoundtripPatchFrame(Image3F* reference_frame,
                          PassesEncoderState* JXL_RESTRICT state, int idx,
-                         CompressParams& cparams, ThreadPool* pool,
-                         bool subtract) {
+                         CompressParams& cparams, const JxlCmsInterface& cms,
+                         ThreadPool* pool, bool subtract) {
   FrameInfo patch_frame_info;
   cparams.resampling = 1;
   cparams.ec_resampling = 1;
@@ -810,7 +764,8 @@ void RoundtripPatchFrame(Image3F* reference_frame,
   PassesEncoderState roundtrip_state;
   auto special_frame = std::unique_ptr<BitWriter>(new BitWriter());
   JXL_CHECK(EncodeFrame(cparams, patch_frame_info, state->shared.metadata, ib,
-                        &roundtrip_state, pool, special_frame.get(), nullptr));
+                        &roundtrip_state, cms, pool, special_frame.get(),
+                        nullptr));
   const Span<const uint8_t> encoded = special_frame->GetSpan();
   state->special_frames.emplace_back(std::move(special_frame));
   if (subtract) {
@@ -823,12 +778,13 @@ void RoundtripPatchFrame(Image3F* reference_frame,
             state->shared.metadata->m.color_encoding.IsGray())));
     JXL_CHECK(DecodeFrame({}, &dec_state, pool, &br, &decoded,
                           *state->shared.metadata, /*constraints=*/nullptr));
+    size_t ref_xsize =
+        dec_state.shared_storage.reference_frames[idx].storage.color()->xsize();
     // if the frame itself uses patches, we need to decode another frame
-    if (!dec_state.shared_storage.reference_frames[idx]
-             .storage.color()
-             ->xsize())
+    if (!ref_xsize) {
       JXL_CHECK(DecodeFrame({}, &dec_state, pool, &br, &decoded,
                             *state->shared.metadata, /*constraints=*/nullptr));
+    }
     JXL_CHECK(br.Close());
     state->shared.reference_frames[idx] =
         std::move(dec_state.shared_storage.reference_frames[idx]);

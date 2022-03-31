@@ -6,51 +6,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include <cmath>
-
 #include "lib/extras/codec.h"
+#include "lib/extras/hlg.h"
 #include "lib/extras/tone_mapping.h"
 #include "lib/jxl/base/thread_pool_internal.h"
+#include "lib/jxl/enc_color_management.h"
 #include "tools/args.h"
 #include "tools/cmdline.h"
-
-namespace jxl {
-namespace {
-
-Status HlgInverseOOTF(ImageBundle* ib, ThreadPool* pool) {
-  ColorEncoding linear_rec2020;
-  linear_rec2020.SetColorSpace(ColorSpace::kRGB);
-  linear_rec2020.primaries = Primaries::k2100;
-  linear_rec2020.white_point = WhitePoint::kD65;
-  linear_rec2020.tf.SetTransferFunction(TransferFunction::kLinear);
-  JXL_RETURN_IF_ERROR(linear_rec2020.CreateICC());
-  JXL_RETURN_IF_ERROR(ib->TransformTo(linear_rec2020, pool));
-
-  return RunOnPool(
-      pool, 0, ib->ysize(), ThreadPool::SkipInit(),
-      [&](const int y, const int thread) {
-        float* const JXL_RESTRICT rows[3] = {ib->color()->PlaneRow(0, y),
-                                             ib->color()->PlaneRow(1, y),
-                                             ib->color()->PlaneRow(2, y)};
-        for (size_t x = 0; x < ib->xsize(); ++x) {
-          float& red = rows[0][x];
-          float& green = rows[1][x];
-          float& blue = rows[2][x];
-          const float luminance =
-              0.2627f * red + 0.6780f * green + 0.0593f * blue;
-          const float ratio = std::pow(luminance, 1 / 1.2f - 1);
-          if (std::isfinite(ratio)) {
-            red *= ratio;
-            green *= ratio;
-            blue *= ratio;
-          }
-        }
-      },
-      "HlgInverseOOTF");
-}
-
-}  // namespace
-}  // namespace jxl
 
 int main(int argc, const char** argv) {
   jxl::ThreadPoolInternal pool;
@@ -60,6 +22,11 @@ int main(int argc, const char** argv) {
   parser.AddOptionValue('m', "max_nits", "nits",
                         "maximum luminance in the image", &max_nits,
                         &jpegxl::tools::ParseFloat, 0);
+  float preserve_saturation = .1f;
+  parser.AddOptionValue(
+      's', "preserve_saturation", "0..1",
+      "to what extent to try and preserve saturation over luminance",
+      &preserve_saturation, &jpegxl::tools::ParseFloat, 0);
   const char* input_filename = nullptr;
   auto input_filename_option = parser.AddPositionalOption(
       "input", true, "input image", &input_filename, 0);
@@ -87,14 +54,19 @@ int main(int argc, const char** argv) {
   }
 
   jxl::CodecInOut image;
-  jxl::ColorHints color_hints;
+  jxl::extras::ColorHints color_hints;
   color_hints.Add("color_space", "RGB_D65_202_Rel_PeQ");
   JXL_CHECK(jxl::SetFromFile(input_filename, color_hints, &image, &pool));
   if (max_nits > 0) {
     image.metadata.m.SetIntensityTarget(max_nits);
   }
   JXL_CHECK(jxl::ToneMapTo({0, 1000}, &image, &pool));
-  JXL_CHECK(jxl::HlgInverseOOTF(&image.Main(), &pool));
+  JXL_CHECK(jxl::HlgInverseOOTF(&image.Main(), 1.2f, &pool));
+  JXL_CHECK(jxl::GamutMap(&image, preserve_saturation, &pool));
+  // Peak luminance at which the system gamma is 1, since we are now in scene
+  // light, having applied the inverse OOTF ourselves to control the subsequent
+  // gamut mapping instead of leaving it to JxlCms below.
+  image.metadata.m.SetIntensityTarget(301);
 
   jxl::ColorEncoding hlg;
   hlg.SetColorSpace(jxl::ColorSpace::kRGB);
@@ -102,7 +74,7 @@ int main(int argc, const char** argv) {
   hlg.white_point = jxl::WhitePoint::kD65;
   hlg.tf.SetTransferFunction(jxl::TransferFunction::kHLG);
   JXL_CHECK(hlg.CreateICC());
-  JXL_CHECK(image.TransformTo(hlg, &pool));
+  JXL_CHECK(image.TransformTo(hlg, jxl::GetJxlCms(), &pool));
   image.metadata.m.color_encoding = hlg;
   JXL_CHECK(jxl::EncodeToFile(image, output_filename, &pool));
 }

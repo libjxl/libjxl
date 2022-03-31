@@ -59,12 +59,12 @@ class QuantizedSpline {
  public:
   QuantizedSpline() = default;
   explicit QuantizedSpline(const Spline& original,
-                           int32_t quantization_adjustment, float ytox,
-                           float ytob);
+                           int32_t quantization_adjustment, float y_to_x,
+                           float y_to_b);
 
-  Spline Dequantize(const Spline::Point& starting_point,
-                    int32_t quantization_adjustment, float ytox,
-                    float ytob) const;
+  Status Dequantize(const Spline::Point& starting_point,
+                    int32_t quantization_adjustment, float y_to_x, float y_to_b,
+                    Spline& result) const;
 
   Status Decode(const std::vector<uint8_t>& context_map,
                 ANSSymbolReader* decoder, BitReader* br,
@@ -84,10 +84,8 @@ class QuantizedSpline {
 // row, which allows reuse for different y values (which are tracked
 // separately).
 struct SplineSegment {
-  ssize_t xbegin, xend;
   float center_x, center_y;
   float maximum_distance;
-  float sigma;
   float inv_sigma;
   float sigma_over_4_times_intensity;
   float color[3];
@@ -111,6 +109,8 @@ class Splines {
 
   void AddTo(Image3F* opsin, const Rect& opsin_rect,
              const Rect& image_rect) const;
+  void AddToRow(float* JXL_RESTRICT row_x, float* JXL_RESTRICT row_y,
+                float* JXL_RESTRICT row_b, const Rect& image_row) const;
   void SubtractFrom(Image3F* opsin) const;
 
   const std::vector<QuantizedSpline>& QuantizedSplines() const {
@@ -126,6 +126,9 @@ class Splines {
                              const ColorCorrelationMap& cmap);
 
  private:
+  template <bool>
+  void ApplyToRow(float* JXL_RESTRICT row_x, float* JXL_RESTRICT row_y,
+                  float* JXL_RESTRICT row_b, const Rect& image_row) const;
   template <bool>
   void Apply(Image3F* opsin, const Rect& opsin_rect,
              const Rect& image_rect) const;

@@ -76,7 +76,7 @@ inline std::array<int, 3> JpegOrder(ColorTransform ct, bool is_gray) {
 
 struct YCbCrChromaSubsampling : public Fields {
   YCbCrChromaSubsampling();
-  const char* Name() const override { return "YCbCrChromaSubsampling"; }
+  JXL_FIELDS_NAME(YCbCrChromaSubsampling)
   size_t HShift(size_t c) const { return maxhs_ - kHShift[channel_mode_[c]]; }
   size_t VShift(size_t c) const { return maxvs_ - kVShift[channel_mode_[c]]; }
 
@@ -208,7 +208,7 @@ enum class BlendMode {
 
 struct BlendingInfo : public Fields {
   BlendingInfo();
-  const char* Name() const override { return "BlendingInfo"; }
+  JXL_FIELDS_NAME(BlendingInfo)
   Status VisitFields(Visitor* JXL_RESTRICT visitor) override;
   BlendMode mode;
   // Which extra channel to use as alpha channel for blending, only encoded
@@ -238,7 +238,7 @@ struct FrameSize {
 // AnimationFrame defines duration of animation frames.
 struct AnimationFrame : public Fields {
   explicit AnimationFrame(const CodecMetadata* metadata);
-  const char* Name() const override { return "AnimationFrame"; }
+  JXL_FIELDS_NAME(AnimationFrame)
 
   Status VisitFields(Visitor* JXL_RESTRICT visitor) override;
 
@@ -256,7 +256,7 @@ struct AnimationFrame : public Fields {
 // For decoding to lower resolutions. Only used for kRegular frames.
 struct Passes : public Fields {
   Passes();
-  const char* Name() const override { return "Passes"; }
+  JXL_FIELDS_NAME(Passes)
 
   Status VisitFields(Visitor* JXL_RESTRICT visitor) override;
 
@@ -338,7 +338,7 @@ struct FrameHeader : public Fields {
   };
 
   explicit FrameHeader(const CodecMetadata* metadata);
-  const char* Name() const override { return "FrameHeader"; }
+  JXL_FIELDS_NAME(FrameHeader)
 
   Status VisitFields(Visitor* JXL_RESTRICT visitor) override;
 

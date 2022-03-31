@@ -41,41 +41,6 @@ Status DecodeHeaders(BitReader* reader, CodecInOut* io) {
 
 }  // namespace
 
-Status DecodePreview(const DecompressParams& dparams,
-                     const CodecMetadata& metadata,
-                     BitReader* JXL_RESTRICT reader, ThreadPool* pool,
-                     ImageBundle* JXL_RESTRICT preview, uint64_t* dec_pixels,
-                     const SizeConstraints* constraints) {
-  // No preview present in file.
-  if (!metadata.m.have_preview) {
-    if (dparams.preview == Override::kOn) {
-      return JXL_FAILURE("preview == kOn but no preview present");
-    }
-    return true;
-  }
-
-  // Have preview; prepare to skip or read it.
-  JXL_RETURN_IF_ERROR(reader->JumpToByteBoundary());
-
-  if (dparams.preview == Override::kOff) {
-    JXL_RETURN_IF_ERROR(SkipFrame(metadata, reader, /*is_preview=*/true));
-    return true;
-  }
-
-  // Else: default or kOn => decode preview.
-  PassesDecoderState dec_state;
-  JXL_RETURN_IF_ERROR(dec_state.output_encoding_info.Set(
-      metadata, ColorEncoding::LinearSRGB(metadata.m.color_encoding.IsGray())));
-  JXL_RETURN_IF_ERROR(DecodeFrame(dparams, &dec_state, pool, reader, preview,
-                                  metadata, constraints,
-                                  /*is_preview=*/true));
-  if (dec_pixels) {
-    *dec_pixels += dec_state.shared->frame_dim.xsize_upsampled *
-                   dec_state.shared->frame_dim.ysize_upsampled;
-  }
-  return true;
-}
-
 // To avoid the complexity of file I/O and buffering, we assume the bitstream
 // is loaded (or for large images/sequences: mapped into) memory.
 Status DecodeFile(const DecompressParams& dparams,
@@ -101,7 +66,23 @@ Status DecodeFile(const DecompressParams& dparams,
   {
     BitReader reader(file);
     BitReaderScopedCloser reader_closer(&reader, &ret);
-    (void)reader.ReadFixedBits<16>();  // skip marker
+    if (reader.ReadFixedBits<16>() != 0x0AFF) {
+      // We don't have a naked codestream. Make a quick & dirty attempt to find
+      // the codestream.
+      // TODO(jon): get rid of this whole function
+      const unsigned char* begin = file.data();
+      const unsigned char* end = file.data() + file.size() - 4;
+      while (begin < end) {
+        if (!memcmp(begin, "jxlc", 4)) break;
+        begin++;
+      }
+      if (begin >= end) return JXL_FAILURE("Couldn't find jxl codestream");
+      reader.SkipBits(8 * (begin - file.data() + 2));
+      unsigned int firstbytes = reader.ReadFixedBits<16>();
+      if (firstbytes != 0x0AFF)
+        return JXL_FAILURE("Codestream didn't start with FF0A but with %X",
+                           firstbytes);
+    }
 
     {
       JXL_RETURN_IF_ERROR(DecodeHeaders(&reader, io));
@@ -124,20 +105,23 @@ Status DecodeFile(const DecompressParams& dparams,
       }
     }
 
-    JXL_RETURN_IF_ERROR(DecodePreview(dparams, io->metadata, &reader, pool,
-                                      &io->preview_frame, &io->dec_pixels,
-                                      &io->constraints));
+    PassesDecoderState dec_state;
+    JXL_RETURN_IF_ERROR(dec_state.output_encoding_info.Set(
+        io->metadata,
+        ColorEncoding::LinearSRGB(io->metadata.m.color_encoding.IsGray())));
+
+    if (io->metadata.m.have_preview) {
+      JXL_RETURN_IF_ERROR(reader.JumpToByteBoundary());
+      JXL_RETURN_IF_ERROR(DecodeFrame(dparams, &dec_state, pool, &reader,
+                                      &io->preview_frame, io->metadata,
+                                      &io->constraints, /*is_preview=*/true));
+    }
 
     // Only necessary if no ICC and no preview.
     JXL_RETURN_IF_ERROR(reader.JumpToByteBoundary());
     if (io->metadata.m.have_animation && dparams.keep_dct) {
       return JXL_FAILURE("Cannot decode to JPEG an animation");
     }
-
-    PassesDecoderState dec_state;
-    JXL_RETURN_IF_ERROR(dec_state.output_encoding_info.Set(
-        io->metadata,
-        ColorEncoding::LinearSRGB(io->metadata.m.color_encoding.IsGray())));
 
     io->frames.clear();
     Status dec_ok(false);
@@ -147,6 +131,7 @@ Status DecodeFile(const DecompressParams& dparams,
         io->frames.back().jpeg_data = std::move(jpeg_data);
       }
       // Skip frames that are not displayed.
+      bool found_displayed_frame = true;
       do {
         dec_ok =
             DecodeFrame(dparams, &dec_state, pool, &reader, &io->frames.back(),
@@ -155,13 +140,19 @@ Status DecodeFile(const DecompressParams& dparams,
           JXL_RETURN_IF_ERROR(dec_ok);
         } else if (!dec_ok) {
           io->frames.pop_back();
+          found_displayed_frame = false;
           break;
         }
       } while (dec_state.shared->frame_header.frame_type !=
                    FrameType::kRegularFrame &&
                dec_state.shared->frame_header.frame_type !=
                    FrameType::kSkipProgressive);
-      io->dec_pixels += io->frames.back().xsize() * io->frames.back().ysize();
+      if (found_displayed_frame) {
+        // if found_displayed_frame is true io->frames shouldn't be empty
+        // because we added a frame before the loop.
+        JXL_ASSERT(!io->frames.empty());
+        io->dec_pixels += io->frames.back().xsize() * io->frames.back().ysize();
+      }
     } while (!dec_state.shared->frame_header.is_last && dec_ok);
 
     if (io->frames.empty()) return JXL_FAILURE("Not enough data.");

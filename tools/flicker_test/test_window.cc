@@ -148,9 +148,10 @@ void FlickerTestWindow::nextImage() {
   const QString image = remainingImages_.takeFirst();
 retry:
   QImage originalImage =
-      loadImage(originalFolder_.absoluteFilePath(image), monitorProfile_);
-  QImage alteredImage =
-      loadImage(alteredFolder_.absoluteFilePath(image), monitorProfile_);
+      loadImage(originalFolder_.absoluteFilePath(image), monitorProfile_,
+                parameters_.intensityTarget);
+  QImage alteredImage = loadImage(alteredFolder_.absoluteFilePath(image),
+                                  monitorProfile_, parameters_.intensityTarget);
   if (originalImage.isNull() || alteredImage.isNull()) {
     QMessageBox messageBox(this);
     messageBox.setIcon(QMessageBox::Warning);

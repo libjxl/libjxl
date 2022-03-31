@@ -72,6 +72,15 @@ typedef struct {
   uint32_t ysize;
 } JxlPreviewHeader;
 
+/** The intrinsic size header */
+typedef struct {
+  /** Intrinsic width in pixels */
+  uint32_t xsize;
+
+  /** Intrinsic height in pixels */
+  uint32_t ysize;
+} JxlIntrinsicSizeHeader;
+
 /** The codestream animation header, optionally present in the beginning of
  * the codestream, and if it is it applies to all animation frames, unlike
  * JxlFrameHeader which applies to an individual frame.
@@ -134,6 +143,8 @@ typedef struct {
    * representable value. The image does not necessarily contain a pixel
    * actually this bright. An encoder is allowed to set 255 for SDR images
    * without computing a histogram.
+   * Leaving this set to its default of 0 lets libjxl choose a sensible default
+   * value based on the color encoding.
    */
   float intensity_target;
 
@@ -232,10 +243,26 @@ typedef struct {
    */
   JxlAnimationHeader animation;
 
+  /** Intrinsic width of the image.
+   * The intrinsic size can be different from the actual size in pixels
+   * (as given by xsize and ysize) and it denotes the recommended dimensions
+   * for displaying the image, i.e. applications are advised to resample the
+   * decoded image to the intrinsic dimensions.
+   */
+  uint32_t intrinsic_xsize;
+
+  /** Intrinsic heigth of the image.
+   * The intrinsic size can be different from the actual size in pixels
+   * (as given by xsize and ysize) and it denotes the recommended dimensions
+   * for displaying the image, i.e. applications are advised to resample the
+   * decoded image to the intrinsic dimensions.
+   */
+  uint32_t intrinsic_ysize;
+
   /** Padding for forwards-compatibility, in case more fields are exposed
    * in a future version of the library.
    */
-  uint8_t padding[108];
+  uint8_t padding[100];
 } JxlBasicInfo;
 
 /** Information for a single extra channel.
@@ -289,7 +316,81 @@ typedef struct {
   uint64_t extensions;
 } JxlHeaderExtensions;
 
-/** The header of one displayed frame. */
+/** Frame blend modes.
+ * When decoding, if coalescing is enabled (default), this can be ignored.
+ */
+typedef enum {
+  JXL_BLEND_REPLACE = 0,
+  JXL_BLEND_ADD = 1,
+  JXL_BLEND_BLEND = 2,
+  JXL_BLEND_MULADD = 3,
+  JXL_BLEND_MUL = 4,
+} JxlBlendMode;
+
+/** The information about blending the color channels or a single extra channel.
+ * When decoding, if coalescing is enabled (default), this can be ignored and
+ * the blend mode is considered to be JXL_BLEND_REPLACE.
+ * When encoding, these settings apply to the pixel data given to the encoder.
+ */
+typedef struct {
+  /** Blend mode.
+   */
+  JxlBlendMode blendmode;
+  /** Reference frame ID to use as the 'bottom' layer (0-3).
+   */
+  uint32_t source;
+  /** Which extra channel to use as the 'alpha' channel for blend modes
+   * JXL_BLEND_BLEND and JXL_BLEND_MULADD.
+   */
+  uint32_t alpha;
+  /** Clamp values to [0,1] for the purpose of blending.
+   */
+  JXL_BOOL clamp;
+} JxlBlendInfo;
+
+/** The information about layers.
+ * When decoding, if coalescing is enabled (default), this can be ignored.
+ * When encoding, these settings apply to the pixel data given to the encoder,
+ * the encoder could choose an internal representation that differs.
+ */
+typedef struct {
+  /** Whether cropping is applied for this frame. When decoding, if false,
+   * crop_x0 and crop_y0 are set to zero, and xsize and ysize to the main
+   * image dimensions. When encoding and this is false, those fields are
+   * ignored. When decoding, if coalescing is enabled (default), this is always
+   * false, regardless of the internal encoding in the JPEG XL codestream.
+   */
+  JXL_BOOL have_crop;
+
+  /** Horizontal offset of the frame (can be negative).
+   */
+  int32_t crop_x0;
+
+  /** Vertical offset of the frame (can be negative).
+   */
+  int32_t crop_y0;
+
+  /** Width of the frame (number of columns).
+   */
+  uint32_t xsize;
+
+  /** Height of the frame (number of rows).
+   */
+  uint32_t ysize;
+
+  /** The blending info for the color channels. Blending info for extra channels
+   * has to be retrieved separately using JxlDecoderGetExtraChannelBlendInfo.
+   */
+  JxlBlendInfo blend_info;
+
+  /** After blending, save the frame as reference frame with this ID (0-3).
+   * Special case: if the frame duration is nonzero, ID 0 means "will not be
+   * referenced in the future". This value is not used for the last frame.
+   */
+  uint32_t save_as_reference;
+} JxlLayerInfo;
+
+/** The header of one displayed frame or non-coalesced layer. */
 typedef struct {
   /** How long to wait after rendering in ticks. The duration in seconds of a
    * tick is given by tps_numerator and tps_denominator in JxlAnimationHeader.
@@ -307,13 +408,22 @@ typedef struct {
   uint32_t timecode;
 
   /** Length of the frame name in bytes, or 0 if no name.
-   * Excludes null termination character.
+   * Excludes null termination character. This value is set by the decoder.
+   * For the encoder, this value is ignored and @ref JxlEncoderSetFrameName is
+   * used instead to set the name and the length.
    */
   uint32_t name_length;
 
-  /** Indicates this is the last animation frame.
+  /** Indicates this is the last animation frame. This value is set by the
+   * decoder to indicate no further frames follow. For the encoder, it is not
+   * required to set this value and it is ignored, @ref JxlEncoderCloseFrames is
+   * used to indicate the last frame to the encoder instead.
    */
   JXL_BOOL is_last;
+
+  /** Information about the layer in case of no coalescing.
+   */
+  JxlLayerInfo layer_info;
 } JxlFrameHeader;
 
 #if defined(__cplusplus) || defined(c_plusplus)

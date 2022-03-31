@@ -10,12 +10,12 @@
 
 #include <algorithm>
 #include <numeric>
-#include <random>
 #include <vector>
 
 #include "gtest/gtest.h"
 #include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/random.h"
 #include "lib/jxl/base/thread_pool_internal.h"
 
 namespace jxl {
@@ -42,7 +42,7 @@ void Roundtrip(size_t n, WorkingSet<PermutationT>* ws) {
   JXL_ASSERT(n != 0);
   const size_t padded_n = 1ull << CeilLog2Nonzero(n);
 
-  std::mt19937 rng(n * 65537 + 13);
+  Rng rng(n * 65537 + 13);
 
   // Ensure indices fit into PermutationT
   EXPECT_LE(n, 1ULL << (sizeof(PermutationT) * 8));
@@ -50,8 +50,8 @@ void Roundtrip(size_t n, WorkingSet<PermutationT>* ws) {
   std::iota(ws->permutation.begin(), ws->permutation.begin() + n, 0);
 
   // For various random permutations:
-  for (size_t rep = 0; rep < 100; ++rep) {
-    std::shuffle(ws->permutation.begin(), ws->permutation.begin() + n, rng);
+  for (size_t rep = 0; rep < 3; ++rep) {
+    rng.Shuffle(ws->permutation.data(), n);
 
     // Must decode to the same permutation
     ComputeLehmerCode(ws->permutation.data(), ws->temp.data(), n,
@@ -71,18 +71,18 @@ void RoundtripSizeRange(ThreadPool* pool, uint32_t begin, uint32_t end) {
   ASSERT_NE(0u, begin);  // n = 0 not allowed.
   std::vector<WorkingSet<PermutationT>> working_sets;
 
-  RunOnPool(
+  JXL_CHECK(RunOnPool(
       pool, begin, end,
-      [&working_sets, end](size_t num_threads) {
+      [&working_sets, end](const size_t num_threads) {
         for (size_t i = 0; i < num_threads; i++) {
           working_sets.emplace_back(end - 1);
         }
         return true;
       },
-      [&working_sets](int n, int thread) {
+      [&working_sets](const uint32_t n, const size_t thread) {
         Roundtrip(n, &working_sets[thread]);
       },
-      "lehmer test");
+      "lehmer test"));
 }
 
 TEST(LehmerCodeTest, TestRoundtrips) {

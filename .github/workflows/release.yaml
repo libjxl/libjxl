@@ -35,6 +35,7 @@ jobs:
           doxygen \
           libbrotli-dev \
           libgdk-pixbuf2.0-dev \
+          libgflags-dev \
           libgif-dev \
           libgtest-dev \
           libgtk2.0-dev  \
@@ -71,6 +72,8 @@ jobs:
         cd build
         tar -zcvf ${{ runner.workspace }}/release_file.tar.gz \
           LICENSE* tools/{cjxl,djxl,benchmark_xl}
+        ln -s ${{ runner.workspace }}/release_file.tar.gz \
+          ${{ runner.workspace }}/jxl-linux-x86_64-static-${{ github.event.release.tag_name }}.tar.gz
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v2
@@ -80,13 +83,10 @@ jobs:
 
     - name: Upload binaries to release
       if: github.event_name == 'release'
-      uses: svenstaro/upload-release-action@v1-release
+      uses: AButler/upload-release-assets@v2.0
       with:
-        repo_token: ${{ secrets.GITHUB_TOKEN }}
-        file: ${{ runner.workspace }}/release_file.tar.gz
-        asset_name: jxl-linux-x86_64-static-${{ github.event.release.tag_name }}.tar.gz
-        tag: ${{ github.ref }}
-        overwrite: true
+        files: ${{ runner.workspace }}/jxl-linux-x86_64-static-${{ github.event.release.tag_name }}.tar.gz
+        repo-token: ${{ secrets.GITHUB_TOKEN }}
 
 
   # Build .deb packages Ubuntu/Debian
@@ -94,6 +94,7 @@ jobs:
     name: .deb packages / ${{ matrix.os }}
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         os:
         - ubuntu:20.04
@@ -232,22 +233,22 @@ jobs:
       run: |
         (cd build/debs/; find -maxdepth 1 -name '*jxl*.*') | \
         tar -zcvf release_file.tar.gz -C build/debs/ -T -
+        ln -s release_file.tar.gz \
+          ${{ steps.env.outputs.artifact_name }}-${{ github.event.release.tag_name }}.tar.gz
 
     - name: Upload binaries to release
       if: github.event_name == 'release'
-      uses: svenstaro/upload-release-action@v1-release
+      uses: AButler/upload-release-assets@v2.0
       with:
-        repo_token: ${{ secrets.GITHUB_TOKEN }}
-        file: release_file.tar.gz
-        asset_name: ${{ steps.env.outputs.artifact_name }}-${{ github.event.release.tag_name }}.tar.gz
-        tag: ${{ github.ref }}
-        overwrite: true
+        files: ${{ steps.env.outputs.artifact_name }}-${{ github.event.release.tag_name }}.tar.gz
+        repo-token: ${{ secrets.GITHUB_TOKEN }}
 
 
   windows_build:
     name: Windows Build (vcpkg / ${{ matrix.triplet }})
     runs-on: [windows-latest]
     strategy:
+      fail-fast: false
       matrix:
         include:
           - triplet: x86-windows-static
@@ -296,6 +297,7 @@ jobs:
       run: |
         set -x
         ${VCPKG_ROOT}/vcpkg --triplet ${{ matrix.triplet }} install \
+          gflags \
           giflib \
           libjpeg-turbo \
           libpng \
@@ -317,6 +319,7 @@ jobs:
           -DJPEGXL_ENABLE_TCMALLOC=OFF \
           -DJPEGXL_ENABLE_VIEWERS=OFF \
           -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} \
+          -DJPEGXL_BUNDLE_GFLAGS=ON \
         #
     - name: Build
       shell: 'bash'
@@ -349,14 +352,11 @@ jobs:
       shell: 'powershell'
       run: |
         Compress-Archive -Path prefix\bin\* `
-          -DestinationPath ${{ runner.workspace }}\release_file.zip
+          -DestinationPath jxl-${{matrix.triplet}}.zip
 
     - name: Upload binaries to release
       if: github.event_name == 'release'
-      uses: svenstaro/upload-release-action@v1-release
+      uses: AButler/upload-release-assets@v2.0
       with:
-        repo_token: ${{ secrets.GITHUB_TOKEN }}
-        file: ${{ runner.workspace }}/release_file.zip
-        asset_name: jxl-${{matrix.triplet}}.zip
-        tag: ${{ github.ref }}
-        overwrite: true
+        files: jxl-${{matrix.triplet}}.zip
+        repo-token: ${{ secrets.GITHUB_TOKEN }}

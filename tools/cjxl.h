@@ -9,9 +9,10 @@
 #include <stddef.h>
 
 #include <string>
+#include <thread>
 #include <utility>
 
-#include "lib/extras/color_hints.h"
+#include "lib/extras/dec/color_hints.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/padded_bytes.h"
@@ -55,12 +56,12 @@ struct CompressArgs {
   jxl::Override print_profile = jxl::Override::kDefault;
 
   // Decoding source image flags
-  jxl::ColorHints color_hints;
+  jxl::extras::ColorHints color_hints;
 
   // JXL flags
   size_t override_bitdepth = 0;
   jxl::CompressParams params;
-  size_t num_threads;
+  size_t num_threads = std::thread::hardware_concurrency();
   size_t num_reps = 1;
   float intensity_target = 0;
 
@@ -72,6 +73,8 @@ struct CompressArgs {
   // Reset to false if input image is not a JPEG.
   bool jpeg_transcode = true;
 
+  bool store_jpeg_metadata = true;
+
   float quality = -1001.f;  // Default to lossless if input is already lossy,
                             // or to VarDCT otherwise.
   bool progressive = false;
@@ -82,7 +85,6 @@ struct CompressArgs {
   jxl::InspectorImage3F inspector_image3f;
 
   // References (ids) of specific options to check if they were matched.
-  CommandLineParser::OptionId opt_num_threads_id = -1;
   CommandLineParser::OptionId opt_distance_id = -1;
   CommandLineParser::OptionId opt_target_size_id = -1;
   CommandLineParser::OptionId opt_target_bpp_id = -1;

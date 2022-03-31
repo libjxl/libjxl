@@ -82,13 +82,17 @@ endif()  # BUILD_TESTING
 
 # Highway
 set(HWY_SYSTEM_GTEST ON CACHE INTERNAL "")
+set(HWY_FORCE_STATIC_LIBS ON CACHE INTERNAL "")
+if((SANITIZER STREQUAL "asan") OR (SANITIZER STREQUAL "msan"))
+  set(HWY_EXAMPLES_TESTS_INSTALL OFF CACHE INTERNAL "")
+endif()
 if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/highway/CMakeLists.txt" AND
     NOT JPEGXL_FORCE_SYSTEM_HWY)
   add_subdirectory(highway)
   configure_file("${CMAKE_CURRENT_SOURCE_DIR}/highway/LICENSE"
                  ${PROJECT_BINARY_DIR}/LICENSE.highway COPYONLY)
 else()
-  pkg_check_modules(HWY libhwy)
+  find_package(HWY 0.15.0)
   if (NOT HWY_FOUND)
     message(FATAL_ERROR
         "Highway library (hwy) not found. Install libhwy-dev or download it "
@@ -96,78 +100,17 @@ else()
         "Highway is required to build JPEG XL. You can run "
         "${PROJECT_SOURCE_DIR}/deps.sh to download this dependency.")
   endif()
-  add_library(hwy INTERFACE IMPORTED GLOBAL)
-  if(${CMAKE_VERSION} VERSION_LESS "3.13.5")
-    set_property(TARGET hwy PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${HWY_INCLUDE_DIR})
-    target_link_libraries(hwy INTERFACE ${HWY_LDFLAGS})
-    set_property(TARGET hwy PROPERTY INTERFACE_COMPILE_OPTIONS ${HWY_CFLAGS_OTHER})
-  else()
-    target_include_directories(hwy INTERFACE ${HWY_INCLUDE_DIRS})
-    target_link_libraries(hwy INTERFACE ${HWY_LINK_LIBRARIES})
-    target_link_options(hwy INTERFACE ${HWY_LDFLAGS_OTHER})
-    target_compile_options(hwy INTERFACE ${HWY_CFLAGS_OTHER})
-  endif()
   if(JPEGXL_DEP_LICENSE_DIR)
     configure_file("${JPEGXL_DEP_LICENSE_DIR}/libhwy-dev/copyright"
                    ${PROJECT_BINARY_DIR}/LICENSE.highway COPYONLY)
   endif()  # JPEGXL_DEP_LICENSE_DIR
 endif()
 
-# lodepng
-if( NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/lodepng/lodepng.h" )
-  message(FATAL_ERROR "Please run ${PROJECT_SOURCE_DIR}/deps.sh to fetch the "
-          "build dependencies.")
-endif()
-include(lodepng.cmake)
-configure_file("${CMAKE_CURRENT_SOURCE_DIR}/lodepng/LICENSE"
-               ${PROJECT_BINARY_DIR}/LICENSE.lodepng COPYONLY)
-
 # brotli
 if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/brotli/c/include/brotli/decode.h" OR
     JPEGXL_FORCE_SYSTEM_BROTLI)
-  # Create the libbrotli* and libbrotli*-static targets.
-  foreach(brlib IN ITEMS brotlienc brotlidec brotlicommon)
-    # Use uppercase like "BROTLIENC" for the cmake variables
-    string(TOUPPER "${brlib}" BRPREFIX)
-    pkg_check_modules(${BRPREFIX} lib${brlib})
-    if (${BRPREFIX}_FOUND)
-      if(${CMAKE_VERSION} VERSION_LESS "3.13.5")
-        add_library(${brlib} INTERFACE IMPORTED GLOBAL)
-        set_property(TARGET ${brlib} PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${${BRPREFIX}_INCLUDE_DIR})
-        target_link_libraries(${brlib} INTERFACE ${${BRPREFIX}_LDFLAGS})
-        set_property(TARGET ${brlib} PROPERTY INTERFACE_COMPILE_OPTIONS ${${BRPREFIX}_CFLAGS_OTHER})
-
-        add_library(${brlib}-static INTERFACE IMPORTED GLOBAL)
-        set_property(TARGET ${brlib}-static PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${${BRPREFIX}_INCLUDE_DIR})
-        target_link_libraries(${brlib}-static INTERFACE ${${BRPREFIX}_LDFLAGS})
-        set_property(TARGET ${brlib}-static PROPERTY INTERFACE_COMPILE_OPTIONS ${${BRPREFIX}_CFLAGS_OTHER})
-      else()
-        add_library(${brlib} INTERFACE IMPORTED GLOBAL)
-        target_include_directories(${brlib}
-            INTERFACE ${${BRPREFIX}_INCLUDE_DIRS})
-        target_link_libraries(${brlib}
-            INTERFACE ${${BRPREFIX}_LINK_LIBRARIES})
-        target_link_options(${brlib}
-            INTERFACE ${${BRPREFIX}_LDFLAGS_OTHER})
-        target_compile_options(${brlib}
-            INTERFACE ${${BRPREFIX}_CFLAGS_OTHER})
-
-        # TODO(deymo): Remove the -static library versions, this target is
-        # currently needed by brunsli.cmake. When importing it this way, the
-        # brotli*-static target is just an alias.
-        add_library(${brlib}-static ALIAS ${brlib})
-      endif()
-    endif()
-    unset(BRPREFIX)
-  endforeach()
-
-  if (BROTLIENC_FOUND AND BROTLIDEC_FOUND AND BROTLICOMMON_FOUND)
-    set(BROTLI_FOUND 1)
-  else()
-    set(BROTLI_FOUND 0)
-  endif()
-
-  if (NOT BROTLI_FOUND)
+  find_package(Brotli)
+  if (NOT Brotli_FOUND)
     message(FATAL_ERROR
         "Brotli not found, install brotli-dev or download brotli source code to"
         " third_party/brotli from https://github.com/google/brotli. You can use"
@@ -202,12 +145,84 @@ if (JPEGXL_ENABLE_SKCMS OR JPEGXL_ENABLE_PLUGINS)
                  ${PROJECT_BINARY_DIR}/LICENSE.skcms COPYONLY)
 endif ()
 if (JPEGXL_ENABLE_VIEWERS OR NOT JPEGXL_ENABLE_SKCMS)
-  if( NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/lcms/.git" )
-    message(SEND_ERROR "Please run git submodule update --init")
+  if( NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/lcms/.git" OR JPEGXL_FORCE_SYSTEM_LCMS2 )
+    find_package(LCMS2 2.13)
+    if ( NOT LCMS2_FOUND )
+      message(FATAL_ERROR "Please install lcms2 or run git submodule update --init")
+    endif ()
+  else()
+    include(lcms2.cmake)
+    configure_file("${CMAKE_CURRENT_SOURCE_DIR}/lcms/COPYING"
+                   ${PROJECT_BINARY_DIR}/LICENSE.lcms COPYONLY)
   endif()
-  include(lcms2.cmake)
-  configure_file("${CMAKE_CURRENT_SOURCE_DIR}/lcms/COPYING"
-                 ${PROJECT_BINARY_DIR}/LICENSE.lcms COPYONLY)
+endif()
+
+# gflags
+if(JPEGXL_ENABLE_TOOLS)
+  if (JPEGXL_BUNDLE_GFLAGS)
+    # Compile gflags from sources.
+    set(GFLAGS_BUILD_TESTING OFF)
+    add_subdirectory(gflags)
+    configure_file("${CMAKE_CURRENT_SOURCE_DIR}/gflags/COPYING.txt"
+                   ${PROJECT_BINARY_DIR}/LICENSE.gflags COPYONLY)
+  else()
+    # Use sytem libgflags-dev
+    find_package(gflags REQUIRED)
+    if (NOT gflags_FOUND)
+      message(FATAL_ERROR
+        "Gflags not found, install libgflags-dev or download gflags source to"
+        "third_party/gflags from https://github.com/gflags/gflags. You can use"
+        " ${PROJECT_SOURCE_DIR}/deps.sh to download the dependency.")
+    endif()
+    if(JPEGXL_DEP_LICENSE_DIR)
+      configure_file("${JPEGXL_DEP_LICENSE_DIR}/libgflags-dev/copyright"
+                     ${PROJECT_BINARY_DIR}/LICENSE.gflags COPYONLY)
+    endif()  # JPEGXL_DEP_LICENSE_DIR
+  endif()
+endif()
+
+# libpng
+if (JPEGXL_EMSCRIPTEN)
+  if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/libpng/CMakeLists.txt")
+  message(FATAL_ERROR "Please run ${PROJECT_SOURCE_DIR}/deps.sh to fetch the "
+          "build dependencies.")
+  endif()
+  file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/libpng/scripts/pnglibconf.h.prebuilt" DESTINATION "${CMAKE_CURRENT_SOURCE_DIR}/libpng")
+  file(RENAME "${CMAKE_CURRENT_SOURCE_DIR}/libpng/pnglibconf.h.prebuilt" "${CMAKE_CURRENT_SOURCE_DIR}/libpng/pnglibconf.h")
+  set(ZLIB_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/zlib/")
+  set(ZLIB_LIBRARY "")
+  set(PNG_FOUND YES PARENT_SCOPE)
+  set(PNG_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/libpng/" PARENT_SCOPE)
+  set(PNG_LIBRARIES "" PARENT_SCOPE)
+elseif (JPEGXL_BUNDLE_LIBPNG)
+  if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/libpng/CMakeLists.txt")
+    message(FATAL_ERROR "Please run ${PROJECT_SOURCE_DIR}/deps.sh to fetch the "
+            "build dependencies.")
+  endif()
+  add_subdirectory(zlib)
+  set(PNG_STATIC ON CACHE BOOL "")
+  set(PNG_EXECUTABLES OFF CACHE BOOL "")
+  set(PNG_BUILD_ZLIB ON CACHE BOOL "")
+  set(PNG_TESTS OFF CACHE BOOL "")
+  set(SKIP_INSTALL_ALL ON CACHE BOOL "")
+  set(ZLIB_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/zlib/")
+  set(ZLIB_LIBRARY zlibstatic)
+  add_subdirectory(libpng EXCLUDE_FROM_ALL)
+  set(PNG_FOUND YES PARENT_SCOPE)
+  set(PNG_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/libpng/" PARENT_SCOPE)
+  set(PNG_LIBRARIES png_static PARENT_SCOPE)
+  if(JPEGXL_DEP_LICENSE_DIR)
+    configure_file("${CMAKE_CURRENT_SOURCE_DIR}/libpng/LICENSE"
+                   ${PROJECT_BINARY_DIR}/LICENSE.libpng COPYONLY)
+  endif()
+else()
+  find_package(PNG)
+  if(PNG_FOUND AND JPEGXL_DEP_LICENSE_DIR)
+    configure_file("${JPEGXL_DEP_LICENSE_DIR}/zlib1g-dev/copyright"
+                   ${PROJECT_BINARY_DIR}/LICENSE.zlib COPYONLY)
+    configure_file("${JPEGXL_DEP_LICENSE_DIR}/libpng-dev/copyright"
+                   ${PROJECT_BINARY_DIR}/LICENSE.libpng COPYONLY)
+  endif()  # JPEGXL_DEP_LICENSE_DIR
 endif()
 
 # sjpeg

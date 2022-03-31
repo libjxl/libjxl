@@ -104,8 +104,10 @@ void BitWriter::AppendByteAligned(const std::vector<BitWriter>& others) {
   size_t pos = BitsWritten() / kBitsPerByte;
   for (const BitWriter& writer : others) {
     const Span<const uint8_t> span = writer.GetSpan();
-    memcpy(storage_.data() + pos, span.data(), span.size());
-    pos += span.size();
+    if (!span.empty()) {
+      memcpy(storage_.data() + pos, span.data(), span.size());
+      pos += span.size();
+    }
   }
   storage_[pos++] = 0;  // for next Write
   JXL_ASSERT(pos <= storage_.size());
@@ -142,49 +144,6 @@ void BitWriter::AppendByteAligned(
   bits_written_ += other_bytes * kBitsPerByte;
 }
 
-BitWriter& BitWriter::operator+=(const BitWriter& other) {
-  // Required for correctness, otherwise owned[bits_written_] is out of bounds.
-  if (other.bits_written_ == 0) return *this;
-  const size_t other_bytes = DivCeil(other.bits_written_, kBitsPerByte);
-  const size_t prev_bytes = storage_.size();
-  storage_.resize(prev_bytes + other_bytes + 1);  // extra zero padding
-
-  if (bits_written_ % kBitsPerByte == 0) {
-    // Only copy fully-initialized bytes.
-    const size_t full_bytes = other.bits_written_ / kBitsPerByte;  // truncated
-    memcpy(&storage_[bits_written_ / kBitsPerByte], other.storage_.data(),
-           full_bytes);
-    storage_[bits_written_ / kBitsPerByte + full_bytes] = 0;  // for next Write
-    bits_written_ += full_bytes * kBitsPerByte;
-
-    const size_t leftovers = other.bits_written_ % kBitsPerByte;
-    if (leftovers != 0) {
-      BitReader reader(Span<const uint8_t>(other.storage_.data() + full_bytes,
-                                           other_bytes - full_bytes));
-      Write(leftovers, reader.ReadBits(leftovers));
-      JXL_CHECK(reader.Close());
-    }
-    return *this;
-  }
-
-  constexpr size_t N = kMaxBitsPerCall < BitReader::kMaxBitsPerCall
-                           ? kMaxBitsPerCall
-                           : BitReader::kMaxBitsPerCall;
-
-  // Do not use GetSpan because other may not be byte-aligned.
-  BitReader reader(other.storage_);
-  size_t i = 0;
-  for (; i + N <= other.bits_written_; i += N) {
-    Write(N, reader.ReadFixedBits<N>());
-  }
-  const size_t leftovers = other.bits_written_ - i;
-  if (leftovers != 0) {
-    Write(leftovers, reader.ReadBits(leftovers));
-  }
-  JXL_CHECK(reader.Close());
-  return *this;
-}
-
 // Example: let's assume that 3 bits (Rs below) have been written already:
 // BYTE+0       BYTE+1       BYTE+2
 // 0000 0RRR    ???? ????    ???? ????
@@ -218,33 +177,4 @@ void BitWriter::Write(size_t n_bits, uint64_t bits) {
 #endif
   bits_written_ += n_bits;
 }
-
-BitWriter& BitWriter::operator+=(const PaddedBytes& other) {
-  const size_t other_bytes = other.size();
-  // Required for correctness, otherwise owned[bits_written_] is out of bounds.
-  if (other_bytes == 0) return *this;
-  const size_t other_bits = other_bytes * kBitsPerByte;
-
-  storage_.resize(storage_.size() + other_bytes + 1);
-  if (bits_written_ % kBitsPerByte == 0) {
-    memcpy(&storage_[bits_written_ / kBitsPerByte], other.data(), other_bytes);
-    storage_[bits_written_ / kBitsPerByte + other_bytes] = 0;  // for next Write
-    bits_written_ += other_bits;
-    return *this;
-  }
-  constexpr size_t N = kMaxBitsPerCall < BitReader::kMaxBitsPerCall
-                           ? kMaxBitsPerCall
-                           : BitReader::kMaxBitsPerCall;
-
-  BitReader reader(other);
-  size_t i = 0;
-  for (; i + N <= other_bits; i += N) {
-    Write(N, reader.ReadFixedBits<N>());
-  }
-  const size_t leftovers = other_bits - i;
-  Write(leftovers, reader.ReadBits(leftovers));
-  JXL_CHECK(reader.Close());
-  return *this;
-}
-
 }  // namespace jxl

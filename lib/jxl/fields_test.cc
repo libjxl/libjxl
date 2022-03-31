@@ -289,7 +289,7 @@ TEST(FieldsTest, TestOutOfRange) {
 
 struct OldBundle : public Fields {
   OldBundle() { Bundle::Init(this); }
-  const char* Name() const override { return "OldBundle"; }
+  JXL_FIELDS_NAME(OldBundle)
 
   Status VisitFields(Visitor* JXL_RESTRICT visitor) override {
     JXL_QUIET_RETURN_IF_ERROR(
@@ -310,7 +310,7 @@ struct OldBundle : public Fields {
 
 struct NewBundle : public Fields {
   NewBundle() { Bundle::Init(this); }
-  const char* Name() const override { return "NewBundle"; }
+  JXL_FIELDS_NAME(NewBundle)
 
   Status VisitFields(Visitor* JXL_RESTRICT visitor) override {
     JXL_QUIET_RETURN_IF_ERROR(

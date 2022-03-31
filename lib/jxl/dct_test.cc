@@ -35,7 +35,7 @@ template <size_t N>
 void ComputeDCT(float block[N * N]) {
   HWY_ALIGN float tmp_block[N * N];
   HWY_ALIGN float scratch_space[N * N];
-  ComputeTransposedScaledDCT<N>()(DCTFrom(block, N), tmp_block, scratch_space);
+  ComputeScaledDCT<N, N>()(DCTFrom(block, N), tmp_block, scratch_space);
 
   // Untranspose.
   Transpose<N, N>::Run(DCTFrom(tmp_block, N), DCTTo(block, N));
@@ -50,7 +50,7 @@ void ComputeIDCT(float block[N * N]) {
   // Untranspose.
   Transpose<N, N>::Run(DCTFrom(block, N), DCTTo(tmp_block, N));
 
-  ComputeTransposedScaledIDCT<N>()(tmp_block, DCTTo(block, N), scratch_space);
+  ComputeScaledIDCT<N, N>()(tmp_block, DCTTo(block, N), scratch_space);
 }
 
 template <size_t N>
@@ -159,9 +159,9 @@ template <size_t N>
 void TestInverseT(float accuracy) {
   ThreadPoolInternal pool(N < 32 ? 0 : 8);
   enum { kBlockSize = N * N };
-  RunOnPool(
-      &pool, 0, kBlockSize, ThreadPool::SkipInit(),
-      [accuracy](const int task, int /*thread*/) {
+  EXPECT_TRUE(RunOnPool(
+      &pool, 0, kBlockSize, ThreadPool::NoInit,
+      [accuracy](const uint32_t task, size_t /*thread*/) {
         const size_t i = static_cast<size_t>(task);
         HWY_ALIGN float x[kBlockSize] = {0.0f};
         x[i] = 1.0;
@@ -174,7 +174,7 @@ void TestInverseT(float accuracy) {
               << "i = " << i << ", k = " << k;
         }
       },
-      "TestInverse");
+      "TestInverse"));
 }
 
 void InverseTest() {

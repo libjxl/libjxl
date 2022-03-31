@@ -26,9 +26,8 @@ struct DecompressParams {
   bool keep_dct = false;
   // If true, render spot colors (otherwise only returned as extra channels)
   bool render_spotcolors = true;
-
-  // These cannot be kOn because they need encoder support.
-  Override preview = Override::kDefault;
+  // If true, coalesce frames (otherwise return unblended frames)
+  bool coalescing = true;
 
   // How many passes to decode at most. By default, decode everything.
   uint32_t max_passes = std::numeric_limits<uint32_t>::max();
@@ -43,18 +42,9 @@ struct DecompressParams {
   // Allow even more progression.
   bool allow_more_progressive_steps = false;
 
-  bool operator==(const DecompressParams other) const {
-    return check_decompressed_size == other.check_decompressed_size &&
-           keep_dct == other.keep_dct &&
-           render_spotcolors == other.render_spotcolors &&
-           preview == other.preview && max_passes == other.max_passes &&
-           max_downsampling == other.max_downsampling &&
-           allow_partial_files == other.allow_partial_files &&
-           allow_more_progressive_steps == other.allow_more_progressive_steps;
-  }
-  bool operator!=(const DecompressParams& other) const {
-    return !(*this == other);
-  }
+  // Internal test-only setting: whether or not to use the slow rendering
+  // pipeline.
+  bool use_slow_render_pipeline = false;
 };
 
 }  // namespace jxl

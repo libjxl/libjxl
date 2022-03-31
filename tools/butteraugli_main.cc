@@ -10,11 +10,11 @@
 #include <vector>
 
 #include "lib/extras/codec.h"
-#include "lib/extras/codec_png.h"
-#include "lib/extras/color_hints.h"
+#include "lib/extras/dec/color_hints.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/file_io.h"
 #include "lib/jxl/base/padded_bytes.h"
+#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/butteraugli/butteraugli.h"
@@ -23,6 +23,7 @@
 #include "lib/jxl/color_management.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/enc_butteraugli_pnorm.h"
+#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
@@ -30,23 +31,20 @@
 namespace jxl {
 namespace {
 
-Status WritePNG(Image3F&& image, const std::string& filename) {
+Status WriteImage(Image3F&& image, const std::string& filename) {
   ThreadPoolInternal pool(4);
   CodecInOut io;
   io.metadata.m.SetUintSamples(8);
   io.metadata.m.color_encoding = ColorEncoding::SRGB();
   io.SetFromImage(std::move(image), io.metadata.m.color_encoding);
-  PaddedBytes compressed;
-  JXL_CHECK(extras::EncodeImagePNG(&io, io.Main().c_current(), 8, &pool,
-                                   &compressed));
-  return WriteFile(compressed, filename);
+  return EncodeToFile(io, filename, &pool);
 }
 
 Status RunButteraugli(const char* pathname1, const char* pathname2,
                       const std::string& distmap_filename,
                       const std::string& colorspace_hint, double p,
                       float intensity_target) {
-  ColorHints color_hints;
+  extras::ColorHints color_hints;
   if (!colorspace_hint.empty()) {
     color_hints.Add("color_space", colorspace_hint);
   }
@@ -65,11 +63,13 @@ Status RunButteraugli(const char* pathname1, const char* pathname2,
   }
 
   if (io1.xsize() != io2.xsize()) {
-    fprintf(stderr, "Width mismatch: %zu %zu\n", io1.xsize(), io2.xsize());
+    fprintf(stderr, "Width mismatch: %" PRIuS " %" PRIuS "\n", io1.xsize(),
+            io2.xsize());
     return false;
   }
   if (io1.ysize() != io2.ysize()) {
-    fprintf(stderr, "Height mismatch: %zu %zu\n", io1.ysize(), io2.ysize());
+    fprintf(stderr, "Height mismatch: %" PRIuS " %" PRIuS "\n", io1.ysize(),
+            io2.ysize());
     return false;
   }
 
@@ -78,8 +78,8 @@ Status RunButteraugli(const char* pathname1, const char* pathname2,
   ba_params.hf_asymmetry = 0.8f;
   ba_params.xmul = 1.0f;
   ba_params.intensity_target = intensity_target;
-  const float distance =
-      ButteraugliDistance(io1.Main(), io2.Main(), ba_params, &distmap, &pool);
+  const float distance = ButteraugliDistance(io1.Main(), io2.Main(), ba_params,
+                                             GetJxlCms(), &distmap, &pool);
   printf("%.10f\n", distance);
 
   double pnorm = ComputeDistanceP(distmap, ba_params, p);
@@ -89,7 +89,7 @@ Status RunButteraugli(const char* pathname1, const char* pathname2,
     float good = ButteraugliFuzzyInverse(1.5);
     float bad = ButteraugliFuzzyInverse(0.5);
     JXL_CHECK(
-        WritePNG(CreateHeatMapImage(distmap, good, bad), distmap_filename));
+        WriteImage(CreateHeatMapImage(distmap, good, bad), distmap_filename));
   }
   return true;
 }

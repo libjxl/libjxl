@@ -251,18 +251,6 @@ void PadImageToBlockMultipleInPlace(Image3F* JXL_RESTRICT in) {
   }
 }
 
-float DotProduct(const ImageF& a, const ImageF& b) {
-  double sum = 0.0;
-  for (size_t y = 0; y < a.ysize(); ++y) {
-    const float* const JXL_RESTRICT row_a = a.ConstRow(y);
-    const float* const JXL_RESTRICT row_b = b.ConstRow(y);
-    for (size_t x = 0; x < a.xsize(); ++x) {
-      sum += row_a[x] * row_b[x];
-    }
-  }
-  return sum;
-}
-
 static void DownsampleImage(const ImageF& input, size_t factor,
                             ImageF* output) {
   JXL_ASSERT(factor != 1);

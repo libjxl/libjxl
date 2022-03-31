@@ -6,30 +6,45 @@
 #include <stdlib.h>
 
 #include <QApplication>
+#include <QCommandLineParser>
 #include <QMessageBox>
 #include <QString>
 #include <QStringList>
 
 #include "tools/comparison_viewer/codec_comparison_window.h"
 
-namespace {
-
-template <typename Window, typename... Arguments>
-void displayNewWindow(Arguments&&... arguments) {
-  Window* const window = new Window(arguments...);
-  window->setAttribute(Qt::WA_DeleteOnClose);
-  window->show();
-}
-
-}  // namespace
-
 int main(int argc, char** argv) {
   QApplication application(argc, argv);
 
-  QStringList arguments = application.arguments();
-  arguments.removeFirst();  // program name
+  QCommandLineParser parser;
+  parser.setApplicationDescription(
+      QCoreApplication::translate("compare_codecs", "Codec comparison tool"));
+  parser.addHelpOption();
 
-  if (arguments.empty()) {
+  QCommandLineOption intensityTargetOption(
+      {"intensity-target", "intensity_target", "i"},
+      QCoreApplication::translate("compare_codecs",
+                                  "The peak luminance of the display."),
+      QCoreApplication::translate("compare_codecs", "nits"),
+      QString::number(jxl::kDefaultIntensityTarget));
+  parser.addOption(intensityTargetOption);
+
+  parser.addPositionalArgument(
+      "folders", QCoreApplication::translate("compare_codecs", "Image folders"),
+      "<folders>...");
+
+  parser.process(application);
+
+  bool ok;
+  const float intensityTarget =
+      parser.value(intensityTargetOption).toFloat(&ok);
+  if (!ok) {
+    parser.showHelp(EXIT_FAILURE);
+  }
+
+  QStringList folders = parser.positionalArguments();
+
+  if (folders.empty()) {
     QMessageBox message;
     message.setIcon(QMessageBox::Information);
     message.setWindowTitle(
@@ -49,8 +64,11 @@ int main(int argc, char** argv) {
     return EXIT_FAILURE;
   }
 
-  for (const QString& argument : arguments) {
-    displayNewWindow<jxl::CodecComparisonWindow>(argument);
+  for (const QString& folder : folders) {
+    auto* const window =
+        new jxl::CodecComparisonWindow(folder, intensityTarget);
+    window->setAttribute(Qt::WA_DeleteOnClose);
+    window->show();
   }
 
   return application.exec();

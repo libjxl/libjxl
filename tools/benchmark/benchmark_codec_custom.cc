@@ -13,7 +13,7 @@
 #include <fstream>
 
 #include "lib/extras/codec.h"
-#include "lib/extras/codec_png.h"
+#include "lib/extras/enc/apng.h"
 #include "lib/extras/time.h"
 #include "lib/jxl/base/file_io.h"
 #include "lib/jxl/base/thread_pool_internal.h"
@@ -100,7 +100,7 @@ class CustomCodec : public ImageCodec {
     const size_t bits = io->metadata.m.bit_depth.bits_per_sample;
     PaddedBytes png;
     JXL_RETURN_IF_ERROR(
-        extras::EncodeImagePNG(io, io->Main().c_current(), bits, pool, &png));
+        extras::EncodeImageAPNG(io, io->Main().c_current(), bits, pool, &png));
     JXL_RETURN_IF_ERROR(WriteFile(png, png_filename));
     std::vector<std::string> arguments = compress_args_;
     arguments.push_back(png_filename);
@@ -129,8 +129,10 @@ class CustomCodec : public ImageCodec {
               std::vector<std::string>{encoded_filename, png_filename});
         },
         png_filename, speed_stats));
-    io->target_nits = saved_intensity_target_;
-    return SetFromFile(png_filename, ColorHints(), io, pool);
+    JXL_RETURN_IF_ERROR(
+        SetFromFile(png_filename, extras::ColorHints(), io, pool));
+    io->metadata.m.SetIntensityTarget(saved_intensity_target_);
+    return true;
   }
 
  private:

@@ -7,35 +7,40 @@
 
 #include "lib/extras/codec.h"
 #include "lib/jxl/color_management.h"
+#include "lib/jxl/enc_color_management.h"
 #include "tools/ssimulacra.h"
 
 namespace ssimulacra {
 namespace {
 
 int PrintUsage(char** argv) {
-  fprintf(stderr, "Usage: %s [-v] orig.png distorted.png\n", argv[0]);
+  fprintf(stderr, "Usage: %s [-v] [-s] orig.png distorted.png\n", argv[0]);
   return 1;
 }
 
 int Run(int argc, char** argv) {
   if (argc < 2) return PrintUsage(argv);
 
-  bool verbose = false;
+  bool verbose = false, simple = false;
   int input_arg = 1;
-  if (argv[1][0] == '-' && argv[1][1] == 'v') {
+  if (!strcmp(argv[input_arg], "-v")) {
     verbose = true;
-    input_arg = 2;
+    input_arg++;
+  }
+  if (!strcmp(argv[input_arg], "-s")) {
+    simple = true;
+    input_arg++;
   }
   if (argc < input_arg + 2) return PrintUsage(argv);
 
   jxl::CodecInOut io1;
   jxl::CodecInOut io2;
-  JXL_CHECK(SetFromFile(argv[input_arg], jxl::ColorHints(), &io1));
-  JXL_CHECK(SetFromFile(argv[input_arg + 1], jxl::ColorHints(), &io2));
-  JXL_CHECK(
-      io1.TransformTo(jxl::ColorEncoding::LinearSRGB(io1.Main().IsGray())));
-  JXL_CHECK(
-      io2.TransformTo(jxl::ColorEncoding::LinearSRGB(io2.Main().IsGray())));
+  JXL_CHECK(SetFromFile(argv[input_arg], jxl::extras::ColorHints(), &io1));
+  JXL_CHECK(SetFromFile(argv[input_arg + 1], jxl::extras::ColorHints(), &io2));
+  JXL_CHECK(io1.TransformTo(jxl::ColorEncoding::LinearSRGB(io1.Main().IsGray()),
+                            jxl::GetJxlCms()));
+  JXL_CHECK(io2.TransformTo(jxl::ColorEncoding::LinearSRGB(io2.Main().IsGray()),
+                            jxl::GetJxlCms()));
 
   if (io1.xsize() != io2.xsize() || io1.ysize() != io2.ysize()) {
     fprintf(stderr, "Image size mismatch\n");
@@ -46,7 +51,8 @@ int Run(int argc, char** argv) {
     return 1;
   }
 
-  Ssimulacra ssimulacra = ComputeDiff(*io1.Main().color(), *io2.Main().color());
+  Ssimulacra ssimulacra =
+      ComputeDiff(*io1.Main().color(), *io2.Main().color(), simple);
 
   if (verbose) {
     ssimulacra.PrintDetails();

@@ -25,6 +25,7 @@
 #include "lib/jxl/dec_file.h"
 #include "lib/jxl/dec_params.h"
 #include "lib/jxl/enc_cache.h"
+#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_file.h"
 #include "lib/jxl/enc_params.h"
@@ -241,9 +242,8 @@ class JxlCodec : public ImageCodec {
     cparams_.ba_params.hf_asymmetry = ba_params_.hf_asymmetry;
     cparams_.ba_params.xmul = static_cast<float>(jxlargs->xmul);
 
-    cparams_.quality_pair.first = q_target_;
-    cparams_.quality_pair.second = q_target_;
-    if (q_target_ != 100 && cparams_.color_transform == ColorTransform::kNone &&
+    if (cparams_.butteraugli_distance > 0.f &&
+        cparams_.color_transform == ColorTransform::kNone &&
         cparams_.modular_mode && !has_ctransform_) {
       cparams_.color_transform = ColorTransform::kXYB;
     }
@@ -255,7 +255,7 @@ class JxlCodec : public ImageCodec {
           jxl::make_unique<jxl::FastEncoderHeuristics>();
     }
     JXL_RETURN_IF_ERROR(EncodeFile(cparams_, io, &passes_encoder_state,
-                                   compressed, &cinfo_, pool));
+                                   compressed, GetJxlCms(), &cinfo_, pool));
     const double end = Now();
     speed_stats->NotifyElapsed(end - start);
     return true;
@@ -266,7 +266,8 @@ class JxlCodec : public ImageCodec {
                     ThreadPoolInternal* pool, CodecInOut* io,
                     jpegxl::tools::SpeedStats* speed_stats) override {
     io->frames.clear();
-    if (dparams_ != DecompressParams{}) {
+    if (dparams_.max_passes != DecompressParams().max_passes ||
+        dparams_.max_downsampling != DecompressParams().max_downsampling) {
       // Must use the C++ API to honor non-default dparams.
       if (uint8_) {
         return JXL_FAILURE(

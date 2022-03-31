@@ -5,6 +5,8 @@
 
 // This example prints information from the main codestream header.
 
+#include <inttypes.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -25,9 +27,9 @@ int PrintBasicInfo(FILE* file) {
 
   JxlDecoderSetKeepOrientation(dec, 1);
 
-  if (JXL_DEC_SUCCESS !=
-      JxlDecoderSubscribeEvents(
-          dec, JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING | JXL_DEC_FRAME)) {
+  if (JXL_DEC_SUCCESS != JxlDecoderSubscribeEvents(
+                             dec, JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING |
+                                      JXL_DEC_FRAME | JXL_DEC_BOX)) {
     fprintf(stderr, "JxlDecoderSubscribeEvents failed\n");
     JxlDecoderDestroy(dec);
     return 0;
@@ -65,6 +67,7 @@ int PrintBasicInfo(FILE* file) {
       }
       data_size = remaining + read_size;
       JxlDecoderSetInput(dec, data, data_size);
+      if (feof(file)) JxlDecoderCloseInput(dec);
     } else if (status == JXL_DEC_SUCCESS) {
       // Finished all processing.
       break;
@@ -103,6 +106,8 @@ int PrintBasicInfo(FILE* file) {
         printf("num_loops: %u\n", info.animation.num_loops);
         printf("have_timecodes: %d\n", info.animation.have_timecodes);
       }
+      printf("intrinsic xsize: %u\n", info.intrinsic_xsize);
+      printf("intrinsic ysize: %u\n", info.intrinsic_ysize);
       const char* const orientation_string[8] = {
           "Normal",          "Flipped horizontally",
           "Upside down",     "Flipped vertically",
@@ -150,8 +155,8 @@ int PrintBasicInfo(FILE* file) {
             free(name);
             break;
           }
-          free(name);
           printf("  name: %s\n", name);
+          free(name);
         }
         if (extra.type == JXL_CHANNEL_ALPHA)
           printf("  alpha_premultiplied: %d (%s)\n", extra.alpha_premultiplied,
@@ -232,7 +237,7 @@ int PrintBasicInfo(FILE* file) {
           fprintf(stderr, "JxlDecoderGetICCProfileSize failed\n");
           continue;
         }
-        printf("  ICC profile size: %zu\n", profile_size);
+        printf("  ICC profile size: %" PRIu64 "\n", (uint64_t)profile_size);
         if (profile_size < 132) {
           fprintf(stderr, "ICC profile too small\n");
           continue;
@@ -251,7 +256,6 @@ int PrintBasicInfo(FILE* file) {
         printf("  rendering intent: %d\n", (int)profile[67]);
         free(profile);
       }
-
     } else if (status == JXL_DEC_FRAME) {
       if (JXL_DEC_SUCCESS != JxlDecoderGetFrameHeader(dec, &frame_header)) {
         fprintf(stderr, "JxlDecoderGetFrameHeader failed\n");
@@ -266,8 +270,8 @@ int PrintBasicInfo(FILE* file) {
           free(name);
           break;
         }
-        free(name);
         printf("  name: %s\n", name);
+        free(name);
       }
       float ms = frame_header.duration * 1000.f *
                  info.animation.tps_denominator / info.animation.tps_numerator;
@@ -280,8 +284,13 @@ int PrintBasicInfo(FILE* file) {
       if (!frame_header.name_length && !info.have_animation) {
         printf("  still frame, unnamed\n");
       }
-
-      // This is the last expected event, no need to read the rest of the file.
+    } else if (status == JXL_DEC_BOX) {
+      JxlBoxType type;
+      uint64_t size;
+      JxlDecoderGetBoxType(dec, type, JXL_FALSE);
+      JxlDecoderGetBoxSizeRaw(dec, &size);
+      printf("box: type: \"%c%c%c%c\" size: %" PRIu64 "\n", type[0], type[1],
+             type[2], type[3], (uint64_t)size);
     } else {
       fprintf(stderr, "Unexpected decoder status\n");
       break;
@@ -313,9 +322,11 @@ int main(int argc, char* argv[]) {
   }
 
   if (!PrintBasicInfo(file)) {
+    fclose(file);
     fprintf(stderr, "Couldn't print basic info\n");
     return 1;
   }
 
+  fclose(file);
   return 0;
 }

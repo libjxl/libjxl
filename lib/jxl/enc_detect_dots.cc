@@ -21,6 +21,7 @@
 
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/profiler.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/codec_in_out.h"
@@ -52,9 +53,9 @@ ImageF SumOfSquareDifferences(const Image3F& forig, const Image3F& smooth,
   const auto color_coef2 = Set(d, 0.0f);
 
   ImageF sum_of_squares(forig.xsize(), forig.ysize());
-  RunOnPool(
-      pool, 0, forig.ysize(), ThreadPool::SkipInit(),
-      [&](const int task, const int thread) {
+  JXL_CHECK(RunOnPool(
+      pool, 0, forig.ysize(), ThreadPool::NoInit,
+      [&](const uint32_t task, size_t thread) {
         const size_t y = static_cast<size_t>(task);
         const float* JXL_RESTRICT orig_row0 = forig.Plane(0).ConstRow(y);
         const float* JXL_RESTRICT orig_row1 = forig.Plane(1).ConstRow(y);
@@ -78,7 +79,7 @@ ImageF SumOfSquareDifferences(const Image3F& forig, const Image3F& smooth,
           Store(sos, d, sos_row + x);
         }
       },
-      "ComputeEnergyImage");
+      "ComputeEnergyImage"));
   return sum_of_squares;
 }
 
@@ -320,7 +321,7 @@ std::vector<ConnectedComponent> FindCC(const ImageF& energy, double t_low,
           if (cc.score < minScore) continue;
           JXL_DEBUG(JXL_DEBUG_DOT_DETECT,
                     "cc mode: (%d,%d), max: %f, bgMean: %f bgVar: "
-                    "%f bound:(%zu,%zu,%zu,%zu)\n",
+                    "%f bound:(%" PRIuS ",%" PRIuS ",%" PRIuS ",%" PRIuS ")\n",
                     cc.mode.x, cc.mode.y, cc.maxEnergy, cc.meanEnergy,
                     cc.varEnergy, cc.bounds.x0(), cc.bounds.y0(),
                     cc.bounds.xsize(), cc.bounds.ysize());
@@ -415,7 +416,8 @@ GaussianEllipse FitGaussianFast(const ConnectedComponent& cc,
   std::array<double, 3> color{{0.0, 0.0, 0.0}};
   std::array<double, 3> bgColor{{0.0, 0.0, 0.0}};
 
-  JXL_DEBUG(JXL_DEBUG_DOT_DETECT, "%zu %zu %zu %zu\n", cc.bounds.x0(),
+  JXL_DEBUG(JXL_DEBUG_DOT_DETECT,
+            "%" PRIuS " %" PRIuS " %" PRIuS " %" PRIuS "\n", cc.bounds.x0(),
             cc.bounds.y0(), cc.bounds.xsize(), cc.bounds.ysize());
   for (int c = 0; c < 3; c++) {
     color[c] = img.ConstPlaneRow(c, cc.mode.y)[cc.mode.x] -
@@ -523,7 +525,7 @@ GaussianEllipse FitGaussian(const ConnectedComponent& cc, const ImageF& energy,
   JXL_DEBUG(JXL_DEBUG_DOT_DETECT,
             "Ellipse mu=(%lf,%lf) sigma=(%lf,%lf) angle=%lf "
             "intensity=(%lf,%lf,%lf) bg=(%lf,%lf,%lf) l2_loss=%lf "
-            "custom_loss=%lf, neg_pix=%zu, neg_v=(%lf,%lf,%lf)\n",
+            "custom_loss=%lf, neg_pix=%" PRIuS ", neg_v=(%lf,%lf,%lf)\n",
             ellipse.x, ellipse.y, ellipse.sigma_x, ellipse.sigma_y,
             ellipse.angle, ellipse.intensity[0], ellipse.intensity[1],
             ellipse.intensity[2], ellipse.bgColor[0], ellipse.bgColor[1],
@@ -601,7 +603,7 @@ std::vector<PatchInfo> DetectGaussianEllipses(
     }
   }
 #if JXL_DEBUG_DOT_DETECT
-  JXL_DEBUG(JXL_DEBUG_DOT_DETECT, "Candidates: %zu, Dots: %zu\n",
+  JXL_DEBUG(JXL_DEBUG_DOT_DETECT, "Candidates: %" PRIuS ", Dots: %" PRIuS "\n",
             components.size(), dots.size());
   ApplyGaussianEllipses(&smooth, dots, 1.0);
   aux.DumpXybImage("draw", smooth);

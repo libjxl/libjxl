@@ -3,7 +3,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Re-implementation of //third_party/ssimulacra/ssimulacra.cpp using jxl's
+// Re-implementation of //tools/ssimulacra.tct using jxl's
 // ImageF library instead of opencv.
 
 #include "tools/ssimulacra.h"
@@ -235,11 +235,13 @@ double Ssimulacra::Score() const {
       ssim += kMinScaleWeights[scale][c] * scales[scale].min_ssim[c];
       ssim_max += kMinScaleWeights[scale][c];
     }
-    ssim += kEdgeWeight[c] * avg_edgediff[c];
-    ssim_max += kEdgeWeight[c];
-    ssim += kGridWeight[c] *
-            (row_p2[0][c] + row_p2[1][c] + col_p2[0][c] + col_p2[1][c]);
-    ssim_max += 4.0 * kGridWeight[c];
+    if (!simple) {
+      ssim += kEdgeWeight[c] * avg_edgediff[c];
+      ssim_max += kEdgeWeight[c];
+      ssim += kGridWeight[c] *
+              (row_p2[0][c] + row_p2[1][c] + col_p2[0][c] + col_p2[1][c]);
+      ssim_max += 4.0 * kGridWeight[c];
+    }
   }
   double dssim = ssim_max / ssim - 1.0;
   return std::min(1.0, std::max(0.0, dssim));
@@ -253,9 +255,11 @@ inline void PrintItem(const char* name, int scale, const double* vals,
 
 void Ssimulacra::PrintDetails() const {
   for (size_t s = 0; s < scales.size(); ++s) {
-    PrintItem("avg ssim", s, scales[s].avg_ssim, &kScaleWeights[s][0]);
-    PrintItem("min ssim", s, scales[s].min_ssim, &kMinScaleWeights[s][0]);
-    if (s == 0) {
+    if (s < kNumScales) {
+      PrintItem("avg ssim", s, scales[s].avg_ssim, kScaleWeights[s]);
+      PrintItem("min ssim", s, scales[s].min_ssim, kMinScaleWeights[s]);
+    }
+    if (s == 0 && !simple) {
       PrintItem("avg edif", s, avg_edgediff, kEdgeWeight);
       PrintItem("rp2 ssim", s, &row_p2[0][0], kGridWeight);
       PrintItem("cp2 ssim", s, &col_p2[0][0], kGridWeight);
@@ -265,9 +269,11 @@ void Ssimulacra::PrintDetails() const {
   }
 }
 
-Ssimulacra ComputeDiff(const Image3F& orig, const Image3F& distorted) {
+Ssimulacra ComputeDiff(const Image3F& orig, const Image3F& distorted,
+                       bool simple) {
   Ssimulacra ssimulacra;
 
+  ssimulacra.simple = simple;
   Image3F img1 = Rgb2Lab(orig);
   Image3F img2 = Rgb2Lab(distorted);
 
@@ -308,7 +314,7 @@ Ssimulacra ComputeDiff(const Image3F& orig, const Image3F& distorted) {
     }
     ssimulacra.scales.push_back(sscale);
 
-    if (scale == 0) {
+    if (scale == 0 && !simple) {
       Image3F* edgediff = &sigma1_sq;  // reuse
       EdgeDiffMap(img1, mu1, img2, mu2, edgediff, ssimulacra.avg_edgediff);
       for (size_t c = 0; c < 3; c++) {

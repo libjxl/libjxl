@@ -53,8 +53,8 @@ int TestInit(void* jpegxl_opaque, size_t num_threads) { return 0; }
 
 TEST_F(DataParallelTest, RunnerCalledParamenters) {
   EXPECT_TRUE(pool_.Run(
-      1234, 5678, [](const size_t num_threads) { return true; },
-      [](const int task, const int thread) { return; }));
+      1234, 5678, [](size_t /* num_threads */) { return true; },
+      [](uint32_t /* task */, size_t /* thread */) { return; }));
   EXPECT_EQ(1, runner_called_);
   EXPECT_NE(nullptr, init_);
   EXPECT_NE(nullptr, func_);
@@ -66,46 +66,24 @@ TEST_F(DataParallelTest, RunnerCalledParamenters) {
 TEST_F(DataParallelTest, RunnerFailurePropagates) {
   runner_return_ = -1;  // FakeRunner return value.
   EXPECT_FALSE(pool_.Run(
-      1234, 5678, [](const size_t num_threads) { return false; },
-      [](const int task, const int thread) { return; }));
+      1234, 5678, [](size_t /* num_threads */) { return false; },
+      [](uint32_t /* task */, size_t /* thread */) { return; }));
   EXPECT_FALSE(RunOnPool(
-      nullptr, 1234, 5678, [](const size_t num_threads) { return false; },
-      [](const int task, const int thread) { return; }, "Test"));
+      nullptr, 1234, 5678, [](size_t /* num_threads */) { return false; },
+      [](uint32_t /* task */, size_t /* thread */) { return; }, "Test"));
 }
 
 TEST_F(DataParallelTest, RunnerNotCalledOnEmptyRange) {
   runner_return_ = -1;  // FakeRunner return value.
   EXPECT_TRUE(pool_.Run(
-      123, 123, [](const size_t num_threads) { return false; },
-      [](const int task, const int thread) { return; }));
+      123, 123, [](size_t /* num_threads */) { return false; },
+      [](uint32_t /* task */, size_t /* thread */) { return; }));
   EXPECT_TRUE(RunOnPool(
-      nullptr, 123, 123, [](const size_t num_threads) { return false; },
-      [](const int task, const int thread) { return; }, "Test"));
+      nullptr, 123, 123, [](size_t /* num_threads */) { return false; },
+      [](uint32_t /* task */, size_t /* thread */) { return; }, "Test"));
   // We don't call the external runner when the range is empty. We don't even
   // need to call the init function.
   EXPECT_EQ(0, runner_called_);
-}
-
-// The TestDivider is slow when compiled in debug mode.
-TEST_F(DataParallelTest, JXL_SLOW_TEST(TestDivider)) {
-  jxl::ThreadPoolInternal pool(8);
-  // 1, 2 are powers of two.
-  pool.Run(3, 2 * 1024, ThreadPool::SkipInit(),
-           [](const int d, const int thread) {
-             // powers of two are not supported.
-             if ((d & (d - 1)) == 0) return;
-
-             const Divider div(d);
-#ifdef NDEBUG
-             const int max_dividend = 4 * 1024 * 1024;
-#else
-             const int max_dividend = 2 * 1024 + 1;
-#endif
-             for (int x = 0; x < max_dividend; ++x) {
-               const int q = div(x);
-               ASSERT_EQ(x / d, q) << x << "/" << d;
-             }
-           });
 }
 
 }  // namespace jxl

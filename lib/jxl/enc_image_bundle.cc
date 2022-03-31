@@ -23,40 +23,52 @@ namespace jxl {
 namespace {
 
 // Copies ib:rect, converts, and copies into out.
-template <typename T>
 Status CopyToT(const ImageMetadata* metadata, const ImageBundle* ib,
                const Rect& rect, const ColorEncoding& c_desired,
-               ThreadPool* pool, Image3<T>* out) {
+               const JxlCmsInterface& cms, ThreadPool* pool, Image3F* out) {
   PROFILER_FUNC;
-  static_assert(
-      std::is_same<T, float>::value || std::numeric_limits<T>::min() == 0,
-      "CopyToT implemented only for float and unsigned types");
-  ColorSpaceTransform c_transform;
+  ColorSpaceTransform c_transform(cms);
   // Changing IsGray is probably a bug.
   JXL_CHECK(ib->IsGray() == c_desired.IsGray());
-#if JPEGXL_ENABLE_SKCMS
-  bool is_gray = false;
-#else
   bool is_gray = ib->IsGray();
-#endif
   if (out->xsize() < rect.xsize() || out->ysize() < rect.ysize()) {
-    *out = Image3<T>(rect.xsize(), rect.ysize());
+    *out = Image3F(rect.xsize(), rect.ysize());
   } else {
     out->ShrinkTo(rect.xsize(), rect.ysize());
   }
-  RunOnPool(
+  std::atomic<bool> ok{true};
+  JXL_RETURN_IF_ERROR(RunOnPool(
       pool, 0, rect.ysize(),
-      [&](size_t num_threads) {
+      [&](const size_t num_threads) {
         return c_transform.Init(ib->c_current(), c_desired,
                                 metadata->IntensityTarget(), rect.xsize(),
                                 num_threads);
       },
-      [&](const int y, const int thread) {
+      [&](const uint32_t y, const size_t thread) {
         float* mutable_src_buf = c_transform.BufSrc(thread);
         const float* src_buf = mutable_src_buf;
         // Interleave input.
         if (is_gray) {
           src_buf = rect.ConstPlaneRow(ib->color(), 0, y);
+        } else if (ib->c_current().IsCMYK()) {
+          if (!ib->HasBlack()) {
+            ok.store(false);
+            return;
+          }
+          const float* JXL_RESTRICT row_in0 =
+              rect.ConstPlaneRow(ib->color(), 0, y);
+          const float* JXL_RESTRICT row_in1 =
+              rect.ConstPlaneRow(ib->color(), 1, y);
+          const float* JXL_RESTRICT row_in2 =
+              rect.ConstPlaneRow(ib->color(), 2, y);
+          const float* JXL_RESTRICT row_in3 = rect.ConstRow(ib->black(), y);
+          for (size_t x = 0; x < rect.xsize(); x++) {
+            // CMYK convention in JXL: 0 = max ink, 1 = white
+            mutable_src_buf[4 * x + 0] = row_in0[x];
+            mutable_src_buf[4 * x + 1] = row_in1[x];
+            mutable_src_buf[4 * x + 2] = row_in2[x];
+            mutable_src_buf[4 * x + 3] = row_in3[x];
+          }
         } else {
           const float* JXL_RESTRICT row_in0 =
               rect.ConstPlaneRow(ib->color(), 0, y);
@@ -71,79 +83,50 @@ Status CopyToT(const ImageMetadata* metadata, const ImageBundle* ib,
           }
         }
         float* JXL_RESTRICT dst_buf = c_transform.BufDst(thread);
-        DoColorSpaceTransform(&c_transform, thread, src_buf, dst_buf);
-        T* JXL_RESTRICT row_out0 = out->PlaneRow(0, y);
-        T* JXL_RESTRICT row_out1 = out->PlaneRow(1, y);
-        T* JXL_RESTRICT row_out2 = out->PlaneRow(2, y);
+        if (!c_transform.Run(thread, src_buf, dst_buf)) {
+          ok.store(false);
+          return;
+        }
+        float* JXL_RESTRICT row_out0 = out->PlaneRow(0, y);
+        float* JXL_RESTRICT row_out1 = out->PlaneRow(1, y);
+        float* JXL_RESTRICT row_out2 = out->PlaneRow(2, y);
         // De-interleave output and convert type.
-        if (std::is_same<float, T>::value) {  // deinterleave to float.
-          if (is_gray) {
-            for (size_t x = 0; x < rect.xsize(); x++) {
-              row_out0[x] = dst_buf[x];
-              row_out1[x] = dst_buf[x];
-              row_out2[x] = dst_buf[x];
-            }
-          } else {
-            for (size_t x = 0; x < rect.xsize(); x++) {
-              row_out0[x] = dst_buf[3 * x + 0];
-              row_out1[x] = dst_buf[3 * x + 1];
-              row_out2[x] = dst_buf[3 * x + 2];
-            }
+        if (is_gray) {
+          for (size_t x = 0; x < rect.xsize(); x++) {
+            row_out0[x] = dst_buf[x];
+            row_out1[x] = dst_buf[x];
+            row_out2[x] = dst_buf[x];
           }
         } else {
-          // Convert to T, doing clamping.
-          float max = std::numeric_limits<T>::max();
-          auto cvt = [max](float in) {
-            float v = std::max(0.0f, std::min(max, in * max));
-            return static_cast<T>(v < 0 ? v - 0.5f : v + 0.5f);
-          };
-          if (is_gray) {
-            for (size_t x = 0; x < rect.xsize(); x++) {
-              row_out0[x] = cvt(dst_buf[x]);
-              row_out1[x] = cvt(dst_buf[x]);
-              row_out2[x] = cvt(dst_buf[x]);
-            }
-          } else {
-            for (size_t x = 0; x < rect.xsize(); x++) {
-              row_out0[x] = cvt(dst_buf[3 * x + 0]);
-              row_out1[x] = cvt(dst_buf[3 * x + 1]);
-              row_out2[x] = cvt(dst_buf[3 * x + 2]);
-            }
+          for (size_t x = 0; x < rect.xsize(); x++) {
+            row_out0[x] = dst_buf[3 * x + 0];
+            row_out1[x] = dst_buf[3 * x + 1];
+            row_out2[x] = dst_buf[3 * x + 2];
           }
         }
       },
-      "Colorspace transform");
-  return true;
+      "Colorspace transform"));
+  return ok.load();
 }
 
 }  // namespace
 
 Status ImageBundle::TransformTo(const ColorEncoding& c_desired,
-                                ThreadPool* pool) {
+                                const JxlCmsInterface& cms, ThreadPool* pool) {
   PROFILER_FUNC;
-  JXL_RETURN_IF_ERROR(CopyTo(Rect(color_), c_desired, &color_, pool));
+  JXL_RETURN_IF_ERROR(CopyTo(Rect(color_), c_desired, cms, &color_, pool));
   c_current_ = c_desired;
   return true;
 }
-
 Status ImageBundle::CopyTo(const Rect& rect, const ColorEncoding& c_desired,
-                           Image3B* out, ThreadPool* pool) const {
-  return CopyToT(metadata_, this, rect, c_desired, pool, out);
+                           const JxlCmsInterface& cms, Image3F* out,
+                           ThreadPool* pool) const {
+  return CopyToT(metadata_, this, rect, c_desired, cms, pool, out);
 }
-Status ImageBundle::CopyTo(const Rect& rect, const ColorEncoding& c_desired,
-                           Image3F* out, ThreadPool* pool) const {
-  return CopyToT(metadata_, this, rect, c_desired, pool, out);
-}
-
-Status ImageBundle::CopyToSRGB(const Rect& rect, Image3B* out,
-                               ThreadPool* pool) const {
-  return CopyTo(rect, ColorEncoding::SRGB(IsGray()), out, pool);
-}
-
 Status TransformIfNeeded(const ImageBundle& in, const ColorEncoding& c_desired,
-                         ThreadPool* pool, ImageBundle* store,
-                         const ImageBundle** out) {
-  if (in.c_current().SameColorEncoding(c_desired)) {
+                         const JxlCmsInterface& cms, ThreadPool* pool,
+                         ImageBundle* store, const ImageBundle** out) {
+  if (in.c_current().SameColorEncoding(c_desired) && !in.HasBlack()) {
     *out = &in;
     return true;
   }
@@ -160,7 +143,7 @@ Status TransformIfNeeded(const ImageBundle& in, const ColorEncoding& c_desired,
     store->SetExtraChannels(std::move(extra_channels));
   }
 
-  if (!store->TransformTo(c_desired, pool)) {
+  if (!store->TransformTo(c_desired, cms, pool)) {
     return false;
   }
   *out = store;

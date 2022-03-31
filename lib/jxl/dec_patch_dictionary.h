@@ -23,8 +23,6 @@
 
 namespace jxl {
 
-constexpr size_t kMaxPatchSize = 32;
-
 enum class PatchBlendMode : uint8_t {
   // The new values are the old ones. Useful to skip some channels.
   kNone = 0,
@@ -77,47 +75,6 @@ struct PatchBlending {
   bool clamp;
 };
 
-struct QuantizedPatch {
-  size_t xsize;
-  size_t ysize;
-  QuantizedPatch() {
-    for (size_t i = 0; i < 3; i++) {
-      pixels[i].resize(kMaxPatchSize * kMaxPatchSize);
-      fpixels[i].resize(kMaxPatchSize * kMaxPatchSize);
-    }
-  }
-  std::vector<int8_t> pixels[3] = {};
-  // Not compared. Used only to retrieve original pixels to construct the
-  // reference image.
-  std::vector<float> fpixels[3] = {};
-  bool operator==(const QuantizedPatch& other) const {
-    if (xsize != other.xsize) return false;
-    if (ysize != other.ysize) return false;
-    for (size_t c = 0; c < 3; c++) {
-      if (memcmp(pixels[c].data(), other.pixels[c].data(),
-                 sizeof(int8_t) * xsize * ysize) != 0)
-        return false;
-    }
-    return true;
-  }
-
-  bool operator<(const QuantizedPatch& other) const {
-    if (xsize != other.xsize) return xsize < other.xsize;
-    if (ysize != other.ysize) return ysize < other.ysize;
-    for (size_t c = 0; c < 3; c++) {
-      int cmp = memcmp(pixels[c].data(), other.pixels[c].data(),
-                       sizeof(int8_t) * xsize * ysize);
-      if (cmp > 0) return false;
-      if (cmp < 0) return true;
-    }
-    return false;
-  }
-};
-
-// Pair (patch, vector of occurrences).
-using PatchInfo =
-    std::pair<QuantizedPatch, std::vector<std::pair<uint32_t, uint32_t>>>;
-
 // Position and size of the patch in the reference frame.
 struct PatchReferencePosition {
   size_t ref, x0, y0, xsize, ysize;
@@ -165,10 +122,14 @@ class PatchDictionary {
     ComputePatchCache();
   }
 
+  // Adds patches to a segment of `xsize` pixels, starting at `inout`, assumed
+  // to be located at position (x0, y) in the frame.
+  void AddOneRow(float* const* inout, size_t y, size_t x0, size_t xsize) const;
+
   // Only adds patches that belong to the `image_rect` area of the decoded
   // image, writing them to the `opsin_rect` area of `opsin`.
-  Status AddTo(Image3F* opsin, const Rect& opsin_rect,
-               float* const* extra_channels, const Rect& image_rect) const;
+  void AddTo(Image3F* opsin, const Rect& opsin_rect,
+             float* const* extra_channels, const Rect& image_rect) const;
 
   // Returns dependencies of this patch dictionary on reference frame ids as a
   // bit mask: bits 0-3 indicate reference frame 0-3.

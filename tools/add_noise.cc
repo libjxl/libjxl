@@ -18,6 +18,7 @@
 #include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/convolve.h"
 #include "lib/jxl/dec_noise.h"
+#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_photon_noise.h"
 #include "lib/jxl/enc_xyb.h"
 
@@ -37,15 +38,15 @@ int main(int argc, const char** argv) {
   jxl::ThreadPoolInternal pool;
 
   jxl::CodecInOut io;
-  JXL_CHECK(jxl::SetFromFile(argv[2], jxl::ColorHints(), &io, &pool));
+  JXL_CHECK(jxl::SetFromFile(argv[2], jxl::extras::ColorHints(), &io, &pool));
 
   jxl::Image3F xyb(io.Main().xsize(), io.Main().ysize());
-  jxl::ToXYB(io.Main(), &pool, &xyb);
+  jxl::ToXYB(io.Main(), &pool, &xyb, jxl::GetJxlCms());
 
   jxl::Image3F noise_image(xyb.xsize(), xyb.ysize());
   {
     // TODO(sboukortt): perhaps add a flag to set the seed.
-    jxl::RandomImage3(1337, jxl::Rect(noise_image), &noise_image);
+    jxl::RandomImage3(0, 0, 0, 0, jxl::Rect(noise_image), &noise_image);
     // TODO(sboukortt): and maybe one to use Gaussian noise instead of our
     // high-pass-filtered uniform noise.
     jxl::WeightsSymmetric5 weights{{HWY_REP4(-3.84)}, {HWY_REP4(0.16)},

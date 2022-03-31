@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
 #include "tools/benchmark/benchmark_args.h"
 
@@ -253,12 +254,12 @@ static std::string PrintFormattedEntries(
     if (descriptors[i].type == TYPE_STRING) {
       value = values[i].s;
     } else if (descriptors[i].type == TYPE_SIZE) {
-      value = values[i].i ? StringPrintf("%zd", values[i].i) : "---";
+      value = values[i].i ? StringPrintf("%" PRIdS, values[i].i) : "---";
     } else if (descriptors[i].type == TYPE_POSITIVE_FLOAT) {
       value = FormatFloat(descriptors[i], values[i].f);
       value = FormatFloat(descriptors[i], values[i].f);
     } else if (descriptors[i].type == TYPE_COUNT) {
-      value = StringPrintf("%zd", values[i].i);
+      value = StringPrintf("%" PRIdS, values[i].i);
     }
 
     int numspaces = descriptors[i].width - value.size();

@@ -30,7 +30,8 @@ class ModularFrameEncoder {
                              Image3F* JXL_RESTRICT color,
                              const std::vector<ImageF>& extra_channels,
                              PassesEncoderState* JXL_RESTRICT enc_state,
-                             ThreadPool* pool, AuxOut* aux_out, bool do_color);
+                             const JxlCmsInterface& cms, ThreadPool* pool,
+                             AuxOut* aux_out, bool do_color);
   // Encodes global info (tree + histograms) in the `writer`.
   Status EncodeGlobalInfo(BitWriter* writer, AuxOut* aux_out);
   // Encodes a specific modular image (identified by `stream`) in the `writer`,
@@ -42,7 +43,7 @@ class ModularFrameEncoder {
   // `nl_dc` decides whether to apply a near-lossless processing to the DC or
   // not.
   void AddVarDCTDC(const Image3F& dc, size_t group_index, bool nl_dc,
-                   PassesEncoderState* enc_state);
+                   PassesEncoderState* enc_state, bool jpeg_transcode);
   // Creates a modular image for the AC metadata of the given group
   // (`group_index`).
   void AddACMetadata(size_t group_index, bool jpeg_transcode,
@@ -79,12 +80,12 @@ class ModularFrameEncoder {
   std::vector<uint8_t> context_map;
   FrameDimensions frame_dim;
   CompressParams cparams;
-  float quality = cparams.quality_pair.first;
-  float cquality = cparams.quality_pair.second;
+  float quality = 100.f;
   std::vector<size_t> tree_splits;
   std::vector<ModularMultiplierInfo> multiplier_info;
   std::vector<std::vector<uint32_t>> gi_channel;
   std::vector<size_t> image_widths;
+  Predictor delta_pred = Predictor::Average4;
 };
 
 }  // namespace jxl

@@ -17,6 +17,7 @@
 #include "lib/jxl/butteraugli/butteraugli.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/modular/options.h"
+#include "lib/jxl/modular/transform/transform.h"
 
 namespace jxl {
 
@@ -126,6 +127,7 @@ struct CompressParams {
   float max_error[3] = {0.0, 0.0, 0.0};
 
   SpeedTier speed_tier = SpeedTier::kSquirrel;
+  int brotli_effort = -1;
 
   // 0 = default.
   // 1 = slightly worse quality.
@@ -215,8 +217,8 @@ struct CompressParams {
   // modular mode options below
   ModularOptions options;
   int responsive = -1;
-  // A pair of <quality, cquality>.
-  std::pair<float, float> quality_pair{100.f, 100.f};
+  // empty for default squeeze
+  std::vector<SqueezeParams> squeezes;
   int colorspace = -1;
   // Use Global channel palette if #colors < this percentage of range
   float channel_colors_pre_transform_percent = 95.f;
@@ -227,30 +229,37 @@ struct CompressParams {
 
   // Returns whether these params are lossless as defined by SetLossless();
   bool IsLossless() const {
-    return modular_mode && quality_pair.first == 100 &&
-           quality_pair.second == 100 &&
-           color_transform == jxl::ColorTransform::kNone;
+    // YCbCr is also considered lossless here since it's intended for
+    // source material that is already YCbCr (we don't do the fwd transform)
+    return modular_mode && butteraugli_distance == 0.0f &&
+           color_transform != jxl::ColorTransform::kXYB;
   }
 
   // Sets the parameters required to make the codec lossless.
   void SetLossless() {
     modular_mode = true;
-    quality_pair.first = 100;
-    quality_pair.second = 100;
+    butteraugli_distance = 0.0f;
     color_transform = jxl::ColorTransform::kNone;
   }
 
   bool use_new_heuristics = false;
 
   // Down/upsample the image before encoding / after decoding by this factor.
-  // The resampling value can also be set to 0 to automatically choose based
+  // The resampling value can also be set to <= 0 to automatically choose based
   // on distance, however EncodeFrame doesn't support this, so it is
-  // required to process the CompressParams to set a valid positive resampling
+  // required to call PostInit() to set a valid positive resampling
   // value and altered butteraugli score if this is used.
-  size_t resampling = 1;
-  size_t ec_resampling = 1;
+  int resampling = -1;
+  int ec_resampling = -1;
   // Skip the downsampling before encoding if this is true.
   bool already_downsampled = false;
+
+  // Codestream level to conform to.
+  // -1: don't care
+  int level = -1;
+
+  std::vector<float> manual_noise;
+  std::vector<float> manual_xyb_factors;
 };
 
 static constexpr float kMinButteraugliForDynamicAR = 0.5f;

@@ -692,9 +692,16 @@ Status AdaptToXYZD50(float wx, float wy, float matrix[9]) {
   MatMul(kBradford, w, 3, 3, 1, lms);
   MatMul(kBradford, w50, 3, 3, 1, lms50);
 
+  if (lms[0] == 0 || lms[1] == 0 || lms[2] == 0) {
+    return JXL_FAILURE("Invalid white point");
+  }
   float a[9] = {
+      //       /----> 0, 1, 2, 3,          /----> 4, 5, 6, 7,          /----> 8,
       lms50[0] / lms[0], 0, 0, 0, lms50[1] / lms[1], 0, 0, 0, lms50[2] / lms[2],
   };
+  if (!std::isfinite(a[0]) || !std::isfinite(a[4]) || !std::isfinite(a[8])) {
+    return JXL_FAILURE("Invalid white point");
+  }
 
   float b[9];
   MatMul(a, kBradford, 3, 3, 3, b);
@@ -703,8 +710,8 @@ Status AdaptToXYZD50(float wx, float wy, float matrix[9]) {
   return true;
 }
 
-Status PrimariesToXYZD50(float rx, float ry, float gx, float gy, float bx,
-                         float by, float wx, float wy, float matrix[9]) {
+Status PrimariesToXYZ(float rx, float ry, float gx, float gy, float bx,
+                      float by, float wx, float wy, float matrix[9]) {
   if (wx < 0 || wx > 1 || wy <= 0 || wy > 1) {
     return JXL_FAILURE("Invalid white point");
   }
@@ -727,9 +734,14 @@ Status PrimariesToXYZD50(float rx, float ry, float gx, float gy, float bx,
       xyz[0], 0, 0, 0, xyz[1], 0, 0, 0, xyz[2],
   };
 
-  float toXYZ[9];
-  MatMul(primaries, a, 3, 3, 3, toXYZ);
+  MatMul(primaries, a, 3, 3, 3, matrix);
+  return true;
+}
 
+Status PrimariesToXYZD50(float rx, float ry, float gx, float gy, float bx,
+                         float by, float wx, float wy, float matrix[9]) {
+  float toXYZ[9];
+  JXL_RETURN_IF_ERROR(PrimariesToXYZ(rx, ry, gx, gy, bx, by, wx, wy, toXYZ));
   float d50[9];
   JXL_RETURN_IF_ERROR(AdaptToXYZD50(wx, wy, d50));
 

@@ -9,17 +9,19 @@
 #include <QThread>
 
 #include "lib/extras/codec.h"
-#include "lib/extras/color_hints.h"
+#include "lib/extras/dec/color_hints.h"
 #include "lib/jxl/base/file_io.h"
 #include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/color_management.h"
+#include "lib/jxl/enc_color_management.h"
 #include "tools/viewer/load_jxl.h"
 
 namespace jxl {
 
 namespace {
 
-Status loadFromFile(const QString& filename, const ColorHints& color_hints,
+Status loadFromFile(const QString& filename,
+                    const extras::ColorHints& color_hints,
                     CodecInOut* const decoded, ThreadPool* const pool) {
   PaddedBytes compressed;
   JXL_RETURN_IF_ERROR(ReadFile(filename.toStdString(), &compressed));
@@ -33,11 +35,13 @@ bool canLoadImageWithExtension(QString extension) {
   extension = extension.toLower();
   size_t bitsPerSampleUnused;
   return extension == "jxl" || extension == "j" || extension == "brn" ||
-         CodecFromExtension("." + extension.toStdString(),
-                            &bitsPerSampleUnused) != jxl::Codec::kUnknown;
+         extras::CodecFromExtension("." + extension.toStdString(),
+                                    &bitsPerSampleUnused) !=
+             jxl::extras::Codec::kUnknown;
 }
 
 QImage loadImage(const QString& filename, const QByteArray& targetIccProfile,
+                 const float intensityTarget,
                  const QString& sourceColorSpaceHint) {
   qint64 elapsed;
   QImage img = loadJxlImage(filename, targetIccProfile, &elapsed);
@@ -47,13 +51,14 @@ QImage loadImage(const QString& filename, const QByteArray& targetIccProfile,
   static ThreadPoolInternal pool(QThread::idealThreadCount());
 
   CodecInOut decoded;
-  ColorHints color_hints;
+  extras::ColorHints color_hints;
   if (!sourceColorSpaceHint.isEmpty()) {
     color_hints.Add("color_space", sourceColorSpaceHint.toStdString());
   }
   if (!loadFromFile(filename, color_hints, &decoded, &pool)) {
     return QImage();
   }
+  decoded.metadata.m.SetIntensityTarget(intensityTarget);
   const ImageBundle& ib = decoded.Main();
 
   ColorEncoding targetColorSpace;
@@ -65,7 +70,7 @@ QImage loadImage(const QString& filename, const QByteArray& targetIccProfile,
     targetColorSpace = ColorEncoding::SRGB(ib.IsGray());
   }
   Image3F converted;
-  if (!ib.CopyTo(Rect(ib), targetColorSpace, &converted, &pool)) {
+  if (!ib.CopyTo(Rect(ib), targetColorSpace, GetJxlCms(), &converted, &pool)) {
     return QImage();
   }
 

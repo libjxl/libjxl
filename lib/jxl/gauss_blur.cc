@@ -421,7 +421,7 @@ ImageF ConvolveXSampleAndTranspose(const ImageF& in,
       for (int i = -r; i <= r; i += Lanes(df)) {
         sum = MulAdd(LoadU(df, rowp + x + i), LoadU(df, kernelp + i), sum);
       }
-      out.Row(ox)[y] = GetLane(SumOfLanes(sum));
+      out.Row(ox)[y] = GetLane(SumOfLanes(df, sum));
     }
     for (; x < in.xsize(); x += res, ++ox) {
       float sum = 0.0f;
@@ -592,15 +592,15 @@ void FastGaussianHorizontal(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
   JXL_CHECK(SameSize(in, *out));
 
   const intptr_t xsize = in.xsize();
-  RunOnPool(
-      pool, 0, in.ysize(), ThreadPool::SkipInit(),
-      [&](const int task, const int /*thread*/) {
+  JXL_CHECK(RunOnPool(
+      pool, 0, in.ysize(), ThreadPool::NoInit,
+      [&](const uint32_t task, size_t /*thread*/) {
         const size_t y = task;
         const float* row_in = in.ConstRow(y);
         float* JXL_RESTRICT row_out = out->Row(y);
         FastGaussian1D(rg, row_in, xsize, row_out);
       },
-      "FastGaussianHorizontal");
+      "FastGaussianHorizontal"));
 }
 
 }  // namespace

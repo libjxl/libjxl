@@ -21,9 +21,6 @@
 #include "jxl/thread_parallel_runner.h"
 #include "jxl/thread_parallel_runner_cxx.h"
 
-// Unpublised API.
-void SetDecoderMemoryLimitBase_(size_t memory_limit_base);
-
 namespace {
 
 // Externally visible value to ensure pixels are used in the fuzzer.
@@ -43,6 +40,8 @@ struct FuzzSpec {
   // Whether to use the callback mechanism for the output image or not.
   bool use_callback;
   bool keep_orientation;
+  bool decode_boxes;
+  bool coalescing;
   // Used for random variation of chunk sizes, extra channels, ... to get
   uint32_t random_seed;
 };
@@ -70,7 +69,6 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
                   const FuzzSpec& spec, std::vector<uint8_t>* pixels,
                   std::vector<uint8_t>* jpeg, size_t* xsize, size_t* ysize,
                   std::vector<uint8_t>* icc_profile) {
-  SetDecoderMemoryLimitBase_(max_pixels);
   // Multi-threaded parallel runner. Limit to max 2 threads since the fuzzer
   // itself is already multithreaded.
   size_t num_threads =
@@ -86,7 +84,7 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
           dec.get(), JXL_DEC_BASIC_INFO | JXL_DEC_EXTENSIONS |
                          JXL_DEC_COLOR_ENCODING | JXL_DEC_PREVIEW_IMAGE |
                          JXL_DEC_FRAME | JXL_DEC_FULL_IMAGE |
-                         JXL_DEC_JPEG_RECONSTRUCTION)) {
+                         JXL_DEC_JPEG_RECONSTRUCTION | JXL_DEC_BOX)) {
     return false;
   }
   if (JXL_DEC_SUCCESS != JxlDecoderSetParallelRunner(dec.get(),
@@ -98,6 +96,9 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
       JxlDecoderSetKeepOrientation(dec.get(), spec.keep_orientation)) {
     abort();
   }
+  if (JXL_DEC_SUCCESS != JxlDecoderSetCoalescing(dec.get(), spec.coalescing)) {
+    abort();
+  }
   JxlBasicInfo info;
   uint32_t channels = (spec.get_grayscale ? 1 : 3) + (spec.get_alpha ? 1 : 0);
   JxlPixelFormat format = {channels, spec.output_type, spec.output_endianness,
@@ -106,6 +107,7 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
   if (!spec.use_streaming) {
     // Set all input at once
     JxlDecoderSetInput(dec.get(), jxl, size);
+    JxlDecoderCloseInput(dec.get());
   }
 
   bool seen_basic_info = false;
@@ -114,7 +116,6 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
   bool seen_preview = false;
   bool seen_need_image_out = false;
   bool seen_full_image = false;
-  bool seen_success = false;
   bool seen_frame = false;
   uint32_t num_frames = 0;
   bool seen_jpeg_reconstruction = false;
@@ -136,6 +137,8 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
   // Callback function used when decoding with use_callback.
   struct DecodeCallbackData {
     JxlBasicInfo info;
+    size_t xsize = 0;
+    size_t ysize = 0;
     std::mutex called_rows_mutex;
     // For each row stores the segments of the row being called. For each row
     // the sum of all the int values in the map up to [i] (inclusive) tell how
@@ -149,9 +152,9 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
   auto decode_callback = +[](void* opaque, size_t x, size_t y,
                              size_t num_pixels, const void* pixels) {
     DecodeCallbackData* data = static_cast<DecodeCallbackData*>(opaque);
-    if (num_pixels > data->info.xsize) abort();
-    if (x + num_pixels > data->info.xsize) abort();
-    if (y >= data->info.ysize) abort();
+    if (num_pixels > data->xsize) abort();
+    if (x + num_pixels > data->xsize) abort();
+    if (y >= data->ysize) abort();
     if (num_pixels && !pixels) abort();
     // Keep track of the segments being called by the callback.
     {
@@ -163,6 +166,13 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
   };
 
   JxlExtraChannelInfo extra_channel_info;
+
+  std::vector<uint8_t> box_buffer;
+
+  if (spec.decode_boxes &&
+      JXL_DEC_SUCCESS != JxlDecoderSetDecompressBoxes(dec.get(), JXL_TRUE)) {
+    // error ignored, can still fuzz if it doesn't brotli-decompress brob boxes.
+  }
 
   for (;;) {
     JxlDecoderStatus status = JxlDecoderProcessInput(dec.get());
@@ -185,7 +195,14 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
           return false;
         }
         streaming_size += add_size;
-        JxlDecoderSetInput(dec.get(), jxl, streaming_size);
+        if (JXL_DEC_SUCCESS !=
+            JxlDecoderSetInput(dec.get(), jxl, streaming_size)) {
+          return false;
+        }
+        if (leftover == streaming_size) {
+          // All possible input bytes given
+          JxlDecoderCloseInput(dec.get());
+        }
 
         if (!tested_flush && seen_frame) {
           // Test flush max once to avoid too slow fuzzer run
@@ -222,7 +239,6 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
       *xsize = info.xsize;
       *ysize = info.ysize;
       decode_callback_data.info = info;
-      decode_callback_data.called_rows.resize(info.ysize);
       size_t num_pixels = *xsize * *ysize;
       // num_pixels overflow
       if (*xsize != 0 && num_pixels / *xsize != *ysize) return false;
@@ -316,6 +332,12 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
             JxlDecoderGetFrameHeader(dec.get(), &frame_header)) {
           abort();
         }
+        decode_callback_data.xsize = frame_header.layer_info.xsize;
+        decode_callback_data.ysize = frame_header.layer_info.ysize;
+        if (!spec.coalescing) {
+          decode_callback_data.called_rows.clear();
+        }
+        decode_callback_data.called_rows.resize(decode_callback_data.ysize);
         Consume(frame_header);
         std::vector<char> frame_name(frame_header.name_length + 1);
         if (JXL_DEC_SUCCESS != JxlDecoderGetFrameName(dec.get(),
@@ -417,18 +439,34 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
       Consume(pixels->cbegin(), pixels->cend());
       Consume(jpeg->cbegin(), jpeg->cend());
 
+      // When not coalescing, check that the whole (possibly cropped) frame was
+      // sent
+      if (seen_need_image_out && spec.use_callback && spec.coalescing) {
+        // Check that the callback sent all the pixels
+        for (uint32_t y = 0; y < decode_callback_data.ysize; y++) {
+          // Check that each row was at least called once.
+          if (decode_callback_data.called_rows[y].empty()) abort();
+          uint32_t last_idx = 0;
+          int calls = 0;
+          for (auto it : decode_callback_data.called_rows[y]) {
+            if (it.first > last_idx) {
+              if (static_cast<uint32_t>(calls) != 1) abort();
+            }
+            calls += it.second;
+            last_idx = it.first;
+          }
+        }
+      }
       // Nothing to do. Do not yet return. If the image is an animation, more
       // full frames may be decoded. This example only keeps the last one.
     } else if (status == JXL_DEC_SUCCESS) {
       if (!seen_full_image) abort();  // expected full image before finishing
-      if (seen_success) abort();      // already seen success
-      seen_success = true;
 
       // When decoding we may not get seen_need_image_out unless we were
       // decoding the image to pixels.
-      if (seen_need_image_out && spec.use_callback) {
+      if (seen_need_image_out && spec.use_callback && spec.coalescing) {
         // Check that the callback sent all the pixels
-        for (uint32_t y = 0; y < info.ysize; y++) {
+        for (uint32_t y = 0; y < decode_callback_data.ysize; y++) {
           // Check that each row was at least called once.
           if (decode_callback_data.called_rows[y].empty()) abort();
           uint32_t last_idx = 0;
@@ -447,6 +485,28 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
       // It's not required to call JxlDecoderReleaseInput(dec.get()) here since
       // the decoder will be destroyed.
       return true;
+    } else if (status == JXL_DEC_BOX) {
+      if (spec.decode_boxes) {
+        if (!box_buffer.empty()) {
+          size_t remaining = JxlDecoderReleaseBoxBuffer(dec.get());
+          size_t box_size = box_buffer.size() - remaining;
+          if (box_size != 0) {
+            Consume(box_buffer.begin(), box_buffer.begin() + box_size);
+            box_buffer.clear();
+          }
+        }
+        box_buffer.resize(64);
+        JxlDecoderSetBoxBuffer(dec.get(), box_buffer.data(), box_buffer.size());
+      }
+    } else if (status == JXL_DEC_BOX_NEED_MORE_OUTPUT) {
+      if (!spec.decode_boxes) {
+        abort();  // Not expected when not setting output buffer
+      }
+      size_t remaining = JxlDecoderReleaseBoxBuffer(dec.get());
+      size_t box_size = box_buffer.size() - remaining;
+      box_buffer.resize(box_buffer.size() * 2);
+      JxlDecoderSetBoxBuffer(dec.get(), box_buffer.data() + box_size,
+                             box_buffer.size() - box_size);
     } else {
       return false;
     }
@@ -482,9 +542,11 @@ int TestOneInput(const uint8_t* data, size_t size) {
   spec.jpeg_to_pixels = !!getFlag(1);
   spec.use_callback = !!getFlag(1);
   spec.keep_orientation = !!getFlag(1);
+  spec.coalescing = !!getFlag(1);
   spec.output_type = static_cast<JxlDataType>(getFlag(JXL_TYPE_FLOAT16));
   spec.output_endianness = static_cast<JxlEndianness>(getFlag(JXL_BIG_ENDIAN));
   spec.output_align = getFlag(16);
+  spec.decode_boxes = !!getFlag(1);
 
   std::vector<uint8_t> pixels;
   std::vector<uint8_t> jpeg;

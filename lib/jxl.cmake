@@ -29,22 +29,25 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/base/compiler_specific.h
   jxl/base/data_parallel.cc
   jxl/base/data_parallel.h
-  jxl/base/descriptive_statistics.cc
-  jxl/base/descriptive_statistics.h
   jxl/base/file_io.h
   jxl/base/iaca.h
   jxl/base/os_macros.h
   jxl/base/override.h
   jxl/base/padded_bytes.cc
   jxl/base/padded_bytes.h
+  jxl/base/printf_macros.h
   jxl/base/profiler.h
-  jxl/base/robust_statistics.h
+  jxl/base/random.cc
+  jxl/base/random.h
+  jxl/base/scope_guard.h
   jxl/base/span.h
   jxl/base/status.cc
   jxl/base/status.h
   jxl/base/thread_pool_internal.h
   jxl/blending.cc
   jxl/blending.h
+  jxl/box_content_decoder.cc
+  jxl/box_content_decoder.h
   jxl/chroma_from_luma.cc
   jxl/chroma_from_luma.h
   jxl/codec_in_out.h
@@ -90,12 +93,7 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/dec_params.h
   jxl/dec_patch_dictionary.cc
   jxl/dec_patch_dictionary.h
-  jxl/dec_reconstruct.cc
-  jxl/dec_reconstruct.h
-  jxl/dec_render_pipeline.h
   jxl/dec_transforms-inl.h
-  jxl/dec_upsample.cc
-  jxl/dec_upsample.h
   jxl/dec_xyb-inl.h
   jxl/dec_xyb.cc
   jxl/dec_xyb.h
@@ -108,13 +106,21 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/entropy_coder.h
   jxl/epf.cc
   jxl/epf.h
+  jxl/exif.cc
+  jxl/exif.h
+  jxl/fast_dct-inl.h
+  jxl/fast_dct.cc
+  jxl/fast_dct.h
+  jxl/fast_dct128-inl.h
+  jxl/fast_dct16-inl.h
+  jxl/fast_dct256-inl.h
+  jxl/fast_dct32-inl.h
+  jxl/fast_dct64-inl.h
+  jxl/fast_dct8-inl.h
   jxl/fast_math-inl.h
   jxl/field_encodings.h
   jxl/fields.cc
   jxl/fields.h
-  jxl/filters.cc
-  jxl/filters.h
-  jxl/filters_internal.h
   jxl/frame_header.cc
   jxl/frame_header.h
   jxl/gauss_blur.cc
@@ -168,7 +174,6 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/modular/transform/transform.cc
   jxl/modular/transform/transform.h
   jxl/noise.h
-  jxl/noise_distributions.h
   jxl/opsin_params.cc
   jxl/opsin_params.h
   jxl/passes_state.cc
@@ -180,7 +185,41 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/quantizer.cc
   jxl/quantizer.h
   jxl/rational_polynomial-inl.h
+  jxl/render_pipeline/low_memory_render_pipeline.cc
+  jxl/render_pipeline/low_memory_render_pipeline.h
+  jxl/render_pipeline/render_pipeline.cc
+  jxl/render_pipeline/render_pipeline.h
+  jxl/render_pipeline/render_pipeline_stage.h
+  jxl/render_pipeline/simple_render_pipeline.cc
+  jxl/render_pipeline/simple_render_pipeline.h
+  jxl/render_pipeline/stage_blending.cc
+  jxl/render_pipeline/stage_blending.h
+  jxl/render_pipeline/stage_chroma_upsampling.cc
+  jxl/render_pipeline/stage_chroma_upsampling.h
+  jxl/render_pipeline/stage_epf.cc
+  jxl/render_pipeline/stage_epf.h
+  jxl/render_pipeline/stage_gaborish.cc
+  jxl/render_pipeline/stage_gaborish.h
+  jxl/render_pipeline/stage_noise.cc
+  jxl/render_pipeline/stage_noise.h
+  jxl/render_pipeline/stage_patches.cc
+  jxl/render_pipeline/stage_patches.h
+  jxl/render_pipeline/stage_splines.cc
+  jxl/render_pipeline/stage_splines.h
+  jxl/render_pipeline/stage_spot.cc
+  jxl/render_pipeline/stage_spot.h
+  jxl/render_pipeline/stage_upsampling.cc
+  jxl/render_pipeline/stage_upsampling.h
+  jxl/render_pipeline/stage_write.cc
+  jxl/render_pipeline/stage_write.h
+  jxl/render_pipeline/stage_xyb.cc
+  jxl/render_pipeline/stage_xyb.h
+  jxl/render_pipeline/stage_ycbcr.cc
+  jxl/render_pipeline/stage_ycbcr.h
+  jxl/render_pipeline/test_render_pipeline_stages.h
   jxl/sanitizers.h
+  jxl/simd_util-inl.h
+  jxl/size_constraints.h
   jxl/splines.cc
   jxl/splines.h
   jxl/toc.cc
@@ -283,6 +322,8 @@ set(JPEGXL_INTERNAL_SOURCES_ENC
   jxl/jpeg/enc_jpeg_huffman_decode.cc
   jxl/jpeg/enc_jpeg_huffman_decode.h
   jxl/linalg.cc
+  jxl/modular/encoding/enc_debug_tree.cc
+  jxl/modular/encoding/enc_debug_tree.h
   jxl/modular/encoding/enc_encoding.cc
   jxl/modular/encoding/enc_encoding.h
   jxl/modular/encoding/enc_ma.cc
@@ -305,6 +346,8 @@ set(JPEGXL_DEC_INTERNAL_LIBS
   brotlidec-static
   brotlicommon-static
   hwy
+  Threads::Threads
+  ${ATOMICS_LIBRARIES}
 )
 
 if(JPEGXL_ENABLE_PROFILER)
@@ -314,7 +357,6 @@ endif()
 set(JPEGXL_INTERNAL_LIBS
   ${JPEGXL_DEC_INTERNAL_LIBS}
   brotlienc-static
-  Threads::Threads
 )
 
 # strips the -static suffix from all the elements in LIST
@@ -426,7 +468,7 @@ add_library(jxl_dec-static STATIC
   $<TARGET_OBJECTS:jxl_dec-obj>
 )
 target_link_libraries(jxl_dec-static
-  PUBLIC ${JPEGXL_COVERAGE_FLAGS} ${JPEGXL_DEC_INTERNAL_LIBS} hwy)
+  PUBLIC ${JPEGXL_COVERAGE_FLAGS} ${JPEGXL_DEC_INTERNAL_LIBS})
 target_include_directories(jxl_dec-static PUBLIC
   "${PROJECT_SOURCE_DIR}"
   "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -447,7 +489,7 @@ endif()
 # to do, remove $<TARGET_OBJECTS:jxl_dec-obj> here and depend on jxl_dec-static
 add_library(jxl-static STATIC ${JPEGXL_INTERNAL_OBJECTS})
 target_link_libraries(jxl-static
-  PUBLIC ${JPEGXL_COVERAGE_FLAGS} ${JPEGXL_INTERNAL_LIBS} hwy)
+  PUBLIC ${JPEGXL_COVERAGE_FLAGS} ${JPEGXL_INTERNAL_LIBS})
 target_include_directories(jxl-static PUBLIC
   "${PROJECT_SOURCE_DIR}"
   "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -559,7 +601,9 @@ endforeach()
 # contains symbols also in libjxl which would conflict if programs try to use
 # both.
 install(TARGETS jxl
-  DESTINATION ${CMAKE_INSTALL_LIBDIR})
+  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
 else()
 add_library(jxl ALIAS jxl-static)
 add_library(jxl_dec ALIAS jxl_dec-static)

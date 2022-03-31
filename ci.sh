@@ -468,6 +468,8 @@ cmake_build_and_test() {
   if [[ "${PACK_TEST:-}" == "1" ]]; then
     (cd "${BUILD_DIR}"
      ${FIND_BIN} -name '*.cmake' -a '!' -path '*CMakeFiles*'
+     # gtest / gmock / gtest_main shared libs
+     ${FIND_BIN} lib/ -name 'libg*.so*'
      ${FIND_BIN} -type d -name tests -a '!' -path '*CMakeFiles*'
     ) | tar -C "${BUILD_DIR}" -cf "${BUILD_DIR}/tests.tar.xz" -T - \
       --use-compress-program="xz --threads=$(nproc --all || echo 1) -6"
@@ -551,10 +553,13 @@ cmd_coverage_report() {
   local gcovr_args=(
     -r "${real_build_dir}"
     --gcov-executable "${LLVM_COV} gcov"
-    # Only print coverage information for the jxl and fuif directories. The rest
+    # Only print coverage information for the libjxl directories. The rest
     # is not part of the code under test.
     --filter '.*jxl/.*'
     --exclude '.*_test.cc'
+    --exclude '.*_testonly..*'
+    --exclude '.*_debug.*'
+    --exclude '.*test_utils..*'
     --object-directory "${real_build_dir}"
   )
 
@@ -595,8 +600,8 @@ cmd_gbench() {
 }
 
 cmd_asanfuzz() {
-  CMAKE_CXX_FLAGS+=" -fsanitize=fuzzer-no-link"
-  CMAKE_C_FLAGS+=" -fsanitize=fuzzer-no-link"
+  CMAKE_CXX_FLAGS+=" -fsanitize=fuzzer-no-link -DFUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION=1"
+  CMAKE_C_FLAGS+=" -fsanitize=fuzzer-no-link -DFUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION=1"
   cmd_asan -DJPEGXL_ENABLE_FUZZERS=ON "$@"
 }
 
@@ -610,8 +615,8 @@ cmd_msanfuzz() {
     cmd_msan_install
   fi
 
-  CMAKE_CXX_FLAGS+=" -fsanitize=fuzzer-no-link"
-  CMAKE_C_FLAGS+=" -fsanitize=fuzzer-no-link"
+  CMAKE_CXX_FLAGS+=" -fsanitize=fuzzer-no-link -DFUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION=1"
+  CMAKE_C_FLAGS+=" -fsanitize=fuzzer-no-link -DFUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION=1"
   cmd_msan -DJPEGXL_ENABLE_FUZZERS=ON "$@"
 }
 
@@ -692,7 +697,8 @@ cmd_msan() {
   strip_dead_code
   cmake_configure "$@" \
     -DCMAKE_CROSSCOMPILING=1 -DRUN_HAVE_STD_REGEX=0 -DRUN_HAVE_POSIX_REGEX=0 \
-    -DJPEGXL_ENABLE_TCMALLOC=OFF
+    -DJPEGXL_ENABLE_TCMALLOC=OFF -DJPEGXL_WARNINGS_AS_ERRORS=OFF \
+    -DCMAKE_REQUIRED_LINK_OPTIONS="${msan_linker_flags[@]}"
   cmake_build_and_test
 }
 

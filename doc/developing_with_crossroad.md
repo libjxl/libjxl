@@ -93,7 +93,8 @@ mkdir build
 cd build
 crossroad w64 libjxl
 crossroad cmake -DCMAKE_BUILD_TYPE=Release \
-   -DBUILD_TESTING=OFF -DJPEGXL_ENABLE_BENCHMARK=OFF \
+   -DBUILD_TESTING=OFF -DBUILD_SHARED_LIBS=OFF \
+   -DJPEGXL_ENABLE_BENCHMARK=OFF -DJPEGXL_ENABLE_MANPAGES=OFF \
    -DJPEGXL_ENABLE_PLUGINS=ON -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
    -DJPEGXL_FORCE_SYSTEM_GTEST=ON ..
 ```
@@ -106,10 +107,10 @@ cmake --build .
 
 ## Try out the GIMP Plugin
 
-To install and try out out the GIMP plugin:
+The plugin is built statically, so there should be no need to install `dll` files.  To try out the plugin:
 
 1. [Download](https://www.gimp.org/downloads/) and install the stable version of GIMP (currently 2.10.24).
 
 2. Create a new folder: `C:\Program Files\GIMP 2\lib\gimp\2.0\plug-ins\file-jxl`
 
-3. Copy `build/plugins/gimp/file-jxl.exe` to the new folder.
+3. Copy `build/plugins/gimp/file-jxl.exe` to the new folder. 

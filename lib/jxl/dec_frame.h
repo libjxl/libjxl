@@ -44,18 +44,16 @@ Status DecodeFrame(const DecompressParams& dparams,
                    const CodecMetadata& metadata,
                    const SizeConstraints* constraints, bool is_preview = false);
 
-// Leaves reader in the same state as DecodeFrame would. Used to skip preview.
-// Also updates `dec_state` with the new frame header.
-Status SkipFrame(const CodecMetadata& metadata, BitReader* JXL_RESTRICT reader,
-                 bool is_preview = false);
-
 // TODO(veluca): implement "forced drawing".
 class FrameDecoder {
  public:
   // All parameters must outlive the FrameDecoder.
   FrameDecoder(PassesDecoderState* dec_state, const CodecMetadata& metadata,
-               ThreadPool* pool)
-      : dec_state_(dec_state), pool_(pool), frame_header_(&metadata) {}
+               ThreadPool* pool, bool use_slow_rendering_pipeline)
+      : dec_state_(dec_state),
+        pool_(pool),
+        frame_header_(&metadata),
+        use_slow_rendering_pipeline_(use_slow_rendering_pipeline) {}
 
   // `constraints` must outlive the FrameDecoder if not null, or stay alive
   // until the next call to SetFrameSizeLimits.
@@ -63,6 +61,7 @@ class FrameDecoder {
     constraints_ = constraints;
   }
   void SetRenderSpotcolors(bool rsc) { render_spotcolors_ = rsc; }
+  void SetCoalescing(bool c) { coalescing_ = c; }
 
   // Read FrameHeader and table of contents from the given BitReader.
   // Also checks frame dimensions for their limits, and sets the output
@@ -71,7 +70,7 @@ class FrameDecoder {
   // on callers.
   Status InitFrame(BitReader* JXL_RESTRICT br, ImageBundle* decoded,
                    bool is_preview, bool allow_partial_frames,
-                   bool allow_partial_dc_global);
+                   bool allow_partial_dc_global, bool output_needed);
 
   struct SectionInfo {
     BitReader* JXL_RESTRICT br;
@@ -132,9 +131,16 @@ class FrameDecoder {
 
   // Returns whether a DC image has been decoded, accessible at low resolution
   // at passes.shared_storage.dc_storage
-  bool HasDecodedDC() const {
-    return frame_header_.encoding == FrameEncoding::kVarDCT && finalized_dc_;
-  }
+  bool HasDecodedDC() const { return finalized_dc_; }
+  bool HasDecodedAll() const { return NumSections() == num_sections_done_; }
+
+  // If enabled, ProcessSections will stop and return true when the DC
+  // sections have been processed, instead of starting the AC sections. This
+  // will only occur if supported (that is, flushing will produce a valid
+  // 1/8th*1/8th resolution image). The return value of true then does not mean
+  // all sections have been processed, use HasDecodedDC and HasDecodedAll
+  // to check the true finished state.
+  void SetPauseAtProgressive() { pause_at_progressive_ = true; }
 
   // Sets the buffer to which uint8 sRGB pixels will be decoded. This is not
   // supported for all images. If it succeeds, HasRGBBuffer() will return true.
@@ -197,11 +203,13 @@ class FrameDecoder {
   Status ProcessDCGlobal(BitReader* br);
   Status ProcessDCGroup(size_t dc_group_id, BitReader* br);
   void FinalizeDC();
-  void AllocateOutput();
+  Status AllocateOutput();
   Status ProcessACGlobal(BitReader* br);
   Status ProcessACGroup(size_t ac_group_id, BitReader* JXL_RESTRICT* br,
                         size_t num_passes, size_t thread, bool force_draw,
                         bool dc_only);
+  void MarkSections(const SectionInfo* sections, size_t num,
+                    SectionStatus* section_status);
 
   // Allocates storage for parallel decoding using up to `num_threads` threads
   // of up to `num_tasks` tasks. The value of `thread` passed to
@@ -213,8 +221,13 @@ class FrameDecoder {
     if (storage_size > group_dec_caches_.size()) {
       group_dec_caches_.resize(storage_size);
     }
-    dec_state_->EnsureStorage(storage_size);
     use_task_id_ = num_threads > num_tasks;
+    if (dec_state_->render_pipeline) {
+      dec_state_->render_pipeline->PrepareForThreads(
+          storage_size,
+          /*use_group_ids=*/modular_frame_decoder_.UsesFullImage() &&
+              frame_header_.encoding == FrameEncoding::kVarDCT);
+    }
   }
 
   size_t GetStorageLocation(size_t thread, size_t task) {
@@ -233,7 +246,7 @@ class FrameDecoder {
         decoded_->metadata()->GetOrientation() != Orientation::kIdentity) {
       return false;
     }
-    if (ImageBlender::NeedsBlending(dec_state_)) return false;
+    if (NeedsBlending(dec_state_)) return false;
     if (frame_header_.CanBeReferenced()) return false;
     if (render_spotcolors_ &&
         decoded_->metadata()->Find(ExtraChannel::kSpotColor)) {
@@ -256,15 +269,19 @@ class FrameDecoder {
   bool allow_partial_frames_;
   bool allow_partial_dc_global_;
   bool render_spotcolors_ = true;
+  bool coalescing_ = true;
 
   std::vector<uint8_t> processed_section_;
   std::vector<uint8_t> decoded_passes_per_ac_group_;
   std::vector<uint8_t> decoded_dc_groups_;
   bool decoded_dc_global_;
   bool decoded_ac_global_;
+  bool HasEverything() const;
   bool finalized_dc_ = true;
+  size_t num_sections_done_ = 0;
   bool is_finalized_ = true;
   size_t num_renders_ = 0;
+  bool allocated_ = false;
 
   std::vector<GroupDecCache> group_dec_caches_;
 
@@ -274,6 +291,11 @@ class FrameDecoder {
   // Whether or not the task id should be used for storage indexing, instead of
   // the thread id.
   bool use_task_id_ = false;
+
+  // Testing setting: whether or not to use the slow rendering pipeline.
+  bool use_slow_rendering_pipeline_;
+
+  bool pause_at_progressive_ = false;
 };
 
 }  // namespace jxl

@@ -27,9 +27,9 @@
 #include "lib/jxl/image_ops.h"
 #include "tools/benchmark/benchmark_args.h"
 #include "tools/benchmark/benchmark_codec_custom.h"
-#ifdef BENCHMARK_JPEG
+#ifdef JPEGXL_ENABLE_JPEG
 #include "tools/benchmark/benchmark_codec_jpeg.h"
-#endif  // BENCHMARK_JPEG
+#endif  // JPEG_ENABLE_JPEG
 #include "tools/benchmark/benchmark_codec_jxl.h"
 #include "tools/benchmark/benchmark_codec_png.h"
 #include "tools/benchmark/benchmark_stats.h"
@@ -55,9 +55,7 @@ void ImageCodec::ParseParameters(const std::string& parameters) {
 }
 
 Status ImageCodec::ParseParam(const std::string& param) {
-  if (param[0] ==
-      'q') {  // libjpeg-style quality, [0,100]  (or in case of
-              // modular, below 0 is also allowed if you like cubism)
+  if (param[0] == 'q') {  // libjpeg-style quality, [0,100]
     const std::string quality_param = param.substr(1);
     char* end;
     const float q_target = strtof(quality_param.c_str(), &end);
@@ -165,12 +163,14 @@ ImageCodecPtr CreateImageCodec(const std::string& description) {
   } else if (name == "custom") {
     result.reset(CreateNewCustomCodec(*Args()));
 #endif
-#ifdef BENCHMARK_JPEG
+#ifdef JPEGXL_ENABLE_JPEG
   } else if (name == "jpeg") {
     result.reset(CreateNewJPEGCodec(*Args()));
 #endif  // BENCHMARK_JPEG
+#if JPEGXL_ENABLE_APNG
   } else if (name == "png") {
     result.reset(CreateNewPNGCodec(*Args()));
+#endif
   } else if (name == "none") {
     result.reset(new NoneCodec(*Args()));
 #ifdef BENCHMARK_WEBP

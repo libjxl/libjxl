@@ -123,10 +123,6 @@ class Quantizer {
     return dequant_->InvMatrix(quant_kind, c);
   }
 
-  JXL_INLINE size_t DequantMatrixOffset(size_t quant_kind, size_t c) const {
-    return dequant_->MatrixOffset(quant_kind, c);
-  }
-
   // Calculates DC quantization step.
   JXL_INLINE float GetDcStep(size_t c) const {
     return inv_quant_dc_ * dequant_->DCQuant(c);
@@ -139,8 +135,8 @@ class Quantizer {
   JXL_INLINE const float* InvMulDC() const { return inv_mul_dc_; }
 
   JXL_INLINE void ClearDCMul() {
-    std::fill(mul_dc_, mul_dc_ + 4, 1);
-    std::fill(inv_mul_dc_, inv_mul_dc_ + 4, 1);
+    std::fill(mul_dc_, mul_dc_ + 4, 1.f);
+    std::fill(inv_mul_dc_, inv_mul_dc_ + 4, 1.f);
   }
 
   void ComputeGlobalScaleAndQuant(float quant_dc, float quant_median,
@@ -165,7 +161,7 @@ class Quantizer {
 
 struct QuantizerParams : public Fields {
   QuantizerParams() { Bundle::Init(this); }
-  const char* Name() const override { return "QuantizerParams"; }
+  JXL_FIELDS_NAME(QuantizerParams)
 
   Status VisitFields(Visitor* JXL_RESTRICT visitor) override;
 

@@ -9,19 +9,20 @@
 #include <stdio.h>
 
 #include <algorithm>
-#include <random>
 #include <utility>
 #include <vector>
 
 #include "gtest/gtest.h"
-#include "lib/extras/codec_pgx.h"
-#include "lib/extras/codec_pnm.h"
+#include "lib/extras/dec/pgx.h"
+#include "lib/extras/dec/pnm.h"
+#include "lib/jxl/base/printf_macros.h"
+#include "lib/jxl/base/random.h"
 #include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/color_management.h"
+#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_test_utils.h"
-#include "lib/jxl/luminance.h"
 #include "lib/jxl/testdata.h"
 
 namespace jxl {
@@ -33,19 +34,18 @@ CodecInOut CreateTestImage(const size_t xsize, const size_t ysize,
                            const size_t bits_per_sample,
                            const ColorEncoding& c_native) {
   Image3F image(xsize, ysize);
-  std::mt19937_64 rng(129);
-  std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+  Rng rng(129);
   if (is_gray) {
     for (size_t y = 0; y < ysize; ++y) {
       float* JXL_RESTRICT row0 = image.PlaneRow(0, y);
       float* JXL_RESTRICT row1 = image.PlaneRow(1, y);
       float* JXL_RESTRICT row2 = image.PlaneRow(2, y);
       for (size_t x = 0; x < xsize; ++x) {
-        row0[x] = row1[x] = row2[x] = dist(rng);
+        row0[x] = row1[x] = row2[x] = rng.UniformF(0.0f, 1.0f);
       }
     }
   } else {
-    RandomFillImage(&image, 1.0f);
+    RandomFillImage(&image, 0.0f, 1.0f);
   }
   CodecInOut io;
 
@@ -58,7 +58,7 @@ CodecInOut CreateTestImage(const size_t xsize, const size_t ysize,
   io.SetFromImage(std::move(image), c_native);
   if (add_alpha) {
     ImageF alpha(xsize, ysize);
-    RandomFillImage(&alpha, 1.f);
+    RandomFillImage(&alpha, 0.0f, 1.f);
     io.metadata.m.SetAlphaBits(bits_per_sample <= 8 ? 8 : 16);
     io.Main().SetAlpha(std::move(alpha), /*alpha_is_premultiplied=*/false);
   }
@@ -75,7 +75,7 @@ void TestRoundTrip(Codec codec, const size_t xsize, const size_t ysize,
   // Our EXR codec always uses 16-bit premultiplied alpha, does not support
   // grayscale, and somehow does not have sufficient precision for this test.
   if (codec == Codec::kEXR) return;
-  printf("Codec %s bps:%zu gr:%d al:%d\n",
+  printf("Codec %s bps:%" PRIuS " gr:%d al:%d\n",
          ExtensionFromCodec(codec, is_gray, bits_per_sample).c_str(),
          bits_per_sample, is_gray, add_alpha);
 
@@ -106,7 +106,6 @@ void TestRoundTrip(Codec codec, const size_t xsize, const size_t ysize,
 
   CodecInOut io2;
   ColorHints color_hints;
-  io2.target_nits = io.metadata.m.IntensityTarget();
   // Only for PNM because PNG will warn about ignoring them.
   if (codec == Codec::kPNM) {
     color_hints.Add("color_space", Description(c_external));
@@ -128,7 +127,7 @@ void TestRoundTrip(Codec codec, const size_t xsize, const size_t ysize,
     EXPECT_TRUE(SamePixels(ib1.alpha(), *ib2.alpha()));
   }
 
-  JXL_CHECK(ib2.TransformTo(ib1.c_current(), pool));
+  JXL_CHECK(ib2.TransformTo(ib1.c_current(), GetJxlCms(), pool));
 
   double max_l1, max_rel;
   // Round-trip tolerances must be higher than in external_image_test because
@@ -184,8 +183,7 @@ TEST(CodecTest, TestRoundTrip) {
 }
 #endif
 
-CodecInOut DecodeRoundtrip(const std::string& pathname, Codec expected_codec,
-                           ThreadPool* pool,
+CodecInOut DecodeRoundtrip(const std::string& pathname, ThreadPool* pool,
                            const ColorHints& color_hints = ColorHints()) {
   CodecInOut io;
   const PaddedBytes orig = ReadTestData(pathname);
@@ -195,7 +193,7 @@ CodecInOut DecodeRoundtrip(const std::string& pathname, Codec expected_codec,
 
   // Encode/Decode again to make sure Encode carries through all metadata.
   PaddedBytes encoded;
-  JXL_CHECK(Encode(io, expected_codec, io.metadata.m.color_encoding,
+  JXL_CHECK(Encode(io, Codec::kPNG, io.metadata.m.color_encoding,
                    io.metadata.m.bit_depth.bits_per_sample, &encoded, pool));
 
   CodecInOut io2;
@@ -345,7 +343,7 @@ TEST(CodecTest, TestPNGSuite) {
 
 void VerifyWideGamutMetadata(const std::string& relative_pathname,
                              const Primaries primaries, ThreadPool* pool) {
-  const CodecInOut io = DecodeRoundtrip(relative_pathname, Codec::kPNG, pool);
+  const CodecInOut io = DecodeRoundtrip(relative_pathname, pool);
 
   EXPECT_EQ(8u, io.metadata.m.bit_depth.bits_per_sample);
   EXPECT_FALSE(io.metadata.m.bit_depth.floating_point_sample);

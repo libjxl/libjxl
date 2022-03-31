@@ -14,6 +14,7 @@
 #include "lib/jxl/base/file_io.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/padded_bytes.h"
+#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
 #include "tools/box/box.h"
 
@@ -28,18 +29,19 @@ int RunMain(int argc, const char* argv[]) {
 
   jxl::PaddedBytes compressed;
   if (!jxl::ReadFile(argv[1], &compressed)) return 1;
-  fprintf(stderr, "Read %zu compressed bytes\n", compressed.size());
+  fprintf(stderr, "Read %" PRIuS " compressed bytes\n", compressed.size());
 
   const uint8_t* in = compressed.data();
   size_t available_in = compressed.size();
 
-  fprintf(stderr, "File size: %zu\n", compressed.size());
+  fprintf(stderr, "File size: %" PRIuS "\n", compressed.size());
 
   while (available_in != 0) {
     const uint8_t* start = in;
     Box box;
     if (!ParseBoxHeader(&in, &available_in, &box)) {
-      fprintf(stderr, "Failed at %zu\n", compressed.size() - available_in);
+      fprintf(stderr, "Failed at %" PRIuS "\n",
+              compressed.size() - available_in);
       break;
     }
 
@@ -55,8 +57,8 @@ int RunMain(int argc, const char* argv[]) {
       }
     }
 
-    printf("box: \"%.4s\" box_size:%zu data_size:%zu", box.type, box_size,
-           data_size);
+    printf("box: \"%.4s\" box_size:%" PRIuS " data_size:%" PRIuS, box.type,
+           box_size, data_size);
     if (!memcmp("uuid", box.type, 4)) {
       printf(" -- extended type:\"%.16s\"", box.extended_type);
     }
@@ -67,9 +69,9 @@ int RunMain(int argc, const char* argv[]) {
     printf("\n");
 
     if (data_size > available_in) {
-      fprintf(stderr, "Unexpected end of file %zu %zu %zu\n",
-              static_cast<size_t>(box.data_size), available_in,
-              compressed.size());
+      fprintf(
+          stderr, "Unexpected end of file %" PRIuS " %" PRIuS " %" PRIuS "\n",
+          static_cast<size_t>(box.data_size), available_in, compressed.size());
       break;
     }
 

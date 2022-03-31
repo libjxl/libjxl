@@ -10,6 +10,7 @@
 #include <numeric>  // accumulate
 
 #include "lib/jxl/aux_out_fwd.h"
+#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/enc_bit_writer.h"
 
 namespace jxl {
@@ -52,26 +53,10 @@ void AuxOut::Print(size_t num_inputs) const {
   size_t total_positions = 0;
   if (total_blocks != 0 && total_positions != 0) {
     printf("\n\t\t  Blocks\t\tPositions\t\t\tBlocks/Position\n");
-    printf(" Total:\t\t    %7zu\t\t     %7zu \t\t\t%10f%%\n\n", total_blocks,
-           total_positions, 100.0 * total_blocks / total_positions);
+    printf(" Total:\t\t    %7" PRIuS "\t\t     %7" PRIuS " \t\t\t%10f%%\n\n",
+           total_blocks, total_positions,
+           100.0 * total_blocks / total_positions);
   }
-}
-
-void AuxOut::DumpCoeffImage(const char* label,
-                            const Image3S& coeff_image) const {
-  JXL_ASSERT(coeff_image.xsize() % 64 == 0);
-  Image3S reshuffled(coeff_image.xsize() / 8, coeff_image.ysize() * 8);
-  for (size_t c = 0; c < 3; c++) {
-    for (size_t y = 0; y < coeff_image.ysize(); y++) {
-      for (size_t x = 0; x < coeff_image.xsize(); x += 64) {
-        for (size_t i = 0; i < 64; i++) {
-          reshuffled.PlaneRow(c, 8 * y + i / 8)[x / 8 + i % 8] =
-              coeff_image.PlaneRow(c, y)[x + i];
-        }
-      }
-    }
-  }
-  DumpImage(label, reshuffled);
 }
 
 void ReclaimAndCharge(BitWriter* JXL_RESTRICT writer,
@@ -81,7 +66,7 @@ void ReclaimAndCharge(BitWriter* JXL_RESTRICT writer,
   allotment->PrivateReclaim(writer, &used_bits, &unused_bits);
 
 #if 0
-  printf("Layer %s bits: max %zu used %zu unused %zu\n", LayerName(layer),
+  printf("Layer %s bits: max %" PRIuS " used %" PRIuS " unused %" PRIuS "\n", LayerName(layer),
          allotment->MaxBits(), used_bits, unused_bits);
 #endif
 

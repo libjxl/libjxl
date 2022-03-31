@@ -12,10 +12,12 @@
 
 #include "lib/jxl/base/file_io.h"
 #include "lib/jxl/enc_cache.h"
+#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_file.h"
 #include "lib/jxl/enc_frame.h"
 #include "lib/jxl/enc_heuristics.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
+#include "lib/jxl/modular/encoding/enc_debug_tree.h"
 #include "lib/jxl/modular/encoding/enc_ma.h"
 #include "lib/jxl/modular/encoding/encoding.h"
 #include "lib/jxl/splines.h"
@@ -344,6 +346,41 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     }
 
     spline_data.splines.push_back(std::move(spline));
+  } else if (t == "Gaborish") {
+    cparams.gaborish = jxl::Override::kOn;
+  } else if (t == "DeltaPalette") {
+    cparams.lossy_palette = true;
+    cparams.palette_colors = 0;
+  } else if (t == "EPF") {
+    t = tok();
+    size_t num = 0;
+    cparams.epf = std::stoul(t, &num);
+    if (num != t.size() || cparams.epf > 3) {
+      fprintf(stderr, "Invalid EPF: %s\n", t.c_str());
+      return false;
+    }
+  } else if (t == "Noise") {
+    cparams.manual_noise.resize(8);
+    for (size_t i = 0; i < 8; i++) {
+      t = tok();
+      size_t num = 0;
+      cparams.manual_noise[i] = std::stof(t, &num);
+      if (num != t.size()) {
+        fprintf(stderr, "Invalid noise entry: %s\n", t.c_str());
+        return false;
+      }
+    }
+  } else if (t == "XYBFactors") {
+    cparams.manual_xyb_factors.resize(3);
+    for (size_t i = 0; i < 3; i++) {
+      t = tok();
+      size_t num = 0;
+      cparams.manual_xyb_factors[i] = std::stof(t, &num);
+      if (num != t.size()) {
+        fprintf(stderr, "Invalid XYB factor: %s\n", t.c_str());
+        return false;
+      }
+    }
   } else {
     fprintf(stderr, "Unexpected node type: %s\n", t.c_str());
     return false;
@@ -351,29 +388,6 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   JXL_RETURN_IF_ERROR(
       ParseNode(tok, tree, spline_data, cparams, W, H, io, have_next, x0, y0));
   return true;
-}
-
-void PrintTree(const Tree& tree, const std::string& path) {
-  FILE* f = fopen((path + ".dot").c_str(), "w");
-  fprintf(f, "digraph{\n");
-  for (size_t cur = 0; cur < tree.size(); cur++) {
-    if (tree[cur].property < 0) {
-      fprintf(f, "n%05zu [label=\"%s%+lld\"];\n", cur,
-              PredictorName(tree[cur].predictor),
-              static_cast<long long>(tree[cur].predictor_offset));
-    } else {
-      fprintf(f, "n%05zu [label=\"%s>%d\"];\n", cur,
-              PropertyName(tree[cur].property).c_str(), tree[cur].splitval);
-      fprintf(f, "n%05zu -> n%05d [style=dashed];\n", cur, tree[cur].rchild);
-      fprintf(f, "n%05zu -> n%05d;\n", cur, tree[cur].lchild);
-    }
-  }
-  fprintf(f, "}\n");
-  fclose(f);
-  std::string command = "dot " + path + ".dot -T png -o " + path + ".png";
-  if (system(command.c_str()) != 0) {
-    JXL_ABORT("Command failed: %s", command.c_str());
-  }
 }
 
 class Heuristics : public DefaultEncoderHeuristics {
@@ -394,10 +408,12 @@ class Heuristics : public DefaultEncoderHeuristics {
 int JxlFromTree(const char* in, const char* out, const char* tree_out) {
   Tree tree;
   SplineData spline_data;
-  CompressParams cparams;
+  CompressParams cparams = {};
   size_t width = 1024, height = 1024;
   int x0 = 0, y0 = 0;
   cparams.color_transform = ColorTransform::kNone;
+  cparams.resampling = 1;
+  cparams.ec_resampling = 1;
   cparams.modular_group_size_shift = 3;
   CodecInOut io;
   int have_next = 0;
@@ -456,7 +472,8 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
     io.frames[0].origin.y0 = y0;
 
     JXL_RETURN_IF_ERROR(EncodeFrame(cparams, info, metadata.get(), io.frames[0],
-                                    &enc_state, nullptr, &writer, nullptr));
+                                    &enc_state, GetJxlCms(), nullptr, &writer,
+                                    nullptr));
     if (!have_next) break;
     tree.clear();
     spline_data.splines.clear();

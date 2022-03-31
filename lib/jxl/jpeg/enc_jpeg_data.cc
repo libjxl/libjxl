@@ -9,6 +9,7 @@
 #include <stdio.h>
 
 #include "lib/jxl/jpeg/enc_jpeg_data_reader.h"
+#include "lib/jxl/sanitizers.h"
 
 namespace jxl {
 namespace jpeg {
@@ -206,6 +207,10 @@ Status SetBlobsFromJpegData(const jpeg::JPEGData& jpeg_data, Blobs* blobs) {
   return true;
 }
 
+static inline bool IsJPG(const Span<const uint8_t> bytes) {
+  return bytes.size() >= 2 && bytes[0] == 0xFF && bytes[1] == 0xD8;
+}
+
 }  // namespace
 
 Status SetColorEncodingFromJpegData(const jpeg::JPEGData& jpg,
@@ -225,7 +230,8 @@ Status SetColorEncodingFromJpegData(const jpeg::JPEGData& jpg,
   return color_encoding->SetICC(std::move(icc_profile));
 }
 
-Status EncodeJPEGData(JPEGData& jpeg_data, PaddedBytes* bytes) {
+Status EncodeJPEGData(JPEGData& jpeg_data, PaddedBytes* bytes,
+                      const CompressParams& cparams) {
   jpeg_data.app_marker_type.resize(jpeg_data.app_data.size(),
                                    AppMarkerType::kUnknown);
   JXL_RETURN_IF_ERROR(DetectIccProfile(jpeg_data));
@@ -236,7 +242,9 @@ Status EncodeJPEGData(JPEGData& jpeg_data, PaddedBytes* bytes) {
   *bytes = std::move(writer).TakeBytes();
   BrotliEncoderState* brotli_enc =
       BrotliEncoderCreateInstance(nullptr, nullptr, nullptr);
-  BrotliEncoderSetParameter(brotli_enc, BROTLI_PARAM_QUALITY, 11);
+  int effort = cparams.brotli_effort;
+  if (effort < 0) effort = 11 - static_cast<int>(cparams.speed_tier);
+  BrotliEncoderSetParameter(brotli_enc, BROTLI_PARAM_QUALITY, effort);
   size_t total_data = 0;
   for (size_t i = 0; i < jpeg_data.app_data.size(); i++) {
     if (jpeg_data.app_marker_type[i] != AppMarkerType::kUnknown) {
@@ -261,9 +269,12 @@ Status EncodeJPEGData(JPEGData& jpeg_data, PaddedBytes* bytes) {
     const uint8_t* in = data.data();
     uint8_t* out = &(*bytes)[initial_size + enc_size];
     do {
+      uint8_t* out_before = out;
+      msan::MemoryIsInitialized(in, available_in);
       JXL_CHECK(BrotliEncoderCompressStream(
           brotli_enc, last ? BROTLI_OPERATION_FINISH : BROTLI_OPERATION_PROCESS,
           &available_in, &in, &brotli_capacity, &out, &enc_size));
+      msan::UnpoisonMemory(out_before, out - out_before);
     } while (BrotliEncoderHasMoreOutput(brotli_enc) || available_in > 0);
   };
 
@@ -286,6 +297,7 @@ Status EncodeJPEGData(JPEGData& jpeg_data, PaddedBytes* bytes) {
 }
 
 Status DecodeImageJPG(const Span<const uint8_t> bytes, CodecInOut* io) {
+  if (!IsJPG(bytes)) return false;
   io->frames.clear();
   io->frames.reserve(1);
   io->frames.emplace_back(&io->metadata.m);
@@ -357,8 +369,7 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, CodecInOut* io) {
   io->Main().color_transform =
       (!is_rgb || nbcomp == 1) ? ColorTransform::kYCbCr : ColorTransform::kNone;
 
-  io->metadata.m.SetIntensityTarget(
-      io->target_nits != 0 ? io->target_nits : kDefaultIntensityTarget);
+  io->metadata.m.SetIntensityTarget(kDefaultIntensityTarget);
   io->metadata.m.SetUintSamples(BITS_IN_JSAMPLE);
   io->SetFromImage(Image3F(jpeg_data->width, jpeg_data->height),
                    io->metadata.m.color_encoding);

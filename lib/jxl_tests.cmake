@@ -1,14 +1,11 @@
-# Copyright (c) the JPEG XL Project Authors. All rights reserved.
-#
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
 set(TEST_FILES
-  extras/codec_pgx_test.cc
   extras/codec_test.cc
-  extras/color_description_test.cc
+  extras/dec/color_description_test.cc
+  extras/dec/pgx_test.cc
   jxl/ac_strategy_test.cc
-  jxl/adaptive_reconstruction_test.cc
   jxl/alpha_test.cc
   jxl/ans_common_test.cc
   jxl/ans_test.cc
@@ -20,19 +17,17 @@ set(TEST_FILES
   jxl/coeff_order_test.cc
   jxl/color_encoding_internal_test.cc
   jxl/color_management_test.cc
-  jxl/compressed_image_test.cc
   jxl/convolve_test.cc
   jxl/data_parallel_test.cc
   jxl/dct_test.cc
   jxl/decode_test.cc
-  jxl/descriptive_statistics_test.cc
   jxl/enc_external_image_test.cc
   jxl/enc_photon_noise_test.cc
   jxl/encode_test.cc
   jxl/entropy_coder_test.cc
+  jxl/fast_dct_test.cc
   jxl/fast_math_test.cc
   jxl/fields_test.cc
-  jxl/filters_internal_test.cc
   jxl/gaborish_test.cc
   jxl/gamma_correct_test.cc
   jxl/gauss_blur_test.cc
@@ -55,8 +50,9 @@ set(TEST_FILES
   jxl/quant_weights_test.cc
   jxl/quantizer_test.cc
   jxl/rational_polynomial_test.cc
-  jxl/robust_statistics_test.cc
+  jxl/render_pipeline/render_pipeline_test.cc
   jxl/roundtrip_test.cc
+  jxl/simd_util_test.cc
   jxl/speed_tier_test.cc
   jxl/splines_test.cc
   jxl/toc_test.cc
@@ -69,9 +65,12 @@ set(TEST_FILES
 
 # Test-only library code.
 set(TESTLIB_FILES
+  jxl/codec_y4m_testonly.cc
+  jxl/codec_y4m_testonly.h
   jxl/dct_for_test.h
   jxl/dec_transforms_testonly.cc
   jxl/dec_transforms_testonly.h
+  jxl/fake_parallel_runner_testonly.h
   jxl/image_test_utils.h
   jxl/test_utils.h
   jxl/testdata.h
@@ -90,7 +89,7 @@ target_compile_definitions(jxl_testlib-static PUBLIC
 target_include_directories(jxl_testlib-static PUBLIC
   "${PROJECT_SOURCE_DIR}"
 )
-target_link_libraries(jxl_testlib-static hwy)
+target_link_libraries(jxl_testlib-static hwy jxl-static)
 
 # Individual test binaries:
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tests)
@@ -103,6 +102,7 @@ foreach (TESTFILE IN LISTS TEST_FILES)
     # wasm-opt step when using -O2 optimization level
     set_target_properties(${TESTNAME} PROPERTIES LINK_FLAGS "\
       -O1 \
+      -s USE_LIBPNG=1 \
       -s TOTAL_MEMORY=1536MB \
       -s SINGLE_FILE=1 \
     ")

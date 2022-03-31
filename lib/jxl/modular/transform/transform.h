@@ -32,7 +32,7 @@ enum class TransformId : uint32_t {
 };
 
 struct SqueezeParams : public Fields {
-  const char *Name() const override { return "SqueezeParams"; }
+  JXL_FIELDS_NAME(SqueezeParams)
   bool horizontal;
   bool in_place;
   uint32_t begin_c;
@@ -129,7 +129,7 @@ class Transform : public Fields {
     return true;
   }
 
-  const char *Name() const override { return "Transform"; }
+  JXL_FIELDS_NAME(Transform)
 
   Status Inverse(Image &input, const weighted::Header &wp_header,
                  ThreadPool *pool = nullptr);

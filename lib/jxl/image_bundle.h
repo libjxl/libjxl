@@ -13,6 +13,7 @@
 
 #include <vector>
 
+#include "jxl/cms_interface.h"
 #include "lib/jxl/aux_out_fwd.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
@@ -148,15 +149,12 @@ class ImageBundle {
 
   // Transforms color to c_desired and sets c_current to c_desired. Alpha and
   // metadata remains unchanged.
-  Status TransformTo(const ColorEncoding& c_desired,
+  Status TransformTo(const ColorEncoding& c_desired, const JxlCmsInterface& cms,
                      ThreadPool* pool = nullptr);
   // Copies this:rect, converts to c_desired, and allocates+fills out.
-  Status CopyTo(const Rect& rect, const ColorEncoding& c_desired, Image3B* out,
+  Status CopyTo(const Rect& rect, const ColorEncoding& c_desired,
+                const JxlCmsInterface& cms, Image3F* out,
                 ThreadPool* pool = nullptr) const;
-  Status CopyTo(const Rect& rect, const ColorEncoding& c_desired, Image3F* out,
-                ThreadPool* pool = nullptr) const;
-  Status CopyToSRGB(const Rect& rect, Image3B* out,
-                    ThreadPool* pool = nullptr) const;
 
   // Detect 'real' bit depth, which can be lower than nominal bit depth
   // (this is common in PNG), returns 'real' bit depth
@@ -179,13 +177,11 @@ class ImageBundle {
   const ImageF& alpha() const;
   ImageF* alpha();
 
-  // -- DEPTH
-  bool HasDepth() const {
-    return metadata_->Find(ExtraChannel::kDepth) != nullptr;
-  }
-  const ImageF& depth() const;
-
   // -- EXTRA CHANNELS
+  bool HasBlack() const {
+    return metadata_->Find(ExtraChannel::kBlack) != nullptr;
+  }
+  const ImageF& black() const;
 
   // Extra channels of unknown interpretation (e.g. spot colors).
   void SetExtraChannels(std::vector<ImageF>&& extra_channels);
@@ -221,11 +217,22 @@ class ImageBundle {
   YCbCrChromaSubsampling chroma_subsampling;
 
   FrameOrigin origin{0, 0};
-  // Animation-related information. This assumes GIF- and APNG- like animation.
+
+  // Animation-related information, corresponding to the timecode and duration
+  // fields of the jxl::AnimationFrame of the jxl::FrameHeader.
+  // TODO(lode): ImageBundle is used here to carry the information from
+  // jxl::FrameHeader, consider instead passing a jxl::FrameHeader directly to
+  // EncodeFrame or having a field of that type here.
   uint32_t duration = 0;
+  uint32_t timecode = 0;
+
+  // TODO(lode): these fields do not match the JXL frame header, it should be
+  // possible to specify up to 4 (3 if nonzero duration) slots to save this
+  // frame as reference (see save_as_reference).
   bool use_for_next_frame = false;
   bool blend = false;
   BlendMode blendmode = BlendMode::kBlend;
+
   std::string name;
 
  private:
@@ -247,16 +254,6 @@ class ImageBundle {
   // How many bytes of the input were actually read.
   size_t decoded_bytes_ = 0;
 };
-
-// Does color transformation from in.c_current() to c_desired if the color
-// encodings are different, or nothing if they are already the same.
-// If color transformation is done, stores the transformed values into store and
-// sets the out pointer to store, else leaves store untouched and sets the out
-// pointer to &in.
-// Returns false if color transform fails.
-Status TransformIfNeeded(const ImageBundle& in, const ColorEncoding& c_desired,
-                         ThreadPool* pool, ImageBundle* store,
-                         const ImageBundle** out);
 
 }  // namespace jxl
 

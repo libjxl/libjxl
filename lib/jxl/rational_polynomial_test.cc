@@ -14,7 +14,6 @@
 #include <hwy/highway.h>
 #include <hwy/tests/test_util-inl.h>
 
-#include "lib/jxl/base/descriptive_statistics.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/rational_polynomial-inl.h"
@@ -51,7 +50,7 @@ struct EvalLog2 {
     const HWY_FULL(int32_t) di;
     const auto x_bits = BitCast(di, vx);
     // Cannot handle negative numbers / NaN.
-    JXL_DASSERT(AllTrue(Abs(x_bits) == x_bits));
+    JXL_DASSERT(AllTrue(di, Abs(x_bits) == x_bits));
 
     // Range reduction to [-1/3, 1/3] - 3 integer, 2 float ops
     const auto exp_bits = x_bits - Set(di, 0x3f2aaaab);  // = 2/3
@@ -100,23 +99,20 @@ T SimpleGamma(T v) {
 template <size_t NP, size_t NQ, class Eval>
 T RunApproximation(T x0, T x1, const T (&p)[NP], const T (&q)[NQ],
                    const Eval& eval, T func_to_approx(T)) {
-  Stats err;
-
+  float maxerr = 0;
   T lastPrint = 0;
   // NOLINTNEXTLINE(clang-analyzer-security.FloatLoopCounter)
   for (T x = x0; x <= x1; x += (x1 - x0) / 10000.0) {
     const T f = func_to_approx(x);
     const T g = eval(x, p, q);
-    err.Notify(fabs(g - f));
+    maxerr = std::max(fabsf(g - f), maxerr);
     if (x == x0 || x - lastPrint > (x1 - x0) / 20.0) {
       printf("x: %11.6f, f: %11.6f, g: %11.6f, e: %11.6f\n", x, f, g,
              fabs(g - f));
       lastPrint = x;
     }
   }
-  printf("%s\n", err.ToString().c_str());
-
-  return err.Max();
+  return maxerr;
 }
 
 void TestSimpleGamma() {

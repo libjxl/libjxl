@@ -62,8 +62,6 @@ set(TOOL_BINARIES)
 add_library(jxl_tool STATIC EXCLUDE_FROM_ALL
   cmdline.cc
   codec_config.cc
-  cpu/cpu.cc
-  cpu/os_specific.cc
   tool_version.cc
 )
 target_compile_options(jxl_tool PUBLIC "${JPEGXL_INTERNAL_FLAGS}")
@@ -123,7 +121,10 @@ endif()
 if(JPEGXL_ENABLE_TOOLS)
   list(APPEND TOOL_BINARIES
     cjxl
+    cjxl_ng
     djxl
+    djxl_ng
+    cjpeg_hdr
   )
 
   # Main compressor.
@@ -139,6 +140,32 @@ if(JPEGXL_ENABLE_TOOLS)
       jxl_threads-static
   )
 
+
+  add_executable(cjxl_ng
+    cjxl_ng_main.cc
+  )
+  target_link_libraries(cjxl_ng
+    jxl
+    gflags
+  )
+
+  add_executable(djxl_ng
+    djxl_ng_main.cc
+  )
+  target_link_libraries(djxl_ng
+    jxl
+    gflags
+  )
+
+add_executable(cjpeg_hdr
+  cjpeg_hdr.cc
+)
+target_link_libraries(cjpeg_hdr
+    box
+    jxl-static
+    jxl_extras-static
+    jxl_threads-static
+)
 
   # Main decompressor.
   add_library(djxltool STATIC
@@ -165,10 +192,12 @@ if(${JPEGXL_ENABLE_DEVTOOLS})
     add_noise
     butteraugli_main
     decode_and_encode
-    epf_main
+    display_to_hlg
     pq_to_hlg
     render_hlg
     tone_map
+    texture_to_cube
+    generate_lut_template
     ssimulacra_main
     xyb_range
     jxl_from_tree
@@ -180,10 +209,12 @@ if(${JPEGXL_ENABLE_DEVTOOLS})
   add_executable(ssimulacra_main ssimulacra_main.cc ssimulacra.cc)
   add_executable(butteraugli_main butteraugli_main.cc)
   add_executable(decode_and_encode decode_and_encode.cc)
-  add_executable(epf_main epf_main.cc epf.cc epf.h)
+  add_executable(display_to_hlg hdr/display_to_hlg.cc)
   add_executable(pq_to_hlg hdr/pq_to_hlg.cc)
   add_executable(render_hlg hdr/render_hlg.cc)
   add_executable(tone_map hdr/tone_map.cc)
+  add_executable(texture_to_cube hdr/texture_to_cube.cc)
+  add_executable(generate_lut_template hdr/generate_lut_template.cc)
   add_executable(xyb_range xyb_range.cc)
   add_executable(jxl_from_tree jxl_from_tree.cc)
 endif()  # JPEGXL_ENABLE_DEVTOOLS
@@ -206,8 +237,6 @@ if(${JPEGXL_ENABLE_BENCHMARK})
     benchmark/benchmark_codec_custom.h
     benchmark/benchmark_codec_jxl.cc
     benchmark/benchmark_codec_jxl.h
-    benchmark/benchmark_codec_png.cc
-    benchmark/benchmark_codec_png.h
     speed_stats.cc
     speed_stats.h
     ../third_party/dirent.cc
@@ -224,10 +253,17 @@ if(${JPEGXL_ENABLE_BENCHMARK})
       "${CMAKE_CURRENT_LIST_DIR}/benchmark/benchmark_codec_jpeg.cc"
       "${CMAKE_CURRENT_LIST_DIR}/benchmark/benchmark_codec_jpeg.h"
     )
-    target_compile_definitions(benchmark_xl PRIVATE -DBENCHMARK_JPEG)
-    target_include_directories(benchmark_xl PRIVATE ${JPEG_INCLUDE_DIR})
-    target_link_libraries(benchmark_xl ${JPEG_LIBRARIES})
   endif ()
+
+  if(NOT JPEGXL_BUNDLE_LIBPNG)
+    find_package(PNG)
+  endif()
+  if(PNG_FOUND)
+    target_sources(benchmark_xl PRIVATE
+      "${CMAKE_CURRENT_LIST_DIR}/benchmark/benchmark_codec_png.cc"
+      "${CMAKE_CURRENT_LIST_DIR}/benchmark/benchmark_codec_png.h"
+    )
+  endif()
 
   find_package(PkgConfig)
   pkg_check_modules(WebP IMPORTED_TARGET libwebp)
@@ -267,6 +303,10 @@ endif()  # JPEGXL_ENABLE_BENCHMARK
 foreach(BINARY IN LISTS TOOL_BINARIES)
   target_include_directories("${BINARY}" PRIVATE "${PROJECT_SOURCE_DIR}")
   target_link_libraries("${BINARY}" box jxl-static jxl_extras-static jxl_threads-static jxl_tool)
+  if(JPEGXL_EMSCRIPTEN)
+    set_target_properties(${BINARY} PROPERTIES LINK_FLAGS "-s USE_LIBPNG=1")
+  endif()
+
 endforeach()
 install(TARGETS ${TOOL_BINARIES} RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
 message(STATUS "Building tools: ${TOOL_BINARIES}")
@@ -335,6 +375,7 @@ endif()  # NOT WIN32
 endif()  # NOT MSVC
 
 add_test(NAME LibraryCLinkageTest COMMAND libjxl_test)
+
 endif()  # BUILD_TESTING AND TARGET jxl AND NOT JPEGXL_EMSCRIPTEN
 
 # Tools defined in subdirectories.
@@ -347,6 +388,7 @@ endif()
 add_subdirectory(box)
 add_subdirectory(conformance)
 
+
 if ("${JPEGXL_EMSCRIPTEN}")
 # WASM API facade.
 add_executable(jxl_emcc jxl_emcc.cc)
@@ -355,8 +397,7 @@ set_target_properties(jxl_emcc PROPERTIES LINK_FLAGS "\
   -O3\
   --closure 1 \
   -s ALLOW_MEMORY_GROWTH=1 \
-  -flto \
-  --llvm-lto 1 \
+  -s USE_LIBPNG=1 \
   -s DISABLE_EXCEPTION_CATCHING=1 \
   -s MODULARIZE=1 \
   -s FILESYSTEM=0 \

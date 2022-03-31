@@ -5,14 +5,13 @@
 
 #include "tools/speed_stats.h"
 
+#include <inttypes.h>
 #include <math.h>
 #include <stddef.h>
 #include <stdio.h>
 
 #include <algorithm>
 #include <string>
-
-#include "lib/jxl/base/robust_statistics.h"
 
 namespace jpegxl {
 namespace tools {
@@ -45,23 +44,30 @@ jxl::Status SpeedStats::GetSummary(SpeedStats::Summary* s) {
   }
 
   // Prefer geomean unless numerically unreliable (too many reps)
-  if (std::pow(elapsed_[0], elapsed_.size()) < 1E100) {
+  if (pow(elapsed_[0], elapsed_.size()) < 1E100) {
     double product = 1.0;
     for (size_t i = 1; i < elapsed_.size(); ++i) {
       product *= elapsed_[i];
     }
 
-    s->central_tendency = std::pow(product, 1.0 / (elapsed_.size() - 1));
+    s->central_tendency = pow(product, 1.0 / (elapsed_.size() - 1));
     s->variability = 0.0;
     s->type = " geomean:";
     return true;
   }
 
-  // Else: mode
+  // Else: median
   std::sort(elapsed_.begin(), elapsed_.end());
-  s->central_tendency = jxl::HalfSampleMode()(elapsed_.data(), elapsed_.size());
-  s->variability = jxl::MedianAbsoluteDeviation(elapsed_, s->central_tendency);
-  s->type = "mode: ";
+  s->central_tendency = elapsed_.data()[elapsed_.size() / 2];
+  std::vector<double> deviations(elapsed_.size());
+  for (size_t i = 0; i < elapsed_.size(); i++) {
+    deviations[i] = fabs(elapsed_[i] - s->central_tendency);
+  }
+  std::nth_element(deviations.begin(),
+                   deviations.begin() + deviations.size() / 2,
+                   deviations.end());
+  s->variability = deviations[deviations.size() / 2];
+  s->type = "median: ";
   return true;
 }
 
@@ -97,9 +103,13 @@ jxl::Status SpeedStats::Print(size_t worker_threads) {
     snprintf(variability, sizeof(variability), " (var %.2f)", s.variability);
   }
 
-  fprintf(stderr, "%zu x %zu%s%s%s, %zu reps, %zu threads.\n", xsize_, ysize_,
-          mps_stats.c_str(), mbs_stats.c_str(), variability, elapsed_.size(),
-          worker_threads);
+  fprintf(stderr,
+          "%" PRIu64 " x %" PRIu64 "%s%s%s, %" PRIu64 " reps, %" PRIu64
+          " threads.\n",
+          static_cast<uint64_t>(xsize_), static_cast<uint64_t>(ysize_),
+          mps_stats.c_str(), mbs_stats.c_str(), variability,
+          static_cast<uint64_t>(elapsed_.size()),
+          static_cast<uint64_t>(worker_threads));
   return true;
 }
 

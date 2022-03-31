@@ -25,6 +25,7 @@ enum CjxlRetCode : int {
   ERR_ENCODING,
   ERR_CONTAINER,
   ERR_WRITE,
+  DROPPED_JBRD,
 };
 
 int CompressJpegXlMain(int argc, const char* argv[]) {
@@ -84,10 +85,10 @@ int CompressJpegXlMain(int argc, const char* argv[]) {
     return CjxlRetCode::ERR_ENCODING;
   }
 
+  int ret = CjxlRetCode::OK;
   if (args.use_container) {
     JpegXlContainer container;
-    container.codestream = compressed.data();
-    container.codestream_size = compressed.size();
+    container.codestream = std::move(compressed);
     if (!io.blobs.exif.empty()) {
       container.exif = io.blobs.exif.data();
       container.exif_size = io.blobs.exif.size();
@@ -102,18 +103,21 @@ int CompressJpegXlMain(int argc, const char* argv[]) {
       container.jumb_size = io.blobs.jumbf.size();
     }
     jxl::PaddedBytes jpeg_data;
-    if (io.Main().IsJPEG()) {
+    if (args.store_jpeg_metadata && io.Main().IsJPEG()) {
       jxl::jpeg::JPEGData data_in = *io.Main().jpeg_data;
-      JXL_RETURN_IF_ERROR(EncodeJPEGData(data_in, &jpeg_data));
-      container.jpeg_reconstruction = jpeg_data.data();
-      container.jpeg_reconstruction_size = jpeg_data.size();
+      if (EncodeJPEGData(data_in, &jpeg_data, args.params)) {
+        container.jpeg_reconstruction = jpeg_data.data();
+        container.jpeg_reconstruction_size = jpeg_data.size();
+      } else {
+        fprintf(stderr, "Warning: failed to create JPEG reconstruction data\n");
+        ret = CjxlRetCode::DROPPED_JBRD;
+      }
     }
-    jxl::PaddedBytes container_file;
-    if (!EncodeJpegXlContainerOneShot(container, &container_file)) {
+    compressed = {};
+    if (!EncodeJpegXlContainerOneShot(container, &compressed)) {
       fprintf(stderr, "Failed to encode container format\n");
       return CjxlRetCode::ERR_CONTAINER;
     }
-    compressed.swap(container_file);
     if (!args.quiet) {
       const size_t pixels = io.xsize() * io.ysize();
       const double bpp =
@@ -136,7 +140,7 @@ int CompressJpegXlMain(int argc, const char* argv[]) {
   if (!args.quiet && cmdline.verbosity > 0) {
     jxl::CacheAligned::PrintStats();
   }
-  return 0;
+  return ret;
 }
 
 }  // namespace tools

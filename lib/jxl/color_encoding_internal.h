@@ -140,7 +140,7 @@ struct PrimariesCIExy {
 // Serializable form of CIExy.
 struct Customxy : public Fields {
   Customxy();
-  const char* Name() const override { return "Customxy"; }
+  JXL_FIELDS_NAME(Customxy)
 
   Status VisitFields(Visitor* JXL_RESTRICT visitor) override;
 
@@ -154,7 +154,7 @@ struct Customxy : public Fields {
 
 struct CustomTransferFunction : public Fields {
   CustomTransferFunction();
-  const char* Name() const override { return "CustomTransferFunction"; }
+  JXL_FIELDS_NAME(CustomTransferFunction)
 
   // Sets fields and returns true if nonserialized_color_space has an implicit
   // transfer function, otherwise leaves fields unchanged and returns false.
@@ -229,7 +229,7 @@ struct CustomTransferFunction : public Fields {
 // known color space. Stored in Metadata. Thread-compatible.
 struct ColorEncoding : public Fields {
   ColorEncoding();
-  const char* Name() const override { return "ColorEncoding"; }
+  JXL_FIELDS_NAME(ColorEncoding)
 
   // Returns ready-to-use color encodings (initialized on-demand).
   static const ColorEncoding& SRGB(bool is_gray = false);
@@ -290,6 +290,7 @@ struct ColorEncoding : public Fields {
   void DecideIfWantICC();
 
   bool IsGray() const { return color_space_ == ColorSpace::kGray; }
+  bool IsCMYK() const { return cmyk_; }
   size_t Channels() const { return IsGray() ? 1 : 3; }
 
   // Returns false if the field is invalid and unusable.
@@ -399,7 +400,7 @@ struct ColorEncoding : public Fields {
  private:
   // Returns true if all fields have been initialized (possibly to kUnknown).
   // Returns false if the ICC profile is invalid or decoding it fails.
-  // Defined in color_management.cc.
+  // Defined in enc_color_management.cc.
   Status SetFieldsFromICC();
 
   // If true, the codestream contains an ICC profile and we do not serialize
@@ -414,6 +415,7 @@ struct ColorEncoding : public Fields {
   PaddedBytes icc_;  // Valid ICC profile
 
   ColorSpace color_space_;  // Can be kUnknown
+  bool cmyk_ = false;
 
   // Only used if white_point == kCustom.
   Customxy white_;
@@ -450,6 +452,8 @@ void ConvertInternalToExternalColorEncoding(const jxl::ColorEncoding& internal,
 Status ConvertExternalToInternalColorEncoding(const JxlColorEncoding& external,
                                               jxl::ColorEncoding* internal);
 
+Status PrimariesToXYZ(float rx, float ry, float gx, float gy, float bx,
+                      float by, float wx, float wy, float matrix[9]);
 Status PrimariesToXYZD50(float rx, float ry, float gx, float gy, float bx,
                          float by, float wx, float wy, float matrix[9]);
 Status AdaptToXYZD50(float wx, float wy, float matrix[9]);

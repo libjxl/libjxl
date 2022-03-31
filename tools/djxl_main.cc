@@ -16,6 +16,7 @@
 #include "lib/jxl/base/file_io.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/padded_bytes.h"
+#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/profiler.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
@@ -24,8 +25,6 @@
 #include "tools/box/box.h"
 #include "tools/cmdline.h"
 #include "tools/codec_config.h"
-#include "tools/cpu/cpu.h"
-#include "tools/cpu/os_specific.h"
 #include "tools/djxl.h"
 #include "tools/speed_stats.h"
 
@@ -72,7 +71,7 @@ int DecompressMain(int argc, const char* argv[]) {
     return 1;
   }
   if (!args.quiet) {
-    fprintf(stderr, "Read %zu compressed bytes.\n", compressed.size());
+    fprintf(stderr, "Read %" PRIuS " compressed bytes.\n", compressed.size());
   }
 
   // If the file uses the box format container, unpack the boxes into
@@ -85,30 +84,19 @@ int DecompressMain(int argc, const char* argv[]) {
       return 1;
     }
   } else {
-    container.codestream = compressed.data();
-    container.codestream_size = compressed.size();
+    container.codestream = std::move(compressed);
   }
 
   jxl::ThreadPoolInternal pool(args.num_threads);
   SpeedStats stats;
 
   // Quick test that this looks like a valid JXL file.
-  JxlSignature signature =
-      JxlSignatureCheck(container.codestream, container.codestream_size);
+  JxlSignature signature = JxlSignatureCheck(container.codestream.data(),
+                                             container.codestream.size());
   if (signature == JXL_SIG_NOT_ENOUGH_BYTES || signature == JXL_SIG_INVALID) {
-    fprintf(stderr, "Unknown compressed image format\n");
+    fprintf(stderr, "Unknown compressed image format (%u)\n", signature);
     return 1;
   }
-
-  const std::vector<int> cpus = jpegxl::tools::cpu::AvailableCPUs();
-  pool.RunOnEachThread([&cpus](const int task, const size_t thread) {
-    // 1.1-1.2x speedup (36 cores) from pinning.
-    if (thread < cpus.size()) {
-      if (!jpegxl::tools::cpu::PinThreadToCPU(cpus[thread])) {
-        fprintf(stderr, "WARNING: failed to pin thread %zu.\n", thread);
-      }
-    }
-  });
 
   if (!args.file_out && !args.quiet) {
     fprintf(stderr,
@@ -172,10 +160,8 @@ int DecompressMain(int argc, const char* argv[]) {
 
     // Decode to pixels.
     for (size_t i = 0; i < args.num_reps; ++i) {
-      if (!DecompressJxlToPixels(
-              jxl::Span<const uint8_t>(container.codestream,
-                                       container.codestream_size),
-              args.params, &pool, &io, &stats)) {
+      if (!DecompressJxlToPixels(jxl::Span<const uint8_t>(container.codestream),
+                                 args.params, &pool, &io, &stats)) {
         // Error is already reported by DecompressJxlToPixels.
         return 1;
       }
@@ -187,7 +173,7 @@ int DecompressMain(int argc, const char* argv[]) {
     }
 
     if (args.print_read_bytes) {
-      fprintf(stderr, "Decoded bytes: %zu\n", io.Main().decoded_bytes());
+      fprintf(stderr, "Decoded bytes: %" PRIuS "\n", io.Main().decoded_bytes());
     }
   }
 

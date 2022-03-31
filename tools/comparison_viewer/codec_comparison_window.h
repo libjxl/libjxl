@@ -13,6 +13,7 @@
 #include <QString>
 
 #include "lib/jxl/base/padded_bytes.h"
+#include "lib/jxl/common.h"
 #include "tools/comparison_viewer/ui_codec_comparison_window.h"
 
 namespace jxl {
@@ -21,9 +22,9 @@ class CodecComparisonWindow : public QMainWindow {
   Q_OBJECT
 
  public:
-  explicit CodecComparisonWindow(QWidget* parent = nullptr);
-  explicit CodecComparisonWindow(const QString& directory,
-                                 QWidget* parent = nullptr);
+  explicit CodecComparisonWindow(
+      const QString& directory, float intensityTarget = kDefaultIntensityTarget,
+      QWidget* parent = nullptr);
   ~CodecComparisonWindow() override = default;
 
  private slots:
@@ -67,6 +68,7 @@ class CodecComparisonWindow : public QMainWindow {
   ImageSets imageSets_;
   QSet<QString> visited_;
 
+  const float intensityTarget_;
   const QByteArray monitorIccProfile_;
 };
 

@@ -11,6 +11,7 @@
 #include "lib/jxl/alpha.h"
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/padded_bytes.h"
+#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/profiler.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_management.h"
@@ -41,7 +42,7 @@ void ImageBundle::VerifyMetadata() const {
   JXL_CHECK(metadata_->color_encoding.IsGray() == IsGray());
 
   if (metadata_->HasAlpha() && alpha().xsize() == 0) {
-    JXL_ABORT("MD alpha_bits %u IB alpha %zu x %zu\n",
+    JXL_ABORT("MD alpha_bits %u IB alpha %" PRIuS " x %" PRIuS "\n",
               metadata_->GetAlphaBits(), alpha().xsize(), alpha().ysize());
   }
   const uint32_t alpha_bits = metadata_->GetAlphaBits();
@@ -77,6 +78,13 @@ size_t ImageBundle::DetectRealBitdepth() const {
   // and there may be slight imprecisions in the floating point image.
 }
 
+const ImageF& ImageBundle::black() const {
+  JXL_ASSERT(HasBlack());
+  const size_t ec = metadata_->Find(ExtraChannel::kBlack) -
+                    metadata_->extra_channel_info.data();
+  JXL_ASSERT(ec < extra_channels_.size());
+  return extra_channels_[ec];
+}
 const ImageF& ImageBundle::alpha() const {
   JXL_ASSERT(HasAlpha());
   const size_t ec = metadata_->Find(ExtraChannel::kAlpha) -
@@ -92,23 +100,21 @@ ImageF* ImageBundle::alpha() {
   return &extra_channels_[ec];
 }
 
-const ImageF& ImageBundle::depth() const {
-  JXL_ASSERT(HasDepth());
-  const size_t ec = metadata_->Find(ExtraChannel::kDepth) -
-                    metadata_->extra_channel_info.data();
-  JXL_ASSERT(ec < extra_channels_.size());
-  return extra_channels_[ec];
-}
-
 void ImageBundle::SetAlpha(ImageF&& alpha, bool alpha_is_premultiplied) {
   const ExtraChannelInfo* eci = metadata_->Find(ExtraChannel::kAlpha);
   // Must call SetAlphaBits first, otherwise we don't know which channel index
   JXL_CHECK(eci != nullptr);
   JXL_CHECK(alpha.xsize() != 0 && alpha.ysize() != 0);
   JXL_CHECK(eci->alpha_associated == alpha_is_premultiplied);
-  extra_channels_.insert(
-      extra_channels_.begin() + (eci - metadata_->extra_channel_info.data()),
-      std::move(alpha));
+  if (extra_channels_.size() < metadata_->extra_channel_info.size()) {
+    // TODO(jon): get rid of this case
+    extra_channels_.insert(
+        extra_channels_.begin() + (eci - metadata_->extra_channel_info.data()),
+        std::move(alpha));
+  } else {
+    extra_channels_[eci - metadata_->extra_channel_info.data()] =
+        std::move(alpha);
+  }
   // num_extra_channels is automatically set in visitor
   VerifySizes();
 }

@@ -33,7 +33,6 @@
 #include "lib/jxl/convolve.h"
 #include "lib/jxl/dec_cache.h"
 #include "lib/jxl/dec_group.h"
-#include "lib/jxl/dec_reconstruct.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_group.h"
@@ -189,7 +188,7 @@ V GammaModulation(const D d, const size_t x, const size_t y,
       overall_ratio += avg_ratio;
     }
   }
-  overall_ratio = SumOfLanes(overall_ratio);
+  overall_ratio = SumOfLanes(d, overall_ratio);
   overall_ratio *= Set(d, 1.0f / 64);
   // ideally -1.0, but likely optimal correction adds some entropy, so slightly
   // less than that.
@@ -246,12 +245,12 @@ V ColorModulation(const D d, const size_t x, const size_t y,
   // blue we consider as if it was fully red or blue.
   static const float ratio = 30.610615782142737f;  // out of 64 pixels.
 
-  auto overall_red_coverage = SumOfLanes(red_coverage);
+  auto overall_red_coverage = SumOfLanes(d, red_coverage);
   overall_red_coverage =
       Min(overall_red_coverage, Set(d, ratio * kRedRampLength));
   overall_red_coverage *= Set(d, red_strength / ratio);
 
-  auto overall_blue_coverage = SumOfLanes(blue_coverage);
+  auto overall_blue_coverage = SumOfLanes(d, blue_coverage);
   overall_blue_coverage =
       Min(overall_blue_coverage, Set(d, ratio * kBlueRampLength));
   overall_blue_coverage *= Set(d, blue_strength / ratio);
@@ -295,7 +294,7 @@ V HfModulation(const D d, const size_t x, const size_t y, const ImageF& xyb,
     }
   }
 
-  sum = SumOfLanes(sum);
+  sum = SumOfLanes(d, sum);
   return MulAdd(sum, Set(d, -2.0052193233688884f / 112), out_val);
 }
 
@@ -587,15 +586,15 @@ ImageF AdaptiveQuantizationMap(const float butteraugli_target,
   AdaptiveQuantizationImpl impl;
   impl.Init(xyb);
   *mask = ImageF(frame_dim.xsize_blocks, frame_dim.ysize_blocks);
-  RunOnPool(
+  JXL_CHECK(RunOnPool(
       pool, 0,
       DivCeil(frame_dim.xsize_blocks, kEncTileDimInBlocks) *
           DivCeil(frame_dim.ysize_blocks, kEncTileDimInBlocks),
-      [&](size_t num_threads) {
+      [&](const size_t num_threads) {
         impl.PrepareBuffers(num_threads);
         return true;
       },
-      [&](const int tid, int thread) {
+      [&](const uint32_t tid, const size_t thread) {
         size_t n_enc_tiles =
             DivCeil(frame_dim.xsize_blocks, kEncTileDimInBlocks);
         size_t tx = tid % n_enc_tiles;
@@ -609,7 +608,7 @@ ImageF AdaptiveQuantizationMap(const float butteraugli_target,
         Rect r(bx0, by0, bx1 - bx0, by1 - by0);
         impl.ComputeTile(butteraugli_target, scale, xyb, r, thread, mask);
       },
-      "AQ DiffPrecompute");
+      "AQ DiffPrecompute"));
 
   return std::move(impl).aq_map;
 }
@@ -729,15 +728,37 @@ ImageF TileDistMap(const ImageF& distmap, int tile_size, int margin,
 
 constexpr float kDcQuantPow = 0.57f;
 static const float kDcQuant = 1.12f;
-static const float kAcQuant = 0.7886f;
+static const float kAcQuant = 0.8294f;
 
 void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
-                          PassesEncoderState* enc_state, ThreadPool* pool,
+                          PassesEncoderState* enc_state,
+                          const JxlCmsInterface& cms, ThreadPool* pool,
                           AuxOut* aux_out) {
   const CompressParams& cparams = enc_state->cparams;
   Quantizer& quantizer = enc_state->shared.quantizer;
   ImageI& raw_quant_field = enc_state->shared.raw_quant_field;
   ImageF& quant_field = enc_state->initial_quant_field;
+
+  // TODO(veluca): this should really be rather handled on the
+  // ButteraugliComparator side.
+  struct TemporaryShrink {
+    TemporaryShrink(ImageBundle& bundle, size_t xsize, size_t ysize)
+        : bundle(bundle),
+          orig_xsize(bundle.xsize()),
+          orig_ysize(bundle.ysize()) {
+      bundle.ShrinkTo(xsize, ysize);
+    }
+    TemporaryShrink(const TemporaryShrink&) = delete;
+    TemporaryShrink(TemporaryShrink&&) = delete;
+
+    ~TemporaryShrink() { bundle.ShrinkTo(orig_xsize, orig_ysize); }
+
+    ImageBundle& bundle;
+    size_t orig_xsize;
+    size_t orig_ysize;
+  } t(const_cast<ImageBundle&>(linear),
+      enc_state->shared.frame_header.nonserialized_metadata->xsize(),
+      enc_state->shared.frame_header.nonserialized_metadata->ysize());
 
   const float butteraugli_target = cparams.butteraugli_distance;
   ButteraugliParams params = cparams.ba_params;
@@ -748,7 +769,7 @@ void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
   if (fabs(params.intensity_target - 255.0f) < 1e-3) {
     params.intensity_target = 80.0f;
   }
-  JxlButteraugliComparator comparator(params);
+  JxlButteraugliComparator comparator(params, cms);
   JXL_CHECK(comparator.SetReferenceImage(linear));
   bool lower_is_better =
       (comparator.GoodQualityScore() < comparator.BadQualityScore());
@@ -788,18 +809,18 @@ void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
       }
     }
     quantizer.SetQuantField(initial_quant_dc, quant_field, &raw_quant_field);
-    ImageBundle linear = RoundtripImage(opsin, enc_state, pool);
+    ImageBundle dec_linear = RoundtripImage(opsin, enc_state, cms, pool);
     PROFILER_ZONE("enc Butteraugli");
     float score;
     ImageF diffmap;
-    JXL_CHECK(comparator.CompareWith(linear, &diffmap, &score));
+    JXL_CHECK(comparator.CompareWith(dec_linear, &diffmap, &score));
     if (!lower_is_better) {
       score = -score;
       diffmap = ScaleImage(-1.0f, diffmap);
     }
     tile_distmap = TileDistMap(diffmap, 8, 0, enc_state->shared.ac_strategy);
     if (WantDebugOutput(aux_out)) {
-      aux_out->DumpImage(("dec" + ToString(i)).c_str(), *linear.color());
+      aux_out->DumpImage(("dec" + ToString(i)).c_str(), *dec_linear.color());
       DumpHeatmaps(aux_out, butteraugli_target, quant_field, tile_distmap,
                    diffmap);
     }
@@ -898,7 +919,8 @@ void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
 
 void FindBestQuantizationMaxError(const Image3F& opsin,
                                   PassesEncoderState* enc_state,
-                                  ThreadPool* pool, AuxOut* aux_out) {
+                                  const JxlCmsInterface& cms, ThreadPool* pool,
+                                  AuxOut* aux_out) {
   // TODO(veluca): this only works if opsin is in XYB. The current encoder does
   // not have code paths that produce non-XYB opsin here.
   JXL_CHECK(enc_state->shared.frame_header.color_transform ==
@@ -923,7 +945,7 @@ void FindBestQuantizationMaxError(const Image3F& opsin,
     if (aux_out) {
       aux_out->DumpXybImage(("ops" + ToString(i)).c_str(), opsin);
     }
-    ImageBundle decoded = RoundtripImage(opsin, enc_state, pool);
+    ImageBundle decoded = RoundtripImage(opsin, enc_state, cms, pool);
     if (aux_out) {
       aux_out->DumpXybImage(("dec" + ToString(i)).c_str(), *decoded.color());
     }
@@ -1024,21 +1046,22 @@ ImageF InitialQuantField(const float butteraugli_target, const Image3F& opsin,
 }
 
 void FindBestQuantizer(const ImageBundle* linear, const Image3F& opsin,
-                       PassesEncoderState* enc_state, ThreadPool* pool,
+                       PassesEncoderState* enc_state,
+                       const JxlCmsInterface& cms, ThreadPool* pool,
                        AuxOut* aux_out, double rescale) {
   const CompressParams& cparams = enc_state->cparams;
   if (cparams.max_error_mode) {
     PROFILER_ZONE("enc find best maxerr");
-    FindBestQuantizationMaxError(opsin, enc_state, pool, aux_out);
+    FindBestQuantizationMaxError(opsin, enc_state, cms, pool, aux_out);
   } else if (cparams.speed_tier <= SpeedTier::kKitten) {
     // Normal encoding to a butteraugli score.
     PROFILER_ZONE("enc find best2");
-    FindBestQuantization(*linear, opsin, enc_state, pool, aux_out);
+    FindBestQuantization(*linear, opsin, enc_state, cms, pool, aux_out);
   }
 }
 
 ImageBundle RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
-                           ThreadPool* pool) {
+                           const JxlCmsInterface& cms, ThreadPool* pool) {
   PROFILER_ZONE("enc roundtrip");
   std::unique_ptr<PassesDecoderState> dec_state =
       jxl::make_unique<PassesDecoderState>();
@@ -1058,56 +1081,53 @@ ImageBundle RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
   std::unique_ptr<ModularFrameEncoder> modular_frame_encoder =
       jxl::make_unique<ModularFrameEncoder>(enc_state->shared.frame_header,
                                             enc_state->cparams);
-  InitializePassesEncoder(opsin, pool, enc_state, modular_frame_encoder.get(),
-                          nullptr);
+  JXL_CHECK(InitializePassesEncoder(opsin, cms, pool, enc_state,
+                                    modular_frame_encoder.get(), nullptr));
   JXL_CHECK(dec_state->Init());
-  dec_state->InitForAC(pool);
+  JXL_CHECK(dec_state->InitForAC(pool));
 
   ImageBundle decoded(&enc_state->shared.metadata->m);
   decoded.origin = enc_state->shared.frame_header.frame_origin;
   decoded.SetFromImage(Image3F(opsin.xsize(), opsin.ysize()),
                        dec_state->output_encoding_info.color_encoding);
 
+  PassesDecoderState::PipelineOptions options;
+  options.use_slow_render_pipeline = false;
+  options.coalescing = true;
+  options.render_spotcolors = false;
+
   // Same as dec_state->shared->frame_header.nonserialized_metadata->m
   const ImageMetadata& metadata = *decoded.metadata();
-  if (!metadata.extra_channel_info.empty()) {
-    // Add dummy extra channels to the dec_state: FinalizeFrameDecoding moves
-    // these extra channels to the ImageBundle, and is required that the amount
-    // of extra channels matches its metadata()->extra_channel_info.size().
-    // Normally we'd place these extra channels in the ImageBundle, but in this
-    // case FinalizeFrameDecoding is the one that does this.
-    std::vector<ImageF> extra_channels;
-    extra_channels.reserve(metadata.extra_channel_info.size());
-    for (size_t i = 0; i < metadata.extra_channel_info.size(); i++) {
-      extra_channels.emplace_back(decoded.xsize(), decoded.ysize());
-      // Must initialize the image with data to not affect blending with
-      // uninitialized memory.
-      ZeroFillImage(&extra_channels.back());
-    }
-    dec_state->extra_channels = std::move(extra_channels);
-  }
+
+  JXL_CHECK(dec_state->PreparePipeline(&decoded, options));
 
   hwy::AlignedUniquePtr<GroupDecCache[]> group_dec_caches;
-  const auto allocate_storage = [&](size_t num_threads) {
-    dec_state->EnsureStorage(num_threads);
+  const auto allocate_storage = [&](const size_t num_threads) {
+    dec_state->render_pipeline->PrepareForThreads(num_threads,
+                                                  /*use_group_ids=*/false);
     group_dec_caches = hwy::MakeUniqueAlignedArray<GroupDecCache>(num_threads);
     return true;
   };
-  const auto process_group = [&](const int group_index, const int thread) {
+  const auto process_group = [&](const uint32_t group_index,
+                                 const size_t thread) {
     if (dec_state->shared->frame_header.loop_filter.epf_iters > 0) {
       ComputeSigma(dec_state->shared->BlockGroupRect(group_index),
                    dec_state.get());
     }
+    RenderPipelineInput input =
+        dec_state->render_pipeline->GetInputBuffers(group_index, thread);
     JXL_CHECK(DecodeGroupForRoundtrip(
         enc_state->coeffs, group_index, dec_state.get(),
-        &group_dec_caches[thread], thread, &decoded, nullptr));
+        &group_dec_caches[thread], thread, input, &decoded, nullptr));
+    for (size_t c = 0; c < metadata.num_extra_channels; c++) {
+      std::pair<ImageF*, Rect> ri = input.GetBuffer(3 + c);
+      FillPlane(0.0f, ri.first, ri.second);
+    }
+    input.Done();
   };
-  RunOnPool(pool, 0, num_groups, allocate_storage, process_group, "AQ loop");
+  JXL_CHECK(RunOnPool(pool, 0, num_groups, allocate_storage, process_group,
+                      "AQ loop"));
 
-  // Fine to do a JXL_ASSERT instead of error handling, since this only happens
-  // on the encoder side where we can't be fed with invalid data.
-  JXL_CHECK(FinalizeFrameDecoding(&decoded, dec_state.get(), pool,
-                                  /*force_fir=*/false, /*skip_blending=*/true));
   // Ensure we don't create any new special frames.
   enc_state->special_frames.resize(num_special_frames);
 

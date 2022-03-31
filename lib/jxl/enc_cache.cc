@@ -34,10 +34,10 @@
 
 namespace jxl {
 
-void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
-                             PassesEncoderState* enc_state,
-                             ModularFrameEncoder* modular_frame_encoder,
-                             AuxOut* aux_out) {
+Status InitializePassesEncoder(const Image3F& opsin, const JxlCmsInterface& cms,
+                               ThreadPool* pool, PassesEncoderState* enc_state,
+                               ModularFrameEncoder* modular_frame_encoder,
+                               AuxOut* aux_out) {
   PROFILER_FUNC;
 
   PassesSharedState& JXL_RESTRICT shared = enc_state->shared;
@@ -63,12 +63,12 @@ void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
   }
 
   Image3F dc(shared.frame_dim.xsize_blocks, shared.frame_dim.ysize_blocks);
-  RunOnPool(
-      pool, 0, shared.frame_dim.num_groups, ThreadPool::SkipInit(),
+  JXL_RETURN_IF_ERROR(RunOnPool(
+      pool, 0, shared.frame_dim.num_groups, ThreadPool::NoInit,
       [&](size_t group_idx, size_t _) {
         ComputeCoefficients(group_idx, enc_state, opsin, &dc);
       },
-      "Compute coeffs");
+      "Compute coeffs"));
 
   if (shared.frame_header.flags & FrameHeader::kUseDcFrame) {
     CompressParams cparams = enc_state->cparams;
@@ -98,8 +98,10 @@ void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
     // and kModular for the smallest DC (first in the bitstream)
     if (cparams.progressive_dc == 0) {
       cparams.modular_mode = true;
-      cparams.quality_pair.first = cparams.quality_pair.second =
-          99.f - enc_state->cparams.butteraugli_distance * 0.2f;
+      // TODO(jon): tweak mapping from image dist to dist for modular DC
+      cparams.butteraugli_distance =
+          std::max(kMinButteraugliDistance,
+                   enc_state->cparams.butteraugli_distance * 0.03f);
     }
     ImageBundle ib(&shared.metadata->m);
     // This is a lie - dc is in XYB
@@ -136,7 +138,8 @@ void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
     // case of dc_level >= 3, since EncodeFrame may output multiple frames
     // to the bitwriter, while DecodeFrame reads only one.
     JXL_CHECK(EncodeFrame(cparams, dc_frame_info, shared.metadata, ib,
-                          state.get(), pool, special_frame.get(), nullptr));
+                          state.get(), cms, pool, special_frame.get(),
+                          nullptr));
     const Span<const uint8_t> encoded = special_frame->GetSpan();
     enc_state->special_frames.emplace_back(std::move(special_frame));
 
@@ -165,10 +168,11 @@ void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
           dc, group_index,
           enc_state->cparams.butteraugli_distance >= 2.0f &&
               enc_state->cparams.speed_tier < SpeedTier::kFalcon,
-          enc_state);
+          enc_state, /*jpeg_transcode=*/false);
     };
-    RunOnPool(pool, 0, shared.frame_dim.num_dc_groups, ThreadPool::SkipInit(),
-              compute_dc_coeffs, "Compute DC coeffs");
+    JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, shared.frame_dim.num_dc_groups,
+                                  ThreadPool::NoInit, compute_dc_coeffs,
+                                  "Compute DC coeffs"));
     // TODO(veluca): this is only useful in tests and if inspection is enabled.
     if (!(shared.frame_header.flags & FrameHeader::kSkipAdaptiveDCSmoothing)) {
       AdaptiveDCSmoothing(shared.quantizer.MulDC(), &shared.dc_storage, pool);
@@ -178,13 +182,15 @@ void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
     modular_frame_encoder->AddACMetadata(group_index, /*jpeg_transcode=*/false,
                                          enc_state);
   };
-  RunOnPool(pool, 0, shared.frame_dim.num_dc_groups, ThreadPool::SkipInit(),
-            compute_ac_meta, "Compute AC Metadata");
+  JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, shared.frame_dim.num_dc_groups,
+                                ThreadPool::NoInit, compute_ac_meta,
+                                "Compute AC Metadata"));
 
   if (aux_out != nullptr) {
     aux_out->InspectImage3F("compressed_image:InitializeFrameEncCache:dc_dec",
                             shared.dc_storage);
   }
+  return true;
 }
 
 void EncCache::InitOnce() {

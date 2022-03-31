@@ -191,7 +191,7 @@ Java_org_jpeg_jpegxl_wrapper_DecoderJni_nativeGetBasicInfo(
   jint context[6] = {0};
   env->GetIntArrayRegion(ctx, 0, 1, context);
 
-  JxlBasicInfo info;
+  JxlBasicInfo info = {};
   size_t pixels_size = 0;
   size_t icc_size = 0;
   size_t pixel_format = 0;
