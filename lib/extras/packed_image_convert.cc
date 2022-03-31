@@ -75,14 +75,10 @@ Status ConvertPackedPixelFileToCodecInOut(const PackedPixelFile& ppf,
   }
 
   // Convert the extra blobs
-  io->blobs.exif.clear();
-  io->blobs.exif.append(ppf.metadata.exif);
-  io->blobs.iptc.clear();
-  io->blobs.iptc.append(ppf.metadata.iptc);
-  io->blobs.jumbf.clear();
-  io->blobs.jumbf.append(ppf.metadata.jumbf);
-  io->blobs.xmp.clear();
-  io->blobs.xmp.append(ppf.metadata.xmp);
+  io->blobs.exif = ppf.metadata.exif;
+  io->blobs.iptc = ppf.metadata.iptc;
+  io->blobs.jumbf = ppf.metadata.jumbf;
+  io->blobs.xmp = ppf.metadata.xmp;
 
   // Append all other extra channels.
   for (const PackedPixelFile::PackedExtraChannel& info :
@@ -226,10 +222,10 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
   }
 
   // Convert the extra blobs
-  ppf->metadata.exif.assign(io.blobs.exif.begin(), io.blobs.exif.end());
-  ppf->metadata.iptc.assign(io.blobs.iptc.begin(), io.blobs.iptc.end());
-  ppf->metadata.jumbf.assign(io.blobs.jumbf.begin(), io.blobs.jumbf.end());
-  ppf->metadata.xmp.assign(io.blobs.xmp.begin(), io.blobs.xmp.end());
+  ppf->metadata.exif = io.blobs.exif;
+  ppf->metadata.iptc = io.blobs.iptc;
+  ppf->metadata.jumbf = io.blobs.jumbf;
+  ppf->metadata.xmp = io.blobs.xmp;
   const bool float_out = pixel_format.data_type == JXL_TYPE_FLOAT ||
                          pixel_format.data_type == JXL_TYPE_FLOAT16;
   // Convert the pixels

@@ -17,10 +17,10 @@ namespace jxl {
 // Parses the Exif data just enough to extract any render-impacting info.
 // If the Exif data is invalid or could not be parsed, then it is treated
 // as a no-op.
-void InterpretExif(const PaddedBytes& exif, CodecMetadata* metadata);
+void InterpretExif(const std::vector<uint8_t>& exif, CodecMetadata* metadata);
 
 // Sets the Exif orientation to the identity, to avoid repeated orientation
-void ResetExifOrientation(PaddedBytes& exif);
+void ResetExifOrientation(std::vector<uint8_t>& exif);
 
 }  // namespace jxl
 
