@@ -374,10 +374,11 @@ void LowMemoryRenderPipeline::PrepareForThreadsInternal(size_t num,
   // TODO(veluca): avoid reallocating buffers if not needed.
   stage_data_.resize(num);
   size_t upsampling = 1u << base_color_shift_;
-  size_t stage_buffer_xsize =
-      frame_dimensions_.group_dim * upsampling +
+  size_t group_dim = frame_dimensions_.group_dim * upsampling;
+  size_t padding =
       2 * group_data_x_border_ * upsampling +  // maximum size of a rect
       2 * kRenderPipelineXOffset;              // extra padding for processing
+  size_t stage_buffer_xsize = group_dim + padding;
   for (size_t t = 0; t < num; t++) {
     stage_data_[t].resize(shifts.size());
     for (size_t c = 0; c < shifts.size(); c++) {
@@ -397,15 +398,16 @@ void LowMemoryRenderPipeline::PrepareForThreadsInternal(size_t num,
   }
   if (first_image_dim_stage_ != stages_.size()) {
     out_of_frame_data_.resize(num);
+    size_t left_padding = std::max<ssize_t>(0, frame_origin_.x0);
+    size_t middle_padding = group_dim;
+    ssize_t last_x =
+        frame_origin_.x0 + std::min(frame_dimensions_.xsize_groups * group_dim,
+                                    frame_dimensions_.xsize_upsampled);
+    last_x = Clamp1<ssize_t>(last_x, 0, full_image_xsize_);
+    size_t right_padding = full_image_xsize_ - last_x;
     size_t out_of_frame_xsize =
-        2 * kRenderPipelineXOffset +
-        std::max<ssize_t>(
-            0,
-            std::max<ssize_t>(
-                frame_origin_.x0,
-                static_cast<ssize_t>(full_image_xsize_) - frame_origin_.x0 -
-                    static_cast<ssize_t>(frame_dimensions_.xsize_upsampled)));
-    out_of_frame_xsize = std::max(out_of_frame_xsize, stage_buffer_xsize);
+        padding +
+        std::max(left_padding, std::max(middle_padding, right_padding));
     for (size_t t = 0; t < num; t++) {
       out_of_frame_data_[t] = ImageF(out_of_frame_xsize, shifts.size());
     }
