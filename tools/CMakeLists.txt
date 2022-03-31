@@ -121,7 +121,6 @@ endif()
 if(JPEGXL_ENABLE_TOOLS)
   list(APPEND TOOL_BINARIES
     cjxl
-    cjxl_ng
     djxl
     djxl_ng
     cjpeg_hdr
@@ -146,8 +145,15 @@ if(JPEGXL_ENABLE_TOOLS)
   )
   target_link_libraries(cjxl_ng
     jxl
+    jxl_extras_dec-static
+    jxl_threads
+    hwy
     gflags
   )
+  target_include_directories(cjxl_ng PRIVATE "${PROJECT_SOURCE_DIR}")
+  if(JPEGXL_EMSCRIPTEN)
+    set_target_properties(cjxl_ng PROPERTIES LINK_FLAGS "-s USE_LIBPNG=1")
+  endif()
 
   add_executable(djxl_ng
     djxl_ng_main.cc

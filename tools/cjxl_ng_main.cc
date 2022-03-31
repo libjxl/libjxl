@@ -17,9 +17,9 @@
 #include "jxl/thread_parallel_runner.h"
 #include "jxl/thread_parallel_runner_cxx.h"
 #include "jxl/types.h"
-#include "lib/extras/codec.h"
 #include "lib/extras/dec/apng.h"
 #include "lib/extras/dec/color_hints.h"
+#include "lib/extras/dec/decode.h"
 #include "lib/extras/dec/gif.h"
 #include "lib/extras/dec/jpg.h"
 #include "lib/extras/dec/pgx.h"
@@ -336,8 +336,8 @@ jxl::Status LoadInput(const char* filename_in,
   // Any valid encoding is larger (ensures codecs can read the first few bytes).
   constexpr size_t kMinBytes = 9;
 
-  jxl::PaddedBytes image_data;
-  jxl::Status status = ReadFile(filename_in, &image_data);
+  std::vector<uint8_t> image_data;
+  jxl::Status status = jxl::ReadFile(filename_in, &image_data);
   if (!status) {
     return status;
   }
@@ -776,8 +776,8 @@ int main(int argc, char** argv) {
   }
 
   if (FLAGS_add_jpeg_frame) {
-    jxl::PaddedBytes jpeg_data;
-    if (!ReadFile(filename_in, &jpeg_data)) {
+    std::vector<uint8_t> jpeg_data;
+    if (!jxl::ReadFile(filename_in, &jpeg_data)) {
       std::cerr << "Reading image data failed.\n";
       return EXIT_FAILURE;
     }
