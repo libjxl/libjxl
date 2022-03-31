@@ -721,24 +721,20 @@ void LowMemoryRenderPipeline::ProcessBuffers(size_t group_id,
   size_t gx = group_id % frame_dimensions_.xsize_groups;
 
   if (first_image_dim_stage_ != stages_.size()) {
-    size_t x0 = std::max<ssize_t>(
-        0, (gx * frame_dimensions_.group_dim << base_color_shift_) +
-               frame_origin_.x0);
-    size_t y0 = std::max<ssize_t>(
-        0, (gy * frame_dimensions_.group_dim << base_color_shift_) +
-               frame_origin_.y0);
-    size_t x1 = std::min(
-        frame_origin_.x0 + std::min((gx + 1) * frame_dimensions_.group_dim
-                                        << base_color_shift_,
-                                    frame_dimensions_.xsize_upsampled),
-        full_image_xsize_);
-    size_t y1 = std::min(
-        frame_origin_.y0 + std::min((gy + 1) * frame_dimensions_.group_dim
-                                        << base_color_shift_,
-                                    frame_dimensions_.ysize_upsampled),
-        full_image_ysize_);
-    x0 = std::min(x1, x0);
-    y0 = std::min(y1, y0);
+    size_t group_dim = frame_dimensions_.group_dim << base_color_shift_;
+    RectT<ssize_t> group_rect(gx * group_dim, gy * group_dim, group_dim,
+                              group_dim);
+    RectT<ssize_t> image_rect(0, 0, frame_dimensions_.xsize_upsampled,
+                              frame_dimensions_.ysize_upsampled);
+    RectT<ssize_t> full_image_rect(0, 0, full_image_xsize_, full_image_ysize_);
+    group_rect = group_rect.Translate(frame_origin_.x0, frame_origin_.y0);
+    image_rect = image_rect.Translate(frame_origin_.x0, frame_origin_.y0);
+    group_rect =
+        group_rect.Intersection(image_rect).Intersection(full_image_rect);
+    size_t x0 = group_rect.x0();
+    size_t y0 = group_rect.y0();
+    size_t x1 = group_rect.x1();
+    size_t y1 = group_rect.y1();
 
     if (gx == 0 && gy == 0) {
       RenderPadding(thread_id, Rect(0, 0, x0, y0));
