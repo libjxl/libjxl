@@ -305,6 +305,7 @@ jxl::Status WriteJxlOutput(const DecompressArgs& args, const char* file_out,
                             io.frames[i].c_current());
       frame_io.metadata.m = *io.frames[i].metadata();
       frame_io.jpeg_quality = io.jpeg_quality;
+      frame_io.use_sjpeg = io.use_sjpeg;
       if (io.frames[i].HasAlpha()) {
         frame_io.Main().SetAlpha(
             jxl::CopyImage(*io.frames[i].alpha()),
