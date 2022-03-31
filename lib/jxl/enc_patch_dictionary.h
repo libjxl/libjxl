@@ -35,6 +35,8 @@ constexpr size_t kMaxPatchSize = 32;
 struct QuantizedPatch {
   size_t xsize;
   size_t ysize;
+  size_t o_x0;
+  size_t o_y0;
   QuantizedPatch() {
     for (size_t i = 0; i < 3; i++) {
       pixels[i].resize(kMaxPatchSize * kMaxPatchSize);
@@ -48,6 +50,7 @@ struct QuantizedPatch {
   bool operator==(const QuantizedPatch& other) const {
     if (xsize != other.xsize) return false;
     if (ysize != other.ysize) return false;
+    // don't care about o_x0, o_y0
     for (size_t c = 0; c < 3; c++) {
       if (memcmp(pixels[c].data(), other.pixels[c].data(),
                  sizeof(int8_t) * xsize * ysize) != 0)

@@ -180,6 +180,10 @@ class JxlCodec : public ImageCodec {
       cparams_.modular_group_size_shift = gsize;
     } else if (param == "new_heuristics") {
       cparams_.use_new_heuristics = true;
+    } else if (param == "more_patches") {
+      cparams_.more_patches = jxl::Override::kOn;
+    } else if (param == "no_more_patches") {
+      cparams_.more_patches = jxl::Override::kOff;
     } else if (param == "plt") {
       cparams_.options.max_properties = 0;
       cparams_.options.nb_repeats = 0;

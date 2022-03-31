@@ -546,7 +546,6 @@ std::vector<PatchInfo> DetectGaussianEllipses(
   ImageF energy = ComputeEnergyImage(opsin, &smooth, pool);
 #if JXL_DEBUG_DOT_DETECT
   AuxOut aux;
-  aux.debug_prefix = "/tmp/sebastian/";
   aux.DumpXybImage("smooth", smooth);
   aux.DumpPlaneNormalized("energy", energy);
 #endif  // JXL_DEBUG_DOT_DETECT
@@ -591,6 +590,8 @@ std::vector<PatchInfo> DetectGaussianEllipses(
       QuantizedPatch& patch = dots.back().first;
       patch.xsize = cc.bounds.xsize();
       patch.ysize = cc.bounds.ysize();
+      patch.o_x0 = x0;
+      patch.o_y0 = y0;
       for (size_t y = 0; y < patch.ysize; y++) {
         for (size_t x = 0; x < patch.xsize; x++) {
           for (size_t c = 0; c < 3; c++) {

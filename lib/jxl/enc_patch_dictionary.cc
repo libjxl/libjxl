@@ -487,6 +487,8 @@ std::vector<PatchInfo> FindTextLikePatches(
       QuantizedPatch& patch = info.back().first;
       patch.xsize = max_x - min_x + 1;
       patch.ysize = max_y - min_y + 1;
+      patch.o_x0 = min_x;
+      patch.o_y0 = min_y;
       int max_value = 0;
       for (size_t c : {1, 0, 2}) {
         for (size_t iy = min_y; iy <= max_y; iy++) {
@@ -555,12 +557,350 @@ std::vector<PatchInfo> FindTextLikePatches(
   return info;
 }
 
+// Heuristically tries to find regions that are better encoded as a modular
+// patch
+void AddMorePatches(std::vector<PatchInfo>& info, const Image3F& opsin,
+                    PassesEncoderState* JXL_RESTRICT state, ThreadPool* pool,
+                    AuxOut* aux_out, bool is_xyb) {
+  // Only do this in VarDCT mode
+  if (state->cparams.modular_mode) return;
+
+  // STEP 1: Heuristically determine the kind of image content in each 8x8
+  // block:
+  //   0 = photo / vardct friendly
+  //   1 = can choose
+  //   2 = nonphoto / modular friendly
+  //   3 = already covered by a patch (so stay away to avoid trouble with
+  //   overlapping patches)
+  const size_t bs = 8;
+  ImageB content_type(opsin.xsize() / bs, opsin.ysize() / bs);
+  ZeroFillImage(&content_type);
+  size_t avgtype = 0;
+  size_t count = 0;
+  const float quant[3] = {8192.f, 256.f, 256.f};
+  size_t nb_patches = info.size();
+
+  for (size_t y = 0; y + bs <= state->shared.frame_dim.ysize; y += bs) {
+    uint8_t* ct = content_type.Row(y / bs);
+    for (size_t x = 0; x + bs <= state->shared.frame_dim.xsize; x += bs) {
+      Rect block(x, y, bs, bs, opsin.xsize(), opsin.ysize());
+      bool already_covered = false;
+      for (size_t i = 0; i < nb_patches && !already_covered; i++) {
+        for (const auto& pos : info[i].second) {
+          Rect patch(pos.first, pos.second, info[i].first.xsize,
+                     info[i].first.ysize);
+          Rect intersection = block.Intersection(patch);
+          if (intersection.xsize() > 0 && intersection.ysize() > 0) {
+            already_covered = true;
+            continue;
+          }
+        }
+      }
+      if (already_covered) {
+        ct[x / bs] = 3;
+        continue;
+      }
+      size_t perfect[3] = {}, mid[3] = {}, edge[3] = {};
+      for (size_t c = 0; c < 3; c++) {
+        for (size_t oy = 1; oy < bs; oy++) {
+          const float* JXL_RESTRICT opp =
+              opsin.PlaneRow(c, y + oy + (oy ? -1 : 0));
+          const float* JXL_RESTRICT op = opsin.PlaneRow(c, y + oy);
+          for (size_t ox = 1; ox < bs; ox++) {
+            float px = op[x + ox] * quant[c];
+            float N = opp[x + ox] * quant[c];
+            float W = op[x - 1 + ox] * quant[c];
+            float NW = opp[x - 1 + ox] * quant[c];
+            float residual = abs(N + W - NW - px);
+            if (residual < 1.8f) {
+              // gradient predictor works well here, e.g. solid color area or
+              // perfect (synthetic) gradient
+              perfect[c]++;
+              // perfect horizontal/vertical lines get perfectly predicted by
+              // gradient, but they're also edges
+              if (abs(px - N) > 50.f || abs(px - W) > 50.f) edge[c]++;
+            } else if (residual > 50.f) {
+              // strong edge, typical for non-photo (text, illustrations)
+              edge[c]++;
+            } else {
+              // not smooth, but also no strong edge, typical for photo
+              mid[c]++;
+            }
+          }
+        }
+      }
+      // now we know for 7x7 pixels what category they are in.
+      // start by assuming the block is modular-friendly and can/should be
+      // encoded with a modular patch
+      int type = 2;
+      // if not enough pixels are 'perfect', it's at best "can choose"
+      if (perfect[0] < 30) type = 1;
+      if (perfect[1] < 20) type = 1;
+      if (perfect[2] < 30) type = 1;
+      // same if there are significantly more 'mid' than 'perfect' pixels in a
+      // channel
+      if (mid[0] > 10 + perfect[0]) type = 1;
+      if (mid[1] > 15 + perfect[1]) type = 1;
+      if (mid[2] > 10 + perfect[2]) type = 1;
+      size_t sperfect = perfect[0] + perfect[1] + perfect[2],
+             smid = mid[0] + mid[1] + mid[2],
+             sedge = edge[0] + edge[1] + edge[2];
+      // non-photo has mostly 'perfect' and 'edge', not much 'mid'
+      if (smid + 10 > sperfect + sedge) type = 1;
+      // not worth switching to modular if there are no hard edges
+      if (sedge < 5) {
+        if (smid < 15) {
+          // it's mostly smooth, can still choose
+          type = 1;
+        } else {
+          // it's not smooth, use vardct
+          type = 0;
+        }
+      }
+      // too much 'mid' -> certainly use VarDCT
+      if (smid > 2 * sperfect + sedge + 8) type = 0;
+      if (mid[1] > 2 * perfect[1] + edge[1] + 3) type = 0;
+
+      // a lot of 'perfect' and also some edge -> certainly try to use Modular
+      if (sperfect > 90 + smid && sedge > 8) type = 2;
+      if (perfect[1] > 20 + mid[1] && sedge > 15 && mid[0] + mid[2] < 15)
+        type = 2;
+      ct[x / bs] = type;
+      count++;
+      avgtype += type;
+    }
+  }
+
+  // STEP 2: Check for special case of "better to do everything with Modular"
+
+  double imgtype = 1.0 * avgtype / count;
+  // printf("image type: %.5f modular-friendly\n", imgtype);
+  size_t total_pixels = 0;
+
+  for (size_t i = 0; i < info.size(); i++) {
+    size_t pixels = info[i].first.xsize * info[i].first.ysize;
+    total_pixels += pixels;
+  }
+  if (imgtype > 1.1 && total_pixels < 0.01 * opsin.xsize() * opsin.ysize()) {
+    info.clear();
+    // best to just encode everything with Modular
+    // TODO(jon): even better would be to skip patches in this case, and even
+    // skip xyb if that can still be done
+    QuantizedPatch p;
+    p.xsize = opsin.xsize();
+    p.ysize = opsin.ysize();
+    p.o_x0 = p.o_y0 = 0;
+    for (size_t c = 0; c < 3; c++) {
+      p.fpixels[c].resize(p.xsize * p.ysize);
+      for (size_t oy = 0; oy < opsin.ysize(); oy++) {
+        const float* JXL_RESTRICT op = opsin.ConstPlaneRow(c, oy);
+        for (size_t ox = 0; ox < opsin.xsize(); ox++) {
+          p.fpixels[c][ox + oy * p.xsize] = op[ox];
+        }
+      }
+    }
+    info.emplace_back();
+    info.back().first = std::move(p);
+    info.back().second.emplace_back(0, 0);
+    return;
+  }
+
+  // STEP 3: Play a bit of game of life on the content type heuristic map
+  // Context map values:
+  //    0 = bad (for modular),
+  //    1 = neutral,
+  //    2 = good (for modular),
+  //    3 (already covered) = very good
+  // Get rid of isolated good blocks, and allow some bad blocks to become
+  // neutral
+  size_t ctrow = content_type.PixelsPerRow();
+  for (size_t iters = 0; iters < 5; iters++) {
+    for (size_t y = 1; y + 1 < content_type.ysize(); y++) {
+      uint8_t* ct = content_type.Row(y);
+      for (size_t x = 1; x + 1 < content_type.xsize(); x++) {
+        // sum of 8 neighbors, is between 0 and 16, 8 if all neutral
+        int sum = ct[x - 1] + ct[x + 1];
+        sum += ct[x - 1 - ctrow];
+        sum += ct[x - ctrow];
+        sum += ct[x + 1 - ctrow];
+        sum += ct[x - 1 + ctrow];
+        sum += ct[x + ctrow];
+        sum += ct[x + 1 + ctrow];
+
+        // isolated good block becomes neutral if it has at least 1 bad neighbor
+        if (ct[x] == 2 && sum < 8) ct[x] = 1;
+
+        // bad block in a very good neighborhood (e.g. 5 good and 3 neutral
+        // neighbors) becomes neutral
+        if (ct[x] == 0 && sum > 12) ct[x] = 1;
+      }
+    }
+  }
+  if (aux_out) {
+    aux_out->DumpPlaneNormalized("content_type_processed", content_type);
+  }
+
+  // STEP 4: Fit rectangles to cover good blocks, allowing them to also cover
+  // neutral blocks but no bad blacks or already-covered blocks. Trim them to
+  // not contain more neutral blocks than needed.
+  for (size_t y = 0; y < content_type.ysize(); y++) {
+    uint8_t* ct = content_type.Row(y);
+    for (size_t x = 0; x < content_type.xsize(); x++) {
+      if (ct[x] != 2) continue;
+      size_t x0 = x, y0 = y, x1 = x, y1 = y;  // current rect
+      size_t x2 = x, y2 = y, x3 = x, y3 = y;  // trimmed rect
+      bool did_enlarge = true;
+      const size_t max_aspect_ratio = 5;
+      const size_t max_dimension = 32;  // max 256x256 per patch
+      while (did_enlarge) {
+        did_enlarge = false;
+        uint8_t* ct0 = content_type.Row(y0);
+        // Try growing on the right
+        bool grow = x1 - x0 < max_dimension &&
+                    ((x1 - x0 + 1) < (y1 - y0 + 1) * max_aspect_ratio &&
+                     x1 + 1 < content_type.xsize());
+        bool added_good = false;
+        for (size_t yi = 0; grow && yi <= y1 - y0; yi++) {
+          int type = ct0[x1 + 1 + ctrow * yi];
+          if (type == 0 || type == 3) grow = false;
+          if (type == 2) added_good = true;
+        }
+        if (grow) {
+          x1++;
+          did_enlarge = true;
+          if (added_good) x2 = x1;
+        }
+        // Try growing on the bottom
+        grow = y1 - y0 < max_dimension &&
+               ((y1 - y0 + 1) < (x1 - x0 + 1) * max_aspect_ratio &&
+                y1 + 1 < content_type.ysize());
+        added_good = false;
+        for (size_t xi = 0; grow && xi <= x1 - x0; xi++) {
+          int type = ct[x0 + xi + ctrow * (y1 - y + 1)];
+          if (type == 0 || type == 3) grow = false;
+          if (type == 2) added_good = true;
+        }
+        if (grow) {
+          y1++;
+          did_enlarge = true;
+          if (added_good) y2 = y1;
+        }
+
+        // Try growing on the left
+        grow = x1 - x0 < max_dimension &&
+               (x1 - x0 + 1) < (y1 - y0 + 1) * max_aspect_ratio && x0 > 0;
+        added_good = false;
+        for (size_t yi = 0; grow && yi <= y1 - y0; yi++) {
+          int type = ct0[x0 - 1 + ctrow * yi];
+          if (type == 0 || type == 3) grow = false;
+          if (type == 2) added_good = true;
+        }
+        if (grow) {
+          x0--;
+          did_enlarge = true;
+          if (added_good) x3 = x0;
+        }
+        // Try growing on the top
+        grow = y1 - y0 < max_dimension &&
+               (y1 - y0 + 1) < (x1 - x0 + 1) * max_aspect_ratio && y0 > 0;
+        added_good = false;
+        for (size_t xi = 0; grow && xi <= x1 - x0; xi++) {
+          int type = ct0[x0 + xi - ctrow];
+          if (type == 0 || type == 3) grow = false;
+          if (type == 2) added_good = true;
+        }
+        if (grow) {
+          y0--;
+          did_enlarge = true;
+          if (added_good) y3 = y0;
+        }
+      }
+      // trim to what added good blocks
+      x1 = x2;
+      y1 = y2;
+      x0 = x3;
+      y0 = y3;
+      // avoiding small patches can perhaps help to reduce the signaling cost
+      // and the amount of border entropy in the patch frame
+      const size_t kMinPatchSizeBlocks = 2;
+      if ((x1 - x0 + 1) * (y1 - y0 + 1) < kMinPatchSizeBlocks) continue;
+
+      Rect block(x0 * bs, y0 * bs, (x1 - x0 + 1) * bs, (y1 - y0 + 1) * bs,
+                 opsin.xsize(), opsin.ysize());
+
+      float bg[3] = {};
+      bool reject = false;
+      // Require 4 identical corners, and assume the corner color is a good
+      // background color to keep as a residual after subtracting the patch.
+      // This is also unlikely to happen by chance in a non-synthetic image, so
+      // it's a good extra filtering.
+      //
+      // TODO(jon): somehow relax this requirement. The problem is that leaving
+      // discontinuities in the residual image (after subtracting patches) is
+      // bad for VarDCT, especially considering gaborish. It can lead to
+      // boundary artifacts. Discontinuities can be avoided by e.g. using a very
+      // blurry version of the patch as 'background color', but then the patch
+      // itself gets more entropy, leading to worse compression. What is
+      // basically needed is some kind of "in-painting" in the VarDCT-encoded
+      // residual image, in such a way that it doesn't lead to higher entropy
+      // when subtracted from the Modular-encoded patch.
+      for (size_t c = 0; c < 3; c++) {
+        const float* JXL_RESTRICT op0 = block.ConstPlaneRow(opsin, c, 0);
+        const float* JXL_RESTRICT op1 =
+            block.ConstPlaneRow(opsin, c, block.ysize() - 1);
+        float tl = op0[0];
+        float tr = op0[block.xsize() - 1];
+        float bl = op1[0];
+        float br = op1[block.xsize() - 1];
+        if (tl == tr && tl == bl && tl == br)
+          bg[c] = tl;
+        else {
+          reject = true;
+          break;
+        }
+      }
+      if (reject) continue;
+
+      // STEP 5: Add a patch
+
+      // Mark the region as 'already covered'
+      for (size_t yi = y0; yi <= y1; yi++) {
+        uint8_t* cti = content_type.Row(yi);
+        for (size_t xi = x0; xi <= x1; xi++) cti[xi] = 3;
+      }
+
+      // Make patch with (likely) background color subtracted, so the residual
+      // will become solid background
+      QuantizedPatch p;
+      p.xsize = block.xsize();
+      p.ysize = block.ysize();
+      p.o_x0 = block.x0();
+      p.o_y0 = block.y0();
+      for (size_t c = 0; c < 3; c++) {
+        p.fpixels[c].resize(p.xsize * p.ysize);
+        for (size_t oy = 0; oy < block.ysize(); oy++) {
+          const float* JXL_RESTRICT op = block.ConstPlaneRow(opsin, c, oy);
+          for (size_t ox = 0; ox < block.xsize(); ox++) {
+            p.fpixels[c][ox + oy * p.xsize] = op[ox] - bg[c];
+          }
+        }
+      }
+
+      info.emplace_back();
+      info.back().first = std::move(p);
+      info.back().second.emplace_back(block.x0(), block.y0());
+    }
+  }
+}
+
 }  // namespace
 
 void FindBestPatchDictionary(const Image3F& opsin,
                              PassesEncoderState* JXL_RESTRICT state,
                              const JxlCmsInterface& cms, ThreadPool* pool,
                              AuxOut* aux_out, bool is_xyb) {
+  if (state->cparams.patches == Override::kOff) return;
+
   std::vector<PatchInfo> info =
       FindTextLikePatches(opsin, state, pool, aux_out, is_xyb);
 
@@ -574,7 +914,10 @@ void FindBestPatchDictionary(const Image3F& opsin,
               state->cparams.butteraugli_distance >= kMinButteraugliForDots)) {
     info = FindDotDictionary(state->cparams, opsin, state->shared.cmap, pool);
   }
-
+  if (ApplyOverride(state->cparams.more_patches,
+                    state->cparams.speed_tier <= SpeedTier::kSquirrel)) {
+    AddMorePatches(info, opsin, state, pool, aux_out, is_xyb);
+  }
   if (info.empty()) return;
 
   std::sort(
@@ -596,18 +939,29 @@ void FindBestPatchDictionary(const Image3F& opsin,
   // Bin-packing & conversion of patches.
   constexpr float kBinPackingSlackness = 1.05f;
   size_t ref_xsize = std::max<float>(max_x_size, std::sqrt(total_pixels));
-  size_t ref_ysize = std::max<float>(max_y_size, std::sqrt(total_pixels));
+  size_t ref_ysize = std::max<float>(max_y_size, total_pixels / ref_xsize);
   std::vector<std::pair<size_t, size_t>> ref_positions(info.size());
   // TODO(veluca): allow partial overlaps of patches that have the same pixels.
   size_t max_y = 0;
+  bool try_fitting = true;
   do {
     max_y = 0;
     // Increase packed image size.
-    ref_xsize = ref_xsize * kBinPackingSlackness + 1;
-    ref_ysize = ref_ysize * kBinPackingSlackness + 1;
+    ref_xsize =
+        8 * (static_cast<size_t>(ref_xsize * kBinPackingSlackness / 8) + 1);
+    ref_ysize =
+        8 * (static_cast<size_t>(ref_ysize * kBinPackingSlackness / 8) + 1);
+    if (ref_xsize >= opsin.xsize() && ref_ysize >= opsin.ysize()) {
+      ref_xsize = opsin.xsize();
+      ref_ysize = opsin.ysize();
+      try_fitting = false;
+    }
 
-    ImageB occupied(ref_xsize, ref_ysize);
-    ZeroFillImage(&occupied);
+    ImageB occupied;
+    if (try_fitting) {
+      occupied = ImageB(ref_xsize, ref_ysize);
+      ZeroFillImage(&occupied);
+    }
     uint8_t* JXL_RESTRICT occupied_rows = occupied.Row(0);
     size_t occupied_stride = occupied.PixelsPerRow();
 
@@ -619,47 +973,54 @@ void FindBestPatchDictionary(const Image3F& opsin,
       size_t xsize = info[patch].first.xsize;
       size_t ysize = info[patch].first.ysize;
       bool found = false;
-      // For every possible start position ...
-      for (; y0 + ysize <= ref_ysize; y0++) {
-        x0 = 0;
-        for (; x0 + xsize <= ref_xsize; x0++) {
-          bool has_occupied_pixel = false;
-          size_t x = x0;
-          // Check if it is possible to place the patch in this position in the
-          // reference frame.
-          for (size_t y = y0; y < y0 + ysize; y++) {
-            x = x0;
-            for (; x < x0 + xsize; x++) {
-              if (occupied_rows[y * occupied_stride + x]) {
-                has_occupied_pixel = true;
-                break;
+      if (!try_fitting) {
+        // When not trying to fit the patches in a smaller frame, just put them
+        // in the same spot as where they came from
+        x0 = info[patch].first.o_x0;
+        y0 = info[patch].first.o_y0;
+      } else {
+        // For every possible start position ...
+        for (; y0 + ysize <= ref_ysize; y0++) {
+          x0 = 0;
+          for (; x0 + xsize <= ref_xsize; x0++) {
+            bool has_occupied_pixel = false;
+            size_t x = x0;
+            // Check if it is possible to place the patch in this position in
+            // the reference frame.
+            for (size_t y = y0; y < y0 + ysize; y++) {
+              x = x0;
+              for (; x < x0 + xsize; x++) {
+                if (occupied_rows[y * occupied_stride + x]) {
+                  has_occupied_pixel = true;
+                  break;
+                }
               }
+            }  // end of positioning check
+            if (!has_occupied_pixel) {
+              found = true;
+              break;
             }
-          }  // end of positioning check
-          if (!has_occupied_pixel) {
-            found = true;
-            break;
+            x0 = x;  // Jump to next pixel after the occupied one.
           }
-          x0 = x;  // Jump to next pixel after the occupied one.
+          if (found) break;
+        }  // end of start position checking
+
+        // We didn't find a possible position: repeat from the beginning with a
+        // larger reference frame size.
+        if (!found) {
+          success = false;
+          break;
         }
-        if (found) break;
-      }  // end of start position checking
 
-      // We didn't find a possible position: repeat from the beginning with a
-      // larger reference frame size.
-      if (!found) {
-        success = false;
-        break;
+        // We found a position: mark the corresponding positions in the
+        // reference image as used.
+        for (size_t y = y0; y < y0 + ysize; y++) {
+          for (size_t x = x0; x < x0 + xsize; x++) {
+            occupied_rows[y * occupied_stride + x] = true;
+          }
+        }
       }
-
-      // We found a position: mark the corresponding positions in the reference
-      // image as used.
       ref_positions[patch] = {x0, y0};
-      for (size_t y = y0; y < y0 + ysize; y++) {
-        for (size_t x = x0; x < x0 + xsize; x++) {
-          occupied_rows[y * occupied_stride + x] = true;
-        }
-      }
       max_y = std::max(max_y, y0 + ysize);
     }
 
@@ -710,7 +1071,8 @@ void FindBestPatchDictionary(const Image3F& opsin,
   CompressParams cparams = state->cparams;
   // Recursive application of patches could create very weird issues.
   cparams.patches = Override::kOff;
-
+  //  cparams.butteraugli_distance *= 1.5f;
+  //  cparams.butteraugli_distance *= 0.8f;
   RoundtripPatchFrame(&reference_frame, state, 0, cparams, cms, pool, true);
 
   // TODO(veluca): this assumes that applying patches is commutative, which is

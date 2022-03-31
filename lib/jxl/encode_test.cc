@@ -343,7 +343,6 @@ TEST(EncodeTest, frame_settingsTest) {
     VerifyFrameEncoding(enc.get(), frame_settings);
     EXPECT_EQ(2u, enc->last_used_cparams.decoding_speed_tier);
   }
-
   {
     JxlEncoderPtr enc = JxlEncoderMake(nullptr);
     EXPECT_NE(nullptr, enc.get());
