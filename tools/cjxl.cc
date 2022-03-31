@@ -509,7 +509,9 @@ jxl::Status CompressArgs::ValidateArgs(const CommandLineParser& cmdline) {
       if (jpeg_transcode == false) params.modular_mode = true;
     }
     // Quality settings roughly match libjpeg qualities.
-    if (quality >= 30) {
+    if (quality >= 100) {
+      params.butteraugli_distance = 0;
+    } else if (quality >= 30) {
       params.butteraugli_distance = 0.1 + (100 - quality) * 0.09;
     } else {
       params.butteraugli_distance =
