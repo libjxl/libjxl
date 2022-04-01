@@ -224,12 +224,6 @@ Status ConvertFromExternal(Span<const uint8_t> bytes, size_t xsize,
   if (bits_per_sample < 1 || bits_per_sample > 32) {
     return JXL_FAILURE("Invalid bits_per_sample value.");
   }
-  // TODO(deymo): Implement 1-bit per sample as 8 samples per byte. In
-  // any other case we use DivCeil(bits_per_sample, 8) bytes per pixel per
-  // channel.
-  if (bits_per_sample == 1) {
-    return JXL_FAILURE("packed 1-bit per sample is not yet supported");
-  }
 
   const size_t color_channels = c_current.Channels();
   bool has_alpha = channels == 2 || channels == 4;
