@@ -67,7 +67,7 @@ class PackedImage {
   // Whether the range is determined by format or by JxlBasicInfo
   // e.g. if format is UINT16 and JxlBasicInfo bits_per_sample is 10,
   // then if bitdepth_from_format == true, the range is 0..65535
-  // while if bitdepth_from_format == true, the range is 0..1023.
+  // while if bitdepth_from_format == false, the range is 0..1023.
   bool bitdepth_from_format = true;
 
   // The number of bytes per row.
