@@ -235,7 +235,11 @@ class Parser {
     if (max_val == 0 || max_val >= 65536) {
       return JXL_FAILURE("PAM: bad MAXVAL");
     }
-    header->bits_per_sample = CeilLog2Nonzero(max_val);
+    // e.g When `max_val` is 1 , we want 1 bit:
+    header->bits_per_sample = FloorLog2Nonzero(max_val) + 1;
+    if ((1u << header->bits_per_sample) - 1 != max_val)
+      return JXL_FAILURE("PNM: unsupported MaxVal (expected 2^n - 1)");
+    // PAM does not pack bits as in PBM.
 
     header->floating_point = false;
     header->big_endian = true;
@@ -257,7 +261,13 @@ class Parser {
       if (max_val == 0 || max_val >= 65536) {
         return JXL_FAILURE("PNM: bad MaxVal");
       }
-      header->bits_per_sample = CeilLog2Nonzero(max_val);
+      header->bits_per_sample = FloorLog2Nonzero(max_val) + 1;
+      if ((1u << header->bits_per_sample) - 1 != max_val)
+        return JXL_FAILURE("PNM: unsupported MaxVal (expected 2^n - 1)");
+    } else {
+      // TODO: unpack bit into bytes + Note that in the PBM format, a sample
+      // value of zero means white.
+      return JXL_FAILURE("pbm is not supported");
     }
     header->floating_point = false;
     header->big_endian = true;
