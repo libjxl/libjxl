@@ -266,6 +266,7 @@ int DecompressJxlToPackedPixelFile(const std::vector<uint8_t>& compressed,
     return EXIT_FAILURE;
   }
   // TODO(firsching): handle boxes as well (exif, iptc, jumbf and xmp).
+  uint8_t rendering_intent = 0;
   for (;;) {
     JxlDecoderStatus status = JxlDecoderProcessInput(dec.get());
     if (status == JXL_DEC_ERROR) {
@@ -304,6 +305,7 @@ int DecompressJxlToPackedPixelFile(const std::vector<uint8_t>& compressed,
           fprintf(stderr, "JxlDecoderGetColorAsICCProfile failed\n");
           return EXIT_FAILURE;
         }
+        rendering_intent = ppf.icc[67];
       } else {
         if (JXL_DEC_SUCCESS !=
             JxlDecoderGetColorAsEncodedProfile(dec.get(), &format, target,
@@ -328,6 +330,11 @@ int DecompressJxlToPackedPixelFile(const std::vector<uint8_t>& compressed,
         return EXIT_FAILURE;
       }
 
+        // Make more modifications if the decoded data requires it.
+        if (rendering_intent > 0) {
+          fprintf(stderr, "overwriting data type\n");
+          format.data_type = JXL_TYPE_FLOAT;
+        }
       auto lambda = [&](size_t x, size_t y, size_t num_pixels,
                         const void* pixels) {
         // jxl::extras::PackedPixelFile ppf = ppf;
@@ -339,7 +346,7 @@ int DecompressJxlToPackedPixelFile(const std::vector<uint8_t>& compressed,
             dst_format->num_channels *
             ppf.frames.back().color.BitsPerChannel(dst_format->data_type) / 8;
 
-        if (src_format != dst_format) {
+        if (src_format->data_type != dst_format->data_type) {
           // color transfrom needed
           // TODO(firsching): fix error handling for everyting related to color
           // transforms below
