@@ -328,22 +328,17 @@ int DecompressJxlToPackedPixelFile(const std::vector<uint8_t>& compressed,
         return EXIT_FAILURE;
       }
 
-      auto callback = [](void* opaque, size_t x, size_t y, size_t num_pixels,
-                         const void* pixels) {
-        std::pair<JxlPixelFormat&, jxl::extras::PackedPixelFile&>*
-            format_and_ppf = reinterpret_cast<
-                std::pair<JxlPixelFormat&, jxl::extras::PackedPixelFile&>*>(
-                opaque);
-        jxl::extras::PackedPixelFile* ppf = &format_and_ppf->second;
-        JxlPixelFormat* src_format = &format_and_ppf->first;
-        JxlPixelFormat* dst_format = &ppf->frames.back().color.format;
+      auto lambda = [&](size_t x, size_t y, size_t num_pixels,
+                        const void* pixels) {
+        // jxl::extras::PackedPixelFile ppf = ppf;
+        JxlPixelFormat* src_format = &format;
+        JxlPixelFormat* dst_format = &ppf.frames.back().color.format;
         uint8_t* pixels_out_buffer =
-            reinterpret_cast<uint8_t*>(ppf->frames.back().color.pixels());
+            reinterpret_cast<uint8_t*>(ppf.frames.back().color.pixels());
         size_t sample_size =
             dst_format->num_channels *
-            ppf->frames.back().color.BitsPerChannel(dst_format->data_type) / 8;
-        // TODO(firsching): find a better of passing the info that a color
-        // transfrom is needed.
+            ppf.frames.back().color.BitsPerChannel(dst_format->data_type) / 8;
+
         if (src_format != dst_format) {
           // color transfrom needed
           // TODO(firsching): fix error handling for everyting related to color
@@ -352,17 +347,18 @@ int DecompressJxlToPackedPixelFile(const std::vector<uint8_t>& compressed,
           jxl::ColorSpaceTransform transform(cms);
           jxl::ColorEncoding c_dst;
           jxl::PaddedBytes padded_icc;
-          padded_icc.assign(ppf->icc.data(), ppf->icc.data() + ppf->icc.size());
+          padded_icc.assign(ppf.icc.data(), ppf.icc.data() + ppf.icc.size());
           if (!c_dst.SetICC(std::move(padded_icc))) {
             return;
           };
           jxl::ColorEncoding c_src;
-          // TODO(firsching): set c_src correctly and actually use it in the
-          // transform.
+          // TODO(firsching): check if this is setting the source color encoding
+          // correctly.
+          c_src.SRGB(src_format->num_channels == 1);
           std::vector<float> buffer(num_pixels);
 
           if (!transform.Init(/*c_src=*/c_dst, /*c_dst=*/c_dst,
-                              ppf->info.intensity_target, num_pixels,
+                              ppf.info.intensity_target, num_pixels,
                               /*num_threads=*/1)) {
             return;
           }
@@ -371,21 +367,37 @@ int DecompressJxlToPackedPixelFile(const std::vector<uint8_t>& compressed,
                   buffer.data())) {
             return;
           }
-          // TODO(firsching): convert floats in buffer to uints or whatever is
-          // needed. reuse some function!?
-
-          // src: buffer (float), dest: pixels_out_buffer (uint8), n: num_pixels
+          // TODO(firsching): optimize converting to int if needed.
+          for (size_t i = 0; i < num_pixels; ++i) {
+            for (size_t col = 0; col < dst_format->num_channels; ++col) {
+              size_t bits_per_channel =
+                  ppf.frames.back().color.BitsPerChannel(dst_format->data_type);
+              // TODO(firsching): use std::lround instead? what about clipping?
+              pixels_out_buffer[ppf.frames.back().color.stride * y +
+                                sample_size * x + i * dst_format->num_channels +
+                                col] =
+                  static_cast<int>(buffer[i * dst_format->num_channels + col] *
+                                       (1 << bits_per_channel) +
+                                   .5);
+            }
+          }
 
         } else {
           memcpy(pixels_out_buffer +
-                     (ppf->frames.back().color.stride * y + sample_size * x),
+                     (ppf.frames.back().color.stride * y + sample_size * x),
                  pixels, num_pixels * sample_size);
         }
       };
-      std::pair<JxlPixelFormat&, jxl::extras::PackedPixelFile&> opaque = {
-          format, ppf};
-      if (JXL_DEC_SUCCESS != JxlDecoderSetImageOutCallback(dec.get(), &format,
-                                                           callback, &opaque)) {
+      // std::pair<JxlPixelFormat&, jxl::extras::PackedPixelFile&> opaque = {
+      //     format, ppf};
+      if (JXL_DEC_SUCCESS != JxlDecoderSetImageOutCallback(
+                                 dec.get(), &format,
+                                 [](void* opaque, size_t x, size_t y,
+                                    size_t num_pixels, const void* pixels) {
+                                   (*reinterpret_cast<decltype(&lambda)>(
+                                       opaque))(x, y, num_pixels, pixels);
+                                 },
+                                 &lambda)) {
         fprintf(stderr, "JxlDecoderSetImageOutCallback failed\n");
         return EXIT_FAILURE;
       }
