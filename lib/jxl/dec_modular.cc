@@ -564,9 +564,9 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
                   SingleFromSingleAccurate(xsize_shifted, row_in, factor,
                                            get_row(r, 0, y));
                   SingleFromSingleAccurate(xsize_shifted, row_in, factor,
-                                           get_row(r, 0, y));
+                                           get_row(r, 1, y));
                   SingleFromSingleAccurate(xsize_shifted, row_in, factor,
-                                           get_row(r, 0, y));
+                                           get_row(r, 2, y));
                 }
               } else {
                 float* const JXL_RESTRICT row_out = get_row(r, c, y);
