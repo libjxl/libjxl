@@ -291,7 +291,6 @@ int DecompressJxlToPackedPixelFile(const std::vector<uint8_t>& compressed,
       // TODO(firsching): handle extra channels
     } else if (status == JXL_DEC_COLOR_ENCODING) {
       size_t icc_size = 0;
-      // TODO(firsching) handle other targets as well.
       JxlColorProfileTarget target = JXL_COLOR_PROFILE_TARGET_ORIGINAL;
       if (JXL_DEC_SUCCESS !=
           JxlDecoderGetICCProfileSize(dec.get(), &format, target, &icc_size)) {
@@ -306,7 +305,11 @@ int DecompressJxlToPackedPixelFile(const std::vector<uint8_t>& compressed,
           return EXIT_FAILURE;
         }
         rendering_intent = ppf.icc[67];
-      } else {
+      }
+      if (rendering_intent > 0 || icc_size == 0) {
+        JxlColorProfileTarget target = rendering_intent > 0
+                                           ? JXL_COLOR_PROFILE_TARGET_DATA
+                                           : JXL_COLOR_PROFILE_TARGET_ORIGINAL;
         if (JXL_DEC_SUCCESS !=
             JxlDecoderGetColorAsEncodedProfile(dec.get(), &format, target,
                                                &ppf.color_encoding)) {
@@ -331,10 +334,9 @@ int DecompressJxlToPackedPixelFile(const std::vector<uint8_t>& compressed,
       }
 
         // Make more modifications if the decoded data requires it.
-        if (rendering_intent > 0) {
-          fprintf(stderr, "overwriting data type\n");
-          format.data_type = JXL_TYPE_FLOAT;
-        }
+      if (rendering_intent > 0) {
+        format.data_type = JXL_TYPE_FLOAT;
+      }
       auto lambda = [&](size_t x, size_t y, size_t num_pixels,
                         const void* pixels) {
         // jxl::extras::PackedPixelFile ppf = ppf;
@@ -359,19 +361,24 @@ int DecompressJxlToPackedPixelFile(const std::vector<uint8_t>& compressed,
             return;
           };
           jxl::ColorEncoding c_src;
-          // TODO(firsching): check if this is setting the source color encoding
-          // correctly.
+          if (!jxl::ConvertExternalToInternalColorEncoding(ppf.color_encoding,
+                                                           &c_src)) {
+            fprintf(stderr, "ConvertExternalToInternalColorEncoding failed\n");
+            return;
+          }
           c_src.SRGB(src_format->num_channels == 1);
           std::vector<float> buffer(num_pixels);
 
-          if (!transform.Init(/*c_src=*/c_dst, /*c_dst=*/c_dst,
+          if (!transform.Init(/*c_src=*/c_src, /*c_dst=*/c_dst,
                               ppf.info.intensity_target, num_pixels,
-                              /*num_threads=*/1)) {
+                              /*num_threads=*/0)) {
+            fprintf(stderr, "Init of jxl::ColorSpaceTransform failed.\n");
             return;
           }
           if (!transform.Run(
                   /*thread=*/0, static_cast<const float*>(pixels),
                   buffer.data())) {
+            fprintf(stderr, "Run of jxl::ColorSpaceTransform failed.\n");
             return;
           }
           // TODO(firsching): optimize converting to int if needed.
@@ -379,7 +386,7 @@ int DecompressJxlToPackedPixelFile(const std::vector<uint8_t>& compressed,
             for (size_t col = 0; col < dst_format->num_channels; ++col) {
               size_t bits_per_channel =
                   ppf.frames.back().color.BitsPerChannel(dst_format->data_type);
-              // TODO(firsching): use std::lround instead? what about clipping?
+              // TODO(firsching): use clamping here.
               pixels_out_buffer[ppf.frames.back().color.stride * y +
                                 sample_size * x + i * dst_format->num_channels +
                                 col] =
@@ -418,6 +425,8 @@ int DecompressJxlToPackedPixelFile(const std::vector<uint8_t>& compressed,
       return EXIT_FAILURE;
     }
   }
+  // Undo the modifications to the format from above, because they are no longer
+  // needed.
   format.data_type = ppf.frames.back().color.format.data_type;
   return EXIT_SUCCESS;
 }
