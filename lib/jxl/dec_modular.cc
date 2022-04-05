@@ -467,9 +467,9 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
   const auto* metadata = frame_header.nonserialized_metadata;
   JXL_CHECK(gi.transform.empty());
 
-  auto get_row = [&](Rect r, size_t c, size_t y) {
-    return render_pipeline_input.GetBuffer(c).second.Row(
-        render_pipeline_input.GetBuffer(c).first, y);
+  auto get_row = [&](size_t c, size_t y) {
+    const auto& buffer = render_pipeline_input.GetBuffer(c);
+    return buffer.second.Row(buffer.first, y);
   };
 
   size_t c = 0;
@@ -523,7 +523,7 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
                   mr.Row(&ch_in.plane, y);
               const pixel_type* const JXL_RESTRICT row_in_Y =
                   mr.Row(&gi.channel[0].plane, y);
-              float* const JXL_RESTRICT row_out = get_row(r, c, y);
+              float* const JXL_RESTRICT row_out = get_row(c, y);
               HWY_DYNAMIC_DISPATCH(MultiplySum)
               (xsize_shifted, row_in, row_in_Y, factor, row_out);
             },
@@ -539,11 +539,11 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
                   mr.Row(&ch_in.plane, y);
               if (rgb_from_gray) {
                 for (size_t cc = 0; cc < 3; cc++) {
-                  float* const JXL_RESTRICT row_out = get_row(r, cc, y);
+                  float* const JXL_RESTRICT row_out = get_row(cc, y);
                   int_to_float(row_in, row_out, xsize_shifted, bits, exp_bits);
                 }
               } else {
-                float* const JXL_RESTRICT row_out = get_row(r, c, y);
+                float* const JXL_RESTRICT row_out = get_row(c, y);
                 int_to_float(row_in, row_out, xsize_shifted, bits, exp_bits);
               }
             },
@@ -558,18 +558,18 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
               if (rgb_from_gray) {
                 if (full_image.bitdepth < 23) {
                   HWY_DYNAMIC_DISPATCH(RgbFromSingle)
-                  (xsize_shifted, row_in, factor, get_row(r, 0, y),
-                   get_row(r, 1, y), get_row(r, 2, y));
+                  (xsize_shifted, row_in, factor, get_row(0, y), get_row(1, y),
+                   get_row(2, y));
                 } else {
                   SingleFromSingleAccurate(xsize_shifted, row_in, factor,
-                                           get_row(r, 0, y));
+                                           get_row(0, y));
                   SingleFromSingleAccurate(xsize_shifted, row_in, factor,
-                                           get_row(r, 1, y));
+                                           get_row(1, y));
                   SingleFromSingleAccurate(xsize_shifted, row_in, factor,
-                                           get_row(r, 2, y));
+                                           get_row(2, y));
                 }
               } else {
-                float* const JXL_RESTRICT row_out = get_row(r, c, y);
+                float* const JXL_RESTRICT row_out = get_row(c, y);
                 if (full_image.bitdepth < 23) {
                   HWY_DYNAMIC_DISPATCH(SingleFromSingle)
                   (xsize_shifted, row_in, factor, row_out);
