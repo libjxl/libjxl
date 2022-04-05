@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "gflags/gflags.h"
+#include "jxl/cms_interface.h"
 #include "jxl/codestream_header.h"
 #include "jxl/color_encoding.h"
 #include "jxl/decode.h"
@@ -266,7 +267,7 @@ int DecompressJxlToPackedPixelFile(const std::vector<uint8_t>& compressed,
     return EXIT_FAILURE;
   }
   // TODO(firsching): handle boxes as well (exif, iptc, jumbf and xmp).
-  uint8_t rendering_intent = 0;
+  std::vector<uint8_t> data_icc;
   for (;;) {
     JxlDecoderStatus status = JxlDecoderProcessInput(dec.get());
     if (status == JXL_DEC_ERROR) {
@@ -304,18 +305,31 @@ int DecompressJxlToPackedPixelFile(const std::vector<uint8_t>& compressed,
           fprintf(stderr, "JxlDecoderGetColorAsICCProfile failed\n");
           return EXIT_FAILURE;
         }
-        rendering_intent = ppf.icc[67];
-      }
-      if (rendering_intent > 0 || icc_size == 0) {
-        JxlColorProfileTarget target = rendering_intent > 0
-                                           ? JXL_COLOR_PROFILE_TARGET_DATA
-                                           : JXL_COLOR_PROFILE_TARGET_ORIGINAL;
+      } else {
         if (JXL_DEC_SUCCESS !=
             JxlDecoderGetColorAsEncodedProfile(dec.get(), &format, target,
                                                &ppf.color_encoding)) {
           fprintf(stderr, "JxlDecoderGetColorAsEncodedProfile failed\n");
           return EXIT_FAILURE;
         }
+      }
+      size_t data_icc_size = 0;
+      target = JXL_COLOR_PROFILE_TARGET_DATA;
+      if (JXL_DEC_SUCCESS != JxlDecoderGetICCProfileSize(
+                                 dec.get(), &format, target, &data_icc_size)) {
+        fprintf(stderr, "JxlDecoderGetICCProfileSize failed\n");
+      }
+      if (data_icc_size != 0) {
+        data_icc.resize(data_icc_size);
+        if (JXL_DEC_SUCCESS !=
+            JxlDecoderGetColorAsICCProfile(dec.get(), &format, target,
+                                           data_icc.data(), data_icc_size)) {
+          fprintf(stderr, "JxlDecoderGetColorAsICCProfile failed\n");
+          return EXIT_FAILURE;
+        }
+      } else {
+        // TODO(firsching): Decide how to handle that case..
+        return EXIT_FAILURE;
       }
     } else if (status == JXL_DEC_FRAME) {
       jxl::extras::PackedFrame frame(ppf.info.xsize, ppf.info.ysize, format);
@@ -333,54 +347,38 @@ int DecompressJxlToPackedPixelFile(const std::vector<uint8_t>& compressed,
         return EXIT_FAILURE;
       }
 
-        // Make more modifications if the decoded data requires it.
-      if (rendering_intent > 0) {
+      // Make more modifications if the decoded data requires it. 
+      // TODO(firsching): only choose float here and do the color transform if needed.
         format.data_type = JXL_TYPE_FLOAT;
-      }
       auto lambda = [&](size_t x, size_t y, size_t num_pixels,
                         const void* pixels) {
         // jxl::extras::PackedPixelFile ppf = ppf;
-        JxlPixelFormat* src_format = &format;
+        //JxlPixelFormat* src_format = &format;
         JxlPixelFormat* dst_format = &ppf.frames.back().color.format;
         uint8_t* pixels_out_buffer =
             reinterpret_cast<uint8_t*>(ppf.frames.back().color.pixels());
         size_t sample_size =
             dst_format->num_channels *
             ppf.frames.back().color.BitsPerChannel(dst_format->data_type) / 8;
-
-        if (src_format->data_type != dst_format->data_type) {
+        //TODO(firsching): only do the color transform if needed
+        if (true) {
           // color transfrom needed
           // TODO(firsching): fix error handling for everyting related to color
           // transforms below
           JxlCmsInterface cms = jxl::GetJxlCms();
-          jxl::ColorSpaceTransform transform(cms);
-          jxl::ColorEncoding c_dst;
-          jxl::PaddedBytes padded_icc;
-          padded_icc.assign(ppf.icc.data(), ppf.icc.data() + ppf.icc.size());
-          if (!c_dst.SetICC(std::move(padded_icc))) {
-            return;
-          };
-          jxl::ColorEncoding c_src;
-          if (!jxl::ConvertExternalToInternalColorEncoding(ppf.color_encoding,
-                                                           &c_src)) {
-            fprintf(stderr, "ConvertExternalToInternalColorEncoding failed\n");
-            return;
-          }
-          c_src.SRGB(src_format->num_channels == 1);
-          std::vector<float> buffer(num_pixels);
+          const JxlColorProfile input_profile{
+              {data_icc.data(), data_icc.size()}};
+          const JxlColorProfile output_profile{
+              {ppf.icc.data(), ppf.icc.size()}};
 
-          if (!transform.Init(/*c_src=*/c_src, /*c_dst=*/c_dst,
-                              ppf.info.intensity_target, num_pixels,
-                              /*num_threads=*/0)) {
-            fprintf(stderr, "Init of jxl::ColorSpaceTransform failed.\n");
-            return;
-          }
-          if (!transform.Run(
-                  /*thread=*/0, static_cast<const float*>(pixels),
-                  buffer.data())) {
-            fprintf(stderr, "Run of jxl::ColorSpaceTransform failed.\n");
-            return;
-          }
+          std::vector<float> buffer(num_pixels);
+          // TODO(firsching): use unique ptr here.
+          auto *user_data =
+              cms.init(cms.init_data, 1, num_pixels, &input_profile,
+                       &output_profile, ppf.info.intensity_target);
+          cms.run(user_data, 1, static_cast<const float*>(pixels), buffer.data(), num_pixels);
+          cms.destroy(user_data);
+
           // TODO(firsching): optimize converting to int if needed.
           for (size_t i = 0; i < num_pixels; ++i) {
             for (size_t col = 0; col < dst_format->num_channels; ++col) {
