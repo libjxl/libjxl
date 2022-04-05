@@ -402,8 +402,6 @@ int DecompressJxlToPackedPixelFile(const std::vector<uint8_t>& compressed,
                  pixels, num_pixels * sample_size);
         }
       };
-      // std::pair<JxlPixelFormat&, jxl::extras::PackedPixelFile&> opaque = {
-      //     format, ppf};
       if (JXL_DEC_SUCCESS != JxlDecoderSetImageOutCallback(
                                  dec.get(), &format,
                                  [](void* opaque, size_t x, size_t y,
