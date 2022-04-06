@@ -195,10 +195,10 @@ Status EncodeImageAPNG(const CodecInOut* io, const ColorEncoding& c_desired,
 
       std::vector<std::string> textstrings;
       JXL_RETURN_IF_ERROR(BlobsWriterPNG::Encode(io->blobs, &textstrings));
-      for (size_t i = 0; i + 1 < textstrings.size(); i += 2) {
+      for (size_t kk = 0; kk + 1 < textstrings.size(); kk += 2) {
         png_text text;
-        text.key = const_cast<png_charp>(textstrings[i].c_str());
-        text.text = const_cast<png_charp>(textstrings[i + 1].c_str());
+        text.key = const_cast<png_charp>(textstrings[kk].c_str());
+        text.text = const_cast<png_charp>(textstrings[kk + 1].c_str());
         text.compression = PNG_TEXT_COMPRESSION_zTXt;
         png_set_text(png_ptr, info_ptr, &text, 1);
       }
