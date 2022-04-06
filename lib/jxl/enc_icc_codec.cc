@@ -22,29 +22,6 @@
 namespace jxl {
 namespace {
 
-bool EncodeVarInt(uint64_t value, size_t output_size, size_t* output_pos,
-                  uint8_t* output) {
-  // While more than 7 bits of data are left,
-  // store 7 bits and set the next byte flag
-  while (value > 127) {
-    if (*output_pos > output_size) return false;
-    // |128: Set the next byte flag
-    output[(*output_pos)++] = ((uint8_t)(value & 127)) | 128;
-    // Remove the seven bits we just wrote
-    value >>= 7;
-  }
-  if (*output_pos > output_size) return false;
-  output[(*output_pos)++] = ((uint8_t)value) & 127;
-  return true;
-}
-
-void EncodeVarInt(uint64_t value, PaddedBytes* data) {
-  size_t pos = data->size();
-  data->resize(data->size() + 9);
-  JXL_CHECK(EncodeVarInt(value, data->size(), &pos, data->data()));
-  data->resize(pos);
-}
-
 // Unshuffles or de-interleaves bytes, for example with width 2, turns
 // "AaBbCcDc" into "ABCDabcd", this for example de-interleaves UTF-16 bytes into
 // first all the high order bytes, then all the low order bytes.
