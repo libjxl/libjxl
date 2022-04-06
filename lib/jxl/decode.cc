@@ -376,6 +376,50 @@ struct ExtraChannelOutput {
 
 }  // namespace
 
+namespace jxl {
+
+typedef struct JxlDecoderFrameIndexBoxEntryStruct {
+  // OFFi: offset of start byte of this frame compared to start
+  // byte of previous frame from this index in the JPEG XL codestream. For the
+  // first frame, this is the offset from the first byte of the JPEG XL
+  // codestream.
+  uint64_t OFFi;
+  // Ti: duration in ticks between the start of this frame and
+  // the start of the next frame in the index. If this is the last frame in the
+  // index, this is the duration in ticks between the start of this frame and
+  // the end of the stream. A tick lasts TNUM / TDEN seconds.
+  uint32_t Ti;
+  // Fi: amount of frames the next frame in the index occurs
+  // after this frame. If this is the last frame in the index, this is the
+  // amount of frames after this frame in the remainder of the stream. Only
+  // frames that are presented by the decoder are counted for this purpose, this
+  // excludes frames that are not intended for display but for compositing with
+  // other frames, such as frames that aren't the last frame with a duration of
+  // 0 ticks.
+  uint32_t Fi;
+} JxlDecoderFrameIndexBoxEntry;
+
+typedef struct JxlDecoderFrameIndexBoxStruct {
+  int64_t NF() const { return entries.size(); }
+  int32_t TNUM = 1;
+  int32_t TDEN = 1000;
+
+  std::vector<JxlDecoderFrameIndexBoxEntry> entries;
+
+  // That way we can ensure that every index box will have the first frame.
+  // If the API user decides to mark it as an indexed frame, we call
+  // the AddFrame again, this time with requested.
+  void AddFrame(uint64_t OFFi, uint32_t Ti, uint32_t Fi) {
+    JxlDecoderFrameIndexBoxEntry e;
+    e.OFFi = OFFi;
+    e.Ti = Ti;
+    e.Fi = Fi;
+    entries.push_back(e);
+  }
+} JxlDecoderFrameIndexBox;
+
+}  // namespace jxl
+
 // NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
 struct JxlDecoderStruct {
   JxlDecoderStruct() = default;
@@ -399,7 +443,7 @@ struct JxlDecoderStruct {
   bool got_all_headers;               // Codestream metadata headers.
   bool post_headers;                  // Already decoding pixels.
   jxl::ICCReader icc_reader;
-
+  jxl::JxlDecoderFrameIndexBox frame_index_box;
   // This means either we actually got the preview image, or determined we
   // cannot get it or there is none.
   bool got_preview_image;
