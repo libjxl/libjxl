@@ -465,8 +465,15 @@ struct JxlDecoderStruct {
   // Owned by the caller, buffers for DC image and full resolution images
   void* preview_out_buffer;
   void* image_out_buffer;
-  JxlImageOutCallback image_out_callback;
-  void* image_out_opaque;
+  JxlImageOutInitCallback image_out_init_callback;
+  JxlImageOutRunCallback image_out_run_callback;
+  JxlImageOutDestroyCallback image_out_destroy_callback;
+  void* image_out_init_opaque;
+  struct SimpleImageOutCallback {
+    JxlImageOutCallback callback;
+    void* opaque;
+  };
+  SimpleImageOutCallback simple_image_out_callback;
 
   size_t preview_out_size;
   size_t image_out_size;
@@ -675,8 +682,10 @@ void JxlDecoderRewindDecodingState(JxlDecoder* dec) {
   dec->image_out_buffer_set = false;
   dec->preview_out_buffer = nullptr;
   dec->image_out_buffer = nullptr;
-  dec->image_out_callback = nullptr;
-  dec->image_out_opaque = nullptr;
+  dec->image_out_init_callback = nullptr;
+  dec->image_out_run_callback = nullptr;
+  dec->image_out_destroy_callback = nullptr;
+  dec->image_out_init_opaque = nullptr;
   dec->preview_out_size = 0;
   dec->image_out_size = 0;
   dec->extra_channel_output.clear();
@@ -1056,7 +1065,7 @@ static JxlDecoderStatus ConvertImageInternal(
     const JxlDecoder* dec, const jxl::ImageBundle& frame,
     const JxlPixelFormat& format, bool want_extra_channel,
     size_t extra_channel_index, void* out_image, size_t out_size,
-    JxlImageOutCallback out_callback, void* out_opaque) {
+    const PixelCallback& out_callback) {
   // TODO(lode): handle mismatch of RGB/grayscale color profiles and pixel data
   // color/grayscale format
   const size_t stride = GetStride(dec, format);
@@ -1071,19 +1080,16 @@ static JxlDecoderStatus ConvertImageInternal(
   jxl::Status status(true);
   if (want_extra_channel) {
     JXL_ASSERT(extra_channel_index < frame.extra_channels().size());
-    status = jxl::ConvertToExternal(
-        frame.extra_channels()[extra_channel_index],
-        BitsPerChannel(format.data_type), float_format, format.endianness,
-        stride, dec->thread_pool.get(), out_image, out_size,
-        /*out_callback=*/out_callback,
-        /*out_opaque=*/out_opaque, undo_orientation);
+    status = jxl::ConvertToExternal(frame.extra_channels()[extra_channel_index],
+                                    BitsPerChannel(format.data_type),
+                                    float_format, format.endianness, stride,
+                                    dec->thread_pool.get(), out_image, out_size,
+                                    out_callback, undo_orientation);
   } else {
     status = jxl::ConvertToExternal(
         frame, BitsPerChannel(format.data_type), float_format,
         format.num_channels, format.endianness, stride, dec->thread_pool.get(),
-        out_image, out_size,
-        /*out_callback=*/out_callback,
-        /*out_opaque=*/out_opaque, undo_orientation);
+        out_image, out_size, out_callback, undo_orientation);
   }
 
   return status ? JXL_DEC_SUCCESS : JXL_DEC_ERROR;
@@ -1258,8 +1264,8 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec, const uint8_t* in,
           JxlDecoderStatus status = ConvertImageInternal(
               dec, ib, dec->preview_out_format, /*want_extra_channel=*/false,
               /*extra_channel_index=*/0, dec->preview_out_buffer,
-              dec->preview_out_size, /*out_callback=*/nullptr,
-              /*out_opaque=*/nullptr);
+              dec->preview_out_size,
+              /*out_callback=*/{});
           if (status != JXL_DEC_SUCCESS) return status;
         }
         return JXL_DEC_PREVIEW_IMAGE;
@@ -1459,17 +1465,16 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec, const uint8_t* in,
 
       // TODO(lode): Support more formats than just native endian float32 for
       // the low-memory callback path
-      if (dec->image_out_buffer_set && !!dec->image_out_callback &&
+      if (dec->image_out_buffer_set && !!dec->image_out_init_callback &&
+          !!dec->image_out_run_callback &&
           dec->image_out_format.data_type == JXL_TYPE_FLOAT &&
           dec->image_out_format.num_channels >= 3 && !swap_endianness &&
           dec->frame_dec_in_progress) {
         bool is_rgba = dec->image_out_format.num_channels == 4;
         dec->frame_dec->MaybeSetFloatCallback(
-            [dec](const float* pixels, size_t x, size_t y, size_t num_pixels) {
-              JXL_DASSERT(num_pixels > 0);
-              dec->image_out_callback(dec->image_out_opaque, x, y, num_pixels,
-                                      pixels);
-            },
+            PixelCallback{
+                dec->image_out_init_callback, dec->image_out_run_callback,
+                dec->image_out_destroy_callback, dec->image_out_init_opaque},
             is_rgba, !dec->keep_orientation);
       }
 
@@ -1563,8 +1568,11 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec, const uint8_t* in,
                 dec, *dec->ib, dec->image_out_format,
                 /*want_extra_channel=*/false,
                 /*extra_channel_index=*/0, dec->image_out_buffer,
-                dec->image_out_size, dec->image_out_callback,
-                dec->image_out_opaque);
+                dec->image_out_size,
+                PixelCallback{dec->image_out_init_callback,
+                              dec->image_out_run_callback,
+                              dec->image_out_destroy_callback,
+                              dec->image_out_init_opaque});
             if (status != JXL_DEC_SUCCESS) return status;
           }
           dec->image_out_buffer_set = false;
@@ -1583,7 +1591,7 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec, const uint8_t* in,
             JxlDecoderStatus status = ConvertImageInternal(
                 dec, *dec->ib, *format,
                 /*want_extra_channel=*/true, /*extra_channel_index=*/i, buffer,
-                dec->extra_channel_output[i].buffer_size, nullptr, nullptr);
+                dec->extra_channel_output[i].buffer_size, /*out_callback=*/{});
             if (status != JXL_DEC_SUCCESS) return status;
           }
 
@@ -2452,7 +2460,7 @@ JxlDecoderStatus JxlDecoderFlushImage(JxlDecoder* dec) {
       dec, *dec->ib, dec->image_out_format,
       /*want_extra_channel=*/false,
       /*extra_channel_index=*/0, dec->image_out_buffer, dec->image_out_size,
-      /*out_callback=*/nullptr, /*out_opaque=*/nullptr);
+      /*out_callback=*/{});
   dec->ib->ShrinkTo(xsize, ysize);
   if (status != JXL_DEC_SUCCESS) return status;
   return JXL_DEC_SUCCESS;
@@ -2560,7 +2568,7 @@ JxlDecoderStatus JxlDecoderSetImageOutBuffer(JxlDecoder* dec,
   if (!dec->got_basic_info || !(dec->orig_events_wanted & JXL_DEC_FULL_IMAGE)) {
     return JXL_API_ERROR("No image out buffer needed at this time");
   }
-  if (dec->image_out_buffer_set && !!dec->image_out_callback) {
+  if (dec->image_out_buffer_set && !!dec->image_out_run_callback) {
     return JXL_API_ERROR(
         "Cannot change from image out callback to image out buffer");
   }
@@ -2646,9 +2654,39 @@ JxlDecoderStatus JxlDecoderSetImageOutCallback(JxlDecoder* dec,
                                                const JxlPixelFormat* format,
                                                JxlImageOutCallback callback,
                                                void* opaque) {
+  dec->simple_image_out_callback.callback = callback;
+  dec->simple_image_out_callback.opaque = opaque;
+  const auto init_callback =
+      +[](void* init_opaque, size_t num_threads, size_t num_pixels_per_thread) {
+        // No initialization to do, just reuse init_opaque as run_opaque.
+        return init_opaque;
+      };
+  const auto run_callback =
+      +[](void* run_opaque, size_t thread_id, size_t x, size_t y,
+          size_t num_pixels, const void* pixels) {
+        const auto* const simple_callback =
+            static_cast<const JxlDecoder::SimpleImageOutCallback*>(run_opaque);
+        simple_callback->callback(simple_callback->opaque, x, y, num_pixels,
+                                  pixels);
+      };
+  const auto destroy_callback = +[](void* run_opaque) {};
+  return JxlDecoderSetMultithreadedImageOutCallback(
+      dec, format, init_callback, run_callback,
+      /*destroy_callback=*/destroy_callback, &dec->simple_image_out_callback);
+}
+
+JxlDecoderStatus JxlDecoderSetMultithreadedImageOutCallback(
+    JxlDecoder* dec, const JxlPixelFormat* format,
+    JxlImageOutInitCallback init_callback, JxlImageOutRunCallback run_callback,
+    JxlImageOutDestroyCallback destroy_callback, void* init_opaque) {
   if (dec->image_out_buffer_set && !!dec->image_out_buffer) {
     return JXL_API_ERROR(
         "Cannot change from image out buffer to image out callback");
+  }
+
+  if (init_callback == nullptr || run_callback == nullptr ||
+      destroy_callback == nullptr) {
+    return JXL_API_ERROR("All callbacks are required");
   }
 
   // Perform error checking for invalid format.
@@ -2657,8 +2695,10 @@ JxlDecoderStatus JxlDecoderSetImageOutCallback(JxlDecoder* dec,
   if (status != JXL_DEC_SUCCESS) return status;
 
   dec->image_out_buffer_set = true;
-  dec->image_out_callback = callback;
-  dec->image_out_opaque = opaque;
+  dec->image_out_init_callback = init_callback;
+  dec->image_out_run_callback = run_callback;
+  dec->image_out_destroy_callback = destroy_callback;
+  dec->image_out_init_opaque = init_opaque;
   dec->image_out_format = *format;
 
   return JXL_DEC_SUCCESS;

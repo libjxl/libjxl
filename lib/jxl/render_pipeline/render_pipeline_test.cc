@@ -49,7 +49,7 @@ TEST(RenderPipelineTest, CallAllGroups) {
                        /*max_hshift=*/0, /*max_vshift=*/0,
                        /*modular_mode=*/false, /*upsampling=*/1);
   auto pipeline = std::move(builder).Finalize(frame_dimensions);
-  pipeline->PrepareForThreads(1, /*use_group_ids=*/false);
+  ASSERT_TRUE(pipeline->PrepareForThreads(1, /*use_group_ids=*/false));
 
   for (size_t i = 0; i < frame_dimensions.num_groups; i++) {
     auto input_buffers = pipeline->GetInputBuffers(i, 0);
@@ -58,7 +58,7 @@ TEST(RenderPipelineTest, CallAllGroups) {
     input_buffers.Done();
   }
 
-  EXPECT_TRUE(pipeline->PassesWithAllInput() == 1);
+  EXPECT_EQ(pipeline->PassesWithAllInput(), 1);
 }
 
 TEST(RenderPipelineTest, BuildFast) {
@@ -84,7 +84,7 @@ TEST(RenderPipelineTest, CallAllGroupsFast) {
                        /*max_hshift=*/0, /*max_vshift=*/0,
                        /*modular_mode=*/false, /*upsampling=*/1);
   auto pipeline = std::move(builder).Finalize(frame_dimensions);
-  pipeline->PrepareForThreads(1, /*use_group_ids=*/false);
+  ASSERT_TRUE(pipeline->PrepareForThreads(1, /*use_group_ids=*/false));
 
   for (size_t i = 0; i < frame_dimensions.num_groups; i++) {
     auto input_buffers = pipeline->GetInputBuffers(i, 0);
@@ -93,7 +93,7 @@ TEST(RenderPipelineTest, CallAllGroupsFast) {
     input_buffers.Done();
   }
 
-  EXPECT_TRUE(pipeline->PassesWithAllInput() == 1);
+  EXPECT_EQ(pipeline->PassesWithAllInput(), 1);
 }
 
 struct RenderPipelineTestInputSettings {

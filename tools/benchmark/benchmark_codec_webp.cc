@@ -108,8 +108,8 @@ class WebPCodec : public ImageCodec {
     PaddedBytes srgb(stride * ysize);
     JXL_RETURN_IF_ERROR(ConvertToExternal(
         *transformed, 8, /*float_out=*/false, num_chans, JXL_BIG_ENDIAN, stride,
-        pool, srgb.data(), srgb.size(), /*out_callback=*/nullptr,
-        /*out_opaque=*/nullptr, metadata.GetOrientation()));
+        pool, srgb.data(), srgb.size(),
+        /*out_callback=*/{}, metadata.GetOrientation()));
 
     if (lossless_ || near_lossless_) {
       // The lossless codec does not support 16-bit channels.

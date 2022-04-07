@@ -627,10 +627,10 @@ void LowMemoryRenderPipeline::RenderRect(size_t thread_id,
         }
       }
       // Produce output rows.
-      stages_[i]->ProcessRow(
-          input_rows[i], output_rows, xpadding_for_output_[i],
-          group_rect[i].xsize(), group_rect[i].x0(), group_rect[i].y0() + y,
-          reinterpret_cast<float*>(temp_buffers_[thread_id].get()));
+      stages_[i]->ProcessRow(input_rows[i], output_rows,
+                             xpadding_for_output_[i], group_rect[i].xsize(),
+                             group_rect[i].x0(), group_rect[i].y0() + y,
+                             thread_id);
     }
 
     // Process trailing stages, i.e. the final set of non-kInOut stages; they
@@ -645,11 +645,10 @@ void LowMemoryRenderPipeline::RenderRect(size_t thread_id,
     }
 
     for (size_t i = first_trailing_stage_; i < first_image_dim_stage_; i++) {
-      stages_[i]->ProcessRow(
-          input_rows[first_trailing_stage_], output_rows,
-          /*xextra=*/0, group_rect[i].xsize(), group_rect[i].x0(),
-          group_rect[i].y0() + y,
-          reinterpret_cast<float*>(temp_buffers_[thread_id].get()));
+      stages_[i]->ProcessRow(input_rows[first_trailing_stage_], output_rows,
+                             /*xextra=*/0, group_rect[i].xsize(),
+                             group_rect[i].x0(), group_rect[i].y0() + y,
+                             thread_id);
     }
 
     if (first_image_dim_stage_ == stages_.size()) continue;
@@ -678,11 +677,9 @@ void LowMemoryRenderPipeline::RenderRect(size_t thread_id,
     if (full_image_x1 <= full_image_x0) continue;
 
     for (size_t i = first_image_dim_stage_; i < stages_.size(); i++) {
-      stages_[i]->ProcessRow(
-          input_rows[first_trailing_stage_], output_rows,
-          /*xextra=*/0, full_image_x1 - full_image_x0, full_image_x0,
-          full_image_y,
-          reinterpret_cast<float*>(temp_buffers_[thread_id].get()));
+      stages_[i]->ProcessRow(input_rows[first_trailing_stage_], output_rows,
+                             /*xextra=*/0, full_image_x1 - full_image_x0,
+                             full_image_x0, full_image_y, thread_id);
     }
   }
 }
@@ -701,10 +698,9 @@ void LowMemoryRenderPipeline::RenderPadding(size_t thread_id, Rect rect) {
     stages_[first_image_dim_stage_ - 1]->ProcessPaddingRow(
         input_rows, rect.xsize(), rect.x0(), rect.y0() + y);
     for (size_t i = first_image_dim_stage_; i < stages_.size(); i++) {
-      stages_[i]->ProcessRow(
-          input_rows, output_rows,
-          /*xextra=*/0, rect.xsize(), rect.x0(), rect.y0() + y,
-          reinterpret_cast<float*>(temp_buffers_[thread_id].get()));
+      stages_[i]->ProcessRow(input_rows, output_rows,
+                             /*xextra=*/0, rect.xsize(), rect.x0(),
+                             rect.y0() + y, thread_id);
     }
   }
 }

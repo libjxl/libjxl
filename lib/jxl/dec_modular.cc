@@ -648,11 +648,10 @@ Status ModularFrameDecoder::FinalizeDecoding(PassesDecoderState* dec_state,
   JXL_RETURN_IF_ERROR(RunOnPool(
       pool, 0, dec_state->shared->frame_dim.num_groups,
       [&](size_t num_threads) {
-        dec_state->render_pipeline->PrepareForThreads(
+        return dec_state->render_pipeline->PrepareForThreads(
             num_threads,
             /*use_group_ids=*/dec_state->shared->frame_header.encoding ==
                 FrameEncoding::kVarDCT);
-        return true;
       },
       [&](const uint32_t group, size_t thread_id) {
         RenderPipelineInput input =
