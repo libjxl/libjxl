@@ -1234,7 +1234,8 @@ TEST_P(DecodeTestParam, PixelTest) {
         io.Main(), 16,
         /*float_out=*/false, orig_channels, JXL_BIG_ENDIAN,
         xsize * 2 * orig_channels, nullptr, pixels.data(), pixels.size(),
-        nullptr, nullptr, static_cast<jxl::Orientation>(config.orientation)));
+        /*out_callback=*/{},
+        static_cast<jxl::Orientation>(config.orientation)));
   }
   if (config.upsampling == 1) {
     EXPECT_EQ(0u, jxl::test::ComparePixels(pixels.data(), pixels2.data(), xsize,

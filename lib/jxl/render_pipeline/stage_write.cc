@@ -6,6 +6,7 @@
 #include "lib/jxl/render_pipeline/stage_write.h"
 
 #include "lib/jxl/common.h"
+#include "lib/jxl/dec_cache.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/sanitizers.h"
 
@@ -88,7 +89,7 @@ class WriteToU8Stage : public RenderPipelineStage {
 
   void ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
                   size_t xextra, size_t xsize, size_t xpos, size_t ypos,
-                  float* JXL_RESTRICT temp) const final {
+                  size_t thread_id) const final {
     if (ypos >= height_) return;
     JXL_DASSERT(xextra == 0);
     size_t bytes = rgba_ ? 4 : 3;
@@ -203,7 +204,7 @@ class WriteToImageBundleStage : public RenderPipelineStage {
 
   void ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
                   size_t xextra, size_t xsize, size_t xpos, size_t ypos,
-                  float* JXL_RESTRICT temp) const final {
+                  size_t thread_id) const final {
     for (size_t c = 0; c < 3; c++) {
       memcpy(image_bundle_->color()->PlaneRow(c, ypos) + xpos - xextra,
              GetInputRow(input_rows, c, 0) - xextra,
@@ -248,7 +249,7 @@ class WriteToImage3FStage : public RenderPipelineStage {
 
   void ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
                   size_t xextra, size_t xsize, size_t xpos, size_t ypos,
-                  float* JXL_RESTRICT temp) const final {
+                  size_t thread_id) const final {
     for (size_t c = 0; c < 3; c++) {
       memcpy(image_->PlaneRow(c, ypos) + xpos - xextra,
              GetInputRow(input_rows, c, 0) - xextra,
@@ -269,10 +270,9 @@ class WriteToImage3FStage : public RenderPipelineStage {
 
 class WriteToPixelCallbackStage : public RenderPipelineStage {
  public:
-  WriteToPixelCallbackStage(
-      const std::function<void(const float*, size_t, size_t, size_t)>&
-          pixel_callback,
-      size_t width, size_t height, bool rgba, bool has_alpha, size_t alpha_c)
+  WriteToPixelCallbackStage(const PixelCallback& pixel_callback, size_t width,
+                            size_t height, bool rgba, bool has_alpha,
+                            size_t alpha_c)
       : RenderPipelineStage(RenderPipelineStage::Settings()),
         pixel_callback_(pixel_callback),
         width_(width),
@@ -280,13 +280,21 @@ class WriteToPixelCallbackStage : public RenderPipelineStage {
         rgba_(rgba),
         has_alpha_(has_alpha),
         alpha_c_(alpha_c),
-        opaque_alpha_(kMaxPixelsPerCall, 1.0f) {
-    settings_.temp_buffer_size = kMaxPixelsPerCall * (rgba_ ? 4 : 3);
+        opaque_alpha_(kMaxPixelsPerCall, 1.0f) {}
+
+  WriteToPixelCallbackStage(const WriteToPixelCallbackStage&) = delete;
+  WriteToPixelCallbackStage& operator=(const WriteToPixelCallbackStage&) =
+      delete;
+  WriteToPixelCallbackStage(WriteToPixelCallbackStage&&) = delete;
+  WriteToPixelCallbackStage& operator=(WriteToPixelCallbackStage&&) = delete;
+
+  ~WriteToPixelCallbackStage() override {
+    pixel_callback_.destroy(run_opaque_);
   }
 
   void ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
                   size_t xextra, size_t xsize, size_t xpos, size_t ypos,
-                  float* JXL_RESTRICT temp) const final {
+                  size_t thread_id) const final {
     if (ypos >= height_) return;
     const float* line_buffers[4];
     for (size_t c = 0; c < 3; c++) {
@@ -303,6 +311,8 @@ class WriteToPixelCallbackStage : public RenderPipelineStage {
     for (ssize_t x0 = -xextra; x0 < limit; x0 += kMaxPixelsPerCall) {
       size_t j = 0;
       size_t ix = 0;
+      float* JXL_RESTRICT temp =
+          reinterpret_cast<float*>(temp_[thread_id].get());
       for (; ix < kMaxPixelsPerCall && ssize_t(ix) + x0 < limit; ix++) {
         temp[j++] = line_buffers[0][ix];
         temp[j++] = line_buffers[1][ix];
@@ -311,7 +321,7 @@ class WriteToPixelCallbackStage : public RenderPipelineStage {
           temp[j++] = line_buffers[3][ix];
         }
       }
-      pixel_callback_(temp, xpos + x0, ypos, ix);
+      pixel_callback_.run(run_opaque_, thread_id, xpos + x0, ypos, ix, temp);
       for (size_t c = 0; c < 3; c++) line_buffers[c] += kMaxPixelsPerCall;
       if (has_alpha_) line_buffers[3] += kMaxPixelsPerCall;
     }
@@ -326,15 +336,27 @@ class WriteToPixelCallbackStage : public RenderPipelineStage {
   const char* GetName() const override { return "WritePixelCB"; }
 
  private:
+  Status PrepareForThreads(size_t num_threads) override {
+    run_opaque_ =
+        pixel_callback_.Init(num_threads, /*num_pixels=*/kMaxPixelsPerCall);
+    JXL_RETURN_IF_ERROR(run_opaque_ != nullptr);
+    temp_.resize(num_threads);
+    for (CacheAlignedUniquePtr& temp : temp_) {
+      temp = AllocateArray(sizeof(float) * kMaxPixelsPerCall * (rgba_ ? 4 : 3));
+    }
+    return true;
+  }
+
   static constexpr size_t kMaxPixelsPerCall = 1024;
-  const std::function<void(const float*, size_t, size_t, size_t)>&
-      pixel_callback_;
+  PixelCallback pixel_callback_;
+  void* run_opaque_;
   size_t width_;
   size_t height_;
   bool rgba_;
   bool has_alpha_;
   size_t alpha_c_;
   std::vector<float> opaque_alpha_;
+  std::vector<CacheAlignedUniquePtr> temp_;
 };
 
 }  // namespace
@@ -357,9 +379,8 @@ std::unique_ptr<RenderPipelineStage> GetWriteToU8Stage(
 }
 
 std::unique_ptr<RenderPipelineStage> GetWriteToPixelCallbackStage(
-    const std::function<void(const float*, size_t, size_t, size_t)>&
-        pixel_callback,
-    size_t width, size_t height, bool rgba, bool has_alpha, size_t alpha_c) {
+    const PixelCallback& pixel_callback, size_t width, size_t height, bool rgba,
+    bool has_alpha, size_t alpha_c) {
   return jxl::make_unique<WriteToPixelCallbackStage>(
       pixel_callback, width, height, rgba, has_alpha, alpha_c);
 }

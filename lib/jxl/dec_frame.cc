@@ -793,8 +793,8 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
     JXL_RETURN_IF_ERROR(RunOnPool(
         pool_, 0, ac_group_sec.size(),
         [this](size_t num_threads) {
-          PrepareStorage(num_threads, decoded_passes_per_ac_group_.size());
-          return true;
+          return PrepareStorage(num_threads,
+                                decoded_passes_per_ac_group_.size());
         },
         [this, &ac_group_sec, &num_ac_passes, &num, &sections, &section_status,
          &has_error](size_t g, size_t thread) {
@@ -864,8 +864,8 @@ Status FrameDecoder::Flush() {
     JXL_RETURN_IF_ERROR(RunOnPool(
         pool_, 0, decoded_passes_per_ac_group_.size(),
         [this](const size_t num_threads) {
-          PrepareStorage(num_threads, decoded_passes_per_ac_group_.size());
-          return true;
+          return PrepareStorage(num_threads,
+                                decoded_passes_per_ac_group_.size());
         },
         [this, &has_error](const uint32_t g, size_t thread) {
           if (decoded_passes_per_ac_group_[g] ==

@@ -918,6 +918,56 @@ typedef void (*JxlImageOutCallback)(void* opaque, size_t x, size_t y,
                                     size_t num_pixels, const void* pixels);
 
 /**
+ * Initialization callback for @c JxlDecoderSetMultithreadedImageOutCallback.
+ *
+ * @see JxlDecoderSetMultithreadedImageOutCallback
+ *
+ * @param init_opaque optional user data, as given to
+ * @c JxlDecoderSetMultithreadedImageOutCallback.
+ * @param num_threads maximum number of threads that will call the @c run
+ * callback concurrently.
+ * @param num_pixels_per_thread maximum number of pixels that will be passed in
+ * one call to @c run.
+ * @return a pointer to data that will be passed to the @c run callback, or
+ * @c NULL if initialization failed.
+ */
+typedef void* (*JxlImageOutInitCallback)(void* init_opaque, size_t num_threads,
+                                         size_t num_pixels_per_thread);
+
+/**
+ * Worker callback for @c JxlDecoderSetMultithreadedImageOutCallback.
+ *
+ * @see JxlDecoderSetMultithreadedImageOutCallback
+ *
+ * @param run_opaque user data returned by the @c init callback.
+ * @param thread_id number in `[0, num_threads)` identifying the thread of the
+ * current invocation of the callback.
+ * @param x horizontal position of the first (leftmost) pixel of the pixel data.
+ * @param y vertical position of the pixel data.
+ * @param num_pixels number of pixels in the pixel data. May be less than the
+ * full @c xsize of the image, and will be at most equal to the @c
+ * num_pixels_per_thread that was passed to @c init.
+ * @param pixels pixel data as a horizontal stripe, in the format passed to @c
+ * JxlDecoderSetMultithreadedImageOutCallback. The data pointed to remains owned
+ * by the caller and is only guaranteed to outlive the current callback
+ * invocation.
+ */
+typedef void (*JxlImageOutRunCallback)(void* run_opaque, size_t thread_id,
+                                       size_t x, size_t y, size_t num_pixels,
+                                       const void* pixels);
+
+/**
+ * Destruction callback for @c JxlDecoderSetMultithreadedImageOutCallback,
+ * called after all invocations of the @c run callback to perform any
+ * appropriate clean-up of the @c run_opaque data returned by @c init.
+ *
+ * @see JxlDecoderSetMultithreadedImageOutCallback
+ *
+ * @param run_opaque user data returned by the @c init callback.
+ */
+typedef void (*JxlImageOutDestroyCallback)(void* run_opaque);
+
+/**
  * Sets pixel output callback. This is an alternative to
  * JxlDecoderSetImageOutBuffer. This can be set when the JXL_DEC_FRAME event
  * occurs, must be set when the JXL_DEC_NEED_IMAGE_OUT_BUFFER event occurs, and
@@ -950,8 +1000,8 @@ typedef void (*JxlImageOutCallback)(void* opaque, size_t x, size_t y,
  * guaranteed).
  *
  * @param dec decoder object
- * @param format format of the pixels. Object owned by user and its contents
- * are copied internally.
+ * @param format format of the pixels. Object owned by user; its contents are
+ * copied internally.
  * @param callback the callback function receiving partial scanlines of pixel
  * data.
  * @param opaque optional user data, which will be passed on to the callback,
@@ -962,6 +1012,30 @@ typedef void (*JxlImageOutCallback)(void* opaque, size_t x, size_t y,
 JXL_EXPORT JxlDecoderStatus
 JxlDecoderSetImageOutCallback(JxlDecoder* dec, const JxlPixelFormat* format,
                               JxlImageOutCallback callback, void* opaque);
+
+/** Similar to @c JxlDecoderSetImageOutCallback except that the callback is
+ * allowed an initialization phase during which it is informed of how many
+ * threads will call it concurrently, and those calls are further informed of
+ * which thread they are occurring in.
+ *
+ * @param dec decoder object
+ * @param format format of the pixels. Object owned by user; its contents are
+ * copied internally.
+ * @param init_callback initialization callback.
+ * @param run_callback the callback function receiving partial scanlines of
+ * pixel data.
+ * @param destroy_callback clean-up callback invoked after all calls to @c
+ * run_callback. May be NULL if no clean-up is necessary.
+ * @param init_opaque optional user data passed to @c init_callback, may be NULL
+ * (unlike the return value from @c init_callback which may only be NULL if
+ * initialization failed).
+ * @return JXL_DEC_SUCCESS on success, JXL_DEC_ERROR on error, such as @c
+ * JxlDecoderSetImageOutBuffer having already been called.
+ */
+JXL_EXPORT JxlDecoderStatus JxlDecoderSetMultithreadedImageOutCallback(
+    JxlDecoder* dec, const JxlPixelFormat* format,
+    JxlImageOutInitCallback init_callback, JxlImageOutRunCallback run_callback,
+    JxlImageOutDestroyCallback destroy_callback, void* init_opaque);
 
 /**
  * Returns the minimum size in bytes of an extra channel pixel buffer for the
