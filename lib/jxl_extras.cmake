@@ -143,8 +143,7 @@ if (OpenEXR_FOUND)
     extras/dec/exr.h
   )
   list(APPEND JXL_EXTRAS_DEC_PUBLIC_DEFINITIONS -DJPEGXL_ENABLE_EXR=1)
-  # For the include directory.
-  target_link_libraries(jxl_extras_dec-obj PRIVATE PkgConfig::OpenEXR)
+  target_include_directories(jxl_extras_dec-obj PRIVATE "${OpenEXR_INCLUDE_DIRS}")
   list(APPEND JXL_EXTRAS_DEC_INTERNAL_LIBRARIES PkgConfig::OpenEXR)
   target_sources(jxl_extras-static PRIVATE
     extras/enc/exr.cc
