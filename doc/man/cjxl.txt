@@ -31,8 +31,14 @@ cjxl input.gif output.jxl
 Options
 -------
 
---container
+--container::
     Always encode using container format (default: only if needed)
+
+--strip::
+    Do not encode using container format (strips Exif/XMP/JPEG bitstream reconstruction data)
+
+--strip_jpeg_metadata::
+    Do not encode JPEG bitstream reconstruction data
 
 -d 'distance'::
 --distance='distance'::
@@ -82,6 +88,19 @@ Recognized effort settings, from fastest to slowest, are:
 - 8 or ``kitten''
 - 9 or ``tortoise''
 
+--brotli_effort='B_EFFORT'::
+    Brotli effort setting. Range: 0 .. 11.
+    Default: -1 (based on EFFORT). Higher number is more effort (slower).
+
+-s 'ANIMAL'::
+--speed='ANIMAL'::
+    Deprecated synonym for --effort. Valid values are:
+    lightning (1), thunder, falcon, cheetah, hare, wombat, squirrel, kitten, tortoise (9)
+    Default: squirrel. Values are in order from faster to slower.
+
+--faster_decoding='AMOUNT'::
+    Favour higher decoding speed. 0 = default, higher values give higher speed at the expense of quality
+
 -p::
 --progressive::
     Enable progressive/responsive decoding.
@@ -115,10 +134,16 @@ Recognized effort settings, from fastest to slowest, are:
 --modular::
     Use the modular mode (lossy / lossless).
 
+--use_new_heuristics::
+    Use new and not yet ready encoder heuristics
+
 -j::
 --jpeg_transcode::
     Do lossy transcode of input JPEG file (decode to pixels instead of doing
     lossless transcode).
+
+--jpeg_transcode_disable_cfl::
+    Disable CFL for lossless JPEG recompression
 
 --num_threads='N'::
     number of worker threads (zero = none).
@@ -141,8 +166,14 @@ Recognized effort settings, from fastest to slowest, are:
 --patches='0|1'::
     force disable/enable patches generation.
 
---resampling='0|1|2|4|8'::
-    Subsample all color channels by this factor, or use 0 to choose the resampling factor based on distance.
+--resampling='-1|1|2|4|8'::
+    Subsample all color channels by this factor, or use -1 to choose the resampling factor based on distance.
+
+--ec_resampling='1|2|4|8'::
+    Subsample all extra channels by this factor. If this value is smaller than the resampling of color channels, it will be increased to match.
+
+--already_downsampled::
+    Do not downsample the given input before encoding, but still signal that the decoder should upsample.
 
 --epf='-1..3'::
     Edge preserving filter level (-1 = choose based on quality, default)
@@ -155,14 +186,28 @@ Recognized effort settings, from fastest to slowest, are:
     image. Must be strictly positive. Default is 255 for standard images, 4000
     for input images known to to have PQ or HLG transfer function.
 
+--saliency_num_progressive_steps='N'::
+
+--saliency_map_filename='STRING'::
+
+--saliency_threshold='0..1'::
+
 -x 'key=value'::
 --dec-hints='key=value'::
     color_space indicates the ColorEncoding, see Description(); cc_pathname
     refers to a binary file containing an ICC profile.
 
--Q 'luma_q[,chroma_q]'::
---mquality='luma_q[,chroma_q]'::
-    [modular encoding] lossy 'quality' (100=lossless, lower is more lossy)
+--override_bitdepth='0..32'::
+    0=use from image, 1-32=override.
+    If nonzero, store the given bit depth in the JPEG XL file metadata (1-32), instead of using the bit depth from the original input image.
+
+-c '0..2'::
+--colortransform='0..2'::
+    0=XYB, 1=None, 2=YCbCr
+
+-I 'F'::
+--iterations='F'::
+    [modular encoding] fraction of pixels used to learn MA trees (default=0.5, try 0 for no MA and fast decode)
 
 -C 'K'::
 --colorspace='K'::
@@ -196,6 +241,10 @@ Recognized effort settings, from fastest to slowest, are:
 +
 Default 14, at slowest speed default 15
 
+-E 'K'::
+--extra-properties='K'::
+    [modular encoding] number of extra MA tree properties to use
+
 --palette='K'::
     [modular encoding] use a palette if image has at most K colors (default:
     1024)
@@ -204,6 +253,14 @@ Default 14, at slowest speed default 15
     [modular encoding] quantize to a palette that has fewer entries than would
     be necessary for perfect preservation; for the time being, it is
     recommended to set --palette=0 with this option to use the default palette only
+
+-X 'PERCENT'::
+--pre-compact='PERCENT'::
+    [modular encoding] compact channels (globally) if ratio used/range is below this (default: 80%)
+
+-Y 'PERCENT'::
+--post-compact='PERCENT'::
+    [modular encoding] compact channels (per-group) if ratio used/range is below this (default: 80%)
 
 -R 'K'::
 --responsive='K'::
