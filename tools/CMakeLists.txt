@@ -428,16 +428,25 @@ if ("${JNI_FOUND}" AND "${Java_FOUND}")
   add_library(jxl_jni SHARED jni/org/jpeg/jpegxl/wrapper/decoder_jni.cc)
   target_include_directories(jxl_jni PRIVATE "${JNI_INCLUDE_DIRS}" "${PROJECT_SOURCE_DIR}")
   target_link_libraries(jxl_jni PUBLIC jxl_dec-static jxl_threads-static)
+  if(NOT DEFINED JPEGXL_INSTALL_JNIDIR)
+    set(JPEGXL_INSTALL_JNIDIR ${CMAKE_INSTALL_LIBDIR})
+  endif()
+  install(TARGETS jxl_jni DESTINATION ${JPEGXL_INSTALL_JNIDIR})
 
-  add_jar(jxl_jni_wrapper
+  add_jar(jxl_jni_wrapper SOURCES
     jni/org/jpeg/jpegxl/wrapper/Decoder.java
     jni/org/jpeg/jpegxl/wrapper/DecoderJni.java
     jni/org/jpeg/jpegxl/wrapper/ImageData.java
     jni/org/jpeg/jpegxl/wrapper/PixelFormat.java
     jni/org/jpeg/jpegxl/wrapper/Status.java
     jni/org/jpeg/jpegxl/wrapper/StreamInfo.java
+    OUTPUT_NAME org.jpeg.jpegxl
   )
   get_target_property(JXL_JNI_WRAPPER_JAR jxl_jni_wrapper JAR_FILE)
+  if(NOT DEFINED JPEGXL_INSTALL_JARDIR)
+    set(JPEGXL_INSTALL_JARDIR ${CMAKE_INSTALL_LIBDIR})
+  endif()
+  install_jar(jxl_jni_wrapper DESTINATION ${JPEGXL_INSTALL_JARDIR})
 
   add_jar(jxl_jni_wrapper_test
     SOURCES jni/org/jpeg/jpegxl/wrapper/DecoderTest.java
