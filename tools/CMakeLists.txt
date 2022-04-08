@@ -433,13 +433,14 @@ if ("${JNI_FOUND}" AND "${Java_FOUND}")
   endif()
   install(TARGETS jxl_jni DESTINATION ${JPEGXL_INSTALL_JNIDIR})
 
-  add_jar(jxl_jni_wrapper
+  add_jar(jxl_jni_wrapper SOURCES
     jni/org/jpeg/jpegxl/wrapper/Decoder.java
     jni/org/jpeg/jpegxl/wrapper/DecoderJni.java
     jni/org/jpeg/jpegxl/wrapper/ImageData.java
     jni/org/jpeg/jpegxl/wrapper/PixelFormat.java
     jni/org/jpeg/jpegxl/wrapper/Status.java
     jni/org/jpeg/jpegxl/wrapper/StreamInfo.java
+    OUTPUT_NAME org.jpeg.jpegxl
   )
   get_target_property(JXL_JNI_WRAPPER_JAR jxl_jni_wrapper JAR_FILE)
   if(NOT DEFINED JPEGXL_INSTALL_JARDIR)
