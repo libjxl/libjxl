@@ -178,6 +178,9 @@ if(JPEGXL_ENABLE_TOOLS)
       configure_file("${JPEGXL_DEP_LICENSE_DIR}/libgflags-dev/copyright"
                      ${PROJECT_BINARY_DIR}/LICENSE.gflags COPYONLY)
     endif()  # JPEGXL_DEP_LICENSE_DIR
+    # https://gitlab.kitware.com/cmake/cmake/-/issues/22919
+    message(STATUS "Found: ${gflags_FOUND}")
+    set_target_properties(gflags PROPERTIES IMPORTED_GLOBAL TRUE)
   endif()
 endif()
 
