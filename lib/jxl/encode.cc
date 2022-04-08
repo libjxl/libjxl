@@ -1080,7 +1080,10 @@ int JxlEncoderGetRequiredCodestreamLevel(const JxlEncoder* enc) {
   return VerifyLevelSettings(enc, nullptr);
 }
 
-void JxlEncoderSetCms(JxlEncoder* enc, JxlCmsInterface cms) { enc->cms = cms; }
+void JxlEncoderSetCms(JxlEncoder* enc, JxlCmsInterface cms) {
+  jxl::msan::MemoryIsInitialized(&cms, sizeof(cms));
+  enc->cms = cms;
+}
 
 JxlEncoderStatus JxlEncoderSetParallelRunner(JxlEncoder* enc,
                                              JxlParallelRunner parallel_runner,
