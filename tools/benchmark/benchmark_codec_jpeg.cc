@@ -88,7 +88,7 @@ class JPEGCodec : public ImageCodec {
   }
 
   Status Compress(const std::string& filename, const CodecInOut* io,
-                  ThreadPoolInternal* pool, PaddedBytes* compressed,
+                  ThreadPoolInternal* pool, std::vector<uint8_t>* compressed,
                   jpegxl::tools::SpeedStats* speed_stats) override {
     const double start = Now();
     JXL_RETURN_IF_ERROR(EncodeImageJPG(io, encoder_,

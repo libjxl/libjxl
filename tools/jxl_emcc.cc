@@ -42,7 +42,7 @@ uint8_t* jxlCompress(const uint8_t* data, size_t size) {
 
 /** Result: uint32_t 'size' followed by decompressed image (JPG). */
 uint8_t* jxlDecompress(const uint8_t* data, size_t size) {
-  jxl::PaddedBytes decompressed;
+  std::vector<uint8_t> decompressed;
   jxl::CodecInOut io;
   jxl::DecompressParams params;
   if (!jxl::DecodeFile(params, jxl::Span<const uint8_t>(data, size), &io,

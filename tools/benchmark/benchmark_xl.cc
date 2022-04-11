@@ -72,7 +72,7 @@ Status ReadPNG(const std::string& filename, Image3F* image) {
 void DoCompress(const std::string& filename, const CodecInOut& io,
                 const std::vector<std::string>& extra_metrics_commands,
                 ImageCodec* codec, ThreadPoolInternal* inner_pool,
-                PaddedBytes* compressed, BenchmarkStats* s) {
+                std::vector<uint8_t>* compressed, BenchmarkStats* s) {
   PROFILER_FUNC;
   ++s->total_input_files;
 
@@ -131,10 +131,9 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
   }
 
   if (valid && Args()->decode_only) {
-    std::string data_in;
+    std::vector<uint8_t> data_in;
     JXL_CHECK(ReadFile(filename, &data_in));
-    compressed->append((uint8_t*)data_in.data(),
-                       (uint8_t*)data_in.data() + data_in.size());
+    compressed->insert(compressed->end(), data_in.begin(), data_in.end());
   }
 
   // Decompress
@@ -1043,7 +1042,7 @@ class Benchmark {
           Task& t = (*tasks)[i];
           const CodecInOut& image = loaded_images[t.idx_image];
           t.image = &image;
-          PaddedBytes compressed;
+          std::vector<uint8_t> compressed;
           DoCompress(fnames[t.idx_image], image, extra_metrics_commands,
                      t.codec.get(), inner_pools[thread].get(), &compressed,
                      &t.stats);

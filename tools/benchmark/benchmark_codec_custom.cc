@@ -86,7 +86,7 @@ class CustomCodec : public ImageCodec {
   }
 
   Status Compress(const std::string& filename, const CodecInOut* io,
-                  ThreadPoolInternal* pool, PaddedBytes* compressed,
+                  ThreadPoolInternal* pool, std::vector<uint8_t>* compressed,
                   jpegxl::tools::SpeedStats* speed_stats) override {
     JXL_RETURN_IF_ERROR(param_index_ > 2);
 
@@ -98,7 +98,7 @@ class CustomCodec : public ImageCodec {
     saved_intensity_target_ = io->metadata.m.IntensityTarget();
 
     const size_t bits = io->metadata.m.bit_depth.bits_per_sample;
-    PaddedBytes png;
+    std::vector<uint8_t> png;
     JXL_RETURN_IF_ERROR(
         extras::EncodeImageAPNG(io, io->Main().c_current(), bits, pool, &png));
     JXL_RETURN_IF_ERROR(WriteFile(png, png_filename));

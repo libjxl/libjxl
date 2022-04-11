@@ -448,6 +448,8 @@ libjxl_extras_sources = [
     "extras/dec/pgx.h",
     "extras/dec/pnm.cc",
     "extras/dec/pnm.h",
+    "extras/enc/encode.cc",
+    "extras/enc/encode.h",
     "extras/enc/pgx.cc",
     "extras/enc/pgx.h",
     "extras/enc/pnm.cc",

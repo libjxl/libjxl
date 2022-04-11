@@ -232,7 +232,7 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
   if (spec.is_reconstructible_jpeg) {
     // If this image is supposed to be a reconstructible JPEG, collect the JPEG
     // metadata and encode it in the beginning of the compressed bytes.
-    jxl::PaddedBytes jpeg_bytes;
+    std::vector<uint8_t> jpeg_bytes;
     JXL_RETURN_IF_ERROR(EncodeImageJPG(
         &io, jxl::extras::JpegEncoder::kLibJpeg, /*quality=*/70,
         jxl::YCbCrChromaSubsampling(), /*pool=*/nullptr, &jpeg_bytes));
