@@ -289,7 +289,7 @@ void SetFlagFrameOptionOrDie(const char* flag_name, int32_t flag_value,
 }
 
 void SetDistanceFromFlags(JxlEncoderFrameSettings* jxl_encoder_frame_settings,
-                          jxl::extras::Codec codec) {
+                          const jxl::extras::Codec& codec) {
   bool distance_set =
       !gflags::GetCommandLineFlagInfoOrDie("distance").is_default;
   bool quality_set = !gflags::GetCommandLineFlagInfoOrDie("quality").is_default;
@@ -444,7 +444,7 @@ int main(int argc, char** argv) {
   jxl::extras::PackedPixelFile ppf;
   jxl::extras::Codec codec;
   auto ensure_image_loaded = [&filename_in, &input_image_loaded, &jpeg_data,
-                              &ppf]() {
+                              &ppf, &codec]() {
     if (input_image_loaded) return;
     if (FLAGS_add_jpeg_frame) {
       if (!ReadFile(filename_in, &jpeg_data)) {
@@ -453,7 +453,7 @@ int main(int argc, char** argv) {
       }
       codec = jxl::extras::Codec::kJPG;
     } else {
-      jxl::Status status = LoadInput(filename_in, ppf, &codec);
+      jxl::Status status = LoadInput(filename_in, ppf, codec);
       if (!status) {
         std::cerr << "Loading input file failed." << std::endl;
         exit(EXIT_FAILURE);
@@ -613,7 +613,7 @@ int main(int argc, char** argv) {
                    });
       process_bool_flag("already_downsampled", FLAGS_already_downsampled,
                         JXL_ENC_FRAME_SETTING_ALREADY_DOWNSAMPLED);
-      SetDistanceFromFlags(jxl_encoder_frame_settings);
+      SetDistanceFromFlags(jxl_encoder_frame_settings, codec);
 
       if (!FLAGS_group_order &&
           (FLAGS_center_x != -1 || FLAGS_center_y != -1)) {
@@ -626,7 +626,7 @@ int main(int argc, char** argv) {
                    JXL_ENC_FRAME_SETTING_GROUP_ORDER_CENTER_X,
                    [](int32_t x) -> std::string {
                      if (x < -1) {
-                       return "Valid values are: -1 or [0 .. xsize)."
+                       return "Valid values are: -1 or [0 .. xsize).";
                      }
                      return "";
                    });
@@ -634,7 +634,7 @@ int main(int argc, char** argv) {
                    JXL_ENC_FRAME_SETTING_GROUP_ORDER_CENTER_Y,
                    [](int32_t x) -> std::string {
                      if (x < -1) {
-                       return "Valid values are: -1 or [0 .. ysize)."
+                       return "Valid values are: -1 or [0 .. ysize).";
                      }
                      return "";
                    });
