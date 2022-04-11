@@ -117,8 +117,12 @@ class Parser {
     // 0xa, or 0xd 0xa.
     JXL_RETURN_IF_ERROR(SkipLineBreak());
 
-    if (header->bits_per_sample > 16) {
-      return JXL_FAILURE("PGX: >16 bits not yet supported");
+    // libjxl currently does use float buffers internally for most parts of the
+    // codec so the actual precision limit for lossless integer encoding is
+    // 24-bit (higher than that starts losing least significant bits in the
+    // conversion to/from float).
+    if (header->bits_per_sample > 24) {
+      return JXL_FAILURE("PGX: >24 bits not yet supported");
     }
     // TODO(lode): support signed integers. This may require changing the way
     // external_image works.
