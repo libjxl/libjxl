@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "lib/extras/packed_image_convert.h"
 #include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/file_io.h"
@@ -47,12 +48,10 @@ Status EncodeHeader(const ImageBundle& ib, const size_t bits_per_sample,
   return true;
 }
 
-}  // namespace
-
-Status EncodeImagePGX(const CodecInOut* io, const ColorEncoding& c_desired,
+Status EncodeImagePGX(const ImageBundle& ib, const ColorEncoding& c_desired,
                       size_t bits_per_sample, ThreadPool* pool,
-                      PaddedBytes* bytes) {
-  if (!Bundle::AllDefault(io->metadata.m)) {
+                      std::vector<uint8_t>* bytes) {
+  if (!Bundle::AllDefault(*ib.metadata())) {
     JXL_WARNING("PGX encoder ignoring metadata - use a different codec");
   }
   if (!c_desired.IsSRGB()) {
@@ -61,15 +60,13 @@ Status EncodeImagePGX(const CodecInOut* io, const ColorEncoding& c_desired,
         "will need hint key=color_space to get the same values");
   }
 
-  ImageBundle ib = io->Main().Copy();
-
-  ImageMetadata metadata = io->metadata.m;
+  ImageMetadata metadata = *ib.metadata();
   ImageBundle store(&metadata);
   const ImageBundle* transformed;
   JXL_RETURN_IF_ERROR(TransformIfNeeded(ib, c_desired, GetJxlCms(), pool,
                                         &store, &transformed));
-  PaddedBytes pixels(ib.xsize() * ib.ysize() *
-                     (bits_per_sample / kBitsPerByte));
+  std::vector<uint8_t> pixels(ib.xsize() * ib.ysize() *
+                              (bits_per_sample / kBitsPerByte));
   size_t stride = ib.xsize() * (bits_per_sample / kBitsPerByte);
   JXL_RETURN_IF_ERROR(
       ConvertToExternal(*transformed, bits_per_sample,
@@ -87,6 +84,50 @@ Status EncodeImagePGX(const CodecInOut* io, const ColorEncoding& c_desired,
   memcpy(bytes->data() + header_size, pixels.data(), pixels.size());
 
   return true;
+}
+
+class PGXEncoder : public Encoder {
+ public:
+  std::vector<JxlPixelFormat> AcceptedFormats() const override {
+    std::vector<JxlPixelFormat> formats;
+    for (const JxlDataType data_type : {JXL_TYPE_UINT8, JXL_TYPE_UINT16}) {
+      for (JxlEndianness endianness : {JXL_BIG_ENDIAN, JXL_LITTLE_ENDIAN}) {
+        formats.push_back(JxlPixelFormat{/*num_channels=*/1,
+                                         /*data_type=*/data_type,
+                                         /*endianness=*/endianness,
+                                         /*align=*/0});
+      }
+    }
+    return formats;
+  }
+  Status Encode(const PackedPixelFile& ppf, EncodedImage* encoded_image,
+                ThreadPool* pool) const override {
+    CodecInOut io;
+    JXL_RETURN_IF_ERROR(ConvertPackedPixelFileToCodecInOut(ppf, pool, &io));
+    const PaddedBytes& icc = io.Main().c_current().ICC();
+    encoded_image->icc.assign(icc.begin(), icc.end());
+    encoded_image->bitstreams.clear();
+    encoded_image->bitstreams.reserve(io.frames.size());
+    for (const ImageBundle& ib : io.frames) {
+      encoded_image->bitstreams.emplace_back();
+      JXL_RETURN_IF_ERROR(EncodeImagePGX(ib, io.metadata.m.color_encoding,
+                                         ppf.info.bits_per_sample, pool,
+                                         &encoded_image->bitstreams.back()));
+    }
+    return true;
+  }
+};
+
+}  // namespace
+
+std::unique_ptr<Encoder> GetPGXEncoder() {
+  return jxl::make_unique<PGXEncoder>();
+}
+
+Status EncodeImagePGX(const CodecInOut* io, const ColorEncoding& c_desired,
+                      size_t bits_per_sample, ThreadPool* pool,
+                      std::vector<uint8_t>* bytes) {
+  return EncodeImagePGX(io->Main(), c_desired, bits_per_sample, pool, bytes);
 }
 
 }  // namespace extras

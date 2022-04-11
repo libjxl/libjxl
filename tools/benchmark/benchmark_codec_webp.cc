@@ -86,7 +86,7 @@ class WebPCodec : public ImageCodec {
   }
 
   Status Compress(const std::string& filename, const CodecInOut* io,
-                  ThreadPoolInternal* pool, PaddedBytes* compressed,
+                  ThreadPoolInternal* pool, std::vector<uint8_t>* compressed,
                   jpegxl::tools::SpeedStats* speed_stats) override {
     const double start = Now();
     const ImageBundle& ib = io->Main();
@@ -105,7 +105,7 @@ class WebPCodec : public ImageCodec {
     size_t xsize = ib.oriented_xsize();
     size_t ysize = ib.oriented_ysize();
     size_t stride = xsize * num_chans;
-    PaddedBytes srgb(stride * ysize);
+    std::vector<uint8_t> srgb(stride * ysize);
     JXL_RETURN_IF_ERROR(ConvertToExternal(
         *transformed, 8, /*float_out=*/false, num_chans, JXL_BIG_ENDIAN, stride,
         pool, srgb.data(), srgb.size(),
@@ -216,17 +216,18 @@ class WebPCodec : public ImageCodec {
   static int WebPStringWrite(const uint8_t* data, size_t data_size,
                              const WebPPicture* const picture) {
     if (data_size) {
-      PaddedBytes* const out = static_cast<PaddedBytes*>(picture->custom_ptr);
+      std::vector<uint8_t>* const out =
+          static_cast<std::vector<uint8_t>*>(picture->custom_ptr);
       const size_t pos = out->size();
       out->resize(pos + data_size);
       memcpy(out->data() + pos, data, data_size);
     }
     return 1;
   }
-  Status CompressInternal(const PaddedBytes& srgb, size_t xsize, size_t ysize,
-                          size_t num_chans, int quality,
-                          PaddedBytes* compressed) {
-    *compressed = PaddedBytes();
+  Status CompressInternal(const std::vector<uint8_t>& srgb, size_t xsize,
+                          size_t ysize, size_t num_chans, int quality,
+                          std::vector<uint8_t>* compressed) {
+    compressed->clear();
     WebPConfig config;
     WebPConfigInit(&config);
     JXL_ASSERT(!lossless_ || !near_lossless_);  // can't have both

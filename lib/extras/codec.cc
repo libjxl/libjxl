@@ -52,7 +52,7 @@ Status SetFromBytes(const Span<const uint8_t> bytes,
 Status SetFromFile(const std::string& pathname,
                    const extras::ColorHints& color_hints, CodecInOut* io,
                    ThreadPool* pool, extras::Codec* orig_codec) {
-  PaddedBytes encoded;
+  std::vector<uint8_t> encoded;
   JXL_RETURN_IF_ERROR(ReadFile(pathname, &encoded));
   JXL_RETURN_IF_ERROR(SetFromBytes(Span<const uint8_t>(encoded), color_hints,
                                    io, pool, orig_codec));
@@ -61,7 +61,7 @@ Status SetFromFile(const std::string& pathname,
 
 Status Encode(const CodecInOut& io, const extras::Codec codec,
               const ColorEncoding& c_desired, size_t bits_per_sample,
-              PaddedBytes* bytes, ThreadPool* pool) {
+              std::vector<uint8_t>* bytes, ThreadPool* pool) {
   JXL_CHECK(!io.Main().c_current().ICC().empty());
   JXL_CHECK(!c_desired.ICC().empty());
   io.CheckMetadata();
@@ -163,7 +163,7 @@ Status EncodeToFile(const CodecInOut& io, const ColorEncoding& c_desired,
     bits_per_sample = 16;
   }
 
-  PaddedBytes encoded;
+  std::vector<uint8_t> encoded;
   return Encode(io, codec, c_desired, bits_per_sample, &encoded, pool) &&
          WriteFile(encoded, pathname);
 }

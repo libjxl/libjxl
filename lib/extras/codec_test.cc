@@ -12,9 +12,12 @@
 #include <utility>
 #include <vector>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "lib/extras/dec/pgx.h"
 #include "lib/extras/dec/pnm.h"
+#include "lib/extras/enc/encode.h"
+#include "lib/extras/packed_image_convert.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/random.h"
 #include "lib/jxl/base/thread_pool_internal.h"
@@ -28,6 +31,13 @@
 namespace jxl {
 namespace extras {
 namespace {
+
+using ::testing::AllOf;
+using ::testing::Contains;
+using ::testing::Field;
+using ::testing::IsEmpty;
+using ::testing::NotNull;
+using ::testing::SizeIs;
 
 std::string ExtensionFromCodec(Codec codec, const bool is_gray,
                                const bool has_alpha,
@@ -126,7 +136,7 @@ void TestRoundTrip(Codec codec, const size_t xsize, const size_t ysize,
                                         bits_per_sample, c_native);
   const ImageBundle& ib1 = io.Main();
 
-  PaddedBytes encoded;
+  std::vector<uint8_t> encoded;
   JXL_CHECK(Encode(io, codec, c_external, bits_per_sample, &encoded, pool));
 
   CodecInOut io2;
@@ -217,7 +227,7 @@ CodecInOut DecodeRoundtrip(const std::string& pathname, ThreadPool* pool,
   const ImageBundle& ib1 = io.Main();
 
   // Encode/Decode again to make sure Encode carries through all metadata.
-  PaddedBytes encoded;
+  std::vector<uint8_t> encoded;
   JXL_CHECK(Encode(io, Codec::kPNG, io.metadata.m.color_encoding,
                    io.metadata.m.bit_depth.bits_per_sample, &encoded, pool));
 
@@ -395,6 +405,78 @@ TEST(CodecTest, TestWideGamut) {
 }
 
 TEST(CodecTest, TestPNM) { TestCodecPNM(); }
+
+TEST(CodecTest, FormatNegotiation) {
+  const std::vector<JxlPixelFormat> accepted_formats = {
+      {/*num_channels=*/4,
+       /*data_type=*/JXL_TYPE_UINT16,
+       /*endianness=*/JXL_NATIVE_ENDIAN,
+       /*align=*/0},
+      {/*num_channels=*/3,
+       /*data_type=*/JXL_TYPE_UINT8,
+       /*endianness=*/JXL_NATIVE_ENDIAN,
+       /*align=*/0},
+      {/*num_channels=*/3,
+       /*data_type=*/JXL_TYPE_UINT16,
+       /*endianness=*/JXL_NATIVE_ENDIAN,
+       /*align=*/0},
+      {/*num_channels=*/1,
+       /*data_type=*/JXL_TYPE_UINT8,
+       /*endianness=*/JXL_NATIVE_ENDIAN,
+       /*align=*/0},
+  };
+
+  JxlBasicInfo info;
+  JxlEncoderInitBasicInfo(&info);
+  info.bits_per_sample = 12;
+  info.num_color_channels = 2;
+
+  JxlPixelFormat format;
+  EXPECT_FALSE(SelectFormat(accepted_formats, info, &format));
+
+  info.num_color_channels = 3;
+  ASSERT_TRUE(SelectFormat(accepted_formats, info, &format));
+  EXPECT_EQ(format.num_channels, info.num_color_channels);
+  // 16 is the smallest accepted format that can accommodate the 12-bit data.
+  EXPECT_EQ(format.data_type, JXL_TYPE_UINT16);
+}
+
+TEST(CodecTest, EncodeToPNG) {
+  ThreadPool* const pool = nullptr;
+
+  std::unique_ptr<Encoder> png_encoder = Encoder::FromExtension(".png");
+  ASSERT_THAT(png_encoder, NotNull());
+
+  const PaddedBytes original_png = ReadTestData(
+      "third_party/wesaturate/500px/tmshre_riaphotographs_srgb8.png");
+  PackedPixelFile ppf;
+  ASSERT_TRUE(extras::DecodeBytes(Span<const uint8_t>(original_png),
+                                  ColorHints(), SizeConstraints(), &ppf));
+
+  const JxlPixelFormat& format = ppf.frames.front().color.format;
+  ASSERT_THAT(
+      png_encoder->AcceptedFormats(),
+      Contains(AllOf(
+          Field("num_channels", &JxlPixelFormat::num_channels,
+                format.num_channels),
+          Field("data_type", &JxlPixelFormat::data_type, format.data_type),
+          Field("endianness", &JxlPixelFormat::endianness,
+                format.endianness))));
+  EncodedImage encoded_png;
+  ASSERT_TRUE(png_encoder->Encode(ppf, &encoded_png, pool));
+  EXPECT_THAT(encoded_png.icc, IsEmpty());
+  ASSERT_THAT(encoded_png.bitstreams, SizeIs(1));
+
+  PackedPixelFile decoded_ppf;
+  ASSERT_TRUE(
+      extras::DecodeBytes(Span<const uint8_t>(encoded_png.bitstreams.front()),
+                          ColorHints(), SizeConstraints(), &decoded_ppf));
+
+  CodecInOut io1, io2;
+  ASSERT_TRUE(ConvertPackedPixelFileToCodecInOut(ppf, pool, &io1));
+  ASSERT_TRUE(ConvertPackedPixelFileToCodecInOut(decoded_ppf, pool, &io2));
+  VerifyEqual(*io1.Main().color(), *io2.Main().color());
+}
 
 }  // namespace
 }  // namespace extras

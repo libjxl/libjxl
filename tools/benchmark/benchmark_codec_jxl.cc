@@ -215,7 +215,7 @@ class JxlCodec : public ImageCodec {
   }
 
   Status Compress(const std::string& filename, const CodecInOut* io,
-                  ThreadPoolInternal* pool, PaddedBytes* compressed,
+                  ThreadPoolInternal* pool, std::vector<uint8_t>* compressed,
                   jpegxl::tools::SpeedStats* speed_stats) override {
     if (!jxlargs->debug_image_dir.empty()) {
       cinfo_.dump_image = [](const CodecInOut& io, const std::string& path) {
@@ -254,9 +254,12 @@ class JxlCodec : public ImageCodec {
       passes_encoder_state.heuristics =
           jxl::make_unique<jxl::FastEncoderHeuristics>();
     }
+    PaddedBytes compressed_padded;
     JXL_RETURN_IF_ERROR(EncodeFile(cparams_, io, &passes_encoder_state,
-                                   compressed, GetJxlCms(), &cinfo_, pool));
+                                   &compressed_padded, GetJxlCms(), &cinfo_,
+                                   pool));
     const double end = Now();
+    compressed->assign(compressed_padded.begin(), compressed_padded.end());
     speed_stats->NotifyElapsed(end - start);
     return true;
   }
