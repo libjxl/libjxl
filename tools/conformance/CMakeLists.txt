@@ -14,7 +14,7 @@ if(BASH_PROGRAM)
     NAME conformance_tooling_test
     COMMAND
         ${BASH_PROGRAM} ${CMAKE_CURRENT_SOURCE_DIR}/tooling_test.sh
-        ${CMAKE_BINARY_DIR})
+        ${CMAKE_BINARY_DIR} ${JPEGXL_TEST_DATA_PATH})
   # Skip the test if dependencies are not available.
   set_tests_properties(conformance_tooling_test PROPERTIES SKIP_RETURN_CODE 254)
 endif()
