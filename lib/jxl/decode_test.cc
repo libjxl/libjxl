@@ -1407,12 +1407,8 @@ std::ostream& operator<<(std::ostream& os, const PixelTestConfig& c) {
     case JXL_TYPE_FLOAT16:
       os << "f16";
       break;
-    case JXL_TYPE_UINT32:
-      os << "u32";
-      break;
-    case JXL_TYPE_BOOLEAN:
-      os << "b";
-      break;
+    default:
+      JXL_ASSERT(false);
   };
   if (jxl::test::GetDataBits(c.data_type) > jxl::kBitsPerByte) {
     if (c.endianness == JXL_NATIVE_ENDIAN) {

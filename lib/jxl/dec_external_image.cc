@@ -32,28 +32,9 @@ HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
 
+// TODO(jon): check if this can be replaced by a FloatToU16 function
 void FloatToU32(const float* in, uint32_t* out, size_t num, float mul,
                 size_t bits_per_sample) {
-  // TODO(eustas): investigate 24..31 bpp cases.
-  if (bits_per_sample == 32) {
-    // Conversion to real 32-bit *unsigned* integers requires more intermediate
-    // precision that what is given by the usual f32 -> i32 conversion
-    // instructions, so we run the non-SIMD path for those.
-    const uint32_t cap = (1ull << bits_per_sample) - 1;
-    for (size_t x = 0; x < num; x++) {
-      float v = in[x];
-      if (v >= 1.0f) {
-        out[x] = cap;
-      } else if (v >= 0.0f) {  // Inverted condition => NaN -> 0.
-        out[x] = static_cast<uint32_t>(v * mul + 0.5f);
-      } else {
-        out[x] = 0;
-      }
-    }
-    return;
-  }
-
-  // General SIMD case for less than 32 bits output.
   const HWY_FULL(float) d;
   const hwy::HWY_NAMESPACE::Rebind<uint32_t, decltype(d)> du;
 
@@ -271,23 +252,13 @@ Status ConvertChannelsToExternal(const ImageF* channels[], size_t num_channels,
                                  jxl::Orientation undo_orientation) {
   JXL_DASSERT(num_channels != 0 && num_channels <= kConvertMaxChannels);
   JXL_DASSERT(channels[0] != nullptr);
-
-  if (bits_per_sample < 1 || bits_per_sample > 32) {
-    return JXL_FAILURE("Invalid bits_per_sample value.");
-  }
+  JXL_CHECK(float_out ? bits_per_sample == 16 || bits_per_sample == 32
+                      : bits_per_sample > 0 && bits_per_sample <= 16);
   if (!!out_image == out_callback.IsPresent()) {
     return JXL_FAILURE(
         "Must provide either an out_image or an out_callback, but not both.");
   }
-  // TODO(deymo): Implement 1-bit per pixel packed in 8 samples per byte.
-  if (bits_per_sample == 1) {
-    return JXL_FAILURE("packed 1-bit per sample is not yet supported");
-  }
-  if (bits_per_sample > 16 && bits_per_sample < 32) {
-    return JXL_FAILURE("not supported, try bits_per_sample=32");
-  }
 
-  // bytes_per_channel and is only valid for bits_per_sample > 1.
   const size_t bytes_per_channel = DivCeil(bits_per_sample, jxl::kBitsPerByte);
   const size_t bytes_per_pixel = num_channels * bytes_per_channel;
 
@@ -454,20 +425,13 @@ Status ConvertChannelsToExternal(const ImageF* channels[], size_t num_channels,
             HWY_DYNAMIC_DISPATCH(FloatToU32)
             (row_in[c], row_u32[c], xsize, mul, bits_per_sample);
           }
-          // TODO(deymo): add bits_per_sample == 1 case here.
           if (bits_per_sample <= 8) {
             StoreUintRow<Store8>(row_u32, num_channels, xsize, 1, row_out);
-          } else if (bits_per_sample <= 16) {
+          } else {
             if (little_endian) {
               StoreUintRow<StoreLE16>(row_u32, num_channels, xsize, 2, row_out);
             } else {
               StoreUintRow<StoreBE16>(row_u32, num_channels, xsize, 2, row_out);
-            }
-          } else {
-            if (little_endian) {
-              StoreUintRow<StoreLE32>(row_u32, num_channels, xsize, 4, row_out);
-            } else {
-              StoreUintRow<StoreBE32>(row_u32, num_channels, xsize, 4, row_out);
             }
           }
           if (out_callback.IsPresent()) {
