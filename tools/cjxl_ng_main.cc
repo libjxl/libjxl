@@ -13,8 +13,8 @@
 
 #include <stdint.h>
 
-#include <cstdlib>
 #include <cmath>
+#include <cstdlib>
 #include <functional>
 #include <iostream>
 #include <sstream>
@@ -76,10 +76,10 @@ DEFINE_bool(qprogressive_ac, false, "Use progressive mode for AC.");
 
 DEFINE_bool(modular_lossy_palette, false, "Use delta-palette.");
 
-DEFINE_bool(premultiply, false,
-            // TODO(tfish): Discuss - should `false` be treated differently from
-            // `unset` w.r.t. what default to use?
-            "Force premultiplied (associated) alpha.");
+DEFINE_int32(premultiply, -1,
+             "Force premultiplied (associated) alpha. "
+             "-1 = Do what the input does, 0 = Do not premultiply, "
+             "1 = force premultiply.");
 
 DEFINE_bool(already_downsampled, false,
             "Do not downsample the given input before encoding, "
@@ -159,9 +159,9 @@ DEFINE_int64(center_y, -1,
              "group order. The value -1 means 'use the middle of the image', "
              "other values [0..ysize) set this to a particular coordinate.");
 
-DEFINE_int64(num_threads, 0,
-             "Number of worker threads (0 == use machine default, "
-             "-1 == do not use multithreading).");
+DEFINE_int64(num_threads, -1,
+             "Number of worker threads (-1 == use machine default, "
+             "0 == do not use multithreading).");
 
 DEFINE_int64(num_reps, 1, "How many times to compress. (For benchmarking).");
 
@@ -221,14 +221,16 @@ DEFINE_double(
     "    0.0 = mathematically lossless. Default for already-lossy input "
     "(JPEG/GIF).\n"
     "    1.0 = visually lossless. Default for other input.\n"
-    "    Recommended range: 0.5 .. 3.0.");
+    "    Recommended range: 0.5 .. 3.0. Mutually exclusive with --quality.");
 
 DEFINE_double(
     quality, 100.0,
     "Quality setting (is remapped to --distance). Range: -inf .. 100.\n"
     "    100 = mathematically lossless. Default for already-lossy input "
-    "(JPEG/GIF).\n    Positive quality values roughly match libjpeg "
-    "quality.");
+    "(JPEG/GIF).\n"
+    "    Other input gets encoded as per --distance default.\n"
+    "    Positive quality values roughly match libjpeg quality.\n"
+    "    Mutually exclusive with --distance.");
 
 DEFINE_int64(effort, 3,
              "Encoder effort setting. Range: 1 .. 9.\n"
@@ -239,14 +241,15 @@ DEFINE_int32(brotli_effort, 9,
              "    Default: 9. Higher number is more effort (slower).");
 
 DEFINE_string(frame_indexing, "",
+              // TODO(tfish): Add a more convenient vanilla alternative.
               "If non-empty, a string matching '^[01]*$'. If this string has a "
               "'1' in i-th position, then the i-th frame will be indexed in "
               "the frame index box.");
 
-DEFINE_string(
-    colortransform, "",
-    "The color transform to use. Valid values are: '' (= \"use default\"), "
-    "'RGB', 'XYB', 'YCbCr'.");
+DEFINE_string(colortransform, "",
+              "The color transform used by the input. Valid values are: '' (= "
+              "\"use default\"), "
+              "'RGB', 'XYB', 'YCbCr'.");
 
 namespace {
 /**
@@ -285,8 +288,10 @@ void SetFlagFrameOptionOrDie(const char* flag_name, int32_t flag_value,
   }
 }
 
-void SetDistanceFromFlags(JxlEncoderFrameSettings* jxl_encoder_frame_settings) {
-  bool distance_set = !gflags::GetCommandLineFlagInfoOrDie("distance").is_default;
+void SetDistanceFromFlags(JxlEncoderFrameSettings* jxl_encoder_frame_settings,
+                          jxl::extras::Codec codec) {
+  bool distance_set =
+      !gflags::GetCommandLineFlagInfoOrDie("distance").is_default;
   bool quality_set = !gflags::GetCommandLineFlagInfoOrDie("quality").is_default;
 
   if (distance_set && quality_set) {
@@ -295,27 +300,42 @@ void SetDistanceFromFlags(JxlEncoderFrameSettings* jxl_encoder_frame_settings) {
   }
   if (distance_set) {
     if (JXL_ENC_SUCCESS != JxlEncoderSetFrameDistance(
-                                                      jxl_encoder_frame_settings, FLAGS_distance)) {
+                               jxl_encoder_frame_settings, FLAGS_distance)) {
       std::cerr << "Setting --distance parameter failed." << std::endl;
       exit(EXIT_FAILURE);
     }
+    return;
   }
   if (quality_set) {
-    double distance = FLAGS_quality >= 30? 0.1 + (100 - FLAGS_quality) * 0.09 : 6.4 + pow(2.5, (30 - FLAGS_quality) / 5.0) / 6.25;
-    if (JXL_ENC_SUCCESS != JxlEncoderSetFrameDistance(
-                                                      jxl_encoder_frame_settings, distance)) {
+    double distance = FLAGS_quality >= 100 ? 0.0
+                      : FLAGS_quality >= 30
+                          ? 0.1 + (100 - FLAGS_quality) * 0.09
+                          : 6.4 + pow(2.5, (30 - FLAGS_quality) / 5.0) / 6.25;
+    if (JXL_ENC_SUCCESS !=
+        JxlEncoderSetFrameDistance(jxl_encoder_frame_settings, distance)) {
       std::cerr << "Setting --quality parameter failed." << std::endl;
       exit(EXIT_FAILURE);
-    }    
+    }
+    return;
+  }
+  // No flag set, but input is JPG or GIF: Use distance 0 default.
+  if (codec == jxl::extras::Codec::kJPG || codec == jxl::extras::Codec::kGIF) {
+    if (JXL_ENC_SUCCESS !=
+        JxlEncoderSetFrameDistance(jxl_encoder_frame_settings, 0.0)) {
+      std::cerr << "Setting '100% quality' default for GIF or JPEG input."
+                << std::endl;
+      exit(EXIT_FAILURE);
+    }
   }
 }
-  
+
 typedef std::function<std::string(int32_t)> flag_check_fn;
 
 // TODO(tfish): Replace with non-C-API library function.
 // Implementation is in extras/.
 jxl::Status LoadInput(const char* filename_in,
-                      jxl::extras::PackedPixelFile& ppf) {
+                      jxl::extras::PackedPixelFile& ppf,
+                      jxl::extras::Codec& codec) {
   // Any valid encoding is larger (ensures codecs can read the first few bytes).
   constexpr size_t kMinBytes = 9;
 
@@ -331,8 +351,6 @@ jxl::Status LoadInput(const char* filename_in,
   jxl::extras::ColorHints color_hints;
   jxl::SizeConstraints size_constraints;
 
-  jxl::extras::Codec codec;
-  (void)codec;
 #if JPEGXL_ENABLE_APNG
   if (jxl::extras::DecodeImageAPNG(encoded, color_hints, size_constraints,
                                    &ppf)) {
@@ -424,6 +442,7 @@ int main(int argc, char** argv) {
   bool input_image_loaded = false;
   jxl::PaddedBytes jpeg_data;
   jxl::extras::PackedPixelFile ppf;
+  jxl::extras::Codec codec;
   auto ensure_image_loaded = [&filename_in, &input_image_loaded, &jpeg_data,
                               &ppf]() {
     if (input_image_loaded) return;
@@ -432,8 +451,9 @@ int main(int argc, char** argv) {
         std::cerr << "Reading image data failed." << std::endl;
         exit(EXIT_FAILURE);
       }
+      codec = jxl::extras::Codec::kJPG;
     } else {
-      jxl::Status status = LoadInput(filename_in, ppf);
+      jxl::Status status = LoadInput(filename_in, ppf, &codec);
       if (!status) {
         std::cerr << "Loading input file failed." << std::endl;
         exit(EXIT_FAILURE);
@@ -448,19 +468,22 @@ int main(int argc, char** argv) {
 
   JxlEncoderPtr enc = JxlEncoderMake(/*memory_manager=*/nullptr);
   JxlEncoder* jxl_encoder = enc.get();
+  JxlThreadParallelRunnerPtr runner;
   for (int num_rep = 0; num_rep < FLAGS_num_reps; ++num_rep) {
     JxlEncoderReset(jxl_encoder);
-    if (FLAGS_num_threads != -1) {
+    if (FLAGS_num_threads != 0) {
       size_t num_worker_threads =
           JxlThreadParallelRunnerDefaultNumWorkerThreads();
       {
         int64_t flag_num_worker_threads = FLAGS_num_threads;
-        if (flag_num_worker_threads != 0) {
+        if (flag_num_worker_threads != -1) {
           num_worker_threads = flag_num_worker_threads;
         }
       }
-      auto runner = JxlThreadParallelRunnerMake(
-          /*memory_manager=*/nullptr, num_worker_threads);
+      if (runner == nullptr) {
+        runner = JxlThreadParallelRunnerMake(
+            /*memory_manager=*/nullptr, num_worker_threads);
+      }
       if (JXL_ENC_SUCCESS !=
           JxlEncoderSetParallelRunner(jxl_encoder, JxlThreadParallelRunner,
                                       runner.get())) {
@@ -599,13 +622,22 @@ int main(int argc, char** argv) {
             << "requires setting --group_order=1" << std::endl;
         return EXIT_FAILURE;
       }
-
       process_flag("center_x", FLAGS_center_x,
                    JXL_ENC_FRAME_SETTING_GROUP_ORDER_CENTER_X,
-                   [](int32_t x) -> std::string { return ""; });
+                   [](int32_t x) -> std::string {
+                     if (x < -1) {
+                       return "Valid values are: -1 or [0 .. xsize)."
+                     }
+                     return "";
+                   });
       process_flag("center_y", FLAGS_center_y,
                    JXL_ENC_FRAME_SETTING_GROUP_ORDER_CENTER_Y,
-                   [](int32_t x) -> std::string { return ""; });
+                   [](int32_t x) -> std::string {
+                     if (x < -1) {
+                       return "Valid values are: -1 or [0 .. ysize)."
+                     }
+                     return "";
+                   });
     }
     {  // Progressive/responsive mode settings.
       bool qprogressive_ac_set =
@@ -826,8 +858,14 @@ int main(int argc, char** argv) {
                         << std::endl;
               return EXIT_FAILURE;
             }
-            extra_channel_info.alpha_premultiplied = FLAGS_premultiply;
-
+            if (FLAGS_premultiply != -1) {
+              if (!(FLAGS_premultiply == 0 || FLAGS_premultiply == 1)) {
+                std::cerr << "Flag --premultiply must be one of: -1, 0, 1."
+                          << std::endl;
+                return EXIT_FAILURE;
+              }
+              extra_channel_info.alpha_premultiplied = FLAGS_premultiply;
+            }
             // We take the extra channel blend info frame_info, but don't do
             // clamping.
             JxlBlendInfo extra_channel_blend_info =
