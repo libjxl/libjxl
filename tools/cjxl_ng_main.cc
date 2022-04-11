@@ -45,10 +45,10 @@ DECLARE_bool(helpshort);
 DEFINE_bool(encoder_version, false,
             "Print encoder library version number and exit.");
 
-DEFINE_bool(add_jpeg_frame, false,
-            "Use JxlEncoderAddJPEGFrame to add a JPEG frame "
-            "(i.e. transcoding JPEG), rather than using "
-            "JxlEncoderAddImageFrame.");
+DEFINE_bool(lossless_jpeg, true,
+            "If the input is JPEG, use JxlEncoderAddJPEGFrame "
+            "to add a JPEG frame  (i.e. losslessly transcoding JPEG), "
+            "rather than using JxlEncoderAddImageFrame to reencode pixels.");
 
 DEFINE_bool(jpeg_store_metadata, false,
             "If --add_jpeg_frame is set, store JPEG reconstruction "
@@ -331,19 +331,19 @@ void SetDistanceFromFlags(JxlEncoderFrameSettings* jxl_encoder_frame_settings,
 
 typedef std::function<std::string(int32_t)> flag_check_fn;
 
+bool IsJPG(const jxl::PaddedBytes& image_data) {
+  return (image_data.size() >= 2 && image_data[0] == 0xFF &&
+          image_data[1] == 0xD8);
+}
+
 // TODO(tfish): Replace with non-C-API library function.
 // Implementation is in extras/.
-jxl::Status LoadInput(const char* filename_in,
-                      jxl::extras::PackedPixelFile& ppf,
-                      jxl::extras::Codec& codec) {
+jxl::Status GetPixeldata(const jxl::PaddedBytes& image_data,
+                         jxl::extras::PackedPixelFile& ppf,
+                         jxl::extras::Codec& codec) {
   // Any valid encoding is larger (ensures codecs can read the first few bytes).
   constexpr size_t kMinBytes = 9;
 
-  jxl::PaddedBytes image_data;
-  jxl::Status status = ReadFile(filename_in, &image_data);
-  if (!status) {
-    return status;
-  }
   if (image_data.size() < kMinBytes) return JXL_FAILURE("Input too small.");
   jxl::Span<const uint8_t> encoded(image_data);
 
@@ -440,22 +440,20 @@ int main(int argc, char** argv) {
   // Since we do not want to load the input before we decided that
   // flag-settings are valid, we need a mechanism to lazy-load the image.
   bool input_image_loaded = false;
-  jxl::PaddedBytes jpeg_data;
+  jxl::PaddedBytes image_data;
   jxl::extras::PackedPixelFile ppf;
   jxl::extras::Codec codec;
-  auto ensure_image_loaded = [&filename_in, &input_image_loaded, &jpeg_data,
+  auto ensure_image_loaded = [&filename_in, &input_image_loaded, &image_data,
                               &ppf, &codec]() {
     if (input_image_loaded) return;
-    if (FLAGS_add_jpeg_frame) {
-      if (!ReadFile(filename_in, &jpeg_data)) {
-        std::cerr << "Reading image data failed." << std::endl;
-        exit(EXIT_FAILURE);
-      }
-      codec = jxl::extras::Codec::kJPG;
-    } else {
-      jxl::Status status = LoadInput(filename_in, ppf, codec);
+    if (!ReadFile(filename_in, &image_data)) {
+      std::cerr << "Reading image data failed." << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    if (!(FLAGS_lossless_jpeg && IsJPG(image_data))) {
+      jxl::Status status = GetPixeldata(image_data, ppf, codec);
       if (!status) {
-        std::cerr << "Loading input file failed." << std::endl;
+        std::cerr << "Getting pixel data." << std::endl;
         exit(EXIT_FAILURE);
       }
       if (ppf.frames.size() < 1) {
@@ -771,9 +769,13 @@ int main(int argc, char** argv) {
         }
       }
     }
-
-    if (FLAGS_add_jpeg_frame) {
-      ensure_image_loaded();
+    ensure_image_loaded();
+    if (FLAGS_lossless_jpeg && IsJPG(image_data)) {
+      if (gflags::GetCommandLineFlagInfoOrDie("lossless_jpeg").is_default) {
+        std::cerr << "Note: Implicit-default for JPEG is lossless-transcoding. "
+                  << "To silence this message, set --lossless_jpeg=(1|0)."
+                  << std::endl;
+      }
       if (FLAGS_jpeg_store_metadata) {
         if (JXL_ENC_SUCCESS != JxlEncoderStoreJPEGMetadata(jxl_encoder, true)) {
           std::cerr << "Storing JPEG metadata failed. " << std::endl;
@@ -784,13 +786,12 @@ int main(int argc, char** argv) {
                         FLAGS_jpeg_reconstruction_cfl,
                         JXL_ENC_FRAME_SETTING_JPEG_RECON_CFL);
       if (JXL_ENC_SUCCESS != JxlEncoderAddJPEGFrame(jxl_encoder_frame_settings,
-                                                    jpeg_data.data(),
-                                                    jpeg_data.size())) {
+                                                    image_data.data(),
+                                                    image_data.size())) {
         std::cerr << "JxlEncoderAddJPEGFrame() failed." << std::endl;
         return EXIT_FAILURE;
       }
-    } else {  // Do JxlEncoderAddImageFrame().
-      ensure_image_loaded();
+    } else {                          // Do JxlEncoderAddImageFrame().
       size_t num_alpha_channels = 0;  // Adjusted below.
       {
         JxlBasicInfo basic_info = ppf.info;
