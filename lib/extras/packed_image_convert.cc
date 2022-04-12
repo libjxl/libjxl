@@ -244,8 +244,11 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
 
     PackedFrame packed_frame(frame.oriented_xsize(), frame.oriented_ysize(),
                              format);
+    packed_frame.color.bitdepth_from_format = float_out;
     const size_t bits_per_sample =
-        packed_frame.color.BitsPerChannel(pixel_format.data_type);
+        packed_frame.color.bitdepth_from_format
+            ? packed_frame.color.BitsPerChannel(pixel_format.data_type)
+            : ppf->info.bits_per_sample;
     packed_frame.name = frame.name;
     packed_frame.frame_info.name_length = frame.name.size();
     // Color transform
