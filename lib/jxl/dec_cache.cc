@@ -185,7 +185,7 @@ Status PassesDecoderState::PreparePipeline(ImageBundle* decoded,
                                                     height, rgb_output_is_rgba,
                                                     has_alpha, alpha_c));
     } else if (rgb_output) {
-      builder.AddStage(GetWriteToU8Stage(rgb_output, rgb_stride, width, height,
+      builder.AddStage(GetWriteToU8Stage(rgb_output, rgb_stride, height,
                                          rgb_output_is_rgba, has_alpha,
                                          alpha_c));
     } else {

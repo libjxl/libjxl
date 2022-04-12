@@ -21,9 +21,11 @@ std::unique_ptr<RenderPipelineStage> GetWriteToImageBundleStage(
 std::unique_ptr<RenderPipelineStage> GetWriteToImage3FStage(Image3F* image);
 
 // Gets a stage to write to a uint8 buffer.
-std::unique_ptr<RenderPipelineStage> GetWriteToU8Stage(
-    uint8_t* rgb, size_t stride, size_t width, size_t height, bool rgba,
-    bool has_alpha, size_t alpha_c);
+std::unique_ptr<RenderPipelineStage> GetWriteToU8Stage(uint8_t* rgb,
+                                                       size_t stride,
+                                                       size_t height, bool rgba,
+                                                       bool has_alpha,
+                                                       size_t alpha_c);
 
 // Gets a stage to write to a pixel callback.
 std::unique_ptr<RenderPipelineStage> GetWriteToPixelCallbackStage(
