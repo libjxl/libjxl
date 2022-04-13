@@ -29,6 +29,31 @@ namespace jxl {
 namespace extras {
 namespace {
 
+std::string ExtensionFromCodec(Codec codec, const bool is_gray,
+                               const bool has_alpha,
+                               const size_t bits_per_sample) {
+  switch (codec) {
+    case Codec::kJPG:
+      return ".jpg";
+    case Codec::kPGX:
+      return ".pgx";
+    case Codec::kPNG:
+      return ".png";
+    case Codec::kPNM:
+      if (has_alpha) return ".pam";
+      if (is_gray) return ".pgm";
+      return (bits_per_sample == 32) ? ".pfm" : ".ppm";
+    case Codec::kGIF:
+      return ".gif";
+    case Codec::kEXR:
+      return ".exr";
+    case Codec::kUnknown:
+      return std::string();
+  }
+  JXL_UNREACHABLE;
+  return std::string();
+}
+
 CodecInOut CreateTestImage(const size_t xsize, const size_t ysize,
                            const bool is_gray, const bool add_alpha,
                            const size_t bits_per_sample,
@@ -76,7 +101,7 @@ void TestRoundTrip(Codec codec, const size_t xsize, const size_t ysize,
   // grayscale, and somehow does not have sufficient precision for this test.
   if (codec == Codec::kEXR) return;
   printf("Codec %s bps:%" PRIuS " gr:%d al:%d\n",
-         ExtensionFromCodec(codec, is_gray, bits_per_sample).c_str(),
+         ExtensionFromCodec(codec, is_gray, add_alpha, bits_per_sample).c_str(),
          bits_per_sample, is_gray, add_alpha);
 
   ColorEncoding c_native;
