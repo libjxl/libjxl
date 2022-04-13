@@ -44,7 +44,7 @@ class Neighbors {
     return c;  // Same (the first mirrored value is the last valid one)
 #else  // 128 bit
     // c = LKJI
-#if HWY_ARCH_X86
+#if HWY_TARGET <= (1 << HWY_HIGHEST_TARGET_BIT_X86)
     return V{_mm_shuffle_ps(c.raw, c.raw, _MM_SHUFFLE(2, 1, 0, 0))};  // KJII
 #else
     const D d;
