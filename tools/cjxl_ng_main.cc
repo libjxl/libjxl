@@ -50,8 +50,8 @@ DEFINE_bool(lossless_jpeg, true,
             "to add a JPEG frame  (i.e. losslessly transcoding JPEG), "
             "rather than using JxlEncoderAddImageFrame to reencode pixels.");
 
-DEFINE_bool(jpeg_store_metadata, false,
-            "If --add_jpeg_frame is set, store JPEG reconstruction "
+DEFINE_bool(jpeg_store_metadata, true,
+            "If --lossless_jpeg is set, store JPEG reconstruction "
             "metadata in the JPEG XL container "
             "(for lossless reconstruction of the JPEG codestream).");
 
@@ -246,11 +246,6 @@ DEFINE_string(frame_indexing, "",
               "'1' in i-th position, then the i-th frame will be indexed in "
               "the frame index box.");
 
-DEFINE_string(colortransform, "",
-              "The color transform used by the input. Valid values are: '' (= "
-              "\"use default\"), "
-              "'RGB', 'XYB', 'YCbCr'.");
-
 namespace {
 /**
  * Writes bytes to file.
@@ -320,11 +315,10 @@ void SetDistanceFromFlags(JxlEncoderFrameSettings* jxl_encoder_frame_settings,
   }
   // No flag set, but input is JPG or GIF: Use distance 0 default.
   if (codec == jxl::extras::Codec::kJPG || codec == jxl::extras::Codec::kGIF) {
-    if (JXL_ENC_SUCCESS !=
+    if (JXL_ENC_SUCCESS ==
         JxlEncoderSetFrameDistance(jxl_encoder_frame_settings, 0.0)) {
-      std::cerr << "Setting '100% quality' default for GIF or JPEG input."
+      std::cerr << "Setting 'lossless' default for GIF or JPEG input."
                 << std::endl;
-      exit(EXIT_FAILURE);
     }
   }
 }
@@ -740,34 +734,6 @@ int main(int argc, char** argv) {
                          "Valid "
                          "range is {-1, 0, 1, ..., 100}.\n";
           });
-    }
-    // Color related (not for modular-mode)
-    {
-      bool colortransform_set =
-          !gflags::GetCommandLineFlagInfoOrDie("colortransform").is_default;
-
-      if (colortransform_set) {
-        int32_t colortransform = -1;
-        if (FLAGS_colortransform == "XYB") {
-          colortransform = 0;
-        } else if (FLAGS_colortransform == "RGB") {
-          colortransform = 1;
-        } else if (FLAGS_colortransform == "YCbCr") {
-          colortransform = 2;
-        } else {
-          std::cerr << "Invalid --colortransform: " << FLAGS_colortransform
-                    << std::endl;
-          return EXIT_FAILURE;
-        }
-        if (JXL_ENC_SUCCESS != JxlEncoderFrameSettingsSetOption(
-                                   jxl_encoder_frame_settings,
-                                   JXL_ENC_FRAME_SETTING_COLOR_TRANSFORM,
-                                   colortransform)) {
-          std::cerr << "Invalid --colortransform: " << FLAGS_colortransform
-                    << std::endl;
-          return EXIT_FAILURE;
-        }
-      }
     }
     ensure_image_loaded();
     if (FLAGS_lossless_jpeg && IsJPG(image_data)) {
