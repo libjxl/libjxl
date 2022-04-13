@@ -1454,7 +1454,7 @@ JxlEncoderStatus JxlEncoderSetExtraChannelBlendInfo(
 
 JxlEncoderStatus JxlEncoderSetFrameName(JxlEncoderFrameSettings* frame_settings,
                                         const char* frame_name) {
-  std::string str = frame_name;
+  std::string str = frame_name ? frame_name : "";
   if (str.size() > 1071) {
     return JXL_API_ERROR("frame name can be max 1071 bytes long");
   }
