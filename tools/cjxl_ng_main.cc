@@ -330,6 +330,35 @@ bool IsJPG(const jxl::PaddedBytes& image_data) {
           image_data[1] == 0xD8);
 }
 
+void SetCodestreamLevel(JxlEncoder* jxl_encoder, bool for_lossless_jpeg) {
+  bool flag_set =
+      !gflags::GetCommandLineFlagInfoOrDie("codestream_level").is_default;
+  int32_t codestream_level = FLAGS_codestream_level;
+  auto set_codestream_level = [&jxl_encoder, &codestream_level]() {
+    if (JXL_ENC_SUCCESS !=
+        JxlEncoderSetCodestreamLevel(jxl_encoder, codestream_level)) {
+      std::cerr << "Setting --codestream_level failed." << std::endl;
+      exit(EXIT_FAILURE);
+    }
+  };
+  if (for_lossless_jpeg) {
+    if (!flag_set) {
+      set_codestream_level();
+    }
+  } else {
+    if (!flag_set) {
+      codestream_level = static_cast<int32_t>(
+          JxlEncoderGetRequiredCodestreamLevel(jxl_encoder));
+      if (codestream_level == -1) {
+        std::cerr << "No codestream_level supports the given image parameters."
+                  << std::endl;
+        exit(EXIT_FAILURE);
+      }
+    }
+    set_codestream_level();
+  }
+}
+
 // TODO(tfish): Replace with non-C-API library function.
 // Implementation is in extras/.
 jxl::Status GetPixeldata(const jxl::PaddedBytes& image_data,
@@ -532,14 +561,6 @@ int main(int argc, char** argv) {
                         JXL_ENC_FRAME_SETTING_GABORISH);
       process_bool_flag("group_order", FLAGS_group_order,
                         JXL_ENC_FRAME_SETTING_GROUP_ORDER);
-
-      if (!gflags::GetCommandLineFlagInfoOrDie("codestream_level").is_default) {
-        if (JXL_ENC_SUCCESS !=
-            JxlEncoderSetCodestreamLevel(jxl_encoder, FLAGS_codestream_level)) {
-          std::cerr << "Setting --codestream_level failed." << std::endl;
-          return EXIT_FAILURE;
-        }
-      }
 
       if (!FLAGS_frame_indexing.empty()) {
         bool must_be_all_zeros = FLAGS_frame_indexing[0] != '1';
@@ -751,6 +772,7 @@ int main(int argc, char** argv) {
       process_bool_flag("jpeg_reconstruction_cfl",
                         FLAGS_jpeg_reconstruction_cfl,
                         JXL_ENC_FRAME_SETTING_JPEG_RECON_CFL);
+      SetCodestreamLevel(jxl_encoder, /*for_lossless_jpeg=*/true);
       if (JXL_ENC_SUCCESS != JxlEncoderAddJPEGFrame(jxl_encoder_frame_settings,
                                                     image_data.data(),
                                                     image_data.size())) {
@@ -772,6 +794,7 @@ int main(int argc, char** argv) {
           std::cerr << "JxlEncoderSetBasicInfo() failed." << std::endl;
           return EXIT_FAILURE;
         }
+        SetCodestreamLevel(jxl_encoder, /*for_lossless_jpeg=*/false);
       }
 
       if (!ppf.icc.empty()) {
