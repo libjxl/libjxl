@@ -125,6 +125,7 @@ if(JPEGXL_ENABLE_TOOLS)
     djxl
     djxl_ng
     cjpeg_hdr
+    jxlinfo
   )
 
   # Main compressor.
@@ -134,10 +135,10 @@ if(JPEGXL_ENABLE_TOOLS)
     cjxl_main.cc
   )
   target_link_libraries(cjxl
-      box
-      jxl-static
-      jxl_extras-static
-      jxl_threads-static
+    box
+    jxl-static
+    jxl_extras-static
+    jxl_threads-static
   )
 
 
@@ -164,15 +165,15 @@ if(JPEGXL_ENABLE_TOOLS)
     gflags
   )
 
-add_executable(cjpeg_hdr
-  cjpeg_hdr.cc
-)
-target_link_libraries(cjpeg_hdr
+  add_executable(cjpeg_hdr
+    cjpeg_hdr.cc
+  )
+  target_link_libraries(cjpeg_hdr
     box
     jxl-static
     jxl_extras-static
     jxl_threads-static
-)
+  )
 
   # Main decompressor.
   add_library(djxltool STATIC
@@ -180,16 +181,29 @@ target_link_libraries(cjpeg_hdr
     speed_stats.cc
   )
   target_link_libraries(djxltool
-      box
-      jxl-static
-      jxl_extras-static
-      jxl_threads-static
+    box
+    jxl-static
+    jxl_extras-static
+    jxl_threads-static
   )
 
   add_executable(djxl
-      djxl_main.cc
+    djxl_main.cc
   )
-target_link_libraries(djxl djxltool)
+  target_link_libraries(djxl djxltool)
+
+  add_executable(jxlinfo
+    jxlinfo.c
+  )
+  target_link_libraries(jxlinfo jxl)
+
+  if(NOT ${SANITIZER} STREQUAL "none")
+    # Linking a C test binary with the C++ JPEG XL implementation when using
+    # address sanitizer is not well supported by clang 9, so force using clang++
+    # for linking this test if a sanitizer is used.
+    set_target_properties(jxlinfo PROPERTIES LINKER_LANGUAGE CXX)
+  endif()  # SANITIZER != "none"
+
 endif()  # JPEGXL_ENABLE_TOOLS
 
 # Other developer tools.
