@@ -760,9 +760,10 @@ JxlDecoder* JxlDecoderCreate(const JxlMemoryManager* memory_manager) {
 
 void JxlDecoderDestroy(JxlDecoder* dec) {
   if (dec) {
+    JxlMemoryManager local_memory_manager = dec->memory_manager;
     // Call destructor directly since custom free function is used.
     dec->~JxlDecoder();
-    jxl::MemoryManagerFree(&dec->memory_manager, dec);
+    jxl::MemoryManagerFree(&local_memory_manager, dec);
   }
 }
 
