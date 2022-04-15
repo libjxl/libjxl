@@ -271,7 +271,7 @@ struct Reader {
 };
 
 const unsigned long cMaxPNGSize = 1000000UL;
-const size_t kMaxPNGChunkSize = 100000000;  // 100 MB
+const size_t kMaxPNGChunkSize = 1lu << 30;  // 1 GB
 
 void info_fn(png_structp png_ptr, png_infop info_ptr) {
   png_set_expand(png_ptr);
