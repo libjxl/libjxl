@@ -216,10 +216,10 @@ jobs:
         files: build/coverage.xml
     - name: Fast benchmark ${{ matrix.mode }}
       if: |
-        github.event_name == 'push' ||
+        matrix.name != 'coverage' && (github.event_name == 'push' ||
         (github.event_name == 'pull_request' && (
          matrix.test_in_pr ||
-         contains(github.event.pull_request.labels.*.names, 'CI:full')))
+         contains(github.event.pull_request.labels.*.names, 'CI:full'))))
       run: |
         STORE_IMAGES=0 ./ci.sh fast_benchmark
     # Run gbench once, just to make sure it runs, not for actual benchmarking.
