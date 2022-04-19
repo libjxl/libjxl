@@ -34,8 +34,9 @@ namespace HWY_NAMESPACE {
 
 // TODO(jon): check if this can be replaced by a FloatToU16 function
 void FloatToU32(const float* in, uint32_t* out, size_t num, float mul,
-                size_t bits_per_sample) {
-  const HWY_FULL(float) d;
+                size_t bits_per_sample, const float* odither) {
+  // cap could be removed but then the input dither needs to be wider
+  const HWY_CAPPED(float, 8) d;
   const hwy::HWY_NAMESPACE::Rebind<uint32_t, decltype(d)> du;
 
   // Unpoison accessing partially-uninitialized vectors with memory sanitizer.
@@ -44,13 +45,12 @@ void FloatToU32(const float* in, uint32_t* out, size_t num, float mul,
   const size_t num_round_up = RoundUpTo(num, Lanes(d));
   msan::UnpoisonMemory(in + num, sizeof(in[0]) * (num_round_up - num));
 
-  const auto one = Set(d, 1.0f);
   const auto scale = Set(d, mul);
   for (size_t x = 0; x < num; x += Lanes(d)) {
     auto v = Load(d, in + x);
+    auto dither = LoadU(d, odither + (x % 8));
     // Clamp turns NaN to 'min'.
-    v = Clamp(v, Zero(d), one);
-    auto i = NearestInt(v * scale);
+    auto i = NearestInt(Clamp(v * scale + dither, Zero(d), scale));
     Store(BitCast(du, i), du, out + x);
   }
 
@@ -423,7 +423,8 @@ Status ConvertChannelsToExternal(const ImageF* channels[], size_t num_channels,
             // intended to be initialized on a previous run.
             msan::PoisonMemory(row_u32[c], xsize * sizeof(row_u32[c][0]));
             HWY_DYNAMIC_DISPATCH(FloatToU32)
-            (row_in[c], row_u32[c], xsize, mul, bits_per_sample);
+            (row_in[c], row_u32[c], xsize, mul, bits_per_sample,
+             kDither.Row(y));
           }
           if (bits_per_sample <= 8) {
             StoreUintRow<Store8>(row_u32, num_channels, xsize, 1, row_out);

@@ -592,6 +592,13 @@ size_t ComparePixels(const uint8_t* a, const uint8_t* b, size_t xsize,
     // TODO(lode): Set the required precision back to 11 bits when possible.
     precision = 0.5 * threshold_multiplier / ((1ull << (bits - 1)) - 1ull);
   }
+  // allow dithering to do its thing, e.g. if original is lossless uint16
+  // and we compare against decoded uint8, we don't want to force undithered
+  // output,
+  // e.g. an original value of 50000/65535 ~= 194.5525/255 can be rounded to 195
+  // but with dithering it can be rounded to 194 too, so a max difference of
+  // 0.5/255 is not enough.
+  if (bits_a != bits_b) precision *= 2.0;
   size_t numdiff = 0;
   for (size_t y = 0; y < ysize; y++) {
     for (size_t x = 0; x < xsize; x++) {

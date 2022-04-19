@@ -102,7 +102,6 @@ class WriteToU8Stage : public RenderPipelineStage {
     const D d;
     D::Rebind<uint32_t> du;
     auto zero = Zero(d);
-    auto one = Set(d, 1.0f);
     auto mul = Set(d, 255.0f);
 
     ssize_t x1 = RoundUpTo(xsize, Lanes(d));
@@ -113,13 +112,14 @@ class WriteToU8Stage : public RenderPipelineStage {
     if (row_in_a) {
       msan::UnpoisonMemory(row_in_a + xsize, sizeof(float) * (x1 - xsize));
     }
-
     for (ssize_t x = 0; x < x1; x += Lanes(d)) {
-      auto rf = Clamp(zero, Load(d, row_in_r + x), one) * mul;
-      auto gf = Clamp(zero, Load(d, row_in_g + x), one) * mul;
-      auto bf = Clamp(zero, Load(d, row_in_b + x), one) * mul;
-      auto af = row_in_a ? Clamp(zero, Load(d, row_in_a + x), one) * mul
-                         : Set(d, 255.0f);
+      auto dither = LoadU(d, kDither.Row(ypos) + (x + xpos) % 8);
+      auto rf = Clamp(zero, Load(d, row_in_r + x) * mul + dither, mul);
+      auto gf = Clamp(zero, Load(d, row_in_g + x) * mul + dither, mul);
+      auto bf = Clamp(zero, Load(d, row_in_b + x) * mul + dither, mul);
+      auto af = row_in_a
+                    ? Clamp(zero, Load(d, row_in_a + x) * mul + dither, mul)
+                    : mul;
       auto r8 = U8FromU32(BitCast(du, NearestInt(rf)));
       auto g8 = U8FromU32(BitCast(du, NearestInt(gf)));
       auto b8 = U8FromU32(BitCast(du, NearestInt(bf)));

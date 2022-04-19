@@ -3084,8 +3084,11 @@ TEST(DecodeTest, OrientedCroppedFrameTest) {
       }
     }
 
+    // when resampling > 1, after upsampling the sample values are not integers
+    // anymore, and dithering can be different for coalesced vs non-coalesced
     EXPECT_EQ(0u, jxl::test::ComparePixels(frames[0].data(), frames[4].data(),
-                                           oxsize, oysize, format, format));
+                                           oxsize, oysize, format, format,
+                                           resampling > 1 ? 2.01 : 1.0));
   };
 
   for (bool keep_orientation : {true, false}) {

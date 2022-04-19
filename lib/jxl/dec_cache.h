@@ -241,6 +241,28 @@ struct GroupDecCache {
   size_t max_block_area_ = 0;
 };
 
+// 8x8 ordered dithering pattern from
+// https://en.wikipedia.org/wiki/Ordered_dithering
+const int8_t kIntegerDither[64] = {
+    0,  32, 8,  40, 2,  34, 10, 42, 48, 16, 56, 24, 50, 18, 58, 26,
+    12, 44, 4,  36, 14, 46, 6,  38, 60, 28, 52, 20, 62, 30, 54, 22,
+    3,  35, 11, 43, 1,  33, 9,  41, 51, 19, 59, 27, 49, 17, 57, 25,
+    15, 47, 7,  39, 13, 45, 5,  37, 63, 31, 55, 23, 61, 29, 53, 21};
+
+struct Ordered8x8Dithering {
+  float dither[64];
+  Ordered8x8Dithering() {
+    for (size_t i = 0; i < 64; i++) {
+      // make the average 0 and the range [-63/128,63/128], so
+      // actual integer values (e.g. lossless) are still rounded correctly
+      dither[i] = kIntegerDither[i] / 64.f - 0.4921875f;
+    }
+  }
+  const float* Row(size_t y) const { return dither + 8 * (y % 8); }
+};
+
+static const struct Ordered8x8Dithering kDither = Ordered8x8Dithering();
+
 }  // namespace jxl
 
 #endif  // LIB_JXL_DEC_CACHE_H_
