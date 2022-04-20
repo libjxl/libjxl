@@ -44,17 +44,9 @@ enum class ColorSpace : uint32_t {
   kXYB,
   // For non-RGB/gray data, e.g. from non-electro-optical sensors. Otherwise
   // the same conditions as kRGB apply.
-  kUnknown
+  kUnknown,
+  kLastEnumVal
 };
-
-static inline const char* EnumName(ColorSpace /*unused*/) {
-  return "ColorSpace";
-}
-static inline constexpr uint64_t EnumBits(ColorSpace /*unused*/) {
-  using CS = ColorSpace;
-  return MakeBit(CS::kRGB) | MakeBit(CS::kGray) | MakeBit(CS::kXYB) |
-         MakeBit(CS::kUnknown);
-}
 
 // Values from CICP ColourPrimaries.
 enum class WhitePoint : uint32_t {
@@ -62,15 +54,8 @@ enum class WhitePoint : uint32_t {
   kCustom = 2,  // Actual values encoded in separate fields
   kE = 10,      // XYZ
   kDCI = 11,    // DCI-P3
+  kLastEnumVal
 };
-
-static inline const char* EnumName(WhitePoint /*unused*/) {
-  return "WhitePoint";
-}
-static inline constexpr uint64_t EnumBits(WhitePoint /*unused*/) {
-  return MakeBit(WhitePoint::kD65) | MakeBit(WhitePoint::kCustom) |
-         MakeBit(WhitePoint::kE) | MakeBit(WhitePoint::kDCI);
-}
 
 // Values from CICP ColourPrimaries
 enum class Primaries : uint32_t {
@@ -78,14 +63,8 @@ enum class Primaries : uint32_t {
   kCustom = 2,  // Actual values encoded in separate fields
   k2100 = 9,    // Same as BT.2020
   kP3 = 11,
+  kLastEnumVal
 };
-
-static inline const char* EnumName(Primaries /*unused*/) { return "Primaries"; }
-static inline constexpr uint64_t EnumBits(Primaries /*unused*/) {
-  using Pr = Primaries;
-  return MakeBit(Pr::kSRGB) | MakeBit(Pr::kCustom) | MakeBit(Pr::k2100) |
-         MakeBit(Pr::kP3);
-}
 
 // Values from CICP TransferCharacteristics
 enum TransferFunction : uint32_t {
@@ -96,17 +75,8 @@ enum TransferFunction : uint32_t {
   kPQ = 16,   // from BT.2100
   kDCI = 17,  // from SMPTE RP 431-2 reference projector
   kHLG = 18,  // from BT.2100
+  kLastEnumVal
 };
-
-static inline const char* EnumName(TransferFunction /*unused*/) {
-  return "TransferFunction";
-}
-static inline constexpr uint64_t EnumBits(TransferFunction /*unused*/) {
-  using TF = TransferFunction;
-  return MakeBit(TF::k709) | MakeBit(TF::kLinear) | MakeBit(TF::kSRGB) |
-         MakeBit(TF::kPQ) | MakeBit(TF::kDCI) | MakeBit(TF::kHLG) |
-         MakeBit(TF::kUnknown);
-}
 
 enum class RenderingIntent : uint32_t {
   // Values match ICC sRGB encodings.
@@ -114,16 +84,8 @@ enum class RenderingIntent : uint32_t {
   kRelative,        // good for logos.
   kSaturation,      // perhaps useful for CG with fully saturated colors.
   kAbsolute,        // leaves white point unchanged; good for proofing.
+  kLastEnumVal
 };
-
-static inline const char* EnumName(RenderingIntent /*unused*/) {
-  return "RenderingIntent";
-}
-static inline constexpr uint64_t EnumBits(RenderingIntent /*unused*/) {
-  using RI = RenderingIntent;
-  return MakeBit(RI::kPerceptual) | MakeBit(RI::kRelative) |
-         MakeBit(RI::kSaturation) | MakeBit(RI::kAbsolute);
-}
 
 // Chromaticity (Y is omitted because it is 1 for primaries/white points)
 struct CIExy {
@@ -178,7 +140,8 @@ struct CustomTransferFunction : public Fields {
   }
 
   bool IsUnknown() const {
-    return !have_gamma_ && (transfer_function_ == TransferFunction::kUnknown);
+    return !(have_gamma_ || IsSRGB() || IsLinear() || IsPQ() || IsHLG() ||
+             Is709() || IsDCI());
   }
   bool IsSRGB() const {
     return !have_gamma_ && (transfer_function_ == TransferFunction::kSRGB);

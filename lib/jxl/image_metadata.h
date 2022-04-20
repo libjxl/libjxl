@@ -37,7 +37,6 @@ enum class Orientation : uint32_t {
   kAntiTranspose = JXL_ORIENT_ANTI_TRANSPOSE,
   kRotate270 = JXL_ORIENT_ROTATE_90_CCW,
 };
-// Don't need an EnumBits because Orientation is not read via Enum().
 
 enum class ExtraChannel : uint32_t {
   // First two enumerators (most common) are cheaper to encode
@@ -60,17 +59,9 @@ enum class ExtraChannel : uint32_t {
   // disambiguated via name string, raise warning if unsupported
   kUnknown = JXL_CHANNEL_UNKNOWN,
   // like kUnknown but can silently be ignored
-  kOptional = JXL_CHANNEL_OPTIONAL
+  kOptional = JXL_CHANNEL_OPTIONAL,
+  kLastEnumVal
 };
-static inline const char* EnumName(ExtraChannel /*unused*/) {
-  return "ExtraChannel";
-}
-static inline constexpr uint64_t EnumBits(ExtraChannel /*unused*/) {
-  using EC = ExtraChannel;
-  return MakeBit(EC::kAlpha) | MakeBit(EC::kDepth) | MakeBit(EC::kSpotColor) |
-         MakeBit(EC::kSelectionMask) | MakeBit(EC::kBlack) | MakeBit(EC::kCFA) |
-         MakeBit(EC::kThermal) | MakeBit(EC::kUnknown) | MakeBit(EC::kOptional);
-}
 
 // Used in ImageMetadata and ExtraChannelInfo.
 struct BitDepth : public Fields {

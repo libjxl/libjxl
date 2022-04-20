@@ -236,29 +236,31 @@ std::vector<ColorEncodingDescriptor> AllEncodings() {
   all_encodings.reserve(300);
   ColorEncoding c;
 
-  for (ColorSpace cs : Values<ColorSpace>()) {
-    if (cs == ColorSpace::kUnknown || cs == ColorSpace::kXYB) continue;
+  for (ColorSpace cs : {ColorSpace::kRGB, ColorSpace::kGray}) {
     c.SetColorSpace(cs);
 
-    for (WhitePoint wp : Values<WhitePoint>()) {
-      if (wp == WhitePoint::kCustom) continue;
+    for (WhitePoint wp : {WhitePoint::kD65, WhitePoint::kE, WhitePoint::kDCI}) {
       if (c.ImplicitWhitePoint() && c.white_point != wp) continue;
       c.white_point = wp;
 
-      for (Primaries primaries : Values<Primaries>()) {
-        if (primaries == Primaries::kCustom) continue;
+      for (Primaries primaries :
+           {Primaries::kSRGB, Primaries::k2100, Primaries::kP3}) {
         if (!c.HasPrimaries()) continue;
         c.primaries = primaries;
 
-        for (TransferFunction tf : Values<TransferFunction>()) {
-          if (tf == TransferFunction::kUnknown) continue;
+        for (TransferFunction tf :
+             {TransferFunction::k709, TransferFunction::kLinear,
+              TransferFunction::kSRGB, TransferFunction::kPQ,
+              TransferFunction::kDCI, TransferFunction::kHLG}) {
           if (c.tf.SetImplicit() &&
               (c.tf.IsGamma() || c.tf.GetTransferFunction() != tf)) {
             continue;
           }
           c.tf.SetTransferFunction(tf);
 
-          for (RenderingIntent ri : Values<RenderingIntent>()) {
+          for (RenderingIntent ri :
+               {RenderingIntent::kPerceptual, RenderingIntent::kRelative,
+                RenderingIntent::kSaturation, RenderingIntent::kAbsolute}) {
             ColorEncodingDescriptor cdesc;
             cdesc.color_space = cs;
             cdesc.white_point = wp;
