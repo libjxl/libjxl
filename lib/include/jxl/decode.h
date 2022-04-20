@@ -1199,8 +1199,8 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetDecompressBoxes(JxlDecoder* dec,
  *
  * @param dec decoder object
  * @param type buffer to copy the type into
- * @param decompressed which box type to get: JXL_TRUE to get the raw box type,
- * which can be "brob", JXL_FALSE, get the underlying box type.
+ * @param decompressed which box type to get: JXL_FALSE to get the raw box type,
+ * which can be "brob", JXL_TRUE, get the underlying box type.
  * @return JXL_DEC_SUCCESS if the value is available, JXL_DEC_ERROR if not, for
  *    example the JXL file does not use the container format.
  */
