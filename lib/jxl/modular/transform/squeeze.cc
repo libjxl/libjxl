@@ -119,8 +119,7 @@ Status InvHSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
       pixel_type left = (x ? p_out[(x << 1) - 1] : avg);
       pixel_type tendency = SmoothTendency(left, avg, next_avg);
       pixel_type diff = diff_minus_tendency + tendency;
-      pixel_type A =
-          ((avg * 2) + diff + (diff > 0 ? -(diff & 1) : (diff & 1))) >> 1;
+      pixel_type A = avg + (diff / 2);
       p_out[(x << 1)] = A;
       pixel_type B = A - diff;
       p_out[(x << 1) + 1] = B;
@@ -249,9 +248,7 @@ Status InvVSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
         pixel_type tendency = SmoothTendency(top, avg, next_avg);
         pixel_type diff_minus_tendency = p_residual[x];
         pixel_type diff = diff_minus_tendency + tendency;
-        pixel_type out =
-            ((avg * 2) + diff + (diff < 0 ? (diff & 1) : -(diff & 1))) >> 1;
-
+        pixel_type out = avg + (diff / 2);
         p_out[x] = out;
         // If the chin_residual.h == chin.h, the output has an even number
         // of rows so the next line is fine. Otherwise, this loop won't
