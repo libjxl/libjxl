@@ -139,21 +139,17 @@ namespace {
 
 size_t BitsPerChannel(JxlDataType data_type) {
   switch (data_type) {
-    case JXL_TYPE_BOOLEAN:
-      return 1;
     case JXL_TYPE_UINT8:
       return 8;
     case JXL_TYPE_UINT16:
       return 16;
-    case JXL_TYPE_UINT32:
-      return 32;
     case JXL_TYPE_FLOAT:
       return 32;
     case JXL_TYPE_FLOAT16:
       return 16;
-      // No default, give compiler error if new type not handled.
+    default:
+      return 0;  // signals unhandled JxlDataType
   }
-  return 0;  // Indicate invalid data type.
 }
 
 enum class DecoderStage : uint32_t {
@@ -2406,17 +2402,11 @@ JxlDecoderStatus PrepareSizeCheck(const JxlDecoder* dec,
   if (format->num_channels > 4) {
     return JXL_API_ERROR("More than 4 channels not supported");
   }
-  if (format->data_type == JXL_TYPE_BOOLEAN) {
-    return JXL_API_ERROR("Boolean data type not yet supported");
-  }
-  if (format->data_type == JXL_TYPE_UINT32) {
-    return JXL_API_ERROR("uint32 data type not yet supported");
-  }
 
   *bits = BitsPerChannel(format->data_type);
 
   if (*bits == 0) {
-    return JXL_API_ERROR("Invalid data type");
+    return JXL_API_ERROR("Invalid/unsupported data type");
   }
 
   return JXL_DEC_SUCCESS;

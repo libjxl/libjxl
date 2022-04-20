@@ -51,7 +51,6 @@ jxl::CodecInOut ConvertTestImage(const std::vector<uint8_t>& buf,
         io.metadata.m.SetAlphaBits(8);
         break;
       case JXL_TYPE_UINT16:
-      case JXL_TYPE_UINT32:
       case JXL_TYPE_FLOAT:
       case JXL_TYPE_FLOAT16:
         io.metadata.m.SetAlphaBits(16);
