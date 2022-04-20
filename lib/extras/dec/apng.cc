@@ -57,6 +57,12 @@ namespace extras {
 
 namespace {
 
+/* hIST chunk tail is not proccesed properly; skip this chunk completely;
+   see https://github.com/glennrp/libpng/pull/413 */
+const png_byte kIgnoredPngChunks[] = {
+    104, 73, 83, 84, '\0' /* hIST */
+};
+
 // Returns floating-point value from the PNG encoding (times 10^5).
 static double F64FromU32(const uint32_t x) {
   return static_cast<int32_t>(x) * 1E-5;
@@ -285,6 +291,7 @@ void row_fn(png_structp png_ptr, png_bytep new_row, png_uint_32 row_num,
             int pass) {
   APNGFrame* frame = (APNGFrame*)png_get_progressive_ptr(png_ptr);
   JXL_CHECK(frame);
+  JXL_CHECK(row_num < frame->rows.size());
   JXL_CHECK(frame->rows[row_num] < frame->pixels.data() + frame->pixels.size());
   png_progressive_combine_row(png_ptr, frame->rows[row_num], new_row);
 }
@@ -319,6 +326,9 @@ int processing_start(png_structp& png_ptr, png_infop& info_ptr, void* frame_ptr,
   if (setjmp(png_jmpbuf(png_ptr))) {
     return 1;
   }
+
+  png_set_keep_unknown_chunks(png_ptr, 1, kIgnoredPngChunks,
+                              (int)sizeof(kIgnoredPngChunks) / 5);
 
   png_set_crc_action(png_ptr, PNG_CRC_QUIET_USE, PNG_CRC_QUIET_USE);
   png_set_progressive_read_fn(png_ptr, frame_ptr, info_fn, row_fn, NULL);
