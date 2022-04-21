@@ -400,7 +400,7 @@ int PrintBasicInfo(FILE* file, int verbose) {
 int main(int argc, char* argv[]) {
   int verbose = 0;
   if (argc == 3) {
-    if (argv[1][0] == '-' && argv[1][1] == 'v') {
+    if (strncmp(argv[1], "-v", 3) == 0) {
       verbose = 1;
       argv++;
       argc--;
