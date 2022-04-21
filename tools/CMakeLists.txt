@@ -150,7 +150,7 @@ if(JPEGXL_ENABLE_TOOLS)
     jxl_extras_dec-static
     jxl_threads
     hwy
-    gflags
+    jxl_gflags
   )
   target_include_directories(cjxl_ng PRIVATE "${PROJECT_SOURCE_DIR}")
   if(JPEGXL_EMSCRIPTEN)
@@ -162,7 +162,7 @@ if(JPEGXL_ENABLE_TOOLS)
   )
   target_link_libraries(djxl_ng
     jxl
-    gflags
+    jxl_gflags
   )
 
   add_executable(cjpeg_hdr

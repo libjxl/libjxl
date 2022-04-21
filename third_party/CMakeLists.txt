@@ -163,11 +163,12 @@ if(JPEGXL_ENABLE_TOOLS)
     # Compile gflags from sources.
     set(GFLAGS_BUILD_TESTING OFF)
     add_subdirectory(gflags)
+    add_library(jxl_gflags ALIAS gflags_nothreads_static)
     configure_file("${CMAKE_CURRENT_SOURCE_DIR}/gflags/COPYING.txt"
                    ${PROJECT_BINARY_DIR}/LICENSE.gflags COPYONLY)
   else()
     # Use sytem libgflags-dev
-    find_package(gflags REQUIRED)
+    find_package(gflags)
     if (NOT gflags_FOUND)
       message(FATAL_ERROR
         "Gflags not found, install libgflags-dev or download gflags source to"
@@ -178,9 +179,12 @@ if(JPEGXL_ENABLE_TOOLS)
       configure_file("${JPEGXL_DEP_LICENSE_DIR}/libgflags-dev/copyright"
                      ${PROJECT_BINARY_DIR}/LICENSE.gflags COPYONLY)
     endif()  # JPEGXL_DEP_LICENSE_DIR
-    # https://gitlab.kitware.com/cmake/cmake/-/issues/22919
-    message(STATUS "Found: ${gflags_FOUND}")
-    set_target_properties(gflags PROPERTIES IMPORTED_GLOBAL TRUE)
+    add_library(jxl_gflags INTERFACE)
+    if(JPEGXL_STATIC)
+      target_link_libraries(jxl_gflags INTERFACE gflags_static)
+    else()
+      target_link_libraries(jxl_gflags INTERFACE gflags)
+    endif()
   endif()
 endif()
 
