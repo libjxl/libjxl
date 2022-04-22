@@ -340,8 +340,10 @@ JXL_EXPORT void JxlDecoderSkipFrames(JxlDecoder* dec, size_t amount);
  * the data loaded into this decoder.
  * @return JXL_DEC_SUCCESS if no error, JXL_DEC_NEED_MORE_INPUT if the
  * basic info isn't yet available, and JXL_DEC_ERROR otherwise.
+ *
+ * DEPRECATED: this function will be removed in the future.
  */
-JXL_EXPORT JxlDecoderStatus
+JXL_EXPORT JXL_DEPRECATED JxlDecoderStatus
 JxlDecoderDefaultPixelFormat(const JxlDecoder* dec, JxlPixelFormat* format);
 
 /**
