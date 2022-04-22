@@ -465,7 +465,7 @@ int main(int argc, char** argv) {
   bool input_image_loaded = false;
   jxl::PaddedBytes image_data;
   jxl::extras::PackedPixelFile ppf;
-  jxl::extras::Codec codec;
+  jxl::extras::Codec codec = jxl::extras::Codec::kUnknown;
   auto ensure_image_loaded = [&filename_in, &input_image_loaded, &image_data,
                               &ppf, &codec]() {
     if (input_image_loaded) return;
