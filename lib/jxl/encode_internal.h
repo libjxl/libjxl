@@ -117,12 +117,15 @@ struct JxlEncoderStruct {
   size_t num_queued_boxes;
   std::vector<jxl::JxlEncoderQueuedInput> input_queue;
   std::deque<uint8_t> output_byte_queue;
-  size_t output_bytes_flushed;
 
-  // Get the current write position in the stream (for indexing use).
-  size_t BytePosition() const {
-    return output_bytes_flushed + output_byte_queue.size();
-  }
+  // How many codestream bytes have been written, i.e.,
+  // content of jxlc and jxlp boxes. Frame index box jxli
+  // requires position indices to point to codestream bytes,
+  // so we need to keep track of the total of flushed or queue
+  // codestream bytes. These bytes may be in a single jxlc box
+  // or accross multiple jxlp boxes.
+  size_t codestream_bytes_written_beginning_of_frame;
+  size_t codestream_bytes_written_end_of_frame;
 
   // Force using the container even if not needed
   bool use_container;

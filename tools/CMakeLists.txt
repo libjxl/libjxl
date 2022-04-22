@@ -125,6 +125,7 @@ if(JPEGXL_ENABLE_TOOLS)
     djxl
     djxl_ng
     cjpeg_hdr
+    jxlinfo
   )
 
   # Main compressor.
@@ -134,10 +135,10 @@ if(JPEGXL_ENABLE_TOOLS)
     cjxl_main.cc
   )
   target_link_libraries(cjxl
-      box
-      jxl-static
-      jxl_extras-static
-      jxl_threads-static
+    box
+    jxl-static
+    jxl_extras-static
+    jxl_threads-static
   )
 
 
@@ -146,26 +147,33 @@ if(JPEGXL_ENABLE_TOOLS)
   )
   target_link_libraries(cjxl_ng
     jxl
-    gflags
+    jxl_extras_dec-static
+    jxl_threads
+    hwy
+    jxl_gflags
   )
+  target_include_directories(cjxl_ng PRIVATE "${PROJECT_SOURCE_DIR}")
+  if(JPEGXL_EMSCRIPTEN)
+    set_target_properties(cjxl_ng PROPERTIES LINK_FLAGS "-s USE_LIBPNG=1")
+  endif()
 
   add_executable(djxl_ng
     djxl_ng_main.cc
   )
   target_link_libraries(djxl_ng
     jxl
-    gflags
+    jxl_gflags
   )
 
-add_executable(cjpeg_hdr
-  cjpeg_hdr.cc
-)
-target_link_libraries(cjpeg_hdr
+  add_executable(cjpeg_hdr
+    cjpeg_hdr.cc
+  )
+  target_link_libraries(cjpeg_hdr
     box
     jxl-static
     jxl_extras-static
     jxl_threads-static
-)
+  )
 
   # Main decompressor.
   add_library(djxltool STATIC
@@ -173,16 +181,29 @@ target_link_libraries(cjpeg_hdr
     speed_stats.cc
   )
   target_link_libraries(djxltool
-      box
-      jxl-static
-      jxl_extras-static
-      jxl_threads-static
+    box
+    jxl-static
+    jxl_extras-static
+    jxl_threads-static
   )
 
   add_executable(djxl
-      djxl_main.cc
+    djxl_main.cc
   )
-target_link_libraries(djxl djxltool)
+  target_link_libraries(djxl djxltool)
+
+  add_executable(jxlinfo
+    jxlinfo.c
+  )
+  target_link_libraries(jxlinfo jxl)
+
+  if(NOT ${SANITIZER} STREQUAL "none")
+    # Linking a C test binary with the C++ JPEG XL implementation when using
+    # address sanitizer is not well supported by clang 9, so force using clang++
+    # for linking this test if a sanitizer is used.
+    set_target_properties(jxlinfo PROPERTIES LINKER_LANGUAGE CXX)
+  endif()  # SANITIZER != "none"
+
 endif()  # JPEGXL_ENABLE_TOOLS
 
 # Other developer tools.
@@ -422,16 +443,25 @@ if ("${JNI_FOUND}" AND "${Java_FOUND}")
   add_library(jxl_jni SHARED jni/org/jpeg/jpegxl/wrapper/decoder_jni.cc)
   target_include_directories(jxl_jni PRIVATE "${JNI_INCLUDE_DIRS}" "${PROJECT_SOURCE_DIR}")
   target_link_libraries(jxl_jni PUBLIC jxl_dec-static jxl_threads-static)
+  if(NOT DEFINED JPEGXL_INSTALL_JNIDIR)
+    set(JPEGXL_INSTALL_JNIDIR ${CMAKE_INSTALL_LIBDIR})
+  endif()
+  install(TARGETS jxl_jni DESTINATION ${JPEGXL_INSTALL_JNIDIR})
 
-  add_jar(jxl_jni_wrapper
+  add_jar(jxl_jni_wrapper SOURCES
     jni/org/jpeg/jpegxl/wrapper/Decoder.java
     jni/org/jpeg/jpegxl/wrapper/DecoderJni.java
     jni/org/jpeg/jpegxl/wrapper/ImageData.java
     jni/org/jpeg/jpegxl/wrapper/PixelFormat.java
     jni/org/jpeg/jpegxl/wrapper/Status.java
     jni/org/jpeg/jpegxl/wrapper/StreamInfo.java
+    OUTPUT_NAME org.jpeg.jpegxl
   )
   get_target_property(JXL_JNI_WRAPPER_JAR jxl_jni_wrapper JAR_FILE)
+  if(NOT DEFINED JPEGXL_INSTALL_JARDIR)
+    set(JPEGXL_INSTALL_JARDIR ${CMAKE_INSTALL_LIBDIR})
+  endif()
+  install_jar(jxl_jni_wrapper DESTINATION ${JPEGXL_INSTALL_JARDIR})
 
   add_jar(jxl_jni_wrapper_test
     SOURCES jni/org/jpeg/jpegxl/wrapper/DecoderTest.java

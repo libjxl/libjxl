@@ -57,6 +57,12 @@ namespace extras {
 
 namespace {
 
+/* hIST chunk tail is not proccesed properly; skip this chunk completely;
+   see https://github.com/glennrp/libpng/pull/413 */
+const png_byte kIgnoredPngChunks[] = {
+    104, 73, 83, 84, '\0' /* hIST */
+};
+
 // Returns floating-point value from the PNG encoding (times 10^5).
 static double F64FromU32(const uint32_t x) {
   return static_cast<int32_t>(x) * 1E-5;
@@ -252,7 +258,7 @@ constexpr uint32_t kId_cHRM = 0x4D524863;
 constexpr uint32_t kId_eXIf = 0x66495865;
 
 struct APNGFrame {
-  PaddedBytes pixels;
+  std::vector<uint8_t> pixels;
   std::vector<uint8_t*> rows;
   unsigned int w, h, delay_num, delay_den;
 };
@@ -271,7 +277,7 @@ struct Reader {
 };
 
 const unsigned long cMaxPNGSize = 1000000UL;
-const size_t kMaxPNGChunkSize = 100000000;  // 100 MB
+const size_t kMaxPNGChunkSize = 1lu << 30;  // 1 GB
 
 void info_fn(png_structp png_ptr, png_infop info_ptr) {
   png_set_expand(png_ptr);
@@ -285,11 +291,12 @@ void row_fn(png_structp png_ptr, png_bytep new_row, png_uint_32 row_num,
             int pass) {
   APNGFrame* frame = (APNGFrame*)png_get_progressive_ptr(png_ptr);
   JXL_CHECK(frame);
+  JXL_CHECK(row_num < frame->rows.size());
   JXL_CHECK(frame->rows[row_num] < frame->pixels.data() + frame->pixels.size());
   png_progressive_combine_row(png_ptr, frame->rows[row_num], new_row);
 }
 
-inline unsigned int read_chunk(Reader* r, PaddedBytes* pChunk) {
+inline unsigned int read_chunk(Reader* r, std::vector<uint8_t>* pChunk) {
   unsigned char len[4];
   if (r->Read(&len, 4)) {
     const auto size = png_get_uint_32(len);
@@ -308,8 +315,8 @@ inline unsigned int read_chunk(Reader* r, PaddedBytes* pChunk) {
 }
 
 int processing_start(png_structp& png_ptr, png_infop& info_ptr, void* frame_ptr,
-                     bool hasInfo, PaddedBytes& chunkIHDR,
-                     std::vector<PaddedBytes>& chunksInfo) {
+                     bool hasInfo, std::vector<uint8_t>& chunkIHDR,
+                     std::vector<std::vector<uint8_t>>& chunksInfo) {
   unsigned char header[8] = {137, 80, 78, 71, 13, 10, 26, 10};
 
   png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
@@ -319,6 +326,9 @@ int processing_start(png_structp& png_ptr, png_infop& info_ptr, void* frame_ptr,
   if (setjmp(png_jmpbuf(png_ptr))) {
     return 1;
   }
+
+  png_set_keep_unknown_chunks(png_ptr, 1, kIgnoredPngChunks,
+                              (int)sizeof(kIgnoredPngChunks) / 5);
 
   png_set_crc_action(png_ptr, PNG_CRC_QUIET_USE, PNG_CRC_QUIET_USE);
   png_set_progressive_read_fn(png_ptr, frame_ptr, info_fn, row_fn, NULL);
@@ -381,9 +391,9 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
   unsigned char sig[8];
   png_structp png_ptr = nullptr;
   png_infop info_ptr = nullptr;
-  PaddedBytes chunk;
-  PaddedBytes chunkIHDR;
-  std::vector<PaddedBytes> chunksInfo;
+  std::vector<uint8_t> chunk;
+  std::vector<uint8_t> chunkIHDR;
+  std::vector<std::vector<uint8_t>> chunksInfo;
   bool isAnimated = false;
   bool hasInfo = false;
   APNGFrame frameRaw = {};
@@ -595,8 +605,7 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
           auto ok = png_get_iCCP(png_ptr, info_ptr, &name, &compression_type,
                                  &profile, &proflen);
           if (ok && proflen) {
-            ppf->icc.resize(proflen);
-            memcpy(ppf->icc.data(), profile, proflen);
+            ppf->icc.assign(profile, profile + proflen);
             have_color = true;
           } else {
             // TODO(eustas): JXL_WARNING?

@@ -9,7 +9,7 @@ from numpy.ctypeslib import ndpointer
 import numpy
 import os
 
-lcms2_lib_path = os.getenv("LCMS2_LIB_PATH", "liblcms2.so")
+lcms2_lib_path = os.getenv("LCMS2_LIB_PATH", "liblcms2.so.2")
 lcms2_lib = ctypes.cdll.LoadLibrary(lcms2_lib_path)
 
 native_open_profile = lcms2_lib.cmsOpenProfileFromMem

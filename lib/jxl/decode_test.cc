@@ -1234,7 +1234,8 @@ TEST_P(DecodeTestParam, PixelTest) {
         io.Main(), 16,
         /*float_out=*/false, orig_channels, JXL_BIG_ENDIAN,
         xsize * 2 * orig_channels, nullptr, pixels.data(), pixels.size(),
-        nullptr, nullptr, static_cast<jxl::Orientation>(config.orientation)));
+        /*out_callback=*/{},
+        static_cast<jxl::Orientation>(config.orientation)));
   }
   if (config.upsampling == 1) {
     EXPECT_EQ(0u, jxl::test::ComparePixels(pixels.data(), pixels2.data(), xsize,
@@ -1406,12 +1407,8 @@ std::ostream& operator<<(std::ostream& os, const PixelTestConfig& c) {
     case JXL_TYPE_FLOAT16:
       os << "f16";
       break;
-    case JXL_TYPE_UINT32:
-      os << "u32";
-      break;
-    case JXL_TYPE_BOOLEAN:
-      os << "b";
-      break;
+    default:
+      JXL_ASSERT(false);
   };
   if (jxl::test::GetDataBits(c.data_type) > jxl::kBitsPerByte) {
     if (c.endianness == JXL_NATIVE_ENDIAN) {
@@ -3568,7 +3565,7 @@ TEST(DecodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGReconstructTestCodestream)) {
 
 TEST(DecodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGReconstructionTest)) {
   const std::string jpeg_path =
-      "imagecompression.info/flower_foveon.png.im_q85_420.jpg";
+      "third_party/imagecompression.info/flower_foveon.png.im_q85_420.jpg";
   const jxl::PaddedBytes orig = jxl::ReadTestData(jpeg_path);
   jxl::CodecInOut orig_io;
   ASSERT_TRUE(

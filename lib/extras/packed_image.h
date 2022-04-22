@@ -67,7 +67,7 @@ class PackedImage {
   // Whether the range is determined by format or by JxlBasicInfo
   // e.g. if format is UINT16 and JxlBasicInfo bits_per_sample is 10,
   // then if bitdepth_from_format == true, the range is 0..65535
-  // while if bitdepth_from_format == true, the range is 0..1023.
+  // while if bitdepth_from_format == false, the range is 0..1023.
   bool bitdepth_from_format = true;
 
   // The number of bytes per row.
@@ -79,21 +79,17 @@ class PackedImage {
 
   static size_t BitsPerChannel(JxlDataType data_type) {
     switch (data_type) {
-      case JXL_TYPE_BOOLEAN:
-        return 1;
       case JXL_TYPE_UINT8:
         return 8;
       case JXL_TYPE_UINT16:
         return 16;
-      case JXL_TYPE_UINT32:
-        return 32;
       case JXL_TYPE_FLOAT:
         return 32;
       case JXL_TYPE_FLOAT16:
         return 16;
-        // No default, give compiler error if new type not handled.
+      default:
+        JXL_ABORT("Unhandled JxlDataType");
     }
-    return 0;  // Indicate invalid data type.
   }
 
  private:

@@ -252,6 +252,12 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
     // TODO(lode): preview should be added here if a preview image is added
 
     writer.ZeroPadToByte();
+
+    // Not actually the end of frame, but the end of metadata/ICC, but helps
+    // the next frame to start here for indexing purposes.
+    codestream_bytes_written_end_of_frame +=
+        jxl::DivCeil(writer.BitsWritten(), 8);
+
     bytes = std::move(writer).TakeBytes();
 
     if (MustUseContainer()) {
@@ -387,17 +393,21 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
       ib.origin.x0 = input_frame->option_values.header.layer_info.crop_x0;
       ib.origin.y0 = input_frame->option_values.header.layer_info.crop_y0;
     }
+    JXL_ASSERT(writer.BitsWritten() == 0);
     if (!jxl::EncodeFrame(input_frame->option_values.cparams, frame_info,
                           &metadata, input_frame->frame, &enc_state, cms,
                           thread_pool.get(), &writer,
                           /*aux_out=*/nullptr)) {
       return JXL_API_ERROR("Failed to encode frame");
     }
+    codestream_bytes_written_beginning_of_frame =
+        codestream_bytes_written_end_of_frame;
+    codestream_bytes_written_end_of_frame +=
+        jxl::DivCeil(writer.BitsWritten(), 8);
 
     // Possibly bytes already contains the codestream header: in case this is
     // the first frame, and the codestream header was not encoded as jxlp above.
     bytes.append(std::move(writer).TakeBytes());
-
     if (MustUseContainer()) {
       if (last_frame && jxlp_counter == 0) {
         // If this is the last frame and no jxlp boxes were used yet, it's
@@ -1026,7 +1036,8 @@ void JxlEncoderReset(JxlEncoder* enc) {
   enc->num_queued_boxes = 0;
   enc->encoder_options.clear();
   enc->output_byte_queue.clear();
-  enc->output_bytes_flushed = 0;
+  enc->codestream_bytes_written_beginning_of_frame = 0;
+  enc->codestream_bytes_written_end_of_frame = 0;
   enc->wrote_bytes = false;
   enc->jxlp_counter = 0;
   enc->metadata = jxl::CodecMetadata();
@@ -1043,9 +1054,10 @@ void JxlEncoderReset(JxlEncoder* enc) {
 
 void JxlEncoderDestroy(JxlEncoder* enc) {
   if (enc) {
+    JxlMemoryManager local_memory_manager = enc->memory_manager;
     // Call destructor directly since custom free function is used.
     enc->~JxlEncoder();
-    jxl::MemoryManagerFree(&enc->memory_manager, enc);
+    jxl::MemoryManagerFree(&local_memory_manager, enc);
   }
 }
 
@@ -1080,7 +1092,10 @@ int JxlEncoderGetRequiredCodestreamLevel(const JxlEncoder* enc) {
   return VerifyLevelSettings(enc, nullptr);
 }
 
-void JxlEncoderSetCms(JxlEncoder* enc, JxlCmsInterface cms) { enc->cms = cms; }
+void JxlEncoderSetCms(JxlEncoder* enc, JxlCmsInterface cms) {
+  jxl::msan::MemoryIsInitialized(&cms, sizeof(cms));
+  enc->cms = cms;
+}
 
 JxlEncoderStatus JxlEncoderSetParallelRunner(JxlEncoder* enc,
                                              JxlParallelRunner parallel_runner,
@@ -1385,7 +1400,6 @@ JxlEncoderStatus JxlEncoderProcessOutput(JxlEncoder* enc, uint8_t** next_out,
       std::copy_n(enc->output_byte_queue.begin(), to_copy, *next_out);
       *next_out += to_copy;
       *avail_out -= to_copy;
-      enc->output_bytes_flushed += to_copy;
       enc->output_byte_queue.erase(enc->output_byte_queue.begin(),
                                    enc->output_byte_queue.begin() + to_copy);
     } else if (!enc->input_queue.empty()) {
@@ -1441,7 +1455,7 @@ JxlEncoderStatus JxlEncoderSetExtraChannelBlendInfo(
 
 JxlEncoderStatus JxlEncoderSetFrameName(JxlEncoderFrameSettings* frame_settings,
                                         const char* frame_name) {
-  std::string str = frame_name;
+  std::string str = frame_name ? frame_name : "";
   if (str.size() > 1071) {
     return JXL_API_ERROR("frame name can be max 1071 bytes long");
   }

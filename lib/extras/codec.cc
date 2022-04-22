@@ -42,7 +42,7 @@ Status SetFromBytes(const Span<const uint8_t> bytes,
   if (bytes.size() < kMinBytes) return JXL_FAILURE("Too few bytes");
 
   extras::PackedPixelFile ppf;
-  if (extras::DecodeBytes(bytes, color_hints, io->constraints, &ppf, pool,
+  if (extras::DecodeBytes(bytes, color_hints, io->constraints, &ppf,
                           orig_codec)) {
     return ConvertPackedPixelFileToCodecInOut(ppf, pool, io);
   }
@@ -139,10 +139,13 @@ Status EncodeToFile(const CodecInOut& io, const ColorEncoding& c_desired,
   const extras::Codec codec =
       extras::CodecFromExtension(extension, &bits_per_sample);
 
-  // Warn about incorrect usage of PBM/PGM/PGX/PPM - only the latter supports
+  // Warn about incorrect usage of PGM/PGX/PPM - only the latter supports
   // color, but CodecFromExtension lumps them all together.
   if (codec == extras::Codec::kPNM && extension != ".pfm") {
-    if (!io.Main().IsGray() && extension != ".ppm") {
+    if (io.Main().HasAlpha() && extension != ".pam") {
+      JXL_WARNING(
+          "For images with alpha, the filename should end with .pam.\n");
+    } else if (!io.Main().IsGray() && extension == ".pgm") {
       JXL_WARNING("For color images, the filename should end with .ppm.\n");
     } else if (io.Main().IsGray() && extension == ".ppm") {
       JXL_WARNING(

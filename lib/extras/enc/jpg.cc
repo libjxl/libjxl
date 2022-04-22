@@ -67,7 +67,8 @@ void WriteICCProfile(jpeg_compress_struct* const cinfo,
     }
   }
 }
-void WriteExif(jpeg_compress_struct* const cinfo, const PaddedBytes& exif) {
+void WriteExif(jpeg_compress_struct* const cinfo,
+               const std::vector<uint8_t>& exif) {
   jpeg_write_m_header(
       cinfo, kExifMarker,
       static_cast<unsigned int>(exif.size() + sizeof kExifSignature));
@@ -128,7 +129,7 @@ Status EncodeWithLibJpeg(const ImageBundle* ib, const CodecInOut* io,
     WriteICCProfile(&cinfo, ib->c_current().ICC());
   }
   if (!io->blobs.exif.empty()) {
-    PaddedBytes exif(io->blobs.exif);
+    std::vector<uint8_t> exif = io->blobs.exif;
     ResetExifOrientation(exif);
     WriteExif(&cinfo, exif);
   }
@@ -141,8 +142,7 @@ Status EncodeWithLibJpeg(const ImageBundle* ib, const CodecInOut* io,
   JXL_RETURN_IF_ERROR(ConvertToExternal(
       *ib, BITS_IN_JSAMPLE, /*float_out=*/false, cinfo.input_components,
       JXL_BIG_ENDIAN, stride, nullptr, raw_bytes.data(), raw_bytes.size(),
-      /*out_callback=*/nullptr,
-      /*out_opaque=*/nullptr, ib->metadata()->GetOrientation()));
+      /*out_callback=*/{}, ib->metadata()->GetOrientation()));
 
   for (size_t y = 0; y < ib->oriented_ysize(); ++y) {
     JSAMPROW row[] = {raw_bytes.data() + y * stride};
@@ -172,7 +172,7 @@ Status EncodeWithSJpeg(const ImageBundle* ib, const CodecInOut* io,
     param.iccp.assign(ib->metadata()->color_encoding.ICC().begin(),
                       ib->metadata()->color_encoding.ICC().end());
   }
-  PaddedBytes exif(io->blobs.exif);
+  std::vector<uint8_t> exif = io->blobs.exif;
   if (!exif.empty()) {
     ResetExifOrientation(exif);
     param.exif.assign(exif.begin(), exif.end());
@@ -186,10 +186,10 @@ Status EncodeWithSJpeg(const ImageBundle* ib, const CodecInOut* io,
   }
   size_t stride = ib->oriented_xsize() * 3;
   PaddedBytes rgb(ib->xsize() * ib->ysize() * 3);
-  JXL_RETURN_IF_ERROR(ConvertToExternal(
-      *ib, 8, /*float_out=*/false, 3, JXL_BIG_ENDIAN, stride, nullptr,
-      rgb.data(), rgb.size(), /*out_callback=*/nullptr,
-      /*out_opaque=*/nullptr, ib->metadata()->GetOrientation()));
+  JXL_RETURN_IF_ERROR(
+      ConvertToExternal(*ib, 8, /*float_out=*/false, 3, JXL_BIG_ENDIAN, stride,
+                        nullptr, rgb.data(), rgb.size(),
+                        /*out_callback=*/{}, ib->metadata()->GetOrientation()));
 
   std::string output;
   JXL_RETURN_IF_ERROR(sjpeg::Encode(rgb.data(), ib->oriented_xsize(),

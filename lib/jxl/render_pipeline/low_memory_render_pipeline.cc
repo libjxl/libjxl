@@ -374,10 +374,11 @@ void LowMemoryRenderPipeline::PrepareForThreadsInternal(size_t num,
   // TODO(veluca): avoid reallocating buffers if not needed.
   stage_data_.resize(num);
   size_t upsampling = 1u << base_color_shift_;
-  size_t stage_buffer_xsize =
-      frame_dimensions_.group_dim * upsampling +
+  size_t group_dim = frame_dimensions_.group_dim * upsampling;
+  size_t padding =
       2 * group_data_x_border_ * upsampling +  // maximum size of a rect
       2 * kRenderPipelineXOffset;              // extra padding for processing
+  size_t stage_buffer_xsize = group_dim + padding;
   for (size_t t = 0; t < num; t++) {
     stage_data_[t].resize(shifts.size());
     for (size_t c = 0; c < shifts.size(); c++) {
@@ -397,15 +398,16 @@ void LowMemoryRenderPipeline::PrepareForThreadsInternal(size_t num,
   }
   if (first_image_dim_stage_ != stages_.size()) {
     out_of_frame_data_.resize(num);
+    size_t left_padding = std::max<ssize_t>(0, frame_origin_.x0);
+    size_t middle_padding = group_dim;
+    ssize_t last_x =
+        frame_origin_.x0 + std::min(frame_dimensions_.xsize_groups * group_dim,
+                                    frame_dimensions_.xsize_upsampled);
+    last_x = Clamp1<ssize_t>(last_x, 0, full_image_xsize_);
+    size_t right_padding = full_image_xsize_ - last_x;
     size_t out_of_frame_xsize =
-        2 * kRenderPipelineXOffset +
-        std::max<ssize_t>(
-            0,
-            std::max<ssize_t>(
-                frame_origin_.x0,
-                static_cast<ssize_t>(full_image_xsize_) - frame_origin_.x0 -
-                    static_cast<ssize_t>(frame_dimensions_.xsize_upsampled)));
-    out_of_frame_xsize = std::max(out_of_frame_xsize, stage_buffer_xsize);
+        padding +
+        std::max(left_padding, std::max(middle_padding, right_padding));
     for (size_t t = 0; t < num; t++) {
       out_of_frame_data_[t] = ImageF(out_of_frame_xsize, shifts.size());
     }
@@ -625,10 +627,10 @@ void LowMemoryRenderPipeline::RenderRect(size_t thread_id,
         }
       }
       // Produce output rows.
-      stages_[i]->ProcessRow(
-          input_rows[i], output_rows, xpadding_for_output_[i],
-          group_rect[i].xsize(), group_rect[i].x0(), group_rect[i].y0() + y,
-          reinterpret_cast<float*>(temp_buffers_[thread_id].get()));
+      stages_[i]->ProcessRow(input_rows[i], output_rows,
+                             xpadding_for_output_[i], group_rect[i].xsize(),
+                             group_rect[i].x0(), group_rect[i].y0() + y,
+                             thread_id);
     }
 
     // Process trailing stages, i.e. the final set of non-kInOut stages; they
@@ -643,11 +645,10 @@ void LowMemoryRenderPipeline::RenderRect(size_t thread_id,
     }
 
     for (size_t i = first_trailing_stage_; i < first_image_dim_stage_; i++) {
-      stages_[i]->ProcessRow(
-          input_rows[first_trailing_stage_], output_rows,
-          /*xextra=*/0, group_rect[i].xsize(), group_rect[i].x0(),
-          group_rect[i].y0() + y,
-          reinterpret_cast<float*>(temp_buffers_[thread_id].get()));
+      stages_[i]->ProcessRow(input_rows[first_trailing_stage_], output_rows,
+                             /*xextra=*/0, group_rect[i].xsize(),
+                             group_rect[i].x0(), group_rect[i].y0() + y,
+                             thread_id);
     }
 
     if (first_image_dim_stage_ == stages_.size()) continue;
@@ -676,11 +677,9 @@ void LowMemoryRenderPipeline::RenderRect(size_t thread_id,
     if (full_image_x1 <= full_image_x0) continue;
 
     for (size_t i = first_image_dim_stage_; i < stages_.size(); i++) {
-      stages_[i]->ProcessRow(
-          input_rows[first_trailing_stage_], output_rows,
-          /*xextra=*/0, full_image_x1 - full_image_x0, full_image_x0,
-          full_image_y,
-          reinterpret_cast<float*>(temp_buffers_[thread_id].get()));
+      stages_[i]->ProcessRow(input_rows[first_trailing_stage_], output_rows,
+                             /*xextra=*/0, full_image_x1 - full_image_x0,
+                             full_image_x0, full_image_y, thread_id);
     }
   }
 }
@@ -699,10 +698,9 @@ void LowMemoryRenderPipeline::RenderPadding(size_t thread_id, Rect rect) {
     stages_[first_image_dim_stage_ - 1]->ProcessPaddingRow(
         input_rows, rect.xsize(), rect.x0(), rect.y0() + y);
     for (size_t i = first_image_dim_stage_; i < stages_.size(); i++) {
-      stages_[i]->ProcessRow(
-          input_rows, output_rows,
-          /*xextra=*/0, rect.xsize(), rect.x0(), rect.y0() + y,
-          reinterpret_cast<float*>(temp_buffers_[thread_id].get()));
+      stages_[i]->ProcessRow(input_rows, output_rows,
+                             /*xextra=*/0, rect.xsize(), rect.x0(),
+                             rect.y0() + y, thread_id);
     }
   }
 }
@@ -736,31 +734,35 @@ void LowMemoryRenderPipeline::ProcessBuffers(size_t group_id,
     size_t x1 = group_rect.x1();
     size_t y1 = group_rect.y1();
 
-    if (gx == 0 && gy == 0) {
-      RenderPadding(thread_id, Rect(0, 0, x0, y0));
-    }
-    if (gy == 0) {
-      RenderPadding(thread_id, Rect(x0, 0, x1 - x0, y0));
-    }
-    if (gx == 0) {
-      RenderPadding(thread_id, Rect(0, y0, x0, y1 - y0));
-    }
-    if (gx == 0 && gy + 1 == frame_dimensions_.ysize_groups) {
-      RenderPadding(thread_id, Rect(0, y1, x0, full_image_ysize_ - y1));
-    }
-    if (gy + 1 == frame_dimensions_.ysize_groups) {
-      RenderPadding(thread_id, Rect(x0, y1, x1 - x0, full_image_ysize_ - y1));
-    }
-    if (gy == 0 && gx + 1 == frame_dimensions_.xsize_groups) {
-      RenderPadding(thread_id, Rect(x1, 0, full_image_xsize_ - x1, y0));
-    }
-    if (gx + 1 == frame_dimensions_.xsize_groups) {
-      RenderPadding(thread_id, Rect(x1, y0, full_image_xsize_ - x1, y1 - y0));
-    }
-    if (gy + 1 == frame_dimensions_.ysize_groups &&
-        gx + 1 == frame_dimensions_.xsize_groups) {
-      RenderPadding(thread_id, Rect(x1, y1, full_image_xsize_ - x1,
-                                    full_image_ysize_ - y1));
+    // Do not render padding if group is empty; if group is empty x0, y0 might
+    // have arbitrary values (from frame_origin).
+    if (group_rect.xsize() > 0 && group_rect.ysize() > 0) {
+      if (gx == 0 && gy == 0) {
+        RenderPadding(thread_id, Rect(0, 0, x0, y0));
+      }
+      if (gy == 0) {
+        RenderPadding(thread_id, Rect(x0, 0, x1 - x0, y0));
+      }
+      if (gx == 0) {
+        RenderPadding(thread_id, Rect(0, y0, x0, y1 - y0));
+      }
+      if (gx == 0 && gy + 1 == frame_dimensions_.ysize_groups) {
+        RenderPadding(thread_id, Rect(0, y1, x0, full_image_ysize_ - y1));
+      }
+      if (gy + 1 == frame_dimensions_.ysize_groups) {
+        RenderPadding(thread_id, Rect(x0, y1, x1 - x0, full_image_ysize_ - y1));
+      }
+      if (gy == 0 && gx + 1 == frame_dimensions_.xsize_groups) {
+        RenderPadding(thread_id, Rect(x1, 0, full_image_xsize_ - x1, y0));
+      }
+      if (gx + 1 == frame_dimensions_.xsize_groups) {
+        RenderPadding(thread_id, Rect(x1, y0, full_image_xsize_ - x1, y1 - y0));
+      }
+      if (gy + 1 == frame_dimensions_.ysize_groups &&
+          gx + 1 == frame_dimensions_.xsize_groups) {
+        RenderPadding(thread_id, Rect(x1, y1, full_image_xsize_ - x1,
+                                      full_image_ysize_ - y1));
+      }
     }
   }
 

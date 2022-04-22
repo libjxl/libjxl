@@ -28,9 +28,9 @@
 #include "jxl/thread_parallel_runner.h"
 #include "jxl/thread_parallel_runner_cxx.h"
 #include "jxl/types.h"
-#include "lib/extras/codec.h"
 #include "lib/extras/dec/apng.h"
 #include "lib/extras/dec/color_hints.h"
+#include "lib/extras/dec/decode.h"
 #include "lib/extras/dec/gif.h"
 #include "lib/extras/dec/jpg.h"
 #include "lib/extras/dec/pgx.h"
@@ -763,11 +763,67 @@ int main(int argc, char** argv) {
                   << "To silence this message, set --lossless_jpeg=(1|0)."
                   << std::endl;
       }
-      if (FLAGS_jpeg_store_metadata) {
-        if (JXL_ENC_SUCCESS != JxlEncoderStoreJPEGMetadata(jxl_encoder, true)) {
-          std::cerr << "Storing JPEG metadata failed. " << std::endl;
-          return EXIT_FAILURE;
-        }
+      JxlEncoderFrameSettingsSetOption(jxl_encoder_frame_settings,
+                                       JXL_ENC_FRAME_SETTING_COLOR_TRANSFORM,
+                                       colortransform);
+    }
+  }
+
+  if (FLAGS_add_jpeg_frame) {
+    std::vector<uint8_t> jpeg_data;
+    if (!jxl::ReadFile(filename_in, &jpeg_data)) {
+      std::cerr << "Reading image data failed.\n";
+      return EXIT_FAILURE;
+    }
+    if (FLAGS_jpeg_store_metadata) {
+      JxlEncoderStoreJPEGMetadata(jxl_encoder, true);
+    }
+    if (!gflags::GetCommandLineFlagInfoOrDie("jpeg_reconstruction_cfl")
+             .is_default) {
+      JxlEncoderFrameSettingsSetOption(jxl_encoder_frame_settings,
+                                       JXL_ENC_FRAME_SETTING_JPEG_RECON_CFL,
+                                       FLAGS_jpeg_reconstruction_cfl ? 1 : 0);
+    }
+    if (JXL_ENC_SUCCESS != JxlEncoderAddJPEGFrame(jxl_encoder_frame_settings,
+                                                  jpeg_data.data(),
+                                                  jpeg_data.size())) {
+      std::cerr << "JxlEncoderAddJPEGFrame() failed.\n";
+      return EXIT_FAILURE;
+    }
+  } else {  // Do JxlEncoderAddImageFrame().
+    jxl::extras::PackedPixelFile ppf;
+    jxl::Status status = LoadInput(filename_in, ppf);
+    if (!status) {
+      // TODO(tfish): Fix such status handling throughout.  We should
+      // have more detail available about what went wrong than what we
+      // currently share with the caller.
+      std::cerr << "Loading input file failed.\n";
+      return EXIT_FAILURE;
+    }
+    if (ppf.frames.size() < 1) {
+      std::cerr << "No frames on input file.\n";
+      return EXIT_FAILURE;
+    }
+
+    size_t num_alpha_channels = 0;  // Adjusted below.
+    {                               // JxlEncoderSetBasicInfo
+      JxlBasicInfo basic_info = ppf.info;
+      if (basic_info.alpha_bits > 0) num_alpha_channels = 1;
+      basic_info.num_extra_channels = num_alpha_channels;
+      basic_info.num_color_channels = ppf.info.num_color_channels;
+      basic_info.uses_original_profile = JXL_FALSE;
+      if (JXL_ENC_SUCCESS != JxlEncoderSetBasicInfo(jxl_encoder, &basic_info)) {
+        std::cerr << "JxlEncoderSetBasicInfo() failed.\n";
+        return EXIT_FAILURE;
+      }
+    }
+
+    if (!ppf.icc.empty()) {
+      JxlEncoderStatus enc_status =
+          JxlEncoderSetICCProfile(jxl_encoder, ppf.icc.data(), ppf.icc.size());
+      if (JXL_ENC_SUCCESS != enc_status) {
+        std::cerr << "JxlEncoderSetICCProfile() failed.\n";
+        return EXIT_FAILURE;
       }
       process_bool_flag("jpeg_reconstruction_cfl",
                         FLAGS_jpeg_reconstruction_cfl,

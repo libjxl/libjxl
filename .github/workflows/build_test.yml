@@ -46,7 +46,7 @@ jobs:
           # Build scalar-only hwy instructions.
           - name: scalar
             mode: release
-            cxxflags: -DHWY_DISABLED_TARGETS=~HWY_SCALAR
+            cxxflags: -DHWY_COMPILE_ONLY_SCALAR
           # Disabling optional features to speed up msan build a little bit.
           - name: msan
             skip_install: true
@@ -216,10 +216,10 @@ jobs:
         files: build/coverage.xml
     - name: Fast benchmark ${{ matrix.mode }}
       if: |
-        github.event_name == 'push' ||
+        matrix.name != 'coverage' && (github.event_name == 'push' ||
         (github.event_name == 'pull_request' && (
          matrix.test_in_pr ||
-         contains(github.event.pull_request.labels.*.names, 'CI:full')))
+         contains(github.event.pull_request.labels.*.names, 'CI:full'))))
       run: |
         STORE_IMAGES=0 ./ci.sh fast_benchmark
     # Run gbench once, just to make sure it runs, not for actual benchmarking.

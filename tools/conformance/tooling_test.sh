@@ -10,6 +10,12 @@
 
 MYDIR=$(dirname $(realpath "$0"))
 
+if [[ $# -eq 2 ]]; then
+    JPEGXL_TEST_DATA_PATH="$2"
+else
+    JPEGXL_TEST_DATA_PATH="${MYDIR}/../../third_party/testdata"
+fi
+
 set -eux
 
 # Temporary files cleanup hooks.
@@ -41,7 +47,7 @@ main() {
     --output="${tmpdir}" \
     --peak_error=0.001 \
     --rmse=0.001 \
-    "${MYDIR}/../../third_party/testdata/jxl/blending/cropped_traffic_light.jxl"
+    "${JPEGXL_TEST_DATA_PATH}/jxl/blending/cropped_traffic_light.jxl"
 
   # List the contents of the corpus dir.
   tree "${tmpdir}" || true
