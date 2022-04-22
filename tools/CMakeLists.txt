@@ -210,7 +210,6 @@ endif()  # JPEGXL_ENABLE_TOOLS
 if(${JPEGXL_ENABLE_DEVTOOLS})
   list(APPEND TOOL_BINARIES
     fuzzer_corpus
-    add_noise
     butteraugli_main
     decode_and_encode
     display_to_hlg
@@ -226,7 +225,6 @@ if(${JPEGXL_ENABLE_DEVTOOLS})
 
   add_executable(fuzzer_corpus fuzzer_corpus.cc)
 
-  add_executable(add_noise add_noise.cc)
   add_executable(ssimulacra_main ssimulacra_main.cc ssimulacra.cc)
   add_executable(butteraugli_main butteraugli_main.cc)
   add_executable(decode_and_encode decode_and_encode.cc)
