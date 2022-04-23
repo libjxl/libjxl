@@ -411,7 +411,7 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
   CompressParams cparams = {};
   size_t width = 1024, height = 1024;
   int x0 = 0, y0 = 0;
-  cparams.color_transform = ColorTransform::kNone;
+  cparams.SetLossless();
   cparams.resampling = 1;
   cparams.ec_resampling = 1;
   cparams.modular_group_size_shift = 3;
@@ -438,7 +438,6 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
              (height + y0) * cparams.resampling);
   io.metadata.m.color_encoding.DecideIfWantICC();
   cparams.options.zero_tokens = true;
-  cparams.modular_mode = true;
   cparams.palette_colors = 0;
   cparams.channel_colors_pre_transform_percent = 0;
   cparams.channel_colors_percent = 0;
