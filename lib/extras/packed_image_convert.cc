@@ -65,6 +65,11 @@ Status ConvertPackedPixelFileToCodecInOut(const PackedPixelFile& ppf,
     if (!io->metadata.m.color_encoding.SetICC(std::move(icc))) {
       fprintf(stderr, "Warning: error setting ICC profile, assuming SRGB");
       io->metadata.m.color_encoding = ColorEncoding::SRGB(is_gray);
+    } else {
+      if (io->metadata.m.color_encoding.IsGray() != is_gray) {
+        // E.g. JPG image has 3 channels, but gray ICC.
+        return JXL_FAILURE("Embedded ICC does not match image color type");
+      }
     }
   } else {
     JXL_RETURN_IF_ERROR(ConvertExternalToInternalColorEncoding(
