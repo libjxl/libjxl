@@ -397,39 +397,65 @@ int PrintBasicInfo(FILE* file, int verbose) {
   return seen_basic_info;
 }
 
-int main(int argc, char* argv[]) {
-  int verbose = 0;
-  if (argc == 3) {
-    if (strncmp(argv[1], "-v", 3) == 0) {
-      verbose = 1;
-      argv++;
-      argc--;
-    } else {
-      argc = 0;  // print error
-    }
-  }
-  if (argc != 2) {
-    fprintf(stderr,
-            "Usage: %s [-v] INPUT\n"
-            "  INPUT      input JPEG XL image filename\n"
-            "  -v         more verbose output\n",
-            argv[0]);
-    return 1;
-  }
-  const char* jxl_filename = argv[1];
+static void print_usage(const char* name) {
+  fprintf(stderr,
+          "Usage: %s [-v] INPUT\n"
+          "  INPUT      input JPEG XL image filename(s)\n"
+          "  -v         more verbose output\n",
+          name);
+}
 
+static int print_basic_info_filename(const char* jxl_filename, int verbose) {
   FILE* file = fopen(jxl_filename, "rb");
   if (!file) {
-    fprintf(stderr, "Failed to read file %s\n", jxl_filename);
+    fprintf(stderr, "Failed to read file: %s\n", jxl_filename);
     return 1;
   }
-
-  if (!PrintBasicInfo(file, verbose)) {
-    fclose(file);
-    fprintf(stderr, "Couldn't print basic info\n");
-    return 1;
-  }
-
+  int status = PrintBasicInfo(file, verbose);
   fclose(file);
+  if (!status) {
+    fprintf(stderr, "Error reading file: %s\n", jxl_filename);
+    return status;
+  }
+
   return 0;
+}
+
+int main(int argc, char* argv[]) {
+  int verbose = 0, status = 0;
+  const char* const name = argv[0];
+
+  for (int i = 1; i < argc; i++) {
+    const char* const* help_opts =
+        (const char* const[]){"--help", "-h", "-?", NULL};
+    while (*help_opts) {
+      if (!strcmp(*help_opts++, argv[i])) {
+        print_usage(name);
+        return 0;
+      }
+    }
+  }
+
+  const char* const* verbose_opts =
+      (const char* const[]){"--verbose", "-v", NULL};
+  /* argc >= 2 gate prevents segfault on argc = 1 */
+  while (argc >= 2 && *verbose_opts) {
+    if (!strcmp(*verbose_opts++, argv[1])) {
+      verbose = 1;
+      argc--;
+      argv++;
+      break;
+    }
+  }
+
+  if (argc < 2) {
+    print_usage(name);
+    return 2;
+  }
+
+  while (argc-- >= 2) {
+    status |= print_basic_info_filename(*++argv, verbose);
+  }
+
+  return status;
 }
