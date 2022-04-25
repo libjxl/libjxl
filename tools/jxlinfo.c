@@ -400,7 +400,7 @@ int PrintBasicInfo(FILE* file, int verbose) {
 static void print_usage(const char* name) {
   fprintf(stderr,
           "Usage: %s [-v] INPUT\n"
-          "  INPUT      input JPEG XL image filename\n"
+          "  INPUT      input JPEG XL image filename(s)\n"
           "  -v         more verbose output\n",
           name);
 }
