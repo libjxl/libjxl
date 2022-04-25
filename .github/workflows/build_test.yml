@@ -59,8 +59,6 @@ jobs:
             apt_pkgs: gcovr
             # Coverage builds require a bit more RAM.
             env_test_stack_size: 2048
-            # Exclude roundtrip tests from the unittest coverage.
-            ctest_args: -E '^JxlTest'
           # Build with support for decoding to JPEG bytes disabled. Produces a
           # smaller build if only decoding to pixels is needed.
           - name: release-nojpeg
@@ -149,6 +147,7 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-${{ steps.git-env.outputs.parent }}-${{ matrix.name }}
     - name: Build
+      if: matrix.name != 'coverage' || env.WILL_RUN_TESTS == 'true'
       run: |
         mkdir -p ${CCACHE_DIR}
         echo "max_size = 200M" > ${CCACHE_DIR}/ccache.conf
