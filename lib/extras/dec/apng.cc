@@ -170,6 +170,31 @@ class BlobsReaderPNG {
     return true;
   }
 
+  // Returns false if invalid.
+  static JXL_INLINE Status DecodeDecimal(const char** pos, const char* end,
+                                         uint32_t* JXL_RESTRICT value) {
+    size_t len = 0;
+    *value = 0;
+    while (*pos < end) {
+      char next = **pos;
+      if (next >= '0' && next <= '9') {
+        *value = (*value * 10) + static_cast<uint32_t>(next - '0');
+        len++;
+        if (len > 8) {
+          break;
+        }
+      } else {
+        // Do not consume terminator (non-decimal digit).
+        break;
+      }
+      (*pos)++;
+    }
+    if (len == 0 || len > 8) {
+      return JXL_FAILURE("Failed to parse decimal");
+    }
+    return true;
+  }
+
   // Parses a PNG text chunk with key of the form "Raw profile type ####", with
   // #### a type.
   // Returns whether it could successfully parse the content.
@@ -203,17 +228,15 @@ class BlobsReaderPNG {
     // We parsed so far a \n, some number of non \n characters and are now
     // pointing at a \n.
     if (*(pos++) != '\n') return false;
-    unsigned long bytes_to_decode;
-    const int fields = sscanf(pos, "%8lu", &bytes_to_decode);
-    if (fields != 1) return false;  // Failed to decode metadata header
-    JXL_ASSERT(pos + 8 <= encoded_end);
-    pos += 8;  // read %8lu
+    uint32_t bytes_to_decode = 0;
+    JXL_RETURN_IF_ERROR(DecodeDecimal(&pos, encoded_end, &bytes_to_decode));
 
-    // We need 2*bytes for the hex values plus 1 byte every 36 values.
+    // We need 2*bytes for the hex values plus 1 byte every 36 values,
+    // plus terminal \n for length.
     const unsigned long needed_bytes =
         bytes_to_decode * 2 + 1 + DivCeil(bytes_to_decode, 36);
     if (needed_bytes != static_cast<size_t>(encoded_end - pos)) {
-      return JXL_FAILURE("Not enough bytes to parse %lu bytes in hex",
+      return JXL_FAILURE("Not enough bytes to parse %d bytes in hex",
                          bytes_to_decode);
     }
     JXL_ASSERT(bytes->empty());
