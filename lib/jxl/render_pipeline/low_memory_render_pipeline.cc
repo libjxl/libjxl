@@ -282,7 +282,7 @@ void LowMemoryRenderPipeline::Init() {
                          DivCeil(frame_dimensions_.ysize_upsampled,
                                  1 << channel_shifts_[i][c].second));
     }
-    stages_[i]->SetInputSizes(input_sizes);
+    stages_[i]->SetInputSizes(input_sizes, frame_origin_);
     if (stages_[i]->SwitchToImageDimensions()) {
       // We don't allow kInOut after switching to image dimensions.
       JXL_ASSERT(i >= first_trailing_stage_);
@@ -300,7 +300,7 @@ void LowMemoryRenderPipeline::Init() {
     for (size_t c = 0; c < shifts.size(); c++) {
       input_sizes[c] = {full_image_xsize_, full_image_ysize_};
     }
-    stages_[i]->SetInputSizes(input_sizes);
+    stages_[i]->SetInputSizes(input_sizes, frame_origin_);
   }
 
   anyc_.resize(stages_.size());

@@ -108,7 +108,8 @@ class RenderPipelineStage {
   // Informs the stage about the total size of each channel. Few stages will
   // actually need to use this information.
   virtual void SetInputSizes(
-      const std::vector<std::pair<size_t, size_t>>& input_sizes) {}
+      const std::vector<std::pair<size_t, size_t>>& input_sizes,
+      const FrameOrigin& frame_origin) {}
 
   virtual Status PrepareForThreads(size_t num_threads) { return true; }
 

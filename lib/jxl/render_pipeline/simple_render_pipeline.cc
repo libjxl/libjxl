@@ -159,7 +159,8 @@ void SimpleRenderPipeline::ProcessBuffers(size_t group_id, size_t thread_id) {
 
     // Run the pipeline.
     {
-      stage->SetInputSizes(input_sizes);
+      FrameOrigin frame_origin;
+      stage->SetInputSizes(input_sizes, frame_origin);
       int border_y = stage->settings_.border_y;
       for (size_t y = 0; y < ysize; y++) {
         // Prepare input rows.

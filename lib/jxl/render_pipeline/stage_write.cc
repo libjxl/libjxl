@@ -174,6 +174,22 @@ namespace jxl {
 HWY_EXPORT(GetWriteToU8Stage);
 
 namespace {
+
+// Not pipelined - not covered by groups.
+// Fills image above and to the left of the origin.
+void ZeroFillBackground(ImageF* img, const FrameOrigin& frame_origin) {
+  size_t x0 = static_cast<size_t>(std::max<int32_t>(0, frame_origin.x0));
+  x0 = std::min(x0, img->xsize());
+  size_t y0 = static_cast<size_t>(std::max<int32_t>(0, frame_origin.y0));
+  y0 = std::min(y0, img->ysize());
+  if (y0 > 0) {
+    ZeroFillPlane(img, Rect(0, 0, img->xsize(), y0));
+  }
+  if (x0 > 0) {
+    ZeroFillPlane(img, Rect(0, y0, img->xsize(), img->ysize() - y0));
+  }
+}
+
 class WriteToImageBundleStage : public RenderPipelineStage {
  public:
   explicit WriteToImageBundleStage(ImageBundle* image_bundle,
@@ -182,8 +198,8 @@ class WriteToImageBundleStage : public RenderPipelineStage {
         image_bundle_(image_bundle),
         color_encoding_(std::move(color_encoding)) {}
 
-  void SetInputSizes(
-      const std::vector<std::pair<size_t, size_t>>& input_sizes) override {
+  void SetInputSizes(const std::vector<std::pair<size_t, size_t>>& input_sizes,
+                     const FrameOrigin& frame_origin) override {
 #if JXL_ENABLE_ASSERT
     JXL_ASSERT(input_sizes.size() >= 3);
     for (size_t c = 1; c < input_sizes.size(); c++) {
@@ -194,11 +210,15 @@ class WriteToImageBundleStage : public RenderPipelineStage {
     // TODO(eustas): what should we do in the case of "want only ECs"?
     image_bundle_->SetFromImage(
         Image3F(input_sizes[0].first, input_sizes[0].second), color_encoding_);
+    for (size_t c = 0; c < 3; ++c) {
+      ZeroFillBackground(&image_bundle_->color()->Plane(c), frame_origin);
+    }
     // TODO(veluca): consider not reallocating ECs if not needed.
     image_bundle_->extra_channels().clear();
     for (size_t c = 3; c < input_sizes.size(); c++) {
       image_bundle_->extra_channels().emplace_back(input_sizes[c].first,
                                                    input_sizes[c].second);
+      ZeroFillBackground(&image_bundle_->extra_channels().back(), frame_origin);
     }
   }
 
@@ -235,8 +255,8 @@ class WriteToImage3FStage : public RenderPipelineStage {
   explicit WriteToImage3FStage(Image3F* image)
       : RenderPipelineStage(RenderPipelineStage::Settings()), image_(image) {}
 
-  void SetInputSizes(
-      const std::vector<std::pair<size_t, size_t>>& input_sizes) override {
+  void SetInputSizes(const std::vector<std::pair<size_t, size_t>>& input_sizes,
+                     const FrameOrigin& frame_origin) override {
 #if JXL_ENABLE_ASSERT
     JXL_ASSERT(input_sizes.size() >= 3);
     for (size_t c = 1; c < 3; ++c) {
@@ -245,6 +265,9 @@ class WriteToImage3FStage : public RenderPipelineStage {
     }
 #endif
     *image_ = Image3F(input_sizes[0].first, input_sizes[0].second);
+    for (size_t c = 0; c < 3; ++c) {
+      ZeroFillBackground(&image_->Plane(c), frame_origin);
+    }
   }
 
   void ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
