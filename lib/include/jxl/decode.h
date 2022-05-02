@@ -1232,7 +1232,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetDecompressBoxes(JxlDecoder* dec,
  * - "jbrd": JPEG reconstruction box, contains the information required to
  *   byte-for-byte losslessly recontruct a JPEG-1 image. The JPEG DCT
  *   coefficients (pixel content) themselves as well as the ICC profile are
- *   encoded in the JXL codestream (jxlc or jxlp) itself. Exif, XMP and JUMBF
+ *   encoded in the JXL codestream (jxlc or jxlp) itself. EXIF, XMP and JUMBF
  *   metadata is encoded in the corresponding boxes. The jbrd box itself
  *   contains information such as the remaining app markers of the JPEG-1 file
  *   and everything else required to fit the information together into the
@@ -1244,7 +1244,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetDecompressBoxes(JxlDecoder* dec,
  * The signature, jxl* and jbrd boxes are processed by the decoder and would
  * typically be ignored by applications. The typical way to use this function is
  * to check if an encountered box contains metadata that the application is
- * interested in (e.g. Exif or XMP metadata), in order to conditionally set a
+ * interested in (e.g. EXIF or XMP metadata), in order to conditionally set a
  * box buffer.
  *
  * @param dec decoder object

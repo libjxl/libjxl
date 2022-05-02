@@ -606,7 +606,7 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelBuffer(
  * "jxlp", "jxli", "jbrd"), and this function only needs to be called to add
  * optional metadata when encoding from pixels (using JxlEncoderAddImageFrame).
  * When recompressing JPEG files (using JxlEncoderAddJPEGFrame), if the input
- * JPEG contains Exif, XMP or JUMBF metadata, the corresponding boxes are
+ * JPEG contains EXIF, XMP or JUMBF metadata, the corresponding boxes are
  * already added automatically.
  *
  * Box types are given by 4 characters. The following boxes can be added with
