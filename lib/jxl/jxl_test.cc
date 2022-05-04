@@ -231,8 +231,7 @@ TEST(JxlTest, RoundtripResample2) {
 
 TEST(JxlTest, RoundtripResample2MT) {
   ThreadPoolInternal pool(4);
-  const PaddedBytes orig =
-      ReadTestData("jxl/flower/flower.png");
+  const PaddedBytes orig = ReadTestData("jxl/flower/flower.png");
   // image has to be large enough to have multiple groups after downsampling
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
@@ -253,8 +252,7 @@ TEST(JxlTest, RoundtripResample2MT) {
 TEST(JxlTest, RoundtripOutOfOrderProcessing) {
   FakeParallelRunner fake_pool(/*order_seed=*/123, /*num_threads=*/8);
   ThreadPool pool(&JxlFakeParallelRunner, &fake_pool);
-  const PaddedBytes orig =
-      ReadTestData("jxl/flower/flower.png");
+  const PaddedBytes orig = ReadTestData("jxl/flower/flower.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
   // Image size is selected so that the block border needed is larger than the
@@ -276,8 +274,7 @@ TEST(JxlTest, RoundtripOutOfOrderProcessing) {
 TEST(JxlTest, RoundtripOutOfOrderProcessingBorder) {
   FakeParallelRunner fake_pool(/*order_seed=*/47, /*num_threads=*/8);
   ThreadPool pool(&JxlFakeParallelRunner, &fake_pool);
-  const PaddedBytes orig =
-      ReadTestData("jxl/flower/flower.png");
+  const PaddedBytes orig = ReadTestData("jxl/flower/flower.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
   // Image size is selected so that the block border needed is larger than the
@@ -354,8 +351,7 @@ TEST(JxlTest, RoundtripUnalignedD2) {
 
 TEST(JxlTest, RoundtripMultiGroupNL) {
   ThreadPoolInternal pool(4);
-  const PaddedBytes orig =
-      ReadTestData("jxl/flower/flower.png");
+  const PaddedBytes orig = ReadTestData("jxl/flower/flower.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
   io.ShrinkTo(600, 1024);  // partial X, full Y group
@@ -383,8 +379,7 @@ TEST(JxlTest, RoundtripMultiGroupNL) {
 
 TEST(JxlTest, RoundtripMultiGroup) {
   ThreadPoolInternal pool(4);
-  const PaddedBytes orig =
-      ReadTestData("jxl/flower/flower.png");
+  const PaddedBytes orig = ReadTestData("jxl/flower/flower.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
   io.ShrinkTo(600, 1024);
@@ -409,8 +404,7 @@ TEST(JxlTest, RoundtripMultiGroup) {
 
 TEST(JxlTest, RoundtripLargeFast) {
   ThreadPoolInternal pool(8);
-  const PaddedBytes orig =
-      ReadTestData("jxl/flower/flower.png");
+  const PaddedBytes orig = ReadTestData("jxl/flower/flower.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
 
@@ -444,8 +438,7 @@ TEST(JxlTest, RoundtripDotsForceEpf) {
 // Failing this may be a sign of race conditions or invalid memory accesses.
 TEST(JxlTest, RoundtripD2Consistent) {
   ThreadPoolInternal pool(8);
-  const PaddedBytes orig =
-      ReadTestData("jxl/flower/flower.png");
+  const PaddedBytes orig = ReadTestData("jxl/flower/flower.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
 
@@ -477,8 +470,7 @@ TEST(JxlTest, RoundtripD2Consistent) {
 // Same as above, but for full image, testing multiple groups.
 TEST(JxlTest, RoundtripLargeConsistent) {
   ThreadPoolInternal pool(8);
-  const PaddedBytes orig =
-      ReadTestData("jxl/flower/flower.png");
+  const PaddedBytes orig = ReadTestData("jxl/flower/flower.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
 
@@ -1220,12 +1212,10 @@ TEST(JxlTest, RoundtripLossless16AlphaNotMisdetectedAs8Bit) {
 
 TEST(JxlTest, RoundtripYCbCr420) {
   ThreadPool* pool = nullptr;
-  const PaddedBytes orig =
-      ReadTestData("jxl/flower/flower.png");
+  const PaddedBytes orig = ReadTestData("jxl/flower/flower.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
-  const PaddedBytes yuv420 = ReadTestData(
-      "jxl/flower/flower.png.ffmpeg.y4m");
+  const PaddedBytes yuv420 = ReadTestData("jxl/flower/flower.png.ffmpeg.y4m");
   CodecInOut io2;
   ASSERT_TRUE(test::DecodeImageY4M(Span<const uint8_t>(yuv420), &io2));
 
@@ -1474,8 +1464,7 @@ size_t RoundtripJpeg(const PaddedBytes& jpeg_in, ThreadPool* pool) {
 
 TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression444)) {
   ThreadPoolInternal pool(8);
-  const PaddedBytes orig = ReadTestData(
-      "jxl/flower/flower.png.im_q85_444.jpg");
+  const PaddedBytes orig = ReadTestData("jxl/flower/flower.png.im_q85_444.jpg");
   // JPEG size is 696,659 bytes.
   EXPECT_LE(RoundtripJpeg(orig, &pool), 568843u);
 }
@@ -1484,8 +1473,7 @@ TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression444)) {
 
 TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionToPixels)) {
   ThreadPoolInternal pool(8);
-  const PaddedBytes orig = ReadTestData(
-      "jxl/flower/flower.png.im_q85_444.jpg");
+  const PaddedBytes orig = ReadTestData("jxl/flower/flower.png.im_q85_444.jpg");
   CodecInOut io;
   ASSERT_TRUE(jpeg::DecodeImageJPG(Span<const uint8_t>(orig), &io));
 
@@ -1508,8 +1496,7 @@ TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionToPixels)) {
 
 TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionToPixels420)) {
   ThreadPoolInternal pool(8);
-  const PaddedBytes orig = ReadTestData(
-      "jxl/flower/flower.png.im_q85_420.jpg");
+  const PaddedBytes orig = ReadTestData("jxl/flower/flower.png.im_q85_420.jpg");
   CodecInOut io;
   ASSERT_TRUE(jpeg::DecodeImageJPG(Span<const uint8_t>(orig), &io));
 
@@ -1531,8 +1518,7 @@ TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionToPixels420)) {
 TEST(JxlTest,
      JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionToPixels420EarlyFlush)) {
   ThreadPoolInternal pool(8);
-  const PaddedBytes orig = ReadTestData(
-      "jxl/flower/flower.png.im_q85_420.jpg");
+  const PaddedBytes orig = ReadTestData("jxl/flower/flower.png.im_q85_420.jpg");
   CodecInOut io;
   ASSERT_TRUE(jpeg::DecodeImageJPG(Span<const uint8_t>(orig), &io));
 
@@ -1555,8 +1541,7 @@ TEST(JxlTest,
 TEST(JxlTest,
      JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionToPixels420Mul16)) {
   ThreadPoolInternal pool(8);
-  const PaddedBytes orig = ReadTestData(
-      "jxl/flower/flower_cropped.jpg");
+  const PaddedBytes orig = ReadTestData("jxl/flower/flower_cropped.jpg");
   CodecInOut io;
   ASSERT_TRUE(jpeg::DecodeImageJPG(Span<const uint8_t>(orig), &io));
 
@@ -1578,8 +1563,8 @@ TEST(JxlTest,
 TEST(JxlTest,
      JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionToPixels_asymmetric)) {
   ThreadPoolInternal pool(8);
-  const PaddedBytes orig = ReadTestData(
-      "jxl/flower/flower.png.im_q85_asymmetric.jpg");
+  const PaddedBytes orig =
+      ReadTestData("jxl/flower/flower.png.im_q85_asymmetric.jpg");
   CodecInOut io;
   ASSERT_TRUE(jpeg::DecodeImageJPG(Span<const uint8_t>(orig), &io));
 
@@ -1602,16 +1587,15 @@ TEST(JxlTest,
 
 TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionGray)) {
   ThreadPoolInternal pool(8);
-  const PaddedBytes orig = ReadTestData(
-      "jxl/flower/flower.png.im_q85_gray.jpg");
+  const PaddedBytes orig =
+      ReadTestData("jxl/flower/flower.png.im_q85_gray.jpg");
   // JPEG size is 456,528 bytes.
   EXPECT_LE(RoundtripJpeg(orig, &pool), 383825u);
 }
 
 TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression420)) {
   ThreadPoolInternal pool(8);
-  const PaddedBytes orig = ReadTestData(
-      "jxl/flower/flower.png.im_q85_420.jpg");
+  const PaddedBytes orig = ReadTestData("jxl/flower/flower.png.im_q85_420.jpg");
   // JPEG size is 546,797 bytes.
   EXPECT_LE(RoundtripJpeg(orig, &pool), 455508u);
 }
@@ -1619,8 +1603,8 @@ TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression420)) {
 TEST(JxlTest,
      JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression_luma_subsample)) {
   ThreadPoolInternal pool(8);
-  const PaddedBytes orig = ReadTestData(
-      "jxl/flower/flower.png.im_q85_luma_subsample.jpg");
+  const PaddedBytes orig =
+      ReadTestData("jxl/flower/flower.png.im_q85_luma_subsample.jpg");
   // JPEG size is 400,724 bytes.
   EXPECT_LE(RoundtripJpeg(orig, &pool), 325327u);
 }
@@ -1628,24 +1612,22 @@ TEST(JxlTest,
 TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression444_12)) {
   // 444 JPEG that has an interesting sampling-factor (1x2, 1x2, 1x2).
   ThreadPoolInternal pool(8);
-  const PaddedBytes orig = ReadTestData(
-      "jxl/flower/flower.png.im_q85_444_1x2.jpg");
+  const PaddedBytes orig =
+      ReadTestData("jxl/flower/flower.png.im_q85_444_1x2.jpg");
   // JPEG size is 703,874 bytes.
   EXPECT_LE(RoundtripJpeg(orig, &pool), 569624u);
 }
 
 TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression422)) {
   ThreadPoolInternal pool(8);
-  const PaddedBytes orig = ReadTestData(
-      "jxl/flower/flower.png.im_q85_422.jpg");
+  const PaddedBytes orig = ReadTestData("jxl/flower/flower.png.im_q85_422.jpg");
   // JPEG size is 522,057 bytes.
   EXPECT_LE(RoundtripJpeg(orig, &pool), 499206u);
 }
 
 TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression440)) {
   ThreadPoolInternal pool(8);
-  const PaddedBytes orig = ReadTestData(
-      "jxl/flower/flower.png.im_q85_440.jpg");
+  const PaddedBytes orig = ReadTestData("jxl/flower/flower.png.im_q85_440.jpg");
   // JPEG size is 603,623 bytes.
   EXPECT_LE(RoundtripJpeg(orig, &pool), 501006u);
 }
@@ -1654,24 +1636,23 @@ TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression_asymmetric)) {
   // 2x vertical downsample of one chroma channel, 2x horizontal downsample of
   // the other.
   ThreadPoolInternal pool(8);
-  const PaddedBytes orig = ReadTestData(
-      "jxl/flower/flower.png.im_q85_asymmetric.jpg");
+  const PaddedBytes orig =
+      ReadTestData("jxl/flower/flower.png.im_q85_asymmetric.jpg");
   // JPEG size is 604,601 bytes.
   EXPECT_LE(RoundtripJpeg(orig, &pool), 500484u);
 }
 
 TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression420Progr)) {
   ThreadPoolInternal pool(8);
-  const PaddedBytes orig = ReadTestData(
-      "jxl/flower/flower.png.im_q85_420_progr.jpg");
+  const PaddedBytes orig =
+      ReadTestData("jxl/flower/flower.png.im_q85_420_progr.jpg");
   // JPEG size is 522,057 bytes.
   EXPECT_LE(RoundtripJpeg(orig, &pool), 455447u);
 }
 
 TEST(JxlTest, RoundtripProgressive) {
   ThreadPoolInternal pool(4);
-  const PaddedBytes orig =
-      ReadTestData("jxl/flower/flower.png");
+  const PaddedBytes orig = ReadTestData("jxl/flower/flower.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
   io.ShrinkTo(600, 1024);

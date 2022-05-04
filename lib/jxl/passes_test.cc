@@ -76,8 +76,7 @@ TEST(PassesTest, RoundtripUnalignedPasses) {
 
 TEST(PassesTest, RoundtripMultiGroupPasses) {
   ThreadPoolInternal pool(4);
-  const PaddedBytes orig =
-      ReadTestData("jxl/flower/flower.png");
+  const PaddedBytes orig = ReadTestData("jxl/flower/flower.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
   io.ShrinkTo(600, 1024);  // partial X, full Y group
@@ -103,8 +102,7 @@ TEST(PassesTest, RoundtripMultiGroupPasses) {
 
 TEST(PassesTest, RoundtripLargeFastPasses) {
   ThreadPoolInternal pool(8);
-  const PaddedBytes orig =
-      ReadTestData("jxl/flower/flower.png");
+  const PaddedBytes orig = ReadTestData("jxl/flower/flower.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
 
@@ -122,8 +120,7 @@ TEST(PassesTest, RoundtripLargeFastPasses) {
 // Failing this may be a sign of race conditions or invalid memory accesses.
 TEST(PassesTest, RoundtripProgressiveConsistent) {
   ThreadPoolInternal pool(8);
-  const PaddedBytes orig =
-      ReadTestData("jxl/flower/flower.png");
+  const PaddedBytes orig = ReadTestData("jxl/flower/flower.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
 
@@ -301,8 +298,7 @@ TEST(PassesTest, ProgressiveDownsample2DegradesCorrectlyGrayscale) {
 
 TEST(PassesTest, ProgressiveDownsample2DegradesCorrectly) {
   ThreadPoolInternal pool(8);
-  const PaddedBytes orig =
-      ReadTestData("jxl/flower/flower.png");
+  const PaddedBytes orig = ReadTestData("jxl/flower/flower.png");
   CodecInOut io_orig;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io_orig, &pool));
   Rect rect(0, 0, io_orig.xsize(), 128);
@@ -348,8 +344,7 @@ TEST(PassesTest, ProgressiveDownsample2DegradesCorrectly) {
 
 TEST(PassesTest, NonProgressiveDCImage) {
   ThreadPoolInternal pool(8);
-  const PaddedBytes orig =
-      ReadTestData("jxl/flower/flower.png");
+  const PaddedBytes orig = ReadTestData("jxl/flower/flower.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
 
