@@ -62,7 +62,7 @@ cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DJPEGXL_ENABLE_SJPEG=OFF .
 cmake --build . -- -j\$(nproc)
 
 tools/djxl ../third_party/testdata/jxl/blending/cropped_traffic_light.jxl test.png
-tools/cjxl ../third_party/testdata/third_party/imagecompression.info/flower_foveon.png.im_q85_444.jpg test.jxl
+tools/cjxl ../third_party/testdata/jxl/flower/flower.png.im_q85_444.jpg test.jxl
 tools/djxl test.jxl test.jpg
 EOF
     set +x

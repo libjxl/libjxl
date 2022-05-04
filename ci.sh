@@ -1020,11 +1020,11 @@ cmd_arm_benchmark() {
   )
 
   local images=(
-    "third_party/testdata/third_party/imagecompression.info/flower_foveon.png"
+    "third_party/testdata/jxl/flower/flower.png"
   )
 
   local jpg_images=(
-    "third_party/testdata/third_party/imagecompression.info/flower_foveon.png.im_q85_420.jpg"
+    "third_party/testdata/jxl/flower/flower.png.im_q85_420.jpg"
   )
 
   if [[ "${SKIP_CPUSET:-}" == "1" ]]; then

@@ -45,8 +45,7 @@ using test::Roundtrip;
 
 void TestLosslessGroups(size_t group_size_shift) {
   ThreadPool* pool = nullptr;
-  const PaddedBytes orig =
-      ReadTestData("third_party/imagecompression.info/flower_foveon.png");
+  const PaddedBytes orig = ReadTestData("jxl/flower/flower.png");
   CompressParams cparams;
   cparams.SetLossless();
   cparams.modular_group_size_shift = group_size_shift;
