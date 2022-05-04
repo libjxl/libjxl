@@ -1167,7 +1167,27 @@ JxlEncoderStatus JxlEncoderAddJPEGFrame(
     // Can't XYB encode a lossless JPEG.
     return JXL_ENC_ERROR;
   }
-
+  if (!io.blobs.exif.empty()) {
+    size_t exif_size = io.blobs.exif.size();
+    // Exif data in JPEG is limited to 64k
+    if (exif_size > 0xFFFF) return JXL_ENC_ERROR;
+    exif_size += 4;  // prefix 4 zero bytes for tiff offset
+    std::vector<uint8_t> exif(exif_size);
+    memcpy(exif.data() + 4, io.blobs.exif.data(), io.blobs.exif.size());
+    JxlEncoderUseBoxes(frame_settings->enc);
+    JxlEncoderAddBox(frame_settings->enc, "Exif", exif.data(), exif_size,
+                     /*compress_box=*/JXL_TRUE);
+  }
+  if (!io.blobs.xmp.empty()) {
+    JxlEncoderUseBoxes(frame_settings->enc);
+    JxlEncoderAddBox(frame_settings->enc, "xml ", io.blobs.xmp.data(),
+                     io.blobs.xmp.size(), /*compress_box=*/JXL_TRUE);
+  }
+  if (!io.blobs.jumbf.empty()) {
+    JxlEncoderUseBoxes(frame_settings->enc);
+    JxlEncoderAddBox(frame_settings->enc, "jumb", io.blobs.jumbf.data(),
+                     io.blobs.jumbf.size(), /*compress_box=*/JXL_TRUE);
+  }
   if (frame_settings->enc->store_jpeg_metadata) {
     jxl::jpeg::JPEGData data_in = *io.Main().jpeg_data;
     jxl::PaddedBytes jpeg_data;
