@@ -244,7 +244,7 @@ TEST(JxlTest, RoundtripResample2MT) {
   // file size.
   EXPECT_LE(Roundtrip(&io, cparams, dparams, &pool, &io2), 200000u);
   EXPECT_THAT(ComputeDistance2(io.Main(), io2.Main(), GetJxlCms()),
-              IsSlightlyBelow(330));
+              IsSlightlyBelow(340));
 }
 
 // Roundtrip the image using a parallel runner that executes single-threaded but
