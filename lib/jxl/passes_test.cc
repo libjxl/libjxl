@@ -77,7 +77,7 @@ TEST(PassesTest, RoundtripUnalignedPasses) {
 TEST(PassesTest, RoundtripMultiGroupPasses) {
   ThreadPoolInternal pool(4);
   const PaddedBytes orig =
-      ReadTestData("third_party/imagecompression.info/flower_foveon.png");
+      ReadTestData("jxl/flower/flower.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
   io.ShrinkTo(600, 1024);  // partial X, full Y group
@@ -91,20 +91,20 @@ TEST(PassesTest, RoundtripMultiGroupPasses) {
   Roundtrip(&io, cparams, dparams, &pool, &io2);
   EXPECT_THAT(ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
                                   /*distmap=*/nullptr, &pool),
-              IsSlightlyBelow(1.2f));
+              IsSlightlyBelow(1.3f));
 
   cparams.butteraugli_distance = 2.0f;
   CodecInOut io3;
   Roundtrip(&io, cparams, dparams, &pool, &io3);
   EXPECT_THAT(ButteraugliDistance(io, io3, cparams.ba_params, GetJxlCms(),
                                   /*distmap=*/nullptr, &pool),
-              IsSlightlyBelow(2.0f));
+              IsSlightlyBelow(2.2f));
 }
 
 TEST(PassesTest, RoundtripLargeFastPasses) {
   ThreadPoolInternal pool(8);
   const PaddedBytes orig =
-      ReadTestData("third_party/imagecompression.info/flower_foveon.png");
+      ReadTestData("jxl/flower/flower.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
 
@@ -123,7 +123,7 @@ TEST(PassesTest, RoundtripLargeFastPasses) {
 TEST(PassesTest, RoundtripProgressiveConsistent) {
   ThreadPoolInternal pool(8);
   const PaddedBytes orig =
-      ReadTestData("third_party/imagecompression.info/flower_foveon.png");
+      ReadTestData("jxl/flower/flower.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
 
@@ -302,7 +302,7 @@ TEST(PassesTest, ProgressiveDownsample2DegradesCorrectlyGrayscale) {
 TEST(PassesTest, ProgressiveDownsample2DegradesCorrectly) {
   ThreadPoolInternal pool(8);
   const PaddedBytes orig =
-      ReadTestData("third_party/imagecompression.info/flower_foveon.png");
+      ReadTestData("jxl/flower/flower.png");
   CodecInOut io_orig;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io_orig, &pool));
   Rect rect(0, 0, io_orig.xsize(), 128);
@@ -349,7 +349,7 @@ TEST(PassesTest, ProgressiveDownsample2DegradesCorrectly) {
 TEST(PassesTest, NonProgressiveDCImage) {
   ThreadPoolInternal pool(8);
   const PaddedBytes orig =
-      ReadTestData("third_party/imagecompression.info/flower_foveon.png");
+      ReadTestData("jxl/flower/flower.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
 
