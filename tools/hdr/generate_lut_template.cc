@@ -53,6 +53,7 @@ int main(int argc, const char** argv) {
       "GenerateTemplate"));
 
   jxl::CodecInOut output;
+  output.metadata.m.bit_depth.bits_per_sample = 16;
   output.SetFromImage(std::move(image), jxl::ColorEncoding::SRGB());
   JXL_CHECK(jxl::EncodeToFile(output, jxl::ColorEncoding::SRGB(), 16,
                               output_filename, &pool));
