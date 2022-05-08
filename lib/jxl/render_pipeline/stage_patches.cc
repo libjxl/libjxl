@@ -17,12 +17,13 @@ class PatchDictionaryStage : public RenderPipelineStage {
                   size_t xextra, size_t xsize, size_t xpos, size_t ypos,
                   size_t thread_id) const final {
     PROFILER_ZONE("RenderPatches");
+    JXL_ASSERT(xpos == 0 || xpos >= xextra);
+    size_t x0 = xpos ? xpos - xextra : 0;
     std::vector<float*> row_ptrs(input_rows.size());
     for (size_t i = 0; i < row_ptrs.size(); i++) {
-      row_ptrs[i] = GetInputRow(input_rows, i, 0) - xextra;
+      row_ptrs[i] = GetInputRow(input_rows, i, 0) + x0 - xpos;
     }
-    patches_.AddOneRow(row_ptrs.data(), ypos, xpos - xextra,
-                       xsize + 2 * xextra);
+    patches_.AddOneRow(row_ptrs.data(), ypos, x0, xsize + xextra + xpos - x0);
   }
 
   RenderPipelineChannelMode GetChannelMode(size_t c) const final {
