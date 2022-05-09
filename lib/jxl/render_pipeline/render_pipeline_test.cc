@@ -418,6 +418,26 @@ std::vector<RenderPipelineTestInputSettings> GeneratePipelineTests() {
     all_tests.push_back(settings);
   }
 
+  {
+    RenderPipelineTestInputSettings settings;
+    settings.input_path = "jxl/grayscale_patches.png";
+    settings.xsize = 1011;
+    settings.ysize = 277;
+    settings.cparams.photon_noise_iso = 1000;
+    settings.cparams_descr = "PatchesAndNoise";
+    all_tests.push_back(settings);
+  }
+
+  {
+    RenderPipelineTestInputSettings settings;
+    settings.input_path = "jxl/grayscale_patches.png";
+    settings.xsize = 1011;
+    settings.ysize = 277;
+    settings.cparams.resampling = 2;
+    settings.cparams_descr = "PatchesAndUps2";
+    all_tests.push_back(settings);
+  }
+
   return all_tests;
 }
 

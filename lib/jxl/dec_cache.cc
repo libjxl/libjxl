@@ -89,7 +89,9 @@ Status PassesDecoderState::PreparePipeline(ImageBundle* decoded,
   }
 
   if ((frame_header.flags & FrameHeader::kPatches) != 0) {
-    builder.AddStage(GetPatchesStage(&shared->image_features.patches));
+    builder.AddStage(
+        GetPatchesStage(&shared->image_features.patches,
+                        3 + shared->metadata->m.num_extra_channels));
   }
   if ((frame_header.flags & FrameHeader::kSplines) != 0) {
     builder.AddStage(GetSplineStage(&shared->image_features.splines));
