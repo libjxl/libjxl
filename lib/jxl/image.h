@@ -300,6 +300,32 @@ class RectT {
   T x1() const { return x0_ + xsize_; }
   T y1() const { return y0_ + ysize_; }
 
+  RectT<T> ShiftLeft(size_t shiftx, size_t shifty) const {
+    return RectT<T>(x0_ * (1 << shiftx), y0_ * (1 << shifty), xsize_ << shiftx,
+                    ysize_ << shifty);
+  }
+  RectT<T> ShiftLeft(size_t shift) const { return ShiftLeft(shift, shift); }
+
+  // Requires x0(), y0() to be multiples of 1<<shiftx, 1<<shifty.
+  RectT<T> CeilShiftRight(size_t shiftx, size_t shifty) const {
+    JXL_ASSERT(x0_ % (1 << shiftx) == 0);
+    JXL_ASSERT(y0_ % (1 << shifty) == 0);
+    return RectT<T>(x0_ / (1 << shiftx), y0_ / (1 << shifty),
+                    DivCeil(xsize_, T{1} << shiftx),
+                    DivCeil(ysize_, T{1} << shifty));
+  }
+  RectT<T> CeilShiftRight(std::pair<size_t, size_t> shift) const {
+    return CeilShiftRight(shift.first, shift.second);
+  }
+  RectT<T> CeilShiftRight(size_t shift) const {
+    return CeilShiftRight(shift, shift);
+  }
+
+  template <typename U>
+  RectT<U> As() const {
+    return RectT<U>(U(x0_), U(y0_), U(xsize_), U(ysize_));
+  }
+
  private:
   // Returns size_max, or whatever is left in [begin, end).
   static constexpr size_t ClampedSize(T begin, size_t size_max, T end) {
