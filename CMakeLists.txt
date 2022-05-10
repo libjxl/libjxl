@@ -234,6 +234,12 @@ if(JPEGXL_STATIC)
   endif()
 endif()  # JPEGXL_STATIC
 
+if (JPEGXL_EMSCRIPTEN)
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pthread")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pthread")
+endif()
+
 if ("${CXX_MACRO_PREFIX_MAP}")
   add_compile_options(-fmacro-prefix-map=${CMAKE_CURRENT_SOURCE_DIR}=.)
 endif()
