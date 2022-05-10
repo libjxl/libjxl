@@ -32,10 +32,9 @@ uint8_t* jxlCompress(const uint8_t* data, size_t size) {
                        jxl::GetJxlCms(), nullptr, nullptr)) {
     return nullptr;
   }
-  size_t compressed_size = compressed.size();
+  uint32_t compressed_size = compressed.size();
   uint8_t* result = reinterpret_cast<uint8_t*>(malloc(compressed_size + 4));
-  uint32_t* meta = reinterpret_cast<uint32_t*>(result);
-  meta[0] = compressed_size;
+  memcpy(result, &compressed_size, sizeof(compressed_size));
   memcpy(result + 4, compressed.data(), compressed_size);
   return result;
 }
@@ -55,10 +54,9 @@ uint8_t* jxlDecompress(const uint8_t* data, size_t size) {
                    &decompressed, nullptr)) {
     return nullptr;
   }
-  size_t decompressed_size = decompressed.size();
+  uint32_t decompressed_size = decompressed.size();
   uint8_t* result = reinterpret_cast<uint8_t*>(malloc(decompressed_size + 4));
-  uint32_t* meta = reinterpret_cast<uint32_t*>(result);
-  meta[0] = decompressed_size;
+  memcpy(result, &decompressed_size, sizeof(decompressed_size));
   memcpy(result + 4, decompressed.data(), decompressed_size);
   return result;
 }
