@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 
+#include <atomic>
 #include <vector>
 
 #include "lib/jxl/frame_header.h"

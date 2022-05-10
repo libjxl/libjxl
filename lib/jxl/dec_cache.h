@@ -8,6 +8,7 @@
 
 #include <stdint.h>
 
+#include <atomic>
 #include <hwy/base.h>  // HWY_ALIGN_MAX
 
 #include "jxl/decode.h"
