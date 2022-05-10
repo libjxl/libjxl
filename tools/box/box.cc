@@ -315,13 +315,16 @@ jxl::Status DecodeJpegXlToJpeg(jxl::DecompressParams params,
     if (jpeg_data->app_marker_type[i] == jxl::jpeg::AppMarkerType::kXMP) {
       if (have_xmp)
         return JXL_FAILURE("Unexpected: more than one XMP box required?");
-      if (jpeg_data->app_data[i].size() != container.xml[0].second + 32) {
-        return JXL_FAILURE(
-            "XMP box size does not match JPEG reconstruction data");
+      // Container xml might be empty if xmp data not in xml box.
+      if (!container.xml.empty()) {
+        if (jpeg_data->app_data[i].size() != container.xml[0].second + 32) {
+          return JXL_FAILURE(
+              "XMP box size does not match JPEG reconstruction data");
+        }
+        have_xmp = true;
+        memcpy(&jpeg_data->app_data[i][3 + 29], container.xml[0].first,
+               container.xml[0].second);
       }
-      have_xmp = true;
-      memcpy(&jpeg_data->app_data[i][3 + 29], container.xml[0].first,
-             container.xml[0].second);
     }
   }
 
