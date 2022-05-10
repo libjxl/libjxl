@@ -262,10 +262,10 @@ struct Passes : public Fields {
 
   void GetDownsamplingBracket(size_t pass, int& minShift, int& maxShift) const {
     maxShift = 2;
-    minShift = 0;
+    minShift = 3;
     for (size_t i = 0;; i++) {
       for (uint32_t j = 0; j < num_downsample; ++j) {
-        if (i <= last_pass[j]) {
+        if (i == last_pass[j]) {
           if (downsample[j] == 8) minShift = 3;
           if (downsample[j] == 4) minShift = 2;
           if (downsample[j] == 2) minShift = 1;
@@ -275,7 +275,6 @@ struct Passes : public Fields {
       if (i == num_passes - 1) minShift = 0;
       if (i == pass) return;
       maxShift = minShift - 1;
-      minShift = 0;
     }
   }
 

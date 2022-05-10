@@ -120,10 +120,16 @@ Status Passes::VisitFields(Visitor* JXL_RESTRICT visitor) {
     for (uint32_t i = 0; i < num_downsample; ++i) {
       JXL_QUIET_RETURN_IF_ERROR(
           visitor->U32(Val(1), Val(2), Val(4), Val(8), 1, &downsample[i]));
+      if (i > 0 && downsample[i] >= downsample[i - 1]) {
+        return JXL_FAILURE("downsample sequence should be decreasing");
+      }
     }
     for (uint32_t i = 0; i < num_downsample; ++i) {
       JXL_QUIET_RETURN_IF_ERROR(
           visitor->U32(Val(0), Val(1), Val(2), Bits(3), 0, &last_pass[i]));
+      if (i > 0 && last_pass[i] <= last_pass[i - 1]) {
+        return JXL_FAILURE("last_pass sequence should be increasing");
+      }
       if (last_pass[i] >= num_passes) {
         return JXL_FAILURE("last_pass %u >= num_passes %u", last_pass[i],
                            num_passes);
