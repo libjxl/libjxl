@@ -12,6 +12,7 @@
 #include "lib/jxl/modular/encoding/context_predict.h"
 #include "lib/jxl/modular/modular_image.h"
 #include "lib/jxl/modular/transform/transform.h"  // CheckEqualChannels
+#include <atomic>
 
 namespace jxl {
 

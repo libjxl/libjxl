@@ -17,6 +17,7 @@
 #include "lib/jxl/fields.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/luminance.h"
+#include <atomic>
 
 namespace jxl {
 
