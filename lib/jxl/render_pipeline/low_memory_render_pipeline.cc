@@ -504,9 +504,11 @@ class Rows {
     JXL_ASSERT(thread_data.size() == num_channels);
     JXL_ASSERT(group_data_shift.size() == num_channels);
 
+#if JXL_ENABLE_ASSERT
     for (const auto& td : thread_data) {
       JXL_ASSERT(td.size() == num_stages);
     }
+#endif
 
     rows_.resize(num_stages + 1, std::vector<RowInfo>(num_channels));
 
