@@ -456,12 +456,9 @@ TEST(CodecTest, EncodeToPNG) {
   const JxlPixelFormat& format = ppf.frames.front().color.format;
   ASSERT_THAT(
       png_encoder->AcceptedFormats(),
-      Contains(AllOf(
-          Field("num_channels", &JxlPixelFormat::num_channels,
-                format.num_channels),
-          Field("data_type", &JxlPixelFormat::data_type, format.data_type),
-          Field("endianness", &JxlPixelFormat::endianness,
-                format.endianness))));
+      Contains(AllOf(Field(&JxlPixelFormat::num_channels, format.num_channels),
+                     Field(&JxlPixelFormat::data_type, format.data_type),
+                     Field(&JxlPixelFormat::endianness, format.endianness))));
   EncodedImage encoded_png;
   ASSERT_TRUE(png_encoder->Encode(ppf, &encoded_png, pool));
   EXPECT_THAT(encoded_png.icc, IsEmpty());
