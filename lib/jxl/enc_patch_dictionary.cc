@@ -10,6 +10,7 @@
 #include <sys/types.h>
 
 #include <algorithm>
+#include <atomic>
 #include <string>
 #include <tuple>
 #include <utility>
