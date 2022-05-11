@@ -741,7 +741,7 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
   if (has_error) return JXL_FAILURE("Error in DC group");
 
   bool do_progressive = false;
-  if (pause_at_progressive_) {
+  if (pause_at_progressive_ && (frame_header_.frame_type != kSkipProgressive)) {
     do_progressive = true;
     if (single_section) {
       // If there's only one group and one pass, there is no separate section
@@ -754,6 +754,7 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
       // but the implementation may not yet correctly support this for Flush.
       // Therefore, can't correctly pause for a progressive step if there is
       // an extra channel (including alpha channel)
+      // TOOD(firsching): Check if this is still the case.
       do_progressive = false;
     }
     if (frame_header_.encoding != FrameEncoding::kVarDCT) {

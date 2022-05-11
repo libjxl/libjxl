@@ -1279,7 +1279,8 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetBoxSizeRaw(const JxlDecoder* dec,
 
 /**
  * Configures at which progressive steps in frame decoding the @ref
- * JXL_DEC_FRAME_PROGRESSION event occurs.
+ * JXL_DEC_FRAME_PROGRESSION event occurs. The default value for the level of
+ * detail if this function is never called is `kDC`.
  *
  * @param dec decoder object
  * @param detail at which level of detail to trigger JXL_DEC_FRAME_PROGRESSION
