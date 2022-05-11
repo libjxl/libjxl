@@ -400,10 +400,10 @@ target_compile_options(jxl_dec-obj PRIVATE ${JPEGXL_INTERNAL_FLAGS})
 target_compile_options(jxl_dec-obj PUBLIC ${JPEGXL_COVERAGE_FLAGS})
 set_property(TARGET jxl_dec-obj PROPERTY POSITION_INDEPENDENT_CODE ON)
 target_include_directories(jxl_dec-obj PUBLIC
-  ${PROJECT_SOURCE_DIR}
-  ${CMAKE_CURRENT_SOURCE_DIR}/include
-  $<TARGET_PROPERTY:hwy,INTERFACE_INCLUDE_DIRECTORIES>
-  $<TARGET_PROPERTY:brotlicommon-static,INTERFACE_INCLUDE_DIRECTORIES>
+  "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>"
+  "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+  "$<BUILD_INTERFACE:$<TARGET_PROPERTY:hwy,INTERFACE_INCLUDE_DIRECTORIES>>"
+  "$<BUILD_INTERFACE:$<TARGET_PROPERTY:brotlicommon-static,INTERFACE_INCLUDE_DIRECTORIES>>"
 )
 target_compile_definitions(jxl_dec-obj PUBLIC
   ${OBJ_COMPILE_DEFINITIONS}
@@ -470,9 +470,9 @@ add_library(jxl_dec-static STATIC
 target_link_libraries(jxl_dec-static
   PUBLIC ${JPEGXL_COVERAGE_FLAGS} ${JPEGXL_DEC_INTERNAL_LIBS})
 target_include_directories(jxl_dec-static PUBLIC
-  "${PROJECT_SOURCE_DIR}"
-  "${CMAKE_CURRENT_SOURCE_DIR}/include"
-  "${CMAKE_CURRENT_BINARY_DIR}/include")
+  "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>"
+  "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+  "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>")
 
 # The list of objects in the static and shared libraries.
 set(JPEGXL_INTERNAL_OBJECTS
@@ -491,9 +491,9 @@ add_library(jxl-static STATIC ${JPEGXL_INTERNAL_OBJECTS})
 target_link_libraries(jxl-static
   PUBLIC ${JPEGXL_COVERAGE_FLAGS} ${JPEGXL_INTERNAL_LIBS})
 target_include_directories(jxl-static PUBLIC
-  "${PROJECT_SOURCE_DIR}"
-  "${CMAKE_CURRENT_SOURCE_DIR}/include"
-  "${CMAKE_CURRENT_BINARY_DIR}/include")
+  "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>"
+  "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+  "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>")
 
 # JXL_EXPORT is defined to "__declspec(dllimport)" automatically by CMake
 # in Windows builds when including headers from the C API and compiling from
@@ -543,8 +543,8 @@ target_link_libraries(jxl PUBLIC ${JPEGXL_COVERAGE_FLAGS})
 target_link_libraries(jxl PRIVATE ${JPEGXL_INTERNAL_SHARED_LIBS})
 # Shared library include path contains only the "include/" paths.
 target_include_directories(jxl PUBLIC
-  "${CMAKE_CURRENT_SOURCE_DIR}/include"
-  "${CMAKE_CURRENT_BINARY_DIR}/include")
+  "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+  "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>")
 set_target_properties(jxl PROPERTIES
   VERSION ${JPEGXL_LIBRARY_VERSION}
   SOVERSION ${JPEGXL_LIBRARY_SOVERSION}
