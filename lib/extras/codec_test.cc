@@ -12,8 +12,6 @@
 #include <utility>
 #include <vector>
 
-#include "gmock/gmock.h"
-#include "gtest/gtest.h"
 #include "lib/extras/dec/pgx.h"
 #include "lib/extras/dec/pnm.h"
 #include "lib/extras/enc/encode.h"
@@ -26,6 +24,7 @@
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_test_utils.h"
+#include "lib/jxl/test_utils.h"
 #include "lib/jxl/testdata.h"
 
 namespace jxl {
