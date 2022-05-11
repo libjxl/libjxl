@@ -91,9 +91,13 @@ int PrintBasicInfo(FILE* file, int verbose) {
         printf("float (%d exponent bits) ", info.exponent_bits_per_sample);
       }
       int cmyk = 0, alpha = 0;
-      const char* const ec_type_names[7] = {"Alpha",     "Depth", "Spotcolor",
-                                            "Selection", "Black", "CFA",
-                                            "Thermal"};
+      const char* const ec_type_names[] = {
+          "Alpha",     "Depth",     "Spotcolor", "Selection", "Black",
+          "CFA",       "Thermal",   "Reserved0", "Reserved1", "Reserved2",
+          "Reserved3", "Reserved4", "Reserved5", "Reserved6", "Reserved7",
+          "Unknown",   "Optional"};
+      const size_t ec_type_names_size =
+          sizeof(ec_type_names) / sizeof(ec_type_names[0]);
       for (uint32_t i = 0; i < info.num_extra_channels; i++) {
         JxlExtraChannelInfo extra;
         if (JXL_DEC_SUCCESS != JxlDecoderGetExtraChannelInfo(dec, i, &extra)) {
@@ -131,10 +135,9 @@ int PrintBasicInfo(FILE* file, int verbose) {
           continue;
         }
 
-        printf("+%s", (extra.type < 7 ? ec_type_names[extra.type]
-                                      : (extra.type == JXL_CHANNEL_OPTIONAL
-                                             ? "UnknownOptional"
-                                             : "Unknown(OUTDATED libjxl!)")));
+        printf("+%s", (extra.type < ec_type_names_size
+                           ? ec_type_names[extra.type]
+                           : "Unknown, please update your libjxl"));
       }
       printf("\n");
       if (verbose) {
@@ -149,12 +152,9 @@ int PrintBasicInfo(FILE* file, int verbose) {
             break;
           }
           printf("extra channel %u:\n", i);
-          printf(
-              "  type: %s\n",
-              (extra.type < 7 ? ec_type_names[extra.type]
-                              : (extra.type == JXL_CHANNEL_OPTIONAL
-                                     ? "Unknown but can be ignored"
-                                     : "Unknown, please update your libjxl")));
+          printf("  type: %s\n", (extra.type < ec_type_names_size
+                                      ? ec_type_names[extra.type]
+                                      : "Unknown, please update your libjxl"));
           printf("  bits_per_sample: %u\n", extra.bits_per_sample);
           if (extra.exponent_bits_per_sample > 0) {
             printf("  float, with exponent_bits_per_sample: %u\n",
