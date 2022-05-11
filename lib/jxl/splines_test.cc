@@ -5,8 +5,6 @@
 
 #include "lib/jxl/splines.h"
 
-#include "gmock/gmock.h"
-#include "gtest/gtest.h"
 #include "lib/extras/codec.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/dec_file.h"
@@ -14,6 +12,7 @@
 #include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_splines.h"
 #include "lib/jxl/image_test_utils.h"
+#include "lib/jxl/test_utils.h"
 #include "lib/jxl/testdata.h"
 
 namespace jxl {

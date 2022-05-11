@@ -8,7 +8,14 @@
 
 // Macros and functions useful for tests.
 
+// gmock unconditionally redefines those macros (to wrong values).
+// Lets include it only here and mitigate the problem.
+#pragma push_macro("PRIdS")
+#pragma push_macro("PRIuS")
 #include "gmock/gmock.h"
+#pragma pop_macro("PRIuS")
+#pragma pop_macro("PRIdS")
+
 #include "gtest/gtest.h"
 #include "jxl/codestream_header.h"
 #include "jxl/encode.h"
