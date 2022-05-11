@@ -86,7 +86,7 @@ static pixel_type GetPaletteValue(const pixel_type *const palette, int index,
     pixel_type result =
         kDeltaPalette[((index + 1) >> 1)][c] * kMultiplier[index & 1];
     if (bit_depth > 8) {
-      result *= static_cast<pixel_type>(1) << (bit_depth - 8);
+      result *= static_cast<pixel_type>(1) << (std::min(bit_depth, 24) - 8);
     }
     return result;
   } else if (palette_size <= index && index < palette_size + kLargeCubeOffset) {
