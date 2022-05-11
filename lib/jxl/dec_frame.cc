@@ -815,8 +815,8 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
         },
         [this, &ac_group_sec, &desired_num_ac_passes, &num, &sections,
          &section_status, &has_error](size_t g, size_t thread) {
-          if (desired_num_ac_passes[g] ==
-              0) {  // no new AC pass, nothing to do.
+          if (desired_num_ac_passes[g] == 0) {
+            // no new AC pass, nothing to do
             return;
           }
           (void)num;
