@@ -15,6 +15,7 @@
 #include <utility>
 #include <vector>
 
+#include "jxl/types.h"
 #include "lib/jxl/ac_context.h"
 #include "lib/jxl/ac_strategy.h"
 #include "lib/jxl/ans_params.h"
@@ -656,7 +657,9 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
   std::vector<std::vector<size_t>> ac_group_sec(
       frame_dim_.num_groups,
       std::vector<size_t>(frame_header_.passes.num_passes, num));
-  std::vector<size_t> num_ac_passes(frame_dim_.num_groups);
+  // This keeps track of the number of ac passes we want to process during this
+  // call of ProcessSections.
+  std::vector<size_t> desired_num_ac_passes(frame_dim_.num_groups);
   bool single_section =
       frame_dim_.num_groups == 1 && frame_header_.passes.num_passes == 1;
   if (single_section) {
@@ -666,7 +669,7 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
       processed_section_[0] = true;
       ac_group_sec[0].resize(1);
       dc_global_sec = ac_global_sec = dc_group_sec[0] = ac_group_sec[0][0] = 0;
-      num_ac_passes[0] = 1;
+      desired_num_ac_passes[0] = 1;
     } else {
       section_status[0] = SectionStatus::kDuplicate;
     }
@@ -706,7 +709,7 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
           break;
         }
       }
-      num_ac_passes[g] = j;
+      desired_num_ac_passes[g] = j;
     }
   }
   if (dc_global_sec != num) {
@@ -737,6 +740,32 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
   }
   if (has_error) return JXL_FAILURE("Error in DC group");
 
+  bool do_progressive = false;
+  if (pause_at_progressive_ && (frame_header_.frame_type != kSkipProgressive)) {
+    do_progressive = true;
+    if (single_section) {
+      // If there's only one group and one pass, there is no separate section
+      // for DC and the entire full resolution image is available at once.
+      do_progressive = false;
+    }
+    if (!decoded_->metadata()->extra_channel_info.empty()) {
+      // If extra channels are encoded with modular without squeeze, they
+      // don't support DC. If the are encoded with squeeze, DC works in theory
+      // but the implementation may not yet correctly support this for Flush.
+      // Therefore, can't correctly pause for a progressive step if there is
+      // an extra channel (including alpha channel)
+      // TOOD(firsching): Check if this is still the case.
+      do_progressive = false;
+    }
+    if (frame_header_.encoding != FrameEncoding::kVarDCT) {
+      // DC is not guaranteed to be available in modular mode and may be a
+      // black image. If squeeze is used, it may be available depending on the
+      // current implementation.
+      // TODO(lode): do return DC if it's known that flushing at this point will
+      // produce a valid 1/8th downscaled image with modular encoding.
+      do_progressive = false;
+    }
+  }
   if (*std::min_element(decoded_dc_groups_.begin(), decoded_dc_groups_.end()) &&
       !finalized_dc_) {
     PassesDecoderState::PipelineOptions pipeline_options;
@@ -747,33 +776,9 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
         dec_state_->PreparePipeline(decoded_, pipeline_options));
     FinalizeDC();
     JXL_RETURN_IF_ERROR(AllocateOutput());
-    if (pause_at_progressive_ && !single_section) {
-      bool can_return_dc = true;
-      if (single_section) {
-        // If there's only one group and one pass, there is no separate section
-        // for DC and the entire full resolution image is available at once.
-        can_return_dc = false;
-      }
-      if (!decoded_->metadata()->extra_channel_info.empty()) {
-        // If extra channels are encoded with modular without squeeze, they
-        // don't support DC. If the are encoded with squeeze, DC works in theory
-        // but the implementation may not yet correctly support this for Flush.
-        // Therefore, can't correctly pause for a progressive step if there is
-        // an extra channel (including alpha channel)
-        can_return_dc = false;
-      }
-      if (frame_header_.encoding != FrameEncoding::kVarDCT) {
-        // DC is not guaranteed to be available in modular mode and may be a
-        // black image. If squeeze is used, it may be available depending on the
-        // current implementation.
-        // TODO(lode): do return DC if it's known that flushing at this point
-        // will produce a valid 1/8th downscaled image with modular encoding.
-        can_return_dc = false;
-      }
-      if (can_return_dc) {
-        MarkSections(sections, num, section_status);
-        return true;
-      }
+    if (do_progressive && progressive_detail_ >= JxlProgressiveDetail::kDC) {
+      MarkSections(sections, num, section_status);
+      return true;
     }
   }
 
@@ -782,10 +787,21 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
     section_status[ac_global_sec] = SectionStatus::kDone;
   }
 
+  if (do_progressive && progressive_detail_ >= JxlProgressiveDetail::kPasses) {
+    // Mark that we only want the next pass.
+    size_t num_complete_passes = NumCompletePasses();
+    for (size_t i = 0; i < ac_group_sec.size(); i++) {
+      desired_num_ac_passes[i] =
+          std::min(desired_num_ac_passes[i],
+                   1 + num_complete_passes - decoded_passes_per_ac_group_[i]);
+    }
+  }
+
   if (decoded_ac_global_) {
     // Mark all the AC groups that we received as not complete yet.
     for (size_t i = 0; i < ac_group_sec.size(); i++) {
-      if (num_ac_passes[i] == 0 && !modular_frame_decoder_.UsesFullImage()) {
+      if (desired_num_ac_passes[i] == 0 &&
+          !modular_frame_decoder_.UsesFullImage()) {
         continue;
       }
       dec_state_->render_pipeline->ClearDone(i);
@@ -797,24 +813,25 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
           return PrepareStorage(num_threads,
                                 decoded_passes_per_ac_group_.size());
         },
-        [this, &ac_group_sec, &num_ac_passes, &num, &sections, &section_status,
-         &has_error](size_t g, size_t thread) {
-          if (num_ac_passes[g] == 0) {  // no new AC pass, nothing to do.
+        [this, &ac_group_sec, &desired_num_ac_passes, &num, &sections,
+         &section_status, &has_error](size_t g, size_t thread) {
+          if (desired_num_ac_passes[g] == 0) {
+            // no new AC pass, nothing to do
             return;
           }
           (void)num;
           size_t first_pass = decoded_passes_per_ac_group_[g];
           BitReader* JXL_RESTRICT readers[kMaxNumPasses];
-          for (size_t i = 0; i < num_ac_passes[g]; i++) {
+          for (size_t i = 0; i < desired_num_ac_passes[g]; i++) {
             JXL_ASSERT(ac_group_sec[g][first_pass + i] != num);
             readers[i] = sections[ac_group_sec[g][first_pass + i]].br;
           }
-          if (!ProcessACGroup(g, readers, num_ac_passes[g],
+          if (!ProcessACGroup(g, readers, desired_num_ac_passes[g],
                               GetStorageLocation(thread, g),
                               /*force_draw=*/false, /*dc_only=*/false)) {
             has_error = true;
           } else {
-            for (size_t i = 0; i < num_ac_passes[g]; i++) {
+            for (size_t i = 0; i < desired_num_ac_passes[g]; i++) {
               section_status[ac_group_sec[g][first_pass + i]] =
                   SectionStatus::kDone;
             }

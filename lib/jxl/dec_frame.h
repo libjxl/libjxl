@@ -9,6 +9,7 @@
 #include <stdint.h>
 
 #include "jxl/decode.h"
+#include "jxl/types.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/span.h"
@@ -135,13 +136,21 @@ class FrameDecoder {
   bool HasDecodedDC() const { return finalized_dc_; }
   bool HasDecodedAll() const { return NumSections() == num_sections_done_; }
 
+  size_t NumCompletePasses() const {
+    return *std::min_element(decoded_passes_per_ac_group_.begin(),
+                             decoded_passes_per_ac_group_.end());
+  };
+
   // If enabled, ProcessSections will stop and return true when the DC
   // sections have been processed, instead of starting the AC sections. This
   // will only occur if supported (that is, flushing will produce a valid
   // 1/8th*1/8th resolution image). The return value of true then does not mean
   // all sections have been processed, use HasDecodedDC and HasDecodedAll
   // to check the true finished state.
-  void SetPauseAtProgressive() { pause_at_progressive_ = true; }
+  void SetPauseAtProgressive(JxlProgressiveDetail prog_detail) {
+    pause_at_progressive_ = true;
+    progressive_detail_ = prog_detail;
+  }
 
   // Sets the buffer to which uint8 sRGB pixels will be decoded. This is not
   // supported for all images. If it succeeds, HasRGBBuffer() will return true.
@@ -286,6 +295,7 @@ class FrameDecoder {
   bool use_slow_rendering_pipeline_;
 
   bool pause_at_progressive_ = false;
+  JxlProgressiveDetail progressive_detail_ = kDC;
 };
 
 }  // namespace jxl

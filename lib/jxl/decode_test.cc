@@ -17,6 +17,7 @@
 #include "jxl/decode_cxx.h"
 #include "jxl/resizable_parallel_runner_cxx.h"
 #include "jxl/thread_parallel_runner_cxx.h"
+#include "jxl/types.h"
 #include "lib/extras/enc/jpg.h"
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/file_io.h"
@@ -3393,122 +3394,159 @@ TEST(DecodeTest, FlushTestLosslessProgressiveAlpha) {
 }
 
 TEST(DecodeTest, ProgressiveEventTest) {
+  std::set<JxlProgressiveDetail> progressive_details = {kDC, kPasses};
   for (int single_group = 0; single_group <= 1; ++single_group) {
     for (int lossless = 0; lossless <= 1; ++lossless) {
       for (uint32_t num_channels = 3; num_channels < 4; ++num_channels) {
-        // Only few combinations are expected to support outputting the DC. The
-        // test can be updated if more cases are expected to support it.
-        bool expect_dc = !single_group && (num_channels & 1) && !lossless;
-        size_t xsize, ysize;
-        if (single_group) {
-          // An image smaller than 256x256 ensures it contains only 1 group.
-          xsize = 99;
-          ysize = 100;
-        } else {
-          xsize = 257;
-          ysize = 280;
-        }
-        std::vector<uint8_t> pixels =
-            jxl::test::GetSomeTestImage(xsize, ysize, num_channels, 0);
-        jxl::CompressParams cparams;
-        if (lossless) {
-          cparams.SetLossless();
-        } else {
-          cparams.butteraugli_distance = 0.5f;
-        }
+        for (auto prog_detail : progressive_details) {
+          // Only few combinations are expected to support outputting
+          // intermediate flushes for complete DC and complete passes.
+          // The test can be updated if more cases are expected to support it.
+          bool expect_flush = (num_channels & 1) && !lossless;
+          size_t xsize, ysize;
+          if (single_group) {
+            // An image smaller than 256x256 ensures it contains only 1 group.
+            xsize = 99;
+            ysize = 100;
+          } else {
+            xsize = 277;
+            ysize = 280;
+          }
+          std::vector<uint8_t> pixels =
+              jxl::test::GetSomeTestImage(xsize, ysize, num_channels, 0);
+          jxl::CompressParams cparams;
+          if (lossless) {
+            cparams.SetLossless();
+          } else {
+            cparams.butteraugli_distance = 0.5f;
+          }
+          cparams.qprogressive_mode = true;
+          jxl::PaddedBytes data = jxl::CreateTestJXLCodestream(
+              jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize,
+              ysize, num_channels, cparams, kCSBF_None, JXL_ORIENT_IDENTITY,
+              false, false);
+          JxlPixelFormat format = {num_channels, JXL_TYPE_UINT16,
+                                   JXL_BIG_ENDIAN, 0};
 
-        jxl::PaddedBytes data = jxl::CreateTestJXLCodestream(
-            jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize,
-            ysize, num_channels, cparams, kCSBF_None, JXL_ORIENT_IDENTITY,
-            false, false);
-        JxlPixelFormat format = {num_channels, JXL_TYPE_UINT16, JXL_BIG_ENDIAN,
-                                 0};
+          std::vector<uint8_t> pixels2;
+          pixels2.resize(pixels.size());
+          std::vector<uint8_t> dc;
+          dc.resize(pixels.size());
+          std::vector<uint8_t> pass;
+          pass.resize(pixels.size());
 
-        std::vector<uint8_t> pixels2;
-        pixels2.resize(pixels.size());
-        std::vector<uint8_t> dc;
-        dc.resize(pixels.size());
+          JxlDecoder* dec = JxlDecoderCreate(nullptr);
 
-        JxlDecoder* dec = JxlDecoderCreate(nullptr);
+          EXPECT_EQ(
+              JXL_DEC_SUCCESS,
+              JxlDecoderSubscribeEvents(
+                  dec, JXL_DEC_BASIC_INFO | JXL_DEC_FRAME | JXL_DEC_FULL_IMAGE |
+                           JXL_DEC_FRAME_PROGRESSION));
+          EXPECT_EQ(JXL_DEC_ERROR,
+                    JxlDecoderSetProgressiveDetail(dec, kFrames));
+          EXPECT_EQ(JXL_DEC_ERROR,
+                    JxlDecoderSetProgressiveDetail(dec, kLastPasses));
+          EXPECT_EQ(JXL_DEC_ERROR,
+                    JxlDecoderSetProgressiveDetail(dec, kDCProgressive));
+          EXPECT_EQ(JXL_DEC_ERROR,
+                    JxlDecoderSetProgressiveDetail(dec, kDCGroups));
+          EXPECT_EQ(JXL_DEC_ERROR,
+                    JxlDecoderSetProgressiveDetail(dec, kGroups));
+          EXPECT_EQ(JXL_DEC_SUCCESS,
+                    JxlDecoderSetProgressiveDetail(dec, prog_detail));
+          EXPECT_EQ(JXL_DEC_SUCCESS,
+                    JxlDecoderSetInput(dec, data.data(), data.size()));
 
-        EXPECT_EQ(JXL_DEC_SUCCESS,
-                  JxlDecoderSubscribeEvents(
-                      dec, JXL_DEC_BASIC_INFO | JXL_DEC_FRAME |
-                               JXL_DEC_FULL_IMAGE | JXL_DEC_FRAME_PROGRESSION));
+          EXPECT_EQ(JXL_DEC_BASIC_INFO, JxlDecoderProcessInput(dec));
+          JxlBasicInfo info;
+          EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBasicInfo(dec, &info));
+          EXPECT_EQ(info.xsize, xsize);
+          EXPECT_EQ(info.ysize, ysize);
 
-        EXPECT_EQ(JXL_DEC_SUCCESS,
-                  JxlDecoderSetInput(dec, data.data(), data.size()));
+          EXPECT_EQ(JXL_DEC_FRAME, JxlDecoderProcessInput(dec));
 
-        EXPECT_EQ(JXL_DEC_BASIC_INFO, JxlDecoderProcessInput(dec));
-        JxlBasicInfo info;
-        EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBasicInfo(dec, &info));
-        EXPECT_EQ(info.xsize, xsize);
-        EXPECT_EQ(info.ysize, ysize);
+          size_t buffer_size;
+          EXPECT_EQ(JXL_DEC_SUCCESS,
+                    JxlDecoderImageOutBufferSize(dec, &format, &buffer_size));
+          EXPECT_EQ(pixels2.size(), buffer_size);
+          EXPECT_EQ(JXL_DEC_SUCCESS,
+                    JxlDecoderSetImageOutBuffer(dec, &format, pixels2.data(),
+                                                pixels2.size()));
 
-        EXPECT_EQ(JXL_DEC_FRAME, JxlDecoderProcessInput(dec));
-
-        size_t buffer_size;
-        EXPECT_EQ(JXL_DEC_SUCCESS,
-                  JxlDecoderImageOutBufferSize(dec, &format, &buffer_size));
-        EXPECT_EQ(pixels2.size(), buffer_size);
-        EXPECT_EQ(JXL_DEC_SUCCESS,
-                  JxlDecoderSetImageOutBuffer(dec, &format, pixels2.data(),
-                                              pixels2.size()));
-
-        if (expect_dc) {
-          EXPECT_EQ(JXL_DEC_FRAME_PROGRESSION, JxlDecoderProcessInput(dec));
-          EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderFlushImage(dec));
-          dc = pixels2;
-        }
-
-        EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec));
-        EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderProcessInput(dec));
-
-        jxl::Image3F imagef_pixels(xsize, ysize);
-        jxl::Image3F imagef_pixels2(xsize, ysize);
-        jxl::Image3F imagef_dc(xsize, ysize);
-        for (size_t c = 0; c < 3; c++) {
-          for (size_t y = 0; y < ysize; y++) {
-            float* row_pixels = imagef_pixels.PlaneRow(c, y);
-            float* row_pixels2 = imagef_pixels2.PlaneRow(c, y);
-            float* row_dc = imagef_dc.PlaneRow(c, y);
-            for (size_t x = 0; x < xsize; x++) {
-              size_t pixel_index = (y * xsize + x) * num_channels * 2 + c * 2;
-              row_pixels[x] = pixels[pixel_index] / 255.0f;
-              row_pixels2[x] = pixels2[pixel_index] / 255.0f;
-              row_dc[x] = dc[pixel_index] / 255.0f;
+          if (expect_flush) {
+            EXPECT_EQ(JXL_DEC_FRAME_PROGRESSION, JxlDecoderProcessInput(dec));
+            EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderFlushImage(dec));
+            dc = pixels2;
+            if (prog_detail == kPasses) {
+              EXPECT_EQ(JXL_DEC_FRAME_PROGRESSION, JxlDecoderProcessInput(dec));
+              EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderFlushImage(dec));
+              pass = pixels2;
             }
           }
-        }
 
-        jxl::CodecInOut io_pixels;
-        io_pixels.SetFromImage(std::move(imagef_pixels),
+          EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec));
+          EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderProcessInput(dec));
+
+          jxl::Image3F imagef_pixels(xsize, ysize);
+          jxl::Image3F imagef_pixels2(xsize, ysize);
+          jxl::Image3F imagef_dc(xsize, ysize);
+          jxl::Image3F imagef_pass(xsize, ysize);
+          for (size_t c = 0; c < 3; c++) {
+            for (size_t y = 0; y < ysize; y++) {
+              float* row_pixels = imagef_pixels.PlaneRow(c, y);
+              float* row_pixels2 = imagef_pixels2.PlaneRow(c, y);
+              float* row_dc = imagef_dc.PlaneRow(c, y);
+              float* row_pass = imagef_pass.PlaneRow(c, y);
+              for (size_t x = 0; x < xsize; x++) {
+                size_t pixel_index = (y * xsize + x) * num_channels * 2 + c * 2;
+                row_pixels[x] = pixels[pixel_index] / 255.0f;
+                row_pixels2[x] = pixels2[pixel_index] / 255.0f;
+                row_dc[x] = dc[pixel_index] / 255.0f;
+                row_pass[x] = pass[pixel_index] / 255.0f;
+              }
+            }
+          }
+
+          jxl::CodecInOut io_pixels;
+          io_pixels.SetFromImage(std::move(imagef_pixels),
+                                 jxl::ColorEncoding::SRGB(false));
+          jxl::CodecInOut io_pixels2;
+          io_pixels2.SetFromImage(std::move(imagef_pixels2),
+                                  jxl::ColorEncoding::SRGB(false));
+          jxl::CodecInOut io_dc;
+          io_dc.SetFromImage(std::move(imagef_dc),
+                             jxl::ColorEncoding::SRGB(false));
+          jxl::CodecInOut io_pass;
+          io_pass.SetFromImage(std::move(imagef_pass),
                                jxl::ColorEncoding::SRGB(false));
-        jxl::CodecInOut io_pixels2;
-        io_pixels2.SetFromImage(std::move(imagef_pixels2),
-                                jxl::ColorEncoding::SRGB(false));
-        jxl::CodecInOut io_dc;
-        io_dc.SetFromImage(std::move(imagef_dc),
-                           jxl::ColorEncoding::SRGB(false));
 
-        jxl::ButteraugliParams ba;
-        float distance_full =
-            ButteraugliDistance(io_pixels, io_pixels2, ba, jxl::GetJxlCms(),
-                                /*distmap=*/nullptr, nullptr);
-
-        if (expect_dc) {
-          float distance_dc =
-              ButteraugliDistance(io_pixels, io_dc, ba, jxl::GetJxlCms(),
+          jxl::ButteraugliParams ba;
+          float distance_full =
+              ButteraugliDistance(io_pixels, io_pixels2, ba, jxl::GetJxlCms(),
                                   /*distmap=*/nullptr, nullptr);
           EXPECT_LT(distance_full, 2.0f);
-          EXPECT_LT(distance_dc, 30.0f);
-          // Verify that the returned DC image is actually DC, by checking that
-          // it has worse butteraugli score than the full image
-          EXPECT_LT(distance_full + 1.0f, distance_dc);
-        } else {
-          EXPECT_LT(distance_full, 2.0f);
+
+          if (expect_flush) {
+            float distance_dc =
+                ButteraugliDistance(io_pixels, io_dc, ba, jxl::GetJxlCms(),
+                                    /*distmap=*/nullptr, nullptr);
+            EXPECT_LT(distance_dc, 30.0f);
+            // Verify that the returned DC image is actually DC, by checking
+            // that it has much worse butteraugli score than the full image.
+            EXPECT_LT(distance_full * 5, distance_dc);
+            if (prog_detail == kPasses) {
+              float distance_pass =
+                  ButteraugliDistance(io_pixels, io_pass, ba, jxl::GetJxlCms(),
+                                      /*distmap=*/nullptr, nullptr);
+              EXPECT_LT(distance_pass, 3.0f);
+              // Verify that the returned pass image is actually not the full
+              // image, by checking that it has a bit worse butteraugli score
+              // than the full image.
+              EXPECT_LT(distance_full * 1.1, distance_pass);
+            }
+          }
+          JxlDecoderDestroy(dec);
         }
-        JxlDecoderDestroy(dec);
       }
     }
   }
