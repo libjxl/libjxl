@@ -54,6 +54,7 @@ Please add missing software to this list.
   - Qt viewers: gwenview, digiKam, KolourPaint, KPhotoAlbum, LXImage-Qt, qimgv, qView, nomacs, VookiImageViewer, PhotoQt
   - GTK viewers: Eye of Gnome (eog), gThumb, Geeqie
   - EFL viewers: entice, ephoto
+- [Swayimg](https://github.com/artemsen/swayimg)
 
 ## Online tools
 
