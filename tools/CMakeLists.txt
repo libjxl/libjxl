@@ -411,18 +411,23 @@ add_subdirectory(conformance)
 if ("${JPEGXL_EMSCRIPTEN}")
 # WASM API facade.
 add_executable(jxl_emcc jxl_emcc.cc)
-target_link_libraries(jxl_emcc jxl-static jxl_extras-static)
+target_link_libraries(jxl_emcc
+    jxl-static
+    jxl_extras-static
+    jxl_threads-static
+)
 set_target_properties(jxl_emcc PROPERTIES LINK_FLAGS "\
   -O3\
   --closure 1 \
-  -s ALLOW_MEMORY_GROWTH=1 \
+  -s TOTAL_MEMORY=80mb \
   -s USE_LIBPNG=1 \
   -s DISABLE_EXCEPTION_CATCHING=1 \
   -s MODULARIZE=1 \
   -s FILESYSTEM=0 \
+  -s USE_PTHREADS=1 \
+  -s PTHREAD_POOL_SIZE=4 \
   -s EXPORT_NAME=\"JxlCodecModule\"\
   -s \"EXPORTED_FUNCTIONS=[\
-    _jxlCompress,\
     _jxlDecompress,\
     _free,\
     _malloc\
