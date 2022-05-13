@@ -2208,6 +2208,8 @@ JxlDecoderStatus JxlDecoderGetBasicInfo(const JxlDecoder* dec,
   if (!dec->got_basic_info) return JXL_DEC_NEED_MORE_INPUT;
 
   if (info) {
+    memset(info, 0, sizeof(*info));
+
     const jxl::ImageMetadata& meta = dec->metadata.m;
 
     info->have_container = dec->have_container;
@@ -2728,6 +2730,7 @@ JxlDecoderStatus JxlDecoderGetFrameHeader(const JxlDecoder* dec,
     return JXL_API_ERROR("no frame header available");
   }
   const auto& metadata = dec->metadata.m;
+  memset(header, 0, sizeof(*header));
   if (metadata.have_animation) {
     header->duration = dec->frame_header->animation_frame.duration;
     if (metadata.animation.have_timecodes) {
