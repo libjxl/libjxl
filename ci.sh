@@ -1010,11 +1010,11 @@ cmd_arm_benchmark() {
   )
 
   local images=(
-    "third_party/testdata/jxl/flower/flower.png"
+    "testdata/jxl/flower/flower.png"
   )
 
   local jpg_images=(
-    "third_party/testdata/jxl/flower/flower.png.im_q85_420.jpg"
+    "testdata/jxl/flower/flower.png.im_q85_420.jpg"
   )
 
   if [[ "${SKIP_CPUSET:-}" == "1" ]]; then

@@ -26,5 +26,5 @@
 	path = third_party/gflags
 	url = https://github.com/gflags/gflags
 [submodule "third_party/testdata"]
-	path = third_party/testdata
+	path = testdata
 	url = https://github.com/libjxl/testdata

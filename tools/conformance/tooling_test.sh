@@ -13,7 +13,7 @@ MYDIR=$(dirname $(realpath "$0"))
 if [[ $# -eq 2 ]]; then
     JPEGXL_TEST_DATA_PATH="$2"
 else
-    JPEGXL_TEST_DATA_PATH="${MYDIR}/../../third_party/testdata"
+    JPEGXL_TEST_DATA_PATH="${MYDIR}/../../testdata"
 fi
 
 set -eux
