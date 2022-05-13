@@ -106,6 +106,7 @@ void AppendBoxHeader(const jxl::BoxType& type, size_t size, bool unbounded,
 // Internal use only struct, can only be initialized correctly by
 // JxlEncoderCreate.
 struct JxlEncoderStruct {
+  JxlEncoderError error = JxlEncoderError::JXL_ENC_ERR_OK;
   JxlMemoryManager memory_manager;
   jxl::MemoryManagerUniquePtr<jxl::ThreadPool> thread_pool{
       nullptr, jxl::MemoryManagerDeleteHelper(&memory_manager)};
@@ -145,6 +146,7 @@ struct JxlEncoderStruct {
   // reconstruction box.
   bool wrote_bytes;
   jxl::CompressParams last_used_cparams;
+  JxlBasicInfo basic_info;
 
   // Encoder wrote a jxlp (partial codestream) box, so any next codestream
   // parts must also be written in jxlp boxes, a single jxlc box cannot be

@@ -73,15 +73,60 @@ typedef enum {
 
   /** DEPRECATED: the encoder does not return this status and there is no need
    * to handle or expect it.
+   * Instead, JXL_ENC_ERROR is returned with error condition
+   * JXL_ENC_ERR_NOT_SUPPORTED.
    */
   JXL_ENC_NOT_SUPPORTED = 3,
 
 } JxlEncoderStatus;
 
 /**
- * Id of encoder options for a frame. This includes options such as the
- * image quality and compression speed for this frame. This does not include
- * non-frame related encoder options such as for boxes.
+ * Error conditions:
+ * API usage errors have the 0x80 bit set to 1
+ * Other errors have the 0x80 bit set to 0
+ */
+typedef enum {
+  /** No error
+   */
+  JXL_ENC_ERR_OK = 0,
+
+  /** Generic encoder error due to unspecified cause
+   */
+  JXL_ENC_ERR_GENERIC = 1,
+
+  /** Out of memory
+   *  TODO(jon): actually catch this and return this error
+   */
+  JXL_ENC_ERR_OOM = 2,
+
+  /** JPEG bitstream reconstruction data could not be
+   *  represented (e.g. too much tail data)
+   */
+  JXL_ENC_ERR_JBRD = 3,
+
+  /** Input is invalid (e.g. corrupt JPEG file or ICC profile)
+   */
+  JXL_ENC_ERR_BAD_INPUT = 4,
+
+  /** The encoder doesn't (yet) support this. Either no version of libjxl
+   * supports this, and the API is used incorrectly, or the libjxl version
+   * should have been checked before trying to do this.
+   */
+  JXL_ENC_ERR_NOT_SUPPORTED = 0x80,
+
+  /** The encoder API is used in an incorrect way.
+   *  In this case, a debug build of libjxl should output a specific error
+   * message. (if not, please open an issue about it)
+   */
+  JXL_ENC_ERR_API_USAGE = 0x81,
+
+} JxlEncoderError;
+
+/**
+ * Id of encoder options for a frame. This includes options such as setting
+ * encoding effort/speed or overriding the use of certain coding tools, for this
+ * frame. This does not include non-frame related encoder options such as for
+ * boxes.
  */
 typedef enum {
   /** Sets encoder effort/speed level without affecting decoding speed. Valid
@@ -236,9 +281,12 @@ typedef enum {
    */
   JXL_ENC_FRAME_SETTING_COLOR_TRANSFORM = 24,
 
-  /** Color space for modular encoding: -1=default, 0-35=reverse color transform
+  /** Reversible color transform for modular encoding: -1=default, 0-48=RCT
    * index, e.g. index 0 = none, index 6 = YCoCg.
-   * The default behavior is to try several, depending on the speed setting.
+   * If this option is set to a non-default value, the RCT will be globally
+   * applied to the whole frame.
+   * The default behavior is to try several RCTs locally per modular group,
+   * depending on the speed and distance setting.
    */
   JXL_ENC_FRAME_SETTING_MODULAR_COLOR_SPACE = 25,
 
@@ -353,6 +401,15 @@ JXL_EXPORT void JxlEncoderSetCms(JxlEncoder* enc, JxlCmsInterface cms);
 JXL_EXPORT JxlEncoderStatus
 JxlEncoderSetParallelRunner(JxlEncoder* enc, JxlParallelRunner parallel_runner,
                             void* parallel_runner_opaque);
+
+/**
+ * Get the (last) error code in case JXL_ENC_ERROR was returned.
+ *
+ * @param enc encoder object.
+ * @return the JxlEncoderError that caused the (last) JXL_ENC_ERROR to be
+ * returned.
+ */
+JXL_EXPORT JxlEncoderError JxlEncoderGetError(JxlEncoder* enc);
 
 /**
  * Encodes JPEG XL file using the available bytes. @p *avail_out indicates how
@@ -715,6 +772,7 @@ JXL_EXPORT void JxlEncoderCloseInput(JxlEncoder* enc);
  * is an alternative to JxlEncoderSetICCProfile and only one of these two must
  * be used. This one sets the color encoding as a @ref JxlColorEncoding, while
  * the other sets it as ICC binary data.
+ * Must be called after JxlEncoderSetBasicInfo.
  *
  * @param enc encoder object.
  * @param color color encoding. Object owned by the caller and its contents are
@@ -730,6 +788,7 @@ JxlEncoderSetColorEncoding(JxlEncoder* enc, const JxlColorEncoding* color);
  * ICC color profile. This is an alternative to JxlEncoderSetColorEncoding and
  * only one of these two must be used. This one sets the color encoding as ICC
  * binary data, while the other defines it as a @ref JxlColorEncoding.
+ * Must be called after JxlEncoderSetBasicInfo.
  *
  * @param enc encoder object.
  * @param icc_profile bytes of the original ICC profile

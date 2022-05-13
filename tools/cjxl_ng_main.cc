@@ -178,8 +178,8 @@ DEFINE_int32(modular_predictor, -1,
              "at slowest speed default 15.");
 
 DEFINE_int32(modular_colorspace, -1,
-             "[modular encoding] color transform: 0=RGB, 1=YCoCg, "
-             "2-37=RCT (default: try several, depending on speed)");
+             "[modular encoding] color transform: -1=default, 0=RGB (none), "
+             "1-48=RCT (6=YCoCg, default: try several, depending on speed)");
 
 DEFINE_int32(
     modular_channel_colors_global_percent, -1,
@@ -697,7 +697,7 @@ int main(int argc, char** argv) {
       process_flag("modular_predictor", FLAGS_modular_predictor,
                    JXL_ENC_FRAME_SETTING_MODULAR_PREDICTOR,
                    [](int32_t x) -> std::string {
-                     return (0 <= x && x <= 15)
+                     return (-1 <= x && x <= 15)
                                 ? ""
                                 : "Invalid --modular_predictor. Valid "
                                   "range is {-1, 0, 1, ..., 15}.\n";
@@ -706,10 +706,10 @@ int main(int argc, char** argv) {
           "modular_colorspace", FLAGS_modular_colorspace,
           JXL_ENC_FRAME_SETTING_MODULAR_COLOR_SPACE,
           [](int32_t x) -> std::string {
-            return (0 <= x && x <= 15)
+            return (-1 <= x && x <= 48)
                        ? ""
                        : "Invalid --modular_colorspace. Valid range is "
-                         "{-1, 0, 1, ..., 37}.\n";
+                         "{-1, 0, 1, ..., 48}.\n";
           });
       process_flag("modular_ma_tree_learning_percent",
                    FLAGS_modular_ma_tree_learning_percent,

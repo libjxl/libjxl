@@ -109,7 +109,7 @@ TEST(EncodeTest, AddFrameBeforeBasicInfoTest) {
   JxlColorEncoding color_encoding;
   JxlColorEncodingSetToSRGB(&color_encoding,
                             /*is_gray=*/pixel_format.num_channels < 3);
-  EXPECT_EQ(JXL_ENC_SUCCESS,
+  EXPECT_EQ(JXL_ENC_ERROR,
             JxlEncoderSetColorEncoding(enc.get(), &color_encoding));
   JxlEncoderFrameSettings* frame_settings =
       JxlEncoderFrameSettingsCreate(enc.get(), NULL);
@@ -178,9 +178,15 @@ void VerifyFrameEncoding(size_t xsize, size_t ysize, JxlEncoder* enc,
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetCodestreamLevel(enc, 10));
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc, &basic_info));
   JxlColorEncoding color_encoding;
-  JxlColorEncodingSetToSRGB(&color_encoding,
-                            /*is_gray=*/pixel_format.num_channels < 3);
+  JxlColorEncodingSetToSRGB(&color_encoding, true);
+  EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderSetColorEncoding(enc, &color_encoding));
+  JxlColorEncodingSetToSRGB(&color_encoding, false);
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetColorEncoding(enc, &color_encoding));
+  pixel_format.num_channels = 1;
+  EXPECT_EQ(JXL_ENC_ERROR,
+            JxlEncoderAddImageFrame(frame_settings, &pixel_format,
+                                    pixels.data(), pixels.size()));
+  pixel_format.num_channels = 4;
   EXPECT_EQ(JXL_ENC_SUCCESS,
             JxlEncoderAddImageFrame(frame_settings, &pixel_format,
                                     pixels.data(), pixels.size()));
@@ -450,10 +456,7 @@ TEST(EncodeTest, frame_settingsTest) {
         JxlEncoderFrameSettingsSetOption(
             frame_settings, JXL_ENC_FRAME_SETTING_MODULAR_NB_PREV_CHANNELS, 7));
     VerifyFrameEncoding(enc.get(), frame_settings);
-    // It was set to 30, but becomes 32 because in the C++ implementation, the
-    // numerical RCT values are shifted 2 compared to the specification. The
-    // API uses the values seen in the JXL specification.
-    EXPECT_EQ(32, enc->last_used_cparams.colorspace);
+    EXPECT_EQ(30, enc->last_used_cparams.colorspace);
     EXPECT_EQ(2, enc->last_used_cparams.modular_group_size_shift);
     EXPECT_EQ(jxl::Predictor::Best, enc->last_used_cparams.options.predictor);
     EXPECT_EQ(0.77f, enc->last_used_cparams.options.nb_repeats);
@@ -1304,6 +1307,8 @@ TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGFrameTest)) {
   for (int skip_basic_info = 0; skip_basic_info < 2; skip_basic_info++) {
     for (int skip_color_encoding = 0; skip_color_encoding < 2;
          skip_color_encoding++) {
+      // cannot set color encoding if basic info is not set
+      if (skip_basic_info && !skip_color_encoding) continue;
       const std::string jpeg_path = "jxl/flower/flower_cropped.jpg";
       const jxl::PaddedBytes orig = jxl::ReadTestData(jpeg_path);
       jxl::CodecInOut orig_io;

@@ -748,18 +748,17 @@ Status ModularFrameEncoder::ComputeEncodingData(
   if (cparams.color_transform == ColorTransform::kNone && do_color &&
       gi.channel.size() - gi.nb_meta_channels >= 3 &&
       max_bitdepth + 1 < level_max_bitdepth) {
-    if (cparams.colorspace == 1 ||
-        (cparams.colorspace < 0 &&
-         (!cparams.IsLossless() || cparams.speed_tier > SpeedTier::kHare))) {
+    if (cparams.colorspace < 0 &&
+        (!cparams.IsLossless() || cparams.speed_tier > SpeedTier::kHare)) {
       Transform ycocg{TransformId::kRCT};
       ycocg.rct_type = 6;
       ycocg.begin_c = gi.nb_meta_channels;
       do_transform(gi, ycocg, weighted::Header(), pool);
       max_bitdepth++;
-    } else if (cparams.colorspace >= 2) {
+    } else if (cparams.colorspace > 0) {
       Transform sg(TransformId::kRCT);
       sg.begin_c = gi.nb_meta_channels;
-      sg.rct_type = cparams.colorspace - 2;
+      sg.rct_type = cparams.colorspace;
       do_transform(gi, sg, weighted::Header(), pool);
       max_bitdepth++;
     }
