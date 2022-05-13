@@ -324,7 +324,7 @@ enable_testing()
 include(CTest)
 # Specify default location of `testdata`:
 if(NOT DEFINED JPEGXL_TEST_DATA_PATH)
-  set(JPEGXL_TEST_DATA_PATH "${PROJECT_SOURCE_DIR}/third_party/testdata")
+  set(JPEGXL_TEST_DATA_PATH "${PROJECT_SOURCE_DIR}/testdata")
 endif()
 
 # Libraries.
