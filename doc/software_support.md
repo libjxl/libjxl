@@ -36,6 +36,7 @@ Please add missing software to this list.
 - [Windows thumbnail handler](https://github.com/saschanaz/jxl-winthumb)
 - [OpenMandriva Lx (since 4.3 RC)](https://www.openmandriva.org/en/news/article/openmandriva-lx-4-3-rc-available-for-testing)
 - [KaOS (since 2021.06)](https://news.itsfoss.com/kaos-2021-06-release/)
+- [EFL (since 1.27, no external plugin needed)](https://www.enlightenment.org)
 
 ## Image editors
 
@@ -49,9 +50,10 @@ Please add missing software to this list.
 - [ImageGlass](https://imageglass.org/)
 - [IrfanView](https://www.irfanview.com/); supported since 4.59 - requires a [plugin](https://www.irfanview.com/plugins.htm) to be downloaded and enabled.
 - [Tachiyomi](https://github.com/tachiyomiorg/tachiyomi/releases/tag/v0.12.1)
-- Any viewer based on Qt, KDE, GDK-pixbuf, ImageMagick, libvips or imlib2 (see above)
+- Any viewer based on Qt, KDE, GDK-pixbuf, EFL, ImageMagick, libvips or imlib2 (see above)
   - Qt viewers: gwenview, digiKam, KolourPaint, KPhotoAlbum, LXImage-Qt, qimgv, qView, nomacs, VookiImageViewer, PhotoQt
   - GTK viewers: Eye of Gnome (eog), gThumb, Geeqie
+  - EFL viewers: entice, ephoto
 
 ## Online tools
 
