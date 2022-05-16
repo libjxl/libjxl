@@ -14,6 +14,7 @@
 #include "jxl/codestream_header.h"
 #include "jxl/types.h"
 #include "lib/jxl/aux_out.h"
+#include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/enc_color_management.h"
@@ -211,6 +212,83 @@ JxlEncoderStatus CheckValidBitdepth(uint32_t bits_per_sample,
   return JXL_ENC_SUCCESS;
 }
 
+bool EncodeFrameIndexBox(const jxl::JxlEncoderFrameIndexBox& frame_index_box,
+                         jxl::BitWriter& writer) {
+  bool ok = true;
+  int NF = 0;
+  for (size_t i = 0; i < frame_index_box.entries.size(); ++i) {
+    if (i == 0 || frame_index_box.entries[i].to_be_indexed) {
+      ++NF;
+    }
+  }
+  // Frame index box contents varint + 8 bytes
+  // continue with NF * 3 * varint
+  // varint max length is 10 for 64 bit numbers, and these numbers
+  // are limited to 63 bits.
+  static const int kVarintMaxLength = 10;
+  static const int kFrameIndexBoxHeaderLength = kVarintMaxLength + 8;
+  static const int kFrameIndexBoxElementLength = 3 * kVarintMaxLength;
+  const int buffer_size =
+      kFrameIndexBoxHeaderLength + NF * kFrameIndexBoxElementLength;
+  std::vector<uint8_t> buffer_vec(buffer_size);
+  uint8_t* buffer = buffer_vec.data();
+  size_t output_pos = 0;
+  ok &= jxl::EncodeVarInt(NF, buffer_vec.size(), &output_pos, buffer);
+  StoreBE32(frame_index_box.TNUM, &buffer[output_pos]);
+  output_pos += 4;
+  StoreBE32(frame_index_box.TDEN, &buffer[output_pos]);
+  output_pos += 4;
+  // When we record a frame in the index, the record needs to know
+  // how many frames until the next indexed frame. That is why
+  // we store the 'prev' record. That 'prev' record needs to store
+  // the offset byte position to previously recorded indexed frame,
+  // that's why we also trace previous to the previous frame.
+  int prev_prev_ix = -1;  // For position offset (OFFi) delta coding.
+  int prev_ix = 0;
+  int T_prev = 0;
+  int T = 0;
+  for (size_t i = 1; i < frame_index_box.entries.size(); ++i) {
+    if (frame_index_box.entries[i].to_be_indexed) {
+      // Now we can record the previous entry, since we need to store
+      // there how many frames until the next one.
+      int64_t OFFi = frame_index_box.entries[prev_ix].OFFi;
+      if (prev_prev_ix != -1) {
+        // Offi needs to be offset of start byte of this frame compared to start
+        // byte of previous frame from this index in the JPEG XL codestream. For
+        // the first frame, this is the offset from the first byte of the JPEG
+        // XL codestream.
+        OFFi -= frame_index_box.entries[prev_prev_ix].OFFi;
+      }
+      int32_t Ti = T_prev;
+      int32_t Fi = i - prev_ix;
+      ok &= jxl::EncodeVarInt(OFFi, buffer_vec.size(), &output_pos, buffer);
+      ok &= jxl::EncodeVarInt(Ti, buffer_vec.size(), &output_pos, buffer);
+      ok &= jxl::EncodeVarInt(Fi, buffer_vec.size(), &output_pos, buffer);
+      prev_prev_ix = prev_ix;
+      prev_ix = i;
+      T_prev = T;
+      T += frame_index_box.entries[i].duration;
+    }
+  }
+  {
+    // Last frame.
+    size_t i = frame_index_box.entries.size();
+    int64_t OFFi = frame_index_box.entries[prev_ix].OFFi;
+    if (prev_prev_ix != -1) {
+      OFFi -= frame_index_box.entries[prev_prev_ix].OFFi;
+    }
+    int32_t Ti = T_prev;
+    int32_t Fi = i - prev_ix;
+    ok &= jxl::EncodeVarInt(OFFi, buffer_vec.size(), &output_pos, buffer);
+    ok &= jxl::EncodeVarInt(Ti, buffer_vec.size(), &output_pos, buffer);
+    ok &= jxl::EncodeVarInt(Fi, buffer_vec.size(), &output_pos, buffer);
+  }
+  // Enough buffer has been allocated, this function should never fail in
+  // writing.
+  JXL_ASSERT(ok);
+  return ok;
+}
+
 }  // namespace
 
 JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
@@ -363,6 +441,8 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
       ib.duration = 0;
       ib.timecode = 0;
     }
+    frame_index_box.AddFrame(codestream_bytes_written_end_of_frame, ib.duration,
+                             input_frame->option_values.frame_index_box);
     ib.blendmode = static_cast<jxl::BlendMode>(
         input_frame->option_values.header.layer_info.blend_info.blendmode);
     ib.blend =
@@ -438,6 +518,12 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
                              bytes.data() + bytes.size());
 
     last_used_cparams = input_frame->option_values.cparams;
+    if (last_frame && frame_index_box.StoreFrameIndexBox()) {
+      bytes.clear();
+      EncodeFrameIndexBox(frame_index_box, writer);
+      jxl::AppendBoxHeader(jxl::MakeBoxType("jxli"), bytes.size(),
+                           /*unbounded=*/false, &output_byte_queue);
+    }
   } else {
     // Not a frame, so is a box instead
     jxl::MemoryManagerUniquePtr<jxl::JxlEncoderQueuedBox> box =
@@ -1117,6 +1203,9 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetOption(
       } else {
         frame_settings->values.cparams.force_cfl_jpeg_recompression = value;
       }
+      return JXL_ENC_SUCCESS;
+    case JXL_ENC_FRAME_INDEX_BOX:
+      frame_settings->values.frame_index_box = true;
       return JXL_ENC_SUCCESS;
     default:
       return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_NOT_SUPPORTED,
