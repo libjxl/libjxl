@@ -418,7 +418,7 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
   cmdline->AddOptionValue(
       'C', "colorspace", "K",
       ("[modular encoding] color transform: -1=default, 0=RGB (none), "
-       "1-48=RCT (6=YCoCg, default: try several, depending on speed)"),
+       "1-41=RCT (6=YCoCg, default: try several, depending on speed)"),
       &params.colorspace, &ParseSigned, 1);
 
   opt_m_group_size_id = cmdline->AddOptionValue(

@@ -1135,9 +1135,9 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetOption(
       }
       return JXL_ENC_SUCCESS;
     case JXL_ENC_FRAME_SETTING_MODULAR_COLOR_SPACE:
-      if (value < -1 || value > 48) {
+      if (value < -1 || value > 41) {
         return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
-                             "Option value has to be in [-1..48]");
+                             "Option value has to be in [-1..41]");
       }
       frame_settings->values.cparams.colorspace = value;
       return JXL_ENC_SUCCESS;
