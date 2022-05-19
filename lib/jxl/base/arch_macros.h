@@ -28,6 +28,12 @@ namespace jxl {
 #define JXL_ARCH_ARM 0
 #endif
 
+#if defined(__riscv) && __riscv_xlen == 64
+#define JXL_ARCH_RISCV64 1
+#else
+#define JXL_ARCH_RISCV64 0
+#endif
+
 }  // namespace jxl
 
 #endif  // LIB_JXL_BASE_ARCH_MACROS_H_
