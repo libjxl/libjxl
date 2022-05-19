@@ -1413,11 +1413,14 @@ cmd_bump_version() {
 # Check that the AUTHORS file contains the email of the committer.
 cmd_authors() {
   merge_request_commits
-  # TODO(deymo): Handle multiple commits and check that they are all the same
-  # author.
-  local email=$(git log --format='%ae' "${MR_HEAD_SHA}^!")
-  local name=$(git log --format='%an' "${MR_HEAD_SHA}^!")
-  "${MYDIR}"/tools/check_author.py "${email}" "${name}"
+  local emails
+  local names
+  readarray -t emails < <(git log --format='%ae' "${MR_HEAD_SHA}...${MR_ANCESTOR_SHA}")
+  readarray -t names < <(git log --format='%an' "${MR_HEAD_SHA}...${MR_ANCESTOR_SHA}")
+  for i in "${!names[@]}"; do
+    echo "Checking name '${names[$i]}' with email '${emails[$i]}' ..."
+    "${MYDIR}"/tools/check_author.py "${emails[$i]}" "${names[$i]}"
+  done
 }
 
 main() {
