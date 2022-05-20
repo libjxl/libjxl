@@ -281,7 +281,7 @@ typedef enum {
    */
   JXL_ENC_FRAME_SETTING_COLOR_TRANSFORM = 24,
 
-  /** Reversible color transform for modular encoding: -1=default, 0-48=RCT
+  /** Reversible color transform for modular encoding: -1=default, 0-41=RCT
    * index, e.g. index 0 = none, index 6 = YCoCg.
    * If this option is set to a non-default value, the RCT will be globally
    * applied to the whole frame.

@@ -706,10 +706,10 @@ int main(int argc, char** argv) {
           "modular_colorspace", FLAGS_modular_colorspace,
           JXL_ENC_FRAME_SETTING_MODULAR_COLOR_SPACE,
           [](int32_t x) -> std::string {
-            return (-1 <= x && x <= 48)
+            return (-1 <= x && x <= 41)
                        ? ""
                        : "Invalid --modular_colorspace. Valid range is "
-                         "{-1, 0, 1, ..., 48}.\n";
+                         "{-1, 0, 1, ..., 41}.\n";
           });
       process_flag("modular_ma_tree_learning_percent",
                    FLAGS_modular_ma_tree_learning_percent,
