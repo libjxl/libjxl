@@ -40,7 +40,7 @@ set_target_properties(${_target} PROPERTIES
 
 # Always install the library as jxl_threads.{a,so} file without the "-static"
 # suffix, except in Windows.
-if (NOT WIN32)
+if (NOT WIN32 OR MINGW)
   set_target_properties(${_target} PROPERTIES OUTPUT_NAME "jxl_threads")
 endif()
 install(TARGETS ${_target}
