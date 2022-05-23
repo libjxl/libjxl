@@ -422,7 +422,7 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
   std::istream* f = &std::cin;
   std::ifstream file;
 
-  if (strcmp(in, "stdin")) {
+  if (strcmp(in, "-")) {
     file.open(in, std::ifstream::in);
     f = &file;
   }
@@ -496,7 +496,7 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
 
   compressed = std::move(writer).TakeBytes();
 
-  if (strcmp(out, "stdout") == 0) {
+  if (!strcmp(out, "-")) {
     fwrite(compressed.data(), 1, compressed.size(), stdout);
   } else if (!WriteFile(compressed, out)) {
     fprintf(stderr, "Failed to write to \"%s\"\n", out);
@@ -508,7 +508,8 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
 }  // namespace jxl
 
 int main(int argc, char** argv) {
-  if ((argc != 3 && argc != 4) || !strcmp(argv[1], argv[2])) {
+  if ((argc != 3 && argc != 4) ||
+      (strcmp(argv[1], "-") && !strcmp(argv[1], argv[2]))) {
     fprintf(stderr, "Usage: %s tree_in.txt out.jxl [tree_drawing]\n", argv[0]);
     return 1;
   }
