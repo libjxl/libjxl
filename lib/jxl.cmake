@@ -526,7 +526,7 @@ endif()  # JPEGXL_ENABLE_TCMALLOC
 
 # Install the static library too, but as jxl.a file without the -static except
 # in Windows.
-if (NOT WIN32)
+if (NOT WIN32 OR MINGW)
   set_target_properties(jxl-static PROPERTIES OUTPUT_NAME "jxl")
   set_target_properties(jxl_dec-static PROPERTIES OUTPUT_NAME "jxl_dec")
 endif()
