@@ -251,7 +251,7 @@ jobs:
 
   windows_build:
     name: Windows Build (vcpkg / ${{ matrix.triplet }})
-    runs-on: [windows-latest]
+    runs-on: [windows-2019]
     strategy:
       fail-fast: false
       matrix:
