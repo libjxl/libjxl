@@ -625,7 +625,6 @@ namespace jxl {
 HWY_EXPORT(AdaptiveQuantizationMap);
 
 namespace {
-bool FLAGS_log_search_state = false;
 // If true, prints the quantization maps at each iteration.
 bool FLAGS_dump_quant_state = false;
 
@@ -825,7 +824,7 @@ void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
                    diffmap);
     }
     if (aux_out != nullptr) ++aux_out->num_butteraugli_iters;
-    if (FLAGS_log_search_state) {
+    if (cparams.log_search_state) {
       float minval, maxval;
       ImageMinMax(quant_field, &minval, &maxval);
       printf("\nButteraugli iter: %d/%d\n", i, cparams.max_butteraugli_iters);
