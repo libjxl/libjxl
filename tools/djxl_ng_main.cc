@@ -22,6 +22,7 @@
 #include "jxl/thread_parallel_runner_cxx.h"
 #include "jxl/types.h"
 #include "lib/extras/dec/decode.h"
+#include "lib/extras/enc/encode.h"
 #include "lib/extras/enc/pnm.h"
 #include "lib/extras/packed_image.h"
 #include "lib/jxl/base/printf_macros.h"
@@ -236,10 +237,10 @@ int DecompressJxlReconstructJPEG(const std::vector<uint8_t>& compressed,
   return EXIT_SUCCESS;
 }
 
-int DecompressJxlToPackedPixelFile(const std::vector<uint8_t>& compressed,
-                                   jxl::extras::PackedPixelFile& ppf,
-                                   JxlPixelFormat& format, JxlDecoderPtr dec,
-                                   JxlThreadParallelRunnerPtr runner) {
+int DecompressJxlToPackedPixelFile(
+    const std::vector<uint8_t>& compressed, jxl::extras::PackedPixelFile& ppf,
+    const std::vector<JxlPixelFormat>& accepted_formats, JxlDecoderPtr dec,
+    JxlThreadParallelRunnerPtr runner) {
   if (JXL_DEC_SUCCESS != JxlDecoderSetParallelRunner(dec.get(),
                                                      JxlThreadParallelRunner,
                                                      runner.get())) {
@@ -254,6 +255,7 @@ int DecompressJxlToPackedPixelFile(const std::vector<uint8_t>& compressed,
     return EXIT_FAILURE;
   }
 
+  JxlPixelFormat format;
   // Reading compressed JPEG XL input and decoding to pixels
   if (JXL_DEC_SUCCESS !=
       JxlDecoderSetInput(dec.get(), compressed.data(), compressed.size())) {
@@ -274,15 +276,13 @@ int DecompressJxlToPackedPixelFile(const std::vector<uint8_t>& compressed,
         fprintf(stderr, "JxlDecoderGetBasicInfo failed\n");
         return EXIT_FAILURE;
       }
-      // Make some modifications to the format if the decoded data requires it.
-      if (ppf.info.num_color_channels != format.num_channels) {
-        format.num_channels = ppf.info.num_color_channels;
+      // Select format according to accepted formats.
+
+      if (!jxl::extras::SelectFormat(accepted_formats, ppf.info, &format)) {
+        fprintf(stderr, "SelectFormat failed\n");
+        return EXIT_FAILURE;
       }
-      if (ppf.info.bits_per_sample > 8 &&
-          ppf.info.exponent_bits_per_sample == 0) {
-        format.data_type = JXL_TYPE_UINT16;
-      }
-      // TODO(firsching): handle extra channels
+      //  TODO(firsching): handle extra channels
     } else if (status == JXL_DEC_COLOR_ENCODING) {
       size_t icc_size = 0;
       // TODO(firsching) handle other targets as well.
@@ -425,52 +425,36 @@ int main(int argc, char** argv) {
       return EXIT_FAILURE;
     };
     // TODO(firsching): handle non-reconstruct JPEG
-  } else if (codec == jxl::extras::Codec::kPNM) {
-    JxlDataType datatype = JXL_TYPE_UINT8;
-    uint32_t num_channels = 3;
-    if (std::string(extension) == ".pfm") {
-      datatype = JXL_TYPE_FLOAT;
-    }
-    if (std::string(extension) == ".pgm") {
-      num_channels = 1;
-    }
-
-    JxlPixelFormat format = {num_channels, datatype, JXL_NATIVE_ENDIAN, 0};
+  } else {
+    std::unique_ptr<jxl::extras::Encoder> encoder =
+        jxl::extras::Encoder::FromExtension(extension);
     jxl::extras::PackedPixelFile ppf;
-    if (DecompressJxlToPackedPixelFile(compressed, ppf, format, std::move(dec),
-                                       std::move(runner)) != 0) {
+    if (DecompressJxlToPackedPixelFile(
+            compressed, ppf, encoder->AcceptedFormats(), std::move(dec),
+            std::move(runner)) != 0) {
+      fprintf(stderr, "DecompressJxlToPackedPixelFile failed\n");
       return EXIT_FAILURE;
     }
-    if (ppf.info.exponent_bits_per_sample != 0) {
-      if (num_channels == 1 && ppf.info.num_color_channels == 3) {
-        JXL_WARNING("For color images, the filename should end with .ppm.\n");
-      }
-      if (num_channels == 3 && ppf.info.num_color_channels == 1) {
-        JXL_WARNING(
-            "For grayscale images, the filename should end with .pgm.\n");
-      }
-      if (ppf.info.bits_per_sample > 16) {
-        JXL_WARNING("PPM only supports up to 16 bits per sample");
-      }
+    jxl::extras::EncodedImage encoded_image;
+    if (!encoder->Encode(ppf, &encoded_image)) {
+      fprintf(stderr, "Encode failed\n");
+      return EXIT_FAILURE;
     }
-    const int digits = 1 + static_cast<int>(std::log10(std::max(
-                               1, static_cast<int>(ppf.frames.size() - 1))));
+    const int digits =
+        1 + static_cast<int>(std::log10(std::max(
+                1, static_cast<int>(encoded_image.bitstreams.size() - 1))));
     std::vector<char> output_filename;
     output_filename.resize(base.size() + 1 + digits + strlen(extension) + 1);
-    for (size_t i = 0; i < ppf.frames.size(); i++) {
-      JXL_RETURN_IF_ERROR(jxl::extras::EncodeImagePNM(
-          ppf, ppf.frames[i].color.BitsPerChannel(format.data_type), nullptr, i,
-          &bytes));
+    for (size_t i = 0; i < encoded_image.bitstreams.size(); i++) {
       snprintf(output_filename.data(), output_filename.size(), "%s-%0*zu%s",
                base.c_str(), digits, i, extension);
-      if (!WriteFile(
-              ppf.frames.size() > 1 ? output_filename.data() : filename_out,
-              bytes)) {
+      if (!WriteFile(encoded_image.bitstreams.size() > 1
+                         ? output_filename.data()
+                         : filename_out,
+                     encoded_image.bitstreams[i])) {
         return EXIT_FAILURE;
       }
     }
-  } else {
-    // TODO(firsching): handle other formats
   }
   return EXIT_SUCCESS;
 }
