@@ -229,6 +229,23 @@ TEST(JxlTest, RoundtripResample2) {
               IsSlightlyBelow(90));
 }
 
+TEST(JxlTest, RoundtripResample2Slow) {
+  ThreadPool* pool = nullptr;
+  const PaddedBytes orig =
+      ReadTestData("third_party/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  CodecInOut io;
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
+  io.ShrinkTo(io.xsize(), io.ysize());
+  CompressParams cparams;
+  cparams.resampling = 2;
+  cparams.speed_tier = SpeedTier::kTortoise;
+  DecompressParams dparams;
+  CodecInOut io2;
+  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 35000u);
+  EXPECT_THAT(ComputeDistance2(io.Main(), io2.Main(), GetJxlCms()),
+              IsSlightlyBelow(90));
+}
+
 TEST(JxlTest, RoundtripResample2MT) {
   ThreadPoolInternal pool(4);
   const PaddedBytes orig = ReadTestData("jxl/flower/flower.png");
