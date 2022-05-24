@@ -426,7 +426,6 @@ int main(int argc, char** argv) {
     };
     // TODO(firsching): handle non-reconstruct JPEG
   } else {
-    JxlPixelFormat format;
     std::unique_ptr<jxl::extras::Encoder> encoder =
         jxl::extras::Encoder::FromExtension(extension);
     jxl::extras::PackedPixelFile ppf;
@@ -436,30 +435,23 @@ int main(int argc, char** argv) {
       fprintf(stderr, "DecompressJxlToPackedPixelFile failed\n");
       return EXIT_FAILURE;
     }
-    if (!jxl::extras::SelectFormat(encoder->AcceptedFormats(), ppf.info,
-                                   &format)) {
-      fprintf(stderr, "SelectFormat failed\n");
-      return EXIT_FAILURE;
-    }
     jxl::extras::EncodedImage encoded_image;
-    JXL_RETURN_IF_ERROR(encoder->Encode(ppf, &encoded_image));
-    if (ppf.frames.size() != encoded_image.bitstreams.size()) {
-      fprintf(stderr,
-              "didn't receive expected number of frames: %" PRIuS
-              " (expected) versus %" PRIuS "(received)\n",
-              ppf.frames.size(), encoded_image.bitstreams.size());
+    if (!encoder->Encode(ppf, &encoded_image)) {
+      fprintf(stderr, "Encode failed\n");
       return EXIT_FAILURE;
     }
-    const int digits = 1 + static_cast<int>(std::log10(std::max(
-                               1, static_cast<int>(ppf.frames.size() - 1))));
+    const int digits =
+        1 + static_cast<int>(std::log10(std::max(
+                1, static_cast<int>(encoded_image.bitstreams.size() - 1))));
     std::vector<char> output_filename;
     output_filename.resize(base.size() + 1 + digits + strlen(extension) + 1);
-    for (size_t i = 0; i < ppf.frames.size(); i++) {
+    for (size_t i = 0; i < encoded_image.bitstreams.size(); i++) {
       snprintf(output_filename.data(), output_filename.size(), "%s-%0*zu%s",
                base.c_str(), digits, i, extension);
-      if (!WriteFile(
-              ppf.frames.size() > 1 ? output_filename.data() : filename_out,
-              encoded_image.bitstreams[i])) {
+      if (!WriteFile(encoded_image.bitstreams.size() > 1
+                         ? output_filename.data()
+                         : filename_out,
+                     encoded_image.bitstreams[i])) {
         return EXIT_FAILURE;
       }
     }
