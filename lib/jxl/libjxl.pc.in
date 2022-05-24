@@ -10,3 +10,4 @@ Requires.private: @JPEGXL_LIBRARY_REQUIRES@
 Libs: -L${libdir} -ljxl
 Libs.private: -lm
 Cflags: -I${includedir}
+Cflags.private: -DJXL_STATIC_DEFINE
