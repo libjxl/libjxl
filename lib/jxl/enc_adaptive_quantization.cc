@@ -817,7 +817,8 @@ void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
       score = -score;
       diffmap = ScaleImage(-1.0f, diffmap);
     }
-    tile_distmap = TileDistMap(diffmap, 8, 0, enc_state->shared.ac_strategy);
+    tile_distmap = TileDistMap(diffmap, 8 * cparams.resampling, 0,
+                               enc_state->shared.ac_strategy);
     if (WantDebugOutput(aux_out)) {
       aux_out->DumpImage(("dec" + ToString(i)).c_str(), *dec_linear.color());
       DumpHeatmaps(aux_out, butteraugli_target, quant_field, tile_distmap,
