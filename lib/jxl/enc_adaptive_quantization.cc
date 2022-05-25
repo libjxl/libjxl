@@ -760,6 +760,7 @@ void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
       enc_state->shared.frame_header.nonserialized_metadata->ysize());
 
   const float butteraugli_target = cparams.butteraugli_distance;
+  const float original_butteraugli = cparams.original_butteraugli_distance;
   ButteraugliParams params = cparams.ba_params;
   params.intensity_target = linear.metadata()->IntensityTarget();
   // Hack the default intensity target value to be 80.0, the intensity
@@ -829,7 +830,8 @@ void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
       float minval, maxval;
       ImageMinMax(quant_field, &minval, &maxval);
       printf("\nButteraugli iter: %d/%d\n", i, cparams.max_butteraugli_iters);
-      printf("Butteraugli distance: %f\n", score);
+      printf("Butteraugli distance: %f  (target = %f)\n", score,
+             original_butteraugli);
       printf("quant range: %f ... %f  DC quant: %f\n", minval, maxval,
              initial_quant_dc);
       if (FLAGS_dump_quant_state) {
@@ -867,7 +869,7 @@ void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
 
     double cur_pow = 0.0;
     if (i < 7) {
-      cur_pow = kPow[i] + (butteraugli_target - 1.0) * kPowMod[i];
+      cur_pow = kPow[i] + (original_butteraugli - 1.0) * kPowMod[i];
       if (cur_pow < 0) {
         cur_pow = 0;
       }
@@ -877,7 +879,7 @@ void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
         const float* const JXL_RESTRICT row_dist = tile_distmap.Row(y);
         float* const JXL_RESTRICT row_q = quant_field.Row(y);
         for (size_t x = 0; x < quant_field.xsize(); ++x) {
-          const float diff = row_dist[x] / butteraugli_target;
+          const float diff = row_dist[x] / original_butteraugli;
           if (diff > 1.0f) {
             float old = row_q[x];
             row_q[x] *= diff;
@@ -896,7 +898,7 @@ void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
         const float* const JXL_RESTRICT row_dist = tile_distmap.Row(y);
         float* const JXL_RESTRICT row_q = quant_field.Row(y);
         for (size_t x = 0; x < quant_field.xsize(); ++x) {
-          const float diff = row_dist[x] / butteraugli_target;
+          const float diff = row_dist[x] / original_butteraugli;
           if (diff <= 1.0f) {
             row_q[x] *= std::pow(diff, cur_pow);
           } else {
