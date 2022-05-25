@@ -265,9 +265,16 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
     std::string dir = FileDirName(filename);
     std::string outdir =
         Args()->output_dir.empty() ? dir + "/out" : Args()->output_dir;
-    // Make compatible for filename
-    std::replace(codec_name.begin(), codec_name.end(), ':', '_');
-    std::string compressed_fn = outdir + "/" + name + "." + codec_name;
+    std::string compressed_fn = outdir + "/" + name;
+    // Add in the parameters of the codec_name in reverse order, so that the
+    // name of the file format (e.g. jxl) is last.
+    int pos = static_cast<int>(codec_name.size()) - 1;
+    while (pos > 0) {
+      int prev = codec_name.find_last_of(':', pos);
+      if (prev > pos) prev = -1;
+      compressed_fn += '.' + codec_name.substr(prev + 1, pos - prev);
+      pos = prev - 1;
+    }
     std::string decompressed_fn = compressed_fn + Args()->output_extension;
 #if JPEGXL_ENABLE_APNG
     std::string heatmap_fn = compressed_fn + ".heatmap.png";
