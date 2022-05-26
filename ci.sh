@@ -22,6 +22,7 @@ CMAKE_C_COMPILER_LAUNCHER=${CMAKE_C_COMPILER_LAUNCHER:-}
 CMAKE_CXX_COMPILER_LAUNCHER=${CMAKE_CXX_COMPILER_LAUNCHER:-}
 CMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM:-}
 SKIP_TEST="${SKIP_TEST:-0}"
+TEST_SELECTOR="${TEST_SELECTOR:-}"
 BUILD_TARGET="${BUILD_TARGET:-}"
 ENABLE_WASM_SIMD="${ENABLE_WASM_SIMD:-0}"
 if [[ -n "${BUILD_TARGET}" ]]; then
@@ -475,7 +476,7 @@ cmake_build_and_test() {
     (cd "${BUILD_DIR}"
      export UBSAN_OPTIONS=print_stacktrace=1
      [[ "${TEST_STACK_LIMIT}" == "none" ]] || ulimit -s "${TEST_STACK_LIMIT}"
-     ctest -j $(nproc --all || echo 1) --output-on-failure)
+     ctest -j $(nproc --all || echo 1) ${TEST_SELECTOR} --output-on-failure)
   fi
 }
 
