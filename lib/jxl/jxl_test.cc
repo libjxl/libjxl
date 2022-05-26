@@ -238,12 +238,13 @@ TEST(JxlTest, RoundtripResample2Slow) {
   io.ShrinkTo(io.xsize(), io.ysize());
   CompressParams cparams;
   cparams.resampling = 2;
+  cparams.butteraugli_distance = 10;
   cparams.speed_tier = SpeedTier::kTortoise;
   DecompressParams dparams;
   CodecInOut io2;
-  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 35000u);
+  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 5000u);
   EXPECT_THAT(ComputeDistance2(io.Main(), io2.Main(), GetJxlCms()),
-              IsSlightlyBelow(90));
+              IsSlightlyBelow(250));
 }
 
 TEST(JxlTest, RoundtripResample2MT) {

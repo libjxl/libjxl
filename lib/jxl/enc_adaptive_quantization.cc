@@ -734,6 +734,13 @@ void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
                           const JxlCmsInterface& cms, ThreadPool* pool,
                           AuxOut* aux_out) {
   const CompressParams& cparams = enc_state->cparams;
+  if (cparams.resampling > 1 &&
+      cparams.original_butteraugli_distance <= 4.0 * cparams.resampling) {
+    // For downsampled opsin image, the butteraugli based adaptive quantization
+    // loop would only make the size bigger without improving the distance much,
+    // so in this case we enable it only for very high butteraugli targets.
+    return;
+  }
   Quantizer& quantizer = enc_state->shared.quantizer;
   ImageI& raw_quant_field = enc_state->shared.raw_quant_field;
   ImageF& quant_field = enc_state->initial_quant_field;
