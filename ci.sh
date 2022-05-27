@@ -1210,10 +1210,10 @@ cmd_lint() {
     # We include in this linter all the changes including the uncommitted changes
     # to avoid printing changes already applied.
     set -x
+    # Ignoring the error that git-clang-format outputs.
     git -C "${MYDIR}" "${clang_format}" --binary "${clang_format}" \
-      --style=file --diff "${MR_ANCESTOR_SHA}" -- >"${tmppatch}"
+      --style=file --diff "${MR_ANCESTOR_SHA}" -- >"${tmppatch}" || true
     { set +x; } 2>/dev/null
-
     if grep -E '^--- ' "${tmppatch}">/dev/null; then
       if [[ -n "${LINT_OUTPUT:-}" ]]; then
         cp "${tmppatch}" "${LINT_OUTPUT}"
