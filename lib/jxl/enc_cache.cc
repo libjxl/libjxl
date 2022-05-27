@@ -150,8 +150,10 @@ Status InitializePassesEncoder(const Image3F& opsin, const JxlCmsInterface& cms,
     JXL_CHECK(dec_state->output_encoding_info.Set(
         *shared.metadata,
         ColorEncoding::LinearSRGB(shared.metadata->m.color_encoding.IsGray())));
-    JXL_CHECK(DecodeFrame({}, dec_state.get(), pool, &br, &decoded,
-                          *shared.metadata, /*constraints=*/nullptr));
+    for (int i = 0; i <= cparams.progressive_dc; ++i) {
+      JXL_CHECK(DecodeFrame({}, dec_state.get(), pool, &br, &decoded,
+                            *shared.metadata, /*constraints=*/nullptr));
+    }
     // TODO(lode): shared.frame_header.dc_level should be equal to
     // dec_state.shared->frame_header.dc_level - 1 here, since above we set
     // dc_frame_info.dc_level = shared.frame_header.dc_level + 1, and

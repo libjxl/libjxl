@@ -1679,11 +1679,33 @@ TEST(JxlTest, RoundtripProgressive) {
   DecompressParams dparams;
 
   cparams.butteraugli_distance = 1.0f;
-  cparams.progressive_dc = true;
+  cparams.progressive_dc = 1;
   cparams.responsive = true;
   cparams.progressive_mode = true;
   CodecInOut io2;
   EXPECT_LE(Roundtrip(&io, cparams, dparams, &pool, &io2), 61000u);
+  EXPECT_THAT(ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
+                                  /*distmap=*/nullptr, &pool),
+              IsSlightlyBelow(1.2f));
+}
+
+TEST(JxlTest, RoundtripProgressiveLevel2Slow) {
+  ThreadPoolInternal pool(4);
+  const PaddedBytes orig = ReadTestData("jxl/flower/flower.png");
+  CodecInOut io;
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
+  io.ShrinkTo(600, 1024);
+
+  CompressParams cparams;
+  DecompressParams dparams;
+
+  cparams.butteraugli_distance = 1.0f;
+  cparams.progressive_dc = 2;
+  cparams.speed_tier = SpeedTier::kTortoise;
+  cparams.responsive = true;
+  cparams.progressive_mode = true;
+  CodecInOut io2;
+  EXPECT_LE(Roundtrip(&io, cparams, dparams, &pool, &io2), 71000u);
   EXPECT_THAT(ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
                                   /*distmap=*/nullptr, &pool),
               IsSlightlyBelow(1.2f));
