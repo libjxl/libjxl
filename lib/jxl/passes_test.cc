@@ -37,7 +37,7 @@ using test::Roundtrip;
 TEST(PassesTest, RoundtripSmallPasses) {
   ThreadPool* pool = nullptr;
   const PaddedBytes orig =
-      ReadTestData("third_party/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+      ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
   io.ShrinkTo(io.xsize() / 8, io.ysize() / 8);
@@ -57,7 +57,7 @@ TEST(PassesTest, RoundtripSmallPasses) {
 TEST(PassesTest, RoundtripUnalignedPasses) {
   ThreadPool* pool = nullptr;
   const PaddedBytes orig =
-      ReadTestData("third_party/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+      ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
   io.ShrinkTo(io.xsize() / 12, io.ysize() / 7);
@@ -157,7 +157,7 @@ TEST(PassesTest, RoundtripProgressiveConsistent) {
 TEST(PassesTest, AllDownsampleFeasible) {
   ThreadPoolInternal pool(8);
   const PaddedBytes orig =
-      ReadTestData("third_party/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+      ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
 
@@ -204,7 +204,7 @@ TEST(PassesTest, AllDownsampleFeasible) {
 TEST(PassesTest, AllDownsampleFeasibleQProgressive) {
   ThreadPoolInternal pool(8);
   const PaddedBytes orig =
-      ReadTestData("third_party/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+      ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
 
@@ -251,7 +251,7 @@ TEST(PassesTest, AllDownsampleFeasibleQProgressive) {
 TEST(PassesTest, ProgressiveDownsample2DegradesCorrectlyGrayscale) {
   ThreadPoolInternal pool(8);
   const PaddedBytes orig = ReadTestData(
-      "third_party/wesaturate/500px/cvo9xd_keong_macan_grayscale.png");
+      "external/wesaturate/500px/cvo9xd_keong_macan_grayscale.png");
   CodecInOut io_orig;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io_orig, &pool));
   Rect rect(0, 0, io_orig.xsize(), 128);
@@ -372,7 +372,7 @@ TEST(PassesTest, NonProgressiveDCImage) {
 TEST(PassesTest, RoundtripSmallNoGaborishPasses) {
   ThreadPool* pool = nullptr;
   const PaddedBytes orig =
-      ReadTestData("third_party/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+      ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
   io.ShrinkTo(io.xsize() / 8, io.ysize() / 8);

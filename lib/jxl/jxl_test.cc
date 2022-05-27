@@ -124,7 +124,7 @@ TEST(JxlTest, RoundtripMarker) {
 TEST(JxlTest, RoundtripTinyFast) {
   ThreadPool* pool = nullptr;
   const PaddedBytes orig =
-      ReadTestData("third_party/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+      ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
   io.ShrinkTo(32, 32);
@@ -142,7 +142,7 @@ TEST(JxlTest, RoundtripTinyFast) {
 TEST(JxlTest, RoundtripSmallD1) {
   ThreadPool* pool = nullptr;
   const PaddedBytes orig =
-      ReadTestData("third_party/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+      ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CompressParams cparams;
   cparams.butteraugli_distance = 1.0;
   DecompressParams dparams;
@@ -183,7 +183,7 @@ TEST(JxlTest, RoundtripSmallD1) {
 TEST(JxlTest, RoundtripOtherTransforms) {
   ThreadPool* pool = nullptr;
   const PaddedBytes orig =
-      ReadTestData("third_party/wesaturate/64px/a2d1un_nkitzmiller_srgb8.png");
+      ReadTestData("external/wesaturate/64px/a2d1un_nkitzmiller_srgb8.png");
   std::unique_ptr<CodecInOut> io = jxl::make_unique<CodecInOut>();
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), io.get(), pool));
 
@@ -215,7 +215,7 @@ TEST(JxlTest, RoundtripOtherTransforms) {
 TEST(JxlTest, RoundtripResample2) {
   ThreadPool* pool = nullptr;
   const PaddedBytes orig =
-      ReadTestData("third_party/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+      ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
   io.ShrinkTo(io.xsize(), io.ysize());
@@ -232,7 +232,7 @@ TEST(JxlTest, RoundtripResample2) {
 TEST(JxlTest, RoundtripResample2Slow) {
   ThreadPool* pool = nullptr;
   const PaddedBytes orig =
-      ReadTestData("third_party/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+      ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
   io.ShrinkTo(io.xsize(), io.ysize());
@@ -315,7 +315,7 @@ TEST(JxlTest, RoundtripOutOfOrderProcessingBorder) {
 TEST(JxlTest, RoundtripResample4) {
   ThreadPool* pool = nullptr;
   const PaddedBytes orig =
-      ReadTestData("third_party/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+      ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
   io.ShrinkTo(io.xsize(), io.ysize());
@@ -332,7 +332,7 @@ TEST(JxlTest, RoundtripResample4) {
 TEST(JxlTest, RoundtripResample8) {
   ThreadPool* pool = nullptr;
   const PaddedBytes orig =
-      ReadTestData("third_party/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+      ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
   io.ShrinkTo(io.xsize(), io.ysize());
@@ -349,7 +349,7 @@ TEST(JxlTest, RoundtripResample8) {
 TEST(JxlTest, RoundtripUnalignedD2) {
   ThreadPool* pool = nullptr;
   const PaddedBytes orig =
-      ReadTestData("third_party/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+      ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
   io.ShrinkTo(io.xsize() / 12, io.ysize() / 7);
@@ -437,7 +437,7 @@ TEST(JxlTest, RoundtripLargeFast) {
 TEST(JxlTest, RoundtripDotsForceEpf) {
   ThreadPoolInternal pool(8);
   const PaddedBytes orig =
-      ReadTestData("third_party/wesaturate/500px/cvo9xd_keong_macan_srgb8.png");
+      ReadTestData("external/wesaturate/500px/cvo9xd_keong_macan_srgb8.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
 
@@ -518,7 +518,7 @@ TEST(JxlTest, RoundtripLargeConsistent) {
 TEST(JxlTest, RoundtripSmallNL) {
   ThreadPool* pool = nullptr;
   const PaddedBytes orig =
-      ReadTestData("third_party/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+      ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
   io.ShrinkTo(io.xsize() / 8, io.ysize() / 8);
@@ -539,7 +539,7 @@ TEST(JxlTest, RoundtripSmallNL) {
 TEST(JxlTest, RoundtripNoGaborishNoAR) {
   ThreadPool* pool = nullptr;
   const PaddedBytes orig =
-      ReadTestData("third_party/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+      ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
 
@@ -559,7 +559,7 @@ TEST(JxlTest, RoundtripNoGaborishNoAR) {
 TEST(JxlTest, RoundtripSmallNoGaborish) {
   ThreadPool* pool = nullptr;
   const PaddedBytes orig =
-      ReadTestData("third_party/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+      ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
   io.ShrinkTo(io.xsize() / 8, io.ysize() / 8);
@@ -711,7 +711,7 @@ TEST(JxlTest, RoundtripImageBundleOriginalBits) {
 TEST(JxlTest, RoundtripGrayscale) {
   ThreadPool* pool = nullptr;
   const PaddedBytes orig = ReadTestData(
-      "third_party/wesaturate/500px/cvo9xd_keong_macan_grayscale.png");
+      "external/wesaturate/500px/cvo9xd_keong_macan_grayscale.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
   ASSERT_NE(io.xsize(), 0u);
@@ -766,8 +766,8 @@ TEST(JxlTest, RoundtripGrayscale) {
 
 TEST(JxlTest, RoundtripAlpha) {
   ThreadPool* pool = nullptr;
-  const PaddedBytes orig = ReadTestData(
-      "third_party/wesaturate/500px/tmshre_riaphotographs_alpha.png");
+  const PaddedBytes orig =
+      ReadTestData("external/wesaturate/500px/tmshre_riaphotographs_alpha.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
 
@@ -801,8 +801,8 @@ TEST(JxlTest, RoundtripAlpha) {
 
 TEST(JxlTest, RoundtripAlphaPremultiplied) {
   ThreadPool* pool = nullptr;
-  const PaddedBytes orig = ReadTestData(
-      "third_party/wesaturate/500px/tmshre_riaphotographs_alpha.png");
+  const PaddedBytes orig =
+      ReadTestData("external/wesaturate/500px/tmshre_riaphotographs_alpha.png");
   CodecInOut io, io_nopremul;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io_nopremul, pool));
@@ -841,8 +841,8 @@ TEST(JxlTest, RoundtripAlphaPremultiplied) {
 
 TEST(JxlTest, RoundtripAlphaResampling) {
   ThreadPool* pool = nullptr;
-  const PaddedBytes orig = ReadTestData(
-      "third_party/wesaturate/500px/tmshre_riaphotographs_alpha.png");
+  const PaddedBytes orig =
+      ReadTestData("external/wesaturate/500px/tmshre_riaphotographs_alpha.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
 
@@ -874,8 +874,8 @@ TEST(JxlTest, RoundtripAlphaResampling) {
 
 TEST(JxlTest, RoundtripAlphaResamplingOnlyAlpha) {
   ThreadPool* pool = nullptr;
-  const PaddedBytes orig = ReadTestData(
-      "third_party/wesaturate/500px/tmshre_riaphotographs_alpha.png");
+  const PaddedBytes orig =
+      ReadTestData("external/wesaturate/500px/tmshre_riaphotographs_alpha.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
 
@@ -906,8 +906,8 @@ TEST(JxlTest, RoundtripAlphaResamplingOnlyAlpha) {
 
 TEST(JxlTest, RoundtripAlphaNonMultipleOf8) {
   ThreadPool* pool = nullptr;
-  const PaddedBytes orig = ReadTestData(
-      "third_party/wesaturate/500px/tmshre_riaphotographs_alpha.png");
+  const PaddedBytes orig =
+      ReadTestData("external/wesaturate/500px/tmshre_riaphotographs_alpha.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
 
@@ -1005,8 +1005,8 @@ CompressParams CParamsForLossless() {
 
 TEST(JxlTest, JXL_SLOW_TEST(RoundtripLossless8)) {
   ThreadPoolInternal pool(8);
-  const PaddedBytes orig = ReadTestData(
-      "third_party/wesaturate/500px/tmshre_riaphotographs_srgb8.png");
+  const PaddedBytes orig =
+      ReadTestData("external/wesaturate/500px/tmshre_riaphotographs_srgb8.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
 
@@ -1033,8 +1033,8 @@ TEST(JxlTest, JXL_SLOW_TEST(RoundtripLossless8)) {
 
 TEST(JxlTest, JXL_SLOW_TEST(RoundtripLosslessNoEncoderFastPathWP)) {
   ThreadPoolInternal pool(8);
-  const PaddedBytes orig = ReadTestData(
-      "third_party/wesaturate/500px/tmshre_riaphotographs_srgb8.png");
+  const PaddedBytes orig =
+      ReadTestData("external/wesaturate/500px/tmshre_riaphotographs_srgb8.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
 
@@ -1050,8 +1050,8 @@ TEST(JxlTest, JXL_SLOW_TEST(RoundtripLosslessNoEncoderFastPathWP)) {
 
 TEST(JxlTest, JXL_SLOW_TEST(RoundtripLosslessNoEncoderFastPathGradient)) {
   ThreadPoolInternal pool(8);
-  const PaddedBytes orig = ReadTestData(
-      "third_party/wesaturate/500px/tmshre_riaphotographs_srgb8.png");
+  const PaddedBytes orig =
+      ReadTestData("external/wesaturate/500px/tmshre_riaphotographs_srgb8.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
 
@@ -1068,8 +1068,8 @@ TEST(JxlTest, JXL_SLOW_TEST(RoundtripLosslessNoEncoderFastPathGradient)) {
 
 TEST(JxlTest, JXL_SLOW_TEST(RoundtripLosslessNoEncoderVeryFastPathGradient)) {
   ThreadPoolInternal pool(8);
-  const PaddedBytes orig = ReadTestData(
-      "third_party/wesaturate/500px/tmshre_riaphotographs_srgb8.png");
+  const PaddedBytes orig =
+      ReadTestData("external/wesaturate/500px/tmshre_riaphotographs_srgb8.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
 
@@ -1089,8 +1089,8 @@ TEST(JxlTest, JXL_SLOW_TEST(RoundtripLosslessNoEncoderVeryFastPathGradient)) {
 
 TEST(JxlTest, JXL_SLOW_TEST(RoundtripLossless8Falcon)) {
   ThreadPoolInternal pool(8);
-  const PaddedBytes orig = ReadTestData(
-      "third_party/wesaturate/500px/tmshre_riaphotographs_srgb8.png");
+  const PaddedBytes orig =
+      ReadTestData("external/wesaturate/500px/tmshre_riaphotographs_srgb8.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
 
@@ -1106,8 +1106,8 @@ TEST(JxlTest, JXL_SLOW_TEST(RoundtripLossless8Falcon)) {
 
 TEST(JxlTest, RoundtripLossless8Alpha) {
   ThreadPool* pool = nullptr;
-  const PaddedBytes orig = ReadTestData(
-      "third_party/wesaturate/500px/tmshre_riaphotographs_alpha.png");
+  const PaddedBytes orig =
+      ReadTestData("external/wesaturate/500px/tmshre_riaphotographs_alpha.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
   EXPECT_EQ(8u, io.metadata.m.GetAlphaBits());
@@ -1259,7 +1259,7 @@ TEST(JxlTest, RoundtripYCbCr420) {
 TEST(JxlTest, RoundtripDots) {
   ThreadPool* pool = nullptr;
   const PaddedBytes orig =
-      ReadTestData("third_party/wesaturate/500px/cvo9xd_keong_macan_srgb8.png");
+      ReadTestData("external/wesaturate/500px/cvo9xd_keong_macan_srgb8.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
 
@@ -1292,7 +1292,7 @@ TEST(JxlTest, RoundtripDots) {
 TEST(JxlTest, RoundtripNoise) {
   ThreadPool* pool = nullptr;
   const PaddedBytes orig =
-      ReadTestData("third_party/wesaturate/500px/cvo9xd_keong_macan_srgb8.png");
+      ReadTestData("external/wesaturate/500px/cvo9xd_keong_macan_srgb8.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
 
@@ -1324,7 +1324,7 @@ TEST(JxlTest, RoundtripNoise) {
 TEST(JxlTest, RoundtripLossless8Gray) {
   ThreadPool* pool = nullptr;
   const PaddedBytes orig = ReadTestData(
-      "third_party/wesaturate/500px/cvo9xd_keong_macan_grayscale.png");
+      "external/wesaturate/500px/cvo9xd_keong_macan_grayscale.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
 

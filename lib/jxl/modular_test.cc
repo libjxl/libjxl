@@ -78,7 +78,7 @@ TEST(ModularTest, JXL_TSAN_SLOW_TEST(RoundtripLosslessGroups1024)) {
 TEST(ModularTest, RoundtripLosslessCustomWP_PermuteRCT) {
   ThreadPool* pool = nullptr;
   const PaddedBytes orig =
-      ReadTestData("third_party/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+      ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CompressParams cparams;
   cparams.SetLossless();
   // 9 = permute to GBR, to test the special case of permutation-only
@@ -105,7 +105,7 @@ TEST(ModularTest, RoundtripLosslessCustomWP_PermuteRCT) {
 TEST(ModularTest, RoundtripLossyDeltaPalette) {
   ThreadPool* pool = nullptr;
   const PaddedBytes orig =
-      ReadTestData("third_party/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+      ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CompressParams cparams;
   cparams.modular_mode = true;
   cparams.color_transform = jxl::ColorTransform::kNone;
@@ -131,7 +131,7 @@ TEST(ModularTest, RoundtripLossyDeltaPalette) {
 TEST(ModularTest, RoundtripLossyDeltaPaletteWP) {
   ThreadPool* pool = nullptr;
   const PaddedBytes orig =
-      ReadTestData("third_party/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+      ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CompressParams cparams;
   cparams.SetLossless();
   cparams.lossy_palette = true;
@@ -158,7 +158,7 @@ TEST(ModularTest, RoundtripLossyDeltaPaletteWP) {
 TEST(ModularTest, RoundtripLossy) {
   ThreadPool* pool = nullptr;
   const PaddedBytes orig =
-      ReadTestData("third_party/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+      ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CompressParams cparams;
   cparams.modular_mode = true;
   cparams.butteraugli_distance = 2.f;
@@ -181,7 +181,7 @@ TEST(ModularTest, RoundtripLossy) {
 TEST(ModularTest, RoundtripLossy16) {
   ThreadPool* pool = nullptr;
   const PaddedBytes orig =
-      ReadTestData("third_party/raw.pixls/DJI-FC6310-16bit_709_v4_krita.png");
+      ReadTestData("external/raw.pixls/DJI-FC6310-16bit_709_v4_krita.png");
   CompressParams cparams;
   cparams.modular_mode = true;
   cparams.butteraugli_distance = 2.f;
@@ -247,8 +247,8 @@ TEST(ModularTest, RoundtripExtraProperties) {
 
 TEST(ModularTest, RoundtripLosslessCustomSqueeze) {
   ThreadPool* pool = nullptr;
-  const PaddedBytes orig = ReadTestData(
-      "third_party/wesaturate/500px/tmshre_riaphotographs_srgb8.png");
+  const PaddedBytes orig =
+      ReadTestData("external/wesaturate/500px/tmshre_riaphotographs_srgb8.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
 
@@ -315,7 +315,7 @@ TEST_P(ModularTestParam, RoundtripLossless) {
   ThreadPool* pool = nullptr;
   Rng generator(123);
   const PaddedBytes orig =
-      ReadTestData("third_party/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+      ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CodecInOut io1;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io1, pool));
 
