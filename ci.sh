@@ -46,7 +46,7 @@ SANITIZER="none"
 if [[ "${BUILD_TARGET%%-*}" == "x86_64" ||
     "${BUILD_TARGET%%-*}" == "i686" ]]; then
   # Default to building all targets, even if compiler baseline is SSE4
-  HWY_BASELINE_TARGETS=${HWY_BASELINE_TARGETS:-HWY_SCALAR}
+  HWY_BASELINE_TARGETS=${HWY_BASELINE_TARGETS:-HWY_EMU128}
 else
   HWY_BASELINE_TARGETS=${HWY_BASELINE_TARGETS:-}
 fi

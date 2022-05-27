@@ -231,10 +231,9 @@ jobs:
       run: |
         ./ci.sh gbench --benchmark_min_time=0
 
-
   cross_compile_ubuntu:
     name: Cross-compiling ${{ matrix.build_target }} ${{ matrix.lowprecision }}
-    runs-on: [ubuntu-18.04]
+    runs-on: [ubuntu-22.04]
     strategy:
       matrix:
         include:
@@ -309,17 +308,18 @@ jobs:
           # Build dependencies
           cmake
           doxygen
+          graphviz
           ninja-build
           pkg-config
           qemu-user-static
           xvfb
 
           # Toolchain for cross-compiling.
-          clang-7
+          clang-14
           # libclang-common-7-dev:${{ matrix.arch }}
           libc6-dev-${{ matrix.arch }}-cross
-          libstdc++-8-dev-${{ matrix.arch }}-cross
-          libstdc++-8-dev:${{ matrix.arch }}
+          libstdc++-11-dev-${{ matrix.arch }}-cross
+          libstdc++-11-dev:${{ matrix.arch }}
 
           # Dependencies
           libbrotli-dev:${{ matrix.arch }}
@@ -356,8 +356,8 @@ jobs:
           )
         fi
         DEBIAN_FRONTEND=noninteractive sudo apt install -y "${pkgs[@]}"
-        echo "CC=clang-7" >> $GITHUB_ENV
-        echo "CXX=clang++-7" >> $GITHUB_ENV
+        echo "CC=clang-14" >> $GITHUB_ENV
+        echo "CXX=clang++-14" >> $GITHUB_ENV
     - name: Checkout the source
       uses: actions/checkout@v2
       with:
