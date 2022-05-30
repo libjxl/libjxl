@@ -85,7 +85,7 @@ float EstimateDataBits(const ANSHistBin* histogram, const ANSHistBin* counts,
 
 float EstimateDataBitsFlat(const ANSHistBin* histogram, size_t len) {
   const float flat_bits = std::max(FastLog2f(len), 0.0f);
-  int total_histogram = 0;
+  float total_histogram = 0;
   for (size_t i = 0; i < len; ++i) {
     total_histogram += histogram[i];
   }
