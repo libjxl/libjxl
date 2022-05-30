@@ -505,6 +505,7 @@ struct JxlDecoderStruct {
   // set to nullptr.
   bool preview_out_buffer_set;
   // Idem for the image buffer.
+  // Set to true if either an image out buffer or an image out callback was set.
   bool image_out_buffer_set;
 
   // Owned by the caller, buffers for DC image and full resolution images
@@ -2498,7 +2499,7 @@ JxlDecoderStatus PrepareSizeCheck(const JxlDecoder* dec,
 }  // namespace
 
 JxlDecoderStatus JxlDecoderFlushImage(JxlDecoder* dec) {
-  if (!dec->image_out_buffer) return JXL_DEC_ERROR;
+  if (!dec->image_out_buffer_set) return JXL_DEC_ERROR;
   if (!dec->sections || dec->sections->section_info.empty()) {
     return JXL_DEC_ERROR;
   }
@@ -2534,7 +2535,9 @@ JxlDecoderStatus JxlDecoderFlushImage(JxlDecoder* dec) {
       dec, *dec->ib, dec->image_out_format,
       /*want_extra_channel=*/false,
       /*extra_channel_index=*/0, dec->image_out_buffer, dec->image_out_size,
-      /*out_callback=*/{});
+      jxl::PixelCallback{
+          dec->image_out_init_callback, dec->image_out_run_callback,
+          dec->image_out_destroy_callback, dec->image_out_init_opaque});
   dec->ib->ShrinkTo(xsize, ysize);
   if (status != JXL_DEC_SUCCESS) return status;
   return JXL_DEC_SUCCESS;

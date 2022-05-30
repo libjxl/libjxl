@@ -3210,6 +3210,91 @@ TEST(DecodeTest, FlushTest) {
   JxlDecoderDestroy(dec);
 }
 
+TEST(DecodeTest, FlushTestImageOutCallback) {
+  // Size large enough for multiple groups, required to have progressive
+  // stages
+  size_t xsize = 333, ysize = 300;
+  uint32_t num_channels = 3;
+  std::vector<uint8_t> pixels =
+      jxl::test::GetSomeTestImage(xsize, ysize, num_channels, 0);
+  jxl::CompressParams cparams;
+  jxl::PaddedBytes data = jxl::CreateTestJXLCodestream(
+      jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize,
+      num_channels, cparams, kCSBF_None, JXL_ORIENT_IDENTITY, true, false);
+  JxlPixelFormat format = {num_channels, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
+
+  std::vector<uint8_t> pixels2;
+  pixels2.resize(pixels.size());
+
+  size_t bytes_per_pixel = format.num_channels * 2;
+  size_t stride = bytes_per_pixel * xsize;
+  auto callback = [&](size_t x, size_t y, size_t num_pixels,
+                      const void* pixels_row) {
+    memcpy(pixels2.data() + stride * y + bytes_per_pixel * x, pixels_row,
+           num_pixels * bytes_per_pixel);
+  };
+
+  JxlDecoder* dec = JxlDecoderCreate(nullptr);
+
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSubscribeEvents(
+                dec, JXL_DEC_BASIC_INFO | JXL_DEC_FRAME | JXL_DEC_FULL_IMAGE));
+
+  // Ensure that the first part contains at least the full DC of the image,
+  // otherwise flush does not work.
+  size_t first_part = data.size() - 1;
+
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec, data.data(), first_part));
+
+  EXPECT_EQ(JXL_DEC_BASIC_INFO, JxlDecoderProcessInput(dec));
+  JxlBasicInfo info;
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBasicInfo(dec, &info));
+  EXPECT_EQ(info.xsize, xsize);
+  EXPECT_EQ(info.ysize, ysize);
+
+  EXPECT_EQ(JXL_DEC_FRAME, JxlDecoderProcessInput(dec));
+
+  // Output callback not yet set
+  EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderFlushImage(dec));
+
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetImageOutCallback(
+                                 dec, &format,
+                                 [](void* opaque, size_t x, size_t y,
+                                    size_t xsize, const void* pixels_row) {
+                                   auto cb =
+                                       static_cast<decltype(&callback)>(opaque);
+                                   (*cb)(x, y, xsize, pixels_row);
+                                 },
+                                 /*opaque=*/&callback));
+
+  // Must process input further until we get JXL_DEC_NEED_MORE_INPUT, even if
+  // data was already input before, since the processing of the frame only
+  // happens at the JxlDecoderProcessInput call after JXL_DEC_FRAME.
+  EXPECT_EQ(JXL_DEC_NEED_MORE_INPUT, JxlDecoderProcessInput(dec));
+
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderFlushImage(dec));
+
+  // Crude test of actual pixel data: pixel threshold of about 4% (2560/65535).
+  // 29000 pixels can be above the threshold
+  EXPECT_LE(jxl::test::ComparePixels(pixels2.data(), pixels.data(), xsize,
+                                     ysize, format, format, 2560.0),
+            29000u);
+
+  EXPECT_EQ(JXL_DEC_NEED_MORE_INPUT, JxlDecoderProcessInput(dec));
+
+  size_t consumed = first_part - JxlDecoderReleaseInput(dec);
+
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec, data.data() + consumed,
+                                                data.size() - consumed));
+  EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec));
+  // Lower threshold for the final (still lossy) image
+  EXPECT_LE(jxl::test::ComparePixels(pixels2.data(), pixels.data(), xsize,
+                                     ysize, format, format, 2560.0),
+            11000u);
+
+  JxlDecoderDestroy(dec);
+}
+
 TEST(DecodeTest, FlushTestLossyProgressiveAlpha) {
   // Size large enough for multiple groups, required to have progressive
   // stages
