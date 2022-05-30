@@ -339,6 +339,7 @@ jobs:
           # QT
           libqt5x11extras5-dev:${{ matrix.arch }}
           qtbase5-dev:${{ matrix.arch }}
+          libgl1-mesa-dev:${{ matrix.arch }}
         )
         if [[ "${{ matrix.build_target }}" != "x86_64-linux-gnu" ]]; then
           pkgs+=(
