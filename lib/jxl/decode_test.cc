@@ -1685,6 +1685,40 @@ TEST(DecodeTest, PixelTestOpaqueSrgbLossyNoise) {
   }
 }
 
+TEST(DecodeTest, ExtraBytesAfterCompressedStream) {
+  size_t xsize = 123, ysize = 77;
+  size_t num_pixels = xsize * ysize;
+  std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 3, 0);
+  jxl::CompressParams cparams;
+  CodeStreamBoxFormat box_formats[3] = {
+      kCSBF_None,
+      kCSBF_Single_Zero_Terminated,
+      kCSBF_Multi_Zero_Terminated,
+  };
+  for (CodeStreamBoxFormat box_format : box_formats) {
+    printf("Testing with box format %d\n", (int)box_format);
+    jxl::PaddedBytes compressed = jxl::CreateTestJXLCodestream(
+        jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 3,
+        cparams, box_format, JXL_ORIENT_IDENTITY, /*add_preview=*/false,
+        /*add_intrinsic_size=*/false);
+    // Add some more bytes after compressed data.
+    compressed.push_back(0);
+    compressed.push_back(1);
+    compressed.push_back(2);
+    JxlDecoder* dec = JxlDecoderCreate(NULL);
+    uint32_t channels = 3;
+    JxlPixelFormat format = {channels, JXL_TYPE_FLOAT, JXL_LITTLE_ENDIAN, 0};
+    std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
+        dec, jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
+        format, /*use_callback=*/false, /*set_buffer_early=*/true,
+        /*use_resizable_runner=*/false);
+    size_t unconsumed_bytes = JxlDecoderReleaseInput(dec);
+    EXPECT_EQ(3, unconsumed_bytes);
+    EXPECT_EQ(num_pixels * channels * 4, pixels2.size());
+    JxlDecoderDestroy(dec);
+  }
+}
+
 void TestPartialStream(bool reconstructible_jpeg) {
   size_t xsize = 123, ysize = 77;
   uint32_t channels = 4;
