@@ -593,6 +593,9 @@ struct JxlDecoderStruct {
   // all bytes at once, to save memory. Find alternative to std::vector doubling
   // strategy to prevent some memory usage.
   std::vector<uint8_t> codestream_copy;
+  // Number of bytes at the end of codestream_copy that were not yet consumed
+  // by calling AdvanceInput().
+  size_t codestream_unconsumed;
   // Position in the actual codestream, which codestream_copy.begin() points to.
   // Non-zero once earlier parts of the codestream vector have been erased.
   // TODO(lode): use this variable to allow pruning codestream_copy
@@ -749,6 +752,7 @@ void JxlDecoderRewindDecodingState(JxlDecoder* dec) {
   dec->frame_header.reset(new jxl::FrameHeader(&dec->metadata));
 
   dec->codestream_copy.clear();
+  dec->codestream_unconsumed = 0;
 
   dec->frame_stage = FrameStage::kHeader;
   dec->frame_start = 0;
@@ -2041,9 +2045,10 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
       if (have_copy) {
         // TODO(lode): prune the codestream_copy vector if the codestream
         // decoder no longer needs data from previous frames.
-        dec->codestream_copy.insert(dec->codestream_copy.end(), dec->next_in,
+        dec->codestream_copy.insert(dec->codestream_copy.end(),
+                                    dec->next_in + dec->codestream_unconsumed,
                                     dec->next_in + avail_codestream);
-        dec->AdvanceInput(avail_codestream);
+        dec->codestream_unconsumed = avail_codestream;
         avail_codestream = dec->codestream_copy.size();
       }
 
@@ -2058,7 +2063,10 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
         }
       }
       if (status == JXL_DEC_NEED_MORE_INPUT) {
-        if (!have_copy) {
+        if (have_copy) {
+          dec->AdvanceInput(dec->codestream_unconsumed);
+          dec->codestream_unconsumed = 0;
+        } else {
           dec->codestream_copy.insert(dec->codestream_copy.end(), dec->next_in,
                                       dec->next_in + avail_codestream);
           dec->AdvanceInput(avail_codestream);
@@ -2077,7 +2085,9 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
         }
         if (dec->box_contents_unbounded) {
           // Last box reached and codestream done, nothing more to do.
-          dec->AdvanceInput(dec->avail_in);
+          size_t codestream_consumed =
+              dec->codestream_copy.size() - dec->codestream_unconsumed;
+          dec->AdvanceInput(dec->frame_start - codestream_consumed);
           break;
         }
         if (dec->events_wanted & JXL_DEC_BOX) {
