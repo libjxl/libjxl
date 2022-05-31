@@ -984,18 +984,9 @@ Status FrameDecoder::FinalizeFrame() {
     return true;
   }
   if (!finalized_dc_) {
-    // We don't have all of DC: EPF might not behave correctly (and is not
-    // particularly useful anyway on upsampling results), so we disable it.
-    dec_state_->shared_storage.frame_header.loop_filter.epf_iters = 0;
-  }
-  if (!HasEverything() && !allow_partial_frames_) {
-    return JXL_FAILURE(
-        "FinalizeFrame called before the frame was fully decoded");
-  }
-
-  if (!finalized_dc_) {
-    JXL_ASSERT(allow_partial_frames_);
-    JXL_RETURN_IF_ERROR(AllocateOutput());
+    // We don't have all of DC, and render pipeline is not created yet, so we
+    // can not call Flush() yet.
+    return JXL_FAILURE("FinalizeFrame called before DC was fully decoded");
   }
 
   JXL_RETURN_IF_ERROR(Flush());
