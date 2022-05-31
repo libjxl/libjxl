@@ -351,12 +351,21 @@ PaddedBytes CreateTestJXLCodestream(
   return compressed;
 }
 
+JxlDecoderStatus ProcessInputIgnoreBoxes(JxlDecoder* dec) {
+  JxlDecoderStatus status;
+  while ((status = JxlDecoderProcessInput(dec)) == JXL_DEC_BOX) {
+    continue;
+  }
+  return status;
+}
+
 // Decodes one-shot with the API for non-streaming decoding tests.
 std::vector<uint8_t> DecodeWithAPI(JxlDecoder* dec,
                                    Span<const uint8_t> compressed,
                                    const JxlPixelFormat& format,
                                    bool use_callback, bool set_buffer_early,
                                    bool use_resizable_runner,
+                                   bool require_boxes, bool expect_success,
                                    PaddedBytes* icc = nullptr) {
   JxlThreadParallelRunnerPtr runner_fixed;
   JxlResizableParallelRunnerPtr runner_resizable;
@@ -377,16 +386,20 @@ std::vector<uint8_t> DecodeWithAPI(JxlDecoder* dec,
   EXPECT_EQ(JXL_DEC_SUCCESS,
             JxlDecoderSetParallelRunner(dec, runner_fn, runner));
 
+  auto process_input =
+      require_boxes ? ProcessInputIgnoreBoxes : JxlDecoderProcessInput;
+
   EXPECT_EQ(
       JXL_DEC_SUCCESS,
       JxlDecoderSubscribeEvents(
           dec, JXL_DEC_BASIC_INFO | (set_buffer_early ? JXL_DEC_FRAME : 0) |
                    JXL_DEC_PREVIEW_IMAGE | JXL_DEC_FULL_IMAGE |
+                   (require_boxes ? JXL_DEC_BOX : 0) |
                    (icc != nullptr ? JXL_DEC_COLOR_ENCODING : 0)));
 
   EXPECT_EQ(JXL_DEC_SUCCESS,
             JxlDecoderSetInput(dec, compressed.data(), compressed.size()));
-  EXPECT_EQ(JXL_DEC_BASIC_INFO, JxlDecoderProcessInput(dec));
+  EXPECT_EQ(JXL_DEC_BASIC_INFO, process_input(dec));
   size_t buffer_size;
   EXPECT_EQ(JXL_DEC_SUCCESS,
             JxlDecoderImageOutBufferSize(dec, &format, &buffer_size));
@@ -412,7 +425,7 @@ std::vector<uint8_t> DecodeWithAPI(JxlDecoder* dec,
            num_pixels * bytes_per_pixel);
   };
 
-  JxlDecoderStatus status = JxlDecoderProcessInput(dec);
+  JxlDecoderStatus status = process_input(dec);
 
   if (status == JXL_DEC_COLOR_ENCODING) {
     size_t icc_size = 0;
@@ -424,7 +437,7 @@ std::vector<uint8_t> DecodeWithAPI(JxlDecoder* dec,
                                    dec, &format, JXL_COLOR_PROFILE_TARGET_DATA,
                                    icc->data(), icc_size));
 
-    status = JxlDecoderProcessInput(dec);
+    status = process_input(dec);
   }
 
   std::vector<uint8_t> preview;
@@ -436,9 +449,9 @@ std::vector<uint8_t> DecodeWithAPI(JxlDecoder* dec,
     EXPECT_EQ(JXL_DEC_SUCCESS,
               JxlDecoderSetPreviewOutBuffer(dec, &format, preview.data(),
                                             preview.size()));
-    EXPECT_EQ(JXL_DEC_PREVIEW_IMAGE, JxlDecoderProcessInput(dec));
+    EXPECT_EQ(JXL_DEC_PREVIEW_IMAGE, process_input(dec));
 
-    status = JxlDecoderProcessInput(dec);
+    status = process_input(dec);
   }
 
   if (set_buffer_early) {
@@ -462,11 +475,15 @@ std::vector<uint8_t> DecodeWithAPI(JxlDecoder* dec,
                                    dec, &format, pixels.data(), pixels.size()));
   }
 
-  EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec));
+  EXPECT_EQ(JXL_DEC_FULL_IMAGE, process_input(dec));
 
   // After the full image was output, JxlDecoderProcessInput should return
-  // success to indicate all is done.
-  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderProcessInput(dec));
+  // success to indicate all is done, unless we requested boxes and the last
+  // box was not a terminal unbounded box, in which case it should ask for
+  // more input.
+  JxlDecoderStatus expected_status =
+      expect_success ? JXL_DEC_SUCCESS : JXL_DEC_NEED_MORE_INPUT;
+  EXPECT_EQ(expected_status, process_input(dec));
 
   return pixels;
 }
@@ -475,11 +492,12 @@ std::vector<uint8_t> DecodeWithAPI(JxlDecoder* dec,
 std::vector<uint8_t> DecodeWithAPI(Span<const uint8_t> compressed,
                                    const JxlPixelFormat& format,
                                    bool use_callback, bool set_buffer_early,
-                                   bool use_resizable_runner) {
+                                   bool use_resizable_runner,
+                                   bool require_boxes, bool expect_success) {
   JxlDecoder* dec = JxlDecoderCreate(NULL);
   std::vector<uint8_t> pixels =
       DecodeWithAPI(dec, compressed, format, use_callback, set_buffer_early,
-                    use_resizable_runner);
+                    use_resizable_runner, require_boxes, expect_success);
   JxlDecoderDestroy(dec);
   return pixels;
 }
@@ -1205,7 +1223,8 @@ TEST_P(DecodeTestParam, PixelTest) {
   std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
       dec, jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
       format, config.use_callback, config.set_buffer_early,
-      config.use_resizable_runner);
+      config.use_resizable_runner, /*require_boxes=*/false,
+      /*expect_success=*/true);
   JxlDecoderReset(dec);
   EXPECT_EQ(num_pixels * config.output_channels *
                 jxl::test::GetDataBits(config.data_type) / jxl::kBitsPerByte,
@@ -1469,7 +1488,8 @@ TEST(DecodeTest, PixelTestWithICCProfileLossless) {
       std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
           dec, jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
           format, /*use_callback=*/false, /*set_buffer_early=*/false,
-          /*use_resizable_runner=*/false);
+          /*use_resizable_runner=*/false, /*require_boxes=*/false,
+          /*expect_success=*/true);
       JxlDecoderReset(dec);
       EXPECT_EQ(num_pixels * channels, pixels2.size());
       EXPECT_EQ(0u,
@@ -1483,7 +1503,8 @@ TEST(DecodeTest, PixelTestWithICCProfileLossless) {
       std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
           dec, jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
           format, /*use_callback=*/true, /*set_buffer_early=*/true,
-          /*use_resizable_runner=*/false);
+          /*use_resizable_runner=*/false, /*require_boxes=*/false,
+          /*expect_success=*/true);
       JxlDecoderReset(dec);
       EXPECT_EQ(num_pixels * channels * 2, pixels2.size());
       EXPECT_EQ(0u,
@@ -1497,7 +1518,8 @@ TEST(DecodeTest, PixelTestWithICCProfileLossless) {
       std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
           dec, jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
           format, /*use_callback=*/false, /*set_buffer_early=*/false,
-          /*use_resizable_runner=*/false);
+          /*use_resizable_runner=*/false, /*reuqire_boxes=*/false,
+          /*expect_success=*/true);
       JxlDecoderReset(dec);
       EXPECT_EQ(num_pixels * channels * 4, pixels2.size());
       EXPECT_EQ(0u,
@@ -1530,7 +1552,8 @@ TEST(DecodeTest, PixelTestWithICCProfileLossy) {
   std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
       dec, jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
       format, /*use_callback=*/false, /*set_buffer_early=*/true,
-      /*use_resizable_runner=*/false, /*icc=*/&icc);
+      /*use_resizable_runner=*/false, /*require_boxes=*/false,
+      /*expect_success=*/true, /*icc=*/&icc);
   JxlDecoderReset(dec);
   EXPECT_EQ(num_pixels * channels * 4, pixels2.size());
 
@@ -1590,7 +1613,8 @@ TEST(DecodeTest, PixelTestOpaqueSrgbLossy) {
     std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
         dec, jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
         format, /*use_callback=*/true, /*set_buffer_early=*/false,
-        /*use_resizable_runner=*/false);
+        /*use_resizable_runner=*/false, /*require_boxes=*/false,
+        /*expect_success*/ true);
     JxlDecoderReset(dec);
     EXPECT_EQ(num_pixels * channels, pixels2.size());
 
@@ -1649,7 +1673,8 @@ TEST(DecodeTest, PixelTestOpaqueSrgbLossyNoise) {
     std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
         dec, jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
         format, /*use_callback=*/false, /*set_buffer_early=*/true,
-        /*use_resizable_runner=*/false);
+        /*use_resizable_runner=*/false, /*require_boxes=*/false,
+        /*expect_success=*/true);
     JxlDecoderReset(dec);
     EXPECT_EQ(num_pixels * channels, pixels2.size());
 
@@ -1690,13 +1715,16 @@ TEST(DecodeTest, ExtraBytesAfterCompressedStream) {
   size_t num_pixels = xsize * ysize;
   std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 3, 0);
   jxl::CompressParams cparams;
-  CodeStreamBoxFormat box_formats[3] = {
-      kCSBF_None,
-      kCSBF_Single_Zero_Terminated,
-      kCSBF_Multi_Zero_Terminated,
-  };
-  for (CodeStreamBoxFormat box_format : box_formats) {
+  for (int i = 0; i < kCSBF_NUM_ENTRIES; ++i) {
+    CodeStreamBoxFormat box_format = (CodeStreamBoxFormat)i;
+    if (box_format == kCSBF_Multi_Other_Zero_Terminated) continue;
     printf("Testing with box format %d\n", (int)box_format);
+    size_t last_unknown_box_size = 0;
+    if (box_format == kCSBF_Single_Other) {
+      last_unknown_box_size = unk1_box_size + 8;
+    } else if (box_format == kCSBF_Multi_Other_Terminated) {
+      last_unknown_box_size = unk3_box_size + 8;
+    }
     jxl::PaddedBytes compressed = jxl::CreateTestJXLCodestream(
         jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 3,
         cparams, box_format, JXL_ORIENT_IDENTITY, /*add_preview=*/false,
@@ -1711,11 +1739,96 @@ TEST(DecodeTest, ExtraBytesAfterCompressedStream) {
     std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
         dec, jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
         format, /*use_callback=*/false, /*set_buffer_early=*/true,
-        /*use_resizable_runner=*/false);
+        /*use_resizable_runner=*/false, /*require_boxes=*/false,
+        /*expect_success=*/true);
+    size_t unconsumed_bytes = JxlDecoderReleaseInput(dec);
+    EXPECT_EQ(last_unknown_box_size + 3, unconsumed_bytes);
+    EXPECT_EQ(num_pixels * channels * 4, pixels2.size());
+    JxlDecoderDestroy(dec);
+  }
+}
+
+TEST(DecodeTest, ExtraBytesAfterCompressedStreamRequireBoxes) {
+  size_t xsize = 123, ysize = 77;
+  size_t num_pixels = xsize * ysize;
+  std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 3, 0);
+  jxl::CompressParams cparams;
+  for (int i = 0; i < kCSBF_NUM_ENTRIES; ++i) {
+    CodeStreamBoxFormat box_format = (CodeStreamBoxFormat)i;
+    if (box_format == kCSBF_Multi_Other_Zero_Terminated) continue;
+    printf("Testing with box format %d\n", (int)box_format);
+    bool expect_success = (box_format == kCSBF_None ||
+                           box_format == kCSBF_Single_Zero_Terminated ||
+                           box_format == kCSBF_Multi_Zero_Terminated);
+    jxl::PaddedBytes compressed = jxl::CreateTestJXLCodestream(
+        jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 3,
+        cparams, box_format, JXL_ORIENT_IDENTITY, /*add_preview=*/false,
+        /*add_intrinsic_size=*/false);
+    // Add some more bytes after compressed data.
+    compressed.push_back(0);
+    compressed.push_back(1);
+    compressed.push_back(2);
+    JxlDecoder* dec = JxlDecoderCreate(NULL);
+    uint32_t channels = 3;
+    JxlPixelFormat format = {channels, JXL_TYPE_FLOAT, JXL_LITTLE_ENDIAN, 0};
+    std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
+        dec, jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
+        format, /*use_callback=*/false, /*set_buffer_early=*/true,
+        /*use_resizable_runner=*/false, /*require_boxes=*/true, expect_success);
     size_t unconsumed_bytes = JxlDecoderReleaseInput(dec);
     EXPECT_EQ(3, unconsumed_bytes);
     EXPECT_EQ(num_pixels * channels * 4, pixels2.size());
     JxlDecoderDestroy(dec);
+  }
+}
+
+TEST(DecodeTest, ConcatenatedCompressedStreams) {
+  size_t xsize = 123, ysize = 77;
+  size_t num_pixels = xsize * ysize;
+  std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 3, 0);
+  jxl::CompressParams cparams;
+  for (int i = 0; i < kCSBF_NUM_ENTRIES; ++i) {
+    CodeStreamBoxFormat first_box_format = (CodeStreamBoxFormat)i;
+    if (first_box_format == kCSBF_Multi_Other_Zero_Terminated) continue;
+    jxl::PaddedBytes compressed1 = jxl::CreateTestJXLCodestream(
+        jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 3,
+        cparams, first_box_format, JXL_ORIENT_IDENTITY, /*add_preview=*/false,
+        /*add_intrinsic_size=*/false);
+    for (int j = 0; j < kCSBF_NUM_ENTRIES; ++j) {
+      CodeStreamBoxFormat second_box_format = (CodeStreamBoxFormat)j;
+      if (second_box_format == kCSBF_Multi_Other_Zero_Terminated) continue;
+      printf("Testing with box format pair %d, %d\n", (int)first_box_format,
+             (int)second_box_format);
+      jxl::PaddedBytes compressed2 = jxl::CreateTestJXLCodestream(
+          jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize,
+          3, cparams, second_box_format, JXL_ORIENT_IDENTITY,
+          /*add_preview=*/false,
+          /*add_intrinsic_size=*/false);
+      jxl::PaddedBytes concat;
+      concat.append(compressed1);
+      concat.append(compressed2);
+      uint32_t channels = 3;
+      JxlPixelFormat format = {channels, JXL_TYPE_FLOAT, JXL_LITTLE_ENDIAN, 0};
+      size_t remaining = concat.size();
+      for (int part = 0; part < 2; ++part) {
+        printf("  Decoding part %d\n", part + 1);
+        JxlDecoder* dec = JxlDecoderCreate(NULL);
+        size_t pos = concat.size() - remaining;
+        bool expect_success =
+            (part == 0 || second_box_format == kCSBF_None ||
+             second_box_format == kCSBF_Single_Zero_Terminated ||
+             second_box_format == kCSBF_Multi_Zero_Terminated);
+        std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
+            dec, jxl::Span<const uint8_t>(concat.data() + pos, remaining),
+            format, /*use_callback=*/false, /*set_buffer_early=*/true,
+            /*use_resizable_runner=*/false, /*require_boxes=*/true,
+            expect_success);
+        EXPECT_EQ(num_pixels * channels * 4, pixels2.size());
+        remaining = JxlDecoderReleaseInput(dec);
+        JxlDecoderDestroy(dec);
+      }
+      EXPECT_EQ(0, remaining);
+    }
   }
 }
 
@@ -2014,7 +2127,8 @@ TEST(DecodeTest, AlignTest) {
     std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
         jxl::Span<const uint8_t>(compressed.data(), compressed.size()), format,
         use_callback, /*set_buffer_early=*/false,
-        /*use_resizable_runner=*/false);
+        /*use_resizable_runner=*/false, /*require_boxes=*/false,
+        /*expect_succes=*/true);
     EXPECT_EQ(expected_line_bytes * ysize, pixels2.size());
     EXPECT_EQ(0u, jxl::test::ComparePixels(pixels.data(), pixels2.data(), xsize,
                                            ysize, format_orig, format));
@@ -3801,8 +3915,9 @@ TEST(DecodeTest, ContinueFinalNonEssentialBoxTest) {
   size_t remaining = JxlDecoderReleaseInput(dec);
   // Since the test was set up to end exactly at the boundary of the final
   // codestream box, and the decoder returned success, all bytes are expected to
-  // be consumed.
-  EXPECT_EQ(0, remaining);
+  // be consumed until the end of the jxlp box that was needed to decode the
+  // frame header.
+  EXPECT_THAT(remaining, IsSlightlyBelow(compressed.size() * 0.7f));
 
   // Now set the remaining non-codestream box as input.
   EXPECT_EQ(JXL_DEC_SUCCESS,

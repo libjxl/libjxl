@@ -1912,6 +1912,18 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
         return JXL_DEC_NEED_MORE_INPUT;
       }
 
+      bool boxed_codestream_done =
+          ((dec->events_wanted & JXL_DEC_BOX) &&
+           dec->stage == DecoderStage::kCodestreamFinished &&
+           dec->last_codestream_seen && !dec->JbrdNeedMoreBoxes());
+      if (boxed_codestream_done && dec->avail_in >= 2 &&
+          dec->next_in[0] == 0xff &&
+          dec->next_in[1] == jxl::kCodestreamMarker) {
+        // We detected the start of the next naked codestream, so we can return
+        // success here.
+        return JXL_DEC_SUCCESS;
+      }
+
       uint64_t box_size, header_size;
       JxlDecoderStatus status =
           ParseBoxHeader(dec->next_in, dec->avail_in, 0, dec->file_pos,
@@ -1938,6 +1950,11 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
       // The signature box at box_count == 1 is not checked here since that's
       // already done at the beginning.
       dec->box_count++;
+      if (boxed_codestream_done && memcmp(dec->box_type, "JXL ", 4) == 0) {
+        // We detected the start of the next boxed stream, so we can return
+        // success here.
+        return JXL_DEC_SUCCESS;
+      }
       if (dec->box_count == 2 && memcmp(dec->box_type, "ftyp", 4) != 0) {
         return JXL_API_ERROR("the second box must be the ftyp box");
       }
@@ -2106,8 +2123,10 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
           continue;
         } else {
           // Codestream decoded, and no box output requested, skip all further
-          // input and return success.
-          dec->AdvanceInput(dec->avail_in);
+          // input until the end of the box and return success.
+          size_t remaining = dec->box_contents_end - dec->file_pos;
+          size_t to_skip = std::min<size_t>(remaining, dec->avail_in);
+          dec->AdvanceInput(to_skip);
           break;
         }
       }
