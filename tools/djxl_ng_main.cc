@@ -26,7 +26,6 @@
 #include "lib/extras/enc/pnm.h"
 #include "lib/extras/packed_image.h"
 #include "lib/jxl/base/printf_macros.h"
-#include "lib/jxl/base/status.h"
 
 DECLARE_bool(help);
 DECLARE_bool(helpshort);
