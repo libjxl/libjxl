@@ -507,7 +507,6 @@ std::unique_ptr<RenderPipelineStage> GetEPFStage(const LoopFilter& lf,
     default:
       JXL_ABORT("Invalid EPF stage");
   }
-  return nullptr;
 }
 
 }  // namespace jxl
