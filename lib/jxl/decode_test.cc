@@ -3951,8 +3951,6 @@ TEST(DecodeTest, BoxTest) {
   JxlDecoder* dec = JxlDecoderCreate(nullptr);
 
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSubscribeEvents(dec, JXL_DEC_BOX));
-  EXPECT_EQ(JXL_DEC_SUCCESS,
-            JxlDecoderSetInput(dec, compressed.data(), compressed.size()));
 
   std::vector<std::string> expected_box_types = {
       "JXL ", "ftyp", "jxlp", "unk1", "unk2", "jxlp", "jxlp", "jxlp", "unk3"};
@@ -3970,7 +3968,10 @@ TEST(DecodeTest, BoxTest) {
   EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderGetBoxType(dec, type, JXL_FALSE));
   EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderGetBoxSizeRaw(dec, &box_size));
 
+  uint8_t* next_in = compressed.data();
+  size_t avail_in = compressed.size();
   for (size_t i = 0; i < expected_box_types.size(); i++) {
+    EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec, next_in, avail_in));
     EXPECT_EQ(JXL_DEC_BOX, JxlDecoderProcessInput(dec));
     EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxType(dec, type, JXL_FALSE));
     EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxSizeRaw(dec, &box_size));
@@ -3991,10 +3992,18 @@ TEST(DecodeTest, BoxTest) {
                          : (type[3] == '2' ? unk2_box_size : unk3_box_size);
       expected_release_size = contents.size() - expected_box_contents_size;
     }
+    size_t consumed = avail_in - JxlDecoderReleaseInput(dec);
+    next_in += consumed;
+    avail_in -= consumed;
   }
+
+  // After the last DEC_BOX event, check that the input position is exactly at
+  // the stat of the box header.
+  EXPECT_EQ(avail_in, expected_box_sizes.back());
 
   // Even though all input is given, the decoder cannot assume there aren't
   // more boxes if the input was not closed.
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec, next_in, avail_in));
   EXPECT_EQ(JXL_DEC_NEED_MORE_INPUT, JxlDecoderProcessInput(dec));
   JxlDecoderCloseInput(dec);
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderProcessInput(dec));
