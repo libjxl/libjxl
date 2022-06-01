@@ -456,6 +456,7 @@ struct JxlDecoderStruct {
   size_t box_contents_end;
   size_t box_contents_size;
   size_t box_size;
+  size_t header_size;
   // Either a final box that runs until EOF, or the case of no container format
   // at all.
   bool box_contents_unbounded;
@@ -703,6 +704,7 @@ void JxlDecoderRewindDecodingState(JxlDecoder* dec) {
   dec->box_contents_end = 0;
   dec->box_contents_size = 0;
   dec->box_size = 0;
+  dec->header_size = 0;
   dec->box_contents_unbounded = false;
   memset(dec->box_type, 0, sizeof(dec->box_type));
   memset(dec->box_decoded_type, 0, sizeof(dec->box_decoded_type));
@@ -1788,6 +1790,8 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
   // Box handling loop
   for (;;) {
     if (dec->box_stage != BoxStage::kHeader) {
+      dec->AdvanceInput(dec->header_size);
+      dec->header_size = 0;
       if ((dec->events_wanted & JXL_DEC_BOX) &&
           dec->box_out_buffer_set_current_box) {
         uint8_t* next_out = dec->box_out_buffer + dec->box_out_buffer_pos;
@@ -1962,16 +1966,14 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
         return JXL_API_ERROR("the ftyp box must come second");
       }
 
-      dec->AdvanceInput(header_size);
-
       dec->box_contents_unbounded = (box_size == 0);
-      dec->box_contents_begin = dec->file_pos;
-      dec->box_contents_end = dec->box_contents_unbounded
-                                  ? 0
-                                  : (dec->file_pos + box_size - header_size);
+      dec->box_contents_begin = dec->file_pos + header_size;
+      dec->box_contents_end =
+          dec->box_contents_unbounded ? 0 : (dec->file_pos + box_size);
       dec->box_contents_size =
           dec->box_contents_unbounded ? 0 : (box_size - header_size);
       dec->box_size = box_size;
+      dec->header_size = header_size;
 
       if (dec->orig_events_wanted & JXL_DEC_JPEG_RECONSTRUCTION) {
         // Initiate storing of Exif or XMP data for JPEG reconstruction
