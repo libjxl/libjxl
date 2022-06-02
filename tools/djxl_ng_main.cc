@@ -37,7 +37,6 @@ DEFINE_int64(num_threads, 0,
              // was: No multithreaded workers. Is: use default number.
              "Number of worker threads (0 == use machine default).");
 
-// TODO(firsching): wire this up.
 DEFINE_int32(bits_per_sample, 0, "0 = original (input) bit depth");
 
 // TODO(firsching): wire this up.
@@ -433,6 +432,11 @@ int main(int argc, char** argv) {
             std::move(runner)) != 0) {
       fprintf(stderr, "DecompressJxlToPackedPixelFile failed\n");
       return EXIT_FAILURE;
+    }
+    if (strcmp(extension, ".pfm") == 0) {
+      ppf.info.bits_per_sample = 32;
+    } else if (FLAGS_bits_per_sample > 0) {
+      ppf.info.bits_per_sample = FLAGS_bits_per_sample;
     }
     jxl::extras::EncodedImage encoded_image;
     if (!encoder->Encode(ppf, &encoded_image)) {

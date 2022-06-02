@@ -128,8 +128,8 @@ Status EncodeHeader(const PackedPixelFile& ppf, const size_t bits_per_sample,
     JXL_RETURN_IF_ERROR(static_cast<unsigned int>(*chars_written) <
                         kMaxHeaderSize);
   } else {  // PGM/PPM
+    if (bits_per_sample > 16) return JXL_FAILURE("PNM cannot have > 16 bits");
     const uint32_t max_val = (1U << bits_per_sample) - 1;
-    if (max_val >= 65536) return JXL_FAILURE("PNM cannot have > 16 bits");
     const char type = is_gray ? '5' : '6';
     *chars_written =
         snprintf(header, kMaxHeaderSize, "P%c\n%" PRIuS " %" PRIuS "\n%u\n",
