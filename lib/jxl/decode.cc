@@ -2092,7 +2092,8 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
           dec->AdvanceInput(avail_codestream);
         }
 
-        if (dec->file_pos == dec->box_contents_end) {
+        if (dec->file_pos == dec->box_contents_end &&
+            !dec->box_contents_unbounded) {
           dec->box_stage = BoxStage::kHeader;
           continue;
         }
