@@ -147,9 +147,32 @@ class FrameDecoder {
   // 1/8th*1/8th resolution image). The return value of true then does not mean
   // all sections have been processed, use HasDecodedDC and HasDecodedAll
   // to check the true finished state.
-  void SetPauseAtProgressive(JxlProgressiveDetail prog_detail) {
-    pause_at_progressive_ = true;
-    progressive_detail_ = prog_detail;
+  // Returns the progressive detail that will be effective for the frame.
+  JxlProgressiveDetail SetPauseAtProgressive(JxlProgressiveDetail prog_detail) {
+    bool single_section =
+        frame_dim_.num_groups == 1 && frame_header_.passes.num_passes == 1;
+    if (frame_header_.frame_type != kSkipProgressive &&
+        // If there's only one group and one pass, there is no separate section
+        // for DC and the entire full resolution image is available at once.
+        !single_section &&
+        // If extra channels are encoded with modular without squeeze, they
+        // don't support DC. If the are encoded with squeeze, DC works in theory
+        // but the implementation may not yet correctly support this for Flush.
+        // Therefore, can't correctly pause for a progressive step if there is
+        // an extra channel (including alpha channel)
+        // TOOD(firsching): Check if this is still the case.
+        decoded_->metadata()->extra_channel_info.empty() &&
+        // DC is not guaranteed to be available in modular mode and may be a
+        // black image. If squeeze is used, it may be available depending on the
+        // current implementation.
+        // TODO(lode): do return DC if it's known that flushing at this point
+        // will produce a valid 1/8th downscaled image with modular encoding.
+        frame_header_.encoding == FrameEncoding::kVarDCT) {
+      progressive_detail_ = prog_detail;
+    } else {
+      progressive_detail_ = JxlProgressiveDetail::kFrames;
+    }
+    return progressive_detail_;
   }
 
   // Sets the buffer to which uint8 sRGB pixels will be decoded. This is not
@@ -294,8 +317,7 @@ class FrameDecoder {
   // Testing setting: whether or not to use the slow rendering pipeline.
   bool use_slow_rendering_pipeline_;
 
-  bool pause_at_progressive_ = false;
-  JxlProgressiveDetail progressive_detail_ = kDC;
+  JxlProgressiveDetail progressive_detail_ = kFrames;
 };
 
 }  // namespace jxl

@@ -500,6 +500,8 @@ struct JxlDecoderStruct {
 
   // The level of progressive detail in frame decoding.
   JxlProgressiveDetail prog_detail = kDC;
+  // The progressive detail of the current frame.
+  JxlProgressiveDetail frame_prog_detail;
 
   // Whether the preview out buffer was set. It is possible for the buffer to
   // be nullptr and buffer_set to be true, indicating it was deliberately
@@ -553,6 +555,8 @@ struct JxlDecoderStruct {
   size_t frame_start;
   size_t frame_size;
   FrameStage frame_stage;
+  bool dc_frame_progression_done;
+  size_t num_complete_passes;
   // The currently processed frame is the last of the current composite still,
   // and so must be returned as pixels
   bool is_last_of_still;
@@ -1450,10 +1454,6 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec, const uint8_t* in,
           /*use_slow_rendering_pipeline=*/false));
       dec->frame_dec->SetRenderSpotcolors(dec->render_spotcolors);
       dec->frame_dec->SetCoalescing(dec->coalescing);
-      if (dec->events_wanted & JXL_DEC_FRAME_PROGRESSION) {
-        dec->frame_dec->SetPauseAtProgressive(dec->prog_detail);
-      }
-
       // If JPEG reconstruction is wanted and possible, set the jpeg_data of
       // the ImageBundle.
       if (!dec->jpeg_decoder.SetImageBundleJpegData(dec->ib.get()))
@@ -1464,6 +1464,15 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec, const uint8_t* in,
           /*allow_partial_frames=*/true, /*allow_partial_dc_global=*/false,
           /*output_needed=*/dec->events_wanted & JXL_DEC_FULL_IMAGE);
       if (!status) JXL_API_RETURN_IF_ERROR(status);
+
+      if (dec->events_wanted & JXL_DEC_FRAME_PROGRESSION) {
+        dec->frame_prog_detail =
+            dec->frame_dec->SetPauseAtProgressive(dec->prog_detail);
+      } else {
+        dec->frame_prog_detail = JxlProgressiveDetail::kFrames;
+      }
+      dec->dc_frame_progression_done = 0;
+      dec->num_complete_passes = 0;
 
       size_t sections_begin =
           DivCeil(reader->TotalBitsConsumed(), kBitsPerByte);
@@ -1485,7 +1494,6 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec, const uint8_t* in,
     bool return_full_image = false;
 
     if (dec->frame_stage == FrameStage::kFull) {
-      size_t num_complete_passes = 0;
       if (dec->events_wanted & JXL_DEC_FULL_IMAGE) {
         if (!dec->image_out_buffer_set &&
             (!dec->jpeg_decoder.IsOutputSet() ||
@@ -1568,29 +1576,21 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec, const uint8_t* in,
       bool got_dc_only =
           !!status && !all_sections_done && dec->frame_dec->HasDecodedDC();
 
-      if ((dec->events_wanted & JXL_DEC_FRAME_PROGRESSION) && got_dc_only) {
-        if (dec->prog_detail <= JxlProgressiveDetail::kDC) {
-          dec->events_wanted &= ~JXL_DEC_FRAME_PROGRESSION;
-        }
-        if (dec->frame_header->frame_type != kSkipProgressive) {
-          return JXL_DEC_FRAME_PROGRESSION;
-        }
+      if (dec->frame_prog_detail >= JxlProgressiveDetail::kDC &&
+          !dec->dc_frame_progression_done && got_dc_only) {
+        dec->dc_frame_progression_done = true;
+        return JXL_DEC_FRAME_PROGRESSION;
       }
 
       size_t new_num_complete_passes = dec->frame_dec->NumCompletePasses();
-
-      bool new_group_done = num_complete_passes < new_num_complete_passes;
-      if (new_group_done) {
-        num_complete_passes = new_num_complete_passes;
-      }
+      bool new_group_done = dec->num_complete_passes < new_num_complete_passes;
+      dec->num_complete_passes = new_num_complete_passes;
 
       bool got_complete_group_only =
           !!status && !all_sections_done && new_group_done;
 
-      if ((dec->events_wanted & JXL_DEC_FRAME_PROGRESSION) &&
-          got_complete_group_only &&
-          (dec->frame_header->frame_type != kSkipProgressive) &&
-          (dec->prog_detail <= JxlProgressiveDetail::kPasses)) {
+      if (got_complete_group_only &&
+          (dec->frame_prog_detail >= JxlProgressiveDetail::kPasses)) {
         return JXL_DEC_FRAME_PROGRESSION;
       }
 

@@ -740,32 +740,6 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
   }
   if (has_error) return JXL_FAILURE("Error in DC group");
 
-  bool do_progressive = false;
-  if (pause_at_progressive_ && (frame_header_.frame_type != kSkipProgressive)) {
-    do_progressive = true;
-    if (single_section) {
-      // If there's only one group and one pass, there is no separate section
-      // for DC and the entire full resolution image is available at once.
-      do_progressive = false;
-    }
-    if (!decoded_->metadata()->extra_channel_info.empty()) {
-      // If extra channels are encoded with modular without squeeze, they
-      // don't support DC. If the are encoded with squeeze, DC works in theory
-      // but the implementation may not yet correctly support this for Flush.
-      // Therefore, can't correctly pause for a progressive step if there is
-      // an extra channel (including alpha channel)
-      // TOOD(firsching): Check if this is still the case.
-      do_progressive = false;
-    }
-    if (frame_header_.encoding != FrameEncoding::kVarDCT) {
-      // DC is not guaranteed to be available in modular mode and may be a
-      // black image. If squeeze is used, it may be available depending on the
-      // current implementation.
-      // TODO(lode): do return DC if it's known that flushing at this point will
-      // produce a valid 1/8th downscaled image with modular encoding.
-      do_progressive = false;
-    }
-  }
   if (*std::min_element(decoded_dc_groups_.begin(), decoded_dc_groups_.end()) &&
       !finalized_dc_) {
     PassesDecoderState::PipelineOptions pipeline_options;
@@ -776,7 +750,7 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
         dec_state_->PreparePipeline(decoded_, pipeline_options));
     FinalizeDC();
     JXL_RETURN_IF_ERROR(AllocateOutput());
-    if (do_progressive && progressive_detail_ >= JxlProgressiveDetail::kDC) {
+    if (progressive_detail_ >= JxlProgressiveDetail::kDC) {
       MarkSections(sections, num, section_status);
       return true;
     }
@@ -787,7 +761,7 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
     section_status[ac_global_sec] = SectionStatus::kDone;
   }
 
-  if (do_progressive && progressive_detail_ >= JxlProgressiveDetail::kPasses) {
+  if (progressive_detail_ >= JxlProgressiveDetail::kPasses) {
     // Mark that we only want the next pass.
     size_t num_complete_passes = NumCompletePasses();
     for (size_t i = 0; i < ac_group_sec.size(); i++) {
