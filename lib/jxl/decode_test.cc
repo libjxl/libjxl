@@ -1727,8 +1727,7 @@ TEST(DecodeTest, ProcessEmptyInputWithBoxes) {
         /*add_intrinsic_size=*/false);
     const int events =
         JXL_DEC_BASIC_INFO | JXL_DEC_FULL_IMAGE | JXL_DEC_COLOR_ENCODING;
-    EXPECT_EQ(JXL_DEC_SUCCESS,
-              JXL_DEC_SUCCESS != JxlDecoderSubscribeEvents(dec, events));
+    EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSubscribeEvents(dec, events));
     EXPECT_EQ(JXL_DEC_NEED_MORE_INPUT, JxlDecoderProcessInput(dec));
     EXPECT_EQ(JXL_DEC_SUCCESS,
               JxlDecoderSetInput(dec, compressed.data(), compressed.size()));
@@ -1742,8 +1741,6 @@ TEST(DecodeTest, ProcessEmptyInputWithBoxes) {
     const size_t remaining = JxlDecoderReleaseInput(dec);
     EXPECT_LE(remaining, compressed.size());
     EXPECT_EQ(JXL_DEC_NEED_MORE_INPUT, JxlDecoderProcessInput(dec));
-    EXPECT_EQ(JXL_DEC_SUCCESS,
-              JxlDecoderSetInput(dec, compressed.data(), compressed.size()));
   }
 }
 
