@@ -556,7 +556,6 @@ struct JxlDecoderStruct {
   size_t frame_size;
   FrameStage frame_stage;
   bool dc_frame_progression_done;
-  size_t num_complete_passes;
   // The currently processed frame is the last of the current composite still,
   // and so must be returned as pixels
   bool is_last_of_still;
@@ -1472,7 +1471,6 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec, const uint8_t* in,
         dec->frame_prog_detail = JxlProgressiveDetail::kFrames;
       }
       dec->dc_frame_progression_done = 0;
-      dec->num_complete_passes = 0;
 
       size_t sections_begin =
           DivCeil(reader->TotalBitsConsumed(), kBitsPerByte);
@@ -1559,6 +1557,7 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec, const uint8_t* in,
         }
       }
 
+      size_t next_num_passes_to_pause = dec->frame_dec->NextNumPassesToPause();
       jxl::Status status =
           dec->frame_dec->ProcessSections(dec->sections->section_info.data(),
                                           dec->sections->section_info.size(),
@@ -1582,15 +1581,12 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec, const uint8_t* in,
         return JXL_DEC_FRAME_PROGRESSION;
       }
 
-      size_t new_num_complete_passes = dec->frame_dec->NumCompletePasses();
-      bool new_group_done = dec->num_complete_passes < new_num_complete_passes;
-      dec->num_complete_passes = new_num_complete_passes;
+      bool new_progression_step_done =
+          dec->frame_dec->NumCompletePasses() >= next_num_passes_to_pause;
 
-      bool got_complete_group_only =
-          !!status && !all_sections_done && new_group_done;
-
-      if (got_complete_group_only &&
-          (dec->frame_prog_detail >= JxlProgressiveDetail::kPasses)) {
+      if (!!status && !all_sections_done &&
+          dec->frame_prog_detail >= JxlProgressiveDetail::kLastPasses &&
+          new_progression_step_done) {
         return JXL_DEC_FRAME_PROGRESSION;
       }
 
@@ -2993,11 +2989,11 @@ JxlDecoderStatus JxlDecoderGetBoxSizeRaw(const JxlDecoder* dec,
 
 JxlDecoderStatus JxlDecoderSetProgressiveDetail(JxlDecoder* dec,
                                                 JxlProgressiveDetail detail) {
-  if (detail != kDC && detail != kPasses) {
+  if (detail != kDC && detail != kLastPasses && detail != kPasses) {
     return JXL_API_ERROR(
-        "Values other than kDC (%d) and kPasses (%d), like %d are not "
-        "implemented.",
-        kDC, kPasses, detail);
+        "Values other than kDC (%d), kLastPasses (%d) and kPasses (%d), "
+        "like %d are not implemented.",
+        kDC, kLastPasses, kPasses, detail);
   }
   dec->prog_detail = detail;
   return JXL_DEC_SUCCESS;

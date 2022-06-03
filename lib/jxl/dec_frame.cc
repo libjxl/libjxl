@@ -761,13 +761,13 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
     section_status[ac_global_sec] = SectionStatus::kDone;
   }
 
-  if (progressive_detail_ >= JxlProgressiveDetail::kPasses) {
-    // Mark that we only want the next pass.
-    size_t num_complete_passes = NumCompletePasses();
+  if (progressive_detail_ >= JxlProgressiveDetail::kLastPasses) {
+    // Mark that we only want the next progression pass.
+    size_t target_complete_passes = NextNumPassesToPause();
     for (size_t i = 0; i < ac_group_sec.size(); i++) {
       desired_num_ac_passes[i] =
           std::min(desired_num_ac_passes[i],
-                   1 + num_complete_passes - decoded_passes_per_ac_group_[i]);
+                   target_complete_passes - decoded_passes_per_ac_group_[i]);
     }
   }
 

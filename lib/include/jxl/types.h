@@ -120,6 +120,7 @@ typedef char JxlBoxType[4];
  * with smaller or equal value. Currently only the following level of
  * progressive detail is implemented:
  *  - kDC (which implies kFrames)
+ *  - kLastPasses (which implies kDC and kFrames)
  *  - kPasses (which implies kLastPasses, kDC and kFrames)
  */
 typedef enum {
