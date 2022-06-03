@@ -172,7 +172,25 @@ class FrameDecoder {
     } else {
       progressive_detail_ = JxlProgressiveDetail::kFrames;
     }
+    if (progressive_detail_ >= JxlProgressiveDetail::kPasses) {
+      for (size_t i = 1; i < frame_header_.passes.num_passes; ++i) {
+        passes_to_pause_.push_back(i);
+      }
+    } else if (progressive_detail_ >= JxlProgressiveDetail::kLastPasses) {
+      for (size_t i = 0; i < frame_header_.passes.num_downsample; ++i) {
+        passes_to_pause_.push_back(frame_header_.passes.last_pass[i] + 1);
+      }
+      // The format does not guarantee that these values are sorted.
+      std::sort(passes_to_pause_.begin(), passes_to_pause_.end());
+    }
     return progressive_detail_;
+  }
+
+  size_t NextNumPassesToPause() const {
+    auto it = std::upper_bound(passes_to_pause_.begin(), passes_to_pause_.end(),
+                               NumCompletePasses());
+    return (it != passes_to_pause_.end() ? *it
+                                         : std::numeric_limits<size_t>::max());
   }
 
   // Sets the buffer to which uint8 sRGB pixels will be decoded. This is not
@@ -318,6 +336,9 @@ class FrameDecoder {
   bool use_slow_rendering_pipeline_;
 
   JxlProgressiveDetail progressive_detail_ = kFrames;
+  // Number of completed passes where section decoding should pause.
+  // Used for progressive details at least kLastPasses.
+  std::vector<int> passes_to_pause_;
 };
 
 }  // namespace jxl
