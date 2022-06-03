@@ -1741,6 +1741,7 @@ TEST(DecodeTest, ProcessEmptyInputWithBoxes) {
     const size_t remaining = JxlDecoderReleaseInput(dec);
     EXPECT_LE(remaining, compressed.size());
     EXPECT_EQ(JXL_DEC_NEED_MORE_INPUT, JxlDecoderProcessInput(dec));
+    JxlDecoderDestroy(dec);
   }
 }
 
