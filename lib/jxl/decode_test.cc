@@ -21,6 +21,7 @@
 #include "lib/extras/enc/jpg.h"
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/file_io.h"
+#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/common.h"
@@ -1707,6 +1708,42 @@ TEST(DecodeTest, PixelTestOpaqueSrgbLossyNoise) {
                 IsSlightlyBelow(2.6f));
 
     JxlDecoderDestroy(dec);
+  }
+}
+
+TEST(DecodeTest, ProcessEmptyInputWithBoxes) {
+  size_t xsize = 123, ysize = 77;
+  std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 3, 0);
+  jxl::CompressParams cparams;
+  uint32_t channels = 3;
+  JxlPixelFormat format = {channels, JXL_TYPE_FLOAT, JXL_LITTLE_ENDIAN, 0};
+  for (int i = 0; i < kCSBF_NUM_ENTRIES; ++i) {
+    JxlDecoder* dec = JxlDecoderCreate(NULL);
+    CodeStreamBoxFormat box_format = (CodeStreamBoxFormat)i;
+    printf("Testing empty input with box format %d\n", (int)box_format);
+    jxl::PaddedBytes compressed = jxl::CreateTestJXLCodestream(
+        jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 3,
+        cparams, box_format, JXL_ORIENT_IDENTITY, /*add_preview=*/false,
+        /*add_intrinsic_size=*/false);
+    const int events =
+        JXL_DEC_BASIC_INFO | JXL_DEC_FULL_IMAGE | JXL_DEC_COLOR_ENCODING;
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JXL_DEC_SUCCESS != JxlDecoderSubscribeEvents(dec, events));
+    EXPECT_EQ(JXL_DEC_NEED_MORE_INPUT, JxlDecoderProcessInput(dec));
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderSetInput(dec, compressed.data(), compressed.size()));
+    EXPECT_EQ(JXL_DEC_BASIC_INFO, JxlDecoderProcessInput(dec));
+    EXPECT_EQ(JXL_DEC_COLOR_ENCODING, JxlDecoderProcessInput(dec));
+    size_t buffer_size;
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderImageOutBufferSize(dec, &format, &buffer_size));
+    JxlBasicInfo info;
+    EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBasicInfo(dec, &info));
+    const size_t remaining = JxlDecoderReleaseInput(dec);
+    EXPECT_LE(remaining, compressed.size());
+    EXPECT_EQ(JXL_DEC_NEED_MORE_INPUT, JxlDecoderProcessInput(dec));
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderSetInput(dec, compressed.data(), compressed.size()));
   }
 }
 
