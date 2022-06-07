@@ -347,6 +347,20 @@ JXL_EXPORT void JxlDecoderRewind(JxlDecoder* dec);
 JXL_EXPORT void JxlDecoderSkipFrames(JxlDecoder* dec, size_t amount);
 
 /**
+ * Skips processing the current frame. Can be called after frame processing
+ * already started, signaled by a @ref JXL_DEC_NEED_IMAGE_OUT_BUFFER event,
+ * but before the corrsponding @ref JXL_DEC_FULL_IMAGE event. The next signaled
+ * event will be another @ref JXL_DEC_FRAME, or @ref JXL_DEC_SUCCESS if there
+ * are no more frames. If pixel data is required from the already processed part
+ * of the frame, @ref JxlDecoderFlushImage must be called before this.
+ *
+ * @param dec decoder object
+ * @return @ref JXL_DEC_SUCCESS if there is a frame to skip, and @ref
+ *     JXL_DEC_ERROR if the function was not called during frame processing.
+ */
+JXL_EXPORT JxlDecoderStatus JxlDecoderSkipCurrentFrame(JxlDecoder* dec);
+
+/**
  * Get the default pixel format for this decoder.
  *
  * Requires that the decoder can produce JxlBasicInfo.
@@ -1318,6 +1332,16 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetBoxSizeRaw(const JxlDecoder* dec,
  */
 JXL_EXPORT JxlDecoderStatus
 JxlDecoderSetProgressiveDetail(JxlDecoder* dec, JxlProgressiveDetail detail);
+
+/**
+ * Returns the intended downsampling ratio for the progressive frame produced
+ * by @ref JxlDecoderFlushImage after the latest @ref JXL_DEC_FRAME_PROGRESSION
+ * event.
+ *
+ * @param dec decoder object
+ * @return The intended downsampling ratio, can be 1, 2, 4 or 8.
+ */
+JXL_EXPORT size_t JxlDecoderGetIntendedDownsamplingRatio(JxlDecoder* dec);
 
 /**
  * Outputs progressive step towards the decoded image so far when only partial
