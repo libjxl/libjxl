@@ -640,7 +640,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetExtraChannelName(const JxlDecoder* dec,
 
 /** Defines which color profile to get: the profile from the codestream
  * metadata header, which represents the color profile of the original image,
- * or the color profile from the pixel data received by the decoder. Both are
+ * or the color profile from the pixel data produced by the decoder. Both are
  * the same if the JxlBasicInfo has uses_original_profile set.
  */
 typedef enum {

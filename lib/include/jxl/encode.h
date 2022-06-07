@@ -576,12 +576,12 @@ JxlEncoderAddJPEGFrame(const JxlEncoderFrameSettings* frame_settings,
  * If the image has alpha, and alpha is not passed here, it will implicitly be
  * set to all-opaque (an alpha value of 1.0 everywhere).
  *
- * The color profile of the pixels depends on the value of uses_original_profile
- * in the JxlBasicInfo. If true, the pixels are assumed to be encoded in the
- * original profile that is set with JxlEncoderSetColorEncoding or
- * JxlEncoderSetICCProfile. If false, the pixels are assumed to be nonlinear
- * sRGB for integer data types (JXL_TYPE_UINT8, JXL_TYPE_UINT16), and linear
- * sRGB for floating point data types (JXL_TYPE_FLOAT16, JXL_TYPE_FLOAT).
+ * The pixels are assumed to be encoded in the original profile that is set with
+ * JxlEncoderSetColorEncoding or JxlEncoderSetICCProfile. If none of these
+ * functions were used, the pixels are assumed to be nonlinear sRGB for integer
+ * data types (JXL_TYPE_UINT8, JXL_TYPE_UINT16), and linear sRGB for floating
+ * point data types (JXL_TYPE_FLOAT16, JXL_TYPE_FLOAT).
+ *
  * Sample values in floating-point pixel formats are allowed to be outside the
  * nominal range, e.g. to represent out-of-sRGB-gamut colors in the
  * uses_original_profile=false case. They are however not allowed to be NaN or
