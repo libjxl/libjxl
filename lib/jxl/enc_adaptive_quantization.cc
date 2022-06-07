@@ -930,10 +930,7 @@ void FindBestQuantizationMaxError(const Image3F& opsin,
                                   PassesEncoderState* enc_state,
                                   const JxlCmsInterface& cms, ThreadPool* pool,
                                   AuxOut* aux_out) {
-  // TODO(veluca): this only works if opsin is in XYB. The current encoder does
-  // not have code paths that produce non-XYB opsin here.
-  JXL_CHECK(enc_state->shared.frame_header.color_transform ==
-            ColorTransform::kXYB);
+  // TODO(szabadka): Make this work for non-opsin color spaces.
   const CompressParams& cparams = enc_state->cparams;
   Quantizer& quantizer = enc_state->shared.quantizer;
   ImageI& raw_quant_field = enc_state->shared.raw_quant_field;
