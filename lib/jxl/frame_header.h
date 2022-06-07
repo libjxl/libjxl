@@ -279,6 +279,17 @@ struct Passes : public Fields {
     }
   }
 
+  uint32_t GetDownsamplingTargetForCompletedPasses(uint32_t num_p) {
+    if (num_p >= num_passes) return 1;
+    uint32_t retval = 8;
+    for (uint32_t i = 0; i < num_downsample; ++i) {
+      if (num_p > last_pass[i]) {
+        retval = std::min(retval, downsample[i]);
+      }
+    }
+    return retval;
+  }
+
   uint32_t num_passes;      // <= kMaxNumPasses
   uint32_t num_downsample;  // <= num_passes
 

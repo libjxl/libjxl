@@ -502,6 +502,8 @@ struct JxlDecoderStruct {
   JxlProgressiveDetail prog_detail = kDC;
   // The progressive detail of the current frame.
   JxlProgressiveDetail frame_prog_detail;
+  // The intended downsampling ratio for the current progression step.
+  size_t downsampling_target;
 
   // Whether the preview out buffer was set. It is possible for the buffer to
   // be nullptr and buffer_set to be true, indicating it was deliberately
@@ -732,6 +734,7 @@ void JxlDecoderRewindDecodingState(JxlDecoder* dec) {
   dec->basic_info_size_hint = InitialBasicInfoSizeHint();
   dec->have_container = 0;
   dec->box_count = 0;
+  dec->downsampling_target = 8;
   dec->preview_out_buffer_set = false;
   dec->image_out_buffer_set = false;
   dec->preview_out_buffer = nullptr;
@@ -851,6 +854,19 @@ void JxlDecoderSkipFrames(JxlDecoder* dec, size_t amount) {
       }
     }
   }
+}
+
+JxlDecoderStatus JxlDecoderSkipCurrentFrame(JxlDecoder* dec) {
+  if (!dec->frame_dec || !dec->frame_dec_in_progress) {
+    return JXL_DEC_ERROR;
+  }
+  dec->frame_stage = FrameStage::kHeader;
+  dec->frame_start += dec->frame_size;
+  dec->frame_dec_in_progress = false;
+  if (dec->is_last_of_still) {
+    dec->image_out_buffer_set = false;
+  }
+  return JXL_DEC_SUCCESS;
 }
 
 JXL_EXPORT JxlDecoderStatus
@@ -1578,6 +1594,7 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec, const uint8_t* in,
       if (dec->frame_prog_detail >= JxlProgressiveDetail::kDC &&
           !dec->dc_frame_progression_done && got_dc_only) {
         dec->dc_frame_progression_done = true;
+        dec->downsampling_target = 8;
         return JXL_DEC_FRAME_PROGRESSION;
       }
 
@@ -1587,6 +1604,9 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec, const uint8_t* in,
       if (!!status && !all_sections_done &&
           dec->frame_prog_detail >= JxlProgressiveDetail::kLastPasses &&
           new_progression_step_done) {
+        dec->downsampling_target =
+            dec->frame_header->passes.GetDownsamplingTargetForCompletedPasses(
+                dec->frame_dec->NumCompletePasses());
         return JXL_DEC_FRAME_PROGRESSION;
       }
 
@@ -2515,6 +2535,10 @@ JxlDecoderStatus PrepareSizeCheck(const JxlDecoder* dec,
 }
 
 }  // namespace
+
+size_t JxlDecoderGetIntendedDownsamplingRatio(JxlDecoder* dec) {
+  return dec->downsampling_target;
+}
 
 JxlDecoderStatus JxlDecoderFlushImage(JxlDecoder* dec) {
   if (!dec->image_out_buffer_set) return JXL_DEC_ERROR;

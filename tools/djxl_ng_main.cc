@@ -58,10 +58,11 @@ DEFINE_double(preserve_saturation, 0.1,
 DEFINE_string(color_space, "RGB_D65_SRG_Rel_Lin",
               "defaults to original (input) color space");
 
-// TODO(firsching): wire this up.
 DEFINE_uint32(downsampling, 0,
-              "maximum permissible downsampling factor (values "
-              "greater than 16 will return the LQIP if available");
+              "If set and the input JXL stream is progressive and contains "
+              "hints for target downsampling ratios, the decoder will skip any "
+              "progressive passes that are not needed to produce a partially "
+              "decoded image intended for this downsampling ratio.");
 
 // TODO(firsching): wire this up.
 DEFINE_bool(allow_partial_files, false, "allow decoding of truncated files");
@@ -245,14 +246,17 @@ int DecompressJxlToPackedPixelFile(
     fprintf(stderr, "JxlEncoderSetParallelRunner failed\n");
     return EXIT_FAILURE;
   }
-  if (JXL_DEC_SUCCESS !=
-      JxlDecoderSubscribeEvents(dec.get(),
-                                JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING |
-                                    JXL_DEC_FRAME | JXL_DEC_FULL_IMAGE)) {
+  int events = (JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING | JXL_DEC_FRAME |
+                JXL_DEC_FULL_IMAGE);
+  if (FLAGS_downsampling > 1) {
+    events |= JXL_DEC_FRAME_PROGRESSION;
+    JxlDecoderSetProgressiveDetail(dec.get(),
+                                   JxlProgressiveDetail::kLastPasses);
+  }
+  if (JXL_DEC_SUCCESS != JxlDecoderSubscribeEvents(dec.get(), events)) {
     fprintf(stderr, "JxlDecoderSubscribeEvents failed\n");
     return EXIT_FAILURE;
   }
-
   JxlPixelFormat format;
   // Reading compressed JPEG XL input and decoding to pixels
   if (JXL_DEC_SUCCESS !=
@@ -261,6 +265,7 @@ int DecompressJxlToPackedPixelFile(
     return EXIT_FAILURE;
   }
   // TODO(firsching): handle boxes as well (exif, iptc, jumbf and xmp).
+  bool is_last_frame = false;
   for (;;) {
     JxlDecoderStatus status = JxlDecoderProcessInput(dec.get());
     if (status == JXL_DEC_ERROR) {
@@ -308,6 +313,28 @@ int DecompressJxlToPackedPixelFile(
     } else if (status == JXL_DEC_FRAME) {
       jxl::extras::PackedFrame frame(ppf.info.xsize, ppf.info.ysize, format);
       ppf.frames.emplace_back(std::move(frame));
+      JxlFrameHeader frame_header;
+      if (JXL_DEC_SUCCESS !=
+          JxlDecoderGetFrameHeader(dec.get(), &frame_header)) {
+        fprintf(stderr, "JxlDecoderGetFrameHeader failed\n");
+        return EXIT_FAILURE;
+      }
+      is_last_frame = frame_header.is_last;
+    } else if (status == JXL_DEC_FRAME_PROGRESSION) {
+      size_t downsampling = JxlDecoderGetIntendedDownsamplingRatio(dec.get());
+      if (downsampling <= FLAGS_downsampling) {
+        if (JXL_DEC_SUCCESS != JxlDecoderFlushImage(dec.get())) {
+          fprintf(stderr, "JxlDecoderFlushImage failed\n");
+          return EXIT_FAILURE;
+        }
+        if (is_last_frame) {
+          break;
+        }
+        if (JXL_DEC_SUCCESS != JxlDecoderSkipCurrentFrame(dec.get())) {
+          fprintf(stderr, "JxlDecoderSkipCurrentFrame failed\n");
+          return EXIT_FAILURE;
+        }
+      }
     } else if (status == JXL_DEC_NEED_IMAGE_OUT_BUFFER) {
       size_t buffer_size;
       if (JXL_DEC_SUCCESS !=

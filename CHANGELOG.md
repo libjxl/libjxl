@@ -26,6 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
  - decoder API: new function `JxlDecoderSetMultithreadedImageOutCallback`,
    allowing output callbacks to receive more information about the number of
    threads on which they are running.
+ - decoder API: new function `JxlDecoderSkipCurrentFrame` to skip processing
+   the current frame after a progressive detail is reached.
+ - decoder API: new function `JxlDecoderGetIntendedDownsamplingRatio` to get
+   the intended downsampling ratio of progressive setps, based on the
+   information in the frame header.
  - encoder API: added ability to set several encoder options to frames using
    `JxlEncoderFrameSettingsSetOption`
  - encoder API: new functions `JxlEncoderSetFrameHeader` and

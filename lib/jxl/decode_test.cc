@@ -2492,6 +2492,122 @@ TEST(DecodeTest, ExtraChannelTest) {
                                      format_orig_alpha, format_alpha));
 }
 
+TEST(DecodeTest, SkipCurrentFrameTest) {
+  size_t xsize = 90, ysize = 120;
+  constexpr size_t num_frames = 7;
+  std::vector<uint8_t> frames[num_frames];
+  for (size_t i = 0; i < num_frames; i++) {
+    frames[i] = jxl::test::GetSomeTestImage(xsize, ysize, 3, i);
+  }
+  JxlPixelFormat format = {3, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
+
+  jxl::CodecInOut io;
+  io.SetSize(xsize, ysize);
+  io.metadata.m.SetUintSamples(16);
+  io.metadata.m.color_encoding = jxl::ColorEncoding::SRGB(false);
+  io.metadata.m.have_animation = true;
+  io.frames.clear();
+  io.frames.reserve(num_frames);
+  io.SetSize(xsize, ysize);
+
+  std::vector<uint32_t> frame_durations(num_frames);
+  for (size_t i = 0; i < num_frames; ++i) {
+    frame_durations[i] = 5 + i;
+  }
+
+  for (size_t i = 0; i < num_frames; ++i) {
+    jxl::ImageBundle bundle(&io.metadata.m);
+    if (i & 1) {
+      // Mark some frames as referenceable, others not.
+      bundle.use_for_next_frame = true;
+    }
+
+    EXPECT_TRUE(ConvertFromExternal(
+        jxl::Span<const uint8_t>(frames[i].data(), frames[i].size()), xsize,
+        ysize, jxl::ColorEncoding::SRGB(/*is_gray=*/false), /*channels=*/3,
+        /*alpha_is_premultiplied=*/false, /*bits_per_sample=*/16,
+        JXL_BIG_ENDIAN, /*flipped_y=*/false, /*pool=*/nullptr, &bundle,
+        /*float_in=*/false, /*align=*/0));
+    bundle.duration = frame_durations[i];
+    io.frames.push_back(std::move(bundle));
+  }
+
+  jxl::CompressParams cparams;
+  cparams.speed_tier = jxl::SpeedTier::kThunder;
+  jxl::AuxOut aux_out;
+  jxl::PaddedBytes compressed;
+  jxl::PassesEncoderState enc_state;
+  jxl::PassDefinition passes[] = {
+      {2, 0, false, 4}, {4, 0, false, 4}, {8, 2, false, 2}, {8, 0, false, 1}};
+  jxl::ProgressiveMode progressive_mode{passes};
+  enc_state.progressive_splitter.SetProgressiveMode(progressive_mode);
+  EXPECT_TRUE(jxl::EncodeFile(cparams, &io, &enc_state, &compressed,
+                              jxl::GetJxlCms(), &aux_out, nullptr));
+
+  JxlDecoder* dec = JxlDecoderCreate(NULL);
+  const uint8_t* next_in = compressed.data();
+  size_t avail_in = compressed.size();
+
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSubscribeEvents(dec, JXL_DEC_BASIC_INFO | JXL_DEC_FRAME |
+                                               JXL_DEC_FRAME_PROGRESSION |
+                                               JXL_DEC_FULL_IMAGE));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetProgressiveDetail(dec, kLastPasses));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec, next_in, avail_in));
+
+  EXPECT_EQ(JXL_DEC_BASIC_INFO, JxlDecoderProcessInput(dec));
+  size_t buffer_size;
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderImageOutBufferSize(dec, &format, &buffer_size));
+  JxlBasicInfo info;
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBasicInfo(dec, &info));
+
+  for (size_t i = 0; i < num_frames; ++i) {
+    printf("Decoding frame %d\n", (int)i);
+    EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderSkipCurrentFrame(dec));
+    std::vector<uint8_t> pixels(buffer_size);
+    EXPECT_EQ(JXL_DEC_FRAME, JxlDecoderProcessInput(dec));
+    EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderSkipCurrentFrame(dec));
+    JxlFrameHeader frame_header;
+    EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetFrameHeader(dec, &frame_header));
+    EXPECT_EQ(frame_durations[i], frame_header.duration);
+    EXPECT_EQ(i + 1 == num_frames, frame_header.is_last);
+    EXPECT_EQ(JXL_DEC_NEED_IMAGE_OUT_BUFFER, JxlDecoderProcessInput(dec));
+    EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetImageOutBuffer(
+                                   dec, &format, pixels.data(), pixels.size()));
+    if (i == 2) {
+      EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSkipCurrentFrame(dec));
+      continue;
+    }
+    EXPECT_EQ(JXL_DEC_FRAME_PROGRESSION, JxlDecoderProcessInput(dec));
+    EXPECT_EQ(8, JxlDecoderGetIntendedDownsamplingRatio(dec));
+    if (i == 3) {
+      EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSkipCurrentFrame(dec));
+      continue;
+    }
+    EXPECT_EQ(JXL_DEC_FRAME_PROGRESSION, JxlDecoderProcessInput(dec));
+    EXPECT_EQ(4, JxlDecoderGetIntendedDownsamplingRatio(dec));
+    if (i == 4) {
+      EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSkipCurrentFrame(dec));
+      continue;
+    }
+    EXPECT_EQ(JXL_DEC_FRAME_PROGRESSION, JxlDecoderProcessInput(dec));
+    EXPECT_EQ(2, JxlDecoderGetIntendedDownsamplingRatio(dec));
+    if (i == 5) {
+      EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSkipCurrentFrame(dec));
+      continue;
+    }
+    EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec));
+    EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderSkipCurrentFrame(dec));
+  }
+
+  // After all frames were decoded, JxlDecoderProcessInput should return
+  // success to indicate all is done.
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderProcessInput(dec));
+
+  JxlDecoderDestroy(dec);
+}
+
 TEST(DecodeTest, SkipFrameTest) {
   size_t xsize = 90, ysize = 120;
   constexpr size_t num_frames = 16;
@@ -3794,8 +3910,13 @@ TEST(DecodeTest, ProgressiveEventTest) {
             };
 
             if (expect_flush) {
+              // Return a particular downsampling ratio only after the last
+              // pass for that downsampling was processed.
+              int expected_downsampling_ratios[] = {8, 8, 4, 4, 2};
               for (int p = 0; p < kNumPasses; p = next_pass(p)) {
                 EXPECT_EQ(JXL_DEC_FRAME_PROGRESSION, process_input());
+                EXPECT_EQ(expected_downsampling_ratios[p],
+                          JxlDecoderGetIntendedDownsamplingRatio(dec));
                 EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderFlushImage(dec));
                 passes[p] = passes[kNumPasses];
               }
