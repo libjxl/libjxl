@@ -72,7 +72,7 @@ class FrameDecoder {
   // on callers.
   Status InitFrame(BitReader* JXL_RESTRICT br, ImageBundle* decoded,
                    bool is_preview, bool allow_partial_frames,
-                   bool allow_partial_dc_global, bool output_needed);
+                   bool output_needed);
 
   struct SectionInfo {
     BitReader* JXL_RESTRICT br;
@@ -307,7 +307,6 @@ class FrameDecoder {
   ImageBundle* decoded_;
   ModularFrameDecoder modular_frame_decoder_;
   bool allow_partial_frames_;
-  bool allow_partial_dc_global_;
   bool render_spotcolors_ = true;
   bool coalescing_ = true;
 

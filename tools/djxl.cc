@@ -108,10 +108,12 @@ void DecompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
                          "allow decoding of truncated files",
                          &params.allow_partial_files, &SetBooleanTrue);
 
-  cmdline->AddOptionFlag('\0', "allow_more_progressive_steps",
-                         "allow decoding more progressive steps in truncated "
-                         "files. No effect without --allow_partial_files",
-                         &params.allow_more_progressive_steps, &SetBooleanTrue);
+  bool dummy_allow_more_progressive_steps = true;
+  opt_allow_more_progressive_steps = cmdline->AddOptionFlag(
+      '\0', "allow_more_progressive_steps",
+      "DEPRECATED: we always decode as much detail "
+      "as possible if --allow_partial_files is used",
+      &dummy_allow_more_progressive_steps, &SetBooleanTrue);
 
 #if JPEGXL_ENABLE_JPEG
   cmdline->AddOptionFlag(
@@ -148,6 +150,10 @@ jxl::Status DecompressArgs::ValidateArgs(const CommandLineParser& cmdline) {
   if (file_in == nullptr) {
     fprintf(stderr, "Missing INPUT filename.\n");
     return false;
+  }
+
+  if (cmdline.GetOption(opt_allow_more_progressive_steps)->matched()) {
+    fprintf(stderr, "Warning: --allow_more_progressive_steps is deprecated.");
   }
 
 #if JPEGXL_ENABLE_JPEG

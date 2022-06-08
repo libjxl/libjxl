@@ -119,10 +119,9 @@ Status DecodeFrame(const DecompressParams& dparams,
 
   frame_decoder.SetFrameSizeLimits(constraints);
 
-  JXL_RETURN_IF_ERROR(frame_decoder.InitFrame(
-      reader, decoded, is_preview, dparams.allow_partial_files,
-      dparams.allow_partial_files && dparams.allow_more_progressive_steps,
-      true));
+  JXL_RETURN_IF_ERROR(frame_decoder.InitFrame(reader, decoded, is_preview,
+                                              dparams.allow_partial_files,
+                                              /*output_needed=*/true));
 
   // Handling of progressive decoding.
   const FrameHeader& frame_header = frame_decoder.GetFrameHeader();
@@ -165,13 +164,12 @@ Status DecodeFrame(const DecompressParams& dparams,
       size_t e = b + frame_decoder.SectionSizes()[i];
       bytes_to_skip += e - b;
       size_t pos = reader->TotalBitsConsumed() / kBitsPerByte;
-      if (pos + (dparams.allow_more_progressive_steps &&
-                         (i == 0 ||
-                          frame_header.encoding == FrameEncoding::kModular)
+      if (pos + (dparams.allow_partial_files &&
+                         frame_header.encoding == FrameEncoding::kModular
                      ? b
                      : e) <=
               reader->TotalBytes() ||
-          (i == 0 && dparams.allow_more_progressive_steps)) {
+          (i == 0 && dparams.allow_partial_files)) {
         auto br = make_unique<BitReader>(Span<const uint8_t>(
             reader->FirstByte() + b + pos,
             (pos + b > reader->TotalBytes()
@@ -198,7 +196,7 @@ Status DecodeFrame(const DecompressParams& dparams,
         processed_bytes += frame_decoder.SectionSizes()[i];
         continue;
       }
-      if (dparams.allow_more_progressive_steps && s == FrameDecoder::kPartial) {
+      if (dparams.allow_partial_files && s == FrameDecoder::kPartial) {
         continue;
       }
       if (dparams.max_downsampling > 1 && s == FrameDecoder::kSkipped) {
@@ -218,14 +216,12 @@ Status DecodeFrame(const DecompressParams& dparams,
 
 Status FrameDecoder::InitFrame(BitReader* JXL_RESTRICT br, ImageBundle* decoded,
                                bool is_preview, bool allow_partial_frames,
-                               bool allow_partial_dc_global,
                                bool output_needed) {
   PROFILER_FUNC;
   decoded_ = decoded;
   JXL_ASSERT(is_finalized_);
 
   allow_partial_frames_ = allow_partial_frames;
-  allow_partial_dc_global_ = allow_partial_dc_global;
 
   // Reset the dequantization matrices to their default values.
   dec_state_->shared_storage.matrices = DequantMatrices();
@@ -383,7 +379,7 @@ Status FrameDecoder::ProcessDCGlobal(BitReader* br) {
   if (shared.frame_header.flags & FrameHeader::kNoise) {
     JXL_RETURN_IF_ERROR(DecodeNoise(br, &shared.image_features.noise_params));
   }
-  if (!allow_partial_dc_global_ ||
+  if (!allow_partial_frames_ ||
       br->TotalBitsConsumed() < br->TotalBytes() * kBitsPerByte) {
     JXL_RETURN_IF_ERROR(dec_state_->shared_storage.matrices.DecodeDC(br));
 
@@ -399,7 +395,7 @@ Status FrameDecoder::ProcessDCGlobal(BitReader* br) {
         dec_state_->shared->cmap));
   }
   Status dec_status = modular_frame_decoder_.DecodeGlobalInfo(
-      br, frame_header_, allow_partial_dc_global_);
+      br, frame_header_, allow_partial_frames_);
   if (dec_status.IsFatalError()) return dec_status;
   if (dec_status) {
     decoded_dc_global_ = true;
