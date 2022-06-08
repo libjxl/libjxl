@@ -530,8 +530,8 @@ if (NOT WIN32 OR MINGW)
   set_target_properties(jxl-static PROPERTIES OUTPUT_NAME "jxl")
   set_target_properties(jxl_dec-static PROPERTIES OUTPUT_NAME "jxl_dec")
 endif()
-install(TARGETS jxl-static DESTINATION ${CMAKE_INSTALL_LIBDIR})
-install(TARGETS jxl_dec-static DESTINATION ${CMAKE_INSTALL_LIBDIR})
+install(TARGETS jxl-static EXPORT JPEGXL DESTINATION ${CMAKE_INSTALL_LIBDIR})
+install(TARGETS jxl_dec-static EXPORT JPEGXL DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
 if (((NOT DEFINED "${TARGET_SUPPORTS_SHARED_LIBS}") OR
      TARGET_SUPPORTS_SHARED_LIBS) AND NOT JPEGXL_STATIC AND BUILD_SHARED_LIBS)
@@ -600,7 +600,7 @@ endforeach()
 # Only install libjxl shared library. The libjxl_dec is not installed since it
 # contains symbols also in libjxl which would conflict if programs try to use
 # both.
-install(TARGETS jxl
+install(TARGETS jxl EXPORT JPEGXL
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})

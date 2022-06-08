@@ -147,6 +147,31 @@ install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/jxl
 install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include/jxl
   DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
 
+include(CMakePackageConfigHelpers)
+
+configure_package_config_file(${CMAKE_CURRENT_SOURCE_DIR}/jxl/libjxl.cmake.in
+  ${CMAKE_CURRENT_BINARY_DIR}/JPEGXLConfig.cmake
+  INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/JPEGXL
+)
+
+write_basic_package_version_file(
+  ${CMAKE_CURRENT_BINARY_DIR}/JPEGXLConfigVersion.cmake
+  VERSION ${JPEGXL_VERSION}
+  COMPATIBILITY SameMinorVersion
+)
+
+install(EXPORT JPEGXL
+  NAMESPACE JPEGXL::
+  FILE JPEGXLTargets.cmake
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/JPEGXL
+)
+
+install(FILES
+  ${CMAKE_CURRENT_BINARY_DIR}/JPEGXLConfig.cmake
+  ${CMAKE_CURRENT_BINARY_DIR}/JPEGXLConfigVersion.cmake
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/JPEGXL
+)
+
 # Profiler for libjxl
 include(jxl_profiler.cmake)
 

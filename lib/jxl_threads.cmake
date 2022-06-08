@@ -25,8 +25,8 @@ target_include_directories(${_target}
   PRIVATE
     "${PROJECT_SOURCE_DIR}"
   PUBLIC
-    "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_BINARY_DIR}/include")
+    "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+    "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>")
 
 target_link_libraries(${_target}
   PUBLIC ${JPEGXL_COVERAGE_FLAGS} Threads::Threads
@@ -44,6 +44,7 @@ if (NOT WIN32 OR MINGW)
   set_target_properties(${_target} PROPERTIES OUTPUT_NAME "jxl_threads")
 endif()
 install(TARGETS ${_target}
+  EXPORT JPEGXL
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
