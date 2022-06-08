@@ -67,6 +67,7 @@ struct DecompressArgs {
 
   // References (ids) of specific options to check if they were matched.
   CommandLineParser::OptionId opt_jpeg_quality_id = -1;
+  CommandLineParser::OptionId opt_allow_more_progressive_steps = -1;
 };
 
 // Decompresses and notifies SpeedStats of elapsed time.

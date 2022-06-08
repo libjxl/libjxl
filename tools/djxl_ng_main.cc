@@ -67,11 +67,6 @@ DEFINE_uint32(downsampling, 0,
 // TODO(firsching): wire this up.
 DEFINE_bool(allow_partial_files, false, "allow decoding of truncated files");
 
-// TODO(firsching): wire this up.
-DEFINE_bool(allow_more_progressive_steps, false,
-            "allow decoding more progressive steps in truncated "
-            "files. No effect without --allow_partial_files");
-
 #if JPEGXL_ENABLE_JPEG
 // TODO(firsching): wire this up.
 DEFINE_bool(
