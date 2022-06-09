@@ -38,17 +38,15 @@ jxl::Status ParseBoxHeader(const uint8_t** next_in, size_t* available_in,
 
   // Total box_size including this header itself.
   uint64_t box_size = LoadBE32(in + pos);
-  memcpy(box->type, in + pos + 4, 4);
-
-  pos += 8;
-
+  pos += 4;
   if (box_size == 1) {
     // If the size is 1, it indicates extended size read from 64-bit integer.
     if (OutOfBounds(pos, 8, size)) return JXL_FAILURE("out of bounds");
     box_size = LoadBE64(in + pos);
     pos += 8;
   }
-
+  memcpy(box->type, in + pos, 4);
+  pos += 4;
   if (!memcmp("uuid", box->type, 4)) {
     if (OutOfBounds(pos, 16, size)) return JXL_FAILURE("out of bounds");
     memcpy(box->extended_type, in + pos, 16);
