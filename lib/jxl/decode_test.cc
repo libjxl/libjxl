@@ -33,12 +33,15 @@
 #include "lib/jxl/enc_icc_codec.h"
 #include "lib/jxl/encode_internal.h"
 #include "lib/jxl/fields.h"
+#include "lib/jxl/frame_header.h"
 #include "lib/jxl/headers.h"
 #include "lib/jxl/icc_codec.h"
+#include "lib/jxl/image_metadata.h"
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
 #include "lib/jxl/progressive_split.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testdata.h"
+#include "lib/jxl/toc.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -3404,6 +3407,202 @@ TEST(DecodeTest, OrientedCroppedFrameTest) {
       }
     }
   }
+}
+
+struct FramePositions {
+  size_t frame_start;
+  size_t header_end;
+  size_t toc_end;
+  std::vector<size_t> section_end;
+};
+
+void AnalyzeCodestream(const jxl::PaddedBytes& data,
+                       std::vector<FramePositions>* framepos) {
+  jxl::BitReader br(jxl::Span<const uint8_t>(data.data(), data.size()));
+  ASSERT_EQ(br.ReadFixedBits<16>(), 0x0AFF);
+  jxl::CodecMetadata metadata;
+  EXPECT_TRUE(ReadSizeHeader(&br, &metadata.size));
+  EXPECT_TRUE(ReadImageMetadata(&br, &metadata.m));
+  metadata.transform_data.nonserialized_xyb_encoded = metadata.m.xyb_encoded;
+  EXPECT_TRUE(jxl::Bundle::Read(&br, &metadata.transform_data));
+  EXPECT_TRUE(br.JumpToByteBoundary());
+  bool has_preview = metadata.m.have_preview;
+  while (br.TotalBitsConsumed() < br.TotalBytes() * jxl::kBitsPerByte) {
+    FramePositions p;
+    p.frame_start = br.TotalBitsConsumed() / jxl::kBitsPerByte;
+    jxl::FrameHeader frame_header(&metadata);
+    if (has_preview) {
+      frame_header.nonserialized_is_preview = true;
+      has_preview = false;
+    }
+    EXPECT_TRUE(ReadFrameHeader(&br, &frame_header));
+    p.header_end = jxl::DivCeil(br.TotalBitsConsumed(), jxl::kBitsPerByte);
+    jxl::FrameDimensions frame_dim = frame_header.ToFrameDimensions();
+    uint64_t groups_total_size;
+    const size_t toc_entries = jxl::NumTocEntries(
+        frame_dim.num_groups, frame_dim.num_dc_groups,
+        frame_header.passes.num_passes, /*has_ac_global=*/true);
+    std::vector<uint64_t> section_offsets;
+    std::vector<uint32_t> section_sizes;
+    EXPECT_TRUE(ReadGroupOffsets(toc_entries, &br, &section_offsets,
+                                 &section_sizes, &groups_total_size));
+    EXPECT_EQ(br.TotalBitsConsumed() % jxl::kBitsPerByte, 0);
+    p.toc_end = br.TotalBitsConsumed() / jxl::kBitsPerByte;
+    for (size_t i = 0; i < toc_entries; ++i) {
+      p.section_end.push_back(p.toc_end + section_offsets[i] +
+                              section_sizes[i]);
+    }
+    br.SkipBits(groups_total_size * jxl::kBitsPerByte);
+    framepos->push_back(p);
+  }
+  EXPECT_EQ(br.TotalBitsConsumed(), br.TotalBytes() * jxl::kBitsPerByte);
+  EXPECT_TRUE(br.Close());
+}
+
+enum ExpectedFlushState { NO_FLUSH, SAME_FLUSH, NEW_FLUSH };
+struct Breakpoint {
+  size_t file_pos;
+  ExpectedFlushState expect_flush;
+};
+
+void VerifyProgression(size_t xsize, size_t ysize, uint32_t num_channels,
+                       const std::vector<uint8_t>& pixels,
+                       const jxl::PaddedBytes& data,
+                       std::vector<Breakpoint> breakpoints) {
+  // Size large enough for multiple groups, required to have progressive stages.
+  ASSERT_LT(256, xsize);
+  ASSERT_LT(256, ysize);
+  std::vector<uint8_t> pixels2;
+  pixels2.resize(pixels.size());
+  JxlPixelFormat format = {num_channels, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
+  JxlDecoder* dec = JxlDecoderCreate(nullptr);
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSubscribeEvents(
+                dec, JXL_DEC_BASIC_INFO | JXL_DEC_FRAME | JXL_DEC_FULL_IMAGE));
+  int bp = 0;
+  const uint8_t* next_in = data.data();
+  size_t avail_in = breakpoints[bp].file_pos;
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec, next_in, avail_in));
+  double prev_dist = 1.0;
+  for (;;) {
+    JxlDecoderStatus status = JxlDecoderProcessInput(dec);
+    printf("bp: %d  status: 0x%x\n", bp, (int)status);
+    if (status == JXL_DEC_BASIC_INFO) {
+      JxlBasicInfo info;
+      EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBasicInfo(dec, &info));
+      EXPECT_EQ(info.xsize, xsize);
+      EXPECT_EQ(info.ysize, ysize);
+      // Output buffer/callback not yet set
+      EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderFlushImage(dec));
+      size_t buffer_size;
+      EXPECT_EQ(JXL_DEC_SUCCESS,
+                JxlDecoderImageOutBufferSize(dec, &format, &buffer_size));
+      EXPECT_EQ(pixels2.size(), buffer_size);
+      EXPECT_EQ(JXL_DEC_SUCCESS,
+                JxlDecoderSetImageOutBuffer(dec, &format, pixels2.data(),
+                                            pixels2.size()));
+    } else if (status == JXL_DEC_FRAME) {
+      // Nothing to do.
+    } else if (status == JXL_DEC_SUCCESS) {
+      EXPECT_EQ(bp + 1, breakpoints.size());
+      break;
+    } else if (status == JXL_DEC_NEED_MORE_INPUT ||
+               status == JXL_DEC_FULL_IMAGE) {
+      if (breakpoints[bp].expect_flush == NO_FLUSH) {
+        EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderFlushImage(dec));
+      } else {
+        if (status != JXL_DEC_FULL_IMAGE) {
+          EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderFlushImage(dec));
+        }
+        double dist = jxl::test::DistanceRMS(pixels2.data(), pixels.data(),
+                                             xsize, ysize, format);
+        if (breakpoints[bp].expect_flush == NEW_FLUSH) {
+          EXPECT_LT(dist, prev_dist);
+          prev_dist = dist;
+        } else {
+          EXPECT_EQ(dist, prev_dist);
+        }
+      }
+      if (status == JXL_DEC_FULL_IMAGE) {
+        EXPECT_EQ(bp + 1, breakpoints.size());
+        continue;
+      }
+      ASSERT_LT(++bp, breakpoints.size());
+      next_in += avail_in - JxlDecoderReleaseInput(dec);
+      avail_in = breakpoints[bp].file_pos - (next_in - data.data());
+      EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec, next_in, avail_in));
+    } else {
+      printf("Unexpected status: 0x%x\n", (int)status);
+      FAIL();  // unexpected returned status
+    }
+  }
+  JxlDecoderDestroy(dec);
+}
+
+TEST(DecodeTest, ProgressionTest) {
+  size_t xsize = 508, ysize = 470;
+  uint32_t num_channels = 3;
+  std::vector<uint8_t> pixels =
+      jxl::test::GetSomeTestImage(xsize, ysize, num_channels, 0);
+  jxl::CompressParams cparams;
+  cparams.progressive_dc = 1;
+  jxl::PaddedBytes data = jxl::CreateTestJXLCodestream(
+      jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize,
+      num_channels, cparams, kCSBF_None, JXL_ORIENT_IDENTITY, true, false);
+  std::vector<FramePositions> fp;
+  AnalyzeCodestream(data, &fp);
+  // We have preview, dc frame and regular frame.
+  EXPECT_EQ(3, fp.size());
+  EXPECT_EQ(7, fp[2].section_end.size());
+  EXPECT_EQ(data.size(), fp[2].section_end[6]);
+  std::vector<Breakpoint> breakpoints{
+      {fp[0].frame_start, NO_FLUSH},           // headers
+      {fp[1].frame_start, NO_FLUSH},           // preview
+      {fp[2].frame_start, NO_FLUSH},           // dc frame
+      {fp[2].section_end[0], NO_FLUSH},        // DC global
+      {fp[2].section_end[1] - 1, NO_FLUSH},    // partial DC group
+      {fp[2].section_end[1], NEW_FLUSH},       // DC group
+      {fp[2].section_end[2], SAME_FLUSH},      // AC global
+      {fp[2].section_end[3], NEW_FLUSH},       // AC group 0
+      {fp[2].section_end[4] - 1, SAME_FLUSH},  // partial AC group 1
+      {fp[2].section_end[4], NEW_FLUSH},       // AC group 1
+      {fp[2].section_end[5], NEW_FLUSH},       // AC group 2
+      {data.size() - 1, SAME_FLUSH},           // partial AC group 3
+      {data.size(), NEW_FLUSH}};               // full image
+  VerifyProgression(xsize, ysize, num_channels, pixels, data, breakpoints);
+}
+
+TEST(DecodeTest, ProgressionTestLosslessAlpha) {
+  size_t xsize = 508, ysize = 470;
+  uint32_t num_channels = 4;
+  std::vector<uint8_t> pixels =
+      jxl::test::GetSomeTestImage(xsize, ysize, num_channels, 0);
+  jxl::CompressParams cparams;
+  cparams.SetLossless();
+  cparams.speed_tier = jxl::SpeedTier::kThunder;
+  cparams.responsive = 1;
+  jxl::PaddedBytes data = jxl::CreateTestJXLCodestream(
+      jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize,
+      num_channels, cparams, kCSBF_None, JXL_ORIENT_IDENTITY, false, false);
+  std::vector<FramePositions> fp;
+  AnalyzeCodestream(data, &fp);
+  // We have preview, dc frame and regular frame.
+  EXPECT_EQ(1, fp.size());
+  EXPECT_EQ(7, fp[0].section_end.size());
+  EXPECT_EQ(data.size(), fp[0].section_end[6]);
+  std::vector<Breakpoint> breakpoints{
+      {fp[0].frame_start, NO_FLUSH},           // headers
+      {fp[0].section_end[0] - 1, NO_FLUSH},    // partial DC global
+      {fp[0].section_end[0], NEW_FLUSH},       // DC global
+      {fp[0].section_end[1], SAME_FLUSH},      // DC group
+      {fp[0].section_end[2], SAME_FLUSH},      // AC global
+      {fp[0].section_end[3], NEW_FLUSH},       // AC group 0
+      {fp[0].section_end[4] - 1, SAME_FLUSH},  // partial AC group 1
+      {fp[0].section_end[4], NEW_FLUSH},       // AC group 1
+      {fp[0].section_end[5], NEW_FLUSH},       // AC group 2
+      {data.size() - 1, SAME_FLUSH},           // partial AC group 3
+      {data.size(), NEW_FLUSH}};               // full image
+  VerifyProgression(xsize, ysize, num_channels, pixels, data, breakpoints);
 }
 
 TEST(DecodeTest, FlushTest) {
