@@ -53,7 +53,6 @@ DEFINE_uint32(downsampling, 0,
               "progressive passes that are not needed to produce a partially "
               "decoded image intended for this downsampling ratio.");
 
-// TODO(firsching): wire this up.
 DEFINE_bool(allow_partial_files, false, "allow decoding of truncated files");
 
 #if JPEGXL_ENABLE_JPEG
@@ -262,7 +261,18 @@ bool DecompressJxlToPackedPixelFile(
       fprintf(stderr, "Failed to decode image\n");
       return false;
     } else if (status == JXL_DEC_NEED_MORE_INPUT) {
-      fprintf(stderr, "Error, already provided all input\n");
+      if (FLAGS_allow_partial_files) {
+        if (JXL_DEC_SUCCESS != JxlDecoderFlushImage(dec)) {
+          fprintf(stderr,
+                  "Input file is truncated and there is no preview "
+                  "available yet.\n");
+          return false;
+        }
+        break;
+      }
+      fprintf(stderr,
+              "Input file is truncated and --allow_partial_files was "
+              "not used\n");
       return false;
     } else if (status == JXL_DEC_BASIC_INFO) {
       if (JXL_DEC_SUCCESS != JxlDecoderGetBasicInfo(dec, &ppf->info)) {
