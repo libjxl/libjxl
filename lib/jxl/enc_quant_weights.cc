@@ -105,10 +105,9 @@ Status EncodeQuant(const QuantEncoding& encoding, size_t idx, size_t size_x,
           JXL_RETURN_IF_ERROR(F16Coder::Write(
               encoding.afv_weights[c][i] * (i < 6 ? 1.0f / 64 : 1.0f), writer));
         }
-        JXL_RETURN_IF_ERROR(EncodeDctParams(encoding.dct_params, writer));
-        JXL_RETURN_IF_ERROR(
-            EncodeDctParams(encoding.dct_params_afv_4x4, writer));
       }
+      JXL_RETURN_IF_ERROR(EncodeDctParams(encoding.dct_params, writer));
+      JXL_RETURN_IF_ERROR(EncodeDctParams(encoding.dct_params_afv_4x4, writer));
       break;
     }
   }
