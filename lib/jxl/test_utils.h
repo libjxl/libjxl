@@ -636,6 +636,26 @@ size_t ComparePixels(const uint8_t* a, const uint8_t* b, size_t xsize,
   }
   return numdiff;
 }
+double DistanceRMS(const uint8_t* a, const uint8_t* b, size_t xsize,
+                   size_t ysize, const JxlPixelFormat& format) {
+  // Convert both images to equal full precision for comparison.
+  std::vector<double> a_full = ConvertToRGBA32(a, xsize, ysize, format);
+  std::vector<double> b_full = ConvertToRGBA32(b, xsize, ysize, format);
+  double sum = 0.0;
+  for (size_t y = 0; y < ysize; y++) {
+    double row_sum = 0.0;
+    for (size_t x = 0; x < xsize; x++) {
+      size_t i = (y * xsize + x) * 4;
+      for (size_t c = 0; c < format.num_channels; ++c) {
+        double diff = a_full[i + c] - b_full[i + c];
+        row_sum += diff * diff;
+      }
+    }
+    sum += row_sum;
+  }
+  sum /= (xsize * ysize);
+  return sqrt(sum);
+}
 }  // namespace test
 
 bool operator==(const jxl::PaddedBytes& a, const jxl::PaddedBytes& b) {
