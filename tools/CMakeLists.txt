@@ -481,3 +481,14 @@ if ("${JNI_FOUND}" AND "${Java_FOUND}")
   endif()  # JPEGXL_ENABLE_FUZZERS
 endif()  # JNI_FOUND & Java_FOUND
 endif()  # JPEGXL_ENABLE_JNI
+
+# End-to-end tests for the tools
+if(BUILD_TESTING AND JPEGXL_ENABLE_TOOLS)
+find_program (BASH_PROGRAM bash)
+if(BASH_PROGRAM)
+  add_test(
+    NAME roundtrip_test
+    COMMAND ${BASH_PROGRAM} ${CMAKE_CURRENT_SOURCE_DIR}/roundtrip_test.sh
+            ${CMAKE_BINARY_DIR})
+endif()
+endif() # BUILD_TESTING
