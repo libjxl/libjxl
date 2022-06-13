@@ -13,7 +13,6 @@
 #include "lib/jxl/dec_xyb-inl.h"
 #include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_xyb.h"
-#include "lib/jxl/fast_math-inl.h"
 #include "lib/jxl/transfer_functions-inl.h"
 
 // Test utils
