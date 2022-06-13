@@ -64,6 +64,9 @@ class FrameDecoder {
   }
   void SetRenderSpotcolors(bool rsc) { render_spotcolors_ = rsc; }
   void SetCoalescing(bool c) { coalescing_ = c; }
+  void SetDesiredIntensityTarget(float desired_intensity_target) {
+    desired_intensity_target_ = desired_intensity_target;
+  }
 
   // Read FrameHeader and table of contents from the given BitReader.
   // Also checks frame dimensions for their limits, and sets the output
@@ -215,6 +218,7 @@ class FrameDecoder {
     if (decoded_->metadata()->xyb_encoded &&
         dec_state_->output_encoding_info.color_encoding.IsSRGB() &&
         dec_state_->output_encoding_info.all_default_opsin &&
+        dec_state_->output_encoding_info.desired_intensity_target == 0 &&
         HasFastXYBTosRGB8() && frame_header_.needs_color_transform()) {
       dec_state_->fast_xyb_srgb8_conversion = true;
     }
@@ -309,6 +313,7 @@ class FrameDecoder {
   bool allow_partial_frames_;
   bool render_spotcolors_ = true;
   bool coalescing_ = true;
+  float desired_intensity_target_ = 0.f;
 
   std::vector<uint8_t> processed_section_;
   std::vector<uint8_t> decoded_passes_per_ac_group_;

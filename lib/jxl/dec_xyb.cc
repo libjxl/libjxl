@@ -197,13 +197,16 @@ void OpsinParams::Init(float intensity_target) {
 }
 
 Status OutputEncodingInfo::Set(const CodecMetadata& metadata,
-                               const ColorEncoding& default_enc) {
+                               const ColorEncoding& default_enc,
+                               float desired_intensity_target) {
   const auto& im = metadata.transform_data.opsin_inverse_matrix;
   float inverse_matrix[9];
   memcpy(inverse_matrix, im.inverse_matrix, sizeof(inverse_matrix));
-  intensity_target = metadata.m.IntensityTarget();
+  orig_intensity_target = metadata.m.IntensityTarget();
+  float encoding_intensity_target = orig_intensity_target;
+  this->desired_intensity_target = desired_intensity_target;
+  orig_color_encoding = metadata.m.color_encoding;
   if (metadata.m.xyb_encoded) {
-    const auto& orig_color_encoding = metadata.m.color_encoding;
     color_encoding = default_enc;
     // Figure out if we can output to this color encoding.
     do {
@@ -265,17 +268,17 @@ Status OutputEncodingInfo::Set(const CodecMetadata& metadata,
       color_encoding = orig_color_encoding;
       color_encoding_is_original = true;
       if (color_encoding.tf.IsPQ()) {
-        intensity_target = 10000;
+        encoding_intensity_target = 10000;
       }
     } while (false);
   } else {
     color_encoding = metadata.m.color_encoding;
   }
-  if (std::abs(intensity_target - 255.0) > 0.1f || !im.all_default) {
+  if (std::abs(encoding_intensity_target - 255.0) > 0.1f || !im.all_default) {
     all_default_opsin = false;
   }
   InitSIMDInverseMatrix(inverse_matrix, opsin_params.inverse_opsin_matrix,
-                        intensity_target);
+                        encoding_intensity_target);
   std::copy(std::begin(im.opsin_biases), std::end(im.opsin_biases),
             opsin_params.opsin_biases);
   for (int i = 0; i < 3; ++i) {

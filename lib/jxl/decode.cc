@@ -485,6 +485,7 @@ struct JxlDecoderStruct {
   bool keep_orientation;
   bool render_spotcolors;
   bool coalescing;
+  float desired_intensity_target;
 
   // Bitfield, for which informative events (JXL_DEC_BASIC_INFO, etc...) the
   // decoder returns a status. By default, do not return for any of the events,
@@ -781,6 +782,7 @@ void JxlDecoderReset(JxlDecoder* dec) {
   dec->keep_orientation = false;
   dec->render_spotcolors = true;
   dec->coalescing = true;
+  dec->desired_intensity_target = 0;
   dec->orig_events_wanted = 0;
   dec->frame_references.clear();
   dec->frame_saved_as.clear();
@@ -1111,7 +1113,7 @@ JxlDecoderStatus JxlDecoderReadAllHeaders(JxlDecoder* dec, const uint8_t* in,
       ColorEncoding::LinearSRGB(dec->metadata.m.color_encoding.IsGray());
 
   JXL_API_RETURN_IF_ERROR(dec->passes_state->output_encoding_info.Set(
-      dec->metadata, dec->default_enc));
+      dec->metadata, dec->default_enc, dec->desired_intensity_target));
 
   return JXL_DEC_SUCCESS;
 }
@@ -1319,7 +1321,8 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec, const uint8_t* in,
       PassesDecoderState preview_dec_state;
       JXL_API_RETURN_IF_ERROR(preview_dec_state.output_encoding_info.Set(
           dec->metadata,
-          ColorEncoding::LinearSRGB(dec->metadata.m.color_encoding.IsGray())));
+          ColorEncoding::LinearSRGB(dec->metadata.m.color_encoding.IsGray()),
+          dec->desired_intensity_target));
       if (!DecodeFrame(dparams, &preview_dec_state, dec->thread_pool.get(),
                        reader.get(), &ib, dec->metadata,
                        /*constraints=*/nullptr,
@@ -1469,6 +1472,7 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec, const uint8_t* in,
           /*use_slow_rendering_pipeline=*/false));
       dec->frame_dec->SetRenderSpotcolors(dec->render_spotcolors);
       dec->frame_dec->SetCoalescing(dec->coalescing);
+      dec->frame_dec->SetDesiredIntensityTarget(dec->desired_intensity_target);
       // If JPEG reconstruction is wanted and possible, set the jpeg_data of
       // the ImageBundle.
       if (!dec->jpeg_decoder.SetImageBundleJpegData(dec->ib.get()))
@@ -2326,6 +2330,9 @@ JxlDecoderStatus JxlDecoderGetBasicInfo(const JxlDecoder* dec,
     }
 
     info->intensity_target = meta.IntensityTarget();
+    if (dec->desired_intensity_target > 0) {
+      info->intensity_target = dec->desired_intensity_target;
+    }
     info->min_nits = meta.tone_mapping.min_nits;
     info->relative_to_max_display = meta.tone_mapping.relative_to_max_display;
     info->linear_below = meta.tone_mapping.linear_below;
@@ -2942,7 +2949,16 @@ JxlDecoderStatus JxlDecoderSetPreferredColorProfile(
   JXL_API_RETURN_IF_ERROR(ConvertExternalToInternalColorEncoding(
       *color_encoding, &dec->default_enc));
   JXL_API_RETURN_IF_ERROR(dec->passes_state->output_encoding_info.Set(
-      dec->metadata, dec->default_enc));
+      dec->metadata, dec->default_enc, dec->desired_intensity_target));
+  return JXL_DEC_SUCCESS;
+}
+
+JxlDecoderStatus JxlDecoderSetDesiredIntensityTarget(
+    JxlDecoder* dec, float desired_intensity_target) {
+  if (desired_intensity_target < 0) {
+    return JXL_API_ERROR("negative intensity target requested");
+  }
+  dec->desired_intensity_target = desired_intensity_target;
   return JXL_DEC_SUCCESS;
 }
 

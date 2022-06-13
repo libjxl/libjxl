@@ -1074,7 +1074,8 @@ ImageBundle RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
   JXL_CHECK(dec_state->output_encoding_info.Set(
       *enc_state->shared.metadata,
       ColorEncoding::LinearSRGB(
-          enc_state->shared.metadata->m.color_encoding.IsGray())));
+          enc_state->shared.metadata->m.color_encoding.IsGray()),
+      /*desired_intensity_target=*/0));
   dec_state->shared = &enc_state->shared;
   JXL_ASSERT(opsin.ysize() % kBlockDim == 0);
 

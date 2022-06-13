@@ -28,6 +28,8 @@ struct DecompressParams {
   bool render_spotcolors = true;
   // If true, coalesce frames (otherwise return unblended frames)
   bool coalescing = true;
+  // If non-zero, tone-maps PQ and HLG images to the given peak luminance
+  float desired_intensity_target = 0.f;
 
   // How many passes to decode at most. By default, decode everything.
   uint32_t max_passes = std::numeric_limits<uint32_t>::max();

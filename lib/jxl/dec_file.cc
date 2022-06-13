@@ -108,7 +108,8 @@ Status DecodeFile(const DecompressParams& dparams,
     PassesDecoderState dec_state;
     JXL_RETURN_IF_ERROR(dec_state.output_encoding_info.Set(
         io->metadata,
-        ColorEncoding::LinearSRGB(io->metadata.m.color_encoding.IsGray())));
+        ColorEncoding::LinearSRGB(io->metadata.m.color_encoding.IsGray()),
+        dparams.desired_intensity_target));
 
     if (io->metadata.m.have_preview) {
       JXL_RETURN_IF_ERROR(reader.JumpToByteBoundary());
