@@ -18,6 +18,7 @@
 
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/fast_math-inl.h"
 #include "lib/jxl/rational_polynomial-inl.h"
 
 HWY_BEFORE_NAMESPACE();

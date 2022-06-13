@@ -10,7 +10,7 @@
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 
-#include "lib/jxl/fast_math-inl.h"
+#include "lib/jxl/dec_tone_mapping-inl.h"
 #include "lib/jxl/sanitizers.h"
 #include "lib/jxl/transfer_functions-inl.h"
 
@@ -62,33 +62,17 @@ struct OpPq {
 
 struct OpHlg {
   explicit OpHlg(const float luminances[3], const float intensity_target)
-      : luminances(luminances), exponent(1.0f) {
-    if (295 <= intensity_target && intensity_target <= 305) {
-      apply_inverse_ootf = false;
-      return;
-    }
-    exponent =
-        (1 / 1.2f) * std::pow(1.111f, -std::log2(intensity_target * 1e-3f)) - 1;
-  }
+      : hlg_ootf_(HlgOOTF::ToSceneLight(/*display_luminance=*/intensity_target,
+                                        luminances)) {}
+
   template <typename D, typename T>
   void Transform(D d, T* r, T* g, T* b) const {
-    if (apply_inverse_ootf) {
-      const T luminance = Set(d, luminances[0]) * *r +
-                          Set(d, luminances[1]) * *g +
-                          Set(d, luminances[2]) * *b;
-      const T ratio =
-          Min(FastPowf(d, luminance, Set(d, exponent)), Set(d, 1e9));
-      *r *= ratio;
-      *g *= ratio;
-      *b *= ratio;
-    }
+    hlg_ootf_.Apply(r, g, b);
     *r = TF_HLG().EncodedFromDisplay(d, *r);
     *g = TF_HLG().EncodedFromDisplay(d, *g);
     *b = TF_HLG().EncodedFromDisplay(d, *b);
   }
-  bool apply_inverse_ootf = true;
-  const float* luminances;
-  float exponent;
+  HlgOOTF hlg_ootf_;
 };
 
 struct Op709 {
