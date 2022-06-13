@@ -9,6 +9,7 @@
 #include "lib/jxl/render_pipeline/stage_blending.h"
 #include "lib/jxl/render_pipeline/stage_chroma_upsampling.h"
 #include "lib/jxl/render_pipeline/stage_epf.h"
+#include "lib/jxl/render_pipeline/stage_from_linear.h"
 #include "lib/jxl/render_pipeline/stage_gaborish.h"
 #include "lib/jxl/render_pipeline/stage_noise.h"
 #include "lib/jxl/render_pipeline/stage_patches.h"
@@ -155,7 +156,8 @@ Status PassesDecoderState::PreparePipeline(ImageBundle* decoded,
     if (frame_header.color_transform == ColorTransform::kYCbCr) {
       builder.AddStage(GetYCbCrStage());
     } else if (frame_header.color_transform == ColorTransform::kXYB) {
-      builder.AddStage(GetXYBStage(output_encoding_info));
+      builder.AddStage(GetXYBStage(output_encoding_info.opsin_params));
+      builder.AddStage(GetFromLinearStage(output_encoding_info));
     }  // Nothing to do for kNone.
 
     if (options.coalescing && NeedsBlending(this)) {

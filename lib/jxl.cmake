@@ -198,6 +198,8 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/render_pipeline/stage_chroma_upsampling.h
   jxl/render_pipeline/stage_epf.cc
   jxl/render_pipeline/stage_epf.h
+  jxl/render_pipeline/stage_from_linear.cc
+  jxl/render_pipeline/stage_from_linear.h
   jxl/render_pipeline/stage_gaborish.cc
   jxl/render_pipeline/stage_gaborish.h
   jxl/render_pipeline/stage_noise.cc
