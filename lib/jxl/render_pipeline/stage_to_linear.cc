@@ -3,10 +3,10 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include "lib/jxl/render_pipeline/stage_from_linear.h"
+#include "lib/jxl/render_pipeline/stage_to_linear.h"
 
 #undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "lib/jxl/render_pipeline/stage_from_linear.cc"
+#define HWY_TARGET_INCLUDE "lib/jxl/render_pipeline/stage_to_linear.cc"
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 
@@ -37,71 +37,80 @@ PerChannelOp<Op> MakePerChannelOp(Op&& op) {
 
 struct OpLinear {
   template <typename D, typename T>
-  T Transform(D d, const T& linear) const {
-    return linear;
+  T Transform(D d, const T& encoded) const {
+    return encoded;
   }
 };
 
 struct OpRgb {
   template <typename D, typename T>
-  T Transform(D d, const T& linear) const {
-#if JXL_HIGH_PRECISION
-    return TF_SRGB().EncodedFromDisplay(d, linear);
-#else
-    return FastLinearToSRGB(d, linear);
-#endif
+  T Transform(D d, const T& encoded) const {
+    return TF_SRGB().DisplayFromEncoded(encoded);
   }
 };
 
 struct OpPq {
   template <typename D, typename T>
-  T Transform(D d, const T& linear) const {
-    return TF_PQ().EncodedFromDisplay(d, linear);
+  T Transform(D d, const T& encoded) const {
+    return TF_PQ().DisplayFromEncoded(d, encoded);
   }
 };
 
 struct OpHlg {
   explicit OpHlg(const float luminances[3], const float intensity_target)
-      : hlg_ootf_(HlgOOTF::ToSceneLight(/*display_luminance=*/intensity_target,
-                                        luminances)) {}
+      : hlg_ootf_(HlgOOTF::FromSceneLight(
+            /*display_luminance=*/intensity_target, luminances)) {}
 
   template <typename D, typename T>
   void Transform(D d, T* r, T* g, T* b) const {
+    for (T* val : {r, g, b}) {
+      float vals[MaxLanes(d)];
+      Store(*val, d, vals);
+      for (size_t i = 0; i < Lanes(d); ++i) {
+        vals[i] = TF_HLG().DisplayFromEncoded(vals[i]);
+      }
+      *val = Load(d, vals);
+    }
     hlg_ootf_.Apply(r, g, b);
-    *r = TF_HLG().EncodedFromDisplay(d, *r);
-    *g = TF_HLG().EncodedFromDisplay(d, *g);
-    *b = TF_HLG().EncodedFromDisplay(d, *b);
   }
   HlgOOTF hlg_ootf_;
 };
 
 struct Op709 {
   template <typename D, typename T>
-  T Transform(D d, const T& linear) const {
-    return TF_709().EncodedFromDisplay(d, linear);
+  T Transform(D d, const T& encoded) const {
+    return TF_709().DisplayFromEncoded(d, encoded);
   }
 };
 
 struct OpGamma {
-  const float inverse_gamma;
+  const float gamma;
   template <typename D, typename T>
-  T Transform(D d, const T& linear) const {
-    return IfThenZeroElse(linear <= Set(d, 1e-5f),
-                          FastPowf(d, linear, Set(d, inverse_gamma)));
+  T Transform(D d, const T& encoded) const {
+    return IfThenZeroElse(encoded <= Set(d, 1e-5f),
+                          FastPowf(d, encoded, Set(d, gamma)));
   }
 };
 
+struct OpInvalid {
+  template <typename D, typename T>
+  void Transform(D d, T* r, T* g, T* b) const {}
+};
+
 template <typename Op>
-class FromLinearStage : public RenderPipelineStage {
+class ToLinearStage : public RenderPipelineStage {
  public:
-  explicit FromLinearStage(Op op)
+  explicit ToLinearStage(Op op)
       : RenderPipelineStage(RenderPipelineStage::Settings()),
         op_(std::move(op)) {}
+
+  explicit ToLinearStage()
+      : RenderPipelineStage(RenderPipelineStage::Settings()), valid_(false) {}
 
   void ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
                   size_t xextra, size_t xsize, size_t xpos, size_t ypos,
                   size_t thread_id) const final {
-    PROFILER_ZONE("FromLinear");
+    PROFILER_ZONE("ToLinear");
 
     const HWY_FULL(float) d;
     const size_t xsize_v = RoundUpTo(xsize, Lanes(d));
@@ -133,38 +142,39 @@ class FromLinearStage : public RenderPipelineStage {
                  : RenderPipelineChannelMode::kIgnored;
   }
 
-  const char* GetName() const override { return "FromLinear"; }
+  const char* GetName() const override { return "ToLinear"; }
 
  private:
+  Status IsInitialized() const override { return valid_; }
+
   Op op_;
+  bool valid_ = true;
 };
 
 template <typename Op>
-std::unique_ptr<FromLinearStage<Op>> MakeFromLinearStage(Op&& op) {
-  return jxl::make_unique<FromLinearStage<Op>>(std::forward<Op>(op));
+std::unique_ptr<ToLinearStage<Op>> MakeToLinearStage(Op&& op) {
+  return jxl::make_unique<ToLinearStage<Op>>(std::forward<Op>(op));
 }
 
-std::unique_ptr<RenderPipelineStage> GetFromLinearStage(
+std::unique_ptr<RenderPipelineStage> GetToLinearStage(
     const OutputEncodingInfo& output_encoding_info) {
   if (output_encoding_info.color_encoding.tf.IsLinear()) {
-    return MakeFromLinearStage(MakePerChannelOp(OpLinear()));
+    return MakeToLinearStage(MakePerChannelOp(OpLinear()));
   } else if (output_encoding_info.color_encoding.tf.IsSRGB()) {
-    return MakeFromLinearStage(MakePerChannelOp(OpRgb()));
+    return MakeToLinearStage(MakePerChannelOp(OpRgb()));
   } else if (output_encoding_info.color_encoding.tf.IsPQ()) {
-    return MakeFromLinearStage(MakePerChannelOp(OpPq()));
+    return MakeToLinearStage(MakePerChannelOp(OpPq()));
   } else if (output_encoding_info.color_encoding.tf.IsHLG()) {
-    return MakeFromLinearStage(
-        OpHlg(output_encoding_info.luminances,
-              output_encoding_info.orig_intensity_target));
+    return MakeToLinearStage(OpHlg(output_encoding_info.luminances,
+                                   output_encoding_info.orig_intensity_target));
   } else if (output_encoding_info.color_encoding.tf.Is709()) {
-    return MakeFromLinearStage(MakePerChannelOp(Op709()));
+    return MakeToLinearStage(MakePerChannelOp(Op709()));
   } else if (output_encoding_info.color_encoding.tf.IsGamma() ||
              output_encoding_info.color_encoding.tf.IsDCI()) {
-    return MakeFromLinearStage(
-        MakePerChannelOp(OpGamma{output_encoding_info.inverse_gamma}));
+    return MakeToLinearStage(
+        MakePerChannelOp(OpGamma{1.f / output_encoding_info.inverse_gamma}));
   } else {
-    // This is a programming error.
-    JXL_ABORT("Invalid target encoding");
+    return jxl::make_unique<ToLinearStage<OpInvalid>>();
   }
 }
 
@@ -176,11 +186,11 @@ HWY_AFTER_NAMESPACE();
 #if HWY_ONCE
 namespace jxl {
 
-HWY_EXPORT(GetFromLinearStage);
+HWY_EXPORT(GetToLinearStage);
 
-std::unique_ptr<RenderPipelineStage> GetFromLinearStage(
+std::unique_ptr<RenderPipelineStage> GetToLinearStage(
     const OutputEncodingInfo& output_encoding_info) {
-  return HWY_DYNAMIC_DISPATCH(GetFromLinearStage)(output_encoding_info);
+  return HWY_DYNAMIC_DISPATCH(GetToLinearStage)(output_encoding_info);
 }
 
 }  // namespace jxl

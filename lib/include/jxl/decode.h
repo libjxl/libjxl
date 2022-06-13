@@ -786,6 +786,19 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetColorAsICCProfile(
 JXL_EXPORT JxlDecoderStatus JxlDecoderSetPreferredColorProfile(
     JxlDecoder* dec, const JxlColorEncoding* color_encoding);
 
+/** Requests that the decoder perform tone mapping to the peak display luminance
+ * passed as @c desired_intensity_target, if appropriate.
+ * @note This is provided for convenience and the exact tone mapping that is
+ * performed is not meant to be considered authoritative in any way. It may
+ * change from version to version.
+ * @param dec decoder object
+ * @param desired_intensity_target the intended target peak luminance
+ * @return @ref JXL_DEC_SUCCESS if the preference was set successfully, @ref
+ * JXL_DEC_ERROR otherwise.
+ */
+JXL_EXPORT JxlDecoderStatus JxlDecoderSetDesiredIntensityTarget(
+    JxlDecoder* dec, float desired_intensity_target);
+
 /**
  * Returns the minimum size in bytes of the preview image output pixel buffer
  * for the given format. This is the buffer for @ref

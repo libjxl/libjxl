@@ -40,20 +40,8 @@ DEFINE_int64(num_threads, 0,
 
 DEFINE_int32(bits_per_sample, 0, "0 = original (input) bit depth");
 
-// TODO(firsching): wire this up.
-DEFINE_bool(
-    tone_map, true,
-    "tone map the image to the luminance range indicated by --display_nits "
-    "instead of performing a naive 0-1 -> 0-1 conversion");
-
-// TODO(firsching): wire this up.
-DEFINE_string(display_nits, "0.f-255.",
-              "luminance range of the display to which to "
-              "tone-map; the lower bound can be omitted");
-
-// TODO(firsching): wire this up.
-DEFINE_double(preserve_saturation, 0.1,
-              "with --tone_map, how much to favor saturation over luminance");
+DEFINE_double(display_nits, 0.,
+              "tone map the image to the peak display luminance given");
 
 // TODO(firsching): wire this up; consider making empty string the default.
 DEFINE_string(color_space, "RGB_D65_SRG_Rel_Lin",
@@ -259,6 +247,12 @@ bool DecompressJxlToPackedPixelFile(
       JxlDecoderSetInput(dec, compressed.data(), compressed.size())) {
     fprintf(stderr, "Decoder failed to set input\n");
     return false;
+  }
+  if (FLAGS_display_nits > 0 &&
+      JXL_DEC_SUCCESS !=
+          JxlDecoderSetDesiredIntensityTarget(dec, FLAGS_display_nits)) {
+    fprintf(stderr, "Decoder failed to set desired intensity target\n");
+    return EXIT_FAILURE;
   }
   // TODO(firsching): handle boxes as well (exif, iptc, jumbf and xmp).
   bool is_last_frame = false;
