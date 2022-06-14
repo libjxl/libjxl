@@ -168,6 +168,9 @@ Status EncodeImageAPNG(const CodecInOut* io, const ColorEncoding& c_desired,
     bits_per_sample = 8;
   }
 
+  png_byte cicp_data[4] = {};
+  png_unknown_chunk cicp_chunk;
+
   size_t count = 0;
   bool have_anim = io->metadata.m.have_animation;
   size_t anim_chunks = 0;
@@ -221,6 +224,26 @@ Status EncodeImageAPNG(const CodecInOut* io, const ColorEncoding& c_desired,
       W = width;
       H = height;
 
+      if (!c_desired.WantICC() && c_desired.primaries != Primaries::kCustom &&
+          !c_desired.tf.IsUnknown() && !c_desired.tf.IsGamma() &&
+          (c_desired.white_point == WhitePoint::kD65 ||
+           (c_desired.white_point == WhitePoint::kDCI &&
+            c_desired.primaries == Primaries::kP3))) {
+        cicp_data[0] = c_desired.primaries != Primaries::kP3
+                           ? static_cast<png_byte>(c_desired.primaries)
+                       : c_desired.white_point == WhitePoint::kD65 ? 12
+                                                                   : 11;
+        cicp_data[1] =
+            static_cast<png_byte>(c_desired.tf.GetTransferFunction());
+        cicp_data[3] = 1;
+        cicp_chunk.data = cicp_data;
+        cicp_chunk.size = sizeof(cicp_data);
+        cicp_chunk.location = PNG_HAVE_PLTE;
+        memcpy(cicp_chunk.name, "cICP", 5);
+        png_set_keep_unknown_chunks(
+            png_ptr, 3, reinterpret_cast<const png_byte*>("cICP"), 1);
+        png_set_unknown_chunks(png_ptr, info_ptr, &cicp_chunk, 1);
+      }
       // TODO(jon): instead of always setting an iCCP, could try to avoid that
       // have to avoid warnings on the ICC profile becoming fatal
       png_set_benign_errors(png_ptr, 1);
