@@ -4317,6 +4317,35 @@ bool BoxTypeEquals(const std::string& type_string, JxlBoxType type) {
 }
 }  // namespace
 
+TEST(DecodeTest, ExtentedBoxSizeTest) {
+  const std::string jxl_path = "jxl/boxes/square-extended-size-container.jxl";
+  const jxl::PaddedBytes orig = jxl::ReadTestData(jxl_path);
+  JxlDecoder* dec = JxlDecoderCreate(nullptr);
+
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSubscribeEvents(dec, JXL_DEC_BOX));
+
+  JxlBoxType type;
+  uint64_t box_size;
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec, orig.data(), orig.size()));
+  EXPECT_EQ(JXL_DEC_BOX, JxlDecoderProcessInput(dec));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxType(dec, type, JXL_FALSE));
+  EXPECT_TRUE(BoxTypeEquals("JXL ", type));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxSizeRaw(dec, &box_size));
+  EXPECT_EQ(12, box_size);
+  EXPECT_EQ(JXL_DEC_BOX, JxlDecoderProcessInput(dec));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxType(dec, type, JXL_FALSE));
+  EXPECT_TRUE(BoxTypeEquals("ftyp", type));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxSizeRaw(dec, &box_size));
+  EXPECT_EQ(20, box_size);
+  EXPECT_EQ(JXL_DEC_BOX, JxlDecoderProcessInput(dec));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxType(dec, type, JXL_FALSE));
+  EXPECT_TRUE(BoxTypeEquals("jxlc", type));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxSizeRaw(dec, &box_size));
+  EXPECT_EQ(72, box_size);
+
+  JxlDecoderDestroy(dec);
+}
+
 TEST(DecodeTest, BoxTest) {
   size_t xsize = 1, ysize = 1;
   std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 4, 0);
