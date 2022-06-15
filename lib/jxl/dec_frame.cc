@@ -76,6 +76,18 @@ Status DecodeGlobalDCInfo(BitReader* reader, bool is_jpeg,
   state->shared_storage.ac_strategy.FillInvalid();
   return true;
 }
+
+std::unique_ptr<BitReader, std::function<void(BitReader*)>> GetBitReader(
+    Span<const uint8_t> span) {
+  BitReader* reader = new BitReader(span);
+  return std::unique_ptr<BitReader, std::function<void(BitReader*)>>(
+      reader, [](BitReader* reader) {
+        (void)reader->AllReadsWithinBounds();
+        (void)reader->Close();
+        delete reader;
+      });
+}
+
 }  // namespace
 
 Status DecodeFrameHeader(BitReader* JXL_RESTRICT reader,
@@ -85,32 +97,10 @@ Status DecodeFrameHeader(BitReader* JXL_RESTRICT reader,
   return true;
 }
 
-static BitReader* GetReaderForSection(
-    size_t num_groups, size_t num_passes, size_t group_codes_begin,
-    const std::vector<uint64_t>& group_offsets,
-    const std::vector<uint32_t>& group_sizes, BitReader* JXL_RESTRICT reader,
-    BitReader* JXL_RESTRICT store, size_t index) {
-  if (num_groups == 1 && num_passes == 1) return reader;
-  const size_t group_offset = group_codes_begin + group_offsets[index];
-  const size_t next_group_offset =
-      group_codes_begin + group_offsets[index] + group_sizes[index];
-  // The order of these variables must be:
-  // group_codes_begin <= group_offset <= next_group_offset <= file.size()
-  JXL_DASSERT(group_codes_begin <= group_offset);
-  JXL_DASSERT(group_offset <= next_group_offset);
-  JXL_DASSERT(next_group_offset <= reader->TotalBytes());
-  const size_t group_size = next_group_offset - group_offset;
-  const size_t remaining_size = reader->TotalBytes() - group_offset;
-  const size_t size = std::min(group_size + 8, remaining_size);
-  *store =
-      BitReader(Span<const uint8_t>(reader->FirstByte() + group_offset, size));
-  return store;
-}
-
 Status DecodeFrame(const DecompressParams& dparams,
                    PassesDecoderState* dec_state, ThreadPool* JXL_RESTRICT pool,
-                   BitReader* JXL_RESTRICT reader, ImageBundle* decoded,
-                   const CodecMetadata& metadata,
+                   const uint8_t* next_in, size_t avail_in,
+                   ImageBundle* decoded, const CodecMetadata& metadata,
                    const SizeConstraints* constraints, bool is_preview) {
   PROFILER_ZONE("DecodeFrame uninstrumented");
 
@@ -119,7 +109,8 @@ Status DecodeFrame(const DecompressParams& dparams,
 
   frame_decoder.SetFrameSizeLimits(constraints);
 
-  JXL_RETURN_IF_ERROR(frame_decoder.InitFrame(reader, decoded, is_preview,
+  auto reader = GetBitReader(Span<const uint8_t>(next_in, avail_in));
+  JXL_RETURN_IF_ERROR(frame_decoder.InitFrame(reader.get(), decoded, is_preview,
                                               dparams.allow_partial_files,
                                               /*output_needed=*/true));
 
@@ -150,7 +141,12 @@ Status DecodeFrame(const DecompressParams& dparams,
   frame_decoder.SetRenderSpotcolors(dparams.render_spotcolors);
   frame_decoder.SetCoalescing(dparams.coalescing);
 
-  size_t processed_bytes = reader->TotalBitsConsumed() / kBitsPerByte;
+  if (!reader->AllReadsWithinBounds() && !dparams.allow_partial_files) {
+    return JXL_FAILURE("Premature end of stream.");
+  }
+
+  size_t header_bytes = reader->TotalBitsConsumed() / kBitsPerByte;
+  size_t processed_bytes = header_bytes;
 
   Status close_ok = true;
   std::vector<std::unique_ptr<BitReader>> section_readers;
@@ -158,23 +154,21 @@ Status DecodeFrame(const DecompressParams& dparams,
     std::vector<std::unique_ptr<BitReaderScopedCloser>> section_closers;
     std::vector<FrameDecoder::SectionInfo> section_info;
     std::vector<FrameDecoder::SectionStatus> section_status;
-    size_t bytes_to_skip = 0;
     for (size_t i = 0; i < frame_decoder.NumSections(); i++) {
       size_t b = frame_decoder.SectionOffsets()[i];
       size_t e = b + frame_decoder.SectionSizes()[i];
-      bytes_to_skip += e - b;
-      size_t pos = reader->TotalBitsConsumed() / kBitsPerByte;
-      if (pos + (dparams.allow_partial_files &&
-                         frame_header.encoding == FrameEncoding::kModular
-                     ? b
-                     : e) <=
-              reader->TotalBytes() ||
+      if (header_bytes +
+                  (dparams.allow_partial_files &&
+                           frame_header.encoding == FrameEncoding::kModular
+                       ? b
+                       : e) <=
+              avail_in ||
           (i == 0 && dparams.allow_partial_files)) {
         auto br = make_unique<BitReader>(Span<const uint8_t>(
-            reader->FirstByte() + b + pos,
-            (pos + b > reader->TotalBytes()
+            next_in + header_bytes + b,
+            (header_bytes + b > avail_in
                  ? 0
-                 : std::min(reader->TotalBytes() - pos - b, e - b))));
+                 : std::min(avail_in - header_bytes - b, e - b))));
         section_info.emplace_back(FrameDecoder::SectionInfo{br.get(), i});
         section_closers.emplace_back(
             make_unique<BitReaderScopedCloser>(br.get(), &close_ok));
@@ -183,8 +177,6 @@ Status DecodeFrame(const DecompressParams& dparams,
         return JXL_FAILURE("Premature end of stream.");
       }
     }
-    // Skip over the to-be-decoded sections.
-    reader->SkipBits(kBitsPerByte * bytes_to_skip);
     section_status.resize(section_info.size());
 
     JXL_RETURN_IF_ERROR(frame_decoder.ProcessSections(
@@ -227,11 +219,13 @@ Status FrameDecoder::InitFrame(BitReader* JXL_RESTRICT br, ImageBundle* decoded,
   dec_state_->shared_storage.matrices = DequantMatrices();
 
   frame_header_.nonserialized_is_preview = is_preview;
-  size_t pos = br->TotalBitsConsumed() / kBitsPerByte;
-  Status have_frameheader =
-      br->TotalBytes() > pos && DecodeFrameHeader(br, &frame_header_);
-  JXL_RETURN_IF_ERROR(have_frameheader || allow_partial_frames);
-  if (!have_frameheader) {
+  Status status = DecodeFrameHeader(br, &frame_header_);
+  if (status.code() == StatusCode::kNotEnoughBytes) {
+    if (!allow_partial_frames) return status;
+  } else {
+    JXL_RETURN_IF_ERROR(status);
+  }
+  if (!status) {
     if (dec_state_->shared_storage.dc_frames[0].xsize() > 0) {
       // If we have a (partial) DC frame available, but we don't have the next
       // frame header (so allow_partial_frames is true), then we'll assume the
@@ -272,20 +266,23 @@ Status FrameDecoder::InitFrame(BitReader* JXL_RESTRICT br, ImageBundle* decoded,
   }
 
   // Read TOC.
-  uint64_t groups_total_size;
   const bool has_ac_global = true;
   const size_t toc_entries = NumTocEntries(num_groups, frame_dim_.num_dc_groups,
                                            num_passes, has_ac_global);
-  JXL_RETURN_IF_ERROR(ReadGroupOffsets(toc_entries, br, &section_offsets_,
-                                       &section_sizes_, &groups_total_size) ||
-                      allow_partial_frames);
+  status = ReadGroupOffsets(toc_entries, br, &section_offsets_, &section_sizes_,
+                            &section_sizes_sum_);
+  if (status.code() == StatusCode::kNotEnoughBytes) {
+    if (!allow_partial_frames) return status;
+  } else {
+    JXL_RETURN_IF_ERROR(status);
+  }
 
   JXL_DASSERT((br->TotalBitsConsumed() % kBitsPerByte) == 0);
   const size_t group_codes_begin = br->TotalBitsConsumed() / kBitsPerByte;
   JXL_DASSERT(!section_offsets_.empty());
 
   // Overflow check.
-  if (group_codes_begin + groups_total_size < group_codes_begin) {
+  if (group_codes_begin + section_sizes_sum_ < group_codes_begin) {
     return JXL_FAILURE("Invalid group codes");
   }
 
