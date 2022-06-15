@@ -42,8 +42,8 @@ Status DecodeFrameHeader(BitReader* JXL_RESTRICT reader,
 // `decoded->metadata` must already be set and must match metadata.m.
 Status DecodeFrame(const DecompressParams& dparams,
                    PassesDecoderState* dec_state, ThreadPool* JXL_RESTRICT pool,
-                   BitReader* JXL_RESTRICT reader, ImageBundle* decoded,
-                   const CodecMetadata& metadata,
+                   const uint8_t* next_in, size_t avail_in,
+                   ImageBundle* decoded, const CodecMetadata& metadata,
                    const SizeConstraints* constraints, bool is_preview = false);
 
 // TODO(veluca): implement "forced drawing".
@@ -129,6 +129,7 @@ class FrameDecoder {
   }
   const std::vector<uint32_t>& SectionSizes() const { return section_sizes_; }
   size_t NumSections() const { return section_sizes_.size(); }
+  uint64_t SumSectionSizes() const { return section_sizes_sum_; }
 
   // TODO(veluca): remove once we remove --downsampling flag.
   void SetMaxPasses(size_t max_passes) { max_passes_ = max_passes; }
@@ -304,6 +305,7 @@ class FrameDecoder {
   ThreadPool* pool_;
   std::vector<uint64_t> section_offsets_;
   std::vector<uint32_t> section_sizes_;
+  uint64_t section_sizes_sum_;
   size_t max_passes_;
   // TODO(veluca): figure out the duplication between these and dec_state_.
   FrameHeader frame_header_;

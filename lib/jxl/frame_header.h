@@ -279,7 +279,7 @@ struct Passes : public Fields {
     }
   }
 
-  uint32_t GetDownsamplingTargetForCompletedPasses(uint32_t num_p) {
+  uint32_t GetDownsamplingTargetForCompletedPasses(uint32_t num_p) const {
     if (num_p >= num_passes) return 1;
     uint32_t retval = 8;
     for (uint32_t i = 0; i < num_downsample; ++i) {

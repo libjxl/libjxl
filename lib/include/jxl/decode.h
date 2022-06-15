@@ -189,6 +189,9 @@ typedef enum {
    * "JxlDecoderProcessInput": User extensions of the codestream header. This
    * event occurs max once per image and always later than @ref
    * JXL_DEC_BASIC_INFO and earlier than any pixel data.
+   *
+   * @deprecated The decoder no longer returns this, the header extensions,
+   * if any, are available at the JXL_DEC_BASIC_INFO event.
    */
   JXL_DEC_EXTENSIONS = 0x80,
 
@@ -518,8 +521,6 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetCoalescing(JxlDecoder* dec,
  *     TODO(lode): document the input data mechanism
  * @return @ref JXL_DEC_NEED_MORE_INPUT when more input data is necessary.
  * @return @ref JXL_DEC_BASIC_INFO when basic info such as image dimensions is
- *     available and this informative event is subscribed to.
- * @return @ref JXL_DEC_EXTENSIONS when JPEG XL codestream user extensions are
  *     available and this informative event is subscribed to.
  * @return @ref JXL_DEC_COLOR_ENCODING when color profile information is
  *     available and this informative event is subscribed to.
