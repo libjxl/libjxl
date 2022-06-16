@@ -483,7 +483,7 @@ endif()  # JNI_FOUND & Java_FOUND
 endif()  # JPEGXL_ENABLE_JNI
 
 # End-to-end tests for the tools
-if(BUILD_TESTING AND JPEGXL_ENABLE_TOOLS)
+if(BUILD_TESTING AND JPEGXL_ENABLE_TOOLS AND JPEGXL_ENABLE_DEVTOOLS)
 find_program (BASH_PROGRAM bash)
 if(BASH_PROGRAM)
   add_test(
