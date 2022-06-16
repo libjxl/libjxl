@@ -22,8 +22,6 @@ namespace {
 class OpsinImageTargetTest : public hwy::TestWithParamTarget {};
 HWY_TARGET_INSTANTIATE_TEST_SUITE_P(OpsinImageTargetTest);
 
-TEST_P(OpsinImageTargetTest, MaxCubeRootError) { TestCubeRoot(); }
-
 // Convert a single linear sRGB color to xyb, using the exact image conversion
 // procedure that jpeg xl uses.
 void LinearSrgbToOpsin(float rgb_r, float rgb_g, float rgb_b,
