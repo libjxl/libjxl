@@ -82,6 +82,11 @@ class FrameDecoder {
     size_t id;
   };
 
+  struct TocEntry {
+    size_t size;
+    size_t id;
+  };
+
   enum SectionStatus {
     // Processed correctly.
     kDone = 0,
@@ -122,14 +127,8 @@ class FrameDecoder {
   // soon as the frame header is known.
   static int SavedAs(const FrameHeader& header);
 
-  // Returns offset of this section after the end of the TOC. The end of the TOC
-  // is the byte position of the bit reader after InitFrame was called.
-  const std::vector<uint64_t>& SectionOffsets() const {
-    return section_offsets_;
-  }
-  const std::vector<uint32_t>& SectionSizes() const { return section_sizes_; }
-  size_t NumSections() const { return section_sizes_.size(); }
   uint64_t SumSectionSizes() const { return section_sizes_sum_; }
+  const std::vector<TocEntry>& Toc() const { return toc_; }
 
   // TODO(veluca): remove once we remove --downsampling flag.
   void SetMaxPasses(size_t max_passes) { max_passes_ = max_passes; }
@@ -138,7 +137,7 @@ class FrameDecoder {
   // Returns whether a DC image has been decoded, accessible at low resolution
   // at passes.shared_storage.dc_storage
   bool HasDecodedDC() const { return finalized_dc_; }
-  bool HasDecodedAll() const { return NumSections() == num_sections_done_; }
+  bool HasDecodedAll() const { return toc_.size() == num_sections_done_; }
 
   size_t NumCompletePasses() const {
     return *std::min_element(decoded_passes_per_ac_group_.begin(),
@@ -303,8 +302,7 @@ class FrameDecoder {
 
   PassesDecoderState* dec_state_;
   ThreadPool* pool_;
-  std::vector<uint64_t> section_offsets_;
-  std::vector<uint32_t> section_sizes_;
+  std::vector<TocEntry> toc_;
   uint64_t section_sizes_sum_;
   size_t max_passes_;
   // TODO(veluca): figure out the duplication between these and dec_state_.
