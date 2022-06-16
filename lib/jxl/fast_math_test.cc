@@ -117,7 +117,7 @@ HWY_NOINLINE void TestCubeRoot() {
 
     // All lanes are same
     for (size_t i = 1; i < Lanes(d); ++i) {
-      EXPECT_NEAR(approx[0], approx[i], 0);
+      EXPECT_NEAR(approx[0], approx[i], 5E-7f);
     }
     EXPECT_NEAR(approx[0], expected, 8E-7f);
   }
