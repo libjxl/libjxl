@@ -200,9 +200,9 @@ HWY_AFTER_NAMESPACE();
 
 #endif  // LIB_JXL_FAST_MATH_INL_H_
 
+#if HWY_ONCE
 #ifndef FAST_MATH_ONCE
 #define FAST_MATH_ONCE
-#if HWY_ONCE
 
 namespace jxl {
 inline float FastLog2f(float f) { return HWY_STATIC_DISPATCH(FastLog2f)(f); }
@@ -214,5 +214,5 @@ inline float FastCosf(float f) { return HWY_STATIC_DISPATCH(FastCosf)(f); }
 inline float FastErff(float f) { return HWY_STATIC_DISPATCH(FastErff)(f); }
 }  // namespace jxl
 
-#endif  // HWY_ONCE
 #endif  // FAST_MATH_ONCE
+#endif  // HWY_ONCE
