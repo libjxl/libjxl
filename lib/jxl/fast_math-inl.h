@@ -200,6 +200,8 @@ HWY_AFTER_NAMESPACE();
 
 #endif  // LIB_JXL_FAST_MATH_INL_H_
 
+#ifndef FAST_MATH_ONCE
+#define FAST_MATH_ONCE
 #if HWY_ONCE
 
 namespace jxl {
@@ -213,3 +215,4 @@ inline float FastErff(float f) { return HWY_STATIC_DISPATCH(FastErff)(f); }
 }  // namespace jxl
 
 #endif  // HWY_ONCE
+#endif  // FAST_MATH_ONCE
