@@ -90,7 +90,7 @@ jobs:
       # Whether we track the stack size.
       STACK_SIZE: ${{ matrix.env_stack_size }}
       TEST_STACK_LIMIT: ${{ matrix.env_test_stack_size }}
-      WILL_RUN_TESTS: ${{ github.event_name == 'push' || (github.event_name == 'pull_request' && (matrix.test_in_pr || contains(github.event.pull_request.labels.*.names, 'CI:full'))) }}
+      WILL_RUN_TESTS: ${{ github.event_name == 'push' || (github.event_name == 'pull_request' && (matrix.test_in_pr || contains(github.event.pull_request.labels.*.name, 'CI:full'))) }}
 
     steps:
     - name: Install build deps
@@ -218,7 +218,7 @@ jobs:
         matrix.name != 'coverage' && (github.event_name == 'push' ||
         (github.event_name == 'pull_request' && (
          matrix.test_in_pr ||
-         contains(github.event.pull_request.labels.*.names, 'CI:full'))))
+         contains(github.event.pull_request.labels.*.name, 'CI:full'))))
       run: |
         STORE_IMAGES=0 ./ci.sh fast_benchmark
     # Run gbench once, just to make sure it runs, not for actual benchmarking.
@@ -259,7 +259,7 @@ jobs:
 
     env:
       BUILD_DIR: build
-      WILL_RUN_TESTS: ${{ github.event_name == 'push' || (github.event_name == 'pull_request' && (matrix.test_in_pr || contains(github.event.pull_request.labels.*.names, 'CI:full'))) }}
+      WILL_RUN_TESTS: ${{ github.event_name == 'push' || (github.event_name == 'pull_request' && (matrix.test_in_pr || contains(github.event.pull_request.labels.*.name, 'CI:full'))) }}
 
     steps:
     - name: Setup apt
@@ -445,7 +445,7 @@ jobs:
         if: |
           github.event_name == 'push' ||
           (github.event_name == 'pull_request' &&
-           contains(github.event.pull_request.labels.*.names, 'CI:full'))
+           contains(github.event.pull_request.labels.*.name, 'CI:full'))
         # LibraryCLinkageTest doesn't work in here because it needs the DLL
         # which is not installed.
         run: ctest --test-dir build --parallel 2 --output-on-failure -E LibraryCLinkageTest
@@ -540,6 +540,6 @@ jobs:
       if: |
         github.event_name == 'push' ||
         (github.event_name == 'pull_request' &&
-         contains(github.event.pull_request.labels.*.names, 'CI:full'))
+         contains(github.event.pull_request.labels.*.name, 'CI:full'))
       run: |
         ./ci.sh test
