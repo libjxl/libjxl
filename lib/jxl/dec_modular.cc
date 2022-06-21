@@ -645,6 +645,9 @@ Status ModularFrameDecoder::FinalizeDecoding(PassesDecoderState* dec_state,
   }
   if (gi.error) return JXL_FAILURE("Undoing transforms failed");
 
+  for (size_t i = 0; i < dec_state->shared->frame_dim.num_groups; i++) {
+    dec_state->render_pipeline->ClearDone(i);
+  }
   std::atomic<bool> has_error{false};
   JXL_RETURN_IF_ERROR(RunOnPool(
       pool, 0, dec_state->shared->frame_dim.num_groups,
