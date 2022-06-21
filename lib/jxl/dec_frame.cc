@@ -777,11 +777,9 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
   if (decoded_ac_global_) {
     // Mark all the AC groups that we received as not complete yet.
     for (size_t i = 0; i < ac_group_sec.size(); i++) {
-      if (desired_num_ac_passes[i] == 0 &&
-          !modular_frame_decoder_.UsesFullImage()) {
-        continue;
+      if (desired_num_ac_passes[i] != 0) {
+        dec_state_->render_pipeline->ClearDone(i);
       }
-      dec_state_->render_pipeline->ClearDone(i);
     }
 
     JXL_RETURN_IF_ERROR(RunOnPool(
@@ -851,9 +849,9 @@ Status FrameDecoder::Flush() {
     // We don't have all AC yet: force a draw of all the missing areas.
     // Mark all sections as not complete.
     for (size_t i = 0; i < decoded_passes_per_ac_group_.size(); i++) {
-      if (decoded_passes_per_ac_group_[i] == frame_header_.passes.num_passes)
-        continue;
-      dec_state_->render_pipeline->ClearDone(i);
+      if (decoded_passes_per_ac_group_[i] < frame_header_.passes.num_passes) {
+        dec_state_->render_pipeline->ClearDone(i);
+      }
     }
     std::atomic<bool> has_error{false};
     JXL_RETURN_IF_ERROR(RunOnPool(
