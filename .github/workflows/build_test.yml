@@ -81,6 +81,8 @@ jobs:
             # TODO(eustas): investigate, why static brotli library is not found.
             skip_install: true
             apt_pkgs: clang-5.0
+            # For Clang <= 6, highway only supports scalar
+            cxxflags: -DHWY_COMPILE_ONLY_SCALAR
             cmake_args: >-
               -DCMAKE_C_COMPILER=clang-5.0 -DCMAKE_CXX_COMPILER=clang++-5.0
               -DJPEGXL_ENABLE_PLUGINS=OFF
