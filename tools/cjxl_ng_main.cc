@@ -798,7 +798,6 @@ int main(int argc, char** argv) {
       }
 
       if (!ppf.icc.empty()) {
-        JxlEncoderSetICCProfile(jxl_encoder, ppf.icc.data(), ppf.icc.size());
         if (JXL_ENC_SUCCESS != JxlEncoderSetICCProfile(jxl_encoder,
                                                        ppf.icc.data(),
                                                        ppf.icc.size())) {
