@@ -460,10 +460,10 @@ int main(int argc, char** argv) {
   if (decode_to_pixels) {
     std::unique_ptr<jxl::extras::Encoder> encoder =
         jxl::extras::Encoder::FromExtension(extension);
-  if (encoder == nullptr) {
-    fprintf(stderr, "can't decode to the file extension '%s'\n", extension);
-    return EXIT_FAILURE;
-  }
+    if (encoder == nullptr) {
+      fprintf(stderr, "can't decode to the file extension '%s'\n", extension);
+      return EXIT_FAILURE;
+    }
 #if JPEGXL_ENABLE_JPEG
     std::ostringstream os;
     os << FLAGS_jpeg_quality;
