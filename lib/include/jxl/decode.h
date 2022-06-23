@@ -746,22 +746,15 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetColorAsICCProfile(
 
 /** Sets the color profile to use for @ref JXL_COLOR_PROFILE_TARGET_DATA for the
  * special case when the decoder has a choice. This only has effect for a JXL
- * image where uses_original_profile is false, and the original color profile is
- * encoded as an ICC color profile rather than a JxlColorEncoding with known
- * enum values. In most other cases (uses uses_original_profile is true, or the
- * color profile is already given as a JxlColorEncoding), this setting is
- * ignored and the decoder uses a profile related to the image.
+ * image where uses_original_profile is false. If uses_original_profile is true,
+ * this setting is ignored and the decoder uses a profile related to the image.
  * No matter what, the @ref JXL_COLOR_PROFILE_TARGET_DATA must still be queried
  * to know the actual data format of the decoded pixels after decoding.
  *
- * The intended use case of this function is for cases where you are using
- * a color management system to parse the original ICC color profile
- * (@ref JXL_COLOR_PROFILE_TARGET_ORIGINAL), from this you know that the ICC
- * profile represents one of the color profiles supported by JxlColorEncoding
- * (such as sRGB, PQ or HLG): in that case it is beneficial (but not necessary)
- * to use @ref JxlDecoderSetPreferredColorProfile to match the parsed profile.
  * The JXL decoder has no color management system built in, but can convert XYB
- * color to any of the ones supported by JxlColorEncoding.
+ * color to any of the ones supported by JxlColorEncoding. Note that if the
+ * requested color encoding has a narrower gamut, or the white points differ,
+ * then the resulting image can have significant color distortion.
  *
  * Can only be set after the @ref JXL_DEC_COLOR_ENCODING event occurred and
  * before any other event occurred, and can affect the result of @ref

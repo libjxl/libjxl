@@ -21,7 +21,7 @@ namespace jxl {
 // Tone maps the image if appropriate. It must be in linear space and
 // `output_encoding_info.luminances` must contain the luminance for the
 // primaries of that space. It must also be encoded such that (1, 1, 1)
-// represents `output_encoding_info.intensity_target` nits, unless
+// represents `output_encoding_info.orig_intensity_target` nits, unless
 // `output_encoding_info.color_encoding.tf.IsPQ()`, in which case (1, 1, 1) must
 // represent 10000 nits. This corresponds to what XYBStage outputs. After this
 // stage, (1, 1, 1) will represent

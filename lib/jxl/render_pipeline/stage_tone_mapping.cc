@@ -24,8 +24,12 @@ class ToneMappingStage : public RenderPipelineStage {
   explicit ToneMappingStage(OutputEncodingInfo output_encoding_info)
       : RenderPipelineStage(RenderPipelineStage::Settings()),
         output_encoding_info_(std::move(output_encoding_info)) {
+    if (output_encoding_info_.desired_intensity_target ==
+        output_encoding_info_.orig_intensity_target) {
+      // No tone mapping requested.
+      return;
+    }
     if (output_encoding_info_.orig_color_encoding.tf.IsPQ() &&
-        0 < output_encoding_info_.desired_intensity_target &&
         output_encoding_info_.desired_intensity_target <
             output_encoding_info_.orig_intensity_target) {
       tone_mapper_storage_ = AllocateArray(sizeof(ToneMapper));

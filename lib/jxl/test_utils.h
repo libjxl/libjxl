@@ -220,6 +220,7 @@ static inline ColorEncoding ColorEncodingFromDescriptor(
   c.primaries = desc.primaries;
   c.tf.SetTransferFunction(desc.tf);
   c.rendering_intent = desc.rendering_intent;
+  JXL_CHECK(c.CreateICC());
   return c;
 }
 

@@ -146,10 +146,8 @@ Status InitializePassesEncoder(const Image3F& opsin, const JxlCmsInterface& cms,
     ImageBundle decoded(&shared.metadata->m);
     std::unique_ptr<PassesDecoderState> dec_state =
         jxl::make_unique<PassesDecoderState>();
-    JXL_CHECK(dec_state->output_encoding_info.Set(
-        *shared.metadata,
-        ColorEncoding::LinearSRGB(shared.metadata->m.color_encoding.IsGray()),
-        /*desired_intensity_target=*/0));
+    JXL_CHECK(
+        dec_state->output_encoding_info.SetFromMetadata(*shared.metadata));
     const uint8_t* frame_start = encoded.data();
     size_t encoded_size = encoded.size();
     for (int i = 0; i <= cparams.progressive_dc; ++i) {
