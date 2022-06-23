@@ -22,6 +22,7 @@
 #include "jxl/thread_parallel_runner.h"
 #include "jxl/thread_parallel_runner_cxx.h"
 #include "jxl/types.h"
+#include "lib/extras/dec/color_description.h"
 #include "lib/extras/dec/decode.h"
 #include "lib/extras/enc/encode.h"
 #include "lib/extras/enc/pnm.h"
@@ -43,9 +44,9 @@ DEFINE_int32(bits_per_sample, 0, "0 = original (input) bit depth");
 DEFINE_double(display_nits, 0.,
               "tone map the image to the peak display luminance given");
 
-// TODO(firsching): wire this up; consider making empty string the default.
-DEFINE_string(color_space, "RGB_D65_SRG_Rel_Lin",
-              "defaults to original (input) color space");
+DEFINE_string(color_space, "",
+              "Sets the output color space of the image. This flag has no "
+              "effect if the image is not XYB encoded.");
 
 DEFINE_uint32(downsampling, 0,
               "If set and the input JXL stream is progressive and contains "
@@ -286,9 +287,26 @@ bool DecompressJxlToPackedPixelFile(
       }
       //  TODO(firsching): handle extra channels
     } else if (status == JXL_DEC_COLOR_ENCODING) {
+      if (!FLAGS_color_space.empty()) {
+        if (ppf->info.uses_original_profile) {
+          fprintf(stderr,
+                  "Warning: --color_space ignored because the image is "
+                  "not XYB encoded.\n");
+        } else {
+          JxlColorEncoding color_encoding;
+          if (!jxl::ParseDescription(FLAGS_color_space, &color_encoding)) {
+            fprintf(stderr, "Failed to parse color space.\n");
+            return false;
+          }
+          if (JXL_DEC_SUCCESS !=
+              JxlDecoderSetPreferredColorProfile(dec, &color_encoding)) {
+            fprintf(stderr, "Failed to set color space.\n");
+            return false;
+          }
+        }
+      }
       size_t icc_size = 0;
-      // TODO(firsching) handle other targets as well.
-      JxlColorProfileTarget target = JXL_COLOR_PROFILE_TARGET_ORIGINAL;
+      JxlColorProfileTarget target = JXL_COLOR_PROFILE_TARGET_DATA;
       if (JXL_DEC_SUCCESS !=
           JxlDecoderGetICCProfileSize(dec, &format, target, &icc_size)) {
         fprintf(stderr, "JxlDecoderGetICCProfileSize failed\n");

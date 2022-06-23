@@ -155,7 +155,7 @@ std::unique_ptr<RenderPipelineStage> GetFromLinearStage(
   } else if (output_encoding_info.color_encoding.tf.IsHLG()) {
     return MakeFromLinearStage(
         OpHlg(output_encoding_info.luminances,
-              output_encoding_info.orig_intensity_target));
+              output_encoding_info.desired_intensity_target));
   } else if (output_encoding_info.color_encoding.tf.Is709()) {
     return MakeFromLinearStage(MakePerChannelOp(Op709()));
   } else if (output_encoding_info.color_encoding.tf.IsGamma() ||

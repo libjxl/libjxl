@@ -772,11 +772,8 @@ void RoundtripPatchFrame(Image3F* reference_frame,
   if (subtract) {
     ImageBundle decoded(&state->shared.metadata->m);
     PassesDecoderState dec_state;
-    JXL_CHECK(dec_state.output_encoding_info.Set(
-        *state->shared.metadata,
-        ColorEncoding::LinearSRGB(
-            state->shared.metadata->m.color_encoding.IsGray()),
-        /*desired_intensity_target=*/0));
+    JXL_CHECK(dec_state.output_encoding_info.SetFromMetadata(
+        *state->shared.metadata));
     const uint8_t* frame_start = encoded.data();
     size_t encoded_size = encoded.size();
     JXL_CHECK(DecodeFrame({}, &dec_state, pool, frame_start, encoded_size,

@@ -430,8 +430,6 @@ struct JxlDecoderStruct {
 
   jxl::CodecMetadata metadata;
   std::unique_ptr<jxl::ImageBundle> ib;
-  // ColorEncoding to use for xyb encoded image with ICC profile.
-  jxl::ColorEncoding default_enc;
 
   std::unique_ptr<jxl::PassesDecoderState> passes_state;
   std::unique_ptr<jxl::FrameDecoder> frame_dec;
@@ -1061,11 +1059,12 @@ JxlDecoderStatus JxlDecoderReadAllHeaders(JxlDecoder* dec) {
     dec->passes_state.reset(new jxl::PassesDecoderState());
   }
 
-  dec->default_enc =
-      ColorEncoding::LinearSRGB(dec->metadata.m.color_encoding.IsGray());
-
-  JXL_API_RETURN_IF_ERROR(dec->passes_state->output_encoding_info.Set(
-      dec->metadata, dec->default_enc, dec->desired_intensity_target));
+  JXL_API_RETURN_IF_ERROR(
+      dec->passes_state->output_encoding_info.SetFromMetadata(dec->metadata));
+  if (dec->desired_intensity_target > 0) {
+    dec->passes_state->output_encoding_info.desired_intensity_target =
+        dec->desired_intensity_target;
+  }
 
   return JXL_DEC_SUCCESS;
 }
@@ -1385,7 +1384,6 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec) {
     if (dec->frame_stage == FrameStage::kTOC) {
       dec->frame_dec->SetRenderSpotcolors(dec->render_spotcolors);
       dec->frame_dec->SetCoalescing(dec->coalescing);
-      dec->frame_dec->SetDesiredIntensityTarget(dec->desired_intensity_target);
 
       if (!dec->preview_frame &&
           (dec->events_wanted & JXL_DEC_FRAME_PROGRESSION)) {
@@ -2782,10 +2780,11 @@ JxlDecoderStatus JxlDecoderSetPreferredColorProfile(
     return JXL_API_ERROR("only RGB or grayscale output supported");
   }
 
-  JXL_API_RETURN_IF_ERROR(ConvertExternalToInternalColorEncoding(
-      *color_encoding, &dec->default_enc));
-  JXL_API_RETURN_IF_ERROR(dec->passes_state->output_encoding_info.Set(
-      dec->metadata, dec->default_enc, dec->desired_intensity_target));
+  jxl::ColorEncoding c_out;
+  JXL_API_RETURN_IF_ERROR(
+      ConvertExternalToInternalColorEncoding(*color_encoding, &c_out));
+  JXL_API_RETURN_IF_ERROR(
+      dec->passes_state->output_encoding_info.MaybeSetColorEncoding(c_out));
   return JXL_DEC_SUCCESS;
 }
 
