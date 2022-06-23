@@ -263,7 +263,7 @@ jobs:
             git
             mingw-w64-${{ matrix.arch }}-brotli
             mingw-w64-${{ matrix.arch }}-cmake
-            mingw-w64-${{ matrix.arch }}-clang
+            mingw-w64-${{ matrix.arch }}-gcc
             mingw-w64-${{ matrix.arch }}-gflags
             mingw-w64-${{ matrix.arch }}-giflib
             mingw-w64-${{ matrix.arch }}-gtest
@@ -278,7 +278,7 @@ jobs:
         run: |
           cmake \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_CXX_FLAGS="-DHWY_DISABLED_TARGETS=\"HWY_AVX2|HWY_AVX3\"" \
+            -DCMAKE_CXX_FLAGS="-DHWY_DISABLED_TARGETS=\"HWY_AVX2|HWY_AVX3|HWY_EMU128\"" \
             -DJPEGXL_ENABLE_JNI=OFF \
             -DJPEGXL_ENABLE_MANPAGES=OFF \
             -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
