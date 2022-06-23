@@ -59,7 +59,7 @@ std::unique_ptr<Encoder> Encoder::FromExtension(std::string extension) {
       extension.begin(), extension.end(), extension.begin(),
       [](char c) { return std::tolower(c, std::locale::classic()); });
 #if JPEGXL_ENABLE_APNG
-  if (extension == ".png") return GetAPNGEncoder();
+  if (extension == ".png" || extension == ".apng") return GetAPNGEncoder();
 #endif
 
 #if JPEGXL_ENABLE_JPEG
