@@ -28,6 +28,9 @@ struct EncodedImage {
   // more sequential bitstreams.
   std::vector<std::vector<uint8_t>> bitstreams;
 
+  // For each extra channel one or more sequential bitstreams.
+  std::vector<std::vector<std::vector<uint8_t>>> extra_channel_bitstreams;
+
   // If the format does not support embedding color profiles into the bitstreams
   // above, it will be present here, to be written as a separate file. If it
   // does support them, this field will be empty.

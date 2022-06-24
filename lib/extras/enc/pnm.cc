@@ -36,14 +36,28 @@ class PNMEncoder : public Encoder {
  public:
   Status Encode(const PackedPixelFile& ppf, EncodedImage* encoded_image,
                 ThreadPool* pool = nullptr) const override {
+    if (!ppf.metadata.exif.empty() || !ppf.metadata.iptc.empty() ||
+        !ppf.metadata.jumbf.empty() || !ppf.metadata.xmp.empty()) {
+      JXL_WARNING("PNM encoder ignoring metadata - use a different codec");
+    }
     encoded_image->icc = ppf.icc;
     encoded_image->bitstreams.clear();
     encoded_image->bitstreams.reserve(ppf.frames.size());
-    for (size_t i = 0; i < ppf.frames.size(); ++i) {
+    for (const auto& frame : ppf.frames) {
       encoded_image->bitstreams.emplace_back();
-      JXL_RETURN_IF_ERROR(EncodeImagePNM(ppf, ppf.info.bits_per_sample, pool,
-                                         /*frame_index=*/i,
+      JXL_RETURN_IF_ERROR(EncodeImagePNM(frame.color, ppf.info.orientation,
+                                         ppf.info.bits_per_sample,
                                          &encoded_image->bitstreams.back()));
+    }
+    for (size_t i = 0; i < ppf.extra_channels_info.size(); ++i) {
+      encoded_image->extra_channel_bitstreams.emplace_back();
+      auto& ec_bitstreams = encoded_image->extra_channel_bitstreams.back();
+      for (const auto& frame : ppf.frames) {
+        ec_bitstreams.emplace_back();
+        JXL_RETURN_IF_ERROR(
+            EncodeImagePNM(frame.extra_channels[i], ppf.info.orientation,
+                           ppf.info.bits_per_sample, &ec_bitstreams.back()));
+      }
     }
     return true;
   }
@@ -100,15 +114,15 @@ class PGMEncoder : public PPMEncoder {
   }
 };
 
-Status EncodeHeader(const PackedPixelFile& ppf, const size_t bits_per_sample,
-                    const bool little_endian, char* header,
-                    int* JXL_RESTRICT chars_written) {
-  bool is_gray = ppf.info.num_color_channels <= 2;
-  size_t oriented_xsize =
-      ppf.info.orientation <= 4 ? ppf.info.xsize : ppf.info.ysize;
-  size_t oriented_ysize =
-      ppf.info.orientation <= 4 ? ppf.info.ysize : ppf.info.xsize;
-  if (ppf.info.alpha_bits > 0) {  // PAM
+Status EncodeHeader(const PackedImage& image, JxlOrientation orientation,
+                    size_t bits_per_sample, bool little_endian, char* header,
+                    int* chars_written) {
+  size_t num_channels = image.format.num_channels;
+  bool is_gray = num_channels <= 2;
+  bool has_alpha = num_channels == 2 || num_channels == 4;
+  size_t oriented_xsize = orientation <= 4 ? image.xsize : image.ysize;
+  size_t oriented_ysize = orientation <= 4 ? image.ysize : image.xsize;
+  if (has_alpha) {  // PAM
     if (bits_per_sample > 16) return JXL_FAILURE("PNM cannot have > 16 bits");
     const uint32_t max_val = (1U << bits_per_sample) - 1;
     *chars_written =
@@ -176,34 +190,20 @@ std::unique_ptr<Encoder> GetPGMEncoder() {
   return jxl::make_unique<PGMEncoder>();
 }
 
-Status EncodeImagePNM(const PackedPixelFile& ppf, size_t bits_per_sample,
-                      ThreadPool* pool, size_t frame_index,
-                      std::vector<uint8_t>* bytes) {
-  const bool floating_point = bits_per_sample > 16;
+Status EncodeImagePNM(const PackedImage& image, JxlOrientation orientation,
+                      size_t bits_per_sample, std::vector<uint8_t>* bytes) {
   // Choose native for PFM; PGM/PPM require big-endian
-  const JxlEndianness endianness =
-      floating_point ? JXL_NATIVE_ENDIAN : JXL_BIG_ENDIAN;
-  if (!ppf.metadata.exif.empty() || !ppf.metadata.iptc.empty() ||
-      !ppf.metadata.jumbf.empty() || !ppf.metadata.xmp.empty()) {
-    JXL_WARNING("PNM encoder ignoring metadata - use a different codec");
-  }
-
+  bool is_little_endian = bits_per_sample > 16 && IsLittleEndian();
   char header[kMaxHeaderSize];
   int header_size = 0;
-  bool is_little_endian = endianness == JXL_LITTLE_ENDIAN ||
-                          (endianness == JXL_NATIVE_ENDIAN && IsLittleEndian());
-  JXL_RETURN_IF_ERROR(EncodeHeader(ppf, bits_per_sample, is_little_endian,
-                                   header, &header_size));
-  bytes->resize(static_cast<size_t>(header_size) +
-                ppf.frames[frame_index].color.pixels_size);
+  JXL_RETURN_IF_ERROR(EncodeHeader(image, orientation, bits_per_sample,
+                                   is_little_endian, header, &header_size));
+  bytes->resize(static_cast<size_t>(header_size) + image.pixels_size);
   memcpy(bytes->data(), header, static_cast<size_t>(header_size));
-  memcpy(bytes->data() + header_size, ppf.frames[frame_index].color.pixels(),
-         ppf.frames[frame_index].color.pixels_size);
-  if (floating_point) {
+  memcpy(bytes->data() + header_size, image.pixels(), image.pixels_size);
+  if (bits_per_sample > 16) {
     VerticallyFlipImage(reinterpret_cast<float*>(bytes->data() + header_size),
-                        ppf.frames[frame_index].color.xsize,
-                        ppf.frames[frame_index].color.ysize,
-                        ppf.info.num_color_channels);
+                        image.xsize, image.ysize, image.format.num_channels);
   }
 
   return true;
