@@ -137,6 +137,30 @@ bool WriteFile(const char* filename, const std::vector<uint8_t>& bytes) {
   return true;
 }
 
+std::string Filename(const std::string& base, const std::string& extension,
+                     int layer_index, int frame_index, int num_layers,
+                     int num_frames) {
+  auto digits = [](int n) { return 1 + static_cast<int>(std::log10(n)); };
+  std::string out = base;
+  if (num_frames > 1) {
+    std::vector<char> buf(2 + digits(num_frames));
+    snprintf(buf.data(), buf.size(), "-%0*d", digits(num_frames), frame_index);
+    out.append(buf.data());
+  }
+  if (num_layers > 1) {
+    std::vector<char> buf(4 + digits(num_layers));
+    snprintf(buf.data(), buf.size(), "-ec%0*d", digits(num_layers),
+             layer_index);
+    out.append(buf.data());
+  }
+  if (extension == ".ppm" && layer_index > 0) {
+    out.append(".pgm");
+  } else {
+    out.append(extension);
+  }
+  return out;
+}
+
 bool DecompressJxlReconstructJPEG(const std::vector<uint8_t>& compressed,
                                   JxlDecoder* dec, void* runner,
                                   std::vector<uint8_t>* jpeg_bytes,
@@ -220,6 +244,58 @@ bool DecompressJxlReconstructJPEG(const std::vector<uint8_t>& compressed,
   return true;
 }
 
+struct BoxProcessor {
+  BoxProcessor(JxlDecoder* dec) : dec_(dec) { Reset(); }
+
+  void InitializeOutput(std::vector<uint8_t>* out) {
+    box_data_ = out;
+    AddMoreOutput();
+  }
+
+  bool AddMoreOutput() {
+    Flush();
+    static const size_t kBoxOutputChunkSize = 1 << 16;
+    box_data_->resize(box_data_->size() + kBoxOutputChunkSize);
+    next_out_ = box_data_->data() + total_size_;
+    avail_out_ = box_data_->size() - total_size_;
+    if (JXL_DEC_SUCCESS !=
+        JxlDecoderSetBoxBuffer(dec_, next_out_, avail_out_)) {
+      fprintf(stderr, "JxlDecoderSetBoxBuffer failed\n");
+      return false;
+    }
+    return true;
+  }
+
+  void FinalizeOutput() {
+    if (box_data_ == nullptr) return;
+    Flush();
+    box_data_->resize(total_size_);
+    Reset();
+  }
+
+ private:
+  JxlDecoder* dec_;
+  std::vector<uint8_t>* box_data_;
+  uint8_t* next_out_;
+  size_t avail_out_;
+  size_t total_size_;
+
+  void Reset() {
+    box_data_ = nullptr;
+    next_out_ = nullptr;
+    avail_out_ = 0;
+    total_size_ = 0;
+  }
+  void Flush() {
+    if (box_data_ == nullptr) return;
+    size_t remaining = JxlDecoderReleaseBoxBuffer(dec_);
+    size_t bytes_written = avail_out_ - remaining;
+    next_out_ += bytes_written;
+    avail_out_ -= bytes_written;
+    total_size_ += bytes_written;
+  }
+};
+
 bool DecompressJxlToPackedPixelFile(
     const std::vector<uint8_t>& compressed,
     const std::vector<JxlPixelFormat>& accepted_formats, JxlDecoder* dec,
@@ -232,7 +308,7 @@ bool DecompressJxlToPackedPixelFile(
     return false;
   }
   int events = (JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING | JXL_DEC_FRAME |
-                JXL_DEC_FULL_IMAGE);
+                JXL_DEC_FULL_IMAGE | JXL_DEC_BOX);
   if (FLAGS_downsampling > 1) {
     events |= JXL_DEC_FRAME_PROGRESSION;
     JxlDecoderSetProgressiveDetail(dec, JxlProgressiveDetail::kLastPasses);
@@ -252,16 +328,23 @@ bool DecompressJxlToPackedPixelFile(
       JXL_DEC_SUCCESS !=
           JxlDecoderSetDesiredIntensityTarget(dec, FLAGS_display_nits)) {
     fprintf(stderr, "Decoder failed to set desired intensity target\n");
-    return EXIT_FAILURE;
+    return false;
   }
-  // TODO(firsching): handle boxes as well (exif, iptc, jumbf and xmp).
-  bool is_last_frame = false;
+  if (JXL_DEC_SUCCESS != JxlDecoderSetDecompressBoxes(dec, JXL_TRUE)) {
+    fprintf(stderr, "JxlDecoderSetDecompressBoxes failed\n");
+    return false;
+  }
+  bool codestream_done = false;
+  BoxProcessor boxes(dec);
   for (;;) {
     JxlDecoderStatus status = JxlDecoderProcessInput(dec);
     if (status == JXL_DEC_ERROR) {
       fprintf(stderr, "Failed to decode image\n");
       return false;
     } else if (status == JXL_DEC_NEED_MORE_INPUT) {
+      if (codestream_done) {
+        break;
+      }
       if (FLAGS_allow_partial_files) {
         if (JXL_DEC_SUCCESS != JxlDecoderFlushImage(dec)) {
           fprintf(stderr,
@@ -275,6 +358,28 @@ bool DecompressJxlToPackedPixelFile(
               "Input file is truncated and --allow_partial_files was "
               "not used\n");
       return false;
+    } else if (status == JXL_DEC_BOX) {
+      boxes.FinalizeOutput();
+      JxlBoxType box_type;
+      if (JXL_DEC_SUCCESS != JxlDecoderGetBoxType(dec, box_type, JXL_TRUE)) {
+        fprintf(stderr, "JxlDecoderGetBoxType failed\n");
+        return false;
+      }
+      std::vector<uint8_t>* box_data = nullptr;
+      if (memcmp(box_type, "Exif", 4) == 0) {
+        box_data = &ppf->metadata.exif;
+      } else if (memcmp(box_type, "iptc", 4) == 0) {
+        box_data = &ppf->metadata.iptc;
+      } else if (memcmp(box_type, "jumb", 4) == 0) {
+        box_data = &ppf->metadata.jumbf;
+      } else if (memcmp(box_type, "xml ", 4) == 0) {
+        box_data = &ppf->metadata.xmp;
+      }
+      if (box_data) {
+        boxes.InitializeOutput(box_data);
+      }
+    } else if (status == JXL_DEC_BOX_NEED_MORE_OUTPUT) {
+      boxes.AddMoreOutput();
     } else if (status == JXL_DEC_BASIC_INFO) {
       if (JXL_DEC_SUCCESS != JxlDecoderGetBasicInfo(dec, &ppf->info)) {
         fprintf(stderr, "JxlDecoderGetBasicInfo failed\n");
@@ -285,7 +390,28 @@ bool DecompressJxlToPackedPixelFile(
         fprintf(stderr, "SelectFormat failed\n");
         return false;
       }
-      //  TODO(firsching): handle extra channels
+      bool have_alpha = (format.num_channels == 2 || format.num_channels == 4);
+      bool alpha_found = false;
+      for (uint32_t i = 0; i < ppf->info.num_extra_channels; ++i) {
+        JxlExtraChannelInfo eci;
+        if (JXL_DEC_SUCCESS != JxlDecoderGetExtraChannelInfo(dec, i, &eci)) {
+          fprintf(stderr, "JxlDecoderGetExtraChannelInfo failed\n");
+          return false;
+        }
+        if (eci.type == JXL_CHANNEL_ALPHA && have_alpha && !alpha_found) {
+          // Skip the first alpha channels because it is already present in the
+          // interleaved image.
+          alpha_found = true;
+          continue;
+        }
+        std::string name(eci.name_length + 1, 0);
+        if (JXL_DEC_SUCCESS !=
+            JxlDecoderGetExtraChannelName(dec, i, &name[0], name.size())) {
+          fprintf(stderr, "JxlDecoderGetExtraChannelName failed\n");
+          return false;
+        }
+        ppf->extra_channels_info.push_back({eci, i, name});
+      }
     } else if (status == JXL_DEC_COLOR_ENCODING) {
       if (!FLAGS_color_space.empty()) {
         if (ppf->info.uses_original_profile) {
@@ -329,13 +455,17 @@ bool DecompressJxlToPackedPixelFile(
       }
     } else if (status == JXL_DEC_FRAME) {
       jxl::extras::PackedFrame frame(ppf->info.xsize, ppf->info.ysize, format);
-      ppf->frames.emplace_back(std::move(frame));
-      JxlFrameHeader frame_header;
-      if (JXL_DEC_SUCCESS != JxlDecoderGetFrameHeader(dec, &frame_header)) {
+      if (JXL_DEC_SUCCESS != JxlDecoderGetFrameHeader(dec, &frame.frame_info)) {
         fprintf(stderr, "JxlDecoderGetFrameHeader failed\n");
         return false;
       }
-      is_last_frame = frame_header.is_last;
+      frame.name.resize(frame.frame_info.name_length + 1, 0);
+      if (JXL_DEC_SUCCESS !=
+          JxlDecoderGetFrameName(dec, &frame.name[0], frame.name.size())) {
+        fprintf(stderr, "JxlDecoderGetFrameName failed\n");
+        return false;
+      }
+      ppf->frames.emplace_back(std::move(frame));
     } else if (status == JXL_DEC_FRAME_PROGRESSION) {
       size_t downsampling = JxlDecoderGetIntendedDownsamplingRatio(dec);
       if (downsampling <= FLAGS_downsampling) {
@@ -343,7 +473,7 @@ bool DecompressJxlToPackedPixelFile(
           fprintf(stderr, "JxlDecoderFlushImage failed\n");
           return false;
         }
-        if (is_last_frame) {
+        if (ppf->frames.back().frame_info.is_last) {
           break;
         }
         if (JXL_DEC_SUCCESS != JxlDecoderSkipCurrentFrame(dec)) {
@@ -358,43 +488,66 @@ bool DecompressJxlToPackedPixelFile(
         fprintf(stderr, "JxlDecoderImageOutBufferSize failed\n");
         return false;
       }
-      if (buffer_size != ppf->frames.back().color.pixels_size) {
+      jxl::extras::PackedFrame& frame = ppf->frames.back();
+      if (buffer_size != frame.color.pixels_size) {
         fprintf(stderr, "Invalid out buffer size %" PRIuS " %" PRIuS "\n",
-                buffer_size, ppf->frames.back().color.pixels_size);
+                buffer_size, frame.color.pixels_size);
         return false;
       }
-
       auto callback = [](void* opaque, size_t x, size_t y, size_t num_pixels,
                          const void* pixels) {
-        jxl::extras::PackedPixelFile* ppf =
-            reinterpret_cast<jxl::extras::PackedPixelFile*>(opaque);
-        uint8_t* pixels_buffer =
-            reinterpret_cast<uint8_t*>(ppf->frames.back().color.pixels());
-        size_t sample_size = ppf->frames.back().color.format.num_channels *
-                             ppf->frames.back().color.BitsPerChannel(
-                                 ppf->frames.back().color.format.data_type) /
-                             8;
-        // TODO(firsching): take color profile into account and transform if
-        // needed here.
-        memcpy(pixels_buffer +
-                   (ppf->frames.back().color.stride * y + sample_size * x),
-               pixels, num_pixels * sample_size);
+        auto* ppf = reinterpret_cast<jxl::extras::PackedPixelFile*>(opaque);
+        jxl::extras::PackedImage& color = ppf->frames.back().color;
+        uint8_t* pixels_buffer = reinterpret_cast<uint8_t*>(color.pixels());
+        size_t sample_size = color.pixel_stride();
+        memcpy(pixels_buffer + (color.stride * y + sample_size * x), pixels,
+               num_pixels * sample_size);
       };
       if (JXL_DEC_SUCCESS !=
           JxlDecoderSetImageOutCallback(dec, &format, callback, ppf)) {
         fprintf(stderr, "JxlDecoderSetImageOutCallback failed\n");
         return false;
       }
+      JxlPixelFormat ec_format = format;
+      ec_format.num_channels = 1;
+      for (const auto& eci : ppf->extra_channels_info) {
+        frame.extra_channels.emplace_back(jxl::extras::PackedImage(
+            ppf->info.xsize, ppf->info.ysize, ec_format));
+        auto& ec = frame.extra_channels.back();
+        size_t buffer_size;
+        if (JXL_DEC_SUCCESS != JxlDecoderExtraChannelBufferSize(
+                                   dec, &ec_format, &buffer_size, eci.index)) {
+          fprintf(stderr, "JxlDecoderExtraChannelBufferSize failed\n");
+          return false;
+        }
+        if (buffer_size != ec.pixels_size) {
+          fprintf(stderr,
+                  "Invalid extra channel buffer size"
+                  " %" PRIuS " %" PRIuS "\n",
+                  buffer_size, ec.pixels_size);
+          return false;
+        }
+        if (JXL_DEC_SUCCESS !=
+            JxlDecoderSetExtraChannelBuffer(dec, &ec_format, ec.pixels(),
+                                            buffer_size, eci.index)) {
+          fprintf(stderr, "JxlDecoderSetExtraChannelBuffer failed\n");
+          return false;
+        }
+      }
     } else if (status == JXL_DEC_SUCCESS) {
       // Decoding finished successfully.
       break;
     } else if (status == JXL_DEC_FULL_IMAGE) {
+      if (ppf->frames.back().frame_info.is_last) {
+        codestream_done = true;
+      }
     } else {
       fprintf(stderr, "Error: unexpected status: %d\n",
               static_cast<int>(status));
       return false;
     }
   }
+  boxes.FinalizeOutput();
   return true;
 }
 
@@ -511,19 +664,17 @@ int main(int argc, char** argv) {
       fprintf(stderr, "Encode failed\n");
       return EXIT_FAILURE;
     }
-    const int digits =
-        1 + static_cast<int>(std::log10(std::max(
-                1, static_cast<int>(encoded_image.bitstreams.size() - 1))));
-    std::vector<char> output_filename;
-    output_filename.resize(base.size() + 1 + digits + strlen(extension) + 1);
-    for (size_t i = 0; i < encoded_image.bitstreams.size(); i++) {
-      snprintf(output_filename.data(), output_filename.size(), "%s-%0*zu%s",
-               base.c_str(), digits, i, extension);
-      if (!WriteFile(encoded_image.bitstreams.size() > 1
-                         ? output_filename.data()
-                         : filename_out,
-                     encoded_image.bitstreams[i])) {
-        return EXIT_FAILURE;
+    size_t nlayers = 1 + encoded_image.extra_channel_bitstreams.size();
+    size_t nframes = encoded_image.bitstreams.size();
+    for (size_t i = 0; i < nlayers; ++i) {
+      for (size_t j = 0; j < nframes; ++j) {
+        const std::vector<uint8_t>& bitstream =
+            (i == 0 ? encoded_image.bitstreams[j]
+                    : encoded_image.extra_channel_bitstreams[i - 1][j]);
+        std::string fn = Filename(base, extension, i, j, nlayers, nframes);
+        if (!WriteFile(fn.c_str(), bitstream)) {
+          return EXIT_FAILURE;
+        }
       }
     }
   }
