@@ -729,7 +729,7 @@ TEST(RoundtripTest, TestICCProfile) {
   jxl::test::JxlBasicInfoSetFromPixelFormat(&basic_info, &format);
   basic_info.xsize = xsize;
   basic_info.ysize = ysize;
-  basic_info.uses_original_profile = JXL_FALSE;
+  basic_info.uses_original_profile = JXL_TRUE;
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc, &basic_info));
 
   EXPECT_EQ(JXL_ENC_SUCCESS,

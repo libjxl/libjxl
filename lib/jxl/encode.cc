@@ -627,6 +627,11 @@ JxlEncoderStatus JxlEncoderSetICCProfile(JxlEncoder* enc,
   if (!enc->intensity_target_set) {
     jxl::SetIntensityTarget(&enc->metadata.m);
   }
+
+  if (!enc->basic_info.uses_original_profile) {
+    enc->metadata.m.color_encoding.DecideIfWantICC();
+  }
+
   return JXL_ENC_SUCCESS;
 }
 
