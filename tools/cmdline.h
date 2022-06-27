@@ -13,8 +13,6 @@
 #include <string>
 #include <vector>
 
-#include "lib/jxl/base/status.h"
-
 namespace jpegxl {
 namespace tools {
 
@@ -97,7 +95,6 @@ class CommandLineParser {
   }
 
   const CmdOptionInterface* GetOption(OptionId id) const {
-    JXL_ASSERT(id < options_.size());
     return options_[id].get();
   }
 
@@ -315,6 +312,72 @@ class CommandLineParser {
   // stderr.
   bool help_ = false;
 };
+
+//
+// Common parsers for AddOptionValue and AddOptionFlag
+//
+
+static inline bool ParseSigned(const char* arg, int* out) {
+  char* end;
+  *out = static_cast<int>(strtol(arg, &end, 0));
+  if (end[0] != '\0') {
+    fprintf(stderr, "Unable to interpret as signed integer: %s.\n", arg);
+    return false;
+  }
+  return true;
+}
+
+static inline bool ParseUnsigned(const char* arg, size_t* out) {
+  char* end;
+  *out = static_cast<size_t>(strtoull(arg, &end, 0));
+  if (end[0] != '\0') {
+    fprintf(stderr, "Unable to interpret as unsigned integer: %s.\n", arg);
+    return false;
+  }
+  return true;
+}
+
+static inline bool ParseUint32(const char* arg, uint32_t* out) {
+  size_t value = 0;
+  bool ret = ParseUnsigned(arg, &value);
+  if (ret) *out = value;
+  return ret;
+}
+
+static inline bool ParseFloat(const char* arg, float* out) {
+  char* end;
+  *out = static_cast<float>(strtod(arg, &end));
+  if (end[0] != '\0') {
+    fprintf(stderr, "Unable to interpret as float: %s.\n", arg);
+    return false;
+  }
+  return true;
+}
+
+static inline bool ParseDouble(const char* arg, double* out) {
+  char* end;
+  *out = static_cast<double>(strtod(arg, &end));
+  if (end[0] != '\0') {
+    fprintf(stderr, "Unable to interpret as double: %s.\n", arg);
+    return false;
+  }
+  return true;
+}
+
+static inline bool ParseString(const char* arg, std::string* out) {
+  out->assign(arg);
+  return true;
+}
+
+static inline bool SetBooleanTrue(bool* out) {
+  *out = true;
+  return true;
+}
+
+static inline bool SetBooleanFalse(bool* out) {
+  *out = false;
+  return true;
+}
 
 }  // namespace tools
 }  // namespace jpegxl

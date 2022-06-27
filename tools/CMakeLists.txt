@@ -62,10 +62,11 @@ set(TOOL_BINARIES)
 add_library(jxl_tool STATIC EXCLUDE_FROM_ALL
   cmdline.cc
   codec_config.cc
+  speed_stats.cc
   tool_version.cc
 )
 target_compile_options(jxl_tool PUBLIC "${JPEGXL_INTERNAL_FLAGS}")
-target_link_libraries(jxl_tool jxl-static)
+target_link_libraries(jxl_tool hwy)
 
 target_include_directories(jxl_tool
   PUBLIC "${PROJECT_SOURCE_DIR}")
@@ -130,7 +131,6 @@ if(JPEGXL_ENABLE_TOOLS)
   # Main compressor.
   add_executable(cjxl
     cjxl.cc
-    speed_stats.cc
     cjxl_main.cc
   )
   target_link_libraries(cjxl
@@ -161,9 +161,9 @@ if(JPEGXL_ENABLE_TOOLS)
   )
   target_link_libraries(djxl_ng
     jxl_dec
-    jxl_gflags
-    jxl_threads
     jxl_extras-static
+    jxl_threads
+    jxl_tool
   )
 
   add_executable(cjpeg_hdr
@@ -178,7 +178,6 @@ if(JPEGXL_ENABLE_TOOLS)
   # Main decompressor.
   add_library(djxltool STATIC
     djxl.cc
-    speed_stats.cc
   )
   target_link_libraries(djxltool
     box
@@ -256,8 +255,6 @@ if(${JPEGXL_ENABLE_BENCHMARK} AND JPEGXL_ENABLE_TOOLS)
     benchmark/benchmark_codec_custom.h
     benchmark/benchmark_codec_jxl.cc
     benchmark/benchmark_codec_jxl.h
-    speed_stats.cc
-    speed_stats.h
     ../third_party/dirent.cc
   )
   target_link_libraries(benchmark_xl Threads::Threads)
