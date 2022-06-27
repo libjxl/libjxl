@@ -26,7 +26,7 @@ roundtrip_test() {
   local maxdist="$3"
   
   local encoder="${build_dir}/tools/cjxl"
-  local decoder="${build_dir}/tools/djxl_ng"
+  local decoder="${build_dir}/tools/djxl"
   local comparator="${build_dir}/tools/ssimulacra_main"
   local jxlfn="$(mktemp -p "$tmpdir")"
 

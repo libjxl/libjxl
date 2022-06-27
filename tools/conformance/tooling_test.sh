@@ -41,7 +41,7 @@ main() {
     build_dir=$(realpath "${MYDIR}/../../build")
   fi
 
-  local decoder="${build_dir}/tools/djxl_ng"
+  local decoder="${build_dir}/tools/djxl"
   "${MYDIR}/generator.py" \
     --decoder="${decoder}" \
     --output="${tmpdir}" \

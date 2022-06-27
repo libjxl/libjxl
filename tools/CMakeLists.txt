@@ -123,7 +123,6 @@ if(JPEGXL_ENABLE_TOOLS)
   list(APPEND TOOL_BINARIES
     cjxl
     cjxl_ng
-    djxl
     cjpeg_hdr
     jxlinfo
   )
@@ -140,7 +139,6 @@ if(JPEGXL_ENABLE_TOOLS)
     jxl_threads-static
   )
 
-
   add_executable(cjxl_ng
     cjxl_ng_main.cc
   )
@@ -156,10 +154,10 @@ if(JPEGXL_ENABLE_TOOLS)
     set_target_properties(cjxl_ng PROPERTIES LINK_FLAGS "-s USE_LIBPNG=1")
   endif()
 
-  add_executable(djxl_ng
-    djxl_ng_main.cc
+  add_executable(djxl
+    djxl_main.cc
   )
-  target_link_libraries(djxl_ng
+  target_link_libraries(djxl
     jxl_dec
     jxl_extras-static
     jxl_threads
@@ -174,22 +172,6 @@ if(JPEGXL_ENABLE_TOOLS)
     jxl_extras-static
     jxl_threads-static
   )
-
-  # Main decompressor.
-  add_library(djxltool STATIC
-    djxl.cc
-  )
-  target_link_libraries(djxltool
-    box
-    jxl-static
-    jxl_extras-static
-    jxl_threads-static
-  )
-
-  add_executable(djxl
-    djxl_main.cc
-  )
-  target_link_libraries(djxl djxltool)
 
   add_executable(jxlinfo
     jxlinfo.c
@@ -325,9 +307,9 @@ foreach(BINARY IN LISTS TOOL_BINARIES)
 endforeach()
 
 if(JPEGXL_ENABLE_TOOLS)
-  list(APPEND TOOL_BINARIES djxl_ng)
+  list(APPEND TOOL_BINARIES djxl)
   if(JPEGXL_EMSCRIPTEN)
-    set_target_properties(djxl_ng PROPERTIES LINK_FLAGS "-s USE_LIBPNG=1")
+    set_target_properties(djxl PROPERTIES LINK_FLAGS "-s USE_LIBPNG=1")
   endif()
 endif()
 
