@@ -221,12 +221,14 @@ if(${JPEGXL_ENABLE_DEVTOOLS})
     ssimulacra_main
     xyb_range
     jxl_from_tree
+    xybmsssim
   )
 
   add_executable(fuzzer_corpus fuzzer_corpus.cc)
 
   add_executable(ssimulacra_main ssimulacra_main.cc ssimulacra.cc)
   add_executable(butteraugli_main butteraugli_main.cc)
+  add_executable(xybmsssim xybmsssim.cc)
   add_executable(decode_and_encode decode_and_encode.cc)
   add_executable(display_to_hlg hdr/display_to_hlg.cc)
   add_executable(pq_to_hlg hdr/pq_to_hlg.cc)
