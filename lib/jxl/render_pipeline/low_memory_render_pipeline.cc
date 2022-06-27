@@ -398,7 +398,8 @@ void LowMemoryRenderPipeline::PrepareForThreadsInternal(size_t num,
   }
   if (first_image_dim_stage_ != stages_.size()) {
     out_of_frame_data_.resize(num);
-    size_t left_padding = std::max<ssize_t>(0, frame_origin_.x0);
+    size_t left_padding =
+        Clamp1<ssize_t>(frame_origin_.x0, 0, full_image_xsize_);
     size_t middle_padding = group_dim;
     ssize_t last_x =
         frame_origin_.x0 + std::min(frame_dimensions_.xsize_groups * group_dim,
