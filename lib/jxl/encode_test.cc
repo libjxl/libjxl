@@ -797,6 +797,7 @@ TEST(EncodeTest, CodestreamLevelVerificationTest) {
   // Set an image dimension that is too large for level 5, but fits in level 10
 
   basic_info.xsize = 1ull << 30ull;
+  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetCodestreamLevel(enc.get(), 5));
   EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetCodestreamLevel(enc.get(), 10));
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));

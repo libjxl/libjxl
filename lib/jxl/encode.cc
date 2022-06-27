@@ -308,6 +308,8 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
     // indicate full incompatibility.
     JXL_ASSERT(required_level == -1 || required_level == 5 ||
                required_level == 10);
+    // codestream_level == -1 means auto-set to the required level
+    if (codestream_level == -1) codestream_level = required_level;
     if (codestream_level == 5 && required_level != 5) {
       // If the required level is 10, return error rather than automatically
       // setting the level to 10, to avoid inadvertently creating a level 10
@@ -317,7 +319,7 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
           ("Codestream level verification for level 5 failed: " + level_message)
               .c_str());
     }
-    if (codestream_level == 10 && required_level == -1) {
+    if (required_level == -1) {
       return JXL_API_ERROR(
           this, JXL_ENC_ERR_API_USAGE, "%s",
           ("Codestream level verification for level 10 failed: " +
@@ -783,7 +785,8 @@ JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
   std::string level_message;
   int required_level = VerifyLevelSettings(enc, &level_message);
   if (required_level == -1 ||
-      static_cast<int>(enc->codestream_level) < required_level) {
+      (static_cast<int>(enc->codestream_level) < required_level &&
+       enc->codestream_level != -1)) {
     return JXL_API_ERROR(
         enc, JXL_ENC_ERR_API_USAGE, "%s",
         ("Codestream level verification for level " +
@@ -837,7 +840,8 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelInfo(
   std::string level_message;
   int required_level = VerifyLevelSettings(enc, &level_message);
   if (required_level == -1 ||
-      static_cast<int>(enc->codestream_level) < required_level) {
+      (static_cast<int>(enc->codestream_level) < required_level &&
+       enc->codestream_level != -1)) {
     return JXL_API_ERROR(
         enc, JXL_ENC_ERR_API_USAGE, "%s",
         ("Codestream level verification for level " +
@@ -1253,7 +1257,7 @@ void JxlEncoderReset(JxlEncoder* enc) {
   enc->intensity_target_set = false;
   enc->use_container = false;
   enc->use_boxes = false;
-  enc->codestream_level = 5;
+  enc->codestream_level = -1;
   JxlEncoderInitBasicInfo(&enc->basic_info);
 }
 
@@ -1289,7 +1293,7 @@ JxlEncoderStatus JxlEncoderStoreJPEGMetadata(JxlEncoder* enc,
 }
 
 JxlEncoderStatus JxlEncoderSetCodestreamLevel(JxlEncoder* enc, int level) {
-  if (level != 5 && level != 10) {
+  if (level != -1 && level != 5 && level != 10) {
     return JXL_API_ERROR(enc, JXL_ENC_ERR_NOT_SUPPORTED, "invalid level");
   }
   if (enc->wrote_bytes) {
