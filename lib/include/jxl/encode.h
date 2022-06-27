@@ -952,8 +952,8 @@ JXL_EXPORT JxlEncoderStatus
 JxlEncoderStoreJPEGMetadata(JxlEncoder* enc, JXL_BOOL store_jpeg_metadata);
 
 /** Sets the feature level of the JPEG XL codestream. Valid values are 5 and
- * 10. Keeping the default value of 5 is recommended for compatibility with all
- * decoders.
+ * 10, or -1 (to choose automatically). Using the minimum required level, or
+ * level 5 in most cases, is recommended for compatibility with all decoders.
  *
  * Level 5: for end-user image delivery, this level is the most widely
  * supported level by image decoders and the recommended level to use unless a
@@ -969,16 +969,19 @@ JxlEncoderStoreJPEGMetadata(JxlEncoder* enc, JXL_BOOL store_jpeg_metadata);
  * 5 limitations, allows CMYK color and up to 32 bits per color channel, but
  * may be less widely supported.
  *
- * The default value is 5. To use level 10 features, the setting must be
- * explicitly set to 10, the encoder will not automatically enable it. If
- * incompatible parameters such as too high image resolution for the current
- * level are set, the encoder will return an error. For internal coding tools,
- * the encoder will only use those compatible with the level setting.
+ * The default value is -1. This means the encoder will automatically choose
+ * between level 5 and level 10 based on what information is inside the @ref
+ * JxlBasicInfo structure. Do note that some level 10 features, particularly
+ * those used by animated JPEG XL codestreams, might require level 10, even
+ * though the @ref JxlBasicInfo only suggests level 5. In this case, the level
+ * must be explicitly set to 10, otherwise the encoder will return an error.
+ * The encoder will restrict internal encoding choices to those compatible with
+ * the level setting.
  *
  * This setting can only be set at the beginning, before encoding starts.
  *
  * @param enc encoder object.
- * @param level the level value to set, must be 5 or 10.
+ * @param level the level value to set, must be -1, 5, or 10.
  * @return JXL_ENC_SUCCESS if the operation was successful, JXL_ENC_ERROR
  * otherwise.
  */
