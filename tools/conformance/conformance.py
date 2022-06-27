@@ -123,26 +123,38 @@ def ConformanceTestRunner(args):
             exact_tests = []
 
             with tempfile.TemporaryDirectory(prefix=test_id) as work_dir:
-                cmd = [args.decoder, os.path.join(test_dir, 'input.jxl')]
-                # Select the parameters to run.
+                input_filename = os.path.join(test_dir, 'input.jxl')
                 pixel_prefix = os.path.join(work_dir, 'decoded')
-                cmd.extend(['-p', pixel_prefix])
+                output_filename = pixel_prefix + '_image.npy'
+                cmd = [args.decoder, input_filename, output_filename]
+                cmd_jpeg = []
+                if 'preview' in descriptor:
+                    preview_filename = os.path.join(work_dir,
+                                                    'decoded_preview.npy')
+                    cmd.extend(['--preview_out', preview_filename])
                 if 'reconstructed_jpeg' in descriptor:
                     jpeg_filename = os.path.join(work_dir, 'reconstructed.jpg')
-                    cmd.extend(['-j', jpeg_filename])
+                    cmd_jpeg = [args.decoder, input_filename, jpeg_filename]
                     exact_tests.append(('reconstructed.jpg', jpeg_filename))
                 if 'original_icc' in descriptor:
                     decoded_original_icc = os.path.join(
                         work_dir, 'decoded_org.icc')
-                    cmd.extend(['-i', decoded_original_icc])
+                    cmd.extend(['--orig_icc_out', decoded_original_icc])
                     exact_tests.append(('original.icc', decoded_original_icc))
                 meta_filename = os.path.join(work_dir, 'meta.json')
-                cmd.extend(['-m', meta_filename])
+                cmd.extend(['--metadata_out', meta_filename])
+                cmd.extend(['--icc_out', pixel_prefix + '.icc'])
+                cmd.extend(['--norender_spotcolors'])
 
                 if subprocess.call(cmd) != 0:
                     raise ConformanceTestError(
                         'Running the decoder (%s) returned error' %
                         ' '.join(cmd))
+
+                if cmd_jpeg and subprocess.call(cmd_jpeg) != 0:
+                    raise ConformanceTestError(
+                        'Running the decoder (%s) returned error' %
+                        ' '.join(cmd_jpeg))
 
                 # Run validation of exact files.
                 for reference_basename, decoded_filename in exact_tests:

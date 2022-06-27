@@ -1456,7 +1456,8 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec) {
       if (!dec->preview_frame && dec->image_out_buffer_set &&
           !!dec->image_out_init_callback && !!dec->image_out_run_callback &&
           dec->image_out_format.data_type == JXL_TYPE_FLOAT &&
-          dec->image_out_format.num_channels >= 3 && !swap_endianness &&
+          dec->image_out_format.num_channels >= 3 &&
+          dec->extra_channel_output.empty() && !swap_endianness &&
           dec->frame_dec_in_progress) {
         bool is_rgba = dec->image_out_format.num_channels == 4;
         dec->frame_dec->MaybeSetFloatCallback(

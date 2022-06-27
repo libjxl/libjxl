@@ -3,9 +3,6 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
-add_executable(djxl_conformance djxl_conformance.cc)
-target_link_libraries(djxl_conformance jxl_dec)
-
 if(BUILD_TESTING AND CMAKE_EXECUTABLE_SUFFIX STREQUAL "")
 # Script to validate the tooling.
 find_program (BASH_PROGRAM bash)

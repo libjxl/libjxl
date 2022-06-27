@@ -73,6 +73,26 @@ DEFINE_uint32(jpeg_quality, 95,
 DEFINE_bool(use_sjpeg, false, "use sjpeg instead of libjpeg for JPEG output");
 #endif
 
+DEFINE_bool(render_spotcolors, true, "enable/disable rendering spot colors");
+
+DEFINE_string(preview_out, "",
+              "If specified, writes the preview image to this file.");
+
+DEFINE_string(icc_out, "",
+              "If specified, writes the ICC profile of the decoded image to "
+              "this file.");
+
+DEFINE_string(orig_icc_out, "",
+              "If specified, writes the ICC profile of the original image to "
+              "this file. This can be different from the ICC profile of the "
+              "decoded image if --color_space was specified, or if the image "
+              "was XYB encoded and the color conversion to the original "
+              "profile was not supported by the decoder.");
+
+DEFINE_string(metadata_out, "",
+              "If specified, writes decoded metadata info to this file in "
+              "JSON format. Used by the conformance test script");
+
 // TODO(firsching): wire this up.
 DEFINE_bool(print_read_bytes, false, "print total number of decoded bytes");
 
@@ -135,6 +155,14 @@ bool WriteFile(const char* filename, const std::vector<uint8_t>& bytes) {
     return false;
   }
   return true;
+}
+
+bool WriteOptionalOutput(const std::string& filename,
+                         const std::vector<uint8_t>& bytes) {
+  if (filename.empty() || bytes.empty()) {
+    return true;
+  }
+  return WriteFile(filename.data(), bytes);
 }
 
 std::string Filename(const std::string& base, const std::string& extension,
@@ -308,13 +336,18 @@ bool DecompressJxlToPackedPixelFile(
     return false;
   }
   int events = (JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING | JXL_DEC_FRAME |
-                JXL_DEC_FULL_IMAGE | JXL_DEC_BOX);
+                JXL_DEC_FULL_IMAGE | JXL_DEC_PREVIEW_IMAGE | JXL_DEC_BOX);
   if (FLAGS_downsampling > 1) {
     events |= JXL_DEC_FRAME_PROGRESSION;
     JxlDecoderSetProgressiveDetail(dec, JxlProgressiveDetail::kLastPasses);
   }
   if (JXL_DEC_SUCCESS != JxlDecoderSubscribeEvents(dec, events)) {
     fprintf(stderr, "JxlDecoderSubscribeEvents failed\n");
+    return false;
+  }
+  if (JXL_DEC_SUCCESS !=
+      JxlDecoderSetRenderSpotcolors(dec, FLAGS_render_spotcolors)) {
+    fprintf(stderr, "JxlDecoderSetRenderSpotColors failed\n");
     return false;
   }
   JxlPixelFormat format;
@@ -410,6 +443,7 @@ bool DecompressJxlToPackedPixelFile(
           fprintf(stderr, "JxlDecoderGetExtraChannelName failed\n");
           return false;
         }
+        name.resize(eci.name_length);
         ppf->extra_channels_info.push_back({eci, i, name});
       }
     } else if (status == JXL_DEC_COLOR_ENCODING) {
@@ -453,6 +487,21 @@ bool DecompressJxlToPackedPixelFile(
           return false;
         }
       }
+      icc_size = 0;
+      target = JXL_COLOR_PROFILE_TARGET_ORIGINAL;
+      if (JXL_DEC_SUCCESS !=
+          JxlDecoderGetICCProfileSize(dec, &format, target, &icc_size)) {
+        fprintf(stderr, "JxlDecoderGetICCProfileSize failed\n");
+      }
+      if (icc_size != 0) {
+        ppf->orig_icc.resize(icc_size);
+        if (JXL_DEC_SUCCESS !=
+            JxlDecoderGetColorAsICCProfile(dec, &format, target,
+                                           ppf->orig_icc.data(), icc_size)) {
+          fprintf(stderr, "JxlDecoderGetColorAsICCProfile failed\n");
+          return false;
+        }
+      }
     } else if (status == JXL_DEC_FRAME) {
       jxl::extras::PackedFrame frame(ppf->info.xsize, ppf->info.ysize, format);
       if (JXL_DEC_SUCCESS != JxlDecoderGetFrameHeader(dec, &frame.frame_info)) {
@@ -465,6 +514,7 @@ bool DecompressJxlToPackedPixelFile(
         fprintf(stderr, "JxlDecoderGetFrameName failed\n");
         return false;
       }
+      frame.name.resize(frame.frame_info.name_length);
       ppf->frames.emplace_back(std::move(frame));
     } else if (status == JXL_DEC_FRAME_PROGRESSION) {
       size_t downsampling = JxlDecoderGetIntendedDownsamplingRatio(dec);
@@ -480,6 +530,27 @@ bool DecompressJxlToPackedPixelFile(
           fprintf(stderr, "JxlDecoderSkipCurrentFrame failed\n");
           return false;
         }
+      }
+    } else if (status == JXL_DEC_NEED_PREVIEW_OUT_BUFFER) {
+      size_t buffer_size;
+      if (JXL_DEC_SUCCESS !=
+          JxlDecoderPreviewOutBufferSize(dec, &format, &buffer_size)) {
+        fprintf(stderr, "JxlDecoderPreviewOutBufferSize failed\n");
+        return false;
+      }
+      ppf->preview_frame = std::unique_ptr<jxl::extras::PackedFrame>(
+          new jxl::extras::PackedFrame(ppf->info.preview.xsize,
+                                       ppf->info.preview.ysize, format));
+      if (buffer_size != ppf->preview_frame->color.pixels_size) {
+        fprintf(stderr, "Invalid out buffer size %" PRIuS " %" PRIuS "\n",
+                buffer_size, ppf->preview_frame->color.pixels_size);
+        return false;
+      }
+      if (JXL_DEC_SUCCESS !=
+          JxlDecoderSetPreviewOutBuffer(
+              dec, &format, ppf->preview_frame->color.pixels(), buffer_size)) {
+        fprintf(stderr, "JxlDecoderSetPreviewOutBuffer failed\n");
+        return false;
       }
     } else if (status == JXL_DEC_NEED_IMAGE_OUT_BUFFER) {
       size_t buffer_size;
@@ -537,6 +608,8 @@ bool DecompressJxlToPackedPixelFile(
     } else if (status == JXL_DEC_SUCCESS) {
       // Decoding finished successfully.
       break;
+    } else if (status == JXL_DEC_PREVIEW_IMAGE) {
+      // Nothing to do.
     } else if (status == JXL_DEC_FULL_IMAGE) {
       if (ppf->frames.back().frame_info.is_last) {
         codestream_done = true;
@@ -676,6 +749,13 @@ int main(int argc, char** argv) {
           return EXIT_FAILURE;
         }
       }
+    }
+    if (!WriteOptionalOutput(FLAGS_preview_out,
+                             encoded_image.preview_bitstream) ||
+        !WriteOptionalOutput(FLAGS_icc_out, ppf.icc) ||
+        !WriteOptionalOutput(FLAGS_orig_icc_out, ppf.orig_icc) ||
+        !WriteOptionalOutput(FLAGS_metadata_out, encoded_image.metadata)) {
+      return EXIT_FAILURE;
     }
   }
   return EXIT_SUCCESS;
