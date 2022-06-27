@@ -14,7 +14,6 @@
 #include <string>
 #include <vector>
 
-#include "gflags/gflags.h"
 #include "jxl/codestream_header.h"
 #include "jxl/decode.h"
 #include "jxl/decode_cxx.h"
@@ -27,77 +26,166 @@
 #include "lib/extras/enc/encode.h"
 #include "lib/extras/enc/pnm.h"
 #include "lib/extras/packed_image.h"
+#include "lib/extras/time.h"
 #include "lib/jxl/base/printf_macros.h"
+#include "tools/cmdline.h"
+#include "tools/codec_config.h"
+#include "tools/speed_stats.h"
 
-DECLARE_bool(help);
-DECLARE_bool(helpshort);
+namespace jpegxl {
+namespace tools {
 
-DEFINE_int64(num_reps, 1, "How many times to decompress.");
+struct DecompressArgs {
+  DecompressArgs() = default;
 
-DEFINE_int64(num_threads, 0,
-             // TODO(firsching): Sync with team about changed meaning of 0 -
-             // was: No multithreaded workers. Is: use default number.
-             "Number of worker threads (0 == use machine default).");
+  void AddCommandLineOptions(CommandLineParser* cmdline) {
+    cmdline->AddPositionalOption("INPUT", /* required = */ true,
+                                 "The compressed input file.", &file_in);
 
-DEFINE_int32(bits_per_sample, 0, "0 = original (input) bit depth");
+    cmdline->AddPositionalOption("OUTPUT", /* required = */ true,
+                                 "The output can be (A)PNG with ICC, JPG, or "
+                                 "PPM/PFM.",
+                                 &file_out);
 
-DEFINE_double(display_nits, 0.,
-              "tone map the image to the peak display luminance given");
+    cmdline->AddOptionFlag('V', "version", "Print version number and exit.",
+                           &version, &SetBooleanTrue);
 
-DEFINE_string(color_space, "",
-              "Sets the output color space of the image. This flag has no "
-              "effect if the image is not XYB encoded.");
+    cmdline->AddOptionValue('\0', "num_reps", "N",
+                            "Sets the number of times to decompress the image. "
+                            "Used for benchmarking, the default is 1.",
+                            &num_reps, &ParseUnsigned);
 
-DEFINE_uint32(downsampling, 0,
-              "If set and the input JXL stream is progressive and contains "
-              "hints for target downsampling ratios, the decoder will skip any "
-              "progressive passes that are not needed to produce a partially "
-              "decoded image intended for this downsampling ratio.");
+    cmdline->AddOptionValue('\0', "num_threads", "N",
+                            "Sets the number of threads to use. The default 0 "
+                            "value means the machine default.",
+                            &num_threads, &ParseUnsigned);
 
-DEFINE_bool(allow_partial_files, false, "allow decoding of truncated files");
+    cmdline->AddOptionValue('\0', "bits_per_sample", "N",
+                            "Sets the output bit depth. The default 0 value "
+                            "means the original (input) bit depth.",
+                            &bits_per_sample, &ParseUnsigned);
+
+    cmdline->AddOptionValue('\0', "display_nits", "N",
+                            "If set to a non-zero value, tone maps the image "
+                            "the given peak display luminance.",
+                            &display_nits, &ParseDouble);
+
+    cmdline->AddOptionValue('\0', "color_space", "COLORSPACE_DESC",
+                            "Sets the output color space of the image. This "
+                            "flag has no effect if the image is not XYB "
+                            "encoded.",
+                            &color_space, &ParseString);
+
+    cmdline->AddOptionValue('s', "downsampling", "N",
+                            "If set and the input JXL stream is progressive "
+                            "and contains hints for target downsampling "
+                            "ratios, the decoder will skip any progressive "
+                            "passes that are not needed to produce a partially "
+                            "decoded image intended for this downsampling "
+                            "ratio.",
+                            &downsampling, &ParseUint32);
+
+    cmdline->AddOptionFlag('\0', "allow_partial_files",
+                           "Allow decoding of truncated files.",
+                           &allow_partial_files, &SetBooleanTrue);
 
 #if JPEGXL_ENABLE_JPEG
-DEFINE_bool(
-    pixels_to_jpeg, false,
-    "By default, if the input JPEG XL contains a recompressed JPEG file, djxl "
-    "reconstructs the exact original JPEG file. This flag causes the decoder "
-    "to instead decode the image to pixels and encode a new (lossy) JPEG. "
-    "The output file if provided must be a .jpg or .jpeg file.");
+    cmdline->AddOptionFlag(
+        'j', "pixels_to_jpeg",
+        "By default, if the input JPEG XL contains a recompressed JPEG file, "
+        "djxl reconstructs the exact original JPEG file. This flag causes the "
+        "decoder to instead decode the image to pixels and encode a new "
+        "(lossy) JPEG. The output file if provided must be a .jpg or .jpeg "
+        "file.",
+        &pixels_to_jpeg, &SetBooleanTrue);
 
-DEFINE_uint32(jpeg_quality, 95,
-              "JPEG output quality. Setting an output quality "
-              "implies --pixels_to_jpeg.");
+    opt_jpeg_quality_id = cmdline->AddOptionValue(
+        'q', "jpeg_quality", "N",
+        "Sets the JPEG output quality, default is 95. Setting an output "
+        "quality implies --pixels_to_jpeg.",
+        &jpeg_quality, &ParseUnsigned);
 #endif
 
 #if JPEGXL_ENABLE_SJPEG
-DEFINE_bool(use_sjpeg, false, "use sjpeg instead of libjpeg for JPEG output");
+    cmdline->AddOptionFlag('\0', "use_sjpeg",
+                           "Use sjpeg instead of libjpeg for JPEG output.",
+                           &use_sjpeg, &SetBooleanTrue);
 #endif
 
-DEFINE_bool(render_spotcolors, true, "enable/disable rendering spot colors");
+    cmdline->AddOptionFlag('\0', "norender_spotcolors",
+                           "Disables rendering spot colors.",
+                           &render_spotcolors, &SetBooleanFalse);
 
-DEFINE_string(preview_out, "",
-              "If specified, writes the preview image to this file.");
+    cmdline->AddOptionValue('\0', "preview_out", "FILENAME",
+                            "If specified, writes the preview image to this "
+                            "file.",
+                            &preview_out, &ParseString);
 
-DEFINE_string(icc_out, "",
-              "If specified, writes the ICC profile of the decoded image to "
-              "this file.");
+    cmdline->AddOptionValue(
+        '\0', "icc_out", "FILENAME",
+        "If specified, writes the ICC profile of the decoded image to "
+        "this file.",
+        &icc_out, &ParseString);
 
-DEFINE_string(orig_icc_out, "",
-              "If specified, writes the ICC profile of the original image to "
-              "this file. This can be different from the ICC profile of the "
-              "decoded image if --color_space was specified, or if the image "
-              "was XYB encoded and the color conversion to the original "
-              "profile was not supported by the decoder.");
+    cmdline->AddOptionValue(
+        '\0', "orig_icc_out", "FILENAME",
+        "If specified, writes the ICC profile of the original image to "
+        "this file. This can be different from the ICC profile of the "
+        "decoded image if --color_space was specified, or if the image "
+        "was XYB encoded and the color conversion to the original "
+        "profile was not supported by the decoder.",
+        &orig_icc_out, &ParseString);
 
-DEFINE_string(metadata_out, "",
-              "If specified, writes decoded metadata info to this file in "
-              "JSON format. Used by the conformance test script");
+    cmdline->AddOptionValue(
+        '\0', "metadata_out", "FILENAME",
+        "If specified, writes decoded metadata info to this file in "
+        "JSON format. Used by the conformance test script",
+        &metadata_out, &ParseString);
 
-// TODO(firsching): wire this up.
-DEFINE_bool(print_read_bytes, false, "print total number of decoded bytes");
+    cmdline->AddOptionFlag('\0', "print_read_bytes",
+                           "Print total number of decoded bytes.",
+                           &print_read_bytes, &SetBooleanTrue);
 
-// TODO(firsching): wire this up.
-DEFINE_bool(quiet, false, "silence output (except for errors)");
+    cmdline->AddOptionFlag('\0', "quiet", "Silence output (except for errors).",
+                           &quiet, &SetBooleanTrue);
+  }
+
+  // Validate the passed arguments, checking whether all passed options are
+  // compatible. Returns whether the validation was successful.
+  bool ValidateArgs(const CommandLineParser& cmdline) {
+    if (file_in == nullptr) {
+      fprintf(stderr, "Missing INPUT filename.\n");
+      return false;
+    }
+    return true;
+  }
+
+  const char* file_in = nullptr;
+  const char* file_out = nullptr;
+  bool version = false;
+  size_t num_reps = 1;
+  size_t num_threads = 0;
+  size_t bits_per_sample = 0;
+  double display_nits = 0.0;
+  std::string color_space;
+  uint32_t downsampling = 0;
+  bool allow_partial_files = false;
+  bool pixels_to_jpeg = false;
+  size_t jpeg_quality = 95;
+  bool use_sjpeg = false;
+  bool render_spotcolors = true;
+  std::string preview_out;
+  std::string icc_out;
+  std::string orig_icc_out;
+  std::string metadata_out;
+  bool print_read_bytes = false;
+  bool quiet = false;
+  // References (ids) of specific options to check if they were matched.
+  CommandLineParser::OptionId opt_jpeg_quality_id = -1;
+};
+
+}  // namespace tools
+}  // namespace jpegxl
 
 bool ReadFile(const char* filename, std::vector<uint8_t>* out) {
   FILE* file = fopen(filename, "rb");
@@ -189,10 +277,13 @@ std::string Filename(const std::string& base, const std::string& extension,
   return out;
 }
 
-bool DecompressJxlReconstructJPEG(const std::vector<uint8_t>& compressed,
+bool DecompressJxlReconstructJPEG(const jpegxl::tools::DecompressArgs& args,
+                                  const std::vector<uint8_t>& compressed,
                                   JxlDecoder* dec, void* runner,
                                   std::vector<uint8_t>* jpeg_bytes,
-                                  bool* can_reconstruct_jpeg) {
+                                  bool* can_reconstruct_jpeg,
+                                  jpegxl::tools::SpeedStats* stats) {
+  const double t0 = jxl::Now();
   JxlDecoderReset(dec);
   if (JXL_DEC_SUCCESS !=
       JxlDecoderSetParallelRunner(dec, JxlThreadParallelRunner, runner)) {
@@ -217,6 +308,7 @@ bool DecompressJxlReconstructJPEG(const std::vector<uint8_t>& compressed,
   }
   JxlDecoderCloseInput(dec);
 
+  JxlBasicInfo info;
   for (;;) {
     JxlDecoderStatus status = JxlDecoderProcessInput(dec);
     if (status == JXL_DEC_ERROR) {
@@ -251,6 +343,10 @@ bool DecompressJxlReconstructJPEG(const std::vector<uint8_t>& compressed,
         return false;
       }
     } else if (status == JXL_DEC_BASIC_INFO) {
+      if (JXL_DEC_SUCCESS != JxlDecoderGetBasicInfo(dec, &info)) {
+        fprintf(stderr, "JxlDecoderGetBasicInfo failed\n");
+        return false;
+      }
       if (!*can_reconstruct_jpeg) return false;
     } else if (status == JXL_DEC_SUCCESS) {
       // Decoding finished successfully.
@@ -269,6 +365,12 @@ bool DecompressJxlReconstructJPEG(const std::vector<uint8_t>& compressed,
       jpeg_data_chunk.size() - JxlDecoderReleaseJPEGBuffer(dec);
   jpeg_bytes->insert(jpeg_bytes->end(), jpeg_data_chunk.data(),
                      jpeg_data_chunk.data() + used_jpeg_output);
+  const double t1 = jxl::Now();
+  if (stats) {
+    stats->NotifyElapsed(t1 - t0);
+    stats->SetImageSize(info.xsize, info.ysize);
+    stats->SetFileSize(jpeg_bytes->size());
+  }
   return true;
 }
 
@@ -325,9 +427,12 @@ struct BoxProcessor {
 };
 
 bool DecompressJxlToPackedPixelFile(
+    const jpegxl::tools::DecompressArgs& args,
     const std::vector<uint8_t>& compressed,
     const std::vector<JxlPixelFormat>& accepted_formats, JxlDecoder* dec,
-    void* runner, jxl::extras::PackedPixelFile* ppf) {
+    void* runner, jxl::extras::PackedPixelFile* ppf, size_t* decoded_bytes,
+    jpegxl::tools::SpeedStats* stats) {
+  const double t0 = jxl::Now();
   JxlDecoderReset(dec);
   ppf->frames.clear();
   if (JXL_DEC_SUCCESS !=
@@ -337,7 +442,7 @@ bool DecompressJxlToPackedPixelFile(
   }
   int events = (JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING | JXL_DEC_FRAME |
                 JXL_DEC_FULL_IMAGE | JXL_DEC_PREVIEW_IMAGE | JXL_DEC_BOX);
-  if (FLAGS_downsampling > 1) {
+  if (args.downsampling > 1) {
     events |= JXL_DEC_FRAME_PROGRESSION;
     JxlDecoderSetProgressiveDetail(dec, JxlProgressiveDetail::kLastPasses);
   }
@@ -346,7 +451,7 @@ bool DecompressJxlToPackedPixelFile(
     return false;
   }
   if (JXL_DEC_SUCCESS !=
-      JxlDecoderSetRenderSpotcolors(dec, FLAGS_render_spotcolors)) {
+      JxlDecoderSetRenderSpotcolors(dec, args.render_spotcolors)) {
     fprintf(stderr, "JxlDecoderSetRenderSpotColors failed\n");
     return false;
   }
@@ -357,9 +462,9 @@ bool DecompressJxlToPackedPixelFile(
     fprintf(stderr, "Decoder failed to set input\n");
     return false;
   }
-  if (FLAGS_display_nits > 0 &&
+  if (args.display_nits > 0 &&
       JXL_DEC_SUCCESS !=
-          JxlDecoderSetDesiredIntensityTarget(dec, FLAGS_display_nits)) {
+          JxlDecoderSetDesiredIntensityTarget(dec, args.display_nits)) {
     fprintf(stderr, "Decoder failed to set desired intensity target\n");
     return false;
   }
@@ -378,7 +483,7 @@ bool DecompressJxlToPackedPixelFile(
       if (codestream_done) {
         break;
       }
-      if (FLAGS_allow_partial_files) {
+      if (args.allow_partial_files) {
         if (JXL_DEC_SUCCESS != JxlDecoderFlushImage(dec)) {
           fprintf(stderr,
                   "Input file is truncated and there is no preview "
@@ -447,14 +552,14 @@ bool DecompressJxlToPackedPixelFile(
         ppf->extra_channels_info.push_back({eci, i, name});
       }
     } else if (status == JXL_DEC_COLOR_ENCODING) {
-      if (!FLAGS_color_space.empty()) {
+      if (!args.color_space.empty()) {
         if (ppf->info.uses_original_profile) {
           fprintf(stderr,
                   "Warning: --color_space ignored because the image is "
                   "not XYB encoded.\n");
         } else {
           JxlColorEncoding color_encoding;
-          if (!jxl::ParseDescription(FLAGS_color_space, &color_encoding)) {
+          if (!jxl::ParseDescription(args.color_space, &color_encoding)) {
             fprintf(stderr, "Failed to parse color space.\n");
             return false;
           }
@@ -518,7 +623,7 @@ bool DecompressJxlToPackedPixelFile(
       ppf->frames.emplace_back(std::move(frame));
     } else if (status == JXL_DEC_FRAME_PROGRESSION) {
       size_t downsampling = JxlDecoderGetIntendedDownsamplingRatio(dec);
-      if (downsampling <= FLAGS_downsampling) {
+      if (downsampling <= args.downsampling) {
         if (JXL_DEC_SUCCESS != JxlDecoderFlushImage(dec)) {
           fprintf(stderr, "JxlDecoderFlushImage failed\n");
           return false;
@@ -621,53 +726,84 @@ bool DecompressJxlToPackedPixelFile(
     }
   }
   boxes.FinalizeOutput();
+  if (decoded_bytes) {
+    *decoded_bytes = compressed.size() - JxlDecoderReleaseInput(dec);
+  }
+  const double t1 = jxl::Now();
+  if (stats) {
+    stats->NotifyElapsed(t1 - t0);
+    stats->SetImageSize(ppf->info.xsize, ppf->info.ysize);
+  }
   return true;
 }
 
-int main(int argc, char** argv) {
-  std::cerr << "Warning: This is work in progress, consider using djxl "
-               "instead!\n";
+int main(int argc, const char* argv[]) {
+  std::string version = jpegxl::tools::CodecConfigString(JxlDecoderVersion());
+  jpegxl::tools::DecompressArgs args;
+  jpegxl::tools::CommandLineParser cmdline;
+  args.AddCommandLineOptions(&cmdline);
 
-  gflags::SetUsageMessage("JPEG XL decoder");
-  uint32_t version = JxlDecoderVersion();
-  gflags::SetVersionString(std::to_string(version / 1000000) + "." +
-                           std::to_string((version / 1000) % 1000) + "." +
-                           std::to_string(version % 1000));
-  // TODO(firsching): rethink --help handling
-  gflags::ParseCommandLineNonHelpFlags(&argc, &argv, /*remove_flags=*/true);
-  if (FLAGS_help) {
-    FLAGS_help = false;
-    FLAGS_helpshort = true;
-  }
-  gflags::HandleCommandLineHelpFlags();
-
-  if (argc != 3) {
-    FLAGS_help = false;
-    FLAGS_helpshort = true;
-    gflags::HandleCommandLineHelpFlags();
+  if (!cmdline.Parse(argc, argv)) {
+    // Parse already printed the actual error cause.
+    fprintf(stderr, "Use '%s -h' for more information\n", argv[0]);
     return EXIT_FAILURE;
   }
-  const char* filename_in = argv[1];
-  const char* filename_out = argv[2];
-  size_t num_reps = FLAGS_num_reps;
 
-  const char* extension = strrchr(filename_out, '.');
-  std::string base = extension == nullptr
-                         ? std::string(filename_out)
-                         : std::string(filename_out, extension - filename_out);
-  if (extension == nullptr) extension = "";
-  const jxl::extras::Codec codec = jxl::extras::CodecFromExtension(extension);
+  if (args.version) {
+    fprintf(stdout, "djxl %s\n", version.c_str());
+    fprintf(stdout, "Copyright (c) the JPEG XL Project\n");
+    return EXIT_SUCCESS;
+  }
+  if (!args.quiet) {
+    fprintf(stderr, "JPEG XL decoder %s\n", version.c_str());
+  }
+
+  if (cmdline.HelpFlagPassed()) {
+    cmdline.PrintHelp();
+    return EXIT_SUCCESS;
+  }
+
+  if (!args.ValidateArgs(cmdline)) {
+    // ValidateArgs already printed the actual error cause.
+    fprintf(stderr, "Use '%s -h' for more information\n", argv[0]);
+    return EXIT_FAILURE;
+  }
 
   std::vector<uint8_t> compressed;
   // Reading compressed JPEG XL input
-  if (!ReadFile(filename_in, &compressed)) {
-    fprintf(stderr, "couldn't load %s\n", filename_in);
+  if (!ReadFile(args.file_in, &compressed)) {
+    fprintf(stderr, "couldn't load %s\n", args.file_in);
     return EXIT_FAILURE;
   }
+  if (!args.quiet) {
+    fprintf(stderr, "Read %" PRIuS " compressed bytes.\n", compressed.size());
+  }
 
+  if (!args.file_out && !args.quiet) {
+    fprintf(stderr,
+            "No output file specified.\n"
+            "Decoding will be performed, but the result will be discarded.\n");
+  }
+
+  std::string filename_out;
+  std::string base;
+  std::string extension;
+  if (args.file_out) {
+    filename_out = std::string(args.file_out);
+    size_t pos = filename_out.find_last_of(".");
+    if (pos < filename_out.size()) {
+      base = filename_out.substr(0, pos);
+      extension = filename_out.substr(pos);
+    } else {
+      base = filename_out;
+    }
+  }
+  const jxl::extras::Codec codec = jxl::extras::CodecFromExtension(extension);
+
+  jpegxl::tools::SpeedStats stats;
   size_t num_worker_threads = JxlThreadParallelRunnerDefaultNumWorkerThreads();
   {
-    int64_t flag_num_worker_threads = FLAGS_num_threads;
+    int64_t flag_num_worker_threads = args.num_threads;
     if (flag_num_worker_threads != 0) {
       num_worker_threads = flag_num_worker_threads;
     }
@@ -678,64 +814,92 @@ int main(int argc, char** argv) {
 
   bool decode_to_pixels = (codec != jxl::extras::Codec::kJPG);
 #if JPEGXL_ENABLE_JPEG
-  if (FLAGS_pixels_to_jpeg ||
-      !gflags::GetCommandLineFlagInfoOrDie("jpeg_quality").is_default) {
+  if (args.pixels_to_jpeg ||
+      cmdline.GetOption(args.opt_jpeg_quality_id)->matched()) {
     decode_to_pixels = true;
   }
 #endif
 
+  size_t num_reps = args.num_reps;
   if (!decode_to_pixels) {
     std::vector<uint8_t> bytes;
     bool can_reconstruct_jpeg = false;
     for (size_t i = 0; i < num_reps; ++i) {
-      if (!DecompressJxlReconstructJPEG(compressed, dec.get(), runner.get(),
-                                        &bytes, &can_reconstruct_jpeg)) {
+      if (!DecompressJxlReconstructJPEG(args, compressed, dec.get(),
+                                        runner.get(), &bytes,
+                                        &can_reconstruct_jpeg, &stats)) {
         if (!can_reconstruct_jpeg) {
+          if (!args.quiet) {
+            fprintf(stderr,
+                    "Warning: could not decode losslessly to JPEG. Retrying "
+                    "with --pixels_to_jpeg...\n");
+          }
           decode_to_pixels = true;
           break;
         }
         return EXIT_FAILURE;
       }
     }
-    if (can_reconstruct_jpeg && !WriteFile(filename_out, bytes)) {
-      return EXIT_FAILURE;
-    };
+    if (can_reconstruct_jpeg) {
+      if (!args.quiet) fprintf(stderr, "Reconstructed to JPEG.\n");
+      if (!filename_out.empty() && !WriteFile(filename_out.c_str(), bytes)) {
+        return EXIT_FAILURE;
+      }
+    }
   }
   if (decode_to_pixels) {
-    std::unique_ptr<jxl::extras::Encoder> encoder =
-        jxl::extras::Encoder::FromExtension(extension);
-    if (encoder == nullptr) {
-      fprintf(stderr, "can't decode to the file extension '%s'\n", extension);
-      return EXIT_FAILURE;
+    std::vector<JxlPixelFormat> accepted_formats;
+    for (const uint32_t num_channels : {1, 2, 3, 4}) {
+      accepted_formats.push_back(
+          {num_channels, JXL_TYPE_FLOAT, JXL_LITTLE_ENDIAN, /*align=*/0});
     }
-#if JPEGXL_ENABLE_JPEG
-    std::ostringstream os;
-    os << FLAGS_jpeg_quality;
-    encoder->SetOption("q", os.str());
-#endif
-#if JPEGXL_ENABLE_SJPEG
-    if (FLAGS_use_sjpeg) {
-      encoder->SetOption("jpeg_encoder", "sjpeg");
+    std::unique_ptr<jxl::extras::Encoder> encoder;
+    if (!filename_out.empty()) {
+      encoder = jxl::extras::Encoder::FromExtension(extension);
+      if (encoder == nullptr) {
+        fprintf(stderr, "can't decode to the file extension '%s'\n",
+                extension.c_str());
+        return EXIT_FAILURE;
+      }
+      accepted_formats = encoder->AcceptedFormats();
     }
-#endif
     jxl::extras::PackedPixelFile ppf;
+    size_t decoded_bytes = 0;
     for (size_t i = 0; i < num_reps; ++i) {
-      if (!DecompressJxlToPackedPixelFile(compressed,
-                                          encoder->AcceptedFormats(), dec.get(),
-                                          runner.get(), &ppf)) {
+      if (!DecompressJxlToPackedPixelFile(args, compressed, accepted_formats,
+                                          dec.get(), runner.get(), &ppf,
+                                          &decoded_bytes, &stats)) {
         fprintf(stderr, "DecompressJxlToPackedPixelFile failed\n");
         return EXIT_FAILURE;
       }
     }
-    if (strcmp(extension, ".pfm") == 0) {
-      ppf.info.bits_per_sample = 32;
-    } else if (FLAGS_bits_per_sample > 0) {
-      ppf.info.bits_per_sample = FLAGS_bits_per_sample;
+    if (!args.quiet) fprintf(stderr, "Decoded to pixels.\n");
+    if (args.print_read_bytes) {
+      fprintf(stderr, "Decoded bytes: %" PRIuS "\n", decoded_bytes);
     }
+    if (extension == ".pfm") {
+      ppf.info.bits_per_sample = 32;
+    } else if (args.bits_per_sample > 0) {
+      ppf.info.bits_per_sample = args.bits_per_sample;
+    }
+#if JPEGXL_ENABLE_JPEG
+    if (encoder.get()) {
+      std::ostringstream os;
+      os << args.jpeg_quality;
+      encoder->SetOption("q", os.str());
+    }
+#endif
+#if JPEGXL_ENABLE_SJPEG
+    if (encoder.get() && args.use_sjpeg) {
+      encoder->SetOption("jpeg_encoder", "sjpeg");
+    }
+#endif
     jxl::extras::EncodedImage encoded_image;
-    if (!encoder->Encode(ppf, &encoded_image)) {
-      fprintf(stderr, "Encode failed\n");
-      return EXIT_FAILURE;
+    if (encoder.get()) {
+      if (!encoder->Encode(ppf, &encoded_image)) {
+        fprintf(stderr, "Encode failed\n");
+        return EXIT_FAILURE;
+      }
     }
     size_t nlayers = 1 + encoded_image.extra_channel_bitstreams.size();
     size_t nframes = encoded_image.bitstreams.size();
@@ -750,13 +914,16 @@ int main(int argc, char** argv) {
         }
       }
     }
-    if (!WriteOptionalOutput(FLAGS_preview_out,
+    if (!WriteOptionalOutput(args.preview_out,
                              encoded_image.preview_bitstream) ||
-        !WriteOptionalOutput(FLAGS_icc_out, ppf.icc) ||
-        !WriteOptionalOutput(FLAGS_orig_icc_out, ppf.orig_icc) ||
-        !WriteOptionalOutput(FLAGS_metadata_out, encoded_image.metadata)) {
+        !WriteOptionalOutput(args.icc_out, ppf.icc) ||
+        !WriteOptionalOutput(args.orig_icc_out, ppf.orig_icc) ||
+        !WriteOptionalOutput(args.metadata_out, encoded_image.metadata)) {
       return EXIT_FAILURE;
     }
+  }
+  if (!args.quiet) {
+    stats.Print(num_worker_threads);
   }
   return EXIT_SUCCESS;
 }

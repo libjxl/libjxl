@@ -11,8 +11,6 @@
 
 #include <vector>
 
-#include "lib/jxl/base/status.h"
-
 namespace jpegxl {
 namespace tools {
 
@@ -32,7 +30,7 @@ class SpeedStats {
   };
 
   // Non-const, may sort elapsed_.
-  jxl::Status GetSummary(Summary* summary);
+  bool GetSummary(Summary* summary);
 
   // Sets the image size to allow computing MP/s values.
   void SetImageSize(size_t xsize, size_t ysize) {
@@ -45,7 +43,7 @@ class SpeedStats {
 
   // Calls GetSummary and prints megapixels/sec. SetImageSize() must be called
   // once before this can be used.
-  jxl::Status Print(size_t worker_threads);
+  bool Print(size_t worker_threads);
 
  private:
   std::vector<double> elapsed_;

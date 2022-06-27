@@ -17,12 +17,13 @@ namespace jpegxl {
 namespace tools {
 
 void SpeedStats::NotifyElapsed(double elapsed_seconds) {
-  JXL_ASSERT(elapsed_seconds > 0.0);
-  elapsed_.push_back(elapsed_seconds);
+  if (elapsed_seconds > 0.0) {
+    elapsed_.push_back(elapsed_seconds);
+  }
 }
 
-jxl::Status SpeedStats::GetSummary(SpeedStats::Summary* s) {
-  if (elapsed_.empty()) return JXL_FAILURE("Didn't call NotifyElapsed");
+bool SpeedStats::GetSummary(SpeedStats::Summary* s) {
+  if (elapsed_.empty()) return false;
 
   s->min = *std::min_element(elapsed_.begin(), elapsed_.end());
   s->max = *std::max_element(elapsed_.begin(), elapsed_.end());
@@ -83,18 +84,18 @@ std::string SummaryStat(double value, const char* unit,
   const double value_min = value / s.max;
   const double value_max = value / s.min;
 
-  int ret = snprintf(stat_str, sizeof(stat_str), ",%s %.2f %s/s [%.2f, %.2f]",
-                     s.type, value_tendency, unit, value_min, value_max);
-  (void)ret;  // ret is unused when JXL_ASSERT is disabled.
-  JXL_ASSERT(ret < static_cast<int>(sizeof(stat_str)));
+  snprintf(stat_str, sizeof(stat_str), ",%s %.2f %s/s [%.2f, %.2f]", s.type,
+           value_tendency, unit, value_min, value_max);
   return stat_str;
 }
 
 }  // namespace
 
-jxl::Status SpeedStats::Print(size_t worker_threads) {
+bool SpeedStats::Print(size_t worker_threads) {
   Summary s;
-  JXL_RETURN_IF_ERROR(GetSummary(&s));
+  if (!GetSummary(&s)) {
+    return false;
+  }
   std::string mps_stats = SummaryStat(xsize_ * ysize_ * 1e-6, "MP", s);
   std::string mbs_stats = SummaryStat(file_size_ * 1e-6, "MB", s);
 
