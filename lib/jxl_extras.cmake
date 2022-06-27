@@ -18,6 +18,8 @@ set(JPEGXL_EXTRAS_SOURCES
   extras/dec/pnm.h
   extras/enc/encode.cc
   extras/enc/encode.h
+  extras/enc/npy.cc
+  extras/enc/npy.h
   extras/enc/pgx.cc
   extras/enc/pgx.h
   extras/enc/pnm.cc

@@ -123,7 +123,6 @@ if(JPEGXL_ENABLE_TOOLS)
     cjxl
     cjxl_ng
     djxl
-    djxl_ng
     cjpeg_hdr
     jxlinfo
   )
@@ -161,15 +160,16 @@ if(JPEGXL_ENABLE_TOOLS)
     djxl_ng_main.cc
   )
   target_link_libraries(djxl_ng
-    jxl
+    jxl_dec
     jxl_gflags
+    jxl_threads
+    jxl_extras-static
   )
 
   add_executable(cjpeg_hdr
     cjpeg_hdr.cc
   )
   target_link_libraries(cjpeg_hdr
-    box
     jxl-static
     jxl_extras-static
     jxl_threads-static
@@ -321,12 +321,19 @@ endif()  # JPEGXL_ENABLE_BENCHMARK
 # All tool binaries depend on "jxl" library and the tool helpers.
 foreach(BINARY IN LISTS TOOL_BINARIES)
   target_include_directories("${BINARY}" PRIVATE "${PROJECT_SOURCE_DIR}")
-  target_link_libraries("${BINARY}" box jxl-static jxl_extras-static jxl_threads-static jxl_tool)
+  target_link_libraries("${BINARY}" jxl-static jxl_extras-static jxl_threads-static jxl_tool)
   if(JPEGXL_EMSCRIPTEN)
     set_target_properties(${BINARY} PROPERTIES LINK_FLAGS "-s USE_LIBPNG=1")
   endif()
-
 endforeach()
+
+if(JPEGXL_ENABLE_TOOLS)
+  list(APPEND TOOL_BINARIES djxl_ng)
+  if(JPEGXL_EMSCRIPTEN)
+    set_target_properties(djxl_ng PROPERTIES LINK_FLAGS "-s USE_LIBPNG=1")
+  endif()
+endif()
+
 install(TARGETS ${TOOL_BINARIES} RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
 message(STATUS "Building tools: ${TOOL_BINARIES}")
 

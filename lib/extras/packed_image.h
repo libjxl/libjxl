@@ -151,11 +151,14 @@ class PackedPixelFile {
   };
   std::vector<PackedExtraChannel> extra_channels_info;
 
-  // Color information. If the icc is empty, the JxlColorEncoding should be used
-  // instead.
+  // Color information of the decoded pixels.
+  // If the icc is empty, the JxlColorEncoding should be used instead.
   std::vector<uint8_t> icc;
   JxlColorEncoding color_encoding = {};
+  // The icc profile of the original image.
+  std::vector<uint8_t> orig_icc;
 
+  std::unique_ptr<PackedFrame> preview_frame;
   std::vector<PackedFrame> frames;
 
   PackedMetadata metadata;

@@ -57,15 +57,14 @@ def GenerateConformanceCorpus(args):
         descriptor = {}
         descriptor['jxl'] = 'input.jxl'
 
-        cmd = [args.decoder, input_file]
         original_icc_filename = os.path.join(test_dir, 'original.icc')
         reconstructed_filename = os.path.join(test_dir, 'reconstructed.jpg')
         pixel_prefix = os.path.join(test_dir, 'reference')
-        cmd.extend(['-p', pixel_prefix])
-        cmd.extend(['-i', original_icc_filename])
-        cmd.extend(['-j', reconstructed_filename])
+        output_file = pixel_prefix + '_image.npy'
+        cmd = [args.decoder, input_file, output_file]
         metadata_filename = os.path.join(test_dir, 'test.json')
-        cmd.extend(['-m', metadata_filename])
+        cmd.extend(['--metadata_out', metadata_filename])
+        cmd.extend(['--icc_out', pixel_prefix + '.icc'])
 
         # Decode and generate the reference files.
         subprocess.check_call(cmd)
