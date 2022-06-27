@@ -213,7 +213,8 @@ DEFINE_int32(photon_noise_iso, 0,
              "As an example, a value of 100 gives low noise whereas a value "
              "of 3200 gives a lot of noise. The default value is 0.");
 
-DEFINE_int32(codestream_level, 5, "The codestream level. Either `5` or `10`.");
+DEFINE_int32(codestream_level, -1,
+             "The codestream level. Either `-1`, `5` or `10`.");
 
 DEFINE_double(
     distance, 1.0,
@@ -323,40 +324,11 @@ void SetDistanceFromFlags(JxlEncoderFrameSettings* jxl_encoder_frame_settings,
   }
 }
 
-typedef std::function<std::string(int32_t)> flag_check_fn;
+using flag_check_fn = std::function<std::string(int32_t)>;
 
 bool IsJPG(const jxl::PaddedBytes& image_data) {
   return (image_data.size() >= 2 && image_data[0] == 0xFF &&
           image_data[1] == 0xD8);
-}
-
-void SetCodestreamLevel(JxlEncoder* jxl_encoder, bool for_lossless_jpeg) {
-  bool flag_set =
-      !gflags::GetCommandLineFlagInfoOrDie("codestream_level").is_default;
-  int32_t codestream_level = FLAGS_codestream_level;
-  auto set_codestream_level = [&jxl_encoder, &codestream_level]() {
-    if (JXL_ENC_SUCCESS !=
-        JxlEncoderSetCodestreamLevel(jxl_encoder, codestream_level)) {
-      std::cerr << "Setting --codestream_level failed." << std::endl;
-      exit(EXIT_FAILURE);
-    }
-  };
-  if (for_lossless_jpeg) {
-    if (!flag_set) {
-      set_codestream_level();
-    }
-  } else {
-    if (!flag_set) {
-      codestream_level = static_cast<int32_t>(
-          JxlEncoderGetRequiredCodestreamLevel(jxl_encoder));
-      if (codestream_level == -1) {
-        std::cerr << "No codestream_level supports the given image parameters."
-                  << std::endl;
-        exit(EXIT_FAILURE);
-      }
-    }
-    set_codestream_level();
-  }
 }
 
 // TODO(tfish): Replace with non-C-API library function.
@@ -772,7 +744,6 @@ int main(int argc, char** argv) {
       process_bool_flag("jpeg_reconstruction_cfl",
                         FLAGS_jpeg_reconstruction_cfl,
                         JXL_ENC_FRAME_SETTING_JPEG_RECON_CFL);
-      SetCodestreamLevel(jxl_encoder, /*for_lossless_jpeg=*/true);
       if (JXL_ENC_SUCCESS != JxlEncoderAddJPEGFrame(jxl_encoder_frame_settings,
                                                     image_data.data(),
                                                     image_data.size())) {
@@ -788,13 +759,27 @@ int main(int argc, char** argv) {
             static_cast<float>(FLAGS_intensity_target);
         basic_info.num_extra_channels = num_alpha_channels;
         basic_info.num_color_channels = ppf.info.num_color_channels;
-        basic_info.uses_original_profile = JXL_FALSE;
+        const bool lossless =
+            FLAGS_distance == 0 ||
+            (!gflags::GetCommandLineFlagInfoOrDie("quality").is_default &&
+             FLAGS_quality == 100);
+        basic_info.uses_original_profile = lossless;
+        if (JXL_ENC_SUCCESS !=
+            JxlEncoderSetCodestreamLevel(jxl_encoder, FLAGS_codestream_level)) {
+          std::cerr << "Setting --codestream_level failed." << std::endl;
+          return EXIT_FAILURE;
+        }
         if (JXL_ENC_SUCCESS !=
             JxlEncoderSetBasicInfo(jxl_encoder, &basic_info)) {
           std::cerr << "JxlEncoderSetBasicInfo() failed." << std::endl;
           return EXIT_FAILURE;
         }
-        SetCodestreamLevel(jxl_encoder, /*for_lossless_jpeg=*/false);
+        if (lossless &&
+            JXL_ENC_SUCCESS != JxlEncoderSetFrameLossless(
+                                   jxl_encoder_frame_settings, JXL_TRUE)) {
+          std::cerr << "JxlEncoderSetFrameLossless() failed." << std::endl;
+          return EXIT_FAILURE;
+        }
       }
 
       if (!ppf.icc.empty()) {
