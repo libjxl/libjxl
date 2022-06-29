@@ -303,17 +303,6 @@ void LowMemoryRenderPipeline::Init() {
     stages_[i]->SetInputSizes(input_sizes);
   }
 
-  // Check that kInput stages appear after the switch to image dimensions (if
-  // any).
-  for (size_t i = 0; i < stages_.size(); i++) {
-    for (size_t c = 0; c < shifts.size(); c++) {
-      if (stages_[i]->GetChannelMode(c) == RenderPipelineChannelMode::kInput) {
-        JXL_ASSERT(first_image_dim_stage_ == stages_.size() ||
-                   i >= first_image_dim_stage_);
-      }
-    }
-  }
-
   anyc_.resize(stages_.size());
   for (size_t i = 0; i < stages_.size(); i++) {
     for (size_t c = 0; c < shifts.size(); c++) {
