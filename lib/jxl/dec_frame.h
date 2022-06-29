@@ -68,11 +68,8 @@ class FrameDecoder {
   // Read FrameHeader and table of contents from the given BitReader.
   // Also checks frame dimensions for their limits, and sets the output
   // image buffer.
-  // TODO(veluca): remove the `allow_partial_frames` flag - this should be moved
-  // on callers.
   Status InitFrame(BitReader* JXL_RESTRICT br, ImageBundle* decoded,
-                   bool is_preview, bool allow_partial_frames,
-                   bool output_needed);
+                   bool is_preview, bool output_needed);
 
   struct SectionInfo {
     BitReader* JXL_RESTRICT br;
@@ -308,7 +305,6 @@ class FrameDecoder {
   FrameDimensions frame_dim_;
   ImageBundle* decoded_;
   ModularFrameDecoder modular_frame_decoder_;
-  bool allow_partial_frames_;
   bool render_spotcolors_ = true;
   bool coalescing_ = true;
 

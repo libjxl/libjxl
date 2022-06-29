@@ -18,18 +18,8 @@
 namespace jxl {
 
 struct DecompressParams {
-  // If true, checks at the end of decoding that all of the compressed data
-  // was consumed by the decoder.
-  bool check_decompressed_size = true;
-
   // If true, skip dequant and iDCT and decode to JPEG (only if possible)
-  bool keep_dct = false;
-  // If true, render spot colors (otherwise only returned as extra channels)
-  bool render_spotcolors = true;
-  // If true, coalesce frames (otherwise return unblended frames)
-  bool coalescing = true;
-  // If non-zero, tone-maps PQ and HLG images to the given peak luminance
-  float desired_intensity_target = 0.f;
+  bool decode_to_jpeg = false;
 
   // How many passes to decode at most. By default, decode everything.
   uint32_t max_passes = std::numeric_limits<uint32_t>::max();
@@ -37,9 +27,6 @@ struct DecompressParams {
   // with respect to the full size of the image. By default, nothing less than
   // the full size is requested.
   size_t max_downsampling = 1;
-
-  // Try to decode as much as possible of a truncated codestream.
-  bool allow_partial_files = false;
 
   // Internal test-only setting: whether or not to use the slow rendering
   // pipeline.

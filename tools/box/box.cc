@@ -283,7 +283,7 @@ jxl::Status EncodeJpegXlContainerOneShot(const JpegXlContainer& container,
 jxl::Status DecodeJpegXlToJpeg(jxl::DecompressParams params,
                                const JpegXlContainer& container,
                                jxl::CodecInOut* io, jxl::ThreadPool* pool) {
-  params.keep_dct = true;
+  params.decode_to_jpeg = true;
   if (container.jpeg_reconstruction == nullptr) {
     return JXL_FAILURE(
         "Cannot decode to JPEG without a JPEG reconstruction box");

@@ -165,8 +165,6 @@ TEST_P(RenderPipelineTestParam, PipelineTest) {
 
   DecompressParams dparams;
 
-  dparams.render_spotcolors = true;
-
   CodecInOut io_default;
   ASSERT_TRUE(DecodeFile(dparams, compressed, &io_default, &pool));
   CodecInOut io_slow_pipeline;

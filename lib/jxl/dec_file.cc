@@ -55,7 +55,7 @@ Status DecodeFile(const DecompressParams& dparams,
   }
 
   std::unique_ptr<jpeg::JPEGData> jpeg_data = nullptr;
-  if (dparams.keep_dct) {
+  if (dparams.decode_to_jpeg) {
     if (io->Main().jpeg_data == nullptr) {
       return JXL_FAILURE("Caller must set jpeg_data");
     }
@@ -108,10 +108,6 @@ Status DecodeFile(const DecompressParams& dparams,
     PassesDecoderState dec_state;
     JXL_RETURN_IF_ERROR(
         dec_state.output_encoding_info.SetFromMetadata(io->metadata));
-    if (dparams.desired_intensity_target > 0) {
-      dec_state.output_encoding_info.desired_intensity_target =
-          dparams.desired_intensity_target;
-    }
 
     if (io->metadata.m.have_preview) {
       JXL_RETURN_IF_ERROR(reader.JumpToByteBoundary());
@@ -125,12 +121,11 @@ Status DecodeFile(const DecompressParams& dparams,
 
     // Only necessary if no ICC and no preview.
     JXL_RETURN_IF_ERROR(reader.JumpToByteBoundary());
-    if (io->metadata.m.have_animation && dparams.keep_dct) {
+    if (io->metadata.m.have_animation && dparams.decode_to_jpeg) {
       return JXL_FAILURE("Cannot decode to JPEG an animation");
     }
 
     io->frames.clear();
-    Status dec_ok(false);
     do {
       io->frames.emplace_back(&io->metadata.m);
       if (jpeg_data) {
@@ -140,18 +135,11 @@ Status DecodeFile(const DecompressParams& dparams,
       bool found_displayed_frame = true;
       do {
         size_t frame_start = reader.TotalBitsConsumed() / kBitsPerByte;
-        dec_ok =
+        JXL_RETURN_IF_ERROR(
             DecodeFrame(dparams, &dec_state, pool, file.data() + frame_start,
                         file.size() - frame_start, &io->frames.back(),
-                        io->metadata, &io->constraints);
+                        io->metadata, &io->constraints));
         reader.SkipBits(io->frames.back().decoded_bytes() * kBitsPerByte);
-        if (!dparams.allow_partial_files) {
-          JXL_RETURN_IF_ERROR(dec_ok);
-        } else if (!reader.AllReadsWithinBounds()) {
-          io->frames.pop_back();
-          found_displayed_frame = false;
-          break;
-        }
       } while (dec_state.shared->frame_header.frame_type !=
                    FrameType::kRegularFrame &&
                dec_state.shared->frame_header.frame_type !=
@@ -162,19 +150,17 @@ Status DecodeFile(const DecompressParams& dparams,
         JXL_ASSERT(!io->frames.empty());
         io->dec_pixels += io->frames.back().xsize() * io->frames.back().ysize();
       }
-    } while (!dec_state.shared->frame_header.is_last && dec_ok);
+    } while (!dec_state.shared->frame_header.is_last);
 
     if (io->frames.empty()) return JXL_FAILURE("Not enough data.");
 
-    if (dparams.check_decompressed_size && !dparams.allow_partial_files &&
-        dparams.max_downsampling == 1) {
+    if (dparams.max_downsampling == 1) {
       if (reader.TotalBitsConsumed() != file.size() * kBitsPerByte) {
         return JXL_FAILURE("DecodeFile reader position not at EOF.");
       }
     }
-    // Suppress errors when decoding partial files with DC frames.
-    if (!reader.AllReadsWithinBounds() && dparams.allow_partial_files) {
-      reader_closer.CloseAndSuppressError();
+    if (!reader.AllReadsWithinBounds()) {
+      return JXL_FAILURE("DecodeFile reader out of bounds read.");
     }
 
     io->CheckMetadata();

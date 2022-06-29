@@ -1428,7 +1428,7 @@ jxl::Status DecompressJxlToJPEGForTest(
   // Decode to DCT when possible and generate a JPG file.
   jxl::CodecInOut io;
   jxl::DecompressParams params;
-  params.keep_dct = true;
+  params.decode_to_jpeg = true;
   if (!jpegxl::tools::DecodeJpegXlToJpeg(params, container, &io, pool)) {
     return JXL_FAILURE("Failed to decode JXL to JPEG");
   }

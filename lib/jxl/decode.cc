@@ -1270,8 +1270,7 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec) {
           (dec->preview_frame ? (dec->events_wanted & JXL_DEC_PREVIEW_IMAGE)
                               : (dec->events_wanted & JXL_DEC_FULL_IMAGE));
       jxl::Status status = dec->frame_dec->InitFrame(
-          reader.get(), dec->ib.get(), dec->preview_frame,
-          /*allow_partial_frames=*/false, output_needed);
+          reader.get(), dec->ib.get(), dec->preview_frame, output_needed);
       if (!reader->AllReadsWithinBounds() ||
           status.code() == StatusCode::kNotEnoughBytes) {
         return dec->RequestMoreInput();

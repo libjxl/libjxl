@@ -881,7 +881,7 @@ TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGReconstructionTest)) {
                                         decoded_io.Main().jpeg_data.get()));
 
   jxl::DecompressParams dparams;
-  dparams.keep_dct = true;
+  dparams.decode_to_jpeg = true;
   jxl::Span<const uint8_t> codestream_span = jxl::Span<const uint8_t>(
       codestream_bytes.data(), codestream_bytes.size());
   EXPECT_TRUE(jxl::DecodeFile(dparams, codestream_span, &decoded_io, nullptr));
