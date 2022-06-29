@@ -1484,6 +1484,7 @@ You can pass some optional environment variables as well:
  - SKIP_TEST=1: Skip the test stage.
  - STORE_IMAGES=0: Makes the benchmark discard the computed images.
  - TEST_STACK_LIMIT: Stack size limit (ulimit -s) during tests, in KiB.
+ - TEST_SELECTOR: pass additional arguments to ctest, e.g. "-R .Resample.".
  - STACK_SIZE=1: Generate binaries with the .stack_sizes sections.
 
 These optional environment variables are forwarded to the cmake call as
