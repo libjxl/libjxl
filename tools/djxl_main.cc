@@ -347,7 +347,6 @@ bool DecompressJxlReconstructJPEG(const jpegxl::tools::DecompressArgs& args,
         fprintf(stderr, "JxlDecoderGetBasicInfo failed\n");
         return false;
       }
-      if (!*can_reconstruct_jpeg) return false;
     } else if (status == JXL_DEC_SUCCESS) {
       // Decoding finished successfully.
       break;
