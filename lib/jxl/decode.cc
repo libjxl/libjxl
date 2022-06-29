@@ -1505,13 +1505,14 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec) {
         // this frame was skipped before and set to 255, while only now we know
         // the true value.
         dec->frame_references[internal_index] = dec->frame_dec->References();
-        if (!dec->frame_dec->FinalizeFrame()) {
-          return JXL_API_ERROR("decoding frame failed");
-        }
         // Copy exif/xmp metadata from their boxes into the jpeg_data, if
         // JPEG reconstruction is requested.
         if (dec->jpeg_decoder.IsOutputSet() && dec->ib->jpeg_data != nullptr) {
         }
+      }
+
+      if (!dec->frame_dec->FinalizeFrame()) {
+        return JXL_API_ERROR("decoding frame failed");
       }
 
       dec->frame_dec_in_progress = false;
