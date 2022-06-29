@@ -122,6 +122,16 @@ JXL_EXPORT void JxlDecoderDestroy(JxlDecoder* dec);
 typedef enum {
   /** Function call finished successfully, or decoding is finished and there is
    * nothing more to be done.
+   *
+   * Note that @ref JxlDecoderProcessInput will return JXL_DEC_SUCCESS if all
+   * events that were registered with @ref JxlDecoderSubscribeEvents were
+   * processed, even before the end of the JPEG XL codestream.
+   *
+   * In this case, the return value @ref JxlDecoderReleaseInput will be the same
+   * as it was at the last signaled event. E.g. if JXL_DEC_FULL_IMAGE was
+   * subscribed to, then all bytes from the end of the JPEG XL codestream
+   * (including possible boxes needed for jpeg reconstruction) will be returned
+   * as unprocessed.
    */
   JXL_DEC_SUCCESS = 0,
 
@@ -138,6 +148,11 @@ typedef enum {
    * all unprocessed bytes must be provided again (the address need not match,
    * but the contents must), and more bytes must be concatenated after the
    * unprocessed bytes.
+   * In most cases, @ref JxlDecoderReleaseInput will return no unprocessed bytes
+   * at this event, the only exceptions are if the previously set input ended
+   * within (a) the raw codestream signiture, (b) the signature box, (c) a box
+   * header, or (d) the first 4 bytes of a brob, ftyp, or jxlp box. In any of
+   * these cases the number of unprocessed bytes is less than 20.
    */
   JXL_DEC_NEED_MORE_INPUT = 2,
 
@@ -146,6 +161,9 @@ typedef enum {
    * if @ref JXL_DEC_PREVIEW_IMAGE is requested and it is possible to decode a
    * preview image from the codestream and the preview out buffer was not yet
    * set. There is maximum one preview image in a codestream.
+   * In this case, @ref JxlDecoderReleaseInput will return all bytes from the
+   * end of the frame header (including ToC) of the preview frame as
+   * unprocessed.
    */
   JXL_DEC_NEED_PREVIEW_OUT_BUFFER = 3,
 
@@ -163,6 +181,8 @@ typedef enum {
    * which can be set with @ref JxlDecoderSetImageOutBuffer or with @ref
    * JxlDecoderSetImageOutCallback. This event re-occurs for new frames if
    * there are multiple animation frames and requires setting an output again.
+   * In this case, @ref JxlDecoderReleaseInput will return all bytes from the
+   * end of the frame header (including ToC) as unprocessed.
    */
   JXL_DEC_NEED_IMAGE_OUT_BUFFER = 5,
 
@@ -182,6 +202,9 @@ typedef enum {
   /** Informative event by @ref JxlDecoderProcessInput
    * "JxlDecoderProcessInput": Basic information such as image dimensions and
    * extra channels. This event occurs max once per image.
+   * In this case, @ref JxlDecoderReleaseInput will return all bytes from the
+   * end of the basic info as unprocessed (including the last byte of basic info
+   * if it did not end on a byte boundary).
    */
   JXL_DEC_BASIC_INFO = 0x40,
 
@@ -199,6 +222,9 @@ typedef enum {
    * "JxlDecoderProcessInput": Color encoding or ICC profile from the
    * codestream header. This event occurs max once per image and always later
    * than @ref JXL_DEC_BASIC_INFO and earlier than any pixel data.
+   * In this case, @ref JxlDecoderReleaseInput will return all bytes from the
+   * end of the image header (which is the start of the first frame) as
+   * unprocessed.
    */
   JXL_DEC_COLOR_ENCODING = 0x100,
 
@@ -207,6 +233,8 @@ typedef enum {
    * event can only happen if the image has a preview frame encoded. This event
    * occurs max once for the codestream and always later than @ref
    * JXL_DEC_COLOR_ENCODING and before @ref JXL_DEC_FRAME.
+   * In this case, @ref JxlDecoderReleaseInput will return all bytes from the
+   * end of the preview frame as unprocessed.
    */
   JXL_DEC_PREVIEW_IMAGE = 0x200,
 
@@ -226,6 +254,8 @@ typedef enum {
    * JPEG XL supports encoding a single frame as the composition of multiple
    * internal sub-frames also called frames, this event is not indicated for the
    * internal frames.
+   * In this case, @ref JxlDecoderReleaseInput will return all bytes from the
+   * end of the frame header (including ToC) as unprocessed.
    */
   JXL_DEC_FRAME = 0x400,
 
@@ -251,6 +281,10 @@ typedef enum {
    * not this return status only indicates we're past this point in the
    * codestream. This event occurs max once per frame and always later than @ref
    * JXL_DEC_DC_IMAGE.
+   * In this case, @ref JxlDecoderReleaseInput will return all bytes from the
+   * end of the frame (or if @ref JXL_DEC_JPEG_RECONSTRUCTION is subscribed to,
+   * from the end of the last box that is needed for jpeg reconstruction) as
+   * unprocessed.
    */
   JXL_DEC_FULL_IMAGE = 0x1000,
 
@@ -262,6 +296,8 @@ typedef enum {
    * image will be written to the JPEG reconstruction buffer instead of pixels
    * to the image out buffer. This event occurs max once per image and always
    * before @ref JXL_DEC_FULL_IMAGE.
+   * In this case, @ref JxlDecoderReleaseInput will return all bytes from the
+   * end of the 'jbrd' box as unprocessed.
    */
   JXL_DEC_JPEG_RECONSTRUCTION = 0x2000,
 
@@ -296,6 +332,9 @@ typedef enum {
    * boxes. To check whether the box is a metadata type for respectively EXIF,
    * XMP or JUMBF, use @ref JxlDecoderGetBoxType and check for types "Exif",
    * "xml " and "jumb" respectively.
+   *
+   * In this case, @ref JxlDecoderReleaseInput will return all bytes from the
+   * start of the box header as unprocessed.
    */
   JXL_DEC_BOX = 0x4000,
 
@@ -310,6 +349,9 @@ typedef enum {
    * JxlDecoderSetProgressiveDetail to configure more fine-grainedness. The
    * event is not guaranteed to trigger, not all images have progressive steps
    * or DC encoded.
+   * In this case, @ref JxlDecoderReleaseInput will return all bytes from the
+   * end of the section that was needed to produce this progressive event as
+   * unprocessed.
    */
   JXL_DEC_FRAME_PROGRESSION = 0x8000,
 } JxlDecoderStatus;
@@ -565,9 +607,10 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetInput(JxlDecoder* dec,
  *     remaining in the data set by @ref JxlDecoderSetInput, or 0 if no input is
  *     set or @ref JxlDecoderReleaseInput was already called. For a next call
  *     to @ref JxlDecoderProcessInput, the buffer must start with these
- *     unprocessed bytes. This value doesn't provide information about how many
- *     bytes the decoder truly processed internally or how large the original
- *     JPEG XL codestream or file are.
+ *     unprocessed bytes. From this value it is possible to infer the position
+ *     of certain JPEG XL codestream elements (e.g. end of headers, frame
+ *     start/end). See the documentation of individual values of @ref
+ *     JxlDecoderStatus for more information.
  */
 JXL_EXPORT size_t JxlDecoderReleaseInput(JxlDecoder* dec);
 
