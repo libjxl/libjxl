@@ -602,7 +602,7 @@ TEST(JxlTest, RoundtripSmallPatchesAlpha) {
   DecompressParams dparams;
 
   CodecInOut io2;
-  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 2000u);
+  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 1000u);
   EXPECT_THAT(ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
                                   /*distmap=*/nullptr, pool),
               IsSlightlyBelow(0.04f));
@@ -630,7 +630,7 @@ TEST(JxlTest, RoundtripSmallPatches) {
   DecompressParams dparams;
 
   CodecInOut io2;
-  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 2000u);
+  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 1000u);
   EXPECT_THAT(ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
                                   /*distmap=*/nullptr, pool),
               IsSlightlyBelow(0.04f));

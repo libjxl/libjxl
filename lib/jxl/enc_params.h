@@ -152,6 +152,7 @@ struct CompressParams {
   Override noise = Override::kDefault;
   Override dots = Override::kDefault;
   Override patches = Override::kDefault;
+  Override more_patches = Override::kDefault;
   Override gaborish = Override::kDefault;
   int epf = -1;
 
