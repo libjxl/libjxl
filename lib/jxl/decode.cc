@@ -530,6 +530,7 @@ struct JxlDecoderStruct {
   bool input_closed;
 
   void AdvanceInput(size_t size) {
+    JXL_DASSERT(avail_in >= size);
     next_in += size;
     avail_in -= size;
     file_pos += size;
@@ -1684,7 +1685,7 @@ static JxlDecoderStatus ParseBoxHeader(const uint8_t* in, size_t size,
   pos += 4;
   if (*box_size == 1) {
     *header_size = 16;
-    if (OutOfBounds(pos, 8, size)) return JXL_DEC_NEED_MORE_INPUT;
+    if (OutOfBounds(pos, 12, size)) return JXL_DEC_NEED_MORE_INPUT;
     *box_size = LoadBE64(in + pos);
     pos += 8;
   }
