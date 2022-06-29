@@ -29,6 +29,7 @@ class XYBStage : public RenderPipelineStage {
     PROFILER_ZONE("UndoXYB");
 
     const HWY_FULL(float) d;
+    JXL_ASSERT(xextra == 0);
     const size_t xsize_v = RoundUpTo(xsize, Lanes(d));
     float* JXL_RESTRICT row0 = GetInputRow(input_rows, 0, 0);
     float* JXL_RESTRICT row1 = GetInputRow(input_rows, 1, 0);
@@ -39,18 +40,20 @@ class XYBStage : public RenderPipelineStage {
     msan::UnpoisonMemory(row0 + xsize, sizeof(float) * (xsize_v - xsize));
     msan::UnpoisonMemory(row1 + xsize, sizeof(float) * (xsize_v - xsize));
     msan::UnpoisonMemory(row2 + xsize, sizeof(float) * (xsize_v - xsize));
+    // TODO(eustas): when using frame origin, addresses might be unaligned;
+    //               making them aligned will void performance penalty.
     for (ssize_t x = -xextra; x < (ssize_t)(xsize + xextra); x += Lanes(d)) {
-      const auto in_opsin_x = Load(d, row0 + x);
-      const auto in_opsin_y = Load(d, row1 + x);
-      const auto in_opsin_b = Load(d, row2 + x);
+      const auto in_opsin_x = LoadU(d, row0 + x);
+      const auto in_opsin_y = LoadU(d, row1 + x);
+      const auto in_opsin_b = LoadU(d, row2 + x);
       auto r = Undefined(d);
       auto g = Undefined(d);
       auto b = Undefined(d);
       XybToRgb(d, in_opsin_x, in_opsin_y, in_opsin_b, opsin_params_, &r, &g,
                &b);
-      Store(r, d, row0 + x);
-      Store(g, d, row1 + x);
-      Store(b, d, row2 + x);
+      StoreU(r, d, row0 + x);
+      StoreU(g, d, row1 + x);
+      StoreU(b, d, row2 + x);
     }
     msan::PoisonMemory(row0 + xsize, sizeof(float) * (xsize_v - xsize));
     msan::PoisonMemory(row1 + xsize, sizeof(float) * (xsize_v - xsize));
