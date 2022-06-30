@@ -143,15 +143,20 @@ Status InitializePassesEncoder(const Image3F& opsin, const JxlCmsInterface& cms,
     const Span<const uint8_t> encoded = special_frame->GetSpan();
     enc_state->special_frames.emplace_back(std::move(special_frame));
 
-    BitReader br(encoded);
     ImageBundle decoded(&shared.metadata->m);
     std::unique_ptr<PassesDecoderState> dec_state =
         jxl::make_unique<PassesDecoderState>();
-    JXL_CHECK(dec_state->output_encoding_info.Set(
-        *shared.metadata,
-        ColorEncoding::LinearSRGB(shared.metadata->m.color_encoding.IsGray())));
-    JXL_CHECK(DecodeFrame({}, dec_state.get(), pool, &br, &decoded,
-                          *shared.metadata, /*constraints=*/nullptr));
+    JXL_CHECK(
+        dec_state->output_encoding_info.SetFromMetadata(*shared.metadata));
+    const uint8_t* frame_start = encoded.data();
+    size_t encoded_size = encoded.size();
+    for (int i = 0; i <= cparams.progressive_dc; ++i) {
+      JXL_CHECK(DecodeFrame({}, dec_state.get(), pool, frame_start,
+                            encoded_size, &decoded, *shared.metadata,
+                            /*constraints=*/nullptr));
+      frame_start += decoded.decoded_bytes();
+      encoded_size -= decoded.decoded_bytes();
+    }
     // TODO(lode): shared.frame_header.dc_level should be equal to
     // dec_state.shared->frame_header.dc_level - 1 here, since above we set
     // dc_frame_info.dc_level = shared.frame_header.dc_level + 1, and
@@ -161,7 +166,7 @@ Status InitializePassesEncoder(const Image3F& opsin, const JxlCmsInterface& cms,
         CopyImage(dec_state->shared->dc_frames[shared.frame_header.dc_level]);
     ZeroFillImage(&shared.quant_dc);
     shared.dc = &shared.dc_storage;
-    JXL_CHECK(br.Close());
+    JXL_CHECK(encoded_size == 0);
   } else {
     auto compute_dc_coeffs = [&](int group_index, int /* thread */) {
       modular_frame_encoder->AddVarDCTDC(

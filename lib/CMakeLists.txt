@@ -126,7 +126,7 @@ endif()  # WIN32
 # Internal flags for coverage builds:
 if(JPEGXL_ENABLE_COVERAGE)
 set(JPEGXL_COVERAGE_FLAGS
-    -g -O0 -fprofile-arcs -ftest-coverage -DJXL_DISABLE_SLOW_TESTS
+    -g -O0 -fprofile-arcs -ftest-coverage
     -DJXL_ENABLE_ASSERT=0 -DJXL_ENABLE_CHECK=0
 )
 endif()  # JPEGXL_ENABLE_COVERAGE
@@ -136,7 +136,9 @@ endif()  #!MSVC
 include(jxl.cmake)
 
 # Other libraries outside the core jxl library.
-include(jxl_extras.cmake)
+if(JPEGXL_ENABLE_TOOLS)
+  include(jxl_extras.cmake)
+endif()
 include(jxl_threads.cmake)
 
 # Install all the library headers from the source and the generated ones. There

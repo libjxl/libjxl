@@ -58,6 +58,7 @@ struct JxlArgs {
   Override dots;
   Override patches;
 
+  bool log_search_state;
   std::string debug_image_dir;
 };
 
@@ -84,6 +85,9 @@ Status AddCommandLineOptionsJxlCodec(BenchmarkArgs* args) {
                     "Enable(1)/disable(0) dots generation.");
   args->AddOverride(&jxlargs->patches, "patches",
                     "Enable(1)/disable(0) patch dictionary.");
+
+  args->AddFlag(&jxlargs->log_search_state, "log_search_state",
+                "Print out debug info for tortoise mode AQ loop.", false);
 
   args->AddString(
       &jxlargs->debug_image_dir, "debug_image_dir",
@@ -215,7 +219,7 @@ class JxlCodec : public ImageCodec {
   }
 
   Status Compress(const std::string& filename, const CodecInOut* io,
-                  ThreadPoolInternal* pool, PaddedBytes* compressed,
+                  ThreadPoolInternal* pool, std::vector<uint8_t>* compressed,
                   jpegxl::tools::SpeedStats* speed_stats) override {
     if (!jxlargs->debug_image_dir.empty()) {
       cinfo_.dump_image = [](const CodecInOut& io, const std::string& path) {
@@ -248,15 +252,20 @@ class JxlCodec : public ImageCodec {
       cparams_.color_transform = ColorTransform::kXYB;
     }
 
+    cparams_.log_search_state = jxlargs->log_search_state;
+
     const double start = Now();
     PassesEncoderState passes_encoder_state;
     if (cparams_.use_new_heuristics) {
       passes_encoder_state.heuristics =
           jxl::make_unique<jxl::FastEncoderHeuristics>();
     }
+    PaddedBytes compressed_padded;
     JXL_RETURN_IF_ERROR(EncodeFile(cparams_, io, &passes_encoder_state,
-                                   compressed, GetJxlCms(), &cinfo_, pool));
+                                   &compressed_padded, GetJxlCms(), &cinfo_,
+                                   pool));
     const double end = Now();
+    compressed->assign(compressed_padded.begin(), compressed_padded.end());
     speed_stats->NotifyElapsed(end - start);
     return true;
   }

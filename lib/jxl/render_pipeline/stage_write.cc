@@ -289,12 +289,15 @@ class WriteToPixelCallbackStage : public RenderPipelineStage {
   WriteToPixelCallbackStage& operator=(WriteToPixelCallbackStage&&) = delete;
 
   ~WriteToPixelCallbackStage() override {
-    pixel_callback_.destroy(run_opaque_);
+    if (run_opaque_) {
+      pixel_callback_.destroy(run_opaque_);
+    }
   }
 
   void ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
                   size_t xextra, size_t xsize, size_t xpos, size_t ypos,
                   size_t thread_id) const final {
+    JXL_DASSERT(run_opaque_);
     if (ypos >= height_) return;
     const float* line_buffers[4];
     for (size_t c = 0; c < 3; c++) {
@@ -349,7 +352,7 @@ class WriteToPixelCallbackStage : public RenderPipelineStage {
 
   static constexpr size_t kMaxPixelsPerCall = 1024;
   PixelCallback pixel_callback_;
-  void* run_opaque_;
+  void* run_opaque_ = nullptr;
   size_t width_;
   size_t height_;
   bool rgba_;

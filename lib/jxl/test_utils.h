@@ -8,7 +8,14 @@
 
 // Macros and functions useful for tests.
 
+// gmock unconditionally redefines those macros (to wrong values).
+// Lets include it only here and mitigate the problem.
+#pragma push_macro("PRIdS")
+#pragma push_macro("PRIuS")
 #include "gmock/gmock.h"
+#pragma pop_macro("PRIuS")
+#pragma pop_macro("PRIdS")
+
 #include "gtest/gtest.h"
 #include "jxl/codestream_header.h"
 #include "jxl/encode.h"
@@ -80,6 +87,11 @@ void JxlBasicInfoSetFromPixelFormat(JxlBasicInfo* basic_info,
       break;
     default:
       JXL_ABORT("Unhandled JxlDataType");
+  }
+  if (pixel_format->num_channels < 3) {
+    basic_info->num_color_channels = 1;
+  } else {
+    basic_info->num_color_channels = 3;
   }
   if (pixel_format->num_channels == 2 || pixel_format->num_channels == 4) {
     basic_info->alpha_exponent_bits = basic_info->exponent_bits_per_sample;
@@ -208,6 +220,7 @@ static inline ColorEncoding ColorEncodingFromDescriptor(
   c.primaries = desc.primaries;
   c.tf.SetTransferFunction(desc.tf);
   c.rendering_intent = desc.rendering_intent;
+  JXL_CHECK(c.CreateICC());
   return c;
 }
 
@@ -623,6 +636,26 @@ size_t ComparePixels(const uint8_t* a, const uint8_t* b, size_t xsize,
     }
   }
   return numdiff;
+}
+double DistanceRMS(const uint8_t* a, const uint8_t* b, size_t xsize,
+                   size_t ysize, const JxlPixelFormat& format) {
+  // Convert both images to equal full precision for comparison.
+  std::vector<double> a_full = ConvertToRGBA32(a, xsize, ysize, format);
+  std::vector<double> b_full = ConvertToRGBA32(b, xsize, ysize, format);
+  double sum = 0.0;
+  for (size_t y = 0; y < ysize; y++) {
+    double row_sum = 0.0;
+    for (size_t x = 0; x < xsize; x++) {
+      size_t i = (y * xsize + x) * 4;
+      for (size_t c = 0; c < format.num_channels; ++c) {
+        double diff = a_full[i + c] - b_full[i + c];
+        row_sum += diff * diff;
+      }
+    }
+    sum += row_sum;
+  }
+  sum /= (xsize * ysize);
+  return sqrt(sum);
 }
 }  // namespace test
 

@@ -271,6 +271,11 @@ Status FrameHeader::VisitFields(Visitor* JXL_RESTRICT visitor) {
       // Frame size
       JXL_QUIET_RETURN_IF_ERROR(visitor->U32(enc, 0, &frame_size.xsize));
       JXL_QUIET_RETURN_IF_ERROR(visitor->U32(enc, 0, &frame_size.ysize));
+      if (custom_size_or_origin &&
+          (frame_size.xsize == 0 || frame_size.ysize == 0)) {
+        return JXL_FAILURE(
+            "Invalid crop dimensions for frame: zero width or height");
+      }
       int32_t image_xsize = default_xsize();
       int32_t image_ysize = default_ysize();
       if (frame_type == FrameType::kRegularFrame ||

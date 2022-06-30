@@ -62,10 +62,11 @@ set(TOOL_BINARIES)
 add_library(jxl_tool STATIC EXCLUDE_FROM_ALL
   cmdline.cc
   codec_config.cc
+  speed_stats.cc
   tool_version.cc
 )
 target_compile_options(jxl_tool PUBLIC "${JPEGXL_INTERNAL_FLAGS}")
-target_link_libraries(jxl_tool jxl-static)
+target_link_libraries(jxl_tool hwy)
 
 target_include_directories(jxl_tool
   PUBLIC "${PROJECT_SOURCE_DIR}")
@@ -122,8 +123,6 @@ if(JPEGXL_ENABLE_TOOLS)
   list(APPEND TOOL_BINARIES
     cjxl
     cjxl_ng
-    djxl
-    djxl_ng
     cjpeg_hdr
     jxlinfo
   )
@@ -131,7 +130,6 @@ if(JPEGXL_ENABLE_TOOLS)
   # Main compressor.
   add_executable(cjxl
     cjxl.cc
-    speed_stats.cc
     cjxl_main.cc
   )
   target_link_libraries(cjxl
@@ -140,7 +138,6 @@ if(JPEGXL_ENABLE_TOOLS)
     jxl_extras-static
     jxl_threads-static
   )
-
 
   add_executable(cjxl_ng
     cjxl_ng_main.cc
@@ -157,40 +154,24 @@ if(JPEGXL_ENABLE_TOOLS)
     set_target_properties(cjxl_ng PROPERTIES LINK_FLAGS "-s USE_LIBPNG=1")
   endif()
 
-  add_executable(djxl_ng
-    djxl_ng_main.cc
+  add_executable(djxl
+    djxl_main.cc
   )
-  target_link_libraries(djxl_ng
-    jxl
-    jxl_gflags
+  target_link_libraries(djxl
+    jxl_dec
+    jxl_extras-static
+    jxl_threads
+    jxl_tool
   )
 
   add_executable(cjpeg_hdr
     cjpeg_hdr.cc
   )
   target_link_libraries(cjpeg_hdr
-    box
     jxl-static
     jxl_extras-static
     jxl_threads-static
   )
-
-  # Main decompressor.
-  add_library(djxltool STATIC
-    djxl.cc
-    speed_stats.cc
-  )
-  target_link_libraries(djxltool
-    box
-    jxl-static
-    jxl_extras-static
-    jxl_threads-static
-  )
-
-  add_executable(djxl
-    djxl_main.cc
-  )
-  target_link_libraries(djxl djxltool)
 
   add_executable(jxlinfo
     jxlinfo.c
@@ -210,7 +191,6 @@ endif()  # JPEGXL_ENABLE_TOOLS
 if(${JPEGXL_ENABLE_DEVTOOLS})
   list(APPEND TOOL_BINARIES
     fuzzer_corpus
-    add_noise
     butteraugli_main
     decode_and_encode
     display_to_hlg
@@ -226,7 +206,6 @@ if(${JPEGXL_ENABLE_DEVTOOLS})
 
   add_executable(fuzzer_corpus fuzzer_corpus.cc)
 
-  add_executable(add_noise add_noise.cc)
   add_executable(ssimulacra_main ssimulacra_main.cc ssimulacra.cc)
   add_executable(butteraugli_main butteraugli_main.cc)
   add_executable(decode_and_encode decode_and_encode.cc)
@@ -241,7 +220,7 @@ if(${JPEGXL_ENABLE_DEVTOOLS})
 endif()  # JPEGXL_ENABLE_DEVTOOLS
 
 # Benchmark tools.
-if(${JPEGXL_ENABLE_BENCHMARK})
+if(${JPEGXL_ENABLE_BENCHMARK} AND JPEGXL_ENABLE_TOOLS)
   list(APPEND TOOL_BINARIES
     benchmark_xl
   )
@@ -258,8 +237,6 @@ if(${JPEGXL_ENABLE_BENCHMARK})
     benchmark/benchmark_codec_custom.h
     benchmark/benchmark_codec_jxl.cc
     benchmark/benchmark_codec_jxl.h
-    speed_stats.cc
-    speed_stats.h
     ../third_party/dirent.cc
   )
   target_link_libraries(benchmark_xl Threads::Threads)
@@ -323,12 +300,19 @@ endif()  # JPEGXL_ENABLE_BENCHMARK
 # All tool binaries depend on "jxl" library and the tool helpers.
 foreach(BINARY IN LISTS TOOL_BINARIES)
   target_include_directories("${BINARY}" PRIVATE "${PROJECT_SOURCE_DIR}")
-  target_link_libraries("${BINARY}" box jxl-static jxl_extras-static jxl_threads-static jxl_tool)
+  target_link_libraries("${BINARY}" jxl-static jxl_extras-static jxl_threads-static jxl_tool)
   if(JPEGXL_EMSCRIPTEN)
     set_target_properties(${BINARY} PROPERTIES LINK_FLAGS "-s USE_LIBPNG=1")
   endif()
-
 endforeach()
+
+if(JPEGXL_ENABLE_TOOLS)
+  list(APPEND TOOL_BINARIES djxl)
+  if(JPEGXL_EMSCRIPTEN)
+    set_target_properties(djxl PROPERTIES LINK_FLAGS "-s USE_LIBPNG=1")
+  endif()
+endif()
+
 install(TARGETS ${TOOL_BINARIES} RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
 message(STATUS "Building tools: ${TOOL_BINARIES}")
 
@@ -413,23 +397,38 @@ add_subdirectory(conformance)
 if ("${JPEGXL_EMSCRIPTEN}")
 # WASM API facade.
 add_executable(jxl_emcc jxl_emcc.cc)
-target_link_libraries(jxl_emcc jxl-static jxl_extras-static)
+target_link_libraries(jxl_emcc
+    jxl-static
+    jxl_extras-static
+    jxl_threads-static
+)
 set_target_properties(jxl_emcc PROPERTIES LINK_FLAGS "\
   -O3\
   --closure 1 \
-  -s ALLOW_MEMORY_GROWTH=1 \
+  -s TOTAL_MEMORY=75mb \
   -s USE_LIBPNG=1 \
   -s DISABLE_EXCEPTION_CATCHING=1 \
   -s MODULARIZE=1 \
   -s FILESYSTEM=0 \
+  -s USE_PTHREADS=1 \
+  -s PTHREAD_POOL_SIZE=4 \
   -s EXPORT_NAME=\"JxlCodecModule\"\
   -s \"EXPORTED_FUNCTIONS=[\
-    _jxlCompress,\
-    _jxlDecompress,\
+    _malloc,\
     _free,\
-    _malloc\
+    _jxlCreateInstance,\
+    _jxlDestroyInstance,\
+    _jxlFlush,\
+    _jxlProcessInput\
   ]\"\
 ")
+else()
+add_executable(jxl_emcc jxl_emcc.cc)
+target_link_libraries(jxl_emcc
+    jxl-static
+    jxl_extras-static
+    jxl_threads-static
+)
 endif ()  # JPEGXL_EMSCRIPTEN
 
 if(JPEGXL_ENABLE_JNI)
@@ -483,3 +482,14 @@ if ("${JNI_FOUND}" AND "${Java_FOUND}")
   endif()  # JPEGXL_ENABLE_FUZZERS
 endif()  # JNI_FOUND & Java_FOUND
 endif()  # JPEGXL_ENABLE_JNI
+
+# End-to-end tests for the tools
+if(BUILD_TESTING AND JPEGXL_ENABLE_TOOLS AND JPEGXL_ENABLE_DEVTOOLS AND JPEGXL_ENABLE_TRANSCODE_JPEG AND (NOT JPEGXL_ENABLE_JNI))
+find_program (BASH_PROGRAM bash)
+if(BASH_PROGRAM)
+  add_test(
+    NAME roundtrip_test
+    COMMAND ${BASH_PROGRAM} ${CMAKE_CURRENT_SOURCE_DIR}/roundtrip_test.sh
+            ${CMAKE_BINARY_DIR})
+endif()
+endif() # BUILD_TESTING

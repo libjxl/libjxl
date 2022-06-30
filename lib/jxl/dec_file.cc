@@ -106,15 +106,21 @@ Status DecodeFile(const DecompressParams& dparams,
     }
 
     PassesDecoderState dec_state;
-    JXL_RETURN_IF_ERROR(dec_state.output_encoding_info.Set(
-        io->metadata,
-        ColorEncoding::LinearSRGB(io->metadata.m.color_encoding.IsGray())));
+    JXL_RETURN_IF_ERROR(
+        dec_state.output_encoding_info.SetFromMetadata(io->metadata));
+    if (dparams.desired_intensity_target > 0) {
+      dec_state.output_encoding_info.desired_intensity_target =
+          dparams.desired_intensity_target;
+    }
 
     if (io->metadata.m.have_preview) {
       JXL_RETURN_IF_ERROR(reader.JumpToByteBoundary());
-      JXL_RETURN_IF_ERROR(DecodeFrame(dparams, &dec_state, pool, &reader,
-                                      &io->preview_frame, io->metadata,
-                                      &io->constraints, /*is_preview=*/true));
+      size_t preview_start = reader.TotalBitsConsumed() / kBitsPerByte;
+      JXL_RETURN_IF_ERROR(
+          DecodeFrame(dparams, &dec_state, pool, file.data() + preview_start,
+                      file.size() - preview_start, &io->preview_frame,
+                      io->metadata, &io->constraints, /*is_preview=*/true));
+      reader.SkipBits(io->preview_frame.decoded_bytes() * kBitsPerByte);
     }
 
     // Only necessary if no ICC and no preview.
@@ -133,12 +139,15 @@ Status DecodeFile(const DecompressParams& dparams,
       // Skip frames that are not displayed.
       bool found_displayed_frame = true;
       do {
+        size_t frame_start = reader.TotalBitsConsumed() / kBitsPerByte;
         dec_ok =
-            DecodeFrame(dparams, &dec_state, pool, &reader, &io->frames.back(),
+            DecodeFrame(dparams, &dec_state, pool, file.data() + frame_start,
+                        file.size() - frame_start, &io->frames.back(),
                         io->metadata, &io->constraints);
+        reader.SkipBits(io->frames.back().decoded_bytes() * kBitsPerByte);
         if (!dparams.allow_partial_files) {
           JXL_RETURN_IF_ERROR(dec_ok);
-        } else if (!dec_ok) {
+        } else if (!reader.AllReadsWithinBounds()) {
           io->frames.pop_back();
           found_displayed_frame = false;
           break;

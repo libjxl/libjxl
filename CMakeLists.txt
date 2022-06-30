@@ -234,6 +234,12 @@ if(JPEGXL_STATIC)
   endif()
 endif()  # JPEGXL_STATIC
 
+if (JPEGXL_EMSCRIPTEN)
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pthread")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pthread")
+endif()
+
 if ("${CXX_MACRO_PREFIX_MAP}")
   add_compile_options(-fmacro-prefix-map=${CMAKE_CURRENT_SOURCE_DIR}=.)
 endif()
@@ -318,7 +324,7 @@ enable_testing()
 include(CTest)
 # Specify default location of `testdata`:
 if(NOT DEFINED JPEGXL_TEST_DATA_PATH)
-  set(JPEGXL_TEST_DATA_PATH "${PROJECT_SOURCE_DIR}/third_party/testdata")
+  set(JPEGXL_TEST_DATA_PATH "${PROJECT_SOURCE_DIR}/testdata")
 endif()
 
 # Libraries.
@@ -384,7 +390,7 @@ if(JPEGXL_ENABLE_MANPAGES)
 find_program(ASCIIDOC a2x)
 if(NOT "${ASCIIDOC}" STREQUAL "ASCIIDOC-NOTFOUND")
 file(STRINGS "${ASCIIDOC}" ASCIIDOC_SHEBANG LIMIT_COUNT 1)
-if(ASCIIDOC_SHEBANG MATCHES "/sh")
+if(ASCIIDOC_SHEBANG MATCHES "/sh|/bash")
   set(ASCIIDOC_PY_FOUND ON)
   # Run the program directly and set ASCIIDOC as empty.
   set(ASCIIDOC_PY "${ASCIIDOC}")

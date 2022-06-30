@@ -9,6 +9,7 @@
 #include <stdint.h>
 
 #include <array>
+#include <atomic>
 #include <limits>
 #include <queue>
 #include <utility>
@@ -675,6 +676,8 @@ Status ModularFrameEncoder::ComputeEncodingData(
        (do_color && metadata.bit_depth.bits_per_sample > 8))) {
     // single channel palette (like FLIF's ChannelCompact)
     size_t nb_channels = gi.channel.size() - gi.nb_meta_channels;
+    int orig_bitdepth = max_bitdepth;
+    max_bitdepth = 0;
     for (size_t i = 0; i < nb_channels; i++) {
       int min, max;
       compute_minmax(gi.channel[gi.nb_meta_channels + i], &min, &max);
@@ -694,7 +697,11 @@ Status ModularFrameEncoder::ComputeEncodingData(
         // effective bit depth is lower, adjust quantization accordingly
         compute_minmax(gi.channel[gi.nb_meta_channels + i], &min, &max);
         if (max < maxval) maxval = max;
-      }
+        int ch_bitdepth =
+            (max > 0 ? CeilLog2Nonzero(static_cast<uint32_t>(max)) : 0);
+        if (ch_bitdepth > max_bitdepth) max_bitdepth = ch_bitdepth;
+      } else
+        max_bitdepth = orig_bitdepth;
     }
   }
 
@@ -738,21 +745,20 @@ Status ModularFrameEncoder::ComputeEncodingData(
   }
 
   // don't do an RCT if we're short on bits
-  if (cparams.color_transform == ColorTransform::kNone && do_color && !fp &&
+  if (cparams.color_transform == ColorTransform::kNone && do_color &&
       gi.channel.size() - gi.nb_meta_channels >= 3 &&
       max_bitdepth + 1 < level_max_bitdepth) {
-    if (cparams.colorspace == 1 ||
-        (cparams.colorspace < 0 &&
-         (!cparams.IsLossless() || cparams.speed_tier > SpeedTier::kHare))) {
+    if (cparams.colorspace < 0 &&
+        (!cparams.IsLossless() || cparams.speed_tier > SpeedTier::kHare)) {
       Transform ycocg{TransformId::kRCT};
       ycocg.rct_type = 6;
       ycocg.begin_c = gi.nb_meta_channels;
       do_transform(gi, ycocg, weighted::Header(), pool);
       max_bitdepth++;
-    } else if (cparams.colorspace >= 2) {
+    } else if (cparams.colorspace > 0) {
       Transform sg(TransformId::kRCT);
       sg.begin_c = gi.nb_meta_channels;
-      sg.rct_type = cparams.colorspace - 2;
+      sg.rct_type = cparams.colorspace;
       do_transform(gi, sg, weighted::Header(), pool);
       max_bitdepth++;
     }

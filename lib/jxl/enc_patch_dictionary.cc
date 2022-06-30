@@ -10,6 +10,7 @@
 #include <sys/types.h>
 
 #include <algorithm>
+#include <atomic>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -769,23 +770,26 @@ void RoundtripPatchFrame(Image3F* reference_frame,
   const Span<const uint8_t> encoded = special_frame->GetSpan();
   state->special_frames.emplace_back(std::move(special_frame));
   if (subtract) {
-    BitReader br(encoded);
     ImageBundle decoded(&state->shared.metadata->m);
     PassesDecoderState dec_state;
-    JXL_CHECK(dec_state.output_encoding_info.Set(
-        *state->shared.metadata,
-        ColorEncoding::LinearSRGB(
-            state->shared.metadata->m.color_encoding.IsGray())));
-    JXL_CHECK(DecodeFrame({}, &dec_state, pool, &br, &decoded,
-                          *state->shared.metadata, /*constraints=*/nullptr));
+    JXL_CHECK(dec_state.output_encoding_info.SetFromMetadata(
+        *state->shared.metadata));
+    const uint8_t* frame_start = encoded.data();
+    size_t encoded_size = encoded.size();
+    JXL_CHECK(DecodeFrame({}, &dec_state, pool, frame_start, encoded_size,
+                          &decoded, *state->shared.metadata,
+                          /*constraints=*/nullptr));
+    frame_start += decoded.decoded_bytes();
+    encoded_size -= decoded.decoded_bytes();
     size_t ref_xsize =
         dec_state.shared_storage.reference_frames[idx].storage.color()->xsize();
     // if the frame itself uses patches, we need to decode another frame
     if (!ref_xsize) {
-      JXL_CHECK(DecodeFrame({}, &dec_state, pool, &br, &decoded,
-                            *state->shared.metadata, /*constraints=*/nullptr));
+      JXL_CHECK(DecodeFrame({}, &dec_state, pool, frame_start, encoded_size,
+                            &decoded, *state->shared.metadata,
+                            /*constraints=*/nullptr));
     }
-    JXL_CHECK(br.Close());
+    JXL_CHECK(encoded_size == 0);
     state->shared.reference_frames[idx] =
         std::move(dec_state.shared_storage.reference_frames[idx]);
   } else {

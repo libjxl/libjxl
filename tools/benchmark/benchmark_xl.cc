@@ -72,7 +72,7 @@ Status ReadPNG(const std::string& filename, Image3F* image) {
 void DoCompress(const std::string& filename, const CodecInOut& io,
                 const std::vector<std::string>& extra_metrics_commands,
                 ImageCodec* codec, ThreadPoolInternal* inner_pool,
-                PaddedBytes* compressed, BenchmarkStats* s) {
+                std::vector<uint8_t>* compressed, BenchmarkStats* s) {
   PROFILER_FUNC;
   ++s->total_input_files;
 
@@ -131,10 +131,9 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
   }
 
   if (valid && Args()->decode_only) {
-    std::string data_in;
+    std::vector<uint8_t> data_in;
     JXL_CHECK(ReadFile(filename, &data_in));
-    compressed->append((uint8_t*)data_in.data(),
-                       (uint8_t*)data_in.data() + data_in.size());
+    compressed->insert(compressed->end(), data_in.begin(), data_in.end());
   }
 
   // Decompress
@@ -266,9 +265,16 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
     std::string dir = FileDirName(filename);
     std::string outdir =
         Args()->output_dir.empty() ? dir + "/out" : Args()->output_dir;
-    // Make compatible for filename
-    std::replace(codec_name.begin(), codec_name.end(), ':', '_');
-    std::string compressed_fn = outdir + "/" + name + "." + codec_name;
+    std::string compressed_fn = outdir + "/" + name;
+    // Add in the parameters of the codec_name in reverse order, so that the
+    // name of the file format (e.g. jxl) is last.
+    int pos = static_cast<int>(codec_name.size()) - 1;
+    while (pos > 0) {
+      int prev = codec_name.find_last_of(':', pos);
+      if (prev > pos) prev = -1;
+      compressed_fn += '.' + codec_name.substr(prev + 1, pos - prev);
+      pos = prev - 1;
+    }
     std::string decompressed_fn = compressed_fn + Args()->output_extension;
 #if JPEGXL_ENABLE_APNG
     std::string heatmap_fn = compressed_fn + ".heatmap.png";
@@ -1043,7 +1049,7 @@ class Benchmark {
           Task& t = (*tasks)[i];
           const CodecInOut& image = loaded_images[t.idx_image];
           t.image = &image;
-          PaddedBytes compressed;
+          std::vector<uint8_t> compressed;
           DoCompress(fnames[t.idx_image], image, extra_metrics_commands,
                      t.codec.get(), inner_pools[thread].get(), &compressed,
                      &t.stats);

@@ -91,9 +91,13 @@ int PrintBasicInfo(FILE* file, int verbose) {
         printf("float (%d exponent bits) ", info.exponent_bits_per_sample);
       }
       int cmyk = 0, alpha = 0;
-      const char* const ec_type_names[7] = {"Alpha",     "Depth", "Spotcolor",
-                                            "Selection", "Black", "CFA",
-                                            "Thermal"};
+      const char* const ec_type_names[] = {
+          "Alpha",     "Depth",     "Spotcolor", "Selection", "Black",
+          "CFA",       "Thermal",   "Reserved0", "Reserved1", "Reserved2",
+          "Reserved3", "Reserved4", "Reserved5", "Reserved6", "Reserved7",
+          "Unknown",   "Optional"};
+      const size_t ec_type_names_size =
+          sizeof(ec_type_names) / sizeof(ec_type_names[0]);
       for (uint32_t i = 0; i < info.num_extra_channels; i++) {
         JxlExtraChannelInfo extra;
         if (JXL_DEC_SUCCESS != JxlDecoderGetExtraChannelInfo(dec, i, &extra)) {
@@ -131,10 +135,9 @@ int PrintBasicInfo(FILE* file, int verbose) {
           continue;
         }
 
-        printf("+%s", (extra.type < 7 ? ec_type_names[extra.type]
-                                      : (extra.type == JXL_CHANNEL_OPTIONAL
-                                             ? "UnknownOptional"
-                                             : "Unknown(OUTDATED libjxl!)")));
+        printf("+%s", (extra.type < ec_type_names_size
+                           ? ec_type_names[extra.type]
+                           : "Unknown, please update your libjxl"));
       }
       printf("\n");
       if (verbose) {
@@ -149,12 +152,9 @@ int PrintBasicInfo(FILE* file, int verbose) {
             break;
           }
           printf("extra channel %u:\n", i);
-          printf(
-              "  type: %s\n",
-              (extra.type < 7 ? ec_type_names[extra.type]
-                              : (extra.type == JXL_CHANNEL_OPTIONAL
-                                     ? "Unknown but can be ignored"
-                                     : "Unknown, please update your libjxl")));
+          printf("  type: %s\n", (extra.type < ec_type_names_size
+                                      ? ec_type_names[extra.type]
+                                      : "Unknown, please update your libjxl"));
           printf("  bits_per_sample: %u\n", extra.bits_per_sample);
           if (extra.exponent_bits_per_sample > 0) {
             printf("  float, with exponent_bits_per_sample: %u\n",
@@ -397,39 +397,65 @@ int PrintBasicInfo(FILE* file, int verbose) {
   return seen_basic_info;
 }
 
-int main(int argc, char* argv[]) {
-  int verbose = 0;
-  if (argc == 3) {
-    if (strncmp(argv[1], "-v", 3) == 0) {
-      verbose = 1;
-      argv++;
-      argc--;
-    } else {
-      argc = 0;  // print error
-    }
-  }
-  if (argc != 2) {
-    fprintf(stderr,
-            "Usage: %s [-v] INPUT\n"
-            "  INPUT      input JPEG XL image filename\n"
-            "  -v         more verbose output\n",
-            argv[0]);
-    return 1;
-  }
-  const char* jxl_filename = argv[1];
+static void print_usage(const char* name) {
+  fprintf(stderr,
+          "Usage: %s [-v] INPUT\n"
+          "  INPUT      input JPEG XL image filename(s)\n"
+          "  -v         more verbose output\n",
+          name);
+}
 
+static int print_basic_info_filename(const char* jxl_filename, int verbose) {
   FILE* file = fopen(jxl_filename, "rb");
   if (!file) {
-    fprintf(stderr, "Failed to read file %s\n", jxl_filename);
+    fprintf(stderr, "Failed to read file: %s\n", jxl_filename);
     return 1;
   }
-
-  if (!PrintBasicInfo(file, verbose)) {
-    fclose(file);
-    fprintf(stderr, "Couldn't print basic info\n");
-    return 1;
-  }
-
+  int status = PrintBasicInfo(file, verbose);
   fclose(file);
+  if (!status) {
+    fprintf(stderr, "Error reading file: %s\n", jxl_filename);
+    return status;
+  }
+
   return 0;
+}
+
+int main(int argc, char* argv[]) {
+  int verbose = 0, status = 0;
+  const char* const name = argv[0];
+
+  for (int i = 1; i < argc; i++) {
+    const char* const* help_opts =
+        (const char* const[]){"--help", "-h", "-?", NULL};
+    while (*help_opts) {
+      if (!strcmp(*help_opts++, argv[i])) {
+        print_usage(name);
+        return 0;
+      }
+    }
+  }
+
+  const char* const* verbose_opts =
+      (const char* const[]){"--verbose", "-v", NULL};
+  /* argc >= 2 gate prevents segfault on argc = 1 */
+  while (argc >= 2 && *verbose_opts) {
+    if (!strcmp(*verbose_opts++, argv[1])) {
+      verbose = 1;
+      argc--;
+      argv++;
+      break;
+    }
+  }
+
+  if (argc < 2) {
+    print_usage(name);
+    return 2;
+  }
+
+  while (argc-- >= 2) {
+    status |= print_basic_info_filename(*++argv, verbose);
+  }
+
+  return status;
 }

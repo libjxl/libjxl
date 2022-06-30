@@ -1050,6 +1050,9 @@ Status ParamsPostInit(CompressParams* p) {
   if (!p->manual_xyb_factors.empty() && p->manual_xyb_factors.size() != 3) {
     return JXL_FAILURE("Invalid number of XYB quantization factors");
   }
+  if (p->original_butteraugli_distance == -1.0) {
+    p->original_butteraugli_distance = p->butteraugli_distance;
+  }
   if (p->resampling <= 0) {
     p->resampling = 1;
     // For very low bit rates, using 2x2 resampling gives better results on
@@ -1093,7 +1096,9 @@ Status EncodeFrame(const CompressParams& cparams_orig,
   if (cparams.ec_resampling < cparams.resampling) {
     cparams.ec_resampling = cparams.resampling;
   }
-  if (cparams.resampling > 1) cparams.progressive_dc = 0;
+  if (cparams.resampling > 1 || frame_info.is_preview) {
+    cparams.progressive_dc = 0;
+  }
 
   if (frame_info.dc_level + cparams.progressive_dc > 4) {
     return JXL_FAILURE("Too many levels of progressive DC");

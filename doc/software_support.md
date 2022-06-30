@@ -24,6 +24,8 @@ Please add missing software to this list.
 - [ImageMagick](https://imagemagick.org/): supported since 7.0.10-54
 - [libvips](https://libvips.github.io/libvips/): supported since 8.11
 - [Imlib2](https://github.com/alistair7/imlib2-jxl)
+- [FFmpeg](https://github.com/FFmpeg/FFmpeg/search?q=jpeg-xl&type=commits)
+- [GDAL](https://gdal.org/drivers/raster/jpegxl.html): supported since 3.4.0 as a TIFF codec, and 3.6.0 as standalone format
 
 ## OS-level support / UI frameworks / file browser plugins
 
@@ -35,10 +37,12 @@ Please add missing software to this list.
 - [Windows thumbnail handler](https://github.com/saschanaz/jxl-winthumb)
 - [OpenMandriva Lx (since 4.3 RC)](https://www.openmandriva.org/en/news/article/openmandriva-lx-4-3-rc-available-for-testing)
 - [KaOS (since 2021.06)](https://news.itsfoss.com/kaos-2021-06-release/)
+- [EFL (since 1.27, no external plugin needed)](https://www.enlightenment.org)
 
 ## Image editors
 
 - [GIMP (since 2.99.8)](https://www.gimp.org/news/2021/10/20/gimp-2-99-8-released/); plugin for older versions available in libjxl repo
+- [Krita](https://invent.kde.org/graphics/krita/-/commit/13e5d2e5b9f0eac5c8064b7767f0b62264a0797b)
 - Photoshop: no plugin available yet, no official support yet
 
 ## Image viewers
@@ -46,9 +50,12 @@ Please add missing software to this list.
 - [XnView](https://www.xnview.com/en/)
 - [ImageGlass](https://imageglass.org/)
 - [IrfanView](https://www.irfanview.com/); supported since 4.59 - requires a [plugin](https://www.irfanview.com/plugins.htm) to be downloaded and enabled.
-- Any viewer based on Qt, KDE, GDK-pixbuf, ImageMagick, libvips or imlib2 (see above)
+- [Tachiyomi](https://github.com/tachiyomiorg/tachiyomi/releases/tag/v0.12.1)
+- Any viewer based on Qt, KDE, GDK-pixbuf, EFL, ImageMagick, libvips or imlib2 (see above)
   - Qt viewers: gwenview, digiKam, KolourPaint, KPhotoAlbum, LXImage-Qt, qimgv, qView, nomacs, VookiImageViewer, PhotoQt
   - GTK viewers: Eye of Gnome (eog), gThumb, Geeqie
+  - EFL viewers: entice, ephoto
+- [Swayimg](https://github.com/artemsen/swayimg)
 
 ## Online tools
 

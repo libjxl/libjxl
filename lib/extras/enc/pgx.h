@@ -11,6 +11,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "lib/extras/enc/encode.h"
 #include "lib/extras/packed_image.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/padded_bytes.h"
@@ -22,10 +23,12 @@
 namespace jxl {
 namespace extras {
 
+std::unique_ptr<Encoder> GetPGXEncoder();
+
 // Transforms from io->c_current to `c_desired` and encodes into `bytes`.
 Status EncodeImagePGX(const CodecInOut* io, const ColorEncoding& c_desired,
                       size_t bits_per_sample, ThreadPool* pool,
-                      PaddedBytes* bytes);
+                      std::vector<uint8_t>* bytes);
 
 }  // namespace extras
 }  // namespace jxl

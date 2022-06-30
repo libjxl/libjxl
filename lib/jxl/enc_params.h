@@ -202,6 +202,7 @@ struct CompressParams {
 
   // Prints extra information during/after encoding.
   bool verbose = false;
+  bool log_search_state = false;
 
   ButteraugliParams ba_params;
 
@@ -253,6 +254,9 @@ struct CompressParams {
   int ec_resampling = -1;
   // Skip the downsampling before encoding if this is true.
   bool already_downsampled = false;
+  // Butteraugli target distance on the original full size image, this can be
+  // different from butteraugli_distance if resampling was used.
+  float original_butteraugli_distance = -1.0f;
 
   // Codestream level to conform to.
   // -1: don't care

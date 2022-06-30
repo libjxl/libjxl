@@ -80,16 +80,23 @@ jobs:
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
           -DCMAKE_C_COMPILER_LAUNCHER=ccache \
           -DBUILD_TESTING=OFF
-        # Copy library to flatten the artifacts directory structure
+        # Flatten the artifacts directory structure
+        cp tools/conformance/conformance.py build/tools/conformance
+        cp tools/conformance/lcms2.py build/tools/conformance
+        cp build/tools/djxl build/tools/conformance
         cp build/libjxl_dec.so.0.7.0 build/tools/conformance
+        cp build/libjxl_threads.so.0.7.0 build/tools/conformance
       env:
         SKIP_TEST: 1
     - uses: actions/upload-artifact@v2
       with:
         name: conformance_binary
         path: |
-          build/tools/conformance/djxl_conformance
+          build/tools/conformance/conformance.py
+          build/tools/conformance/lcms2.py
+          build/tools/conformance/djxl
           build/tools/conformance/libjxl_dec.so.0.7.0
+          build/tools/conformance/libjxl_threads.so.0.7.0
     - name: ccache stats
       run: ccache --show-stats
 
@@ -117,9 +124,10 @@ jobs:
         name: conformance_binary
     - name: Run conformance tests
       run: |
-        chmod +x djxl_conformance
+        chmod +x djxl
         ln -s libjxl_dec.so.0.7.0 libjxl_dec.so.0.7
+        ln -s libjxl_threads.so.0.7.0 libjxl_threads.so.0.7
         export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:`pwd`
-        python conformance/scripts/conformance.py \
-          --decoder=`pwd`/djxl_conformance \
+        python conformance.py \
+          --decoder=`pwd`/djxl \
           --corpus=`pwd`/conformance/testcases/${{ matrix.name }}.txt

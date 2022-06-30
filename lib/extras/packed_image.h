@@ -77,6 +77,11 @@ class PackedImage {
   JxlPixelFormat format;
   size_t pixels_size;
 
+  size_t pixel_stride() const {
+    return (BitsPerChannel(format.data_type) * format.num_channels /
+            jxl::kBitsPerByte);
+  }
+
   static size_t BitsPerChannel(JxlDataType data_type) {
     switch (data_type) {
       case JXL_TYPE_UINT8:
@@ -140,20 +145,20 @@ class PackedPixelFile {
 
   // The extra channel metadata information.
   struct PackedExtraChannel {
-    PackedExtraChannel(const JxlExtraChannelInfo& ec_info,
-                       const std::string& name)
-        : ec_info(ec_info), name(name) {}
-
     JxlExtraChannelInfo ec_info;
+    size_t index;
     std::string name;
   };
   std::vector<PackedExtraChannel> extra_channels_info;
 
-  // Color information. If the icc is empty, the JxlColorEncoding should be used
-  // instead.
+  // Color information of the decoded pixels.
+  // If the icc is empty, the JxlColorEncoding should be used instead.
   std::vector<uint8_t> icc;
   JxlColorEncoding color_encoding = {};
+  // The icc profile of the original image.
+  std::vector<uint8_t> orig_icc;
 
+  std::unique_ptr<PackedFrame> preview_frame;
   std::vector<PackedFrame> frames;
 
   PackedMetadata metadata;

@@ -85,7 +85,7 @@ JXL_GTEST_INSTANTIATE_TEST_SUITE_P(
 
 TEST_P(SpeedTierTest, Roundtrip) {
   const PaddedBytes orig =
-      ReadTestData("third_party/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+      ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CodecInOut io;
   ThreadPoolInternal pool(8);
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));

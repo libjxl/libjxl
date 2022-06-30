@@ -16,6 +16,10 @@ set(JPEGXL_EXTRAS_SOURCES
   extras/dec/pgx.h
   extras/dec/pnm.cc
   extras/dec/pnm.h
+  extras/enc/encode.cc
+  extras/enc/encode.h
+  extras/enc/npy.cc
+  extras/enc/npy.h
   extras/enc/pgx.cc
   extras/enc/pgx.h
   extras/enc/pnm.cc
@@ -25,6 +29,8 @@ set(JPEGXL_EXTRAS_SOURCES
   extras/packed_image.h
   extras/packed_image_convert.cc
   extras/packed_image_convert.h
+  extras/render_hdr.cc
+  extras/render_hdr.h
   extras/time.cc
   extras/time.h
   extras/tone_mapping.cc

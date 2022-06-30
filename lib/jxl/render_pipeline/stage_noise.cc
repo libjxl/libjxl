@@ -10,7 +10,6 @@
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 
-#include "lib/jxl/fast_math-inl.h"
 #include "lib/jxl/sanitizers.h"
 #include "lib/jxl/transfer_functions-inl.h"
 
