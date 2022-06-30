@@ -146,6 +146,20 @@ jobs:
         cd "git-${git_version}"
         make prefix=/usr -j4 install
 
+    - name: Install gcc-8 (only 18.04)
+      if: matrix.os == 'ubuntu:18.04'
+        # Compiler bug workaround: install and use gcc-8 
+      shell: 'bash'
+      run: |
+        apt install -y \
+          gcc-8 \
+          g++-8 \
+        #
+        update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-8 100
+        update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-8 100
+        update-alternatives --set g++ /usr/bin/g++-8
+        update-alternatives --set gcc /usr/bin/gcc-8
+
     - name: Set git safe dir
       run: |
         export GIT_CEILING_DIRECTORIES=/__w # only work before git v2.35.2
