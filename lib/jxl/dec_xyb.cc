@@ -236,11 +236,12 @@ Status OutputEncodingInfo::SetFromMetadata(const CodecMetadata& metadata) {
                               : ColorEncoding::LinearSRGB(orig_grey));
 }
 
-Status OutputEncodingInfo::MaybeSetColorEncoding(const ColorEncoding& color) {
-  if (!xyb_encoded || !CanOutputToColorEncoding(color)) {
+Status OutputEncodingInfo::MaybeSetColorEncoding(
+    const ColorEncoding& c_desired) {
+  if (!xyb_encoded || !CanOutputToColorEncoding(c_desired)) {
     return false;
   }
-  return SetColorEncoding(color);
+  return SetColorEncoding(c_desired);
 }
 
 Status OutputEncodingInfo::SetColorEncoding(const ColorEncoding& c_desired) {
