@@ -130,9 +130,12 @@ jobs:
       if: matrix.os == 'ubuntu:18.04'
         # Ubuntu 18.04 ships with git 2.17 but we need 2.18 or newer for
         # actions/checkout@v2 to work
+        # Compiler bug workaround: install and use gcc-8 
       shell: 'bash'
       run: |
         apt install -y \
+          gcc-8 \
+          g++-8 \
           libcurl4-openssl-dev \
           libexpat1-dev \
           libssl-dev \
@@ -145,6 +148,8 @@ jobs:
         tar -zxf "v${git_version}.tar.gz"
         cd "git-${git_version}"
         make prefix=/usr -j4 install
+        echo "CC=gcc-8" >> $GITHUB_ENV
+        echo "CXX=g++-8" >> $GITHUB_ENV
 
     - name: Set git safe dir
       run: |
