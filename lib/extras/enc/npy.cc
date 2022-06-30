@@ -289,7 +289,7 @@ class NumPyEncoder : public Encoder {
     if (!WriteNPYArray(ppf, &encoded_image->bitstreams.back())) {
       return false;
     }
-    if (ppf.preview_frame.get()) {
+    if (ppf.preview_frame) {
       size_t xsize = ppf.info.preview.xsize;
       size_t ysize = ppf.info.preview.ysize;
       WriteNPYHeader(xsize, ysize, ppf.info.num_color_channels, 1,

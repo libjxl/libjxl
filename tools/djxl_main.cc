@@ -789,7 +789,7 @@ int main(int argc, const char* argv[]) {
   std::string extension;
   if (args.file_out) {
     filename_out = std::string(args.file_out);
-    size_t pos = filename_out.find_last_of(".");
+    size_t pos = filename_out.find_last_of('.');
     if (pos < filename_out.size()) {
       base = filename_out.substr(0, pos);
       extension = filename_out.substr(pos);
@@ -882,19 +882,19 @@ int main(int argc, const char* argv[]) {
       ppf.info.bits_per_sample = args.bits_per_sample;
     }
 #if JPEGXL_ENABLE_JPEG
-    if (encoder.get()) {
+    if (encoder) {
       std::ostringstream os;
       os << args.jpeg_quality;
       encoder->SetOption("q", os.str());
     }
 #endif
 #if JPEGXL_ENABLE_SJPEG
-    if (encoder.get() && args.use_sjpeg) {
+    if (encoder && args.use_sjpeg) {
       encoder->SetOption("jpeg_encoder", "sjpeg");
     }
 #endif
     jxl::extras::EncodedImage encoded_image;
-    if (encoder.get()) {
+    if (encoder) {
       if (!encoder->Encode(ppf, &encoded_image)) {
         fprintf(stderr, "Encode failed\n");
         return EXIT_FAILURE;
