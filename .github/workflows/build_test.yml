@@ -292,7 +292,8 @@ jobs:
            contains(github.event.pull_request.labels.*.name, 'CI:full'))
         # LibraryCLinkageTest doesn't work in here because it needs the DLL
         # which is not installed.
-        run: ctest --test-dir build --parallel 2 --output-on-failure -E LibraryCLinkageTest
+        # TODO(szabadka) Re-enable hwy tests once they are fixed upstream
+        run: ctest --test-dir build --parallel 2 --output-on-failure -E "LibraryCLinkageTest|HwyMulTestGroup.*Emu128"
 
   wasm32_build:
     name: WASM wasm32/${{ matrix.variant }}
