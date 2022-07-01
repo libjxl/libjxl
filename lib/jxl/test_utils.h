@@ -19,14 +19,14 @@
 #include "gtest/gtest.h"
 #include "jxl/codestream_header.h"
 #include "jxl/encode.h"
+#include "lib/extras/dec/jxl.h"
+#include "lib/extras/packed_image_convert.h"
 #include "lib/jxl/aux_out_fwd.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/random.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/common.h"  // JPEGXL_ENABLE_TRANSCODE_JPEG
-#include "lib/jxl/dec_file.h"
-#include "lib/jxl/dec_params.h"
 #include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_file.h"
@@ -104,8 +104,9 @@ void JxlBasicInfoSetFromPixelFormat(JxlBasicInfo* basic_info,
 }
 
 MATCHER_P(MatchesPrimariesAndTransferFunction, color_encoding, "") {
-  return arg.primaries == color_encoding.primaries &&
-         arg.tf.IsSame(color_encoding.tf);
+  return (arg.ICC() == color_encoding.ICC() ||
+          (arg.primaries == color_encoding.primaries &&
+           arg.tf.IsSame(color_encoding.tf)));
 }
 
 MATCHER(MatchesPrimariesAndTransferFunction, "") {
@@ -114,9 +115,28 @@ MATCHER(MatchesPrimariesAndTransferFunction, "") {
       result_listener);
 }
 
+Status DecodeFile(extras::JXLDecompressParams dparams,
+                  const Span<const uint8_t> file, CodecInOut* JXL_RESTRICT io,
+                  ThreadPool* pool) {
+  if (pool && !dparams.runner_opaque) {
+    dparams.runner = pool->runner();
+    dparams.runner_opaque = pool->runner_opaque();
+  }
+  extras::PackedPixelFile ppf;
+  JXL_RETURN_IF_ERROR(DecodeImageJXL(file.data(), file.size(), dparams,
+                                     /*decoded_bytes=*/nullptr, &ppf));
+  JXL_RETURN_IF_ERROR(ConvertPackedPixelFileToCodecInOut(ppf, pool, io));
+  return true;
+}
+
+Status DecodeFile(extras::JXLDecompressParams dparams, const PaddedBytes& file,
+                  CodecInOut* io, ThreadPool* pool = nullptr) {
+  return DecodeFile(dparams, Span<const uint8_t>(file), io, pool);
+}
+
 // Returns compressed size [bytes].
 size_t Roundtrip(const CodecInOut* io, const CompressParams& cparams,
-                 const DecompressParams& dparams, ThreadPool* pool,
+                 extras::JXLDecompressParams dparams, ThreadPool* pool,
                  CodecInOut* JXL_RESTRICT io2, AuxOut* aux_out = nullptr) {
   PaddedBytes compressed;
 

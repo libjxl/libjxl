@@ -14,7 +14,6 @@
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/codec_in_out.h"
-#include "lib/jxl/dec_file.h"
 #include "lib/jxl/enc_file.h"
 
 namespace jpegxl {
@@ -107,12 +106,6 @@ jxl::Status DecodeJpegXlContainerOneShot(const uint8_t* data, size_t size,
 // TODO(lode): streaming C API
 jxl::Status EncodeJpegXlContainerOneShot(const JpegXlContainer& container,
                                          jxl::PaddedBytes* out);
-
-// TODO(veluca): this doesn't really belong here.
-jxl::Status DecodeJpegXlToJpeg(jxl::DecompressParams params,
-                               const JpegXlContainer& container,
-                               jxl::CodecInOut* io,
-                               jxl::ThreadPool* pool = nullptr);
 
 }  // namespace tools
 }  // namespace jpegxl

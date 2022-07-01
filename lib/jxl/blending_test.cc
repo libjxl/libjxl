@@ -4,7 +4,6 @@
 // license that can be found in the LICENSE file.
 
 #include "lib/extras/codec.h"
-#include "lib/jxl/dec_file.h"
 #include "lib/jxl/image_test_utils.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testdata.h"
@@ -19,9 +18,8 @@ TEST(BlendingTest, Crops) {
 
   const PaddedBytes compressed =
       ReadTestData("jxl/blending/cropped_traffic_light.jxl");
-  DecompressParams dparams;
   CodecInOut decoded;
-  ASSERT_TRUE(DecodeFile(dparams, compressed, &decoded, pool));
+  ASSERT_TRUE(test::DecodeFile({}, compressed, &decoded, pool));
   ASSERT_THAT(decoded.frames, SizeIs(4));
 
   int i = 0;

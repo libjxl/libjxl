@@ -90,7 +90,6 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/dec_modular.h
   jxl/dec_noise.cc
   jxl/dec_noise.h
-  jxl/dec_params.h
   jxl/dec_patch_dictionary.cc
   jxl/dec_patch_dictionary.h
   jxl/dec_tone_mapping-inl.h
@@ -242,8 +241,6 @@ set(JPEGXL_INTERNAL_SOURCES_ENC
   jxl/butteraugli/butteraugli.cc
   jxl/butteraugli/butteraugli.h
   jxl/butteraugli_wrapper.cc
-  jxl/dec_file.cc
-  jxl/dec_file.h
   jxl/enc_ac_strategy.cc
   jxl/enc_ac_strategy.h
   jxl/enc_adaptive_quantization.cc

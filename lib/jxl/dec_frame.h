@@ -20,31 +20,20 @@
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/dec_cache.h"
 #include "lib/jxl/dec_modular.h"
-#include "lib/jxl/dec_params.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/headers.h"
 #include "lib/jxl/image_bundle.h"
 
 namespace jxl {
 
-// TODO(veluca): remove DecodeFrameHeader once the API migrates to FrameDecoder.
-
-// `frame_header` must have nonserialized_metadata and
-// nonserialized_is_preview set.
-Status DecodeFrameHeader(BitReader* JXL_RESTRICT reader,
-                         FrameHeader* JXL_RESTRICT frame_header);
-
 // Decodes a frame. Groups may be processed in parallel by `pool`.
-// See DecodeFile for explanation of c_decoded.
-// `io` is only used for reading maximum image size. Also updates
-// `dec_state` with the new frame header.
 // `metadata` is the metadata that applies to all frames of the codestream
 // `decoded->metadata` must already be set and must match metadata.m.
-Status DecodeFrame(const DecompressParams& dparams,
-                   PassesDecoderState* dec_state, ThreadPool* JXL_RESTRICT pool,
+// Used in the encoder to model decoder behaviour, and in tests.
+Status DecodeFrame(PassesDecoderState* dec_state, ThreadPool* JXL_RESTRICT pool,
                    const uint8_t* next_in, size_t avail_in,
                    ImageBundle* decoded, const CodecMetadata& metadata,
-                   const SizeConstraints* constraints, bool is_preview = false);
+                   bool use_slow_rendering_pipeline = false);
 
 // TODO(veluca): implement "forced drawing".
 class FrameDecoder {
@@ -57,22 +46,14 @@ class FrameDecoder {
         frame_header_(&metadata),
         use_slow_rendering_pipeline_(use_slow_rendering_pipeline) {}
 
-  // `constraints` must outlive the FrameDecoder if not null, or stay alive
-  // until the next call to SetFrameSizeLimits.
-  void SetFrameSizeLimits(const SizeConstraints* constraints) {
-    constraints_ = constraints;
-  }
   void SetRenderSpotcolors(bool rsc) { render_spotcolors_ = rsc; }
   void SetCoalescing(bool c) { coalescing_ = c; }
 
   // Read FrameHeader and table of contents from the given BitReader.
   // Also checks frame dimensions for their limits, and sets the output
   // image buffer.
-  // TODO(veluca): remove the `allow_partial_frames` flag - this should be moved
-  // on callers.
   Status InitFrame(BitReader* JXL_RESTRICT br, ImageBundle* decoded,
-                   bool is_preview, bool allow_partial_frames,
-                   bool output_needed);
+                   bool is_preview, bool output_needed);
 
   struct SectionInfo {
     BitReader* JXL_RESTRICT br;
@@ -127,8 +108,6 @@ class FrameDecoder {
   uint64_t SumSectionSizes() const { return section_sizes_sum_; }
   const std::vector<TocEntry>& Toc() const { return toc_; }
 
-  // TODO(veluca): remove once we remove --downsampling flag.
-  void SetMaxPasses(size_t max_passes) { max_passes_ = max_passes; }
   const FrameHeader& GetFrameHeader() const { return frame_header_; }
 
   // Returns whether a DC image has been decoded, accessible at low resolution
@@ -302,13 +281,11 @@ class FrameDecoder {
   ThreadPool* pool_;
   std::vector<TocEntry> toc_;
   uint64_t section_sizes_sum_;
-  size_t max_passes_;
   // TODO(veluca): figure out the duplication between these and dec_state_.
   FrameHeader frame_header_;
   FrameDimensions frame_dim_;
   ImageBundle* decoded_;
   ModularFrameDecoder modular_frame_decoder_;
-  bool allow_partial_frames_;
   bool render_spotcolors_ = true;
   bool coalescing_ = true;
 
@@ -321,13 +298,9 @@ class FrameDecoder {
   bool finalized_dc_ = true;
   size_t num_sections_done_ = 0;
   bool is_finalized_ = true;
-  size_t num_renders_ = 0;
   bool allocated_ = false;
 
   std::vector<GroupDecCache> group_dec_caches_;
-
-  // Frame size limits.
-  const SizeConstraints* constraints_ = nullptr;
 
   // Whether or not the task id should be used for storage indexing, instead of
   // the thread id.

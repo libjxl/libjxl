@@ -14,8 +14,11 @@
 
 #include "gtest/gtest.h"
 #include "lib/extras/codec.h"
+#include "lib/jxl/base/printf_macros.h"
+#include "lib/jxl/dec_frame.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/fake_parallel_runner_testonly.h"
+#include "lib/jxl/icc_codec.h"
 #include "lib/jxl/image_test_utils.h"
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
 #include "lib/jxl/render_pipeline/test_render_pipeline_stages.h"
@@ -24,6 +27,61 @@
 
 namespace jxl {
 namespace {
+
+Status DecodeFile(const Span<const uint8_t> file, bool use_slow_pipeline,
+                  CodecInOut* io, ThreadPool* pool) {
+  Status ret = true;
+  {
+    BitReader reader(file);
+    BitReaderScopedCloser reader_closer(&reader, &ret);
+    JXL_RETURN_IF_ERROR(reader.ReadFixedBits<16>() == 0x0AFF);
+    JXL_RETURN_IF_ERROR(ReadSizeHeader(&reader, &io->metadata.size));
+    JXL_RETURN_IF_ERROR(ReadImageMetadata(&reader, &io->metadata.m));
+    io->metadata.transform_data.nonserialized_xyb_encoded =
+        io->metadata.m.xyb_encoded;
+    JXL_RETURN_IF_ERROR(Bundle::Read(&reader, &io->metadata.transform_data));
+    size_t xsize = io->metadata.xsize();
+    size_t ysize = io->metadata.ysize();
+    JXL_RETURN_IF_ERROR(VerifyDimensions(&io->constraints, xsize, ysize));
+    if (io->metadata.m.color_encoding.WantICC()) {
+      PaddedBytes icc;
+      JXL_RETURN_IF_ERROR(ReadICC(&reader, &icc));
+      JXL_RETURN_IF_ERROR(io->metadata.m.color_encoding.SetICC(std::move(icc)));
+    }
+    PassesDecoderState dec_state;
+    JXL_RETURN_IF_ERROR(
+        dec_state.output_encoding_info.SetFromMetadata(io->metadata));
+    JXL_RETURN_IF_ERROR(reader.JumpToByteBoundary());
+    io->frames.clear();
+    do {
+      io->frames.emplace_back(&io->metadata.m);
+      // Skip frames that are not displayed.
+      do {
+        size_t frame_start = reader.TotalBitsConsumed() / kBitsPerByte;
+        size_t size_left = file.size() - frame_start;
+        JXL_RETURN_IF_ERROR(
+            DecodeFrame(&dec_state, pool, file.data() + frame_start, size_left,
+                        &io->frames.back(), io->metadata, use_slow_pipeline));
+        reader.SkipBits(io->frames.back().decoded_bytes() * kBitsPerByte);
+      } while (dec_state.shared->frame_header.frame_type !=
+                   FrameType::kRegularFrame &&
+               dec_state.shared->frame_header.frame_type !=
+                   FrameType::kSkipProgressive);
+    } while (!dec_state.shared->frame_header.is_last);
+
+    if (io->frames.empty()) return JXL_FAILURE("Not enough data.");
+
+    if (reader.TotalBitsConsumed() != file.size() * kBitsPerByte) {
+      return JXL_FAILURE("Reader position not at EOF.");
+    }
+    if (!reader.AllReadsWithinBounds()) {
+      return JXL_FAILURE("Reader out of bounds read.");
+    }
+    io->CheckMetadata();
+    // reader is closed here.
+  }
+  return ret;
+}
 
 TEST(RenderPipelineTest, Build) {
   RenderPipeline::Builder builder(/*num_c=*/1);
@@ -163,15 +221,13 @@ TEST_P(RenderPipelineTestParam, PipelineTest) {
   ASSERT_TRUE(EncodeFile(config.cparams, &io, &enc_state, &compressed,
                          GetJxlCms(), /*aux_out=*/nullptr, &pool));
 
-  DecompressParams dparams;
-
-  dparams.render_spotcolors = true;
 
   CodecInOut io_default;
-  ASSERT_TRUE(DecodeFile(dparams, compressed, &io_default, &pool));
+  ASSERT_TRUE(DecodeFile(Span<const uint8_t>(compressed),
+                         /*use_slow_pipeline=*/false, &io_default, &pool));
   CodecInOut io_slow_pipeline;
-  dparams.use_slow_render_pipeline = true;
-  ASSERT_TRUE(DecodeFile(dparams, compressed, &io_slow_pipeline, &pool));
+  ASSERT_TRUE(DecodeFile(Span<const uint8_t>(compressed),
+                         /*use_slow_pipeline=*/true, &io_slow_pipeline, &pool));
 
   ASSERT_EQ(io_default.frames.size(), io_slow_pipeline.frames.size());
   for (size_t i = 0; i < io_default.frames.size(); i++) {
@@ -476,12 +532,12 @@ TEST(RenderPipelineDecodingTest, Animation) {
   PaddedBytes compressed =
       ReadTestData("jxl/blending/cropped_traffic_light.jxl");
 
-  DecompressParams dparams;
   CodecInOut io_default;
-  ASSERT_TRUE(DecodeFile(dparams, compressed, &io_default, &pool));
+  ASSERT_TRUE(DecodeFile(Span<const uint8_t>(compressed),
+                         /*use_slow_pipeline=*/false, &io_default, &pool));
   CodecInOut io_slow_pipeline;
-  dparams.use_slow_render_pipeline = true;
-  ASSERT_TRUE(DecodeFile(dparams, compressed, &io_slow_pipeline, &pool));
+  ASSERT_TRUE(DecodeFile(Span<const uint8_t>(compressed),
+                         /*use_slow_pipeline=*/true, &io_slow_pipeline, &pool));
 
   ASSERT_EQ(io_default.frames.size(), io_slow_pipeline.frames.size());
   for (size_t i = 0; i < io_default.frames.size(); i++) {

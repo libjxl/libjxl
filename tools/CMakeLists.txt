@@ -158,7 +158,6 @@ if(JPEGXL_ENABLE_TOOLS)
     djxl_main.cc
   )
   target_link_libraries(djxl
-    jxl_dec
     jxl_extras-static
     jxl_threads
     jxl_tool

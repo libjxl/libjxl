@@ -11,7 +11,7 @@
 #include "jxl/decode_cxx.h"
 #include "jxl/encode_cxx.h"
 #include "lib/extras/codec.h"
-#include "lib/jxl/dec_file.h"
+#include "lib/extras/dec/jxl.h"
 #include "lib/jxl/enc_butteraugli_pnorm.h"
 #include "lib/jxl/encode_internal.h"
 #include "lib/jxl/jpeg/dec_jpeg_data.h"
@@ -210,10 +210,9 @@ void VerifyFrameEncoding(size_t xsize, size_t ysize, JxlEncoder* enc,
   compressed.resize(next_out - compressed.data());
   EXPECT_LE(compressed.size(), max_compressed_size);
   EXPECT_EQ(JXL_ENC_SUCCESS, process_result);
-  jxl::DecompressParams dparams;
   jxl::CodecInOut decoded_io;
-  EXPECT_TRUE(jxl::DecodeFile(
-      dparams, jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
+  EXPECT_TRUE(jxl::test::DecodeFile(
+      {}, jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
       &decoded_io, /*pool=*/nullptr));
 
   EXPECT_LE(
@@ -838,61 +837,11 @@ TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGReconstructionTest)) {
   compressed.resize(next_out - compressed.data());
   EXPECT_EQ(JXL_ENC_SUCCESS, process_result);
 
-  Container container = {};
-  jxl::Span<const uint8_t> encoded_span =
-      jxl::Span<const uint8_t>(compressed.data(), compressed.size());
-  EXPECT_TRUE(container.Decode(&encoded_span));
-  EXPECT_EQ(0u, encoded_span.size());
-  bool found_jbrd = false;
-  bool found_jxlc = false;
-  bool found_jxlp = false;
-  size_t jbrd_index = 0;
-  std::vector<uint8_t> codestream_bytes;
-  // The encoder is allowed to either emit a jxlc or one or more jxlp.
-  for (size_t i = 0; i < container.boxes.size(); ++i) {
-    if (memcmp("jbrd", container.boxes[i].type, 4) == 0) {
-      EXPECT_EQ(false, found_jxlc);  // Max 1 jbrd
-      found_jbrd = true;
-      jbrd_index = i;
-    }
-    if (memcmp("jxlc", container.boxes[i].type, 4) == 0) {
-      EXPECT_EQ(false, found_jxlc);  // Max 1 jxlc
-      EXPECT_EQ(false, found_jxlp);  // Can't mix jxlc and jxlp
-      found_jxlc = true;
-      codestream_bytes.insert(
-          codestream_bytes.end(), container.boxes[i].data.data(),
-          container.boxes[i].data.data() + container.boxes[i].data.size());
-    }
-    if (memcmp("jxlp", container.boxes[i].type, 4) == 0) {
-      EXPECT_EQ(false, found_jxlc);  // Can't mix jxlc and jxlp
-      found_jxlp = true;
-      // Append all data except the first 4 box content bytes which are the
-      // jxpl box counter.
-      codestream_bytes.insert(
-          codestream_bytes.end(), container.boxes[i].data.data() + 4,
-          container.boxes[i].data.data() + container.boxes[i].data.size());
-    }
-  }
-  EXPECT_EQ(true, found_jbrd);
-  EXPECT_EQ(true, found_jxlc || found_jxlp);
-
-  jxl::CodecInOut decoded_io;
-  decoded_io.Main().jpeg_data = jxl::make_unique<jxl::jpeg::JPEGData>();
-  EXPECT_TRUE(jxl::jpeg::DecodeJPEGData(container.boxes[jbrd_index].data,
-                                        decoded_io.Main().jpeg_data.get()));
-
-  jxl::DecompressParams dparams;
-  dparams.keep_dct = true;
-  jxl::Span<const uint8_t> codestream_span = jxl::Span<const uint8_t>(
-      codestream_bytes.data(), codestream_bytes.size());
-  EXPECT_TRUE(jxl::DecodeFile(dparams, codestream_span, &decoded_io, nullptr));
-
+  jxl::extras::JXLDecompressParams dparams;
   std::vector<uint8_t> decoded_jpeg_bytes;
-  auto write = [&decoded_jpeg_bytes](const uint8_t* buf, size_t len) {
-    decoded_jpeg_bytes.insert(decoded_jpeg_bytes.end(), buf, buf + len);
-    return len;
-  };
-  EXPECT_TRUE(jxl::jpeg::WriteJpeg(*decoded_io.Main().jpeg_data, write));
+  jxl::extras::PackedPixelFile ppf;
+  EXPECT_TRUE(DecodeImageJXL(compressed.data(), compressed.size(), dparams,
+                             nullptr, &ppf, &decoded_jpeg_bytes));
 
   EXPECT_EQ(decoded_jpeg_bytes.size(), orig.size());
   EXPECT_EQ(0, memcmp(decoded_jpeg_bytes.data(), orig.data(), orig.size()));
@@ -1393,11 +1342,9 @@ TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGFrameTest)) {
       compressed.resize(next_out - compressed.data());
       EXPECT_EQ(JXL_ENC_SUCCESS, process_result);
 
-      jxl::DecompressParams dparams;
       jxl::CodecInOut decoded_io;
-      EXPECT_TRUE(jxl::DecodeFile(
-          dparams,
-          jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
+      EXPECT_TRUE(jxl::test::DecodeFile(
+          {}, jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
           &decoded_io, /*pool=*/nullptr));
 
       EXPECT_LE(
