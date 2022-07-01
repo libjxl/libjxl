@@ -680,7 +680,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
     int orig_bitdepth = max_bitdepth;
     max_bitdepth = 0;
     for (size_t i = 0; i < nb_channels; i++) {
-      int min, max;
+      int32_t min, max;
       compute_minmax(gi.channel[gi.nb_meta_channels + i], &min, &max);
       int64_t colors = max - min + 1;
       JXL_DEBUG_V(10, "Channel %" PRIuS ": range=%i..%i", i, min, max);
@@ -1360,7 +1360,7 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
       // single channel palette (like FLIF's ChannelCompact)
       size_t nb_channels = gi.channel.size() - gi.nb_meta_channels;
       for (size_t i = 0; i < nb_channels; i++) {
-        int min, max;
+        int32_t min, max;
         compute_minmax(gi.channel[gi.nb_meta_channels + i], &min, &max);
         int colors = max - min + 1;
         JXL_DEBUG_V(10, "Channel %" PRIuS ": range=%i..%i", i, min, max);
@@ -1675,11 +1675,11 @@ void ModularFrameEncoder::AddACMetadata(size_t group_index, bool jpeg_transcode,
   size_t num = 0;
   for (size_t y = 0; y < r.ysize(); y++) {
     AcStrategyRow row_acs = enc_state->shared.ac_strategy.ConstRow(r, y);
-    const int* row_qf = r.ConstRow(enc_state->shared.raw_quant_field, y);
+    const int32_t* row_qf = r.ConstRow(enc_state->shared.raw_quant_field, y);
     const uint8_t* row_epf = r.ConstRow(enc_state->shared.epf_sharpness, y);
-    int* out_acs = image.channel[2].plane.Row(0);
-    int* out_qf = image.channel[2].plane.Row(1);
-    int* row_out_epf = image.channel[3].plane.Row(y);
+    int32_t* out_acs = image.channel[2].plane.Row(0);
+    int32_t* out_qf = image.channel[2].plane.Row(1);
+    int32_t* row_out_epf = image.channel[3].plane.Row(y);
     for (size_t x = 0; x < r.xsize(); x++) {
       row_out_epf[x] = row_epf[x];
       if (!row_acs[x].IsFirstBlock()) continue;
@@ -1707,7 +1707,7 @@ void ModularFrameEncoder::EncodeQuantTable(
   Image image(size_x, size_y, 8, 3);
   for (size_t c = 0; c < 3; c++) {
     for (size_t y = 0; y < size_y; y++) {
-      int* JXL_RESTRICT row = image.channel[c].Row(y);
+      int32_t* JXL_RESTRICT row = image.channel[c].Row(y);
       for (size_t x = 0; x < size_x; x++) {
         row[x] = (*encoding.qraw.qtable)[c * size_x * size_y + y * size_x + x];
       }
@@ -1727,7 +1727,7 @@ void ModularFrameEncoder::AddQuantTable(size_t size_x, size_t size_y,
   image = Image(size_x, size_y, 8, 3);
   for (size_t c = 0; c < 3; c++) {
     for (size_t y = 0; y < size_y; y++) {
-      int* JXL_RESTRICT row = image.channel[c].Row(y);
+      int32_t* JXL_RESTRICT row = image.channel[c].Row(y);
       for (size_t x = 0; x < size_x; x++) {
         row[x] = (*encoding.qraw.qtable)[c * size_x * size_y + y * size_x + x];
       }

@@ -451,11 +451,11 @@ Status ModularFrameDecoder::DecodeAcMetadata(size_t group_id, BitReader* reader,
   uint32_t local_used_acs = 0;
   for (size_t iy = 0; iy < r.ysize(); iy++) {
     size_t y = r.y0() + iy;
-    int* row_qf = r.Row(&dec_state->shared_storage.raw_quant_field, iy);
+    int32_t* row_qf = r.Row(&dec_state->shared_storage.raw_quant_field, iy);
     uint8_t* row_epf = r.Row(&dec_state->shared_storage.epf_sharpness, iy);
-    int* row_in_1 = image.channel[2].plane.Row(0);
-    int* row_in_2 = image.channel[2].plane.Row(1);
-    int* row_in_3 = image.channel[3].plane.Row(iy);
+    int32_t* row_in_1 = image.channel[2].plane.Row(0);
+    int32_t* row_in_2 = image.channel[2].plane.Row(1);
+    int32_t* row_in_3 = image.channel[3].plane.Row(iy);
     for (size_t ix = 0; ix < r.xsize(); ix++) {
       size_t x = r.x0() + ix;
       int sharpness = row_in_3[ix];
@@ -492,8 +492,8 @@ Status ModularFrameDecoder::DecodeAcMetadata(size_t group_id, BitReader* reader,
       }
       JXL_RETURN_IF_ERROR(
           ac_strategy.SetNoBoundsCheck(x, y, AcStrategy::Type(row_in_1[num])));
-      row_qf[ix] =
-          1 + std::max(0, std::min(Quantizer::kQuantMax - 1, row_in_2[num]));
+      row_qf[ix] = 1 + std::max<int32_t>(0, std::min(Quantizer::kQuantMax - 1,
+                                                     row_in_2[num]));
       num++;
     }
   }
@@ -755,7 +755,7 @@ Status ModularFrameDecoder::DecodeQuantTable(
   encoding->qraw.qtable->resize(required_size_x * required_size_y * 3);
   for (size_t c = 0; c < 3; c++) {
     for (size_t y = 0; y < required_size_y; y++) {
-      int* JXL_RESTRICT row = image.channel[c].Row(y);
+      int32_t* JXL_RESTRICT row = image.channel[c].Row(y);
       for (size_t x = 0; x < required_size_x; x++) {
         (*encoding->qraw.qtable)[c * required_size_x * required_size_y +
                                  y * required_size_x + x] = row[x];

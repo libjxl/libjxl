@@ -22,7 +22,7 @@ using hwy::HWY_NAMESPACE::ShiftRight;
 using hwy::HWY_NAMESPACE::Vec;
 
 using D = HWY_CAPPED(float, kBlockDim);
-using DI = hwy::HWY_NAMESPACE::Rebind<int, D>;
+using DI = hwy::HWY_NAMESPACE::Rebind<int32_t, D>;
 using DI8 = hwy::HWY_NAMESPACE::Repartition<uint8_t, D>;
 
 // [0, max_value]

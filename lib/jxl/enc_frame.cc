@@ -604,7 +604,7 @@ class LossyFrameEncoder {
     std::vector<int> qt(192);
     for (size_t c = 0; c < 3; c++) {
       size_t jpeg_c = jpeg_c_map[c];
-      const int* quant =
+      const int32_t* quant =
           jpeg_data.quant[jpeg_data.components[jpeg_c].quant_idx].values.data();
 
       dcquantization[c] = 255 * 8.0f / quant[0];
@@ -629,7 +629,7 @@ class LossyFrameEncoder {
     shared.quantizer.RecomputeFromGlobalScale();
 
     // Per-block dequant scaling should be 1.
-    FillImage(static_cast<int>(shared.quantizer.InvGlobalScale()),
+    FillImage(static_cast<int32_t>(shared.quantizer.InvGlobalScale()),
               &shared.raw_quant_field);
 
     std::vector<int32_t> scaled_qtable(192);

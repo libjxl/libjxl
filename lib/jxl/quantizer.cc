@@ -19,9 +19,9 @@
 
 namespace jxl {
 
-static const int kDefaultQuant = 64;
+static const int32_t kDefaultQuant = 64;
 
-constexpr int Quantizer::kQuantMax;
+constexpr int32_t Quantizer::kQuantMax;
 
 Quantizer::Quantizer(const DequantMatrices* dequant)
     : Quantizer(dequant, kDefaultQuant, kGlobalScaleDenom / kDefaultQuant) {}
@@ -109,7 +109,7 @@ void Quantizer::SetQuantField(const float quant_dc, const ImageF& qf,
 void Quantizer::SetQuant(float quant_dc, float quant_ac,
                          ImageI* JXL_RESTRICT raw_quant_field) {
   ComputeGlobalScaleAndQuant(quant_dc, quant_ac, 0);
-  int val = ClampVal(quant_ac * inv_global_scale_ + 0.5f);
+  int32_t val = ClampVal(quant_ac * inv_global_scale_ + 0.5f);
   FillImage(val, raw_quant_field);
 }
 
