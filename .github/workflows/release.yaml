@@ -276,7 +276,7 @@ jobs:
             arch: '-A x64'
 
     env:
-      VCPKG_VERSION: '2021.05.12'
+      VCPKG_VERSION: '2022.06.16.1'
       VCPKG_ROOT: vcpkg
       VCPKG_DISABLE_METRICS: 1
 

@@ -158,7 +158,7 @@ if(JPEGXL_ENABLE_TOOLS)
     djxl_main.cc
   )
   target_link_libraries(djxl
-    jxl_dec
+    jxl # jxl_dec would be enough, but shared jxl_dec is not shipped
     jxl_extras-static
     jxl_threads
     jxl_tool
