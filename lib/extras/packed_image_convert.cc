@@ -41,7 +41,7 @@ Status ConvertPackedFrameToImageBundle(const JxlBasicInfo& info,
   Rect frame_rect = Rect(
       frame.frame_info.layer_info.crop_x0, frame.frame_info.layer_info.crop_y0,
       frame.frame_info.layer_info.xsize, frame.frame_info.layer_info.ysize);
-  JXL_ASSERT(frame_rect.IsInside(Rect(0, 0, info.xsize, info.ysize)));
+  JXL_RETURN_IF_ERROR(frame_rect.IsInside(Rect(0, 0, info.xsize, info.ysize)));
   if (info.have_animation) {
     bundle->duration = frame.frame_info.duration;
     bundle->blend = frame.frame_info.layer_info.blend_info.blendmode > 0;
@@ -254,8 +254,6 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
   // Convert the pixels
   ppf->frames.clear();
   for (const auto& frame : io.frames) {
-    size_t frame_bits_per_sample = frame.metadata()->bit_depth.bits_per_sample;
-    JXL_ASSERT(frame_bits_per_sample != 0);
     // It is ok for the frame.color().kNumPlanes to not match the
     // number of channels on the image.
     const uint32_t num_channels =
