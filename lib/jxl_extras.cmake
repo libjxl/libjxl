@@ -12,6 +12,8 @@ set(JPEGXL_EXTRAS_SOURCES
   extras/dec/color_hints.h
   extras/dec/decode.cc
   extras/dec/decode.h
+  extras/dec/jxl.cc
+  extras/dec/jxl.h
   extras/dec/pgx.cc
   extras/dec/pgx.h
   extras/dec/pnm.cc
@@ -75,6 +77,7 @@ target_include_directories(jxl_extras-static PUBLIC "${PROJECT_SOURCE_DIR}")
 target_link_libraries(jxl_extras-static PUBLIC
   jxl-static
   jxl_extras_dec-static
+  jxl_threads-static
 )
 
 find_package(GIF 5.1)

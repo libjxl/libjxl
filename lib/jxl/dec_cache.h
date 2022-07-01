@@ -136,6 +136,7 @@ struct PassesDecoderState {
     rgb_output = nullptr;
     rgb_output_is_rgba = false;
     fast_xyb_srgb8_conversion = false;
+    pixel_callback = PixelCallback();
     used_acs = 0;
 
     upsampler8x = GetUpsamplingStage(shared->metadata->transform_data, 0, 3);

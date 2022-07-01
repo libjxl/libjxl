@@ -22,8 +22,6 @@
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/color_management.h"
-#include "lib/jxl/dec_file.h"
-#include "lib/jxl/dec_params.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/enc_butteraugli_pnorm.h"
 #include "lib/jxl/enc_cache.h"
@@ -49,7 +47,6 @@ void TestLosslessGroups(size_t group_size_shift) {
   CompressParams cparams;
   cparams.SetLossless();
   cparams.modular_group_size_shift = group_size_shift;
-  DecompressParams dparams;
 
   CodecInOut io_out;
   size_t compressed_size;
@@ -58,7 +55,7 @@ void TestLosslessGroups(size_t group_size_shift) {
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
   io.ShrinkTo(io.xsize() / 4, io.ysize() / 4);
 
-  compressed_size = Roundtrip(&io, cparams, dparams, pool, &io_out);
+  compressed_size = Roundtrip(&io, cparams, {}, pool, &io_out);
   EXPECT_LE(compressed_size, 280000u);
   EXPECT_LE(ButteraugliDistance(io, io_out, cparams.ba_params, GetJxlCms(),
                                 /*distmap=*/nullptr, pool),
@@ -86,7 +83,6 @@ TEST(ModularTest, RoundtripLosslessCustomWP_PermuteRCT) {
   // slowest speed so different WP modes are tried
   cparams.speed_tier = SpeedTier::kTortoise;
   cparams.options.predictor = {Predictor::Weighted};
-  DecompressParams dparams;
 
   CodecInOut io_out;
   size_t compressed_size;
@@ -95,7 +91,7 @@ TEST(ModularTest, RoundtripLosslessCustomWP_PermuteRCT) {
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
   io.ShrinkTo(100, 100);
 
-  compressed_size = Roundtrip(&io, cparams, dparams, pool, &io_out);
+  compressed_size = Roundtrip(&io, cparams, {}, pool, &io_out);
   EXPECT_LE(compressed_size, 10150u);
   EXPECT_LE(ButteraugliDistance(io, io_out, cparams.ba_params, GetJxlCms(),
                                 /*distmap=*/nullptr, pool),
@@ -112,8 +108,6 @@ TEST(ModularTest, RoundtripLossyDeltaPalette) {
   cparams.lossy_palette = true;
   cparams.palette_colors = 0;
 
-  DecompressParams dparams;
-
   CodecInOut io_out;
   size_t compressed_size;
 
@@ -121,7 +115,7 @@ TEST(ModularTest, RoundtripLossyDeltaPalette) {
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
   io.ShrinkTo(300, 100);
 
-  compressed_size = Roundtrip(&io, cparams, dparams, pool, &io_out);
+  compressed_size = Roundtrip(&io, cparams, {}, pool, &io_out);
   EXPECT_LE(compressed_size, 6800u);
   cparams.ba_params.intensity_target = 80.0f;
   EXPECT_THAT(ButteraugliDistance(io, io_out, cparams.ba_params, GetJxlCms(),
@@ -138,8 +132,6 @@ TEST(ModularTest, RoundtripLossyDeltaPaletteWP) {
   cparams.palette_colors = 0;
   cparams.options.predictor = jxl::Predictor::Weighted;
 
-  DecompressParams dparams;
-
   CodecInOut io_out;
   size_t compressed_size;
 
@@ -147,7 +139,7 @@ TEST(ModularTest, RoundtripLossyDeltaPaletteWP) {
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
   io.ShrinkTo(300, 100);
 
-  compressed_size = Roundtrip(&io, cparams, dparams, pool, &io_out);
+  compressed_size = Roundtrip(&io, cparams, {}, pool, &io_out);
   EXPECT_LE(compressed_size, 7000u);
   cparams.ba_params.intensity_target = 80.0f;
   EXPECT_THAT(ButteraugliDistance(io, io_out, cparams.ba_params, GetJxlCms(),
@@ -162,7 +154,6 @@ TEST(ModularTest, RoundtripLossy) {
   CompressParams cparams;
   cparams.modular_mode = true;
   cparams.butteraugli_distance = 2.f;
-  DecompressParams dparams;
 
   CodecInOut io_out;
   size_t compressed_size;
@@ -170,7 +161,7 @@ TEST(ModularTest, RoundtripLossy) {
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
 
-  compressed_size = Roundtrip(&io, cparams, dparams, pool, &io_out);
+  compressed_size = Roundtrip(&io, cparams, {}, pool, &io_out);
   EXPECT_LE(compressed_size, 30000u);
   cparams.ba_params.intensity_target = 80.0f;
   EXPECT_THAT(ButteraugliDistance(io, io_out, cparams.ba_params, GetJxlCms(),
@@ -185,7 +176,6 @@ TEST(ModularTest, RoundtripLossy16) {
   CompressParams cparams;
   cparams.modular_mode = true;
   cparams.butteraugli_distance = 2.f;
-  DecompressParams dparams;
 
   CodecInOut io_out;
   size_t compressed_size;
@@ -195,7 +185,7 @@ TEST(ModularTest, RoundtripLossy16) {
   JXL_CHECK(io.TransformTo(ColorEncoding::SRGB(), GetJxlCms(), pool));
   io.metadata.m.color_encoding = ColorEncoding::SRGB();
 
-  compressed_size = Roundtrip(&io, cparams, dparams, pool, &io_out);
+  compressed_size = Roundtrip(&io, cparams, {}, pool, &io_out);
   EXPECT_LE(compressed_size, 300u);
   cparams.ba_params.intensity_target = 80.0f;
   EXPECT_THAT(ButteraugliDistance(io, io_out, cparams.ba_params, GetJxlCms(),
@@ -270,10 +260,9 @@ TEST(ModularTest, RoundtripLosslessCustomSqueeze) {
   p.in_place = true;
   p.horizontal = false;
   cparams.squeezes.push_back(p);
-  DecompressParams dparams;
 
   CodecInOut io2;
-  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 265000u);
+  EXPECT_LE(Roundtrip(&io, cparams, {}, pool, &io2), 265000u);
   EXPECT_EQ(0.0, ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
                                      /*distmap=*/nullptr, pool));
 }
@@ -356,9 +345,8 @@ TEST_P(ModularTestParam, RoundtripLossless) {
   cparams.options.predictor = {Predictor::Zero};
   cparams.speed_tier = SpeedTier::kThunder;
   cparams.responsive = responsive;
-  DecompressParams dparams;
   CodecInOut io2;
-  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2),
+  EXPECT_LE(Roundtrip(&io, cparams, {}, pool, &io2),
             bitdepth * xsize * ysize / 3);
   EXPECT_LE(0, ComputeDistance2(io.Main(), io2.Main(), GetJxlCms()));
   size_t different = 0;
@@ -410,10 +398,9 @@ TEST(ModularTest, RoundtripLosslessCustomFloat) {
   cparams.options.predictor = {Predictor::Zero};
   cparams.speed_tier = SpeedTier::kThunder;
   cparams.decoding_speed_tier = 2;
-  DecompressParams dparams;
 
   CodecInOut io2;
-  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 23000u);
+  EXPECT_LE(Roundtrip(&io, cparams, {}, pool, &io2), 23000u);
   EXPECT_EQ(0.0, ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
                                      /*distmap=*/nullptr, pool));
 }

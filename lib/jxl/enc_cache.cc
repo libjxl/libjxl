@@ -134,9 +134,6 @@ Status InitializePassesEncoder(const Image3F& opsin, const JxlCmsInterface& cms,
     dc_frame_info.dc_level = shared.frame_header.dc_level + 1;
     dc_frame_info.ib_needs_color_transform = false;
     dc_frame_info.save_before_color_transform = true;  // Implicitly true
-    // TODO(lode): the EncodeFrame / DecodeFrame pair here is likely broken in
-    // case of dc_level >= 3, since EncodeFrame may output multiple frames
-    // to the bitwriter, while DecodeFrame reads only one.
     JXL_CHECK(EncodeFrame(cparams, dc_frame_info, shared.metadata, ib,
                           state.get(), cms, pool, special_frame.get(),
                           nullptr));
@@ -151,9 +148,8 @@ Status InitializePassesEncoder(const Image3F& opsin, const JxlCmsInterface& cms,
     const uint8_t* frame_start = encoded.data();
     size_t encoded_size = encoded.size();
     for (int i = 0; i <= cparams.progressive_dc; ++i) {
-      JXL_CHECK(DecodeFrame({}, dec_state.get(), pool, frame_start,
-                            encoded_size, &decoded, *shared.metadata,
-                            /*constraints=*/nullptr));
+      JXL_CHECK(DecodeFrame(dec_state.get(), pool, frame_start, encoded_size,
+                            &decoded, *shared.metadata));
       frame_start += decoded.decoded_bytes();
       encoded_size -= decoded.decoded_bytes();
     }

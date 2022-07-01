@@ -16,8 +16,6 @@
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
-#include "lib/jxl/dec_file.h"
-#include "lib/jxl/dec_params.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_file.h"
@@ -50,10 +48,9 @@ TEST(PreviewTest, RoundtripGivenPreview) {
   CompressParams cparams;
   cparams.butteraugli_distance = 2.0;
   cparams.speed_tier = SpeedTier::kSquirrel;
-  DecompressParams dparams;
 
   CodecInOut io2;
-  Roundtrip(&io, cparams, dparams, pool, &io2);
+  Roundtrip(&io, cparams, {}, pool, &io2);
   EXPECT_EQ(preview_xsize, io2.metadata.m.preview_size.xsize());
   EXPECT_EQ(preview_ysize, io2.metadata.m.preview_size.ysize());
   EXPECT_EQ(preview_xsize, io2.preview_frame.xsize());

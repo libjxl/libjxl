@@ -776,18 +776,16 @@ void RoundtripPatchFrame(Image3F* reference_frame,
         *state->shared.metadata));
     const uint8_t* frame_start = encoded.data();
     size_t encoded_size = encoded.size();
-    JXL_CHECK(DecodeFrame({}, &dec_state, pool, frame_start, encoded_size,
-                          &decoded, *state->shared.metadata,
-                          /*constraints=*/nullptr));
+    JXL_CHECK(DecodeFrame(&dec_state, pool, frame_start, encoded_size, &decoded,
+                          *state->shared.metadata));
     frame_start += decoded.decoded_bytes();
     encoded_size -= decoded.decoded_bytes();
     size_t ref_xsize =
         dec_state.shared_storage.reference_frames[idx].storage.color()->xsize();
     // if the frame itself uses patches, we need to decode another frame
     if (!ref_xsize) {
-      JXL_CHECK(DecodeFrame({}, &dec_state, pool, frame_start, encoded_size,
-                            &decoded, *state->shared.metadata,
-                            /*constraints=*/nullptr));
+      JXL_CHECK(DecodeFrame(&dec_state, pool, frame_start, encoded_size,
+                            &decoded, *state->shared.metadata));
     }
     JXL_CHECK(encoded_size == 0);
     state->shared.reference_frames[idx] =
