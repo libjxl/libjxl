@@ -83,7 +83,8 @@ else()
 endif()
 
 # Standard cmake naming for building shared libraries.
-option(BUILD_SHARED_LIBS "Build shared libraries instead of static ones" ON)
+get_property(SHARED_LIBS_SUPPORTED GLOBAL PROPERTY TARGET_SUPPORTS_SHARED_LIBS)
+option(BUILD_SHARED_LIBS "Build shared libraries instead of static ones" ${SHARED_LIBS_SUPPORTED})
 
 set(JPEGXL_ENABLE_FUZZERS ${ENABLE_FUZZERS_DEFAULT} CACHE BOOL
     "Build JPEGXL fuzzer targets.")
