@@ -68,7 +68,7 @@ if (NOT DEFINED GMOCK_INCLUDE_DIR)
   find_path(
       GMOCK_INCLUDE_DIR "gmock/gmock.h"
       HINTS ${GTEST_INCLUDE_DIRS})
-  if ("${GMOCK_INCLUDE_DIR}" STREQUAL "GMOCK_INCLUDE_DIR-NOTFOUND")
+  if (NOT GMOCK_INCLUDE_DIR)
     set(BUILD_TESTING OFF CACHE BOOL "Build tests" FORCE)
     message(SEND_ERROR "GMock not found. Install googletest package "
             "(libgmock-dev) in the system or download googletest to "
@@ -76,7 +76,7 @@ if (NOT DEFINED GMOCK_INCLUDE_DIR)
             "To disable tests instead re-run cmake with -DBUILD_TESTING=OFF.")
   else()
     message(STATUS "Found GMock: ${GMOCK_INCLUDE_DIR}")
-  endif()  # GMOCK_INCLUDE_DIR-NOTFOUND
+  endif()  # NOT GMOCK_INCLUDE_DIR
 endif()  # NOT DEFINED GMOCK_INCLUDE_DIR
 endif()  # BUILD_TESTING
 
