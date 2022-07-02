@@ -52,7 +52,7 @@ set(JPEGXL_INTERNAL_FLAGS
 )
 
 # Warning flags supported by clang.
-if (${CMAKE_CXX_COMPILER_ID} MATCHES "Clang")
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   list(APPEND JPEGXL_INTERNAL_FLAGS
     -Wdeprecated-increment-bool
     # TODO(deymo): Add -Wextra-semi once we update third_party/highway.
@@ -90,7 +90,7 @@ if (WIN32)
     -Wno-zero-as-null-pointer-constant
   )
 
-  if (${CMAKE_CXX_COMPILER_ID} MATCHES "Clang")
+  if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     list(APPEND JPEGXL_INTERNAL_FLAGS
       -Wno-used-but-marked-unused
       -Wno-unused-template
@@ -110,7 +110,7 @@ else()  # WIN32
     -fmath-errno
   )
 
-  if (${CMAKE_CXX_COMPILER_ID} MATCHES "Clang")
+  if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     list(APPEND JPEGXL_INTERNAL_FLAGS
       -fnew-alignment=8
       -fno-cxx-exceptions

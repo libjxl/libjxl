@@ -510,7 +510,7 @@ target_compile_definitions(jxl_dec-static INTERFACE -DJXL_EXPORT=)
 
 # TODO(deymo): Move TCMalloc linkage to the tools/ directory since the library
 # shouldn't do any allocs anyway.
-if(${JPEGXL_ENABLE_TCMALLOC})
+if(JPEGXL_ENABLE_TCMALLOC)
   pkg_check_modules(TCMallocMinimal REQUIRED IMPORTED_TARGET
       libtcmalloc_minimal)
   # tcmalloc 2.8 has concurrency issues that makes it sometimes return nullptr
@@ -595,7 +595,7 @@ foreach(target IN ITEMS jxl jxl_dec)
   # This hides the default visibility symbols from static libraries bundled into
   # the shared library. In particular this prevents exposing symbols from hwy
   # and skcms in the shared library.
-  if(${LINKER_SUPPORT_EXCLUDE_LIBS})
+  if(LINKER_SUPPORT_EXCLUDE_LIBS)
     set_property(TARGET ${target} APPEND_STRING PROPERTY
         LINK_FLAGS " ${LINKER_EXCLUDE_LIBS_FLAG}")
   endif()
