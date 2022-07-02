@@ -393,7 +393,7 @@ add_subdirectory(box)
 add_subdirectory(conformance)
 
 
-if ("${JPEGXL_EMSCRIPTEN}")
+if (JPEGXL_ENABLE_TOOLS AND JPEGXL_EMSCRIPTEN)
 # WASM API facade.
 add_executable(jxl_emcc jxl_emcc.cc)
 target_link_libraries(jxl_emcc
@@ -421,14 +421,7 @@ set_target_properties(jxl_emcc PROPERTIES LINK_FLAGS "\
     _jxlProcessInput\
   ]\"\
 ")
-else()
-add_executable(jxl_emcc jxl_emcc.cc)
-target_link_libraries(jxl_emcc
-    jxl-static
-    jxl_extras-static
-    jxl_threads-static
-)
-endif ()  # JPEGXL_EMSCRIPTEN
+endif ()  # JPEGXL_ENABLE_TOOLS AND JPEGXL_EMSCRIPTEN
 
 if(JPEGXL_ENABLE_JNI)
 find_package(JNI QUIET)
