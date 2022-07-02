@@ -183,12 +183,10 @@ target_compile_definitions(jxl_extras_dec-static PUBLIC ${JXL_EXTRAS_DEC_PUBLIC_
 target_link_libraries(jxl_extras_dec-static PRIVATE ${JXL_EXTRAS_DEC_INTERNAL_LIBRARIES})
 
 ### Shared library.
-if (((NOT DEFINED "${TARGET_SUPPORTS_SHARED_LIBS}") OR
-     TARGET_SUPPORTS_SHARED_LIBS) AND NOT JPEGXL_STATIC AND BUILD_SHARED_LIBS)
+if (BUILD_SHARED_LIBS)
 add_library(jxl_extras_dec SHARED $<TARGET_OBJECTS:jxl_extras_dec-obj>)
 target_compile_definitions(jxl_extras_dec PUBLIC ${JXL_EXTRAS_DEC_PUBLIC_DEFINITIONS})
 target_link_libraries(jxl_extras_dec PRIVATE ${JXL_EXTRAS_DEC_INTERNAL_LIBRARIES} jxl)
 else()
 add_library(jxl_extras_dec ALIAS jxl_extras_dec-static)
-endif()  # TARGET_SUPPORTS_SHARED_LIBS AND NOT JPEGXL_STATIC AND
-         # BUILD_SHARED_LIBS
+endif()  # BUILD_SHARED_LIBS
