@@ -157,9 +157,9 @@ if (${CMAKE_CXX_COMPILER_ID} MATCHES "Clang")
   # Android NDK's toolchain.cmake fakes the clang version in
   # CMAKE_CXX_COMPILER_VERSION with an incorrect number, so ignore this.
   if (NOT ${CMAKE_ANDROID_NDK_TOOLCHAIN_VERSION} MATCHES "clang"
-      AND ${CMAKE_CXX_COMPILER_VERSION} VERSION_LESS 6)
+      AND ${CMAKE_CXX_COMPILER_VERSION} VERSION_LESS 5)
     message(FATAL_ERROR
-      "Minimum Clang version required is Clang 6, please update.")
+      "Minimum Clang version required is Clang 5, please update.")
   endif()
 elseif (${CMAKE_CXX_COMPILER_ID} MATCHES "GNU")
   if (${CMAKE_CXX_COMPILER_VERSION} VERSION_LESS 7)
