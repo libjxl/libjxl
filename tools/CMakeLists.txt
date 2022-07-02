@@ -274,7 +274,7 @@ if(JPEGXL_ENABLE_BENCHMARK AND JPEGXL_ENABLE_TOOLS)
     # Use the static version of webp if available.
     find_library(WebP_STATIC_LINK_LIBRARY NAMES libwebp.a
         PATHS "${WebP_LIBDIR}")
-    if("${WebP_STATIC_LINK_LIBRARY}" STREQUAL "WebP_STATIC_LINK_LIBRARY-NOTFOUND")
+    if(NOT WebP_STATIC_LINK_LIBRARY)
       message(WARNING "Using dynamic libwebp")
       target_link_libraries(benchmark_xl PkgConfig::WebP)
     else()
@@ -282,7 +282,7 @@ if(JPEGXL_ENABLE_BENCHMARK AND JPEGXL_ENABLE_TOOLS)
       target_include_directories(benchmark_xl
           PRIVATE ${WebP_STATIC_INCLUDE_DIRS})
       target_compile_options(benchmark_xl PRIVATE ${WebP_STATIC_CFLAGS_OTHER})
-    endif()
+    endif()  # NOT WebP_STATIC_LINK_LIBRARY
   endif()
 
   pkg_check_modules(AVIF IMPORTED_TARGET libavif)

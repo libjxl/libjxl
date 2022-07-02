@@ -388,7 +388,7 @@ endif() # JPEGXL_ENABLE_DOXYGEN
 
 if(JPEGXL_ENABLE_MANPAGES)
 find_program(ASCIIDOC a2x)
-if(NOT "${ASCIIDOC}" STREQUAL "ASCIIDOC-NOTFOUND")
+if(ASCIIDOC)
 file(STRINGS "${ASCIIDOC}" ASCIIDOC_SHEBANG LIMIT_COUNT 1)
 if(ASCIIDOC_SHEBANG MATCHES "/sh|/bash")
   set(ASCIIDOC_PY_FOUND ON)
@@ -407,7 +407,7 @@ else()
   find_package(Python COMPONENTS Interpreter QUIET)
   if(NOT Python_Interpreter_FOUND)
     find_program(ASCIIDOC_PY python)
-    if(NOT ASCIIDOC_PY STREQUAL "ASCIIDOC_PY-NOTFOUND")
+    if(ASCIIDOC_PY)
       set(ASCIIDOC_PY_FOUND ON)
     endif()
   else()
@@ -438,7 +438,7 @@ if (ASCIIDOC_PY_FOUND)
 endif()  # ASCIIDOC_PY_FOUND
 else()
   message(WARNING "asciidoc was not found, the man pages will not be installed.")
-endif()  # ASCIIDOC != "ASCIIDOC-NOTFOUND"
+endif()  # ASCIIDOC
 endif()  # JPEGXL_ENABLE_MANPAGES
 
 # Example usage code.
