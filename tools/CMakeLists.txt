@@ -177,7 +177,7 @@ if(JPEGXL_ENABLE_TOOLS)
   )
   target_link_libraries(jxlinfo jxl)
 
-  if(NOT ${SANITIZER} STREQUAL "none")
+  if(NOT SANITIZER STREQUAL "none")
     # Linking a C test binary with the C++ JPEG XL implementation when using
     # address sanitizer is not well supported by clang 9, so force using clang++
     # for linking this test if a sanitizer is used.
@@ -187,7 +187,7 @@ if(JPEGXL_ENABLE_TOOLS)
 endif()  # JPEGXL_ENABLE_TOOLS
 
 # Other developer tools.
-if(${JPEGXL_ENABLE_DEVTOOLS})
+if(JPEGXL_ENABLE_DEVTOOLS)
   list(APPEND TOOL_BINARIES
     fuzzer_corpus
     butteraugli_main
@@ -219,7 +219,7 @@ if(${JPEGXL_ENABLE_DEVTOOLS})
 endif()  # JPEGXL_ENABLE_DEVTOOLS
 
 # Benchmark tools.
-if(${JPEGXL_ENABLE_BENCHMARK} AND JPEGXL_ENABLE_TOOLS)
+if(JPEGXL_ENABLE_BENCHMARK AND JPEGXL_ENABLE_TOOLS)
   list(APPEND TOOL_BINARIES
     benchmark_xl
   )
@@ -328,7 +328,7 @@ set(FUZZER_BINARIES
 
 # Fuzzers.
 foreach(FUZZER IN LISTS FUZZER_BINARIES)
-  if(${JPEGXL_ENABLE_FUZZERS})
+  if(JPEGXL_ENABLE_FUZZERS)
     set(BINARY "${FUZZER}")
     add_executable("${BINARY}" "${BINARY}.cc")
     target_link_libraries("${BINARY}" ${JPEGXL_FUZZER_LINK_FLAGS})
@@ -340,7 +340,7 @@ foreach(FUZZER IN LISTS FUZZER_BINARIES)
         "fuzzer_stub.cc" "${FUZZER}.cc")
   endif()  # JPEGXL_ENABLE_FUZZERS
   target_include_directories("${BINARY}" PRIVATE "${CMAKE_SOURCE_DIR}")
-  if(${FUZZER} STREQUAL djxl_fuzzer)
+  if(FUZZER STREQUAL djxl_fuzzer)
     target_link_libraries("${BINARY}"
       jxl_dec-static
       jxl_threads-static
@@ -363,7 +363,7 @@ if(BUILD_TESTING AND TARGET jxl AND NOT JPEGXL_EMSCRIPTEN)
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tests)
 add_executable(libjxl_test libjxl_test.c)
 set_property(TARGET libjxl_test PROPERTY C_STANDARD 99)
-if(NOT ${SANITIZER} STREQUAL "none")
+if(NOT SANITIZER STREQUAL "none")
   # Linking a C test binary with the C++ JPEG XL implementation when using
   # address sanitizer is not well supported by clang 9, so force using clang++
   # for linking this test if a sanitizer is used.
@@ -383,7 +383,7 @@ add_test(NAME LibraryCLinkageTest COMMAND libjxl_test)
 endif()  # BUILD_TESTING AND TARGET jxl AND NOT JPEGXL_EMSCRIPTEN
 
 # Tools defined in subdirectories.
-if(${JPEGXL_ENABLE_VIEWERS})
+if(JPEGXL_ENABLE_VIEWERS)
 add_subdirectory(viewer)
 add_subdirectory(comparison_viewer)
 add_subdirectory(flicker_test)
@@ -427,7 +427,7 @@ if(JPEGXL_ENABLE_JNI)
 find_package(JNI QUIET)
 find_package(Java QUIET)
 
-if ("${JNI_FOUND}" AND "${Java_FOUND}")
+if (JNI_FOUND AND Java_FOUND)
   include(UseJava)
 
   # decoder_jni_onload.cc might be necessary for Android; not used yet.
@@ -460,7 +460,7 @@ if ("${JNI_FOUND}" AND "${Java_FOUND}")
   )
   get_target_property(JXL_JNI_WRAPPER_TEST_JAR jxl_jni_wrapper_test JAR_FILE)
 
-  if(NOT "${SANITIZER}" MATCHES ".san")
+  if(NOT SANITIZER MATCHES ".san")
     # NB: Vanilla OpenJDK 8 / 11 are known to work well (i.e. either
     #     "which java" or JAVA_HOME environment variable point to the path like
     #     "/usr/lib/jvm/java-xx-openjdk-yyy" on Debian Linux).

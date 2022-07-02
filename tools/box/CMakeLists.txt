@@ -18,7 +18,7 @@ target_include_directories(box
   "${PROJECT_SOURCE_DIR}"
 )
 
-if(${JPEGXL_ENABLE_DEVTOOLS})
+if(JPEGXL_ENABLE_DEVTOOLS)
 add_executable(box_list
   box_list_main.cc
 )
