@@ -102,7 +102,7 @@ void FindBestPatchDictionary(const Image3F& opsin,
 void RoundtripPatchFrame(Image3F* reference_frame,
                          PassesEncoderState* JXL_RESTRICT state, int idx,
                          CompressParams& cparams, const JxlCmsInterface& cms,
-                         ThreadPool* pool, bool subtract);
+                         ThreadPool* pool, AuxOut* aux_out, bool subtract);
 
 }  // namespace jxl
 

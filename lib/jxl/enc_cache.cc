@@ -134,9 +134,15 @@ Status InitializePassesEncoder(const Image3F& opsin, const JxlCmsInterface& cms,
     dc_frame_info.dc_level = shared.frame_header.dc_level + 1;
     dc_frame_info.ib_needs_color_transform = false;
     dc_frame_info.save_before_color_transform = true;  // Implicitly true
+    AuxOut dc_aux_out;
     JXL_CHECK(EncodeFrame(cparams, dc_frame_info, shared.metadata, ib,
                           state.get(), cms, pool, special_frame.get(),
-                          nullptr));
+                          aux_out ? &dc_aux_out : nullptr));
+    if (aux_out) {
+      for (const auto& l : dc_aux_out.layers) {
+        aux_out->layers[kLayerDC].Assimilate(l);
+      }
+    }
     const Span<const uint8_t> encoded = special_frame->GetSpan();
     enc_state->special_frames.emplace_back(std::move(special_frame));
 
