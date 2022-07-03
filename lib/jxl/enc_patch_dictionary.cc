@@ -712,7 +712,8 @@ void FindBestPatchDictionary(const Image3F& opsin,
   // Recursive application of patches could create very weird issues.
   cparams.patches = Override::kOff;
 
-  RoundtripPatchFrame(&reference_frame, state, 0, cparams, cms, pool, true);
+  RoundtripPatchFrame(&reference_frame, state, 0, cparams, cms, pool, aux_out,
+                      /*subtract=*/true);
 
   // TODO(veluca): this assumes that applying patches is commutative, which is
   // not true for all blending modes. This code only produces kAdd patches, so
@@ -725,7 +726,7 @@ void FindBestPatchDictionary(const Image3F& opsin,
 void RoundtripPatchFrame(Image3F* reference_frame,
                          PassesEncoderState* JXL_RESTRICT state, int idx,
                          CompressParams& cparams, const JxlCmsInterface& cms,
-                         ThreadPool* pool, bool subtract) {
+                         ThreadPool* pool, AuxOut* aux_out, bool subtract) {
   FrameInfo patch_frame_info;
   cparams.resampling = 1;
   cparams.ec_resampling = 1;
@@ -764,9 +765,15 @@ void RoundtripPatchFrame(Image3F* reference_frame,
   }
   PassesEncoderState roundtrip_state;
   auto special_frame = std::unique_ptr<BitWriter>(new BitWriter());
+  AuxOut patch_aux_out;
   JXL_CHECK(EncodeFrame(cparams, patch_frame_info, state->shared.metadata, ib,
                         &roundtrip_state, cms, pool, special_frame.get(),
-                        nullptr));
+                        aux_out ? &patch_aux_out : nullptr));
+  if (aux_out) {
+    for (const auto& l : patch_aux_out.layers) {
+      aux_out->layers[kLayerDictionary].Assimilate(l);
+    }
+  }
   const Span<const uint8_t> encoded = special_frame->GetSpan();
   state->special_frames.emplace_back(std::move(special_frame));
   if (subtract) {

@@ -497,7 +497,6 @@ class LossyFrameEncoder {
                              Image3F* JXL_RESTRICT opsin,
                              const JxlCmsInterface& cms, ThreadPool* pool,
                              ModularFrameEncoder* modular_frame_encoder,
-                             BitWriter* JXL_RESTRICT writer,
                              FrameHeader* frame_header) {
     PROFILER_ZONE("ComputeEncodingData uninstrumented");
     JXL_ASSERT((opsin->xsize() % kBlockDim) == 0 &&
@@ -936,8 +935,8 @@ class LossyFrameEncoder {
   Status EncodeGlobalACInfo(BitWriter* writer,
                             ModularFrameEncoder* modular_frame_encoder) {
     JXL_RETURN_IF_ERROR(DequantMatricesEncode(&enc_state_->shared.matrices,
-                                              writer, kLayerDequantTables,
-                                              aux_out_, modular_frame_encoder));
+                                              writer, kLayerQuant, aux_out_,
+                                              modular_frame_encoder));
     if (enc_state_->cparams.speed_tier <= SpeedTier::kTortoise) {
       if (!doing_jpeg_recompression) ClusterGroups(enc_state_);
     }
@@ -1245,7 +1244,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
     if (frame_header->encoding == FrameEncoding::kVarDCT) {
       PadImageToBlockMultipleInPlace(&opsin);
       JXL_RETURN_IF_ERROR(lossy_frame_encoder.ComputeEncodingData(
-          ib_or_linear, &opsin, cms, pool, modular_frame_encoder.get(), writer,
+          ib_or_linear, &opsin, cms, pool, modular_frame_encoder.get(),
           frame_header.get()));
     } else if (frame_header->upsampling != 1 && !cparams.already_downsampled) {
       // In VarDCT mode, LossyFrameHeuristics takes care of running downsampling
@@ -1254,7 +1253,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
     }
   } else {
     JXL_RETURN_IF_ERROR(lossy_frame_encoder.ComputeEncodingData(
-        &ib, &opsin, cms, pool, modular_frame_encoder.get(), writer,
+        &ib, &opsin, cms, pool, modular_frame_encoder.get(),
         frame_header.get()));
   }
   if (cparams.ec_resampling != 1 && !cparams.already_downsampled) {
@@ -1326,7 +1325,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
 
   JXL_RETURN_IF_ERROR(
       DequantMatricesEncodeDC(&lossy_frame_encoder.State()->shared.matrices,
-                              get_output(0), kLayerDequantTables, aux_out));
+                              get_output(0), kLayerQuant, aux_out));
   if (frame_header->encoding == FrameEncoding::kVarDCT) {
     JXL_RETURN_IF_ERROR(
         lossy_frame_encoder.EncodeGlobalDCInfo(*frame_header, get_output(0)));
@@ -1406,7 +1405,9 @@ Status EncodeFrame(const CompressParams& cparams_orig,
   JXL_RETURN_IF_ERROR(num_errors.load(std::memory_order_relaxed) == 0);
 
   for (BitWriter& bw : group_codes) {
+    BitWriter::Allotment allotment(&bw, 8);
     bw.ZeroPadToByte();  // end of group.
+    ReclaimAndCharge(&bw, &allotment, kLayerAC, aux_out);
   }
 
   std::vector<coeff_order_t>* permutation_ptr = nullptr;
@@ -1488,7 +1489,6 @@ Status EncodeFrame(const CompressParams& cparams_orig,
   JXL_RETURN_IF_ERROR(
       WriteGroupOffsets(group_codes, permutation_ptr, writer, aux_out));
   writer->AppendByteAligned(group_codes);
-  writer->ZeroPadToByte();  // end of frame.
 
   return true;
 }

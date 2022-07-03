@@ -591,13 +591,13 @@ Status ModularGenericDecompress(BitReader *br, Image &image,
 #endif
   GroupHeader local_header;
   if (header == nullptr) header = &local_header;
+  size_t bit_pos = br->TotalBitsConsumed();
   auto dec_status = ModularDecode(br, image, *header, group_id, options, tree,
                                   code, ctx_map, allow_truncated_group);
   if (!allow_truncated_group) JXL_RETURN_IF_ERROR(dec_status);
   if (dec_status.IsFatalError()) return dec_status;
   if (undo_transforms) image.undo_transforms(header->wp_header);
   if (image.error) return JXL_FAILURE("Corrupt file. Aborting.");
-  size_t bit_pos = br->TotalBitsConsumed();
   JXL_DEBUG_V(4,
               "Modular-decoded a %" PRIuS "x%" PRIuS " nbchans=%" PRIuS
               " image from %" PRIuS " bytes",

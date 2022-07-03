@@ -166,6 +166,13 @@ void BenchmarkStats::Assimilate(const BenchmarkStats& victim) {
 void BenchmarkStats::PrintMoreStats() const {
   if (Args()->print_more_stats) {
     jxl_stats.Print();
+    size_t total_bits = jxl_stats.aux_out.TotalBits();
+    size_t compressed_bits = total_compressed_size * kBitsPerByte;
+    if (total_bits != compressed_bits) {
+      printf("Total layer bits: %" PRIuS " vs total compressed bits: %" PRIuS
+             "  (%.2f%% accounted for)\n",
+             total_bits, compressed_bits, total_bits * 100.0 / compressed_bits);
+    }
   }
   if (Args()->print_distance_percentiles) {
     std::vector<float> sorted = distances;
