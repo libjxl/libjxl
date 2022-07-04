@@ -116,7 +116,9 @@ class JxlCodec : public ImageCodec {
       std::istringstream parser(param.substr(kEcResamplingPrefix.size()));
       parser >> cparams_.ec_resampling;
     } else if (ImageCodec::ParseParam(param)) {
-      // Nothing to do.
+      if (param[0] == 'd' && butteraugli_target_ == 0.0) {
+        cparams_.SetLossless();
+      }
     } else if (param == "uint8") {
       uint8_ = true;
     } else if (param[0] == 'u') {
