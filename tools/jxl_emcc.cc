@@ -3,13 +3,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-/*#include "lib/extras/render_hdr.h"
-#include "lib/jxl/base/thread_pool_internal.h"
-#include "lib/jxl/color_encoding_internal.h"
-#include "lib/jxl/dec_file.h"
-#include "lib/jxl/enc_color_management.h"
-*/
-
 #include <cstring>
 #include <memory>
 #include <vector>

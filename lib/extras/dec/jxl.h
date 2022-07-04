@@ -14,6 +14,7 @@
 #include <string>
 #include <vector>
 
+#include "jxl/parallel_runner.h"
 #include "jxl/types.h"
 #include "lib/extras/packed_image.h"
 
