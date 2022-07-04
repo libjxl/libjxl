@@ -138,6 +138,7 @@ Status FrameDecoder::InitFrame(BitReader* JXL_RESTRICT br, ImageBundle* decoded,
   JXL_ASSERT(frame_header_.nonserialized_metadata != nullptr);
   JXL_RETURN_IF_ERROR(ReadFrameHeader(br, &frame_header_));
   frame_dim_ = frame_header_.ToFrameDimensions();
+  JXL_DEBUG_V(2, "FrameHeader: %s", frame_header_.DebugString().c_str());
 
   const size_t num_passes = frame_header_.passes.num_passes;
   const size_t num_groups = frame_dim_.num_groups;
