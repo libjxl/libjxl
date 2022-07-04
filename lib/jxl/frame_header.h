@@ -290,6 +290,8 @@ struct Passes : public Fields {
     return retval;
   }
 
+  std::string DebugString() const;
+
   uint32_t num_passes;      // <= kMaxNumPasses
   uint32_t num_downsample;  // <= num_passes
 
@@ -483,6 +485,8 @@ struct FrameHeader : public Fields {
            frame_type == FrameType::kRegularFrame ||
            frame_type == FrameType::kSkipProgressive;
   }
+
+  std::string DebugString() const;
 
   uint64_t extensions;
 };
