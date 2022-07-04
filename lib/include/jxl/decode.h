@@ -366,6 +366,15 @@ typedef enum {
  * events that were already handled before, such as @ref JXL_DEC_BASIC_INFO
  * and @ref JXL_DEC_COLOR_ENCODING, since they will provide the same information
  * as before.
+ * The difference to @ref JxlDecoderReset is that some state is kept, namely
+ * settings set by a call to
+ *  - @ref JxlDecoderSetCoalescing,
+ *  - @ref JxlDecoderSetDesiredIntensityTarget,
+ *  - @ref JxlDecoderSetDecompressBoxes,
+ *  - @ref JxlDecoderSetKeepOrientation,
+ *  - @ref JxlDecoderSetRenderSpotcolors,
+ *  - @ref JxlDecoderSkipFrames, and
+ *  - @ref JxlDecoderSubscribeEvents.
  *
  * @param dec decoder object
  */
