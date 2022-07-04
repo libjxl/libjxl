@@ -1050,6 +1050,9 @@ Status ParamsPostInit(CompressParams* p) {
   if (!p->manual_xyb_factors.empty() && p->manual_xyb_factors.size() != 3) {
     return JXL_FAILURE("Invalid number of XYB quantization factors");
   }
+  if (!p->modular_mode && p->butteraugli_distance == 0.0) {
+    p->butteraugli_distance = kMinButteraugliDistance;
+  }
   if (p->original_butteraugli_distance == -1.0) {
     p->original_butteraugli_distance = p->butteraugli_distance;
   }
