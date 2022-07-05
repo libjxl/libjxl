@@ -377,7 +377,11 @@ if(NOT WIN32)
 endif()  # NOT WIN32
 endif()  # NOT MSVC
 
-add_test(NAME LibraryCLinkageTest COMMAND libjxl_test)
+add_test(
+  NAME LibraryCLinkageTest
+  COMMAND libjxl_test
+  WORKING_DIRECTORY $<TARGET_FILE_DIR:jxl>
+)
 
 endif()  # BUILD_TESTING AND TARGET jxl AND NOT JPEGXL_EMSCRIPTEN
 
