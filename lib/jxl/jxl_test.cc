@@ -405,6 +405,48 @@ TEST(JxlTest, RoundtripMultiGroup) {
               IsSlightlyBelow(18));
 }
 
+TEST(JxlTest, RoundtripRGBToGrayscale) {
+  ThreadPoolInternal pool(4);
+  const PaddedBytes orig = ReadTestData("jxl/flower/flower.png");
+  CodecInOut io;
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
+  io.ShrinkTo(600, 1024);
+
+  CompressParams cparams;
+  cparams.butteraugli_distance = 1.0f;
+  cparams.speed_tier = SpeedTier::kFalcon;
+
+  extras::JXLDecompressParams dparams;
+  dparams.color_space = "Gra_D65_Rel_SRG";
+
+  CodecInOut io2;
+  EXPECT_FALSE(io.Main().IsGray());
+  EXPECT_LE(Roundtrip(&io, cparams, dparams, &pool, &io2), 55000u);
+  EXPECT_TRUE(io2.Main().IsGray());
+
+  // Convert original to grayscale here, because TransformTo refuses to
+  // convert between grayscale and RGB.
+  ColorEncoding srgb_lin = ColorEncoding::LinearSRGB(/*is_gray=*/false);
+  ASSERT_TRUE(io.TransformTo(srgb_lin, GetJxlCms(), &pool));
+  Image3F* color = io.Main().color();
+  for (size_t y = 0; y < color->ysize(); ++y) {
+    float* row_r = color->PlaneRow(0, y);
+    float* row_g = color->PlaneRow(1, y);
+    float* row_b = color->PlaneRow(2, y);
+    for (size_t x = 0; x < color->xsize(); ++x) {
+      float luma = 0.2126 * row_r[x] + 0.7152 * row_g[x] + 0.0722 * row_b[x];
+      row_r[x] = row_g[x] = row_b[x] = luma;
+    }
+  }
+  ColorEncoding srgb_gamma = ColorEncoding::SRGB(/*is_gray=*/false);
+  ASSERT_TRUE(io.TransformTo(srgb_gamma, GetJxlCms(), &pool));
+  io.metadata.m.color_encoding = io2.Main().c_current();
+  io.Main().OverrideProfile(io2.Main().c_current());
+  EXPECT_THAT(ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
+                                  /*distmap=*/nullptr, &pool),
+              IsSlightlyBelow(1.7));
+}
+
 TEST(JxlTest, RoundtripLargeFast) {
   ThreadPoolInternal pool(8);
   const PaddedBytes orig = ReadTestData("jxl/flower/flower.png");
@@ -734,6 +776,26 @@ TEST(JxlTest, RoundtripGrayscale) {
     EXPECT_THAT(ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
                                     /*distmap=*/nullptr, pool),
                 IsSlightlyBelow(6.0));
+  }
+
+  {
+    CompressParams cparams;
+    cparams.butteraugli_distance = 1.0;
+
+    PaddedBytes compressed;
+    EXPECT_TRUE(EncodeFile(cparams, &io, &enc_state, &compressed, GetJxlCms(),
+                           aux_out, pool));
+
+    CodecInOut io2;
+    extras::JXLDecompressParams dparams;
+    dparams.color_space = "RGB_D65_SRG_Rel_SRG";
+    EXPECT_TRUE(test::DecodeFile(dparams, compressed, &io2, pool));
+    EXPECT_FALSE(io2.Main().IsGray());
+
+    EXPECT_LE(compressed.size(), 7000u);
+    EXPECT_THAT(ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
+                                    /*distmap=*/nullptr, pool),
+                IsSlightlyBelow(1.6));
   }
 }
 
