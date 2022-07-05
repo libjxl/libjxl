@@ -100,10 +100,11 @@ Status RunButteraugli(const char* pathname1, const char* pathname2,
 int main(int argc, char** argv) {
   if (argc < 3) {
     fprintf(stderr,
-            "Usage: %s <reference> <distorted> [--distmap <distmap>] "
-            "[--intensity_target <intensity_target>]\n"
-            "[--colorspace <colorspace_hint>]\n"
-            "[--pnorm <pth norm>]\n"
+            "Usage: %s <reference> <distorted>\n"
+            "  [--distmap <distmap>]\n"
+            "  [--intensity_target <intensity_target>]\n"
+            "  [--colorspace <colorspace_hint>]\n"
+            "  [--pnorm <pth norm>]\n"
             "NOTE: images get converted to linear sRGB for butteraugli. Images"
             " without attached profiles (such as ppm or pfm) are interpreted"
             " as nonlinear sRGB. The hint format is RGB_D65_SRG_Rel_Lin for"
