@@ -723,8 +723,7 @@ typedef enum {
  * image, @ref JxlDecoderGetColorAsEncodedProfile should be used first.
  *
  * @param dec decoder object
- * @param format pixel format to output the data to. Only used for @ref
- *     JXL_COLOR_PROFILE_TARGET_DATA, may be nullptr otherwise.
+ * @param unused_format deprecated, can be NULL
  * @param target whether to get the original color profile from the metadata
  *     or the color profile of the decoded pixels.
  * @param color_encoding struct to copy the information into, or NULL to only
@@ -735,7 +734,7 @@ typedef enum {
  *     codestream.
  */
 JXL_EXPORT JxlDecoderStatus JxlDecoderGetColorAsEncodedProfile(
-    const JxlDecoder* dec, const JxlPixelFormat* format,
+    const JxlDecoder* dec, const JxlPixelFormat* unused_format,
     JxlColorProfileTarget target, JxlColorEncoding* color_encoding);
 
 /**
@@ -750,8 +749,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetColorAsEncodedProfile(
  * depending of what is encoded in the codestream.
  *
  * @param dec decoder object
- * @param format pixel format to output the data to. Only used for @ref
- *     JXL_COLOR_PROFILE_TARGET_DATA, may be NULL otherwise.
+ * @param unused_format deprecated, can be NULL
  * @param target whether to get the original color profile from the metadata
  *     or the color profile of the decoded pixels.
  * @param size variable to output the size into, or NULL to only check the
@@ -762,9 +760,9 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetColorAsEncodedProfile(
  *     size is, @ref JXL_DEC_ERROR in case the ICC profile is not available and
  *     cannot be generated.
  */
-JXL_EXPORT JxlDecoderStatus
-JxlDecoderGetICCProfileSize(const JxlDecoder* dec, const JxlPixelFormat* format,
-                            JxlColorProfileTarget target, size_t* size);
+JXL_EXPORT JxlDecoderStatus JxlDecoderGetICCProfileSize(
+    const JxlDecoder* dec, const JxlPixelFormat* unused_format,
+    JxlColorProfileTarget target, size_t* size);
 
 /**
  * Outputs ICC profile if available. The profile is only available if @ref
@@ -772,8 +770,7 @@ JxlDecoderGetICCProfileSize(const JxlDecoder* dec, const JxlPixelFormat* format,
  * at least as many bytes as given by @ref JxlDecoderGetICCProfileSize.
  *
  * @param dec decoder object
- * @param format pixel format to output the data to. Only used for @ref
- *     JXL_COLOR_PROFILE_TARGET_DATA, may be NULL otherwise.
+ * @param unused_format deprecated, can be NULL
  * @param target whether to get the original color profile from the metadata
  *     or the color profile of the decoded pixels.
  * @param icc_profile buffer to copy the ICC profile into
@@ -784,7 +781,7 @@ JxlDecoderGetICCProfileSize(const JxlDecoder* dec, const JxlPixelFormat* format,
  *     large enough.
  */
 JXL_EXPORT JxlDecoderStatus JxlDecoderGetColorAsICCProfile(
-    const JxlDecoder* dec, const JxlPixelFormat* format,
+    const JxlDecoder* dec, const JxlPixelFormat* unused_format,
     JxlColorProfileTarget target, uint8_t* icc_profile, size_t size);
 
 /** Sets the color profile to use for @ref JXL_COLOR_PROFILE_TARGET_DATA for the

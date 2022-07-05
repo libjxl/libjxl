@@ -1652,23 +1652,23 @@ std::string ColorDescription(JxlColorEncoding c) {
   return Description(color_encoding);
 }
 
-std::string GetOrigProfile(JxlDecoder* dec, const JxlPixelFormat* format) {
+std::string GetOrigProfile(JxlDecoder* dec) {
   JxlColorEncoding c;
   JxlColorProfileTarget target = JXL_COLOR_PROFILE_TARGET_ORIGINAL;
   EXPECT_EQ(JXL_DEC_SUCCESS,
-            JxlDecoderGetColorAsEncodedProfile(dec, format, target, &c));
+            JxlDecoderGetColorAsEncodedProfile(dec, nullptr, target, &c));
   return ColorDescription(c);
 }
 
-std::string GetDataProfile(JxlDecoder* dec, const JxlPixelFormat* format) {
+std::string GetDataProfile(JxlDecoder* dec) {
   JxlColorEncoding c;
   JxlColorProfileTarget target = JXL_COLOR_PROFILE_TARGET_DATA;
   EXPECT_EQ(JXL_DEC_SUCCESS,
-            JxlDecoderGetColorAsEncodedProfile(dec, format, target, &c));
+            JxlDecoderGetColorAsEncodedProfile(dec, nullptr, target, &c));
   return ColorDescription(c);
 }
 
-double ButteraugliDistance(size_t xsize, size_t ysize, uint32_t num_channels,
+double ButteraugliDistance(size_t xsize, size_t ysize,
                            const std::vector<uint8_t>& pixels_in,
                            const jxl::ColorEncoding& color_in,
                            float intensity_in,
@@ -1676,18 +1676,20 @@ double ButteraugliDistance(size_t xsize, size_t ysize, uint32_t num_channels,
                            const jxl::ColorEncoding& color_out,
                            float intensity_out) {
   jxl::CodecInOut in;
+  in.metadata.m.color_encoding = color_in;
   in.metadata.m.SetIntensityTarget(intensity_in);
   EXPECT_TRUE(jxl::ConvertFromExternal(
       jxl::Span<const uint8_t>(pixels_in.data(), pixels_in.size()), xsize,
-      ysize, color_in, num_channels,
+      ysize, color_in, color_in.Channels(),
       /*alpha_is_premultiplied=*/false,
       /*bits_per_sample=*/16, JXL_BIG_ENDIAN, /*flipped_y=*/false,
       /*pool=*/nullptr, &in.Main(), /*float_in=*/false, /*align=*/0));
   jxl::CodecInOut out;
+  out.metadata.m.color_encoding = color_out;
   out.metadata.m.SetIntensityTarget(intensity_out);
   EXPECT_TRUE(jxl::ConvertFromExternal(
       jxl::Span<const uint8_t>(pixels_out.data(), pixels_out.size()), xsize,
-      ysize, color_out, num_channels,
+      ysize, color_out, color_out.Channels(),
       /*alpha_is_premultiplied=*/false,
       /*bits_per_sample=*/16, JXL_BIG_ENDIAN, /*flipped_y=*/false,
       /*pool=*/nullptr, &out.Main(), /*float_in=*/false, /*align=*/0));
@@ -1723,15 +1725,15 @@ TEST(DecodeTest, PreserveOriginalProfileTest) {
     EXPECT_EQ(ysize, info.ysize);
     EXPECT_FALSE(info.uses_original_profile);
     EXPECT_EQ(JXL_DEC_COLOR_ENCODING, JxlDecoderProcessInput(dec));
-    EXPECT_EQ(GetOrigProfile(dec, &format), color_space_in);
-    EXPECT_EQ(GetDataProfile(dec, &format), color_space_in);
+    EXPECT_EQ(GetOrigProfile(dec), color_space_in);
+    EXPECT_EQ(GetDataProfile(dec), color_space_in);
     EXPECT_EQ(JXL_DEC_NEED_IMAGE_OUT_BUFFER, JxlDecoderProcessInput(dec));
     std::vector<uint8_t> out(pixels.size());
     EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetImageOutBuffer(
                                    dec, &format, out.data(), out.size()));
     EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec));
-    double dist = ButteraugliDistance(xsize, ysize, 3, pixels, c_in,
-                                      intensity_in, out, c_in, intensity_in);
+    double dist = ButteraugliDistance(xsize, ysize, pixels, c_in, intensity_in,
+                                      out, c_in, intensity_in);
     EXPECT_LT(dist, 1.2);
     EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderProcessInput(dec));
     JxlDecoderDestroy(dec);
@@ -1740,21 +1742,28 @@ TEST(DecodeTest, PreserveOriginalProfileTest) {
 
 TEST(DecodeTest, SetPreferredColorProfileTest) {
   size_t xsize = 123, ysize = 77;
-  std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 3, 0);
-  JxlPixelFormat format = {3, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
   int events = JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING | JXL_DEC_FULL_IMAGE;
-  for (const auto& c0 : jxl::test::AllEncodings()) {
+  jxl::test::ColorEncodingDescriptor gray = {
+      jxl::ColorSpace::kGray, jxl::WhitePoint::kD65, jxl::Primaries::kSRGB,
+      jxl::TransferFunction::kSRGB, jxl::RenderingIntent::kRelative};
+  auto from_encodings = jxl::test::AllEncodings();
+  from_encodings.push_back(gray);
+  for (const auto& c0 : from_encodings) {
     jxl::ColorEncoding c_in = jxl::test::ColorEncodingFromDescriptor(c0);
     if (c_in.rendering_intent != jxl::RenderingIntent::kRelative) continue;
     if (c_in.white_point != jxl::WhitePoint::kD65) continue;
+    uint32_t num_channels = c_in.Channels();
+    std::vector<uint8_t> pixels =
+        jxl::test::GetSomeTestImage(xsize, ysize, num_channels, 0);
+    JxlPixelFormat format = {num_channels, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
     std::string color_space_in = Description(c_in);
     float intensity_in = c_in.tf.IsPQ() ? 10000 : 255;
     jxl::TestCodestreamParams params;
     params.color_space = color_space_in;
     params.intensity_target = intensity_in;
     jxl::PaddedBytes data = jxl::CreateTestJXLCodestream(
-        jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 3,
-        params);
+        jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize,
+        num_channels, params);
     for (const auto& c1 : jxl::test::AllEncodings()) {
       jxl::ColorEncoding c_out = jxl::test::ColorEncodingFromDescriptor(c1);
       float intensity_out = intensity_in;
@@ -1787,22 +1796,26 @@ TEST(DecodeTest, SetPreferredColorProfileTest) {
       EXPECT_EQ(ysize, info.ysize);
       EXPECT_FALSE(info.uses_original_profile);
       EXPECT_EQ(JXL_DEC_COLOR_ENCODING, JxlDecoderProcessInput(dec));
-      EXPECT_EQ(GetOrigProfile(dec, &format), color_space_in);
-      EXPECT_EQ(GetDataProfile(dec, &format), color_space_in);
+      EXPECT_EQ(GetOrigProfile(dec), color_space_in);
+      EXPECT_EQ(GetDataProfile(dec), color_space_in);
       JxlColorEncoding encoding_out;
       EXPECT_TRUE(jxl::ParseDescription(color_space_out, &encoding_out));
       EXPECT_EQ(JXL_DEC_SUCCESS,
                 JxlDecoderSetPreferredColorProfile(dec, &encoding_out));
-      EXPECT_EQ(GetOrigProfile(dec, &format), color_space_in);
-      EXPECT_EQ(GetDataProfile(dec, &format), color_space_out);
+      EXPECT_EQ(GetOrigProfile(dec), color_space_in);
+      EXPECT_EQ(GetDataProfile(dec), color_space_out);
       EXPECT_EQ(JXL_DEC_NEED_IMAGE_OUT_BUFFER, JxlDecoderProcessInput(dec));
-      std::vector<uint8_t> out(pixels.size());
+      size_t buffer_size;
+      JxlPixelFormat out_format = format;
+      out_format.num_channels = c_out.Channels();
+      EXPECT_EQ(JXL_DEC_SUCCESS,
+                JxlDecoderImageOutBufferSize(dec, &out_format, &buffer_size));
+      std::vector<uint8_t> out(buffer_size);
       EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetImageOutBuffer(
-                                     dec, &format, out.data(), out.size()));
+                                     dec, &out_format, out.data(), out.size()));
       EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec));
-      double dist =
-          ButteraugliDistance(xsize, ysize, 3, pixels, c_in, intensity_in, out,
-                              c_out, intensity_out);
+      double dist = ButteraugliDistance(
+          xsize, ysize, pixels, c_in, intensity_in, out, c_out, intensity_out);
       if (c_in.white_point == c_out.white_point) {
         EXPECT_LT(dist, 1.2);
       } else {

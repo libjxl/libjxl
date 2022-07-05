@@ -288,6 +288,16 @@ Status OutputEncodingInfo::SetColorEncoding(const ColorEncoding& c_desired) {
     }
   }
 
+  if (c_desired.IsGray()) {
+    float tmp_inv_matrix[9];
+    memcpy(tmp_inv_matrix, inverse_matrix, sizeof(inverse_matrix));
+    float srgb_to_luma[9];
+    memcpy(&srgb_to_luma[0], luminances, sizeof(luminances));
+    memcpy(&srgb_to_luma[3], luminances, sizeof(luminances));
+    memcpy(&srgb_to_luma[6], luminances, sizeof(luminances));
+    MatMul(srgb_to_luma, tmp_inv_matrix, 3, 3, 3, inverse_matrix);
+  }
+
   // The internal XYB color space uses absolute luminance, so we scale back the
   // opsin inverse matrix to relative luminance where 1.0 corresponds to the
   // original intensity target, or to absolute luminance for PQ, where 1.0

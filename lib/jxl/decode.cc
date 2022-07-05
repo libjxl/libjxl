@@ -429,6 +429,9 @@ struct JxlDecoderStruct {
   std::vector<ExtraChannelOutput> extra_channel_output;
 
   jxl::CodecMetadata metadata;
+  // Same as metadata.m, except for the color_encoding, which is set to the
+  // output encoding.
+  jxl::ImageMetadata image_metadata;
   std::unique_ptr<jxl::ImageBundle> ib;
 
   std::unique_ptr<jxl::PassesDecoderState> passes_state;
@@ -725,6 +728,7 @@ void JxlDecoderRewindDecodingState(JxlDecoder* dec) {
 
   dec->ib.reset();
   dec->metadata = jxl::CodecMetadata();
+  dec->image_metadata = dec->metadata.m;
   dec->frame_header.reset(new jxl::FrameHeader(&dec->metadata));
 
   dec->codestream_copy.clear();
@@ -990,6 +994,7 @@ JxlDecoderStatus JxlDecoderReadBasicInfo(JxlDecoder* dec) {
   dec->codestream_bits_ahead = total_bits % jxl::kBitsPerByte;
   dec->got_basic_info = true;
   dec->basic_info_size_hint = 0;
+  dec->image_metadata = dec->metadata.m;
 
   if (!CheckSizeLimit(dec, dec->metadata.size.xsize(),
                       dec->metadata.size.ysize())) {
@@ -1066,6 +1071,7 @@ JxlDecoderStatus JxlDecoderReadAllHeaders(JxlDecoder* dec) {
     dec->passes_state->output_encoding_info.desired_intensity_target =
         dec->desired_intensity_target;
   }
+  dec->image_metadata = dec->metadata.m;
 
   return JXL_DEC_SUCCESS;
 }
@@ -1253,7 +1259,7 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec) {
             "cannot decode a next frame after JPEG reconstruction frame");
       }
       if (!dec->ib) {
-        dec->ib.reset(new jxl::ImageBundle(&dec->metadata.m));
+        dec->ib.reset(new jxl::ImageBundle(&dec->image_metadata));
       }
       // If JPEG reconstruction is wanted and possible, set the jpeg_data of
       // the ImageBundle.
@@ -2272,8 +2278,8 @@ namespace {
 // but ensures that if the color encoding is not the encoding from the
 // codestream header metadata, it cannot require ICC profile.
 JxlDecoderStatus GetColorEncodingForTarget(
-    const JxlDecoder* dec, const JxlPixelFormat* format,
-    JxlColorProfileTarget target, const jxl::ColorEncoding** encoding) {
+    const JxlDecoder* dec, JxlColorProfileTarget target,
+    const jxl::ColorEncoding** encoding) {
   if (!dec->got_all_headers) return JXL_DEC_NEED_MORE_INPUT;
   *encoding = nullptr;
   if (target == JXL_COLOR_PROFILE_TARGET_DATA && dec->metadata.m.xyb_encoded) {
@@ -2286,11 +2292,11 @@ JxlDecoderStatus GetColorEncodingForTarget(
 }  // namespace
 
 JxlDecoderStatus JxlDecoderGetColorAsEncodedProfile(
-    const JxlDecoder* dec, const JxlPixelFormat* format,
+    const JxlDecoder* dec, const JxlPixelFormat* unused_format,
     JxlColorProfileTarget target, JxlColorEncoding* color_encoding) {
   const jxl::ColorEncoding* jxl_color_encoding = nullptr;
   JxlDecoderStatus status =
-      GetColorEncodingForTarget(dec, format, target, &jxl_color_encoding);
+      GetColorEncodingForTarget(dec, target, &jxl_color_encoding);
   if (status) return status;
 
   if (jxl_color_encoding->WantICC())
@@ -2303,13 +2309,12 @@ JxlDecoderStatus JxlDecoderGetColorAsEncodedProfile(
   return JXL_DEC_SUCCESS;
 }
 
-JxlDecoderStatus JxlDecoderGetICCProfileSize(const JxlDecoder* dec,
-                                             const JxlPixelFormat* format,
-                                             JxlColorProfileTarget target,
-                                             size_t* size) {
+JxlDecoderStatus JxlDecoderGetICCProfileSize(
+    const JxlDecoder* dec, const JxlPixelFormat* unused_format,
+    JxlColorProfileTarget target, size_t* size) {
   const jxl::ColorEncoding* jxl_color_encoding = nullptr;
   JxlDecoderStatus status =
-      GetColorEncodingForTarget(dec, format, target, &jxl_color_encoding);
+      GetColorEncodingForTarget(dec, target, &jxl_color_encoding);
   if (status != JXL_DEC_SUCCESS) return status;
 
   if (jxl_color_encoding->WantICC()) {
@@ -2332,20 +2337,18 @@ JxlDecoderStatus JxlDecoderGetICCProfileSize(const JxlDecoder* dec,
   return JXL_DEC_SUCCESS;
 }
 
-JxlDecoderStatus JxlDecoderGetColorAsICCProfile(const JxlDecoder* dec,
-                                                const JxlPixelFormat* format,
-                                                JxlColorProfileTarget target,
-                                                uint8_t* icc_profile,
-                                                size_t size) {
+JxlDecoderStatus JxlDecoderGetColorAsICCProfile(
+    const JxlDecoder* dec, const JxlPixelFormat* unused_format,
+    JxlColorProfileTarget target, uint8_t* icc_profile, size_t size) {
   size_t wanted_size;
   // This also checks the NEED_MORE_INPUT and the unknown/xyb cases
   JxlDecoderStatus status =
-      JxlDecoderGetICCProfileSize(dec, format, target, &wanted_size);
+      JxlDecoderGetICCProfileSize(dec, nullptr, target, &wanted_size);
   if (status != JXL_DEC_SUCCESS) return status;
   if (size < wanted_size) return JXL_API_ERROR("ICC profile output too small");
 
   const jxl::ColorEncoding* jxl_color_encoding = nullptr;
-  status = GetColorEncodingForTarget(dec, format, target, &jxl_color_encoding);
+  status = GetColorEncodingForTarget(dec, target, &jxl_color_encoding);
   if (status != JXL_DEC_SUCCESS) return status;
 
   memcpy(icc_profile, jxl_color_encoding->ICC().data(),
@@ -2434,8 +2437,9 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderPreviewOutBufferSize(
   size_t bits;
   JxlDecoderStatus status = PrepareSizeCheck(dec, format, &bits);
   if (status != JXL_DEC_SUCCESS) return status;
-  if (format->num_channels < 3 && !dec->metadata.m.color_encoding.IsGray()) {
-    return JXL_API_ERROR("Grayscale output not possible for color image");
+  if (format->num_channels < 3 &&
+      !dec->image_metadata.color_encoding.IsGray()) {
+    return JXL_API_ERROR("Number of channels is too low for color output");
   }
 
   size_t xsize = dec->metadata.oriented_preview_xsize(dec->keep_orientation);
@@ -2457,8 +2461,9 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetPreviewOutBuffer(
       !(dec->orig_events_wanted & JXL_DEC_PREVIEW_IMAGE)) {
     return JXL_API_ERROR("No preview out buffer needed at this time");
   }
-  if (format->num_channels < 3 && !dec->metadata.m.color_encoding.IsGray()) {
-    return JXL_API_ERROR("Grayscale output not possible for color image");
+  if (format->num_channels < 3 &&
+      !dec->image_metadata.color_encoding.IsGray()) {
+    return JXL_API_ERROR("Number of channels is too low for color output");
   }
 
   size_t min_size;
@@ -2510,8 +2515,9 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderImageOutBufferSize(
   size_t bits;
   JxlDecoderStatus status = PrepareSizeCheck(dec, format, &bits);
   if (status != JXL_DEC_SUCCESS) return status;
-  if (format->num_channels < 3 && !dec->metadata.m.color_encoding.IsGray()) {
-    return JXL_API_ERROR("Grayscale output not possible for color image");
+  if (format->num_channels < 3 &&
+      !dec->image_metadata.color_encoding.IsGray()) {
+    return JXL_API_ERROR("Number of channels is too low for color output");
   }
   size_t xsize, ysize;
   GetCurrentDimensions(dec, xsize, ysize, true);
@@ -2535,8 +2541,9 @@ JxlDecoderStatus JxlDecoderSetImageOutBuffer(JxlDecoder* dec,
     return JXL_API_ERROR(
         "Cannot change from image out callback to image out buffer");
   }
-  if (format->num_channels < 3 && !dec->metadata.m.color_encoding.IsGray()) {
-    return JXL_API_ERROR("Grayscale output not possible for color image");
+  if (format->num_channels < 3 &&
+      !dec->image_metadata.color_encoding.IsGray()) {
+    return JXL_API_ERROR("Number of channels is too low for color output");
   }
   size_t min_size;
   // This also checks whether the format is valid and supported and basic info
@@ -2773,9 +2780,12 @@ JxlDecoderStatus JxlDecoderSetPreferredColorProfile(
   if (dec->post_headers) {
     return JXL_API_ERROR("too late to set the color encoding");
   }
-  if (dec->metadata.m.color_encoding.IsGray() !=
-      (color_encoding->color_space == JXL_COLOR_SPACE_GRAY)) {
-    return JXL_API_ERROR("grayscale mismatch");
+  if (dec->image_metadata.color_encoding.IsGray() &&
+      color_encoding->color_space != JXL_COLOR_SPACE_GRAY &&
+      ((dec->preview_out_buffer_set &&
+        dec->preview_out_format.num_channels < 3) ||
+       (dec->image_out_buffer_set && dec->image_out_format.num_channels < 3))) {
+    return JXL_API_ERROR("Number of channels is too low for color output");
   }
   if (color_encoding->color_space == JXL_COLOR_SPACE_UNKNOWN ||
       color_encoding->color_space == JXL_COLOR_SPACE_XYB) {
@@ -2787,6 +2797,8 @@ JxlDecoderStatus JxlDecoderSetPreferredColorProfile(
       ConvertExternalToInternalColorEncoding(*color_encoding, &c_out));
   JXL_API_RETURN_IF_ERROR(
       dec->passes_state->output_encoding_info.MaybeSetColorEncoding(c_out));
+  dec->image_metadata.color_encoding =
+      dec->passes_state->output_encoding_info.color_encoding;
   return JXL_DEC_SUCCESS;
 }
 

@@ -92,6 +92,17 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
           {num_channels, JXL_TYPE_FLOAT, JXL_LITTLE_ENDIAN, /*align=*/0});
     }
   }
+  JxlColorEncoding color_encoding;
+  size_t num_color_channels = 0;
+  if (!dparams.color_space.empty()) {
+    if (!jxl::ParseDescription(dparams.color_space, &color_encoding)) {
+      fprintf(stderr, "Failed to parse color space %s.\n",
+              dparams.color_space.c_str());
+      return false;
+    }
+    num_color_channels =
+        color_encoding.color_space == JXL_COLOR_SPACE_GRAY ? 1 : 3;
+  }
 
   bool can_reconstruct_jpeg = false;
   std::vector<uint8_t> jpeg_data_chunk;
@@ -224,12 +235,21 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
         fprintf(stderr, "JxlDecoderGetBasicInfo failed\n");
         return false;
       }
+      if (num_color_channels != 0) {
+        // Mark the change in number of color channels due to the requested
+        // color space.
+        ppf->info.num_color_channels = num_color_channels;
+      }
       // Select format according to accepted formats.
       if (!jxl::extras::SelectFormat(accepted_formats, ppf->info, &format)) {
         fprintf(stderr, "SelectFormat failed\n");
         return false;
       }
       bool have_alpha = (format.num_channels == 2 || format.num_channels == 4);
+      if (!have_alpha) {
+        // Mark in th basic info that alpha channel was dropped.
+        ppf->info.alpha_bits = 0;
+      }
       bool alpha_found = false;
       for (uint32_t i = 0; i < ppf->info.num_extra_channels; ++i) {
         JxlExtraChannelInfo eci;
@@ -259,11 +279,6 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
                   "Warning: --color_space ignored because the image is "
                   "not XYB encoded.\n");
         } else {
-          JxlColorEncoding color_encoding;
-          if (!jxl::ParseDescription(dparams.color_space, &color_encoding)) {
-            fprintf(stderr, "Failed to parse color space.\n");
-            return false;
-          }
           if (JXL_DEC_SUCCESS !=
               JxlDecoderSetPreferredColorProfile(dec, &color_encoding)) {
             fprintf(stderr, "Failed to set color space.\n");
@@ -274,20 +289,20 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
       size_t icc_size = 0;
       JxlColorProfileTarget target = JXL_COLOR_PROFILE_TARGET_DATA;
       if (JXL_DEC_SUCCESS !=
-          JxlDecoderGetICCProfileSize(dec, &format, target, &icc_size)) {
+          JxlDecoderGetICCProfileSize(dec, nullptr, target, &icc_size)) {
         fprintf(stderr, "JxlDecoderGetICCProfileSize failed\n");
       }
       if (icc_size != 0) {
         ppf->icc.resize(icc_size);
         if (JXL_DEC_SUCCESS !=
-            JxlDecoderGetColorAsICCProfile(dec, &format, target,
+            JxlDecoderGetColorAsICCProfile(dec, nullptr, target,
                                            ppf->icc.data(), icc_size)) {
           fprintf(stderr, "JxlDecoderGetColorAsICCProfile failed\n");
           return false;
         }
       } else {
         if (JXL_DEC_SUCCESS !=
-            JxlDecoderGetColorAsEncodedProfile(dec, &format, target,
+            JxlDecoderGetColorAsEncodedProfile(dec, nullptr, target,
                                                &ppf->color_encoding)) {
           fprintf(stderr, "JxlDecoderGetColorAsEncodedProfile failed\n");
           return false;
@@ -296,13 +311,13 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
       icc_size = 0;
       target = JXL_COLOR_PROFILE_TARGET_ORIGINAL;
       if (JXL_DEC_SUCCESS !=
-          JxlDecoderGetICCProfileSize(dec, &format, target, &icc_size)) {
+          JxlDecoderGetICCProfileSize(dec, nullptr, target, &icc_size)) {
         fprintf(stderr, "JxlDecoderGetICCProfileSize failed\n");
       }
       if (icc_size != 0) {
         ppf->orig_icc.resize(icc_size);
         if (JXL_DEC_SUCCESS !=
-            JxlDecoderGetColorAsICCProfile(dec, &format, target,
+            JxlDecoderGetColorAsICCProfile(dec, nullptr, target,
                                            ppf->orig_icc.data(), icc_size)) {
           fprintf(stderr, "JxlDecoderGetColorAsICCProfile failed\n");
           return false;
