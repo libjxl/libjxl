@@ -115,9 +115,9 @@ MATCHER(MatchesPrimariesAndTransferFunction, "") {
       result_listener);
 }
 
-Status DecodeFile(extras::JXLDecompressParams dparams,
-                  const Span<const uint8_t> file, CodecInOut* JXL_RESTRICT io,
-                  ThreadPool* pool) {
+template <typename Source>
+Status DecodeFile(extras::JXLDecompressParams dparams, const Source& file,
+                  CodecInOut* JXL_RESTRICT io, ThreadPool* pool) {
   if (pool && !dparams.runner_opaque) {
     dparams.runner = pool->runner();
     dparams.runner_opaque = pool->runner_opaque();
@@ -127,11 +127,6 @@ Status DecodeFile(extras::JXLDecompressParams dparams,
                                      /*decoded_bytes=*/nullptr, &ppf));
   JXL_RETURN_IF_ERROR(ConvertPackedPixelFileToCodecInOut(ppf, pool, io));
   return true;
-}
-
-Status DecodeFile(extras::JXLDecompressParams dparams, const PaddedBytes& file,
-                  CodecInOut* io, ThreadPool* pool = nullptr) {
-  return DecodeFile(dparams, Span<const uint8_t>(file), io, pool);
 }
 
 // Returns compressed size [bytes].
