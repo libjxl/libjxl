@@ -150,7 +150,7 @@ typedef enum {
    * unprocessed bytes.
    * In most cases, @ref JxlDecoderReleaseInput will return no unprocessed bytes
    * at this event, the only exceptions are if the previously set input ended
-   * within (a) the raw codestream signiture, (b) the signature box, (c) a box
+   * within (a) the raw codestream signature, (b) the signature box, (c) a box
    * header, or (d) the first 4 bytes of a brob, ftyp, or jxlp box. In any of
    * these cases the number of unprocessed bytes is less than 20.
    */
