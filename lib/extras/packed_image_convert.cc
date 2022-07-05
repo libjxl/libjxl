@@ -162,7 +162,7 @@ Status ConvertPackedPixelFileToCodecInOut(const PackedPixelFile& ppf,
   }
 
   // Convert the preview
-  if (ppf.preview_frame.get()) {
+  if (ppf.preview_frame) {
     size_t preview_xsize = ppf.preview_frame->color.xsize;
     size_t preview_ysize = ppf.preview_frame->color.ysize;
     io->metadata.m.have_preview = true;
