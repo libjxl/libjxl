@@ -103,6 +103,7 @@ int main(int argc, char** argv) {
             "Usage: %s <reference> <distorted> [--distmap <distmap>] "
             "[--intensity_target <intensity_target>]\n"
             "[--colorspace <colorspace_hint>]\n"
+            "[--pnorm <pth norm>]\n"
             "NOTE: images get converted to linear sRGB for butteraugli. Images"
             " without attached profiles (such as ppm or pfm) are interpreted"
             " as nonlinear sRGB. The hint format is RGB_D65_SRG_Rel_Lin for"
@@ -121,7 +122,7 @@ int main(int argc, char** argv) {
     } else if (std::string(argv[i]) == "--colorspace" && i + 1 < argc) {
       colorspace = argv[++i];
     } else if (std::string(argv[i]) == "--intensity_target" && i + 1 < argc) {
-      intensity_target = std::stof(std::string(argv[i + 1]));
+      intensity_target = std::stof(std::string(argv[++i]));
     } else if (std::string(argv[i]) == "--pnorm" && i + 1 < argc) {
       char* end;
       p = strtod(argv[++i], &end);
