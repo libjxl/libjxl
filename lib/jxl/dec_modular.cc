@@ -8,6 +8,7 @@
 #include <stdint.h>
 
 #include <atomic>
+#include <sstream>
 #include <vector>
 
 #include "lib/jxl/frame_header.h"
@@ -150,6 +151,28 @@ void int_to_float(const pixel_type* const JXL_RESTRICT row_in,
   }
 }
 
+std::string ModularStreamId::DebugString() const {
+  std::ostringstream os;
+  os << (kind == kGlobalData   ? "ModularGlobal"
+         : kind == kVarDCTDC   ? "VarDCTDC"
+         : kind == kModularDC  ? "ModularDC"
+         : kind == kACMetadata ? "ACMeta"
+         : kind == kQuantTable ? "QuantTable"
+         : kind == kModularAC  ? "ModularAC"
+                               : "");
+  if (kind == kVarDCTDC || kind == kModularDC || kind == kACMetadata ||
+      kind == kModularAC) {
+    os << " group " << group_id;
+  }
+  if (kind == kModularAC) {
+    os << " pass " << pass_id;
+  }
+  if (kind == kQuantTable) {
+    os << " " << quant_table_id;
+  }
+  return os.str();
+}
+
 Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
                                              const FrameHeader& frame_header,
                                              bool allow_truncated_group) {
@@ -266,7 +289,10 @@ Status ModularFrameDecoder::DecodeGroup(
     const Rect& rect, BitReader* reader, int minShift, int maxShift,
     const ModularStreamId& stream, bool zerofill, PassesDecoderState* dec_state,
     RenderPipelineInput* render_pipeline_input, ImageBundle* output,
-    bool allow_truncated) {
+    bool allow_truncated, bool* should_run_pipeline) {
+  JXL_DEBUG_V(6, "Decoding %s with rect %s and shift bracket %d..%d %s",
+              stream.DebugString().c_str(), Description(rect).c_str(), minShift,
+              maxShift, zerofill ? "using zerofill" : "");
   JXL_DASSERT(stream.kind == ModularStreamId::kModularDC ||
               stream.kind == ModularStreamId::kModularAC);
   const size_t xsize = rect.xsize();
@@ -303,7 +329,19 @@ Status ModularFrameDecoder::DecodeGroup(
   if (zerofill && use_full_image) return true;
   // Return early if there's nothing to decode. Otherwise there might be
   // problems later (in ModularImageToDecodedRect).
-  if (gi.channel.empty()) return true;
+  if (gi.channel.empty()) {
+    if (dec_state && should_run_pipeline) {
+      const auto& frame_header = dec_state->shared->frame_header;
+      const auto* metadata = frame_header.nonserialized_metadata;
+      if (do_color || metadata->m.num_extra_channels > 0) {
+        // Signal to FrameDecoder that we do not have some of the required input
+        // for the render pipeline.
+        *should_run_pipeline = false;
+      }
+    }
+    JXL_DEBUG_V(6, "Noting to decode, returning early.");
+    return true;
+  }
   ModularOptions options;
   if (!zerofill) {
     auto status = ModularGenericDecompress(
@@ -606,7 +644,13 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
             DivCeil(modular_rect.xsize(), 1 << ch_in.hshift),
             DivCeil(modular_rect.ysize(), 1 << ch_in.vshift));
     mr = mr.Crop(ch_in.plane);
-
+    if (r.ysize() != mr.ysize() || r.xsize() != mr.xsize()) {
+      return JXL_FAILURE("Dimension mismatch: trying to fit a %" PRIuS
+                         "x%" PRIuS
+                         " modular channel into "
+                         "a %" PRIuS "x%" PRIuS " rect",
+                         mr.xsize(), mr.ysize(), r.xsize(), r.ysize());
+    }
     for (size_t y = 0; y < r.ysize(); ++y) {
       float* const JXL_RESTRICT row_out =
           r.Row(render_pipeline_input.GetBuffer(3 + ec).first, y);
@@ -634,6 +678,9 @@ Status ModularFrameDecoder::FinalizeDecoding(PassesDecoderState* dec_state,
   Image gi = (inplace ? std::move(full_image) : full_image.clone());
   size_t xsize = gi.w;
   size_t ysize = gi.h;
+
+  JXL_DEBUG_V(3, "Finalizing decoding for modular image: %s",
+              gi.DebugString().c_str());
 
   // Don't use threads if total image size is smaller than a group
   if (xsize * ysize < frame_dim.group_dim * frame_dim.group_dim) pool = nullptr;

@@ -53,20 +53,20 @@ void StoreRGBA(D d, V r, V g, V b, V a, bool alpha, size_t n, size_t extra,
   // TODO(veluca): implement this for x86.
   size_t mul = alpha ? 4 : 3;
   HWY_ALIGN uint8_t bytes[16];
-  Store(r, d, bytes);
+  StoreU(r, d, bytes);
   for (size_t i = 0; i < n; i++) {
     buf[mul * i] = bytes[i];
   }
-  Store(g, d, bytes);
+  StoreU(g, d, bytes);
   for (size_t i = 0; i < n; i++) {
     buf[mul * i + 1] = bytes[i];
   }
-  Store(b, d, bytes);
+  StoreU(b, d, bytes);
   for (size_t i = 0; i < n; i++) {
     buf[mul * i + 2] = bytes[i];
   }
   if (alpha) {
-    Store(a, d, bytes);
+    StoreU(a, d, bytes);
     for (size_t i = 0; i < n; i++) {
       buf[4 * i + 3] = bytes[i];
     }
@@ -115,10 +115,10 @@ class WriteToU8Stage : public RenderPipelineStage {
     }
 
     for (ssize_t x = 0; x < x1; x += Lanes(d)) {
-      auto rf = Clamp(zero, Load(d, row_in_r + x), one) * mul;
-      auto gf = Clamp(zero, Load(d, row_in_g + x), one) * mul;
-      auto bf = Clamp(zero, Load(d, row_in_b + x), one) * mul;
-      auto af = row_in_a ? Clamp(zero, Load(d, row_in_a + x), one) * mul
+      auto rf = Clamp(zero, LoadU(d, row_in_r + x), one) * mul;
+      auto gf = Clamp(zero, LoadU(d, row_in_g + x), one) * mul;
+      auto bf = Clamp(zero, LoadU(d, row_in_b + x), one) * mul;
+      auto af = row_in_a ? Clamp(zero, LoadU(d, row_in_a + x), one) * mul
                          : Set(d, 255.0f);
       auto r8 = U8FromU32(BitCast(du, NearestInt(rf)));
       auto g8 = U8FromU32(BitCast(du, NearestInt(gf)));

@@ -8,6 +8,8 @@
 
 #include <stddef.h>
 
+#include <string>
+
 #include "lib/jxl/aux_out_fwd.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
@@ -81,6 +83,7 @@ struct ModularStreamId {
   static size_t Num(const FrameDimensions& frame_dim, size_t passes) {
     return ModularAC(0, passes).ID(frame_dim);
   }
+  std::string DebugString() const;
 };
 
 class ModularFrameDecoder {
@@ -92,7 +95,8 @@ class ModularFrameDecoder {
                      int maxShift, const ModularStreamId& stream, bool zerofill,
                      PassesDecoderState* dec_state,
                      RenderPipelineInput* render_pipeline_input,
-                     ImageBundle* output, bool allow_truncated);
+                     ImageBundle* output, bool allow_truncated,
+                     bool* should_run_pipeline = nullptr);
   // Decodes a VarDCT DC group (`group_id`) from the given `reader`.
   Status DecodeVarDCTDC(size_t group_id, BitReader* reader,
                         PassesDecoderState* dec_state);

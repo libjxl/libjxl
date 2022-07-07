@@ -787,38 +787,54 @@ void LowMemoryRenderPipeline::ProcessBuffers(size_t group_id,
     RectT<ssize_t> full_image_rect(0, 0, full_image_xsize_, full_image_ysize_);
     group_rect = group_rect.Translate(frame_origin_.x0, frame_origin_.y0);
     image_rect = image_rect.Translate(frame_origin_.x0, frame_origin_.y0);
-    group_rect =
-        group_rect.Intersection(image_rect).Intersection(full_image_rect);
+    image_rect = image_rect.Intersection(full_image_rect);
+    group_rect = group_rect.Intersection(image_rect);
     size_t x0 = group_rect.x0();
     size_t y0 = group_rect.y0();
     size_t x1 = group_rect.x1();
     size_t y1 = group_rect.y1();
+    JXL_DEBUG_V(6,
+                "Rendering padding for full image rect %s "
+                "outside group rect %s",
+                Description(full_image_rect).c_str(),
+                Description(group_rect).c_str());
 
-    if (gx == 0 && gy == 0) {
-      RenderPadding(thread_id, Rect(0, 0, x0, y0));
+    if (group_id == 0 && (image_rect.xsize() == 0 || image_rect.ysize() == 0)) {
+      // If this frame does not intersect with the full image, we have to
+      // initialize the whole image area with RenderPadding.
+      RenderPadding(thread_id,
+                    Rect(0, 0, full_image_xsize_, full_image_ysize_));
     }
-    if (gy == 0) {
-      RenderPadding(thread_id, Rect(x0, 0, x1 - x0, y0));
-    }
-    if (gx == 0) {
-      RenderPadding(thread_id, Rect(0, y0, x0, y1 - y0));
-    }
-    if (gx == 0 && gy + 1 == frame_dimensions_.ysize_groups) {
-      RenderPadding(thread_id, Rect(0, y1, x0, full_image_ysize_ - y1));
-    }
-    if (gy + 1 == frame_dimensions_.ysize_groups) {
-      RenderPadding(thread_id, Rect(x0, y1, x1 - x0, full_image_ysize_ - y1));
-    }
-    if (gy == 0 && gx + 1 == frame_dimensions_.xsize_groups) {
-      RenderPadding(thread_id, Rect(x1, 0, full_image_xsize_ - x1, y0));
-    }
-    if (gx + 1 == frame_dimensions_.xsize_groups) {
-      RenderPadding(thread_id, Rect(x1, y0, full_image_xsize_ - x1, y1 - y0));
-    }
-    if (gy + 1 == frame_dimensions_.ysize_groups &&
-        gx + 1 == frame_dimensions_.xsize_groups) {
-      RenderPadding(thread_id, Rect(x1, y1, full_image_xsize_ - x1,
-                                    full_image_ysize_ - y1));
+
+    // Render padding for groups that intersect with the full image. The case
+    // where no groups intersect was handled above.
+    if (group_rect.xsize() > 0 && group_rect.ysize() > 0) {
+      if (gx == 0 && gy == 0) {
+        RenderPadding(thread_id, Rect(0, 0, x0, y0));
+      }
+      if (gy == 0) {
+        RenderPadding(thread_id, Rect(x0, 0, x1 - x0, y0));
+      }
+      if (gx == 0) {
+        RenderPadding(thread_id, Rect(0, y0, x0, y1 - y0));
+      }
+      if (gx == 0 && gy + 1 == frame_dimensions_.ysize_groups) {
+        RenderPadding(thread_id, Rect(0, y1, x0, full_image_ysize_ - y1));
+      }
+      if (gy + 1 == frame_dimensions_.ysize_groups) {
+        RenderPadding(thread_id, Rect(x0, y1, x1 - x0, full_image_ysize_ - y1));
+      }
+      if (gy == 0 && gx + 1 == frame_dimensions_.xsize_groups) {
+        RenderPadding(thread_id, Rect(x1, 0, full_image_xsize_ - x1, y0));
+      }
+      if (gx + 1 == frame_dimensions_.xsize_groups) {
+        RenderPadding(thread_id, Rect(x1, y0, full_image_xsize_ - x1, y1 - y0));
+      }
+      if (gy + 1 == frame_dimensions_.ysize_groups &&
+          gx + 1 == frame_dimensions_.xsize_groups) {
+        RenderPadding(thread_id, Rect(x1, y1, full_image_xsize_ - x1,
+                                      full_image_ysize_ - y1));
+      }
     }
   }
 

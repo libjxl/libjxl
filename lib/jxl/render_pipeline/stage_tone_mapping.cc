@@ -83,9 +83,9 @@ class ToneMappingStage : public RenderPipelineStage {
     msan::UnpoisonMemory(row1 + xsize, sizeof(float) * (xsize_v - xsize));
     msan::UnpoisonMemory(row2 + xsize, sizeof(float) * (xsize_v - xsize));
     for (ssize_t x = -xextra; x < (ssize_t)(xsize + xextra); x += Lanes(d)) {
-      auto r = Load(d, row0 + x);
-      auto g = Load(d, row1 + x);
-      auto b = Load(d, row2 + x);
+      auto r = LoadU(d, row0 + x);
+      auto g = LoadU(d, row1 + x);
+      auto b = LoadU(d, row2 + x);
       if (tone_mapper_ || hlg_ootf_) {
         r *= Set(d, to_intensity_target_);
         g *= Set(d, to_intensity_target_);
@@ -103,9 +103,9 @@ class ToneMappingStage : public RenderPipelineStage {
         g *= Set(d, from_desired_intensity_target_);
         b *= Set(d, from_desired_intensity_target_);
       }
-      Store(r, d, row0 + x);
-      Store(g, d, row1 + x);
-      Store(b, d, row2 + x);
+      StoreU(r, d, row0 + x);
+      StoreU(g, d, row1 + x);
+      StoreU(b, d, row2 + x);
     }
     msan::PoisonMemory(row0 + xsize, sizeof(float) * (xsize_v - xsize));
     msan::PoisonMemory(row1 + xsize, sizeof(float) * (xsize_v - xsize));
