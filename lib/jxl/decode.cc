@@ -2795,10 +2795,11 @@ JxlDecoderStatus JxlDecoderSetPreferredColorProfile(
   jxl::ColorEncoding c_out;
   JXL_API_RETURN_IF_ERROR(
       ConvertExternalToInternalColorEncoding(*color_encoding, &c_out));
-  JXL_API_RETURN_IF_ERROR(
-      dec->passes_state->output_encoding_info.MaybeSetColorEncoding(c_out));
-  dec->image_metadata.color_encoding =
-      dec->passes_state->output_encoding_info.color_encoding;
+  auto& output_encoding = dec->passes_state->output_encoding_info;
+  if (!c_out.SameColorEncoding(output_encoding.color_encoding)) {
+    JXL_API_RETURN_IF_ERROR(output_encoding.MaybeSetColorEncoding(c_out));
+    dec->image_metadata.color_encoding = output_encoding.color_encoding;
+  }
   return JXL_DEC_SUCCESS;
 }
 
