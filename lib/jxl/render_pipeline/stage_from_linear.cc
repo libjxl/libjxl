@@ -102,7 +102,6 @@ class FromLinearStage : public RenderPipelineStage {
                   size_t xextra, size_t xsize, size_t xpos, size_t ypos,
                   size_t thread_id) const final {
     PROFILER_ZONE("FromLinear");
-
     const HWY_FULL(float) d;
     const size_t xsize_v = RoundUpTo(xsize, Lanes(d));
     float* JXL_RESTRICT row0 = GetInputRow(input_rows, 0, 0);
@@ -115,13 +114,13 @@ class FromLinearStage : public RenderPipelineStage {
     msan::UnpoisonMemory(row1 + xsize, sizeof(float) * (xsize_v - xsize));
     msan::UnpoisonMemory(row2 + xsize, sizeof(float) * (xsize_v - xsize));
     for (ssize_t x = -xextra; x < (ssize_t)(xsize + xextra); x += Lanes(d)) {
-      auto r = Load(d, row0 + x);
-      auto g = Load(d, row1 + x);
-      auto b = Load(d, row2 + x);
+      auto r = LoadU(d, row0 + x);
+      auto g = LoadU(d, row1 + x);
+      auto b = LoadU(d, row2 + x);
       op_.Transform(d, &r, &g, &b);
-      Store(r, d, row0 + x);
-      Store(g, d, row1 + x);
-      Store(b, d, row2 + x);
+      StoreU(r, d, row0 + x);
+      StoreU(g, d, row1 + x);
+      StoreU(b, d, row2 + x);
     }
     msan::PoisonMemory(row0 + xsize, sizeof(float) * (xsize_v - xsize));
     msan::PoisonMemory(row1 + xsize, sizeof(float) * (xsize_v - xsize));

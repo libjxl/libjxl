@@ -603,6 +603,7 @@ Status ModularGenericDecompress(BitReader *br, Image &image,
               " image from %" PRIuS " bytes",
               image.w, image.h, image.channel.size(),
               (br->TotalBitsConsumed() - bit_pos) / 8);
+  JXL_DEBUG_V(5, "Modular image: %s", image.DebugString().c_str());
   (void)bit_pos;
 #ifdef JXL_ENABLE_ASSERT
   // Check that after applying all transforms we are back to the requested image

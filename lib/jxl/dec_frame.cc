@@ -455,6 +455,11 @@ Status FrameDecoder::ProcessACGroup(size_t ac_group_id,
   const size_t gy = ac_group_id / frame_dim_.xsize_groups;
   const size_t x = gx * group_dim;
   const size_t y = gy * group_dim;
+  JXL_DEBUG_V(3,
+              "Processing AC group %" PRIuS "(%" PRIuS ",%" PRIuS
+              ") group_dim: %" PRIuS " decoded passes: %u new passes: %" PRIuS,
+              ac_group_id, gx, gy, group_dim,
+              decoded_passes_per_ac_group_[ac_group_id], num_passes);
 
   RenderPipelineInput render_pipeline_input =
       dec_state_->render_pipeline->GetInputBuffers(ac_group_id, thread);
@@ -482,14 +487,14 @@ Status FrameDecoder::ProcessACGroup(size_t ac_group_id,
           mrect, br[i - decoded_passes_per_ac_group_[ac_group_id]], minShift,
           maxShift, ModularStreamId::ModularAC(ac_group_id, i),
           /*zerofill=*/false, dec_state_, &render_pipeline_input, decoded_,
-          /*allow_truncated=*/false));
+          /*allow_truncated=*/false, &should_run_pipeline));
     } else if (i >= decoded_passes_per_ac_group_[ac_group_id] + num_passes &&
                force_draw) {
       JXL_RETURN_IF_ERROR(modular_frame_decoder_.DecodeGroup(
           mrect, nullptr, minShift, maxShift,
           ModularStreamId::ModularAC(ac_group_id, i), /*zerofill=*/true,
           dec_state_, &render_pipeline_input, decoded_,
-          /*allow_truncated=*/false));
+          /*allow_truncated=*/false, &should_run_pipeline));
     }
   }
   decoded_passes_per_ac_group_[ac_group_id] += num_passes;
@@ -521,9 +526,12 @@ Status FrameDecoder::ProcessACGroup(size_t ac_group_id,
     }
   }
 
-  if (!modular_frame_decoder_.UsesFullImage() && !decoded_->IsJPEG() &&
-      should_run_pipeline) {
-    render_pipeline_input.Done();
+  if (!modular_frame_decoder_.UsesFullImage() && !decoded_->IsJPEG()) {
+    if (should_run_pipeline) {
+      render_pipeline_input.Done();
+    } else if (force_draw) {
+      return JXL_FAILURE("Modular group decoding failed.");
+    }
   }
   return true;
 }

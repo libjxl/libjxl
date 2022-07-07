@@ -446,7 +446,8 @@ std::string FrameHeader::DebugString() const {
   if (custom_size_or_origin) {
     os << ",xs=" << frame_size.xsize;
     os << ",ys=" << frame_size.ysize;
-    if (frame_type == FrameType::kRegularFrame) {
+    if (frame_type == FrameType::kRegularFrame ||
+        frame_type == FrameType::kSkipProgressive) {
       os << ",x0=" << frame_origin.x0;
       os << ",y0=" << frame_origin.y0;
     }
