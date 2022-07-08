@@ -372,8 +372,8 @@ typedef enum {
  *  - @ref JxlDecoderSetDesiredIntensityTarget,
  *  - @ref JxlDecoderSetDecompressBoxes,
  *  - @ref JxlDecoderSetKeepOrientation,
- *  - @ref JxlDecoderSetRenderSpotcolors,
- *  - @ref JxlDecoderSkipFrames, and
+ *  - @ref JxlDecoderSetParallelRunner,
+ *  - @ref JxlDecoderSetRenderSpotcolors, and
  *  - @ref JxlDecoderSubscribeEvents.
  *
  * @param dec decoder object
