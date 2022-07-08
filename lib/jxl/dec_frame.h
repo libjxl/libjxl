@@ -252,11 +252,12 @@ class FrameDecoder {
       group_dec_caches_.resize(storage_size);
     }
     use_task_id_ = num_threads > num_tasks;
+    bool use_group_ids = (modular_frame_decoder_.UsesFullImage() &&
+                          (frame_header_.encoding == FrameEncoding::kVarDCT ||
+                           (frame_header_.flags & FrameHeader::kNoise)));
     if (dec_state_->render_pipeline) {
       JXL_RETURN_IF_ERROR(dec_state_->render_pipeline->PrepareForThreads(
-          storage_size,
-          /*use_group_ids=*/modular_frame_decoder_.UsesFullImage() &&
-              frame_header_.encoding == FrameEncoding::kVarDCT));
+          storage_size, use_group_ids));
     }
     return true;
   }
