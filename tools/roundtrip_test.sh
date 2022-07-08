@@ -11,6 +11,8 @@ JPEGXL_TEST_DATA_PATH="${MYDIR}/../testdata"
 
 set -eux
 
+EMULATOR=${EMULATOR:-}
+
 # Temporary files cleanup hooks.
 CLEANUP_FILES=()
 cleanup() {
@@ -25,9 +27,9 @@ roundtrip_test() {
   local encargs="$2"
   local maxdist="$3"
   
-  local encoder="${build_dir}/tools/cjxl"
-  local decoder="${build_dir}/tools/djxl"
-  local comparator="${build_dir}/tools/ssimulacra_main"
+  local encoder="${EMULATOR} ${build_dir}/tools/cjxl"
+  local decoder="${EMULATOR} ${build_dir}/tools/djxl"
+  local comparator="${EMULATOR} ${build_dir}/tools/ssimulacra_main"
   local jxlfn="$(mktemp -p "$tmpdir")"
 
   "${encoder}" "${infn}" "${jxlfn}" $encargs
