@@ -5,15 +5,14 @@
 
 # Workflow for building and running tests.
 
-name: Build/Test
+name: Build/Test Cross
 on:
   push:
     branches:
       - main
       - v*.*.x
-# TODO(szabadka): Re-enable this after Ubuntu package dependencies are fixed.
-#  pull_request:
-#    types: [opened, reopened, labeled, synchronize]
+  pull_request:
+    types: [opened, reopened, labeled, synchronize]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
@@ -23,7 +22,10 @@ jobs:
   cross_compile_ubuntu:
     name: Cross-compiling ${{ matrix.build_target }} ${{ matrix.lowprecision }}
     runs-on: [ubuntu-22.04]
+    container:
+      image: debian:bullseye
     strategy:
+      fail-fast: false
       matrix:
         include:
           - arch: arm64
@@ -55,60 +57,52 @@ jobs:
       shell: bash
       run: |
         set -x
-        sudo apt-get update -y
-        sudo apt-get install -y curl gnupg ca-certificates
-        sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 1E9377A2BA9EF27F
+        apt-get update -y
+        apt-get install -y ca-certificates debian-ports-archive-keyring
 
-        if [[ "${{ matrix.arch }}" != "amd64" ]]; then
-          sudo dpkg --add-architecture "${{ matrix.arch }}"
+        dpkg --add-architecture "${{ matrix.arch }}"
 
-          # Update the sources.list with the split of supported architectures.
-          bkplist="/etc/apt/sources.list.bkp"
-          sudo mv /etc/apt/sources.list "${bkplist}"
+        # Update the sources.list with the split of supported architectures.
+        bkplist="/etc/apt/sources.list.bkp"
+        mv /etc/apt/sources.list "${bkplist}"
 
-          newlist="/etc/apt/sources.list"
-          sudo rm -f "${newlist}"
+        newlist="/etc/apt/sources.list"
+        rm -f "${newlist}"
 
-          main_list="amd64"
-          port_list=""
-          if [[ "${{ matrix.arch }}" == "i386" ]]; then
-            main_list="amd64,i386"
-          else
-            port_list="${{ matrix.arch }}"
-          fi
-
-          if [[ -n "${port_list}" ]]; then
-            port_url="http://ports.ubuntu.com/ubuntu-ports/"
-            grep -v -E '^#' "${bkplist}" |
-              sed -E "s;^deb (http[^ ]+) (.*)\$;deb [arch=${{ matrix.arch }}] ${port_url} \\2;" \
-              | sudo tee -a "${newlist}"
-          fi
-          grep -v -E '^#' "${bkplist}" |
-            sed -E "s;^deb (http[^ ]+) (.*)\$;deb [arch=${main_list}] \\1 \\2\ndeb-src [arch=${main_list}] \\1 \\2;" \
-            | sudo tee -a "${newlist}"
+        main_list="amd64,${{ matrix.arch }}"
+        port_list=""
+        if [[ "${{ matrix.arch }}" == "i386" ]]; then
+          main_list="amd64,i386"
+        else
+          port_list="${{ matrix.arch }}"
         fi
+
+        grep -v -E '^#' "${bkplist}" |
+          sed -E "s;^deb (http[^ ]+) (.*)\$;deb [arch=${main_list}] \\1 \\2\ndeb-src [arch=${main_list}] \\1 \\2;" \
+          | tee -a "${newlist}"
 
     - name: Install build deps
       shell: bash
       run: |
         set -x
-        sudo apt update
+        apt update
         pkgs=(
           # Build dependencies
           cmake
           doxygen
+          git
           graphviz
           ninja-build
           pkg-config
           qemu-user-static
+          xdg-utils
           xvfb
 
           # Toolchain for cross-compiling.
-          clang-14
-          # libclang-common-7-dev:${{ matrix.arch }}
+          clang-11
           libc6-dev-${{ matrix.arch }}-cross
-          libstdc++-11-dev-${{ matrix.arch }}-cross
-          libstdc++-11-dev:${{ matrix.arch }}
+          libstdc++-10-dev-${{ matrix.arch }}-cross
+          libstdc++-10-dev:${{ matrix.arch }}
 
           # Dependencies
           libbrotli-dev:${{ matrix.arch }}
@@ -144,9 +138,9 @@ jobs:
             libunwind-dev:${{ matrix.arch }}
           )
         fi
-        DEBIAN_FRONTEND=noninteractive sudo apt install -y "${pkgs[@]}"
-        echo "CC=clang-14" >> $GITHUB_ENV
-        echo "CXX=clang++-14" >> $GITHUB_ENV
+        DEBIAN_FRONTEND=noninteractive apt install -y "${pkgs[@]}"
+        echo "CC=clang-11" >> $GITHUB_ENV
+        echo "CXX=clang++-11" >> $GITHUB_ENV
     - name: Checkout the source
       uses: actions/checkout@v2
       with:
