@@ -233,7 +233,6 @@ struct CompressArgs {
                             "How many times to compress. (For benchmarking).",
                             &num_reps, &ParseUnsigned, 1);
 
-
     cmdline->AddOptionValue(
         '\0', "photon_noise", "ISO3200",
         "Adds noise to the image emulating photographic film noise. "
@@ -300,7 +299,7 @@ struct CompressArgs {
         "icc_pathname refers to a binary file containing an ICC profile.",
         &color_hints, &ParseAndAppendKeyValue, 1);
 
-    //TODO(firsching): wire this up.
+    // TODO(firsching): wire this up.
     cmdline->AddOptionValue(
         '\0', "override_bitdepth", "0=use from image, 1-32=override",
         "If nonzero, store the given bit depth in the JPEG XL file metadata"
@@ -649,7 +648,6 @@ int main(int argc, char** argv) {
     fprintf(stderr, "JPEG XL encoder %s\n", version.c_str());
   }
 
-
   if (cmdline.HelpFlagPassed() || !args.file_in) {
     cmdline.PrintHelp();
     return jpegxl::tools::CjxlRetCode::OK;
@@ -673,8 +671,8 @@ int main(int argc, char** argv) {
   jxl::PaddedBytes image_data;
   jxl::extras::PackedPixelFile ppf;
   jxl::extras::Codec codec = jxl::extras::Codec::kUnknown;
-  auto ensure_image_loaded = [&input_image_loaded, &image_data,
-                              &ppf, &codec, &args]() {
+  auto ensure_image_loaded = [&input_image_loaded, &image_data, &ppf, &codec,
+                              &args]() {
     if (input_image_loaded) return;
     if (!ReadFile(args.file_in, &image_data)) {
       std::cerr << "Reading image data failed." << std::endl;
@@ -755,7 +753,9 @@ int main(int argc, char** argv) {
       if (args.strip) {
         use_container = false;
       }
-      if (JXL_ENC_SUCCESS != JxlEncoderUseContainer(jxl_encoder, static_cast<int>(use_container))){
+      if (JXL_ENC_SUCCESS !=
+          JxlEncoderUseContainer(jxl_encoder,
+                                 static_cast<int>(use_container))) {
         std::cerr << "JxlEncoderUseContainer failed." << std::endl;
         return EXIT_FAILURE;
       }
@@ -927,14 +927,15 @@ int main(int argc, char** argv) {
                        : "Invalid --modular_colorspace. Valid range is "
                          "{-1, 0, 1, ..., 41}.\n";
           });
-      process_flag("modular_ma_tree_learning_percent",
-                   args.modular_ma_tree_learning_percent,
-                   JXL_ENC_FRAME_SETTING_MODULAR_MA_TREE_LEARNING_PERCENT,
-                   [](int32_t x) -> std::string {
-                     return -1 <= x ? ""
-                                    : "Invalid --modular_ma_tree_learning_percent, must "
-                                      "be -1 or non-negative\n";
-                   });
+      process_flag(
+          "modular_ma_tree_learning_percent",
+          args.modular_ma_tree_learning_percent,
+          JXL_ENC_FRAME_SETTING_MODULAR_MA_TREE_LEARNING_PERCENT,
+          [](int32_t x) -> std::string {
+            return -1 <= x ? ""
+                           : "Invalid --modular_ma_tree_learning_percent, must "
+                             "be -1 or non-negative\n";
+          });
       process_flag("modular_nb_prev_channels", args.modular_nb_prev_channels,
                    JXL_ENC_FRAME_SETTING_MODULAR_NB_PREV_CHANNELS,
                    [](int32_t x) -> std::string {
@@ -985,7 +986,8 @@ int main(int argc, char** argv) {
                   << std::endl;
       }
       if (args.jpeg_store_metadata) {
-        if (JXL_ENC_SUCCESS != JxlEncoderStoreJPEGMetadata(jxl_encoder, JXL_TRUE)) {
+        if (JXL_ENC_SUCCESS !=
+            JxlEncoderStoreJPEGMetadata(jxl_encoder, JXL_TRUE)) {
           std::cerr << "Storing JPEG metadata failed. " << std::endl;
           return EXIT_FAILURE;
         }
