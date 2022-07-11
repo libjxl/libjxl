@@ -193,14 +193,17 @@ struct CompressArgs {
     cmdline->AddOptionFlag('\0', "progressive_ac",
                            "Use the progressive mode for AC.", &progressive_ac,
                            &SetBooleanTrue, 1);
+
     opt_qprogressive_ac_id = cmdline->AddOptionFlag(
         '\0', "qprogressive_ac",
         "Use the progressive mode for AC with shift quantization.",
         &qprogressive_ac, &SetBooleanTrue, 1);
+
     cmdline->AddOptionValue(
         '\0', "progressive_dc", "num_dc_frames",
         "Progressive-DC setting. Valid values are: -1, 0, 1, 2.",
         &progressive_dc, &ParseSigned, 1);
+
     cmdline->AddOptionValue(
         'm', "modular", "0|1",
         "Use modular mode (not provided = encoder chooses, 0 = enforce VarDCT, "
@@ -213,6 +216,7 @@ struct CompressArgs {
         "If the input is JPEG, losslessly transcode JPEG, "
         "rather than using reencode pixels.",
         &lossless_jpeg, &ParseUnsigned, 1);
+
     cmdline->AddOptionValue(
         '\0', "jpeg_reconstruction_cfl", "0|1",
         "Enable/disable chroma-from-luma (CFL) for lossless "
@@ -224,9 +228,11 @@ struct CompressArgs {
         "Number of worker threads (-1 == use machine default, "
         "0 == do not use multithreading).",
         &num_threads, &ParseSigned, 1);
+
     cmdline->AddOptionValue('\0', "num_reps", "N",
                             "How many times to compress. (For benchmarking).",
                             &num_reps, &ParseUnsigned, 1);
+
 
     cmdline->AddOptionValue(
         '\0', "photon_noise", "ISO3200",
@@ -235,28 +241,33 @@ struct CompressArgs {
         "As an example, a value of 100 gives low noise whereas a value "
         "of 3200 gives a lot of noise. The default value is 0.",
         &photon_noise_iso, &ParsePhotonNoiseParameter, 1);
+
     cmdline->AddOptionValue(
         '\0', "dots", "0|1",
         "Force disable/enable dots generation. "
         "(not provided = default, 0 = disable, 1 = enable).",
         &dots, &ParseOverride, 1);
+
     cmdline->AddOptionValue(
         '\0', "patches", "0|1",
         "Force disable/enable patches generation. "
         "(not provided = default, 0 = disable, 1 = enable).",
         &patches, &ParseOverride, 1);
+
     cmdline->AddOptionValue(
         '\0', "resampling", "-1|1|2|4|8",
         "Resampling for extra channels. Default of -1 applies resampling only "
         "for low quality. Value 1 does no downsampling (1x1), 2 does 2x2 "
         "downsampling, 4 is for 4x4 downsampling, and 8 for 8x8 downsampling.",
         &resampling, &ParseSigned, 0);
+
     cmdline->AddOptionValue(
         '\0', "ec_resampling", "-1|1|2|4|8",
         "Resampling for extra channels. Default of -1 applies resampling only "
         "for low quality. Value 1 does no downsampling (1x1), 2 does 2x2 "
         "downsampling, 4 is for 4x4 downsampling, and 8 for 8x8 downsampling.",
         &ec_resampling, &ParseSigned, 2);
+
     cmdline->AddOptionFlag('\0', "already_downsampled",
                            "Do not downsample the given input before encoding, "
                            "but still signal that the decoder should upsample.",
@@ -282,12 +293,14 @@ struct CompressArgs {
         "value based on the color encoding.",
         &intensity_target, &ParseIntensityTarget, 1);
 
+    // TODO(firsching): wire this up.
     cmdline->AddOptionValue(
         'x', "dec-hints", "key=value",
         "color_space indicates the ColorEncoding, see Description();\n"
         "icc_pathname refers to a binary file containing an ICC profile.",
         &color_hints, &ParseAndAppendKeyValue, 1);
 
+    //TODO(firsching): wire this up.
     cmdline->AddOptionValue(
         '\0', "override_bitdepth", "0=use from image, 1-32=override",
         "If nonzero, store the given bit depth in the JPEG XL file metadata"
@@ -375,11 +388,9 @@ struct CompressArgs {
     cmdline->AddOptionFlag('V', "version",
                            "Print encoder library version number and exit.",
                            &version, &SetBooleanTrue, 1);
+
     cmdline->AddOptionFlag('\0', "quiet", "Be more silent", &quiet,
                            &SetBooleanTrue, 1);
-    cmdline->AddOptionValue('\0', "print_profile", "0|1",
-                            "Print timing information before exiting",
-                            &print_profile, &ParseOverride, 1);
 
     cmdline->AddOptionValue(
         '\0', "frame_indexing", "string",
@@ -638,15 +649,13 @@ int main(int argc, char** argv) {
     fprintf(stderr, "JPEG XL encoder %s\n", version.c_str());
   }
 
-  const char* filename_in = args.file_in;
-  const char* filename_out = args.file_out;
 
-  if (cmdline.HelpFlagPassed() || !filename_in) {
+  if (cmdline.HelpFlagPassed() || !args.file_in) {
     cmdline.PrintHelp();
     return jpegxl::tools::CjxlRetCode::OK;
   }
 
-  if (!filename_out && !args.quiet) {
+  if (!args.file_out && !args.quiet) {
     fprintf(stderr,
             "No output file specified.\n"
             "Encoding will be performed, but the result will be discarded.\n");
@@ -664,10 +673,10 @@ int main(int argc, char** argv) {
   jxl::PaddedBytes image_data;
   jxl::extras::PackedPixelFile ppf;
   jxl::extras::Codec codec = jxl::extras::Codec::kUnknown;
-  auto ensure_image_loaded = [&filename_in, &input_image_loaded, &image_data,
+  auto ensure_image_loaded = [&input_image_loaded, &image_data,
                               &ppf, &codec, &args]() {
     if (input_image_loaded) return;
-    if (!ReadFile(filename_in, &image_data)) {
+    if (!ReadFile(args.file_in, &image_data)) {
       std::cerr << "Reading image data failed." << std::endl;
       exit(EXIT_FAILURE);
     }
@@ -688,7 +697,7 @@ int main(int argc, char** argv) {
   JxlEncoderPtr enc = JxlEncoderMake(/*memory_manager=*/nullptr);
   JxlEncoder* jxl_encoder = enc.get();
   JxlThreadParallelRunnerPtr runner;
-  for (int num_rep = 0; num_rep < args.num_reps; ++num_rep) {
+  for (size_t num_rep = 0; num_rep < args.num_reps; ++num_rep) {
     JxlEncoderReset(jxl_encoder);
     if (args.num_threads != 0) {
       size_t num_worker_threads =
@@ -746,7 +755,10 @@ int main(int argc, char** argv) {
       if (args.strip) {
         use_container = false;
       }
-      JxlEncoderUseContainer(jxl_encoder, static_cast<int>(use_container));
+      if (JXL_ENC_SUCCESS != JxlEncoderUseContainer(jxl_encoder, static_cast<int>(use_container))){
+        std::cerr << "JxlEncoderUseContainer failed." << std::endl;
+        return EXIT_FAILURE;
+      }
 
       process_bool_flag("modular", args.modular, JXL_ENC_FRAME_SETTING_MODULAR);
       process_bool_flag("keep_invisible", args.keep_invisible,
@@ -920,7 +932,7 @@ int main(int argc, char** argv) {
                    JXL_ENC_FRAME_SETTING_MODULAR_MA_TREE_LEARNING_PERCENT,
                    [](int32_t x) -> std::string {
                      return -1 <= x ? ""
-                                    : "Invalid --modular_palette_colors, must "
+                                    : "Invalid --modular_ma_tree_learning_percent, must "
                                       "be -1 or non-negative\n";
                    });
       process_flag("modular_nb_prev_channels", args.modular_nb_prev_channels,
@@ -973,7 +985,7 @@ int main(int argc, char** argv) {
                   << std::endl;
       }
       if (args.jpeg_store_metadata) {
-        if (JXL_ENC_SUCCESS != JxlEncoderStoreJPEGMetadata(jxl_encoder, 1)) {
+        if (JXL_ENC_SUCCESS != JxlEncoderStoreJPEGMetadata(jxl_encoder, JXL_TRUE)) {
           std::cerr << "Storing JPEG metadata failed. " << std::endl;
           return EXIT_FAILURE;
         }
@@ -991,7 +1003,7 @@ int main(int argc, char** argv) {
       {
         JxlBasicInfo basic_info = ppf.info;
         if (basic_info.alpha_bits > 0) num_alpha_channels = 1;
-        basic_info.intensity_target = static_cast<float>(args.intensity_target);
+        basic_info.intensity_target = args.intensity_target;
         basic_info.num_extra_channels = num_alpha_channels;
         basic_info.num_color_channels = ppf.info.num_color_channels;
         const bool lossless =
@@ -1054,7 +1066,7 @@ int main(int argc, char** argv) {
             return EXIT_FAILURE;
           }
         }
-        jxl::Status enc_status(true);
+        JxlEncoderStatus enc_status;
         {
           if (num_alpha_channels > 0) {
             JxlExtraChannelInfo extra_channel_info;
@@ -1062,7 +1074,7 @@ int main(int argc, char** argv) {
                                            &extra_channel_info);
             enc_status = JxlEncoderSetExtraChannelInfo(jxl_encoder, 0,
                                                        &extra_channel_info);
-            if (JXL_ENC_SUCCESS != static_cast<int>(enc_status)) {
+            if (JXL_ENC_SUCCESS != enc_status) {
               std::cerr << "JxlEncoderSetExtraChannelInfo() failed."
                         << std::endl;
               return EXIT_FAILURE;
@@ -1133,8 +1145,8 @@ int main(int argc, char** argv) {
 
   // TODO(firsching): print info about compressed size and other image stats
   // here and in the beginning, like is done in current cjxl.
-  if (filename_out) {
-    if (!WriteFile(compressed, filename_out)) {
+  if (args.file_out) {
+    if (!WriteFile(compressed, args.file_out)) {
       std::cerr << "Could not write jxl file." << std::endl;
       return EXIT_FAILURE;
     }
