@@ -105,7 +105,6 @@ jobs:
           libbenchmark-tools \
           libbrotli-dev \
           libgdk-pixbuf2.0-dev \
-          libgflags-dev \
           libgif-dev \
           libgtest-dev \
           libgtk2.0-dev  \
@@ -262,7 +261,6 @@ jobs:
             mingw-w64-${{ matrix.arch }}-brotli
             mingw-w64-${{ matrix.arch }}-cmake
             mingw-w64-${{ matrix.arch }}-gcc
-            mingw-w64-${{ matrix.arch }}-gflags
             mingw-w64-${{ matrix.arch }}-giflib
             mingw-w64-${{ matrix.arch }}-gtest
             mingw-w64-${{ matrix.arch }}-libavif

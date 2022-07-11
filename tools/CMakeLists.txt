@@ -147,7 +147,6 @@ if(JPEGXL_ENABLE_TOOLS)
     jxl_extras_dec-static
     jxl_threads
     hwy
-    jxl_gflags
   )
   target_include_directories(cjxl_ng PRIVATE "${PROJECT_SOURCE_DIR}")
   if(JPEGXL_EMSCRIPTEN)

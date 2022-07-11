@@ -35,7 +35,6 @@ jobs:
           doxygen \
           libbrotli-dev \
           libgdk-pixbuf2.0-dev \
-          libgflags-dev \
           libgif-dev \
           libgtest-dev \
           libgtk2.0-dev  \
@@ -148,7 +147,7 @@ jobs:
 
     - name: Install gcc-8 (only 18.04)
       if: matrix.os == 'ubuntu:18.04'
-        # Compiler bug workaround: install and use gcc-8 
+        # Compiler bug workaround: install and use gcc-8
       shell: 'bash'
       run: |
         apt install -y \
@@ -316,7 +315,6 @@ jobs:
       run: |
         set -x
         ${VCPKG_ROOT}/vcpkg --triplet ${{ matrix.triplet }} install \
-          gflags \
           giflib \
           libjpeg-turbo \
           libpng \
@@ -338,7 +336,6 @@ jobs:
           -DJPEGXL_ENABLE_TCMALLOC=OFF \
           -DJPEGXL_ENABLE_VIEWERS=OFF \
           -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} \
-          -DJPEGXL_BUNDLE_GFLAGS=ON \
         #
     - name: Build
       shell: 'bash'

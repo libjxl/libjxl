@@ -156,7 +156,6 @@ jobs:
       run: |
         ./ci.sh release \
           -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
-          -DJPEGXL_BUNDLE_GFLAGS=ON \
           -DJPEGXL_ENABLE_JNI=OFF \
           ${{ matrix.cmake_args }}
       env:
