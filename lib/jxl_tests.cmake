@@ -28,6 +28,7 @@ set(TEST_FILES
   jxl/fast_dct_test.cc
   jxl/fast_math_test.cc
   jxl/fields_test.cc
+  jxl/fuzzer_test.cc
   jxl/gaborish_test.cc
   jxl/gamma_correct_test.cc
   jxl/gauss_blur_test.cc
@@ -96,7 +97,11 @@ file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tests)
 foreach (TESTFILE IN LISTS TEST_FILES)
   # The TESTNAME is the name without the extension or directory.
   get_filename_component(TESTNAME ${TESTFILE} NAME_WE)
-  add_executable(${TESTNAME} ${TESTFILE})
+  if(TESTFILE STREQUAL jxl/fuzzer_test.cc)
+    add_executable(${TESTNAME} ${TESTFILE} ../tools/djxl_fuzzer.cc)
+  else()
+    add_executable(${TESTNAME} ${TESTFILE})
+  endif()
   if(JPEGXL_EMSCRIPTEN)
     # The emscripten linking step takes too much memory and crashes during the
     # wasm-opt step when using -O2 optimization level
