@@ -815,8 +815,8 @@ int main(int argc, char** argv) {
                                 ? ""
                                 : "Valid values are {-1, 1, 2, 4, 8}.\n";
                    });
-      // TODO(firsching): change JxlEncoderFrameSettingsSetOption to take float for
-      // JXL_ENC_FRAME_SETTING_PHOTON_NOISE.
+      // TODO(firsching): change JxlEncoderFrameSettingsSetOption to take float
+      // for JXL_ENC_FRAME_SETTING_PHOTON_NOISE.
       SetFlagFrameOptionOrDie("photon_noise_iso", args.photon_noise_iso,
                               jxl_encoder_frame_settings,
                               JXL_ENC_FRAME_SETTING_PHOTON_NOISE);
@@ -833,8 +833,8 @@ int main(int argc, char** argv) {
             << "requires setting --group_order=1" << std::endl;
         return EXIT_FAILURE;
       }
-      // TODO(firsching): change JxlEncoderFrameSettingsSetOption fo take int64_t for
-      // JXL_ENC_FRAME_SETTING_GROUP_ORDER_CENTER_[X|Y].
+      // TODO(firsching): change JxlEncoderFrameSettingsSetOption fo take
+      // int64_t for JXL_ENC_FRAME_SETTING_GROUP_ORDER_CENTER_[X|Y].
       process_flag("center_x", args.center_x,
                    JXL_ENC_FRAME_SETTING_GROUP_ORDER_CENTER_X,
                    [](int32_t x) -> std::string {
@@ -888,7 +888,8 @@ int main(int argc, char** argv) {
     }
     {  // Modular mode related.
       // TODO(firsching): consider doing more validation after image size is
-      // known, i.e. set to 512 if 256 would be silly using opt_modular_group_size_id.
+      // known, i.e. set to 512 if 256 would be silly using
+      // opt_modular_group_size_id.
       process_flag("modular_group_size", args.modular_group_size,
                    JXL_ENC_FRAME_SETTING_MODULAR_GROUP_SIZE,
                    [](int32_t x) -> std::string {
