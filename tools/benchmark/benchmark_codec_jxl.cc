@@ -183,8 +183,6 @@ class JxlCodec : public ImageCodec {
         return JXL_FAILURE("Invalid group size shift value");
       }
       cparams_.modular_group_size_shift = gsize;
-    } else if (param == "new_heuristics") {
-      cparams_.use_new_heuristics = true;
     } else if (param == "plt") {
       cparams_.options.max_properties = 0;
       cparams_.options.nb_repeats = 0;
@@ -257,10 +255,6 @@ class JxlCodec : public ImageCodec {
 
     const double start = Now();
     PassesEncoderState passes_encoder_state;
-    if (cparams_.use_new_heuristics) {
-      passes_encoder_state.heuristics =
-          jxl::make_unique<jxl::FastEncoderHeuristics>();
-    }
     PaddedBytes compressed_padded;
     JXL_RETURN_IF_ERROR(EncodeFile(cparams_, io, &passes_encoder_state,
                                    &compressed_padded, GetJxlCms(), &cinfo_,

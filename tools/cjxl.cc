@@ -315,9 +315,6 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
   cmdline->AddOptionFlag('m', "modular",
                          "Use the modular mode (lossy / lossless).",
                          &params.modular_mode, &SetBooleanTrue, 1);
-  cmdline->AddOptionFlag('\0', "use_new_heuristics",
-                         "use new and not yet ready encoder heuristics",
-                         &params.use_new_heuristics, &SetBooleanTrue, 2);
 
   // JPEG modes: parallel Brunsli, pixels to JPEG, or JPEG to Brunsli
   cmdline->AddOptionFlag('j', "jpeg_transcode",
@@ -725,10 +722,6 @@ jxl::Status CompressJxl(jxl::CodecInOut& io, double decode_mps,
   }
   SpeedStats stats;
   jxl::PassesEncoderState passes_encoder_state;
-  if (args.params.use_new_heuristics) {
-    passes_encoder_state.heuristics =
-        jxl::make_unique<jxl::FastEncoderHeuristics>();
-  }
   for (size_t i = 0; i < args.num_reps; ++i) {
     const double t0 = jxl::Now();
     jxl::Status ok = false;
