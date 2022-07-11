@@ -276,7 +276,6 @@ set(JPEGXL_INTERNAL_SOURCES_ENC
   jxl/enc_entropy_coder.h
   jxl/enc_external_image.cc
   jxl/enc_external_image.h
-  jxl/enc_fast_heuristics.cc
   jxl/enc_file.cc
   jxl/enc_file.h
   jxl/enc_frame.cc

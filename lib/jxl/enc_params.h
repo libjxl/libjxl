@@ -243,8 +243,6 @@ struct CompressParams {
     color_transform = jxl::ColorTransform::kNone;
   }
 
-  bool use_new_heuristics = false;
-
   // Down/upsample the image before encoding / after decoding by this factor.
   // The resampling value can also be set to <= 0 to automatically choose based
   // on distance, however EncodeFrame doesn't support this, so it is
