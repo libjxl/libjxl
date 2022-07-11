@@ -242,6 +242,8 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
       all_same_shift = false;
   }
 
+  JXL_DEBUG_V(6, "DecodeGlobalInfo: full_image (w/o transforms) %s",
+              gi.DebugString().c_str());
   ModularOptions options;
   options.max_chan_size = frame_dim.group_dim;
   options.group_dim = frame_dim.group_dim;
@@ -272,6 +274,8 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
     }
   }
   full_image = std::move(gi);
+  JXL_DEBUG_V(6, "DecodeGlobalInfo: full_image (with transforms) %s",
+              full_image.DebugString().c_str());
   return dec_status;
 }
 

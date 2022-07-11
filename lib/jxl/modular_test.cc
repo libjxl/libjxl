@@ -13,6 +13,7 @@
 
 #include "gtest/gtest.h"
 #include "lib/extras/codec.h"
+#include "lib/extras/dec/jxl.h"
 #include "lib/jxl/aux_out.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
@@ -28,12 +29,14 @@
 #include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_file.h"
 #include "lib/jxl/enc_params.h"
+#include "lib/jxl/enc_toc.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/image_test_utils.h"
 #include "lib/jxl/modular/encoding/enc_encoding.h"
 #include "lib/jxl/modular/encoding/encoding.h"
+#include "lib/jxl/modular/encoding/ma_common.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testdata.h"
 
@@ -403,6 +406,139 @@ TEST(ModularTest, RoundtripLosslessCustomFloat) {
   EXPECT_LE(Roundtrip(&io, cparams, {}, pool, &io2), 23000u);
   EXPECT_EQ(0.0, ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
                                      /*distmap=*/nullptr, pool));
+}
+
+void WriteHeaders(BitWriter* writer, size_t xsize, size_t ysize) {
+  BitWriter::Allotment allotment(writer, 16);
+  writer->Write(8, 0xFF);
+  writer->Write(8, kCodestreamMarker);
+  ReclaimAndCharge(writer, &allotment, 0, nullptr);
+  CodecMetadata metadata;
+  EXPECT_TRUE(metadata.size.Set(xsize, ysize));
+  EXPECT_TRUE(WriteSizeHeader(metadata.size, writer, 0, nullptr));
+  metadata.m.color_encoding = ColorEncoding::LinearSRGB(/*is_gray=*/true);
+  metadata.m.xyb_encoded = false;
+  metadata.m.SetUintSamples(31);
+  EXPECT_TRUE(WriteImageMetadata(metadata.m, writer, 0, nullptr));
+  metadata.transform_data.nonserialized_xyb_encoded = metadata.m.xyb_encoded;
+  EXPECT_TRUE(Bundle::Write(metadata.transform_data, writer, 0, nullptr));
+  writer->ZeroPadToByte();
+  FrameHeader frame_header(&metadata);
+  frame_header.encoding = FrameEncoding::kModular;
+  frame_header.loop_filter.gab = false;
+  frame_header.loop_filter.epf_iters = 0;
+  EXPECT_TRUE(WriteFrameHeader(frame_header, writer, nullptr));
+}
+
+// Tree with single node, zero predictor, offset is 1 and multiplier is 1,
+// entropy code is prefix tree with alphabet size 256 and all bits lengths 8.
+void WriteHistograms(BitWriter* writer) {
+  writer->Write(1, 1);  // default DC quant
+  writer->Write(1, 1);  // has_tree
+  // tree histograms
+  writer->Write(1, 0);         // LZ77 disabled
+  writer->Write(3, 1);         // simple context map
+  writer->Write(1, 1);         // prefix code
+  writer->Write(7, 0x63);      // UnintConfig(3, 2, 1)
+  writer->Write(12, 0xfef);    // alphabet_size = 256
+  writer->Write(32, 0x10003);  // all bit lengths 8
+  // tree tokens
+  writer->Write(8, 0);   // tree leaf
+  writer->Write(8, 0);   // zero predictor
+  writer->Write(8, 64);  // offset = UnpackSigned(ReverseBits(64)) = 1
+  writer->Write(16, 0);  // multiplier = 1
+  // histograms
+  writer->Write(1, 0);         // LZ77 disabled
+  writer->Write(1, 1);         // prefix code
+  writer->Write(7, 0x63);      // UnintConfig(3, 2, 1)
+  writer->Write(12, 0xfef);    // alphabet_size = 256
+  writer->Write(32, 0x10003);  // all bit lengths 8
+}
+
+TEST(ModularTest, PredictorIntegerOverflow) {
+  const size_t xsize = 1;
+  const size_t ysize = 1;
+  BitWriter writer;
+  WriteHeaders(&writer, xsize, ysize);
+  std::vector<BitWriter> group_codes(1);
+  {
+    BitWriter* bw = &group_codes[0];
+    BitWriter::Allotment allotment(bw, 1 << 20);
+    WriteHistograms(bw);
+    GroupHeader header;
+    header.use_global_tree = true;
+    EXPECT_TRUE(Bundle::Write(header, bw, 0, nullptr));
+    // After UnpackSigned this becomes (1 << 31) - 1, the largest pixel_type,
+    // and after adding the offset we get -(1 << 31).
+    bw->Write(8, 119);
+    bw->Write(28, 0xfffffff);
+    bw->ZeroPadToByte();
+    ReclaimAndCharge(bw, &allotment, 0, nullptr);
+  }
+  EXPECT_TRUE(WriteGroupOffsets(group_codes, nullptr, &writer, nullptr));
+  writer.AppendByteAligned(group_codes);
+
+  PaddedBytes compressed = std::move(writer).TakeBytes();
+  extras::PackedPixelFile ppf;
+  extras::JXLDecompressParams params;
+  params.accepted_formats.push_back({1, JXL_TYPE_FLOAT, JXL_LITTLE_ENDIAN, 0});
+  EXPECT_TRUE(DecodeImageJXL(compressed.data(), compressed.size(), params,
+                             nullptr, &ppf));
+  ASSERT_EQ(1, ppf.frames.size());
+  const auto& img = ppf.frames[0].color;
+  const auto pixels = reinterpret_cast<const float*>(img.pixels());
+  EXPECT_EQ(-1.0f, pixels[0]);
+}
+
+TEST(ModularTest, UnsqueezeIntegerOverflow) {
+  // Image width is 9 so we can test both the SIMD and non-vector code paths.
+  const size_t xsize = 9;
+  const size_t ysize = 2;
+  BitWriter writer;
+  WriteHeaders(&writer, xsize, ysize);
+  std::vector<BitWriter> group_codes(1);
+  {
+    BitWriter* bw = &group_codes[0];
+    BitWriter::Allotment allotment(bw, 1 << 20);
+    WriteHistograms(bw);
+    GroupHeader header;
+    header.use_global_tree = true;
+    header.transforms.emplace_back();
+    header.transforms[0].id = TransformId::kSqueeze;
+    SqueezeParams params;
+    params.horizontal = false;
+    params.in_place = true;
+    params.begin_c = 0;
+    params.num_c = 1;
+    header.transforms[0].squeezes.emplace_back(params);
+    EXPECT_TRUE(Bundle::Write(header, bw, 0, nullptr));
+    for (size_t i = 0; i < xsize * ysize; ++i) {
+      // After UnpackSigned and adding offset, this becomes (1 << 31) - 1, both
+      // in the image and in the residual channels, and unsqueeze makes them
+      // ~(3 << 30) and (1 << 30) (in pixel_type_w) and the first wraps around
+      // to about -(1 << 30).
+      bw->Write(8, 119);
+      bw->Write(28, 0xffffffe);
+    }
+    bw->ZeroPadToByte();
+    ReclaimAndCharge(bw, &allotment, 0, nullptr);
+  }
+  EXPECT_TRUE(WriteGroupOffsets(group_codes, nullptr, &writer, nullptr));
+  writer.AppendByteAligned(group_codes);
+
+  PaddedBytes compressed = std::move(writer).TakeBytes();
+  extras::PackedPixelFile ppf;
+  extras::JXLDecompressParams params;
+  params.accepted_formats.push_back({1, JXL_TYPE_FLOAT, JXL_LITTLE_ENDIAN, 0});
+  EXPECT_TRUE(DecodeImageJXL(compressed.data(), compressed.size(), params,
+                             nullptr, &ppf));
+  ASSERT_EQ(1, ppf.frames.size());
+  const auto& img = ppf.frames[0].color;
+  const auto pixels = reinterpret_cast<const float*>(img.pixels());
+  for (size_t x = 0; x < xsize; ++x) {
+    EXPECT_NEAR(-0.5f, pixels[x], 1e-10);
+    EXPECT_NEAR(0.5f, pixels[xsize + x], 1e-10);
+  }
 }
 
 }  // namespace

@@ -62,9 +62,9 @@ Image Image::clone() {
 
 std::string Image::DebugString() const {
   std::ostringstream os;
-  os << w << "x" << h << " depth: " << bitdepth;
+  os << w << "x" << h << ", depth: " << bitdepth;
   if (!channel.empty()) {
-    os << " channels:";
+    os << ", channels:";
     for (size_t i = 0; i < channel.size(); ++i) {
       os << " " << channel[i].w << "x" << channel[i].h
          << "(shift: " << channel[i].hshift << "," << channel[i].vshift << ")";

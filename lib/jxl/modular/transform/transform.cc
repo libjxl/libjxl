@@ -39,8 +39,7 @@ Status Transform::Inverse(Image &input, const weighted::Header &wp_header,
 }
 
 Status Transform::MetaApply(Image &input) {
-  JXL_DEBUG_V(6, "Input channels (%" PRIuS ", %" PRIuS " meta): ",
-              input.channel.size(), input.nb_meta_channels);
+  JXL_DEBUG_V(6, "MetaApply input: %s", input.DebugString().c_str());
   switch (id) {
     case TransformId::kRCT:
       JXL_DEBUG_V(2, "Transform: kRCT, rct_type=%" PRIu32, rct_type);
