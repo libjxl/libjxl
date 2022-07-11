@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -332,6 +333,16 @@ static inline bool ParseUnsigned(const char* arg, size_t* out) {
   *out = static_cast<size_t>(strtoull(arg, &end, 0));
   if (end[0] != '\0') {
     fprintf(stderr, "Unable to interpret as unsigned integer: %s.\n", arg);
+    return false;
+  }
+  return true;
+}
+
+static inline bool ParseInt64(const char* arg, int64_t* out) {
+  char* end;
+  *out = strtol(arg, &end, 0);
+  if (end[0] != '\0') {
+    fprintf(stderr, "Unable to interpret as signed integer: %s.\n", arg);
     return false;
   }
   return true;
