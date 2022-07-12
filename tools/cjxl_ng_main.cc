@@ -106,13 +106,13 @@ struct CompressArgs {
                            "Exif/XMP/JPEG bitstream reconstruction data).",
                            &strip, &SetBooleanTrue, 2);
 
-    cmdline->AddOptionFlag(
-        '\0', "jpeg_store_metadata",
+    cmdline->AddOptionValue(
+        '\0', "jpeg_store_metadata", "0|1",
         ("If --lossless_jpeg=1, store JPEG reconstruction "
          "metadata in the JPEG XL container "
          "(for lossless reconstruction of the JPEG codestream)."
          "(default: 1)"),
-        &jpeg_store_metadata, &SetBooleanTrue, 2);
+        &jpeg_store_metadata, &ParseUnsigned, 2);
 
     // Target distance/size/bpp
     opt_distance_id = cmdline->AddOptionValue(
@@ -431,16 +431,16 @@ struct CompressArgs {
   // Reset to false if input image is not a JPEG.
   size_t lossless_jpeg = 1;
 
-  bool jpeg_store_metadata = true;
+  size_t jpeg_store_metadata = 1;
 
   float quality = -1001.f;  // Default to lossless if input is already lossy,
                             // or to VarDCT otherwise.
-  bool verbose;
+  bool verbose = false;
   bool progressive = false;
-  bool progressive_ac;
-  bool qprogressive_ac;
-  int32_t progressive_dc;
-  bool modular_lossy_palette;
+  bool progressive_ac = false;
+  bool qprogressive_ac = false;
+  int32_t progressive_dc = -1;
+  bool modular_lossy_palette = false;
   int32_t premultiply = -1;
   bool already_downsampled = false;
   jxl::Override jpeg_reconstruction_cfl = jxl::Override::kDefault;
