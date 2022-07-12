@@ -292,7 +292,6 @@ struct CompressArgs {
         "value based on the color encoding.",
         &intensity_target, &ParseIntensityTarget, 1);
 
-    // TODO(firsching): wire this up.
     cmdline->AddOptionValue(
         'x', "dec-hints", "key=value",
         "color_space indicates the ColorEncoding, see Description();\n"
