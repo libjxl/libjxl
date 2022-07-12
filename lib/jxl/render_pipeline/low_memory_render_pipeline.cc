@@ -397,18 +397,21 @@ void LowMemoryRenderPipeline::PrepareForThreadsInternal(size_t num,
     }
   }
   if (first_image_dim_stage_ != stages_.size()) {
-    out_of_frame_data_.resize(num);
-    size_t left_padding =
-        Clamp1<ssize_t>(frame_origin_.x0, 0, full_image_xsize_);
+    RectT<ssize_t> image_rect(0, 0, frame_dimensions_.xsize_upsampled,
+                              frame_dimensions_.ysize_upsampled);
+    RectT<ssize_t> full_image_rect(0, 0, full_image_xsize_, full_image_ysize_);
+    image_rect = image_rect.Translate(frame_origin_.x0, frame_origin_.y0);
+    image_rect = image_rect.Intersection(full_image_rect);
+    if (image_rect.xsize() == 0 || image_rect.ysize() == 0) {
+      image_rect = RectT<ssize_t>(0, 0, 0, 0);
+    }
+    size_t left_padding = image_rect.x0();
     size_t middle_padding = group_dim;
-    ssize_t last_x =
-        frame_origin_.x0 + std::min(frame_dimensions_.xsize_groups * group_dim,
-                                    frame_dimensions_.xsize_upsampled);
-    last_x = Clamp1<ssize_t>(last_x, 0, full_image_xsize_);
-    size_t right_padding = full_image_xsize_ - last_x;
+    size_t right_padding = full_image_xsize_ - image_rect.x1();
     size_t out_of_frame_xsize =
         padding +
         std::max(left_padding, std::max(middle_padding, right_padding));
+    out_of_frame_data_.resize(num);
     for (size_t t = 0; t < num; t++) {
       out_of_frame_data_[t] = ImageF(out_of_frame_xsize, shifts.size());
     }
