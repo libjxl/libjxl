@@ -299,7 +299,6 @@ struct CompressArgs {
         "icc_pathname refers to a binary file containing an ICC profile.",
         &color_hints, &ParseAndAppendKeyValue, 1);
 
-    // TODO(firsching): wire this up.
     cmdline->AddOptionValue(
         '\0', "override_bitdepth", "0=use from image, 1-32=override",
         "If nonzero, store the given bit depth in the JPEG XL file metadata"
@@ -1013,6 +1012,11 @@ int main(int argc, char** argv) {
             (cmdline.GetOption(args.opt_quality_id)->matched() &&
              args.quality == 100);
         basic_info.uses_original_profile = lossless;
+        if (args.override_bitdepth != 0) {
+          basic_info.bits_per_sample = args.override_bitdepth;
+          basic_info.exponent_bits_per_sample =
+              args.override_bitdepth == 32 ? 8 : 0;
+        }
         if (JXL_ENC_SUCCESS !=
             JxlEncoderSetCodestreamLevel(jxl_encoder, args.codestream_level)) {
           std::cerr << "Setting --codestream_level failed." << std::endl;
