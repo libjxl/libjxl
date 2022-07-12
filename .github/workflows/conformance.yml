@@ -20,7 +20,24 @@ concurrency:
 
 jobs:
   build:
+    name: Conformance Build ${{ matrix.name }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: AVX3
+            cflags: -DHWY_DISABLED_TARGETS=HWY_AVX3-1
+          - name: AVX2
+            cflags: -DHWY_DISABLED_TARGETS=HWY_AVX2-1
+          - name: SSE4
+            cflags: -DHWY_DISABLED_TARGETS=HWY_SSE4-1
+          - name: SSSE3
+            cflags: -DHWY_DISABLED_TARGETS=HWY_SSSE3-1
+          - name: EMU128
+            cflags: -DHWY_COMPILE_ONLY_EMU128=1
+          - name: SCALAR
+            cflags: -DHWY_COMPILE_ONLY_SCALAR=1
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
     steps:
@@ -75,6 +92,7 @@ jobs:
       run: |
         mkdir -p ${CCACHE_DIR}
         echo "max_size = 200M" > ${CCACHE_DIR}/ccache.conf
+        CMAKE_FLAGS="${{ matrix.cflags }}" \
         ./ci.sh release -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
           -DCMAKE_C_COMPILER_LAUNCHER=ccache \
@@ -89,7 +107,7 @@ jobs:
         SKIP_TEST: 1
     - uses: actions/upload-artifact@v2
       with:
-        name: conformance_binary
+        name: conformance_binary-${{ matrix.name }}
         path: |
           build/tools/conformance/conformance.py
           build/tools/conformance/lcms2.py
@@ -100,11 +118,14 @@ jobs:
       run: ccache --show-stats
 
   run:
+    name: Conformance Test ${{ matrix.name }} on ${{ matrix.target}}
     needs: build
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         name: [main_level5, main_level10]
+        target: [AVX3, AVX2, SSE4, SSSE3, EMU128, SCALAR]
     steps:
     - name: Install deps
       run: |
@@ -120,7 +141,7 @@ jobs:
         ${{ github.workspace }}/conformance/scripts/download_and_symlink.sh
     - uses: actions/download-artifact@v2
       with:
-        name: conformance_binary
+        name: conformance_binary-${{ matrix.target }}
     - name: Run conformance tests
       run: |
         chmod +x djxl
