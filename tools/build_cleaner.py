@@ -54,7 +54,7 @@ def SplitLibFiles(repo_files):
 
   """
   testonly = (
-      'testdata.h', 'test_utils.h', '_test.h', '_test.cc',
+      'testdata.h', 'test_utils.h', 'test_image.h', '_test.h', '_test.cc',
       # _testonly.* files are library code used in tests only.
       '_testonly.h', '_testonly.cc'
   )

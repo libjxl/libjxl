@@ -317,6 +317,7 @@ message(STATUS "Building tools: ${TOOL_BINARIES}")
 set(FUZZER_BINARIES
   color_encoding_fuzzer
   decode_basic_info_fuzzer
+  cjxl_fuzzer
   djxl_fuzzer
   icc_codec_fuzzer
   fields_fuzzer
