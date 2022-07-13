@@ -17,7 +17,6 @@
 #include "lib/jxl/dec_cache.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/image.h"
-#include "lib/jxl/image_bundle.h"
 #include "lib/jxl/modular/encoding/encoding.h"
 #include "lib/jxl/modular/modular_image.h"
 
@@ -95,8 +94,7 @@ class ModularFrameDecoder {
                      int maxShift, const ModularStreamId& stream, bool zerofill,
                      PassesDecoderState* dec_state,
                      RenderPipelineInput* render_pipeline_input,
-                     ImageBundle* output, bool allow_truncated,
-                     bool* should_run_pipeline = nullptr);
+                     bool allow_truncated, bool* should_run_pipeline = nullptr);
   // Decodes a VarDCT DC group (`group_id`) from the given `reader`.
   Status DecodeVarDCTDC(size_t group_id, BitReader* reader,
                         PassesDecoderState* dec_state);
@@ -114,7 +112,7 @@ class ModularFrameDecoder {
   // if it is false, it can be called multiple times (e.g. for progressive
   // steps)
   Status FinalizeDecoding(PassesDecoderState* dec_state, jxl::ThreadPool* pool,
-                          ImageBundle* output, bool inplace);
+                          bool inplace);
   bool have_dc() const { return have_something; }
   void MaybeDropFullImage();
   bool UsesFullImage() const { return use_full_image; }
