@@ -124,6 +124,28 @@ jobs:
       with:
         submodules: true
         fetch-depth: 2
+
+    - name: Setup the LLVM source path
+      if: matrix.name == 'msan'
+      run: |
+        LLVM_ROOT=${GITHUB_WORKSPACE}/llvm_root
+        mkdir -p ${LLVM_ROOT}
+        echo "LLVM_ROOT=${LLVM_ROOT}" >> $GITHUB_ENV
+    - name: Cache LLVM sources
+      if: matrix.name == 'msan'
+      uses: actions/cache@v2
+      with:
+        path: ${{ env.LLVM_ROOT }}
+        key: llvm
+    - name: Checkout the LLVM source
+      if: matrix.name == 'msan'
+      uses: actions/checkout@v2
+      with:
+        submodules: false
+        repository: llvm/llvm-project
+        ref: llvmorg-7.0.1
+        path: llvm_root
+
     - name: Sphinx dependencies
       # Dependencies for sphinx HTML documentation
       if: matrix.name == 'release'

@@ -702,20 +702,24 @@ cmd_msan_install() {
   export CC="${CC:-clang}"
   export CXX="${CXX:-clang++}"
   detect_clang_version
-  local llvm_tag="llvmorg-${CLANG_VERSION}.0.0"
-  case "${CLANG_VERSION}" in
-    "6.0")
-      llvm_tag="llvmorg-6.0.1"
-      ;;
-    "7")
-      llvm_tag="llvmorg-7.0.1"
-      ;;
-  esac
-  local llvm_targz="${tmpdir}/${llvm_tag}.tar.gz"
-  curl -L --show-error -o "${llvm_targz}" \
-    "https://github.com/llvm/llvm-project/archive/${llvm_tag}.tar.gz"
-  tar -C "${tmpdir}" -zxf "${llvm_targz}"
-  local llvm_root="${tmpdir}/llvm-project-${llvm_tag}"
+  # Allow overriding the LLVM checkout.
+  local llvm_root="${LLVM_ROOT}"
+  if [ -z "${llvm_root}" ]; then
+    local llvm_tag="llvmorg-${CLANG_VERSION}.0.0"
+    case "${CLANG_VERSION}" in
+      "6.0")
+        llvm_tag="llvmorg-6.0.1"
+        ;;
+      "7")
+        llvm_tag="llvmorg-7.0.1"
+        ;;
+    esac
+    local llvm_targz="${tmpdir}/${llvm_tag}.tar.gz"
+    curl -L --show-error -o "${llvm_targz}" \
+      "https://github.com/llvm/llvm-project/archive/${llvm_tag}.tar.gz"
+    tar -C "${tmpdir}" -zxf "${llvm_targz}"
+    llvm_root="${tmpdir}/llvm-project-${llvm_tag}"
+  fi
 
   local msan_prefix="${HOME}/.msan/${CLANG_VERSION}"
   rm -rf "${msan_prefix}"
