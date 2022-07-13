@@ -312,7 +312,7 @@ Status FrameDecoder::ProcessDCGroup(size_t dc_group_id, BitReader* br) {
                    frame_dim_.dc_group_dim, frame_dim_.dc_group_dim);
   JXL_RETURN_IF_ERROR(modular_frame_decoder_.DecodeGroup(
       mrect, br, 3, 1000, ModularStreamId::ModularDC(dc_group_id),
-      /*zerofill=*/false, nullptr, nullptr, nullptr,
+      /*zerofill=*/false, nullptr, nullptr,
       /*allow_truncated=*/false));
   if (frame_header_.encoding == FrameEncoding::kVarDCT) {
     JXL_RETURN_IF_ERROR(
@@ -486,14 +486,14 @@ Status FrameDecoder::ProcessACGroup(size_t ac_group_id,
       JXL_RETURN_IF_ERROR(modular_frame_decoder_.DecodeGroup(
           mrect, br[i - decoded_passes_per_ac_group_[ac_group_id]], minShift,
           maxShift, ModularStreamId::ModularAC(ac_group_id, i),
-          /*zerofill=*/false, dec_state_, &render_pipeline_input, decoded_,
+          /*zerofill=*/false, dec_state_, &render_pipeline_input,
           /*allow_truncated=*/false, &should_run_pipeline));
     } else if (i >= decoded_passes_per_ac_group_[ac_group_id] + num_passes &&
                force_draw) {
       JXL_RETURN_IF_ERROR(modular_frame_decoder_.DecodeGroup(
           mrect, nullptr, minShift, maxShift,
           ModularStreamId::ModularAC(ac_group_id, i), /*zerofill=*/true,
-          dec_state_, &render_pipeline_input, decoded_,
+          dec_state_, &render_pipeline_input,
           /*allow_truncated=*/false, &should_run_pipeline));
     }
   }
@@ -775,8 +775,8 @@ Status FrameDecoder::Flush() {
   }
 
   // undo global modular transforms and copy int pixel buffers to float ones
-  JXL_RETURN_IF_ERROR(modular_frame_decoder_.FinalizeDecoding(
-      dec_state_, pool_, decoded_, is_finalized_));
+  JXL_RETURN_IF_ERROR(modular_frame_decoder_.FinalizeDecoding(dec_state_, pool_,
+                                                              is_finalized_));
 
   return true;
 }
