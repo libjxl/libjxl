@@ -660,18 +660,11 @@ int main(int argc, char** argv) {
   // Loading the input.
   // Depending on flags-settings, we want to either load a JPEG and
   // faithfully convert it to JPEG XL, or load (JPEG or non-JPEG)
-  // pixel data. For benchmarking, we want to be able to do
-  // N repetitions of image-compression, but the input should
-  // not get reloaded as part of that.
-  // Since we do not want to load the input before we decided that
-  // flag-settings are valid, we need a mechanism to lazy-load the image.
-  bool input_image_loaded = false;
+  // pixel data.
   jxl::PaddedBytes image_data;
   jxl::extras::PackedPixelFile ppf;
   jxl::extras::Codec codec = jxl::extras::Codec::kUnknown;
-  auto ensure_image_loaded = [&input_image_loaded, &image_data, &ppf, &codec,
-                              &args]() {
-    if (input_image_loaded) return;
+  {
     if (!ReadFile(args.file_in, &image_data)) {
       std::cerr << "Reading image data failed." << std::endl;
       exit(EXIT_FAILURE);
@@ -688,12 +681,12 @@ int main(int argc, char** argv) {
         exit(EXIT_FAILURE);
       }
     }
-    input_image_loaded = true;
-  };
+  }
 
   JxlEncoderPtr enc = JxlEncoderMake(/*memory_manager=*/nullptr);
   JxlEncoder* jxl_encoder = enc.get();
   JxlThreadParallelRunnerPtr runner;
+  std::vector<uint8_t> compressed;
   for (size_t num_rep = 0; num_rep < args.num_reps; ++num_rep) {
     JxlEncoderReset(jxl_encoder);
     if (args.num_threads != 0) {
@@ -977,7 +970,6 @@ int main(int argc, char** argv) {
                          "range is {-1, 0, 1, ..., 100}.\n";
           });
     }
-    ensure_image_loaded();
     if (args.lossless_jpeg && IsJPG(image_data)) {
       if (!cmdline.GetOption(args.opt_lossless_jpeg_id)->matched()) {
         std::cerr << "Note: Implicit-default for JPEG is lossless-transcoding. "
@@ -1086,7 +1078,7 @@ int main(int argc, char** argv) {
               return EXIT_FAILURE;
             }
             if (args.premultiply != -1) {
-              if (!(args.premultiply == 0 || args.premultiply == 1)) {
+              if (args.premultiply != 0 && args.premultiply != 1) {
                 std::cerr << "Flag --premultiply must be one of: -1, 0, 1."
                           << std::endl;
                 return EXIT_FAILURE;
@@ -1126,27 +1118,27 @@ int main(int argc, char** argv) {
       }
     }
     JxlEncoderCloseInput(jxl_encoder);
-  }
-  // Reading compressed output
-  std::vector<uint8_t> compressed;
-  compressed.resize(4096);
-  uint8_t* next_out = compressed.data();
-  size_t avail_out = compressed.size() - (next_out - compressed.data());
-  JxlEncoderStatus process_result = JXL_ENC_NEED_MORE_OUTPUT;
-  while (process_result == JXL_ENC_NEED_MORE_OUTPUT) {
-    process_result =
-        JxlEncoderProcessOutput(jxl_encoder, &next_out, &avail_out);
-    if (process_result == JXL_ENC_NEED_MORE_OUTPUT) {
-      size_t offset = next_out - compressed.data();
-      compressed.resize(compressed.size() * 2);
-      next_out = compressed.data() + offset;
-      avail_out = compressed.size() - offset;
+    // Reading compressed output
+    compressed.clear();
+    compressed.resize(4096);
+    uint8_t* next_out = compressed.data();
+    size_t avail_out = compressed.size() - (next_out - compressed.data());
+    JxlEncoderStatus process_result = JXL_ENC_NEED_MORE_OUTPUT;
+    while (process_result == JXL_ENC_NEED_MORE_OUTPUT) {
+      process_result =
+          JxlEncoderProcessOutput(jxl_encoder, &next_out, &avail_out);
+      if (process_result == JXL_ENC_NEED_MORE_OUTPUT) {
+        size_t offset = next_out - compressed.data();
+        compressed.resize(compressed.size() * 2);
+        next_out = compressed.data() + offset;
+        avail_out = compressed.size() - offset;
+      }
     }
-  }
-  compressed.resize(next_out - compressed.data());
-  if (JXL_ENC_SUCCESS != process_result) {
-    std::cerr << "JxlEncoderProcessOutput failed." << std::endl;
-    return EXIT_FAILURE;
+    compressed.resize(next_out - compressed.data());
+    if (JXL_ENC_SUCCESS != process_result) {
+      std::cerr << "JxlEncoderProcessOutput failed." << std::endl;
+      return EXIT_FAILURE;
+    }
   }
 
   // TODO(firsching): print info about compressed size and other image stats
