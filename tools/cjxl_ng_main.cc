@@ -292,7 +292,6 @@ struct CompressArgs {
         "value based on the color encoding.",
         &intensity_target, &ParseIntensityTarget, 1);
 
-    // TODO(firsching): wire this up.
     cmdline->AddOptionValue(
         'x', "dec-hints", "key=value",
         "color_space indicates the ColorEncoding, see Description();\n"
@@ -576,6 +575,7 @@ bool IsJPG(const jxl::PaddedBytes& image_data) {
 // TODO(tfish): Replace with non-C-API library function.
 // Implementation is in extras/.
 jxl::Status GetPixeldata(const jxl::PaddedBytes& image_data,
+                         const jxl::extras::ColorHints& color_hints,
                          jxl::extras::PackedPixelFile& ppf,
                          jxl::extras::Codec& codec) {
   // Any valid encoding is larger (ensures codecs can read the first few bytes).
@@ -585,7 +585,6 @@ jxl::Status GetPixeldata(const jxl::PaddedBytes& image_data,
   jxl::Span<const uint8_t> encoded(image_data);
 
   ppf.info.orientation = JXL_ORIENT_IDENTITY;
-  jxl::extras::ColorHints color_hints;
   jxl::SizeConstraints size_constraints;
 
 #if JPEGXL_ENABLE_APNG
@@ -678,7 +677,8 @@ int main(int argc, char** argv) {
       exit(EXIT_FAILURE);
     }
     if (!(args.lossless_jpeg && IsJPG(image_data))) {
-      jxl::Status status = GetPixeldata(image_data, ppf, codec);
+      jxl::Status status =
+          GetPixeldata(image_data, args.color_hints, ppf, codec);
       if (!status) {
         std::cerr << "Getting pixel data." << std::endl;
         exit(EXIT_FAILURE);
