@@ -1,7 +1,13 @@
 # JPEG XL reference implementation
 
-[![Build&Test](https://github.com/libjxl/libjxl/actions/workflows/build_test.yml/badge.svg)](
+[![Build/Test](https://github.com/libjxl/libjxl/actions/workflows/build_test.yml/badge.svg)](
 https://github.com/libjxl/libjxl/actions/workflows/build_test.yml)
+[![Build/Test Cross](https://github.com/libjxl/libjxl/actions/workflows/build_test_cross.yml/badge.svg)](
+https://github.com/libjxl/libjxl/actions/workflows/build_test_cross.yml)
+[![Conformance](https://github.com/libjxl/libjxl/actions/workflows/conformance.yml/badge.svg)](
+https://github.com/libjxl/libjxl/actions/workflows/conformance.yml)
+[![CIFuzz](https://github.com/libjxl/libjxl/actions/workflows/fuzz.yml/badge.svg)](
+https://github.com/libjxl/libjxl/actions/workflows/fuzz.yml)
 [![Releases](https://github.com/libjxl/libjxl/actions/workflows/release.yaml/badge.svg)](
 https://github.com/libjxl/libjxl/actions/workflows/release.yaml)
 [![Doc](https://readthedocs.org/projects/libjxl/badge/?version=latest)](
