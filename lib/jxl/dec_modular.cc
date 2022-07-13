@@ -691,9 +691,7 @@ Status ModularFrameDecoder::FinalizeDecoding(PassesDecoderState* dec_state,
 
   // Undo the global transforms
   gi.undo_transforms(global_header.wp_header, pool);
-  for (auto t : global_transform) {
-    JXL_RETURN_IF_ERROR(t.Inverse(gi, global_header.wp_header));
-  }
+  JXL_DASSERT(global_transform.empty());
   if (gi.error) return JXL_FAILURE("Undoing transforms failed");
 
   for (size_t i = 0; i < dec_state->shared->frame_dim.num_groups; i++) {
