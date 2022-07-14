@@ -425,8 +425,10 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSkipCurrentFrame(JxlDecoder* dec);
  *     the data loaded into this decoder.
  * @return @ref JXL_DEC_SUCCESS if no error, @ref JXL_DEC_NEED_MORE_INPUT if the
  *     basic info isn't yet available, and @ref JXL_DEC_ERROR otherwise.
+ *
+ * DEPRECATED: this function will be removed in the future.
  */
-JXL_EXPORT JxlDecoderStatus
+JXL_EXPORT JXL_DEPRECATED JxlDecoderStatus
 JxlDecoderDefaultPixelFormat(const JxlDecoder* dec, JxlPixelFormat* format);
 
 /**
