@@ -138,7 +138,7 @@ struct CompressArgs {
     cmdline->AddOptionValue(
         'e', "effort", "EFFORT",
         "Encoder effort setting. Range: 1 .. 9.\n"
-        "     Default: 3. Higher number is more effort (slower).",
+        "     Default: 7. Higher number is more effort (slower).",
         &effort, &ParseUnsigned, -1);
 
     cmdline->AddOptionValue(
@@ -468,7 +468,7 @@ struct CompressArgs {
   int32_t codestream_level = -1;
   int32_t responsive = -1;
   float distance = 1.0;
-  size_t effort = 3;
+  size_t effort = 7;
   size_t brotli_effort = 9;
   std::string frame_indexing;
 
