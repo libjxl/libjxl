@@ -28,7 +28,6 @@ set(TEST_FILES
   jxl/fast_dct_test.cc
   jxl/fast_math_test.cc
   jxl/fields_test.cc
-  jxl/fuzzer_test.cc
   jxl/gaborish_test.cc
   jxl/gamma_correct_test.cc
   jxl/gauss_blur_test.cc
@@ -62,6 +61,7 @@ set(TEST_FILES
   ### Files before this line are handled by build_cleaner.py
   # TODO(deymo): Move this to tools/
   ../tools/box/box_test.cc
+  ../tools/djxl_fuzzer_test.cc
 )
 
 # Test-only library code.
@@ -97,7 +97,7 @@ file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tests)
 foreach (TESTFILE IN LISTS TEST_FILES)
   # The TESTNAME is the name without the extension or directory.
   get_filename_component(TESTNAME ${TESTFILE} NAME_WE)
-  if(TESTFILE STREQUAL jxl/fuzzer_test.cc)
+  if(TESTFILE STREQUAL ../tools/djxl_fuzzer_test.cc)
     add_executable(${TESTNAME} ${TESTFILE} ../tools/djxl_fuzzer.cc)
   else()
     add_executable(${TESTNAME} ${TESTFILE})

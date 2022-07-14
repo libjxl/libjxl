@@ -394,7 +394,6 @@ libjxl_tests_sources = [
     "jxl/fast_dct_test.cc",
     "jxl/fast_math_test.cc",
     "jxl/fields_test.cc",
-    "jxl/fuzzer_test.cc",
     "jxl/gaborish_test.cc",
     "jxl/gamma_correct_test.cc",
     "jxl/gauss_blur_test.cc",

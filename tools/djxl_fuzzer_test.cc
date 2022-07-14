@@ -30,7 +30,7 @@ std::vector<uint64_t> GetTestIds() {
   };
 }
 
-TEST(FuzzerTest, TestAll) {
+TEST(DjxlFuzzerTest, TestAll) {
   for (auto id : GetTestIds()) {
     std::ostringstream os;
     os << "oss-fuzz/clusterfuzz-testcase-minimized-djxl_fuzzer-" << id;
