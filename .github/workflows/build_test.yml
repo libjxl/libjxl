@@ -183,6 +183,9 @@ jobs:
       env:
         SKIP_TEST: 1
         CMAKE_CXX_FLAGS: ${{ matrix.cxxflags }}
+    - name: Build stats
+      run: |
+        awk '!/^#/ {total[$4]+=($2-$1);cntr[$4]+=1} END {for (key in total) print total[key]/cntr[key] " " key}' build/.ninja_log | sort -n | tail -n 25
     - name: ccache stats
       run: ccache --show-stats
     - name: Build stats ${{ matrix.name }}
