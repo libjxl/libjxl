@@ -34,13 +34,16 @@
 #include "lib/extras/dec/jpg.h"
 #include "lib/extras/dec/pgx.h"
 #include "lib/extras/dec/pnm.h"
+#include "lib/extras/time.h"
 #include "lib/jxl/base/file_io.h"
 #include "lib/jxl/base/override.h"
+#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/size_constraints.h"
 #include "tools/args.h"
 #include "tools/cmdline.h"
 #include "tools/codec_config.h"
+#include "tools/speed_stats.h"
 
 namespace jpegxl {
 namespace tools {
@@ -52,6 +55,7 @@ inline bool ParsePhotonNoiseParameter(const char* arg, float* out) {
 inline bool ParseIntensityTarget(const char* arg, float* out) {
   return ParseFloat(arg, out) && *out > 0;
 }
+
 }  // namespace
 
 enum CjxlRetCode : int {
@@ -484,6 +488,52 @@ struct CompressArgs {
   CommandLineParser::OptionId opt_modular_group_size_id = -1;
 };
 
+const char* ModeFromArgs(const CompressArgs& args) {
+  if (args.lossless_jpeg) return "JPEG";
+  if (args.modular == jxl::Override::kOn) return "Modular";
+  return "VarDCT";
+}
+
+std::string QualityFromArgs(const CompressArgs& args) {
+  char buf[100];
+  if (args.lossless_jpeg) {
+    snprintf(buf, sizeof(buf), "lossless transcode");
+  } else if (args.distance == 0 || args.quality == 100) {
+    snprintf(buf, sizeof(buf), "lossless");
+  } else {
+    snprintf(buf, sizeof(buf), "d%.3f", args.distance);
+  }
+  return buf;
+}
+
+void PrintMode(jxl::extras::PackedPixelFile& ppf, const double decode_mps,
+               size_t num_bytes, const CompressArgs& args) {
+  const char* mode = ModeFromArgs(args);
+  const std::string quality = QualityFromArgs(args);
+  if (args.lossless_jpeg) {
+    fprintf(stderr, "Read JPEG image with %" PRIuS " bytes.\n", num_bytes);
+  } else {
+    fprintf(stderr,
+            "Read %" PRIuS "x%" PRIuS " image, %" PRIuS " bytes, %.1f MP/s\n",
+            static_cast<size_t>(ppf.info.xsize),
+            static_cast<size_t>(ppf.info.ysize), num_bytes, decode_mps);
+  }
+  fprintf(stderr, "Encoding [%s%s, %s, effort: %" PRIuS,
+          (args.container ? "Container | " : ""), mode, quality.c_str(),
+          args.effort);
+  if (args.container) {
+    if (args.lossless_jpeg && args.jpeg_store_metadata)
+      fprintf(stderr, " | JPEG reconstruction data");
+    if (!ppf.metadata.exif.empty())
+      fprintf(stderr, " | %" PRIuS "-byte Exif", ppf.metadata.exif.size());
+    if (!ppf.metadata.xmp.empty())
+      fprintf(stderr, " | %" PRIuS "-byte XMP", ppf.metadata.xmp.size());
+    if (!ppf.metadata.jumbf.empty())
+      fprintf(stderr, " | %" PRIuS "-byte JUMBF", ppf.metadata.jumbf.size());
+  }
+  fprintf(stderr, "], \n");
+}
+
 }  // namespace tools
 }  // namespace jpegxl
 
@@ -664,34 +714,42 @@ int main(int argc, char** argv) {
   jxl::PaddedBytes image_data;
   jxl::extras::PackedPixelFile ppf;
   jxl::extras::Codec codec = jxl::extras::Codec::kUnknown;
-  {
-    if (!ReadFile(args.file_in, &image_data)) {
-      std::cerr << "Reading image data failed." << std::endl;
+  double decode_mps = 0;
+  size_t pixels = 0;
+  if (!ReadFile(args.file_in, &image_data)) {
+    std::cerr << "Reading image data failed." << std::endl;
+    exit(EXIT_FAILURE);
+  }
+  if (!IsJPG(image_data)) args.lossless_jpeg = 0;
+  if (!args.lossless_jpeg) {
+    const double t0 = jxl::Now();
+    jxl::Status status = GetPixeldata(image_data, args.color_hints, ppf, codec);
+    if (!status) {
+      std::cerr << "Getting pixel data." << std::endl;
       exit(EXIT_FAILURE);
     }
-    if (!(args.lossless_jpeg && IsJPG(image_data))) {
-      jxl::Status status =
-          GetPixeldata(image_data, args.color_hints, ppf, codec);
-      if (!status) {
-        std::cerr << "Getting pixel data." << std::endl;
-        exit(EXIT_FAILURE);
-      }
-      if (ppf.frames.empty()) {
-        std::cerr << "No frames on input file." << std::endl;
-        exit(EXIT_FAILURE);
-      }
+    if (ppf.frames.empty()) {
+      std::cerr << "No frames on input file." << std::endl;
+      exit(EXIT_FAILURE);
     }
+
+    const double t1 = jxl::Now();
+    pixels = ppf.info.xsize * ppf.info.ysize;
+    decode_mps = pixels * ppf.info.num_color_channels * 1E-6 / (t1 - t0);
   }
+  if (!args.quiet) PrintMode(ppf, decode_mps, image_data.size(), args);
 
   JxlEncoderPtr enc = JxlEncoderMake(/*memory_manager=*/nullptr);
   JxlEncoder* jxl_encoder = enc.get();
   JxlThreadParallelRunnerPtr runner;
   std::vector<uint8_t> compressed;
+  size_t num_worker_threads;
+  jpegxl::tools::SpeedStats stats;
   for (size_t num_rep = 0; num_rep < args.num_reps; ++num_rep) {
+    const double t0 = jxl::Now();
     JxlEncoderReset(jxl_encoder);
     if (args.num_threads != 0) {
-      size_t num_worker_threads =
-          JxlThreadParallelRunnerDefaultNumWorkerThreads();
+      num_worker_threads = JxlThreadParallelRunnerDefaultNumWorkerThreads();
       {
         int64_t flag_num_worker_threads = args.num_threads;
         if (flag_num_worker_threads > -1) {
@@ -709,7 +767,6 @@ int main(int argc, char** argv) {
         return EXIT_FAILURE;
       }
     }
-
     JxlEncoderFrameSettings* jxl_encoder_frame_settings =
         JxlEncoderFrameSettingsCreate(jxl_encoder, nullptr);
 
@@ -970,6 +1027,7 @@ int main(int argc, char** argv) {
                          "range is {-1, 0, 1, ..., 100}.\n";
           });
     }
+
     if (args.lossless_jpeg && IsJPG(image_data)) {
       if (!cmdline.GetOption(args.opt_lossless_jpeg_id)->matched()) {
         std::cerr << "Note: Implicit-default for JPEG is lossless-transcoding. "
@@ -1139,14 +1197,30 @@ int main(int argc, char** argv) {
       std::cerr << "JxlEncoderProcessOutput failed." << std::endl;
       return EXIT_FAILURE;
     }
+
+    const double t1 = jxl::Now();
+    stats.NotifyElapsed(t1 - t0);
+    stats.SetImageSize(ppf.info.xsize, ppf.info.ysize);
   }
 
-  // TODO(firsching): print info about compressed size and other image stats
-  // here and in the beginning, like is done in current cjxl.
   if (args.file_out) {
     if (!WriteFile(compressed, args.file_out)) {
       std::cerr << "Could not write jxl file." << std::endl;
       return EXIT_FAILURE;
+    }
+  }
+  if (!args.quiet) {
+    const double bpp =
+        static_cast<double>(compressed.size() * jxl::kBitsPerByte) / pixels;
+    fprintf(stderr, "Compressed to %" PRIuS " bytes ", compressed.size());
+    // For lossless jpeg-reconstruction, we don't print some stats, since we
+    // don't have easy acccess to the image dimensions.
+    if (!args.lossless_jpeg) {
+      fprintf(stderr, "(%.3f bpp%s).\n", bpp / ppf.frames.size(),
+              ppf.frames.size() == 1 ? "" : "/frame");
+      JXL_CHECK(stats.Print(num_worker_threads));
+    } else {
+      fprintf(stderr, "\n");
     }
   }
   return EXIT_SUCCESS;
