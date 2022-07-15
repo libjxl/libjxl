@@ -790,7 +790,7 @@ int main(int argc, char** argv) {
       }
     };
 
-    { // Processing tuning flags.
+    {  // Processing tuning flags.
       process_bool_flag("modular", args.modular, JXL_ENC_FRAME_SETTING_MODULAR);
       process_bool_flag("keep_invisible", args.keep_invisible,
                         JXL_ENC_FRAME_SETTING_KEEP_INVISIBLE);
