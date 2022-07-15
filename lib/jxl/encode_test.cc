@@ -404,10 +404,10 @@ TEST(EncodeTest, frame_settingsTest) {
     JxlEncoderFrameSettings* frame_settings =
         JxlEncoderFrameSettingsCreate(enc.get(), NULL);
     EXPECT_EQ(JXL_ENC_SUCCESS,
-              JxlEncoderFrameSettingsSetOption(
-                  frame_settings, JXL_ENC_FRAME_SETTING_PHOTON_NOISE, 1777));
+              JxlEncoderFrameSettingsSetFloatOption(
+                  frame_settings, JXL_ENC_FRAME_SETTING_PHOTON_NOISE, 1777.777));
     VerifyFrameEncoding(enc.get(), frame_settings);
-    EXPECT_EQ(1777.0f, enc->last_used_cparams.photon_noise_iso);
+    EXPECT_NEAR(1777.777f, enc->last_used_cparams.photon_noise_iso, 1E-6);
   }
 
   {
@@ -416,13 +416,13 @@ TEST(EncodeTest, frame_settingsTest) {
     JxlEncoderFrameSettings* frame_settings =
         JxlEncoderFrameSettingsCreate(enc.get(), NULL);
     EXPECT_EQ(JXL_ENC_SUCCESS,
-              JxlEncoderFrameSettingsSetOption(
+              JxlEncoderFrameSettingsSetFloatOption(
                   frame_settings,
-                  JXL_ENC_FRAME_SETTING_CHANNEL_COLORS_GLOBAL_PERCENT, 55));
+                  JXL_ENC_FRAME_SETTING_CHANNEL_COLORS_GLOBAL_PERCENT, 55.0f));
     EXPECT_EQ(JXL_ENC_SUCCESS,
-              JxlEncoderFrameSettingsSetOption(
+              JxlEncoderFrameSettingsSetFloatOption(
                   frame_settings,
-                  JXL_ENC_FRAME_SETTING_CHANNEL_COLORS_GROUP_PERCENT, 25));
+                  JXL_ENC_FRAME_SETTING_CHANNEL_COLORS_GROUP_PERCENT, 25.0f));
     EXPECT_EQ(JXL_ENC_SUCCESS,
               JxlEncoderFrameSettingsSetOption(
                   frame_settings, JXL_ENC_FRAME_SETTING_PALETTE_COLORS, 70000));
@@ -430,9 +430,9 @@ TEST(EncodeTest, frame_settingsTest) {
               JxlEncoderFrameSettingsSetOption(
                   frame_settings, JXL_ENC_FRAME_SETTING_LOSSY_PALETTE, 1));
     VerifyFrameEncoding(enc.get(), frame_settings);
-    EXPECT_EQ(55.0f,
-              enc->last_used_cparams.channel_colors_pre_transform_percent);
-    EXPECT_EQ(25.0f, enc->last_used_cparams.channel_colors_percent);
+    EXPECT_NEAR(55.0f,
+              enc->last_used_cparams.channel_colors_pre_transform_percent, 1E-6);
+    EXPECT_NEAR(25.0f, enc->last_used_cparams.channel_colors_percent, 1E-6);
     EXPECT_EQ(70000, enc->last_used_cparams.palette_colors);
     EXPECT_EQ(true, enc->last_used_cparams.lossy_palette);
   }
@@ -453,9 +453,9 @@ TEST(EncodeTest, frame_settingsTest) {
               JxlEncoderFrameSettingsSetOption(
                   frame_settings, JXL_ENC_FRAME_SETTING_MODULAR_PREDICTOR, 14));
     EXPECT_EQ(JXL_ENC_SUCCESS,
-              JxlEncoderFrameSettingsSetOption(
+              JxlEncoderFrameSettingsSetFloatOption(
                   frame_settings,
-                  JXL_ENC_FRAME_SETTING_MODULAR_MA_TREE_LEARNING_PERCENT, 77));
+                  JXL_ENC_FRAME_SETTING_MODULAR_MA_TREE_LEARNING_PERCENT, 77.0f));
     EXPECT_EQ(
         JXL_ENC_SUCCESS,
         JxlEncoderFrameSettingsSetOption(
@@ -464,7 +464,7 @@ TEST(EncodeTest, frame_settingsTest) {
     EXPECT_EQ(30, enc->last_used_cparams.colorspace);
     EXPECT_EQ(2, enc->last_used_cparams.modular_group_size_shift);
     EXPECT_EQ(jxl::Predictor::Best, enc->last_used_cparams.options.predictor);
-    EXPECT_EQ(0.77f, enc->last_used_cparams.options.nb_repeats);
+    EXPECT_NEAR(0.77f, enc->last_used_cparams.options.nb_repeats, 1E-6);
     EXPECT_EQ(7, enc->last_used_cparams.options.max_properties);
   }
 
