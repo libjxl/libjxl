@@ -563,11 +563,12 @@ bool WriteFile(const std::vector<uint8_t>& bytes, const char* filename) {
   return true;
 }
 
-void SetFlagFrameOptionOrDie(const char* flag_name, int32_t flag_value,
+void SetFlagFrameOptionOrDie(const char* flag_name, int64_t flag_value,
                              JxlEncoderFrameSettings* frame_settings,
                              JxlEncoderFrameSettingId encoder_option) {
-  if (JXL_ENC_SUCCESS != JxlEncoderFrameSettingsSetOption(
-                             frame_settings, encoder_option, flag_value)) {
+  if (JXL_ENC_SUCCESS !=
+      JxlEncoderFrameSettingsSetOption(frame_settings, encoder_option,
+                                       static_cast<int64_t>(flag_value))) {
     std::cerr << "Setting encoder option from flag -- " << flag_name
               << "failed." << std::endl;
     exit(EXIT_FAILURE);
@@ -615,7 +616,7 @@ void SetDistanceFromFlags(JxlEncoderFrameSettings* jxl_encoder_frame_settings,
   }
 }
 
-using flag_check_fn = std::function<std::string(int32_t)>;
+using flag_check_fn = std::function<std::string(int64_t)>;
 
 bool IsJPG(const jxl::PaddedBytes& image_data) {
   return (image_data.size() >= 2 && image_data[0] == 0xFF &&
@@ -771,7 +772,7 @@ int main(int argc, char** argv) {
         JxlEncoderFrameSettingsCreate(jxl_encoder, nullptr);
 
     auto process_flag = [&jxl_encoder_frame_settings](
-                            const char* flag_name, int32_t flag_value,
+                            const char* flag_name, int64_t flag_value,
                             JxlEncoderFrameSettingId encoder_option,
                             const flag_check_fn& flag_check) {
       std::string error = flag_check(flag_value);
@@ -841,37 +842,37 @@ int main(int argc, char** argv) {
 
       process_flag(
           "effort", args.effort, JXL_ENC_FRAME_SETTING_EFFORT,
-          [](int32_t x) -> std::string {
+          [](int64_t x) -> std::string {
             return (1 <= x && x <= 9) ? "" : "Valid range is {1, 2, ..., 9}.";
           });
       process_flag(
           "brotli_effort", args.brotli_effort,
-          JXL_ENC_FRAME_SETTING_BROTLI_EFFORT, [](int32_t x) -> std::string {
+          JXL_ENC_FRAME_SETTING_BROTLI_EFFORT, [](int64_t x) -> std::string {
             return (-1 <= x && x <= 11) ? ""
                                         : "Valid range is {-1, 0, 1, ..., 11}.";
           });
       process_flag("epf", args.epf, JXL_ENC_FRAME_SETTING_EPF,
-                   [](int32_t x) -> std::string {
+                   [](int64_t x) -> std::string {
                      return (-1 <= x && x <= 3)
                                 ? ""
                                 : "Valid range is {-1, 0, 1, 2, 3}.\n";
                    });
       process_flag(
           "faster_decoding", args.faster_decoding,
-          JXL_ENC_FRAME_SETTING_DECODING_SPEED, [](int32_t x) -> std::string {
+          JXL_ENC_FRAME_SETTING_DECODING_SPEED, [](int64_t x) -> std::string {
             return (0 <= x && x <= 4) ? ""
                                       : "Valid range is {0, 1, 2, 3, 4}.\n";
           });
       process_flag("resampling", args.resampling,
                    JXL_ENC_FRAME_SETTING_RESAMPLING,
-                   [](int32_t x) -> std::string {
+                   [](int64_t x) -> std::string {
                      return (x == -1 || x == 1 || x == 4 || x == 8)
                                 ? ""
                                 : "Valid values are {-1, 1, 2, 4, 8}.\n";
                    });
       process_flag("ec_resampling", args.ec_resampling,
                    JXL_ENC_FRAME_SETTING_EXTRA_CHANNEL_RESAMPLING,
-                   [](int32_t x) -> std::string {
+                   [](int64_t x) -> std::string {
                      return (x == -1 || x == 1 || x == 4 || x == 8)
                                 ? ""
                                 : "Valid values are {-1, 1, 2, 4, 8}.\n";
@@ -894,11 +895,9 @@ int main(int argc, char** argv) {
             << "requires setting --group_order=1" << std::endl;
         return EXIT_FAILURE;
       }
-      // TODO(firsching): change JxlEncoderFrameSettingsSetOption fo take
-      // int64_t for JXL_ENC_FRAME_SETTING_GROUP_ORDER_CENTER_[X|Y].
       process_flag("center_x", args.center_x,
                    JXL_ENC_FRAME_SETTING_GROUP_ORDER_CENTER_X,
-                   [](int32_t x) -> std::string {
+                   [](int64_t x) -> std::string {
                      if (x < -1) {
                        return "Valid values are: -1 or [0 .. xsize).";
                      }
@@ -906,7 +905,7 @@ int main(int argc, char** argv) {
                    });
       process_flag("center_y", args.center_y,
                    JXL_ENC_FRAME_SETTING_GROUP_ORDER_CENTER_Y,
-                   [](int32_t x) -> std::string {
+                   [](int64_t x) -> std::string {
                      if (x < -1) {
                        return "Valid values are: -1 or [0 .. ysize).";
                      }
@@ -923,7 +922,7 @@ int main(int argc, char** argv) {
 
       process_flag(
           "progressive_dc", args.progressive_dc,
-          JXL_ENC_FRAME_SETTING_PROGRESSIVE_DC, [](int32_t x) -> std::string {
+          JXL_ENC_FRAME_SETTING_PROGRESSIVE_DC, [](int64_t x) -> std::string {
             return (-1 <= x && x <= 2) ? "" : "Valid range is {-1, 0, 1, 2}.\n";
           });
       SetFlagFrameOptionOrDie(
@@ -953,7 +952,7 @@ int main(int argc, char** argv) {
       // opt_modular_group_size_id.
       process_flag("modular_group_size", args.modular_group_size,
                    JXL_ENC_FRAME_SETTING_MODULAR_GROUP_SIZE,
-                   [](int32_t x) -> std::string {
+                   [](int64_t x) -> std::string {
                      return (-1 <= x && x <= 3)
                                 ? ""
                                 : "Invalid --modular_group_size. Valid "
@@ -961,7 +960,7 @@ int main(int argc, char** argv) {
                    });
       process_flag("modular_predictor", args.modular_predictor,
                    JXL_ENC_FRAME_SETTING_MODULAR_PREDICTOR,
-                   [](int32_t x) -> std::string {
+                   [](int64_t x) -> std::string {
                      return (-1 <= x && x <= 15)
                                 ? ""
                                 : "Invalid --modular_predictor. Valid "
@@ -970,7 +969,7 @@ int main(int argc, char** argv) {
       process_flag(
           "modular_colorspace", args.modular_colorspace,
           JXL_ENC_FRAME_SETTING_MODULAR_COLOR_SPACE,
-          [](int32_t x) -> std::string {
+          [](int64_t x) -> std::string {
             return (-1 <= x && x <= 41)
                        ? ""
                        : "Invalid --modular_colorspace. Valid range is "
@@ -980,14 +979,14 @@ int main(int argc, char** argv) {
           "modular_ma_tree_learning_percent",
           args.modular_ma_tree_learning_percent,
           JXL_ENC_FRAME_SETTING_MODULAR_MA_TREE_LEARNING_PERCENT,
-          [](int32_t x) -> std::string {
+          [](int64_t x) -> std::string {
             return -1 <= x ? ""
                            : "Invalid --modular_ma_tree_learning_percent, must "
                              "be -1 or non-negative\n";
           });
       process_flag("modular_nb_prev_channels", args.modular_nb_prev_channels,
                    JXL_ENC_FRAME_SETTING_MODULAR_NB_PREV_CHANNELS,
-                   [](int32_t x) -> std::string {
+                   [](int64_t x) -> std::string {
                      return (-1 <= x && x <= 11)
                                 ? ""
                                 : "Invalid --modular_nb_prev_channels. Valid "
@@ -999,7 +998,7 @@ int main(int argc, char** argv) {
                               JXL_ENC_FRAME_SETTING_LOSSY_PALETTE);
       process_flag("modular_palette_colors", args.modular_palette_colors,
                    JXL_ENC_FRAME_SETTING_PALETTE_COLORS,
-                   [](int32_t x) -> std::string {
+                   [](int64_t x) -> std::string {
                      return -1 <= x ? ""
                                     : "Invalid --modular_palette_colors, must "
                                       "be -1 or non-negative\n";
@@ -1008,7 +1007,7 @@ int main(int argc, char** argv) {
           "modular_channel_colors_global_percent",
           args.modular_channel_colors_global_percent,
           JXL_ENC_FRAME_SETTING_CHANNEL_COLORS_GLOBAL_PERCENT,
-          [](int32_t x) -> std::string {
+          [](int64_t x) -> std::string {
             return (-1 <= x && x <= 100)
                        ? ""
                        : "Invalid --modular_channel_colors_global_percent. "
@@ -1019,7 +1018,7 @@ int main(int argc, char** argv) {
           "modular_channel_colors_group_percent",
           args.modular_channel_colors_group_percent,
           JXL_ENC_FRAME_SETTING_CHANNEL_COLORS_GROUP_PERCENT,
-          [](int32_t x) -> std::string {
+          [](int64_t x) -> std::string {
             return (-1 <= x && x <= 100)
                        ? ""
                        : "Invalid --modular_channel_colors_group_percent. "
