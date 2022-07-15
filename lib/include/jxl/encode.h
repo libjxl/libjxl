@@ -913,6 +913,24 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderFrameSettingsSetOption(
     JxlEncoderFrameSettings* frame_settings, JxlEncoderFrameSettingId option,
     int64_t value);
 
+/**
+ * Sets a frame-specific option of float type to the encoder options.
+ * The JxlEncoderFrameSettingId argument determines which option is set.
+ *
+ * @param frame_settings set of options and metadata for this frame. Also
+ * includes reference to the encoder object.
+ * @param option ID of the option to set.
+ * @param value Float value to set for this option.
+ * @return JXL_ENC_SUCCESS if the operation was successful, JXL_ENC_ERROR in
+ * case of an error, such as invalid or unknown option id, or invalid integer
+ * value for the given option. If an error is returned, the state of the
+ * JxlEncoderFrameSettings object is still valid and is the same as before this
+ * function was called.
+ */
+JXL_EXPORT JxlEncoderStatus JxlEncoderFrameSettingsSetFloatOption(
+    JxlEncoderFrameSettings* frame_settings, JxlEncoderFrameSettingId option,
+    float value);
+
 /** Forces the encoder to use the box-based container format (BMFF) even
  * when not necessary.
  *

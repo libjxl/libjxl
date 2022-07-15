@@ -31,8 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
  - decoder API: new function `JxlDecoderGetIntendedDownsamplingRatio` to get
    the intended downsampling ratio of progressive setps, based on the
    information in the frame header.
- - encoder API: added ability to set several encoder options to frames using
-   `JxlEncoderFrameSettingsSetOption`
+ - encoder API: added ability to set several encoder int options to frames
+   using `JxlEncoderFrameSettingsSetOption`.
+ - encoder API: added ability to set several encoder float options to frames
+   using `JxlEncoderFrameSettingsSetFloatOption`.
  - encoder API: new functions `JxlEncoderSetFrameHeader` and
    `JxlEncoderSetExtraChannelBlendInfo` to set animation
    and blending parameters of the frame, and `JxlEncoderInitFrameHeader` and
