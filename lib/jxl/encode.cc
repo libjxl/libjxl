@@ -942,7 +942,7 @@ JxlEncoderStatus JxlEncoderOptionsSetDecodingSpeed(
 
 JxlEncoderStatus JxlEncoderFrameSettingsSetOption(
     JxlEncoderFrameSettings* frame_settings, JxlEncoderFrameSettingId option,
-    int32_t value) {
+    int64_t value) {
   // check if value is -1, 0 or 1 for Override-type options
   switch (option) {
     case JXL_ENC_FRAME_SETTING_NOISE:
