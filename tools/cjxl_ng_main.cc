@@ -20,6 +20,7 @@
 #include <sstream>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <vector>
 
 #include "jxl/codestream_header.h"
@@ -311,9 +312,9 @@ struct CompressArgs {
         'I', "iterations", "F",
         "[modular encoding] Fraction of pixels used to learn MA trees as "
         "a percentage. -1 = default, 0 = no MA and fast decode, 50 = "
-        "default value, 100 = all, values above 100 are also permitted. "
+        "default value, 100 = all."
         "Higher values use more encoder memory.",
-        &modular_ma_tree_learning_percent, &ParseSigned, 2);
+        &modular_ma_tree_learning_percent, &ParseFloat, 2);
 
     cmdline->AddOptionValue(
         'C', "modular_colorspace", "K",
@@ -363,7 +364,7 @@ struct CompressArgs {
         "colors is smaller than this percentage of range. "
         "Use 0-100 to set an explicit percentage, -1 to use the encoder "
         "default.",
-        &modular_channel_colors_global_percent, &ParseSigned, 2);
+        &modular_channel_colors_global_percent, &ParseFloat, 2);
 
     cmdline->AddOptionValue(
         'Y', "post-compact", "PERCENT",
@@ -371,7 +372,7 @@ struct CompressArgs {
         "number "
         "of colors is smaller than this percentage of range. Use 0-100 to set "
         "an explicit percentage, -1 to use the encoder default.",
-        &modular_channel_colors_group_percent, &ParseSigned, 2);
+        &modular_channel_colors_group_percent, &ParseFloat, 2);
 
     cmdline->AddOptionValue('\0', "codestream_level", "K",
                             "The codestream level. Either `-1`, `5` or `10`.",
@@ -459,11 +460,11 @@ struct CompressArgs {
   int32_t modular_group_size = -1;
   int32_t modular_predictor = -1;
   int32_t modular_colorspace = -1;
-  int32_t modular_channel_colors_global_percent = -1;
-  int32_t modular_channel_colors_group_percent = -1;
+  float modular_channel_colors_global_percent = -1.f;
+  float modular_channel_colors_group_percent = -1.f;
   int32_t modular_palette_colors = -1;
   int32_t modular_nb_prev_channels = -1;
-  int32_t modular_ma_tree_learning_percent = -1;
+  float modular_ma_tree_learning_percent = -1.f;
   float photon_noise_iso = 0;
   int32_t codestream_level = -1;
   int32_t responsive = -1;
@@ -559,14 +560,18 @@ bool WriteFile(const std::vector<uint8_t>& bytes, const char* filename) {
   return true;
 }
 
-void SetFlagFrameOptionOrDie(const char* flag_name, int64_t flag_value,
+template <typename T>
+void SetFlagFrameOptionOrDie(const char* flag_name, T flag_value,
                              JxlEncoderFrameSettings* frame_settings,
                              JxlEncoderFrameSettingId encoder_option) {
   if (JXL_ENC_SUCCESS !=
-      JxlEncoderFrameSettingsSetOption(frame_settings, encoder_option,
-                                       static_cast<int64_t>(flag_value))) {
-    std::cerr << "Setting encoder option from flag -- " << flag_name
-              << "failed." << std::endl;
+      (std::is_same<T, float>::value
+           ? JxlEncoderFrameSettingsSetFloatOption(frame_settings,
+                                                   encoder_option, flag_value)
+           : JxlEncoderFrameSettingsSetOption(frame_settings, encoder_option,
+                                              flag_value))) {
+    std::cerr << "Setting encoder option from flag --" << flag_name
+              << " failed." << std::endl;
     exit(EXIT_FAILURE);
   }
 }
@@ -613,6 +618,7 @@ void SetDistanceFromFlags(JxlEncoderFrameSettings* jxl_encoder_frame_settings,
 }
 
 using flag_check_fn = std::function<std::string(int64_t)>;
+using flag_check_float_fn = std::function<std::string(float)>;
 
 bool IsJPG(const jxl::PaddedBytes& image_data) {
   return (image_data.size() >= 2 && image_data[0] == 0xFF &&
@@ -779,6 +785,19 @@ int main(int argc, char** argv) {
       SetFlagFrameOptionOrDie(flag_name, flag_value, jxl_encoder_frame_settings,
                               encoder_option);
     };
+    auto process_float_flag = [&jxl_encoder_frame_settings](
+                                  const char* flag_name, float flag_value,
+                                  JxlEncoderFrameSettingId encoder_option,
+                                  const flag_check_float_fn& flag_check) {
+      std::string error = flag_check(flag_value);
+      if (!error.empty()) {
+        std::cerr << "Invalid flag value for --" << flag_name << ": " << error
+                  << std::endl;
+        exit(EXIT_FAILURE);
+      }
+      SetFlagFrameOptionOrDie(flag_name, flag_value, jxl_encoder_frame_settings,
+                              encoder_option);
+    };
 
     auto process_bool_flag = [&jxl_encoder_frame_settings](
                                  const char* flag_name,
@@ -859,8 +878,6 @@ int main(int argc, char** argv) {
                                 ? ""
                                 : "Valid values are {-1, 1, 2, 4, 8}.\n";
                    });
-      // TODO(firsching): change JxlEncoderFrameSettingsSetOption to take float
-      // for JXL_ENC_FRAME_SETTING_PHOTON_NOISE.
       SetFlagFrameOptionOrDie("photon_noise_iso", args.photon_noise_iso,
                               jxl_encoder_frame_settings,
                               JXL_ENC_FRAME_SETTING_PHOTON_NOISE);
@@ -957,14 +974,15 @@ int main(int argc, char** argv) {
                        : "Invalid --modular_colorspace. Valid range is "
                          "{-1, 0, 1, ..., 41}.\n";
           });
-      process_flag(
+      process_float_flag(
           "modular_ma_tree_learning_percent",
           args.modular_ma_tree_learning_percent,
           JXL_ENC_FRAME_SETTING_MODULAR_MA_TREE_LEARNING_PERCENT,
-          [](int64_t x) -> std::string {
-            return -1 <= x ? ""
-                           : "Invalid --modular_ma_tree_learning_percent, must "
-                             "be -1 or non-negative\n";
+          [](float x) -> std::string {
+            return -1 <= x && x <= 100
+                       ? ""
+                       : "Invalid --modular_ma_tree_learning_percent, Valid"
+                         "rang is [-1, 100].\n";
           });
       process_flag("modular_nb_prev_channels", args.modular_nb_prev_channels,
                    JXL_ENC_FRAME_SETTING_MODULAR_NB_PREV_CHANNELS,
@@ -985,27 +1003,27 @@ int main(int argc, char** argv) {
                                     : "Invalid --modular_palette_colors, must "
                                       "be -1 or non-negative\n";
                    });
-      process_flag(
+      process_float_flag(
           "modular_channel_colors_global_percent",
           args.modular_channel_colors_global_percent,
           JXL_ENC_FRAME_SETTING_CHANNEL_COLORS_GLOBAL_PERCENT,
-          [](int64_t x) -> std::string {
+          [](float x) -> std::string {
             return (-1 <= x && x <= 100)
                        ? ""
                        : "Invalid --modular_channel_colors_global_percent. "
                          "Valid "
-                         "range is {-1, 0, 1, ..., 100}.\n";
+                         "range is [-1, 100].\n";
           });
-      process_flag(
+      process_float_flag(
           "modular_channel_colors_group_percent",
           args.modular_channel_colors_group_percent,
           JXL_ENC_FRAME_SETTING_CHANNEL_COLORS_GROUP_PERCENT,
-          [](int64_t x) -> std::string {
+          [](float x) -> std::string {
             return (-1 <= x && x <= 100)
                        ? ""
                        : "Invalid --modular_channel_colors_group_percent. "
                          "Valid "
-                         "range is {-1, 0, 1, ..., 100}.\n";
+                         "range is [-1, 100].\n";
           });
     }
 

@@ -1019,13 +1019,6 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetOption(
       }
       frame_settings->values.cparams.already_downsampled = (value == 1);
       return JXL_ENC_SUCCESS;
-    case JXL_ENC_FRAME_SETTING_PHOTON_NOISE:
-      if (value < 0) return JXL_ENC_ERROR;
-      // TODO(lode): add encoder setting to set the 8 floating point values of
-      // the noise synthesis parameters per frame for more fine grained control.
-      frame_settings->values.cparams.photon_noise_iso =
-          static_cast<float>(value);
-      return JXL_ENC_SUCCESS;
     case JXL_ENC_FRAME_SETTING_NOISE:
       frame_settings->values.cparams.noise = static_cast<jxl::Override>(value);
       return JXL_ENC_SUCCESS;
@@ -1086,31 +1079,6 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetOption(
                              "Progressive DC has to be in [-1..2]");
       }
       frame_settings->values.cparams.progressive_dc = value;
-      return JXL_ENC_SUCCESS;
-    case JXL_ENC_FRAME_SETTING_CHANNEL_COLORS_GLOBAL_PERCENT:
-      if (value < -1 || value > 100) {
-        return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
-                             "Option value has to be in [-1..100]");
-      }
-      if (value == -1) {
-        frame_settings->values.cparams.channel_colors_pre_transform_percent =
-            95.0f;
-      } else {
-        frame_settings->values.cparams.channel_colors_pre_transform_percent =
-            static_cast<float>(value);
-      }
-      return JXL_ENC_SUCCESS;
-    case JXL_ENC_FRAME_SETTING_CHANNEL_COLORS_GROUP_PERCENT:
-      if (value < -1 || value > 100) {
-        return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
-                             "Option value has to be in [-1..100]");
-      }
-      if (value == -1) {
-        frame_settings->values.cparams.channel_colors_percent = 80.0f;
-      } else {
-        frame_settings->values.cparams.channel_colors_percent =
-            static_cast<float>(value);
-      }
       return JXL_ENC_SUCCESS;
     case JXL_ENC_FRAME_SETTING_PALETTE_COLORS:
       if (value < -1 || value > 70913) {
@@ -1173,23 +1141,6 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetOption(
       frame_settings->values.cparams.options.predictor =
           static_cast<jxl::Predictor>(value);
       return JXL_ENC_SUCCESS;
-    case JXL_ENC_FRAME_SETTING_MODULAR_MA_TREE_LEARNING_PERCENT:
-      if (value < -1) {
-        return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
-                             "Option value has to be in [-1..100]");
-      }
-      // This value is called "iterations" or "nb_repeats" in cjxl, but is in
-      // fact a fraction in range 0.0-1.0, with the defautl value 0.5.
-      // Convert from integer percentage to floating point fraction here.
-      if (value == -1) {
-        // TODO(lode): for this and many other settings, avoid duplicating the
-        // default values here and in enc_params.h and options.h, have one
-        // location where the defaults are specified.
-        frame_settings->values.cparams.options.nb_repeats = 0.5f;
-      } else {
-        frame_settings->values.cparams.options.nb_repeats = value * 0.01f;
-      }
-      return JXL_ENC_SUCCESS;
     case JXL_ENC_FRAME_SETTING_MODULAR_NB_PREV_CHANNELS:
       // The max allowed value can in theory be higher. However, it depends on
       // the effort setting. 11 is the highest safe value that doesn't cause
@@ -1216,12 +1167,106 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetOption(
     case JXL_ENC_FRAME_INDEX_BOX:
       frame_settings->values.frame_index_box = true;
       return JXL_ENC_SUCCESS;
+    case JXL_ENC_FRAME_SETTING_PHOTON_NOISE:
+      return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_NOT_SUPPORTED,
+                           "Float option, try setting it with "
+                           "JxlEncoderFrameSettingsSetFloatOption");
     default:
       return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_NOT_SUPPORTED,
                            "Unknown option");
   }
 }
 
+JxlEncoderStatus JxlEncoderFrameSettingsSetFloatOption(
+    JxlEncoderFrameSettings* frame_settings, JxlEncoderFrameSettingId option,
+    float value) {
+  switch (option) {
+    case JXL_ENC_FRAME_SETTING_PHOTON_NOISE:
+      if (value < 0) return JXL_ENC_ERROR;
+      // TODO(lode): add encoder setting to set the 8 floating point values of
+      // the noise synthesis parameters per frame for more fine grained control.
+      frame_settings->values.cparams.photon_noise_iso = value;
+      return JXL_ENC_SUCCESS;
+    case JXL_ENC_FRAME_SETTING_MODULAR_MA_TREE_LEARNING_PERCENT:
+      if (value < -1.f || value > 100.f) {
+        return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
+                             "Option value has to be smaller than 100");
+      }
+      // This value is called "iterations" or "nb_repeats" in cjxl, but is in
+      // fact a fraction in range 0.0-1.0, with the defautl value 0.5.
+      // Convert from floating point percentage to floating point fraction here.
+      if (value < -.5f) {
+        // TODO(lode): for this and many other settings (also in
+        // JxlEncoderFrameSettingsSetOption), avoid duplicating the default
+        // values here and in enc_params.h and options.h, have one location
+        // where the defaults are specified.
+        frame_settings->values.cparams.options.nb_repeats = 0.5f;
+      } else {
+        frame_settings->values.cparams.options.nb_repeats = value * 0.01f;
+      }
+      return JXL_ENC_SUCCESS;
+    case JXL_ENC_FRAME_SETTING_CHANNEL_COLORS_GLOBAL_PERCENT:
+      if (value < -1.f || value > 100.f) {
+        return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
+                             "Option value has to be in [-1..100]");
+      }
+      if (value < -.5f) {
+        frame_settings->values.cparams.channel_colors_pre_transform_percent =
+            95.0f;
+      } else {
+        frame_settings->values.cparams.channel_colors_pre_transform_percent =
+            value;
+      }
+      return JXL_ENC_SUCCESS;
+    case JXL_ENC_FRAME_SETTING_CHANNEL_COLORS_GROUP_PERCENT:
+      if (value < -1.f || value > 100.f) {
+        return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
+                             "Option value has to be in [-1..100]");
+      }
+      if (value < -.5f) {
+        frame_settings->values.cparams.channel_colors_percent = 80.0f;
+      } else {
+        frame_settings->values.cparams.channel_colors_percent = value;
+      }
+      return JXL_ENC_SUCCESS;
+    case JXL_ENC_FRAME_SETTING_EFFORT:
+    case JXL_ENC_FRAME_SETTING_DECODING_SPEED:
+    case JXL_ENC_FRAME_SETTING_RESAMPLING:
+    case JXL_ENC_FRAME_SETTING_EXTRA_CHANNEL_RESAMPLING:
+    case JXL_ENC_FRAME_SETTING_ALREADY_DOWNSAMPLED:
+    case JXL_ENC_FRAME_SETTING_NOISE:
+    case JXL_ENC_FRAME_SETTING_DOTS:
+    case JXL_ENC_FRAME_SETTING_PATCHES:
+    case JXL_ENC_FRAME_SETTING_EPF:
+    case JXL_ENC_FRAME_SETTING_GABORISH:
+    case JXL_ENC_FRAME_SETTING_MODULAR:
+    case JXL_ENC_FRAME_SETTING_KEEP_INVISIBLE:
+    case JXL_ENC_FRAME_SETTING_GROUP_ORDER:
+    case JXL_ENC_FRAME_SETTING_GROUP_ORDER_CENTER_X:
+    case JXL_ENC_FRAME_SETTING_GROUP_ORDER_CENTER_Y:
+    case JXL_ENC_FRAME_SETTING_RESPONSIVE:
+    case JXL_ENC_FRAME_SETTING_PROGRESSIVE_AC:
+    case JXL_ENC_FRAME_SETTING_QPROGRESSIVE_AC:
+    case JXL_ENC_FRAME_SETTING_PROGRESSIVE_DC:
+    case JXL_ENC_FRAME_SETTING_PALETTE_COLORS:
+    case JXL_ENC_FRAME_SETTING_LOSSY_PALETTE:
+    case JXL_ENC_FRAME_SETTING_COLOR_TRANSFORM:
+    case JXL_ENC_FRAME_SETTING_MODULAR_COLOR_SPACE:
+    case JXL_ENC_FRAME_SETTING_MODULAR_GROUP_SIZE:
+    case JXL_ENC_FRAME_SETTING_MODULAR_PREDICTOR:
+    case JXL_ENC_FRAME_SETTING_MODULAR_NB_PREV_CHANNELS:
+    case JXL_ENC_FRAME_SETTING_JPEG_RECON_CFL:
+    case JXL_ENC_FRAME_INDEX_BOX:
+    case JXL_ENC_FRAME_SETTING_BROTLI_EFFORT:
+    case JXL_ENC_FRAME_SETTING_FILL_ENUM:
+      return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_NOT_SUPPORTED,
+                           "Int option, try setting it with "
+                           "JxlEncoderFrameSettingsSetOption");
+    default:
+      return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_NOT_SUPPORTED,
+                           "Unknown option");
+  }
+}
 JxlEncoder* JxlEncoderCreate(const JxlMemoryManager* memory_manager) {
   JxlMemoryManager local_memory_manager;
   if (!jxl::MemoryManagerInit(&local_memory_manager, memory_manager)) {
