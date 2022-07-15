@@ -100,15 +100,12 @@ struct CompressArgs {
     // Flags.
     // TODO(lode): also add options to add exif/xmp/other metadata in the
     // container.
-    cmdline->AddOptionFlag(
-        '\0', "container",
-        "Force using container format (default: use only if needed).",
-        &container, &SetBooleanTrue, 1);
-
-    cmdline->AddOptionFlag('\0', "strip",
-                           "Do not encode using container format (strips "
-                           "Exif/XMP/JPEG bitstream reconstruction data).",
-                           &strip, &SetBooleanTrue, 2);
+    cmdline->AddOptionValue('\0', "container", "0|1",
+                            "0 = Do not encode using container format (strip "
+                            "Exif/XMP/JPEG bitstream reconstruction data)."
+                            "1 = Force using container format \n"
+                            "(default: use only if needed).\n",
+                            &container, &ParseOverride, 1);
 
     cmdline->AddOptionValue(
         '\0', "jpeg_store_metadata", "0|1",
@@ -409,8 +406,7 @@ struct CompressArgs {
 
   // Common flags.
   bool version = false;
-  bool container = false;
-  bool strip = false;
+  jxl::Override container = jxl::Override::kDefault;
   bool quiet = false;
 
   const char* file_in = nullptr;
@@ -519,9 +515,9 @@ void PrintMode(jxl::extras::PackedPixelFile& ppf, const double decode_mps,
             static_cast<size_t>(ppf.info.ysize), num_bytes, decode_mps);
   }
   fprintf(stderr, "Encoding [%s%s, %s, effort: %" PRIuS,
-          (args.container ? "Container | " : ""), mode, quality.c_str(),
-          args.effort);
-  if (args.container) {
+          (args.container == jxl::Override::kOn ? "Container | " : ""), mode,
+          quality.c_str(), args.effort);
+  if (args.container == jxl::Override::kOn) {
     if (args.lossless_jpeg && args.jpeg_store_metadata)
       fprintf(stderr, " | JPEG reconstruction data");
     if (!ppf.metadata.exif.empty())
@@ -737,7 +733,6 @@ int main(int argc, char** argv) {
     pixels = ppf.info.xsize * ppf.info.ysize;
     decode_mps = pixels * ppf.info.num_color_channels * 1E-6 / (t1 - t0);
   }
-  if (!args.quiet) PrintMode(ppf, decode_mps, image_data.size(), args);
 
   JxlEncoderPtr enc = JxlEncoderMake(/*memory_manager=*/nullptr);
   JxlEncoder* jxl_encoder = enc.get();
@@ -795,20 +790,7 @@ int main(int argc, char** argv) {
       }
     };
 
-    {  // Processing tuning flags.
-      bool use_container = args.container;
-      // TODO(tfish): Set use_container according to need of encoded data.
-      // This will likely require moving this piece out of flags-processing.
-      if (args.strip) {
-        use_container = false;
-      }
-      if (JXL_ENC_SUCCESS !=
-          JxlEncoderUseContainer(jxl_encoder,
-                                 static_cast<int>(use_container))) {
-        std::cerr << "JxlEncoderUseContainer failed." << std::endl;
-        return EXIT_FAILURE;
-      }
-
+    { // Processing tuning flags.
       process_bool_flag("modular", args.modular, JXL_ENC_FRAME_SETTING_MODULAR);
       process_bool_flag("keep_invisible", args.keep_invisible,
                         JXL_ENC_FRAME_SETTING_KEEP_INVISIBLE);
@@ -1028,6 +1010,23 @@ int main(int argc, char** argv) {
           });
     }
 
+    bool use_container = args.container == jxl::Override::kOn;
+    if (!ppf.metadata.exif.empty() || !ppf.metadata.xmp.empty() ||
+        !ppf.metadata.jumbf.empty() || !ppf.metadata.iptc.empty() ||
+        (args.lossless_jpeg && args.jpeg_store_metadata)) {
+      use_container = true;
+    }
+    if (use_container) args.container = jxl::Override::kOn;
+
+    if (JXL_ENC_SUCCESS !=
+        JxlEncoderUseContainer(jxl_encoder, static_cast<int>(use_container))) {
+      std::cerr << "JxlEncoderUseContainer failed." << std::endl;
+      return EXIT_FAILURE;
+    }
+
+    if (num_rep == 0 && !args.quiet)
+      PrintMode(ppf, decode_mps, image_data.size(), args);
+
     if (args.lossless_jpeg && IsJPG(image_data)) {
       if (!cmdline.GetOption(args.opt_lossless_jpeg_id)->matched()) {
         std::cerr << "Note: Implicit-default for JPEG is lossless-transcoding. "
@@ -1215,6 +1214,9 @@ int main(int argc, char** argv) {
     fprintf(stderr, "Compressed to %" PRIuS " bytes ", compressed.size());
     // For lossless jpeg-reconstruction, we don't print some stats, since we
     // don't have easy acccess to the image dimensions.
+    if (args.container == jxl::Override::kOn) {
+      fprintf(stderr, "including container ");
+    }
     if (!args.lossless_jpeg) {
       fprintf(stderr, "(%.3f bpp%s).\n", bpp / ppf.frames.size(),
               ppf.frames.size() == 1 ? "" : "/frame");
