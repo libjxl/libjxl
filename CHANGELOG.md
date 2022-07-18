@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
  - decoder API: new function `JxlDecoderSetCoalesced` to allow decoding
    non-coalesced (unblended) frames, e.g. layers of a composite still image
    or the cropped frames of a recompressed GIF/APNG.
+ - decoder API: new function `JxlDecoderSetUnpremultiplyAlpha` to set
+   preference for getting an associated alpha channel with premultiplied or
+   unpremultiplied colors.
  - decoder API: field added to `JxlFrameHeader`: a `JxlLayerInfo` struct
    that contains crop dimensions and offsets and blending information for
    the non-coalesced case.

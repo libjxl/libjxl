@@ -5,6 +5,7 @@
 
 #include "lib/jxl/render_pipeline/stage_write.h"
 
+#include "lib/jxl/alpha.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/dec_cache.h"
 #include "lib/jxl/image_bundle.h"
@@ -272,13 +273,14 @@ class WriteToPixelCallbackStage : public RenderPipelineStage {
  public:
   WriteToPixelCallbackStage(const PixelCallback& pixel_callback, size_t width,
                             size_t height, bool rgba, bool has_alpha,
-                            size_t alpha_c)
+                            bool unpremul_alpha, size_t alpha_c)
       : RenderPipelineStage(RenderPipelineStage::Settings()),
         pixel_callback_(pixel_callback),
         width_(width),
         height_(height),
         rgba_(rgba),
         has_alpha_(has_alpha),
+        unpremul_alpha_(unpremul_alpha),
         alpha_c_(alpha_c),
         opaque_alpha_(kMaxPixelsPerCall, 1.0f) {}
 
@@ -309,6 +311,18 @@ class WriteToPixelCallbackStage : public RenderPipelineStage {
       // No xextra offset; opaque_alpha_ is a way to set all values to 1.0f.
       line_buffers[3] = opaque_alpha_.data();
     }
+    if (has_alpha_ && rgba_ && unpremul_alpha_) {
+      ImageF tmp(xsize + 2 * xextra, 3);
+      for (size_t c = 0; c < 3; ++c) {
+        memcpy(tmp.Row(c), line_buffers[c], sizeof(float) * tmp.xsize());
+      }
+      UnpremultiplyAlpha(tmp.Row(0), tmp.Row(1), tmp.Row(2), line_buffers[3],
+                         tmp.xsize());
+      for (size_t c = 0; c < 3; ++c) {
+        line_buffers[c] = tmp.Row(c);
+      }
+    }
+
     // TODO(veluca): SIMD.
     ssize_t limit = std::min(xextra + xsize, width_ - xpos);
     for (ssize_t x0 = -xextra; x0 < limit; x0 += kMaxPixelsPerCall) {
@@ -357,6 +371,7 @@ class WriteToPixelCallbackStage : public RenderPipelineStage {
   size_t height_;
   bool rgba_;
   bool has_alpha_;
+  bool unpremul_alpha_;
   size_t alpha_c_;
   std::vector<float> opaque_alpha_;
   std::vector<CacheAlignedUniquePtr> temp_;
@@ -385,9 +400,9 @@ std::unique_ptr<RenderPipelineStage> GetWriteToU8Stage(uint8_t* rgb,
 
 std::unique_ptr<RenderPipelineStage> GetWriteToPixelCallbackStage(
     const PixelCallback& pixel_callback, size_t width, size_t height, bool rgba,
-    bool has_alpha, size_t alpha_c) {
+    bool has_alpha, bool unpremul_alpha, size_t alpha_c) {
   return jxl::make_unique<WriteToPixelCallbackStage>(
-      pixel_callback, width, height, rgba, has_alpha, alpha_c);
+      pixel_callback, width, height, rgba, has_alpha, unpremul_alpha, alpha_c);
 }
 
 }  // namespace jxl

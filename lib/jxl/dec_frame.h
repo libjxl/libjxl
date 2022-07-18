@@ -172,6 +172,14 @@ class FrameDecoder {
                                          : std::numeric_limits<size_t>::max());
   }
 
+  void MaybeSetUnpremultiplyAlpha(bool unpremul_alpha) {
+    const jxl::ExtraChannelInfo* alpha =
+        decoded_->metadata()->Find(jxl::ExtraChannel::kAlpha);
+    if (alpha && alpha->alpha_associated && unpremul_alpha) {
+      dec_state_->unpremul_alpha = true;
+    }
+  }
+
   // Sets the buffer to which uint8 sRGB pixels will be decoded. This is not
   // supported for all images. If it succeeds, HasRGBBuffer() will return true.
   // If it does not succeed, the image is decoded to the ImageBundle passed to
@@ -185,7 +193,9 @@ class FrameDecoder {
   // orientation. When outputting to the ImageBundle, no orientation is undone.
   void MaybeSetRGB8OutputBuffer(uint8_t* rgb_output, size_t stride,
                                 bool is_rgba, bool undo_orientation) const {
-    if (!CanDoLowMemoryPath(undo_orientation)) return;
+    if (!CanDoLowMemoryPath(undo_orientation) || dec_state_->unpremul_alpha) {
+      return;
+    }
     dec_state_->rgb_output = rgb_output;
     dec_state_->rgb_output_is_rgba = is_rgba;
     dec_state_->rgb_stride = stride;
@@ -214,7 +224,7 @@ class FrameDecoder {
   // results in not setting the buffer if the image has a non-identity EXIF
   // orientation. When outputting to the ImageBundle, no orientation is undone.
   void MaybeSetFloatCallback(const PixelCallback& pixel_callback, bool is_rgba,
-                             bool undo_orientation) const {
+                             bool unpremul_alpha, bool undo_orientation) const {
     if (!CanDoLowMemoryPath(undo_orientation)) return;
     dec_state_->pixel_callback = pixel_callback;
     dec_state_->rgb_output_is_rgba = is_rgba;

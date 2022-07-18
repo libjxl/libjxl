@@ -144,6 +144,11 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
       fprintf(stderr, "JxlDecoderSetKeepOrientation failed\n");
       return false;
     }
+    if (JXL_DEC_SUCCESS !=
+        JxlDecoderSetUnpremultiplyAlpha(dec, dparams.unpremultiply_alpha)) {
+      fprintf(stderr, "JxlDecoderSetUnpremultiplyAlpha failed\n");
+      return false;
+    }
     if (dparams.display_nits > 0 &&
         JXL_DEC_SUCCESS !=
             JxlDecoderSetDesiredIntensityTarget(dec, dparams.display_nits)) {
@@ -247,8 +252,11 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
       }
       bool have_alpha = (format.num_channels == 2 || format.num_channels == 4);
       if (!have_alpha) {
-        // Mark in th basic info that alpha channel was dropped.
+        // Mark in the basic info that alpha channel was dropped.
         ppf->info.alpha_bits = 0;
+      } else if (dparams.unpremultiply_alpha) {
+        // Mark in the basic info that alpha was unpremultiplied.
+        ppf->info.alpha_premultiplied = false;
       }
       bool alpha_found = false;
       for (uint32_t i = 0; i < ppf->info.num_extra_channels; ++i) {
@@ -392,19 +400,29 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
                 buffer_size, frame.color.pixels_size);
         return false;
       }
-      auto callback = [](void* opaque, size_t x, size_t y, size_t num_pixels,
-                         const void* pixels) {
-        auto* ppf = reinterpret_cast<jxl::extras::PackedPixelFile*>(opaque);
-        jxl::extras::PackedImage& color = ppf->frames.back().color;
-        uint8_t* pixels_buffer = reinterpret_cast<uint8_t*>(color.pixels());
-        size_t sample_size = color.pixel_stride();
-        memcpy(pixels_buffer + (color.stride * y + sample_size * x), pixels,
-               num_pixels * sample_size);
-      };
-      if (JXL_DEC_SUCCESS !=
-          JxlDecoderSetImageOutCallback(dec, &format, callback, ppf)) {
-        fprintf(stderr, "JxlDecoderSetImageOutCallback failed\n");
-        return false;
+
+      if (dparams.use_image_callback) {
+        auto callback = [](void* opaque, size_t x, size_t y, size_t num_pixels,
+                           const void* pixels) {
+          auto* ppf = reinterpret_cast<jxl::extras::PackedPixelFile*>(opaque);
+          jxl::extras::PackedImage& color = ppf->frames.back().color;
+          uint8_t* pixels_buffer = reinterpret_cast<uint8_t*>(color.pixels());
+          size_t sample_size = color.pixel_stride();
+          memcpy(pixels_buffer + (color.stride * y + sample_size * x), pixels,
+                 num_pixels * sample_size);
+        };
+        if (JXL_DEC_SUCCESS !=
+            JxlDecoderSetImageOutCallback(dec, &format, callback, ppf)) {
+          fprintf(stderr, "JxlDecoderSetImageOutCallback failed\n");
+          return false;
+        }
+      } else {
+        if (JXL_DEC_SUCCESS != JxlDecoderSetImageOutBuffer(dec, &format,
+                                                           frame.color.pixels(),
+                                                           buffer_size)) {
+          fprintf(stderr, "JxlDecoderSetImageOutBuffer failed\n");
+          return false;
+        }
       }
       JxlPixelFormat ec_format = format;
       ec_format.num_channels = 1;
