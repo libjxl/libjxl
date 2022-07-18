@@ -122,35 +122,23 @@ endif()
 if(JPEGXL_ENABLE_TOOLS)
   list(APPEND TOOL_BINARIES
     cjxl
-    cjxl_ng
     cjpeg_hdr
     jxlinfo
   )
 
   # Main compressor.
   add_executable(cjxl
-    cjxl.cc
     cjxl_main.cc
   )
   target_link_libraries(cjxl
-    box
-    jxl-static
-    jxl_extras-static
-    jxl_threads-static
-  )
-
-  add_executable(cjxl_ng
-    cjxl_ng_main.cc
-  )
-  target_link_libraries(cjxl_ng
     jxl
     jxl_extras_dec-static
     jxl_threads
     hwy
   )
-  target_include_directories(cjxl_ng PRIVATE "${PROJECT_SOURCE_DIR}")
+  target_include_directories(cjxl PRIVATE "${PROJECT_SOURCE_DIR}")
   if(JPEGXL_EMSCRIPTEN)
-    set_target_properties(cjxl_ng PROPERTIES LINK_FLAGS "-s USE_LIBPNG=1")
+    set_target_properties(cjxl PROPERTIES LINK_FLAGS "-s USE_LIBPNG=1")
   endif()
 
   add_executable(djxl
