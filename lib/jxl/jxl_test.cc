@@ -890,7 +890,7 @@ TEST(JxlTest, RoundtripAlphaPremultiplied) {
           EXPECT_THAT(
               ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
                                   /*distmap=*/nullptr, pool),
-              IsSlightlyBelow(1.2));
+              IsSlightlyBelow(1.25));
           io2.Main().UnpremultiplyAlpha();
         }
         EXPECT_THAT(ButteraugliDistance(io_nopremul, io2, cparams.ba_params,

@@ -311,17 +311,6 @@ class WriteToPixelCallbackStage : public RenderPipelineStage {
       // No xextra offset; opaque_alpha_ is a way to set all values to 1.0f.
       line_buffers[3] = opaque_alpha_.data();
     }
-    if (has_alpha_ && rgba_ && unpremul_alpha_) {
-      ImageF tmp(xsize + 2 * xextra, 3);
-      for (size_t c = 0; c < 3; ++c) {
-        memcpy(tmp.Row(c), line_buffers[c], sizeof(float) * tmp.xsize());
-      }
-      UnpremultiplyAlpha(tmp.Row(0), tmp.Row(1), tmp.Row(2), line_buffers[3],
-                         tmp.xsize());
-      for (size_t c = 0; c < 3; ++c) {
-        line_buffers[c] = tmp.Row(c);
-      }
-    }
 
     // TODO(veluca): SIMD.
     ssize_t limit = std::min(xextra + xsize, width_ - xpos);
@@ -337,6 +326,10 @@ class WriteToPixelCallbackStage : public RenderPipelineStage {
         if (rgba_) {
           temp[j++] = line_buffers[3][ix];
         }
+      }
+      if (has_alpha_ && rgba_ && unpremul_alpha_) {
+        // TODO(szabadka) SIMDify (possibly in a separate pipeline stage).
+        UnpremultiplyAlpha(temp, ix);
       }
       pixel_callback_.run(run_opaque_, thread_id, xpos + x0, ypos, ix, temp);
       for (size_t c = 0; c < 3; c++) line_buffers[c] += kMaxPixelsPerCall;
