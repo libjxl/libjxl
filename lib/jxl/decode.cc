@@ -374,6 +374,7 @@ struct JxlDecoderStruct {
 
   // Settings
   bool keep_orientation;
+  bool unpremul_alpha;
   bool render_spotcolors;
   bool coalescing;
   float desired_intensity_target;
@@ -751,6 +752,7 @@ void JxlDecoderReset(JxlDecoder* dec) {
 
   dec->thread_pool.reset();
   dec->keep_orientation = false;
+  dec->unpremul_alpha = true;
   dec->render_spotcolors = true;
   dec->coalescing = true;
   dec->desired_intensity_target = 0;
@@ -876,6 +878,15 @@ JxlDecoderStatus JxlDecoderSetKeepOrientation(JxlDecoder* dec,
     return JXL_API_ERROR("Must set keep_orientation option before starting");
   }
   dec->keep_orientation = !!keep_orientation;
+  return JXL_DEC_SUCCESS;
+}
+
+JxlDecoderStatus JxlDecoderSetUnpremultiplyAlpha(JxlDecoder* dec,
+                                                 JXL_BOOL unpremul_alpha) {
+  if (dec->stage != DecoderStage::kInited) {
+    return JXL_API_ERROR("Must set unpremul_alpha option before starting");
+  }
+  dec->unpremul_alpha = !!unpremul_alpha;
   return JXL_DEC_SUCCESS;
 }
 
@@ -1122,7 +1133,8 @@ static JxlDecoderStatus ConvertImageInternal(
     status = jxl::ConvertToExternal(
         frame, BitsPerChannel(format.data_type), float_format,
         format.num_channels, format.endianness, stride, dec->thread_pool.get(),
-        out_image, out_size, out_callback, undo_orientation);
+        out_image, out_size, out_callback, undo_orientation,
+        dec->unpremul_alpha);
   }
 
   return status ? JXL_DEC_SUCCESS : JXL_DEC_ERROR;
@@ -1440,6 +1452,8 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec) {
         }
       }
 
+      dec->frame_dec->MaybeSetUnpremultiplyAlpha(dec->unpremul_alpha);
+
       if (!dec->preview_frame && dec->image_out_buffer_set &&
           !!dec->image_out_buffer &&
           dec->image_out_format.data_type == JXL_TYPE_UINT8 &&
@@ -1471,7 +1485,7 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec) {
             PixelCallback{
                 dec->image_out_init_callback, dec->image_out_run_callback,
                 dec->image_out_destroy_callback, dec->image_out_init_opaque},
-            is_rgba, !dec->keep_orientation);
+            is_rgba, dec->unpremul_alpha, !dec->keep_orientation);
       }
 
       size_t next_num_passes_to_pause = dec->frame_dec->NextNumPassesToPause();

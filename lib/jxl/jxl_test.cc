@@ -823,14 +823,22 @@ TEST(JxlTest, RoundtripAlpha) {
   PaddedBytes compressed;
   EXPECT_TRUE(EncodeFile(cparams, &io, &enc_state, &compressed, GetJxlCms(),
                          aux_out, pool));
-  CodecInOut io2;
-  EXPECT_TRUE(test::DecodeFile({}, compressed, &io2, pool));
 
-  EXPECT_LE(compressed.size(), 10077u);
+  for (bool use_image_callback : {false, true}) {
+    for (bool unpremul_alpha : {false, true}) {
+      CodecInOut io2;
+      extras::JXLDecompressParams dparams;
+      dparams.use_image_callback = use_image_callback;
+      dparams.unpremultiply_alpha = unpremul_alpha;
+      EXPECT_TRUE(test::DecodeFile(dparams, compressed, &io2, pool));
 
-  EXPECT_THAT(ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
-                                  /*distmap=*/nullptr, pool),
-              IsSlightlyBelow(1.2));
+      EXPECT_LE(compressed.size(), 10077u);
+
+      EXPECT_THAT(ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
+                                      /*distmap=*/nullptr, pool),
+                  IsSlightlyBelow(1.2));
+    }
+  }
 }
 
 TEST(JxlTest, RoundtripAlphaPremultiplied) {
@@ -857,19 +865,41 @@ TEST(JxlTest, RoundtripAlphaPremultiplied) {
   PaddedBytes compressed;
   EXPECT_TRUE(EncodeFile(cparams, &io, &enc_state, &compressed, GetJxlCms(),
                          aux_out, pool));
-  CodecInOut io2;
-  EXPECT_TRUE(test::DecodeFile({}, compressed, &io2, pool));
 
-  EXPECT_LE(compressed.size(), 10000u);
+  for (bool use_image_callback : {false, true}) {
+    for (bool unpremul_alpha : {false, true}) {
+      for (bool use_uint8 : {false, true}) {
+        printf(
+            "Testing premultiplied alpha using %s %s requesting "
+            "%spremultiplied output.\n",
+            use_uint8 ? "uint8" : "float",
+            use_image_callback ? "image callback" : "image_buffer",
+            unpremul_alpha ? "un" : "");
+        CodecInOut io2;
+        extras::JXLDecompressParams dparams;
+        dparams.use_image_callback = use_image_callback;
+        dparams.unpremultiply_alpha = unpremul_alpha;
+        if (use_uint8) {
+          dparams.accepted_formats = {
+              {4, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0}};
+        }
+        EXPECT_TRUE(test::DecodeFile(dparams, compressed, &io2, pool));
 
-  EXPECT_THAT(ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
+        EXPECT_LE(compressed.size(), 10000u);
+        if (!unpremul_alpha) {
+          EXPECT_THAT(
+              ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
                                   /*distmap=*/nullptr, pool),
               IsSlightlyBelow(1.2));
-  io2.Main().UnpremultiplyAlpha();
-  EXPECT_THAT(
-      ButteraugliDistance(io_nopremul, io2, cparams.ba_params, GetJxlCms(),
-                          /*distmap=*/nullptr, pool),
-      IsSlightlyBelow(1.35));
+          io2.Main().UnpremultiplyAlpha();
+        }
+        EXPECT_THAT(ButteraugliDistance(io_nopremul, io2, cparams.ba_params,
+                                        GetJxlCms(),
+                                        /*distmap=*/nullptr, pool),
+                    IsSlightlyBelow(1.35));
+      }
+    }
+  }
 }
 
 TEST(JxlTest, RoundtripAlphaResampling) {

@@ -372,6 +372,7 @@ typedef enum {
  *  - @ref JxlDecoderSetDesiredIntensityTarget,
  *  - @ref JxlDecoderSetDecompressBoxes,
  *  - @ref JxlDecoderSetKeepOrientation,
+ *  - @ref JxlDecoderSetUnpremultiplyAlpha,
  *  - @ref JxlDecoderSetParallelRunner,
  *  - @ref JxlDecoderSetRenderSpotcolors, and
  *  - @ref JxlDecoderSubscribeEvents.
@@ -512,6 +513,25 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSubscribeEvents(JxlDecoder* dec,
  */
 JXL_EXPORT JxlDecoderStatus
 JxlDecoderSetKeepOrientation(JxlDecoder* dec, JXL_BOOL skip_reorientation);
+
+/**
+ * Enables or disables preserving of associated alpha channels. If
+ * unpremul_alpha is set to JXL_FALSE then for associated alpha channel, the
+ * pixel data is returned with premultiplied colors. If it is set to JXL_TRUE,
+ * The colors will be unpremultiplied based on the alpha channel. This function
+ * has no effect if the image does not have an associated alpha channel.
+ *
+ * By default, this option is enabled, and the returned pixel data is
+ * unpremultiplied.
+ *
+ * This function must be called at the beginning, before decoding is performed.
+ *
+ * @param dec decoder object
+ * @param unpremul_alpha JXL_TRUE to enable, JXL_FALSE to disable.
+ * @return @ref JXL_DEC_SUCCESS if no error, @ref JXL_DEC_ERROR otherwise.
+ */
+JXL_EXPORT JxlDecoderStatus
+JxlDecoderSetUnpremultiplyAlpha(JxlDecoder* dec, JXL_BOOL unpremul_alpha);
 
 /** Enables or disables rendering spot colors. By default, spot colors
  * are rendered, which is OK for viewing the decoded image. If render_spotcolors

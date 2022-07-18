@@ -48,6 +48,11 @@ struct JXLDecompressParams {
   // with respect to the full size of the image. By default, nothing less than
   // the full size is requested.
   size_t max_downsampling = 1;
+
+  // Whether to use the image callback or the image buffer to get the output.
+  bool use_image_callback = true;
+  // Whether to unpremultiply colors for associated alpha channels.
+  bool unpremultiply_alpha = true;
 };
 
 bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
