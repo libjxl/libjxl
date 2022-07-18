@@ -170,7 +170,7 @@ TEST(JxlTest, RoundtripSmallD1) {
     EXPECT_THAT(
         ButteraugliDistance(io_dim, io_out, cparams.ba_params, GetJxlCms(),
                             /*distmap=*/nullptr, pool),
-        IsSlightlyBelow(1.5));
+        IsSlightlyBelow(1.1));
     EXPECT_EQ(io_dim.metadata.m.IntensityTarget(),
               io_out.metadata.m.IntensityTarget());
   }
@@ -457,7 +457,7 @@ TEST(JxlTest, RoundtripLargeFast) {
   cparams.speed_tier = SpeedTier::kSquirrel;
 
   CodecInOut io2;
-  EXPECT_LE(Roundtrip(&io, cparams, {}, &pool, &io2), 450000u);
+  EXPECT_LE(Roundtrip(&io, cparams, {}, &pool, &io2), 450500u);
 }
 
 TEST(JxlTest, RoundtripDotsForceEpf) {
@@ -1459,7 +1459,7 @@ TEST(JxlTest, RoundtripAnimationPatches) {
   // >10 with broken patches
   EXPECT_THAT(ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
                                   /*distmap=*/nullptr, pool),
-              IsSlightlyBelow(1.5));
+              IsSlightlyBelow(1.2));
 }
 
 #endif  // JPEGXL_ENABLE_GIF
@@ -1700,10 +1700,10 @@ TEST(JxlTest, RoundtripProgressive) {
   cparams.responsive = true;
   cparams.progressive_mode = true;
   CodecInOut io2;
-  EXPECT_LE(Roundtrip(&io, cparams, {}, &pool, &io2), 61000u);
+  EXPECT_LE(Roundtrip(&io, cparams, {}, &pool, &io2), 61600u);
   EXPECT_THAT(ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
                                   /*distmap=*/nullptr, &pool),
-              IsSlightlyBelow(1.2f));
+              IsSlightlyBelow(1.17f));
 }
 
 TEST(JxlTest, RoundtripProgressiveLevel2Slow) {

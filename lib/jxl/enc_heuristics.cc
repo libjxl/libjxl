@@ -841,6 +841,7 @@ Status DefaultEncoderHeuristics::LossyFrameHeuristics(
     enc_state->initial_quant_field = InitialQuantField(
         butteraugli_distance_for_iqf, *opsin, shared.frame_dim, pool, 1.0f,
         &enc_state->initial_quant_masking);
+    quantizer.SetQuantField(quant_dc, enc_state->initial_quant_field, nullptr);
   }
 
   // TODO(veluca): do something about animations.
