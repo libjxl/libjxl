@@ -38,6 +38,9 @@ jobs:
             cflags: -DHWY_COMPILE_ONLY_EMU128=1
           - name: SCALAR
             cflags: -DHWY_COMPILE_ONLY_SCALAR=1
+          - name: SCALAR_ASAN
+            cflags: -DHWY_COMPILE_ONLY_SCALAR=1
+            build_type: asan
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
     steps:
@@ -93,7 +96,7 @@ jobs:
         mkdir -p ${CCACHE_DIR}
         echo "max_size = 200M" > ${CCACHE_DIR}/ccache.conf
         CMAKE_FLAGS="${{ matrix.cflags }}" \
-        ./ci.sh release -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
+        ./ci.sh ${{ matrix.build_type || 'release' }} -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
           -DCMAKE_C_COMPILER_LAUNCHER=ccache \
           -DBUILD_TESTING=OFF
@@ -125,7 +128,7 @@ jobs:
       fail-fast: false
       matrix:
         name: [main_level5, main_level10]
-        target: [AVX3, AVX2, SSE4, SSSE3, EMU128, SCALAR]
+        target: [AVX3, AVX2, SSE4, SSSE3, EMU128, SCALAR, SCALAR_ASAN]
     steps:
     - name: Install deps
       run: |
