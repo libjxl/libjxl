@@ -31,7 +31,7 @@ Add any other context about the problem here.
 <!--
 Currently github does not allow uploading files that end in `.jxl`, but when you
 rename them for example as `image.jxl.jpg`, it will be possible to upload them
-and also view them in browser that are configured to support it.
+and also view them in browsers that are configured to support it.
 
 See https://github.com/orgs/github-community/discussions/18139
 -->
