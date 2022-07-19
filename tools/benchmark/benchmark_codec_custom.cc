@@ -98,10 +98,8 @@ class CustomCodec : public ImageCodec {
     saved_intensity_target_ = io->metadata.m.IntensityTarget();
 
     const size_t bits = io->metadata.m.bit_depth.bits_per_sample;
-    std::vector<uint8_t> png;
     JXL_RETURN_IF_ERROR(
-        extras::EncodeImageAPNG(io, io->Main().c_current(), bits, pool, &png));
-    JXL_RETURN_IF_ERROR(WriteFile(png, png_filename));
+        EncodeToFile(*io, io->Main().c_current(), bits, png_filename, pool));
     std::vector<std::string> arguments = compress_args_;
     arguments.push_back(png_filename);
     arguments.push_back(encoded_filename);

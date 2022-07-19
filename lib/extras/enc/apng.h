@@ -8,22 +8,14 @@
 
 // Encodes APNG images in memory.
 
+#include <memory>
+
 #include "lib/extras/enc/encode.h"
-#include "lib/jxl/base/data_parallel.h"
-#include "lib/jxl/base/padded_bytes.h"
-#include "lib/jxl/base/span.h"
-#include "lib/jxl/base/status.h"
-#include "lib/jxl/codec_in_out.h"
 
 namespace jxl {
 namespace extras {
 
 std::unique_ptr<Encoder> GetAPNGEncoder();
-
-// Encodes `io` into `bytes`.
-Status EncodeImageAPNG(const CodecInOut* io, const ColorEncoding& c_desired,
-                       size_t bits_per_sample, ThreadPool* pool,
-                       std::vector<uint8_t>* bytes);
 
 }  // namespace extras
 }  // namespace jxl

@@ -80,6 +80,7 @@ std::unique_ptr<Encoder> Encoder::FromExtension(std::string extension) {
 
   if (extension == ".pgx") return GetPGXEncoder();
 
+  if (extension == ".pam") return GetPAMEncoder();
   if (extension == ".pgm") return GetPGMEncoder();
   if (extension == ".ppm") return GetPPMEncoder();
   if (extension == ".pfm") return GetPFMEncoder();
