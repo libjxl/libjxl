@@ -52,7 +52,7 @@ struct JXLDecompressParams {
   // Whether to use the image callback or the image buffer to get the output.
   bool use_image_callback = true;
   // Whether to unpremultiply colors for associated alpha channels.
-  bool unpremultiply_alpha = true;
+  bool unpremultiply_alpha = false;
 };
 
 bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,

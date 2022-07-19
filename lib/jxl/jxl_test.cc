@@ -858,8 +858,12 @@ TEST(JxlTest, RoundtripAlphaPremultiplied) {
   CompressParams cparams;
   cparams.butteraugli_distance = 1.0;
 
-  io.PremultiplyAlpha();
+  EXPECT_FALSE(io.Main().AlphaIsPremultiplied());
+  EXPECT_TRUE(io.PremultiplyAlpha());
   EXPECT_TRUE(io.Main().AlphaIsPremultiplied());
+
+  EXPECT_FALSE(io_nopremul.Main().AlphaIsPremultiplied());
+
   PassesEncoderState enc_state;
   AuxOut* aux_out = nullptr;
   PaddedBytes compressed;
@@ -886,12 +890,14 @@ TEST(JxlTest, RoundtripAlphaPremultiplied) {
         EXPECT_TRUE(test::DecodeFile(dparams, compressed, &io2, pool));
 
         EXPECT_LE(compressed.size(), 10000u);
+        EXPECT_EQ(unpremul_alpha, !io2.Main().AlphaIsPremultiplied());
         if (!unpremul_alpha) {
           EXPECT_THAT(
               ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
                                   /*distmap=*/nullptr, pool),
               IsSlightlyBelow(1.25));
-          io2.Main().UnpremultiplyAlpha();
+          EXPECT_TRUE(io2.UnpremultiplyAlpha());
+          EXPECT_FALSE(io2.Main().AlphaIsPremultiplied());
         }
         EXPECT_THAT(ButteraugliDistance(io_nopremul, io2, cparams.ba_params,
                                         GetJxlCms(),
