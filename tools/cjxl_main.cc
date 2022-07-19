@@ -640,34 +640,40 @@ jxl::Status GetPixeldata(const jxl::PaddedBytes& image_data,
   ppf.info.orientation = JXL_ORIENT_IDENTITY;
   jxl::SizeConstraints size_constraints;
 
+  const auto choose_codec = [&]() {
 #if JPEGXL_ENABLE_APNG
-  if (jxl::extras::DecodeImageAPNG(encoded, color_hints, size_constraints,
-                                   &ppf)) {
-    codec = jxl::extras::Codec::kPNG;
-  } else
+    if (jxl::extras::DecodeImageAPNG(encoded, color_hints, size_constraints,
+                                     &ppf)) {
+      return jxl::extras::Codec::kPNG;
+    }
 #endif
-      if (jxl::extras::DecodeImagePGX(encoded, color_hints, size_constraints,
-                                      &ppf)) {
-    codec = jxl::extras::Codec::kPGX;
-  } else if (jxl::extras::DecodeImagePNM(encoded, color_hints, size_constraints,
-                                         &ppf)) {
-    codec = jxl::extras::Codec::kPNM;
-  }
+    if (jxl::extras::DecodeImagePGX(encoded, color_hints, size_constraints,
+                                    &ppf)) {
+      return jxl::extras::Codec::kPGX;
+    } else if (jxl::extras::DecodeImagePNM(encoded, color_hints,
+                                           size_constraints, &ppf)) {
+      return jxl::extras::Codec::kPNM;
+    }
 #if JPEGXL_ENABLE_GIF
-  else if (jxl::extras::DecodeImageGIF(encoded, color_hints, size_constraints,
-                                       &ppf)) {
-    codec = jxl::extras::Codec::kGIF;
-  }
+    if (jxl::extras::DecodeImageGIF(encoded, color_hints, size_constraints,
+                                    &ppf)) {
+      return jxl::extras::Codec::kGIF;
+    }
 #endif
 #if JPEGXL_ENABLE_JPEG
-  else if (jxl::extras::DecodeImageJPG(encoded, color_hints, size_constraints,
-                                       &ppf)) {
-    codec = jxl::extras::Codec::kJPG;
-  }
+    if (jxl::extras::DecodeImageJPG(encoded, color_hints, size_constraints,
+                                    &ppf)) {
+      return jxl::extras::Codec::kJPG;
+    }
 #endif
-  else {  // TODO(tfish): Bring back EXR and PSD.
+    // TODO(tfish): Bring back EXR and PSD.
+    return jxl::extras::Codec::kUnknown;
+  };
+  codec = choose_codec();
+  if (codec == jxl::extras::Codec::kUnknown) {
     return JXL_FAILURE("Codecs failed to decode input.");
   }
+
   // TODO(tfish): Migrate this:
   // if (!skip_ppf_conversion) {
   //   JXL_RETURN_IF_ERROR(ConvertPackedPixelFileToCodecInOut(ppf, pool, io));
