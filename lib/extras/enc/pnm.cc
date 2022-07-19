@@ -114,6 +114,21 @@ class PGMEncoder : public PPMEncoder {
   }
 };
 
+class PAMEncoder : public PPMEncoder {
+ public:
+  std::vector<JxlPixelFormat> AcceptedFormats() const override {
+    std::vector<JxlPixelFormat> formats = PPMEncoder::AcceptedFormats();
+    for (auto it = formats.begin(); it != formats.end();) {
+      if (it->num_channels != 2 && it->num_channels != 4) {
+        it = formats.erase(it);
+      } else {
+        ++it;
+      }
+    }
+    return formats;
+  }
+};
+
 Status EncodeHeader(const PackedImage& image, JxlOrientation orientation,
                     size_t bits_per_sample, bool little_endian, char* header,
                     int* chars_written) {
@@ -188,6 +203,10 @@ std::unique_ptr<Encoder> GetPFMEncoder() {
 
 std::unique_ptr<Encoder> GetPGMEncoder() {
   return jxl::make_unique<PGMEncoder>();
+}
+
+std::unique_ptr<Encoder> GetPAMEncoder() {
+  return jxl::make_unique<PAMEncoder>();
 }
 
 Status EncodeImagePNM(const PackedImage& image, JxlOrientation orientation,

@@ -12,13 +12,8 @@
 #include <unordered_map>
 
 #include "lib/extras/dec/decode.h"
-#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
-#include "lib/jxl/base/padded_bytes.h"
-#include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/codec_in_out.h"
-#include "lib/jxl/field_encodings.h"  // MakeBit
 
 namespace jxl {
 namespace extras {

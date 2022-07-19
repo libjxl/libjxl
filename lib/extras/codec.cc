@@ -70,18 +70,24 @@ Status Encode(const CodecInOut& io, const extras::Codec codec,
   }
 
   extras::PackedPixelFile ppf;
-  size_t num_channels = io.metadata.m.color_encoding.Channels();
   JxlPixelFormat format = {
-      static_cast<uint32_t>(num_channels),
+      0,  // num_channels is ignored by the converter
       bits_per_sample <= 8 ? JXL_TYPE_UINT8 : JXL_TYPE_UINT16,
       JXL_NATIVE_ENDIAN, 0};
   std::vector<uint8_t> bytes_vector;
   const bool floating_point = bits_per_sample > 16;
+  extras::EncodedImage encoded_image;
   switch (codec) {
     case extras::Codec::kPNG:
 #if JPEGXL_ENABLE_APNG
-      return extras::EncodeImageAPNG(&io, c_desired, bits_per_sample, pool,
-                                     bytes);
+      format.endianness = JXL_BIG_ENDIAN;
+      JXL_RETURN_IF_ERROR(extras::ConvertCodecInOutToPackedPixelFile(
+          io, format, c_desired, pool, &ppf));
+      JXL_RETURN_IF_ERROR(
+          extras::GetAPNGEncoder()->Encode(ppf, &encoded_image, pool));
+      JXL_ASSERT(encoded_image.bitstreams.size() == 1);
+      *bytes = encoded_image.bitstreams[0];
+      return true;
 #else
       return JXL_FAILURE("JPEG XL was built without (A)PNG support");
 #endif

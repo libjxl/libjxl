@@ -12,6 +12,7 @@
 
 #include <string>
 
+#include "lib/extras/codec.h"
 #include "lib/extras/dec/apng.h"
 #include "lib/extras/enc/apng.h"
 #include "lib/extras/packed_image.h"
@@ -44,8 +45,8 @@ class PNGCodec : public ImageCodec {
                   jpegxl::tools::SpeedStats* speed_stats) override {
     const size_t bits = io->metadata.m.bit_depth.bits_per_sample;
     const double start = Now();
-    JXL_RETURN_IF_ERROR(extras::EncodeImageAPNG(io, io->Main().c_current(),
-                                                bits, pool, compressed));
+    JXL_RETURN_IF_ERROR(Encode(*io, extras::Codec::kPNG, io->Main().c_current(),
+                               bits, compressed, pool));
     const double end = Now();
     speed_stats->NotifyElapsed(end - start);
     return true;

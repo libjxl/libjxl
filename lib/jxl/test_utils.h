@@ -401,8 +401,8 @@ size_t GetDataBits(JxlDataType data_type) {
 // precisions needed for the maximum data types the API supports: uint32_t
 // integers, and, single precision float. The values are in range 0-1 for SDR.
 std::vector<double> ConvertToRGBA32(const uint8_t* pixels, size_t xsize,
-                                    size_t ysize,
-                                    const JxlPixelFormat& format) {
+                                    size_t ysize, const JxlPixelFormat& format,
+                                    double factor = 0.0) {
   std::vector<double> result(xsize * ysize * 4);
   size_t num_channels = format.num_channels;
   bool gray = num_channels == 1 || num_channels == 2;
@@ -414,7 +414,8 @@ std::vector<double> ConvertToRGBA32(const uint8_t* pixels, size_t xsize,
   if (format.align > 1) stride = jxl::RoundUpTo(stride, format.align);
 
   if (format.data_type == JXL_TYPE_UINT8) {
-    double mul = 1.0 / 255.0;  // Multiplier to bring to 0-1.0 range
+    // Multiplier to bring to 0-1.0 range
+    double mul = factor > 0.0 ? factor : 1.0 / 255.0;
     for (size_t y = 0; y < ysize; ++y) {
       for (size_t x = 0; x < xsize; ++x) {
         size_t j = (y * xsize + x) * 4;
@@ -430,7 +431,8 @@ std::vector<double> ConvertToRGBA32(const uint8_t* pixels, size_t xsize,
       }
     }
   } else if (format.data_type == JXL_TYPE_UINT16) {
-    double mul = 1.0 / 65535.0;  // Multiplier to bring to 0-1.0 range
+    // Multiplier to bring to 0-1.0 range
+    double mul = factor > 0.0 ? factor : 1.0 / 65535.0;
     for (size_t y = 0; y < ysize; ++y) {
       for (size_t x = 0; x < xsize; ++x) {
         size_t j = (y * xsize + x) * 4;
