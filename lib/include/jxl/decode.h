@@ -521,8 +521,7 @@ JxlDecoderSetKeepOrientation(JxlDecoder* dec, JXL_BOOL skip_reorientation);
  * The colors will be unpremultiplied based on the alpha channel. This function
  * has no effect if the image does not have an associated alpha channel.
  *
- * By default, this option is enabled, and the returned pixel data is
- * unpremultiplied.
+ * By default, this option is disabled, and the returned pixel data "as is".
  *
  * This function must be called at the beginning, before decoding is performed.
  *

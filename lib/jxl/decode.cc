@@ -752,7 +752,7 @@ void JxlDecoderReset(JxlDecoder* dec) {
 
   dec->thread_pool.reset();
   dec->keep_orientation = false;
-  dec->unpremul_alpha = true;
+  dec->unpremul_alpha = false;
   dec->render_spotcolors = true;
   dec->coalescing = true;
   dec->desired_intensity_target = 0;
