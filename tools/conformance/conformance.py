@@ -19,7 +19,7 @@ import tempfile
 import lcms2
 
 def Failure(message):
-    print(message, flush=True)
+    print(f"\033[91m{message}\033[0m", flush=True)
     return False
 
 def CompareNPY(ref, ref_icc, dec, dec_icc, frame_idx, rmse_limit, peak_error):
@@ -115,7 +115,7 @@ def ConformanceTestRunner(args):
     with open(corpus_txt, 'r') as f:
         for test_id in f:
             test_id = test_id.rstrip('\n')
-            print('Testing %s' % test_id, flush=True)
+            print(f"\033[94m\033[1mTesting {test_id}\033[0m", flush=True)
             test_dir = os.path.join(corpus_dir, test_id)
 
             with open(os.path.join(test_dir, 'test.json'), 'r') as f:
