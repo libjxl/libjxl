@@ -86,7 +86,7 @@ static pixel_type GetPaletteValue(const pixel_type *const palette, int index,
     pixel_type result =
         kDeltaPalette[((index + 1) >> 1)][c] * kMultiplier[index & 1];
     if (bit_depth > 8) {
-      result *= static_cast<pixel_type>(1) << (std::min(bit_depth, 24) - 8);
+      result *= static_cast<pixel_type>(1) << (bit_depth - 8);
     }
     return result;
   } else if (palette_size <= index && index < palette_size + kLargeCubeOffset) {
@@ -141,7 +141,7 @@ static Status InvPalette(Image &input, uint32_t begin_c, uint32_t nb_colors,
   const pixel_type *JXL_RESTRICT p_palette = input.channel[0].Row(0);
   intptr_t onerow = input.channel[0].plane.PixelsPerRow();
   intptr_t onerow_image = input.channel[c0].plane.PixelsPerRow();
-  const int bit_depth = input.bitdepth;
+  const int bit_depth = std::min(input.bitdepth, 24);
 
   if (w == 0) {
     // Nothing to do.
