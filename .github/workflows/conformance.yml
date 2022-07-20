@@ -137,7 +137,7 @@ jobs:
       uses: actions/checkout@v2
       with:
         repository: libjxl/conformance
-        ref: ce5a804a3ff834097b93c39d2f93e5445f6bf340
+        ref: a6a44bbbd69830e1dc862174599ce5738a0a414f
         path: conformance
     - name: Download and link conformance files
       run: |
