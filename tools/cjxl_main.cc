@@ -1238,7 +1238,7 @@ int main(int argc, char** argv) {
         static_cast<double>(compressed.size() * jxl::kBitsPerByte) / pixels;
     fprintf(stderr, "Compressed to %" PRIuS " bytes ", compressed.size());
     // For lossless jpeg-reconstruction, we don't print some stats, since we
-    // don't have easy acccess to the image dimensions.
+    // don't have easy access to the image dimensions.
     if (args.container == jxl::Override::kOn) {
       fprintf(stderr, "including container ");
     }
