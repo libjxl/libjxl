@@ -18,7 +18,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "jxl/color_encoding.h"
 #include "jxl/types.h"
 
 #if defined(__cplusplus) || defined(c_plusplus)

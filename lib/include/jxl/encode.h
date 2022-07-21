@@ -13,8 +13,8 @@
 #ifndef JXL_ENCODE_H_
 #define JXL_ENCODE_H_
 
+#include "jxl/cms_interface.h"
 #include "jxl/codestream_header.h"
-#include "jxl/decode.h"
 #include "jxl/jxl_export.h"
 #include "jxl/memory_manager.h"
 #include "jxl/parallel_runner.h"

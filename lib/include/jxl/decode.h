@@ -16,7 +16,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "jxl/cms_interface.h"
 #include "jxl/codestream_header.h"
 #include "jxl/color_encoding.h"
 #include "jxl/jxl_export.h"
