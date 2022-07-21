@@ -1193,7 +1193,7 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetFloatOption(
                              "Option value has to be smaller than 100");
       }
       // This value is called "iterations" or "nb_repeats" in cjxl, but is in
-      // fact a fraction in range 0.0-1.0, with the defautl value 0.5.
+      // fact a fraction in range 0.0-1.0, with the default value 0.5.
       // Convert from floating point percentage to floating point fraction here.
       if (value < -.5f) {
         // TODO(lode): for this and many other settings (also in
