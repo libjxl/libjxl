@@ -36,12 +36,12 @@ check_cxx_source_compiles(
 
 check_cxx_source_compiles(
    "int main() {
-      #if !defined(HWY_DISABLE_TARGETS)
-      static_assert(false, \"HWY_DISABLE_TARGETS is not defined\");
+      #if !defined(HWY_DISABLED_TARGETS)
+      static_assert(false, \"HWY_DISABLED_TARGETS is not defined\");
       #endif
       return 0;
     }"
-  JXL_HWY_DISABLE_TARGETS_FORCED
+  JXL_HWY_DISABLED_TARGETS_FORCED
 )
 
 message(STATUS "CMAKE_SYSTEM_PROCESSOR is ${CMAKE_SYSTEM_PROCESSOR}")
@@ -268,8 +268,8 @@ add_definitions(
 )
 
 # TODO(eustas): see https://github.com/google/highway/issues/836
-if (CMAKE_CXX_COMPILER_ID MATCHES "GNU" AND NOT JXL_HWY_DISABLE_TARGETS_FORCED)
-  add_definitions(-DHWY_DISABLE_TARGETS=\(HWY_SVE|HWY_SVE2|HWY_SVE_256|HWY_SVE2_128|HWY_RVV\))
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU" AND NOT JXL_HWY_DISABLED_TARGETS_FORCED)
+  add_definitions(-DHWY_DISABLED_TARGETS=\(HWY_SVE|HWY_SVE2|HWY_SVE_256|HWY_SVE2_128|HWY_RVV\))
   message("Warning: HWY_SVE, HWY_SVE2, HWY_SVE_256, HWY_SVE2_128 and HWY_RVV CPU targets are disabled")
 endif()
 
