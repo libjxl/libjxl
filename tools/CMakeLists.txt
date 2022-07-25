@@ -171,6 +171,7 @@ if(JPEGXL_ENABLE_DEVTOOLS)
     texture_to_cube
     generate_lut_template
     ssimulacra_main
+    ssimulacra2
     xyb_range
     jxl_from_tree
   )
@@ -178,6 +179,7 @@ if(JPEGXL_ENABLE_DEVTOOLS)
   add_executable(fuzzer_corpus fuzzer_corpus.cc)
 
   add_executable(ssimulacra_main ssimulacra_main.cc ssimulacra.cc)
+  add_executable(ssimulacra2 ssimulacra2_main.cc ssimulacra2.cc)
   add_executable(butteraugli_main butteraugli_main.cc)
   add_executable(decode_and_encode decode_and_encode.cc)
   add_executable(display_to_hlg hdr/display_to_hlg.cc)
