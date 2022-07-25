@@ -34,6 +34,7 @@ TEST(DjxlFuzzerTest, TestAll) {
   for (auto id : GetTestIds()) {
     std::ostringstream os;
     os << "oss-fuzz/clusterfuzz-testcase-minimized-djxl_fuzzer-" << id;
+    printf("Testing %s\n", os.str().c_str());
     const jxl::PaddedBytes input = jxl::ReadTestData(os.str());
     LLVMFuzzerTestOneInput(input.data(), input.size());
   }
