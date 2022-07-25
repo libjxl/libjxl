@@ -479,19 +479,20 @@ Status FrameDecoder::ProcessACGroup(size_t ac_group_id,
   // don't limit to image dimensions here (is done in DecodeGroup)
   const Rect mrect(x, y, group_dim, group_dim);
   bool modular_ready = false;
-  for (size_t i = 0; i < frame_header_.passes.num_passes; i++) {
+  size_t pass0 = decoded_passes_per_ac_group_[ac_group_id];
+  size_t pass1 =
+      force_draw ? frame_header_.passes.num_passes : pass0 + num_passes;
+  for (size_t i = pass0; i < pass1; ++i) {
     int minShift, maxShift;
     frame_header_.passes.GetDownsamplingBracket(i, minShift, maxShift);
     bool modular_pass_ready = true;
-    if (i >= decoded_passes_per_ac_group_[ac_group_id] &&
-        i < decoded_passes_per_ac_group_[ac_group_id] + num_passes) {
+    if (i < pass0 + num_passes) {
       JXL_RETURN_IF_ERROR(modular_frame_decoder_.DecodeGroup(
-          mrect, br[i - decoded_passes_per_ac_group_[ac_group_id]], minShift,
-          maxShift, ModularStreamId::ModularAC(ac_group_id, i),
+          mrect, br[i - pass0], minShift, maxShift,
+          ModularStreamId::ModularAC(ac_group_id, i),
           /*zerofill=*/false, dec_state_, &render_pipeline_input,
           /*allow_truncated=*/false, &modular_pass_ready));
-    } else if (i >= decoded_passes_per_ac_group_[ac_group_id] + num_passes &&
-               force_draw) {
+    } else {
       JXL_RETURN_IF_ERROR(modular_frame_decoder_.DecodeGroup(
           mrect, nullptr, minShift, maxShift,
           ModularStreamId::ModularAC(ac_group_id, i), /*zerofill=*/true,
