@@ -478,24 +478,27 @@ Status FrameDecoder::ProcessACGroup(size_t ac_group_id,
 
   // don't limit to image dimensions here (is done in DecodeGroup)
   const Rect mrect(x, y, group_dim, group_dim);
+  bool modular_ready = false;
   for (size_t i = 0; i < frame_header_.passes.num_passes; i++) {
     int minShift, maxShift;
     frame_header_.passes.GetDownsamplingBracket(i, minShift, maxShift);
+    bool modular_pass_ready = true;
     if (i >= decoded_passes_per_ac_group_[ac_group_id] &&
         i < decoded_passes_per_ac_group_[ac_group_id] + num_passes) {
       JXL_RETURN_IF_ERROR(modular_frame_decoder_.DecodeGroup(
           mrect, br[i - decoded_passes_per_ac_group_[ac_group_id]], minShift,
           maxShift, ModularStreamId::ModularAC(ac_group_id, i),
           /*zerofill=*/false, dec_state_, &render_pipeline_input,
-          /*allow_truncated=*/false, &should_run_pipeline));
+          /*allow_truncated=*/false, &modular_pass_ready));
     } else if (i >= decoded_passes_per_ac_group_[ac_group_id] + num_passes &&
                force_draw) {
       JXL_RETURN_IF_ERROR(modular_frame_decoder_.DecodeGroup(
           mrect, nullptr, minShift, maxShift,
           ModularStreamId::ModularAC(ac_group_id, i), /*zerofill=*/true,
           dec_state_, &render_pipeline_input,
-          /*allow_truncated=*/false, &should_run_pipeline));
+          /*allow_truncated=*/false, &modular_pass_ready));
     }
+    if (modular_pass_ready) modular_ready = true;
   }
   decoded_passes_per_ac_group_[ac_group_id] += num_passes;
 
@@ -527,7 +530,7 @@ Status FrameDecoder::ProcessACGroup(size_t ac_group_id,
   }
 
   if (!modular_frame_decoder_.UsesFullImage() && !decoded_->IsJPEG()) {
-    if (should_run_pipeline) {
+    if (should_run_pipeline && modular_ready) {
       render_pipeline_input.Done();
     } else if (force_draw) {
       return JXL_FAILURE("Modular group decoding failed.");
