@@ -1076,11 +1076,57 @@ Status EncodeFrame(const CompressParams& cparams_orig,
                    const ImageBundle& ib, PassesEncoderState* passes_enc_state,
                    const JxlCmsInterface& cms, ThreadPool* pool,
                    BitWriter* writer, AuxOut* aux_out) {
+  CompressParams cparams = cparams_orig;
+  if (cparams_orig.target_bitrate > 0.0f &&
+      frame_info.frame_type == FrameType::kRegularFrame) {
+    cparams.target_bitrate = 0.0f;
+    const float target_bitrate = cparams_orig.target_bitrate;
+    float bitrate = 0.0f;
+    float prev_bitrate = 0.0f;
+    float rescale = 1.0f;
+    size_t prev_bits = 0;
+    float error = 0.0f;
+    float best_error = 100.0f;
+    float best_rescale = 1.0f;
+    for (size_t i = 0; i < 10; ++i) {
+      std::unique_ptr<PassesEncoderState> state =
+          jxl::make_unique<PassesEncoderState>();
+      BitWriter bw;
+      JXL_CHECK(EncodeFrame(cparams, frame_info, metadata, ib, state.get(), cms,
+                            pool, &bw, nullptr));
+      bitrate = bw.BitsWritten() * 1.0 / (ib.xsize() * ib.ysize());
+      error = target_bitrate / bitrate - 1.0f;
+      if (std::abs(error) < std::abs(best_error)) {
+        best_error = error;
+        best_rescale = cparams.quant_ac_rescale;
+      }
+      if (bw.BitsWritten() == prev_bits || std::abs(error) < 0.0005f) {
+        break;
+      }
+      float lambda = 1.0f;
+      if (i > 0) {
+        lambda = (((bitrate / prev_bitrate) - 1.0f) / (rescale - 1.0f));
+      }
+      rescale = (1.0f + ((target_bitrate / bitrate) - 1.0f) / lambda);
+      if (rescale < 0.0f) {
+        break;
+      }
+      cparams.quant_ac_rescale *= rescale;
+      prev_bitrate = bitrate;
+      prev_bits = bw.BitsWritten();
+    }
+    if (aux_out) {
+      aux_out->max_quant_rescale = best_rescale;
+      aux_out->min_quant_rescale = best_rescale;
+      aux_out->min_bitrate_error = best_error;
+      aux_out->max_bitrate_error = best_error;
+    }
+    cparams.quant_ac_rescale = best_rescale;
+  }
   ib.VerifyMetadata();
 
   passes_enc_state->special_frames.clear();
 
-  CompressParams cparams = cparams_orig;
   JXL_RETURN_IF_ERROR(ParamsPostInit(&cparams));
 
   if (cparams.progressive_dc < 0) {

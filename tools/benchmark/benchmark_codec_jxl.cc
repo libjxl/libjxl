@@ -15,6 +15,9 @@
 #include "jxl/thread_parallel_runner_cxx.h"
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/jxl.h"
+#if JPEGXL_ENABLE_JPEG
+#include "lib/extras/enc/jpg.h"
+#endif
 #include "lib/extras/packed_image_convert.h"
 #include "lib/extras/time.h"
 #include "lib/jxl/aux_out.h"
@@ -196,6 +199,8 @@ class JxlCodec : public ImageCodec {
       if (cparams_.epf > 3) {
         return JXL_FAILURE("Invalid epf value");
       }
+    } else if (param.substr(0, 2) == "nr") {
+      normalize_bitrate_ = true;
     } else if (param.substr(0, 16) == "faster_decoding=") {
       cparams_.decoding_speed_tier =
           strtol(param.substr(16).c_str(), nullptr, 10);
@@ -208,6 +213,7 @@ class JxlCodec : public ImageCodec {
   bool IsColorAware() const override {
     // Can't deal with negative values from color space conversion.
     if (cparams_.modular_mode) return false;
+    if (normalize_bitrate_) return false;
     // Otherwise, input may be in any color space.
     return true;
   }
@@ -252,6 +258,20 @@ class JxlCodec : public ImageCodec {
     }
 
     cparams_.log_search_state = jxlargs->log_search_state;
+
+#if JPEGXL_ENABLE_JPEG
+    if (normalize_bitrate_ && cparams_.butteraugli_distance > 0.0f) {
+      extras::JpegEncoder jpeg_encoder = extras::JpegEncoder::kLibJpeg;
+      std::vector<uint8_t> jpeg_bytes;
+      JXL_RETURN_IF_ERROR(EncodeImageJPG(
+          io, jpeg_encoder, 95, YCbCrChromaSubsampling(), pool, &jpeg_bytes));
+      float jpeg_bits = jpeg_bytes.size() * kBitsPerByte;
+      float jpeg_bitrate = jpeg_bits / (io->xsize() * io->ysize());
+      // Formula fitted on jyrki31 corpus for distances between 1.0 and 8.0.
+      cparams_.target_bitrate = (jpeg_bitrate * 0.36f /
+                                 (0.6f * cparams_.butteraugli_distance + 0.4f));
+    }
+#endif
 
     const double start = Now();
     PassesEncoderState passes_encoder_state;
@@ -304,6 +324,7 @@ class JxlCodec : public ImageCodec {
   bool has_ctransform_ = false;
   extras::JXLDecompressParams dparams_;
   bool uint8_ = false;
+  bool normalize_bitrate_ = false;
 };
 
 ImageCodec* CreateNewJxlCodec(const BenchmarkArgs& args) {
