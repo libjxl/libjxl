@@ -169,6 +169,9 @@ struct TestImageParams {
     } else if (codec == Codec::kPNM) {
       return ((bits_per_sample <= 16 && big_endian) ||
               (bits_per_sample == 32 && !add_alpha));
+    } else if (codec == Codec::kPGX) {
+      return ((bits_per_sample == 8 || bits_per_sample == 16) && is_gray &&
+              !add_alpha);
     } else {
       return false;
     }
@@ -231,7 +234,7 @@ void TestRoundTrip(Codec codec, const TestImageParams& params,
   ASSERT_TRUE(DecodeBytes(Span<const uint8_t>(encoded.bitstreams[0]),
                           ColorHints(), SizeConstraints(), &ppf_out));
 
-  if (codec != Codec::kPNM) {
+  if (codec != Codec::kPNM && codec != Codec::kPGX) {
     EXPECT_EQ(ppf_in.icc, ppf_out.icc);
   }
 
