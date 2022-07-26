@@ -122,8 +122,7 @@ Status Encode(const CodecInOut& io, const extras::Codec codec,
                     bytes_vector.data() + bytes_vector.size());
       return true;
     case extras::Codec::kPGX:
-      return extras::EncodeImagePGX(&io, c_desired, bits_per_sample, pool,
-                                    bytes);
+      return JXL_FAILURE("Encoding CodecInOut to PGX is not implemented");
     case extras::Codec::kGIF:
       return JXL_FAILURE("Encoding to GIF is not implemented");
     case extras::Codec::kEXR:
