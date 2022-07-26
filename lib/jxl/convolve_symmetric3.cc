@@ -46,11 +46,10 @@ class Symmetric3Strategy {
 
   // Only accesses pixels in [0, xsize).
   template <size_t kSizeModN, class WrapRow>
-  static JXL_INLINE void ConvolveRow(const float* const JXL_RESTRICT row_m,
-                                     const size_t xsize, const int64_t stride,
-                                     const WrapRow& wrap_row,
-                                     const WeightsSymmetric3& weights,
-                                     float* const JXL_RESTRICT row_out) {
+  static JXL_MAYBE_INLINE void ConvolveRow(
+      const float* const JXL_RESTRICT row_m, const size_t xsize,
+      const int64_t stride, const WrapRow& wrap_row,
+      const WeightsSymmetric3& weights, float* const JXL_RESTRICT row_out) {
     const D d;
     // t, m, b = top, middle, bottom row;
     const float* const JXL_RESTRICT row_t = wrap_row(row_m - stride, stride);
@@ -123,10 +122,10 @@ class Symmetric3Strategy {
  private:
   // Returns sum{x_i * w_i}.
   template <class V>
-  static JXL_INLINE V WeightedSum(const V tl, const V tc, const V tr,
-                                  const V ml, const V mc, const V mr,
-                                  const V bl, const V bc, const V br,
-                                  const V w0, const V w1, const V w2) {
+  static JXL_MAYBE_INLINE V WeightedSum(const V tl, const V tc, const V tr,
+                                        const V ml, const V mc, const V mr,
+                                        const V bl, const V bc, const V br,
+                                        const V w0, const V w1, const V w2) {
     const V sum_tb = tc + bc;
 
     // Faster than 5 mul + 4 FMA.
@@ -143,11 +142,11 @@ class Symmetric3Strategy {
     return mul2;
   }
 
-  static JXL_INLINE V ConvolveValid(const float* JXL_RESTRICT row_t,
-                                    const float* JXL_RESTRICT row_m,
-                                    const float* JXL_RESTRICT row_b,
-                                    const int64_t x, const V w0, const V w1,
-                                    const V w2) {
+  static JXL_MAYBE_INLINE V ConvolveValid(const float* JXL_RESTRICT row_t,
+                                          const float* JXL_RESTRICT row_m,
+                                          const float* JXL_RESTRICT row_b,
+                                          const int64_t x, const V w0,
+                                          const V w1, const V w2) {
     const D d;
     const V tc = LoadU(d, row_t + x);
     const V mc = LoadU(d, row_m + x);

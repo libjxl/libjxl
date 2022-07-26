@@ -50,11 +50,10 @@ class Separable5Strategy {
   static constexpr int64_t kRadius = 2;
 
   template <size_t kSizeModN, class WrapRow>
-  static JXL_INLINE void ConvolveRow(const float* const JXL_RESTRICT row_m,
-                                     const size_t xsize, const int64_t stride,
-                                     const WrapRow& wrap_row,
-                                     const WeightsSeparable5& weights,
-                                     float* const JXL_RESTRICT row_out) {
+  static JXL_MAYBE_INLINE void ConvolveRow(
+      const float* const JXL_RESTRICT row_m, const size_t xsize,
+      const int64_t stride, const WrapRow& wrap_row,
+      const WeightsSeparable5& weights, float* const JXL_RESTRICT row_out) {
     const D d;
     const int64_t neg_stride = -stride;  // allows LEA addressing.
     const float* const JXL_RESTRICT row_t2 =
@@ -147,9 +146,9 @@ class Separable5Strategy {
 
  private:
   // Same as HorzConvolve for the first/last vector in a row.
-  static JXL_INLINE V HorzConvolveFirst(const float* const JXL_RESTRICT row,
-                                        const int64_t x, const int64_t xsize,
-                                        const V wh0, const V wh1, const V wh2) {
+  static JXL_MAYBE_INLINE V HorzConvolveFirst(
+      const float* const JXL_RESTRICT row, const int64_t x, const int64_t xsize,
+      const V wh0, const V wh1, const V wh2) {
     const D d;
     const V c = LoadU(d, row + x);
     const V mul0 = c * wh0;
@@ -172,9 +171,9 @@ class Separable5Strategy {
   }
 
   template <size_t kSizeModN>
-  static JXL_INLINE V HorzConvolveLast(const float* const JXL_RESTRICT row,
-                                       const int64_t x, const int64_t xsize,
-                                       const V wh0, const V wh1, const V wh2) {
+  static JXL_MAYBE_INLINE V
+  HorzConvolveLast(const float* const JXL_RESTRICT row, const int64_t x,
+                   const int64_t xsize, const V wh0, const V wh1, const V wh2) {
     const D d;
     const V c = LoadU(d, row + x);
     const V mul0 = c * wh0;
@@ -207,8 +206,9 @@ class Separable5Strategy {
   }
 
   // Requires kRadius valid pixels before/after pos.
-  static JXL_INLINE V HorzConvolve(const float* const JXL_RESTRICT pos,
-                                   const V wh0, const V wh1, const V wh2) {
+  static JXL_MAYBE_INLINE V HorzConvolve(const float* const JXL_RESTRICT pos,
+                                         const V wh0, const V wh1,
+                                         const V wh2) {
     const D d;
     const V c = LoadU(d, pos);
     const V mul0 = c * wh0;
