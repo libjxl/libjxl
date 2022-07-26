@@ -94,7 +94,6 @@ Status ImageCodec::ParseParam(const std::string& param) {
     }
     return true;
   } else if (param[0] == 'r') {
-    butteraugli_target_ = -1.0;
     ba_params_.hf_asymmetry = args_.ba_params.hf_asymmetry;
     bitrate_target_ = strtof(param.substr(1).c_str(), nullptr);
     return true;

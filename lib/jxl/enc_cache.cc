@@ -25,6 +25,7 @@
 #include "lib/jxl/enc_frame.h"
 #include "lib/jxl/enc_group.h"
 #include "lib/jxl/enc_modular.h"
+#include "lib/jxl/enc_quant_weights.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
@@ -62,6 +63,11 @@ Status InitializePassesEncoder(const Image3F& opsin, const JxlCmsInterface& cms,
     enc_state->coeffs.pop_back();
   }
 
+  float scale =
+      shared.quantizer.ScaleGlobalScale(enc_state->cparams.quant_ac_rescale);
+  DequantMatricesScaleDC(&shared.matrices, scale);
+  shared.quantizer.RecomputeFromGlobalScale();
+
   Image3F dc(shared.frame_dim.xsize_blocks, shared.frame_dim.ysize_blocks);
   JXL_RETURN_IF_ERROR(RunOnPool(
       pool, 0, shared.frame_dim.num_groups, ThreadPool::NoInit,
@@ -72,28 +78,17 @@ Status InitializePassesEncoder(const Image3F& opsin, const JxlCmsInterface& cms,
 
   if (shared.frame_header.flags & FrameHeader::kUseDcFrame) {
     CompressParams cparams = enc_state->cparams;
-    // Guess a distance that produces good initial results.
-    cparams.butteraugli_distance =
-        std::max(kMinButteraugliDistance,
-                 enc_state->cparams.butteraugli_distance * 0.1f);
     cparams.dots = Override::kOff;
     cparams.noise = Override::kOff;
     cparams.patches = Override::kOff;
     cparams.gaborish = Override::kOff;
     cparams.epf = 0;
-    cparams.max_error_mode = true;
     cparams.resampling = 1;
     cparams.ec_resampling = 1;
-    for (size_t c = 0; c < 3; c++) {
-      cparams.max_error[c] = shared.quantizer.MulDC()[c];
-    }
-    JXL_ASSERT(cparams.progressive_dc > 0);
-    cparams.progressive_dc--;
     // The DC frame will have alpha=0. Don't erase its contents.
     cparams.keep_invisible = Override::kOn;
-    // No EPF or Gaborish in DC frames.
-    cparams.epf = 0;
-    cparams.gaborish = Override::kOff;
+    JXL_ASSERT(cparams.progressive_dc > 0);
+    cparams.progressive_dc--;
     // Use kVarDCT in max_error_mode for intermediate progressive DC,
     // and kModular for the smallest DC (first in the bitstream)
     if (cparams.progressive_dc == 0) {
@@ -102,6 +97,15 @@ Status InitializePassesEncoder(const Image3F& opsin, const JxlCmsInterface& cms,
       cparams.butteraugli_distance =
           std::max(kMinButteraugliDistance,
                    enc_state->cparams.butteraugli_distance * 0.03f);
+    } else {
+      cparams.max_error_mode = true;
+      for (size_t c = 0; c < 3; c++) {
+        cparams.max_error[c] = shared.quantizer.MulDC()[c];
+      }
+      // Guess a distance that produces good initial results.
+      cparams.butteraugli_distance =
+          std::max(kMinButteraugliDistance,
+                   enc_state->cparams.butteraugli_distance * 0.1f);
     }
     ImageBundle ib(&shared.metadata->m);
     // This is a lie - dc is in XYB

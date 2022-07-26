@@ -70,7 +70,7 @@ void Quantizer::ComputeGlobalScaleAndQuant(float quant_dc, float quant_median,
 }
 
 void Quantizer::SetQuantFieldRect(const ImageF& qf, const Rect& rect,
-                                  ImageI* JXL_RESTRICT raw_quant_field) {
+                                  ImageI* JXL_RESTRICT raw_quant_field) const {
   for (size_t y = 0; y < rect.ysize(); ++y) {
     const float* JXL_RESTRICT row_qf = rect.ConstRow(qf, y);
     int32_t* JXL_RESTRICT row_qi = rect.Row(raw_quant_field, y);

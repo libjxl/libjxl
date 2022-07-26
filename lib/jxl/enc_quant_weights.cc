@@ -175,6 +175,14 @@ void DequantMatricesSetCustomDC(DequantMatrices* matrices, const float* dc) {
   JXL_CHECK(br.Close());
 }
 
+void DequantMatricesScaleDC(DequantMatrices* matrices, const float scale) {
+  float dc[3];
+  for (size_t c = 0; c < 3; ++c) {
+    dc[c] = matrices->InvDCQuant(c) * (1.0f / scale);
+  }
+  DequantMatricesSetCustomDC(matrices, dc);
+}
+
 void DequantMatricesSetCustom(DequantMatrices* matrices,
                               const std::vector<QuantEncoding>& encodings,
                               ModularFrameEncoder* encoder) {

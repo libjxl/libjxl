@@ -149,6 +149,10 @@ struct AuxOut {
       dc_pred_usage[i] += victim.dc_pred_usage[i];
       dc_pred_usage_xb[i] += victim.dc_pred_usage_xb[i];
     }
+    max_quant_rescale = std::max(max_quant_rescale, victim.max_quant_rescale);
+    min_quant_rescale = std::min(min_quant_rescale, victim.min_quant_rescale);
+    max_bitrate_error = std::max(max_bitrate_error, victim.max_bitrate_error);
+    min_bitrate_error = std::min(min_bitrate_error, victim.min_bitrate_error);
   }
 
   void Print(size_t num_inputs) const;
@@ -274,6 +278,11 @@ struct AuxOut {
   std::array<uint32_t, 8> dc_pred_usage_xb = {{0}};
 
   int num_butteraugli_iters = 0;
+
+  float max_quant_rescale = 1.0f;
+  float min_quant_rescale = 1.0f;
+  float min_bitrate_error = 0.0f;
+  float max_bitrate_error = 0.0f;
 
   // If not empty, additional debugging information (e.g. debug images) is
   // saved in files with this prefix.

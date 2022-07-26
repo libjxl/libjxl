@@ -74,6 +74,14 @@ class Quantizer {
     return static_cast<int>(std::max(1.0f, std::min<float>(val, kQuantMax)));
   }
 
+  float ScaleGlobalScale(const float scale) {
+    int new_global_scale = static_cast<int>(global_scale_ * scale + 0.5f);
+    float scale_out = new_global_scale * 1.0f / global_scale_;
+    global_scale_ = new_global_scale;
+    RecomputeFromGlobalScale();
+    return scale_out;
+  }
+
   // Recomputes other derived fields after global_scale_ has changed.
   void RecomputeFromGlobalScale() {
     global_scale_float_ = global_scale_ * (1.0 / kGlobalScaleDenom);
@@ -93,7 +101,7 @@ class Quantizer {
   JXL_INLINE float InvGlobalScale() const { return inv_global_scale_; }
 
   void SetQuantFieldRect(const ImageF& qf, const Rect& rect,
-                         ImageI* JXL_RESTRICT raw_quant_field);
+                         ImageI* JXL_RESTRICT raw_quant_field) const;
 
   void SetQuantField(float quant_dc, const ImageF& qf,
                      ImageI* JXL_RESTRICT raw_quant_field);

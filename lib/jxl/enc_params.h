@@ -256,6 +256,8 @@ struct CompressParams {
   // different from butteraugli_distance if resampling was used.
   float original_butteraugli_distance = -1.0f;
 
+  float quant_ac_rescale = 1.0;
+
   // Codestream level to conform to.
   // -1: don't care
   int level = -1;
