@@ -209,7 +209,7 @@ jobs:
           exit 1
         fi
         # Test that the built binaries run.
-        echo -e -n "PF\n1 1\n-1.0\nrrrrggggbbbb" > test.pfm
+        echo -e -n "PF\n1 1\n-1.0\n\0\0\x80\x3f\0\0\x80\x3f\0\0\x80\x3f" > test.pfm
         build-example/encode_oneshot test.pfm test.jxl
         build-example/encode_oneshot_static test.pfm test-static.jxl
         build-example/decode_oneshot test.jxl dec.pfm dec.icc

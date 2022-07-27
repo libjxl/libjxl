@@ -1641,7 +1641,7 @@ TEST(DecodeTest, PixelTestWithICCProfileLossy) {
   jxl::ButteraugliParams ba;
   EXPECT_THAT(ButteraugliDistance(io0, io1, ba, jxl::GetJxlCms(),
                                   /*distmap=*/nullptr, nullptr),
-              IsSlightlyBelow(0.77f));
+              IsSlightlyBelow(0.775f));
 
   JxlDecoderDestroy(dec);
 }
