@@ -266,7 +266,7 @@ jobs:
          - msystem: clang64
          - msystem: mingw32
            # TODO(eustas): investigate HWY Mul failures
-           disable_tests: HwyMulTestGroup/HwyMulTest\.TestAllMulHigh/Emu128|HwyMulTestGroup/HwyMulTest\.TestAllMulFixedPoint15/Emu128
+           disable_tests: HwyMulTestGroup/HwyMulTest\.TestAllMulHigh/EMU128|HwyMulTestGroup/HwyMulTest\.TestAllMulFixedPoint15/EMU128
          - msystem: clang32
            # TODO(eustas): investigate HWY Sort and JXL ANS failures
            disable_tests: SortTestGroup/SortTest\.TestAllSort/.*|ANSTest\.RandomUnbalancedStreamRoundtrip3|ANSTest\.RandomUnbalancedStreamRoundtripBig
