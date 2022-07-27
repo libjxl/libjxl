@@ -1697,23 +1697,93 @@ double ButteraugliDistance(size_t xsize, size_t ysize,
                              jxl::GetJxlCms(), nullptr, nullptr);
 }
 
-TEST(DecodeTest, PreserveOriginalProfileTest) {
+class DecodeAllEncodingsTest
+    : public ::testing::TestWithParam<jxl::test::ColorEncodingDescriptor> {};
+JXL_GTEST_INSTANTIATE_TEST_SUITE_P(
+    DecodeAllEncodingsTestInstantiation, DecodeAllEncodingsTest,
+    ::testing::ValuesIn(jxl::test::AllEncodings()));
+TEST_P(DecodeAllEncodingsTest, PreserveOriginalProfileTest) {
   size_t xsize = 123, ysize = 77;
   std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 3, 0);
   JxlPixelFormat format = {3, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
   int events = JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING | JXL_DEC_FULL_IMAGE;
-  for (const auto& cdesc : jxl::test::AllEncodings()) {
-    jxl::ColorEncoding c_in = jxl::test::ColorEncodingFromDescriptor(cdesc);
-    if (c_in.rendering_intent != jxl::RenderingIntent::kRelative) continue;
-    std::string color_space_in = Description(c_in);
-    float intensity_in = c_in.tf.IsPQ() ? 10000 : 255;
-    printf("Testing input color space %s\n", color_space_in.c_str());
-    jxl::TestCodestreamParams params;
-    params.color_space = color_space_in;
-    params.intensity_target = intensity_in;
-    jxl::PaddedBytes data = jxl::CreateTestJXLCodestream(
-        jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 3,
-        params);
+  const auto& cdesc = GetParam();
+  jxl::ColorEncoding c_in = jxl::test::ColorEncodingFromDescriptor(cdesc);
+  if (c_in.rendering_intent != jxl::RenderingIntent::kRelative) return;
+  std::string color_space_in = Description(c_in);
+  float intensity_in = c_in.tf.IsPQ() ? 10000 : 255;
+  printf("Testing input color space %s\n", color_space_in.c_str());
+  jxl::TestCodestreamParams params;
+  params.color_space = color_space_in;
+  params.intensity_target = intensity_in;
+  jxl::PaddedBytes data = jxl::CreateTestJXLCodestream(
+      jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 3,
+      params);
+  JxlDecoder* dec = JxlDecoderCreate(nullptr);
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSubscribeEvents(dec, events));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec, data.data(), data.size()));
+  EXPECT_EQ(JXL_DEC_BASIC_INFO, JxlDecoderProcessInput(dec));
+  JxlBasicInfo info;
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBasicInfo(dec, &info));
+  EXPECT_EQ(xsize, info.xsize);
+  EXPECT_EQ(ysize, info.ysize);
+  EXPECT_FALSE(info.uses_original_profile);
+  EXPECT_EQ(JXL_DEC_COLOR_ENCODING, JxlDecoderProcessInput(dec));
+  EXPECT_EQ(GetOrigProfile(dec), color_space_in);
+  EXPECT_EQ(GetDataProfile(dec), color_space_in);
+  EXPECT_EQ(JXL_DEC_NEED_IMAGE_OUT_BUFFER, JxlDecoderProcessInput(dec));
+  std::vector<uint8_t> out(pixels.size());
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSetImageOutBuffer(dec, &format, out.data(), out.size()));
+  EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec));
+  double dist = ButteraugliDistance(xsize, ysize, pixels, c_in, intensity_in,
+                                    out, c_in, intensity_in);
+  EXPECT_LT(dist, 1.2);
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderProcessInput(dec));
+  JxlDecoderDestroy(dec);
+}
+
+namespace {
+void SetPreferredColorProfileTest(
+    const jxl::test::ColorEncodingDescriptor& from) {
+  size_t xsize = 123, ysize = 77;
+  int events = JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING | JXL_DEC_FULL_IMAGE;
+  jxl::ColorEncoding c_in = jxl::test::ColorEncodingFromDescriptor(from);
+  if (c_in.rendering_intent != jxl::RenderingIntent::kRelative) return;
+  if (c_in.white_point != jxl::WhitePoint::kD65) return;
+  uint32_t num_channels = c_in.Channels();
+  std::vector<uint8_t> pixels =
+      jxl::test::GetSomeTestImage(xsize, ysize, num_channels, 0);
+  JxlPixelFormat format = {num_channels, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
+  std::string color_space_in = Description(c_in);
+  float intensity_in = c_in.tf.IsPQ() ? 10000 : 255;
+  jxl::TestCodestreamParams params;
+  params.color_space = color_space_in;
+  params.intensity_target = intensity_in;
+  jxl::PaddedBytes data = jxl::CreateTestJXLCodestream(
+      jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize,
+      num_channels, params);
+  for (const auto& c1 : jxl::test::AllEncodings()) {
+    jxl::ColorEncoding c_out = jxl::test::ColorEncodingFromDescriptor(c1);
+    float intensity_out = intensity_in;
+    if (c_out.rendering_intent != jxl::RenderingIntent::kRelative) continue;
+    if ((c_in.primaries == jxl::Primaries::k2100 &&
+         c_out.primaries != jxl::Primaries::k2100) ||
+        (c_in.primaries == jxl::Primaries::kP3 &&
+         c_out.primaries == jxl::Primaries::kSRGB)) {
+      // Converting to a narrower gamut does not work without gammut mapping.
+      continue;
+    }
+    if (c_out.tf.IsHLG() && intensity_out > 300) {
+      // The Linear->HLG OOTF function at this intensity level can push
+      // saturated colors out of gamut, so we would need gamut mapping in
+      // this case too.
+      continue;
+    }
+    std::string color_space_out = Description(c_out);
+    if (color_space_in == color_space_out) continue;
+    printf("Testing input color space %s with output color space %s\n",
+           color_space_in.c_str(), color_space_out.c_str());
     JxlDecoder* dec = JxlDecoderCreate(nullptr);
     EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSubscribeEvents(dec, events));
     EXPECT_EQ(JXL_DEC_SUCCESS,
@@ -1727,104 +1797,45 @@ TEST(DecodeTest, PreserveOriginalProfileTest) {
     EXPECT_EQ(JXL_DEC_COLOR_ENCODING, JxlDecoderProcessInput(dec));
     EXPECT_EQ(GetOrigProfile(dec), color_space_in);
     EXPECT_EQ(GetDataProfile(dec), color_space_in);
+    JxlColorEncoding encoding_out;
+    EXPECT_TRUE(jxl::ParseDescription(color_space_out, &encoding_out));
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderSetPreferredColorProfile(dec, &encoding_out));
+    EXPECT_EQ(GetOrigProfile(dec), color_space_in);
+    EXPECT_EQ(GetDataProfile(dec), color_space_out);
     EXPECT_EQ(JXL_DEC_NEED_IMAGE_OUT_BUFFER, JxlDecoderProcessInput(dec));
-    std::vector<uint8_t> out(pixels.size());
+    size_t buffer_size;
+    JxlPixelFormat out_format = format;
+    out_format.num_channels = c_out.Channels();
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderImageOutBufferSize(dec, &out_format, &buffer_size));
+    std::vector<uint8_t> out(buffer_size);
     EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetImageOutBuffer(
-                                   dec, &format, out.data(), out.size()));
+                                   dec, &out_format, out.data(), out.size()));
     EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec));
     double dist = ButteraugliDistance(xsize, ysize, pixels, c_in, intensity_in,
-                                      out, c_in, intensity_in);
-    EXPECT_LT(dist, 1.2);
+                                      out, c_out, intensity_out);
+    if (c_in.white_point == c_out.white_point) {
+      EXPECT_LT(dist, 1.2);
+    } else {
+      EXPECT_LT(dist, 4.0);
+    }
     EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderProcessInput(dec));
     JxlDecoderDestroy(dec);
   }
 }
+}  // namespace
 
-TEST(DecodeTest, SetPreferredColorProfileTest) {
-  size_t xsize = 123, ysize = 77;
-  int events = JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING | JXL_DEC_FULL_IMAGE;
+TEST(DecodeTest, SetPreferredColorProfileTestFromGray) {
   jxl::test::ColorEncodingDescriptor gray = {
       jxl::ColorSpace::kGray, jxl::WhitePoint::kD65, jxl::Primaries::kSRGB,
       jxl::TransferFunction::kSRGB, jxl::RenderingIntent::kRelative};
-  auto from_encodings = jxl::test::AllEncodings();
-  from_encodings.push_back(gray);
-  for (const auto& c0 : from_encodings) {
-    jxl::ColorEncoding c_in = jxl::test::ColorEncodingFromDescriptor(c0);
-    if (c_in.rendering_intent != jxl::RenderingIntent::kRelative) continue;
-    if (c_in.white_point != jxl::WhitePoint::kD65) continue;
-    uint32_t num_channels = c_in.Channels();
-    std::vector<uint8_t> pixels =
-        jxl::test::GetSomeTestImage(xsize, ysize, num_channels, 0);
-    JxlPixelFormat format = {num_channels, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
-    std::string color_space_in = Description(c_in);
-    float intensity_in = c_in.tf.IsPQ() ? 10000 : 255;
-    jxl::TestCodestreamParams params;
-    params.color_space = color_space_in;
-    params.intensity_target = intensity_in;
-    jxl::PaddedBytes data = jxl::CreateTestJXLCodestream(
-        jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize,
-        num_channels, params);
-    for (const auto& c1 : jxl::test::AllEncodings()) {
-      jxl::ColorEncoding c_out = jxl::test::ColorEncodingFromDescriptor(c1);
-      float intensity_out = intensity_in;
-      if (c_out.rendering_intent != jxl::RenderingIntent::kRelative) continue;
-      if ((c_in.primaries == jxl::Primaries::k2100 &&
-           c_out.primaries != jxl::Primaries::k2100) ||
-          (c_in.primaries == jxl::Primaries::kP3 &&
-           c_out.primaries == jxl::Primaries::kSRGB)) {
-        // Converting to a narrower gamut does not work without gammut mapping.
-        continue;
-      }
-      if (c_out.tf.IsHLG() && intensity_out > 300) {
-        // The Linear->HLG OOTF function at this intensity level can push
-        // saturated colors out of gamut, so we would need gamut mapping in
-        // this case too.
-        continue;
-      }
-      std::string color_space_out = Description(c_out);
-      if (color_space_in == color_space_out) continue;
-      printf("Testing input color space %s with output color space %s\n",
-             color_space_in.c_str(), color_space_out.c_str());
-      JxlDecoder* dec = JxlDecoderCreate(nullptr);
-      EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSubscribeEvents(dec, events));
-      EXPECT_EQ(JXL_DEC_SUCCESS,
-                JxlDecoderSetInput(dec, data.data(), data.size()));
-      EXPECT_EQ(JXL_DEC_BASIC_INFO, JxlDecoderProcessInput(dec));
-      JxlBasicInfo info;
-      EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBasicInfo(dec, &info));
-      EXPECT_EQ(xsize, info.xsize);
-      EXPECT_EQ(ysize, info.ysize);
-      EXPECT_FALSE(info.uses_original_profile);
-      EXPECT_EQ(JXL_DEC_COLOR_ENCODING, JxlDecoderProcessInput(dec));
-      EXPECT_EQ(GetOrigProfile(dec), color_space_in);
-      EXPECT_EQ(GetDataProfile(dec), color_space_in);
-      JxlColorEncoding encoding_out;
-      EXPECT_TRUE(jxl::ParseDescription(color_space_out, &encoding_out));
-      EXPECT_EQ(JXL_DEC_SUCCESS,
-                JxlDecoderSetPreferredColorProfile(dec, &encoding_out));
-      EXPECT_EQ(GetOrigProfile(dec), color_space_in);
-      EXPECT_EQ(GetDataProfile(dec), color_space_out);
-      EXPECT_EQ(JXL_DEC_NEED_IMAGE_OUT_BUFFER, JxlDecoderProcessInput(dec));
-      size_t buffer_size;
-      JxlPixelFormat out_format = format;
-      out_format.num_channels = c_out.Channels();
-      EXPECT_EQ(JXL_DEC_SUCCESS,
-                JxlDecoderImageOutBufferSize(dec, &out_format, &buffer_size));
-      std::vector<uint8_t> out(buffer_size);
-      EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetImageOutBuffer(
-                                     dec, &out_format, out.data(), out.size()));
-      EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec));
-      double dist = ButteraugliDistance(
-          xsize, ysize, pixels, c_in, intensity_in, out, c_out, intensity_out);
-      if (c_in.white_point == c_out.white_point) {
-        EXPECT_LT(dist, 1.2);
-      } else {
-        EXPECT_LT(dist, 4.0);
-      }
-      EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderProcessInput(dec));
-      JxlDecoderDestroy(dec);
-    }
-  }
+  SetPreferredColorProfileTest(gray);
+}
+
+TEST_P(DecodeAllEncodingsTest, SetPreferredColorProfileTest) {
+  const auto& from = GetParam();
+  SetPreferredColorProfileTest(from);
 }
 
 // Tests the case of lossy sRGB image without alpha channel, decoded to RGB8
@@ -4572,183 +4583,179 @@ TEST(DecodeTest, FlushTestLosslessProgressiveAlpha) {
   JxlDecoderDestroy(dec);
 }
 
-TEST(DecodeTest, ProgressiveEventTest) {
+class DecodeProgressiveTest : public ::testing::TestWithParam<int> {};
+JXL_GTEST_INSTANTIATE_TEST_SUITE_P(DecodeProgressiveTestInstantiation,
+                                   DecodeProgressiveTest,
+                                   ::testing::Range(0, 8));
+TEST_P(DecodeProgressiveTest, ProgressiveEventTest) {
+  const int params = GetParam();
+  int single_group = params & 1;
+  int lossless = (params >> 1) & 1;
+  uint32_t num_channels = 3 + ((params >> 2) & 1);
   std::set<JxlProgressiveDetail> progressive_details = {kDC, kLastPasses,
                                                         kPasses};
-  for (int single_group = 0; single_group <= 1; ++single_group) {
-    for (int lossless = 0; lossless <= 1; ++lossless) {
-      for (uint32_t num_channels = 3; num_channels < 4; ++num_channels) {
-        for (auto prog_detail : progressive_details) {
-          // Only few combinations are expected to support outputting
-          // intermediate flushes for complete DC and complete passes.
-          // The test can be updated if more cases are expected to support it.
-          bool expect_flush = (num_channels & 1) && !lossless;
-          size_t xsize, ysize;
-          if (single_group) {
-            // An image smaller than 256x256 ensures it contains only 1 group.
-            xsize = 99;
-            ysize = 100;
-          } else {
-            xsize = 277;
-            ysize = 280;
-          }
-          std::vector<uint8_t> pixels =
-              jxl::test::GetSomeTestImage(xsize, ysize, num_channels, 0);
-          jxl::ColorEncoding color_encoding = jxl::ColorEncoding::SRGB(false);
-          jxl::CodecInOut io;
-          EXPECT_TRUE(jxl::ConvertFromExternal(
-              jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize,
-              ysize, color_encoding, num_channels,
-              /*alpha_is_premultiplied=*/false,
-              /*bits_per_sample=*/16, JXL_BIG_ENDIAN, /*flipped_y=*/false,
-              /*pool=*/nullptr, &io.Main(), /*float_in=*/false, /*align=*/0));
-          jxl::TestCodestreamParams params;
-          if (lossless) {
-            params.cparams.SetLossless();
-          } else {
-            params.cparams.butteraugli_distance = 0.5f;
-          }
-          jxl::PassDefinition passes[] = {{2, 0, false, 4},
-                                          {4, 0, false, 4},
-                                          {8, 2, false, 2},
-                                          {8, 1, false, 2},
-                                          {8, 0, false, 1}};
-          const int kNumPasses = 5;
-          jxl::ProgressiveMode progressive_mode{passes};
-          params.progressive_mode = &progressive_mode;
-          jxl::PaddedBytes data = jxl::CreateTestJXLCodestream(
-              jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize,
-              ysize, num_channels, params);
-          JxlPixelFormat format = {num_channels, JXL_TYPE_UINT16,
-                                   JXL_BIG_ENDIAN, 0};
+  for (auto prog_detail : progressive_details) {
+    // Only few combinations are expected to support outputting
+    // intermediate flushes for complete DC and complete passes.
+    // The test can be updated if more cases are expected to support it.
+    bool expect_flush = (num_channels & 1) && !lossless;
+    size_t xsize, ysize;
+    if (single_group) {
+      // An image smaller than 256x256 ensures it contains only 1 group.
+      xsize = 99;
+      ysize = 100;
+    } else {
+      xsize = 277;
+      ysize = 280;
+    }
+    std::vector<uint8_t> pixels =
+        jxl::test::GetSomeTestImage(xsize, ysize, num_channels, 0);
+    jxl::ColorEncoding color_encoding = jxl::ColorEncoding::SRGB(false);
+    jxl::CodecInOut io;
+    EXPECT_TRUE(jxl::ConvertFromExternal(
+        jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize,
+        color_encoding, num_channels,
+        /*alpha_is_premultiplied=*/false,
+        /*bits_per_sample=*/16, JXL_BIG_ENDIAN, /*flipped_y=*/false,
+        /*pool=*/nullptr, &io.Main(), /*float_in=*/false, /*align=*/0));
+    jxl::TestCodestreamParams params;
+    if (lossless) {
+      params.cparams.SetLossless();
+    } else {
+      params.cparams.butteraugli_distance = 0.5f;
+    }
+    jxl::PassDefinition passes[] = {{2, 0, false, 4},
+                                    {4, 0, false, 4},
+                                    {8, 2, false, 2},
+                                    {8, 1, false, 2},
+                                    {8, 0, false, 1}};
+    const int kNumPasses = 5;
+    jxl::ProgressiveMode progressive_mode{passes};
+    params.progressive_mode = &progressive_mode;
+    jxl::PaddedBytes data = jxl::CreateTestJXLCodestream(
+        jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize,
+        num_channels, params);
+    JxlPixelFormat format = {num_channels, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
 
-          for (size_t increment : {(size_t)1, data.size()}) {
-            printf(
-                "Testing with single_group=%d, lossless=%d, "
-                "num_channels=%d, prog_detail=%d, increment=%d\n",
-                single_group, lossless, (int)num_channels, (int)prog_detail,
-                (int)increment);
-            std::vector<std::vector<uint8_t>> passes(kNumPasses + 1);
-            for (int i = 0; i <= kNumPasses; ++i) {
-              passes[i].resize(pixels.size());
-            }
+    for (size_t increment : {(size_t)1, data.size()}) {
+      printf(
+          "Testing with single_group=%d, lossless=%d, "
+          "num_channels=%d, prog_detail=%d, increment=%d\n",
+          single_group, lossless, (int)num_channels, (int)prog_detail,
+          (int)increment);
+      std::vector<std::vector<uint8_t>> passes(kNumPasses + 1);
+      for (int i = 0; i <= kNumPasses; ++i) {
+        passes[i].resize(pixels.size());
+      }
 
-            JxlDecoder* dec = JxlDecoderCreate(nullptr);
+      JxlDecoder* dec = JxlDecoderCreate(nullptr);
 
-            EXPECT_EQ(
-                JXL_DEC_SUCCESS,
+      EXPECT_EQ(JXL_DEC_SUCCESS,
                 JxlDecoderSubscribeEvents(
                     dec, JXL_DEC_BASIC_INFO | JXL_DEC_FRAME |
                              JXL_DEC_FULL_IMAGE | JXL_DEC_FRAME_PROGRESSION));
-            EXPECT_EQ(JXL_DEC_ERROR,
-                      JxlDecoderSetProgressiveDetail(dec, kFrames));
-            EXPECT_EQ(JXL_DEC_ERROR,
-                      JxlDecoderSetProgressiveDetail(dec, kDCProgressive));
-            EXPECT_EQ(JXL_DEC_ERROR,
-                      JxlDecoderSetProgressiveDetail(dec, kDCGroups));
-            EXPECT_EQ(JXL_DEC_ERROR,
-                      JxlDecoderSetProgressiveDetail(dec, kGroups));
-            EXPECT_EQ(JXL_DEC_SUCCESS,
-                      JxlDecoderSetProgressiveDetail(dec, prog_detail));
+      EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderSetProgressiveDetail(dec, kFrames));
+      EXPECT_EQ(JXL_DEC_ERROR,
+                JxlDecoderSetProgressiveDetail(dec, kDCProgressive));
+      EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderSetProgressiveDetail(dec, kDCGroups));
+      EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderSetProgressiveDetail(dec, kGroups));
+      EXPECT_EQ(JXL_DEC_SUCCESS,
+                JxlDecoderSetProgressiveDetail(dec, prog_detail));
 
-            uint8_t* next_in = data.data();
-            size_t avail_in = 0;
-            size_t pos = 0;
+      uint8_t* next_in = data.data();
+      size_t avail_in = 0;
+      size_t pos = 0;
 
-            auto process_input = [&]() {
-              for (;;) {
-                EXPECT_EQ(JXL_DEC_SUCCESS,
-                          JxlDecoderSetInput(dec, next_in, avail_in));
-                JxlDecoderStatus status = JxlDecoderProcessInput(dec);
-                size_t remaining = JxlDecoderReleaseInput(dec);
-                EXPECT_LE(remaining, avail_in);
-                next_in += avail_in - remaining;
-                avail_in = remaining;
-                if (status == JXL_DEC_NEED_MORE_INPUT && pos < data.size()) {
-                  size_t chunk = std::min<size_t>(increment, data.size() - pos);
-                  pos += chunk;
-                  avail_in += chunk;
-                  continue;
-                }
-                return status;
-              }
-            };
-
-            EXPECT_EQ(JXL_DEC_BASIC_INFO, process_input());
-            JxlBasicInfo info;
-            EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBasicInfo(dec, &info));
-            EXPECT_EQ(info.xsize, xsize);
-            EXPECT_EQ(info.ysize, ysize);
-
-            EXPECT_EQ(JXL_DEC_FRAME, process_input());
-
-            size_t buffer_size;
-            EXPECT_EQ(JXL_DEC_SUCCESS,
-                      JxlDecoderImageOutBufferSize(dec, &format, &buffer_size));
-            EXPECT_EQ(pixels.size(), buffer_size);
-            EXPECT_EQ(JXL_DEC_SUCCESS,
-                      JxlDecoderSetImageOutBuffer(dec, &format,
-                                                  passes[kNumPasses].data(),
-                                                  passes[kNumPasses].size()));
-
-            auto next_pass = [&](int pass) {
-              if (prog_detail <= kDC) return kNumPasses;
-              if (prog_detail <= kLastPasses) {
-                return std::min(pass + 2, kNumPasses);
-              }
-              return pass + 1;
-            };
-
-            if (expect_flush) {
-              // Return a particular downsampling ratio only after the last
-              // pass for that downsampling was processed.
-              int expected_downsampling_ratios[] = {8, 8, 4, 4, 2};
-              for (int p = 0; p < kNumPasses; p = next_pass(p)) {
-                EXPECT_EQ(JXL_DEC_FRAME_PROGRESSION, process_input());
-                EXPECT_EQ(expected_downsampling_ratios[p],
-                          JxlDecoderGetIntendedDownsamplingRatio(dec));
-                EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderFlushImage(dec));
-                passes[p] = passes[kNumPasses];
-              }
-            }
-
-            EXPECT_EQ(JXL_DEC_FULL_IMAGE, process_input());
-            EXPECT_EQ(JXL_DEC_SUCCESS, process_input());
-
-            JxlDecoderDestroy(dec);
-
-            if (!expect_flush) {
-              continue;
-            }
-            jxl::ButteraugliParams ba;
-            std::vector<float> distances(kNumPasses + 1);
-            for (int p = 0;; p = next_pass(p)) {
-              jxl::CodecInOut io1;
-              EXPECT_TRUE(jxl::ConvertFromExternal(
-                  jxl::Span<const uint8_t>(passes[p].data(), passes[p].size()),
-                  xsize, ysize, color_encoding, num_channels,
-                  /*alpha_is_premultiplied=*/false, /*bits_per_sample=*/16,
-                  JXL_BIG_ENDIAN, /*flipped_y=*/false,
-                  /*pool=*/nullptr, &io1.Main(), /*float_in=*/false,
-                  /*align=*/0));
-              distances[p] = ButteraugliDistance(io, io1, ba, jxl::GetJxlCms(),
-                                                 nullptr, nullptr);
-              if (p == kNumPasses) break;
-            }
-            const float kMaxDistance[kNumPasses + 1] = {30.0f, 20.0f, 10.0f,
-                                                        5.0f,  3.0f,  2.0f};
-            EXPECT_LT(distances[kNumPasses], kMaxDistance[kNumPasses]);
-            for (int p = 0; p < kNumPasses;) {
-              int next_p = next_pass(p);
-              EXPECT_LT(distances[p], kMaxDistance[p]);
-              // Verify that the returned pass image is actually not the
-              // same as the next pass image, by checking that it has a bit
-              // worse butteraugli score.
-              EXPECT_LT(distances[next_p] * 1.2f, distances[p]);
-              p = next_p;
-            }
+      auto process_input = [&]() {
+        for (;;) {
+          EXPECT_EQ(JXL_DEC_SUCCESS,
+                    JxlDecoderSetInput(dec, next_in, avail_in));
+          JxlDecoderStatus status = JxlDecoderProcessInput(dec);
+          size_t remaining = JxlDecoderReleaseInput(dec);
+          EXPECT_LE(remaining, avail_in);
+          next_in += avail_in - remaining;
+          avail_in = remaining;
+          if (status == JXL_DEC_NEED_MORE_INPUT && pos < data.size()) {
+            size_t chunk = std::min<size_t>(increment, data.size() - pos);
+            pos += chunk;
+            avail_in += chunk;
+            continue;
           }
+          return status;
         }
+      };
+
+      EXPECT_EQ(JXL_DEC_BASIC_INFO, process_input());
+      JxlBasicInfo info;
+      EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBasicInfo(dec, &info));
+      EXPECT_EQ(info.xsize, xsize);
+      EXPECT_EQ(info.ysize, ysize);
+
+      EXPECT_EQ(JXL_DEC_FRAME, process_input());
+
+      size_t buffer_size;
+      EXPECT_EQ(JXL_DEC_SUCCESS,
+                JxlDecoderImageOutBufferSize(dec, &format, &buffer_size));
+      EXPECT_EQ(pixels.size(), buffer_size);
+      EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetImageOutBuffer(
+                                     dec, &format, passes[kNumPasses].data(),
+                                     passes[kNumPasses].size()));
+
+      auto next_pass = [&](int pass) {
+        if (prog_detail <= kDC) return kNumPasses;
+        if (prog_detail <= kLastPasses) {
+          return std::min(pass + 2, kNumPasses);
+        }
+        return pass + 1;
+      };
+
+      if (expect_flush) {
+        // Return a particular downsampling ratio only after the last
+        // pass for that downsampling was processed.
+        int expected_downsampling_ratios[] = {8, 8, 4, 4, 2};
+        for (int p = 0; p < kNumPasses; p = next_pass(p)) {
+          EXPECT_EQ(JXL_DEC_FRAME_PROGRESSION, process_input());
+          EXPECT_EQ(expected_downsampling_ratios[p],
+                    JxlDecoderGetIntendedDownsamplingRatio(dec));
+          EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderFlushImage(dec));
+          passes[p] = passes[kNumPasses];
+        }
+      }
+
+      EXPECT_EQ(JXL_DEC_FULL_IMAGE, process_input());
+      EXPECT_EQ(JXL_DEC_SUCCESS, process_input());
+
+      JxlDecoderDestroy(dec);
+
+      if (!expect_flush) {
+        continue;
+      }
+      jxl::ButteraugliParams ba;
+      std::vector<float> distances(kNumPasses + 1);
+      for (int p = 0;; p = next_pass(p)) {
+        jxl::CodecInOut io1;
+        EXPECT_TRUE(jxl::ConvertFromExternal(
+            jxl::Span<const uint8_t>(passes[p].data(), passes[p].size()), xsize,
+            ysize, color_encoding, num_channels,
+            /*alpha_is_premultiplied=*/false, /*bits_per_sample=*/16,
+            JXL_BIG_ENDIAN, /*flipped_y=*/false,
+            /*pool=*/nullptr, &io1.Main(), /*float_in=*/false,
+            /*align=*/0));
+        distances[p] = ButteraugliDistance(io, io1, ba, jxl::GetJxlCms(),
+                                           nullptr, nullptr);
+        if (p == kNumPasses) break;
+      }
+      const float kMaxDistance[kNumPasses + 1] = {30.0f, 20.0f, 10.0f,
+                                                  5.0f,  3.0f,  2.0f};
+      EXPECT_LT(distances[kNumPasses], kMaxDistance[kNumPasses]);
+      for (int p = 0; p < kNumPasses;) {
+        int next_p = next_pass(p);
+        EXPECT_LT(distances[p], kMaxDistance[p]);
+        // Verify that the returned pass image is actually not the
+        // same as the next pass image, by checking that it has a bit
+        // worse butteraugli score.
+        EXPECT_LT(distances[next_p] * 1.2f, distances[p]);
+        p = next_p;
       }
     }
   }

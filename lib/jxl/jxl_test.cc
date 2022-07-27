@@ -9,7 +9,9 @@
 #include <stdio.h>
 
 #include <array>
+#include <future>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -382,27 +384,30 @@ TEST(JxlTest, RoundtripMultiGroupNL) {
 #endif
 
 TEST(JxlTest, RoundtripMultiGroup) {
-  ThreadPoolInternal pool(4);
   const PaddedBytes orig = ReadTestData("jxl/flower/flower.png");
   CodecInOut io;
-  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
+  {
+    ThreadPoolInternal pool(4);
+    ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
+  }
   io.ShrinkTo(600, 1024);
 
-  CompressParams cparams;
+  auto test = [&](jxl::SpeedTier speed_tier, float target_distance,
+                  size_t expected_size, float expected_distance) {
+    ThreadPoolInternal pool(4);
+    CompressParams cparams;
+    cparams.butteraugli_distance = target_distance;
+    cparams.speed_tier = speed_tier;
+    CodecInOut io2;
+    EXPECT_LE(Roundtrip(&io, cparams, {}, &pool, &io2), expected_size);
+    EXPECT_THAT(ComputeDistance2(io.Main(), io2.Main(), GetJxlCms()),
+                IsSlightlyBelow(expected_distance));
+  };
 
-  cparams.butteraugli_distance = 1.0f;
-  cparams.speed_tier = SpeedTier::kKitten;
-  CodecInOut io2;
-  EXPECT_LE(Roundtrip(&io, cparams, {}, &pool, &io2), 55000u);
-  EXPECT_THAT(ComputeDistance2(io.Main(), io2.Main(), GetJxlCms()),
-              IsSlightlyBelow(11));
-
-  cparams.butteraugli_distance = 2.0f;
-  cparams.speed_tier = SpeedTier::kWombat;
-  CodecInOut io3;
-  EXPECT_LE(Roundtrip(&io, cparams, {}, &pool, &io3), 34000u);
-  EXPECT_THAT(ComputeDistance2(io.Main(), io3.Main(), GetJxlCms()),
-              IsSlightlyBelow(18));
+  auto run_kitten = std::async(std::launch::async, test, SpeedTier::kKitten,
+                               1.0f, 55000u, 11);
+  auto run_wombat = std::async(std::launch::async, test, SpeedTier::kWombat,
+                               2.0f, 34000u, 18);
 }
 
 TEST(JxlTest, RoundtripRGBToGrayscale) {
@@ -511,29 +516,37 @@ TEST(JxlTest, RoundtripD2Consistent) {
 
 // Same as above, but for full image, testing multiple groups.
 TEST(JxlTest, RoundtripLargeConsistent) {
-  ThreadPoolInternal pool(8);
   const PaddedBytes orig = ReadTestData("jxl/flower/flower.png");
   CodecInOut io;
-  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
+  {
+    ThreadPoolInternal pool(8);
+    ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
+  }
 
   CompressParams cparams;
   cparams.speed_tier = SpeedTier::kSquirrel;
   cparams.butteraugli_distance = 2.0;
 
-  // Try each xsize mod kBlockDim to verify right border handling.
-  CodecInOut io2;
-  const size_t size2 = Roundtrip(&io, cparams, {}, &pool, &io2);
+  auto roundtrip_and_compare = [&]() {
+    ThreadPoolInternal pool(8);
+    CodecInOut io2;
+    size_t size = Roundtrip(&io, cparams, {}, &pool, &io2);
+    double dist = ComputeDistance2(io.Main(), io2.Main(), GetJxlCms());
+    return std::tuple<size_t, double>(size, dist);
+  };
 
-  CodecInOut io3;
-  const size_t size3 = Roundtrip(&io, cparams, {}, &pool, &io3);
+  // Try each xsize mod kBlockDim to verify right border handling.
+  auto future2 = std::async(std::launch::async, roundtrip_and_compare);
+  auto future3 = std::async(std::launch::async, roundtrip_and_compare);
+
+  const auto result2 = future2.get();
+  const auto result3 = future3.get();
 
   // Exact same compressed size.
-  EXPECT_EQ(size2, size3);
+  EXPECT_EQ(std::get<0>(result2), std::get<0>(result3));
 
   // Exact same distance.
-  const float dist2 = ComputeDistance2(io.Main(), io2.Main(), GetJxlCms());
-  const float dist3 = ComputeDistance2(io.Main(), io3.Main(), GetJxlCms());
-  EXPECT_EQ(dist2, dist3);
+  EXPECT_EQ(std::get<1>(result2), std::get<1>(result3));
 }
 
 #if JXL_TEST_NL
@@ -1707,7 +1720,7 @@ TEST(JxlTest, RoundtripProgressive) {
 }
 
 TEST(JxlTest, RoundtripProgressiveLevel2Slow) {
-  ThreadPoolInternal pool(4);
+  ThreadPoolInternal pool(8);
   const PaddedBytes orig = ReadTestData("jxl/flower/flower.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));

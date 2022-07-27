@@ -5,6 +5,7 @@
 
 #include <stddef.h>
 
+#include <future>
 #include <string>
 #include <utility>
 
@@ -71,28 +72,28 @@ TEST(PassesTest, RoundtripUnalignedPasses) {
 }
 
 TEST(PassesTest, RoundtripMultiGroupPasses) {
-  ThreadPoolInternal pool(4);
   const PaddedBytes orig = ReadTestData("jxl/flower/flower.png");
   CodecInOut io;
-  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
+  {
+    ThreadPoolInternal pool(4);
+    ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
+  }
   io.ShrinkTo(600, 1024);  // partial X, full Y group
 
-  CompressParams cparams;
+  auto test = [&](float target_distance, float threshold) {
+    ThreadPoolInternal pool(4);
+    CompressParams cparams;
+    cparams.butteraugli_distance = target_distance;
+    cparams.progressive_mode = true;
+    CodecInOut io2;
+    Roundtrip(&io, cparams, {}, &pool, &io2);
+    EXPECT_THAT(ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
+                                    /*distmap=*/nullptr, &pool),
+                IsSlightlyBelow(target_distance + threshold));
+  };
 
-  cparams.butteraugli_distance = 1.0f;
-  cparams.progressive_mode = true;
-  CodecInOut io2;
-  Roundtrip(&io, cparams, {}, &pool, &io2);
-  EXPECT_THAT(ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
-                                  /*distmap=*/nullptr, &pool),
-              IsSlightlyBelow(1.3f));
-
-  cparams.butteraugli_distance = 2.0f;
-  CodecInOut io3;
-  Roundtrip(&io, cparams, {}, &pool, &io3);
-  EXPECT_THAT(ButteraugliDistance(io, io3, cparams.ba_params, GetJxlCms(),
-                                  /*distmap=*/nullptr, &pool),
-              IsSlightlyBelow(2.3f));
+  auto run1 = std::async(std::launch::async, test, 1.0f, 0.3f);
+  auto run2 = std::async(std::launch::async, test, 2.0f, 0.3f);
 }
 
 TEST(PassesTest, RoundtripLargeFastPasses) {
