@@ -308,13 +308,10 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
           fprintf(stderr, "JxlDecoderGetColorAsICCProfile failed\n");
           return false;
         }
-      } else {
-        if (JXL_DEC_SUCCESS !=
-            JxlDecoderGetColorAsEncodedProfile(dec, nullptr, target,
-                                               &ppf->color_encoding)) {
-          fprintf(stderr, "JxlDecoderGetColorAsEncodedProfile failed\n");
-          return false;
-        }
+      }
+      if (JXL_DEC_SUCCESS != JxlDecoderGetColorAsEncodedProfile(
+                                 dec, nullptr, target, &ppf->color_encoding)) {
+        ppf->color_encoding.color_space = JXL_COLOR_SPACE_UNKNOWN;
       }
       icc_size = 0;
       target = JXL_COLOR_PROFILE_TARGET_ORIGINAL;

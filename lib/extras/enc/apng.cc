@@ -115,6 +115,43 @@ class BlobsWriterPNG {
   }
 };
 
+void MaybeAddCICP(JxlColorEncoding c_enc, png_structp png_ptr,
+                  png_infop info_ptr) {
+  png_byte cicp_data[4] = {};
+  png_unknown_chunk cicp_chunk;
+  if (c_enc.color_space != JXL_COLOR_SPACE_RGB) {
+    return;
+  }
+  if (c_enc.primaries == JXL_PRIMARIES_P3) {
+    if (c_enc.white_point == JXL_WHITE_POINT_D65) {
+      cicp_data[0] = 12;
+    } else if (c_enc.white_point == JXL_WHITE_POINT_DCI) {
+      cicp_data[0] = 11;
+    } else {
+      return;
+    }
+  } else if (c_enc.primaries != JXL_PRIMARIES_CUSTOM &&
+             c_enc.white_point == JXL_WHITE_POINT_D65) {
+    cicp_data[0] = static_cast<png_byte>(c_enc.primaries);
+  } else {
+    return;
+  }
+  if (c_enc.transfer_function == JXL_TRANSFER_FUNCTION_UNKNOWN ||
+      c_enc.transfer_function == JXL_TRANSFER_FUNCTION_GAMMA) {
+    return;
+  }
+  cicp_data[1] = static_cast<png_byte>(c_enc.transfer_function);
+  cicp_data[2] = 0;
+  cicp_data[3] = 1;
+  cicp_chunk.data = cicp_data;
+  cicp_chunk.size = sizeof(cicp_data);
+  cicp_chunk.location = PNG_HAVE_PLTE;
+  memcpy(cicp_chunk.name, "cICP", 5);
+  png_set_keep_unknown_chunks(png_ptr, 3,
+                              reinterpret_cast<const png_byte*>("cICP"), 1);
+  png_set_unknown_chunks(png_ptr, info_ptr, &cicp_chunk, 1);
+}
+
 Status EncodePackedPixelFileToAPNG(const PackedPixelFile& ppf, ThreadPool* pool,
                                    std::vector<uint8_t>* bytes) {
   size_t xsize = ppf.info.xsize;
@@ -140,9 +177,6 @@ Status EncodePackedPixelFileToAPNG(const PackedPixelFile& ppf, ThreadPool* pool,
   if (ppf.info.orientation != JXL_ORIENT_IDENTITY) {
     return JXL_FAILURE("Orientation must be identity");
   }
-
-  png_byte cicp_data[4] = {};
-  png_unknown_chunk cicp_chunk;
 
   size_t count = 0;
   size_t anim_chunks = 0;
@@ -235,36 +269,8 @@ Status EncodePackedPixelFileToAPNG(const PackedPixelFile& ppf, ThreadPool* pool,
                  PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_BASE,
                  PNG_FILTER_TYPE_BASE);
     if (count == 0) {
-      if (ppf.icc.empty()) {
-        JxlColorEncoding c_enc = ppf.color_encoding;
-        if (c_enc.primaries == JXL_PRIMARIES_P3) {
-          if (c_enc.white_point == JXL_WHITE_POINT_D65) {
-            cicp_data[0] = 12;
-          } else if (c_enc.white_point == JXL_WHITE_POINT_DCI) {
-            cicp_data[0] = 11;
-          } else {
-            return JXL_FAILURE("Unsupported color encoding");
-          }
-        } else if (c_enc.primaries != JXL_PRIMARIES_CUSTOM &&
-                   c_enc.white_point == JXL_WHITE_POINT_D65) {
-          cicp_data[0] = static_cast<png_byte>(c_enc.primaries);
-        } else {
-          return JXL_FAILURE("Unsupported color encoding");
-        }
-        if (c_enc.transfer_function == JXL_TRANSFER_FUNCTION_UNKNOWN ||
-            c_enc.transfer_function == JXL_TRANSFER_FUNCTION_GAMMA) {
-          return JXL_FAILURE("Unsupported transfer function");
-        }
-        cicp_data[1] = static_cast<png_byte>(c_enc.transfer_function);
-        cicp_data[3] = 1;
-        cicp_chunk.data = cicp_data;
-        cicp_chunk.size = sizeof(cicp_data);
-        cicp_chunk.location = PNG_HAVE_PLTE;
-        memcpy(cicp_chunk.name, "cICP", 5);
-        png_set_keep_unknown_chunks(
-            png_ptr, 3, reinterpret_cast<const png_byte*>("cICP"), 1);
-        png_set_unknown_chunks(png_ptr, info_ptr, &cicp_chunk, 1);
-      } else {
+      MaybeAddCICP(ppf.color_encoding, png_ptr, info_ptr);
+      if (!ppf.icc.empty()) {
         png_set_benign_errors(png_ptr, 1);
         png_set_iCCP(png_ptr, info_ptr, "1", 0, ppf.icc.data(), ppf.icc.size());
       }
