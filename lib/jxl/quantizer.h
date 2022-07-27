@@ -68,10 +68,11 @@ class Quantizer {
   explicit Quantizer(const DequantMatrices* dequant);
   Quantizer(const DequantMatrices* dequant, int quant_dc, int global_scale);
 
-  static constexpr int kQuantMax = 256;
+  static constexpr int32_t kQuantMax = 256;
 
-  static JXL_INLINE int ClampVal(float val) {
-    return static_cast<int>(std::max(1.0f, std::min<float>(val, kQuantMax)));
+  static JXL_INLINE int32_t ClampVal(float val) {
+    return static_cast<int32_t>(
+        std::max(1.0f, std::min<float>(val, kQuantMax)));
   }
 
   float ScaleGlobalScale(const float scale) {
