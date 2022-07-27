@@ -10,11 +10,12 @@
 #include "gtest/gtest.h"
 #include "jxl/thread_parallel_runner.h"
 #include "jxl/thread_parallel_runner_cxx.h"
+#include "lib/jxl/test_utils.h"
 #include "lib/jxl/testdata.h"
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size);
 
-std::vector<uint64_t> GetTestIds() {
+std::vector<uint64_t> AllTestIds() {
   return {
       4546077333782528, 4716049045520384, 4718378999218176, 4729306868219904,
       4787817341911040, 4816304719134720, 4848606801166336, 4859247059402752,
@@ -30,12 +31,14 @@ std::vector<uint64_t> GetTestIds() {
   };
 }
 
-TEST(DjxlFuzzerTest, TestAll) {
-  for (auto id : GetTestIds()) {
-    std::ostringstream os;
-    os << "oss-fuzz/clusterfuzz-testcase-minimized-djxl_fuzzer-" << id;
-    printf("Testing %s\n", os.str().c_str());
-    const jxl::PaddedBytes input = jxl::ReadTestData(os.str());
-    LLVMFuzzerTestOneInput(input.data(), input.size());
-  }
+class DjxlFuzzerTest : public ::testing::TestWithParam<uint64_t> {};
+JXL_GTEST_INSTANTIATE_TEST_SUITE_P(DjxlFuzzerTestInstantiation, DjxlFuzzerTest,
+                                   ::testing::ValuesIn(AllTestIds()));
+TEST_P(DjxlFuzzerTest, TestOne) {
+  uint64_t id = GetParam();
+  std::ostringstream os;
+  os << "oss-fuzz/clusterfuzz-testcase-minimized-djxl_fuzzer-" << id;
+  printf("Testing %s\n", os.str().c_str());
+  const jxl::PaddedBytes input = jxl::ReadTestData(os.str());
+  LLVMFuzzerTestOneInput(input.data(), input.size());
 }
