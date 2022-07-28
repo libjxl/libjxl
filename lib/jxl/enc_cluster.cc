@@ -26,12 +26,18 @@ HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
 
+// These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::Eq;
+using hwy::HWY_NAMESPACE::IfThenZeroElse;
+
 template <class V>
 V Entropy(V count, V inv_total, V total) {
   const HWY_CAPPED(float, Histogram::kRounding) d;
   const auto zero = Set(d, 0.0f);
-  return IfThenZeroElse(count == total,
-                        zero - count * FastLog2f(d, inv_total * count));
+  // TODO(eustas): why (0 - x) instead of Neg(x)?
+  return IfThenZeroElse(
+      Eq(count, total),
+      Sub(zero, Mul(count, FastLog2f(d, Mul(inv_total, count)))));
 }
 
 void HistogramEntropy(const Histogram& a) {
@@ -47,7 +53,8 @@ void HistogramEntropy(const Histogram& a) {
 
   for (size_t i = 0; i < a.data_.size(); i += Lanes(di)) {
     const auto counts = LoadU(di, &a.data_[i]);
-    entropy_lanes += Entropy(ConvertTo(df, counts), inv_tot, total);
+    entropy_lanes =
+        Add(entropy_lanes, Entropy(ConvertTo(df, counts), inv_tot, total));
   }
   a.entropy_ += GetLane(SumOfLanes(df, entropy_lanes));
 }
@@ -68,8 +75,8 @@ float HistogramDistance(const Histogram& a, const Histogram& b) {
         a.data_.size() > i ? LoadU(di, &a.data_[i]) : Zero(di);
     const auto b_counts =
         b.data_.size() > i ? LoadU(di, &b.data_[i]) : Zero(di);
-    const auto counts = ConvertTo(df, a_counts + b_counts);
-    distance_lanes += Entropy(counts, inv_tot, total);
+    const auto counts = ConvertTo(df, Add(a_counts, b_counts));
+    distance_lanes = Add(distance_lanes, Entropy(counts, inv_tot, total));
   }
   const float total_distance = GetLane(SumOfLanes(df, distance_lanes));
   return total_distance - a.entropy_ - b.entropy_;

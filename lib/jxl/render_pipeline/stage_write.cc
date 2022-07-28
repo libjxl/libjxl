@@ -20,6 +20,12 @@ HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
 
+// These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::Clamp;
+using hwy::HWY_NAMESPACE::Mul;
+using hwy::HWY_NAMESPACE::NearestInt;
+using hwy::HWY_NAMESPACE::U8FromU32;
+
 template <typename D, typename V>
 void StoreRGBA(D d, V r, V g, V b, V a, bool alpha, size_t n, size_t extra,
                uint8_t* buf) {
@@ -116,10 +122,10 @@ class WriteToU8Stage : public RenderPipelineStage {
     }
 
     for (ssize_t x = 0; x < x1; x += Lanes(d)) {
-      auto rf = Clamp(zero, LoadU(d, row_in_r + x), one) * mul;
-      auto gf = Clamp(zero, LoadU(d, row_in_g + x), one) * mul;
-      auto bf = Clamp(zero, LoadU(d, row_in_b + x), one) * mul;
-      auto af = row_in_a ? Clamp(zero, LoadU(d, row_in_a + x), one) * mul
+      auto rf = Mul(Clamp(zero, LoadU(d, row_in_r + x), one), mul);
+      auto gf = Mul(Clamp(zero, LoadU(d, row_in_g + x), one), mul);
+      auto bf = Mul(Clamp(zero, LoadU(d, row_in_b + x), one), mul);
+      auto af = row_in_a ? Mul(Clamp(zero, LoadU(d, row_in_a + x), one), mul)
                          : Set(d, 255.0f);
       auto r8 = U8FromU32(BitCast(du, NearestInt(rf)));
       auto g8 = U8FromU32(BitCast(du, NearestInt(gf)));
