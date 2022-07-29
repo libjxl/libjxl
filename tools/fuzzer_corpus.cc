@@ -23,7 +23,7 @@
 #include <vector>
 
 #if JPEGXL_ENABLE_JPEG
-#include "lib/extras/enc/jpg.h"
+#include "lib/extras/codec.h"
 #endif
 #include "lib/jxl/aux_out.h"
 #include "lib/jxl/base/data_parallel.h"
@@ -220,8 +220,8 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
         span, spec.width, spec.height, io.metadata.m.color_encoding,
         bytes_per_pixel / bytes_per_sample,
         /*alpha_is_premultiplied=*/spec.alpha_is_premultiplied,
-        io.metadata.m.bit_depth.bits_per_sample, JXL_LITTLE_ENDIAN,
-        false /* flipped_y */, nullptr, &ib, /*float_in=*/false, /*align=*/0));
+        io.metadata.m.bit_depth.bits_per_sample, JXL_LITTLE_ENDIAN, nullptr,
+        &ib, /*float_in=*/false, /*align=*/0));
     io.frames.push_back(std::move(ib));
   }
 
@@ -233,9 +233,11 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
     // If this image is supposed to be a reconstructible JPEG, collect the JPEG
     // metadata and encode it in the beginning of the compressed bytes.
     std::vector<uint8_t> jpeg_bytes;
-    JXL_RETURN_IF_ERROR(EncodeImageJPG(
-        &io, jxl::extras::JpegEncoder::kLibJpeg, /*quality=*/70,
-        jxl::YCbCrChromaSubsampling(), /*pool=*/nullptr, &jpeg_bytes));
+    io.jpeg_quality = 70;
+    JXL_RETURN_IF_ERROR(jxl::Encode(io, jxl::extras::Codec::kJPG,
+                                    io.metadata.m.color_encoding,
+                                    /*bits_per_sample=*/8, &jpeg_bytes,
+                                    /*pool=*/nullptr));
     JXL_RETURN_IF_ERROR(jxl::jpeg::DecodeImageJPG(
         jxl::Span<const uint8_t>(jpeg_bytes.data(), jpeg_bytes.size()), &io));
     jxl::PaddedBytes jpeg_data;

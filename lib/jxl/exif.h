@@ -19,9 +19,6 @@ namespace jxl {
 // as a no-op.
 void InterpretExif(const std::vector<uint8_t>& exif, CodecMetadata* metadata);
 
-// Sets the Exif orientation to the identity, to avoid repeated orientation
-void ResetExifOrientation(std::vector<uint8_t>& exif);
-
 }  // namespace jxl
 
 #endif  // LIB_JXL_EXIF_H_

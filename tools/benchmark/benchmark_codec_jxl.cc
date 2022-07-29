@@ -261,11 +261,15 @@ class JxlCodec : public ImageCodec {
 
 #if JPEGXL_ENABLE_JPEG
     if (normalize_bitrate_ && cparams_.butteraugli_distance > 0.0f) {
-      extras::JpegEncoder jpeg_encoder = extras::JpegEncoder::kLibJpeg;
-      std::vector<uint8_t> jpeg_bytes;
-      JXL_RETURN_IF_ERROR(EncodeImageJPG(
-          io, jpeg_encoder, 95, YCbCrChromaSubsampling(), pool, &jpeg_bytes));
-      float jpeg_bits = jpeg_bytes.size() * kBitsPerByte;
+      extras::PackedPixelFile ppf;
+      JxlPixelFormat format = {0, JXL_TYPE_UINT8, JXL_BIG_ENDIAN, 0};
+      JXL_RETURN_IF_ERROR(ConvertCodecInOutToPackedPixelFile(
+          *io, format, io->metadata.m.color_encoding, pool, &ppf));
+      extras::EncodedImage encoded;
+      std::unique_ptr<extras::Encoder> encoder = extras::GetJPEGEncoder();
+      encoder->SetOption("q", "95");
+      JXL_RETURN_IF_ERROR(encoder->Encode(ppf, &encoded, pool));
+      float jpeg_bits = encoded.bitstreams.back().size() * kBitsPerByte;
       float jpeg_bitrate = jpeg_bits / (io->xsize() * io->ysize());
       // Formula fitted on jyrki31 corpus for distances between 1.0 and 8.0.
       cparams_.target_bitrate = (jpeg_bitrate * 0.36f /

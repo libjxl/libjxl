@@ -67,23 +67,4 @@ void InterpretExif(const std::vector<uint8_t>& exif, CodecMetadata* metadata) {
   }
 }
 
-void ResetExifOrientation(std::vector<uint8_t>& exif) {
-  bool bigendian;
-  if (!IsExif(exif, &bigendian)) return;
-  size_t o_pos = FindExifTagPosition(exif, kExifOrientationTag);
-  if (o_pos) {
-    uint8_t* t = exif.data() + o_pos;
-    uint16_t type = (bigendian ? LoadBE16(t) : LoadLE16(t));
-    t += 2;
-    uint32_t count = (bigendian ? LoadBE32(t) : LoadLE32(t));
-    t += 4;
-    if (type == 3 && count == 1) {
-      if (bigendian)
-        StoreBE16(1, t);
-      else
-        StoreLE16(1, t);
-    }
-  }
-}
-
 }  // namespace jxl

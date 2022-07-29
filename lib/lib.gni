@@ -466,6 +466,8 @@ libjxl_extras_sources = [
     "extras/enc/pgx.h",
     "extras/enc/pnm.cc",
     "extras/enc/pnm.h",
+    "extras/exif.cc",
+    "extras/exif.h",
     "extras/hlg.cc",
     "extras/hlg.h",
     "extras/packed_image.h",
