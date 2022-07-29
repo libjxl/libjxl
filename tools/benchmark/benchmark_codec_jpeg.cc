@@ -24,36 +24,16 @@
 #include "lib/jxl/codec_in_out.h"
 #include "tools/cmdline.h"
 
-using jxl::extras::JpegEncoder;
-
 namespace jxl {
 
 namespace {
 
 struct JPEGArgs {
-  JpegEncoder encoder = JpegEncoder::kLibJpeg;
-  YCbCrChromaSubsampling chroma_subsampling;
+  std::string jpeg_encoder = "libjpeg";
+  std::string chroma_subsampling = "444";
 };
 
 JPEGArgs* const jpegargs = new JPEGArgs;
-
-bool ParseChromaSubsampling(const char* param,
-                            YCbCrChromaSubsampling* subsampling) {
-  std::vector<std::pair<
-      std::string, std::pair<std::array<uint8_t, 3>, std::array<uint8_t, 3>>>>
-      options = {{"444", {{{1, 1, 1}}, {{1, 1, 1}}}},
-                 {"420", {{{2, 1, 1}}, {{2, 1, 1}}}},
-                 {"422", {{{2, 1, 1}}, {{1, 1, 1}}}},
-                 {"440", {{{1, 1, 1}}, {{2, 1, 1}}}}};
-  for (const auto& option : options) {
-    if (param == option.first) {
-      JXL_CHECK(subsampling->Set(option.second.first.data(),
-                                 option.second.second.data()));
-      return true;
-    }
-  }
-  return false;
-}
 
 }  // namespace
 
@@ -61,14 +41,14 @@ Status AddCommandLineOptionsJPEGCodec(BenchmarkArgs* args) {
   args->cmdline.AddOptionValue(
       '\0', "chroma_subsampling", "444/422/420/411",
       "default JPEG chroma subsampling (default: 444).",
-      &jpegargs->chroma_subsampling, &ParseChromaSubsampling);
+      &jpegargs->chroma_subsampling, &jpegxl::tools::ParseString);
   return true;
 }
 
 class JPEGCodec : public ImageCodec {
  public:
   explicit JPEGCodec(const BenchmarkArgs& args) : ImageCodec(args) {
-    encoder_ = jpegargs->encoder;
+    jpeg_encoder_ = jpegargs->jpeg_encoder;
     chroma_subsampling_ = jpegargs->chroma_subsampling;
   }
 
@@ -77,12 +57,13 @@ class JPEGCodec : public ImageCodec {
       return true;
     }
     if (param == "sjpeg") {
-      encoder_ = JpegEncoder::kSJpeg;
+      jpeg_encoder_ = param;
       return true;
     }
     if (param.compare(0, 3, "yuv") == 0) {
       if (param.size() != 6) return false;
-      return ParseChromaSubsampling(param.c_str() + 3, &chroma_subsampling_);
+      chroma_subsampling_ = param.substr(3);
+      return true;
     }
     return false;
   }
@@ -90,11 +71,21 @@ class JPEGCodec : public ImageCodec {
   Status Compress(const std::string& filename, const CodecInOut* io,
                   ThreadPoolInternal* pool, std::vector<uint8_t>* compressed,
                   jpegxl::tools::SpeedStats* speed_stats) override {
+    extras::PackedPixelFile ppf;
+    JxlPixelFormat format = {0, JXL_TYPE_UINT8, JXL_BIG_ENDIAN, 0};
+    JXL_RETURN_IF_ERROR(ConvertCodecInOutToPackedPixelFile(
+        *io, format, io->metadata.m.color_encoding, pool, &ppf));
+    extras::EncodedImage encoded;
+    std::unique_ptr<extras::Encoder> encoder = extras::GetJPEGEncoder();
+    std::ostringstream os;
+    os << static_cast<int>(std::round(q_target_));
+    encoder->SetOption("q", os.str());
+    encoder->SetOption("jpeg_encoder", jpeg_encoder_);
+    encoder->SetOption("chroma_subsampling", chroma_subsampling_);
     const double start = Now();
-    JXL_RETURN_IF_ERROR(EncodeImageJPG(io, encoder_,
-                                       static_cast<int>(std::round(q_target_)),
-                                       chroma_subsampling_, pool, compressed));
+    JXL_RETURN_IF_ERROR(encoder->Encode(ppf, &encoded, pool));
     const double end = Now();
+    *compressed = encoded.bitstreams.back();
     speed_stats->NotifyElapsed(end - start);
     return true;
   }
@@ -114,8 +105,8 @@ class JPEGCodec : public ImageCodec {
   }
 
  protected:
-  JpegEncoder encoder_;
-  YCbCrChromaSubsampling chroma_subsampling_;
+  std::string jpeg_encoder_;
+  std::string chroma_subsampling_;
 };
 
 ImageCodec* CreateNewJPEGCodec(const BenchmarkArgs& args) {

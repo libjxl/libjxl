@@ -58,18 +58,19 @@ endif()  # JPEGXL_ENABLE_VIEWERS
 
 # Tools are added conditionally below.
 set(TOOL_BINARIES)
+# Tools that depend on jxl internal functions.
+set(INTERNAL_TOOL_BINARIES)
 
 add_library(jxl_tool STATIC EXCLUDE_FROM_ALL
   cmdline.cc
   codec_config.cc
   speed_stats.cc
+  file_io.cc
   tool_version.cc
 )
 target_compile_options(jxl_tool PUBLIC "${JPEGXL_INTERNAL_FLAGS}")
+target_include_directories(jxl_tool PUBLIC "${PROJECT_SOURCE_DIR}")
 target_link_libraries(jxl_tool hwy)
-
-target_include_directories(jxl_tool
-  PUBLIC "${PROJECT_SOURCE_DIR}")
 
 # The JPEGXL_VERSION is set from the builders.
 if(NOT DEFINED JPEGXL_VERSION OR JPEGXL_VERSION STREQUAL "")
@@ -120,49 +121,32 @@ else()
 endif()
 
 if(JPEGXL_ENABLE_TOOLS)
-  list(APPEND TOOL_BINARIES
-    cjxl
-    cjpeg_hdr
-    jxlinfo
-  )
-
   # Main compressor.
-  add_executable(cjxl
-    cjxl_main.cc
-  )
+  add_executable(cjxl cjxl_main.cc)
   target_link_libraries(cjxl
     jxl
-    jxl_extras_dec-static
-    jxl_threads
-    hwy
-  )
-  target_include_directories(cjxl PRIVATE "${PROJECT_SOURCE_DIR}")
-  if(JPEGXL_EMSCRIPTEN)
-    set_target_properties(cjxl PROPERTIES LINK_FLAGS "-s USE_LIBPNG=1")
-  endif()
-
-  add_executable(djxl
-    djxl_main.cc
-  )
-  target_link_libraries(djxl
-    jxl_extras-static
+    jxl_extras_codec-static
     jxl_threads
     jxl_tool
   )
+  list(APPEND TOOL_BINARIES cjxl)
 
-  add_executable(cjpeg_hdr
-    cjpeg_hdr.cc
+  # Main decompressor.
+  add_executable(djxl djxl_main.cc)
+  target_link_libraries(djxl
+    jxl
+    jxl_extras_codec-static
+    jxl_threads
+    jxl_tool
   )
-  target_link_libraries(cjpeg_hdr
-    jxl-static
-    jxl_extras-static
-    jxl_threads-static
-  )
+  list(APPEND TOOL_BINARIES djxl)
 
-  add_executable(jxlinfo
-    jxlinfo.c
-  )
+  add_executable(cjpeg_hdr cjpeg_hdr.cc)
+  list(APPEND INTERNAL_TOOL_BINARIES cjpeg_hdr)
+
+  add_executable(jxlinfo jxlinfo.c)
   target_link_libraries(jxlinfo jxl)
+  list(APPEND TOOL_BINARIES jxlinfo)
 
   if(NOT SANITIZER STREQUAL "none")
     # Linking a C test binary with the C++ JPEG XL implementation when using
@@ -175,7 +159,7 @@ endif()  # JPEGXL_ENABLE_TOOLS
 
 # Other developer tools.
 if(JPEGXL_ENABLE_DEVTOOLS)
-  list(APPEND TOOL_BINARIES
+  list(APPEND INTERNAL_TOOL_BINARIES
     fuzzer_corpus
     butteraugli_main
     decode_and_encode
@@ -207,7 +191,7 @@ endif()  # JPEGXL_ENABLE_DEVTOOLS
 
 # Benchmark tools.
 if(JPEGXL_ENABLE_BENCHMARK AND JPEGXL_ENABLE_TOOLS)
-  list(APPEND TOOL_BINARIES
+  list(APPEND INTERNAL_TOOL_BINARIES
     benchmark_xl
   )
 
@@ -284,20 +268,20 @@ if(JPEGXL_ENABLE_BENCHMARK AND JPEGXL_ENABLE_TOOLS)
 endif()  # JPEGXL_ENABLE_BENCHMARK
 
 # All tool binaries depend on "jxl" library and the tool helpers.
+foreach(BINARY IN LISTS INTERNAL_TOOL_BINARIES)
+  target_link_libraries("${BINARY}"
+    jxl_extras-static
+    jxl_tool
+  )
+endforeach()
+
+list(APPEND TOOL_BINARIES ${INTERNAL_TOOL_BINARIES})
+
 foreach(BINARY IN LISTS TOOL_BINARIES)
-  target_include_directories("${BINARY}" PRIVATE "${PROJECT_SOURCE_DIR}")
-  target_link_libraries("${BINARY}" jxl-static jxl_extras-static jxl_threads-static jxl_tool)
   if(JPEGXL_EMSCRIPTEN)
     set_target_properties(${BINARY} PROPERTIES LINK_FLAGS "-s USE_LIBPNG=1")
   endif()
 endforeach()
-
-if(JPEGXL_ENABLE_TOOLS)
-  list(APPEND TOOL_BINARIES djxl)
-  if(JPEGXL_EMSCRIPTEN)
-    set_target_properties(djxl PROPERTIES LINK_FLAGS "-s USE_LIBPNG=1")
-  endif()
-endif()
 
 install(TARGETS ${TOOL_BINARIES} RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
 message(STATUS "Building tools: ${TOOL_BINARIES}")
@@ -335,9 +319,7 @@ foreach(FUZZER IN LISTS FUZZER_BINARIES)
     )
   else()
     target_link_libraries("${BINARY}"
-      jxl-static
       jxl_extras-static
-      jxl_threads-static
       jxl_tool
     )
   endif()
@@ -389,9 +371,7 @@ if (JPEGXL_ENABLE_TOOLS AND JPEGXL_EMSCRIPTEN)
 # WASM API facade.
 add_executable(jxl_emcc jxl_emcc.cc)
 target_link_libraries(jxl_emcc
-    jxl-static
     jxl_extras-static
-    jxl_threads-static
 )
 set_target_properties(jxl_emcc PROPERTIES LINK_FLAGS "\
   -O3\

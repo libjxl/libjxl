@@ -36,7 +36,6 @@
 #include "lib/extras/dec/pgx.h"
 #include "lib/extras/dec/pnm.h"
 #include "lib/extras/time.h"
-#include "lib/jxl/base/file_io.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
@@ -44,6 +43,7 @@
 #include "tools/args.h"
 #include "tools/cmdline.h"
 #include "tools/codec_config.h"
+#include "tools/file_io.h"
 #include "tools/speed_stats.h"
 
 namespace jpegxl {
@@ -537,30 +537,6 @@ void PrintMode(jxl::extras::PackedPixelFile& ppf, const double decode_mps,
 }  // namespace jpegxl
 
 namespace {
-/**
- * Writes bytes to file.
- */
-bool WriteFile(const std::vector<uint8_t>& bytes, const char* filename) {
-  FILE* file = fopen(filename, "wb");
-  if (!file) {
-    std::cerr << "Could not open file: " << filename << " for writing"
-              << std::endl
-              << "Error: " << strerror(errno) << std::endl;
-    return false;
-  }
-  if (fwrite(bytes.data(), sizeof(uint8_t), bytes.size(), file) !=
-      bytes.size()) {
-    std::cerr << "Could not write bytes to file: " << filename << std::endl
-              << "Error: " << strerror(errno) << std::endl;
-    return false;
-  }
-  if (fclose(file) != 0) {
-    std::cerr << "Could not close file: " << filename << std::endl
-              << "Error: " << strerror(errno) << std::endl;
-    return false;
-  }
-  return true;
-}
 
 template <typename T>
 void SetFlagFrameOptionOrDie(const char* flag_name, T flag_value,
@@ -622,14 +598,14 @@ void SetDistanceFromFlags(JxlEncoderFrameSettings* jxl_encoder_frame_settings,
 using flag_check_fn = std::function<std::string(int64_t)>;
 using flag_check_float_fn = std::function<std::string(float)>;
 
-bool IsJPG(const jxl::PaddedBytes& image_data) {
+bool IsJPG(const std::vector<uint8_t>& image_data) {
   return (image_data.size() >= 2 && image_data[0] == 0xFF &&
           image_data[1] == 0xD8);
 }
 
 // TODO(tfish): Replace with non-C-API library function.
 // Implementation is in extras/.
-jxl::Status GetPixeldata(const jxl::PaddedBytes& image_data,
+jxl::Status GetPixeldata(const std::vector<uint8_t>& image_data,
                          const jxl::extras::ColorHints& color_hints,
                          jxl::extras::PackedPixelFile& ppf,
                          jxl::extras::Codec& codec) {
@@ -675,11 +651,6 @@ jxl::Status GetPixeldata(const jxl::PaddedBytes& image_data,
   if (codec == jxl::extras::Codec::kUnknown) {
     return JXL_FAILURE("Codecs failed to decode input.");
   }
-
-  // TODO(tfish): Migrate this:
-  // if (!skip_ppf_conversion) {
-  //   JXL_RETURN_IF_ERROR(ConvertPackedPixelFileToCodecInOut(ppf, pool, io));
-  // }
   return true;
 }
 
@@ -722,12 +693,12 @@ int main(int argc, char** argv) {
   // Depending on flags-settings, we want to either load a JPEG and
   // faithfully convert it to JPEG XL, or load (JPEG or non-JPEG)
   // pixel data.
-  jxl::PaddedBytes image_data;
+  std::vector<uint8_t> image_data;
   jxl::extras::PackedPixelFile ppf;
   jxl::extras::Codec codec = jxl::extras::Codec::kUnknown;
   double decode_mps = 0;
   size_t pixels = 0;
-  if (!ReadFile(args.file_in, &image_data)) {
+  if (!jpegxl::tools::ReadFile(args.file_in, &image_data)) {
     std::cerr << "Reading image data failed." << std::endl;
     exit(EXIT_FAILURE);
   }
@@ -1228,7 +1199,7 @@ int main(int argc, char** argv) {
   }
 
   if (args.file_out) {
-    if (!WriteFile(compressed, args.file_out)) {
+    if (!jpegxl::tools::WriteFile(args.file_out, compressed)) {
       std::cerr << "Could not write jxl file." << std::endl;
       return EXIT_FAILURE;
     }

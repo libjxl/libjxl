@@ -40,11 +40,10 @@ Status FromSRGB(const size_t xsize, const size_t ysize, const bool is_gray,
   const ColorEncoding& c = ColorEncoding::SRGB(is_gray);
   const size_t bits_per_sample = (is_16bit ? 2 : 1) * kBitsPerByte;
   const Span<const uint8_t> span(pixels, end - pixels);
-  return ConvertFromExternal(span, xsize, ysize, c,
-                             (is_gray ? 1 : 3) + (has_alpha ? 1 : 0),
-                             alpha_is_premultiplied, bits_per_sample,
-                             endianness, /*flipped_y=*/false, pool, ib,
-                             /*float_in=*/false, /*align=*/0);
+  return ConvertFromExternal(
+      span, xsize, ysize, c, (is_gray ? 1 : 3) + (has_alpha ? 1 : 0),
+      alpha_is_premultiplied, bits_per_sample, endianness, pool, ib,
+      /*float_in=*/false, /*align=*/0);
 }
 
 struct WebPArgs {

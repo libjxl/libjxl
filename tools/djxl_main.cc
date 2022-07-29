@@ -27,6 +27,7 @@
 #include "lib/jxl/base/printf_macros.h"
 #include "tools/cmdline.h"
 #include "tools/codec_config.h"
+#include "tools/file_io.h"
 #include "tools/speed_stats.h"
 
 namespace jpegxl {
@@ -184,70 +185,14 @@ struct DecompressArgs {
 }  // namespace tools
 }  // namespace jpegxl
 
-bool ReadFile(const char* filename, std::vector<uint8_t>* out) {
-  FILE* file = fopen(filename, "rb");
-  if (!file) {
-    return false;
-  }
-
-  if (fseek(file, 0, SEEK_END) != 0) {
-    fclose(file);
-    return false;
-  }
-
-  long size = ftell(file);
-  // Avoid invalid file or directory.
-  if (size >= LONG_MAX || size < 0) {
-    fclose(file);
-    return false;
-  }
-
-  if (fseek(file, 0, SEEK_SET) != 0) {
-    fclose(file);
-    return false;
-  }
-
-  out->resize(size);
-  size_t readsize = fread(out->data(), 1, size, file);
-  if (fclose(file) != 0) {
-    return false;
-  }
-
-  return readsize == static_cast<size_t>(size);
-}
-
-bool WriteFile(const char* filename, const std::vector<uint8_t>& bytes) {
-  FILE* file = fopen(filename, "wb");
-  if (!file) {
-    fprintf(stderr,
-            "Could not open %s for writing\n"
-            "Error: %s",
-            filename, strerror(errno));
-    return false;
-  }
-  if (fwrite(bytes.data(), 1, bytes.size(), file) != bytes.size()) {
-    fprintf(stderr,
-            "Could not write to file\n"
-            "Error: %s",
-            strerror(errno));
-    return false;
-  }
-  if (fclose(file) != 0) {
-    fprintf(stderr,
-            "Could not close file\n"
-            "Error: %s",
-            strerror(errno));
-    return false;
-  }
-  return true;
-}
+namespace {
 
 bool WriteOptionalOutput(const std::string& filename,
                          const std::vector<uint8_t>& bytes) {
   if (filename.empty() || bytes.empty()) {
     return true;
   }
-  return WriteFile(filename.data(), bytes);
+  return jpegxl::tools::WriteFile(filename.data(), bytes);
 }
 
 std::string Filename(const std::string& base, const std::string& extension,
@@ -325,6 +270,8 @@ bool DecompressJxlToPackedPixelFile(
   return true;
 }
 
+}  // namespace
+
 int main(int argc, const char* argv[]) {
   std::string version = jpegxl::tools::CodecConfigString(JxlDecoderVersion());
   jpegxl::tools::DecompressArgs args;
@@ -359,7 +306,7 @@ int main(int argc, const char* argv[]) {
 
   std::vector<uint8_t> compressed;
   // Reading compressed JPEG XL input
-  if (!ReadFile(args.file_in, &compressed)) {
+  if (!jpegxl::tools::ReadFile(args.file_in, &compressed)) {
     fprintf(stderr, "couldn't load %s\n", args.file_in);
     return EXIT_FAILURE;
   }
@@ -387,6 +334,13 @@ int main(int argc, const char* argv[]) {
     }
   }
   const jxl::extras::Codec codec = jxl::extras::CodecFromExtension(extension);
+  if (codec == jxl::extras::Codec::kEXR) {
+    std::string force_colorspace = "RGB_D65_SRG_Rel_Lin";
+    if (!args.color_space.empty() && args.color_space != force_colorspace) {
+      fprintf(stderr, "Warning: colorspace ignored for EXR output\n");
+    }
+    args.color_space = force_colorspace;
+  }
 
   jpegxl::tools::SpeedStats stats;
   size_t num_worker_threads = JxlThreadParallelRunnerDefaultNumWorkerThreads();
@@ -427,7 +381,8 @@ int main(int argc, const char* argv[]) {
     }
     if (!bytes.empty()) {
       if (!args.quiet) fprintf(stderr, "Reconstructed to JPEG.\n");
-      if (!filename_out.empty() && !WriteFile(filename_out.c_str(), bytes)) {
+      if (!filename_out.empty() &&
+          !jpegxl::tools::WriteFile(filename_out.c_str(), bytes)) {
         return EXIT_FAILURE;
       }
     }
@@ -490,7 +445,7 @@ int main(int argc, const char* argv[]) {
             (i == 0 ? encoded_image.bitstreams[j]
                     : encoded_image.extra_channel_bitstreams[i - 1][j]);
         std::string fn = Filename(base, extension, i, j, nlayers, nframes);
-        if (!WriteFile(fn.c_str(), bitstream)) {
+        if (!jpegxl::tools::WriteFile(fn.c_str(), bitstream)) {
           return EXIT_FAILURE;
         }
       }
