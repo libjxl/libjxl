@@ -128,7 +128,7 @@ Status Encode(const CodecInOut& io, const extras::Codec codec,
       return JXL_FAILURE("Cannot encode using Codec::kUnknown");
   }
 
-  if (encoder.get() == nullptr) {
+  if (!encoder) {
     return JXL_FAILURE("Invalid codec.");
   }
 
