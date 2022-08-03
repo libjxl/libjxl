@@ -22,6 +22,8 @@
 #include "lib/jxl/enc_file.h"
 #include "lib/jxl/enc_icc_codec.h"
 #include "lib/jxl/encode_internal.h"
+#include "lib/jxl/exif.h"
+#include "lib/jxl/image_metadata.h"
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
 #include "lib/jxl/sanitizers.h"
 
@@ -1425,12 +1427,14 @@ JxlEncoderStatus JxlEncoderAddJPEGFrame(
     }
   }
 
-  if (!frame_settings->enc->basic_info_set) {
+  if (!frame_settings->enc->basic_info_set || !io.blobs.exif.empty()) {
     JxlBasicInfo basic_info;
     JxlEncoderInitBasicInfo(&basic_info);
     basic_info.xsize = io.Main().jpeg_data->width;
     basic_info.ysize = io.Main().jpeg_data->height;
     basic_info.uses_original_profile = true;
+    JxlEncoderOrientationFromExif(io.blobs.exif.data(), io.blobs.exif.size(),
+                                  &basic_info);
     if (JxlEncoderSetBasicInfo(frame_settings->enc, &basic_info) !=
         JXL_ENC_SUCCESS) {
       return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_GENERIC,
@@ -1813,4 +1817,12 @@ void JxlColorEncodingSetToLinearSRGB(JxlColorEncoding* color_encoding,
                                      JXL_BOOL is_gray) {
   ConvertInternalToExternalColorEncoding(
       jxl::ColorEncoding::LinearSRGB(is_gray), color_encoding);
+}
+
+void JxlEncoderOrientationFromExif(const uint8_t* exif, size_t size,
+                                   JxlBasicInfo* info) {
+  const std::vector<unsigned char> exif_content(exif, exif + size);
+  jxl::CodecMetadata metadata;
+  jxl::InterpretExif(exif_content, &metadata);
+  info->orientation = static_cast<JxlOrientation>(metadata.m.orientation);
 }

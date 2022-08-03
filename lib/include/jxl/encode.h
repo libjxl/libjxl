@@ -1142,6 +1142,17 @@ JXL_EXPORT void JxlColorEncodingSetToSRGB(JxlColorEncoding* color_encoding,
 JXL_EXPORT void JxlColorEncodingSetToLinearSRGB(
     JxlColorEncoding* color_encoding, JXL_BOOL is_gray);
 
+/**
+ * Sets the orientation of a @ref JxlBasicInfo from exif data.
+ *
+ * @param exif bytes of the EXIF metadata.
+ * @param size of exif.
+ * @param info global image metadata. Object owned by the caller.
+ *
+ */
+JXL_EXPORT void JxlEncoderOrientationFromExif(const uint8_t* exif, size_t size,
+                                              JxlBasicInfo* info);
+
 #if defined(__cplusplus) || defined(c_plusplus)
 }
 #endif

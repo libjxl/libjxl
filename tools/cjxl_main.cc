@@ -1014,6 +1014,11 @@ int main(int argc, char** argv) {
     }
     if (use_container) args.container = jxl::Override::kOn;
 
+    if (!ppf.metadata.exif.empty()) {
+      JxlEncoderOrientationFromExif(ppf.metadata.exif.data(),
+                                    ppf.metadata.exif.size(), &ppf.info);
+    }
+
     if (JXL_ENC_SUCCESS !=
         JxlEncoderUseContainer(jxl_encoder, static_cast<int>(use_container))) {
       std::cerr << "JxlEncoderUseContainer failed." << std::endl;
