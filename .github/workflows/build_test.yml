@@ -164,9 +164,9 @@ jobs:
         # of the same Pull Request it will reuse the cache if still around. For
         # either Pull Requests or new pushes to main, this will use the parent
         # hash as the starting point from the restore-keys entry.
-        key: ${{ runner.os }}-${{ github.sha }}-${{ matrix.name }}
+        key: build-${{ runner.os }}-${{ github.sha }}-${{ matrix.name }}
         restore-keys: |
-          ${{ runner.os }}-${{ steps.git-env.outputs.parent }}-${{ matrix.name }}
+          build-${{ runner.os }}-${{ steps.git-env.outputs.parent }}-${{ matrix.name }}
     - name: Build
       if: matrix.name != 'coverage' || env.WILL_RUN_TESTS == 'true'
       run: |
@@ -363,9 +363,9 @@ jobs:
       uses: actions/cache@v2
       with:
         path: ${{ env.CCACHE_DIR }}
-        key: ${{ runner.os }}-${{ github.sha }}-${{ matrix.variant }}
+        key: build-wasm-${{ runner.os }}-${{ github.sha }}-${{ matrix.variant }}
         restore-keys: |
-          ${{ runner.os }}-${{ steps.git-env.outputs.parent }}-${{ matrix.variant }}
+          build-wasm-${{ runner.os }}-${{ steps.git-env.outputs.parent }}-${{ matrix.variant }}
 
     - name: Install node
       uses: actions/setup-node@v3
