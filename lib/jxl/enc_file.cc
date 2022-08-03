@@ -20,7 +20,6 @@
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_frame.h"
 #include "lib/jxl/enc_icc_codec.h"
-#include "lib/jxl/exif.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/headers.h"
 #include "lib/jxl/image_bundle.h"
@@ -84,8 +83,6 @@ Status PrepareCodecMetadataFromIO(const CompressParams& cparams,
   metadata->m.xyb_encoded =
       cparams.color_transform == ColorTransform::kXYB ? true : false;
 
-  InterpretExif(io->blobs.exif, metadata);
-
   return true;
 }
 
@@ -139,6 +136,7 @@ Status WriteHeaders(CodecMetadata* metadata, BitWriter* writer,
   return true;
 }
 
+// TODO(firsching): remove this function and all tests that use it.
 Status EncodeFile(const CompressParams& params, const CodecInOut* io,
                   PassesEncoderState* passes_enc_state, PaddedBytes* compressed,
                   const JxlCmsInterface& cms, AuxOut* aux_out,

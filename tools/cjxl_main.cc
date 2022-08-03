@@ -35,6 +35,7 @@
 #include "lib/extras/dec/jpg.h"
 #include "lib/extras/dec/pgx.h"
 #include "lib/extras/dec/pnm.h"
+#include "lib/extras/exif.h"
 #include "lib/extras/time.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/printf_macros.h"
@@ -1013,7 +1014,9 @@ int main(int argc, char** argv) {
       use_container = true;
     }
     if (use_container) args.container = jxl::Override::kOn;
-
+    if (!ppf.metadata.exif.empty()) {
+      jxl::InterpretExif(ppf.metadata.exif, &ppf.info);
+    }
     if (JXL_ENC_SUCCESS !=
         JxlEncoderUseContainer(jxl_encoder, static_cast<int>(use_container))) {
       std::cerr << "JxlEncoderUseContainer failed." << std::endl;
