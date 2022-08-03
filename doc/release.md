@@ -26,8 +26,8 @@ tags `v0.5`, `v0.5.1`, `v0.5.2`, ... on commits from the `v0.5.x` branch.
 `v0.5.x` is a branch name, not a tag name, and doesn't represent a released
 version since semantic versioning requires that the PATCH is a non-negative
 number. Released tags don't each one have their own release branch, all releases
-from the same MAJOR.MINOR version will share the same branch. The branch-off 
-point between the main branch and the release branch will be tagged `v0.5-base`, 
+from the same MAJOR.MINOR version will share the same branch. The branch-off
+points between the main branch and the release branch will be tagged `v0.5-base`,
 `v0.6-base`, ... for convenience, but those those branch-off points are not a
 release on their own.
 
