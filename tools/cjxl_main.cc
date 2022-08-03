@@ -39,6 +39,7 @@
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/exif.h"
 #include "lib/jxl/size_constraints.h"
 #include "tools/args.h"
 #include "tools/cmdline.h"
@@ -1013,6 +1014,10 @@ int main(int argc, char** argv) {
       use_container = true;
     }
     if (use_container) args.container = jxl::Override::kOn;
+
+    if (!ppf.metadata.exif.empty()) {
+      jxl::InterpretExif(ppf.metadata.exif, &ppf.info.orientation);
+    }
 
     if (JXL_ENC_SUCCESS !=
         JxlEncoderUseContainer(jxl_encoder, static_cast<int>(use_container))) {

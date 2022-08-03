@@ -22,6 +22,7 @@
 #include "lib/jxl/enc_file.h"
 #include "lib/jxl/enc_icc_codec.h"
 #include "lib/jxl/encode_internal.h"
+#include "lib/jxl/exif.h"
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
 #include "lib/jxl/sanitizers.h"
 
@@ -1436,6 +1437,11 @@ JxlEncoderStatus JxlEncoderAddJPEGFrame(
       return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_GENERIC,
                            "Error setting basic info");
     }
+  }
+  if (!io.blobs.exif.empty()) {
+    JxlOrientation orientation;
+    jxl::InterpretExif(io.blobs.exif, &orientation);
+    frame_settings->enc->metadata.m.orientation = orientation;
   }
 
   if (frame_settings->enc->metadata.m.xyb_encoded) {
