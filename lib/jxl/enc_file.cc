@@ -20,7 +20,6 @@
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_frame.h"
 #include "lib/jxl/enc_icc_codec.h"
-#include "lib/jxl/exif.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/headers.h"
 #include "lib/jxl/image_bundle.h"
@@ -84,8 +83,8 @@ Status PrepareCodecMetadataFromIO(const CompressParams& cparams,
   metadata->m.xyb_encoded =
       cparams.color_transform == ColorTransform::kXYB ? true : false;
 
-  InterpretExif(io->blobs.exif, metadata);
-
+  // TODO(firsching): move this EncodeFile to test_utils / re-implement this
+  // using API functions
   return true;
 }
 
