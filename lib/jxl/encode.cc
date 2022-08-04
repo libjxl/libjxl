@@ -1438,17 +1438,17 @@ JxlEncoderStatus JxlEncoderAddJPEGFrame(
                            "Error setting basic info");
     }
   }
-  if (!io.blobs.exif.empty()) {
-    JxlOrientation orientation = JXL_ORIENT_IDENTITY;
-    jxl::InterpretExif(io.blobs.exif, &orientation);
-    frame_settings->enc->metadata.m.orientation = orientation;
-  }
 
   if (frame_settings->enc->metadata.m.xyb_encoded) {
     return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
                          "Can't XYB encode a lossless JPEG");
   }
   if (!io.blobs.exif.empty()) {
+    JxlOrientation orientation = static_cast<JxlOrientation>(
+        frame_settings->enc->metadata.m.orientation);
+    jxl::InterpretExif(io.blobs.exif, &orientation);
+    frame_settings->enc->metadata.m.orientation = orientation;
+
     size_t exif_size = io.blobs.exif.size();
     // Exif data in JPEG is limited to 64k
     if (exif_size > 0xFFFF) {
