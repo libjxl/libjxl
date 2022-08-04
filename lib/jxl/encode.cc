@@ -1439,7 +1439,7 @@ JxlEncoderStatus JxlEncoderAddJPEGFrame(
     }
   }
   if (!io.blobs.exif.empty()) {
-    JxlOrientation orientation;
+    JxlOrientation orientation = JXL_ORIENT_IDENTITY;
     jxl::InterpretExif(io.blobs.exif, &orientation);
     frame_settings->enc->metadata.m.orientation = orientation;
   }
