@@ -201,13 +201,13 @@ void PatchDictionary::ComputePatchTree() {
     intervals[i].y1 = pos.y + ref_positions_[pos.ref_pos_idx].ysize;
   }
   auto sort_by_y0 = [&intervals](size_t start, size_t end) {
-    std::sort(&intervals[start], &intervals[end],
+    std::sort(intervals.data() + start, intervals.data() + end,
               [](const PatchInterval& i0, const PatchInterval& i1) {
                 return i0.y0 < i1.y0;
               });
   };
   auto sort_by_y1 = [&intervals](size_t start, size_t end) {
-    std::sort(&intervals[start], &intervals[end],
+    std::sort(intervals.data() + start, intervals.data() + end,
               [](const PatchInterval& i0, const PatchInterval& i1) {
                 return i0.y1 < i1.y1;
               });
@@ -340,7 +340,7 @@ void PatchDictionary::AddOneRow(float* const* inout, size_t y, size_t x0,
     }
     PerformBlending(inout, fg_ptrs.data(), inout, patch_x0 - x0,
                     patch_x1 - patch_x0, blendings_[blending_idx],
-                    &blendings_[blending_idx + 1],
+                    blendings_.data() + blending_idx + 1,
                     shared_->metadata->m.extra_channel_info);
   }
 }
