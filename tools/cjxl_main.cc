@@ -488,17 +488,16 @@ struct CompressArgs {
 
 const char* ModeFromArgs(const CompressArgs& args) {
   if (args.lossless_jpeg) return "JPEG";
-  if (args.modular == jxl::Override::kOn || args.distance == 0 ||
-      args.quality == 100)
+  if (args.modular == jxl::Override::kOn || args.distance == 0)
     return "Modular";
   return "VarDCT";
 }
 
-std::string QualityFromArgs(const CompressArgs& args) {
+std::string DistanceFromArgs(const CompressArgs& args) {
   char buf[100];
   if (args.lossless_jpeg) {
     snprintf(buf, sizeof(buf), "lossless transcode");
-  } else if (args.distance == 0 || args.quality == 100) {
+  } else if (args.distance == 0) {
     snprintf(buf, sizeof(buf), "lossless");
   } else {
     snprintf(buf, sizeof(buf), "d%.3f", args.distance);
@@ -509,7 +508,7 @@ std::string QualityFromArgs(const CompressArgs& args) {
 void PrintMode(jxl::extras::PackedPixelFile& ppf, const double decode_mps,
                size_t num_bytes, const CompressArgs& args) {
   const char* mode = ModeFromArgs(args);
-  const std::string quality = QualityFromArgs(args);
+  const std::string distance = DistanceFromArgs(args);
   if (args.lossless_jpeg) {
     fprintf(stderr, "Read JPEG image with %" PRIuS " bytes.\n", num_bytes);
   } else {
@@ -520,7 +519,7 @@ void PrintMode(jxl::extras::PackedPixelFile& ppf, const double decode_mps,
   }
   fprintf(stderr, "Encoding [%s%s, %s, effort: %" PRIuS,
           (args.container == jxl::Override::kOn ? "Container | " : ""), mode,
-          quality.c_str(), args.effort);
+          distance.c_str(), args.effort);
   if (args.container == jxl::Override::kOn) {
     if (args.lossless_jpeg && args.jpeg_store_metadata)
       fprintf(stderr, " | JPEG reconstruction data");
@@ -561,38 +560,27 @@ void SetDistanceFromFlags(JxlEncoderFrameSettings* jxl_encoder_frame_settings,
                           const jxl::extras::Codec& codec) {
   bool distance_set = cmdline->GetOption(args->opt_distance_id)->matched();
   bool quality_set = cmdline->GetOption(args->opt_quality_id)->matched();
-
-  if (distance_set && quality_set) {
-    std::cerr << "Must not set both --distance and --quality." << std::endl;
-    exit(EXIT_FAILURE);
-  }
-  if (distance_set) {
-    if (JXL_ENC_SUCCESS != JxlEncoderSetFrameDistance(
-                               jxl_encoder_frame_settings, args->distance)) {
-      std::cerr << "Setting --distance parameter failed." << std::endl;
+  if (quality_set) {
+    if (distance_set) {
+      std::cerr << "Must not set both --distance and --quality." << std::endl;
       exit(EXIT_FAILURE);
     }
-    return;
-  }
-  if (quality_set) {
     double distance = args->quality >= 100 ? 0.0
                       : args->quality >= 30
                           ? 0.1 + (100 - args->quality) * 0.09
                           : 6.4 + pow(2.5, (30 - args->quality) / 5.0) / 6.25;
-    if (JXL_ENC_SUCCESS !=
-        JxlEncoderSetFrameDistance(jxl_encoder_frame_settings, distance)) {
-      std::cerr << "Setting --quality parameter failed." << std::endl;
-      exit(EXIT_FAILURE);
-    }
-    return;
+    args->distance = distance;
+    distance_set = true;
   }
-  // No flag set, but input is JPG or GIF: Use distance 0 default.
-  if (codec == jxl::extras::Codec::kJPG || codec == jxl::extras::Codec::kGIF) {
-    if (JXL_ENC_SUCCESS ==
-        JxlEncoderSetFrameDistance(jxl_encoder_frame_settings, 0.0)) {
-      std::cerr << "Setting 'lossless' default for GIF or JPEG input."
-                << std::endl;
-    }
+  if (!distance_set) {
+    bool lossy_input = (codec == jxl::extras::Codec::kJPG ||
+                        codec == jxl::extras::Codec::kGIF);
+    args->distance = lossy_input ? 0.0 : 1.0;
+  }
+  if (JXL_ENC_SUCCESS !=
+      JxlEncoderSetFrameDistance(jxl_encoder_frame_settings, args->distance)) {
+    std::cerr << "Setting frame distance failed." << std::endl;
+    exit(EXIT_FAILURE);
   }
 }
 
@@ -1057,10 +1045,7 @@ int main(int argc, char** argv) {
         basic_info.intensity_target = args.intensity_target;
         basic_info.num_extra_channels = num_alpha_channels;
         basic_info.num_color_channels = ppf.info.num_color_channels;
-        const bool lossless =
-            args.distance == 0 ||
-            (cmdline.GetOption(args.opt_quality_id)->matched() &&
-             args.quality == 100);
+        const bool lossless = args.distance == 0;
         basic_info.uses_original_profile = lossless;
         if (args.override_bitdepth != 0) {
           basic_info.bits_per_sample = args.override_bitdepth;
