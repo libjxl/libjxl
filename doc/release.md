@@ -264,3 +264,37 @@ instructions:
    to see the results.
 
  * Finally click "Publish release" and go celebrate with the team. 🎉
+
+### How to build downstream projects
+
+```bash
+docker run -it debian:bullseye /bin/bash
+
+apt update
+apt install -y clang cmake git libbrotli-dev nasm pkg-config ninja-build
+export CC=clang
+export CXX=clang++
+
+git clone --recurse-submodules --depth 1 -b v0.7.x \
+  https://github.com/libjxl/libjxl.git
+git clone --recurse-submodules --depth 1 \
+  https://github.com/ImageMagick/ImageMagick.git
+git clone --recurse-submodules --depth 1 \
+  https://github.com/FFmpeg/FFmpeg.git
+
+cd ~/libjxl
+git checkout v0.7.x
+cmake -B build -G Ninja .
+cmake --build build
+cmake --install build
+
+cd ~/ImageMagick
+./configure --with-jxl=yes
+# check for "JPEG XL --with-jxl=yes yes"
+make -j 80
+
+cd ~/FFmpeg
+./configure --enable-libjxl
+# check for libjxl decoder/encoder support
+make -j 80
+```
