@@ -2778,8 +2778,7 @@ TEST(DecodeTest, SkipCurrentFrameTest) {
   jxl::AuxOut aux_out;
   jxl::PaddedBytes compressed;
   jxl::PassesEncoderState enc_state;
-  jxl::PassDefinition passes[] = {
-      {2, 0, false, 4}, {4, 0, false, 4}, {8, 2, false, 2}, {8, 0, false, 1}};
+  jxl::PassDefinition passes[] = {{2, 0, 4}, {4, 0, 4}, {8, 2, 2}, {8, 0, 1}};
   jxl::ProgressiveMode progressive_mode{passes};
   enc_state.progressive_splitter.SetProgressiveMode(progressive_mode);
   EXPECT_TRUE(jxl::EncodeFile(cparams, &io, &enc_state, &compressed,
@@ -4624,11 +4623,8 @@ TEST_P(DecodeProgressiveTest, ProgressiveEventTest) {
     } else {
       params.cparams.butteraugli_distance = 0.5f;
     }
-    jxl::PassDefinition passes[] = {{2, 0, false, 4},
-                                    {4, 0, false, 4},
-                                    {8, 2, false, 2},
-                                    {8, 1, false, 2},
-                                    {8, 0, false, 1}};
+    jxl::PassDefinition passes[] = {
+        {2, 0, 4}, {4, 0, 4}, {8, 2, 2}, {8, 1, 2}, {8, 0, 1}};
     const int kNumPasses = 5;
     jxl::ProgressiveMode progressive_mode{passes};
     params.progressive_mode = &progressive_mode;
