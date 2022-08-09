@@ -424,9 +424,6 @@ struct CompressArgs {
   size_t num_reps = 1;
   float intensity_target = 0;
 
-  // Filename for the user provided saliency-map.
-  std::string saliency_map_filename;
-
   // Whether to perform lossless transcoding with kVarDCT or kJPEG encoding.
   // If true, attempts to load JPEG coefficients instead of pixels.
   // Reset to false if input image is not a JPEG.
