@@ -197,7 +197,7 @@ struct CompressArgs {
                            "Use the progressive mode for AC.", &progressive_ac,
                            &SetBooleanTrue, 1);
 
-    opt_qprogressive_ac_id = cmdline->AddOptionFlag(
+    cmdline->AddOptionFlag(
         '\0', "qprogressive_ac",
         "Use the progressive mode for AC with shift quantization.",
         &qprogressive_ac, &SetBooleanTrue, 1);
@@ -482,7 +482,6 @@ struct CompressArgs {
   CommandLineParser::OptionId opt_responsive_id = -1;
   CommandLineParser::OptionId opt_distance_id = -1;
   CommandLineParser::OptionId opt_quality_id = -1;
-  CommandLineParser::OptionId opt_qprogressive_ac_id = -1;
   CommandLineParser::OptionId opt_modular_group_size_id = -1;
 };
 
@@ -880,12 +879,8 @@ int main(int argc, char** argv) {
                    });
     }
     {  // Progressive/responsive mode settings.
-      bool qprogressive_ac_set =
-          cmdline.GetOption(args.opt_qprogressive_ac_id)->matched();
-      int32_t qprogressive_ac = args.qprogressive_ac ? 1 : 0;
       bool responsive_set =
           cmdline.GetOption(args.opt_responsive_id)->matched();
-      int32_t responsive = args.responsive ? 1 : 0;
 
       process_flag(
           "progressive_dc", args.progressive_dc,
@@ -897,18 +892,17 @@ int main(int argc, char** argv) {
           jxl_encoder_frame_settings, JXL_ENC_FRAME_SETTING_PROGRESSIVE_AC);
 
       if (args.progressive) {
-        qprogressive_ac = 1;
-        qprogressive_ac_set = true;
-        responsive = 1;
+        args.qprogressive_ac = true;
+        args.responsive = 1;
         responsive_set = true;
       }
       if (responsive_set) {
-        SetFlagFrameOptionOrDie("responsive", responsive,
+        SetFlagFrameOptionOrDie("responsive", args.responsive,
                                 jxl_encoder_frame_settings,
                                 JXL_ENC_FRAME_SETTING_RESPONSIVE);
       }
-      if (qprogressive_ac_set) {
-        SetFlagFrameOptionOrDie("qprogressive_ac", qprogressive_ac,
+      if (args.qprogressive_ac) {
+        SetFlagFrameOptionOrDie("qprogressive_ac", 1,
                                 jxl_encoder_frame_settings,
                                 JXL_ENC_FRAME_SETTING_QPROGRESSIVE_AC);
       }
@@ -960,6 +954,14 @@ int main(int argc, char** argv) {
                                 : "Invalid --modular_nb_prev_channels. Valid "
                                   "range is {-1, 0, 1, ..., 11}.\n";
                    });
+      if (args.modular_lossy_palette) {
+        if (args.progressive || args.qprogressive_ac) {
+          fprintf(stderr,
+                  "WARNING: --modular_lossy_palette is ignored in "
+                  "progressive mode.\n");
+          args.modular_lossy_palette = false;
+        }
+      }
       SetFlagFrameOptionOrDie("modular_lossy_palette",
                               static_cast<int32_t>(args.modular_lossy_palette),
                               jxl_encoder_frame_settings,
