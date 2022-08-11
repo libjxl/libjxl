@@ -97,6 +97,7 @@ struct PassesDecoderState {
   bool unpremul_alpha;
 
   bool swap_endianness;
+  Orientation undo_orientation;
 
   // Callback for line-by-line output.
   PixelCallback pixel_callback;
@@ -145,6 +146,7 @@ struct PassesDecoderState {
     output_channels = 3;
     unpremul_alpha = false;
     swap_endianness = false;
+    undo_orientation = Orientation::kIdentity;
     fast_xyb_srgb8_conversion = false;
     pixel_callback = PixelCallback();
     used_acs = 0;

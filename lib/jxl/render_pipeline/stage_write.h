@@ -31,7 +31,7 @@ std::unique_ptr<RenderPipelineStage> GetWriteToU8Stage(uint8_t* rgb,
 std::unique_ptr<RenderPipelineStage> GetWriteToPixelCallbackStage(
     const PixelCallback& pixel_callback, size_t width, size_t height,
     size_t num_channels, bool has_alpha, bool unpremul_alpha, size_t alpha_c,
-    bool swap_endianness);
+    bool swap_endianness, Orientation undo_orientation);
 
 }  // namespace jxl
 
