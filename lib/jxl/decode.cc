@@ -439,8 +439,6 @@ struct JxlDecoderStruct {
   std::unique_ptr<jxl::FrameDecoder> frame_dec;
   size_t next_section;
   std::vector<char> section_processed;
-  // The FrameDecoder is initialized, and not yet finalized
-  bool frame_dec_in_progress;
 
   // headers and TOC for the current frame. When got_toc is true, this is
   // always the frame header of the last frame of the current still series,
@@ -725,7 +723,6 @@ void JxlDecoderRewindDecodingState(JxlDecoder* dec) {
   dec->frame_dec.reset(nullptr);
   dec->next_section = 0;
   dec->section_processed.clear();
-  dec->frame_dec_in_progress = false;
 
   dec->ib.reset();
   dec->metadata = jxl::CodecMetadata();
@@ -832,12 +829,12 @@ void JxlDecoderSkipFrames(JxlDecoder* dec, size_t amount) {
 }
 
 JxlDecoderStatus JxlDecoderSkipCurrentFrame(JxlDecoder* dec) {
-  if (!dec->frame_dec || !dec->frame_dec_in_progress) {
+  if (dec->frame_stage != FrameStage::kFull) {
     return JXL_DEC_ERROR;
   }
+  JXL_DASSERT(dec->frame_dec);
   dec->frame_stage = FrameStage::kHeader;
   dec->AdvanceCodestream(dec->remaining_frame_size);
-  dec->frame_dec_in_progress = false;
   if (dec->is_last_of_still) {
     dec->image_out_buffer_set = false;
   }
@@ -1420,7 +1417,6 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec) {
       // If we don't need pixels, we can skip actually decoding the frames
       // (kFull / kFullOut).
       if (dec->preview_frame || (dec->events_wanted & JXL_DEC_FULL_IMAGE)) {
-        dec->frame_dec_in_progress = true;
         dec->frame_stage = FrameStage::kFull;
       } else if (!dec->is_last_total) {
         dec->frame_stage = FrameStage::kHeader;
@@ -1478,7 +1474,7 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec) {
           !!dec->image_out_init_callback && !!dec->image_out_run_callback &&
           dec->image_out_format.data_type == JXL_TYPE_FLOAT &&
           dec->image_out_format.num_channels >= 3 &&
-          dec->extra_channel_output.empty() && dec->frame_dec_in_progress) {
+          dec->extra_channel_output.empty()) {
         bool is_rgba = dec->image_out_format.num_channels == 4;
         dec->frame_dec->MaybeSetFloatCallback(
             PixelCallback{
@@ -1532,7 +1528,6 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec) {
         return JXL_API_ERROR("decoding frame failed");
       }
 
-      dec->frame_dec_in_progress = false;
       dec->frame_stage = FrameStage::kFullOutput;
     }
 
@@ -2403,9 +2398,10 @@ size_t JxlDecoderGetIntendedDownsamplingRatio(JxlDecoder* dec) {
 
 JxlDecoderStatus JxlDecoderFlushImage(JxlDecoder* dec) {
   if (!dec->image_out_buffer_set) return JXL_DEC_ERROR;
-  if (!dec->frame_dec || !dec->frame_dec_in_progress) {
+  if (dec->frame_stage != FrameStage::kFull) {
     return JXL_DEC_ERROR;
   }
+  JXL_DASSERT(dec->frame_dec);
   if (!dec->frame_dec->HasDecodedDC()) {
     // FrameDecoder::Flush currently requires DC to have been decoded already
     // to work correctly.
