@@ -1473,15 +1473,13 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec) {
       if (!dec->preview_frame && dec->image_out_buffer_set &&
           !!dec->image_out_init_callback && !!dec->image_out_run_callback &&
           dec->image_out_format.data_type == JXL_TYPE_FLOAT &&
-          dec->image_out_format.num_channels >= 3 &&
           dec->extra_channel_output.empty()) {
-        bool is_rgba = dec->image_out_format.num_channels == 4;
         dec->frame_dec->MaybeSetFloatCallback(
             PixelCallback{
                 dec->image_out_init_callback, dec->image_out_run_callback,
                 dec->image_out_destroy_callback, dec->image_out_init_opaque},
-            is_rgba, dec->unpremul_alpha, !dec->keep_orientation,
-            swap_endianness);
+            dec->image_out_format.num_channels, dec->unpremul_alpha,
+            !dec->keep_orientation, swap_endianness);
       }
 
       size_t next_num_passes_to_pause = dec->frame_dec->NextNumPassesToPause();

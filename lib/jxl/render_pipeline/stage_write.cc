@@ -278,14 +278,16 @@ class WriteToImage3FStage : public RenderPipelineStage {
 class WriteToPixelCallbackStage : public RenderPipelineStage {
  public:
   WriteToPixelCallbackStage(const PixelCallback& pixel_callback, size_t width,
-                            size_t height, bool rgba, bool has_alpha,
+                            size_t height, size_t num_channels, bool has_alpha,
                             bool unpremul_alpha, size_t alpha_c,
                             bool swap_endianness)
       : RenderPipelineStage(RenderPipelineStage::Settings()),
         pixel_callback_(pixel_callback),
         width_(width),
         height_(height),
-        rgba_(rgba),
+        num_channels_(num_channels),
+        num_color_(num_channels < 3 ? 1 : 3),
+        want_alpha_(num_channels_ == 2 || num_channels_ == 4),
         has_alpha_(has_alpha),
         unpremul_alpha_(unpremul_alpha),
         alpha_c_(alpha_c),
@@ -310,14 +312,14 @@ class WriteToPixelCallbackStage : public RenderPipelineStage {
     JXL_DASSERT(run_opaque_);
     if (ypos >= height_) return;
     const float* line_buffers[4];
-    for (size_t c = 0; c < 3; c++) {
+    for (size_t c = 0; c < num_color_; c++) {
       line_buffers[c] = GetInputRow(input_rows, c, 0) - xextra;
     }
     if (has_alpha_) {
-      line_buffers[3] = GetInputRow(input_rows, alpha_c_, 0) - xextra;
+      line_buffers[num_color_] = GetInputRow(input_rows, alpha_c_, 0) - xextra;
     } else {
       // No xextra offset; opaque_alpha_ is a way to set all values to 1.0f.
-      line_buffers[3] = opaque_alpha_.data();
+      line_buffers[num_color_] = opaque_alpha_.data();
     }
 
     // TODO(veluca): SIMD.
@@ -328,31 +330,32 @@ class WriteToPixelCallbackStage : public RenderPipelineStage {
       float* JXL_RESTRICT temp =
           reinterpret_cast<float*>(temp_[thread_id].get());
       for (; ix < kMaxPixelsPerCall && ssize_t(ix) + x0 < limit; ix++) {
-        temp[j++] = line_buffers[0][ix];
-        temp[j++] = line_buffers[1][ix];
-        temp[j++] = line_buffers[2][ix];
-        if (rgba_) {
-          temp[j++] = line_buffers[3][ix];
+        for (size_t c = 0; c < num_channels_; ++c) {
+          temp[j++] = line_buffers[c][ix];
         }
       }
-      if (has_alpha_ && rgba_ && unpremul_alpha_) {
+      if (has_alpha_ && want_alpha_ && unpremul_alpha_) {
         // TODO(szabadka) SIMDify (possibly in a separate pipeline stage).
-        UnpremultiplyAlpha(temp, ix);
+        UnpremultiplyAlpha(temp, num_color_, ix);
       }
       if (swap_endianness_) {
-        size_t len = ix * (rgba_ ? 4 : 3);
+        size_t len = ix * num_channels_;
         for (size_t j = 0; j < len; ++j) {
           temp[j] = BSwapFloat(temp[j]);
         }
       }
       pixel_callback_.run(run_opaque_, thread_id, xpos + x0, ypos, ix, temp);
-      for (size_t c = 0; c < 3; c++) line_buffers[c] += kMaxPixelsPerCall;
-      if (has_alpha_) line_buffers[3] += kMaxPixelsPerCall;
+      for (size_t c = 0; c < num_color_; c++) {
+        line_buffers[c] += kMaxPixelsPerCall;
+      }
+      if (has_alpha_) {
+        line_buffers[num_color_] += kMaxPixelsPerCall;
+      }
     }
   }
 
   RenderPipelineChannelMode GetChannelMode(size_t c) const final {
-    return c < 3 || (has_alpha_ && c == alpha_c_)
+    return c < num_color_ || (has_alpha_ && c == alpha_c_)
                ? RenderPipelineChannelMode::kInput
                : RenderPipelineChannelMode::kIgnored;
   }
@@ -366,7 +369,7 @@ class WriteToPixelCallbackStage : public RenderPipelineStage {
     JXL_RETURN_IF_ERROR(run_opaque_ != nullptr);
     temp_.resize(num_threads);
     for (CacheAlignedUniquePtr& temp : temp_) {
-      temp = AllocateArray(sizeof(float) * kMaxPixelsPerCall * (rgba_ ? 4 : 3));
+      temp = AllocateArray(sizeof(float) * kMaxPixelsPerCall * num_channels_);
     }
     return true;
   }
@@ -376,7 +379,9 @@ class WriteToPixelCallbackStage : public RenderPipelineStage {
   void* run_opaque_ = nullptr;
   size_t width_;
   size_t height_;
-  bool rgba_;
+  size_t num_channels_;
+  size_t num_color_;
+  bool want_alpha_;
   bool has_alpha_;
   bool unpremul_alpha_;
   size_t alpha_c_;
@@ -407,11 +412,12 @@ std::unique_ptr<RenderPipelineStage> GetWriteToU8Stage(uint8_t* rgb,
 }
 
 std::unique_ptr<RenderPipelineStage> GetWriteToPixelCallbackStage(
-    const PixelCallback& pixel_callback, size_t width, size_t height, bool rgba,
-    bool has_alpha, bool unpremul_alpha, size_t alpha_c, bool swap_endianness) {
+    const PixelCallback& pixel_callback, size_t width, size_t height,
+    size_t num_channels, bool has_alpha, bool unpremul_alpha, size_t alpha_c,
+    bool swap_endianness) {
   return jxl::make_unique<WriteToPixelCallbackStage>(
-      pixel_callback, width, height, rgba, has_alpha, unpremul_alpha, alpha_c,
-      swap_endianness);
+      pixel_callback, width, height, num_channels, has_alpha, unpremul_alpha,
+      alpha_c, swap_endianness);
 }
 
 }  // namespace jxl
