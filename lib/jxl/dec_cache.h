@@ -94,6 +94,8 @@ struct PassesDecoderState {
   // output callback (the output buffer case is handled in ConvertToExternal).
   bool unpremul_alpha;
 
+  bool swap_endianness;
+
   // Callback for line-by-line output.
   PixelCallback pixel_callback;
 
@@ -139,6 +141,7 @@ struct PassesDecoderState {
     rgb_output = nullptr;
     rgb_output_is_rgba = false;
     unpremul_alpha = false;
+    swap_endianness = false;
     fast_xyb_srgb8_conversion = false;
     pixel_callback = PixelCallback();
     used_acs = 0;

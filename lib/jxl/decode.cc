@@ -1478,14 +1478,14 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec) {
           !!dec->image_out_init_callback && !!dec->image_out_run_callback &&
           dec->image_out_format.data_type == JXL_TYPE_FLOAT &&
           dec->image_out_format.num_channels >= 3 &&
-          dec->extra_channel_output.empty() && !swap_endianness &&
-          dec->frame_dec_in_progress) {
+          dec->extra_channel_output.empty() && dec->frame_dec_in_progress) {
         bool is_rgba = dec->image_out_format.num_channels == 4;
         dec->frame_dec->MaybeSetFloatCallback(
             PixelCallback{
                 dec->image_out_init_callback, dec->image_out_run_callback,
                 dec->image_out_destroy_callback, dec->image_out_init_opaque},
-            is_rgba, dec->unpremul_alpha, !dec->keep_orientation);
+            is_rgba, dec->unpremul_alpha, !dec->keep_orientation,
+            swap_endianness);
       }
 
       size_t next_num_passes_to_pause = dec->frame_dec->NextNumPassesToPause();
@@ -1526,10 +1526,6 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec) {
         // this frame was skipped before and set to 255, while only now we know
         // the true value.
         dec->frame_references[internal_index] = dec->frame_dec->References();
-        // Copy exif/xmp metadata from their boxes into the jpeg_data, if
-        // JPEG reconstruction is requested.
-        if (dec->jpeg_decoder.IsOutputSet() && dec->ib->jpeg_data != nullptr) {
-        }
       }
 
       if (!dec->frame_dec->FinalizeFrame()) {
