@@ -279,7 +279,8 @@ class WriteToPixelCallbackStage : public RenderPipelineStage {
  public:
   WriteToPixelCallbackStage(const PixelCallback& pixel_callback, size_t width,
                             size_t height, bool rgba, bool has_alpha,
-                            bool unpremul_alpha, size_t alpha_c)
+                            bool unpremul_alpha, size_t alpha_c,
+                            bool swap_endianness)
       : RenderPipelineStage(RenderPipelineStage::Settings()),
         pixel_callback_(pixel_callback),
         width_(width),
@@ -288,6 +289,7 @@ class WriteToPixelCallbackStage : public RenderPipelineStage {
         has_alpha_(has_alpha),
         unpremul_alpha_(unpremul_alpha),
         alpha_c_(alpha_c),
+        swap_endianness_(swap_endianness),
         opaque_alpha_(kMaxPixelsPerCall, 1.0f) {}
 
   WriteToPixelCallbackStage(const WriteToPixelCallbackStage&) = delete;
@@ -337,6 +339,12 @@ class WriteToPixelCallbackStage : public RenderPipelineStage {
         // TODO(szabadka) SIMDify (possibly in a separate pipeline stage).
         UnpremultiplyAlpha(temp, ix);
       }
+      if (swap_endianness_) {
+        size_t len = ix * (rgba_ ? 4 : 3);
+        for (size_t j = 0; j < len; ++j) {
+          temp[j] = BSwapFloat(temp[j]);
+        }
+      }
       pixel_callback_.run(run_opaque_, thread_id, xpos + x0, ypos, ix, temp);
       for (size_t c = 0; c < 3; c++) line_buffers[c] += kMaxPixelsPerCall;
       if (has_alpha_) line_buffers[3] += kMaxPixelsPerCall;
@@ -372,6 +380,7 @@ class WriteToPixelCallbackStage : public RenderPipelineStage {
   bool has_alpha_;
   bool unpremul_alpha_;
   size_t alpha_c_;
+  bool swap_endianness_;
   std::vector<float> opaque_alpha_;
   std::vector<CacheAlignedUniquePtr> temp_;
 };
@@ -399,9 +408,10 @@ std::unique_ptr<RenderPipelineStage> GetWriteToU8Stage(uint8_t* rgb,
 
 std::unique_ptr<RenderPipelineStage> GetWriteToPixelCallbackStage(
     const PixelCallback& pixel_callback, size_t width, size_t height, bool rgba,
-    bool has_alpha, bool unpremul_alpha, size_t alpha_c) {
+    bool has_alpha, bool unpremul_alpha, size_t alpha_c, bool swap_endianness) {
   return jxl::make_unique<WriteToPixelCallbackStage>(
-      pixel_callback, width, height, rgba, has_alpha, unpremul_alpha, alpha_c);
+      pixel_callback, width, height, rgba, has_alpha, unpremul_alpha, alpha_c,
+      swap_endianness);
 }
 
 }  // namespace jxl
