@@ -1295,10 +1295,11 @@ TEST_P(DecodeTestParam, PixelTest) {
 
     jxl::CodecInOut io;
     if (config.include_alpha) io.metadata.m.SetAlphaBits(16);
+    io.metadata.m.color_encoding = color_encoding;
     io.SetSize(config.xsize, config.ysize);
 
     EXPECT_TRUE(ConvertFromExternal(bytes, config.xsize, config.ysize,
-                                    color_encoding, config.output_channels,
+                                    color_encoding, orig_channels,
                                     /*alpha_is_premultiplied=*/false, 16,
                                     JXL_BIG_ENDIAN, nullptr, &io.Main(),
                                     /*float_in=*/false,
@@ -1445,19 +1446,22 @@ std::vector<PixelTestConfig> GeneratePixelTests() {
   }
 
   // Test orientations.
-  for (int orientation = 1; orientation <= 8; ++orientation) {
-    make_test(ch_info[0], 280, 12, /*add_preview=*/false,
-              /*add_intrinsic_size=*/false, CodeStreamBoxFormat::kCSBF_None,
-              static_cast<JxlOrientation>(orientation),
-              /*keep_orientation=*/false, out_formats[0],
-              /*use_callback=*/false, /*set_buffer_early=*/true,
-              /*resizable_runner=*/false, 1);
-    make_test(ch_info[0], 280, 12, /*add_preview=*/false,
-              /*add_intrinsic_size=*/false, CodeStreamBoxFormat::kCSBF_None,
-              static_cast<JxlOrientation>(orientation),
-              /*keep_orientation=*/true, out_formats[0],
-              /*use_callback=*/false, /*set_buffer_early=*/true,
-              /*resizable_runner=*/false, 1);
+  for (int orientation = 2; orientation <= 8; ++orientation) {
+    for (int keep_orientation = 0; keep_orientation <= 1; keep_orientation++) {
+      for (int use_callback = 0; use_callback <= 1; use_callback++) {
+        for (ChannelInfo ch : ch_info) {
+          for (OutputFormat fmt : out_formats) {
+            make_test(ch, 280, 12, /*add_preview=*/false,
+                      /*add_intrinsic_size=*/false,
+                      CodeStreamBoxFormat::kCSBF_None,
+                      static_cast<JxlOrientation>(orientation),
+                      /*keep_orientation=*/keep_orientation, fmt,
+                      /*use_callback=*/use_callback, /*set_buffer_early=*/true,
+                      /*resizable_runner=*/false, 1);
+          }
+        }
+      }
+    }
   }
 
   return all_tests;

@@ -1490,7 +1490,7 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec) {
           !!dec->image_out_init_callback && !!dec->image_out_run_callback &&
           dec->image_out_format.data_type == JXL_TYPE_FLOAT &&
           dec->extra_channel_output.empty()) {
-        dec->frame_dec->MaybeSetFloatCallback(
+        dec->frame_dec->SetFloatCallback(
             PixelCallback{
                 dec->image_out_init_callback, dec->image_out_run_callback,
                 dec->image_out_destroy_callback, dec->image_out_init_opaque},

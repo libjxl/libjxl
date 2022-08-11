@@ -280,7 +280,7 @@ class WriteToPixelCallbackStage : public RenderPipelineStage {
   WriteToPixelCallbackStage(const PixelCallback& pixel_callback, size_t width,
                             size_t height, size_t num_channels, bool has_alpha,
                             bool unpremul_alpha, size_t alpha_c,
-                            bool swap_endianness)
+                            bool swap_endianness, Orientation undo_orientation)
       : RenderPipelineStage(RenderPipelineStage::Settings()),
         pixel_callback_(pixel_callback),
         width_(width),
@@ -292,6 +292,9 @@ class WriteToPixelCallbackStage : public RenderPipelineStage {
         unpremul_alpha_(unpremul_alpha),
         alpha_c_(alpha_c),
         swap_endianness_(swap_endianness),
+        flip_x_(ShouldFlipX(undo_orientation)),
+        flip_y_(ShouldFlipY(undo_orientation)),
+        transpose_(ShouldTranspose(undo_orientation)),
         opaque_alpha_(kMaxPixelsPerCall, 1.0f) {}
 
   WriteToPixelCallbackStage(const WriteToPixelCallbackStage&) = delete;
@@ -321,7 +324,9 @@ class WriteToPixelCallbackStage : public RenderPipelineStage {
       // No xextra offset; opaque_alpha_ is a way to set all values to 1.0f.
       line_buffers[num_color_] = opaque_alpha_.data();
     }
-
+    if (flip_y_) {
+      ypos = height_ - 1u - ypos;
+    }
     // TODO(veluca): SIMD.
     ssize_t limit = std::min(xextra + xsize, width_ - xpos);
     for (ssize_t x0 = -xextra; x0 < limit; x0 += kMaxPixelsPerCall) {
@@ -334,17 +339,37 @@ class WriteToPixelCallbackStage : public RenderPipelineStage {
           temp[j++] = line_buffers[c][ix];
         }
       }
+      size_t xstart = xpos + x0;
+      size_t xlen = ix;
       if (has_alpha_ && want_alpha_ && unpremul_alpha_) {
         // TODO(szabadka) SIMDify (possibly in a separate pipeline stage).
-        UnpremultiplyAlpha(temp, num_color_, ix);
+        UnpremultiplyAlpha(temp, num_color_, xlen);
       }
       if (swap_endianness_) {
-        size_t len = ix * num_channels_;
+        size_t len = xlen * num_channels_;
         for (size_t j = 0; j < len; ++j) {
           temp[j] = BSwapFloat(temp[j]);
         }
       }
-      pixel_callback_.run(run_opaque_, thread_id, xpos + x0, ypos, ix, temp);
+      if (flip_x_) {
+        size_t last = (xlen - 1u) * num_channels_;
+        size_t num = (xlen / 2) * num_channels_;
+        for (size_t i = 0; i < num; i += num_channels_) {
+          for (size_t c = 0; c < num_channels_; ++c) {
+            std::swap(temp[i + c], temp[last - i + c]);
+          }
+        }
+        xstart = width_ - xstart - xlen;
+      }
+      if (transpose_) {
+        // TODO(szabadka) Buffer 8x8 chunks and transpose with SIMD.
+        for (size_t i = 0, j = 0; i < xlen; ++i, j += num_channels_) {
+          pixel_callback_.run(run_opaque_, thread_id, ypos, xstart + i, 1,
+                              temp + j);
+        }
+      } else {
+        pixel_callback_.run(run_opaque_, thread_id, xstart, ypos, xlen, temp);
+      }
       for (size_t c = 0; c < num_color_; c++) {
         line_buffers[c] += kMaxPixelsPerCall;
       }
@@ -373,6 +398,24 @@ class WriteToPixelCallbackStage : public RenderPipelineStage {
     }
     return true;
   }
+  static bool ShouldFlipX(Orientation undo_orientation) {
+    return (undo_orientation == Orientation::kFlipHorizontal ||
+            undo_orientation == Orientation::kRotate180 ||
+            undo_orientation == Orientation::kRotate270 ||
+            undo_orientation == Orientation::kAntiTranspose);
+  }
+  static bool ShouldFlipY(Orientation undo_orientation) {
+    return (undo_orientation == Orientation::kFlipVertical ||
+            undo_orientation == Orientation::kRotate180 ||
+            undo_orientation == Orientation::kRotate90 ||
+            undo_orientation == Orientation::kAntiTranspose);
+  }
+  static bool ShouldTranspose(Orientation undo_orientation) {
+    return (undo_orientation == Orientation::kTranspose ||
+            undo_orientation == Orientation::kRotate90 ||
+            undo_orientation == Orientation::kRotate270 ||
+            undo_orientation == Orientation::kAntiTranspose);
+  }
 
   static constexpr size_t kMaxPixelsPerCall = 1024;
   PixelCallback pixel_callback_;
@@ -386,6 +429,9 @@ class WriteToPixelCallbackStage : public RenderPipelineStage {
   bool unpremul_alpha_;
   size_t alpha_c_;
   bool swap_endianness_;
+  bool flip_x_;
+  bool flip_y_;
+  bool transpose_;
   std::vector<float> opaque_alpha_;
   std::vector<CacheAlignedUniquePtr> temp_;
 };
@@ -414,10 +460,10 @@ std::unique_ptr<RenderPipelineStage> GetWriteToU8Stage(uint8_t* rgb,
 std::unique_ptr<RenderPipelineStage> GetWriteToPixelCallbackStage(
     const PixelCallback& pixel_callback, size_t width, size_t height,
     size_t num_channels, bool has_alpha, bool unpremul_alpha, size_t alpha_c,
-    bool swap_endianness) {
+    bool swap_endianness, Orientation undo_orientation) {
   return jxl::make_unique<WriteToPixelCallbackStage>(
       pixel_callback, width, height, num_channels, has_alpha, unpremul_alpha,
-      alpha_c, swap_endianness);
+      alpha_c, swap_endianness, undo_orientation);
 }
 
 }  // namespace jxl
