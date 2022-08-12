@@ -1466,8 +1466,7 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec) {
 
       dec->frame_dec->MaybeSetUnpremultiplyAlpha(dec->unpremul_alpha);
 
-      if (!dec->preview_frame && dec->image_out_buffer_set &&
-          !!dec->image_out_buffer &&
+      if (dec->image_out_buffer_set && !!dec->image_out_buffer &&
           dec->image_out_format.data_type == JXL_TYPE_UINT8 &&
           dec->image_out_format.num_channels >= 3 &&
           dec->extra_channel_output.empty()) {
@@ -1486,8 +1485,8 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec) {
 
       // TODO(lode): Support more formats than just native endian float32 for
       // the low-memory callback path
-      if (!dec->preview_frame && dec->image_out_buffer_set &&
-          !!dec->image_out_init_callback && !!dec->image_out_run_callback &&
+      if (dec->image_out_buffer_set && !!dec->image_out_init_callback &&
+          !!dec->image_out_run_callback &&
           dec->image_out_format.data_type == JXL_TYPE_FLOAT &&
           dec->extra_channel_output.empty()) {
         dec->frame_dec->SetFloatCallback(
