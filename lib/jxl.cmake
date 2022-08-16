@@ -349,8 +349,8 @@ set(JPEGXL_INTERNAL_SOURCES_ENC
 )
 
 set(JPEGXL_DEC_INTERNAL_LIBS
-  brotlidec-static
-  brotlicommon-static
+  brotlidec
+  brotlicommon
   hwy
   Threads::Threads
   ${ATOMICS_LIBRARIES}
@@ -362,7 +362,7 @@ endif()
 
 set(JPEGXL_INTERNAL_LIBS
   ${JPEGXL_DEC_INTERNAL_LIBS}
-  brotlienc-static
+  brotlienc
 )
 
 # strips the -static suffix from all the elements in LIST
@@ -409,7 +409,7 @@ target_include_directories(jxl_dec-obj PUBLIC
   "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>"
   "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
   "$<BUILD_INTERFACE:$<TARGET_PROPERTY:hwy,INTERFACE_INCLUDE_DIRECTORIES>>"
-  "$<BUILD_INTERFACE:$<TARGET_PROPERTY:brotlicommon-static,INTERFACE_INCLUDE_DIRECTORIES>>"
+  "$<BUILD_INTERFACE:$<TARGET_PROPERTY:brotlicommon,INTERFACE_INCLUDE_DIRECTORIES>>"
 )
 target_compile_definitions(jxl_dec-obj PUBLIC
   ${OBJ_COMPILE_DEFINITIONS}
@@ -427,7 +427,7 @@ target_include_directories(jxl_enc-obj PUBLIC
   ${PROJECT_SOURCE_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}/include
   $<TARGET_PROPERTY:hwy,INTERFACE_INCLUDE_DIRECTORIES>
-  $<TARGET_PROPERTY:brotlicommon-static,INTERFACE_INCLUDE_DIRECTORIES>
+  $<TARGET_PROPERTY:brotlicommon,INTERFACE_INCLUDE_DIRECTORIES>
 )
 target_compile_definitions(jxl_enc-obj PUBLIC
   ${OBJ_COMPILE_DEFINITIONS}

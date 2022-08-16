@@ -26,31 +26,16 @@ foreach(brlib IN ITEMS ${brlibs})
   )
 
   if (${BRPREFIX}_LIBRARY AND NOT TARGET ${brlib})
-    if(CMAKE_VERSION VERSION_LESS "3.13.5")
     add_library(${brlib} INTERFACE IMPORTED GLOBAL)
+    if(CMAKE_VERSION VERSION_LESS "3.13.5")
       set_property(TARGET ${brlib} PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${BROTLI_INCLUDE_DIR})
       target_link_libraries(${brlib} INTERFACE ${${BRPREFIX}_LIBRARY})
       set_property(TARGET ${brlib} PROPERTY INTERFACE_COMPILE_OPTIONS ${PC_${BRPREFIX}_CFLAGS_OTHER})
-
-      add_library(${brlib}-static INTERFACE IMPORTED GLOBAL)
-      set_property(TARGET ${brlib}-static PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${BROTLI_INCLUDE_DIR})
-      target_link_libraries(${brlib}-static INTERFACE ${${BRPREFIX}_LIBRARY})
-      set_property(TARGET ${brlib}-static PROPERTY INTERFACE_COMPILE_OPTIONS ${PC_${BRPREFIX}_CFLAGS_OTHER})
     else()
-    add_library(${brlib} INTERFACE IMPORTED GLOBAL)
-      target_include_directories(${brlib}
-        INTERFACE ${BROTLI_INCLUDE_DIR})
-      target_link_libraries(${brlib}
-        INTERFACE ${${BRPREFIX}_LIBRARY})
-      target_link_options(${brlib}
-        INTERFACE ${PC_${BRPREFIX}_LDFLAGS_OTHER})
-      target_compile_options(${brlib}
-        INTERFACE ${PC_${BRPREFIX}_CFLAGS_OTHER})
-
-      # TODO(deymo): Remove the -static library versions, this target is
-      # currently needed by brunsli.cmake. When importing it this way, the
-      # brotli*-static target is just an alias.
-      add_library(${brlib}-static ALIAS ${brlib})
+      target_include_directories(${brlib} INTERFACE ${BROTLI_INCLUDE_DIR})
+      target_link_libraries(${brlib} INTERFACE ${${BRPREFIX}_LIBRARY})
+      target_link_options(${brlib} INTERFACE ${PC_${BRPREFIX}_LDFLAGS_OTHER})
+      target_compile_options(${brlib} INTERFACE ${PC_${BRPREFIX}_CFLAGS_OTHER})
     endif()
   endif()
 endforeach()

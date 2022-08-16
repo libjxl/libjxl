@@ -13,12 +13,8 @@
 
 name: Release build / deploy
 on:
-  push:
-    branches:
-      - main
-      - v*.*.x
-  release:
-    types: [ published ]
+  pull_request:
+    types: [opened, reopened, synchronize]
 
 jobs:
   ubuntu_static_x86_64:
