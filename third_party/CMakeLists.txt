@@ -65,7 +65,7 @@ else()
   if((NOT SANITIZER STREQUAL "asan") AND (NOT SANITIZER STREQUAL "msan"))
     set(BROTLI_BUNDLED_MODE OFF CACHE INTERNAL "")
   endif()
-  add_subdirectory(brotli EXCLUDE_FROM_ALL)
+  add_subdirectory(brotli)
   configure_file("${CMAKE_CURRENT_SOURCE_DIR}/brotli/LICENSE"
                  ${PROJECT_BINARY_DIR}/LICENSE.brotli COPYONLY)
   if(BROTLI_EMSCRIPTEN)
