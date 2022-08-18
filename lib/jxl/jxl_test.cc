@@ -462,7 +462,7 @@ TEST(JxlTest, RoundtripLargeFast) {
   cparams.speed_tier = SpeedTier::kSquirrel;
 
   CodecInOut io2;
-  EXPECT_LE(Roundtrip(&io, cparams, {}, &pool, &io2), 450800u);
+  EXPECT_LE(Roundtrip(&io, cparams, {}, &pool, &io2), 451040u);
 }
 
 TEST(JxlTest, RoundtripDotsForceEpf) {
