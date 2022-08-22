@@ -164,6 +164,7 @@ if(JPEGXL_ENABLE_DEVTOOLS)
     butteraugli_main
     decode_and_encode
     display_to_hlg
+    exr_to_pq
     pq_to_hlg
     render_hlg
     tone_map
@@ -180,6 +181,7 @@ if(JPEGXL_ENABLE_DEVTOOLS)
   add_executable(butteraugli_main butteraugli_main.cc)
   add_executable(decode_and_encode decode_and_encode.cc)
   add_executable(display_to_hlg hdr/display_to_hlg.cc)
+  add_executable(exr_to_pq hdr/exr_to_pq.cc)
   add_executable(pq_to_hlg hdr/pq_to_hlg.cc)
   add_executable(render_hlg hdr/render_hlg.cc)
   add_executable(tone_map hdr/tone_map.cc)
