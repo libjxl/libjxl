@@ -353,6 +353,13 @@ add_test(
   COMMAND libjxl_test
   WORKING_DIRECTORY $<TARGET_FILE_DIR:jxl>
 )
+# if user decide to set CMAKE_SKIP_RPATH:BOOL=ON make sure libjxl.so.0.7 can
+# still be found:
+if(UNIX AND CMAKE_SKIP_RPATH)
+  set_property(TEST LibraryCLinkageTest PROPERTY ENVIRONMENT
+     LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}/..
+     )
+endif()
 
 endif()  # BUILD_TESTING AND TARGET jxl AND NOT JPEGXL_EMSCRIPTEN
 
