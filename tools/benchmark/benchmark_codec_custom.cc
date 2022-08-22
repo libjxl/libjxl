@@ -13,6 +13,7 @@
 #include <fstream>
 
 #include "lib/extras/codec.h"
+#include "lib/extras/dec/color_description.h"
 #include "lib/extras/enc/apng.h"
 #include "lib/extras/time.h"
 #include "lib/jxl/base/file_io.h"
@@ -22,6 +23,30 @@
 #include "tools/benchmark/benchmark_utils.h"
 
 namespace jxl {
+
+struct CustomCodecArgs {
+  std::string extension;
+  std::string colorspace;
+  bool quiet;
+};
+
+static CustomCodecArgs* const custom_args = new CustomCodecArgs;
+
+Status AddCommandLineOptionsCustomCodec(BenchmarkArgs* args) {
+  args->AddString(
+      &custom_args->extension, "custom_codec_extension",
+      "Converts input and output of codec to this file type (default: png).",
+      "png");
+  args->AddString(
+      &custom_args->colorspace, "custom_codec_colorspace",
+      "If not empty, converts input and output of codec to this colorspace.",
+      "");
+  args->AddFlag(&custom_args->quiet, "custom_codec_quiet",
+                "Whether stdin and stdout of custom codec should be shown.",
+                false);
+  return true;
+}
+
 namespace {
 
 std::string GetBaseName(std::string filename) {
@@ -64,21 +89,40 @@ class CustomCodec : public ImageCodec {
   explicit CustomCodec(const BenchmarkArgs& args) : ImageCodec(args) {}
 
   Status ParseParam(const std::string& param) override {
+    if (param_index_ == 0) {
+      description_ = "";
+    }
     switch (param_index_) {
       case 0:
         extension_ = param;
+        description_ += param;
         break;
-
       case 1:
         compress_command_ = param;
+        description_ += std::string(":");
+        if (param.find_last_of('/') < param.size()) {
+          description_ += param.substr(param.find_last_of('/') + 1);
+        } else {
+          description_ += param;
+        }
         break;
-
       case 2:
         decompress_command_ = param;
         break;
-
       default:
         compress_args_.push_back(param);
+        if (param.size() > 2 && param[0] == '-' && param[1] == 'd') {
+          // For setting ba_params_.hf_asymmetry
+          JXL_RETURN_IF_ERROR(ImageCodec::ParseParam(param.substr(1)));
+        }
+        description_ += std::string(":");
+        if (param.size() > 2 && param[0] == '-' && param[1] == '-') {
+          description_ += param.substr(2);
+        } else if (param.size() > 2 && param[0] == '-') {
+          description_ += param.substr(1);
+        } else {
+          description_ += param;
+        }
         break;
     }
     ++param_index_;
@@ -91,20 +135,30 @@ class CustomCodec : public ImageCodec {
     JXL_RETURN_IF_ERROR(param_index_ > 2);
 
     const std::string basename = GetBaseName(filename);
-    TemporaryFile png_file(basename, "png"), encoded_file(basename, extension_);
-    std::string png_filename, encoded_filename;
-    JXL_RETURN_IF_ERROR(png_file.GetFileName(&png_filename));
+    TemporaryFile in_file(basename, custom_args->extension);
+    TemporaryFile encoded_file(basename, extension_);
+    std::string in_filename, encoded_filename;
+    JXL_RETURN_IF_ERROR(in_file.GetFileName(&in_filename));
     JXL_RETURN_IF_ERROR(encoded_file.GetFileName(&encoded_filename));
     saved_intensity_target_ = io->metadata.m.IntensityTarget();
 
     const size_t bits = io->metadata.m.bit_depth.bits_per_sample;
-    JXL_RETURN_IF_ERROR(
-        EncodeToFile(*io, io->Main().c_current(), bits, png_filename, pool));
+    ColorEncoding c_enc = io->Main().c_current();
+    if (!custom_args->colorspace.empty()) {
+      JxlColorEncoding colorspace;
+      JXL_RETURN_IF_ERROR(
+          ParseDescription(custom_args->colorspace, &colorspace));
+      JXL_RETURN_IF_ERROR(
+          ConvertExternalToInternalColorEncoding(colorspace, &c_enc));
+    }
+    JXL_RETURN_IF_ERROR(EncodeToFile(*io, c_enc, bits, in_filename, pool));
     std::vector<std::string> arguments = compress_args_;
-    arguments.push_back(png_filename);
+    arguments.push_back(in_filename);
     arguments.push_back(encoded_filename);
     JXL_RETURN_IF_ERROR(ReportCodecRunningTime(
-        [&, this] { return RunCommand(compress_command_, arguments); },
+        [&, this] {
+          return RunCommand(compress_command_, arguments, custom_args->quiet);
+        },
         encoded_filename, speed_stats));
     return ReadFile(encoded_filename, compressed);
   }
@@ -114,21 +168,26 @@ class CustomCodec : public ImageCodec {
                     ThreadPoolInternal* pool, CodecInOut* io,
                     jpegxl::tools::SpeedStats* speed_stats) override {
     const std::string basename = GetBaseName(filename);
-    TemporaryFile encoded_file(basename, extension_), png_file(basename, "png");
-    std::string encoded_filename, png_filename;
+    TemporaryFile encoded_file(basename, extension_);
+    TemporaryFile out_file(basename, custom_args->extension);
+    std::string encoded_filename, out_filename;
     JXL_RETURN_IF_ERROR(encoded_file.GetFileName(&encoded_filename));
-    JXL_RETURN_IF_ERROR(png_file.GetFileName(&png_filename));
+    JXL_RETURN_IF_ERROR(out_file.GetFileName(&out_filename));
 
     JXL_RETURN_IF_ERROR(WriteFile(compressed, encoded_filename));
     JXL_RETURN_IF_ERROR(ReportCodecRunningTime(
         [&, this] {
           return RunCommand(
               decompress_command_,
-              std::vector<std::string>{encoded_filename, png_filename});
+              std::vector<std::string>{encoded_filename, out_filename},
+              custom_args->quiet);
         },
-        png_filename, speed_stats));
-    JXL_RETURN_IF_ERROR(
-        SetFromFile(png_filename, extras::ColorHints(), io, pool));
+        out_filename, speed_stats));
+    extras::ColorHints hints;
+    if (!custom_args->colorspace.empty()) {
+      hints.Add("color_space", custom_args->colorspace);
+    }
+    JXL_RETURN_IF_ERROR(SetFromFile(out_filename, hints, io, pool));
     io->metadata.m.SetIntensityTarget(saved_intensity_target_);
     return true;
   }
@@ -155,6 +214,7 @@ ImageCodec* CreateNewCustomCodec(const BenchmarkArgs& args) {
 namespace jxl {
 
 ImageCodec* CreateNewCustomCodec(const BenchmarkArgs& args) { return nullptr; }
+Status AddCommandLineOptionsCustomCodec(BenchmarkArgs* args) { return false; }
 
 }  // namespace jxl
 

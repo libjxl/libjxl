@@ -51,7 +51,7 @@ Status TemporaryFile::GetFileName(std::string* const output) const {
 }
 
 Status RunCommand(const std::string& command,
-                  const std::vector<std::string>& arguments) {
+                  const std::vector<std::string>& arguments, bool quiet) {
   std::vector<char*> args;
   args.reserve(arguments.size() + 2);
   args.push_back(const_cast<char*>(command.c_str()));
@@ -60,10 +60,17 @@ Status RunCommand(const std::string& command,
   }
   args.push_back(nullptr);
   pid_t pid;
-  JXL_RETURN_IF_ERROR(posix_spawnp(&pid, command.c_str(), nullptr, nullptr,
-                                   args.data(), environ) == 0);
+  posix_spawn_file_actions_t file_actions;
+  posix_spawn_file_actions_init(&file_actions);
+  if (quiet) {
+    posix_spawn_file_actions_addclose(&file_actions, STDOUT_FILENO);
+    posix_spawn_file_actions_addclose(&file_actions, STDERR_FILENO);
+  }
+  JXL_RETURN_IF_ERROR(posix_spawnp(&pid, command.c_str(), &file_actions,
+                                   nullptr, args.data(), environ) == 0);
   int wstatus;
   waitpid(pid, &wstatus, 0);
+  posix_spawn_file_actions_destroy(&file_actions);
   return WIFEXITED(wstatus) && WEXITSTATUS(wstatus) == EXIT_SUCCESS;
 }
 
@@ -81,7 +88,7 @@ Status TemporaryFile::GetFileName(std::string* const output) const {
 }
 
 Status RunCommand(const std::string& command,
-                  const std::vector<std::string>& arguments) {
+                  const std::vector<std::string>& arguments, bool quiet) {
   return JXL_FAILURE("Not supported on this build");
 }
 
