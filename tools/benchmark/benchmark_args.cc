@@ -17,6 +17,7 @@
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/color_management.h"
+#include "tools/benchmark/benchmark_codec_custom.h"  // for AddCommand..
 #include "tools/benchmark/benchmark_codec_jpeg.h"  // for AddCommand..
 #include "tools/benchmark/benchmark_codec_jxl.h"
 #if JPEGXL_ENABLE_APNG
@@ -210,6 +211,7 @@ Status BenchmarkArgs::AddCommandLineOptions() {
       "Distance numbers and compression speeds shown in the table are invalid.",
       false);
 
+  if (!AddCommandLineOptionsCustomCodec(this)) return false;
   if (!AddCommandLineOptionsJxlCodec(this)) return false;
 #ifdef BENCHMARK_JPEG
   if (!AddCommandLineOptionsJPEGCodec(this)) return false;
