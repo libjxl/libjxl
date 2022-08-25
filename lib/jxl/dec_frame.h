@@ -118,7 +118,7 @@ class FrameDecoder {
   size_t NumCompletePasses() const {
     return *std::min_element(decoded_passes_per_ac_group_.begin(),
                              decoded_passes_per_ac_group_.end());
-  };
+  }
 
   // If enabled, ProcessSections will stop and return true when the DC
   // sections have been processed, instead of starting the AC sections. This
