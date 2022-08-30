@@ -37,9 +37,11 @@ static inline bool IsLittleEndian() {
 #endif
 
 #if JXL_COMPILER_MSVC
+#define JXL_BSWAP16(x) _byteswap_ushort(x)
 #define JXL_BSWAP32(x) _byteswap_ulong(x)
 #define JXL_BSWAP64(x) _byteswap_uint64(x)
 #else
+#define JXL_BSWAP16(x) __builtin_bswap16(x)
 #define JXL_BSWAP32(x) __builtin_bswap32(x)
 #define JXL_BSWAP64(x) __builtin_bswap64(x)
 #endif

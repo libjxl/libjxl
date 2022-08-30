@@ -1487,14 +1487,14 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec) {
       // the low-memory callback path
       if (dec->image_out_buffer_set && !!dec->image_out_init_callback &&
           !!dec->image_out_run_callback &&
-          dec->image_out_format.data_type == JXL_TYPE_FLOAT &&
           dec->extra_channel_output.empty()) {
-        dec->frame_dec->SetFloatCallback(
+        dec->frame_dec->SetCallback(
             PixelCallback{
                 dec->image_out_init_callback, dec->image_out_run_callback,
                 dec->image_out_destroy_callback, dec->image_out_init_opaque},
             dec->image_out_format.num_channels, dec->unpremul_alpha,
-            !dec->keep_orientation, swap_endianness);
+            !dec->keep_orientation, swap_endianness,
+            dec->image_out_format.data_type);
       }
 
       size_t next_num_passes_to_pause = dec->frame_dec->NextNumPassesToPause();

@@ -85,6 +85,7 @@ struct PassesDecoderState {
   size_t rgb_stride = 0;
 
   size_t output_channels;
+  JxlDataType output_data_type;
 
   // Whether to use int16 float-XYB-to-uint8-srgb conversion.
   bool fast_xyb_srgb8_conversion;
@@ -144,6 +145,7 @@ struct PassesDecoderState {
     rgb_output = nullptr;
     rgb_output_is_rgba = false;
     output_channels = 3;
+    output_data_type = JXL_TYPE_FLOAT;
     unpremul_alpha = false;
     swap_endianness = false;
     undo_orientation = Orientation::kIdentity;
