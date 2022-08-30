@@ -218,7 +218,8 @@ Status PassesDecoderState::PreparePipeline(ImageBundle* decoded,
     if (pixel_callback.IsPresent()) {
       builder.AddStage(GetWriteToPixelCallbackStage(
           pixel_callback, width, height, output_channels, has_alpha,
-          unpremul_alpha, alpha_c, swap_endianness, undo_orientation));
+          unpremul_alpha, alpha_c, swap_endianness, undo_orientation,
+          output_data_type));
     } else if (rgb_output) {
       builder.AddStage(GetWriteToU8Stage(rgb_output, rgb_stride, height,
                                          rgb_output_is_rgba, has_alpha,

@@ -221,15 +221,16 @@ class FrameDecoder {
   // @param undo_orientation: if true, indicates the frame decoder should apply
   // the exif orientation to bring the image to the intended display
   // orientation.
-  void SetFloatCallback(const PixelCallback& pixel_callback,
-                        size_t num_channels, bool unpremul_alpha,
-                        bool undo_orientation, bool swap_endianness) const {
+  void SetCallback(const PixelCallback& pixel_callback, size_t num_channels,
+                   bool unpremul_alpha, bool undo_orientation,
+                   bool swap_endianness, JxlDataType data_type) const {
     dec_state_->pixel_callback = pixel_callback;
     dec_state_->output_channels = num_channels;
     dec_state_->undo_orientation = undo_orientation
                                        ? decoded_->metadata()->GetOrientation()
                                        : Orientation::kIdentity;
     dec_state_->swap_endianness = swap_endianness;
+    dec_state_->output_data_type = data_type;
     JXL_ASSERT(dec_state_->rgb_output == nullptr);
   }
 
