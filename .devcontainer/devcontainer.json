@@ -1,0 +1,16 @@
+{
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "onCreateCommand": "./deps.sh && SKIP_TEST=1 ./ci.sh debug",
+  "remoteEnv": { 
+    "PATH": "${containerEnv:PATH}:${containerWorkspaceFolder}/build/tools"
+  },
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "extensions.ignoreRecommendations": true
+      }
+    }
+  }
+}
