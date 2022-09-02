@@ -2730,14 +2730,13 @@ JxlDecoderStatus JxlDecoderSetPreferredColorProfile(
       dec->image_out_buffer_set && dec->image_out_format.num_channels < 3) {
     return JXL_API_ERROR("Number of channels is too low for color output");
   }
-  if (color_encoding->color_space == JXL_COLOR_SPACE_UNKNOWN ||
-      color_encoding->color_space == JXL_COLOR_SPACE_XYB) {
-    return JXL_API_ERROR("only RGB or grayscale output supported");
+  if (color_encoding->color_space == JXL_COLOR_SPACE_UNKNOWN) {
+    return JXL_API_ERROR("Unknown output colorspace");
   }
-
   jxl::ColorEncoding c_out;
   JXL_API_RETURN_IF_ERROR(
       ConvertExternalToInternalColorEncoding(*color_encoding, &c_out));
+  JXL_API_RETURN_IF_ERROR(!c_out.ICC().empty());
   auto& output_encoding = dec->passes_state->output_encoding_info;
   if (!c_out.SameColorEncoding(output_encoding.color_encoding)) {
     JXL_API_RETURN_IF_ERROR(output_encoding.MaybeSetColorEncoding(c_out));

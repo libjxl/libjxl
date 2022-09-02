@@ -159,8 +159,11 @@ Status PassesDecoderState::PreparePipeline(ImageBundle* decoded,
     if (frame_header.color_transform == ColorTransform::kYCbCr) {
       builder.AddStage(GetYCbCrStage());
     } else if (frame_header.color_transform == ColorTransform::kXYB) {
-      builder.AddStage(GetXYBStage(output_encoding_info.opsin_params));
-      linear = true;
+      builder.AddStage(GetXYBStage(output_encoding_info));
+      if (output_encoding_info.color_encoding.GetColorSpace() !=
+          ColorSpace::kXYB) {
+        linear = true;
+      }
     }  // Nothing to do for kNone.
 
     if (options.coalescing && NeedsBlending(this)) {
