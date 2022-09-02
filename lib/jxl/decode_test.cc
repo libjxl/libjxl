@@ -1767,16 +1767,24 @@ void SetPreferredColorProfileTest(
   jxl::PaddedBytes data = jxl::CreateTestJXLCodestream(
       jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize,
       num_channels, params);
-  for (const auto& c1 : jxl::test::AllEncodings()) {
+  auto all_encodings = jxl::test::AllEncodings();
+  all_encodings.push_back(
+      {jxl::ColorSpace::kXYB, jxl::WhitePoint::kD65, jxl::Primaries::kCustom,
+       jxl::TransferFunction::kUnknown, jxl::RenderingIntent::kPerceptual});
+  for (const auto& c1 : all_encodings) {
     jxl::ColorEncoding c_out = jxl::test::ColorEncodingFromDescriptor(c1);
     float intensity_out = intensity_in;
-    if (c_out.rendering_intent != jxl::RenderingIntent::kRelative) continue;
-    if ((c_in.primaries == jxl::Primaries::k2100 &&
-         c_out.primaries != jxl::Primaries::k2100) ||
-        (c_in.primaries == jxl::Primaries::kP3 &&
-         c_out.primaries == jxl::Primaries::kSRGB)) {
-      // Converting to a narrower gamut does not work without gammut mapping.
-      continue;
+    if (c_out.GetColorSpace() != jxl::ColorSpace::kXYB) {
+      if (c_out.rendering_intent != jxl::RenderingIntent::kRelative) {
+        continue;
+      }
+      if ((c_in.primaries == jxl::Primaries::k2100 &&
+           c_out.primaries != jxl::Primaries::k2100) ||
+          (c_in.primaries == jxl::Primaries::kP3 &&
+           c_out.primaries == jxl::Primaries::kSRGB)) {
+        // Converting to a narrower gamut does not work without gammut mapping.
+        continue;
+      }
     }
     if (c_out.tf.IsHLG() && intensity_out > 300) {
       // The Linear->HLG OOTF function at this intensity level can push
@@ -1803,6 +1811,12 @@ void SetPreferredColorProfileTest(
     EXPECT_EQ(GetDataProfile(dec), color_space_in);
     JxlColorEncoding encoding_out;
     EXPECT_TRUE(jxl::ParseDescription(color_space_out, &encoding_out));
+    if (c_out.GetColorSpace() == jxl::ColorSpace::kXYB &&
+        (c_in.primaries != jxl::Primaries::kSRGB || c_in.tf.IsPQ())) {
+      EXPECT_EQ(JXL_DEC_ERROR,
+                JxlDecoderSetPreferredColorProfile(dec, &encoding_out));
+      continue;
+    }
     EXPECT_EQ(JXL_DEC_SUCCESS,
               JxlDecoderSetPreferredColorProfile(dec, &encoding_out));
     EXPECT_EQ(GetOrigProfile(dec), color_space_in);
