@@ -22,9 +22,14 @@ namespace HWY_NAMESPACE {
 
 // These templates are not found via ADL.
 using hwy::HWY_NAMESPACE::Clamp;
+using hwy::HWY_NAMESPACE::Div;
+using hwy::HWY_NAMESPACE::Max;
 using hwy::HWY_NAMESPACE::Mul;
 using hwy::HWY_NAMESPACE::NearestInt;
+using hwy::HWY_NAMESPACE::Or;
 using hwy::HWY_NAMESPACE::Rebind;
+using hwy::HWY_NAMESPACE::ShiftLeftSame;
+using hwy::HWY_NAMESPACE::ShiftRightSame;
 using hwy::HWY_NAMESPACE::U8FromU32;
 
 template <typename D, typename V>
@@ -209,105 +214,71 @@ class WriteToPixelCallbackStage : public RenderPipelineStage {
   void ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
                   size_t xextra, size_t xsize, size_t xpos, size_t ypos,
                   size_t thread_id) const final {
+    JXL_DASSERT(xextra == 0);
     JXL_DASSERT(run_opaque_);
     if (ypos >= height_) return;
-    const float* line_buffers[4];
-    for (size_t c = 0; c < num_color_; c++) {
-      line_buffers[c] = GetInputRow(input_rows, c, 0) - xextra;
-    }
-    if (has_alpha_) {
-      line_buffers[num_color_] = GetInputRow(input_rows, alpha_c_, 0) - xextra;
-    } else {
-      // No xextra offset; opaque_alpha_ is a way to set all values to 1.0f.
-      line_buffers[num_color_] = opaque_alpha_.data();
-    }
+    if (xpos >= width_) return;
     if (flip_y_) {
       ypos = height_ - 1u - ypos;
     }
-    // TODO(veluca): SIMD.
-    ssize_t limit = std::min(xextra + xsize, width_ - xpos);
-    for (ssize_t x0 = -xextra; x0 < limit; x0 += kMaxPixelsPerCall) {
-      size_t j = 0;
-      size_t ix = 0;
-      float* JXL_RESTRICT temp =
-          reinterpret_cast<float*>(tempf_[thread_id].get());
-      for (; ix < kMaxPixelsPerCall && ssize_t(ix) + x0 < limit; ix++) {
-        for (size_t c = 0; c < num_channels_; ++c) {
-          temp[j++] = line_buffers[c][ix];
-        }
-      }
+
+    size_t limit = std::min(xsize, width_ - xpos);
+    for (size_t x0 = 0; x0 < limit; x0 += kMaxPixelsPerCall) {
       size_t xstart = xpos + x0;
-      size_t xlen = ix;
-      size_t len = xlen * num_channels_;
+      size_t len = std::min<size_t>(kMaxPixelsPerCall, limit - x0);
+
+      const float* line_buffers[4];
+      for (size_t c = 0; c < num_color_; c++) {
+        line_buffers[c] = GetInputRow(input_rows, c, 0) + x0;
+      }
+      if (has_alpha_) {
+        line_buffers[num_color_] = GetInputRow(input_rows, alpha_c_, 0) + x0;
+      } else {
+        // opaque_alpha_ is a way to set all values to 1.0f.
+        line_buffers[num_color_] = opaque_alpha_.data();
+      }
       if (has_alpha_ && want_alpha_ && unpremul_alpha_) {
-        // TODO(szabadka) SIMDify (possibly in a separate pipeline stage).
-        UnpremultiplyAlpha(temp, num_color_, xlen);
+        UnpremulAlpha(thread_id, len, line_buffers);
       }
       if (flip_x_) {
-        size_t last = (xlen - 1u) * num_channels_;
-        size_t num = (xlen / 2) * num_channels_;
-        for (size_t i = 0; i < num; i += num_channels_) {
-          for (size_t c = 0; c < num_channels_; ++c) {
-            std::swap(temp[i + c], temp[last - i + c]);
-          }
-        }
-        xstart = width_ - xstart - xlen;
+        FlipX(thread_id, len, &xstart, line_buffers);
       }
 
-      const HWY_FULL(float) d;
-      auto zero = Zero(d);
-      auto one = Set(d, 1.0f);
-
-      const size_t lenup = RoundUpTo(len, Lanes(d));
-      msan::UnpoisonMemory(temp + len, sizeof(temp[0]) * (lenup - len));
-
-      if (data_type_ == JXL_TYPE_FLOAT) {
+      if (data_type_ == JXL_TYPE_UINT8) {
+        uint8_t* JXL_RESTRICT temp =
+            reinterpret_cast<uint8_t*>(temp_out_[thread_id].get());
+        StoreUnsignedRow(line_buffers, len, temp);
+        WriteToCallback(thread_id, ypos, xstart, len, temp);
+      } else if (data_type_ == JXL_TYPE_UINT16 ||
+                 data_type_ == JXL_TYPE_FLOAT16) {
+        uint16_t* JXL_RESTRICT temp =
+            reinterpret_cast<uint16_t*>(temp_out_[thread_id].get());
+        if (data_type_ == JXL_TYPE_UINT16) {
+          StoreUnsignedRow(line_buffers, len, temp);
+        } else {
+          StoreFloat16Row(line_buffers, len, temp);
+        }
         if (swap_endianness_) {
-          for (size_t j = 0; j < len; ++j) {
+          const HWY_FULL(uint16_t) du;
+          size_t output_len = len * num_channels_;
+          for (size_t j = 0; j < output_len; j += Lanes(du)) {
+            auto v = LoadU(du, temp + j);
+            auto vswap = Or(ShiftRightSame(v, 8), ShiftLeftSame(v, 8));
+            StoreU(vswap, du, temp + j);
+          }
+        }
+        WriteToCallback(thread_id, ypos, xstart, len, temp);
+      } else if (data_type_ == JXL_TYPE_FLOAT) {
+        float* JXL_RESTRICT temp =
+            reinterpret_cast<float*>(temp_out_[thread_id].get());
+        StoreFloatRow(line_buffers, len, temp);
+        if (swap_endianness_) {
+          size_t output_len = len * num_channels_;
+          for (size_t j = 0; j < output_len; ++j) {
             temp[j] = BSwapFloat(temp[j]);
           }
         }
-        WriteToCallback(thread_id, ypos, xstart, xlen, temp);
-      } else if (data_type_ == JXL_TYPE_UINT16 ||
-                 data_type_ == JXL_TYPE_FLOAT16) {
-        uint16_t* JXL_RESTRICT tempu =
-            reinterpret_cast<uint16_t*>(tempu_[thread_id].get());
-        const Rebind<uint16_t, decltype(d)> du16;
-        if (data_type_ == JXL_TYPE_UINT16) {
-          auto mul = Set(d, 65535.0f);
-          for (size_t j = 0; j < len; j += Lanes(d)) {
-            auto v = Mul(Clamp(zero, LoadU(d, temp + j), one), mul);
-            StoreU(DemoteTo(du16, NearestInt(v)), du16, tempu + j);
-          }
-        } else {
-          const Rebind<hwy::float16_t, decltype(d)> df16;
-          for (size_t j = 0; j < len; j += Lanes(d)) {
-            auto v = LoadU(d, temp + j);
-            StoreU(BitCast(du16, DemoteTo(df16, v)), du16, tempu + j);
-          }
-        }
-        if (swap_endianness_) {
-          for (size_t j = 0; j < len; ++j) {
-            tempu[j] = JXL_BSWAP16(tempu[j]);
-          }
-        }
-        WriteToCallback(thread_id, ypos, xstart, xlen, tempu);
-      } else if (data_type_ == JXL_TYPE_UINT8) {
-        uint8_t* JXL_RESTRICT tempu =
-            reinterpret_cast<uint8_t*>(tempu_[thread_id].get());
-        auto mul = Set(d, 255.0f);
-        const Rebind<uint8_t, decltype(d)> du8;
-        for (size_t j = 0; j < len; j += Lanes(d)) {
-          auto v = Mul(Clamp(zero, LoadU(d, temp + j), one), mul);
-          StoreU(DemoteTo(du8, NearestInt(v)), du8, tempu + j);
-        }
-        WriteToCallback(thread_id, ypos, xstart, xlen, tempu);
-      }
-      for (size_t c = 0; c < num_color_; c++) {
-        line_buffers[c] += kMaxPixelsPerCall;
-      }
-      if (has_alpha_) {
-        line_buffers[num_color_] += kMaxPixelsPerCall;
+        WriteToCallback(thread_id, ypos, xstart, len, temp);
       }
     }
   }
@@ -325,15 +296,14 @@ class WriteToPixelCallbackStage : public RenderPipelineStage {
     run_opaque_ =
         pixel_callback_.Init(num_threads, /*num_pixels=*/kMaxPixelsPerCall);
     JXL_RETURN_IF_ERROR(run_opaque_ != nullptr);
-    tempf_.resize(num_threads);
-    for (CacheAlignedUniquePtr& temp : tempf_) {
+    temp_out_.resize(num_threads);
+    for (CacheAlignedUniquePtr& temp : temp_out_) {
       temp = AllocateArray(sizeof(float) * kMaxPixelsPerCall * num_channels_);
     }
-    if (data_type_ != JXL_TYPE_FLOAT) {
-      tempu_.resize(num_threads);
-      for (CacheAlignedUniquePtr& temp : tempu_) {
-        temp =
-            AllocateArray(sizeof(uint16_t) * kMaxPixelsPerCall * num_channels_);
+    if ((has_alpha_ && want_alpha_ && unpremul_alpha_) || flip_x_) {
+      temp_in_.resize(num_threads * num_channels_);
+      for (CacheAlignedUniquePtr& temp : temp_in_) {
+        temp = AllocateArray(sizeof(float) * kMaxPixelsPerCall);
       }
     }
     return true;
@@ -356,17 +326,182 @@ class WriteToPixelCallbackStage : public RenderPipelineStage {
             undo_orientation == Orientation::kRotate270 ||
             undo_orientation == Orientation::kAntiTranspose);
   }
+
+  void UnpremulAlpha(size_t thread_id, size_t len,
+                     const float** line_buffers) const {
+    const HWY_FULL(float) d;
+    auto one = Set(d, 1.0f);
+    float* temp_in[4];
+    for (size_t c = 0; c < num_channels_; ++c) {
+      size_t tix = thread_id * num_channels_ + c;
+      temp_in[c] = reinterpret_cast<float*>(temp_in_[tix].get());
+      memcpy(temp_in[c], line_buffers[c], sizeof(float) * len);
+    }
+    auto small_alpha = Set(d, kSmallAlpha);
+    for (size_t ix = 0; ix < len; ix += Lanes(d)) {
+      auto alpha = LoadU(d, temp_in[num_color_] + ix);
+      auto mul = Div(one, Max(small_alpha, alpha));
+      for (size_t c = 0; c < num_color_; ++c) {
+        auto val = LoadU(d, temp_in[c] + ix);
+        StoreU(Mul(val, mul), d, temp_in[c] + ix);
+      }
+    }
+    for (size_t c = 0; c < num_channels_; ++c) {
+      line_buffers[c] = temp_in[c];
+    }
+  }
+
+  void FlipX(size_t thread_id, size_t len, size_t* xstart,
+             const float** line_buffers) const {
+    float* temp_in[4];
+    for (size_t c = 0; c < num_channels_; ++c) {
+      size_t tix = thread_id * num_channels_ + c;
+      temp_in[c] = reinterpret_cast<float*>(temp_in_[tix].get());
+      if (temp_in[c] != line_buffers[c]) {
+        memcpy(temp_in[c], line_buffers[c], sizeof(float) * len);
+      }
+    }
+    size_t last = (len - 1u);
+    size_t num = (len / 2);
+    for (size_t i = 0; i < num; ++i) {
+      for (size_t c = 0; c < num_channels_; ++c) {
+        std::swap(temp_in[c][i], temp_in[c][last - i]);
+      }
+    }
+    for (size_t c = 0; c < num_channels_; ++c) {
+      line_buffers[c] = temp_in[c];
+    }
+    *xstart = width_ - *xstart - len;
+  }
+
   template <typename T>
-  void WriteToCallback(size_t thread_id, size_t ypos, size_t xstart,
-                       size_t xlen, T* output) const {
+  void StoreUnsignedRow(const float* input[4], size_t len, T* output) const {
+    const HWY_FULL(float) d;
+    auto zero = Zero(d);
+    auto one = Set(d, 1.0f);
+    auto mul = Set(d, (1u << (sizeof(T) * 8)) - 1);
+    const Rebind<T, decltype(d)> du;
+    const size_t padding = RoundUpTo(len, Lanes(d)) - len;
+    for (size_t c = 0; c < num_channels_; ++c) {
+      msan::UnpoisonMemory(input[c] + len, sizeof(input[c][0]) * padding);
+    }
+    if (num_channels_ == 1) {
+      for (size_t i = 0; i < len; i += Lanes(d)) {
+        auto v0 = Mul(Clamp(zero, LoadU(d, &input[0][i]), one), mul);
+        StoreU(DemoteTo(du, NearestInt(v0)), du, &output[i]);
+      }
+    } else if (num_channels_ == 2) {
+      for (size_t i = 0; i < len; i += Lanes(d)) {
+        auto v0 = Mul(Clamp(zero, LoadU(d, &input[0][i]), one), mul);
+        auto v1 = Mul(Clamp(zero, LoadU(d, &input[1][i]), one), mul);
+        StoreInterleaved2(DemoteTo(du, NearestInt(v0)),
+                          DemoteTo(du, NearestInt(v1)), du, &output[2 * i]);
+      }
+    } else if (num_channels_ == 3) {
+      for (size_t i = 0; i < len; i += Lanes(d)) {
+        auto v0 = Mul(Clamp(zero, LoadU(d, &input[0][i]), one), mul);
+        auto v1 = Mul(Clamp(zero, LoadU(d, &input[1][i]), one), mul);
+        auto v2 = Mul(Clamp(zero, LoadU(d, &input[2][i]), one), mul);
+        StoreInterleaved3(DemoteTo(du, NearestInt(v0)),
+                          DemoteTo(du, NearestInt(v1)),
+                          DemoteTo(du, NearestInt(v2)), du, &output[3 * i]);
+      }
+    } else if (num_channels_ == 4) {
+      for (size_t i = 0; i < len; i += Lanes(d)) {
+        auto v0 = Mul(Clamp(zero, LoadU(d, &input[0][i]), one), mul);
+        auto v1 = Mul(Clamp(zero, LoadU(d, &input[1][i]), one), mul);
+        auto v2 = Mul(Clamp(zero, LoadU(d, &input[2][i]), one), mul);
+        auto v3 = Mul(Clamp(zero, LoadU(d, &input[3][i]), one), mul);
+        StoreInterleaved4(DemoteTo(du, NearestInt(v0)),
+                          DemoteTo(du, NearestInt(v1)),
+                          DemoteTo(du, NearestInt(v2)),
+                          DemoteTo(du, NearestInt(v3)), du, &output[4 * i]);
+      }
+    }
+    msan::PoisonMemory(output + num_channels_ * len,
+                       sizeof(output[0]) * num_channels_ * padding);
+  }
+
+  void StoreFloat16Row(const float* input[4], size_t len,
+                       uint16_t* output) const {
+    const HWY_FULL(float) d;
+    const Rebind<uint16_t, decltype(d)> du;
+    const Rebind<hwy::float16_t, decltype(d)> df16;
+    const size_t padding = RoundUpTo(len, Lanes(d)) - len;
+    for (size_t c = 0; c < num_channels_; ++c) {
+      msan::UnpoisonMemory(input[c] + len, sizeof(input[c][0]) * padding);
+    }
+    if (num_channels_ == 1) {
+      for (size_t i = 0; i < len; i += Lanes(d)) {
+        auto v0 = LoadU(d, &input[0][i]);
+        StoreU(BitCast(du, DemoteTo(df16, v0)), du, &output[i]);
+      }
+    } else if (num_channels_ == 2) {
+      for (size_t i = 0; i < len; i += Lanes(d)) {
+        auto v0 = LoadU(d, &input[0][i]);
+        auto v1 = LoadU(d, &input[1][i]);
+        StoreInterleaved2(BitCast(du, DemoteTo(df16, v0)),
+                          BitCast(du, DemoteTo(df16, v1)), du, &output[2 * i]);
+      }
+    } else if (num_channels_ == 3) {
+      for (size_t i = 0; i < len; i += Lanes(d)) {
+        auto v0 = LoadU(d, &input[0][i]);
+        auto v1 = LoadU(d, &input[1][i]);
+        auto v2 = LoadU(d, &input[2][i]);
+        StoreInterleaved3(BitCast(du, DemoteTo(df16, v0)),
+                          BitCast(du, DemoteTo(df16, v1)),
+                          BitCast(du, DemoteTo(df16, v2)), du, &output[3 * i]);
+      }
+    } else if (num_channels_ == 4) {
+      for (size_t i = 0; i < len; i += Lanes(d)) {
+        auto v0 = LoadU(d, &input[0][i]);
+        auto v1 = LoadU(d, &input[1][i]);
+        auto v2 = LoadU(d, &input[2][i]);
+        auto v3 = LoadU(d, &input[3][i]);
+        StoreInterleaved4(BitCast(du, DemoteTo(df16, v0)),
+                          BitCast(du, DemoteTo(df16, v1)),
+                          BitCast(du, DemoteTo(df16, v2)),
+                          BitCast(du, DemoteTo(df16, v3)), du, &output[4 * i]);
+      }
+    }
+    msan::PoisonMemory(output + num_channels_ * len,
+                       sizeof(output[0]) * num_channels_ * padding);
+  }
+
+  void StoreFloatRow(const float* input[4], size_t len, float* output) const {
+    const HWY_FULL(float) d;
+    if (num_channels_ == 1) {
+      memcpy(output, input[0], len * sizeof(output[0]));
+    } else if (num_channels_ == 2) {
+      for (size_t i = 0; i < len; i += Lanes(d)) {
+        StoreInterleaved2(LoadU(d, &input[0][i]), LoadU(d, &input[1][i]), d,
+                          &output[2 * i]);
+      }
+    } else if (num_channels_ == 3) {
+      for (size_t i = 0; i < len; i += Lanes(d)) {
+        StoreInterleaved3(LoadU(d, &input[0][i]), LoadU(d, &input[1][i]),
+                          LoadU(d, &input[2][i]), d, &output[3 * i]);
+      }
+    } else {
+      for (size_t i = 0; i < len; i += Lanes(d)) {
+        StoreInterleaved4(LoadU(d, &input[0][i]), LoadU(d, &input[1][i]),
+                          LoadU(d, &input[2][i]), LoadU(d, &input[3][i]), d,
+                          &output[4 * i]);
+      }
+    }
+  }
+
+  template <typename T>
+  void WriteToCallback(size_t thread_id, size_t ypos, size_t xstart, size_t len,
+                       T* output) const {
     if (transpose_) {
       // TODO(szabadka) Buffer 8x8 chunks and transpose with SIMD.
-      for (size_t i = 0, j = 0; i < xlen; ++i, j += num_channels_) {
+      for (size_t i = 0, j = 0; i < len; ++i, j += num_channels_) {
         pixel_callback_.run(run_opaque_, thread_id, ypos, xstart + i, 1,
                             output + j);
       }
     } else {
-      pixel_callback_.run(run_opaque_, thread_id, xstart, ypos, xlen, output);
+      pixel_callback_.run(run_opaque_, thread_id, xstart, ypos, len, output);
     }
   }
 
@@ -387,9 +522,11 @@ class WriteToPixelCallbackStage : public RenderPipelineStage {
   bool transpose_;
   JxlDataType data_type_;
   std::vector<float> opaque_alpha_;
-  std::vector<CacheAlignedUniquePtr> tempf_;
-  std::vector<CacheAlignedUniquePtr> tempu_;
+  std::vector<CacheAlignedUniquePtr> temp_in_;
+  std::vector<CacheAlignedUniquePtr> temp_out_;
 };
+
+constexpr size_t WriteToPixelCallbackStage::kMaxPixelsPerCall;
 
 std::unique_ptr<RenderPipelineStage> GetWriteToPixelCallbackStage(
     const PixelCallback& pixel_callback, size_t width, size_t height,
