@@ -1815,6 +1815,7 @@ void SetPreferredColorProfileTest(
         (c_in.primaries != jxl::Primaries::kSRGB || c_in.tf.IsPQ())) {
       EXPECT_EQ(JXL_DEC_ERROR,
                 JxlDecoderSetPreferredColorProfile(dec, &encoding_out));
+      JxlDecoderDestroy(dec);
       continue;
     }
     EXPECT_EQ(JXL_DEC_SUCCESS,
