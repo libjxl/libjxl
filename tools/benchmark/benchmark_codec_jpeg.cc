@@ -15,6 +15,7 @@
 
 #include "lib/extras/dec/jpg.h"
 #include "lib/extras/enc/jpg.h"
+#include "lib/extras/encode_jpeg.h"
 #include "lib/extras/packed_image.h"
 #include "lib/extras/packed_image_convert.h"
 #include "lib/extras/time.h"
@@ -56,7 +57,7 @@ class JPEGCodec : public ImageCodec {
     if (ImageCodec::ParseParam(param)) {
       return true;
     }
-    if (param == "sjpeg") {
+    if (param == "sjpeg" || param == "libjxl") {
       jpeg_encoder_ = param;
       return true;
     }
@@ -71,6 +72,14 @@ class JPEGCodec : public ImageCodec {
   Status Compress(const std::string& filename, const CodecInOut* io,
                   ThreadPoolInternal* pool, std::vector<uint8_t>* compressed,
                   jpegxl::tools::SpeedStats* speed_stats) override {
+    if (jpeg_encoder_ == "libjxl") {
+      const double start = Now();
+      JXL_RETURN_IF_ERROR(extras::EncodeJpeg(io->Main(), butteraugli_target_,
+                                             pool, compressed));
+      const double end = Now();
+      speed_stats->NotifyElapsed(end - start);
+      return true;
+    }
     extras::PackedPixelFile ppf;
     JxlPixelFormat format = {0, JXL_TYPE_UINT8, JXL_BIG_ENDIAN, 0};
     JXL_RETURN_IF_ERROR(ConvertCodecInOutToPackedPixelFile(
