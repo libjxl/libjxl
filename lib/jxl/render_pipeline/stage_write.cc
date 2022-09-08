@@ -30,182 +30,38 @@ using hwy::HWY_NAMESPACE::Or;
 using hwy::HWY_NAMESPACE::Rebind;
 using hwy::HWY_NAMESPACE::ShiftLeftSame;
 using hwy::HWY_NAMESPACE::ShiftRightSame;
-using hwy::HWY_NAMESPACE::U8FromU32;
 
-template <typename D, typename V>
-void StoreRGBA(D d, V r, V g, V b, V a, bool alpha, size_t n, size_t extra,
-               uint8_t* buf) {
-#if HWY_TARGET == HWY_SCALAR
-  buf[0] = r.raw;
-  buf[1] = g.raw;
-  buf[2] = b.raw;
-  if (alpha) {
-    buf[3] = a.raw;
-  }
-#elif HWY_TARGET == HWY_NEON
-  if (alpha) {
-    uint8x8x4_t data = {r.raw, g.raw, b.raw, a.raw};
-    if (extra >= 8) {
-      vst4_u8(buf, data);
-    } else {
-      uint8_t tmp[8 * 4];
-      vst4_u8(tmp, data);
-      memcpy(buf, tmp, n * 4);
-    }
-  } else {
-    uint8x8x3_t data = {r.raw, g.raw, b.raw};
-    if (extra >= 8) {
-      vst3_u8(buf, data);
-    } else {
-      uint8_t tmp[8 * 3];
-      vst3_u8(tmp, data);
-      memcpy(buf, tmp, n * 3);
-    }
-  }
-#else
-  // TODO(veluca): implement this for x86.
-  size_t mul = alpha ? 4 : 3;
-  HWY_ALIGN uint8_t bytes[16];
-  StoreU(r, d, bytes);
-  for (size_t i = 0; i < n; i++) {
-    buf[mul * i] = bytes[i];
-  }
-  StoreU(g, d, bytes);
-  for (size_t i = 0; i < n; i++) {
-    buf[mul * i + 1] = bytes[i];
-  }
-  StoreU(b, d, bytes);
-  for (size_t i = 0; i < n; i++) {
-    buf[mul * i + 2] = bytes[i];
-  }
-  if (alpha) {
-    StoreU(a, d, bytes);
-    for (size_t i = 0; i < n; i++) {
-      buf[4 * i + 3] = bytes[i];
-    }
-  }
-#endif
-}
-
-class WriteToU8Stage : public RenderPipelineStage {
+class WriteToOutputStage : public RenderPipelineStage {
  public:
-  WriteToU8Stage(uint8_t* rgb, size_t stride, size_t height, bool rgba,
-                 bool has_alpha, size_t alpha_c)
-      : RenderPipelineStage(RenderPipelineStage::Settings()),
-        rgb_(rgb),
-        stride_(stride),
-        height_(height),
-        rgba_(rgba),
-        has_alpha_(has_alpha),
-        alpha_c_(alpha_c) {}
-
-  void ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
-                  size_t xextra, size_t xsize, size_t xpos, size_t ypos,
-                  size_t thread_id) const final {
-    if (ypos >= height_) return;
-    JXL_DASSERT(xextra == 0);
-    size_t bytes = rgba_ ? 4 : 3;
-    const float* JXL_RESTRICT row_in_r = GetInputRow(input_rows, 0, 0);
-    const float* JXL_RESTRICT row_in_g = GetInputRow(input_rows, 1, 0);
-    const float* JXL_RESTRICT row_in_b = GetInputRow(input_rows, 2, 0);
-    const float* JXL_RESTRICT row_in_a =
-        has_alpha_ ? GetInputRow(input_rows, alpha_c_, 0) : nullptr;
-    size_t base_ptr = ypos * stride_ + bytes * (xpos - xextra);
-    using D = HWY_CAPPED(float, 4);
-    const D d;
-    D::Rebind<uint32_t> du;
-    auto zero = Zero(d);
-    auto one = Set(d, 1.0f);
-    auto mul = Set(d, 255.0f);
-
-    ssize_t x1 = RoundUpTo(xsize, Lanes(d));
-
-    msan::UnpoisonMemory(row_in_r + xsize, sizeof(float) * (x1 - xsize));
-    msan::UnpoisonMemory(row_in_g + xsize, sizeof(float) * (x1 - xsize));
-    msan::UnpoisonMemory(row_in_b + xsize, sizeof(float) * (x1 - xsize));
-    if (row_in_a) {
-      msan::UnpoisonMemory(row_in_a + xsize, sizeof(float) * (x1 - xsize));
-    }
-
-    for (ssize_t x = 0; x < x1; x += Lanes(d)) {
-      auto rf = Mul(Clamp(zero, LoadU(d, row_in_r + x), one), mul);
-      auto gf = Mul(Clamp(zero, LoadU(d, row_in_g + x), one), mul);
-      auto bf = Mul(Clamp(zero, LoadU(d, row_in_b + x), one), mul);
-      auto af = row_in_a ? Mul(Clamp(zero, LoadU(d, row_in_a + x), one), mul)
-                         : Set(d, 255.0f);
-      auto r8 = U8FromU32(BitCast(du, NearestInt(rf)));
-      auto g8 = U8FromU32(BitCast(du, NearestInt(gf)));
-      auto b8 = U8FromU32(BitCast(du, NearestInt(bf)));
-      auto a8 = U8FromU32(BitCast(du, NearestInt(af)));
-      size_t n = xsize - x;
-      if (JXL_LIKELY(n >= Lanes(d))) {
-        StoreRGBA(D::Rebind<uint8_t>(), r8, g8, b8, a8, rgba_, Lanes(d), n,
-                  rgb_ + base_ptr + bytes * x);
-      } else {
-        StoreRGBA(D::Rebind<uint8_t>(), r8, g8, b8, a8, rgba_, n, n,
-                  rgb_ + base_ptr + bytes * x);
-      }
-    }
-  }
-
-  RenderPipelineChannelMode GetChannelMode(size_t c) const final {
-    return c < 3 || (has_alpha_ && c == alpha_c_)
-               ? RenderPipelineChannelMode::kInput
-               : RenderPipelineChannelMode::kIgnored;
-  }
-
-  const char* GetName() const override { return "WriteToU8"; }
-
- private:
-  uint8_t* rgb_;
-  size_t stride_;
-  size_t height_;
-  bool rgba_;
-  bool has_alpha_;
-  size_t alpha_c_;
-  std::vector<float> opaque_alpha_;
-};
-
-std::unique_ptr<RenderPipelineStage> GetWriteToU8Stage(uint8_t* rgb,
-                                                       size_t stride,
-                                                       size_t height, bool rgba,
-                                                       bool has_alpha,
-                                                       size_t alpha_c) {
-  return jxl::make_unique<WriteToU8Stage>(rgb, stride, height, rgba, has_alpha,
-                                          alpha_c);
-}
-
-class WriteToPixelCallbackStage : public RenderPipelineStage {
- public:
-  WriteToPixelCallbackStage(const PixelCallback& pixel_callback, size_t width,
-                            size_t height, size_t num_channels, bool has_alpha,
-                            bool unpremul_alpha, size_t alpha_c,
-                            bool swap_endianness, Orientation undo_orientation,
-                            JxlDataType data_type)
+  WriteToOutputStage(const PixelCallback& pixel_callback, void* buffer,
+                     size_t width, size_t height, size_t stride,
+                     JxlPixelFormat format, bool has_alpha, bool unpremul_alpha,
+                     size_t alpha_c, Orientation undo_orientation)
       : RenderPipelineStage(RenderPipelineStage::Settings()),
         pixel_callback_(pixel_callback),
+        buffer_(buffer),
         width_(width),
         height_(height),
-        num_channels_(num_channels),
-        num_color_(num_channels < 3 ? 1 : 3),
+        stride_(stride),
+        num_channels_(format.num_channels),
+        num_color_(num_channels_ < 3 ? 1 : 3),
         want_alpha_(num_channels_ == 2 || num_channels_ == 4),
         has_alpha_(has_alpha),
         unpremul_alpha_(unpremul_alpha),
         alpha_c_(alpha_c),
-        swap_endianness_(swap_endianness),
+        swap_endianness_(SwapEndianness(format.endianness)),
         flip_x_(ShouldFlipX(undo_orientation)),
         flip_y_(ShouldFlipY(undo_orientation)),
         transpose_(ShouldTranspose(undo_orientation)),
-        data_type_(data_type),
+        data_type_(format.data_type),
         opaque_alpha_(kMaxPixelsPerCall, 1.0f) {}
 
-  WriteToPixelCallbackStage(const WriteToPixelCallbackStage&) = delete;
-  WriteToPixelCallbackStage& operator=(const WriteToPixelCallbackStage&) =
-      delete;
-  WriteToPixelCallbackStage(WriteToPixelCallbackStage&&) = delete;
-  WriteToPixelCallbackStage& operator=(WriteToPixelCallbackStage&&) = delete;
+  WriteToOutputStage(const WriteToOutputStage&) = delete;
+  WriteToOutputStage& operator=(const WriteToOutputStage&) = delete;
+  WriteToOutputStage(WriteToOutputStage&&) = delete;
+  WriteToOutputStage& operator=(WriteToOutputStage&&) = delete;
 
-  ~WriteToPixelCallbackStage() override {
+  ~WriteToOutputStage() override {
     if (run_opaque_) {
       pixel_callback_.destroy(run_opaque_);
     }
@@ -215,7 +71,7 @@ class WriteToPixelCallbackStage : public RenderPipelineStage {
                   size_t xextra, size_t xsize, size_t xpos, size_t ypos,
                   size_t thread_id) const final {
     JXL_DASSERT(xextra == 0);
-    JXL_DASSERT(run_opaque_);
+    JXL_DASSERT(run_opaque_ || buffer_);
     if (ypos >= height_) return;
     if (xpos >= width_) return;
     if (flip_y_) {
@@ -248,7 +104,7 @@ class WriteToPixelCallbackStage : public RenderPipelineStage {
         uint8_t* JXL_RESTRICT temp =
             reinterpret_cast<uint8_t*>(temp_out_[thread_id].get());
         StoreUnsignedRow(line_buffers, len, temp);
-        WriteToCallback(thread_id, ypos, xstart, len, temp);
+        WriteToOutput(thread_id, ypos, xstart, len, temp);
       } else if (data_type_ == JXL_TYPE_UINT16 ||
                  data_type_ == JXL_TYPE_FLOAT16) {
         uint16_t* JXL_RESTRICT temp =
@@ -267,7 +123,7 @@ class WriteToPixelCallbackStage : public RenderPipelineStage {
             StoreU(vswap, du, temp + j);
           }
         }
-        WriteToCallback(thread_id, ypos, xstart, len, temp);
+        WriteToOutput(thread_id, ypos, xstart, len, temp);
       } else if (data_type_ == JXL_TYPE_FLOAT) {
         float* JXL_RESTRICT temp =
             reinterpret_cast<float*>(temp_out_[thread_id].get());
@@ -278,7 +134,7 @@ class WriteToPixelCallbackStage : public RenderPipelineStage {
             temp[j] = BSwapFloat(temp[j]);
           }
         }
-        WriteToCallback(thread_id, ypos, xstart, len, temp);
+        WriteToOutput(thread_id, ypos, xstart, len, temp);
       }
     }
   }
@@ -293,9 +149,13 @@ class WriteToPixelCallbackStage : public RenderPipelineStage {
 
  private:
   Status PrepareForThreads(size_t num_threads) override {
-    run_opaque_ =
-        pixel_callback_.Init(num_threads, /*num_pixels=*/kMaxPixelsPerCall);
-    JXL_RETURN_IF_ERROR(run_opaque_ != nullptr);
+    if (pixel_callback_.IsPresent()) {
+      run_opaque_ =
+          pixel_callback_.Init(num_threads, /*num_pixels=*/kMaxPixelsPerCall);
+      JXL_RETURN_IF_ERROR(run_opaque_ != nullptr);
+    } else {
+      JXL_RETURN_IF_ERROR(buffer_ != nullptr);
+    }
     temp_out_.resize(num_threads);
     for (CacheAlignedUniquePtr& temp : temp_out_) {
       temp = AllocateArray(sizeof(float) * kMaxPixelsPerCall * num_channels_);
@@ -492,24 +352,40 @@ class WriteToPixelCallbackStage : public RenderPipelineStage {
   }
 
   template <typename T>
-  void WriteToCallback(size_t thread_id, size_t ypos, size_t xstart, size_t len,
-                       T* output) const {
+  void WriteToOutput(size_t thread_id, size_t ypos, size_t xstart, size_t len,
+                     T* output) const {
     if (transpose_) {
       // TODO(szabadka) Buffer 8x8 chunks and transpose with SIMD.
-      for (size_t i = 0, j = 0; i < len; ++i, j += num_channels_) {
-        pixel_callback_.run(run_opaque_, thread_id, ypos, xstart + i, 1,
-                            output + j);
+      if (run_opaque_) {
+        for (size_t i = 0, j = 0; i < len; ++i, j += num_channels_) {
+          pixel_callback_.run(run_opaque_, thread_id, ypos, xstart + i, 1,
+                              output + j);
+        }
+      } else {
+        size_t offset = xstart * stride_ + ypos * num_channels_ * sizeof(T);
+        for (size_t i = 0, j = 0; i < len; ++i, j += num_channels_) {
+          memcpy(reinterpret_cast<uint8_t*>(buffer_) + offset + i * stride_,
+                 output + j, num_channels_ * sizeof(T));
+        }
       }
     } else {
-      pixel_callback_.run(run_opaque_, thread_id, xstart, ypos, len, output);
+      if (run_opaque_) {
+        pixel_callback_.run(run_opaque_, thread_id, xstart, ypos, len, output);
+      } else {
+        size_t offset = ypos * stride_ + xstart * num_channels_ * sizeof(T);
+        memcpy(reinterpret_cast<uint8_t*>(buffer_) + offset, output,
+               len * num_channels_ * sizeof(T));
+      }
     }
   }
 
   static constexpr size_t kMaxPixelsPerCall = 1024;
   PixelCallback pixel_callback_;
   void* run_opaque_ = nullptr;
+  void* buffer_ = nullptr;
   size_t width_;
   size_t height_;
+  size_t stride_;
   size_t num_channels_;
   size_t num_color_;
   bool want_alpha_;
@@ -526,15 +402,15 @@ class WriteToPixelCallbackStage : public RenderPipelineStage {
   std::vector<CacheAlignedUniquePtr> temp_out_;
 };
 
-constexpr size_t WriteToPixelCallbackStage::kMaxPixelsPerCall;
+constexpr size_t WriteToOutputStage::kMaxPixelsPerCall;
 
-std::unique_ptr<RenderPipelineStage> GetWriteToPixelCallbackStage(
-    const PixelCallback& pixel_callback, size_t width, size_t height,
-    size_t num_channels, bool has_alpha, bool unpremul_alpha, size_t alpha_c,
-    bool swap_endianness, Orientation undo_orientation, JxlDataType data_type) {
-  return jxl::make_unique<WriteToPixelCallbackStage>(
-      pixel_callback, width, height, num_channels, has_alpha, unpremul_alpha,
-      alpha_c, swap_endianness, undo_orientation, data_type);
+std::unique_ptr<RenderPipelineStage> GetWriteToOutputStage(
+    const PixelCallback& pixel_callback, void* buffer, size_t width,
+    size_t height, size_t stride, JxlPixelFormat format, bool has_alpha,
+    bool unpremul_alpha, size_t alpha_c, Orientation undo_orientation) {
+  return jxl::make_unique<WriteToOutputStage>(
+      pixel_callback, buffer, width, height, stride, format, has_alpha,
+      unpremul_alpha, alpha_c, undo_orientation);
 }
 
 // NOLINTNEXTLINE(google-readability-namespace-comments)
@@ -546,8 +422,7 @@ HWY_AFTER_NAMESPACE();
 
 namespace jxl {
 
-HWY_EXPORT(GetWriteToU8Stage);
-HWY_EXPORT(GetWriteToPixelCallbackStage);
+HWY_EXPORT(GetWriteToOutputStage);
 
 namespace {
 class WriteToImageBundleStage : public RenderPipelineStage {
@@ -656,22 +531,13 @@ std::unique_ptr<RenderPipelineStage> GetWriteToImage3FStage(Image3F* image) {
   return jxl::make_unique<WriteToImage3FStage>(image);
 }
 
-std::unique_ptr<RenderPipelineStage> GetWriteToU8Stage(uint8_t* rgb,
-                                                       size_t stride,
-                                                       size_t height, bool rgba,
-                                                       bool has_alpha,
-                                                       size_t alpha_c) {
-  return HWY_DYNAMIC_DISPATCH(GetWriteToU8Stage)(rgb, stride, height, rgba,
-                                                 has_alpha, alpha_c);
-}
-
-std::unique_ptr<RenderPipelineStage> GetWriteToPixelCallbackStage(
-    const PixelCallback& pixel_callback, size_t width, size_t height,
-    size_t num_channels, bool has_alpha, bool unpremul_alpha, size_t alpha_c,
-    bool swap_endianness, Orientation undo_orientation, JxlDataType data_type) {
-  return HWY_DYNAMIC_DISPATCH(GetWriteToPixelCallbackStage)(
-      pixel_callback, width, height, num_channels, has_alpha, unpremul_alpha,
-      alpha_c, swap_endianness, undo_orientation, data_type);
+std::unique_ptr<RenderPipelineStage> GetWriteToOutputStage(
+    const PixelCallback& pixel_callback, void* buffer, size_t width,
+    size_t height, size_t stride, JxlPixelFormat format, bool has_alpha,
+    bool unpremul_alpha, size_t alpha_c, Orientation undo_orientation) {
+  return HWY_DYNAMIC_DISPATCH(GetWriteToOutputStage)(
+      pixel_callback, buffer, width, height, stride, format, has_alpha,
+      unpremul_alpha, alpha_c, undo_orientation);
 }
 
 }  // namespace jxl
