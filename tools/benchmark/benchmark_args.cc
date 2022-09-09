@@ -129,6 +129,7 @@ Status BenchmarkArgs::AddCommandLineOptions() {
   AddDouble(&mul_output, "mul_output",
             "If nonzero, multiplies linear sRGB by this and clamps to 255",
             0.0);
+  AddFlag(&save_heatmap, "save_heatmap", "Saves the heatmap images.", true);
   AddDouble(&heatmap_good, "heatmap_good",
             "If greater than zero, use this as the good "
             "threshold for creating heatmap images.",
@@ -144,6 +145,11 @@ Status BenchmarkArgs::AddCommandLineOptions() {
           "Base64-encode the images in the HTML report rather than use "
           "external file names. May cause very large HTML data size.",
           false);
+  AddFlag(&html_report_use_decompressed, "html_report_use_decompressed",
+          "Show the compressed image as decompressed to --output_extension.",
+          true);
+  AddFlag(&html_report_add_heatmap, "html_report_add_heatmap",
+          "Add heatmaps to the image comparisons.", false);
 
   AddFlag(
       &markdown, "markdown",

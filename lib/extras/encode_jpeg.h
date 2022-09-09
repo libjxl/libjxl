@@ -16,8 +16,8 @@
 namespace jxl {
 namespace extras {
 
-Status EncodeJpeg(const ImageBundle& input, float distance, ThreadPool* pool,
-                  std::vector<uint8_t>* compressed);
+Status EncodeJpeg(const ImageBundle& input, size_t target_size, float distance,
+                  ThreadPool* pool, std::vector<uint8_t>* compressed);
 
 }  // namespace extras
 }  // namespace jxl
