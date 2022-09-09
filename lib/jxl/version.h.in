@@ -15,11 +15,12 @@
 
 #define JPEGXL_MAJOR_VERSION @JPEGXL_MAJOR_VERSION@ ///< JPEG XL Major version
 #define JPEGXL_MINOR_VERSION @JPEGXL_MINOR_VERSION@ ///< JPEG XL Minor version
+#define JPEGXL_PATCH_VERSTION @JPEGXL_PATCH_VERSION@ ///< JPEG XL Patch version
 
 /** Can be used to conditionally compile code for a specific JXL version
  * @param[maj] major version
  * @param[min] minor version
- * 
+ *
  * @code
  * #if JPEGXL_VERSION_NUM < JPEGXL_COMPUTE_LIBRARY_VERSION(0,8)
  * // use old/deprecated api
@@ -28,11 +29,9 @@
  * #endif
  * @endcode
  */
-#define JPEGXL_COMPUTE_LIBRARY_VERSION(maj,min) ((maj)*1000+(min))
 
-/** Full JPEG XL version, to be used with JPEGXL_COMPUTE_LIBRARY_VERSION
- */
-#define JPEGXL_VERSION_NUM JPEGXL_COMPUTE_LIBRARY_VERSION(JPEGXL_MAJOR_VERSION,JPEGXL_MINOR_VERSION)
+/* Numeric representation of the version */
+#define JPEGXL_NUMERIC_VERSION ((JPEGXL_MAJOR_VERSION <<24) | (JPEGXL_MINOR_VERSION <<16) | (JPEGXL_PATCH_VERSION <<8) | 0)
 
 #endif /* JXL_VERSION_H_ */
 
