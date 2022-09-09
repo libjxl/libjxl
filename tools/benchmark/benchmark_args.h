@@ -126,8 +126,11 @@ struct BenchmarkArgs {
   double heatmap_good;
   double heatmap_bad;
 
+  bool save_heatmap;
   bool write_html_report;
   bool html_report_self_contained;
+  bool html_report_use_decompressed;
+  bool html_report_add_heatmap;
   bool markdown;
   bool more_columns;
 

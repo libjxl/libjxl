@@ -65,6 +65,9 @@ class JPEGCodec : public ImageCodec {
       if (param.size() != 6) return false;
       chroma_subsampling_ = param.substr(3);
       return true;
+    } else if (param.substr(0, 2) == "nr") {
+      normalize_bitrate_ = true;
+      return true;
     }
     return false;
   }
@@ -72,30 +75,36 @@ class JPEGCodec : public ImageCodec {
   Status Compress(const std::string& filename, const CodecInOut* io,
                   ThreadPoolInternal* pool, std::vector<uint8_t>* compressed,
                   jpegxl::tools::SpeedStats* speed_stats) override {
-    if (jpeg_encoder_ == "libjxl") {
+    double elapsed = 0.0;
+    if (jpeg_encoder_ != "libjxl" || normalize_bitrate_) {
+      extras::PackedPixelFile ppf;
+      JxlPixelFormat format = {0, JXL_TYPE_UINT8, JXL_BIG_ENDIAN, 0};
+      JXL_RETURN_IF_ERROR(ConvertCodecInOutToPackedPixelFile(
+          *io, format, io->metadata.m.color_encoding, pool, &ppf));
+      extras::EncodedImage encoded;
+      std::unique_ptr<extras::Encoder> encoder = extras::GetJPEGEncoder();
+      std::ostringstream os;
+      os << static_cast<int>(std::round(q_target_));
+      encoder->SetOption("q", os.str());
+      std::string jpeg_encoder = normalize_bitrate_ ? "libjpeg" : jpeg_encoder_;
+      encoder->SetOption("jpeg_encoder", jpeg_encoder);
+      encoder->SetOption("chroma_subsampling", chroma_subsampling_);
       const double start = Now();
-      JXL_RETURN_IF_ERROR(extras::EncodeJpeg(io->Main(), butteraugli_target_,
-                                             pool, compressed));
+      JXL_RETURN_IF_ERROR(encoder->Encode(ppf, &encoded, pool));
       const double end = Now();
-      speed_stats->NotifyElapsed(end - start);
-      return true;
+      elapsed = end - start;
+      *compressed = encoded.bitstreams.back();
     }
-    extras::PackedPixelFile ppf;
-    JxlPixelFormat format = {0, JXL_TYPE_UINT8, JXL_BIG_ENDIAN, 0};
-    JXL_RETURN_IF_ERROR(ConvertCodecInOutToPackedPixelFile(
-        *io, format, io->metadata.m.color_encoding, pool, &ppf));
-    extras::EncodedImage encoded;
-    std::unique_ptr<extras::Encoder> encoder = extras::GetJPEGEncoder();
-    std::ostringstream os;
-    os << static_cast<int>(std::round(q_target_));
-    encoder->SetOption("q", os.str());
-    encoder->SetOption("jpeg_encoder", jpeg_encoder_);
-    encoder->SetOption("chroma_subsampling", chroma_subsampling_);
-    const double start = Now();
-    JXL_RETURN_IF_ERROR(encoder->Encode(ppf, &encoded, pool));
-    const double end = Now();
-    *compressed = encoded.bitstreams.back();
-    speed_stats->NotifyElapsed(end - start);
+    if (jpeg_encoder_ == "libjxl") {
+      size_t target_size = normalize_bitrate_ ? compressed->size() : 0;
+      compressed->clear();
+      const double start = Now();
+      JXL_RETURN_IF_ERROR(extras::EncodeJpeg(
+          io->Main(), target_size, butteraugli_target_, pool, compressed));
+      const double end = Now();
+      elapsed = end - start;
+    }
+    speed_stats->NotifyElapsed(elapsed);
     return true;
   }
 
@@ -114,6 +123,7 @@ class JPEGCodec : public ImageCodec {
   }
 
  protected:
+  bool normalize_bitrate_;
   std::string jpeg_encoder_;
   std::string chroma_subsampling_;
 };

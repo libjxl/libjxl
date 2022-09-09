@@ -102,7 +102,7 @@ std::vector<uint8_t> CreateXybICCAppMarker() {
   return icc_marker;
 }
 
-void AddJpegQuantMatrices(const ImageF& qf, float dc_quant,
+void AddJpegQuantMatrices(const ImageF& qf, float dc_quant, float global_scale,
                           std::vector<jpeg::JPEGQuantTable>* quant_tables,
                           float* qm) {
   // Create a custom JPEG XL dequant matrix. The quantization weight parameters
@@ -127,7 +127,6 @@ void AddJpegQuantMatrices(const ImageF& qf, float dc_quant,
   // Scale the quant matrix based on the scaled XYB scales and the quant field.
   float qfmin, qfmax;
   ImageMinMax(qf, &qfmin, &qfmax);
-  const float global_scale = 0.66f;
   for (size_t c = 0; c < 3; c++) {
     const float scale = kScaledXYBScale[c] * global_scale;
     qm[c * kDCTBlockSize] *= scale;
@@ -237,7 +236,9 @@ void AddJpegHuffmanCodes(std::vector<Histogram>& histograms,
 }
 
 void FillJPEGData(const Image3F& opsin, const ImageF& qf, float dc_quant,
-                  const FrameDimensions& frame_dim, jpeg::JPEGData* out) {
+                  float global_scale, const FrameDimensions& frame_dim,
+                  jpeg::JPEGData* out) {
+  *out = jpeg::JPEGData();
   // ICC
   out->marker_order.push_back(0xe2);
   out->app_data.push_back(CreateXybICCAppMarker());
@@ -245,7 +246,7 @@ void FillJPEGData(const Image3F& opsin, const ImageF& qf, float dc_quant,
   // DQT
   out->marker_order.emplace_back(0xdb);
   float qm[3 * kDCTBlockSize];
-  AddJpegQuantMatrices(qf, dc_quant, &out->quant, qm);
+  AddJpegQuantMatrices(qf, dc_quant, global_scale, &out->quant, qm);
 
   // SOF
   out->marker_order.emplace_back(0xc2);
@@ -315,10 +316,20 @@ void FillJPEGData(const Image3F& opsin, const ImageF& qf, float dc_quant,
   }
 }
 
+size_t JpegSize(const jpeg::JPEGData& jpeg_data) {
+  size_t total_size = 0;
+  auto countsize = [&total_size](const uint8_t* buf, size_t len) {
+    total_size += len;
+    return len;
+  };
+  JXL_CHECK(jpeg::WriteJpeg(jpeg_data, countsize));
+  return total_size;
+}
+
 }  // namespace
 
-Status EncodeJpeg(const ImageBundle& input, float distance, ThreadPool* pool,
-                  std::vector<uint8_t>* compressed) {
+Status EncodeJpeg(const ImageBundle& input, size_t target_size, float distance,
+                  ThreadPool* pool, std::vector<uint8_t>* compressed) {
   FrameDimensions frame_dim;
   frame_dim.Set(input.xsize(), input.ysize(), 1, 0, 0, false, 1);
 
@@ -335,7 +346,37 @@ Status EncodeJpeg(const ImageBundle& input, float distance, ThreadPool* pool,
 
   // Create jpeg data and optimize Huffman codes.
   jpeg::JPEGData jpeg_data;
-  FillJPEGData(opsin, qf, InitialQuantDC(distance), frame_dim, &jpeg_data);
+  float global_scale = 0.66f;
+  float dc_quant = InitialQuantDC(distance);
+  FillJPEGData(opsin, qf, dc_quant, global_scale, frame_dim, &jpeg_data);
+
+  if (target_size != 0) {
+    // Tweak the jpeg data so that the resulting compressed file is
+    // approximately target_size long.
+    size_t prev_size = 0;
+    float best_error = 100.0f;
+    float best_global_scale = global_scale;
+    size_t iter = 0;
+    for (;;) {
+      size_t size = JpegSize(jpeg_data);
+      float error = size * 1.0f / target_size - 1.0f;
+      if (std::abs(error) < std::abs(best_error)) {
+        best_error = error;
+        best_global_scale = global_scale;
+      }
+      if (size == prev_size || std::abs(error) < 0.001f || iter >= 10) {
+        break;
+      }
+      global_scale *= 1.0f + error;
+      FillJPEGData(opsin, qf, dc_quant, global_scale, frame_dim, &jpeg_data);
+      prev_size = size;
+      ++iter;
+    }
+    if (best_global_scale != global_scale) {
+      FillJPEGData(opsin, qf, dc_quant, best_global_scale, frame_dim,
+                   &jpeg_data);
+    }
+  }
 
   // Write jpeg data to compressed stream.
   auto write = [&compressed](const uint8_t* buf, size_t len) {
