@@ -123,7 +123,7 @@ class JPEGCodec : public ImageCodec {
   }
 
  protected:
-  bool normalize_bitrate_;
+  bool normalize_bitrate_ = false;
   std::string jpeg_encoder_;
   std::string chroma_subsampling_;
 };
