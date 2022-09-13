@@ -1072,93 +1072,6 @@ JxlDecoderStatus JxlDecoderReadAllHeaders(JxlDecoder* dec) {
   return JXL_DEC_SUCCESS;
 }
 
-static size_t GetStride(const JxlDecoder* dec, const JxlPixelFormat& format) {
-  size_t xsize, ysize;
-  GetCurrentDimensions(dec, xsize, ysize);
-  size_t stride = xsize * (BitsPerChannel(format.data_type) *
-                           format.num_channels / jxl::kBitsPerByte);
-  if (format.align > 1) {
-    stride = jxl::DivCeil(stride, format.align) * format.align;
-  }
-  return stride;
-}
-
-// Internal wrapper around jxl::ConvertToExternal which converts the stride,
-// format and orientation and allows to choose whether to get all RGB(A)
-// channels or alternatively get a single extra channel.
-// If want_extra_channel, a valid index to a single extra channel must be
-// given, the output must be single-channel, and format.num_channels is ignored
-// and treated as if it is 1.
-static JxlDecoderStatus ConvertImageInternal(
-    const JxlDecoder* dec, const jxl::ImageBundle& frame,
-    const JxlPixelFormat& format, bool want_extra_channel,
-    size_t extra_channel_index, void* out_image, size_t out_size,
-    const PixelCallback& out_callback) {
-  // TODO(lode): handle mismatch of RGB/grayscale color profiles and pixel data
-  // color/grayscale format
-  const size_t stride = GetStride(dec, format);
-
-  bool float_format = format.data_type == JXL_TYPE_FLOAT ||
-                      format.data_type == JXL_TYPE_FLOAT16;
-
-  jxl::Orientation undo_orientation = dec->keep_orientation
-                                          ? jxl::Orientation::kIdentity
-                                          : dec->metadata.m.GetOrientation();
-
-  jxl::Status status(true);
-  if (want_extra_channel) {
-    JXL_ASSERT(extra_channel_index < frame.extra_channels().size());
-    status = jxl::ConvertToExternal(frame.extra_channels()[extra_channel_index],
-                                    BitsPerChannel(format.data_type),
-                                    float_format, format.endianness, stride,
-                                    dec->thread_pool.get(), out_image, out_size,
-                                    out_callback, undo_orientation);
-  } else {
-    status = jxl::ConvertToExternal(
-        frame, BitsPerChannel(format.data_type), float_format,
-        format.num_channels, format.endianness, stride, dec->thread_pool.get(),
-        out_image, out_size, out_callback, undo_orientation,
-        dec->unpremul_alpha);
-  }
-
-  return status ? JXL_DEC_SUCCESS : JXL_DEC_ERROR;
-}
-
-// Outputs the preview or full image (including extra channels) in the internal
-// image bundle to the image buffers and/or image callback provided through the
-// API.
-// TODO(szabadka) Handle all these cases in the low-memory code-path and remove
-// this function.
-JxlDecoderStatus JxlDecoderOutputImage(JxlDecoder* dec) {
-  if (!dec->frame_dec->HasRGBBuffer()) {
-    JxlDecoderStatus status = ConvertImageInternal(
-        dec, *dec->ib, dec->image_out_format,
-        /*want_extra_channel=*/false,
-        /*extra_channel_index=*/0, dec->image_out_buffer, dec->image_out_size,
-        PixelCallback{dec->image_out_init_callback, dec->image_out_run_callback,
-                      dec->image_out_destroy_callback,
-                      dec->image_out_init_opaque});
-    if (status != JXL_DEC_SUCCESS) return status;
-  }
-  bool has_ec = !dec->ib->extra_channels().empty();
-  for (size_t i = 0; i < dec->extra_channel_output.size(); ++i) {
-    void* buffer = dec->extra_channel_output[i].buffer;
-    // buffer nullptr indicates this extra channel is not requested
-    if (!buffer) continue;
-    if (!has_ec) {
-      JXL_WARNING("Extra channels are not supported when callback is used");
-      return JXL_DEC_ERROR;
-    }
-    const JxlPixelFormat* format = &dec->extra_channel_output[i].format;
-    JxlDecoderStatus status = ConvertImageInternal(
-        dec, *dec->ib, *format,
-        /*want_extra_channel=*/true, /*extra_channel_index=*/i, buffer,
-        dec->extra_channel_output[i].buffer_size, /*out_callback=*/{});
-    if (status != JXL_DEC_SUCCESS) return status;
-  }
-  return JXL_DEC_SUCCESS;
-}
-
 JxlDecoderStatus JxlDecoderProcessSections(JxlDecoder* dec) {
   Span<const uint8_t> span;
   JXL_API_RETURN_IF_ERROR(dec->GetCodestreamInput(&span));
@@ -1463,15 +1376,20 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec) {
         }
       }
 
-      if (dec->image_out_buffer_set && dec->extra_channel_output.empty()) {
+      if (dec->image_out_buffer_set) {
         size_t xsize, ysize;
         GetCurrentDimensions(dec, xsize, ysize);
         dec->frame_dec->SetImageOutput(
             PixelCallback{
                 dec->image_out_init_callback, dec->image_out_run_callback,
                 dec->image_out_destroy_callback, dec->image_out_init_opaque},
-            reinterpret_cast<uint8_t*>(dec->image_out_buffer), xsize, ysize,
-            dec->image_out_format, dec->unpremul_alpha, !dec->keep_orientation);
+            reinterpret_cast<uint8_t*>(dec->image_out_buffer),
+            dec->image_out_size, xsize, ysize, dec->image_out_format,
+            dec->unpremul_alpha, !dec->keep_orientation);
+        for (const auto& extra : dec->extra_channel_output) {
+          dec->frame_dec->AddExtraChannelOutput(extra.buffer, extra.buffer_size,
+                                                xsize, extra.format);
+        }
       }
 
       size_t next_num_passes_to_pause = dec->frame_dec->NextNumPassesToPause();
@@ -1527,9 +1445,6 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec) {
       }
 
       if (dec->preview_frame || dec->is_last_of_still) {
-        if (dec->image_out_buffer_set) {
-          JXL_API_RETURN_IF_ERROR(JxlDecoderOutputImage(dec));
-        }
         dec->image_out_buffer_set = false;
         dec->extra_channel_output.clear();
       }
@@ -2347,11 +2262,7 @@ JxlDecoderStatus JxlDecoderFlushImage(JxlDecoder* dec) {
     return JXL_DEC_ERROR;
   }
 
-  if (dec->jpeg_decoder.IsOutputSet() && dec->ib->jpeg_data != nullptr) {
-    return JXL_DEC_SUCCESS;
-  }
-
-  return jxl::JxlDecoderOutputImage(dec);
+  return JXL_DEC_SUCCESS;
 }
 
 JXL_EXPORT JxlDecoderStatus JxlDecoderPreviewOutBufferSize(
