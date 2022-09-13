@@ -1448,8 +1448,6 @@ std::vector<PixelTestConfig> GeneratePixelTests() {
   // Test previews.
   for (int preview_mode = 0; preview_mode < jxl::kNumPreviewModes;
        preview_mode++) {
-    // if (preview_mode == jxl::kBigPreview &&
-    //	ch_info[0].output_channels != 3) continue;
     make_test(ch_info[0], 77, 33, (jxl::PreviewMode)preview_mode,
               /*add_intrinsic_size=*/false, CodeStreamBoxFormat::kCSBF_None,
               JXL_ORIENT_IDENTITY,
