@@ -564,7 +564,7 @@ void SetDistanceFromFlags(JxlEncoderFrameSettings* jxl_encoder_frame_settings,
     double distance = args->quality >= 100 ? 0.0
                       : args->quality >= 30
                           ? 0.1 + (100 - args->quality) * 0.09
-                          : 6.4 + pow(2.5, (30 - args->quality) / 5.0) / 6.25;
+                          : 6.24 + pow(2.5, (30 - args->quality) / 5.0) / 6.25;
     args->distance = distance;
     distance_set = true;
   }
