@@ -351,6 +351,7 @@ void CreateICCCurvCurvTag(const std::vector<uint16_t>& curve,
   }
 }
 
+// Writes 12 + 4*params.size() bytes
 Status CreateICCCurvParaTag(std::vector<float> params, size_t curve_type,
                             PaddedBytes* JXL_RESTRICT tags) {
   WriteICCTag("para", tags->size(), tags);
@@ -365,30 +366,44 @@ Status CreateICCCurvParaTag(std::vector<float> params, size_t curve_type,
 
 Status CreateICCLutAtoBTagForXYB(PaddedBytes* JXL_RESTRICT tags) {
   WriteICCTag("mAB ", tags->size(), tags);
+  // 4 reserved bytes set to 0
   WriteICCUint32(0, tags->size(), tags);
+  // number of input channels
   WriteICCUint8(3, tags->size(), tags);
+  // number of output channels
   WriteICCUint8(3, tags->size(), tags);
+  // 2 reserved bytes for padding
   WriteICCUint16(0, tags->size(), tags);
-  WriteICCUint32(316, tags->size(), tags);
-  WriteICCUint32(268, tags->size(), tags);
-  WriteICCUint32(148, tags->size(), tags);
-  WriteICCUint32(80, tags->size(), tags);
+  // offset to first B curve
   WriteICCUint32(32, tags->size(), tags);
+  // offset to matrix
+  WriteICCUint32(244, tags->size(), tags);
+  // offset to first M curve
+  WriteICCUint32(148, tags->size(), tags);
+  // offset to CLUT
+  WriteICCUint32(80, tags->size(), tags);
+  // offset to first A curve
+  // (reuse linear B curves)
+  WriteICCUint32(32, tags->size(), tags);
+
+  // offset = 32
+  // no-op curves
   JXL_RETURN_IF_ERROR(CreateICCCurvParaTag({1.0f}, 0, tags));
   JXL_RETURN_IF_ERROR(CreateICCCurvParaTag({1.0f}, 0, tags));
   JXL_RETURN_IF_ERROR(CreateICCCurvParaTag({1.0f}, 0, tags));
+  // offset = 80
+  // number of grid points for each input channel
+  for (int i = 0; i < 16; ++i) {
+    WriteICCUint8(i < 3 ? 2 : 0, tags->size(), tags);
+  }
+  // precision = 2
   WriteICCUint8(2, tags->size(), tags);
-  WriteICCUint8(2, tags->size(), tags);
-  WriteICCUint8(2, tags->size(), tags);
-  WriteICCUint8(0, tags->size(), tags);
-  WriteICCUint32(0, tags->size(), tags);
-  WriteICCUint32(0, tags->size(), tags);
-  WriteICCUint32(0, tags->size(), tags);
-  WriteICCUint8(2, tags->size(), tags);
+  // 3 bytes of padding
   WriteICCUint8(0, tags->size(), tags);
   WriteICCUint16(0, tags->size(), tags);
   const float kOffsets[3] = {0.015387, 0.028101, 0.277706};
   const float kScaling[3] = {1.125, 1.125, 1. / 1.511027};
+  // 2*2*2*3 entries of 2 bytes each = 48 bytes
   for (size_t ix = 0; ix < 2; ++ix) {
     for (size_t iy = 0; iy < 2; ++iy) {
       for (size_t ib = 0; ib < 2; ++ib) {
@@ -414,6 +429,8 @@ Status CreateICCLutAtoBTagForXYB(PaddedBytes* JXL_RESTRICT tags) {
       }
     }
   }
+  // offset = 148
+  // 3 curves with 5 parameters = 3 * (12 + 5 * 4) = 96 bytes
   for (size_t i = 0; i < 3; ++i) {
     const float b =
         -kOffsets[i] - std::cbrt(jxl::kNegOpsinAbsorbanceBiasRGB[i]);
@@ -423,23 +440,24 @@ Status CreateICCLutAtoBTagForXYB(PaddedBytes* JXL_RESTRICT tags) {
         b,
         0,                                // unused
         std::max(0.f, -b * kScaling[i]),  // make skcms happy
-        jxl::kNegOpsinAbsorbanceBiasRGB[i],
-        0,  // unused
     };
-    JXL_RETURN_IF_ERROR(CreateICCCurvParaTag(params, 4, tags));
+    JXL_RETURN_IF_ERROR(CreateICCCurvParaTag(params, 3, tags));
   }
+  // offset = 244
   const double matrix[] = {1.5170095, -1.1065225, 0.071623,
                            -0.050022, 0.5683655,  -0.018344,
                            -1.387676, 1.1145555,  0.6857255};
+  // 12 * 4 = 48 bytes
   for (size_t i = 0; i < 9; ++i) {
     JXL_RETURN_IF_ERROR(WriteICCS15Fixed16(matrix[i], tags->size(), tags));
   }
-  JXL_RETURN_IF_ERROR(WriteICCS15Fixed16(0.0f, tags->size(), tags));
-  JXL_RETURN_IF_ERROR(WriteICCS15Fixed16(0.0f, tags->size(), tags));
-  JXL_RETURN_IF_ERROR(WriteICCS15Fixed16(0.0f, tags->size(), tags));
-  JXL_RETURN_IF_ERROR(CreateICCCurvParaTag({1.0f}, 0, tags));
-  JXL_RETURN_IF_ERROR(CreateICCCurvParaTag({1.0f}, 0, tags));
-  JXL_RETURN_IF_ERROR(CreateICCCurvParaTag({1.0f}, 0, tags));
+  for (size_t i = 0; i < 3; ++i) {
+    float intercept = 0;
+    for (size_t j = 0; j < 3; ++j) {
+      intercept += matrix[i * 3 + j] * jxl::kNegOpsinAbsorbanceBiasRGB[j];
+    }
+    JXL_RETURN_IF_ERROR(WriteICCS15Fixed16(intercept, tags->size(), tags));
+  }
   return true;
 }
 }  // namespace
@@ -481,9 +499,7 @@ Status MaybeCreateProfile(const ColorEncoding& c,
   FinalizeICCTag(&tags, &tag_offset, &tag_size);
   AddToICCTagTable("desc", tag_offset, tag_size, &tagtable, &offsets);
 
-  const std::string copyright =
-      "Copyright 2019 Google LLC, CC-BY-SA 3.0 Unported "
-      "license(https://creativecommons.org/licenses/by-sa/3.0/legalcode)";
+  const std::string copyright = "CC0";
   CreateICCMlucTag(copyright, &tags);
   FinalizeICCTag(&tags, &tag_offset, &tag_size);
   AddToICCTagTable("cprt", tag_offset, tag_size, &tagtable, &offsets);
