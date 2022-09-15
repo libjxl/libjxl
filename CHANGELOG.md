@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.7] - 2022-07-21
 
 ### Added
+ - Export version information in headers.
  - decoder API: Ability to decode the content of metadata boxes:
    `JXL_DEC_BOX`, `JXL_DEC_BOX_NEED_MORE_OUTPUT`, `JxlDecoderSetBoxBuffer`,
    `JxlDecoderGetBoxType`, `JxlDecoderGetBoxSizeRaw` and
