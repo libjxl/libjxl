@@ -8,6 +8,6 @@ Description: Loads and saves JPEG XL files
 Version: @JPEGXL_LIBRARY_VERSION@
 Requires.private: @JPEGXL_LIBRARY_REQUIRES@
 Libs: -L${libdir} -ljxl
-Libs.private: -lm
+Libs.private: -lm -lc++
 Cflags: -I${includedir}
 Cflags.private: -DJXL_STATIC_DEFINE
