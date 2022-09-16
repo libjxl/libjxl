@@ -58,6 +58,7 @@ struct DecompressArgs {
                             "value means the machine default.",
                             &num_threads, &ParseUnsigned);
 
+    // TODO(szabadka) Implement this.
     cmdline->AddOptionValue('\0', "bits_per_sample", "N",
                             "Sets the output bit depth. The default 0 value "
                             "means the original (input) bit depth.",
@@ -412,11 +413,6 @@ int main(int argc, const char* argv[]) {
     if (!args.quiet) fprintf(stderr, "Decoded to pixels.\n");
     if (args.print_read_bytes) {
       fprintf(stderr, "Decoded bytes: %" PRIuS "\n", decoded_bytes);
-    }
-    if (extension == ".pfm") {
-      ppf.info.bits_per_sample = 32;
-    } else if (args.bits_per_sample > 0) {
-      ppf.info.bits_per_sample = args.bits_per_sample;
     }
 #if JPEGXL_ENABLE_JPEG
     if (encoder) {

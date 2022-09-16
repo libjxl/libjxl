@@ -68,6 +68,28 @@ struct BoxProcessor {
   }
 };
 
+void SetBitDepthFromDataType(JxlDataType data_type, uint32_t* bits_per_sample,
+                             uint32_t* exponent_bits_per_sample) {
+  switch (data_type) {
+    case JXL_TYPE_UINT8:
+      *bits_per_sample = 8;
+      *exponent_bits_per_sample = 0;
+      break;
+    case JXL_TYPE_UINT16:
+      *bits_per_sample = 16;
+      *exponent_bits_per_sample = 0;
+      break;
+    case JXL_TYPE_FLOAT16:
+      *bits_per_sample = 16;
+      *exponent_bits_per_sample = 5;
+      break;
+    case JXL_TYPE_FLOAT:
+      *bits_per_sample = 32;
+      *exponent_bits_per_sample = 8;
+      break;
+  }
+}
+
 }  // namespace
 
 bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
@@ -250,13 +272,20 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
         fprintf(stderr, "SelectFormat failed\n");
         return false;
       }
+      SetBitDepthFromDataType(format.data_type, &ppf->info.bits_per_sample,
+                              &ppf->info.exponent_bits_per_sample);
       bool have_alpha = (format.num_channels == 2 || format.num_channels == 4);
       if (!have_alpha) {
         // Mark in the basic info that alpha channel was dropped.
         ppf->info.alpha_bits = 0;
-      } else if (dparams.unpremultiply_alpha) {
-        // Mark in the basic info that alpha was unpremultiplied.
-        ppf->info.alpha_premultiplied = false;
+      } else {
+        // Interleaved alpha channels has the same bit depth as color channels.
+        SetBitDepthFromDataType(format.data_type, &ppf->info.alpha_bits,
+                                &ppf->info.alpha_exponent_bits);
+        if (dparams.unpremultiply_alpha) {
+          // Mark in the basic info that alpha was unpremultiplied.
+          ppf->info.alpha_premultiplied = false;
+        }
       }
       bool alpha_found = false;
       for (uint32_t i = 0; i < ppf->info.num_extra_channels; ++i) {
@@ -423,7 +452,7 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
       }
       JxlPixelFormat ec_format = format;
       ec_format.num_channels = 1;
-      for (const auto& eci : ppf->extra_channels_info) {
+      for (auto& eci : ppf->extra_channels_info) {
         frame.extra_channels.emplace_back(jxl::extras::PackedImage(
             ppf->info.xsize, ppf->info.ysize, ec_format));
         auto& ec = frame.extra_channels.back();
@@ -446,6 +475,9 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
           fprintf(stderr, "JxlDecoderSetExtraChannelBuffer failed\n");
           return false;
         }
+        SetBitDepthFromDataType(ec_format.data_type,
+                                &eci.ec_info.bits_per_sample,
+                                &eci.ec_info.exponent_bits_per_sample);
       }
     } else if (status == JXL_DEC_SUCCESS) {
       // Decoding finished successfully.
