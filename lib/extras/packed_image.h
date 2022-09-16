@@ -117,17 +117,18 @@ class PackedMetadata {
   std::vector<uint8_t> xmp;
 };
 
+// The extra channel metadata information.
+struct PackedExtraChannel {
+  JxlExtraChannelInfo ec_info;
+  size_t index;
+  std::string name;
+};
+
 // Helper class representing a JXL image file as decoded to pixels from the API.
 class PackedPixelFile {
  public:
   JxlBasicInfo info = {};
 
-  // The extra channel metadata information.
-  struct PackedExtraChannel {
-    JxlExtraChannelInfo ec_info;
-    size_t index;
-    std::string name;
-  };
   std::vector<PackedExtraChannel> extra_channels_info;
 
   // Color information of the decoded pixels.

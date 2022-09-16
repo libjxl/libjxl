@@ -140,8 +140,7 @@ Status ConvertPackedPixelFileToCodecInOut(const PackedPixelFile& ppf,
   io->blobs.xmp = ppf.metadata.xmp;
 
   // Append all other extra channels.
-  for (const PackedPixelFile::PackedExtraChannel& info :
-       ppf.extra_channels_info) {
+  for (const auto& info : ppf.extra_channels_info) {
     ExtraChannelInfo out;
     out.type = static_cast<jxl::ExtraChannel>(info.ec_info.type);
     out.bit_depth.bits_per_sample = info.ec_info.bits_per_sample;
