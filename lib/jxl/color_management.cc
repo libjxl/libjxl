@@ -249,7 +249,7 @@ Status CreateICCHeader(const ColorEncoding& c,
 
   WriteICCUint32(0, 0, header);  // size, correct value filled in at end
   WriteICCTag(kCmm, 4, header);
-  WriteICCUint32(0x04300000u, 8, header);
+  WriteICCUint32(0x04400000u, 8, header);
   const char* profile_type =
       c.GetColorSpace() == ColorSpace::kXYB ? "scnr" : "mntr";
   WriteICCTag(profile_type, 12, header);
@@ -337,6 +337,44 @@ Status CreateICCChadTag(float chad[9], PaddedBytes* JXL_RESTRICT tags) {
     JXL_RETURN_IF_ERROR(WriteICCS15Fixed16(chad[i], tags->size(), tags));
   }
   return true;
+}
+
+void MaybeCreateICCCICPTag(const ColorEncoding& c,
+                           PaddedBytes* JXL_RESTRICT tags, size_t* offset,
+                           size_t* size, PaddedBytes* JXL_RESTRICT tagtable,
+                           std::vector<size_t>* offsets) {
+  if (c.GetColorSpace() != ColorSpace::kRGB) {
+    return;
+  }
+  uint8_t primaries = 0;
+  if (c.primaries == Primaries::kP3) {
+    if (c.white_point == WhitePoint::kD65) {
+      primaries = 12;
+    } else if (c.white_point == WhitePoint::kDCI) {
+      primaries = 11;
+    } else {
+      return;
+    }
+  } else if (c.primaries != Primaries::kCustom &&
+             c.white_point == WhitePoint::kD65) {
+    primaries = static_cast<uint8_t>(c.primaries);
+  } else {
+    return;
+  }
+  if (c.tf.IsUnknown() || c.tf.IsGamma()) {
+    return;
+  }
+  WriteICCTag("cicp", tags->size(), tags);
+  WriteICCUint32(0, tags->size(), tags);
+  WriteICCUint8(primaries, tags->size(), tags);
+  WriteICCUint8(static_cast<uint8_t>(c.tf.GetTransferFunction()), tags->size(),
+                tags);
+  // Matrix
+  WriteICCUint8(0, tags->size(), tags);
+  // Full range
+  WriteICCUint8(1, tags->size(), tags);
+  FinalizeICCTag(tags, offset, size);
+  AddToICCTagTable("cicp", *offset, *size, tagtable, offsets);
 }
 
 void CreateICCCurvCurvTag(const std::vector<uint16_t>& curve,
@@ -533,6 +571,9 @@ Status MaybeCreateProfile(const ColorEncoding& c,
   }
 
   if (c.GetColorSpace() == ColorSpace::kRGB) {
+    MaybeCreateICCCICPTag(c, &tags, &tag_offset, &tag_size, &tagtable,
+                          &offsets);
+
     const PrimariesCIExy primaries = c.GetPrimaries();
     float m[9];
     JXL_RETURN_IF_ERROR(CreateICCRGBMatrix(primaries.r, primaries.g,
