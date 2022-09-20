@@ -4798,7 +4798,7 @@ TEST_P(DecodeProgressiveTest, ProgressiveEventTest) {
         // Verify that the returned pass image is actually not the
         // same as the next pass image, by checking that it has a bit
         // worse butteraugli score.
-        EXPECT_LT(distances[next_p] * 1.2f, distances[p]);
+        EXPECT_LT(distances[next_p] * 1.1f, distances[p]);
         p = next_p;
       }
     }
