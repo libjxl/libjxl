@@ -98,8 +98,8 @@ class Rec2408ToneMapper {
         ks,
         MulAdd(Add(t_b_3, MulAdd(Set(df_, -2), t_b_2, t_b)),
                Sub(Set(df_, 1), ks),
-               MulAdd(Set(df_, -2), t_b_3,
-                      Mul(Mul(Set(df_, 3), t_b_2), max_lum))));
+               Mul(MulAdd(Set(df_, -2), t_b_3, Mul(Set(df_, 3), t_b_2)),
+                   max_lum)));
   }
 
   D df_;
