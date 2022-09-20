@@ -78,27 +78,6 @@ Status CIEXYZFromWhiteCIExy(const CIExy& xy, float XYZ[3]) {
 
 namespace {
 
-// NOTE: this is only used to provide a reasonable ICC profile that other
-// software can read. Our own transforms use ExtraTF instead because that is
-// more precise and supports unbounded mode.
-template <class Func>
-std::vector<uint16_t> CreateTableCurve(uint32_t N, const Func& func) {
-  JXL_ASSERT(N <= 4096);  // ICC MFT2 only allows 4K entries
-  // No point using float - LCMS converts to 16-bit for A2B/MFT.
-  std::vector<uint16_t> table(N);
-  for (uint32_t i = 0; i < N; ++i) {
-    const float x = static_cast<float>(i) / (N - 1);  // 1.0 at index N - 1.
-    // LCMS requires EOTF (e.g. 2.4 exponent).
-    double y = func.DisplayFromEncoded(static_cast<double>(x));
-    JXL_ASSERT(y >= 0.0);
-    // Clamp to table range - necessary for HLG.
-    if (y > 1.0) y = 1.0;
-    // 1.0 corresponds to table value 0xFFFF.
-    table[i] = static_cast<uint16_t>(roundf(y * 65535.0));
-  }
-  return table;
-}
-
 void ICCComputeMD5(const PaddedBytes& data, uint8_t sum[16])
     JXL_NO_SANITIZE("unsigned-integer-overflow") {
   PaddedBytes data64 = data;
