@@ -21,12 +21,15 @@ been merged to `main`, resulting in some errors being detected hours after the
 code is merged or even days after in the case of fuzzer-detected bugs.
 
 Release tags are cut from *release branches*. Each MAJOR.MINOR version has its
-own release branch, for example releases `0.5`, `0.5.1`, `0.5.2`, ... would have
-tags `v0.5`, `v0.5.1`, `v0.5.2`, ... on commits from the `v0.5.x` branch.
-`v0.5.x` is a branch name, not a tag name, and doesn't represent a released
+own release branch, for example releases `0.7.0`, `0.7.1`, `0.7.2`, ... would
+have tags `v0.7.0`, `v0.7.1`, `v0.7.2`, ... on commits from the `v0.7.x` branch.
+`v0.7.x` is a branch name, not a tag name, and doesn't represent a released
 version since semantic versioning requires that the PATCH is a non-negative
 number. Released tags don't each one have their own release branch, all releases
-from the same MAJOR.MINOR version will share the same branch.
+from the same MAJOR.MINOR version will share the same branch. The first commit
+after the branch-off points between the main branch and the release branch
+should be tagged with the suffix `-snapshot` and the name of the next
+MAJOR.MINOR version, in order to get meaningful ouput for `git --describe`.
 
 The main purpose of the release branch is to stabilize the code before a
 release. This involves including fixes to existing bugs but **not** including
@@ -36,7 +39,7 @@ branch into the release branch without including the new *features* from `main`.
 For this reason it is important to make small commits in `main` and separate bug
 fixes from new features.
 
-After the initial minor release (`M.N`, for example `0.5.0` or just `0.5`) the
+After the initial minor release (`MAJOR.MINOR.PATCH`, for example `0.5.0`) the
 release branch is used to continue to cherry-pick fixes to be included in a
 patch release, for example a version `0.5.1` release. Patch fixes are only meant
 to fix security bugs or other critical bugs that can't wait until the next major
@@ -114,12 +117,12 @@ branch is created the code in `main` will only be included in the next major
 or minor release. Right after a release branch update the version targeting the
 next release. Artifacts from `main` should include the new (unreleased) version,
 so it is important to update it. For example, after the `v0.5.x` branch is
-created from main, you should update the version on `main` to `0.6`.
+created from main, you should update the version on `main` to `0.6.0`.
 
 To help update it, run this helper command (in a Debian-based system):
 
 ```bash
-./ci.sh bump_version 0.6
+./ci.sh bump_version 0.6.0
 ```
 
 This will update the version in the following files:
@@ -248,12 +251,10 @@ To publish a release open the [New Release
 page](https://github.com/libjxl/libjxl/releases/new) and follow these
 instructions:
 
- * Set the "Tag version" as "v" plus the semantic version number. Omit the ".0"
-   when the PATCH version is 0, for example use "v0.5" or "v0.5.1" but not
-   "v0.5.0".
+ * Set the "Tag version" as "v" plus the semantic version number.
 
- * Select the "Target" as your release branch. For a "v0.5" release tag you
-   would use the "v0.5.x" branch.
+ * Select the "Target" as your release branch. For example for a "v0.7.1"
+   release tag you should use the "v0.7.x" branch.
 
  * Use the version number as the release title.
 
