@@ -1,0 +1,63 @@
+// Copyright (c) the JPEG XL Project Authors. All rights reserved.
+//
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+#ifndef LIB_EXTRAS_ENC_JXL_H_
+#define LIB_EXTRAS_ENC_JXL_H_
+
+#include <stdint.h>
+
+#include <vector>
+
+#include "jxl/encode.h"
+#include "jxl/parallel_runner.h"
+#include "jxl/types.h"
+#include "lib/extras/packed_image.h"
+
+namespace jxl {
+namespace extras {
+
+struct JXLOption {
+  JXLOption(JxlEncoderFrameSettingId id, int64_t val, size_t frame_index)
+      : id(id), is_float(false), ival(val), frame_index(frame_index) {}
+  JXLOption(JxlEncoderFrameSettingId id, float val, size_t frame_index)
+      : id(id), is_float(true), fval(val), frame_index(frame_index) {}
+
+  JxlEncoderFrameSettingId id;
+  bool is_float;
+  union {
+    int64_t ival;
+    float fval;
+  };
+  size_t frame_index;
+};
+
+struct JXLCompressParams {
+  std::vector<JXLOption> options;
+  // Target butteraugli distance, 0.0 means lossless.
+  float distance = 1.0f;
+  // If set to true, forces container mode.
+  bool use_container = false;
+  // Whether to enable/disable byte-exact jpeg reconstruction for jpeg inputs.
+  bool jpeg_store_metadata = true;
+  // Upper bound on the intensity level present in the image in nits (zero means
+  // that the library chooses a default).
+  float intensity_target = 0;
+  // Overrides for bitdepth, codestream level and alpha premultiply.
+  size_t override_bitdepth = 0;
+  int32_t codestream_level = -1;
+  int32_t premultiply = -1;
+  // If runner_opaque is set, the decoder uses this parallel runner.
+  JxlParallelRunner runner;
+  void* runner_opaque = nullptr;
+};
+
+bool EncodeImageJXL(const JXLCompressParams& params, const PackedPixelFile& ppf,
+                    const std::vector<uint8_t>* jpeg_bytes,
+                    std::vector<uint8_t>* compressed);
+
+}  // namespace extras
+}  // namespace jxl
+
+#endif  // LIB_EXTRAS_ENC_JXL_H_
