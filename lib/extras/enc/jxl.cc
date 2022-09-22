@@ -85,7 +85,9 @@ bool EncodeImageJXL(const JXLCompressParams& params, const PackedPixelFile& ppf,
     size_t num_alpha_channels = 0;  // Adjusted below.
     JxlBasicInfo basic_info = ppf.info;
     if (basic_info.alpha_bits > 0) num_alpha_channels = 1;
-    basic_info.intensity_target = params.intensity_target;
+    if (params.intensity_target > 0) {
+      basic_info.intensity_target = params.intensity_target;
+    }
     basic_info.num_extra_channels = num_alpha_channels;
     basic_info.num_color_channels = ppf.info.num_color_channels;
     const bool lossless = params.distance == 0;

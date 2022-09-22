@@ -12,6 +12,7 @@
 
 #include "jxl/encode.h"
 #include "jxl/parallel_runner.h"
+#include "jxl/thread_parallel_runner.h"
 #include "jxl/types.h"
 #include "lib/extras/packed_image.h"
 
@@ -49,8 +50,15 @@ struct JXLCompressParams {
   int32_t codestream_level = -1;
   int32_t premultiply = -1;
   // If runner_opaque is set, the decoder uses this parallel runner.
-  JxlParallelRunner runner;
+  JxlParallelRunner runner = JxlThreadParallelRunner;
   void* runner_opaque = nullptr;
+
+  void AddOption(JxlEncoderFrameSettingId id, int64_t val) {
+    options.emplace_back(JXLOption(id, val, 0));
+  }
+  void AddFloatOption(JxlEncoderFrameSettingId id, float val) {
+    options.emplace_back(JXLOption(id, val, 0));
+  }
 };
 
 bool EncodeImageJXL(const JXLCompressParams& params, const PackedPixelFile& ppf,

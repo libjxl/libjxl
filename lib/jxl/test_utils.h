@@ -19,7 +19,9 @@
 #include "gtest/gtest.h"
 #include "jxl/codestream_header.h"
 #include "jxl/encode.h"
+#include "lib/extras/dec/decode.h"
 #include "lib/extras/dec/jxl.h"
+#include "lib/extras/enc/jxl.h"
 #include "lib/extras/packed_image_convert.h"
 #include "lib/jxl/aux_out_fwd.h"
 #include "lib/jxl/base/data_parallel.h"
@@ -27,6 +29,8 @@
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/common.h"  // JPEGXL_ENABLE_TRANSCODE_JPEG
+#include "lib/jxl/enc_butteraugli_comparator.h"
+#include "lib/jxl/enc_butteraugli_pnorm.h"
 #include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_file.h"
@@ -116,13 +120,18 @@ MATCHER(MatchesPrimariesAndTransferFunction, "") {
       result_listener);
 }
 
+template <typename Params>
+void SetThreadParallelRunner(Params params, ThreadPool* pool) {
+  if (pool && !params.runner_opaque) {
+    params.runner = pool->runner();
+    params.runner_opaque = pool->runner_opaque();
+  }
+}
+
 template <typename Source>
 Status DecodeFile(extras::JXLDecompressParams dparams, const Source& file,
                   CodecInOut* JXL_RESTRICT io, ThreadPool* pool) {
-  if (pool && !dparams.runner_opaque) {
-    dparams.runner = pool->runner();
-    dparams.runner_opaque = pool->runner_opaque();
-  }
+  SetThreadParallelRunner(dparams, pool);
   extras::PackedPixelFile ppf;
   JXL_RETURN_IF_ERROR(DecodeImageJXL(file.data(), file.size(), dparams,
                                      /*decoded_bytes=*/nullptr, &ppf));
@@ -181,6 +190,23 @@ size_t Roundtrip(const CodecInOut* io, const CompressParams& cparams,
               testing::Pointwise(MatchesPrimariesAndTransferFunction(),
                                  original_metadata_encodings));
 
+  return compressed.size();
+}
+
+// Returns compressed size [bytes].
+size_t Roundtrip(const extras::PackedPixelFile& ppf_in,
+                 extras::JXLCompressParams cparams,
+                 extras::JXLDecompressParams dparams, ThreadPool* pool,
+                 extras::PackedPixelFile* ppf_out) {
+  SetThreadParallelRunner(cparams, pool);
+  SetThreadParallelRunner(dparams, pool);
+  std::vector<uint8_t> compressed;
+  EXPECT_TRUE(extras::EncodeImageJXL(cparams, ppf_in, /*jpeg_bytes=*/nullptr,
+                                     &compressed));
+  size_t decoded_bytes = 0;
+  EXPECT_TRUE(extras::DecodeImageJXL(compressed.data(), compressed.size(),
+                                     dparams, &decoded_bytes, ppf_out));
+  EXPECT_EQ(decoded_bytes, compressed.size());
   return compressed.size();
 }
 
@@ -594,6 +620,26 @@ double DistanceRMS(const uint8_t* a, const uint8_t* b, size_t xsize,
   }
   sum /= (xsize * ysize);
   return sqrt(sum);
+}
+
+float ButteraugliDistance(const extras::PackedPixelFile& a,
+                          const extras::PackedPixelFile& b,
+                          ThreadPool* pool = nullptr) {
+  CodecInOut io0;
+  EXPECT_TRUE(ConvertPackedPixelFileToCodecInOut(a, pool, &io0));
+  CodecInOut io1;
+  EXPECT_TRUE(ConvertPackedPixelFileToCodecInOut(b, pool, &io1));
+  return ButteraugliDistance(io0, io1, ButteraugliParams(), GetJxlCms(),
+                             /*distmap=*/nullptr, pool);
+}
+
+float ComputeDistance2(const extras::PackedPixelFile& a,
+                       const extras::PackedPixelFile& b) {
+  CodecInOut io0;
+  EXPECT_TRUE(ConvertPackedPixelFileToCodecInOut(a, nullptr, &io0));
+  CodecInOut io1;
+  EXPECT_TRUE(ConvertPackedPixelFileToCodecInOut(b, nullptr, &io1));
+  return ComputeDistance2(io0.Main(), io1.Main(), GetJxlCms());
 }
 }  // namespace test
 
