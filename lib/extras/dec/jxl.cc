@@ -207,8 +207,12 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
         }
         break;
       }
+      size_t released_size = JxlDecoderReleaseInput(dec);
       fprintf(stderr,
-              "Input file is truncated and allow_partial_input was disabled.");
+              "Input file is truncated (total bytes: %" PRIuS
+              ", processed bytes: %" PRIuS
+              ") and allow_partial_input was disabled.",
+              bytes_size, bytes_size - released_size);
       return false;
     } else if (status == JXL_DEC_BOX) {
       boxes.FinalizeOutput();

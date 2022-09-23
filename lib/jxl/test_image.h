@@ -227,12 +227,12 @@ class TestImage {
 
   TestImage& DecodeFromBytes(const PaddedBytes& bytes) {
     ColorEncoding c_enc;
-    JXL_ASSERT(
+    JXL_CHECK(
         ConvertExternalToInternalColorEncoding(ppf_.color_encoding, &c_enc));
     extras::ColorHints color_hints;
     color_hints.Add("color_space", Description(c_enc));
-    JXL_ASSERT(extras::DecodeBytes(Span<const uint8_t>(bytes), color_hints,
-                                   SizeConstraints(), &ppf_));
+    JXL_CHECK(extras::DecodeBytes(Span<const uint8_t>(bytes), color_hints,
+                                  SizeConstraints(), &ppf_));
     return *this;
   }
 
@@ -316,11 +316,11 @@ class TestImage {
   }
 
   TestImage& SetColorEncoding(const std::string& description) {
-    JXL_ASSERT(ParseDescription(description, &ppf_.color_encoding));
+    JXL_CHECK(ParseDescription(description, &ppf_.color_encoding));
     ColorEncoding c_enc;
-    JXL_ASSERT(
+    JXL_CHECK(
         ConvertExternalToInternalColorEncoding(ppf_.color_encoding, &c_enc));
-    JXL_ASSERT(c_enc.CreateICC());
+    JXL_CHECK(c_enc.CreateICC());
     PaddedBytes icc = c_enc.ICC();
     ppf_.icc.assign(icc.begin(), icc.end());
     return *this;
