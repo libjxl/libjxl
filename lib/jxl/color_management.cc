@@ -401,8 +401,14 @@ Status CreateICCLutAtoBTagForXYB(PaddedBytes* JXL_RESTRICT tags) {
   // 3 bytes of padding
   WriteICCUint8(0, tags->size(), tags);
   WriteICCUint16(0, tags->size(), tags);
-  const float kOffsets[3] = {0.015387, 0.028101, 0.277706};
-  const float kScaling[3] = {1.125, 1.125, 1. / 1.511027};
+  const float kOffsets[3] = {
+      kScaledXYBOffset[0] + kScaledXYBOffset[1],
+      kScaledXYBOffset[1] - kScaledXYBOffset[0] + 1.0f / kScaledXYBScale[0],
+      kScaledXYBOffset[1] + kScaledXYBOffset[2]};
+  const float kScaling[3] = {
+      1.0f / (1.0f / kScaledXYBScale[0] + 1.0f / kScaledXYBScale[1]),
+      1.0f / (1.0f / kScaledXYBScale[0] + 1.0f / kScaledXYBScale[1]),
+      1.0f / (1.0f / kScaledXYBScale[1] + 1.0f / kScaledXYBScale[2])};
   // 2*2*2*3 entries of 2 bytes each = 48 bytes
   for (size_t ix = 0; ix < 2; ++ix) {
     for (size_t iy = 0; iy < 2; ++iy) {
