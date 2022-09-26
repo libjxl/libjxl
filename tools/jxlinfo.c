@@ -90,7 +90,7 @@ int PrintBasicInfo(FILE* file, int verbose) {
       if (info.exponent_bits_per_sample) {
         printf("float (%d exponent bits) ", info.exponent_bits_per_sample);
       }
-      int cmyk = 0, alpha = 0;
+      int cmyk = 0;
       const char* const ec_type_names[] = {
           "Alpha",     "Depth",     "Spotcolor", "Selection", "Black",
           "CFA",       "Thermal",   "Reserved0", "Reserved1", "Reserved2",
@@ -105,17 +105,12 @@ int PrintBasicInfo(FILE* file, int verbose) {
           break;
         }
         if (extra.type == JXL_CHANNEL_BLACK) cmyk = 1;
-        if (extra.type == JXL_CHANNEL_ALPHA) alpha = 1;
       }
       if (info.num_color_channels == 1)
         printf("Grayscale");
       else {
         if (cmyk) {
-          printf("CMYK");
-          cmyk = 0;
-        } else if (alpha) {
-          printf("RGBA");
-          alpha = 0;
+          printf("CMY");
         } else {
           printf("RGB");
         }
@@ -126,15 +121,6 @@ int PrintBasicInfo(FILE* file, int verbose) {
           fprintf(stderr, "JxlDecoderGetExtraChannelInfo failed\n");
           break;
         }
-        if (extra.type == JXL_CHANNEL_BLACK && cmyk == 0) {
-          cmyk = 1;
-          continue;
-        }
-        if (extra.type == JXL_CHANNEL_ALPHA && alpha == 0) {
-          alpha = 1;
-          continue;
-        }
-
         printf("+%s", (extra.type < ec_type_names_size
                            ? ec_type_names[extra.type]
                            : "Unknown, please update your libjxl"));
