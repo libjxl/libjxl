@@ -242,7 +242,7 @@ class TestImage {
   }
 
   TestImage& SetDimensions(size_t xsize, size_t ysize) {
-    if (xsize < ppf_.info.xsize && ysize < ppf_.info.ysize) {
+    if (xsize <= ppf_.info.xsize && ysize <= ppf_.info.ysize) {
       for (auto& frame : ppf_.frames) {
         CropLayerInfo(xsize, ysize, &frame.frame_info.layer_info);
         CropImage(xsize, ysize, &frame.color);
@@ -344,6 +344,19 @@ class TestImage {
         FillPackedImage(ppf().extra_channels_info[i].ec_info, seed + 1 + i,
                         &frame().extra_channels[i]);
       }
+    }
+
+    void SetValue(size_t y, size_t x, size_t c, float val) {
+      const extras::PackedImage& color = frame().color;
+      JxlPixelFormat format = color.format;
+      JXL_CHECK(y < ppf().info.ysize);
+      JXL_CHECK(x < ppf().info.xsize);
+      JXL_CHECK(c < format.num_channels);
+      size_t pwidth = extras::PackedImage::BitsPerChannel(format.data_type) / 8;
+      size_t idx = ((y * color.xsize + x) * format.num_channels + c) * pwidth;
+      uint8_t* pixels = reinterpret_cast<uint8_t*>(frame().color.pixels());
+      uint8_t* p = pixels + idx;
+      StoreValue(val, ppf().info, frame().color.format, &p);
     }
 
    private:

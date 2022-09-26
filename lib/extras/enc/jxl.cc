@@ -140,17 +140,20 @@ bool EncodeImageJXL(const JXLCompressParams& params, const PackedPixelFile& ppf,
       if (num_alpha_channels > 0) {
         JxlExtraChannelInfo extra_channel_info;
         JxlEncoderInitExtraChannelInfo(JXL_CHANNEL_ALPHA, &extra_channel_info);
-        if (JXL_ENC_SUCCESS !=
-            JxlEncoderSetExtraChannelInfo(enc, 0, &extra_channel_info)) {
-          fprintf(stderr, "JxlEncoderSetExtraChannelInfo() failed.\n");
-          return false;
-        }
+        extra_channel_info.bits_per_sample = ppf.info.alpha_bits;
+        extra_channel_info.exponent_bits_per_sample =
+            ppf.info.alpha_exponent_bits;
         if (params.premultiply != -1) {
           if (params.premultiply != 0 && params.premultiply != 1) {
             fprintf(stderr, "premultiply must be one of: -1, 0, 1.\n");
             return false;
           }
           extra_channel_info.alpha_premultiplied = params.premultiply;
+        }
+        if (JXL_ENC_SUCCESS !=
+            JxlEncoderSetExtraChannelInfo(enc, 0, &extra_channel_info)) {
+          fprintf(stderr, "JxlEncoderSetExtraChannelInfo() failed.\n");
+          return false;
         }
         // We take the extra channel blend info frame_info, but don't do
         // clamping.

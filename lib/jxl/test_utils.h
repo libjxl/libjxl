@@ -641,6 +641,41 @@ float ComputeDistance2(const extras::PackedPixelFile& a,
   EXPECT_TRUE(ConvertPackedPixelFileToCodecInOut(b, nullptr, &io1));
   return ComputeDistance2(io0.Main(), io1.Main(), GetJxlCms());
 }
+
+bool SameAlpha(const extras::PackedPixelFile& a,
+               const extras::PackedPixelFile& b) {
+  JXL_CHECK(a.info.xsize == b.info.xsize);
+  JXL_CHECK(a.info.ysize == b.info.ysize);
+  JXL_CHECK(a.info.alpha_bits == b.info.alpha_bits);
+  JXL_CHECK(a.info.alpha_exponent_bits == b.info.alpha_exponent_bits);
+  JXL_CHECK(a.info.alpha_bits > 0);
+  JXL_CHECK(a.frames.size() == b.frames.size());
+  for (size_t i = 0; i < a.frames.size(); ++i) {
+    const extras::PackedImage& color_a = a.frames[i].color;
+    const extras::PackedImage& color_b = b.frames[i].color;
+    JXL_CHECK(color_a.format.num_channels == color_b.format.num_channels);
+    JXL_CHECK(color_a.format.data_type == color_b.format.data_type);
+    JXL_CHECK(color_a.format.endianness == color_b.format.endianness);
+    JXL_CHECK(color_a.pixels_size == color_b.pixels_size);
+    size_t pwidth =
+        extras::PackedImage::BitsPerChannel(color_a.format.data_type) / 8;
+    size_t num_color = color_a.format.num_channels < 3 ? 1 : 3;
+    const uint8_t* p_a = reinterpret_cast<const uint8_t*>(color_a.pixels());
+    const uint8_t* p_b = reinterpret_cast<const uint8_t*>(color_b.pixels());
+    for (size_t y = 0; y < a.info.ysize; ++y) {
+      for (size_t x = 0; x < a.info.xsize; ++x) {
+        size_t idx =
+            ((y * a.info.xsize + x) * color_a.format.num_channels + num_color) *
+            pwidth;
+        if (memcmp(&p_a[idx], &p_b[idx], pwidth) != 0) {
+          return false;
+        }
+      }
+    }
+  }
+  return true;
+}
+
 }  // namespace test
 
 bool operator==(const jxl::PaddedBytes& a, const jxl::PaddedBytes& b) {
