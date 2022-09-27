@@ -210,40 +210,6 @@ size_t Roundtrip(const extras::PackedPixelFile& ppf_in,
   return compressed.size();
 }
 
-void CoalesceGIFAnimationWithAlpha(CodecInOut* io) {
-  ImageBundle canvas = io->frames[0].Copy();
-  for (size_t i = 1; i < io->frames.size(); i++) {
-    const ImageBundle& frame = io->frames[i];
-    ImageBundle rendered = canvas.Copy();
-    for (size_t y = 0; y < frame.ysize(); y++) {
-      float* row0 =
-          rendered.color()->PlaneRow(0, frame.origin.y0 + y) + frame.origin.x0;
-      float* row1 =
-          rendered.color()->PlaneRow(1, frame.origin.y0 + y) + frame.origin.x0;
-      float* row2 =
-          rendered.color()->PlaneRow(2, frame.origin.y0 + y) + frame.origin.x0;
-      float* rowa =
-          rendered.alpha()->Row(frame.origin.y0 + y) + frame.origin.x0;
-      const float* row0f = frame.color().PlaneRow(0, y);
-      const float* row1f = frame.color().PlaneRow(1, y);
-      const float* row2f = frame.color().PlaneRow(2, y);
-      const float* rowaf = frame.alpha().Row(y);
-      for (size_t x = 0; x < frame.xsize(); x++) {
-        if (rowaf[x] != 0) {
-          row0[x] = row0f[x];
-          row1[x] = row1f[x];
-          row2[x] = row2f[x];
-          rowa[x] = rowaf[x];
-        }
-      }
-    }
-    if (frame.use_for_next_frame) {
-      canvas = rendered.Copy();
-    }
-    io->frames[i] = std::move(rendered);
-  }
-}
-
 // A POD descriptor of a ColorEncoding. Only used in tests as the return value
 // of AllEncodings().
 struct ColorEncodingDescriptor {
