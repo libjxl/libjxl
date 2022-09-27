@@ -75,7 +75,7 @@ Status RunButteraugli(const char* pathname1, const char* pathname2,
 
   ImageF distmap;
   ButteraugliParams ba_params;
-  ba_params.hf_asymmetry = 0.8f;
+  ba_params.hf_asymmetry = 1.0f;
   ba_params.xmul = 1.0f;
   ba_params.intensity_target = intensity_target;
   const float distance = ButteraugliDistance(io1.Main(), io2.Main(), ba_params,
