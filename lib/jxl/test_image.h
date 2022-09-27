@@ -326,6 +326,45 @@ class TestImage {
     return *this;
   }
 
+  TestImage& CoalesceGIFAnimationWithAlpha() {
+    extras::PackedFrame canvas = ppf_.frames[0].Copy();
+    JXL_CHECK(canvas.color.format.num_channels == 3);
+    JXL_CHECK(canvas.color.format.data_type == JXL_TYPE_UINT8);
+    JXL_CHECK(canvas.extra_channels.size() == 1);
+    for (size_t i = 1; i < ppf_.frames.size(); i++) {
+      const extras::PackedFrame& frame = ppf_.frames[i];
+      JXL_CHECK(frame.extra_channels.size() == 1);
+      const JxlLayerInfo& layer_info = frame.frame_info.layer_info;
+      extras::PackedFrame rendered = canvas.Copy();
+      uint8_t* pixels_rendered =
+          reinterpret_cast<uint8_t*>(rendered.color.pixels());
+      const uint8_t* pixels_frame =
+          reinterpret_cast<const uint8_t*>(frame.color.pixels());
+      uint8_t* alpha_rendered =
+          reinterpret_cast<uint8_t*>(rendered.extra_channels[0].pixels());
+      const uint8_t* alpha_frame =
+          reinterpret_cast<const uint8_t*>(frame.extra_channels[0].pixels());
+      for (size_t y = 0; y < frame.color.ysize; y++) {
+        for (size_t x = 0; x < frame.color.xsize; x++) {
+          size_t idx_frame = y * frame.color.xsize + x;
+          size_t idx_rendered =
+              ((layer_info.crop_y0 + y) * rendered.color.xsize +
+               (layer_info.crop_x0 + x));
+          if (alpha_frame[idx_frame] != 0) {
+            memcpy(&pixels_rendered[idx_rendered * 3],
+                   &pixels_frame[idx_frame * 3], 3);
+            alpha_rendered[idx_rendered] = alpha_frame[idx_frame];
+          }
+        }
+      }
+      if (layer_info.save_as_reference != 0) {
+        canvas = rendered.Copy();
+      }
+      ppf_.frames[i] = std::move(rendered);
+    }
+    return *this;
+  }
+
   class Frame {
    public:
     Frame(TestImage* parent, bool is_preview, size_t index)
