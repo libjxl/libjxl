@@ -14,7 +14,9 @@
 #include <string>
 
 #include "lib/extras/dec/jpg.h"
+#include "lib/extras/dec/jxl.h"
 #include "lib/extras/enc/jpg.h"
+#include "lib/extras/enc/jxl.h"
 #include "lib/extras/encode_jpeg.h"
 #include "lib/extras/packed_image.h"
 #include "lib/extras/packed_image_convert.h"
@@ -59,6 +61,16 @@ class JPEGCodec : public ImageCodec {
     }
     if (param == "sjpeg" || param == "libjxl") {
       jpeg_encoder_ = param;
+      return true;
+    }
+    if (param == "djxl8") {
+      use_jxl_decoder_ = true;
+      jxl_decoder_data_type_ = JXL_TYPE_UINT8;
+      return true;
+    }
+    if (param == "djxl16") {
+      use_jxl_decoder_ = true;
+      jxl_decoder_data_type_ = JXL_TYPE_UINT16;
       return true;
     }
     if (param.compare(0, 3, "yuv") == 0) {
@@ -113,11 +125,30 @@ class JPEGCodec : public ImageCodec {
                     ThreadPoolInternal* pool, CodecInOut* io,
                     jpegxl::tools::SpeedStats* speed_stats) override {
     extras::PackedPixelFile ppf;
-    const double start = Now();
-    JXL_RETURN_IF_ERROR(DecodeImageJPG(compressed, extras::ColorHints(),
-                                       SizeConstraints(), &ppf));
-    const double end = Now();
-    speed_stats->NotifyElapsed(end - start);
+    if (use_jxl_decoder_) {
+      extras::JXLCompressParams cparams;
+      std::vector<uint8_t> jpeg_bytes(compressed.data(),
+                                      compressed.data() + compressed.size());
+      const double start = Now();
+      std::vector<uint8_t> jxl_bytes;
+      JXL_RETURN_IF_ERROR(
+          extras::EncodeImageJXL(cparams, ppf, &jpeg_bytes, &jxl_bytes));
+      extras::JXLDecompressParams dparams;
+      for (uint32_t num_channels : {1, 3}) {
+        dparams.accepted_formats.push_back(JxlPixelFormat{
+            num_channels, jxl_decoder_data_type_, JXL_BIG_ENDIAN, 0});
+      }
+      JXL_RETURN_IF_ERROR(extras::DecodeImageJXL(
+          jxl_bytes.data(), jxl_bytes.size(), dparams, nullptr, &ppf, nullptr));
+      const double end = Now();
+      speed_stats->NotifyElapsed(end - start);
+    } else {
+      const double start = Now();
+      JXL_RETURN_IF_ERROR(DecodeImageJPG(compressed, extras::ColorHints(),
+                                         SizeConstraints(), &ppf));
+      const double end = Now();
+      speed_stats->NotifyElapsed(end - start);
+    }
     JXL_RETURN_IF_ERROR(ConvertPackedPixelFileToCodecInOut(ppf, pool, io));
     return true;
   }
@@ -126,6 +157,8 @@ class JPEGCodec : public ImageCodec {
   bool normalize_bitrate_ = false;
   std::string jpeg_encoder_;
   std::string chroma_subsampling_;
+  bool use_jxl_decoder_ = false;
+  JxlDataType jxl_decoder_data_type_ = JXL_TYPE_UINT8;
 };
 
 ImageCodec* CreateNewJPEGCodec(const BenchmarkArgs& args) {
