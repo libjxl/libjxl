@@ -127,6 +127,7 @@ class JPEGCodec : public ImageCodec {
     extras::PackedPixelFile ppf;
     if (use_jxl_decoder_) {
       extras::JXLCompressParams cparams;
+      cparams.AddOption(JXL_ENC_FRAME_SETTING_JPEG_RECON_CFL, 0);
       std::vector<uint8_t> jpeg_bytes(compressed.data(),
                                       compressed.data() + compressed.size());
       const double start = Now();
