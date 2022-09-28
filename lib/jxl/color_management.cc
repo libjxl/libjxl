@@ -585,13 +585,11 @@ Status MaybeCreateProfile(const ColorEncoding& c,
       switch (c.tf.GetTransferFunction()) {
         case TransferFunction::kHLG:
           CreateICCCurvCurvTag(
-              HWY_DYNAMIC_DISPATCH(CreateTableCurve)(4096, ExtraTF::kHLG),
-              &tags);
+              HWY_DYNAMIC_DISPATCH(CreateTableCurve)(64, ExtraTF::kHLG), &tags);
           break;
         case TransferFunction::kPQ:
           CreateICCCurvCurvTag(
-              HWY_DYNAMIC_DISPATCH(CreateTableCurve)(4096, ExtraTF::kPQ),
-              &tags);
+              HWY_DYNAMIC_DISPATCH(CreateTableCurve)(64, ExtraTF::kPQ), &tags);
           break;
         case TransferFunction::kSRGB:
           JXL_RETURN_IF_ERROR(CreateICCCurvParaTag(
