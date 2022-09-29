@@ -226,7 +226,7 @@ void VerifyFrameEncoding(size_t xsize, size_t ysize, JxlEncoder* enc,
 
 void VerifyFrameEncoding(JxlEncoder* enc,
                          const JxlEncoderFrameSettings* frame_settings) {
-  VerifyFrameEncoding(63, 129, enc, frame_settings, 2600,
+  VerifyFrameEncoding(63, 129, enc, frame_settings, 2700,
                       /*lossy_use_original_profile=*/false);
 }
 
