@@ -15,6 +15,7 @@
 
 #include "lib/extras/dec/jpg.h"
 #include "lib/extras/dec/jxl.h"
+#include "lib/extras/decode_jpeg.h"
 #include "lib/extras/enc/jpg.h"
 #include "lib/extras/enc/jxl.h"
 #include "lib/extras/encode_jpeg.h"
@@ -126,21 +127,11 @@ class JPEGCodec : public ImageCodec {
                     jpegxl::tools::SpeedStats* speed_stats) override {
     extras::PackedPixelFile ppf;
     if (use_jxl_decoder_) {
-      extras::JXLCompressParams cparams;
-      cparams.AddOption(JXL_ENC_FRAME_SETTING_JPEG_RECON_CFL, 0);
       std::vector<uint8_t> jpeg_bytes(compressed.data(),
                                       compressed.data() + compressed.size());
       const double start = Now();
-      std::vector<uint8_t> jxl_bytes;
       JXL_RETURN_IF_ERROR(
-          extras::EncodeImageJXL(cparams, ppf, &jpeg_bytes, &jxl_bytes));
-      extras::JXLDecompressParams dparams;
-      for (uint32_t num_channels : {1, 3}) {
-        dparams.accepted_formats.push_back(JxlPixelFormat{
-            num_channels, jxl_decoder_data_type_, JXL_BIG_ENDIAN, 0});
-      }
-      JXL_RETURN_IF_ERROR(extras::DecodeImageJXL(
-          jxl_bytes.data(), jxl_bytes.size(), dparams, nullptr, &ppf, nullptr));
+          extras::DecodeJpeg(jpeg_bytes, jxl_decoder_data_type_, pool, &ppf));
       const double end = Now();
       speed_stats->NotifyElapsed(end - start);
     } else {
