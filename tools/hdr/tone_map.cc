@@ -80,7 +80,7 @@ int main(int argc, const char** argv) {
   if (pq) {
     c_out.tf.SetTransferFunction(jxl::TransferFunction::kPQ);
   } else {
-    c_out.tf.SetTransferFunction(jxl::TransferFunction::k709);
+    c_out.tf.SetTransferFunction(jxl::TransferFunction::kSRGB);
   }
   JXL_CHECK(c_out.CreateICC());
   JXL_CHECK(image.TransformTo(c_out, jxl::GetJxlCms(), &pool));
