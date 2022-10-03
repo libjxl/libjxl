@@ -926,7 +926,7 @@ int main(int argc, char** argv) {
     jxl::Status status =
         jpegxl::tools::GetPixeldata(image_data, args.color_hints, ppf, codec);
     if (!status) {
-      std::cerr << "Getting pixel data." << std::endl;
+      std::cerr << "Getting pixel data failed." << std::endl;
       exit(EXIT_FAILURE);
     }
     if (ppf.frames.empty()) {
