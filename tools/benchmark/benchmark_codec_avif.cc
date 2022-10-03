@@ -318,14 +318,17 @@ class AvifCodec : public ImageCodec {
         JXL_RETURN_IF_AVIF_ERROR(avifImageYUVToRGB(decoder->image, &rgb_image));
         const double start_convert_image = Now();
         {
+          JxlPixelFormat format = {
+              (has_alpha ? 4u : 3u),
+              (rgb_image.depth <= 8 ? JXL_TYPE_UINT8 : JXL_TYPE_UINT16),
+              JXL_NATIVE_ENDIAN, 0};
           ImageBundle ib(&io->metadata.m);
           JXL_RETURN_IF_ERROR(ConvertFromExternal(
               Span<const uint8_t>(rgb_image.pixels,
                                   rgb_image.height * rgb_image.rowBytes),
-              rgb_image.width, rgb_image.height, color, (has_alpha ? 4 : 3),
-              /*alpha_is_premultiplied=*/false, rgb_image.depth,
-              JXL_NATIVE_ENDIAN, pool, &ib,
-              /*float_in=*/false, /*align=*/0));
+              rgb_image.width, rgb_image.height, color,
+              /*alpha_is_premultiplied=*/false, rgb_image.depth, format, pool,
+              &ib));
           io->frames.push_back(std::move(ib));
           io->dec_pixels += rgb_image.width * rgb_image.height;
         }
