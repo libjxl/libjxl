@@ -39,11 +39,12 @@ Status FromSRGB(const size_t xsize, const size_t ysize, const bool is_gray,
                 ImageBundle* ib) {
   const ColorEncoding& c = ColorEncoding::SRGB(is_gray);
   const size_t bits_per_sample = (is_16bit ? 2 : 1) * kBitsPerByte;
+  const uint32_t num_channels = (is_gray ? 1 : 3) + (has_alpha ? 1 : 0);
+  JxlDataType data_type = is_16bit ? JXL_TYPE_UINT16 : JXL_TYPE_UINT8;
+  JxlPixelFormat format = {num_channels, data_type, endianness, 0};
   const Span<const uint8_t> span(pixels, end - pixels);
-  return ConvertFromExternal(
-      span, xsize, ysize, c, (is_gray ? 1 : 3) + (has_alpha ? 1 : 0),
-      alpha_is_premultiplied, bits_per_sample, endianness, pool, ib,
-      /*float_in=*/false, /*align=*/0);
+  return ConvertFromExternal(span, xsize, ysize, c, alpha_is_premultiplied,
+                             bits_per_sample, format, pool, ib);
 }
 
 struct WebPArgs {

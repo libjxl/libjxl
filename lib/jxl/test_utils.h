@@ -297,12 +297,14 @@ jxl::CodecInOut SomeTestImageToCodecInOut(const std::vector<uint8_t>& buf,
   io.metadata.m.SetAlphaBits(16);
   io.metadata.m.color_encoding = jxl::ColorEncoding::SRGB(
       /*is_gray=*/num_channels == 1 || num_channels == 2);
+  JxlPixelFormat format = {static_cast<uint32_t>(num_channels), JXL_TYPE_UINT16,
+                           JXL_BIG_ENDIAN, 0};
   EXPECT_TRUE(ConvertFromExternal(
       jxl::Span<const uint8_t>(buf.data(), buf.size()), xsize, ysize,
-      jxl::ColorEncoding::SRGB(/*is_gray=*/num_channels < 3), num_channels,
-      /*alpha_is_premultiplied=*/false, /*bits_per_sample=*/16, JXL_BIG_ENDIAN,
+      jxl::ColorEncoding::SRGB(/*is_gray=*/num_channels < 3),
+      /*alpha_is_premultiplied=*/false, /*bits_per_sample=*/16, format,
       /*pool=*/nullptr,
-      /*ib=*/&io.Main(), /*float_in=*/false, 0));
+      /*ib=*/&io.Main()));
   return io;
 }
 

@@ -214,14 +214,15 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
         }
       }
     }
-
+    uint32_t num_channels = bytes_per_pixel / bytes_per_sample;
+    JxlDataType data_type =
+        bytes_per_sample == 1 ? JXL_TYPE_UINT8 : JXL_TYPE_UINT16;
+    JxlPixelFormat format = {num_channels, data_type, JXL_LITTLE_ENDIAN, 0};
     const jxl::Span<const uint8_t> span(img_data.data(), img_data.size());
     JXL_RETURN_IF_ERROR(ConvertFromExternal(
         span, spec.width, spec.height, io.metadata.m.color_encoding,
-        bytes_per_pixel / bytes_per_sample,
         /*alpha_is_premultiplied=*/spec.alpha_is_premultiplied,
-        io.metadata.m.bit_depth.bits_per_sample, JXL_LITTLE_ENDIAN, nullptr,
-        &ib, /*float_in=*/false, /*align=*/0));
+        io.metadata.m.bit_depth.bits_per_sample, format, nullptr, &ib));
     io.frames.push_back(std::move(ib));
   }
 
