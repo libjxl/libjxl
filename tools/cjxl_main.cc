@@ -94,10 +94,8 @@ struct CompressArgs {
 #endif
                                  "PPM, PFM, or PGX",
                                  &file_in);
-    cmdline->AddPositionalOption(
-        "OUTPUT", /* required = */ true,
-        "the compressed JXL output file (can be omitted for benchmarking)",
-        &file_out);
+    cmdline->AddPositionalOption("OUTPUT", /* required = */ true,
+                                 "the compressed JXL output file", &file_out);
 
     // Flags.
     // TODO(lode): also add options to add exif/xmp/other metadata in the
@@ -235,6 +233,10 @@ struct CompressArgs {
     cmdline->AddOptionValue('\0', "num_reps", "N",
                             "How many times to compress. (For benchmarking).",
                             &num_reps, &ParseUnsigned, 1);
+
+    cmdline->AddOptionFlag('\0', "disable_output",
+                           "No output file will be written (for benchmarking)",
+                           &disable_output, &SetBooleanTrue, 1);
 
     cmdline->AddOptionValue(
         '\0', "photon_noise", "ISO3200",
@@ -410,6 +412,7 @@ struct CompressArgs {
   bool version = false;
   jxl::Override container = jxl::Override::kDefault;
   bool quiet = false;
+  bool disable_output = false;
 
   const char* file_in = nullptr;
   const char* file_out = nullptr;
@@ -901,9 +904,15 @@ int main(int argc, char** argv) {
     return jpegxl::tools::CjxlRetCode::OK;
   }
 
-  if (!args.file_out && !args.quiet) {
+  if (!args.file_out && !args.disable_output) {
+    std::cerr
+        << "No output file specified and --disable_output flag not passed."
+        << std::endl;
+    exit(EXIT_FAILURE);
+  }
+
+  if (args.file_out && args.disable_output && !args.quiet) {
     fprintf(stderr,
-            "No output file specified.\n"
             "Encoding will be performed, but the result will be discarded.\n");
   }
 
@@ -988,7 +997,7 @@ int main(int argc, char** argv) {
     stats.SetImageSize(ppf.info.xsize, ppf.info.ysize);
   }
 
-  if (args.file_out) {
+  if (args.file_out && !args.disable_output) {
     if (!jpegxl::tools::WriteFile(args.file_out, compressed)) {
       std::cerr << "Could not write jxl file." << std::endl;
       return EXIT_FAILURE;
