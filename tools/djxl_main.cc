@@ -53,6 +53,10 @@ struct DecompressArgs {
                             "Used for benchmarking, the default is 1.",
                             &num_reps, &ParseUnsigned);
 
+    cmdline->AddOptionFlag('\0', "disable_output",
+                           "No output file will be written (for benchmarking)",
+                           &disable_output, &SetBooleanTrue, 1);
+
     cmdline->AddOptionValue('\0', "num_threads", "N",
                             "Sets the number of threads to use. The default 0 "
                             "value means the machine default.",
@@ -163,6 +167,7 @@ struct DecompressArgs {
   const char* file_out = nullptr;
   bool version = false;
   size_t num_reps = 1;
+  bool disable_output = false;
   size_t num_threads = 0;
   size_t bits_per_sample = 0;
   double display_nits = 0.0;
@@ -315,16 +320,22 @@ int main(int argc, const char* argv[]) {
     fprintf(stderr, "Read %" PRIuS " compressed bytes.\n", compressed.size());
   }
 
-  if (!args.file_out && !args.quiet) {
+  if (!args.file_out && !args.disable_output) {
+    std::cerr
+        << "No output file specified and --disable_output flag not passed."
+        << std::endl;
+    return EXIT_FAILURE;
+  }
+
+  if (args.file_out && args.disable_output && !args.quiet) {
     fprintf(stderr,
-            "No output file specified.\n"
             "Decoding will be performed, but the result will be discarded.\n");
   }
 
   std::string filename_out;
   std::string base;
   std::string extension;
-  if (args.file_out) {
+  if (args.file_out && !args.disable_output) {
     filename_out = std::string(args.file_out);
     size_t pos = filename_out.find_last_of('.');
     if (pos < filename_out.size()) {
