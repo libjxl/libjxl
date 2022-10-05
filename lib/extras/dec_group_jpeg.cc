@@ -95,7 +95,7 @@ Status DecodeGroupJpeg(const Image3S& coeffs, size_t group_idx,
                        float* JXL_RESTRICT group_dec_cache, size_t thread,
                        RenderPipelineInput& render_pipeline_input) {
   HWY_ALIGN float* const block = group_dec_cache;
-  HWY_ALIGN float* const scratch_space = block + kDCTBlockSize * 3;
+  HWY_ALIGN float* const scratch_space = block + kDCTBlockSize;
 
   size_t hshift[3] = {cs.HShift(0), cs.HShift(1), cs.HShift(2)};
   size_t vshift[3] = {cs.VShift(0), cs.VShift(1), cs.VShift(2)};
@@ -122,8 +122,10 @@ Status DecodeGroupJpeg(const Image3S& coeffs, size_t group_idx,
         DequantBlock(qblock, c, dequant_matrices, kDefaultQuantBias, block);
         // IDCT
         float* JXL_RESTRICT idct_pos = idct_row + bx * kBlockDim;
-        TransformToPixels(AcStrategy::DCT, block, idct_pos, idct_stride,
-                          scratch_space);
+        // JPEG XL transposes the DCT, JPEG doesn't.
+        Transpose<8, 8>::Run(DCTFrom(block, 8), DCTTo(scratch_space, 8));
+        TransformToPixels(AcStrategy::DCT, scratch_space, idct_pos, idct_stride,
+                          block);
       }
     }
   }

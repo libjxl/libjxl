@@ -118,11 +118,8 @@ void SetDequantWeightsFromJpegData(const jpeg::JPEGData& jpeg_data,
     size_t jpeg_c = jpeg_c_map[c];
     const int32_t* quant =
         jpeg_data.quant[jpeg_data.components[jpeg_c].quant_idx].values.data();
-    for (size_t y = 0; y < 8; y++) {
-      for (size_t x = 0; x < 8; x++) {
-        // JPEG XL transposes the DCT, JPEG doesn't.
-        dequant[c * 64 + 8 * x + y] = quant[8 * y + x] * kDequantScale;
-      }
+    for (size_t k = 0; k < kDCTBlockSize; ++k) {
+      dequant[c * kDCTBlockSize + k] = quant[k] * kDequantScale;
     }
   }
 }
@@ -131,54 +128,39 @@ void SetCoefficientsFromJpegData(const jpeg::JPEGData& jpeg_data,
                                  const FrameDimensions& frame_dim,
                                  const YCbCrChromaSubsampling& cs,
                                  const bool is_ycbcr, Image3S* coeffs) {
-  const size_t xsize_blocks = frame_dim.xsize_blocks;
-  const size_t ysize_blocks = frame_dim.ysize_blocks;
   auto jpeg_c_map = JpegOrder(is_ycbcr, jpeg_data.components.size() == 1);
-
-  int dcquant[3];
-  for (size_t c = 0; c < 3; c++) {
-    size_t jpeg_c = jpeg_c_map[c];
-    dcquant[c] =
-        *jpeg_data.quant[jpeg_data.components[jpeg_c].quant_idx].values.data();
-  }
-
-  auto jpeg_row = [&](size_t c, size_t y) {
-    return jpeg_data.components[jpeg_c_map[c]].coeffs.data() +
-           jpeg_data.components[jpeg_c_map[c]].width_in_blocks * kDCTBlockSize *
-               y;
-  };
-
   *coeffs = Image3S(kGroupDim * kGroupDim, frame_dim.num_groups);
   for (size_t c = 0; c < 3; ++c) {
     if (jpeg_data.components.size() == 1 && c != 1) {
       ZeroFillImage(&coeffs->Plane(c));
       continue;
     }
+    const auto& comp = jpeg_data.components[jpeg_c_map[c]];
     size_t hshift = cs.HShift(c);
     size_t vshift = cs.VShift(c);
+    int dcquant = jpeg_data.quant[comp.quant_idx].values.data()[0];
+    int16_t dc_level = 1024 / dcquant;
+    size_t jpeg_stride = comp.width_in_blocks * kDCTBlockSize;
     for (size_t group_index = 0; group_index < frame_dim.num_groups;
          group_index++) {
-      const size_t gx = group_index % frame_dim.xsize_groups;
-      const size_t gy = group_index / frame_dim.xsize_groups;
-      size_t offset = 0;
+      Rect block_rect = BlockGroupRect(frame_dim, group_index);
+      size_t xsize_blocks = DivCeil(block_rect.xsize(), 1 << hshift);
+      size_t ysize_blocks = DivCeil(block_rect.ysize(), 1 << vshift);
+      size_t group_xsize = xsize_blocks * kDCTBlockSize;
+      size_t bx0 = block_rect.x0() >> hshift;
+      size_t by0 = block_rect.y0() >> vshift;
+      size_t jpeg_offset = by0 * jpeg_stride + bx0 * kDCTBlockSize;
+      const int16_t* JXL_RESTRICT jpeg_coeffs =
+          comp.coeffs.data() + jpeg_offset;
       int16_t* JXL_RESTRICT coeff_row = coeffs->PlaneRow(c, group_index);
-      for (size_t by = gy * kGroupDimInBlocks;
-           by < ysize_blocks && by < (gy + 1) * kGroupDimInBlocks; ++by) {
-        if ((by >> vshift) << vshift != by) continue;
-        const int16_t* JXL_RESTRICT inputjpeg = jpeg_row(c, by >> vshift);
-        for (size_t bx = gx * kGroupDimInBlocks;
-             bx < xsize_blocks && bx < (gx + 1) * kGroupDimInBlocks; ++bx) {
-          if ((bx >> hshift) << hshift != bx) continue;
-          size_t base = (bx >> hshift) * kDCTBlockSize;
-          for (size_t y = 0; y < 8; y++) {
-            for (size_t x = 0; x < 8; x++) {
-              coeff_row[offset + y * 8 + x] = inputjpeg[base + x * 8 + y];
-            }
-          }
-          if (!is_ycbcr) {
-            coeff_row[offset] += 1024 / dcquant[c];
-          }
-          offset += 64;
+      for (size_t by = 0; by < ysize_blocks; ++by) {
+        memcpy(&coeff_row[by * group_xsize], &jpeg_coeffs[by * jpeg_stride],
+               group_xsize * sizeof(coeff_row[0]));
+      }
+      if (!is_ycbcr) {
+        for (size_t offset = 0; offset < coeffs->xsize();
+             offset += kDCTBlockSize) {
+          coeff_row[offset] += dc_level;
         }
       }
     }
@@ -269,14 +251,14 @@ Status DecodeJpeg(const std::vector<uint8_t>& compressed,
     JXL_RETURN_IF_ERROR(
         render_pipeline->PrepareForThreads(num_threads,
                                            /*use_group_ids=*/false));
-    float_memory = hwy::AllocateAligned<float>(kDCTBlockSize * 4 * num_threads);
+    float_memory = hwy::AllocateAligned<float>(kDCTBlockSize * 2 * num_threads);
     return true;
   };
   const auto process_group = [&](const uint32_t group_index,
                                  const size_t thread) {
     RenderPipelineInput input =
         render_pipeline->GetInputBuffers(group_index, thread);
-    float* group_dec_cache = float_memory.get() + thread * kDCTBlockSize * 4;
+    float* group_dec_cache = float_memory.get() + thread * kDCTBlockSize * 2;
     const Rect block_rect = BlockGroupRect(frame_dim, group_index);
     JXL_CHECK(DecodeGroupJpeg(coeffs, group_index, block_rect, cs, &dequant[0],
                               group_dec_cache, thread, input));
