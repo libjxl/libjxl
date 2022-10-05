@@ -204,6 +204,8 @@ std::unique_ptr<RenderPipeline> PreparePipeline(
   }
   ImageOutput main_output;
   main_output.format = output->format;
+  main_output.bits_per_sample =
+      PackedImage::BitsPerChannel(output->format.data_type);
   main_output.buffer = reinterpret_cast<uint8_t*>(output->pixels());
   main_output.buffer_size = output->pixels_size;
   main_output.stride = output->stride;

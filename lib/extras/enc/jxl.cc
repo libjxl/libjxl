@@ -88,7 +88,8 @@ bool EncodeImageJXL(const JXLCompressParams& params, const PackedPixelFile& ppf,
     if (params.intensity_target > 0) {
       basic_info.intensity_target = params.intensity_target;
     }
-    basic_info.num_extra_channels = num_alpha_channels;
+    basic_info.num_extra_channels =
+        std::max<uint32_t>(num_alpha_channels, ppf.info.num_extra_channels);
     basic_info.num_color_channels = ppf.info.num_color_channels;
     const bool lossless = params.distance == 0;
     basic_info.uses_original_profile = lossless;
@@ -104,6 +105,11 @@ bool EncodeImageJXL(const JXLCompressParams& params, const PackedPixelFile& ppf,
     }
     if (JXL_ENC_SUCCESS != JxlEncoderSetBasicInfo(enc, &basic_info)) {
       fprintf(stderr, "JxlEncoderSetBasicInfo() failed.\n");
+      return false;
+    }
+    if (JXL_ENC_SUCCESS !=
+        JxlEncoderSetFrameBitDepth(settings, &params.input_bitdepth)) {
+      fprintf(stderr, "JxlEncoderSetFrameBitDepth() failed.\n");
       return false;
     }
     if (lossless &&
@@ -163,6 +169,20 @@ bool EncodeImageJXL(const JXLCompressParams& params, const PackedPixelFile& ppf,
         JxlEncoderSetExtraChannelBlendInfo(settings, 0,
                                            &extra_channel_blend_info);
       }
+      size_t num_interleaved_alpha =
+          (ppixelformat.num_channels - ppf.info.num_color_channels);
+      // Add extra channel info for the rest of the extra channels.
+      for (size_t i = 0; i < ppf.info.num_extra_channels; ++i) {
+        if (i < ppf.extra_channels_info.size()) {
+          const auto& ec_info = ppf.extra_channels_info[i].ec_info;
+          if (JXL_ENC_SUCCESS !=
+              JxlEncoderSetExtraChannelInfo(enc, num_interleaved_alpha + i,
+                                            &ec_info)) {
+            fprintf(stderr, "JxlEncoderSetExtraChannelInfo() failed.\n");
+            return false;
+          }
+        }
+      }
       if (JXL_ENC_SUCCESS != JxlEncoderAddImageFrame(settings, &ppixelformat,
                                                      pimage.pixels(),
                                                      pimage.pixels_size)) {
@@ -170,15 +190,16 @@ bool EncodeImageJXL(const JXLCompressParams& params, const PackedPixelFile& ppf,
         return false;
       }
       // Only set extra channel buffer if it is provided non-interleaved.
-      if (!pframe.extra_channels.empty() &&
-          JXL_ENC_SUCCESS != JxlEncoderSetExtraChannelBuffer(
-                                 settings, &ppixelformat,
-                                 pframe.extra_channels[0].pixels(),
-                                 pframe.extra_channels[0].stride *
-                                     pframe.extra_channels[0].ysize,
-                                 0)) {
-        fprintf(stderr, "JxlEncoderSetExtraChannelBuffer() failed.\n");
-        return false;
+      for (size_t i = 0; i < pframe.extra_channels.size(); ++i) {
+        if (JXL_ENC_SUCCESS !=
+            JxlEncoderSetExtraChannelBuffer(settings, &ppixelformat,
+                                            pframe.extra_channels[i].pixels(),
+                                            pframe.extra_channels[i].stride *
+                                                pframe.extra_channels[i].ysize,
+                                            num_interleaved_alpha + i)) {
+          fprintf(stderr, "JxlEncoderSetExtraChannelBuffer() failed.\n");
+          return false;
+        }
       }
     }
   }

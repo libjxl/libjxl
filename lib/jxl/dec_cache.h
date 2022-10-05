@@ -59,6 +59,8 @@ struct PixelCallback {
 struct ImageOutput {
   // Pixel format of the output pixels, used for buffer and callback output.
   JxlPixelFormat format;
+  // Output bit depth for unsigned data types, used for float to int conversion.
+  size_t bits_per_sample;
   // Callback for line-by-line output.
   PixelCallback callback;
   // Pixel buffer for image output.

@@ -179,11 +179,12 @@ class FrameDecoder {
   // orientation.
   void SetImageOutput(const PixelCallback& pixel_callback, void* image_buffer,
                       size_t image_buffer_size, size_t xsize, size_t ysize,
-                      JxlPixelFormat format, bool unpremul_alpha,
-                      bool undo_orientation) const {
+                      JxlPixelFormat format, size_t bits_per_sample,
+                      bool unpremul_alpha, bool undo_orientation) const {
     dec_state_->width = xsize;
     dec_state_->height = ysize;
     dec_state_->main_output.format = format;
+    dec_state_->main_output.bits_per_sample = bits_per_sample;
     dec_state_->main_output.callback = pixel_callback;
     dec_state_->main_output.buffer = image_buffer;
     dec_state_->main_output.buffer_size = image_buffer_size;
@@ -217,9 +218,10 @@ class FrameDecoder {
   }
 
   void AddExtraChannelOutput(void* buffer, size_t buffer_size, size_t xsize,
-                             JxlPixelFormat format) {
+                             JxlPixelFormat format, size_t bits_per_sample) {
     ImageOutput out;
     out.format = format;
+    out.bits_per_sample = bits_per_sample;
     out.buffer = buffer;
     out.buffer_size = buffer_size;
     out.stride = GetStride(xsize, format);

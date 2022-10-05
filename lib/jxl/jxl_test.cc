@@ -1398,5 +1398,36 @@ TEST(JxlTest, RoundtripProgressiveLevel2Slow) {
   EXPECT_THAT(ButteraugliDistance(t.ppf(), ppf_out), IsSlightlyBelow(1.1));
 }
 
+TEST(JxlTest, RoundtripUnsignedCustomBitdepthLossless) {
+  ThreadPool* pool = nullptr;
+  for (uint32_t num_channels = 1; num_channels < 6; ++num_channels) {
+    for (JxlEndianness endianness : {JXL_LITTLE_ENDIAN, JXL_BIG_ENDIAN}) {
+      for (uint32_t bitdepth = 3; bitdepth <= 16; ++bitdepth) {
+        if (bitdepth <= 8 && endianness == JXL_BIG_ENDIAN) continue;
+        printf("Testing %u channel unsigned %u bit %s endian lossless.\n",
+               num_channels, bitdepth,
+               endianness == JXL_LITTLE_ENDIAN ? "little" : "big");
+        TestImage t;
+        t.SetDimensions(256, 256).SetChannels(num_channels);
+        t.SetAllBitDepths(bitdepth).SetEndianness(endianness);
+        TestImage::Frame frame = t.AddFrame();
+        frame.RandomFill();
+
+        JXLCompressParams cparams = CompressParamsForLossless();
+        cparams.input_bitdepth.type = JXL_BIT_DEPTH_FROM_CODESTREAM;
+
+        JXLDecompressParams dparams;
+        dparams.accepted_formats.push_back(t.ppf().frames[0].color.format);
+        dparams.output_bitdepth.type = JXL_BIT_DEPTH_FROM_CODESTREAM;
+
+        PackedPixelFile ppf_out;
+        Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out);
+
+        ASSERT_TRUE(test::SamePixels(t.ppf(), ppf_out));
+      }
+    }
+  }
+}
+
 }  // namespace
 }  // namespace jxl

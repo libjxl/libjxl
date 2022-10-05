@@ -25,6 +25,7 @@
 #include "lib/extras/packed_image_convert.h"
 #include "lib/jxl/aux_out_fwd.h"
 #include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/random.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
@@ -638,6 +639,59 @@ bool SameAlpha(const extras::PackedPixelFile& a,
         if (memcmp(&p_a[idx], &p_b[idx], pwidth) != 0) {
           return false;
         }
+      }
+    }
+  }
+  return true;
+}
+
+bool SamePixels(const extras::PackedImage& a, const extras::PackedImage& b) {
+  JXL_CHECK(a.xsize == b.xsize);
+  JXL_CHECK(a.ysize == b.ysize);
+  JXL_CHECK(a.format.num_channels == b.format.num_channels);
+  JXL_CHECK(a.format.data_type == b.format.data_type);
+  JXL_CHECK(a.format.endianness == b.format.endianness);
+  JXL_CHECK(a.pixels_size == b.pixels_size);
+  const uint8_t* p_a = reinterpret_cast<const uint8_t*>(a.pixels());
+  const uint8_t* p_b = reinterpret_cast<const uint8_t*>(b.pixels());
+  for (size_t y = 0; y < a.ysize; ++y) {
+    for (size_t x = 0; x < a.xsize; ++x) {
+      size_t idx = (y * a.xsize + x) * a.pixel_stride();
+      if (memcmp(&p_a[idx], &p_b[idx], a.pixel_stride()) != 0) {
+        printf("Mismatch at row %" PRIuS " col %" PRIuS "\n", y, x);
+        printf("  a: ");
+        for (size_t j = 0; j < a.pixel_stride(); ++j) {
+          printf(" %3u", p_a[idx + j]);
+        }
+        printf("\n  b: ");
+        for (size_t j = 0; j < a.pixel_stride(); ++j) {
+          printf(" %3u", p_b[idx + j]);
+        }
+        printf("\n");
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+bool SamePixels(const extras::PackedPixelFile& a,
+                const extras::PackedPixelFile& b) {
+  JXL_CHECK(a.info.xsize == b.info.xsize);
+  JXL_CHECK(a.info.ysize == b.info.ysize);
+  JXL_CHECK(a.info.bits_per_sample == b.info.bits_per_sample);
+  JXL_CHECK(a.info.exponent_bits_per_sample == b.info.exponent_bits_per_sample);
+  JXL_CHECK(a.frames.size() == b.frames.size());
+  for (size_t i = 0; i < a.frames.size(); ++i) {
+    const auto& frame_a = a.frames[i];
+    const auto& frame_b = b.frames[i];
+    if (!SamePixels(frame_a.color, frame_b.color)) {
+      return false;
+    }
+    JXL_CHECK(frame_a.extra_channels.size() == frame_b.extra_channels.size());
+    for (size_t j = 0; j < frame_a.extra_channels.size(); ++j) {
+      if (!SamePixels(frame_a.extra_channels[i], frame_b.extra_channels[i])) {
+        return false;
       }
     }
   }
