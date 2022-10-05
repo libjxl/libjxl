@@ -78,8 +78,13 @@ class JPEGCodec : public ImageCodec {
       if (param.size() != 6) return false;
       chroma_subsampling_ = param.substr(3);
       return true;
-    } else if (param.substr(0, 2) == "nr") {
+    }
+    if (param.substr(0, 2) == "nr") {
       normalize_bitrate_ = true;
+      return true;
+    }
+    if (param == "p") {
+      progressive_ = true;
       return true;
     }
     return false;
@@ -102,6 +107,9 @@ class JPEGCodec : public ImageCodec {
       std::string jpeg_encoder = normalize_bitrate_ ? "libjpeg" : jpeg_encoder_;
       encoder->SetOption("jpeg_encoder", jpeg_encoder);
       encoder->SetOption("chroma_subsampling", chroma_subsampling_);
+      if (progressive_) {
+        encoder->SetOption("progressive", "");
+      }
       const double start = Now();
       JXL_RETURN_IF_ERROR(encoder->Encode(ppf, &encoded, pool));
       const double end = Now();
@@ -150,6 +158,7 @@ class JPEGCodec : public ImageCodec {
   std::string jpeg_encoder_;
   std::string chroma_subsampling_;
   bool use_jxl_decoder_ = false;
+  bool progressive_ = false;
   JxlDataType jxl_decoder_data_type_ = JXL_TYPE_UINT8;
 };
 
