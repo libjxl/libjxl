@@ -124,7 +124,7 @@ static std::string FormatFloat(const ColumnDescriptor& label, double value) {
     size_t point = result.rfind('.');
     if (point != std::string::npos) {
       int end = std::max<int>(point + 2, label.width - 1);
-      result = result.substr(0, end);
+      result.resize(end);
     }
   }
   return result;
