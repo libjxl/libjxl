@@ -85,7 +85,6 @@ class WriteToOutputStage : public RenderPipelineStage {
     if (flip_y_) {
       ypos = height_ - 1u - ypos;
     }
-
     size_t limit = std::min(xsize, width_ - xpos);
     for (size_t x0 = 0; x0 < limit; x0 += kMaxPixelsPerCall) {
       size_t xstart = xpos + x0;
@@ -104,7 +103,6 @@ class WriteToOutputStage : public RenderPipelineStage {
       if (has_alpha_ && want_alpha_ && unpremul_alpha_) {
         UnpremulAlpha(thread_id, len, line_buffers);
       }
-
       OutputBuffers(main_, thread_id, ypos, xstart, len, line_buffers);
       for (const auto& extra : extra_channels_) {
         line_buffers[0] = GetInputRow(input_rows, extra.channel_index_, 0) + x0;
@@ -136,7 +134,8 @@ class WriteToOutputStage : public RenderPipelineStage {
           stride_(image_out.stride),
           num_channels_(image_out.format.num_channels),
           swap_endianness_(SwapEndianness(image_out.format.endianness)),
-          data_type_(image_out.format.data_type) {}
+          data_type_(image_out.format.data_type),
+          bits_per_sample_(image_out.bits_per_sample) {}
 
     Status PrepareForThreads(size_t num_threads) {
       if (pixel_callback_.IsPresent()) {
@@ -157,6 +156,7 @@ class WriteToOutputStage : public RenderPipelineStage {
     size_t num_channels_;
     bool swap_endianness_;
     JxlDataType data_type_;
+    size_t bits_per_sample_;
     size_t channel_index_;  // used for extra_channels
   };
 
@@ -293,7 +293,7 @@ class WriteToOutputStage : public RenderPipelineStage {
     const HWY_FULL(float) d;
     auto zero = Zero(d);
     auto one = Set(d, 1.0f);
-    auto mul = Set(d, (1u << (sizeof(T) * 8)) - 1);
+    auto mul = Set(d, (1u << (out.bits_per_sample_)) - 1);
     const Rebind<T, decltype(d)> du;
     const size_t padding = RoundUpTo(len, Lanes(d)) - len;
     for (size_t c = 0; c < out.num_channels_; ++c) {

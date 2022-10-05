@@ -144,6 +144,20 @@ size_t BitsPerChannel(JxlDataType data_type) {
   }
 }
 
+template <typename T>
+uint32_t GetBitDepth(JxlBitDepth bit_depth, const T& metadata,
+                     JxlPixelFormat format) {
+  if (bit_depth.type == JXL_BIT_DEPTH_FROM_PIXEL_FORMAT) {
+    return BitsPerChannel(format.data_type);
+  } else if (bit_depth.type == JXL_BIT_DEPTH_FROM_CODESTREAM) {
+    return metadata.bit_depth.bits_per_sample;
+  } else if (bit_depth.type == JXL_BIT_DEPTH_CUSTOM) {
+    return bit_depth.bits_per_sample;
+  } else {
+    return 0;
+  }
+}
+
 enum class DecoderStage : uint32_t {
   kInited,              // Decoder created, no JxlDecoderProcessInput called yet
   kStarted,             // Running JxlDecoderProcessInput calls
@@ -415,6 +429,7 @@ struct JxlDecoderStruct {
   size_t image_out_size;
 
   JxlPixelFormat image_out_format;
+  JxlBitDepth image_out_bit_depth;
 
   // For extra channels. Empty if no extra channels are requested, and they are
   // reset each frame
@@ -701,6 +716,7 @@ void JxlDecoderRewindDecodingState(JxlDecoder* dec) {
   dec->image_out_destroy_callback = nullptr;
   dec->image_out_init_opaque = nullptr;
   dec->image_out_size = 0;
+  dec->image_out_bit_depth.type = JXL_BIT_DEPTH_FROM_PIXEL_FORMAT;
   dec->extra_channel_output.clear();
   dec->dec_pixels = 0;
   dec->next_in = 0;
@@ -1379,16 +1395,23 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec) {
       if (dec->image_out_buffer_set) {
         size_t xsize, ysize;
         GetCurrentDimensions(dec, xsize, ysize);
+        size_t bits_per_sample = GetBitDepth(
+            dec->image_out_bit_depth, dec->metadata.m, dec->image_out_format);
         dec->frame_dec->SetImageOutput(
             PixelCallback{
                 dec->image_out_init_callback, dec->image_out_run_callback,
                 dec->image_out_destroy_callback, dec->image_out_init_opaque},
             reinterpret_cast<uint8_t*>(dec->image_out_buffer),
             dec->image_out_size, xsize, ysize, dec->image_out_format,
-            dec->unpremul_alpha, !dec->keep_orientation);
-        for (const auto& extra : dec->extra_channel_output) {
+            bits_per_sample, dec->unpremul_alpha, !dec->keep_orientation);
+        for (size_t i = 0; i < dec->extra_channel_output.size(); ++i) {
+          const auto& extra = dec->extra_channel_output[i];
+          size_t ec_bits_per_sample =
+              GetBitDepth(dec->image_out_bit_depth,
+                          dec->metadata.m.extra_channel_info[i], extra.format);
           dec->frame_dec->AddExtraChannelOutput(extra.buffer, extra.buffer_size,
-                                                xsize, extra.format);
+                                                xsize, extra.format,
+                                                ec_bits_per_sample);
         }
       }
 
@@ -2718,5 +2741,43 @@ JxlDecoderStatus JxlDecoderSetProgressiveDetail(JxlDecoder* dec,
         kDC, kLastPasses, kPasses, detail);
   }
   dec->prog_detail = detail;
+  return JXL_DEC_SUCCESS;
+}
+
+namespace {
+
+template <typename T>
+JxlDecoderStatus VerifyOutputBitDepth(JxlBitDepth bit_depth, const T& metadata,
+                                      JxlPixelFormat format) {
+  if ((format.data_type == JXL_TYPE_FLOAT ||
+       format.data_type == JXL_TYPE_FLOAT16) &&
+      bit_depth.type != JXL_BIT_DEPTH_FROM_PIXEL_FORMAT) {
+    return JXL_API_ERROR(
+        "Only JXL_BIT_DEPTH_FROM_PIXEL_FORMAT is implemented "
+        "for float types.");
+  }
+  uint32_t bits_per_sample = GetBitDepth(bit_depth, metadata, format);
+  if (format.data_type == JXL_TYPE_UINT8 &&
+      (bits_per_sample == 0 || bits_per_sample > 8)) {
+    return JXL_API_ERROR("Inavlid bit depth %u for uint8 output",
+                         bits_per_sample);
+  } else if (format.data_type == JXL_TYPE_UINT16 &&
+             (bits_per_sample == 0 || bits_per_sample > 16)) {
+    return JXL_API_ERROR("Inavlid bit depth %u for uint16 output",
+                         bits_per_sample);
+  }
+  return JXL_DEC_SUCCESS;
+}
+
+}  // namespace
+
+JxlDecoderStatus JxlDecoderSetImageOutBitDepth(JxlDecoder* dec,
+                                               const JxlBitDepth* bit_depth) {
+  if (!dec->image_out_buffer_set) {
+    return JXL_API_ERROR("No image out buffer was set.");
+  }
+  JXL_API_RETURN_IF_ERROR(
+      VerifyOutputBitDepth(*bit_depth, dec->metadata.m, dec->image_out_format));
+  dec->image_out_bit_depth = *bit_depth;
   return JXL_DEC_SUCCESS;
 }

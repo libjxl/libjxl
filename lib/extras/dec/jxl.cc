@@ -90,6 +90,17 @@ void SetBitDepthFromDataType(JxlDataType data_type, uint32_t* bits_per_sample,
   }
 }
 
+template <typename T>
+void UpdateBitDepth(JxlBitDepth bit_depth, JxlDataType data_type, T* info) {
+  if (bit_depth.type == JXL_BIT_DEPTH_FROM_PIXEL_FORMAT) {
+    SetBitDepthFromDataType(data_type, &info->bits_per_sample,
+                            &info->exponent_bits_per_sample);
+  } else if (bit_depth.type == JXL_BIT_DEPTH_CUSTOM) {
+    info->bits_per_sample = bit_depth.bits_per_sample;
+    info->exponent_bits_per_sample = bit_depth.exponent_bits_per_sample;
+  }
+}
+
 }  // namespace
 
 bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
@@ -276,16 +287,11 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
         fprintf(stderr, "SelectFormat failed\n");
         return false;
       }
-      SetBitDepthFromDataType(format.data_type, &ppf->info.bits_per_sample,
-                              &ppf->info.exponent_bits_per_sample);
       bool have_alpha = (format.num_channels == 2 || format.num_channels == 4);
       if (!have_alpha) {
         // Mark in the basic info that alpha channel was dropped.
         ppf->info.alpha_bits = 0;
       } else {
-        // Interleaved alpha channels has the same bit depth as color channels.
-        SetBitDepthFromDataType(format.data_type, &ppf->info.alpha_bits,
-                                &ppf->info.alpha_exponent_bits);
         if (dparams.unpremultiply_alpha) {
           // Mark in the basic info that alpha was unpremultiplied.
           ppf->info.alpha_premultiplied = false;
@@ -454,6 +460,18 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
           return false;
         }
       }
+      if (JXL_DEC_SUCCESS !=
+          JxlDecoderSetImageOutBitDepth(dec, &dparams.output_bitdepth)) {
+        fprintf(stderr, "JxlDecoderSetImageOutBitDepth failed\n");
+        return false;
+      }
+      UpdateBitDepth(dparams.output_bitdepth, format.data_type, &ppf->info);
+      bool have_alpha = (format.num_channels == 2 || format.num_channels == 4);
+      if (have_alpha) {
+        // Interleaved alpha channels has the same bit depth as color channels.
+        ppf->info.alpha_bits = ppf->info.bits_per_sample;
+        ppf->info.alpha_exponent_bits = ppf->info.exponent_bits_per_sample;
+      }
       JxlPixelFormat ec_format = format;
       ec_format.num_channels = 1;
       for (auto& eci : ppf->extra_channels_info) {
@@ -479,9 +497,8 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
           fprintf(stderr, "JxlDecoderSetExtraChannelBuffer failed\n");
           return false;
         }
-        SetBitDepthFromDataType(ec_format.data_type,
-                                &eci.ec_info.bits_per_sample,
-                                &eci.ec_info.exponent_bits_per_sample);
+        UpdateBitDepth(dparams.output_bitdepth, ec_format.data_type,
+                       &eci.ec_info);
       }
     } else if (status == JXL_DEC_SUCCESS) {
       // Decoding finished successfully.

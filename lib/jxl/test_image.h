@@ -186,10 +186,10 @@ void FillPackedImage(const T& info, uint16_t seed, extras::PackedImage* image) {
       // put some shape in there for visual debugging
       if ((x - circle_x) * (x - circle_x) + (y - circle_y) * (y - circle_y) <
           circle_r * circle_r) {
-        r = ((65535 - x * y) ^ seed) * imul16;
-        g = ((x << 8) + y + seed) * imul16;
-        b = ((y << 8) + x * seed) * imul16;
-        a = (32768 + x * 256 - y) * imul16;
+        r = std::min(1.0f, ((65535 - x * y) ^ seed) * imul16);
+        g = std::min(1.0f, ((x << 8) + y + seed) * imul16);
+        b = std::min(1.0f, ((y << 8) + x * seed) * imul16);
+        a = std::min(1.0f, (32768 + x * 256 - y) * imul16);
       } else if (x > rect_x0 && x < rect_x1 && y > rect_y0 && y < rect_y1) {
         r = rngf(1.0f);
         g = rngf(1.0f);
@@ -205,7 +205,7 @@ void FillPackedImage(const T& info, uint16_t seed, extras::PackedImage* image) {
         StoreValue(r, info, format, &out);
         StoreValue(g, info, format, &out);
         StoreValue(b, info, format, &out);
-      } else if (format.num_channels == 3) {
+      } else if (format.num_channels == 4) {
         StoreValue(r, info, format, &out);
         StoreValue(g, info, format, &out);
         StoreValue(b, info, format, &out);

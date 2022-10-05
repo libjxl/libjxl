@@ -1450,6 +1450,21 @@ JXL_EXPORT size_t JxlDecoderGetIntendedDownsamplingRatio(JxlDecoder* dec);
  */
 JXL_EXPORT JxlDecoderStatus JxlDecoderFlushImage(JxlDecoder* dec);
 
+/**
+ * Sets the bit depth of the output buffer or callback.
+ *
+ * Can be called after @ref JxlDecoderSetImageOutBuffer or @ref
+ * JxlDecoderSetImageOutCallback. For float pixel data types, only the default
+ * @ref JXL_BIT_DEPTH_FROM_PIXEL_FORMAT setting is supported.
+ *
+ * @param dec decoder object
+ * @param bit_depth the bit depth setting of the pixel output
+ * @return @ref JXL_DEC_SUCCESS on success, @ref JXL_DEC_ERROR on error, such as
+ *     incompatible custom bit depth and pixel data type.
+ */
+JXL_EXPORT JxlDecoderStatus
+JxlDecoderSetImageOutBitDepth(JxlDecoder* dec, const JxlBitDepth* bit_depth);
+
 #if defined(__cplusplus) || defined(c_plusplus)
 }
 #endif
