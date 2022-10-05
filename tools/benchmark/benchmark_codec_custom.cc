@@ -214,7 +214,7 @@ ImageCodec* CreateNewCustomCodec(const BenchmarkArgs& args) {
 namespace jxl {
 
 ImageCodec* CreateNewCustomCodec(const BenchmarkArgs& args) { return nullptr; }
-Status AddCommandLineOptionsCustomCodec(BenchmarkArgs* args) { return false; }
+Status AddCommandLineOptionsCustomCodec(BenchmarkArgs* args) { return true; }
 
 }  // namespace jxl
 
