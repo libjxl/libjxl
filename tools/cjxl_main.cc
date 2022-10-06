@@ -1004,8 +1004,6 @@ int main(int argc, char** argv) {
     }
   }
   if (!args.quiet) {
-    const double bpp =
-        static_cast<double>(compressed.size() * jxl::kBitsPerByte) / pixels;
     fprintf(stderr, "Compressed to %" PRIuS " bytes ", compressed.size());
     // For lossless jpeg-reconstruction, we don't print some stats, since we
     // don't have easy access to the image dimensions.
@@ -1013,6 +1011,8 @@ int main(int argc, char** argv) {
       fprintf(stderr, "including container ");
     }
     if (!args.lossless_jpeg) {
+      const double bpp =
+          static_cast<double>(compressed.size() * jxl::kBitsPerByte) / pixels;
       fprintf(stderr, "(%.3f bpp%s).\n", bpp / ppf.frames.size(),
               ppf.frames.size() == 1 ? "" : "/frame");
       JXL_CHECK(stats.Print(num_worker_threads));
