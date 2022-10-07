@@ -8,6 +8,7 @@
 
 #include <fstream>
 #include <iostream>
+#include <istream>
 #include <unordered_map>
 
 #include "lib/jxl/base/file_io.h"
@@ -418,10 +419,17 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
   CodecInOut io;
   int have_next = 0;
 
-  std::ifstream f(in);
+  std::istream* f = &std::cin;
+  std::ifstream file;
+
+  if (strcmp(in, "-")) {
+    file.open(in, std::ifstream::in);
+    f = &file;
+  }
+
   auto tok = [&f]() {
     std::string out;
-    f >> out;
+    *f >> out;
     return out;
   };
   if (!ParseNode(tok, tree, spline_data, cparams, width, height, io, have_next,
@@ -488,7 +496,9 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
 
   compressed = std::move(writer).TakeBytes();
 
-  if (!WriteFile(compressed, out)) {
+  if (!strcmp(out, "-")) {
+    fwrite(compressed.data(), 1, compressed.size(), stdout);
+  } else if (!WriteFile(compressed, out)) {
     fprintf(stderr, "Failed to write to \"%s\"\n", out);
     return 1;
   }
@@ -498,7 +508,8 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
 }  // namespace jxl
 
 int main(int argc, char** argv) {
-  if ((argc != 3 && argc != 4) || !strcmp(argv[1], argv[2])) {
+  if ((argc != 3 && argc != 4) ||
+      (strcmp(argv[1], "-") && !strcmp(argv[1], argv[2]))) {
     fprintf(stderr, "Usage: %s tree_in.txt out.jxl [tree_drawing]\n", argv[0]);
     return 1;
   }
