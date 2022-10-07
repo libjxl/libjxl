@@ -122,17 +122,20 @@ struct CompressArgs {
         "    0.0 = mathematically lossless. Default for already-lossy input "
         "(JPEG/GIF).\n"
         "    1.0 = visually lossless. Default for other input.\n"
-        "    Recommended range: 0.5 .. 3.0. Mutually exclusive with --quality.",
+        "    Recommended range: 0.5 .. 3.0. Allowed range: 0.0 ... 25.0.\n"
+        "    Mutually exclusive with --quality.",
         &distance, &ParseFloat);
 
     // High-level options
     opt_quality_id = cmdline->AddOptionValue(
         'q', "quality", "QUALITY",
-        "Quality setting (is remapped to --distance). Range: -inf .. 100.\n"
+        "Quality setting (is remapped to --distance)."
         "    100 = mathematically lossless. Default for already-lossy input "
         "(JPEG/GIF).\n"
-        "    Other input gets encoded as per --distance default.\n"
-        "    Positive quality values roughly match libjpeg quality.\n"
+        "    Other input gets encoded as per --distance default,\n"
+        "    which corresponds to quality 90.\n"
+        "    Quality values roughly match libjpeg quality.\n"
+        "    Recommended range: 68 .. 96. Allowed range: 0 .. 100.\n"
         "    Mutually exclusive with --distance.",
         &quality, &ParseFloat);
 
@@ -630,7 +633,8 @@ void SetDistanceFromFlags(CommandLineParser* cmdline, CompressArgs* args,
     double distance = args->quality >= 100 ? 0.0
                       : args->quality >= 30
                           ? 0.1 + (100 - args->quality) * 0.09
-                          : 6.24 + pow(2.5, (30 - args->quality) / 5.0) / 6.25;
+                          : 53.0 / 3000.0 * args->quality * args->quality -
+                                23.0 / 20.0 * args->quality + 25.0;
     args->distance = distance;
     distance_set = true;
   }

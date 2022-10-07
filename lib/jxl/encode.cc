@@ -962,7 +962,8 @@ JxlEncoderStatus JxlEncoderSetFrameDistance(
     JxlEncoderFrameSettings* frame_settings, float distance) {
   if (distance < 0.f || distance > 25.f) {
     return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
-                         "Distance has to be in [0.0..25.0]");
+                         "Distance has to be in [0.0..25.0] (corresponding to "
+                         "quality in [0.0..100.0])");
   }
   if (distance > 0.f && distance < 0.01f) {
     distance = 0.01f;
