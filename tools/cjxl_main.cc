@@ -872,6 +872,9 @@ void ProcessFlags(const jxl::extras::Codec codec,
   params->override_bitdepth = args->override_bitdepth;
   params->codestream_level = args->codestream_level;
   params->premultiply = args->premultiply;
+  if (codec == jxl::extras::Codec::kPNM) {
+    params->input_bitdepth.type = JXL_BIT_DEPTH_FROM_CODESTREAM;
+  }
 }
 
 }  // namespace tools

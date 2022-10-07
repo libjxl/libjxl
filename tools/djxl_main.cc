@@ -62,11 +62,13 @@ struct DecompressArgs {
                             "value means the machine default.",
                             &num_threads, &ParseUnsigned);
 
-    // TODO(szabadka) Implement this.
-    cmdline->AddOptionValue('\0', "bits_per_sample", "N",
-                            "Sets the output bit depth. The default 0 value "
-                            "means the original (input) bit depth.",
-                            &bits_per_sample, &ParseUnsigned);
+    opt_bits_per_sample_id = cmdline->AddOptionValue(
+        '\0', "bits_per_sample", "N",
+        "Sets the output bit depth. The 0 value (default for PNM output) "
+        "means the original (input) bit depth. The -1 value (default for "
+        "other codecs) means the full bit depth of the output pixel "
+        "format.",
+        &bits_per_sample, &ParseSigned);
 
     cmdline->AddOptionValue('\0', "display_nits", "N",
                             "If set to a non-zero value, tone maps the image "
@@ -169,7 +171,7 @@ struct DecompressArgs {
   size_t num_reps = 1;
   bool disable_output = false;
   size_t num_threads = 0;
-  size_t bits_per_sample = 0;
+  int bits_per_sample = -1;
   double display_nits = 0.0;
   std::string color_space;
   uint32_t downsampling = 0;
@@ -185,6 +187,7 @@ struct DecompressArgs {
   bool print_read_bytes = false;
   bool quiet = false;
   // References (ids) of specific options to check if they were matched.
+  CommandLineParser::OptionId opt_bits_per_sample_id = -1;
   CommandLineParser::OptionId opt_jpeg_quality_id = -1;
 };
 
@@ -263,6 +266,12 @@ bool DecompressJxlToPackedPixelFile(
   dparams.runner = JxlThreadParallelRunner;
   dparams.runner_opaque = runner;
   dparams.allow_partial_input = args.allow_partial_files;
+  if (args.bits_per_sample == 0) {
+    dparams.output_bitdepth.type = JXL_BIT_DEPTH_FROM_CODESTREAM;
+  } else if (args.bits_per_sample > 0) {
+    dparams.output_bitdepth.type = JXL_BIT_DEPTH_CUSTOM;
+    dparams.output_bitdepth.bits_per_sample = args.bits_per_sample;
+  }
   const double t0 = jxl::Now();
   if (!jxl::extras::DecodeImageJXL(compressed.data(), compressed.size(),
                                    dparams, decoded_bytes, ppf)) {
@@ -352,6 +361,10 @@ int main(int argc, const char* argv[]) {
       fprintf(stderr, "Warning: colorspace ignored for EXR output\n");
     }
     args.color_space = force_colorspace;
+  }
+  if (codec == jxl::extras::Codec::kPNM &&
+      !cmdline.GetOption(args.opt_jpeg_quality_id)->matched()) {
+    args.bits_per_sample = 0;
   }
 
   jpegxl::tools::SpeedStats stats;
