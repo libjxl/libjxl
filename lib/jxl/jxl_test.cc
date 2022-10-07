@@ -17,6 +17,7 @@
 
 #include "gtest/gtest.h"
 #include "lib/extras/codec.h"
+#include "lib/extras/enc/encode.h"
 #include "lib/extras/packed_image.h"
 #include "lib/jxl/aux_out.h"
 #include "lib/jxl/base/compiler_specific.h"
@@ -1425,6 +1426,44 @@ TEST(JxlTest, RoundtripUnsignedCustomBitdepthLossless) {
 
         ASSERT_TRUE(test::SamePixels(t.ppf(), ppf_out));
       }
+    }
+  }
+}
+
+TEST(JxlTest, LosslessPNMRoundtrip) {
+  static const char* kChannels[] = {"", "g", "ga", "rgb", "rgba"};
+  static const char* kExtension[] = {"", ".pgm", ".pam", ".ppm", ".pam"};
+  for (size_t bit_depth = 1; bit_depth <= 16; ++bit_depth) {
+    for (size_t channels = 1; channels <= 4; ++channels) {
+      if (bit_depth == 1 && (channels == 2 || channels == 4)) continue;
+      std::string extension(kExtension[channels]);
+      std::string filename = "jxl/flower/flower_small." +
+                             std::string(kChannels[channels]) + ".depth" +
+                             std::to_string(bit_depth) + extension;
+      const PaddedBytes orig = ReadTestData(filename);
+      test::TestImage t;
+      if (channels < 3) t.SetColorEncoding("Gra_D65_Rel_SRG");
+      t.DecodeFromBytes(orig);
+
+      JXLCompressParams cparams = CompressParamsForLossless();
+      cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 1);  // kLightning
+      cparams.input_bitdepth.type = JXL_BIT_DEPTH_FROM_CODESTREAM;
+
+      JXLDecompressParams dparams;
+      dparams.accepted_formats.push_back(t.ppf().frames[0].color.format);
+      dparams.output_bitdepth.type = JXL_BIT_DEPTH_FROM_CODESTREAM;
+
+      PackedPixelFile ppf_out;
+      Roundtrip(t.ppf(), cparams, dparams, nullptr, &ppf_out);
+
+      extras::EncodedImage encoded;
+      auto encoder = extras::Encoder::FromExtension(extension);
+      ASSERT_TRUE(encoder.get());
+      ASSERT_TRUE(encoder->Encode(ppf_out, &encoded, nullptr));
+      ASSERT_EQ(encoded.bitstreams.size(), 1);
+      ASSERT_EQ(orig.size(), encoded.bitstreams[0].size());
+      EXPECT_EQ(0,
+                memcmp(orig.data(), encoded.bitstreams[0].data(), orig.size()));
     }
   }
 }
