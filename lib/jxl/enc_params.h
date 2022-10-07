@@ -246,13 +246,12 @@ struct CompressParams {
 static constexpr float kMinButteraugliForDynamicAR = 0.5f;
 static constexpr float kMinButteraugliForDots = 3.0f;
 static constexpr float kMinButteraugliToSubtractOriginalPatches = 3.0f;
-static constexpr float kMinButteraugliDistanceForProgressiveDc = 4.5f;
 
 // Always off
 static constexpr float kMinButteraugliForNoise = 99.0f;
 
 // Minimum butteraugli distance the encoder accepts.
-static constexpr float kMinButteraugliDistance = 0.01f;
+static constexpr float kMinButteraugliDistance = 0.001f;
 
 // Tile size for encoder-side processing. Must be equal to color tile dim in the
 // current implementation.
