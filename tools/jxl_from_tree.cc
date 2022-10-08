@@ -467,7 +467,7 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
 
   while (true) {
     PassesEncoderState enc_state;
-    enc_state.heuristics = make_unique<Heuristics>(tree);
+    enc_state.heuristics = jxl::make_unique<Heuristics>(tree);
     enc_state.shared.image_features.splines =
         SplinesFromSplineData(spline_data, enc_state.shared.cmap);
 
