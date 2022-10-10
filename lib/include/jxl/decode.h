@@ -16,6 +16,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "jxl/cms_interface.h"
 #include "jxl/codestream_header.h"
 #include "jxl/color_encoding.h"
 #include "jxl/jxl_export.h"
@@ -833,10 +834,19 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetColorAsICCProfile(
  * No matter what, the @ref JXL_COLOR_PROFILE_TARGET_DATA must still be queried
  * to know the actual data format of the decoded pixels after decoding.
  *
- * The JXL decoder has no color management system built in, but can convert XYB
- * color to any of the ones supported by JxlColorEncoding. Note that if the
- * requested color encoding has a narrower gamut, or the white points differ,
- * then the resulting image can have significant color distortion.
+ * The JXL decoder has no color management system (CMS) built in, but can
+ * convert XYB color to any of the ones supported by JxlColorEncoding. Note that
+ * if the requested color encoding has a narrower gamut, or the white points
+ * differ, then the resulting image can have significant color distortion.
+ *
+ * Can be used with a CMS by setting it via JxlDecoderSetCms, in which case it
+ * not only can convert to color profile supported by JxlColorEncoding, but to
+ * those supported by the CMS. JxlDecoderSetCms must not be called after
+ * JxlDecoderSetPreferredColorProfile, but it can be optionally called before.
+ * When JxlDecoderSetCms has been called, JxlDecoderSetPreferredColorProfile is
+ * an alternative to JxlDecoderSetICCProfile and only one of these two must be
+ * used. This one sets the color encoding as a @ref JxlColorEncoding, while the
+ * other sets it as ICC binary data.
  *
  * Can only be set after the @ref JXL_DEC_COLOR_ENCODING event occurred and
  * before any other event occurred, and can affect the result of @ref
@@ -882,21 +892,22 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetDesiredIntensityTarget(
  * JxlDecoderSetPreferredColorProfile can be used, but there is no guarantee
  * that the decoded image will be returned in the preferred color encoding. If
  * however a CMS is set using this function, then the function
- * JxlDecoderSetColorEncoding or JxlDecoderSetICCProfile can be used and the
- * decoded image will then be guaranteed to be in the requested color encoding.
+ * JxlDecoderSetPreferredColorProfile or JxlDecoderSetICCProfile can be used and
+ * the decoded image will then be guaranteed to be in the requested color
+ * encoding.
  *
- * Only one of JxlDecoderSetPreferredColorProfile, JxlDecoderSetColorEncoding
- * and JxlDecoderSetICCProfile should be called. The CMS will not be used in
- * case JxlDecoderSetPreferredColorProfile is used; in the other two cases
- * the CMS will be used if the desired conversion cannot be performed by the
- * decoder. In any case, the color encoding of the decoded image data can be
- * obtained through JxlDecoderGetColorAsICCProfile with
- * target=JXL_COLOR_PROFILE_TARGET_DATA. If a desired color encoding was set
- * with JxlDecoderSetColorEncoding or JxlDecoderSetICCProfile, the resulting ICC
- * profile will always be equivalent to the desired encoding; if a preferred
- * color encoding was set with JxlDecoderSetPreferredColorProfile, this will not
- * necessarily be the case (it will only be the case if the decoder can do the
- * conversion without using the CMS).
+ * Only one of JxlDecoderSetPreferredColorProfile and JxlDecoderSetICCProfile
+ * should be called. The CMS will be used if the desired conversion cannot be
+ * performed by the decoder. In any case, the color encoding of the decoded
+ * image data can be obtained through JxlDecoderGetColorAsICCProfile with
+ * target=JXL_COLOR_PROFILE_TARGET_DATA. If a CMS was set with JxlDecoderSetCms
+ * and that CMS can do the conversion to a desired color encoding set with
+ * JxlDecoderSetPreferredColorEncoding or JxlDecoderSetICCProfile, the resulting
+ * ICC profile will always be equivalent to the desired encoding. If no CMS was
+ * set with JxlDecoderSetCms and a preferred color encoding was set with
+ * JxlDecoderSetPreferredColorProfile, this will not necessarily be the case (it
+ * will only be the case if the decoder can do the conversion without using the
+ * CMS).
  *
  * @param dec decoder object.
  * @param cms structure representing a CMS implementation. See JxlCmsInterface
@@ -905,28 +916,12 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetDesiredIntensityTarget(
 JXL_EXPORT void JxlDecoderSetCms(JxlDecoder* dec, JxlCmsInterface cms);
 
 /**
- * Sets the desired output color encoding of the decoded image. This function
- * can only be used if JxlDecoderSetCms was previously set. This is an
- * alternative to JxlDecoderSetICCProfile and only one of these two must be
- * used. This one sets the color encoding as a @ref JxlColorEncoding, while the
- * other sets it as ICC binary data.
- *
- * @param dec decoder object.
- * @param color color encoding. Object owned by the caller and its contents are
- * copied internally.
- * @return JXL_DEC_SUCCESS if the operation was successful, JXL_DEC_ERROR
- * otherwise.
- */
-JXL_EXPORT JxlDecoderStatus
-JxlDecoderSetColorEncoding(JxlDecoder* dec, const JxlColorEncoding* color);
-
-/**
  * Sets the desired output color encoding of the decoded image, as an ICC color
  * profile. This function can only be used if JxlDecoderSetCms was previously
  * set. The ICC profile has to be a valid RGB color profile (not grayscale or
- * CMYK). This is an alternative to JxlDecoderSetColorEncoding and only one of
- * these two must be used. This one sets the color encoding as ICC binary data,
- * while the other defines it as a @ref JxlColorEncoding.
+ * CMYK). This is an alternative to JxlDecodeSetPreferredColorEncoding and only
+ * one of these two must be used. This one sets the color encoding as ICC binary
+ * data, while the other defines it as a @ref JxlColorEncoding.
  *
  * @param dec decoder object.
  * @param icc_profile bytes of the ICC profile
