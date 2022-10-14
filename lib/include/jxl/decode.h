@@ -877,10 +877,10 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetDesiredIntensityTarget(
  * If no CMS has been set with @ref JxlDecoderSetCms, there are two cases:
  *
  * (1) Calling this function with a color encoding will convert XYB images to
- * the desired color encoding. Non-XYB images will not be converted to the
- * desired color space. In this case, if the requested color encoding has a
+ * the desired color encoding. In this case, if the requested color encoding has a
  * narrower gamut, or the white points differ, then the resulting image can have
- * significant color distortion.
+ * significant color distortion. Non-XYB images will not be converted to the
+ * desired color space.
  *
  * (2) Calling this function with an ICC profile will result in an error.
  *
