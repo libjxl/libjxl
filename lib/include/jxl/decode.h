@@ -829,33 +829,10 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetColorAsICCProfile(
     const JxlDecoder* dec, const JxlPixelFormat* unused_format,
     JxlColorProfileTarget target, uint8_t* icc_profile, size_t size);
 
-/** Sets the color profile to use for @ref JXL_COLOR_PROFILE_TARGET_DATA for the
- * special case when the decoder has a choice. This only has effect for a JXL
- * image where uses_original_profile is false. If uses_original_profile is true,
- * this setting is ignored and the decoder uses a profile related to the image.
- * No matter what, the @ref JXL_COLOR_PROFILE_TARGET_DATA must still be queried
- * to know the actual data format of the decoded pixels after decoding.
- *
- * The JXL decoder has no color management system built in, but can convert XYB
- * color to any of the ones supported by JxlColorEncoding. Note that if the
- * requested color encoding has a narrower gamut, or the white points differ,
- * then the resulting image can have significant color distortion.
- *
- * Can only be set after the @ref JXL_DEC_COLOR_ENCODING event occurred and
- * before any other event occurred, and can affect the result of @ref
- * JXL_COLOR_PROFILE_TARGET_DATA (but not of @ref
- * JXL_COLOR_PROFILE_TARGET_ORIGINAL), so should be used after getting @ref
- * JXL_COLOR_PROFILE_TARGET_ORIGINAL but before getting @ref
- * JXL_COLOR_PROFILE_TARGET_DATA. The color_encoding must be grayscale if
- * num_color_channels from the basic info is 1, RGB if num_color_channels from
- * the basic info is 3.
- *
- * If @ref JxlDecoderSetPreferredColorProfile is not used, then for images for
- * which uses_original_profile is false and with ICC color profile, the decoder
- * will choose linear sRGB for color images, linear grayscale for grayscale
- * images. This function only sets a preference, since for other images the
- * decoder has no choice what color profile to use, it is determined by the
- * image.
+/** Sets the desired output color profile either of the decoded image by calling
+ * @ref JxlDecoderSetOutputColorProfile, passing on @c color_encoding and
+ * setting @c icc_data to NULL. See @ref JxlDecoderSetOutputColorProfile for
+ * details.
  *
  * @param dec decoder object
  * @param color_encoding the default color encoding to set
@@ -863,7 +840,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetColorAsICCProfile(
  *     JXL_DEC_ERROR otherwise.
  *
  * @deprecated This function will be removed. Use @ref
- * JxlDecoderSetOutputColorProfile (possibly with @c icc_data set to NUL)
+ * JxlDecoderSetOutputColorProfile (possibly with @c icc_data set to NULL)
  *     instead.
  */
 JXL_DEPRECATED JXL_EXPORT JxlDecoderStatus JxlDecoderSetPreferredColorProfile(
