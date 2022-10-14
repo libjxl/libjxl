@@ -862,7 +862,8 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetColorAsICCProfile(
  * @return @ref JXL_DEC_SUCCESS if the preference was set successfully, @ref
  *     JXL_DEC_ERROR otherwise.
  *
- * @deprecated This function will be removed. Use @ref JxlDecoderSetOutputColorProfile
+ * @deprecated This function will be removed. Use @ref
+ * JxlDecoderSetOutputColorProfile (possibly with @c icc_data set to NUL)
  *     instead.
  */
 JXL_DEPRECATED JXL_EXPORT JxlDecoderStatus JxlDecoderSetPreferredColorProfile(
