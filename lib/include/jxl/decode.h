@@ -829,7 +829,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetColorAsICCProfile(
     const JxlDecoder* dec, const JxlPixelFormat* unused_format,
     JxlColorProfileTarget target, uint8_t* icc_profile, size_t size);
 
-/** Sets the desired output color profile either of the decoded image by calling
+/** Sets the desired output color profile of the decoded image by calling
  * @ref JxlDecoderSetOutputColorProfile, passing on @c color_encoding and
  * setting @c icc_data to NULL. See @ref JxlDecoderSetOutputColorProfile for
  * details.
@@ -860,18 +860,18 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetDesiredIntensityTarget(
     JxlDecoder* dec, float desired_intensity_target);
 
 /**
- * Sets the desired output color profile either of the decoded
- * image either from color a color encoding or an ICC profile. Valid calls of
- * this function have either @c color_encoding or @c icc_data set to NULL and
- * @c icc_size must be 0 if and only if @c icc_data is NULL.
+ * Sets the desired output color profile of the decoded image either from a
+ * color encoding or an ICC profile. Valid calls of this function have either @c
+ * color_encoding or @c icc_data set to NULL and @c icc_size must be 0 if and
+ * only if @c icc_data is NULL.
  *
  * Depending of whether a color management system (CMS) has been set the
  * behavior is as follows:
  *
- * If an color management system (CMS) has been set with @ref JxlDecoderSetCms,
- * and the CMS suppports output to the desired color encoding or icc profile,
- * the it will provide the output in that color encoding or icc profile. If the
- * desired color encoding or icc is not supported, then an error will be
+ * If a color management system (CMS) has been set with @ref JxlDecoderSetCms,
+ * and the CMS suppports output to the desired color encoding or ICC profile,
+ * the it will provide the output in that color encoding or ICC profile. If the
+ * desired color encoding or the ICC is not supported, then an error will be
  * returned.
  *
  * If no CMS has been set with @ref JxlDecoderSetCms, there are two cases:
