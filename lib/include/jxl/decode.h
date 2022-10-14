@@ -16,8 +16,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <cstdint>
-
 #include "jxl/cms_interface.h"
 #include "jxl/codestream_header.h"
 #include "jxl/color_encoding.h"
@@ -843,7 +841,9 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetColorAsICCProfile(
  * JxlDecoderSetOutputColorProfile (possibly with @c icc_data set to NULL)
  *     instead.
  */
-JXL_DEPRECATED JXL_EXPORT JxlDecoderStatus JxlDecoderSetPreferredColorProfile(
+// TODO(firsching): deprecate this function once JxlDecoderSetOutputColorProfile
+// is implemted.
+JXL_EXPORT JxlDecoderStatus JxlDecoderSetPreferredColorProfile(
     JxlDecoder* dec, const JxlColorEncoding* color_encoding);
 
 /** Requests that the decoder perform tone mapping to the peak display luminance
@@ -885,7 +885,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetDesiredIntensityTarget(
  * (2) Calling this function with an ICC profile will result in an error.
  *
  * In case @ref JxlDecoderSetOutputColorProfile is used with an ICC profile,
- * (after a in this case required call to @ref JxlDecocderSetCms), the ICC
+ * (after a in this case required call to JxlDecocderSetCms), the ICC
  * profile has to be a valid RGB or grayscale color profile.
  *
  * Can only be set after the @ref JXL_DEC_COLOR_ENCODING event occurred and
@@ -897,7 +897,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetDesiredIntensityTarget(
  * num_color_channels from the basic info is 1, RGB if num_color_channels from
  * the basic info is 3.
  *
- * This function must not be called after @ref JxlDecoderSetCms.
+ * This function must not be called after JxlDecoderSetCms.
  *
  * @param dec decoder orbject
  * @param color_encoding the output color encoding
