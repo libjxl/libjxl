@@ -477,6 +477,7 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
 
     io.frames[0].origin.x0 = x0;
     io.frames[0].origin.y0 = y0;
+    info.clamp = false;
 
     JXL_RETURN_IF_ERROR(EncodeFrame(cparams, info, metadata.get(), io.frames[0],
                                     &enc_state, GetJxlCms(), nullptr, &writer,
@@ -485,6 +486,7 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
     tree.clear();
     spline_data.splines.clear();
     have_next = 0;
+    cparams.manual_noise.clear();
     if (!ParseNode(tok, tree, spline_data, cparams, width, height, io,
                    have_next, x0, y0)) {
       return 1;
