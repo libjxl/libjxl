@@ -886,9 +886,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetDesiredIntensityTarget(
  *
  * In case @ref JxlDecoderSetOutputColorProfile is used with an ICC profile,
  * (after a in this case required call to @ref JxlDecocderSetCms), the ICC
- * profile has to be a either a valid RGB color profile (not grayscale or CMYK)
- * except when the original color encoding is already grayscale, in which case
- * the ICC profile can be grayscale or RGB.
+ * profile has to be a valid RGB or grayscale color profile.
  *
  * Can only be set after the @ref JXL_DEC_COLOR_ENCODING event occurred and
  * before any other event occurred, and can affect the result of @ref
