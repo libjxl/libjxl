@@ -146,6 +146,12 @@ struct CompressArgs {
         &effort, &ParseUnsigned, -1);
 
     cmdline->AddOptionValue(
+        '\0', "compress_boxes", "0|1",
+        "Disable/enable Brotli compression for metadata boxes "
+        "(not provided = default, 0 = disable, 1 = enable).",
+        &compress_boxes, &ParseOverride, 1);
+
+    cmdline->AddOptionValue(
         '\0', "brotli_effort", "B_EFFORT",
         "Brotli effort setting. Range: 0 .. 11.\n"
         "    Default: 9. Higher number is more effort (slower).",
@@ -454,6 +460,7 @@ struct CompressArgs {
   jxl::Override patches = jxl::Override::kDefault;
   jxl::Override gaborish = jxl::Override::kDefault;
   jxl::Override group_order = jxl::Override::kDefault;
+  jxl::Override compress_boxes = jxl::Override::kDefault;
 
   size_t faster_decoding = 0;
   int64_t resampling = -1;
@@ -876,6 +883,7 @@ void ProcessFlags(const jxl::extras::Codec codec,
   params->override_bitdepth = args->override_bitdepth;
   params->codestream_level = args->codestream_level;
   params->premultiply = args->premultiply;
+  params->compress_boxes = args->compress_boxes == jxl::Override::kOn;
   if (codec == jxl::extras::Codec::kPNM) {
     params->input_bitdepth.type = JXL_BIT_DEPTH_FROM_CODESTREAM;
   }

@@ -157,7 +157,7 @@ bool EncodeImageJXL(const JXLCompressParams& params, const PackedPixelFile& ppf,
         if (!box.bytes.empty() &&
             JXL_ENC_SUCCESS != JxlEncoderAddBox(enc, box.type, box.bytes.data(),
                                                 box.bytes.size(),
-                                                /*compress_box=*/JXL_FALSE)) {
+                                                params.compress_boxes)) {
           fprintf(stderr, "JxlEncoderAddBox() failed (%s).\n", box.type);
           return false;
         }
