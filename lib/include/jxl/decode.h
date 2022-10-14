@@ -877,22 +877,18 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetDesiredIntensityTarget(
  * If no CMS has been set with @ref JxlDecoderSetCms, there are two cases:
  *
  * (1) Calling this function with a color encoding will convert XYB images to
- * the desired color encoding and will do no conversion. In this case, if the
- * requested color encoding has a narrower gamut, or the white points differ,
- * then the resulting image can have significant color distortion.
+ * the desired color encoding. Non-XYB images will not be converted to the
+ * desired color space. In this case, if the requested color encoding has a
+ * narrower gamut, or the white points differ, then the resulting image can have
+ * significant color distortion.
  *
  * (2) Calling this function with an ICC profile will result in an error.
  *
- *
- * If @ref JxlDecoderSetOutputColorProfile is not used, then for images for
- * which uses_original_profile is false and with ICC color profile, the decoder
- * will choose linear sRGB for color images, linear grayscale for grayscale
- * images.
- *
- * In case this is used with an ICC profile, (after a in this case required call
- * to @ref JxlDecocderSetCms), the ICC profile has to be a either a valid RGB
- * color profile (not grayscale or CMYK) except when the original color encoding
- * is already grayscale, in which case the ICC profile can be grayscale or RGB.
+ * In case @ref JxlDecoderSetOutputColorProfile is used with an ICC profile,
+ * (after a in this case required call to @ref JxlDecocderSetCms), the ICC
+ * profile has to be a either a valid RGB color profile (not grayscale or CMYK)
+ * except when the original color encoding is already grayscale, in which case
+ * the ICC profile can be grayscale or RGB.
  *
  * Can only be set after the @ref JXL_DEC_COLOR_ENCODING event occurred and
  * before any other event occurred, and can affect the result of @ref
@@ -904,7 +900,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetDesiredIntensityTarget(
  * the basic info is 3.
  *
  *
- * This function must not be called after @ref JxlDecoderSetCms
+ * This function must not be called after @ref JxlDecoderSetCms.
  *
  * @param dec decoder orbject
  * @param color_encoding the output color encoding
