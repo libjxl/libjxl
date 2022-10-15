@@ -866,6 +866,8 @@ void ProcessFlags(const jxl::extras::Codec codec,
   if (jpeg_bytes) {
     ProcessBoolFlag(args->jpeg_reconstruction_cfl,
                     JXL_ENC_FRAME_SETTING_JPEG_RECON_CFL, params);
+    ProcessBoolFlag(args->compress_boxes,
+                    JXL_ENC_FRAME_SETTING_JPEG_COMPRESS_BOXES, params);
   }
   // Set per-frame options.
   for (size_t num_frame = 0; num_frame < ppf.frames.size(); ++num_frame) {
@@ -883,7 +885,7 @@ void ProcessFlags(const jxl::extras::Codec codec,
   params->override_bitdepth = args->override_bitdepth;
   params->codestream_level = args->codestream_level;
   params->premultiply = args->premultiply;
-  params->compress_boxes = args->compress_boxes == jxl::Override::kOn;
+  params->compress_boxes = args->compress_boxes != jxl::Override::kOff;
   if (codec == jxl::extras::Codec::kPNM) {
     params->input_bitdepth.type = JXL_BIT_DEPTH_FROM_CODESTREAM;
   }
