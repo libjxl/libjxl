@@ -18,8 +18,13 @@
 namespace jxl {
 namespace extras {
 
-void DecodeJpegBlock(const int16_t* qblock, size_t c,
+void GatherBlockStats(const int16_t* coeffs, const size_t coeffs_size,
+                      int32_t* JXL_RESTRICT nonzeros,
+                      int32_t* JXL_RESTRICT sumabs);
+
+void DecodeJpegBlock(const int16_t* qblock,
                      const float* JXL_RESTRICT dequant_matrices,
+                     const float* JXL_RESTRICT biases,
                      float* JXL_RESTRICT scratch_space,
                      float* JXL_RESTRICT output, size_t output_stride);
 
