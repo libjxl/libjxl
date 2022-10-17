@@ -842,7 +842,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetColorAsICCProfile(
  *     instead.
  */
 // TODO(firsching): deprecate this function once JxlDecoderSetOutputColorProfile
-// is implemted.
+// is implemented.
 JXL_EXPORT JxlDecoderStatus JxlDecoderSetPreferredColorProfile(
     JxlDecoder* dec, const JxlColorEncoding* color_encoding);
 
@@ -897,7 +897,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetDesiredIntensityTarget(
  * num_color_channels from the basic info is 1, RGB if num_color_channels from
  * the basic info is 3.
  *
- * This function must not be called after JxlDecoderSetCms.
+ * This function must not be called before JxlDecoderSetCms.
  *
  * @param dec decoder orbject
  * @param color_encoding the output color encoding
