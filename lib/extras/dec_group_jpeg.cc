@@ -28,14 +28,10 @@ namespace jxl {
 namespace HWY_NAMESPACE {
 
 // These templates are not found via ADL.
-using hwy::HWY_NAMESPACE::And;
-using hwy::HWY_NAMESPACE::AndNot;
-using hwy::HWY_NAMESPACE::ApproximateReciprocal;
+using hwy::HWY_NAMESPACE::Abs;
 using hwy::HWY_NAMESPACE::Clamp;
 using hwy::HWY_NAMESPACE::Gt;
-using hwy::HWY_NAMESPACE::IfThenElse;
 using hwy::HWY_NAMESPACE::IfThenElseZero;
-using hwy::HWY_NAMESPACE::Lt;
 using hwy::HWY_NAMESPACE::NearestInt;
 using hwy::HWY_NAMESPACE::Rebind;
 using hwy::HWY_NAMESPACE::Vec;
@@ -46,66 +42,46 @@ using DI = HWY_FULL(int32_t);
 constexpr D d;
 constexpr DI di;
 
-static constexpr float kDefaultQuantBias[4] = {
-    1.0f - 0.05465007330715401f,
-    1.0f - 0.07005449891748593f,
-    1.0f - 0.049935103337343655f,
-    0.145f,
-};
-
-template <class DI>
-HWY_INLINE HWY_MAYBE_UNUSED Vec<Rebind<float, DI>> AdjustQuantBias(
-    DI di, const size_t c, const Vec<DI> quant_i,
-    const float* HWY_RESTRICT biases) {
-  const Rebind<float, DI> df;
-
-  const auto quant = ConvertTo(df, quant_i);
-
-  // Compare |quant|, keep sign bit for negating result.
-  const auto kSign = BitCast(df, Set(di, INT32_MIN));
-  const auto sign = And(quant, kSign);  // TODO(janwas): = abs ^ orig
-  const auto abs_quant = AndNot(kSign, quant);
-
-  // If |x| is 1, kZeroBias creates a different bias for each channel.
-  // We're implementing the following:
-  // if (quant == 0) return 0;
-  // if (quant == 1) return biases[c];
-  // if (quant == -1) return -biases[c];
-  // return quant - biases[3] / quant;
-
-  // Integer comparison is not helpful because Clang incurs bypass penalties
-  // from unnecessarily mixing integer and float.
-  const auto is_01 = Lt(abs_quant, Set(df, 1.125f));
-  const auto not_0 = Gt(abs_quant, Zero(df));
-
-  // Bitwise logic is faster than quant * biases[c].
-  const auto one_bias = IfThenElseZero(not_0, Xor(Set(df, biases[c]), sign));
-
-  // About 2E-5 worse than ReciprocalNR or division.
-  const auto bias =
-      NegMulAdd(Set(df, biases[3]), ApproximateReciprocal(quant), quant);
-
-  return IfThenElse(is_01, one_bias, bias);
+void GatherBlockStats(const int16_t* coeffs, const size_t coeffs_size,
+                      int32_t* JXL_RESTRICT nonzeros,
+                      int32_t* JXL_RESTRICT sumabs) {
+  for (size_t i = 0; i < coeffs_size; i += Lanes(d)) {
+    size_t k = i % kDCTBlockSize;
+    const Rebind<int16_t, DI> di16;
+    const Vec<DI> coeff = PromoteTo(di, Load(di16, coeffs + i));
+    const auto abs_coeff = Abs(coeff);
+    const auto not_0 = Gt(abs_coeff, Zero(di));
+    const auto nzero = IfThenElseZero(not_0, Set(di, 1));
+    Store(Add(nzero, Load(di, nonzeros + k)), di, nonzeros + k);
+    Store(Add(abs_coeff, Load(di, sumabs + k)), di, sumabs + k);
+  }
 }
 
-void DequantBlock(const int16_t* JXL_RESTRICT qblock, size_t c,
-                  const float* JXL_RESTRICT dequant_matrices,
+void DequantBlock(const int16_t* JXL_RESTRICT qblock,
+                  const float* JXL_RESTRICT dequant,
                   const float* JXL_RESTRICT biases, float* JXL_RESTRICT block) {
   for (size_t k = 0; k < kDCTBlockSize; k += Lanes(d)) {
-    const auto mul = Load(d, dequant_matrices + c * kDCTBlockSize + k);
-    Rebind<int16_t, DI> di16;
-    Vec<DI> quantized = PromoteTo(di, Load(di16, qblock + k));
-    const auto dequant = Mul(AdjustQuantBias(di, c, quantized, biases), mul);
+    const auto mul = Load(d, dequant + k);
+    const auto bias = Load(d, biases + k);
+    const Rebind<int16_t, DI> di16;
+    const Vec<DI> quant_i = PromoteTo(di, Load(di16, qblock + k));
+    const Rebind<float, DI> df;
+    const auto quant = ConvertTo(df, quant_i);
+    const auto abs_quant = Abs(quant);
+    const auto not_0 = Gt(abs_quant, Zero(df));
+    const auto sign_quant = Xor(quant, abs_quant);
+    const auto biased_quant = Sub(quant, Xor(bias, sign_quant));
+    const auto dequant = IfThenElseZero(not_0, Mul(biased_quant, mul));
     Store(dequant, d, block + k);
   }
 }
 
-void DecodeJpegBlock(const int16_t* qblock, size_t c,
-                     const float* JXL_RESTRICT dequant_matrices,
+void DecodeJpegBlock(const int16_t* qblock, const float* JXL_RESTRICT dequant,
+                     const float* JXL_RESTRICT biases,
                      float* JXL_RESTRICT scratch_space,
                      float* JXL_RESTRICT output, size_t output_stride) {
   HWY_ALIGN float* const block = scratch_space + kDCTBlockSize;
-  DequantBlock(qblock, c, dequant_matrices, kDefaultQuantBias, scratch_space);
+  DequantBlock(qblock, dequant, biases, scratch_space);
   // JPEG XL transposes the DCT, JPEG doesn't.
   Transpose<8, 8>::Run(DCTFrom(scratch_space, 8), DCTTo(block, 8));
   TransformToPixels(AcStrategy::DCT, block, output, output_stride,
@@ -161,8 +137,8 @@ void YCbCrToRGB(float* JXL_RESTRICT row0, float* JXL_RESTRICT row1,
   const auto cbcb = Set(df, 1.772f);
 
   for (size_t x = 0; x < xsize; x += Lanes(df)) {
-    const auto y_vec = Add(Load(df, row1 + x), c128);
-    const auto cb_vec = Load(df, row0 + x);
+    const auto y_vec = Add(Load(df, row0 + x), c128);
+    const auto cb_vec = Load(df, row1 + x);
     const auto cr_vec = Load(df, row2 + x);
     const auto r_vec = MulAdd(crcr, cr_vec, y_vec);
     const auto g_vec = MulAdd(cgcr, cr_vec, MulAdd(cgcb, cb_vec, y_vec));
@@ -241,6 +217,7 @@ HWY_AFTER_NAMESPACE();
 #if HWY_ONCE
 namespace jxl {
 namespace {
+HWY_EXPORT(GatherBlockStats);
 HWY_EXPORT(DecodeJpegBlock);
 HWY_EXPORT(Upsample2Horizontal);
 HWY_EXPORT(Upsample2Vertical);
@@ -250,12 +227,21 @@ HWY_EXPORT(WriteToPackedImage);
 }  // namespace
 
 namespace extras {
-void DecodeJpegBlock(const int16_t* qblock, size_t c,
+
+void GatherBlockStats(const int16_t* coeffs, const size_t coeffs_size,
+                      int32_t* JXL_RESTRICT nonzeros,
+                      int32_t* JXL_RESTRICT sumabs) {
+  return HWY_DYNAMIC_DISPATCH(GatherBlockStats)(coeffs, coeffs_size, nonzeros,
+                                                sumabs);
+}
+
+void DecodeJpegBlock(const int16_t* qblock,
                      const float* JXL_RESTRICT dequant_matrices,
+                     const float* JXL_RESTRICT biases,
                      float* JXL_RESTRICT scratch_space,
                      float* JXL_RESTRICT output, size_t output_stride) {
   return HWY_DYNAMIC_DISPATCH(DecodeJpegBlock)(
-      qblock, c, dequant_matrices, scratch_space, output, output_stride);
+      qblock, dequant_matrices, biases, scratch_space, output, output_stride);
 }
 
 void Upsample2Horizontal(float* JXL_RESTRICT row_in,
