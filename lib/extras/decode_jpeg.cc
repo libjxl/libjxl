@@ -59,10 +59,8 @@ bool IsYCbCrJpeg(const jpeg::JPEGData& jpeg_data) {
 // J. R. Price and M. Rabbani, "Dequantization bias for JPEG decompression"
 // Proceedings International Conference on Information Technology: Coding and
 // Computing (Cat. No.PR00540), 2000, pp. 30-35, doi: 10.1109/ITCC.2000.844179.
-void ComputeOptimalLaplacianBiases(const int num_blocks,
-                                   const std::vector<int>& nonzeros,
-                                   const std::vector<int>& sumabs,
-                                   float* biases) {
+void ComputeOptimalLaplacianBiases(const int num_blocks, const int* nonzeros,
+                                   const int* sumabs, float* biases) {
   for (size_t k = 1; k < kDCTBlockSize; ++k) {
     // Notation adapted from the article
     int N = num_blocks;
@@ -127,26 +125,6 @@ Status DecodeJpeg(const std::vector<uint8_t>& compressed,
     }
   }
 
-  std::vector<float> biases(nbcomp * kDCTBlockSize);
-  for (size_t c = 0; c < nbcomp; c++) {
-    const auto& comp = jpeg_data.components[c];
-    const auto& coeffs = comp.coeffs;
-    if (comp.h_samp_factor < max_h_samp || comp.v_samp_factor < max_v_samp) {
-      // Disable biases for subsampled chroma channels.
-      // TODO(szabadka) Figure out the distribution of AC coeffs of subsampled
-      // chroma components.
-      continue;
-    }
-    std::vector<int> nonzeros(kDCTBlockSize);
-    std::vector<int> sumabs(kDCTBlockSize);
-    int num_blocks = comp.width_in_blocks * comp.height_in_blocks;
-    // TODO(szabadka) Try to estimate block statistics instead of having to
-    // buffer all coefficients before dequantization.
-    GatherBlockStats(coeffs.data(), coeffs.size(), &nonzeros[0], &sumabs[0]);
-    ComputeOptimalLaplacianBiases(num_blocks, nonzeros, sumabs,
-                                  &biases[c * kDCTBlockSize]);
-  }
-
   JxlPixelFormat format = {nbcomp, output_data_type, JXL_LITTLE_ENDIAN, 0};
   ppf->frames.emplace_back(xsize, ysize, format);
   auto& frame = ppf->frames.back();
@@ -194,9 +172,18 @@ Status DecodeJpeg(const std::vector<uint8_t>& compressed,
   hwy::AlignedFreeUniquePtr<uint8_t[]> output_scratch =
       hwy::AllocateAligned<uint8_t>(bytes_per_pixel * kTempOutputLen);
 
+  // Per channel and per frequency statistics about the number of nonzeros and
+  // the sum of coefficient absolute values, used in dequantization bias
+  // computation.
+  std::vector<int> nonzeros(nbcomp * kDCTBlockSize);
+  std::vector<int> sumabs(nbcomp * kDCTBlockSize);
+  std::vector<size_t> num_processed_blocks(nbcomp);
+  std::vector<float> biases(nbcomp * kDCTBlockSize);
+
   for (size_t mcu_y = 0; mcu_y <= MCU_rows; mcu_y++) {
     for (size_t ci = 0; ci < nbcomp; ++ci) {
       size_t c = component_order[ci];
+      size_t k0 = c * kDCTBlockSize;
       auto& comp = jpeg_data.components[c];
       bool hups = comp.h_samp_factor < max_h_samp;
       bool vups = comp.v_samp_factor < max_v_samp;
@@ -235,6 +222,20 @@ Status DecodeJpeg(const std::vector<uint8_t>& compressed,
         }
       }
       if (mcu_y < MCU_rows) {
+        if (!hups && !vups) {
+          size_t num_coeffs = comp.width_in_blocks * kDCTBlockSize;
+          size_t offset = mcu_y * comp.width_in_blocks * kDCTBlockSize;
+          // Update statistics for this MCU row.
+          GatherBlockStats(&comp.coeffs[offset], num_coeffs, &nonzeros[k0],
+                           &sumabs[k0]);
+          num_processed_blocks[c] += comp.width_in_blocks;
+          if (mcu_y % 4 == 3) {
+            // Re-compute optimal biases every few MCU-rows.
+            ComputeOptimalLaplacianBiases(num_processed_blocks[c],
+                                          &nonzeros[k0], &sumabs[k0],
+                                          &biases[k0]);
+          }
+        }
         for (size_t iy = 0; iy < nblocks_y; ++iy) {
           size_t by = mcu_y * nblocks_y + iy;
           size_t y0 = mcu_y0 + iy * kBlockDim;
@@ -242,9 +243,8 @@ Status DecodeJpeg(const std::vector<uint8_t>& compressed,
               &comp.coeffs[by * comp.width_in_blocks * kDCTBlockSize];
           float* JXL_RESTRICT row_out = output->Row(y0) + kPaddingLeft;
           for (size_t bx = 0; bx < comp.width_in_blocks; ++bx) {
-            DecodeJpegBlock(&row_in[bx * kDCTBlockSize],
-                            &dequant[c * kDCTBlockSize],
-                            &biases[c * kDCTBlockSize], idct_scratch.get(),
+            DecodeJpegBlock(&row_in[bx * kDCTBlockSize], &dequant[k0],
+                            &biases[k0], idct_scratch.get(),
                             &row_out[bx * kBlockDim], output->PixelsPerRow());
           }
           if (hups) {
