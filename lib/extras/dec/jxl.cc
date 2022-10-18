@@ -11,6 +11,7 @@
 #include "lib/extras/dec/color_description.h"
 #include "lib/extras/enc/encode.h"
 #include "lib/jxl/base/printf_macros.h"
+#include "lib/jxl/exif.h"
 
 namespace jxl {
 namespace extras {
@@ -516,13 +517,27 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
     }
   }
   boxes.FinalizeOutput();
-  // Encoded Exif has a 4-byte offset, but for processing we expect the TIFF
-  // header at the start of the data.
-  constexpr uint8_t zero32[] = {0, 0, 0, 0};
-  if (ppf->metadata.exif.size() >= 4 &&
-      memcmp(ppf->metadata.exif.data(), zero32, 4) == 0) {
-    ppf->metadata.exif.erase(ppf->metadata.exif.begin(),
-                             ppf->metadata.exif.begin() + 4);
+  if (!ppf->metadata.exif.empty()) {
+    // Verify that Exif box has a valid TIFF header at the specified offset.
+    // Discard bytes preceding the header.
+    if (ppf->metadata.exif.size() >= 4) {
+      uint32_t offset = LoadBE32(ppf->metadata.exif.data());
+      if (offset <= ppf->metadata.exif.size() - 8) {
+        std::vector<uint8_t> exif(ppf->metadata.exif.begin() + 4 + offset,
+                                  ppf->metadata.exif.end());
+        bool bigendian;
+        if (IsExif(exif, &bigendian)) {
+          ppf->metadata.exif = std::move(exif);
+        } else {
+          fprintf(stderr, "Warning: invalid TIFF header in Exif\n");
+        }
+      } else {
+        fprintf(stderr, "Warning: invalid Exif offset: %" PRIu32 "\n", offset);
+      }
+    } else {
+      fprintf(stderr, "Warning: invalid Exif length: %" PRIuS "\n",
+              ppf->metadata.exif.size());
+    }
   }
   if (jpeg_bytes != nullptr) {
     if (!can_reconstruct_jpeg) return false;
