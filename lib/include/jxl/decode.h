@@ -830,16 +830,12 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetColorAsICCProfile(
 /** Sets the desired output color profile of the decoded image by calling
  * @ref JxlDecoderSetOutputColorProfile, passing on @c color_encoding and
  * setting @c icc_data to NULL. See @ref JxlDecoderSetOutputColorProfile for
- * details.
+ * details. See @ref JxlDecoderSetOutputColorProfile for details.
  *
  * @param dec decoder object
  * @param color_encoding the default color encoding to set
  * @return @ref JXL_DEC_SUCCESS if the preference was set successfully, @ref
  *     JXL_DEC_ERROR otherwise.
- *
- * @deprecated This function will be removed. Use @ref
- * JxlDecoderSetOutputColorProfile (possibly with @c icc_data set to NULL)
- *     instead.
  */
 // TODO(firsching): deprecate this function once JxlDecoderSetOutputColorProfile
 // is implemented.
@@ -865,12 +861,12 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetDesiredIntensityTarget(
  * color_encoding or @c icc_data set to NULL and @c icc_size must be 0 if and
  * only if @c icc_data is NULL.
  *
- * Depending of whether a color management system (CMS) has been set the
+ * Depending on whether a color management system (CMS) has been set the
  * behavior is as follows:
  *
  * If a color management system (CMS) has been set with @ref JxlDecoderSetCms,
  * and the CMS suppports output to the desired color encoding or ICC profile,
- * the it will provide the output in that color encoding or ICC profile. If the
+ * then it will provide the output in that color encoding or ICC profile. If the
  * desired color encoding or the ICC is not supported, then an error will be
  * returned.
  *
@@ -884,18 +880,14 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetDesiredIntensityTarget(
  *
  * (2) Calling this function with an ICC profile will result in an error.
  *
- * In case @ref JxlDecoderSetOutputColorProfile is used with an ICC profile,
- * (after a in this case required call to JxlDecocderSetCms), the ICC
- * profile has to be a valid RGB or grayscale color profile.
+ * If called with an ICC profile (after a call to @ref JxlDecoderSetCms), the
+ * ICC profile has to be a valid RGB or grayscale color profile
  *
  * Can only be set after the @ref JXL_DEC_COLOR_ENCODING event occurred and
- * before any other event occurred, and can affect the result of @ref
- * JXL_COLOR_PROFILE_TARGET_DATA (but not of @ref
- * JXL_COLOR_PROFILE_TARGET_ORIGINAL), so should be used after getting @ref
- * JXL_COLOR_PROFILE_TARGET_ORIGINAL but before getting @ref
- * JXL_COLOR_PROFILE_TARGET_DATA. The color_encoding must be grayscale if
- * num_color_channels from the basic info is 1, RGB if num_color_channels from
- * the basic info is 3.
+ * before any other event occurred, and should be used before getting
+ * JXL_COLOR_PROFILE_TARGET_DATA The color_encoding or ICC profile must be
+ * grayscale if num_color_channels from the basic info is 1, RGB if
+ * num_color_channels from the basic info is 3.
  *
  * This function must not be called before JxlDecoderSetCms.
  *
@@ -903,7 +895,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetDesiredIntensityTarget(
  * @param color_encoding the output color encoding
  * @param icc_data bytes of the icc profile
  * @param icc_size size of the icc profile in bytes
- * @return @ref JXL_DEC_SUCCESS if the preference was set successfully, @ref
+ * @return @ref JXL_DEC_SUCCESS if the color profile was set successfully, @ref
  *     JXL_DEC_ERROR otherwise.
  */
 JXL_EXPORT JxlDecoderStatus JxlDecoderSetOutputColorProfile(
@@ -923,6 +915,8 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetOutputColorProfile(
  * JxlCmsInterface for more details.
  */
 JXL_EXPORT void JxlDecoderSetCms(JxlDecoder* dec, JxlCmsInterface cms);
+// TODO(firsching): add a function JxlDecoderSetDefaultCms() for setting a
+// default in case libjxl is build with an CMS.
 
 /**
  * Returns the minimum size in bytes of the preview image output pixel buffer
