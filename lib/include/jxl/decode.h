@@ -830,15 +830,13 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetColorAsICCProfile(
 /** Sets the desired output color profile of the decoded image by calling
  * @ref JxlDecoderSetOutputColorProfile, passing on @c color_encoding and
  * setting @c icc_data to NULL. See @ref JxlDecoderSetOutputColorProfile for
- * details. See @ref JxlDecoderSetOutputColorProfile for details.
+ * details.
  *
  * @param dec decoder object
  * @param color_encoding the default color encoding to set
  * @return @ref JXL_DEC_SUCCESS if the preference was set successfully, @ref
  *     JXL_DEC_ERROR otherwise.
  */
-// TODO(firsching): deprecate this function once JxlDecoderSetOutputColorProfile
-// is implemented.
 JXL_EXPORT JxlDecoderStatus JxlDecoderSetPreferredColorProfile(
     JxlDecoder* dec, const JxlColorEncoding* color_encoding);
 
@@ -881,11 +879,11 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetDesiredIntensityTarget(
  * (2) Calling this function with an ICC profile will result in an error.
  *
  * If called with an ICC profile (after a call to @ref JxlDecoderSetCms), the
- * ICC profile has to be a valid RGB or grayscale color profile
+ * ICC profile has to be a valid RGB or grayscale color profile.
  *
  * Can only be set after the @ref JXL_DEC_COLOR_ENCODING event occurred and
  * before any other event occurred, and should be used before getting
- * JXL_COLOR_PROFILE_TARGET_DATA The color_encoding or ICC profile must be
+ * JXL_COLOR_PROFILE_TARGET_DATA. The color_encoding or ICC profile must be
  * grayscale if num_color_channels from the basic info is 1, RGB if
  * num_color_channels from the basic info is 3.
  *
