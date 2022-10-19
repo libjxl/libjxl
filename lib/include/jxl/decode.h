@@ -883,9 +883,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetDesiredIntensityTarget(
  *
  * Can only be set after the @ref JXL_DEC_COLOR_ENCODING event occurred and
  * before any other event occurred, and should be used before getting
- * JXL_COLOR_PROFILE_TARGET_DATA. The color_encoding or ICC profile must be
- * grayscale if num_color_channels from the basic info is 1, RGB if
- * num_color_channels from the basic info is 3.
+ * JXL_COLOR_PROFILE_TARGET_DATA.
  *
  * This function must not be called before JxlDecoderSetCms.
  *
