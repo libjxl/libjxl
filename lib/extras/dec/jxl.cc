@@ -288,6 +288,30 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
         fprintf(stderr, "SelectFormat failed\n");
         return false;
       }
+      // Update selected format to forced bit depth.
+      // if we don't set the bit depth here, the JxlPixelFormat
+      // will match the tagged format, regardless of what bit
+      // depth the user requests, which will fail verification
+      switch (dparams.output_bitdepth.bits_per_sample) {
+        case 0:
+          // output_bitdepth == 0 means default
+          break;
+        case 8:
+          format.data_type = JXL_TYPE_UINT8;
+          break;
+        case 16:
+          format.data_type = JXL_TYPE_UINT16;
+          break;
+        case 32:
+          format.data_type = JXL_TYPE_FLOAT;
+          break;
+        default:
+          fprintf(
+              stderr,
+              "Invalid Bit Depth Requested: %d. Only 8, 16, and 32 supported\n",
+              dparams.output_bitdepth.bits_per_sample);
+          return false;
+      }
       bool have_alpha = (format.num_channels == 2 || format.num_channels == 4);
       if (!have_alpha) {
         // Mark in the basic info that alpha channel was dropped.
