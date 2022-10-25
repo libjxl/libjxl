@@ -394,7 +394,7 @@ jobs:
 
     - name: Set EMSDK node version
       run: |
-        echo "NODE_JS='$(cat $HOME/.base_node_path)'" >> $EM_CONFIG
+        echo "NODE_JS='$(cat $HOME/.base_node_path)'" >> $EMSDK/.emscripten
         emsdk construct_env
 
     # TODO(deymo): Build and install other dependencies like libpng, libjpeg,
