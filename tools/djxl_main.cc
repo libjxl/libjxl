@@ -362,7 +362,7 @@ int main(int argc, const char* argv[]) {
     }
     args.color_space = force_colorspace;
   }
-  if (codec == jxl::extras::Codec::kPNM &&
+  if (codec == jxl::extras::Codec::kPNM && extension != ".pfm" &&
       !cmdline.GetOption(args.opt_jpeg_quality_id)->matched()) {
     args.bits_per_sample = 0;
   }
