@@ -72,6 +72,12 @@ roundtrip_test() {
       local dist="$("${comparator}" "${infn}" "${outfn}")"
       python3 -c "import sys; sys.exit(not ${dist} <= ${maxdist})"
 
+      # Test decoding to pfm.
+      local outfn="$(mktemp -p "$tmpdir").pfm"
+      "${decoder}" "${jxlfn}" "${outfn}"
+      local dist="$("${comparator}" "${infn}" "${outfn}")"
+      python3 -c "import sys; sys.exit(not ${dist} <= ${maxdist})"
+
       # Test decoding to jpg.
       outfn="$(mktemp -p "$tmpdir").jpg"
       "${decoder}" "${jxlfn}" "${outfn}" --num_reps 2
