@@ -72,11 +72,27 @@ roundtrip_test() {
       local dist="$("${comparator}" "${infn}" "${outfn}")"
       python3 -c "import sys; sys.exit(not ${dist} <= ${maxdist})"
 
+      # Test decoding to 16 bit png.
+      "${decoder}" "${jxlfn}" "${outfn}" --bits_per_sample 16
+      local dist="$("${comparator}" "${infn}" "${outfn}")"
+      python3 -c "import sys; sys.exit(not ${dist} <= ${maxdist} + 0.0005)"
+
       # Test decoding to pfm.
       local outfn="$(mktemp -p "$tmpdir").pfm"
       "${decoder}" "${jxlfn}" "${outfn}"
       local dist="$("${comparator}" "${infn}" "${outfn}")"
       python3 -c "import sys; sys.exit(not ${dist} <= ${maxdist})"
+
+      # Test decoding to ppm.
+      local outfn="$(mktemp -p "$tmpdir").ppm"
+      "${decoder}" "${jxlfn}" "${outfn}"
+      local dist="$("${comparator}" "${infn}" "${outfn}")"
+      python3 -c "import sys; sys.exit(not ${dist} <= ${maxdist})"
+
+      # Test decoding to 16 bit ppm.
+      "${decoder}" "${jxlfn}" "${outfn}" --bits_per_sample 16
+      local dist="$("${comparator}" "${infn}" "${outfn}")"
+      python3 -c "import sys; sys.exit(not ${dist} <= ${maxdist} + 0.0005)"
 
       # Test decoding to jpg.
       outfn="$(mktemp -p "$tmpdir").jpg"
