@@ -42,8 +42,8 @@ using DI = HWY_FULL(int32_t);
 constexpr D d;
 constexpr DI di;
 
-void GatherBlockStats(const int16_t* coeffs, const size_t coeffs_size,
-                      int32_t* JXL_RESTRICT nonzeros,
+void GatherBlockStats(const int16_t* JXL_RESTRICT coeffs,
+                      const size_t coeffs_size, int32_t* JXL_RESTRICT nonzeros,
                       int32_t* JXL_RESTRICT sumabs) {
   for (size_t i = 0; i < coeffs_size; i += Lanes(d)) {
     size_t k = i % kDCTBlockSize;
@@ -76,7 +76,8 @@ void DequantBlock(const int16_t* JXL_RESTRICT qblock,
   }
 }
 
-void DecodeJpegBlock(const int16_t* qblock, const float* JXL_RESTRICT dequant,
+void DecodeJpegBlock(const int16_t* JXL_RESTRICT qblock,
+                     const float* JXL_RESTRICT dequant,
                      const float* JXL_RESTRICT biases,
                      float* JXL_RESTRICT scratch_space,
                      float* JXL_RESTRICT output, size_t output_stride) {
@@ -228,14 +229,14 @@ HWY_EXPORT(WriteToPackedImage);
 
 namespace extras {
 
-void GatherBlockStats(const int16_t* coeffs, const size_t coeffs_size,
-                      int32_t* JXL_RESTRICT nonzeros,
+void GatherBlockStats(const int16_t* JXL_RESTRICT coeffs,
+                      const size_t coeffs_size, int32_t* JXL_RESTRICT nonzeros,
                       int32_t* JXL_RESTRICT sumabs) {
   return HWY_DYNAMIC_DISPATCH(GatherBlockStats)(coeffs, coeffs_size, nonzeros,
                                                 sumabs);
 }
 
-void DecodeJpegBlock(const int16_t* qblock,
+void DecodeJpegBlock(const int16_t* JXL_RESTRICT qblock,
                      const float* JXL_RESTRICT dequant_matrices,
                      const float* JXL_RESTRICT biases,
                      float* JXL_RESTRICT scratch_space,
