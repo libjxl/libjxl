@@ -762,6 +762,18 @@ JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
   enc->metadata.m.modular_16_bit_buffer_sufficient =
       (!info->uses_original_profile || info->bits_per_sample <= 12) &&
       info->alpha_bits <= 12;
+  if ((info->intrinsic_xsize > 0 || info->intrinsic_ysize > 0) &&
+      (info->intrinsic_xsize != info->xsize ||
+       info->intrinsic_ysize != info->ysize)) {
+    if (info->intrinsic_xsize > (1ull << 30ull) ||
+        info->intrinsic_ysize > (1ull << 30ull) ||
+        !enc->metadata.m.intrinsic_size.Set(info->intrinsic_xsize,
+                                            info->intrinsic_ysize)) {
+      return JXL_API_ERROR(enc, JXL_ENC_ERR_API_USAGE,
+                           "Invalid intrinsic dimensions");
+    }
+    enc->metadata.m.have_intrinsic_size = true;
+  }
 
   // The number of extra channels includes the alpha channel, so for example and
   // RGBA with no other extra channels, has exactly num_extra_channels == 1
