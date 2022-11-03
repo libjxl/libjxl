@@ -1171,7 +1171,7 @@ TEST(EncodeTest, CroppedFrameTest) {
   EXPECT_EQ(true, seen_frame);
 }
 
-TEST(EncodeTest, BoxTest) {
+TEST(EncodeTest, JXL_BOXES_TEST(BoxTest)) {
   // Test with uncompressed boxes and with brob boxes
   for (int compress_box = 0; compress_box <= 1; ++compress_box) {
     // Tests adding two metadata boxes with the encoder: an exif box before the

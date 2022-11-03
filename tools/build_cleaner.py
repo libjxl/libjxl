@@ -37,6 +37,7 @@ def GetPrefixLibFiles(repo_files, prefix, suffixes=('.h', '.cc', '.ui')):
   return prefix_files
 
 # Type holding the different types of sources in libjxl:
+#   * decoder and common sources for minimal decoder,
 #   * decoder and common sources,
 #   * encoder-only sources,
 #   * tests-only sources,
@@ -46,8 +47,9 @@ def GetPrefixLibFiles(repo_files, prefix, suffixes=('.h', '.cc', '.ui')):
 #   * libjxl (encoder+decoder) public include/ headers and
 #   * threads public include/ headers.
 JxlSources = collections.namedtuple(
-    'JxlSources', ['dec', 'enc', 'test', 'gbench', 'threads',
-                   'extras', 'jxl_public_hdrs', 'threads_public_hdrs'])
+    'JxlSources', ['dec_minimal', 'dec', 'enc', 'test',
+                   'gbench', 'threads', 'extras', 'jxl_public_hdrs',
+                   'threads_public_hdrs'])
 
 def SplitLibFiles(repo_files):
   """Splits the library files into the different groups.
@@ -117,6 +119,17 @@ def SplitLibFiles(repo_files):
   # The remaining of the files are in the dec_library.
   dec_srcs = lib_srcs
 
+  dec_opt_srcs = [
+    "lib/jxl/box_content_decoder.cc",
+    "lib/jxl/box_content_decoder.h",
+    "lib/jxl/decode_to_jpeg.cc",
+    "lib/jxl/decode_to_jpeg.h",
+  ]
+  dec_opt_srcs.extend([fn for fn in dec_srcs
+                       if fn.startswith('lib/jxl/jpeg')])
+  dec_opt_srcs_set = set(dec_opt_srcs)
+  dec_minimal_srcs = [fn for fn in dec_srcs if fn not in dec_opt_srcs_set]
+
   thread_srcs = GetPrefixLibFiles(repo_files, 'lib/threads/')
   thread_srcs = [fn for fn in thread_srcs
                  if not any(patt in fn for patt in testonly)]
@@ -124,8 +137,9 @@ def SplitLibFiles(repo_files):
 
   threads_public_hdrs = [fn for fn in public_hdrs if '_parallel_runner' in fn]
   jxl_public_hdrs = list(sorted(set(public_hdrs) - set(threads_public_hdrs)))
-  return JxlSources(dec_srcs, enc_srcs, test_srcs, gbench_srcs, thread_srcs,
-                    extras_srcs, jxl_public_hdrs, threads_public_hdrs)
+  return JxlSources(dec_minimal_srcs, dec_srcs, enc_srcs, test_srcs,
+                    gbench_srcs, thread_srcs, extras_srcs, jxl_public_hdrs,
+                    threads_public_hdrs)
 
 
 def CleanFile(args, filename, pattern_data_list):
@@ -203,7 +217,7 @@ def BuildCleaner(args):
   jxl_cmake_patterns = []
   jxl_cmake_patterns.append(
       (r'set\(JPEGXL_INTERNAL_SOURCES_DEC\n([^\)]+)\)',
-       ''.join('  %s\n' % fn[len('lib/'):] for fn in jxl_src.dec)))
+       ''.join('  %s\n' % fn[len('lib/'):] for fn in jxl_src.dec_minimal)))
   jxl_cmake_patterns.append(
       (r'set\(JPEGXL_INTERNAL_SOURCES_ENC\n([^\)]+)\)',
        ''.join('  %s\n' % fn[len('lib/'):] for fn in jxl_src.enc)))
