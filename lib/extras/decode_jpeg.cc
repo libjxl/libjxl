@@ -30,6 +30,11 @@ constexpr int kJpegHuffmanAlphabetSize = 256;
 constexpr int kMaxQuantTables = 4;
 constexpr int kJpegDCAlphabetSize = 12;
 constexpr int kMaxDimPixels = 65535;
+// Max 14 block per MCU (when 1 channel is subsampled)
+// Max 64 nonzero coefficients per block
+// Max 16 symbol bits plus 11 extra bits per nonzero symbol
+// Max 2 bytes per 8 bits (worst case is all bytes are escaped 0xff)
+constexpr int kMaxMCUByteSize = 6048;
 constexpr uint8_t kIccProfileTag[12] = "ICC_PROFILE";
 
 constexpr int kJpegHuffmanRootTableBits = 8;
@@ -1219,7 +1224,9 @@ JpegDecoder::Status JpegDecoder::ProcessScan(const uint8_t* data, size_t len,
     if (codestream_bits_ahead_ > 0) {
       br.ReadBits(codestream_bits_ahead_);
     }
-    SaveMCUCodingState();
+    if (start_pos + kMaxMCUByteSize > len) {
+      SaveMCUCodingState();
+    }
 
     // Decode one MCU.
     bool scan_ok = true;
