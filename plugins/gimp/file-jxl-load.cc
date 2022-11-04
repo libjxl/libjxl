@@ -16,6 +16,11 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
   GimpColorProfile *profile_icc = nullptr;
   GimpColorProfile *profile_int = nullptr;
   bool is_linear = false;
+  unsigned long xsize = 0, ysize = 0;
+  long crop_x0 = 0, crop_y0 = 0;
+  size_t layer_idx = 0;
+  uint32_t frame_duration = 0;
+  double tick_duration = 1.0;
 
   gint32 layer;
 
@@ -28,6 +33,7 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
   GimpPrecision precision = GIMP_PRECISION_U16_GAMMA;
   JxlBasicInfo info = {};
   JxlPixelFormat format = {};
+  JxlAnimationHeader animation = {};
 
   format.num_channels = 4;
   format.data_type = JXL_TYPE_FLOAT;
@@ -55,7 +61,8 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
   if (JXL_DEC_SUCCESS !=
       JxlDecoderSubscribeEvents(dec.get(), JXL_DEC_BASIC_INFO |
                                                JXL_DEC_COLOR_ENCODING |
-                                               JXL_DEC_FULL_IMAGE)) {
+                                               JXL_DEC_FULL_IMAGE |
+                                               JXL_DEC_FRAME)) {
     g_printerr(LOAD_PROC " Error: JxlDecoderSubscribeEvents failed\n");
     return false;
   }
@@ -64,6 +71,11 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
                                                      JxlResizableParallelRunner,
                                                      runner.get())) {
     g_printerr(LOAD_PROC " Error: JxlDecoderSetParallelRunner failed\n");
+    return false;
+  }
+
+  if (JXL_DEC_SUCCESS != JxlDecoderSetCoalescing(dec.get(), JXL_FALSE)) {
+    g_printerr(LOAD_PROC " Error: JxlDecoderSetCoalescing failed\n");
     return false;
   }
 
@@ -81,9 +93,16 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
         return false;
       }
 
+      xsize = info.xsize;
+      ysize = info.ysize;
+      if (info.have_animation) {
+        animation = info.animation;
+        tick_duration = animation.tps_numerator / animation.tps_denominator;
+      }
+
       JxlResizableParallelRunnerSetThreads(
           runner.get(),
-          JxlResizableParallelRunnerSuggestThreads(info.xsize, info.ysize));
+          JxlResizableParallelRunnerSuggestThreads(xsize, ysize));
     } else if (status == JXL_DEC_COLOR_ENCODING) {
       // check for ICC profile
       size_t icc_size = 0;
@@ -280,10 +299,10 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
       // create new image
       if (is_linear) {
         *image_id = gimp_image_new_with_precision(
-            info.xsize, info.ysize, image_type, GIMP_PRECISION_FLOAT_LINEAR);
+            xsize, ysize, image_type, GIMP_PRECISION_FLOAT_LINEAR);
       } else {
         *image_id = gimp_image_new_with_precision(
-            info.xsize, info.ysize, image_type, GIMP_PRECISION_FLOAT_GAMMA);
+            xsize, ysize, image_type, GIMP_PRECISION_FLOAT_GAMMA);
       }
 
       if (profile_int) {
@@ -306,9 +325,16 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
         g_printerr(LOAD_PROC " Error: JxlDecoderSetImageOutBuffer failed\n");
         return false;
       }
-    } else if (status == JXL_DEC_FULL_IMAGE || status == JXL_DEC_FRAME) {
+    } else if (status == JXL_DEC_FULL_IMAGE) {
       // create and insert layer
-      layer = gimp_layer_new(*image_id, "Background", info.xsize, info.ysize,
+      gchar* layer_name;
+      if (layer_idx == 0 && !info.have_animation) {
+        layer_name = g_strdup_printf("Background");
+      } else {
+        layer_name = g_strdup_printf("Frame %lu (%.1fms)", layer_idx,
+                                     frame_duration * tick_duration / 1000.0);
+      }
+      layer = gimp_layer_new(*image_id, layer_name, xsize, ysize,
                              layer_type, /*opacity=*/100,
                              gimp_image_get_default_new_layer_mode(*image_id));
 
@@ -333,12 +359,27 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
       const Babl *source_format = babl_format(babl_format_str.c_str());
 
       babl_process(babl_fish(source_format, destination_format),
-                   pixels_buffer_1, pixels_buffer_2, info.xsize * info.ysize);
+                   pixels_buffer_1, pixels_buffer_2, xsize * ysize);
 
-      gegl_buffer_set(buffer, GEGL_RECTANGLE(0, 0, info.xsize, info.ysize), 0,
+      gegl_buffer_set(buffer, GEGL_RECTANGLE(0, 0, xsize, ysize), 0,
                       nullptr, pixels_buffer_2, GEGL_AUTO_ROWSTRIDE);
+      gimp_item_transform_translate(layer, crop_x0, crop_y0);
 
       g_clear_object(&buffer);
+      g_free(layer_name);
+      layer_idx++;
+    } else if (status == JXL_DEC_FRAME) {
+      JxlFrameHeader frame_header;
+      if (JxlDecoderGetFrameHeader(dec.get(), &frame_header) != JXL_DEC_SUCCESS) {
+          g_printerr(LOAD_PROC " Error: JxlDecoderSetImageOutBuffer failed\n");
+          return false;
+      }
+      xsize = frame_header.layer_info.xsize;
+      ysize = frame_header.layer_info.ysize;
+      crop_x0 = frame_header.layer_info.crop_x0;
+      crop_y0 = frame_header.layer_info.crop_y0;
+      frame_duration = frame_header.duration;
+
     } else if (status == JXL_DEC_SUCCESS) {
       // All decoding successfully finished.
       // It's not required to call JxlDecoderReleaseInput(dec.get())
