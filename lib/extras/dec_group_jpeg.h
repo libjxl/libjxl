@@ -12,8 +12,7 @@
 #include <vector>
 
 #include "lib/extras/packed_image.h"
-#include "lib/jxl/base/status.h"
-#include "lib/jxl/image.h"
+#include "lib/jxl/base/compiler_specific.h"
 
 namespace jxl {
 namespace extras {
