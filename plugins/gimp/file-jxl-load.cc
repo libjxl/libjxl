@@ -59,10 +59,9 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
 
   auto dec = JxlDecoderMake(nullptr);
   if (JXL_DEC_SUCCESS !=
-      JxlDecoderSubscribeEvents(dec.get(), JXL_DEC_BASIC_INFO |
-                                               JXL_DEC_COLOR_ENCODING |
-                                               JXL_DEC_FULL_IMAGE |
-                                               JXL_DEC_FRAME)) {
+      JxlDecoderSubscribeEvents(dec.get(),
+                                JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING |
+                                    JXL_DEC_FULL_IMAGE | JXL_DEC_FRAME)) {
     g_printerr(LOAD_PROC " Error: JxlDecoderSubscribeEvents failed\n");
     return false;
   }
@@ -101,8 +100,7 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
       }
 
       JxlResizableParallelRunnerSetThreads(
-          runner.get(),
-          JxlResizableParallelRunnerSuggestThreads(xsize, ysize));
+          runner.get(), JxlResizableParallelRunnerSuggestThreads(xsize, ysize));
     } else if (status == JXL_DEC_COLOR_ENCODING) {
       // check for ICC profile
       size_t icc_size = 0;
@@ -298,11 +296,11 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
 
       // create new image
       if (is_linear) {
-        *image_id = gimp_image_new_with_precision(
-            xsize, ysize, image_type, GIMP_PRECISION_FLOAT_LINEAR);
+        *image_id = gimp_image_new_with_precision(xsize, ysize, image_type,
+                                                  GIMP_PRECISION_FLOAT_LINEAR);
       } else {
-        *image_id = gimp_image_new_with_precision(
-            xsize, ysize, image_type, GIMP_PRECISION_FLOAT_GAMMA);
+        *image_id = gimp_image_new_with_precision(xsize, ysize, image_type,
+                                                  GIMP_PRECISION_FLOAT_GAMMA);
       }
 
       if (profile_int) {
@@ -327,15 +325,15 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
       }
     } else if (status == JXL_DEC_FULL_IMAGE) {
       // create and insert layer
-      gchar* layer_name;
+      gchar *layer_name;
       if (layer_idx == 0 && !info.have_animation) {
         layer_name = g_strdup_printf("Background");
       } else {
         layer_name = g_strdup_printf("Frame %lu (%.1fms)", layer_idx,
                                      frame_duration * tick_duration / 1000.0);
       }
-      layer = gimp_layer_new(*image_id, layer_name, xsize, ysize,
-                             layer_type, /*opacity=*/100,
+      layer = gimp_layer_new(*image_id, layer_name, xsize, ysize, layer_type,
+                             /*opacity=*/100,
                              gimp_image_get_default_new_layer_mode(*image_id));
 
       gimp_image_insert_layer(*image_id, layer, /*parent_id=*/-1,
@@ -361,8 +359,8 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
       babl_process(babl_fish(source_format, destination_format),
                    pixels_buffer_1, pixels_buffer_2, xsize * ysize);
 
-      gegl_buffer_set(buffer, GEGL_RECTANGLE(0, 0, xsize, ysize), 0,
-                      nullptr, pixels_buffer_2, GEGL_AUTO_ROWSTRIDE);
+      gegl_buffer_set(buffer, GEGL_RECTANGLE(0, 0, xsize, ysize), 0, nullptr,
+                      pixels_buffer_2, GEGL_AUTO_ROWSTRIDE);
       gimp_item_transform_translate(layer, crop_x0, crop_y0);
 
       g_clear_object(&buffer);
@@ -370,9 +368,10 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
       layer_idx++;
     } else if (status == JXL_DEC_FRAME) {
       JxlFrameHeader frame_header;
-      if (JxlDecoderGetFrameHeader(dec.get(), &frame_header) != JXL_DEC_SUCCESS) {
-          g_printerr(LOAD_PROC " Error: JxlDecoderSetImageOutBuffer failed\n");
-          return false;
+      if (JxlDecoderGetFrameHeader(dec.get(), &frame_header) !=
+          JXL_DEC_SUCCESS) {
+        g_printerr(LOAD_PROC " Error: JxlDecoderSetImageOutBuffer failed\n");
+        return false;
       }
       xsize = frame_header.layer_info.xsize;
       ysize = frame_header.layer_info.ysize;
