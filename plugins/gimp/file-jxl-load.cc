@@ -35,6 +35,8 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
   JxlPixelFormat format = {};
   JxlAnimationHeader animation = {};
   JxlBlendMode blend_mode = JXL_BLEND_BLEND;
+  char *frame_name = nullptr;  // will be realloced
+  size_t frame_name_len = 0;
 
   format.num_channels = 4;
   format.data_type = JXL_TYPE_FLOAT;
@@ -343,8 +345,17 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
         } else {
           blend = (GString *)blend_null_flag;
         }
-        layer_name = g_strdup_printf("Frame %lu (%.15gms)%s", layer_idx,
+        char *temp_frame_name = nullptr;
+        bool must_free_frame_name = false;
+        if (frame_name_len == 0) {
+          temp_frame_name = g_strdup_printf("Frame %lu", layer_idx);
+          must_free_frame_name = true;
+        } else {
+          temp_frame_name = frame_name;
+        }
+        layer_name = g_strdup_printf("%s (%.15gms)%s", temp_frame_name,
                                      frame_duration * tps_factor, blend->str);
+        if (must_free_frame_name) free(temp_frame_name);
       }
       layer = gimp_layer_new(*image_id, layer_name, xsize, ysize, layer_type,
                              /*opacity=*/100,
@@ -398,6 +409,14 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
             LOAD_PROC
             " Warning: JxlDecoderGetFrameHeader: Unhandled blend mode: %d\n",
             blend_mode);
+      }
+      if ((frame_name_len = frame_header.name_length) > 0) {
+        frame_name = (char *)realloc(frame_name, frame_name_len);
+        if (JXL_DEC_SUCCESS !=
+            JxlDecoderGetFrameName(dec.get(), frame_name, frame_name_len)) {
+          g_printerr(LOAD_PROC "Error: JxlDecoderGetFrameName failed");
+          return false;
+        };
       }
     } else if (status == JXL_DEC_SUCCESS) {
       // All decoding successfully finished.
