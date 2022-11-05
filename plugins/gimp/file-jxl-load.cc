@@ -347,7 +347,7 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
         char *temp_frame_name = nullptr;
         bool must_free_frame_name = false;
         if (frame_name_len == 0) {
-          temp_frame_name = g_strdup_printf("Frame %lu", layer_idx);
+          temp_frame_name = g_strdup_printf("Frame %lu", layer_idx + 1);
           must_free_frame_name = true;
         } else {
           temp_frame_name = frame_name;
