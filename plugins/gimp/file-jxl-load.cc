@@ -20,7 +20,7 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
   long crop_x0 = 0, crop_y0 = 0;
   size_t layer_idx = 0;
   uint32_t frame_duration = 0;
-  double tick_duration = 1.0;
+  double tps_factor = 1.0;
 
   gint32 layer;
 
@@ -34,6 +34,7 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
   JxlBasicInfo info = {};
   JxlPixelFormat format = {};
   JxlAnimationHeader animation = {};
+  JxlBlendMode blend_mode = JXL_BLEND_BLEND;
 
   format.num_channels = 4;
   format.data_type = JXL_TYPE_FLOAT;
@@ -96,7 +97,9 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
       ysize = info.ysize;
       if (info.have_animation) {
         animation = info.animation;
-        tick_duration = animation.tps_numerator / animation.tps_denominator;
+        tps_factor = animation.tps_numerator / animation.tps_denominator;
+        // GIMP expects animation durations to be expressed in ms.
+        tps_factor /= 1000.0;
       }
 
       JxlResizableParallelRunnerSetThreads(
@@ -329,8 +332,19 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
       if (layer_idx == 0 && !info.have_animation) {
         layer_name = g_strdup_printf("Background");
       } else {
-        layer_name = g_strdup_printf("Frame %lu (%.1fms)", layer_idx,
-                                     frame_duration * tick_duration / 1000.0);
+        const GString *blend_null_flag = g_string_new("");
+        const GString *blend_replace_flag = g_string_new(" (replace)");
+        const GString *blend_combine_flag = g_string_new(" (combine)");
+        GString *blend;
+        if (blend_mode == JXL_BLEND_REPLACE) {
+          blend = (GString *)blend_replace_flag;
+        } else if (blend_mode == JXL_BLEND_BLEND) {
+          blend = (GString *)blend_combine_flag;
+        } else {
+          blend = (GString *)blend_null_flag;
+        }
+        layer_name = g_strdup_printf("Frame %lu (%.15gms)%s", layer_idx,
+                                     frame_duration * tps_factor, blend->str);
       }
       layer = gimp_layer_new(*image_id, layer_name, xsize, ysize, layer_type,
                              /*opacity=*/100,
@@ -378,7 +392,13 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
       crop_x0 = frame_header.layer_info.crop_x0;
       crop_y0 = frame_header.layer_info.crop_y0;
       frame_duration = frame_header.duration;
-
+      blend_mode = frame_header.layer_info.blend_info.blendmode;
+      if (blend_mode != JXL_BLEND_BLEND && blend_mode != JXL_BLEND_REPLACE) {
+        g_printerr(
+            LOAD_PROC
+            " Warning: JxlDecoderGetFrameHeader: Unhandled blend mode: %d\n",
+            blend_mode);
+      }
     } else if (status == JXL_DEC_SUCCESS) {
       // All decoding successfully finished.
       // It's not required to call JxlDecoderReleaseInput(dec.get())
