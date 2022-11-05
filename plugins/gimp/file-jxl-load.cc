@@ -20,7 +20,7 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
   long crop_x0 = 0, crop_y0 = 0;
   size_t layer_idx = 0;
   uint32_t frame_duration = 0;
-  double tps_factor = 1.0;
+  double tps_denom = 1.f, tps_numer = 1.f;
 
   gint32 layer;
 
@@ -99,9 +99,8 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
       ysize = info.ysize;
       if (info.have_animation) {
         animation = info.animation;
-        tps_factor = animation.tps_numerator / animation.tps_denominator;
-        // GIMP expects animation durations to be expressed in ms.
-        tps_factor /= 1000.0;
+        tps_denom = animation.tps_denominator;
+        tps_numer = animation.tps_numerator;
       }
 
       JxlResizableParallelRunnerSetThreads(
@@ -353,8 +352,9 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
         } else {
           temp_frame_name = frame_name;
         }
+        double fduration = frame_duration * 1000.f * tps_denom / tps_numer;
         layer_name = g_strdup_printf("%s (%.15gms)%s", temp_frame_name,
-                                     frame_duration * tps_factor, blend->str);
+                                     fduration, blend->str);
         if (must_free_frame_name) free(temp_frame_name);
       }
       layer = gimp_layer_new(*image_id, layer_name, xsize, ysize, layer_type,
