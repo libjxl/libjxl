@@ -23,6 +23,7 @@
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/encode_internal.h"
 #include "lib/jxl/icc_codec.h"
+#include "lib/jxl/image_test_utils.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testdata.h"
 
@@ -415,13 +416,14 @@ void VerifyRoundtripCompression(
     decoded_io.SetSize(color->xsize(), color->ysize());
   }
 
-  jxl::ButteraugliParams ba;
-  float butteraugli_score =
-      ButteraugliDistance(original_io, decoded_io, ba, jxl::GetJxlCms(),
-                          /*distmap=*/nullptr, nullptr);
   if (lossless && !already_downsampled) {
-    EXPECT_LE(butteraugli_score, 0.0f);
+    EXPECT_TRUE(jxl::SamePixels(*original_io.Main().color(),
+                                *decoded_io.Main().color()));
   } else {
+    jxl::ButteraugliParams ba;
+    float butteraugli_score =
+        ButteraugliDistance(original_io, decoded_io, ba, jxl::GetJxlCms(),
+                            /*distmap=*/nullptr, nullptr);
     EXPECT_LE(butteraugli_score, 2.0f);
   }
   JxlPixelFormat extra_channel_output_pixel_format = output_pixel_format;
