@@ -3,14 +3,14 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#if JPEGXL_ENABLE_JPEG
+
 #include "lib/extras/decode_jpeg.h"
 
 #include <stddef.h>
 #include <stdio.h>
 
-#if JPEGXL_ENABLE_JPEG
 #include "lib/extras/dec/jpg.h"
-#endif
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testdata.h"
 
@@ -33,13 +33,11 @@ TEST_P(DecodeJpegTestParam, Streaming) {
   TestConfig config = GetParam();
   const PaddedBytes compressed = ReadTestData(config.fn.c_str());
 
-#if JPEGXL_ENABLE_JPEG
   PackedPixelFile ppf_libjpeg;
   EXPECT_TRUE(
       DecodeImageJPG(Span<const uint8_t>(compressed.data(), compressed.size()),
                      ColorHints(), SizeConstraints(), &ppf_libjpeg));
   ASSERT_EQ(1, ppf_libjpeg.frames.size());
-#endif
 
   JpegDecoder dec;
 
@@ -64,11 +62,9 @@ TEST_P(DecodeJpegTestParam, Streaming) {
     break;
   }
 
-#if JPEGXL_ENABLE_JPEG
   EXPECT_EQ(ppf_libjpeg.info.xsize, dec.xsize());
   EXPECT_EQ(ppf_libjpeg.info.ysize, dec.ysize());
   EXPECT_EQ(ppf_libjpeg.info.num_color_channels, dec.num_channels());
-#endif
 
   JxlPixelFormat format = {static_cast<uint32_t>(dec.num_channels()),
                            JXL_TYPE_UINT8, JXL_BIG_ENDIAN, 0};
@@ -97,7 +93,6 @@ TEST_P(DecodeJpegTestParam, Streaming) {
     }
   }
 
-#if JPEGXL_ENABLE_JPEG
   const PackedImage& output_libjpeg = ppf_libjpeg.frames[0].color;
   ASSERT_EQ(output.xsize, output_libjpeg.xsize);
   ASSERT_EQ(output.ysize, output_libjpeg.ysize);
@@ -106,7 +101,113 @@ TEST_P(DecodeJpegTestParam, Streaming) {
                   reinterpret_cast<const uint8_t*>(output_libjpeg.pixels()),
                   output.xsize, output.ysize, output.format),
       0.0075);
-#endif
+}
+
+static constexpr uint8_t kFakeEoiMarker[2] = {0xff, 0xd9};
+
+// Custom source manager that refills the input buffer in chunks, simulating
+// a file reader with a fixed buffer size.
+struct TestJpegSourceManager {
+  jpeg_source_mgr pub;
+  const uint8_t* data;
+  size_t len;
+  size_t pos;
+  size_t chunk_size;
+
+  TestJpegSourceManager(const uint8_t* buf, size_t buf_size,
+                        size_t max_chunk_size) {
+    pub.next_input_byte = nullptr;
+    pub.bytes_in_buffer = 0;
+    pub.init_source = init_source;
+    pub.fill_input_buffer = fill_input_buffer;
+    pub.skip_input_data = skip_input_data;
+    pub.resync_to_restart = resync_to_restart;
+    pub.term_source = term_source;
+    data = buf;
+    len = buf_size;
+    pos = 0;
+    chunk_size = max_chunk_size;
+  }
+
+  static void init_source(j_decompress_ptr cinfo) {}
+
+  static boolean fill_input_buffer(j_decompress_ptr cinfo) {
+    auto src = reinterpret_cast<TestJpegSourceManager*>(cinfo->src);
+    if (src->pos < src->len) {
+      src->pub.next_input_byte = src->data + src->pos;
+      src->pub.bytes_in_buffer = std::min(src->len - src->pos, src->chunk_size);
+      src->pos += src->pub.bytes_in_buffer;
+    } else {
+      src->pub.next_input_byte = kFakeEoiMarker;
+      src->pub.bytes_in_buffer = 2;
+    }
+    return TRUE;
+  }
+
+  static void skip_input_data(j_decompress_ptr cinfo, long num_bytes) {}
+
+  static boolean resync_to_restart(j_decompress_ptr cinfo, int desired) {
+    return FALSE;
+  }
+
+  static void term_source(j_decompress_ptr cinfo) {}
+};
+
+TEST_P(DecodeJpegTestParam, JpegSourceManager) {
+  TestConfig config = GetParam();
+  const PaddedBytes compressed = ReadTestData(config.fn.c_str());
+
+  PackedPixelFile ppf_libjpeg;
+  EXPECT_TRUE(
+      DecodeImageJPG(Span<const uint8_t>(compressed.data(), compressed.size()),
+                     ColorHints(), SizeConstraints(), &ppf_libjpeg));
+  ASSERT_EQ(1, ppf_libjpeg.frames.size());
+
+  JpegDecoder dec;
+
+  size_t chunk_size = config.chunk_size;
+  if (chunk_size == 0) chunk_size = compressed.size();
+  TestJpegSourceManager jsrc(compressed.data(), compressed.size(), chunk_size);
+  dec.SetJpegSourceManager(reinterpret_cast<jpeg_source_mgr*>(&jsrc));
+
+  JpegDecoder::Status status;
+  for (;;) {
+    status = dec.ReadHeaders();
+    ASSERT_EQ(status, JpegDecoder::Status::kSuccess);
+    break;
+  }
+
+  EXPECT_EQ(ppf_libjpeg.info.xsize, dec.xsize());
+  EXPECT_EQ(ppf_libjpeg.info.ysize, dec.ysize());
+  EXPECT_EQ(ppf_libjpeg.info.num_color_channels, dec.num_channels());
+
+  JxlPixelFormat format = {static_cast<uint32_t>(dec.num_channels()),
+                           JXL_TYPE_UINT8, JXL_BIG_ENDIAN, 0};
+  PackedImage output(dec.xsize(), dec.ysize(), format);
+  ASSERT_EQ(JpegDecoder::Status::kSuccess, dec.SetOutput(&output));
+
+  size_t max_output_lines = config.max_output_lines;
+  if (max_output_lines == 0) max_output_lines = dec.ysize();
+
+  size_t total_output_lines = 0;
+  while (total_output_lines < dec.ysize()) {
+    size_t num_output_lines = 0;
+    status = dec.ReadScanLines(&num_output_lines, max_output_lines);
+    total_output_lines += num_output_lines;
+    ASSERT_EQ(status, JpegDecoder::Status::kSuccess);
+    if (total_output_lines < dec.ysize()) {
+      EXPECT_EQ(num_output_lines, max_output_lines);
+    }
+  }
+
+  const PackedImage& output_libjpeg = ppf_libjpeg.frames[0].color;
+  ASSERT_EQ(output.xsize, output_libjpeg.xsize);
+  ASSERT_EQ(output.ysize, output_libjpeg.ysize);
+  EXPECT_LE(
+      DistanceRMS(reinterpret_cast<const uint8_t*>(output.pixels()),
+                  reinterpret_cast<const uint8_t*>(output_libjpeg.pixels()),
+                  output.xsize, output.ysize, output.format),
+      0.0075);
 }
 
 std::vector<TestConfig> GenerateTests() {
@@ -188,3 +289,4 @@ JXL_GTEST_INSTANTIATE_TEST_SUITE_P(DecodeJpegTest, DecodeJpegTestParam,
 }  // namespace
 }  // namespace extras
 }  // namespace jxl
+#endif

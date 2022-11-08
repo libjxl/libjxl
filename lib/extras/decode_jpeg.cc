@@ -545,15 +545,64 @@ void ComputeOptimalLaplacianBiases(const int num_blocks, const int* nonzeros,
   }
 }
 
+// Trivial implementations of the jpeg_source_mgr callback functions.
+
+void init_source(j_decompress_ptr cinfo) {}
+
+boolean fill_input_buffer(j_decompress_ptr cinfo) { return FALSE; }
+
+void skip_input_data(j_decompress_ptr cinfo, long num_bytes) {}
+
+boolean resync_to_restart(j_decompress_ptr cinfo, int desired) { return FALSE; }
+
+void term_source(j_decompress_ptr cinfo) {}
+
+void InitSuspendingSourceManager(jpeg_source_mgr* jsrc) {
+  jsrc->next_input_byte = nullptr;
+  jsrc->bytes_in_buffer = 0;
+  jsrc->init_source = init_source;
+  jsrc->fill_input_buffer = fill_input_buffer;
+  jsrc->skip_input_data = skip_input_data;
+  jsrc->resync_to_restart = resync_to_restart;
+  jsrc->term_source = term_source;
+}
+
 }  // namespace
 
+JpegDecoder::JpegDecoder() {
+  InitSuspendingSourceManager(&jsrc_);
+  cinfo.src = &jsrc_;
+}
+
 JpegDecoder::Status JpegDecoder::SetInput(const uint8_t* data, size_t size) {
-  if (next_in_ != nullptr) {
-    return JPEG_ERROR("No input is needed.");
+  if (next_in_ != nullptr && codestream_copy_.empty()) {
+    codestream_copy_.assign(next_in_, next_in_ + avail_in_);
   }
   next_in_ = data;
   avail_in_ = size;
-  return Status::kSuccess;
+  if (codestream_copy_.empty() && codestream_pos_ > 0) {
+    size_t skip = std::min<size_t>(codestream_pos_, avail_in_);
+    AdvanceInput(skip);
+    codestream_pos_ -= skip;
+    if (codestream_pos_ > 0) {
+      return Status::kNeedMoreInput;
+    }
+  }
+  JXL_DASSERT(codestream_pos_ <= codestream_copy_.size());
+  if (codestream_copy_.empty()) {
+    if (avail_in_ == 0) {
+      return Status::kNeedMoreInput;
+    }
+    cinfo.src->next_input_byte = next_in_;
+    cinfo.src->bytes_in_buffer = avail_in_;
+    return Status::kSuccess;
+  } else {
+    codestream_copy_.insert(codestream_copy_.end(), next_in_,
+                            next_in_ + avail_in_);
+    cinfo.src->next_input_byte = codestream_copy_.data() + codestream_pos_;
+    cinfo.src->bytes_in_buffer = codestream_copy_.size() - codestream_pos_;
+    return Status::kSuccess;
+  }
 }
 
 void JpegDecoder::AdvanceInput(size_t size) {
@@ -572,60 +621,17 @@ void JpegDecoder::AdvanceCodestream(size_t size) {
     }
   } else {
     codestream_pos_ += size;
-    if (codestream_pos_ + codestream_unconsumed_ >= codestream_copy_.size()) {
+    if (codestream_pos_ + avail_in_ >= codestream_copy_.size()) {
       size_t advance = std::min(
-          codestream_unconsumed_,
-          codestream_unconsumed_ + codestream_pos_ - codestream_copy_.size());
+          avail_in_, avail_in_ + codestream_pos_ - codestream_copy_.size());
       AdvanceInput(advance);
       codestream_pos_ -= std::min(codestream_pos_, codestream_copy_.size());
-      codestream_unconsumed_ = 0;
       codestream_copy_.clear();
     }
   }
-}
-
-JpegDecoder::Status JpegDecoder::RequestMoreInput() {
-  if (codestream_copy_.empty()) {
-    codestream_copy_.insert(codestream_copy_.end(), next_in_,
-                            next_in_ + avail_in_);
-    AdvanceInput(avail_in_);
-  } else {
-    AdvanceInput(codestream_unconsumed_);
-    codestream_unconsumed_ = 0;
-  }
-  JXL_DASSERT(avail_in_ == 0);
-  next_in_ = nullptr;
-  return Status::kNeedMoreInput;
-}
-
-JpegDecoder::Status JpegDecoder::GetCodestreamInput(const uint8_t** data,
-                                                    size_t* len) {
-  if (codestream_copy_.empty() && codestream_pos_ > 0) {
-    size_t skip = std::min<size_t>(codestream_pos_, avail_in_);
-    AdvanceInput(skip);
-    codestream_pos_ -= skip;
-    if (codestream_pos_ > 0) {
-      return RequestMoreInput();
-    }
-  }
-  JXL_DASSERT(codestream_pos_ <= codestream_copy_.size());
-  JXL_DASSERT(codestream_unconsumed_ <= codestream_copy_.size());
-  if (codestream_copy_.empty()) {
-    if (avail_in_ == 0) {
-      return RequestMoreInput();
-    }
-    *data = next_in_;
-    *len = avail_in_;
-    return Status::kSuccess;
-  } else {
-    codestream_copy_.insert(codestream_copy_.end(),
-                            next_in_ + codestream_unconsumed_,
-                            next_in_ + avail_in_);
-    codestream_unconsumed_ = avail_in_;
-    *data = codestream_copy_.data() + codestream_pos_;
-    *len = codestream_copy_.size() - codestream_pos_;
-    return Status::kSuccess;
-  }
+  JXL_DASSERT(size <= cinfo.src->bytes_in_buffer);
+  cinfo.src->bytes_in_buffer -= size;
+  cinfo.src->next_input_byte += size;
 }
 
 JpegDecoder::Status JpegDecoder::SetOutput(PackedImage* image) {
@@ -643,29 +649,59 @@ JpegDecoder::Status JpegDecoder::SetOutput(PackedImage* image) {
 }
 
 JpegDecoder::Status JpegDecoder::ReadHeaders() {
-  const uint8_t* data;
-  size_t len;
+  const uint8_t* data = cinfo.src->next_input_byte;
+  size_t len = cinfo.src->bytes_in_buffer;
   size_t pos = 0;
-  JPEG_RETURN_IF_ERROR(GetCodestreamInput(&data, &len));
+  std::vector<uint8_t> buffer;
+  const uint8_t* last_src_buf_start = data;
+  size_t last_src_buf_len = len;
 
   while (!found_sof_) {
+    Status status = Status::kSuccess;
     if (state_ == State::kStart) {
       // Look for the SOI marker.
-      if (len < 2) return RequestMoreInput();
-      if (data[0] != 0xff || data[1] != 0xd8) {
-        return JPEG_ERROR("Did not find SOI marker.");
+      if (len >= 2) {
+        if (data[0] != 0xff || data[1] != 0xd8) {
+          return JPEG_ERROR("Did not find SOI marker.");
+        }
+        pos += 2;
+        AdvanceCodestream(2);
+        found_soi_ = true;
+        state_ = State::kProcessMarkers;
+      } else {
+        status = Status::kNeedMoreInput;
       }
-      pos += 2;
-      AdvanceCodestream(2);
-      found_soi_ = true;
-      state_ = State::kProcessMarkers;
     } else if (state_ == State::kProcessMarkers) {
-      JPEG_RETURN_IF_ERROR(ProcessMarker(data, len, &pos));
+      status = ProcessMarker(data, len, &pos);
     } else {
       return JPEG_ERROR("ReadHeaders: Unexpected state");
     }
+    if (status == Status::kNeedMoreInput) {
+      if (buffer.empty()) {
+        buffer.assign(data, data + len);
+      }
+      if ((*cinfo.src->fill_input_buffer)(&cinfo)) {
+        buffer.insert(buffer.end(), cinfo.src->next_input_byte,
+                      cinfo.src->next_input_byte + cinfo.src->bytes_in_buffer);
+        data = buffer.data();
+        len = buffer.size();
+        last_src_buf_start = cinfo.src->next_input_byte;
+        last_src_buf_len = cinfo.src->bytes_in_buffer;
+        cinfo.src->next_input_byte = data + pos;
+        cinfo.src->bytes_in_buffer = len - pos;
+      } else {
+        return status;
+      }
+    } else if (status != Status::kSuccess) {
+      return status;
+    }
   }
 
+  if (!buffer.empty()) {
+    cinfo.src->next_input_byte =
+        (last_src_buf_start + last_src_buf_len - buffer.size() + pos);
+    cinfo.src->bytes_in_buffer = buffer.size() - pos;
+  }
   return Status::kSuccess;
 }
 
@@ -676,29 +712,52 @@ JpegDecoder::Status JpegDecoder::ReadScanLines(size_t* num_output_rows,
   }
   *num_output_rows = 0;
 
-  const uint8_t* data;
-  size_t len = 0;
+  const uint8_t* data = cinfo.src->next_input_byte;
+  size_t len = cinfo.src->bytes_in_buffer;
   size_t pos = 0;
-  if (!found_eoi_) {
-    JPEG_RETURN_IF_ERROR(GetCodestreamInput(&data, &len));
-  }
+  std::vector<uint8_t> buffer;
+  const uint8_t* last_src_buf_start = data;
+  size_t last_src_buf_len = len;
 
-  for (;;) {
+  while (*num_output_rows < max_output_rows) {
+    Status status = Status::kSuccess;
     if (state_ == State::kProcessMarkers) {
-      JPEG_RETURN_IF_ERROR(ProcessMarker(data, len, &pos));
+      status = ProcessMarker(data, len, &pos);
     } else if (state_ == State::kScan) {
-      JPEG_RETURN_IF_ERROR(ProcessScan(data, len, &pos));
+      status = ProcessScan(data, len, &pos);
     } else if (state_ == State::kRender) {
       ProcessOutput(num_output_rows, max_output_rows);
-      if (*num_output_rows == max_output_rows) {
-        return Status::kSuccess;
-      }
     } else if (state_ == State::kEnd) {
-      return Status::kSuccess;
+      break;
     } else {
       return JPEG_ERROR("ReadScanLines: Unexpected state");
     }
+    if (status == Status::kNeedMoreInput) {
+      if (buffer.empty()) {
+        buffer.assign(data, data + len);
+      }
+      if ((*cinfo.src->fill_input_buffer)(&cinfo)) {
+        buffer.insert(buffer.end(), cinfo.src->next_input_byte,
+                      cinfo.src->next_input_byte + cinfo.src->bytes_in_buffer);
+        data = buffer.data();
+        len = buffer.size();
+        last_src_buf_start = cinfo.src->next_input_byte;
+        last_src_buf_len = cinfo.src->bytes_in_buffer;
+        cinfo.src->next_input_byte = data + pos;
+        cinfo.src->bytes_in_buffer = len - pos;
+      } else {
+        return status;
+      }
+    } else if (status != Status::kSuccess) {
+      return status;
+    }
   }
+  if (!buffer.empty()) {
+    cinfo.src->next_input_byte =
+        (last_src_buf_start + last_src_buf_len - buffer.size() + pos);
+    cinfo.src->bytes_in_buffer = buffer.size() - pos;
+  }
+  return Status::kSuccess;
 }
 
 JpegDecoder::Status JpegDecoder::ProcessMarker(const uint8_t* data, size_t len,
@@ -717,7 +776,7 @@ JpegDecoder::Status JpegDecoder::ProcessMarker(const uint8_t* data, size_t len,
     ++num_skipped;
   }
   if (*pos + 2 > len) {
-    return RequestMoreInput();
+    return Status::kNeedMoreInput;
   }
   if (num_skipped > 0) {
     AdvanceCodestream(num_skipped);
@@ -731,11 +790,12 @@ JpegDecoder::Status JpegDecoder::ProcessMarker(const uint8_t* data, size_t len,
     } else {
       state_ = State::kEnd;
     }
+    *pos += 2;
     AdvanceCodestream(2);
     return Status::kSuccess;
   }
   if (*pos + 4 > len) {
-    return RequestMoreInput();
+    return Status::kNeedMoreInput;
   }
   const uint8_t* marker_data = &data[*pos];
   size_t marker_len = (data[*pos + 2] << 8) + data[*pos + 3] + 2;
@@ -743,7 +803,7 @@ JpegDecoder::Status JpegDecoder::ProcessMarker(const uint8_t* data, size_t len,
     return JPEG_ERROR("Invalid marker length");
   }
   if (*pos + marker_len > len) {
-    return RequestMoreInput();
+    return Status::kNeedMoreInput;
   }
   if (marker == 0xc0 || marker == 0xc1 || marker == 0xc2) {
     JPEG_RETURN_IF_ERROR(ProcessSOF(marker_data, marker_len));
@@ -1202,7 +1262,7 @@ JpegDecoder::Status JpegDecoder::ProcessScan(const uint8_t* data, size_t len,
         codestream_bits_ahead_ = 0;
       }
       if (*pos + 2 > len) {
-        return RequestMoreInput();
+        return Status::kNeedMoreInput;
       }
       int expected_marker = 0xd0 + next_restart_marker_;
       int marker = data[*pos + 1];
@@ -1259,26 +1319,28 @@ JpegDecoder::Status JpegDecoder::ProcessScan(const uint8_t* data, size_t len,
       }
     }
     size_t bit_pos;
-    bool stream_ok = br.FinishStream(pos, &bit_pos);
-    if (*pos + 2 > len) {
+    size_t stream_pos;
+    bool stream_ok = br.FinishStream(&stream_pos, &bit_pos);
+    if (stream_pos + 2 > len) {
       // If reading stopped within the last two bytes, we have to request more
       // input even if FinishStream() returned true, since the Huffman code
       // reader could have peaked ahead some bits past the current input chunk
       // and thus the last prefix code length could have been wrong. We can do
       // this because a valid JPEG bit stream has two extra bytes at the end.
       RestoreMCUCodingState();
-      return RequestMoreInput();
+      return Status::kNeedMoreInput;
     }
     if (!scan_ok) {
       return JPEG_ERROR("Failed to decode DCT block");
     }
     if (!stream_ok) {
       // We hit a marker during parsing.
-      JXL_DASSERT(data[*pos] == 0xff);
-      JXL_DASSERT(data[*pos + 1] != 0);
+      JXL_DASSERT(data[stream_pos] == 0xff);
+      JXL_DASSERT(data[stream_pos + 1] != 0);
       return JPEG_ERROR("Unexpected end of scan.");
     }
     codestream_bits_ahead_ = bit_pos;
+    *pos = stream_pos;
     AdvanceCodestream(*pos - start_pos);
     if (restarts_to_go_ > 0) {
       --restarts_to_go_;
