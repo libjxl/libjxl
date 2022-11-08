@@ -18,10 +18,6 @@ set(JPEGXL_EXTRAS_SOURCES
   extras/dec/pgx.h
   extras/dec/pnm.cc
   extras/dec/pnm.h
-  extras/dec_group_jpeg.cc
-  extras/dec_group_jpeg.h
-  extras/decode_jpeg.cc
-  extras/decode_jpeg.h
   extras/enc/encode.cc
   extras/enc/encode.h
   extras/enc/jxl.cc
@@ -32,8 +28,6 @@ set(JPEGXL_EXTRAS_SOURCES
   extras/enc/pgx.h
   extras/enc/pnm.cc
   extras/enc/pnm.h
-  extras/encode_jpeg.cc
-  extras/encode_jpeg.h
   extras/exif.cc
   extras/exif.h
   extras/hlg.cc
@@ -136,6 +130,12 @@ if(JPEG_FOUND)
     extras/dec/jpg.h
     extras/enc/jpg.cc
     extras/enc/jpg.h
+    extras/dec_group_jpeg.cc
+    extras/dec_group_jpeg.h
+    extras/decode_jpeg.cc
+    extras/decode_jpeg.h
+    extras/encode_jpeg.cc
+    extras/encode_jpeg.h
   )
   target_include_directories(jxl_extras-static PRIVATE "${JPEG_INCLUDE_DIRS}")
   target_link_libraries(jxl_extras-static PRIVATE ${JPEG_LIBRARIES})

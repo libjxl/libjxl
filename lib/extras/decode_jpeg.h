@@ -6,7 +6,12 @@
 #ifndef LIB_EXTRAS_DECODE_JPEG_H_
 #define LIB_EXTRAS_DECODE_JPEG_H_
 
+/* clang-format off */
 #include <stdint.h>
+#include <stdio.h>
+#include <jpeglib.h>
+
+/* clang-format on */
 
 #include <array>
 #include <vector>
@@ -112,10 +117,16 @@ class JpegDecoder {
     kError,
   };
 
+  JpegDecoder();
+
   // Sets the next chunk of input. It must be called before the first call to
   // ReadHeaders() and every time a reder function returns
   // Status::kNeedMoreInput.
   Status SetInput(const uint8_t* data, size_t len);
+
+  // Sets custom source manager. In this case SetInput() must not be called.
+  // The passed pointer is owned by the caller.
+  void SetJpegSourceManager(jpeg_source_mgr* jsrc) { cinfo.src = jsrc; }
 
   // Sets the output image. Must be called between ReadHeaders() and
   // ReadScanLines(). The provided image must have the dimensions and number of
@@ -139,6 +150,8 @@ class JpegDecoder {
   const std::vector<uint8_t>& icc_profile() const { return icc_profile_; }
 
  private:
+  jpeg_decompress_struct cinfo;
+
   enum class State {
     kStart,
     kProcessMarkers,
@@ -151,14 +164,12 @@ class JpegDecoder {
   //
   // Input handling state.
   //
+  jpeg_source_mgr jsrc_;
   const uint8_t* next_in_ = nullptr;
   size_t avail_in_ = 0;
   // Codestream input data is copied here temporarily when the decoder needs
   // more input bytes to process the next part of the stream.
   std::vector<uint8_t> codestream_copy_;
-  // Number of bytes at the end of codestream_copy_ that were not yet consumed
-  // by calling AdvanceInput().
-  size_t codestream_unconsumed_ = 0;
   // Position in the codestream_copy_ vector that the decoder already finished
   // processing.
   size_t codestream_pos_ = 0;
@@ -245,8 +256,6 @@ class JpegDecoder {
 
   void AdvanceInput(size_t size);
   void AdvanceCodestream(size_t size);
-  Status RequestMoreInput();
-  Status GetCodestreamInput(const uint8_t** data, size_t* len);
 
   Status ProcessMarker(const uint8_t* data, size_t len, size_t* pos);
   Status ProcessSOF(const uint8_t* data, size_t len);
