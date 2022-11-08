@@ -1334,13 +1334,9 @@ size_t LLEnc(const unsigned char* rgba, size_t width, size_t stride,
 extern "C" {
 #endif
 
-size_t JxlFastLosslessEncode(const unsigned char* rgba,
-                             size_t width,
-                             size_t stride,
-                             size_t height,
-                             size_t nb_chans,
-                             size_t bitdepth,
-                             int effort,
+size_t JxlFastLosslessEncode(const unsigned char* rgba, size_t width,
+                             size_t stride, size_t height, size_t nb_chans,
+                             size_t bitdepth, int effort,
                              unsigned char** output) {
   assert(bitdepth <= 12);
   assert(bitdepth > 0);
