@@ -125,16 +125,44 @@ void AddJpegQuantMatrices(const ImageF& qf, float dc_quant, float global_scale,
   DequantMatrices dequant;
   std::vector<QuantEncoding> encodings(DequantMatrices::kNum,
                                        QuantEncoding::Library(0));
-  encodings[0] = QuantEncoding::DCT(
-      DctQuantWeightParams({{{{2000.0, -0.5, -0.5, -0.5, -0.5, -0.5}},
-                             {{500.0, -0.1, -0.1, -0.2, -0.2, -0.2}},
-                             {{200.0, -1.0, -0.5, -0.5, -0.5, -0.5}}}},
-                           6));
+  DctQuantWeightParams dct_params =
+      DctQuantWeightParams({{
+                               {{
+                                   2000.0f,         //
+                                   -0.5098828077f,  //
+                                   0.1776620001f,   //
+                                   -0.3956851959f,  //
+                                   -0.3340485990f,  //
+                                   -0.5691086054f,  //
+                               }},
+                               {{
+                                   500.0f,          //
+                                   -0.0927032605f,  //
+                                   -0.3072603941f,  //
+                                   -0.1561524570f,  //
+                                   -0.3872784674f,  //
+                                   0.0549057312f,   //
+                               }},
+                               {{
+                                   200.0f,          //
+                                   0.0085711535f,   //
+                                   -0.5770072937f,  //
+                                   -0.6606003642f,  //
+                                   -0.6159313917f,  //
+                                   -0.4991085827f,  //
+                               }},
+                           }},
+                           6);
+  encodings[0] = QuantEncoding::DCT(dct_params);
   dequant.SetEncodings(encodings);
   JXL_CHECK(dequant.EnsureComputed(1));
   memcpy(qm, dequant.Matrix(0, 0), 3 * kDCTBlockSize * sizeof(qm[0]));
   // Set custom DC quant weights.
-  const float inv_dc_quant[3] = {3200.0f, 512.0f, 320.0f};
+  const float inv_dc_quant[3] = {
+      2140.0,
+      512.0f,
+      320.0f,
+  };
   for (size_t c = 0; c < 3; c++) {
     qm[c * kDCTBlockSize] = 1.0f / (inv_dc_quant[c] * dc_quant);
   }
