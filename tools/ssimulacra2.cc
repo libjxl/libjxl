@@ -4,16 +4,17 @@
 // license that can be found in the LICENSE file.
 
 /*
-SSIMULACRA 2 - Structural SIMilarity Unveiling Local And Compression Related
-Artifacts
+SSIMULACRA 2
+Structural SIMilarity Unveiling Local And Compression Related Artifacts
 
 Perceptual metric developed by Jon Sneyers (Cloudinary) in July 2022.
 Design:
 - XYB color space (X+0.5, Y, Y-B+1.0)
-- SSIM map
+- SSIM map (with correction: no double gamma correction)
 - 'blockiness/ringing' map (distorted has edges where original is smooth)
 - 'smoothing' map (distorted is smooth where original has edges)
 - error maps are computed at 6 scales (1:1 to 1:32) for each component (X,Y,B)
+- downscaling is done in linear RGB
 - for all 6*3*3=54 maps, two norms are computed: 1-norm (mean) and 4-norm
 - a weighted sum of these 54*2=108 norms leads to the final score
 - weights were tuned based on a large set of subjective scores for images
@@ -26,6 +27,7 @@ Design:
 
 #include <cmath>
 
+#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_xyb.h"
 #include "lib/jxl/gauss_blur.h"
@@ -36,8 +38,7 @@ namespace {
 using jxl::Image3F;
 using jxl::ImageF;
 
-static const float kC1 = 0.0001f;
-static const float kC2 = 0.0003f;
+static const float kC2 = 0.0009f;
 static const int kNumScales = 6;
 
 Image3F Downsample(const Image3F& in, size_t fx, size_t fy) {
@@ -128,11 +129,10 @@ void SSIMMap(const Image3F& m1, const Image3F& m2, const Image3F& s11,
         float mu11 = mu1 * mu1;
         float mu22 = mu2 * mu2;
         float mu12 = mu1 * mu2;
-        float num_m = 2 * mu12 + kC1;
+        float num_m = 1.0 - (mu1 - mu2) * (mu1 - mu2);
         float num_s = 2 * (row_s12[x] - mu12) + kC2;
-        float denom_m = mu11 + mu22 + kC1;
         float denom_s = (row_s11[x] - mu11) + (row_s22[x] - mu22) + kC2;
-        double d = 1.0 - ((num_m * num_s) / (denom_m * denom_s));
+        double d = 1.0 - ((num_m * num_s) / (denom_s));
         d = std::max(d, 0.0);
         sum1[0] += d;
         sum1[1] += tothe4th(d);
@@ -180,12 +180,13 @@ void EdgeDiffMap(const Image3F& img1, const Image3F& mu1, const Image3F& img2,
 // (SSIM expects non-negative ranges)
 void MakePositiveXYB(jxl::Image3F& img) {
   for (size_t y = 0; y < img.ysize(); ++y) {
-    const float* JXL_RESTRICT rowY = img.PlaneRow(1, y);
+    float* JXL_RESTRICT rowY = img.PlaneRow(1, y);
     float* JXL_RESTRICT rowB = img.PlaneRow(2, y);
     float* JXL_RESTRICT rowX = img.PlaneRow(0, y);
     for (size_t x = 0; x < img.xsize(); ++x) {
-      rowB[x] += 1.0f - rowY[x];
+      rowB[x] += 1.1f - rowY[x];
       rowX[x] += 0.5f;
+      rowY[x] += 0.05f;
     }
   }
 }
@@ -223,45 +224,118 @@ validated on separate validation data consisting of 4292 scores.
 */
 double Msssim::Score() const {
   double ssim = 0.0;
-  constexpr double weight[108] = {
-      4.219667647997749e-05,  0.012686211358327482,   3.107147477665606e-05,
-      0.0005435962381676873,  0.09395129733837515,    0.00023116489501884274,
-      3.1161782753752476e-05, 0.03927085987454604,    3.112320351661424e-05,
-      15.207946778270552,     0.11685373060645432,    0.10825883042600981,
-      3.116785767387498e-05,  3.131457976301988e-05,  3.114664519432431e-05,
-      3.111881734196853e-05,  0.1505260790864622,     1.181932253296347,
-      0.023779401135092804,   3.118721767259025e-05,  3.107147477665606e-05,
-      3.107147477665606e-05,  0.29263071159729126,    100.0,
-      0.07835191903023642,    0.308749239640701,      3.110101392123088e-05,
-      0.03313472929067718,    1.2615585738398967,     1.2865041534163861,
-      0.0005007158018729418,  3.114135552706454e-05,  3.107147477665606e-05,
-      0.0996219886985672,     0.07444482577438882,    0.11372427084611647,
-      5.518066533005683e-05,  3.135558661193638e-05,  3.1165492501039616e-05,
-      0.34750942964683273,    3.4565270945252635e-05, 4.0885439725990835,
-      3.401042790207587e-05,  3.107147477665606e-05,  3.1316775810030784e-05,
-      0.00353728778695106,    0.00028891881745896075, 13.56776514419144,
-      28.427922207790395,     4.698319951601526e-05,  3.1247764029185277e-05,
-      0.1304924308955202,     2.8128347927967736,     7.902846378027295e-05,
-      1.3106634271023248,     0.00021573043084699428, 0.00013016160297185664,
-      3.4061442495967658,     4.460412915533889,      3.107147477665606e-05,
-      3.2773610579184265e-05, 0.10369457277204852,    3.629363118118345e-05,
-      0.0008483509905105047,  1.1933830424964742,     3.342669917216767e-05,
-      3.1129364631232725e-05, 3.111597216765016e-05,  0.002772786993656906,
-      5.50680530699843e-05,   3.107147477665606e-05,  3.113120547104664e-05,
-      3.109181778038206e-05,  3.107147477665606e-05,  3.111874829531125e-05,
-      3.271770143775665e-05,  0.0001592648376030903,  7.958992275525212e-05,
-      3.2765921379684926e-05, 3.11977840244948e-05,   3.11737542622037e-05,
-      3.2698540317954716e-05, 0.0002066952296724267,  8.39634553865265e-05,
-      3.4445126357751654e-05, 4.973593015122901e-05,  3.108593217115985e-05,
-      7.448916645891313e-05,  0.0006505495770876557,  4.3423265674080724e-05,
-      7.247563231427279e-05,  0.00021223544764059632, 3.11772963338397e-05,
-      0.4067536289734678,     0.13898049837088255,    4.54117813611484,
-      0.06853491105140475,    0.15581252655659317,    0.09982664921024764,
-      3.440168932652795,      0.12829653103408623,    56.59930986733967,
-      5.773410728426853e-05,  0.1067440463539433,     3.108444898647367e-05,
-      3.374827724533791e-05,  0.020250432987237055,   0.1334684230723412};
+  constexpr double weight[108] = {0.0,
+                                  0.0,
+                                  0.0,
+                                  1.0035479352512353,
+                                  0.00011322061110474735,
+                                  0.00040442991823685936,
+                                  0.0018953834105783773,
+                                  0.0,
+                                  0.0,
+                                  8.982542997575905,
+                                  0.9899785796045556,
+                                  0.0,
+                                  0.9748315131207942,
+                                  0.9581575169937973,
+                                  0.0,
+                                  0.5133611777952946,
+                                  1.0423189317331243,
+                                  0.000308010928520841,
+                                  12.149584966240063,
+                                  0.9565577248115467,
+                                  0.0,
+                                  1.0406668123136824,
+                                  81.51139046057362,
+                                  0.30593391895330946,
+                                  1.0752214433626779,
+                                  1.1039042369464611,
+                                  0.0,
+                                  1.021911638819618,
+                                  1.1141823296855722,
+                                  0.9730845751441705,
+                                  0.0,
+                                  0.0,
+                                  0.0,
+                                  0.9833918426095505,
+                                  0.7920385137059867,
+                                  0.9710740411514053,
+                                  0.0,
+                                  0.0,
+                                  0.0,
+                                  0.5387077903152638,
+                                  0.0,
+                                  3.4036945601155804,
+                                  0.0,
+                                  0.0,
+                                  0.0,
+                                  2.337569295661117,
+                                  0.0,
+                                  5.707946510901609,
+                                  37.83086423878157,
+                                  0.0,
+                                  0.0,
+                                  3.8258200594305185,
+                                  0.0,
+                                  0.0,
+                                  24.073659674271497,
+                                  0.0,
+                                  0.0,
+                                  13.181871265286068,
+                                  0.0,
+                                  0.0,
+                                  0.0,
+                                  0.0,
+                                  0.0,
+                                  10.00750121262895,
+                                  0.0,
+                                  0.0,
+                                  0.0,
+                                  0.0,
+                                  0.0,
+                                  52.51428385603891,
+                                  0.0,
+                                  0.0,
+                                  0.0,
+                                  0.0,
+                                  0.0,
+                                  0.0,
+                                  0.0,
+                                  0.0,
+                                  0.0,
+                                  0.0,
+                                  0.0,
+                                  0.0,
+                                  0.0,
+                                  0.0,
+                                  0.0,
+                                  0.9946464267894417,
+                                  0.0,
+                                  0.0,
+                                  0.0006040447715934816,
+                                  0.0,
+                                  0.0,
+                                  0.9945171491374072,
+                                  0.0,
+                                  2.8260043809454376,
+                                  1.0052642766534516,
+                                  8.201441997546244e-05,
+                                  12.154041855876695,
+                                  32.292928706201266,
+                                  0.992837130387521,
+                                  0.0,
+                                  30.71925517844603,
+                                  0.00012309907022278743,
+                                  0.0,
+                                  0.9826260237051734,
+                                  0.0,
+                                  0.0,
+                                  0.9980928367837651,
+                                  0.012142430067163312};
 
   size_t i = 0;
+  char ch[] = "XYB";
+  const bool verbose = false;
   for (size_t c = 0; c < 3; ++c) {
     for (size_t scale = 0; scale < scales.size(); ++scale) {
       for (size_t n = 0; n < 2; n++) {
@@ -270,18 +344,37 @@ double Msssim::Score() const {
                scales[scale].avg_edgediff[c * 4 + n],
                scales[scale].avg_edgediff[c * 4 + 2 + n]);
 #endif
+        if (verbose) {
+          printf("%f from channel %c, scale 1:%i, %" PRIuS
+                 "-norm (weight %f)\n",
+                 weight[i] * std::abs(scales[scale].avg_ssim[c * 2 + n]), ch[c],
+                 1 << scale, n * 3 + 1, weight[i]);
+        }
         ssim += weight[i++] * std::abs(scales[scale].avg_ssim[c * 2 + n]);
+        if (verbose) {
+          printf("%f from channel %c ringing, scale 1:%i, %" PRIuS
+                 "-norm (weight %f)\n",
+                 weight[i] * std::abs(scales[scale].avg_edgediff[c * 4 + n]),
+                 ch[c], 1 << scale, n * 3 + 1, weight[i]);
+        }
         ssim += weight[i++] * std::abs(scales[scale].avg_edgediff[c * 4 + n]);
+        if (verbose) {
+          printf(
+              "%f from channel %c blur, scale 1:%i, %" PRIuS
+              "-norm (weight %f)\n",
+              weight[i] * std::abs(scales[scale].avg_edgediff[c * 4 + n + 2]),
+              ch[c], 1 << scale, n * 3 + 1, weight[i]);
+        }
         ssim +=
             weight[i++] * std::abs(scales[scale].avg_edgediff[c * 4 + n + 2]);
       }
     }
   }
 
-  ssim = ssim * 11.480665013024748 - 1.0204610491040174;
+  ssim = ssim * 17.829717797575952 - 1.634169143917183;
 
   if (ssim > 0) {
-    ssim = 100.0 - 10.0 * pow(ssim, 0.6402032009298979);
+    ssim = 100.0 - 10.0 * pow(ssim, 0.5453261009510213);
   } else {
     ssim = 100.0;
   }
@@ -295,20 +388,21 @@ Msssim ComputeSSIMULACRA2(const jxl::ImageBundle& orig,
   jxl::Image3F img1(orig.xsize(), orig.ysize());
   jxl::Image3F img2(img1.xsize(), img1.ysize());
 
-  if (orig.HasAlpha()) {
-    jxl::ImageBundle orig2 = orig.Copy();
-    AlphaBlend(orig2, bg);
-    jxl::ToXYB(orig2, nullptr, &img1, jxl::GetJxlCms(), nullptr);
-  } else {
-    jxl::ToXYB(orig, nullptr, &img1, jxl::GetJxlCms(), nullptr);
-  }
-  if (dist.HasAlpha()) {
-    jxl::ImageBundle dist2 = dist.Copy();
-    AlphaBlend(dist2, bg);
-    jxl::ToXYB(dist2, nullptr, &img2, jxl::GetJxlCms(), nullptr);
-  } else {
-    jxl::ToXYB(dist, nullptr, &img2, jxl::GetJxlCms(), nullptr);
-  }
+  jxl::ImageBundle orig2 = orig.Copy();
+  jxl::ImageBundle dist2 = dist.Copy();
+
+  if (orig.HasAlpha()) AlphaBlend(orig2, bg);
+  if (dist.HasAlpha()) AlphaBlend(dist2, bg);
+  orig2.ClearExtraChannels();
+  dist2.ClearExtraChannels();
+
+  JXL_CHECK(orig2.TransformTo(jxl::ColorEncoding::LinearSRGB(orig2.IsGray()),
+                              jxl::GetJxlCms()));
+  JXL_CHECK(dist2.TransformTo(jxl::ColorEncoding::LinearSRGB(dist2.IsGray()),
+                              jxl::GetJxlCms()));
+
+  jxl::ToXYB(orig2, nullptr, &img1, jxl::GetJxlCms(), nullptr);
+  jxl::ToXYB(dist2, nullptr, &img2, jxl::GetJxlCms(), nullptr);
   MakePositiveXYB(img1);
   MakePositiveXYB(img2);
 
@@ -320,11 +414,19 @@ Msssim ComputeSSIMULACRA2(const jxl::ImageBundle& orig,
       break;
     }
     if (scale) {
-      img1 = Downsample(img1, 2, 2);
-      img2 = Downsample(img2, 2, 2);
+      orig2.SetFromImage(Downsample(*orig2.color(), 2, 2),
+                         jxl::ColorEncoding::LinearSRGB(orig2.IsGray()));
+      dist2.SetFromImage(Downsample(*dist2.color(), 2, 2),
+                         jxl::ColorEncoding::LinearSRGB(dist2.IsGray()));
+      img1.ShrinkTo(orig2.xsize(), orig2.ysize());
+      img2.ShrinkTo(orig2.xsize(), orig2.ysize());
+      jxl::ToXYB(orig2, nullptr, &img1, jxl::GetJxlCms(), nullptr);
+      jxl::ToXYB(dist2, nullptr, &img2, jxl::GetJxlCms(), nullptr);
+      MakePositiveXYB(img1);
+      MakePositiveXYB(img2);
     }
-    mul.ShrinkTo(img1.xsize(), img2.ysize());
-    blur.ShrinkTo(img1.xsize(), img2.ysize());
+    mul.ShrinkTo(img1.xsize(), img1.ysize());
+    blur.ShrinkTo(img1.xsize(), img1.ysize());
 
     Multiply(img1, img1, &mul);
     Image3F sigma1_sq = blur(mul);
