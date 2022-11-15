@@ -71,6 +71,20 @@ TEST_P(DecodeJpegTestParam, Streaming) {
   PackedImage output(dec.xsize(), dec.ysize(), format);
   ASSERT_EQ(JpegDecoder::Status::kSuccess, dec.SetOutput(&output));
 
+  for (;;) {
+    status = dec.StartDecompress();
+    if (status == JpegDecoder::Status::kNeedMoreInput) {
+      ASSERT_LT(pos, compressed.size());
+      size_t len = std::min(chunk_size, compressed.size() - pos);
+      ASSERT_EQ(JpegDecoder::Status::kSuccess,
+                dec.SetInput(compressed.data() + pos, len));
+      pos += len;
+      continue;
+    }
+    ASSERT_EQ(status, JpegDecoder::Status::kSuccess);
+    break;
+  }
+
   size_t max_output_lines = config.max_output_lines;
   if (max_output_lines == 0) max_output_lines = dec.ysize();
 
@@ -170,12 +184,7 @@ TEST_P(DecodeJpegTestParam, JpegSourceManager) {
   TestJpegSourceManager jsrc(compressed.data(), compressed.size(), chunk_size);
   dec.SetJpegSourceManager(reinterpret_cast<jpeg_source_mgr*>(&jsrc));
 
-  JpegDecoder::Status status;
-  for (;;) {
-    status = dec.ReadHeaders();
-    ASSERT_EQ(status, JpegDecoder::Status::kSuccess);
-    break;
-  }
+  ASSERT_EQ(JpegDecoder::Status::kSuccess, dec.ReadHeaders());
 
   EXPECT_EQ(ppf_libjpeg.info.xsize, dec.xsize());
   EXPECT_EQ(ppf_libjpeg.info.ysize, dec.ysize());
@@ -186,13 +195,16 @@ TEST_P(DecodeJpegTestParam, JpegSourceManager) {
   PackedImage output(dec.xsize(), dec.ysize(), format);
   ASSERT_EQ(JpegDecoder::Status::kSuccess, dec.SetOutput(&output));
 
+  ASSERT_EQ(JpegDecoder::Status::kSuccess, dec.StartDecompress());
+
   size_t max_output_lines = config.max_output_lines;
   if (max_output_lines == 0) max_output_lines = dec.ysize();
 
   size_t total_output_lines = 0;
   while (total_output_lines < dec.ysize()) {
     size_t num_output_lines = 0;
-    status = dec.ReadScanLines(&num_output_lines, max_output_lines);
+    JpegDecoder::Status status =
+        dec.ReadScanLines(&num_output_lines, max_output_lines);
     total_output_lines += num_output_lines;
     ASSERT_EQ(status, JpegDecoder::Status::kSuccess);
     if (total_output_lines < dec.ysize()) {

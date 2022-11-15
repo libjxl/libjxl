@@ -133,9 +133,14 @@ class JpegDecoder {
   // channels as the underlying JPEG bitstream.
   Status SetOutput(PackedImage* image);
 
-  // Reads the header markers up to and including SOF marker. After this returns
+  // Reads the header markers up to and including SOS marker. After this returns
   // kSuccess, the image attribute accessors can be called.
   Status ReadHeaders();
+
+  // Prepares internal buffers for image output. Must be called after
+  // SetOutput(). For progressive images, reads the whole input data until the
+  // EOI marker.
+  Status StartDecompress();
 
   // Reads the bitstream after the SOF marker, and fills in at most
   // max_output_rows scan lines of the provided image. Set *num_output_rows to
@@ -180,6 +185,7 @@ class JpegDecoder {
   // Marker data processing state.
   //
   bool found_soi_ = false;
+  bool found_sos_ = false;
   bool found_app0_ = false;
   bool found_dri_ = false;
   bool found_sof_ = false;
