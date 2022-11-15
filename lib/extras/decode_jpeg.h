@@ -144,8 +144,8 @@ class JpegDecoder {
 
   // Image attribute accessors, can be called after ReadHeaders() returns
   // kSuccess.
-  size_t xsize() const { return xsize_; }
-  size_t ysize() const { return ysize_; }
+  size_t xsize() const { return cinfo.image_width; }
+  size_t ysize() const { return cinfo.image_height; }
   size_t num_channels() const { return components_.size(); }
   const std::vector<uint8_t>& icc_profile() const { return icc_profile_; }
 
@@ -184,8 +184,6 @@ class JpegDecoder {
   bool found_dri_ = false;
   bool found_sof_ = false;
   bool found_eoi_ = false;
-  size_t xsize_ = 0;
-  size_t ysize_ = 0;
   bool is_ycbcr_ = true;
   size_t icc_index_ = 0;
   size_t icc_total_ = 0;
