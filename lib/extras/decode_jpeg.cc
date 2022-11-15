@@ -656,7 +656,7 @@ JpegDecoder::Status JpegDecoder::ReadHeaders() {
   const uint8_t* last_src_buf_start = data;
   size_t last_src_buf_len = len;
 
-  while (!found_sof_) {
+  while (!found_sos_) {
     Status status = Status::kSuccess;
     if (state_ == State::kStart) {
       // Look for the SOI marker.
@@ -702,6 +702,54 @@ JpegDecoder::Status JpegDecoder::ReadHeaders() {
         (last_src_buf_start + last_src_buf_len - buffer.size() + pos);
     cinfo.src->bytes_in_buffer = buffer.size() - pos;
   }
+  return Status::kSuccess;
+}
+
+JpegDecoder::Status JpegDecoder::StartDecompress() {
+  if (is_progressive_) {
+    const uint8_t* data = cinfo.src->next_input_byte;
+    size_t len = cinfo.src->bytes_in_buffer;
+    size_t pos = 0;
+    std::vector<uint8_t> buffer;
+    const uint8_t* last_src_buf_start = data;
+    size_t last_src_buf_len = len;
+    while (!found_eoi_) {
+      Status status = Status::kSuccess;
+      if (state_ == State::kProcessMarkers) {
+        status = ProcessMarker(data, len, &pos);
+      } else if (state_ == State::kScan) {
+        status = ProcessScan(data, len, &pos);
+      } else {
+        return JPEG_ERROR("StartDecompress: Unexpected state");
+      }
+      if (status == Status::kNeedMoreInput) {
+        if (buffer.empty()) {
+          buffer.assign(data, data + len);
+        }
+        if ((*cinfo.src->fill_input_buffer)(&cinfo)) {
+          buffer.insert(
+              buffer.end(), cinfo.src->next_input_byte,
+              cinfo.src->next_input_byte + cinfo.src->bytes_in_buffer);
+          data = buffer.data();
+          len = buffer.size();
+          last_src_buf_start = cinfo.src->next_input_byte;
+          last_src_buf_len = cinfo.src->bytes_in_buffer;
+          cinfo.src->next_input_byte = data + pos;
+          cinfo.src->bytes_in_buffer = len - pos;
+        } else {
+          return status;
+        }
+      } else if (status != Status::kSuccess) {
+        return status;
+      }
+    }
+    if (!buffer.empty()) {
+      cinfo.src->next_input_byte =
+          (last_src_buf_start + last_src_buf_len - buffer.size() + pos);
+      cinfo.src->bytes_in_buffer = buffer.size() - pos;
+    }
+  }
+  PrepareForOutput();
   return Status::kSuccess;
 }
 
@@ -784,12 +832,7 @@ JpegDecoder::Status JpegDecoder::ProcessMarker(const uint8_t* data, size_t len,
   uint8_t marker = data[*pos + 1];
   if (marker == 0xd9) {
     found_eoi_ = true;
-    if (is_progressive_) {
-      PrepareForOutput();
-      state_ = State::kRender;
-    } else {
-      state_ = State::kEnd;
-    }
+    state_ = is_progressive_ ? State::kRender : State::kEnd;
     *pos += 2;
     AdvanceCodestream(2);
     return Status::kSuccess;
@@ -922,6 +965,7 @@ JpegDecoder::Status JpegDecoder::ProcessSOS(const uint8_t* data, size_t len) {
   if (!found_sof_) {
     return JPEG_ERROR("Unexpected SOS marker.");
   }
+  found_sos_ = true;
   size_t pos = 4;
   JPEG_VERIFY_LEN(1);
   size_t comps_in_scan = ReadUint8(data, &pos);
@@ -1038,9 +1082,6 @@ JpegDecoder::Status JpegDecoder::ProcessSOS(const uint8_t* data, size_t len) {
     mcu_size += si->mcu_ysize_blocks * si->mcu_xsize_blocks;
   }
   mcu_.coeffs.resize(mcu_size * kDCTBlockSize);
-  if (!is_progressive_) {
-    PrepareForOutput();
-  }
   state_ = State::kScan;
   return Status::kSuccess;
 }
@@ -1588,6 +1629,10 @@ Status DecodeJpeg(const std::vector<uint8_t>& compressed,
 
   if (dec.SetOutput(&frame.color) != JpegDecoder::Status::kSuccess) {
     return JXL_FAILURE("Failed to set output image");
+  }
+
+  if (dec.StartDecompress() != JpegDecoder::Status::kSuccess) {
+    return JXL_FAILURE("StartDecompress failed.");
   }
 
   size_t num_output_rows = 0;
