@@ -6,12 +6,8 @@
 #ifndef LIB_EXTRAS_DECODE_JPEG_H_
 #define LIB_EXTRAS_DECODE_JPEG_H_
 
-/* clang-format off */
 #include <stdint.h>
 #include <stdio.h>
-#include <jpeglib.h>
-
-/* clang-format on */
 
 #include <array>
 #include <vector>
@@ -24,6 +20,10 @@
 
 namespace jxl {
 namespace extras {
+
+// Until we are ready with a complete implementation, we implement libjpeg API
+// functions in this namespace so that there are no linker conflicts.
+#include <jpeglib.h>
 
 constexpr int kMaxComponents = 4;
 
@@ -108,55 +108,9 @@ struct MCUCodingState {
   std::vector<coeff_t> coeffs;
 };
 
-// Streaming JPEG decoding object.
-class JpegDecoder {
- public:
-  enum class Status {
-    kSuccess,
-    kNeedMoreInput,
-    kError,
-  };
-
-  JpegDecoder();
-
-  // Sets the next chunk of input. It must be called before the first call to
-  // ReadHeaders() and every time a reder function returns
-  // Status::kNeedMoreInput.
-  Status SetInput(const uint8_t* data, size_t len);
-
-  // Sets custom source manager. In this case SetInput() must not be called.
-  // The passed pointer is owned by the caller.
-  void SetJpegSourceManager(jpeg_source_mgr* jsrc) { cinfo.src = jsrc; }
-
-  // Sets the output image. Must be called between ReadHeaders() and
-  // ReadScanLines(). The provided image must have the dimensions and number of
-  // channels as the underlying JPEG bitstream.
-  Status SetOutput(PackedImage* image);
-
-  // Reads the header markers up to and including SOS marker. After this returns
-  // kSuccess, the image attribute accessors can be called.
-  Status ReadHeaders();
-
-  // Prepares internal buffers for image output. Must be called after
-  // SetOutput(). For progressive images, reads the whole input data until the
-  // EOI marker.
-  Status StartDecompress();
-
-  // Reads the bitstream after the SOF marker, and fills in at most
-  // max_output_rows scan lines of the provided image. Set *num_output_rows to
-  // the actual number of lines produced.
-  Status ReadScanLines(size_t* num_output_rows, size_t max_output_rows);
-
-  // Image attribute accessors, can be called after ReadHeaders() returns
-  // kSuccess.
-  size_t xsize() const { return cinfo.image_width; }
-  size_t ysize() const { return cinfo.image_height; }
-  size_t num_channels() const { return components_.size(); }
-  const std::vector<uint8_t>& icc_profile() const { return icc_profile_; }
-
- private:
-  jpeg_decompress_struct cinfo;
-
+// Use this forward-declared libjpeg struct to hold all our private variables.
+// TODO(szabadka) Remove variables that have a corresponding version in cinfo.
+struct jpeg_decomp_master {
   enum class State {
     kStart,
     kProcessMarkers,
@@ -169,7 +123,6 @@ class JpegDecoder {
   //
   // Input handling state.
   //
-  jpeg_source_mgr jsrc_;
   const uint8_t* next_in_ = nullptr;
   size_t avail_in_ = 0;
   // Codestream input data is copied here temporarily when the decoder needs
@@ -195,10 +148,10 @@ class JpegDecoder {
   size_t icc_total_ = 0;
   std::vector<uint8_t> icc_profile_;
   size_t restart_interval_ = 0;
-  std::vector<JPEGQuantTable> quant_;
-  std::vector<JPEGComponent> components_;
-  std::vector<HuffmanTableEntry> dc_huff_lut_;
-  std::vector<HuffmanTableEntry> ac_huff_lut_;
+  std::vector<jxl::extras::JPEGQuantTable> quant_;
+  std::vector<jxl::extras::JPEGComponent> components_;
+  std::vector<jxl::extras::HuffmanTableEntry> dc_huff_lut_;
+  std::vector<jxl::extras::HuffmanTableEntry> ac_huff_lut_;
   uint8_t huff_slot_defined_[256] = {};
 
   // Fields defined by SOF marker.
@@ -211,27 +164,27 @@ class JpegDecoder {
   size_t iMCU_height_;
 
   // Initialized at strat of frame.
-  uint16_t scan_progression_[kMaxComponents][kDCTBlockSize];
+  uint16_t scan_progression_[jxl::extras::kMaxComponents][jxl::kDCTBlockSize];
 
   //
   // Per scan state.
   //
-  JPEGScanInfo scan_info_;
+  jxl::extras::JPEGScanInfo scan_info_;
   size_t scan_mcu_row_;
   size_t scan_mcu_col_;
-  coeff_t last_dc_coeff_[kMaxComponents];
+  jxl::extras::coeff_t last_dc_coeff_[jxl::extras::kMaxComponents];
   int eobrun_;
   int restarts_to_go_;
   int next_restart_marker_;
 
-  MCUCodingState mcu_;
+  jxl::extras::MCUCodingState mcu_;
 
   //
   // Rendering state.
   //
-  PackedImage* output_;
+  jxl::extras::PackedImage* output_;
 
-  Image3F MCU_row_buf_;
+  jxl::Image3F MCU_row_buf_;
   size_t MCU_buf_current_row_;
   size_t MCU_buf_ready_rows_;
 
@@ -242,7 +195,7 @@ class JpegDecoder {
   // Temporary buffers for vertically upsampled chroma components. We keep a
   // ringbuffer of 3 * kBlockDim rows so that we have access for previous and
   // next rows.
-  std::vector<ImageF> chroma_;
+  std::vector<jxl::ImageF> chroma_;
   // In the rendering order, vertically upsampled chroma components come first.
   std::vector<size_t> component_order_;
   hwy::AlignedFreeUniquePtr<float[]> idct_scratch_;
@@ -257,26 +210,61 @@ class JpegDecoder {
   hwy::AlignedFreeUniquePtr<int[]> sumabs_;
   std::vector<size_t> num_processed_blocks_;
   hwy::AlignedFreeUniquePtr<float[]> biases_;
+};
 
-  void AdvanceInput(size_t size);
-  void AdvanceCodestream(size_t size);
+// Streaming JPEG decoding object. This is a C++ wrapper around the libjpeg API.
+class JpegDecoder {
+ public:
+  enum class Status {
+    kSuccess,
+    kNeedMoreInput,
+    kError,
+  };
 
-  Status ProcessMarker(const uint8_t* data, size_t len, size_t* pos);
-  Status ProcessSOF(const uint8_t* data, size_t len);
-  Status ProcessSOS(const uint8_t* data, size_t len);
-  Status ProcessDHT(const uint8_t* data, size_t len);
-  Status ProcessDQT(const uint8_t* data, size_t len);
-  Status ProcessDRI(const uint8_t* data, size_t len);
-  Status ProcessAPP(const uint8_t* data, size_t len);
-  Status ProcessCOM(const uint8_t* data, size_t len);
+  JpegDecoder();
 
-  Status ProcessScan(const uint8_t* data, size_t len, size_t* pos);
+  // Sets the next chunk of input. It must be called before the first call to
+  // ReadHeaders() and every time a reder function returns
+  // Status::kNeedMoreInput.
+  Status SetInput(const uint8_t* data, size_t len);
 
-  void SaveMCUCodingState();
-  void RestoreMCUCodingState();
+  // Sets custom source manager. In this case SetInput() must not be called.
+  // The passed pointer is owned by the caller.
+  void SetJpegSourceManager(jpeg_source_mgr* jsrc) { cinfo_.src = jsrc; }
 
-  void PrepareForOutput();
-  void ProcessOutput(size_t* num_output_rows, size_t max_output_rows);
+  // Sets the output image. Must be called between ReadHeaders() and
+  // ReadScanLines(). The provided image must have the dimensions and number of
+  // channels as the underlying JPEG bitstream.
+  Status SetOutput(PackedImage* image);
+
+  // Reads the header markers up to and including SOS marker. After this returns
+  // kSuccess, the image attribute accessors can be called.
+  Status ReadHeaders();
+
+  // Prepares internal buffers for image output. Must be called after
+  // SetOutput(). For progressive images, reads the whole input data until the
+  // EOI marker.
+  Status StartDecompress();
+
+  // Reads the bitstream after the SOF marker, and fills in at most
+  // max_output_rows scan lines of the provided image. Set *num_output_rows to
+  // the actual number of lines produced.
+  Status ReadScanLines(size_t* num_output_rows, size_t max_output_rows);
+
+  // Image attribute accessors, can be called after ReadHeaders() returns
+  // kSuccess.
+  size_t xsize() const { return cinfo_.image_width; }
+  size_t ysize() const { return cinfo_.image_height; }
+  size_t num_channels() const { return cinfo_.master->components_.size(); }
+  const std::vector<uint8_t>& icc_profile() const {
+    return cinfo_.master->icc_profile_;
+  }
+
+ private:
+  jpeg_decompress_struct cinfo_;
+  jpeg_error_mgr jerr_;
+  jpeg_source_mgr jsrc_;
+  jpeg_decomp_master jmaster_;
 };
 
 Status DecodeJpeg(const std::vector<uint8_t>& compressed,

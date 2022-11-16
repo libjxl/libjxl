@@ -5,6 +5,8 @@
 
 #include "lib/extras/decode_jpeg.h"
 
+#include <setjmp.h>
+
 #include <cmath>
 
 #include "hwy/aligned_allocator.h"
@@ -14,8 +16,13 @@
 #include "lib/jxl/common.h"
 #include "lib/jxl/image.h"
 
+#define ERREXIT() \
+  (*cinfo->err->error_exit)(reinterpret_cast<j_common_ptr>(cinfo))
+
 namespace jxl {
 namespace extras {
+
+typedef jpeg_decomp_master::State State;
 
 namespace {
 
@@ -545,6 +552,39 @@ void ComputeOptimalLaplacianBiases(const int num_blocks, const int* nonzeros,
   }
 }
 
+void error_exit(j_common_ptr cinfo) {
+  jmp_buf* env = static_cast<jmp_buf*>(cinfo->client_data);
+  longjmp(*env, 1);
+}
+
+void output_message(j_common_ptr cinfo) {}
+
+void emit_message(j_common_ptr cinfo, int msg_level) {}
+
+void format_message(j_common_ptr cinfo, char* buffer) {}
+
+void reset_error_mgr(j_common_ptr cinfo) {}
+
+const char* const kErrorMessageTable[] = {
+    "Something went wrong.",
+};
+
+void InitErrorManager(jpeg_error_mgr* jerr) {
+  jerr->error_exit = error_exit;
+  jerr->output_message = output_message;
+  jerr->emit_message = emit_message;
+  jerr->format_message = format_message;
+  jerr->reset_error_mgr = reset_error_mgr;
+  jerr->msg_code = 0;
+  jerr->trace_level = 0;
+  jerr->num_warnings = 0;
+  jerr->jpeg_message_table = kErrorMessageTable;
+  jerr->last_jpeg_message = 0;
+  jerr->addon_message_table = nullptr;
+  jerr->first_addon_message = 0;
+  jerr->last_addon_message = 0;
+}
+
 // Trivial implementations of the jpeg_source_mgr callback functions.
 
 void init_source(j_decompress_ptr cinfo) {}
@@ -567,337 +607,69 @@ void InitSuspendingSourceManager(jpeg_source_mgr* jsrc) {
   jsrc->term_source = term_source;
 }
 
-}  // namespace
-
-JpegDecoder::JpegDecoder() {
-  InitSuspendingSourceManager(&jsrc_);
-  cinfo.src = &jsrc_;
+void AdvanceInput(j_decompress_ptr cinfo, size_t size) {
+  jpeg_decomp_master* m = cinfo->master;
+  JXL_DASSERT(m->avail_in_ >= size);
+  m->next_in_ += size;
+  m->avail_in_ -= size;
 }
 
-JpegDecoder::Status JpegDecoder::SetInput(const uint8_t* data, size_t size) {
-  if (next_in_ != nullptr && codestream_copy_.empty()) {
-    codestream_copy_.assign(next_in_, next_in_ + avail_in_);
-  }
-  next_in_ = data;
-  avail_in_ = size;
-  if (codestream_copy_.empty() && codestream_pos_ > 0) {
-    size_t skip = std::min<size_t>(codestream_pos_, avail_in_);
-    AdvanceInput(skip);
-    codestream_pos_ -= skip;
-    if (codestream_pos_ > 0) {
-      return Status::kNeedMoreInput;
-    }
-  }
-  JXL_DASSERT(codestream_pos_ <= codestream_copy_.size());
-  if (codestream_copy_.empty()) {
-    if (avail_in_ == 0) {
-      return Status::kNeedMoreInput;
-    }
-    cinfo.src->next_input_byte = next_in_;
-    cinfo.src->bytes_in_buffer = avail_in_;
-    return Status::kSuccess;
-  } else {
-    codestream_copy_.insert(codestream_copy_.end(), next_in_,
-                            next_in_ + avail_in_);
-    cinfo.src->next_input_byte = codestream_copy_.data() + codestream_pos_;
-    cinfo.src->bytes_in_buffer = codestream_copy_.size() - codestream_pos_;
-    return Status::kSuccess;
-  }
-}
-
-void JpegDecoder::AdvanceInput(size_t size) {
-  JXL_DASSERT(avail_in_ >= size);
-  next_in_ += size;
-  avail_in_ -= size;
-}
-
-void JpegDecoder::AdvanceCodestream(size_t size) {
-  if (codestream_copy_.empty()) {
-    if (size <= avail_in_) {
-      AdvanceInput(size);
+void AdvanceCodestream(j_decompress_ptr cinfo, size_t size) {
+  jpeg_decomp_master* m = cinfo->master;
+  if (m->codestream_copy_.empty()) {
+    if (size <= m->avail_in_) {
+      AdvanceInput(cinfo, size);
     } else {
-      codestream_pos_ = size - avail_in_;
-      AdvanceInput(avail_in_);
+      m->codestream_pos_ = size - m->avail_in_;
+      AdvanceInput(cinfo, m->avail_in_);
     }
   } else {
-    codestream_pos_ += size;
-    if (codestream_pos_ + avail_in_ >= codestream_copy_.size()) {
-      size_t advance = std::min(
-          avail_in_, avail_in_ + codestream_pos_ - codestream_copy_.size());
-      AdvanceInput(advance);
-      codestream_pos_ -= std::min(codestream_pos_, codestream_copy_.size());
-      codestream_copy_.clear();
+    m->codestream_pos_ += size;
+    if (m->codestream_pos_ + m->avail_in_ >= m->codestream_copy_.size()) {
+      size_t advance =
+          std::min(m->avail_in_, m->avail_in_ + m->codestream_pos_ -
+                                     m->codestream_copy_.size());
+      AdvanceInput(cinfo, advance);
+      m->codestream_pos_ -=
+          std::min(m->codestream_pos_, m->codestream_copy_.size());
+      m->codestream_copy_.clear();
     }
   }
-  JXL_DASSERT(size <= cinfo.src->bytes_in_buffer);
-  cinfo.src->bytes_in_buffer -= size;
-  cinfo.src->next_input_byte += size;
+  JXL_DASSERT(size <= cinfo->src->bytes_in_buffer);
+  cinfo->src->bytes_in_buffer -= size;
+  cinfo->src->next_input_byte += size;
 }
 
-JpegDecoder::Status JpegDecoder::SetOutput(PackedImage* image) {
-  if (!found_sof_) {
-    return JPEG_ERROR("SOF header was not found.");
-  }
-  if (image->xsize != cinfo.image_width || image->ysize != cinfo.image_height) {
-    return JPEG_ERROR("Invalid image dimensions.");
-  }
-  if (image->format.num_channels != components_.size()) {
-    return JPEG_ERROR("Invalid number of channels.");
-  }
-  output_ = image;
-  return Status::kSuccess;
-}
-
-JpegDecoder::Status JpegDecoder::ReadHeaders() {
-  const uint8_t* data = cinfo.src->next_input_byte;
-  size_t len = cinfo.src->bytes_in_buffer;
-  size_t pos = 0;
-  std::vector<uint8_t> buffer;
-  const uint8_t* last_src_buf_start = data;
-  size_t last_src_buf_len = len;
-
-  while (!found_sos_) {
-    Status status = Status::kSuccess;
-    if (state_ == State::kStart) {
-      // Look for the SOI marker.
-      if (len >= 2) {
-        if (data[0] != 0xff || data[1] != 0xd8) {
-          return JPEG_ERROR("Did not find SOI marker.");
-        }
-        pos += 2;
-        AdvanceCodestream(2);
-        found_soi_ = true;
-        state_ = State::kProcessMarkers;
-      } else {
-        status = Status::kNeedMoreInput;
-      }
-    } else if (state_ == State::kProcessMarkers) {
-      status = ProcessMarker(data, len, &pos);
-    } else {
-      return JPEG_ERROR("ReadHeaders: Unexpected state");
-    }
-    if (status == Status::kNeedMoreInput) {
-      if (buffer.empty()) {
-        buffer.assign(data, data + len);
-      }
-      if ((*cinfo.src->fill_input_buffer)(&cinfo)) {
-        buffer.insert(buffer.end(), cinfo.src->next_input_byte,
-                      cinfo.src->next_input_byte + cinfo.src->bytes_in_buffer);
-        data = buffer.data();
-        len = buffer.size();
-        last_src_buf_start = cinfo.src->next_input_byte;
-        last_src_buf_len = cinfo.src->bytes_in_buffer;
-        cinfo.src->next_input_byte = data + pos;
-        cinfo.src->bytes_in_buffer = len - pos;
-      } else {
-        return status;
-      }
-    } else if (status != Status::kSuccess) {
-      return status;
-    }
-  }
-
-  if (!buffer.empty()) {
-    cinfo.src->next_input_byte =
-        (last_src_buf_start + last_src_buf_len - buffer.size() + pos);
-    cinfo.src->bytes_in_buffer = buffer.size() - pos;
-  }
-  return Status::kSuccess;
-}
-
-JpegDecoder::Status JpegDecoder::StartDecompress() {
-  if (is_progressive_) {
-    const uint8_t* data = cinfo.src->next_input_byte;
-    size_t len = cinfo.src->bytes_in_buffer;
-    size_t pos = 0;
-    std::vector<uint8_t> buffer;
-    const uint8_t* last_src_buf_start = data;
-    size_t last_src_buf_len = len;
-    while (!found_eoi_) {
-      Status status = Status::kSuccess;
-      if (state_ == State::kProcessMarkers) {
-        status = ProcessMarker(data, len, &pos);
-      } else if (state_ == State::kScan) {
-        status = ProcessScan(data, len, &pos);
-      } else {
-        return JPEG_ERROR("StartDecompress: Unexpected state");
-      }
-      if (status == Status::kNeedMoreInput) {
-        if (buffer.empty()) {
-          buffer.assign(data, data + len);
-        }
-        if ((*cinfo.src->fill_input_buffer)(&cinfo)) {
-          buffer.insert(
-              buffer.end(), cinfo.src->next_input_byte,
-              cinfo.src->next_input_byte + cinfo.src->bytes_in_buffer);
-          data = buffer.data();
-          len = buffer.size();
-          last_src_buf_start = cinfo.src->next_input_byte;
-          last_src_buf_len = cinfo.src->bytes_in_buffer;
-          cinfo.src->next_input_byte = data + pos;
-          cinfo.src->bytes_in_buffer = len - pos;
-        } else {
-          return status;
-        }
-      } else if (status != Status::kSuccess) {
-        return status;
-      }
-    }
-    if (!buffer.empty()) {
-      cinfo.src->next_input_byte =
-          (last_src_buf_start + last_src_buf_len - buffer.size() + pos);
-      cinfo.src->bytes_in_buffer = buffer.size() - pos;
-    }
-  }
-  PrepareForOutput();
-  return Status::kSuccess;
-}
-
-JpegDecoder::Status JpegDecoder::ReadScanLines(size_t* num_output_rows,
-                                               size_t max_output_rows) {
-  if (max_output_rows == 0 || state_ == State::kEnd) {
-    return Status::kSuccess;
-  }
-  *num_output_rows = 0;
-
-  const uint8_t* data = cinfo.src->next_input_byte;
-  size_t len = cinfo.src->bytes_in_buffer;
-  size_t pos = 0;
-  std::vector<uint8_t> buffer;
-  const uint8_t* last_src_buf_start = data;
-  size_t last_src_buf_len = len;
-
-  while (*num_output_rows < max_output_rows) {
-    Status status = Status::kSuccess;
-    if (state_ == State::kProcessMarkers) {
-      status = ProcessMarker(data, len, &pos);
-    } else if (state_ == State::kScan) {
-      status = ProcessScan(data, len, &pos);
-    } else if (state_ == State::kRender) {
-      ProcessOutput(num_output_rows, max_output_rows);
-    } else if (state_ == State::kEnd) {
-      break;
-    } else {
-      return JPEG_ERROR("ReadScanLines: Unexpected state");
-    }
-    if (status == Status::kNeedMoreInput) {
-      if (buffer.empty()) {
-        buffer.assign(data, data + len);
-      }
-      if ((*cinfo.src->fill_input_buffer)(&cinfo)) {
-        buffer.insert(buffer.end(), cinfo.src->next_input_byte,
-                      cinfo.src->next_input_byte + cinfo.src->bytes_in_buffer);
-        data = buffer.data();
-        len = buffer.size();
-        last_src_buf_start = cinfo.src->next_input_byte;
-        last_src_buf_len = cinfo.src->bytes_in_buffer;
-        cinfo.src->next_input_byte = data + pos;
-        cinfo.src->bytes_in_buffer = len - pos;
-      } else {
-        return status;
-      }
-    } else if (status != Status::kSuccess) {
-      return status;
-    }
-  }
-  if (!buffer.empty()) {
-    cinfo.src->next_input_byte =
-        (last_src_buf_start + last_src_buf_len - buffer.size() + pos);
-    cinfo.src->bytes_in_buffer = buffer.size() - pos;
-  }
-  return Status::kSuccess;
-}
-
-JpegDecoder::Status JpegDecoder::ProcessMarker(const uint8_t* data, size_t len,
-                                               size_t* pos) {
-  // kIsValidMarker[i] == 1 means (0xc0 + i) is a valid marker.
-  static const uint8_t kIsValidMarker[] = {
-      1, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1,
-      1, 1, 0, 1, 1, 1, 0, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-      1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0,
-  };
-  // Skip bytes between markers.
-  size_t num_skipped = 0;
-  while (*pos + 1 < len && (data[*pos] != 0xff || data[*pos + 1] < 0xc0 ||
-                            !kIsValidMarker[data[*pos + 1] - 0xc0])) {
-    ++(*pos);
-    ++num_skipped;
-  }
-  if (*pos + 2 > len) {
-    return Status::kNeedMoreInput;
-  }
-  if (num_skipped > 0) {
-    AdvanceCodestream(num_skipped);
-  }
-  uint8_t marker = data[*pos + 1];
-  if (marker == 0xd9) {
-    found_eoi_ = true;
-    state_ = is_progressive_ ? State::kRender : State::kEnd;
-    *pos += 2;
-    AdvanceCodestream(2);
-    return Status::kSuccess;
-  }
-  if (*pos + 4 > len) {
-    return Status::kNeedMoreInput;
-  }
-  const uint8_t* marker_data = &data[*pos];
-  size_t marker_len = (data[*pos + 2] << 8) + data[*pos + 3] + 2;
-  if (marker_len < 4) {
-    return JPEG_ERROR("Invalid marker length");
-  }
-  if (*pos + marker_len > len) {
-    return Status::kNeedMoreInput;
-  }
-  if (marker == 0xc0 || marker == 0xc1 || marker == 0xc2) {
-    JPEG_RETURN_IF_ERROR(ProcessSOF(marker_data, marker_len));
-  } else if (marker == 0xc4) {
-    JPEG_RETURN_IF_ERROR(ProcessDHT(marker_data, marker_len));
-  } else if (marker == 0xda) {
-    JPEG_RETURN_IF_ERROR(ProcessSOS(marker_data, marker_len));
-  } else if (marker == 0xdb) {
-    JPEG_RETURN_IF_ERROR(ProcessDQT(marker_data, marker_len));
-  } else if (marker == 0xdd) {
-    JPEG_RETURN_IF_ERROR(ProcessDRI(marker_data, marker_len));
-  } else if (marker >= 0xe0 && marker <= 0xef) {
-    JPEG_RETURN_IF_ERROR(ProcessAPP(marker_data, marker_len));
-  } else if (marker == 0xfe) {
-    JPEG_RETURN_IF_ERROR(ProcessCOM(marker_data, marker_len));
-  } else {
-    return JPEG_ERROR("Unexpected marker 0x%x", marker);
-  }
-  *pos += marker_len;
-  AdvanceCodestream(marker_len);
-  return Status::kSuccess;
-}
-
-JpegDecoder::Status JpegDecoder::ProcessSOF(const uint8_t* data, size_t len) {
-  if (!found_soi_) {
+JpegDecoder::Status ProcessSOF(j_decompress_ptr cinfo, const uint8_t* data,
+                               size_t len) {
+  jpeg_decomp_master* m = cinfo->master;
+  if (!m->found_soi_) {
     return JPEG_ERROR("Unexpected SOF marker.");
   }
-  if (found_sof_) {
+  if (m->found_sof_) {
     return JPEG_ERROR("Duplicate SOF marker.");
   }
-  found_sof_ = true;
-  is_progressive_ = (data[1] == 0xc2);
+  m->found_sof_ = true;
+  m->is_progressive_ = (data[1] == 0xc2);
   size_t pos = 4;
   JPEG_VERIFY_LEN(6);
   int precision = ReadUint8(data, &pos);
-  cinfo.image_height = ReadUint16(data, &pos);
-  cinfo.image_width = ReadUint16(data, &pos);
+  cinfo->image_height = ReadUint16(data, &pos);
+  cinfo->image_width = ReadUint16(data, &pos);
   int num_components = ReadUint8(data, &pos);
   JPEG_VERIFY_INPUT(precision, 8, 8);
-  JPEG_VERIFY_INPUT(cinfo.image_height, 1, kMaxDimPixels);
-  JPEG_VERIFY_INPUT(cinfo.image_width, 1, kMaxDimPixels);
+  JPEG_VERIFY_INPUT(cinfo->image_height, 1, kMaxDimPixels);
+  JPEG_VERIFY_INPUT(cinfo->image_width, 1, kMaxDimPixels);
   JPEG_VERIFY_INPUT(num_components, 1, kMaxComponents);
   JPEG_VERIFY_LEN(3 * num_components);
-  components_.resize(num_components);
+  m->components_.resize(num_components);
 
   // Read sampling factors and quant table index for each component.
   std::vector<bool> ids_seen(256, false);
-  max_h_samp_ = 1;
-  max_v_samp_ = 1;
-  for (size_t i = 0; i < components_.size(); ++i) {
-    JPEGComponent* c = &components_[i];
+  m->max_h_samp_ = 1;
+  m->max_v_samp_ = 1;
+  for (size_t i = 0; i < m->components_.size(); ++i) {
+    JPEGComponent* c = &m->components_[i];
     const int id = ReadUint8(data, &pos);
     if (ids_seen[id]) {  // (cf. section B.2.2, syntax of Ci)
       return JPEG_ERROR("Duplicate ID %d in SOF.", id);
@@ -911,12 +683,12 @@ JpegDecoder::Status JpegDecoder::ProcessSOF(const uint8_t* data, size_t len) {
     JPEG_VERIFY_INPUT(v_samp_factor, 1, kMaxSampling);
     c->h_samp_factor = h_samp_factor;
     c->v_samp_factor = v_samp_factor;
-    max_h_samp_ = std::max(max_h_samp_, h_samp_factor);
-    max_v_samp_ = std::max(max_v_samp_, v_samp_factor);
+    m->max_h_samp_ = std::max(m->max_h_samp_, h_samp_factor);
+    m->max_v_samp_ = std::max(m->max_v_samp_, v_samp_factor);
     uint8_t quant_tbl_idx = ReadUint8(data, &pos);
     bool found_quant_tbl = false;
-    for (size_t j = 0; j < quant_.size(); ++j) {
-      if (quant_[j].index == quant_tbl_idx) {
+    for (size_t j = 0; j < m->quant_.size(); ++j) {
+      if (m->quant_[j].index == quant_tbl_idx) {
         c->quant_idx = j;
         found_quant_tbl = true;
         break;
@@ -930,63 +702,65 @@ JpegDecoder::Status JpegDecoder::ProcessSOF(const uint8_t* data, size_t len) {
   JPEG_VERIFY_MARKER_END();
 
   if (num_components == 1) {
-    is_ycbcr_ = true;
+    m->is_ycbcr_ = true;
   }
-  if (!found_app0_ && num_components == 3 && components_[0].id == 'R' &&
-      components_[1].id == 'G' && components_[2].id == 'B') {
-    is_ycbcr_ = false;
+  if (!m->found_app0_ && num_components == 3 && m->components_[0].id == 'R' &&
+      m->components_[1].id == 'G' && m->components_[2].id == 'B') {
+    m->is_ycbcr_ = false;
   }
 
   // We have checked above that none of the sampling factors are 0, so the max
   // sampling factors can not be 0.
-  iMCU_height_ = max_v_samp_ * kBlockDim;
-  iMCU_width_ = max_h_samp_ * kBlockDim;
-  iMCU_rows_ = DivCeil(cinfo.image_height, iMCU_height_);
-  iMCU_cols_ = DivCeil(cinfo.image_width, iMCU_width_);
+  m->iMCU_height_ = m->max_v_samp_ * kBlockDim;
+  m->iMCU_width_ = m->max_h_samp_ * kBlockDim;
+  m->iMCU_rows_ = DivCeil(cinfo->image_height, m->iMCU_height_);
+  m->iMCU_cols_ = DivCeil(cinfo->image_width, m->iMCU_width_);
   // Compute the block dimensions for each component.
-  for (size_t i = 0; i < components_.size(); ++i) {
-    JPEGComponent* c = &components_[i];
-    if (max_h_samp_ % c->h_samp_factor != 0 ||
-        max_v_samp_ % c->v_samp_factor != 0) {
+  for (size_t i = 0; i < m->components_.size(); ++i) {
+    JPEGComponent* c = &m->components_[i];
+    if (m->max_h_samp_ % c->h_samp_factor != 0 ||
+        m->max_v_samp_ % c->v_samp_factor != 0) {
       return JPEG_ERROR("Non-integral subsampling ratios.");
     }
-    c->width_in_blocks = iMCU_cols_ * c->h_samp_factor;
-    c->height_in_blocks = iMCU_rows_ * c->v_samp_factor;
+    c->width_in_blocks = m->iMCU_cols_ * c->h_samp_factor;
+    c->height_in_blocks = m->iMCU_rows_ * c->v_samp_factor;
     const uint64_t num_blocks =
         static_cast<uint64_t>(c->width_in_blocks) * c->height_in_blocks;
     c->coeffs = hwy::AllocateAligned<coeff_t>(num_blocks * kDCTBlockSize);
     memset(c->coeffs.get(), 0, num_blocks * kDCTBlockSize * sizeof(coeff_t));
   }
-  memset(scan_progression_, 0, sizeof(scan_progression_));
-  return Status::kSuccess;
+  memset(m->scan_progression_, 0, sizeof(m->scan_progression_));
+  return JpegDecoder::Status::kSuccess;
 }
 
-JpegDecoder::Status JpegDecoder::ProcessSOS(const uint8_t* data, size_t len) {
-  if (!found_sof_) {
+JpegDecoder::Status ProcessSOS(j_decompress_ptr cinfo, const uint8_t* data,
+                               size_t len) {
+  jpeg_decomp_master* m = cinfo->master;
+  if (!m->found_sof_) {
     return JPEG_ERROR("Unexpected SOS marker.");
   }
-  found_sos_ = true;
+  m->found_sos_ = true;
   size_t pos = 4;
   JPEG_VERIFY_LEN(1);
   size_t comps_in_scan = ReadUint8(data, &pos);
-  JPEG_VERIFY_INPUT(comps_in_scan, 1, components_.size());
+  JPEG_VERIFY_INPUT(comps_in_scan, 1, m->components_.size());
 
-  scan_info_.num_components = comps_in_scan;
+  m->scan_info_.num_components = comps_in_scan;
   JPEG_VERIFY_LEN(2 * comps_in_scan);
-  bool is_interleaved = (scan_info_.num_components > 1);
+  bool is_interleaved = (m->scan_info_.num_components > 1);
   std::vector<bool> ids_seen(256, false);
-  for (size_t i = 0; i < scan_info_.num_components; ++i) {
-    JPEGComponentScanInfo* si = &scan_info_.components[i];
+  for (size_t i = 0; i < m->scan_info_.num_components; ++i) {
+    JPEGComponentScanInfo* si = &m->scan_info_.components[i];
     uint32_t id = ReadUint8(data, &pos);
     if (ids_seen[id]) {  // (cf. section B.2.3, regarding CSj)
       return JPEG_ERROR("Duplicate ID %d in SOS.", id);
     }
     ids_seen[id] = true;
     JPEGComponent* comp = nullptr;
-    for (size_t j = 0; j < components_.size(); ++j) {
-      if (components_[j].id == id) {
+    for (size_t j = 0; j < m->components_.size(); ++j) {
+      if (m->components_[j].id == id) {
         si->comp_idx = j;
-        comp = &components_[j];
+        comp = &m->components_[j];
       }
     }
     if (!comp) {
@@ -1001,98 +775,103 @@ JpegDecoder::Status JpegDecoder::ProcessSOS(const uint8_t* data, size_t len) {
     si->mcu_ysize_blocks = is_interleaved ? comp->v_samp_factor : 1;
   }
   JPEG_VERIFY_LEN(3);
-  scan_info_.Ss = ReadUint8(data, &pos);
-  scan_info_.Se = ReadUint8(data, &pos);
-  JPEG_VERIFY_INPUT(static_cast<int>(scan_info_.Ss), 0, 63);
-  JPEG_VERIFY_INPUT(scan_info_.Se, scan_info_.Ss, 63);
+  m->scan_info_.Ss = ReadUint8(data, &pos);
+  m->scan_info_.Se = ReadUint8(data, &pos);
+  JPEG_VERIFY_INPUT(static_cast<int>(m->scan_info_.Ss), 0, 63);
+  JPEG_VERIFY_INPUT(m->scan_info_.Se, m->scan_info_.Ss, 63);
   int c = ReadUint8(data, &pos);
-  scan_info_.Ah = c >> 4;
-  scan_info_.Al = c & 0xf;
+  m->scan_info_.Ah = c >> 4;
+  m->scan_info_.Al = c & 0xf;
   JPEG_VERIFY_MARKER_END();
 
-  if (scan_info_.Ah != 0 && scan_info_.Al != scan_info_.Ah - 1) {
+  if (m->scan_info_.Ah != 0 && m->scan_info_.Al != m->scan_info_.Ah - 1) {
     // section G.1.1.1.2 : Successive approximation control only improves
     // by one bit at a time.
-    JPEG_ERROR("Invalid progressive parameters: Al=%d Ah=%d", scan_info_.Al,
-               scan_info_.Ah);
+    JPEG_ERROR("Invalid progressive parameters: Al=%d Ah=%d", m->scan_info_.Al,
+               m->scan_info_.Ah);
   }
-  if (!is_progressive_) {
-    scan_info_.Ss = 0;
-    scan_info_.Se = 63;
-    scan_info_.Ah = 0;
-    scan_info_.Al = 0;
+  if (!m->is_progressive_) {
+    m->scan_info_.Ss = 0;
+    m->scan_info_.Se = 63;
+    m->scan_info_.Ah = 0;
+    m->scan_info_.Al = 0;
   }
-  const uint16_t scan_bitmask =
-      scan_info_.Ah == 0 ? (0xffff << scan_info_.Al) : (1u << scan_info_.Al);
-  const uint16_t refinement_bitmask = (1 << scan_info_.Al) - 1;
-  for (size_t i = 0; i < scan_info_.num_components; ++i) {
-    int comp_idx = scan_info_.components[i].comp_idx;
-    for (uint32_t k = scan_info_.Ss; k <= scan_info_.Se; ++k) {
-      if (scan_progression_[comp_idx][k] & scan_bitmask) {
+  const uint16_t scan_bitmask = m->scan_info_.Ah == 0
+                                    ? (0xffff << m->scan_info_.Al)
+                                    : (1u << m->scan_info_.Al);
+  const uint16_t refinement_bitmask = (1 << m->scan_info_.Al) - 1;
+  for (size_t i = 0; i < m->scan_info_.num_components; ++i) {
+    int comp_idx = m->scan_info_.components[i].comp_idx;
+    for (uint32_t k = m->scan_info_.Ss; k <= m->scan_info_.Se; ++k) {
+      if (m->scan_progression_[comp_idx][k] & scan_bitmask) {
         return JPEG_ERROR(
             "Overlapping scans: component=%d k=%d prev_mask: %u cur_mask %u",
-            comp_idx, k, scan_progression_[i][k], scan_bitmask);
+            comp_idx, k, m->scan_progression_[i][k], scan_bitmask);
       }
-      if (scan_progression_[comp_idx][k] & refinement_bitmask) {
+      if (m->scan_progression_[comp_idx][k] & refinement_bitmask) {
         return JPEG_ERROR(
             "Invalid scan order, a more refined scan was already done: "
             "component=%d k=%d prev_mask=%u cur_mask=%u",
-            comp_idx, k, scan_progression_[i][k], scan_bitmask);
+            comp_idx, k, m->scan_progression_[i][k], scan_bitmask);
       }
-      scan_progression_[comp_idx][k] |= scan_bitmask;
+      m->scan_progression_[comp_idx][k] |= scan_bitmask;
     }
   }
-  if (scan_info_.Al > 10) {
-    return JPEG_ERROR("Scan parameter Al=%d is not supported.", scan_info_.Al);
+  if (m->scan_info_.Al > 10) {
+    return JPEG_ERROR("Scan parameter Al=%d is not supported.",
+                      m->scan_info_.Al);
   }
   // Check that all the Huffman tables needed for this scan are defined.
   for (size_t i = 0; i < comps_in_scan; ++i) {
-    if (scan_info_.Ss == 0 &&
-        !huff_slot_defined_[scan_info_.components[i].dc_tbl_idx]) {
+    if (m->scan_info_.Ss == 0 &&
+        !m->huff_slot_defined_[m->scan_info_.components[i].dc_tbl_idx]) {
       return JPEG_ERROR(
           "SOS marker: Could not find DC Huffman table with index %d",
-          scan_info_.components[i].dc_tbl_idx);
+          m->scan_info_.components[i].dc_tbl_idx);
     }
-    if (scan_info_.Se > 0 &&
-        !huff_slot_defined_[scan_info_.components[i].ac_tbl_idx + 16]) {
+    if (m->scan_info_.Se > 0 &&
+        !m->huff_slot_defined_[m->scan_info_.components[i].ac_tbl_idx + 16]) {
       return JPEG_ERROR(
           "SOS marker: Could not find AC Huffman table with index %d",
-          scan_info_.components[i].ac_tbl_idx);
+          m->scan_info_.components[i].ac_tbl_idx);
     }
   }
-  scan_info_.MCU_rows = iMCU_rows_;
-  scan_info_.MCU_cols = iMCU_cols_;
+  m->scan_info_.MCU_rows = m->iMCU_rows_;
+  m->scan_info_.MCU_cols = m->iMCU_cols_;
   if (!is_interleaved) {
-    const JPEGComponent& c = components_[scan_info_.components[0].comp_idx];
-    scan_info_.MCU_cols =
-        DivCeil(cinfo.image_width * c.h_samp_factor, iMCU_width_);
-    scan_info_.MCU_rows =
-        DivCeil(cinfo.image_height * c.v_samp_factor, iMCU_height_);
+    const JPEGComponent& c =
+        m->components_[m->scan_info_.components[0].comp_idx];
+    m->scan_info_.MCU_cols =
+        DivCeil(cinfo->image_width * c.h_samp_factor, m->iMCU_width_);
+    m->scan_info_.MCU_rows =
+        DivCeil(cinfo->image_height * c.v_samp_factor, m->iMCU_height_);
   }
-  memset(last_dc_coeff_, 0, sizeof(last_dc_coeff_));
-  restarts_to_go_ = restart_interval_;
-  next_restart_marker_ = 0;
-  eobrun_ = -1;
-  scan_mcu_row_ = 0;
-  scan_mcu_col_ = 0;
-  codestream_bits_ahead_ = 0;
+  memset(m->last_dc_coeff_, 0, sizeof(m->last_dc_coeff_));
+  m->restarts_to_go_ = m->restart_interval_;
+  m->next_restart_marker_ = 0;
+  m->eobrun_ = -1;
+  m->scan_mcu_row_ = 0;
+  m->scan_mcu_col_ = 0;
+  m->codestream_bits_ahead_ = 0;
   size_t mcu_size = 0;
-  for (size_t i = 0; i < scan_info_.num_components; ++i) {
-    JPEGComponentScanInfo* si = &scan_info_.components[i];
+  for (size_t i = 0; i < m->scan_info_.num_components; ++i) {
+    JPEGComponentScanInfo* si = &m->scan_info_.components[i];
     mcu_size += si->mcu_ysize_blocks * si->mcu_xsize_blocks;
   }
-  mcu_.coeffs.resize(mcu_size * kDCTBlockSize);
-  state_ = State::kScan;
-  return Status::kSuccess;
+  m->mcu_.coeffs.resize(mcu_size * kDCTBlockSize);
+  m->state_ = State::kScan;
+  return JpegDecoder::Status::kSuccess;
 }
 
 // Reads the Define Huffman Table (DHT) marker segment and builds the Huffman
 // decoding table in either dc_huff_lut_ or ac_huff_lut_, depending on the type
 // and solt_id of Huffman code being read.
-JpegDecoder::Status JpegDecoder::ProcessDHT(const uint8_t* data, size_t len) {
+JpegDecoder::Status ProcessDHT(j_decompress_ptr cinfo, const uint8_t* data,
+                               size_t len) {
+  jpeg_decomp_master* m = cinfo->master;
   constexpr int kLutSize = kMaxHuffmanTables * kJpegHuffmanLutSize;
-  dc_huff_lut_.resize(kLutSize);
-  ac_huff_lut_.resize(kLutSize);
+  m->dc_huff_lut_.resize(kLutSize);
+  m->ac_huff_lut_.resize(kLutSize);
   size_t pos = 4;
   if (pos == len) {
     return JPEG_ERROR("DHT marker: no Huffman table found");
@@ -1102,19 +881,19 @@ JpegDecoder::Status JpegDecoder::ProcessDHT(const uint8_t* data, size_t len) {
     // The index of the Huffman code in the current set of Huffman codes. For AC
     // component Huffman codes, 0x10 is added to the index.
     int slot_id = ReadUint8(data, &pos);
-    huff_slot_defined_[slot_id] = 1;
+    m->huff_slot_defined_[slot_id] = 1;
     int huffman_index = slot_id;
     int is_ac_table = (slot_id & 0x10) != 0;
     HuffmanTableEntry* huff_lut;
     if (is_ac_table) {
       huffman_index -= 0x10;
       JPEG_VERIFY_INPUT(huffman_index, 0, 3);
-      huff_lut = &ac_huff_lut_[huffman_index * kJpegHuffmanLutSize];
+      huff_lut = &m->ac_huff_lut_[huffman_index * kJpegHuffmanLutSize];
     } else {
       JPEG_VERIFY_INPUT(huffman_index, 0, 3);
-      huff_lut = &dc_huff_lut_[huffman_index * kJpegHuffmanLutSize];
+      huff_lut = &m->dc_huff_lut_[huffman_index * kJpegHuffmanLutSize];
     }
-    // Bit length histogram.
+    // Bit length histogram->
     std::array<uint32_t, kJpegHuffmanMaxBitLength + 1> counts = {};
     counts[0] = 0;
     int total_count = 0;
@@ -1166,15 +945,17 @@ JpegDecoder::Status JpegDecoder::ProcessDHT(const uint8_t* data, size_t len) {
     BuildJpegHuffmanTable(&counts[0], &values[0], huff_lut);
   }
   JPEG_VERIFY_MARKER_END();
-  return Status::kSuccess;
+  return JpegDecoder::Status::kSuccess;
 }
 
-JpegDecoder::Status JpegDecoder::ProcessDQT(const uint8_t* data, size_t len) {
+JpegDecoder::Status ProcessDQT(j_decompress_ptr cinfo, const uint8_t* data,
+                               size_t len) {
+  jpeg_decomp_master* m = cinfo->master;
   size_t pos = 4;
   if (pos == len) {
     return JPEG_ERROR("DQT marker: no quantization table found");
   }
-  while (pos < len && quant_.size() < kMaxQuantTables) {
+  while (pos < len && m->quant_.size() < kMaxQuantTables) {
     JPEG_VERIFY_LEN(1);
     int quant_table_index = ReadUint8(data, &pos);
     int precision = quant_table_index >> 4;
@@ -1190,34 +971,38 @@ JpegDecoder::Status JpegDecoder::ProcessDQT(const uint8_t* data, size_t len) {
       JPEG_VERIFY_INPUT(quant_val, 1, 65535);
       table.values[kJPEGNaturalOrder[i]] = quant_val;
     }
-    quant_.push_back(table);
+    m->quant_.push_back(table);
   }
   JPEG_VERIFY_MARKER_END();
-  return Status::kSuccess;
+  return JpegDecoder::Status::kSuccess;
 }
 
-JpegDecoder::Status JpegDecoder::ProcessDRI(const uint8_t* data, size_t len) {
-  if (found_dri_) {
+JpegDecoder::Status ProcessDRI(j_decompress_ptr cinfo, const uint8_t* data,
+                               size_t len) {
+  jpeg_decomp_master* m = cinfo->master;
+  if (m->found_dri_) {
     return JPEG_ERROR("Duplicate DRI marker.");
   }
-  found_dri_ = true;
+  m->found_dri_ = true;
   size_t pos = 4;
   JPEG_VERIFY_LEN(2);
-  restart_interval_ = ReadUint16(data, &pos);
+  m->restart_interval_ = ReadUint16(data, &pos);
   JPEG_VERIFY_MARKER_END();
-  return Status::kSuccess;
+  return JpegDecoder::Status::kSuccess;
 }
 
-JpegDecoder::Status JpegDecoder::ProcessAPP(const uint8_t* data, size_t len) {
+JpegDecoder::Status ProcessAPP(j_decompress_ptr cinfo, const uint8_t* data,
+                               size_t len) {
+  jpeg_decomp_master* m = cinfo->master;
   const uint8_t marker = data[1];
   const uint8_t* payload = data + 4;
   size_t payload_size = len - 4;
   if (marker == 0xE0) {
-    found_app0_ = true;
-    is_ycbcr_ = true;
-  } else if (!found_app0_ && marker == 0xEE && payload_size == 12 &&
+    m->found_app0_ = true;
+    m->is_ycbcr_ = true;
+  } else if (!m->found_app0_ && marker == 0xEE && payload_size == 12 &&
              memcmp(payload, "Adobe", 5) == 0 && payload[11] == 0) {
-    is_ycbcr_ = false;
+    m->is_ycbcr_ = false;
   }
   if (marker == 0xE2) {
     if (payload_size >= sizeof(kIccProfileTag) &&
@@ -1229,132 +1014,200 @@ JpegDecoder::Status JpegDecoder::ProcessAPP(const uint8_t* data, size_t len) {
       }
       uint8_t index = payload[0];
       uint8_t total = payload[1];
-      ++icc_index_;
-      if (icc_index_ != index) {
+      ++m->icc_index_;
+      if (m->icc_index_ != index) {
         return JPEG_ERROR("Invalid ICC chunk order.");
       }
       JPEG_RETURN_IF_ERROR(total != 0);
-      if (icc_total_ == 0) {
-        icc_total_ = total;
+      if (m->icc_total_ == 0) {
+        m->icc_total_ = total;
       } else {
-        JPEG_RETURN_IF_ERROR(icc_total_ == total);
+        JPEG_RETURN_IF_ERROR(m->icc_total_ == total);
       }
-      if (icc_index_ > icc_total_) {
+      if (m->icc_index_ > m->icc_total_) {
         return JPEG_ERROR("Invalid ICC chunk index.");
       }
-      icc_profile_.insert(icc_profile_.end(), payload + 2,
-                          payload + payload_size);
+      m->icc_profile_.insert(m->icc_profile_.end(), payload + 2,
+                             payload + payload_size);
     }
   }
-  return Status::kSuccess;
+  return JpegDecoder::Status::kSuccess;
 }
 
-JpegDecoder::Status JpegDecoder::ProcessCOM(const uint8_t* data, size_t len) {
-  return Status::kSuccess;
+JpegDecoder::Status ProcessCOM(j_decompress_ptr cinfo, const uint8_t* data,
+                               size_t len) {
+  return JpegDecoder::Status::kSuccess;
 }
 
-void JpegDecoder::SaveMCUCodingState() {
-  memcpy(mcu_.last_dc_coeff, last_dc_coeff_, sizeof(last_dc_coeff_));
-  mcu_.eobrun = eobrun_;
+JpegDecoder::Status ProcessMarker(j_decompress_ptr cinfo, const uint8_t* data,
+                                  size_t len, size_t* pos) {
+  jpeg_decomp_master* m = cinfo->master;
+  // kIsValidMarker[i] == 1 means (0xc0 + i) is a valid marker.
+  static const uint8_t kIsValidMarker[] = {
+      1, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1,
+      1, 1, 0, 1, 1, 1, 0, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+      1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0,
+  };
+  // Skip bytes between markers.
+  size_t num_skipped = 0;
+  while (*pos + 1 < len && (data[*pos] != 0xff || data[*pos + 1] < 0xc0 ||
+                            !kIsValidMarker[data[*pos + 1] - 0xc0])) {
+    ++(*pos);
+    ++num_skipped;
+  }
+  if (*pos + 2 > len) {
+    return JpegDecoder::Status::kNeedMoreInput;
+  }
+  if (num_skipped > 0) {
+    AdvanceCodestream(cinfo, num_skipped);
+  }
+  uint8_t marker = data[*pos + 1];
+  if (marker == 0xd9) {
+    m->found_eoi_ = true;
+    m->state_ = m->is_progressive_ ? State::kRender : State::kEnd;
+    *pos += 2;
+    AdvanceCodestream(cinfo, 2);
+    return JpegDecoder::Status::kSuccess;
+  }
+  if (*pos + 4 > len) {
+    return JpegDecoder::Status::kNeedMoreInput;
+  }
+  const uint8_t* marker_data = &data[*pos];
+  size_t marker_len = (data[*pos + 2] << 8) + data[*pos + 3] + 2;
+  if (marker_len < 4) {
+    return JPEG_ERROR("Invalid marker length");
+  }
+  if (*pos + marker_len > len) {
+    return JpegDecoder::Status::kNeedMoreInput;
+  }
+  if (marker == 0xc0 || marker == 0xc1 || marker == 0xc2) {
+    JPEG_RETURN_IF_ERROR(ProcessSOF(cinfo, marker_data, marker_len));
+  } else if (marker == 0xc4) {
+    JPEG_RETURN_IF_ERROR(ProcessDHT(cinfo, marker_data, marker_len));
+  } else if (marker == 0xda) {
+    JPEG_RETURN_IF_ERROR(ProcessSOS(cinfo, marker_data, marker_len));
+  } else if (marker == 0xdb) {
+    JPEG_RETURN_IF_ERROR(ProcessDQT(cinfo, marker_data, marker_len));
+  } else if (marker == 0xdd) {
+    JPEG_RETURN_IF_ERROR(ProcessDRI(cinfo, marker_data, marker_len));
+  } else if (marker >= 0xe0 && marker <= 0xef) {
+    JPEG_RETURN_IF_ERROR(ProcessAPP(cinfo, marker_data, marker_len));
+  } else if (marker == 0xfe) {
+    JPEG_RETURN_IF_ERROR(ProcessCOM(cinfo, marker_data, marker_len));
+  } else {
+    return JPEG_ERROR("Unexpected marker 0x%x", marker);
+  }
+  *pos += marker_len;
+  AdvanceCodestream(cinfo, marker_len);
+  return JpegDecoder::Status::kSuccess;
+}
+
+void SaveMCUCodingState(j_decompress_ptr cinfo) {
+  jpeg_decomp_master* m = cinfo->master;
+  memcpy(m->mcu_.last_dc_coeff, m->last_dc_coeff_, sizeof(m->last_dc_coeff_));
+  m->mcu_.eobrun = m->eobrun_;
   size_t offset = 0;
-  for (size_t i = 0; i < scan_info_.num_components; ++i) {
-    JPEGComponentScanInfo* si = &scan_info_.components[i];
-    JPEGComponent* c = &components_[si->comp_idx];
-    int block_x = scan_mcu_col_ * si->mcu_xsize_blocks;
+  for (size_t i = 0; i < m->scan_info_.num_components; ++i) {
+    JPEGComponentScanInfo* si = &m->scan_info_.components[i];
+    JPEGComponent* c = &m->components_[si->comp_idx];
+    int block_x = m->scan_mcu_col_ * si->mcu_xsize_blocks;
     for (uint32_t iy = 0; iy < si->mcu_ysize_blocks; ++iy) {
-      int block_y = scan_mcu_row_ * si->mcu_ysize_blocks + iy;
+      int block_y = m->scan_mcu_row_ * si->mcu_ysize_blocks + iy;
       size_t ncoeffs = si->mcu_xsize_blocks * kDCTBlockSize;
       int block_idx = (block_y * c->width_in_blocks + block_x) * kDCTBlockSize;
       coeff_t* coeffs = &c->coeffs[block_idx];
-      memcpy(&mcu_.coeffs[offset], coeffs, ncoeffs * sizeof(coeffs[0]));
+      memcpy(&m->mcu_.coeffs[offset], coeffs, ncoeffs * sizeof(coeffs[0]));
       offset += ncoeffs;
     }
   }
 }
 
-void JpegDecoder::RestoreMCUCodingState() {
-  memcpy(last_dc_coeff_, mcu_.last_dc_coeff, sizeof(last_dc_coeff_));
-  eobrun_ = mcu_.eobrun;
+void RestoreMCUCodingState(j_decompress_ptr cinfo) {
+  jpeg_decomp_master* m = cinfo->master;
+  memcpy(m->last_dc_coeff_, m->mcu_.last_dc_coeff, sizeof(m->last_dc_coeff_));
+  m->eobrun_ = m->mcu_.eobrun;
   size_t offset = 0;
-  for (size_t i = 0; i < scan_info_.num_components; ++i) {
-    JPEGComponentScanInfo* si = &scan_info_.components[i];
-    JPEGComponent* c = &components_[si->comp_idx];
-    int block_x = scan_mcu_col_ * si->mcu_xsize_blocks;
+  for (size_t i = 0; i < m->scan_info_.num_components; ++i) {
+    JPEGComponentScanInfo* si = &m->scan_info_.components[i];
+    JPEGComponent* c = &m->components_[si->comp_idx];
+    int block_x = m->scan_mcu_col_ * si->mcu_xsize_blocks;
     for (uint32_t iy = 0; iy < si->mcu_ysize_blocks; ++iy) {
-      int block_y = scan_mcu_row_ * si->mcu_ysize_blocks + iy;
+      int block_y = m->scan_mcu_row_ * si->mcu_ysize_blocks + iy;
       size_t ncoeffs = si->mcu_xsize_blocks * kDCTBlockSize;
       int block_idx = (block_y * c->width_in_blocks + block_x) * kDCTBlockSize;
       coeff_t* coeffs = &c->coeffs[block_idx];
-      memcpy(coeffs, &mcu_.coeffs[offset], ncoeffs * sizeof(coeffs[0]));
+      memcpy(coeffs, &m->mcu_.coeffs[offset], ncoeffs * sizeof(coeffs[0]));
       offset += ncoeffs;
     }
   }
 }
 
-JpegDecoder::Status JpegDecoder::ProcessScan(const uint8_t* data, size_t len,
-                                             size_t* pos) {
-  for (; scan_mcu_col_ < scan_info_.MCU_cols; ++scan_mcu_col_) {
+JpegDecoder::Status ProcessScan(j_decompress_ptr cinfo, const uint8_t* data,
+                                size_t len, size_t* pos) {
+  jpeg_decomp_master* m = cinfo->master;
+  for (; m->scan_mcu_col_ < m->scan_info_.MCU_cols; ++m->scan_mcu_col_) {
     // Handle the restart intervals.
-    if (restart_interval_ > 0 && restarts_to_go_ == 0) {
-      if (eobrun_ > 0) {
+    if (m->restart_interval_ > 0 && m->restarts_to_go_ == 0) {
+      if (m->eobrun_ > 0) {
         return JPEG_ERROR("End-of-block run too long.");
       }
-      if (codestream_bits_ahead_ > 0) {
+      if (m->codestream_bits_ahead_ > 0) {
         ++(*pos);
-        AdvanceCodestream(1);
-        codestream_bits_ahead_ = 0;
+        AdvanceCodestream(cinfo, 1);
+        m->codestream_bits_ahead_ = 0;
       }
       if (*pos + 2 > len) {
-        return Status::kNeedMoreInput;
+        return JpegDecoder::Status::kNeedMoreInput;
       }
-      int expected_marker = 0xd0 + next_restart_marker_;
+      int expected_marker = 0xd0 + m->next_restart_marker_;
       int marker = data[*pos + 1];
       if (marker != expected_marker) {
         return JPEG_ERROR("Did not find expected restart marker %d actual %d",
                           expected_marker, marker);
       }
-      next_restart_marker_ += 1;
-      next_restart_marker_ &= 0x7;
-      restarts_to_go_ = restart_interval_;
-      memset(last_dc_coeff_, 0, sizeof(last_dc_coeff_));
-      eobrun_ = -1;  // fresh start
+      m->next_restart_marker_ += 1;
+      m->next_restart_marker_ &= 0x7;
+      m->restarts_to_go_ = m->restart_interval_;
+      memset(m->last_dc_coeff_, 0, sizeof(m->last_dc_coeff_));
+      m->eobrun_ = -1;  // fresh start
       *pos += 2;
-      AdvanceCodestream(2);
+      AdvanceCodestream(cinfo, 2);
     }
 
     size_t start_pos = *pos;
     BitReaderState br(data, len, start_pos);
-    if (codestream_bits_ahead_ > 0) {
-      br.ReadBits(codestream_bits_ahead_);
+    if (m->codestream_bits_ahead_ > 0) {
+      br.ReadBits(m->codestream_bits_ahead_);
     }
     if (start_pos + kMaxMCUByteSize > len) {
-      SaveMCUCodingState();
+      SaveMCUCodingState(cinfo);
     }
 
     // Decode one MCU.
     bool scan_ok = true;
-    for (size_t i = 0; i < scan_info_.num_components; ++i) {
-      JPEGComponentScanInfo* si = &scan_info_.components[i];
-      JPEGComponent* c = &components_[si->comp_idx];
+    for (size_t i = 0; i < m->scan_info_.num_components; ++i) {
+      JPEGComponentScanInfo* si = &m->scan_info_.components[i];
+      JPEGComponent* c = &m->components_[si->comp_idx];
       const HuffmanTableEntry* dc_lut =
-          &dc_huff_lut_[si->dc_tbl_idx * kJpegHuffmanLutSize];
+          &m->dc_huff_lut_[si->dc_tbl_idx * kJpegHuffmanLutSize];
       const HuffmanTableEntry* ac_lut =
-          &ac_huff_lut_[si->ac_tbl_idx * kJpegHuffmanLutSize];
+          &m->ac_huff_lut_[si->ac_tbl_idx * kJpegHuffmanLutSize];
       for (uint32_t iy = 0; iy < si->mcu_ysize_blocks; ++iy) {
-        int block_y = scan_mcu_row_ * si->mcu_ysize_blocks + iy;
+        int block_y = m->scan_mcu_row_ * si->mcu_ysize_blocks + iy;
         for (uint32_t ix = 0; ix < si->mcu_xsize_blocks; ++ix) {
-          int block_x = scan_mcu_col_ * si->mcu_xsize_blocks + ix;
+          int block_x = m->scan_mcu_col_ * si->mcu_xsize_blocks + ix;
           int block_idx = block_y * c->width_in_blocks + block_x;
           coeff_t* coeffs = &c->coeffs[block_idx * kDCTBlockSize];
-          if (scan_info_.Ah == 0) {
-            if (!DecodeDCTBlock(dc_lut, ac_lut, scan_info_.Ss, scan_info_.Se,
-                                scan_info_.Al, &eobrun_, &br,
-                                &last_dc_coeff_[si->comp_idx], coeffs)) {
+          if (m->scan_info_.Ah == 0) {
+            if (!DecodeDCTBlock(dc_lut, ac_lut, m->scan_info_.Ss,
+                                m->scan_info_.Se, m->scan_info_.Al, &m->eobrun_,
+                                &br, &m->last_dc_coeff_[si->comp_idx],
+                                coeffs)) {
               scan_ok = false;
             }
           } else {
-            if (!RefineDCTBlock(ac_lut, scan_info_.Ss, scan_info_.Se,
-                                scan_info_.Al, &eobrun_, &br, coeffs)) {
+            if (!RefineDCTBlock(ac_lut, m->scan_info_.Ss, m->scan_info_.Se,
+                                m->scan_info_.Al, &m->eobrun_, &br, coeffs)) {
               scan_ok = false;
             }
           }
@@ -1370,8 +1223,8 @@ JpegDecoder::Status JpegDecoder::ProcessScan(const uint8_t* data, size_t len,
       // reader could have peaked ahead some bits past the current input chunk
       // and thus the last prefix code length could have been wrong. We can do
       // this because a valid JPEG bit stream has two extra bytes at the end.
-      RestoreMCUCodingState();
-      return Status::kNeedMoreInput;
+      RestoreMCUCodingState(cinfo);
+      return JpegDecoder::Status::kNeedMoreInput;
     }
     if (!scan_ok) {
       return JPEG_ERROR("Failed to decode DCT block");
@@ -1382,116 +1235,120 @@ JpegDecoder::Status JpegDecoder::ProcessScan(const uint8_t* data, size_t len,
       JXL_DASSERT(data[stream_pos + 1] != 0);
       return JPEG_ERROR("Unexpected end of scan.");
     }
-    codestream_bits_ahead_ = bit_pos;
+    m->codestream_bits_ahead_ = bit_pos;
     *pos = stream_pos;
-    AdvanceCodestream(*pos - start_pos);
-    if (restarts_to_go_ > 0) {
-      --restarts_to_go_;
+    AdvanceCodestream(cinfo, *pos - start_pos);
+    if (m->restarts_to_go_ > 0) {
+      --m->restarts_to_go_;
     }
   }
-  ++scan_mcu_row_;
-  scan_mcu_col_ = 0;
-  if (scan_mcu_row_ == scan_info_.MCU_rows) {
+  ++m->scan_mcu_row_;
+  m->scan_mcu_col_ = 0;
+  if (m->scan_mcu_row_ == m->scan_info_.MCU_rows) {
     // Current scan is done, skip any remaining bits in the last byte.
-    if (codestream_bits_ahead_ > 0) {
+    if (m->codestream_bits_ahead_ > 0) {
       ++(*pos);
-      AdvanceCodestream(1);
-      codestream_bits_ahead_ = 0;
+      AdvanceCodestream(cinfo, 1);
+      m->codestream_bits_ahead_ = 0;
     }
-    if (eobrun_ > 0) {
+    if (m->eobrun_ > 0) {
       return JPEG_ERROR("End-of-block run too long.");
     }
-    if (is_progressive_) {
-      state_ = State::kProcessMarkers;
+    if (m->is_progressive_) {
+      m->state_ = State::kProcessMarkers;
     }
   }
-  if (!is_progressive_) {
-    state_ = State::kRender;
+  if (!m->is_progressive_) {
+    m->state_ = State::kRender;
   }
-  return Status::kSuccess;
+  return JpegDecoder::Status::kSuccess;
 }
 
-void JpegDecoder::PrepareForOutput() {
-  size_t stride = iMCU_cols_ * iMCU_width_ + kPaddingLeft + kPaddingRight;
-  MCU_row_buf_ = Image3F(stride, iMCU_height_);
-  const size_t nbcomp = components_.size();
+void PrepareForOutput(j_decompress_ptr cinfo) {
+  jpeg_decomp_master* m = cinfo->master;
+  size_t stride = m->iMCU_cols_ * m->iMCU_width_ + kPaddingLeft + kPaddingRight;
+  m->MCU_row_buf_ = Image3F(stride, m->iMCU_height_);
+  const size_t nbcomp = m->components_.size();
   for (size_t c = 0; c < nbcomp; ++c) {
-    const auto& comp = components_[c];
-    if (comp.v_samp_factor < max_v_samp_) {
-      component_order_.emplace_back(c);
-      chroma_.emplace_back(ImageF(stride, 3 * kBlockDim));
+    const auto& comp = m->components_[c];
+    if (comp.v_samp_factor < m->max_v_samp_) {
+      m->component_order_.emplace_back(c);
+      m->chroma_.emplace_back(ImageF(stride, 3 * kBlockDim));
     }
   }
   for (size_t c = 0; c < nbcomp; ++c) {
-    const auto& comp = components_[c];
-    if (comp.v_samp_factor == max_v_samp_) {
-      component_order_.emplace_back(c);
+    const auto& comp = m->components_[c];
+    if (comp.v_samp_factor == m->max_v_samp_) {
+      m->component_order_.emplace_back(c);
     }
   }
-  idct_scratch_ = hwy::AllocateAligned<float>(kDCTBlockSize * 2);
-  upsample_scratch_ = hwy::AllocateAligned<float>(stride);
+  m->idct_scratch_ = hwy::AllocateAligned<float>(kDCTBlockSize * 2);
+  m->upsample_scratch_ = hwy::AllocateAligned<float>(stride);
   size_t bytes_per_channel =
-      PackedImage::BitsPerChannel(output_->format.data_type) / 8;
+      PackedImage::BitsPerChannel(m->output_->format.data_type) / 8;
   size_t bytes_per_sample = nbcomp * bytes_per_channel;
-  output_scratch_ =
+  m->output_scratch_ =
       hwy::AllocateAligned<uint8_t>(bytes_per_sample * kTempOutputLen);
-  nonzeros_ = hwy::AllocateAligned<int>(nbcomp * kDCTBlockSize);
-  sumabs_ = hwy::AllocateAligned<int>(nbcomp * kDCTBlockSize);
-  memset(nonzeros_.get(), 0, nbcomp * kDCTBlockSize * sizeof(nonzeros_[0]));
-  memset(sumabs_.get(), 0, nbcomp * kDCTBlockSize * sizeof(sumabs_[0]));
-  num_processed_blocks_.resize(nbcomp);
-  biases_ = hwy::AllocateAligned<float>(nbcomp * kDCTBlockSize);
-  memset(biases_.get(), 0, nbcomp * kDCTBlockSize * sizeof(biases_[0]));
-  output_mcu_row_ = 0;
-  output_ci_ = 0;
-  output_row_ = 0;
-  MCU_buf_ready_rows_ = 0;
+  m->nonzeros_ = hwy::AllocateAligned<int>(nbcomp * kDCTBlockSize);
+  m->sumabs_ = hwy::AllocateAligned<int>(nbcomp * kDCTBlockSize);
+  memset(m->nonzeros_.get(), 0,
+         nbcomp * kDCTBlockSize * sizeof(m->nonzeros_[0]));
+  memset(m->sumabs_.get(), 0, nbcomp * kDCTBlockSize * sizeof(m->sumabs_[0]));
+  m->num_processed_blocks_.resize(nbcomp);
+  m->biases_ = hwy::AllocateAligned<float>(nbcomp * kDCTBlockSize);
+  memset(m->biases_.get(), 0, nbcomp * kDCTBlockSize * sizeof(m->biases_[0]));
+  m->output_mcu_row_ = 0;
+  m->output_ci_ = 0;
+  m->output_row_ = 0;
+  m->MCU_buf_ready_rows_ = 0;
   const float kDequantScale = 1.0f / (8 * 255);
-  dequant_ = hwy::AllocateAligned<float>(nbcomp * kDCTBlockSize);
+  m->dequant_ = hwy::AllocateAligned<float>(nbcomp * kDCTBlockSize);
   for (size_t c = 0; c < nbcomp; c++) {
-    const auto& comp = components_[c];
-    const int32_t* quant = quant_[comp.quant_idx].values.data();
+    const auto& comp = m->components_[c];
+    const int32_t* quant = m->quant_[comp.quant_idx].values.data();
     for (size_t k = 0; k < kDCTBlockSize; ++k) {
-      dequant_[c * kDCTBlockSize + k] = quant[k] * kDequantScale;
+      m->dequant_[c * kDCTBlockSize + k] = quant[k] * kDequantScale;
     }
   }
 }
 
-void JpegDecoder::ProcessOutput(size_t* num_output_rows,
-                                size_t max_output_rows) {
-  const size_t nbcomp = components_.size();
-  size_t xsize_blocks = DivCeil(cinfo.image_width, kBlockDim);
-  size_t mcu_y = output_mcu_row_;
-  for (; output_ci_ < components_.size(); ++output_ci_) {
-    size_t c = component_order_[output_ci_];
+void ProcessOutput(j_decompress_ptr cinfo, size_t* num_output_rows,
+                   size_t max_output_rows) {
+  jpeg_decomp_master* m = cinfo->master;
+  const size_t nbcomp = m->components_.size();
+  size_t xsize_blocks = DivCeil(cinfo->image_width, kBlockDim);
+  size_t mcu_y = m->output_mcu_row_;
+  for (; m->output_ci_ < m->components_.size(); ++m->output_ci_) {
+    size_t c = m->component_order_[m->output_ci_];
     size_t k0 = c * kDCTBlockSize;
-    auto& comp = components_[c];
-    bool hups = comp.h_samp_factor < max_h_samp_;
-    bool vups = comp.v_samp_factor < max_v_samp_;
+    auto& comp = m->components_[c];
+    bool hups = comp.h_samp_factor < m->max_h_samp_;
+    bool vups = comp.v_samp_factor < m->max_v_samp_;
     size_t nblocks_y = comp.v_samp_factor;
-    ImageF* output = vups ? &chroma_[output_ci_] : &MCU_row_buf_.Plane(c);
+    ImageF* output =
+        vups ? &m->chroma_[m->output_ci_] : &m->MCU_row_buf_.Plane(c);
     size_t mcu_y0 = vups ? (mcu_y * kBlockDim) % output->ysize() : 0;
-    if (output_ci_ == chroma_.size() && mcu_y > 0) {
+    if (m->output_ci_ == m->chroma_.size() && mcu_y > 0) {
       // For the previous MCU row we have everything we need at this point,
       // including the chroma components for the current MCU row that was used
       // in upsampling, so we can do the color conversion and the interleaved
       // output.
-      if (MCU_buf_ready_rows_ == 0) {
-        MCU_buf_ready_rows_ = iMCU_height_;
-        MCU_buf_current_row_ = 0;
+      if (m->MCU_buf_ready_rows_ == 0) {
+        m->MCU_buf_ready_rows_ = m->iMCU_height_;
+        m->MCU_buf_current_row_ = 0;
       }
-      while (MCU_buf_current_row_ < MCU_buf_ready_rows_ &&
+      while (m->MCU_buf_current_row_ < m->MCU_buf_ready_rows_ &&
              *num_output_rows < max_output_rows &&
-             output_row_ < cinfo.image_height) {
+             m->output_row_ < cinfo->image_height) {
         float* rows[3];
-        for (size_t c = 0; c < components_.size(); ++c) {
-          rows[c] =
-              MCU_row_buf_.PlaneRow(c, MCU_buf_current_row_) + kPaddingLeft;
+        for (size_t c = 0; c < m->components_.size(); ++c) {
+          rows[c] = m->MCU_row_buf_.PlaneRow(c, m->MCU_buf_current_row_) +
+                    kPaddingLeft;
         }
-        if (is_ycbcr_ && nbcomp == 3) {
+        if (m->is_ycbcr_ && nbcomp == 3) {
           YCbCrToRGB(rows[0], rows[1], rows[2], xsize_blocks * kBlockDim);
         } else {
-          for (size_t c = 0; c < components_.size(); ++c) {
+          for (size_t c = 0; c < m->components_.size(); ++c) {
             // Libjpeg encoder converts all unsigned input values to signed
             // ones, i.e. for 8 bit input from [0..255] to [-128..127]. For
             // YCbCr jpegs this is undone in the YCbCr -> RGB conversion above
@@ -1500,37 +1357,37 @@ void JpegDecoder::ProcessOutput(size_t* num_output_rows,
             DecenterRow(rows[c], xsize_blocks * kBlockDim);
           }
         }
-        for (size_t x0 = 0; x0 < cinfo.image_width; x0 += kTempOutputLen) {
-          size_t len = std::min(cinfo.image_width - x0, kTempOutputLen);
-          WriteToPackedImage(rows, x0, output_row_, len, output_scratch_.get(),
-                             output_);
+        for (size_t x0 = 0; x0 < cinfo->image_width; x0 += kTempOutputLen) {
+          size_t len = std::min(cinfo->image_width - x0, kTempOutputLen);
+          WriteToPackedImage(rows, x0, m->output_row_, len,
+                             m->output_scratch_.get(), m->output_);
         }
-        ++output_row_;
+        ++m->output_row_;
         ++(*num_output_rows);
-        ++MCU_buf_current_row_;
+        ++m->MCU_buf_current_row_;
       }
-      if (output_row_ == cinfo.image_height) {
-        state_ = is_progressive_ ? State::kEnd : State::kProcessMarkers;
+      if (m->output_row_ == cinfo->image_height) {
+        m->state_ = m->is_progressive_ ? State::kEnd : State::kProcessMarkers;
         return;
       }
       if (*num_output_rows == max_output_rows) {
         return;
       }
-      MCU_buf_ready_rows_ = 0;
+      m->MCU_buf_ready_rows_ = 0;
     }
-    if (mcu_y < iMCU_rows_) {
+    if (mcu_y < m->iMCU_rows_) {
       if (!hups && !vups) {
         size_t num_coeffs = comp.width_in_blocks * kDCTBlockSize;
         size_t offset = mcu_y * comp.width_in_blocks * kDCTBlockSize;
         // Update statistics for this MCU row.
-        GatherBlockStats(&comp.coeffs[offset], num_coeffs, &nonzeros_[k0],
-                         &sumabs_[k0]);
-        num_processed_blocks_[c] += comp.width_in_blocks;
+        GatherBlockStats(&comp.coeffs[offset], num_coeffs, &m->nonzeros_[k0],
+                         &m->sumabs_[k0]);
+        m->num_processed_blocks_[c] += comp.width_in_blocks;
         if (mcu_y % 4 == 3) {
           // Re-compute optimal biases every few MCU-rows.
-          ComputeOptimalLaplacianBiases(num_processed_blocks_[c],
-                                        &nonzeros_[k0], &sumabs_[k0],
-                                        &biases_[k0]);
+          ComputeOptimalLaplacianBiases(m->num_processed_blocks_[c],
+                                        &m->nonzeros_[k0], &m->sumabs_[k0],
+                                        &m->biases_[k0]);
         }
       }
       for (size_t iy = 0; iy < nblocks_y; ++iy) {
@@ -1540,16 +1397,16 @@ void JpegDecoder::ProcessOutput(size_t* num_output_rows,
             &comp.coeffs[by * comp.width_in_blocks * kDCTBlockSize];
         float* JXL_RESTRICT row_out = output->Row(y0) + kPaddingLeft;
         for (size_t bx = 0; bx < comp.width_in_blocks; ++bx) {
-          DecodeJpegBlock(&row_in[bx * kDCTBlockSize], &dequant_[k0],
-                          &biases_[k0], idct_scratch_.get(),
+          DecodeJpegBlock(&row_in[bx * kDCTBlockSize], &m->dequant_[k0],
+                          &m->biases_[k0], m->idct_scratch_.get(),
                           &row_out[bx * kBlockDim], output->PixelsPerRow());
         }
         if (hups) {
           for (size_t y = 0; y < kBlockDim; ++y) {
             float* JXL_RESTRICT row = output->Row(y0 + y) + kPaddingLeft;
-            Upsample2Horizontal(row, upsample_scratch_.get(),
+            Upsample2Horizontal(row, m->upsample_scratch_.get(),
                                 xsize_blocks * kBlockDim);
-            memcpy(row, upsample_scratch_.get(),
+            memcpy(row, m->upsample_scratch_.get(),
                    xsize_blocks * kBlockDim * sizeof(row[0]));
           }
         }
@@ -1565,7 +1422,7 @@ void JpegDecoder::ProcessOutput(size_t* num_output_rows,
         memcpy(output->Row(y_idx(mcu_y, -1)), output->Row(y_idx(mcu_y, 0)),
                output->PixelsPerRow() * sizeof(output->Row(0)[0]));
       }
-      if (mcu_y == iMCU_rows_) {
+      if (mcu_y == m->iMCU_rows_) {
         // Copy the last row of the current MCU row to the  first row of the
         // next  one.
         memcpy(output->Row(y_idx(mcu_y + 1, 0)),
@@ -1582,19 +1439,268 @@ void JpegDecoder::ProcessOutput(size_t* num_output_rows,
           Upsample2Vertical(output->Row(y_top) + kPaddingLeft,
                             output->Row(y_cur) + kPaddingLeft,
                             output->Row(y_bot) + kPaddingLeft,
-                            MCU_row_buf_.PlaneRow(c, y_out0) + kPaddingLeft,
-                            MCU_row_buf_.PlaneRow(c, y_out1) + kPaddingLeft,
+                            m->MCU_row_buf_.PlaneRow(c, y_out0) + kPaddingLeft,
+                            m->MCU_row_buf_.PlaneRow(c, y_out1) + kPaddingLeft,
                             xsize_blocks * kBlockDim);
         }
       }
     }
   }
-  ++output_mcu_row_;
-  output_ci_ = 0;
-  if (!is_progressive_ && output_mcu_row_ < iMCU_rows_) {
-    state_ = State::kScan;
+  ++m->output_mcu_row_;
+  m->output_ci_ = 0;
+  if (!m->is_progressive_ && m->output_mcu_row_ < m->iMCU_rows_) {
+    m->state_ = State::kScan;
   }
-  JXL_DASSERT(output_mcu_row_ <= iMCU_rows_);
+  JXL_DASSERT(m->output_mcu_row_ <= m->iMCU_rows_);
+}
+
+}  // namespace
+
+namespace internal {
+
+int jpeg_read_header(j_decompress_ptr cinfo, boolean require_image) {
+  jpeg_decomp_master* m = cinfo->master;
+  const uint8_t* data = cinfo->src->next_input_byte;
+  size_t len = cinfo->src->bytes_in_buffer;
+  size_t pos = 0;
+  std::vector<uint8_t> buffer;
+  const uint8_t* last_src_buf_start = data;
+  size_t last_src_buf_len = len;
+
+  while (!m->found_sos_) {
+    JpegDecoder::Status status = JpegDecoder::Status::kSuccess;
+    if (m->state_ == State::kStart) {
+      // Look for the SOI marker.
+      if (len >= 2) {
+        if (data[0] != 0xff || data[1] != 0xd8) {
+          ERREXIT();
+        }
+        pos += 2;
+        AdvanceCodestream(cinfo, 2);
+        m->found_soi_ = true;
+        m->state_ = State::kProcessMarkers;
+      } else {
+        status = JpegDecoder::Status::kNeedMoreInput;
+      }
+    } else if (m->state_ == State::kProcessMarkers) {
+      status = ProcessMarker(cinfo, data, len, &pos);
+    } else {
+      ERREXIT();
+    }
+    if (status == JpegDecoder::Status::kNeedMoreInput) {
+      if (buffer.empty()) {
+        buffer.assign(data, data + len);
+      }
+      if ((*cinfo->src->fill_input_buffer)(cinfo)) {
+        buffer.insert(
+            buffer.end(), cinfo->src->next_input_byte,
+            cinfo->src->next_input_byte + cinfo->src->bytes_in_buffer);
+        data = buffer.data();
+        len = buffer.size();
+        last_src_buf_start = cinfo->src->next_input_byte;
+        last_src_buf_len = cinfo->src->bytes_in_buffer;
+        cinfo->src->next_input_byte = data + pos;
+        cinfo->src->bytes_in_buffer = len - pos;
+      } else {
+        return JPEG_SUSPENDED;
+      }
+    } else if (status != JpegDecoder::Status::kSuccess) {
+      ERREXIT();
+    }
+  }
+
+  if (!buffer.empty()) {
+    cinfo->src->next_input_byte =
+        (last_src_buf_start + last_src_buf_len - buffer.size() + pos);
+    cinfo->src->bytes_in_buffer = buffer.size() - pos;
+  }
+  return JPEG_HEADER_OK;
+}
+
+boolean jpeg_start_decompress(j_decompress_ptr cinfo) {
+  jpeg_decomp_master* m = cinfo->master;
+  if (m->is_progressive_) {
+    const uint8_t* data = cinfo->src->next_input_byte;
+    size_t len = cinfo->src->bytes_in_buffer;
+    size_t pos = 0;
+    std::vector<uint8_t> buffer;
+    const uint8_t* last_src_buf_start = data;
+    size_t last_src_buf_len = len;
+    while (!m->found_eoi_) {
+      JpegDecoder::Status status = JpegDecoder::Status::kSuccess;
+      if (m->state_ == State::kProcessMarkers) {
+        status = ProcessMarker(cinfo, data, len, &pos);
+      } else if (m->state_ == State::kScan) {
+        status = ProcessScan(cinfo, data, len, &pos);
+      } else {
+	ERREXIT();
+      }
+      if (status == JpegDecoder::Status::kNeedMoreInput) {
+        if (buffer.empty()) {
+          buffer.assign(data, data + len);
+        }
+        if ((*cinfo->src->fill_input_buffer)(cinfo)) {
+          buffer.insert(
+              buffer.end(), cinfo->src->next_input_byte,
+              cinfo->src->next_input_byte + cinfo->src->bytes_in_buffer);
+          data = buffer.data();
+          len = buffer.size();
+          last_src_buf_start = cinfo->src->next_input_byte;
+          last_src_buf_len = cinfo->src->bytes_in_buffer;
+          cinfo->src->next_input_byte = data + pos;
+          cinfo->src->bytes_in_buffer = len - pos;
+        } else {
+          return FALSE;
+        }
+      } else if (status != JpegDecoder::Status::kSuccess) {
+        ERREXIT();
+      }
+    }
+    if (!buffer.empty()) {
+      cinfo->src->next_input_byte =
+          (last_src_buf_start + last_src_buf_len - buffer.size() + pos);
+      cinfo->src->bytes_in_buffer = buffer.size() - pos;
+    }
+  }
+  PrepareForOutput(cinfo);
+  return TRUE;
+}
+
+}  // namespace internal
+
+JpegDecoder::JpegDecoder() {
+  InitErrorManager(&jerr_);
+  cinfo_.err = &jerr_;
+  InitSuspendingSourceManager(&jsrc_);
+  cinfo_.src = &jsrc_;
+  cinfo_.master = &jmaster_;
+}
+
+JpegDecoder::Status JpegDecoder::SetInput(const uint8_t* data, size_t size) {
+  jpeg_decomp_master* m = cinfo_.master;
+  if (m->next_in_ != nullptr && m->codestream_copy_.empty()) {
+    m->codestream_copy_.assign(m->next_in_, m->next_in_ + m->avail_in_);
+  }
+  m->next_in_ = data;
+  m->avail_in_ = size;
+  if (m->codestream_copy_.empty() && m->codestream_pos_ > 0) {
+    size_t skip = std::min<size_t>(m->codestream_pos_, m->avail_in_);
+    AdvanceInput(&cinfo_, skip);
+    m->codestream_pos_ -= skip;
+    if (m->codestream_pos_ > 0) {
+      return Status::kNeedMoreInput;
+    }
+  }
+  JXL_DASSERT(m->codestream_pos_ <= m->codestream_copy_.size());
+  if (m->codestream_copy_.empty()) {
+    if (m->avail_in_ == 0) {
+      return Status::kNeedMoreInput;
+    }
+    cinfo_.src->next_input_byte = m->next_in_;
+    cinfo_.src->bytes_in_buffer = m->avail_in_;
+    return Status::kSuccess;
+  } else {
+    m->codestream_copy_.insert(m->codestream_copy_.end(), m->next_in_,
+                               m->next_in_ + m->avail_in_);
+    cinfo_.src->next_input_byte =
+        m->codestream_copy_.data() + m->codestream_pos_;
+    cinfo_.src->bytes_in_buffer =
+        m->codestream_copy_.size() - m->codestream_pos_;
+    return Status::kSuccess;
+  }
+}
+
+JpegDecoder::Status JpegDecoder::SetOutput(PackedImage* image) {
+  jpeg_decomp_master* m = cinfo_.master;
+  if (!m->found_sof_) {
+    return JPEG_ERROR("SOF header was not found.");
+  }
+  if (image->xsize != cinfo_.image_width ||
+      image->ysize != cinfo_.image_height) {
+    return JPEG_ERROR("Invalid image dimensions.");
+  }
+  if (image->format.num_channels != m->components_.size()) {
+    return JPEG_ERROR("Invalid number of channels.");
+  }
+  m->output_ = image;
+  return Status::kSuccess;
+}
+
+JpegDecoder::Status JpegDecoder::ReadHeaders() {
+  jmp_buf env;
+  if (setjmp(env)) {
+    return JPEG_ERROR("Failed to read header.");
+  }
+  cinfo_.client_data = static_cast<void*>(&env);
+  int retcode = internal::jpeg_read_header(&cinfo_, /*require_image=*/TRUE);
+  return retcode == JPEG_SUSPENDED ? Status::kNeedMoreInput : Status::kSuccess;
+}
+
+JpegDecoder::Status JpegDecoder::StartDecompress() {
+  jmp_buf env;
+  if (setjmp(env)) {
+    return JPEG_ERROR("jpeg_start_decompress() failed.");
+  }
+  cinfo_.client_data = static_cast<void*>(&env);
+  boolean retcode = internal::jpeg_start_decompress(&cinfo_);
+  return retcode ? Status::kSuccess : Status::kNeedMoreInput;
+}
+
+JpegDecoder::Status JpegDecoder::ReadScanLines(size_t* num_output_rows,
+                                               size_t max_output_rows) {
+  jpeg_decomp_master* m = cinfo_.master;
+  if (max_output_rows == 0 || m->state_ == State::kEnd) {
+    return Status::kSuccess;
+  }
+  *num_output_rows = 0;
+
+  const uint8_t* data = cinfo_.src->next_input_byte;
+  size_t len = cinfo_.src->bytes_in_buffer;
+  size_t pos = 0;
+  std::vector<uint8_t> buffer;
+  const uint8_t* last_src_buf_start = data;
+  size_t last_src_buf_len = len;
+
+  while (*num_output_rows < max_output_rows) {
+    Status status = Status::kSuccess;
+    if (m->state_ == State::kProcessMarkers) {
+      status = ProcessMarker(&cinfo_, data, len, &pos);
+    } else if (m->state_ == State::kScan) {
+      status = ProcessScan(&cinfo_, data, len, &pos);
+    } else if (m->state_ == State::kRender) {
+      ProcessOutput(&cinfo_, num_output_rows, max_output_rows);
+    } else if (m->state_ == State::kEnd) {
+      break;
+    } else {
+      return JPEG_ERROR("ReadScanLines: Unexpected state");
+    }
+    if (status == Status::kNeedMoreInput) {
+      if (buffer.empty()) {
+        buffer.assign(data, data + len);
+      }
+      if ((*cinfo_.src->fill_input_buffer)(&cinfo_)) {
+        buffer.insert(
+            buffer.end(), cinfo_.src->next_input_byte,
+            cinfo_.src->next_input_byte + cinfo_.src->bytes_in_buffer);
+        data = buffer.data();
+        len = buffer.size();
+        last_src_buf_start = cinfo_.src->next_input_byte;
+        last_src_buf_len = cinfo_.src->bytes_in_buffer;
+        cinfo_.src->next_input_byte = data + pos;
+        cinfo_.src->bytes_in_buffer = len - pos;
+      } else {
+        return status;
+      }
+    } else if (status != Status::kSuccess) {
+      return status;
+    }
+  }
+  if (!buffer.empty()) {
+    cinfo_.src->next_input_byte =
+        (last_src_buf_start + last_src_buf_len - buffer.size() + pos);
+    cinfo_.src->bytes_in_buffer = buffer.size() - pos;
+  }
+  return Status::kSuccess;
 }
 
 Status DecodeJpeg(const std::vector<uint8_t>& compressed,
