@@ -812,10 +812,10 @@ JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
   if (info->intensity_target != 0) {
     enc->metadata.m.SetIntensityTarget(info->intensity_target);
     enc->intensity_target_set = true;
-  } else if (enc->color_encoding_set || enc->metadata.m.xyb_encoded) {
-    // If both conditions are false, JxlEncoderSetColorEncoding will be called
-    // later and we will get one more chance to call jxl::SetIntensityTarget,
-    // after the color encoding is indeed set.
+  } else if (enc->color_encoding_set) {
+    // If this is false, JxlEncoderSetColorEncoding will be called later and we
+    // will get one more chance to call jxl::SetIntensityTarget, after the color
+    // encoding is indeed set.
     jxl::SetIntensityTarget(&enc->metadata.m);
     enc->intensity_target_set = true;
   }
