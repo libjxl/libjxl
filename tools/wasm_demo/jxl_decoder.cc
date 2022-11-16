@@ -3,6 +3,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include "tools/wasm_demo/jxl_decoder.h"
+
 #include <cstring>
 #include <memory>
 #include <vector>
@@ -11,17 +13,14 @@
 #include "jxl/decode_cxx.h"
 #include "jxl/thread_parallel_runner_cxx.h"
 
-#if !defined(__wasm__)
-#include "lib/jxl/base/file_io.h"
-#endif
+extern "C" {
 
 namespace {
 
-struct DecoderInstance {
-  uint32_t width = 0;
-  uint32_t height = 0;
-  uint8_t* pixels = nullptr;
-  uint32_t color_space = 0;
+struct DecoderInstancePrivate {
+  // Due to "Standard Layout" rules it is guaranteed that address of the entity
+  // and its first non-static member are the same.
+  DecoderInstance info;
 
   size_t pixels_size = 0;
   bool want_sdr;
@@ -35,26 +34,24 @@ struct DecoderInstance {
 
 }  // namespace
 
-extern "C" {
-
-void* jxlCreateInstance(bool want_sdr, uint32_t display_nits) {
-  DecoderInstance* instance = new DecoderInstance();
-  instance->want_sdr = want_sdr;
-  instance->display_nits = display_nits;
+DecoderInstance* jxlCreateInstance(bool want_sdr, uint32_t display_nits) {
+  DecoderInstancePrivate* self = new DecoderInstancePrivate();
+  self->want_sdr = want_sdr;
+  self->display_nits = display_nits;
   JxlDataType storageFormat = want_sdr ? JXL_TYPE_UINT8 : JXL_TYPE_UINT16;
-  instance->format = {4, storageFormat, JXL_NATIVE_ENDIAN, 0};
-  instance->decoder = JxlDecoderMake(nullptr);
+  self->format = {4, storageFormat, JXL_NATIVE_ENDIAN, 0};
+  self->decoder = JxlDecoderMake(nullptr);
 
-  JxlDecoder* dec = instance->decoder.get();
+  JxlDecoder* dec = self->decoder.get();
 
   auto report_error = [&](uint32_t code, const char* text) {
     fprintf(stderr, "%s\n", text);
-    // instance->result = code;
-    return instance;
+    // self->result = code;
+    return &self->info;
   };
 
-  instance->thread_pool = JxlThreadParallelRunnerMake(nullptr, 4);
-  void* runner = instance->thread_pool.get();
+  self->thread_pool = JxlThreadParallelRunnerMake(nullptr, 4);
+  void* runner = self->thread_pool.get();
 
   auto status =
       JxlDecoderSetParallelRunner(dec, JxlThreadParallelRunner, runner);
@@ -74,33 +71,33 @@ void* jxlCreateInstance(bool want_sdr, uint32_t display_nits) {
   if (JXL_DEC_SUCCESS != status) {
     return report_error(3, "JxlDecoderSetProgressiveDetail failed");
   }
-  return instance;
+  return &self->info;
 }
 
-void jxlDestroyInstance(void* opaque_instance) {
-  if (opaque_instance == nullptr) return;
-  DecoderInstance* instance =
-      reinterpret_cast<DecoderInstance*>(opaque_instance);
+void jxlDestroyInstance(DecoderInstance* instance) {
+  if (instance == nullptr) return;
+  DecoderInstancePrivate* self =
+      reinterpret_cast<DecoderInstancePrivate*>(instance);
   if (instance->pixels) {
     free(instance->pixels);
   }
-  delete instance;
+  delete self;
 }
 
-uint32_t jxlProcessInput(void* opaque_instance, const uint8_t* input,
+uint32_t jxlProcessInput(DecoderInstance* instance, const uint8_t* input,
                          size_t input_size) {
-  if (opaque_instance == nullptr) return static_cast<uint32_t>(-1);
-  DecoderInstance* instance =
-      reinterpret_cast<DecoderInstance*>(opaque_instance);
-  JxlDecoder* dec = instance->decoder.get();
+  if (instance == nullptr) return static_cast<uint32_t>(-1);
+  DecoderInstancePrivate* self =
+      reinterpret_cast<DecoderInstancePrivate*>(instance);
+  JxlDecoder* dec = self->decoder.get();
 
   auto report_error = [&](int code, const char* text) {
     fprintf(stderr, "%s\n", text);
-    // instance->result = code;
+    // self->result = code;
     return static_cast<uint32_t>(code);
   };
 
-  std::vector<uint8_t>& tail = instance->tail;
+  std::vector<uint8_t>& tail = self->tail;
   if (!tail.empty()) {
     tail.reserve(tail.size() + input_size);
     tail.insert(tail.end(), input, input + input_size);
@@ -152,8 +149,8 @@ uint32_t jxlProcessInput(void* opaque_instance, const uint8_t* input,
       }
       instance->width = info.xsize;
       instance->height = info.ysize;
-      status = JxlDecoderImageOutBufferSize(dec, &instance->format,
-                                            &instance->pixels_size);
+      status =
+          JxlDecoderImageOutBufferSize(dec, &self->format, &self->pixels_size);
       if (status != JXL_DEC_SUCCESS) {
         release_input();
         return report_error(-6, "JxlDecoderImageOutBufferSize failed");
@@ -162,15 +159,14 @@ uint32_t jxlProcessInput(void* opaque_instance, const uint8_t* input,
         release_input();
         return report_error(-7, "Tried to realloc pixels");
       }
-      instance->pixels =
-          reinterpret_cast<uint8_t*>(malloc(instance->pixels_size));
+      instance->pixels = reinterpret_cast<uint8_t*>(malloc(self->pixels_size));
     } else if (JXL_DEC_NEED_IMAGE_OUT_BUFFER == status) {
-      if (!instance->pixels) {
+      if (!self->info.pixels) {
         release_input();
         return report_error(-8, "Out buffer not allocated");
       }
-      status = JxlDecoderSetImageOutBuffer(
-          dec, &instance->format, instance->pixels, instance->pixels_size);
+      status = JxlDecoderSetImageOutBuffer(dec, &self->format, instance->pixels,
+                                           self->pixels_size);
       if (status != JXL_DEC_SUCCESS) {
         release_input();
         return report_error(-9, "JxlDecoderSetImageOutBuffer failed");
@@ -180,8 +176,8 @@ uint32_t jxlProcessInput(void* opaque_instance, const uint8_t* input,
       color_encoding.color_space = JXL_COLOR_SPACE_RGB;
       color_encoding.white_point = JXL_WHITE_POINT_D65;
       color_encoding.primaries =
-          instance->want_sdr ? JXL_PRIMARIES_SRGB : JXL_PRIMARIES_2100;
-      color_encoding.transfer_function = instance->want_sdr
+          self->want_sdr ? JXL_PRIMARIES_SRGB : JXL_PRIMARIES_2100;
+      color_encoding.transfer_function = self->want_sdr
                                              ? JXL_TRANSFER_FUNCTION_SRGB
                                              : JXL_TRANSFER_FUNCTION_PQ;
       color_encoding.rendering_intent = JXL_RENDERING_INTENT_PERCEPTUAL;
@@ -200,15 +196,15 @@ uint32_t jxlProcessInput(void* opaque_instance, const uint8_t* input,
   return 0;
 }
 
-uint32_t jxlFlush(void* opaque_instance) {
-  if (opaque_instance == nullptr) return static_cast<uint32_t>(-1);
-  DecoderInstance* instance =
-      reinterpret_cast<DecoderInstance*>(opaque_instance);
-  JxlDecoder* dec = instance->decoder.get();
+uint32_t jxlFlush(DecoderInstance* instance) {
+  if (instance == nullptr) return static_cast<uint32_t>(-1);
+  DecoderInstancePrivate* self =
+      reinterpret_cast<DecoderInstancePrivate*>(instance);
+  JxlDecoder* dec = self->decoder.get();
 
   auto report_error = [&](int code, const char* text) {
     fprintf(stderr, "%s\n", text);
-    // instance->result = code;
+    // self->result = code;
     return static_cast<uint32_t>(code);
   };
 
@@ -223,21 +219,5 @@ uint32_t jxlFlush(void* opaque_instance) {
 
   return 0;
 }
-
-#if !defined(__wasm__)
-int main(int argc, char* argv[]) {
-  std::vector<uint8_t> data;
-  JXL_RETURN_IF_ERROR(jxl::ReadFile(argv[1], &data));
-  fprintf(stderr, "File size: %d\n", (int)data.size());
-
-  void* instance = jxlCreateInstance(true, 100);
-  uint32_t status = jxlProcessInput(instance, data.data(), data.size());
-  fprintf(stderr, "Process result: %d\n", status);
-  jxlFlush(instance);
-  status = jxlProcessInput(instance, nullptr, 0);
-  fprintf(stderr, "Process result: %d\n", status);
-  jxlDestroyInstance(instance);
-}
-#endif
 
 }  // extern "C"
