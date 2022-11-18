@@ -39,6 +39,7 @@ class JpegXlSaveOpts {
   bool has_alpha = false;
   bool is_gray = false;
   bool icc_attached = false;
+  bool as_animation = false;
 
   bool advanced_mode = false;
   bool use_container = true;
@@ -57,7 +58,6 @@ class JpegXlSaveOpts {
   JpegXlSaveOpts();
 
   bool SetDistance(float dist);
-  bool SetQuality(float qual);
   bool SetDimensions(int x, int y);
   bool SetNumChannels(int channels);
 
@@ -72,10 +72,12 @@ class JpegXlSaveOpts {
 
   bool SetPrecision(int gimp_precision);
 
+  bool SetAnimation(bool enabled);
+
  private:
 };  // class JpegXlSaveOpts
 
-JpegXlSaveOpts jxl_save_opts;
+static JpegXlSaveOpts jxl_save_opts;
 
 class JpegXlSaveGui {
  public:
@@ -87,12 +89,14 @@ class JpegXlSaveGui {
   GtkAdjustment* entry_quality = nullptr;
   GtkAdjustment* entry_effort = nullptr;
   GtkAdjustment* entry_faster = nullptr;
+  GtkWidget* toggle_animation = nullptr;
   GtkWidget* frame_advanced = nullptr;
   GtkWidget* toggle_no_xyb = nullptr;
   GtkWidget* toggle_raw = nullptr;
   gulong handle_toggle_lossless = 0;
   gulong handle_entry_quality = 0;
   gulong handle_entry_distance = 0;
+  gulong handle_toggle_animation = 0;
 
   static bool GuiOnChangeQuality(GtkAdjustment* adj_qual, void* this_pointer);
 
@@ -103,6 +107,7 @@ class JpegXlSaveGui {
   static bool GuiOnChangeCodestream(GtkWidget* toggle);
   static bool GuiOnChangeNoXYB(GtkWidget* toggle);
 
+  static bool GuiOnChangeAnimation(GtkWidget* toggle);
   static bool GuiOnChangeAdvancedMode(GtkWidget* toggle, void* this_pointer);
 };  // class JpegXlSaveGui
 
@@ -238,6 +243,13 @@ bool JpegXlSaveGui::GuiOnChangeAdvancedMode(GtkWidget* toggle,
   return true;
 }
 
+bool JpegXlSaveGui::GuiOnChangeAnimation(GtkWidget* toggle) {
+  jxl_save_opts.basic_info.have_animation = jxl_save_opts.as_animation =
+      gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(toggle));
+
+  return true;
+}
+
 bool JpegXlSaveGui::SaveDialog() {
   gboolean run;
   GtkWidget* dialog;
@@ -348,6 +360,22 @@ bool JpegXlSaveGui::SaveDialog() {
   // lossless signal
   handle_toggle_lossless = g_signal_connect(
       toggle_lossless, "toggled", G_CALLBACK(GuiOnChangeLossless), this);
+
+  // ----------
+  // Animation Convenience Checkbox
+  static gchar animation_help[] =
+      "Save as JPEG XL animation, using the same layer name semantics of GIF/"
+      "WebP plugins.";
+  toggle_animation = gtk_check_button_new_with_label("Animation");
+  gimp_help_set_help_data(toggle_animation, animation_help, nullptr);
+  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(toggle_animation),
+                               jxl_save_opts.as_animation);
+  gtk_table_attach_defaults(GTK_TABLE(table), toggle_animation, 0, 2, 6, 7);
+  gtk_widget_show(toggle_animation);
+
+  // animation signal
+  handle_toggle_animation = g_signal_connect(
+      toggle_animation, "toggled", G_CALLBACK(GuiOnChangeAnimation), nullptr);
 
   // ----------
   separator = gtk_vseparator_new();
@@ -470,7 +498,7 @@ JpegXlSaveOpts::JpegXlSaveOpts() {
   pixel_format.endianness = JXL_NATIVE_ENDIAN;
   pixel_format.align = 0;
 
-  JxlEncoderInitBasicInfo(&basic_info);
+  JxlEncoderInitBasicInfo(&this->basic_info);
   return;
 }  // JpegXlSaveOpts constructor
 
@@ -506,11 +534,6 @@ bool JpegXlSaveOpts::SetModel(bool is_linear_) {
 bool JpegXlSaveOpts::SetDistance(float dist) {
   distance = dist;
   return UpdateQuality();
-}
-
-bool JpegXlSaveOpts::SetQuality(float qual) {
-  quality = qual;
-  return UpdateDistance();
 }
 
 bool JpegXlSaveOpts::UpdateQuality() {
@@ -556,6 +579,15 @@ bool JpegXlSaveOpts::UpdateDistance() {
 bool JpegXlSaveOpts::SetDimensions(int x, int y) {
   basic_info.xsize = x;
   basic_info.ysize = y;
+  return true;
+}
+
+bool JpegXlSaveOpts::SetAnimation(bool enabled) {
+  if (enabled) {
+    basic_info.have_animation = true;
+    basic_info.animation.tps_numerator = 1000;
+    basic_info.animation.tps_denominator = 1;
+  }
   return true;
 }
 
@@ -643,6 +675,52 @@ bool JpegXlSaveOpts::SetPrecision(int gimp_precision) {
   return true;
 }  // JpegXlSaveOpts::SetPrecision
 
+class GimpParser {
+ public:
+  JxlFrameHeader LayerNameToFrameHeader(gchar* layer_name) {
+    JxlFrameHeader frame_header;
+    JxlEncoderInitFrameHeader(&frame_header);
+    gchar** remainder = &layer_name;
+    LayerNameToJxlLayerName(layer_name, remainder);
+    if (g_str_has_prefix(*remainder, " (")) {
+      gchar* remainder2;
+      gchar** endptr = &remainder2;
+      gint64 ms_len = g_ascii_strtoll(*remainder + 2, endptr, 10);
+      if (ms_len == 0) {
+        ms_len = 1;
+      }
+      frame_header.duration = ms_len;
+    }
+    gchar* found;
+    gsize len = g_ref_string_length(*remainder);
+    found = g_strstr_len(*remainder, len, GIMP_BLEND_REPLACE_FLAG->str);
+    if (found != nullptr) {
+      frame_header.layer_info.blend_info.blendmode = JXL_BLEND_REPLACE;
+    }
+    found = g_strstr_len(*remainder, len, GIMP_BLEND_COMBINE_FLAG->str);
+    if (found != nullptr) {
+      frame_header.layer_info.blend_info.blendmode = JXL_BLEND_ADD;
+    }
+    return frame_header;
+  }
+  char* LayerNameToJxlLayerName(gchar* layer_name, gchar** remainder) {
+    gsize len = g_ref_string_length(layer_name);
+    gchar* found = g_strstr_len(layer_name, len, " (");
+    gchar* ret = layer_name;
+    if (found != nullptr) {
+      gsize new_len = found - layer_name + 1;
+      ret = (gchar*)g_malloc(new_len);
+      g_strlcpy(ret, layer_name, new_len);
+    }
+    if (remainder != nullptr) {
+      *remainder = found;
+    }
+    return (char*)ret;
+  }
+
+ private:
+};
+
 }  // namespace
 
 bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
@@ -654,6 +732,7 @@ bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
   gint32 nlayers;
   gint32* layers;
   gint32 duplicate = gimp_image_duplicate(image_id);
+  layers = gimp_image_get_layers(duplicate, &nlayers);
 
   JpegXlGimpProgress gimp_save_progress(
       ("Saving JPEG XL file:" + std::string(filename)).c_str());
@@ -662,11 +741,11 @@ bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
   // try to get ICC color profile...
   std::vector<uint8_t> icc;
 
-  GimpColorProfile* profile = gimp_image_get_effective_color_profile(image_id);
+  GimpColorProfile* profile = gimp_image_get_effective_color_profile(duplicate);
   jxl_save_opts.is_gray = gimp_color_profile_is_gray(profile);
   jxl_save_opts.is_linear = gimp_color_profile_is_linear(profile);
 
-  profile = gimp_image_get_color_profile(image_id);
+  profile = gimp_image_get_color_profile(duplicate);
   if (profile) {
     g_printerr(SAVE_PROC " Info: Extracting ICC Profile...\n");
     gsize icc_size;
@@ -678,13 +757,10 @@ bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
     g_printerr(SAVE_PROC " Info: No ICC profile.  Exporting image anyway.\n");
   }
 
-  gimp_save_progress.update();
+  jxl_save_opts.SetDimensions(gimp_image_width(duplicate),
+                              gimp_image_height(duplicate));
 
-  jxl_save_opts.SetDimensions(gimp_image_width(image_id),
-                              gimp_image_height(image_id));
-
-  jxl_save_opts.SetPrecision(gimp_image_get_precision(image_id));
-  layers = gimp_image_get_layers(duplicate, &nlayers);
+  jxl_save_opts.SetPrecision(gimp_image_get_precision(duplicate));
 
   for (int i = 0; i < nlayers; i++) {
     if (gimp_drawable_has_alpha(layers[i])) {
@@ -693,20 +769,13 @@ bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
     }
   }
 
-  gimp_save_progress.update();
-
   // layers need to match image size, for now
   for (int i = 0; i < nlayers; i++) {
     gimp_layer_resize_to_image_size(layers[i]);
   }
 
-  // treat layers as animation frames, for now
-  if (nlayers > 1) {
-    jxl_save_opts.basic_info.have_animation = true;
-    jxl_save_opts.basic_info.animation.tps_numerator = 100;
-  }
-
-  gimp_save_progress.update();
+  if (nlayers > 1 && jxl_save_opts.as_animation)
+    jxl_save_opts.SetAnimation(jxl_save_opts.as_animation);
 
   // multi-threaded parallel runner.
   auto runner = JxlResizableParallelRunnerMake(nullptr);
@@ -726,20 +795,15 @@ bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
     return false;
   }
 
-  // try to use ICC profile
-  if (!icc.empty() && !jxl_save_opts.is_gray) {
-    if (JXL_ENC_SUCCESS ==
-        JxlEncoderSetICCProfile(enc.get(), icc.data(), icc.size())) {
-      jxl_save_opts.icc_attached = true;
-    } else {
-      g_printerr(SAVE_PROC " Warning: JxlEncoderSetICCProfile failed.\n");
-      jxl_save_opts.basic_info.uses_original_profile = false;
-      jxl_save_opts.lossless = false;
-    }
+  // this sets some basic_info properties
+  jxl_save_opts.SetModel(jxl_save_opts.is_linear);
+
+  // convert precision and colorspace
+  if (jxl_save_opts.is_linear &&
+      jxl_save_opts.basic_info.bits_per_sample < 32) {
+    gimp_image_convert_precision(duplicate, GIMP_PRECISION_FLOAT_LINEAR);
   } else {
-    g_printerr(SAVE_PROC " Warning: Using internal profile.\n");
-    jxl_save_opts.basic_info.uses_original_profile = false;
-    jxl_save_opts.lossless = false;
+    gimp_image_convert_precision(duplicate, GIMP_PRECISION_FLOAT_GAMMA);
   }
 
   // set up internal color profile
@@ -756,58 +820,74 @@ bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
     g_printerr(SAVE_PROC " Warning: JxlEncoderSetColorEncoding failed\n");
   }
 
-  // set encoder options
-  JxlEncoderFrameSettings* frame_settings;
-  frame_settings = JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
-
-  JxlEncoderFrameSettingsSetOption(frame_settings, JXL_ENC_FRAME_SETTING_EFFORT,
-                                   jxl_save_opts.encoding_effort);
-  JxlEncoderFrameSettingsSetOption(frame_settings,
-                                   JXL_ENC_FRAME_SETTING_DECODING_SPEED,
-                                   jxl_save_opts.faster_decoding);
-
-  // lossless mode
-  if (jxl_save_opts.lossless || jxl_save_opts.distance < 0.01) {
-    if (jxl_save_opts.basic_info.exponent_bits_per_sample > 0) {
-      // lossless mode doesn't work well with floating point
-      jxl_save_opts.distance = 0.01;
-      jxl_save_opts.lossless = false;
-      JxlEncoderSetFrameLossless(frame_settings, false);
-      JxlEncoderSetFrameDistance(frame_settings, 0.01);
-    } else {
-      JxlEncoderSetFrameDistance(frame_settings, 0);
-      JxlEncoderSetFrameLossless(frame_settings, true);
-    }
-  } else {
-    jxl_save_opts.lossless = false;
-    JxlEncoderSetFrameLossless(frame_settings, false);
-    JxlEncoderSetFrameDistance(frame_settings, jxl_save_opts.distance);
-  }
-
-  // this sets some basic_info properties
-  jxl_save_opts.SetModel(jxl_save_opts.is_linear);
-
-  if (JXL_ENC_SUCCESS !=
-      JxlEncoderSetBasicInfo(enc.get(), &jxl_save_opts.basic_info)) {
-    g_printerr(SAVE_PROC " Error: JxlEncoderSetBasicInfo failed\n");
-    return false;
-  }
-
-  // convert precision and colorspace
-  if (jxl_save_opts.is_linear &&
-      jxl_save_opts.basic_info.bits_per_sample < 32) {
-    gimp_image_convert_precision(duplicate, GIMP_PRECISION_FLOAT_LINEAR);
-  } else {
-    gimp_image_convert_precision(duplicate, GIMP_PRECISION_FLOAT_GAMMA);
-  }
-
   // process layers and compress into JXL
   size_t buffer_size =
       jxl_save_opts.basic_info.xsize * jxl_save_opts.basic_info.ysize *
       jxl_save_opts.pixel_format.num_channels * 4;  // bytes per sample
 
-  for (int i = nlayers - 1; i >= 0; i--) {
+  for (int i = 0; i < nlayers; i++) {
     gimp_save_progress.update();
+
+    // set encoder options
+    JxlEncoderFrameSettings* frame_settings = {};
+    frame_settings = JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
+    JxlEncoderFrameSettingsSetOption(frame_settings,
+                                     JXL_ENC_FRAME_SETTING_EFFORT,
+                                     jxl_save_opts.encoding_effort);
+    JxlEncoderFrameSettingsSetOption(frame_settings,
+                                     JXL_ENC_FRAME_SETTING_DECODING_SPEED,
+                                     jxl_save_opts.faster_decoding);
+
+    if (jxl_save_opts.as_animation) {
+      jxl_save_opts.SetAnimation(jxl_save_opts.as_animation);
+      // sanity
+      if (!gimp_item_is_layer(layers[i])) {
+        g_printerr(SAVE_PROC " Error: !gimp_item_is_layer(layers[%d])\n", i);
+        return false;
+      }
+      gchar* layer_name = gimp_item_get_name(layers[i]);
+      GimpParser gimp_parser;
+      char* jxl_layer_name =
+          gimp_parser.LayerNameToJxlLayerName(layer_name, nullptr);
+      JxlEncoderSetFrameName(frame_settings, jxl_layer_name);
+      JxlFrameHeader frame_header =
+          gimp_parser.LayerNameToFrameHeader(layer_name);
+      JxlEncoderSetFrameHeader(frame_settings, &frame_header);
+    }
+
+    // try to use ICC profile
+    if (!icc.empty() && !jxl_save_opts.is_gray) {
+      if (JXL_ENC_SUCCESS ==
+          JxlEncoderSetICCProfile(enc.get(), icc.data(), icc.size())) {
+        jxl_save_opts.icc_attached = true;
+      } else {
+        g_printerr(SAVE_PROC " Warning: JxlEncoderSetICCProfile failed.\n");
+        jxl_save_opts.basic_info.uses_original_profile = false;
+        jxl_save_opts.lossless = false;
+      }
+    } else {
+      g_printerr(SAVE_PROC " Warning: Using internal profile.\n");
+      jxl_save_opts.basic_info.uses_original_profile = false;
+      jxl_save_opts.lossless = false;
+    }
+
+    // lossless mode
+    if (jxl_save_opts.lossless || jxl_save_opts.distance < 0.01) {
+      if (jxl_save_opts.basic_info.exponent_bits_per_sample > 0) {
+        // lossless mode doesn't work well with floating point
+        jxl_save_opts.distance = 0.01;
+        jxl_save_opts.lossless = false;
+        JxlEncoderSetFrameLossless(frame_settings, false);
+        JxlEncoderSetFrameDistance(frame_settings, 0.01);
+      } else {
+        JxlEncoderSetFrameDistance(frame_settings, 0);
+        JxlEncoderSetFrameLossless(frame_settings, true);
+      }
+    } else {
+      jxl_save_opts.lossless = false;
+      JxlEncoderSetFrameLossless(frame_settings, false);
+      JxlEncoderSetFrameDistance(frame_settings, jxl_save_opts.distance);
+    }
 
     // copy image into buffer...
     gpointer pixels_buffer_1;
@@ -846,6 +926,12 @@ bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
         pixels_buffer_2,
         jxl_save_opts.basic_info.xsize * jxl_save_opts.basic_info.ysize);
 
+    if (JXL_ENC_SUCCESS !=
+        JxlEncoderSetBasicInfo(enc.get(), &jxl_save_opts.basic_info)) {
+      g_printerr(SAVE_PROC " Error: JxlEncoderSetBasicInfo failed\n");
+      return false;
+    }
+
     gimp_save_progress.update();
 
     // send layer to encoder
@@ -855,8 +941,12 @@ bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
       g_printerr(SAVE_PROC " Error: JxlEncoderAddImageFrame failed\n");
       return false;
     }
+
+    g_free(pixels_buffer_1);
+    g_free(pixels_buffer_2);
   }
 
+  JxlEncoderCloseFrames(enc.get());
   JxlEncoderCloseInput(enc.get());
 
   // get data from encoder
@@ -865,17 +955,15 @@ bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
   uint8_t* next_out = compressed.data();
   size_t avail_out = compressed.size();
 
-  JxlEncoderStatus process_result = JXL_ENC_NEED_MORE_OUTPUT;
-  while (process_result == JXL_ENC_NEED_MORE_OUTPUT) {
+  JxlEncoderStatus process_result;
+  while ((process_result = JxlEncoderProcessOutput(
+              enc.get(), &next_out, &avail_out)) == JXL_ENC_NEED_MORE_OUTPUT) {
     gimp_save_progress.update();
 
-    process_result = JxlEncoderProcessOutput(enc.get(), &next_out, &avail_out);
-    if (process_result == JXL_ENC_NEED_MORE_OUTPUT) {
-      size_t offset = next_out - compressed.data();
-      compressed.resize(compressed.size() + 262144);
-      next_out = compressed.data() + offset;
-      avail_out = compressed.size() - offset;
-    }
+    size_t offset = next_out - compressed.data();
+    compressed.resize(compressed.size() + 262144);
+    next_out = compressed.data() + offset;
+    avail_out = compressed.size() - offset;
   }
   compressed.resize(next_out - compressed.data());
 
