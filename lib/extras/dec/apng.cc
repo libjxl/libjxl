@@ -76,6 +76,9 @@ Status DecodeSRGB(const unsigned char* payload, const size_t payload_size,
   if (payload_size != 1) return JXL_FAILURE("Wrong sRGB size");
   // (PNG uses the same values as ICC.)
   if (payload[0] >= 4) return JXL_FAILURE("Invalid Rendering Intent");
+  color_encoding->white_point = JXL_WHITE_POINT_D65;
+  color_encoding->primaries = JXL_PRIMARIES_SRGB;
+  color_encoding->transfer_function = JXL_TRANSFER_FUNCTION_SRGB;
   color_encoding->rendering_intent =
       static_cast<JxlRenderingIntent>(payload[0]);
   return true;
