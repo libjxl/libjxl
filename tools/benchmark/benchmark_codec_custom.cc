@@ -49,16 +49,6 @@ Status AddCommandLineOptionsCustomCodec(BenchmarkArgs* args) {
 
 namespace {
 
-std::string GetBaseName(std::string filename) {
-  std::string result = std::move(filename);
-  result = basename(&result[0]);
-  const size_t dot = result.rfind('.');
-  if (dot != std::string::npos) {
-    result.resize(dot);
-  }
-  return result;
-}
-
 // This uses `output_filename` to determine the name of the corresponding
 // `.time` file.
 template <typename F>

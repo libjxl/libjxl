@@ -50,6 +50,16 @@ Status TemporaryFile::GetFileName(std::string* const output) const {
   return true;
 }
 
+std::string GetBaseName(std::string filename) {
+  std::string result = std::move(filename);
+  result = basename(&result[0]);
+  const size_t dot = result.rfind('.');
+  if (dot != std::string::npos) {
+    result.resize(dot);
+  }
+  return result;
+}
+
 Status RunCommand(const std::string& command,
                   const std::vector<std::string>& arguments, bool quiet) {
   std::vector<char*> args;
@@ -86,6 +96,8 @@ Status TemporaryFile::GetFileName(std::string* const output) const {
   (void)ok_;
   return JXL_FAILURE("Not supported on this build");
 }
+
+std::string GetBaseName(std::string filename) { return filename; }
 
 Status RunCommand(const std::string& command,
                   const std::vector<std::string>& arguments, bool quiet) {
