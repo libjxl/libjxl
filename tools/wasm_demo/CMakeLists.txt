@@ -26,6 +26,7 @@ set_target_properties(jxl_decoder PROPERTIES LINK_FLAGS "\
   -s DISABLE_EXCEPTION_CATCHING=1 \
   -s MODULARIZE=1 \
   -s FILESYSTEM=0 \
+  -s NODERAWFS=1 \
   -s USE_PTHREADS=1 \
   -s PTHREAD_POOL_SIZE=4 \
   -s EXPORT_NAME=\"JxlCodecModule\" \
