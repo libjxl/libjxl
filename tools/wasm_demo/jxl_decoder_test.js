@@ -97,7 +97,7 @@ function testChunks() {
   jxlModule._free(buffer);
 }
 
-require('jxl_decoder.js')().then(module => {
+require('jxl_decoder_for_test.js')().then(module => {
   jxlModule = module;
   let tests = [testSdr, testRegular, testChunks];
   tests.forEach(runTest);
