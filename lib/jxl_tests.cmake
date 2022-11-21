@@ -108,7 +108,7 @@ foreach (TESTFILE IN LISTS TEST_FILES)
     set_target_properties(${TESTNAME} PROPERTIES LINK_FLAGS "\
       -O1 \
       -s USE_LIBPNG=1 \
-      -s TOTAL_MEMORY=1536MB \
+      -s INITIAL_MEMORY=1536MB \
       -s SINGLE_FILE=1 \
       -s PROXY_TO_PTHREAD \
       -s EXIT_RUNTIME=1 \
