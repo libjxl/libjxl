@@ -379,15 +379,6 @@ set(JPEGXL_INTERNAL_LIBS
   brotlienc-static
 )
 
-# strips the -static suffix from all the elements in LIST
-function(strip_static OUTPUT_VAR LIB_LIST)
-  foreach(lib IN LISTS ${LIB_LIST})
-    string(REGEX REPLACE "-static$" "" lib "${lib}")
-    list(APPEND out_list "${lib}")
-  endforeach()
-  set(${OUTPUT_VAR} ${out_list} PARENT_SCOPE)
-endfunction()
-
 if (JPEGXL_ENABLE_SKCMS)
   list(APPEND JPEGXL_INTERNAL_FLAGS -DJPEGXL_ENABLE_SKCMS=1)
   if (JPEGXL_BUNDLE_SKCMS)

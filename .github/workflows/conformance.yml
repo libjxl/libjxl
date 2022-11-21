@@ -123,7 +123,8 @@ jobs:
         ./ci.sh ${{ matrix.build_type || 'release' }} -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
           -DCMAKE_C_COMPILER_LAUNCHER=ccache \
-          -DBUILD_TESTING=OFF
+          -DBUILD_TESTING=OFF \
+          -DJPEGXL_ENABLE_JPEGLI=OFF
         # Flatten the artifacts directory structure
         cp tools/conformance/conformance.py build/tools/conformance
         cp tools/conformance/lcms2.py build/tools/conformance

@@ -68,6 +68,7 @@ jobs:
               -DJPEGXL_ENABLE_TRANSCODE_JPEG=OFF
               -DJPEGXL_ENABLE_PLUGINS=OFF
               -DJPEGXL_ENABLE_VIEWERS=OFF
+              -DJPEGXL_ENABLE_JPEGLI=OFF
           # Build optimized for binary size, all features not needed for
           # reconstructing pixels is disabled.
           - name: release:minimal
@@ -78,6 +79,7 @@ jobs:
               -DJPEGXL_ENABLE_BOXES=OFF
               -DJPEGXL_ENABLE_PLUGINS=OFF
               -DJPEGXL_ENABLE_VIEWERS=OFF
+              -DJPEGXL_ENABLE_JPEGLI=OFF
           # Builds with gcc in release mode
           - name: release:gcc8
             mode: release
