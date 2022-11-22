@@ -179,6 +179,7 @@ struct TestConfig {
   std::string origfn;
   size_t chunk_size;
   size_t max_output_lines;
+  size_t output_bit_depth;
   float max_distance;
 };
 
@@ -222,22 +223,29 @@ TEST_P(DecodeAPITestParam, TestAPI) {
   EXPECT_EQ(ysize, cinfo.image_height);
   EXPECT_EQ(num_channels, cinfo.num_components);
 
+  cinfo.quantize_colors = FALSE;
+  cinfo.desired_number_of_colors = 1 << config.output_bit_depth;
   ASSERT_TRUE(jpeg_start_decompress(&cinfo));
+  EXPECT_EQ(xsize, cinfo.output_width);
+  EXPECT_EQ(ysize, cinfo.output_height);
+  EXPECT_EQ(num_channels, cinfo.out_color_components);
 
-  size_t stride = cinfo.image_width * cinfo.num_components;
-  std::vector<uint8_t> output(cinfo.image_height * stride);
+  size_t bytes_per_sample = config.output_bit_depth <= 8 ? 1 : 2;
+  size_t stride = cinfo.output_width * cinfo.num_components * bytes_per_sample;
+  std::vector<uint8_t> output(cinfo.output_height * stride);
   size_t max_output_lines = config.max_output_lines;
-  if (max_output_lines == 0) max_output_lines = cinfo.image_height;
+  if (max_output_lines == 0) max_output_lines = cinfo.output_height;
   size_t total_output_lines = 0;
-  while (total_output_lines < cinfo.image_height) {
+  while (cinfo.output_scanline < cinfo.output_height) {
     std::vector<JSAMPROW> scanlines(max_output_lines);
     for (size_t i = 0; i < max_output_lines; ++i) {
-      scanlines[i] = &output[(total_output_lines + i) * stride];
+      scanlines[i] = &output[(cinfo.output_scanline + i) * stride];
     }
     size_t num_output_lines =
         jpeg_read_scanlines(&cinfo, &scanlines[0], max_output_lines);
     total_output_lines += num_output_lines;
-    if (total_output_lines < cinfo.image_height) {
+    EXPECT_EQ(total_output_lines, cinfo.output_scanline);
+    if (cinfo.output_scanline < cinfo.output_height) {
       EXPECT_EQ(num_output_lines, max_output_lines);
     }
   }
@@ -246,15 +254,25 @@ TEST_P(DecodeAPITestParam, TestAPI) {
 
   jpeg_destroy_decompress(&cinfo);
 
-  ASSERT_EQ(output.size(), orig.size());
+  ASSERT_EQ(output.size(), orig.size() * bytes_per_sample);
+  const double mul_orig = 1.0 / 255.0;
+  const double mul_output = 1.0 / ((1u << config.output_bit_depth) - 1);
   double diff2 = 0.0;
-  for (size_t i = 0; i < output.size(); ++i) {
-    double diff = orig[i] - output[i];
+  for (size_t i = 0; i < orig.size(); ++i) {
+    double sample_orig = orig[i] * mul_orig;
+    double sample_output;
+    if (bytes_per_sample == 1) {
+      sample_output = output[i];
+    } else {
+      sample_output = output[2 * i] + (output[2 * i + 1] << 8);
+    }
+    sample_output *= mul_output;
+    double diff = sample_orig - sample_output;
     diff2 += diff * diff;
   }
   double rms = std::sqrt(diff2 / orig.size());
 
-  EXPECT_LE(rms, config.max_distance);
+  EXPECT_LE(rms / mul_orig, config.max_distance);
 }
 
 std::vector<TestConfig> GenerateTests() {
@@ -269,14 +287,20 @@ std::vector<TestConfig> GenerateTests() {
     for (const auto& it : testfiles) {
       for (size_t chunk_size : {0, 1, 64, 65536}) {
         for (size_t max_output_lines : {0, 1, 8, 16}) {
-          TestConfig config;
-          config.fn = it.first;
-          config.fn_desc = it.second;
-          config.chunk_size = chunk_size;
-          config.max_output_lines = max_output_lines;
-          config.origfn = "jxl/flower/flower.pnm";
-          config.max_distance = 3.0;
-          all_tests.push_back(config);
+          for (size_t output_bit_depth : {8, 16}) {
+            TestConfig config;
+            config.fn = it.first;
+            config.fn_desc = it.second;
+            config.chunk_size = chunk_size;
+            config.output_bit_depth = output_bit_depth;
+            config.max_output_lines = max_output_lines;
+            config.origfn = "jxl/flower/flower.pnm";
+            config.max_distance = 2.2;
+            if (config.output_bit_depth == 16) {
+              config.max_distance = 2.1;
+            }
+            all_tests.push_back(config);
+          }
         }
       }
     }
@@ -300,6 +324,7 @@ std::vector<TestConfig> GenerateTests() {
           config.fn = it.first;
           config.fn_desc = it.second;
           config.chunk_size = chunk_size;
+          config.output_bit_depth = 8;
           config.max_output_lines = max_output_lines;
           config.origfn = "jxl/flower/flower.pnm";
           config.max_distance = 3.5;
@@ -327,6 +352,7 @@ std::ostream& operator<<(std::ostream& os, const TestConfig& c) {
   } else {
     os << "OutputLines" << c.max_output_lines;
   }
+  os << "BitDepth" << c.output_bit_depth;
   return os;
 }
 

@@ -65,13 +65,13 @@ void ProcessSOF(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
     JPEGLI_ERROR("Duplicate SOF marker.");
   }
   m->found_sof_ = true;
-  m->is_progressive_ = (data[1] == 0xc2);
+  cinfo->progressive_mode = (data[1] == 0xc2);
+  cinfo->arith_code = 0;
   size_t pos = 4;
   JPEG_VERIFY_LEN(6);
   int precision = ReadUint8(data, &pos);
   cinfo->image_height = ReadUint16(data, &pos);
   cinfo->image_width = ReadUint16(data, &pos);
-  cinfo->arith_code = 0;
   cinfo->num_components = ReadUint8(data, &pos);
   JPEG_VERIFY_INPUT(precision, 8, 8);
   JPEG_VERIFY_INPUT(cinfo->image_height, 1, kMaxDimPixels);
@@ -82,9 +82,9 @@ void ProcessSOF(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
 
   // Read sampling factors and quant table index for each component.
   std::vector<bool> ids_seen(256, false);
-  m->max_h_samp_ = 1;
-  m->max_v_samp_ = 1;
-  for (size_t i = 0; i < m->components_.size(); ++i) {
+  cinfo->max_h_samp_factor = 1;
+  cinfo->max_v_samp_factor = 1;
+  for (int i = 0; i < cinfo->num_components; ++i) {
     JPEGComponent* c = &m->components_[i];
     const int id = ReadUint8(data, &pos);
     if (ids_seen[id]) {  // (cf. section B.2.2, syntax of Ci)
@@ -99,8 +99,10 @@ void ProcessSOF(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
     JPEG_VERIFY_INPUT(v_samp_factor, 1, kMaxSampling);
     c->h_samp_factor = h_samp_factor;
     c->v_samp_factor = v_samp_factor;
-    m->max_h_samp_ = std::max(m->max_h_samp_, h_samp_factor);
-    m->max_v_samp_ = std::max(m->max_v_samp_, v_samp_factor);
+    cinfo->max_h_samp_factor =
+        std::max(cinfo->max_h_samp_factor, h_samp_factor);
+    cinfo->max_v_samp_factor =
+        std::max(cinfo->max_v_samp_factor, v_samp_factor);
     uint8_t quant_tbl_idx = ReadUint8(data, &pos);
     bool found_quant_tbl = false;
     for (size_t j = 0; j < m->quant_.size(); ++j) {
@@ -116,30 +118,52 @@ void ProcessSOF(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
   }
   JPEG_VERIFY_MARKER_END();
 
+  // Set the input colorspace based on the markers we have seen and set
+  // default output colorspace.
   if (cinfo->num_components == 1) {
-    m->is_ycbcr_ = true;
+    cinfo->jpeg_color_space = JCS_GRAYSCALE;
+    cinfo->out_color_space = JCS_GRAYSCALE;
+  } else if (cinfo->num_components == 3) {
+    if (cinfo->saw_JFIF_marker) {
+      cinfo->jpeg_color_space = JCS_YCbCr;
+    } else if (cinfo->saw_Adobe_marker) {
+      cinfo->jpeg_color_space =
+          cinfo->Adobe_transform == 0 ? JCS_RGB : JCS_YCbCr;
+    } else {
+      cinfo->jpeg_color_space = JCS_YCbCr;
+      if (m->components_[0].id == 'R' &&  //
+          m->components_[1].id == 'G' &&  //
+          m->components_[2].id == 'B') {
+        cinfo->jpeg_color_space = JCS_RGB;
+      }
+    }
+    cinfo->out_color_space = JCS_RGB;
+  } else if (cinfo->num_components == 4) {
+    if (cinfo->saw_Adobe_marker) {
+      cinfo->jpeg_color_space =
+          cinfo->Adobe_transform == 0 ? JCS_CMYK : JCS_YCCK;
+    } else {
+      cinfo->jpeg_color_space = JCS_CMYK;
+    }
+    cinfo->out_color_space = JCS_CMYK;
   }
-  if (!m->found_app0_ && cinfo->num_components == 3 &&
-      m->components_[0].id == 'R' && m->components_[1].id == 'G' &&
-      m->components_[2].id == 'B') {
-    m->is_ycbcr_ = false;
-  }
+  cinfo->out_color_components = cinfo->num_components;
 
   // We have checked above that none of the sampling factors are 0, so the max
   // sampling factors can not be 0.
-  m->iMCU_height_ = m->max_v_samp_ * DCTSIZE;
-  m->iMCU_width_ = m->max_h_samp_ * DCTSIZE;
-  m->iMCU_rows_ = DivCeil(cinfo->image_height, m->iMCU_height_);
+  m->iMCU_height_ = cinfo->max_v_samp_factor * DCTSIZE;
+  m->iMCU_width_ = cinfo->max_h_samp_factor * DCTSIZE;
+  cinfo->total_iMCU_rows = DivCeil(cinfo->image_height, m->iMCU_height_);
   m->iMCU_cols_ = DivCeil(cinfo->image_width, m->iMCU_width_);
   // Compute the block dimensions for each component.
-  for (size_t i = 0; i < m->components_.size(); ++i) {
+  for (int i = 0; i < cinfo->num_components; ++i) {
     JPEGComponent* c = &m->components_[i];
-    if (m->max_h_samp_ % c->h_samp_factor != 0 ||
-        m->max_v_samp_ % c->v_samp_factor != 0) {
+    if (cinfo->max_h_samp_factor % c->h_samp_factor != 0 ||
+        cinfo->max_v_samp_factor % c->v_samp_factor != 0) {
       JPEGLI_ERROR("Non-integral subsampling ratios.");
     }
     c->width_in_blocks = m->iMCU_cols_ * c->h_samp_factor;
-    c->height_in_blocks = m->iMCU_rows_ * c->v_samp_factor;
+    c->height_in_blocks = cinfo->total_iMCU_rows * c->v_samp_factor;
     const uint64_t num_blocks =
         static_cast<uint64_t>(c->width_in_blocks) * c->height_in_blocks;
     c->coeffs = hwy::AllocateAligned<coeff_t>(num_blocks * DCTSIZE2);
@@ -153,11 +177,10 @@ void ProcessSOS(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
   if (!m->found_sof_) {
     JPEGLI_ERROR("Unexpected SOS marker.");
   }
-  m->found_sos_ = true;
   size_t pos = 4;
   JPEG_VERIFY_LEN(1);
-  size_t comps_in_scan = ReadUint8(data, &pos);
-  JPEG_VERIFY_INPUT(comps_in_scan, 1, m->components_.size());
+  int comps_in_scan = ReadUint8(data, &pos);
+  JPEG_VERIFY_INPUT(comps_in_scan, 1, cinfo->num_components);
 
   m->scan_info_.num_components = comps_in_scan;
   JPEG_VERIFY_LEN(2 * comps_in_scan);
@@ -171,7 +194,7 @@ void ProcessSOS(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
     }
     ids_seen[id] = true;
     JPEGComponent* comp = nullptr;
-    for (size_t j = 0; j < m->components_.size(); ++j) {
+    for (int j = 0; j < cinfo->num_components; ++j) {
       if (m->components_[j].id == id) {
         si->comp_idx = j;
         comp = &m->components_[j];
@@ -190,34 +213,33 @@ void ProcessSOS(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
     si->mcu_ysize_blocks = is_interleaved ? comp->v_samp_factor : 1;
   }
   JPEG_VERIFY_LEN(3);
-  m->scan_info_.Ss = ReadUint8(data, &pos);
-  m->scan_info_.Se = ReadUint8(data, &pos);
-  JPEG_VERIFY_INPUT(static_cast<int>(m->scan_info_.Ss), 0, 63);
-  JPEG_VERIFY_INPUT(m->scan_info_.Se, m->scan_info_.Ss, 63);
+  cinfo->Ss = ReadUint8(data, &pos);
+  cinfo->Se = ReadUint8(data, &pos);
+  JPEG_VERIFY_INPUT(cinfo->Ss, 0, 63);
+  JPEG_VERIFY_INPUT(cinfo->Se, cinfo->Ss, 63);
   int c = ReadUint8(data, &pos);
-  m->scan_info_.Ah = c >> 4;
-  m->scan_info_.Al = c & 0xf;
+  cinfo->Ah = c >> 4;
+  cinfo->Al = c & 0xf;
   JPEG_VERIFY_MARKER_END();
 
-  if (m->scan_info_.Ah != 0 && m->scan_info_.Al != m->scan_info_.Ah - 1) {
+  if (cinfo->Ah != 0 && cinfo->Al != cinfo->Ah - 1) {
     // section G.1.1.1.2 : Successive approximation control only improves
     // by one bit at a time.
-    JPEGLI_ERROR("Invalid progressive parameters: Al=%d Ah=%d",
-                 m->scan_info_.Al, m->scan_info_.Ah);
+    JPEGLI_ERROR("Invalid progressive parameters: Al=%d Ah=%d", cinfo->Al,
+                 cinfo->Ah);
   }
-  if (!m->is_progressive_) {
-    m->scan_info_.Ss = 0;
-    m->scan_info_.Se = 63;
-    m->scan_info_.Ah = 0;
-    m->scan_info_.Al = 0;
+  if (!cinfo->progressive_mode) {
+    cinfo->Ss = 0;
+    cinfo->Se = 63;
+    cinfo->Ah = 0;
+    cinfo->Al = 0;
   }
-  const uint16_t scan_bitmask = m->scan_info_.Ah == 0
-                                    ? (0xffff << m->scan_info_.Al)
-                                    : (1u << m->scan_info_.Al);
-  const uint16_t refinement_bitmask = (1 << m->scan_info_.Al) - 1;
+  const uint16_t scan_bitmask =
+      cinfo->Ah == 0 ? (0xffff << cinfo->Al) : (1u << cinfo->Al);
+  const uint16_t refinement_bitmask = (1 << cinfo->Al) - 1;
   for (size_t i = 0; i < m->scan_info_.num_components; ++i) {
     int comp_idx = m->scan_info_.components[i].comp_idx;
-    for (uint32_t k = m->scan_info_.Ss; k <= m->scan_info_.Se; ++k) {
+    for (int k = cinfo->Ss; k <= cinfo->Se; ++k) {
       if (m->scan_progression_[comp_idx][k] & scan_bitmask) {
         return JPEGLI_ERROR(
             "Overlapping scans: component=%d k=%d prev_mask: %u cur_mask %u",
@@ -232,37 +254,36 @@ void ProcessSOS(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
       m->scan_progression_[comp_idx][k] |= scan_bitmask;
     }
   }
-  if (m->scan_info_.Al > 10) {
-    return JPEGLI_ERROR("Scan parameter Al=%d is not supported.",
-                        m->scan_info_.Al);
+  if (cinfo->Al > 10) {
+    return JPEGLI_ERROR("Scan parameter Al=%d is not supported.", cinfo->Al);
   }
   // Check that all the Huffman tables needed for this scan are defined.
-  for (size_t i = 0; i < comps_in_scan; ++i) {
-    if (m->scan_info_.Ss == 0 &&
+  for (int i = 0; i < comps_in_scan; ++i) {
+    if (cinfo->Ss == 0 &&
         !m->huff_slot_defined_[m->scan_info_.components[i].dc_tbl_idx]) {
       return JPEGLI_ERROR(
           "SOS marker: Could not find DC Huffman table with index %d",
           m->scan_info_.components[i].dc_tbl_idx);
     }
-    if (m->scan_info_.Se > 0 &&
+    if (cinfo->Se > 0 &&
         !m->huff_slot_defined_[m->scan_info_.components[i].ac_tbl_idx + 16]) {
       return JPEGLI_ERROR(
           "SOS marker: Could not find AC Huffman table with index %d",
           m->scan_info_.components[i].ac_tbl_idx);
     }
   }
-  m->scan_info_.MCU_rows = m->iMCU_rows_;
-  m->scan_info_.MCU_cols = m->iMCU_cols_;
+  cinfo->MCU_rows_in_scan = cinfo->total_iMCU_rows;
+  cinfo->MCUs_per_row = m->iMCU_cols_;
   if (!is_interleaved) {
     const JPEGComponent& c =
         m->components_[m->scan_info_.components[0].comp_idx];
-    m->scan_info_.MCU_cols =
+    cinfo->MCUs_per_row =
         DivCeil(cinfo->image_width * c.h_samp_factor, m->iMCU_width_);
-    m->scan_info_.MCU_rows =
+    cinfo->MCU_rows_in_scan =
         DivCeil(cinfo->image_height * c.v_samp_factor, m->iMCU_height_);
   }
   memset(m->last_dc_coeff_, 0, sizeof(m->last_dc_coeff_));
-  m->restarts_to_go_ = m->restart_interval_;
+  m->restarts_to_go_ = cinfo->restart_interval;
   m->next_restart_marker_ = 0;
   m->eobrun_ = -1;
   m->scan_mcu_row_ = 0;
@@ -274,6 +295,7 @@ void ProcessSOS(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
     mcu_size += si->mcu_ysize_blocks * si->mcu_xsize_blocks;
   }
   m->mcu_.coeffs.resize(mcu_size * DCTSIZE2);
+  ++cinfo->input_scan_number;
   m->state_ = State::kScan;
 }
 
@@ -395,7 +417,7 @@ void ProcessDRI(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
   m->found_dri_ = true;
   size_t pos = 4;
   JPEG_VERIFY_LEN(2);
-  m->restart_interval_ = ReadUint16(data, &pos);
+  cinfo->restart_interval = ReadUint16(data, &pos);
   JPEG_VERIFY_MARKER_END();
 }
 
@@ -405,13 +427,20 @@ void ProcessAPP(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
   const uint8_t* payload = data + 4;
   size_t payload_size = len - 4;
   if (marker == 0xE0) {
-    m->found_app0_ = true;
-    m->is_ycbcr_ = true;
-  } else if (!m->found_app0_ && marker == 0xEE && payload_size == 12 &&
-             memcmp(payload, "Adobe", 5) == 0 && payload[11] == 0) {
-    m->is_ycbcr_ = false;
-  }
-  if (marker == 0xE2) {
+    if (payload_size >= 14 && memcmp(payload, "JFIF", 4) == 0) {
+      cinfo->saw_JFIF_marker = TRUE;
+      cinfo->JFIF_major_version = payload[5];
+      cinfo->JFIF_minor_version = payload[6];
+      cinfo->density_unit = payload[7];
+      cinfo->X_density = (payload[8] << 8) + payload[9];
+      cinfo->Y_density = (payload[10] << 8) + payload[11];
+    }
+  } else if (marker == 0xEE) {
+    if (payload_size >= 12 && memcmp(payload, "Adobe", 5) == 0) {
+      cinfo->saw_Adobe_marker = TRUE;
+      cinfo->Adobe_transform = payload[11];
+    }
+  } else if (marker == 0xE2) {
     if (payload_size >= sizeof(kIccProfileTag) &&
         memcmp(payload, kIccProfileTag, sizeof(kIccProfileTag)) == 0) {
       payload += sizeof(kIccProfileTag);
@@ -494,7 +523,7 @@ bool ProcessMarker(j_decompress_ptr cinfo, const uint8_t* data, size_t len,
   uint8_t marker = data[*pos + 1];
   if (marker == 0xd9) {
     m->found_eoi_ = true;
-    m->state_ = m->is_progressive_ ? State::kRender : State::kEnd;
+    m->state_ = cinfo->progressive_mode ? State::kRender : State::kEnd;
     *pos += 2;
     AdvanceInput(cinfo, 2);
     return true;
