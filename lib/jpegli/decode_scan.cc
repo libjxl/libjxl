@@ -382,9 +382,9 @@ void RestoreMCUCodingState(j_decompress_ptr cinfo) {
 bool ProcessScan(j_decompress_ptr cinfo, const uint8_t* data, size_t len,
                  size_t* pos) {
   jpeg_decomp_master* m = cinfo->master;
-  for (; m->scan_mcu_col_ < m->scan_info_.MCU_cols; ++m->scan_mcu_col_) {
+  for (; m->scan_mcu_col_ < cinfo->MCUs_per_row; ++m->scan_mcu_col_) {
     // Handle the restart intervals.
-    if (m->restart_interval_ > 0 && m->restarts_to_go_ == 0) {
+    if (cinfo->restart_interval > 0 && m->restarts_to_go_ == 0) {
       if (m->eobrun_ > 0) {
         JPEGLI_ERROR("End-of-block run too long.");
       }
@@ -404,7 +404,7 @@ bool ProcessScan(j_decompress_ptr cinfo, const uint8_t* data, size_t len,
       }
       m->next_restart_marker_ += 1;
       m->next_restart_marker_ &= 0x7;
-      m->restarts_to_go_ = m->restart_interval_;
+      m->restarts_to_go_ = cinfo->restart_interval;
       memset(m->last_dc_coeff_, 0, sizeof(m->last_dc_coeff_));
       m->eobrun_ = -1;  // fresh start
       *pos += 2;
@@ -435,16 +435,15 @@ bool ProcessScan(j_decompress_ptr cinfo, const uint8_t* data, size_t len,
           int block_x = m->scan_mcu_col_ * si->mcu_xsize_blocks + ix;
           int block_idx = block_y * c->width_in_blocks + block_x;
           coeff_t* coeffs = &c->coeffs[block_idx * DCTSIZE2];
-          if (m->scan_info_.Ah == 0) {
-            if (!DecodeDCTBlock(dc_lut, ac_lut, m->scan_info_.Ss,
-                                m->scan_info_.Se, m->scan_info_.Al, &m->eobrun_,
-                                &br, &m->last_dc_coeff_[si->comp_idx],
-                                coeffs)) {
+          if (cinfo->Ah == 0) {
+            if (!DecodeDCTBlock(dc_lut, ac_lut, cinfo->Ss, cinfo->Se, cinfo->Al,
+                                &m->eobrun_, &br,
+                                &m->last_dc_coeff_[si->comp_idx], coeffs)) {
               scan_ok = false;
             }
           } else {
-            if (!RefineDCTBlock(ac_lut, m->scan_info_.Ss, m->scan_info_.Se,
-                                m->scan_info_.Al, &m->eobrun_, &br, coeffs)) {
+            if (!RefineDCTBlock(ac_lut, cinfo->Ss, cinfo->Se, cinfo->Al,
+                                &m->eobrun_, &br, coeffs)) {
               scan_ok = false;
             }
           }
@@ -481,7 +480,7 @@ bool ProcessScan(j_decompress_ptr cinfo, const uint8_t* data, size_t len,
   }
   ++m->scan_mcu_row_;
   m->scan_mcu_col_ = 0;
-  if (m->scan_mcu_row_ == m->scan_info_.MCU_rows) {
+  if (m->scan_mcu_row_ == cinfo->MCU_rows_in_scan) {
     // Current scan is done, skip any remaining bits in the last byte.
     if (m->codestream_bits_ahead_ > 0) {
       ++(*pos);
@@ -491,11 +490,11 @@ bool ProcessScan(j_decompress_ptr cinfo, const uint8_t* data, size_t len,
     if (m->eobrun_ > 0) {
       JPEGLI_ERROR("End-of-block run too long.");
     }
-    if (m->is_progressive_) {
+    if (cinfo->progressive_mode) {
       m->state_ = jpeg_decomp_master::State::kProcessMarkers;
     }
   }
-  if (!m->is_progressive_) {
+  if (!cinfo->progressive_mode) {
     m->state_ = jpeg_decomp_master::State::kRender;
   }
   return true;

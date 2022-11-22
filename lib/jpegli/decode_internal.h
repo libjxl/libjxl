@@ -74,19 +74,8 @@ struct JPEGComponentScanInfo {
 
 // Contains information that is used in one scan.
 struct JPEGScanInfo {
-  // Parameters used for progressive scans (named the same way as in the spec):
-  //   Ss : Start of spectral band in zig-zag sequence.
-  //   Se : End of spectral band in zig-zag sequence.
-  //   Ah : Successive approximation bit position, high.
-  //   Al : Successive approximation bit position, low.
-  uint32_t Ss;
-  uint32_t Se;
-  uint32_t Ah;
-  uint32_t Al;
   uint32_t num_components = 0;
   std::array<JPEGComponentScanInfo, kMaxComponents> components;
-  size_t MCU_rows;
-  size_t MCU_cols;
 };
 
 // State of the decoder that has to be saved before decoding one MCU in case
@@ -138,16 +127,12 @@ struct jpeg_decomp_master {
   // Marker data processing state.
   //
   bool found_soi_ = false;
-  bool found_sos_ = false;
-  bool found_app0_ = false;
   bool found_dri_ = false;
   bool found_sof_ = false;
   bool found_eoi_ = false;
-  bool is_ycbcr_ = true;
   size_t icc_index_ = 0;
   size_t icc_total_ = 0;
   std::vector<uint8_t> icc_profile_;
-  size_t restart_interval_ = 0;
   std::vector<jpegli::JPEGQuantTable> quant_;
   std::vector<jpegli::JPEGComponent> components_;
   std::vector<jpegli::HuffmanTableEntry> dc_huff_lut_;
@@ -156,10 +141,6 @@ struct jpeg_decomp_master {
   std::set<int> markers_to_save_;
 
   // Fields defined by SOF marker.
-  bool is_progressive_;
-  int max_h_samp_;
-  int max_v_samp_;
-  size_t iMCU_rows_;
   size_t iMCU_cols_;
   size_t iMCU_width_;
   size_t iMCU_height_;
@@ -186,20 +167,22 @@ struct jpeg_decomp_master {
   size_t output_bit_depth_ = 8;
   size_t output_stride_;
 
+  JSAMPARRAY scanlines_;
+  JDIMENSION max_lines_;
+  size_t num_output_rows_;
+
   hwy::AlignedFreeUniquePtr<float[]> MCU_row_buf_;
   size_t MCU_row_stride_;
   size_t MCU_plane_size_;
   size_t MCU_buf_current_row_;
   size_t MCU_buf_ready_rows_;
 
-  size_t output_row_;
-  size_t output_mcu_row_;
-  size_t output_ci_;
+  int output_ci_;
   // Temporary buffers for vertically upsampled chroma components. We keep a
   // ringbuffer of 3 * kBlockDim rows so that we have access for previous and
   // next rows.
   hwy::AlignedFreeUniquePtr<float[]> chroma_;
-  size_t num_chroma_;
+  int num_chroma_;
   size_t chroma_plane_size_;
 
   // In the rendering order, vertically upsampled chroma components come first.
