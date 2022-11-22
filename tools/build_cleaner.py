@@ -83,7 +83,6 @@ def SplitLibFiles(repo_files):
                  not any(patt in fn for patt in testonly) and
                  not any(patt in fn for patt in exclude_extras)]
 
-
   enc_srcs = [fn for fn in lib_srcs
               if os.path.basename(fn).startswith('enc_') or
                  os.path.basename(fn).startswith('butteraugli')]
@@ -298,7 +297,8 @@ def BuildCleaner(args):
   # Update the list of tests. CMake version include test files in other libs,
   # not just in libjxl.
   tests = [fn[len('lib/'):] for fn in repo_files
-           if fn.endswith('_test.cc') and fn.startswith('lib/')]
+           if fn.endswith('_test.cc') and fn.startswith('lib/')
+           and not fn.startswith('lib/jpegli')]
   ok = CleanFile(
       args, 'lib/jxl_tests.cmake',
       [(r'set\(TEST_FILES\n([^\)]+)  ### Files before this line',

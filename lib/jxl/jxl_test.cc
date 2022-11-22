@@ -1306,7 +1306,7 @@ TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionGray)) {
   const PaddedBytes orig =
       ReadTestData("jxl/flower/flower.png.im_q85_gray.jpg");
   // JPEG size is 456,528 bytes.
-  EXPECT_NEAR(RoundtripJpeg(orig, &pool), 383847u, 120);
+  EXPECT_NEAR(RoundtripJpeg(orig, &pool), 387496u, 200);
 }
 
 TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression420)) {
