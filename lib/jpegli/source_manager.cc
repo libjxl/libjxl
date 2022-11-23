@@ -28,7 +28,7 @@ boolean EmitFakeEoiMarker(j_decompress_ptr cinfo) {
 
 void jpeg_mem_src(j_decompress_ptr cinfo, const unsigned char* inbuffer,
                   unsigned long insize) {
-  cinfo->src = (jpeg_source_mgr*)malloc(sizeof(jpeg_source_mgr));
+  cinfo->src = jpegli::Allocate<jpeg_source_mgr>(cinfo, 1);
   cinfo->src->next_input_byte = inbuffer;
   cinfo->src->bytes_in_buffer = insize;
   cinfo->src->init_source = jpegli::init_source;
@@ -36,6 +36,4 @@ void jpeg_mem_src(j_decompress_ptr cinfo, const unsigned char* inbuffer,
   cinfo->src->skip_input_data = jpegli::skip_input_data;
   cinfo->src->resync_to_restart = jpegli::resync_to_restart;
   cinfo->src->term_source = jpegli::term_source;
-  auto mem = reinterpret_cast<jpegli::MemoryManager*>(cinfo->mem);
-  mem->owned_ptrs.push_back(cinfo->src);
 }

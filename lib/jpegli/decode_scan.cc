@@ -340,14 +340,14 @@ void SaveMCUCodingState(j_decompress_ptr cinfo) {
   memcpy(m->mcu_.last_dc_coeff, m->last_dc_coeff_, sizeof(m->last_dc_coeff_));
   m->mcu_.eobrun = m->eobrun_;
   size_t offset = 0;
-  for (size_t i = 0; i < m->scan_info_.num_components; ++i) {
-    JPEGComponentScanInfo* si = &m->scan_info_.components[i];
-    JPEGComponent* c = &m->components_[si->comp_idx];
-    int block_x = m->scan_mcu_col_ * si->mcu_xsize_blocks;
-    for (uint32_t iy = 0; iy < si->mcu_ysize_blocks; ++iy) {
-      int block_y = m->scan_mcu_row_ * si->mcu_ysize_blocks + iy;
-      size_t ncoeffs = si->mcu_xsize_blocks * DCTSIZE2;
-      int block_idx = (block_y * c->width_in_blocks + block_x) * DCTSIZE2;
+  for (int i = 0; i < cinfo->comps_in_scan; ++i) {
+    const jpeg_component_info* comp = cinfo->cur_comp_info[i];
+    JPEGComponent* c = &m->components_[comp->component_index];
+    int block_x = m->scan_mcu_col_ * comp->MCU_width;
+    for (int iy = 0; iy < comp->MCU_height; ++iy) {
+      int block_y = m->scan_mcu_row_ * comp->MCU_height + iy;
+      size_t ncoeffs = comp->MCU_width * DCTSIZE2;
+      int block_idx = (block_y * comp->width_in_blocks + block_x) * DCTSIZE2;
       coeff_t* coeffs = &c->coeffs[block_idx];
       memcpy(&m->mcu_.coeffs[offset], coeffs, ncoeffs * sizeof(coeffs[0]));
       offset += ncoeffs;
@@ -360,14 +360,14 @@ void RestoreMCUCodingState(j_decompress_ptr cinfo) {
   memcpy(m->last_dc_coeff_, m->mcu_.last_dc_coeff, sizeof(m->last_dc_coeff_));
   m->eobrun_ = m->mcu_.eobrun;
   size_t offset = 0;
-  for (size_t i = 0; i < m->scan_info_.num_components; ++i) {
-    JPEGComponentScanInfo* si = &m->scan_info_.components[i];
-    JPEGComponent* c = &m->components_[si->comp_idx];
-    int block_x = m->scan_mcu_col_ * si->mcu_xsize_blocks;
-    for (uint32_t iy = 0; iy < si->mcu_ysize_blocks; ++iy) {
-      int block_y = m->scan_mcu_row_ * si->mcu_ysize_blocks + iy;
-      size_t ncoeffs = si->mcu_xsize_blocks * DCTSIZE2;
-      int block_idx = (block_y * c->width_in_blocks + block_x) * DCTSIZE2;
+  for (int i = 0; i < cinfo->comps_in_scan; ++i) {
+    const jpeg_component_info* comp = cinfo->cur_comp_info[i];
+    JPEGComponent* c = &m->components_[comp->component_index];
+    int block_x = m->scan_mcu_col_ * comp->MCU_width;
+    for (int iy = 0; iy < comp->MCU_height; ++iy) {
+      int block_y = m->scan_mcu_row_ * comp->MCU_height + iy;
+      size_t ncoeffs = comp->MCU_width * DCTSIZE2;
+      int block_idx = (block_y * comp->width_in_blocks + block_x) * DCTSIZE2;
       coeff_t* coeffs = &c->coeffs[block_idx];
       memcpy(coeffs, &m->mcu_.coeffs[offset], ncoeffs * sizeof(coeffs[0]));
       offset += ncoeffs;
@@ -422,23 +422,24 @@ bool ProcessScan(j_decompress_ptr cinfo, const uint8_t* data, size_t len,
 
     // Decode one MCU.
     bool scan_ok = true;
-    for (size_t i = 0; i < m->scan_info_.num_components; ++i) {
-      JPEGComponentScanInfo* si = &m->scan_info_.components[i];
-      JPEGComponent* c = &m->components_[si->comp_idx];
+    for (int i = 0; i < cinfo->comps_in_scan; ++i) {
+      const jpeg_component_info* comp = cinfo->cur_comp_info[i];
+      JPEGComponent* c = &m->components_[comp->component_index];
       const HuffmanTableEntry* dc_lut =
-          &m->dc_huff_lut_[si->dc_tbl_idx * kJpegHuffmanLutSize];
+          &m->dc_huff_lut_[comp->dc_tbl_no * kJpegHuffmanLutSize];
       const HuffmanTableEntry* ac_lut =
-          &m->ac_huff_lut_[si->ac_tbl_idx * kJpegHuffmanLutSize];
-      for (uint32_t iy = 0; iy < si->mcu_ysize_blocks; ++iy) {
-        int block_y = m->scan_mcu_row_ * si->mcu_ysize_blocks + iy;
-        for (uint32_t ix = 0; ix < si->mcu_xsize_blocks; ++ix) {
-          int block_x = m->scan_mcu_col_ * si->mcu_xsize_blocks + ix;
-          int block_idx = block_y * c->width_in_blocks + block_x;
+          &m->ac_huff_lut_[comp->ac_tbl_no * kJpegHuffmanLutSize];
+      for (int iy = 0; iy < comp->MCU_height; ++iy) {
+        int block_y = m->scan_mcu_row_ * comp->MCU_height + iy;
+        for (int ix = 0; ix < comp->MCU_width; ++ix) {
+          int block_x = m->scan_mcu_col_ * comp->MCU_width + ix;
+          int block_idx = block_y * comp->width_in_blocks + block_x;
           coeff_t* coeffs = &c->coeffs[block_idx * DCTSIZE2];
           if (cinfo->Ah == 0) {
             if (!DecodeDCTBlock(dc_lut, ac_lut, cinfo->Ss, cinfo->Se, cinfo->Al,
                                 &m->eobrun_, &br,
-                                &m->last_dc_coeff_[si->comp_idx], coeffs)) {
+                                &m->last_dc_coeff_[comp->component_index],
+                                coeffs)) {
               scan_ok = false;
             }
           } else {

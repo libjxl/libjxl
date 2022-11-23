@@ -78,6 +78,8 @@ void ProcessSOF(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
   JPEG_VERIFY_INPUT(cinfo->image_width, 1, kMaxDimPixels);
   JPEG_VERIFY_INPUT(cinfo->num_components, 1, kMaxComponents);
   JPEG_VERIFY_LEN(3 * cinfo->num_components);
+  cinfo->comp_info =
+      jpegli::Allocate<jpeg_component_info>(cinfo, cinfo->num_components);
   m->components_.resize(cinfo->num_components);
 
   // Read sampling factors and quant table index for each component.
@@ -85,20 +87,21 @@ void ProcessSOF(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
   cinfo->max_h_samp_factor = 1;
   cinfo->max_v_samp_factor = 1;
   for (int i = 0; i < cinfo->num_components; ++i) {
-    JPEGComponent* c = &m->components_[i];
+    jpeg_component_info* comp = &cinfo->comp_info[i];
+    comp->component_index = i;
     const int id = ReadUint8(data, &pos);
     if (ids_seen[id]) {  // (cf. section B.2.2, syntax of Ci)
       JPEGLI_ERROR("Duplicate ID %d in SOF.", id);
     }
     ids_seen[id] = true;
-    c->id = id;
+    comp->component_id = id;
     int factor = ReadUint8(data, &pos);
     int h_samp_factor = factor >> 4;
     int v_samp_factor = factor & 0xf;
     JPEG_VERIFY_INPUT(h_samp_factor, 1, kMaxSampling);
     JPEG_VERIFY_INPUT(v_samp_factor, 1, kMaxSampling);
-    c->h_samp_factor = h_samp_factor;
-    c->v_samp_factor = v_samp_factor;
+    comp->h_samp_factor = h_samp_factor;
+    comp->v_samp_factor = v_samp_factor;
     cinfo->max_h_samp_factor =
         std::max(cinfo->max_h_samp_factor, h_samp_factor);
     cinfo->max_v_samp_factor =
@@ -107,7 +110,7 @@ void ProcessSOF(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
     bool found_quant_tbl = false;
     for (size_t j = 0; j < m->quant_.size(); ++j) {
       if (m->quant_[j].index == quant_tbl_idx) {
-        c->quant_idx = j;
+        comp->quant_tbl_no = j;
         found_quant_tbl = true;
         break;
       }
@@ -131,9 +134,9 @@ void ProcessSOF(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
           cinfo->Adobe_transform == 0 ? JCS_RGB : JCS_YCbCr;
     } else {
       cinfo->jpeg_color_space = JCS_YCbCr;
-      if (m->components_[0].id == 'R' &&  //
-          m->components_[1].id == 'G' &&  //
-          m->components_[2].id == 'B') {
+      if (cinfo->comp_info[0].component_id == 'R' &&  //
+          cinfo->comp_info[1].component_id == 'G' &&  //
+          cinfo->comp_info[2].component_id == 'B') {
         cinfo->jpeg_color_space = JCS_RGB;
       }
     }
@@ -151,21 +154,22 @@ void ProcessSOF(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
 
   // We have checked above that none of the sampling factors are 0, so the max
   // sampling factors can not be 0.
-  m->iMCU_height_ = cinfo->max_v_samp_factor * DCTSIZE;
-  m->iMCU_width_ = cinfo->max_h_samp_factor * DCTSIZE;
-  cinfo->total_iMCU_rows = DivCeil(cinfo->image_height, m->iMCU_height_);
-  m->iMCU_cols_ = DivCeil(cinfo->image_width, m->iMCU_width_);
+  cinfo->total_iMCU_rows =
+      DivCeil(cinfo->image_height, cinfo->max_v_samp_factor * DCTSIZE);
+  m->iMCU_cols_ =
+      DivCeil(cinfo->image_width, cinfo->max_h_samp_factor * DCTSIZE);
   // Compute the block dimensions for each component.
   for (int i = 0; i < cinfo->num_components; ++i) {
     JPEGComponent* c = &m->components_[i];
-    if (cinfo->max_h_samp_factor % c->h_samp_factor != 0 ||
-        cinfo->max_v_samp_factor % c->v_samp_factor != 0) {
+    jpeg_component_info* comp = &cinfo->comp_info[i];
+    if (cinfo->max_h_samp_factor % comp->h_samp_factor != 0 ||
+        cinfo->max_v_samp_factor % comp->v_samp_factor != 0) {
       JPEGLI_ERROR("Non-integral subsampling ratios.");
     }
-    c->width_in_blocks = m->iMCU_cols_ * c->h_samp_factor;
-    c->height_in_blocks = cinfo->total_iMCU_rows * c->v_samp_factor;
+    comp->width_in_blocks = m->iMCU_cols_ * comp->h_samp_factor;
+    comp->height_in_blocks = cinfo->total_iMCU_rows * comp->v_samp_factor;
     const uint64_t num_blocks =
-        static_cast<uint64_t>(c->width_in_blocks) * c->height_in_blocks;
+        static_cast<uint64_t>(comp->width_in_blocks) * comp->height_in_blocks;
     c->coeffs = hwy::AllocateAligned<coeff_t>(num_blocks * DCTSIZE2);
     memset(c->coeffs.get(), 0, num_blocks * DCTSIZE2 * sizeof(coeff_t));
   }
@@ -179,25 +183,23 @@ void ProcessSOS(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
   }
   size_t pos = 4;
   JPEG_VERIFY_LEN(1);
-  int comps_in_scan = ReadUint8(data, &pos);
-  JPEG_VERIFY_INPUT(comps_in_scan, 1, cinfo->num_components);
+  cinfo->comps_in_scan = ReadUint8(data, &pos);
+  JPEG_VERIFY_INPUT(cinfo->comps_in_scan, 1, cinfo->num_components);
 
-  m->scan_info_.num_components = comps_in_scan;
-  JPEG_VERIFY_LEN(2 * comps_in_scan);
-  bool is_interleaved = (m->scan_info_.num_components > 1);
+  JPEG_VERIFY_LEN(2 * cinfo->comps_in_scan);
+  bool is_interleaved = (cinfo->comps_in_scan > 1);
   std::vector<bool> ids_seen(256, false);
-  for (size_t i = 0; i < m->scan_info_.num_components; ++i) {
-    JPEGComponentScanInfo* si = &m->scan_info_.components[i];
-    uint32_t id = ReadUint8(data, &pos);
+  for (int i = 0; i < cinfo->comps_in_scan; ++i) {
+    int id = ReadUint8(data, &pos);
     if (ids_seen[id]) {  // (cf. section B.2.3, regarding CSj)
       return JPEGLI_ERROR("Duplicate ID %d in SOS.", id);
     }
     ids_seen[id] = true;
-    JPEGComponent* comp = nullptr;
+    jpeg_component_info* comp = nullptr;
     for (int j = 0; j < cinfo->num_components; ++j) {
-      if (m->components_[j].id == id) {
-        si->comp_idx = j;
-        comp = &m->components_[j];
+      if (cinfo->comp_info[j].component_id == id) {
+        comp = &cinfo->comp_info[j];
+        cinfo->cur_comp_info[i] = comp;
       }
     }
     if (!comp) {
@@ -205,12 +207,13 @@ void ProcessSOS(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
                           id);
     }
     int c = ReadUint8(data, &pos);
-    si->dc_tbl_idx = c >> 4;
-    si->ac_tbl_idx = c & 0xf;
-    JPEG_VERIFY_INPUT(static_cast<int>(si->dc_tbl_idx), 0, 3);
-    JPEG_VERIFY_INPUT(static_cast<int>(si->ac_tbl_idx), 0, 3);
-    si->mcu_xsize_blocks = is_interleaved ? comp->h_samp_factor : 1;
-    si->mcu_ysize_blocks = is_interleaved ? comp->v_samp_factor : 1;
+    comp->dc_tbl_no = c >> 4;
+    comp->ac_tbl_no = c & 0xf;
+    JPEG_VERIFY_INPUT(comp->dc_tbl_no, 0, 3);
+    JPEG_VERIFY_INPUT(comp->ac_tbl_no, 0, 3);
+    comp->MCU_width = is_interleaved ? comp->h_samp_factor : 1;
+    comp->MCU_height = is_interleaved ? comp->v_samp_factor : 1;
+    comp->MCU_blocks = comp->MCU_width * comp->MCU_height;
   }
   JPEG_VERIFY_LEN(3);
   cinfo->Ss = ReadUint8(data, &pos);
@@ -237,8 +240,8 @@ void ProcessSOS(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
   const uint16_t scan_bitmask =
       cinfo->Ah == 0 ? (0xffff << cinfo->Al) : (1u << cinfo->Al);
   const uint16_t refinement_bitmask = (1 << cinfo->Al) - 1;
-  for (size_t i = 0; i < m->scan_info_.num_components; ++i) {
-    int comp_idx = m->scan_info_.components[i].comp_idx;
+  for (int i = 0; i < cinfo->comps_in_scan; ++i) {
+    int comp_idx = cinfo->cur_comp_info[i]->component_index;
     for (int k = cinfo->Ss; k <= cinfo->Se; ++k) {
       if (m->scan_progression_[comp_idx][k] & scan_bitmask) {
         return JPEGLI_ERROR(
@@ -258,29 +261,28 @@ void ProcessSOS(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
     return JPEGLI_ERROR("Scan parameter Al=%d is not supported.", cinfo->Al);
   }
   // Check that all the Huffman tables needed for this scan are defined.
-  for (int i = 0; i < comps_in_scan; ++i) {
-    if (cinfo->Ss == 0 &&
-        !m->huff_slot_defined_[m->scan_info_.components[i].dc_tbl_idx]) {
+  for (int i = 0; i < cinfo->comps_in_scan; ++i) {
+    int dc_tbl_idx = cinfo->cur_comp_info[i]->dc_tbl_no;
+    int ac_tbl_idx = cinfo->cur_comp_info[i]->ac_tbl_no;
+    if (cinfo->Ss == 0 && !m->huff_slot_defined_[dc_tbl_idx]) {
       return JPEGLI_ERROR(
           "SOS marker: Could not find DC Huffman table with index %d",
-          m->scan_info_.components[i].dc_tbl_idx);
+          dc_tbl_idx);
     }
-    if (cinfo->Se > 0 &&
-        !m->huff_slot_defined_[m->scan_info_.components[i].ac_tbl_idx + 16]) {
+    if (cinfo->Se > 0 && !m->huff_slot_defined_[ac_tbl_idx + 16]) {
       return JPEGLI_ERROR(
           "SOS marker: Could not find AC Huffman table with index %d",
-          m->scan_info_.components[i].ac_tbl_idx);
+          ac_tbl_idx);
     }
   }
   cinfo->MCU_rows_in_scan = cinfo->total_iMCU_rows;
   cinfo->MCUs_per_row = m->iMCU_cols_;
   if (!is_interleaved) {
-    const JPEGComponent& c =
-        m->components_[m->scan_info_.components[0].comp_idx];
-    cinfo->MCUs_per_row =
-        DivCeil(cinfo->image_width * c.h_samp_factor, m->iMCU_width_);
-    cinfo->MCU_rows_in_scan =
-        DivCeil(cinfo->image_height * c.v_samp_factor, m->iMCU_height_);
+    const auto& comp = *cinfo->cur_comp_info[0];
+    cinfo->MCUs_per_row = DivCeil(cinfo->image_width * comp.h_samp_factor,
+                                  cinfo->max_h_samp_factor * DCTSIZE);
+    cinfo->MCU_rows_in_scan = DivCeil(cinfo->image_height * comp.v_samp_factor,
+                                      cinfo->max_v_samp_factor * DCTSIZE);
   }
   memset(m->last_dc_coeff_, 0, sizeof(m->last_dc_coeff_));
   m->restarts_to_go_ = cinfo->restart_interval;
@@ -290,9 +292,8 @@ void ProcessSOS(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
   m->scan_mcu_col_ = 0;
   m->codestream_bits_ahead_ = 0;
   size_t mcu_size = 0;
-  for (size_t i = 0; i < m->scan_info_.num_components; ++i) {
-    JPEGComponentScanInfo* si = &m->scan_info_.components[i];
-    mcu_size += si->mcu_ysize_blocks * si->mcu_xsize_blocks;
+  for (int i = 0; i < cinfo->comps_in_scan; ++i) {
+    mcu_size += cinfo->cur_comp_info[i]->MCU_blocks;
   }
   m->mcu_.coeffs.resize(mcu_size * DCTSIZE2);
   ++cinfo->input_scan_number;
@@ -482,18 +483,13 @@ void SaveMarker(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
 
   // Insert new saved marker to the head of the list.
   jpeg_saved_marker_ptr next = cinfo->marker_list;
-  cinfo->marker_list = (jpeg_marker_struct*)malloc(sizeof(jpeg_marker_struct));
+  cinfo->marker_list = jpegli::Allocate<jpeg_marker_struct>(cinfo, 1);
   cinfo->marker_list->next = next;
   cinfo->marker_list->marker = marker;
   cinfo->marker_list->original_length = payload_size;
   cinfo->marker_list->data_length = payload_size;
-  cinfo->marker_list->data = (uint8_t*)malloc(payload_size);
+  cinfo->marker_list->data = jpegli::Allocate<uint8_t>(cinfo, payload_size);
   memcpy(cinfo->marker_list->data, payload, payload_size);
-
-  // Remember to free the newly allocated pointers.
-  auto mem = reinterpret_cast<jpegli::MemoryManager*>(cinfo->mem);
-  mem->owned_ptrs.push_back(cinfo->marker_list);
-  mem->owned_ptrs.push_back(cinfo->marker_list->data);
 }
 
 }  // namespace

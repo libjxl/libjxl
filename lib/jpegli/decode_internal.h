@@ -29,26 +29,6 @@ typedef int16_t coeff_t;
 
 // Represents one component of a jpeg file.
 struct JPEGComponent {
-  JPEGComponent()
-      : id(0),
-        h_samp_factor(1),
-        v_samp_factor(1),
-        quant_idx(0),
-        width_in_blocks(0),
-        height_in_blocks(0) {}
-
-  // One-byte id of the component.
-  uint32_t id;
-  // Horizontal and vertical sampling factors.
-  // In interleaved mode, each minimal coded unit (MCU) has
-  // h_samp_factor x v_samp_factor DCT blocks from this component.
-  int h_samp_factor;
-  int v_samp_factor;
-  // The index of the quantization table used for this component.
-  uint32_t quant_idx;
-  // The dimensions of the component measured in 8x8 blocks.
-  uint32_t width_in_blocks;
-  uint32_t height_in_blocks;
   // The DCT coefficients of this component, laid out block-by-block, divided
   // through the quantization matrix values.
   hwy::AlignedFreeUniquePtr<coeff_t[]> coeffs;
@@ -61,21 +41,6 @@ struct JPEGQuantTable {
   // Each DQT marker segment contains an 'index' field, and we save this index
   // here. Valid values are 0 to 3.
   uint32_t index = 0;
-};
-
-// Huffman table indexes and MCU dimensions used for one component of one scan.
-struct JPEGComponentScanInfo {
-  uint32_t comp_idx;
-  uint32_t dc_tbl_idx;
-  uint32_t ac_tbl_idx;
-  uint32_t mcu_ysize_blocks;
-  uint32_t mcu_xsize_blocks;
-};
-
-// Contains information that is used in one scan.
-struct JPEGScanInfo {
-  uint32_t num_components = 0;
-  std::array<JPEGComponentScanInfo, kMaxComponents> components;
 };
 
 // State of the decoder that has to be saved before decoding one MCU in case
@@ -142,8 +107,6 @@ struct jpeg_decomp_master {
 
   // Fields defined by SOF marker.
   size_t iMCU_cols_;
-  size_t iMCU_width_;
-  size_t iMCU_height_;
 
   // Initialized at strat of frame.
   uint16_t scan_progression_[jpegli::kMaxComponents][DCTSIZE2];
@@ -151,7 +114,6 @@ struct jpeg_decomp_master {
   //
   // Per scan state.
   //
-  jpegli::JPEGScanInfo scan_info_;
   size_t scan_mcu_row_;
   size_t scan_mcu_col_;
   jpegli::coeff_t last_dc_coeff_[jpegli::kMaxComponents];

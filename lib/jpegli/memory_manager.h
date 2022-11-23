@@ -21,6 +21,14 @@ struct MemoryManager {
   std::vector<void*> owned_ptrs;
 };
 
+template <typename T>
+T* Allocate(j_decompress_ptr cinfo, size_t len) {
+  T* p = reinterpret_cast<T*>(malloc(len * sizeof(T)));
+  auto mem = reinterpret_cast<jpegli::MemoryManager*>(cinfo->mem);
+  mem->owned_ptrs.push_back(p);
+  return p;
+}
+
 }  // namespace jpegli
 
 #endif  // LIB_JPEGLI_MEMORY_MANAGER_H_
