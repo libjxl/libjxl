@@ -82,6 +82,10 @@ class JPEGCodec : public ImageCodec {
       chroma_subsampling_ = param.substr(3);
       return true;
     }
+    if (param.substr(0, 2) == "bd") {
+      bitdepth_ = strtol(param.substr(2).c_str(), nullptr, 10);
+      return true;
+    }
     if (param.substr(0, 2) == "nr") {
       normalize_bitrate_ = true;
       return true;
@@ -187,7 +191,7 @@ class JPEGCodec : public ImageCodec {
     } else {
       const double start = Now();
       JXL_RETURN_IF_ERROR(DecodeImageJPG(compressed, extras::ColorHints(),
-                                         SizeConstraints(), &ppf));
+                                         SizeConstraints(), bitdepth_, &ppf));
       const double end = Now();
       speed_stats->NotifyElapsed(end - start);
     }
@@ -202,6 +206,7 @@ class JPEGCodec : public ImageCodec {
   bool use_jxl_decoder_ = false;
   int progressive_id_ = -1;
   JxlDataType jxl_decoder_data_type_ = JXL_TYPE_UINT8;
+  size_t bitdepth_ = 8;
 };
 
 ImageCodec* CreateNewJPEGCodec(const BenchmarkArgs& args) {

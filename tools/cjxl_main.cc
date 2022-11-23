@@ -584,7 +584,7 @@ jxl::Status GetPixeldata(const std::vector<uint8_t>& image_data,
 #endif
 #if JPEGXL_ENABLE_JPEG
     if (jxl::extras::DecodeImageJPG(encoded, color_hints, size_constraints,
-                                    &ppf)) {
+                                    /*output_bit_depth=*/16, &ppf)) {
       return jxl::extras::Codec::kJPG;
     }
 #endif

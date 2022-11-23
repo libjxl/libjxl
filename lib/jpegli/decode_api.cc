@@ -138,6 +138,7 @@ void jpeg_CreateDecompress(j_decompress_ptr cinfo, int version,
   cinfo->input_scan_number = 0;
   cinfo->quantize_colors = FALSE;
   cinfo->desired_number_of_colors = 0;
+  cinfo->master->output_bit_depth_ = 8;
 }
 
 void jpeg_destroy_decompress(j_decompress_ptr cinfo) {
@@ -173,13 +174,14 @@ void jpeg_calc_output_dimensions(j_decompress_ptr cinfo) {
   cinfo->output_height = cinfo->image_height;
   cinfo->output_components = cinfo->out_color_components;
   cinfo->rec_outbuf_height = 1;
-  m->output_bit_depth_ = 8;
   if (!cinfo->quantize_colors) {
     for (size_t depth = 1; depth <= 16; ++depth) {
       if (cinfo->desired_number_of_colors == (1 << depth)) {
         m->output_bit_depth_ = depth;
       }
     }
+    // Signal to the application code that we did set the output bit depth.
+    cinfo->desired_number_of_colors = 0;
   }
 }
 
