@@ -2333,8 +2333,8 @@ TEST(DecodeTest, DCNotGettableTest) {
 
   JxlDecoder* dec = JxlDecoderCreate(NULL);
 
-  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSubscribeEvents(
-                                 dec, JXL_DEC_BASIC_INFO | JXL_DEC_DC_IMAGE));
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSubscribeEvents(dec, JXL_DEC_BASIC_INFO));
   EXPECT_EQ(JXL_DEC_SUCCESS,
             JxlDecoderSetInput(
                 dec, reinterpret_cast<const uint8_t*>(compressed.data()),
