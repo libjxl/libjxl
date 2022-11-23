@@ -136,6 +136,8 @@ void jpeg_CreateDecompress(j_decompress_ptr cinfo, int version,
       reinterpret_cast<struct jpeg_memory_mgr*>(new jpegli::MemoryManager);
   cinfo->marker_list = nullptr;
   cinfo->input_scan_number = 0;
+  cinfo->quantize_colors = FALSE;
+  cinfo->desired_number_of_colors = 0;
 }
 
 void jpeg_destroy_decompress(j_decompress_ptr cinfo) {
