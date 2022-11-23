@@ -101,6 +101,44 @@ Status AddCommandLineOptionsJxlCodec(BenchmarkArgs* args) {
 
 Status ValidateArgsJxlCodec(BenchmarkArgs* args) { return true; }
 
+inline bool ParseSpeedTier(const std::string& s, SpeedTier* out) {
+  if (s == "lightning") {
+    *out = SpeedTier::kLightning;
+    return true;
+  } else if (s == "thunder") {
+    *out = SpeedTier::kThunder;
+    return true;
+  } else if (s == "falcon") {
+    *out = SpeedTier::kFalcon;
+    return true;
+  } else if (s == "cheetah") {
+    *out = SpeedTier::kCheetah;
+    return true;
+  } else if (s == "hare") {
+    *out = SpeedTier::kHare;
+    return true;
+  } else if (s == "fast" || s == "wombat") {
+    *out = SpeedTier::kWombat;
+    return true;
+  } else if (s == "squirrel") {
+    *out = SpeedTier::kSquirrel;
+    return true;
+  } else if (s == "kitten") {
+    *out = SpeedTier::kKitten;
+    return true;
+  } else if (s == "guetzli" || s == "tortoise") {
+    *out = SpeedTier::kTortoise;
+    return true;
+  }
+  size_t st = 10 - static_cast<size_t>(strtoull(s.c_str(), nullptr, 0));
+  if (st <= static_cast<size_t>(SpeedTier::kLightning) &&
+      st >= static_cast<size_t>(SpeedTier::kTortoise)) {
+    *out = SpeedTier(st);
+    return true;
+  }
+  return false;
+}
+
 class JxlCodec : public ImageCodec {
  public:
   explicit JxlCodec(const BenchmarkArgs& args) : ImageCodec(args) {}
