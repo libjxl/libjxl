@@ -68,7 +68,7 @@ struct OpHlg {
   template <typename D, typename T>
   void Transform(D d, T* r, T* g, T* b) const {
     for (T* val : {r, g, b}) {
-      float vals[MaxLanes(d)];
+      HWY_ALIGN float vals[MaxLanes(d)];
       Store(*val, d, vals);
       for (size_t i = 0; i < Lanes(d); ++i) {
         vals[i] = TF_HLG().DisplayFromEncoded(vals[i]);
