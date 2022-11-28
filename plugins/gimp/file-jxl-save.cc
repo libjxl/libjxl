@@ -699,7 +699,7 @@ class GimpParser {
     }
     found = g_strstr_len(*remainder, len, GIMP_BLEND_COMBINE_FLAG->str);
     if (found != nullptr) {
-      frame_header.layer_info.blend_info.blendmode = JXL_BLEND_ADD;
+      frame_header.layer_info.blend_info.blendmode = JXL_BLEND_BLEND;
     }
     return frame_header;
   }
