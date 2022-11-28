@@ -141,8 +141,12 @@ if(JPEGXL_ENABLE_TOOLS)
   )
   list(APPEND TOOL_BINARIES djxl)
 
-  add_executable(cjpeg_hdr cjpeg_hdr.cc)
-  list(APPEND INTERNAL_TOOL_BINARIES cjpeg_hdr)
+  find_package(JPEG)
+  if(JPEG_FOUND)
+    # Depends on parts of jxl_extras that are only built if libjpeg is found.
+    add_executable(cjpeg_hdr cjpeg_hdr.cc)
+    list(APPEND INTERNAL_TOOL_BINARIES cjpeg_hdr)
+  endif()
 
   add_executable(jxlinfo jxlinfo.c)
   target_link_libraries(jxlinfo jxl)

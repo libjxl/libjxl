@@ -166,8 +166,12 @@ class JPEGCodec : public ImageCodec {
       size_t target_size = normalize_bitrate_ ? compressed->size() : 0;
       compressed->clear();
       const double start = Now();
-      JXL_RETURN_IF_ERROR(extras::EncodeJpeg(
-          io->Main(), target_size, butteraugli_target_, pool, compressed));
+      extras::JpegSettings settings;
+      settings.xyb = true;
+      settings.distance = butteraugli_target_;
+      settings.target_size = target_size;
+      JXL_RETURN_IF_ERROR(
+          extras::EncodeJpeg(io->Main(), settings, pool, compressed));
       const double end = Now();
       elapsed = end - start;
     }
