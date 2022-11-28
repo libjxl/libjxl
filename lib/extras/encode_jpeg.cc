@@ -124,7 +124,7 @@ std::vector<uint8_t> CreateXybICCAppMarker() {
   return CreateICCAppMarker(c_xyb.ICC());
 }
 
-static constexpr float kBaseQuantMatrix[] = {
+static constexpr float kBaseQuantMatrixXYB[] = {
     // c = 0
     0.010745695802f,
     0.014724285860f,
@@ -322,9 +322,45 @@ static constexpr float kBaseQuantMatrix[] = {
     0.047241950370f,
 };
 
-void AddJpegQuantMatrices(const ImageF& qf, float dc_quant, float global_scale,
+// Y: mozjpeg q99; Cb, Cr: mozjpeg q95
+static constexpr float kBaseQuantMatrixYCbCr[] = {
+    // c = 0
+    1, 1, 1, 1, 1, 1, 1, 2,  //
+    1, 1, 1, 1, 1, 1, 1, 2,  //
+    1, 1, 1, 1, 1, 1, 2, 3,  //
+    1, 1, 1, 1, 1, 1, 2, 3,  //
+    1, 1, 1, 1, 1, 2, 3, 4,  //
+    1, 1, 1, 1, 2, 2, 3, 5,  //
+    1, 1, 2, 2, 3, 3, 5, 6,  //
+    2, 2, 3, 3, 4, 5, 6, 8,  //
+
+    // c = 1
+    2, 2, 2, 2, 3, 4, 6, 9,        //
+    2, 2, 2, 3, 3, 4, 5, 8,        //
+    2, 2, 2, 3, 4, 6, 9, 14,       //
+    2, 3, 3, 4, 5, 7, 11, 16,      //
+    3, 3, 4, 5, 7, 9, 13, 19,      //
+    4, 4, 6, 7, 9, 12, 17, 24,     //
+    6, 5, 9, 11, 13, 17, 23, 31,   //
+    9, 8, 14, 16, 19, 24, 31, 42,  //
+
+    // c = 2
+    2, 2, 2, 2, 3, 4, 6, 9,        //
+    2, 2, 2, 3, 3, 4, 5, 8,        //
+    2, 2, 2, 3, 4, 6, 9, 14,       //
+    2, 3, 3, 4, 5, 7, 11, 16,      //
+    3, 3, 4, 5, 7, 9, 13, 19,      //
+    4, 4, 6, 7, 9, 12, 17, 24,     //
+    6, 5, 9, 11, 13, 17, 23, 31,   //
+    9, 8, 14, 16, 19, 24, 31, 42,  //
+};
+
+void AddJpegQuantMatrices(const ImageF& qf, bool xyb, float dc_quant,
+                          float global_scale,
                           std::vector<jpeg::JPEGQuantTable>* quant_tables,
                           float* qm) {
+  const float* const base_quant_matrix =
+      xyb ? kBaseQuantMatrixXYB : kBaseQuantMatrixYCbCr;
   // Scale the base quant matrix based on the scaled XYB scales and the quant
   // field.
   float qfmin, qfmax;
@@ -332,10 +368,10 @@ void AddJpegQuantMatrices(const ImageF& qf, float dc_quant, float global_scale,
   const float dc_scale = global_scale / dc_quant;
   const float ac_scale = global_scale / qfmax;
   for (size_t c = 0, ix = 0; c < 3; c++) {
-    qm[ix] = dc_scale * kBaseQuantMatrix[ix];
+    qm[ix] = dc_scale * base_quant_matrix[ix];
     ix++;
     for (size_t j = 1; j < kDCTBlockSize; j++, ix++) {
-      qm[ix] = ac_scale * kBaseQuantMatrix[ix];
+      qm[ix] = ac_scale * base_quant_matrix[ix];
     }
   }
 
@@ -537,7 +573,7 @@ void FillJPEGData(const Image3F& opsin, const ImageF& qf, float dc_quant,
   // DQT
   out->marker_order.emplace_back(0xdb);
   float qm[3 * kDCTBlockSize];
-  AddJpegQuantMatrices(qf, dc_quant, global_scale, &out->quant, qm);
+  AddJpegQuantMatrices(qf, xyb, dc_quant, global_scale, &out->quant, qm);
 
   // SOF
   out->marker_order.emplace_back(0xc2);
@@ -685,6 +721,14 @@ Status EncodeJpeg(const ImageBundle& input, const JpegSettings& jpeg_settings,
   // Create jpeg data and optimize Huffman codes.
   jpeg::JPEGData jpeg_data;
   float global_scale = 0.66f;
+  if (!jpeg_settings.xyb) {
+    global_scale /= 500;
+    if (input.metadata()->color_encoding.tf.IsPQ()) {
+      global_scale *= .4f;
+    } else if (input.metadata()->color_encoding.tf.IsHLG()) {
+      global_scale *= .5f;
+    }
+  }
   float dc_quant = InitialQuantDC(jpeg_settings.distance);
   FillJPEGData(opsin, qf, dc_quant, global_scale, jpeg_settings.xyb,
                subsample_blue, input.metadata()->color_encoding.ICC(),
