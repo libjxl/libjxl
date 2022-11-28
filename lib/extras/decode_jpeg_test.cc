@@ -36,7 +36,8 @@ TEST_P(DecodeJpegTestParam, Streaming) {
   PackedPixelFile ppf_libjpeg;
   EXPECT_TRUE(
       DecodeImageJPG(Span<const uint8_t>(compressed.data(), compressed.size()),
-                     ColorHints(), SizeConstraints(), &ppf_libjpeg));
+                     ColorHints(), SizeConstraints(),
+                     /*output_bit_depth=*/8, &ppf_libjpeg));
   ASSERT_EQ(1, ppf_libjpeg.frames.size());
 
   JpegDecoder dec;
@@ -174,7 +175,8 @@ TEST_P(DecodeJpegTestParam, JpegSourceManager) {
   PackedPixelFile ppf_libjpeg;
   EXPECT_TRUE(
       DecodeImageJPG(Span<const uint8_t>(compressed.data(), compressed.size()),
-                     ColorHints(), SizeConstraints(), &ppf_libjpeg));
+                     ColorHints(), SizeConstraints(),
+                     /*output_bit_depth=*/8, &ppf_libjpeg));
   ASSERT_EQ(1, ppf_libjpeg.frames.size());
 
   JpegDecoder dec;
