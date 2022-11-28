@@ -27,8 +27,9 @@ namespace jxl {
 namespace extras {
 namespace HWY_NAMESPACE {
 
-void ComputeDCTCoefficients(const Image3F& opsin, const ImageF& qf,
-                            const FrameDimensions& frame_dim, const float* qm,
+void ComputeDCTCoefficients(const Image3F& opsin, const bool xyb,
+                            const ImageF& qf, const FrameDimensions& frame_dim,
+                            const float* qm,
                             std::vector<jpeg::JPEGComponent>* components) {
   int max_samp_factor = 1;
   for (const auto& c : *components) {
@@ -75,7 +76,11 @@ void ComputeDCTCoefficients(const Image3F& opsin, const ImageF& qf,
             block[ix * 8 + iy] = cc;
           }
         }
-        block[0] = std::round((2040 * dct[0] - 1024) * qmc[0]);
+        if (xyb) {
+          // ToXYB does not create zero-centered sample values like RgbToYcbcr
+          // does, so we apply an offset to the DC values instead.
+          block[0] = std::round((2040 * dct[0] - 1024) * qmc[0]);
+        }
       }
     }
   }
@@ -95,12 +100,7 @@ HWY_EXPORT(ComputeDCTCoefficients);
 
 namespace {
 
-std::vector<uint8_t> CreateXybICCAppMarker() {
-  ColorEncoding c_xyb;
-  c_xyb.SetColorSpace(ColorSpace::kXYB);
-  c_xyb.rendering_intent = RenderingIntent::kPerceptual;
-  JXL_CHECK(c_xyb.CreateICC());
-  const auto& icc = c_xyb.ICC();
+std::vector<uint8_t> CreateICCAppMarker(const PaddedBytes& icc) {
   std::vector<uint8_t> icc_marker(17 + icc.size());
   // See the APP2 marker format for embedded ICC profile at
   // https://www.color.org/technotes/ICC-Technote-ProfileEmbedding.pdf
@@ -114,6 +114,14 @@ std::vector<uint8_t> CreateXybICCAppMarker() {
   icc_marker[16] = 1;  // Number of chunks.
   memcpy(&icc_marker[17], icc.data(), icc.size());
   return icc_marker;
+}
+
+std::vector<uint8_t> CreateXybICCAppMarker() {
+  ColorEncoding c_xyb;
+  c_xyb.SetColorSpace(ColorSpace::kXYB);
+  c_xyb.rendering_intent = RenderingIntent::kPerceptual;
+  JXL_CHECK(c_xyb.CreateICC());
+  return CreateICCAppMarker(c_xyb.ICC());
 }
 
 static constexpr float kBaseQuantMatrix[] = {
@@ -514,12 +522,17 @@ void SetJpegHuffmanCode(const JpegClusteredHistograms& clusters,
 }
 
 void FillJPEGData(const Image3F& opsin, const ImageF& qf, float dc_quant,
-                  float global_scale, const bool subsample_blue,
-                  const FrameDimensions& frame_dim, jpeg::JPEGData* out) {
+                  float global_scale, const bool xyb, const bool subsample_blue,
+                  const PaddedBytes& icc, const FrameDimensions& frame_dim,
+                  jpeg::JPEGData* out) {
   *out = jpeg::JPEGData();
   // ICC
   out->marker_order.push_back(0xe2);
-  out->app_data.push_back(CreateXybICCAppMarker());
+  if (xyb) {
+    out->app_data.push_back(CreateXybICCAppMarker());
+  } else {
+    out->app_data.push_back(CreateICCAppMarker(icc));
+  }
 
   // DQT
   out->marker_order.emplace_back(0xdb);
@@ -531,9 +544,15 @@ void FillJPEGData(const Image3F& opsin, const ImageF& qf, float dc_quant,
   out->components.resize(3);
   out->height = frame_dim.ysize;
   out->width = frame_dim.xsize;
-  out->components[0].id = 'R';
-  out->components[1].id = 'G';
-  out->components[2].id = 'B';
+  if (xyb) {
+    out->components[0].id = 'R';
+    out->components[1].id = 'G';
+    out->components[2].id = 'B';
+  } else {
+    out->components[0].id = 1;
+    out->components[1].id = 2;
+    out->components[2].id = 3;
+  }
   size_t max_samp_factor = subsample_blue ? 2 : 1;
   for (size_t c = 0; c < 3; ++c) {
     const size_t factor = (subsample_blue && c == 2) ? 2 : 1;
@@ -546,7 +565,7 @@ void FillJPEGData(const Image3F& opsin, const ImageF& qf, float dc_quant,
     out->components[c].quant_idx = c;
   }
   HWY_DYNAMIC_DISPATCH(ComputeDCTCoefficients)
-  (opsin, qf, frame_dim, qm, &out->components);
+  (opsin, xyb, qf, frame_dim, qm, &out->components);
 
   // DHT (the actual Huffman codes will be added later).
   out->marker_order.emplace_back(0xc4);
@@ -635,9 +654,9 @@ size_t JpegSize(const jpeg::JPEGData& jpeg_data) {
 
 }  // namespace
 
-Status EncodeJpeg(const ImageBundle& input, size_t target_size, float distance,
+Status EncodeJpeg(const ImageBundle& input, const JpegSettings& jpeg_settings,
                   ThreadPool* pool, std::vector<uint8_t>* compressed) {
-  const bool subsample_blue = true;
+  const bool subsample_blue = jpeg_settings.xyb;
   const size_t max_shift = subsample_blue ? 1 : 0;
   FrameDimensions frame_dim;
   frame_dim.Set(input.xsize(), input.ysize(), 1, max_shift, max_shift, false,
@@ -651,17 +670,27 @@ Status EncodeJpeg(const ImageBundle& input, size_t target_size, float distance,
 
   // Compute adaptive quant field.
   ImageF mask;
-  ImageF qf = InitialQuantField(distance, opsin, frame_dim, pool, 1.0, &mask);
-  ScaleXYB(&opsin);
+  ImageF qf = InitialQuantField(jpeg_settings.distance, opsin, frame_dim, pool,
+                                1.0, &mask);
+  if (jpeg_settings.xyb) {
+    ScaleXYB(&opsin);
+  } else {
+    opsin.ShrinkTo(input.xsize(), input.ysize());
+    JXL_RETURN_IF_ERROR(RgbToYcbcr(
+        input.color().Plane(0), input.color().Plane(1), input.color().Plane(2),
+        &opsin.Plane(0), &opsin.Plane(1), &opsin.Plane(2), pool));
+    PadImageToBlockMultipleInPlace(&opsin, 8 << max_shift);
+  }
 
   // Create jpeg data and optimize Huffman codes.
   jpeg::JPEGData jpeg_data;
   float global_scale = 0.66f;
-  float dc_quant = InitialQuantDC(distance);
-  FillJPEGData(opsin, qf, dc_quant, global_scale, subsample_blue, frame_dim,
-               &jpeg_data);
+  float dc_quant = InitialQuantDC(jpeg_settings.distance);
+  FillJPEGData(opsin, qf, dc_quant, global_scale, jpeg_settings.xyb,
+               subsample_blue, input.metadata()->color_encoding.ICC(),
+               frame_dim, &jpeg_data);
 
-  if (target_size != 0) {
+  if (jpeg_settings.target_size != 0) {
     // Tweak the jpeg data so that the resulting compressed file is
     // approximately target_size long.
     size_t prev_size = 0;
@@ -670,7 +699,7 @@ Status EncodeJpeg(const ImageBundle& input, size_t target_size, float distance,
     size_t iter = 0;
     for (;;) {
       size_t size = JpegSize(jpeg_data);
-      float error = size * 1.0f / target_size - 1.0f;
+      float error = size * 1.0f / jpeg_settings.target_size - 1.0f;
       if (std::abs(error) < std::abs(best_error)) {
         best_error = error;
         best_global_scale = global_scale;
@@ -679,13 +708,15 @@ Status EncodeJpeg(const ImageBundle& input, size_t target_size, float distance,
         break;
       }
       global_scale *= 1.0f + error;
-      FillJPEGData(opsin, qf, dc_quant, global_scale, subsample_blue, frame_dim,
-                   &jpeg_data);
+      FillJPEGData(opsin, qf, dc_quant, global_scale, jpeg_settings.xyb,
+                   subsample_blue, input.metadata()->color_encoding.ICC(),
+                   frame_dim, &jpeg_data);
       prev_size = size;
       ++iter;
     }
     if (best_global_scale != global_scale) {
-      FillJPEGData(opsin, qf, dc_quant, best_global_scale, subsample_blue,
+      FillJPEGData(opsin, qf, dc_quant, best_global_scale, jpeg_settings.xyb,
+                   subsample_blue, input.metadata()->color_encoding.ICC(),
                    frame_dim, &jpeg_data);
     }
   }
