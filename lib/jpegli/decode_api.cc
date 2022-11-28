@@ -183,6 +183,13 @@ void jpeg_calc_output_dimensions(j_decompress_ptr cinfo) {
   }
 }
 
+boolean jpeg_has_multiple_scans(j_decompress_ptr cinfo) {
+  if (cinfo->input_scan_number == 0) {
+    JPEGLI_ERROR("No SOS marker found.");
+  }
+  return cinfo->master->is_multiscan_;
+}
+
 boolean jpeg_start_decompress(j_decompress_ptr cinfo) {
   jpeg_calc_output_dimensions(cinfo);
   if (cinfo->progressive_mode) {

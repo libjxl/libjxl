@@ -319,8 +319,7 @@ void ProcessOutput(j_decompress_ptr cinfo, size_t* num_output_rows,
         ++m->MCU_buf_current_row_;
       }
       if (cinfo->output_scanline == cinfo->output_height) {
-        m->state_ =
-            cinfo->progressive_mode ? State::kEnd : State::kProcessMarkers;
+        m->state_ = m->is_multiscan_ ? State::kEnd : State::kProcessMarkers;
         return;
       }
       if (*num_output_rows == max_output_rows) {
@@ -406,8 +405,7 @@ void ProcessOutput(j_decompress_ptr cinfo, size_t* num_output_rows,
   }
   ++cinfo->output_iMCU_row;
   m->output_ci_ = 0;
-  if (!cinfo->progressive_mode &&
-      cinfo->output_iMCU_row < cinfo->total_iMCU_rows) {
+  if (!m->is_multiscan_ && cinfo->output_iMCU_row < cinfo->total_iMCU_rows) {
     m->state_ = State::kScan;
   }
   JXL_DASSERT(cinfo->output_iMCU_row <= cinfo->total_iMCU_rows);
