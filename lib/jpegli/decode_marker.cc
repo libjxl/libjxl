@@ -225,6 +225,10 @@ void ProcessSOS(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
   cinfo->Al = c & 0xf;
   JPEG_VERIFY_MARKER_END();
 
+  if (cinfo->input_scan_number == 0) {
+    m->is_multiscan_ = (cinfo->comps_in_scan < cinfo->num_components ||
+                        cinfo->progressive_mode);
+  }
   if (cinfo->Ah != 0 && cinfo->Al != cinfo->Ah - 1) {
     // section G.1.1.1.2 : Successive approximation control only improves
     // by one bit at a time.
@@ -519,7 +523,7 @@ bool ProcessMarker(j_decompress_ptr cinfo, const uint8_t* data, size_t len,
   uint8_t marker = data[*pos + 1];
   if (marker == 0xd9) {
     m->found_eoi_ = true;
-    m->state_ = cinfo->progressive_mode ? State::kRender : State::kEnd;
+    m->state_ = m->is_multiscan_ ? State::kRender : State::kEnd;
     *pos += 2;
     AdvanceInput(cinfo, 2);
     return true;

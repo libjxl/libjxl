@@ -491,11 +491,11 @@ bool ProcessScan(j_decompress_ptr cinfo, const uint8_t* data, size_t len,
     if (m->eobrun_ > 0) {
       JPEGLI_ERROR("End-of-block run too long.");
     }
-    if (cinfo->progressive_mode) {
+    if (m->is_multiscan_) {
       m->state_ = jpeg_decomp_master::State::kProcessMarkers;
     }
   }
-  if (!cinfo->progressive_mode) {
+  if (!m->is_multiscan_) {
     m->state_ = jpeg_decomp_master::State::kRender;
   }
   return true;

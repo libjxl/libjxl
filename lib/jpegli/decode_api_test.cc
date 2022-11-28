@@ -234,6 +234,33 @@ std::vector<TestConfig> GenerateTests() {
       }
     }
   }
+  {
+    std::vector<std::pair<std::string, std::string>> testfiles({
+        {"jxl/flower/flower_small.q85_444_non_interleaved.jpg",
+         "Q85YUV444NonInterleaved"},
+        {"jxl/flower/flower_small.q85_420_non_interleaved.jpg",
+         "Q85YUV420NonInterleaved"},
+        {"jxl/flower/flower_small.q85_444_partially_interleaved.jpg",
+         "Q85YUV444PartiallyInterleaved"},
+        {"jxl/flower/flower_small.q85_420_partially_interleaved.jpg",
+         "Q85YUV420PartiallyInterleaved"},
+    });
+    for (const auto& it : testfiles) {
+      for (size_t chunk_size : {0, 64}) {
+        for (size_t max_output_lines : {0, 16}) {
+          TestConfig config;
+          config.fn = it.first;
+          config.fn_desc = it.second;
+          config.chunk_size = chunk_size;
+          config.output_bit_depth = 8;
+          config.max_output_lines = max_output_lines;
+          config.origfn = "jxl/flower/flower_small.rgb.depth8.ppm";
+          config.max_distance = 3.5;
+          all_tests.push_back(config);
+        }
+      }
+    }
+  }
   return all_tests;
 }
 

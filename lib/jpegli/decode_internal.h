@@ -104,6 +104,9 @@ struct jpeg_decomp_master {
   std::vector<jpegli::HuffmanTableEntry> ac_huff_lut_;
   uint8_t huff_slot_defined_[256] = {};
   std::set<int> markers_to_save_;
+  // Whether this jpeg has multiple scans (progressive or non-interleaved
+  // sequential).
+  bool is_multiscan_;
 
   // Fields defined by SOF marker.
   size_t iMCU_cols_;
