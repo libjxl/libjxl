@@ -40,7 +40,7 @@ TEST(ExternalImageTest, InvalidSize) {
   EXPECT_TRUE(
       ConvertFromExternal(Span<const uint8_t>(buf, sizeof(buf)), /*xsize=*/10,
                           /*ysize=*/100, /*c_current=*/ColorEncoding::SRGB(),
-                          /*alpha_is_premultiplied=*/false,
+                          /*alpha_is_premultiplied=*/ib.AlphaIsPremultiplied(),
                           /*bits_per_sample=*/16, format, nullptr, &ib));
 }
 #endif
@@ -63,6 +63,21 @@ TEST(ExternalImageTest, AlphaMissing) {
                                   /*alpha_is_premultiplied=*/false,
                                   /*bits_per_sample=*/8, format, nullptr, &ib));
   EXPECT_FALSE(ib.HasAlpha());
+}
+
+TEST(ExternalImageTest, AlphaPremultiplied) {
+  ImageMetadata im;
+  im.SetAlphaBits(8, true);
+
+  ImageBundle ib(&im);
+  const size_t xsize = 10;
+  const size_t ysize = 20;
+  const size_t size = xsize * ysize * 4;
+  const uint8_t buf[size] = {};
+
+  JxlPixelFormat format = {4, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
+  EXPECT_TRUE(BufferToImageBundle(format, xsize, ysize, buf, 2 * size, nullptr,
+                                  ColorEncoding::SRGB(), &ib));
 }
 
 }  // namespace

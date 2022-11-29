@@ -268,7 +268,8 @@ Status BufferToImageBundle(const JxlPixelFormat& pixel_format, uint32_t xsize,
   JXL_RETURN_IF_ERROR(ConvertFromExternal(
       jxl::Span<const uint8_t>(static_cast<const uint8_t*>(buffer), size),
       xsize, ysize, c_current,
-      /*alpha_is_premultiplied=*/false, bitdepth, pixel_format, pool, ib));
+      /*alpha_is_premultiplied=*/ib->AlphaIsPremultiplied(), bitdepth,
+      pixel_format, pool, ib));
   ib->VerifyMetadata();
 
   return true;
