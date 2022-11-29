@@ -678,34 +678,34 @@ void EncodeChunk(const uint16_t* residuals, const PrefixCode& code,
   uint16x8_t res = vld1q_u16(residuals);
   uint16x8_t token = vsubq_u16(vdupq_n_u16(16), vclzq_u16(res));
   uint16x8_t nbits = vqsubq_u16(token, vdupq_n_u16(1));
-  uint16x8_t bits = vqsubq_u16(res, vshlq_s16(vdupq_n_s16(1), nbits));
-  uint16x8_t huff_bits =
-      vandq_u16(vdupq_n_u16(0xFF), vqtbl1q_u8(vld1q_u8(code.raw_bits), token));
-  uint16x8_t huff_nbits =
-      vandq_u16(vdupq_n_u16(0xFF), vqtbl1q_u8(vld1q_u8(code.raw_nbits), token));
-  bits = vorrq_u16(vshlq_u16(bits, huff_nbits), huff_bits);
+  uint16x8_t bits =
+      vqsubq_u16(res, vshlq_u16(vdupq_n_u16(1), vreinterpretq_s16_u16(nbits)));
+  uint8x16_t tok8x16 = vreinterpretq_u8_u16(token);
+  uint16x8_t huff_bits = vandq_u16(
+      vdupq_n_u16(0xFF),
+      vreinterpretq_u16_u8(vqtbl1q_u8(vld1q_u8(code.raw_bits), tok8x16)));
+  uint16x8_t huff_nbits = vandq_u16(
+      vdupq_n_u16(0xFF),
+      vreinterpretq_u16_u8(vqtbl1q_u8(vld1q_u8(code.raw_nbits), tok8x16)));
+  bits =
+      vorrq_u16(vshlq_u16(bits, vreinterpretq_s16_u16(huff_nbits)), huff_bits);
   nbits = vaddq_u16(nbits, huff_nbits);
 
   // Merge nbits and bits from 16-bit to 32-bit lanes.
-  uint32x4_t nbits_lo16 = vandq_u32(nbits, vdupq_n_u32(0xFFFF));
-  uint32x4_t bits_hi16 = vshlq_u32(vshrq_n_u32(bits, 16), nbits_lo16);
-  uint32x4_t bits_lo16 = vandq_u32(bits, vdupq_n_u32(0xFFFF));
+  uint32x4_t nbits_lo16 =
+      vandq_u32(vreinterpretq_u32_u16(nbits), vdupq_n_u32(0xFFFF));
+  uint32x4_t bits_hi16 = vshlq_u32(vshrq_n_u32(vreinterpretq_u32_u16(bits), 16),
+                                   vreinterpretq_s32_u32(nbits_lo16));
+  uint32x4_t bits_lo16 =
+      vandq_u32(vreinterpretq_u32_u16(bits), vdupq_n_u32(0xFFFF));
 
-  uint32x4_t nbits32 = vsraq_n_u32(nbits_lo16, nbits, 16);
+  uint32x4_t nbits32 =
+      vsraq_n_u32(nbits_lo16, vreinterpretq_u32_u16(nbits), 16);
   uint32x4_t bits32 = vorrq_u32(bits_hi16, bits_lo16);
 
   // Merging up to 64 bits is not faster.
-
-  // Manually merge the buffer bits with the SIMD bits.
-  // A bit faster.
   for (size_t i = 0; i < 4; i++) {
-    output.buffer |= bits32[i] << output.bits_in_buffer;
-    memcpy(output.data.get() + output.bytes_written, &output.buffer, 8);
-    output.bits_in_buffer += nbits32[i];
-    size_t bytes_in_buffer = output.bits_in_buffer / 8;
-    output.bits_in_buffer -= bytes_in_buffer * 8;
-    output.buffer >>= bytes_in_buffer * 8;
-    output.bytes_written += bytes_in_buffer;
+    output.Write(nbits32[i], bits32[i]);
   }
 }
 #endif
