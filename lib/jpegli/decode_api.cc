@@ -20,13 +20,15 @@
 #include "lib/jpegli/source_manager.h"
 #include "lib/jxl/base/status.h"
 
-#define JPEGLI_STATE_READ_HEADER 1
-#define JPEGLI_STATE_START_DECOMPRESS 2
-#define JPEGLI_STATE_READ_SCANLINES 3
-
-typedef jpeg_decomp_master::State State;
-
 namespace jpegli {
+
+enum DecodeState {
+  kStart,
+  kInHeader,
+  kHeaderDone,
+  kProcessMarkers,
+  kProcessScan,
+};
 
 void InitializeImage(j_decompress_ptr cinfo) {
   cinfo->jpeg_color_space = JCS_UNKNOWN;
@@ -41,87 +43,46 @@ void InitializeImage(j_decompress_ptr cinfo) {
   cinfo->Adobe_transform = 0;
 }
 
-bool ShouldStop(j_decompress_ptr cinfo) {
-  jpeg_decomp_master* m = cinfo->master;
-  if (cinfo->global_state == JPEGLI_STATE_READ_HEADER) {
-    return cinfo->input_scan_number > 0;
-  } else if (cinfo->global_state == JPEGLI_STATE_START_DECOMPRESS) {
-    return m->found_eoi_;
-  } else if (cinfo->global_state == JPEGLI_STATE_READ_SCANLINES) {
-    return m->num_output_rows_ >= m->max_lines_;
-  }
-  JPEGLI_ERROR("Unexpected global state");
-  return false;
-}
-
-bool DoSomeWork(j_decompress_ptr cinfo) {
-  jpeg_decomp_master* m = cinfo->master;
-  const uint8_t* data = cinfo->src->next_input_byte;
-  size_t len = cinfo->src->bytes_in_buffer;
-  size_t pos = 0;
+int ConsumeInput(j_decompress_ptr cinfo) {
+  jpeg_source_mgr* src = cinfo->src;
   std::vector<uint8_t> buffer;
-  const uint8_t* last_src_buf_start = data;
-  size_t last_src_buf_len = len;
-
-  while (!ShouldStop(cinfo)) {
-    bool status = true;
-    if (cinfo->global_state == JPEGLI_STATE_READ_HEADER &&
-        m->state_ == State::kStart) {
-      // Look for the SOI marker.
-      if (len >= 2) {
-        if (data[0] != 0xff || data[1] != 0xd8) {
-          JPEGLI_ERROR("Did not find SOI marker.");
-        }
-        pos += 2;
-        jpegli::AdvanceInput(cinfo, 2);
-        InitializeImage(cinfo);
-        m->found_soi_ = true;
-        m->state_ = State::kProcessMarkers;
-      } else {
-        status = false;
-      }
-    } else if (m->state_ == State::kProcessMarkers) {
-      status = jpegli::ProcessMarker(cinfo, data, len, &pos);
-    } else if ((cinfo->global_state == JPEGLI_STATE_START_DECOMPRESS ||
-                cinfo->global_state == JPEGLI_STATE_READ_SCANLINES) &&
-               m->state_ == State::kScan) {
-      status = jpegli::ProcessScan(cinfo, data, len, &pos);
-    } else if (cinfo->global_state == JPEGLI_STATE_READ_SCANLINES &&
-               m->state_ == State::kRender) {
-      jpegli::ProcessOutput(cinfo, &m->num_output_rows_, m->scanlines_,
-                            m->max_lines_);
-    } else if (cinfo->global_state == JPEGLI_STATE_READ_SCANLINES &&
-               m->state_ == State::kEnd) {
-      break;
+  const uint8_t* last_input_byte = src->next_input_byte + src->bytes_in_buffer;
+  int status;
+  for (;;) {
+    if (cinfo->global_state == kProcessScan) {
+      status = ProcessScan(cinfo);
     } else {
-      JPEGLI_ERROR("Unexpected state.");
+      status = ProcessMarkers(cinfo);
     }
-    if (!status) {
-      if (buffer.empty()) {
-        buffer.assign(data, data + len);
-      }
-      if ((*cinfo->src->fill_input_buffer)(cinfo)) {
-        buffer.insert(
-            buffer.end(), cinfo->src->next_input_byte,
-            cinfo->src->next_input_byte + cinfo->src->bytes_in_buffer);
-        data = buffer.data();
-        len = buffer.size();
-        last_src_buf_start = cinfo->src->next_input_byte;
-        last_src_buf_len = cinfo->src->bytes_in_buffer;
-        cinfo->src->next_input_byte = data + pos;
-        cinfo->src->bytes_in_buffer = len - pos;
-      } else {
-        return false;
-      }
+    if (status != JPEG_SUSPENDED) {
+      break;
     }
+    if (buffer.size() != src->bytes_in_buffer) {
+      // Save the unprocessed bytes in the input to a temporary buffer.
+      buffer.assign(src->next_input_byte,
+                    src->next_input_byte + src->bytes_in_buffer);
+    }
+    if (!(*cinfo->src->fill_input_buffer)(cinfo)) {
+      return status;
+    }
+    // Save the end of the current input so that we can restore it after the
+    // input processing succeeds.
+    last_input_byte = cinfo->src->next_input_byte + src->bytes_in_buffer;
+    // Extend the temporary buffer with the new bytes and point the input to it.
+    buffer.insert(buffer.end(), src->next_input_byte, last_input_byte);
+    src->next_input_byte = buffer.data();
+    src->bytes_in_buffer = buffer.size();
   }
-
-  if (!buffer.empty()) {
-    cinfo->src->next_input_byte =
-        (last_src_buf_start + last_src_buf_len - buffer.size() + pos);
-    cinfo->src->bytes_in_buffer = buffer.size() - pos;
+  // Restore the input pointer in case we had to change it to a temporary
+  // buffer earlier.
+  src->next_input_byte = last_input_byte - src->bytes_in_buffer;
+  if (status == JPEG_SCAN_COMPLETED) {
+    cinfo->global_state = kProcessMarkers;
+  } else if (status == JPEG_REACHED_SOS) {
+    cinfo->global_state =
+        cinfo->global_state == kInHeader ? kHeaderDone : kProcessScan;
   }
-  return true;
+  return status;
 }
 
 }  // namespace jpegli
@@ -139,6 +100,7 @@ void jpeg_CreateDecompress(j_decompress_ptr cinfo, int version,
   cinfo->quantize_colors = FALSE;
   cinfo->desired_number_of_colors = 0;
   cinfo->master->output_bit_depth_ = 8;
+  cinfo->global_state = jpegli::kStart;
 }
 
 void jpeg_destroy_decompress(j_decompress_ptr cinfo) {
@@ -158,10 +120,43 @@ void jpeg_save_markers(j_decompress_ptr cinfo, int marker_code,
   m->markers_to_save_.insert(marker_code);
 }
 
+int jpeg_consume_input(j_decompress_ptr cinfo) {
+  if (cinfo->global_state == jpegli::kStart) {
+    (*cinfo->src->init_source)(cinfo);
+    jpegli::InitializeImage(cinfo);
+    cinfo->global_state = jpegli::kInHeader;
+  }
+  if (cinfo->global_state == jpegli::kHeaderDone) {
+    return JPEG_REACHED_SOS;
+  }
+  if (cinfo->master->found_eoi_) {
+    return JPEG_REACHED_EOI;
+  }
+  if (cinfo->global_state == jpegli::kInHeader ||
+      cinfo->global_state == jpegli::kProcessMarkers ||
+      cinfo->global_state == jpegli::kProcessScan) {
+    return jpegli::ConsumeInput(cinfo);
+  }
+  JPEGLI_ERROR("Unexpected state %d", cinfo->global_state);
+  return JPEG_REACHED_EOI;  // return value does not matter
+}
+
 int jpeg_read_header(j_decompress_ptr cinfo, boolean require_image) {
-  cinfo->global_state = JPEGLI_STATE_READ_HEADER;
-  bool success = jpegli::DoSomeWork(cinfo);
-  return success ? JPEG_HEADER_OK : JPEG_SUSPENDED;
+  if (cinfo->global_state != jpegli::kStart &&
+      cinfo->global_state != jpegli::kInHeader) {
+    JPEGLI_ERROR("jpeg_read_header: unexpected state %d", cinfo->global_state);
+  }
+  for (;;) {
+    int retcode = jpeg_consume_input(cinfo);
+    if (retcode == JPEG_SUSPENDED) {
+      return retcode;
+    } else if (retcode == JPEG_REACHED_SOS) {
+      break;
+    } else if (retcode == JPEG_REACHED_EOI) {
+      JPEGLI_ERROR("jpeg_read_header: unexpected EOI marker.");
+    }
+  };
+  return JPEG_HEADER_OK;
 }
 
 void jpeg_calc_output_dimensions(j_decompress_ptr cinfo) {
@@ -193,11 +188,24 @@ boolean jpeg_has_multiple_scans(j_decompress_ptr cinfo) {
 }
 
 boolean jpeg_start_decompress(j_decompress_ptr cinfo) {
-  jpeg_calc_output_dimensions(cinfo);
-  if (cinfo->progressive_mode) {
-    cinfo->global_state = JPEGLI_STATE_START_DECOMPRESS;
-    if (!jpegli::DoSomeWork(cinfo)) {
-      return FALSE;
+  if (cinfo->global_state == jpegli::kHeaderDone) {
+    jpeg_calc_output_dimensions(cinfo);
+    cinfo->global_state = jpegli::kProcessScan;
+  } else if (!cinfo->master->is_multiscan_) {
+    JPEGLI_ERROR("jpeg_start_decompress: unexpected state %d",
+                 cinfo->global_state);
+  }
+  if (cinfo->master->is_multiscan_) {
+    if (cinfo->global_state != jpegli::kProcessScan &&
+        cinfo->global_state != jpegli::kProcessMarkers) {
+      JPEGLI_ERROR("jpeg_start_decompress: unexpected state %d",
+                   cinfo->global_state);
+    }
+    while (!cinfo->master->found_eoi_) {
+      int retcode = jpegli::ConsumeInput(cinfo);
+      if (retcode == JPEG_SUSPENDED) {
+        return FALSE;
+      }
     }
   }
   jpegli::PrepareForOutput(cinfo);
@@ -207,15 +215,38 @@ boolean jpeg_start_decompress(j_decompress_ptr cinfo) {
 JDIMENSION jpeg_read_scanlines(j_decompress_ptr cinfo, JSAMPARRAY scanlines,
                                JDIMENSION max_lines) {
   jpeg_decomp_master* m = cinfo->master;
-  if (max_lines == 0 || m->state_ == State::kEnd) {
-    return 0;
+  if (cinfo->global_state != jpegli::kProcessScan &&
+      cinfo->global_state != jpegli::kProcessMarkers) {
+    JPEGLI_ERROR("jpeg_read_scanlines: unexpected state %d",
+                 cinfo->global_state);
   }
-  cinfo->global_state = JPEGLI_STATE_READ_SCANLINES;
-  m->num_output_rows_ = 0;
-  m->scanlines_ = scanlines;
-  m->max_lines_ = max_lines;
-  jpegli::DoSomeWork(cinfo);
-  return m->num_output_rows_;
+  if (m->is_multiscan_ && !m->found_eoi_) {
+    JPEGLI_ERROR("jpeg_read_scanlines: jpeg_start_decompress() did not finish");
+  }
+  size_t num_output_rows = 0;
+  while (cinfo->output_scanline < cinfo->output_height &&
+         num_output_rows < max_lines) {
+    if (cinfo->input_iMCU_row <= cinfo->output_iMCU_row &&
+        cinfo->output_iMCU_row < cinfo->total_iMCU_rows &&
+        jpegli::ConsumeInput(cinfo) == JPEG_SUSPENDED) {
+      return num_output_rows;
+    }
+    jpegli::ProcessOutput(cinfo, &num_output_rows, scanlines, max_lines);
+  }
+  return num_output_rows;
 }
 
-boolean jpeg_finish_decompress(j_decompress_ptr cinfo) { return TRUE; }
+boolean jpeg_finish_decompress(j_decompress_ptr cinfo) {
+  if (cinfo->global_state != jpegli::kProcessScan &&
+      cinfo->global_state != jpegli::kProcessMarkers) {
+    JPEGLI_ERROR("jpeg_finish_decompress: unexpected state %d",
+                 cinfo->global_state);
+  }
+  while (!cinfo->master->found_eoi_) {
+    int retcode = jpegli::ConsumeInput(cinfo);
+    if (retcode == JPEG_SUSPENDED) {
+      return FALSE;
+    }
+  }
+  return TRUE;
+}

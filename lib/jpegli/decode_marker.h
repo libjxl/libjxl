@@ -14,11 +14,17 @@
 
 namespace jpegli {
 
-// Returns true if [data, data + len) contains a valid marker segment (it does
-// not need to be at the start of data), and sets *pos to the offset of the end
-// of the marker segment and fills in the relevant parts of cinfo.
-bool ProcessMarker(j_decompress_ptr cinfo, const uint8_t* data, size_t len,
-                   size_t* pos);
+// Reads the available input in the source manager's input buffer until either
+// the end of the next SOS marker or the end of the input.
+// The corresponding fields of cinfo are updated with the processed input data.
+// Upon return, the input buffer will be at the start or at the end of a marker
+// data segment (inter-marker data is allowed).
+// Return value is one of:
+//   * JPEG_SUSPENDED, if the current input buffer ends before the next SOS or
+//       EOI marker. Input buffer refill is handled by the caller;
+//   * JPEG_REACHED_SOS, if the the next SOS marker is found;
+//   * JPEG_REACHED_EOR, if the end of the input is found.
+int ProcessMarkers(j_decompress_ptr cinfo);
 
 }  // namespace jpegli
 

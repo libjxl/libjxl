@@ -11,56 +11,41 @@
 /* clang-format on */
 
 #include <cmath>
+#include <memory>
 #include <vector>
 
 #include "gtest/gtest.h"
 #include "lib/jpegli/test_utils.h"
 #include "lib/jxl/base/file_io.h"
+#include "lib/jxl/base/status.h"
 
 namespace jpegli {
 namespace {
 
 static constexpr uint8_t kFakeEoiMarker[2] = {0xff, 0xd9};
 
-// Custom source manager that refills the input buffer in chunks, simulating
-// a file reader with a fixed buffer size.
-struct TestJpegSourceManager {
-  jpeg_source_mgr pub;
-  const uint8_t* data;
-  size_t len;
-  size_t pos;
-  size_t chunk_size;
-
-  TestJpegSourceManager(const uint8_t* buf, size_t buf_size,
-                        size_t max_chunk_size) {
-    pub.next_input_byte = nullptr;
-    pub.bytes_in_buffer = 0;
-    pub.init_source = init_source;
-    pub.fill_input_buffer = fill_input_buffer;
-    pub.skip_input_data = skip_input_data;
-    pub.resync_to_restart = resync_to_restart;
-    pub.term_source = term_source;
-    data = buf;
-    len = buf_size;
-    pos = 0;
-    chunk_size = max_chunk_size;
+class SourceManager {
+ public:
+  SourceManager(const uint8_t* data, size_t len, size_t max_chunk_size)
+      : data_(data), len_(len), pos_(0), max_chunk_size_(max_chunk_size) {
+    pub_.next_input_byte = nullptr;
+    pub_.bytes_in_buffer = 0;
+    pub_.skip_input_data = skip_input_data;
+    pub_.resync_to_restart = resync_to_restart;
+    pub_.term_source = term_source;
   }
 
-  static void init_source(j_decompress_ptr cinfo) {}
+  size_t TotalBytes() const { return pos_; }
+  size_t UnprocessedBytes() const { return pub_.bytes_in_buffer; }
 
-  static boolean fill_input_buffer(j_decompress_ptr cinfo) {
-    auto src = reinterpret_cast<TestJpegSourceManager*>(cinfo->src);
-    if (src->pos < src->len) {
-      src->pub.next_input_byte = src->data + src->pos;
-      src->pub.bytes_in_buffer = std::min(src->len - src->pos, src->chunk_size);
-      src->pos += src->pub.bytes_in_buffer;
-    } else {
-      src->pub.next_input_byte = kFakeEoiMarker;
-      src->pub.bytes_in_buffer = 2;
-    }
-    return TRUE;
-  }
+ protected:
+  jpeg_source_mgr pub_;
+  const uint8_t* data_;
+  size_t len_;
+  size_t pos_;
+  size_t max_chunk_size_;
 
+ private:
   static void skip_input_data(j_decompress_ptr cinfo, long num_bytes) {}
 
   static boolean resync_to_restart(j_decompress_ptr cinfo, int desired) {
@@ -68,6 +53,76 @@ struct TestJpegSourceManager {
   }
 
   static void term_source(j_decompress_ptr cinfo) {}
+};
+
+// Custom source manager that refills the input buffer in chunks, simulating
+// a file reader with a fixed buffer size.
+class ChunkedSourceManager : public SourceManager {
+ public:
+  ChunkedSourceManager(const uint8_t* data, size_t len, size_t max_chunk_size)
+      : SourceManager(data, len, max_chunk_size) {
+    pub_.init_source = init_source;
+    pub_.fill_input_buffer = fill_input_buffer;
+  }
+
+ private:
+  static void init_source(j_decompress_ptr cinfo) { fill_input_buffer(cinfo); }
+
+  static boolean fill_input_buffer(j_decompress_ptr cinfo) {
+    auto src = reinterpret_cast<ChunkedSourceManager*>(cinfo->src);
+    if (src->pos_ < src->len_) {
+      size_t chunk_size = std::min(src->len_ - src->pos_, src->max_chunk_size_);
+      src->pub_.next_input_byte = src->data_ + src->pos_;
+      src->pub_.bytes_in_buffer = chunk_size;
+    } else {
+      src->pub_.next_input_byte = kFakeEoiMarker;
+      src->pub_.bytes_in_buffer = 2;
+    }
+    src->pos_ += src->pub_.bytes_in_buffer;
+    return TRUE;
+  }
+};
+
+class SuspendingSourceManager : public SourceManager {
+ public:
+  SuspendingSourceManager(const uint8_t* data, size_t len,
+                          size_t max_chunk_size)
+      : SourceManager(data, len, max_chunk_size) {
+    pub_.init_source = init_source;
+    pub_.fill_input_buffer = fill_input_buffer;
+  }
+
+  bool LoadNextChunk() {
+    if (pos_ >= len_) {
+      return false;
+    }
+    if (pub_.bytes_in_buffer > 0) {
+      EXPECT_LE(pub_.bytes_in_buffer, buffer_.size());
+      memmove(&buffer_[0], pub_.next_input_byte, pub_.bytes_in_buffer);
+    }
+    size_t chunk_size = std::min(len_ - pos_, max_chunk_size_);
+    buffer_.resize(pub_.bytes_in_buffer + chunk_size);
+    memcpy(&buffer_[pub_.bytes_in_buffer], data_ + pos_, chunk_size);
+    pub_.next_input_byte = &buffer_[0];
+    pub_.bytes_in_buffer += chunk_size;
+    pos_ += chunk_size;
+    return true;
+  }
+
+ private:
+  std::vector<uint8_t> buffer_;
+
+  static void init_source(j_decompress_ptr cinfo) {
+    auto src = reinterpret_cast<SuspendingSourceManager*>(cinfo->src);
+    src->pub_.next_input_byte = nullptr;
+    src->pub_.bytes_in_buffer = 0;
+  }
+  static boolean fill_input_buffer(j_decompress_ptr cinfo) { return FALSE; }
+};
+
+enum SourceManagerType {
+  SOURCE_MGR_CHUNKED,
+  SOURCE_MGR_SUSPENDING,
 };
 
 struct TestConfig {
@@ -78,7 +133,14 @@ struct TestConfig {
   size_t max_output_lines;
   size_t output_bit_depth;
   float max_distance;
+  SourceManagerType source_mgr;
+  bool pre_consume_input = false;
 };
+
+void LoadNextChunk(const TestConfig& config, SourceManager* src) {
+  ASSERT_EQ(config.source_mgr, SOURCE_MGR_SUSPENDING);
+  JXL_CHECK(reinterpret_cast<SuspendingSourceManager*>(src)->LoadNextChunk());
+}
 
 class DecodeAPITestParam : public ::testing::TestWithParam<TestConfig> {};
 
@@ -111,10 +173,38 @@ TEST_P(DecodeAPITestParam, TestAPI) {
 
   size_t chunk_size = config.chunk_size;
   if (chunk_size == 0) chunk_size = compressed.size();
-  TestJpegSourceManager jsrc(compressed.data(), compressed.size(), chunk_size);
-  cinfo.src = reinterpret_cast<jpeg_source_mgr*>(&jsrc);
+  std::unique_ptr<SourceManager> jsrc;
+  if (config.source_mgr == SOURCE_MGR_CHUNKED) {
+    jsrc.reset(new ChunkedSourceManager(compressed.data(), compressed.size(),
+                                        chunk_size));
+  } else if (config.source_mgr == SOURCE_MGR_SUSPENDING) {
+    jsrc.reset(new SuspendingSourceManager(compressed.data(), compressed.size(),
+                                           chunk_size));
+  }
+  cinfo.src = reinterpret_cast<jpeg_source_mgr*>(jsrc.get());
 
-  ASSERT_EQ(JPEG_HEADER_OK, jpeg_read_header(&cinfo, /*require_image=*/TRUE));
+  if (config.pre_consume_input) {
+    for (;;) {
+      int status = jpeg_consume_input(&cinfo);
+      if (status == JPEG_SUSPENDED) {
+        LoadNextChunk(config, jsrc.get());
+      } else if (status == JPEG_REACHED_SOS) {
+        break;
+      }
+    }
+  } else {
+    for (;;) {
+      int status = jpeg_read_header(&cinfo, /*require_image=*/TRUE);
+      if (status == JPEG_SUSPENDED) {
+        LoadNextChunk(config, jsrc.get());
+      } else {
+        ASSERT_EQ(status, JPEG_HEADER_OK);
+        break;
+      }
+    }
+  }
+
+  ASSERT_EQ(JPEG_REACHED_SOS, jpeg_consume_input(&cinfo));
 
   EXPECT_EQ(xsize, cinfo.image_width);
   EXPECT_EQ(ysize, cinfo.image_height);
@@ -122,10 +212,29 @@ TEST_P(DecodeAPITestParam, TestAPI) {
 
   cinfo.quantize_colors = FALSE;
   cinfo.desired_number_of_colors = 1 << config.output_bit_depth;
-  ASSERT_TRUE(jpeg_start_decompress(&cinfo));
+
+  if (config.pre_consume_input) {
+    jpeg_start_decompress(&cinfo);
+  } else {
+    while (!jpeg_start_decompress(&cinfo)) {
+      LoadNextChunk(config, jsrc.get());
+    }
+  }
+
   EXPECT_EQ(xsize, cinfo.output_width);
   EXPECT_EQ(ysize, cinfo.output_height);
   EXPECT_EQ(num_channels, cinfo.out_color_components);
+
+  if (config.pre_consume_input) {
+    for (;;) {
+      int status = jpeg_consume_input(&cinfo);
+      if (status == JPEG_SUSPENDED) {
+        LoadNextChunk(config, jsrc.get());
+      } else if (status == JPEG_REACHED_EOI) {
+        break;
+      }
+    }
+  }
 
   size_t bytes_per_sample = config.output_bit_depth <= 8 ? 1 : 2;
   size_t stride = cinfo.output_width * cinfo.num_components * bytes_per_sample;
@@ -133,7 +242,7 @@ TEST_P(DecodeAPITestParam, TestAPI) {
   size_t max_output_lines = config.max_output_lines;
   if (max_output_lines == 0) max_output_lines = cinfo.output_height;
   size_t total_output_lines = 0;
-  while (cinfo.output_scanline < cinfo.output_height) {
+  for (;;) {
     std::vector<JSAMPROW> scanlines(max_output_lines);
     for (size_t i = 0; i < max_output_lines; ++i) {
       scanlines[i] = &output[(cinfo.output_scanline + i) * stride];
@@ -142,12 +251,26 @@ TEST_P(DecodeAPITestParam, TestAPI) {
         jpeg_read_scanlines(&cinfo, &scanlines[0], max_output_lines);
     total_output_lines += num_output_lines;
     EXPECT_EQ(total_output_lines, cinfo.output_scanline);
-    if (cinfo.output_scanline < cinfo.output_height) {
+    if (cinfo.output_scanline >= cinfo.output_height) {
+      break;
+    }
+    if (config.pre_consume_input) {
       EXPECT_EQ(num_output_lines, max_output_lines);
+    } else if (num_output_lines < max_output_lines) {
+      LoadNextChunk(config, jsrc.get());
     }
   }
+  EXPECT_EQ(cinfo.input_iMCU_row, cinfo.total_iMCU_rows);
 
-  ASSERT_TRUE(jpeg_finish_decompress(&cinfo));
+  if (config.pre_consume_input) {
+    jpeg_finish_decompress(&cinfo);
+  } else {
+    while (!jpeg_finish_decompress(&cinfo)) {
+      LoadNextChunk(config, jsrc.get());
+    }
+  }
+  EXPECT_EQ(0, jsrc->UnprocessedBytes());
+  EXPECT_EQ(jsrc->TotalBytes(), compressed.size());
 
   jpeg_destroy_decompress(&cinfo);
 
@@ -196,7 +319,12 @@ std::vector<TestConfig> GenerateTests() {
             if (config.output_bit_depth == 16) {
               config.max_distance = 2.1;
             }
+            config.source_mgr = SOURCE_MGR_CHUNKED;
             all_tests.push_back(config);
+            if (config.chunk_size != 0) {
+              config.source_mgr = SOURCE_MGR_SUSPENDING;
+              all_tests.push_back(config);
+            }
           }
         }
       }
@@ -217,19 +345,27 @@ std::vector<TestConfig> GenerateTests() {
     for (const auto& it : testfiles) {
       for (size_t chunk_size : {0, 64}) {
         for (size_t max_output_lines : {0, 16}) {
-          TestConfig config;
-          config.fn = it.first;
-          config.fn_desc = it.second;
-          config.chunk_size = chunk_size;
-          config.output_bit_depth = 8;
-          config.max_output_lines = max_output_lines;
-          config.origfn = "jxl/flower/flower.pnm";
-          config.max_distance = 3.5;
-          if (config.fn_desc == "Q85Gray") {
-            config.origfn = "jxl/flower/flower.pgm";
-            config.max_distance = 1.5;
+          for (bool pre_consume : {false, true}) {
+            TestConfig config;
+            config.fn = it.first;
+            config.fn_desc = it.second;
+            config.chunk_size = chunk_size;
+            config.output_bit_depth = 8;
+            config.max_output_lines = max_output_lines;
+            config.origfn = "jxl/flower/flower.pnm";
+            config.max_distance = 3.5;
+            if (config.fn_desc == "Q85Gray") {
+              config.origfn = "jxl/flower/flower.pgm";
+              config.max_distance = 1.5;
+            }
+            config.source_mgr = SOURCE_MGR_CHUNKED;
+            config.pre_consume_input = pre_consume;
+            all_tests.push_back(config);
+            if (config.chunk_size != 0) {
+              config.source_mgr = SOURCE_MGR_SUSPENDING;
+              all_tests.push_back(config);
+            }
           }
-          all_tests.push_back(config);
         }
       }
     }
@@ -256,6 +392,7 @@ std::vector<TestConfig> GenerateTests() {
           config.max_output_lines = max_output_lines;
           config.origfn = "jxl/flower/flower_small.rgb.depth8.ppm";
           config.max_distance = 3.5;
+          config.source_mgr = SOURCE_MGR_CHUNKED;
           all_tests.push_back(config);
         }
       }
@@ -270,6 +407,12 @@ std::ostream& operator<<(std::ostream& os, const TestConfig& c) {
     os << "CompleteInput";
   } else {
     os << "InputChunks" << c.chunk_size;
+    if (c.source_mgr == SOURCE_MGR_SUSPENDING) {
+      os << "Suspending";
+    }
+  }
+  if (c.pre_consume_input) {
+    os << "PreConsume";
   }
   if (c.max_output_lines == 0) {
     os << "CompleteOutput";

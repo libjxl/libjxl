@@ -377,27 +377,27 @@ void RestoreMCUCodingState(j_decompress_ptr cinfo) {
 
 }  // namespace
 
-// Returns true if [data, data + len) contains a valid entropy coded scan, and
-// sets *pos to the offset of the end of the scan data.
-bool ProcessScan(j_decompress_ptr cinfo, const uint8_t* data, size_t len,
-                 size_t* pos) {
+int ProcessScan(j_decompress_ptr cinfo) {
+  const uint8_t* data = cinfo->src->next_input_byte;
+  size_t len = cinfo->src->bytes_in_buffer;
+  size_t pos = 0;
   jpeg_decomp_master* m = cinfo->master;
-  for (; m->scan_mcu_col_ < cinfo->MCUs_per_row; ++m->scan_mcu_col_) {
+  for (;;) {
     // Handle the restart intervals.
     if (cinfo->restart_interval > 0 && m->restarts_to_go_ == 0) {
       if (m->eobrun_ > 0) {
         JPEGLI_ERROR("End-of-block run too long.");
       }
       if (m->codestream_bits_ahead_ > 0) {
-        ++(*pos);
+        ++pos;
         AdvanceInput(cinfo, 1);
         m->codestream_bits_ahead_ = 0;
       }
-      if (*pos + 2 > len) {
-        return false;
+      if (pos + 2 > len) {
+        return JPEG_SUSPENDED;
       }
       int expected_marker = 0xd0 + m->next_restart_marker_;
-      int marker = data[*pos + 1];
+      int marker = data[pos + 1];
       if (marker != expected_marker) {
         JPEGLI_ERROR("Did not find expected restart marker %d actual %d",
                      expected_marker, marker);
@@ -407,11 +407,11 @@ bool ProcessScan(j_decompress_ptr cinfo, const uint8_t* data, size_t len,
       m->restarts_to_go_ = cinfo->restart_interval;
       memset(m->last_dc_coeff_, 0, sizeof(m->last_dc_coeff_));
       m->eobrun_ = -1;  // fresh start
-      *pos += 2;
+      pos += 2;
       AdvanceInput(cinfo, 2);
     }
 
-    size_t start_pos = *pos;
+    size_t start_pos = pos;
     BitReaderState br(data, len, start_pos);
     if (m->codestream_bits_ahead_ > 0) {
       br.ReadBits(m->codestream_bits_ahead_);
@@ -461,7 +461,7 @@ bool ProcessScan(j_decompress_ptr cinfo, const uint8_t* data, size_t len,
       // and thus the last prefix code length could have been wrong. We can do
       // this because a valid JPEG bit stream has two extra bytes at the end.
       RestoreMCUCodingState(cinfo);
-      return false;
+      return JPEG_SUSPENDED;
     }
     if (!scan_ok) {
       JPEGLI_ERROR("Failed to decode DCT block");
@@ -473,32 +473,35 @@ bool ProcessScan(j_decompress_ptr cinfo, const uint8_t* data, size_t len,
       JPEGLI_ERROR("Unexpected end of scan.");
     }
     m->codestream_bits_ahead_ = bit_pos;
-    *pos = stream_pos;
-    AdvanceInput(cinfo, *pos - start_pos);
+    pos = stream_pos;
+    AdvanceInput(cinfo, pos - start_pos);
     if (m->restarts_to_go_ > 0) {
       --m->restarts_to_go_;
     }
-  }
-  ++m->scan_mcu_row_;
-  m->scan_mcu_col_ = 0;
-  if (m->scan_mcu_row_ == cinfo->MCU_rows_in_scan) {
-    // Current scan is done, skip any remaining bits in the last byte.
-    if (m->codestream_bits_ahead_ > 0) {
-      ++(*pos);
-      AdvanceInput(cinfo, 1);
-      m->codestream_bits_ahead_ = 0;
+    ++m->scan_mcu_col_;
+    if (m->scan_mcu_col_ == cinfo->MCUs_per_row) {
+      ++m->scan_mcu_row_;
+      m->scan_mcu_col_ = 0;
+      if (m->scan_mcu_row_ == cinfo->MCU_rows_in_scan) {
+        // Current scan is done, skip any remaining bits in the last byte.
+        if (m->codestream_bits_ahead_ > 0) {
+          ++pos;
+          AdvanceInput(cinfo, 1);
+          m->codestream_bits_ahead_ = 0;
+        }
+        if (m->eobrun_ > 0) {
+          JPEGLI_ERROR("End-of-block run too long.");
+        }
+        break;
+      } else if ((m->scan_mcu_row_ % m->mcu_rows_per_iMCU_row_) == 0) {
+        // Current iMCU row is done.
+        break;
+      }
     }
-    if (m->eobrun_ > 0) {
-      JPEGLI_ERROR("End-of-block run too long.");
-    }
-    if (m->is_multiscan_) {
-      m->state_ = jpeg_decomp_master::State::kProcessMarkers;
-    }
   }
-  if (!m->is_multiscan_) {
-    m->state_ = jpeg_decomp_master::State::kRender;
-  }
-  return true;
+  ++cinfo->input_iMCU_row;
+  return (m->scan_mcu_row_ == cinfo->MCU_rows_in_scan ? JPEG_SCAN_COMPLETED
+                                                      : JPEG_ROW_COMPLETED);
 }
 
 }  // namespace jpegli

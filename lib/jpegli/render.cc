@@ -141,8 +141,6 @@ HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 
-typedef jpeg_decomp_master::State State;
-
 namespace jpegli {
 
 HWY_EXPORT(GatherBlockStats);
@@ -318,11 +316,8 @@ void ProcessOutput(j_decompress_ptr cinfo, size_t* num_output_rows,
         ++(*num_output_rows);
         ++m->MCU_buf_current_row_;
       }
-      if (cinfo->output_scanline == cinfo->output_height) {
-        m->state_ = m->is_multiscan_ ? State::kEnd : State::kProcessMarkers;
-        return;
-      }
-      if (*num_output_rows == max_output_rows) {
+      if (cinfo->output_scanline == cinfo->output_height ||
+          *num_output_rows == max_output_rows) {
         return;
       }
       m->MCU_buf_ready_rows_ = 0;
@@ -405,9 +400,6 @@ void ProcessOutput(j_decompress_ptr cinfo, size_t* num_output_rows,
   }
   ++cinfo->output_iMCU_row;
   m->output_ci_ = 0;
-  if (!m->is_multiscan_ && cinfo->output_iMCU_row < cinfo->total_iMCU_rows) {
-    m->state_ = State::kScan;
-  }
   JXL_DASSERT(cinfo->output_iMCU_row <= cinfo->total_iMCU_rows);
 }
 
