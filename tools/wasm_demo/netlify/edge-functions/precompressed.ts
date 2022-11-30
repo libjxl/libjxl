@@ -30,6 +30,7 @@ export default async (request: Request, context: Context) => {
       '; etag: ' + etag);
 
   // If browser does not support Brotli/Jxl - just process request normally.
+
   if (!supportsBr && !supportsJxl) {
     return;
   }
