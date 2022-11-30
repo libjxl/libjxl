@@ -29,6 +29,7 @@
 (() => {
   // Embedded (baked-in) responses for faster turn-around.
   const EMBEDDED = {
+    'client_worker.js': '$client_worker.js$',
     'jxl_decoder.js': '$jxl_decoder.js$',
     'jxl_decoder.worker.js': '$jxl_decoder.worker.js$',
   };
@@ -36,6 +37,25 @@
   const setCopHeaders = (headers) => {
     headers.set('Cross-Origin-Embedder-Policy', 'require-corp');
     headers.set('Cross-Origin-Opener-Policy', 'same-origin');
+  };
+
+  // Inflight object: {clientId, uid, timestamp, controller}
+  // TODO: cleanup, when client is gone / too old.
+  const inflight = [];
+
+  const makeUid = () => {
+    return Math.random().toString(36).substring(2) +
+        Math.random().toString(36).substring(2);
+  };
+
+  const gatherTransferrables = (...args) => {
+    const result = [];
+    for (let i = 0; i < args.length; ++i) {
+      if (args[i]) {
+        result.push(args[i].buffer);
+      }
+    }
+    return result;
   };
 
   const maybeProcessEmbeddedResources = (event) => {
@@ -58,22 +78,67 @@
     return false;
   };
 
-  const upgradeResponse = (response) => {
-    if (response.status === 0) {
-      return response;
+  const wrapImageResponse = async (clientId, originalResponse) => {
+    // TODO: cache?
+    const client = await clients.get(clientId);
+    // Client is gone? Not our problem then.
+    if (!client) {
+      return originalResponse;
     }
 
-    const newHeaders = new Headers(response.headers);
-    setCopHeaders(newHeaders);
+    const inputStream = await originalResponse.body;
+    // Can't use "BYOB" for regular responses.
+    const reader = inputStream.getReader();
 
-    return new Response(response.body, {
-      status: response.status,
-      statusText: response.statusText,
-      headers: newHeaders,
+    const inflightEntry = {
+      clientId: clientId,
+      uid: makeUid(),
+      timestamp: Date.now(),
+      inputStreamReader: reader,
+      outputStreamController: null
+    };
+    inflight.push(inflightEntry);
+
+    const outputStream = new ReadableStream({
+      start: (controller) => {
+        inflightEntry.outputStreamController = controller;
+      }
     });
+
+    const onRead = (chunk) => {
+      const msg = {
+        op: 'decodeJxl',
+        uid: inflightEntry.uid,
+        data: chunk.value || null
+      };
+      client.postMessage(msg, gatherTransferrables(msg.data));
+      if (!chunk.done) {
+        reader.read().then(onRead);
+      }
+    };
+    reader.read(new SharedArrayBuffer(65536)).then(onRead);
+
+    let modifiedResponseHeaders = new Headers(originalResponse.headers);
+    modifiedResponseHeaders.set('Content-Type', 'image/png');
+    return new Response(outputStream, {headers: modifiedResponseHeaders});
   };
 
-  const onFetch = (event) => {
+  const wrapImageRequest = async (clientId, request) => {
+    let modifiedRequestHeaders = new Headers(request.headers);
+    modifiedRequestHeaders.append('Accept', 'image/jxl');
+    let modifiedRequest =
+        new Request(request, {headers: modifiedRequestHeaders});
+    let originalResponse = await fetch(modifiedRequest);
+    let contentType = originalResponse.headers.get('Content-Type');
+
+    if (contentType === 'image/jxl') {
+      return wrapImageResponse(clientId, originalResponse);
+    }
+
+    return originalResponse;
+  };
+
+  const onFetch = async (event) => {
     // Pass direct cached resource requests.
     if (event.request.cache === 'only-if-cached' &&
         event.request.mode !== 'same-origin') {
@@ -85,35 +150,61 @@
       return;
     }
 
-    // Pass HTML page fetching.
-    if (event.request.destination !== 'document') {
+    // Notify server we are JXL-capable.
+    if (event.request.destination === 'image') {
+      let accept = event.request.headers.get('Accept');
+      // Only if browser does not support JXL.
+      if (accept.indexOf('image/jxl') === -1) {
+        event.respondWith(wrapImageRequest(event.clientId, event.request));
+      }
       return;
     }
+  };
 
-    // Upgrade all other request responses.
-    event.respondWith(fetch(event.request)
-                          .then(upgradeResponse)
-                          .catch((err) => console.error(err)));
+  const onMessage = (event) => {
+    const data = event.data;
+    const uid = data.uid;
+    let inflightEntry = null;
+    for (let i = 0; i < inflight.length; ++i) {
+      if (inflight[i].uid === uid) {
+        inflightEntry = inflight[i];
+        break;
+      }
+    }
+    if (!inflightEntry) {
+      console.log('Ooops, not found: ' + uid);
+      return;
+    }
+    inflightEntry.outputStreamController.enqueue(data.data);
+    inflightEntry.outputStreamController.close();
   };
 
   const serviceWorkerMain = () => {
     // ServiceWorker lifecycle.
-    self.addEventListener('install', () => self.skipWaiting());
+    self.addEventListener('install', () => {
+      return self.skipWaiting();
+    });
     self.addEventListener(
         'activate', (event) => event.waitUntil(self.clients.claim()));
-    self.addEventListener('message', (ev) => {
-      if (ev.data && ev.data.type === 'deregister') {
-        self.registration.unregister()
-            .then(() => {
-              return self.clients.matchAll();
-            })
-            .then(clients => {
-              clients.forEach((client) => client.navigate(client.url));
-            });
-      }
-    });
+    self.addEventListener('message', onMessage);
     // Intercept some requests.
     self.addEventListener('fetch', onFetch);
+  };
+
+  // Service workers does not support multi-threading; that is why decoding is
+  // relayed back to "client" (document / window).
+  const prepareClient = () => {
+    const clientWorker = new Worker('client_worker.js');
+    clientWorker.onmessage = (event) => {
+      navigator.serviceWorker.controller.postMessage(
+          event.data, gatherTransferrables(event.data.data));
+    };
+
+    // Forward ServiceWorker requests to "Client" worker.
+    navigator.serviceWorker.addEventListener('message', (event) => {
+      clientWorker.postMessage(
+          event.data, gatherTransferrables(event.data.data));
+    });
   };
 
   // Executed in HTML page environment.
@@ -124,39 +215,20 @@
     }
 
     const config = {
-      doReload: () => window.location.reload(),
       log: console.log,
       error: console.error,
       ...window.serviceWorkerConfig  // add overrides
     }
 
-    const n = navigator;
-    // In some environments this won't be available.
-    if (!n.serviceWorker) {
-      return;
-    }
-
     const onServiceWorkerRegistrationSuccess = (registration) => {
       config.log('Service Worker registered', registration.scope);
-
-      registration.addEventListener('updatefound', () => {
-        config.log('Reloading page to make use of updated Service Worker.');
-        config.doReload();
-      });
-
-      // If the registration is active, but it's not controlling the
-      // page
-      if (registration.active && !n.serviceWorker.controller) {
-        config.log('Reloading page to make use of Service Worker.');
-        config.doReload();
-      }
     };
 
     const onServiceWorkerRegistrationFailure = (err) => {
       config.error('Service Worker failed to register:', err);
     };
 
-    n.serviceWorker.register(window.document.currentScript.src)
+    navigator.serviceWorker.register(window.document.currentScript.src)
         .then(
             onServiceWorkerRegistrationSuccess,
             onServiceWorkerRegistrationFailure);
@@ -166,5 +238,6 @@
     serviceWorkerMain();
   } else {
     maybeRegisterServiceWorker();
+    prepareClient();
   }
 })();

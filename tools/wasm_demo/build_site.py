@@ -11,30 +11,43 @@ import sys
 from pathlib import Path
 
 EMBED_BIN = ['jxl_decoder.js', 'jxl_decoder.worker.js']
+EMBED_SRC = ['client_worker.js']
 TEMPLATES = ['serviceworker.js']
-COPY_BIN = ['jxl_decoder.wasm']
-COPY_SRC = ['index.html']
+COPY_BIN = ['jxl_decoder.wasm'] + EMBED_BIN
+COPY_SRC = ['index.html', 'netlify.toml', 'netlify'] + EMBED_SRC
 
 COMPRESS = COPY_BIN + COPY_SRC + TEMPLATES
+COMPRESSIBLE_EXT = ['.html', '.js', '.wasm']
+
+BROTLIFY = True
+ZOPFLIFY = False
 
 def escape_js(js):
   return js.replace('\\', '\\\\').replace('\'', '\\\'')
 
 def compress(path):
-  print(f'Compressing {path.name}')
+  name = path.name
+  compressible = any([name.endswith(ext) for ext in COMPRESSIBLE_EXT])
+  if not compressible:
+    print(f'Not compressing {name}')
+    return
+  print(f'Compressing {name}')
   orig_size = path.stat().st_size
-  cmd_brotli = ['brotli', '-Zfk', path.absolute()]
-  subprocess.run(cmd_brotli, check=True, stdout=sys.stdout, stderr=sys.stderr)
-  br_size = path.parent.joinpath(path.name + '.br').stat().st_size
-  print(f'  Brotli: {orig_size} -> {br_size}')
-  cmd_zopfli = ['zopfli', path.absolute()]
-  subprocess.run(cmd_zopfli, check=True, stdout=sys.stdout, stderr=sys.stderr)
-  gz_size = path.parent.joinpath(path.name + '.gz').stat().st_size
-  print(f'  Zopfli: {orig_size} -> {gz_size}')
+  if BROTLIFY:
+    cmd_brotli = ['brotli', '-Zfk', path.absolute()]
+    subprocess.run(cmd_brotli, check=True, stdout=sys.stdout, stderr=sys.stderr)
+    br_size = path.parent.joinpath(name + '.br').stat().st_size
+    print(f'  Brotli: {orig_size} -> {br_size}')
+  if ZOPFLIFY:
+    cmd_zopfli = ['zopfli', path.absolute()]
+    subprocess.run(cmd_zopfli, check=True, stdout=sys.stdout, stderr=sys.stderr)
+    gz_size = path.parent.joinpath(name + '.gz').stat().st_size
+    print(f'  Zopfli: {orig_size} -> {gz_size}')
 
 def uglify(text, name):
   cmd = ['uglifyjs', '-m', '-c']
-  ugly_result = subprocess.run(cmd, capture_output=True, check=True, input=text, text=True)
+  ugly_result = subprocess.run(
+      cmd, capture_output=True, check=True, input=text, text=True)
   ugly_text = ugly_result.stdout.strip()
   print(f'Uglify {name}: {len(text)} -> {len(ugly_text)}')
   return ugly_text
@@ -55,18 +68,30 @@ if __name__ == "__main__":
     value = escape_js(uglify(path.read_text().strip(), name))
     substitutes[key] = value
 
+  for name in EMBED_SRC:
+    key = '$' + name + '$'
+    path = source_path.joinpath(name)
+    value = escape_js(uglify(path.read_text().strip(), name))
+    substitutes[key] = value
+
   for name in TEMPLATES:
     print(f'Processing template {name}')
     path = source_path.joinpath(name)
     text = path.read_text().strip()
     for key, value in substitutes.items():
       text = text.replace(key, value)
-    text = uglify(text, name)
+    # text = uglify(text, name)
     output_path.joinpath(name).write_text(text)
 
   for name in COPY_SRC:
-    shutil.copy(source_path.joinpath(name), output_path.absolute())
+    path = source_path.joinpath(name)
+    if path.is_dir():
+      shutil.copytree(path, output_path.joinpath(
+          name).absolute(), dirs_exist_ok=True)
+    else:
+      shutil.copy(path, output_path.absolute())
 
+  # TODO: uglify
   for name in COPY_BIN:
     shutil.copy(binary_path.joinpath(name), output_path.absolute())
 

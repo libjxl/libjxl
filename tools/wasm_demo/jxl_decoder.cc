@@ -36,6 +36,11 @@ struct DecoderInstancePrivate {
 
 DecoderInstance* jxlCreateInstance(bool want_sdr, uint32_t display_nits) {
   DecoderInstancePrivate* self = new DecoderInstancePrivate();
+
+  if (!self) {
+    return nullptr;
+  }
+
   self->want_sdr = want_sdr;
   self->display_nits = display_nits;
   JxlDataType storageFormat = want_sdr ? JXL_TYPE_UINT8 : JXL_TYPE_UINT16;
@@ -46,8 +51,8 @@ DecoderInstance* jxlCreateInstance(bool want_sdr, uint32_t display_nits) {
 
   auto report_error = [&](uint32_t code, const char* text) {
     fprintf(stderr, "%s\n", text);
-    // self->result = code;
-    return &self->info;
+    delete self;
+    return reinterpret_cast<DecoderInstance*>(code);
   };
 
   self->thread_pool = JxlThreadParallelRunnerMake(nullptr, 4);
@@ -93,7 +98,6 @@ uint32_t jxlProcessInput(DecoderInstance* instance, const uint8_t* input,
 
   auto report_error = [&](int code, const char* text) {
     fprintf(stderr, "%s\n", text);
-    // self->result = code;
     return static_cast<uint32_t>(code);
   };
 

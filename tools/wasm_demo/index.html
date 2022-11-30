@@ -60,7 +60,7 @@ let probeHdr = () => {
 let onDomContentLoaded = () => {
   if (!probeMutlithreading()) return;
   hdrCanvas = probeHdr();
-  JxlCodecModule().then(onLoadJxlModule);
+  //JxlDecoderModule().then(onLoadJxlModule);
 };
 
 let processInput = (img, chunkLen) => {
@@ -126,6 +126,7 @@ let processChunk = (img, chunkLen) => {
     img.canvas = document.createElement('canvas');
     img.canvas.width = w;
     img.canvas.height = h;
+    img.canvas.style = 'width:100%';
     // TODO: postpone until really flushed
     document.body.appendChild(img.canvas);
     let ctxOptions = {colorSpace: img.colorSpace, pixelFormat: 'float16'};
@@ -315,6 +316,9 @@ let onJxlModuleReady = () => {
 
 document.addEventListener('DOMContentLoaded', onDomContentLoaded);
 </script>
-<script type="text/javascript" src="jxl_decoder.js"></script>
+
+<img src="cat.jpg" style="width:100%"/>
+
+<!--script type="text/javascript" src="jxl_decoder.js"></script-->
 </body>
 </html>

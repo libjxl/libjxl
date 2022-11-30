@@ -18,6 +18,10 @@ function runTest(testFn) {
 
 let jxlModule;
 
+const isAddress = (v) => {
+  return (v >= 4) && ((v & (1 << 31)) === 0);
+};
+
 let splinesJxl = new Uint8Array([
   0xff, 0x0a, 0xf8, 0x19, 0x10, 0x09, 0xd8, 0x63, 0x10, 0x00, 0xbc, 0x00,
   0xa6, 0x19, 0x4a, 0xa3, 0x56, 0x8c, 0x94, 0x62, 0x24, 0x7d, 0x12, 0x72,
@@ -26,10 +30,18 @@ let splinesJxl = new Uint8Array([
   0x62, 0xc8, 0x97, 0x31, 0xc4, 0x3e, 0x58, 0x02, 0xc1, 0x01, 0x00
 ]);
 
+let crossJxl = new Uint8Array([
+  0xff, 0x0a, 0x98, 0x10, 0x10, 0x50, 0x5c, 0x08, 0x08, 0x02, 0x01,
+  0x00, 0x98, 0x00, 0x4b, 0x18, 0x8b, 0x15, 0x00, 0xd4, 0x92, 0x62,
+  0xcc, 0x98, 0x91, 0x17, 0x08, 0x01, 0xe0, 0x92, 0xbc, 0x7e, 0xdf,
+  0xbf, 0xff, 0x50, 0xc0, 0x64, 0x35, 0xb0, 0x40, 0x1e, 0x24, 0xa9,
+  0xac, 0x38, 0xd9, 0x13, 0x1e, 0x85, 0x4a, 0x0d
+]);
+
 function testSdr() {
   let decoder = jxlModule._jxlCreateInstance(
       /* wantSdr */ true, /* displayNits */ 100);
-  assertTrue(decoder >= 4, 'create decoder instance');
+  assertTrue(isAddress(decoder), 'create decoder instance');
   let encoded = splinesJxl;
   let buffer = jxlModule._malloc(encoded.length);
   jxlModule.HEAP8.set(encoded, buffer);
@@ -52,7 +64,7 @@ function testSdr() {
 function testRegular() {
   let decoder = jxlModule._jxlCreateInstance(
       /* wantSdr */ false, /* displayNits */ 100);
-  assertTrue(decoder >= 4, 'create decoder instance');
+  assertTrue(isAddress(decoder), 'create decoder instance');
   let encoded = splinesJxl;
   let buffer = jxlModule._malloc(encoded.length);
   jxlModule.HEAP8.set(encoded, buffer);
@@ -75,7 +87,7 @@ function testRegular() {
 function testChunks() {
   let decoder = jxlModule._jxlCreateInstance(
       /* wantSdr */ false, /* displayNits */ 100);
-  assertTrue(decoder >= 4, 'create decoder instance');
+  assertTrue(isAddress(decoder), 'create decoder instance');
   let encoded = splinesJxl;
   let buffer = jxlModule._malloc(encoded.length);
   jxlModule.HEAP8.set(encoded, buffer);
@@ -102,9 +114,26 @@ function testChunks() {
   jxlModule._free(buffer);
 }
 
+function testDecompress() {
+  let encoded = crossJxl;
+  let buffer = jxlModule._malloc(encoded.length);
+  jxlModule.HEAP8.set(encoded, buffer);
+
+  let output = jxlModule._jxlDecompress(buffer, encoded.length);
+  assertTrue(isAddress(output), 'decompress');
+
+  jxlModule._free(buffer);
+
+  let pngSize = jxlModule.HEAP32[output >> 2];
+  assertTrue(pngSize >= 400, 'png size');
+  assertTrue(pngSize <= 600, 'png size');
+
+  jxlModule._jxlCleanup(output);
+}
+
 require('jxl_decoder_for_test.js')().then(module => {
   jxlModule = module;
-  let tests = [testSdr, testRegular, testChunks];
+  let tests = [testSdr, testRegular, testChunks, testDecompress];
   tests.forEach(runTest);
   process.exit(0);
 });
