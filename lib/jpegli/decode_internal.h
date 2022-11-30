@@ -73,15 +73,6 @@ constexpr uint32_t kJPEGNaturalOrder[80] = {
 // Use this forward-declared libjpeg struct to hold all our private variables.
 // TODO(szabadka) Remove variables that have a corresponding version in cinfo.
 struct jpeg_decomp_master {
-  enum class State {
-    kStart,
-    kProcessMarkers,
-    kScan,
-    kRender,
-    kEnd,
-  };
-  State state_ = State::kStart;
-
   //
   // Input handling state.
   //
@@ -119,6 +110,7 @@ struct jpeg_decomp_master {
   //
   size_t scan_mcu_row_;
   size_t scan_mcu_col_;
+  size_t mcu_rows_per_iMCU_row_;
   jpegli::coeff_t last_dc_coeff_[jpegli::kMaxComponents];
   int eobrun_;
   int restarts_to_go_;

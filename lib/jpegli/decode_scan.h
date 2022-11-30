@@ -14,10 +14,16 @@
 
 namespace jpegli {
 
-// Returns true if [data, data + len) contains a valid entropy coded scan, and
-// sets *pos to the offset of the end of the scan data.
-bool ProcessScan(j_decompress_ptr cinfo, const uint8_t* data, size_t len,
-                 size_t* pos);
+// Reads the available input in the source manager's input buffer until the end
+// of the next iMCU row.
+// The corresponding fields of cinfo are updated with the processed input data.
+// Upon return, the input buffer will be at the start of an MCU, or at the end
+// of the scan.
+// Return value is one of:
+//   * JPEG_SUSPENDED, if the input buffer ends before the end of an iMCU row;
+//   * JPEG_ROW_COMPLETED, if the next iMCU row (but not the scan) is reached;
+//   * JPEG_SCAN_COMPLETED, if the end of the scan is reached.
+int ProcessScan(j_decompress_ptr cinfo);
 
 }  // namespace jpegli
 
