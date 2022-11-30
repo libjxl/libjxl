@@ -3,38 +3,56 @@ if (NOT JPEGXL_ENABLE_TOOLS OR NOT JPEGXL_EMSCRIPTEN)
 endif()
 
 # WASM API facade.
-add_executable(jxl_decoder jxl_decoder.cc)
-add_executable(jxl_decoder_for_test jxl_decoder.cc)
+add_executable(jxl_decoder jxl_decoder.cc jxl_decompressor.cc)
+add_executable(jxl_decoder_for_test jxl_decoder.cc jxl_decompressor.cc)
 target_link_libraries(jxl_decoder jxl_extras-static)
 target_link_libraries(jxl_decoder_for_test jxl_extras-static)
 
-set(JXL_DECODER_SYMBOLS
-  _malloc
+set(JXL_C_SYMBOLS
   _free
+  _malloc
+)
+
+set(JXL_DECODER_SYMBOLS
   _jxlCreateInstance
   _jxlDestroyInstance
   _jxlFlush
   _jxlProcessInput
 )
-list(JOIN JXL_DECODER_SYMBOLS ", " JXL_DECODER_EXPORTS)
+
+set(JXL_DECOMPRESSOR_SYMBOLS
+  _jxlDecompress
+  _jxlCleanup
+)
+
+set(JXL_MODULE_SYMBOLS ${JXL_C_SYMBOLS} ${JXL_DECODER_SYMBOLS} ${JXL_DECOMPRESSOR_SYMBOLS})
+
+list(JOIN JXL_MODULE_SYMBOLS ", " JXL_MODULE_EXPORTS)
+
+set(JXL_WASM_SITE_LINK_FLAGS " -O3 -s FILESYSTEM=0 --closure 1 ")
+set(JXL_WASM_TEST_LINK_FLAGS " -O1 -s NODERAWFS=1 ")
 
 # TODO(eustas): How to set INITIAL_MEMORY on module startup?
-set(JXL_DECODER_BASE_LINK_FLAGS "\
-  -s USE_LIBPNG=1 \
+set(JXL_WASM_BASE_LINK_FLAGS "\
   -s INITIAL_MEMORY=75mb \
   -s DISABLE_EXCEPTION_CATCHING=1 \
   -s MODULARIZE=1 \
   -s USE_PTHREADS=1 \
   -s PTHREAD_POOL_SIZE=4 \
-  -s EXPORT_NAME=\"JxlCodecModule\" \
-  -s \"EXPORTED_FUNCTIONS=[${JXL_DECODER_EXPORTS}]\" \
+")
+
+# libpng is used only by "decompressor"
+set(JXL_DECODER_LINK_FLAGS "${JXL_WASM_BASE_LINK_FLAGS} \
+  -s EXPORT_NAME=\"JxlDecoderModule\" \
+  -s USE_LIBPNG=1 \
+  -s \"EXPORTED_FUNCTIONS=[${JXL_MODULE_EXPORTS}]\" \
 ")
 
 set_target_properties(jxl_decoder PROPERTIES LINK_FLAGS
-  ${JXL_DECODER_BASE_LINK_FLAGS} + " -O3 -s FILESYSTEM=0 --closure 1 ")
+  "${JXL_DECODER_LINK_FLAGS} ${JXL_WASM_SITE_LINK_FLAGS}")
 
 set_target_properties(jxl_decoder_for_test PROPERTIES LINK_FLAGS
-  ${JXL_DECODER_BASE_LINK_FLAGS} + " -O1 -s NODERAWFS=1 ")
+  "${JXL_DECODER_LINK_FLAGS} ${JXL_WASM_TEST_LINK_FLAGS}")
 
 if (BUILD_TESTING)
   add_test(
