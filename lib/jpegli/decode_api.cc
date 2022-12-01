@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <jpeglib.h>
+#include <string.h>
 /* clang-format on */
 
 #include <vector>
@@ -193,6 +194,31 @@ int jpeg_read_header(j_decompress_ptr cinfo, boolean require_image) {
     }
   };
   return JPEG_HEADER_OK;
+}
+
+boolean jpeg_read_icc_profile(j_decompress_ptr cinfo, JOCTET** icc_data_ptr,
+                              unsigned int* icc_data_len) {
+  if (cinfo->global_state == jpegli::kStart ||
+      cinfo->global_state == jpegli::kInHeader) {
+    JPEGLI_ERROR("jpeg_read_icc_profile: unexpected state %d",
+                 cinfo->global_state);
+  }
+  if (icc_data_ptr == nullptr || icc_data_len == nullptr) {
+    JPEGLI_ERROR("jpeg_read_icc_profile: invalid output buffer");
+  }
+  jpeg_decomp_master* m = cinfo->master;
+  if (m->icc_profile_.empty()) {
+    *icc_data_ptr = nullptr;
+    *icc_data_len = 0;
+    return FALSE;
+  }
+  *icc_data_len = m->icc_profile_.size();
+  *icc_data_ptr = (JOCTET*)malloc(*icc_data_len);
+  if (*icc_data_ptr == nullptr) {
+    JPEGLI_ERROR("jpeg_read_icc_profile: Out of memory");
+  }
+  memcpy(*icc_data_ptr, m->icc_profile_.data(), *icc_data_len);
+  return TRUE;
 }
 
 void jpeg_calc_output_dimensions(j_decompress_ptr cinfo) {
