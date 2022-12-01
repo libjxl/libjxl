@@ -95,7 +95,6 @@ jxl::CodecInOut ConvertTestImage(const std::vector<uint8_t>& buf,
   EXPECT_TRUE(
       ConvertFromExternal(jxl::Span<const uint8_t>(buf.data(), buf.size()),
                           xsize, ysize, color_encoding,
-                          /*alpha_is_premultiplied=*/false,
                           /*bits_per_sample=*/bitdepth, pixel_format,
                           /*pool=*/nullptr, &io.Main()));
   return io;

@@ -33,18 +33,17 @@ namespace jxl {
 // Amount of input bytes per pixel must be:
 // (is_gray ? 1 : 3) + (has_alpha ? 1 : 0)
 Status FromSRGB(const size_t xsize, const size_t ysize, const bool is_gray,
-                const bool has_alpha, const bool alpha_is_premultiplied,
-                const bool is_16bit, const JxlEndianness endianness,
-                const uint8_t* pixels, const uint8_t* end, ThreadPool* pool,
-                ImageBundle* ib) {
+                const bool has_alpha, const bool is_16bit,
+                const JxlEndianness endianness, const uint8_t* pixels,
+                const uint8_t* end, ThreadPool* pool, ImageBundle* ib) {
   const ColorEncoding& c = ColorEncoding::SRGB(is_gray);
   const size_t bits_per_sample = (is_16bit ? 2 : 1) * kBitsPerByte;
   const uint32_t num_channels = (is_gray ? 1 : 3) + (has_alpha ? 1 : 0);
   JxlDataType data_type = is_16bit ? JXL_TYPE_UINT16 : JXL_TYPE_UINT8;
   JxlPixelFormat format = {num_channels, data_type, endianness, 0};
   const Span<const uint8_t> span(pixels, end - pixels);
-  return ConvertFromExternal(span, xsize, ysize, c, alpha_is_premultiplied,
-                             bits_per_sample, format, pool, ib);
+  return ConvertFromExternal(span, xsize, ysize, c, bits_per_sample, format,
+                             pool, ib);
 }
 
 struct WebPArgs {
@@ -202,10 +201,9 @@ class WebPCodec : public ImageCodec {
       return JXL_FAILURE("Color profile is-gray mismatch");
     }
     io->metadata.m.SetAlphaBits(8);
-    const Status ok =
-        FromSRGB(buf->width, buf->height, is_gray, has_alpha,
-                 /*alpha_is_premultiplied=*/false, /*is_16bit=*/false,
-                 JXL_LITTLE_ENDIAN, data_begin, data_end, pool, &io->Main());
+    const Status ok = FromSRGB(buf->width, buf->height, is_gray, has_alpha,
+                               /*is_16bit=*/false, JXL_LITTLE_ENDIAN,
+                               data_begin, data_end, pool, &io->Main());
     WebPFreeDecBuffer(buf);
     JXL_RETURN_IF_ERROR(ok);
     io->dec_pixels = buf->width * buf->height;
