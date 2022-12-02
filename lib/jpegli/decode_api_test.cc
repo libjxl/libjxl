@@ -130,10 +130,11 @@ struct TestConfig {
   std::string origfn;
   size_t chunk_size;
   size_t max_output_lines;
-  size_t output_bit_depth;
   float max_distance;
-  SourceManagerType source_mgr;
+  size_t output_bit_depth = 8;
+  SourceManagerType source_mgr = SOURCE_MGR_CHUNKED;
   bool pre_consume_input = false;
+  bool buffered_image_mode = false;
 };
 
 bool LoadNextChunk(const TestConfig& config, j_decompress_ptr cinfo) {
@@ -215,8 +216,14 @@ TEST_P(DecodeAPITestParam, TestAPI) {
   cinfo.quantize_colors = FALSE;
   cinfo.desired_number_of_colors = 1 << config.output_bit_depth;
 
+  if (jpeg_has_multiple_scans(&cinfo) && config.buffered_image_mode) {
+    cinfo.buffered_image = TRUE;
+  }
+
   if (config.pre_consume_input) {
     jpeg_start_decompress(&cinfo);
+  } else if (cinfo.buffered_image) {
+    EXPECT_TRUE(jpeg_start_decompress(&cinfo));
   } else {
     while (!jpeg_start_decompress(&cinfo)) {
       ASSERT_TRUE(LoadNextChunk(config, &cinfo));
@@ -226,6 +233,11 @@ TEST_P(DecodeAPITestParam, TestAPI) {
   EXPECT_EQ(xsize, cinfo.output_width);
   EXPECT_EQ(ysize, cinfo.output_height);
   EXPECT_EQ(num_channels, cinfo.out_color_components);
+
+  size_t bytes_per_sample = config.output_bit_depth <= 8 ? 1 : 2;
+  size_t stride = cinfo.output_width * cinfo.num_components * bytes_per_sample;
+  size_t max_output_lines = config.max_output_lines;
+  if (max_output_lines == 0) max_output_lines = cinfo.output_height;
 
   if (config.pre_consume_input) {
     for (;;) {
@@ -238,39 +250,77 @@ TEST_P(DecodeAPITestParam, TestAPI) {
     }
   }
 
-  size_t bytes_per_sample = config.output_bit_depth <= 8 ? 1 : 2;
-  size_t stride = cinfo.output_width * cinfo.num_components * bytes_per_sample;
-  std::vector<uint8_t> output(cinfo.output_height * stride);
-  size_t max_output_lines = config.max_output_lines;
-  if (max_output_lines == 0) max_output_lines = cinfo.output_height;
-  size_t total_output_lines = 0;
-  for (;;) {
-    std::vector<JSAMPROW> scanlines(max_output_lines);
-    for (size_t i = 0; i < max_output_lines; ++i) {
-      scanlines[i] = &output[(cinfo.output_scanline + i) * stride];
+  while (!jpeg_input_complete(&cinfo)) {
+    if (cinfo.buffered_image) {
+      EXPECT_TRUE(jpeg_start_output(&cinfo, cinfo.input_scan_number));
     }
-    size_t num_output_lines =
-        jpeg_read_scanlines(&cinfo, &scanlines[0], max_output_lines);
-    total_output_lines += num_output_lines;
-    EXPECT_EQ(total_output_lines, cinfo.output_scanline);
-    if (cinfo.output_scanline >= cinfo.output_height) {
+
+    std::vector<uint8_t> output(cinfo.output_height * stride);
+    size_t total_output_lines = 0;
+    for (;;) {
+      std::vector<JSAMPROW> scanlines(max_output_lines);
+      for (size_t i = 0; i < max_output_lines; ++i) {
+        scanlines[i] = &output[(cinfo.output_scanline + i) * stride];
+      }
+      size_t num_output_lines =
+          jpeg_read_scanlines(&cinfo, &scanlines[0], max_output_lines);
+      total_output_lines += num_output_lines;
+      EXPECT_EQ(total_output_lines, cinfo.output_scanline);
+      if (cinfo.output_scanline >= cinfo.output_height) {
+        break;
+      }
+      if (config.pre_consume_input) {
+        EXPECT_EQ(num_output_lines, max_output_lines);
+      } else if (num_output_lines < max_output_lines) {
+        ASSERT_TRUE(LoadNextChunk(config, &cinfo));
+      }
+    }
+    EXPECT_EQ(cinfo.input_iMCU_row, cinfo.total_iMCU_rows);
+
+    ASSERT_EQ(output.size(), orig.size() * bytes_per_sample);
+    const double mul_orig = 1.0 / 255.0;
+    const double mul_output = 1.0 / ((1u << config.output_bit_depth) - 1);
+    double diff2 = 0.0;
+    for (size_t i = 0; i < orig.size(); ++i) {
+      double sample_orig = orig[i] * mul_orig;
+      double sample_output;
+      if (bytes_per_sample == 1) {
+        sample_output = output[i];
+      } else {
+        sample_output = output[2 * i] + (output[2 * i + 1] << 8);
+      }
+      sample_output *= mul_output;
+      double diff = sample_orig - sample_output;
+      diff2 += diff * diff;
+    }
+    double rms = std::sqrt(diff2 / orig.size()) / mul_orig;
+    double max_dist = config.max_distance;
+    if (!cinfo.buffered_image || jpeg_input_complete(&cinfo)) {
+      // TODO(szabadka) Have expectations for the progression steps as well.
+      EXPECT_LE(rms, max_dist);
+    }
+
+    if (cinfo.buffered_image) {
+      if (config.pre_consume_input) {
+        EXPECT_TRUE(jpeg_finish_output(&cinfo));
+      } else {
+        while (!jpeg_finish_output(&cinfo)) {
+          ASSERT_TRUE(LoadNextChunk(config, &cinfo));
+        }
+      }
+    } else {
       break;
     }
-    if (config.pre_consume_input) {
-      EXPECT_EQ(num_output_lines, max_output_lines);
-    } else if (num_output_lines < max_output_lines) {
-      ASSERT_TRUE(LoadNextChunk(config, &cinfo));
-    }
   }
-  EXPECT_EQ(cinfo.input_iMCU_row, cinfo.total_iMCU_rows);
 
-  if (config.pre_consume_input) {
-    jpeg_finish_decompress(&cinfo);
+  if (config.pre_consume_input || cinfo.buffered_image) {
+    EXPECT_TRUE(jpeg_finish_decompress(&cinfo));
   } else {
     while (!jpeg_finish_decompress(&cinfo)) {
       ASSERT_TRUE(LoadNextChunk(config, &cinfo));
     }
   }
+  EXPECT_TRUE(jpeg_input_complete(&cinfo));
   if (config.source_mgr == SOURCE_MGR_CHUNKED) {
     EXPECT_EQ(0, src_chunked.UnprocessedBytes());
     EXPECT_EQ(src_chunked.TotalBytes(), compressed.size());
@@ -280,26 +330,6 @@ TEST_P(DecodeAPITestParam, TestAPI) {
   }
 
   jpeg_destroy_decompress(&cinfo);
-
-  ASSERT_EQ(output.size(), orig.size() * bytes_per_sample);
-  const double mul_orig = 1.0 / 255.0;
-  const double mul_output = 1.0 / ((1u << config.output_bit_depth) - 1);
-  double diff2 = 0.0;
-  for (size_t i = 0; i < orig.size(); ++i) {
-    double sample_orig = orig[i] * mul_orig;
-    double sample_output;
-    if (bytes_per_sample == 1) {
-      sample_output = output[i];
-    } else {
-      sample_output = output[2 * i] + (output[2 * i + 1] << 8);
-    }
-    sample_output *= mul_output;
-    double diff = sample_orig - sample_output;
-    diff2 += diff * diff;
-  }
-  double rms = std::sqrt(diff2 / orig.size());
-
-  EXPECT_LE(rms / mul_orig, config.max_distance);
 }
 
 std::vector<TestConfig> GenerateTests() {
@@ -308,7 +338,6 @@ std::vector<TestConfig> GenerateTests() {
     std::vector<std::pair<std::string, std::string>> testfiles({
         {"jxl/flower/flower.png.im_q85_444.jpg", "Q85YUV444"},
         {"jxl/flower/flower.png.im_q85_420.jpg", "Q85YUV420"},
-        {"jxl/flower/flower.png.im_q85_420_progr.jpg", "Q85YUV420PROGR"},
         {"jxl/flower/flower.png.im_q85_420_R13B.jpg", "Q85YUV420R13B"},
     });
     for (const auto& it : testfiles) {
@@ -326,7 +355,6 @@ std::vector<TestConfig> GenerateTests() {
             if (config.output_bit_depth == 16) {
               config.max_distance = 2.1;
             }
-            config.source_mgr = SOURCE_MGR_CHUNKED;
             all_tests.push_back(config);
             if (config.chunk_size != 0) {
               config.source_mgr = SOURCE_MGR_SUSPENDING;
@@ -337,6 +365,32 @@ std::vector<TestConfig> GenerateTests() {
       }
     }
   }
+
+  {
+    for (size_t chunk_size : {0, 65536}) {
+      for (size_t max_output_lines : {0, 16}) {
+        for (bool pre_consume : {false, true}) {
+          for (bool buffered : {false, true}) {
+            TestConfig config;
+            config.origfn = "jxl/flower/flower.pnm";
+            config.fn = "jxl/flower/flower.png.im_q85_420_progr.jpg";
+            config.fn_desc = "Q85YUV420PROGR";
+            config.max_distance = 3.5;
+            config.chunk_size = chunk_size;
+            config.max_output_lines = max_output_lines;
+            config.pre_consume_input = pre_consume;
+            config.buffered_image_mode = buffered;
+            all_tests.push_back(config);
+            if (config.chunk_size != 0) {
+              config.source_mgr = SOURCE_MGR_SUSPENDING;
+              all_tests.push_back(config);
+            }
+          }
+        }
+      }
+    }
+  }
+
   {
     std::vector<std::pair<std::string, std::string>> testfiles({
         {"jxl/flower/flower.png.im_q85_422.jpg", "Q85YUV422"},
@@ -357,7 +411,6 @@ std::vector<TestConfig> GenerateTests() {
             config.fn = it.first;
             config.fn_desc = it.second;
             config.chunk_size = chunk_size;
-            config.output_bit_depth = 8;
             config.max_output_lines = max_output_lines;
             config.origfn = "jxl/flower/flower.pnm";
             config.max_distance = 3.5;
@@ -365,7 +418,6 @@ std::vector<TestConfig> GenerateTests() {
               config.origfn = "jxl/flower/flower.pgm";
               config.max_distance = 1.5;
             }
-            config.source_mgr = SOURCE_MGR_CHUNKED;
             config.pre_consume_input = pre_consume;
             all_tests.push_back(config);
             if (config.chunk_size != 0) {
@@ -395,11 +447,9 @@ std::vector<TestConfig> GenerateTests() {
           config.fn = it.first;
           config.fn_desc = it.second;
           config.chunk_size = chunk_size;
-          config.output_bit_depth = 8;
           config.max_output_lines = max_output_lines;
           config.origfn = "jxl/flower/flower_small.rgb.depth8.ppm";
           config.max_distance = 3.5;
-          config.source_mgr = SOURCE_MGR_CHUNKED;
           all_tests.push_back(config);
         }
       }
@@ -425,6 +475,9 @@ std::ostream& operator<<(std::ostream& os, const TestConfig& c) {
     os << "CompleteOutput";
   } else {
     os << "OutputLines" << c.max_output_lines;
+  }
+  if (c.buffered_image_mode) {
+    os << "Buffered";
   }
   os << "BitDepth" << c.output_bit_depth;
   return os;
