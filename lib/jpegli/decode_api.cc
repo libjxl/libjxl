@@ -85,6 +85,26 @@ int ConsumeInput(j_decompress_ptr cinfo) {
   return status;
 }
 
+bool IsInputReady(j_decompress_ptr cinfo) {
+  if (cinfo->master->found_eoi_) {
+    return true;
+  }
+  if (cinfo->input_scan_number > cinfo->output_scan_number) {
+    return true;
+  }
+  if (cinfo->input_scan_number < cinfo->output_scan_number) {
+    return false;
+  }
+  if (cinfo->input_iMCU_row > cinfo->output_iMCU_row) {
+    return true;
+  }
+  if (cinfo->input_iMCU_row == cinfo->output_iMCU_row &&
+      cinfo->output_iMCU_row == cinfo->total_iMCU_rows) {
+    return true;
+  }
+  return false;
+}
+
 }  // namespace jpegli
 
 void jpeg_CreateDecompress(j_decompress_ptr cinfo, int version,
@@ -101,6 +121,7 @@ void jpeg_CreateDecompress(j_decompress_ptr cinfo, int version,
   cinfo->desired_number_of_colors = 0;
   cinfo->master->output_bit_depth_ = 8;
   cinfo->global_state = jpegli::kStart;
+  cinfo->buffered_image = FALSE;
 }
 
 void jpeg_destroy_decompress(j_decompress_ptr cinfo) {
@@ -187,10 +208,18 @@ boolean jpeg_has_multiple_scans(j_decompress_ptr cinfo) {
   return cinfo->master->is_multiscan_;
 }
 
+boolean jpeg_input_complete(j_decompress_ptr cinfo) {
+  return cinfo->master->found_eoi_;
+}
+
 boolean jpeg_start_decompress(j_decompress_ptr cinfo) {
   if (cinfo->global_state == jpegli::kHeaderDone) {
     jpeg_calc_output_dimensions(cinfo);
     cinfo->global_state = jpegli::kProcessScan;
+    if (cinfo->buffered_image == TRUE) {
+      cinfo->output_scan_number = 0;
+      return TRUE;
+    }
   } else if (!cinfo->master->is_multiscan_) {
     JPEGLI_ERROR("jpeg_start_decompress: unexpected state %d",
                  cinfo->global_state);
@@ -208,7 +237,44 @@ boolean jpeg_start_decompress(j_decompress_ptr cinfo) {
       }
     }
   }
+  cinfo->output_scan_number = cinfo->input_scan_number;
   jpegli::PrepareForOutput(cinfo);
+  return TRUE;
+}
+
+boolean jpeg_start_output(j_decompress_ptr cinfo, int scan_number) {
+  if (!cinfo->buffered_image) {
+    JPEGLI_ERROR("jpeg_start_output: buffered image mode was not set");
+  }
+  if (cinfo->global_state != jpegli::kProcessScan) {
+    JPEGLI_ERROR("jpeg_start_output: unexpected state %d", cinfo->global_state);
+  }
+  cinfo->output_scan_number = std::max(1, scan_number);
+  if (cinfo->master->found_eoi_) {
+    cinfo->output_scan_number =
+        std::min(cinfo->output_scan_number, cinfo->input_scan_number);
+  }
+  // TODO(szabadka): Figure out how much we can reuse.
+  jpegli::PrepareForOutput(cinfo);
+  return TRUE;
+}
+
+boolean jpeg_finish_output(j_decompress_ptr cinfo) {
+  if (!cinfo->buffered_image) {
+    JPEGLI_ERROR("jpeg_finish_output: buffered image mode was not set");
+  }
+  if (cinfo->global_state != jpegli::kProcessScan &&
+      cinfo->global_state != jpegli::kProcessMarkers) {
+    JPEGLI_ERROR("jpeg_finish_output: unexpected state %d",
+                 cinfo->global_state);
+  }
+  // Advance input to the start of the next scan, or to the end of input.
+  while (cinfo->input_scan_number <= cinfo->output_scan_number &&
+         !cinfo->master->found_eoi_) {
+    if (jpegli::ConsumeInput(cinfo) == JPEG_SUSPENDED) {
+      return FALSE;
+    }
+  }
   return TRUE;
 }
 
@@ -220,18 +286,23 @@ JDIMENSION jpeg_read_scanlines(j_decompress_ptr cinfo, JSAMPARRAY scanlines,
     JPEGLI_ERROR("jpeg_read_scanlines: unexpected state %d",
                  cinfo->global_state);
   }
-  if (m->is_multiscan_ && !m->found_eoi_) {
+  if (cinfo->buffered_image) {
+    if (cinfo->output_scan_number == 0) {
+      JPEGLI_ERROR("jpeg_read_scanlines: jpeg_start_output() was not called");
+    }
+  } else if (m->is_multiscan_ && !m->found_eoi_) {
     JPEGLI_ERROR("jpeg_read_scanlines: jpeg_start_decompress() did not finish");
   }
+  if (cinfo->output_scanline + max_lines > cinfo->output_height) {
+    max_lines = cinfo->output_height - cinfo->output_scanline;
+  }
   size_t num_output_rows = 0;
-  while (cinfo->output_scanline < cinfo->output_height &&
-         num_output_rows < max_lines) {
-    if (cinfo->input_iMCU_row <= cinfo->output_iMCU_row &&
-        cinfo->output_iMCU_row < cinfo->total_iMCU_rows &&
-        jpegli::ConsumeInput(cinfo) == JPEG_SUSPENDED) {
-      return num_output_rows;
+  while (num_output_rows < max_lines) {
+    if (jpegli::IsInputReady(cinfo)) {
+      jpegli::ProcessOutput(cinfo, &num_output_rows, scanlines, max_lines);
+    } else if (jpegli::ConsumeInput(cinfo) == JPEG_SUSPENDED) {
+      break;
     }
-    jpegli::ProcessOutput(cinfo, &num_output_rows, scanlines, max_lines);
   }
   return num_output_rows;
 }
