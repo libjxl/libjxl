@@ -11,7 +11,6 @@
 /* clang-format on */
 
 #include <cmath>
-#include <memory>
 #include <vector>
 
 #include "gtest/gtest.h"
@@ -137,9 +136,12 @@ struct TestConfig {
   bool pre_consume_input = false;
 };
 
-void LoadNextChunk(const TestConfig& config, SourceManager* src) {
-  ASSERT_EQ(config.source_mgr, SOURCE_MGR_SUSPENDING);
-  JXL_CHECK(reinterpret_cast<SuspendingSourceManager*>(src)->LoadNextChunk());
+bool LoadNextChunk(const TestConfig& config, j_decompress_ptr cinfo) {
+  if (config.source_mgr == SOURCE_MGR_SUSPENDING) {
+    auto src = reinterpret_cast<SuspendingSourceManager*>(cinfo->src);
+    return src->LoadNextChunk();
+  }
+  return false;
 }
 
 class DecodeAPITestParam : public ::testing::TestWithParam<TestConfig> {};
@@ -173,21 +175,21 @@ TEST_P(DecodeAPITestParam, TestAPI) {
 
   size_t chunk_size = config.chunk_size;
   if (chunk_size == 0) chunk_size = compressed.size();
-  std::unique_ptr<SourceManager> jsrc;
+  ChunkedSourceManager src_chunked(compressed.data(), compressed.size(),
+                                   chunk_size);
+  SuspendingSourceManager src_susp(compressed.data(), compressed.size(),
+                                   chunk_size);
   if (config.source_mgr == SOURCE_MGR_CHUNKED) {
-    jsrc.reset(new ChunkedSourceManager(compressed.data(), compressed.size(),
-                                        chunk_size));
+    cinfo.src = reinterpret_cast<jpeg_source_mgr*>(&src_chunked);
   } else if (config.source_mgr == SOURCE_MGR_SUSPENDING) {
-    jsrc.reset(new SuspendingSourceManager(compressed.data(), compressed.size(),
-                                           chunk_size));
+    cinfo.src = reinterpret_cast<jpeg_source_mgr*>(&src_susp);
   }
-  cinfo.src = reinterpret_cast<jpeg_source_mgr*>(jsrc.get());
 
   if (config.pre_consume_input) {
     for (;;) {
       int status = jpeg_consume_input(&cinfo);
       if (status == JPEG_SUSPENDED) {
-        LoadNextChunk(config, jsrc.get());
+        ASSERT_TRUE(LoadNextChunk(config, &cinfo));
       } else if (status == JPEG_REACHED_SOS) {
         break;
       }
@@ -196,7 +198,7 @@ TEST_P(DecodeAPITestParam, TestAPI) {
     for (;;) {
       int status = jpeg_read_header(&cinfo, /*require_image=*/TRUE);
       if (status == JPEG_SUSPENDED) {
-        LoadNextChunk(config, jsrc.get());
+        ASSERT_TRUE(LoadNextChunk(config, &cinfo));
       } else {
         ASSERT_EQ(status, JPEG_HEADER_OK);
         break;
@@ -217,7 +219,7 @@ TEST_P(DecodeAPITestParam, TestAPI) {
     jpeg_start_decompress(&cinfo);
   } else {
     while (!jpeg_start_decompress(&cinfo)) {
-      LoadNextChunk(config, jsrc.get());
+      ASSERT_TRUE(LoadNextChunk(config, &cinfo));
     }
   }
 
@@ -229,7 +231,7 @@ TEST_P(DecodeAPITestParam, TestAPI) {
     for (;;) {
       int status = jpeg_consume_input(&cinfo);
       if (status == JPEG_SUSPENDED) {
-        LoadNextChunk(config, jsrc.get());
+        ASSERT_TRUE(LoadNextChunk(config, &cinfo));
       } else if (status == JPEG_REACHED_EOI) {
         break;
       }
@@ -257,7 +259,7 @@ TEST_P(DecodeAPITestParam, TestAPI) {
     if (config.pre_consume_input) {
       EXPECT_EQ(num_output_lines, max_output_lines);
     } else if (num_output_lines < max_output_lines) {
-      LoadNextChunk(config, jsrc.get());
+      ASSERT_TRUE(LoadNextChunk(config, &cinfo));
     }
   }
   EXPECT_EQ(cinfo.input_iMCU_row, cinfo.total_iMCU_rows);
@@ -266,11 +268,16 @@ TEST_P(DecodeAPITestParam, TestAPI) {
     jpeg_finish_decompress(&cinfo);
   } else {
     while (!jpeg_finish_decompress(&cinfo)) {
-      LoadNextChunk(config, jsrc.get());
+      ASSERT_TRUE(LoadNextChunk(config, &cinfo));
     }
   }
-  EXPECT_EQ(0, jsrc->UnprocessedBytes());
-  EXPECT_EQ(jsrc->TotalBytes(), compressed.size());
+  if (config.source_mgr == SOURCE_MGR_CHUNKED) {
+    EXPECT_EQ(0, src_chunked.UnprocessedBytes());
+    EXPECT_EQ(src_chunked.TotalBytes(), compressed.size());
+  } else {
+    EXPECT_EQ(0, src_susp.UnprocessedBytes());
+    EXPECT_EQ(src_susp.TotalBytes(), compressed.size());
+  }
 
   jpeg_destroy_decompress(&cinfo);
 
