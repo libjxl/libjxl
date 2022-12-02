@@ -552,6 +552,7 @@ cmd_coverage_report() {
     # Only print coverage information for the libjxl directories. The rest
     # is not part of the code under test.
     --filter '.*jxl/.*'
+    --exclude '.*_gbench.cc'
     --exclude '.*_test.cc'
     --exclude '.*_testonly..*'
     --exclude '.*_debug.*'
