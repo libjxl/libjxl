@@ -22,6 +22,12 @@
 #error "system not known to be little endian"
 #endif
 
+#ifdef _MSC_VER
+#define FJXL_INLINE __forceinline
+#else
+#define FJXL_INLINE inline __attribute__((always_inline))
+#endif
+
 namespace {
 
 constexpr size_t kNumRawSymbols = 19;
@@ -61,10 +67,13 @@ constexpr size_t kLZ77MinLength = 16;
 struct PrefixCode {
   static constexpr size_t kNumLZ77 = 17;
 
-  alignas(32) uint8_t raw_nbits[kNumRawSymbols] = {};
-  alignas(32) uint8_t raw_bits[kNumRawSymbols] = {};
-  uint8_t lz77_nbits[kNumLZ77] = {};
+  uint8_t raw_nbits[kNumRawSymbols] = {};
+  uint8_t raw_bits[kNumRawSymbols] = {};
 
+  alignas(32) uint8_t raw_nbits_simd[16] = {};
+  alignas(32) uint8_t raw_bits_simd[16] = {};
+
+  uint8_t lz77_nbits[kNumLZ77] = {};
   uint16_t lz77_bits[kNumLZ77] = {};
 
   static uint16_t BitReverse(size_t nbits, uint16_t bits) {
@@ -231,6 +240,8 @@ struct PrefixCode {
 
     ComputeCanonicalCode(raw_nbits, raw_bits, numraw, lz77_nbits, lz77_bits,
                          kNumLZ77);
+    BitDepth::PrepareForSimd(raw_nbits, raw_bits, numraw, raw_nbits_simd,
+                             raw_bits_simd);
   }
 
   void WriteTo(BitWriter* writer) const {
@@ -309,7 +320,7 @@ struct PrefixCode {
 
 #ifdef FASTLL_ENABLE_AVX2_INTRINSICS
 #include <immintrin.h>
-void EncodeChunkAVX2(const uint16_t* residuals, const PrefixCode& prefix_code,
+void EncodeChunkAVX2(const uint16_t* residuals, const PrefixCode& code,
                      BitWriter& output) {
   auto value = _mm256_load_si256((__m256i*)residuals);
 
@@ -362,13 +373,12 @@ void EncodeChunkAVX2(const uint16_t* residuals, const PrefixCode& prefix_code,
   // huff_nbits <= 6.
   auto huff_nbits =
       _mm256_shuffle_epi8(_mm256_broadcastsi128_si256(
-                              _mm_load_si128((__m128i*)prefix_code.raw_nbits)),
+                              _mm_load_si128((__m128i*)code.raw_nbits_simd)),
                           token_masked);
 
-  auto huff_bits =
-      _mm256_shuffle_epi8(_mm256_broadcastsi128_si256(
-                              _mm_load_si128((__m128i*)prefix_code.raw_bits)),
-                          token_masked);
+  auto huff_bits = _mm256_shuffle_epi8(
+      _mm256_broadcastsi128_si256(_mm_load_si128((__m128i*)code.raw_bits_simd)),
+      token_masked);
 
   auto huff_nbits_masked =
       _mm256_or_si256(huff_nbits, _mm256_set1_epi16(0xFF00));
@@ -433,25 +443,99 @@ void EncodeChunkAVX2(const uint16_t* residuals, const PrefixCode& prefix_code,
 #ifdef FASTLL_ENABLE_NEON_INTRINSICS
 #include <arm_neon.h>
 
-void EncodeChunkNeon(const uint16_t* residuals, const PrefixCode& code,
-                     BitWriter& output) {
+FJXL_INLINE void TokenizeNeon(const uint16_t* residuals, uint16_t* token_out,
+                              uint16_t* nbits_out, uint16_t* bits_out) {
   uint16x8_t res = vld1q_u16(residuals);
   uint16x8_t token = vsubq_u16(vdupq_n_u16(16), vclzq_u16(res));
   uint16x8_t nbits = vqsubq_u16(token, vdupq_n_u16(1));
   uint16x8_t bits =
       vqsubq_u16(res, vshlq_u16(vdupq_n_u16(1), vreinterpretq_s16_u16(nbits)));
-  uint8x16_t tok8x16 = vreinterpretq_u8_u16(token);
-  uint16x8_t huff_bits = vandq_u16(
-      vdupq_n_u16(0xFF),
-      vreinterpretq_u16_u8(vqtbl1q_u8(vld1q_u8(code.raw_bits), tok8x16)));
-  uint16x8_t huff_nbits = vandq_u16(
-      vdupq_n_u16(0xFF),
-      vreinterpretq_u16_u8(vqtbl1q_u8(vld1q_u8(code.raw_nbits), tok8x16)));
-  bits =
-      vorrq_u16(vshlq_u16(bits, vreinterpretq_s16_u16(huff_nbits)), huff_bits);
-  nbits = vaddq_u16(nbits, huff_nbits);
+  vst1q_u16(token_out, token);
+  vst1q_u16(nbits_out, nbits);
+  vst1q_u16(bits_out, bits);
+}
 
-  // Merge nbits and bits from 16-bit to 32-bit lanes.
+FJXL_INLINE void TokenizeNeon(const uint32_t* residuals, uint16_t* token_out,
+                              uint32_t* nbits_out, uint32_t* bits_out) {
+  uint32x4_t res_lo = vld1q_u32(residuals);
+  uint32x4_t res_hi = vld1q_u32(residuals + 4);
+  uint32x4_t token_lo = vsubq_u32(vdupq_n_u32(32), vclzq_u32(res_lo));
+  uint32x4_t token_hi = vsubq_u32(vdupq_n_u32(32), vclzq_u32(res_hi));
+  uint32x4_t nbits_lo = vqsubq_u32(token_lo, vdupq_n_u32(1));
+  uint32x4_t nbits_hi = vqsubq_u32(token_hi, vdupq_n_u32(1));
+  uint32x4_t bits_lo = vqsubq_u32(
+      res_lo, vshlq_u32(vdupq_n_u32(1), vreinterpretq_s32_u32(nbits_lo)));
+  uint32x4_t bits_hi = vqsubq_u32(
+      res_hi, vshlq_u32(vdupq_n_u32(1), vreinterpretq_s32_u32(nbits_hi)));
+  uint16x8_t token = vmovn_high_u32(vmovn_u32(token_lo), token_hi);
+  vst1q_u16(token_out, token);
+  vst1q_u32(nbits_out, nbits_lo);
+  vst1q_u32(nbits_out + 4, nbits_hi);
+  vst1q_u32(bits_out, bits_lo);
+  vst1q_u32(bits_out + 4, bits_hi);
+}
+
+FJXL_INLINE void HuffmanNeonUpTo13(const uint16_t* tokens,
+                                   const PrefixCode& code, uint16_t* nbits_out,
+                                   uint16_t* bits_out) {
+  uint8x16_t tok8x16 =
+      vreinterpretq_u8_u16(vorrq_u16(vld1q_u16(tokens), vdupq_n_u16(0xFF00)));
+  uint16x8_t huff_bits =
+      vreinterpretq_u16_u8(vqtbl1q_u8(vld1q_u8(code.raw_bits_simd), tok8x16));
+  uint16x8_t huff_nbits =
+      vreinterpretq_u16_u8(vqtbl1q_u8(vld1q_u8(code.raw_nbits_simd), tok8x16));
+  vst1q_u16(nbits_out, huff_nbits);
+  vst1q_u16(bits_out, huff_bits);
+}
+
+FJXL_INLINE void HuffmanNeon14(const uint16_t* tokens, const PrefixCode& code,
+                               uint16_t* nbits_out, uint16_t* bits_out) {
+  uint16x8_t tok_cap = vdupq_n_u16(15);
+  uint16x8_t tok = vld1q_u16(tokens);
+  uint8x16_t tokindex = vreinterpretq_u8_u16(
+      vorrq_u16(vminq_u16(tok, tok_cap), vdupq_n_u16(0xFF00)));
+  uint16x8_t huff_bits_pre =
+      vreinterpretq_u16_u8(vqtbl1q_u8(vld1q_u8(code.raw_bits_simd), tokindex));
+  // Set the highest bit when token == 16; the Huffman code is constructed in
+  // such a way that the code for token 15 is the same as the code for 16,
+  // except for the highest bit.
+  uint16x8_t huff_bits = vorrq_u16(
+      vandq_u16(vcgtq_u16(tok, tok_cap), vdupq_n_u16(128)), huff_bits_pre);
+  uint16x8_t huff_nbits =
+      vreinterpretq_u16_u8(vqtbl1q_u8(vld1q_u8(code.raw_nbits_simd), tokindex));
+  vst1q_u16(nbits_out, huff_nbits);
+  vst1q_u16(bits_out, huff_bits);
+}
+
+FJXL_INLINE void HuffmanNeonAbove14(const uint16_t* tokens,
+                                    const PrefixCode& code, uint16_t* nbits_out,
+                                    uint16_t* bits_out) {
+  uint16x8_t tok = vld1q_u16(tokens);
+
+  uint16x8_t above = vcgtq_u16(tok, vdupq_n_u16(12));
+  // 13, 14 -> 13
+  // 15, 16 -> 14
+  // 17, 18 -> 15
+  uint16x8_t remap_tok =
+      vbslq_u16(above, vshrq_n_u16(vaddq_u16(tok, vdupq_n_u16(13)), 1), tok);
+
+  uint8x16_t tokindex =
+      vreinterpretq_u8_u16(vorrq_u16(remap_tok, vdupq_n_u16(0xFF00)));
+  uint16x8_t huff_bits_pre =
+      vreinterpretq_u16_u8(vqtbl1q_u8(vld1q_u8(code.raw_bits_simd), tokindex));
+  // Set the highest bit when token == 14, 16, 18.
+  uint16x8_t needs_high_bit =
+      vandq_u16(above, vceqq_u16(tok, vandq_u16(tok, vdupq_n_u16(0xFFFE))));
+  uint16x8_t huff_bits =
+      vorrq_u16(vandq_u16(needs_high_bit, vdupq_n_u16(128)), huff_bits_pre);
+  uint16x8_t huff_nbits =
+      vreinterpretq_u16_u8(vqtbl1q_u8(vld1q_u8(code.raw_nbits_simd), tokindex));
+  vst1q_u16(nbits_out, huff_nbits);
+  vst1q_u16(bits_out, huff_bits);
+}
+
+FJXL_INLINE uint32x4_t Merge16To32Neon(uint16x8_t nbits, uint16x8_t bits,
+                                       uint32x4_t* nbits32) {
   uint32x4_t nbits_lo16 =
       vandq_u32(vreinterpretq_u32_u16(nbits), vdupq_n_u32(0xFFFF));
   uint32x4_t bits_hi16 = vshlq_u32(vshrq_n_u32(vreinterpretq_u32_u16(bits), 16),
@@ -459,13 +543,85 @@ void EncodeChunkNeon(const uint16_t* residuals, const PrefixCode& code,
   uint32x4_t bits_lo16 =
       vandq_u32(vreinterpretq_u32_u16(bits), vdupq_n_u32(0xFFFF));
 
-  uint32x4_t nbits32 =
-      vsraq_n_u32(nbits_lo16, vreinterpretq_u32_u16(nbits), 16);
-  uint32x4_t bits32 = vorrq_u32(bits_hi16, bits_lo16);
+  *nbits32 = vsraq_n_u32(nbits_lo16, vreinterpretq_u32_u16(nbits), 16);
+  return vorrq_u32(bits_hi16, bits_lo16);
+}
+
+FJXL_INLINE void StoreNeonUpTo8(const uint16_t* nbits_tok,
+                                const uint16_t* bits_tok,
+                                const uint16_t* nbits_huff,
+                                const uint16_t* bits_huff, BitWriter& out) {
+  uint16x8_t bits = vld1q_u16(bits_tok);
+  uint16x8_t nbits = vld1q_u16(nbits_tok);
+  uint16x8_t huff_bits = vld1q_u16(bits_huff);
+  uint16x8_t huff_nbits = vld1q_u16(nbits_huff);
+  bits =
+      vorrq_u16(vshlq_u16(bits, vreinterpretq_s16_u16(huff_nbits)), huff_bits);
+  nbits = vaddq_u16(nbits, huff_nbits);
+
+  uint32x4_t nbits32;
+  auto bits32 = Merge16To32Neon(nbits, bits, &nbits32);
 
   // Merging up to 64 bits is not faster.
   for (size_t i = 0; i < 4; i++) {
-    output.Write(nbits32[i], bits32[i]);
+    out.Write(nbits32[i], bits32[i]);
+  }
+}
+
+// Huffman and raw bits don't necessarily fit in a single u16 here.
+FJXL_INLINE void StoreNeonUpTo14(const uint16_t* nbits_tok,
+                                 const uint16_t* bits_tok,
+                                 const uint16_t* nbits_huff,
+                                 const uint16_t* bits_huff, BitWriter& out) {
+  uint16x8_t bits = vld1q_u16(bits_tok);
+  uint16x8_t nbits = vld1q_u16(nbits_tok);
+  uint16x8_t huff_bits = vld1q_u16(bits_huff);
+  uint16x8_t huff_nbits = vld1q_u16(nbits_huff);
+
+  uint16x8_t lbits = vzip1q_u16(huff_bits, bits);
+  uint16x8_t hbits = vzip2q_u16(huff_bits, bits);
+  uint16x8_t lnbits = vzip1q_u16(huff_nbits, nbits);
+  uint16x8_t hnbits = vzip2q_u16(huff_nbits, nbits);
+
+  // Merging up to 64 bits is not faster.
+  uint32x4_t nbits32;
+  auto bits32 = Merge16To32Neon(lnbits, lbits, &nbits32);
+  for (size_t i = 0; i < 4; i++) {
+    out.Write(nbits32[i], bits32[i]);
+  }
+  bits32 = Merge16To32Neon(hnbits, hbits, &nbits32);
+  for (size_t i = 0; i < 4; i++) {
+    out.Write(nbits32[i], bits32[i]);
+  }
+}
+
+FJXL_INLINE void StoreNeonAbove14(const uint32_t* nbits_tok,
+                                  const uint32_t* bits_tok,
+                                  const uint16_t* nbits_huff,
+                                  const uint16_t* bits_huff, BitWriter& out) {
+  uint32x4_t bits_lo = vld1q_u32(bits_tok);
+  uint32x4_t nbits_lo = vld1q_u32(nbits_tok);
+  uint32x4_t bits_hi = vld1q_u32(bits_tok + 4);
+  uint32x4_t nbits_hi = vld1q_u32(nbits_tok + 4);
+  uint16x8_t huff_bits = vld1q_u16(bits_huff);
+  uint16x8_t huff_nbits = vld1q_u16(nbits_huff);
+  uint32x4_t huff_nbits_lo = vmovl_u16(vget_low_u16(huff_nbits));
+  uint32x4_t huff_nbits_hi = vmovl_high_u16(huff_nbits);
+  uint32x4_t huff_bits_lo = vmovl_u16(vget_low_u16(huff_bits));
+  uint32x4_t huff_bits_hi = vmovl_high_u16(huff_bits);
+  bits_lo = vorrq_u32(vshlq_u32(bits_lo, vreinterpretq_s32_u32(huff_nbits_lo)),
+                      huff_bits_lo);
+  nbits_lo = vaddq_u32(nbits_lo, huff_nbits_lo);
+
+  // Merging up to 64 bits is not faster.
+  for (size_t i = 0; i < 4; i++) {
+    out.Write(nbits_lo[i], bits_lo[i]);
+  }
+  bits_hi = vorrq_u32(vshlq_u32(bits_hi, vreinterpretq_s32_u32(huff_nbits_hi)),
+                      huff_bits_hi);
+  nbits_hi = vaddq_u32(nbits_hi, huff_nbits_hi);
+  for (size_t i = 0; i < 4; i++) {
+    out.Write(nbits_hi[i], bits_hi[i]);
   }
 }
 #endif
@@ -509,17 +665,43 @@ struct UpTo8Bits {
   using pixel_t = int16_t;
   using upixel_t = uint16_t;
 
+  static void PrepareForSimd(const uint8_t* nbits, const uint8_t* bits,
+                             size_t n, uint8_t* nbits_simd,
+                             uint8_t* bits_simd) {
+    assert(n <= 16);
+    memcpy(nbits_simd, nbits, 16);
+    memcpy(bits_simd, bits, 16);
+  }
+
   static void EncodeChunk(upixel_t* residuals, const PrefixCode& code,
                           BitWriter& output) {
 #if defined(FASTLL_ENABLE_AVX2_INTRINSICS) && FASTLL_ENABLE_AVX2_INTRINSICS
     EncodeChunkAVX2(residuals, code, output);
     return;
 #elif defined(FASTLL_ENABLE_NEON_INTRINSICS) && FASTLL_ENABLE_NEON_INTRINSICS
-    EncodeChunkNeon(residuals, code, output);
-    EncodeChunkNeon(residuals + 8, code, output);
+    for (int i : {0, 8}) {
+      uint16_t bits[8];
+      uint16_t nbits[8];
+      uint16_t bits_huff[8];
+      uint16_t nbits_huff[8];
+      uint16_t token[8];
+      TokenizeNeon(residuals + i, token, nbits, bits);
+      HuffmanNeonUpTo13(token, code, nbits_huff, bits_huff);
+      StoreNeonUpTo8(nbits, bits, nbits_huff, bits_huff, output);
+    }
     return;
 #endif
     GenericEncodeChunk(residuals, code, output);
+  }
+
+  size_t NumSymbols(bool doing_ycocg) const {
+    // values gain 1 bit for YCoCg, 1 bit for prediction.
+    // Maximum symbol is 1 + effective bit depth of residuals.
+    if (doing_ycocg) {
+      return bitdepth + 3;
+    } else {
+      return bitdepth + 2;
+    }
   }
 };
 constexpr uint8_t UpTo8Bits::kMinRawLength[];
@@ -545,13 +727,50 @@ struct From9To13Bits {
   using pixel_t = int16_t;
   using upixel_t = uint16_t;
 
+  static void PrepareForSimd(const uint8_t* nbits, const uint8_t* bits,
+                             size_t n, uint8_t* nbits_simd,
+                             uint8_t* bits_simd) {
+    assert(n <= 16);
+    memcpy(nbits_simd, nbits, 16);
+    memcpy(bits_simd, bits, 16);
+  }
+
   static void EncodeChunk(upixel_t* residuals, const PrefixCode& code,
                           BitWriter& output) {
+#if defined(FASTLL_ENABLE_NEON_INTRINSICS) && FASTLL_ENABLE_NEON_INTRINSICS
+    for (int i : {0, 8}) {
+      uint16_t bits[8];
+      uint16_t nbits[8];
+      uint16_t bits_huff[8];
+      uint16_t nbits_huff[8];
+      uint16_t token[8];
+      TokenizeNeon(residuals + i, token, nbits, bits);
+      HuffmanNeonUpTo13(token, code, nbits_huff, bits_huff);
+      StoreNeonUpTo14(nbits, bits, nbits_huff, bits_huff, output);
+    }
+    return;
+#endif
     GenericEncodeChunk(residuals, code, output);
+  }
+
+  size_t NumSymbols(bool doing_ycocg) const {
+    // values gain 1 bit for YCoCg, 1 bit for prediction.
+    // Maximum symbol is 1 + effective bit depth of residuals.
+    if (doing_ycocg) {
+      return bitdepth + 3;
+    } else {
+      return bitdepth + 2;
+    }
   }
 };
 constexpr uint8_t From9To13Bits::kMinRawLength[];
 constexpr uint8_t From9To13Bits::kMaxRawLength[];
+
+void CheckHuffmanBitsSIMD(int bits1, int nbits1, int bits2, int nbits2) {
+  assert(nbits1 == 8);
+  assert(nbits2 == 8);
+  assert(bits2 == (bits1 | 128));
+}
 
 struct Exactly14Bits {
   explicit Exactly14Bits(size_t bitdepth) { assert(bitdepth == 14); }
@@ -570,10 +789,34 @@ struct Exactly14Bits {
   using pixel_t = int16_t;
   using upixel_t = uint16_t;
 
+  static void PrepareForSimd(const uint8_t* nbits, const uint8_t* bits,
+                             size_t n, uint8_t* nbits_simd,
+                             uint8_t* bits_simd) {
+    assert(n == 17);
+    CheckHuffmanBitsSIMD(bits[15], nbits[15], bits[16], nbits[16]);
+    memcpy(nbits_simd, nbits, 16);
+    memcpy(bits_simd, bits, 16);
+  }
+
   static void EncodeChunk(upixel_t* residuals, const PrefixCode& code,
                           BitWriter& output) {
+#if defined(FASTLL_ENABLE_NEON_INTRINSICS) && FASTLL_ENABLE_NEON_INTRINSICS
+    for (int i : {0, 8}) {
+      uint16_t bits[8];
+      uint16_t nbits[8];
+      uint16_t bits_huff[8];
+      uint16_t nbits_huff[8];
+      uint16_t token[8];
+      TokenizeNeon(residuals + i, token, nbits, bits);
+      HuffmanNeon14(token, code, nbits_huff, bits_huff);
+      StoreNeonUpTo14(nbits, bits, nbits_huff, bits_huff, output);
+    }
+    return;
+#endif
     GenericEncodeChunk(residuals, code, output);
   }
+
+  size_t NumSymbols(bool) const { return 17; }
 };
 constexpr uint8_t Exactly14Bits::kMinRawLength[];
 constexpr uint8_t Exactly14Bits::kMaxRawLength[];
@@ -599,24 +842,44 @@ struct MoreThan14Bits {
   using pixel_t = int32_t;
   using upixel_t = uint32_t;
 
+  static void PrepareForSimd(const uint8_t* nbits, const uint8_t* bits,
+                             size_t n, uint8_t* nbits_simd,
+                             uint8_t* bits_simd) {
+    assert(n == 19);
+    CheckHuffmanBitsSIMD(bits[13], nbits[13], bits[14], nbits[14]);
+    CheckHuffmanBitsSIMD(bits[15], nbits[15], bits[16], nbits[16]);
+    CheckHuffmanBitsSIMD(bits[17], nbits[17], bits[18], nbits[18]);
+    for (size_t i = 0; i < 14; i++) {
+      nbits_simd[i] = nbits[i];
+      bits_simd[i] = bits[i];
+    }
+    nbits_simd[14] = nbits[15];
+    bits_simd[14] = bits[15];
+    nbits_simd[15] = nbits[17];
+    bits_simd[15] = bits[17];
+  }
+
   static void EncodeChunk(upixel_t* residuals, const PrefixCode& code,
                           BitWriter& output) {
+#if defined(FASTLL_ENABLE_NEON_INTRINSICS) && FASTLL_ENABLE_NEON_INTRINSICS
+    for (int i : {0, 8}) {
+      uint32_t bits[8];
+      uint32_t nbits[8];
+      uint16_t bits_huff[8];
+      uint16_t nbits_huff[8];
+      uint16_t token[8];
+      TokenizeNeon(residuals + i, token, nbits, bits);
+      HuffmanNeonAbove14(token, code, nbits_huff, bits_huff);
+      StoreNeonAbove14(nbits, bits, nbits_huff, bits_huff, output);
+    }
+    return;
+#endif
     GenericEncodeChunk(residuals, code, output);
   }
+  size_t NumSymbols(bool) const { return 19; }
 };
 constexpr uint8_t MoreThan14Bits::kMinRawLength[];
 constexpr uint8_t MoreThan14Bits::kMaxRawLength[];
-
-template <typename BitDepth>
-size_t NumSymbols(BitDepth bitdepth, bool doing_ycocg) {
-  // values gain 1 bit for YCoCg, 1 bit for prediction.
-  // Maximum symbol is 1 + effective bit depth of residuals.
-  if (doing_ycocg) {
-    return bitdepth.bitdepth + 3;
-  } else {
-    return bitdepth.bitdepth + 2;
-  }
-}
 
 void AppendWriter(BitWriter* dest, const BitWriter* src) {
   if (dest->bits_in_buffer == 0) {
@@ -1447,7 +1710,7 @@ size_t LLEnc(const unsigned char* rgba, size_t width, size_t stride,
       5,    1,   1,    1,    1,    1,   1,   1,   1};
 
   bool doing_ycocg = nb_chans > 2 && collided;
-  for (size_t i = NumSymbols(bitdepth, doing_ycocg); i < kNumRawSymbols; i++) {
+  for (size_t i = bitdepth.NumSymbols(doing_ycocg); i < kNumRawSymbols; i++) {
     base_raw_counts[i] = 0;
   }
   uint64_t base_lz77_counts[17] = {
