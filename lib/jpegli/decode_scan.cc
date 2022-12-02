@@ -84,7 +84,8 @@ struct BitReaderState {
       --pos_;
       // If we give back a 0 byte, we need to check if it was a 0xff/0x00 escape
       // sequence, and if yes, we need to give back one more byte.
-      if (((pos_ == len_) || (pos_ < next_marker_pos_ && data_[pos_] == 0)) &&
+      if (((pos_ == len_) ||
+           (pos_ > 0 && pos_ < next_marker_pos_ && data_[pos_] == 0)) &&
           (data_[pos_ - 1] == 0xff)) {
         --pos_;
       }
@@ -380,6 +381,9 @@ void RestoreMCUCodingState(j_decompress_ptr cinfo) {
 int ProcessScan(j_decompress_ptr cinfo) {
   const uint8_t* data = cinfo->src->next_input_byte;
   size_t len = cinfo->src->bytes_in_buffer;
+  if (len == 0) {
+    return JPEG_SUSPENDED;
+  }
   size_t pos = 0;
   jpeg_decomp_master* m = cinfo->master;
   for (;;) {
