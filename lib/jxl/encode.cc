@@ -1697,7 +1697,7 @@ JxlEncoderStatus JxlEncoderAddImageFrame(
   const uint8_t* uint8_buffer = reinterpret_cast<const uint8_t*>(buffer);
   if (!jxl::ConvertFromExternal(
           jxl::Span<const uint8_t>(uint8_buffer, size), xsize, ysize, c_current,
-          /*alpha_is_premultiplied=*/false, bits_per_sample, *pixel_format,
+          bits_per_sample, *pixel_format,
           frame_settings->enc->thread_pool.get(), &(queued_frame->frame))) {
     return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
                          "Invalid input buffer");

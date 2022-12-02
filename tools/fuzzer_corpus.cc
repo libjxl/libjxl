@@ -221,7 +221,6 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
     const jxl::Span<const uint8_t> span(img_data.data(), img_data.size());
     JXL_RETURN_IF_ERROR(ConvertFromExternal(
         span, spec.width, spec.height, io.metadata.m.color_encoding,
-        /*alpha_is_premultiplied=*/spec.alpha_is_premultiplied,
         io.metadata.m.bit_depth.bits_per_sample, format, nullptr, &ib));
     io.frames.push_back(std::move(ib));
   }

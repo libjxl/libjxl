@@ -197,7 +197,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   } else if (t == "Alpha") {
     io.metadata.m.SetAlphaBits(io.metadata.m.bit_depth.bits_per_sample);
     ImageF alpha(W, H);
-    io.frames[0].SetAlpha(std::move(alpha), false);
+    io.frames[0].SetAlpha(std::move(alpha));
   } else if (t == "Bitdepth") {
     t = tok();
     size_t num = 0;
