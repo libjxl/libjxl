@@ -895,8 +895,6 @@ class LossyFrameEncoder {
     for (PassesEncoderState::PassData& pass : enc_state_->passes) {
       pass.ac_tokens.resize(shared.frame_dim.num_groups);
     }
-    fprintf(stderr, "enc_stat_->passes.size(): %zu\n",
-            enc_state_->passes.size());
 
     JXL_CHECK(enc_state_->passes.size() ==
               1);  // skipping coeff splitting so need to have only one pass

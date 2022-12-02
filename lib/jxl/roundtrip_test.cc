@@ -232,7 +232,7 @@ void VerifyRoundtripCompression(
         /*pool=*/nullptr, &alpha_channel));
 
     original_io.metadata.m.SetAlphaBits(basic_info.bits_per_sample);
-    original_io.Main().SetAlpha(std::move(alpha_channel), false);
+    original_io.Main().SetAlpha(std::move(alpha_channel));
     output_pixel_format_with_extra_channel_alpha.num_channels++;
   }
   // Those are the num_extra_channels including a potential alpha channel.

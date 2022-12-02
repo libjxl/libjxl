@@ -237,13 +237,13 @@ Status ConvertFromExternal(Span<const uint8_t> bytes, size_t xsize,
     JXL_RETURN_IF_ERROR(
         ConvertFromExternal(bytes, xsize, ysize, bits_per_sample, format,
                             format.num_channels - 1, pool, &alpha));
-    ib->SetAlpha(std::move(alpha), ib->AlphaIsPremultiplied());
+    ib->SetAlpha(std::move(alpha));
   } else if (!has_alpha && ib->HasAlpha()) {
     // if alpha is not passed, but it is expected, then assume
     // it is all-opaque
     ImageF alpha(xsize, ysize);
     FillImage(1.0f, &alpha);
-    ib->SetAlpha(std::move(alpha), ib->AlphaIsPremultiplied());
+    ib->SetAlpha(std::move(alpha));
   }
 
   return true;
