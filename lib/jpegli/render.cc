@@ -116,19 +116,19 @@ void StoreUnsignedRow(float* JXL_RESTRICT input[3], size_t x0, size_t len,
 #endif
 }
 
-void WriteToOutput(float* JXL_RESTRICT rows[3], size_t x0, size_t len,
-                   size_t num_channels, size_t bit_depth,
+void WriteToOutput(float* JXL_RESTRICT rows[3], size_t xoffset, size_t x0,
+                   size_t len, size_t num_channels, size_t bit_depth,
                    uint8_t* JXL_RESTRICT scratch_space,
                    uint8_t* JXL_RESTRICT output) {
   const float mul = (1u << bit_depth) - 1;
   if (bit_depth <= 8) {
     size_t offset = x0 * num_channels;
-    StoreUnsignedRow(rows, x0, len, num_channels, mul, scratch_space);
+    StoreUnsignedRow(rows, xoffset + x0, len, num_channels, mul, scratch_space);
     memcpy(output + offset, scratch_space, len * num_channels);
   } else {
     size_t offset = x0 * num_channels * 2;
     uint16_t* tmp = reinterpret_cast<uint16_t*>(scratch_space);
-    StoreUnsignedRow(rows, x0, len, num_channels, mul, tmp);
+    StoreUnsignedRow(rows, xoffset + x0, len, num_channels, mul, tmp);
     // TODO(szabadka) Handle endianness.
     memcpy(output + offset, tmp, len * num_channels * 2);
   }
@@ -154,12 +154,12 @@ void GatherBlockStats(const int16_t* JXL_RESTRICT coeffs,
                                                 sumabs);
 }
 
-void WriteToOutput(float* JXL_RESTRICT rows[3], size_t x0, size_t len,
-                   size_t num_channels, size_t bit_depth,
+void WriteToOutput(float* JXL_RESTRICT rows[3], size_t xoffset, size_t x0,
+                   size_t len, size_t num_channels, size_t bit_depth,
                    uint8_t* JXL_RESTRICT scratch_space,
                    uint8_t* JXL_RESTRICT output) {
-  return HWY_DYNAMIC_DISPATCH(WriteToOutput)(rows, x0, len, num_channels,
-                                             bit_depth, scratch_space, output);
+  return HWY_DYNAMIC_DISPATCH(WriteToOutput)(
+      rows, xoffset, x0, len, num_channels, bit_depth, scratch_space, output);
 }
 
 void DecenterRow(float* row, size_t xsize) {
@@ -199,8 +199,6 @@ void ComputeOptimalLaplacianBiases(const int num_blocks, const int* nonzeros,
 
 void PrepareForOutput(j_decompress_ptr cinfo) {
   jpeg_decomp_master* m = cinfo->master;
-  m->output_stride_ = (cinfo->output_width * cinfo->out_color_components *
-                       DivCeil(m->output_bit_depth_, 8));
   m->MCU_row_stride_ = m->iMCU_cols_ * cinfo->max_h_samp_factor * DCTSIZE +
                        kPaddingLeft + kPaddingRight;
   m->MCU_plane_size_ = m->MCU_row_stride_ * cinfo->max_v_samp_factor * DCTSIZE;
@@ -308,9 +306,12 @@ void ProcessOutput(j_decompress_ptr cinfo, size_t* num_output_rows,
         }
         for (size_t x0 = 0; x0 < cinfo->output_width; x0 += kTempOutputLen) {
           size_t len = std::min(cinfo->output_width - x0, kTempOutputLen);
-          uint8_t* output = scanlines[*num_output_rows];
-          WriteToOutput(rows, x0, len, cinfo->out_color_components,
-                        m->output_bit_depth_, m->output_scratch_.get(), output);
+          if (scanlines) {
+            uint8_t* output = scanlines[*num_output_rows];
+            WriteToOutput(rows, m->xoffset_, x0, len,
+                          cinfo->out_color_components, m->output_bit_depth_,
+                          m->output_scratch_.get(), output);
+          }
         }
         ++cinfo->output_scanline;
         ++(*num_output_rows);

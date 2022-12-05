@@ -122,7 +122,7 @@ struct jpeg_decomp_master {
   // Rendering state.
   //
   size_t output_bit_depth_ = 8;
-  size_t output_stride_;
+  size_t xoffset_ = 0;
 
   JSAMPARRAY scanlines_;
   JDIMENSION max_lines_;
