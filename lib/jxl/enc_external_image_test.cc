@@ -68,11 +68,11 @@ TEST(ExternalImageTest, AlphaPremultiplied) {
   ImageBundle ib(&im);
   const size_t xsize = 10;
   const size_t ysize = 20;
-  const size_t size = xsize * ysize * 4;
+  const size_t size = xsize * ysize * 8;
   const uint8_t buf[size] = {};
 
   JxlPixelFormat format = {4, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
-  EXPECT_TRUE(BufferToImageBundle(format, xsize, ysize, buf, 2 * size, nullptr,
+  EXPECT_TRUE(BufferToImageBundle(format, xsize, ysize, buf, size, nullptr,
                                   ColorEncoding::SRGB(), &ib));
 }
 
