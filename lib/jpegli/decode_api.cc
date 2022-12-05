@@ -122,6 +122,7 @@ void jpeg_CreateDecompress(j_decompress_ptr cinfo, int version,
   cinfo->master->output_bit_depth_ = 8;
   cinfo->global_state = jpegli::kStart;
   cinfo->buffered_image = FALSE;
+  cinfo->output_scanline = 0;
 }
 
 void jpeg_destroy_decompress(j_decompress_ptr cinfo) {
@@ -305,6 +306,31 @@ JDIMENSION jpeg_read_scanlines(j_decompress_ptr cinfo, JSAMPARRAY scanlines,
     }
   }
   return num_output_rows;
+}
+
+JDIMENSION jpeg_skip_scanlines(j_decompress_ptr cinfo, JDIMENSION num_lines) {
+  // TODO(szabadka) Skip the IDCT for skipped over blocks.
+  return jpeg_read_scanlines(cinfo, nullptr, num_lines);
+}
+
+void jpeg_crop_scanline(j_decompress_ptr cinfo, JDIMENSION* xoffset,
+                        JDIMENSION* width) {
+  if ((cinfo->global_state != jpegli::kProcessScan &&
+       cinfo->global_state != jpegli::kProcessMarkers) ||
+      cinfo->output_scanline != 0) {
+    JPEGLI_ERROR("jpeg_crop_decompress: unexpected state %d",
+                 cinfo->global_state);
+  }
+  if (xoffset == nullptr || width == nullptr || *width == 0 ||
+      *xoffset + *width > cinfo->output_width) {
+    JPEGLI_ERROR("jpeg_crop_scanline: Invalid arguments");
+  }
+  // TODO(szabadka) Skip the IDCT for skipped over blocks.
+  size_t xend = *xoffset + *width;
+  *xoffset = (*xoffset / DCTSIZE) * DCTSIZE;
+  *width = xend - *xoffset;
+  cinfo->master->xoffset_ = *xoffset;
+  cinfo->output_width = *width;
 }
 
 boolean jpeg_finish_decompress(j_decompress_ptr cinfo) {
