@@ -12,6 +12,7 @@ import argparse
 import json
 import numpy
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -166,7 +167,13 @@ def ConformanceTestRunner(args):
                 for reference_basename, decoded_filename in exact_tests:
                     reference_filename = os.path.join(test_dir,
                                                       reference_basename)
-                    ok = ok & CompareBinaries(reference_filename, decoded_filename)
+                    binary_ok = CompareBinaries(reference_filename,
+                                                decoded_filename)
+                    if not binary_ok and args.update_on_failure:
+                        os.unlink(reference_filename)
+                        shutil.copy2(decoded_filename, reference_filename)
+                        binary_ok = True
+                    ok = ok & binary_ok
 
                 # Validate metadata.
                 with open(meta_filename, 'r') as f:
@@ -182,36 +189,50 @@ def ConformanceTestRunner(args):
                 with open(reference_icc, 'rb') as f:
                     reference_icc = f.read()
 
-                reference_npy = os.path.join(test_dir, 'reference_image.npy')
-                decoded_npy = os.path.join(work_dir, 'decoded_image.npy')
+                reference_npy_fn = os.path.join(test_dir, 'reference_image.npy')
+                decoded_npy_fn = os.path.join(work_dir, 'decoded_image.npy')
 
-                if not os.path.exists(decoded_npy):
+                if not os.path.exists(decoded_npy_fn):
                     ok = Failure('File not decoded: decoded_image.npy')
                     continue
 
-                reference_npy = numpy.load(reference_npy)
-                decoded_npy = numpy.load(decoded_npy)
+                reference_npy = numpy.load(reference_npy_fn)
+                decoded_npy = numpy.load(decoded_npy_fn)
 
+                frames_ok = True
                 for i, fd in enumerate(descriptor['frames']):
-                    ok = ok & CompareNPY(reference_npy, reference_icc, decoded_npy,
-                                         decoded_icc, i, fd['rms_error'],
-                                         fd['peak_error'])
+                    frames_ok = frames_ok & CompareNPY(
+                        reference_npy, reference_icc, decoded_npy,
+                        decoded_icc, i, fd['rms_error'],
+                        fd['peak_error'])
+
+                if not frames_ok and args.update_on_failure:
+                    os.unlink(reference_npy_fn)
+                    shutil.copy2(decoded_npy_fn, reference_npy_fn)
+                    frames_ok = True
+                ok = ok & frames_ok
 
                 if 'preview' in descriptor:
-                    reference_npy = os.path.join(test_dir,
-                                                 'reference_preview.npy')
-                    decoded_npy = os.path.join(work_dir, 'decoded_preview.npy')
+                    reference_npy_fn = os.path.join(test_dir,
+                                                    'reference_preview.npy')
+                    decoded_npy_fn = os.path.join(work_dir,
+                                                  'decoded_preview.npy')
 
-                    if not os.path.exists(decoded_npy):
+                    if not os.path.exists(decoded_npy_fn):
                         ok = Failure(
                             'File not decoded: decoded_preview.npy')
 
-                    reference_npy = numpy.load(reference_npy)
-                    decoded_npy = numpy.load(decoded_npy)
-                    ok = ok & CompareNPY(reference_npy, reference_icc, decoded_npy,
-                                         decoded_icc, 0,
-                                         descriptor['preview']['rms_error'],
-                                         descriptor['preview']['peak_error'])
+                    reference_npy = numpy.load(reference_npy_fn)
+                    decoded_npy = numpy.load(decoded_npy_fn)
+                    preview_ok = CompareNPY(reference_npy, reference_icc,
+                                            decoded_npy, decoded_icc, 0,
+                                            descriptor['preview']['rms_error'],
+                                            descriptor['preview']['peak_error'])
+                    if not preview_ok & args.update_on_failure:
+                        os.unlink(reference_npy_fn)
+                        shutil.copy2(decoded_npy_fn, reference_npy_fn)
+                        preview_ok = True
+                    ok = ok & preview_ok
 
     return ok
 
@@ -228,6 +249,9 @@ def main():
         required=True,
         help=('path to the corpus directory or corpus descriptor'
               ' text file.'))
+    parser.add_argument(
+        '--update_on_failure', action='store_true',
+        help='If set, updates reference files on failing checks.')
     args = parser.parse_args()
     if not ConformanceTestRunner(args):
         sys.exit(1)
