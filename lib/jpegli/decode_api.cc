@@ -95,14 +95,7 @@ bool IsInputReady(j_decompress_ptr cinfo) {
   if (cinfo->input_scan_number < cinfo->output_scan_number) {
     return false;
   }
-  if (cinfo->input_iMCU_row > cinfo->output_iMCU_row) {
-    return true;
-  }
-  if (cinfo->input_iMCU_row == cinfo->output_iMCU_row &&
-      cinfo->output_iMCU_row == cinfo->total_iMCU_rows) {
-    return true;
-  }
-  return false;
+  return cinfo->input_iMCU_row > cinfo->output_iMCU_row;
 }
 
 }  // namespace jpegli
@@ -122,6 +115,7 @@ void jpeg_CreateDecompress(j_decompress_ptr cinfo, int version,
   cinfo->master->output_bit_depth_ = 8;
   cinfo->global_state = jpegli::kStart;
   cinfo->buffered_image = FALSE;
+  cinfo->raw_data_out = FALSE;
   cinfo->output_scanline = 0;
 }
 
@@ -331,6 +325,30 @@ void jpeg_crop_scanline(j_decompress_ptr cinfo, JDIMENSION* xoffset,
   *width = xend - *xoffset;
   cinfo->master->xoffset_ = *xoffset;
   cinfo->output_width = *width;
+}
+
+JDIMENSION jpeg_read_raw_data(j_decompress_ptr cinfo, JSAMPIMAGE data,
+                              JDIMENSION max_lines) {
+  if ((cinfo->global_state != jpegli::kProcessScan &&
+       cinfo->global_state != jpegli::kProcessMarkers) ||
+      !cinfo->raw_data_out) {
+    JPEGLI_ERROR("jpeg_read_raw_data: unexpected state %d",
+                 cinfo->global_state);
+  }
+  size_t iMCU_height = cinfo->max_v_samp_factor * DCTSIZE;
+  if (max_lines < iMCU_height) {
+    JPEGLI_ERROR("jpeg_read_raw_data: output buffer too small");
+  }
+  while (!jpegli::IsInputReady(cinfo)) {
+    if (jpegli::ConsumeInput(cinfo) == JPEG_SUSPENDED) {
+      return 0;
+    }
+  }
+  if (cinfo->output_iMCU_row < cinfo->total_iMCU_rows) {
+    jpegli::ProcessRawOutput(cinfo, data);
+    return iMCU_height;
+  }
+  return 0;
 }
 
 boolean jpeg_finish_decompress(j_decompress_ptr cinfo) {

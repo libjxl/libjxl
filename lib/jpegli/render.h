@@ -21,6 +21,8 @@ void PrepareForOutput(j_decompress_ptr cinfo);
 void ProcessOutput(j_decompress_ptr cinfo, size_t* num_output_rows,
                    JSAMPARRAY scanlines, size_t max_output_rows);
 
+void ProcessRawOutput(j_decompress_ptr cinfo, JSAMPIMAGE data);
+
 }  // namespace jpegli
 
 #endif  // LIB_JPEGLI_RENDER_H_

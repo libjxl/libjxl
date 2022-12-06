@@ -51,6 +51,25 @@ struct MCUCodingState {
   std::vector<coeff_t> coeffs;
 };
 
+class RowBuffer {
+ public:
+  void Allocate(size_t num_rows, size_t stride) {
+    ysize_ = num_rows;
+    stride_ = stride;
+    data_ = hwy::AllocateAligned<float>(ysize_ * stride_);
+  }
+
+  float* Row(ssize_t y) { return &data_[((ysize_ + y) % ysize_) * stride_]; }
+
+  size_t stride() const { return stride_; }
+  size_t memstride() const { return stride_ * sizeof(data_[0]); }
+
+ private:
+  size_t ysize_ = 0;
+  size_t stride_ = 0;
+  hwy::AlignedFreeUniquePtr<float[]> data_;
+};
+
 /* clang-format off */
 constexpr uint32_t kJPEGNaturalOrder[80] = {
   0,   1,  8, 16,  9,  2,  3, 10,
@@ -128,27 +147,15 @@ struct jpeg_decomp_master {
   JDIMENSION max_lines_;
   size_t num_output_rows_;
 
-  hwy::AlignedFreeUniquePtr<float[]> MCU_row_buf_;
-  size_t MCU_row_stride_;
-  size_t MCU_plane_size_;
-  size_t MCU_buf_current_row_;
-  size_t MCU_buf_ready_rows_;
+  std::array<size_t, jpegli::kMaxComponents> raw_height_;
+  std::array<jpegli::RowBuffer, jpegli::kMaxComponents> raw_output_;
+  std::array<jpegli::RowBuffer, jpegli::kMaxComponents> render_output_;
 
-  int output_ci_;
-  // Temporary buffers for vertically upsampled chroma components. We keep a
-  // ringbuffer of 3 * kBlockDim rows so that we have access for previous and
-  // next rows.
-  hwy::AlignedFreeUniquePtr<float[]> chroma_;
-  int num_chroma_;
-  size_t chroma_plane_size_;
-
-  // In the rendering order, vertically upsampled chroma components come first.
-  std::vector<size_t> component_order_;
   hwy::AlignedFreeUniquePtr<float[]> idct_scratch_;
   hwy::AlignedFreeUniquePtr<float[]> upsample_scratch_;
   hwy::AlignedFreeUniquePtr<uint8_t[]> output_scratch_;
-
   hwy::AlignedFreeUniquePtr<float[]> dequant_;
+
   // Per channel and per frequency statistics about the number of nonzeros and
   // the sum of coefficient absolute values, used in dequantization bias
   // computation.
