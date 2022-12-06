@@ -66,6 +66,7 @@ target_compile_definitions(jpegli-obj PUBLIC
 
 set(JPEGLI_INTERNAL_OBJECTS $<TARGET_OBJECTS:jpegli-obj>)
 
+file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/jpegli)
 add_library(jpeg SHARED ${JPEGLI_INTERNAL_OBJECTS})
 strip_static(JPEGLI_INTERNAL_SHARED_LIBS JPEGLI_INTERNAL_LIBS)
 target_link_libraries(jpeg PUBLIC ${JPEGXL_COVERAGE_FLAGS})
@@ -73,8 +74,8 @@ target_link_libraries(jpeg PRIVATE ${JPEGLI_INTERNAL_SHARED_LIBS})
 set_target_properties(jpeg PROPERTIES
   VERSION ${JPEGLI_LIBRARY_VERSION}
   SOVERSION ${JPEGLI_LIBRARY_SOVERSION}
-  LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
-  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
+  LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/jpegli"
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/jpegli")
 
 # Add a jpeg.version file as a version script to tag symbols with the
 # appropriate version number.
