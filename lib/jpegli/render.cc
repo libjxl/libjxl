@@ -171,6 +171,12 @@ constexpr size_t kPaddingLeft = 64;
 constexpr size_t kPaddingRight = 64;
 constexpr size_t kTempOutputLen = 1024;
 
+bool ShouldApplyDequantBiases(j_decompress_ptr cinfo, int ci) {
+  const auto& compinfo = cinfo->comp_info[ci];
+  return (compinfo.h_samp_factor == cinfo->max_h_samp_factor &&
+          compinfo.v_samp_factor == cinfo->max_v_samp_factor);
+}
+
 // See the following article for the details:
 // J. R. Price and M. Rabbani, "Dequantization bias for JPEG decompression"
 // Proceedings International Conference on Information Technology: Coding and
@@ -179,10 +185,10 @@ void ComputeOptimalLaplacianBiases(const int num_blocks, const int* nonzeros,
                                    const int* sumabs, float* biases) {
   for (size_t k = 1; k < DCTSIZE2; ++k) {
     // Notation adapted from the article
-    size_t N = num_blocks;
-    size_t N1 = nonzeros[k];
-    size_t N0 = num_blocks - N1;
-    size_t S = sumabs[k];
+    float N = num_blocks;
+    float N1 = nonzeros[k];
+    float N0 = num_blocks - N1;
+    float S = sumabs[k];
     // Compute gamma from N0, N1, N, S (eq. 11), with A and B being just
     // temporary grouping of terms.
     float A = 4.0 * S + 2.0 * N;
@@ -199,26 +205,17 @@ void ComputeOptimalLaplacianBiases(const int num_blocks, const int* nonzeros,
 
 void PrepareForOutput(j_decompress_ptr cinfo) {
   jpeg_decomp_master* m = cinfo->master;
-  m->MCU_row_stride_ = m->iMCU_cols_ * cinfo->max_h_samp_factor * DCTSIZE +
-                       kPaddingLeft + kPaddingRight;
-  m->MCU_plane_size_ = m->MCU_row_stride_ * cinfo->max_v_samp_factor * DCTSIZE;
-  m->MCU_row_buf_ = hwy::AllocateAligned<float>(3 * m->MCU_plane_size_);
-  m->num_chroma_ = 0;
-  m->chroma_plane_size_ = m->MCU_row_stride_ * 3 * DCTSIZE;
-  m->chroma_ = hwy::AllocateAligned<float>(3 * m->chroma_plane_size_);
   for (int c = 0; c < cinfo->num_components; ++c) {
-    if (cinfo->comp_info[c].v_samp_factor < cinfo->max_v_samp_factor) {
-      m->component_order_.emplace_back(c);
-      ++m->num_chroma_;
-    }
-  }
-  for (int c = 0; c < cinfo->num_components; ++c) {
-    if (cinfo->comp_info[c].v_samp_factor == cinfo->max_v_samp_factor) {
-      m->component_order_.emplace_back(c);
-    }
+    const auto& comp = cinfo->comp_info[c];
+    const size_t stride = m->iMCU_cols_ * cinfo->max_h_samp_factor * DCTSIZE;
+    m->raw_height_[c] = cinfo->total_iMCU_rows * comp.v_samp_factor * DCTSIZE;
+    m->raw_output_[c].Allocate(3 * comp.v_samp_factor * DCTSIZE, stride);
+    m->render_output_[c].Allocate(cinfo->max_v_samp_factor, stride);
   }
   m->idct_scratch_ = hwy::AllocateAligned<float>(DCTSIZE2 * 2);
-  m->upsample_scratch_ = hwy::AllocateAligned<float>(m->MCU_row_stride_);
+  size_t MCU_row_stride = m->iMCU_cols_ * cinfo->max_h_samp_factor * DCTSIZE;
+  m->upsample_scratch_ = hwy::AllocateAligned<float>(
+      MCU_row_stride + kPaddingLeft + kPaddingRight);
   size_t bytes_per_channel = DivCeil(m->output_bit_depth_, 8);
   size_t bytes_per_sample = cinfo->out_color_components * bytes_per_channel;
   m->output_scratch_ =
@@ -229,12 +226,13 @@ void PrepareForOutput(j_decompress_ptr cinfo) {
   memset(m->nonzeros_.get(), 0, coeffs_per_block * sizeof(m->nonzeros_[0]));
   memset(m->sumabs_.get(), 0, coeffs_per_block * sizeof(m->sumabs_[0]));
   m->num_processed_blocks_.resize(cinfo->num_components);
+  for (int c = 0; c < cinfo->num_components; ++c) {
+    m->num_processed_blocks_[c] = 0;
+  }
   m->biases_ = hwy::AllocateAligned<float>(coeffs_per_block);
   memset(m->biases_.get(), 0, coeffs_per_block * sizeof(m->biases_[0]));
   cinfo->output_iMCU_row = 0;
-  m->output_ci_ = 0;
   cinfo->output_scanline = 0;
-  m->MCU_buf_ready_rows_ = 0;
   const float kDequantScale = 1.0f / (8 * 255);
   m->dequant_ = hwy::AllocateAligned<float>(coeffs_per_block);
   for (int c = 0; c < cinfo->num_components; c++) {
@@ -246,51 +244,112 @@ void PrepareForOutput(j_decompress_ptr cinfo) {
   }
 }
 
+void DecodeCurrentiMCURow(j_decompress_ptr cinfo) {
+  jpeg_decomp_master* m = cinfo->master;
+  const size_t imcu_row = cinfo->output_iMCU_row;
+  for (int c = 0; c < cinfo->num_components; ++c) {
+    size_t k0 = c * DCTSIZE2;
+    auto& comp = m->components_[c];
+    auto& compinfo = cinfo->comp_info[c];
+    if (ShouldApplyDequantBiases(cinfo, c)) {
+      size_t num_coeffs = compinfo.width_in_blocks * DCTSIZE2;
+      size_t offset = imcu_row * compinfo.width_in_blocks * DCTSIZE2;
+      // Update statistics for this MCU row.
+      GatherBlockStats(&comp.coeffs[offset], num_coeffs, &m->nonzeros_[k0],
+                       &m->sumabs_[k0]);
+      m->num_processed_blocks_[c] += compinfo.width_in_blocks;
+      if (imcu_row % 4 == 3) {
+        // Re-compute optimal biases every few MCU-rows.
+        ComputeOptimalLaplacianBiases(m->num_processed_blocks_[c],
+                                      &m->nonzeros_[k0], &m->sumabs_[k0],
+                                      &m->biases_[k0]);
+      }
+    }
+    size_t block_row = imcu_row * compinfo.v_samp_factor;
+    RowBuffer* raw_out = &m->raw_output_[c];
+    for (int iy = 0; iy < compinfo.v_samp_factor; ++iy) {
+      size_t by = block_row + iy;
+      size_t bix = by * compinfo.width_in_blocks;
+      int16_t* JXL_RESTRICT row_in = &comp.coeffs[bix * DCTSIZE2];
+      float* JXL_RESTRICT row_out = raw_out->Row(by * DCTSIZE);
+      for (size_t bx = 0; bx < compinfo.width_in_blocks; ++bx) {
+        InverseTransformBlock(&row_in[bx * DCTSIZE2], &m->dequant_[k0],
+                              &m->biases_[k0], m->idct_scratch_.get(),
+                              &row_out[bx * DCTSIZE], raw_out->stride());
+      }
+    }
+  }
+}
+
+void ProcessRawOutput(j_decompress_ptr cinfo, JSAMPIMAGE data) {
+  jpegli::DecodeCurrentiMCURow(cinfo);
+  jpeg_decomp_master* m = cinfo->master;
+  for (int c = 0; c < cinfo->num_components; ++c) {
+    const auto& compinfo = cinfo->comp_info[c];
+    size_t comp_width = compinfo.width_in_blocks * DCTSIZE;
+    size_t comp_height = compinfo.height_in_blocks * DCTSIZE;
+    size_t comp_nrows = compinfo.v_samp_factor * DCTSIZE;
+    size_t y0 = cinfo->output_iMCU_row * compinfo.v_samp_factor * DCTSIZE;
+    size_t y1 = std::min(y0 + comp_nrows, comp_height);
+    for (size_t y = y0; y < y1; ++y) {
+      for (size_t x0 = 0; x0 < comp_width; x0 += kTempOutputLen) {
+        float* rows[3] = {m->raw_output_[c].Row(y)};
+        size_t len = std::min(comp_width - x0, kTempOutputLen);
+        uint8_t* output = data[c][y - y0];
+        WriteToOutput(rows, 0, x0, len, 1, m->output_bit_depth_,
+                      m->output_scratch_.get(), output);
+      }
+    }
+  }
+  ++cinfo->output_iMCU_row;
+  cinfo->output_scanline += cinfo->max_v_samp_factor * DCTSIZE;
+}
+
 void ProcessOutput(j_decompress_ptr cinfo, size_t* num_output_rows,
                    JSAMPARRAY scanlines, size_t max_output_rows) {
   jpeg_decomp_master* m = cinfo->master;
   size_t xsize_blocks = DivCeil(cinfo->image_width, DCTSIZE);
-  size_t mcu_y = cinfo->output_iMCU_row;
-  for (; m->output_ci_ < cinfo->num_components; ++m->output_ci_) {
-    size_t c = m->component_order_[m->output_ci_];
-    size_t k0 = c * DCTSIZE2;
-    auto& comp = m->components_[c];
-    auto& compinfo = cinfo->comp_info[c];
-    bool hups = compinfo.h_samp_factor < cinfo->max_h_samp_factor;
-    bool vups = compinfo.v_samp_factor < cinfo->max_v_samp_factor;
-    size_t nblocks_y = compinfo.v_samp_factor;
-    float* output;
-    size_t output_ysize;
-    if (vups) {
-      output = m->chroma_.get() + m->output_ci_ * m->chroma_plane_size_;
-      output_ysize = 3 * DCTSIZE;
-    } else {
-      output = m->MCU_row_buf_.get() + c * m->MCU_plane_size_;
-      output_ysize = cinfo->max_v_samp_factor * DCTSIZE;
-    }
-    size_t mcu_y0 = vups ? (mcu_y * DCTSIZE) % output_ysize : 0;
-    if (m->output_ci_ == m->num_chroma_ && mcu_y > 0) {
-      // For the previous MCU row we have everything we need at this point,
-      // including the chroma components for the current MCU row that was used
-      // in upsampling, so we can do the color conversion and the interleaved
-      // output.
-      if (m->MCU_buf_ready_rows_ == 0) {
-        m->MCU_buf_ready_rows_ = cinfo->max_v_samp_factor * DCTSIZE;
-        m->MCU_buf_current_row_ = 0;
+  const int vfactor = cinfo->max_v_samp_factor;
+  const size_t imcu_row = cinfo->output_iMCU_row;
+  const size_t imcu_height = vfactor * DCTSIZE;
+  if (imcu_row == cinfo->total_iMCU_rows ||
+      (imcu_row > 1 && cinfo->output_scanline < (imcu_row - 1) * imcu_height)) {
+    // We are ready to output some scanlines.
+    size_t ybegin = cinfo->output_scanline;
+    size_t yend =
+        (imcu_row == cinfo->total_iMCU_rows ? cinfo->output_height
+                                            : (imcu_row - 1) * imcu_height);
+    yend = std::min<size_t>(yend, ybegin + max_output_rows - *num_output_rows);
+    size_t yb = (ybegin / vfactor) * vfactor;
+    size_t ye = DivCeil(yend, vfactor) * vfactor;
+    for (size_t y = yb; y < ye; y += vfactor) {
+      for (int c = 0; c < cinfo->num_components; ++c) {
+        RowBuffer* raw_out = &m->raw_output_[c];
+        RowBuffer* render_out = &m->render_output_[c];
+        const auto& compinfo = cinfo->comp_info[c];
+        size_t yc = (y / vfactor) * compinfo.v_samp_factor;
+        if (compinfo.v_samp_factor < vfactor) {
+          const float* JXL_RESTRICT row_mid = raw_out->Row(yc);
+          const float* JXL_RESTRICT row_top =
+              yc == 0 ? row_mid : raw_out->Row(yc - 1);
+          const float* JXL_RESTRICT row_bot =
+              yc + 1 == m->raw_height_[c] ? row_mid : raw_out->Row(yc + 1);
+          Upsample2Vertical(row_top, row_mid, row_bot, render_out->Row(0),
+                            render_out->Row(1), xsize_blocks * DCTSIZE);
+        } else {
+          JXL_ASSERT(y == static_cast<size_t>(yc));
+          for (int yix = 0; yix < vfactor; ++yix) {
+            memcpy(render_out->Row(yix), raw_out->Row(yc + yix),
+                   raw_out->memstride());
+          }
+        }
       }
-      while (m->MCU_buf_current_row_ < m->MCU_buf_ready_rows_ &&
-             *num_output_rows < max_output_rows &&
-             cinfo->output_scanline < cinfo->output_height) {
+      for (int yix = 0; yix < vfactor; ++yix) {
+        if (y + yix < ybegin || y + yix >= yend) continue;
         // TODO(szabadka) Support 4 components JPEGs.
-        size_t offsets[3];
         float* rows[3];
         for (int c = 0; c < cinfo->out_color_components; ++c) {
-          offsets[c] = c * m->MCU_plane_size_ +
-                       m->MCU_buf_current_row_ * m->MCU_row_stride_ +
-                       kPaddingLeft;
-        }
-        for (int c = 0; c < cinfo->out_color_components; ++c) {
-          rows[c] = m->MCU_row_buf_.get() + offsets[c];
+          rows[c] = m->render_output_[c].Row(yix);
         }
         if (cinfo->jpeg_color_space == JCS_YCbCr) {
           YCbCrToRGB(rows[0], rows[1], rows[2], xsize_blocks * DCTSIZE);
@@ -313,95 +372,27 @@ void ProcessOutput(j_decompress_ptr cinfo, size_t* num_output_rows,
                           m->output_scratch_.get(), output);
           }
         }
+        JXL_ASSERT(cinfo->output_scanline == y + yix);
         ++cinfo->output_scanline;
         ++(*num_output_rows);
-        ++m->MCU_buf_current_row_;
       }
-      if (cinfo->output_scanline == cinfo->output_height ||
-          *num_output_rows == max_output_rows) {
-        return;
-      }
-      m->MCU_buf_ready_rows_ = 0;
     }
-    if (mcu_y < cinfo->total_iMCU_rows) {
-      if (!hups && !vups) {
-        size_t num_coeffs = compinfo.width_in_blocks * DCTSIZE2;
-        size_t offset = mcu_y * compinfo.width_in_blocks * DCTSIZE2;
-        // Update statistics for this MCU row.
-        GatherBlockStats(&comp.coeffs[offset], num_coeffs, &m->nonzeros_[k0],
-                         &m->sumabs_[k0]);
-        m->num_processed_blocks_[c] += compinfo.width_in_blocks;
-        if (mcu_y % 4 == 3) {
-          // Re-compute optimal biases every few MCU-rows.
-          ComputeOptimalLaplacianBiases(m->num_processed_blocks_[c],
-                                        &m->nonzeros_[k0], &m->sumabs_[k0],
-                                        &m->biases_[k0]);
-        }
-      }
-      for (size_t iy = 0; iy < nblocks_y; ++iy) {
-        size_t by = mcu_y * nblocks_y + iy;
-        size_t y0 = mcu_y0 + iy * DCTSIZE;
-        int16_t* JXL_RESTRICT row_in =
-            &comp.coeffs[by * compinfo.width_in_blocks * DCTSIZE2];
-        float* JXL_RESTRICT row_out =
-            output + y0 * m->MCU_row_stride_ + kPaddingLeft;
-        for (size_t bx = 0; bx < compinfo.width_in_blocks; ++bx) {
-          InverseTransformBlock(&row_in[bx * DCTSIZE2], &m->dequant_[k0],
-                                &m->biases_[k0], m->idct_scratch_.get(),
-                                &row_out[bx * DCTSIZE], m->MCU_row_stride_);
-        }
-        if (hups) {
-          for (size_t y = 0; y < DCTSIZE; ++y) {
-            float* JXL_RESTRICT row =
-                output + (y0 + y) * m->MCU_row_stride_ + kPaddingLeft;
-            Upsample2Horizontal(row, m->upsample_scratch_.get(),
-                                xsize_blocks * DCTSIZE);
-            memcpy(row, m->upsample_scratch_.get(),
-                   xsize_blocks * DCTSIZE * sizeof(row[0]));
-          }
+  } else {
+    DecodeCurrentiMCURow(cinfo);
+    for (int c = 0; c < cinfo->num_components; ++c) {
+      const auto& compinfo = cinfo->comp_info[c];
+      if (compinfo.h_samp_factor < cinfo->max_h_samp_factor) {
+        RowBuffer* raw_out = &m->raw_output_[c];
+        size_t y0 = imcu_row * compinfo.v_samp_factor * DCTSIZE;
+        for (int iy = 0; iy < compinfo.v_samp_factor * DCTSIZE; ++iy) {
+          float* JXL_RESTRICT row = raw_out->Row(y0 + iy);
+          Upsample2Horizontal(row, m->upsample_scratch_.get(),
+                              xsize_blocks * DCTSIZE);
         }
       }
     }
-    if (vups) {
-      auto y_idx = [&](size_t mcu_y, ssize_t y) {
-        return (output_ysize + mcu_y * DCTSIZE + y) % output_ysize;
-      };
-      if (mcu_y == 0) {
-        // Copy the first row of the current MCU row to the last row of the
-        // previous one.
-        memcpy(output + y_idx(mcu_y, -1) * m->MCU_row_stride_,
-               output + y_idx(mcu_y, 0) * m->MCU_row_stride_,
-               m->MCU_row_stride_ * sizeof(output[0]));
-      }
-      if (mcu_y == cinfo->total_iMCU_rows) {
-        // Copy the last row of the current MCU row to the  first row of the
-        // next  one.
-        memcpy(output + y_idx(mcu_y + 1, 0) * m->MCU_row_stride_,
-               output + y_idx(mcu_y, DCTSIZE - 1) * m->MCU_row_stride_,
-               m->MCU_row_stride_ * sizeof(output[0]));
-      }
-      if (mcu_y > 0) {
-        for (size_t y = 0; y < DCTSIZE; ++y) {
-          size_t y_top = y_idx(mcu_y - 1, y - 1);
-          size_t y_cur = y_idx(mcu_y - 1, y);
-          size_t y_bot = y_idx(mcu_y - 1, y + 1);
-          size_t y_out0 = 2 * y;
-          size_t y_out1 = 2 * y + 1;
-          Upsample2Vertical(output + y_top * m->MCU_row_stride_ + kPaddingLeft,
-                            output + y_cur * m->MCU_row_stride_ + kPaddingLeft,
-                            output + y_bot * m->MCU_row_stride_ + kPaddingLeft,
-                            m->MCU_row_buf_.get() + c * m->MCU_plane_size_ +
-                                y_out0 * m->MCU_row_stride_ + kPaddingLeft,
-                            m->MCU_row_buf_.get() + c * m->MCU_plane_size_ +
-                                y_out1 * m->MCU_row_stride_ + kPaddingLeft,
-                            xsize_blocks * DCTSIZE);
-        }
-      }
-    }
+    ++cinfo->output_iMCU_row;
   }
-  ++cinfo->output_iMCU_row;
-  m->output_ci_ = 0;
-  JXL_DASSERT(cinfo->output_iMCU_row <= cinfo->total_iMCU_rows);
 }
 
 }  // namespace jpegli

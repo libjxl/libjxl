@@ -136,6 +136,7 @@ struct TestConfig {
   bool pre_consume_input = false;
   bool buffered_image_mode = false;
   bool crop = false;
+  bool raw_output = false;
 };
 
 bool LoadNextChunk(const TestConfig& config, j_decompress_ptr cinfo) {
@@ -221,6 +222,10 @@ TEST_P(DecodeAPITestParam, TestAPI) {
     cinfo.buffered_image = TRUE;
   }
 
+  if (cinfo.max_v_samp_factor > 1 && config.raw_output) {
+    cinfo.raw_data_out = TRUE;
+  }
+
   if (config.pre_consume_input) {
     jpeg_start_decompress(&cinfo);
   } else if (cinfo.buffered_image) {
@@ -239,7 +244,7 @@ TEST_P(DecodeAPITestParam, TestAPI) {
   JDIMENSION yoffset = 0;
   JDIMENSION xsize_cropped = xsize;
   JDIMENSION ysize_cropped = ysize;
-  if (config.crop) {
+  if (config.crop && !config.raw_output) {
     xoffset = xsize_cropped = xsize / 3;
     yoffset = ysize_cropped = ysize / 3;
     jpeg_crop_scanline(&cinfo, &xoffset, &xsize_cropped);
@@ -277,64 +282,107 @@ TEST_P(DecodeAPITestParam, TestAPI) {
       EXPECT_TRUE(jpeg_start_output(&cinfo, cinfo.input_scan_number));
     }
 
-    std::vector<uint8_t> output(ysize_cropped * stride);
-    size_t total_output_lines = 0;
-    for (;;) {
-      size_t num_output_lines;
-      size_t max_lines;
-      if (cinfo.output_scanline < yoffset) {
-        max_lines = yoffset - cinfo.output_scanline;
-        num_output_lines = jpeg_skip_scanlines(&cinfo, max_lines);
-      } else if (cinfo.output_scanline >= yoffset + ysize_cropped) {
-        max_lines = cinfo.output_height - cinfo.output_scanline;
-        num_output_lines = jpeg_skip_scanlines(&cinfo, max_lines);
-      } else {
-        size_t lines_left = yoffset + ysize_cropped - cinfo.output_scanline;
-        max_lines = std::min<size_t>(max_output_lines, lines_left);
-        std::vector<JSAMPROW> scanlines(max_lines);
-        for (size_t i = 0; i < max_lines; ++i) {
-          size_t yidx = cinfo.output_scanline - yoffset + i;
-          scanlines[i] = &output[yidx * stride];
+    if (cinfo.raw_data_out) {
+      std::vector<std::vector<uint8_t>> planes;
+      std::vector<size_t> strides(cinfo.num_components);
+      for (int c = 0; c < cinfo.num_components; ++c) {
+        size_t xsize = cinfo.comp_info[c].width_in_blocks * DCTSIZE;
+        strides[c] = xsize * bytes_per_sample;
+        size_t ysize = cinfo.comp_info[c].height_in_blocks * DCTSIZE;
+        std::vector<uint8_t> plane(ysize * stride);
+        planes.emplace_back(std::move(plane));
+      }
+      size_t total_output_lines = 0;
+      for (;;) {
+        size_t max_lines = cinfo.max_v_samp_factor * DCTSIZE;
+        std::vector<std::vector<JSAMPROW>> rowdata(cinfo.num_components);
+        std::vector<JSAMPARRAY> data(cinfo.num_components);
+        for (int c = 0; c < cinfo.num_components; ++c) {
+          size_t vfactor = cinfo.comp_info[c].v_samp_factor;
+          size_t cheight = cinfo.comp_info[c].height_in_blocks * DCTSIZE;
+          size_t num_lines = vfactor * DCTSIZE;
+          rowdata[c].resize(num_lines);
+          size_t y0 = cinfo.output_iMCU_row * num_lines;
+          for (size_t i = 0; i < num_lines; ++i) {
+            rowdata[c][i] = y0 + i < cheight ? &planes[c][y0 + i] : nullptr;
+          }
+          data[c] = &rowdata[c][0];
         }
-        num_output_lines =
-            jpeg_read_scanlines(&cinfo, &scanlines[0], max_lines);
+        size_t num_output_lines =
+            jpeg_read_raw_data(&cinfo, &data[0], max_lines);
+        total_output_lines += num_output_lines;
+        EXPECT_EQ(total_output_lines, cinfo.output_scanline);
+        if (cinfo.output_scanline >= cinfo.output_height) {
+          break;
+        }
+        if (config.pre_consume_input) {
+          EXPECT_EQ(num_output_lines, max_lines);
+        } else if (num_output_lines < max_lines) {
+          ASSERT_TRUE(LoadNextChunk(config, &cinfo));
+        }
+        // TODO(szabadka) Add expectations on the raw data.
       }
-      total_output_lines += num_output_lines;
-      EXPECT_EQ(total_output_lines, cinfo.output_scanline);
-      if (cinfo.output_scanline >= cinfo.output_height) {
-        break;
+    } else {
+      std::vector<uint8_t> output(ysize_cropped * stride);
+      size_t total_output_lines = 0;
+      for (;;) {
+        size_t num_output_lines;
+        size_t max_lines;
+        if (cinfo.output_scanline < yoffset) {
+          max_lines = yoffset - cinfo.output_scanline;
+          num_output_lines = jpeg_skip_scanlines(&cinfo, max_lines);
+        } else if (cinfo.output_scanline >= yoffset + ysize_cropped) {
+          max_lines = cinfo.output_height - cinfo.output_scanline;
+          num_output_lines = jpeg_skip_scanlines(&cinfo, max_lines);
+        } else {
+          size_t lines_left = yoffset + ysize_cropped - cinfo.output_scanline;
+          max_lines = std::min<size_t>(max_output_lines, lines_left);
+          std::vector<JSAMPROW> scanlines(max_lines);
+          for (size_t i = 0; i < max_lines; ++i) {
+            size_t yidx = cinfo.output_scanline - yoffset + i;
+            scanlines[i] = &output[yidx * stride];
+          }
+          num_output_lines =
+              jpeg_read_scanlines(&cinfo, &scanlines[0], max_lines);
+        }
+        total_output_lines += num_output_lines;
+        EXPECT_EQ(total_output_lines, cinfo.output_scanline);
+        if (cinfo.output_scanline >= cinfo.output_height) {
+          break;
+        }
+        if (config.pre_consume_input) {
+          EXPECT_EQ(num_output_lines, max_lines);
+        } else if (num_output_lines < max_lines) {
+          ASSERT_TRUE(LoadNextChunk(config, &cinfo));
+        }
       }
-      if (config.pre_consume_input) {
-        EXPECT_EQ(num_output_lines, max_lines);
-      } else if (num_output_lines < max_lines) {
-        ASSERT_TRUE(LoadNextChunk(config, &cinfo));
+      ASSERT_EQ(output.size(), cropped.size() * bytes_per_sample);
+      const double mul_orig = 1.0 / 255.0;
+      const double mul_output = 1.0 / ((1u << config.output_bit_depth) - 1);
+      double diff2 = 0.0;
+      for (size_t i = 0; i < cropped.size(); ++i) {
+        double sample_orig = cropped[i] * mul_orig;
+        double sample_output;
+        if (bytes_per_sample == 1) {
+          sample_output = output[i];
+        } else {
+          sample_output = output[2 * i] + (output[2 * i + 1] << 8);
+        }
+        sample_output *= mul_output;
+        double diff = sample_orig - sample_output;
+        diff2 += diff * diff;
       }
-    }
-    EXPECT_EQ(cinfo.input_iMCU_row, cinfo.total_iMCU_rows);
-
-    ASSERT_EQ(output.size(), cropped.size() * bytes_per_sample);
-    const double mul_orig = 1.0 / 255.0;
-    const double mul_output = 1.0 / ((1u << config.output_bit_depth) - 1);
-    double diff2 = 0.0;
-    for (size_t i = 0; i < cropped.size(); ++i) {
-      double sample_orig = cropped[i] * mul_orig;
-      double sample_output;
-      if (bytes_per_sample == 1) {
-        sample_output = output[i];
+      double rms = std::sqrt(diff2 / cropped.size()) / mul_orig;
+      double max_dist = config.max_distance;
+      if (!cinfo.buffered_image || jpeg_input_complete(&cinfo)) {
+        EXPECT_LE(rms, max_dist);
       } else {
-        sample_output = output[2 * i] + (output[2 * i + 1] << 8);
+        EXPECT_LE(rms, max_dist * 10.0);
       }
-      sample_output *= mul_output;
-      double diff = sample_orig - sample_output;
-      diff2 += diff * diff;
     }
-    double rms = std::sqrt(diff2 / cropped.size()) / mul_orig;
-    double max_dist = config.max_distance;
     if (!cinfo.buffered_image || jpeg_input_complete(&cinfo)) {
-      // TODO(szabadka) Have expectations for the progression steps as well.
-      EXPECT_LE(rms, max_dist);
+      EXPECT_EQ(cinfo.input_iMCU_row, cinfo.total_iMCU_rows);
     }
-
     if (cinfo.buffered_image) {
       if (config.pre_consume_input) {
         EXPECT_TRUE(jpeg_finish_output(&cinfo));
@@ -420,6 +468,10 @@ std::vector<TestConfig> GenerateTests() {
               all_tests.push_back(config);
               if (config.chunk_size != 0) {
                 config.source_mgr = SOURCE_MGR_SUSPENDING;
+                all_tests.push_back(config);
+              }
+              if (config.max_output_lines == 0 && !config.crop) {
+                config.raw_output = true;
                 all_tests.push_back(config);
               }
             }
@@ -519,6 +571,8 @@ std::ostream& operator<<(std::ostream& os, const TestConfig& c) {
   }
   if (c.crop) {
     os << "Crop";
+  } else if (c.raw_output) {
+    os << "Raw";
   }
   os << "BitDepth" << c.output_bit_depth;
   return os;

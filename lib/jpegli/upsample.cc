@@ -5,6 +5,8 @@
 
 #include "lib/jpegli/upsample.h"
 
+#include <string.h>
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jpegli/upsample.cc"
 #include <hwy/foreach_target.h>
@@ -70,21 +72,22 @@ void StoreInterleaved(const DF df, V v0, V v1, T* mem) {
 #endif
 }
 
-void Upsample2Horizontal(float* JXL_RESTRICT row_in,
-                         float* JXL_RESTRICT row_out, size_t len_out) {
+void Upsample2Horizontal(float* JXL_RESTRICT row,
+                         float* JXL_RESTRICT scratch_space, size_t len_out) {
   HWY_FULL(float) df;
   auto threefour = Set(df, 0.75f);
   auto onefour = Set(df, 0.25f);
   const size_t len_in = len_out >> 1;
-  row_in[-1] = row_in[0];
-  row_in[len_in] = row_in[len_in - 1];
+  memcpy(scratch_space, row, len_in * sizeof(row[0]));
+  scratch_space[-1] = scratch_space[0];
+  scratch_space[len_in] = scratch_space[len_in - 1];
   for (size_t x = 0; x < len_in; x += Lanes(df)) {
-    auto current = Mul(Load(df, row_in + x), threefour);
-    auto prev = LoadU(df, row_in + x - 1);
-    auto next = LoadU(df, row_in + x + 1);
+    auto current = Mul(Load(df, scratch_space + x), threefour);
+    auto prev = LoadU(df, scratch_space + x - 1);
+    auto next = LoadU(df, scratch_space + x + 1);
     auto left = MulAdd(onefour, prev, current);
     auto right = MulAdd(onefour, next, current);
-    StoreInterleaved(df, left, right, row_out + x * 2);
+    StoreInterleaved(df, left, right, row + x * 2);
   }
 }
 
@@ -117,9 +120,9 @@ namespace jpegli {
 HWY_EXPORT(Upsample2Horizontal);
 HWY_EXPORT(Upsample2Vertical);
 
-void Upsample2Horizontal(float* JXL_RESTRICT row_in,
-                         float* JXL_RESTRICT row_out, size_t len_out) {
-  return HWY_DYNAMIC_DISPATCH(Upsample2Horizontal)(row_in, row_out, len_out);
+void Upsample2Horizontal(float* JXL_RESTRICT row,
+                         float* JXL_RESTRICT scratch_space, size_t len_out) {
+  return HWY_DYNAMIC_DISPATCH(Upsample2Horizontal)(row, scratch_space, len_out);
 }
 
 void Upsample2Vertical(const float* JXL_RESTRICT row_top,

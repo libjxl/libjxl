@@ -12,46 +12,125 @@ on:
       - ci-*-debug
 
 jobs:
-  ubuntu_build:
-    name: Ubuntu Build and SSH
-    runs-on: [ubuntu-latest]
+  cross_compile_ubuntu:
+    name: Cross-compiling ${{ matrix.build_target }} ${{ matrix.variant }} 
+    runs-on: [ubuntu-22.04]
+    container:
+      image: debian:bullseye
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: i386
+            build_target: i686-linux-gnu
+
+    env:
+      BUILD_DIR: build
 
     steps:
-    - name: Install build deps
+    - name: Setup apt
+      shell: bash
       run: |
-        sudo apt update
-        sudo apt install -y \
-          ccache \
-          clang-7 \
-          cmake \
-          doxygen \
-          libbrotli-dev \
-          libgdk-pixbuf2.0-dev \
-          libgif-dev \
-          libgtest-dev \
-          libgtk2.0-dev  \
-          libjpeg-dev \
-          libopenexr-dev \
-          libpng-dev \
-          libwebp-dev \
-          ninja-build \
-          pkg-config \
-          xvfb \
-          ${{ matrix.apt_pkgs }} \
-        #
-        echo "CC=clang-7" >> $GITHUB_ENV
-        echo "CXX=clang++-7" >> $GITHUB_ENV
+        set -x
+        apt-get update -y
+        apt-get install -y ca-certificates debian-ports-archive-keyring
+
+        dpkg --add-architecture "${{ matrix.arch }}"
+
+        # Update the sources.list with the split of supported architectures.
+        bkplist="/etc/apt/sources.list.bkp"
+        mv /etc/apt/sources.list "${bkplist}"
+
+        newlist="/etc/apt/sources.list"
+        rm -f "${newlist}"
+
+        main_list="amd64,${{ matrix.arch }}"
+        port_list=""
+        if [[ "${{ matrix.arch }}" == "i386" ]]; then
+          main_list="amd64,i386"
+        else
+          port_list="${{ matrix.arch }}"
+        fi
+
+        grep -v -E '^#' "${bkplist}" |
+          sed -E "s;^deb (http[^ ]+) (.*)\$;deb [arch=${main_list}] \\1 \\2\ndeb-src [arch=${main_list}] \\1 \\2;" \
+          | tee -a "${newlist}"
+
+    - name: Install build deps
+      shell: bash
+      run: |
+        set -x
+        apt update
+        pkgs=(
+          # Build dependencies
+          cmake
+          doxygen
+          git
+          graphviz
+          ninja-build
+          pkg-config
+          qemu-user-static
+          xdg-utils
+          xvfb
+
+          # Toolchain for cross-compiling.
+          clang-11
+          g++-aarch64-linux-gnu
+          libc6-dev-${{ matrix.arch }}-cross
+          libstdc++-10-dev-${{ matrix.arch }}-cross
+          libstdc++-10-dev:${{ matrix.arch }}
+
+          # Dependencies
+          libbrotli-dev:${{ matrix.arch }}
+          libgif-dev:${{ matrix.arch }}
+          libjpeg-dev:${{ matrix.arch }}
+          libpng-dev:${{ matrix.arch }}
+          libwebp-dev:${{ matrix.arch }}
+
+          # For OpenEXR:
+          libilmbase-dev:${{ matrix.arch }}
+          libopenexr-dev:${{ matrix.arch }}
+
+          # GTK plugins
+          libgdk-pixbuf2.0-dev:${{ matrix.arch }}
+          libgtk2.0-dev:${{ matrix.arch }}
+
+          # QT
+          libqt5x11extras5-dev:${{ matrix.arch }}
+          qtbase5-dev:${{ matrix.arch }}
+        )
+        if [[ "${{ matrix.build_target }}" != "x86_64-linux-gnu" ]]; then
+          pkgs+=(
+            binutils-${{ matrix.build_target }}
+            gcc-${{ matrix.build_target }}
+          )
+        fi
+        if [[ "${{ matrix.arch }}" != "i386" ]]; then
+          pkgs+=(
+            # TCMalloc
+            libgoogle-perftools-dev:${{ matrix.arch }}
+            libgoogle-perftools4:${{ matrix.arch }}
+            libtcmalloc-minimal4:${{ matrix.arch }}
+            libunwind-dev:${{ matrix.arch }}
+          )
+        fi
+        DEBIAN_FRONTEND=noninteractive apt install -y "${pkgs[@]}"
+        echo "CC=${{ matrix.c_compiler || 'clang-11' }}" >> $GITHUB_ENV
+        echo "CXX=${{ matrix.cxx_compiler || 'clang++-11' }}" >> $GITHUB_ENV
     - name: Checkout the source
       uses: actions/checkout@v2
       with:
         submodules: true
-        fetch-depth: 2
+        fetch-depth: 1
     - name: Build
       run: |
-        ./ci.sh $(echo ${{ github.ref }} | sed 's_refs/heads/ci-\([a-z_]*\)-debug_\1_') \
-          -DJPEGXL_FORCE_SYSTEM_BROTLI=ON
+        CMAKE_FLAGS="${{ matrix.cmake_flags }}" ./ci.sh release \
+          -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
+          -DJPEGXL_ENABLE_JNI=OFF \
+          ${{ join(matrix.cmake_args, ' ') }}
       env:
         SKIP_TEST: 1
+        BUILD_TARGET: ${{ matrix.build_target }}
     - name: Setup tmate session
       uses: mxschmitt/action-tmate@v3
 
