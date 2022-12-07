@@ -10,7 +10,7 @@
 #include <chrono>
 #include <thread>
 
-#include "fast_lossless.h"
+#include "lib/jxl/enc_fast_lossless.h"
 #include "lodepng.h"
 #include "pam-input.h"
 

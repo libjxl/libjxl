@@ -3,8 +3,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#ifndef FAST_LOSSLESS_H
-#define FAST_LOSSLESS_H
+#ifndef LIB_JXL_ENC_FAST_LOSSLESS_H_
+#define LIB_JXL_ENC_FAST_LOSSLESS_H_
 #include <stdlib.h>
 
 #ifdef __cplusplus
@@ -20,4 +20,4 @@ size_t JxlFastLosslessEncode(const unsigned char* rgba, size_t width,
 }  // extern "C"
 #endif
 
-#endif
+#endif  // LIB_JXL_ENC_FAST_LOSSLESS_H_

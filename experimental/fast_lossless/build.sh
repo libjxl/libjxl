@@ -22,5 +22,6 @@ fi
 
 "$CXX" -O3 -mavx2 -DFASTLL_ENABLE_AVX2_INTRINSICS=1 -fopenmp \
   -I. lodepng.o \
-  "$DIR"/fast_lossless.cc "$DIR"/fast_lossless_main.cc \
+  -I"$DIR"/../../ \
+  "$DIR"/../../lib/jxl/enc_fast_lossless.cc "$DIR"/fast_lossless_main.cc \
   -o fast_lossless
