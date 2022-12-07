@@ -40,7 +40,6 @@
   };
 
   // Inflight object: {clientId, uid, timestamp, controller}
-  // TODO: cleanup, when client is gone / too old.
   const inflight = [];
 
   const makeUid = () => {
@@ -109,6 +108,7 @@
       const msg = {
         op: 'decodeJxl',
         uid: inflightEntry.uid,
+        url: originalResponse.url,
         data: chunk.value || null
       };
       client.postMessage(msg, gatherTransferrables(msg.data));
@@ -139,9 +139,11 @@
   };
 
   const onFetch = async (event) => {
+    const clientId = event.clientId;
+    const request = event.request;
+
     // Pass direct cached resource requests.
-    if (event.request.cache === 'only-if-cached' &&
-        event.request.mode !== 'same-origin') {
+    if (request.cache === 'only-if-cached' && request.mode !== 'same-origin') {
       return;
     }
 
@@ -151,11 +153,11 @@
     }
 
     // Notify server we are JXL-capable.
-    if (event.request.destination === 'image') {
-      let accept = event.request.headers.get('Accept');
+    if (request.destination === 'image') {
+      let accept = request.headers.get('Accept');
       // Only if browser does not support JXL.
       if (accept.indexOf('image/jxl') === -1) {
-        event.respondWith(wrapImageRequest(event.clientId, event.request));
+        event.respondWith(wrapImageRequest(clientId, request));
       }
       return;
     }
@@ -196,8 +198,14 @@
   const prepareClient = () => {
     const clientWorker = new Worker('client_worker.js');
     clientWorker.onmessage = (event) => {
+      const data = event.data;
+      if (typeof addMessage !== 'undefined') {
+        if (data.msg) {
+          addMessage(data.msg, 'blue');
+        }
+      }
       navigator.serviceWorker.controller.postMessage(
-          event.data, gatherTransferrables(event.data.data));
+          data, gatherTransferrables(data.data));
     };
 
     // Forward ServiceWorker requests to "Client" worker.

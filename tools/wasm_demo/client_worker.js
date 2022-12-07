@@ -48,7 +48,8 @@ const processJobs = () => {
     // TODO: check result
     const result = decoder._jxlDecompress(buffer, totalInputLength);
     let t1 = Date.now();
-    console.log('Decoding time: ' + (t1 - t0) + 'ms');
+    const msg = 'Decoded ' + job.url + ' in ' + (t1 - t0) + 'ms';
+    // console.log(msg);
     decoder._free(buffer);
     const outputLength = decoder.HEAP32[result >> 2];
     const outputAddr = decoder.HEAP32[(result + 4) >> 2];
@@ -56,7 +57,7 @@ const processJobs = () => {
     const outputSrc = new Uint8Array(decoder.HEAP8.buffer);
     output.set(outputSrc.slice(outputAddr, outputAddr + outputLength));
     decoder._jxlCleanup(result);
-    const response = {uid: job.uid, data: output};
+    const response = {uid: job.uid, data: output, msg: msg};
     postMessage(response, [output.buffer]);
   }
 };
@@ -73,7 +74,7 @@ onmessage = function(event) {
       }
     }
     if (!job) {
-      job = {uid: data.uid, input: [], inputComplete: false};
+      job = {uid: data.uid, input: [], inputComplete: false, url: data.url};
       jobs.push(job);
     }
     if (data.data) {
@@ -85,13 +86,13 @@ onmessage = function(event) {
   }
 };
 
-const onLoadJxlModule = (module) => {
-  decoder = module;
+const onLoadJxlModule = (instance) => {
+  decoder = instance;
   processJobs();
 };
 
 importScripts('jxl_decoder.js');
 const config = {
-  mainScriptUrlOrBlob: 'https://jxl-demo.netlify.app/jxl_decoder.js'
+  mainScriptUrlOrBlob: 'https://jxl-demo.netlify.app/jxl_decoder.js',
 };
 JxlDecoderModule(config).then(onLoadJxlModule);
