@@ -27,6 +27,15 @@ constexpr int kJpegDCAlphabetSize = 12;
 
 typedef int16_t coeff_t;
 
+enum DecodeState {
+  kNull,
+  kStart,
+  kInHeader,
+  kHeaderDone,
+  kProcessMarkers,
+  kProcessScan,
+};
+
 // Represents one component of a jpeg file.
 struct JPEGComponent {
   // The DCT coefficients of this component, laid out block-by-block, divided
@@ -114,6 +123,8 @@ struct jpeg_decomp_master {
   std::vector<jpegli::HuffmanTableEntry> ac_huff_lut_;
   uint8_t huff_slot_defined_[256] = {};
   std::set<int> markers_to_save_;
+  jpeg_marker_parser_method app_marker_parsers[16];
+  jpeg_marker_parser_method com_marker_parser;
   // Whether this jpeg has multiple scans (progressive or non-interleaved
   // sequential).
   bool is_multiscan_;
