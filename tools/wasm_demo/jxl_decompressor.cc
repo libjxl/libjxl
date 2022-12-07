@@ -7,12 +7,10 @@
 
 #include <cstring>
 #include <memory>
-#include <vector>
 
 #include "jxl/thread_parallel_runner_cxx.h"
 #include "lib/extras/dec/jxl.h"
-#include "lib/extras/enc/apng.h"
-#include "lib/extras/enc/encode.h"
+#include "tools/wasm_demo/no_png.h"
 
 extern "C" {
 
@@ -22,8 +20,6 @@ struct DecompressorOutputPrivate {
   // Due to "Standard Layout" rules it is guaranteed that address of the entity
   // and its first non-static member are the same.
   DecompressorOutput output;
-
-  std::vector<uint8_t> bitstream;
 };
 
 }  // namespace
@@ -43,26 +39,34 @@ DecompressorOutput* jxlDecompress(const uint8_t* input, size_t input_size) {
   auto thread_pool = JxlThreadParallelRunnerMake(nullptr, 4);
   void* runner = thread_pool.get();
 
-  std::unique_ptr<jxl::extras::Encoder> encoder = jxl::extras::GetAPNGEncoder();
-
   jxl::extras::JXLDecompressParams dparams;
-  dparams.accepted_formats = encoder->AcceptedFormats();
+  dparams.accepted_formats.push_back(
+      {/* num_channels */ 3, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, /* align */ 0});
   dparams.runner = JxlThreadParallelRunner;
   dparams.runner_opaque = runner;
   jxl::extras::PackedPixelFile ppf;
+
   if (!jxl::extras::DecodeImageJXL(input, input_size, dparams, nullptr, &ppf)) {
     return report_error(1, "failed to decode jxl");
   }
 
-  jxl::extras::EncodedImage encoded_image;
-  if (!encoder->Encode(ppf, &encoded_image)) {
+  // Just 1-st frame.
+  const auto& image = ppf.frames[0].color;
+  self->output.data = WrapPixelsToPng(
+      image.xsize, image.ysize, /* bit_depth */ 8,
+      /* has_alpha */ false, reinterpret_cast<const uint8_t*>(image.pixels()),
+      &self->output.size);
+  if (!self->output.data) {
     return report_error(2, "failed to encode png");
   }
 
-  // Just 1-st frame.
-  self->bitstream.swap(encoded_image.bitstreams[0]);
-  self->output.size = self->bitstream.size();
-  self->output.data = self->bitstream.data();
+  // jxl::extras::EncodedImage encoded_image;
+  // if (!encoder->Encode(ppf, &encoded_image)) {
+  //   return report_error(2, "failed to encode png");
+  // }
+  //  self->bitstream.swap(encoded_image.bitstreams[0]);
+  //  self->output.size = self->bitstream.size();
+  //  self->output.data = self->bitstream.data();
 
   return &self->output;
 }
@@ -71,6 +75,9 @@ void jxlCleanup(DecompressorOutput* output) {
   if (output == nullptr) return;
   DecompressorOutputPrivate* self =
       reinterpret_cast<DecompressorOutputPrivate*>(output);
+  if (self->output.data) {
+    free(self->output.data);
+  }
   delete self;
 }
 

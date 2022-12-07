@@ -12,7 +12,7 @@ from pathlib import Path
 
 EMBED_BIN = ['jxl_decoder.js', 'jxl_decoder.worker.js']
 EMBED_SRC = ['client_worker.js']
-TEMPLATES = ['serviceworker.js']
+TEMPLATES = ['service_worker.js']
 COPY_BIN = ['jxl_decoder.wasm'] + EMBED_BIN
 COPY_SRC = ['index.html', 'netlify.toml', 'netlify'] + EMBED_SRC
 
@@ -80,7 +80,7 @@ if __name__ == "__main__":
     text = path.read_text().strip()
     for key, value in substitutes.items():
       text = text.replace(key, value)
-    # text = uglify(text, name)
+    #text = uglify(text, name)
     output_path.joinpath(name).write_text(text)
 
   for name in COPY_SRC:

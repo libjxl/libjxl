@@ -3,8 +3,8 @@ if (NOT JPEGXL_ENABLE_TOOLS OR NOT JPEGXL_EMSCRIPTEN)
 endif()
 
 # WASM API facade.
-add_executable(jxl_decoder jxl_decoder.cc jxl_decompressor.cc)
-add_executable(jxl_decoder_for_test jxl_decoder.cc jxl_decompressor.cc)
+add_executable(jxl_decoder jxl_decoder.cc jxl_decompressor.cc no_png.cc)
+add_executable(jxl_decoder_for_test jxl_decoder.cc jxl_decompressor.cc no_png.cc)
 target_link_libraries(jxl_decoder jxl_extras-static)
 target_link_libraries(jxl_decoder_for_test jxl_extras-static)
 
@@ -29,10 +29,10 @@ set(JXL_MODULE_SYMBOLS ${JXL_C_SYMBOLS} ${JXL_DECODER_SYMBOLS} ${JXL_DECOMPRESSO
 
 list(JOIN JXL_MODULE_SYMBOLS ", " JXL_MODULE_EXPORTS)
 
-set(JXL_WASM_SITE_LINK_FLAGS " -O3 -s FILESYSTEM=0 --closure 1 ")
+set(JXL_WASM_SITE_LINK_FLAGS " -O3 -s FILESYSTEM=0 --closure 1 -mnontrapping-fptoint")
 set(JXL_WASM_TEST_LINK_FLAGS " -O1 -s NODERAWFS=1 ")
 
-# TODO(eustas): How to set INITIAL_MEMORY on module startup?
+# TODO(eustas): Set INITIAL_MEMORY via module config.
 set(JXL_WASM_BASE_LINK_FLAGS "\
   -s INITIAL_MEMORY=75mb \
   -s DISABLE_EXCEPTION_CATCHING=1 \
@@ -44,7 +44,6 @@ set(JXL_WASM_BASE_LINK_FLAGS "\
 # libpng is used only by "decompressor"
 set(JXL_DECODER_LINK_FLAGS "${JXL_WASM_BASE_LINK_FLAGS} \
   -s EXPORT_NAME=\"JxlDecoderModule\" \
-  -s USE_LIBPNG=1 \
   -s \"EXPORTED_FUNCTIONS=[${JXL_MODULE_EXPORTS}]\" \
 ")
 
