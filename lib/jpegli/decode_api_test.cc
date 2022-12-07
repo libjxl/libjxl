@@ -30,7 +30,7 @@ class SourceManager {
     pub_.next_input_byte = nullptr;
     pub_.bytes_in_buffer = 0;
     pub_.skip_input_data = skip_input_data;
-    pub_.resync_to_restart = resync_to_restart;
+    pub_.resync_to_restart = jpeg_resync_to_restart;
     pub_.term_source = term_source;
   }
 
@@ -46,10 +46,6 @@ class SourceManager {
 
  private:
   static void skip_input_data(j_decompress_ptr cinfo, long num_bytes) {}
-
-  static boolean resync_to_restart(j_decompress_ptr cinfo, int desired) {
-    return FALSE;
-  }
 
   static void term_source(j_decompress_ptr cinfo) {}
 };
@@ -122,6 +118,7 @@ class SuspendingSourceManager : public SourceManager {
 enum SourceManagerType {
   SOURCE_MGR_CHUNKED,
   SOURCE_MGR_SUSPENDING,
+  SOURCE_MGR_STDIO,
 };
 
 struct TestConfig {
@@ -182,10 +179,15 @@ TEST_P(DecodeAPITestParam, TestAPI) {
                                    chunk_size);
   SuspendingSourceManager src_susp(compressed.data(), compressed.size(),
                                    chunk_size);
+  std::string jpg_full_path = std::string(TEST_DATA_PATH "/") + config.fn;
+  jxl::FileWrapper testfile(jpg_full_path, "rb");
+  ASSERT_TRUE(testfile != nullptr);
   if (config.source_mgr == SOURCE_MGR_CHUNKED) {
     cinfo.src = reinterpret_cast<jpeg_source_mgr*>(&src_chunked);
   } else if (config.source_mgr == SOURCE_MGR_SUSPENDING) {
     cinfo.src = reinterpret_cast<jpeg_source_mgr*>(&src_susp);
+  } else if (config.source_mgr == SOURCE_MGR_STDIO) {
+    jpeg_stdio_src(&cinfo, testfile);
   }
 
   if (config.pre_consume_input) {
@@ -407,7 +409,7 @@ TEST_P(DecodeAPITestParam, TestAPI) {
   if (config.source_mgr == SOURCE_MGR_CHUNKED) {
     EXPECT_EQ(0, src_chunked.UnprocessedBytes());
     EXPECT_EQ(src_chunked.TotalBytes(), compressed.size());
-  } else {
+  } else if (config.source_mgr == SOURCE_MGR_SUSPENDING) {
     EXPECT_EQ(0, src_susp.UnprocessedBytes());
     EXPECT_EQ(src_susp.TotalBytes(), compressed.size());
   }
@@ -441,6 +443,9 @@ std::vector<TestConfig> GenerateTests() {
             all_tests.push_back(config);
             if (config.chunk_size != 0) {
               config.source_mgr = SOURCE_MGR_SUSPENDING;
+              all_tests.push_back(config);
+            } else {
+              config.source_mgr = SOURCE_MGR_STDIO;
               all_tests.push_back(config);
             }
           }
@@ -550,7 +555,9 @@ std::vector<TestConfig> GenerateTests() {
 
 std::ostream& operator<<(std::ostream& os, const TestConfig& c) {
   os << c.fn_desc;
-  if (c.chunk_size == 0) {
+  if (c.source_mgr == SOURCE_MGR_STDIO) {
+    os << "Stdio";
+  } else if (c.chunk_size == 0) {
     os << "CompleteInput";
   } else {
     os << "InputChunks" << c.chunk_size;

@@ -405,6 +405,7 @@ int ProcessScan(j_decompress_ptr cinfo) {
       if (marker != expected_marker) {
         JPEGLI_ERROR("Did not find expected restart marker %d actual %d",
                      expected_marker, marker);
+        // TODO(szabadka) Use source manager's resync_to_restart callback here.
       }
       m->next_restart_marker_ += 1;
       m->next_restart_marker_ &= 0x7;

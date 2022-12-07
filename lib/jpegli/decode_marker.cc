@@ -431,6 +431,10 @@ void ProcessAPP(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
   const uint8_t marker = data[1];
   const uint8_t* payload = data + 4;
   size_t payload_size = len - 4;
+  if (m->app_marker_parsers[marker - 0xe0] != nullptr) {
+    (*m->app_marker_parsers[marker - 0xe0])(cinfo);
+    return;
+  }
   if (marker == 0xE0) {
     if (payload_size >= 14 && memcmp(payload, "JFIF", 4) == 0) {
       cinfo->saw_JFIF_marker = TRUE;
@@ -477,7 +481,10 @@ void ProcessAPP(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
 }
 
 void ProcessCOM(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
-  // Nothing to do.
+  jpeg_decomp_master* m = cinfo->master;
+  if (m->com_marker_parser != nullptr) {
+    (*m->com_marker_parser)(cinfo);
+  }
 }
 
 void ProcessSOI(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {

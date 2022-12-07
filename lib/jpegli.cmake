@@ -15,6 +15,7 @@ set(JPEGLI_LIBRARY_SOVERSION "${JPEGLI_MAJOR_VERSION}")
 set(JPEGLI_INTERNAL_SOURCES
   jpegli/color_transform.h
   jpegli/color_transform.cc
+  jpegli/common_api.cc
   jpegli/decode_api.cc
   jpegli/decode_internal.h
   jpegli/decode_marker.h
