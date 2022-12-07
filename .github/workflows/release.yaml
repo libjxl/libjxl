@@ -23,7 +23,7 @@ on:
 jobs:
   ubuntu_static_x86_64:
     name: Release linux x86_64 static
-    runs-on: [ubuntu-latest]
+    runs-on: [ubuntu-20.04]
     steps:
     - name: Install build deps
       run: |

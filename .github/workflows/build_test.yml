@@ -110,9 +110,10 @@ jobs:
         sudo apt update
         sudo apt install -y \
           ccache \
-          clang-7 \
+          clang-11 \
           cmake \
           doxygen \
+          graphviz \
           libbenchmark-dev \
           libbenchmark-tools \
           libbrotli-dev \
@@ -129,8 +130,8 @@ jobs:
           xvfb \
           ${{ matrix.apt_pkgs }} \
         #
-        echo "CC=clang-7" >> $GITHUB_ENV
-        echo "CXX=clang++-7" >> $GITHUB_ENV
+        echo "CC=clang-11" >> $GITHUB_ENV
+        echo "CXX=clang++-11" >> $GITHUB_ENV
     - name: Checkout the source
       uses: actions/checkout@v2
       with:
@@ -362,6 +363,7 @@ jobs:
           ccache
           cmake
           doxygen
+          graphviz
           ninja-build
           pkg-config
         )
