@@ -82,6 +82,7 @@ jobs:
               -DJPEGXL_ENABLE_JPEGLI=OFF
           # Builds with gcc in release mode
           - name: release:gcc8
+            os: ubuntu-20.04
             mode: release
             apt_pkgs: gcc-8 g++-8
             cmake_args: >-
@@ -96,6 +97,14 @@ jobs:
             cmake_args: >-
               -DCMAKE_C_COMPILER=clang-5.0 -DCMAKE_CXX_COMPILER=clang++-5.0
               -DJPEGXL_ENABLE_PLUGINS=OFF
+          # Builds with clang-7 in release mode
+          - name: release:clang-7
+            os: ubuntu-20.04
+            mode: release
+            skip_install: true
+            apt_pkgs: clang-7
+            cc: clang-7
+            cxx: clang++-7
 
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
@@ -110,9 +119,10 @@ jobs:
         sudo apt update
         sudo apt install -y \
           ccache \
-          clang-7 \
+          clang \
           cmake \
           doxygen \
+          graphviz \
           libbenchmark-dev \
           libbenchmark-tools \
           libbrotli-dev \
@@ -129,8 +139,8 @@ jobs:
           xvfb \
           ${{ matrix.apt_pkgs }} \
         #
-        echo "CC=clang-7" >> $GITHUB_ENV
-        echo "CXX=clang++-7" >> $GITHUB_ENV
+        echo "CC=${{ matrix.cc || 'clang' }}" >> $GITHUB_ENV
+        echo "CXX=${{ matrix.cxx || 'clang++' }}" >> $GITHUB_ENV
     - name: Checkout the source
       uses: actions/checkout@v2
       with:
@@ -201,6 +211,8 @@ jobs:
     - name: ccache stats
       run: ccache --show-stats
     - name: Build stats ${{ matrix.name }}
+      # TODO(eustas): Dozens of symbols fail with 'exceeds stack limit'
+      continue-on-error: true
       if: matrix.mode == 'release' || matrix.name == 'release'
       run: |
         tools/build_stats.py --save build/stats.json \
@@ -362,6 +374,7 @@ jobs:
           ccache
           cmake
           doxygen
+          graphviz
           ninja-build
           pkg-config
         )
