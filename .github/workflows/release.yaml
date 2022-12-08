@@ -33,6 +33,7 @@ jobs:
           clang \
           cmake \
           doxygen \
+          graphviz \
           libbrotli-dev \
           libgdk-pixbuf2.0-dev \
           libgif-dev \
