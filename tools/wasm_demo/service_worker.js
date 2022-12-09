@@ -42,6 +42,8 @@
   // Inflight object: {clientId, uid, timestamp, controller}
   const inflight = [];
 
+  let leak = null;
+
   const makeUid = () => {
     return Math.random().toString(36).substring(2) +
         Math.random().toString(36).substring(2);
@@ -182,6 +184,12 @@
   };
 
   const serviceWorkerMain = () => {
+    // https://v8.dev/blog/wasm-code-caching
+    // > Every web site must perform at least one full compilation of a
+    // > WebAssembly module — use workers to hide that from your users.
+    // TODO(eustas): not 100% reliable, investigate why
+    leak = WebAssembly.compileStreaming(fetch('jxl_decoder.wasm'));
+
     // ServiceWorker lifecycle.
     self.addEventListener('install', () => {
       return self.skipWaiting();
