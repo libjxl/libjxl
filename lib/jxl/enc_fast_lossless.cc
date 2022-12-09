@@ -1262,7 +1262,8 @@ struct ChannelRowProcessor {
   upixel_t last = std::numeric_limits<upixel_t>::max();  // Can never appear
 };
 
-template <typename Processor, size_t nb_chans, typename BitDepth>
+template <typename Processor, size_t nb_chans, typename BitDepth,
+          bool big_endian>
 void ProcessImageArea(const unsigned char* rgba, size_t x0, size_t y0,
                       size_t oxs, size_t xs, size_t yskip, size_t ys,
                       size_t row_stride, BitDepth bitdepth,
@@ -1281,9 +1282,15 @@ void ProcessImageArea(const unsigned char* rgba, size_t x0, size_t y0,
                      (x0 + x) * nb_chans * BitDepth::kInputBytes +
                      channel * BitDepth::kInputBytes];
     if (BitDepth::kInputBytes == 2) {
-      p <<= 8;
-      p |= rgba[row_stride * (y0 + y) + (x0 + x) * nb_chans * 2 + channel * 2 +
-                1];
+      if (big_endian) {
+        p <<= 8;
+        p |= rgba[row_stride * (y0 + y) + (x0 + x) * nb_chans * 2 +
+                  channel * 2 + 1];
+      } else {
+        p |= rgba[row_stride * (y0 + y) + (x0 + x) * nb_chans * 2 +
+                  channel * 2 + 1]
+             << 8;
+      }
     }
     return p;
   };
@@ -1365,10 +1372,24 @@ void ProcessImageArea(const unsigned char* rgba, size_t x0, size_t y0,
   }
 }
 
+template <typename Processor, size_t nb_chans, typename BitDepth>
+void ProcessImageArea(const unsigned char* rgba, size_t x0, size_t y0,
+                      size_t oxs, size_t xs, size_t yskip, size_t ys,
+                      size_t row_stride, BitDepth bitdepth, bool big_endian,
+                      Processor* processors) {
+  if (big_endian) {
+    ProcessImageArea<Processor, nb_chans, BitDepth, /*big_endian=*/true>(
+        rgba, x0, y0, oxs, xs, yskip, ys, row_stride, bitdepth, processors);
+  } else {
+    ProcessImageArea<Processor, nb_chans, BitDepth, /*big_endian=*/false>(
+        rgba, x0, y0, oxs, xs, yskip, ys, row_stride, bitdepth, processors);
+  }
+}
+
 template <size_t nb_chans, typename BitDepth>
 void WriteACSection(const unsigned char* rgba, size_t x0, size_t y0, size_t oxs,
                     size_t ys, size_t row_stride, bool is_single_group,
-                    BitDepth bitdepth, const PrefixCode& code,
+                    BitDepth bitdepth, bool big_endian, const PrefixCode& code,
                     std::array<BitWriter, 4>& output) {
   size_t xs = (oxs + kChunkSize - 1) / kChunkSize * kChunkSize;
   for (size_t i = 0; i < nb_chans; i++) {
@@ -1393,7 +1414,7 @@ void WriteACSection(const unsigned char* rgba, size_t x0, size_t y0, size_t oxs,
   }
   ProcessImageArea<ChannelRowProcessor<ChunkEncoder<BitDepth>, BitDepth>,
                    nb_chans>(rgba, x0, y0, oxs, xs, 0, ys, row_stride, bitdepth,
-                             row_encoders);
+                             big_endian, row_encoders);
 }
 
 constexpr int kHashExp = 16;
@@ -1480,7 +1501,7 @@ template <size_t nb_chans, typename BitDepth>
 void CollectSamples(const unsigned char* rgba, size_t x0, size_t y0, size_t xs,
                     size_t row_stride, size_t row_count, uint64_t* raw_counts,
                     uint64_t* lz77_counts, bool palette, BitDepth bitdepth,
-                    const int16_t* lookup) {
+                    bool big_endian, const int16_t* lookup) {
   if (palette) {
     ChunkSampleCollector<UpTo8Bits> sample_collectors[nb_chans];
     ChannelRowProcessor<ChunkSampleCollector<UpTo8Bits>, UpTo8Bits>
@@ -1506,7 +1527,7 @@ void CollectSamples(const unsigned char* rgba, size_t x0, size_t y0, size_t xs,
     ProcessImageArea<
         ChannelRowProcessor<ChunkSampleCollector<BitDepth>, BitDepth>,
         nb_chans>(rgba, x0, y0, xs, xs, 1, 1 + row_count, row_stride, bitdepth,
-                  row_sample_collectors);
+                  big_endian, row_sample_collectors);
   }
 }
 
@@ -1573,7 +1594,7 @@ void PrepareDCGlobalPalette(bool is_single_group, size_t width, size_t height,
 
 template <size_t nb_chans, typename BitDepth>
 size_t LLEnc(const unsigned char* rgba, size_t width, size_t stride,
-             size_t height, BitDepth bitdepth, int effort,
+             size_t height, BitDepth bitdepth, bool big_endian, int effort,
              unsigned char** output) {
   assert(width != 0);
   assert(height != 0);
@@ -1698,7 +1719,7 @@ size_t LLEnc(const unsigned char* rgba, size_t width, size_t stride,
         std::min<size_t>(width - xg * 256, 256) / kChunkSize * kChunkSize;
     CollectSamples<nb_chans>(rgba, xg * 256, y_begin, x_max, stride, y_count,
                              raw_counts, lz77_counts, !collided, bitdepth,
-                             lookup);
+                             big_endian, lookup);
   }
 
   // TODO(veluca): can probably improve this and make it bitdepth-dependent.
@@ -1766,7 +1787,7 @@ size_t LLEnc(const unsigned char* rgba, size_t width, size_t stride,
     auto& gd = group_data[group_id];
     if (collided) {
       WriteACSection<nb_chans>(rgba, x0, y0, xs, ys, stride, onegroup, bitdepth,
-                               hcode, gd);
+                               big_endian, hcode, gd);
 
     } else {
       WriteACSectionPalette<nb_chans>(rgba, x0, y0, xs, ys, stride, onegroup,
@@ -1783,20 +1804,24 @@ size_t LLEnc(const unsigned char* rgba, size_t width, size_t stride,
 
 template <typename BitDepth>
 size_t LLEnc(const unsigned char* rgba, size_t width, size_t stride,
-             size_t height, size_t nb_chans, BitDepth bitdepth, int effort,
-             unsigned char** output) {
+             size_t height, size_t nb_chans, BitDepth bitdepth, bool big_endian,
+             int effort, unsigned char** output) {
   assert(nb_chans <= 4);
   assert(nb_chans != 0);
   if (nb_chans == 1) {
-    return LLEnc<1>(rgba, width, stride, height, bitdepth, effort, output);
+    return LLEnc<1>(rgba, width, stride, height, bitdepth, big_endian, effort,
+                    output);
   }
   if (nb_chans == 2) {
-    return LLEnc<2>(rgba, width, stride, height, bitdepth, effort, output);
+    return LLEnc<2>(rgba, width, stride, height, bitdepth, big_endian, effort,
+                    output);
   }
   if (nb_chans == 3) {
-    return LLEnc<3>(rgba, width, stride, height, bitdepth, effort, output);
+    return LLEnc<3>(rgba, width, stride, height, bitdepth, big_endian, effort,
+                    output);
   }
-  return LLEnc<4>(rgba, width, stride, height, bitdepth, effort, output);
+  return LLEnc<4>(rgba, width, stride, height, bitdepth, big_endian, effort,
+                  output);
 }
 
 }  // namespace
@@ -1807,23 +1832,23 @@ extern "C" {
 
 size_t JxlFastLosslessEncode(const unsigned char* rgba, size_t width,
                              size_t stride, size_t height, size_t nb_chans,
-                             size_t bitdepth, int effort,
+                             size_t bitdepth, bool big_endian, int effort,
                              unsigned char** output) {
   assert(bitdepth > 0);
   if (bitdepth <= 8) {
     return LLEnc(rgba, width, stride, height, nb_chans, UpTo8Bits(bitdepth),
-                 effort, output);
+                 big_endian, effort, output);
   }
   if (bitdepth <= 13) {
     return LLEnc(rgba, width, stride, height, nb_chans, From9To13Bits(bitdepth),
-                 effort, output);
+                 big_endian, effort, output);
   }
   if (bitdepth == 14) {
     return LLEnc(rgba, width, stride, height, nb_chans, Exactly14Bits(bitdepth),
-                 effort, output);
+                 big_endian, effort, output);
   }
   return LLEnc(rgba, width, stride, height, nb_chans, MoreThan14Bits(bitdepth),
-               effort, output);
+               big_endian, effort, output);
 }
 
 #ifdef __cplusplus

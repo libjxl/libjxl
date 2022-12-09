@@ -13,7 +13,7 @@ extern "C" {
 
 size_t JxlFastLosslessEncode(const unsigned char* rgba, size_t width,
                              size_t row_stride, size_t height, size_t nb_chans,
-                             size_t bitdepth, int effort,
+                             size_t bitdepth, bool big_endian, int effort,
                              unsigned char** output);
 
 #ifdef __cplusplus
