@@ -1260,7 +1260,7 @@ TEST(JxlTest, RoundtripNoise) {
   CodecInOut io2;
   EXPECT_TRUE(DecodeFile(dparams, compressed, &io2, pool));
 
-  EXPECT_LE(compressed.size(), 40000u);
+  EXPECT_LE(compressed.size(), 42000u);
   EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
             2.2);

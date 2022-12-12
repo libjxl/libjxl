@@ -419,8 +419,13 @@ void FuzzyErosion(const Rect& from_rect, const ImageF& from,
       static const float kMul1 = 0.05f;
       static const float kMul2 = 0.05f;
       static const float kMul3 = 0.05f;
+
       float v = kMulC * row[x] + kMul0 * min0 + kMul1 * min1 + kMul2 * min2 +
                 kMul3 * min3;
+        if (v >= 2.0f) {
+        v = 2.0f;
+      }
+      v += 0.13f;
       if (fx % 2 == 0 && fy % 2 == 0) {
         row_out[fx / 2] = v;
       } else {
@@ -730,6 +735,7 @@ ImageF TileDistMap(const ImageF& distmap, int tile_size, int margin,
 constexpr float kDcQuantPow = 0.57f;
 static const float kDcQuant = 1.12f;
 static const float kAcQuant = 0.7886f;
+
 
 void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
                           PassesEncoderState* enc_state, ThreadPool* pool,

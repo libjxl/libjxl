@@ -349,6 +349,9 @@ float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
   const size_t num_blocks = acs.covered_blocks_x() * acs.covered_blocks_y();
   float quant_norm8 = 0;
   float masking = 0;
+  // avoid large blocks when there is a lot going on in red-green.
+  float cmul[3] = {
+    std::min<float>(2, std::max<float>(1, num_blocks - 1)), 1.0f, 1.0f };
   if (num_blocks == 1) {
     // When it is only one 8x8, we don't need aggregation of values.
     quant_norm8 = config.Quant(x / 8, y / 8);
@@ -429,7 +432,7 @@ float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
     }
     entropy_v += nzeros_v * cost1;
 
-    entropy += GetLane(SumOfLanes(entropy_v));
+    entropy += cmul[c] * GetLane(SumOfLanes(entropy_v));
     size_t num_nzeros = GetLane(SumOfLanes(nzeros_v));
     // Add #bit of num_nonzeros, as an estimate of the cost for encoding the
     // number of non-zeros of the block.
