@@ -287,7 +287,13 @@ list(APPEND TOOL_BINARIES ${INTERNAL_TOOL_BINARIES})
 
 foreach(BINARY IN LISTS TOOL_BINARIES)
   if(JPEGXL_EMSCRIPTEN)
-    set_target_properties(${BINARY} PROPERTIES LINK_FLAGS "-s USE_LIBPNG=1")
+    set(JXL_WASM_TOOLS_LINK_FLAGS "\
+      -s USE_LIBPNG=1 \
+      -s ALLOW_MEMORY_GROWTH=1 \
+      -s USE_PTHREADS=1 \
+      -s PTHREAD_POOL_SIZE=16 \
+    ")
+    set_target_properties(${BINARY} PROPERTIES LINK_FLAGS "${JXL_WASM_TOOLS_LINK_FLAGS}")
   endif()
 endforeach()
 

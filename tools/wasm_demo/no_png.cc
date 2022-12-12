@@ -62,6 +62,7 @@ void AdlerCopy(const uint8_t* src, uint8_t* dst, size_t length, uint32_t* s1,
 
 constexpr size_t kMaxDeflateBlock = 65535;
 constexpr uint32_t kIhdrSize = 13;
+constexpr uint32_t kCicpSize = 4;
 
 void WriteU8(uint8_t*& dst, uint8_t value) { *(dst++) = value; }
 
@@ -84,6 +85,7 @@ void WriteU32BE(uint8_t*& dst, uint32_t value) {
 uint8_t* WrapPixelsToPng(size_t width, size_t height, size_t bit_depth,
                          bool has_alpha, const uint8_t* input,
                          const std::vector<uint8_t>& icc,
+                         const std::vector<uint8_t>& cicp,
                          uint32_t* output_size) {
   size_t row_size = width * (bit_depth / 8) * (3 + has_alpha);
   size_t data_size = height * (row_size + 1);
@@ -93,9 +95,11 @@ uint8_t* WrapPixelsToPng(size_t width, size_t height, size_t bit_depth,
   // 64k is enough for everyone
   bool has_iccp = !icc.empty() && (icc.size() <= kMaxDeflateBlock);
   size_t iccp_size = 3 + icc.size() + 5 + 6;  // name + data + deflate-wrapping
+  bool has_cicp = (cicp.size() == kCicpSize);
   size_t total_size = 0;
   total_size += kPngMagic.size();
   total_size += 12 + kIhdrSize;
+  total_size += has_cicp ? (kCicpSize + 12) : 0;
   total_size += has_iccp ? (iccp_size + 12) : 0;
   total_size += 12 + idat_size;
   total_size += 12;  // IEND
@@ -124,6 +128,18 @@ uint8_t* WrapPixelsToPng(size_t width, size_t height, size_t bit_depth,
   WriteU8(dst, 0);  // interlace: no
   uint32_t crc32 = CalculateCrc32(chunk_start, dst);
   WriteU32BE(dst, crc32);
+
+  if (has_cicp) {
+    // cICP
+    WriteU32BE(dst, kCicpSize);
+    uint8_t* chunk_start = dst;
+    WriteU32(dst, 0x50434963);
+    for (size_t i = 0; i < kCicpSize; ++i) {
+      WriteU8(dst, cicp[i]);
+    }
+    uint32_t crc32 = CalculateCrc32(chunk_start, dst);
+    WriteU32BE(dst, crc32);
+  }
 
   if (has_iccp) {
     // iCCP
