@@ -40,8 +40,9 @@ DecompressorOutput* jxlDecompress(const uint8_t* input, size_t input_size) {
   void* runner = thread_pool.get();
 
   jxl::extras::JXLDecompressParams dparams;
-  dparams.accepted_formats.push_back(
-      {/* num_channels */ 3, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, /* align */ 0});
+  JxlPixelFormat format = {/* num_channels */ 3, JXL_TYPE_UINT16,
+                           JXL_BIG_ENDIAN, /* align */ 0};
+  dparams.accepted_formats.push_back(format);
   dparams.runner = JxlThreadParallelRunner;
   dparams.runner_opaque = runner;
   jxl::extras::PackedPixelFile ppf;
@@ -53,20 +54,12 @@ DecompressorOutput* jxlDecompress(const uint8_t* input, size_t input_size) {
   // Just 1-st frame.
   const auto& image = ppf.frames[0].color;
   self->output.data = WrapPixelsToPng(
-      image.xsize, image.ysize, /* bit_depth */ 8,
+      image.xsize, image.ysize, (format.data_type == JXL_TYPE_UINT16) ? 16 : 8,
       /* has_alpha */ false, reinterpret_cast<const uint8_t*>(image.pixels()),
-      &self->output.size);
+      ppf.icc, &self->output.size);
   if (!self->output.data) {
     return report_error(2, "failed to encode png");
   }
-
-  // jxl::extras::EncodedImage encoded_image;
-  // if (!encoder->Encode(ppf, &encoded_image)) {
-  //   return report_error(2, "failed to encode png");
-  // }
-  //  self->bitstream.swap(encoded_image.bitstreams[0]);
-  //  self->output.size = self->bitstream.size();
-  //  self->output.data = self->bitstream.data();
 
   return &self->output;
 }
