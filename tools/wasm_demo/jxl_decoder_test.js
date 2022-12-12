@@ -125,8 +125,9 @@ function testDecompress() {
   jxlModule._free(buffer);
 
   let pngSize = jxlModule.HEAP32[output >> 2];
-  assertTrue(pngSize >= 400, 'png size');
-  assertTrue(pngSize <= 600, 'png size');
+  let px = 20 * 20;
+  assertTrue(pngSize >= 6 * px, 'png size');
+  assertTrue(pngSize <= 6 * px + 800, 'png size');
 
   jxlModule._jxlCleanup(output);
 }
