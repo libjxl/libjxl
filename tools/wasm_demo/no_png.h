@@ -9,10 +9,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <vector>
+
 extern "C" {
 
 uint8_t* WrapPixelsToPng(size_t width, size_t height, size_t bit_depth,
                          bool has_alpha, const uint8_t* input,
+                         const std::vector<uint8_t>& icc,
                          uint32_t* output_size);
 
 }  // extern "C"

@@ -94,5 +94,6 @@ const onLoadJxlModule = (instance) => {
 importScripts('jxl_decoder.js');
 const config = {
   mainScriptUrlOrBlob: 'https://jxl-demo.netlify.app/jxl_decoder.js',
+  INITIAL_MEMORY: 16 * 1024 * 1024,
 };
 JxlDecoderModule(config).then(onLoadJxlModule);

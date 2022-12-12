@@ -83,15 +83,20 @@ void WriteU32BE(uint8_t*& dst, uint32_t value) {
 
 uint8_t* WrapPixelsToPng(size_t width, size_t height, size_t bit_depth,
                          bool has_alpha, const uint8_t* input,
+                         const std::vector<uint8_t>& icc,
                          uint32_t* output_size) {
   size_t row_size = width * (bit_depth / 8) * (3 + has_alpha);
   size_t data_size = height * (row_size + 1);
   size_t num_deflate_blocks =
       (data_size + kMaxDeflateBlock - 1) / kMaxDeflateBlock;
   size_t idat_size = data_size + num_deflate_blocks * 5 + 6;
+  // 64k is enough for everyone
+  bool has_iccp = !icc.empty() && (icc.size() <= kMaxDeflateBlock);
+  size_t iccp_size = 3 + icc.size() + 5 + 6;  // name + data + deflate-wrapping
   size_t total_size = 0;
   total_size += kPngMagic.size();
   total_size += 12 + kIhdrSize;
+  total_size += has_iccp ? (iccp_size + 12) : 0;
   total_size += 12 + idat_size;
   total_size += 12;  // IEND
 
@@ -119,6 +124,30 @@ uint8_t* WrapPixelsToPng(size_t width, size_t height, size_t bit_depth,
   WriteU8(dst, 0);  // interlace: no
   uint32_t crc32 = CalculateCrc32(chunk_start, dst);
   WriteU32BE(dst, crc32);
+
+  if (has_iccp) {
+    // iCCP
+    WriteU32BE(dst, iccp_size);
+    uint8_t* chunk_start = dst;
+    WriteU32(dst, 0x50434369);
+    WriteU8(dst, '1');   // Profile name
+    WriteU8(dst, 0);     // NUL terminator
+    WriteU8(dst, 0);     // Compression method: deflate
+    WriteU8(dst, 0x08);  // CM = 8 (deflate), CINFO = 0 (window size = 2**(0+8))
+    WriteU8(dst, 29);    // FCHECK; (FCHECK + 256* CMF) % 31 = 0
+    uint32_t adler_s1 = 1;
+    uint32_t adler_s2 = 0;
+    WriteU8(dst, 1);  // btype = 00 (uncompressed), last
+    uint16_t block_size = static_cast<uint16_t>(icc.size());
+    WriteU16(dst, block_size);
+    WriteU16(dst, ~block_size);
+    AdlerCopy(icc.data(), dst, block_size, &adler_s1, &adler_s2);
+    dst += block_size;
+    uint32_t adler = (adler_s2 << 8) | adler_s1;
+    WriteU32BE(dst, adler);
+    uint32_t crc32 = CalculateCrc32(chunk_start, dst);
+    WriteU32BE(dst, crc32);
+  }
 
   // IDAT
   WriteU32BE(dst, idat_size);
