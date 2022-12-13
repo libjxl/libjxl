@@ -13,15 +13,26 @@ on:
       - v*.*.x
   pull_request:
     types: [opened, reopened, labeled, synchronize]
+  schedule:
+    - cron: '0 1 * * *'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  config:
+    runs-on: ubuntu-latest
+    outputs:
+      resourceful: ${{ steps.calc.outputs.resourceful }}
+    steps:
+      - id: calc
+        run: echo "resourceful=${{ github.event_name == 'push' || github.event.schedule || contains(github.event.pull_request.labels.*.name, 'CI:full') }}" >> $GITHUB_OUTPUT
   ubuntu_build:
     name: Ubuntu Build ${{ matrix.name }}
     runs-on: ${{ matrix.os || 'ubuntu-latest' }}
+    needs: config
+    if: needs.config.outputs.resourceful || !matrix.secondary
     strategy:
       matrix:
         # We have one job per "name" in the matrix. Attributes are set on the
@@ -39,10 +50,12 @@ jobs:
             mode: release
             test_in_pr: true
             cmake_args: -DCMAKE_CXX_FLAGS=-DJXL_HIGH_PRECISION=0
+            secondary: true
           - name: debug
             # Runs on AVX3 CPUs require more stack than others. Make sure to
             # test on AVX3-enabled CPUs when changing this value.
             env_test_stack_size: 4000
+            secondary: true
           # Build scalar-only hwy instructions.
           - name: scalar
             mode: release
@@ -53,6 +66,7 @@ jobs:
             cmake_args: >-
               -DJPEGXL_ENABLE_DEVTOOLS=OFF -DJPEGXL_ENABLE_PLUGINS=OFF
               -DJPEGXL_ENABLE_VIEWERS=OFF
+            secondary: true
           - name: asan
             skip_install: true
           - name: coverage
@@ -87,6 +101,7 @@ jobs:
             apt_pkgs: gcc-8 g++-8
             cmake_args: >-
               -DCMAKE_C_COMPILER=gcc-8 -DCMAKE_CXX_COMPILER=g++-8
+            secondary: true
           # Builds with clang-5 in release mode
           - name: release:clang-5
             os: ubuntu-18.04
@@ -97,6 +112,7 @@ jobs:
             cmake_args: >-
               -DCMAKE_C_COMPILER=clang-5.0 -DCMAKE_CXX_COMPILER=clang++-5.0
               -DJPEGXL_ENABLE_PLUGINS=OFF
+            secondary: true
           # Builds with clang-7 in release mode
           - name: release:clang-7
             os: ubuntu-20.04
@@ -105,13 +121,14 @@ jobs:
             apt_pkgs: clang-7
             cc: clang-7
             cxx: clang++-7
+            secindary: true
 
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
       # Whether we track the stack size.
       STACK_SIZE: ${{ matrix.env_stack_size }}
       TEST_STACK_LIMIT: ${{ matrix.env_test_stack_size }}
-      WILL_RUN_TESTS: ${{ github.event_name == 'push' || (github.event_name == 'pull_request' && (matrix.test_in_pr || contains(github.event.pull_request.labels.*.name, 'CI:full'))) }}
+      WILL_RUN_TESTS: ${{ needs.config.outputs.resourceful || matrix.test_in_pr }}
 
     steps:
     - name: Install build deps
@@ -252,43 +269,40 @@ jobs:
       run: |
         cmake --build build -- rtd-html
     - name: Coverage report
-      if: github.event_name == 'push' && matrix.name == 'coverage'
+      if: needs.config.outputs.resourceful && matrix.name == 'coverage'
       run: |
         ./ci.sh coverage_report
     - name: Coverage upload to Codecov
-      if: github.event_name == 'push' && matrix.name == 'coverage'
+      if: needs.config.outputs.resourceful && matrix.name == 'coverage'
       uses: codecov/codecov-action@v2
       with:
         flags: unittests
         files: build/coverage.xml
     - name: Fast benchmark ${{ matrix.mode }}
-      if: |
-        matrix.name != 'coverage' && (github.event_name == 'push' ||
-        (github.event_name == 'pull_request' && (
-         matrix.test_in_pr ||
-         contains(github.event.pull_request.labels.*.name, 'CI:full'))))
+      if: matrix.name != 'coverage' && (needs.config.outputs.resourceful || matrix.test_in_pr)
       run: |
         STORE_IMAGES=0 ./ci.sh fast_benchmark
     # Run gbench once, just to make sure it runs, not for actual benchmarking.
     # This doesn't work on msan because we use gbench library from the system
     # which is not instrumented by msan.
     - name: gbench check
-      if: |
-        matrix.name == 'release' || (
-          github.event_name == 'push' && matrix.name != 'msan')
+      if: matrix.name == 'release' || (matrix.name != 'msan' && needs.config.outputs.resourceful)
       run: |
         ./ci.sh gbench --benchmark_min_time=0
 
   windows_msys:
     name: Windows MSYS2 / ${{ matrix.msystem }}
     runs-on: windows-latest
+    if: needs.config.outputs.resourceful || !matrix.secondary
     strategy:
       fail-fast: false
       matrix:
         include:
          - msystem: mingw64
+           secondary: true
          - msystem: clang64
          - msystem: mingw32
+           secondary: true
            # TODO(eustas): investigate failures
            disable_tests:
              - ButteraugliTest.Lossless
@@ -337,15 +351,13 @@ jobs:
       - name: CMake build
         run: cmake --build build
       - name: Test
-        if: |
-          github.event_name == 'push' ||
-          (github.event_name == 'pull_request' &&
-           contains(github.event.pull_request.labels.*.name, 'CI:full'))
+        if: needs.config.outputs.resourceful
         run: ctest --test-dir build --parallel 2 --output-on-failure -E "${{ join(matrix.disable_tests, '|') }}"
 
   wasm32_build:
     name: WASM wasm32/${{ matrix.variant }}
     runs-on: ubuntu-latest
+    if: needs.config.outputs.resourceful || !matrix.secondary
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
       BUILD_TARGET: wasm32
@@ -356,8 +368,10 @@ jobs:
       matrix:
         include:
           - variant: scalar
+            secondary: true
           - variant: simd-128
           - variant: simd-256
+            secondary: true
 
     steps:
     - uses: actions/checkout@v2
@@ -435,9 +449,6 @@ jobs:
       run: ccache --show-stats
 
     - name: Test
-      if: |
-        github.event_name == 'push' ||
-        (github.event_name == 'pull_request' &&
-         contains(github.event.pull_request.labels.*.name, 'CI:full'))
+      if: needs.config.outputs.resourceful
       run: |
         ./ci.sh test
