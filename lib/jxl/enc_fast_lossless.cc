@@ -1609,7 +1609,8 @@ void PrepareDCGlobalPalette(bool is_single_group, size_t width, size_t height,
 template <size_t nb_chans, typename BitDepth>
 size_t LLEnc(const unsigned char* rgba, size_t width, size_t stride,
              size_t height, BitDepth bitdepth, bool big_endian, int effort,
-             unsigned char** output) {
+             unsigned char** output, void* runner_opaque,
+             FJxlParallelRunner runner) {
   assert(width != 0);
   assert(height != 0);
   assert(stride >= nb_chans * BitDepth::kInputBytes * width);
@@ -1786,10 +1787,8 @@ size_t LLEnc(const unsigned char* rgba, size_t width, size_t stride,
     PrepareDCGlobalPalette(onegroup, width, height, hcode, palette, pcolors,
                            &group_data[0][0]);
   }
-#ifdef _OPENMP
-#pragma omp parallel for
-#endif
-  for (size_t g = 0; g < num_groups_y * num_groups_x; g++) {
+
+  auto run_one = [&](size_t g) {
     size_t xg = g % num_groups_x;
     size_t yg = g / num_groups_x;
     size_t group_id =
@@ -1807,7 +1806,12 @@ size_t LLEnc(const unsigned char* rgba, size_t width, size_t stride,
       WriteACSectionPalette<nb_chans>(rgba, x0, y0, xs, ys, stride, onegroup,
                                       hcode, lookup, gd[0]);
     }
-  }
+  };
+
+  runner(
+      runner_opaque, &run_one,
+      +[](void* r, size_t i) { (*reinterpret_cast<decltype(&run_one)>(r))(i); },
+      num_groups_x * num_groups_y);
 
   AssembleFrame(width, height, nb_chans, bitdepth.bitdepth, kChunkSize,
                 group_data, &writer);
@@ -1819,44 +1823,46 @@ size_t LLEnc(const unsigned char* rgba, size_t width, size_t stride,
 template <typename BitDepth>
 size_t LLEnc(const unsigned char* rgba, size_t width, size_t stride,
              size_t height, size_t nb_chans, BitDepth bitdepth, bool big_endian,
-             int effort, unsigned char** output) {
+             int effort, unsigned char** output, void* runner_opaque,
+             FJxlParallelRunner runner) {
   assert(nb_chans <= 4);
   assert(nb_chans != 0);
   if (nb_chans == 1) {
     return LLEnc<1>(rgba, width, stride, height, bitdepth, big_endian, effort,
-                    output);
+                    output, runner_opaque, runner);
   }
   if (nb_chans == 2) {
     return LLEnc<2>(rgba, width, stride, height, bitdepth, big_endian, effort,
-                    output);
+                    output, runner_opaque, runner);
   }
   if (nb_chans == 3) {
     return LLEnc<3>(rgba, width, stride, height, bitdepth, big_endian, effort,
-                    output);
+                    output, runner_opaque, runner);
   }
   return LLEnc<4>(rgba, width, stride, height, bitdepth, big_endian, effort,
-                  output);
+                  output, runner_opaque, runner);
 }
 
 size_t JxlFastLosslessEncodeImpl(const unsigned char* rgba, size_t width,
                                  size_t stride, size_t height, size_t nb_chans,
                                  size_t bitdepth, bool big_endian, int effort,
-                                 unsigned char** output) {
+                                 unsigned char** output, void* runner_opaque,
+                                 FJxlParallelRunner runner) {
   assert(bitdepth > 0);
   if (bitdepth <= 8) {
     return LLEnc(rgba, width, stride, height, nb_chans, UpTo8Bits(bitdepth),
-                 big_endian, effort, output);
+                 big_endian, effort, output, runner_opaque, runner);
   }
   if (bitdepth <= 13) {
     return LLEnc(rgba, width, stride, height, nb_chans, From9To13Bits(bitdepth),
-                 big_endian, effort, output);
+                 big_endian, effort, output, runner_opaque, runner);
   }
   if (bitdepth == 14) {
     return LLEnc(rgba, width, stride, height, nb_chans, Exactly14Bits(bitdepth),
-                 big_endian, effort, output);
+                 big_endian, effort, output, runner_opaque, runner);
   }
   return LLEnc(rgba, width, stride, height, nb_chans, MoreThan14Bits(bitdepth),
-               big_endian, effort, output);
+               big_endian, effort, output, runner_opaque, runner);
 }
 
 }  // namespace
@@ -1904,19 +1910,32 @@ extern "C" {
 #endif
 
 size_t JxlFastLosslessEncode(const unsigned char* rgba, size_t width,
-                             size_t stride, size_t height, size_t nb_chans,
+                             size_t row_stride, size_t height, size_t nb_chans,
                              size_t bitdepth, bool big_endian, int effort,
-                             unsigned char** output) {
+                             unsigned char** output, void* runner_opaque,
+                             FJxlParallelRunner runner) {
+  auto trivial_runner =
+      +[](void*, void* opaque, void fun(void*, size_t), size_t count) {
+        for (size_t i = 0; i < count; i++) {
+          fun(opaque, i);
+        }
+      };
+
+  if (runner == nullptr) {
+    runner = trivial_runner;
+  }
+
   // TODO(veluca): MSVC dynamic dispatch.
 #if (!defined(_MSC_VER) || defined(__clang__)) && defined(__x86_64__)
   if (__builtin_cpu_supports("avx2")) {
-    return AVX2::JxlFastLosslessEncodeImpl(rgba, width, stride, height,
-                                           nb_chans, bitdepth, big_endian,
-                                           effort, output);
+    return AVX2::JxlFastLosslessEncodeImpl(
+        rgba, width, row_stride, height, nb_chans, bitdepth, big_endian, effort,
+        output, runner_opaque, runner);
   }
 #endif
-  return JxlFastLosslessEncodeImpl(rgba, width, stride, height, nb_chans,
-                                   bitdepth, big_endian, effort, output);
+  return JxlFastLosslessEncodeImpl(rgba, width, row_stride, height, nb_chans,
+                                   bitdepth, big_endian, effort, output,
+                                   runner_opaque, runner);
 }
 
 #ifdef __cplusplus
