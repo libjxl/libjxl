@@ -11,10 +11,17 @@
 extern "C" {
 #endif
 
+// A FJxlParallelRunner must call fun(opaque, i) for all i from 0 to count. It
+// may do so in parallel.
+typedef void(FJxlParallelRunner)(void* runner_opaque, void* opaque,
+                                 void fun(void*, size_t), size_t count);
+
+// You may pass `nullptr` as a runner: encoding will be sequential.
 size_t JxlFastLosslessEncode(const unsigned char* rgba, size_t width,
                              size_t row_stride, size_t height, size_t nb_chans,
                              size_t bitdepth, bool big_endian, int effort,
-                             unsigned char** output);
+                             unsigned char** output, void* runner_opaque,
+                             FJxlParallelRunner runner);
 
 #ifdef __cplusplus
 }  // extern "C"
