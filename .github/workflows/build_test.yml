@@ -87,6 +87,7 @@ jobs:
             apt_pkgs: gcc-8 g++-8
             cmake_args: >-
               -DCMAKE_C_COMPILER=gcc-8 -DCMAKE_CXX_COMPILER=g++-8
+              -DJPEGXL_ENABLE_JPEGLI=OFF
           # Builds with clang-5 in release mode
           - name: release:clang-5
             os: ubuntu-18.04
