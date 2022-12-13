@@ -11,6 +11,7 @@
 /* clang-format on */
 
 #include "lib/jpegli/decode_internal.h"
+#include "lib/jpegli/encode_internal.h"
 #include "lib/jpegli/memory_manager.h"
 
 void jpeg_abort(j_common_ptr cinfo) {
@@ -40,6 +41,8 @@ void jpeg_destroy(j_common_ptr cinfo) {
   if (cinfo->is_decompressor) {
     cinfo->global_state = jpegli::DecodeState::kNull;
     delete reinterpret_cast<j_decompress_ptr>(cinfo)->master;
+  } else {
+    delete reinterpret_cast<j_compress_ptr>(cinfo)->master;
   }
 }
 

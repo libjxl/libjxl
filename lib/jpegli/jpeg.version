@@ -6,5 +6,6 @@ LIBJPEG_6.2 {
 LIBJPEGTURBO_6.2 {
   global:
     jpeg_mem_src*;
+    jpeg_mem_dest*;
     tj*;
 };

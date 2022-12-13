@@ -16,12 +16,19 @@ set(JPEGLI_INTERNAL_SOURCES
   jpegli/color_transform.h
   jpegli/color_transform.cc
   jpegli/common_api.cc
+  jpegli/dct.h
+  jpegli/dct.cc
   jpegli/decode_api.cc
   jpegli/decode_internal.h
   jpegli/decode_marker.h
   jpegli/decode_marker.cc
   jpegli/decode_scan.h
   jpegli/decode_scan.cc
+  jpegli/destination_manager.cc
+  jpegli/encode_api.cc
+  jpegli/encode_internal.h
+  jpegli/entropy_coding.h
+  jpegli/entropy_coding.cc
   jpegli/error.h
   jpegli/error.cc
   jpegli/huffman.h
@@ -29,6 +36,8 @@ set(JPEGLI_INTERNAL_SOURCES
   jpegli/idct.h
   jpegli/idct.cc
   jpegli/memory_manager.h
+  jpegli/quant.h
+  jpegli/quant.cc
   jpegli/render.h
   jpegli/render.cc
   jpegli/source_manager.h
@@ -39,6 +48,7 @@ set(JPEGLI_INTERNAL_SOURCES
 
 set(JPEGLI_INTERNAL_LIBS
   hwy
+  jxl-static
   Threads::Threads
   ${ATOMICS_LIBRARIES}
 )
@@ -59,6 +69,8 @@ target_compile_options(jpegli-obj PUBLIC ${JPEGXL_COVERAGE_FLAGS})
 set_property(TARGET jpegli-obj PROPERTY POSITION_INDEPENDENT_CODE ON)
 target_include_directories(jpegli-obj PUBLIC
   "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>"
+  "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+  "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>"
   "$<BUILD_INTERFACE:$<TARGET_PROPERTY:hwy,INTERFACE_INCLUDE_DIRECTORIES>>"
 )
 target_compile_definitions(jpegli-obj PUBLIC
@@ -69,9 +81,8 @@ set(JPEGLI_INTERNAL_OBJECTS $<TARGET_OBJECTS:jpegli-obj>)
 
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/jpegli)
 add_library(jpeg SHARED ${JPEGLI_INTERNAL_OBJECTS})
-strip_static(JPEGLI_INTERNAL_SHARED_LIBS JPEGLI_INTERNAL_LIBS)
 target_link_libraries(jpeg PUBLIC ${JPEGXL_COVERAGE_FLAGS})
-target_link_libraries(jpeg PRIVATE ${JPEGLI_INTERNAL_SHARED_LIBS})
+target_link_libraries(jpeg PRIVATE ${JPEGLI_INTERNAL_LIBS})
 set_target_properties(jpeg PROPERTIES
   VERSION ${JPEGLI_LIBRARY_VERSION}
   SOVERSION ${JPEGLI_LIBRARY_SOVERSION}
@@ -96,6 +107,7 @@ endif()
 if(BUILD_TESTING)
 set(TEST_FILES
   jpegli/decode_api_test.cc
+  jpegli/encode_api_test.cc
 )
 
 # Individual test binaries:

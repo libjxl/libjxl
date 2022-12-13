@@ -10,6 +10,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <jpeglib.h>
+#include <stdlib.h>
 /* clang-format on */
 
 #include <vector>
@@ -31,6 +32,11 @@ T* Allocate(j_common_ptr cinfo, size_t len) {
 
 template <typename T>
 T* Allocate(j_decompress_ptr cinfo, size_t len) {
+  return Allocate<T>(reinterpret_cast<j_common_ptr>(cinfo), len);
+}
+
+template <typename T>
+T* Allocate(j_compress_ptr cinfo, size_t len) {
   return Allocate<T>(reinterpret_cast<j_common_ptr>(cinfo), len);
 }
 
