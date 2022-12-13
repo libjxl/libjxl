@@ -15,17 +15,25 @@
 #include <memory>
 #include <vector>
 
-#if (!defined(__BYTE_ORDER__) || (__BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__))
-#error "system not known to be little endian"
-#endif
+#if defined(_MSC_VER) && !defined(__clang__)
 
-#ifdef _MSC_VER
 #define FJXL_INLINE __forceinline
 #else
 #define FJXL_INLINE inline __attribute__((always_inline))
 #endif
 
 namespace {
+
+// Compiles to a memcpy on little-endian systems.
+FJXL_INLINE void StoreLE64(uint8_t* tgt, uint64_t data) {
+#if (!defined(__BYTE_ORDER__) || (__BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__))
+  for (int i = 0; i < 8; i++) {
+    tgt[i] = (data >> (i * 8)) & 0xFF;
+  }
+#else
+  memcpy(tgt, &data, 8);
+#endif
+}
 
 constexpr size_t kNumRawSymbols = 19;
 
@@ -39,7 +47,7 @@ struct BitWriter {
   void Write(uint32_t count, uint64_t bits) {
     buffer |= bits << bits_in_buffer;
     bits_in_buffer += count;
-    memcpy(data.get() + bytes_written, &buffer, 8);
+    StoreLE64(data.get() + bytes_written, buffer);
     size_t bytes_in_buffer = bits_in_buffer / 8;
     bits_in_buffer -= bytes_in_buffer * 8;
     buffer >>= bytes_in_buffer * 8;
