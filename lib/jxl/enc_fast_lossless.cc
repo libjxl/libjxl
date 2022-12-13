@@ -3,6 +3,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#ifndef FJXL_SELF_INCLUDE
+
 #include "lib/jxl/enc_fast_lossless.h"
 
 #include <assert.h>
@@ -16,11 +18,14 @@
 #include <vector>
 
 #if defined(_MSC_VER) && !defined(__clang__)
-
 #define FJXL_INLINE __forceinline
 #else
 #define FJXL_INLINE inline __attribute__((always_inline))
 #endif
+
+#endif  // FJXL_SELF_INCLUDE
+
+#ifdef FJXL_SELF_INCLUDE
 
 namespace {
 
@@ -323,7 +328,7 @@ struct PrefixCode {
   }
 };
 
-#ifdef FASTLL_ENABLE_AVX2_INTRINSICS
+#ifdef FJXL_AVX2
 #include <immintrin.h>
 void EncodeChunkAVX2(const uint16_t* residuals, const PrefixCode& code,
                      BitWriter& output) {
@@ -445,7 +450,7 @@ void EncodeChunkAVX2(const uint16_t* residuals, const PrefixCode& code,
 }
 #endif
 
-#ifdef FASTLL_ENABLE_NEON_INTRINSICS
+#ifdef FJXL_NEON
 #include <arm_neon.h>
 
 FJXL_INLINE void TokenizeNeon(const uint16_t* residuals, uint16_t* token_out,
@@ -680,10 +685,10 @@ struct UpTo8Bits {
 
   static void EncodeChunk(upixel_t* residuals, const PrefixCode& code,
                           BitWriter& output) {
-#if defined(FASTLL_ENABLE_AVX2_INTRINSICS) && FASTLL_ENABLE_AVX2_INTRINSICS
+#ifdef FJXL_AVX2
     EncodeChunkAVX2(residuals, code, output);
     return;
-#elif defined(FASTLL_ENABLE_NEON_INTRINSICS) && FASTLL_ENABLE_NEON_INTRINSICS
+#elif defined(FJXL_NEON)
     for (int i : {0, 8}) {
       uint16_t bits[8];
       uint16_t nbits[8];
@@ -742,7 +747,7 @@ struct From9To13Bits {
 
   static void EncodeChunk(upixel_t* residuals, const PrefixCode& code,
                           BitWriter& output) {
-#if defined(FASTLL_ENABLE_NEON_INTRINSICS) && FASTLL_ENABLE_NEON_INTRINSICS
+#ifdef FJXL_NEON
     for (int i : {0, 8}) {
       uint16_t bits[8];
       uint16_t nbits[8];
@@ -805,7 +810,7 @@ struct Exactly14Bits {
 
   static void EncodeChunk(upixel_t* residuals, const PrefixCode& code,
                           BitWriter& output) {
-#if defined(FASTLL_ENABLE_NEON_INTRINSICS) && FASTLL_ENABLE_NEON_INTRINSICS
+#ifdef FJXL_NEON
     for (int i : {0, 8}) {
       uint16_t bits[8];
       uint16_t nbits[8];
@@ -866,7 +871,7 @@ struct MoreThan14Bits {
 
   static void EncodeChunk(upixel_t* residuals, const PrefixCode& code,
                           BitWriter& output) {
-#if defined(FASTLL_ENABLE_NEON_INTRINSICS) && FASTLL_ENABLE_NEON_INTRINSICS
+#ifdef FJXL_NEON
     for (int i : {0, 8}) {
       uint32_t bits[8];
       uint32_t nbits[8];
@@ -1226,8 +1231,8 @@ struct ChannelRowProcessor {
   using upixel_t = typename BitDepth::upixel_t;
   using pixel_t = typename BitDepth::pixel_t;
   T* t;
-  inline void ProcessChunk(const pixel_t* row, const pixel_t* row_left,
-                           const pixel_t* row_top, const pixel_t* row_topleft) {
+  void ProcessChunk(const pixel_t* row, const pixel_t* row_left,
+                    const pixel_t* row_top, const pixel_t* row_topleft) {
     bool continue_rle = true;
     alignas(32) upixel_t residuals[kChunkSize] = {};
     for (size_t ix = 0; ix < kChunkSize; ix++) {
@@ -1257,6 +1262,7 @@ struct ChannelRowProcessor {
     }
     last = residuals[kChunkSize - 1];
   }
+
   void ProcessRow(const pixel_t* row, const pixel_t* row_left,
                   const pixel_t* row_top, const pixel_t* row_topleft,
                   size_t xs) {
@@ -1832,16 +1838,10 @@ size_t LLEnc(const unsigned char* rgba, size_t width, size_t stride,
                   output);
 }
 
-}  // namespace
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-size_t JxlFastLosslessEncode(const unsigned char* rgba, size_t width,
-                             size_t stride, size_t height, size_t nb_chans,
-                             size_t bitdepth, bool big_endian, int effort,
-                             unsigned char** output) {
+size_t JxlFastLosslessEncodeImpl(const unsigned char* rgba, size_t width,
+                                 size_t stride, size_t height, size_t nb_chans,
+                                 size_t bitdepth, bool big_endian, int effort,
+                                 unsigned char** output) {
   assert(bitdepth > 0);
   if (bitdepth <= 8) {
     return LLEnc(rgba, width, stride, height, nb_chans, UpTo8Bits(bitdepth),
@@ -1859,6 +1859,67 @@ size_t JxlFastLosslessEncode(const unsigned char* rgba, size_t width,
                big_endian, effort, output);
 }
 
+}  // namespace
+
+#endif  // FJXL_SELF_INCLUDE
+
+#ifndef FJXL_SELF_INCLUDE
+
+#define FJXL_SELF_INCLUDE
+
+#if defined(__aarch64__) || defined(_M_ARM64)
+
+#define FJXL_NEON
+#include "lib/jxl/enc_fast_lossless.cc"
+
+#elif defined(__x86_64__) || defined(_M_X64)
+
+#include "lib/jxl/enc_fast_lossless.cc"
+
+#ifdef __clang__
+#pragma clang attribute push(__attribute__((target("avx2"))), \
+                             apply_to = function)
+#elif defined(__GNUC__)
+#pragma GCC push_options
+#pragma GCC target "avx2"
+#endif
+
+namespace AVX2 {
+#define FJXL_AVX2
+#include "lib/jxl/enc_fast_lossless.cc"
+}  // namespace AVX2
+
+#ifdef __clang__
+#pragma clang attribute pop
+#elif defined(__GNUC__)
+#pragma GCC pop_options
+#endif
+
+#else
+#include "lib/jxl/enc_fast_lossless.cc"
+#endif
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+size_t JxlFastLosslessEncode(const unsigned char* rgba, size_t width,
+                             size_t stride, size_t height, size_t nb_chans,
+                             size_t bitdepth, bool big_endian, int effort,
+                             unsigned char** output) {
+  // TODO(veluca): MSVC dynamic dispatch.
+#if (!defined(_MSC_VER) || defined(__clang__)) && defined(__x86_64__)
+  if (__builtin_cpu_supports("avx2")) {
+    return AVX2::JxlFastLosslessEncodeImpl(rgba, width, stride, height,
+                                           nb_chans, bitdepth, big_endian,
+                                           effort, output);
+  }
+#endif
+  return JxlFastLosslessEncodeImpl(rgba, width, stride, height, nb_chans,
+                                   bitdepth, big_endian, effort, output);
+}
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif
+#endif  // FJXL_SELF_INCLUDE
