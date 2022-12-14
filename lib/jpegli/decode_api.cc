@@ -34,6 +34,9 @@ void InitializeImage(j_decompress_ptr cinfo) {
   cinfo->Y_density = 1;
   cinfo->saw_Adobe_marker = FALSE;
   cinfo->Adobe_transform = 0;
+  for (int i = 0; i < NUM_QUANT_TBLS; ++i) {
+    cinfo->quant_tbl_ptrs[i] = nullptr;
+  }
 }
 
 int ConsumeInput(j_decompress_ptr cinfo) {
@@ -112,6 +115,9 @@ void jpeg_CreateDecompress(j_decompress_ptr cinfo, int version,
   cinfo->buffered_image = FALSE;
   cinfo->raw_data_out = FALSE;
   cinfo->output_scanline = 0;
+  cinfo->sample_range_limit = nullptr;  // not used
+  cinfo->rec_outbuf_height = 1;         // output works with any buffer height
+
   for (int i = 0; i < 16; ++i) {
     cinfo->master->app_marker_parsers[i] = nullptr;
   }

@@ -43,15 +43,6 @@ struct JPEGComponent {
   hwy::AlignedFreeUniquePtr<coeff_t[]> coeffs;
 };
 
-// Quantization values for an 8x8 pixel block.
-struct JPEGQuantTable {
-  std::array<int32_t, DCTSIZE2> values;
-  // The index of this quantization table as it was parsed from the input JPEG.
-  // Each DQT marker segment contains an 'index' field, and we save this index
-  // here. Valid values are 0 to 3.
-  uint32_t index = 0;
-};
-
 // State of the decoder that has to be saved before decoding one MCU in case
 // we run out of the bitstream.
 struct MCUCodingState {
@@ -117,7 +108,6 @@ struct jpeg_decomp_master {
   size_t icc_index_ = 0;
   size_t icc_total_ = 0;
   std::vector<uint8_t> icc_profile_;
-  std::vector<jpegli::JPEGQuantTable> quant_;
   std::vector<jpegli::JPEGComponent> components_;
   std::vector<jpegli::HuffmanTableEntry> dc_huff_lut_;
   std::vector<jpegli::HuffmanTableEntry> ac_huff_lut_;
