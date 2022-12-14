@@ -362,6 +362,8 @@ set(JPEGXL_INTERNAL_SOURCES_ENC
   jxl/progressive_split.h
 )
 
+set_source_files_properties(jxl/enc_fast_lossless.cc PROPERTIES COMPILE_FLAGS -O3)
+
 set(JPEGXL_DEC_INTERNAL_LIBS
   hwy
   Threads::Threads

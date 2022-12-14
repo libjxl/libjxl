@@ -50,6 +50,11 @@ void JxlFastLosslessPrepareHeader(JxlFastLosslessFrameState* frame,
 // JxlFastLosslessPrepareHeader.
 size_t JxlFastLosslessMaxRequiredOutput(const JxlFastLosslessFrameState* frame);
 
+// Actual size of the frame once it is encoded. This is not identical to
+// JxlFastLosslessMaxRequiredOutput because JxlFastLosslessWriteOutput may
+// require extra padding.
+size_t JxlFastLosslessOutputSize(const JxlFastLosslessFrameState* frame);
+
 // Writes the frame to the given output buffer. Returns the number of bytes that
 // were written, which is at least 1 unless the entire output has been written
 // already. It is required that `output_size >= 32` when calling this function.

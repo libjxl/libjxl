@@ -120,7 +120,7 @@ bool EncodeJpegXl(const FuzzSpec& spec) {
     // Reading compressed output
     JxlEncoderStatus process_result = JXL_ENC_NEED_MORE_OUTPUT;
     while (process_result == JXL_ENC_NEED_MORE_OUTPUT) {
-      std::vector<uint8_t> buf(spec.output_buffer_size);
+      std::vector<uint8_t> buf(spec.output_buffer_size + 32);
       uint8_t* next_out = buf.data();
       size_t avail_out = buf.size();
       process_result = JxlEncoderProcessOutput(enc, &next_out, &avail_out);

@@ -944,7 +944,7 @@ TEST(JxlTest, JXL_SLOW_TEST(RoundtripLossless8LightningGradient)) {
   cparams.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_PREDICTOR, 5);  // Gradient
 
   PackedPixelFile ppf_out;
-  EXPECT_EQ(Roundtrip(t.ppf(), cparams, {}, &pool, &ppf_out), 265418);
+  EXPECT_EQ(Roundtrip(t.ppf(), cparams, {}, &pool, &ppf_out), 286648);
   EXPECT_EQ(ComputeDistance2(t.ppf(), ppf_out), 0.0);
 }
 

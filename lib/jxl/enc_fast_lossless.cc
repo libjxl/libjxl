@@ -88,8 +88,7 @@ struct JxlFastLosslessFrameState {
   uint64_t bit_buffer = 0;
 };
 
-size_t JxlFastLosslessMaxRequiredOutput(
-    const JxlFastLosslessFrameState* frame) {
+size_t JxlFastLosslessOutputSize(const JxlFastLosslessFrameState* frame) {
   size_t total_size_groups = 0;
   for (size_t i = 0; i < frame->group_data.size(); i++) {
     size_t sz = 0;
@@ -100,7 +99,12 @@ size_t JxlFastLosslessMaxRequiredOutput(
     sz = (sz + 7) / 8;
     total_size_groups += sz;
   }
-  return frame->header.bytes_written + total_size_groups + 32;
+  return frame->header.bytes_written + total_size_groups;
+}
+
+size_t JxlFastLosslessMaxRequiredOutput(
+    const JxlFastLosslessFrameState* frame) {
+  return JxlFastLosslessOutputSize(frame) + 32;
 }
 
 void JxlFastLosslessPrepareHeader(JxlFastLosslessFrameState* frame,
@@ -741,11 +745,11 @@ void EncodeChunkAVX2(const uint16_t* residuals, const PrefixCode& code,
     for (size_t i = 0; i < 4; i++) {
       output.buffer |= bits_simd[i] << output.bits_in_buffer;
       memcpy(output.data.get() + output.bytes_written, &output.buffer, 8);
-      // If >> 64, next_buffer is unused.
-      uint64_t next_buffer = bits_simd[i] >> (64 - output.bits_in_buffer);
+      uint64_t shift = 64 - output.bits_in_buffer;
       output.bits_in_buffer += nbits_simd[i];
       // This `if` seems to be faster than using ternaries.
       if (output.bits_in_buffer >= 64) {
+        uint64_t next_buffer = bits_simd[i] >> shift;
         output.buffer = next_buffer;
         output.bits_in_buffer -= 64;
         output.bytes_written += 8;
@@ -948,7 +952,7 @@ FJXL_INLINE void StoreNeonAbove14(const uint32_t* nbits_tok,
 
 void EncodeHybridUint000(uint32_t value, uint32_t* token, uint32_t* nbits,
                          uint32_t* bits) {
-  uint32_t n = 31 - __builtin_clz(value);
+  uint32_t n = value ? 31 - __builtin_clz(value) : 32;
   *token = value ? n + 1 : 0;
   *nbits = value ? n : 0;
   *bits = value ? value - (1 << n) : 0;
@@ -1275,7 +1279,7 @@ void PrepareDCGlobal(bool is_single_group, size_t width, size_t height,
 void EncodeHybridUint404_Mul16(uint32_t value, uint32_t* token_div16,
                                uint32_t* nbits, uint32_t* bits) {
   // NOTE: token in libjxl is actually << 4.
-  uint32_t n = 31 - __builtin_clz(value);
+  uint32_t n = value ? 31 - __builtin_clz(value) : 32;
   *token_div16 = value < 16 ? 0 : n - 3;
   *nbits = value < 16 ? 0 : n - 4;
   *bits = value < 16 ? 0 : (value >> 4) - (1 << *nbits);
@@ -1398,8 +1402,8 @@ void ProcessImageArea(const unsigned char* rgba, size_t x0, size_t y0,
   using pixel_t = typename BitDepth::pixel_t;
   using upixel_t = typename BitDepth::upixel_t;
 
-  // Could use nb_chans, but clang-tidy complains otherwise.
-  pixel_t group_data[4][2][256 + kPadding * 2] = {};
+  std::vector<std::array<std::array<pixel_t, 256 + kPadding * 2>, 2>>
+      group_data(nb_chans);
   upixel_t allzero[4] = {};
   upixel_t allone[4];
   auto get_pixel = [&](size_t x, size_t y, size_t channel) {
@@ -1561,7 +1565,7 @@ void ProcessImageAreaPalette(const unsigned char* rgba, size_t x0, size_t y0,
                              Processor* processors) {
   constexpr size_t kPadding = 16;
 
-  int16_t group_data[2][256 + kPadding * 2] = {};
+  std::vector<std::array<int16_t, 256 + kPadding * 2>> group_data(2);
   Processor& row_encoder = processors[0];
 
   for (size_t y = 0; y < ys; y++) {
@@ -1731,7 +1735,7 @@ JxlFastLosslessFrameState* LLEnc(const unsigned char* rgba, size_t width,
   // Count colors to try palette
   std::vector<uint32_t> palette(kHashSize);
   palette[0] = 1;
-  int16_t lookup[kHashSize];
+  std::vector<int16_t> lookup(kHashSize);
   lookup[0] = 0;
   int pcolors = 0;
   bool collided = effort < 2 || bitdepth.bitdepth != 8 ||
@@ -1847,7 +1851,7 @@ JxlFastLosslessFrameState* LLEnc(const unsigned char* rgba, size_t width,
         std::min<size_t>(width - xg * 256, 256) / kChunkSize * kChunkSize;
     CollectSamples<nb_chans>(rgba, xg * 256, y_begin, x_max, stride, y_count,
                              raw_counts, lz77_counts, !collided, bitdepth,
-                             big_endian, lookup);
+                             big_endian, lookup.data());
   }
 
   // TODO(veluca): can probably improve this and make it bitdepth-dependent.
@@ -1923,7 +1927,7 @@ JxlFastLosslessFrameState* LLEnc(const unsigned char* rgba, size_t width,
 
     } else {
       WriteACSectionPalette<nb_chans>(rgba, x0, y0, xs, ys, stride, onegroup,
-                                      hcode, lookup, gd[0]);
+                                      hcode, lookup.data(), gd[0]);
     }
   };
 
