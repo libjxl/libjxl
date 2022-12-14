@@ -237,9 +237,9 @@ void PrepareForOutput(j_decompress_ptr cinfo) {
   m->dequant_ = hwy::AllocateAligned<float>(coeffs_per_block);
   for (int c = 0; c < cinfo->num_components; c++) {
     const auto& comp = cinfo->comp_info[c];
-    const int32_t* quant = m->quant_[comp.quant_tbl_no].values.data();
+    JQUANT_TBL* table = comp.quant_table;
     for (size_t k = 0; k < DCTSIZE2; ++k) {
-      m->dequant_[c * DCTSIZE2 + k] = quant[k] * kDequantScale;
+      m->dequant_[c * DCTSIZE2 + k] = table->quantval[k] * kDequantScale;
     }
   }
 }

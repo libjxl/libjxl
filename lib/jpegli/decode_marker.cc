@@ -19,7 +19,6 @@ namespace {
 
 constexpr int kMaxSampling = 2;
 constexpr int kMaxHuffmanTables = 4;
-constexpr int kMaxQuantTables = 4;
 constexpr int kMaxDimPixels = 65535;
 constexpr uint8_t kIccProfileTag[12] = "ICC_PROFILE";
 
@@ -67,11 +66,11 @@ void ProcessSOF(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
   cinfo->arith_code = 0;
   size_t pos = 4;
   JPEG_VERIFY_LEN(6);
-  int precision = ReadUint8(data, &pos);
+  cinfo->data_precision = ReadUint8(data, &pos);
   cinfo->image_height = ReadUint16(data, &pos);
   cinfo->image_width = ReadUint16(data, &pos);
   cinfo->num_components = ReadUint8(data, &pos);
-  JPEG_VERIFY_INPUT(precision, 8, 8);
+  JPEG_VERIFY_INPUT(cinfo->data_precision, 8, 8);
   JPEG_VERIFY_INPUT(cinfo->image_height, 1, kMaxDimPixels);
   JPEG_VERIFY_INPUT(cinfo->image_width, 1, kMaxDimPixels);
   JPEG_VERIFY_INPUT(cinfo->num_components, 1, kMaxComponents);
@@ -105,15 +104,8 @@ void ProcessSOF(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
     cinfo->max_v_samp_factor =
         std::max(cinfo->max_v_samp_factor, v_samp_factor);
     uint8_t quant_tbl_idx = ReadUint8(data, &pos);
-    bool found_quant_tbl = false;
-    for (size_t j = 0; j < m->quant_.size(); ++j) {
-      if (m->quant_[j].index == quant_tbl_idx) {
-        comp->quant_tbl_no = j;
-        found_quant_tbl = true;
-        break;
-      }
-    }
-    if (!found_quant_tbl) {
+    comp->quant_table = cinfo->quant_tbl_ptrs[quant_tbl_idx];
+    if (comp->quant_table == nullptr) {
       JPEGLI_ERROR("Quantization table with index %u not found", quant_tbl_idx);
     }
   }
@@ -389,27 +381,34 @@ void ProcessDHT(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
 
 void ProcessDQT(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
   jpeg_decomp_master* m = cinfo->master;
+  if (m->found_sof_) {
+    JPEGLI_ERROR("Updating quant tables between scans is not supported.");
+  }
   size_t pos = 4;
   if (pos == len) {
     return JPEGLI_ERROR("DQT marker: no quantization table found");
   }
-  while (pos < len && m->quant_.size() < kMaxQuantTables) {
+  while (pos < len) {
     JPEG_VERIFY_LEN(1);
     int quant_table_index = ReadUint8(data, &pos);
     int precision = quant_table_index >> 4;
     JPEG_VERIFY_INPUT(precision, 0, 1);
     quant_table_index &= 0xf;
-    JPEG_VERIFY_INPUT(quant_table_index, 0, 3);
+    JPEG_VERIFY_INPUT(quant_table_index, 0, NUM_QUANT_TBLS - 1);
     JPEG_VERIFY_LEN((precision + 1) * DCTSIZE2);
-    JPEGQuantTable table;
-    table.index = quant_table_index;
+
+    if (cinfo->quant_tbl_ptrs[quant_table_index] == nullptr) {
+      cinfo->quant_tbl_ptrs[quant_table_index] =
+          jpeg_alloc_quant_table(reinterpret_cast<j_common_ptr>(cinfo));
+    }
+    JQUANT_TBL* quant_table = cinfo->quant_tbl_ptrs[quant_table_index];
+
     for (size_t i = 0; i < DCTSIZE2; ++i) {
       int quant_val =
           precision ? ReadUint16(data, &pos) : ReadUint8(data, &pos);
       JPEG_VERIFY_INPUT(quant_val, 1, 65535);
-      table.values[kJPEGNaturalOrder[i]] = quant_val;
+      quant_table->quantval[kJPEGNaturalOrder[i]] = quant_val;
     }
-    m->quant_.push_back(table);
   }
   JPEG_VERIFY_MARKER_END();
 }
