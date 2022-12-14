@@ -355,6 +355,9 @@ float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
   HWY_FULL(float) df;
 
   const size_t num_blocks = acs.covered_blocks_x() * acs.covered_blocks_y();
+  // avoid large blocks when there is a lot going on in red-green.
+  float cmul[3] = {std::min<float>(2, std::max<float>(1, num_blocks - 1)), 1.0f,
+                   1.0f};
   float quant_norm8 = 0;
   float masking = 0;
   if (num_blocks == 1) {
@@ -437,7 +440,7 @@ float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
     }
     entropy_v = MulAdd(nzeros_v, cost1, entropy_v);
 
-    entropy += GetLane(SumOfLanes(df, entropy_v));
+    entropy += cmul[c] * GetLane(SumOfLanes(df, entropy_v));
     size_t num_nzeros = GetLane(SumOfLanes(df, nzeros_v));
     // Add #bit of num_nonzeros, as an estimate of the cost for encoding the
     // number of non-zeros of the block.
