@@ -251,21 +251,24 @@ void DecodeCurrentiMCURow(j_decompress_ptr cinfo) {
     size_t k0 = c * DCTSIZE2;
     auto& comp = m->components_[c];
     auto& compinfo = cinfo->comp_info[c];
+    size_t block_row = imcu_row * compinfo.v_samp_factor;
     if (ShouldApplyDequantBiases(cinfo, c)) {
-      size_t num_coeffs = compinfo.width_in_blocks * DCTSIZE2;
-      size_t offset = imcu_row * compinfo.width_in_blocks * DCTSIZE2;
-      // Update statistics for this MCU row.
-      GatherBlockStats(&comp.coeffs[offset], num_coeffs, &m->nonzeros_[k0],
-                       &m->sumabs_[k0]);
-      m->num_processed_blocks_[c] += compinfo.width_in_blocks;
+      // Update statistics for this iMCU row.
+      for (int iy = 0; iy < compinfo.v_samp_factor; ++iy) {
+        size_t by = block_row + iy;
+        size_t bix = by * compinfo.width_in_blocks;
+        int16_t* JXL_RESTRICT coeffs = &comp.coeffs[bix * DCTSIZE2];
+        size_t num = compinfo.width_in_blocks * DCTSIZE2;
+        GatherBlockStats(coeffs, num, &m->nonzeros_[k0], &m->sumabs_[k0]);
+        m->num_processed_blocks_[c] += compinfo.width_in_blocks;
+      }
       if (imcu_row % 4 == 3) {
-        // Re-compute optimal biases every few MCU-rows.
+        // Re-compute optimal biases every few iMCU-rows.
         ComputeOptimalLaplacianBiases(m->num_processed_blocks_[c],
                                       &m->nonzeros_[k0], &m->sumabs_[k0],
                                       &m->biases_[k0]);
       }
     }
-    size_t block_row = imcu_row * compinfo.v_samp_factor;
     RowBuffer* raw_out = &m->raw_output_[c];
     for (int iy = 0; iy < compinfo.v_samp_factor; ++iy) {
       size_t by = block_row + iy;
