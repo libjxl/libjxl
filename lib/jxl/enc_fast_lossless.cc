@@ -9,6 +9,7 @@
 
 #include <assert.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 #include <algorithm>
@@ -23,12 +24,7 @@
 #define FJXL_INLINE inline __attribute__((always_inline))
 #endif
 
-#endif  // FJXL_SELF_INCLUDE
-
-#ifdef FJXL_SELF_INCLUDE
-
 namespace {
-
 // Compiles to a memcpy on little-endian systems.
 FJXL_INLINE void StoreLE64(uint8_t* tgt, uint64_t data) {
 #if (!defined(__BYTE_ORDER__) || (__BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__))
@@ -40,7 +36,16 @@ FJXL_INLINE void StoreLE64(uint8_t* tgt, uint64_t data) {
 #endif
 }
 
-constexpr size_t kNumRawSymbols = 19;
+FJXL_INLINE size_t AddBits(uint32_t count, uint64_t bits, uint8_t* data_buf,
+                           size_t& bits_in_buffer, uint64_t& bit_buffer) {
+  bit_buffer |= bits << bits_in_buffer;
+  bits_in_buffer += count;
+  StoreLE64(data_buf, bit_buffer);
+  size_t bytes_in_buffer = bits_in_buffer / 8;
+  bits_in_buffer -= bytes_in_buffer * 8;
+  bit_buffer >>= bytes_in_buffer * 8;
+  return bytes_in_buffer;
+}
 
 struct BitWriter {
   void Allocate(size_t maximum_bit_size) {
@@ -50,13 +55,8 @@ struct BitWriter {
   }
 
   void Write(uint32_t count, uint64_t bits) {
-    buffer |= bits << bits_in_buffer;
-    bits_in_buffer += count;
-    StoreLE64(data.get() + bytes_written, buffer);
-    size_t bytes_in_buffer = bits_in_buffer / 8;
-    bits_in_buffer -= bytes_in_buffer * 8;
-    buffer >>= bytes_in_buffer * 8;
-    bytes_written += bytes_in_buffer;
+    bytes_written += AddBits(count, bits, data.get() + bytes_written,
+                             bits_in_buffer, buffer);
   }
 
   void ZeroPadToByte() {
@@ -70,6 +70,316 @@ struct BitWriter {
   size_t bits_in_buffer = 0;
   uint64_t buffer = 0;
 };
+}  // namespace
+
+extern "C" {
+
+struct JxlFastLosslessFrameState {
+  size_t width;
+  size_t height;
+  size_t nb_chans;
+  size_t bitdepth;
+  size_t chunk_size;
+  BitWriter header;
+  std::vector<std::array<BitWriter, 4>> group_data;
+  size_t current_bit_writer = 0;
+  size_t bit_writer_byte_pos = 0;
+  size_t bits_in_buffer = 0;
+  uint64_t bit_buffer = 0;
+};
+
+size_t JxlFastLosslessMaxRequiredOutput(
+    const JxlFastLosslessFrameState* frame) {
+  size_t total_size_groups = 0;
+  for (size_t i = 0; i < frame->group_data.size(); i++) {
+    size_t sz = 0;
+    for (size_t j = 0; j < frame->nb_chans; j++) {
+      const auto& writer = frame->group_data[i][j];
+      sz += writer.bytes_written * 8 + writer.bits_in_buffer;
+    }
+    sz = (sz + 7) / 8;
+    total_size_groups += sz;
+  }
+  return frame->header.bytes_written + total_size_groups + 32;
+}
+
+void JxlFastLosslessPrepareHeader(JxlFastLosslessFrameState* frame,
+                                  int add_image_header, int is_last) {
+  BitWriter* output = &frame->header;
+  output->Allocate(1000 + frame->group_data.size() * 32);
+
+  std::vector<size_t> group_sizes(frame->group_data.size());
+  for (size_t i = 0; i < frame->group_data.size(); i++) {
+    size_t sz = 0;
+    for (size_t j = 0; j < frame->nb_chans; j++) {
+      const auto& writer = frame->group_data[i][j];
+      sz += writer.bytes_written * 8 + writer.bits_in_buffer;
+    }
+    sz = (sz + 7) / 8;
+    group_sizes[i] = sz;
+  }
+
+  bool have_alpha = (frame->nb_chans == 2 || frame->nb_chans == 4);
+
+  if (add_image_header) {
+    // Signature
+    output->Write(16, 0x0AFF);
+
+    // Size header, hand-crafted.
+    // Not small
+    output->Write(1, 0);
+
+    auto wsz = [output](size_t size) {
+      if (size - 1 < (1 << 9)) {
+        output->Write(2, 0b00);
+        output->Write(9, size - 1);
+      } else if (size - 1 < (1 << 13)) {
+        output->Write(2, 0b01);
+        output->Write(13, size - 1);
+      } else if (size - 1 < (1 << 18)) {
+        output->Write(2, 0b10);
+        output->Write(18, size - 1);
+      } else {
+        output->Write(2, 0b11);
+        output->Write(30, size - 1);
+      }
+    };
+
+    wsz(frame->height);
+
+    // No special ratio.
+    output->Write(3, 0);
+
+    wsz(frame->width);
+
+    // Hand-crafted ImageMetadata.
+    output->Write(1, 0);  // all_default
+    output->Write(1, 0);  // extra_fields
+    output->Write(1, 0);  // bit_depth.floating_point_sample
+    if (frame->bitdepth == 8) {
+      output->Write(2, 0b00);  // bit_depth.bits_per_sample = 8
+    } else if (frame->bitdepth == 10) {
+      output->Write(2, 0b01);  // bit_depth.bits_per_sample = 10
+    } else if (frame->bitdepth == 12) {
+      output->Write(2, 0b10);  // bit_depth.bits_per_sample = 12
+    } else {
+      output->Write(2, 0b11);  // 1 + u(6)
+      output->Write(6, frame->bitdepth - 1);
+    }
+    if (frame->bitdepth <= 14) {
+      output->Write(1, 1);  // 16-bit-buffer sufficient
+    } else {
+      output->Write(1, 0);  // 16-bit-buffer NOT sufficient
+    }
+    if (have_alpha) {
+      output->Write(2, 0b01);  // One extra channel
+      output->Write(1, 1);     // ... all_default (ie. 8-bit alpha)
+    } else {
+      output->Write(2, 0b00);  // No extra channel
+    }
+    output->Write(1, 0);  // Not XYB
+    if (frame->nb_chans > 1) {
+      output->Write(1, 1);  // color_encoding.all_default (sRGB)
+    } else {
+      output->Write(1, 0);     // color_encoding.all_default false
+      output->Write(1, 0);     // color_encoding.want_icc false
+      output->Write(2, 1);     // grayscale
+      output->Write(2, 1);     // D65
+      output->Write(1, 0);     // no gamma transfer function
+      output->Write(2, 0b10);  // tf: 2 + u(4)
+      output->Write(4, 11);    // tf of sRGB
+      output->Write(2, 1);     // relative rendering intent
+    }
+    output->Write(2, 0b00);  // No extensions.
+
+    output->Write(1, 1);  // all_default transform data
+
+    // No ICC, no preview. Frame should start at byte boundery.
+    output->ZeroPadToByte();
+  }
+
+  auto wsz_fh = [output](size_t size) {
+    if (size < (1 << 8)) {
+      output->Write(2, 0b00);
+      output->Write(8, size);
+    } else if (size - 256 < (1 << 11)) {
+      output->Write(2, 0b01);
+      output->Write(11, size - 256);
+    } else if (size - 2304 < (1 << 14)) {
+      output->Write(2, 0b10);
+      output->Write(14, size - 2304);
+    } else {
+      output->Write(2, 0b11);
+      output->Write(30, size - 18688);
+    }
+  };
+
+  // Handcrafted frame header.
+  output->Write(1, 0);     // all_default
+  output->Write(2, 0b00);  // regular frame
+  output->Write(1, 1);     // modular
+  output->Write(2, 0b00);  // default flags
+  output->Write(1, 0);     // not YCbCr
+  output->Write(2, 0b00);  // no upsampling
+  if (have_alpha) {
+    output->Write(2, 0b00);  // no alpha upsampling
+  }
+  output->Write(2, 0b01);  // default group size
+  output->Write(2, 0b00);  // exactly one pass
+  if (frame->width % frame->chunk_size == 0) {
+    output->Write(1, 0);  // no custom size or origin
+  } else {
+    output->Write(1, 1);  // custom size
+    wsz_fh(0);            // x0 = 0
+    wsz_fh(0);            // y0 = 0
+    wsz_fh((frame->width + frame->chunk_size - 1) / frame->chunk_size *
+           frame->chunk_size);  // xsize rounded up to chunk size
+    wsz_fh(frame->height);      // ysize same
+  }
+  output->Write(2, 0b00);  // kReplace blending mode
+  if (have_alpha) {
+    output->Write(2, 0b00);  // kReplace blending mode for alpha channel
+  }
+  output->Write(1, is_last);  // is_last
+  output->Write(2, 0b00);     // a frame has no name
+  output->Write(1, 0);        // loop filter is not all_default
+  output->Write(1, 0);        // no gaborish
+  output->Write(2, 0);        // 0 EPF iters
+  output->Write(2, 0b00);     // No LF extensions
+  output->Write(2, 0b00);     // No FH extensions
+
+  output->Write(1, 0);      // No TOC permutation
+  output->ZeroPadToByte();  // TOC is byte-aligned.
+  for (size_t i = 0; i < frame->group_data.size(); i++) {
+    size_t sz = group_sizes[i];
+    if (sz < (1 << 10)) {
+      output->Write(2, 0b00);
+      output->Write(10, sz);
+    } else if (sz - 1024 < (1 << 14)) {
+      output->Write(2, 0b01);
+      output->Write(14, sz - 1024);
+    } else if (sz - 17408 < (1 << 22)) {
+      output->Write(2, 0b10);
+      output->Write(22, sz - 17408);
+    } else {
+      output->Write(2, 0b11);
+      output->Write(30, sz - 4211712);
+    }
+  }
+  output->ZeroPadToByte();  // Groups are byte-aligned.
+}
+
+void AppendWriter(BitWriter* dest, const BitWriter* src) {
+  if (dest->bits_in_buffer == 0) {
+    memcpy(dest->data.get() + dest->bytes_written, src->data.get(),
+           src->bytes_written);
+    dest->bytes_written += src->bytes_written;
+  } else {
+    size_t i = 0;
+    uint64_t buf = dest->buffer;
+    uint64_t bits_in_buffer = dest->bits_in_buffer;
+    uint8_t* dest_buf = dest->data.get() + dest->bytes_written;
+    // Copy 8 bytes at a time until we reach the border.
+    for (; i + 8 < src->bytes_written; i += 8) {
+      uint64_t chunk;
+      memcpy(&chunk, src->data.get() + i, 8);
+      uint64_t out = buf | (chunk << bits_in_buffer);
+      memcpy(dest_buf + i, &out, 8);
+      buf = chunk >> (64 - bits_in_buffer);
+    }
+    dest->buffer = buf;
+    dest->bytes_written += i;
+    for (; i < src->bytes_written; i++) {
+      dest->Write(8, src->data[i]);
+    }
+  }
+  dest->Write(src->bits_in_buffer, src->buffer);
+}
+
+void AssembleFrame(size_t nb_chans,
+                   const std::vector<std::array<BitWriter, 4>>& group_data,
+                   BitWriter* output) {
+  for (size_t i = 0; i < group_data.size(); i++) {
+    for (size_t j = 0; j < nb_chans; j++) {
+      AppendWriter(output, &group_data[i][j]);
+    }
+    output->ZeroPadToByte();
+  }
+}
+
+size_t JxlFastLosslessWriteOutput(JxlFastLosslessFrameState* frame,
+                                  unsigned char* output, size_t output_size) {
+  assert(output_size >= 32);
+  unsigned char* initial_output = output;
+  while (true) {
+    size_t& cur = frame->current_bit_writer;
+    size_t& bw_pos = frame->bit_writer_byte_pos;
+    if (cur >= 1 + frame->group_data.size() * frame->nb_chans) {
+      return output - initial_output;
+    }
+    if (output_size <= 8) {
+      return output - initial_output;
+    }
+    size_t nbc = frame->nb_chans;
+    const BitWriter& writer =
+        cur == 0 ? frame->header
+                 : frame->group_data[(cur - 1) / nbc][(cur - 1) % nbc];
+    size_t full_byte_count =
+        std::min(output_size - 8, writer.bytes_written - bw_pos);
+    if (frame->bits_in_buffer == 0) {
+      memcpy(output, writer.data.get() + bw_pos, full_byte_count);
+    } else {
+      size_t i = 0;
+#if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+      // Copy 8 bytes at a time until we reach the border.
+      for (; i + 8 < full_byte_count; i += 8) {
+        uint64_t chunk;
+        memcpy(&chunk, writer.data.get() + bw_pos + i, 8);
+        uint64_t out = frame->bit_buffer | (chunk << frame->bits_in_buffer);
+        memcpy(output + i, &out, 8);
+        frame->bit_buffer = chunk >> (64 - frame->bits_in_buffer);
+      }
+#endif
+      for (; i < full_byte_count; i++) {
+        AddBits(8, writer.data.get()[bw_pos + i], output + i,
+                frame->bits_in_buffer, frame->bit_buffer);
+      }
+    }
+    output += full_byte_count;
+    output_size -= full_byte_count;
+    bw_pos += full_byte_count;
+    if (bw_pos == writer.bytes_written) {
+      auto write = [&](size_t num, uint64_t bits) {
+        size_t n = AddBits(num, bits, output, frame->bits_in_buffer,
+                           frame->bit_buffer);
+        output += n;
+        output_size -= n;
+      };
+      if (writer.bits_in_buffer) {
+        write(writer.bits_in_buffer, writer.buffer);
+      }
+      bw_pos = 0;
+      cur++;
+      if ((cur - 1) % nbc == 0 && frame->bits_in_buffer != 0) {
+        write(8 - frame->bits_in_buffer, 0);
+      }
+    }
+  }
+}
+
+void JxlFastLosslessFreeFrameState(JxlFastLosslessFrameState* frame) {
+  delete frame;
+}
+
+}  // extern "C"
+
+#endif
+
+#ifdef FJXL_SELF_INCLUDE
+
+namespace {
+
+constexpr size_t kNumRawSymbols = 19;
 
 constexpr size_t kLZ77Offset = 224;
 constexpr size_t kLZ77MinLength = 16;
@@ -891,205 +1201,6 @@ struct MoreThan14Bits {
 constexpr uint8_t MoreThan14Bits::kMinRawLength[];
 constexpr uint8_t MoreThan14Bits::kMaxRawLength[];
 
-void AppendWriter(BitWriter* dest, const BitWriter* src) {
-  if (dest->bits_in_buffer == 0) {
-    memcpy(dest->data.get() + dest->bytes_written, src->data.get(),
-           src->bytes_written);
-    dest->bytes_written += src->bytes_written;
-  } else {
-    size_t i = 0;
-    uint64_t buf = dest->buffer;
-    uint64_t bits_in_buffer = dest->bits_in_buffer;
-    uint8_t* dest_buf = dest->data.get() + dest->bytes_written;
-    // Copy 8 bytes at a time until we reach the border.
-    for (; i + 8 < src->bytes_written; i += 8) {
-      uint64_t chunk;
-      memcpy(&chunk, src->data.get() + i, 8);
-      uint64_t out = buf | (chunk << bits_in_buffer);
-      memcpy(dest_buf + i, &out, 8);
-      buf = chunk >> (64 - bits_in_buffer);
-    }
-    dest->buffer = buf;
-    dest->bytes_written += i;
-    for (; i < src->bytes_written; i++) {
-      dest->Write(8, src->data[i]);
-    }
-  }
-  dest->Write(src->bits_in_buffer, src->buffer);
-}
-
-void AssembleFrame(size_t width, size_t height, size_t nb_chans,
-                   size_t bitdepth, size_t chunk_size,
-                   const std::vector<std::array<BitWriter, 4>>& group_data,
-                   BitWriter* output) {
-  size_t total_size_groups = 0;
-  std::vector<size_t> group_sizes(group_data.size());
-  for (size_t i = 0; i < group_data.size(); i++) {
-    size_t sz = 0;
-    for (size_t j = 0; j < nb_chans; j++) {
-      const auto& writer = group_data[i][j];
-      sz += writer.bytes_written * 8 + writer.bits_in_buffer;
-    }
-    sz = (sz + 7) / 8;
-    group_sizes[i] = sz;
-    total_size_groups += sz * 8;
-  }
-  output->Allocate(1000 + group_data.size() * 32 + total_size_groups);
-
-  // Signature
-  output->Write(16, 0x0AFF);
-
-  // Size header, hand-crafted.
-  // Not small
-  output->Write(1, 0);
-
-  auto wsz = [output](size_t size) {
-    if (size - 1 < (1 << 9)) {
-      output->Write(2, 0b00);
-      output->Write(9, size - 1);
-    } else if (size - 1 < (1 << 13)) {
-      output->Write(2, 0b01);
-      output->Write(13, size - 1);
-    } else if (size - 1 < (1 << 18)) {
-      output->Write(2, 0b10);
-      output->Write(18, size - 1);
-    } else {
-      output->Write(2, 0b11);
-      output->Write(30, size - 1);
-    }
-  };
-
-  wsz(height);
-
-  // No special ratio.
-  output->Write(3, 0);
-
-  wsz(width);
-
-  // Hand-crafted ImageMetadata.
-  output->Write(1, 0);  // all_default
-  output->Write(1, 0);  // extra_fields
-  output->Write(1, 0);  // bit_depth.floating_point_sample
-  if (bitdepth == 8) {
-    output->Write(2, 0b00);  // bit_depth.bits_per_sample = 8
-  } else if (bitdepth == 10) {
-    output->Write(2, 0b01);  // bit_depth.bits_per_sample = 10
-  } else if (bitdepth == 12) {
-    output->Write(2, 0b10);  // bit_depth.bits_per_sample = 12
-  } else {
-    output->Write(2, 0b11);  // 1 + u(6)
-    output->Write(6, bitdepth - 1);
-  }
-  if (bitdepth <= 14) {
-    output->Write(1, 1);  // 16-bit-buffer sufficient
-  } else {
-    output->Write(1, 0);  // 16-bit-buffer NOT sufficient
-  }
-  bool have_alpha = (nb_chans == 2 || nb_chans == 4);
-  if (have_alpha) {
-    output->Write(2, 0b01);  // One extra channel
-    output->Write(1, 1);     // ... all_default (ie. 8-bit alpha)
-  } else {
-    output->Write(2, 0b00);  // No extra channel
-  }
-  output->Write(1, 0);  // Not XYB
-  if (nb_chans > 1) {
-    output->Write(1, 1);  // color_encoding.all_default (sRGB)
-  } else {
-    output->Write(1, 0);     // color_encoding.all_default false
-    output->Write(1, 0);     // color_encoding.want_icc false
-    output->Write(2, 1);     // grayscale
-    output->Write(2, 1);     // D65
-    output->Write(1, 0);     // no gamma transfer function
-    output->Write(2, 0b10);  // tf: 2 + u(4)
-    output->Write(4, 11);    // tf of sRGB
-    output->Write(2, 1);     // relative rendering intent
-  }
-  output->Write(2, 0b00);  // No extensions.
-
-  output->Write(1, 1);  // all_default transform data
-
-  // No ICC, no preview. Frame should start at byte boundery.
-  output->ZeroPadToByte();
-
-  auto wsz_fh = [output](size_t size) {
-    if (size < (1 << 8)) {
-      output->Write(2, 0b00);
-      output->Write(8, size);
-    } else if (size - 256 < (1 << 11)) {
-      output->Write(2, 0b01);
-      output->Write(11, size - 256);
-    } else if (size - 2304 < (1 << 14)) {
-      output->Write(2, 0b10);
-      output->Write(14, size - 2304);
-    } else {
-      output->Write(2, 0b11);
-      output->Write(30, size - 18688);
-    }
-  };
-
-  // Handcrafted frame header.
-  output->Write(1, 0);     // all_default
-  output->Write(2, 0b00);  // regular frame
-  output->Write(1, 1);     // modular
-  output->Write(2, 0b00);  // default flags
-  output->Write(1, 0);     // not YCbCr
-  output->Write(2, 0b00);  // no upsampling
-  if (have_alpha) {
-    output->Write(2, 0b00);  // no alpha upsampling
-  }
-  output->Write(2, 0b01);  // default group size
-  output->Write(2, 0b00);  // exactly one pass
-  if (width % chunk_size == 0) {
-    output->Write(1, 0);  // no custom size or origin
-  } else {
-    output->Write(1, 1);  // custom size
-    wsz_fh(0);            // x0 = 0
-    wsz_fh(0);            // y0 = 0
-    wsz_fh((width + chunk_size - 1) / chunk_size *
-           chunk_size);  // xsize rounded up to chunk size
-    wsz_fh(height);      // ysize same
-  }
-  output->Write(2, 0b00);  // kReplace blending mode
-  if (have_alpha) {
-    output->Write(2, 0b00);  // kReplace blending mode for alpha channel
-  }
-  output->Write(1, 1);     // is_last
-  output->Write(2, 0b00);  // a frame has no name
-  output->Write(1, 0);     // loop filter is not all_default
-  output->Write(1, 0);     // no gaborish
-  output->Write(2, 0);     // 0 EPF iters
-  output->Write(2, 0b00);  // No LF extensions
-  output->Write(2, 0b00);  // No FH extensions
-
-  output->Write(1, 0);      // No TOC permutation
-  output->ZeroPadToByte();  // TOC is byte-aligned.
-  for (size_t i = 0; i < group_data.size(); i++) {
-    size_t sz = group_sizes[i];
-    if (sz < (1 << 10)) {
-      output->Write(2, 0b00);
-      output->Write(10, sz);
-    } else if (sz - 1024 < (1 << 14)) {
-      output->Write(2, 0b01);
-      output->Write(14, sz - 1024);
-    } else if (sz - 17408 < (1 << 22)) {
-      output->Write(2, 0b10);
-      output->Write(22, sz - 17408);
-    } else {
-      output->Write(2, 0b11);
-      output->Write(30, sz - 4211712);
-    }
-  }
-  output->ZeroPadToByte();  // Groups are byte-aligned.
-
-  for (size_t i = 0; i < group_data.size(); i++) {
-    for (size_t j = 0; j < nb_chans; j++) {
-      AppendWriter(output, &group_data[i][j]);
-    }
-    output->ZeroPadToByte();
-  }
-}
-
 void PrepareDCGlobalCommon(bool is_single_group, size_t width, size_t height,
                            const PrefixCode& code, BitWriter* output) {
   output->Allocate(100000 + (is_single_group ? width * height * 16 : 0));
@@ -1392,8 +1503,9 @@ void ProcessImageArea(const unsigned char* rgba, size_t x0, size_t y0,
                       size_t row_stride, BitDepth bitdepth, bool big_endian,
                       Processor* processors) {
   if (big_endian) {
-    ProcessImageArea<Processor, nb_chans, BitDepth, /*big_endian=*/true>(
-        rgba, x0, y0, oxs, xs, yskip, ys, row_stride, bitdepth, processors);
+    ProcessImageArea<Processor, nb_chans, BitDepth, /*big_endian=*/
+                     true>(rgba, x0, y0, oxs, xs, yskip, ys, row_stride,
+                           bitdepth, processors);
   } else {
     ProcessImageArea<Processor, nb_chans, BitDepth, /*big_endian=*/false>(
         rgba, x0, y0, oxs, xs, yskip, ys, row_stride, bitdepth, processors);
@@ -1607,10 +1719,11 @@ void PrepareDCGlobalPalette(bool is_single_group, size_t width, size_t height,
 }
 
 template <size_t nb_chans, typename BitDepth>
-size_t LLEnc(const unsigned char* rgba, size_t width, size_t stride,
-             size_t height, BitDepth bitdepth, bool big_endian, int effort,
-             unsigned char** output, void* runner_opaque,
-             FJxlParallelRunner runner) {
+JxlFastLosslessFrameState* LLEnc(const unsigned char* rgba, size_t width,
+                                 size_t stride, size_t height,
+                                 BitDepth bitdepth, bool big_endian, int effort,
+                                 void* runner_opaque,
+                                 FJxlParallelRunner runner) {
   assert(width != 0);
   assert(height != 0);
   assert(stride >= nb_chans * BitDepth::kInputBytes * width);
@@ -1771,21 +1884,27 @@ size_t LLEnc(const unsigned char* rgba, size_t width, size_t stride,
 
   alignas(32) PrefixCode hcode(bitdepth, raw_counts, lz77_counts);
 
-  BitWriter writer;
-
   bool onegroup = num_groups_x == 1 && num_groups_y == 1;
 
   size_t num_groups = onegroup ? 1
                                : (2 + num_dc_groups_x * num_dc_groups_y +
                                   num_groups_x * num_groups_y);
 
-  std::vector<std::array<BitWriter, 4>> group_data(num_groups);
+  JxlFastLosslessFrameState* frame_state = new JxlFastLosslessFrameState();
+
+  frame_state->width = width;
+  frame_state->height = height;
+  frame_state->nb_chans = nb_chans;
+  frame_state->bitdepth = bitdepth.bitdepth;
+  frame_state->chunk_size = kChunkSize;
+
+  frame_state->group_data = std::vector<std::array<BitWriter, 4>>(num_groups);
   if (collided) {
     PrepareDCGlobal(onegroup, width, height, nb_chans, hcode,
-                    &group_data[0][0]);
+                    &frame_state->group_data[0][0]);
   } else {
     PrepareDCGlobalPalette(onegroup, width, height, hcode, palette, pcolors,
-                           &group_data[0][0]);
+                           &frame_state->group_data[0][0]);
   }
 
   auto run_one = [&](size_t g) {
@@ -1797,7 +1916,7 @@ size_t LLEnc(const unsigned char* rgba, size_t width, size_t stride,
     size_t ys = std::min<size_t>(height - yg * 256, 256);
     size_t x0 = xg * 256;
     size_t y0 = yg * 256;
-    auto& gd = group_data[group_id];
+    auto& gd = frame_state->group_data[group_id];
     if (collided) {
       WriteACSection<nb_chans>(rgba, x0, y0, xs, ys, stride, onegroup, bitdepth,
                                big_endian, hcode, gd);
@@ -1813,56 +1932,52 @@ size_t LLEnc(const unsigned char* rgba, size_t width, size_t stride,
       +[](void* r, size_t i) { (*reinterpret_cast<decltype(&run_one)>(r))(i); },
       num_groups_x * num_groups_y);
 
-  AssembleFrame(width, height, nb_chans, bitdepth.bitdepth, kChunkSize,
-                group_data, &writer);
-
-  *output = writer.data.release();
-  return writer.bytes_written;
+  return frame_state;
 }
 
 template <typename BitDepth>
-size_t LLEnc(const unsigned char* rgba, size_t width, size_t stride,
-             size_t height, size_t nb_chans, BitDepth bitdepth, bool big_endian,
-             int effort, unsigned char** output, void* runner_opaque,
-             FJxlParallelRunner runner) {
+JxlFastLosslessFrameState* LLEnc(const unsigned char* rgba, size_t width,
+                                 size_t stride, size_t height, size_t nb_chans,
+                                 BitDepth bitdepth, bool big_endian, int effort,
+                                 void* runner_opaque,
+                                 FJxlParallelRunner runner) {
   assert(nb_chans <= 4);
   assert(nb_chans != 0);
   if (nb_chans == 1) {
     return LLEnc<1>(rgba, width, stride, height, bitdepth, big_endian, effort,
-                    output, runner_opaque, runner);
+                    runner_opaque, runner);
   }
   if (nb_chans == 2) {
     return LLEnc<2>(rgba, width, stride, height, bitdepth, big_endian, effort,
-                    output, runner_opaque, runner);
+                    runner_opaque, runner);
   }
   if (nb_chans == 3) {
     return LLEnc<3>(rgba, width, stride, height, bitdepth, big_endian, effort,
-                    output, runner_opaque, runner);
+                    runner_opaque, runner);
   }
   return LLEnc<4>(rgba, width, stride, height, bitdepth, big_endian, effort,
-                  output, runner_opaque, runner);
+                  runner_opaque, runner);
 }
 
-size_t JxlFastLosslessEncodeImpl(const unsigned char* rgba, size_t width,
-                                 size_t stride, size_t height, size_t nb_chans,
-                                 size_t bitdepth, bool big_endian, int effort,
-                                 unsigned char** output, void* runner_opaque,
-                                 FJxlParallelRunner runner) {
+JxlFastLosslessFrameState* JxlFastLosslessEncodeImpl(
+    const unsigned char* rgba, size_t width, size_t stride, size_t height,
+    size_t nb_chans, size_t bitdepth, bool big_endian, int effort,
+    void* runner_opaque, FJxlParallelRunner runner) {
   assert(bitdepth > 0);
   if (bitdepth <= 8) {
     return LLEnc(rgba, width, stride, height, nb_chans, UpTo8Bits(bitdepth),
-                 big_endian, effort, output, runner_opaque, runner);
+                 big_endian, effort, runner_opaque, runner);
   }
   if (bitdepth <= 13) {
     return LLEnc(rgba, width, stride, height, nb_chans, From9To13Bits(bitdepth),
-                 big_endian, effort, output, runner_opaque, runner);
+                 big_endian, effort, runner_opaque, runner);
   }
   if (bitdepth == 14) {
     return LLEnc(rgba, width, stride, height, nb_chans, Exactly14Bits(bitdepth),
-                 big_endian, effort, output, runner_opaque, runner);
+                 big_endian, effort, runner_opaque, runner);
   }
   return LLEnc(rgba, width, stride, height, nb_chans, MoreThan14Bits(bitdepth),
-               big_endian, effort, output, runner_opaque, runner);
+               big_endian, effort, runner_opaque, runner);
 }
 
 }  // namespace
@@ -1905,15 +2020,33 @@ namespace AVX2 {
 #include "lib/jxl/enc_fast_lossless.cc"
 #endif
 
-#ifdef __cplusplus
 extern "C" {
-#endif
 
 size_t JxlFastLosslessEncode(const unsigned char* rgba, size_t width,
                              size_t row_stride, size_t height, size_t nb_chans,
-                             size_t bitdepth, bool big_endian, int effort,
+                             size_t bitdepth, int big_endian, int effort,
                              unsigned char** output, void* runner_opaque,
                              FJxlParallelRunner runner) {
+  auto frame_state = JxlFastLosslessPrepareFrame(
+      rgba, width, row_stride, height, nb_chans, bitdepth, big_endian, effort,
+      runner_opaque, runner);
+  JxlFastLosslessPrepareHeader(frame_state, /*add_image_header=*/1,
+                               /*is_last=*/1);
+  size_t output_size = JxlFastLosslessMaxRequiredOutput(frame_state);
+  *output = (unsigned char*)malloc(output_size);
+  size_t written = 0;
+  size_t total = 0;
+  while ((written = JxlFastLosslessWriteOutput(frame_state, *output + total,
+                                               output_size - total)) != 0) {
+    total += written;
+  }
+  return total;
+}
+
+JxlFastLosslessFrameState* JxlFastLosslessPrepareFrame(
+    const unsigned char* rgba, size_t width, size_t row_stride, size_t height,
+    size_t nb_chans, size_t bitdepth, int big_endian, int effort,
+    void* runner_opaque, FJxlParallelRunner runner) {
   auto trivial_runner =
       +[](void*, void* opaque, void fun(void*, size_t), size_t count) {
         for (size_t i = 0; i < count; i++) {
@@ -1928,17 +2061,16 @@ size_t JxlFastLosslessEncode(const unsigned char* rgba, size_t width,
   // TODO(veluca): MSVC dynamic dispatch.
 #if (!defined(_MSC_VER) || defined(__clang__)) && defined(__x86_64__)
   if (__builtin_cpu_supports("avx2")) {
-    return AVX2::JxlFastLosslessEncodeImpl(
-        rgba, width, row_stride, height, nb_chans, bitdepth, big_endian, effort,
-        output, runner_opaque, runner);
+    return AVX2::JxlFastLosslessEncodeImpl(rgba, width, row_stride, height,
+                                           nb_chans, bitdepth, big_endian,
+                                           effort, runner_opaque, runner);
   }
 #endif
   return JxlFastLosslessEncodeImpl(rgba, width, row_stride, height, nb_chans,
-                                   bitdepth, big_endian, effort, output,
-                                   runner_opaque, runner);
+                                   bitdepth, big_endian, effort, runner_opaque,
+                                   runner);
 }
 
-#ifdef __cplusplus
 }  // extern "C"
-#endif
+
 #endif  // FJXL_SELF_INCLUDE
