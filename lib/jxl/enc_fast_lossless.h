@@ -11,6 +11,8 @@
 extern "C" {
 #endif
 
+// Simple encoding API.
+
 // A FJxlParallelRunner must call fun(opaque, i) for all i from 0 to count. It
 // may do so in parallel.
 typedef void(FJxlParallelRunner)(void* runner_opaque, void* opaque,
@@ -19,9 +21,44 @@ typedef void(FJxlParallelRunner)(void* runner_opaque, void* opaque,
 // You may pass `nullptr` as a runner: encoding will be sequential.
 size_t JxlFastLosslessEncode(const unsigned char* rgba, size_t width,
                              size_t row_stride, size_t height, size_t nb_chans,
-                             size_t bitdepth, bool big_endian, int effort,
+                             size_t bitdepth, int big_endian, int effort,
                              unsigned char** output, void* runner_opaque,
                              FJxlParallelRunner runner);
+
+// More complex API for cases in which you may want to allocate your own buffer
+// and other advanced use cases.
+
+// Opaque struct that represents an intermediate state of the computation.
+struct JxlFastLosslessFrameState;
+
+// Returned JxlFastLosslessFrameState must be freed by calling
+// JxlFastLosslessFreeFrameState.
+JxlFastLosslessFrameState* JxlFastLosslessPrepareFrame(
+    const unsigned char* rgba, size_t width, size_t row_stride, size_t height,
+    size_t nb_chans, size_t bitdepth, int big_endian, int effort,
+    void* runner_opaque, FJxlParallelRunner runner);
+
+// Prepare the (image/frame) header. You may encode animations by concatenating
+// the output of multiple frames, of which the first one has add_image_header =
+// 1 and subsequent ones have add_image_header = 0, and all frames but the last
+// one have is_last = 0.
+void JxlFastLosslessPrepareHeader(JxlFastLosslessFrameState* frame,
+                                  int add_image_header, int is_last);
+
+// Upper bound on the required output size, including any padding that may be
+// required by JxlFastLosslessWriteOutput. Cannot be called before
+// JxlFastLosslessPrepareHeader.
+size_t JxlFastLosslessMaxRequiredOutput(const JxlFastLosslessFrameState* frame);
+
+// Writes the frame to the given output buffer. Returns the number of bytes that
+// were written, which is at least 1 unless the entire output has been written
+// already. It is required that `output_size >= 32` when calling this function.
+// This function must be called repeatedly until it returns 0.
+size_t JxlFastLosslessWriteOutput(JxlFastLosslessFrameState* frame,
+                                  unsigned char* output, size_t output_size);
+
+// Frees the provided frame state.
+void JxlFastLosslessFreeFrameState(JxlFastLosslessFrameState* frame);
 
 #ifdef __cplusplus
 }  // extern "C"
