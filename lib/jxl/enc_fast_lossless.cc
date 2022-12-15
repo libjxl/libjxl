@@ -18,13 +18,21 @@
 #include <memory>
 #include <vector>
 
+namespace {
 #if defined(_MSC_VER) && !defined(__clang__)
 #define FJXL_INLINE __forceinline
+FJXL_INLINE uint32_t CeilLog2(uint32_t v) {
+  unsigned long index;
+  _BitScanReverse(&index, v);
+  return index;
+}
 #else
 #define FJXL_INLINE inline __attribute__((always_inline))
+FJXL_INLINE uint32_t CeilLog2(uint32_t v) {
+  return v ? 31 - __builtin_clz(v) : 0;
+}
 #endif
 
-namespace {
 // Compiles to a memcpy on little-endian systems.
 FJXL_INLINE void StoreLE64(uint8_t* tgt, uint64_t data) {
 #if (!defined(__BYTE_ORDER__) || (__BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__))
@@ -952,7 +960,7 @@ FJXL_INLINE void StoreNeonAbove14(const uint32_t* nbits_tok,
 
 void EncodeHybridUint000(uint32_t value, uint32_t* token, uint32_t* nbits,
                          uint32_t* bits) {
-  uint32_t n = value ? 31 - __builtin_clz(value) : 32;
+  uint32_t n = CeilLog2(value);
   *token = value ? n + 1 : 0;
   *nbits = value ? n : 0;
   *bits = value ? value - (1 << n) : 0;
@@ -1279,7 +1287,7 @@ void PrepareDCGlobal(bool is_single_group, size_t width, size_t height,
 void EncodeHybridUint404_Mul16(uint32_t value, uint32_t* token_div16,
                                uint32_t* nbits, uint32_t* bits) {
   // NOTE: token in libjxl is actually << 4.
-  uint32_t n = value ? 31 - __builtin_clz(value) : 32;
+  uint32_t n = CeilLog2(value);
   *token_div16 = value < 16 ? 0 : n - 3;
   *nbits = value < 16 ? 0 : n - 4;
   *bits = value < 16 ? 0 : (value >> 4) - (1 << *nbits);
