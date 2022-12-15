@@ -37,6 +37,10 @@ void InitializeImage(j_decompress_ptr cinfo) {
   for (int i = 0; i < NUM_QUANT_TBLS; ++i) {
     cinfo->quant_tbl_ptrs[i] = nullptr;
   }
+  for (int i = 0; i < NUM_HUFF_TBLS; ++i) {
+    cinfo->dc_huff_tbl_ptrs[i] = nullptr;
+    cinfo->ac_huff_tbl_ptrs[i] = nullptr;
+  }
 }
 
 int ConsumeInput(j_decompress_ptr cinfo) {
@@ -117,7 +121,9 @@ void jpeg_CreateDecompress(j_decompress_ptr cinfo, int version,
   cinfo->output_scanline = 0;
   cinfo->sample_range_limit = nullptr;  // not used
   cinfo->rec_outbuf_height = 1;         // output works with any buffer height
-
+  cinfo->unread_marker = 0;             // not used
+  // TODO(szabadka) Fill this in for progressive mode.
+  cinfo->coef_bits = nullptr;
   for (int i = 0; i < 16; ++i) {
     cinfo->master->app_marker_parsers[i] = nullptr;
   }
