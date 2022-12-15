@@ -287,7 +287,7 @@ TEST(JxlTest, RoundtripMultiGroup) {
 
     PackedPixelFile ppf_out;
     EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, &pool, &ppf_out), expected_size,
-                70);
+                80);
     EXPECT_THAT(ComputeDistance2(t.ppf(), ppf_out),
                 IsSlightlyBelow(expected_distance));
   };
