@@ -166,6 +166,10 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
         }
         valid = false;
       }
+      // TODO(veluca): this is a hack. codec->Decompress should set the bitdepth
+      // correctly, but for jxl it currently sets it from the pixel format (i.e.
+      // 32-bit float).
+      io2.metadata.m.bit_depth = io.metadata.m.bit_depth;
 
       // io2.dec_pixels increases each time, but the total should be independent
       // of decode_reps, so only take the value from the first iteration.
