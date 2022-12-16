@@ -215,6 +215,7 @@ if(JPEGXL_ENABLE_BENCHMARK AND JPEGXL_ENABLE_TOOLS)
     benchmark/benchmark_codec_custom.h
     benchmark/benchmark_codec_jxl.cc
     benchmark/benchmark_codec_jxl.h
+    ssimulacra2.cc
     ../third_party/dirent.cc
   )
   target_link_libraries(benchmark_xl Threads::Threads)

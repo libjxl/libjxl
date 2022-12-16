@@ -81,6 +81,7 @@ std::vector<ColumnDescriptor> GetColumnDescriptors(size_t num_extra_metrics) {
       {{"E MP/s"},          8,  3, TYPE_POSITIVE_FLOAT, false},
       {{"D MP/s"},          8,  3, TYPE_POSITIVE_FLOAT, false},
       {{"Max norm"},       13,  8, TYPE_POSITIVE_FLOAT, false},
+      {{"SSIMULACRA2"},    13,  8, TYPE_POSITIVE_FLOAT, false},
       {{"pnorm"},          13,  8, TYPE_POSITIVE_FLOAT, false},
       {{"PSNR"},            7,  2, TYPE_POSITIVE_FLOAT, true},
       {{"QABPP"},           8,  3, TYPE_POSITIVE_FLOAT, true},
@@ -150,6 +151,7 @@ void BenchmarkStats::Assimilate(const BenchmarkStats& victim) {
   total_time_decode += victim.total_time_decode;
   max_distance = std::max(max_distance, victim.max_distance);
   distance_p_norm += victim.distance_p_norm;
+  ssimulacra2 += victim.ssimulacra2;
   distance_2 += victim.distance_2;
   distances.insert(distances.end(), victim.distances.begin(),
                    victim.distances.end());
@@ -201,6 +203,7 @@ std::vector<ColumnValue> BenchmarkStats::ComputeColumns(
                       : (distance_2 == 0)        ? 99.99
                                                  : (20 * std::log10(1 / rmse));
   const double p_norm = distance_p_norm / total_input_pixels;
+  const double ssimulacra2_avg = ssimulacra2 / total_input_pixels;
   const double bpp_p_norm = p_norm * comp_bpp;
 
   std::vector<ColumnValue> values(
@@ -213,39 +216,40 @@ std::vector<ColumnValue> BenchmarkStats::ComputeColumns(
   values[4].f = compression_speed;
   values[5].f = decompression_speed;
   values[6].f = static_cast<double>(max_distance);
-  values[7].f = p_norm;
-  values[8].f = psnr;
-  values[9].f = adj_comp_bpp;
+  values[7].f = ssimulacra2_avg;
+  values[8].f = p_norm;
+  values[9].f = psnr;
+  values[10].f = adj_comp_bpp;
   // The DCT2, DCT4, AFV and DCT4X8 are applied to an 8x8 block by having 4x4
   // DCT2X2s, 2x2 DCT4x4s/AFVs, or 2x1 DCT4X8s, filling the whole 8x8 blocks.
   // Thus we need to multiply the block count by 8.0 * 8.0 pixels for these
   // transforms.
-  values[10].f = 100.f * jxl_stats.aux_out.num_small_blocks * 8.0 * 8.0 /
+  values[11].f = 100.f * jxl_stats.aux_out.num_small_blocks * 8.0 * 8.0 /
                  total_input_pixels;
-  values[11].f = 100.f * jxl_stats.aux_out.num_dct4x8_blocks * 8.0 * 8.0 /
+  values[12].f = 100.f * jxl_stats.aux_out.num_dct4x8_blocks * 8.0 * 8.0 /
                  total_input_pixels;
-  values[12].f =
+  values[13].f =
       100.f * jxl_stats.aux_out.num_afv_blocks * 8.0 * 8.0 / total_input_pixels;
-  values[13].f = 100.f * jxl_stats.aux_out.num_dct8_blocks * 8.0 * 8.0 /
+  values[14].f = 100.f * jxl_stats.aux_out.num_dct8_blocks * 8.0 * 8.0 /
                  total_input_pixels;
-  values[14].f = 100.f * jxl_stats.aux_out.num_dct8x16_blocks * 8.0 * 16.0 /
+  values[15].f = 100.f * jxl_stats.aux_out.num_dct8x16_blocks * 8.0 * 16.0 /
                  total_input_pixels;
-  values[15].f = 100.f * jxl_stats.aux_out.num_dct8x32_blocks * 8.0 * 32.0 /
+  values[16].f = 100.f * jxl_stats.aux_out.num_dct8x32_blocks * 8.0 * 32.0 /
                  total_input_pixels;
-  values[16].f = 100.f * jxl_stats.aux_out.num_dct16_blocks * 16.0 * 16.0 /
+  values[17].f = 100.f * jxl_stats.aux_out.num_dct16_blocks * 16.0 * 16.0 /
                  total_input_pixels;
-  values[17].f = 100.f * jxl_stats.aux_out.num_dct16x32_blocks * 16.0 * 32.0 /
+  values[18].f = 100.f * jxl_stats.aux_out.num_dct16x32_blocks * 16.0 * 32.0 /
                  total_input_pixels;
-  values[18].f = 100.f * jxl_stats.aux_out.num_dct32_blocks * 32.0 * 32.0 /
+  values[19].f = 100.f * jxl_stats.aux_out.num_dct32_blocks * 32.0 * 32.0 /
                  total_input_pixels;
-  values[19].f = 100.f * jxl_stats.aux_out.num_dct32x64_blocks * 32.0 * 64.0 /
+  values[20].f = 100.f * jxl_stats.aux_out.num_dct32x64_blocks * 32.0 * 64.0 /
                  total_input_pixels;
-  values[20].f = 100.f * jxl_stats.aux_out.num_dct64_blocks * 64.0 * 64.0 /
+  values[21].f = 100.f * jxl_stats.aux_out.num_dct64_blocks * 64.0 * 64.0 /
                  total_input_pixels;
-  values[21].f = bpp_p_norm;
-  values[22].i = total_errors;
+  values[22].f = bpp_p_norm;
+  values[23].i = total_errors;
   for (size_t i = 0; i < extra_metrics.size(); i++) {
-    values[23 + i].f = extra_metrics[i] / total_input_files;
+    values[24 + i].f = extra_metrics[i] / total_input_files;
   }
   return values;
 }
