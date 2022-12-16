@@ -488,7 +488,7 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
 
     uint32_t duration;
     uint32_t timecode;
-    if (metadata.m.have_animation) {
+    if (input_frame && metadata.m.have_animation) {
       duration = input_frame->option_values.header.duration;
       timecode = input_frame->option_values.header.timecode;
     } else {
@@ -1645,6 +1645,9 @@ static bool CanDoFastLossless(const JxlEncoderFrameSettings* frame_settings,
     return false;
   }
   if (frame_settings->values.header.layer_info.have_crop) {
+    return false;
+  }
+  if (frame_settings->enc->metadata.m.have_animation) {
     return false;
   }
   if (frame_settings->values.cparams.speed_tier != jxl::SpeedTier::kLightning) {
