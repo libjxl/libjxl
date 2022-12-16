@@ -49,6 +49,7 @@
 #include "tools/benchmark/benchmark_utils.h"
 #include "tools/codec_config.h"
 #include "tools/speed_stats.h"
+#include "tools/ssimulacra2.h"
 
 namespace jxl {
 namespace {
@@ -243,6 +244,7 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
       s->distance_p_norm +=
           ComputeDistanceP(distmap, Args()->ba_params, Args()->error_pnorm) *
           input_pixels;
+      s->ssimulacra2 += ComputeSSIMULACRA2(ib1, ib2).Score() * input_pixels;
       s->max_distance = std::max(s->max_distance, distance);
       s->distances.push_back(distance);
       max_distance = std::max(max_distance, distance);
