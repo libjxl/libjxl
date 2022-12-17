@@ -81,13 +81,20 @@ jobs:
               -DJPEGXL_ENABLE_BOXES=OFF
               -DJPEGXL_ENABLE_PLUGINS=OFF
               -DJPEGXL_ENABLE_VIEWERS=OFF
-          # Builds with gcc in release mode
-          - name: release:gcc8
+          # Builds with gcc-8 in release mode
+          - name: release:gcc-8
             os: ubuntu-20.04
             mode: release
             apt_pkgs: gcc-8 g++-8
             cmake_args: >-
               -DCMAKE_C_COMPILER=gcc-8 -DCMAKE_CXX_COMPILER=g++-8
+          # Builds with gcc-10 in release mode
+          - name: release:gcc-10
+            os: ubuntu-22.04
+            mode: release
+            apt_pkgs: gcc-10 g++-10
+            cmake_args: >-
+              -DCMAKE_C_COMPILER=gcc-10 -DCMAKE_CXX_COMPILER=g++-10
           # Builds with clang-5 in release mode
           - name: release:clang-5
             os: ubuntu-18.04
@@ -106,7 +113,14 @@ jobs:
             apt_pkgs: clang-7
             cc: clang-7
             cxx: clang++-7
-
+          # Builds with clang-14 in release mode
+          - name: release:clang-14
+            os: ubuntu-22.04
+            mode: release
+            skip_install: true
+            apt_pkgs: clang-14
+            cc: clang-14
+            cxx: clang++-14
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
       # Whether we track the stack size.
