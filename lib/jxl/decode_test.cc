@@ -1775,7 +1775,7 @@ TEST_P(DecodeAllEncodingsTest, PreserveOriginalProfileTest) {
   EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec));
   double dist = ButteraugliDistance(xsize, ysize, pixels, c_in, intensity_in,
                                     out, c_in, intensity_in);
-  EXPECT_LT(dist, 1.2);
+  EXPECT_LT(dist, 1.29);
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderProcessInput(dec));
   JxlDecoderDestroy(dec);
 }
@@ -1868,7 +1868,7 @@ void SetPreferredColorProfileTest(
     double dist = ButteraugliDistance(xsize, ysize, pixels, c_in, intensity_in,
                                       out, c_out, intensity_out);
     if (c_in.white_point == c_out.white_point) {
-      EXPECT_LT(dist, 1.2);
+      EXPECT_LT(dist, 1.29);
     } else {
       EXPECT_LT(dist, 4.0);
     }
