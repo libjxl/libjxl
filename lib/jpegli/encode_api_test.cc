@@ -127,7 +127,7 @@ std::vector<TestConfig> GenerateTests() {
   for (int quality : {80, 90, 100}) {
     TestConfig config;
     config.quality = quality;
-    config.max_dist = quality == 100 ? 0.5 : quality == 90 ? 1.5 : 2.5;
+    config.max_dist = quality == 100 ? 0.5 : quality == 90 ? 1.85 : 2.65;
     all_tests.push_back(config);
   }
   return all_tests;

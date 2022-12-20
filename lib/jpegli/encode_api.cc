@@ -281,7 +281,6 @@ void jpeg_finish_compress(j_compress_ptr cinfo) {
   // Create jpeg data and optimize Huffman codes.
   float global_scale = 0.66f;
   if (!use_xyb) {
-    global_scale /= 500;
     if (color_encoding.tf.IsPQ()) {
       global_scale *= .4f;
     } else if (color_encoding.tf.IsHLG()) {
