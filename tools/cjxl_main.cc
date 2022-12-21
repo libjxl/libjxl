@@ -632,6 +632,14 @@ void SetDistanceFromFlags(CommandLineParser* cmdline, CompressArgs* args,
                           const jxl::extras::Codec& codec) {
   bool distance_set = cmdline->GetOption(args->opt_distance_id)->matched();
   bool quality_set = cmdline->GetOption(args->opt_quality_id)->matched();
+  if (((distance_set && (args->distance != 0.0)) ||
+       (quality_set && (args->quality != 100))) &&
+      args->lossless_jpeg && args->lossless_jpeg) {
+    std::cerr << "Must not set quality below 100 nor non-zero distance in "
+                 "combination with --lossless_jpeg=1."
+              << std::endl;
+    exit(EXIT_FAILURE);
+  }
   if (quality_set) {
     if (distance_set) {
       std::cerr << "Must not set both --distance and --quality." << std::endl;
