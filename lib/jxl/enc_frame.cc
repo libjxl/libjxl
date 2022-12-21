@@ -315,6 +315,13 @@ Status MakeFrameHeader(const CompressParams& cparams,
           "recompressing JPEGs");
     }
   }
+  if (frame_header->color_transform != ColorTransform::kYCbCr &&
+      (frame_header->chroma_subsampling.MaxHShift() != 0 ||
+       frame_header->chroma_subsampling.MaxVShift() != 0)) {
+    return JXL_FAILURE(
+        "Chroma subsampling is not supported when color transform is not "
+        "YCbCr");
+  }
 
   frame_header->flags = FrameFlagsFromParams(cparams);
   // Non-photon noise is not supported in the Modular encoder for now.
