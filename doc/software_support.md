@@ -43,6 +43,8 @@ Please add missing software to this list.
 
 ## Image editors
 
+- [Adobe Camera Raw (since version 15)](https://helpx.adobe.com/camera-raw/using/hdr-output.html)
+- [Affinity (since V2)](https://affinity.serif.com/en-gb/whats-new/)
 - [darktable (since 4.2)](https://github.com/darktable-org/darktable/releases/tag/release-4.2.0)
 - [GIMP (since 2.99.8)](https://www.gimp.org/news/2021/10/20/gimp-2-99-8-released/); plugin for older versions available in libjxl repo
 - [Krita](https://invent.kde.org/graphics/krita/-/commit/13e5d2e5b9f0eac5c8064b7767f0b62264a0797b)
