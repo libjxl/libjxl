@@ -130,7 +130,7 @@ TEST(JxlTest, RoundtripSmallD1) {
   {
     PackedPixelFile ppf_out;
     EXPECT_NEAR(Roundtrip(t.ppf(), {}, {}, pool, &ppf_out), 593, 20);
-    EXPECT_THAT(ButteraugliDistance(t.ppf(), ppf_out), IsSlightlyBelow(1.1));
+    EXPECT_THAT(ButteraugliDistance(t.ppf(), ppf_out), IsSlightlyBelow(1.2));
     EXPECT_EQ(ppf_out.info.intensity_target, t.ppf().info.intensity_target);
   }
 }
