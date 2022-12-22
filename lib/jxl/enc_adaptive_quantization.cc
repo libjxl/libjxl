@@ -312,8 +312,8 @@ void PerBlockModulations(const float butteraugli_target, const ImageF& xyb_x,
   JXL_ASSERT(DivCeil(xyb_x.xsize(), kBlockDim) == out->xsize());
   JXL_ASSERT(DivCeil(xyb_x.ysize(), kBlockDim) == out->ysize());
 
-  float base_level = 0.5f * scale;
-  float kDampenRampStart = 7.0f;
+  float base_level = 0.48f * scale;
+  float kDampenRampStart = 2.0f;
   float kDampenRampEnd = 14.0f;
   float dampen = 1.0f;
   if (butteraugli_target >= kDampenRampStart) {
@@ -420,13 +420,11 @@ void FuzzyErosion(const Rect& from_rect, const ImageF& from,
       StoreMin4(rowb[xm1], min0, min1, min2, min3);
       StoreMin4(rowb[x], min0, min1, min2, min3);
       StoreMin4(rowb[xp1], min0, min1, min2, min3);
-      static const float kMulC = 0.05f;
-      static const float kMul0 = 0.05f;
-      static const float kMul1 = 0.05f;
-      static const float kMul2 = 0.05f;
+      static const float kMul0 = 0.125f;
+      static const float kMul1 = 0.075f;
+      static const float kMul2 = 0.06f;
       static const float kMul3 = 0.05f;
-      float v = kMulC * row[x] + kMul0 * min0 + kMul1 * min1 + kMul2 * min2 +
-                kMul3 * min3;
+      float v = kMul0 * min0 + kMul1 * min1 + kMul2 * min2 + kMul3 * min3;
       if (fx % 2 == 0 && fy % 2 == 0) {
         row_out[fx / 2] = v;
       } else {
@@ -466,8 +464,6 @@ struct AdaptiveQuantizationImpl {
     const float match_gamma_offset = 0.019;
 
     const HWY_FULL(float) df;
-    const float kXMul = 23.426802998210313f;
-    const auto kXMulv = Set(df, kXMul);
 
     size_t y_start = rect.y0() * 8;
     size_t y_end = y_start + rect.ysize() * 8;
@@ -480,6 +476,7 @@ struct AdaptiveQuantizationImpl {
     if (y_end != xyb.ysize()) y_end += 4;
     pre_erosion[thread].ShrinkTo((x1 - x0) / 4, (y_end - y_start) / 4);
 
+    static const float limit = 0.2f;
     // Computes image (padded to multiple of 8x8) of local pixel differences.
     // Subsample both directions by 4.
     for (size_t y = y_start; y < y_end; ++y) {
@@ -489,9 +486,6 @@ struct AdaptiveQuantizationImpl {
       const float* row_in = xyb.PlaneRow(1, y);
       const float* row_in1 = xyb.PlaneRow(1, y1);
       const float* row_in2 = xyb.PlaneRow(1, y2);
-      const float* row_x_in = xyb.PlaneRow(0, y);
-      const float* row_x_in1 = xyb.PlaneRow(0, y1);
-      const float* row_x_in2 = xyb.PlaneRow(0, y2);
       float* JXL_RESTRICT row_out = diff_buffer.Row(thread);
 
       auto scalar_pixel = [&](size_t x) {
@@ -503,11 +497,9 @@ struct AdaptiveQuantizationImpl {
             row_in[x] + match_gamma_offset);
         float diff = gammac * (row_in[x] - base);
         diff *= diff;
-        const float base_x =
-            0.25f * (row_x_in2[x] + row_x_in1[x] + row_x_in[x1] + row_x_in[x2]);
-        float diff_x = gammac * (row_x_in[x] - base_x);
-        diff_x *= diff_x;
-        diff += kXMul * diff_x;
+        if (diff >= limit) {
+          diff = limit;
+        }
         diff = MaskingSqrt(diff);
         if ((y % 4) != 0) {
           row_out[x - x0] += diff;
@@ -537,17 +529,7 @@ struct AdaptiveQuantizationImpl {
                 df, Add(in, match_gamma_offset_v));
         auto diff = Mul(gammacv, Sub(in, base));
         diff = Mul(diff, diff);
-
-        const auto in_x = LoadU(df, row_x_in + x);
-        const auto in_x_r = LoadU(df, row_x_in + x + 1);
-        const auto in_x_l = LoadU(df, row_x_in + x - 1);
-        const auto in_x_t = LoadU(df, row_x_in2 + x);
-        const auto in_x_b = LoadU(df, row_x_in1 + x);
-        auto base_x =
-            Mul(quarter, Add(Add(in_x_r, in_x_l), Add(in_x_t, in_x_b)));
-        auto diff_x = Mul(gammacv, Sub(in_x, base_x));
-        diff_x = Mul(diff_x, diff_x);
-        diff = MulAdd(kXMulv, diff_x, diff);
+        diff = Min(diff, Set(df, limit));
         diff = MaskingSqrt(df, diff);
         if ((y & 3) != 0) {
           diff = Add(diff, LoadU(df, row_out + x - x0));
@@ -735,7 +717,7 @@ ImageF TileDistMap(const ImageF& distmap, int tile_size, int margin,
 
 constexpr float kDcQuantPow = 0.66f;
 static const float kDcQuant = 1.1f;
-static const float kAcQuant = 0.8f;
+static const float kAcQuant = 0.838f;
 
 void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
                           PassesEncoderState* enc_state,
