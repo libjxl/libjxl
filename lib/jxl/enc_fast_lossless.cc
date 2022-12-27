@@ -394,7 +394,6 @@ namespace {
 constexpr size_t kNumRawSymbols = 19;
 
 constexpr size_t kLZ77Offset = 224;
-constexpr size_t kLZ77MinLength = 16;
 
 struct PrefixCode {
   static constexpr size_t kNumLZ77 = 17;
@@ -576,7 +575,7 @@ struct PrefixCode {
                              raw_bits_simd);
   }
 
-  void WriteTo(BitWriter* writer) const {
+  void WriteTo(BitWriter* writer, size_t chunk_size) const {
     uint64_t code_length_counts[18] = {};
     code_length_counts[17] = 3 + 2 * (kNumLZ77 - 1);
     for (size_t i = 0; i < kNumRawSymbols; i++) {
@@ -640,11 +639,24 @@ struct PrefixCode {
       writer->Write(code_length_nbits[lz77_nbits[i]],
                     code_length_bits[lz77_nbits[i]]);
       if (i != num_lz77 - 1) {
-        // Encode gap between LZ77 symbols: 15 zeros.
-        writer->Write(code_length_nbits[17], code_length_bits[17]);
-        writer->Write(3, 0b000);  // 3
-        writer->Write(code_length_nbits[17], code_length_bits[17]);
-        writer->Write(3, 0b100);  // (3-2)*8+7 = 15
+        if (chunk_size == 16) {
+          // Encode gap between LZ77 symbols: 15 zeros.
+          writer->Write(code_length_nbits[17], code_length_bits[17]);
+          writer->Write(3, 0b000);  // 3
+          writer->Write(code_length_nbits[17], code_length_bits[17]);
+          writer->Write(3, 0b100);  // (3-2)*8+7 = 15
+        } else if (chunk_size == 8) {
+          // 7 zeros
+          writer->Write(code_length_nbits[17], code_length_bits[17]);
+          writer->Write(3, 0b100);  // 7
+        } else {
+          assert(chunk_size == 32);
+          // 31 zeros
+          writer->Write(code_length_nbits[17], code_length_bits[17]);
+          writer->Write(3, 0b010);  // 5
+          writer->Write(code_length_nbits[17], code_length_bits[17]);
+          writer->Write(3, 0b100);  // (5-2)*8+7 = 31
+        }
       }
     }
   }
@@ -966,8 +978,18 @@ void EncodeHybridUint000(uint32_t value, uint32_t* token, uint32_t* nbits,
   *bits = value ? value - (1 << n) : 0;
 }
 
-// NOTE: the encoding of lz77 lengths relies on the chunk size being 16.
-constexpr size_t kChunkSize = 16;
+#ifdef FJXL_AVX512
+constexpr static size_t kLogChunkSize = 5;
+#elif defined(FJXL_AVX2) || defined(FJXL_NEON)
+// Even if NEON only has 128-bit lanes, it is still significantly (~1.3x) faster
+// to process two vectors at a time.
+constexpr static size_t kLogChunkSize = 4;
+#else
+constexpr static size_t kLogChunkSize = 3;
+#endif
+
+constexpr static size_t kChunkSize = 1 << kLogChunkSize;
+constexpr size_t kLZ77MinLength = kChunkSize;
 
 template <typename Residual>
 void GenericEncodeChunk(const Residual* residuals, const PrefixCode& code,
@@ -1235,16 +1257,24 @@ void PrepareDCGlobalCommon(bool is_single_group, size_t width, size_t height,
   output->Write(1, 1);     // Enable lz77 for the main bitstream
   output->Write(2, 0b00);  // lz77 offset 224
   static_assert(kLZ77Offset == 224, "");
-  output->Write(10, 0b0000011111);  // lz77 min length 16
-  static_assert(kLZ77MinLength == 16, "");
-  output->Write(4, 4);  // 404 hybrid uint config for lz77: 4
-  output->Write(3, 0);  // 0
-  output->Write(3, 4);  // 4
-  output->Write(1, 1);  // simple code for the context map
-  output->Write(2, 1);  // two clusters
-  output->Write(1, 1);  // raw/lz77 length histogram last
-  output->Write(1, 0);  // distance histogram first
-  output->Write(1, 1);  // use prefix codes
+  if (kChunkSize == 16) {
+    output->Write(10, 0b0000011111);  // lz77 min length 16
+  } else if (kChunkSize == 8) {
+    output->Write(4, 0b1110);  // lz77 min length 8
+  } else {
+    assert(kChunkSize == 32);
+    output->Write(10, 0b0000111111);  // lz77 min length 32
+  }
+  // hybrid uint config for lz77
+  size_t hu_bits_sb = kChunkSize == 8 ? 2 : 3;
+  output->Write(4, kLogChunkSize);           // kLogChunkSize
+  output->Write(hu_bits_sb, 0);              // 0
+  output->Write(hu_bits_sb, kLogChunkSize);  // kLogChunkSize
+  output->Write(1, 1);                       // simple code for the context map
+  output->Write(2, 1);                       // two clusters
+  output->Write(1, 1);                       // raw/lz77 length histogram last
+  output->Write(1, 0);                       // distance histogram first
+  output->Write(1, 1);                       // use prefix codes
   output->Write(4, 0);  // 000 hybrid uint config for distances (only need 0)
   output->Write(4, 0);  // 000 hybrid uint config for symbols (only <= 10)
   // Distance alphabet size:
@@ -1260,7 +1290,7 @@ void PrepareDCGlobalCommon(bool is_single_group, size_t width, size_t height,
   output->Write(1, 1);  // 1
 
   // Symbol + lz77 histogram:
-  code.WriteTo(output);
+  code.WriteTo(output, kChunkSize);
 
   // Group header for global modular image.
   output->Write(1, 1);  // Global tree
@@ -1284,13 +1314,13 @@ void PrepareDCGlobal(bool is_single_group, size_t width, size_t height,
   }
 }
 
-void EncodeHybridUint404_Mul16(uint32_t value, uint32_t* token_div16,
-                               uint32_t* nbits, uint32_t* bits) {
-  // NOTE: token in libjxl is actually << 4.
+void EncodeHybridUintLZ77(uint32_t value, uint32_t* token_div16,
+                          uint32_t* nbits, uint32_t* bits) {
+  // NOTE: token in libjxl is actually << kLogChunkSize.
   uint32_t n = CeilLog2(value);
-  *token_div16 = value < 16 ? 0 : n - 3;
-  *nbits = value < 16 ? 0 : n - 4;
-  *bits = value < 16 ? 0 : (value >> 4) - (1 << *nbits);
+  *token_div16 = value < kChunkSize ? 0 : n - kLogChunkSize + 1;
+  *nbits = value < kChunkSize ? 0 : n - kLogChunkSize;
+  *bits = value < kChunkSize ? 0 : (value >> kLogChunkSize) - (1 << *nbits);
 }
 
 template <typename BitDepth>
@@ -1300,7 +1330,7 @@ struct ChunkEncoder {
     if (count == 0) return;
     count -= kLZ77MinLength;
     unsigned token_div16, nbits, bits;
-    EncodeHybridUint404_Mul16(count, &token_div16, &nbits, &bits);
+    EncodeHybridUintLZ77(count, &token_div16, &nbits, &bits);
     output.Write(
         code.lz77_nbits[token_div16] + nbits,
         (bits << code.lz77_nbits[token_div16]) | code.lz77_bits[token_div16]);
@@ -1323,7 +1353,7 @@ struct ChunkSampleCollector {
     if (count == 0) return;
     count -= kLZ77MinLength;
     unsigned token_div16, nbits, bits;
-    EncodeHybridUint404_Mul16(count, &token_div16, &nbits, &bits);
+    EncodeHybridUintLZ77(count, &token_div16, &nbits, &bits);
     lz77_counts[token_div16]++;
   }
 
@@ -1871,10 +1901,18 @@ JxlFastLosslessFrameState* LLEnc(const unsigned char* rgba, size_t width,
   for (size_t i = bitdepth.NumSymbols(doing_ycocg); i < kNumRawSymbols; i++) {
     base_raw_counts[i] = 0;
   }
-  uint64_t base_lz77_counts[17] = {
-      // short runs will be sampled, but long ones won't.
-      // near full-group run is quite common (e.g. all-opaque alpha)
+  // short runs will be sampled, but long ones won't.
+  // near full-group run is quite common (e.g. all-opaque alpha)
+  uint64_t base_lz77_counts_c32[PrefixCode::kNumLZ77] = {
+      12, 9, 11, 15, 2, 2, 1, 1, 1, 1, 2, 300, 0, 0, 0, 0, 0};
+  uint64_t base_lz77_counts_c16[PrefixCode::kNumLZ77] = {
       18, 12, 9, 11, 15, 2, 2, 1, 1, 1, 1, 2, 300, 0, 0, 0, 0};
+  uint64_t base_lz77_counts_c8[PrefixCode::kNumLZ77] = {
+      32, 18, 12, 9, 11, 15, 2, 2, 1, 1, 1, 1, 2, 300, 0, 0, 0};
+
+  uint64_t* base_lz77_counts = kChunkSize == 8    ? base_lz77_counts_c8
+                               : kChunkSize == 16 ? base_lz77_counts_c16
+                                                  : base_lz77_counts_c32;
 
   for (size_t i = 0; i < kNumRawSymbols; i++) {
     raw_counts[i] = (raw_counts[i] << 8) + base_raw_counts[i];
