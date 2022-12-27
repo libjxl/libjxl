@@ -6,39 +6,12 @@
 set(JPEGXL_EXTRAS_SOURCES
   extras/codec.cc
   extras/codec.h
-  extras/dec/color_description.cc
-  extras/dec/color_description.h
-  extras/dec/color_hints.cc
-  extras/dec/color_hints.h
-  extras/dec/decode.cc
-  extras/dec/decode.h
-  extras/dec/jxl.cc
-  extras/dec/jxl.h
-  extras/dec/pgx.cc
-  extras/dec/pgx.h
-  extras/dec/pnm.cc
-  extras/dec/pnm.h
-  extras/enc/encode.cc
-  extras/enc/encode.h
-  extras/enc/jxl.cc
-  extras/enc/jxl.h
-  extras/enc/npy.cc
-  extras/enc/npy.h
-  extras/enc/pgx.cc
-  extras/enc/pgx.h
-  extras/enc/pnm.cc
-  extras/enc/pnm.h
-  extras/exif.cc
-  extras/exif.h
   extras/hlg.cc
   extras/hlg.h
-  extras/packed_image.h
   extras/packed_image_convert.cc
   extras/packed_image_convert.h
   extras/render_hdr.cc
   extras/render_hdr.h
-  extras/time.cc
-  extras/time.h
   extras/tone_mapping.cc
   extras/tone_mapping.h
 )
@@ -117,15 +90,6 @@ endif()
 find_package(JPEG)
 if(JPEG_FOUND)
   target_sources(jxl_extras_codec-obj PRIVATE
-    extras/dec/jpg.cc
-    extras/dec/jpg.h
-    extras/enc/jpg.cc
-    extras/enc/jpg.h
-  )
-  target_include_directories(jxl_extras_codec-obj PRIVATE "${JPEG_INCLUDE_DIRS}")
-  list(APPEND JXL_EXTRAS_CODEC_INTERNAL_LIBRARIES ${JPEG_LIBRARIES})
-  list(APPEND JXL_EXTRAS_CODEC_PUBLIC_DEFINITIONS -DJPEGXL_ENABLE_JPEG=1)
-  target_sources(jxl_extras-static PRIVATE
     extras/dec/jpegli.cc
     extras/dec/jpegli.h
     extras/dec/jpg.cc
@@ -135,9 +99,9 @@ if(JPEG_FOUND)
     extras/encode_jpeg.cc
     extras/encode_jpeg.h
   )
-  target_include_directories(jxl_extras-static PRIVATE "${JPEG_INCLUDE_DIRS}")
-  target_link_libraries(jxl_extras-static PRIVATE ${JPEG_LIBRARIES} jpegli-static)
-  target_compile_definitions(jxl_extras-static PUBLIC -DJPEGXL_ENABLE_JPEG=1)
+  target_include_directories(jxl_extras_codec-obj PRIVATE "${JPEG_INCLUDE_DIRS}")
+  list(APPEND JXL_EXTRAS_CODEC_INTERNAL_LIBRARIES ${JPEG_LIBRARIES} jpegli-static)
+  list(APPEND JXL_EXTRAS_CODEC_PUBLIC_DEFINITIONS -DJPEGXL_ENABLE_JPEG=1)
   if(JPEGXL_DEP_LICENSE_DIR)
     configure_file("${JPEGXL_DEP_LICENSE_DIR}/libjpeg-dev/copyright"
                    ${PROJECT_BINARY_DIR}/LICENSE.libjpeg COPYONLY)
@@ -157,22 +121,13 @@ if(PNG_FOUND)
   target_include_directories(jxl_extras_codec-obj PRIVATE "${PNG_INCLUDE_DIRS}")
   list(APPEND JXL_EXTRAS_CODEC_INTERNAL_LIBRARIES ${PNG_LIBRARIES})
   list(APPEND JXL_EXTRAS_CODEC_PUBLIC_DEFINITIONS -DJPEGXL_ENABLE_APNG=1)
-  target_sources(jxl_extras-static PRIVATE
-    extras/dec/apng.cc
-    extras/dec/apng.h
-    extras/enc/apng.cc
-    extras/enc/apng.h
-  )
-  target_include_directories(jxl_extras-static PUBLIC "${PNG_INCLUDE_DIRS}")
-  target_link_libraries(jxl_extras-static PUBLIC ${PNG_LIBRARIES})
-  target_compile_definitions(jxl_extras-static PUBLIC -DJPEGXL_ENABLE_APNG=1)
   configure_file(extras/LICENSE.apngdis
                  ${PROJECT_BINARY_DIR}/LICENSE.apngdis COPYONLY)
 endif()
 
 if (JPEGXL_ENABLE_SJPEG)
-  target_compile_definitions(jxl_extras-static PUBLIC -DJPEGXL_ENABLE_SJPEG=1)
-  target_link_libraries(jxl_extras-static PRIVATE sjpeg)
+  list(APPEND JXL_EXTRAS_CODEC_INTERNAL_LIBRARIES sjpeg)
+  list(APPEND JXL_EXTRAS_PUBLIC_DEFINITIONS -DJPEGXL_ENABLE_SJPEG=1)
 endif ()
 
 if (JPEGXL_ENABLE_OPENEXR)
@@ -187,14 +142,6 @@ if (OpenEXR_FOUND)
   list(APPEND JXL_EXTRAS_CODEC_PUBLIC_DEFINITIONS -DJPEGXL_ENABLE_EXR=1)
   target_include_directories(jxl_extras_codec-obj PRIVATE "${OpenEXR_INCLUDE_DIRS}")
   list(APPEND JXL_EXTRAS_CODEC_INTERNAL_LIBRARIES PkgConfig::OpenEXR)
-  target_sources(jxl_extras-static PRIVATE
-    extras/dec/exr.cc
-    extras/dec/exr.h
-    extras/enc/exr.cc
-    extras/enc/exr.h
-  )
-  target_compile_definitions(jxl_extras-static PUBLIC -DJPEGXL_ENABLE_EXR=1)
-  target_link_libraries(jxl_extras-static PRIVATE PkgConfig::OpenEXR)
   if(JPEGXL_DEP_LICENSE_DIR)
     configure_file("${JPEGXL_DEP_LICENSE_DIR}/libopenexr-dev/copyright"
                    ${PROJECT_BINARY_DIR}/LICENSE.libopenexr COPYONLY)
@@ -225,3 +172,5 @@ target_link_libraries(jxl_extras_codec PRIVATE ${JXL_EXTRAS_CODEC_INTERNAL_LIBRA
 else()
 add_library(jxl_extras_codec ALIAS jxl_extras_codec-static)
 endif()  # BUILD_SHARED_LIBS
+
+target_link_libraries(jxl_extras-static PUBLIC jxl_extras_codec-static)

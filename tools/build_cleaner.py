@@ -12,6 +12,7 @@ This tool keeps certain parts of the build files up to date.
 
 import argparse
 import collections
+import itertools
 import locale
 import os
 import re
@@ -48,8 +49,8 @@ def GetPrefixLibFiles(repo_files, prefix, suffixes=('.h', '.cc', '.ui')):
 #   * threads public include/ headers.
 JxlSources = collections.namedtuple(
     'JxlSources', ['dec_minimal', 'dec', 'enc', 'test',
-                   'gbench', 'threads', 'extras', 'jxl_public_hdrs',
-                   'threads_public_hdrs'])
+                   'gbench', 'threads', 'extras', 'extras_codec',
+                   'jxl_public_hdrs', 'threads_public_hdrs'])
 
 def SplitLibFiles(repo_files):
   """Splits the library files into the different groups.
@@ -71,17 +72,18 @@ def SplitLibFiles(repo_files):
   gbench_srcs = sorted(fn for fn in lib_srcs + extras_srcs
                        if fn.endswith('_gbench.cc'))
   lib_srcs = [fn for fn in lib_srcs if fn not in gbench_srcs]
-  # Exclude optional codecs from extras.
-  exclude_extras = [
-    '/dec/gif',
-    '/dec/apng', '/enc/apng',
-    '/dec/exr', '/enc/exr',
-    '/dec/jpg', '/dec/jpegli',
-    '/enc/jpg', '/encode_jpeg',
+  # Codecs from extras go into their own separate library in CMake.
+  extras_codec_patterns = [
+    '/dec/', '/enc/',
+    '/encode_jpeg.', '/decode_jpeg.', '/dec_group_jpeg.',
+    '/exif.', '/packed_image.h', '/time.'
   ]
+  extras_codec_srcs = [fn for fn in extras_srcs if fn not in gbench_srcs and
+                       any(patt in fn for patt in extras_codec_patterns) and
+                       not any(patt in fn for patt in testonly)]
   extras_srcs = [fn for fn in extras_srcs if fn not in gbench_srcs and
-                 not any(patt in fn for patt in testonly) and
-                 not any(patt in fn for patt in exclude_extras)]
+                 fn not in extras_codec_srcs and
+                 not any(patt in fn for patt in testonly)]
 
   enc_srcs = [fn for fn in lib_srcs
               if os.path.basename(fn).startswith('enc_') or
@@ -138,8 +140,8 @@ def SplitLibFiles(repo_files):
   threads_public_hdrs = [fn for fn in public_hdrs if '_parallel_runner' in fn]
   jxl_public_hdrs = list(sorted(set(public_hdrs) - set(threads_public_hdrs)))
   return JxlSources(dec_minimal_srcs, dec_srcs, enc_srcs, test_srcs,
-                    gbench_srcs, thread_srcs, extras_srcs, jxl_public_hdrs,
-                    threads_public_hdrs)
+                    gbench_srcs, thread_srcs, extras_srcs, extras_codec_srcs,
+                    jxl_public_hdrs, threads_public_hdrs)
 
 
 def CleanFile(args, filename, pattern_data_list):
@@ -269,7 +271,8 @@ def BuildCleaner(args):
 
   gni_patterns.append((
       r'libjxl_extras_sources = \[\n([^\]]+)\]',
-      ''.join('    "%s",\n' % fn[len('lib/'):] for fn in jxl_src.extras)))
+      ''.join('    "%s",\n' % fn[len('lib/'):] for fn in sorted(itertools.chain(
+          jxl_src.extras, jxl_src.extras_codec)))))
 
   # libjxl_profiler
   profiler_srcs = [fn[len('lib/'):] for fn in repo_files
