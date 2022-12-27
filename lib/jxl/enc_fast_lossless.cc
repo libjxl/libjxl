@@ -784,189 +784,328 @@ void EncodeChunkAVX2(const uint16_t* residuals, const PrefixCode& code,
 }
 #endif
 
+template <typename T>
+struct VecPair {
+  T low;
+  T hi;
+};
+
+#ifdef FJXL_GENERIC_SIMD
+#undef FJXL_GENERIC_SIMD
+#endif
+
+// #ifdef FJXL_AVX2
+// #define FJXL_GENERIC_SIMD
+// #endif
+
 #ifdef FJXL_NEON
+#define FJXL_GENERIC_SIMD
 #include <arm_neon.h>
+struct SIMDVec32 {
+  uint32x4_t vec;
+
+  static constexpr size_t kLanes = 4;
+
+  FJXL_INLINE static SIMDVec32 Load(const uint32_t* data) {
+    return SIMDVec32{vld1q_u32(data)};
+  }
+  FJXL_INLINE void Store(uint32_t* data) { vst1q_u32(data, vec); }
+  FJXL_INLINE static SIMDVec32 Val(uint32_t v) {
+    return SIMDVec32{vdupq_n_u32(v)};
+  }
+  FJXL_INLINE SIMDVec32 ValToToken() const {
+    return SIMDVec32{vsubq_u32(vdupq_n_u32(32), vclzq_u32(vec))};
+  }
+  FJXL_INLINE SIMDVec32 SatSubU(const SIMDVec32& to_subtract) const {
+    return SIMDVec32{vqsubq_u32(vec, to_subtract.vec)};
+  }
+  FJXL_INLINE SIMDVec32 Pow2() const {
+    return SIMDVec32{vshlq_u32(vdupq_n_u32(1), vreinterpretq_s32_u32(vec))};
+  }
+};
+
+struct SIMDVec16;
+
+struct Mask16 {
+  uint16x8_t mask;
+  SIMDVec16 IfThenElse(const SIMDVec16& if_true, const SIMDVec16& if_false);
+  Mask16 And(const Mask16& oth) const {
+    return Mask16{vandq_u16(mask, oth.mask)};
+  }
+};
+
+struct SIMDVec16 {
+  uint16x8_t vec;
+
+  static constexpr size_t kLanes = 8;
+
+  FJXL_INLINE static SIMDVec16 Load(const uint16_t* data) {
+    return SIMDVec16{vld1q_u16(data)};
+  }
+  FJXL_INLINE void Store(uint16_t* data) { vst1q_u16(data, vec); }
+  FJXL_INLINE static SIMDVec16 Val(uint16_t v) {
+    return SIMDVec16{vdupq_n_u16(v)};
+  }
+  FJXL_INLINE static SIMDVec16 FromTwo32(const SIMDVec32& lo,
+                                         const SIMDVec32& hi) {
+    return SIMDVec16{vmovn_high_u32(vmovn_u32(lo.vec), hi.vec)};
+  }
+
+  FJXL_INLINE SIMDVec16 ValToToken() const {
+    return SIMDVec16{vsubq_u16(vdupq_n_u16(16), vclzq_u16(vec))};
+  }
+  FJXL_INLINE SIMDVec16 SatSubU(const SIMDVec16& to_subtract) const {
+    return SIMDVec16{vqsubq_u16(vec, to_subtract.vec)};
+  }
+  FJXL_INLINE SIMDVec16 Min(const SIMDVec16& oth) const {
+    return SIMDVec16{vminq_u16(vec, oth.vec)};
+  }
+  FJXL_INLINE Mask16 Eq(const SIMDVec16& oth) const {
+    return Mask16{vceqq_u16(vec, oth.vec)};
+  }
+  FJXL_INLINE Mask16 Gt(const SIMDVec16& oth) const {
+    return Mask16{vcgtq_u16(vec, oth.vec)};
+  }
+  FJXL_INLINE SIMDVec16 Pow2() const {
+    return SIMDVec16{vshlq_u16(vdupq_n_u16(1), vreinterpretq_s16_u16(vec))};
+  }
+  FJXL_INLINE SIMDVec16 Or(const SIMDVec16& oth) const {
+    return SIMDVec16{vorrq_u16(vec, oth.vec)};
+  }
+  FJXL_INLINE SIMDVec16 And(const SIMDVec16& oth) const {
+    return SIMDVec16{vandq_u16(vec, oth.vec)};
+  }
+  FJXL_INLINE SIMDVec16 HAdd(const SIMDVec16& oth) const {
+    return SIMDVec16{vhaddq_u16(vec, oth.vec)};
+  }
+  FJXL_INLINE SIMDVec16 PrepareForU8Lookup() const {
+    return SIMDVec16{vorrq_u16(vec, vdupq_n_u16(0xFF00))};
+  }
+  FJXL_INLINE VecPair<SIMDVec16> Interleave(const SIMDVec16& low) const {
+    return {SIMDVec16{vzip1q_u16(low.vec, vec)},
+            SIMDVec16{vzip2q_u16(low.vec, vec)}};
+  }
+  FJXL_INLINE VecPair<SIMDVec32> Upcast() const {
+    uint32x4_t lo = vmovl_u16(vget_low_u16(vec));
+    uint32x4_t hi = vmovl_high_u16(vec);
+    return {SIMDVec32{lo}, SIMDVec32{hi}};
+  }
+  FJXL_INLINE SIMDVec16 U8Lookup(const uint8_t* table) const {
+    uint8x16_t tbl = vld1q_u8(table);
+    uint8x16_t indices = vreinterpretq_u8_u16(vec);
+    return SIMDVec16{vreinterpretq_u16_u8(vqtbl1q_u8(tbl, indices))};
+  }
+};
+
+SIMDVec16 Mask16::IfThenElse(const SIMDVec16& if_true,
+                             const SIMDVec16& if_false) {
+  return SIMDVec16{vbslq_u16(mask, if_true.vec, if_false.vec)};
+}
+
+struct Bits64 {
+  static constexpr size_t kLanes = 2;
+
+  uint64x2_t nbits;
+  uint64x2_t bits;
+
+  FJXL_INLINE void Store(uint64_t* nbits_out, uint64_t* bits_out) {
+    vst1q_u64(nbits_out, nbits);
+    vst1q_u64(bits_out, bits);
+  }
+};
+
+struct Bits32 {
+  uint32x4_t nbits;
+  uint32x4_t bits;
+
+  static Bits32 FromRaw(SIMDVec32 nbits, SIMDVec32 bits) {
+    return Bits32{nbits.vec, bits.vec};
+  }
+
+  Bits64 Merge() const {
+    // TODO(veluca): can probably be optimized.
+    uint64x2_t nbits_lo32 =
+        vandq_u64(vreinterpretq_u64_u32(nbits), vdupq_n_u64(0xFFFFFFFF));
+    uint64x2_t bits_hi32 =
+        vshlq_u64(vshrq_n_u64(vreinterpretq_u64_u32(bits), 32),
+                  vreinterpretq_s64_u64(nbits_lo32));
+    uint64x2_t bits_lo32 =
+        vandq_u64(vreinterpretq_u64_u32(bits), vdupq_n_u64(0xFFFFFFFF));
+    uint64x2_t nbits64 =
+        vsraq_n_u64(nbits_lo32, vreinterpretq_u64_u32(nbits), 32);
+    uint64x2_t bits64 = vorrq_u64(bits_hi32, bits_lo32);
+    return Bits64{nbits64, bits64};
+  }
+
+  void Interleave(const Bits32& low) {
+    bits =
+        vorrq_u32(vshlq_u32(bits, vreinterpretq_s32_u32(low.nbits)), low.bits);
+    nbits = vaddq_u32(nbits, low.nbits);
+  }
+};
+
+struct Bits16 {
+  uint16x8_t nbits;
+  uint16x8_t bits;
+
+  static Bits16 FromRaw(SIMDVec16 nbits, SIMDVec16 bits) {
+    return Bits16{nbits.vec, bits.vec};
+  }
+
+  Bits32 Merge() const {
+    // TODO(veluca): can probably be optimized.
+    uint32x4_t nbits_lo16 =
+        vandq_u32(vreinterpretq_u32_u16(nbits), vdupq_n_u32(0xFFFF));
+    uint32x4_t bits_hi16 =
+        vshlq_u32(vshrq_n_u32(vreinterpretq_u32_u16(bits), 16),
+                  vreinterpretq_s32_u32(nbits_lo16));
+    uint32x4_t bits_lo16 =
+        vandq_u32(vreinterpretq_u32_u16(bits), vdupq_n_u32(0xFFFF));
+    uint32x4_t nbits32 =
+        vsraq_n_u32(nbits_lo16, vreinterpretq_u32_u16(nbits), 16);
+    uint32x4_t bits32 = vorrq_u32(bits_hi16, bits_lo16);
+    return Bits32{nbits32, bits32};
+  }
+
+  void Interleave(const Bits16& low) {
+    bits =
+        vorrq_u16(vshlq_u16(bits, vreinterpretq_s16_u16(low.nbits)), low.bits);
+    nbits = vaddq_u16(nbits, low.nbits);
+  }
+};
+
+#endif
+
+#ifdef FJXL_GENERIC_SIMD
+
+//  Each of these functions will process SIMDVec16::kLanes worth of values.
 
 FJXL_INLINE void TokenizeNeon(const uint16_t* residuals, uint16_t* token_out,
                               uint16_t* nbits_out, uint16_t* bits_out) {
-  uint16x8_t res = vld1q_u16(residuals);
-  uint16x8_t token = vsubq_u16(vdupq_n_u16(16), vclzq_u16(res));
-  uint16x8_t nbits = vqsubq_u16(token, vdupq_n_u16(1));
-  uint16x8_t bits =
-      vqsubq_u16(res, vshlq_u16(vdupq_n_u16(1), vreinterpretq_s16_u16(nbits)));
-  vst1q_u16(token_out, token);
-  vst1q_u16(nbits_out, nbits);
-  vst1q_u16(bits_out, bits);
+  SIMDVec16 res = SIMDVec16::Load(residuals);
+  SIMDVec16 token = res.ValToToken();
+  SIMDVec16 nbits = token.SatSubU(SIMDVec16::Val(1));
+  SIMDVec16 bits = res.SatSubU(nbits.Pow2());
+  token.Store(token_out);
+  nbits.Store(nbits_out);
+  bits.Store(bits_out);
 }
 
 FJXL_INLINE void TokenizeNeon(const uint32_t* residuals, uint16_t* token_out,
                               uint32_t* nbits_out, uint32_t* bits_out) {
-  uint32x4_t res_lo = vld1q_u32(residuals);
-  uint32x4_t res_hi = vld1q_u32(residuals + 4);
-  uint32x4_t token_lo = vsubq_u32(vdupq_n_u32(32), vclzq_u32(res_lo));
-  uint32x4_t token_hi = vsubq_u32(vdupq_n_u32(32), vclzq_u32(res_hi));
-  uint32x4_t nbits_lo = vqsubq_u32(token_lo, vdupq_n_u32(1));
-  uint32x4_t nbits_hi = vqsubq_u32(token_hi, vdupq_n_u32(1));
-  uint32x4_t bits_lo = vqsubq_u32(
-      res_lo, vshlq_u32(vdupq_n_u32(1), vreinterpretq_s32_u32(nbits_lo)));
-  uint32x4_t bits_hi = vqsubq_u32(
-      res_hi, vshlq_u32(vdupq_n_u32(1), vreinterpretq_s32_u32(nbits_hi)));
-  uint16x8_t token = vmovn_high_u32(vmovn_u32(token_lo), token_hi);
-  vst1q_u16(token_out, token);
-  vst1q_u32(nbits_out, nbits_lo);
-  vst1q_u32(nbits_out + 4, nbits_hi);
-  vst1q_u32(bits_out, bits_lo);
-  vst1q_u32(bits_out + 4, bits_hi);
+  static_assert(SIMDVec16::kLanes == 2 * SIMDVec32::kLanes, "");
+  SIMDVec32 res_lo = SIMDVec32::Load(residuals);
+  SIMDVec32 res_hi = SIMDVec32::Load(residuals + SIMDVec32::kLanes);
+  SIMDVec32 token_lo = res_lo.ValToToken();
+  SIMDVec32 token_hi = res_hi.ValToToken();
+  SIMDVec32 nbits_lo = token_lo.SatSubU(SIMDVec32::Val(1));
+  SIMDVec32 nbits_hi = token_hi.SatSubU(SIMDVec32::Val(1));
+  SIMDVec32 bits_lo = res_lo.SatSubU(nbits_lo.Pow2());
+  SIMDVec32 bits_hi = res_hi.SatSubU(nbits_hi.Pow2());
+  SIMDVec16 token = SIMDVec16::FromTwo32(token_lo, token_hi);
+  token.Store(token_out);
+  nbits_lo.Store(nbits_out);
+  nbits_hi.Store(nbits_out + SIMDVec32::kLanes);
+  bits_lo.Store(bits_out);
+  bits_hi.Store(bits_out + SIMDVec32::kLanes);
 }
 
 FJXL_INLINE void HuffmanNeonUpTo13(const uint16_t* tokens,
                                    const PrefixCode& code, uint16_t* nbits_out,
                                    uint16_t* bits_out) {
-  uint8x16_t tok8x16 =
-      vreinterpretq_u8_u16(vorrq_u16(vld1q_u16(tokens), vdupq_n_u16(0xFF00)));
-  uint16x8_t huff_bits =
-      vreinterpretq_u16_u8(vqtbl1q_u8(vld1q_u8(code.raw_bits_simd), tok8x16));
-  uint16x8_t huff_nbits =
-      vreinterpretq_u16_u8(vqtbl1q_u8(vld1q_u8(code.raw_nbits_simd), tok8x16));
-  vst1q_u16(nbits_out, huff_nbits);
-  vst1q_u16(bits_out, huff_bits);
+  SIMDVec16 tok = SIMDVec16::Load(tokens).PrepareForU8Lookup();
+  tok.U8Lookup(code.raw_nbits_simd).Store(nbits_out);
+  tok.U8Lookup(code.raw_bits_simd).Store(bits_out);
 }
 
 FJXL_INLINE void HuffmanNeon14(const uint16_t* tokens, const PrefixCode& code,
                                uint16_t* nbits_out, uint16_t* bits_out) {
-  uint16x8_t tok_cap = vdupq_n_u16(15);
-  uint16x8_t tok = vld1q_u16(tokens);
-  uint8x16_t tokindex = vreinterpretq_u8_u16(
-      vorrq_u16(vminq_u16(tok, tok_cap), vdupq_n_u16(0xFF00)));
-  uint16x8_t huff_bits_pre =
-      vreinterpretq_u16_u8(vqtbl1q_u8(vld1q_u8(code.raw_bits_simd), tokindex));
+  SIMDVec16 token_cap = SIMDVec16::Val(15);
+  SIMDVec16 tok = SIMDVec16::Load(tokens);
+  SIMDVec16 tok_index = tok.Min(token_cap).PrepareForU8Lookup();
+  SIMDVec16 huff_bits_pre = tok_index.U8Lookup(code.raw_bits_simd);
   // Set the highest bit when token == 16; the Huffman code is constructed in
   // such a way that the code for token 15 is the same as the code for 16,
   // except for the highest bit.
-  uint16x8_t huff_bits = vorrq_u16(
-      vandq_u16(vcgtq_u16(tok, tok_cap), vdupq_n_u16(128)), huff_bits_pre);
-  uint16x8_t huff_nbits =
-      vreinterpretq_u16_u8(vqtbl1q_u8(vld1q_u8(code.raw_nbits_simd), tokindex));
-  vst1q_u16(nbits_out, huff_nbits);
-  vst1q_u16(bits_out, huff_bits);
+  Mask16 needs_high_bit = tok.Eq(SIMDVec16::Val(16));
+  SIMDVec16 huff_bits = needs_high_bit.IfThenElse(
+      huff_bits_pre.Or(SIMDVec16::Val(128)), huff_bits_pre);
+  huff_bits.Store(bits_out);
+  tok_index.U8Lookup(code.raw_nbits_simd).Store(nbits_out);
 }
 
 FJXL_INLINE void HuffmanNeonAbove14(const uint16_t* tokens,
                                     const PrefixCode& code, uint16_t* nbits_out,
                                     uint16_t* bits_out) {
-  uint16x8_t tok = vld1q_u16(tokens);
-
-  uint16x8_t above = vcgtq_u16(tok, vdupq_n_u16(12));
+  SIMDVec16 tok = SIMDVec16::Load(tokens);
+  Mask16 above = tok.Gt(SIMDVec16::Val(12));
   // 13, 14 -> 13
   // 15, 16 -> 14
   // 17, 18 -> 15
-  uint16x8_t remap_tok =
-      vbslq_u16(above, vshrq_n_u16(vaddq_u16(tok, vdupq_n_u16(13)), 1), tok);
-
-  uint8x16_t tokindex =
-      vreinterpretq_u8_u16(vorrq_u16(remap_tok, vdupq_n_u16(0xFF00)));
-  uint16x8_t huff_bits_pre =
-      vreinterpretq_u16_u8(vqtbl1q_u8(vld1q_u8(code.raw_bits_simd), tokindex));
+  SIMDVec16 remap_tok = above.IfThenElse(tok.HAdd(SIMDVec16::Val(13)), tok);
+  SIMDVec16 tok_index = remap_tok.PrepareForU8Lookup();
+  SIMDVec16 huff_bits_pre = tok_index.U8Lookup(code.raw_bits_simd);
   // Set the highest bit when token == 14, 16, 18.
-  uint16x8_t needs_high_bit =
-      vandq_u16(above, vceqq_u16(tok, vandq_u16(tok, vdupq_n_u16(0xFFFE))));
-  uint16x8_t huff_bits =
-      vorrq_u16(vandq_u16(needs_high_bit, vdupq_n_u16(128)), huff_bits_pre);
-  uint16x8_t huff_nbits =
-      vreinterpretq_u16_u8(vqtbl1q_u8(vld1q_u8(code.raw_nbits_simd), tokindex));
-  vst1q_u16(nbits_out, huff_nbits);
-  vst1q_u16(bits_out, huff_bits);
-}
-
-FJXL_INLINE uint32x4_t Merge16To32Neon(uint16x8_t nbits, uint16x8_t bits,
-                                       uint32x4_t* nbits32) {
-  uint32x4_t nbits_lo16 =
-      vandq_u32(vreinterpretq_u32_u16(nbits), vdupq_n_u32(0xFFFF));
-  uint32x4_t bits_hi16 = vshlq_u32(vshrq_n_u32(vreinterpretq_u32_u16(bits), 16),
-                                   vreinterpretq_s32_u32(nbits_lo16));
-  uint32x4_t bits_lo16 =
-      vandq_u32(vreinterpretq_u32_u16(bits), vdupq_n_u32(0xFFFF));
-
-  *nbits32 = vsraq_n_u32(nbits_lo16, vreinterpretq_u32_u16(nbits), 16);
-  return vorrq_u32(bits_hi16, bits_lo16);
+  Mask16 needs_high_bit = above.And(tok.Eq(tok.And(SIMDVec16::Val(0xFFFE))));
+  SIMDVec16 huff_bits = needs_high_bit.IfThenElse(
+      huff_bits_pre.Or(SIMDVec16::Val(128)), huff_bits_pre);
+  huff_bits.Store(bits_out);
+  tok_index.U8Lookup(code.raw_nbits_simd).Store(nbits_out);
 }
 
 FJXL_INLINE void StoreNeonUpTo8(const uint16_t* nbits_tok,
                                 const uint16_t* bits_tok,
                                 const uint16_t* nbits_huff,
-                                const uint16_t* bits_huff, BitWriter& out) {
-  uint16x8_t bits = vld1q_u16(bits_tok);
-  uint16x8_t nbits = vld1q_u16(nbits_tok);
-  uint16x8_t huff_bits = vld1q_u16(bits_huff);
-  uint16x8_t huff_nbits = vld1q_u16(nbits_huff);
-  bits =
-      vorrq_u16(vshlq_u16(bits, vreinterpretq_s16_u16(huff_nbits)), huff_bits);
-  nbits = vaddq_u16(nbits, huff_nbits);
-
-  uint32x4_t nbits32;
-  auto bits32 = Merge16To32Neon(nbits, bits, &nbits32);
-
-  // Merging up to 64 bits is not faster.
-  for (size_t i = 0; i < 4; i++) {
-    out.Write(nbits32[i], bits32[i]);
-  }
+                                const uint16_t* bits_huff, uint64_t* nbits_out,
+                                uint64_t* bits_out) {
+  Bits16 bits =
+      Bits16::FromRaw(SIMDVec16::Load(nbits_tok), SIMDVec16::Load(bits_tok));
+  Bits16 huff_bits =
+      Bits16::FromRaw(SIMDVec16::Load(nbits_huff), SIMDVec16::Load(bits_huff));
+  bits.Interleave(huff_bits);
+  bits.Merge().Merge().Store(nbits_out, bits_out);
 }
 
 // Huffman and raw bits don't necessarily fit in a single u16 here.
 FJXL_INLINE void StoreNeonUpTo14(const uint16_t* nbits_tok,
                                  const uint16_t* bits_tok,
                                  const uint16_t* nbits_huff,
-                                 const uint16_t* bits_huff, BitWriter& out) {
-  uint16x8_t bits = vld1q_u16(bits_tok);
-  uint16x8_t nbits = vld1q_u16(nbits_tok);
-  uint16x8_t huff_bits = vld1q_u16(bits_huff);
-  uint16x8_t huff_nbits = vld1q_u16(nbits_huff);
+                                 const uint16_t* bits_huff, uint64_t* nbits_out,
+                                 uint64_t* bits_out) {
+  VecPair<SIMDVec16> bits =
+      SIMDVec16::Load(bits_tok).Interleave(SIMDVec16::Load(bits_huff));
+  VecPair<SIMDVec16> nbits =
+      SIMDVec16::Load(nbits_tok).Interleave(SIMDVec16::Load(nbits_huff));
+  Bits16 low = Bits16::FromRaw(nbits.low, bits.low);
+  Bits16 hi = Bits16::FromRaw(nbits.hi, bits.hi);
 
-  uint16x8_t lbits = vzip1q_u16(huff_bits, bits);
-  uint16x8_t hbits = vzip2q_u16(huff_bits, bits);
-  uint16x8_t lnbits = vzip1q_u16(huff_nbits, nbits);
-  uint16x8_t hnbits = vzip2q_u16(huff_nbits, nbits);
-
-  // Merging up to 64 bits is not faster.
-  uint32x4_t nbits32;
-  auto bits32 = Merge16To32Neon(lnbits, lbits, &nbits32);
-  for (size_t i = 0; i < 4; i++) {
-    out.Write(nbits32[i], bits32[i]);
-  }
-  bits32 = Merge16To32Neon(hnbits, hbits, &nbits32);
-  for (size_t i = 0; i < 4; i++) {
-    out.Write(nbits32[i], bits32[i]);
-  }
+  low.Merge().Merge().Store(nbits_out, bits_out);
+  hi.Merge().Merge().Store(nbits_out + Bits64::kLanes,
+                           bits_out + Bits64::kLanes);
 }
 
 FJXL_INLINE void StoreNeonAbove14(const uint32_t* nbits_tok,
                                   const uint32_t* bits_tok,
                                   const uint16_t* nbits_huff,
-                                  const uint16_t* bits_huff, BitWriter& out) {
-  uint32x4_t bits_lo = vld1q_u32(bits_tok);
-  uint32x4_t nbits_lo = vld1q_u32(nbits_tok);
-  uint32x4_t bits_hi = vld1q_u32(bits_tok + 4);
-  uint32x4_t nbits_hi = vld1q_u32(nbits_tok + 4);
-  uint16x8_t huff_bits = vld1q_u16(bits_huff);
-  uint16x8_t huff_nbits = vld1q_u16(nbits_huff);
-  uint32x4_t huff_nbits_lo = vmovl_u16(vget_low_u16(huff_nbits));
-  uint32x4_t huff_nbits_hi = vmovl_high_u16(huff_nbits);
-  uint32x4_t huff_bits_lo = vmovl_u16(vget_low_u16(huff_bits));
-  uint32x4_t huff_bits_hi = vmovl_high_u16(huff_bits);
-  bits_lo = vorrq_u32(vshlq_u32(bits_lo, vreinterpretq_s32_u32(huff_nbits_lo)),
-                      huff_bits_lo);
-  nbits_lo = vaddq_u32(nbits_lo, huff_nbits_lo);
+                                  const uint16_t* bits_huff,
+                                  uint64_t* nbits_out, uint64_t* bits_out) {
+  static_assert(SIMDVec16::kLanes == 2 * SIMDVec32::kLanes, "");
+  Bits32 bits_low =
+      Bits32::FromRaw(SIMDVec32::Load(nbits_tok), SIMDVec32::Load(bits_tok));
+  Bits32 bits_hi =
+      Bits32::FromRaw(SIMDVec32::Load(nbits_tok + SIMDVec32::kLanes),
+                      SIMDVec32::Load(bits_tok + SIMDVec32::kLanes));
 
-  // Merging up to 64 bits is not faster.
-  for (size_t i = 0; i < 4; i++) {
-    out.Write(nbits_lo[i], bits_lo[i]);
-  }
-  bits_hi = vorrq_u32(vshlq_u32(bits_hi, vreinterpretq_s32_u32(huff_nbits_hi)),
-                      huff_bits_hi);
-  nbits_hi = vaddq_u32(nbits_hi, huff_nbits_hi);
-  for (size_t i = 0; i < 4; i++) {
-    out.Write(nbits_hi[i], bits_hi[i]);
-  }
+  VecPair<SIMDVec32> huff_bits = SIMDVec16::Load(bits_huff).Upcast();
+  VecPair<SIMDVec32> huff_nbits = SIMDVec16::Load(nbits_huff).Upcast();
+
+  Bits32 huff_low = Bits32::FromRaw(huff_nbits.low, huff_bits.low);
+  Bits32 huff_hi = Bits32::FromRaw(huff_nbits.hi, huff_bits.hi);
+
+  bits_low.Interleave(huff_low);
+  bits_low.Merge().Store(nbits_out, bits_out);
+  bits_hi.Interleave(huff_hi);
+  bits_hi.Merge().Store(nbits_out + Bits64::kLanes, bits_out + Bits64::kLanes);
 }
 #endif
 
@@ -1002,6 +1141,33 @@ void GenericEncodeChunk(const Residual* residuals, const PrefixCode& code,
   }
 }
 
+FJXL_INLINE void WriteToWriter(const uint64_t* nbits, const uint64_t* bits,
+                               size_t n, BitWriter& output) {
+  // Necessary because Write() is only guaranteed to work with <=56 bits.
+  // Trying to SIMD-fy this code results in lower speed (and definitely less
+  // clarity).
+  {
+    for (size_t i = 0; i < n; i++) {
+      output.buffer |= bits[i] << output.bits_in_buffer;
+      memcpy(output.data.get() + output.bytes_written, &output.buffer, 8);
+      uint64_t shift = 64 - output.bits_in_buffer;
+      output.bits_in_buffer += nbits[i];
+      // This `if` seems to be faster than using ternaries.
+      if (output.bits_in_buffer >= 64) {
+        uint64_t next_buffer = bits[i] >> shift;
+        output.buffer = next_buffer;
+        output.bits_in_buffer -= 64;
+        output.bytes_written += 8;
+      }
+    }
+    memcpy(output.data.get() + output.bytes_written, &output.buffer, 8);
+    size_t bytes_in_buffer = output.bits_in_buffer / 8;
+    output.bits_in_buffer -= bytes_in_buffer * 8;
+    output.buffer >>= bytes_in_buffer * 8;
+    output.bytes_written += bytes_in_buffer;
+  }
+}
+
 struct UpTo8Bits {
   size_t bitdepth;
   explicit UpTo8Bits(size_t bitdepth) : bitdepth(bitdepth) {
@@ -1032,17 +1198,21 @@ struct UpTo8Bits {
 #ifdef FJXL_AVX2
     EncodeChunkAVX2(residuals, code, output);
     return;
-#elif defined(FJXL_NEON)
-    for (int i : {0, 8}) {
-      uint16_t bits[8];
-      uint16_t nbits[8];
-      uint16_t bits_huff[8];
-      uint16_t nbits_huff[8];
-      uint16_t token[8];
+#elif defined(FJXL_GENERIC_SIMD)
+    uint64_t nbits64[kChunkSize / 4];
+    uint64_t bits64[kChunkSize / 4];
+    uint16_t bits[SIMDVec16::kLanes];
+    uint16_t nbits[SIMDVec16::kLanes];
+    uint16_t bits_huff[SIMDVec16::kLanes];
+    uint16_t nbits_huff[SIMDVec16::kLanes];
+    uint16_t token[SIMDVec16::kLanes];
+    for (size_t i = 0; i < kChunkSize; i += SIMDVec16::kLanes) {
       TokenizeNeon(residuals + i, token, nbits, bits);
       HuffmanNeonUpTo13(token, code, nbits_huff, bits_huff);
-      StoreNeonUpTo8(nbits, bits, nbits_huff, bits_huff, output);
+      StoreNeonUpTo8(nbits, bits, nbits_huff, bits_huff, nbits64 + i / 4,
+                     bits64 + i / 4);
     }
+    WriteToWriter(nbits64, bits64, kChunkSize / 4, output);
     return;
 #endif
     GenericEncodeChunk(residuals, code, output);
@@ -1091,17 +1261,21 @@ struct From9To13Bits {
 
   static void EncodeChunk(upixel_t* residuals, const PrefixCode& code,
                           BitWriter& output) {
-#ifdef FJXL_NEON
-    for (int i : {0, 8}) {
-      uint16_t bits[8];
-      uint16_t nbits[8];
-      uint16_t bits_huff[8];
-      uint16_t nbits_huff[8];
-      uint16_t token[8];
+#ifdef FJXL_GENERIC_SIMD
+    uint64_t nbits64[kChunkSize / 2];
+    uint64_t bits64[kChunkSize / 2];
+    uint16_t bits[SIMDVec16::kLanes];
+    uint16_t nbits[SIMDVec16::kLanes];
+    uint16_t bits_huff[SIMDVec16::kLanes];
+    uint16_t nbits_huff[SIMDVec16::kLanes];
+    uint16_t token[SIMDVec16::kLanes];
+    for (size_t i = 0; i < kChunkSize; i += SIMDVec16::kLanes) {
       TokenizeNeon(residuals + i, token, nbits, bits);
       HuffmanNeonUpTo13(token, code, nbits_huff, bits_huff);
-      StoreNeonUpTo14(nbits, bits, nbits_huff, bits_huff, output);
+      StoreNeonUpTo14(nbits, bits, nbits_huff, bits_huff, nbits64 + i / 2,
+                      bits64 + i / 2);
     }
+    WriteToWriter(nbits64, bits64, kChunkSize / 2, output);
     return;
 #endif
     GenericEncodeChunk(residuals, code, output);
@@ -1154,17 +1328,21 @@ struct Exactly14Bits {
 
   static void EncodeChunk(upixel_t* residuals, const PrefixCode& code,
                           BitWriter& output) {
-#ifdef FJXL_NEON
-    for (int i : {0, 8}) {
-      uint16_t bits[8];
-      uint16_t nbits[8];
-      uint16_t bits_huff[8];
-      uint16_t nbits_huff[8];
-      uint16_t token[8];
+#ifdef FJXL_GENERIC_SIMD
+    uint64_t nbits64[kChunkSize / 2];
+    uint64_t bits64[kChunkSize / 2];
+    uint16_t bits[SIMDVec16::kLanes];
+    uint16_t nbits[SIMDVec16::kLanes];
+    uint16_t bits_huff[SIMDVec16::kLanes];
+    uint16_t nbits_huff[SIMDVec16::kLanes];
+    uint16_t token[SIMDVec16::kLanes];
+    for (size_t i = 0; i < kChunkSize; i += SIMDVec16::kLanes) {
       TokenizeNeon(residuals + i, token, nbits, bits);
       HuffmanNeon14(token, code, nbits_huff, bits_huff);
-      StoreNeonUpTo14(nbits, bits, nbits_huff, bits_huff, output);
+      StoreNeonUpTo14(nbits, bits, nbits_huff, bits_huff, nbits64 + i / 2,
+                      bits64 + i / 2);
     }
+    WriteToWriter(nbits64, bits64, kChunkSize / 2, output);
     return;
 #endif
     GenericEncodeChunk(residuals, code, output);
@@ -1215,17 +1393,21 @@ struct MoreThan14Bits {
 
   static void EncodeChunk(upixel_t* residuals, const PrefixCode& code,
                           BitWriter& output) {
-#ifdef FJXL_NEON
-    for (int i : {0, 8}) {
-      uint32_t bits[8];
-      uint32_t nbits[8];
-      uint16_t bits_huff[8];
-      uint16_t nbits_huff[8];
-      uint16_t token[8];
+#ifdef FJXL_GENERIC_SIMD
+    uint64_t nbits64[kChunkSize / 2];
+    uint64_t bits64[kChunkSize / 2];
+    uint32_t bits[SIMDVec16::kLanes];
+    uint32_t nbits[SIMDVec16::kLanes];
+    uint16_t bits_huff[SIMDVec16::kLanes];
+    uint16_t nbits_huff[SIMDVec16::kLanes];
+    uint16_t token[SIMDVec16::kLanes];
+    for (size_t i = 0; i < kChunkSize; i += SIMDVec16::kLanes) {
       TokenizeNeon(residuals + i, token, nbits, bits);
       HuffmanNeonAbove14(token, code, nbits_huff, bits_huff);
-      StoreNeonAbove14(nbits, bits, nbits_huff, bits_huff, output);
+      StoreNeonAbove14(nbits, bits, nbits_huff, bits_huff, nbits64 + i / 2,
+                       bits64 + i / 2);
     }
+    WriteToWriter(nbits64, bits64, kChunkSize / 2, output);
     return;
 #endif
     GenericEncodeChunk(residuals, code, output);
