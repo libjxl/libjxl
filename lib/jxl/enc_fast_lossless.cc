@@ -980,7 +980,7 @@ struct Bits16 {
 
 //  Each of these functions will process SIMDVec16::kLanes worth of values.
 
-FJXL_INLINE void TokenizeNeon(const uint16_t* residuals, uint16_t* token_out,
+FJXL_INLINE void TokenizeSIMD(const uint16_t* residuals, uint16_t* token_out,
                               uint16_t* nbits_out, uint16_t* bits_out) {
   SIMDVec16 res = SIMDVec16::Load(residuals);
   SIMDVec16 token = res.ValToToken();
@@ -991,7 +991,7 @@ FJXL_INLINE void TokenizeNeon(const uint16_t* residuals, uint16_t* token_out,
   bits.Store(bits_out);
 }
 
-FJXL_INLINE void TokenizeNeon(const uint32_t* residuals, uint16_t* token_out,
+FJXL_INLINE void TokenizeSIMD(const uint32_t* residuals, uint16_t* token_out,
                               uint32_t* nbits_out, uint32_t* bits_out) {
   static_assert(SIMDVec16::kLanes == 2 * SIMDVec32::kLanes, "");
   SIMDVec32 res_lo = SIMDVec32::Load(residuals);
@@ -1010,7 +1010,7 @@ FJXL_INLINE void TokenizeNeon(const uint32_t* residuals, uint16_t* token_out,
   bits_hi.Store(bits_out + SIMDVec32::kLanes);
 }
 
-FJXL_INLINE void HuffmanNeonUpTo13(const uint16_t* tokens,
+FJXL_INLINE void HuffmanSIMDUpTo13(const uint16_t* tokens,
                                    const PrefixCode& code, uint16_t* nbits_out,
                                    uint16_t* bits_out) {
   SIMDVec16 tok = SIMDVec16::Load(tokens).PrepareForU8Lookup();
@@ -1018,7 +1018,7 @@ FJXL_INLINE void HuffmanNeonUpTo13(const uint16_t* tokens,
   tok.U8Lookup(code.raw_bits_simd).Store(bits_out);
 }
 
-FJXL_INLINE void HuffmanNeon14(const uint16_t* tokens, const PrefixCode& code,
+FJXL_INLINE void HuffmanSIMD14(const uint16_t* tokens, const PrefixCode& code,
                                uint16_t* nbits_out, uint16_t* bits_out) {
   SIMDVec16 token_cap = SIMDVec16::Val(15);
   SIMDVec16 tok = SIMDVec16::Load(tokens);
@@ -1034,7 +1034,7 @@ FJXL_INLINE void HuffmanNeon14(const uint16_t* tokens, const PrefixCode& code,
   tok_index.U8Lookup(code.raw_nbits_simd).Store(nbits_out);
 }
 
-FJXL_INLINE void HuffmanNeonAbove14(const uint16_t* tokens,
+FJXL_INLINE void HuffmanSIMDAbove14(const uint16_t* tokens,
                                     const PrefixCode& code, uint16_t* nbits_out,
                                     uint16_t* bits_out) {
   SIMDVec16 tok = SIMDVec16::Load(tokens);
@@ -1053,7 +1053,7 @@ FJXL_INLINE void HuffmanNeonAbove14(const uint16_t* tokens,
   tok_index.U8Lookup(code.raw_nbits_simd).Store(nbits_out);
 }
 
-FJXL_INLINE void StoreNeonUpTo8(const uint16_t* nbits_tok,
+FJXL_INLINE void StoreSIMDUpTo8(const uint16_t* nbits_tok,
                                 const uint16_t* bits_tok,
                                 const uint16_t* nbits_huff,
                                 const uint16_t* bits_huff, uint64_t* nbits_out,
@@ -1067,7 +1067,7 @@ FJXL_INLINE void StoreNeonUpTo8(const uint16_t* nbits_tok,
 }
 
 // Huffman and raw bits don't necessarily fit in a single u16 here.
-FJXL_INLINE void StoreNeonUpTo14(const uint16_t* nbits_tok,
+FJXL_INLINE void StoreSIMDUpTo14(const uint16_t* nbits_tok,
                                  const uint16_t* bits_tok,
                                  const uint16_t* nbits_huff,
                                  const uint16_t* bits_huff, uint64_t* nbits_out,
@@ -1084,7 +1084,7 @@ FJXL_INLINE void StoreNeonUpTo14(const uint16_t* nbits_tok,
                            bits_out + Bits64::kLanes);
 }
 
-FJXL_INLINE void StoreNeonAbove14(const uint32_t* nbits_tok,
+FJXL_INLINE void StoreSIMDAbove14(const uint32_t* nbits_tok,
                                   const uint32_t* bits_tok,
                                   const uint16_t* nbits_huff,
                                   const uint16_t* bits_huff,
@@ -1207,9 +1207,9 @@ struct UpTo8Bits {
     uint16_t nbits_huff[SIMDVec16::kLanes];
     uint16_t token[SIMDVec16::kLanes];
     for (size_t i = 0; i < kChunkSize; i += SIMDVec16::kLanes) {
-      TokenizeNeon(residuals + i, token, nbits, bits);
-      HuffmanNeonUpTo13(token, code, nbits_huff, bits_huff);
-      StoreNeonUpTo8(nbits, bits, nbits_huff, bits_huff, nbits64 + i / 4,
+      TokenizeSIMD(residuals + i, token, nbits, bits);
+      HuffmanSIMDUpTo13(token, code, nbits_huff, bits_huff);
+      StoreSIMDUpTo8(nbits, bits, nbits_huff, bits_huff, nbits64 + i / 4,
                      bits64 + i / 4);
     }
     WriteToWriter(nbits64, bits64, kChunkSize / 4, output);
@@ -1270,9 +1270,9 @@ struct From9To13Bits {
     uint16_t nbits_huff[SIMDVec16::kLanes];
     uint16_t token[SIMDVec16::kLanes];
     for (size_t i = 0; i < kChunkSize; i += SIMDVec16::kLanes) {
-      TokenizeNeon(residuals + i, token, nbits, bits);
-      HuffmanNeonUpTo13(token, code, nbits_huff, bits_huff);
-      StoreNeonUpTo14(nbits, bits, nbits_huff, bits_huff, nbits64 + i / 2,
+      TokenizeSIMD(residuals + i, token, nbits, bits);
+      HuffmanSIMDUpTo13(token, code, nbits_huff, bits_huff);
+      StoreSIMDUpTo14(nbits, bits, nbits_huff, bits_huff, nbits64 + i / 2,
                       bits64 + i / 2);
     }
     WriteToWriter(nbits64, bits64, kChunkSize / 2, output);
@@ -1337,9 +1337,9 @@ struct Exactly14Bits {
     uint16_t nbits_huff[SIMDVec16::kLanes];
     uint16_t token[SIMDVec16::kLanes];
     for (size_t i = 0; i < kChunkSize; i += SIMDVec16::kLanes) {
-      TokenizeNeon(residuals + i, token, nbits, bits);
-      HuffmanNeon14(token, code, nbits_huff, bits_huff);
-      StoreNeonUpTo14(nbits, bits, nbits_huff, bits_huff, nbits64 + i / 2,
+      TokenizeSIMD(residuals + i, token, nbits, bits);
+      HuffmanSIMD14(token, code, nbits_huff, bits_huff);
+      StoreSIMDUpTo14(nbits, bits, nbits_huff, bits_huff, nbits64 + i / 2,
                       bits64 + i / 2);
     }
     WriteToWriter(nbits64, bits64, kChunkSize / 2, output);
@@ -1402,9 +1402,9 @@ struct MoreThan14Bits {
     uint16_t nbits_huff[SIMDVec16::kLanes];
     uint16_t token[SIMDVec16::kLanes];
     for (size_t i = 0; i < kChunkSize; i += SIMDVec16::kLanes) {
-      TokenizeNeon(residuals + i, token, nbits, bits);
-      HuffmanNeonAbove14(token, code, nbits_huff, bits_huff);
-      StoreNeonAbove14(nbits, bits, nbits_huff, bits_huff, nbits64 + i / 2,
+      TokenizeSIMD(residuals + i, token, nbits, bits);
+      HuffmanSIMDAbove14(token, code, nbits_huff, bits_huff);
+      StoreSIMDAbove14(nbits, bits, nbits_huff, bits_huff, nbits64 + i / 2,
                        bits64 + i / 2);
     }
     WriteToWriter(nbits64, bits64, kChunkSize / 2, output);
