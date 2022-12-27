@@ -413,6 +413,7 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
   size_t width = 1024, height = 1024;
   int x0 = 0, y0 = 0;
   cparams.SetLossless();
+  cparams.responsive = false;
   cparams.resampling = 1;
   cparams.ec_resampling = 1;
   cparams.modular_group_size_shift = 3;
