@@ -8,6 +8,7 @@
 #include "lib/jxl/blending.h"
 #include "lib/jxl/render_pipeline/stage_blending.h"
 #include "lib/jxl/render_pipeline/stage_chroma_upsampling.h"
+#include "lib/jxl/render_pipeline/stage_cms.h"
 #include "lib/jxl/render_pipeline/stage_epf.h"
 #include "lib/jxl/render_pipeline/stage_from_linear.h"
 #include "lib/jxl/render_pipeline/stage_gaborish.h"
@@ -193,6 +194,12 @@ Status PassesDecoderState::PreparePipeline(ImageBundle* decoded,
           builder.AddStage(GetSpotColorStage(3 + i, eci.spot_color));
         }
       }
+    }
+
+    auto cms_stage = GetCmsStage(output_encoding_info);
+    if (cms_stage) {
+      builder.AddStage(std::move(cms_stage));
+      linear = false;
     }
 
     auto tone_mapping_stage = GetToneMappingStage(output_encoding_info);

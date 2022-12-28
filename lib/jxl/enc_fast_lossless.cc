@@ -3752,7 +3752,7 @@ namespace default_implementation {
 #if FJXL_ENABLE_AVX2
 #ifdef __clang__
 #pragma clang attribute push(__attribute__((target("avx,avx2"))), \
-                             apply_to = function)
+                                 apply_to = function)
 // Causes spurious warnings on clang5.
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wmissing-braces"
@@ -3779,9 +3779,10 @@ namespace AVX2 {
 
 #if FJXL_ENABLE_AVX512
 #ifdef __clang__
-#pragma clang attribute push(                                                 \
-    __attribute__((target("avx512cd,avx512bw,avx512vl,avx512f,avx512vbmi"))), \
-    apply_to = function)
+#pragma clang attribute push(                                              \
+        __attribute__((                                                    \
+                target("avx512cd,avx512bw,avx512vl,avx512f,avx512vbmi"))), \
+            apply_to = function)
 #elif defined(__GNUC__)
 #pragma GCC push_options
 #pragma GCC target "avx512cd,avx512bw,avx512vl,avx512f,avx512vbmi"

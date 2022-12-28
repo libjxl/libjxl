@@ -23,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
    `JxlDecoderGetICCProfileSize`, and `JxlDecoderGetColorAsICCProfile`
    changed: a deprecated unused argument was removed.
 
-### Changed 
+### Changed
  - changed the name of the cjxl flag `photon_noise` to `photon_noise_iso`
 
 ## [0.8.0] - 2023-01-18
@@ -40,12 +40,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
    setting requires calling `JxlEncoderAllowExpertOptions`.
  - encoder API: new `JXL_ENC_FRAME_SETTING_JPEG_COMPRESS_BOXES` enum value to
    allow explicit control of metadata compression
+ - encoder API: add an effort 10 option for lossless compression.
+ - decoder API: new function `JxlDecoderSetOutputColorProfile` to set color
+   profile from either a color encoding or an ICC profile.
 
 ### Removed
  - common API: removed `JxlIntrinsicSizeHeader`
  - decoder API: removed deprecated `JXL_DEC_NEED_DC_OUT_BUFFER` and
    `JXL_DEC_DC_IMAGE` events, `JxlDecoderDCOutBufferSize` and
    `JxlDecoderSetDCOutBuffer` functions
+ - decoder API: new function `JxlDecoderSetOutputColorProfile` to set color
+   profile from either a color encoding or an ICC profile.
 
 ### Changed / clarified
  - encoder API: `JxlEncoderProcessOutput` requires at least 32 bytes of output

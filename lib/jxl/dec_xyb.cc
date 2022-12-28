@@ -7,6 +7,8 @@
 
 #include <string.h>
 
+#include "lib/jxl/frame_header.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/dec_xyb.cc"
 #include <hwy/foreach_target.h>

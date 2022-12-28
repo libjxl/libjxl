@@ -259,6 +259,8 @@ set(JPEGXL_INTERNAL_DEC_SOURCES
   jxl/render_pipeline/stage_blending.h
   jxl/render_pipeline/stage_chroma_upsampling.cc
   jxl/render_pipeline/stage_chroma_upsampling.h
+  jxl/render_pipeline/stage_cms.cc
+  jxl/render_pipeline/stage_cms.h
   jxl/render_pipeline/stage_epf.cc
   jxl/render_pipeline/stage_epf.h
   jxl/render_pipeline/stage_from_linear.cc

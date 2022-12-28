@@ -14,18 +14,22 @@
 #include <vector>
 
 #include "lib/jxl/base/byte_order.h"
+#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/common.h"
 #if JPEGXL_ENABLE_BOXES || JPEGXL_ENABLE_TRANSCODE_JPEG
 #include "lib/jxl/box_content_decoder.h"
 #endif
+#include "lib/jxl/color_encoding_internal.h"
+#include "lib/jxl/common.h"
 #include "lib/jxl/dec_external_image.h"
 #include "lib/jxl/dec_frame.h"
 #include "lib/jxl/dec_modular.h"
 #if JPEGXL_ENABLE_TRANSCODE_JPEG
 #include "lib/jxl/decode_to_jpeg.h"
 #endif
+#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/fields.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/headers.h"
@@ -55,16 +59,17 @@ bool SumOverflows(size_t a, size_t b, size_t c) {
 }
 
 JXL_INLINE size_t InitialBasicInfoSizeHint() {
-  // Amount of bytes before the start of the codestream in the container format,
-  // assuming that the codestream is the first box after the signature and
-  // filetype boxes. 12 bytes signature box + 20 bytes filetype box + 16 bytes
-  // codestream box length + name + optional XLBox length.
+  // Amount of bytes before the start of the codestream in the container
+  // format, assuming that the codestream is the first box after the signature
+  // and filetype boxes. 12 bytes signature box + 20 bytes filetype box + 16
+  // bytes codestream box length + name + optional XLBox length.
   const size_t container_header_size = 48;
 
-  // Worst-case amount of bytes for basic info of the JPEG XL codestream header,
-  // that is all information up to and including extra_channel_bits. Up to
-  // around 2 bytes signature + 8 bytes SizeHeader + 31 bytes ColorEncoding + 4
-  // bytes rest of ImageMetadata + 5 bytes part of ImageMetadata2.
+  // Worst-case amount of bytes for basic info of the JPEG XL codestream
+  // header, that is all information up to and including extra_channel_bits.
+  // Up to around 2 bytes signature + 8 bytes SizeHeader + 31 bytes
+  // ColorEncoding + 4 bytes rest of ImageMetadata + 5 bytes part of
+  // ImageMetadata2.
   // TODO(lode): recompute and update this value when alpha_bits is moved to
   // extra channels info.
   const size_t max_codestream_basic_info_size = 50;
@@ -2334,6 +2339,10 @@ JxlDecoderStatus JxlDecoderFlushImage(JxlDecoder* dec) {
   return JXL_DEC_SUCCESS;
 }
 
+JXL_EXPORT void JxlDecoderSetCms(JxlDecoder* dec, const JxlCmsInterface* cms) {
+  dec->passes_state->output_encoding_info.color_management_system = *cms;
+}
+
 JXL_EXPORT JxlDecoderStatus JxlDecoderPreviewOutBufferSize(
     const JxlDecoder* dec, const JxlPixelFormat* format, size_t* size) {
   size_t bits;
@@ -2649,29 +2658,55 @@ JxlDecoderStatus JxlDecoderGetFrameName(const JxlDecoder* dec, char* name,
 
 JxlDecoderStatus JxlDecoderSetPreferredColorProfile(
     JxlDecoder* dec, const JxlColorEncoding* color_encoding) {
+  return JxlDecoderSetOutputColorProfile(dec, color_encoding, nullptr, 0);
+}
+
+JxlDecoderStatus JxlDecoderSetOutputColorProfile(
+    JxlDecoder* dec, const JxlColorEncoding* color_encoding,
+    const uint8_t* icc_data, size_t icc_size) {
+  if ((color_encoding != nullptr) && (icc_data != nullptr)) {
+    return JXL_API_ERROR("cannot set both color_encoding and icc_data");
+  }
+  if ((color_encoding == nullptr) && (icc_data == nullptr)) {
+    return JXL_API_ERROR("one of color_encoding and icc_data must be set");
+  }
   if (!dec->got_all_headers) {
     return JXL_API_ERROR("color info not yet available");
   }
   if (dec->post_headers) {
     return JXL_API_ERROR("too late to set the color encoding");
   }
-  if (dec->image_metadata.color_encoding.IsGray() &&
-      color_encoding->color_space != JXL_COLOR_SPACE_GRAY &&
-      dec->image_out_buffer_set && dec->image_out_format.num_channels < 3) {
-    return JXL_API_ERROR("Number of channels is too low for color output");
+  // TODO(firsching): check if cms has been set
+  if (color_encoding) {
+    if (dec->image_metadata.color_encoding.IsGray() &&
+        color_encoding->color_space != JXL_COLOR_SPACE_GRAY &&
+        dec->image_out_buffer_set && dec->image_out_format.num_channels < 3) {
+      return JXL_API_ERROR("Number of channels is too low for color output");
+    }
+    if (color_encoding->color_space == JXL_COLOR_SPACE_UNKNOWN) {
+      return JXL_API_ERROR("Unknown output colorspace");
+    }
+    jxl::ColorEncoding c_out;
+    JXL_API_RETURN_IF_ERROR(
+        ConvertExternalToInternalColorEncoding(*color_encoding, &c_out));
+    JXL_API_RETURN_IF_ERROR(!c_out.ICC().empty());
+    auto& output_encoding = dec->passes_state->output_encoding_info;
+    if (!c_out.SameColorEncoding(output_encoding.color_encoding)) {
+      JXL_API_RETURN_IF_ERROR(output_encoding.MaybeSetColorEncoding(c_out));
+      dec->image_metadata.color_encoding = output_encoding.color_encoding;
+    }
+    return JXL_DEC_SUCCESS;
   }
-  if (color_encoding->color_space == JXL_COLOR_SPACE_UNKNOWN) {
-    return JXL_API_ERROR("Unknown output colorspace");
+  // icc_data != nullptr
+  // TODO(firsching): implement setting output color profile from icc_data.
+  jxl::ColorEncoding c_dst;
+  jxl::PaddedBytes padded_icc;
+  padded_icc.assign(icc_data, icc_data + icc_size);
+  if (!c_dst.SetICC(std::move(padded_icc))) {
+    return JXL_API_ERROR(
+        "setting output color profile from icc_data not yet implemented.");
   }
-  jxl::ColorEncoding c_out;
-  JXL_API_RETURN_IF_ERROR(
-      ConvertExternalToInternalColorEncoding(*color_encoding, &c_out));
-  JXL_API_RETURN_IF_ERROR(!c_out.ICC().empty());
-  auto& output_encoding = dec->passes_state->output_encoding_info;
-  if (!c_out.SameColorEncoding(output_encoding.color_encoding)) {
-    JXL_API_RETURN_IF_ERROR(output_encoding.MaybeSetColorEncoding(c_out));
-    dec->image_metadata.color_encoding = output_encoding.color_encoding;
-  }
+  dec->passes_state->output_encoding_info.color_encoding = c_dst;
   return JXL_DEC_SUCCESS;
 }
 
