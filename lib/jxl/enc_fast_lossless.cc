@@ -73,6 +73,33 @@ struct BitWriter {
     }
   }
 
+  FJXL_INLINE void WriteMultiple(const uint64_t* nbits, const uint64_t* bits,
+                                 size_t n) {
+    // Necessary because Write() is only guaranteed to work with <=56 bits.
+    // Trying to SIMD-fy this code results in lower speed (and definitely less
+    // clarity).
+    {
+      for (size_t i = 0; i < n; i++) {
+        this->buffer |= bits[i] << this->bits_in_buffer;
+        memcpy(this->data.get() + this->bytes_written, &this->buffer, 8);
+        uint64_t shift = 64 - this->bits_in_buffer;
+        this->bits_in_buffer += nbits[i];
+        // This `if` seems to be faster than using ternaries.
+        if (this->bits_in_buffer >= 64) {
+          uint64_t next_buffer = bits[i] >> shift;
+          this->buffer = next_buffer;
+          this->bits_in_buffer -= 64;
+          this->bytes_written += 8;
+        }
+      }
+      memcpy(this->data.get() + this->bytes_written, &this->buffer, 8);
+      size_t bytes_in_buffer = this->bits_in_buffer / 8;
+      this->bits_in_buffer -= bytes_in_buffer * 8;
+      this->buffer >>= bytes_in_buffer * 8;
+      this->bytes_written += bytes_in_buffer;
+    }
+  }
+
   std::unique_ptr<uint8_t[], void (*)(void*)> data = {nullptr, free};
   size_t bytes_written = 0;
   size_t bits_in_buffer = 0;
@@ -662,128 +689,6 @@ struct PrefixCode {
   }
 };
 
-#ifdef FJXL_AVX2
-#include <immintrin.h>
-void EncodeChunkAVX2(const uint16_t* residuals, const PrefixCode& code,
-                     BitWriter& output) {
-  auto value = _mm256_load_si256((__m256i*)residuals);
-
-  // we know that residuals[i] has at most 12 bits, so we just need 3 nibbles
-  // and don't need to mask the third. However we do need to set the high
-  // byte to 0xFF, which will make table lookups return 0.
-  auto lo_nibble =
-      _mm256_or_si256(_mm256_and_si256(value, _mm256_set1_epi16(0xF)),
-                      _mm256_set1_epi16(0xFF00));
-  auto mi_nibble = _mm256_or_si256(
-      _mm256_and_si256(_mm256_srli_epi16(value, 4), _mm256_set1_epi16(0xF)),
-      _mm256_set1_epi16(0xFF00));
-  auto hi_nibble =
-      _mm256_or_si256(_mm256_srli_epi16(value, 8), _mm256_set1_epi16(0xFF00));
-
-  auto lo_lut = _mm256_broadcastsi128_si256(
-      _mm_setr_epi8(0, 1, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4));
-  auto mi_lut = _mm256_broadcastsi128_si256(
-      _mm_setr_epi8(0, 5, 6, 6, 7, 7, 7, 7, 8, 8, 8, 8, 8, 8, 8, 8));
-  auto hi_lut = _mm256_broadcastsi128_si256(_mm_setr_epi8(
-      0, 9, 10, 10, 11, 11, 11, 11, 12, 12, 12, 12, 12, 12, 12, 12));
-
-  auto lo_token = _mm256_shuffle_epi8(lo_lut, lo_nibble);
-  auto mi_token = _mm256_shuffle_epi8(mi_lut, mi_nibble);
-  auto hi_token = _mm256_shuffle_epi8(hi_lut, hi_nibble);
-
-  auto token = _mm256_max_epi16(lo_token, _mm256_max_epi16(mi_token, hi_token));
-  auto nbits = _mm256_subs_epu16(token, _mm256_set1_epi16(1));
-
-  // Compute 1<<nbits.
-  auto pow2_lo_lut = _mm256_broadcastsi128_si256(
-      _mm_setr_epi8(1 << 0, 1 << 1, 1 << 2, 1 << 3, 1 << 4, 1 << 5, 1 << 6,
-                    1u << 7, 0, 0, 0, 0, 0, 0, 0, 0));
-  auto pow2_hi_lut = _mm256_broadcastsi128_si256(
-      _mm_setr_epi8(0, 0, 0, 0, 0, 0, 0, 0, 1 << 0, 1 << 1, 1 << 2, 1 << 3,
-                    1 << 4, 1 << 5, 1 << 6, 1u << 7));
-
-  auto nbits_masked = _mm256_or_si256(nbits, _mm256_set1_epi16(0xFF00));
-
-  auto nbits_pow2_lo = _mm256_shuffle_epi8(pow2_lo_lut, nbits_masked);
-  auto nbits_pow2_hi = _mm256_shuffle_epi8(pow2_hi_lut, nbits_masked);
-
-  auto nbits_pow2 =
-      _mm256_or_si256(_mm256_slli_epi16(nbits_pow2_hi, 8), nbits_pow2_lo);
-
-  auto bits = _mm256_subs_epu16(value, nbits_pow2);
-
-  auto token_masked = _mm256_or_si256(token, _mm256_set1_epi16(0xFF00));
-
-  // huff_nbits <= 6.
-  auto huff_nbits =
-      _mm256_shuffle_epi8(_mm256_broadcastsi128_si256(
-                              _mm_load_si128((__m128i*)code.raw_nbits_simd)),
-                          token_masked);
-
-  auto huff_bits = _mm256_shuffle_epi8(
-      _mm256_broadcastsi128_si256(_mm_load_si128((__m128i*)code.raw_bits_simd)),
-      token_masked);
-
-  auto huff_nbits_masked =
-      _mm256_or_si256(huff_nbits, _mm256_set1_epi16(0xFF00));
-
-  auto bits_shifted = _mm256_mullo_epi16(
-      bits, _mm256_shuffle_epi8(pow2_lo_lut, huff_nbits_masked));
-
-  nbits = _mm256_add_epi16(nbits, huff_nbits);
-  bits = _mm256_or_si256(bits_shifted, huff_bits);
-
-  // Merge nbits and bits from 16-bit to 32-bit lanes.
-  auto nbits_hi16 = _mm256_srli_epi32(nbits, 16);
-  auto nbits_lo16 = _mm256_and_si256(nbits, _mm256_set1_epi32(0xFFFF));
-  auto bits_hi16 = _mm256_srli_epi32(bits, 16);
-  auto bits_lo16 = _mm256_and_si256(bits, _mm256_set1_epi32(0xFFFF));
-
-  nbits = _mm256_add_epi32(nbits_hi16, nbits_lo16);
-  bits = _mm256_or_si256(_mm256_sllv_epi32(bits_hi16, nbits_lo16), bits_lo16);
-
-  // Merge 32 -> 64 bit lanes.
-  auto nbits_hi32 = _mm256_srli_epi64(nbits, 32);
-  auto nbits_lo32 = _mm256_and_si256(nbits, _mm256_set1_epi64x(0xFFFFFFFF));
-  auto bits_hi32 = _mm256_srli_epi64(bits, 32);
-  auto bits_lo32 = _mm256_and_si256(bits, _mm256_set1_epi64x(0xFFFFFFFF));
-
-  nbits = _mm256_add_epi64(nbits_hi32, nbits_lo32);
-  bits = _mm256_or_si256(_mm256_sllv_epi64(bits_hi32, nbits_lo32), bits_lo32);
-
-  alignas(32) uint64_t nbits_simd[4] = {};
-  alignas(32) uint64_t bits_simd[4] = {};
-
-  _mm256_store_si256((__m256i*)nbits_simd, nbits);
-  _mm256_store_si256((__m256i*)bits_simd, bits);
-
-  // Manually merge the buffer bits with the SIMD bits.
-  // Necessary because Write() is only guaranteed to work with <=56 bits.
-  // Trying to SIMD-fy this code results in slower speed (and definitely less
-  // clarity).
-  {
-    for (size_t i = 0; i < 4; i++) {
-      output.buffer |= bits_simd[i] << output.bits_in_buffer;
-      memcpy(output.data.get() + output.bytes_written, &output.buffer, 8);
-      uint64_t shift = 64 - output.bits_in_buffer;
-      output.bits_in_buffer += nbits_simd[i];
-      // This `if` seems to be faster than using ternaries.
-      if (output.bits_in_buffer >= 64) {
-        uint64_t next_buffer = bits_simd[i] >> shift;
-        output.buffer = next_buffer;
-        output.bits_in_buffer -= 64;
-        output.bytes_written += 8;
-      }
-    }
-    memcpy(output.data.get() + output.bytes_written, &output.buffer, 8);
-    size_t bytes_in_buffer = output.bits_in_buffer / 8;
-    output.bits_in_buffer -= bytes_in_buffer * 8;
-    output.buffer >>= bytes_in_buffer * 8;
-    output.bytes_written += bytes_in_buffer;
-  }
-}
-#endif
-
 template <typename T>
 struct VecPair {
   T low;
@@ -794,9 +699,290 @@ struct VecPair {
 #undef FJXL_GENERIC_SIMD
 #endif
 
-// #ifdef FJXL_AVX2
-// #define FJXL_GENERIC_SIMD
-// #endif
+#ifdef FJXL_AVX2
+#define FJXL_GENERIC_SIMD
+#include <immintrin.h>
+struct SIMDVec32 {
+  __m256i vec;
+
+  static constexpr size_t kLanes = 8;
+
+  FJXL_INLINE static SIMDVec32 Load(const uint32_t* data) {
+    return SIMDVec32{_mm256_loadu_si256((__m256i*)data)};
+  }
+  FJXL_INLINE void Store(uint32_t* data) {
+    _mm256_store_si256((__m256i*)data, vec);
+  }
+  FJXL_INLINE static SIMDVec32 Val(uint32_t v) {
+    return SIMDVec32{_mm256_set1_epi32(v)};
+  }
+  FJXL_INLINE SIMDVec32 ValToToken() const {
+    // we know that each value has at most 20 bits, so we just need 5 nibbles
+    // and don't need to mask the fifth. However we do need to set the higher
+    // bytes to 0xFF, which will make table lookups return 0.
+    auto nibble0 =
+        _mm256_or_si256(_mm256_and_si256(vec, _mm256_set1_epi32(0xF)),
+                        _mm256_set1_epi32(0xFFFFFF00));
+    auto nibble1 = _mm256_or_si256(
+        _mm256_and_si256(_mm256_srli_epi32(vec, 4), _mm256_set1_epi32(0xF)),
+        _mm256_set1_epi32(0xFFFFFF00));
+    auto nibble2 = _mm256_or_si256(
+        _mm256_and_si256(_mm256_srli_epi32(vec, 8), _mm256_set1_epi32(0xF)),
+        _mm256_set1_epi32(0xFFFFFF00));
+    auto nibble3 = _mm256_or_si256(
+        _mm256_and_si256(_mm256_srli_epi32(vec, 12), _mm256_set1_epi32(0xF)),
+        _mm256_set1_epi32(0xFFFFFF00));
+    auto nibble4 = _mm256_or_si256(_mm256_srli_epi32(vec, 16),
+                                   _mm256_set1_epi32(0xFFFFFF00));
+
+    auto lut0 = _mm256_broadcastsi128_si256(
+        _mm_setr_epi8(0, 1, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4));
+    auto lut1 = _mm256_broadcastsi128_si256(
+        _mm_setr_epi8(0, 5, 6, 6, 7, 7, 7, 7, 8, 8, 8, 8, 8, 8, 8, 8));
+    auto lut2 = _mm256_broadcastsi128_si256(_mm_setr_epi8(
+        0, 9, 10, 10, 11, 11, 11, 11, 12, 12, 12, 12, 12, 12, 12, 12));
+    auto lut3 = _mm256_broadcastsi128_si256(_mm_setr_epi8(
+        0, 13, 14, 14, 15, 15, 15, 15, 16, 16, 16, 16, 16, 16, 16, 16));
+    auto lut4 = _mm256_broadcastsi128_si256(_mm_setr_epi8(
+        0, 17, 18, 18, 19, 19, 19, 19, 20, 20, 20, 20, 20, 20, 20, 20));
+
+    auto token0 = _mm256_shuffle_epi8(lut0, nibble0);
+    auto token1 = _mm256_shuffle_epi8(lut1, nibble1);
+    auto token2 = _mm256_shuffle_epi8(lut2, nibble2);
+    auto token3 = _mm256_shuffle_epi8(lut3, nibble3);
+    auto token4 = _mm256_shuffle_epi8(lut4, nibble4);
+
+    auto token =
+        _mm256_max_epi32(_mm256_max_epi32(_mm256_max_epi32(token0, token1),
+                                          _mm256_max_epi32(token2, token3)),
+                         token4);
+    return SIMDVec32{token};
+  }
+  FJXL_INLINE SIMDVec32 SatSubU(const SIMDVec32& to_subtract) const {
+    return SIMDVec32{_mm256_sub_epi32(_mm256_max_epu32(vec, to_subtract.vec),
+                                      to_subtract.vec)};
+  }
+  FJXL_INLINE SIMDVec32 Pow2() const {
+    return SIMDVec32{_mm256_sllv_epi32(_mm256_set1_epi32(1), vec)};
+  }
+};
+
+struct SIMDVec16;
+
+struct Mask16 {
+  __m256i mask;
+  SIMDVec16 IfThenElse(const SIMDVec16& if_true, const SIMDVec16& if_false);
+  Mask16 And(const Mask16& oth) const {
+    return Mask16{_mm256_and_si256(mask, oth.mask)};
+  }
+};
+
+struct SIMDVec16 {
+  __m256i vec;
+
+  static constexpr size_t kLanes = 16;
+
+  FJXL_INLINE static SIMDVec16 Load(const uint16_t* data) {
+    return SIMDVec16{_mm256_loadu_si256((__m256i*)data)};
+  }
+  FJXL_INLINE void Store(uint16_t* data) {
+    _mm256_store_si256((__m256i*)data, vec);
+  }
+  FJXL_INLINE static SIMDVec16 Val(uint16_t v) {
+    return SIMDVec16{_mm256_set1_epi16(v)};
+  }
+  FJXL_INLINE static SIMDVec16 FromTwo32(const SIMDVec32& lo,
+                                         const SIMDVec32& hi) {
+    auto tmp = _mm256_packus_epi32(lo.vec, hi.vec);
+    return SIMDVec16{_mm256_permute4x64_epi64(tmp, 0b11011000)};
+  }
+
+  FJXL_INLINE SIMDVec16 ValToToken() const {
+    auto nibble0 =
+        _mm256_or_si256(_mm256_and_si256(vec, _mm256_set1_epi16(0xF)),
+                        _mm256_set1_epi16(0xFF00));
+    auto nibble1 = _mm256_or_si256(
+        _mm256_and_si256(_mm256_srli_epi16(vec, 4), _mm256_set1_epi16(0xF)),
+        _mm256_set1_epi16(0xFF00));
+    auto nibble2 = _mm256_or_si256(
+        _mm256_and_si256(_mm256_srli_epi16(vec, 8), _mm256_set1_epi16(0xF)),
+        _mm256_set1_epi16(0xFF00));
+    auto nibble3 =
+        _mm256_or_si256(_mm256_srli_epi16(vec, 12), _mm256_set1_epi16(0xFF00));
+
+    auto lut0 = _mm256_broadcastsi128_si256(
+        _mm_setr_epi8(0, 1, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4));
+    auto lut1 = _mm256_broadcastsi128_si256(
+        _mm_setr_epi8(0, 5, 6, 6, 7, 7, 7, 7, 8, 8, 8, 8, 8, 8, 8, 8));
+    auto lut2 = _mm256_broadcastsi128_si256(_mm_setr_epi8(
+        0, 9, 10, 10, 11, 11, 11, 11, 12, 12, 12, 12, 12, 12, 12, 12));
+    auto lut3 = _mm256_broadcastsi128_si256(_mm_setr_epi8(
+        0, 13, 14, 14, 15, 15, 15, 15, 16, 16, 16, 16, 16, 16, 16, 16));
+
+    auto token0 = _mm256_shuffle_epi8(lut0, nibble0);
+    auto token1 = _mm256_shuffle_epi8(lut1, nibble1);
+    auto token2 = _mm256_shuffle_epi8(lut2, nibble2);
+    auto token3 = _mm256_shuffle_epi8(lut3, nibble3);
+
+    auto token = _mm256_max_epi16(_mm256_max_epi16(token0, token1),
+                                  _mm256_max_epi16(token2, token3));
+    return SIMDVec16{token};
+  }
+
+  FJXL_INLINE SIMDVec16 SatSubU(const SIMDVec16& to_subtract) const {
+    return SIMDVec16{_mm256_subs_epu16(vec, to_subtract.vec)};
+  }
+  FJXL_INLINE SIMDVec16 Min(const SIMDVec16& oth) const {
+    return SIMDVec16{_mm256_min_epu16(vec, oth.vec)};
+  }
+  FJXL_INLINE Mask16 Eq(const SIMDVec16& oth) const {
+    return Mask16{_mm256_cmpeq_epi16(vec, oth.vec)};
+  }
+  // Undefined whether this uses signed or unsigned semantics.
+  FJXL_INLINE Mask16 Gt(const SIMDVec16& oth) const {
+    return Mask16{_mm256_cmpgt_epi16(vec, oth.vec)};
+  }
+  FJXL_INLINE SIMDVec16 Pow2() const {
+    auto pow2_lo_lut = _mm256_broadcastsi128_si256(
+        _mm_setr_epi8(1 << 0, 1 << 1, 1 << 2, 1 << 3, 1 << 4, 1 << 5, 1 << 6,
+                      1u << 7, 0, 0, 0, 0, 0, 0, 0, 0));
+    auto pow2_hi_lut = _mm256_broadcastsi128_si256(
+        _mm_setr_epi8(0, 0, 0, 0, 0, 0, 0, 0, 1 << 0, 1 << 1, 1 << 2, 1 << 3,
+                      1 << 4, 1 << 5, 1 << 6, 1u << 7));
+
+    auto masked = _mm256_or_si256(vec, _mm256_set1_epi16(0xFF00));
+
+    auto pow2_lo = _mm256_shuffle_epi8(pow2_lo_lut, masked);
+    auto pow2_hi = _mm256_shuffle_epi8(pow2_hi_lut, masked);
+
+    auto pow2 = _mm256_or_si256(_mm256_slli_epi16(pow2_hi, 8), pow2_lo);
+    return SIMDVec16{pow2};
+  }
+  FJXL_INLINE SIMDVec16 Or(const SIMDVec16& oth) const {
+    return SIMDVec16{_mm256_or_si256(vec, oth.vec)};
+  }
+  FJXL_INLINE SIMDVec16 And(const SIMDVec16& oth) const {
+    return SIMDVec16{_mm256_and_si256(vec, oth.vec)};
+  }
+  FJXL_INLINE SIMDVec16 HAdd(const SIMDVec16& oth) const {
+    return SIMDVec16{_mm256_srai_epi16(_mm256_add_epi16(vec, oth.vec), 1)};
+  }
+  FJXL_INLINE SIMDVec16 PrepareForU8Lookup() const {
+    return SIMDVec16{_mm256_or_si256(vec, _mm256_set1_epi16(0xFF00))};
+  }
+  FJXL_INLINE SIMDVec16 U8Lookup(const uint8_t* table) const {
+    return SIMDVec16{_mm256_shuffle_epi8(
+        _mm256_broadcastsi128_si256(_mm_loadu_si128((__m128i*)table)), vec)};
+  }
+  FJXL_INLINE VecPair<SIMDVec16> Interleave(const SIMDVec16& low) const {
+    auto v02 = _mm256_unpacklo_epi16(low.vec, vec);
+    auto v13 = _mm256_unpackhi_epi16(low.vec, vec);
+    return {SIMDVec16{_mm256_permute2x128_si256(v02, v13, 0x20)},
+            SIMDVec16{_mm256_permute2x128_si256(v02, v13, 0x31)}};
+  }
+  FJXL_INLINE VecPair<SIMDVec32> Upcast() const {
+    auto v02 = _mm256_unpacklo_epi16(vec, _mm256_setzero_si256());
+    auto v13 = _mm256_unpackhi_epi16(vec, _mm256_setzero_si256());
+    return {SIMDVec32{_mm256_permute2x128_si256(v02, v13, 0x20)},
+            SIMDVec32{_mm256_permute2x128_si256(v02, v13, 0x31)}};
+  }
+};
+
+/*
+__attribute__((constructor)) void f() {
+  uint32_t v1[8] = {1 << 8,  1 << 9,  1 << 10, 1 << 11,
+                    1 << 13, 1 << 14, 1 << 16, 1 << 18};
+
+  uint32_t res[8];
+  auto x = SIMDVec32::Load(v1).ValToToken();
+  x.Store(res);
+  for (size_t i = 0; i < 8; i++) {
+    fprintf(stderr, "%u ", res[i]);
+  }
+  fprintf(stderr, "\n");
+  exit(1);
+}
+*/
+
+SIMDVec16 Mask16::IfThenElse(const SIMDVec16& if_true,
+                             const SIMDVec16& if_false) {
+  return SIMDVec16{_mm256_blendv_epi8(if_false.vec, if_true.vec, mask)};
+}
+
+struct Bits64 {
+  static constexpr size_t kLanes = 4;
+
+  __m256i nbits;
+  __m256i bits;
+
+  FJXL_INLINE void Store(uint64_t* nbits_out, uint64_t* bits_out) {
+    _mm256_store_si256((__m256i*)nbits_out, nbits);
+    _mm256_store_si256((__m256i*)bits_out, bits);
+  }
+};
+
+struct Bits32 {
+  __m256i nbits;
+  __m256i bits;
+
+  static Bits32 FromRaw(SIMDVec32 nbits, SIMDVec32 bits) {
+    return Bits32{nbits.vec, bits.vec};
+  }
+
+  Bits64 Merge() const {
+    auto nbits_hi32 = _mm256_srli_epi64(nbits, 32);
+    auto nbits_lo32 = _mm256_and_si256(nbits, _mm256_set1_epi64x(0xFFFFFFFF));
+    auto bits_hi32 = _mm256_srli_epi64(bits, 32);
+    auto bits_lo32 = _mm256_and_si256(bits, _mm256_set1_epi64x(0xFFFFFFFF));
+
+    auto nbits64 = _mm256_add_epi64(nbits_hi32, nbits_lo32);
+    auto bits64 =
+        _mm256_or_si256(_mm256_sllv_epi64(bits_hi32, nbits_lo32), bits_lo32);
+    return Bits64{nbits64, bits64};
+  }
+
+  void Interleave(const Bits32& low) {
+    bits = _mm256_or_si256(_mm256_sllv_epi32(bits, low.nbits), low.bits);
+    nbits = _mm256_add_epi32(nbits, low.nbits);
+  }
+};
+
+struct Bits16 {
+  __m256i nbits;
+  __m256i bits;
+
+  static Bits16 FromRaw(SIMDVec16 nbits, SIMDVec16 bits) {
+    return Bits16{nbits.vec, bits.vec};
+  }
+
+  Bits32 Merge() const {
+    auto nbits_hi16 = _mm256_srli_epi32(nbits, 16);
+    auto nbits_lo16 = _mm256_and_si256(nbits, _mm256_set1_epi32(0xFFFF));
+    auto bits_hi16 = _mm256_srli_epi32(bits, 16);
+    auto bits_lo16 = _mm256_and_si256(bits, _mm256_set1_epi32(0xFFFF));
+
+    auto nbits32 = _mm256_add_epi32(nbits_hi16, nbits_lo16);
+    auto bits32 =
+        _mm256_or_si256(_mm256_sllv_epi32(bits_hi16, nbits_lo16), bits_lo16);
+    return Bits32{nbits32, bits32};
+  }
+
+  void Interleave(const Bits16& low) {
+    auto pow2_lo_lut = _mm256_broadcastsi128_si256(
+        _mm_setr_epi8(1 << 0, 1 << 1, 1 << 2, 1 << 3, 1 << 4, 1 << 5, 1 << 6,
+                      1u << 7, 0, 0, 0, 0, 0, 0, 0, 0));
+    auto low_nbits_masked =
+        _mm256_or_si256(low.nbits, _mm256_set1_epi16(0xFF00));
+
+    auto bits_shifted = _mm256_mullo_epi16(
+        bits, _mm256_shuffle_epi8(pow2_lo_lut, low_nbits_masked));
+
+    nbits = _mm256_add_epi16(nbits, low.nbits);
+    bits = _mm256_or_si256(bits_shifted, low.bits);
+  }
+};
+
+#endif
 
 #ifdef FJXL_NEON
 #define FJXL_GENERIC_SIMD
@@ -881,6 +1067,11 @@ struct SIMDVec16 {
   FJXL_INLINE SIMDVec16 PrepareForU8Lookup() const {
     return SIMDVec16{vorrq_u16(vec, vdupq_n_u16(0xFF00))};
   }
+  FJXL_INLINE SIMDVec16 U8Lookup(const uint8_t* table) const {
+    uint8x16_t tbl = vld1q_u8(table);
+    uint8x16_t indices = vreinterpretq_u8_u16(vec);
+    return SIMDVec16{vreinterpretq_u16_u8(vqtbl1q_u8(tbl, indices))};
+  }
   FJXL_INLINE VecPair<SIMDVec16> Interleave(const SIMDVec16& low) const {
     return {SIMDVec16{vzip1q_u16(low.vec, vec)},
             SIMDVec16{vzip2q_u16(low.vec, vec)}};
@@ -889,11 +1080,6 @@ struct SIMDVec16 {
     uint32x4_t lo = vmovl_u16(vget_low_u16(vec));
     uint32x4_t hi = vmovl_high_u16(vec);
     return {SIMDVec32{lo}, SIMDVec32{hi}};
-  }
-  FJXL_INLINE SIMDVec16 U8Lookup(const uint8_t* table) const {
-    uint8x16_t tbl = vld1q_u8(table);
-    uint8x16_t indices = vreinterpretq_u8_u16(vec);
-    return SIMDVec16{vreinterpretq_u16_u8(vqtbl1q_u8(tbl, indices))};
   }
 };
 
@@ -1038,6 +1224,7 @@ FJXL_INLINE void HuffmanSIMDAbove14(const uint16_t* tokens,
                                     const PrefixCode& code, uint16_t* nbits_out,
                                     uint16_t* bits_out) {
   SIMDVec16 tok = SIMDVec16::Load(tokens);
+  // We assume `tok` fits in a *signed* 16-bit integer.
   Mask16 above = tok.Gt(SIMDVec16::Val(12));
   // 13, 14 -> 13
   // 15, 16 -> 14
@@ -1141,33 +1328,6 @@ void GenericEncodeChunk(const Residual* residuals, const PrefixCode& code,
   }
 }
 
-FJXL_INLINE void WriteToWriter(const uint64_t* nbits, const uint64_t* bits,
-                               size_t n, BitWriter& output) {
-  // Necessary because Write() is only guaranteed to work with <=56 bits.
-  // Trying to SIMD-fy this code results in lower speed (and definitely less
-  // clarity).
-  {
-    for (size_t i = 0; i < n; i++) {
-      output.buffer |= bits[i] << output.bits_in_buffer;
-      memcpy(output.data.get() + output.bytes_written, &output.buffer, 8);
-      uint64_t shift = 64 - output.bits_in_buffer;
-      output.bits_in_buffer += nbits[i];
-      // This `if` seems to be faster than using ternaries.
-      if (output.bits_in_buffer >= 64) {
-        uint64_t next_buffer = bits[i] >> shift;
-        output.buffer = next_buffer;
-        output.bits_in_buffer -= 64;
-        output.bytes_written += 8;
-      }
-    }
-    memcpy(output.data.get() + output.bytes_written, &output.buffer, 8);
-    size_t bytes_in_buffer = output.bits_in_buffer / 8;
-    output.bits_in_buffer -= bytes_in_buffer * 8;
-    output.buffer >>= bytes_in_buffer * 8;
-    output.bytes_written += bytes_in_buffer;
-  }
-}
-
 struct UpTo8Bits {
   size_t bitdepth;
   explicit UpTo8Bits(size_t bitdepth) : bitdepth(bitdepth) {
@@ -1195,10 +1355,7 @@ struct UpTo8Bits {
 
   static void EncodeChunk(upixel_t* residuals, const PrefixCode& code,
                           BitWriter& output) {
-#ifdef FJXL_AVX2
-    EncodeChunkAVX2(residuals, code, output);
-    return;
-#elif defined(FJXL_GENERIC_SIMD)
+#ifdef FJXL_GENERIC_SIMD
     uint64_t nbits64[kChunkSize / 4];
     uint64_t bits64[kChunkSize / 4];
     uint16_t bits[SIMDVec16::kLanes];
@@ -1212,7 +1369,7 @@ struct UpTo8Bits {
       StoreSIMDUpTo8(nbits, bits, nbits_huff, bits_huff, nbits64 + i / 4,
                      bits64 + i / 4);
     }
-    WriteToWriter(nbits64, bits64, kChunkSize / 4, output);
+    output.WriteMultiple(nbits64, bits64, kChunkSize / 4);
     return;
 #endif
     GenericEncodeChunk(residuals, code, output);
@@ -1275,7 +1432,7 @@ struct From9To13Bits {
       StoreSIMDUpTo14(nbits, bits, nbits_huff, bits_huff, nbits64 + i / 2,
                       bits64 + i / 2);
     }
-    WriteToWriter(nbits64, bits64, kChunkSize / 2, output);
+    output.WriteMultiple(nbits64, bits64, kChunkSize / 2);
     return;
 #endif
     GenericEncodeChunk(residuals, code, output);
@@ -1342,7 +1499,7 @@ struct Exactly14Bits {
       StoreSIMDUpTo14(nbits, bits, nbits_huff, bits_huff, nbits64 + i / 2,
                       bits64 + i / 2);
     }
-    WriteToWriter(nbits64, bits64, kChunkSize / 2, output);
+    output.WriteMultiple(nbits64, bits64, kChunkSize / 2);
     return;
 #endif
     GenericEncodeChunk(residuals, code, output);
@@ -1407,7 +1564,7 @@ struct MoreThan14Bits {
       StoreSIMDAbove14(nbits, bits, nbits_huff, bits_huff, nbits64 + i / 2,
                        bits64 + i / 2);
     }
-    WriteToWriter(nbits64, bits64, kChunkSize / 2, output);
+    output.WriteMultiple(nbits64, bits64, kChunkSize / 2);
     return;
 #endif
     GenericEncodeChunk(residuals, code, output);
