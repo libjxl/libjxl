@@ -339,6 +339,36 @@ bool MultiBlockTransformCrossesVerticalBoundary(
   return false;
 }
 
+static const float kChromaErrorWeight[AcStrategy::kNumValidStrategies] = {
+    0.5f,  // DCT = 0,
+    1.0f,  // IDENTITY = 1,
+    1.0f,  // DCT2X2 = 2,
+    1.0f,  // DCT4X4 = 3,
+    2.0f,  // DCT16X16 = 4,
+    2.0f,  // DCT32X32 = 5,
+    1.1f,  // DCT16X8 = 6,
+    1.1f,  // DCT8X16 = 7,
+    2.0f,  // DCT32X8 = 8,
+    2.0f,  // DCT8X32 = 9,
+    2.0f,  // DCT32X16 = 10,
+    2.0f,  // DCT16X32 = 11,
+    2.0f,  // DCT4X8 = 12,
+    2.0f,  // DCT8X4 = 13,
+    1.7f,  // AFV0 = 14,
+    1.7f,  // AFV1 = 15,
+    1.7f,  // AFV2 = 16,
+    1.7f,  // AFV3 = 17,
+    2.0f,  // DCT64X64 = 18,
+    2.0f,  // DCT64X32 = 19,
+    2.0f,  // DCT32X64 = 20,
+    2.0f,  // DCT128X128 = 21,
+    2.0f,  // DCT128X64 = 22,
+    2.0f,  // DCT64X128 = 23,
+    2.0f,  // DCT256X256 = 24,
+    2.0f,  // DCT256X128 = 25,
+    2.0f,  // DCT128X256 = 26,
+};
+
 float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
                       const ACSConfig& config,
                       const float* JXL_RESTRICT cmap_factors, float* block,
@@ -356,8 +386,7 @@ float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
 
   const size_t num_blocks = acs.covered_blocks_x() * acs.covered_blocks_y();
   // avoid large blocks when there is a lot going on in red-green.
-  float cmul[3] = {std::min<float>(2, std::max<float>(1, num_blocks - 1)), 1.0f,
-                   1.0f};
+  float cmul[3] = {kChromaErrorWeight[acs.RawStrategy()], 1.0f, 1.0f};
   float quant_norm8 = 0;
   float masking = 0;
   if (num_blocks == 1) {
@@ -481,7 +510,7 @@ uint8_t FindBest8x8Transform(size_t x, size_t y, int encoding_speed_tier,
           AcStrategy::Type::DCT4X4,
           5,
           4.0f,
-          1.0179946967008329f,
+          0.7f,
       },
       {
           AcStrategy::Type::DCT2X2,
