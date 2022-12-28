@@ -1131,7 +1131,7 @@ TEST(JxlTest, RoundtripAnimation) {
   dparams.accepted_formats.push_back(t.ppf().frames[0].color.format);
 
   PackedPixelFile ppf_out;
-  EXPECT_EQ(Roundtrip(t.ppf(), {}, dparams, pool, &ppf_out), 2401);
+  EXPECT_EQ(Roundtrip(t.ppf(), {}, dparams, pool, &ppf_out), 2298);
 
   t.CoalesceGIFAnimationWithAlpha();
   ASSERT_EQ(ppf_out.frames.size(), t.ppf().frames.size());
@@ -1179,7 +1179,7 @@ TEST(JxlTest, RoundtripAnimationPatches) {
 
   PackedPixelFile ppf_out;
   // 40k with no patches, 27k with patch frames encoded multiple times.
-  EXPECT_EQ(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out), 13721);
+  EXPECT_EQ(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out), 13458);
   EXPECT_EQ(ppf_out.frames.size(), t.ppf().frames.size());
   // >10 with broken patches
   EXPECT_THAT(ButteraugliDistance(t.ppf(), ppf_out), IsSlightlyBelow(1.2));
