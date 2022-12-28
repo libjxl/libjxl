@@ -940,11 +940,12 @@ TEST(JxlTest, JXL_SLOW_TEST(RoundtripLossless8LightningGradient)) {
   t.DecodeFromBytes(orig).ClearMetadata();
 
   JXLCompressParams cparams = CompressParamsForLossless();
-  cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 1);             // kLightning
-  cparams.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_PREDICTOR, 5);  // Gradient
+  cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 1);  // kLightning
 
   PackedPixelFile ppf_out;
-  EXPECT_EQ(Roundtrip(t.ppf(), cparams, {}, &pool, &ppf_out), 286648);
+  // Lax comparison because different SIMD will cause different compression.
+  EXPECT_THAT(Roundtrip(t.ppf(), cparams, {}, &pool, &ppf_out),
+              IsSlightlyBelow(286648u));
   EXPECT_EQ(ComputeDistance2(t.ppf(), ppf_out), 0.0);
 }
 

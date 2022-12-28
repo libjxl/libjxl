@@ -18,6 +18,12 @@
 #include <memory>
 #include <vector>
 
+#if defined(__aarch64__) || defined(_M_ARM64)
+#include <arm_neon.h>
+#elif defined(__x86_64__) || defined(_M_X64)
+#include <immintrin.h>
+#endif
+
 namespace {
 #if defined(_MSC_VER) && !defined(__clang__)
 #define FJXL_INLINE __forceinline
@@ -428,8 +434,8 @@ struct PrefixCode {
   uint8_t raw_nbits[kNumRawSymbols] = {};
   uint8_t raw_bits[kNumRawSymbols] = {};
 
-  alignas(32) uint8_t raw_nbits_simd[16] = {};
-  alignas(32) uint8_t raw_bits_simd[16] = {};
+  alignas(64) uint8_t raw_nbits_simd[16] = {};
+  alignas(64) uint8_t raw_bits_simd[16] = {};
 
   uint8_t lz77_nbits[kNumLZ77] = {};
   uint16_t lz77_bits[kNumLZ77] = {};
@@ -699,6 +705,203 @@ struct VecPair {
 #undef FJXL_GENERIC_SIMD
 #endif
 
+#ifdef FJXL_AVX512
+#define FJXL_GENERIC_SIMD
+struct SIMDVec32 {
+  __m512i vec;
+
+  static constexpr size_t kLanes = 16;
+
+  FJXL_INLINE static SIMDVec32 Load(const uint32_t* data) {
+    return SIMDVec32{_mm512_loadu_si512((__m512i*)data)};
+  }
+  FJXL_INLINE void Store(uint32_t* data) {
+    _mm512_store_si512((__m512i*)data, vec);
+  }
+  FJXL_INLINE static SIMDVec32 Val(uint32_t v) {
+    return SIMDVec32{_mm512_set1_epi32(v)};
+  }
+  FJXL_INLINE SIMDVec32 ValToToken() const {
+    return SIMDVec32{
+        _mm512_sub_epi32(_mm512_set1_epi32(32), _mm512_lzcnt_epi32(vec))};
+  }
+  FJXL_INLINE SIMDVec32 SatSubU(const SIMDVec32& to_subtract) const {
+    return SIMDVec32{_mm512_sub_epi32(_mm512_max_epu32(vec, to_subtract.vec),
+                                      to_subtract.vec)};
+  }
+  FJXL_INLINE SIMDVec32 Pow2() const {
+    return SIMDVec32{_mm512_sllv_epi32(_mm512_set1_epi32(1), vec)};
+  }
+};
+
+struct SIMDVec16;
+
+struct Mask16 {
+  __mmask32 mask;
+  SIMDVec16 IfThenElse(const SIMDVec16& if_true, const SIMDVec16& if_false);
+  Mask16 And(const Mask16& oth) const {
+    return Mask16{_kand_mask32(mask, oth.mask)};
+  }
+};
+
+struct SIMDVec16 {
+  __m512i vec;
+
+  static constexpr size_t kLanes = 32;
+
+  FJXL_INLINE static SIMDVec16 Load(const uint16_t* data) {
+    return SIMDVec16{_mm512_loadu_si512((__m512i*)data)};
+  }
+  FJXL_INLINE void Store(uint16_t* data) {
+    _mm512_store_si512((__m512i*)data, vec);
+  }
+  FJXL_INLINE static SIMDVec16 Val(uint16_t v) {
+    return SIMDVec16{_mm512_set1_epi16(v)};
+  }
+  FJXL_INLINE static SIMDVec16 FromTwo32(const SIMDVec32& lo,
+                                         const SIMDVec32& hi) {
+    auto tmp = _mm512_packus_epi32(lo.vec, hi.vec);
+    alignas(64) uint64_t perm[8] = {0, 2, 4, 6, 1, 3, 5, 7};
+    return SIMDVec16{
+        _mm512_permutex2var_epi64(tmp, _mm512_load_si512((__m512i*)perm), tmp)};
+  }
+
+  FJXL_INLINE SIMDVec16 ValToToken() const {
+    auto c16 = _mm512_set1_epi32(16);
+    auto c32 = _mm512_set1_epi32(32);
+    auto low16bit = _mm512_set1_epi32(0x0000FFFF);
+    auto lzhi =
+        _mm512_sub_epi32(c16, _mm512_min_epu32(c16, _mm512_lzcnt_epi32(vec)));
+    auto lzlo = _mm512_sub_epi32(
+        c32, _mm512_lzcnt_epi32(_mm512_and_si512(low16bit, vec)));
+    return SIMDVec16{_mm512_or_si512(lzlo, _mm512_slli_epi32(lzhi, 16))};
+  }
+
+  FJXL_INLINE SIMDVec16 SatSubU(const SIMDVec16& to_subtract) const {
+    return SIMDVec16{_mm512_subs_epu16(vec, to_subtract.vec)};
+  }
+  FJXL_INLINE SIMDVec16 Min(const SIMDVec16& oth) const {
+    return SIMDVec16{_mm512_min_epu16(vec, oth.vec)};
+  }
+  FJXL_INLINE Mask16 Eq(const SIMDVec16& oth) const {
+    return Mask16{_mm512_cmpeq_epi16_mask(vec, oth.vec)};
+  }
+  // Undefined whether this uses signed or unsigned semantics.
+  FJXL_INLINE Mask16 Gt(const SIMDVec16& oth) const {
+    return Mask16{_mm512_cmpgt_epi16_mask(vec, oth.vec)};
+  }
+  FJXL_INLINE SIMDVec16 Pow2() const {
+    return SIMDVec16{_mm512_sllv_epi16(_mm512_set1_epi16(1), vec)};
+  }
+  FJXL_INLINE SIMDVec16 Or(const SIMDVec16& oth) const {
+    return SIMDVec16{_mm512_or_si512(vec, oth.vec)};
+  }
+  FJXL_INLINE SIMDVec16 And(const SIMDVec16& oth) const {
+    return SIMDVec16{_mm512_and_si512(vec, oth.vec)};
+  }
+  FJXL_INLINE SIMDVec16 HAdd(const SIMDVec16& oth) const {
+    return SIMDVec16{_mm512_srai_epi16(_mm512_add_epi16(vec, oth.vec), 1)};
+  }
+  FJXL_INLINE SIMDVec16 PrepareForU8Lookup() const {
+    return SIMDVec16{_mm512_or_si512(vec, _mm512_set1_epi16(0xFF00))};
+  }
+  FJXL_INLINE SIMDVec16 U8Lookup(const uint8_t* table) const {
+    return SIMDVec16{_mm512_shuffle_epi8(
+        _mm512_broadcast_i32x4(_mm_loadu_si128((__m128i*)table)), vec)};
+  }
+  FJXL_INLINE VecPair<SIMDVec16> Interleave(const SIMDVec16& low) const {
+    auto lo = _mm512_unpacklo_epi16(low.vec, vec);
+    auto hi = _mm512_unpackhi_epi16(low.vec, vec);
+    alignas(64) uint64_t perm1[8] = {0, 1, 8, 9, 2, 3, 10, 11};
+    alignas(64) uint64_t perm2[8] = {4, 5, 12, 13, 6, 7, 14, 15};
+    return {SIMDVec16{_mm512_permutex2var_epi64(
+                lo, _mm512_load_si512((__m512i*)perm1), hi)},
+            SIMDVec16{_mm512_permutex2var_epi64(
+                lo, _mm512_load_si512((__m512i*)perm2), hi)}};
+  }
+  FJXL_INLINE VecPair<SIMDVec32> Upcast() const {
+    auto lo = _mm512_unpacklo_epi16(vec, _mm512_setzero_si512());
+    auto hi = _mm512_unpackhi_epi16(vec, _mm512_setzero_si512());
+    alignas(64) uint64_t perm1[8] = {0, 1, 8, 9, 2, 3, 10, 11};
+    alignas(64) uint64_t perm2[8] = {4, 5, 12, 13, 6, 7, 14, 15};
+    return {SIMDVec32{_mm512_permutex2var_epi64(
+                lo, _mm512_load_si512((__m512i*)perm1), hi)},
+            SIMDVec32{_mm512_permutex2var_epi64(
+                lo, _mm512_load_si512((__m512i*)perm2), hi)}};
+  }
+};
+
+SIMDVec16 Mask16::IfThenElse(const SIMDVec16& if_true,
+                             const SIMDVec16& if_false) {
+  return SIMDVec16{_mm512_mask_blend_epi16(mask, if_false.vec, if_true.vec)};
+}
+
+struct Bits64 {
+  static constexpr size_t kLanes = 8;
+
+  __m512i nbits;
+  __m512i bits;
+
+  FJXL_INLINE void Store(uint64_t* nbits_out, uint64_t* bits_out) {
+    _mm512_store_si512((__m512i*)nbits_out, nbits);
+    _mm512_store_si512((__m512i*)bits_out, bits);
+  }
+};
+
+struct Bits32 {
+  __m512i nbits;
+  __m512i bits;
+
+  static Bits32 FromRaw(SIMDVec32 nbits, SIMDVec32 bits) {
+    return Bits32{nbits.vec, bits.vec};
+  }
+
+  Bits64 Merge() const {
+    auto nbits_hi32 = _mm512_srli_epi64(nbits, 32);
+    auto nbits_lo32 = _mm512_and_si512(nbits, _mm512_set1_epi64(0xFFFFFFFF));
+    auto bits_hi32 = _mm512_srli_epi64(bits, 32);
+    auto bits_lo32 = _mm512_and_si512(bits, _mm512_set1_epi64(0xFFFFFFFF));
+
+    auto nbits64 = _mm512_add_epi64(nbits_hi32, nbits_lo32);
+    auto bits64 =
+        _mm512_or_si512(_mm512_sllv_epi64(bits_hi32, nbits_lo32), bits_lo32);
+    return Bits64{nbits64, bits64};
+  }
+
+  void Interleave(const Bits32& low) {
+    bits = _mm512_or_si512(_mm512_sllv_epi32(bits, low.nbits), low.bits);
+    nbits = _mm512_add_epi32(nbits, low.nbits);
+  }
+};
+
+struct Bits16 {
+  __m512i nbits;
+  __m512i bits;
+
+  static Bits16 FromRaw(SIMDVec16 nbits, SIMDVec16 bits) {
+    return Bits16{nbits.vec, bits.vec};
+  }
+
+  Bits32 Merge() const {
+    auto nbits_hi16 = _mm512_srli_epi32(nbits, 16);
+    auto nbits_lo16 = _mm512_and_si512(nbits, _mm512_set1_epi32(0xFFFF));
+    auto bits_hi16 = _mm512_srli_epi32(bits, 16);
+    auto bits_lo16 = _mm512_and_si512(bits, _mm512_set1_epi32(0xFFFF));
+
+    auto nbits32 = _mm512_add_epi32(nbits_hi16, nbits_lo16);
+    auto bits32 =
+        _mm512_or_si512(_mm512_sllv_epi32(bits_hi16, nbits_lo16), bits_lo16);
+    return Bits32{nbits32, bits32};
+  }
+
+  void Interleave(const Bits16& low) {
+    bits = _mm512_or_si512(_mm512_sllv_epi16(bits, low.nbits), low.bits);
+    nbits = _mm512_add_epi16(nbits, low.nbits);
+  }
+};
+
+#endif
+
 #ifdef FJXL_AVX2
 #define FJXL_GENERIC_SIMD
 #include <immintrin.h>
@@ -888,22 +1091,6 @@ struct SIMDVec16 {
   }
 };
 
-/*
-__attribute__((constructor)) void f() {
-  uint32_t v1[8] = {1 << 8,  1 << 9,  1 << 10, 1 << 11,
-                    1 << 13, 1 << 14, 1 << 16, 1 << 18};
-
-  uint32_t res[8];
-  auto x = SIMDVec32::Load(v1).ValToToken();
-  x.Store(res);
-  for (size_t i = 0; i < 8; i++) {
-    fprintf(stderr, "%u ", res[i]);
-  }
-  fprintf(stderr, "\n");
-  exit(1);
-}
-*/
-
 SIMDVec16 Mask16::IfThenElse(const SIMDVec16& if_true,
                              const SIMDVec16& if_false) {
   return SIMDVec16{_mm256_blendv_epi8(if_false.vec, if_true.vec, mask)};
@@ -986,7 +1173,6 @@ struct Bits16 {
 
 #ifdef FJXL_NEON
 #define FJXL_GENERIC_SIMD
-#include <arm_neon.h>
 struct SIMDVec32 {
   uint32x4_t vec;
 
@@ -1602,7 +1788,7 @@ void PrepareDCGlobalCommon(bool is_single_group, size_t width, size_t height,
     output->Write(4, 0b1110);  // lz77 min length 8
   } else {
     assert(kChunkSize == 32);
-    output->Write(10, 0b0000111111);  // lz77 min length 32
+    output->Write(10, 0b0001011111);  // lz77 min length 32
   }
   // hybrid uint config for lz77
   size_t hu_bits_sb = kChunkSize == 8 ? 2 : 3;
@@ -1619,9 +1805,15 @@ void PrepareDCGlobalCommon(bool is_single_group, size_t width, size_t height,
   // Distance alphabet size:
   output->Write(5, 0b00001);  // 2: just need 1 for RLE (i.e. distance 1)
   // Symbol + LZ77 alphabet size:
-  output->Write(1, 1);    // > 1
-  output->Write(4, 8);    // <= 512
-  output->Write(8, 255);  // == 512
+  if (kChunkSize < 32) {
+    output->Write(1, 1);    // > 1
+    output->Write(4, 8);    // <= 512
+    output->Write(8, 255);  // == 512
+  } else {
+    output->Write(1, 1);    // > 1
+    output->Write(4, 9);    // <= 1024
+    output->Write(9, 511);  // == 1024
+  }
 
   // Distance histogram:
   output->Write(2, 1);  // simple prefix code
@@ -1726,7 +1918,7 @@ struct ChannelRowProcessor {
   void ProcessChunk(const pixel_t* row, const pixel_t* row_left,
                     const pixel_t* row_top, const pixel_t* row_topleft) {
     bool continue_rle = true;
-    alignas(32) upixel_t residuals[kChunkSize] = {};
+    alignas(64) upixel_t residuals[kChunkSize] = {};
     for (size_t ix = 0; ix < kChunkSize; ix++) {
       pixel_t px = row[ix];
       pixel_t left = row_left[ix];
@@ -2271,7 +2463,7 @@ JxlFastLosslessFrameState* LLEnc(const unsigned char* rgba, size_t width,
     lz77_counts[i] = (lz77_counts[i] << 8) + base_lz77_counts[i];
   }
 
-  alignas(32) PrefixCode hcode(bitdepth, raw_counts, lz77_counts);
+  alignas(64) PrefixCode hcode(bitdepth, raw_counts, lz77_counts);
 
   bool onegroup = num_groups_x == 1 && num_groups_y == 1;
 
@@ -2373,6 +2565,13 @@ JxlFastLosslessFrameState* JxlFastLosslessEncodeImpl(
 
 #endif  // FJXL_SELF_INCLUDE
 
+// The gains from AVX512 seem marginal (at least on a i7-11850H) and come at the
+// cost of a significant increase in compilation time. Disable AVX512 by
+// default.
+#ifndef FJXL_ENABLE_AVX512
+#define FJXL_ENABLE_AVX512 0
+#endif
+
 #ifndef FJXL_SELF_INCLUDE
 
 #define FJXL_SELF_INCLUDE
@@ -2381,6 +2580,7 @@ JxlFastLosslessFrameState* JxlFastLosslessEncodeImpl(
 
 #define FJXL_NEON
 #include "lib/jxl/enc_fast_lossless.cc"
+#undef FJXL_NEON
 
 #elif defined(__x86_64__) || defined(_M_X64)
 
@@ -2397,6 +2597,7 @@ JxlFastLosslessFrameState* JxlFastLosslessEncodeImpl(
 namespace AVX2 {
 #define FJXL_AVX2
 #include "lib/jxl/enc_fast_lossless.cc"
+#undef FJXL_AVX2
 }  // namespace AVX2
 
 #ifdef __clang__
@@ -2404,6 +2605,29 @@ namespace AVX2 {
 #elif defined(__GNUC__)
 #pragma GCC pop_options
 #endif
+
+#if FJXL_ENABLE_AVX512
+#ifdef __clang__
+#pragma clang attribute push(                                      \
+    __attribute__((target("avx512cd,avx512bw,avx512vl,avx512f"))), \
+    apply_to = function)
+#elif defined(__GNUC__)
+#pragma GCC push_options
+#pragma GCC target "avx512cd,avx512bw,avx512vl,avx512f"
+#endif
+
+namespace AVX512 {
+#define FJXL_AVX512
+#include "lib/jxl/enc_fast_lossless.cc"
+#undef FJXL_AVX512
+}  // namespace AVX512
+
+#ifdef __clang__
+#pragma clang attribute pop
+#elif defined(__GNUC__)
+#pragma GCC pop_options
+#endif
+#endif  // FJXL_ENABLE_AVX512
 
 #else
 #include "lib/jxl/enc_fast_lossless.cc"
@@ -2449,6 +2673,15 @@ JxlFastLosslessFrameState* JxlFastLosslessPrepareFrame(
 
   // TODO(veluca): MSVC dynamic dispatch.
 #if (!defined(_MSC_VER) || defined(__clang__)) && defined(__x86_64__)
+#if FJXL_ENABLE_AVX512
+  if (__builtin_cpu_supports("avx512cd") &&
+      __builtin_cpu_supports("avx512bw") && __builtin_cpu_supports("avx512f") &&
+      __builtin_cpu_supports("avx512vl")) {
+    return AVX512::JxlFastLosslessEncodeImpl(rgba, width, row_stride, height,
+                                             nb_chans, bitdepth, big_endian,
+                                             effort, runner_opaque, runner);
+  }
+#endif
   if (__builtin_cpu_supports("avx2")) {
     return AVX2::JxlFastLosslessEncodeImpl(rgba, width, row_stride, height,
                                            nb_chans, bitdepth, big_endian,
