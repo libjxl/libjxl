@@ -34,6 +34,7 @@
     'jxl_decoder.worker.js': '$jxl_decoder.worker.js$',
   };
 
+  // Enable SharedArrayBuffer.
   const setCopHeaders = (headers) => {
     headers.set('Cross-Origin-Embedder-Policy', 'require-corp');
     headers.set('Cross-Origin-Opener-Policy', 'same-origin');
@@ -42,23 +43,24 @@
   // Inflight object: {clientId, uid, timestamp, controller}
   const inflight = [];
 
-  let leak = null;
-
+  // Generate (very likely) unique string.
   const makeUid = () => {
     return Math.random().toString(36).substring(2) +
         Math.random().toString(36).substring(2);
   };
 
+  // Make list (non-recursively) of transferable entities.
   const gatherTransferrables = (...args) => {
     const result = [];
     for (let i = 0; i < args.length; ++i) {
-      if (args[i]) {
+      if (args[i] && args[i].buffer) {
         result.push(args[i].buffer);
       }
     }
     return result;
   };
 
+  // Serve items that are embedded in this service worker.
   const maybeProcessEmbeddedResources = (event) => {
     const url = event.request.url;
     // Shortcut for baked-in scripts.
@@ -79,6 +81,7 @@
     return false;
   };
 
+  // Decode JXL image response and serve it as a PNG image.
   const wrapImageResponse = async (clientId, originalResponse) => {
     // TODO: cache?
     const client = await clients.get(clientId);
@@ -121,10 +124,13 @@
     reader.read(new SharedArrayBuffer(65536)).then(onRead);
 
     let modifiedResponseHeaders = new Headers(originalResponse.headers);
+    modifiedResponseHeaders.delete('Content-Length');
     modifiedResponseHeaders.set('Content-Type', 'image/png');
+    modifiedResponseHeaders.set('Server', 'ServiceWorker');
     return new Response(outputStream, {headers: modifiedResponseHeaders});
   };
 
+  // Check if response needs decoding; if so - do it.
   const wrapImageRequest = async (clientId, request) => {
     let modifiedRequestHeaders = new Headers(request.headers);
     modifiedRequestHeaders.append('Accept', 'image/jxl');
@@ -140,6 +146,8 @@
     return originalResponse;
   };
 
+  // Process fetch request; either bypass, or serve embedded resource,
+  // or upgrade.
   const onFetch = async (event) => {
     const clientId = event.clientId;
     const request = event.request;
@@ -165,6 +173,7 @@
     }
   };
 
+  // Serve decoded bytes.
   const onMessage = (event) => {
     const data = event.data;
     const uid = data.uid;
@@ -183,12 +192,14 @@
     inflightEntry.outputStreamController.close();
   };
 
+  // This method is "main" for service worker.
   const serviceWorkerMain = () => {
     // https://v8.dev/blog/wasm-code-caching
     // > Every web site must perform at least one full compilation of a
     // > WebAssembly module — use workers to hide that from your users.
     // TODO(eustas): not 100% reliable, investigate why
-    leak = WebAssembly.compileStreaming(fetch('jxl_decoder.wasm'));
+    self['JxlDecoderLeak'] =
+        WebAssembly.compileStreaming(fetch('jxl_decoder.wasm'));
 
     // ServiceWorker lifecycle.
     self.addEventListener('install', () => {
@@ -250,10 +261,15 @@
             onServiceWorkerRegistrationFailure);
   };
 
+  const pageMain = () => {
+    maybeRegisterServiceWorker();
+    prepareClient();
+  };
+
+  // Detect environment and run corresponding "main" method.
   if (typeof window === 'undefined') {
     serviceWorkerMain();
   } else {
-    maybeRegisterServiceWorker();
-    prepareClient();
+    pageMain();
   }
 })();
