@@ -14,7 +14,7 @@ EMBED_BIN = ['jxl_decoder.js', 'jxl_decoder.worker.js']
 EMBED_SRC = ['client_worker.js']
 TEMPLATES = ['service_worker.js']
 COPY_BIN = ['jxl_decoder.wasm'] + EMBED_BIN
-COPY_SRC = ['index.html', 'netlify.toml', 'netlify'] + EMBED_SRC
+COPY_SRC = ['one_line_demo.html', 'one_line_demo_with_console.html', 'manual_decode_demo.html', 'netlify.toml', 'netlify'] + EMBED_SRC
 
 COMPRESS = COPY_BIN + COPY_SRC + TEMPLATES
 COMPRESSIBLE_EXT = ['.html', '.js', '.wasm']

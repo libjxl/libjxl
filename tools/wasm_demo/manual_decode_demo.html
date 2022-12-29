@@ -1,7 +1,6 @@
 <html>
 <head>
   <link rel="icon" type="image/x-icon" href="favicon.ico">
-  <script src="service_worker.js"></script>
   <style>
 #log p {
   margin: 0;
@@ -11,9 +10,12 @@
 <body>
 <div id="log" style="padding:2px; border: solid 1px #000; background-color: #CCC; margin:2px; height: 8em; font-family: monospace; overflow-y: auto; font-size: 8px;"></div>
 <script type="text/javascript">
-let jxlModule;
-let hdrCanvas;
+// WASM module.
+let jxlModule = null;
+// Flag; if true, then HDR color space / 16 bit output is supported.
+let hdrCanvas = false;
 
+// Add message to "console".
 let addMessage = (text, color) => {
   let log = document.getElementById('log');
   let message = document.createElement('p');
@@ -23,12 +25,14 @@ let addMessage = (text, color) => {
   log.scrollTop = log.scrollHeight;
 }
 
+// Callback from WASM module when it becomes available.
 let onLoadJxlModule = (module) => {
   jxlModule = module;
   addMessage('WASM module loaded', 'black');
   onJxlModuleReady();
 };
 
+// Check if multi-threading is supported (i.e. SharedArrayBuffer is allowed).
 let probeMutlithreading = () => {
   try {
     new SharedArrayBuffer();
@@ -39,6 +43,7 @@ let probeMutlithreading = () => {
   }
 };
 
+// Check if HDR features are enabled.
 let probeHdr = () => {
   addMessage('Probing HDR features', 'black');
   try {
@@ -57,12 +62,15 @@ let probeHdr = () => {
   }
 };
 
+// "main" method executed after page is loaded; all scripts are "synchronous" elements,
+// so it is guaranted that script elements are loaded and executed.
 let onDomContentLoaded = () => {
   if (!probeMutlithreading()) return;
   hdrCanvas = probeHdr();
-  //JxlDecoderModule().then(onLoadJxlModule);
+  JxlDecoderModule().then(onLoadJxlModule);
 };
 
+// Pass next chunk to decoder and interprets result.
 let processInput = (img, chunkLen) => {
   let response = {
     wantFlush: false,
@@ -104,6 +112,7 @@ let processInput = (img, chunkLen) => {
   return response;
 }
 
+// Decode chunk and present results (dump to canvas).
 let processChunk = (img, chunkLen) => {
   let result = processInput(img, chunkLen);
   if (result.error) return;
@@ -154,8 +163,10 @@ let processChunk = (img, chunkLen) => {
 
 const BUF_LEN = 150 * 1024;
 
+// Image data cache for benchmarking.
 let fullImage = new Uint8Array(0);
 
+// Callback for fetch data.
 let onChunk = (img, chunk) => {
   if (chunk.done) {
     addMessage('Read finished | total processing: ' + img.totalProcessing.toFixed(1) + 'ms | total flushing ' + img.totalFlushing.toFixed(1) + 'ms', 'black');
@@ -199,10 +210,12 @@ let onChunk = (img, chunk) => {
   setTimeout(img.proceed, 0);
 };
 
+// Read next chunk; NB: used to break promise chain.
 let proceed = (img) => {
   img.reader.read().then(img.onChunk, img.onReadError);
 };
 
+// Release (in-module) memory resources.
 let cleanup = (img) => {
   if (img.decoder) {
     jxlModule._jxlDestroyInstance(img.decoder);
@@ -214,12 +227,14 @@ let cleanup = (img) => {
   }
 };
 
+// Report error and cleanup.
 let onReadError = (img, error) => {
   img.broken = true;
   cleanup(img);
   addMessage('Read failed: ' + error, 'red');
 };
 
+// On successful fetch start.
 let onResponse = (img, response) => {
   if (!response.ok) {
     addMessage('Fetch failed: ' + response.status + ' (' + response.statusText + ')');
@@ -232,6 +247,7 @@ let onResponse = (img, response) => {
   img.proceed();
 };
 
+// On image decoding completion.
 let onComplete = (img) => {
   if (!img.runBenchmark) return;
 
@@ -257,6 +273,7 @@ let onComplete = (img) => {
   jxlModule._free(buffer);
 };
 
+// Fill cookie object template.
 let makeImg = () => {
   return {
     name: '',
@@ -281,6 +298,7 @@ let makeImg = () => {
   };
 }
 
+// Parse URL query and run image decoding / benchmarking.
 let onJxlModuleReady = () => {
   let params = (new URL(document.location)).searchParams;
   const images = ['image00.jxl', 'image01.jxl'];
@@ -317,10 +335,6 @@ let onJxlModuleReady = () => {
 document.addEventListener('DOMContentLoaded', onDomContentLoaded);
 </script>
 
-<img src="w.jpg?tmp=1" style="width:100%"/>
-<img src="image00.jpg?tmp=2" style="width:100%"/>
-<img src="image01.png?tmp=3" style="width:100%"/>
-
-<!--script type="text/javascript" src="jxl_decoder.js"></script-->
+<script type="text/javascript" src="jxl_decoder.js"></script>
 </body>
 </html>
