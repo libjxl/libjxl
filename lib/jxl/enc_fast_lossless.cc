@@ -707,6 +707,13 @@ struct VecPair {
 
 #ifdef FJXL_AVX512
 #define FJXL_GENERIC_SIMD
+struct SIMDVec32;
+struct Mask32 {
+  __mmask16 mask;
+  SIMDVec32 IfThenElse(const SIMDVec32& if_true, const SIMDVec32& if_false);
+  bool AllTrue() const { return _cvtmask16_u32(mask) == 0xFFFF; }
+};
+
 struct SIMDVec32 {
   __m512i vec;
 
@@ -729,6 +736,21 @@ struct SIMDVec32 {
     return SIMDVec32{_mm512_sub_epi32(_mm512_max_epu32(vec, to_subtract.vec),
                                       to_subtract.vec)};
   }
+  FJXL_INLINE SIMDVec32 Sub(const SIMDVec32& to_subtract) const {
+    return SIMDVec32{_mm512_sub_epi32(vec, to_subtract.vec)};
+  }
+  FJXL_INLINE SIMDVec32 Add(const SIMDVec32& oth) const {
+    return SIMDVec32{_mm512_add_epi32(vec, oth.vec)};
+  }
+  FJXL_INLINE SIMDVec32 Xor(const SIMDVec32& oth) const {
+    return SIMDVec32{_mm512_xor_epi32(vec, oth.vec)};
+  }
+  FJXL_INLINE Mask32 Eq(const SIMDVec32& oth) const {
+    return Mask32{_mm512_cmpeq_epi32_mask(vec, oth.vec)};
+  }
+  FJXL_INLINE Mask32 Gt(const SIMDVec32& oth) const {
+    return Mask32{_mm512_cmpgt_epi32_mask(vec, oth.vec)};
+  }
   FJXL_INLINE SIMDVec32 Pow2() const {
     return SIMDVec32{_mm512_sllv_epi32(_mm512_set1_epi32(1), vec)};
   }
@@ -742,6 +764,7 @@ struct Mask16 {
   Mask16 And(const Mask16& oth) const {
     return Mask16{_kand_mask32(mask, oth.mask)};
   }
+  bool AllTrue() const { return _cvtmask32_u32(mask) == 0xFFFFFFFF; }
 };
 
 struct SIMDVec16 {
@@ -780,13 +803,18 @@ struct SIMDVec16 {
   FJXL_INLINE SIMDVec16 SatSubU(const SIMDVec16& to_subtract) const {
     return SIMDVec16{_mm512_subs_epu16(vec, to_subtract.vec)};
   }
+  FJXL_INLINE SIMDVec16 Sub(const SIMDVec16& to_subtract) const {
+    return SIMDVec16{_mm512_sub_epi16(vec, to_subtract.vec)};
+  }
+  FJXL_INLINE SIMDVec16 Add(const SIMDVec16& oth) const {
+    return SIMDVec16{_mm512_add_epi16(vec, oth.vec)};
+  }
   FJXL_INLINE SIMDVec16 Min(const SIMDVec16& oth) const {
     return SIMDVec16{_mm512_min_epu16(vec, oth.vec)};
   }
   FJXL_INLINE Mask16 Eq(const SIMDVec16& oth) const {
     return Mask16{_mm512_cmpeq_epi16_mask(vec, oth.vec)};
   }
-  // Undefined whether this uses signed or unsigned semantics.
   FJXL_INLINE Mask16 Gt(const SIMDVec16& oth) const {
     return Mask16{_mm512_cmpgt_epi16_mask(vec, oth.vec)};
   }
@@ -795,6 +823,9 @@ struct SIMDVec16 {
   }
   FJXL_INLINE SIMDVec16 Or(const SIMDVec16& oth) const {
     return SIMDVec16{_mm512_or_si512(vec, oth.vec)};
+  }
+  FJXL_INLINE SIMDVec16 Xor(const SIMDVec16& oth) const {
+    return SIMDVec16{_mm512_xor_si512(vec, oth.vec)};
   }
   FJXL_INLINE SIMDVec16 And(const SIMDVec16& oth) const {
     return SIMDVec16{_mm512_and_si512(vec, oth.vec)};
@@ -834,6 +865,11 @@ struct SIMDVec16 {
 SIMDVec16 Mask16::IfThenElse(const SIMDVec16& if_true,
                              const SIMDVec16& if_false) {
   return SIMDVec16{_mm512_mask_blend_epi16(mask, if_false.vec, if_true.vec)};
+}
+
+SIMDVec32 Mask32::IfThenElse(const SIMDVec32& if_true,
+                             const SIMDVec32& if_false) {
+  return SIMDVec32{_mm512_mask_blend_epi32(mask, if_false.vec, if_true.vec)};
 }
 
 struct Bits64 {
@@ -904,7 +940,17 @@ struct Bits16 {
 
 #ifdef FJXL_AVX2
 #define FJXL_GENERIC_SIMD
-#include <immintrin.h>
+
+struct SIMDVec32;
+
+struct Mask32 {
+  __m256i mask;
+  SIMDVec32 IfThenElse(const SIMDVec32& if_true, const SIMDVec32& if_false);
+  bool AllTrue() const {
+    return (unsigned)_mm256_movemask_epi8(mask) == 0xFFFFFFFF;
+  }
+};
+
 struct SIMDVec32 {
   __m256i vec;
 
@@ -965,8 +1011,23 @@ struct SIMDVec32 {
     return SIMDVec32{_mm256_sub_epi32(_mm256_max_epu32(vec, to_subtract.vec),
                                       to_subtract.vec)};
   }
+  FJXL_INLINE SIMDVec32 Sub(const SIMDVec32& to_subtract) const {
+    return SIMDVec32{_mm256_sub_epi32(vec, to_subtract.vec)};
+  }
+  FJXL_INLINE SIMDVec32 Add(const SIMDVec32& oth) const {
+    return SIMDVec32{_mm256_add_epi32(vec, oth.vec)};
+  }
+  FJXL_INLINE SIMDVec32 Xor(const SIMDVec32& oth) const {
+    return SIMDVec32{_mm256_xor_si256(vec, oth.vec)};
+  }
   FJXL_INLINE SIMDVec32 Pow2() const {
     return SIMDVec32{_mm256_sllv_epi32(_mm256_set1_epi32(1), vec)};
+  }
+  FJXL_INLINE Mask32 Eq(const SIMDVec32& oth) const {
+    return Mask32{_mm256_cmpeq_epi32(vec, oth.vec)};
+  }
+  FJXL_INLINE Mask32 Gt(const SIMDVec32& oth) const {
+    return Mask32{_mm256_cmpgt_epi32(vec, oth.vec)};
   }
 };
 
@@ -977,6 +1038,9 @@ struct Mask16 {
   SIMDVec16 IfThenElse(const SIMDVec16& if_true, const SIMDVec16& if_false);
   Mask16 And(const Mask16& oth) const {
     return Mask16{_mm256_and_si256(mask, oth.mask)};
+  }
+  bool AllTrue() const {
+    return (unsigned)_mm256_movemask_epi8(mask) == 0xFFFFFFFF;
   }
 };
 
@@ -1035,13 +1099,18 @@ struct SIMDVec16 {
   FJXL_INLINE SIMDVec16 SatSubU(const SIMDVec16& to_subtract) const {
     return SIMDVec16{_mm256_subs_epu16(vec, to_subtract.vec)};
   }
+  FJXL_INLINE SIMDVec16 Sub(const SIMDVec16& to_subtract) const {
+    return SIMDVec16{_mm256_sub_epi16(vec, to_subtract.vec)};
+  }
+  FJXL_INLINE SIMDVec16 Add(const SIMDVec16& oth) const {
+    return SIMDVec16{_mm256_add_epi16(vec, oth.vec)};
+  }
   FJXL_INLINE SIMDVec16 Min(const SIMDVec16& oth) const {
     return SIMDVec16{_mm256_min_epu16(vec, oth.vec)};
   }
   FJXL_INLINE Mask16 Eq(const SIMDVec16& oth) const {
     return Mask16{_mm256_cmpeq_epi16(vec, oth.vec)};
   }
-  // Undefined whether this uses signed or unsigned semantics.
   FJXL_INLINE Mask16 Gt(const SIMDVec16& oth) const {
     return Mask16{_mm256_cmpgt_epi16(vec, oth.vec)};
   }
@@ -1063,6 +1132,9 @@ struct SIMDVec16 {
   }
   FJXL_INLINE SIMDVec16 Or(const SIMDVec16& oth) const {
     return SIMDVec16{_mm256_or_si256(vec, oth.vec)};
+  }
+  FJXL_INLINE SIMDVec16 Xor(const SIMDVec16& oth) const {
+    return SIMDVec16{_mm256_xor_si256(vec, oth.vec)};
   }
   FJXL_INLINE SIMDVec16 And(const SIMDVec16& oth) const {
     return SIMDVec16{_mm256_and_si256(vec, oth.vec)};
@@ -1094,6 +1166,11 @@ struct SIMDVec16 {
 SIMDVec16 Mask16::IfThenElse(const SIMDVec16& if_true,
                              const SIMDVec16& if_false) {
   return SIMDVec16{_mm256_blendv_epi8(if_false.vec, if_true.vec, mask)};
+}
+
+SIMDVec32 Mask32::IfThenElse(const SIMDVec32& if_true,
+                             const SIMDVec32& if_false) {
+  return SIMDVec32{_mm256_blendv_epi8(if_false.vec, if_true.vec, mask)};
 }
 
 struct Bits64 {
@@ -1173,6 +1250,20 @@ struct Bits16 {
 
 #ifdef FJXL_NEON
 #define FJXL_GENERIC_SIMD
+
+struct SIMDVec32;
+
+struct Mask32 {
+  uint32x4_t mask;
+  SIMDVec32 IfThenElse(const SIMDVec32& if_true, const SIMDVec32& if_false);
+  Mask32 And(const Mask32& oth) const {
+    return Mask32{vandq_u32(mask, oth.mask)};
+  }
+  bool AllTrue() const {
+    return ~vreinterpretq_u64_u32(vpminq_u32(mask, mask))[0] == 0;
+  }
+};
+
 struct SIMDVec32 {
   uint32x4_t vec;
 
@@ -1191,8 +1282,24 @@ struct SIMDVec32 {
   FJXL_INLINE SIMDVec32 SatSubU(const SIMDVec32& to_subtract) const {
     return SIMDVec32{vqsubq_u32(vec, to_subtract.vec)};
   }
+  FJXL_INLINE SIMDVec32 Sub(const SIMDVec32& to_subtract) const {
+    return SIMDVec32{vsubq_u32(vec, to_subtract.vec)};
+  }
+  FJXL_INLINE SIMDVec32 Add(const SIMDVec32& oth) const {
+    return SIMDVec32{vaddq_u32(vec, oth.vec)};
+  }
+  FJXL_INLINE SIMDVec32 Xor(const SIMDVec32& oth) const {
+    return SIMDVec32{veorq_u32(vec, oth.vec)};
+  }
   FJXL_INLINE SIMDVec32 Pow2() const {
     return SIMDVec32{vshlq_u32(vdupq_n_u32(1), vreinterpretq_s32_u32(vec))};
+  }
+  FJXL_INLINE Mask32 Eq(const SIMDVec32& oth) const {
+    return Mask32{vceqq_u32(vec, oth.vec)};
+  }
+  FJXL_INLINE Mask32 Gt(const SIMDVec32& oth) const {
+    return Mask32{
+        vcgtq_s32(vreinterpretq_s32_u32(vec), vreinterpretq_s32_u32(oth.vec))};
   }
 };
 
@@ -1203,6 +1310,9 @@ struct Mask16 {
   SIMDVec16 IfThenElse(const SIMDVec16& if_true, const SIMDVec16& if_false);
   Mask16 And(const Mask16& oth) const {
     return Mask16{vandq_u16(mask, oth.mask)};
+  }
+  bool AllTrue() const {
+    return ~vreinterpretq_u64_u16(vpminq_u16(mask, mask))[0] == 0;
   }
 };
 
@@ -1229,6 +1339,12 @@ struct SIMDVec16 {
   FJXL_INLINE SIMDVec16 SatSubU(const SIMDVec16& to_subtract) const {
     return SIMDVec16{vqsubq_u16(vec, to_subtract.vec)};
   }
+  FJXL_INLINE SIMDVec16 Sub(const SIMDVec16& to_subtract) const {
+    return SIMDVec16{vsubq_u16(vec, to_subtract.vec)};
+  }
+  FJXL_INLINE SIMDVec16 Add(const SIMDVec16& oth) const {
+    return SIMDVec16{vaddq_u16(vec, oth.vec)};
+  }
   FJXL_INLINE SIMDVec16 Min(const SIMDVec16& oth) const {
     return SIMDVec16{vminq_u16(vec, oth.vec)};
   }
@@ -1236,13 +1352,17 @@ struct SIMDVec16 {
     return Mask16{vceqq_u16(vec, oth.vec)};
   }
   FJXL_INLINE Mask16 Gt(const SIMDVec16& oth) const {
-    return Mask16{vcgtq_u16(vec, oth.vec)};
+    return Mask16{
+        vcgtq_s16(vreinterpretq_s16_u16(vec), vreinterpretq_s16_u16(oth.vec))};
   }
   FJXL_INLINE SIMDVec16 Pow2() const {
     return SIMDVec16{vshlq_u16(vdupq_n_u16(1), vreinterpretq_s16_u16(vec))};
   }
   FJXL_INLINE SIMDVec16 Or(const SIMDVec16& oth) const {
     return SIMDVec16{vorrq_u16(vec, oth.vec)};
+  }
+  FJXL_INLINE SIMDVec16 Xor(const SIMDVec16& oth) const {
+    return SIMDVec16{veorq_u16(vec, oth.vec)};
   }
   FJXL_INLINE SIMDVec16 And(const SIMDVec16& oth) const {
     return SIMDVec16{vandq_u16(vec, oth.vec)};
@@ -1272,6 +1392,11 @@ struct SIMDVec16 {
 SIMDVec16 Mask16::IfThenElse(const SIMDVec16& if_true,
                              const SIMDVec16& if_false) {
   return SIMDVec16{vbslq_u16(mask, if_true.vec, if_false.vec)};
+}
+
+SIMDVec32 Mask32::IfThenElse(const SIMDVec32& if_true,
+                             const SIMDVec32& if_false) {
+  return SIMDVec32{vbslq_u32(mask, if_true.vec, if_false.vec)};
 }
 
 struct Bits64 {
@@ -1480,6 +1605,74 @@ FJXL_INLINE void StoreSIMDAbove14(const uint32_t* nbits_tok,
   bits_hi.Interleave(huff_hi);
   bits_hi.Merge().Store(nbits_out + Bits64::kLanes, bits_out + Bits64::kLanes);
 }
+
+namespace detail {
+template <typename T>
+struct IntegerTypes;
+
+template <>
+struct IntegerTypes<SIMDVec16> {
+  using signed_ = int16_t;
+  using unsigned_ = uint16_t;
+};
+
+template <>
+struct IntegerTypes<SIMDVec32> {
+  using signed_ = int32_t;
+  using unsigned_ = uint32_t;
+};
+
+template <typename T>
+struct SIMDType;
+
+template <>
+struct SIMDType<int16_t> {
+  using type = SIMDVec16;
+};
+
+template <>
+struct SIMDType<int32_t> {
+  using type = SIMDVec32;
+};
+
+}  // namespace detail
+
+template <typename T>
+using signed_t = typename detail::IntegerTypes<T>::signed_;
+
+template <typename T>
+using unsigned_t = typename detail::IntegerTypes<T>::unsigned_;
+
+template <typename T>
+using simd_t = typename detail::SIMDType<T>::type;
+
+// This function will process exactly one vector worth of pixels.
+
+template <typename T>
+bool PredictPixels(const signed_t<T>* pixels, const signed_t<T>* pixels_left,
+                   const signed_t<T>* pixels_top,
+                   const signed_t<T>* pixels_topleft, unsigned_t<T>* residuals,
+                   signed_t<T> last) {
+  T px = T::Load((unsigned_t<T>*)pixels);
+  T left = T::Load((unsigned_t<T>*)pixels_left);
+  T top = T::Load((unsigned_t<T>*)pixels_top);
+  T topleft = T::Load((unsigned_t<T>*)pixels_topleft);
+  T ac = left.Sub(topleft);
+  T ab = left.Sub(top);
+  T bc = top.Sub(topleft);
+  T grad = ac.Add(top);
+  T d = ab.Xor(bc);
+  T zero = T::Val(0);
+  T clamp = zero.Gt(d).IfThenElse(top, left);
+  T s = ac.Xor(bc);
+  T pred = zero.Gt(s).IfThenElse(grad, clamp);
+  T res = px.Sub(pred);
+  T res_times_2 = res.Add(res);
+  res = zero.Gt(res).IfThenElse(T::Val(-1).Sub(res_times_2), res_times_2);
+  res.Store(residuals);
+  return res.Eq(T::Val(last)).AllTrue();
+}
+
 #endif
 
 void EncodeHybridUint000(uint32_t value, uint32_t* token, uint32_t* nbits,
@@ -1542,13 +1735,13 @@ struct UpTo8Bits {
   static void EncodeChunk(upixel_t* residuals, const PrefixCode& code,
                           BitWriter& output) {
 #ifdef FJXL_GENERIC_SIMD
-    uint64_t nbits64[kChunkSize / 4];
-    uint64_t bits64[kChunkSize / 4];
-    uint16_t bits[SIMDVec16::kLanes];
-    uint16_t nbits[SIMDVec16::kLanes];
-    uint16_t bits_huff[SIMDVec16::kLanes];
-    uint16_t nbits_huff[SIMDVec16::kLanes];
-    uint16_t token[SIMDVec16::kLanes];
+    alignas(64) uint64_t nbits64[kChunkSize / 4];
+    alignas(64) uint64_t bits64[kChunkSize / 4];
+    alignas(64) uint16_t bits[SIMDVec16::kLanes];
+    alignas(64) uint16_t nbits[SIMDVec16::kLanes];
+    alignas(64) uint16_t bits_huff[SIMDVec16::kLanes];
+    alignas(64) uint16_t nbits_huff[SIMDVec16::kLanes];
+    alignas(64) uint16_t token[SIMDVec16::kLanes];
     for (size_t i = 0; i < kChunkSize; i += SIMDVec16::kLanes) {
       TokenizeSIMD(residuals + i, token, nbits, bits);
       HuffmanSIMDUpTo13(token, code, nbits_huff, bits_huff);
@@ -1605,13 +1798,13 @@ struct From9To13Bits {
   static void EncodeChunk(upixel_t* residuals, const PrefixCode& code,
                           BitWriter& output) {
 #ifdef FJXL_GENERIC_SIMD
-    uint64_t nbits64[kChunkSize / 2];
-    uint64_t bits64[kChunkSize / 2];
-    uint16_t bits[SIMDVec16::kLanes];
-    uint16_t nbits[SIMDVec16::kLanes];
-    uint16_t bits_huff[SIMDVec16::kLanes];
-    uint16_t nbits_huff[SIMDVec16::kLanes];
-    uint16_t token[SIMDVec16::kLanes];
+    alignas(64) uint64_t nbits64[kChunkSize / 2];
+    alignas(64) uint64_t bits64[kChunkSize / 2];
+    alignas(64) uint16_t bits[SIMDVec16::kLanes];
+    alignas(64) uint16_t nbits[SIMDVec16::kLanes];
+    alignas(64) uint16_t bits_huff[SIMDVec16::kLanes];
+    alignas(64) uint16_t nbits_huff[SIMDVec16::kLanes];
+    alignas(64) uint16_t token[SIMDVec16::kLanes];
     for (size_t i = 0; i < kChunkSize; i += SIMDVec16::kLanes) {
       TokenizeSIMD(residuals + i, token, nbits, bits);
       HuffmanSIMDUpTo13(token, code, nbits_huff, bits_huff);
@@ -1672,13 +1865,13 @@ struct Exactly14Bits {
   static void EncodeChunk(upixel_t* residuals, const PrefixCode& code,
                           BitWriter& output) {
 #ifdef FJXL_GENERIC_SIMD
-    uint64_t nbits64[kChunkSize / 2];
-    uint64_t bits64[kChunkSize / 2];
-    uint16_t bits[SIMDVec16::kLanes];
-    uint16_t nbits[SIMDVec16::kLanes];
-    uint16_t bits_huff[SIMDVec16::kLanes];
-    uint16_t nbits_huff[SIMDVec16::kLanes];
-    uint16_t token[SIMDVec16::kLanes];
+    alignas(64) uint64_t nbits64[kChunkSize / 2];
+    alignas(64) uint64_t bits64[kChunkSize / 2];
+    alignas(64) uint16_t bits[SIMDVec16::kLanes];
+    alignas(64) uint16_t nbits[SIMDVec16::kLanes];
+    alignas(64) uint16_t bits_huff[SIMDVec16::kLanes];
+    alignas(64) uint16_t nbits_huff[SIMDVec16::kLanes];
+    alignas(64) uint16_t token[SIMDVec16::kLanes];
     for (size_t i = 0; i < kChunkSize; i += SIMDVec16::kLanes) {
       TokenizeSIMD(residuals + i, token, nbits, bits);
       HuffmanSIMD14(token, code, nbits_huff, bits_huff);
@@ -1737,13 +1930,13 @@ struct MoreThan14Bits {
   static void EncodeChunk(upixel_t* residuals, const PrefixCode& code,
                           BitWriter& output) {
 #ifdef FJXL_GENERIC_SIMD
-    uint64_t nbits64[kChunkSize / 2];
-    uint64_t bits64[kChunkSize / 2];
-    uint32_t bits[SIMDVec16::kLanes];
-    uint32_t nbits[SIMDVec16::kLanes];
-    uint16_t bits_huff[SIMDVec16::kLanes];
-    uint16_t nbits_huff[SIMDVec16::kLanes];
-    uint16_t token[SIMDVec16::kLanes];
+    alignas(64) uint64_t nbits64[kChunkSize / 2];
+    alignas(64) uint64_t bits64[kChunkSize / 2];
+    alignas(64) uint32_t bits[SIMDVec16::kLanes];
+    alignas(64) uint32_t nbits[SIMDVec16::kLanes];
+    alignas(64) uint16_t bits_huff[SIMDVec16::kLanes];
+    alignas(64) uint16_t nbits_huff[SIMDVec16::kLanes];
+    alignas(64) uint16_t token[SIMDVec16::kLanes];
     for (size_t i = 0; i < kChunkSize; i += SIMDVec16::kLanes) {
       TokenizeSIMD(residuals + i, token, nbits, bits);
       HuffmanSIMDAbove14(token, code, nbits_huff, bits_huff);
@@ -1919,6 +2112,15 @@ struct ChannelRowProcessor {
                     const pixel_t* row_top, const pixel_t* row_topleft) {
     bool continue_rle = true;
     alignas(64) upixel_t residuals[kChunkSize] = {};
+#ifdef FJXL_GENERIC_SIMD
+    constexpr size_t kNum =
+        sizeof(pixel_t) == 2 ? SIMDVec16::kLanes : SIMDVec32::kLanes;
+    for (size_t ix = 0; ix < kChunkSize; ix += kNum) {
+      continue_rle &= PredictPixels<simd_t<pixel_t>>(
+          row + ix, row_left + ix, row_top + ix, row_topleft + ix,
+          residuals + ix, last);
+    }
+#else
     for (size_t ix = 0; ix < kChunkSize; ix++) {
       pixel_t px = row[ix];
       pixel_t left = row_left[ix];
@@ -1936,6 +2138,8 @@ struct ChannelRowProcessor {
       residuals[ix] = PackSigned(px - pred);
       continue_rle &= residuals[ix] == last;
     }
+#endif
+    last = residuals[kChunkSize - 1];
     // Run continues, nothing to do.
     if (continue_rle) {
       run += kChunkSize;
@@ -1944,7 +2148,6 @@ struct ChannelRowProcessor {
       t->Chunk(run, residuals);
       run = 0;
     }
-    last = residuals[kChunkSize - 1];
   }
 
   void ProcessRow(const pixel_t* row, const pixel_t* row_left,
