@@ -5,6 +5,10 @@
 
 #ifndef FJXL_SELF_INCLUDE
 
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
+
 #include "lib/jxl/enc_fast_lossless.h"
 
 #include <assert.h>
@@ -723,7 +727,7 @@ struct SIMDVec32 {
     return SIMDVec32{_mm512_loadu_si512((__m512i*)data)};
   }
   FJXL_INLINE void Store(uint32_t* data) {
-    _mm512_store_si512((__m512i*)data, vec);
+    _mm512_storeu_si512((__m512i*)data, vec);
   }
   FJXL_INLINE static SIMDVec32 Val(uint32_t v) {
     return SIMDVec32{_mm512_set1_epi32(v)};
@@ -754,6 +758,10 @@ struct SIMDVec32 {
   FJXL_INLINE SIMDVec32 Pow2() const {
     return SIMDVec32{_mm512_sllv_epi32(_mm512_set1_epi32(1), vec)};
   }
+  template <size_t i>
+  FJXL_INLINE SIMDVec32 SignedShiftRight() const {
+    return SIMDVec32{_mm512_srai_epi32(vec, i)};
+  }
 };
 
 struct SIMDVec16;
@@ -776,7 +784,7 @@ struct SIMDVec16 {
     return SIMDVec16{_mm512_loadu_si512((__m512i*)data)};
   }
   FJXL_INLINE void Store(uint16_t* data) {
-    _mm512_store_si512((__m512i*)data, vec);
+    _mm512_storeu_si512((__m512i*)data, vec);
   }
   FJXL_INLINE static SIMDVec16 Val(uint16_t v) {
     return SIMDVec16{_mm512_set1_epi16(v)};
@@ -860,6 +868,51 @@ struct SIMDVec16 {
             SIMDVec32{_mm512_permutex2var_epi64(
                 lo, _mm512_load_si512((__m512i*)perm2), hi)}};
   }
+  template <size_t i>
+  FJXL_INLINE SIMDVec16 SignedShiftRight() const {
+    return SIMDVec16{_mm512_srai_epi16(vec, i)};
+  }
+
+  static std::array<SIMDVec16, 1> LoadG8(const unsigned char* data) {
+    // TODO
+    assert(false);
+  }
+  static std::array<SIMDVec16, 1> LoadG16(const unsigned char* data) {
+    // TODO
+    assert(false);
+  }
+
+  static std::array<SIMDVec16, 2> LoadGA8(const unsigned char* data) {
+    // TODO
+    assert(false);
+  }
+  static std::array<SIMDVec16, 2> LoadGA16(const unsigned char* data) {
+    // TODO
+    assert(false);
+  }
+
+  static std::array<SIMDVec16, 3> LoadRGB8(const unsigned char* data) {
+    // TODO
+    assert(false);
+  }
+  static std::array<SIMDVec16, 3> LoadRGB16(const unsigned char* data) {
+    // TODO
+    assert(false);
+  }
+
+  static std::array<SIMDVec16, 4> LoadRGBA8(const unsigned char* data) {
+    // TODO
+    assert(false);
+  }
+  static std::array<SIMDVec16, 4> LoadRGBA16(const unsigned char* data) {
+    // TODO
+    assert(false);
+  }
+
+  void SwapEndian() {
+    // TODO
+    assert(false);
+  }
 };
 
 SIMDVec16 Mask16::IfThenElse(const SIMDVec16& if_true,
@@ -879,8 +932,8 @@ struct Bits64 {
   __m512i bits;
 
   FJXL_INLINE void Store(uint64_t* nbits_out, uint64_t* bits_out) {
-    _mm512_store_si512((__m512i*)nbits_out, nbits);
-    _mm512_store_si512((__m512i*)bits_out, bits);
+    _mm512_storeu_si512((__m512i*)nbits_out, nbits);
+    _mm512_storeu_si512((__m512i*)bits_out, bits);
   }
 };
 
@@ -960,7 +1013,7 @@ struct SIMDVec32 {
     return SIMDVec32{_mm256_loadu_si256((__m256i*)data)};
   }
   FJXL_INLINE void Store(uint32_t* data) {
-    _mm256_store_si256((__m256i*)data, vec);
+    _mm256_storeu_si256((__m256i*)data, vec);
   }
   FJXL_INLINE static SIMDVec32 Val(uint32_t v) {
     return SIMDVec32{_mm256_set1_epi32(v)};
@@ -1029,6 +1082,10 @@ struct SIMDVec32 {
   FJXL_INLINE Mask32 Gt(const SIMDVec32& oth) const {
     return Mask32{_mm256_cmpgt_epi32(vec, oth.vec)};
   }
+  template <size_t i>
+  FJXL_INLINE SIMDVec32 SignedShiftRight() const {
+    return SIMDVec32{_mm256_srai_epi32(vec, i)};
+  }
 };
 
 struct SIMDVec16;
@@ -1053,7 +1110,7 @@ struct SIMDVec16 {
     return SIMDVec16{_mm256_loadu_si256((__m256i*)data)};
   }
   FJXL_INLINE void Store(uint16_t* data) {
-    _mm256_store_si256((__m256i*)data, vec);
+    _mm256_storeu_si256((__m256i*)data, vec);
   }
   FJXL_INLINE static SIMDVec16 Val(uint16_t v) {
     return SIMDVec16{_mm256_set1_epi16(v)};
@@ -1161,6 +1218,181 @@ struct SIMDVec16 {
     return {SIMDVec32{_mm256_permute2x128_si256(v02, v13, 0x20)},
             SIMDVec32{_mm256_permute2x128_si256(v02, v13, 0x31)}};
   }
+  template <size_t i>
+  FJXL_INLINE SIMDVec16 SignedShiftRight() const {
+    return SIMDVec16{_mm256_srai_epi16(vec, i)};
+  }
+
+  static std::array<SIMDVec16, 1> LoadG8(const unsigned char* data) {
+    __m128i bytes = _mm_loadu_si128((__m128i*)data);
+    return {SIMDVec16{_mm256_cvtepu8_epi16(bytes)}};
+  }
+  static std::array<SIMDVec16, 1> LoadG16(const unsigned char* data) {
+    return {Load((const uint16_t*)data)};
+  }
+
+  static std::array<SIMDVec16, 2> LoadGA8(const unsigned char* data) {
+    __m256i bytes = _mm256_loadu_si256((__m256i*)data);
+    __m256i gray = _mm256_and_si256(bytes, _mm256_set1_epi16(0xFF));
+    __m256i alpha = _mm256_srli_epi16(bytes, 8);
+    return {SIMDVec16{gray}, SIMDVec16{alpha}};
+  }
+  static std::array<SIMDVec16, 2> LoadGA16(const unsigned char* data) {
+    __m256i bytes1 = _mm256_loadu_si256((__m256i*)data);
+    __m256i bytes2 = _mm256_loadu_si256((__m256i*)(data + 32));
+    __m256i g_mask = _mm256_set1_epi32(0xFFFF);
+    __m256i g = _mm256_permute4x64_epi64(
+        _mm256_packus_epi32(_mm256_and_si256(bytes1, g_mask),
+                            _mm256_and_si256(bytes2, g_mask)),
+        0b11011000);
+    __m256i a = _mm256_permute4x64_epi64(
+        _mm256_packus_epi32(_mm256_srli_epi32(bytes1, 16),
+                            _mm256_srli_epi32(bytes2, 16)),
+        0b11011000);
+    return {SIMDVec16{g}, SIMDVec16{a}};
+  }
+
+  static std::array<SIMDVec16, 3> LoadRGB8(const unsigned char* data) {
+    __m128i bytes0 = _mm_loadu_si128((__m128i*)data);
+    __m128i bytes1 = _mm_loadu_si128((__m128i*)(data + 16));
+    __m128i bytes2 = _mm_loadu_si128((__m128i*)(data + 32));
+
+    __m128i idx =
+        _mm_setr_epi8(0, 3, 6, 9, 12, 15, 2, 5, 8, 11, 14, 1, 4, 7, 10, 13);
+
+    __m128i r6b5g5_0 = _mm_shuffle_epi8(bytes0, idx);
+    __m128i g6r5b5_1 = _mm_shuffle_epi8(bytes1, idx);
+    __m128i b6g5r5_2 = _mm_shuffle_epi8(bytes2, idx);
+
+    __m128i mask010 = _mm_setr_epi8(0, 0, 0, 0, 0, 0, 0xFF, 0xFF, 0xFF, 0xFF,
+                                    0xFF, 0, 0, 0, 0, 0);
+    __m128i mask001 = _mm_setr_epi8(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xFF,
+                                    0xFF, 0xFF, 0xFF);
+
+    __m128i b2g2b1 = _mm_blendv_epi8(b6g5r5_2, g6r5b5_1, mask001);
+    __m128i b2b0b1 = _mm_blendv_epi8(b2g2b1, r6b5g5_0, mask010);
+
+    __m128i r0r1b1 = _mm_blendv_epi8(r6b5g5_0, g6r5b5_1, mask010);
+    __m128i r0r1r2 = _mm_blendv_epi8(r0r1b1, b6g5r5_2, mask001);
+
+    __m128i g1r1g0 = _mm_blendv_epi8(g6r5b5_1, r6b5g5_0, mask001);
+    __m128i g1g2g0 = _mm_blendv_epi8(g1r1g0, b6g5r5_2, mask010);
+
+    __m128i g0g1g2 = _mm_alignr_epi8(g1g2g0, g1g2g0, 11);
+    __m128i b0b1b2 = _mm_alignr_epi8(b2b0b1, b2b0b1, 6);
+
+    return {SIMDVec16{_mm256_cvtepu8_epi16(r0r1r2)},
+            SIMDVec16{_mm256_cvtepu8_epi16(g0g1g2)},
+            SIMDVec16{_mm256_cvtepu8_epi16(b0b1b2)}};
+  }
+  static std::array<SIMDVec16, 3> LoadRGB16(const unsigned char* data) {
+    auto load_and_split_lohi = [](const unsigned char* data) {
+      // LHLHLH...
+      __m256i bytes = _mm256_loadu_si256((__m256i*)data);
+      // L0L0L0...
+      __m256i lo = _mm256_and_si256(bytes, _mm256_set1_epi16(0xFF));
+      // H0H0H0...
+      __m256i hi = _mm256_srli_epi16(bytes, 8);
+      // LLLLLLLLHHHHHHHHLLLLLLLLHHHHHHHH
+      __m256i packed = _mm256_packus_epi16(lo, hi);
+      return _mm256_permute4x64_epi64(packed, 0b11011000);
+    };
+    __m256i bytes0 = load_and_split_lohi(data);
+    __m256i bytes1 = load_and_split_lohi(data + 32);
+    __m256i bytes2 = load_and_split_lohi(data + 64);
+
+    __m256i idx = _mm256_broadcastsi128_si256(
+        _mm_setr_epi8(0, 3, 6, 9, 12, 15, 2, 5, 8, 11, 14, 1, 4, 7, 10, 13));
+
+    __m256i r6b5g5_0 = _mm256_shuffle_epi8(bytes0, idx);
+    __m256i g6r5b5_1 = _mm256_shuffle_epi8(bytes1, idx);
+    __m256i b6g5r5_2 = _mm256_shuffle_epi8(bytes2, idx);
+
+    __m256i mask010 = _mm256_broadcastsi128_si256(_mm_setr_epi8(
+        0, 0, 0, 0, 0, 0, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0, 0, 0, 0, 0));
+    __m256i mask001 = _mm256_broadcastsi128_si256(_mm_setr_epi8(
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF));
+
+    __m256i b2g2b1 = _mm256_blendv_epi8(b6g5r5_2, g6r5b5_1, mask001);
+    __m256i b2b0b1 = _mm256_blendv_epi8(b2g2b1, r6b5g5_0, mask010);
+
+    __m256i r0r1b1 = _mm256_blendv_epi8(r6b5g5_0, g6r5b5_1, mask010);
+    __m256i r0r1r2 = _mm256_blendv_epi8(r0r1b1, b6g5r5_2, mask001);
+
+    __m256i g1r1g0 = _mm256_blendv_epi8(g6r5b5_1, r6b5g5_0, mask001);
+    __m256i g1g2g0 = _mm256_blendv_epi8(g1r1g0, b6g5r5_2, mask010);
+
+    __m256i g0g1g2 = _mm256_alignr_epi8(g1g2g0, g1g2g0, 11);
+    __m256i b0b1b2 = _mm256_alignr_epi8(b2b0b1, b2b0b1, 6);
+
+    // Now r0r1r2, g0g1g2, b0b1b2 have the low bytes of the RGB pixels in their
+    // lower half, and the high bytes in their upper half.
+
+    auto combine_low_hi = [](__m256i v) {
+      __m128i low = _mm256_extracti128_si256(v, 0);
+      __m128i hi = _mm256_extracti128_si256(v, 1);
+      __m256i low16 = _mm256_cvtepu8_epi16(low);
+      __m256i hi16 = _mm256_cvtepu8_epi16(hi);
+      return _mm256_or_si256(_mm256_slli_epi16(hi16, 8), low16);
+    };
+
+    return {SIMDVec16{combine_low_hi(r0r1r2)},
+            SIMDVec16{combine_low_hi(g0g1g2)},
+            SIMDVec16{combine_low_hi(b0b1b2)}};
+  }
+
+  static std::array<SIMDVec16, 4> LoadRGBA8(const unsigned char* data) {
+    __m256i bytes1 = _mm256_loadu_si256((__m256i*)data);
+    __m256i bytes2 = _mm256_loadu_si256((__m256i*)(data + 32));
+    __m256i rg_mask = _mm256_set1_epi32(0xFFFF);
+    __m256i rg = _mm256_permute4x64_epi64(
+        _mm256_packus_epi32(_mm256_and_si256(bytes1, rg_mask),
+                            _mm256_and_si256(bytes2, rg_mask)),
+        0b11011000);
+    __m256i ba = _mm256_permute4x64_epi64(
+        _mm256_packus_epi32(_mm256_srli_epi32(bytes1, 16),
+                            _mm256_srli_epi32(bytes2, 16)),
+        0b11011000);
+    __m256i r = _mm256_and_si256(rg, _mm256_set1_epi16(0xFF));
+    __m256i g = _mm256_srli_epi16(rg, 8);
+    __m256i b = _mm256_and_si256(ba, _mm256_set1_epi16(0xFF));
+    __m256i a = _mm256_srli_epi16(ba, 8);
+    return {SIMDVec16{r}, SIMDVec16{g}, SIMDVec16{b}, SIMDVec16{a}};
+  }
+  static std::array<SIMDVec16, 4> LoadRGBA16(const unsigned char* data) {
+    __m256i bytes0 = _mm256_loadu_si256((__m256i*)data);
+    __m256i bytes1 = _mm256_loadu_si256((__m256i*)(data + 32));
+    __m256i bytes2 = _mm256_loadu_si256((__m256i*)(data + 64));
+    __m256i bytes3 = _mm256_loadu_si256((__m256i*)(data + 96));
+
+    auto pack32 = [](__m256i a, __m256i b) {
+      return _mm256_permute4x64_epi64(_mm256_packus_epi32(a, b), 0b11011000);
+    };
+    auto packlow32 = [&pack32](__m256i a, __m256i b) {
+      __m256i mask = _mm256_set1_epi32(0xFFFF);
+      return pack32(_mm256_and_si256(a, mask), _mm256_and_si256(b, mask));
+    };
+    auto packhi32 = [&pack32](__m256i a, __m256i b) {
+      return pack32(_mm256_srli_epi32(a, 16), _mm256_srli_epi32(b, 16));
+    };
+
+    __m256i rb0 = packlow32(bytes0, bytes1);
+    __m256i rb1 = packlow32(bytes2, bytes3);
+    __m256i ga0 = packhi32(bytes0, bytes1);
+    __m256i ga1 = packhi32(bytes2, bytes3);
+
+    __m256i r = packlow32(rb0, rb1);
+    __m256i g = packlow32(ga0, ga1);
+    __m256i b = packhi32(rb0, rb1);
+    __m256i a = packhi32(ga0, ga1);
+    return {SIMDVec16{r}, SIMDVec16{g}, SIMDVec16{b}, SIMDVec16{a}};
+  }
+
+  void SwapEndian() {
+    auto indices = _mm256_broadcastsi128_si256(
+        _mm_setr_epi8(1, 0, 3, 2, 5, 4, 7, 6, 9, 8, 11, 10, 13, 12, 15, 14));
+    vec = _mm256_shuffle_epi8(vec, indices);
+  }
 };
 
 SIMDVec16 Mask16::IfThenElse(const SIMDVec16& if_true,
@@ -1180,8 +1412,8 @@ struct Bits64 {
   __m256i bits;
 
   FJXL_INLINE void Store(uint64_t* nbits_out, uint64_t* bits_out) {
-    _mm256_store_si256((__m256i*)nbits_out, nbits);
-    _mm256_store_si256((__m256i*)bits_out, bits);
+    _mm256_storeu_si256((__m256i*)nbits_out, nbits);
+    _mm256_storeu_si256((__m256i*)bits_out, bits);
   }
 };
 
@@ -1301,6 +1533,11 @@ struct SIMDVec32 {
     return Mask32{
         vcgtq_s32(vreinterpretq_s32_u32(vec), vreinterpretq_s32_u32(oth.vec))};
   }
+  template <size_t i>
+  FJXL_INLINE SIMDVec32 SignedShiftRight() const {
+    return SIMDVec32{
+        vreinterpretq_u32_s32(vshrq_n_s32(vreinterpretq_s32_u32(vec), i))};
+  }
 };
 
 struct SIMDVec16;
@@ -1386,6 +1623,53 @@ struct SIMDVec16 {
     uint32x4_t lo = vmovl_u16(vget_low_u16(vec));
     uint32x4_t hi = vmovl_high_u16(vec);
     return {SIMDVec32{lo}, SIMDVec32{hi}};
+  }
+  template <size_t i>
+  FJXL_INLINE SIMDVec16 SignedShiftRight() const {
+    return SIMDVec16{
+        vreinterpretq_u16_s16(vshrq_n_s16(vreinterpretq_s16_u16(vec), i))};
+  }
+
+  static std::array<SIMDVec16, 1> LoadG8(const unsigned char* data) {
+    uint8x8_t v = vld1_u8(data);
+    return {SIMDVec16{vmovl_u8(v)}};
+  }
+  static std::array<SIMDVec16, 1> LoadG16(const unsigned char* data) {
+    return {Load((const uint16_t*)data)};
+  }
+
+  static std::array<SIMDVec16, 2> LoadGA8(const unsigned char* data) {
+    uint8x8x2_t v = vld2_u8(data);
+    return {SIMDVec16{vmovl_u8(v.val[0])}, SIMDVec16{vmovl_u8(v.val[1])}};
+  }
+  static std::array<SIMDVec16, 2> LoadGA16(const unsigned char* data) {
+    uint16x8x2_t v = vld2q_u16((const uint16_t*)data);
+    return {SIMDVec16{v.val[0]}, SIMDVec16{v.val[1]}};
+  }
+
+  static std::array<SIMDVec16, 3> LoadRGB8(const unsigned char* data) {
+    uint8x8x3_t v = vld3_u8(data);
+    return {SIMDVec16{vmovl_u8(v.val[0])}, SIMDVec16{vmovl_u8(v.val[1])},
+            SIMDVec16{vmovl_u8(v.val[2])}};
+  }
+  static std::array<SIMDVec16, 3> LoadRGB16(const unsigned char* data) {
+    uint16x8x3_t v = vld3q_u16((const uint16_t*)data);
+    return {SIMDVec16{v.val[0]}, SIMDVec16{v.val[1]}, SIMDVec16{v.val[2]}};
+  }
+
+  static std::array<SIMDVec16, 4> LoadRGBA8(const unsigned char* data) {
+    uint8x8x4_t v = vld4_u8(data);
+    return {SIMDVec16{vmovl_u8(v.val[0])}, SIMDVec16{vmovl_u8(v.val[1])},
+            SIMDVec16{vmovl_u8(v.val[2])}, SIMDVec16{vmovl_u8(v.val[3])}};
+  }
+  static std::array<SIMDVec16, 4> LoadRGBA16(const unsigned char* data) {
+    uint16x8x4_t v = vld4q_u16((const uint16_t*)data);
+    return {SIMDVec16{v.val[0]}, SIMDVec16{v.val[1]}, SIMDVec16{v.val[2]},
+            SIMDVec16{v.val[3]}};
+  }
+
+  void SwapEndian() {
+    vec = vreinterpretq_u16_u8(vrev16q_u8(vreinterpretq_u8_u16(vec)));
   }
 };
 
@@ -2169,16 +2453,43 @@ uint16_t LoadLE16(const unsigned char* ptr) {
 
 uint16_t SwapEndian(uint16_t in) { return (in >> 8) | (in << 8); }
 
+#ifdef FJXL_GENERIC_SIMD
+void StorePixels(SIMDVec16 p, int16_t* dest) { p.Store((uint16_t*)dest); }
+
+void StorePixels(SIMDVec16 p, int32_t* dest) {
+  VecPair<SIMDVec32> p_up = p.Upcast();
+  p_up.low.Store((uint32_t*)dest);
+  p_up.hi.Store((uint32_t*)dest + SIMDVec32::kLanes);
+}
+#endif
+
 template <typename pixel_t>
 void FillRowG8(const unsigned char* rgba, size_t oxs, pixel_t* luma) {
-  for (size_t x = 0; x < oxs; x++) {
+  size_t x = 0;
+#ifdef FJXL_GENERIC_SIMD
+  for (; x + SIMDVec16::kLanes <= oxs; x += SIMDVec16::kLanes) {
+    auto rgb = SIMDVec16::LoadG8(rgba + x);
+    StorePixels(rgb[0], luma + x);
+  }
+#endif
+  for (; x < oxs; x++) {
     luma[x] = rgba[x];
   }
 }
 
 template <bool big_endian, typename pixel_t>
 void FillRowG16(const unsigned char* rgba, size_t oxs, pixel_t* luma) {
-  for (size_t x = 0; x < oxs; x++) {
+  size_t x = 0;
+#ifdef FJXL_GENERIC_SIMD
+  for (; x + SIMDVec16::kLanes <= oxs; x += SIMDVec16::kLanes) {
+    auto rgb = SIMDVec16::LoadG16(rgba + 2 * x);
+    if (big_endian) {
+      rgb[0].SwapEndian();
+    }
+    StorePixels(rgb[0], luma + x);
+  }
+#endif
+  for (; x < oxs; x++) {
     uint16_t val = LoadLE16(rgba + 2 * x);
     if (big_endian) {
       val = SwapEndian(val);
@@ -2190,7 +2501,15 @@ void FillRowG16(const unsigned char* rgba, size_t oxs, pixel_t* luma) {
 template <typename pixel_t>
 void FillRowGA8(const unsigned char* rgba, size_t oxs, pixel_t* luma,
                 pixel_t* alpha) {
-  for (size_t x = 0; x < oxs; x++) {
+  size_t x = 0;
+#ifdef FJXL_GENERIC_SIMD
+  for (; x + SIMDVec16::kLanes <= oxs; x += SIMDVec16::kLanes) {
+    auto rgb = SIMDVec16::LoadGA8(rgba + 2 * x);
+    StorePixels(rgb[0], luma + x);
+    StorePixels(rgb[1], alpha + x);
+  }
+#endif
+  for (; x < oxs; x++) {
     luma[x] = rgba[2 * x];
     alpha[x] = rgba[2 * x + 1];
   }
@@ -2199,7 +2518,19 @@ void FillRowGA8(const unsigned char* rgba, size_t oxs, pixel_t* luma,
 template <bool big_endian, typename pixel_t>
 void FillRowGA16(const unsigned char* rgba, size_t oxs, pixel_t* luma,
                  pixel_t* alpha) {
-  for (size_t x = 0; x < oxs; x++) {
+  size_t x = 0;
+#ifdef FJXL_GENERIC_SIMD
+  for (; x + SIMDVec16::kLanes <= oxs; x += SIMDVec16::kLanes) {
+    auto rgb = SIMDVec16::LoadGA16(rgba + 4 * x);
+    if (big_endian) {
+      rgb[0].SwapEndian();
+      rgb[1].SwapEndian();
+    }
+    StorePixels(rgb[0], luma + x);
+    StorePixels(rgb[1], alpha + x);
+  }
+#endif
+  for (; x < oxs; x++) {
     uint16_t l = LoadLE16(rgba + 4 * x);
     uint16_t a = LoadLE16(rgba + 4 * x + 2);
     if (big_endian) {
@@ -2220,10 +2551,51 @@ void StoreYCoCg(pixel_t r, pixel_t g, pixel_t b, pixel_t* y, pixel_t* co,
   *y = tmp + (*cg >> 1);
 }
 
+#ifdef FJXL_GENERIC_SIMD
+void StoreYCoCg(SIMDVec16 r, SIMDVec16 g, SIMDVec16 b, int16_t* y, int16_t* co,
+                int16_t* cg) {
+  SIMDVec16 co_v = r.Sub(b);
+  SIMDVec16 tmp = b.Add(co_v.SignedShiftRight<1>());
+  SIMDVec16 cg_v = g.Sub(tmp);
+  SIMDVec16 y_v = tmp.Add(cg_v.SignedShiftRight<1>());
+  y_v.Store((uint16_t*)y);
+  co_v.Store((uint16_t*)co);
+  cg_v.Store((uint16_t*)cg);
+}
+
+void StoreYCoCg(SIMDVec16 r, SIMDVec16 g, SIMDVec16 b, int32_t* y, int32_t* co,
+                int32_t* cg) {
+  VecPair<SIMDVec32> r_up = r.Upcast();
+  VecPair<SIMDVec32> g_up = g.Upcast();
+  VecPair<SIMDVec32> b_up = b.Upcast();
+  SIMDVec32 co_lo_v = r_up.low.Sub(b_up.low);
+  SIMDVec32 tmp_lo = b_up.low.Add(co_lo_v.SignedShiftRight<1>());
+  SIMDVec32 cg_lo_v = g_up.low.Sub(tmp_lo);
+  SIMDVec32 y_lo_v = tmp_lo.Add(cg_lo_v.SignedShiftRight<1>());
+  SIMDVec32 co_hi_v = r_up.hi.Sub(b_up.hi);
+  SIMDVec32 tmp_hi = b_up.hi.Add(co_hi_v.SignedShiftRight<1>());
+  SIMDVec32 cg_hi_v = g_up.hi.Sub(tmp_hi);
+  SIMDVec32 y_hi_v = tmp_hi.Add(cg_hi_v.SignedShiftRight<1>());
+  y_lo_v.Store((uint32_t*)y);
+  co_lo_v.Store((uint32_t*)co);
+  cg_lo_v.Store((uint32_t*)cg);
+  y_hi_v.Store((uint32_t*)y + SIMDVec32::kLanes);
+  co_hi_v.Store((uint32_t*)co + SIMDVec32::kLanes);
+  cg_hi_v.Store((uint32_t*)cg + SIMDVec32::kLanes);
+}
+#endif
+
 template <typename pixel_t>
 void FillRowRGB8(const unsigned char* rgba, size_t oxs, pixel_t* y, pixel_t* co,
                  pixel_t* cg) {
-  for (size_t x = 0; x < oxs; x++) {
+  size_t x = 0;
+#ifdef FJXL_GENERIC_SIMD
+  for (; x + SIMDVec16::kLanes <= oxs; x += SIMDVec16::kLanes) {
+    auto rgb = SIMDVec16::LoadRGB8(rgba + 3 * x);
+    StoreYCoCg(rgb[0], rgb[1], rgb[2], y + x, co + x, cg + x);
+  }
+#endif
+  for (; x < oxs; x++) {
     uint16_t r = rgba[3 * x];
     uint16_t g = rgba[3 * x + 1];
     uint16_t b = rgba[3 * x + 2];
@@ -2234,7 +2606,19 @@ void FillRowRGB8(const unsigned char* rgba, size_t oxs, pixel_t* y, pixel_t* co,
 template <bool big_endian, typename pixel_t>
 void FillRowRGB16(const unsigned char* rgba, size_t oxs, pixel_t* y,
                   pixel_t* co, pixel_t* cg) {
-  for (size_t x = 0; x < oxs; x++) {
+  size_t x = 0;
+#ifdef FJXL_GENERIC_SIMD
+  for (; x + SIMDVec16::kLanes <= oxs; x += SIMDVec16::kLanes) {
+    auto rgb = SIMDVec16::LoadRGB16(rgba + 6 * x);
+    if (big_endian) {
+      rgb[0].SwapEndian();
+      rgb[1].SwapEndian();
+      rgb[2].SwapEndian();
+    }
+    StoreYCoCg(rgb[0], rgb[1], rgb[2], y + x, co + x, cg + x);
+  }
+#endif
+  for (; x < oxs; x++) {
     uint16_t r = LoadLE16(rgba + 6 * x);
     uint16_t g = LoadLE16(rgba + 6 * x + 2);
     uint16_t b = LoadLE16(rgba + 6 * x + 4);
@@ -2250,7 +2634,15 @@ void FillRowRGB16(const unsigned char* rgba, size_t oxs, pixel_t* y,
 template <typename pixel_t>
 void FillRowRGBA8(const unsigned char* rgba, size_t oxs, pixel_t* y,
                   pixel_t* co, pixel_t* cg, pixel_t* alpha) {
-  for (size_t x = 0; x < oxs; x++) {
+  size_t x = 0;
+#ifdef FJXL_GENERIC_SIMD
+  for (; x + SIMDVec16::kLanes <= oxs; x += SIMDVec16::kLanes) {
+    auto rgb = SIMDVec16::LoadRGBA8(rgba + 4 * x);
+    StoreYCoCg(rgb[0], rgb[1], rgb[2], y + x, co + x, cg + x);
+    StorePixels(rgb[3], alpha + x);
+  }
+#endif
+  for (; x < oxs; x++) {
     uint16_t r = rgba[4 * x];
     uint16_t g = rgba[4 * x + 1];
     uint16_t b = rgba[4 * x + 2];
@@ -2263,7 +2655,21 @@ void FillRowRGBA8(const unsigned char* rgba, size_t oxs, pixel_t* y,
 template <bool big_endian, typename pixel_t>
 void FillRowRGBA16(const unsigned char* rgba, size_t oxs, pixel_t* y,
                    pixel_t* co, pixel_t* cg, pixel_t* alpha) {
-  for (size_t x = 0; x < oxs; x++) {
+  size_t x = 0;
+#ifdef FJXL_GENERIC_SIMD
+  for (; x + SIMDVec16::kLanes <= oxs; x += SIMDVec16::kLanes) {
+    auto rgb = SIMDVec16::LoadRGBA16(rgba + 8 * x);
+    if (big_endian) {
+      rgb[0].SwapEndian();
+      rgb[1].SwapEndian();
+      rgb[2].SwapEndian();
+      rgb[3].SwapEndian();
+    }
+    StoreYCoCg(rgb[0], rgb[1], rgb[2], y + x, co + x, cg + x);
+    StorePixels(rgb[3], alpha + x);
+  }
+#endif
+  for (; x < oxs; x++) {
     uint16_t r = LoadLE16(rgba + 8 * x);
     uint16_t g = LoadLE16(rgba + 8 * x + 2);
     uint16_t b = LoadLE16(rgba + 8 * x + 4);
@@ -2288,77 +2694,90 @@ void ProcessImageArea(const unsigned char* rgba, size_t x0, size_t y0,
 
   using pixel_t = typename BitDepth::pixel_t;
 
-  std::vector<std::array<std::array<pixel_t, 256 + kPadding * 2>, 2>>
-      group_data(nb_chans);
+  constexpr size_t kAlign = 64;
+  constexpr size_t kAlignPixels = kAlign / sizeof(pixel_t);
+
+  auto align = [](pixel_t* ptr) {
+    size_t offset = reinterpret_cast<uintptr_t>(ptr) % kAlign;
+    if (offset) {
+      ptr += offset / sizeof(pixel_t);
+    }
+    return ptr;
+  };
+
+  constexpr size_t kNumPx =
+      (256 + kPadding * 2 + kAlignPixels + kAlignPixels - 1) / kAlignPixels *
+      kAlignPixels;
+
+  std::vector<std::array<std::array<pixel_t, kNumPx>, 2>> group_data(nb_chans);
 
   for (size_t y = 0; y < ys; y++) {
     const auto rgba_row =
         rgba + row_stride * (y0 + y) + x0 * nb_chans * BitDepth::kInputBytes;
-    const auto grow0 = &group_data[0][y & 1][kPadding];
-    const auto grow1 = &group_data[1][y & 1][kPadding];
-    const auto grow2 = &group_data[2][y & 1][kPadding];
-    const auto grow3 = &group_data[3][y & 1][kPadding];
+    pixel_t* crow[4];
+    pixel_t* prow[4];
+    for (size_t i = 0; i < 4; i++) {
+      crow[i] = align(&group_data[i][y & 1][kPadding]);
+      prow[i] = align(&group_data[i][(y - 1) & 1][kPadding]);
+    }
 
     // Pre-fill rows with YCoCg converted pixels.
     if (nb_chans == 1) {
       if (BitDepth::kInputBytes == 1) {
-        FillRowG8(rgba_row, oxs, grow0);
+        FillRowG8(rgba_row, oxs, crow[0]);
       } else if (big_endian) {
-        FillRowG16</*big_endian=*/true>(rgba_row, oxs, grow0);
+        FillRowG16</*big_endian=*/true>(rgba_row, oxs, crow[0]);
       } else {
-        FillRowG16</*big_endian=*/false>(rgba_row, oxs, grow0);
+        FillRowG16</*big_endian=*/false>(rgba_row, oxs, crow[0]);
       }
     } else if (nb_chans == 2) {
       if (BitDepth::kInputBytes == 1) {
-        FillRowGA8(rgba_row, oxs, grow0, grow1);
+        FillRowGA8(rgba_row, oxs, crow[0], crow[1]);
       } else if (big_endian) {
-        FillRowGA16</*big_endian=*/true>(rgba_row, oxs, grow0, grow1);
+        FillRowGA16</*big_endian=*/true>(rgba_row, oxs, crow[0], crow[1]);
       } else {
-        FillRowGA16</*big_endian=*/false>(rgba_row, oxs, grow0, grow1);
+        FillRowGA16</*big_endian=*/false>(rgba_row, oxs, crow[0], crow[1]);
       }
     } else if (nb_chans == 3) {
       if (BitDepth::kInputBytes == 1) {
-        FillRowRGB8(rgba_row, oxs, grow0, grow1, grow2);
+        FillRowRGB8(rgba_row, oxs, crow[0], crow[1], crow[2]);
       } else if (big_endian) {
-        FillRowRGB16</*big_endian=*/true>(rgba_row, oxs, grow0, grow1, grow2);
+        FillRowRGB16</*big_endian=*/true>(rgba_row, oxs, crow[0], crow[1],
+                                          crow[2]);
       } else {
-        FillRowRGB16</*big_endian=*/false>(rgba_row, oxs, grow0, grow1, grow2);
+        FillRowRGB16</*big_endian=*/false>(rgba_row, oxs, crow[0], crow[1],
+                                           crow[2]);
       }
     } else {
       if (BitDepth::kInputBytes == 1) {
-        FillRowRGBA8(rgba_row, oxs, grow0, grow1, grow2, grow3);
+        FillRowRGBA8(rgba_row, oxs, crow[0], crow[1], crow[2], crow[3]);
       } else if (big_endian) {
-        FillRowRGBA16</*big_endian=*/true>(rgba_row, oxs, grow0, grow1, grow2,
-                                           grow3);
+        FillRowRGBA16</*big_endian=*/true>(rgba_row, oxs, crow[0], crow[1],
+                                           crow[2], crow[3]);
       } else {
-        FillRowRGBA16</*big_endian=*/false>(rgba_row, oxs, grow0, grow1, grow2,
-                                            grow3);
+        FillRowRGBA16</*big_endian=*/false>(rgba_row, oxs, crow[0], crow[1],
+                                            crow[2], crow[3]);
       }
     }
     // Deal with x == 0.
     for (size_t c = 0; c < nb_chans; c++) {
-      group_data[c][y & 1][kPadding - 1] =
-          y > 0 ? group_data[c][(y - 1) & 1][kPadding] : 0;
+      *(crow[c] - 1) = y > 0 ? *(prow[c]) : 0;
       // Fix topleft.
-      group_data[c][(y - 1) & 1][kPadding - 1] =
-          y > 0 ? group_data[c][(y - 1) & 1][kPadding] : 0;
+      *(prow[c] - 1) = y > 0 ? *(prow[c]) : 0;
     }
     // Fill in padding.
     for (size_t c = 0; c < nb_chans; c++) {
       for (size_t x = oxs; x < xs; x++) {
-        group_data[c][y & 1][kPadding + x] =
-            group_data[c][y & 1][kPadding + oxs - 1];
+        crow[c][x] = crow[c][oxs - 1];
       }
     }
     if (y < yskip) continue;
     for (size_t c = 0; c < nb_chans; c++) {
       // Get pointers to px/left/top/topleft data to speedup loop.
-      const pixel_t* row = &group_data[c][y & 1][kPadding];
-      const pixel_t* row_left = &group_data[c][y & 1][kPadding - 1];
-      const pixel_t* row_top =
-          y == 0 ? row_left : &group_data[c][(y - 1) & 1][kPadding];
-      const pixel_t* row_topleft =
-          y == 0 ? row_left : &group_data[c][(y - 1) & 1][kPadding - 1];
+      const pixel_t* row = crow[c];
+      const pixel_t* row_left = crow[c] - 1;
+      const pixel_t* row_top = y == 0 ? row_left : prow[c];
+      const pixel_t* row_topleft = y == 0 ? row_left : prow[c] - 1;
 
       processors[c].ProcessRow(row, row_left, row_top, row_topleft, xs);
     }
