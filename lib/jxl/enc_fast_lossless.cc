@@ -2163,76 +2163,176 @@ struct ChannelRowProcessor {
   upixel_t last = std::numeric_limits<upixel_t>::max();  // Can never appear
 };
 
-template <typename Processor, size_t nb_chans, typename BitDepth,
-          bool big_endian>
+uint16_t LoadLE16(const unsigned char* ptr) {
+  return uint16_t{ptr[0]} | (uint16_t{ptr[1]} << 8);
+}
+
+uint16_t SwapEndian(uint16_t in) { return (in >> 8) | (in << 8); }
+
+template <typename pixel_t>
+void FillRowG8(const unsigned char* rgba, size_t oxs, pixel_t* luma) {
+  for (size_t x = 0; x < oxs; x++) {
+    luma[x] = rgba[x];
+  }
+}
+
+template <bool big_endian, typename pixel_t>
+void FillRowG16(const unsigned char* rgba, size_t oxs, pixel_t* luma) {
+  for (size_t x = 0; x < oxs; x++) {
+    uint16_t val = LoadLE16(rgba + 2 * x);
+    if (big_endian) {
+      val = SwapEndian(val);
+    }
+    luma[x] = val;
+  }
+}
+
+template <typename pixel_t>
+void FillRowGA8(const unsigned char* rgba, size_t oxs, pixel_t* luma,
+                pixel_t* alpha) {
+  for (size_t x = 0; x < oxs; x++) {
+    luma[x] = rgba[2 * x];
+    alpha[x] = rgba[2 * x + 1];
+  }
+}
+
+template <bool big_endian, typename pixel_t>
+void FillRowGA16(const unsigned char* rgba, size_t oxs, pixel_t* luma,
+                 pixel_t* alpha) {
+  for (size_t x = 0; x < oxs; x++) {
+    uint16_t l = LoadLE16(rgba + 4 * x);
+    uint16_t a = LoadLE16(rgba + 4 * x + 2);
+    if (big_endian) {
+      l = SwapEndian(l);
+      a = SwapEndian(a);
+    }
+    luma[x] = l;
+    alpha[x] = a;
+  }
+}
+
+template <typename pixel_t>
+void StoreYCoCg(pixel_t r, pixel_t g, pixel_t b, pixel_t* y, pixel_t* co,
+                pixel_t* cg) {
+  *co = r - b;
+  pixel_t tmp = b + (*co >> 1);
+  *cg = g - tmp;
+  *y = tmp + (*cg >> 1);
+}
+
+template <typename pixel_t>
+void FillRowRGB8(const unsigned char* rgba, size_t oxs, pixel_t* y, pixel_t* co,
+                 pixel_t* cg) {
+  for (size_t x = 0; x < oxs; x++) {
+    uint16_t r = rgba[3 * x];
+    uint16_t g = rgba[3 * x + 1];
+    uint16_t b = rgba[3 * x + 2];
+    StoreYCoCg<pixel_t>(r, g, b, y + x, co + x, cg + x);
+  }
+}
+
+template <bool big_endian, typename pixel_t>
+void FillRowRGB16(const unsigned char* rgba, size_t oxs, pixel_t* y,
+                  pixel_t* co, pixel_t* cg) {
+  for (size_t x = 0; x < oxs; x++) {
+    uint16_t r = LoadLE16(rgba + 6 * x);
+    uint16_t g = LoadLE16(rgba + 6 * x + 2);
+    uint16_t b = LoadLE16(rgba + 6 * x + 4);
+    if (big_endian) {
+      r = SwapEndian(r);
+      g = SwapEndian(g);
+      b = SwapEndian(b);
+    }
+    StoreYCoCg<pixel_t>(r, g, b, y + x, co + x, cg + x);
+  }
+}
+
+template <typename pixel_t>
+void FillRowRGBA8(const unsigned char* rgba, size_t oxs, pixel_t* y,
+                  pixel_t* co, pixel_t* cg, pixel_t* alpha) {
+  for (size_t x = 0; x < oxs; x++) {
+    uint16_t r = rgba[4 * x];
+    uint16_t g = rgba[4 * x + 1];
+    uint16_t b = rgba[4 * x + 2];
+    uint16_t a = rgba[4 * x + 3];
+    StoreYCoCg<pixel_t>(r, g, b, y + x, co + x, cg + x);
+    alpha[x] = a;
+  }
+}
+
+template <bool big_endian, typename pixel_t>
+void FillRowRGBA16(const unsigned char* rgba, size_t oxs, pixel_t* y,
+                   pixel_t* co, pixel_t* cg, pixel_t* alpha) {
+  for (size_t x = 0; x < oxs; x++) {
+    uint16_t r = LoadLE16(rgba + 8 * x);
+    uint16_t g = LoadLE16(rgba + 8 * x + 2);
+    uint16_t b = LoadLE16(rgba + 8 * x + 4);
+    uint16_t a = LoadLE16(rgba + 8 * x + 6);
+    if (big_endian) {
+      r = SwapEndian(r);
+      g = SwapEndian(g);
+      b = SwapEndian(b);
+      a = SwapEndian(a);
+    }
+    StoreYCoCg<pixel_t>(r, g, b, y + x, co + x, cg + x);
+    alpha[x] = a;
+  }
+}
+
+template <typename Processor, typename BitDepth>
 void ProcessImageArea(const unsigned char* rgba, size_t x0, size_t y0,
                       size_t oxs, size_t xs, size_t yskip, size_t ys,
-                      size_t row_stride, BitDepth bitdepth,
-                      Processor* processors) {
+                      size_t row_stride, BitDepth bitdepth, size_t nb_chans,
+                      bool big_endian, Processor* processors) {
   constexpr size_t kPadding = 16;
 
   using pixel_t = typename BitDepth::pixel_t;
-  using upixel_t = typename BitDepth::upixel_t;
 
   std::vector<std::array<std::array<pixel_t, 256 + kPadding * 2>, 2>>
       group_data(nb_chans);
-  upixel_t allzero[4] = {};
-  upixel_t allone[4];
-  auto get_pixel = [&](size_t x, size_t y, size_t channel) {
-    pixel_t p = rgba[row_stride * (y0 + y) +
-                     (x0 + x) * nb_chans * BitDepth::kInputBytes +
-                     channel * BitDepth::kInputBytes];
-    if (BitDepth::kInputBytes == 2) {
-      if (big_endian) {
-        p <<= 8;
-        p |= rgba[row_stride * (y0 + y) + (x0 + x) * nb_chans * 2 +
-                  channel * 2 + 1];
-      } else {
-        p |= rgba[row_stride * (y0 + y) + (x0 + x) * nb_chans * 2 +
-                  channel * 2 + 1]
-             << 8;
-      }
-    }
-    return p;
-  };
 
-  size_t one_mask = (1 << bitdepth.bitdepth) - 1;
-  for (size_t c = 0; c < nb_chans; c++) {
-    allone[c] = one_mask;
-  }
   for (size_t y = 0; y < ys; y++) {
+    const auto rgba_row =
+        rgba + row_stride * (y0 + y) + x0 * nb_chans * BitDepth::kInputBytes;
+    const auto grow0 = &group_data[0][y & 1][kPadding];
+    const auto grow1 = &group_data[1][y & 1][kPadding];
+    const auto grow2 = &group_data[2][y & 1][kPadding];
+    const auto grow3 = &group_data[3][y & 1][kPadding];
+
     // Pre-fill rows with YCoCg converted pixels.
-    for (size_t x = 0; x < oxs; x++) {
-      if (nb_chans < 3) {
-        pixel_t luma = get_pixel(x, y, 0);
-        group_data[0][y & 1][x + kPadding] = luma;
-        if (nb_chans == 2) {
-          pixel_t a = get_pixel(x, y, 1);
-          group_data[1][y & 1][x + kPadding] = a;
-        }
+    if (nb_chans == 1) {
+      if (BitDepth::kInputBytes == 1) {
+        FillRowG8(rgba_row, oxs, grow0);
+      } else if (big_endian) {
+        FillRowG16</*big_endian=*/true>(rgba_row, oxs, grow0);
       } else {
-        pixel_t r = get_pixel(x, y, 0);
-        pixel_t g = get_pixel(x, y, 1);
-        pixel_t b = get_pixel(x, y, 2);
-        if (nb_chans == 4) {
-          pixel_t a = get_pixel(x, y, 3);
-          group_data[3][y & 1][x + kPadding] = a;
-          group_data[1][y & 1][x + kPadding] = a ? r - b : 0;
-          pixel_t tmp = b + (group_data[1][y & 1][x + kPadding] >> 1);
-          group_data[2][y & 1][x + kPadding] = a ? g - tmp : 0;
-          group_data[0][y & 1][x + kPadding] =
-              a ? tmp + (group_data[2][y & 1][x + kPadding] >> 1) : 0;
-        } else {
-          group_data[1][y & 1][x + kPadding] = r - b;
-          pixel_t tmp = b + (group_data[1][y & 1][x + kPadding] >> 1);
-          group_data[2][y & 1][x + kPadding] = g - tmp;
-          group_data[0][y & 1][x + kPadding] =
-              tmp + (group_data[2][y & 1][x + kPadding] >> 1);
-        }
+        FillRowG16</*big_endian=*/false>(rgba_row, oxs, grow0);
       }
-      for (size_t c = 0; c < nb_chans; c++) {
-        allzero[c] |= group_data[c][y & 1][x + kPadding];
-        allone[c] &= group_data[c][y & 1][x + kPadding];
+    } else if (nb_chans == 2) {
+      if (BitDepth::kInputBytes == 1) {
+        FillRowGA8(rgba_row, oxs, grow0, grow1);
+      } else if (big_endian) {
+        FillRowGA16</*big_endian=*/true>(rgba_row, oxs, grow0, grow1);
+      } else {
+        FillRowGA16</*big_endian=*/false>(rgba_row, oxs, grow0, grow1);
+      }
+    } else if (nb_chans == 3) {
+      if (BitDepth::kInputBytes == 1) {
+        FillRowRGB8(rgba_row, oxs, grow0, grow1, grow2);
+      } else if (big_endian) {
+        FillRowRGB16</*big_endian=*/true>(rgba_row, oxs, grow0, grow1, grow2);
+      } else {
+        FillRowRGB16</*big_endian=*/false>(rgba_row, oxs, grow0, grow1, grow2);
+      }
+    } else {
+      if (BitDepth::kInputBytes == 1) {
+        FillRowRGBA8(rgba_row, oxs, grow0, grow1, grow2, grow3);
+      } else if (big_endian) {
+        FillRowRGBA16</*big_endian=*/true>(rgba_row, oxs, grow0, grow1, grow2,
+                                           grow3);
+      } else {
+        FillRowRGBA16</*big_endian=*/false>(rgba_row, oxs, grow0, grow1, grow2,
+                                            grow3);
       }
     }
     // Deal with x == 0.
@@ -2252,11 +2352,6 @@ void ProcessImageArea(const unsigned char* rgba, size_t x0, size_t y0,
     }
     if (y < yskip) continue;
     for (size_t c = 0; c < nb_chans; c++) {
-      if (y > 0 && (allzero[c] == 0 || allone[c] == one_mask)) {
-        processors[c].run += xs;
-        continue;
-      }
-
       // Get pointers to px/left/top/topleft data to speedup loop.
       const pixel_t* row = &group_data[c][y & 1][kPadding];
       const pixel_t* row_left = &group_data[c][y & 1][kPadding - 1];
@@ -2273,26 +2368,11 @@ void ProcessImageArea(const unsigned char* rgba, size_t x0, size_t y0,
   }
 }
 
-template <typename Processor, size_t nb_chans, typename BitDepth>
-void ProcessImageArea(const unsigned char* rgba, size_t x0, size_t y0,
-                      size_t oxs, size_t xs, size_t yskip, size_t ys,
-                      size_t row_stride, BitDepth bitdepth, bool big_endian,
-                      Processor* processors) {
-  if (big_endian) {
-    ProcessImageArea<Processor, nb_chans, BitDepth, /*big_endian=*/
-                     true>(rgba, x0, y0, oxs, xs, yskip, ys, row_stride,
-                           bitdepth, processors);
-  } else {
-    ProcessImageArea<Processor, nb_chans, BitDepth, /*big_endian=*/false>(
-        rgba, x0, y0, oxs, xs, yskip, ys, row_stride, bitdepth, processors);
-  }
-}
-
-template <size_t nb_chans, typename BitDepth>
+template <typename BitDepth>
 void WriteACSection(const unsigned char* rgba, size_t x0, size_t y0, size_t oxs,
                     size_t ys, size_t row_stride, bool is_single_group,
-                    BitDepth bitdepth, bool big_endian, const PrefixCode& code,
-                    std::array<BitWriter, 4>& output) {
+                    BitDepth bitdepth, size_t nb_chans, bool big_endian,
+                    const PrefixCode& code, std::array<BitWriter, 4>& output) {
   size_t xs = (oxs + kChunkSize - 1) / kChunkSize * kChunkSize;
   for (size_t i = 0; i < nb_chans; i++) {
     if (is_single_group && i == 0) continue;
@@ -2300,23 +2380,23 @@ void WriteACSection(const unsigned char* rgba, size_t x0, size_t y0, size_t oxs,
   }
   if (!is_single_group) {
     // Group header for modular image.
-    // When the image is single-group, the global modular image is the one that
-    // contains the pixel data, and there is no group header.
+    // When the image is single-group, the global modular image is the one
+    // that contains the pixel data, and there is no group header.
     output[0].Write(1, 1);     // Global tree
     output[0].Write(1, 1);     // All default wp
     output[0].Write(2, 0b00);  // 0 transforms
   }
 
-  ChunkEncoder<BitDepth> encoders[nb_chans];
-  ChannelRowProcessor<ChunkEncoder<BitDepth>, BitDepth> row_encoders[nb_chans];
+  ChunkEncoder<BitDepth> encoders[4];
+  ChannelRowProcessor<ChunkEncoder<BitDepth>, BitDepth> row_encoders[4];
   for (size_t c = 0; c < nb_chans; c++) {
     row_encoders[c].t = &encoders[c];
     encoders[c].output = &output[c];
     encoders[c].code = &code;
   }
-  ProcessImageArea<ChannelRowProcessor<ChunkEncoder<BitDepth>, BitDepth>,
-                   nb_chans>(rgba, x0, y0, oxs, xs, 0, ys, row_stride, bitdepth,
-                             big_endian, row_encoders);
+  ProcessImageArea<ChannelRowProcessor<ChunkEncoder<BitDepth>, BitDepth>>(
+      rgba, x0, y0, oxs, xs, 0, ys, row_stride, bitdepth, nb_chans, big_endian,
+      row_encoders);
 }
 
 constexpr int kHashExp = 16;
@@ -2330,11 +2410,21 @@ inline uint32_t pixel_hash(uint32_t p) {
   return (p * kHashMultiplier) >> (32 - kHashExp);
 }
 
-template <typename Processor, size_t nb_chans>
+template <size_t nb_chans>
+void FillRowPalette(const unsigned char* inrow, size_t oxs,
+                    const int16_t* lookup, int16_t* out) {
+  for (size_t x = 0; x < oxs; x++) {
+    uint32_t p = 0;
+    memcpy(&p, inrow + x * nb_chans, nb_chans);
+    out[x] = lookup[pixel_hash(p)];
+  }
+}
+
+template <typename Processor>
 void ProcessImageAreaPalette(const unsigned char* rgba, size_t x0, size_t y0,
                              size_t oxs, size_t xs, size_t yskip, size_t ys,
                              size_t row_stride, const int16_t* lookup,
-                             Processor* processors) {
+                             size_t nb_chans, Processor* processors) {
   constexpr size_t kPadding = 16;
 
   std::vector<std::array<int16_t, 256 + kPadding * 2>> group_data(2);
@@ -2343,10 +2433,15 @@ void ProcessImageAreaPalette(const unsigned char* rgba, size_t x0, size_t y0,
   for (size_t y = 0; y < ys; y++) {
     // Pre-fill rows with palette converted pixels.
     const unsigned char* inrow = rgba + row_stride * (y0 + y) + x0 * nb_chans;
-    for (size_t x = 0; x < oxs; x++) {
-      uint32_t p = 0;
-      memcpy(&p, inrow + x * nb_chans, nb_chans);
-      group_data[y & 1][x + kPadding] = lookup[pixel_hash(p)];
+    int16_t* outrow = &group_data[y & 1][kPadding];
+    if (nb_chans == 1) {
+      FillRowPalette<1>(inrow, oxs, lookup, outrow);
+    } else if (nb_chans == 2) {
+      FillRowPalette<2>(inrow, oxs, lookup, outrow);
+    } else if (nb_chans == 3) {
+      FillRowPalette<3>(inrow, oxs, lookup, outrow);
+    } else if (nb_chans == 4) {
+      FillRowPalette<4>(inrow, oxs, lookup, outrow);
     }
     // Deal with x == 0.
     group_data[y & 1][kPadding - 1] =
@@ -2371,18 +2466,18 @@ void ProcessImageAreaPalette(const unsigned char* rgba, size_t x0, size_t y0,
   row_encoder.Finalize();
 }
 
-template <size_t nb_chans>
 void WriteACSectionPalette(const unsigned char* rgba, size_t x0, size_t y0,
                            size_t oxs, size_t ys, size_t row_stride,
                            bool is_single_group, const PrefixCode& code,
-                           const int16_t* lookup, BitWriter& output) {
+                           const int16_t* lookup, size_t nb_chans,
+                           BitWriter& output) {
   size_t xs = (oxs + kChunkSize - 1) / kChunkSize * kChunkSize;
 
   if (!is_single_group) {
     output.Allocate(16 * xs * ys + 4);
     // Group header for modular image.
-    // When the image is single-group, the global modular image is the one that
-    // contains the pixel data, and there is no group header.
+    // When the image is single-group, the global modular image is the one
+    // that contains the pixel data, and there is no group header.
     output.Write(1, 1);     // Global tree
     output.Write(1, 1);     // All default wp
     output.Write(2, 0b00);  // 0 transforms
@@ -2395,41 +2490,41 @@ void WriteACSectionPalette(const unsigned char* rgba, size_t x0, size_t y0,
   encoder.output = &output;
   encoder.code = &code;
   ProcessImageAreaPalette<
-      ChannelRowProcessor<ChunkEncoder<UpTo8Bits>, UpTo8Bits>, nb_chans>(
-      rgba, x0, y0, oxs, xs, 0, ys, row_stride, lookup, &row_encoder);
+      ChannelRowProcessor<ChunkEncoder<UpTo8Bits>, UpTo8Bits>>(
+      rgba, x0, y0, oxs, xs, 0, ys, row_stride, lookup, nb_chans, &row_encoder);
 }
 
-template <size_t nb_chans, typename BitDepth>
+template <typename BitDepth>
 void CollectSamples(const unsigned char* rgba, size_t x0, size_t y0, size_t xs,
                     size_t row_stride, size_t row_count, uint64_t* raw_counts,
                     uint64_t* lz77_counts, bool palette, BitDepth bitdepth,
-                    bool big_endian, const int16_t* lookup) {
+                    size_t nb_chans, bool big_endian, const int16_t* lookup) {
   if (palette) {
-    ChunkSampleCollector<UpTo8Bits> sample_collectors[nb_chans];
+    ChunkSampleCollector<UpTo8Bits> sample_collectors[4];
     ChannelRowProcessor<ChunkSampleCollector<UpTo8Bits>, UpTo8Bits>
-        row_sample_collectors[nb_chans];
+        row_sample_collectors[4];
     for (size_t c = 0; c < nb_chans; c++) {
       row_sample_collectors[c].t = &sample_collectors[c];
       sample_collectors[c].raw_counts = raw_counts;
       sample_collectors[c].lz77_counts = lz77_counts;
     }
     ProcessImageAreaPalette<
-        ChannelRowProcessor<ChunkSampleCollector<UpTo8Bits>, UpTo8Bits>,
-        nb_chans>(rgba, x0, y0, xs, xs, 1, 1 + row_count, row_stride, lookup,
-                  row_sample_collectors);
+        ChannelRowProcessor<ChunkSampleCollector<UpTo8Bits>, UpTo8Bits>>(
+        rgba, x0, y0, xs, xs, 1, 1 + row_count, row_stride, lookup, nb_chans,
+        row_sample_collectors);
   } else {
-    ChunkSampleCollector<BitDepth> sample_collectors[nb_chans];
+    ChunkSampleCollector<BitDepth> sample_collectors[4];
     ChannelRowProcessor<ChunkSampleCollector<BitDepth>, BitDepth>
-        row_sample_collectors[nb_chans];
+        row_sample_collectors[4];
     for (size_t c = 0; c < nb_chans; c++) {
       row_sample_collectors[c].t = &sample_collectors[c];
       sample_collectors[c].raw_counts = raw_counts;
       sample_collectors[c].lz77_counts = lz77_counts;
     }
     ProcessImageArea<
-        ChannelRowProcessor<ChunkSampleCollector<BitDepth>, BitDepth>,
-        nb_chans>(rgba, x0, y0, xs, xs, 1, 1 + row_count, row_stride, bitdepth,
-                  big_endian, row_sample_collectors);
+        ChannelRowProcessor<ChunkSampleCollector<BitDepth>, BitDepth>>(
+        rgba, x0, y0, xs, xs, 1, 1 + row_count, row_stride, bitdepth, nb_chans,
+        big_endian, row_sample_collectors);
   }
 }
 
@@ -2494,10 +2589,11 @@ void PrepareDCGlobalPalette(bool is_single_group, size_t width, size_t height,
   }
 }
 
-template <size_t nb_chans, typename BitDepth>
+template <typename BitDepth>
 JxlFastLosslessFrameState* LLEnc(const unsigned char* rgba, size_t width,
                                  size_t stride, size_t height,
-                                 BitDepth bitdepth, bool big_endian, int effort,
+                                 BitDepth bitdepth, size_t nb_chans,
+                                 bool big_endian, int effort,
                                  void* runner_opaque,
                                  FJxlParallelRunner runner) {
   assert(width != 0);
@@ -2621,9 +2717,9 @@ JxlFastLosslessFrameState* LLEnc(const unsigned char* rgba, size_t width,
         std::min<int>(2 * effort * y_max / 256, y_offset + y_max - y_begin - 1);
     int x_max =
         std::min<size_t>(width - xg * 256, 256) / kChunkSize * kChunkSize;
-    CollectSamples<nb_chans>(rgba, xg * 256, y_begin, x_max, stride, y_count,
-                             raw_counts, lz77_counts, !collided, bitdepth,
-                             big_endian, lookup.data());
+    CollectSamples(rgba, xg * 256, y_begin, x_max, stride, y_count, raw_counts,
+                   lz77_counts, !collided, bitdepth, nb_chans, big_endian,
+                   lookup.data());
   }
 
   // TODO(veluca): can probably improve this and make it bitdepth-dependent.
@@ -2702,12 +2798,12 @@ JxlFastLosslessFrameState* LLEnc(const unsigned char* rgba, size_t width,
     size_t y0 = yg * 256;
     auto& gd = frame_state->group_data[group_id];
     if (collided) {
-      WriteACSection<nb_chans>(rgba, x0, y0, xs, ys, stride, onegroup, bitdepth,
-                               big_endian, hcode, gd);
+      WriteACSection(rgba, x0, y0, xs, ys, stride, onegroup, bitdepth, nb_chans,
+                     big_endian, hcode, gd);
 
     } else {
-      WriteACSectionPalette<nb_chans>(rgba, x0, y0, xs, ys, stride, onegroup,
-                                      hcode, lookup.data(), gd[0]);
+      WriteACSectionPalette(rgba, x0, y0, xs, ys, stride, onegroup, hcode,
+                            lookup.data(), nb_chans, gd[0]);
     }
   };
 
@@ -2719,48 +2815,26 @@ JxlFastLosslessFrameState* LLEnc(const unsigned char* rgba, size_t width,
   return frame_state;
 }
 
-template <typename BitDepth>
-JxlFastLosslessFrameState* LLEnc(const unsigned char* rgba, size_t width,
-                                 size_t stride, size_t height, size_t nb_chans,
-                                 BitDepth bitdepth, bool big_endian, int effort,
-                                 void* runner_opaque,
-                                 FJxlParallelRunner runner) {
-  assert(nb_chans <= 4);
-  assert(nb_chans != 0);
-  if (nb_chans == 1) {
-    return LLEnc<1>(rgba, width, stride, height, bitdepth, big_endian, effort,
-                    runner_opaque, runner);
-  }
-  if (nb_chans == 2) {
-    return LLEnc<2>(rgba, width, stride, height, bitdepth, big_endian, effort,
-                    runner_opaque, runner);
-  }
-  if (nb_chans == 3) {
-    return LLEnc<3>(rgba, width, stride, height, bitdepth, big_endian, effort,
-                    runner_opaque, runner);
-  }
-  return LLEnc<4>(rgba, width, stride, height, bitdepth, big_endian, effort,
-                  runner_opaque, runner);
-}
-
 JxlFastLosslessFrameState* JxlFastLosslessEncodeImpl(
     const unsigned char* rgba, size_t width, size_t stride, size_t height,
     size_t nb_chans, size_t bitdepth, bool big_endian, int effort,
     void* runner_opaque, FJxlParallelRunner runner) {
   assert(bitdepth > 0);
+  assert(nb_chans <= 4);
+  assert(nb_chans != 0);
   if (bitdepth <= 8) {
-    return LLEnc(rgba, width, stride, height, nb_chans, UpTo8Bits(bitdepth),
+    return LLEnc(rgba, width, stride, height, UpTo8Bits(bitdepth), nb_chans,
                  big_endian, effort, runner_opaque, runner);
   }
   if (bitdepth <= 13) {
-    return LLEnc(rgba, width, stride, height, nb_chans, From9To13Bits(bitdepth),
+    return LLEnc(rgba, width, stride, height, From9To13Bits(bitdepth), nb_chans,
                  big_endian, effort, runner_opaque, runner);
   }
   if (bitdepth == 14) {
-    return LLEnc(rgba, width, stride, height, nb_chans, Exactly14Bits(bitdepth),
+    return LLEnc(rgba, width, stride, height, Exactly14Bits(bitdepth), nb_chans,
                  big_endian, effort, runner_opaque, runner);
   }
-  return LLEnc(rgba, width, stride, height, nb_chans, MoreThan14Bits(bitdepth),
+  return LLEnc(rgba, width, stride, height, MoreThan14Bits(bitdepth), nb_chans,
                big_endian, effort, runner_opaque, runner);
 }
 
