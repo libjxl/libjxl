@@ -5,10 +5,6 @@
 
 #ifndef FJXL_SELF_INCLUDE
 
-#ifdef NDEBUG
-#undef NDEBUG
-#endif
-
 #include "lib/jxl/enc_fast_lossless.h"
 
 #include <assert.h>
@@ -874,44 +870,134 @@ struct SIMDVec16 {
   }
 
   static std::array<SIMDVec16, 1> LoadG8(const unsigned char* data) {
-    // TODO
-    assert(false);
+    __m256i bytes = _mm256_loadu_si256((__m256i*)data);
+    return {SIMDVec16{_mm512_cvtepu8_epi16(bytes)}};
   }
   static std::array<SIMDVec16, 1> LoadG16(const unsigned char* data) {
-    // TODO
-    assert(false);
+    return {Load((const uint16_t*)data)};
   }
 
   static std::array<SIMDVec16, 2> LoadGA8(const unsigned char* data) {
-    // TODO
-    assert(false);
+    __m512i bytes = _mm512_loadu_si512((__m512i*)data);
+    __m512i gray = _mm512_and_si512(bytes, _mm512_set1_epi16(0xFF));
+    __m512i alpha = _mm512_srli_epi16(bytes, 8);
+    return {SIMDVec16{gray}, SIMDVec16{alpha}};
   }
   static std::array<SIMDVec16, 2> LoadGA16(const unsigned char* data) {
-    // TODO
-    assert(false);
+    __m512i bytes1 = _mm512_loadu_si512((__m512i*)data);
+    __m512i bytes2 = _mm512_loadu_si512((__m512i*)(data + 64));
+    __m512i g_mask = _mm512_set1_epi32(0xFFFF);
+    __m512i permuteidx = _mm512_set_epi64(7, 5, 3, 1, 6, 4, 2, 0);
+    __m512i g = _mm512_permutexvar_epi64(
+        permuteidx, _mm512_packus_epi32(_mm512_and_si512(bytes1, g_mask),
+                                        _mm512_and_si512(bytes2, g_mask)));
+    __m512i a = _mm512_permutexvar_epi64(
+        permuteidx, _mm512_packus_epi32(_mm512_srli_epi32(bytes1, 16),
+                                        _mm512_srli_epi32(bytes2, 16)));
+    return {SIMDVec16{g}, SIMDVec16{a}};
   }
 
   static std::array<SIMDVec16, 3> LoadRGB8(const unsigned char* data) {
-    // TODO
-    assert(false);
+    __m512i bytes0 = _mm512_loadu_si512((__m512i*)data);
+    __m512i bytes1 =
+        _mm512_zextsi256_si512(_mm256_loadu_si256((__m256i*)(data + 64)));
+
+    // 0x7A = element of upper half of second vector = 0 after lookup; still in
+    // the upper half once we add 1 or 2.
+    uint8_t z = 0x7A;
+    __m512i ridx =
+        _mm512_set_epi8(z, 93, z, 90, z, 87, z, 84, z, 81, z, 78, z, 75, z, 72,
+                        z, 69, z, 66, z, 63, z, 60, z, 57, z, 54, z, 51, z, 48,
+                        z, 45, z, 42, z, 39, z, 36, z, 33, z, 30, z, 27, z, 24,
+                        z, 21, z, 18, z, 15, z, 12, z, 9, z, 6, z, 3, z, 0);
+    __m512i gidx = _mm512_add_epi8(ridx, _mm512_set1_epi8(1));
+    __m512i bidx = _mm512_add_epi8(gidx, _mm512_set1_epi8(1));
+    __m512i r = _mm512_permutex2var_epi8(bytes0, ridx, bytes1);
+    __m512i g = _mm512_permutex2var_epi8(bytes0, gidx, bytes1);
+    __m512i b = _mm512_permutex2var_epi8(bytes0, bidx, bytes1);
+    return {SIMDVec16{r}, SIMDVec16{g}, SIMDVec16{b}};
   }
   static std::array<SIMDVec16, 3> LoadRGB16(const unsigned char* data) {
-    // TODO
-    assert(false);
+    __m512i bytes0 = _mm512_loadu_si512((__m512i*)data);
+    __m512i bytes1 = _mm512_loadu_si512((__m512i*)(data + 64));
+    __m512i bytes2 = _mm512_loadu_si512((__m512i*)(data + 128));
+
+    __m512i ridx_lo = _mm512_set_epi16(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 60, 57,
+                                       54, 51, 48, 45, 42, 39, 36, 33, 30, 27,
+                                       24, 21, 18, 15, 12, 9, 6, 3, 0);
+    // -1 is such that when adding 1 or 2, we get the correct index for
+    // green/blue.
+    __m512i ridx_hi =
+        _mm512_set_epi16(29, 26, 23, 20, 17, 14, 11, 8, 5, 2, -1, 0, 0, 0, 0, 0,
+                         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+    __m512i gidx_lo = _mm512_add_epi16(ridx_lo, _mm512_set1_epi16(1));
+    __m512i gidx_hi = _mm512_add_epi16(ridx_hi, _mm512_set1_epi16(1));
+    __m512i bidx_lo = _mm512_add_epi16(gidx_lo, _mm512_set1_epi16(1));
+    __m512i bidx_hi = _mm512_add_epi16(gidx_hi, _mm512_set1_epi16(1));
+
+    __mmask32 rmask = _cvtu32_mask32(0b11111111110000000000000000000000);
+    __mmask32 gbmask = _cvtu32_mask32(0b11111111111000000000000000000000);
+
+    __m512i rlo = _mm512_permutex2var_epi16(bytes0, ridx_lo, bytes1);
+    __m512i glo = _mm512_permutex2var_epi16(bytes0, gidx_lo, bytes1);
+    __m512i blo = _mm512_permutex2var_epi16(bytes0, bidx_lo, bytes1);
+    __m512i r = _mm512_mask_permutexvar_epi16(rlo, rmask, ridx_hi, bytes2);
+    __m512i g = _mm512_mask_permutexvar_epi16(glo, gbmask, gidx_hi, bytes2);
+    __m512i b = _mm512_mask_permutexvar_epi16(blo, gbmask, bidx_hi, bytes2);
+    return {SIMDVec16{r}, SIMDVec16{g}, SIMDVec16{b}};
   }
 
   static std::array<SIMDVec16, 4> LoadRGBA8(const unsigned char* data) {
-    // TODO
-    assert(false);
+    __m512i bytes1 = _mm512_loadu_si512((__m512i*)data);
+    __m512i bytes2 = _mm512_loadu_si512((__m512i*)(data + 64));
+    __m512i rg_mask = _mm512_set1_epi32(0xFFFF);
+    __m512i permuteidx = _mm512_set_epi64(7, 5, 3, 1, 6, 4, 2, 0);
+    __m512i rg = _mm512_permutexvar_epi64(
+        permuteidx, _mm512_packus_epi32(_mm512_and_si512(bytes1, rg_mask),
+                                        _mm512_and_si512(bytes2, rg_mask)));
+    __m512i ba = _mm512_permutexvar_epi64(
+        permuteidx, _mm512_packus_epi32(_mm512_srli_epi32(bytes1, 16),
+                                        _mm512_srli_epi32(bytes2, 16)));
+    __m512i r = _mm512_and_si512(rg, _mm512_set1_epi16(0xFF));
+    __m512i g = _mm512_srli_epi16(rg, 8);
+    __m512i b = _mm512_and_si512(ba, _mm512_set1_epi16(0xFF));
+    __m512i a = _mm512_srli_epi16(ba, 8);
+    return {SIMDVec16{r}, SIMDVec16{g}, SIMDVec16{b}, SIMDVec16{a}};
   }
   static std::array<SIMDVec16, 4> LoadRGBA16(const unsigned char* data) {
-    // TODO
-    assert(false);
+    __m512i bytes0 = _mm512_loadu_si512((__m512i*)data);
+    __m512i bytes1 = _mm512_loadu_si512((__m512i*)(data + 64));
+    __m512i bytes2 = _mm512_loadu_si512((__m512i*)(data + 128));
+    __m512i bytes3 = _mm512_loadu_si512((__m512i*)(data + 192));
+
+    auto pack32 = [](__m512i a, __m512i b) {
+      __m512i permuteidx = _mm512_set_epi64(7, 5, 3, 1, 6, 4, 2, 0);
+      return _mm512_permutexvar_epi64(permuteidx, _mm512_packus_epi32(a, b));
+    };
+    auto packlow32 = [&pack32](__m512i a, __m512i b) {
+      __m512i mask = _mm512_set1_epi32(0xFFFF);
+      return pack32(_mm512_and_si512(a, mask), _mm512_and_si512(b, mask));
+    };
+    auto packhi32 = [&pack32](__m512i a, __m512i b) {
+      return pack32(_mm512_srli_epi32(a, 16), _mm512_srli_epi32(b, 16));
+    };
+
+    __m512i rb0 = packlow32(bytes0, bytes1);
+    __m512i rb1 = packlow32(bytes2, bytes3);
+    __m512i ga0 = packhi32(bytes0, bytes1);
+    __m512i ga1 = packhi32(bytes2, bytes3);
+
+    __m512i r = packlow32(rb0, rb1);
+    __m512i g = packlow32(ga0, ga1);
+    __m512i b = packhi32(rb0, rb1);
+    __m512i a = packhi32(ga0, ga1);
+    return {SIMDVec16{r}, SIMDVec16{g}, SIMDVec16{b}, SIMDVec16{a}};
   }
 
   void SwapEndian() {
-    // TODO
-    assert(false);
+    auto indices = _mm512_broadcast_i32x4(
+        _mm_setr_epi8(1, 0, 3, 2, 5, 4, 7, 6, 9, 8, 11, 10, 13, 12, 15, 14));
+    vec = _mm512_shuffle_epi8(vec, indices);
   }
 };
 
@@ -3283,11 +3369,16 @@ JxlFastLosslessFrameState* JxlFastLosslessEncodeImpl(
 #include "lib/jxl/enc_fast_lossless.cc"
 
 #ifdef __clang__
-#pragma clang attribute push(__attribute__((target("avx2"))), \
+#pragma clang attribute push(__attribute__((target("avx,avx2"))), \
                              apply_to = function)
+// Causes spurious warnings on clang5.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wmissing-braces"
 #elif defined(__GNUC__)
 #pragma GCC push_options
-#pragma GCC target "avx2"
+// Seems to cause spurious errors on GCC8.
+#pragma GCC diagnostic ignored "-Wpsabi"
+#pragma GCC target "avx,avx2"
 #endif
 
 namespace AVX2 {
@@ -3298,18 +3389,19 @@ namespace AVX2 {
 
 #ifdef __clang__
 #pragma clang attribute pop
+#pragma clang diagnostic pop
 #elif defined(__GNUC__)
 #pragma GCC pop_options
 #endif
 
 #if FJXL_ENABLE_AVX512
 #ifdef __clang__
-#pragma clang attribute push(                                      \
-    __attribute__((target("avx512cd,avx512bw,avx512vl,avx512f"))), \
+#pragma clang attribute push(                                                 \
+    __attribute__((target("avx512cd,avx512bw,avx512vl,avx512f,avx512vbmi"))), \
     apply_to = function)
 #elif defined(__GNUC__)
 #pragma GCC push_options
-#pragma GCC target "avx512cd,avx512bw,avx512vl,avx512f"
+#pragma GCC target "avx512cd,avx512bw,avx512vl,avx512f,avx512vbmi"
 #endif
 
 namespace AVX512 {
@@ -3371,6 +3463,7 @@ JxlFastLosslessFrameState* JxlFastLosslessPrepareFrame(
 #if (!defined(_MSC_VER) || defined(__clang__)) && defined(__x86_64__)
 #if FJXL_ENABLE_AVX512
   if (__builtin_cpu_supports("avx512cd") &&
+      __builtin_cpu_supports("avx512vbmi") &&
       __builtin_cpu_supports("avx512bw") && __builtin_cpu_supports("avx512f") &&
       __builtin_cpu_supports("avx512vl")) {
     return AVX512::JxlFastLosslessEncodeImpl(rgba, width, row_stride, height,
