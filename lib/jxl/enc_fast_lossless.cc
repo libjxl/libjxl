@@ -111,6 +111,280 @@ struct BitWriter {
   size_t bits_in_buffer = 0;
   uint64_t buffer = 0;
 };
+
+constexpr size_t kNumRawSymbols = 19;
+static constexpr size_t kNumLZ77 = 17;
+
+constexpr size_t kLZ77Offset = 224;
+
+struct PrefixCode {
+  uint8_t raw_nbits[kNumRawSymbols] = {};
+  uint8_t raw_bits[kNumRawSymbols] = {};
+
+  alignas(64) uint8_t raw_nbits_simd[16] = {};
+  alignas(64) uint8_t raw_bits_simd[16] = {};
+
+  uint8_t lz77_nbits[kNumLZ77] = {};
+  uint16_t lz77_bits[kNumLZ77] = {};
+
+  static uint16_t BitReverse(size_t nbits, uint16_t bits) {
+    constexpr uint16_t kNibbleLookup[16] = {
+        0b0000, 0b1000, 0b0100, 0b1100, 0b0010, 0b1010, 0b0110, 0b1110,
+        0b0001, 0b1001, 0b0101, 0b1101, 0b0011, 0b1011, 0b0111, 0b1111,
+    };
+    uint16_t rev16 = (kNibbleLookup[bits & 0xF] << 12) |
+                     (kNibbleLookup[(bits >> 4) & 0xF] << 8) |
+                     (kNibbleLookup[(bits >> 8) & 0xF] << 4) |
+                     (kNibbleLookup[bits >> 12]);
+    return rev16 >> (16 - nbits);
+  }
+
+  // Create the prefix codes given the code lengths.
+  // Supports the code lengths being split into two halves.
+  static void ComputeCanonicalCode(const uint8_t* first_chunk_nbits,
+                                   uint8_t* first_chunk_bits,
+                                   size_t first_chunk_size,
+                                   const uint8_t* second_chunk_nbits,
+                                   uint16_t* second_chunk_bits,
+                                   size_t second_chunk_size) {
+    constexpr size_t kMaxCodeLength = 15;
+    uint8_t code_length_counts[kMaxCodeLength + 1] = {};
+    for (size_t i = 0; i < first_chunk_size; i++) {
+      code_length_counts[first_chunk_nbits[i]]++;
+      assert(first_chunk_nbits[i] <= kMaxCodeLength);
+      assert(first_chunk_nbits[i] <= 8);
+      assert(first_chunk_nbits[i] > 0);
+    }
+    for (size_t i = 0; i < second_chunk_size; i++) {
+      code_length_counts[second_chunk_nbits[i]]++;
+      assert(second_chunk_nbits[i] <= kMaxCodeLength);
+    }
+
+    uint16_t next_code[kMaxCodeLength + 1] = {};
+
+    uint16_t code = 0;
+    for (size_t i = 1; i < kMaxCodeLength + 1; i++) {
+      code = (code + code_length_counts[i - 1]) << 1;
+      next_code[i] = code;
+    }
+
+    for (size_t i = 0; i < first_chunk_size; i++) {
+      first_chunk_bits[i] =
+          BitReverse(first_chunk_nbits[i], next_code[first_chunk_nbits[i]]++);
+    }
+    for (size_t i = 0; i < second_chunk_size; i++) {
+      second_chunk_bits[i] =
+          BitReverse(second_chunk_nbits[i], next_code[second_chunk_nbits[i]]++);
+    }
+  }
+
+  // Computes nbits[i] for i <= n, subject to min_limit[i] <= nbits[i] <=
+  // max_limit[i], so to minimize sum(nbits[i] * freqs[i]).
+  static void ComputeCodeLengthsNonZero(const uint64_t* freqs, size_t n,
+                                        uint8_t* min_limit, uint8_t* max_limit,
+                                        uint8_t* nbits) {
+    size_t precision = 0;
+    uint64_t freqsum = 0;
+    for (size_t i = 0; i < n; i++) {
+      assert(freqs[i] != 0);
+      freqsum += freqs[i];
+      if (min_limit[i] < 1) min_limit[i] = 1;
+      assert(min_limit[i] <= max_limit[i]);
+      precision = std::max<size_t>(max_limit[i], precision);
+    }
+    uint64_t infty = freqsum * precision;
+    std::vector<uint64_t> dynp(((1U << precision) + 1) * (n + 1), infty);
+    auto d = [&](size_t sym, size_t off) -> uint64_t& {
+      return dynp[sym * ((1 << precision) + 1) + off];
+    };
+    d(0, 0) = 0;
+    for (size_t sym = 0; sym < n; sym++) {
+      for (size_t bits = min_limit[sym]; bits <= max_limit[sym]; bits++) {
+        size_t off_delta = 1U << (precision - bits);
+        for (size_t off = 0; off + off_delta <= (1U << precision); off++) {
+          d(sym + 1, off + off_delta) = std::min(
+              d(sym, off) + freqs[sym] * bits, d(sym + 1, off + off_delta));
+        }
+      }
+    }
+
+    size_t sym = n;
+    size_t off = 1U << precision;
+
+    assert(d(sym, off) != infty);
+
+    while (sym-- > 0) {
+      assert(off > 0);
+      for (size_t bits = min_limit[sym]; bits <= max_limit[sym]; bits++) {
+        size_t off_delta = 1U << (precision - bits);
+        if (off_delta <= off &&
+            d(sym + 1, off) == d(sym, off - off_delta) + freqs[sym] * bits) {
+          off -= off_delta;
+          nbits[sym] = bits;
+          break;
+        }
+      }
+    }
+  }
+  static void ComputeCodeLengths(const uint64_t* freqs, size_t n,
+                                 const uint8_t* min_limit_in,
+                                 const uint8_t* max_limit_in, uint8_t* nbits) {
+    assert(n <= kNumRawSymbols + 1);
+    uint64_t compact_freqs[kNumRawSymbols + 1];
+    uint8_t min_limit[kNumRawSymbols + 1];
+    uint8_t max_limit[kNumRawSymbols + 1];
+    size_t ni = 0;
+    for (size_t i = 0; i < n; i++) {
+      if (freqs[i]) {
+        compact_freqs[ni] = freqs[i];
+        min_limit[ni] = min_limit_in[i];
+        max_limit[ni] = max_limit_in[i];
+        ni++;
+      }
+    }
+    uint8_t num_bits[kNumRawSymbols + 1] = {};
+    ComputeCodeLengthsNonZero(compact_freqs, ni, min_limit, max_limit,
+                              num_bits);
+    ni = 0;
+    for (size_t i = 0; i < n; i++) {
+      nbits[i] = 0;
+      if (freqs[i]) {
+        nbits[i] = num_bits[ni++];
+      }
+    }
+  }
+
+  // Invalid code, used to construct arrays.
+  PrefixCode() {}
+
+  template <typename BitDepth>
+  PrefixCode(BitDepth, uint64_t* raw_counts, uint64_t* lz77_counts) {
+    // "merge" together all the lz77 counts in a single symbol for the level 1
+    // table (containing just the raw symbols, up to length 7).
+    uint64_t level1_counts[kNumRawSymbols + 1];
+    memcpy(level1_counts, raw_counts, kNumRawSymbols * sizeof(uint64_t));
+    size_t numraw = kNumRawSymbols;
+    while (numraw > 0 && level1_counts[numraw - 1] == 0) numraw--;
+
+    level1_counts[numraw] = 0;
+    for (size_t i = 0; i < kNumLZ77; i++) {
+      level1_counts[numraw] += lz77_counts[i];
+    }
+    uint8_t level1_nbits[kNumRawSymbols + 1] = {};
+    ComputeCodeLengths(level1_counts, numraw + 1, BitDepth::kMinRawLength,
+                       BitDepth::kMaxRawLength, level1_nbits);
+
+    uint8_t level2_nbits[kNumLZ77] = {};
+    uint8_t min_lengths[kNumLZ77] = {};
+    uint8_t l = 15 - level1_nbits[numraw];
+    uint8_t max_lengths[kNumLZ77] = {
+        l, l, l, l, l, l, l, l, l, l, l, l, l, l, l, l, l,
+    };
+    size_t num_lz77 = kNumLZ77;
+    while (num_lz77 > 0 && lz77_counts[num_lz77 - 1] == 0) num_lz77--;
+    ComputeCodeLengths(lz77_counts, num_lz77, min_lengths, max_lengths,
+                       level2_nbits);
+    for (size_t i = 0; i < numraw; i++) {
+      raw_nbits[i] = level1_nbits[i];
+    }
+    for (size_t i = 0; i < num_lz77; i++) {
+      lz77_nbits[i] =
+          level2_nbits[i] ? level1_nbits[numraw] + level2_nbits[i] : 0;
+    }
+
+    ComputeCanonicalCode(raw_nbits, raw_bits, numraw, lz77_nbits, lz77_bits,
+                         kNumLZ77);
+    BitDepth::PrepareForSimd(raw_nbits, raw_bits, numraw, raw_nbits_simd,
+                             raw_bits_simd);
+  }
+
+  void WriteTo(BitWriter* writer, size_t chunk_size) const {
+    uint64_t code_length_counts[18] = {};
+    code_length_counts[17] = 3 + 2 * (kNumLZ77 - 1);
+    for (size_t i = 0; i < kNumRawSymbols; i++) {
+      code_length_counts[raw_nbits[i]]++;
+    }
+    for (size_t i = 0; i < kNumLZ77; i++) {
+      code_length_counts[lz77_nbits[i]]++;
+    }
+    uint8_t code_length_nbits[18] = {};
+    uint8_t code_length_nbits_min[18] = {};
+    uint8_t code_length_nbits_max[18] = {
+        5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
+    };
+    ComputeCodeLengths(code_length_counts, 18, code_length_nbits_min,
+                       code_length_nbits_max, code_length_nbits);
+    writer->Write(2, 0b00);  // HSKIP = 0, i.e. don't skip code lengths.
+
+    // As per Brotli RFC.
+    uint8_t code_length_order[18] = {1, 2, 3, 4,  0,  5,  17, 6,  16,
+                                     7, 8, 9, 10, 11, 12, 13, 14, 15};
+    uint8_t code_length_length_nbits[] = {2, 4, 3, 2, 2, 4};
+    uint8_t code_length_length_bits[] = {0, 7, 3, 2, 1, 15};
+
+    // Encode lengths of code lengths.
+    size_t num_code_lengths = 18;
+    while (code_length_nbits[code_length_order[num_code_lengths - 1]] == 0) {
+      num_code_lengths--;
+    }
+    for (size_t i = 0; i < num_code_lengths; i++) {
+      int symbol = code_length_nbits[code_length_order[i]];
+      writer->Write(code_length_length_nbits[symbol],
+                    code_length_length_bits[symbol]);
+    }
+
+    // Compute the canonical codes for the codes that represent the lengths of
+    // the actual codes for data.
+    uint16_t code_length_bits[18] = {};
+    ComputeCanonicalCode(nullptr, nullptr, 0, code_length_nbits,
+                         code_length_bits, 18);
+    // Encode raw bit code lengths.
+    for (size_t i = 0; i < kNumRawSymbols; i++) {
+      writer->Write(code_length_nbits[raw_nbits[i]],
+                    code_length_bits[raw_nbits[i]]);
+    }
+    size_t num_lz77 = kNumLZ77;
+    while (lz77_nbits[num_lz77 - 1] == 0) {
+      num_lz77--;
+    }
+    // Encode 0s until 224 (start of LZ77 symbols). This is in total 224-19 =
+    // 205.
+    static_assert(kLZ77Offset == 224, "");
+    static_assert(kNumRawSymbols == 19, "");
+    writer->Write(code_length_nbits[17], code_length_bits[17]);
+    writer->Write(3, 0b010);  // 5
+    writer->Write(code_length_nbits[17], code_length_bits[17]);
+    writer->Write(3, 0b000);  // (5-2)*8 + 3 = 27
+    writer->Write(code_length_nbits[17], code_length_bits[17]);
+    writer->Write(3, 0b010);  // (27-2)*8 + 5 = 205
+    // Encode LZ77 symbols, with values 224+i*16.
+    for (size_t i = 0; i < num_lz77; i++) {
+      writer->Write(code_length_nbits[lz77_nbits[i]],
+                    code_length_bits[lz77_nbits[i]]);
+      if (i != num_lz77 - 1) {
+        if (chunk_size == 16) {
+          // Encode gap between LZ77 symbols: 15 zeros.
+          writer->Write(code_length_nbits[17], code_length_bits[17]);
+          writer->Write(3, 0b000);  // 3
+          writer->Write(code_length_nbits[17], code_length_bits[17]);
+          writer->Write(3, 0b100);  // (3-2)*8+7 = 15
+        } else if (chunk_size == 8) {
+          // 7 zeros
+          writer->Write(code_length_nbits[17], code_length_bits[17]);
+          writer->Write(3, 0b100);  // 7
+        } else {
+          assert(chunk_size == 32);
+          // 31 zeros
+          writer->Write(code_length_nbits[17], code_length_bits[17]);
+          writer->Write(3, 0b010);  // 5
+          writer->Write(code_length_nbits[17], code_length_bits[17]);
+          writer->Write(3, 0b100);  // (5-2)*8+7 = 31
+        }
+      }
+    }
+  }
+};
+
 }  // namespace
 
 extern "C" {
@@ -423,277 +697,6 @@ void JxlFastLosslessFreeFrameState(JxlFastLosslessFrameState* frame) {
 #ifdef FJXL_SELF_INCLUDE
 
 namespace {
-
-constexpr size_t kNumRawSymbols = 19;
-
-constexpr size_t kLZ77Offset = 224;
-
-struct PrefixCode {
-  static constexpr size_t kNumLZ77 = 17;
-
-  uint8_t raw_nbits[kNumRawSymbols] = {};
-  uint8_t raw_bits[kNumRawSymbols] = {};
-
-  alignas(64) uint8_t raw_nbits_simd[16] = {};
-  alignas(64) uint8_t raw_bits_simd[16] = {};
-
-  uint8_t lz77_nbits[kNumLZ77] = {};
-  uint16_t lz77_bits[kNumLZ77] = {};
-
-  static uint16_t BitReverse(size_t nbits, uint16_t bits) {
-    constexpr uint16_t kNibbleLookup[16] = {
-        0b0000, 0b1000, 0b0100, 0b1100, 0b0010, 0b1010, 0b0110, 0b1110,
-        0b0001, 0b1001, 0b0101, 0b1101, 0b0011, 0b1011, 0b0111, 0b1111,
-    };
-    uint16_t rev16 = (kNibbleLookup[bits & 0xF] << 12) |
-                     (kNibbleLookup[(bits >> 4) & 0xF] << 8) |
-                     (kNibbleLookup[(bits >> 8) & 0xF] << 4) |
-                     (kNibbleLookup[bits >> 12]);
-    return rev16 >> (16 - nbits);
-  }
-
-  // Create the prefix codes given the code lengths.
-  // Supports the code lengths being split into two halves.
-  static void ComputeCanonicalCode(const uint8_t* first_chunk_nbits,
-                                   uint8_t* first_chunk_bits,
-                                   size_t first_chunk_size,
-                                   const uint8_t* second_chunk_nbits,
-                                   uint16_t* second_chunk_bits,
-                                   size_t second_chunk_size) {
-    constexpr size_t kMaxCodeLength = 15;
-    uint8_t code_length_counts[kMaxCodeLength + 1] = {};
-    for (size_t i = 0; i < first_chunk_size; i++) {
-      code_length_counts[first_chunk_nbits[i]]++;
-      assert(first_chunk_nbits[i] <= kMaxCodeLength);
-      assert(first_chunk_nbits[i] <= 8);
-      assert(first_chunk_nbits[i] > 0);
-    }
-    for (size_t i = 0; i < second_chunk_size; i++) {
-      code_length_counts[second_chunk_nbits[i]]++;
-      assert(second_chunk_nbits[i] <= kMaxCodeLength);
-    }
-
-    uint16_t next_code[kMaxCodeLength + 1] = {};
-
-    uint16_t code = 0;
-    for (size_t i = 1; i < kMaxCodeLength + 1; i++) {
-      code = (code + code_length_counts[i - 1]) << 1;
-      next_code[i] = code;
-    }
-
-    for (size_t i = 0; i < first_chunk_size; i++) {
-      first_chunk_bits[i] =
-          BitReverse(first_chunk_nbits[i], next_code[first_chunk_nbits[i]]++);
-    }
-    for (size_t i = 0; i < second_chunk_size; i++) {
-      second_chunk_bits[i] =
-          BitReverse(second_chunk_nbits[i], next_code[second_chunk_nbits[i]]++);
-    }
-  }
-
-  // Computes nbits[i] for i <= n, subject to min_limit[i] <= nbits[i] <=
-  // max_limit[i], so to minimize sum(nbits[i] * freqs[i]).
-  static void ComputeCodeLengthsNonZero(const uint64_t* freqs, size_t n,
-                                        uint8_t* min_limit, uint8_t* max_limit,
-                                        uint8_t* nbits) {
-    size_t precision = 0;
-    uint64_t freqsum = 0;
-    for (size_t i = 0; i < n; i++) {
-      assert(freqs[i] != 0);
-      freqsum += freqs[i];
-      if (min_limit[i] < 1) min_limit[i] = 1;
-      assert(min_limit[i] <= max_limit[i]);
-      precision = std::max<size_t>(max_limit[i], precision);
-    }
-    uint64_t infty = freqsum * precision;
-    std::vector<uint64_t> dynp(((1U << precision) + 1) * (n + 1), infty);
-    auto d = [&](size_t sym, size_t off) -> uint64_t& {
-      return dynp[sym * ((1 << precision) + 1) + off];
-    };
-    d(0, 0) = 0;
-    for (size_t sym = 0; sym < n; sym++) {
-      for (size_t bits = min_limit[sym]; bits <= max_limit[sym]; bits++) {
-        size_t off_delta = 1U << (precision - bits);
-        for (size_t off = 0; off + off_delta <= (1U << precision); off++) {
-          d(sym + 1, off + off_delta) = std::min(
-              d(sym, off) + freqs[sym] * bits, d(sym + 1, off + off_delta));
-        }
-      }
-    }
-
-    size_t sym = n;
-    size_t off = 1U << precision;
-
-    assert(d(sym, off) != infty);
-
-    while (sym-- > 0) {
-      assert(off > 0);
-      for (size_t bits = min_limit[sym]; bits <= max_limit[sym]; bits++) {
-        size_t off_delta = 1U << (precision - bits);
-        if (off_delta <= off &&
-            d(sym + 1, off) == d(sym, off - off_delta) + freqs[sym] * bits) {
-          off -= off_delta;
-          nbits[sym] = bits;
-          break;
-        }
-      }
-    }
-  }
-  static void ComputeCodeLengths(const uint64_t* freqs, size_t n,
-                                 const uint8_t* min_limit_in,
-                                 const uint8_t* max_limit_in, uint8_t* nbits) {
-    assert(n <= kNumRawSymbols + 1);
-    uint64_t compact_freqs[kNumRawSymbols + 1];
-    uint8_t min_limit[kNumRawSymbols + 1];
-    uint8_t max_limit[kNumRawSymbols + 1];
-    size_t ni = 0;
-    for (size_t i = 0; i < n; i++) {
-      if (freqs[i]) {
-        compact_freqs[ni] = freqs[i];
-        min_limit[ni] = min_limit_in[i];
-        max_limit[ni] = max_limit_in[i];
-        ni++;
-      }
-    }
-    uint8_t num_bits[kNumRawSymbols + 1] = {};
-    ComputeCodeLengthsNonZero(compact_freqs, ni, min_limit, max_limit,
-                              num_bits);
-    ni = 0;
-    for (size_t i = 0; i < n; i++) {
-      nbits[i] = 0;
-      if (freqs[i]) {
-        nbits[i] = num_bits[ni++];
-      }
-    }
-  }
-
-  template <typename BitDepth>
-  PrefixCode(BitDepth, uint64_t* raw_counts, uint64_t* lz77_counts) {
-    // "merge" together all the lz77 counts in a single symbol for the level 1
-    // table (containing just the raw symbols, up to length 7).
-    uint64_t level1_counts[kNumRawSymbols + 1];
-    memcpy(level1_counts, raw_counts, kNumRawSymbols * sizeof(uint64_t));
-    size_t numraw = kNumRawSymbols;
-    while (numraw > 0 && level1_counts[numraw - 1] == 0) numraw--;
-
-    level1_counts[numraw] = 0;
-    for (size_t i = 0; i < kNumLZ77; i++) {
-      level1_counts[numraw] += lz77_counts[i];
-    }
-    uint8_t level1_nbits[kNumRawSymbols + 1] = {};
-    ComputeCodeLengths(level1_counts, numraw + 1, BitDepth::kMinRawLength,
-                       BitDepth::kMaxRawLength, level1_nbits);
-
-    uint8_t level2_nbits[kNumLZ77] = {};
-    uint8_t min_lengths[kNumLZ77] = {};
-    uint8_t l = 15 - level1_nbits[numraw];
-    uint8_t max_lengths[kNumLZ77] = {
-        l, l, l, l, l, l, l, l, l, l, l, l, l, l, l, l, l,
-    };
-    size_t num_lz77 = kNumLZ77;
-    while (num_lz77 > 0 && lz77_counts[num_lz77 - 1] == 0) num_lz77--;
-    ComputeCodeLengths(lz77_counts, num_lz77, min_lengths, max_lengths,
-                       level2_nbits);
-    for (size_t i = 0; i < numraw; i++) {
-      raw_nbits[i] = level1_nbits[i];
-    }
-    for (size_t i = 0; i < num_lz77; i++) {
-      lz77_nbits[i] =
-          level2_nbits[i] ? level1_nbits[numraw] + level2_nbits[i] : 0;
-    }
-
-    ComputeCanonicalCode(raw_nbits, raw_bits, numraw, lz77_nbits, lz77_bits,
-                         kNumLZ77);
-    BitDepth::PrepareForSimd(raw_nbits, raw_bits, numraw, raw_nbits_simd,
-                             raw_bits_simd);
-  }
-
-  void WriteTo(BitWriter* writer, size_t chunk_size) const {
-    uint64_t code_length_counts[18] = {};
-    code_length_counts[17] = 3 + 2 * (kNumLZ77 - 1);
-    for (size_t i = 0; i < kNumRawSymbols; i++) {
-      code_length_counts[raw_nbits[i]]++;
-    }
-    for (size_t i = 0; i < kNumLZ77; i++) {
-      code_length_counts[lz77_nbits[i]]++;
-    }
-    uint8_t code_length_nbits[18] = {};
-    uint8_t code_length_nbits_min[18] = {};
-    uint8_t code_length_nbits_max[18] = {
-        5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
-    };
-    ComputeCodeLengths(code_length_counts, 18, code_length_nbits_min,
-                       code_length_nbits_max, code_length_nbits);
-    writer->Write(2, 0b00);  // HSKIP = 0, i.e. don't skip code lengths.
-
-    // As per Brotli RFC.
-    uint8_t code_length_order[18] = {1, 2, 3, 4,  0,  5,  17, 6,  16,
-                                     7, 8, 9, 10, 11, 12, 13, 14, 15};
-    uint8_t code_length_length_nbits[] = {2, 4, 3, 2, 2, 4};
-    uint8_t code_length_length_bits[] = {0, 7, 3, 2, 1, 15};
-
-    // Encode lengths of code lengths.
-    size_t num_code_lengths = 18;
-    while (code_length_nbits[code_length_order[num_code_lengths - 1]] == 0) {
-      num_code_lengths--;
-    }
-    for (size_t i = 0; i < num_code_lengths; i++) {
-      int symbol = code_length_nbits[code_length_order[i]];
-      writer->Write(code_length_length_nbits[symbol],
-                    code_length_length_bits[symbol]);
-    }
-
-    // Compute the canonical codes for the codes that represent the lengths of
-    // the actual codes for data.
-    uint16_t code_length_bits[18] = {};
-    ComputeCanonicalCode(nullptr, nullptr, 0, code_length_nbits,
-                         code_length_bits, 18);
-    // Encode raw bit code lengths.
-    for (size_t i = 0; i < kNumRawSymbols; i++) {
-      writer->Write(code_length_nbits[raw_nbits[i]],
-                    code_length_bits[raw_nbits[i]]);
-    }
-    size_t num_lz77 = kNumLZ77;
-    while (lz77_nbits[num_lz77 - 1] == 0) {
-      num_lz77--;
-    }
-    // Encode 0s until 224 (start of LZ77 symbols). This is in total 224-19 =
-    // 205.
-    static_assert(kLZ77Offset == 224, "");
-    static_assert(kNumRawSymbols == 19, "");
-    writer->Write(code_length_nbits[17], code_length_bits[17]);
-    writer->Write(3, 0b010);  // 5
-    writer->Write(code_length_nbits[17], code_length_bits[17]);
-    writer->Write(3, 0b000);  // (5-2)*8 + 3 = 27
-    writer->Write(code_length_nbits[17], code_length_bits[17]);
-    writer->Write(3, 0b010);  // (27-2)*8 + 5 = 205
-    // Encode LZ77 symbols, with values 224+i*16.
-    for (size_t i = 0; i < num_lz77; i++) {
-      writer->Write(code_length_nbits[lz77_nbits[i]],
-                    code_length_bits[lz77_nbits[i]]);
-      if (i != num_lz77 - 1) {
-        if (chunk_size == 16) {
-          // Encode gap between LZ77 symbols: 15 zeros.
-          writer->Write(code_length_nbits[17], code_length_bits[17]);
-          writer->Write(3, 0b000);  // 3
-          writer->Write(code_length_nbits[17], code_length_bits[17]);
-          writer->Write(3, 0b100);  // (3-2)*8+7 = 15
-        } else if (chunk_size == 8) {
-          // 7 zeros
-          writer->Write(code_length_nbits[17], code_length_bits[17]);
-          writer->Write(3, 0b100);  // 7
-        } else {
-          assert(chunk_size == 32);
-          // 31 zeros
-          writer->Write(code_length_nbits[17], code_length_bits[17]);
-          writer->Write(3, 0b010);  // 5
-          writer->Write(code_length_nbits[17], code_length_bits[17]);
-          writer->Write(3, 0b100);  // (5-2)*8+7 = 31
-        }
-      }
-    }
-  }
-};
 
 template <typename T>
 struct VecPair {
@@ -2082,9 +2085,12 @@ struct UpTo8Bits {
   explicit UpTo8Bits(size_t bitdepth) : bitdepth(bitdepth) {
     assert(bitdepth <= 8);
   }
-  // Here we can fit up to 9 extra bits + 7 Huffman bits in a u16.
-  // Last symbol is used for LZ77 lengths and has no limitations except allowing
-  // to represent 32 symbols in total.
+  // Here we can fit up to 9 extra bits + 7 Huffman bits in a u16; for all other
+  // symbols, we could actually go up to 8 Huffman bits as we have at most 8
+  // extra bits; however, the SIMD bit merging logic for AVX2 assumes that no
+  // Huffman length is 8 or more, so we cap at 8 anyway. Last symbol is used for
+  // LZ77 lengths and has no limitations except allowing to represent 32 symbols
+  // in total.
   static constexpr uint8_t kMinRawLength[12] = {};
   static constexpr uint8_t kMaxRawLength[12] = {
       7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 10,
@@ -2324,23 +2330,34 @@ constexpr uint8_t MoreThan14Bits::kMinRawLength[];
 constexpr uint8_t MoreThan14Bits::kMaxRawLength[];
 
 void PrepareDCGlobalCommon(bool is_single_group, size_t width, size_t height,
-                           const PrefixCode& code, BitWriter* output) {
+                           const PrefixCode code[4], BitWriter* output) {
   output->Allocate(100000 + (is_single_group ? width * height * 16 : 0));
   // No patches, spline or noise.
   output->Write(1, 1);  // default DC dequantization factors (?)
   output->Write(1, 1);  // use global tree / histograms
   output->Write(1, 0);  // no lz77 for the tree
 
-  output->Write(1, 1);   // simple code for the tree's context map
-  output->Write(2, 0);   // all contexts clustered together
-  output->Write(1, 1);   // use prefix code for tree
-  output->Write(4, 15);  // don't do hybriduint for tree - 2 symbols anyway
-  output->Write(7, 0b0100101);  // Alphabet size is 6: we need 0 and 5 (var16)
-  output->Write(2, 1);          // simple prefix code
-  output->Write(2, 1);          // with two symbols
-  output->Write(3, 0);          // 0
-  output->Write(3, 5);          // 5
-  output->Write(5, 0b00010);    // tree repr: predictor is 5, all else 0
+  output->Write(1, 1);         // simple code for the tree's context map
+  output->Write(2, 0);         // all contexts clustered together
+  output->Write(1, 1);         // use prefix code for tree
+  output->Write(4, 0);         // 000 hybrid uint
+  output->Write(6, 0b100011);  // Alphabet size is 4 (var16)
+  output->Write(2, 1);         // simple prefix code
+  output->Write(2, 3);         // with 4 symbols
+  output->Write(2, 0);
+  output->Write(2, 1);
+  output->Write(2, 2);
+  output->Write(2, 3);
+  output->Write(1, 0);  // First tree encoding option
+  // Huffman table + extra bits for the tree.
+  uint8_t symbol_bits[6] = {0b00, 0b10, 0b001, 0b101, 0b0011, 0b0111};
+  uint8_t symbol_nbits[6] = {2, 2, 3, 3, 4, 4};
+  // Write a tree with a leaf per channel, and gradient predictor for every
+  // leaf.
+  for (auto v : {1, 2, 1, 4, 1, 0, 0, 5, 0, 0, 0, 0, 5,
+                 0, 0, 0, 0, 5, 0, 0, 0, 0, 5, 0, 0, 0}) {
+    output->Write(symbol_nbits[v], symbol_bits[v]);
+  }
 
   output->Write(1, 1);     // Enable lz77 for the main bitstream
   output->Write(2, 0b00);  // lz77 offset 224
@@ -2358,24 +2375,34 @@ void PrepareDCGlobalCommon(bool is_single_group, size_t width, size_t height,
   output->Write(4, kLogChunkSize);           // kLogChunkSize
   output->Write(hu_bits_sb, 0);              // 0
   output->Write(hu_bits_sb, kLogChunkSize);  // kLogChunkSize
-  output->Write(1, 1);                       // simple code for the context map
-  output->Write(2, 1);                       // two clusters
-  output->Write(1, 1);                       // raw/lz77 length histogram last
-  output->Write(1, 0);                       // distance histogram first
-  output->Write(1, 1);                       // use prefix codes
+
+  output->Write(1, 1);  // simple code for the context map
+  output->Write(2, 3);  // 3 bits per entry
+  output->Write(3, 4);  // channel 3
+  output->Write(3, 3);  // channel 2
+  output->Write(3, 2);  // channel 1
+  output->Write(3, 1);  // channel 0
+  output->Write(3, 0);  // distance histogram first
+
+  output->Write(1, 1);  // use prefix codes
   output->Write(4, 0);  // 000 hybrid uint config for distances (only need 0)
-  output->Write(4, 0);  // 000 hybrid uint config for symbols (only <= 10)
+  for (size_t i = 0; i < 4; i++) {
+    output->Write(4, 0);  // 000 hybrid uint config for symbols (only <= 10)
+  }
+
   // Distance alphabet size:
   output->Write(5, 0b00001);  // 2: just need 1 for RLE (i.e. distance 1)
   // Symbol + LZ77 alphabet size:
-  if (kChunkSize < 32) {
-    output->Write(1, 1);    // > 1
-    output->Write(4, 8);    // <= 512
-    output->Write(8, 255);  // == 512
-  } else {
-    output->Write(1, 1);    // > 1
-    output->Write(4, 9);    // <= 1024
-    output->Write(9, 511);  // == 1024
+  for (size_t i = 0; i < 4; i++) {
+    if (kChunkSize < 32) {
+      output->Write(1, 1);    // > 1
+      output->Write(4, 8);    // <= 512
+      output->Write(8, 255);  // == 512
+    } else {
+      output->Write(1, 1);    // > 1
+      output->Write(4, 9);    // <= 1024
+      output->Write(9, 511);  // == 1024
+    }
   }
 
   // Distance histogram:
@@ -2384,7 +2411,9 @@ void PrepareDCGlobalCommon(bool is_single_group, size_t width, size_t height,
   output->Write(1, 1);  // 1
 
   // Symbol + lz77 histogram:
-  code.WriteTo(output, kChunkSize);
+  for (size_t i = 0; i < 4; i++) {
+    code[i].WriteTo(output, kChunkSize);
+  }
 
   // Group header for global modular image.
   output->Write(1, 1);  // Global tree
@@ -2392,7 +2421,7 @@ void PrepareDCGlobalCommon(bool is_single_group, size_t width, size_t height,
 }
 
 void PrepareDCGlobal(bool is_single_group, size_t width, size_t height,
-                     size_t nb_chans, const PrefixCode& code,
+                     size_t nb_chans, const PrefixCode code[4],
                      BitWriter* output) {
   PrepareDCGlobalCommon(is_single_group, width, height, code, output);
   if (nb_chans > 2) {
@@ -2877,7 +2906,8 @@ template <typename BitDepth>
 void WriteACSection(const unsigned char* rgba, size_t x0, size_t y0, size_t oxs,
                     size_t ys, size_t row_stride, bool is_single_group,
                     BitDepth bitdepth, size_t nb_chans, bool big_endian,
-                    const PrefixCode& code, std::array<BitWriter, 4>& output) {
+                    const PrefixCode code[4],
+                    std::array<BitWriter, 4>& output) {
   size_t xs = (oxs + kChunkSize - 1) / kChunkSize * kChunkSize;
   for (size_t i = 0; i < nb_chans; i++) {
     if (is_single_group && i == 0) continue;
@@ -2897,7 +2927,7 @@ void WriteACSection(const unsigned char* rgba, size_t x0, size_t y0, size_t oxs,
   for (size_t c = 0; c < nb_chans; c++) {
     row_encoders[c].t = &encoders[c];
     encoders[c].output = &output[c];
-    encoders[c].code = &code;
+    encoders[c].code = &code[c];
   }
   ProcessImageArea<ChannelRowProcessor<ChunkEncoder<BitDepth>, BitDepth>>(
       rgba, x0, y0, oxs, xs, 0, ys, row_stride, bitdepth, nb_chans, big_endian,
@@ -2973,7 +3003,7 @@ void ProcessImageAreaPalette(const unsigned char* rgba, size_t x0, size_t y0,
 
 void WriteACSectionPalette(const unsigned char* rgba, size_t x0, size_t y0,
                            size_t oxs, size_t ys, size_t row_stride,
-                           bool is_single_group, const PrefixCode& code,
+                           bool is_single_group, const PrefixCode code[4],
                            const int16_t* lookup, size_t nb_chans,
                            BitWriter& output) {
   size_t xs = (oxs + kChunkSize - 1) / kChunkSize * kChunkSize;
@@ -2993,7 +3023,7 @@ void WriteACSectionPalette(const unsigned char* rgba, size_t x0, size_t y0,
 
   row_encoder.t = &encoder;
   encoder.output = &output;
-  encoder.code = &code;
+  encoder.code = &code[0];
   ProcessImageAreaPalette<
       ChannelRowProcessor<ChunkEncoder<UpTo8Bits>, UpTo8Bits>>(
       rgba, x0, y0, oxs, xs, 0, ys, row_stride, lookup, nb_chans, &row_encoder);
@@ -3001,17 +3031,19 @@ void WriteACSectionPalette(const unsigned char* rgba, size_t x0, size_t y0,
 
 template <typename BitDepth>
 void CollectSamples(const unsigned char* rgba, size_t x0, size_t y0, size_t xs,
-                    size_t row_stride, size_t row_count, uint64_t* raw_counts,
-                    uint64_t* lz77_counts, bool palette, BitDepth bitdepth,
-                    size_t nb_chans, bool big_endian, const int16_t* lookup) {
+                    size_t row_stride, size_t row_count,
+                    uint64_t raw_counts[4][kNumRawSymbols],
+                    uint64_t lz77_counts[4][kNumLZ77], bool palette,
+                    BitDepth bitdepth, size_t nb_chans, bool big_endian,
+                    const int16_t* lookup) {
   if (palette) {
     ChunkSampleCollector<UpTo8Bits> sample_collectors[4];
     ChannelRowProcessor<ChunkSampleCollector<UpTo8Bits>, UpTo8Bits>
         row_sample_collectors[4];
     for (size_t c = 0; c < nb_chans; c++) {
       row_sample_collectors[c].t = &sample_collectors[c];
-      sample_collectors[c].raw_counts = raw_counts;
-      sample_collectors[c].lz77_counts = lz77_counts;
+      sample_collectors[c].raw_counts = raw_counts[c];
+      sample_collectors[c].lz77_counts = lz77_counts[c];
     }
     ProcessImageAreaPalette<
         ChannelRowProcessor<ChunkSampleCollector<UpTo8Bits>, UpTo8Bits>>(
@@ -3023,8 +3055,8 @@ void CollectSamples(const unsigned char* rgba, size_t x0, size_t y0, size_t xs,
         row_sample_collectors[4];
     for (size_t c = 0; c < nb_chans; c++) {
       row_sample_collectors[c].t = &sample_collectors[c];
-      sample_collectors[c].raw_counts = raw_counts;
-      sample_collectors[c].lz77_counts = lz77_counts;
+      sample_collectors[c].raw_counts = raw_counts[c];
+      sample_collectors[c].lz77_counts = lz77_counts[c];
     }
     ProcessImageArea<
         ChannelRowProcessor<ChunkSampleCollector<BitDepth>, BitDepth>>(
@@ -3034,7 +3066,7 @@ void CollectSamples(const unsigned char* rgba, size_t x0, size_t y0, size_t xs,
 }
 
 void PrepareDCGlobalPalette(bool is_single_group, size_t width, size_t height,
-                            const PrefixCode& code,
+                            const PrefixCode code[4],
                             const std::vector<uint32_t>& palette,
                             size_t pcolors_real, BitWriter* output) {
   PrepareDCGlobalCommon(is_single_group, width, height, code, output);
@@ -3061,7 +3093,7 @@ void PrepareDCGlobalPalette(bool is_single_group, size_t width, size_t height,
   ChannelRowProcessor<ChunkEncoder<UpTo8Bits>, UpTo8Bits> row_encoder;
   row_encoder.t = &encoder;
   encoder.output = output;
-  encoder.code = &code;
+  encoder.code = &code[0];
   int16_t p[4][32 + 1024] = {};
   uint8_t prgba[4];
   size_t i = 0;
@@ -3208,8 +3240,8 @@ JxlFastLosslessFrameState* LLEnc(const unsigned char* rgba, size_t width,
   size_t num_dc_groups_x = (width + 2047) / 2048;
   size_t num_dc_groups_y = (height + 2047) / 2048;
 
-  uint64_t raw_counts[kNumRawSymbols] = {};
-  uint64_t lz77_counts[17] = {};
+  uint64_t raw_counts[4][kNumRawSymbols] = {};
+  uint64_t lz77_counts[4][kNumLZ77] = {};
 
   // sample the middle (effort * 2) rows of every group
   for (size_t g = 0; g < num_groups_y * num_groups_x; g++) {
@@ -3236,21 +3268,11 @@ JxlFastLosslessFrameState* LLEnc(const unsigned char* rgba, size_t width,
   for (size_t i = bitdepth.NumSymbols(doing_ycocg); i < kNumRawSymbols; i++) {
     base_raw_counts[i] = 0;
   }
-  // short runs will be sampled, but long ones won't.
-  // near full-group run is quite common (e.g. all-opaque alpha)
-  uint64_t base_lz77_counts_c32[PrefixCode::kNumLZ77] = {
-      12, 9, 11, 15, 2, 2, 1, 1, 1, 1, 2, 300, 0, 0, 0, 0, 0};
-  uint64_t base_lz77_counts_c16[PrefixCode::kNumLZ77] = {
-      18, 12, 9, 11, 15, 2, 2, 1, 1, 1, 1, 2, 300, 0, 0, 0, 0};
-  uint64_t base_lz77_counts_c8[PrefixCode::kNumLZ77] = {
-      32, 18, 12, 9, 11, 15, 2, 2, 1, 1, 1, 1, 2, 300, 0, 0, 0};
 
-  uint64_t* base_lz77_counts = kChunkSize == 8    ? base_lz77_counts_c8
-                               : kChunkSize == 16 ? base_lz77_counts_c16
-                                                  : base_lz77_counts_c32;
-
-  for (size_t i = 0; i < kNumRawSymbols; i++) {
-    raw_counts[i] = (raw_counts[i] << 8) + base_raw_counts[i];
+  for (size_t c = 0; c < 4; c++) {
+    for (size_t i = 0; i < kNumRawSymbols; i++) {
+      raw_counts[c][i] = (raw_counts[c][i] << 8) + base_raw_counts[i];
+    }
   }
 
   if (!collided) {
@@ -3258,16 +3280,35 @@ JxlFastLosslessFrameState* LLEnc(const unsigned char* rgba, size_t width,
     EncodeHybridUint000(PackSigned(pcolors - 1), &token, &nbits, &bits);
     // ensure all palette indices can actually be encoded
     for (size_t i = 0; i < token + 1; i++)
-      raw_counts[i] = std::max<uint64_t>(raw_counts[i], 1);
+      raw_counts[0][i] = std::max<uint64_t>(raw_counts[0][i], 1);
     // these tokens are only used for the palette itself so they can get a bad
     // code
-    for (size_t i = token + 1; i < 10; i++) raw_counts[i] = 1;
-  }
-  for (size_t i = 0; i < 17; i++) {
-    lz77_counts[i] = (lz77_counts[i] << 8) + base_lz77_counts[i];
+    for (size_t i = token + 1; i < 10; i++) raw_counts[0][i] = 1;
   }
 
-  alignas(64) PrefixCode hcode(bitdepth, raw_counts, lz77_counts);
+  // short runs will be sampled, but long ones won't.
+  // near full-group run is quite common (e.g. all-opaque alpha)
+  uint64_t base_lz77_counts_c32[kNumLZ77] = {12, 9, 11,  15, 2, 2, 1, 1, 1,
+                                             1,  2, 300, 0,  0, 0, 0, 0};
+  uint64_t base_lz77_counts_c16[kNumLZ77] = {18, 12, 9, 11,  15, 2, 2, 1, 1,
+                                             1,  1,  2, 300, 0,  0, 0, 0};
+  uint64_t base_lz77_counts_c8[kNumLZ77] = {32, 18, 12, 9, 11,  15, 2, 2, 1,
+                                            1,  1,  1,  2, 300, 0,  0, 0};
+
+  uint64_t* base_lz77_counts = kChunkSize == 8    ? base_lz77_counts_c8
+                               : kChunkSize == 16 ? base_lz77_counts_c16
+                                                  : base_lz77_counts_c32;
+
+  for (size_t c = 0; c < 4; c++) {
+    for (size_t i = 0; i < kNumLZ77; i++) {
+      lz77_counts[c][i] = (lz77_counts[c][i] << 8) + base_lz77_counts[i];
+    }
+  }
+
+  alignas(64) PrefixCode hcode[4];
+  for (size_t i = 0; i < 4; i++) {
+    hcode[i] = PrefixCode(bitdepth, raw_counts[i], lz77_counts[i]);
+  }
 
   bool onegroup = num_groups_x == 1 && num_groups_y == 1;
 
@@ -3360,13 +3401,17 @@ JxlFastLosslessFrameState* JxlFastLosslessEncodeImpl(
 
 #if defined(__aarch64__) || defined(_M_ARM64)
 
+namespace default_implementation {
 #define FJXL_NEON
 #include "lib/jxl/enc_fast_lossless.cc"
 #undef FJXL_NEON
+}  // namespace default_implementation
 
 #elif defined(__x86_64__) || defined(_M_X64)
 
+namespace default_implementation {
 #include "lib/jxl/enc_fast_lossless.cc"
+}
 
 #ifdef __clang__
 #pragma clang attribute push(__attribute__((target("avx,avx2"))), \
@@ -3418,7 +3463,9 @@ namespace AVX512 {
 #endif  // FJXL_ENABLE_AVX512
 
 #else
+namespace default_implementation {
 #include "lib/jxl/enc_fast_lossless.cc"
+}
 #endif
 
 extern "C" {
@@ -3477,9 +3524,9 @@ JxlFastLosslessFrameState* JxlFastLosslessPrepareFrame(
                                            effort, runner_opaque, runner);
   }
 #endif
-  return JxlFastLosslessEncodeImpl(rgba, width, row_stride, height, nb_chans,
-                                   bitdepth, big_endian, effort, runner_opaque,
-                                   runner);
+  return default_implementation::JxlFastLosslessEncodeImpl(
+      rgba, width, row_stride, height, nb_chans, bitdepth, big_endian, effort,
+      runner_opaque, runner);
 }
 
 }  // extern "C"
