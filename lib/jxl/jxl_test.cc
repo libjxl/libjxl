@@ -945,7 +945,7 @@ TEST(JxlTest, JXL_SLOW_TEST(RoundtripLossless8LightningGradient)) {
   PackedPixelFile ppf_out;
   // Lax comparison because different SIMD will cause different compression.
   EXPECT_THAT(Roundtrip(t.ppf(), cparams, {}, &pool, &ppf_out),
-              IsSlightlyBelow(286648u));
+              IsSlightlyBelow(286848u));
   EXPECT_EQ(ComputeDistance2(t.ppf(), ppf_out), 0.0);
 }
 
