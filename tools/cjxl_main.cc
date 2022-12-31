@@ -312,6 +312,12 @@ struct CompressArgs {
         "icc_pathname refers to a binary file containing an ICC profile.",
         &color_hints, &ParseAndAppendKeyValue, 1);
 
+    cmdline->AddOptionFlag(
+        '\0', "use_original_profile",
+        "Force using the original color profile when lossily encoding, "
+        "instead of the XYB transform.",
+        &uses_original_profile, &SetBooleanTrue, 1);
+
     cmdline->AddOptionValue(
         '\0', "override_bitdepth", "0=use from image, 1-32=override",
         "If nonzero, store the given bit depth in the JPEG XL file metadata"
@@ -429,6 +435,9 @@ struct CompressArgs {
 
   // Decoding source image flags
   jxl::extras::ColorHints color_hints;
+
+  // force cjxl to avoid the XYB transform
+  bool uses_original_profile = false;
 
   // JXL flags
   size_t override_bitdepth = 0;
@@ -895,6 +904,7 @@ void ProcessFlags(const jxl::extras::Codec codec,
   params->override_bitdepth = args->override_bitdepth;
   params->codestream_level = args->codestream_level;
   params->premultiply = args->premultiply;
+  params->uses_original_profile = args->uses_original_profile;
   params->compress_boxes = args->compress_boxes != jxl::Override::kOff;
   if (codec == jxl::extras::Codec::kPNM) {
     params->input_bitdepth.type = JXL_BIT_DEPTH_FROM_CODESTREAM;

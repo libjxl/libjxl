@@ -91,7 +91,7 @@ bool EncodeImageJXL(const JXLCompressParams& params, const PackedPixelFile& ppf,
         std::max<uint32_t>(num_alpha_channels, ppf.info.num_extra_channels);
     basic_info.num_color_channels = ppf.info.num_color_channels;
     const bool lossless = params.distance == 0;
-    basic_info.uses_original_profile = lossless;
+    basic_info.uses_original_profile = lossless || params.uses_original_profile;
     if (params.override_bitdepth != 0) {
       basic_info.bits_per_sample = params.override_bitdepth;
       basic_info.exponent_bits_per_sample =

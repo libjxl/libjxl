@@ -47,6 +47,8 @@ struct JXLCompressParams {
   // Upper bound on the intensity level present in the image in nits (zero means
   // that the library chooses a default).
   float intensity_target = 0;
+  // Override uses_original_profile
+  bool uses_original_profile = false;
   // Overrides for bitdepth, codestream level and alpha premultiply.
   size_t override_bitdepth = 0;
   int32_t codestream_level = -1;
