@@ -1160,8 +1160,8 @@ struct Mask32 {
   __m256i mask;
   SIMDVec32 IfThenElse(const SIMDVec32& if_true, const SIMDVec32& if_false);
   size_t CountPrefix() const {
-    return CtzNonZero(
-        ~static_cast<uint64_t>((uint8_t)_mm256_movemask_ps((__m256)mask)));
+    return CtzNonZero(~static_cast<uint64_t>(
+        (uint8_t)_mm256_movemask_ps(_mm256_castsi256_ps(mask))));
   }
 };
 
