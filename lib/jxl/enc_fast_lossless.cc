@@ -71,7 +71,7 @@ struct BitWriter {
   void Allocate(size_t maximum_bit_size) {
     assert(data == nullptr);
     // Leave some padding.
-    data.reset(static_cast<uint8_t*>(malloc(maximum_bit_size / 8 + 32)));
+    data.reset(static_cast<uint8_t*>(malloc(maximum_bit_size / 8 + 64)));
   }
 
   void Write(uint32_t count, uint64_t bits) {
@@ -597,44 +597,6 @@ void JxlFastLosslessPrepareHeader(JxlFastLosslessFrameState* frame,
     }
   }
   output->ZeroPadToByte();  // Groups are byte-aligned.
-}
-
-void AppendWriter(BitWriter* dest, const BitWriter* src) {
-  if (dest->bits_in_buffer == 0) {
-    memcpy(dest->data.get() + dest->bytes_written, src->data.get(),
-           src->bytes_written);
-    dest->bytes_written += src->bytes_written;
-  } else {
-    size_t i = 0;
-    uint64_t buf = dest->buffer;
-    uint64_t bits_in_buffer = dest->bits_in_buffer;
-    uint8_t* dest_buf = dest->data.get() + dest->bytes_written;
-    // Copy 8 bytes at a time until we reach the border.
-    for (; i + 8 < src->bytes_written; i += 8) {
-      uint64_t chunk;
-      memcpy(&chunk, src->data.get() + i, 8);
-      uint64_t out = buf | (chunk << bits_in_buffer);
-      memcpy(dest_buf + i, &out, 8);
-      buf = chunk >> (64 - bits_in_buffer);
-    }
-    dest->buffer = buf;
-    dest->bytes_written += i;
-    for (; i < src->bytes_written; i++) {
-      dest->Write(8, src->data[i]);
-    }
-  }
-  dest->Write(src->bits_in_buffer, src->buffer);
-}
-
-void AssembleFrame(size_t nb_chans,
-                   const std::vector<std::array<BitWriter, 4>>& group_data,
-                   BitWriter* output) {
-  for (size_t i = 0; i < group_data.size(); i++) {
-    for (size_t j = 0; j < nb_chans; j++) {
-      AppendWriter(output, &group_data[i][j]);
-    }
-    output->ZeroPadToByte();
-  }
 }
 
 size_t JxlFastLosslessWriteOutput(JxlFastLosslessFrameState* frame,
@@ -2097,8 +2059,7 @@ FJXL_INLINE void StoreSIMDUpTo8(const uint16_t* nbits_tok,
                                 const uint16_t* bits_tok,
                                 const uint16_t* nbits_huff,
                                 const uint16_t* bits_huff, size_t n,
-                                size_t skip, uint64_t* nbits_out,
-                                uint64_t* bits_out) {
+                                size_t skip, Bits32* bits_out) {
   Bits16 bits =
       Bits16::FromRaw(SIMDVec16::Load(nbits_tok), SIMDVec16::Load(bits_tok));
   Bits16 huff_bits =
@@ -2106,7 +2067,7 @@ FJXL_INLINE void StoreSIMDUpTo8(const uint16_t* nbits_tok,
   bits.Interleave(huff_bits);
   bits.ClipTo(n);
   bits.Skip(skip);
-  bits.Merge().Merge().Store(nbits_out, bits_out);
+  bits_out[0] = bits.Merge();
 }
 
 // Huffman and raw bits don't necessarily fit in a single u16 here.
@@ -2114,8 +2075,7 @@ FJXL_INLINE void StoreSIMDUpTo14(const uint16_t* nbits_tok,
                                  const uint16_t* bits_tok,
                                  const uint16_t* nbits_huff,
                                  const uint16_t* bits_huff, size_t n,
-                                 size_t skip, uint64_t* nbits_out,
-                                 uint64_t* bits_out) {
+                                 size_t skip, Bits32* bits_out) {
   VecPair<SIMDVec16> bits =
       SIMDVec16::Load(bits_tok).Interleave(SIMDVec16::Load(bits_huff));
   VecPair<SIMDVec16> nbits =
@@ -2127,17 +2087,15 @@ FJXL_INLINE void StoreSIMDUpTo14(const uint16_t* nbits_tok,
   hi.ClipTo(std::max(2 * n, SIMDVec16::kLanes) - SIMDVec16::kLanes);
   hi.Skip(std::max(2 * skip, SIMDVec16::kLanes) - SIMDVec16::kLanes);
 
-  low.Merge().Merge().Store(nbits_out, bits_out);
-  hi.Merge().Merge().Store(nbits_out + Bits64::kLanes,
-                           bits_out + Bits64::kLanes);
+  bits_out[0] = low.Merge();
+  bits_out[1] = hi.Merge();
 }
 
 FJXL_INLINE void StoreSIMDAbove14(const uint32_t* nbits_tok,
                                   const uint32_t* bits_tok,
                                   const uint16_t* nbits_huff,
                                   const uint16_t* bits_huff, size_t n,
-                                  size_t skip, uint64_t* nbits_out,
-                                  uint64_t* bits_out) {
+                                  size_t skip, Bits32* bits_out) {
   static_assert(SIMDVec16::kLanes == 2 * SIMDVec32::kLanes, "");
   Bits32 bits_low =
       Bits32::FromRaw(SIMDVec32::Load(nbits_tok), SIMDVec32::Load(bits_tok));
@@ -2154,11 +2112,147 @@ FJXL_INLINE void StoreSIMDAbove14(const uint32_t* nbits_tok,
   bits_low.Interleave(huff_low);
   bits_low.ClipTo(n);
   bits_low.Skip(skip);
-  bits_low.Merge().Store(nbits_out, bits_out);
+  bits_out[0] = bits_low;
   bits_hi.Interleave(huff_hi);
   bits_hi.ClipTo(std::max(n, SIMDVec32::kLanes) - SIMDVec32::kLanes);
   bits_hi.Skip(std::max(skip, SIMDVec32::kLanes) - SIMDVec32::kLanes);
-  bits_hi.Merge().Store(nbits_out + Bits64::kLanes, bits_out + Bits64::kLanes);
+  bits_out[1] = bits_hi;
+}
+
+#ifdef FJXL_AVX512
+FJXL_INLINE void StoreToWriterAVX512(const Bits32& bits32, BitWriter& output) {
+  __m512i bits = bits32.bits;
+  __m512i nbits = bits32.nbits;
+
+  // Insert the leftover bits from the bit buffer at the bottom of the vector
+  // and extract the top of the vector.
+  uint64_t trail_bits = _mm_cvtsi128_si32(
+      _mm512_castsi512_si128(_mm512_alignr_epi32(bits, bits, 15)));
+  uint64_t trail_nbits = _mm_cvtsi128_si32(
+      _mm512_castsi512_si128(_mm512_alignr_epi32(nbits, nbits, 15)));
+  __m512i lead_bits = _mm512_set1_epi32(output.buffer);
+  __m512i lead_nbits = _mm512_set1_epi32(output.bits_in_buffer);
+  bits = _mm512_alignr_epi32(bits, lead_bits, 15);
+  nbits = _mm512_alignr_epi32(nbits, lead_nbits, 15);
+
+  // Merge 32 -> 64 bits.
+  Bits32 b{nbits, bits};
+  Bits64 b64 = b.Merge();
+  bits = b64.bits;
+  nbits = b64.nbits;
+
+  __m512i zero = _mm512_setzero_si512();
+
+  auto sh1 = [zero](__m512i vec) { return _mm512_alignr_epi32(vec, zero, 14); };
+  auto sh2 = [zero](__m512i vec) { return _mm512_alignr_epi32(vec, zero, 12); };
+  auto sh4 = [zero](__m512i vec) { return _mm512_alignr_epi32(vec, zero, 8); };
+
+  // Compute first-past-end-bit-position.
+  __m512i end_interm0 = _mm512_add_epi64(nbits, sh1(nbits));
+  __m512i end_interm1 = _mm512_add_epi64(end_interm0, sh2(end_interm0));
+  __m512i end = _mm512_add_epi64(end_interm1, sh4(end_interm1));
+
+  uint64_t simd_nbits = _mm_cvtsi128_si64(
+      _mm512_castsi512_si128(_mm512_alignr_epi32(end, end, 14)));
+
+  // Compute begin-bit-position.
+  __m512i begin = _mm512_sub_epi64(end, nbits);
+
+  // Index of the last bit in the chunk, or the end bit if nbits==0.
+  __m512i last = _mm512_mask_sub_epi64(
+      end, _mm512_cmpneq_epi64_mask(nbits, zero), end, _mm512_set1_epi64(1));
+
+  __m512i lane_offset_mask = _mm512_set1_epi64(63);
+
+  // Starting position of the chunk that each lane will ultimately belong to.
+  __m512i chunk_start = _mm512_andnot_si512(lane_offset_mask, last);
+
+  // For all lanes that contain bits belonging to two different 64-bit chunks,
+  // compute the number of bits that belong to the first chunk.
+  // total # of bits fit in a u16, so we can satsub_u16 here.
+  __m512i first_chunk_nbits = _mm512_subs_epu16(chunk_start, begin);
+
+  // Move all the previous-chunk-bits to the previous lane.
+  __m512i negnbits = _mm512_sub_epi64(_mm512_set1_epi64(64), first_chunk_nbits);
+  __m512i first_chunk_bits =
+      _mm512_srlv_epi64(_mm512_sllv_epi64(bits, negnbits), negnbits);
+  __m512i first_chunk_bits_down =
+      _mm512_alignr_epi32(zero, first_chunk_bits, 2);
+  bits = _mm512_srlv_epi64(bits, first_chunk_nbits);
+  nbits = _mm512_sub_epi64(nbits, first_chunk_nbits);
+  bits = _mm512_or_si512(bits, _mm512_sllv_epi64(first_chunk_bits_down, nbits));
+  begin = _mm512_add_epi64(begin, first_chunk_nbits);
+
+  // We now know that every lane should give bits to only one chunk. We can
+  // shift the bits and then horizontally-or-reduce them within the same chunk.
+  __m512i offset = _mm512_and_si512(begin, lane_offset_mask);
+  __m512i aligned_bits = _mm512_sllv_epi64(bits, offset);
+  // h-or-reduce within same chunk
+  __m512i red0 = _mm512_mask_or_epi64(
+      aligned_bits, _mm512_cmpeq_epi64_mask(sh1(chunk_start), chunk_start),
+      sh1(aligned_bits), aligned_bits);
+  __m512i red1 = _mm512_mask_or_epi64(
+      red0, _mm512_cmpeq_epi64_mask(sh2(chunk_start), chunk_start), sh2(red0),
+      red0);
+  __m512i reduced = _mm512_mask_or_epi64(
+      red1, _mm512_cmpeq_epi64_mask(sh4(chunk_start), chunk_start), sh4(red1),
+      red1);
+  // Extract the highest lane that belongs to each chunk (the lane that ends up
+  // with the OR-ed value of all the other lanes of that chunk).
+  __m512i next_chunk_start =
+      _mm512_alignr_epi32(_mm512_set1_epi64(~0), chunk_start, 2);
+  __m512i result = _mm512_maskz_compress_epi64(
+      _mm512_cmpneq_epi64_mask(chunk_start, next_chunk_start), reduced);
+
+  _mm512_storeu_si512((__m512i*)(output.data.get() + output.bytes_written),
+                      result);
+
+  // Update the bit writer and add the last 32-bit lane.
+  // Note that since trail_nbits was at most 32 to begin with, operating on
+  // trail_bits does not risk overflowing.
+  output.bytes_written += simd_nbits / 8;
+  // Here we are implicitly relying on the fact that simd_nbits < 512 to know
+  // that the byte of bitreader data we access is initialized. This is
+  // guaranteed because the remaining bits in the bitreader buffer are at most
+  // 7, so simd_nbits <= 505 always.
+  trail_bits = (trail_bits << (simd_nbits % 8)) +
+               output.data.get()[output.bytes_written];
+  trail_nbits += simd_nbits % 8;
+  StoreLE64(output.data.get() + output.bytes_written, trail_bits);
+  size_t trail_bytes = trail_nbits / 8;
+  output.bits_in_buffer = trail_nbits % 8;
+  output.buffer = trail_bits >> (trail_bytes * 8);
+  output.bytes_written += trail_bytes;
+}
+
+#endif
+
+template <size_t n>
+FJXL_INLINE void StoreToWriter(const Bits32* bits, BitWriter& output) {
+#ifdef FJXL_AVX512
+  static_assert(n <= 2, "");
+  StoreToWriterAVX512(bits[0], output);
+  if (n == 2) {
+    StoreToWriterAVX512(bits[1], output);
+  }
+  return;
+#endif
+  static_assert(n <= 4, "");
+  alignas(64) uint64_t nbits64[Bits64::kLanes * n];
+  alignas(64) uint64_t bits64[Bits64::kLanes * n];
+  bits[0].Merge().Store(nbits64, bits64);
+  if (n > 1) {
+    bits[1].Merge().Store(nbits64 + Bits64::kLanes, bits64 + Bits64::kLanes);
+  }
+  if (n > 2) {
+    bits[2].Merge().Store(nbits64 + 2 * Bits64::kLanes,
+                          bits64 + 2 * Bits64::kLanes);
+  }
+  if (n > 3) {
+    bits[3].Merge().Store(nbits64 + 3 * Bits64::kLanes,
+                          bits64 + 3 * Bits64::kLanes);
+  }
+  output.WriteMultiple(nbits64, bits64, Bits64::kLanes * n);
 }
 
 namespace detail {
@@ -2292,8 +2386,7 @@ struct UpTo8Bits {
   static void EncodeChunk(upixel_t* residuals, size_t n, size_t skip,
                           const PrefixCode& code, BitWriter& output) {
 #ifdef FJXL_GENERIC_SIMD
-    alignas(64) uint64_t nbits64[kChunkSize / 4];
-    alignas(64) uint64_t bits64[kChunkSize / 4];
+    Bits32 bits32[kChunkSize / SIMDVec16::kLanes];
     alignas(64) uint16_t bits[SIMDVec16::kLanes];
     alignas(64) uint16_t nbits[SIMDVec16::kLanes];
     alignas(64) uint16_t bits_huff[SIMDVec16::kLanes];
@@ -2303,9 +2396,9 @@ struct UpTo8Bits {
       TokenizeSIMD(residuals + i, token, nbits, bits);
       HuffmanSIMDUpTo13(token, code, nbits_huff, bits_huff);
       StoreSIMDUpTo8(nbits, bits, nbits_huff, bits_huff, std::max(n, i) - i,
-                     std::max(skip, i) - i, nbits64 + i / 4, bits64 + i / 4);
+                     std::max(skip, i) - i, bits32 + i / SIMDVec16::kLanes);
     }
-    output.WriteMultiple(nbits64, bits64, kChunkSize / 4);
+    StoreToWriter<kChunkSize / SIMDVec16::kLanes>(bits32, output);
     return;
 #endif
     GenericEncodeChunk(residuals, n, skip, code, output);
@@ -2355,8 +2448,7 @@ struct From9To13Bits {
   static void EncodeChunk(upixel_t* residuals, size_t n, size_t skip,
                           const PrefixCode& code, BitWriter& output) {
 #ifdef FJXL_GENERIC_SIMD
-    alignas(64) uint64_t nbits64[kChunkSize / 2];
-    alignas(64) uint64_t bits64[kChunkSize / 2];
+    Bits32 bits32[2 * kChunkSize / SIMDVec16::kLanes];
     alignas(64) uint16_t bits[SIMDVec16::kLanes];
     alignas(64) uint16_t nbits[SIMDVec16::kLanes];
     alignas(64) uint16_t bits_huff[SIMDVec16::kLanes];
@@ -2366,9 +2458,9 @@ struct From9To13Bits {
       TokenizeSIMD(residuals + i, token, nbits, bits);
       HuffmanSIMDUpTo13(token, code, nbits_huff, bits_huff);
       StoreSIMDUpTo14(nbits, bits, nbits_huff, bits_huff, std::max(n, i) - i,
-                      std::max(skip, i) - i, nbits64 + i / 2, bits64 + i / 2);
+                      std::max(skip, i) - i, bits32 + i / SIMDVec16::kLanes);
     }
-    output.WriteMultiple(nbits64, bits64, kChunkSize / 2);
+    StoreToWriter<2 * kChunkSize / SIMDVec16::kLanes>(bits32, output);
     return;
 #endif
     GenericEncodeChunk(residuals, n, skip, code, output);
@@ -2422,8 +2514,7 @@ struct Exactly14Bits {
   static void EncodeChunk(upixel_t* residuals, size_t n, size_t skip,
                           const PrefixCode& code, BitWriter& output) {
 #ifdef FJXL_GENERIC_SIMD
-    alignas(64) uint64_t nbits64[kChunkSize / 2];
-    alignas(64) uint64_t bits64[kChunkSize / 2];
+    Bits32 bits32[2 * kChunkSize / SIMDVec16::kLanes];
     alignas(64) uint16_t bits[SIMDVec16::kLanes];
     alignas(64) uint16_t nbits[SIMDVec16::kLanes];
     alignas(64) uint16_t bits_huff[SIMDVec16::kLanes];
@@ -2433,9 +2524,9 @@ struct Exactly14Bits {
       TokenizeSIMD(residuals + i, token, nbits, bits);
       HuffmanSIMD14(token, code, nbits_huff, bits_huff);
       StoreSIMDUpTo14(nbits, bits, nbits_huff, bits_huff, std::max(n, i) - i,
-                      std::max(skip, i) - i, nbits64 + i / 2, bits64 + i / 2);
+                      std::max(skip, i) - i, bits32 + i / SIMDVec16::kLanes);
     }
-    output.WriteMultiple(nbits64, bits64, kChunkSize / 2);
+    StoreToWriter<2 * kChunkSize / SIMDVec16::kLanes>(bits32, output);
     return;
 #endif
     GenericEncodeChunk(residuals, n, skip, code, output);
@@ -2487,8 +2578,7 @@ struct MoreThan14Bits {
   static void EncodeChunk(upixel_t* residuals, size_t n, size_t skip,
                           const PrefixCode& code, BitWriter& output) {
 #ifdef FJXL_GENERIC_SIMD
-    alignas(64) uint64_t nbits64[kChunkSize / 2];
-    alignas(64) uint64_t bits64[kChunkSize / 2];
+    Bits32 bits32[2 * kChunkSize / SIMDVec16::kLanes];
     alignas(64) uint32_t bits[SIMDVec16::kLanes];
     alignas(64) uint32_t nbits[SIMDVec16::kLanes];
     alignas(64) uint16_t bits_huff[SIMDVec16::kLanes];
@@ -2498,9 +2588,9 @@ struct MoreThan14Bits {
       TokenizeSIMD(residuals + i, token, nbits, bits);
       HuffmanSIMDAbove14(token, code, nbits_huff, bits_huff);
       StoreSIMDAbove14(nbits, bits, nbits_huff, bits_huff, std::max(n, i) - i,
-                       std::max(skip, i) - i, nbits64 + i / 2, bits64 + i / 2);
+                       std::max(skip, i) - i, bits32 + i / SIMDVec16::kLanes);
     }
-    output.WriteMultiple(nbits64, bits64, kChunkSize / 2);
+    StoreToWriter<2 * kChunkSize / SIMDVec16::kLanes>(bits32, output);
     return;
 #endif
     GenericEncodeChunk(residuals, n, skip, code, output);
@@ -3539,11 +3629,8 @@ JxlFastLosslessFrameState* JxlFastLosslessEncodeImpl(
 
 #endif  // FJXL_SELF_INCLUDE
 
-// The gains from AVX512 seem marginal (at least on a i7-11850H) and come at the
-// cost of a significant increase in compilation time. Disable AVX512 by
-// default.
 #ifndef FJXL_ENABLE_AVX512
-#define FJXL_ENABLE_AVX512 0
+#define FJXL_ENABLE_AVX512 1
 #endif
 
 #ifndef FJXL_SELF_INCLUDE
