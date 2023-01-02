@@ -46,7 +46,7 @@ jobs:
           # Build scalar-only hwy instructions.
           - name: scalar
             mode: release
-            cxxflags: -DHWY_COMPILE_ONLY_SCALAR
+            cxxflags: -DHWY_COMPILE_ONLY_SCALAR -DFJXL_ENABLE_AVX2=0 -DFJXL_ENABLE_AVX512=0
           # Disabling optional features to speed up msan build a little bit.
           - name: msan
             skip_install: true
