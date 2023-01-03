@@ -206,9 +206,9 @@ template <class D, class V>
 V ColorModulation(const D d, const size_t x, const size_t y,
                   const ImageF& xyb_x, const ImageF& xyb_y, const ImageF& xyb_b,
                   const double butteraugli_target, V out_val) {
-  static const float kStrengthMul = 2.177823400325309;
-  static const float kRedRampStart = 0.0073200141118951231;
-  static const float kRedRampLength = 0.019421555948474039;
+  static const float kStrengthMul = 3.0;
+  static const float kRedRampStart = 0.045;
+  static const float kRedRampLength = 0.09;
   static const float kBlueRampLength = 0.086890611400405895;
   static const float kBlueRampStart = 0.26973418507870539;
   const float strength = kStrengthMul * (1.0f - 0.25f * butteraugli_target);
@@ -217,24 +217,28 @@ V ColorModulation(const D d, const size_t x, const size_t y,
   }
   // x values are smaller than y and b values, need to take the difference into
   // account.
-  const float red_strength = strength * 5.992297772961519f;
+  const float red_strength = strength * 6.5;
   const float blue_strength = strength;
   {
     // Reduce some bits from areas not blue or red.
-    const float offset = strength * -0.009174542291185913f;
+    const float offset = strength * -0.007;  // 9174542291185913f;
     out_val = Add(out_val, Set(d, offset));
   }
   // Calculate how much of the 8x8 block is covered with blue or red.
   auto blue_coverage = Zero(d);
   auto red_coverage = Zero(d);
+  auto bias_y = Set(d, 0.15f);
   for (size_t dy = 0; dy < 8; ++dy) {
     const float* const JXL_RESTRICT row_in_x = xyb_x.Row(y + dy);
     const float* const JXL_RESTRICT row_in_y = xyb_y.Row(y + dy);
     const float* const JXL_RESTRICT row_in_b = xyb_b.Row(y + dy);
     for (size_t dx = 0; dx < 8; dx += Lanes(d)) {
-      const auto pixel_x = Max(
-          Set(d, 0.0f), Sub(Load(d, row_in_x + x + dx), Set(d, kRedRampStart)));
       const auto pixel_y = Load(d, row_in_y + x + dx);
+      // Estimate redness-greeness relative to the intensity.
+      const auto pixel_xpy =
+          Div(Abs(Load(d, row_in_x + x + dx)), Max(pixel_y, bias_y));
+      const auto pixel_x =
+          Max(Set(d, 0.0f), Sub(pixel_xpy, Set(d, kRedRampStart)));
       const auto pixel_b =
           Max(Set(d, 0.0f), Sub(Load(d, row_in_b + x + dx),
                                 Add(pixel_y, Set(d, kBlueRampStart))));
@@ -248,7 +252,7 @@ V ColorModulation(const D d, const size_t x, const size_t y,
   // Saturate when the high red or high blue coverage is above a level.
   // The idea here is that if a certain fraction of the block is red or
   // blue we consider as if it was fully red or blue.
-  static const float ratio = 30.610615782142737f;  // out of 64 pixels.
+  static const float ratio = 28.0f;  // out of 64 pixels.
 
   auto overall_red_coverage = SumOfLanes(d, red_coverage);
   overall_red_coverage =

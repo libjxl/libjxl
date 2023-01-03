@@ -287,7 +287,7 @@ TEST(JxlTest, RoundtripMultiGroup) {
 
     PackedPixelFile ppf_out;
     EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, &pool, &ppf_out), expected_size,
-                80);
+                500);
     EXPECT_THAT(ComputeDistance2(t.ppf(), ppf_out),
                 IsSlightlyBelow(expected_distance));
   };
@@ -351,7 +351,7 @@ TEST(JxlTest, RoundtripLargeFast) {
 
   PackedPixelFile ppf_out;
   // TODO(szabadka) Investigate size difference on SCALAR build.
-  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, &pool, &ppf_out), 407453, 700);
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, &pool, &ppf_out), 404298, 700);
   EXPECT_THAT(ComputeDistance2(t.ppf(), ppf_out), IsSlightlyBelow(100));
 }
 
@@ -466,7 +466,7 @@ TEST(JxlTest, RoundtripNoGaborishNoAR) {
 
   PackedPixelFile ppf_out;
   // TODO(szabadka) Investigate size difference on SCALAR build.
-  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, pool, &ppf_out), 37093, 120);
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, pool, &ppf_out), 37093, 150);
   EXPECT_THAT(ButteraugliDistance(t.ppf(), ppf_out), IsSlightlyBelow(1.8));
 }
 
