@@ -38,9 +38,9 @@
 #endif
 
 #ifndef FJXL_ENABLE_AVX512
-// On clang-7 or earlier, and gcc-8 or earlier, AVX512 seems broken.
+// On clang-7 or earlier, and gcc-10 or earlier, AVX512 seems broken.
 #if (defined(__clang__) && __clang_major__ > 7) || \
-    (defined(__GNUC__) && __GNUC__ > 8)
+    (defined(__GNUC__) && __GNUC__ > 10)
 #define FJXL_ENABLE_AVX512 1
 #endif
 #endif
