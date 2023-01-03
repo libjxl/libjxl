@@ -3,17 +3,14 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-/* clang-format off */
-#include <stdio.h>
-#include <jpeglib.h>
 #include <setjmp.h>
-#include <stddef.h>
-/* clang-format on */
+#include <stdio.h>
 
 #include <cmath>
 #include <vector>
 
 #include "gtest/gtest.h"
+#include "lib/jpegli/decode.h"
 #include "lib/jpegli/test_utils.h"
 #include "lib/jxl/base/file_io.h"
 #include "lib/jxl/base/status.h"
@@ -30,7 +27,7 @@ class SourceManager {
     pub_.next_input_byte = nullptr;
     pub_.bytes_in_buffer = 0;
     pub_.skip_input_data = skip_input_data;
-    pub_.resync_to_restart = jpeg_resync_to_restart;
+    pub_.resync_to_restart = jpegli_resync_to_restart;
     pub_.term_source = term_source;
   }
 
@@ -159,7 +156,7 @@ TEST_P(DecodeAPITestParam, TestAPI) {
 
   jpeg_decompress_struct cinfo;
   jpeg_error_mgr jerr;
-  cinfo.err = jpeg_std_error(&jerr);
+  cinfo.err = jpegli_std_error(&jerr);
   jmp_buf env;
   if (setjmp(env)) {
     FAIL();
@@ -171,7 +168,7 @@ TEST_P(DecodeAPITestParam, TestAPI) {
     longjmp(*env, 1);
   };
 
-  jpeg_create_decompress(&cinfo);
+  jpegli_create_decompress(&cinfo);
 
   size_t chunk_size = config.chunk_size;
   if (chunk_size == 0) chunk_size = compressed.size();
@@ -187,12 +184,12 @@ TEST_P(DecodeAPITestParam, TestAPI) {
   } else if (config.source_mgr == SOURCE_MGR_SUSPENDING) {
     cinfo.src = reinterpret_cast<jpeg_source_mgr*>(&src_susp);
   } else if (config.source_mgr == SOURCE_MGR_STDIO) {
-    jpeg_stdio_src(&cinfo, testfile);
+    jpegli_stdio_src(&cinfo, testfile);
   }
 
   if (config.pre_consume_input) {
     for (;;) {
-      int status = jpeg_consume_input(&cinfo);
+      int status = jpegli_consume_input(&cinfo);
       if (status == JPEG_SUSPENDED) {
         ASSERT_TRUE(LoadNextChunk(config, &cinfo));
       } else if (status == JPEG_REACHED_SOS) {
@@ -201,7 +198,7 @@ TEST_P(DecodeAPITestParam, TestAPI) {
     }
   } else {
     for (;;) {
-      int status = jpeg_read_header(&cinfo, /*require_image=*/TRUE);
+      int status = jpegli_read_header(&cinfo, /*require_image=*/TRUE);
       if (status == JPEG_SUSPENDED) {
         ASSERT_TRUE(LoadNextChunk(config, &cinfo));
       } else {
@@ -211,7 +208,7 @@ TEST_P(DecodeAPITestParam, TestAPI) {
     }
   }
 
-  ASSERT_EQ(JPEG_REACHED_SOS, jpeg_consume_input(&cinfo));
+  ASSERT_EQ(JPEG_REACHED_SOS, jpegli_consume_input(&cinfo));
 
   EXPECT_EQ(xsize, cinfo.image_width);
   EXPECT_EQ(ysize, cinfo.image_height);
@@ -220,7 +217,7 @@ TEST_P(DecodeAPITestParam, TestAPI) {
   cinfo.quantize_colors = FALSE;
   cinfo.desired_number_of_colors = 1 << config.output_bit_depth;
 
-  if (jpeg_has_multiple_scans(&cinfo) && config.buffered_image_mode) {
+  if (jpegli_has_multiple_scans(&cinfo) && config.buffered_image_mode) {
     cinfo.buffered_image = TRUE;
   }
 
@@ -229,11 +226,11 @@ TEST_P(DecodeAPITestParam, TestAPI) {
   }
 
   if (config.pre_consume_input) {
-    jpeg_start_decompress(&cinfo);
+    jpegli_start_decompress(&cinfo);
   } else if (cinfo.buffered_image) {
-    EXPECT_TRUE(jpeg_start_decompress(&cinfo));
+    EXPECT_TRUE(jpegli_start_decompress(&cinfo));
   } else {
-    while (!jpeg_start_decompress(&cinfo)) {
+    while (!jpegli_start_decompress(&cinfo)) {
       ASSERT_TRUE(LoadNextChunk(config, &cinfo));
     }
   }
@@ -249,7 +246,7 @@ TEST_P(DecodeAPITestParam, TestAPI) {
   if (config.crop && !config.raw_output) {
     xoffset = xsize_cropped = xsize / 3;
     yoffset = ysize_cropped = ysize / 3;
-    jpeg_crop_scanline(&cinfo, &xoffset, &xsize_cropped);
+    jpegli_crop_scanline(&cinfo, &xoffset, &xsize_cropped);
   }
 
   std::vector<uint8_t> cropped(xsize_cropped * ysize_cropped * num_channels);
@@ -270,7 +267,7 @@ TEST_P(DecodeAPITestParam, TestAPI) {
 
   if (config.pre_consume_input) {
     for (;;) {
-      int status = jpeg_consume_input(&cinfo);
+      int status = jpegli_consume_input(&cinfo);
       if (status == JPEG_SUSPENDED) {
         ASSERT_TRUE(LoadNextChunk(config, &cinfo));
       } else if (status == JPEG_REACHED_EOI) {
@@ -279,9 +276,9 @@ TEST_P(DecodeAPITestParam, TestAPI) {
     }
   }
 
-  while (!jpeg_input_complete(&cinfo)) {
+  while (!jpegli_input_complete(&cinfo)) {
     if (cinfo.buffered_image) {
-      EXPECT_TRUE(jpeg_start_output(&cinfo, cinfo.input_scan_number));
+      EXPECT_TRUE(jpegli_start_output(&cinfo, cinfo.input_scan_number));
     }
 
     if (cinfo.raw_data_out) {
@@ -311,7 +308,7 @@ TEST_P(DecodeAPITestParam, TestAPI) {
           data[c] = &rowdata[c][0];
         }
         size_t num_output_lines =
-            jpeg_read_raw_data(&cinfo, &data[0], max_lines);
+            jpegli_read_raw_data(&cinfo, &data[0], max_lines);
         total_output_lines += num_output_lines;
         EXPECT_EQ(total_output_lines, cinfo.output_scanline);
         if (cinfo.output_scanline >= cinfo.output_height) {
@@ -332,10 +329,10 @@ TEST_P(DecodeAPITestParam, TestAPI) {
         size_t max_lines;
         if (cinfo.output_scanline < yoffset) {
           max_lines = yoffset - cinfo.output_scanline;
-          num_output_lines = jpeg_skip_scanlines(&cinfo, max_lines);
+          num_output_lines = jpegli_skip_scanlines(&cinfo, max_lines);
         } else if (cinfo.output_scanline >= yoffset + ysize_cropped) {
           max_lines = cinfo.output_height - cinfo.output_scanline;
-          num_output_lines = jpeg_skip_scanlines(&cinfo, max_lines);
+          num_output_lines = jpegli_skip_scanlines(&cinfo, max_lines);
         } else {
           size_t lines_left = yoffset + ysize_cropped - cinfo.output_scanline;
           max_lines = std::min<size_t>(max_output_lines, lines_left);
@@ -345,7 +342,7 @@ TEST_P(DecodeAPITestParam, TestAPI) {
             scanlines[i] = &output[yidx * stride];
           }
           num_output_lines =
-              jpeg_read_scanlines(&cinfo, &scanlines[0], max_lines);
+              jpegli_read_scanlines(&cinfo, &scanlines[0], max_lines);
         }
         total_output_lines += num_output_lines;
         EXPECT_EQ(total_output_lines, cinfo.output_scanline);
@@ -376,20 +373,20 @@ TEST_P(DecodeAPITestParam, TestAPI) {
       }
       double rms = std::sqrt(diff2 / cropped.size()) / mul_orig;
       double max_dist = config.max_distance;
-      if (!cinfo.buffered_image || jpeg_input_complete(&cinfo)) {
+      if (!cinfo.buffered_image || jpegli_input_complete(&cinfo)) {
         EXPECT_LE(rms, max_dist);
       } else {
         EXPECT_LE(rms, max_dist * 10.0);
       }
     }
-    if (!cinfo.buffered_image || jpeg_input_complete(&cinfo)) {
+    if (!cinfo.buffered_image || jpegli_input_complete(&cinfo)) {
       EXPECT_EQ(cinfo.input_iMCU_row, cinfo.total_iMCU_rows);
     }
     if (cinfo.buffered_image) {
       if (config.pre_consume_input) {
-        EXPECT_TRUE(jpeg_finish_output(&cinfo));
+        EXPECT_TRUE(jpegli_finish_output(&cinfo));
       } else {
-        while (!jpeg_finish_output(&cinfo)) {
+        while (!jpegli_finish_output(&cinfo)) {
           ASSERT_TRUE(LoadNextChunk(config, &cinfo));
         }
       }
@@ -399,13 +396,13 @@ TEST_P(DecodeAPITestParam, TestAPI) {
   }
 
   if (config.pre_consume_input || cinfo.buffered_image) {
-    EXPECT_TRUE(jpeg_finish_decompress(&cinfo));
+    EXPECT_TRUE(jpegli_finish_decompress(&cinfo));
   } else {
-    while (!jpeg_finish_decompress(&cinfo)) {
+    while (!jpegli_finish_decompress(&cinfo)) {
       ASSERT_TRUE(LoadNextChunk(config, &cinfo));
     }
   }
-  EXPECT_TRUE(jpeg_input_complete(&cinfo));
+  EXPECT_TRUE(jpegli_input_complete(&cinfo));
   if (config.source_mgr == SOURCE_MGR_CHUNKED) {
     EXPECT_EQ(0, src_chunked.UnprocessedBytes());
     EXPECT_EQ(src_chunked.TotalBytes(), compressed.size());
@@ -414,7 +411,7 @@ TEST_P(DecodeAPITestParam, TestAPI) {
     EXPECT_EQ(src_susp.TotalBytes(), compressed.size());
   }
 
-  jpeg_destroy_decompress(&cinfo);
+  jpegli_destroy_decompress(&cinfo);
 }
 
 std::vector<TestConfig> GenerateTests() {

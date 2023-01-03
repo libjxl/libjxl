@@ -7,6 +7,7 @@
 
 #include <string.h>
 
+#include "lib/jpegli/common.h"
 #include "lib/jpegli/decode_internal.h"
 #include "lib/jpegli/error.h"
 #include "lib/jpegli/huffman.h"
@@ -331,7 +332,7 @@ void ProcessDHT(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
       table = &cinfo->dc_huff_tbl_ptrs[huffman_index];
     }
     if (*table == nullptr) {
-      *table = jpeg_alloc_huff_table(reinterpret_cast<j_common_ptr>(cinfo));
+      *table = jpegli_alloc_huff_table(reinterpret_cast<j_common_ptr>(cinfo));
     }
     // Bit length histogram
     std::array<uint32_t, kJpegHuffmanMaxBitLength + 1> counts = {};
@@ -412,7 +413,7 @@ void ProcessDQT(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
 
     if (cinfo->quant_tbl_ptrs[quant_table_index] == nullptr) {
       cinfo->quant_tbl_ptrs[quant_table_index] =
-          jpeg_alloc_quant_table(reinterpret_cast<j_common_ptr>(cinfo));
+          jpegli_alloc_quant_table(reinterpret_cast<j_common_ptr>(cinfo));
     }
     JQUANT_TBL* quant_table = cinfo->quant_tbl_ptrs[quant_table_index];
 

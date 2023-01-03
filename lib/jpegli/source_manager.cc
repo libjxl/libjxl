@@ -5,6 +5,7 @@
 
 #include "lib/jpegli/source_manager.h"
 
+#include "lib/jpegli/decode.h"
 #include "lib/jpegli/error.h"
 #include "lib/jpegli/memory_manager.h"
 
@@ -44,8 +45,8 @@ struct StdioSourceManager {
 
 }  // namespace jpegli
 
-void jpeg_mem_src(j_decompress_ptr cinfo, const unsigned char* inbuffer,
-                  unsigned long insize) {
+void jpegli_mem_src(j_decompress_ptr cinfo, const unsigned char* inbuffer,
+                    unsigned long insize) {
   if (cinfo->src != nullptr) {
     JPEGLI_ERROR("jpeg_mem_src: source manager is already set");
   }
@@ -55,11 +56,11 @@ void jpeg_mem_src(j_decompress_ptr cinfo, const unsigned char* inbuffer,
   cinfo->src->init_source = jpegli::init_source;
   cinfo->src->fill_input_buffer = jpegli::EmitFakeEoiMarker;
   cinfo->src->skip_input_data = jpegli::skip_input_data;
-  cinfo->src->resync_to_restart = jpeg_resync_to_restart;
+  cinfo->src->resync_to_restart = jpegli_resync_to_restart;
   cinfo->src->term_source = jpegli::term_source;
 }
 
-void jpeg_stdio_src(j_decompress_ptr cinfo, FILE* infile) {
+void jpegli_stdio_src(j_decompress_ptr cinfo, FILE* infile) {
   if (cinfo->src != nullptr) {
     JPEGLI_ERROR("jpeg_stdio_src: source manager is already set");
   }
@@ -72,7 +73,7 @@ void jpeg_stdio_src(j_decompress_ptr cinfo, FILE* infile) {
   src->pub.init_source = jpegli::init_source;
   src->pub.fill_input_buffer = jpegli::StdioSourceManager::fill_input_buffer;
   src->pub.skip_input_data = jpegli::skip_input_data;
-  src->pub.resync_to_restart = jpeg_resync_to_restart;
+  src->pub.resync_to_restart = jpegli_resync_to_restart;
   src->pub.term_source = jpegli::term_source;
   cinfo->src = reinterpret_cast<jpeg_source_mgr*>(src);
 }
