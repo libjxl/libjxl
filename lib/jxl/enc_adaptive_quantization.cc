@@ -97,16 +97,6 @@ V ComputeMask(const D d, const V out_val) {
   return Add(kBase, MulAdd(kMul4, v4, MulAdd(kMul2, v2, Mul(kMul3, v3))));
 }
 
-// For converting full vectors to a subset. Assumes `vfull` lanes are identical.
-template <class D, class VFull>
-Vec<D> CapTo(const D d, VFull vfull) {
-  using T = typename D::T;
-  const HWY_FULL(T) dfull;
-  HWY_ALIGN T lanes[MaxLanes(dfull)];
-  Store(vfull, dfull, lanes);
-  return Load(d, lanes);
-}
-
 // mul and mul2 represent a scaling difference between jxl and butteraugli.
 static const float kSGmul = 226.0480446705883f;
 static const float kSGmul2 = 1.0f / 73.377132366608819f;
@@ -303,6 +293,11 @@ V HfModulation(const D d, const size_t x, const size_t y, const ImageF& xyb,
       const auto pd = Load(d, row_in_next + dx);
       sum = Add(sum, AbsDiff(p, pd));
     }
+#if HWY_TARGET == HWY_SCALAR
+    const auto p = Load(d, row_in + 7);
+    const auto pd = Load(d, row_in_next + 7);
+    sum = Add(sum, AbsDiff(p, pd));
+#endif
   }
 
   sum = SumOfLanes(d, sum);
