@@ -3,13 +3,9 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-/* clang-format off */
-#include <stdint.h>
-#include <stdio.h>
-#include <jpeglib.h>
 #include <string.h>
-/* clang-format on */
 
+#include "lib/jpegli/encode.h"
 #include "lib/jpegli/error.h"
 #include "lib/jpegli/memory_manager.h"
 
@@ -85,7 +81,7 @@ struct MemoryDestinationManager {
 
 }  // namespace jpegli
 
-void jpeg_stdio_dest(j_compress_ptr cinfo, FILE* outfile) {
+void jpegli_stdio_dest(j_compress_ptr cinfo, FILE* outfile) {
   if (cinfo->dest != nullptr) {
     JPEGLI_ERROR("jpeg_stdio_dest: destination manager is already set");
   }
@@ -103,10 +99,10 @@ void jpeg_stdio_dest(j_compress_ptr cinfo, FILE* outfile) {
   cinfo->dest = reinterpret_cast<jpeg_destination_mgr*>(dest);
 }
 
-void jpeg_mem_dest(j_compress_ptr cinfo, unsigned char** outbuffer,
-                   unsigned long* outsize) {
+void jpegli_mem_dest(j_compress_ptr cinfo, unsigned char** outbuffer,
+                     unsigned long* outsize) {
   if (cinfo->dest != nullptr) {
-    JPEGLI_ERROR("jpeg_mem_dest: destination manager is already set");
+    JPEGLI_ERROR("jpegli_mem_dest: destination manager is already set");
   }
   jpegli::MemoryDestinationManager* dest =
       jpegli::Allocate<jpegli::MemoryDestinationManager>(cinfo, 1);

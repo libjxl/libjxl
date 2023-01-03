@@ -3,11 +3,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-/* clang-format off */
-#include <stdint.h>
-#include <stdio.h>
-#include <jpeglib.h>
-/* clang-format on */
+#include "lib/jpegli/encode.h"
 
 #include "lib/jpegli/dct.h"
 #include "lib/jpegli/encode_internal.h"
@@ -114,9 +110,10 @@ void AddJpegScanInfos(const std::vector<ProgressiveScan>& scans,
 
 }  // namespace jpegli
 
-void jpeg_CreateCompress(j_compress_ptr cinfo, int version, size_t structsize) {
+void jpegli_CreateCompress(j_compress_ptr cinfo, int version,
+                           size_t structsize) {
   if (structsize != sizeof(*cinfo)) {
-    JPEGLI_ERROR("jpeg_compress_struct has wrong size.");
+    JPEGLI_ERROR("jpegli_compress_struct has wrong size.");
   }
   cinfo->master = new jpeg_comp_master;
   cinfo->mem =
@@ -126,47 +123,47 @@ void jpeg_CreateCompress(j_compress_ptr cinfo, int version, size_t structsize) {
   cinfo->master->cur_marker_data = nullptr;
 }
 
-void jpeg_destroy_compress(j_compress_ptr cinfo) {
-  jpeg_destroy(reinterpret_cast<j_common_ptr>(cinfo));
+void jpegli_destroy_compress(j_compress_ptr cinfo) {
+  jpegli_destroy(reinterpret_cast<j_common_ptr>(cinfo));
 }
 
-void jpeg_set_defaults(j_compress_ptr cinfo) {
+void jpegli_set_defaults(j_compress_ptr cinfo) {
   cinfo->num_components = cinfo->input_components;
 }
 
-void jpeg_default_colorspace(j_compress_ptr cinfo) {}
+void jpegli_default_colorspace(j_compress_ptr cinfo) {}
 
-void jpeg_set_colorspace(j_compress_ptr cinfo, J_COLOR_SPACE colorspace) {
+void jpegli_set_colorspace(j_compress_ptr cinfo, J_COLOR_SPACE colorspace) {
   cinfo->master->jpeg_colorspace = colorspace;
 }
 
-void jpeg_set_quality(j_compress_ptr cinfo, int quality,
-                      boolean force_baseline) {
+void jpegli_set_quality(j_compress_ptr cinfo, int quality,
+                        boolean force_baseline) {
   cinfo->master->distance = jpegli::QualityToDistance(quality);
   cinfo->master->force_baseline = force_baseline;
 }
 
-void jpeg_set_linear_quality(j_compress_ptr cinfo, int scale_factor,
-                             boolean force_baseline) {
+void jpegli_set_linear_quality(j_compress_ptr cinfo, int scale_factor,
+                               boolean force_baseline) {
   cinfo->master->distance = jpegli::LinearQualityToDistance(scale_factor);
   cinfo->master->force_baseline = force_baseline;
 }
 
-int jpeg_quality_scaling(int quality) {
+int jpegli_quality_scaling(int quality) {
   quality = std::min(100, std::max(1, quality));
   return quality < 50 ? 5000 / quality : 200 - 2 * quality;
 }
 
-void jpeg_add_quant_table(j_compress_ptr cinfo, int which_tbl,
-                          const unsigned int* basic_table, int scale_factor,
-                          boolean force_baseline) {}
+void jpegli_add_quant_table(j_compress_ptr cinfo, int which_tbl,
+                            const unsigned int* basic_table, int scale_factor,
+                            boolean force_baseline) {}
 
-void jpeg_simple_progression(j_compress_ptr cinfo) {}
+void jpegli_simple_progression(j_compress_ptr cinfo) {}
 
-void jpeg_suppress_tables(j_compress_ptr cinfo, boolean suppress) {}
+void jpegli_suppress_tables(j_compress_ptr cinfo, boolean suppress) {}
 
-void jpeg_write_m_header(j_compress_ptr cinfo, int marker,
-                         unsigned int datalen) {
+void jpegli_write_m_header(j_compress_ptr cinfo, int marker,
+                           unsigned int datalen) {
   jpeg_comp_master* m = cinfo->master;
   if (datalen > 65533u) {
     JPEGLI_ERROR("Invalid marker length %u", datalen);
@@ -183,12 +180,12 @@ void jpeg_write_m_header(j_compress_ptr cinfo, int marker,
     m->cur_marker_data = &m->jpeg_data.com_data.back();
   } else {
     JPEGLI_ERROR(
-        "jpeg_write_m_header: "
+        "jpegli_write_m_header: "
         "Only APP and COM markers are supported.");
   }
 }
 
-void jpeg_write_m_byte(j_compress_ptr cinfo, int val) {
+void jpegli_write_m_byte(j_compress_ptr cinfo, int val) {
   jpeg_comp_master* m = cinfo->master;
   if (m->cur_marker_data == nullptr) {
     JPEGLI_ERROR("Marker header missing.");
@@ -196,8 +193,8 @@ void jpeg_write_m_byte(j_compress_ptr cinfo, int val) {
   m->cur_marker_data->push_back(val);
 }
 
-void jpeg_write_icc_profile(j_compress_ptr cinfo, const JOCTET* icc_data_ptr,
-                            unsigned int icc_data_len) {
+void jpegli_write_icc_profile(j_compress_ptr cinfo, const JOCTET* icc_data_ptr,
+                              unsigned int icc_data_len) {
   if (icc_data_len > 65517u) {
     // TODO(szabadka) Handle chunked ICC profiles.
     JPEGLI_ERROR("ICC data is too long.");
@@ -207,14 +204,14 @@ void jpeg_write_icc_profile(j_compress_ptr cinfo, const JOCTET* icc_data_ptr,
       jxl::Span<const uint8_t>(icc_data_ptr, icc_data_len)));
 }
 
-void jpeg_start_compress(j_compress_ptr cinfo, boolean write_all_tables) {
+void jpegli_start_compress(j_compress_ptr cinfo, boolean write_all_tables) {
   jpeg_comp_master* m = cinfo->master;
   m->input = jxl::Image3F(cinfo->image_width, cinfo->image_height);
   cinfo->next_scanline = 0;
 }
 
-JDIMENSION jpeg_write_scanlines(j_compress_ptr cinfo, JSAMPARRAY scanlines,
-                                JDIMENSION num_lines) {
+JDIMENSION jpegli_write_scanlines(j_compress_ptr cinfo, JSAMPARRAY scanlines,
+                                  JDIMENSION num_lines) {
   jpeg_comp_master* m = cinfo->master;
   // TODO(szabadka) Handle CMYK component input images.
   if (cinfo->num_components > 3) {
@@ -236,7 +233,7 @@ JDIMENSION jpeg_write_scanlines(j_compress_ptr cinfo, JSAMPARRAY scanlines,
   return num_lines;
 }
 
-void jpeg_finish_compress(j_compress_ptr cinfo) {
+void jpegli_finish_compress(j_compress_ptr cinfo) {
   jpeg_comp_master* m = cinfo->master;
   m->jpeg_data.components.resize(cinfo->num_components);
   jxl::ColorEncoding color_encoding;
@@ -281,6 +278,7 @@ void jpeg_finish_compress(j_compress_ptr cinfo) {
   // Create jpeg data and optimize Huffman codes.
   float global_scale = 0.66f;
   if (!use_xyb) {
+    global_scale /= 500;
     if (color_encoding.tf.IsPQ()) {
       global_scale *= .4f;
     } else if (color_encoding.tf.IsHLG()) {

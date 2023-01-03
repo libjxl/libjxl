@@ -3,17 +3,15 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-/* clang-format off */
-#include <stdio.h>
-#include <jpeglib.h>
 #include <setjmp.h>
-#include <stddef.h>
-/* clang-format on */
+#include <stdio.h>
 
 #include <cmath>
 #include <vector>
 
 #include "gtest/gtest.h"
+#include "lib/jpegli/decode.h"
+#include "lib/jpegli/encode.h"
 #include "lib/jpegli/test_utils.h"
 #include "lib/jxl/base/file_io.h"
 #include "lib/jxl/base/status.h"
@@ -26,7 +24,7 @@ void TestDecodedImage(const std::vector<uint8_t>& compressed,
                       size_t ysize, size_t num_channels, double max_dist) {
   jpeg_decompress_struct cinfo;
   jpeg_error_mgr jerr;
-  cinfo.err = jpeg_std_error(&jerr);
+  cinfo.err = jpegli_std_error(&jerr);
   jmp_buf env;
   if (setjmp(env)) {
     FAIL();
@@ -37,22 +35,23 @@ void TestDecodedImage(const std::vector<uint8_t>& compressed,
     jmp_buf* env = static_cast<jmp_buf*>(cinfo->client_data);
     longjmp(*env, 1);
   };
-  jpeg_create_decompress(&cinfo);
-  jpeg_mem_src(&cinfo, compressed.data(), compressed.size());
-  EXPECT_EQ(JPEG_REACHED_SOS, jpeg_read_header(&cinfo, /*require_image=*/TRUE));
+  jpegli_create_decompress(&cinfo);
+  jpegli_mem_src(&cinfo, compressed.data(), compressed.size());
+  EXPECT_EQ(JPEG_REACHED_SOS,
+            jpegli_read_header(&cinfo, /*require_image=*/TRUE));
   EXPECT_EQ(xsize, cinfo.image_width);
   EXPECT_EQ(ysize, cinfo.image_height);
   EXPECT_EQ(num_channels, cinfo.num_components);
-  EXPECT_TRUE(jpeg_start_decompress(&cinfo));
+  EXPECT_TRUE(jpegli_start_decompress(&cinfo));
   size_t stride = xsize * num_channels;
   std::vector<uint8_t> output(ysize * stride);
   std::vector<JSAMPROW> scanlines(ysize);
   for (size_t i = 0; i < ysize; ++i) {
     scanlines[i] = &output[i * stride];
   }
-  EXPECT_EQ(ysize, jpeg_read_scanlines(&cinfo, &scanlines[0], ysize));
-  EXPECT_TRUE(jpeg_finish_decompress(&cinfo));
-  jpeg_destroy_decompress(&cinfo);
+  EXPECT_EQ(ysize, jpegli_read_scanlines(&cinfo, &scanlines[0], ysize));
+  EXPECT_TRUE(jpegli_finish_decompress(&cinfo));
+  jpegli_destroy_decompress(&cinfo);
 
   ASSERT_EQ(output.size(), orig.size());
   const double mul = 1.0 / 255.0;
@@ -84,7 +83,7 @@ TEST_P(EncodeAPITestParam, TestAPI) {
   ASSERT_EQ(8, bitdepth);
   jpeg_compress_struct cinfo;
   jpeg_error_mgr jerr;
-  cinfo.err = jpeg_std_error(&jerr);
+  cinfo.err = jpegli_std_error(&jerr);
   jmp_buf env;
   if (setjmp(env)) {
     FAIL();
@@ -95,25 +94,25 @@ TEST_P(EncodeAPITestParam, TestAPI) {
     jmp_buf* env = static_cast<jmp_buf*>(cinfo->client_data);
     longjmp(*env, 1);
   };
-  jpeg_create_compress(&cinfo);
+  jpegli_create_compress(&cinfo);
   unsigned char* buffer = nullptr;
   unsigned long size = 0;
-  jpeg_mem_dest(&cinfo, &buffer, &size);
+  jpegli_mem_dest(&cinfo, &buffer, &size);
   cinfo.image_width = xsize;
   cinfo.image_height = ysize;
   cinfo.input_components = num_channels;
   cinfo.in_color_space = num_channels == 1 ? JCS_GRAYSCALE : JCS_RGB;
-  jpeg_set_defaults(&cinfo);
+  jpegli_set_defaults(&cinfo);
   cinfo.optimize_coding = TRUE;
-  jpeg_set_quality(&cinfo, config.quality, TRUE);
-  jpeg_start_compress(&cinfo, TRUE);
+  jpegli_set_quality(&cinfo, config.quality, TRUE);
+  jpegli_start_compress(&cinfo, TRUE);
   size_t stride = xsize * cinfo.input_components;
   for (size_t y = 0; y < ysize; ++y) {
     JSAMPROW row[] = {orig.data() + y * stride};
-    jpeg_write_scanlines(&cinfo, row, 1);
+    jpegli_write_scanlines(&cinfo, row, 1);
   }
-  jpeg_finish_compress(&cinfo);
-  jpeg_destroy_compress(&cinfo);
+  jpegli_finish_compress(&cinfo);
+  jpegli_destroy_compress(&cinfo);
   std::vector<uint8_t> compressed;
   compressed.resize(size);
   std::copy_n(buffer, size, compressed.data());

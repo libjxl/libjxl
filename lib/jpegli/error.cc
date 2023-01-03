@@ -5,14 +5,11 @@
 
 #include "lib/jpegli/error.h"
 
-/* clang-format off */
-#include <stdint.h>
-#include <stdio.h>
-#include <jpeglib.h>
-#include <stdlib.h>
 #include <setjmp.h>
+#include <stdlib.h>
 #include <string.h>
-/* clang-format on */
+
+#include "lib/jpegli/common.h"
 
 namespace jpegli {
 
@@ -45,7 +42,7 @@ void ResetErrorManager(j_common_ptr cinfo) {}
 
 }  // namespace jpegli
 
-struct jpeg_error_mgr* jpeg_std_error(struct jpeg_error_mgr* err) {
+struct jpeg_error_mgr* jpegli_std_error(struct jpeg_error_mgr* err) {
   err->error_exit = jpegli::ExitWithAbort;
   err->output_message = jpegli::OutputMessage;
   err->emit_message = jpegli::EmitMessage;
