@@ -475,7 +475,7 @@ TEST(ModularTest, PredictorIntegerOverflow) {
   PaddedBytes compressed = std::move(writer).TakeBytes();
   extras::PackedPixelFile ppf;
   extras::JXLDecompressParams params;
-  params.accepted_formats.push_back({1, JXL_TYPE_FLOAT, JXL_LITTLE_ENDIAN, 0});
+  params.accepted_formats.push_back({1, JXL_TYPE_FLOAT, JXL_NATIVE_ENDIAN, 0});
   EXPECT_TRUE(DecodeImageJXL(compressed.data(), compressed.size(), params,
                              nullptr, &ppf));
   ASSERT_EQ(1, ppf.frames.size());
@@ -523,7 +523,7 @@ TEST(ModularTest, UnsqueezeIntegerOverflow) {
   PaddedBytes compressed = std::move(writer).TakeBytes();
   extras::PackedPixelFile ppf;
   extras::JXLDecompressParams params;
-  params.accepted_formats.push_back({1, JXL_TYPE_FLOAT, JXL_LITTLE_ENDIAN, 0});
+  params.accepted_formats.push_back({1, JXL_TYPE_FLOAT, JXL_NATIVE_ENDIAN, 0});
   EXPECT_TRUE(DecodeImageJXL(compressed.data(), compressed.size(), params,
                              nullptr, &ppf));
   ASSERT_EQ(1, ppf.frames.size());
