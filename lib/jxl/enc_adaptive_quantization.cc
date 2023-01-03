@@ -345,7 +345,7 @@ void PerBlockModulations(const float butteraugli_target, const ImageF& xyb_x,
 
 template <typename D, typename V>
 V MaskingSqrt(const D d, V v) {
-  static const float kLogOffset = 26.481471032459346f;
+  static const float kLogOffset = 28;
   static const float kMul = 211.50759899638012f;
   const auto mul_v = Set(d, kMul * 1e8);
   const auto offset_v = Set(d, kLogOffset);
@@ -716,7 +716,7 @@ ImageF TileDistMap(const ImageF& distmap, int tile_size, int margin,
 
 constexpr float kDcQuantPow = 0.66f;
 static const float kDcQuant = 1.1f;
-static const float kAcQuant = 0.833f;
+static const float kAcQuant = 0.841f;
 
 void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
                           PassesEncoderState* enc_state,
