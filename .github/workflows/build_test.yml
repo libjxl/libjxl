@@ -68,7 +68,6 @@ jobs:
               -DJPEGXL_ENABLE_TRANSCODE_JPEG=OFF
               -DJPEGXL_ENABLE_PLUGINS=OFF
               -DJPEGXL_ENABLE_VIEWERS=OFF
-              -DJPEGXL_ENABLE_JPEGLI=OFF
           # Build optimized for binary size, all features not needed for
           # reconstructing pixels is disabled.
           - name: release:minimal
@@ -79,7 +78,6 @@ jobs:
               -DJPEGXL_ENABLE_BOXES=OFF
               -DJPEGXL_ENABLE_PLUGINS=OFF
               -DJPEGXL_ENABLE_VIEWERS=OFF
-              -DJPEGXL_ENABLE_JPEGLI=OFF
           # Builds with gcc in release mode
           - name: release:gcc8
             os: ubuntu-20.04
@@ -87,7 +85,6 @@ jobs:
             apt_pkgs: gcc-8 g++-8
             cmake_args: >-
               -DCMAKE_C_COMPILER=gcc-8 -DCMAKE_CXX_COMPILER=g++-8
-              -DJPEGXL_ENABLE_JPEGLI=OFF
           # Builds with clang-5 in release mode
           - name: release:clang-5
             os: ubuntu-18.04

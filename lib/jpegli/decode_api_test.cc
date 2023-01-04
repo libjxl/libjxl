@@ -148,7 +148,8 @@ TEST_P(DecodeAPITestParam, TestAPI) {
   const std::vector<uint8_t> compressed = ReadTestData(config.fn.c_str());
   const std::vector<uint8_t> origdata = ReadTestData(config.origfn.c_str());
 
-  size_t xsize, ysize, num_channels, bitdepth;
+  // These has to be volatile to make setjmp/longjmp work.
+  volatile size_t xsize, ysize, num_channels, bitdepth;
   std::vector<uint8_t> orig;
   ASSERT_TRUE(
       ReadPNM(origdata, &xsize, &ysize, &num_channels, &bitdepth, &orig));

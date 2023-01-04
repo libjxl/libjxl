@@ -74,7 +74,7 @@ void GatherBlockStats(const int16_t* JXL_RESTRICT coeffs,
 }
 
 void DecenterRow(float* row, size_t xsize) {
-  const HWY_FULL(float) df;
+  const HWY_CAPPED(float, 8) df;
   const auto c128 = Set(df, 128.0f / 255);
   for (size_t x = 0; x < xsize; x += Lanes(df)) {
     Store(Add(Load(df, row + x), c128), df, row + x);
@@ -84,7 +84,7 @@ void DecenterRow(float* row, size_t xsize) {
 template <typename T>
 void StoreUnsignedRow(float* JXL_RESTRICT input[3], size_t x0, size_t len,
                       size_t num_channels, float multiplier, T* output) {
-  const HWY_FULL(float) d;
+  const HWY_CAPPED(float, 8) d;
   auto zero = Zero(d);
   auto one = Set(d, 1.0f);
   auto mul = Set(d, multiplier);

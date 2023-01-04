@@ -101,7 +101,9 @@ set(JPEGXL_ENABLE_DEVTOOLS false CACHE BOOL
 set(JPEGXL_ENABLE_TOOLS true CACHE BOOL
     "Build JPEGXL user tools: cjxl and djxl.")
 set(JPEGXL_ENABLE_JPEGLI true CACHE BOOL
-    "Build jpegli shared library.")
+    "Build jpegli library.")
+set(JPEGXL_ENABLE_JPEGLI_LIBJPEG true CACHE BOOL
+    "Build libjpeg.so shared library based on jpegli.")
 set(JPEGXL_ENABLE_DOXYGEN true CACHE BOOL
     "Generate C API documentation using Doxygen.")
 set(JPEGXL_ENABLE_MANPAGES true CACHE BOOL

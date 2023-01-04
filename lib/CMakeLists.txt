@@ -151,7 +151,7 @@ endif()
 include(jxl_threads.cmake)
 # We only build JPEGLI on linux for now.
 find_package(JPEG)
-if (JPEG_FOUND AND JPEGXL_ENABLE_JPEGLI AND NOT APPLE AND NOT WIN32 AND NOT JPEGXL_EMSCRIPTEN)
+if (JPEG_FOUND AND JPEGXL_ENABLE_JPEGLI)
   include(jpegli.cmake)
 endif()
 

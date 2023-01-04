@@ -13,9 +13,9 @@
 #include <numeric>  // partial_sum
 #include <string>
 
+#include "lib/extras/dec/jpegli.h"
 #include "lib/extras/dec/jpg.h"
 #include "lib/extras/dec/jxl.h"
-#include "lib/extras/decode_jpeg.h"
 #include "lib/extras/enc/jpg.h"
 #include "lib/extras/enc/jxl.h"
 #include "lib/extras/encode_jpeg.h"
