@@ -129,6 +129,9 @@ inline bool ParseSpeedTier(const std::string& s, SpeedTier* out) {
   } else if (s == "guetzli" || s == "tortoise") {
     *out = SpeedTier::kTortoise;
     return true;
+  } else if (s == "glacier") {
+    *out = SpeedTier::kGlacier;
+    return true;
   }
   size_t st = 10 - static_cast<size_t>(strtoull(s.c_str(), nullptr, 0));
   if (st <= static_cast<size_t>(SpeedTier::kLightning) &&

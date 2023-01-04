@@ -61,6 +61,7 @@
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/loop_filter.h"
+#include "lib/jxl/modular/options.h"
 #include "lib/jxl/quant_weights.h"
 #include "lib/jxl/quantizer.h"
 #include "lib/jxl/splines.h"
@@ -1100,6 +1101,59 @@ Status EncodeFrame(const CompressParams& cparams_orig,
                    const JxlCmsInterface& cms, ThreadPool* pool,
                    BitWriter* writer, AuxOut* aux_out) {
   CompressParams cparams = cparams_orig;
+  if (cparams.speed_tier == SpeedTier::kGlacier) {
+    CompressParams best;
+    size_t best_size = std::numeric_limits<size_t>::max();
+
+    auto tryit = [&](const CompressParams& cparams) -> Status {
+      BitWriter w;
+      PassesEncoderState state;
+      JXL_RETURN_IF_ERROR(EncodeFrame(cparams, frame_info, metadata, ib, &state,
+                                      cms, pool, &w, aux_out));
+      if (w.BitsWritten() < best_size) {
+        best = cparams;
+        best_size = w.BitsWritten();
+      }
+      return true;
+    };
+
+    CompressParams cparams_attempt = cparams_orig;
+    cparams_attempt.speed_tier = SpeedTier::kTortoise;
+    cparams_attempt.options.max_properties = 4;
+
+    for (float x : {0.0f, 80.f}) {
+      cparams_attempt.channel_colors_percent = x;
+      for (float y : {0.0f, 95.0f}) {
+        cparams_attempt.channel_colors_pre_transform_percent = y;
+        for (int K : {0, 1 << 10, 1 << 30}) {
+          cparams_attempt.palette_colors = K;
+          for (int tree_mode : {-1, (int)ModularOptions::TreeMode::kNoWP,
+                                (int)ModularOptions::TreeMode::kDefault}) {
+            if (tree_mode == -1) {
+              // LZ77 only
+              cparams_attempt.options.nb_repeats = 0;
+            } else {
+              cparams_attempt.options.nb_repeats = 1;
+              cparams_attempt.options.wp_tree_mode =
+                  static_cast<ModularOptions::TreeMode>(tree_mode);
+            }
+            for (Predictor pred : {Predictor::Zero, Predictor::Variable}) {
+              cparams_attempt.options.predictor = pred;
+              for (int g : {0, 1, 3}) {
+                cparams_attempt.modular_group_size_shift = g;
+                for (Override patches : {Override::kDefault, Override::kOff}) {
+                  cparams_attempt.patches = patches;
+                  JXL_RETURN_IF_ERROR(tryit(cparams_attempt));
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    cparams = best;
+  }
   if (cparams_orig.target_bitrate > 0.0f &&
       frame_info.frame_type == FrameType::kRegularFrame) {
     cparams.target_bitrate = 0.0f;

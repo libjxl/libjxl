@@ -311,7 +311,7 @@ TEST(EncodeTest, frame_settingsTest) {
     // Higher than currently supported values
     EXPECT_EQ(JXL_ENC_ERROR,
               JxlEncoderFrameSettingsSetOption(
-                  frame_settings, JXL_ENC_FRAME_SETTING_EFFORT, 10));
+                  frame_settings, JXL_ENC_FRAME_SETTING_EFFORT, 11));
   }
 
   {
