@@ -20,7 +20,7 @@ using hwy::HWY_NAMESPACE::MulAdd;
 
 void YCbCrToRGB(float* JXL_RESTRICT row0, float* JXL_RESTRICT row1,
                 float* JXL_RESTRICT row2, size_t xsize) {
-  const HWY_FULL(float) df;
+  const HWY_CAPPED(float, 8) df;
 
   // Full-range BT.601 as defined by JFIF Clause 7:
   // https://www.itu.int/rec/T-REC-T.871-201105-I/en

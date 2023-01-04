@@ -76,7 +76,8 @@ class EncodeAPITestParam : public ::testing::TestWithParam<TestConfig> {};
 TEST_P(EncodeAPITestParam, TestAPI) {
   TestConfig config = GetParam();
   const std::vector<uint8_t> origdata = ReadTestData("jxl/flower/flower.pnm");
-  size_t xsize, ysize, num_channels, bitdepth;
+  // These has to be volatile to make setjmp/longjmp work.
+  volatile size_t xsize, ysize, num_channels, bitdepth;
   std::vector<uint8_t> orig;
   ASSERT_TRUE(
       ReadPNM(origdata, &xsize, &ysize, &num_channels, &bitdepth, &orig));

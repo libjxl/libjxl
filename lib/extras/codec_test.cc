@@ -14,6 +14,7 @@
 #include <utility>
 #include <vector>
 
+#include "lib/extras/dec/jpegli.h"
 #include "lib/extras/dec/pgx.h"
 #include "lib/extras/dec/pnm.h"
 #include "lib/extras/enc/encode.h"
@@ -174,6 +175,7 @@ struct TestImageParams {
   bool add_alpha;
   bool big_endian;
   bool add_extra_channels;
+  bool jpegli_decode = false;
 
   bool ShouldTestRoundtrip() const {
     if (codec == Codec::kPNG) {
@@ -273,9 +275,15 @@ void TestRoundTrip(const TestImageParams& params, ThreadPool* pool) {
     color_hints.Add("color_space",
                     params.is_gray ? "Gra_D65_Rel_SRG" : "RGB_D65_SRG_Rel_SRG");
   }
-  ASSERT_TRUE(DecodeBytes(Span<const uint8_t>(encoded.bitstreams[0]),
-                          color_hints, SizeConstraints(), &ppf_out));
-
+  if (params.codec == Codec::kJPG && params.jpegli_decode) {
+#if JPEGXL_ENABLE_JPEG
+    ASSERT_TRUE(
+        DecodeJpeg(encoded.bitstreams[0], JXL_TYPE_UINT8, pool, &ppf_out));
+#endif
+  } else {
+    ASSERT_TRUE(DecodeBytes(Span<const uint8_t>(encoded.bitstreams[0]),
+                            color_hints, SizeConstraints(), &ppf_out));
+  }
   if (params.codec == Codec::kPNG && ppf_out.icc.empty()) {
     // Decoding a PNG may drop the ICC profile if there's a valid cICP chunk.
     // Rendering intent is not preserved in this case.
@@ -335,6 +343,10 @@ TEST(CodecTest, TestRoundTrip) {
             TestRoundTrip(params, &pool);
             if (codec == Codec::kPNM && add_alpha) {
               params.add_extra_channels = true;
+              TestRoundTrip(params, &pool);
+            }
+            if (codec == Codec::kJPG) {
+              params.jpegli_decode = true;
               TestRoundTrip(params, &pool);
             }
           }
