@@ -22,6 +22,8 @@
 namespace jxl {
 
 enum class SpeedTier {
+  // Try multiple combinations of Tortoise flags for modular mode.
+  kGlacier = 0,
   // Turns on FindBestQuantizationHQ loop. Equivalent to "guetzli" mode.
   kTortoise = 1,
   // Turns on FindBestQuantization butteraugli loop.

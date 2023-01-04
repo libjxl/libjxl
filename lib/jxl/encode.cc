@@ -1071,9 +1071,9 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetOption(
 
   switch (option) {
     case JXL_ENC_FRAME_SETTING_EFFORT:
-      if (value < 1 || value > 9) {
+      if (value < 1 || value > 10) {
         return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_NOT_SUPPORTED,
-                             "Encode effort has to be in [1..9]");
+                             "Encode effort has to be in [1..10]");
       }
       frame_settings->values.cparams.speed_tier =
           static_cast<jxl::SpeedTier>(10 - value);

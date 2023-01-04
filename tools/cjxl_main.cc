@@ -141,7 +141,7 @@ struct CompressArgs {
 
     cmdline->AddOptionValue(
         'e', "effort", "EFFORT",
-        "Encoder effort setting. Range: 1 .. 9.\n"
+        "Encoder effort setting. Range: 1 .. 10.\n"
         "     Default: 7. Higher number is more effort (slower).",
         &effort, &ParseUnsigned, -1);
 
@@ -699,7 +699,7 @@ void ProcessFlags(const jxl::extras::Codec codec,
   ProcessFlag(
       "effort", static_cast<int64_t>(args->effort),
       JXL_ENC_FRAME_SETTING_EFFORT, params, [](int64_t x) -> std::string {
-        return (1 <= x && x <= 9) ? "" : "Valid range is {1, 2, ..., 9}.";
+        return (1 <= x && x <= 10) ? "" : "Valid range is {1, 2, ..., 10}.";
       });
   ProcessFlag("brotli_effort", static_cast<int64_t>(args->brotli_effort),
               JXL_ENC_FRAME_SETTING_BROTLI_EFFORT, params,
