@@ -1597,10 +1597,6 @@ struct SIMDVec16 {
   }
 };
 
-// Makes clang5 happy.
-constexpr size_t SIMDVec32::kLanes;
-constexpr size_t SIMDVec16::kLanes;
-
 SIMDVec16 Mask16::IfThenElse(const SIMDVec16& if_true,
                              const SIMDVec16& if_false) {
   return SIMDVec16{_mm256_blendv_epi8(if_false.vec, if_true.vec, mask)};
@@ -2055,6 +2051,8 @@ struct Bits16 {
 #endif
 
 #ifdef FJXL_GENERIC_SIMD
+constexpr size_t SIMDVec32::kLanes;
+constexpr size_t SIMDVec16::kLanes;
 
 //  Each of these functions will process SIMDVec16::kLanes worth of values.
 
