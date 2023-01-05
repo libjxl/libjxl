@@ -7,6 +7,7 @@
 #define LIB_JPEGLI_DECODE_INTERNAL_H_
 
 #include <stdint.h>
+#include <sys/types.h>
 
 #include <array>
 #include <set>
@@ -14,6 +15,7 @@
 
 #include "hwy/aligned_allocator.h"
 #include "lib/jpegli/huffman.h"
+#include "lib/jxl/base/compiler_specific.h"  // for ssize_t
 
 namespace jpegli {
 
