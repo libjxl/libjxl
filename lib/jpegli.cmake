@@ -57,6 +57,7 @@ target_include_directories(jpegli-static PUBLIC
   "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>"
   "$<BUILD_INTERFACE:$<TARGET_PROPERTY:hwy,INTERFACE_INCLUDE_DIRECTORIES>>"
 )
+target_include_directories(jpegli-static PUBLIC "${JPEG_INCLUDE_DIRS}")
 target_link_libraries(jpegli-static PUBLIC ${JPEGLI_INTERNAL_LIBS})
 
 #

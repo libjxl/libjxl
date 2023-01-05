@@ -17,6 +17,8 @@ on:
     branches:
       - main
       - v*.*.x
+  pull_request:
+    types: [opened, reopened, labeled, synchronize]
   release:
     types: [ published ]
 
@@ -63,7 +65,7 @@ jobs:
           -DJPEGXL_DEP_LICENSE_DIR=/usr/share/doc \
           -DJPEGXL_STATIC=ON \
           -DBUILD_TESTING=OFF \
-          -DJPEGXL_ENABLE_JPEGLI=OFF \
+          -DJPEGXL_ENABLE_JPEGLI_LIBJPEG=OFF \
           -DJPEGXL_ENABLE_VIEWERS=OFF \
           -DJPEGXL_ENABLE_PLUGINS=OFF \
           -DJPEGXL_ENABLE_OPENEXR=OFF \
@@ -334,7 +336,7 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release \
           -DCMAKE_INSTALL_PREFIX=`pwd`/prefix \
           -DCMAKE_TOOLCHAIN_FILE=${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake \
-          -DJPEGXL_ENABLE_JPEGLI=OFF \
+          -DJPEGXL_ENABLE_JPEGLI_LIBJPEG=OFF \
           -DJPEGXL_ENABLE_OPENEXR=OFF \
           -DJPEGXL_ENABLE_PLUGINS=OFF \
           -DJPEGXL_ENABLE_TCMALLOC=OFF \
