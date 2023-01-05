@@ -1102,20 +1102,8 @@ Status EncodeFrame(const CompressParams& cparams_orig,
                    BitWriter* writer, AuxOut* aux_out) {
   CompressParams cparams = cparams_orig;
   if (cparams.speed_tier == SpeedTier::kGlacier) {
-    CompressParams best;
-    size_t best_size = std::numeric_limits<size_t>::max();
-
-    auto tryit = [&](const CompressParams& cparams) -> Status {
-      BitWriter w;
-      PassesEncoderState state;
-      JXL_RETURN_IF_ERROR(EncodeFrame(cparams, frame_info, metadata, ib, &state,
-                                      cms, pool, &w, aux_out));
-      if (w.BitsWritten() < best_size) {
-        best = cparams;
-        best_size = w.BitsWritten();
-      }
-      return true;
-    };
+    std::vector<CompressParams> all_params;
+    std::vector<size_t> size;
 
     CompressParams cparams_attempt = cparams_orig;
     cparams_attempt.speed_tier = SpeedTier::kTortoise;
@@ -1143,7 +1131,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
                 cparams_attempt.modular_group_size_shift = g;
                 for (Override patches : {Override::kDefault, Override::kOff}) {
                   cparams_attempt.patches = patches;
-                  JXL_RETURN_IF_ERROR(tryit(cparams_attempt));
+                  all_params.push_back(cparams_attempt);
                 }
               }
             }
@@ -1152,8 +1140,34 @@ Status EncodeFrame(const CompressParams& cparams_orig,
       }
     }
 
-    cparams = best;
+    size.resize(all_params.size());
+
+    std::atomic<int> num_errors{0};
+
+    JXL_RETURN_IF_ERROR(RunOnPool(
+        pool, 0, all_params.size(), ThreadPool::NoInit,
+        [&](size_t task, size_t) {
+          BitWriter w;
+          PassesEncoderState state;
+          if (!EncodeFrame(all_params[task], frame_info, metadata, ib, &state,
+                           cms, nullptr, &w, aux_out)) {
+            num_errors.fetch_add(1, std::memory_order_relaxed);
+            return;
+          }
+          size[task] = w.BitsWritten();
+        },
+        "Compress kGlacier"));
+    JXL_RETURN_IF_ERROR(num_errors.load(std::memory_order_relaxed) == 0);
+
+    size_t best_idx = 0;
+    for (size_t i = 1; i < all_params.size(); i++) {
+      if (size[best_idx] > size[i]) {
+        best_idx = i;
+      }
+    }
+    cparams = all_params[best_idx];
   }
+
   if (cparams_orig.target_bitrate > 0.0f &&
       frame_info.frame_type == FrameType::kRegularFrame) {
     cparams.target_bitrate = 0.0f;
