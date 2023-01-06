@@ -49,6 +49,7 @@ jobs:
             cxxflags: -DHWY_COMPILE_ONLY_SCALAR -DFJXL_ENABLE_AVX2=0 -DFJXL_ENABLE_AVX512=0
           # Disabling optional features to speed up msan build a little bit.
           - name: msan
+            os: ubuntu-20.04
             skip_install: true
             cmake_args: >-
               -DJPEGXL_ENABLE_DEVTOOLS=OFF -DJPEGXL_ENABLE_PLUGINS=OFF
