@@ -18,11 +18,13 @@
 #include "lib/extras/dec/pgx.h"
 #include "lib/extras/dec/pnm.h"
 #include "lib/extras/enc/encode.h"
+#include "lib/extras/encode_jpeg.h"
 #include "lib/extras/packed_image_convert.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/random.h"
 #include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/color_management.h"
+#include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
@@ -388,6 +390,78 @@ TEST(CodecTest, LosslessPNMRoundtrip) {
     }
   }
 }
+
+#if JPEGXL_ENABLE_JPEG
+TEST(CodecTest, JpegliXYBEncodeTest) {
+  ThreadPool* pool = nullptr;
+  CodecInOut io;
+  const PaddedBytes orig =
+      ReadTestData("jxl/flower/flower_small.rgb.depth8.ppm");
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), ColorHints(), &io));
+
+  std::vector<uint8_t> compressed;
+  JpegSettings settings;
+  settings.xyb = true;
+  ASSERT_TRUE(EncodeJpeg(io.Main(), settings, pool, &compressed));
+
+  CodecInOut io2;
+  ASSERT_TRUE(
+      SetFromBytes(Span<const uint8_t>(compressed), ColorHints(), &io2));
+
+  double bpp = compressed.size() * 8.0 / (io.xsize() * io.ysize());
+  EXPECT_THAT(bpp, IsSlightlyBelow(1.5f));
+  EXPECT_THAT(ButteraugliDistance(io, io2, ButteraugliParams(), GetJxlCms(),
+                                  /*distmap=*/nullptr, nullptr),
+              IsSlightlyBelow(1.3f));
+}
+
+TEST(CodecTest, JpegliYUVEncodeTest) {
+  ThreadPool* pool = nullptr;
+  CodecInOut io;
+  const PaddedBytes orig =
+      ReadTestData("jxl/flower/flower_small.rgb.depth8.ppm");
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), ColorHints(), &io));
+
+  std::vector<uint8_t> compressed;
+  JpegSettings settings;
+  settings.xyb = false;
+  ASSERT_TRUE(EncodeJpeg(io.Main(), settings, pool, &compressed));
+
+  CodecInOut io2;
+  ASSERT_TRUE(
+      SetFromBytes(Span<const uint8_t>(compressed), ColorHints(), &io2));
+
+  double bpp = compressed.size() * 8.0 / (io.xsize() * io.ysize());
+  EXPECT_THAT(bpp, IsSlightlyBelow(2.3f));
+  EXPECT_THAT(ButteraugliDistance(io, io2, ButteraugliParams(), GetJxlCms(),
+                                  /*distmap=*/nullptr, nullptr),
+              IsSlightlyBelow(1.3f));
+}
+
+TEST(CodecTest, Jpegli16bitRoundtripTest) {
+  ThreadPool* pool = nullptr;
+  CodecInOut io;
+  const PaddedBytes orig = ReadTestData(
+      "external/raw.pixls/"
+      "Google-Pixel2XL-16bit_srgb8_v4_krita.png");
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), ColorHints(), &io));
+
+  std::vector<uint8_t> compressed;
+  JpegSettings settings;
+  settings.xyb = false;
+  ASSERT_TRUE(EncodeJpeg(io.Main(), settings, pool, &compressed));
+
+  PackedPixelFile ppf_out;
+  ASSERT_TRUE(DecodeJpeg(compressed, JXL_TYPE_UINT16, pool, &ppf_out));
+  CodecInOut io2;
+  ASSERT_TRUE(ConvertPackedPixelFileToCodecInOut(ppf_out, pool, &io2));
+
+  EXPECT_THAT(compressed.size(), IsSlightlyBelow(3500u));
+  EXPECT_THAT(ButteraugliDistance(io, io2, ButteraugliParams(), GetJxlCms(),
+                                  /*distmap=*/nullptr, nullptr),
+              IsSlightlyBelow(1.13f));
+}
+#endif
 
 CodecInOut DecodeRoundtrip(const std::string& pathname, ThreadPool* pool,
                            const ColorHints& color_hints = ColorHints()) {
