@@ -1113,7 +1113,9 @@ Status EncodeFrame(const CompressParams& cparams_orig,
       cparams_attempt.channel_colors_percent = x;
       for (float y : {0.0f, 95.0f}) {
         cparams_attempt.channel_colors_pre_transform_percent = y;
-        for (int K : {0, 1 << 10, 1 << 30}) {
+        // 70000 ensures that the number of palette colors is representable in
+        // modular headers.
+        for (int K : {0, 1 << 10, 70000}) {
           cparams_attempt.palette_colors = K;
           for (int tree_mode : {-1, (int)ModularOptions::TreeMode::kNoWP,
                                 (int)ModularOptions::TreeMode::kDefault}) {
