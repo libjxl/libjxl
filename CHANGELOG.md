@@ -12,7 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
    of the input buffer.
  - decoder API: new function `JxlDecoderSetImageBitDepth` to set the bit depth
    of the output buffer.
- - encoder API: add an effort 10 option for lossless compression.
+ - encoder API: add an effort 10 option for lossless compression; using this
+   setting requires calling `JxlEncoderAllowExpertOptions`.
 
 ## [0.7] - 2022-07-21
 

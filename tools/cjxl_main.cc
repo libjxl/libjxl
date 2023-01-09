@@ -141,7 +141,7 @@ struct CompressArgs {
 
     cmdline->AddOptionValue(
         'e', "effort", "EFFORT",
-        "Encoder effort setting. Range: 1 .. 10.\n"
+        "Encoder effort setting. Range: 1 .. 9.\n"
         "     Default: 7. Higher number is more effort (slower).",
         &effort, &ParseUnsigned, -1);
 
@@ -412,6 +412,13 @@ struct CompressArgs {
         &frame_indexing, &ParseString, 1);
 
     cmdline->AddOptionFlag(
+        '\0', "allow_expert_options",
+        "Allow specifying advanced options; at the moment, this allows setting "
+        "effort to 10, for somewhat better lossless compression at the cost of "
+        "a massive speed hit.",
+        &allow_expert_options, &SetBooleanTrue, 2);
+
+    cmdline->AddOptionFlag(
         'v', "verbose",
         "Verbose output; can be repeated, also applies to help (!).", &verbose,
         &SetBooleanTrue);
@@ -483,6 +490,8 @@ struct CompressArgs {
   size_t effort = 7;
   size_t brotli_effort = 9;
   std::string frame_indexing;
+
+  bool allow_expert_options = false;
 
   // Will get passed on to AuxOut.
   // jxl::InspectorImage3F inspector_image3f;
@@ -677,6 +686,8 @@ void ProcessFlags(const jxl::extras::Codec codec,
   ProcessBoolFlag(args->gaborish, JXL_ENC_FRAME_SETTING_GABORISH, params);
   ProcessBoolFlag(args->group_order, JXL_ENC_FRAME_SETTING_GROUP_ORDER, params);
 
+  params->allow_expert_options = args->allow_expert_options;
+
   if (!args->frame_indexing.empty()) {
     bool must_be_all_zeros = args->frame_indexing[0] != '1';
     for (char c : args->frame_indexing) {
@@ -698,8 +709,12 @@ void ProcessFlags(const jxl::extras::Codec codec,
 
   ProcessFlag(
       "effort", static_cast<int64_t>(args->effort),
-      JXL_ENC_FRAME_SETTING_EFFORT, params, [](int64_t x) -> std::string {
-        return (1 <= x && x <= 10) ? "" : "Valid range is {1, 2, ..., 10}.";
+      JXL_ENC_FRAME_SETTING_EFFORT, params, [args](int64_t x) -> std::string {
+        if (args->allow_expert_options) {
+          return (1 <= x && x <= 10) ? "" : "Valid range is {1, 2, ..., 10}.";
+        } else {
+          return (1 <= x && x <= 9) ? "" : "Valid range is {1, 2, ..., 9}.";
+        }
       });
   ProcessFlag("brotli_effort", static_cast<int64_t>(args->brotli_effort),
               JXL_ENC_FRAME_SETTING_BROTLI_EFFORT, params,
