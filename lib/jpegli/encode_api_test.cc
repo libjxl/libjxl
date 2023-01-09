@@ -3,28 +3,35 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include <setjmp.h>
+/* clang-format off */
 #include <stdio.h>
+#include <jpeglib.h>
+#include <setjmp.h>
+/* clang-format on */
 
 #include <cmath>
 #include <vector>
 
 #include "gtest/gtest.h"
-#include "lib/jpegli/decode.h"
 #include "lib/jpegli/encode.h"
 #include "lib/jpegli/test_utils.h"
 #include "lib/jxl/base/file_io.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/sanitizers.h"
 
 namespace jpegli {
 namespace {
 
+// Verifies that an image encoded with libjpegli can be decoded with libjpeg.
 void TestDecodedImage(const std::vector<uint8_t>& compressed,
                       const std::vector<uint8_t>& orig, size_t xsize,
                       size_t ysize, size_t num_channels, double max_dist) {
   jpeg_decompress_struct cinfo;
+  // cinfo is initialized by libjpeg, which we are not instrumenting with
+  // msan, therefore we need to initialize cinfo here.
+  jxl::msan::UnpoisonMemory(&cinfo, sizeof(cinfo));
   jpeg_error_mgr jerr;
-  cinfo.err = jpegli_std_error(&jerr);
+  cinfo.err = jpeg_std_error(&jerr);
   jmp_buf env;
   if (setjmp(env)) {
     FAIL();
@@ -35,23 +42,23 @@ void TestDecodedImage(const std::vector<uint8_t>& compressed,
     jmp_buf* env = static_cast<jmp_buf*>(cinfo->client_data);
     longjmp(*env, 1);
   };
-  jpegli_create_decompress(&cinfo);
-  jpegli_mem_src(&cinfo, compressed.data(), compressed.size());
-  EXPECT_EQ(JPEG_REACHED_SOS,
-            jpegli_read_header(&cinfo, /*require_image=*/TRUE));
+  jpeg_create_decompress(&cinfo);
+  jpeg_mem_src(&cinfo, compressed.data(), compressed.size());
+  EXPECT_EQ(JPEG_REACHED_SOS, jpeg_read_header(&cinfo, /*require_image=*/TRUE));
   EXPECT_EQ(xsize, cinfo.image_width);
   EXPECT_EQ(ysize, cinfo.image_height);
   EXPECT_EQ(num_channels, cinfo.num_components);
-  EXPECT_TRUE(jpegli_start_decompress(&cinfo));
+  EXPECT_TRUE(jpeg_start_decompress(&cinfo));
   size_t stride = xsize * num_channels;
   std::vector<uint8_t> output(ysize * stride);
-  std::vector<JSAMPROW> scanlines(ysize);
-  for (size_t i = 0; i < ysize; ++i) {
-    scanlines[i] = &output[i * stride];
+  for (size_t y = 0; y < cinfo.image_height; ++y) {
+    JSAMPROW rows[] = {reinterpret_cast<JSAMPLE*>(&output[y * stride])};
+    jxl::msan::UnpoisonMemory(
+        rows[0], sizeof(JSAMPLE) * cinfo.output_components * cinfo.image_width);
+    EXPECT_EQ(1, jpeg_read_scanlines(&cinfo, rows, 1));
   }
-  EXPECT_EQ(ysize, jpegli_read_scanlines(&cinfo, &scanlines[0], ysize));
-  EXPECT_TRUE(jpegli_finish_decompress(&cinfo));
-  jpegli_destroy_decompress(&cinfo);
+  EXPECT_TRUE(jpeg_finish_decompress(&cinfo));
+  jpeg_destroy_decompress(&cinfo);
 
   ASSERT_EQ(output.size(), orig.size());
   const double mul = 1.0 / 255.0;
@@ -66,9 +73,16 @@ void TestDecodedImage(const std::vector<uint8_t>& compressed,
   EXPECT_LE(rms, max_dist);
 }
 
+enum ChromaSubsampling {
+  SAMPLING_444,
+  SAMPLING_420,
+};
+
 struct TestConfig {
   int quality;
   double max_dist;
+  double max_bpp;
+  ChromaSubsampling sampling;
 };
 
 class EncodeAPITestParam : public ::testing::TestWithParam<TestConfig> {};
@@ -104,6 +118,9 @@ TEST_P(EncodeAPITestParam, TestAPI) {
   cinfo.input_components = num_channels;
   cinfo.in_color_space = num_channels == 1 ? JCS_GRAYSCALE : JCS_RGB;
   jpegli_set_defaults(&cinfo);
+  if (config.sampling == SAMPLING_420) {
+    cinfo.comp_info[0].h_samp_factor = cinfo.comp_info[0].v_samp_factor = 2;
+  }
   cinfo.optimize_coding = TRUE;
   jpegli_set_quality(&cinfo, config.quality, TRUE);
   jpegli_start_compress(&cinfo, TRUE);
@@ -118,16 +135,44 @@ TEST_P(EncodeAPITestParam, TestAPI) {
   compressed.resize(size);
   std::copy_n(buffer, size, compressed.data());
   std::free(buffer);
+  double bpp = compressed.size() * 8.0 / (xsize * ysize);
+  EXPECT_LT(bpp, config.max_bpp);
   TestDecodedImage(compressed, orig, xsize, ysize, num_channels,
                    config.max_dist);
 }
 
 std::vector<TestConfig> GenerateTests() {
   std::vector<TestConfig> all_tests;
-  for (int quality : {80, 90, 100}) {
+  {
     TestConfig config;
-    config.quality = quality;
-    config.max_dist = quality == 100 ? 0.5 : quality == 90 ? 1.95 : 2.75;
+    config.quality = 100;
+    config.sampling = SAMPLING_444;
+    config.max_dist = 0.9;
+    config.max_bpp = 4.2;
+    all_tests.push_back(config);
+  }
+  {
+    TestConfig config;
+    config.quality = 90;
+    config.sampling = SAMPLING_444;
+    config.max_dist = 2.0;
+    config.max_bpp = 1.7;
+    all_tests.push_back(config);
+  }
+  {
+    TestConfig config;
+    config.quality = 90;
+    config.sampling = SAMPLING_420;
+    config.max_dist = 2.4;
+    config.max_bpp = 1.5;
+    all_tests.push_back(config);
+  }
+  {
+    TestConfig config;
+    config.quality = 80;
+    config.sampling = SAMPLING_444;
+    config.max_dist = 2.75;
+    config.max_bpp = 1.0;
     all_tests.push_back(config);
   }
   return all_tests;
@@ -135,6 +180,11 @@ std::vector<TestConfig> GenerateTests() {
 
 std::ostream& operator<<(std::ostream& os, const TestConfig& c) {
   os << "Q" << c.quality;
+  if (c.sampling == SAMPLING_444) {
+    os << "YUV444";
+  } else if (c.sampling == SAMPLING_420) {
+    os << "YUV420";
+  }
   return os;
 }
 

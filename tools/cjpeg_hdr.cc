@@ -9,7 +9,7 @@
 #include <tuple>
 
 #include "lib/extras/codec.h"
-#include "lib/extras/encode_jpeg.h"
+#include "lib/extras/enc/jpegli.h"
 #include "lib/jxl/base/file_io.h"
 #include "lib/jxl/codec_in_out.h"
 
