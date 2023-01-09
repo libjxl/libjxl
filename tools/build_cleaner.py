@@ -77,7 +77,7 @@ def SplitLibFiles(repo_files):
     '/dec/apng', '/enc/apng',
     '/dec/exr', '/enc/exr',
     '/dec/jpg', '/dec/jpegli',
-    '/enc/jpg', '/encode_jpeg',
+    '/enc/jpg', '/enc/jpegli',
   ]
   extras_srcs = [fn for fn in extras_srcs if fn not in gbench_srcs and
                  not any(patt in fn for patt in testonly) and

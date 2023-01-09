@@ -16,9 +16,9 @@
 #include "lib/extras/dec/jpegli.h"
 #include "lib/extras/dec/jpg.h"
 #include "lib/extras/dec/jxl.h"
+#include "lib/extras/enc/jpegli.h"
 #include "lib/extras/enc/jpg.h"
 #include "lib/extras/enc/jxl.h"
-#include "lib/extras/encode_jpeg.h"
 #include "lib/extras/packed_image.h"
 #include "lib/extras/packed_image_convert.h"
 #include "lib/extras/time.h"
@@ -167,7 +167,7 @@ class JPEGCodec : public ImageCodec {
       compressed->clear();
       const double start = Now();
       extras::JpegSettings settings;
-      settings.xyb = true;
+      settings.xyb = false;
       settings.distance = butteraugli_target_;
       settings.target_size = target_size;
       JXL_RETURN_IF_ERROR(
