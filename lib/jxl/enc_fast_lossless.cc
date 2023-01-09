@@ -2782,10 +2782,10 @@ struct ChunkEncoder {
     } else {
       unsigned token, nbits, bits;
       EncodeHybridUintLZ77(count, &token, &nbits, &bits);
-      output.Write((code.lz77_nbits[token] + nbits + code.raw_nbits[0]),
-                   (((bits << code.lz77_nbits[token]) | code.lz77_bits[token])
-                    << code.raw_nbits[0]) |
-                       code.raw_bits[0]);
+      uint64_t wbits = bits;
+      wbits = (wbits << code.lz77_nbits[token]) | code.lz77_bits[token];
+      wbits = (wbits << code.raw_nbits[0]) | code.raw_bits[0];
+      output.Write(code.lz77_nbits[token] + nbits + code.raw_nbits[0], wbits);
     }
   }
 
