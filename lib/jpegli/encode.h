@@ -91,6 +91,9 @@ void jpegli_destroy_compress(j_compress_ptr cinfo);
 // Sets the butteraugli target distance for the compressor.
 void jpegli_set_distance(j_compress_ptr cinfo, float distance);
 
+// Returns the butteraugli target distance for the given quality parameter.
+float jpegli_quality_to_distance(int quality);
+
 // Writes an ICC profile for the XYB color space and internally converts the
 // input image to XYB.
 void jpegli_set_xyb_mode(j_compress_ptr cinfo);

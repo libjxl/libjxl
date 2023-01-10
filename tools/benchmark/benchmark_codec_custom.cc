@@ -101,10 +101,6 @@ class CustomCodec : public ImageCodec {
         break;
       default:
         compress_args_.push_back(param);
-        if (param.size() > 2 && param[0] == '-' && param[1] == 'd') {
-          // For setting ba_params_.hf_asymmetry
-          JXL_RETURN_IF_ERROR(ImageCodec::ParseParam(param.substr(1)));
-        }
         description_ += std::string(":");
         if (param.size() > 2 && param[0] == '-' && param[1] == '-') {
           description_ += param.substr(2);

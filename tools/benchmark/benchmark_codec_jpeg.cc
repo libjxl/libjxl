@@ -15,13 +15,12 @@
 
 #include "lib/extras/dec/jpegli.h"
 #include "lib/extras/dec/jpg.h"
-#include "lib/extras/dec/jxl.h"
 #include "lib/extras/enc/jpegli.h"
 #include "lib/extras/enc/jpg.h"
-#include "lib/extras/enc/jxl.h"
 #include "lib/extras/packed_image.h"
 #include "lib/extras/packed_image_convert.h"
 #include "lib/extras/time.h"
+#include "lib/jpegli/encode.h"
 #include "lib/jxl/base/file_io.h"
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/span.h"
@@ -32,49 +31,24 @@
 
 namespace jxl {
 
-namespace {
-
-struct JPEGArgs {
-  std::string jpeg_encoder = "libjpeg";
-  std::string chroma_subsampling = "444";
-};
-
-JPEGArgs* const jpegargs = new JPEGArgs;
-
-}  // namespace
-
-Status AddCommandLineOptionsJPEGCodec(BenchmarkArgs* args) {
-  args->cmdline.AddOptionValue(
-      '\0', "chroma_subsampling", "444/422/420/411",
-      "default JPEG chroma subsampling (default: 444).",
-      &jpegargs->chroma_subsampling, &jpegxl::tools::ParseString);
-  return true;
-}
-
 class JPEGCodec : public ImageCodec {
  public:
-  explicit JPEGCodec(const BenchmarkArgs& args) : ImageCodec(args) {
-    jpeg_encoder_ = jpegargs->jpeg_encoder;
-    chroma_subsampling_ = jpegargs->chroma_subsampling;
-  }
+  explicit JPEGCodec(const BenchmarkArgs& args) : ImageCodec(args) {}
 
   Status ParseParam(const std::string& param) override {
+    if (param[0] == 'q' && ImageCodec::ParseParam(param)) {
+      enc_quality_set_ = true;
+      return true;
+    }
     if (ImageCodec::ParseParam(param)) {
       return true;
     }
-    if (param == "sjpeg" || param == "libjxl" ||
-        param.find("cjpeg") != std::string::npos) {
+    if (param == "sjpeg" || param.find("cjpeg") != std::string::npos) {
       jpeg_encoder_ = param;
       return true;
     }
-    if (param == "djxl8") {
-      use_jxl_decoder_ = true;
-      jxl_decoder_data_type_ = JXL_TYPE_UINT8;
-      return true;
-    }
-    if (param == "djxl16") {
-      use_jxl_decoder_ = true;
-      jxl_decoder_data_type_ = JXL_TYPE_UINT16;
+    if (param == "enc-jpegli") {
+      jpeg_encoder_ = "jpegli";
       return true;
     }
     if (param.compare(0, 3, "yuv") == 0) {
@@ -82,16 +56,20 @@ class JPEGCodec : public ImageCodec {
       chroma_subsampling_ = param.substr(3);
       return true;
     }
-    if (param.substr(0, 2) == "bd") {
-      bitdepth_ = strtol(param.substr(2).c_str(), nullptr, 10);
-      return true;
-    }
-    if (param.substr(0, 2) == "nr") {
-      normalize_bitrate_ = true;
-      return true;
-    }
     if (param[0] == 'p') {
       progressive_id_ = strtol(param.substr(1).c_str(), nullptr, 10);
+      return true;
+    }
+    if (param == "xyb") {
+      xyb_mode_ = true;
+      return true;
+    }
+    if (param == "dec-jpegli") {
+      jpeg_decoder_ = "jpegli";
+      return true;
+    }
+    if (param.substr(0, 2) == "bd") {
+      bitdepth_ = strtol(param.substr(2).c_str(), nullptr, 10);
       return true;
     }
     return false;
@@ -139,8 +117,22 @@ class JPEGCodec : public ImageCodec {
       return JXL_FAILURE("Not supported on this build");
 #endif
     }
+
     double elapsed = 0.0;
-    if (jpeg_encoder_ != "libjxl" || normalize_bitrate_) {
+    if (jpeg_encoder_ == "jpegli") {
+      const double start = Now();
+      extras::JpegSettings settings;
+      settings.xyb = xyb_mode_;
+      if (enc_quality_set_) {
+        settings.distance = jpegli_quality_to_distance(q_target_);
+      } else {
+        settings.distance = butteraugli_target_;
+      }
+      JXL_RETURN_IF_ERROR(
+          extras::EncodeJpeg(io->Main(), settings, pool, compressed));
+      const double end = Now();
+      elapsed = end - start;
+    } else {
       extras::PackedPixelFile ppf;
       JxlPixelFormat format = {0, JXL_TYPE_UINT8, JXL_BIG_ENDIAN, 0};
       JXL_RETURN_IF_ERROR(ConvertCodecInOutToPackedPixelFile(
@@ -150,8 +142,7 @@ class JPEGCodec : public ImageCodec {
       std::ostringstream os;
       os << static_cast<int>(std::round(q_target_));
       encoder->SetOption("q", os.str());
-      std::string jpeg_encoder = normalize_bitrate_ ? "libjpeg" : jpeg_encoder_;
-      encoder->SetOption("jpeg_encoder", jpeg_encoder);
+      encoder->SetOption("jpeg_encoder", jpeg_encoder_);
       encoder->SetOption("chroma_subsampling", chroma_subsampling_);
       if (progressive_id_ >= 0) {
         encoder->SetOption("progressive", std::to_string(progressive_id_));
@@ -162,19 +153,6 @@ class JPEGCodec : public ImageCodec {
       elapsed = end - start;
       *compressed = encoded.bitstreams.back();
     }
-    if (jpeg_encoder_ == "libjxl") {
-      size_t target_size = normalize_bitrate_ ? compressed->size() : 0;
-      compressed->clear();
-      const double start = Now();
-      extras::JpegSettings settings;
-      settings.xyb = false;
-      settings.distance = butteraugli_target_;
-      settings.target_size = target_size;
-      JXL_RETURN_IF_ERROR(
-          extras::EncodeJpeg(io->Main(), settings, pool, compressed));
-      const double end = Now();
-      elapsed = end - start;
-    }
     speed_stats->NotifyElapsed(elapsed);
     return true;
   }
@@ -184,12 +162,13 @@ class JPEGCodec : public ImageCodec {
                     ThreadPoolInternal* pool, CodecInOut* io,
                     jpegxl::tools::SpeedStats* speed_stats) override {
     extras::PackedPixelFile ppf;
-    if (use_jxl_decoder_) {
+    if (jpeg_decoder_ == "jpegli") {
       std::vector<uint8_t> jpeg_bytes(compressed.data(),
                                       compressed.data() + compressed.size());
       const double start = Now();
+      JxlDataType data_type = bitdepth_ > 8 ? JXL_TYPE_UINT16 : JXL_TYPE_UINT8;
       JXL_RETURN_IF_ERROR(
-          extras::DecodeJpeg(jpeg_bytes, jxl_decoder_data_type_, pool, &ppf));
+          extras::DecodeJpeg(jpeg_bytes, data_type, pool, &ppf));
       const double end = Now();
       speed_stats->NotifyElapsed(end - start);
     } else {
@@ -204,12 +183,14 @@ class JPEGCodec : public ImageCodec {
   }
 
  protected:
-  bool normalize_bitrate_ = false;
-  std::string jpeg_encoder_;
-  std::string chroma_subsampling_;
-  bool use_jxl_decoder_ = false;
+  // JPEG encoder and its parameters
+  std::string jpeg_encoder_ = "libjpeg";
+  std::string chroma_subsampling_ = "444";
   int progressive_id_ = -1;
-  JxlDataType jxl_decoder_data_type_ = JXL_TYPE_UINT8;
+  bool enc_quality_set_ = false;
+  bool xyb_mode_ = false;
+  // JPEG decoder and its parameters
+  std::string jpeg_decoder_ = "libjpeg";
   size_t bitdepth_ = 8;
 };
 

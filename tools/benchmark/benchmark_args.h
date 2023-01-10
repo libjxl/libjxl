@@ -146,7 +146,6 @@ struct BenchmarkArgs {
 
   int num_samples;
   int sample_dimensions;
-  ButteraugliParams ba_params;
 
   bool profiler;
   double error_pnorm;

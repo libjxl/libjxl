@@ -27,18 +27,11 @@ constexpr unsigned char kICCSignature[12] = {
 constexpr int kICCMarker = JPEG_APP0 + 2;
 constexpr size_t kMaxBytesInMarker = 65533;
 
-float QualityToDistance(int quality) {
-  return (quality >= 100  ? 0.01f
-          : quality >= 30 ? 0.1f + (100 - quality) * 0.09f
-                          : 53.0f / 3000.0f * quality * quality -
-                                23.0f / 20.0f * quality + 25.0f);
-}
-
 float LinearQualityToDistance(int scale_factor) {
   scale_factor = std::min(5000, std::max(0, scale_factor));
   int quality =
       scale_factor < 100 ? 100 - scale_factor / 2 : 5000 / scale_factor;
-  return QualityToDistance(quality);
+  return jpegli_quality_to_distance(quality);
 }
 
 struct ProgressiveScan {
@@ -165,9 +158,16 @@ void jpegli_set_distance(j_compress_ptr cinfo, float distance) {
   cinfo->master->distance = distance;
 }
 
+float jpegli_quality_to_distance(int quality) {
+  return (quality >= 100  ? 0.01f
+          : quality >= 30 ? 0.1f + (100 - quality) * 0.09f
+                          : 53.0f / 3000.0f * quality * quality -
+                                23.0f / 20.0f * quality + 25.0f);
+}
+
 void jpegli_set_quality(j_compress_ptr cinfo, int quality,
                         boolean force_baseline) {
-  cinfo->master->distance = jpegli::QualityToDistance(quality);
+  cinfo->master->distance = jpegli_quality_to_distance(quality);
   cinfo->master->force_baseline = force_baseline;
 }
 

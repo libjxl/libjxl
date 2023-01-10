@@ -75,26 +75,8 @@ Status ImageCodec::ParseParam(const std::string& param) {
       return false;
     }
     butteraugli_target_ = butteraugli_target;
-
-    // full hf asymmetry at high distance
-    static const double kHighDistance = 2.5;
-
-    // no hf asymmetry at low distance
-    static const double kLowDistance = 0.6;
-
-    if (butteraugli_target_ >= kHighDistance) {
-      ba_params_.hf_asymmetry = args_.ba_params.hf_asymmetry;
-    } else if (butteraugli_target_ >= kLowDistance) {
-      float w =
-          (butteraugli_target_ - kLowDistance) / (kHighDistance - kLowDistance);
-      ba_params_.hf_asymmetry =
-          args_.ba_params.hf_asymmetry * w + 1.0f * (1.0f - w);
-    } else {
-      ba_params_.hf_asymmetry = 1.0f;
-    }
     return true;
   } else if (param[0] == 'r') {
-    ba_params_.hf_asymmetry = args_.ba_params.hf_asymmetry;
     bitrate_target_ = strtof(param.substr(1).c_str(), nullptr);
     return true;
   }

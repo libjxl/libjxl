@@ -215,7 +215,7 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
       PROFILER_ZONE("Benchmark stats");
       float distance;
       if (SameSize(ib1, ib2)) {
-        ButteraugliParams params = codec->BaParams();
+        ButteraugliParams params;
         if (ib1.metadata()->IntensityTarget() !=
             ib2.metadata()->IntensityTarget()) {
           fprintf(stderr,
@@ -242,7 +242,7 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
       }
       // Update stats
       s->distance_p_norm +=
-          ComputeDistanceP(distmap, Args()->ba_params, Args()->error_pnorm) *
+          ComputeDistanceP(distmap, ButteraugliParams(), Args()->error_pnorm) *
           input_pixels;
       s->ssimulacra2 += ComputeSSIMULACRA2(ib1, ib2).Score() * input_pixels;
       s->max_distance = std::max(s->max_distance, distance);

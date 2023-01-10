@@ -43,8 +43,6 @@ class ImageCodec {
   void set_description(const std::string& desc) { description_ = desc; }
   const std::string& description() const { return description_; }
 
-  const ButteraugliParams& BaParams() const { return ba_params_; }
-
   virtual void ParseParameters(const std::string& parameters);
 
   virtual Status ParseParam(const std::string& param);
@@ -87,7 +85,6 @@ class ImageCodec {
   float butteraugli_target_;
   float q_target_;
   float bitrate_target_;
-  ButteraugliParams ba_params_;
   std::string error_message_;
 };
 
