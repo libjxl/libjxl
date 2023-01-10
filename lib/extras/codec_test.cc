@@ -461,6 +461,31 @@ TEST(CodecTest, Jpegli16bitRoundtripTest) {
                                   /*distmap=*/nullptr, nullptr),
               IsSlightlyBelow(1.13f));
 }
+
+TEST(CodecTest, JpegliHDRRoundtripTest) {
+  ThreadPool* pool = nullptr;
+  CodecInOut io;
+  const PaddedBytes orig = ReadTestData("jxl/hdr_room.png");
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), ColorHints(), &io));
+  EXPECT_EQ("RGB_D65_202_Rel_HLG", Description(io.Main().c_current()));
+  EXPECT_EQ(16, io.metadata.m.bit_depth.bits_per_sample);
+
+  std::vector<uint8_t> compressed;
+  JpegSettings settings;
+  settings.xyb = false;
+  ASSERT_TRUE(EncodeJpeg(io.Main(), settings, pool, &compressed));
+
+  PackedPixelFile ppf_out;
+  ASSERT_TRUE(DecodeJpeg(compressed, JXL_TYPE_UINT16, pool, &ppf_out));
+  CodecInOut io2;
+  ASSERT_TRUE(ConvertPackedPixelFileToCodecInOut(ppf_out, pool, &io2));
+
+  double bpp = compressed.size() * 8.0 / (io.xsize() * io.ysize());
+  EXPECT_THAT(bpp, IsSlightlyBelow(3.0f));
+  EXPECT_THAT(ButteraugliDistance(io, io2, ButteraugliParams(), GetJxlCms(),
+                                  /*distmap=*/nullptr, nullptr),
+              IsSlightlyBelow(1.05f));
+}
 #endif
 
 CodecInOut DecodeRoundtrip(const std::string& pathname, ThreadPool* pool,
