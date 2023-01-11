@@ -3174,9 +3174,9 @@ void ProcessImageArea(const unsigned char* rgba, size_t x0, size_t y0,
   for (size_t y = 0; y < ys; y++) {
     const auto rgba_row =
         rgba + row_stride * (y0 + y) + x0 * nb_chans * BitDepth::kInputBytes;
-    pixel_t* crow[4];
-    pixel_t* prow[4];
-    for (size_t i = 0; i < 4; i++) {
+    pixel_t* crow[4] = {};
+    pixel_t* prow[4] = {};
+    for (size_t i = 0; i < nb_chans; i++) {
       crow[i] = align(&group_data[i][y & 1][kPadding]);
       prow[i] = align(&group_data[i][(y - 1) & 1][kPadding]);
     }
