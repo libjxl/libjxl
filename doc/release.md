@@ -29,7 +29,7 @@ number. Released tags don't each one have their own release branch, all releases
 from the same MAJOR.MINOR version will share the same branch. The first commit
 after the branch-off points between the main branch and the release branch
 should be tagged with the suffix `-snapshot` and the name of the next
-MAJOR.MINOR version, in order to get meaningful ouput for `git --describe`.
+MAJOR.MINOR version, in order to get meaningful ouput for `git describe`.
 
 The main purpose of the release branch is to stabilize the code before a
 release. This involves including fixes to existing bugs but **not** including
