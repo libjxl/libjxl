@@ -8,6 +8,8 @@
 #include <setjmp.h>
 #include <stdint.h>
 
+#include "jxl/codestream_header.h"
+#include "lib/extras/enc/encode.h"
 #include "lib/jpegli/encode.h"
 
 namespace jxl {
@@ -22,13 +24,89 @@ void MyErrorExit(j_common_ptr cinfo) {
   longjmp(*env, 1);
 }
 
+bool IsSRGBEncoding(const JxlColorEncoding& c) {
+  return ((c.color_space == JXL_COLOR_SPACE_RGB ||
+           c.color_space == JXL_COLOR_SPACE_GRAY) &&
+          c.primaries == JXL_PRIMARIES_SRGB &&
+          c.white_point == JXL_WHITE_POINT_D65 &&
+          c.transfer_function == JXL_TRANSFER_FUNCTION_SRGB);
+}
+
+Status VerifyInput(const PackedPixelFile& ppf) {
+  const JxlBasicInfo& info = ppf.info;
+  JXL_RETURN_IF_ERROR(Encoder::VerifyBasicInfo(info));
+  if (info.alpha_bits > 0) {
+    return JXL_FAILURE("Alpha is not supported for JPEG output.");
+  }
+  if (ppf.frames.size() != 1) {
+    return JXL_FAILURE("JPEG input must have exactly one frame.");
+  }
+  const PackedImage& image = ppf.frames[0].color;
+  JXL_RETURN_IF_ERROR(Encoder::VerifyImageSize(image, info));
+  if (image.format.data_type == JXL_TYPE_FLOAT16) {
+    return JXL_FAILURE("FLOAT16 input is not supprted.");
+  }
+  JXL_RETURN_IF_ERROR(Encoder::VerifyBitDepth(image.format.data_type,
+                                              info.bits_per_sample,
+                                              info.exponent_bits_per_sample));
+  if ((image.format.data_type == JXL_TYPE_UINT8 && info.bits_per_sample != 8) ||
+      (image.format.data_type == JXL_TYPE_UINT16 &&
+       info.bits_per_sample != 16)) {
+    return JXL_FAILURE("Only full bit depth unsigned types are supported.");
+  }
+  return true;
+}
+
+Status GetICC(const PackedPixelFile& ppf, std::vector<uint8_t>* icc) {
+  if (!ppf.icc.empty()) {
+    icc->assign(ppf.icc.begin(), ppf.icc.end());
+  } else {
+    ColorEncoding c_enc;
+    JXL_RETURN_IF_ERROR(
+        ConvertExternalToInternalColorEncoding(ppf.color_encoding, &c_enc));
+    if (c_enc.ICC().empty()) {
+      return JXL_FAILURE("Failed to serialize ICC");
+    }
+    icc->assign(c_enc.ICC().begin(), c_enc.ICC().end());
+  }
+  return true;
+}
+
+JpegliDataType ConvertDataType(JxlDataType type) {
+  switch (type) {
+    case JXL_TYPE_UINT8:
+      return JPEGLI_TYPE_UINT8;
+    case JXL_TYPE_UINT16:
+      return JPEGLI_TYPE_UINT16;
+    case JXL_TYPE_FLOAT:
+      return JPEGLI_TYPE_FLOAT;
+    default:
+      return JPEGLI_TYPE_UINT8;
+  }
+}
+
+JpegliEndianness ConvertEndianness(JxlEndianness endianness) {
+  switch (endianness) {
+    case JXL_NATIVE_ENDIAN:
+      return JPEGLI_NATIVE_ENDIAN;
+    case JXL_LITTLE_ENDIAN:
+      return JPEGLI_LITTLE_ENDIAN;
+    case JXL_BIG_ENDIAN:
+      return JPEGLI_BIG_ENDIAN;
+    default:
+      return JPEGLI_NATIVE_ENDIAN;
+  }
+}
 }  // namespace
 
-Status EncodeJpeg(const ImageBundle& input, const JpegSettings& jpeg_settings,
+Status EncodeJpeg(const PackedPixelFile& ppf, const JpegSettings& jpeg_settings,
                   ThreadPool* pool, std::vector<uint8_t>* compressed) {
-  // We need to declare all the non-trivial destructor local variables before
-  // the call to setjmp().
-  PaddedBytes icc;
+  JXL_RETURN_IF_ERROR(VerifyInput(ppf));
+  std::vector<uint8_t> icc;
+  JXL_RETURN_IF_ERROR(GetICC(ppf, &icc));
+
+  // We need to declare all the non-trivial destructor local variables
+  // before the call to setjmp().
   std::vector<uint8_t> pixels;
   unsigned char* output_buffer = nullptr;
   unsigned long output_size = 0;
@@ -46,33 +124,29 @@ Status EncodeJpeg(const ImageBundle& input, const JpegSettings& jpeg_settings,
     cinfo.client_data = static_cast<void*>(&env);
     jpegli_create_compress(&cinfo);
     jpegli_mem_dest(&cinfo, &output_buffer, &output_size);
-    cinfo.image_width = input.xsize();
-    cinfo.image_height = input.ysize();
-    cinfo.input_components = input.IsGray() ? 1 : 3;
-    cinfo.in_color_space = input.IsGray() ? JCS_GRAYSCALE : JCS_RGB;
+    const JxlBasicInfo& info = ppf.info;
+    cinfo.image_width = info.xsize;
+    cinfo.image_height = info.ysize;
+    cinfo.input_components = info.num_color_channels;
+    cinfo.in_color_space =
+        cinfo.input_components == 1 ? JCS_GRAYSCALE : JCS_RGB;
     if (jpeg_settings.xyb) {
       jpegli_set_xyb_mode(&cinfo);
     }
     jpegli_set_defaults(&cinfo);
     jpegli_set_distance(&cinfo, jpeg_settings.distance);
     jpegli_start_compress(&cinfo, TRUE);
-    icc = input.c_current().ICC();
-    if (!icc.empty()) {
+    if (!IsSRGBEncoding(ppf.color_encoding)) {
       jpegli_write_icc_profile(&cinfo, icc.data(), icc.size());
     }
-    jpegli_set_input_format(&cinfo, JPEGLI_TYPE_FLOAT, JPEGLI_NATIVE_ENDIAN);
-    size_t stride = input.xsize() * cinfo.input_components * 4;
-    pixels.resize(stride);
-    for (size_t y = 0; y < input.ysize(); ++y) {
-      const float* JXL_RESTRICT row0 = input.color().ConstPlaneRow(0, y);
-      const float* JXL_RESTRICT row1 = input.color().ConstPlaneRow(1, y);
-      const float* JXL_RESTRICT row2 = input.color().ConstPlaneRow(2, y);
-      for (size_t x = 0; x < input.xsize(); ++x) {
-        memcpy(&pixels[x * 12 + 0], row0 + x, sizeof(float));
-        memcpy(&pixels[x * 12 + 4], row1 + x, sizeof(float));
-        memcpy(&pixels[x * 12 + 8], row2 + x, sizeof(float));
-      }
-      JSAMPROW row[] = {pixels.data()};
+    const PackedImage& image = ppf.frames[0].color;
+    const uint8_t* pixels = reinterpret_cast<const uint8_t*>(image.pixels());
+    std::vector<uint8_t> row_bytes(image.stride);
+    jpegli_set_input_format(&cinfo, ConvertDataType(image.format.data_type),
+                            ConvertEndianness(image.format.endianness));
+    for (size_t y = 0; y < info.ysize; ++y) {
+      memcpy(&row_bytes[0], pixels + y * image.stride, image.stride);
+      JSAMPROW row[] = {row_bytes.data()};
       jpegli_write_scanlines(&cinfo, row, 1);
     }
     jpegli_finish_compress(&cinfo);
