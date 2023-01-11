@@ -120,7 +120,14 @@ class JPEGCodec : public ImageCodec {
 
     double elapsed = 0.0;
     if (jpeg_encoder_ == "jpegli") {
-      const double start = Now();
+      extras::PackedPixelFile ppf;
+      size_t bits_per_sample = io->metadata.m.bit_depth.bits_per_sample;
+      JxlPixelFormat format = {
+          0,  // num_channels is ignored by the converter
+          bits_per_sample <= 8 ? JXL_TYPE_UINT8 : JXL_TYPE_UINT16,
+          JXL_BIG_ENDIAN, 0};
+      JXL_RETURN_IF_ERROR(ConvertCodecInOutToPackedPixelFile(
+          *io, format, io->metadata.m.color_encoding, pool, &ppf));
       extras::JpegSettings settings;
       settings.xyb = xyb_mode_;
       if (enc_quality_set_) {
@@ -128,8 +135,8 @@ class JPEGCodec : public ImageCodec {
       } else {
         settings.distance = butteraugli_target_;
       }
-      JXL_RETURN_IF_ERROR(
-          extras::EncodeJpeg(io->Main(), settings, pool, compressed));
+      const double start = Now();
+      JXL_RETURN_IF_ERROR(extras::EncodeJpeg(ppf, settings, pool, compressed));
       const double end = Now();
       elapsed = end - start;
     } else {

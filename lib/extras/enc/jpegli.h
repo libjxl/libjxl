@@ -12,9 +12,9 @@
 
 #include <vector>
 
+#include "lib/extras/packed_image.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/image_bundle.h"
 
 namespace jxl {
 namespace extras {
@@ -25,7 +25,7 @@ struct JpegSettings {
   float distance = 1.f;
 };
 
-Status EncodeJpeg(const ImageBundle& input, const JpegSettings& jpeg_settings,
+Status EncodeJpeg(const PackedPixelFile& ppf, const JpegSettings& jpeg_settings,
                   ThreadPool* pool, std::vector<uint8_t>* compressed);
 
 }  // namespace extras
