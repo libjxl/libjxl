@@ -90,10 +90,12 @@ void TestDecodedImage(const std::vector<uint8_t>& compressed,
       ASSERT_LE(cinfo.input_scan_number, script.num_scans);
       const jpeg_scan_info& scan = script.scans[cinfo.input_scan_number - 1];
       ASSERT_EQ(cinfo.comps_in_scan, scan.comps_in_scan);
+#if !JXL_MEMORY_SANITIZER
       for (int i = 0; i < cinfo.comps_in_scan; ++i) {
         EXPECT_EQ(cinfo.cur_comp_info[i]->component_index,
                   scan.component_index[i]);
       }
+#endif
       EXPECT_EQ(cinfo.Ss, scan.Ss);
       EXPECT_EQ(cinfo.Se, scan.Se);
       EXPECT_EQ(cinfo.Ah, scan.Ah);

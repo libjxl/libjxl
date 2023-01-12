@@ -14,6 +14,7 @@
 #include "lib/jpegli/decode_internal.h"
 #include "lib/jpegli/idct.h"
 #include "lib/jpegli/upsample.h"
+#include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
 
@@ -50,7 +51,10 @@ using hwy::HWY_NAMESPACE::Gt;
 using hwy::HWY_NAMESPACE::IfThenElseZero;
 using hwy::HWY_NAMESPACE::Mul;
 using hwy::HWY_NAMESPACE::NearestInt;
+using hwy::HWY_NAMESPACE::Or;
 using hwy::HWY_NAMESPACE::Rebind;
+using hwy::HWY_NAMESPACE::ShiftLeftSame;
+using hwy::HWY_NAMESPACE::ShiftRightSame;
 using hwy::HWY_NAMESPACE::Vec;
 
 using D = HWY_FULL(float);
@@ -116,21 +120,55 @@ void StoreUnsignedRow(float* JXL_RESTRICT input[3], size_t x0, size_t len,
 #endif
 }
 
+void StoreFloatRow(float* JXL_RESTRICT input[3], size_t x0, size_t len,
+                   size_t num_channels, float* output) {
+  const HWY_CAPPED(float, 8) d;
+  if (num_channels == 1) {
+    memcpy(output, input[0], len * sizeof(output[0]));
+  } else if (num_channels == 3) {
+    for (size_t i = 0; i < len; i += Lanes(d)) {
+      StoreInterleaved3(LoadU(d, &input[0][x0 + i]),
+                        LoadU(d, &input[1][x0 + i]),
+                        LoadU(d, &input[2][x0 + i]), d, &output[3 * i]);
+    }
+  }
+}
+
 void WriteToOutput(float* JXL_RESTRICT rows[3], size_t xoffset, size_t x0,
-                   size_t len, size_t num_channels, size_t bit_depth,
-                   uint8_t* JXL_RESTRICT scratch_space,
+                   size_t len, size_t num_channels, JpegliDataType data_type,
+                   bool swap_endianness, uint8_t* JXL_RESTRICT scratch_space,
                    uint8_t* JXL_RESTRICT output) {
-  const float mul = (1u << bit_depth) - 1;
-  if (bit_depth <= 8) {
+  if (data_type == JPEGLI_TYPE_UINT8) {
+    const float mul = 255.0;
     size_t offset = x0 * num_channels;
     StoreUnsignedRow(rows, xoffset + x0, len, num_channels, mul, scratch_space);
     memcpy(output + offset, scratch_space, len * num_channels);
-  } else {
+  } else if (data_type == JPEGLI_TYPE_UINT16) {
+    const float mul = 65535.0;
     size_t offset = x0 * num_channels * 2;
     uint16_t* tmp = reinterpret_cast<uint16_t*>(scratch_space);
     StoreUnsignedRow(rows, xoffset + x0, len, num_channels, mul, tmp);
-    // TODO(szabadka) Handle endianness.
+    if (swap_endianness) {
+      const HWY_CAPPED(uint16_t, 8) du;
+      size_t output_len = len * num_channels;
+      for (size_t j = 0; j < output_len; j += Lanes(du)) {
+        auto v = LoadU(du, tmp + j);
+        auto vswap = Or(ShiftRightSame(v, 8), ShiftLeftSame(v, 8));
+        StoreU(vswap, du, tmp + j);
+      }
+    }
     memcpy(output + offset, tmp, len * num_channels * 2);
+  } else if (data_type == JPEGLI_TYPE_FLOAT) {
+    size_t offset = x0 * num_channels * 4;
+    float* tmp = reinterpret_cast<float*>(scratch_space);
+    StoreFloatRow(rows, xoffset + x0, len, num_channels, tmp);
+    if (swap_endianness) {
+      size_t output_len = len * num_channels;
+      for (size_t j = 0; j < output_len; ++j) {
+        tmp[j] = BSwapFloat(tmp[j]);
+      }
+    }
+    memcpy(output + offset, tmp, len * num_channels * 4);
   }
 }
 
@@ -155,11 +193,12 @@ void GatherBlockStats(const int16_t* JXL_RESTRICT coeffs,
 }
 
 void WriteToOutput(float* JXL_RESTRICT rows[3], size_t xoffset, size_t x0,
-                   size_t len, size_t num_channels, size_t bit_depth,
-                   uint8_t* JXL_RESTRICT scratch_space,
+                   size_t len, size_t num_channels, JpegliDataType data_type,
+                   bool swap_endianness, uint8_t* JXL_RESTRICT scratch_space,
                    uint8_t* JXL_RESTRICT output) {
   return HWY_DYNAMIC_DISPATCH(WriteToOutput)(
-      rows, xoffset, x0, len, num_channels, bit_depth, scratch_space, output);
+      rows, xoffset, x0, len, num_channels, data_type, swap_endianness,
+      scratch_space, output);
 }
 
 void DecenterRow(float* row, size_t xsize) {
@@ -216,10 +255,10 @@ void PrepareForOutput(j_decompress_ptr cinfo) {
   size_t MCU_row_stride = m->iMCU_cols_ * cinfo->max_h_samp_factor * DCTSIZE;
   m->upsample_scratch_ = hwy::AllocateAligned<float>(
       MCU_row_stride + kPaddingLeft + kPaddingRight);
-  size_t bytes_per_channel = DivCeil(m->output_bit_depth_, 8);
-  size_t bytes_per_sample = cinfo->out_color_components * bytes_per_channel;
+  size_t bytes_per_sample = jpegli_bytes_per_sample(m->output_data_type_);
+  size_t bytes_per_pixel = cinfo->out_color_components * bytes_per_sample;
   m->output_scratch_ =
-      hwy::AllocateAligned<uint8_t>(bytes_per_sample * kTempOutputLen);
+      hwy::AllocateAligned<uint8_t>(bytes_per_pixel * kTempOutputLen);
   size_t coeffs_per_block = cinfo->num_components * DCTSIZE2;
   m->nonzeros_ = hwy::AllocateAligned<int>(coeffs_per_block);
   m->sumabs_ = hwy::AllocateAligned<int>(coeffs_per_block);
@@ -299,8 +338,8 @@ void ProcessRawOutput(j_decompress_ptr cinfo, JSAMPIMAGE data) {
         float* rows[3] = {m->raw_output_[c].Row(y)};
         size_t len = std::min(comp_width - x0, kTempOutputLen);
         uint8_t* output = data[c][y - y0];
-        WriteToOutput(rows, 0, x0, len, 1, m->output_bit_depth_,
-                      m->output_scratch_.get(), output);
+        WriteToOutput(rows, 0, x0, len, 1, m->output_data_type_,
+                      m->swap_endianness_, m->output_scratch_.get(), output);
       }
     }
   }
@@ -371,8 +410,9 @@ void ProcessOutput(j_decompress_ptr cinfo, size_t* num_output_rows,
           if (scanlines) {
             uint8_t* output = scanlines[*num_output_rows];
             WriteToOutput(rows, m->xoffset_, x0, len,
-                          cinfo->out_color_components, m->output_bit_depth_,
-                          m->output_scratch_.get(), output);
+                          cinfo->out_color_components, m->output_data_type_,
+                          m->swap_endianness_, m->output_scratch_.get(),
+                          output);
           }
         }
         JXL_ASSERT(cinfo->output_scanline == y + yix);

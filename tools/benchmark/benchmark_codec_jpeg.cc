@@ -181,7 +181,7 @@ class JPEGCodec : public ImageCodec {
     } else {
       const double start = Now();
       JXL_RETURN_IF_ERROR(DecodeImageJPG(compressed, extras::ColorHints(),
-                                         SizeConstraints(), bitdepth_, &ppf));
+                                         SizeConstraints(), &ppf));
       const double end = Now();
       speed_stats->NotifyElapsed(end - start);
     }

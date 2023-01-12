@@ -12,6 +12,7 @@
 #include "gtest/gtest.h"
 #include "lib/jpegli/decode.h"
 #include "lib/jpegli/test_utils.h"
+#include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/file_io.h"
 #include "lib/jxl/base/status.h"
 
@@ -122,15 +123,16 @@ struct TestConfig {
   std::string fn;
   std::string fn_desc;
   std::string origfn;
-  size_t chunk_size;
-  size_t max_output_lines;
+  size_t chunk_size = 0;
+  size_t max_output_lines = 0;
   float max_distance;
-  size_t output_bit_depth = 8;
   SourceManagerType source_mgr = SOURCE_MGR_CHUNKED;
   bool pre_consume_input = false;
   bool buffered_image_mode = false;
   bool crop = false;
   bool raw_output = false;
+  JpegliDataType data_type = JPEGLI_TYPE_UINT8;
+  JpegliEndianness endianness = JPEGLI_NATIVE_ENDIAN;
 };
 
 bool LoadNextChunk(const TestConfig& config, j_decompress_ptr cinfo) {
@@ -139,6 +141,28 @@ bool LoadNextChunk(const TestConfig& config, j_decompress_ptr cinfo) {
     return src->LoadNextChunk();
   }
   return false;
+}
+
+std::string DataTypeString(JpegliDataType type) {
+  switch (type) {
+    case JPEGLI_TYPE_UINT8:
+      return "UINT8";
+    case JPEGLI_TYPE_UINT16:
+      return "UINT16";
+    case JPEGLI_TYPE_FLOAT:
+      return "FLOAT";
+    default:
+      return "UNKNOWN";
+  }
+}
+
+std::string EndiannessString(JpegliEndianness endianness) {
+  if (endianness == JPEGLI_BIG_ENDIAN) {
+    return "BE";
+  } else if (endianness == JPEGLI_LITTLE_ENDIAN) {
+    return "LE";
+  }
+  return "";
 }
 
 class DecodeAPITestParam : public ::testing::TestWithParam<TestConfig> {};
@@ -215,8 +239,7 @@ TEST_P(DecodeAPITestParam, TestAPI) {
   EXPECT_EQ(ysize, cinfo.image_height);
   EXPECT_EQ(num_channels, cinfo.num_components);
 
-  cinfo.quantize_colors = FALSE;
-  cinfo.desired_number_of_colors = 1 << config.output_bit_depth;
+  jpegli_set_output_format(&cinfo, config.data_type, config.endianness);
 
   if (jpegli_has_multiple_scans(&cinfo) && config.buffered_image_mode) {
     cinfo.buffered_image = TRUE;
@@ -261,7 +284,7 @@ TEST_P(DecodeAPITestParam, TestAPI) {
     }
   }
 
-  size_t bytes_per_sample = config.output_bit_depth <= 8 ? 1 : 2;
+  size_t bytes_per_sample = jpegli_bytes_per_sample(config.data_type);
   size_t stride = cinfo.output_width * cinfo.num_components * bytes_per_sample;
   size_t max_output_lines = config.max_output_lines;
   if (max_output_lines == 0) max_output_lines = cinfo.output_height;
@@ -357,22 +380,29 @@ TEST_P(DecodeAPITestParam, TestAPI) {
         }
       }
       ASSERT_EQ(output.size(), cropped.size() * bytes_per_sample);
-      const double mul_orig = 1.0 / 255.0;
-      const double mul_output = 1.0 / ((1u << config.output_bit_depth) - 1);
+      bool is_little_endian =
+          (config.endianness == JPEGLI_LITTLE_ENDIAN ||
+           (config.endianness == JPEGLI_NATIVE_ENDIAN && IsLittleEndian()));
+      const double kMul8 = 1.0 / 255.0;
+      const double kMul16 = 1.0 / 65535.0;
       double diff2 = 0.0;
       for (size_t i = 0; i < cropped.size(); ++i) {
-        double sample_orig = cropped[i] * mul_orig;
-        double sample_output;
-        if (bytes_per_sample == 1) {
-          sample_output = output[i];
-        } else {
-          sample_output = output[2 * i] + (output[2 * i + 1] << 8);
+        double sample_orig = cropped[i] * kMul8;
+        double sample_output = 0.0;
+        if (config.data_type == JPEGLI_TYPE_UINT8) {
+          sample_output = output[i] * kMul8;
+        } else if (config.data_type == JPEGLI_TYPE_UINT16) {
+          sample_output = is_little_endian ? LoadLE16(&output[2 * i])
+                                           : LoadBE16(&output[2 * i]);
+          sample_output *= kMul16;
+        } else if (config.data_type == JPEGLI_TYPE_FLOAT) {
+          sample_output = is_little_endian ? LoadLEFloat(&output[4 * i])
+                                           : LoadBEFloat(&output[4 * i]);
         }
-        sample_output *= mul_output;
         double diff = sample_orig - sample_output;
         diff2 += diff * diff;
       }
-      double rms = std::sqrt(diff2 / cropped.size()) / mul_orig;
+      double rms = std::sqrt(diff2 / cropped.size()) / kMul8;
       double max_dist = config.max_distance;
       if (!cinfo.buffered_image || jpegli_input_complete(&cinfo)) {
         EXPECT_LE(rms, max_dist);
@@ -426,26 +456,20 @@ std::vector<TestConfig> GenerateTests() {
     for (const auto& it : testfiles) {
       for (size_t chunk_size : {0, 1, 64, 65536}) {
         for (size_t max_output_lines : {0, 1, 8, 16}) {
-          for (size_t output_bit_depth : {8, 16}) {
-            TestConfig config;
-            config.fn = it.first;
-            config.fn_desc = it.second;
-            config.chunk_size = chunk_size;
-            config.output_bit_depth = output_bit_depth;
-            config.max_output_lines = max_output_lines;
-            config.origfn = "jxl/flower/flower.pnm";
-            config.max_distance = 2.2;
-            if (config.output_bit_depth == 16) {
-              config.max_distance = 2.1;
-            }
+          TestConfig config;
+          config.fn = it.first;
+          config.fn_desc = it.second;
+          config.chunk_size = chunk_size;
+          config.max_output_lines = max_output_lines;
+          config.origfn = "jxl/flower/flower.pnm";
+          config.max_distance = 2.2;
+          all_tests.push_back(config);
+          if (config.chunk_size != 0) {
+            config.source_mgr = SOURCE_MGR_SUSPENDING;
             all_tests.push_back(config);
-            if (config.chunk_size != 0) {
-              config.source_mgr = SOURCE_MGR_SUSPENDING;
-              all_tests.push_back(config);
-            } else {
-              config.source_mgr = SOURCE_MGR_STDIO;
-              all_tests.push_back(config);
-            }
+          } else {
+            config.source_mgr = SOURCE_MGR_STDIO;
+            all_tests.push_back(config);
           }
         }
       }
@@ -548,6 +572,21 @@ std::vector<TestConfig> GenerateTests() {
       }
     }
   }
+  {
+    for (JpegliDataType type : {JPEGLI_TYPE_UINT16, JPEGLI_TYPE_FLOAT}) {
+      for (JpegliEndianness endianness :
+           {JPEGLI_NATIVE_ENDIAN, JPEGLI_LITTLE_ENDIAN, JPEGLI_BIG_ENDIAN}) {
+        TestConfig config;
+        config.fn = "jxl/flower/flower.png.im_q85_444.jpg";
+        config.fn_desc = "Q85YUV444";
+        config.origfn = "jxl/flower/flower.pnm";
+        config.data_type = type;
+        config.endianness = endianness;
+        config.max_distance = 1.8;
+        all_tests.push_back(config);
+      }
+    }
+  }
   return all_tests;
 }
 
@@ -579,7 +618,10 @@ std::ostream& operator<<(std::ostream& os, const TestConfig& c) {
   } else if (c.raw_output) {
     os << "Raw";
   }
-  os << "BitDepth" << c.output_bit_depth;
+  os << DataTypeString(c.data_type);
+  if (c.data_type != JPEGLI_TYPE_UINT8) {
+    os << EndiannessString(c.endianness);
+  }
   return os;
 }
 
