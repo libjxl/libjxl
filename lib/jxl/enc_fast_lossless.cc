@@ -27,7 +27,7 @@
 #define FJXL_ENABLE_NEON 1
 #endif
 
-#elif defined(__x86_64__) || defined(_M_X64)
+#elif (defined(__x86_64__) || defined(_M_X64)) && !defined(_MSC_VER)
 #include <immintrin.h>
 
 // TODO(veluca): MSVC support for dynamic dispatch.
