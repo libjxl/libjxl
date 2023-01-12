@@ -107,8 +107,7 @@ Status DecodeBytes(const Span<const uint8_t> bytes,
   }
 #endif
 #if JPEGXL_ENABLE_JPEG
-  else if (DecodeImageJPG(bytes, color_hints, constraints,
-                          /*output_bit_depth=*/8, ppf)) {
+  else if (DecodeImageJPG(bytes, color_hints, constraints, ppf)) {
     codec = Codec::kJPG;
   }
 #endif

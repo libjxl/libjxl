@@ -14,6 +14,7 @@
 #include <set>
 #include <vector>
 
+#include "lib/jpegli/common.h"
 #include "lib/jpegli/huffman.h"
 #include "lib/jxl/base/compiler_specific.h"  // for ssize_t
 
@@ -143,7 +144,8 @@ struct jpeg_decomp_master {
   //
   // Rendering state.
   //
-  size_t output_bit_depth_ = 8;
+  JpegliDataType output_data_type_ = JPEGLI_TYPE_UINT8;
+  bool swap_endianness_ = false;
   size_t xoffset_ = 0;
 
   JSAMPARRAY scanlines_;

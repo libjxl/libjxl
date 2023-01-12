@@ -52,3 +52,16 @@ JHUFF_TBL* jpegli_alloc_huff_table(j_common_ptr cinfo) {
   table->sent_table = FALSE;
   return table;
 }
+
+int jpegli_bytes_per_sample(JpegliDataType data_type) {
+  switch (data_type) {
+    case JPEGLI_TYPE_UINT8:
+      return 1;
+    case JPEGLI_TYPE_UINT16:
+      return 2;
+    case JPEGLI_TYPE_FLOAT:
+      return 4;
+    default:
+      return 0;
+  }
+}
