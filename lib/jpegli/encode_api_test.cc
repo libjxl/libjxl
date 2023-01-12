@@ -19,13 +19,44 @@
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/sanitizers.h"
 
+#define ARRAYSIZE(X) (sizeof(X) / sizeof((X)[0]))
+
 namespace jpegli {
 namespace {
+
+static constexpr jpeg_scan_info kScript1[] = {
+    {3, {0, 1, 2}, 0, 0, 0, 0},
+    {1, {0}, 1, 63, 0, 0},
+    {1, {1}, 1, 63, 0, 0},
+    {1, {2}, 1, 63, 0, 0},
+};
+static constexpr jpeg_scan_info kScript2[] = {
+    {1, {0}, 0, 0, 0, 0},  {1, {1}, 0, 0, 0, 0},  {1, {2}, 0, 0, 0, 0},
+    {1, {0}, 1, 63, 0, 0}, {1, {1}, 1, 63, 0, 0}, {1, {2}, 1, 63, 0, 0},
+};
+static constexpr jpeg_scan_info kScript3[] = {
+    {3, {0, 1, 2}, 0, 0, 0, 0}, {1, {0}, 1, 63, 0, 1}, {1, {1}, 1, 63, 0, 1},
+    {1, {2}, 1, 63, 0, 1},      {1, {0}, 1, 63, 1, 0}, {1, {1}, 1, 63, 1, 0},
+    {1, {2}, 1, 63, 1, 0},
+};
+
+struct ScanScript {
+  size_t num_scans;
+  const jpeg_scan_info* scans;
+};
+
+static constexpr ScanScript kTestScript[] = {
+    {ARRAYSIZE(kScript1), kScript1},
+    {ARRAYSIZE(kScript2), kScript2},
+    {ARRAYSIZE(kScript3), kScript3},
+};
+static constexpr size_t kNumTestScripts = ARRAYSIZE(kTestScript);
 
 // Verifies that an image encoded with libjpegli can be decoded with libjpeg.
 void TestDecodedImage(const std::vector<uint8_t>& compressed,
                       const std::vector<uint8_t>& orig, size_t xsize,
-                      size_t ysize, size_t num_channels, double max_dist) {
+                      size_t ysize, size_t num_channels, int progressive_id,
+                      double max_dist) {
   jpeg_decompress_struct cinfo;
   // cinfo is initialized by libjpeg, which we are not instrumenting with
   // msan, therefore we need to initialize cinfo here.
@@ -48,7 +79,29 @@ void TestDecodedImage(const std::vector<uint8_t>& compressed,
   EXPECT_EQ(xsize, cinfo.image_width);
   EXPECT_EQ(ysize, cinfo.image_height);
   EXPECT_EQ(num_channels, cinfo.num_components);
+  cinfo.buffered_image = TRUE;
   EXPECT_TRUE(jpeg_start_decompress(&cinfo));
+  while (!jpeg_input_complete(&cinfo)) {
+    EXPECT_GT(cinfo.input_scan_number, 0);
+    EXPECT_TRUE(jpeg_start_output(&cinfo, cinfo.input_scan_number));
+    if (progressive_id > 0) {
+      ASSERT_LE(progressive_id, kNumTestScripts);
+      const ScanScript& script = kTestScript[progressive_id - 1];
+      ASSERT_LE(cinfo.input_scan_number, script.num_scans);
+      const jpeg_scan_info& scan = script.scans[cinfo.input_scan_number - 1];
+      ASSERT_EQ(cinfo.comps_in_scan, scan.comps_in_scan);
+      for (int i = 0; i < cinfo.comps_in_scan; ++i) {
+        EXPECT_EQ(cinfo.cur_comp_info[i]->component_index,
+                  scan.component_index[i]);
+      }
+      EXPECT_EQ(cinfo.Ss, scan.Ss);
+      EXPECT_EQ(cinfo.Se, scan.Se);
+      EXPECT_EQ(cinfo.Ah, scan.Ah);
+      EXPECT_EQ(cinfo.Al, scan.Al);
+    }
+    EXPECT_TRUE(jpeg_finish_output(&cinfo));
+  }
+  EXPECT_TRUE(jpeg_start_output(&cinfo, cinfo.input_scan_number));
   size_t stride = xsize * num_channels;
   std::vector<uint8_t> output(ysize * stride);
   for (size_t y = 0; y < cinfo.image_height; ++y) {
@@ -57,6 +110,7 @@ void TestDecodedImage(const std::vector<uint8_t>& compressed,
         rows[0], sizeof(JSAMPLE) * cinfo.output_components * cinfo.image_width);
     EXPECT_EQ(1, jpeg_read_scanlines(&cinfo, rows, 1));
   }
+  EXPECT_TRUE(jpeg_finish_output(&cinfo));
   EXPECT_TRUE(jpeg_finish_decompress(&cinfo));
   jpeg_destroy_decompress(&cinfo);
 
@@ -79,10 +133,11 @@ enum ChromaSubsampling {
 };
 
 struct TestConfig {
-  int quality;
-  double max_dist;
+  int quality = 90;
+  ChromaSubsampling sampling = SAMPLING_444;
+  int progressive_id = 0;
   double max_bpp;
-  ChromaSubsampling sampling;
+  double max_dist;
 };
 
 class EncodeAPITestParam : public ::testing::TestWithParam<TestConfig> {};
@@ -121,6 +176,12 @@ TEST_P(EncodeAPITestParam, TestAPI) {
   if (config.sampling == SAMPLING_420) {
     cinfo.comp_info[0].h_samp_factor = cinfo.comp_info[0].v_samp_factor = 2;
   }
+  if (config.progressive_id > 0) {
+    ASSERT_LE(config.progressive_id, kNumTestScripts);
+    const ScanScript& script = kTestScript[config.progressive_id - 1];
+    cinfo.scan_info = script.scans;
+    cinfo.num_scans = script.num_scans;
+  }
   cinfo.optimize_coding = TRUE;
   jpegli_set_quality(&cinfo, config.quality, TRUE);
   jpegli_start_compress(&cinfo, TRUE);
@@ -138,42 +199,46 @@ TEST_P(EncodeAPITestParam, TestAPI) {
   double bpp = compressed.size() * 8.0 / (xsize * ysize);
   EXPECT_LT(bpp, config.max_bpp);
   TestDecodedImage(compressed, orig, xsize, ysize, num_channels,
-                   config.max_dist);
+                   config.progressive_id, config.max_dist);
 }
 
 std::vector<TestConfig> GenerateTests() {
   std::vector<TestConfig> all_tests;
   {
     TestConfig config;
-    config.quality = 100;
-    config.sampling = SAMPLING_444;
-    config.max_dist = 0.9;
-    config.max_bpp = 4.2;
-    all_tests.push_back(config);
-  }
-  {
-    TestConfig config;
-    config.quality = 90;
-    config.sampling = SAMPLING_444;
-    config.max_dist = 2.0;
     config.max_bpp = 1.7;
+    config.max_dist = 2.0;
     all_tests.push_back(config);
   }
   {
     TestConfig config;
-    config.quality = 90;
-    config.sampling = SAMPLING_420;
-    config.max_dist = 2.4;
-    config.max_bpp = 1.5;
+    config.quality = 100;
+    config.max_bpp = 4.2;
+    config.max_dist = 0.9;
     all_tests.push_back(config);
   }
   {
     TestConfig config;
     config.quality = 80;
-    config.sampling = SAMPLING_444;
-    config.max_dist = 2.75;
     config.max_bpp = 1.0;
+    config.max_dist = 2.75;
     all_tests.push_back(config);
+  }
+  {
+    TestConfig config;
+    config.sampling = SAMPLING_420;
+    config.max_bpp = 1.5;
+    config.max_dist = 2.4;
+    all_tests.push_back(config);
+  }
+  {
+    for (size_t p = 0; p < kNumTestScripts; ++p) {
+      TestConfig config;
+      config.progressive_id = p + 1;
+      config.max_bpp = 1.75;
+      config.max_dist = 2.0;
+      all_tests.push_back(config);
+    }
   }
   return all_tests;
 };
@@ -184,6 +249,9 @@ std::ostream& operator<<(std::ostream& os, const TestConfig& c) {
     os << "YUV444";
   } else if (c.sampling == SAMPLING_420) {
     os << "YUV420";
+  }
+  if (c.progressive_id > 0) {
+    os << "P" << c.progressive_id;
   }
   return os;
 }

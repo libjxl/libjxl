@@ -108,6 +108,23 @@ void AddJpegScanInfos(const std::vector<ProgressiveScan>& scans,
   }
 }
 
+void CopyJpegScanInfos(j_compress_ptr cinfo,
+                       std::vector<jxl::jpeg::JPEGScanInfo>* scan_infos) {
+  for (int i = 0; i < cinfo->num_scans; ++i) {
+    const jpeg_scan_info& scan_info = cinfo->scan_info[i];
+    jxl::jpeg::JPEGScanInfo si;
+    si.Ss = scan_info.Ss;
+    si.Se = scan_info.Se;
+    si.Ah = scan_info.Ah;
+    si.Al = scan_info.Al;
+    si.num_components = scan_info.comps_in_scan;
+    for (int i = 0; i < scan_info.comps_in_scan; ++i) {
+      si.components[i].comp_idx = scan_info.component_index[i];
+    }
+    scan_infos->push_back(si);
+  }
+}
+
 }  // namespace jpegli
 
 void jpegli_CreateCompress(j_compress_ptr cinfo, int version,
@@ -146,6 +163,8 @@ void jpegli_set_defaults(j_compress_ptr cinfo) {
     comp->h_samp_factor = 1;
     comp->v_samp_factor = 1;
   }
+  cinfo->scan_info = nullptr;
+  cinfo->num_scans = 0;
 }
 
 void jpegli_default_colorspace(j_compress_ptr cinfo) {}
@@ -451,7 +470,11 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
       {0, 0, 0, 0, max_shift > 0}, {1, 2, 0, 0, false},  {3, 63, 0, 2, false},
       {3, 63, 2, 1, false},        {3, 63, 1, 0, false},
   };
-  jpegli::AddJpegScanInfos(progressive_mode, &m->jpeg_data.scan_info);
+  if (cinfo->scan_info == nullptr) {
+    jpegli::AddJpegScanInfos(progressive_mode, &m->jpeg_data.scan_info);
+  } else {
+    jpegli::CopyJpegScanInfos(cinfo, &m->jpeg_data.scan_info);
+  }
   for (size_t i = 0; i < m->jpeg_data.scan_info.size(); i++) {
     m->jpeg_data.marker_order.emplace_back(0xda);
   }
