@@ -1,6 +1,7 @@
 # Build output directories
 /build
 /build*
+/bazel*
 /docker/*.log
 
 # The downloaded corpora files for benchmark.
