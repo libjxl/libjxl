@@ -339,11 +339,6 @@ JXL_MUST_USE_RESULT cmsCIEXYZ D50_XYZ() {
   return {0.96420288, 1.0, 0.82490540};
 }
 
-JXL_MUST_USE_RESULT cmsCIExyY xyYFromCIExy(const CIExy& xy) {
-  const cmsCIExyY xyY = {xy.x, xy.y, 1.0};
-  return xyY;
-}
-
 // RAII
 
 struct ProfileDeleter {

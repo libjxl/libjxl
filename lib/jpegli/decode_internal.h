@@ -13,7 +13,7 @@
 #include <set>
 #include <vector>
 
-#include "hwy/aligned_allocator.h"
+#include <hwy/aligned_allocator.h>
 #include "lib/jpegli/huffman.h"
 #include "lib/jxl/base/compiler_specific.h"  // for ssize_t
 

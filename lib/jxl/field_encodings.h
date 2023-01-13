@@ -13,7 +13,7 @@
 
 #include <vector>
 
-#include "hwy/base.h"
+#include <hwy/base.h>
 #include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/status.h"
 
