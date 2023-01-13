@@ -15,7 +15,7 @@
 #include <random>
 #include <vector>
 
-#include "hwy/targets.h"
+#include <hwy/targets.h>
 #include "jxl/decode.h"
 #include "jxl/decode_cxx.h"
 #include "jxl/thread_parallel_runner.h"

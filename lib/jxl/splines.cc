@@ -290,9 +290,6 @@ Vector operator*(const float k, const Vector& vec) {
 Spline::Point operator+(const Spline::Point& p, const Vector& vec) {
   return {p.x + vec.x, p.y + vec.y};
 }
-Spline::Point operator-(const Spline::Point& p, const Vector& vec) {
-  return p + -vec;
-}
 Vector operator-(const Spline::Point& a, const Spline::Point& b) {
   return {a.x - b.x, a.y - b.y};
 }
