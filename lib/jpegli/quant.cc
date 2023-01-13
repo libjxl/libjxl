@@ -408,8 +408,8 @@ static const float kBaseQuantMatrixYCbCr[] = {
 
 }  // namespace
 
-void AddJpegQuantMatrices(const jxl::ImageF& qf, bool xyb, float dc_quant,
-                          float global_scale,
+void AddJpegQuantMatrices(const jxl::ImageF& qf, bool xyb, int num_components,
+                          float dc_quant, float global_scale,
                           std::vector<jxl::jpeg::JPEGQuantTable>* quant_tables,
                           float* qm) {
   const float* const base_quant_matrix =
@@ -420,7 +420,7 @@ void AddJpegQuantMatrices(const jxl::ImageF& qf, bool xyb, float dc_quant,
   ImageMinMax(qf, &qfmin, &qfmax);
   const float dc_scale = global_scale / dc_quant;
   const float ac_scale = global_scale / qfmax;
-  for (size_t c = 0, ix = 0; c < 3; c++) {
+  for (int c = 0, ix = 0; c < num_components; c++) {
     qm[ix] = dc_scale * base_quant_matrix[ix];
     ix++;
     for (size_t j = 1; j < jxl::kDCTBlockSize; j++, ix++) {
@@ -429,10 +429,10 @@ void AddJpegQuantMatrices(const jxl::ImageF& qf, bool xyb, float dc_quant,
   }
 
   // Save the quant matrix into the jpeg data and invert it.
-  quant_tables->resize(3);
-  for (size_t c = 0; c < 3; c++) {
+  quant_tables->resize(num_components);
+  for (int c = 0; c < num_components; c++) {
     jxl::jpeg::JPEGQuantTable& quant = (*quant_tables)[c];
-    quant.is_last = (c == 2);
+    quant.is_last = (c + 1 == num_components);
     quant.index = c + 1;
     for (size_t j = 0; j < jxl::kDCTBlockSize; j++) {
       int qval = std::round(qm[c * jxl::kDCTBlockSize + j] * 255 * 8);
