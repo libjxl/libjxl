@@ -29,6 +29,9 @@ jobs:
     steps:
     - name: Install build deps
       run: |
+        sudo gem install apt-spy2
+        sudo apt-spy2 check
+        sudo apt-spy2 fix --commit
         sudo apt update
         sudo apt install -y \
           asciidoc \
