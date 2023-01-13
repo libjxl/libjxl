@@ -134,10 +134,17 @@ enum ChromaSubsampling {
   SAMPLING_420,
 };
 
+enum InputColor {
+  COLOR_SRGB,
+  COLOR_GRAY,
+};
+
 struct TestConfig {
+  InputColor color = COLOR_SRGB;
   int quality = 90;
   ChromaSubsampling sampling = SAMPLING_444;
   int progressive_id = 0;
+  bool xyb_mode = false;
   double max_bpp;
   double max_dist;
 };
@@ -146,13 +153,19 @@ class EncodeAPITestParam : public ::testing::TestWithParam<TestConfig> {};
 
 TEST_P(EncodeAPITestParam, TestAPI) {
   TestConfig config = GetParam();
-  const std::vector<uint8_t> origdata = ReadTestData("jxl/flower/flower.pnm");
+  std::string testimage = (config.color == COLOR_SRGB)
+                              ? "jxl/flower/flower.pnm"
+                              : "jxl/flower/flower.pgm";
+  const std::vector<uint8_t> origdata = ReadTestData(testimage);
   // These has to be volatile to make setjmp/longjmp work.
   volatile size_t xsize, ysize, num_channels, bitdepth;
   std::vector<uint8_t> orig;
   ASSERT_TRUE(
       ReadPNM(origdata, &xsize, &ysize, &num_channels, &bitdepth, &orig));
   ASSERT_EQ(8, bitdepth);
+  if (config.color == COLOR_GRAY) {
+    ASSERT_EQ(1, num_channels);
+  }
   jpeg_compress_struct cinfo;
   jpeg_error_mgr jerr;
   cinfo.err = jpegli_std_error(&jerr);
@@ -186,6 +199,9 @@ TEST_P(EncodeAPITestParam, TestAPI) {
   }
   cinfo.optimize_coding = TRUE;
   jpegli_set_quality(&cinfo, config.quality, TRUE);
+  if (config.xyb_mode) {
+    jpegli_set_xyb_mode(&cinfo);
+  }
   jpegli_start_compress(&cinfo, TRUE);
   size_t stride = xsize * cinfo.input_components;
   for (size_t y = 0; y < ysize; ++y) {
@@ -242,10 +258,29 @@ std::vector<TestConfig> GenerateTests() {
       all_tests.push_back(config);
     }
   }
+  {
+    TestConfig config;
+    config.xyb_mode = true;
+    config.max_bpp = 1.22;
+    config.max_dist = 60.0;
+    all_tests.push_back(config);
+  }
+  {
+    TestConfig config;
+    config.color = COLOR_GRAY;
+    config.max_bpp = 1.15;
+    config.max_dist = 1.3;
+    all_tests.push_back(config);
+  }
   return all_tests;
 };
 
 std::ostream& operator<<(std::ostream& os, const TestConfig& c) {
+  if (c.color == COLOR_SRGB) {
+    os << "SRGB";
+  } else if (c.color == COLOR_GRAY) {
+    os << "GRAY";
+  }
   os << "Q" << c.quality;
   if (c.sampling == SAMPLING_444) {
     os << "YUV444";
@@ -254,6 +289,9 @@ std::ostream& operator<<(std::ostream& os, const TestConfig& c) {
   }
   if (c.progressive_id > 0) {
     os << "P" << c.progressive_id;
+  }
+  if (c.xyb_mode) {
+    os << "XYB";
   }
   return os;
 }

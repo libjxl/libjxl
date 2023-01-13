@@ -30,7 +30,7 @@ void ComputeDCTCoefficients(const jxl::Image3F& opsin, const bool xyb,
   ImageMinMax(qf, &qfmin, &qfmax);
   HWY_ALIGN float scratch_space[2 * jxl::kDCTBlockSize];
   jxl::ImageF tmp;
-  for (size_t c = 0; c < 3; c++) {
+  for (size_t c = 0; c < components->size(); c++) {
     auto& comp = (*components)[c];
     const size_t xsize_blocks = comp.width_in_blocks;
     const size_t ysize_blocks = comp.height_in_blocks;
