@@ -292,7 +292,7 @@ jobs:
            disable_tests:
              - ButteraugliTest.Lossless
              - ButteraugliTest.Distmap
-         - msystem: clang32
+         # TODO (firsching): investigate webp build failure for `clang32`
 
     defaults:
       run:
