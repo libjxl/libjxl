@@ -887,6 +887,13 @@ void ProcessFlags(const jxl::extras::Codec codec,
                              "Valid "
                              "range is [-1, 100].\n";
               });
+
+  if (args->num_threads < -1) {
+    std::cerr
+        << "Invalid flag value for --num_threads: must be -1, 0 or postive."
+        << std::endl;
+    exit(EXIT_FAILURE);
+  }
   // JPEG specific options.
   if (jpeg_bytes) {
     ProcessBoolFlag(args->jpeg_reconstruction_cfl,
