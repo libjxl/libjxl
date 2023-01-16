@@ -254,11 +254,16 @@ if(JPEGXL_ENABLE_BENCHMARK AND JPEGXL_ENABLE_TOOLS)
     # Use the static version of webp if available.
     find_library(WebP_STATIC_LINK_LIBRARY NAMES libwebp.a
         PATHS "${WebP_LIBDIR}")
+    find_library(SharpYuv_STATIC_LINK_LIBRARY NAMES libsharpyuv.a
+        PATHS "${WebP_LIBDIR}")
     if(NOT WebP_STATIC_LINK_LIBRARY)
       message(WARNING "Using dynamic libwebp")
       target_link_libraries(benchmark_xl PkgConfig::WebP)
     else()
       target_link_libraries(benchmark_xl "${WebP_STATIC_LINK_LIBRARY}")
+      if(SharpYuv_STATIC_LINK_LIBRARY)
+        target_link_libraries(benchmark_xl "${SharpYuv_STATIC_LINK_LIBRARY}")
+      endif()
       target_include_directories(benchmark_xl
           PRIVATE ${WebP_STATIC_INCLUDE_DIRS})
       target_compile_options(benchmark_xl PRIVATE ${WebP_STATIC_CFLAGS_OTHER})
