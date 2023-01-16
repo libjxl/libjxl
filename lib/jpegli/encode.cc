@@ -143,6 +143,7 @@ void jpegli_CreateCompress(j_compress_ptr cinfo, int version,
   cinfo->master->cur_marker_data = nullptr;
   cinfo->master->distance = 1.0;
   cinfo->master->xyb_mode = false;
+  cinfo->master->use_adaptive_quantization = true;
   cinfo->master->data_type = JPEGLI_TYPE_UINT8;
   cinfo->master->endianness = JPEGLI_NATIVE_ENDIAN;
 }
@@ -328,7 +329,10 @@ JDIMENSION jpegli_write_scanlines(j_compress_ptr cinfo, JSAMPARRAY scanlines,
 
 void jpegli_finish_compress(j_compress_ptr cinfo) {
   jpeg_comp_master* m = cinfo->master;
+
   const bool use_xyb = m->xyb_mode;
+  const bool use_aq = m->use_adaptive_quantization;
+
   if (use_xyb && cinfo->num_components != 3) {
     JPEGLI_ERROR("Only RGB input is supported in XYB mode.");
   }
@@ -401,9 +405,16 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
   PadImageToBlockMultipleInPlace(&opsin, 8 << max_shift);
 
   // Compute adaptive quant field.
-  jxl::ImageF mask;
-  jxl::ImageF qf =
-      jxl::InitialQuantField(distance, opsin, frame_dim, nullptr, 1.0, &mask);
+  jxl::ImageF qf(frame_dim.xsize_blocks, frame_dim.ysize_blocks);
+  if (use_aq) {
+    jxl::ImageF mask;
+    qf = jxl::InitialQuantField(distance, opsin, frame_dim, nullptr, distance,
+                                &mask);
+  } else {
+    FillImage(0.6f, &qf);
+  }
+  float qfmin, qfmax;
+  ImageMinMax(qf, &qfmin, &qfmax);
   if (use_xyb) {
     ScaleXYB(&opsin);
   } else {
@@ -415,15 +426,17 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
   }
 
   // Create jpeg data and optimize Huffman codes.
-  float global_scale = 0.66f;
+  float ac_scale = distance / qfmax;
+  float dc_scale = 1.0f / jxl::InitialQuantDC(distance);
   if (!use_xyb) {
     if (color_encoding.tf.IsPQ()) {
-      global_scale *= .4f;
+      dc_scale *= .4f;
+      ac_scale *= .4f;
     } else if (color_encoding.tf.IsHLG()) {
-      global_scale *= .5f;
+      dc_scale *= .5f;
+      ac_scale *= .5f;
     }
   }
-  float dc_quant = jxl::InitialQuantDC(distance);
 
   // APPn
   for (const auto& v : m->jpeg_data.app_data) {
@@ -435,8 +448,8 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
   // DQT
   m->jpeg_data.marker_order.emplace_back(0xdb);
   float qm[3 * jxl::kDCTBlockSize];
-  jpegli::AddJpegQuantMatrices(qf, use_xyb, cinfo->num_components, dc_quant,
-                               global_scale, &m->jpeg_data.quant, qm);
+  jpegli::AddJpegQuantMatrices(use_xyb, cinfo->num_components, dc_scale,
+                               ac_scale, &m->jpeg_data.quant, qm);
 
   // SOF
   m->jpeg_data.marker_order.emplace_back(0xc2);
@@ -522,4 +535,8 @@ void jpegli_set_input_format(j_compress_ptr cinfo, JpegliDataType data_type,
                              JpegliEndianness endianness) {
   cinfo->master->data_type = data_type;
   cinfo->master->endianness = endianness;
+}
+
+void jpegli_enable_adaptive_quantization(j_compress_ptr cinfo, boolean value) {
+  cinfo->master->use_adaptive_quantization = value;
 }

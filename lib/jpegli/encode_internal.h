@@ -20,6 +20,7 @@ struct jpeg_comp_master {
   jxl::Image3F input;
   float distance;
   bool xyb_mode;
+  bool use_adaptive_quantization;
   bool force_baseline;
   J_COLOR_SPACE jpeg_colorspace;
   jxl::jpeg::JPEGData jpeg_data;
