@@ -8,8 +8,8 @@
 #include <string.h>
 
 #include <cmath>
-
 #include <hwy/aligned_allocator.h>
+
 #include "lib/jpegli/color_transform.h"
 #include "lib/jpegli/decode_internal.h"
 #include "lib/jpegli/idct.h"
