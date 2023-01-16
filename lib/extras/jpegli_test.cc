@@ -144,6 +144,26 @@ TEST(JpegliTest, JpegliYUVEncodeTest) {
   EXPECT_THAT(ButteraugliDistance(ppf_in, ppf_out), IsSlightlyBelow(1.3f));
 }
 
+TEST(JpegliTest, JpegliYUVEncodeTestNoAq) {
+  std::string testimage = "jxl/flower/flower_small.rgb.depth8.ppm";
+  PackedPixelFile ppf_in;
+  ASSERT_TRUE(ReadTestImage(testimage, &ppf_in));
+  EXPECT_EQ("RGB_D65_SRG_Rel_SRG", Description(ppf_in.color_encoding));
+  EXPECT_EQ(8, ppf_in.info.bits_per_sample);
+
+  std::vector<uint8_t> compressed;
+  JpegSettings settings;
+  settings.xyb = false;
+  settings.use_adaptive_quantization = false;
+  ASSERT_TRUE(EncodeJpeg(ppf_in, settings, nullptr, &compressed));
+
+  PackedPixelFile ppf_out;
+  ASSERT_TRUE(DecodeWithLibjpeg(compressed, &ppf_out));
+  // TODO(szabadka) Investigate why adaptive quantization is worse.
+  EXPECT_THAT(BitsPerPixel(ppf_in, compressed), IsSlightlyBelow(1.85f));
+  EXPECT_THAT(ButteraugliDistance(ppf_in, ppf_out), IsSlightlyBelow(1.2f));
+}
+
 TEST(JpegliTest, JpegliHDRRoundtripTest) {
   std::string testimage = "jxl/hdr_room.png";
   PackedPixelFile ppf_in;

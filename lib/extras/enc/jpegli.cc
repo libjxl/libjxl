@@ -134,6 +134,8 @@ Status EncodeJpeg(const PackedPixelFile& ppf, const JpegSettings& jpeg_settings,
       jpegli_set_xyb_mode(&cinfo);
     }
     jpegli_set_defaults(&cinfo);
+    jpegli_enable_adaptive_quantization(
+        &cinfo, jpeg_settings.use_adaptive_quantization);
     jpegli_set_distance(&cinfo, jpeg_settings.distance);
     jpegli_start_compress(&cinfo, TRUE);
     if (!IsSRGBEncoding(ppf.color_encoding)) {

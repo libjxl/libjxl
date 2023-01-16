@@ -72,6 +72,10 @@ class JPEGCodec : public ImageCodec {
       bitdepth_ = strtol(param.substr(2).c_str(), nullptr, 10);
       return true;
     }
+    if (param == "noaq") {
+      enable_adaptive_quant_ = false;
+      return true;
+    }
     return false;
   }
 
@@ -135,6 +139,7 @@ class JPEGCodec : public ImageCodec {
       } else {
         settings.distance = butteraugli_target_;
       }
+      settings.use_adaptive_quantization = enable_adaptive_quant_;
       const double start = Now();
       JXL_RETURN_IF_ERROR(extras::EncodeJpeg(ppf, settings, pool, compressed));
       const double end = Now();
@@ -199,6 +204,7 @@ class JPEGCodec : public ImageCodec {
   // JPEG decoder and its parameters
   std::string jpeg_decoder_ = "libjpeg";
   size_t bitdepth_ = 8;
+  bool enable_adaptive_quant_ = true;
 };
 
 ImageCodec* CreateNewJPEGCodec(const BenchmarkArgs& args) {

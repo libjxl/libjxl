@@ -23,6 +23,7 @@ struct JpegSettings {
   bool xyb = false;
   size_t target_size = 0;
   float distance = 1.f;
+  bool use_adaptive_quantization = true;
 };
 
 Status EncodeJpeg(const PackedPixelFile& ppf, const JpegSettings& jpeg_settings,

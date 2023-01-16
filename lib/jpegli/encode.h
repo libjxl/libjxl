@@ -101,6 +101,11 @@ void jpegli_set_xyb_mode(j_compress_ptr cinfo);
 void jpegli_set_input_format(j_compress_ptr cinfo, JpegliDataType data_type,
                              JpegliEndianness endianness);
 
+// Sets whether or not the encoder uses adaptive quantization for createing more
+// zero coefficients based on the local properties of the image.
+// Enabled by default.
+void jpegli_enable_adaptive_quantization(j_compress_ptr cinfo, boolean value);
+
 #if defined(__cplusplus) || defined(c_plusplus)
 }  // extern "C"
 #endif
