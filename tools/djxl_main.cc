@@ -58,9 +58,9 @@ struct DecompressArgs {
                            &disable_output, &SetBooleanTrue, 1);
 
     cmdline->AddOptionValue('\0', "num_threads", "N",
-                            "Sets the number of threads to use. The default 0 "
-                            "value means the machine default.",
-                            &num_threads, &ParseUnsigned);
+                            "Number of worker threads (-1 == use machine "
+                            "default, 0 == do not use multithreading).",
+                            &num_threads, &ParseSigned);
 
     opt_bits_per_sample_id = cmdline->AddOptionValue(
         '\0', "bits_per_sample", "N",
@@ -162,6 +162,12 @@ struct DecompressArgs {
       fprintf(stderr, "Missing INPUT filename.\n");
       return false;
     }
+    if (num_threads < -1) {
+      fprintf(
+          stderr,
+          "Invalid flag value for --num_threads: must be -1, 0 or postive.\n");
+      return false;
+    }
     return true;
   }
 
@@ -170,7 +176,7 @@ struct DecompressArgs {
   bool version = false;
   size_t num_reps = 1;
   bool disable_output = false;
-  size_t num_threads = 0;
+  int32_t num_threads = -1;
   int bits_per_sample = -1;
   double display_nits = 0.0;
   std::string color_space;
@@ -372,7 +378,7 @@ int main(int argc, const char* argv[]) {
   size_t num_worker_threads = JxlThreadParallelRunnerDefaultNumWorkerThreads();
   {
     int64_t flag_num_worker_threads = args.num_threads;
-    if (flag_num_worker_threads != 0) {
+    if (flag_num_worker_threads > -1) {
       num_worker_threads = flag_num_worker_threads;
     }
   }
