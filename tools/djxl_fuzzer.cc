@@ -10,12 +10,12 @@
 #include <string.h>
 
 #include <algorithm>
+#include <hwy/targets.h>
 #include <map>
 #include <mutex>
 #include <random>
 #include <vector>
 
-#include <hwy/targets.h>
 #include "jxl/decode.h"
 #include "jxl/decode_cxx.h"
 #include "jxl/thread_parallel_runner.h"
