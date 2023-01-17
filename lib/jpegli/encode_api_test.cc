@@ -231,8 +231,8 @@ std::vector<TestConfig> GenerateTests() {
   {
     TestConfig config;
     config.quality = 100;
-    config.max_bpp = 4.2;
-    config.max_dist = 0.9;
+    config.max_bpp = 4.65;
+    config.max_dist = 0.75;
     all_tests.push_back(config);
   }
   {

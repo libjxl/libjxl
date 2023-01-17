@@ -59,11 +59,6 @@ void ComputeDCTCoefficients(const jxl::Image3F& opsin, const bool xyb,
             // quantization multiplier.
             float zero_bias = 0.5f * qfmax / qf.Row(by * factor)[bx * factor];
             int cc = std::abs(coeff) < zero_bias ? 0 : std::round(coeff);
-            // If the relative value of the adaptive quantization field is less
-            // than 0.5, we drop the least significant bit.
-            if (zero_bias > 1) {
-              cc = cc / 2 * 2;
-            }
             block[ix * 8 + iy] = cc;
           }
         }
