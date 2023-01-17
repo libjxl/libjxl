@@ -224,8 +224,8 @@ std::vector<TestConfig> GenerateTests() {
   std::vector<TestConfig> all_tests;
   {
     TestConfig config;
-    config.max_bpp = 1.7;
-    config.max_dist = 2.0;
+    config.max_bpp = 1.45;
+    config.max_dist = 2.15;
     all_tests.push_back(config);
   }
   {
@@ -238,38 +238,38 @@ std::vector<TestConfig> GenerateTests() {
   {
     TestConfig config;
     config.quality = 80;
-    config.max_bpp = 1.0;
-    config.max_dist = 2.75;
+    config.max_bpp = 0.9;
+    config.max_dist = 2.95;
     all_tests.push_back(config);
   }
   {
     TestConfig config;
     config.sampling = SAMPLING_420;
-    config.max_bpp = 1.5;
-    config.max_dist = 2.4;
+    config.max_bpp = 1.25;
+    config.max_dist = 2.65;
     all_tests.push_back(config);
   }
   {
     for (size_t p = 0; p < kNumTestScripts; ++p) {
       TestConfig config;
       config.progressive_id = p + 1;
-      config.max_bpp = 1.75;
-      config.max_dist = 2.0;
+      config.max_bpp = 1.5;
+      config.max_dist = 2.15;
       all_tests.push_back(config);
     }
   }
   {
     TestConfig config;
     config.xyb_mode = true;
-    config.max_bpp = 1.22;
+    config.max_bpp = 1.3;
     config.max_dist = 60.0;
     all_tests.push_back(config);
   }
   {
     TestConfig config;
     config.color = COLOR_GRAY;
-    config.max_bpp = 1.15;
-    config.max_dist = 1.3;
+    config.max_bpp = 1.05;
+    config.max_dist = 1.4;
     all_tests.push_back(config);
   }
   return all_tests;
