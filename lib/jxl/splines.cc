@@ -590,10 +590,11 @@ Status Splines::InitializeDrawCache(const size_t image_xsize,
   segment_y_start_.clear();
   std::vector<std::pair<size_t, size_t>> segments_by_y;
   Spline spline;
-  // TODO(eustas): not in the spec; limit spline pixels with image area.
-  float pixel_limit = 16.0f * image_xsize * image_ysize + (1 << 16);
+  // TODO(firsching): this is currently corresponds to level 10 in the spec.
+  // Implement level 5 as well as sson as we implement levels in decoding.
+  float pixel_limit = 1024.0f * image_xsize * image_ysize + (1 << 24);
   // Apply some extra cap to avoid overflows.
-  constexpr size_t kHardPixelLimit = 1u << 30;
+  constexpr size_t kHardPixelLimit = 1u << 31;
   size_t px_limit = (pixel_limit < static_cast<float>(kHardPixelLimit))
                         ? static_cast<size_t>(pixel_limit)
                         : kHardPixelLimit;
