@@ -425,19 +425,20 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
     PadImageToBlockMultipleInPlace(&opsin, 8 << max_shift);
   }
 
-  // Create jpeg data and optimize Huffman codes.
-  float ac_scale = distance / qfmax;
-  float dc_scale = 1.0f / jxl::InitialQuantDC(distance);
+  // Global scale is chosen in a way that butteraugli 3-norm matches libjpeg
+  // with the same quality setting. Fitted for quality 90 on jyrki31 corpus.
+  float global_scale = use_xyb ? 0.9216f : 1.184f;
   if (!use_xyb) {
     if (color_encoding.tf.IsPQ()) {
-      dc_scale *= .4f;
-      ac_scale *= .4f;
+      global_scale *= .4f;
     } else if (color_encoding.tf.IsHLG()) {
-      dc_scale *= .5f;
-      ac_scale *= .5f;
+      global_scale *= .5f;
     }
   }
+  float ac_scale = global_scale * distance / qfmax;
+  float dc_scale = global_scale / jxl::InitialQuantDC(distance);
 
+  // Create jpeg data and optimize Huffman codes.
   // APPn
   for (const auto& v : m->jpeg_data.app_data) {
     JXL_DASSERT(!v.empty());

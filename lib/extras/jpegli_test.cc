@@ -122,8 +122,8 @@ TEST(JpegliTest, JpegliXYBEncodeTest) {
 
   PackedPixelFile ppf_out;
   ASSERT_TRUE(DecodeWithLibjpeg(compressed, &ppf_out));
-  EXPECT_THAT(BitsPerPixel(ppf_in, compressed), IsSlightlyBelow(1.45f));
-  EXPECT_THAT(ButteraugliDistance(ppf_in, ppf_out), IsSlightlyBelow(1.3f));
+  EXPECT_THAT(BitsPerPixel(ppf_in, compressed), IsSlightlyBelow(1.5f));
+  EXPECT_THAT(ButteraugliDistance(ppf_in, ppf_out), IsSlightlyBelow(1.26f));
 }
 
 TEST(JpegliTest, JpegliYUVEncodeTest) {
@@ -140,8 +140,8 @@ TEST(JpegliTest, JpegliYUVEncodeTest) {
 
   PackedPixelFile ppf_out;
   ASSERT_TRUE(DecodeWithLibjpeg(compressed, &ppf_out));
-  EXPECT_THAT(BitsPerPixel(ppf_in, compressed), IsSlightlyBelow(1.9f));
-  EXPECT_THAT(ButteraugliDistance(ppf_in, ppf_out), IsSlightlyBelow(1.3f));
+  EXPECT_THAT(BitsPerPixel(ppf_in, compressed), IsSlightlyBelow(1.7f));
+  EXPECT_THAT(ButteraugliDistance(ppf_in, ppf_out), IsSlightlyBelow(1.26f));
 }
 
 TEST(JpegliTest, JpegliYUVEncodeTestNoAq) {
@@ -159,9 +159,8 @@ TEST(JpegliTest, JpegliYUVEncodeTestNoAq) {
 
   PackedPixelFile ppf_out;
   ASSERT_TRUE(DecodeWithLibjpeg(compressed, &ppf_out));
-  // TODO(szabadka) Investigate why adaptive quantization is worse.
-  EXPECT_THAT(BitsPerPixel(ppf_in, compressed), IsSlightlyBelow(1.85f));
-  EXPECT_THAT(ButteraugliDistance(ppf_in, ppf_out), IsSlightlyBelow(1.2f));
+  EXPECT_THAT(BitsPerPixel(ppf_in, compressed), IsSlightlyBelow(1.62f));
+  EXPECT_THAT(ButteraugliDistance(ppf_in, ppf_out), IsSlightlyBelow(1.29f));
 }
 
 TEST(JpegliTest, JpegliHDRRoundtripTest) {
@@ -178,8 +177,8 @@ TEST(JpegliTest, JpegliHDRRoundtripTest) {
 
   PackedPixelFile ppf_out;
   ASSERT_TRUE(DecodeJpeg(compressed, JXL_TYPE_UINT16, nullptr, &ppf_out));
-  EXPECT_THAT(BitsPerPixel(ppf_in, compressed), IsSlightlyBelow(3.0f));
-  EXPECT_THAT(ButteraugliDistance(ppf_in, ppf_out), IsSlightlyBelow(1.05f));
+  EXPECT_THAT(BitsPerPixel(ppf_in, compressed), IsSlightlyBelow(2.75f));
+  EXPECT_THAT(ButteraugliDistance(ppf_in, ppf_out), IsSlightlyBelow(1.25f));
 }
 
 }  // namespace
