@@ -35,7 +35,6 @@ namespace jxl {
 namespace extras {
 namespace {
 
-using test::ButteraugliDistance;
 using ::testing::AllOf;
 using ::testing::Contains;
 using ::testing::Field;

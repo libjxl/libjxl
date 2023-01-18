@@ -13,6 +13,7 @@
 /* clang-format on */
 
 #include <array>
+#include <vector>
 
 #include "lib/jpegli/common_internal.h"
 #include "lib/jpegli/encode.h"

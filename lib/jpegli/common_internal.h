@@ -6,6 +6,9 @@
 #ifndef LIB_JPEGLI_COMMON_INTERNAL_H_
 #define LIB_JPEGLI_COMMON_INTERNAL_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
 namespace jpegli {
 
 template <typename T1, typename T2>
