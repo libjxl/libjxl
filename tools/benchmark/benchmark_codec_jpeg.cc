@@ -139,6 +139,9 @@ class JPEGCodec : public ImageCodec {
       } else {
         settings.distance = butteraugli_target_;
       }
+      if (progressive_id_ >= 0) {
+        settings.progressive_level = progressive_id_;
+      }
       settings.use_adaptive_quantization = enable_adaptive_quant_;
       const double start = Now();
       JXL_RETURN_IF_ERROR(extras::EncodeJpeg(ppf, settings, pool, compressed));

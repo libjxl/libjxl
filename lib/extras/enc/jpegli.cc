@@ -133,6 +133,7 @@ Status EncodeJpeg(const PackedPixelFile& ppf, const JpegSettings& jpeg_settings,
     if (jpeg_settings.xyb) {
       jpegli_set_xyb_mode(&cinfo);
     }
+    jpegli_set_progressive_level(&cinfo, jpeg_settings.progressive_level);
     jpegli_set_defaults(&cinfo);
     jpegli_enable_adaptive_quantization(
         &cinfo, jpeg_settings.use_adaptive_quantization);

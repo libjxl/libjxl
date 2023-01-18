@@ -144,6 +144,7 @@ void jpegli_CreateCompress(j_compress_ptr cinfo, int version,
   cinfo->master->distance = 1.0;
   cinfo->master->xyb_mode = false;
   cinfo->master->use_adaptive_quantization = true;
+  cinfo->master->progressive_level = 2;
   cinfo->master->data_type = JPEGLI_TYPE_UINT8;
   cinfo->master->endianness = JPEGLI_NATIVE_ENDIAN;
 }
@@ -207,7 +208,9 @@ void jpegli_add_quant_table(j_compress_ptr cinfo, int which_tbl,
                             const unsigned int* basic_table, int scale_factor,
                             boolean force_baseline) {}
 
-void jpegli_simple_progression(j_compress_ptr cinfo) {}
+void jpegli_simple_progression(j_compress_ptr cinfo) {
+  jpegli_set_progressive_level(cinfo, 2);
+}
 
 void jpegli_suppress_tables(j_compress_ptr cinfo, boolean suppress) {}
 
@@ -455,7 +458,9 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
                                ac_scale, &m->jpeg_data.quant, qm);
 
   // SOF
-  m->jpeg_data.marker_order.emplace_back(0xc2);
+  bool is_sequential = cinfo->num_scans == 1 ||
+                       (cinfo->num_scans == 0 && m->progressive_level == 0);
+  m->jpeg_data.marker_order.emplace_back(is_sequential ? 0xc0 : 0xc2);
   m->jpeg_data.height = frame_dim.ysize;
   m->jpeg_data.width = frame_dim.xsize;
   if (use_xyb) {
@@ -487,12 +492,20 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
   // DHT (the actual Huffman codes will be added later).
   m->jpeg_data.marker_order.emplace_back(0xc4);
 
-  // SOS
-  std::vector<jpegli::ProgressiveScan> progressive_mode = {
-      // DC
-      {0, 0, 0, 0, max_shift > 0}, {1, 2, 0, 0, false},  {3, 63, 0, 2, false},
-      {3, 63, 2, 1, false},        {3, 63, 1, 0, false},
-  };
+  std::vector<jpegli::ProgressiveScan> progressive_mode;
+  if (m->progressive_level == 0) {
+    progressive_mode.push_back({0, 63, 0, 0, true});
+  } else if (m->progressive_level == 1) {
+    progressive_mode.push_back({0, 0, 0, 0, max_shift > 0});
+    progressive_mode.push_back({1, 63, 0, 1, false});
+    progressive_mode.push_back({1, 63, 1, 0, false});
+  } else {
+    progressive_mode.push_back({0, 0, 0, 0, max_shift > 0});
+    progressive_mode.push_back({1, 2, 0, 0, false});
+    progressive_mode.push_back({3, 63, 0, 2, false});
+    progressive_mode.push_back({3, 63, 2, 1, false});
+    progressive_mode.push_back({3, 63, 1, 0, false});
+  }
   if (cinfo->scan_info == nullptr) {
     jpegli::AddJpegScanInfos(progressive_mode, cinfo->num_components,
                              &m->jpeg_data.scan_info);
@@ -542,4 +555,11 @@ void jpegli_set_input_format(j_compress_ptr cinfo, JpegliDataType data_type,
 
 void jpegli_enable_adaptive_quantization(j_compress_ptr cinfo, boolean value) {
   cinfo->master->use_adaptive_quantization = value;
+}
+
+void jpegli_set_progressive_level(j_compress_ptr cinfo, int level) {
+  if (level < 0) {
+    JPEGLI_ERROR("Invalid progressive level %d", level);
+  }
+  cinfo->master->progressive_level = level;
 }

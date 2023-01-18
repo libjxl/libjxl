@@ -145,6 +145,7 @@ struct TestConfig {
   int quality = 90;
   ChromaSubsampling sampling = SAMPLING_444;
   int progressive_id = 0;
+  int progressive_level = -1;
   bool xyb_mode = false;
   double max_bpp;
   double max_dist;
@@ -197,6 +198,8 @@ TEST_P(EncodeAPITestParam, TestAPI) {
     const ScanScript& script = kTestScript[config.progressive_id - 1];
     cinfo.scan_info = script.scans;
     cinfo.num_scans = script.num_scans;
+  } else if (config.progressive_level >= 0) {
+    jpegli_set_progressive_level(&cinfo, config.progressive_level);
   }
   cinfo.optimize_coding = TRUE;
   jpegli_set_quality(&cinfo, config.quality, TRUE);
@@ -261,6 +264,15 @@ std::vector<TestConfig> GenerateTests() {
     }
   }
   {
+    for (size_t l = 0; l <= 2; ++l) {
+      TestConfig config;
+      config.progressive_level = l;
+      config.max_bpp = 1.45;
+      config.max_dist = 2.3;
+      all_tests.push_back(config);
+    }
+  }
+  {
     TestConfig config;
     config.xyb_mode = true;
     config.max_bpp = 1.3;
@@ -291,6 +303,9 @@ std::ostream& operator<<(std::ostream& os, const TestConfig& c) {
   }
   if (c.progressive_id > 0) {
     os << "P" << c.progressive_id;
+  }
+  if (c.progressive_level >= 0) {
+    os << "PL" << c.progressive_level;
   }
   if (c.xyb_mode) {
     os << "XYB";
