@@ -166,11 +166,6 @@ inline float FastPow2f(float f) {
   return GetLane(FastPow2f(D, Set(D, f)));
 }
 
-inline float FastLog2f(float f) {
-  HWY_CAPPED(float, 1) D;
-  return GetLane(FastLog2f(D, Set(D, f)));
-}
-
 // The following functions modulate an exponent (out_val) and return the updated
 // value. Their descriptor is limited to 8 lanes for 8x8 blocks.
 
