@@ -132,6 +132,8 @@ Status EncodeJpeg(const PackedPixelFile& ppf, const JpegSettings& jpeg_settings,
         cinfo.input_components == 1 ? JCS_GRAYSCALE : JCS_RGB;
     if (jpeg_settings.xyb) {
       jpegli_set_xyb_mode(&cinfo);
+    } else if (jpeg_settings.use_std_quant_tables) {
+      jpegli_use_standard_quant_tables(&cinfo);
     }
     jpegli_set_progressive_level(&cinfo, jpeg_settings.progressive_level);
     jpegli_set_defaults(&cinfo);
