@@ -491,11 +491,20 @@ Status QuantizedSpline::Decode(const std::vector<uint8_t>& context_map,
   control_points_.resize(num_control_points);
   // Maximal image dimension.
   constexpr int64_t kDeltaLimit = 1u << 30;
+  bool seen_first = false;
+  size_t manhattan_distance = 0;
+  std::pair<int64_t, int64_t> last_control_point = {0, 0};
   for (std::pair<int64_t, int64_t>& control_point : control_points_) {
     control_point.first = UnpackSigned(
         decoder->ReadHybridUint(kControlPointsContext, br, context_map));
     control_point.second = UnpackSigned(
         decoder->ReadHybridUint(kControlPointsContext, br, context_map));
+    if (seen_first) {
+      manhattan_distance += abs(control_point.first - last_control_point.first) +
+        abs(control_point.second - last_control_point.second);
+    }
+    seen_first |= true;
+    last_control_point = control_point;
     // Check delta-deltas are not outrageous; it is not in spec, but there is
     // no reason to allow larger values.
     if ((control_point.first >= kDeltaLimit) ||
@@ -517,6 +526,19 @@ Status QuantizedSpline::Decode(const std::vector<uint8_t>& context_map,
     JXL_RETURN_IF_ERROR(decode_dct(color_dct_[c]));
   }
   JXL_RETURN_IF_ERROR(decode_dct(sigma_dct_));
+
+  size_t width_estimate = 0;
+  for (int i = 0; i < 32; ++i) {
+    const float inv_dct_factor = (i == 0) ? kSqrt0_5 : 1.0f;
+    const float dequant_factor = inv_dct_factor * kChannelWeight[3];
+    size_t weight = static_cast<size_t>(ceil(dequant_factor * 8)) * (static_cast<size_t>(sigma_dct_[i]) / 8) + 1;
+    width_estimate += weight * weight;
+  }
+  size_t estimated_area_reached = width_estimate * manhattan_distance;
+
+  fprintf(stderr, "in QuantizedSpline::Decode...\n");
+  fprintf(stderr, "manhattan: %zu, width: %zu, estimated_area_reached: %zu\n",
+    manhattan_distance, width_estimate, estimated_area_reached);
   return true;
 }
 
