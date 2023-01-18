@@ -14,8 +14,8 @@
 
 namespace jpegli {
 
-void ComputeDCTCoefficients(const jxl::Image3F& opsin, const bool xyb,
-                            const jxl::ImageF& qf,
+void ComputeDCTCoefficients(const jxl::Image3F& opsin, float distance,
+                            const bool xyb, const jxl::ImageF& qf,
                             const float* qm,
                             std::vector<jxl::jpeg::JPEGComponent>* components);
 

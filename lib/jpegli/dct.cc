@@ -17,8 +17,11 @@ HWY_BEFORE_NAMESPACE();
 namespace jpegli {
 namespace HWY_NAMESPACE {
 
-void ComputeDCTCoefficients(const jxl::Image3F& opsin, const bool xyb,
-                            const jxl::ImageF& qf,
+constexpr float kZeroBiasMulXYB[] = {0.5f, 0.5f, 0.5f};
+constexpr float kZeroBiasMulYCbCr[] = {0.7f, 1.0f, 0.8f};
+
+void ComputeDCTCoefficients(const jxl::Image3F& opsin, float distance,
+                            const bool xyb, const jxl::ImageF& qf,
                             const float* qm,
                             std::vector<jxl::jpeg::JPEGComponent>* components) {
   int max_samp_factor = 1;
@@ -28,6 +31,11 @@ void ComputeDCTCoefficients(const jxl::Image3F& opsin, const bool xyb,
   }
   float qfmin, qfmax;
   ImageMinMax(qf, &qfmin, &qfmax);
+  float zero_bias_mul[3] = {0.5f, 0.5f, 0.5f};
+  if (distance <= 1.0f) {
+    memcpy(zero_bias_mul, xyb ? kZeroBiasMulXYB : kZeroBiasMulYCbCr,
+           sizeof(zero_bias_mul));
+  }
   HWY_ALIGN float scratch_space[2 * jxl::kDCTBlockSize];
   jxl::ImageF tmp;
   for (size_t c = 0; c < components->size(); c++) {
@@ -52,12 +60,14 @@ void ComputeDCTCoefficients(const jxl::Image3F& opsin, const bool xyb,
         TransformFromPixels(jxl::AcStrategy::Type::DCT,
                             plane->Row(8 * by) + 8 * bx, plane->PixelsPerRow(),
                             dct, scratch_space);
+        // Create more zeros in areas where jpeg xl would have used a lower
+        // quantization multiplier.
+        float relq = qfmax / qf.Row(by * factor)[bx * factor];
+        float zero_bias = 0.5f + zero_bias_mul[c] * (relq - 1.0f);
+        zero_bias = std::min(1.5f, zero_bias);
         for (size_t iy = 0, i = 0; iy < 8; iy++) {
           for (size_t ix = 0; ix < 8; ix++, i++) {
             float coeff = 2040 * dct[i] * qmc[i];
-            // Create more zeros in areas where jpeg xl would have used a lower
-            // quantization multiplier.
-            float zero_bias = 0.5f * qfmax / qf.Row(by * factor)[bx * factor];
             int cc = std::abs(coeff) < zero_bias ? 0 : std::round(coeff);
             block[ix * 8 + iy] = cc;
           }
@@ -66,6 +76,8 @@ void ComputeDCTCoefficients(const jxl::Image3F& opsin, const bool xyb,
           // ToXYB does not create zero-centered sample values like RgbToYcbcr
           // does, so we apply an offset to the DC values instead.
           block[0] = std::round((2040 * dct[0] - 1024) * qmc[0]);
+        } else {
+          block[0] = std::round(2040 * dct[0] * qmc[0]);
         }
       }
     }
@@ -82,12 +94,12 @@ namespace jpegli {
 
 HWY_EXPORT(ComputeDCTCoefficients);
 
-void ComputeDCTCoefficients(const jxl::Image3F& opsin, const bool xyb,
-                            const jxl::ImageF& qf,
+void ComputeDCTCoefficients(const jxl::Image3F& opsin, float distance,
+                            const bool xyb, const jxl::ImageF& qf,
                             const float* qm,
                             std::vector<jxl::jpeg::JPEGComponent>* components) {
   HWY_DYNAMIC_DISPATCH(ComputeDCTCoefficients)
-  (opsin, xyb, qf, qm, components);
+  (opsin, distance, xyb, qf, qm, components);
 }
 
 }  // namespace jpegli

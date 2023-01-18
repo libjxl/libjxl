@@ -126,6 +126,7 @@ void TestDecodedImage(const std::vector<uint8_t>& compressed,
     diff2 += diff * diff;
   }
   double rms = std::sqrt(diff2 / orig.size()) / mul;
+  printf("rms: %f\n", rms);
   EXPECT_LE(rms, max_dist);
 }
 
@@ -215,6 +216,7 @@ TEST_P(EncodeAPITestParam, TestAPI) {
   std::copy_n(buffer, size, compressed.data());
   std::free(buffer);
   double bpp = compressed.size() * 8.0 / (xsize * ysize);
+  printf("bpp: %f\n", bpp);
   EXPECT_LT(bpp, config.max_bpp);
   TestDecodedImage(compressed, orig, xsize, ysize, num_channels,
                    config.progressive_id, config.max_dist);
@@ -224,37 +226,37 @@ std::vector<TestConfig> GenerateTests() {
   std::vector<TestConfig> all_tests;
   {
     TestConfig config;
-    config.max_bpp = 1.45;
-    config.max_dist = 2.15;
+    config.max_bpp = 1.4;
+    config.max_dist = 2.3;
     all_tests.push_back(config);
   }
   {
     TestConfig config;
     config.quality = 100;
-    config.max_bpp = 4.65;
-    config.max_dist = 0.75;
+    config.max_bpp = 4.1;
+    config.max_dist = 0.85;
     all_tests.push_back(config);
   }
   {
     TestConfig config;
     config.quality = 80;
-    config.max_bpp = 0.9;
-    config.max_dist = 2.95;
+    config.max_bpp = 0.95;
+    config.max_dist = 2.8;
     all_tests.push_back(config);
   }
   {
     TestConfig config;
     config.sampling = SAMPLING_420;
     config.max_bpp = 1.25;
-    config.max_dist = 2.65;
+    config.max_dist = 2.9;
     all_tests.push_back(config);
   }
   {
     for (size_t p = 0; p < kNumTestScripts; ++p) {
       TestConfig config;
       config.progressive_id = p + 1;
-      config.max_bpp = 1.5;
-      config.max_dist = 2.15;
+      config.max_bpp = 1.45;
+      config.max_dist = 2.3;
       all_tests.push_back(config);
     }
   }

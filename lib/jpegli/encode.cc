@@ -427,7 +427,9 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
 
   // Global scale is chosen in a way that butteraugli 3-norm matches libjpeg
   // with the same quality setting. Fitted for quality 90 on jyrki31 corpus.
-  float global_scale = use_xyb ? 0.9216f : 1.184f;
+  constexpr float kGlobalScaleXYB = 0.92159151f;
+  constexpr float kGlobalScaleYCbCr = 1.10048560f;
+  float global_scale = use_xyb ? kGlobalScaleXYB : kGlobalScaleYCbCr;
   if (!use_xyb) {
     if (color_encoding.tf.IsPQ()) {
       global_scale *= .4f;
@@ -479,7 +481,7 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
         frame_dim.ysize_blocks / factor;
     m->jpeg_data.components[c].quant_idx = c;
   }
-  jpegli::ComputeDCTCoefficients(opsin, use_xyb, qf, qm,
+  jpegli::ComputeDCTCoefficients(opsin, distance, use_xyb, qf, qm,
                                  &m->jpeg_data.components);
 
   // DHT (the actual Huffman codes will be added later).
