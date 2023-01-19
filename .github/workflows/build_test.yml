@@ -26,7 +26,7 @@ jobs:
       matrix:
         # We have one job per "name" in the matrix. Attributes are set on the
         # specific job names.
-        name: [release, debug, asan, msan, scalar]
+        name: ${{ fromJSON("[release, debug, asan, msan, scalar]") }}
         include:
           - name: release
             test_in_pr: true
