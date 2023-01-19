@@ -67,9 +67,9 @@ void ComputeDCTCoefficients(const jxl::Image3F& opsin, float distance,
         zero_bias = std::min(1.5f, zero_bias);
         for (size_t iy = 0, i = 0; iy < 8; iy++) {
           for (size_t ix = 0; ix < 8; ix++, i++) {
-            float coeff = 2040 * dct[i] * qmc[i];
+            float coeff = 2040 * dct[ix * 8 + iy] * qmc[i];
             int cc = std::abs(coeff) < zero_bias ? 0 : std::round(coeff);
-            block[ix * 8 + iy] = cc;
+            block[i] = cc;
           }
         }
         if (xyb) {

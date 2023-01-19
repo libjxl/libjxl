@@ -147,6 +147,7 @@ struct TestConfig {
   int progressive_id = 0;
   int progressive_level = -1;
   bool xyb_mode = false;
+  bool libjpeg_mode = false;
   double max_bpp;
   double max_dist;
 };
@@ -205,6 +206,10 @@ TEST_P(EncodeAPITestParam, TestAPI) {
   jpegli_set_quality(&cinfo, config.quality, TRUE);
   if (config.xyb_mode) {
     jpegli_set_xyb_mode(&cinfo);
+  } else if (config.libjpeg_mode) {
+    jpegli_enable_adaptive_quantization(&cinfo, FALSE);
+    jpegli_use_standard_quant_tables(&cinfo);
+    jpegli_set_progressive_level(&cinfo, 0);
   }
   jpegli_start_compress(&cinfo, TRUE);
   size_t stride = xsize * cinfo.input_components;
@@ -281,6 +286,13 @@ std::vector<TestConfig> GenerateTests() {
   }
   {
     TestConfig config;
+    config.libjpeg_mode = true;
+    config.max_bpp = 2.1;
+    config.max_dist = 1.7;
+    all_tests.push_back(config);
+  }
+  {
+    TestConfig config;
     config.color = COLOR_GRAY;
     config.max_bpp = 1.05;
     config.max_dist = 1.4;
@@ -309,6 +321,8 @@ std::ostream& operator<<(std::ostream& os, const TestConfig& c) {
   }
   if (c.xyb_mode) {
     os << "XYB";
+  } else if (c.libjpeg_mode) {
+    os << "Libjpeg";
   }
   return os;
 }

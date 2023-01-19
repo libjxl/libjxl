@@ -406,14 +406,47 @@ static const float kBaseQuantMatrixYCbCr[] = {
     113.0502548218f,
 };
 
+static const float kBaseQuantMatrixStd[] = {
+    // c = 0
+    16.0f, 11.0f, 10.0f, 16.0f, 24.0f, 40.0f, 51.0f, 61.0f,      //
+    12.0f, 12.0f, 14.0f, 19.0f, 26.0f, 58.0f, 60.0f, 55.0f,      //
+    14.0f, 13.0f, 16.0f, 24.0f, 40.0f, 57.0f, 69.0f, 56.0f,      //
+    14.0f, 17.0f, 22.0f, 29.0f, 51.0f, 87.0f, 80.0f, 62.0f,      //
+    18.0f, 22.0f, 37.0f, 56.0f, 68.0f, 109.0f, 103.0f, 77.0f,    //
+    24.0f, 35.0f, 55.0f, 64.0f, 81.0f, 104.0f, 113.0f, 92.0f,    //
+    49.0f, 64.0f, 78.0f, 87.0f, 103.0f, 121.0f, 120.0f, 101.0f,  //
+    72.0f, 92.0f, 95.0f, 98.0f, 112.0f, 100.0f, 103.0f, 99.0f,   //
+    // c = 1
+    17.0f, 18.0f, 24.0f, 47.0f, 99.0f, 99.0f, 99.0f, 99.0f,  //
+    18.0f, 21.0f, 26.0f, 66.0f, 99.0f, 99.0f, 99.0f, 99.0f,  //
+    24.0f, 26.0f, 56.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f,  //
+    47.0f, 66.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f,  //
+    99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f,  //
+    99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f,  //
+    99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f,  //
+    99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f,  //
+    // c = 2
+    17.0f, 18.0f, 24.0f, 47.0f, 99.0f, 99.0f, 99.0f, 99.0f,  //
+    18.0f, 21.0f, 26.0f, 66.0f, 99.0f, 99.0f, 99.0f, 99.0f,  //
+    24.0f, 26.0f, 56.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f,  //
+    47.0f, 66.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f,  //
+    99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f,  //
+    99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f,  //
+    99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f,  //
+    99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f,  //
+};
+
+constexpr const float* kBaseQuantMatrices[NUM_QUANT_MODES] = {
+    kBaseQuantMatrixXYB, kBaseQuantMatrixYCbCr, kBaseQuantMatrixStd};
+
 }  // namespace
 
-void AddJpegQuantMatrices(bool xyb, int num_components, float dc_scale,
+void AddJpegQuantMatrices(QuantMode mode, int num_components, float dc_scale,
                           float ac_scale,
                           std::vector<jxl::jpeg::JPEGQuantTable>* quant_tables,
                           float* qm) {
-  const float* const base_quant_matrix =
-      xyb ? kBaseQuantMatrixXYB : kBaseQuantMatrixYCbCr;
+  JXL_DASSERT(mode < NUM_QUANT_MODES);
+  const float* const base_quant_matrix = kBaseQuantMatrices[mode];
   for (int c = 0, ix = 0; c < num_components; c++) {
     qm[ix] = dc_scale * base_quant_matrix[ix];
     ix++;

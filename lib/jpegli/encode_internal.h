@@ -20,6 +20,7 @@ struct jpeg_comp_master {
   jxl::Image3F input;
   float distance;
   bool xyb_mode;
+  bool use_std_tables;
   bool use_adaptive_quantization;
   int progressive_level;
   bool force_baseline;

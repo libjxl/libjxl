@@ -14,7 +14,14 @@
 
 namespace jpegli {
 
-void AddJpegQuantMatrices(bool xyb, int num_components, float dc_scale,
+enum QuantMode {
+  QUANT_XYB,
+  QUANT_YUV,
+  QUANT_STD,
+  NUM_QUANT_MODES,
+};
+
+void AddJpegQuantMatrices(QuantMode mode, int num_components, float dc_scale,
                           float ac_scale,
                           std::vector<jxl::jpeg::JPEGQuantTable>* quant_tables,
                           float* qm);

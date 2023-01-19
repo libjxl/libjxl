@@ -64,6 +64,10 @@ class JPEGCodec : public ImageCodec {
       xyb_mode_ = true;
       return true;
     }
+    if (param == "std") {
+      use_std_tables_ = true;
+      return true;
+    }
     if (param == "dec-jpegli") {
       jpeg_decoder_ = "jpegli";
       return true;
@@ -134,6 +138,9 @@ class JPEGCodec : public ImageCodec {
           *io, format, io->metadata.m.color_encoding, pool, &ppf));
       extras::JpegSettings settings;
       settings.xyb = xyb_mode_;
+      if (!xyb_mode_) {
+        settings.use_std_quant_tables = use_std_tables_;
+      }
       if (enc_quality_set_) {
         settings.distance = jpegli_quality_to_distance(q_target_);
       } else {
@@ -204,6 +211,7 @@ class JPEGCodec : public ImageCodec {
   int progressive_id_ = -1;
   bool enc_quality_set_ = false;
   bool xyb_mode_ = false;
+  bool use_std_tables_ = false;
   // JPEG decoder and its parameters
   std::string jpeg_decoder_ = "libjpeg";
   size_t bitdepth_ = 8;
