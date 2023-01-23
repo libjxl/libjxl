@@ -473,10 +473,14 @@ Status QuantizedSpline::Dequantize(const Spline::Point& starting_point,
   uint64_t width_estimate = 0;
   for (int i = 0; i < 32; ++i) {
     const float inv_dct_factor = (i == 0) ? kSqrt0_5 : 1.0f;
-    const float dequant_factor = kChannelWeight[3] * inv_quant;
-    result.sigma_dct[i] = sigma_dct_[i] * inv_dct_factor * dequant_factor;
+    result.sigma_dct[i] =
+        sigma_dct_[i] * inv_dct_factor * kChannelWeight[3] * inv_quant;
+    // If we include the factor kChannelWeight[3]=.3333f here, we get a realistic
+    // area esitmate. We leave it out to simplify the calculations, and understand
+    // that this way we underestimate the area by a factor of 1/(0.3333*0.3333). This
+    // is taken into account in the limits below.
     uint64_t weight = static_cast<uint64_t>(
-        ceil(dequant_factor) * (static_cast<float>(std::abs(sigma_dct_[i]))));
+        static_cast<uint64_t>(ceil(inv_quant) * std::abs(sigma_dct_[i])));
     width_estimate += weight * weight;
   }
   *total_estimated_area_reached += (width_estimate * manhattan_distance);
@@ -524,8 +528,6 @@ Status QuantizedSpline::Decode(const std::vector<uint8_t>& context_map,
     JXL_RETURN_IF_ERROR(decode_dct(color_dct_[c]));
   }
   JXL_RETURN_IF_ERROR(decode_dct(sigma_dct_));
-
-
   return true;
 }
 
