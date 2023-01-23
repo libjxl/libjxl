@@ -5,7 +5,11 @@
 
 #include "lib/jpegli/quant.h"
 
-#include "lib/jxl/image_ops.h"
+#include <algorithm>
+#include <cmath>
+
+#include "lib/jpegli/common.h"
+#include "lib/jxl/base/status.h"
 
 namespace jpegli {
 
@@ -441,30 +445,31 @@ constexpr const float* kBaseQuantMatrices[NUM_QUANT_MODES] = {
 
 }  // namespace
 
-void AddJpegQuantMatrices(QuantMode mode, int num_components, float dc_scale,
-                          float ac_scale,
-                          std::vector<jxl::jpeg::JPEGQuantTable>* quant_tables,
-                          float* qm) {
+void AddJpegQuantMatrices(j_compress_ptr cinfo, QuantMode mode, float dc_scale,
+                          float ac_scale, float* qm) {
   JXL_DASSERT(mode < NUM_QUANT_MODES);
   const float* const base_quant_matrix = kBaseQuantMatrices[mode];
-  for (int c = 0, ix = 0; c < num_components; c++) {
+  for (int c = 0, ix = 0; c < cinfo->num_components; c++) {
     qm[ix] = dc_scale * base_quant_matrix[ix];
     ix++;
-    for (size_t j = 1; j < jxl::kDCTBlockSize; j++, ix++) {
+    for (size_t j = 1; j < DCTSIZE2; j++, ix++) {
       qm[ix] = ac_scale * base_quant_matrix[ix];
     }
   }
-
-  // Save the quant matrix into the jpeg data and invert it.
-  quant_tables->resize(num_components);
-  for (int c = 0; c < num_components; c++) {
-    jxl::jpeg::JPEGQuantTable& quant = (*quant_tables)[c];
-    quant.is_last = (c + 1 == num_components);
-    quant.index = c + 1;
-    for (size_t j = 0; j < jxl::kDCTBlockSize; j++) {
-      int qval = std::round(qm[c * jxl::kDCTBlockSize + j]);
-      quant.values[j] = std::max(1, std::min(qval, 255));
-      qm[c * jxl::kDCTBlockSize + j] = 1.0f / quant.values[j];
+  for (int c = 0; c < cinfo->num_components; c++) {
+    // TODO(szabadka) Don't always ignore quant tables that were provided
+    // through the libjpeg API.
+    if (cinfo->quant_tbl_ptrs[c] == nullptr) {
+      cinfo->quant_tbl_ptrs[c] =
+          jpegli_alloc_quant_table(reinterpret_cast<j_common_ptr>(cinfo));
+    }
+    JQUANT_TBL* quant_table = cinfo->quant_tbl_ptrs[c];
+    quant_table->sent_table = FALSE;
+    for (size_t j = 0; j < DCTSIZE2; j++) {
+      int qval = std::round(qm[c * DCTSIZE2 + j]);
+      // TODO(szabadka) Support 16-bit values (if force_baseline was not set).
+      quant_table->quantval[j] = std::max(1, std::min(qval, 255));
+      qm[c * DCTSIZE2 + j] = 1.0f / quant_table->quantval[j];
     }
   }
 }

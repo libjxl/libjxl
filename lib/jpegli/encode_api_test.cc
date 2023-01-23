@@ -146,6 +146,7 @@ struct TestConfig {
   ChromaSubsampling sampling = SAMPLING_444;
   int progressive_id = 0;
   int progressive_level = -1;
+  int restart_interval = 0;
   bool xyb_mode = false;
   bool libjpeg_mode = false;
   double max_bpp;
@@ -190,6 +191,9 @@ TEST_P(EncodeAPITestParam, TestAPI) {
   cinfo.image_height = ysize;
   cinfo.input_components = num_channels;
   cinfo.in_color_space = num_channels == 1 ? JCS_GRAYSCALE : JCS_RGB;
+  if (config.xyb_mode) {
+    jpegli_set_xyb_mode(&cinfo);
+  }
   jpegli_set_defaults(&cinfo);
   if (config.sampling == SAMPLING_420) {
     cinfo.comp_info[0].h_samp_factor = cinfo.comp_info[0].v_samp_factor = 2;
@@ -202,11 +206,10 @@ TEST_P(EncodeAPITestParam, TestAPI) {
   } else if (config.progressive_level >= 0) {
     jpegli_set_progressive_level(&cinfo, config.progressive_level);
   }
+  cinfo.restart_interval = config.restart_interval;
   cinfo.optimize_coding = TRUE;
   jpegli_set_quality(&cinfo, config.quality, TRUE);
-  if (config.xyb_mode) {
-    jpegli_set_xyb_mode(&cinfo);
-  } else if (config.libjpeg_mode) {
+  if (config.libjpeg_mode) {
     jpegli_enable_adaptive_quantization(&cinfo, FALSE);
     jpegli_use_standard_quant_tables(&cinfo);
     jpegli_set_progressive_level(&cinfo, 0);
@@ -298,6 +301,15 @@ std::vector<TestConfig> GenerateTests() {
     config.max_dist = 1.4;
     all_tests.push_back(config);
   }
+  {
+    for (size_t r : {1, 3, 17, 1024}) {
+      TestConfig config;
+      config.restart_interval = r;
+      config.max_bpp = 1.4 + 5.5 / r;
+      config.max_dist = 2.3;
+      all_tests.push_back(config);
+    }
+  }
   return all_tests;
 };
 
@@ -315,6 +327,9 @@ std::ostream& operator<<(std::ostream& os, const TestConfig& c) {
   }
   if (c.progressive_id > 0) {
     os << "P" << c.progressive_id;
+  }
+  if (c.restart_interval > 0) {
+    os << "R" << c.restart_interval;
   }
   if (c.progressive_level >= 0) {
     os << "PL" << c.progressive_level;
