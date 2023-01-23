@@ -5,6 +5,10 @@
 
 #include "lib/jpegli/encode.h"
 
+#include <initializer_list>
+#include <vector>
+
+#include "lib/jpegli/bitstream.h"
 #include "lib/jpegli/dct.h"
 #include "lib/jpegli/encode_internal.h"
 #include "lib/jpegli/entropy_coding.h"
@@ -13,19 +17,123 @@
 #include "lib/jpegli/quant.h"
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/color_encoding_internal.h"
-#include "lib/jxl/common.h"
 #include "lib/jxl/enc_adaptive_quantization.h"
 #include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_xyb.h"
-#include "lib/jxl/jpeg/dec_jpeg_data_writer.h"
-#include "lib/jxl/jpeg/enc_jpeg_data.h"
 
 namespace jpegli {
+
+using ByteSpan = jxl::Span<const uint8_t>;
 
 constexpr unsigned char kICCSignature[12] = {
     0x49, 0x43, 0x43, 0x5F, 0x50, 0x52, 0x4F, 0x46, 0x49, 0x4C, 0x45, 0x00};
 constexpr int kICCMarker = JPEG_APP0 + 2;
 constexpr size_t kMaxBytesInMarker = 65533;
+
+bool GetMarkerPayload(const uint8_t* data, size_t size, ByteSpan* payload) {
+  if (size < 4) {
+    return false;
+  }
+  size_t hi = data[2];
+  size_t lo = data[3];
+  size_t internal_size = (hi << 8u) | lo;
+  // First two bytes of marker is not counted towards size.
+  if (internal_size != size - 2) {
+    return false;
+  }
+  // cut first two marker bytes and "length" from payload.
+  *payload = ByteSpan(data, size);
+  payload->remove_prefix(4);
+  return true;
+}
+
+jxl::Status ParseChunkedMarker(j_compress_ptr cinfo, uint8_t marker_type,
+                               const ByteSpan& tag, jxl::PaddedBytes* output,
+                               bool allow_permutations = false) {
+  output->clear();
+
+  std::vector<ByteSpan> chunks;
+  std::vector<bool> presence;
+  size_t expected_number_of_parts = 0;
+  bool is_first_chunk = true;
+  size_t ordinal = 0;
+  for (const auto& marker : cinfo->master->special_markers) {
+    if (marker.size() < 2 || marker[1] != marker_type) {
+      continue;
+    }
+    ByteSpan payload;
+    if (!GetMarkerPayload(marker.data(), marker.size(), &payload)) {
+      // Something is wrong with this marker; does not care.
+      continue;
+    }
+    if ((payload.size() < tag.size()) ||
+        memcmp(payload.data(), tag.data(), tag.size()) != 0) {
+      continue;
+    }
+    payload.remove_prefix(tag.size());
+    if (payload.size() < 2) {
+      return JXL_FAILURE("Chunk is too small.");
+    }
+    uint8_t index = payload[0];
+    uint8_t total = payload[1];
+    ordinal++;
+    if (!allow_permutations) {
+      if (index != ordinal) return JXL_FAILURE("Invalid chunk order.");
+    }
+
+    payload.remove_prefix(2);
+
+    JXL_RETURN_IF_ERROR(total != 0);
+    if (is_first_chunk) {
+      is_first_chunk = false;
+      expected_number_of_parts = total;
+      // 1-based indices; 0-th element is added for convenience.
+      chunks.resize(total + 1);
+      presence.resize(total + 1);
+    } else {
+      JXL_RETURN_IF_ERROR(expected_number_of_parts == total);
+    }
+
+    if (index == 0 || index > total) {
+      return JXL_FAILURE("Invalid chunk index.");
+    }
+
+    if (presence[index]) {
+      return JXL_FAILURE("Duplicate chunk.");
+    }
+    presence[index] = true;
+    chunks[index] = payload;
+  }
+
+  for (size_t i = 0; i < expected_number_of_parts; ++i) {
+    // 0-th element is not used.
+    size_t index = i + 1;
+    if (!presence[index]) {
+      return JXL_FAILURE("Missing chunk.");
+    }
+    output->append(chunks[index]);
+  }
+
+  return true;
+}
+
+jxl::Status SetColorEncodingFromIccData(j_compress_ptr cinfo,
+                                        jxl::ColorEncoding* color_encoding) {
+  jxl::PaddedBytes icc_profile;
+  if (!ParseChunkedMarker(cinfo, kApp2, ByteSpan(kIccProfileTag),
+                          &icc_profile)) {
+    JXL_WARNING("ReJPEG: corrupted ICC profile\n");
+    icc_profile.clear();
+  }
+
+  if (icc_profile.empty()) {
+    bool is_gray = (cinfo->num_components == 1);
+    *color_encoding = jxl::ColorEncoding::SRGB(is_gray);
+    return true;
+  }
+
+  return color_encoding->SetICC(std::move(icc_profile));
+}
 
 float LinearQualityToDistance(int scale_factor) {
   scale_factor = std::min(5000, std::max(0, scale_factor));
@@ -57,18 +165,19 @@ struct ProgressiveScan {
 
 template <typename T>
 std::vector<uint8_t> CreateICCAppMarker(const T& icc) {
-  std::vector<uint8_t> icc_marker(17 + icc.size());
+  std::vector<uint8_t> icc_marker(18 + icc.size());
   // See the APP2 marker format for embedded ICC profile at
   // https://www.color.org/technotes/ICC-Technote-ProfileEmbedding.pdf
-  icc_marker[0] = 0xe2;  // APP2 marker
+  icc_marker[0] = 0xff;
+  icc_marker[1] = 0xe2;  // APP2 marker
   // ICC marker size (excluding the marker bytes).
-  icc_marker[1] = (icc_marker.size() - 1) >> 8;
-  icc_marker[2] = (icc_marker.size() - 1) & 0xFF;
+  icc_marker[2] = (icc_marker.size() - 2) >> 8;
+  icc_marker[3] = (icc_marker.size() - 2) & 0xFF;
   // Byte sequence identifying an APP2 marker containing an icc profile.
-  memcpy(&icc_marker[3], "ICC_PROFILE", 12);
-  icc_marker[15] = 1;  // Sequence number
-  icc_marker[16] = 1;  // Number of chunks.
-  memcpy(&icc_marker[17], icc.data(), icc.size());
+  memcpy(&icc_marker[4], "ICC_PROFILE", 12);
+  icc_marker[16] = 1;  // Sequence number
+  icc_marker[17] = 1;  // Number of chunks.
+  memcpy(&icc_marker[18], icc.data(), icc.size());
   return icc_marker;
 }
 
@@ -80,66 +189,76 @@ std::vector<uint8_t> CreateXybICCAppMarker() {
   return CreateICCAppMarker(c_xyb.ICC());
 }
 
-void SetICCAppMarker(const std::vector<uint8_t>& icc,
-                     jxl::jpeg::JPEGData* jpg) {
-  std::vector<std::vector<uint8_t>> app_data;
+void SetICCAppMarker(j_compress_ptr cinfo, const std::vector<uint8_t>& icc) {
+  std::vector<std::vector<uint8_t>> special_markers;
   bool icc_added = false;
-  for (auto& v : jpg->app_data) {
-    JXL_DASSERT(!v.empty());
-    if (v[0] != 0xe2) {
-      app_data.emplace_back(std::move(v));
+  for (auto& v : cinfo->master->special_markers) {
+    JXL_DASSERT(v.size() >= 2);
+    if (v[1] != 0xe2) {
+      special_markers.emplace_back(std::move(v));
     } else if (!icc_added) {
       // TODO(szabadka) Handle too big icc data.
-      app_data.push_back(icc);
+      special_markers.push_back(icc);
       icc_added = true;
     }
   }
   if (!icc_added) {
-    app_data.push_back(icc);
+    special_markers.push_back(icc);
   }
-  std::swap(jpg->app_data, app_data);
+  std::swap(cinfo->master->special_markers, special_markers);
 }
 
-void AddJpegScanInfos(const std::vector<ProgressiveScan>& scans,
-                      const int num_components,
-                      std::vector<jxl::jpeg::JPEGScanInfo>* scan_infos) {
-  for (const auto& scan : scans) {
-    jxl::jpeg::JPEGScanInfo si;
-    si.Ss = scan.Ss;
-    si.Se = scan.Se;
-    si.Ah = scan.Ah;
-    si.Al = scan.Al;
+void SetDefaultScanScript(j_compress_ptr cinfo, int max_shift) {
+  int level = cinfo->master->progressive_level;
+  std::vector<jpegli::ProgressiveScan> progressive_mode;
+  if (level == 0) {
+    progressive_mode.push_back({0, 63, 0, 0, true});
+  } else if (level == 1) {
+    progressive_mode.push_back({0, 0, 0, 0, max_shift > 0});
+    progressive_mode.push_back({1, 63, 0, 1, false});
+    progressive_mode.push_back({1, 63, 1, 0, false});
+  } else {
+    progressive_mode.push_back({0, 0, 0, 0, max_shift > 0});
+    progressive_mode.push_back({1, 2, 0, 0, false});
+    progressive_mode.push_back({3, 63, 0, 2, false});
+    progressive_mode.push_back({3, 63, 2, 1, false});
+    progressive_mode.push_back({3, 63, 1, 0, false});
+  }
+
+  cinfo->script_space_size = 0;
+  for (const auto& scan : progressive_mode) {
+    cinfo->script_space_size += scan.interleaved ? 1 : cinfo->num_components;
+  }
+  cinfo->script_space =
+      jpegli::Allocate<jpeg_scan_info>(cinfo, cinfo->script_space_size);
+
+  jpeg_scan_info* next_scan = cinfo->script_space;
+  for (const auto& scan : progressive_mode) {
     if (scan.interleaved) {
-      si.num_components = num_components;
-      for (int c = 0; c < num_components; ++c) {
-        si.components[c].comp_idx = c;
+      next_scan->Ss = scan.Ss;
+      next_scan->Se = scan.Se;
+      next_scan->Ah = scan.Ah;
+      next_scan->Al = scan.Al;
+      next_scan->comps_in_scan = cinfo->num_components;
+      for (int c = 0; c < cinfo->num_components; ++c) {
+        next_scan->component_index[c] = c;
       }
-      scan_infos->push_back(si);
+      ++next_scan;
     } else {
-      for (int c = 0; c < num_components; ++c) {
-        si.num_components = 1;
-        si.components[0].comp_idx = c;
-        scan_infos->push_back(si);
+      for (int c = 0; c < cinfo->num_components; ++c) {
+        next_scan->Ss = scan.Ss;
+        next_scan->Se = scan.Se;
+        next_scan->Ah = scan.Ah;
+        next_scan->Al = scan.Al;
+        next_scan->comps_in_scan = 1;
+        next_scan->component_index[0] = c;
+        ++next_scan;
       }
     }
   }
-}
-
-void CopyJpegScanInfos(j_compress_ptr cinfo,
-                       std::vector<jxl::jpeg::JPEGScanInfo>* scan_infos) {
-  for (int i = 0; i < cinfo->num_scans; ++i) {
-    const jpeg_scan_info& scan_info = cinfo->scan_info[i];
-    jxl::jpeg::JPEGScanInfo si;
-    si.Ss = scan_info.Ss;
-    si.Se = scan_info.Se;
-    si.Ah = scan_info.Ah;
-    si.Al = scan_info.Al;
-    si.num_components = scan_info.comps_in_scan;
-    for (int i = 0; i < scan_info.comps_in_scan; ++i) {
-      si.components[i].comp_idx = scan_info.component_index[i];
-    }
-    scan_infos->push_back(si);
-  }
+  JXL_ASSERT(next_scan - cinfo->script_space == cinfo->script_space_size);
+  cinfo->scan_info = cinfo->script_space;
+  cinfo->num_scans = cinfo->script_space_size;
 }
 
 }  // namespace jpegli
@@ -156,6 +275,12 @@ void jpegli_CreateCompress(j_compress_ptr cinfo, int version,
       reinterpret_cast<struct jpeg_memory_mgr*>(new jpegli::MemoryManager);
   cinfo->is_decompressor = FALSE;
   cinfo->dest = nullptr;
+  cinfo->restart_interval = 0;
+  for (int i = 0; i < NUM_QUANT_TBLS; ++i) {
+    cinfo->quant_tbl_ptrs[i] = nullptr;
+  }
+  cinfo->scan_info = nullptr;
+  cinfo->num_scans = 0;
   cinfo->master->cur_marker_data = nullptr;
   cinfo->master->distance = 1.0;
   cinfo->master->xyb_mode = false;
@@ -175,6 +300,10 @@ void jpegli_set_xyb_mode(j_compress_ptr cinfo) {
 }
 
 void jpegli_set_defaults(j_compress_ptr cinfo) {
+  if (cinfo->master->xyb_mode &&
+      (cinfo->input_components != 3 || cinfo->in_color_space != JCS_RGB)) {
+    JPEGLI_ERROR("Only RGB input is supported in XYB mode.");
+  }
   cinfo->num_components = cinfo->input_components;
   cinfo->comp_info =
       jpegli::Allocate<jpeg_component_info>(cinfo, cinfo->num_components);
@@ -182,6 +311,17 @@ void jpegli_set_defaults(j_compress_ptr cinfo) {
     jpeg_component_info* comp = &cinfo->comp_info[c];
     comp->h_samp_factor = 1;
     comp->v_samp_factor = 1;
+    comp->quant_tbl_no = c;
+    comp->component_index = c;
+  }
+  if (cinfo->master->xyb_mode) {
+    cinfo->comp_info[0].component_id = 'R';
+    cinfo->comp_info[1].component_id = 'G';
+    cinfo->comp_info[2].component_id = 'B';
+  } else {
+    for (int i = 0; i < cinfo->num_components; ++i) {
+      cinfo->comp_info[i].component_id = i + 1;
+    }
   }
   cinfo->scan_info = nullptr;
   cinfo->num_scans = 0;
@@ -237,21 +377,17 @@ void jpegli_write_m_header(j_compress_ptr cinfo, int marker,
   if (datalen > jpegli::kMaxBytesInMarker) {
     JPEGLI_ERROR("Invalid marker length %u", datalen);
   }
-  std::vector<uint8_t> marker_data(3);
-  marker_data[0] = marker;
-  marker_data[1] = (datalen + 2) >> 8;
-  marker_data[2] = (datalen + 2) & 0xff;
-  if (marker >= 0xe0 && marker <= 0xef) {
-    m->jpeg_data.app_data.emplace_back(std::move(marker_data));
-    m->cur_marker_data = &m->jpeg_data.app_data.back();
-  } else if (marker == 0xfe) {
-    m->jpeg_data.com_data.emplace_back(std::move(marker_data));
-    m->cur_marker_data = &m->jpeg_data.com_data.back();
-  } else {
+  if (marker != 0xfe && (marker < 0xe0 || marker > 0xef)) {
     JPEGLI_ERROR(
-        "jpegli_write_m_header: "
-        "Only APP and COM markers are supported.");
+        "jpegli_write_m_header: Only APP and COM markers are supported.");
   }
+  std::vector<uint8_t> marker_data(4);
+  marker_data[0] = 0xff;
+  marker_data[1] = marker;
+  marker_data[2] = (datalen + 2) >> 8;
+  marker_data[3] = (datalen + 2) & 0xff;
+  m->special_markers.emplace_back(std::move(marker_data));
+  m->cur_marker_data = &m->special_markers.back();
 }
 
 void jpegli_write_m_byte(j_compress_ptr cinfo, int val) {
@@ -267,7 +403,7 @@ void jpegli_write_icc_profile(j_compress_ptr cinfo, const JOCTET* icc_data_ptr,
   constexpr size_t kMaxIccBytesInMarker =
       jpegli::kMaxBytesInMarker - sizeof jpegli::kICCSignature - 2;
   const int num_markers =
-      static_cast<int>(jxl::DivCeil(icc_data_len, kMaxIccBytesInMarker));
+      static_cast<int>(jpegli::DivCeil(icc_data_len, kMaxIccBytesInMarker));
   size_t begin = 0;
   for (int current_marker = 0; current_marker < num_markers; ++current_marker) {
     const size_t length = std::min(kMaxIccBytesInMarker, icc_data_len - begin);
@@ -290,6 +426,12 @@ void jpegli_start_compress(j_compress_ptr cinfo, boolean write_all_tables) {
   jpeg_comp_master* m = cinfo->master;
   m->input = jxl::Image3F(cinfo->image_width, cinfo->image_height);
   cinfo->next_scanline = 0;
+  if (cinfo->scan_info != nullptr) {
+    cinfo->progressive_mode =
+        cinfo->scan_info->Ss != 0 || cinfo->scan_info->Se != DCTSIZE2 - 1;
+  } else {
+    cinfo->progressive_mode = cinfo->master->progressive_level > 0;
+  }
 }
 
 JDIMENSION jpegli_write_scanlines(j_compress_ptr cinfo, JSAMPARRAY scanlines,
@@ -364,17 +506,15 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
     CopyImageTo(m->input.Plane(0), &m->input.Plane(1));
     CopyImageTo(m->input.Plane(0), &m->input.Plane(2));
   }
-  m->jpeg_data.components.resize(cinfo->num_components);
   jxl::ColorEncoding color_encoding;
-  if (!jxl::jpeg::SetColorEncodingFromJpegData(m->jpeg_data, &color_encoding)) {
+  if (!jpegli::SetColorEncodingFromIccData(cinfo, &color_encoding)) {
     JPEGLI_ERROR("Could not parse ICC profile.");
   }
   if (use_xyb) {
-    jpegli::SetICCAppMarker(jpegli::CreateXybICCAppMarker(), &m->jpeg_data);
+    jpegli::SetICCAppMarker(cinfo, jpegli::CreateXybICCAppMarker());
   }
   const jxl::Image3F& input = m->input;
   float distance = m->distance;
-  std::vector<uint8_t> compressed;
 
   if (use_xyb) {
     // Subsample blue channel.
@@ -477,107 +617,64 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
     dc_scale = global_scale * linear_scale;
   }
 
-  // Create jpeg data and optimize Huffman codes.
-  // APPn
-  for (const auto& v : m->jpeg_data.app_data) {
-    JXL_DASSERT(!v.empty());
-    uint8_t marker = v[0];
-    m->jpeg_data.marker_order.push_back(marker);
+  //
+  // Start writing to the bitstream
+  //
+  (*cinfo->dest->init_destination)(cinfo);
+
+  // SOI
+  jpegli::WriteOutput(cinfo, {0xFF, 0xD8});
+
+  // APPn, COM
+  for (const auto& v : m->special_markers) {
+    jpegli::WriteOutput(cinfo, v);
   }
 
   // DQT
-  m->jpeg_data.marker_order.emplace_back(0xdb);
-  float qm[3 * jxl::kDCTBlockSize];
-  jpegli::AddJpegQuantMatrices(quant_mode, cinfo->num_components, dc_scale,
-                               ac_scale, &m->jpeg_data.quant, qm);
+  float qm[3 * jpegli::kDCTBlockSize];
+  jpegli::AddJpegQuantMatrices(cinfo, quant_mode, dc_scale, ac_scale, qm);
+  jpegli::EncodeDQT(cinfo);
 
   // SOF
-  bool is_sequential = cinfo->num_scans == 1 ||
-                       (cinfo->num_scans == 0 && m->progressive_level == 0);
-  m->jpeg_data.marker_order.emplace_back(is_sequential ? 0xc0 : 0xc2);
-  m->jpeg_data.height = frame_dim.ysize;
-  m->jpeg_data.width = frame_dim.xsize;
-  if (use_xyb) {
-    m->jpeg_data.components[0].id = 'R';
-    m->jpeg_data.components[1].id = 'G';
-    m->jpeg_data.components[2].id = 'B';
-  } else {
-    for (int i = 0; i < cinfo->num_components; ++i) {
-      m->jpeg_data.components[i].id = i + 1;
-    }
-  }
-  size_t max_samp_factor = 1u << max_shift;
+  jpegli::EncodeSOF(cinfo);
+
   for (int c = 0; c < cinfo->num_components; ++c) {
     const size_t factor =
         (cinfo->max_h_samp_factor / cinfo->comp_info[c].h_samp_factor);
-    m->jpeg_data.components[c].h_samp_factor = max_samp_factor / factor;
-    m->jpeg_data.components[c].v_samp_factor = max_samp_factor / factor;
     JXL_ASSERT(frame_dim.xsize_blocks % factor == 0);
     JXL_ASSERT(frame_dim.ysize_blocks % factor == 0);
-    m->jpeg_data.components[c].width_in_blocks =
-        frame_dim.xsize_blocks / factor;
-    m->jpeg_data.components[c].height_in_blocks =
-        frame_dim.ysize_blocks / factor;
-    m->jpeg_data.components[c].quant_idx = c;
+    // TODO(szabadka): These fields have a different meaning than in libjpeg,
+    // make sure it does not cause problems or change it to the libjpeg values.
+    cinfo->comp_info[c].width_in_blocks = frame_dim.xsize_blocks / factor;
+    cinfo->comp_info[c].height_in_blocks = frame_dim.ysize_blocks / factor;
   }
-  jpegli::ComputeDCTCoefficients(opsin, distance, use_xyb, qf, qm,
-                                 &m->jpeg_data.components);
+  std::vector<std::vector<jpegli::coeff_t>> coeffs;
+  jpegli::ComputeDCTCoefficients(cinfo, opsin, distance, use_xyb, qf, qm,
+                                 &coeffs);
 
-  // DHT (the actual Huffman codes will be added later).
-  m->jpeg_data.marker_order.emplace_back(0xc4);
-
-  std::vector<jpegli::ProgressiveScan> progressive_mode;
-  if (m->progressive_level == 0) {
-    progressive_mode.push_back({0, 63, 0, 0, true});
-  } else if (m->progressive_level == 1) {
-    progressive_mode.push_back({0, 0, 0, 0, max_shift > 0});
-    progressive_mode.push_back({1, 63, 0, 1, false});
-    progressive_mode.push_back({1, 63, 1, 0, false});
-  } else {
-    progressive_mode.push_back({0, 0, 0, 0, max_shift > 0});
-    progressive_mode.push_back({1, 2, 0, 0, false});
-    progressive_mode.push_back({3, 63, 0, 2, false});
-    progressive_mode.push_back({3, 63, 2, 1, false});
-    progressive_mode.push_back({3, 63, 1, 0, false});
-  }
   if (cinfo->scan_info == nullptr) {
-    jpegli::AddJpegScanInfos(progressive_mode, cinfo->num_components,
-                             &m->jpeg_data.scan_info);
-  } else {
-    jpegli::CopyJpegScanInfos(cinfo, &m->jpeg_data.scan_info);
-  }
-  for (size_t i = 0; i < m->jpeg_data.scan_info.size(); i++) {
-    m->jpeg_data.marker_order.emplace_back(0xda);
+    jpegli::SetDefaultScanScript(cinfo, max_shift);
   }
 
-  // EOI
-  m->jpeg_data.marker_order.push_back(0xd9);
+  std::vector<jpegli::JPEGHuffmanCode> huffman_codes;
+  jpegli::OptimizeHuffmanCodes(cinfo, coeffs, &huffman_codes);
 
-  jpegli::OptimizeHuffmanCodes(&m->jpeg_data);
-
-  // Write jpeg data to compressed stream.
-  auto write = [&compressed](const uint8_t* buf, size_t len) {
-    compressed.insert(compressed.end(), buf, buf + len);
-    return len;
-  };
-  if (!jxl::jpeg::WriteJpeg(m->jpeg_data, write)) {
-    JPEGLI_ERROR("Writing jpeg data failed.");
+  // DRI
+  if (cinfo->restart_interval > 0) {
+    jpegli::EncodeDRI(cinfo);
   }
 
-  (*cinfo->dest->init_destination)(cinfo);
-  size_t pos = 0;
-  while (pos < compressed.size()) {
-    if (cinfo->dest->free_in_buffer == 0 &&
-        !(*cinfo->dest->empty_output_buffer)(cinfo)) {
-      JPEGLI_ERROR("Destination suspension is not supported.");
+  size_t dht_index = 0;
+  for (int i = 0; i < cinfo->num_scans; ++i) {
+    jpegli::EncodeDHT(cinfo, huffman_codes, &dht_index,
+                      m->scan_coding_info[i].num_huffman_codes);
+    jpegli::EncodeSOS(cinfo, i);
+    if (!jpegli::EncodeScan(cinfo, coeffs, i)) {
+      JPEGLI_ERROR("Failed to encode scan.");
     }
-    size_t len =
-        std::min<size_t>(cinfo->dest->free_in_buffer, compressed.size() - pos);
-    memcpy(cinfo->dest->next_output_byte, &compressed[pos], len);
-    pos += len;
-    cinfo->dest->free_in_buffer -= len;
-    cinfo->dest->next_output_byte += len;
   }
+  // EOI
+  jpegli::WriteOutput(cinfo, {0xFF, 0xD9});
   (*cinfo->dest->term_destination)(cinfo);
 }
 

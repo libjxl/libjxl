@@ -4,8 +4,11 @@
 # license that can be found in the LICENSE file.
 
 set(JPEGLI_INTERNAL_SOURCES
+  jpegli/bitstream.h
+  jpegli/bitstream.cc
   jpegli/color_transform.h
   jpegli/color_transform.cc
+  jpegli/common_internal.h
   jpegli/common.h
   jpegli/common.cc
   jpegli/dct.h

@@ -15,18 +15,11 @@
 #include <vector>
 
 #include "lib/jpegli/common.h"
+#include "lib/jpegli/common_internal.h"
 #include "lib/jpegli/huffman.h"
 #include "lib/jxl/base/compiler_specific.h"  // for ssize_t
 
 namespace jpegli {
-
-template <typename T1, typename T2>
-constexpr inline T1 DivCeil(T1 a, T2 b) {
-  return (a + b - 1) / b;
-}
-
-constexpr int kMaxComponents = 4;
-constexpr int kJpegDCAlphabetSize = 12;
 
 typedef int16_t coeff_t;
 
@@ -40,7 +33,7 @@ enum DecodeState {
 };
 
 // Represents one component of a jpeg file.
-struct JPEGComponent {
+struct DecJPEGComponent {
   // The DCT coefficients of this component, laid out block-by-block, divided
   // through the quantization matrix values.
   hwy::AlignedFreeUniquePtr<coeff_t[]> coeffs;
@@ -73,23 +66,6 @@ class RowBuffer {
   hwy::AlignedFreeUniquePtr<float[]> data_;
 };
 
-/* clang-format off */
-constexpr uint32_t kJPEGNaturalOrder[80] = {
-  0,   1,  8, 16,  9,  2,  3, 10,
-  17, 24, 32, 25, 18, 11,  4,  5,
-  12, 19, 26, 33, 40, 48, 41, 34,
-  27, 20, 13,  6,  7, 14, 21, 28,
-  35, 42, 49, 56, 57, 50, 43, 36,
-  29, 22, 15, 23, 30, 37, 44, 51,
-  58, 59, 52, 45, 38, 31, 39, 46,
-  53, 60, 61, 54, 47, 55, 62, 63,
-  // extra entries for safety in decoder
-  63, 63, 63, 63, 63, 63, 63, 63,
-  63, 63, 63, 63, 63, 63, 63, 63
-};
-
-/* clang-format on */
-
 }  // namespace jpegli
 
 // Use this forward-declared libjpeg struct to hold all our private variables.
@@ -111,7 +87,7 @@ struct jpeg_decomp_master {
   size_t icc_index_ = 0;
   size_t icc_total_ = 0;
   std::vector<uint8_t> icc_profile_;
-  std::vector<jpegli::JPEGComponent> components_;
+  std::vector<jpegli::DecJPEGComponent> components_;
   std::vector<jpegli::HuffmanTableEntry> dc_huff_lut_;
   std::vector<jpegli::HuffmanTableEntry> ac_huff_lut_;
   uint8_t huff_slot_defined_[256] = {};

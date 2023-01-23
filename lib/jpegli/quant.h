@@ -6,11 +6,10 @@
 #ifndef LIB_JPEGLI_QUANT_H_
 #define LIB_JPEGLI_QUANT_H_
 
-#include <vector>
-
-#include "lib/jxl/common.h"
-#include "lib/jxl/image.h"
-#include "lib/jxl/jpeg/jpeg_data.h"
+/* clang-format off */
+#include <stdio.h>
+#include <jpeglib.h>
+/* clang-format on */
 
 namespace jpegli {
 
@@ -21,10 +20,8 @@ enum QuantMode {
   NUM_QUANT_MODES,
 };
 
-void AddJpegQuantMatrices(QuantMode mode, int num_components, float dc_scale,
-                          float ac_scale,
-                          std::vector<jxl::jpeg::JPEGQuantTable>* quant_tables,
-                          float* qm);
+void AddJpegQuantMatrices(j_compress_ptr cinfo, QuantMode mode, float dc_scale,
+                          float ac_scale, float* qm);
 
 }  // namespace jpegli
 
