@@ -31,6 +31,7 @@
 #include "jxl/types.h"
 #include "lib/extras/dec/apng.h"
 #include "lib/extras/dec/color_hints.h"
+#include "lib/extras/dec/exr.h"
 #include "lib/extras/dec/gif.h"
 #include "lib/extras/dec/jpg.h"
 #include "lib/extras/dec/pgx.h"
@@ -597,7 +598,13 @@ jxl::Status GetPixeldata(const std::vector<uint8_t>& image_data,
       return jxl::extras::Codec::kJPG;
     }
 #endif
-    // TODO(tfish): Bring back EXR and PSD.
+#if JPEGXL_ENABLE_EXR
+    if (jxl::extras::DecodeImageEXR(encoded, color_hints, size_constraints,
+                                    &ppf)) {
+      return jxl::extras::Codec::kEXR;
+    }
+#endif
+    // TODO(tfish): Bring back PSD.
     return jxl::extras::Codec::kUnknown;
   };
   codec = choose_codec();
