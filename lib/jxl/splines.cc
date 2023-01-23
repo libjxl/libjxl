@@ -432,6 +432,7 @@ QuantizedSpline::QuantizedSpline(const Spline& original,
 Status QuantizedSpline::Dequantize(const Spline::Point& starting_point,
                                    const int32_t quantization_adjustment,
                                    const float y_to_x, const float y_to_b,
+                                   uint64_t* total_estimated_area_reached,
                                    Spline& result) const {
   result.control_points.clear();
   result.control_points.reserve(control_points_.size() + 1);
@@ -469,20 +470,16 @@ Status QuantizedSpline::Dequantize(const Spline::Point& starting_point,
     result.color_dct[0][i] += y_to_x * result.color_dct[1][i];
     result.color_dct[2][i] += y_to_b * result.color_dct[1][i];
   }
-
-  size_t width_estimate = 0;
+  uint64_t width_estimate = 0;
   for (int i = 0; i < 32; ++i) {
     const float inv_dct_factor = (i == 0) ? kSqrt0_5 : 1.0f;
-    const float dequant_factor = inv_dct_factor * kChannelWeight[3];
-    result.sigma_dct[i] = sigma_dct_[i] * dequant_factor * inv_quant;
-    size_t weight = static_cast<size_t>(ceil(dequant_factor * 8)) * (static_cast<size_t>(sigma_dct_[i]) / 8) + 1;
+    const float dequant_factor = kChannelWeight[3] * inv_quant;
+    result.sigma_dct[i] = sigma_dct_[i] * inv_dct_factor * dequant_factor;
+    uint64_t weight = static_cast<uint64_t>(
+        ceil(dequant_factor) * (static_cast<float>(std::abs(sigma_dct_[i]))));
     width_estimate += weight * weight;
   }
-  size_t estimated_area_reached = width_estimate * manhattan_distance;
-
-  fprintf(stderr, "in QuantizedSpline::Decode...\n");
-  fprintf(stderr, "manhattan: %zu, width: %zu, estimated_area_reached: %zu\n",
-    manhattan_distance, width_estimate, estimated_area_reached);
+  *total_estimated_area_reached += (width_estimate * manhattan_distance);
   return true;
 }
 
@@ -602,7 +599,6 @@ Status Splines::InitializeDrawCache(const size_t image_xsize,
   segment_y_start_.clear();
   std::vector<std::pair<size_t, size_t>> segments_by_y;
   Spline spline;
-  // TODO(eustas): not in the spec; limit spline pixels with image area.
   float pixel_limit = 16.0f * image_xsize * image_ysize + (1 << 16);
   // Apply some extra cap to avoid overflows.
   constexpr size_t kHardPixelLimit = 1u << 30;
@@ -610,10 +606,11 @@ Status Splines::InitializeDrawCache(const size_t image_xsize,
                         ? static_cast<size_t>(pixel_limit)
                         : kHardPixelLimit;
   std::vector<Spline::Point> intermediate_points;
+  uint64_t total_estimated_area_reached = 0;
   for (size_t i = 0; i < splines_.size(); ++i) {
-    JXL_RETURN_IF_ERROR(
-        splines_[i].Dequantize(starting_points_[i], quantization_adjustment_,
-                               cmap.YtoXRatio(0), cmap.YtoBRatio(0), spline));
+    JXL_RETURN_IF_ERROR(splines_[i].Dequantize(
+        starting_points_[i], quantization_adjustment_, cmap.YtoXRatio(0),
+        cmap.YtoBRatio(0), &total_estimated_area_reached, spline));
     if (std::adjacent_find(spline.control_points.begin(),
                            spline.control_points.end()) !=
         spline.control_points.end()) {
@@ -643,8 +640,21 @@ Status Splines::InitializeDrawCache(const size_t image_xsize,
     HWY_DYNAMIC_DISPATCH(SegmentsFromPoints)
     (spline, points_to_draw, arc_length, segments_, segments_by_y, &px_limit);
     if (px_limit == 0) {
-      //return JXL_FAILURE("Too many pixels covered with splines");
+      return JXL_FAILURE("Too many pixels covered with splines");
     }
+  }
+  if (total_estimated_area_reached >
+      std::min((image_xsize * image_ysize + (uint64_t(1) << 18)),
+               (uint64_t(1) << 22))) {
+    JXL_WARNING(
+        "Large total_estimated_area_reached, expect slower decoding: %" PRIuS,
+        total_estimated_area_reached);
+  }
+  if (total_estimated_area_reached >
+      std::min((64 * image_xsize * image_ysize + (uint64_t(1) << 34)),
+               (uint64_t(1) << 38))) {
+    return JXL_FAILURE("Too large total_estimated_area_reached: %" PRIuS,
+                       total_estimated_area_reached);
   }
   // TODO(eustas): consider linear sorting here.
   std::sort(segments_by_y.begin(), segments_by_y.end());
