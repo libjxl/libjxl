@@ -283,8 +283,8 @@ std::vector<TestConfig> GenerateTests() {
   {
     TestConfig config;
     config.xyb_mode = true;
-    config.max_bpp = 1.3;
-    config.max_dist = 60.0;
+    config.max_bpp = 1.5;
+    config.max_dist = 3.5;
     all_tests.push_back(config);
   }
   {

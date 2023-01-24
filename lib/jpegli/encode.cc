@@ -18,9 +18,10 @@
 #include "lib/jpegli/memory_manager.h"
 #include "lib/jpegli/quant.h"
 #include "lib/jxl/base/byte_order.h"
+#include "lib/jxl/base/span.h"
 #include "lib/jxl/color_encoding_internal.h"
-#include "lib/jxl/enc_color_management.h"
-#include "lib/jxl/enc_xyb.h"
+#include "lib/jxl/image.h"
+#include "lib/jxl/image_ops.h"
 
 namespace jpegli {
 
@@ -163,51 +164,6 @@ struct ProgressiveScan {
   int Ss, Se, Ah, Al;
   bool interleaved;
 };
-
-template <typename T>
-std::vector<uint8_t> CreateICCAppMarker(const T& icc) {
-  std::vector<uint8_t> icc_marker(18 + icc.size());
-  // See the APP2 marker format for embedded ICC profile at
-  // https://www.color.org/technotes/ICC-Technote-ProfileEmbedding.pdf
-  icc_marker[0] = 0xff;
-  icc_marker[1] = 0xe2;  // APP2 marker
-  // ICC marker size (excluding the marker bytes).
-  icc_marker[2] = (icc_marker.size() - 2) >> 8;
-  icc_marker[3] = (icc_marker.size() - 2) & 0xFF;
-  // Byte sequence identifying an APP2 marker containing an icc profile.
-  memcpy(&icc_marker[4], "ICC_PROFILE", 12);
-  icc_marker[16] = 1;  // Sequence number
-  icc_marker[17] = 1;  // Number of chunks.
-  memcpy(&icc_marker[18], icc.data(), icc.size());
-  return icc_marker;
-}
-
-std::vector<uint8_t> CreateXybICCAppMarker() {
-  jxl::ColorEncoding c_xyb;
-  c_xyb.SetColorSpace(jxl::ColorSpace::kXYB);
-  c_xyb.rendering_intent = jxl::RenderingIntent::kPerceptual;
-  JXL_CHECK(c_xyb.CreateICC());
-  return CreateICCAppMarker(c_xyb.ICC());
-}
-
-void SetICCAppMarker(j_compress_ptr cinfo, const std::vector<uint8_t>& icc) {
-  std::vector<std::vector<uint8_t>> special_markers;
-  bool icc_added = false;
-  for (auto& v : cinfo->master->special_markers) {
-    JXL_DASSERT(v.size() >= 2);
-    if (v[1] != 0xe2) {
-      special_markers.emplace_back(std::move(v));
-    } else if (!icc_added) {
-      // TODO(szabadka) Handle too big icc data.
-      special_markers.push_back(icc);
-      icc_added = true;
-    }
-  }
-  if (!icc_added) {
-    special_markers.push_back(icc);
-  }
-  std::swap(cinfo->master->special_markers, special_markers);
-}
 
 void SetDefaultScanScript(j_compress_ptr cinfo, int max_shift) {
   int level = cinfo->master->progressive_level;
@@ -555,21 +511,10 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
   if (!jpegli::SetColorEncodingFromIccData(cinfo, &color_encoding)) {
     JPEGLI_ERROR("Could not parse ICC profile.");
   }
-  if (use_xyb) {
-    jpegli::SetICCAppMarker(cinfo, jpegli::CreateXybICCAppMarker());
-  }
   jxl::Image3F& input = m->input;
   float distance = m->distance;
 
-  if (use_xyb) {
-    // Convert input to XYB colorspace.
-    jxl::Image3F opsin(m->xsize_blocks * DCTSIZE, m->ysize_blocks * DCTSIZE);
-    opsin.ShrinkTo(cinfo->image_width, cinfo->image_height);
-    jxl::Image3FToXYB(input, color_encoding, 255.0, nullptr, &opsin,
-                      jxl::GetJxlCms());
-    ScaleXYB(&opsin);
-    input.Swap(opsin);
-  } else {
+  if (!use_xyb) {
     for (size_t y = 0; y < cinfo->image_height; ++y) {
       jpegli::RGBToYCbCr(input.PlaneRow(0, y), input.PlaneRow(1, y),
                          input.PlaneRow(2, y), cinfo->image_width);

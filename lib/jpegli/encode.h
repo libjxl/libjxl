@@ -94,9 +94,9 @@ void jpegli_set_distance(j_compress_ptr cinfo, float distance);
 // Returns the butteraugli target distance for the given quality parameter.
 float jpegli_quality_to_distance(int quality);
 
-// Writes an ICC profile for the XYB color space and internally converts the
-// input image to XYB. Must be called before jpegli_set_defaults() because some
-// default setting depend on the XYB mode.
+// Changes the default behaviour of the encoder in the selection of quantization
+// matrices and chroma subsampling. Must be called before jpegli_set_defaults()
+// because some default setting depend on the XYB mode.
 void jpegli_set_xyb_mode(j_compress_ptr cinfo);
 
 void jpegli_set_input_format(j_compress_ptr cinfo, JpegliDataType data_type,
