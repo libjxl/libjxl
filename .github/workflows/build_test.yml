@@ -113,12 +113,6 @@ jobs:
       WILL_RUN_TESTS: ${{ github.event_name == 'push' || (github.event_name == 'pull_request' && (matrix.test_in_pr || contains(github.event.pull_request.labels.*.name, 'CI:full'))) }}
 
     steps:
-    - name: Install apt-spy2
-      if: matrix.name != 'release:clang-5'
-      run: |
-        sudo gem install apt-spy2
-        sudo apt-spy2 check
-        sudo apt-spy2 fix --commit
     - name: Install build deps
       run: |
         sudo apt update
