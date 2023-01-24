@@ -1101,6 +1101,9 @@ Status EncodeFrame(const CompressParams& cparams_orig,
                    const JxlCmsInterface& cms, ThreadPool* pool,
                    BitWriter* writer, AuxOut* aux_out) {
   CompressParams cparams = cparams_orig;
+  if (cparams.speed_tier == SpeedTier::kGlacier && !cparams.IsLossless()) {
+    cparams.speed_tier = SpeedTier::kTortoise;
+  }
   if (cparams.speed_tier == SpeedTier::kGlacier) {
     std::vector<CompressParams> all_params;
     std::vector<size_t> size;
