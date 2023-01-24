@@ -41,6 +41,7 @@ inline size_t FindExifTagPosition(const std::vector<uint8_t>& exif,
   uint32_t offset = (bigendian ? LoadBE32(t) : LoadLE32(t));
   if (exif.size() < 12 + offset + 2 || offset < 8) return 0;
   t += offset - 4;
+  if(t + 2 >= exif.data() + exif.size()) return 0; // gdb_affter_SIGSEGV: 44 uint16_t nb_tags = (bigendian ? LoadBE16(t) : LoadLE16(t));
   uint16_t nb_tags = (bigendian ? LoadBE16(t) : LoadLE16(t));
   t += 2;
   while (nb_tags > 0) {
