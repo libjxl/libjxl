@@ -475,10 +475,10 @@ Status QuantizedSpline::Dequantize(const Spline::Point& starting_point,
     const float inv_dct_factor = (i == 0) ? kSqrt0_5 : 1.0f;
     result.sigma_dct[i] =
         sigma_dct_[i] * inv_dct_factor * kChannelWeight[3] * inv_quant;
-    // If we include the factor kChannelWeight[3]=.3333f here, we get a realistic
-    // area esitmate. We leave it out to simplify the calculations, and understand
-    // that this way we underestimate the area by a factor of 1/(0.3333*0.3333). This
-    // is taken into account in the limits below.
+    // If we include the factor kChannelWeight[3]=.3333f here, we get a
+    // realistic area esitmate. We leave it out to simplify the calculations,
+    // and understand that this way we underestimate the area by a factor of
+    // 1/(0.3333*0.3333). This is taken into account in the limits below.
     uint64_t weight = static_cast<uint64_t>(
         static_cast<uint64_t>(ceil(inv_quant) * std::abs(sigma_dct_[i])));
     width_estimate += weight * weight;
