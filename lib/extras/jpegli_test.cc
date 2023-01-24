@@ -24,6 +24,7 @@
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/size_constraints.h"
+#include "lib/jxl/test_image.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testdata.h"
 
@@ -32,6 +33,7 @@ namespace extras {
 namespace {
 
 using test::ButteraugliDistance;
+using test::TestImage;
 
 Status ReadTestImage(const std::string& pathname, PackedPixelFile* ppf) {
   const PaddedBytes encoded = ReadTestData(pathname);
@@ -124,6 +126,34 @@ TEST(JpegliTest, JpegliXYBEncodeTest) {
   ASSERT_TRUE(DecodeWithLibjpeg(compressed, &ppf_out));
   EXPECT_THAT(BitsPerPixel(ppf_in, compressed), IsSlightlyBelow(1.5f));
   EXPECT_THAT(ButteraugliDistance(ppf_in, ppf_out), IsSlightlyBelow(1.26f));
+}
+
+TEST(JpegliTest, JpegliDecodeTestLargeSmoothArea) {
+  TestImage t;
+  const size_t xsize = 2070;
+  const size_t ysize = 1063;
+  t.SetDimensions(xsize, ysize).SetChannels(3);
+  t.SetAllBitDepths(8).SetEndianness(JXL_NATIVE_ENDIAN);
+  TestImage::Frame frame = t.AddFrame();
+  frame.RandomFill();
+  // Create a large smooth area in the top half of the image. This is to test
+  // that the bias statistics calculation can handle many blocks with all-zero
+  // AC coefficients.
+  for (size_t y = 0; y < ysize / 2; ++y) {
+    for (size_t x = 0; x < xsize; ++x) {
+      for (size_t c = 0; c < 3; ++c) {
+        frame.SetValue(y, x, c, 0.5f);
+      }
+    }
+  }
+  const PackedPixelFile& ppf0 = t.ppf();
+
+  std::vector<uint8_t> compressed;
+  ASSERT_TRUE(EncodeWithLibjpeg(ppf0, 90, &compressed));
+
+  PackedPixelFile ppf1;
+  ASSERT_TRUE(DecodeJpeg(compressed, JXL_TYPE_UINT8, nullptr, &ppf1));
+  EXPECT_LT(ButteraugliDistance(ppf0, ppf1), 3.0f);
 }
 
 TEST(JpegliTest, JpegliYUVEncodeTest) {
