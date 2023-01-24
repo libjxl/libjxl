@@ -649,13 +649,13 @@ Status Splines::InitializeDrawCache(const size_t image_xsize,
       std::min((image_xsize * image_ysize + (uint64_t(1) << 18)),
                (uint64_t(1) << 22))) {
     JXL_WARNING(
-        "Large total_estimated_area_reached, expect slower decoding: %" PRIuS,
+        "Large total_estimated_area_reached, expect slower decoding: %" PRIu64,
         total_estimated_area_reached);
   }
   if (total_estimated_area_reached >
       std::min((64 * image_xsize * image_ysize + (uint64_t(1) << 34)),
                (uint64_t(1) << 38))) {
-    return JXL_FAILURE("Too large total_estimated_area_reached: %" PRIuS,
+    return JXL_FAILURE("Too large total_estimated_area_reached: %" PRIu64,
                        total_estimated_area_reached);
   }
   // TODO(eustas): consider linear sorting here.
