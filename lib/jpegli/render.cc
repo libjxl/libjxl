@@ -223,6 +223,10 @@ bool ShouldApplyDequantBiases(j_decompress_ptr cinfo, int ci) {
 void ComputeOptimalLaplacianBiases(const int num_blocks, const int* nonzeros,
                                    const int* sumabs, float* biases) {
   for (size_t k = 1; k < DCTSIZE2; ++k) {
+    if (nonzeros[k] == 0) {
+      biases[k] = 0.5f;
+      continue;
+    }
     // Notation adapted from the article
     float N = num_blocks;
     float N1 = nonzeros[k];
