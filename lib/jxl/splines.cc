@@ -476,7 +476,7 @@ Status QuantizedSpline::Dequantize(const Spline::Point& starting_point,
     result.sigma_dct[i] =
         sigma_dct_[i] * inv_dct_factor * kChannelWeight[3] * inv_quant;
     // If we include the factor kChannelWeight[3]=.3333f here, we get a
-    // realistic area esitmate. We leave it out to simplify the calculations,
+    // realistic area estimate. We leave it out to simplify the calculations,
     // and understand that this way we underestimate the area by a factor of
     // 1/(0.3333*0.3333). This is taken into account in the limits below.
     uint64_t weight = static_cast<uint64_t>(
@@ -645,6 +645,7 @@ Status Splines::InitializeDrawCache(const size_t image_xsize,
       return JXL_FAILURE("Too many pixels covered with splines");
     }
   }
+  // TODO(firsching) Change this into a JXL_FAILURE for level 5 codestreams.
   if (total_estimated_area_reached >
       std::min((image_xsize * image_ysize + (uint64_t(1) << 18)),
                (uint64_t(1) << 22))) {
