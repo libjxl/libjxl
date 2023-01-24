@@ -4,6 +4,8 @@
 # license that can be found in the LICENSE file.
 
 set(JPEGLI_INTERNAL_SOURCES
+  jpegli/adaptive_quantization.h
+  jpegli/adaptive_quantization.cc
   jpegli/bitstream.h
   jpegli/bitstream.cc
   jpegli/color_transform.h
