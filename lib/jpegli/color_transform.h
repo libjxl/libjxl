@@ -15,6 +15,9 @@ namespace jpegli {
 void YCbCrToRGB(float* JXL_RESTRICT row0, float* JXL_RESTRICT row1,
                 float* JXL_RESTRICT row2, size_t xsize);
 
+void RGBToYCbCr(float* JXL_RESTRICT row0, float* JXL_RESTRICT row1,
+                float* JXL_RESTRICT row2, size_t xsize);
+
 }  // namespace jpegli
 
 #endif  // LIB_JPEGLI_COLOR_TRANSFORM_H_

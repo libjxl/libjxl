@@ -68,9 +68,9 @@ void ComputeDCTCoefficients(
             block[i] = cc;
           }
         }
-        if (xyb) {
-          // ToXYB does not create zero-centered sample values like RgbToYcbcr
-          // does, so we apply an offset to the DC values instead.
+        if (xyb || c == 0) {
+          // Only the U, V channels of YUV input are zero-centered, for the
+          // rest apply an offset to the DC values instead.
           block[0] = std::round((2040 * dct[0] - 1024) * qmc[0]);
         } else {
           block[0] = std::round(2040 * dct[0] * qmc[0]);

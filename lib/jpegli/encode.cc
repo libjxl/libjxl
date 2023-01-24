@@ -8,7 +8,9 @@
 #include <initializer_list>
 #include <vector>
 
+#include "lib/jpegli/adaptive_quantization.h"
 #include "lib/jpegli/bitstream.h"
+#include "lib/jpegli/color_transform.h"
 #include "lib/jpegli/dct.h"
 #include "lib/jpegli/encode_internal.h"
 #include "lib/jpegli/entropy_coding.h"
@@ -17,7 +19,6 @@
 #include "lib/jpegli/quant.h"
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/color_encoding_internal.h"
-#include "lib/jxl/enc_adaptive_quantization.h"
 #include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_xyb.h"
 
@@ -318,6 +319,10 @@ void jpegli_set_defaults(j_compress_ptr cinfo) {
     cinfo->comp_info[0].component_id = 'R';
     cinfo->comp_info[1].component_id = 'G';
     cinfo->comp_info[2].component_id = 'B';
+    // Subsample blue channel.
+    cinfo->comp_info[0].h_samp_factor = cinfo->comp_info[0].v_samp_factor = 2;
+    cinfo->comp_info[1].h_samp_factor = cinfo->comp_info[1].v_samp_factor = 2;
+    cinfo->comp_info[2].h_samp_factor = cinfo->comp_info[2].v_samp_factor = 1;
   } else {
     for (int i = 0; i < cinfo->num_components; ++i) {
       cinfo->comp_info[i].component_id = i + 1;
@@ -424,7 +429,6 @@ void jpegli_write_icc_profile(j_compress_ptr cinfo, const JOCTET* icc_data_ptr,
 
 void jpegli_start_compress(j_compress_ptr cinfo, boolean write_all_tables) {
   jpeg_comp_master* m = cinfo->master;
-  m->input = jxl::Image3F(cinfo->image_width, cinfo->image_height);
   cinfo->next_scanline = 0;
   if (cinfo->scan_info != nullptr) {
     cinfo->progressive_mode =
@@ -432,6 +436,47 @@ void jpegli_start_compress(j_compress_ptr cinfo, boolean write_all_tables) {
   } else {
     cinfo->progressive_mode = cinfo->master->progressive_level > 0;
   }
+  cinfo->max_h_samp_factor = cinfo->max_v_samp_factor = 1;
+  for (int c = 0; c < cinfo->num_components; ++c) {
+    jpeg_component_info* comp = &cinfo->comp_info[c];
+    cinfo->max_h_samp_factor =
+        std::max(comp->h_samp_factor, cinfo->max_h_samp_factor);
+    cinfo->max_v_samp_factor =
+        std::max(comp->v_samp_factor, cinfo->max_v_samp_factor);
+  }
+  m->max_shift = 0;
+  for (int c = 0; c < cinfo->num_components; ++c) {
+    jpeg_component_info* comp = &cinfo->comp_info[c];
+    if (comp->h_samp_factor != comp->v_samp_factor) {
+      // TODO(szabadka) Remove this restriction.
+      JPEGLI_ERROR(
+          "Horizontal- or vertical-only subsampling is not "
+          "supported.");
+    }
+    if (cinfo->max_h_samp_factor % comp->h_samp_factor != 0) {
+      JPEGLI_ERROR("Non-integral sampling ratios are not supported.");
+    }
+    int factor = cinfo->max_h_samp_factor / comp->h_samp_factor;
+    bool valid_factor = false;
+    int shift = 0;
+    for (; shift < 4; ++shift) {
+      if (factor == (1 << shift)) {
+        valid_factor = true;
+        break;
+      }
+    }
+    if (!valid_factor) {
+      JPEGLI_ERROR("Invalid sampling factor %d", factor);
+    }
+    m->max_shift = std::max(shift, m->max_shift);
+  }
+  m->xsize_blocks = jpegli::DivCeil(cinfo->image_width, DCTSIZE << m->max_shift)
+                    << m->max_shift;
+  m->ysize_blocks =
+      jpegli::DivCeil(cinfo->image_height, DCTSIZE << m->max_shift)
+      << m->max_shift;
+  m->input = jxl::Image3F(m->xsize_blocks * DCTSIZE, m->ysize_blocks * DCTSIZE);
+  m->input.ShrinkTo(cinfo->image_width, cinfo->image_height);
 }
 
 JDIMENSION jpegli_write_scanlines(j_compress_ptr cinfo, JSAMPARRAY scanlines,
@@ -513,89 +558,41 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
   if (use_xyb) {
     jpegli::SetICCAppMarker(cinfo, jpegli::CreateXybICCAppMarker());
   }
-  const jxl::Image3F& input = m->input;
+  jxl::Image3F& input = m->input;
   float distance = m->distance;
 
   if (use_xyb) {
-    // Subsample blue channel.
-    cinfo->comp_info[0].h_samp_factor = cinfo->comp_info[0].v_samp_factor = 2;
-    cinfo->comp_info[1].h_samp_factor = cinfo->comp_info[1].v_samp_factor = 2;
-    cinfo->comp_info[2].h_samp_factor = cinfo->comp_info[2].v_samp_factor = 1;
-  }
-  cinfo->max_h_samp_factor = cinfo->max_v_samp_factor = 1;
-  for (int c = 0; c < cinfo->num_components; ++c) {
-    jpeg_component_info* comp = &cinfo->comp_info[c];
-    cinfo->max_h_samp_factor =
-        std::max(comp->h_samp_factor, cinfo->max_h_samp_factor);
-    cinfo->max_v_samp_factor =
-        std::max(comp->v_samp_factor, cinfo->max_v_samp_factor);
-  }
-  int max_shift = 0;
-  for (int c = 0; c < cinfo->num_components; ++c) {
-    jpeg_component_info* comp = &cinfo->comp_info[c];
-    if (comp->h_samp_factor != comp->v_samp_factor) {
-      // TODO(szabadka) Remove this restriction.
-      JPEGLI_ERROR(
-          "Horizontal- or vertical-only subsampling is not "
-          "supported.");
-    }
-    if (cinfo->max_h_samp_factor % comp->h_samp_factor != 0) {
-      JPEGLI_ERROR("Non-integral sampling ratios are not supported.");
-    }
-    int factor = cinfo->max_h_samp_factor / comp->h_samp_factor;
-    bool valid_factor = false;
-    int shift = 0;
-    for (; shift < 4; ++shift) {
-      if (factor == (1 << shift)) {
-        valid_factor = true;
-        break;
-      }
-    }
-    if (!valid_factor) {
-      JPEGLI_ERROR("Invalid sampling factor %d", factor);
-    }
-    max_shift = std::max(shift, max_shift);
-  }
-
-  jxl::FrameDimensions frame_dim;
-  frame_dim.Set(input.xsize(), input.ysize(), 1, max_shift, max_shift, false,
-                1);
-
-  // Convert input to XYB colorspace.
-  jxl::Image3F opsin(frame_dim.xsize_padded, frame_dim.ysize_padded);
-  if (use_xyb || use_aq) {
-    opsin.ShrinkTo(frame_dim.xsize, frame_dim.ysize);
+    // Convert input to XYB colorspace.
+    jxl::Image3F opsin(m->xsize_blocks * DCTSIZE, m->ysize_blocks * DCTSIZE);
+    opsin.ShrinkTo(cinfo->image_width, cinfo->image_height);
     jxl::Image3FToXYB(input, color_encoding, 255.0, nullptr, &opsin,
                       jxl::GetJxlCms());
-    PadImageToBlockMultipleInPlace(&opsin, 8 << max_shift);
+    ScaleXYB(&opsin);
+    input.Swap(opsin);
+  } else {
+    for (size_t y = 0; y < cinfo->image_height; ++y) {
+      jpegli::RGBToYCbCr(input.PlaneRow(0, y), input.PlaneRow(1, y),
+                         input.PlaneRow(2, y), cinfo->image_width);
+    }
   }
+  PadImageToBlockMultipleInPlace(&input, DCTSIZE << m->max_shift);
 
   // Compute adaptive quant field.
-  jxl::ImageF qf(frame_dim.xsize_blocks, frame_dim.ysize_blocks);
+  jxl::ImageF qf(m->xsize_blocks, m->ysize_blocks);
   if (use_aq) {
-    jxl::ImageF mask;
-    qf = jxl::InitialQuantField(distance, opsin, frame_dim, nullptr, distance,
-                                &mask);
+    int y_channel = use_xyb ? 1 : 0;
+    qf = jpegli::InitialQuantField(distance, input.Plane(y_channel), nullptr,
+                                   distance);
   } else {
-    FillImage(0.6f, &qf);
+    FillImage(0.575f, &qf);
   }
   float qfmin, qfmax;
   ImageMinMax(qf, &qfmin, &qfmax);
 
-  if (use_xyb) {
-    ScaleXYB(&opsin);
-  } else {
-    opsin.ShrinkTo(input.xsize(), input.ysize());
-    JXL_CHECK(RgbToYcbcr(input.Plane(0), input.Plane(1), input.Plane(2),
-                         &opsin.Plane(0), &opsin.Plane(1), &opsin.Plane(2),
-                         nullptr));
-    PadImageToBlockMultipleInPlace(&opsin, 8 << max_shift);
-  }
-
   // Global scale is chosen in a way that butteraugli 3-norm matches libjpeg
   // with the same quality setting. Fitted for quality 90 on jyrki31 corpus.
-  constexpr float kGlobalScaleXYB = 0.92159151f;
-  constexpr float kGlobalScaleYCbCr = 1.10048560f;
+  constexpr float kGlobalScaleXYB = 0.86747522f;
+  constexpr float kGlobalScaleYCbCr = 1.03148720f;
   constexpr float kGlobalScaleStd = 1.0f;
   constexpr float kGlobalScales[jpegli::NUM_QUANT_MODES] = {
       kGlobalScaleXYB, kGlobalScaleYCbCr, kGlobalScaleStd};
@@ -610,7 +607,7 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
   }
   if (use_xyb || !use_std_tables) {
     ac_scale = global_scale * distance / qfmax;
-    dc_scale = global_scale / jxl::InitialQuantDC(distance);
+    dc_scale = global_scale / jpegli::InitialQuantDC(distance);
   } else {
     float linear_scale = 0.01f * jpegli::DistanceToLinearQuality(distance);
     ac_scale = global_scale * linear_scale;
@@ -641,19 +638,19 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
   for (int c = 0; c < cinfo->num_components; ++c) {
     const size_t factor =
         (cinfo->max_h_samp_factor / cinfo->comp_info[c].h_samp_factor);
-    JXL_ASSERT(frame_dim.xsize_blocks % factor == 0);
-    JXL_ASSERT(frame_dim.ysize_blocks % factor == 0);
+    JXL_ASSERT(m->xsize_blocks % factor == 0);
+    JXL_ASSERT(m->ysize_blocks % factor == 0);
     // TODO(szabadka): These fields have a different meaning than in libjpeg,
     // make sure it does not cause problems or change it to the libjpeg values.
-    cinfo->comp_info[c].width_in_blocks = frame_dim.xsize_blocks / factor;
-    cinfo->comp_info[c].height_in_blocks = frame_dim.ysize_blocks / factor;
+    cinfo->comp_info[c].width_in_blocks = m->xsize_blocks / factor;
+    cinfo->comp_info[c].height_in_blocks = m->ysize_blocks / factor;
   }
   std::vector<std::vector<jpegli::coeff_t>> coeffs;
-  jpegli::ComputeDCTCoefficients(cinfo, opsin, distance, use_xyb, qf, qm,
+  jpegli::ComputeDCTCoefficients(cinfo, input, distance, use_xyb, qf, qm,
                                  &coeffs);
 
   if (cinfo->scan_info == nullptr) {
-    jpegli::SetDefaultScanScript(cinfo, max_shift);
+    jpegli::SetDefaultScanScript(cinfo, m->max_shift);
   }
 
   std::vector<jpegli::JPEGHuffmanCode> huffman_codes;

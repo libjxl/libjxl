@@ -237,22 +237,22 @@ std::vector<TestConfig> GenerateTests() {
   std::vector<TestConfig> all_tests;
   {
     TestConfig config;
-    config.max_bpp = 1.4;
-    config.max_dist = 2.3;
+    config.max_bpp = 1.45;
+    config.max_dist = 2.2;
     all_tests.push_back(config);
   }
   {
     TestConfig config;
     config.quality = 100;
-    config.max_bpp = 4.1;
-    config.max_dist = 0.85;
+    config.max_bpp = 5.9;
+    config.max_dist = 0.6;
     all_tests.push_back(config);
   }
   {
     TestConfig config;
     config.quality = 80;
     config.max_bpp = 0.95;
-    config.max_dist = 2.8;
+    config.max_dist = 2.9;
     all_tests.push_back(config);
   }
   {
@@ -266,8 +266,8 @@ std::vector<TestConfig> GenerateTests() {
     for (size_t p = 0; p < kNumTestScripts; ++p) {
       TestConfig config;
       config.progressive_id = p + 1;
-      config.max_bpp = 1.45;
-      config.max_dist = 2.3;
+      config.max_bpp = 1.5;
+      config.max_dist = 2.2;
       all_tests.push_back(config);
     }
   }
@@ -275,8 +275,8 @@ std::vector<TestConfig> GenerateTests() {
     for (size_t l = 0; l <= 2; ++l) {
       TestConfig config;
       config.progressive_level = l;
-      config.max_bpp = 1.45;
-      config.max_dist = 2.3;
+      config.max_bpp = 1.5;
+      config.max_dist = 2.2;
       all_tests.push_back(config);
     }
   }
@@ -297,16 +297,16 @@ std::vector<TestConfig> GenerateTests() {
   {
     TestConfig config;
     config.color = COLOR_GRAY;
-    config.max_bpp = 1.05;
-    config.max_dist = 1.4;
+    config.max_bpp = 1.15;
+    config.max_dist = 1.35;
     all_tests.push_back(config);
   }
   {
     for (size_t r : {1, 3, 17, 1024}) {
       TestConfig config;
       config.restart_interval = r;
-      config.max_bpp = 1.4 + 5.5 / r;
-      config.max_dist = 2.3;
+      config.max_bpp = 1.5 + 5.5 / r;
+      config.max_dist = 2.2;
       all_tests.push_back(config);
     }
   }
