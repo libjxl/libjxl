@@ -5,6 +5,7 @@
 
 #include "lib/jpegli/encode.h"
 
+#include <cmath>
 #include <initializer_list>
 #include <vector>
 
@@ -19,123 +20,19 @@
 #include "lib/jpegli/quant.h"
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/span.h"
-#include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_ops.h"
 
 namespace jpegli {
 
-using ByteSpan = jxl::Span<const uint8_t>;
-
 constexpr unsigned char kICCSignature[12] = {
     0x49, 0x43, 0x43, 0x5F, 0x50, 0x52, 0x4F, 0x46, 0x49, 0x4C, 0x45, 0x00};
 constexpr int kICCMarker = JPEG_APP0 + 2;
+constexpr unsigned char kCICPTagSignature[4] = {0x63, 0x69, 0x63, 0x70};
+constexpr size_t kCICPTagSize = 12;
+constexpr uint8_t kTransferFunctionPQ = 16;
+constexpr uint8_t kTransferFunctionHLG = 18;
 constexpr size_t kMaxBytesInMarker = 65533;
-
-bool GetMarkerPayload(const uint8_t* data, size_t size, ByteSpan* payload) {
-  if (size < 4) {
-    return false;
-  }
-  size_t hi = data[2];
-  size_t lo = data[3];
-  size_t internal_size = (hi << 8u) | lo;
-  // First two bytes of marker is not counted towards size.
-  if (internal_size != size - 2) {
-    return false;
-  }
-  // cut first two marker bytes and "length" from payload.
-  *payload = ByteSpan(data, size);
-  payload->remove_prefix(4);
-  return true;
-}
-
-jxl::Status ParseChunkedMarker(j_compress_ptr cinfo, uint8_t marker_type,
-                               const ByteSpan& tag, jxl::PaddedBytes* output,
-                               bool allow_permutations = false) {
-  output->clear();
-
-  std::vector<ByteSpan> chunks;
-  std::vector<bool> presence;
-  size_t expected_number_of_parts = 0;
-  bool is_first_chunk = true;
-  size_t ordinal = 0;
-  for (const auto& marker : cinfo->master->special_markers) {
-    if (marker.size() < 2 || marker[1] != marker_type) {
-      continue;
-    }
-    ByteSpan payload;
-    if (!GetMarkerPayload(marker.data(), marker.size(), &payload)) {
-      // Something is wrong with this marker; does not care.
-      continue;
-    }
-    if ((payload.size() < tag.size()) ||
-        memcmp(payload.data(), tag.data(), tag.size()) != 0) {
-      continue;
-    }
-    payload.remove_prefix(tag.size());
-    if (payload.size() < 2) {
-      return JXL_FAILURE("Chunk is too small.");
-    }
-    uint8_t index = payload[0];
-    uint8_t total = payload[1];
-    ordinal++;
-    if (!allow_permutations) {
-      if (index != ordinal) return JXL_FAILURE("Invalid chunk order.");
-    }
-
-    payload.remove_prefix(2);
-
-    JXL_RETURN_IF_ERROR(total != 0);
-    if (is_first_chunk) {
-      is_first_chunk = false;
-      expected_number_of_parts = total;
-      // 1-based indices; 0-th element is added for convenience.
-      chunks.resize(total + 1);
-      presence.resize(total + 1);
-    } else {
-      JXL_RETURN_IF_ERROR(expected_number_of_parts == total);
-    }
-
-    if (index == 0 || index > total) {
-      return JXL_FAILURE("Invalid chunk index.");
-    }
-
-    if (presence[index]) {
-      return JXL_FAILURE("Duplicate chunk.");
-    }
-    presence[index] = true;
-    chunks[index] = payload;
-  }
-
-  for (size_t i = 0; i < expected_number_of_parts; ++i) {
-    // 0-th element is not used.
-    size_t index = i + 1;
-    if (!presence[index]) {
-      return JXL_FAILURE("Missing chunk.");
-    }
-    output->append(chunks[index]);
-  }
-
-  return true;
-}
-
-jxl::Status SetColorEncodingFromIccData(j_compress_ptr cinfo,
-                                        jxl::ColorEncoding* color_encoding) {
-  jxl::PaddedBytes icc_profile;
-  if (!ParseChunkedMarker(cinfo, kApp2, ByteSpan(kIccProfileTag),
-                          &icc_profile)) {
-    JXL_WARNING("ReJPEG: corrupted ICC profile\n");
-    icc_profile.clear();
-  }
-
-  if (icc_profile.empty()) {
-    bool is_gray = (cinfo->num_components == 1);
-    *color_encoding = jxl::ColorEncoding::SRGB(is_gray);
-    return true;
-  }
-
-  return color_encoding->SetICC(std::move(icc_profile));
-}
 
 float LinearQualityToDistance(int scale_factor) {
   scale_factor = std::min(5000, std::max(0, scale_factor));
@@ -216,6 +113,65 @@ void SetDefaultScanScript(j_compress_ptr cinfo, int max_shift) {
   JXL_ASSERT(next_scan - cinfo->script_space == cinfo->script_space_size);
   cinfo->scan_info = cinfo->script_space;
   cinfo->num_scans = cinfo->script_space_size;
+}
+
+void LookupCICPTransferFunction(
+    const std::vector<std::vector<uint8_t>>& special_markers, uint8_t* tf) {
+  *tf = 2;  // Unknown transfer function code
+  size_t last_index = 0;
+  size_t cicp_offset = 0;
+  size_t cicp_length = 0;
+  uint8_t cicp_tag[kCICPTagSize] = {};
+  size_t cicp_pos = 0;
+  for (const auto& marker : special_markers) {
+    if (marker.size() < 18 || marker[1] != kICCMarker ||
+        (marker[2] << 8u) + marker[3] + 2u != marker.size() ||
+        memcmp(&marker[4], kICCSignature, 12) != 0) {
+      continue;
+    }
+    uint8_t index = marker[16];
+    uint8_t total = marker[17];
+    const uint8_t* payload = marker.data() + 18;
+    const size_t payload_size = marker.size() - 18;
+    if (index != last_index + 1 || index > total) {
+      return;
+    }
+    if (last_index == 0) {
+      // Look up the offset of the CICP tag from the first chunk of ICC data.
+      if (payload_size < 132) {
+        return;
+      }
+      uint32_t tag_count = LoadBE32(&payload[128]);
+      if (payload_size < 132 + 12 * tag_count) {
+        return;
+      }
+      for (uint32_t i = 0; i < tag_count; ++i) {
+        if (memcmp(&payload[132 + 12 * i], kCICPTagSignature, 4) == 0) {
+          cicp_offset = LoadBE32(&payload[136 + 12 * i]);
+          cicp_length = LoadBE32(&payload[140 + 12 * i]);
+        }
+      }
+      if (cicp_length < kCICPTagSize) {
+        return;
+      }
+    }
+    if (cicp_offset < payload_size) {
+      size_t n_bytes =
+          std::min(payload_size - cicp_offset, kCICPTagSize - cicp_pos);
+      memcpy(&cicp_tag[cicp_pos], &payload[cicp_offset], n_bytes);
+      cicp_pos += n_bytes;
+      if (cicp_pos == kCICPTagSize) {
+        break;
+      }
+      cicp_offset = 0;
+    } else {
+      cicp_offset -= payload_size;
+    }
+    ++last_index;
+  }
+  if (cicp_pos >= kCICPTagSize && memcmp(cicp_tag, kCICPTagSignature, 4) == 0) {
+    *tf = cicp_tag[9];
+  }
 }
 
 }  // namespace jpegli
@@ -507,10 +463,8 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
     CopyImageTo(m->input.Plane(0), &m->input.Plane(1));
     CopyImageTo(m->input.Plane(0), &m->input.Plane(2));
   }
-  jxl::ColorEncoding color_encoding;
-  if (!jpegli::SetColorEncodingFromIccData(cinfo, &color_encoding)) {
-    JPEGLI_ERROR("Could not parse ICC profile.");
-  }
+  uint8_t cicp_tf;
+  jpegli::LookupCICPTransferFunction(m->special_markers, &cicp_tf);
   jxl::Image3F& input = m->input;
   float distance = m->distance;
 
@@ -544,9 +498,9 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
   float global_scale = kGlobalScales[quant_mode];
   float ac_scale, dc_scale;
   if (!use_xyb) {
-    if (color_encoding.tf.IsPQ()) {
+    if (cicp_tf == jpegli::kTransferFunctionPQ) {
       global_scale *= .4f;
-    } else if (color_encoding.tf.IsHLG()) {
+    } else if (cicp_tf == jpegli::kTransferFunctionHLG) {
       global_scale *= .5f;
     }
   }
