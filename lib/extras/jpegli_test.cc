@@ -3,7 +3,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#if JPEGXL_ENABLE_JPEG
+#if JPEGXL_ENABLE_JPEG && JPEGXL_ENABLE_JPEGLI
 
 #include "lib/extras/dec/jpegli.h"
 
