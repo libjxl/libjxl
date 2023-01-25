@@ -142,8 +142,9 @@ if(JPEGXL_ENABLE_TOOLS)
   list(APPEND TOOL_BINARIES djxl)
 
   find_package(JPEG)
-  if(JPEG_FOUND)
-    # Depends on parts of jxl_extras that are only built if libjpeg is found.
+  if(JPEG_FOUND AND JPEGXL_ENABLE_JPEGLI)
+    # Depends on parts of jxl_extras that are only built if libjpeg is found and
+    # jpegli is enabled.
     add_executable(cjpeg_hdr cjpeg_hdr.cc)
     list(APPEND INTERNAL_TOOL_BINARIES cjpeg_hdr)
   endif()
