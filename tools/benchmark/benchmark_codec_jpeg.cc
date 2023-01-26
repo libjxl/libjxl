@@ -121,7 +121,7 @@ class JPEGCodec : public ImageCodec {
         arguments.push_back("1x1");
       } else if (chroma_subsampling_ == "420") {
         arguments.push_back("2x2");
-      } else {
+      } else if (!chroma_subsampling_.empty()) {
         return JXL_FAILURE("Unsupported chroma subsampling");
       }
       arguments.push_back("-optimize");
@@ -160,6 +160,9 @@ class JPEGCodec : public ImageCodec {
       if (progressive_id_ >= 0) {
         settings.progressive_level = progressive_id_;
       }
+      if (!chroma_subsampling_.empty()) {
+        settings.chroma_subsampling = chroma_subsampling_;
+      }
       settings.use_adaptive_quantization = enable_adaptive_quant_;
       const double start = Now();
       JXL_RETURN_IF_ERROR(extras::EncodeJpeg(ppf, settings, pool, compressed));
@@ -177,7 +180,9 @@ class JPEGCodec : public ImageCodec {
       os << static_cast<int>(std::round(q_target_));
       encoder->SetOption("q", os.str());
       encoder->SetOption("jpeg_encoder", jpeg_encoder_);
-      encoder->SetOption("chroma_subsampling", chroma_subsampling_);
+      if (!chroma_subsampling_.empty()) {
+        encoder->SetOption("chroma_subsampling", chroma_subsampling_);
+      }
       if (progressive_id_ >= 0) {
         encoder->SetOption("progressive", std::to_string(progressive_id_));
       }
@@ -221,7 +226,7 @@ class JPEGCodec : public ImageCodec {
  protected:
   // JPEG encoder and its parameters
   std::string jpeg_encoder_ = "libjpeg";
-  std::string chroma_subsampling_ = "444";
+  std::string chroma_subsampling_;
   int progressive_id_ = -1;
   bool enc_quality_set_ = false;
 #if JPEGXL_ENABLE_JPEGLI

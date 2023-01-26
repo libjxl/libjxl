@@ -174,6 +174,27 @@ TEST(JpegliTest, JpegliYUVEncodeTest) {
   EXPECT_THAT(ButteraugliDistance(ppf_in, ppf_out), IsSlightlyBelow(1.28f));
 }
 
+TEST(JpegliTest, JpegliYUVChromaSubsamplingEncodeTest) {
+  std::string testimage = "jxl/flower/flower_small.rgb.depth8.ppm";
+  PackedPixelFile ppf_in;
+  ASSERT_TRUE(ReadTestImage(testimage, &ppf_in));
+  EXPECT_EQ("RGB_D65_SRG_Rel_SRG", Description(ppf_in.color_encoding));
+  EXPECT_EQ(8, ppf_in.info.bits_per_sample);
+
+  std::vector<uint8_t> compressed;
+  JpegSettings settings;
+  for (const std::string& sampling : {"440", "422", "420"}) {
+    settings.xyb = false;
+    settings.chroma_subsampling = sampling;
+    ASSERT_TRUE(EncodeJpeg(ppf_in, settings, nullptr, &compressed));
+
+    PackedPixelFile ppf_out;
+    ASSERT_TRUE(DecodeWithLibjpeg(compressed, &ppf_out));
+    EXPECT_LE(BitsPerPixel(ppf_in, compressed), 1.6f);
+    EXPECT_LE(ButteraugliDistance(ppf_in, ppf_out), 1.8f);
+  }
+}
+
 TEST(JpegliTest, JpegliYUVEncodeTestNoAq) {
   std::string testimage = "jxl/flower/flower_small.rgb.depth8.ppm";
   PackedPixelFile ppf_in;

@@ -60,7 +60,6 @@ struct jpeg_comp_master {
   int progressive_level;
   bool force_baseline;
   J_COLOR_SPACE jpeg_colorspace;
-  int max_shift;
   size_t xsize_blocks;
   size_t ysize_blocks;
   std::vector<jpegli::ScanCodingInfo> scan_coding_info;
