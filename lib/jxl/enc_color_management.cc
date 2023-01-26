@@ -407,14 +407,6 @@ ColorSpace ColorSpaceFromProfile(const skcms_ICCProfile& profile) {
   }
 }
 
-// "profile1" is pre-decoded to save time in DetectTransferFunction.
-Status ProfileEquivalentToICC(const skcms_ICCProfile& profile1,
-                              const PaddedBytes& icc) {
-  skcms_ICCProfile profile2;
-  JXL_RETURN_IF_ERROR(skcms_Parse(icc.data(), icc.size(), &profile2));
-  return skcms_ApproximatelyEqualProfiles(&profile1, &profile2);
-}
-
 // vector_out := matmul(matrix, vector_in)
 void MatrixProduct(const skcms_Matrix3x3& matrix, const float vector_in[3],
                    float vector_out[3]) {
