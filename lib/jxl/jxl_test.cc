@@ -881,14 +881,6 @@ TEST(JxlTest, RoundtripAlpha16) {
 }
 
 namespace {
-CompressParams CParamsForLossless() {
-  CompressParams cparams;
-  cparams.modular_mode = true;
-  cparams.color_transform = jxl::ColorTransform::kNone;
-  cparams.butteraugli_distance = 0.f;
-  cparams.options.predictor = {Predictor::Weighted};
-  return cparams;
-}
 JXLCompressParams CompressParamsForLossless() {
   JXLCompressParams cparams;
   cparams.AddOption(JXL_ENC_FRAME_SETTING_MODULAR, 1);
