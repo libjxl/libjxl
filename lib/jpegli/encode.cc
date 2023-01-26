@@ -62,17 +62,19 @@ struct ProgressiveScan {
   bool interleaved;
 };
 
-void SetDefaultScanScript(j_compress_ptr cinfo, int max_shift) {
+void SetDefaultScanScript(j_compress_ptr cinfo) {
   int level = cinfo->master->progressive_level;
   std::vector<jpegli::ProgressiveScan> progressive_mode;
+  bool interleave_dc =
+      (cinfo->max_h_samp_factor == 1 && cinfo->max_v_samp_factor == 1);
   if (level == 0) {
     progressive_mode.push_back({0, 63, 0, 0, true});
   } else if (level == 1) {
-    progressive_mode.push_back({0, 0, 0, 0, max_shift > 0});
+    progressive_mode.push_back({0, 0, 0, 0, interleave_dc});
     progressive_mode.push_back({1, 63, 0, 1, false});
     progressive_mode.push_back({1, 63, 1, 0, false});
   } else {
-    progressive_mode.push_back({0, 0, 0, 0, max_shift > 0});
+    progressive_mode.push_back({0, 0, 0, 0, interleave_dc});
     progressive_mode.push_back({1, 2, 0, 0, false});
     progressive_mode.push_back({3, 63, 0, 2, false});
     progressive_mode.push_back({3, 63, 2, 1, false});
@@ -174,6 +176,29 @@ void LookupCICPTransferFunction(
   }
 }
 
+void PadImageToBlockMultipleInPlace(jxl::Image3F* JXL_RESTRICT in,
+                                    size_t block_dim_x, size_t block_dim_y) {
+  PROFILER_FUNC;
+  const size_t xsize_orig = in->xsize();
+  const size_t ysize_orig = in->ysize();
+  const size_t xsize = jxl::RoundUpTo(xsize_orig, block_dim_x);
+  const size_t ysize = jxl::RoundUpTo(ysize_orig, block_dim_y);
+  // Expands image size to the originally-allocated size.
+  in->ShrinkTo(xsize, ysize);
+  for (size_t c = 0; c < 3; c++) {
+    for (size_t y = 0; y < ysize_orig; y++) {
+      float* JXL_RESTRICT row = in->PlaneRow(c, y);
+      for (size_t x = xsize_orig; x < xsize; x++) {
+        row[x] = row[xsize_orig - 1];
+      }
+    }
+    const float* JXL_RESTRICT row_src = in->ConstPlaneRow(c, ysize_orig - 1);
+    for (size_t y = ysize_orig; y < ysize; y++) {
+      memcpy(in->PlaneRow(c, y), row_src, xsize * sizeof(float));
+    }
+  }
+}
+
 }  // namespace jpegli
 
 void jpegli_CreateCompress(j_compress_ptr cinfo, int version,
@@ -225,6 +250,7 @@ void jpegli_set_defaults(j_compress_ptr cinfo) {
     comp->h_samp_factor = 1;
     comp->v_samp_factor = 1;
     comp->quant_tbl_no = c;
+    comp->component_id = c + 1;
     comp->component_index = c;
   }
   if (cinfo->master->xyb_mode) {
@@ -235,10 +261,6 @@ void jpegli_set_defaults(j_compress_ptr cinfo) {
     cinfo->comp_info[0].h_samp_factor = cinfo->comp_info[0].v_samp_factor = 2;
     cinfo->comp_info[1].h_samp_factor = cinfo->comp_info[1].v_samp_factor = 2;
     cinfo->comp_info[2].h_samp_factor = cinfo->comp_info[2].v_samp_factor = 1;
-  } else {
-    for (int i = 0; i < cinfo->num_components; ++i) {
-      cinfo->comp_info[i].component_id = i + 1;
-    }
   }
   cinfo->scan_info = nullptr;
   cinfo->num_scans = 0;
@@ -356,37 +378,19 @@ void jpegli_start_compress(j_compress_ptr cinfo, boolean write_all_tables) {
     cinfo->max_v_samp_factor =
         std::max(comp->v_samp_factor, cinfo->max_v_samp_factor);
   }
-  m->max_shift = 0;
   for (int c = 0; c < cinfo->num_components; ++c) {
     jpeg_component_info* comp = &cinfo->comp_info[c];
-    if (comp->h_samp_factor != comp->v_samp_factor) {
-      // TODO(szabadka) Remove this restriction.
-      JPEGLI_ERROR(
-          "Horizontal- or vertical-only subsampling is not "
-          "supported.");
-    }
-    if (cinfo->max_h_samp_factor % comp->h_samp_factor != 0) {
+    if (cinfo->max_h_samp_factor % comp->h_samp_factor != 0 ||
+        cinfo->max_v_samp_factor % comp->v_samp_factor != 0) {
       JPEGLI_ERROR("Non-integral sampling ratios are not supported.");
     }
-    int factor = cinfo->max_h_samp_factor / comp->h_samp_factor;
-    bool valid_factor = false;
-    int shift = 0;
-    for (; shift < 4; ++shift) {
-      if (factor == (1 << shift)) {
-        valid_factor = true;
-        break;
-      }
-    }
-    if (!valid_factor) {
-      JPEGLI_ERROR("Invalid sampling factor %d", factor);
-    }
-    m->max_shift = std::max(shift, m->max_shift);
   }
-  m->xsize_blocks = jpegli::DivCeil(cinfo->image_width, DCTSIZE << m->max_shift)
-                    << m->max_shift;
-  m->ysize_blocks =
-      jpegli::DivCeil(cinfo->image_height, DCTSIZE << m->max_shift)
-      << m->max_shift;
+  size_t iMCU_width = DCTSIZE * cinfo->max_h_samp_factor;
+  size_t iMCU_height = DCTSIZE * cinfo->max_v_samp_factor;
+  m->xsize_blocks = jpegli::DivCeil(cinfo->image_width, iMCU_width) *
+                    cinfo->max_h_samp_factor;
+  m->ysize_blocks = jpegli::DivCeil(cinfo->image_height, iMCU_height) *
+                    cinfo->max_v_samp_factor;
   m->input = jxl::Image3F(m->xsize_blocks * DCTSIZE, m->ysize_blocks * DCTSIZE);
   m->input.ShrinkTo(cinfo->image_width, cinfo->image_height);
 }
@@ -474,7 +478,9 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
                          input.PlaneRow(2, y), cinfo->image_width);
     }
   }
-  PadImageToBlockMultipleInPlace(&input, DCTSIZE << m->max_shift);
+  jpegli::PadImageToBlockMultipleInPlace(&input,
+                                         DCTSIZE * cinfo->max_h_samp_factor,
+                                         DCTSIZE * cinfo->max_v_samp_factor);
 
   // Compute adaptive quant field.
   jxl::ImageF qf(m->xsize_blocks, m->ysize_blocks);
@@ -535,21 +541,22 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
   jpegli::EncodeSOF(cinfo);
 
   for (int c = 0; c < cinfo->num_components; ++c) {
-    const size_t factor =
-        (cinfo->max_h_samp_factor / cinfo->comp_info[c].h_samp_factor);
-    JXL_ASSERT(m->xsize_blocks % factor == 0);
-    JXL_ASSERT(m->ysize_blocks % factor == 0);
+    jpeg_component_info* comp = &cinfo->comp_info[c];
+    const size_t h_factor = cinfo->max_h_samp_factor / comp->h_samp_factor;
+    const size_t v_factor = cinfo->max_v_samp_factor / comp->v_samp_factor;
+    JXL_ASSERT(m->xsize_blocks % h_factor == 0);
+    JXL_ASSERT(m->ysize_blocks % v_factor == 0);
     // TODO(szabadka): These fields have a different meaning than in libjpeg,
     // make sure it does not cause problems or change it to the libjpeg values.
-    cinfo->comp_info[c].width_in_blocks = m->xsize_blocks / factor;
-    cinfo->comp_info[c].height_in_blocks = m->ysize_blocks / factor;
+    comp->width_in_blocks = m->xsize_blocks / h_factor;
+    comp->height_in_blocks = m->ysize_blocks / v_factor;
   }
   std::vector<std::vector<jpegli::coeff_t>> coeffs;
   jpegli::ComputeDCTCoefficients(cinfo, input, distance, use_xyb, qf, qm,
                                  &coeffs);
 
   if (cinfo->scan_info == nullptr) {
-    jpegli::SetDefaultScanScript(cinfo, m->max_shift);
+    jpegli::SetDefaultScanScript(cinfo);
   }
 
   std::vector<jpegli::JPEGHuffmanCode> huffman_codes;

@@ -52,11 +52,31 @@ static constexpr ScanScript kTestScript[] = {
 };
 static constexpr size_t kNumTestScripts = ARRAYSIZE(kTestScript);
 
+enum InputColor {
+  COLOR_SRGB,
+  COLOR_GRAY,
+};
+
+struct TestConfig {
+  InputColor color = COLOR_SRGB;
+  int quality = 90;
+  bool custom_sampling = false;
+  int h_sampling[3] = {1, 1, 1};
+  int v_sampling[3] = {1, 1, 1};
+  int progressive_id = 0;
+  int progressive_level = -1;
+  int restart_interval = 0;
+  bool xyb_mode = false;
+  bool libjpeg_mode = false;
+  double max_bpp;
+  double max_dist;
+};
+
 // Verifies that an image encoded with libjpegli can be decoded with libjpeg.
-void TestDecodedImage(const std::vector<uint8_t>& compressed,
+void TestDecodedImage(const TestConfig& config,
+                      const std::vector<uint8_t>& compressed,
                       const std::vector<uint8_t>& orig, size_t xsize,
-                      size_t ysize, size_t num_channels, int progressive_id,
-                      double max_dist) {
+                      size_t ysize, size_t num_channels) {
   jpeg_decompress_struct cinfo;
   // cinfo is initialized by libjpeg, which we are not instrumenting with
   // msan, therefore we need to initialize cinfo here.
@@ -81,12 +101,20 @@ void TestDecodedImage(const std::vector<uint8_t>& compressed,
   EXPECT_EQ(num_channels, cinfo.num_components);
   cinfo.buffered_image = TRUE;
   EXPECT_TRUE(jpeg_start_decompress(&cinfo));
+#if !JXL_MEMORY_SANITIZER
+  if (config.custom_sampling) {
+    for (int i = 0; i < cinfo.num_components; ++i) {
+      EXPECT_EQ(cinfo.comp_info[i].h_samp_factor, config.h_sampling[i]);
+      EXPECT_EQ(cinfo.comp_info[i].v_samp_factor, config.v_sampling[i]);
+    }
+  }
+#endif
   while (!jpeg_input_complete(&cinfo)) {
     EXPECT_GT(cinfo.input_scan_number, 0);
     EXPECT_TRUE(jpeg_start_output(&cinfo, cinfo.input_scan_number));
-    if (progressive_id > 0) {
-      ASSERT_LE(progressive_id, kNumTestScripts);
-      const ScanScript& script = kTestScript[progressive_id - 1];
+    if (config.progressive_id > 0) {
+      ASSERT_LE(config.progressive_id, kNumTestScripts);
+      const ScanScript& script = kTestScript[config.progressive_id - 1];
       ASSERT_LE(cinfo.input_scan_number, script.num_scans);
       const jpeg_scan_info& scan = script.scans[cinfo.input_scan_number - 1];
       ASSERT_EQ(cinfo.comps_in_scan, scan.comps_in_scan);
@@ -127,31 +155,8 @@ void TestDecodedImage(const std::vector<uint8_t>& compressed,
   }
   double rms = std::sqrt(diff2 / orig.size()) / mul;
   printf("rms: %f\n", rms);
-  EXPECT_LE(rms, max_dist);
+  EXPECT_LE(rms, config.max_dist);
 }
-
-enum ChromaSubsampling {
-  SAMPLING_444,
-  SAMPLING_420,
-};
-
-enum InputColor {
-  COLOR_SRGB,
-  COLOR_GRAY,
-};
-
-struct TestConfig {
-  InputColor color = COLOR_SRGB;
-  int quality = 90;
-  ChromaSubsampling sampling = SAMPLING_444;
-  int progressive_id = 0;
-  int progressive_level = -1;
-  int restart_interval = 0;
-  bool xyb_mode = false;
-  bool libjpeg_mode = false;
-  double max_bpp;
-  double max_dist;
-};
 
 class EncodeAPITestParam : public ::testing::TestWithParam<TestConfig> {};
 
@@ -195,8 +200,11 @@ TEST_P(EncodeAPITestParam, TestAPI) {
     jpegli_set_xyb_mode(&cinfo);
   }
   jpegli_set_defaults(&cinfo);
-  if (config.sampling == SAMPLING_420) {
-    cinfo.comp_info[0].h_samp_factor = cinfo.comp_info[0].v_samp_factor = 2;
+  if (config.custom_sampling) {
+    for (size_t c = 0; c < num_channels; ++c) {
+      cinfo.comp_info[c].h_samp_factor = config.h_sampling[c];
+      cinfo.comp_info[c].v_samp_factor = config.v_sampling[c];
+    }
   }
   if (config.progressive_id > 0) {
     ASSERT_LE(config.progressive_id, kNumTestScripts);
@@ -229,8 +237,7 @@ TEST_P(EncodeAPITestParam, TestAPI) {
   double bpp = compressed.size() * 8.0 / (xsize * ysize);
   printf("bpp: %f\n", bpp);
   EXPECT_LT(bpp, config.max_bpp);
-  TestDecodedImage(compressed, orig, xsize, ysize, num_channels,
-                   config.progressive_id, config.max_dist);
+  TestDecodedImage(config, compressed, orig, xsize, ysize, num_channels);
 }
 
 std::vector<TestConfig> GenerateTests() {
@@ -257,9 +264,29 @@ std::vector<TestConfig> GenerateTests() {
   }
   {
     TestConfig config;
-    config.sampling = SAMPLING_420;
+    config.custom_sampling = true;
+    config.h_sampling[0] = 2;
+    config.v_sampling[0] = 2;
     config.max_bpp = 1.25;
     config.max_dist = 2.9;
+    all_tests.push_back(config);
+  }
+  {
+    TestConfig config;
+    config.custom_sampling = true;
+    config.h_sampling[0] = 1;
+    config.v_sampling[0] = 2;
+    config.max_bpp = 1.35;
+    config.max_dist = 2.5;
+    all_tests.push_back(config);
+  }
+  {
+    TestConfig config;
+    config.custom_sampling = true;
+    config.h_sampling[0] = 2;
+    config.v_sampling[0] = 1;
+    config.max_bpp = 1.35;
+    config.max_dist = 2.5;
     all_tests.push_back(config);
   }
   {
@@ -320,10 +347,12 @@ std::ostream& operator<<(std::ostream& os, const TestConfig& c) {
     os << "GRAY";
   }
   os << "Q" << c.quality;
-  if (c.sampling == SAMPLING_444) {
-    os << "YUV444";
-  } else if (c.sampling == SAMPLING_420) {
-    os << "YUV420";
+  if (c.custom_sampling) {
+    os << "SAMP";
+    for (int i = 0; i < 3; ++i) {
+      os << "_";
+      os << c.h_sampling[i] << "x" << c.v_sampling[i];
+    }
   }
   if (c.progressive_id > 0) {
     os << "P" << c.progressive_id;
