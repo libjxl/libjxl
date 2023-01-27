@@ -177,6 +177,9 @@ class JxlCodec : public ImageCodec {
         return JXL_FAILURE("failed to parse uniform quant parameter %s",
                            param.c_str());
       }
+    } else if (param[0] == 'D') {
+      cparams_.ec_distance.clear();
+      cparams_.ec_distance.push_back(strtof(param.substr(1).c_str(), nullptr));
     } else if (param.substr(0, kMaxPassesPrefix.size()) == kMaxPassesPrefix) {
       std::istringstream parser(param.substr(kMaxPassesPrefix.size()));
       parser >> dparams_.max_passes;
