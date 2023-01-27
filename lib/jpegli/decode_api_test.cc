@@ -15,9 +15,45 @@
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/file_io.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/sanitizers.h"
 
 namespace jpegli {
 namespace {
+
+void DecodeWithLibJpeg(const std::vector<uint8_t>& compressed,
+                       volatile size_t* xsize, volatile size_t* ysize,
+                       volatile size_t* num_channels,
+                       std::vector<uint8_t>* pixels) {
+  jpeg_decompress_struct cinfo = {};
+  jpeg_error_mgr jerr;
+  cinfo.err = jpeg_std_error(&jerr);
+  jmp_buf env;
+  if (setjmp(env)) {
+    FAIL();
+  }
+  cinfo.client_data = static_cast<void*>(&env);
+  cinfo.err->error_exit = [](j_common_ptr cinfo) {
+    (*cinfo->err->output_message)(cinfo);
+    jmp_buf* env = static_cast<jmp_buf*>(cinfo->client_data);
+    longjmp(*env, 1);
+  };
+  jpeg_create_decompress(&cinfo);
+  jpeg_mem_src(&cinfo, compressed.data(), compressed.size());
+  jpeg_read_header(&cinfo, TRUE);
+  *xsize = cinfo.image_width;
+  *ysize = cinfo.image_height;
+  jpeg_start_decompress(&cinfo);
+  *num_channels = cinfo.output_components;
+  const size_t stride = cinfo.output_components * cinfo.image_width;
+  pixels->resize(cinfo.image_height * stride);
+  for (size_t y = 0; y < cinfo.image_height; ++y) {
+    JSAMPROW rows[] = {&(*pixels)[stride * y]};
+    jpeg_read_scanlines(&cinfo, rows, 1);
+    jxl::msan::UnpoisonMemory(rows[0], stride);
+  }
+  jpeg_finish_decompress(&cinfo);
+  jpeg_destroy_decompress(&cinfo);
+}
 
 static constexpr uint8_t kFakeEoiMarker[2] = {0xff, 0xd9};
 
@@ -122,10 +158,9 @@ enum SourceManagerType {
 struct TestConfig {
   std::string fn;
   std::string fn_desc;
-  std::string origfn;
   size_t chunk_size = 0;
   size_t max_output_lines = 0;
-  float max_distance;
+  float max_distance = 1.0;
   SourceManagerType source_mgr = SOURCE_MGR_CHUNKED;
   bool pre_consume_input = false;
   bool buffered_image_mode = false;
@@ -170,14 +205,11 @@ class DecodeAPITestParam : public ::testing::TestWithParam<TestConfig> {};
 TEST_P(DecodeAPITestParam, TestAPI) {
   TestConfig config = GetParam();
   const std::vector<uint8_t> compressed = ReadTestData(config.fn.c_str());
-  const std::vector<uint8_t> origdata = ReadTestData(config.origfn.c_str());
 
   // These has to be volatile to make setjmp/longjmp work.
-  volatile size_t xsize, ysize, num_channels, bitdepth;
+  volatile size_t xsize, ysize, num_channels;
   std::vector<uint8_t> orig;
-  ASSERT_TRUE(
-      ReadPNM(origdata, &xsize, &ysize, &num_channels, &bitdepth, &orig));
-  ASSERT_EQ(8, bitdepth);
+  DecodeWithLibJpeg(compressed, &xsize, &ysize, &num_channels, &orig);
 
   jpeg_decompress_struct cinfo;
   jpeg_error_mgr jerr;
@@ -407,7 +439,7 @@ TEST_P(DecodeAPITestParam, TestAPI) {
       if (!cinfo.buffered_image || jpegli_input_complete(&cinfo)) {
         EXPECT_LE(rms, max_dist);
       } else {
-        EXPECT_LE(rms, max_dist * 10.0);
+        EXPECT_LE(rms, max_dist * 20.0);
       }
     }
     if (!cinfo.buffered_image || jpegli_input_complete(&cinfo)) {
@@ -461,8 +493,6 @@ std::vector<TestConfig> GenerateTests() {
           config.fn_desc = it.second;
           config.chunk_size = chunk_size;
           config.max_output_lines = max_output_lines;
-          config.origfn = "jxl/flower/flower.pnm";
-          config.max_distance = 2.2;
           all_tests.push_back(config);
           if (config.chunk_size != 0) {
             config.source_mgr = SOURCE_MGR_SUSPENDING;
@@ -483,10 +513,8 @@ std::vector<TestConfig> GenerateTests() {
           for (bool buffered : {false, true}) {
             for (bool crop : {false, true}) {
               TestConfig config;
-              config.origfn = "jxl/flower/flower.pnm";
               config.fn = "jxl/flower/flower.png.im_q85_420_progr.jpg";
               config.fn_desc = "Q85YUV420PROGR";
-              config.max_distance = 3.5;
               config.chunk_size = chunk_size;
               config.max_output_lines = max_output_lines;
               config.pre_consume_input = pre_consume;
@@ -529,12 +557,6 @@ std::vector<TestConfig> GenerateTests() {
             config.fn_desc = it.second;
             config.chunk_size = chunk_size;
             config.max_output_lines = max_output_lines;
-            config.origfn = "jxl/flower/flower.pnm";
-            config.max_distance = 3.5;
-            if (config.fn_desc == "Q85Gray") {
-              config.origfn = "jxl/flower/flower.pgm";
-              config.max_distance = 1.5;
-            }
             config.pre_consume_input = pre_consume;
             all_tests.push_back(config);
             if (config.chunk_size != 0) {
@@ -565,8 +587,6 @@ std::vector<TestConfig> GenerateTests() {
           config.fn_desc = it.second;
           config.chunk_size = chunk_size;
           config.max_output_lines = max_output_lines;
-          config.origfn = "jxl/flower/flower_small.rgb.depth8.ppm";
-          config.max_distance = 3.5;
           all_tests.push_back(config);
         }
       }
@@ -579,10 +599,8 @@ std::vector<TestConfig> GenerateTests() {
         TestConfig config;
         config.fn = "jxl/flower/flower.png.im_q85_444.jpg";
         config.fn_desc = "Q85YUV444";
-        config.origfn = "jxl/flower/flower.pnm";
         config.data_type = type;
         config.endianness = endianness;
-        config.max_distance = 1.8;
         all_tests.push_back(config);
       }
     }
