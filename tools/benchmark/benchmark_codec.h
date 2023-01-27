@@ -47,11 +47,6 @@ class ImageCodec {
 
   virtual Status ParseParam(const std::string& param);
 
-  // Returns true iff the codec instance (including parameters) can tolerate
-  // ImageBundle c_current() != metadata()->color_encoding, and the possibility
-  // of negative (out of gamut) pixel values.
-  virtual bool IsColorAware() const { return false; }
-
   // Returns true iff the codec instance (including parameters) will operate
   // only with quantized DCT (JPEG) coefficients in input.
   virtual bool IsJpegTranscoder() const { return false; }
