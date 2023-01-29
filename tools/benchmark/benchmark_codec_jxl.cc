@@ -256,14 +256,6 @@ class JxlCodec : public ImageCodec {
     return true;
   }
 
-  bool IsColorAware() const override {
-    // Can't deal with negative values from color space conversion.
-    if (cparams_.modular_mode) return false;
-    if (normalize_bitrate_) return false;
-    // Otherwise, input may be in any color space.
-    return true;
-  }
-
   bool IsJpegTranscoder() const override {
     // TODO(veluca): figure out when to turn this on.
     return false;

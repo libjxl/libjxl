@@ -805,18 +805,17 @@ class Benchmark {
       const StringVec extra_metrics_names = GetExtraMetricsNames();
       const StringVec extra_metrics_commands = GetExtraMetricsCommands();
       const StringVec fnames = GetFilenames();
-      bool all_color_aware;
       bool jpeg_transcoding_requested;
       // (non-const because Task.stats are updated)
-      std::vector<Task> tasks = CreateTasks(methods, fnames, &all_color_aware,
-                                            &jpeg_transcoding_requested);
+      std::vector<Task> tasks =
+          CreateTasks(methods, fnames, &jpeg_transcoding_requested);
 
       std::unique_ptr<ThreadPoolInternal> pool;
       std::vector<std::unique_ptr<ThreadPoolInternal>> inner_pools;
       InitThreads(static_cast<int>(tasks.size()), &pool, &inner_pools);
 
-      const std::vector<CodecInOut> loaded_images = LoadImages(
-          fnames, all_color_aware, jpeg_transcoding_requested, pool.get());
+      const std::vector<CodecInOut> loaded_images =
+          LoadImages(fnames, jpeg_transcoding_requested, pool.get());
 
       if (RunTasks(methods, extra_metrics_names, extra_metrics_commands, fnames,
                    loaded_images, pool.get(), inner_pools, &tasks) != 0) {
@@ -997,8 +996,8 @@ class Benchmark {
 
   // (Load only once, not for every codec)
   static std::vector<CodecInOut> LoadImages(
-      const StringVec& fnames, const bool all_color_aware,
-      const bool jpeg_transcoding_requested, ThreadPool* pool) {
+      const StringVec& fnames, const bool jpeg_transcoding_requested,
+      ThreadPool* pool) {
     PROFILER_FUNC;
     std::vector<CodecInOut> loaded_images;
     loaded_images.resize(fnames.size());
@@ -1028,16 +1027,6 @@ class Benchmark {
             return;
           }
 
-          if (!Args()->decode_only && all_color_aware) {
-            const bool is_gray = loaded_images[i].Main().IsGray();
-            const ColorEncoding& c_desired = ColorEncoding::LinearSRGB(is_gray);
-            if (!loaded_images[i].TransformTo(c_desired, GetJxlCms(),
-                                              /*pool=*/nullptr)) {
-              JXL_ABORT("Failed to transform to lin. sRGB %s",
-                        fnames[i].c_str());
-            }
-          }
-
           if (!Args()->decode_only && Args()->override_bitdepth != 0) {
             if (Args()->override_bitdepth == 32) {
               loaded_images[i].metadata.m.SetFloat32Samples();
@@ -1053,18 +1042,15 @@ class Benchmark {
 
   static std::vector<Task> CreateTasks(const StringVec& methods,
                                        const StringVec& fnames,
-                                       bool* all_color_aware,
                                        bool* jpeg_transcoding_requested) {
     std::vector<Task> tasks;
     tasks.reserve(methods.size() * fnames.size());
-    *all_color_aware = true;
     *jpeg_transcoding_requested = false;
     for (size_t idx_image = 0; idx_image < fnames.size(); ++idx_image) {
       for (size_t idx_method = 0; idx_method < methods.size(); ++idx_method) {
         tasks.emplace_back();
         Task& t = tasks.back();
         t.codec = CreateImageCodec(methods[idx_method]);
-        *all_color_aware &= t.codec->IsColorAware();
         *jpeg_transcoding_requested |= t.codec->IsJpegTranscoder();
         t.idx_image = idx_image;
         t.idx_method = idx_method;
