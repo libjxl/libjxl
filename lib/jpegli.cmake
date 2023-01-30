@@ -35,6 +35,7 @@ set(JPEGLI_INTERNAL_SOURCES
   jpegli/idct.h
   jpegli/idct.cc
   jpegli/memory_manager.h
+  jpegli/memory_manager.cc
   jpegli/quant.h
   jpegli/quant.cc
   jpegli/render.h

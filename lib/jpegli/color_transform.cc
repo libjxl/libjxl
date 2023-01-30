@@ -52,6 +52,7 @@ void RGBToYCbCr(float* JXL_RESTRICT row0, float* JXL_RESTRICT row1,
 
   // Full-range BT.601 as defined by JFIF Clause 7:
   // https://www.itu.int/rec/T-REC-T.871-201105-I/en
+  const auto c128 = Set(df, 128.0f / 255);
   const auto kR = Set(df, 0.299f);  // NTSC luma
   const auto kG = Set(df, 0.587f);
   const auto kB = Set(df, 0.114f);
@@ -72,8 +73,8 @@ void RGBToYCbCr(float* JXL_RESTRICT row0, float* JXL_RESTRICT row1,
     const auto b_base = Mul(b, kB);
     const auto b_diff = Mul(b, kDiffB);
     const auto y_base = Add(r_base, Add(g_base, b_base));
-    const auto cb_vec = Mul(Sub(b_diff, y_base), kNormB);
-    const auto cr_vec = Mul(Sub(r_diff, y_base), kNormR);
+    const auto cb_vec = MulAdd(Sub(b_diff, y_base), kNormB, c128);
+    const auto cr_vec = MulAdd(Sub(r_diff, y_base), kNormR, c128);
     Store(y_base, df, row0 + x);
     Store(cb_vec, df, row1 + x);
     Store(cr_vec, df, row2 + x);

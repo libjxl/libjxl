@@ -34,6 +34,20 @@ constexpr uint8_t kTransferFunctionPQ = 16;
 constexpr uint8_t kTransferFunctionHLG = 18;
 constexpr size_t kMaxBytesInMarker = 65533;
 
+void CheckState(j_compress_ptr cinfo, int state) {
+  if (cinfo->global_state != state) {
+    JPEGLI_ERROR("Unexpected global state %d [expected %d]",
+                 cinfo->global_state, state);
+  }
+}
+
+void CheckState(j_compress_ptr cinfo, int state1, int state2) {
+  if (cinfo->global_state != state1 && cinfo->global_state != state2) {
+    JPEGLI_ERROR("Unexpected global state %d [expected %d or %d]",
+                 cinfo->global_state, state1, state2);
+  }
+}
+
 float LinearQualityToDistance(int scale_factor) {
   scale_factor = std::min(5000, std::max(0, scale_factor));
   int quality =
@@ -203,15 +217,13 @@ void PadImageToBlockMultipleInPlace(jxl::Image3F* JXL_RESTRICT in,
 
 void jpegli_CreateCompress(j_compress_ptr cinfo, int version,
                            size_t structsize) {
-  cinfo->master = nullptr;
   cinfo->mem = nullptr;
   if (structsize != sizeof(*cinfo)) {
     JPEGLI_ERROR("jpegli_compress_struct has wrong size.");
   }
-  cinfo->master = new jpeg_comp_master;
-  cinfo->mem =
-      reinterpret_cast<struct jpeg_memory_mgr*>(new jpegli::MemoryManager);
+  cinfo->mem = jpegli::CreateMemoryManager();
   cinfo->is_decompressor = FALSE;
+  cinfo->global_state = jpegli::kEncStart;
   cinfo->dest = nullptr;
   cinfo->restart_interval = 0;
   for (int i = 0; i < NUM_QUANT_TBLS; ++i) {
@@ -219,60 +231,76 @@ void jpegli_CreateCompress(j_compress_ptr cinfo, int version,
   }
   cinfo->scan_info = nullptr;
   cinfo->num_scans = 0;
-  cinfo->master->cur_marker_data = nullptr;
-  cinfo->master->distance = 1.0;
-  cinfo->master->xyb_mode = false;
-  cinfo->master->use_std_tables = false;
-  cinfo->master->use_adaptive_quantization = true;
-  cinfo->master->progressive_level = 2;
-  cinfo->master->data_type = JPEGLI_TYPE_UINT8;
-  cinfo->master->endianness = JPEGLI_NATIVE_ENDIAN;
-}
-
-void jpegli_destroy_compress(j_compress_ptr cinfo) {
-  jpegli_destroy(reinterpret_cast<j_common_ptr>(cinfo));
+  cinfo->master = new jpeg_comp_master;
 }
 
 void jpegli_set_xyb_mode(j_compress_ptr cinfo) {
+  CheckState(cinfo, jpegli::kEncStart);
   cinfo->master->xyb_mode = true;
 }
 
 void jpegli_set_defaults(j_compress_ptr cinfo) {
-  if (cinfo->master->xyb_mode &&
-      (cinfo->input_components != 3 || cinfo->in_color_space != JCS_RGB)) {
-    JPEGLI_ERROR("Only RGB input is supported in XYB mode.");
+  CheckState(cinfo, jpegli::kEncStart);
+  cinfo->scan_info = nullptr;
+  cinfo->num_scans = 0;
+  jpegli_default_colorspace(cinfo);
+}
+
+void jpegli_default_colorspace(j_compress_ptr cinfo) {
+  CheckState(cinfo, jpegli::kEncStart);
+  if (cinfo->in_color_space > JCS_YCbCr) {
+    JPEGLI_ERROR("Unsupported colorspace %d", cinfo->in_color_space);
   }
-  cinfo->num_components = cinfo->input_components;
+  J_COLOR_SPACE in_color = cinfo->in_color_space;
+  J_COLOR_SPACE out_color = in_color;
+  if (in_color == JCS_RGB && !cinfo->master->xyb_mode) {
+    out_color = JCS_YCbCr;
+  }
+  jpegli_set_colorspace(cinfo, out_color);
+}
+
+void jpegli_set_colorspace(j_compress_ptr cinfo, J_COLOR_SPACE colorspace) {
+  CheckState(cinfo, jpegli::kEncStart);
+  if (colorspace > JCS_YCbCr) {
+    JPEGLI_ERROR("Unsupported colorspace %d", colorspace);
+  }
+  cinfo->jpeg_color_space = colorspace;
+  switch (colorspace) {
+    case JCS_GRAYSCALE:
+      cinfo->num_components = 1;
+      break;
+    case JCS_RGB:
+    case JCS_YCbCr:
+      cinfo->num_components = 3;
+      break;
+    default:
+      cinfo->num_components = cinfo->input_components;
+  }
   cinfo->comp_info =
       jpegli::Allocate<jpeg_component_info>(cinfo, cinfo->num_components);
   for (int c = 0; c < cinfo->num_components; ++c) {
     jpeg_component_info* comp = &cinfo->comp_info[c];
+    comp->component_index = c;
+    comp->component_id = c + 1;
     comp->h_samp_factor = 1;
     comp->v_samp_factor = 1;
     comp->quant_tbl_no = c;
-    comp->component_id = c + 1;
-    comp->component_index = c;
   }
-  if (cinfo->master->xyb_mode) {
+  if (colorspace == JCS_RGB) {
     cinfo->comp_info[0].component_id = 'R';
     cinfo->comp_info[1].component_id = 'G';
     cinfo->comp_info[2].component_id = 'B';
-    // Subsample blue channel.
-    cinfo->comp_info[0].h_samp_factor = cinfo->comp_info[0].v_samp_factor = 2;
-    cinfo->comp_info[1].h_samp_factor = cinfo->comp_info[1].v_samp_factor = 2;
-    cinfo->comp_info[2].h_samp_factor = cinfo->comp_info[2].v_samp_factor = 1;
+    if (cinfo->master->xyb_mode) {
+      // Subsample blue channel.
+      cinfo->comp_info[0].h_samp_factor = cinfo->comp_info[0].v_samp_factor = 2;
+      cinfo->comp_info[1].h_samp_factor = cinfo->comp_info[1].v_samp_factor = 2;
+      cinfo->comp_info[2].h_samp_factor = cinfo->comp_info[2].v_samp_factor = 1;
+    }
   }
-  cinfo->scan_info = nullptr;
-  cinfo->num_scans = 0;
-}
-
-void jpegli_default_colorspace(j_compress_ptr cinfo) {}
-
-void jpegli_set_colorspace(j_compress_ptr cinfo, J_COLOR_SPACE colorspace) {
-  cinfo->master->jpeg_colorspace = colorspace;
 }
 
 void jpegli_set_distance(j_compress_ptr cinfo, float distance) {
+  CheckState(cinfo, jpegli::kEncStart);
   cinfo->master->distance = distance;
 }
 
@@ -285,14 +313,14 @@ float jpegli_quality_to_distance(int quality) {
 
 void jpegli_set_quality(j_compress_ptr cinfo, int quality,
                         boolean force_baseline) {
+  CheckState(cinfo, jpegli::kEncStart);
   cinfo->master->distance = jpegli_quality_to_distance(quality);
-  cinfo->master->force_baseline = force_baseline;
 }
 
 void jpegli_set_linear_quality(j_compress_ptr cinfo, int scale_factor,
                                boolean force_baseline) {
+  CheckState(cinfo, jpegli::kEncStart);
   cinfo->master->distance = jpegli::LinearQualityToDistance(scale_factor);
-  cinfo->master->force_baseline = force_baseline;
 }
 
 int jpegli_quality_scaling(int quality) {
@@ -300,68 +328,40 @@ int jpegli_quality_scaling(int quality) {
   return quality < 50 ? 5000 / quality : 200 - 2 * quality;
 }
 
+void jpegli_use_standard_quant_tables(j_compress_ptr cinfo) {
+  CheckState(cinfo, jpegli::kEncStart);
+  cinfo->master->use_std_tables = true;
+}
+
 void jpegli_add_quant_table(j_compress_ptr cinfo, int which_tbl,
                             const unsigned int* basic_table, int scale_factor,
-                            boolean force_baseline) {}
+                            boolean force_baseline) {
+  CheckState(cinfo, jpegli::kEncStart);
+}
+
+void jpegli_enable_adaptive_quantization(j_compress_ptr cinfo, boolean value) {
+  CheckState(cinfo, jpegli::kEncStart);
+  cinfo->master->use_adaptive_quantization = value;
+}
 
 void jpegli_simple_progression(j_compress_ptr cinfo) {
+  CheckState(cinfo, jpegli::kEncStart);
   jpegli_set_progressive_level(cinfo, 2);
+}
+
+void jpegli_set_progressive_level(j_compress_ptr cinfo, int level) {
+  CheckState(cinfo, jpegli::kEncStart);
+  if (level < 0) {
+    JPEGLI_ERROR("Invalid progressive level %d", level);
+  }
+  cinfo->master->progressive_level = level;
 }
 
 void jpegli_suppress_tables(j_compress_ptr cinfo, boolean suppress) {}
 
-void jpegli_write_m_header(j_compress_ptr cinfo, int marker,
-                           unsigned int datalen) {
-  jpeg_comp_master* m = cinfo->master;
-  if (datalen > jpegli::kMaxBytesInMarker) {
-    JPEGLI_ERROR("Invalid marker length %u", datalen);
-  }
-  if (marker != 0xfe && (marker < 0xe0 || marker > 0xef)) {
-    JPEGLI_ERROR(
-        "jpegli_write_m_header: Only APP and COM markers are supported.");
-  }
-  std::vector<uint8_t> marker_data(4);
-  marker_data[0] = 0xff;
-  marker_data[1] = marker;
-  marker_data[2] = (datalen + 2) >> 8;
-  marker_data[3] = (datalen + 2) & 0xff;
-  m->special_markers.emplace_back(std::move(marker_data));
-  m->cur_marker_data = &m->special_markers.back();
-}
-
-void jpegli_write_m_byte(j_compress_ptr cinfo, int val) {
-  jpeg_comp_master* m = cinfo->master;
-  if (m->cur_marker_data == nullptr) {
-    JPEGLI_ERROR("Marker header missing.");
-  }
-  m->cur_marker_data->push_back(val);
-}
-
-void jpegli_write_icc_profile(j_compress_ptr cinfo, const JOCTET* icc_data_ptr,
-                              unsigned int icc_data_len) {
-  constexpr size_t kMaxIccBytesInMarker =
-      jpegli::kMaxBytesInMarker - sizeof jpegli::kICCSignature - 2;
-  const int num_markers =
-      static_cast<int>(jpegli::DivCeil(icc_data_len, kMaxIccBytesInMarker));
-  size_t begin = 0;
-  for (int current_marker = 0; current_marker < num_markers; ++current_marker) {
-    const size_t length = std::min(kMaxIccBytesInMarker, icc_data_len - begin);
-    jpegli_write_m_header(
-        cinfo, jpegli::kICCMarker,
-        static_cast<unsigned int>(length + sizeof jpegli::kICCSignature + 2));
-    for (const unsigned char c : jpegli::kICCSignature) {
-      jpegli_write_m_byte(cinfo, c);
-    }
-    jpegli_write_m_byte(cinfo, current_marker + 1);
-    jpegli_write_m_byte(cinfo, num_markers);
-    for (size_t i = 0; i < length; ++i) {
-      jpegli_write_m_byte(cinfo, icc_data_ptr[begin]);
-      ++begin;
-    }
-  }
-}
-
 void jpegli_start_compress(j_compress_ptr cinfo, boolean write_all_tables) {
+  CheckState(cinfo, jpegli::kEncStart);
+  cinfo->global_state = jpegli::kEncHeader;
   jpeg_comp_master* m = cinfo->master;
   cinfo->next_scanline = 0;
   if (cinfo->scan_info != nullptr) {
@@ -395,8 +395,71 @@ void jpegli_start_compress(j_compress_ptr cinfo, boolean write_all_tables) {
   m->input.ShrinkTo(cinfo->image_width, cinfo->image_height);
 }
 
+void jpegli_write_m_header(j_compress_ptr cinfo, int marker,
+                           unsigned int datalen) {
+  CheckState(cinfo, jpegli::kEncHeader);
+  jpeg_comp_master* m = cinfo->master;
+  if (datalen > jpegli::kMaxBytesInMarker) {
+    JPEGLI_ERROR("Invalid marker length %u", datalen);
+  }
+  if (marker != 0xfe && (marker < 0xe0 || marker > 0xef)) {
+    JPEGLI_ERROR(
+        "jpegli_write_m_header: Only APP and COM markers are supported.");
+  }
+  std::vector<uint8_t> marker_data(4);
+  marker_data[0] = 0xff;
+  marker_data[1] = marker;
+  marker_data[2] = (datalen + 2) >> 8;
+  marker_data[3] = (datalen + 2) & 0xff;
+  m->special_markers.emplace_back(std::move(marker_data));
+  m->cur_marker_data = &m->special_markers.back();
+}
+
+void jpegli_write_m_byte(j_compress_ptr cinfo, int val) {
+  CheckState(cinfo, jpegli::kEncHeader);
+  jpeg_comp_master* m = cinfo->master;
+  if (m->cur_marker_data == nullptr) {
+    JPEGLI_ERROR("Marker header missing.");
+  }
+  m->cur_marker_data->push_back(val);
+}
+
+void jpegli_write_icc_profile(j_compress_ptr cinfo, const JOCTET* icc_data_ptr,
+                              unsigned int icc_data_len) {
+  CheckState(cinfo, jpegli::kEncHeader);
+  constexpr size_t kMaxIccBytesInMarker =
+      jpegli::kMaxBytesInMarker - sizeof jpegli::kICCSignature - 2;
+  const int num_markers =
+      static_cast<int>(jpegli::DivCeil(icc_data_len, kMaxIccBytesInMarker));
+  size_t begin = 0;
+  for (int current_marker = 0; current_marker < num_markers; ++current_marker) {
+    const size_t length = std::min(kMaxIccBytesInMarker, icc_data_len - begin);
+    jpegli_write_m_header(
+        cinfo, jpegli::kICCMarker,
+        static_cast<unsigned int>(length + sizeof jpegli::kICCSignature + 2));
+    for (const unsigned char c : jpegli::kICCSignature) {
+      jpegli_write_m_byte(cinfo, c);
+    }
+    jpegli_write_m_byte(cinfo, current_marker + 1);
+    jpegli_write_m_byte(cinfo, num_markers);
+    for (size_t i = 0; i < length; ++i) {
+      jpegli_write_m_byte(cinfo, icc_data_ptr[begin]);
+      ++begin;
+    }
+  }
+}
+
+void jpegli_set_input_format(j_compress_ptr cinfo, JpegliDataType data_type,
+                             JpegliEndianness endianness) {
+  CheckState(cinfo, jpegli::kEncHeader);
+  cinfo->master->data_type = data_type;
+  cinfo->master->endianness = endianness;
+}
+
 JDIMENSION jpegli_write_scanlines(j_compress_ptr cinfo, JSAMPARRAY scanlines,
                                   JDIMENSION num_lines) {
+  CheckState(cinfo, jpegli::kEncHeader, jpegli::kEncReadImage);
+  cinfo->global_state = jpegli::kEncReadImage;
   jpeg_comp_master* m = cinfo->master;
   // TODO(szabadka) Handle CMYK input images.
   if (cinfo->num_components > 3) {
@@ -451,18 +514,17 @@ JDIMENSION jpegli_write_scanlines(j_compress_ptr cinfo, JSAMPARRAY scanlines,
 }
 
 void jpegli_finish_compress(j_compress_ptr cinfo) {
+  CheckState(cinfo, jpegli::kEncReadImage, jpegli::kEncWriteCoeffs);
   jpeg_comp_master* m = cinfo->master;
 
-  const bool use_xyb = m->xyb_mode;
+  const bool use_xyb = m->xyb_mode && cinfo->jpeg_color_space == JCS_RGB;
   const bool use_aq = m->use_adaptive_quantization;
-  const bool use_std_tables = m->use_std_tables;
+  const bool use_std_tables =
+      m->use_std_tables || cinfo->jpeg_color_space != JCS_YCbCr;
   jpegli::QuantMode quant_mode = use_xyb          ? jpegli::QUANT_XYB
                                  : use_std_tables ? jpegli::QUANT_STD
                                                   : jpegli::QUANT_YUV;
 
-  if (use_xyb && cinfo->num_components != 3) {
-    JPEGLI_ERROR("Only RGB input is supported in XYB mode.");
-  }
   if (cinfo->num_components == 1) {
     CopyImageTo(m->input.Plane(0), &m->input.Plane(1));
     CopyImageTo(m->input.Plane(0), &m->input.Plane(2));
@@ -472,7 +534,8 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
   jxl::Image3F& input = m->input;
   float distance = m->distance;
 
-  if (!use_xyb) {
+  if (cinfo->in_color_space == JCS_RGB && !use_xyb &&
+      cinfo->jpeg_color_space == JCS_YCbCr) {
     for (size_t y = 0; y < cinfo->image_height; ++y) {
       jpegli::RGBToYCbCr(input.PlaneRow(0, y), input.PlaneRow(1, y),
                          input.PlaneRow(2, y), cinfo->image_width);
@@ -579,25 +642,15 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
   // EOI
   jpegli::WriteOutput(cinfo, {0xFF, 0xD9});
   (*cinfo->dest->term_destination)(cinfo);
+
+  // Release memory and reset global state.
+  jpegli_abort_compress(cinfo);
 }
 
-void jpegli_set_input_format(j_compress_ptr cinfo, JpegliDataType data_type,
-                             JpegliEndianness endianness) {
-  cinfo->master->data_type = data_type;
-  cinfo->master->endianness = endianness;
+void jpegli_abort_compress(j_compress_ptr cinfo) {
+  jpegli_abort(reinterpret_cast<j_common_ptr>(cinfo));
 }
 
-void jpegli_enable_adaptive_quantization(j_compress_ptr cinfo, boolean value) {
-  cinfo->master->use_adaptive_quantization = value;
-}
-
-void jpegli_set_progressive_level(j_compress_ptr cinfo, int level) {
-  if (level < 0) {
-    JPEGLI_ERROR("Invalid progressive level %d", level);
-  }
-  cinfo->master->progressive_level = level;
-}
-
-void jpegli_use_standard_quant_tables(j_compress_ptr cinfo) {
-  cinfo->master->use_std_tables = true;
+void jpegli_destroy_compress(j_compress_ptr cinfo) {
+  jpegli_destroy(reinterpret_cast<j_common_ptr>(cinfo));
 }

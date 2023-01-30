@@ -448,12 +448,22 @@ constexpr const float* kBaseQuantMatrices[NUM_QUANT_MODES] = {
 void AddJpegQuantMatrices(j_compress_ptr cinfo, QuantMode mode, float dc_scale,
                           float ac_scale, float* qm) {
   JXL_DASSERT(mode < NUM_QUANT_MODES);
-  const float* const base_quant_matrix = kBaseQuantMatrices[mode];
-  for (int c = 0, ix = 0; c < cinfo->num_components; c++) {
-    qm[ix] = dc_scale * base_quant_matrix[ix];
-    ix++;
-    for (size_t j = 1; j < DCTSIZE2; j++, ix++) {
-      qm[ix] = ac_scale * base_quant_matrix[ix];
+  if (mode == QUANT_STD && cinfo->jpeg_color_space != JCS_YCbCr) {
+    // Use only luminance tables for non-YUV jpegs.
+    for (int c = 0; c < cinfo->num_components; c++) {
+      qm[c * DCTSIZE2] = dc_scale * kBaseQuantMatrixStd[0];
+      for (size_t j = 1; j < DCTSIZE2; j++) {
+        qm[c * DCTSIZE2 + j] = ac_scale * kBaseQuantMatrixStd[j];
+      }
+    }
+  } else {
+    const float* const base_quant_matrix = kBaseQuantMatrices[mode];
+    for (int c = 0, ix = 0; c < cinfo->num_components; c++) {
+      qm[ix] = dc_scale * base_quant_matrix[ix];
+      ix++;
+      for (size_t j = 1; j < DCTSIZE2; j++, ix++) {
+        qm[ix] = ac_scale * base_quant_matrix[ix];
+      }
     }
   }
   for (int c = 0; c < cinfo->num_components; c++) {

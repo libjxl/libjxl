@@ -204,6 +204,8 @@ void jpeg_finish_compress(j_compress_ptr cinfo) {
   jpegli_finish_compress(cinfo);
 }
 
+void jpeg_abort_compress(j_compress_ptr cinfo) { jpegli_abort_compress(cinfo); }
+
 void jpeg_destroy_compress(j_compress_ptr cinfo) {
   jpegli_destroy_compress(cinfo);
 }

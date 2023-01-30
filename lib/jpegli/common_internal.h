@@ -11,6 +11,20 @@
 
 namespace jpegli {
 
+enum State {
+  kDecNull,
+  kDecStart,
+  kDecInHeader,
+  kDecHeaderDone,
+  kDecProcessMarkers,
+  kDecProcessScan,
+  kEncNull,
+  kEncStart,
+  kEncHeader,
+  kEncReadImage,
+  kEncWriteCoeffs,
+};
+
 template <typename T1, typename T2>
 constexpr inline T1 DivCeil(T1 a, T2 b) {
   return (a + b - 1) / b;
