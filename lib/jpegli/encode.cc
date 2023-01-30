@@ -71,6 +71,27 @@ float DistanceToLinearQuality(float distance) {
   }
 }
 
+// Initialize cinfo fields that are not dependent on input image. This is shared
+// between jpegli_CreateCompress() and jpegli_set_defaults()
+void InitializeCompressParams(j_compress_ptr cinfo) {
+  cinfo->data_precision = 8;
+  cinfo->num_scans = 0;
+  cinfo->scan_info = nullptr;
+  cinfo->raw_data_in = false;
+  cinfo->arith_code = false;
+  cinfo->optimize_coding = false;
+  cinfo->CCIR601_sampling = false;
+  cinfo->smoothing_factor = 0;
+  cinfo->dct_method = JDCT_FLOAT;
+  cinfo->restart_interval = 0;
+  cinfo->restart_in_rows = 0;
+  cinfo->JFIF_major_version = 1;
+  cinfo->JFIF_minor_version = 1;
+  cinfo->density_unit = 0;
+  cinfo->X_density = 1;
+  cinfo->Y_density = 1;
+}
+
 struct ProgressiveScan {
   int Ss, Se, Ah, Al;
   bool interleaved;
@@ -222,15 +243,31 @@ void jpegli_CreateCompress(j_compress_ptr cinfo, int version,
     JPEGLI_ERROR("jpegli_compress_struct has wrong size.");
   }
   cinfo->mem = jpegli::CreateMemoryManager();
+  cinfo->progress = nullptr;
   cinfo->is_decompressor = FALSE;
   cinfo->global_state = jpegli::kEncStart;
   cinfo->dest = nullptr;
-  cinfo->restart_interval = 0;
+  cinfo->image_width = 0;
+  cinfo->image_height = 0;
+  cinfo->input_components = 0;
+  cinfo->in_color_space = JCS_UNKNOWN;
+  cinfo->input_gamma = 1.0f;
+  cinfo->num_components = 0;
+  cinfo->jpeg_color_space = JCS_UNKNOWN;
+  cinfo->comp_info = nullptr;
   for (int i = 0; i < NUM_QUANT_TBLS; ++i) {
     cinfo->quant_tbl_ptrs[i] = nullptr;
   }
-  cinfo->scan_info = nullptr;
-  cinfo->num_scans = 0;
+  for (int i = 0; i < NUM_HUFF_TBLS; ++i) {
+    cinfo->dc_huff_tbl_ptrs[i] = nullptr;
+    cinfo->ac_huff_tbl_ptrs[i] = nullptr;
+  }
+  memset(cinfo->arith_dc_L, 0, sizeof(cinfo->arith_dc_L));
+  memset(cinfo->arith_dc_U, 0, sizeof(cinfo->arith_dc_U));
+  memset(cinfo->arith_ac_K, 0, sizeof(cinfo->arith_ac_K));
+  cinfo->write_JFIF_header = false;
+  cinfo->write_Adobe_marker = false;
+  jpegli::InitializeCompressParams(cinfo);
   cinfo->master = new jpeg_comp_master;
 }
 
@@ -241,8 +278,7 @@ void jpegli_set_xyb_mode(j_compress_ptr cinfo) {
 
 void jpegli_set_defaults(j_compress_ptr cinfo) {
   CheckState(cinfo, jpegli::kEncStart);
-  cinfo->scan_info = nullptr;
-  cinfo->num_scans = 0;
+  jpegli::InitializeCompressParams(cinfo);
   jpegli_default_colorspace(cinfo);
 }
 
@@ -361,6 +397,17 @@ void jpegli_suppress_tables(j_compress_ptr cinfo, boolean suppress) {}
 
 void jpegli_start_compress(j_compress_ptr cinfo, boolean write_all_tables) {
   CheckState(cinfo, jpegli::kEncStart);
+  if (cinfo->dest == nullptr) {
+    JPEGLI_ERROR("Missing destination.");
+  }
+  if (cinfo->image_width == 0 || cinfo->image_height == 0 ||
+      cinfo->input_components == 0) {
+    JPEGLI_ERROR("Empty input image.");
+  }
+  if (cinfo->num_components <= 0 ||
+      cinfo->num_components > jpegli::kMaxComponents) {
+    JPEGLI_ERROR("Invalid number of jpeg components %d", cinfo->num_components);
+  }
   cinfo->global_state = jpegli::kEncHeader;
   jpeg_comp_master* m = cinfo->master;
   cinfo->next_scanline = 0;

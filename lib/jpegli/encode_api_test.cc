@@ -237,7 +237,6 @@ bool EncodeWithJpegli(const TestConfig& config,
   cinfo.err = jpegli_std_error(&jerr);
   jmp_buf env;
   if (setjmp(env)) {
-    if (buffer) std::free(buffer);
     return false;
   }
   cinfo.client_data = static_cast<void*>(&env);
@@ -494,6 +493,132 @@ std::string TestDescription(
 JPEGLI_INSTANTIATE_TEST_SUITE_P(EncodeAPITest, EncodeAPITestParam,
                                 testing::ValuesIn(GenerateTests()),
                                 TestDescription);
+
+struct MyClientData {
+  jmp_buf env;
+  unsigned char* buffer = nullptr;
+  unsigned long size = 0;
+};
+
+#define ERROR_HANDLER_SETUP(action)                                           \
+  jpeg_error_mgr jerr;                                                        \
+  cinfo.err = jpegli_std_error(&jerr);                                        \
+  if (setjmp(data.env)) {                                                     \
+    action;                                                                   \
+  }                                                                           \
+  cinfo.client_data = reinterpret_cast<void*>(&data);                         \
+  cinfo.err->error_exit = [](j_common_ptr cinfo) {                            \
+    (*cinfo->err->output_message)(cinfo);                                     \
+    MyClientData* data = reinterpret_cast<MyClientData*>(cinfo->client_data); \
+    if (data->buffer) free(data->buffer);                                     \
+    jpegli_destroy(cinfo);                                                    \
+    longjmp(data->env, 1);                                                    \
+  };
+
+#define EXPECT_FAILURE()              \
+  if (data.buffer) free(data.buffer); \
+  jpegli_destroy_compress(&cinfo);    \
+  FAIL();
+
+TEST(ErrorHandlingTest, MinimalSuccess) {
+  MyClientData data;
+  jpeg_compress_struct cinfo;
+  ERROR_HANDLER_SETUP(FAIL());
+  jpegli_create_compress(&cinfo);
+  jpegli_mem_dest(&cinfo, &data.buffer, &data.size);
+  cinfo.image_width = 1;
+  cinfo.image_height = 1;
+  cinfo.input_components = 1;
+  jpegli_set_defaults(&cinfo);
+  jpegli_start_compress(&cinfo, TRUE);
+  JSAMPLE image[1] = {0};
+  JSAMPROW row[] = {image};
+  jpegli_write_scanlines(&cinfo, row, 1);
+  jpegli_finish_compress(&cinfo);
+  jpegli_destroy_compress(&cinfo);
+
+  jpeg_decompress_struct dinfo = {};
+  dinfo.err = jpeg_std_error(&jerr);
+  jpeg_create_decompress(&dinfo);
+  jpeg_mem_src(&dinfo, data.buffer, data.size);
+  jpeg_read_header(&dinfo, TRUE);
+  EXPECT_EQ(1, dinfo.image_width);
+  EXPECT_EQ(1, dinfo.image_height);
+  jpeg_start_decompress(&dinfo);
+  jpeg_read_scanlines(&dinfo, row, 1);
+  jxl::msan::UnpoisonMemory(image, 1);
+  EXPECT_EQ(0, image[0]);
+  jpeg_finish_decompress(&dinfo);
+  jpeg_destroy_decompress(&dinfo);
+  free(data.buffer);
+}
+
+TEST(ErrorHandlingTest, NoDestination) {
+  MyClientData data;
+  jpeg_compress_struct cinfo;
+  ERROR_HANDLER_SETUP(return );
+  jpegli_create_compress(&cinfo);
+  cinfo.image_width = 1;
+  cinfo.image_height = 1;
+  cinfo.input_components = 1;
+  jpegli_set_defaults(&cinfo);
+  jpegli_start_compress(&cinfo, TRUE);
+  EXPECT_FAILURE();
+}
+
+TEST(ErrorHandlingTest, NoImageDimensions) {
+  MyClientData data;
+  jpeg_compress_struct cinfo;
+  ERROR_HANDLER_SETUP(return );
+  jpegli_create_compress(&cinfo);
+  jpegli_mem_dest(&cinfo, &data.buffer, &data.size);
+  cinfo.input_components = 1;
+  jpegli_set_defaults(&cinfo);
+  jpegli_start_compress(&cinfo, TRUE);
+  EXPECT_FAILURE();
+}
+
+TEST(ErrorHandlingTest, NoInputComponents) {
+  MyClientData data;
+  jpeg_compress_struct cinfo;
+  ERROR_HANDLER_SETUP(return );
+  jpegli_create_compress(&cinfo);
+  jpegli_mem_dest(&cinfo, &data.buffer, &data.size);
+  cinfo.image_width = 1;
+  cinfo.image_height = 1;
+  jpegli_set_defaults(&cinfo);
+  jpegli_start_compress(&cinfo, TRUE);
+  EXPECT_FAILURE();
+}
+
+TEST(ErrorHandlingTest, NoSetDefaults) {
+  MyClientData data;
+  jpeg_compress_struct cinfo;
+  ERROR_HANDLER_SETUP(return );
+  jpegli_create_compress(&cinfo);
+  jpegli_mem_dest(&cinfo, &data.buffer, &data.size);
+  cinfo.image_width = 1;
+  cinfo.image_height = 1;
+  cinfo.input_components = 1;
+  jpegli_start_compress(&cinfo, TRUE);
+  EXPECT_FAILURE();
+}
+
+TEST(ErrorHandlingTest, NoStartCompress) {
+  MyClientData data;
+  jpeg_compress_struct cinfo;
+  ERROR_HANDLER_SETUP(return );
+  jpegli_create_compress(&cinfo);
+  jpegli_mem_dest(&cinfo, &data.buffer, &data.size);
+  cinfo.image_width = 1;
+  cinfo.image_height = 1;
+  cinfo.input_components = 1;
+  jpegli_set_defaults(&cinfo);
+  JSAMPLE image[1] = {0};
+  JSAMPROW row[] = {image};
+  jpegli_write_scanlines(&cinfo, row, 1);
+  EXPECT_FAILURE();
+}
 
 }  // namespace
 }  // namespace jpegli
