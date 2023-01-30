@@ -23,15 +23,6 @@ namespace jpegli {
 
 typedef int16_t coeff_t;
 
-enum DecodeState {
-  kNull,
-  kStart,
-  kInHeader,
-  kHeaderDone,
-  kProcessMarkers,
-  kProcessScan,
-};
-
 // Represents one component of a jpeg file.
 struct DecJPEGComponent {
   // The DCT coefficients of this component, laid out block-by-block, divided

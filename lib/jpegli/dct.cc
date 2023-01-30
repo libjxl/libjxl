@@ -101,13 +101,8 @@ void ComputeDCTCoefficients(
             block[i] = cc;
           }
         }
-        if (xyb || c == 0) {
-          // Only the U, V channels of YUV input are zero-centered, for the
-          // rest apply an offset to the DC values instead.
-          block[0] = std::round((2040 * dct[0] - 1024) * qmc[0]);
-        } else {
-          block[0] = std::round(2040 * dct[0] * qmc[0]);
-        }
+        // Center DC values around zero.
+        block[0] = std::round((2040 * dct[0] - 1024) * qmc[0]);
       }
     }
     all_coeffs->emplace_back(std::move(coeffs));

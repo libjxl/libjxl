@@ -79,6 +79,8 @@ JDIMENSION jpegli_write_scanlines(j_compress_ptr cinfo, JSAMPARRAY scanlines,
 
 void jpegli_finish_compress(j_compress_ptr cinfo);
 
+void jpegli_abort_compress(j_compress_ptr cinfo);
+
 void jpegli_destroy_compress(j_compress_ptr cinfo);
 
 //
