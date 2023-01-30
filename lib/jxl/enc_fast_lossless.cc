@@ -3355,7 +3355,7 @@ void WriteACSectionPalette(const unsigned char* rgba, size_t x0, size_t y0,
 
   row_encoder.t = &encoder;
   encoder.output = &output;
-  encoder.code = &code[0];
+  encoder.code = &code[1];
   ProcessImageAreaPalette<
       ChannelRowProcessor<ChunkEncoder<UpTo8Bits>, UpTo8Bits>>(
       rgba, x0, y0, xs, 0, ys, row_stride, lookup, nb_chans, &row_encoder);
@@ -3374,8 +3374,8 @@ void CollectSamples(const unsigned char* rgba, size_t x0, size_t y0, size_t xs,
         row_sample_collectors[4];
     for (size_t c = 0; c < nb_chans; c++) {
       row_sample_collectors[c].t = &sample_collectors[c];
-      sample_collectors[c].raw_counts = raw_counts[c];
-      sample_collectors[c].lz77_counts = lz77_counts[c];
+      sample_collectors[c].raw_counts = raw_counts[1];
+      sample_collectors[c].lz77_counts = lz77_counts[1];
     }
     ProcessImageAreaPalette<
         ChannelRowProcessor<ChunkSampleCollector<UpTo8Bits>, UpTo8Bits>>(
@@ -3425,7 +3425,7 @@ void PrepareDCGlobalPalette(bool is_single_group, size_t width, size_t height,
   row_encoder.t = &encoder;
   encoder.output = output;
   encoder.code = &code[0];
-  int16_t p[4][32 + 1024] = {};
+  int16_t p[4][32 + 2048] = {};
   uint8_t prgba[4];
   size_t i = 0;
   size_t have_zero = 0;
