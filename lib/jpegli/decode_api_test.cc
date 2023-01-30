@@ -605,6 +605,12 @@ std::vector<TestConfig> GenerateTests() {
       }
     }
   }
+  {
+    TestConfig config;
+    config.fn = "jxl/flower/flower_small.cmyk.jpg";
+    config.fn_desc = "CMYK";
+    all_tests.push_back(config);
+  }
   return all_tests;
 }
 

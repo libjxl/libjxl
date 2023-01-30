@@ -21,6 +21,36 @@ using hwy::HWY_NAMESPACE::Mul;
 using hwy::HWY_NAMESPACE::MulAdd;
 using hwy::HWY_NAMESPACE::Sub;
 
+void YCCKToCMYK(float* JXL_RESTRICT row0, float* JXL_RESTRICT row1,
+                float* JXL_RESTRICT row2, float* JXL_RESTRICT row3,
+                size_t xsize) {
+  const HWY_CAPPED(float, 8) df;
+
+  // Full-range BT.601 as defined by JFIF Clause 7:
+  // https://www.itu.int/rec/T-REC-T.871-201105-I/en
+  // After, C = 1-R, M = 1-G, Y = 1-B, K = K.
+  const auto c128 = Set(df, 128.0f / 255);
+  const auto crcr = Set(df, 1.402f);
+  const auto cgcb = Set(df, -0.114f * 1.772f / 0.587f);
+  const auto cgcr = Set(df, -0.299f * 1.402f / 0.587f);
+  const auto cbcb = Set(df, 1.772f);
+  const auto unity = Set(df, 1.0f);
+
+  for (size_t x = 0; x < xsize; x += Lanes(df)) {
+    const auto y_vec = Add(Load(df, row0 + x), c128);
+    const auto cb_vec = Load(df, row1 + x);
+    const auto cr_vec = Load(df, row2 + x);
+    const auto r_vec = Sub(unity, MulAdd(crcr, cr_vec, y_vec));
+    const auto g_vec =
+        Sub(unity, MulAdd(cgcr, cr_vec, MulAdd(cgcb, cb_vec, y_vec)));
+    const auto b_vec = Sub(unity, MulAdd(cbcb, cb_vec, y_vec));
+    Store(r_vec, df, row0 + x);
+    Store(g_vec, df, row1 + x);
+    Store(b_vec, df, row2 + x);
+    Store(Add(Load(df, row3 + x), c128), df, row3 + x);
+  }
+}
+
 void YCbCrToRGB(float* JXL_RESTRICT row0, float* JXL_RESTRICT row1,
                 float* JXL_RESTRICT row2, size_t xsize) {
   const HWY_CAPPED(float, 8) df;
@@ -89,8 +119,15 @@ HWY_AFTER_NAMESPACE();
 #if HWY_ONCE
 namespace jpegli {
 
+HWY_EXPORT(YCCKToCMYK);
 HWY_EXPORT(YCbCrToRGB);
 HWY_EXPORT(RGBToYCbCr);
+
+void YCCKToCMYK(float* JXL_RESTRICT row0, float* JXL_RESTRICT row1,
+                float* JXL_RESTRICT row2, float* JXL_RESTRICT row3,
+                size_t xsize) {
+  return HWY_DYNAMIC_DISPATCH(YCCKToCMYK)(row0, row1, row2, row3, xsize);
+}
 
 void YCbCrToRGB(float* JXL_RESTRICT row0, float* JXL_RESTRICT row1,
                 float* JXL_RESTRICT row2, size_t xsize) {
