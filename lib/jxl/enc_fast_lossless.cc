@@ -3425,7 +3425,7 @@ void PrepareDCGlobalPalette(bool is_single_group, size_t width, size_t height,
   row_encoder.t = &encoder;
   encoder.output = output;
   encoder.code = &code[0];
-  int16_t p[4][32 + 2048] = {};
+  int16_t p[4][32 + 1024] = {};
   uint8_t prgba[4];
   size_t i = 0;
   size_t have_zero = 0;
