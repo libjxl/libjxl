@@ -54,13 +54,13 @@ void DownsampleImage(jxl::ImageF* image, size_t factor_x, size_t factor_y) {
 }
 
 void ComputeDCTCoefficients(
-    j_compress_ptr cinfo, const jxl::Image3F& opsin, float distance,
-    const bool xyb, const jxl::ImageF& qf, const float* qm,
+    j_compress_ptr cinfo,
     std::vector<std::vector<jpegli::coeff_t> >* all_coeffs) {
-  float qfmin, qfmax;
-  ImageMinMax(qf, &qfmin, &qfmax);
+  jpeg_comp_master* m = cinfo->master;
+  float qfmax = m->quant_field_max;
   float zero_bias_mul[3] = {0.5f, 0.5f, 0.5f};
-  if (distance <= 1.0f) {
+  const bool xyb = m->xyb_mode && cinfo->jpeg_color_space == JCS_RGB;
+  if (m->distance <= 1.0f) {
     memcpy(zero_bias_mul, xyb ? kZeroBiasMulXYB : kZeroBiasMulYCbCr,
            sizeof(zero_bias_mul));
   }
@@ -74,14 +74,18 @@ void ComputeDCTCoefficients(
     JXL_DASSERT(cinfo->max_v_samp_factor % comp->v_samp_factor == 0);
     const int h_factor = cinfo->max_h_samp_factor / comp->h_samp_factor;
     const int v_factor = cinfo->max_v_samp_factor / comp->v_samp_factor;
-    const jxl::ImageF* plane = &opsin.Plane(c);
+    const jxl::ImageF* plane = &m->input.Plane(c);
     if (h_factor > 1 || v_factor > 1) {
       tmp = CopyImage(*plane);
       DownsampleImage(&tmp, h_factor, v_factor);
       plane = &tmp;
     }
     std::vector<coeff_t> coeffs(xsize_blocks * ysize_blocks * kDCTBlockSize);
-    const float* qmc = &qm[c * kDCTBlockSize];
+    JQUANT_TBL* quant_table = cinfo->quant_tbl_ptrs[comp->quant_tbl_no];
+    std::vector<float> qmc(kDCTBlockSize);
+    for (size_t k = 0; k < kDCTBlockSize; k++) {
+      qmc[k] = 1.0f / quant_table->quantval[k];
+    }
     for (size_t by = 0, bix = 0; by < ysize_blocks; by++) {
       for (size_t bx = 0; bx < xsize_blocks; bx++, bix++) {
         coeff_t* block = &coeffs[bix * kDCTBlockSize];
@@ -91,7 +95,7 @@ void ComputeDCTCoefficients(
                             dct, scratch_space);
         // Create more zeros in areas where jpeg xl would have used a lower
         // quantization multiplier.
-        float relq = qfmax / qf.Row(by * v_factor)[bx * h_factor];
+        float relq = qfmax / m->quant_field.Row(by * v_factor)[bx * h_factor];
         float zero_bias = 0.5f + zero_bias_mul[c] * (relq - 1.0f);
         zero_bias = std::min(1.5f, zero_bias);
         for (size_t iy = 0, i = 0; iy < 8; iy++) {
@@ -120,11 +124,8 @@ namespace jpegli {
 HWY_EXPORT(ComputeDCTCoefficients);
 
 void ComputeDCTCoefficients(
-    j_compress_ptr cinfo, const jxl::Image3F& opsin, float distance,
-    const bool xyb, const jxl::ImageF& qf, const float* qm,
-    std::vector<std::vector<jpegli::coeff_t> >* coeffs) {
-  HWY_DYNAMIC_DISPATCH(ComputeDCTCoefficients)
-  (cinfo, opsin, distance, xyb, qf, qm, coeffs);
+    j_compress_ptr cinfo, std::vector<std::vector<jpegli::coeff_t> >* coeffs) {
+  HWY_DYNAMIC_DISPATCH(ComputeDCTCoefficients)(cinfo, coeffs);
 }
 
 }  // namespace jpegli

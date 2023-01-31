@@ -19,11 +19,12 @@
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 
-#include "lib/jpegli/common_internal.h"
+#include "lib/jpegli/encode_internal.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/image.h"
+#include "lib/jxl/image_ops.h"
 HWY_BEFORE_NAMESPACE();
 namespace jpegli {
 namespace HWY_NAMESPACE {
@@ -643,6 +644,22 @@ jxl::ImageF InitialQuantField(const float butteraugli_target,
   const float quant_ac = kAcQuant / butteraugli_target;
   return HWY_DYNAMIC_DISPATCH(AdaptiveQuantizationMap)(
       butteraugli_target, opsin_y, quant_ac * rescale, pool);
+}
+
+void ComputeAdaptiveQuantField(j_compress_ptr cinfo) {
+  jpeg_comp_master* m = cinfo->master;
+  if (m->use_adaptive_quantization) {
+    int y_channel = m->xyb_mode ? 1 : 0;
+    m->quant_field = jpegli::InitialQuantField(
+        m->distance, m->input.Plane(y_channel), nullptr, m->distance);
+    float qfmin;
+    ImageMinMax(m->quant_field, &qfmin, &m->quant_field_max);
+  } else {
+    constexpr float kDefaultQuantFieldMax = 0.575f;
+    m->quant_field_max = kDefaultQuantFieldMax;
+    m->quant_field = jxl::ImageF(m->xsize_blocks, m->ysize_blocks);
+    FillImage(m->quant_field_max, &m->quant_field);
+  }
 }
 
 }  // namespace jpegli

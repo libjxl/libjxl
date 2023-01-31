@@ -25,13 +25,6 @@
 
 namespace jpegli {
 
-constexpr unsigned char kICCSignature[12] = {
-    0x49, 0x43, 0x43, 0x5F, 0x50, 0x52, 0x4F, 0x46, 0x49, 0x4C, 0x45, 0x00};
-constexpr int kICCMarker = JPEG_APP0 + 2;
-constexpr unsigned char kCICPTagSignature[4] = {0x63, 0x69, 0x63, 0x70};
-constexpr size_t kCICPTagSize = 12;
-constexpr uint8_t kTransferFunctionPQ = 16;
-constexpr uint8_t kTransferFunctionHLG = 18;
 constexpr size_t kMaxBytesInMarker = 65533;
 
 void CheckState(j_compress_ptr cinfo, int state) {
@@ -53,22 +46,6 @@ float LinearQualityToDistance(int scale_factor) {
   int quality =
       scale_factor < 100 ? 100 - scale_factor / 2 : 5000 / scale_factor;
   return jpegli_quality_to_distance(quality);
-}
-
-float DistanceToLinearQuality(float distance) {
-  if (distance <= 0.1f) {
-    return 1.0f;
-  } else if (distance <= 4.6f) {
-    return (200.0f / 9.0f) * (distance - 0.1f);
-  } else if (distance <= 6.4f) {
-    return 5000.0f / (100.0f - (distance - 0.1f) / 0.09f);
-  } else if (distance < 25.0f) {
-    return 530000.0f /
-           (3450.0f -
-            300.0f * std::sqrt((848.0f * distance - 5330.0f) / 120.0f));
-  } else {
-    return 5000.0f;
-  }
 }
 
 // Initialize cinfo fields that are not dependent on input image. This is shared
@@ -150,65 +127,6 @@ void SetDefaultScanScript(j_compress_ptr cinfo) {
   JXL_ASSERT(next_scan - cinfo->script_space == cinfo->script_space_size);
   cinfo->scan_info = cinfo->script_space;
   cinfo->num_scans = cinfo->script_space_size;
-}
-
-void LookupCICPTransferFunction(
-    const std::vector<std::vector<uint8_t>>& special_markers, uint8_t* tf) {
-  *tf = 2;  // Unknown transfer function code
-  size_t last_index = 0;
-  size_t cicp_offset = 0;
-  size_t cicp_length = 0;
-  uint8_t cicp_tag[kCICPTagSize] = {};
-  size_t cicp_pos = 0;
-  for (const auto& marker : special_markers) {
-    if (marker.size() < 18 || marker[1] != kICCMarker ||
-        (marker[2] << 8u) + marker[3] + 2u != marker.size() ||
-        memcmp(&marker[4], kICCSignature, 12) != 0) {
-      continue;
-    }
-    uint8_t index = marker[16];
-    uint8_t total = marker[17];
-    const uint8_t* payload = marker.data() + 18;
-    const size_t payload_size = marker.size() - 18;
-    if (index != last_index + 1 || index > total) {
-      return;
-    }
-    if (last_index == 0) {
-      // Look up the offset of the CICP tag from the first chunk of ICC data.
-      if (payload_size < 132) {
-        return;
-      }
-      uint32_t tag_count = LoadBE32(&payload[128]);
-      if (payload_size < 132 + 12 * tag_count) {
-        return;
-      }
-      for (uint32_t i = 0; i < tag_count; ++i) {
-        if (memcmp(&payload[132 + 12 * i], kCICPTagSignature, 4) == 0) {
-          cicp_offset = LoadBE32(&payload[136 + 12 * i]);
-          cicp_length = LoadBE32(&payload[140 + 12 * i]);
-        }
-      }
-      if (cicp_length < kCICPTagSize) {
-        return;
-      }
-    }
-    if (cicp_offset < payload_size) {
-      size_t n_bytes =
-          std::min(payload_size - cicp_offset, kCICPTagSize - cicp_pos);
-      memcpy(&cicp_tag[cicp_pos], &payload[cicp_offset], n_bytes);
-      cicp_pos += n_bytes;
-      if (cicp_pos == kCICPTagSize) {
-        break;
-      }
-      cicp_offset = 0;
-    } else {
-      cicp_offset -= payload_size;
-    }
-    ++last_index;
-  }
-  if (cicp_pos >= kCICPTagSize && memcmp(cicp_tag, kCICPTagSignature, 4) == 0) {
-    *tf = cicp_tag[9];
-  }
 }
 
 void PadImageToBlockMultipleInPlace(jxl::Image3F* JXL_RESTRICT in,
@@ -320,7 +238,7 @@ void jpegli_set_colorspace(j_compress_ptr cinfo, J_COLOR_SPACE colorspace) {
     comp->component_id = c + 1;
     comp->h_samp_factor = 1;
     comp->v_samp_factor = 1;
-    comp->quant_tbl_no = c;
+    comp->quant_tbl_no = 0;
   }
   if (colorspace == JCS_RGB) {
     cinfo->comp_info[0].component_id = 'R';
@@ -331,7 +249,13 @@ void jpegli_set_colorspace(j_compress_ptr cinfo, J_COLOR_SPACE colorspace) {
       cinfo->comp_info[0].h_samp_factor = cinfo->comp_info[0].v_samp_factor = 2;
       cinfo->comp_info[1].h_samp_factor = cinfo->comp_info[1].v_samp_factor = 2;
       cinfo->comp_info[2].h_samp_factor = cinfo->comp_info[2].v_samp_factor = 1;
+      // Use separate quantization tables for each component
+      cinfo->comp_info[1].quant_tbl_no = 1;
+      cinfo->comp_info[2].quant_tbl_no = 2;
     }
+  } else if (colorspace == JCS_YCbCr || colorspace == JCS_YCCK) {
+    cinfo->comp_info[1].quant_tbl_no = 1;
+    cinfo->comp_info[2].quant_tbl_no = 1;
   }
 }
 
@@ -373,6 +297,22 @@ void jpegli_add_quant_table(j_compress_ptr cinfo, int which_tbl,
                             const unsigned int* basic_table, int scale_factor,
                             boolean force_baseline) {
   CheckState(cinfo, jpegli::kEncStart);
+  if (which_tbl < 0 || which_tbl > NUM_QUANT_TBLS) {
+    JPEGLI_ERROR("Invalid quant table index %d", which_tbl);
+  }
+  if (cinfo->quant_tbl_ptrs[which_tbl] == nullptr) {
+    cinfo->quant_tbl_ptrs[which_tbl] =
+        jpegli_alloc_quant_table(reinterpret_cast<j_common_ptr>(cinfo));
+  }
+  // TODO(szabadka) Support non-baseline values.
+  int max_qval = 255;
+  JQUANT_TBL* quant_table = cinfo->quant_tbl_ptrs[which_tbl];
+  for (int k = 0; k < DCTSIZE2; ++k) {
+    int qval = (basic_table[k] * scale_factor + 50) / 100;
+    qval = std::max(1, std::min(qval, max_qval));
+    quant_table->quantval[k] = qval;
+  }
+  quant_table->sent_table = FALSE;
 }
 
 void jpegli_enable_adaptive_quantization(j_compress_ptr cinfo, boolean value) {
@@ -563,24 +503,14 @@ JDIMENSION jpegli_write_scanlines(j_compress_ptr cinfo, JSAMPARRAY scanlines,
 void jpegli_finish_compress(j_compress_ptr cinfo) {
   CheckState(cinfo, jpegli::kEncReadImage, jpegli::kEncWriteCoeffs);
   jpeg_comp_master* m = cinfo->master;
-
-  const bool use_xyb = m->xyb_mode && cinfo->jpeg_color_space == JCS_RGB;
-  const bool use_aq = m->use_adaptive_quantization;
-  const bool use_std_tables =
-      m->use_std_tables || cinfo->jpeg_color_space != JCS_YCbCr;
-  jpegli::QuantMode quant_mode = use_xyb          ? jpegli::QUANT_XYB
-                                 : use_std_tables ? jpegli::QUANT_STD
-                                                  : jpegli::QUANT_YUV;
+  jxl::Image3F& input = m->input;
 
   if (cinfo->num_components == 1) {
     CopyImageTo(m->input.Plane(0), &m->input.Plane(1));
     CopyImageTo(m->input.Plane(0), &m->input.Plane(2));
   }
-  uint8_t cicp_tf;
-  jpegli::LookupCICPTransferFunction(m->special_markers, &cicp_tf);
-  jxl::Image3F& input = m->input;
-  float distance = m->distance;
 
+  const bool use_xyb = m->xyb_mode && cinfo->jpeg_color_space == JCS_RGB;
   if (cinfo->in_color_space == JCS_RGB && !use_xyb &&
       cinfo->jpeg_color_space == JCS_YCbCr) {
     for (size_t y = 0; y < cinfo->image_height; ++y) {
@@ -592,42 +522,7 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
                                          DCTSIZE * cinfo->max_h_samp_factor,
                                          DCTSIZE * cinfo->max_v_samp_factor);
 
-  // Compute adaptive quant field.
-  jxl::ImageF qf(m->xsize_blocks, m->ysize_blocks);
-  if (use_aq) {
-    int y_channel = use_xyb ? 1 : 0;
-    qf = jpegli::InitialQuantField(distance, input.Plane(y_channel), nullptr,
-                                   distance);
-  } else {
-    FillImage(0.575f, &qf);
-  }
-  float qfmin, qfmax;
-  ImageMinMax(qf, &qfmin, &qfmax);
-
-  // Global scale is chosen in a way that butteraugli 3-norm matches libjpeg
-  // with the same quality setting. Fitted for quality 90 on jyrki31 corpus.
-  constexpr float kGlobalScaleXYB = 0.86747522f;
-  constexpr float kGlobalScaleYCbCr = 1.03148720f;
-  constexpr float kGlobalScaleStd = 1.0f;
-  constexpr float kGlobalScales[jpegli::NUM_QUANT_MODES] = {
-      kGlobalScaleXYB, kGlobalScaleYCbCr, kGlobalScaleStd};
-  float global_scale = kGlobalScales[quant_mode];
-  float ac_scale, dc_scale;
-  if (!use_xyb) {
-    if (cicp_tf == jpegli::kTransferFunctionPQ) {
-      global_scale *= .4f;
-    } else if (cicp_tf == jpegli::kTransferFunctionHLG) {
-      global_scale *= .5f;
-    }
-  }
-  if (use_xyb || !use_std_tables) {
-    ac_scale = global_scale * distance / qfmax;
-    dc_scale = global_scale / jpegli::InitialQuantDC(distance);
-  } else {
-    float linear_scale = 0.01f * jpegli::DistanceToLinearQuality(distance);
-    ac_scale = global_scale * linear_scale;
-    dc_scale = global_scale * linear_scale;
-  }
+  jpegli::ComputeAdaptiveQuantField(cinfo);
 
   //
   // Start writing to the bitstream
@@ -643,8 +538,7 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
   }
 
   // DQT
-  float qm[3 * jpegli::kDCTBlockSize];
-  jpegli::AddJpegQuantMatrices(cinfo, quant_mode, dc_scale, ac_scale, qm);
+  jpegli::FinalizeQuantMatrices(cinfo);
   jpegli::EncodeDQT(cinfo);
 
   // SOF
@@ -662,8 +556,7 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
     comp->height_in_blocks = m->ysize_blocks / v_factor;
   }
   std::vector<std::vector<jpegli::coeff_t>> coeffs;
-  jpegli::ComputeDCTCoefficients(cinfo, input, distance, use_xyb, qf, qm,
-                                 &coeffs);
+  jpegli::ComputeDCTCoefficients(cinfo, &coeffs);
 
   if (cinfo->scan_info == nullptr) {
     jpegli::SetDefaultScanScript(cinfo);
