@@ -458,7 +458,7 @@ void WriteOutput(j_compress_ptr cinfo, std::initializer_list<uint8_t> bytes) {
 }
 
 void EncodeSOF(j_compress_ptr cinfo) {
-  const uint8_t marker = cinfo->progressive_mode ? 0xc2 : 0xc0;
+  const uint8_t marker = cinfo->progressive_mode ? 0xc2 : 0xc1;
   const size_t n_comps = cinfo->num_components;
   const size_t marker_len = 8 + 3 * n_comps;
   std::vector<uint8_t> data(marker_len + 2);

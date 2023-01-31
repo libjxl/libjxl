@@ -15,7 +15,7 @@ import subprocess
 import sys
 
 def SourceFileName():
-  return "lib/jpegli/encode.cc"
+  return "lib/jpegli/quant.cc"
 
 def ScalePattern(scale_type):
   return "  constexpr float kGlobalScale" + scale_type + " = ";

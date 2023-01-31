@@ -7,8 +7,13 @@
 
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
+#include "lib/jpegli/adaptive_quantization.h"
 #include "lib/jpegli/common.h"
+#include "lib/jpegli/encode_internal.h"
+#include "lib/jpegli/error.h"
+#include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/status.h"
 
 namespace jpegli {
@@ -440,47 +445,151 @@ static const float kBaseQuantMatrixStd[] = {
     99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f,  //
 };
 
-constexpr const float* kBaseQuantMatrices[NUM_QUANT_MODES] = {
-    kBaseQuantMatrixXYB, kBaseQuantMatrixYCbCr, kBaseQuantMatrixStd};
+constexpr unsigned char kCICPTagSignature[4] = {0x63, 0x69, 0x63, 0x70};
+constexpr size_t kCICPTagSize = 12;
+constexpr uint8_t kTransferFunctionPQ = 16;
+constexpr uint8_t kTransferFunctionHLG = 18;
+
+void LookupCICPTransferFunction(
+    const std::vector<std::vector<uint8_t>>& special_markers, uint8_t* tf) {
+  *tf = 2;  // Unknown transfer function code
+  size_t last_index = 0;
+  size_t cicp_offset = 0;
+  size_t cicp_length = 0;
+  uint8_t cicp_tag[kCICPTagSize] = {};
+  size_t cicp_pos = 0;
+  for (const auto& marker : special_markers) {
+    if (marker.size() < 18 || marker[1] != kICCMarker ||
+        (marker[2] << 8u) + marker[3] + 2u != marker.size() ||
+        memcmp(&marker[4], kICCSignature, 12) != 0) {
+      continue;
+    }
+    uint8_t index = marker[16];
+    uint8_t total = marker[17];
+    const uint8_t* payload = marker.data() + 18;
+    const size_t payload_size = marker.size() - 18;
+    if (index != last_index + 1 || index > total) {
+      return;
+    }
+    if (last_index == 0) {
+      // Look up the offset of the CICP tag from the first chunk of ICC data.
+      if (payload_size < 132) {
+        return;
+      }
+      uint32_t tag_count = LoadBE32(&payload[128]);
+      if (payload_size < 132 + 12 * tag_count) {
+        return;
+      }
+      for (uint32_t i = 0; i < tag_count; ++i) {
+        if (memcmp(&payload[132 + 12 * i], kCICPTagSignature, 4) == 0) {
+          cicp_offset = LoadBE32(&payload[136 + 12 * i]);
+          cicp_length = LoadBE32(&payload[140 + 12 * i]);
+        }
+      }
+      if (cicp_length < kCICPTagSize) {
+        return;
+      }
+    }
+    if (cicp_offset < payload_size) {
+      size_t n_bytes =
+          std::min(payload_size - cicp_offset, kCICPTagSize - cicp_pos);
+      memcpy(&cicp_tag[cicp_pos], &payload[cicp_offset], n_bytes);
+      cicp_pos += n_bytes;
+      if (cicp_pos == kCICPTagSize) {
+        break;
+      }
+      cicp_offset = 0;
+    } else {
+      cicp_offset -= payload_size;
+    }
+    ++last_index;
+  }
+  if (cicp_pos >= kCICPTagSize && memcmp(cicp_tag, kCICPTagSignature, 4) == 0) {
+    *tf = cicp_tag[9];
+  }
+}
+
+float DistanceToLinearQuality(float distance) {
+  if (distance <= 0.1f) {
+    return 1.0f;
+  } else if (distance <= 4.6f) {
+    return (200.0f / 9.0f) * (distance - 0.1f);
+  } else if (distance <= 6.4f) {
+    return 5000.0f / (100.0f - (distance - 0.1f) / 0.09f);
+  } else if (distance < 25.0f) {
+    return 530000.0f /
+           (3450.0f -
+            300.0f * std::sqrt((848.0f * distance - 5330.0f) / 120.0f));
+  } else {
+    return 5000.0f;
+  }
+}
 
 }  // namespace
 
-void AddJpegQuantMatrices(j_compress_ptr cinfo, QuantMode mode, float dc_scale,
-                          float ac_scale, float* qm) {
-  JXL_DASSERT(mode < NUM_QUANT_MODES);
-  if (mode == QUANT_STD && cinfo->jpeg_color_space != JCS_YCbCr) {
-    // Use only luminance tables for non-YUV jpegs.
-    for (int c = 0; c < cinfo->num_components; c++) {
-      qm[c * DCTSIZE2] = dc_scale * kBaseQuantMatrixStd[0];
-      for (size_t j = 1; j < DCTSIZE2; j++) {
-        qm[c * DCTSIZE2 + j] = ac_scale * kBaseQuantMatrixStd[j];
-      }
+void FinalizeQuantMatrices(j_compress_ptr cinfo) {
+  jpeg_comp_master* m = cinfo->master;
+
+  // Global scale is chosen in a way that butteraugli 3-norm matches libjpeg
+  // with the same quality setting. Fitted for quality 90 on jyrki31 corpus.
+  constexpr float kGlobalScaleXYB = 0.86747522f;
+  constexpr float kGlobalScaleYCbCr = 1.03148720f;
+
+  float ac_scale, dc_scale;
+  const float* base_quant_matrix;
+
+  if (cinfo->jpeg_color_space == JCS_RGB && m->xyb_mode) {
+    ac_scale = kGlobalScaleXYB * m->distance / m->quant_field_max;
+    dc_scale = kGlobalScaleXYB / InitialQuantDC(m->distance);
+    base_quant_matrix = kBaseQuantMatrixXYB;
+  } else if (cinfo->jpeg_color_space == JCS_YCbCr && !m->use_std_tables &&
+             cinfo->comp_info[0].quant_tbl_no == 0 &&
+             cinfo->comp_info[1].quant_tbl_no == 1 &&
+             cinfo->comp_info[2].quant_tbl_no == 1 &&
+             cinfo->quant_tbl_ptrs[0] == nullptr &&
+             cinfo->quant_tbl_ptrs[1] == nullptr) {
+    // No custom quantization tables were specified, so we set our default
+    // YCbCr quantization tables here. We could not do this earlier in
+    // jpegli_set_defaults() becase it may depend on the ICC profile and
+    // pixel values.
+    cinfo->comp_info[2].quant_tbl_no = 2;
+    float global_scale = kGlobalScaleYCbCr;
+    uint8_t cicp_tf;
+    LookupCICPTransferFunction(m->special_markers, &cicp_tf);
+    if (cicp_tf == kTransferFunctionPQ) {
+      global_scale *= .4f;
+    } else if (cicp_tf == kTransferFunctionHLG) {
+      global_scale *= .5f;
     }
+    ac_scale = global_scale * m->distance / m->quant_field_max;
+    dc_scale = global_scale / InitialQuantDC(m->distance);
+    base_quant_matrix = kBaseQuantMatrixYCbCr;
   } else {
-    const float* const base_quant_matrix = kBaseQuantMatrices[mode];
-    for (int c = 0, ix = 0; c < cinfo->num_components; c++) {
-      qm[ix] = dc_scale * base_quant_matrix[ix];
-      ix++;
-      for (size_t j = 1; j < DCTSIZE2; j++, ix++) {
-        qm[ix] = ac_scale * base_quant_matrix[ix];
-      }
-    }
+    dc_scale = ac_scale = 0.01f * DistanceToLinearQuality(m->distance);
+    base_quant_matrix = kBaseQuantMatrixStd;
   }
-  for (int c = 0; c < cinfo->num_components; c++) {
-    // TODO(szabadka) Don't always ignore quant tables that were provided
-    // through the libjpeg API.
-    if (cinfo->quant_tbl_ptrs[c] == nullptr) {
-      cinfo->quant_tbl_ptrs[c] =
-          jpegli_alloc_quant_table(reinterpret_cast<j_common_ptr>(cinfo));
+
+  for (int c = 0; c < cinfo->num_components; ++c) {
+    int quant_idx = cinfo->comp_info[c].quant_tbl_no;
+    JQUANT_TBL** qtable = &cinfo->quant_tbl_ptrs[quant_idx];
+    if (*qtable != nullptr) {
+      // A custom quantization table was already set for this component, nothing
+      // more to do here.
+      continue;
     }
-    JQUANT_TBL* quant_table = cinfo->quant_tbl_ptrs[c];
-    quant_table->sent_table = FALSE;
-    for (size_t j = 0; j < DCTSIZE2; j++) {
-      int qval = std::round(qm[c * DCTSIZE2 + j]);
+    if (quant_idx < 0 || quant_idx > 2) {
+      JPEGLI_ERROR("Missing quantization table %d for component %d", quant_idx,
+                   c);
+    }
+    const float* base_qm = &base_quant_matrix[quant_idx * DCTSIZE2];
+    *qtable = jpegli_alloc_quant_table(reinterpret_cast<j_common_ptr>(cinfo));
+    for (int k = 0; k < DCTSIZE2; ++k) {
+      float scale = (k == 0 ? dc_scale : ac_scale);
+      int qval = std::round(scale * base_qm[k]);
       // TODO(szabadka) Support 16-bit values (if force_baseline was not set).
-      quant_table->quantval[j] = std::max(1, std::min(qval, 255));
-      qm[c * DCTSIZE2 + j] = 1.0f / quant_table->quantval[j];
+      (*qtable)->quantval[k] = std::max(1, std::min(qval, 255));
     }
+    (*qtable)->sent_table = FALSE;
   }
 }
 

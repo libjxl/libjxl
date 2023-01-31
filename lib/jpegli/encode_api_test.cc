@@ -53,6 +53,37 @@ static constexpr ScanScript kTestScript[] = {
 };
 static constexpr size_t kNumTestScripts = ARRAYSIZE(kTestScript);
 
+struct CustomQuantTable {
+  int slot_idx = 0;
+  uint16_t table_type = 0;
+  bool force_baseline = true;
+  int scale_factor = 100;
+  bool add_raw = false;
+  std::vector<unsigned int> basic_table;
+  std::vector<unsigned int> quantval;
+  void Generate() {
+    basic_table.resize(DCTSIZE2);
+    quantval.resize(DCTSIZE2);
+    switch (table_type) {
+      case 0: {
+        for (int k = 0; k < DCTSIZE2; ++k) {
+          basic_table[k] = k + 1;
+        }
+        break;
+      }
+      default:
+        for (int k = 0; k < DCTSIZE2; ++k) {
+          basic_table[k] = table_type;
+        }
+    }
+    for (int k = 0; k < DCTSIZE2; ++k) {
+      quantval[k] = (basic_table[k] * scale_factor + 50U) / 100U;
+      quantval[k] = std::max(quantval[k], 1U);
+      quantval[k] = std::min(quantval[k], force_baseline ? 255U : 32767U);
+    }
+  }
+};
+
 struct TestConfig {
   size_t xsize = 0;
   size_t ysize = 0;
@@ -62,6 +93,9 @@ struct TestConfig {
   size_t input_components = 3;
   std::vector<uint8_t> pixels;
   int quality = 90;
+  bool custom_quant_tables = false;
+  std::vector<CustomQuantTable> quant_tables;
+  int quant_indexes[3] = {0, 1, 1};
   bool custom_sampling = false;
   int h_sampling[3] = {1, 1, 1};
   int v_sampling[3] = {1, 1, 1};
@@ -174,6 +208,18 @@ void TestDecodedImage(const TestConfig& config,
       EXPECT_EQ(cinfo.comp_info[i].v_samp_factor, config.v_sampling[i]);
     }
   }
+  if (config.custom_quant_tables) {
+    for (int i = 0; i < cinfo.num_components; ++i) {
+      EXPECT_EQ(cinfo.comp_info[i].quant_tbl_no, config.quant_indexes[i]);
+    }
+    for (const auto& table : config.quant_tables) {
+      JQUANT_TBL* quant_table = cinfo.quant_tbl_ptrs[table.slot_idx];
+      ASSERT_TRUE(quant_table != nullptr);
+      for (int k = 0; k < DCTSIZE2; ++k) {
+        EXPECT_EQ(quant_table->quantval[k], table.quantval[k]);
+      }
+    }
+  }
 #endif
   while (!jpeg_input_complete(&cinfo)) {
     EXPECT_GT(cinfo.input_scan_number, 0);
@@ -228,25 +274,31 @@ void TestDecodedImage(const TestConfig& config,
   EXPECT_LE(rms, config.max_dist);
 }
 
-bool EncodeWithJpegli(const TestConfig& config,
-                      std::vector<uint8_t>* compressed) {
+struct MyClientData {
+  jmp_buf env;
   unsigned char* buffer = nullptr;
   unsigned long size = 0;
+};
+
+bool EncodeWithJpegli(const TestConfig& config,
+                      std::vector<uint8_t>* compressed) {
+  MyClientData data;
   jpeg_compress_struct cinfo;
   jpeg_error_mgr jerr;
   cinfo.err = jpegli_std_error(&jerr);
-  jmp_buf env;
-  if (setjmp(env)) {
+  if (setjmp(data.env)) {
     return false;
   }
-  cinfo.client_data = static_cast<void*>(&env);
+  cinfo.client_data = static_cast<void*>(&data);
   cinfo.err->error_exit = [](j_common_ptr cinfo) {
     (*cinfo->err->output_message)(cinfo);
-    jmp_buf* env = static_cast<jmp_buf*>(cinfo->client_data);
-    longjmp(*env, 1);
+    MyClientData* data = reinterpret_cast<MyClientData*>(cinfo->client_data);
+    if (data->buffer) free(data->buffer);
+    jpegli_destroy(cinfo);
+    longjmp(data->env, 1);
   };
   jpegli_create_compress(&cinfo);
-  jpegli_mem_dest(&cinfo, &buffer, &size);
+  jpegli_mem_dest(&cinfo, &data.buffer, &data.size);
   cinfo.image_width = config.xsize;
   cinfo.image_height = config.ysize;
   cinfo.input_components = config.input_components;
@@ -262,6 +314,24 @@ bool EncodeWithJpegli(const TestConfig& config,
     for (int c = 0; c < cinfo.num_components; ++c) {
       cinfo.comp_info[c].h_samp_factor = config.h_sampling[c];
       cinfo.comp_info[c].v_samp_factor = config.v_sampling[c];
+    }
+  }
+  if (config.custom_quant_tables) {
+    for (int c = 0; c < cinfo.num_components; ++c) {
+      cinfo.comp_info[c].quant_tbl_no = config.quant_indexes[c];
+    }
+    for (const auto& table : config.quant_tables) {
+      if (table.add_raw) {
+        cinfo.quant_tbl_ptrs[table.slot_idx] =
+            jpegli_alloc_quant_table((j_common_ptr)&cinfo);
+        for (int k = 0; k < DCTSIZE2; ++k) {
+          cinfo.quant_tbl_ptrs[table.slot_idx]->quantval[k] = table.quantval[k];
+        }
+        cinfo.quant_tbl_ptrs[table.slot_idx]->sent_table = FALSE;
+      } else {
+        jpegli_add_quant_table(&cinfo, table.slot_idx, &table.basic_table[0],
+                               table.scale_factor, table.force_baseline);
+      }
     }
   }
   if (config.progressive_id > 0) {
@@ -289,9 +359,9 @@ bool EncodeWithJpegli(const TestConfig& config,
   }
   jpegli_finish_compress(&cinfo);
   jpegli_destroy_compress(&cinfo);
-  compressed->resize(size);
-  std::copy_n(buffer, size, compressed->data());
-  std::free(buffer);
+  compressed->resize(data.size);
+  std::copy_n(data.buffer, data.size, compressed->data());
+  std::free(data.buffer);
   return true;
 }
 
@@ -354,23 +424,19 @@ std::vector<TestConfig> GenerateTests() {
     config.max_dist = 2.5;
     all_tests.push_back(config);
   }
-  {
-    for (size_t p = 0; p < kNumTestScripts; ++p) {
-      TestConfig config;
-      config.progressive_id = p + 1;
-      config.max_bpp = 1.5;
-      config.max_dist = 2.2;
-      all_tests.push_back(config);
-    }
+  for (size_t p = 0; p < kNumTestScripts; ++p) {
+    TestConfig config;
+    config.progressive_id = p + 1;
+    config.max_bpp = 1.5;
+    config.max_dist = 2.2;
+    all_tests.push_back(config);
   }
-  {
-    for (size_t l = 0; l <= 2; ++l) {
-      TestConfig config;
-      config.progressive_level = l;
-      config.max_bpp = 1.5;
-      config.max_dist = 2.2;
-      all_tests.push_back(config);
-    }
+  for (size_t l = 0; l <= 2; ++l) {
+    TestConfig config;
+    config.progressive_level = l;
+    config.max_bpp = 1.5;
+    config.max_dist = 2.2;
+    all_tests.push_back(config);
   }
   {
     TestConfig config;
@@ -393,15 +459,13 @@ std::vector<TestConfig> GenerateTests() {
     config.max_dist = 1.3;
     all_tests.push_back(config);
   }
-  {
+  for (bool xyb : {false, true}) {
     TestConfig config;
     config.in_color_space = JCS_GRAYSCALE;
-    for (bool xyb : {false, true}) {
-      config.xyb_mode = xyb;
-      config.max_bpp = 1.25;
-      config.max_dist = 1.4;
-      all_tests.push_back(config);
-    }
+    config.xyb_mode = xyb;
+    config.max_bpp = 1.25;
+    config.max_dist = 1.4;
+    all_tests.push_back(config);
   }
   {
     TestConfig config;
@@ -413,24 +477,137 @@ std::vector<TestConfig> GenerateTests() {
     config.max_dist = 1.4;
     all_tests.push_back(config);
   }
-  {
+  for (int channels = 1; channels <= 3; ++channels) {
     TestConfig config;
     config.in_color_space = JCS_UNKNOWN;
-    for (int channels = 1; channels <= 3; ++channels) {
-      config.input_components = channels;
-      config.max_bpp = 1.25 * channels;
-      config.max_dist = 1.4;
+    config.input_components = channels;
+    config.max_bpp = 1.25 * channels;
+    config.max_dist = 1.4;
+    all_tests.push_back(config);
+  }
+  for (size_t r : {1, 3, 17, 1024}) {
+    TestConfig config;
+    config.restart_interval = r;
+    config.max_bpp = 1.5 + 5.5 / r;
+    config.max_dist = 2.2;
+    all_tests.push_back(config);
+  }
+  for (int type : {0, 1, 10, 100}) {
+    for (int scale : {1, 50, 100, 200, 500}) {
+      for (bool add_raw : {false, true}) {
+        TestConfig config;
+        config.xsize = 64;
+        config.ysize = 64;
+        config.custom_quant_tables = true;
+        config.quant_indexes[1] = 0;
+        config.quant_indexes[2] = 0;
+        CustomQuantTable table;
+        table.table_type = type;
+        table.scale_factor = scale;
+        table.force_baseline = true;
+        table.add_raw = add_raw;
+        table.Generate();
+        config.quant_tables.push_back(table);
+        float q = (type == 0 ? 16 : type) * scale * 0.01f;
+        q = std::max(1.0f, std::min(255.0f, q));
+        config.max_bpp = 1.3f + 25.0f / q;
+        config.max_dist = 0.6f + 0.25f * q;
+        all_tests.push_back(config);
+      }
+    }
+  }
+  for (int qidx = 0; qidx < 8; ++qidx) {
+    if (qidx == 3) continue;
+    TestConfig config;
+    config.xsize = 256;
+    config.ysize = 256;
+    config.custom_quant_tables = true;
+    config.quant_indexes[0] = (qidx >> 2) & 1;
+    config.quant_indexes[1] = (qidx >> 1) & 1;
+    config.quant_indexes[2] = (qidx >> 0) & 1;
+    config.max_bpp = 2.6;
+    config.max_dist = 2.5;
+    all_tests.push_back(config);
+  }
+  for (int qidx = 0; qidx < 8; ++qidx) {
+    for (int slot_idx = 0; slot_idx < 2; ++slot_idx) {
+      if (qidx == 0 && slot_idx == 0) continue;
+      TestConfig config;
+      config.xsize = 256;
+      config.ysize = 256;
+      config.custom_quant_tables = true;
+      config.quant_indexes[0] = (qidx >> 2) & 1;
+      config.quant_indexes[1] = (qidx >> 1) & 1;
+      config.quant_indexes[2] = (qidx >> 0) & 1;
+      CustomQuantTable table;
+      table.slot_idx = slot_idx;
+      table.Generate();
+      config.quant_tables.push_back(table);
+      config.max_bpp = 2.6;
+      config.max_dist = 2.75;
       all_tests.push_back(config);
     }
   }
-  {
-    for (size_t r : {1, 3, 17, 1024}) {
+  for (int qidx = 0; qidx < 8; ++qidx) {
+    for (bool xyb : {false, true}) {
       TestConfig config;
-      config.restart_interval = r;
-      config.max_bpp = 1.5 + 5.5 / r;
-      config.max_dist = 2.2;
+      config.xsize = 256;
+      config.ysize = 256;
+      config.xyb_mode = xyb;
+      config.custom_quant_tables = true;
+      config.quant_indexes[0] = (qidx >> 2) & 1;
+      config.quant_indexes[1] = (qidx >> 1) & 1;
+      config.quant_indexes[2] = (qidx >> 0) & 1;
+      {
+        CustomQuantTable table;
+        table.slot_idx = 0;
+        table.Generate();
+        config.quant_tables.push_back(table);
+      }
+      {
+        CustomQuantTable table;
+        table.slot_idx = 1;
+        table.table_type = 20;
+        table.Generate();
+        config.quant_tables.push_back(table);
+      }
+      config.max_bpp = 1.9;
+      config.max_dist = 3.75;
       all_tests.push_back(config);
     }
+  }
+  for (bool xyb : {false, true}) {
+    TestConfig config;
+    config.xsize = 256;
+    config.ysize = 256;
+    config.xyb_mode = xyb;
+    config.custom_quant_tables = true;
+    config.quant_indexes[0] = 0;
+    config.quant_indexes[1] = 1;
+    config.quant_indexes[2] = 2;
+    {
+      CustomQuantTable table;
+      table.slot_idx = 0;
+      table.Generate();
+      config.quant_tables.push_back(table);
+    }
+    {
+      CustomQuantTable table;
+      table.slot_idx = 1;
+      table.table_type = 20;
+      table.Generate();
+      config.quant_tables.push_back(table);
+    }
+    {
+      CustomQuantTable table;
+      table.slot_idx = 2;
+      table.table_type = 30;
+      table.Generate();
+      config.quant_tables.push_back(table);
+    }
+    config.max_bpp = 1.5;
+    config.max_dist = 3.75;
+    all_tests.push_back(config);
   }
   return all_tests;
 };
@@ -466,6 +643,17 @@ std::ostream& operator<<(std::ostream& os, const TestConfig& c) {
       os << c.h_sampling[i] << "x" << c.v_sampling[i];
     }
   }
+  if (c.custom_quant_tables) {
+    os << "QIDX";
+    for (int i = 0; i < 3; ++i) {
+      os << c.quant_indexes[i];
+    }
+    for (const auto& table : c.quant_tables) {
+      os << "TABLE" << table.slot_idx << "T" << table.table_type
+         << (table.force_baseline ? "B" : "") << "F" << table.scale_factor
+         << (table.add_raw ? "R" : "");
+    }
+  }
   if (c.progressive_id > 0) {
     os << "P" << c.progressive_id;
   }
@@ -493,12 +681,6 @@ std::string TestDescription(
 JPEGLI_INSTANTIATE_TEST_SUITE_P(EncodeAPITest, EncodeAPITestParam,
                                 testing::ValuesIn(GenerateTests()),
                                 TestDescription);
-
-struct MyClientData {
-  jmp_buf env;
-  unsigned char* buffer = nullptr;
-  unsigned long size = 0;
-};
 
 #define ERROR_HANDLER_SETUP(action)                                           \
   jpeg_error_mgr jerr;                                                        \

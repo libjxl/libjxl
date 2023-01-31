@@ -21,6 +21,10 @@
 
 namespace jpegli {
 
+constexpr unsigned char kICCSignature[12] = {
+    0x49, 0x43, 0x43, 0x5F, 0x50, 0x52, 0x4F, 0x46, 0x49, 0x4C, 0x45, 0x00};
+constexpr int kICCMarker = JPEG_APP0 + 2;
+
 struct JPEGHuffmanCode {
   // Bit length histogram.
   std::array<uint32_t, kJpegHuffmanMaxBitLength + 1> counts = {};
@@ -68,6 +72,8 @@ struct jpeg_comp_master {
   JpegliEndianness endianness = JPEGLI_NATIVE_ENDIAN;
   std::array<jpegli::HuffmanCodeTable, jpegli::kMaxHuffmanTables> dc_huff_table;
   std::array<jpegli::HuffmanCodeTable, jpegli::kMaxHuffmanTables> ac_huff_table;
+  jxl::ImageF quant_field;
+  float quant_field_max;
 };
 
 #endif  // LIB_JPEGLI_ENCODE_INTERNAL_H_
