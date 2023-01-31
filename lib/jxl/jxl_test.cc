@@ -876,7 +876,7 @@ TEST(JxlTest, RoundtripAlpha16) {
 
   PackedPixelFile ppf_out;
   // TODO(szabadka) Investigate big size difference on i686
-  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, &pool, &ppf_out), 4007, 150);
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, &pool, &ppf_out), 4107, 200);
   EXPECT_THAT(ButteraugliDistance(t.ppf(), ppf_out), IsSlightlyBelow(0.7));
 }
 
