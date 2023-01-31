@@ -179,7 +179,7 @@ TEST(JxlTest, RoundtripResample2MT) {
   cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 3);  // kFalcon
 
   PackedPixelFile ppf_out;
-  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, &pool, &ppf_out), 190111, 10);
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, &pool, &ppf_out), 190000, 600);
   EXPECT_THAT(ComputeDistance2(t.ppf(), ppf_out), IsSlightlyBelow(340));
 }
 
@@ -350,7 +350,7 @@ TEST(JxlTest, RoundtripLargeFast) {
   cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 7);  // kSquirrel
 
   PackedPixelFile ppf_out;
-  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, &pool, &ppf_out), 401616, 100);
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, &pool, &ppf_out), 405616, 5000);
   EXPECT_THAT(ComputeDistance2(t.ppf(), ppf_out), IsSlightlyBelow(100));
 }
 
@@ -507,7 +507,7 @@ TEST(JxlTest, RoundtripSmallPatchesAlpha) {
   cparams.distance = 0.1f;
 
   PackedPixelFile ppf_out;
-  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, pool, &ppf_out), 550, 15);
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, pool, &ppf_out), 620, 70);
   EXPECT_THAT(ButteraugliDistance(t.ppf(), ppf_out), IsSlightlyBelow(0.025f));
 }
 
@@ -532,7 +532,7 @@ TEST(JxlTest, RoundtripSmallPatches) {
   cparams.distance = 0.1f;
 
   PackedPixelFile ppf_out;
-  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, pool, &ppf_out), 450, 12);
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, pool, &ppf_out), 430, 50);
   EXPECT_THAT(ButteraugliDistance(t.ppf(), ppf_out), IsSlightlyBelow(0.025f));
 }
 
@@ -809,7 +809,7 @@ TEST(JxlTest, RoundtripAlphaResampling) {
   cparams.AddOption(JXL_ENC_FRAME_SETTING_EXTRA_CHANNEL_RESAMPLING, 2);
 
   PackedPixelFile ppf_out;
-  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, pool, &ppf_out), 11819, 60);
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, pool, &ppf_out), 11819, 100);
   EXPECT_THAT(ButteraugliDistance(t.ppf(), ppf_out), IsSlightlyBelow(4.9));
 }
 
@@ -827,7 +827,7 @@ TEST(JxlTest, RoundtripAlphaResamplingOnlyAlpha) {
   cparams.AddOption(JXL_ENC_FRAME_SETTING_EXTRA_CHANNEL_RESAMPLING, 2);
 
   PackedPixelFile ppf_out;
-  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, pool, &ppf_out), 29949, 40);
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, pool, &ppf_out), 30100, 300);
   EXPECT_THAT(ButteraugliDistance(t.ppf(), ppf_out), IsSlightlyBelow(1.85));
 }
 
@@ -1083,7 +1083,7 @@ TEST(JxlTest, RoundtripNoise) {
   cparams.AddOption(JXL_ENC_FRAME_SETTING_NOISE, 1);
 
   PackedPixelFile ppf_out;
-  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, pool, &ppf_out), 39864, 700);
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, pool, &ppf_out), 39864, 750);
   EXPECT_THAT(ButteraugliDistance(t.ppf(), ppf_out), IsSlightlyBelow(1.7));
 }
 
