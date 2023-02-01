@@ -275,12 +275,14 @@ void jpegli_set_quality(j_compress_ptr cinfo, int quality,
                         boolean force_baseline) {
   CheckState(cinfo, jpegli::kEncStart);
   cinfo->master->distance = jpegli_quality_to_distance(quality);
+  cinfo->master->force_baseline = force_baseline;
 }
 
 void jpegli_set_linear_quality(j_compress_ptr cinfo, int scale_factor,
                                boolean force_baseline) {
   CheckState(cinfo, jpegli::kEncStart);
   cinfo->master->distance = jpegli::LinearQualityToDistance(scale_factor);
+  cinfo->master->force_baseline = force_baseline;
 }
 
 int jpegli_quality_scaling(int quality) {
@@ -304,8 +306,7 @@ void jpegli_add_quant_table(j_compress_ptr cinfo, int which_tbl,
     cinfo->quant_tbl_ptrs[which_tbl] =
         jpegli_alloc_quant_table(reinterpret_cast<j_common_ptr>(cinfo));
   }
-  // TODO(szabadka) Support non-baseline values.
-  int max_qval = 255;
+  int max_qval = force_baseline ? 255 : 32767U;
   JQUANT_TBL* quant_table = cinfo->quant_tbl_ptrs[which_tbl];
   for (int k = 0; k < DCTSIZE2; ++k) {
     int qval = (basic_table[k] * scale_factor + 50) / 100;

@@ -59,6 +59,7 @@ typedef int16_t coeff_t;
 struct jpeg_comp_master {
   jxl::Image3F input;
   float distance = 1.0;
+  bool force_baseline = true;
   bool xyb_mode = false;
   bool use_std_tables = false;
   bool use_adaptive_quantization = true;
