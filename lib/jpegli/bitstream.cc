@@ -573,30 +573,35 @@ void EncodeDHT(j_compress_ptr cinfo,
 }
 
 void EncodeDQT(j_compress_ptr cinfo) {
-  // TODO(szabadka) Support 16-bit values (if force_baseline was not set).
-  int marker_len = 2;
-  for (int i = 0; i < NUM_QUANT_TBLS; ++i) {
-    JQUANT_TBL* quant_table = cinfo->quant_tbl_ptrs[i];
-    if (quant_table == nullptr || quant_table->sent_table) continue;
-    marker_len += 1 + kDCTBlockSize;
-  }
-  std::vector<uint8_t> data(marker_len + 2);
+  std::vector<uint8_t> data(4 + NUM_QUANT_TBLS * (1 + 2 * kDCTBlockSize));
   size_t pos = 0;
   data[pos++] = 0xFF;
   data[pos++] = 0xDB;
-  data[pos++] = marker_len >> 8u;
-  data[pos++] = marker_len & 0xFFu;
+  pos += 2;  // Length will be filled in later.
   for (int i = 0; i < NUM_QUANT_TBLS; ++i) {
     JQUANT_TBL* quant_table = cinfo->quant_tbl_ptrs[i];
     if (quant_table == nullptr || quant_table->sent_table) continue;
-    data[pos++] = i;
+    int precision = 0;
+    for (size_t k = 0; k < DCTSIZE2; ++k) {
+      if (quant_table->quantval[k] > 255) precision = 1;
+    }
+    data[pos++] = (precision << 4) + i;
     for (size_t j = 0; j < DCTSIZE2; ++j) {
       int val_idx = kJPEGNaturalOrder[j];
       int val = quant_table->quantval[val_idx];
+      if (val == 0) {
+        JPEGLI_ERROR("Invalid quantval 0.");
+      }
+      if (precision) {
+        data[pos++] = val >> 8;
+      }
       data[pos++] = val & 0xFFu;
     }
     quant_table->sent_table = TRUE;
   }
+  data[2] = (pos - 2) >> 8u;
+  data[3] = (pos - 2) & 0xFFu;
+  data.resize(pos);
   WriteOutput(cinfo, data);
 }
 

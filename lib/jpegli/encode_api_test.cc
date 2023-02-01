@@ -56,9 +56,9 @@ static constexpr size_t kNumTestScripts = ARRAYSIZE(kTestScript);
 struct CustomQuantTable {
   int slot_idx = 0;
   uint16_t table_type = 0;
-  bool force_baseline = true;
   int scale_factor = 100;
   bool add_raw = false;
+  bool force_baseline = true;
   std::vector<unsigned int> basic_table;
   std::vector<unsigned int> quantval;
   void Generate() {
@@ -79,7 +79,10 @@ struct CustomQuantTable {
     for (int k = 0; k < DCTSIZE2; ++k) {
       quantval[k] = (basic_table[k] * scale_factor + 50U) / 100U;
       quantval[k] = std::max(quantval[k], 1U);
-      quantval[k] = std::min(quantval[k], force_baseline ? 255U : 32767U);
+      quantval[k] = std::min(quantval[k], 65535U);
+      if (!add_raw) {
+        quantval[k] = std::min(quantval[k], force_baseline ? 255U : 32767U);
+      }
     }
   }
 };
@@ -492,27 +495,30 @@ std::vector<TestConfig> GenerateTests() {
     config.max_dist = 2.2;
     all_tests.push_back(config);
   }
-  for (int type : {0, 1, 10, 100}) {
+  for (int type : {0, 1, 10, 100, 10000}) {
     for (int scale : {1, 50, 100, 200, 500}) {
       for (bool add_raw : {false, true}) {
-        TestConfig config;
-        config.xsize = 64;
-        config.ysize = 64;
-        config.custom_quant_tables = true;
-        config.quant_indexes[1] = 0;
-        config.quant_indexes[2] = 0;
-        CustomQuantTable table;
-        table.table_type = type;
-        table.scale_factor = scale;
-        table.force_baseline = true;
-        table.add_raw = add_raw;
-        table.Generate();
-        config.quant_tables.push_back(table);
-        float q = (type == 0 ? 16 : type) * scale * 0.01f;
-        q = std::max(1.0f, std::min(255.0f, q));
-        config.max_bpp = 1.3f + 25.0f / q;
-        config.max_dist = 0.6f + 0.25f * q;
-        all_tests.push_back(config);
+        for (bool baseline : {true, false}) {
+          if (!baseline && (add_raw || type * scale < 25500)) continue;
+          TestConfig config;
+          config.xsize = 64;
+          config.ysize = 64;
+          config.custom_quant_tables = true;
+          config.quant_indexes[1] = 0;
+          config.quant_indexes[2] = 0;
+          CustomQuantTable table;
+          table.table_type = type;
+          table.scale_factor = scale;
+          table.force_baseline = baseline;
+          table.add_raw = add_raw;
+          table.Generate();
+          config.quant_tables.push_back(table);
+          float q = (type == 0 ? 16 : type) * scale * 0.01f;
+          if (baseline && !add_raw) q = std::max(1.0f, std::min(255.0f, q));
+          config.max_bpp = 1.3f + 25.0f / q;
+          config.max_dist = 0.6f + 0.25f * q;
+          all_tests.push_back(config);
+        }
       }
     }
   }
@@ -649,9 +655,11 @@ std::ostream& operator<<(std::ostream& os, const TestConfig& c) {
       os << c.quant_indexes[i];
     }
     for (const auto& table : c.quant_tables) {
-      os << "TABLE" << table.slot_idx << "T" << table.table_type
-         << (table.force_baseline ? "B" : "") << "F" << table.scale_factor
-         << (table.add_raw ? "R" : "");
+      os << "TABLE" << table.slot_idx << "T" << table.table_type << "F"
+         << table.scale_factor
+         << (table.add_raw          ? "R"
+             : table.force_baseline ? "B"
+                                    : "");
     }
   }
   if (c.progressive_id > 0) {
@@ -799,6 +807,28 @@ TEST(ErrorHandlingTest, NoStartCompress) {
   JSAMPLE image[1] = {0};
   JSAMPROW row[] = {image};
   jpegli_write_scanlines(&cinfo, row, 1);
+  EXPECT_FAILURE();
+}
+
+TEST(ErrorHandlingTest, InvalidQuantValue) {
+  MyClientData data;
+  jpeg_compress_struct cinfo;
+  ERROR_HANDLER_SETUP(return );
+  jpegli_create_compress(&cinfo);
+  jpegli_mem_dest(&cinfo, &data.buffer, &data.size);
+  cinfo.image_width = 1;
+  cinfo.image_height = 1;
+  cinfo.input_components = 1;
+  jpegli_set_defaults(&cinfo);
+  cinfo.quant_tbl_ptrs[0] = jpegli_alloc_quant_table((j_common_ptr)&cinfo);
+  for (size_t k = 0; k < DCTSIZE2; ++k) {
+    cinfo.quant_tbl_ptrs[0]->quantval[k] = 0;
+  }
+  jpegli_start_compress(&cinfo, TRUE);
+  JSAMPLE image[1] = {0};
+  JSAMPROW row[] = {image};
+  jpegli_write_scanlines(&cinfo, row, 1);
+  jpegli_finish_compress(&cinfo);
   EXPECT_FAILURE();
 }
 

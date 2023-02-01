@@ -569,6 +569,7 @@ void FinalizeQuantMatrices(j_compress_ptr cinfo) {
     base_quant_matrix = kBaseQuantMatrixStd;
   }
 
+  int quant_max = m->force_baseline ? 255 : 32767U;
   for (int c = 0; c < cinfo->num_components; ++c) {
     int quant_idx = cinfo->comp_info[c].quant_tbl_no;
     JQUANT_TBL** qtable = &cinfo->quant_tbl_ptrs[quant_idx];
@@ -586,8 +587,7 @@ void FinalizeQuantMatrices(j_compress_ptr cinfo) {
     for (int k = 0; k < DCTSIZE2; ++k) {
       float scale = (k == 0 ? dc_scale : ac_scale);
       int qval = std::round(scale * base_qm[k]);
-      // TODO(szabadka) Support 16-bit values (if force_baseline was not set).
-      (*qtable)->quantval[k] = std::max(1, std::min(qval, 255));
+      (*qtable)->quantval[k] = std::max(1, std::min(qval, quant_max));
     }
     (*qtable)->sent_table = FALSE;
   }
