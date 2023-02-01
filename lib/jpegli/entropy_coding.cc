@@ -360,7 +360,7 @@ bool ProcessScan(j_compress_ptr cinfo,
                  const jpeg_scan_info* scan_info, int* histo_index,
                  Histogram* dc_histograms, Histogram* ac_histograms) {
   int restarts_to_go = cinfo->restart_interval;
-  coeff_t last_dc_coeff[kMaxComponents] = {0};
+  coeff_t last_dc_coeff[MAX_COMPS_IN_SCAN] = {0};
   DCTState s;
 
   // "Non-interleaved" means color data comes in separate scans, in other words
@@ -412,12 +412,11 @@ bool ProcessScan(j_compress_ptr cinfo,
             bool ok;
             if (!is_progressive) {
               ok = ProcessDCTBlockSequential(block, dc_histo, ac_histo,
-                                             num_zero_runs,
-                                             last_dc_coeff + comp_idx);
+                                             num_zero_runs, last_dc_coeff + i);
             } else if (Ah == 0) {
               ok = ProcessDCTBlockProgressive(block, dc_histo, ac_histo, Ss, Se,
                                               Al, num_zero_runs, &s,
-                                              last_dc_coeff + comp_idx);
+                                              last_dc_coeff + i);
             } else {
               ok = ProcessRefinementBits(block, ac_histo, Ss, Se, Al, &s);
             }

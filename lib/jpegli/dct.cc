@@ -58,11 +58,12 @@ void ComputeDCTCoefficients(
     std::vector<std::vector<jpegli::coeff_t> >* all_coeffs) {
   jpeg_comp_master* m = cinfo->master;
   float qfmax = m->quant_field_max;
-  float zero_bias_mul[3] = {0.5f, 0.5f, 0.5f};
+  std::vector<float> zero_bias_mul(cinfo->num_components, 0.5f);
   const bool xyb = m->xyb_mode && cinfo->jpeg_color_space == JCS_RGB;
   if (m->distance <= 1.0f) {
-    memcpy(zero_bias_mul, xyb ? kZeroBiasMulXYB : kZeroBiasMulYCbCr,
-           sizeof(zero_bias_mul));
+    for (int c = 0; c < 3 && c < cinfo->num_components; ++c) {
+      zero_bias_mul[c] = xyb ? kZeroBiasMulXYB[c] : kZeroBiasMulYCbCr[c];
+    }
   }
   HWY_ALIGN float scratch_space[2 * kDCTBlockSize];
   jxl::ImageF tmp;
@@ -74,11 +75,13 @@ void ComputeDCTCoefficients(
     JXL_DASSERT(cinfo->max_v_samp_factor % comp->v_samp_factor == 0);
     const int h_factor = cinfo->max_h_samp_factor / comp->h_samp_factor;
     const int v_factor = cinfo->max_v_samp_factor / comp->v_samp_factor;
-    const jxl::ImageF* plane = &m->input.Plane(c);
+    jxl::ImageF plane(m->xsize_blocks * DCTSIZE, m->ysize_blocks * DCTSIZE);
+    for (size_t y = 0; y < plane.ysize(); ++y) {
+      memcpy(plane.Row(y), m->input_buffer[c].Row(y),
+             plane.xsize() * sizeof(float));
+    }
     if (h_factor > 1 || v_factor > 1) {
-      tmp = CopyImage(*plane);
-      DownsampleImage(&tmp, h_factor, v_factor);
-      plane = &tmp;
+      DownsampleImage(&plane, h_factor, v_factor);
     }
     std::vector<coeff_t> coeffs(xsize_blocks * ysize_blocks * kDCTBlockSize);
     JQUANT_TBL* quant_table = cinfo->quant_tbl_ptrs[comp->quant_tbl_no];
@@ -91,7 +94,7 @@ void ComputeDCTCoefficients(
         coeff_t* block = &coeffs[bix * kDCTBlockSize];
         HWY_ALIGN float dct[kDCTBlockSize];
         TransformFromPixels(jxl::AcStrategy::Type::DCT,
-                            plane->Row(8 * by) + 8 * bx, plane->PixelsPerRow(),
+                            plane.Row(8 * by) + 8 * bx, plane.PixelsPerRow(),
                             dct, scratch_space);
         // Create more zeros in areas where jpeg xl would have used a lower
         // quantization multiplier.
