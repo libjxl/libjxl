@@ -648,17 +648,27 @@ jxl::ImageF InitialQuantField(const float butteraugli_target,
 
 void ComputeAdaptiveQuantField(j_compress_ptr cinfo) {
   jpeg_comp_master* m = cinfo->master;
+  m->quant_field.Allocate(m->ysize_blocks, m->xsize_blocks);
   if (m->use_adaptive_quantization) {
-    int y_channel = m->xyb_mode ? 1 : 0;
-    m->quant_field = jpegli::InitialQuantField(
-        m->distance, m->input.Plane(y_channel), nullptr, m->distance);
+    int y_channel = cinfo->jpeg_color_space == JCS_RGB && m->xyb_mode ? 1 : 0;
+    jxl::ImageF input(m->xsize_blocks * DCTSIZE, m->ysize_blocks * DCTSIZE);
+    for (size_t y = 0; y < input.ysize(); ++y) {
+      memcpy(input.Row(y), m->input_buffer[y_channel].Row(y),
+             input.xsize() * sizeof(float));
+    }
+    jxl::ImageF qf =
+        jpegli::InitialQuantField(m->distance, input, nullptr, m->distance);
     float qfmin;
-    ImageMinMax(m->quant_field, &qfmin, &m->quant_field_max);
+    ImageMinMax(qf, &qfmin, &m->quant_field_max);
+    for (size_t y = 0; y < m->ysize_blocks; ++y) {
+      m->quant_field.CopyRow(y, qf.Row(y), m->xsize_blocks);
+    }
   } else {
     constexpr float kDefaultQuantFieldMax = 0.575f;
     m->quant_field_max = kDefaultQuantFieldMax;
-    m->quant_field = jxl::ImageF(m->xsize_blocks, m->ysize_blocks);
-    FillImage(m->quant_field_max, &m->quant_field);
+    for (size_t y = 0; y < m->ysize_blocks; ++y) {
+      m->quant_field.FillRow(y, m->quant_field_max, m->xsize_blocks);
+    }
   }
 }
 

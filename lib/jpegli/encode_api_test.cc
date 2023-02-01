@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "gtest/gtest.h"
+#include "lib/jpegli/common_internal.h"
 #include "lib/jpegli/encode.h"
 #include "lib/jpegli/test_utils.h"
 #include "lib/jxl/base/file_io.h"
@@ -91,9 +92,9 @@ struct TestConfig {
   size_t xsize = 0;
   size_t ysize = 0;
   J_COLOR_SPACE in_color_space = JCS_RGB;
+  size_t input_components = 3;
   bool set_jpeg_colorspace = false;
   J_COLOR_SPACE jpeg_color_space = JCS_UNKNOWN;
-  size_t input_components = 3;
   std::vector<uint8_t> pixels;
   int quality = 90;
   bool custom_quant_tables = false;
@@ -117,7 +118,7 @@ void SetNumChannels(J_COLOR_SPACE colorspace, size_t* channels) {
   } else if (colorspace == JCS_RGB || colorspace == JCS_YCbCr) {
     *channels = 3;
   } else if (colorspace == JCS_UNKNOWN) {
-    ASSERT_LE(*channels, 3);
+    ASSERT_LE(*channels, jpegli::kMaxComponents);
   } else {
     FAIL();
   }
@@ -132,7 +133,10 @@ void ConvertPixel(const uint8_t* input_rgb, uint8_t* out,
     const float Y = 0.299f * r + 0.587f * g + 0.114f * b;
     out[0] = static_cast<uint8_t>(std::round(Y));
   } else if (colorspace == JCS_RGB || colorspace == JCS_UNKNOWN) {
-    memcpy(out, input_rgb, num_channels);
+    for (size_t c = 0; c < num_channels; ++c) {
+      size_t copy_channels = std::min<size_t>(3, num_channels - c);
+      memcpy(out + c, input_rgb, copy_channels);
+    }
   } else if (colorspace == JCS_YCbCr) {
     float Y = 0.299f * r + 0.587f * g + 0.114f * b;
     float Cb = -0.168736f * r - 0.331264f * g + 0.5f * b + 128.0f;
@@ -190,6 +194,7 @@ void TestDecodedImage(const TestConfig& config,
   cinfo.err->error_exit = [](j_common_ptr cinfo) {
     (*cinfo->err->output_message)(cinfo);
     jmp_buf* env = static_cast<jmp_buf*>(cinfo->client_data);
+    jpeg_destroy(cinfo);
     longjmp(*env, 1);
   };
   jpeg_create_decompress(&cinfo);
@@ -480,7 +485,7 @@ std::vector<TestConfig> GenerateTests() {
     config.max_dist = 1.4;
     all_tests.push_back(config);
   }
-  for (int channels = 1; channels <= 3; ++channels) {
+  for (int channels = 1; channels <= jpegli::kMaxComponents; ++channels) {
     TestConfig config;
     config.in_color_space = JCS_UNKNOWN;
     config.input_components = channels;
@@ -768,6 +773,20 @@ TEST(ErrorHandlingTest, NoImageDimensions) {
   EXPECT_FAILURE();
 }
 
+TEST(ErrorHandlingTest, ImageTooBig) {
+  MyClientData data;
+  jpeg_compress_struct cinfo;
+  ERROR_HANDLER_SETUP(return );
+  jpegli_create_compress(&cinfo);
+  jpegli_mem_dest(&cinfo, &data.buffer, &data.size);
+  cinfo.image_width = 100000;
+  cinfo.image_height = 1;
+  cinfo.input_components = 1;
+  jpegli_set_defaults(&cinfo);
+  jpegli_start_compress(&cinfo, TRUE);
+  EXPECT_FAILURE();
+}
+
 TEST(ErrorHandlingTest, NoInputComponents) {
   MyClientData data;
   jpeg_compress_struct cinfo;
@@ -776,6 +795,20 @@ TEST(ErrorHandlingTest, NoInputComponents) {
   jpegli_mem_dest(&cinfo, &data.buffer, &data.size);
   cinfo.image_width = 1;
   cinfo.image_height = 1;
+  jpegli_set_defaults(&cinfo);
+  jpegli_start_compress(&cinfo, TRUE);
+  EXPECT_FAILURE();
+}
+
+TEST(ErrorHandlingTest, TooManyInputComponents) {
+  MyClientData data;
+  jpeg_compress_struct cinfo;
+  ERROR_HANDLER_SETUP(return );
+  jpegli_create_compress(&cinfo);
+  jpegli_mem_dest(&cinfo, &data.buffer, &data.size);
+  cinfo.image_width = 1;
+  cinfo.image_height = 1;
+  cinfo.input_components = 1000;
   jpegli_set_defaults(&cinfo);
   jpegli_start_compress(&cinfo, TRUE);
   EXPECT_FAILURE();
@@ -791,6 +824,10 @@ TEST(ErrorHandlingTest, NoSetDefaults) {
   cinfo.image_height = 1;
   cinfo.input_components = 1;
   jpegli_start_compress(&cinfo, TRUE);
+  JSAMPLE image[1] = {0};
+  JSAMPROW row[] = {image};
+  jpegli_write_scanlines(&cinfo, row, 1);
+  jpegli_finish_compress(&cinfo);
   EXPECT_FAILURE();
 }
 
@@ -810,6 +847,39 @@ TEST(ErrorHandlingTest, NoStartCompress) {
   EXPECT_FAILURE();
 }
 
+TEST(ErrorHandlingTest, NoWriteScanlines) {
+  MyClientData data;
+  jpeg_compress_struct cinfo;
+  ERROR_HANDLER_SETUP(return );
+  jpegli_create_compress(&cinfo);
+  jpegli_mem_dest(&cinfo, &data.buffer, &data.size);
+  cinfo.image_width = 1;
+  cinfo.image_height = 1;
+  cinfo.input_components = 1;
+  jpegli_set_defaults(&cinfo);
+  jpegli_start_compress(&cinfo, TRUE);
+  jpegli_finish_compress(&cinfo);
+  EXPECT_FAILURE();
+}
+
+TEST(ErrorHandlingTest, NoWriteAllScanlines) {
+  MyClientData data;
+  jpeg_compress_struct cinfo;
+  ERROR_HANDLER_SETUP(return );
+  jpegli_create_compress(&cinfo);
+  jpegli_mem_dest(&cinfo, &data.buffer, &data.size);
+  cinfo.image_width = 1;
+  cinfo.image_height = 2;
+  cinfo.input_components = 1;
+  jpegli_set_defaults(&cinfo);
+  jpegli_start_compress(&cinfo, TRUE);
+  JSAMPLE image[1] = {0};
+  JSAMPROW row[] = {image};
+  jpegli_write_scanlines(&cinfo, row, 1);
+  jpegli_finish_compress(&cinfo);
+  EXPECT_FAILURE();
+}
+
 TEST(ErrorHandlingTest, InvalidQuantValue) {
   MyClientData data;
   jpeg_compress_struct cinfo;
@@ -826,6 +896,134 @@ TEST(ErrorHandlingTest, InvalidQuantValue) {
   }
   jpegli_start_compress(&cinfo, TRUE);
   JSAMPLE image[1] = {0};
+  JSAMPROW row[] = {image};
+  jpegli_write_scanlines(&cinfo, row, 1);
+  jpegli_finish_compress(&cinfo);
+  EXPECT_FAILURE();
+}
+
+TEST(ErrorHandlingTest, NumberOfComponentsMismatch1) {
+  MyClientData data;
+  jpeg_compress_struct cinfo;
+  ERROR_HANDLER_SETUP(return );
+  jpegli_create_compress(&cinfo);
+  jpegli_mem_dest(&cinfo, &data.buffer, &data.size);
+  cinfo.image_width = 1;
+  cinfo.image_height = 1;
+  cinfo.input_components = 1;
+  jpegli_set_defaults(&cinfo);
+  cinfo.num_components = 100;
+  jpegli_start_compress(&cinfo, TRUE);
+  EXPECT_FAILURE();
+}
+
+TEST(ErrorHandlingTest, NumberOfComponentsMismatch2) {
+  MyClientData data;
+  jpeg_compress_struct cinfo;
+  ERROR_HANDLER_SETUP(return );
+  jpegli_create_compress(&cinfo);
+  jpegli_mem_dest(&cinfo, &data.buffer, &data.size);
+  cinfo.image_width = 1;
+  cinfo.image_height = 1;
+  cinfo.input_components = 1;
+  jpegli_set_defaults(&cinfo);
+  cinfo.num_components = 2;
+  jpegli_start_compress(&cinfo, TRUE);
+  EXPECT_FAILURE();
+}
+
+TEST(ErrorHandlingTest, NumberOfComponentsMismatch3) {
+  MyClientData data;
+  jpeg_compress_struct cinfo;
+  ERROR_HANDLER_SETUP(return );
+  jpegli_create_compress(&cinfo);
+  jpegli_mem_dest(&cinfo, &data.buffer, &data.size);
+  cinfo.image_width = 1;
+  cinfo.image_height = 1;
+  cinfo.input_components = 1;
+  jpegli_set_defaults(&cinfo);
+  cinfo.num_components = 2;
+  cinfo.comp_info[1].h_samp_factor = cinfo.comp_info[1].v_samp_factor = 1;
+  jpegli_start_compress(&cinfo, TRUE);
+  JSAMPLE image[1] = {0};
+  JSAMPROW row[] = {image};
+  jpegli_write_scanlines(&cinfo, row, 1);
+  jpegli_finish_compress(&cinfo);
+  EXPECT_FAILURE();
+}
+
+TEST(ErrorHandlingTest, NumberOfComponentsMismatch4) {
+  MyClientData data;
+  jpeg_compress_struct cinfo;
+  ERROR_HANDLER_SETUP(return );
+  jpegli_create_compress(&cinfo);
+  jpegli_mem_dest(&cinfo, &data.buffer, &data.size);
+  cinfo.image_width = 1;
+  cinfo.image_height = 1;
+  cinfo.input_components = 1;
+  cinfo.in_color_space = JCS_RGB;
+  jpegli_set_defaults(&cinfo);
+  jpegli_start_compress(&cinfo, TRUE);
+  JSAMPLE image[1] = {0};
+  JSAMPROW row[] = {image};
+  jpegli_write_scanlines(&cinfo, row, 1);
+  jpegli_finish_compress(&cinfo);
+  EXPECT_FAILURE();
+}
+
+TEST(ErrorHandlingTest, NumberOfComponentsMismatch5) {
+  MyClientData data;
+  jpeg_compress_struct cinfo;
+  ERROR_HANDLER_SETUP(return );
+  jpegli_create_compress(&cinfo);
+  jpegli_mem_dest(&cinfo, &data.buffer, &data.size);
+  cinfo.image_width = 1;
+  cinfo.image_height = 1;
+  cinfo.input_components = 3;
+  cinfo.in_color_space = JCS_GRAYSCALE;
+  jpegli_set_defaults(&cinfo);
+  jpegli_start_compress(&cinfo, TRUE);
+  JSAMPLE image[3] = {0};
+  JSAMPROW row[] = {image};
+  jpegli_write_scanlines(&cinfo, row, 1);
+  jpegli_finish_compress(&cinfo);
+  EXPECT_FAILURE();
+}
+
+TEST(ErrorHandlingTest, NumberOfComponentsMismatch6) {
+  MyClientData data;
+  jpeg_compress_struct cinfo;
+  ERROR_HANDLER_SETUP(return );
+  jpegli_create_compress(&cinfo);
+  jpegli_mem_dest(&cinfo, &data.buffer, &data.size);
+  cinfo.image_width = 1;
+  cinfo.image_height = 1;
+  cinfo.input_components = 3;
+  cinfo.in_color_space = JCS_RGB;
+  jpegli_set_defaults(&cinfo);
+  cinfo.num_components = 2;
+  jpegli_start_compress(&cinfo, TRUE);
+  JSAMPLE image[3] = {0};
+  JSAMPROW row[] = {image};
+  jpegli_write_scanlines(&cinfo, row, 1);
+  jpegli_finish_compress(&cinfo);
+  EXPECT_FAILURE();
+}
+
+TEST(ErrorHandlingTest, InvalidColorTransform) {
+  MyClientData data;
+  jpeg_compress_struct cinfo;
+  ERROR_HANDLER_SETUP(return );
+  jpegli_create_compress(&cinfo);
+  jpegli_mem_dest(&cinfo, &data.buffer, &data.size);
+  cinfo.image_width = 1;
+  cinfo.image_height = 1;
+  cinfo.input_components = 3;
+  cinfo.in_color_space = JCS_YCbCr;
+  jpegli_set_defaults(&cinfo);
+  cinfo.jpeg_color_space = JCS_RGB;
+  jpegli_start_compress(&cinfo, TRUE);
+  JSAMPLE image[3] = {0};
   JSAMPROW row[] = {image};
   jpegli_write_scanlines(&cinfo, row, 1);
   jpegli_finish_compress(&cinfo);

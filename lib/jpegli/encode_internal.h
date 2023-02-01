@@ -17,7 +17,6 @@
 
 #include "lib/jpegli/common_internal.h"
 #include "lib/jpegli/encode.h"
-#include "lib/jxl/image.h"
 
 namespace jpegli {
 
@@ -57,7 +56,7 @@ typedef int16_t coeff_t;
 }  // namespace jpegli
 
 struct jpeg_comp_master {
-  jxl::Image3F input;
+  std::array<jpegli::RowBuffer<float>, jpegli::kMaxComponents> input_buffer;
   float distance = 1.0;
   bool force_baseline = true;
   bool xyb_mode = false;
@@ -73,7 +72,7 @@ struct jpeg_comp_master {
   JpegliEndianness endianness = JPEGLI_NATIVE_ENDIAN;
   std::array<jpegli::HuffmanCodeTable, jpegli::kMaxHuffmanTables> dc_huff_table;
   std::array<jpegli::HuffmanCodeTable, jpegli::kMaxHuffmanTables> ac_huff_table;
-  jxl::ImageF quant_field;
+  jpegli::RowBuffer<float> quant_field;
   float quant_field_max;
 };
 

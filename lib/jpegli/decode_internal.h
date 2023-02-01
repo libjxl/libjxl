@@ -17,7 +17,6 @@
 #include "lib/jpegli/common.h"
 #include "lib/jpegli/common_internal.h"
 #include "lib/jpegli/huffman.h"
-#include "lib/jxl/base/compiler_specific.h"  // for ssize_t
 
 namespace jpegli {
 
@@ -36,25 +35,6 @@ struct MCUCodingState {
   coeff_t last_dc_coeff[kMaxComponents];
   int eobrun;
   std::vector<coeff_t> coeffs;
-};
-
-class RowBuffer {
- public:
-  void Allocate(size_t num_rows, size_t stride) {
-    ysize_ = num_rows;
-    stride_ = stride;
-    data_ = hwy::AllocateAligned<float>(ysize_ * stride_);
-  }
-
-  float* Row(ssize_t y) { return &data_[((ysize_ + y) % ysize_) * stride_]; }
-
-  size_t stride() const { return stride_; }
-  size_t memstride() const { return stride_ * sizeof(data_[0]); }
-
- private:
-  size_t ysize_ = 0;
-  size_t stride_ = 0;
-  hwy::AlignedFreeUniquePtr<float[]> data_;
 };
 
 }  // namespace jpegli
@@ -120,8 +100,8 @@ struct jpeg_decomp_master {
   size_t num_output_rows_;
 
   std::array<size_t, jpegli::kMaxComponents> raw_height_;
-  std::array<jpegli::RowBuffer, jpegli::kMaxComponents> raw_output_;
-  std::array<jpegli::RowBuffer, jpegli::kMaxComponents> render_output_;
+  std::array<jpegli::RowBuffer<float>, jpegli::kMaxComponents> raw_output_;
+  std::array<jpegli::RowBuffer<float>, jpegli::kMaxComponents> render_output_;
 
   hwy::AlignedFreeUniquePtr<float[]> idct_scratch_;
   hwy::AlignedFreeUniquePtr<float[]> upsample_scratch_;

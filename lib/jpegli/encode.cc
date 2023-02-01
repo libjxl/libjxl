@@ -20,8 +20,6 @@
 #include "lib/jpegli/quant.h"
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/span.h"
-#include "lib/jxl/image.h"
-#include "lib/jxl/image_ops.h"
 
 namespace jpegli {
 
@@ -69,6 +67,104 @@ void InitializeCompressParams(j_compress_ptr cinfo) {
   cinfo->Y_density = 1;
 }
 
+bool CheckColorSpaceComponents(int num_components, J_COLOR_SPACE colorspace) {
+  switch (colorspace) {
+    case JCS_GRAYSCALE:
+      return num_components == 1;
+    case JCS_RGB:
+    case JCS_YCbCr:
+    case JCS_EXT_RGB:
+    case JCS_EXT_BGR:
+      return num_components == 3;
+    case JCS_CMYK:
+    case JCS_YCCK:
+    case JCS_EXT_RGBX:
+    case JCS_EXT_BGRX:
+    case JCS_EXT_XBGR:
+    case JCS_EXT_XRGB:
+    case JCS_EXT_RGBA:
+    case JCS_EXT_BGRA:
+    case JCS_EXT_ABGR:
+    case JCS_EXT_ARGB:
+      return num_components == 4;
+    default:
+      // Unrecognized colorspaces can have any number of channels, since no
+      // color transform will be performed on them.
+      return true;
+  }
+}
+
+void ColorTransform(j_compress_ptr cinfo) {
+  jpeg_comp_master* m = cinfo->master;
+
+  if (!CheckColorSpaceComponents(cinfo->input_components,
+                                 cinfo->in_color_space)) {
+    JPEGLI_ERROR("Invalid number of input components %d for colorspace %d",
+                 cinfo->input_components, cinfo->in_color_space);
+  }
+  if (!CheckColorSpaceComponents(cinfo->num_components,
+                                 cinfo->jpeg_color_space)) {
+    JPEGLI_ERROR("Invalid number of components %d for colorspace %d",
+                 cinfo->num_components, cinfo->jpeg_color_space);
+  }
+
+  if (cinfo->jpeg_color_space == cinfo->in_color_space) {
+    if (cinfo->num_components != cinfo->input_components) {
+      JPEGLI_ERROR("Input/output components mismatch:  %d vs %d",
+                   cinfo->input_components, cinfo->num_components);
+    }
+    // No color transform requested.
+    return;
+  }
+
+  if (cinfo->in_color_space == JCS_RGB && m->xyb_mode) {
+    JPEGLI_ERROR("Color transform on XYB colorspace is not supported.");
+  }
+
+  if (cinfo->jpeg_color_space == JCS_GRAYSCALE) {
+    if (cinfo->in_color_space == JCS_RGB) {
+      for (size_t y = 0; y < cinfo->image_height; ++y) {
+        RGBToYCbCr(m->input_buffer[0].Row(y), m->input_buffer[1].Row(y),
+                   m->input_buffer[2].Row(y), cinfo->image_width);
+      }
+    } else if (cinfo->in_color_space == JCS_YCbCr ||
+               cinfo->in_color_space == JCS_YCCK) {
+      // Since the first luminance channel is the grayscale version of the
+      // image, nothing to do here
+    }
+  } else if (cinfo->jpeg_color_space == JCS_YCbCr) {
+    if (cinfo->in_color_space == JCS_RGB) {
+      for (size_t y = 0; y < cinfo->image_height; ++y) {
+        RGBToYCbCr(m->input_buffer[0].Row(y), m->input_buffer[1].Row(y),
+                   m->input_buffer[2].Row(y), cinfo->image_width);
+      }
+    }
+  } else {
+    // TODO(szabadka) Support more color transforms.
+    JPEGLI_ERROR("Unsupported color transform %d -> %d", cinfo->in_color_space,
+                 cinfo->jpeg_color_space);
+  }
+}
+
+void PadInputToBlockMultiple(j_compress_ptr cinfo) {
+  jpeg_comp_master* m = cinfo->master;
+  const size_t xsize_padded = m->xsize_blocks * DCTSIZE;
+  const size_t ysize_padded = m->ysize_blocks * DCTSIZE;
+  for (int c = 0; c < cinfo->num_components; ++c) {
+    for (size_t y = 0; y < cinfo->image_height; ++y) {
+      float* row = m->input_buffer[c].Row(y);
+      const float last_val = row[cinfo->image_width - 1];
+      for (size_t x = cinfo->image_width; x < xsize_padded; ++x) {
+        row[x] = last_val;
+      }
+    }
+    const float* last_row = m->input_buffer[c].Row(cinfo->image_height - 1);
+    for (size_t y = cinfo->image_height; y < ysize_padded; ++y) {
+      m->input_buffer[c].CopyRow(y, last_row, xsize_padded);
+    }
+  }
+}
+
 struct ProgressiveScan {
   int Ss, Se, Ah, Al;
   bool interleaved;
@@ -76,7 +172,7 @@ struct ProgressiveScan {
 
 void SetDefaultScanScript(j_compress_ptr cinfo) {
   int level = cinfo->master->progressive_level;
-  std::vector<jpegli::ProgressiveScan> progressive_mode;
+  std::vector<ProgressiveScan> progressive_mode;
   bool interleave_dc =
       (cinfo->max_h_samp_factor == 1 && cinfo->max_v_samp_factor == 1);
   if (level == 0) {
@@ -95,61 +191,30 @@ void SetDefaultScanScript(j_compress_ptr cinfo) {
 
   cinfo->script_space_size = 0;
   for (const auto& scan : progressive_mode) {
-    cinfo->script_space_size += scan.interleaved ? 1 : cinfo->num_components;
+    int comps = scan.interleaved ? MAX_COMPS_IN_SCAN : 1;
+    cinfo->script_space_size += DivCeil(cinfo->num_components, comps);
   }
   cinfo->script_space =
-      jpegli::Allocate<jpeg_scan_info>(cinfo, cinfo->script_space_size);
+      Allocate<jpeg_scan_info>(cinfo, cinfo->script_space_size);
 
   jpeg_scan_info* next_scan = cinfo->script_space;
   for (const auto& scan : progressive_mode) {
-    if (scan.interleaved) {
+    int comps = scan.interleaved ? MAX_COMPS_IN_SCAN : 1;
+    for (int c = 0; c < cinfo->num_components; c += comps) {
       next_scan->Ss = scan.Ss;
       next_scan->Se = scan.Se;
       next_scan->Ah = scan.Ah;
       next_scan->Al = scan.Al;
-      next_scan->comps_in_scan = cinfo->num_components;
-      for (int c = 0; c < cinfo->num_components; ++c) {
-        next_scan->component_index[c] = c;
+      next_scan->comps_in_scan = std::min(comps, cinfo->num_components - c);
+      for (int j = 0; j < next_scan->comps_in_scan; ++j) {
+        next_scan->component_index[j] = c + j;
       }
       ++next_scan;
-    } else {
-      for (int c = 0; c < cinfo->num_components; ++c) {
-        next_scan->Ss = scan.Ss;
-        next_scan->Se = scan.Se;
-        next_scan->Ah = scan.Ah;
-        next_scan->Al = scan.Al;
-        next_scan->comps_in_scan = 1;
-        next_scan->component_index[0] = c;
-        ++next_scan;
-      }
     }
   }
   JXL_ASSERT(next_scan - cinfo->script_space == cinfo->script_space_size);
   cinfo->scan_info = cinfo->script_space;
   cinfo->num_scans = cinfo->script_space_size;
-}
-
-void PadImageToBlockMultipleInPlace(jxl::Image3F* JXL_RESTRICT in,
-                                    size_t block_dim_x, size_t block_dim_y) {
-  PROFILER_FUNC;
-  const size_t xsize_orig = in->xsize();
-  const size_t ysize_orig = in->ysize();
-  const size_t xsize = jxl::RoundUpTo(xsize_orig, block_dim_x);
-  const size_t ysize = jxl::RoundUpTo(ysize_orig, block_dim_y);
-  // Expands image size to the originally-allocated size.
-  in->ShrinkTo(xsize, ysize);
-  for (size_t c = 0; c < 3; c++) {
-    for (size_t y = 0; y < ysize_orig; y++) {
-      float* JXL_RESTRICT row = in->PlaneRow(c, y);
-      for (size_t x = xsize_orig; x < xsize; x++) {
-        row[x] = row[xsize_orig - 1];
-      }
-    }
-    const float* JXL_RESTRICT row_src = in->ConstPlaneRow(c, ysize_orig - 1);
-    for (size_t y = ysize_orig; y < ysize; y++) {
-      memcpy(in->PlaneRow(c, y), row_src, xsize * sizeof(float));
-    }
-  }
 }
 
 }  // namespace jpegli
@@ -228,10 +293,13 @@ void jpegli_set_colorspace(j_compress_ptr cinfo, J_COLOR_SPACE colorspace) {
       cinfo->num_components = 3;
       break;
     default:
-      cinfo->num_components = cinfo->input_components;
+      cinfo->num_components =
+          std::min<int>(jpegli::kMaxComponents, cinfo->input_components);
   }
   cinfo->comp_info =
-      jpegli::Allocate<jpeg_component_info>(cinfo, cinfo->num_components);
+      jpegli::Allocate<jpeg_component_info>(cinfo, jpegli::kMaxComponents);
+  memset(cinfo->comp_info, 0,
+         jpegli::kMaxComponents * sizeof(jpeg_component_info));
   for (int c = 0; c < cinfo->num_components; ++c) {
     jpeg_component_info* comp = &cinfo->comp_info[c];
     comp->component_index = c;
@@ -341,13 +409,18 @@ void jpegli_start_compress(j_compress_ptr cinfo, boolean write_all_tables) {
   if (cinfo->dest == nullptr) {
     JPEGLI_ERROR("Missing destination.");
   }
-  if (cinfo->image_width == 0 || cinfo->image_height == 0 ||
-      cinfo->input_components == 0) {
+  if (cinfo->image_width < 1 || cinfo->image_height < 1 ||
+      cinfo->input_components < 1) {
     JPEGLI_ERROR("Empty input image.");
   }
-  if (cinfo->num_components <= 0 ||
-      cinfo->num_components > jpegli::kMaxComponents) {
-    JPEGLI_ERROR("Invalid number of jpeg components %d", cinfo->num_components);
+  if (cinfo->image_width > static_cast<int>(JPEG_MAX_DIMENSION) ||
+      cinfo->image_height > static_cast<int>(JPEG_MAX_DIMENSION) ||
+      cinfo->input_components > static_cast<int>(jpegli::kMaxComponents)) {
+    JPEGLI_ERROR("Input image too big.");
+  }
+  if (cinfo->num_components < 1 ||
+      cinfo->num_components > static_cast<int>(jpegli::kMaxComponents)) {
+    JPEGLI_ERROR("Invalid number of components.");
   }
   cinfo->global_state = jpegli::kEncHeader;
   jpeg_comp_master* m = cinfo->master;
@@ -361,26 +434,37 @@ void jpegli_start_compress(j_compress_ptr cinfo, boolean write_all_tables) {
   cinfo->max_h_samp_factor = cinfo->max_v_samp_factor = 1;
   for (int c = 0; c < cinfo->num_components; ++c) {
     jpeg_component_info* comp = &cinfo->comp_info[c];
+    if (comp->h_samp_factor == 0 || comp->v_samp_factor == 0) {
+      JPEGLI_ERROR("Invalid sampling factor 0");
+    }
     cinfo->max_h_samp_factor =
         std::max(comp->h_samp_factor, cinfo->max_h_samp_factor);
     cinfo->max_v_samp_factor =
         std::max(comp->v_samp_factor, cinfo->max_v_samp_factor);
   }
+  size_t iMCU_width = DCTSIZE * cinfo->max_h_samp_factor;
+  size_t iMCU_height = DCTSIZE * cinfo->max_v_samp_factor;
+  size_t total_iMCU_cols = jpegli::DivCeil(cinfo->image_width, iMCU_width);
+  cinfo->total_iMCU_rows = jpegli::DivCeil(cinfo->image_height, iMCU_height);
+  m->xsize_blocks = total_iMCU_cols * cinfo->max_h_samp_factor;
+  m->ysize_blocks = cinfo->total_iMCU_rows * cinfo->max_v_samp_factor;
   for (int c = 0; c < cinfo->num_components; ++c) {
     jpeg_component_info* comp = &cinfo->comp_info[c];
     if (cinfo->max_h_samp_factor % comp->h_samp_factor != 0 ||
         cinfo->max_v_samp_factor % comp->v_samp_factor != 0) {
       JPEGLI_ERROR("Non-integral sampling ratios are not supported.");
     }
+    const size_t h_factor = cinfo->max_h_samp_factor / comp->h_samp_factor;
+    const size_t v_factor = cinfo->max_v_samp_factor / comp->v_samp_factor;
+    // TODO(szabadka): These fields have a different meaning than in libjpeg,
+    // make sure it does not cause problems or change it to the libjpeg values.
+    comp->width_in_blocks = m->xsize_blocks / h_factor;
+    comp->height_in_blocks = m->ysize_blocks / v_factor;
   }
-  size_t iMCU_width = DCTSIZE * cinfo->max_h_samp_factor;
-  size_t iMCU_height = DCTSIZE * cinfo->max_v_samp_factor;
-  m->xsize_blocks = jpegli::DivCeil(cinfo->image_width, iMCU_width) *
-                    cinfo->max_h_samp_factor;
-  m->ysize_blocks = jpegli::DivCeil(cinfo->image_height, iMCU_height) *
-                    cinfo->max_v_samp_factor;
-  m->input = jxl::Image3F(m->xsize_blocks * DCTSIZE, m->ysize_blocks * DCTSIZE);
-  m->input.ShrinkTo(cinfo->image_width, cinfo->image_height);
+  size_t stride = m->xsize_blocks * DCTSIZE;
+  for (int c = 0; c < cinfo->input_components; ++c) {
+    m->input_buffer[c].Allocate(m->ysize_blocks * DCTSIZE, stride);
+  }
 }
 
 void jpegli_write_m_header(j_compress_ptr cinfo, int marker,
@@ -449,10 +533,6 @@ JDIMENSION jpegli_write_scanlines(j_compress_ptr cinfo, JSAMPARRAY scanlines,
   CheckState(cinfo, jpegli::kEncHeader, jpegli::kEncReadImage);
   cinfo->global_state = jpegli::kEncReadImage;
   jpeg_comp_master* m = cinfo->master;
-  // TODO(szabadka) Handle CMYK input images.
-  if (cinfo->num_components > 3) {
-    JPEGLI_ERROR("Invalid number of components.");
-  }
   if (num_lines + cinfo->next_scanline > cinfo->image_height) {
     num_lines = cinfo->image_height - cinfo->next_scanline;
   }
@@ -460,15 +540,15 @@ JDIMENSION jpegli_write_scanlines(j_compress_ptr cinfo, JSAMPARRAY scanlines,
   const int bytes_per_sample = m->data_type == JPEGLI_TYPE_UINT8    ? 1
                                : m->data_type == JPEGLI_TYPE_UINT16 ? 2
                                                                     : 4;
-  const int pwidth = cinfo->num_components * bytes_per_sample;
+  const int pwidth = cinfo->input_components * bytes_per_sample;
   bool is_little_endian =
       (m->endianness == JPEGLI_LITTLE_ENDIAN ||
        (m->endianness == JPEGLI_NATIVE_ENDIAN && IsLittleEndian()));
   static constexpr double kMul8 = 1.0 / 255.0;
   static constexpr double kMul16 = 1.0 / 65535.0;
-  for (int c = 0; c < cinfo->num_components; ++c) {
+  for (int c = 0; c < cinfo->input_components; ++c) {
     for (size_t i = 0; i < num_lines; ++i) {
-      float* row = m->input.PlaneRow(c, cinfo->next_scanline + i);
+      float* row = m->input_buffer[c].Row(cinfo->next_scanline + i);
       if (m->data_type == JPEGLI_TYPE_UINT8) {
         uint8_t* p = &scanlines[i][c];
         for (size_t x = 0; x < cinfo->image_width; ++x, p += pwidth) {
@@ -503,26 +583,13 @@ JDIMENSION jpegli_write_scanlines(j_compress_ptr cinfo, JSAMPARRAY scanlines,
 
 void jpegli_finish_compress(j_compress_ptr cinfo) {
   CheckState(cinfo, jpegli::kEncReadImage, jpegli::kEncWriteCoeffs);
-  jpeg_comp_master* m = cinfo->master;
-  jxl::Image3F& input = m->input;
-
-  if (cinfo->num_components == 1) {
-    CopyImageTo(m->input.Plane(0), &m->input.Plane(1));
-    CopyImageTo(m->input.Plane(0), &m->input.Plane(2));
+  if (cinfo->next_scanline < cinfo->image_height) {
+    JPEGLI_ERROR("Incomplete image, expected %d rows, got %d",
+                 cinfo->image_height, cinfo->next_scanline);
   }
 
-  const bool use_xyb = m->xyb_mode && cinfo->jpeg_color_space == JCS_RGB;
-  if (cinfo->in_color_space == JCS_RGB && !use_xyb &&
-      cinfo->jpeg_color_space == JCS_YCbCr) {
-    for (size_t y = 0; y < cinfo->image_height; ++y) {
-      jpegli::RGBToYCbCr(input.PlaneRow(0, y), input.PlaneRow(1, y),
-                         input.PlaneRow(2, y), cinfo->image_width);
-    }
-  }
-  jpegli::PadImageToBlockMultipleInPlace(&input,
-                                         DCTSIZE * cinfo->max_h_samp_factor,
-                                         DCTSIZE * cinfo->max_v_samp_factor);
-
+  jpegli::ColorTransform(cinfo);
+  jpegli::PadInputToBlockMultiple(cinfo);
   jpegli::ComputeAdaptiveQuantField(cinfo);
 
   //
@@ -534,7 +601,7 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
   jpegli::WriteOutput(cinfo, {0xFF, 0xD8});
 
   // APPn, COM
-  for (const auto& v : m->special_markers) {
+  for (const auto& v : cinfo->master->special_markers) {
     jpegli::WriteOutput(cinfo, v);
   }
 
@@ -545,17 +612,6 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
   // SOF
   jpegli::EncodeSOF(cinfo);
 
-  for (int c = 0; c < cinfo->num_components; ++c) {
-    jpeg_component_info* comp = &cinfo->comp_info[c];
-    const size_t h_factor = cinfo->max_h_samp_factor / comp->h_samp_factor;
-    const size_t v_factor = cinfo->max_v_samp_factor / comp->v_samp_factor;
-    JXL_ASSERT(m->xsize_blocks % h_factor == 0);
-    JXL_ASSERT(m->ysize_blocks % v_factor == 0);
-    // TODO(szabadka): These fields have a different meaning than in libjpeg,
-    // make sure it does not cause problems or change it to the libjpeg values.
-    comp->width_in_blocks = m->xsize_blocks / h_factor;
-    comp->height_in_blocks = m->ysize_blocks / v_factor;
-  }
   std::vector<std::vector<jpegli::coeff_t>> coeffs;
   jpegli::ComputeDCTCoefficients(cinfo, &coeffs);
 
@@ -574,7 +630,7 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
   size_t dht_index = 0;
   for (int i = 0; i < cinfo->num_scans; ++i) {
     jpegli::EncodeDHT(cinfo, huffman_codes, &dht_index,
-                      m->scan_coding_info[i].num_huffman_codes);
+                      cinfo->master->scan_coding_info[i].num_huffman_codes);
     jpegli::EncodeSOS(cinfo, i);
     if (!jpegli::EncodeScan(cinfo, coeffs, i)) {
       JPEGLI_ERROR("Failed to encode scan.");

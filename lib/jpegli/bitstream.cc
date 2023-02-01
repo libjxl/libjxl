@@ -622,7 +622,7 @@ bool EncodeScan(j_compress_ptr cinfo,
   JpegBitWriter bw;
   JpegBitWriterInit(&bw, cinfo);
 
-  coeff_t last_dc_coeff[kMaxComponents] = {0};
+  coeff_t last_dc_coeff[MAX_COMPS_IN_SCAN] = {0};
   DCTCodingState coding_state;
   DCTCodingStateInit(&coding_state);
 
@@ -680,12 +680,12 @@ bool EncodeScan(j_compress_ptr cinfo,
             bool ok;
             if (!is_progressive) {
               ok = EncodeDCTBlockSequential(block, dc_huff, ac_huff,
-                                            num_zero_runs,
-                                            last_dc_coeff + comp_idx, &bw);
+                                            num_zero_runs, last_dc_coeff + i,
+                                            &bw);
             } else if (Ah == 0) {
               ok = EncodeDCTBlockProgressive(block, dc_huff, ac_huff, Ss, Se,
                                              Al, num_zero_runs, &coding_state,
-                                             last_dc_coeff + comp_idx, &bw);
+                                             last_dc_coeff + i, &bw);
             } else {
               ok = EncodeRefinementBits(block, ac_huff, Ss, Se, Al,
                                         &coding_state, &bw);
