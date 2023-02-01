@@ -573,7 +573,7 @@ void EncodeDHT(j_compress_ptr cinfo,
 }
 
 void EncodeDQT(j_compress_ptr cinfo) {
-  std::vector<uint8_t> data(4 + NUM_QUANT_TBLS * (1 + 2 * kDCTBlockSize));
+  uint8_t data[4 + NUM_QUANT_TBLS * (1 + 2 * DCTSIZE2)];  // 520 bytes
   size_t pos = 0;
   data[pos++] = 0xFF;
   data[pos++] = 0xDB;
@@ -601,8 +601,7 @@ void EncodeDQT(j_compress_ptr cinfo) {
   }
   data[2] = (pos - 2) >> 8u;
   data[3] = (pos - 2) & 0xFFu;
-  data.resize(pos);
-  WriteOutput(cinfo, data);
+  WriteOutput(cinfo, data, pos);
 }
 
 bool EncodeDRI(j_compress_ptr cinfo) {
