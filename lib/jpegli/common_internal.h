@@ -40,6 +40,7 @@ constexpr size_t kDCTBlockSize = 64;
 // maximum number of channels the libjpeg-turbo decoder can decode.
 constexpr int kMaxComponents = 4;
 constexpr int kMaxQuantTables = 4;
+constexpr int kJpegPrecision = 8;
 constexpr int kMaxHuffmanTables = 4;
 constexpr size_t kJpegHuffmanMaxBitLength = 16;
 constexpr int kJpegHuffmanAlphabetSize = 256;

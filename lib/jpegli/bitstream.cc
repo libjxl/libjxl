@@ -11,7 +11,6 @@
 namespace jpegli {
 namespace {
 
-const int kJpegPrecision = 8;
 // JpegBitWriter: buffer size
 const size_t kJpegBitWriterChunkSize = 16384;
 

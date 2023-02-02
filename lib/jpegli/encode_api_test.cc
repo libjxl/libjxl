@@ -99,10 +99,12 @@ struct TestConfig {
   int quality = 90;
   bool custom_quant_tables = false;
   std::vector<CustomQuantTable> quant_tables;
-  int quant_indexes[3] = {0, 1, 1};
+  int quant_indexes[kMaxComponents] = {0, 1, 1};
   bool custom_sampling = false;
-  int h_sampling[3] = {1, 1, 1};
-  int v_sampling[3] = {1, 1, 1};
+  int h_sampling[kMaxComponents] = {1, 1, 1};
+  int v_sampling[kMaxComponents] = {1, 1, 1};
+  bool custom_component_ids = false;
+  int comp_id[kMaxComponents];
   int progressive_id = 0;
   int progressive_level = -1;
   int restart_interval = 0;
@@ -210,6 +212,11 @@ void TestDecodedImage(const TestConfig& config,
   }
   EXPECT_TRUE(jpeg_start_decompress(&cinfo));
 #if !JXL_MEMORY_SANITIZER
+  if (config.custom_component_ids) {
+    for (int i = 0; i < cinfo.num_components; ++i) {
+      EXPECT_EQ(cinfo.comp_info[i].component_id, config.comp_id[i]);
+    }
+  }
   if (config.custom_sampling) {
     for (int i = 0; i < cinfo.num_components; ++i) {
       EXPECT_EQ(cinfo.comp_info[i].h_samp_factor, config.h_sampling[i]);
@@ -317,6 +324,11 @@ bool EncodeWithJpegli(const TestConfig& config,
   jpegli_set_defaults(&cinfo);
   if (config.set_jpeg_colorspace) {
     jpegli_set_colorspace(&cinfo, config.jpeg_color_space);
+  }
+  if (config.custom_component_ids) {
+    for (int c = 0; c < cinfo.num_components; ++c) {
+      cinfo.comp_info[c].component_id = config.comp_id[c];
+    }
   }
   if (config.custom_sampling) {
     for (int c = 0; c < cinfo.num_components; ++c) {
@@ -620,6 +632,16 @@ std::vector<TestConfig> GenerateTests() {
     config.max_dist = 3.75;
     all_tests.push_back(config);
   }
+  {
+    TestConfig config;
+    config.custom_component_ids = true;
+    config.comp_id[0] = 7;
+    config.comp_id[1] = 17;
+    config.comp_id[2] = 177;
+    config.max_bpp = 1.45;
+    config.max_dist = 2.2;
+    all_tests.push_back(config);
+  }
   return all_tests;
 };
 
@@ -649,14 +671,20 @@ std::ostream& operator<<(std::ostream& os, const TestConfig& c) {
   os << "Q" << c.quality;
   if (c.custom_sampling) {
     os << "SAMP";
-    for (int i = 0; i < 3; ++i) {
+    for (size_t i = 0; i < c.input_components; ++i) {
       os << "_";
       os << c.h_sampling[i] << "x" << c.v_sampling[i];
     }
   }
+  if (c.custom_component_ids) {
+    os << "CID";
+    for (size_t i = 0; i < c.input_components; ++i) {
+      os << c.comp_id[i];
+    }
+  }
   if (c.custom_quant_tables) {
     os << "QIDX";
-    for (int i = 0; i < 3; ++i) {
+    for (size_t i = 0; i < c.input_components; ++i) {
       os << c.quant_indexes[i];
     }
     for (const auto& table : c.quant_tables) {
@@ -902,6 +930,25 @@ TEST(ErrorHandlingTest, InvalidQuantValue) {
   EXPECT_FAILURE();
 }
 
+TEST(ErrorHandlingTest, InvalidQuantTableIndex) {
+  MyClientData data;
+  jpeg_compress_struct cinfo;
+  ERROR_HANDLER_SETUP(return );
+  jpegli_create_compress(&cinfo);
+  jpegli_mem_dest(&cinfo, &data.buffer, &data.size);
+  cinfo.image_width = 1;
+  cinfo.image_height = 1;
+  cinfo.input_components = 1;
+  jpegli_set_defaults(&cinfo);
+  cinfo.comp_info[0].quant_tbl_no = 3;
+  jpegli_start_compress(&cinfo, TRUE);
+  JSAMPLE image[1] = {0};
+  JSAMPROW row[] = {image};
+  jpegli_write_scanlines(&cinfo, row, 1);
+  jpegli_finish_compress(&cinfo);
+  EXPECT_FAILURE();
+}
+
 TEST(ErrorHandlingTest, NumberOfComponentsMismatch1) {
   MyClientData data;
   jpeg_compress_struct cinfo;
@@ -1022,6 +1069,45 @@ TEST(ErrorHandlingTest, InvalidColorTransform) {
   cinfo.in_color_space = JCS_YCbCr;
   jpegli_set_defaults(&cinfo);
   cinfo.jpeg_color_space = JCS_RGB;
+  jpegli_start_compress(&cinfo, TRUE);
+  JSAMPLE image[3] = {0};
+  JSAMPROW row[] = {image};
+  jpegli_write_scanlines(&cinfo, row, 1);
+  jpegli_finish_compress(&cinfo);
+  EXPECT_FAILURE();
+}
+
+TEST(ErrorHandlingTest, DuplicateComponentIds) {
+  MyClientData data;
+  jpeg_compress_struct cinfo;
+  ERROR_HANDLER_SETUP(return );
+  jpegli_create_compress(&cinfo);
+  jpegli_mem_dest(&cinfo, &data.buffer, &data.size);
+  cinfo.image_width = 1;
+  cinfo.image_height = 1;
+  cinfo.input_components = 3;
+  jpegli_set_defaults(&cinfo);
+  cinfo.comp_info[0].component_id = 0;
+  cinfo.comp_info[1].component_id = 0;
+  jpegli_start_compress(&cinfo, TRUE);
+  JSAMPLE image[3] = {0};
+  JSAMPROW row[] = {image};
+  jpegli_write_scanlines(&cinfo, row, 1);
+  jpegli_finish_compress(&cinfo);
+  EXPECT_FAILURE();
+}
+
+TEST(ErrorHandlingTest, InvalidComponentIndex) {
+  MyClientData data;
+  jpeg_compress_struct cinfo;
+  ERROR_HANDLER_SETUP(return );
+  jpegli_create_compress(&cinfo);
+  jpegli_mem_dest(&cinfo, &data.buffer, &data.size);
+  cinfo.image_width = 1;
+  cinfo.image_height = 1;
+  cinfo.input_components = 3;
+  jpegli_set_defaults(&cinfo);
+  cinfo.comp_info[0].component_index = 17;
   jpegli_start_compress(&cinfo, TRUE);
   JSAMPLE image[3] = {0};
   JSAMPROW row[] = {image};

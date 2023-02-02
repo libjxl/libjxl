@@ -70,7 +70,7 @@ void ProcessSOF(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
   cinfo->image_height = ReadUint16(data, &pos);
   cinfo->image_width = ReadUint16(data, &pos);
   cinfo->num_components = ReadUint8(data, &pos);
-  JPEG_VERIFY_INPUT(cinfo->data_precision, 8, 8);
+  JPEG_VERIFY_INPUT(cinfo->data_precision, kJpegPrecision, kJpegPrecision);
   JPEG_VERIFY_INPUT(cinfo->image_height, 1, kMaxDimPixels);
   JPEG_VERIFY_INPUT(cinfo->image_width, 1, kMaxDimPixels);
   JPEG_VERIFY_INPUT(cinfo->num_components, 1, kMaxComponents);
