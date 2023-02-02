@@ -132,9 +132,10 @@ This will update the version in the following files:
  * `debian/changelog` to create the Debian package release with the new version.
    Debian changelog shouldn't repeat the library changelog, instead it should
    include changes to the packaging scripts.
- 
-If there were incompatible API/ABI changes, make sure to also adapt the 
-corresponding section in 
+ * `.github/workflows/conformance.yml`
+
+If there were incompatible API/ABI changes, make sure to also adapt the
+corresponding section in
 [CMakeLists.txt](https://github.com/libjxl/libjxl/blob/main/lib/CMakeLists.txt#L12).
 
 ## Cherry-pick fixes to a release
