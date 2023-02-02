@@ -39,6 +39,8 @@ struct JPEGHuffmanCode {
 // DCTCodingState: maximum number of correction bits to buffer
 const int kJPEGMaxCorrectionBits = 1u << 16;
 
+constexpr int kDefaultProgressiveLevel = 2;
+
 struct HuffmanCodeTable {
   int depth[256];
   int code[256];
@@ -62,7 +64,7 @@ struct jpeg_comp_master {
   bool xyb_mode = false;
   bool use_std_tables = false;
   bool use_adaptive_quantization = true;
-  int progressive_level = 2;
+  int progressive_level = jpegli::kDefaultProgressiveLevel;
   size_t xsize_blocks = 0;
   size_t ysize_blocks = 0;
   std::vector<jpegli::ScanCodingInfo> scan_coding_info;
