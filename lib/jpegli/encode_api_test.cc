@@ -119,6 +119,8 @@ void SetNumChannels(J_COLOR_SPACE colorspace, size_t* channels) {
     *channels = 1;
   } else if (colorspace == JCS_RGB || colorspace == JCS_YCbCr) {
     *channels = 3;
+  } else if (colorspace == JCS_CMYK || colorspace == JCS_YCCK) {
+    *channels = 4;
   } else if (colorspace == JCS_UNKNOWN) {
     ASSERT_LE(*channels, jpegli::kMaxComponents);
   } else {
@@ -128,12 +130,13 @@ void SetNumChannels(J_COLOR_SPACE colorspace, size_t* channels) {
 
 void ConvertPixel(const uint8_t* input_rgb, uint8_t* out,
                   J_COLOR_SPACE colorspace, size_t num_channels) {
-  const float r = input_rgb[0];
-  const float g = input_rgb[1];
-  const float b = input_rgb[2];
+  const float kMul = 255.0f;
+  const float r = input_rgb[0] / kMul;
+  const float g = input_rgb[1] / kMul;
+  const float b = input_rgb[2] / kMul;
   if (colorspace == JCS_GRAYSCALE) {
     const float Y = 0.299f * r + 0.587f * g + 0.114f * b;
-    out[0] = static_cast<uint8_t>(std::round(Y));
+    out[0] = static_cast<uint8_t>(std::round(Y * kMul));
   } else if (colorspace == JCS_RGB || colorspace == JCS_UNKNOWN) {
     for (size_t c = 0; c < num_channels; ++c) {
       size_t copy_channels = std::min<size_t>(3, num_channels - c);
@@ -143,9 +146,19 @@ void ConvertPixel(const uint8_t* input_rgb, uint8_t* out,
     float Y = 0.299f * r + 0.587f * g + 0.114f * b;
     float Cb = -0.168736f * r - 0.331264f * g + 0.5f * b + 128.0f;
     float Cr = 0.5f * r - 0.418688f * g - 0.081312f * b + 128.0f;
-    out[0] = static_cast<uint8_t>(std::round(Y));
-    out[1] = static_cast<uint8_t>(std::round(Cb));
-    out[2] = static_cast<uint8_t>(std::round(Cr));
+    out[0] = static_cast<uint8_t>(std::round(Y * kMul));
+    out[1] = static_cast<uint8_t>(std::round(Cb * kMul));
+    out[2] = static_cast<uint8_t>(std::round(Cr * kMul));
+  } else if (colorspace == JCS_CMYK) {
+    float K = 1.0f - std::max(r, std::max(g, b));
+    float scaleK = 1.0f / (1.0f - K);
+    float C = (1.0f - K - r) * scaleK;
+    float M = (1.0f - K - g) * scaleK;
+    float Y = (1.0f - K - b) * scaleK;
+    out[0] = static_cast<uint8_t>(std::round(C * kMul));
+    out[1] = static_cast<uint8_t>(std::round(M * kMul));
+    out[2] = static_cast<uint8_t>(std::round(Y * kMul));
+    out[3] = static_cast<uint8_t>(std::round(K * kMul));
   } else {
     JXL_ABORT("Colorspace %d not supported", colorspace);
   }
@@ -497,6 +510,18 @@ std::vector<TestConfig> GenerateTests() {
     config.max_dist = 1.4;
     all_tests.push_back(config);
   }
+  {
+    TestConfig config;
+    config.in_color_space = JCS_CMYK;
+    config.max_bpp = 3.75;
+    config.max_dist = 1.4;
+    all_tests.push_back(config);
+    config.set_jpeg_colorspace = true;
+    config.jpeg_color_space = JCS_YCCK;
+    config.max_bpp = 3.2;
+    config.max_dist = 1.7;
+    all_tests.push_back(config);
+  }
   for (int channels = 1; channels <= jpegli::kMaxComponents; ++channels) {
     TestConfig config;
     config.in_color_space = JCS_UNKNOWN;
@@ -655,6 +680,8 @@ std::string ColorSpaceName(J_COLOR_SPACE colorspace) {
       return "RGB";
     case JCS_YCbCr:
       return "YCbCr";
+    case JCS_CMYK:
+      return "CMYK";
     default:
       return "";
   }
