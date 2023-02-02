@@ -357,12 +357,14 @@ bool ProcessRefinementBits(const coeff_t* coeffs, Histogram* ac_histo, int Ss,
 
 bool ProcessScan(j_compress_ptr cinfo,
                  const std::vector<std::vector<jpegli::coeff_t> >& coeffs,
-                 const jpeg_scan_info* scan_info, int* histo_index,
-                 Histogram* dc_histograms, Histogram* ac_histograms) {
-  int restarts_to_go = cinfo->restart_interval;
+                 size_t scan_index, int* histo_index, Histogram* dc_histograms,
+                 Histogram* ac_histograms) {
+  size_t restart_interval = RestartIntervalForScan(cinfo, scan_index);
+  int restarts_to_go = restart_interval;
   coeff_t last_dc_coeff[MAX_COMPS_IN_SCAN] = {0};
   DCTState s;
 
+  const jpeg_scan_info* scan_info = &cinfo->scan_info[scan_index];
   // "Non-interleaved" means color data comes in separate scans, in other words
   // each scan can contain only one color component.
   const bool is_interleaved = (scan_info->comps_in_scan > 1);
@@ -388,9 +390,9 @@ bool ProcessScan(j_compress_ptr cinfo,
   for (int mcu_y = 0; mcu_y < MCU_rows; ++mcu_y) {
     for (int mcu_x = 0; mcu_x < MCUs_per_row; ++mcu_x) {
       // Possibly emit a restart marker.
-      if (cinfo->restart_interval > 0 && restarts_to_go == 0) {
+      if (restart_interval > 0 && restarts_to_go == 0) {
         ProcessFlush(&s);
-        restarts_to_go = cinfo->restart_interval;
+        restarts_to_go = restart_interval;
         memset(last_dc_coeff, 0, sizeof(last_dc_coeff));
       }
       // Encode one MCU
@@ -438,8 +440,7 @@ void ProcessJpeg(j_compress_ptr cinfo,
                  std::vector<Histogram>* ac_histograms) {
   int histo_index = 0;
   for (int i = 0; i < cinfo->num_scans; ++i) {
-    const jpeg_scan_info* si = &cinfo->scan_info[i];
-    if (!ProcessScan(cinfo, coeffs, si, &histo_index, &(*dc_histograms)[0],
+    if (!ProcessScan(cinfo, coeffs, i, &histo_index, &(*dc_histograms)[0],
                      &(*ac_histograms)[0])) {
       JPEGLI_ERROR("Invalid scan.");
     }
@@ -447,6 +448,21 @@ void ProcessJpeg(j_compress_ptr cinfo,
 }
 
 }  // namespace
+
+size_t RestartIntervalForScan(j_compress_ptr cinfo, size_t scan_index) {
+  if (cinfo->restart_in_rows <= 0) {
+    return cinfo->restart_interval;
+  } else {
+    const jpeg_scan_info* scan_info = &cinfo->scan_info[scan_index];
+    const bool is_interleaved = (scan_info->comps_in_scan > 1);
+    jpeg_component_info* base_comp =
+        &cinfo->comp_info[scan_info->component_index[0]];
+    const int h_group = is_interleaved ? 1 : base_comp->h_samp_factor;
+    int MCUs_per_row =
+        DivCeil(cinfo->image_width * h_group, 8 * cinfo->max_h_samp_factor);
+    return std::min<size_t>(MCUs_per_row * cinfo->restart_in_rows, 65535u);
+  }
+}
 
 void OptimizeHuffmanCodes(
     j_compress_ptr cinfo,
