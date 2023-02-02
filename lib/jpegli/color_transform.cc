@@ -111,6 +111,19 @@ void RGBToYCbCr(float* JXL_RESTRICT row0, float* JXL_RESTRICT row1,
   }
 }
 
+void CMYKToYCCK(float* JXL_RESTRICT row0, float* JXL_RESTRICT row1,
+                float* JXL_RESTRICT row2, float* JXL_RESTRICT row3,
+                size_t xsize) {
+  const HWY_CAPPED(float, 8) df;
+  const auto unity = Set(df, 1.0f);
+  for (size_t x = 0; x < xsize; x += Lanes(df)) {
+    Store(Sub(unity, Load(df, row0 + x)), df, row0 + x);
+    Store(Sub(unity, Load(df, row1 + x)), df, row1 + x);
+    Store(Sub(unity, Load(df, row2 + x)), df, row2 + x);
+  }
+  RGBToYCbCr(row0, row1, row2, xsize);
+}
+
 // NOLINTNEXTLINE(google-readability-namespace-comments)
 }  // namespace HWY_NAMESPACE
 }  // namespace jpegli
@@ -119,9 +132,16 @@ HWY_AFTER_NAMESPACE();
 #if HWY_ONCE
 namespace jpegli {
 
+HWY_EXPORT(CMYKToYCCK);
 HWY_EXPORT(YCCKToCMYK);
 HWY_EXPORT(YCbCrToRGB);
 HWY_EXPORT(RGBToYCbCr);
+
+void CMYKToYCCK(float* JXL_RESTRICT row0, float* JXL_RESTRICT row1,
+                float* JXL_RESTRICT row2, float* JXL_RESTRICT row3,
+                size_t xsize) {
+  return HWY_DYNAMIC_DISPATCH(CMYKToYCCK)(row0, row1, row2, row3, xsize);
+}
 
 void YCCKToCMYK(float* JXL_RESTRICT row0, float* JXL_RESTRICT row1,
                 float* JXL_RESTRICT row2, float* JXL_RESTRICT row3,

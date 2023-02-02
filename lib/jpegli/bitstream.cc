@@ -456,6 +456,14 @@ void WriteOutput(j_compress_ptr cinfo, std::initializer_list<uint8_t> bytes) {
   WriteOutput(cinfo, bytes.begin(), bytes.size());
 }
 
+void EncodeAPP14(j_compress_ptr cinfo) {
+  uint8_t color_transform = cinfo->jpeg_color_space == JCS_YCbCr  ? 1
+                            : cinfo->jpeg_color_space == JCS_YCCK ? 2
+                                                                  : 0;
+  WriteOutput(cinfo, {0xff, 0xee, 0, 14, 'A', 'd', 'o', 'b', 'e', 0, 100, 0, 0,
+                      0, 0, color_transform});
+}
+
 void EncodeSOF(j_compress_ptr cinfo) {
   const uint8_t marker = cinfo->progressive_mode ? 0xc2 : 0xc1;
   const size_t n_comps = cinfo->num_components;
