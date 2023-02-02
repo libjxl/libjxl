@@ -141,11 +141,11 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/image_ops.h
   jxl/jxl_inspection.h
   jxl/lehmer_code.h
-  jxl/linalg.h
   jxl/loop_filter.cc
   jxl/loop_filter.h
   jxl/luminance.cc
   jxl/luminance.h
+  jxl/matrix_ops.h
   jxl/memory_manager_internal.cc
   jxl/memory_manager_internal.h
   jxl/modular/encoding/context_predict.h
@@ -298,6 +298,8 @@ set(JPEGXL_INTERNAL_SOURCES_ENC
   jxl/enc_file.h
   jxl/enc_frame.cc
   jxl/enc_frame.h
+  jxl/enc_gaborish.cc
+  jxl/enc_gaborish.h
   jxl/enc_gamma_correct.h
   jxl/enc_group.cc
   jxl/enc_group.h
@@ -305,20 +307,28 @@ set(JPEGXL_INTERNAL_SOURCES_ENC
   jxl/enc_heuristics.h
   jxl/enc_huffman.cc
   jxl/enc_huffman.h
+  jxl/enc_huffman_tree.cc
+  jxl/enc_huffman_tree.h
   jxl/enc_icc_codec.cc
   jxl/enc_icc_codec.h
   jxl/enc_image_bundle.cc
   jxl/enc_image_bundle.h
   jxl/enc_jxl_skcms.h
+  jxl/enc_linalg.cc
+  jxl/enc_linalg.h
   jxl/enc_modular.cc
   jxl/enc_modular.h
   jxl/enc_noise.cc
   jxl/enc_noise.h
+  jxl/enc_optimize.cc
+  jxl/enc_optimize.h
   jxl/enc_params.h
   jxl/enc_patch_dictionary.cc
   jxl/enc_patch_dictionary.h
   jxl/enc_photon_noise.cc
   jxl/enc_photon_noise.h
+  jxl/enc_progressive_split.cc
+  jxl/enc_progressive_split.h
   jxl/enc_quant_weights.cc
   jxl/enc_quant_weights.h
   jxl/enc_splines.cc
@@ -332,17 +342,12 @@ set(JPEGXL_INTERNAL_SOURCES_ENC
   jxl/enc_xyb.h
   jxl/encode.cc
   jxl/encode_internal.h
-  jxl/gaborish.cc
-  jxl/gaborish.h
-  jxl/huffman_tree.cc
-  jxl/huffman_tree.h
   jxl/jpeg/enc_jpeg_data.cc
   jxl/jpeg/enc_jpeg_data.h
   jxl/jpeg/enc_jpeg_data_reader.cc
   jxl/jpeg/enc_jpeg_data_reader.h
   jxl/jpeg/enc_jpeg_huffman_decode.cc
   jxl/jpeg/enc_jpeg_huffman_decode.h
-  jxl/linalg.cc
   jxl/modular/encoding/enc_debug_tree.cc
   jxl/modular/encoding/enc_debug_tree.h
   jxl/modular/encoding/enc_encoding.cc
@@ -357,10 +362,6 @@ set(JPEGXL_INTERNAL_SOURCES_ENC
   jxl/modular/transform/enc_squeeze.h
   jxl/modular/transform/enc_transform.cc
   jxl/modular/transform/enc_transform.h
-  jxl/optimize.cc
-  jxl/optimize.h
-  jxl/progressive_split.cc
-  jxl/progressive_split.h
 )
 
 set_source_files_properties(jxl/enc_fast_lossless.cc PROPERTIES COMPILE_FLAGS -O3)

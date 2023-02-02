@@ -8,7 +8,7 @@
 #include "lib/jpegli/encode_internal.h"
 #include "lib/jpegli/error.h"
 #include "lib/jxl/enc_cluster.h"
-#include "lib/jxl/huffman_tree.h"
+#include "lib/jxl/enc_huffman_tree.h"
 
 namespace jpegli {
 namespace {

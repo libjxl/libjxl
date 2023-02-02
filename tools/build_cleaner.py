@@ -89,17 +89,6 @@ def SplitLibFiles(repo_files):
   enc_srcs.extend([
       "lib/jxl/encode.cc",
       "lib/jxl/encode_internal.h",
-      "lib/jxl/gaborish.cc",
-      "lib/jxl/gaborish.h",
-      "lib/jxl/huffman_tree.cc",
-      "lib/jxl/huffman_tree.h",
-      # Only the inlines in linalg.h header are used in the decoder.
-      # TODO(deymo): split out encoder only linalg.h functions.
-      "lib/jxl/linalg.cc",
-      "lib/jxl/optimize.cc",
-      "lib/jxl/optimize.h",
-      "lib/jxl/progressive_split.cc",
-      "lib/jxl/progressive_split.h",
       # TODO(deymo): Add luminance.cc and luminance.h here too. Currently used
       # by aux_out.h.
   ])

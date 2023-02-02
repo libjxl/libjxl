@@ -20,7 +20,7 @@
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/codec_in_out.h"  // DecoderHints
-#include "lib/jxl/gaborish.h"
+#include "lib/jxl/enc_gaborish.h"
 #include "lib/jxl/modular/options.h"
 
 namespace jpegxl {
