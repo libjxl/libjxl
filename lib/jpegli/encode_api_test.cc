@@ -105,6 +105,8 @@ struct TestConfig {
   int v_sampling[kMaxComponents] = {1, 1, 1};
   bool custom_component_ids = false;
   int comp_id[kMaxComponents];
+  int override_JFIF = -1;
+  int override_Adobe = -1;
   int progressive_id = 0;
   int progressive_level = -1;
   int restart_interval = 0;
@@ -220,6 +222,12 @@ void TestDecodedImage(const TestConfig& config,
   EXPECT_EQ(config.input_components, cinfo.num_components);
   cinfo.buffered_image = TRUE;
   cinfo.out_color_space = config.in_color_space;
+  if (config.override_JFIF >= 0) {
+    EXPECT_EQ(cinfo.saw_JFIF_marker, config.override_JFIF);
+  }
+  if (config.override_Adobe >= 0) {
+    EXPECT_EQ(cinfo.saw_Adobe_marker, config.override_Adobe);
+  }
   if (config.in_color_space == JCS_UNKNOWN) {
     cinfo.jpeg_color_space = JCS_UNKNOWN;
   }
@@ -335,6 +343,12 @@ bool EncodeWithJpegli(const TestConfig& config,
     jpegli_set_xyb_mode(&cinfo);
   }
   jpegli_set_defaults(&cinfo);
+  if (config.override_JFIF >= 0) {
+    cinfo.write_JFIF_header = config.override_JFIF;
+  }
+  if (config.override_Adobe >= 0) {
+    cinfo.write_Adobe_marker = config.override_Adobe;
+  }
   if (config.set_jpeg_colorspace) {
     jpegli_set_colorspace(&cinfo, config.jpeg_color_space);
   }
@@ -667,6 +681,19 @@ std::vector<TestConfig> GenerateTests() {
     config.max_dist = 2.2;
     all_tests.push_back(config);
   }
+  {
+    TestConfig config;
+    config.max_bpp = 1.45;
+    config.max_dist = 2.2;
+    config.override_JFIF = 1;
+    all_tests.push_back(config);
+    config.override_JFIF = 0;
+    config.override_Adobe = 1;
+    all_tests.push_back(config);
+    config.override_JFIF = 1;
+    config.override_Adobe = 1;
+    all_tests.push_back(config);
+  }
   return all_tests;
 };
 
@@ -735,6 +762,12 @@ std::ostream& operator<<(std::ostream& os, const TestConfig& c) {
     os << "XYB";
   } else if (c.libjpeg_mode) {
     os << "Libjpeg";
+  }
+  if (c.override_JFIF >= 0) {
+    os << (c.override_JFIF ? "AddJFIF" : "NoJFIF");
+  }
+  if (c.override_Adobe >= 0) {
+    os << (c.override_JFIF ? "AddAdobe" : "NoAdobe");
   }
   return os;
 }

@@ -728,6 +728,11 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
   // SOI
   jpegli::WriteOutput(cinfo, {0xFF, 0xD8});
 
+  // APP0
+  if (cinfo->write_JFIF_header) {
+    jpegli::EncodeAPP0(cinfo);
+  }
+
   // APP14
   if (cinfo->write_Adobe_marker) {
     jpegli::EncodeAPP14(cinfo);
@@ -773,6 +778,7 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
       JPEGLI_ERROR("Failed to encode scan.");
     }
   }
+
   // EOI
   jpegli::WriteOutput(cinfo, {0xFF, 0xD9});
   (*cinfo->dest->term_destination)(cinfo);
