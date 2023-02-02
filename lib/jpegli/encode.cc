@@ -217,6 +217,77 @@ void SetDefaultScanScript(j_compress_ptr cinfo) {
   cinfo->num_scans = cinfo->script_space_size;
 }
 
+void ValidateScanScript(j_compress_ptr cinfo) {
+  // Mask of coefficient bits defined by the scan script, for each component
+  // and coefficient index.
+  uint16_t comp_mask[kMaxComponents][DCTSIZE2] = {};
+  static constexpr int kMaxRefinementBit = 10;
+
+  for (int i = 0; i < cinfo->num_scans; ++i) {
+    const jpeg_scan_info& si = cinfo->scan_info[i];
+    if (si.comps_in_scan < 1 || si.comps_in_scan > MAX_COMPS_IN_SCAN) {
+      JPEGLI_ERROR("Invalid number of components in scan %d", si.comps_in_scan);
+    }
+    int last_ci = -1;
+    for (int j = 0; j < si.comps_in_scan; ++j) {
+      int ci = si.component_index[j];
+      if (ci < 0 || ci >= cinfo->num_components) {
+        JPEGLI_ERROR("Invalid component index %d in scan", ci);
+      } else if (ci == last_ci) {
+        JPEGLI_ERROR("Duplicate component index %d in scan", ci);
+      } else if (ci < last_ci) {
+        JPEGLI_ERROR("Out of order component index %d in scan", ci);
+      }
+      last_ci = ci;
+    }
+    if (si.Ss < 0 || si.Se < si.Ss || si.Se >= DCTSIZE2) {
+      JPEGLI_ERROR("Invalid spectral range %d .. %d in scan", si.Ss, si.Se);
+    }
+    if (si.Ah < 0 || si.Al < 0 || si.Al > kMaxRefinementBit) {
+      JPEGLI_ERROR("Invalid refinement bits %d/%d", si.Ah, si.Al);
+    }
+    if (!cinfo->progressive_mode) {
+      if (si.Ss != 0 || si.Se != DCTSIZE2 - 1 || si.Ah != 0 || si.Al != 0) {
+        JPEGLI_ERROR("Invalid scan for sequential mode");
+      }
+    } else {
+      if (si.Ss == 0 && si.Se != 0) {
+        JPEGLI_ERROR("DC and AC together in progressive scan");
+      }
+    }
+    if (si.Ss != 0 && si.comps_in_scan != 1) {
+      JPEGLI_ERROR("Interleaved AC only scan.");
+    }
+    for (int j = 0; j < si.comps_in_scan; ++j) {
+      int ci = si.component_index[j];
+      if (si.Ss != 0 && comp_mask[ci][0] == 0) {
+        JPEGLI_ERROR("AC before DC in component %d of scan", ci);
+      }
+      for (int k = si.Ss; k <= si.Se; ++k) {
+        if (comp_mask[ci][k] == 0) {
+          if (si.Ah != 0) {
+            JPEGLI_ERROR("Invalid first scan refinement bit");
+          }
+          comp_mask[ci][k] = ((0xffff << si.Al) & 0xffff);
+        } else {
+          if (comp_mask[ci][k] != ((0xffff << si.Ah) & 0xffff) ||
+              si.Al != si.Ah - 1) {
+            JPEGLI_ERROR("Invalid refinement bit progression.");
+          }
+          comp_mask[ci][k] |= 1 << si.Al;
+        }
+      }
+    }
+  }
+  for (int c = 0; c < cinfo->num_components; ++c) {
+    for (int k = 0; k < DCTSIZE2; ++k) {
+      if (comp_mask[c][k] != 0xffff) {
+        JPEGLI_ERROR("Incomplete scan of component %d and frequency %d", c, k);
+      }
+    }
+  }
+}
+
 }  // namespace jpegli
 
 void jpegli_CreateCompress(j_compress_ptr cinfo, int version,
@@ -263,6 +334,7 @@ void jpegli_set_defaults(j_compress_ptr cinfo) {
   CheckState(cinfo, jpegli::kEncStart);
   jpegli::InitializeCompressParams(cinfo);
   jpegli_default_colorspace(cinfo);
+  jpegli_set_progressive_level(cinfo, jpegli::kDefaultProgressiveLevel);
 }
 
 void jpegli_default_colorspace(j_compress_ptr cinfo) {
@@ -391,7 +463,7 @@ void jpegli_enable_adaptive_quantization(j_compress_ptr cinfo, boolean value) {
 
 void jpegli_simple_progression(j_compress_ptr cinfo) {
   CheckState(cinfo, jpegli::kEncStart);
-  jpegli_set_progressive_level(cinfo, 2);
+  jpegli_set_progressive_level(cinfo, jpegli::kDefaultProgressiveLevel);
 }
 
 void jpegli_set_progressive_level(j_compress_ptr cinfo, int level) {
@@ -425,12 +497,19 @@ void jpegli_start_compress(j_compress_ptr cinfo, boolean write_all_tables) {
   if (cinfo->data_precision != jpegli::kJpegPrecision) {
     JPEGLI_ERROR("Invalid data precision");
   }
+  if (cinfo->arith_code) {
+    JPEGLI_ERROR("Arithmetic coding is not implemented.");
+  }
+  if (cinfo->CCIR601_sampling) {
+    JPEGLI_ERROR("CCIR601 sampling is not implemented.");
+  }
   cinfo->global_state = jpegli::kEncHeader;
   jpeg_comp_master* m = cinfo->master;
   cinfo->next_scanline = 0;
   if (cinfo->scan_info != nullptr) {
     cinfo->progressive_mode =
         cinfo->scan_info->Ss != 0 || cinfo->scan_info->Se != DCTSIZE2 - 1;
+    jpegli::ValidateScanScript(cinfo);
   } else {
     cinfo->progressive_mode = cinfo->master->progressive_level > 0;
   }
@@ -628,6 +707,10 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
 
   if (cinfo->scan_info == nullptr) {
     jpegli::SetDefaultScanScript(cinfo);
+    // This should never fail since we are generating the scan script above, but
+    // if there is a bug in the scan script generation code, it is better to
+    // fail here than to create a corrupt JPEG file.
+    jpegli::ValidateScanScript(cinfo);
   }
 
   std::vector<jpegli::JPEGHuffmanCode> huffman_codes;

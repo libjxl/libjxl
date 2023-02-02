@@ -498,9 +498,6 @@ void EncodeSOS(j_compress_ptr cinfo, int scan_index) {
   data[pos++] = scan_info->comps_in_scan;
   for (int i = 0; i < scan_info->comps_in_scan; ++i) {
     int comp_idx = scan_info->component_index[i];
-    if (comp_idx >= cinfo->num_components) {
-      JPEGLI_ERROR("Invalid scan component index %u.", comp_idx);
-    }
     data[pos++] = cinfo->comp_info[comp_idx].component_id;
     data[pos++] = (sci.dc_tbl_idx[i] << 4u) + sci.ac_tbl_idx[i];
   }
