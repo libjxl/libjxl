@@ -422,6 +422,9 @@ void jpegli_start_compress(j_compress_ptr cinfo, boolean write_all_tables) {
       cinfo->num_components > static_cast<int>(jpegli::kMaxComponents)) {
     JPEGLI_ERROR("Invalid number of components.");
   }
+  if (cinfo->data_precision != jpegli::kJpegPrecision) {
+    JPEGLI_ERROR("Invalid data precision");
+  }
   cinfo->global_state = jpegli::kEncHeader;
   jpeg_comp_master* m = cinfo->master;
   cinfo->next_scanline = 0;
@@ -434,6 +437,14 @@ void jpegli_start_compress(j_compress_ptr cinfo, boolean write_all_tables) {
   cinfo->max_h_samp_factor = cinfo->max_v_samp_factor = 1;
   for (int c = 0; c < cinfo->num_components; ++c) {
     jpeg_component_info* comp = &cinfo->comp_info[c];
+    if (comp->component_index != c) {
+      JPEGLI_ERROR("Invalid component index");
+    }
+    for (int j = 0; j < c; ++j) {
+      if (cinfo->comp_info[j].component_id == comp->component_id) {
+        JPEGLI_ERROR("Duplicate component id %d", comp->component_id);
+      }
+    }
     if (comp->h_samp_factor == 0 || comp->v_samp_factor == 0) {
       JPEGLI_ERROR("Invalid sampling factor 0");
     }
