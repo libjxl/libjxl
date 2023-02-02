@@ -110,6 +110,7 @@ struct TestConfig {
   int progressive_id = 0;
   int progressive_level = -1;
   int restart_interval = 0;
+  int restart_in_rows = 0;
   bool xyb_mode = false;
   bool libjpeg_mode = false;
   double max_bpp;
@@ -278,6 +279,12 @@ void TestDecodedImage(const TestConfig& config,
       EXPECT_EQ(cinfo.Al, scan.Al);
     }
     EXPECT_TRUE(jpeg_finish_output(&cinfo));
+    if (config.restart_interval > 0) {
+      EXPECT_EQ(cinfo.restart_interval, config.restart_interval);
+    } else if (config.restart_in_rows > 0) {
+      EXPECT_EQ(cinfo.restart_interval,
+                config.restart_in_rows * cinfo.MCUs_per_row);
+    }
   }
   EXPECT_TRUE(jpeg_start_output(&cinfo, cinfo.input_scan_number));
   size_t stride = cinfo.image_width * cinfo.out_color_components;
@@ -389,6 +396,7 @@ bool EncodeWithJpegli(const TestConfig& config,
     jpegli_set_progressive_level(&cinfo, config.progressive_level);
   }
   cinfo.restart_interval = config.restart_interval;
+  cinfo.restart_in_rows = config.restart_in_rows;
   cinfo.optimize_coding = TRUE;
   jpegli_set_quality(&cinfo, config.quality, TRUE);
   if (config.libjpeg_mode) {
@@ -548,6 +556,13 @@ std::vector<TestConfig> GenerateTests() {
     TestConfig config;
     config.restart_interval = r;
     config.max_bpp = 1.5 + 5.5 / r;
+    config.max_dist = 2.2;
+    all_tests.push_back(config);
+  }
+  for (size_t rr : {1, 3, 8, 100}) {
+    TestConfig config;
+    config.restart_in_rows = rr;
+    config.max_bpp = 1.5;
     config.max_dist = 2.2;
     all_tests.push_back(config);
   }
@@ -754,6 +769,9 @@ std::ostream& operator<<(std::ostream& os, const TestConfig& c) {
   }
   if (c.restart_interval > 0) {
     os << "R" << c.restart_interval;
+  }
+  if (c.restart_in_rows > 0) {
+    os << "RR" << c.restart_in_rows;
   }
   if (c.progressive_level >= 0) {
     os << "PL" << c.progressive_level;
@@ -1430,6 +1448,21 @@ TEST(ErrorHandlingTest, InvalidScanScript13) {
   };
   cinfo.scan_info = kScript;
   cinfo.num_scans = ARRAYSIZE(kScript);
+  jpegli_start_compress(&cinfo, TRUE);
+  EXPECT_FAILURE();
+}
+
+TEST(ErrorHandlingTest, RestartIntervalTooBig) {
+  MyClientData data;
+  jpeg_compress_struct cinfo;
+  ERROR_HANDLER_SETUP(return );
+  jpegli_create_compress(&cinfo);
+  jpegli_mem_dest(&cinfo, &data.buffer, &data.size);
+  cinfo.image_width = 1;
+  cinfo.image_height = 1;
+  cinfo.input_components = 1;
+  jpegli_set_defaults(&cinfo);
+  cinfo.restart_interval = 1000000;
   jpegli_start_compress(&cinfo, TRUE);
   EXPECT_FAILURE();
 }

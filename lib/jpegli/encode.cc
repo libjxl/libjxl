@@ -541,6 +541,9 @@ void jpegli_start_compress(j_compress_ptr cinfo, boolean write_all_tables) {
   if (cinfo->CCIR601_sampling) {
     JPEGLI_ERROR("CCIR601 sampling is not implemented.");
   }
+  if (cinfo->restart_interval > 65535u) {
+    JPEGLI_ERROR("Restart interval too big");
+  }
   cinfo->global_state = jpegli::kEncHeader;
   jpeg_comp_master* m = cinfo->master;
   cinfo->next_scanline = 0;
@@ -764,13 +767,15 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
   std::vector<jpegli::JPEGHuffmanCode> huffman_codes;
   jpegli::OptimizeHuffmanCodes(cinfo, coeffs, &huffman_codes);
 
-  // DRI
-  if (cinfo->restart_interval > 0) {
-    jpegli::EncodeDRI(cinfo);
-  }
-
+  // DRI, DHT, SOS, scan data
   size_t dht_index = 0;
+  size_t last_restart_interval = 0;
   for (int i = 0; i < cinfo->num_scans; ++i) {
+    cinfo->restart_interval = jpegli::RestartIntervalForScan(cinfo, i);
+    if (cinfo->restart_interval != last_restart_interval) {
+      jpegli::EncodeDRI(cinfo);
+      last_restart_interval = cinfo->restart_interval;
+    }
     jpegli::EncodeDHT(cinfo, huffman_codes, &dht_index,
                       cinfo->master->scan_coding_info[i].num_huffman_codes);
     jpegli::EncodeSOS(cinfo, i);

@@ -17,6 +17,8 @@
 
 namespace jpegli {
 
+size_t RestartIntervalForScan(j_compress_ptr cinfo, size_t scan_index);
+
 void OptimizeHuffmanCodes(
     j_compress_ptr cinfo,
     const std::vector<std::vector<jpegli::coeff_t> >& coeffs,
