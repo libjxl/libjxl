@@ -186,6 +186,11 @@ void jpeg_write_m_byte(j_compress_ptr cinfo, int val) {
   jpegli_write_m_byte(cinfo, val);
 }
 
+void jpeg_write_marker(j_compress_ptr cinfo, int marker, const JOCTET *dataptr,
+                       unsigned int datalen) {
+  jpegli_write_marker(cinfo, marker, dataptr, datalen);
+}
+
 void jpeg_write_icc_profile(j_compress_ptr cinfo, const JOCTET *icc_data_ptr,
                             unsigned int icc_data_len) {
   jpegli_write_icc_profile(cinfo, icc_data_ptr, icc_data_len);

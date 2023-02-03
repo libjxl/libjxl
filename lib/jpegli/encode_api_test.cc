@@ -26,6 +26,9 @@
 namespace jpegli {
 namespace {
 
+static constexpr int kSpecialMarker = 0xe5;
+static constexpr uint8_t kMarkerData[] = {0, 1, 255, 0, 17};
+
 static constexpr jpeg_scan_info kScript1[] = {
     {3, {0, 1, 2}, 0, 0, 0, 0},
     {1, {0}, 1, 63, 0, 0},
@@ -107,6 +110,7 @@ struct TestConfig {
   int comp_id[kMaxComponents];
   int override_JFIF = -1;
   int override_Adobe = -1;
+  bool add_marker = false;
   int progressive_id = 0;
   int progressive_level = -1;
   int restart_interval = 0;
@@ -147,8 +151,8 @@ void ConvertPixel(const uint8_t* input_rgb, uint8_t* out,
     }
   } else if (colorspace == JCS_YCbCr) {
     float Y = 0.299f * r + 0.587f * g + 0.114f * b;
-    float Cb = -0.168736f * r - 0.331264f * g + 0.5f * b + 128.0f;
-    float Cr = 0.5f * r - 0.418688f * g - 0.081312f * b + 128.0f;
+    float Cb = -0.168736f * r - 0.331264f * g + 0.5f * b + 0.5f;
+    float Cr = 0.5f * r - 0.418688f * g - 0.081312f * b + 0.5f;
     out[0] = static_cast<uint8_t>(std::round(Y * kMul));
     out[1] = static_cast<uint8_t>(std::round(Cb * kMul));
     out[2] = static_cast<uint8_t>(std::round(Cr * kMul));
@@ -198,25 +202,34 @@ void GeneratePixels(TestConfig* config) {
   }
 }
 
+struct MyClientData {
+  jmp_buf env;
+  unsigned char* buffer = nullptr;
+  unsigned long size = 0;
+};
+
 // Verifies that an image encoded with libjpegli can be decoded with libjpeg.
 void TestDecodedImage(const TestConfig& config,
                       const std::vector<uint8_t>& compressed) {
+  MyClientData data;
   jpeg_decompress_struct cinfo = {};
   jpeg_error_mgr jerr;
   cinfo.err = jpeg_std_error(&jerr);
-  jmp_buf env;
-  if (setjmp(env)) {
+  if (setjmp(data.env)) {
     FAIL();
   }
-  cinfo.client_data = static_cast<void*>(&env);
+  cinfo.client_data = static_cast<void*>(&data);
   cinfo.err->error_exit = [](j_common_ptr cinfo) {
     (*cinfo->err->output_message)(cinfo);
-    jmp_buf* env = static_cast<jmp_buf*>(cinfo->client_data);
+    MyClientData* data = static_cast<MyClientData*>(cinfo->client_data);
     jpeg_destroy(cinfo);
-    longjmp(*env, 1);
+    longjmp(data->env, 1);
   };
   jpeg_create_decompress(&cinfo);
   jpeg_mem_src(&cinfo, compressed.data(), compressed.size());
+  if (config.add_marker) {
+    jpeg_save_markers(&cinfo, kSpecialMarker, 0xffff);
+  }
   EXPECT_EQ(JPEG_REACHED_SOS, jpeg_read_header(&cinfo, /*require_image=*/TRUE));
   EXPECT_EQ(config.xsize, cinfo.image_width);
   EXPECT_EQ(config.ysize, cinfo.image_height);
@@ -231,6 +244,20 @@ void TestDecodedImage(const TestConfig& config,
   }
   if (config.in_color_space == JCS_UNKNOWN) {
     cinfo.jpeg_color_space = JCS_UNKNOWN;
+  }
+  if (config.add_marker) {
+    bool marker_found = false;
+    for (jpeg_saved_marker_ptr marker = cinfo.marker_list; marker != nullptr;
+         marker = marker->next) {
+      jxl::msan::UnpoisonMemory(marker, sizeof(*marker));
+      jxl::msan::UnpoisonMemory(marker->data, marker->data_length);
+      if (marker->marker == kSpecialMarker &&
+          marker->data_length == sizeof(kMarkerData) &&
+          memcmp(marker->data, kMarkerData, sizeof(kMarkerData)) == 0) {
+        marker_found = true;
+      }
+    }
+    EXPECT_TRUE(marker_found);
   }
   EXPECT_TRUE(jpeg_start_decompress(&cinfo));
 #if !JXL_MEMORY_SANITIZER
@@ -317,12 +344,6 @@ void TestDecodedImage(const TestConfig& config,
   EXPECT_LE(rms, config.max_dist);
 }
 
-struct MyClientData {
-  jmp_buf env;
-  unsigned char* buffer = nullptr;
-  unsigned long size = 0;
-};
-
 bool EncodeWithJpegli(const TestConfig& config,
                       std::vector<uint8_t>* compressed) {
   MyClientData data;
@@ -405,6 +426,10 @@ bool EncodeWithJpegli(const TestConfig& config,
     jpegli_set_progressive_level(&cinfo, 0);
   }
   jpegli_start_compress(&cinfo, TRUE);
+  if (config.add_marker) {
+    jpegli_write_marker(&cinfo, kSpecialMarker, kMarkerData,
+                        sizeof(kMarkerData));
+  }
   size_t stride = cinfo.image_width * cinfo.input_components;
   std::vector<uint8_t> row_bytes(stride);
   for (size_t y = 0; y < cinfo.image_height; ++y) {
@@ -511,7 +536,7 @@ std::vector<TestConfig> GenerateTests() {
     TestConfig config;
     config.in_color_space = JCS_YCbCr;
     config.max_bpp = 1.45;
-    config.max_dist = 1.3;
+    config.max_dist = 1.35;
     all_tests.push_back(config);
   }
   for (bool xyb : {false, true}) {
@@ -709,6 +734,14 @@ std::vector<TestConfig> GenerateTests() {
     config.override_Adobe = 1;
     all_tests.push_back(config);
   }
+  {
+    TestConfig config;
+    config.xsize = config.ysize = 256;
+    config.max_bpp = 1.45;
+    config.max_dist = 2.2;
+    config.add_marker = true;
+    all_tests.push_back(config);
+  }
   return all_tests;
 };
 
@@ -786,6 +819,9 @@ std::ostream& operator<<(std::ostream& os, const TestConfig& c) {
   }
   if (c.override_Adobe >= 0) {
     os << (c.override_JFIF ? "AddAdobe" : "NoAdobe");
+  }
+  if (c.add_marker) {
+    os << "AddMarker";
   }
   return os;
 }

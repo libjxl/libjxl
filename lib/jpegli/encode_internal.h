@@ -69,7 +69,7 @@ struct jpeg_comp_master {
   size_t ysize_blocks = 0;
   std::vector<jpegli::ScanCodingInfo> scan_coding_info;
   std::vector<std::vector<uint8_t>> special_markers;
-  std::vector<uint8_t>* cur_marker_data = nullptr;
+  uint8_t* next_marker_byte = nullptr;
   JpegliDataType data_type = JPEGLI_TYPE_UINT8;
   JpegliEndianness endianness = JPEGLI_NATIVE_ENDIAN;
   std::array<jpegli::HuffmanCodeTable, jpegli::kMaxHuffmanTables> dc_huff_table;
