@@ -20,7 +20,6 @@
 #endif
 #include "lib/extras/packed_image_convert.h"
 #include "lib/extras/time.h"
-#include "lib/jxl/aux_out.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/padded_bytes.h"

@@ -23,7 +23,6 @@
 #include "lib/extras/dec/jxl.h"
 #include "lib/extras/enc/jxl.h"
 #include "lib/extras/packed_image_convert.h"
-#include "lib/jxl/aux_out_fwd.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/random.h"
@@ -77,6 +76,9 @@ MATCHER_P(IsSlightlyBelow, max, "") {
 }
 
 namespace jxl {
+
+struct AuxOut;
+
 namespace test {
 
 void JxlBasicInfoSetFromPixelFormat(JxlBasicInfo* basic_info,

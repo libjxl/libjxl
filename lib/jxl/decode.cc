@@ -5,6 +5,13 @@
 
 #include "jxl/decode.h"
 
+#include <algorithm>
+#include <array>
+#include <functional>
+#include <memory>
+#include <utility>
+#include <vector>
+
 #include "jxl/types.h"
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/span.h"

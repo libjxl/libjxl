@@ -11,7 +11,6 @@
 
 #include "gtest/gtest.h"
 #include "lib/extras/codec.h"
-#include "lib/jxl/aux_out.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/override.h"
@@ -19,6 +18,7 @@
 #include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/common.h"
+#include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_color_management.h"

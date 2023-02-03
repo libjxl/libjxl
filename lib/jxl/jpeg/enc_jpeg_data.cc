@@ -8,7 +8,9 @@
 #include <brotli/encode.h>
 #include <stdio.h>
 
+#include "lib/jxl/enc_fields.h"
 #include "lib/jxl/jpeg/enc_jpeg_data_reader.h"
+#include "lib/jxl/luminance.h"
 #include "lib/jxl/sanitizers.h"
 
 namespace jxl {

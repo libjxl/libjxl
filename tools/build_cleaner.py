@@ -89,17 +89,7 @@ def SplitLibFiles(repo_files):
   enc_srcs.extend([
       "lib/jxl/encode.cc",
       "lib/jxl/encode_internal.h",
-      # TODO(deymo): Add luminance.cc and luminance.h here too. Currently used
-      # by aux_out.h.
   ])
-  # Temporarily remove enc_bit_writer from the encoder sources: a lot of
-  # decoder source code still needs to be split up into encoder and decoder.
-  # Including the enc_bit_writer in the decoder allows to build a working
-  # libjxl_dec library.
-  # TODO(lode): remove the dependencies of the decoder on enc_bit_writer and
-  # remove enc_bit_writer from the dec_srcs again.
-  enc_srcs.remove("lib/jxl/enc_bit_writer.cc")
-  enc_srcs.remove("lib/jxl/enc_bit_writer.h")
   enc_srcs.sort()
 
   enc_srcs_set = set(enc_srcs)

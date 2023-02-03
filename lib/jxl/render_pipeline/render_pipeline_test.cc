@@ -14,7 +14,6 @@
 
 #include "gtest/gtest.h"
 #include "lib/extras/codec.h"
-#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/dec_frame.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/fake_parallel_runner_testonly.h"

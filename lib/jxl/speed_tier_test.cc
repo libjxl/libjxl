@@ -7,7 +7,6 @@
 
 #include "gtest/gtest.h"
 #include "lib/extras/codec.h"
-#include "lib/jxl/aux_out.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/thread_pool_internal.h"

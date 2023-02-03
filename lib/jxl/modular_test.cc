@@ -14,7 +14,6 @@
 #include "gtest/gtest.h"
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/jxl.h"
-#include "lib/jxl/aux_out.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/override.h"
@@ -23,10 +22,12 @@
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/color_management.h"
+#include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/enc_butteraugli_pnorm.h"
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_color_management.h"
+#include "lib/jxl/enc_fields.h"
 #include "lib/jxl/enc_file.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/enc_toc.h"
@@ -406,7 +407,7 @@ void WriteHeaders(BitWriter* writer, size_t xsize, size_t ysize) {
   BitWriter::Allotment allotment(writer, 16);
   writer->Write(8, 0xFF);
   writer->Write(8, kCodestreamMarker);
-  ReclaimAndCharge(writer, &allotment, 0, nullptr);
+  allotment.ReclaimAndCharge(writer, 0, nullptr);
   CodecMetadata metadata;
   EXPECT_TRUE(metadata.size.Set(xsize, ysize));
   EXPECT_TRUE(WriteSizeHeader(metadata.size, writer, 0, nullptr));
@@ -467,7 +468,7 @@ TEST(ModularTest, PredictorIntegerOverflow) {
     bw->Write(8, 119);
     bw->Write(28, 0xfffffff);
     bw->ZeroPadToByte();
-    ReclaimAndCharge(bw, &allotment, 0, nullptr);
+    allotment.ReclaimAndCharge(bw, 0, nullptr);
   }
   EXPECT_TRUE(WriteGroupOffsets(group_codes, nullptr, &writer, nullptr));
   writer.AppendByteAligned(group_codes);
@@ -515,7 +516,7 @@ TEST(ModularTest, UnsqueezeIntegerOverflow) {
       bw->Write(28, 0xffffffe);
     }
     bw->ZeroPadToByte();
-    ReclaimAndCharge(bw, &allotment, 0, nullptr);
+    allotment.ReclaimAndCharge(bw, 0, nullptr);
   }
   EXPECT_TRUE(WriteGroupOffsets(group_codes, nullptr, &writer, nullptr));
   writer.AppendByteAligned(group_codes);

@@ -25,7 +25,6 @@
 #if JPEGXL_ENABLE_JPEG
 #include "lib/extras/codec.h"
 #endif
-#include "lib/jxl/aux_out.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/file_io.h"
 #include "lib/jxl/base/override.h"
@@ -33,6 +32,7 @@
 #include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/enc_ans.h"
+#include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_external_image.h"

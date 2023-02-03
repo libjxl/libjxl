@@ -15,7 +15,6 @@
 #include <vector>
 
 #include "lib/jxl/ac_strategy.h"
-#include "lib/jxl/aux_out_fwd.h"
 #include "lib/jxl/base/cache_aligned.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/span.h"

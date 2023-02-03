@@ -19,7 +19,6 @@
 #include "lib/extras/dec/pnm.h"
 #include "lib/extras/enc/encode.h"
 #include "lib/extras/packed_image_convert.h"
-#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/random.h"
 #include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/color_management.h"

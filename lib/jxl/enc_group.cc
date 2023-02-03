@@ -14,14 +14,13 @@
 #include <hwy/highway.h>
 
 #include "lib/jxl/ac_strategy.h"
-#include "lib/jxl/aux_out.h"
-#include "lib/jxl/aux_out_fwd.h"
 #include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/profiler.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/dct_util.h"
 #include "lib/jxl/dec_transforms-inl.h"
+#include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/enc_transforms-inl.h"
 #include "lib/jxl/image.h"
@@ -411,7 +410,7 @@ Status EncodeGroupTokenizedCoefficients(size_t group_idx, size_t pass_idx,
   if (histo_selector_bits != 0) {
     BitWriter::Allotment allotment(writer, histo_selector_bits);
     writer->Write(histo_selector_bits, histogram_idx);
-    ReclaimAndCharge(writer, &allotment, kLayerAC, aux_out);
+    allotment.ReclaimAndCharge(writer, kLayerAC, aux_out);
   }
   WriteTokens(enc_state.passes[pass_idx].ac_tokens[group_idx],
               enc_state.passes[pass_idx].codes,
