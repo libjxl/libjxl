@@ -69,6 +69,9 @@ void jpegli_write_m_header(j_compress_ptr cinfo, int marker,
 
 void jpegli_write_m_byte(j_compress_ptr cinfo, int val);
 
+void jpegli_write_marker(j_compress_ptr cinfo, int marker,
+                         const JOCTET* dataptr, unsigned int datalen);
+
 void jpegli_write_icc_profile(j_compress_ptr cinfo, const JOCTET* icc_data_ptr,
                               unsigned int icc_data_len);
 

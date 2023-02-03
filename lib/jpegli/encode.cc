@@ -547,6 +547,7 @@ void jpegli_start_compress(j_compress_ptr cinfo, boolean write_all_tables) {
   cinfo->global_state = jpegli::kEncHeader;
   jpeg_comp_master* m = cinfo->master;
   cinfo->next_scanline = 0;
+  m->next_marker_byte = nullptr;
   if (cinfo->scan_info != nullptr) {
     cinfo->progressive_mode =
         cinfo->scan_info->Ss != 0 || cinfo->scan_info->Se != DCTSIZE2 - 1;
@@ -609,27 +610,31 @@ void jpegli_write_m_header(j_compress_ptr cinfo, int marker,
     JPEGLI_ERROR(
         "jpegli_write_m_header: Only APP and COM markers are supported.");
   }
-  std::vector<uint8_t> marker_data(4);
+  std::vector<uint8_t> marker_data(4 + datalen);
   marker_data[0] = 0xff;
   marker_data[1] = marker;
   marker_data[2] = (datalen + 2) >> 8;
   marker_data[3] = (datalen + 2) & 0xff;
   m->special_markers.emplace_back(std::move(marker_data));
-  m->cur_marker_data = &m->special_markers.back();
+  m->next_marker_byte = &m->special_markers.back()[4];
 }
 
 void jpegli_write_m_byte(j_compress_ptr cinfo, int val) {
-  CheckState(cinfo, jpegli::kEncHeader);
-  jpeg_comp_master* m = cinfo->master;
-  if (m->cur_marker_data == nullptr) {
+  if (cinfo->master->next_marker_byte == nullptr) {
     JPEGLI_ERROR("Marker header missing.");
   }
-  m->cur_marker_data->push_back(val);
+  *cinfo->master->next_marker_byte++ = val;
+}
+
+void jpegli_write_marker(j_compress_ptr cinfo, int marker,
+                         const JOCTET* dataptr, unsigned int datalen) {
+  jpegli_write_m_header(cinfo, marker, datalen);
+  memcpy(cinfo->master->next_marker_byte, dataptr, datalen);
+  cinfo->master->next_marker_byte = nullptr;
 }
 
 void jpegli_write_icc_profile(j_compress_ptr cinfo, const JOCTET* icc_data_ptr,
                               unsigned int icc_data_len) {
-  CheckState(cinfo, jpegli::kEncHeader);
   constexpr size_t kMaxIccBytesInMarker =
       jpegli::kMaxBytesInMarker - sizeof jpegli::kICCSignature - 2;
   const int num_markers =
@@ -650,6 +655,7 @@ void jpegli_write_icc_profile(j_compress_ptr cinfo, const JOCTET* icc_data_ptr,
       ++begin;
     }
   }
+  cinfo->master->next_marker_byte = nullptr;
 }
 
 void jpegli_set_input_format(j_compress_ptr cinfo, JpegliDataType data_type,
