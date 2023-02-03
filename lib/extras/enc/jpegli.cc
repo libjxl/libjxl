@@ -131,10 +131,54 @@ void ToFloatRow(const uint8_t* row_in, JxlPixelFormat format, size_t len,
   }
 }
 
+Status EncodeJpegToTargetSize(const PackedPixelFile& ppf,
+                              const JpegSettings& jpeg_settings,
+                              size_t target_size, ThreadPool* pool,
+                              std::vector<uint8_t>* output) {
+  float distance = 1.0f;
+  output->clear();
+  size_t best_error = std::numeric_limits<size_t>::max();
+  for (int step = 0; step < 10; ++step) {
+    JpegSettings settings = jpeg_settings;
+    settings.libjpeg_quality = 0;
+    settings.distance = distance;
+    std::vector<uint8_t> compressed;
+    JXL_RETURN_IF_ERROR(EncodeJpeg(ppf, settings, pool, &compressed));
+    size_t size = compressed.size();
+    // prefer being under the target size to being over it
+    size_t error = size < target_size
+                       ? target_size - size
+                       : static_cast<size_t>(1.2f * (size - target_size));
+    if (error < best_error) {
+      best_error = error;
+      std::swap(*output, compressed);
+    }
+    float rel_error = size * 1.0f / target_size;
+    if (std::abs(rel_error - 1.0f) < 0.0005f) {
+      break;
+    }
+    distance *= rel_error;
+  }
+  return true;
+}
+
 }  // namespace
 
 Status EncodeJpeg(const PackedPixelFile& ppf, const JpegSettings& jpeg_settings,
                   ThreadPool* pool, std::vector<uint8_t>* compressed) {
+  if (jpeg_settings.libjpeg_quality > 0) {
+    auto encoder = Encoder::FromExtension(".jpg");
+    encoder->SetOption("q", std::to_string(jpeg_settings.libjpeg_quality));
+    if (!jpeg_settings.libjpeg_chroma_subsampling.empty()) {
+      encoder->SetOption("chroma_subsampling",
+                         jpeg_settings.libjpeg_chroma_subsampling);
+    }
+    EncodedImage encoded;
+    JXL_RETURN_IF_ERROR(encoder->Encode(ppf, &encoded, pool));
+    size_t target_size = encoded.bitstreams[0].size();
+    return EncodeJpegToTargetSize(ppf, jpeg_settings, target_size, pool,
+                                  compressed);
+  }
   JXL_RETURN_IF_ERROR(VerifyInput(ppf));
 
   ColorEncoding color_encoding;
