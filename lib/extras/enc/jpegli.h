@@ -28,6 +28,8 @@ struct JpegSettings {
   bool use_std_quant_tables = false;
   int progressive_level = 2;
   std::string chroma_subsampling;
+  int libjpeg_quality = 0;
+  std::string libjpeg_chroma_subsampling;
 };
 
 Status EncodeJpeg(const PackedPixelFile& ppf, const JpegSettings& jpeg_settings,
