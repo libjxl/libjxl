@@ -12,7 +12,7 @@
 #include <string>
 #include <vector>
 
-#include "lib/jxl/aux_out.h"
+#include "lib/jxl/enc_aux_out.h"
 
 namespace jxl {
 

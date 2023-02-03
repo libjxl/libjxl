@@ -22,23 +22,20 @@
 
 namespace jxl {
 
-namespace {
 #if defined(TEST_DATA_PATH)
-std::string GetPath(const std::string& filename) {
+std::string GetTestDataPath(const std::string& filename) {
   return std::string(TEST_DATA_PATH "/") + filename;
 }
 #else
 using bazel::tools::cpp::runfiles::Runfiles;
 const std::unique_ptr<Runfiles> kRunfiles(Runfiles::Create(""));
-std::string GetPath(const std::string& filename) {
+std::string GetTestDataPath(const std::string& filename) {
   return kRunfiles->Rlocation("__main__/testdata/" + filename);
 }
 #endif
 
-}  // namespace
-
 static inline PaddedBytes ReadTestData(const std::string& filename) {
-  std::string full_path = GetPath(filename);
+  std::string full_path = GetTestDataPath(filename);
   PaddedBytes data;
   JXL_CHECK(ReadFile(full_path, &data));
   printf("Test data %s is %d bytes long.\n", filename.c_str(),

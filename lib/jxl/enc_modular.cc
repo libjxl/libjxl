@@ -15,15 +15,16 @@
 #include <utility>
 #include <vector>
 
-#include "lib/jxl/aux_out.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/compressed_dc.h"
 #include "lib/jxl/dec_ans.h"
+#include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_cluster.h"
+#include "lib/jxl/enc_fields.h"
 #include "lib/jxl/enc_gaborish.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/enc_patch_dictionary.h"
@@ -1130,11 +1131,11 @@ Status ModularFrameEncoder::EncodeGlobalInfo(BitWriter* writer,
   // If we are using brotli, or not using modular mode.
   if (tree_tokens_.empty() || tree_tokens_[0].empty()) {
     writer->Write(1, 0);
-    ReclaimAndCharge(writer, &allotment, kLayerModularTree, aux_out);
+    allotment.ReclaimAndCharge(writer, kLayerModularTree, aux_out);
     return true;
   }
   writer->Write(1, 1);
-  ReclaimAndCharge(writer, &allotment, kLayerModularTree, aux_out);
+  allotment.ReclaimAndCharge(writer, kLayerModularTree, aux_out);
 
   // Write tree
   HistogramParams params;

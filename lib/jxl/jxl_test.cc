@@ -19,12 +19,10 @@
 #include "lib/extras/codec.h"
 #include "lib/extras/enc/encode.h"
 #include "lib/extras/packed_image.h"
-#include "lib/jxl/aux_out.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/padded_bytes.h"
-#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
@@ -49,6 +47,9 @@
 #include "tools/box/box.h"
 
 namespace jxl {
+
+struct AuxOut;
+
 namespace {
 using extras::JXLCompressParams;
 using extras::JXLDecompressParams;

@@ -11,13 +11,14 @@
 #include <utility>
 #include <vector>
 
-#include "lib/jxl/aux_out.h"
-#include "lib/jxl/aux_out_fwd.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/codec_in_out.h"
+#include "lib/jxl/coeff_order_fwd.h"
 #include "lib/jxl/color_encoding_internal.h"
+#include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_cache.h"
+#include "lib/jxl/enc_fields.h"
 #include "lib/jxl/enc_frame.h"
 #include "lib/jxl/enc_icc_codec.h"
 #include "lib/jxl/frame_header.h"
@@ -87,7 +88,7 @@ Status WriteHeaders(CodecMetadata* metadata, BitWriter* writer,
   BitWriter::Allotment allotment(writer, 16);
   writer->Write(8, 0xFF);
   writer->Write(8, kCodestreamMarker);
-  ReclaimAndCharge(writer, &allotment, kLayerHeader, aux_out);
+  allotment.ReclaimAndCharge(writer, kLayerHeader, aux_out);
 
   JXL_RETURN_IF_ERROR(
       WriteSizeHeader(metadata->size, writer, kLayerHeader, aux_out));
@@ -135,7 +136,7 @@ Status EncodeFile(const CompressParams& params, const CodecInOut* io,
   // Each frame should start on byte boundaries.
   BitWriter::Allotment allotment(&writer, 8);
   writer.ZeroPadToByte();
-  ReclaimAndCharge(&writer, &allotment, kLayerHeader, aux_out);
+  allotment.ReclaimAndCharge(&writer, kLayerHeader, aux_out);
 
   for (size_t i = 0; i < io->frames.size(); i++) {
     FrameInfo info;

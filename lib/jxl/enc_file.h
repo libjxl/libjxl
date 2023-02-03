@@ -8,8 +8,6 @@
 
 // Facade for JXL encoding.
 
-#include "lib/jxl/aux_out.h"
-#include "lib/jxl/aux_out_fwd.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/status.h"
@@ -18,6 +16,8 @@
 #include "lib/jxl/enc_params.h"
 
 namespace jxl {
+
+struct AuxOut;
 
 // Write preview from `io`.
 Status EncodePreview(const CompressParams& cparams, const ImageBundle& ib,

@@ -27,9 +27,11 @@
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/dec_external_image.h"
+#include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_external_image.h"
+#include "lib/jxl/enc_fields.h"
 #include "lib/jxl/enc_file.h"
 #include "lib/jxl/enc_icc_codec.h"
 #include "lib/jxl/enc_progressive_split.h"
@@ -753,7 +755,7 @@ std::vector<uint8_t> GetTestHeader(size_t xsize, size_t ysize,
   }
 
   writer.ZeroPadToByte();
-  ReclaimAndCharge(&writer, &allotment, 0, nullptr);
+  allotment.ReclaimAndCharge(&writer, 0, nullptr);
   return std::vector<uint8_t>(
       writer.GetSpan().data(),
       writer.GetSpan().data() + writer.GetSpan().size());

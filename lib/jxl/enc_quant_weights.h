@@ -10,6 +10,9 @@
 
 namespace jxl {
 
+struct AuxOut;
+struct BitWriter;
+
 Status DequantMatricesEncode(
     const DequantMatrices* matrices, BitWriter* writer, size_t layer,
     AuxOut* aux_out, ModularFrameEncoder* modular_frame_encoder = nullptr);

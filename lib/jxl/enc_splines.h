@@ -13,8 +13,6 @@
 #include <vector>
 
 #include "lib/jxl/ans_params.h"
-#include "lib/jxl/aux_out.h"
-#include "lib/jxl/aux_out_fwd.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/chroma_from_luma.h"
 #include "lib/jxl/dec_ans.h"
@@ -26,6 +24,8 @@
 #include "lib/jxl/splines.h"
 
 namespace jxl {
+
+struct AuxOut;
 
 // Only call if splines.HasAny().
 void EncodeSplines(const Splines& splines, BitWriter* writer,

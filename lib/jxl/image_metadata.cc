@@ -401,12 +401,6 @@ Status ReadImageMetadata(BitReader* JXL_RESTRICT reader,
   return Bundle::Read(reader, metadata);
 }
 
-Status WriteImageMetadata(const ImageMetadata& metadata,
-                          BitWriter* JXL_RESTRICT writer, size_t layer,
-                          AuxOut* aux_out) {
-  return Bundle::Write(metadata, writer, layer, aux_out);
-}
-
 void ImageMetadata::SetAlphaBits(uint32_t bits, bool alpha_is_premultiplied) {
   std::vector<ExtraChannelInfo>& eciv = extra_channel_info;
   ExtraChannelInfo* alpha = Find(ExtraChannel::kAlpha);

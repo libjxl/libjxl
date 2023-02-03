@@ -12,7 +12,6 @@
 #include <utility>
 
 #include "gtest/gtest.h"
-#include "lib/jxl/aux_out.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/override.h"
@@ -32,6 +31,9 @@
 #include "lib/jxl/test_utils.h"
 
 namespace jxl {
+
+struct AuxOut;
+
 namespace {
 
 // Returns distance of point p to line p0..p1, the result is signed and is not
