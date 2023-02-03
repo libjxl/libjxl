@@ -578,9 +578,6 @@ void EncodeDHT(j_compress_ptr cinfo,
     for (size_t i = 0; i < total_count; ++i) {
       data[pos++] = huff.values[i];
     }
-    if (i + 1 == num_huffman_codes) {
-      JXL_ASSERT(huff.is_last);
-    }
   }
   *next_huffman_code += num_huffman_codes;
   WriteOutput(cinfo, data);

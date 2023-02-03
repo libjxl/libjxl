@@ -17,6 +17,11 @@
 
 namespace jpegli {
 
+void AddStandardHuffmanTables(j_compress_ptr cinfo, bool is_dc);
+
+void CopyHuffmanCodes(j_compress_ptr cinfo,
+                      std::vector<JPEGHuffmanCode>* huffman_codes);
+
 size_t RestartIntervalForScan(j_compress_ptr cinfo, size_t scan_index);
 
 void OptimizeHuffmanCodes(
