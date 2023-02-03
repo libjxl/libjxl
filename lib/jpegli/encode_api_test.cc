@@ -115,6 +115,8 @@ struct TestConfig {
   int progressive_level = -1;
   int restart_interval = 0;
   int restart_in_rows = 0;
+  bool optimize_coding = true;
+  bool use_flat_dc_luma_code = false;
   bool xyb_mode = false;
   bool libjpeg_mode = false;
   double max_bpp;
@@ -418,7 +420,13 @@ bool EncodeWithJpegli(const TestConfig& config,
   }
   cinfo.restart_interval = config.restart_interval;
   cinfo.restart_in_rows = config.restart_in_rows;
-  cinfo.optimize_coding = TRUE;
+  cinfo.optimize_coding = config.optimize_coding;
+  if (!config.optimize_coding && config.use_flat_dc_luma_code) {
+    JHUFF_TBL* tbl = cinfo.dc_huff_tbl_ptrs[0];
+    memset(tbl, 0, sizeof(*tbl));
+    tbl->bits[4] = 15;
+    for (int i = 0; i < 15; ++i) tbl->huffval[i] = i;
+  }
   jpegli_set_quality(&cinfo, config.quality, TRUE);
   if (config.libjpeg_mode) {
     jpegli_enable_adaptive_quantization(&cinfo, FALSE);
@@ -742,6 +750,17 @@ std::vector<TestConfig> GenerateTests() {
     config.add_marker = true;
     all_tests.push_back(config);
   }
+  {
+    TestConfig config;
+    config.xsize = config.ysize = 256;
+    config.progressive_level = 0;
+    config.optimize_coding = false;
+    config.max_bpp = 1.5;
+    config.max_dist = 2.2;
+    all_tests.push_back(config);
+    config.use_flat_dc_luma_code = true;
+    all_tests.push_back(config);
+  }
   return all_tests;
 };
 
@@ -822,6 +841,12 @@ std::ostream& operator<<(std::ostream& os, const TestConfig& c) {
   }
   if (c.add_marker) {
     os << "AddMarker";
+  }
+  if (!c.optimize_coding) {
+    os << "FixedTree";
+    if (c.use_flat_dc_luma_code) {
+      os << "FlatDCLuma";
+    }
   }
   return os;
 }

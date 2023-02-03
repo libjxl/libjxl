@@ -32,8 +32,6 @@ struct JPEGHuffmanCode {
   // The index of the Huffman code in the current set of Huffman codes. For AC
   // component Huffman codes, 0x10 is added to the index.
   int slot_id = 0;
-  // Set to true if this Huffman code is the last one within its marker segment
-  bool is_last = true;
 };
 
 // DCTCodingState: maximum number of correction bits to buffer

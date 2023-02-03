@@ -54,7 +54,7 @@ void InitializeCompressParams(j_compress_ptr cinfo) {
   cinfo->scan_info = nullptr;
   cinfo->raw_data_in = false;
   cinfo->arith_code = false;
-  cinfo->optimize_coding = false;
+  cinfo->optimize_coding = true;
   cinfo->CCIR601_sampling = false;
   cinfo->smoothing_factor = 0;
   cinfo->dct_method = JDCT_FLOAT;
@@ -343,6 +343,8 @@ void jpegli_set_defaults(j_compress_ptr cinfo) {
   jpegli::InitializeCompressParams(cinfo);
   jpegli_default_colorspace(cinfo);
   jpegli_set_progressive_level(cinfo, jpegli::kDefaultProgressiveLevel);
+  jpegli::AddStandardHuffmanTables(cinfo, /*is_dc=*/false);
+  jpegli::AddStandardHuffmanTables(cinfo, /*is_dc=*/true);
 }
 
 void jpegli_default_colorspace(j_compress_ptr cinfo) {
@@ -411,6 +413,8 @@ void jpegli_set_colorspace(j_compress_ptr cinfo, J_COLOR_SPACE colorspace) {
     comp->h_samp_factor = 1;
     comp->v_samp_factor = 1;
     comp->quant_tbl_no = 0;
+    comp->dc_tbl_no = 0;
+    comp->ac_tbl_no = 0;
   }
   if (colorspace == JCS_RGB) {
     cinfo->comp_info[0].component_id = 'R';
@@ -431,9 +435,11 @@ void jpegli_set_colorspace(j_compress_ptr cinfo, J_COLOR_SPACE colorspace) {
     cinfo->comp_info[2].component_id = 'Y';
     cinfo->comp_info[3].component_id = 'K';
   } else if (colorspace == JCS_YCbCr || colorspace == JCS_YCCK) {
-    // Use separate quantization tables for luma and chroma
+    // Use separate quantization and Huffman tables for luma and chroma
     cinfo->comp_info[1].quant_tbl_no = 1;
     cinfo->comp_info[2].quant_tbl_no = 1;
+    cinfo->comp_info[1].dc_tbl_no = cinfo->comp_info[1].ac_tbl_no = 1;
+    cinfo->comp_info[2].dc_tbl_no = cinfo->comp_info[2].ac_tbl_no = 1;
   }
 }
 
@@ -771,7 +777,11 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
   }
 
   std::vector<jpegli::JPEGHuffmanCode> huffman_codes;
-  jpegli::OptimizeHuffmanCodes(cinfo, coeffs, &huffman_codes);
+  if (cinfo->optimize_coding || cinfo->progressive_mode) {
+    jpegli::OptimizeHuffmanCodes(cinfo, coeffs, &huffman_codes);
+  } else {
+    jpegli::CopyHuffmanCodes(cinfo, &huffman_codes);
+  }
 
   // DRI, DHT, SOS, scan data
   size_t dht_index = 0;
