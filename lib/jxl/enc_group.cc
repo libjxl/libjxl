@@ -102,6 +102,7 @@ void QuantizeBlockAC(const Quantizer& quantizer, const bool error_diffusion,
   }
 
 retry:
+  int sum_of_highest_freq_row_and_column = 0;
   int hfNonZeros[4] = {};
   float hfError[4] = {};
   float hfMaxError[4] = {};
@@ -128,6 +129,9 @@ retry:
       if (v != 0.0f) {
         hfNonZeros[hfix] += std::abs(v);
       }
+      if (y == ysize * kBlockDim - 1 || x == xsize * kBlockDim - 1) {
+        sum_of_highest_freq_row_and_column += std::abs(v);
+      }
     }
   }
   if (c != 1) return;
@@ -150,6 +154,40 @@ retry:
     }
   }
   if (goretry) goto retry;
+  // Heuristic for improving accuracy of high-frequency patterns
+  // occuring in an environment with no medium-frequency masking
+  // patterns. This should be improved later to be done in X and B
+  // planes too as 32x32 and larger transforms become rather ugly
+  // when this is not compensated for.
+  if (4 * sum_of_highest_freq_row_and_column > hfNonZeros[0] + 20) {
+    *quant *= 2;
+    if (2 * sum_of_highest_freq_row_and_column >= hfNonZeros[0] + 20) {
+      *quant *= 2;
+    }
+    if (sum_of_highest_freq_row_and_column >= hfNonZeros[0] + 20) {
+      *quant *= 2;
+    }
+    if (sum_of_highest_freq_row_and_column >= 2 * (hfNonZeros[0] + 20)) {
+      *quant *= 2;
+    }
+    if (*quant >= Quantizer::kQuantMax) {
+      *quant = Quantizer::kQuantMax - 1;
+    }
+    qac = quantizer.Scale() * (*quant);
+    for (size_t y = 0; y < ysize * kBlockDim; y++) {
+      for (size_t x = 0; x < xsize * kBlockDim; x++) {
+        if (x < xsize && y < ysize) {
+          continue;
+        }
+        const size_t pos = y * kBlockDim * xsize + x;
+        const size_t hfix = (static_cast<size_t>(y >= kBlockDim / 2) * 2 +
+                             static_cast<size_t>(x >= kBlockDim / 2));
+        const float val = block_in[pos] * (qm[pos] * qac * qm_multiplier);
+        const float v = (std::abs(val) < thres[hfix]) ? 0 : rintf(val);
+        block_out[pos] = static_cast<int32_t>(v);
+      }
+    }
+  }
   if (quant_kind == AcStrategy::Type::DCT) {
     // If this 8x8 block is too flat, increase the adaptive quantization level
     // a bit to reduce visible block boundaries and requantize the block.
