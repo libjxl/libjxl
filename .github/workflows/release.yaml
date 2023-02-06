@@ -29,6 +29,7 @@ jobs:
     steps:
     - name: Install build deps
       run: |
+        sudo rm -f /var/lib/man-db/auto-update
         sudo apt update
         sudo apt install -y \
           asciidoc \
@@ -124,6 +125,7 @@ jobs:
 
     - name: Install build deps
       run: |
+        rm -f /var/lib/man-db/auto-update
         apt update
         DEBIAN_FRONTEND=noninteractive apt install -y \
           build-essential \

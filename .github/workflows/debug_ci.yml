@@ -32,6 +32,7 @@ jobs:
       shell: bash
       run: |
         set -x
+        rm -f /var/lib/man-db/auto-update
         apt-get update -y
         apt-get install -y ca-certificates debian-ports-archive-keyring
 
@@ -60,6 +61,7 @@ jobs:
       shell: bash
       run: |
         set -x
+        rm -f /var/lib/man-db/auto-update
         apt update
         pkgs=(
           # Build dependencies
