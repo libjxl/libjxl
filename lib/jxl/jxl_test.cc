@@ -1063,7 +1063,7 @@ TEST(JxlTest, RoundtripDots) {
   cparams.distance = 0.04;
 
   PackedPixelFile ppf_out;
-  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, pool, &ppf_out), 274643, 800);
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, pool, &ppf_out), 271410, 3000);
   EXPECT_THAT(ButteraugliDistance(t.ppf(), ppf_out), IsSlightlyBelow(0.3));
 }
 

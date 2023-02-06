@@ -129,7 +129,8 @@ retry:
       if (v != 0.0f) {
         hfNonZeros[hfix] += std::abs(v);
       }
-      if (y == ysize * kBlockDim - 1 || x == xsize * kBlockDim - 1) {
+      if ((y == ysize * kBlockDim - 1 || x == xsize * kBlockDim - 1) &&
+          (x >= xsize * 4 && y >= ysize * 4)) {
         sum_of_highest_freq_row_and_column += std::abs(v);
       }
     }
@@ -159,16 +160,16 @@ retry:
   // patterns. This should be improved later to be done in X and B
   // planes too as 32x32 and larger transforms become rather ugly
   // when this is not compensated for.
-  if (4 * sum_of_highest_freq_row_and_column > hfNonZeros[0] + 20) {
-    *quant *= 2;
+  if (5 * sum_of_highest_freq_row_and_column > hfNonZeros[0] + 20) {
+    *quant += 6;
+    if (3 * sum_of_highest_freq_row_and_column >= hfNonZeros[0] + 20) {
+      *quant += 5;
+    }
     if (2 * sum_of_highest_freq_row_and_column >= hfNonZeros[0] + 20) {
-      *quant *= 2;
+      *quant += 5;
     }
-    if (sum_of_highest_freq_row_and_column >= hfNonZeros[0] + 20) {
-      *quant *= 2;
-    }
-    if (sum_of_highest_freq_row_and_column >= 2 * (hfNonZeros[0] + 20)) {
-      *quant *= 2;
+    if (sum_of_highest_freq_row_and_column >= (hfNonZeros[0] + 20)) {
+      *quant += 5;
     }
     if (*quant >= Quantizer::kQuantMax) {
       *quant = Quantizer::kQuantMax - 1;
@@ -192,8 +193,10 @@ retry:
     // If this 8x8 block is too flat, increase the adaptive quantization level
     // a bit to reduce visible block boundaries and requantize the block.
     if (hfNonZeros[0] + hfNonZeros[1] + hfNonZeros[2] + hfNonZeros[3] < 11) {
-      *quant *= 5;
-      *quant /= 4;
+      *quant += 1;
+      if (*quant >= Quantizer::kQuantMax) {
+        *quant = Quantizer::kQuantMax - 1;
+      }
       qac = quantizer.Scale() * (*quant);
       for (size_t y = 0; y < kBlockDim; y++) {
         for (size_t x = 0; x < kBlockDim; x++) {
