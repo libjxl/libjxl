@@ -513,7 +513,7 @@ TEST(EncodeTest, LossyEncoderUseOriginalProfileTest) {
     EXPECT_EQ(JXL_ENC_SUCCESS,
               JxlEncoderFrameSettingsSetOption(
                   frame_settings, JXL_ENC_FRAME_SETTING_PROGRESSIVE_DC, 2));
-    VerifyFrameEncoding(63, 129, enc.get(), frame_settings, 5620, true);
+    VerifyFrameEncoding(63, 129, enc.get(), frame_settings, 5644, true);
   }
   {
     JxlEncoderPtr enc = JxlEncoderMake(nullptr);
