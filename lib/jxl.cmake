@@ -9,6 +9,9 @@
 # TODO(lode): further prune these files and move to JPEGXL_INTERNAL_SOURCES_ENC:
 #             only those files that the decoder absolutely needs, and or not
 #             only for encoding, should be listed here.
+
+include(compatibility.cmake)
+
 set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/ac_context.h
   jxl/ac_strategy.cc
@@ -427,7 +430,7 @@ set_property(TARGET jxl_dec-obj PROPERTY POSITION_INDEPENDENT_CODE ON)
 target_include_directories(jxl_dec-obj PUBLIC
   "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>"
   "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
-  "$<BUILD_INTERFACE:$<TARGET_PROPERTY:$<IF:$<TARGET_EXISTS:hwy::hwy>,hwy::hwy,hwy>,INTERFACE_INCLUDE_DIRECTORIES>>"
+  "${JXL_HWY_INCLUDE_DIRS}"
   "$<BUILD_INTERFACE:$<TARGET_PROPERTY:brotlicommon,INTERFACE_INCLUDE_DIRECTORIES>>"
 )
 target_compile_definitions(jxl_dec-obj PUBLIC
@@ -445,7 +448,7 @@ set_property(TARGET jxl_enc-obj PROPERTY POSITION_INDEPENDENT_CODE ON)
 target_include_directories(jxl_enc-obj PUBLIC
   ${PROJECT_SOURCE_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}/include
-  $<TARGET_PROPERTY:$<IF:$<TARGET_EXISTS:hwy::hwy>,hwy::hwy,hwy>,INTERFACE_INCLUDE_DIRECTORIES>
+  ${JXL_HWY_INCLUDE_DIRS}
   $<TARGET_PROPERTY:brotlicommon,INTERFACE_INCLUDE_DIRECTORIES>
 )
 target_compile_definitions(jxl_enc-obj PUBLIC

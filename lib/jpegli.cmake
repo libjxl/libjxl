@@ -3,6 +3,8 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
+include(compatibility.cmake)
+
 set(JPEGLI_INTERNAL_SOURCES
   jpegli/adaptive_quantization.h
   jpegli/adaptive_quantization.cc
@@ -61,7 +63,7 @@ target_include_directories(jpegli-static PUBLIC
   "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>"
   "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
   "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>"
-  "$<BUILD_INTERFACE:$<TARGET_PROPERTY:$<IF:$<TARGET_EXISTS:hwy::hwy>,hwy::hwy,hwy>,INTERFACE_INCLUDE_DIRECTORIES>>"
+  "${JXL_HWY_INCLUDE_DIRS}"
 )
 target_include_directories(jpegli-static PUBLIC "${JPEG_INCLUDE_DIRS}")
 target_link_libraries(jpegli-static PUBLIC ${JPEGLI_INTERNAL_LIBS})
@@ -104,11 +106,7 @@ foreach (TESTFILE IN LISTS TEST_FILES)
   if (WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     set_target_properties(${TESTNAME} PROPERTIES COMPILE_FLAGS "-Wno-error")
   endif ()
-  if(CMAKE_VERSION VERSION_LESS "3.10.3")
-    gtest_discover_tests(${TESTNAME} TIMEOUT 240)
-  else ()
-    gtest_discover_tests(${TESTNAME} DISCOVERY_TIMEOUT 240)
-  endif ()
+  jxl_discover_tests(${TESTNAME})
 endforeach ()
 endif()
 
