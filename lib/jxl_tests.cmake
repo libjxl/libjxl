@@ -1,6 +1,8 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
+include(compatibility.cmake)
+
 set(TEST_FILES
   extras/codec_test.cc
   extras/dec/color_description_test.cc
@@ -135,9 +137,5 @@ foreach (TESTFILE IN LISTS TEST_FILES)
   if (WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     set_target_properties(${TESTNAME} PROPERTIES COMPILE_FLAGS "-Wno-error")
   endif ()
-  if(CMAKE_VERSION VERSION_LESS "3.10.3")
-    gtest_discover_tests(${TESTNAME} TIMEOUT 240)
-  else ()
-    gtest_discover_tests(${TESTNAME} DISCOVERY_TIMEOUT 240)
-  endif ()
+  jxl_discover_tests(${TESTNAME})
 endforeach ()

@@ -3,6 +3,8 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
+include(compatibility.cmake)
+
 set(JPEGXL_EXTRAS_SOURCES
   extras/codec.cc
   extras/codec.h
@@ -81,7 +83,7 @@ target_include_directories(jxl_extras_codec-obj PUBLIC
   ${PROJECT_SOURCE_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}/include
   ${CMAKE_CURRENT_BINARY_DIR}/include
-  $<TARGET_PROPERTY:$<IF:$<TARGET_EXISTS:hwy::hwy>,hwy::hwy,hwy>,INTERFACE_INCLUDE_DIRECTORIES>
+  ${JXL_HWY_INCLUDE_DIRS}
 )
 set(JXL_EXTRAS_CODEC_INTERNAL_LIBRARIES)
 set(JXL_EXTRAS_CODEC_PUBLIC_COMPILE_DEFINITIONS)
