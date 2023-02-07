@@ -80,6 +80,9 @@ void jpegli_start_compress(j_compress_ptr cinfo, boolean write_all_tables);
 JDIMENSION jpegli_write_scanlines(j_compress_ptr cinfo, JSAMPARRAY scanlines,
                                   JDIMENSION num_lines);
 
+JDIMENSION jpegli_write_raw_data(j_compress_ptr cinfo, JSAMPIMAGE data,
+                                 JDIMENSION num_lines);
+
 void jpegli_finish_compress(j_compress_ptr cinfo);
 
 void jpegli_abort_compress(j_compress_ptr cinfo);

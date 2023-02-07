@@ -174,6 +174,86 @@ void PadInputToBlockMultiple(j_compress_ptr cinfo) {
   }
 }
 
+void Downsample(RowBuffer<float>* image, size_t orig_xsize, size_t orig_ysize,
+                size_t factor_x, size_t factor_y) {
+  if (factor_x == 1 && factor_y == 1) {
+    return;
+  }
+  size_t xsize = orig_xsize / factor_x;
+  size_t ysize = orig_ysize / factor_y;
+  for (size_t y = 0; y < ysize; y++) {
+    float* row_out = image->Row(y);
+    for (size_t x = 0; x < xsize; x++) {
+      size_t cnt = 0;
+      float sum = 0;
+      for (size_t iy = 0; iy < factor_y && iy + factor_y * y < orig_ysize;
+           iy++) {
+        const float* row_in = image->Row(factor_y * y + iy);
+        for (size_t ix = 0; ix < factor_x && ix + factor_x * x < orig_xsize;
+             ix++) {
+          sum += row_in[x * factor_x + ix];
+          cnt++;
+        }
+      }
+      row_out[x] = sum / cnt;
+    }
+  }
+}
+
+void DownsampleComponents(j_compress_ptr cinfo) {
+  jpeg_comp_master* m = cinfo->master;
+  for (int c = 0; c < cinfo->num_components; c++) {
+    jpeg_component_info* comp = &cinfo->comp_info[c];
+    JXL_DASSERT(cinfo->max_h_samp_factor % comp->h_samp_factor == 0);
+    JXL_DASSERT(cinfo->max_v_samp_factor % comp->v_samp_factor == 0);
+    const int h_factor = cinfo->max_h_samp_factor / comp->h_samp_factor;
+    const int v_factor = cinfo->max_v_samp_factor / comp->v_samp_factor;
+    Downsample(&m->input_buffer[c], m->xsize_blocks * DCTSIZE,
+               m->ysize_blocks * DCTSIZE, h_factor, v_factor);
+  }
+}
+
+void ReadLine(const uint8_t* row_in, size_t xsize, size_t c,
+              size_t num_components, JpegliDataType data_type,
+              JpegliEndianness endianness, float* row_out) {
+  if (row_in == nullptr) {
+    memset(row_out, 0, xsize * sizeof(row_out[0]));
+    return;
+  }
+  static constexpr double kMul8 = 1.0 / 255.0;
+  static constexpr double kMul16 = 1.0 / 65535.0;
+  const int pwidth = num_components * jpegli_bytes_per_sample(data_type);
+  bool is_little_endian =
+      (endianness == JPEGLI_LITTLE_ENDIAN ||
+       (endianness == JPEGLI_NATIVE_ENDIAN && IsLittleEndian()));
+  if (data_type == JPEGLI_TYPE_UINT8) {
+    const uint8_t* p = &row_in[c];
+    for (size_t x = 0; x < xsize; ++x, p += pwidth) {
+      row_out[x] = p[0] * kMul8;
+    }
+  } else if (data_type == JPEGLI_TYPE_UINT16 && is_little_endian) {
+    const uint8_t* p = &row_in[c * 2];
+    for (size_t x = 0; x < xsize; ++x, p += pwidth) {
+      row_out[x] = LoadLE16(p) * kMul16;
+    }
+  } else if (data_type == JPEGLI_TYPE_UINT16 && !is_little_endian) {
+    const uint8_t* p = &row_in[c * 2];
+    for (size_t x = 0; x < xsize; ++x, p += pwidth) {
+      row_out[x] = LoadBE16(p) * kMul16;
+    }
+  } else if (data_type == JPEGLI_TYPE_FLOAT && is_little_endian) {
+    const uint8_t* p = &row_in[c * 4];
+    for (size_t x = 0; x < xsize; ++x, p += pwidth) {
+      row_out[x] = LoadLEFloat(p);
+    }
+  } else if (data_type == JPEGLI_TYPE_FLOAT && !is_little_endian) {
+    const uint8_t* p = &row_in[c * 4];
+    for (size_t x = 0; x < xsize; ++x, p += pwidth) {
+      row_out[x] = LoadBEFloat(p);
+    }
+  }
+}
+
 struct ProgressiveScan {
   int Ss, Se, Ah, Al;
   bool interleaved;
@@ -594,10 +674,10 @@ void jpegli_start_compress(j_compress_ptr cinfo, boolean write_all_tables) {
     }
     const size_t h_factor = cinfo->max_h_samp_factor / comp->h_samp_factor;
     const size_t v_factor = cinfo->max_v_samp_factor / comp->v_samp_factor;
-    // TODO(szabadka): These fields have a different meaning than in libjpeg,
-    // make sure it does not cause problems or change it to the libjpeg values.
-    comp->width_in_blocks = m->xsize_blocks / h_factor;
-    comp->height_in_blocks = m->ysize_blocks / v_factor;
+    comp->downsampled_width = jpegli::DivCeil(cinfo->image_width, h_factor);
+    comp->downsampled_height = jpegli::DivCeil(cinfo->image_height, v_factor);
+    comp->width_in_blocks = jpegli::DivCeil(comp->downsampled_width, DCTSIZE);
+    comp->height_in_blocks = jpegli::DivCeil(comp->downsampled_height, DCTSIZE);
   }
   size_t stride = m->xsize_blocks * DCTSIZE;
   for (int c = 0; c < cinfo->input_components; ++c) {
@@ -674,54 +754,54 @@ void jpegli_set_input_format(j_compress_ptr cinfo, JpegliDataType data_type,
 JDIMENSION jpegli_write_scanlines(j_compress_ptr cinfo, JSAMPARRAY scanlines,
                                   JDIMENSION num_lines) {
   CheckState(cinfo, jpegli::kEncHeader, jpegli::kEncReadImage);
+  if (cinfo->raw_data_in) {
+    JPEGLI_ERROR("jpegli_write_raw_data() must be called for raw data mode.");
+  }
   cinfo->global_state = jpegli::kEncReadImage;
   jpeg_comp_master* m = cinfo->master;
   if (num_lines + cinfo->next_scanline > cinfo->image_height) {
     num_lines = cinfo->image_height - cinfo->next_scanline;
   }
-  // const int bytes_per_sample = jpegli_bytes_per_sample(m->data_type);
-  const int bytes_per_sample = m->data_type == JPEGLI_TYPE_UINT8    ? 1
-                               : m->data_type == JPEGLI_TYPE_UINT16 ? 2
-                                                                    : 4;
-  const int pwidth = cinfo->input_components * bytes_per_sample;
-  bool is_little_endian =
-      (m->endianness == JPEGLI_LITTLE_ENDIAN ||
-       (m->endianness == JPEGLI_NATIVE_ENDIAN && IsLittleEndian()));
-  static constexpr double kMul8 = 1.0 / 255.0;
-  static constexpr double kMul16 = 1.0 / 65535.0;
   for (int c = 0; c < cinfo->input_components; ++c) {
     for (size_t i = 0; i < num_lines; ++i) {
-      float* row = m->input_buffer[c].Row(cinfo->next_scanline + i);
-      if (m->data_type == JPEGLI_TYPE_UINT8) {
-        uint8_t* p = &scanlines[i][c];
-        for (size_t x = 0; x < cinfo->image_width; ++x, p += pwidth) {
-          row[x] = p[0] * kMul8;
-        }
-      } else if (m->data_type == JPEGLI_TYPE_UINT16 && is_little_endian) {
-        uint8_t* p = &scanlines[i][c * 2];
-        for (size_t x = 0; x < cinfo->image_width; ++x, p += pwidth) {
-          row[x] = LoadLE16(p) * kMul16;
-        }
-      } else if (m->data_type == JPEGLI_TYPE_UINT16 && !is_little_endian) {
-        uint8_t* p = &scanlines[i][c * 2];
-        for (size_t x = 0; x < cinfo->image_width; ++x, p += pwidth) {
-          row[x] = LoadBE16(p) * kMul16;
-        }
-      } else if (m->data_type == JPEGLI_TYPE_FLOAT && is_little_endian) {
-        uint8_t* p = &scanlines[i][c * 4];
-        for (size_t x = 0; x < cinfo->image_width; ++x, p += pwidth) {
-          row[x] = LoadLEFloat(p);
-        }
-      } else if (m->data_type == JPEGLI_TYPE_FLOAT && !is_little_endian) {
-        uint8_t* p = &scanlines[i][c * 4];
-        for (size_t x = 0; x < cinfo->image_width; ++x, p += pwidth) {
-          row[x] = LoadBEFloat(p);
-        }
-      }
+      jpegli::ReadLine(scanlines[i], cinfo->image_width, c,
+                       cinfo->num_components, m->data_type, m->endianness,
+                       m->input_buffer[c].Row(cinfo->next_scanline + i));
     }
   }
   cinfo->next_scanline += num_lines;
   return num_lines;
+}
+
+JDIMENSION jpegli_write_raw_data(j_compress_ptr cinfo, JSAMPIMAGE data,
+                                 JDIMENSION num_lines) {
+  CheckState(cinfo, jpegli::kEncHeader, jpegli::kEncReadImage);
+  if (!cinfo->raw_data_in) {
+    JPEGLI_ERROR("jpegli_write_raw_data(): raw data mode was not set");
+  }
+  cinfo->global_state = jpegli::kEncReadImage;
+  jpeg_comp_master* m = cinfo->master;
+  if (cinfo->next_scanline >= cinfo->image_height) {
+    return 0;
+  }
+  size_t iMCU_height = DCTSIZE * cinfo->max_v_samp_factor;
+  if (num_lines < iMCU_height) {
+    JPEGLI_ERROR("Missing input lines, minimum is %u", iMCU_height);
+  }
+  size_t iMCU_y = cinfo->next_scanline / iMCU_height;
+  for (int c = 0; c < cinfo->num_components; ++c) {
+    JSAMPARRAY plane = data[c];
+    jpeg_component_info* comp = &cinfo->comp_info[c];
+    size_t xsize = comp->width_in_blocks * DCTSIZE;
+    size_t ysize = comp->v_samp_factor * DCTSIZE;
+    size_t y0 = iMCU_y * ysize;
+    for (size_t i = 0; i < ysize; ++i) {
+      jpegli::ReadLine(plane[i], xsize, 0, 1, m->data_type, m->endianness,
+                       m->input_buffer[c].Row(y0 + i));
+    }
+  }
+  cinfo->next_scanline += iMCU_height;
+  return iMCU_height;
 }
 
 void jpegli_finish_compress(j_compress_ptr cinfo) {
@@ -731,8 +811,11 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
                  cinfo->image_height, cinfo->next_scanline);
   }
 
-  jpegli::ColorTransform(cinfo);
-  jpegli::PadInputToBlockMultiple(cinfo);
+  if (!cinfo->raw_data_in) {
+    jpegli::ColorTransform(cinfo);
+    jpegli::PadInputToBlockMultiple(cinfo);
+    jpegli::DownsampleComponents(cinfo);
+  }
   jpegli::ComputeAdaptiveQuantField(cinfo);
 
   //

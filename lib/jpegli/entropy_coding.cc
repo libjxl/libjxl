@@ -385,6 +385,7 @@ bool ProcessScan(j_compress_ptr cinfo,
   const int Ah = scan_info->Ah;
   const int Ss = scan_info->Ss;
   const int Se = scan_info->Se;
+  constexpr coeff_t kDummyBlock[DCTSIZE2] = {0};
 
   for (int mcu_y = 0; mcu_y < MCU_rows; ++mcu_y) {
     for (int mcu_x = 0; mcu_x < MCUs_per_row; ++mcu_x) {
@@ -405,11 +406,15 @@ bool ProcessScan(j_compress_ptr cinfo,
         int n_blocks_x = is_interleaved ? comp->h_samp_factor : 1;
         for (int iy = 0; iy < n_blocks_y; ++iy) {
           for (int ix = 0; ix < n_blocks_x; ++ix) {
-            int block_y = mcu_y * n_blocks_y + iy;
-            int block_x = mcu_x * n_blocks_x + ix;
-            int block_idx = block_y * comp->width_in_blocks + block_x;
-            int num_zero_runs = 0;
+            size_t block_y = mcu_y * n_blocks_y + iy;
+            size_t block_x = mcu_x * n_blocks_x + ix;
+            size_t block_idx = block_y * comp->width_in_blocks + block_x;
+            size_t num_zero_runs = 0;
             const coeff_t* block = &coeffs[comp_idx][block_idx << 6];
+            if (block_x >= comp->width_in_blocks ||
+                block_y >= comp->height_in_blocks) {
+              block = kDummyBlock;
+            }
             bool ok;
             if (!is_progressive) {
               ok = ProcessDCTBlockSequential(block, dc_histo, ac_histo,

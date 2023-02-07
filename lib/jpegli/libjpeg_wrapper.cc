@@ -205,6 +205,11 @@ JDIMENSION jpeg_write_scanlines(j_compress_ptr cinfo, JSAMPARRAY scanlines,
   return jpegli_write_scanlines(cinfo, scanlines, num_lines);
 }
 
+JDIMENSION jpeg_write_raw_data(j_compress_ptr cinfo, JSAMPIMAGE data,
+                               JDIMENSION num_lines) {
+  return jpegli_write_raw_data(cinfo, data, num_lines);
+}
+
 void jpeg_finish_compress(j_compress_ptr cinfo) {
   jpegli_finish_compress(cinfo);
 }
