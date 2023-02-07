@@ -6,6 +6,10 @@ include /usr/share/dpkg/pkg-info.mk
 	dh $@ --buildsystem=cmake
 
 override_dh_auto_configure:
+	EXTRA_CMAKE_OPTIONS =
+	ifneq (,$(filter nobuildtest,$(DEB_BUILD_OPTIONS)))
+		EXTRA_CMAKE_OPTIONS += -DBUILD_TESTING=OFF
+	endif
 	# TODO(deymo): Remove the DCMAKE_BUILD_TYPE once builds without NDEBUG
 	# are as useful as Release builds.
 	dh_auto_configure -- \
@@ -15,4 +19,5 @@ override_dh_auto_configure:
 	  -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
 	  -DJPEGXL_FORCE_SYSTEM_HWY=ON \
 	  -DJPEGXL_ENABLE_JPEGLI_LIBJPEG=OFF \
-	  -DJPEGXL_ENABLE_PLUGINS=ON 
+	  -DJPEGXL_ENABLE_PLUGINS=ON \
+	  $(EXTRA_CMAKE_OPTIONS) 

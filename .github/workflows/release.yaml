@@ -97,6 +97,8 @@ jobs:
   release_ubuntu_pkg:
     name: .deb packages / ${{ matrix.os }}
     runs-on: ubuntu-latest
+    env:
+      DEB_BUILD_OPTIONS: nobuildtest
     strategy:
       fail-fast: false
       matrix:
