@@ -649,8 +649,10 @@ jxl::ImageF InitialQuantField(const float butteraugli_target,
 void ComputeAdaptiveQuantField(j_compress_ptr cinfo) {
   jpeg_comp_master* m = cinfo->master;
   m->quant_field.Allocate(m->ysize_blocks, m->xsize_blocks);
-  if (m->use_adaptive_quantization) {
-    int y_channel = cinfo->jpeg_color_space == JCS_RGB && m->xyb_mode ? 1 : 0;
+  int y_channel = cinfo->jpeg_color_space == JCS_RGB ? 1 : 0;
+  if (m->use_adaptive_quantization &&
+      cinfo->comp_info[y_channel].h_samp_factor == cinfo->max_h_samp_factor &&
+      cinfo->comp_info[y_channel].v_samp_factor == cinfo->max_v_samp_factor) {
     jxl::ImageF input(m->xsize_blocks * DCTSIZE, m->ysize_blocks * DCTSIZE);
     for (size_t y = 0; y < input.ysize(); ++y) {
       memcpy(input.Row(y), m->input_buffer[y_channel].Row(y),

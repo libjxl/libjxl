@@ -115,12 +115,27 @@ struct TestConfig {
   int progressive_level = -1;
   int restart_interval = 0;
   int restart_in_rows = 0;
+  bool raw_data_in = false;
+  std::vector<std::vector<uint8_t>> raw_data;
   bool optimize_coding = true;
   bool use_flat_dc_luma_code = false;
   bool xyb_mode = false;
   bool libjpeg_mode = false;
   double max_bpp;
   double max_dist;
+
+  int max_h_sample() const {
+    return std::max(h_sampling[0], std::max(h_sampling[1], h_sampling[2]));
+  }
+  int max_v_sample() const {
+    return std::max(v_sampling[0], std::max(v_sampling[1], v_sampling[2]));
+  }
+  int comp_width(int c) const {
+    return DivCeil(xsize * h_sampling[c], max_h_sample() * DCTSIZE) * DCTSIZE;
+  }
+  int comp_height(int c) const {
+    return DivCeil(ysize * v_sampling[c], max_v_sample() * DCTSIZE) * DCTSIZE;
+  }
 };
 
 void SetNumChannels(J_COLOR_SPACE colorspace, size_t* channels) {
@@ -201,6 +216,34 @@ void GeneratePixels(TestConfig* config) {
       ConvertPixel(&pixels[idx_in], &config->pixels[idx_out],
                    config->in_color_space, config->input_components);
     }
+  }
+}
+
+void GenerateRawData(TestConfig* config) {
+  for (size_t c = 0; c < config->input_components; ++c) {
+    size_t xsize = config->comp_width(c);
+    size_t ysize = config->comp_height(c);
+    size_t factor_y = config->max_v_sample() / config->v_sampling[c];
+    size_t factor_x = config->max_h_sample() / config->h_sampling[c];
+    size_t factor = factor_x * factor_y;
+    std::vector<uint8_t> plane(ysize * xsize);
+    size_t bytes_per_pixel = config->input_components;
+    for (size_t y = 0; y < ysize; ++y) {
+      for (size_t x = 0; x < xsize; ++x) {
+        int result = 0;
+        for (size_t iy = 0; iy < factor_y; ++iy) {
+          size_t yy = std::min(y * factor_y + iy, config->ysize - 1);
+          for (size_t ix = 0; ix < factor_x; ++ix) {
+            size_t xx = std::min(x * factor_x + ix, config->xsize - 1);
+            size_t pixel_ix = (yy * config->xsize + xx) * bytes_per_pixel + c;
+            result += config->pixels[pixel_ix];
+          }
+        }
+        result = static_cast<uint8_t>((result + factor / 2) / factor);
+        plane[y * xsize + x] = result;
+      }
+    }
+    config->raw_data.emplace_back(std::move(plane));
   }
 }
 
@@ -421,6 +464,7 @@ bool EncodeWithJpegli(const TestConfig& config,
   cinfo.restart_interval = config.restart_interval;
   cinfo.restart_in_rows = config.restart_in_rows;
   cinfo.optimize_coding = config.optimize_coding;
+  cinfo.raw_data_in = config.raw_data_in;
   if (!config.optimize_coding && config.use_flat_dc_luma_code) {
     JHUFF_TBL* tbl = cinfo.dc_huff_tbl_ptrs[0];
     memset(tbl, 0, sizeof(*tbl));
@@ -438,12 +482,38 @@ bool EncodeWithJpegli(const TestConfig& config,
     jpegli_write_marker(&cinfo, kSpecialMarker, kMarkerData,
                         sizeof(kMarkerData));
   }
-  size_t stride = cinfo.image_width * cinfo.input_components;
-  std::vector<uint8_t> row_bytes(stride);
-  for (size_t y = 0; y < cinfo.image_height; ++y) {
-    memcpy(&row_bytes[0], &config.pixels[y * stride], stride);
-    JSAMPROW row[] = {row_bytes.data()};
-    jpegli_write_scanlines(&cinfo, row, 1);
+  if (cinfo.raw_data_in) {
+    // Need to copy because jpeg API requires non-const pointers.
+    std::vector<std::vector<uint8_t>> raw_data = config.raw_data;
+    size_t max_lines = config.max_v_sample() * DCTSIZE;
+    std::vector<std::vector<JSAMPROW>> rowdata(cinfo.num_components);
+    std::vector<JSAMPARRAY> data(cinfo.num_components);
+    for (int c = 0; c < cinfo.num_components; ++c) {
+      rowdata[c].resize(config.v_sampling[c] * DCTSIZE);
+      data[c] = &rowdata[c][0];
+    }
+    while (cinfo.next_scanline < cinfo.image_height) {
+      for (int c = 0; c < cinfo.num_components; ++c) {
+        size_t cwidth = config.comp_width(c);
+        size_t cheight = config.comp_height(c);
+        size_t num_lines = config.v_sampling[c] * DCTSIZE;
+        size_t y0 = (cinfo.next_scanline / max_lines) * num_lines;
+        for (size_t i = 0; i < num_lines; ++i) {
+          rowdata[c][i] =
+              (y0 + i < cheight ? &raw_data[c][(y0 + i) * cwidth] : nullptr);
+        }
+      }
+      size_t num_lines = jpegli_write_raw_data(&cinfo, &data[0], max_lines);
+      EXPECT_EQ(num_lines, max_lines);
+    }
+  } else {
+    size_t stride = cinfo.image_width * cinfo.input_components;
+    std::vector<uint8_t> row_bytes(stride);
+    for (size_t y = 0; y < cinfo.image_height; ++y) {
+      memcpy(&row_bytes[0], &config.pixels[y * stride], stride);
+      JSAMPROW row[] = {row_bytes.data()};
+      jpegli_write_scanlines(&cinfo, row, 1);
+    }
   }
   jpegli_finish_compress(&cinfo);
   jpegli_destroy_compress(&cinfo);
@@ -458,6 +528,9 @@ class EncodeAPITestParam : public ::testing::TestWithParam<TestConfig> {};
 TEST_P(EncodeAPITestParam, TestAPI) {
   TestConfig config = GetParam();
   GeneratePixels(&config);
+  if (config.raw_data_in) {
+    GenerateRawData(&config);
+  }
   std::vector<uint8_t> compressed;
   ASSERT_TRUE(EncodeWithJpegli(config, &compressed));
   TestDecodedImage(config, compressed);
@@ -761,6 +834,26 @@ std::vector<TestConfig> GenerateTests() {
     config.use_flat_dc_luma_code = true;
     all_tests.push_back(config);
   }
+  for (int xsize : {640, 641, 648, 649}) {
+    for (int ysize : {640, 641, 648, 649}) {
+      for (int h_sampling : {1, 2}) {
+        for (int v_sampling : {1, 2}) {
+          if (h_sampling == 1 && v_sampling == 1) continue;
+          TestConfig config;
+          config.xsize = xsize;
+          config.ysize = ysize;
+          config.in_color_space = JCS_YCbCr;
+          config.custom_sampling = true;
+          config.h_sampling[0] = h_sampling;
+          config.v_sampling[0] = v_sampling;
+          config.raw_data_in = true;
+          config.max_bpp = 1.7;
+          config.max_dist = 2.0;
+          all_tests.push_back(config);
+        }
+      }
+    }
+  }
   return all_tests;
 };
 
@@ -782,6 +875,7 @@ std::string ColorSpaceName(J_COLOR_SPACE colorspace) {
 }
 
 std::ostream& operator<<(std::ostream& os, const TestConfig& c) {
+  os << c.xsize << "x" << c.ysize;
   os << ColorSpaceName(c.in_color_space);
   if (c.in_color_space == JCS_UNKNOWN) {
     os << c.input_components;
@@ -847,6 +941,9 @@ std::ostream& operator<<(std::ostream& os, const TestConfig& c) {
     if (c.use_flat_dc_luma_code) {
       os << "FlatDCLuma";
     }
+  }
+  if (c.raw_data_in) {
+    os << "RawDataIn";
   }
   return os;
 }

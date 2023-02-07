@@ -13,45 +13,12 @@
 #include <hwy/highway.h>
 
 #include "lib/jxl/enc_transforms.h"
-#include "lib/jxl/image.h"
 HWY_BEFORE_NAMESPACE();
 namespace jpegli {
 namespace HWY_NAMESPACE {
 
 constexpr float kZeroBiasMulXYB[] = {0.5f, 0.5f, 0.5f};
 constexpr float kZeroBiasMulYCbCr[] = {0.7f, 1.0f, 0.8f};
-
-void DownsampleImage(const jxl::ImageF& input, size_t factor_x, size_t factor_y,
-                     jxl::ImageF* output) {
-  output->ShrinkTo(DivCeil(input.xsize(), factor_x),
-                   DivCeil(input.ysize(), factor_y));
-  size_t in_stride = input.PixelsPerRow();
-  for (size_t y = 0; y < output->ysize(); y++) {
-    float* row_out = output->Row(y);
-    const float* row_in = input.Row(factor_y * y);
-    for (size_t x = 0; x < output->xsize(); x++) {
-      size_t cnt = 0;
-      float sum = 0;
-      for (size_t iy = 0; iy < factor_y && iy + factor_y * y < input.ysize();
-           iy++) {
-        for (size_t ix = 0; ix < factor_x && ix + factor_x * x < input.xsize();
-             ix++) {
-          sum += row_in[iy * in_stride + x * factor_x + ix];
-          cnt++;
-        }
-      }
-      row_out[x] = sum / cnt;
-    }
-  }
-}
-
-void DownsampleImage(jxl::ImageF* image, size_t factor_x, size_t factor_y) {
-  // Allocate extra space to avoid a reallocation when padding.
-  jxl::ImageF downsampled(DivCeil(image->xsize(), factor_x) + DCTSIZE,
-                          DivCeil(image->ysize(), factor_y) + DCTSIZE);
-  DownsampleImage(*image, factor_x, factor_y, &downsampled);
-  *image = std::move(downsampled);
-}
 
 void ComputeDCTCoefficients(
     j_compress_ptr cinfo,
@@ -75,27 +42,20 @@ void ComputeDCTCoefficients(
     JXL_DASSERT(cinfo->max_v_samp_factor % comp->v_samp_factor == 0);
     const int h_factor = cinfo->max_h_samp_factor / comp->h_samp_factor;
     const int v_factor = cinfo->max_v_samp_factor / comp->v_samp_factor;
-    jxl::ImageF plane(m->xsize_blocks * DCTSIZE, m->ysize_blocks * DCTSIZE);
-    for (size_t y = 0; y < plane.ysize(); ++y) {
-      memcpy(plane.Row(y), m->input_buffer[c].Row(y),
-             plane.xsize() * sizeof(float));
-    }
-    if (h_factor > 1 || v_factor > 1) {
-      DownsampleImage(&plane, h_factor, v_factor);
-    }
     std::vector<coeff_t> coeffs(xsize_blocks * ysize_blocks * kDCTBlockSize);
     JQUANT_TBL* quant_table = cinfo->quant_tbl_ptrs[comp->quant_tbl_no];
     std::vector<float> qmc(kDCTBlockSize);
     for (size_t k = 0; k < kDCTBlockSize; k++) {
       qmc[k] = 1.0f / quant_table->quantval[k];
     }
+    RowBuffer<float>* plane = &m->input_buffer[c];
     for (size_t by = 0, bix = 0; by < ysize_blocks; by++) {
       for (size_t bx = 0; bx < xsize_blocks; bx++, bix++) {
         coeff_t* block = &coeffs[bix * kDCTBlockSize];
         HWY_ALIGN float dct[kDCTBlockSize];
         TransformFromPixels(jxl::AcStrategy::Type::DCT,
-                            plane.Row(8 * by) + 8 * bx, plane.PixelsPerRow(),
-                            dct, scratch_space);
+                            plane->Row(8 * by) + 8 * bx, plane->stride(), dct,
+                            scratch_space);
         // Create more zeros in areas where jpeg xl would have used a lower
         // quantization multiplier.
         float relq = qfmax / m->quant_field.Row(by * v_factor)[bx * h_factor];
