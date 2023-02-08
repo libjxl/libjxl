@@ -54,7 +54,8 @@ namespace tools {
 
 namespace {
 inline bool ParsePhotonNoiseParameter(const char* arg, float* out) {
-  return strncmp(arg, "ISO", 3) == 0 && ParseFloat(arg + 3, out) && *out >= 0;;
+  return ParseFloat(arg, out) && *out >= 0;
+  ;
 }
 inline bool ParseIntensityTarget(const char* arg, float* out) {
   return ParseFloat(arg, out) && *out > 0;
@@ -249,7 +250,7 @@ struct CompressArgs {
                            &disable_output, &SetBooleanTrue, 1);
 
     cmdline->AddOptionValue(
-        '\0', "photon_noise", "ISO3200",
+        '\0', "photon_noise_iso", "3200",
         "Adds noise to the image emulating photographic film noise. "
         "The higher the given number, the grainier the image will be. "
         "As an example, a value of 100 gives low noise whereas a value "
