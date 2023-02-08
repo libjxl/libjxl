@@ -525,20 +525,23 @@ void EncodeSOS(j_compress_ptr cinfo, int scan_index) {
   WriteOutput(cinfo, data);
 }
 
-void EncodeDHT(j_compress_ptr cinfo,
-               const std::vector<JPEGHuffmanCode>& huffman_code,
-               size_t* next_huffman_code, size_t num_huffman_codes) {
+void EncodeDHT(j_compress_ptr cinfo, const JPEGHuffmanCode* huffman_codes,
+               size_t num_huffman_codes) {
   if (num_huffman_codes == 0) {
     return;
   }
 
   size_t marker_len = 2;
   for (size_t i = 0; i < num_huffman_codes; ++i) {
-    const JPEGHuffmanCode& huff = huffman_code[*next_huffman_code + i];
+    const JPEGHuffmanCode& huff = huffman_codes[i];
+    if (huff.sent_table) continue;
     marker_len += kJpegHuffmanMaxBitLength;
     for (size_t j = 0; j < huff.counts.size(); ++j) {
       marker_len += huff.counts[j];
     }
+  }
+  if (marker_len == 2) {
+    return;
   }
   std::vector<uint8_t> data(marker_len + 2);
   size_t pos = 0;
@@ -547,8 +550,7 @@ void EncodeDHT(j_compress_ptr cinfo,
   data[pos++] = marker_len >> 8u;
   data[pos++] = marker_len & 0xFFu;
   for (size_t i = 0; i < num_huffman_codes; ++i) {
-    const size_t huffman_code_index = *next_huffman_code + i;
-    const JPEGHuffmanCode& huff = huffman_code[huffman_code_index];
+    const JPEGHuffmanCode& huff = huffman_codes[i];
     size_t index = huff.slot_id;
     HuffmanCodeTable* huff_table;
     if (index & 0x10) {
@@ -562,6 +564,7 @@ void EncodeDHT(j_compress_ptr cinfo,
     if (!BuildHuffmanCodeTable(huff, huff_table)) {
       JPEGLI_ERROR("Failed to build Huffman code table.");
     }
+    if (huff.sent_table) continue;
     size_t total_count = 0;
     size_t max_length = 0;
     for (size_t i = 0; i < huff.counts.size(); ++i) {
@@ -579,7 +582,6 @@ void EncodeDHT(j_compress_ptr cinfo,
       data[pos++] = huff.values[i];
     }
   }
-  *next_huffman_code += num_huffman_codes;
   WriteOutput(cinfo, data);
 }
 
@@ -610,9 +612,11 @@ void EncodeDQT(j_compress_ptr cinfo) {
     }
     quant_table->sent_table = TRUE;
   }
-  data[2] = (pos - 2) >> 8u;
-  data[3] = (pos - 2) & 0xFFu;
-  WriteOutput(cinfo, data, pos);
+  if (pos > 4) {
+    data[2] = (pos - 2) >> 8u;
+    data[3] = (pos - 2) & 0xFFu;
+    WriteOutput(cinfo, data, pos);
+  }
 }
 
 bool EncodeDRI(j_compress_ptr cinfo) {
