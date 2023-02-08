@@ -668,7 +668,6 @@ void ComputeAdaptiveQuantField(j_compress_ptr cinfo) {
       m->quant_field.CopyRow(y, qf.Row(y), y_comp->width_in_blocks);
     }
   } else {
-    constexpr float kDefaultQuantFieldMax = 0.575f;
     m->quant_field_max = kDefaultQuantFieldMax;
     for (size_t y = 0; y < y_comp->height_in_blocks; ++y) {
       m->quant_field.FillRow(y, m->quant_field_max, y_comp->width_in_blocks);

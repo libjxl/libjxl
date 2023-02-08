@@ -377,6 +377,13 @@ void ValidateScanScript(j_compress_ptr cinfo) {
   }
 }
 
+template <typename T>
+void SetSentTableFlag(T** table_ptrs, size_t num, boolean val) {
+  for (size_t i = 0; i < num; ++i) {
+    if (table_ptrs[i]) table_ptrs[i]->sent_table = val;
+  }
+}
+
 }  // namespace jpegli
 
 void jpegli_CreateCompress(j_compress_ptr cinfo, int version,
@@ -598,7 +605,11 @@ void jpegli_set_progressive_level(j_compress_ptr cinfo, int level) {
   cinfo->master->progressive_level = level;
 }
 
-void jpegli_suppress_tables(j_compress_ptr cinfo, boolean suppress) {}
+void jpegli_suppress_tables(j_compress_ptr cinfo, boolean suppress) {
+  jpegli::SetSentTableFlag(cinfo->quant_tbl_ptrs, NUM_QUANT_TBLS, suppress);
+  jpegli::SetSentTableFlag(cinfo->dc_huff_tbl_ptrs, NUM_HUFF_TBLS, suppress);
+  jpegli::SetSentTableFlag(cinfo->ac_huff_tbl_ptrs, NUM_HUFF_TBLS, suppress);
+}
 
 void jpegli_start_compress(j_compress_ptr cinfo, boolean write_all_tables) {
   CheckState(cinfo, jpegli::kEncStart);
@@ -683,6 +694,30 @@ void jpegli_start_compress(j_compress_ptr cinfo, boolean write_all_tables) {
   for (int c = 0; c < cinfo->input_components; ++c) {
     m->input_buffer[c].Allocate(m->ysize_blocks * DCTSIZE, stride);
   }
+  if (write_all_tables) {
+    jpegli_suppress_tables(cinfo, FALSE);
+  }
+}
+
+void jpegli_write_tables(j_compress_ptr cinfo) {
+  CheckState(cinfo, jpegli::kEncStart);
+  if (cinfo->dest == nullptr) {
+    JPEGLI_ERROR("Missing destination.");
+  }
+  (*cinfo->dest->init_destination)(cinfo);
+  // SOI
+  jpegli::WriteOutput(cinfo, {0xFF, 0xD8});
+  // DQT
+  jpegli::FinalizeQuantMatrices(cinfo);
+  jpegli::EncodeDQT(cinfo);
+  // DHT
+  std::vector<jpegli::JPEGHuffmanCode> huffman_codes;
+  jpegli::CopyHuffmanCodes(cinfo, &huffman_codes);
+  jpegli::EncodeDHT(cinfo, huffman_codes.data(), huffman_codes.size());
+  // EOI
+  jpegli::WriteOutput(cinfo, {0xFF, 0xD9});
+  (*cinfo->dest->term_destination)(cinfo);
+  jpegli_suppress_tables(cinfo, TRUE);
 }
 
 void jpegli_write_m_header(j_compress_ptr cinfo, int marker,
@@ -875,8 +910,9 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
       jpegli::EncodeDRI(cinfo);
       last_restart_interval = cinfo->restart_interval;
     }
-    jpegli::EncodeDHT(cinfo, huffman_codes, &dht_index,
-                      cinfo->master->scan_coding_info[i].num_huffman_codes);
+    size_t num_dht = cinfo->master->scan_coding_info[i].num_huffman_codes;
+    jpegli::EncodeDHT(cinfo, &huffman_codes[dht_index], num_dht);
+    dht_index += num_dht;
     jpegli::EncodeSOS(cinfo, i);
     if (!jpegli::EncodeScan(cinfo, coeffs, i)) {
       JPEGLI_ERROR("Failed to encode scan.");

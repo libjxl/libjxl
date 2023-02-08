@@ -200,6 +200,8 @@ void jpeg_start_compress(j_compress_ptr cinfo, boolean write_all_tables) {
   jpegli_start_compress(cinfo, write_all_tables);
 }
 
+void jpeg_write_tables(j_compress_ptr cinfo) { jpegli_write_tables(cinfo); }
+
 JDIMENSION jpeg_write_scanlines(j_compress_ptr cinfo, JSAMPARRAY scanlines,
                                 JDIMENSION num_lines) {
   return jpegli_write_scanlines(cinfo, scanlines, num_lines);

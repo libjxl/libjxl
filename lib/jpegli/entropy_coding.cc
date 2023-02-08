@@ -507,6 +507,7 @@ void CopyHuffmanTable(j_compress_ptr cinfo, int index, bool is_dc,
     huff.values[i] = table->huffval[i];
   }
   huff.slot_id = index + (is_dc ? 0 : 0x10);
+  huff.sent_table = table->sent_table;
   bool have_slot = false;
   for (size_t i = 0; i < huffman_codes->size(); ++i) {
     if ((*huffman_codes)[i].slot_id == huff.slot_id) have_slot = true;
@@ -592,9 +593,11 @@ void CopyHuffmanCodes(j_compress_ptr cinfo,
       sci.dc_tbl_idx[j] = cinfo->comp_info[ci].dc_tbl_no;
       sci.ac_tbl_idx[j] = cinfo->comp_info[ci].ac_tbl_no;
     }
+    if (i == 0) {
+      sci.num_huffman_codes = huffman_codes->size();
+    }
     cinfo->master->scan_coding_info.emplace_back(std::move(sci));
   }
-  cinfo->master->scan_coding_info[0].num_huffman_codes = huffman_codes->size();
 }
 
 size_t RestartIntervalForScan(j_compress_ptr cinfo, size_t scan_index) {

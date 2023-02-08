@@ -23,6 +23,21 @@
 
 #define ARRAYSIZE(X) (sizeof(X) / sizeof((X)[0]))
 
+#define ERROR_HANDLER_SETUP(action)                                           \
+  jpeg_error_mgr jerr;                                                        \
+  cinfo.err = jpegli_std_error(&jerr);                                        \
+  if (setjmp(data.env)) {                                                     \
+    action;                                                                   \
+  }                                                                           \
+  cinfo.client_data = reinterpret_cast<void*>(&data);                         \
+  cinfo.err->error_exit = [](j_common_ptr cinfo) {                            \
+    (*cinfo->err->output_message)(cinfo);                                     \
+    MyClientData* data = reinterpret_cast<MyClientData*>(cinfo->client_data); \
+    if (data->buffer) free(data->buffer);                                     \
+    jpegli_destroy(cinfo);                                                    \
+    longjmp(data->env, 1);                                                    \
+  };
+
 namespace jpegli {
 namespace {
 
@@ -251,6 +266,8 @@ struct MyClientData {
   jmp_buf env;
   unsigned char* buffer = nullptr;
   unsigned long size = 0;
+  unsigned char* table_stream = nullptr;
+  unsigned long table_stream_size = 0;
 };
 
 // Verifies that an image encoded with libjpegli can be decoded with libjpeg.
@@ -258,18 +275,7 @@ void TestDecodedImage(const TestConfig& config,
                       const std::vector<uint8_t>& compressed) {
   MyClientData data;
   jpeg_decompress_struct cinfo = {};
-  jpeg_error_mgr jerr;
-  cinfo.err = jpeg_std_error(&jerr);
-  if (setjmp(data.env)) {
-    FAIL();
-  }
-  cinfo.client_data = static_cast<void*>(&data);
-  cinfo.err->error_exit = [](j_common_ptr cinfo) {
-    (*cinfo->err->output_message)(cinfo);
-    MyClientData* data = static_cast<MyClientData*>(cinfo->client_data);
-    jpeg_destroy(cinfo);
-    longjmp(data->env, 1);
-  };
+  ERROR_HANDLER_SETUP(FAIL());
   jpeg_create_decompress(&cinfo);
   jpeg_mem_src(&cinfo, compressed.data(), compressed.size());
   if (config.add_marker) {
@@ -393,19 +399,7 @@ bool EncodeWithJpegli(const TestConfig& config,
                       std::vector<uint8_t>* compressed) {
   MyClientData data;
   jpeg_compress_struct cinfo;
-  jpeg_error_mgr jerr;
-  cinfo.err = jpegli_std_error(&jerr);
-  if (setjmp(data.env)) {
-    return false;
-  }
-  cinfo.client_data = static_cast<void*>(&data);
-  cinfo.err->error_exit = [](j_common_ptr cinfo) {
-    (*cinfo->err->output_message)(cinfo);
-    MyClientData* data = reinterpret_cast<MyClientData*>(cinfo->client_data);
-    if (data->buffer) free(data->buffer);
-    jpegli_destroy(cinfo);
-    longjmp(data->env, 1);
-  };
+  ERROR_HANDLER_SETUP(return false);
   jpegli_create_compress(&cinfo);
   jpegli_mem_dest(&cinfo, &data.buffer, &data.size);
   cinfo.image_width = config.xsize;
@@ -959,20 +953,50 @@ JPEGLI_INSTANTIATE_TEST_SUITE_P(EncodeAPITest, EncodeAPITestParam,
                                 testing::ValuesIn(GenerateTests()),
                                 TestDescription);
 
-#define ERROR_HANDLER_SETUP(action)                                           \
-  jpeg_error_mgr jerr;                                                        \
-  cinfo.err = jpegli_std_error(&jerr);                                        \
-  if (setjmp(data.env)) {                                                     \
-    action;                                                                   \
-  }                                                                           \
-  cinfo.client_data = reinterpret_cast<void*>(&data);                         \
-  cinfo.err->error_exit = [](j_common_ptr cinfo) {                            \
-    (*cinfo->err->output_message)(cinfo);                                     \
-    MyClientData* data = reinterpret_cast<MyClientData*>(cinfo->client_data); \
-    if (data->buffer) free(data->buffer);                                     \
-    jpegli_destroy(cinfo);                                                    \
-    longjmp(data->env, 1);                                                    \
-  };
+TEST(EncodeAPITest, AbbreviatedStreams) {
+  MyClientData data;
+  jpeg_compress_struct cinfo;
+  ERROR_HANDLER_SETUP(FAIL());
+  jpegli_create_compress(&cinfo);
+  jpegli_mem_dest(&cinfo, &data.table_stream, &data.table_stream_size);
+  cinfo.input_components = 3;
+  cinfo.in_color_space = JCS_RGB;
+  jpegli_set_defaults(&cinfo);
+  jpegli_write_tables(&cinfo);
+  jpegli_mem_dest(&cinfo, &data.buffer, &data.size);
+  cinfo.image_width = 1;
+  cinfo.image_height = 1;
+  cinfo.optimize_coding = false;
+  jpegli_set_progressive_level(&cinfo, 0);
+  jpegli_start_compress(&cinfo, FALSE);
+  JSAMPLE image[3] = {0};
+  JSAMPROW row[] = {image};
+  jpegli_write_scanlines(&cinfo, row, 1);
+  jpegli_finish_compress(&cinfo);
+  EXPECT_LT(data.size, 50);
+  jpegli_destroy_compress(&cinfo);
+
+  jpeg_decompress_struct dinfo = {};
+  dinfo.err = jpeg_std_error(&jerr);
+  jpeg_create_decompress(&dinfo);
+  jpeg_mem_src(&dinfo, data.table_stream, data.table_stream_size);
+  jpeg_read_header(&dinfo, FALSE);
+  jpeg_mem_src(&dinfo, data.buffer, data.size);
+  jpeg_read_header(&dinfo, TRUE);
+  EXPECT_EQ(1, dinfo.image_width);
+  EXPECT_EQ(1, dinfo.image_height);
+  EXPECT_EQ(3, dinfo.num_components);
+  jpeg_start_decompress(&dinfo);
+  jpeg_read_scanlines(&dinfo, row, 1);
+  jxl::msan::UnpoisonMemory(image, 3);
+  EXPECT_EQ(0, image[0]);
+  EXPECT_EQ(0, image[1]);
+  EXPECT_EQ(0, image[2]);
+  jpeg_finish_decompress(&dinfo);
+  jpeg_destroy_decompress(&dinfo);
+  free(data.buffer);
+  free(data.table_stream);
+}
 
 #define EXPECT_FAILURE()              \
   if (data.buffer) free(data.buffer); \
