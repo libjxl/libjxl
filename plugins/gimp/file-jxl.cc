@@ -126,9 +126,10 @@ void Run(const gchar* const name, const gint nparams,
     const gint32 orig_image_id = image_id;
     const GimpExportReturn export_result = gimp_export_image(
         &image_id, &drawable_id, "JPEG XL",
-        static_cast<GimpExportCapabilities>(GIMP_EXPORT_CAN_HANDLE_RGB |
-                                            GIMP_EXPORT_CAN_HANDLE_GRAY |
-                                            GIMP_EXPORT_CAN_HANDLE_ALPHA));
+        static_cast<GimpExportCapabilities>(
+            GIMP_EXPORT_CAN_HANDLE_RGB | GIMP_EXPORT_CAN_HANDLE_GRAY |
+            GIMP_EXPORT_CAN_HANDLE_ALPHA |
+            GIMP_EXPORT_CAN_HANDLE_LAYERS_AS_ANIMATION));
     switch (export_result) {
       case GIMP_EXPORT_CANCEL:
         values[0].data.d_status = GIMP_PDB_CANCEL;

@@ -36,6 +36,7 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
   GimpColorProfile *profile_icc = nullptr;
   GimpColorProfile *profile_int = nullptr;
   bool is_linear = false;
+  bool last_frame_blank = false;
   unsigned long xsize = 0, ysize = 0;
   long crop_x0 = 0, crop_y0 = 0;
   size_t layer_idx = 0;
@@ -99,6 +100,11 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
   // TODO: make this work with coalescing set to false, while handling frames
   // with duration 0 and references to earlier frames correctly.
   if (JXL_DEC_SUCCESS != JxlDecoderSetCoalescing(dec.get(), JXL_TRUE)) {
+    g_printerr(LOAD_PROC " Error: JxlDecoderSetCoalescing failed\n");
+    return false;
+  }
+
+  if (JXL_DEC_SUCCESS != JxlDecoderSetCoalescing(dec.get(), JXL_FALSE)) {
     g_printerr(LOAD_PROC " Error: JxlDecoderSetCoalescing failed\n");
     return false;
   }
@@ -351,6 +357,10 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
       if (layer_idx == 0 && !info.have_animation) {
         layer_name = g_strdup_printf("Background");
       } else {
+        if (frame_duration == 0) {
+          last_frame_blank = true;
+          continue;
+        }
         const GString *blend_null_flag = g_string_new("");
         const GString *blend_replace_flag = g_string_new(" (replace)");
         const GString *blend_combine_flag = g_string_new(" (combine)");
@@ -449,6 +459,7 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
       stop_processing = status != JXL_DEC_FRAME_PROGRESSION;
       if (JxlDecoderFlushImage(dec.get()) == JXL_DEC_SUCCESS) {
         status = JXL_DEC_FULL_IMAGE;
+        stop_processing = status == JXL_DEC_NEED_MORE_INPUT;
         continue;
       }
       g_printerr(LOAD_PROC " Error: Already provided all input\n");

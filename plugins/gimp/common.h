@@ -27,6 +27,12 @@
 #include "jxl/resizable_parallel_runner_cxx.h"
 
 namespace jxl {
+namespace {
+// Animation blend modes.
+const GString *GIMP_BLEND_NULL_FLAG = g_string_new("");
+const GString *GIMP_BLEND_REPLACE_FLAG = g_string_new(" (replace)");
+const GString *GIMP_BLEND_COMBINE_FLAG = g_string_new(" (combine)");
+}  // namespace
 
 class JpegXlGimpProgress {
  public:
@@ -39,7 +45,6 @@ class JpegXlGimpProgress {
   int max_progress;
 
 };  // class JpegXlGimpProgress
-
 }  // namespace jxl
 
 #endif  // PLUGINS_GIMP_COMMON_H_
