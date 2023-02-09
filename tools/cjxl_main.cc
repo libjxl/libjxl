@@ -55,7 +55,6 @@ namespace tools {
 namespace {
 inline bool ParsePhotonNoiseParameter(const char* arg, float* out) {
   return ParseFloat(arg, out) && *out >= 0;
-  
 }
 inline bool ParseIntensityTarget(const char* arg, float* out) {
   return ParseFloat(arg, out) && *out > 0;
