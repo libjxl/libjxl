@@ -7,6 +7,7 @@
 
 #include "gtest/gtest.h"
 #include "lib/extras/packed_image_convert.h"
+#include "lib/jxl/image_bundle.h"
 
 namespace jxl {
 namespace extras {

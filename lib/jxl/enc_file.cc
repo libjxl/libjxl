@@ -82,27 +82,6 @@ Status EncodePreview(const CompressParams& cparams, const ImageBundle& ib,
   return true;
 }
 
-Status WriteHeaders(CodecMetadata* metadata, BitWriter* writer,
-                    AuxOut* aux_out) {
-  // Marker/signature
-  BitWriter::Allotment allotment(writer, 16);
-  writer->Write(8, 0xFF);
-  writer->Write(8, kCodestreamMarker);
-  allotment.ReclaimAndCharge(writer, kLayerHeader, aux_out);
-
-  JXL_RETURN_IF_ERROR(
-      WriteSizeHeader(metadata->size, writer, kLayerHeader, aux_out));
-
-  JXL_RETURN_IF_ERROR(
-      WriteImageMetadata(metadata->m, writer, kLayerHeader, aux_out));
-
-  metadata->transform_data.nonserialized_xyb_encoded = metadata->m.xyb_encoded;
-  JXL_RETURN_IF_ERROR(
-      Bundle::Write(metadata->transform_data, writer, kLayerHeader, aux_out));
-
-  return true;
-}
-
 Status EncodeFile(const CompressParams& params, const CodecInOut* io,
                   PassesEncoderState* passes_enc_state, PaddedBytes* compressed,
                   const JxlCmsInterface& cms, AuxOut* aux_out,
@@ -120,7 +99,7 @@ Status EncodeFile(const CompressParams& params, const CodecInOut* io,
 
   std::unique_ptr<CodecMetadata> metadata = jxl::make_unique<CodecMetadata>();
   JXL_RETURN_IF_ERROR(PrepareCodecMetadataFromIO(cparams, io, metadata.get()));
-  JXL_RETURN_IF_ERROR(WriteHeaders(metadata.get(), &writer, aux_out));
+  JXL_RETURN_IF_ERROR(WriteCodestreamHeaders(metadata.get(), &writer, aux_out));
 
   // Only send ICC (at least several hundred bytes) if fields aren't enough.
   if (metadata->m.color_encoding.WantICC()) {

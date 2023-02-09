@@ -16,7 +16,7 @@
 
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/codec_in_out.h"
+#include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/dec_xyb.h"
 #include "lib/jxl/image_ops.h"
 
@@ -155,12 +155,8 @@ void AuxOut::DumpImage(const char* label, const Image3<T>& image) const {
   if (debug_prefix.empty()) return;
   std::ostringstream pathname;
   pathname << debug_prefix << label << ".png";
-  CodecInOut io;
-  // Always save to 16-bit png.
-  io.metadata.m.SetUintSamples(16);
-  io.metadata.m.color_encoding = ColorEncoding::SRGB();
-  io.SetFromImage(ConvertToFloat(image), io.metadata.m.color_encoding);
-  (void)dump_image(io, pathname.str());
+  (void)dump_image(ConvertToFloat(image), ColorEncoding::SRGB(),
+                   pathname.str());
 }
 template void AuxOut::DumpImage(const char* label,
                                 const Image3<float>& image) const;
@@ -202,12 +198,8 @@ void AuxOut::DumpXybImage(const char* label, const Image3F& image) const {
   opsin_params.Init(kDefaultIntensityTarget);
   OpsinToLinear(image, Rect(linear), nullptr, &linear, opsin_params);
 
-  CodecInOut io;
-  io.metadata.m.SetUintSamples(16);
-  io.metadata.m.color_encoding = ColorEncoding::LinearSRGB();
-  io.SetFromImage(std::move(linear), io.metadata.m.color_encoding);
-
-  (void)dump_image(io, pathname.str());
+  (void)dump_image(std::move(linear), ColorEncoding::LinearSRGB(),
+                   pathname.str());
 }
 
 }  // namespace jxl

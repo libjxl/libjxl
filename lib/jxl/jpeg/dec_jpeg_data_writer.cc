@@ -14,6 +14,7 @@
 
 #include "lib/jxl/base/bits.h"
 #include "lib/jxl/common.h"
+#include "lib/jxl/image_bundle.h"
 #include "lib/jxl/jpeg/dec_jpeg_serialization_state.h"
 #include "lib/jxl/jpeg/jpeg_data.h"
 

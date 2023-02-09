@@ -420,9 +420,9 @@ void VerifyRoundtripCompression(
                                 *decoded_io.Main().color()));
   } else {
     jxl::ButteraugliParams ba;
-    float butteraugli_score =
-        ButteraugliDistance(original_io, decoded_io, ba, jxl::GetJxlCms(),
-                            /*distmap=*/nullptr, nullptr);
+    float butteraugli_score = ButteraugliDistance(
+        original_io.frames, decoded_io.frames, ba, jxl::GetJxlCms(),
+        /*distmap=*/nullptr, nullptr);
     EXPECT_LE(butteraugli_score, 2.0f);
   }
   JxlPixelFormat extra_channel_output_pixel_format = output_pixel_format;
@@ -653,9 +653,9 @@ TEST(RoundtripTest, ExtraBoxesTest) {
       ConvertTestImage(decoded_bytes, xsize, ysize, pixel_format, icc_profile);
 
   jxl::ButteraugliParams ba;
-  float butteraugli_score =
-      ButteraugliDistance(original_io, decoded_io, ba, jxl::GetJxlCms(),
-                          /*distmap=*/nullptr, nullptr);
+  float butteraugli_score = ButteraugliDistance(
+      original_io.frames, decoded_io.frames, ba, jxl::GetJxlCms(),
+      /*distmap=*/nullptr, nullptr);
   EXPECT_LE(butteraugli_score, 2.0f);
 }
 

@@ -264,7 +264,14 @@ class JxlCodec : public ImageCodec {
                   ThreadPoolInternal* pool, std::vector<uint8_t>* compressed,
                   jpegxl::tools::SpeedStats* speed_stats) override {
     if (!jxlargs->debug_image_dir.empty()) {
-      cinfo_.dump_image = [](const CodecInOut& io, const std::string& path) {
+      cinfo_.dump_image = [](Image3F&& image,
+                             const ColorEncoding& color_encoding,
+                             const std::string& path) -> Status {
+        CodecInOut io;
+        // Always save to 16-bit png.
+        io.metadata.m.SetUintSamples(16);
+        io.metadata.m.color_encoding = color_encoding;
+        io.SetFromImage(std::move(image), io.metadata.m.color_encoding);
         return EncodeToFile(io, path);
       };
       cinfo_.debug_prefix =

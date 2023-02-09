@@ -193,6 +193,27 @@ Status F16Coder::Write(float value, BitWriter* JXL_RESTRICT writer) {
   return true;
 }
 
+Status WriteCodestreamHeaders(CodecMetadata* metadata, BitWriter* writer,
+                              AuxOut* aux_out) {
+  // Marker/signature
+  BitWriter::Allotment allotment(writer, 16);
+  writer->Write(8, 0xFF);
+  writer->Write(8, kCodestreamMarker);
+  allotment.ReclaimAndCharge(writer, kLayerHeader, aux_out);
+
+  JXL_RETURN_IF_ERROR(
+      WriteSizeHeader(metadata->size, writer, kLayerHeader, aux_out));
+
+  JXL_RETURN_IF_ERROR(
+      WriteImageMetadata(metadata->m, writer, kLayerHeader, aux_out));
+
+  metadata->transform_data.nonserialized_xyb_encoded = metadata->m.xyb_encoded;
+  JXL_RETURN_IF_ERROR(
+      Bundle::Write(metadata->transform_data, writer, kLayerHeader, aux_out));
+
+  return true;
+}
+
 Status WriteFrameHeader(const FrameHeader& frame,
                         BitWriter* JXL_RESTRICT writer, AuxOut* aux_out) {
   return Bundle::Write(frame, writer, kLayerHeader, aux_out);

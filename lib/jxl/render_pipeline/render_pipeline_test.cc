@@ -21,6 +21,7 @@
 #include "lib/jxl/image_test_utils.h"
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
 #include "lib/jxl/render_pipeline/test_render_pipeline_stages.h"
+#include "lib/jxl/size_constraints.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testdata.h"
 

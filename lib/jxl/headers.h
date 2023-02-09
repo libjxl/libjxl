@@ -6,7 +6,7 @@
 #ifndef LIB_JXL_HEADERS_H_
 #define LIB_JXL_HEADERS_H_
 
-// Codestream headers, also stored in CodecInOut.
+// Codestream headers.
 
 #include <stddef.h>
 #include <stdint.h>

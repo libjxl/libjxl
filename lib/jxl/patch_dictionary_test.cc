@@ -45,9 +45,10 @@ TEST(PatchDictionaryTest, GrayscaleVarDCT) {
   // Without patches: ~47k
   EXPECT_LE(Roundtrip(&io, cparams, {}, pool, &io2), 14000u);
   // Without patches: ~1.2
-  EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
-                                /*distmap=*/nullptr, pool),
-            1.1);
+  EXPECT_LE(
+      ButteraugliDistance(io.frames, io2.frames, cparams.ba_params, GetJxlCms(),
+                          /*distmap=*/nullptr, pool),
+      1.1);
 }
 
 }  // namespace

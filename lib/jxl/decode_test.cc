@@ -1676,7 +1676,7 @@ TEST(DecodeTest, PixelTestWithICCProfileLossy) {
                                   /*pool=*/nullptr, &io1.Main()));
 
   jxl::ButteraugliParams ba;
-  EXPECT_THAT(ButteraugliDistance(io0, io1, ba, jxl::GetJxlCms(),
+  EXPECT_THAT(ButteraugliDistance(io0.frames, io1.frames, ba, jxl::GetJxlCms(),
                                   /*distmap=*/nullptr, nullptr),
               IsSlightlyBelow(0.86f));
 
@@ -1732,7 +1732,7 @@ double ButteraugliDistance(size_t xsize, size_t ysize,
       ysize, color_out,
       /*bits_per_sample=*/16, format_out,
       /*pool=*/nullptr, &out.Main()));
-  return ButteraugliDistance(in, out, jxl::ButteraugliParams(),
+  return ButteraugliDistance(in.frames, out.frames, jxl::ButteraugliParams(),
                              jxl::GetJxlCms(), nullptr, nullptr);
 }
 
@@ -1933,9 +1933,10 @@ TEST(DecodeTest, PixelTestOpaqueSrgbLossy) {
                                     /*pool=*/nullptr, &io1.Main()));
 
     jxl::ButteraugliParams ba;
-    EXPECT_THAT(ButteraugliDistance(io0, io1, ba, jxl::GetJxlCms(),
-                                    /*distmap=*/nullptr, nullptr),
-                IsSlightlyBelow(0.8f));
+    EXPECT_THAT(
+        ButteraugliDistance(io0.frames, io1.frames, ba, jxl::GetJxlCms(),
+                            /*distmap=*/nullptr, nullptr),
+        IsSlightlyBelow(0.8f));
 
     JxlDecoderDestroy(dec);
   }
@@ -1983,9 +1984,10 @@ TEST(DecodeTest, PixelTestOpaqueSrgbLossyNoise) {
                                     /*pool=*/nullptr, &io1.Main()));
 
     jxl::ButteraugliParams ba;
-    EXPECT_THAT(ButteraugliDistance(io0, io1, ba, jxl::GetJxlCms(),
-                                    /*distmap=*/nullptr, nullptr),
-                IsSlightlyBelow(2.4f));
+    EXPECT_THAT(
+        ButteraugliDistance(io0.frames, io1.frames, ba, jxl::GetJxlCms(),
+                            /*distmap=*/nullptr, nullptr),
+        IsSlightlyBelow(2.4f));
 
     JxlDecoderDestroy(dec);
   }
@@ -2409,7 +2411,7 @@ TEST(DecodeTest, PreviewTest) {
     // support smaller than 8x8, but jxl's ButteraugliDistance does not. Perhaps
     // move butteraugli's <8x8 handling from ButteraugliDiffmap to
     // ButteraugliComparator::Diffmap in butteraugli.cc.
-    EXPECT_LE(ButteraugliDistance(io0, io1, ba, jxl::GetJxlCms(),
+    EXPECT_LE(ButteraugliDistance(io0.frames, io1.frames, ba, jxl::GetJxlCms(),
                                   /*distmap=*/nullptr, nullptr),
               mode == jxl::kSmallPreview ? 0.7f : 1.2f);
 
@@ -4754,8 +4756,8 @@ TEST_P(DecodeProgressiveTest, ProgressiveEventTest) {
             ysize, color_encoding,
             /*bits_per_sample=*/16, format,
             /*pool=*/nullptr, &io1.Main()));
-        distances[p] = ButteraugliDistance(io, io1, ba, jxl::GetJxlCms(),
-                                           nullptr, nullptr);
+        distances[p] = ButteraugliDistance(io.frames, io1.frames, ba,
+                                           jxl::GetJxlCms(), nullptr, nullptr);
         if (p == kNumPasses) break;
       }
       const float kMaxDistance[kNumPasses + 1] = {30.0f, 20.0f, 10.0f,
@@ -4831,7 +4833,7 @@ TEST(DecodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGReconstructionTest)) {
       jxl::jpeg::DecodeImageJPG(jxl::Span<const uint8_t>(orig), &orig_io));
   orig_io.metadata.m.xyb_encoded = false;
   jxl::BitWriter writer;
-  ASSERT_TRUE(WriteHeaders(&orig_io.metadata, &writer, nullptr));
+  ASSERT_TRUE(WriteCodestreamHeaders(&orig_io.metadata, &writer, nullptr));
   writer.ZeroPadToByte();
   jxl::PassesEncoderState enc_state;
   jxl::CompressParams cparams;
