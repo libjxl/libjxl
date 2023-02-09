@@ -132,6 +132,8 @@ struct TestConfig {
   int restart_in_rows = 0;
   bool raw_data_in = false;
   std::vector<std::vector<uint8_t>> raw_data;
+  bool write_coeffs = false;
+  std::vector<std::vector<JCOEF>> coeffs;
   bool optimize_coding = true;
   bool use_flat_dc_luma_code = false;
   bool xyb_mode = false;
@@ -262,6 +264,23 @@ void GenerateRawData(TestConfig* config) {
   }
 }
 
+void GenerateCoeffs(TestConfig* config) {
+  for (size_t c = 0; c < config->input_components; ++c) {
+    size_t xsize_blocks = config->comp_width(c) / DCTSIZE;
+    size_t ysize_blocks = config->comp_height(c) / DCTSIZE;
+    std::vector<JCOEF> plane(ysize_blocks * xsize_blocks * kDCTBlockSize);
+    for (size_t by = 0; by < ysize_blocks; ++by) {
+      for (size_t bx = 0; bx < xsize_blocks; ++bx) {
+        for (size_t k = 0; k < kDCTBlockSize; ++k) {
+          plane[(by * xsize_blocks + bx) * kDCTBlockSize + k] =
+              (bx - by) / (k + 1);
+        }
+      }
+    }
+    config->coeffs.emplace_back(std::move(plane));
+  }
+}
+
 struct MyClientData {
   jmp_buf env;
   unsigned char* buffer = nullptr;
@@ -310,7 +329,6 @@ void TestDecodedImage(const TestConfig& config,
     }
     EXPECT_TRUE(marker_found);
   }
-  EXPECT_TRUE(jpeg_start_decompress(&cinfo));
 #if !JXL_MEMORY_SANITIZER
   if (config.custom_component_ids) {
     for (int i = 0; i < cinfo.num_components; ++i) {
@@ -336,63 +354,76 @@ void TestDecodedImage(const TestConfig& config,
     }
   }
 #endif
-  while (!jpeg_input_complete(&cinfo)) {
-    EXPECT_GT(cinfo.input_scan_number, 0);
-    EXPECT_TRUE(jpeg_start_output(&cinfo, cinfo.input_scan_number));
-    if (config.progressive_id > 0) {
-      ASSERT_LE(config.progressive_id, kNumTestScripts);
-      const ScanScript& script = kTestScript[config.progressive_id - 1];
-      ASSERT_LE(cinfo.input_scan_number, script.num_scans);
-      const jpeg_scan_info& scan = script.scans[cinfo.input_scan_number - 1];
-      ASSERT_EQ(cinfo.comps_in_scan, scan.comps_in_scan);
-#if !JXL_MEMORY_SANITIZER
-      for (int i = 0; i < cinfo.comps_in_scan; ++i) {
-        EXPECT_EQ(cinfo.cur_comp_info[i]->component_index,
-                  scan.component_index[i]);
+  if (config.write_coeffs) {
+    j_common_ptr comptr = reinterpret_cast<j_common_ptr>(&cinfo);
+    jvirt_barray_ptr* coef_arrays = jpeg_read_coefficients(&cinfo);
+    ASSERT_TRUE(coef_arrays != nullptr);
+    for (int c = 0; c < cinfo.num_components; ++c) {
+      jpeg_component_info* comp = &cinfo.comp_info[c];
+      for (size_t by = 0; by < comp->height_in_blocks; ++by) {
+        JBLOCKARRAY ba = (*cinfo.mem->access_virt_barray)(
+            comptr, coef_arrays[c], by, 1, true);
+        size_t stride = comp->width_in_blocks * sizeof(JBLOCK);
+        size_t offset = by * comp->width_in_blocks * kDCTBlockSize;
+        EXPECT_EQ(0, memcmp(ba[0], &config.coeffs[c][offset], stride));
       }
+    }
+  } else {
+    EXPECT_TRUE(jpeg_start_decompress(&cinfo));
+    while (!jpeg_input_complete(&cinfo)) {
+      EXPECT_GT(cinfo.input_scan_number, 0);
+      EXPECT_TRUE(jpeg_start_output(&cinfo, cinfo.input_scan_number));
+      if (config.progressive_id > 0) {
+        ASSERT_LE(config.progressive_id, kNumTestScripts);
+        const ScanScript& script = kTestScript[config.progressive_id - 1];
+        ASSERT_LE(cinfo.input_scan_number, script.num_scans);
+        const jpeg_scan_info& scan = script.scans[cinfo.input_scan_number - 1];
+        ASSERT_EQ(cinfo.comps_in_scan, scan.comps_in_scan);
+#if !JXL_MEMORY_SANITIZER
+        for (int i = 0; i < cinfo.comps_in_scan; ++i) {
+          EXPECT_EQ(cinfo.cur_comp_info[i]->component_index,
+                    scan.component_index[i]);
+        }
 #endif
-      EXPECT_EQ(cinfo.Ss, scan.Ss);
-      EXPECT_EQ(cinfo.Se, scan.Se);
-      EXPECT_EQ(cinfo.Ah, scan.Ah);
-      EXPECT_EQ(cinfo.Al, scan.Al);
+        EXPECT_EQ(cinfo.Ss, scan.Ss);
+        EXPECT_EQ(cinfo.Se, scan.Se);
+        EXPECT_EQ(cinfo.Ah, scan.Ah);
+        EXPECT_EQ(cinfo.Al, scan.Al);
+      }
+      EXPECT_TRUE(jpeg_finish_output(&cinfo));
+      if (config.restart_interval > 0) {
+        EXPECT_EQ(cinfo.restart_interval, config.restart_interval);
+      } else if (config.restart_in_rows > 0) {
+        EXPECT_EQ(cinfo.restart_interval,
+                  config.restart_in_rows * cinfo.MCUs_per_row);
+      }
+    }
+    EXPECT_TRUE(jpeg_start_output(&cinfo, cinfo.input_scan_number));
+    size_t stride = cinfo.image_width * cinfo.out_color_components;
+    std::vector<uint8_t> output(cinfo.image_height * stride);
+    for (size_t y = 0; y < cinfo.image_height; ++y) {
+      JSAMPROW rows[] = {reinterpret_cast<JSAMPLE*>(&output[y * stride])};
+      jxl::msan::UnpoisonMemory(
+          rows[0],
+          sizeof(JSAMPLE) * cinfo.output_components * cinfo.image_width);
+      EXPECT_EQ(1, jpeg_read_scanlines(&cinfo, rows, 1));
     }
     EXPECT_TRUE(jpeg_finish_output(&cinfo));
-    if (config.restart_interval > 0) {
-      EXPECT_EQ(cinfo.restart_interval, config.restart_interval);
-    } else if (config.restart_in_rows > 0) {
-      EXPECT_EQ(cinfo.restart_interval,
-                config.restart_in_rows * cinfo.MCUs_per_row);
+    ASSERT_EQ(output.size(), config.pixels.size());
+    const double mul = 1.0 / 255.0;
+    double diff2 = 0.0;
+    for (size_t i = 0; i < config.pixels.size(); ++i) {
+      double sample_orig = config.pixels[i] * mul;
+      double sample_output = output[i] * mul;
+      double diff = sample_orig - sample_output;
+      diff2 += diff * diff;
     }
+    double rms = std::sqrt(diff2 / config.pixels.size()) / mul;
+    printf("rms: %f\n", rms);
+    EXPECT_LE(rms, config.max_dist);
   }
-  EXPECT_TRUE(jpeg_start_output(&cinfo, cinfo.input_scan_number));
-  size_t stride = cinfo.image_width * cinfo.out_color_components;
-  std::vector<uint8_t> output(cinfo.image_height * stride);
-  for (size_t y = 0; y < cinfo.image_height; ++y) {
-    JSAMPROW rows[] = {reinterpret_cast<JSAMPLE*>(&output[y * stride])};
-    jxl::msan::UnpoisonMemory(
-        rows[0], sizeof(JSAMPLE) * cinfo.output_components * cinfo.image_width);
-    EXPECT_EQ(1, jpeg_read_scanlines(&cinfo, rows, 1));
-  }
-  EXPECT_TRUE(jpeg_finish_output(&cinfo));
   EXPECT_TRUE(jpeg_finish_decompress(&cinfo));
   jpeg_destroy_decompress(&cinfo);
-
-  double bpp = compressed.size() * 8.0 / (config.xsize * config.ysize);
-  printf("bpp: %f\n", bpp);
-  EXPECT_LT(bpp, config.max_bpp);
-
-  ASSERT_EQ(output.size(), config.pixels.size());
-  const double mul = 1.0 / 255.0;
-  double diff2 = 0.0;
-  for (size_t i = 0; i < config.pixels.size(); ++i) {
-    double sample_orig = config.pixels[i] * mul;
-    double sample_output = output[i] * mul;
-    double diff = sample_orig - sample_output;
-    diff2 += diff * diff;
-  }
-  double rms = std::sqrt(diff2 / config.pixels.size()) / mul;
-  printf("rms: %f\n", rms);
-  EXPECT_LE(rms, config.max_dist);
 }
 
 bool EncodeWithJpegli(const TestConfig& config,
@@ -471,10 +502,12 @@ bool EncodeWithJpegli(const TestConfig& config,
     jpegli_use_standard_quant_tables(&cinfo);
     jpegli_set_progressive_level(&cinfo, 0);
   }
-  jpegli_start_compress(&cinfo, TRUE);
-  if (config.add_marker) {
-    jpegli_write_marker(&cinfo, kSpecialMarker, kMarkerData,
-                        sizeof(kMarkerData));
+  if (!config.write_coeffs) {
+    jpegli_start_compress(&cinfo, TRUE);
+    if (config.add_marker) {
+      jpegli_write_marker(&cinfo, kSpecialMarker, kMarkerData,
+                          sizeof(kMarkerData));
+    }
   }
   if (cinfo.raw_data_in) {
     // Need to copy because jpeg API requires non-const pointers.
@@ -500,6 +533,32 @@ bool EncodeWithJpegli(const TestConfig& config,
       size_t num_lines = jpegli_write_raw_data(&cinfo, &data[0], max_lines);
       EXPECT_EQ(num_lines, max_lines);
     }
+  } else if (config.write_coeffs) {
+    j_common_ptr comptr = reinterpret_cast<j_common_ptr>(&cinfo);
+    jvirt_barray_ptr* coef_arrays = reinterpret_cast<jvirt_barray_ptr*>((
+        *cinfo.mem->alloc_small)(
+        comptr, JPOOL_IMAGE, cinfo.num_components * sizeof(jvirt_barray_ptr)));
+    for (int c = 0; c < cinfo.num_components; ++c) {
+      size_t xsize_blocks = config.comp_width(c) / DCTSIZE;
+      size_t ysize_blocks = config.comp_height(c) / DCTSIZE;
+      coef_arrays[c] = (*cinfo.mem->request_virt_barray)(
+          comptr, JPOOL_IMAGE, FALSE, xsize_blocks, ysize_blocks, 1);
+    }
+    jpegli_write_coefficients(&cinfo, coef_arrays);
+    if (config.add_marker) {
+      jpegli_write_marker(&cinfo, kSpecialMarker, kMarkerData,
+                          sizeof(kMarkerData));
+    }
+    for (int c = 0; c < cinfo.num_components; ++c) {
+      jpeg_component_info* comp = &cinfo.comp_info[c];
+      for (size_t by = 0; by < comp->height_in_blocks; ++by) {
+        JBLOCKARRAY ba = (*cinfo.mem->access_virt_barray)(
+            comptr, coef_arrays[c], by, 1, true);
+        size_t stride = comp->width_in_blocks * sizeof(JBLOCK);
+        size_t offset = by * comp->width_in_blocks * kDCTBlockSize;
+        memcpy(ba[0], &config.coeffs[c][offset], stride);
+      }
+    }
   } else {
     size_t stride = cinfo.image_width * cinfo.input_components;
     std::vector<uint8_t> row_bytes(stride);
@@ -524,9 +583,14 @@ TEST_P(EncodeAPITestParam, TestAPI) {
   GeneratePixels(&config);
   if (config.raw_data_in) {
     GenerateRawData(&config);
+  } else if (config.write_coeffs) {
+    GenerateCoeffs(&config);
   }
   std::vector<uint8_t> compressed;
   ASSERT_TRUE(EncodeWithJpegli(config, &compressed));
+  double bpp = compressed.size() * 8.0 / (config.xsize * config.ysize);
+  printf("bpp: %f\n", bpp);
+  EXPECT_LT(bpp, config.max_bpp);
   TestDecodedImage(config, compressed);
 }
 
@@ -844,6 +908,13 @@ std::vector<TestConfig> GenerateTests() {
           config.max_bpp = 1.7;
           config.max_dist = 2.0;
           all_tests.push_back(config);
+          config.raw_data_in = false;
+          config.write_coeffs = true;
+          if (xsize & 1) {
+            config.add_marker = true;
+          }
+          config.max_bpp = 24.0;
+          all_tests.push_back(config);
         }
       }
     }
@@ -938,6 +1009,9 @@ std::ostream& operator<<(std::ostream& os, const TestConfig& c) {
   }
   if (c.raw_data_in) {
     os << "RawDataIn";
+  }
+  if (c.write_coeffs) {
+    os << "WriteCoeffs";
   }
   return os;
 }

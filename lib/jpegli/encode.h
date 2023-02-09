@@ -85,6 +85,9 @@ JDIMENSION jpegli_write_scanlines(j_compress_ptr cinfo, JSAMPARRAY scanlines,
 JDIMENSION jpegli_write_raw_data(j_compress_ptr cinfo, JSAMPIMAGE data,
                                  JDIMENSION num_lines);
 
+void jpegli_write_coefficients(j_compress_ptr cinfo,
+                               jvirt_barray_ptr* coef_arrays);
+
 void jpegli_finish_compress(j_compress_ptr cinfo);
 
 void jpegli_abort_compress(j_compress_ptr cinfo);

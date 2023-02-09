@@ -85,9 +85,16 @@ void RealizeVirtualArrays(j_common_ptr cinfo) {
 template <typename Control, typename T>
 T** AccessVirtualArray(j_common_ptr cinfo, Control* ptr, JDIMENSION start_row,
                        JDIMENSION num_rows, boolean writable) {
-  if (num_rows > ptr->maxaccess || start_row + num_rows > ptr->numrows ||
-      ptr->full_buffer == nullptr) {
-    JPEGLI_ERROR("Invalid virtual array access.");
+  if (num_rows > ptr->maxaccess) {
+    JPEGLI_ERROR("Invalid virtual array access, num rows %u vs max rows %u",
+                 num_rows, ptr->maxaccess);
+  }
+  if (start_row + num_rows > ptr->numrows) {
+    JPEGLI_ERROR("Invalid virtual array access, %u vs %u total rows",
+                 start_row + num_rows, ptr->numrows);
+  }
+  if (ptr->full_buffer == nullptr) {
+    JPEGLI_ERROR("Invalid virtual array access, array not realized.");
   }
   return ptr->full_buffer + start_row;
 }

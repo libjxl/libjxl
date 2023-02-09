@@ -212,6 +212,11 @@ JDIMENSION jpeg_write_raw_data(j_compress_ptr cinfo, JSAMPIMAGE data,
   return jpegli_write_raw_data(cinfo, data, num_lines);
 }
 
+void jpeg_write_coefficients(j_compress_ptr cinfo,
+                             jvirt_barray_ptr *coef_arrays) {
+  jpegli_write_coefficients(cinfo, coef_arrays);
+}
+
 void jpeg_finish_compress(j_compress_ptr cinfo) {
   jpegli_finish_compress(cinfo);
 }
