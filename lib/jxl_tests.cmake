@@ -2,87 +2,18 @@
 # license that can be found in the LICENSE file.
 
 include(compatibility.cmake)
+include(jxl_lists.cmake)
 
-set(TEST_FILES
-  extras/codec_test.cc
-  extras/dec/color_description_test.cc
-  extras/dec/pgx_test.cc
-  extras/jpegli_test.cc
-  jxl/ac_strategy_test.cc
-  jxl/alpha_test.cc
-  jxl/ans_common_test.cc
-  jxl/ans_test.cc
-  jxl/bit_reader_test.cc
-  jxl/bits_test.cc
-  jxl/blending_test.cc
-  jxl/butteraugli_test.cc
-  jxl/byte_order_test.cc
-  jxl/coeff_order_test.cc
-  jxl/color_encoding_internal_test.cc
-  jxl/color_management_test.cc
-  jxl/convolve_test.cc
-  jxl/data_parallel_test.cc
-  jxl/dct_test.cc
-  jxl/decode_test.cc
-  jxl/enc_external_image_test.cc
-  jxl/enc_gaborish_test.cc
-  jxl/enc_linalg_test.cc
-  jxl/enc_optimize_test.cc
-  jxl/enc_photon_noise_test.cc
-  jxl/encode_test.cc
-  jxl/entropy_coder_test.cc
-  jxl/fast_dct_test.cc
-  jxl/fast_math_test.cc
-  jxl/fields_test.cc
-  jxl/gamma_correct_test.cc
-  jxl/gauss_blur_test.cc
-  jxl/gradient_test.cc
-  jxl/iaca_test.cc
-  jxl/icc_codec_test.cc
-  jxl/image_bundle_test.cc
-  jxl/image_ops_test.cc
-  jxl/jxl_test.cc
-  jxl/lehmer_code_test.cc
-  jxl/modular_test.cc
-  jxl/opsin_image_test.cc
-  jxl/opsin_inverse_test.cc
-  jxl/padded_bytes_test.cc
-  jxl/passes_test.cc
-  jxl/patch_dictionary_test.cc
-  jxl/preview_test.cc
-  jxl/quant_weights_test.cc
-  jxl/quantizer_test.cc
-  jxl/rational_polynomial_test.cc
-  jxl/render_pipeline/render_pipeline_test.cc
-  jxl/roundtrip_test.cc
-  jxl/simd_util_test.cc
-  jxl/speed_tier_test.cc
-  jxl/splines_test.cc
-  jxl/toc_test.cc
-  jxl/xorshift128plus_test.cc
-  threads/thread_parallel_runner_test.cc
-  ### Files before this line are handled by build_cleaner.py
+list(APPEND JPEGXL_INTERNAL_TESTS
   # TODO(deymo): Move this to tools/
   ../tools/box/box_test.cc
   ../tools/djxl_fuzzer_test.cc
 )
 
-# Test-only library code.
-set(TESTLIB_FILES
-  jxl/dct_for_test.h
-  jxl/dec_transforms_testonly.cc
-  jxl/dec_transforms_testonly.h
-  jxl/fake_parallel_runner_testonly.h
-  jxl/image_test_utils.h
-  jxl/test_image.h
-  jxl/test_utils.h
-  jxl/testdata.h
-)
-
 find_package(GTest)
 
 # Library with test-only code shared between all tests.
-add_library(jxl_testlib-static STATIC ${TESTLIB_FILES})
+add_library(jxl_testlib-static STATIC ${JPEGXL_INTERNAL_TESTLIB_FILES})
   target_compile_options(jxl_testlib-static PRIVATE
     ${JPEGXL_INTERNAL_FLAGS}
     ${JPEGXL_COVERAGE_FLAGS}
@@ -96,7 +27,7 @@ target_link_libraries(jxl_testlib-static hwy jxl-static)
 
 # Individual test binaries:
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tests)
-foreach (TESTFILE IN LISTS TEST_FILES)
+foreach (TESTFILE IN LISTS JPEGXL_INTERNAL_TESTS)
   # The TESTNAME is the name without the extension or directory.
   get_filename_component(TESTNAME ${TESTFILE} NAME_WE)
   if(TESTFILE STREQUAL ../tools/djxl_fuzzer_test.cc)

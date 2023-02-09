@@ -11,13 +11,23 @@ This tool keeps certain parts of the build files up to date.
 """
 
 import argparse
-import collections
 import locale
 import os
 import re
 import subprocess
 import sys
 import tempfile
+
+
+HEAD = """
+# Copyright (c) the JPEG XL Project Authors. All rights reserved.
+#
+# Use of this source code is governed by a BSD-style
+# license that can be found in the LICENSE file.
+
+# This file is generated, do not modify by manually.
+# Run `tools/build_cleaner.py --update` to regenerate it.
+"""
 
 
 def RepoFiles(src_dir):
@@ -28,132 +38,114 @@ def RepoFiles(src_dir):
   ret.sort()
   return ret
 
-def GetPrefixLibFiles(repo_files, prefix, suffixes=('.h', '.cc', '.ui')):
-  """Gets the library files that start with the prefix and end with source
-  code suffix."""
-  prefix_files = [
-      fn for fn in repo_files
-      if fn.startswith(prefix) and any(fn.endswith(suf) for suf in suffixes)]
-  return prefix_files
 
-# Type holding the different types of sources in libjxl:
-#   * decoder and common sources for minimal decoder,
-#   * decoder and common sources,
-#   * encoder-only sources,
-#   * tests-only sources,
-#   * google benchmark sources,
-#   * threads library sources,
-#   * extras library sources,
-#   * libjxl (encoder+decoder) public include/ headers and
-#   * threads public include/ headers.
-JxlSources = collections.namedtuple(
-    'JxlSources', ['dec_minimal', 'dec', 'enc', 'test',
-                   'gbench', 'threads', 'extras', 'jxl_public_hdrs',
-                   'threads_public_hdrs'])
+def Check(condition, msg):
+  if not condition:
+    print(msg)
+    sys.exit(2)
+
+
+def ContainsFn(*parts):
+  return lambda path: any(part in path for part in parts)
+
+
+def HasPrefixFn(*prefixes):
+  return lambda path: any(path.startswith(prefix) for prefix in prefixes)
+
+
+def HasSuffixFn(*suffixes):
+  return lambda path: any(path.endswith(suffix) for suffix in suffixes)
+
+
+def Filter(src, fn):
+  yes_list = []
+  no_list = []
+  for item in src:
+    (yes_list if fn(item) else no_list).append(item)
+  return yes_list, no_list
+
 
 def SplitLibFiles(repo_files):
-  """Splits the library files into the different groups.
+  """Splits the library files into the different groups."""
 
-  """
-  testonly = (
-      'testdata.h', 'test_utils.h', 'test_image.h', '_test.h', '_test.cc',
-      # _testonly.* files are library code used in tests only.
-      '_testonly.h', '_testonly.cc'
-  )
-  main_srcs = GetPrefixLibFiles(repo_files, 'lib/jxl/')
-  extras_srcs = GetPrefixLibFiles(repo_files, 'lib/extras/')
-  test_srcs = [fn for fn in main_srcs
-               if any(patt in fn for patt in testonly)]
-  lib_srcs = [fn for fn in main_srcs
-              if not any(patt in fn for patt in testonly)]
+  srcs_base = 'lib/'
+  srcs, _ = Filter(repo_files, HasPrefixFn(srcs_base))
+  srcs = [path[len(srcs_base):] for path in srcs]
+  srcs, _ = Filter(srcs, HasSuffixFn('.cc', '.h', '.ui'))
+  srcs.sort()
 
-  # Google benchmark sources.
-  gbench_srcs = sorted(fn for fn in lib_srcs + extras_srcs
-                       if fn.endswith('_gbench.cc'))
-  lib_srcs = [fn for fn in lib_srcs if fn not in gbench_srcs]
-  # Exclude optional codecs from extras.
-  exclude_extras = [
-    '/dec/gif',
-    '/dec/apng', '/enc/apng',
-    '/dec/exr', '/enc/exr',
-    '/dec/jpg', '/dec/jpegli',
-    '/enc/jpg', '/enc/jpegli',
-  ]
-  extras_srcs = [fn for fn in extras_srcs if fn not in gbench_srcs and
-                 not any(patt in fn for patt in testonly) and
-                 not any(patt in fn for patt in exclude_extras)]
+  # TODO(eustas): why?
+  _, srcs = Filter(srcs, HasPrefixFn('jpegli'))
+  # TODO(eustas): move to tools?
+  _, srcs = Filter(srcs, HasSuffixFn('gbench_main.cc'))
 
-  enc_srcs = [fn for fn in lib_srcs
-              if os.path.basename(fn).startswith('enc_') or
-                 os.path.basename(fn).startswith('butteraugli')]
-  enc_srcs.extend([
-      "lib/jxl/encode.cc",
-      "lib/jxl/encode_internal.h",
-  ])
-  enc_srcs.sort()
+  # First pick files scattered across directories.
+  tests, srcs = Filter(srcs, HasSuffixFn('_test.cc'))
+  testlib_files, srcs = Filter(srcs, ContainsFn('test'))
+  gbench_sources, srcs = Filter(srcs, HasSuffixFn('_gbench.cc'))
 
-  enc_srcs_set = set(enc_srcs)
-  lib_srcs = [fn for fn in lib_srcs if fn not in enc_srcs_set]
+  extras_sources, srcs = Filter(srcs, HasPrefixFn('extras/'))
+  lib_srcs, srcs = Filter(srcs, HasPrefixFn('jxl/'))
+  profiler_sources, srcs = Filter(srcs, HasPrefixFn('profiler/'))
+  public_headers, srcs = Filter(srcs, HasPrefixFn('include/jxl/'))
+  threads_sources, srcs = Filter(srcs, HasPrefixFn('threads/'))
+
+  Check(len(srcs) == 0, 'Orphan source files: ' + str(srcs))
+
+  threads_public_headers, public_headers = Filter(
+      public_headers, ContainsFn('_parallel_runner'))
+
+  codec_names = ['apng', 'exr', 'gif', 'jpegli', 'jpg', 'jxl', 'npy', 'pgx',
+    'pnm']
+  codecs = {}
+  for codec in codec_names:
+    codec_sources, extras_sources = Filter(extras_sources, HasPrefixFn(
+      f'extras/dec/{codec}', f'extras/enc/{codec}'))
+    codecs[f'codec_{codec}_sources'] = codec_sources
+
+  # TODO(eustas): move to separate folder?
+  extras_for_tools_sources, extras_sources = Filter(extras_sources, ContainsFn(
+    '/codec', '/hlg', '/packed_image_convert', '/render_hdr', '/tone_mapping'))
+
+  # Source files only needed by the encoder or by tools (including decoding
+  # tools), but not by the decoder library.
+  # TODO(eustas): investigate the status of codec_in_out.h
+  # TODO(eustas): rename butteraugli_wrapper.cc to butteraugli.cc?
+  # TODO(eustas): is it possible to make butteraugli more standalone?
+  enc_sources, lib_srcs = Filter(lib_srcs, ContainsFn('/enc_', '/butteraugli',
+    'jxl/encode.cc', 'jxl/encode_internal.h'
+  ))
 
   # The remaining of the files are in the dec_library.
-  dec_srcs = lib_srcs
+  dec_jpeg_sources, dec_sources = Filter(lib_srcs, HasPrefixFn('jxl/jpeg/',
+    'jxl/decode_to_jpeg.cc', 'jxl/decode_to_jpeg.h'))
+  dec_box_sources, dec_sources = Filter(dec_sources, HasPrefixFn(
+    'jxl/box_content_decoder.cc', 'jxl/box_content_decoder.h'))
 
-  dec_opt_srcs = [
-    "lib/jxl/box_content_decoder.cc",
-    "lib/jxl/box_content_decoder.h",
-    "lib/jxl/decode_to_jpeg.cc",
-    "lib/jxl/decode_to_jpeg.h",
-  ]
-  dec_opt_srcs.extend([fn for fn in dec_srcs
-                       if fn.startswith('lib/jxl/jpeg')])
-  dec_opt_srcs_set = set(dec_opt_srcs)
-  dec_minimal_srcs = [fn for fn in dec_srcs if fn not in dec_opt_srcs_set]
+  # TODO(lode): further prune dec_srcs: only those files that the decoder
+  # absolutely needs, and or not only for encoding, should be listed here.
 
-  thread_srcs = GetPrefixLibFiles(repo_files, 'lib/threads/')
-  thread_srcs = [fn for fn in thread_srcs
-                 if not any(patt in fn for patt in testonly)]
-  public_hdrs = GetPrefixLibFiles(repo_files, 'lib/include/jxl/')
-
-  threads_public_hdrs = [fn for fn in public_hdrs if '_parallel_runner' in fn]
-  jxl_public_hdrs = list(sorted(set(public_hdrs) - set(threads_public_hdrs)))
-  return JxlSources(dec_minimal_srcs, dec_srcs, enc_srcs, test_srcs,
-                    gbench_srcs, thread_srcs, extras_srcs, jxl_public_hdrs,
-                    threads_public_hdrs)
+  return codecs | {'dec_box_sources': dec_box_sources,
+    'dec_jpeg_sources': dec_jpeg_sources, 'dec_sources': dec_sources,
+    'enc_sources': enc_sources,
+    'extras_for_tools_sources': extras_for_tools_sources,
+    'extras_sources': extras_sources,
+    'gbench_sources': gbench_sources, 'profiler_sources': profiler_sources,
+    'public_headers': public_headers, 'testlib_files': testlib_files,
+    'tests': tests, 'threads_public_headers': threads_public_headers,
+    'threads_sources': threads_sources,
+  }
 
 
-def CleanFile(args, filename, pattern_data_list):
-  """Replace a pattern match with new data in the passed file.
+def MaybeUpdateFile(args, filename, new_text):
+  """Optionally replace file with new contents.
 
-  Given a regular expression pattern with a single () match, it runs the regex
-  over the passed filename and replaces the match () with the new data. If
-  args.update is set, it will update the file with the new contents, otherwise
-  it will return True when no changes were needed.
-
-  Multiple pairs of (regular expression, new data) can be passed to the
-  pattern_data_list parameter and will be applied in order.
-
-  The regular expression must match at least once in the file.
+  If args.update is set, it will update the file with the new contents,
+  otherwise it will return True when no changes were needed.
   """
   filepath = os.path.join(args.src_dir, filename)
   with open(filepath, 'r') as f:
     src_text = f.read()
-
-  if not pattern_data_list:
-    return True
-
-  new_text = src_text
-
-  for pattern, data in pattern_data_list:
-    offset = 0
-    chunks = []
-    for match in re.finditer(pattern, new_text):
-      chunks.append(new_text[offset:match.start(1)])
-      offset = match.end(1)
-      chunks.append(data)
-    if not chunks:
-      raise Exception('Pattern not found for %s: %r' % (filename, pattern))
-    chunks.append(new_text[offset:])
-    new_text = ''.join(chunks)
 
   if new_text == src_text:
     return True
@@ -164,147 +156,77 @@ def CleanFile(args, filename, pattern_data_list):
       f.write(new_text)
     return True
   else:
-    with tempfile.NamedTemporaryFile(
-        mode='w', prefix=os.path.basename(filename)) as new_file:
+    prefix = os.path.basename(filename)
+    with tempfile.NamedTemporaryFile(mode='w', prefix=prefix) as new_file:
       new_file.write(new_text)
       new_file.flush()
-      subprocess.call(
-          ['diff', '-u', filepath, '--label', 'a/' + filename, new_file.name,
-           '--label', 'b/' + filename])
+      subprocess.call(['diff', '-u', filepath, '--label', 'a/' + filename,
+        new_file.name, '--label', 'b/' + filename])
     return False
+
+
+def FormatList(items, prefix, suffix):
+  return ''.join(f'{prefix}{item}{suffix}\n' for item in items)
+
+
+def FormatGniVar(name, var):
+  if type(var) is list:
+    contents = FormatList(var, '    "', '",')
+    return f'{name} = [\n{contents}]\n'
+  else:  # TODO: do we need scalar strings?
+    return f'{name} = {var}\n'
+
+
+def FormatCMakeVar(name, var):
+  if type(var) is list:
+    contents = FormatList(var, '  ', '')
+    return f'set({name}\n{contents})\n'
+  else:  # TODO: do we need scalar strings?
+    return f'set({name} {var})\n'
 
 
 def BuildCleaner(args):
   repo_files = RepoFiles(args.src_dir)
-  ok = True
 
-  # jxl version
   with open(os.path.join(args.src_dir, 'lib/CMakeLists.txt'), 'r') as f:
     cmake_text = f.read()
+  version = {'major_version': '', 'minor_version': '', 'patch_version': ''}
+  for var in version.keys():
+    cmake_var = f'JPEGXL_{var.upper()}'
+    # TODO(eustas): use `cmake -L`
+    # Regexp:
+    #   set(_varname_ _capture_decimal_)
+    match = re.search(r'set\(' + cmake_var + r' ([0-9]+)\)', cmake_text)
+    version[var] = match.group(1)
 
-  gni_patterns = []
-  for varname in ('JPEGXL_MAJOR_VERSION', 'JPEGXL_MINOR_VERSION',
-                  'JPEGXL_PATCH_VERSION'):
-    # Defined in CMakeLists.txt as "set(varname 1234)"
-    match = re.search(r'set\(' + varname + r' ([0-9]+)\)', cmake_text)
-    version_value = match.group(1)
-    gni_patterns.append((r'"' + varname + r'=([0-9]+)"', version_value))
+  lists = SplitLibFiles(repo_files)
 
-  jxl_src = SplitLibFiles(repo_files)
+  cmake_chunks = [HEAD]
+  cmake_parts = lists
+  for var in sorted(cmake_parts):
+    cmake_chunks.append(FormatCMakeVar('JPEGXL_INTERNAL_' + var.upper(), cmake_parts[var]))
 
-  # libjxl
-  jxl_cmake_patterns = []
-  jxl_cmake_patterns.append(
-      (r'set\(JPEGXL_INTERNAL_SOURCES_DEC\n([^\)]+)\)',
-       ''.join('  %s\n' % fn[len('lib/'):] for fn in jxl_src.dec_minimal)))
-  jxl_cmake_patterns.append(
-      (r'set\(JPEGXL_INTERNAL_SOURCES_ENC\n([^\)]+)\)',
-       ''.join('  %s\n' % fn[len('lib/'):] for fn in jxl_src.enc)))
-  ok = CleanFile(
-      args, 'lib/jxl.cmake',
-      jxl_cmake_patterns) and ok
+  gni_chunks = [HEAD]
+  gni_parts = version | lists
+  for var in sorted(gni_parts):
+    gni_chunks.append(FormatGniVar('libjxl_' + var, gni_parts[var]))
 
-  ok = CleanFile(
-      args, 'lib/jxl_benchmark.cmake',
-      [(r'set\(JPEGXL_INTERNAL_SOURCES_GBENCH\n([^\)]+)\)',
-        ''.join('  %s\n' % fn[len('lib/'):] for fn in jxl_src.gbench))]) and ok
-
-  gni_patterns.append((
-      r'libjxl_dec_sources = \[\n([^\]]+)\]',
-      ''.join('    "%s",\n' % fn[len('lib/'):] for fn in jxl_src.dec)))
-  gni_patterns.append((
-      r'libjxl_enc_sources = \[\n([^\]]+)\]',
-      ''.join('    "%s",\n' % fn[len('lib/'):] for fn in jxl_src.enc)))
-  gni_patterns.append((
-      r'libjxl_gbench_sources = \[\n([^\]]+)\]',
-      ''.join('    "%s",\n' % fn[len('lib/'):] for fn in jxl_src.gbench)))
-
-
-  tests = [fn[len('lib/'):] for fn in jxl_src.test if fn.endswith('_test.cc')]
-  testlib = [fn[len('lib/'):] for fn in jxl_src.test
-             if not fn.endswith('_test.cc')]
-  gni_patterns.append((
-      r'libjxl_tests_sources = \[\n([^\]]+)\]',
-      ''.join('    "%s",\n' % fn for fn in tests)))
-  gni_patterns.append((
-      r'libjxl_testlib_sources = \[\n([^\]]+)\]',
-      ''.join('    "%s",\n' % fn for fn in testlib)))
-
-  # libjxl_threads
-  ok = CleanFile(
-      args, 'lib/jxl_threads.cmake',
-      [(r'set\(JPEGXL_THREADS_SOURCES\n([^\)]+)\)',
-        ''.join('  %s\n' % fn[len('lib/'):] for fn in jxl_src.threads))]) and ok
-
-  gni_patterns.append((
-      r'libjxl_threads_sources = \[\n([^\]]+)\]',
-      ''.join('    "%s",\n' % fn[len('lib/'):] for fn in jxl_src.threads)))
-
-  # libjxl_extras
-  ok = CleanFile(
-      args, 'lib/jxl_extras.cmake',
-      [(r'set\(JPEGXL_EXTRAS_SOURCES\n([^\)]+)\)',
-        ''.join('  %s\n' % fn[len('lib/'):] for fn in jxl_src.extras))]) and ok
-
-  gni_patterns.append((
-      r'libjxl_extras_sources = \[\n([^\]]+)\]',
-      ''.join('    "%s",\n' % fn[len('lib/'):] for fn in jxl_src.extras)))
-
-  # libjxl_profiler
-  profiler_srcs = [fn[len('lib/'):] for fn in repo_files
-                   if fn.startswith('lib/profiler')]
-  ok = CleanFile(
-      args, 'lib/jxl_profiler.cmake',
-      [(r'set\(JPEGXL_PROFILER_SOURCES\n([^\)]+)\)',
-        ''.join('  %s\n' % fn for fn in profiler_srcs))]) and ok
-
-  gni_patterns.append((
-      r'libjxl_profiler_sources = \[\n([^\]]+)\]',
-      ''.join('    "%s",\n' % fn for fn in profiler_srcs)))
-
-  # Public headers.
-  gni_patterns.append((
-      r'libjxl_public_headers = \[\n([^\]]+)\]',
-      ''.join('    "%s",\n' % fn[len('lib/'):]
-              for fn in jxl_src.jxl_public_hdrs)))
-  gni_patterns.append((
-      r'libjxl_threads_public_headers = \[\n([^\]]+)\]',
-      ''.join('    "%s",\n' % fn[len('lib/'):]
-              for fn in jxl_src.threads_public_hdrs)))
-
-
-  # Update the list of tests. CMake version include test files in other libs,
-  # not just in libjxl.
-  tests = [fn[len('lib/'):] for fn in repo_files
-           if fn.endswith('_test.cc') and fn.startswith('lib/')
-           and not fn.startswith('lib/jpegli')]
-  ok = CleanFile(
-      args, 'lib/jxl_tests.cmake',
-      [(r'set\(TEST_FILES\n([^\)]+)  ### Files before this line',
-        ''.join('  %s\n' % fn for fn in tests))]) and ok
-  ok = CleanFile(
-      args, 'lib/jxl_tests.cmake',
-      [(r'set\(TESTLIB_FILES\n([^\)]+)\)',
-        ''.join('  %s\n' % fn for fn in testlib))]) and ok
-
-  # Update lib.gni
-  ok = CleanFile(args, 'lib/lib.gni', gni_patterns) and ok
-
-  return ok
+  okay = [
+    MaybeUpdateFile(args, 'lib/jxl_lists.cmake', '\n'.join(cmake_chunks)),
+    MaybeUpdateFile(args, 'lib/lib.gni', '\n'.join(gni_chunks)),
+  ]
+  return all(okay)
 
 
 def main():
   parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument('--src-dir',
-                      default=os.path.realpath(os.path.join(
-                          os.path.dirname(__file__), '..')),
-                      help='path to the build directory')
+    default=os.path.realpath(os.path.join( os.path.dirname(__file__), '..')),
+    help='path to the build directory')
   parser.add_argument('--update', default=False, action='store_true',
-                      help='update the build files instead of only checking')
+    help='update the build files instead of only checking')
   args = parser.parse_args()
-  if not BuildCleaner(args):
-    print('Build files need update.')
-    sys.exit(2)
+  Check(BuildCleaner(args), 'Build files need update.')
 
 
 if __name__ == '__main__':
