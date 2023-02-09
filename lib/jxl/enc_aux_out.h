@@ -19,7 +19,7 @@
 
 namespace jxl {
 
-class CodecInOut;
+struct ColorEncoding;
 
 // For LayerName and AuxOut::layers[] index. Order does not matter.
 enum {
@@ -139,8 +139,8 @@ struct AuxOut {
 
   jxl::InspectorImage3F inspector_image3f_;
 
-  std::function<Status(const CodecInOut&, const std::string&)> dump_image =
-      nullptr;
+  std::function<Status(Image3F&&, const ColorEncoding&, const std::string&)>
+      dump_image = nullptr;
 };
 
 extern template void AuxOut::DumpImage(const char* label,

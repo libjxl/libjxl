@@ -8,6 +8,8 @@
 #include "lib/extras/codec.h"
 #include "lib/jxl/color_management.h"
 #include "lib/jxl/enc_color_management.h"
+#include "lib/jxl/image_bundle.h"
+#include "tools/image_utils.h"
 #include "tools/ssimulacra.h"
 
 namespace ssimulacra {
@@ -37,10 +39,12 @@ int Run(int argc, char** argv) {
   jxl::CodecInOut io2;
   JXL_CHECK(SetFromFile(argv[input_arg], jxl::extras::ColorHints(), &io1));
   JXL_CHECK(SetFromFile(argv[input_arg + 1], jxl::extras::ColorHints(), &io2));
-  JXL_CHECK(io1.TransformTo(jxl::ColorEncoding::LinearSRGB(io1.Main().IsGray()),
-                            jxl::GetJxlCms()));
-  JXL_CHECK(io2.TransformTo(jxl::ColorEncoding::LinearSRGB(io2.Main().IsGray()),
-                            jxl::GetJxlCms()));
+  JXL_CHECK(jpegxl::tools::TransformCodecInOutTo(
+      io1, jxl::ColorEncoding::LinearSRGB(io1.Main().IsGray()),
+      jxl::GetJxlCms(), nullptr));
+  JXL_CHECK(jpegxl::tools::TransformCodecInOutTo(
+      io2, jxl::ColorEncoding::LinearSRGB(io2.Main().IsGray()),
+      jxl::GetJxlCms(), nullptr));
 
   if (io1.xsize() != io2.xsize() || io1.ysize() != io2.ysize()) {
     fprintf(stderr, "Image size mismatch\n");

@@ -27,6 +27,7 @@
 
 namespace jxl {
 
+// TODO(eustas): move to proper place?
 // Also used by extra channel names.
 static inline Status VisitNameString(Visitor* JXL_RESTRICT visitor,
                                      std::string* name) {

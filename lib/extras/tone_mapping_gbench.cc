@@ -24,7 +24,7 @@ static void BM_ToneMapping(benchmark::State& state) {
   linear_rec2020.white_point = WhitePoint::kD65;
   linear_rec2020.tf.SetTransferFunction(TransferFunction::kLinear);
   JXL_CHECK(linear_rec2020.CreateICC());
-  JXL_CHECK(image.TransformTo(linear_rec2020, GetJxlCms()));
+  JXL_CHECK(image.frames[0].TransformTo(linear_rec2020, GetJxlCms()));
 
   for (auto _ : state) {
     state.PauseTiming();

@@ -37,8 +37,6 @@ set(JPEGXL_EXTRAS_SOURCES
   extras/packed_image.h
   extras/packed_image_convert.cc
   extras/packed_image_convert.h
-  extras/render_hdr.cc
-  extras/render_hdr.h
   extras/time.cc
   extras/time.h
   extras/tone_mapping.cc

@@ -321,7 +321,7 @@ TEST(JxlTest, RoundtripRGBToGrayscale) {
   // Convert original to grayscale here, because TransformTo refuses to
   // convert between grayscale and RGB.
   ColorEncoding srgb_lin = ColorEncoding::LinearSRGB(/*is_gray=*/false);
-  ASSERT_TRUE(io.TransformTo(srgb_lin, GetJxlCms(), &pool));
+  ASSERT_TRUE(io.frames[0].TransformTo(srgb_lin, GetJxlCms()));
   Image3F* color = io.Main().color();
   for (size_t y = 0; y < color->ysize(); ++y) {
     float* row_r = color->PlaneRow(0, y);
@@ -333,12 +333,13 @@ TEST(JxlTest, RoundtripRGBToGrayscale) {
     }
   }
   ColorEncoding srgb_gamma = ColorEncoding::SRGB(/*is_gray=*/false);
-  ASSERT_TRUE(io.TransformTo(srgb_gamma, GetJxlCms(), &pool));
+  ASSERT_TRUE(io.frames[0].TransformTo(srgb_gamma, GetJxlCms()));
   io.metadata.m.color_encoding = io2.Main().c_current();
   io.Main().OverrideProfile(io2.Main().c_current());
-  EXPECT_THAT(ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
-                                  /*distmap=*/nullptr, &pool),
-              IsSlightlyBelow(1.7));
+  EXPECT_THAT(
+      ButteraugliDistance(io.frames, io2.frames, cparams.ba_params, GetJxlCms(),
+                          /*distmap=*/nullptr, &pool),
+      IsSlightlyBelow(1.7));
 }
 
 TEST(JxlTest, RoundtripLargeFast) {
@@ -642,7 +643,8 @@ TEST(JxlTest, RoundtripGrayscale) {
     EXPECT_TRUE(io2.Main().IsGray());
 
     EXPECT_LE(compressed.size(), 7000u);
-    EXPECT_THAT(ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
+    EXPECT_THAT(ButteraugliDistance(io.frames, io2.frames, cparams.ba_params,
+                                    GetJxlCms(),
                                     /*distmap=*/nullptr, pool),
                 IsSlightlyBelow(1.6));
   }
@@ -661,7 +663,8 @@ TEST(JxlTest, RoundtripGrayscale) {
     EXPECT_TRUE(io2.Main().IsGray());
 
     EXPECT_LE(compressed.size(), 1300u);
-    EXPECT_THAT(ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
+    EXPECT_THAT(ButteraugliDistance(io.frames, io2.frames, cparams.ba_params,
+                                    GetJxlCms(),
                                     /*distmap=*/nullptr, pool),
                 IsSlightlyBelow(6.0));
   }
@@ -681,7 +684,8 @@ TEST(JxlTest, RoundtripGrayscale) {
     EXPECT_FALSE(io2.Main().IsGray());
 
     EXPECT_LE(compressed.size(), 7000u);
-    EXPECT_THAT(ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
+    EXPECT_THAT(ButteraugliDistance(io.frames, io2.frames, cparams.ba_params,
+                                    GetJxlCms(),
                                     /*distmap=*/nullptr, pool),
                 IsSlightlyBelow(1.6));
   }
@@ -721,7 +725,8 @@ TEST(JxlTest, RoundtripAlpha) {
       dparams.use_image_callback = use_image_callback;
       dparams.unpremultiply_alpha = unpremul_alpha;
       EXPECT_TRUE(test::DecodeFile(dparams, compressed, &io2, pool));
-      EXPECT_THAT(ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
+      EXPECT_THAT(ButteraugliDistance(io.frames, io2.frames, cparams.ba_params,
+                                      GetJxlCms(),
                                       /*distmap=*/nullptr, pool),
                   IsSlightlyBelow(1.25));
     }
@@ -779,15 +784,15 @@ TEST(JxlTest, RoundtripAlphaPremultiplied) {
 
         EXPECT_EQ(unpremul_alpha, !io2.Main().AlphaIsPremultiplied());
         if (!unpremul_alpha) {
-          EXPECT_THAT(
-              ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
-                                  /*distmap=*/nullptr, pool),
-              IsSlightlyBelow(1.25));
+          EXPECT_THAT(ButteraugliDistance(io.frames, io2.frames,
+                                          cparams.ba_params, GetJxlCms(),
+                                          /*distmap=*/nullptr, pool),
+                      IsSlightlyBelow(1.25));
           EXPECT_TRUE(io2.UnpremultiplyAlpha());
           EXPECT_FALSE(io2.Main().AlphaIsPremultiplied());
         }
-        EXPECT_THAT(ButteraugliDistance(io_nopremul, io2, cparams.ba_params,
-                                        GetJxlCms(),
+        EXPECT_THAT(ButteraugliDistance(io_nopremul.frames, io2.frames,
+                                        cparams.ba_params, GetJxlCms(),
                                         /*distmap=*/nullptr, pool),
                     IsSlightlyBelow(1.5));
       }

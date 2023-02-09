@@ -11,6 +11,7 @@
 #include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/size_constraints.h"
 
 namespace jxl {
 namespace extras {

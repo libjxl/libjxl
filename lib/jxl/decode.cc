@@ -546,9 +546,6 @@ struct JxlDecoderStruct {
   }
 #endif
 
-  // Statistics which CodecInOut can keep
-  uint64_t dec_pixels;
-
   const uint8_t* next_in;
   size_t avail_in;
   bool input_closed;
@@ -737,7 +734,6 @@ void JxlDecoderRewindDecodingState(JxlDecoder* dec) {
   dec->image_out_size = 0;
   dec->image_out_bit_depth.type = JXL_BIT_DEPTH_FROM_PIXEL_FORMAT;
   dec->extra_channel_output.clear();
-  dec->dec_pixels = 0;
   dec->next_in = 0;
   dec->avail_in = 0;
   dec->input_closed = false;

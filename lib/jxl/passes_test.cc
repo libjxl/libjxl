@@ -47,9 +47,10 @@ TEST(PassesTest, RoundtripSmallPasses) {
 
   CodecInOut io2;
   Roundtrip(&io, cparams, {}, pool, &io2);
-  EXPECT_THAT(ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
-                                  /*distmap=*/nullptr, pool),
-              IsSlightlyBelow(1.1));
+  EXPECT_THAT(
+      ButteraugliDistance(io.frames, io2.frames, cparams.ba_params, GetJxlCms(),
+                          /*distmap=*/nullptr, pool),
+      IsSlightlyBelow(1.1));
 }
 
 TEST(PassesTest, RoundtripUnalignedPasses) {
@@ -66,9 +67,10 @@ TEST(PassesTest, RoundtripUnalignedPasses) {
 
   CodecInOut io2;
   Roundtrip(&io, cparams, {}, pool, &io2);
-  EXPECT_THAT(ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
-                                  /*distmap=*/nullptr, pool),
-              IsSlightlyBelow(1.72));
+  EXPECT_THAT(
+      ButteraugliDistance(io.frames, io2.frames, cparams.ba_params, GetJxlCms(),
+                          /*distmap=*/nullptr, pool),
+      IsSlightlyBelow(1.72));
 }
 
 TEST(PassesTest, RoundtripMultiGroupPasses) {
@@ -87,7 +89,8 @@ TEST(PassesTest, RoundtripMultiGroupPasses) {
     cparams.progressive_mode = true;
     CodecInOut io2;
     Roundtrip(&io, cparams, {}, &pool, &io2);
-    EXPECT_THAT(ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
+    EXPECT_THAT(ButteraugliDistance(io.frames, io2.frames, cparams.ba_params,
+                                    GetJxlCms(),
                                     /*distmap=*/nullptr, &pool),
                 IsSlightlyBelow(target_distance + threshold));
   };
@@ -138,12 +141,12 @@ TEST(PassesTest, RoundtripProgressiveConsistent) {
     EXPECT_EQ(size2, size3);
 
     // Exact same distance.
-    const float dist2 =
-        ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
-                            /*distmap=*/nullptr, &pool);
-    const float dist3 =
-        ButteraugliDistance(io, io3, cparams.ba_params, GetJxlCms(),
-                            /*distmap=*/nullptr, &pool);
+    const float dist2 = ButteraugliDistance(io.frames, io2.frames,
+                                            cparams.ba_params, GetJxlCms(),
+                                            /*distmap=*/nullptr, &pool);
+    const float dist3 = ButteraugliDistance(io.frames, io3.frames,
+                                            cparams.ba_params, GetJxlCms(),
+                                            /*distmap=*/nullptr, &pool);
     EXPECT_EQ(dist2, dist3);
   }
 }
@@ -186,7 +189,8 @@ TEST(PassesTest, AllDownsampleFeasible) {
     ASSERT_TRUE(test::DecodeFile(dparams, compressed, &output, nullptr));
     EXPECT_EQ(output.xsize(), io.xsize()) << "downsampling = " << downsampling;
     EXPECT_EQ(output.ysize(), io.ysize()) << "downsampling = " << downsampling;
-    EXPECT_LE(ButteraugliDistance(io, output, cparams.ba_params, GetJxlCms(),
+    EXPECT_LE(ButteraugliDistance(io.frames, output.frames, cparams.ba_params,
+                                  GetJxlCms(),
                                   /*distmap=*/nullptr, nullptr),
               target_butteraugli[downsampling])
         << "downsampling: " << downsampling;
@@ -233,7 +237,8 @@ TEST(PassesTest, AllDownsampleFeasibleQProgressive) {
     ASSERT_TRUE(test::DecodeFile(dparams, compressed, &output, nullptr));
     EXPECT_EQ(output.xsize(), io.xsize()) << "downsampling = " << downsampling;
     EXPECT_EQ(output.ysize(), io.ysize()) << "downsampling = " << downsampling;
-    EXPECT_LE(ButteraugliDistance(io, output, cparams.ba_params, GetJxlCms(),
+    EXPECT_LE(ButteraugliDistance(io.frames, output.frames, cparams.ba_params,
+                                  GetJxlCms(),
                                   /*distmap=*/nullptr, nullptr),
               target_butteraugli[downsampling])
         << "downsampling: " << downsampling;
@@ -282,9 +287,9 @@ TEST(PassesTest, ProgressiveDownsample2DegradesCorrectlyGrayscale) {
   ASSERT_TRUE(test::DecodeFile(dparams, compressed, &output_d2, nullptr));
 
   // 0 if reading all the passes, ~15 if skipping the 8x pass.
-  float butteraugli_distance_down2_full =
-      ButteraugliDistance(output, output_d2, cparams.ba_params, GetJxlCms(),
-                          /*distmap=*/nullptr, nullptr);
+  float butteraugli_distance_down2_full = ButteraugliDistance(
+      output.frames, output_d2.frames, cparams.ba_params, GetJxlCms(),
+      /*distmap=*/nullptr, nullptr);
 
   EXPECT_LE(butteraugli_distance_down2_full, 3.2f);
   EXPECT_GE(butteraugli_distance_down2_full, 1.0f);
@@ -328,9 +333,9 @@ TEST(PassesTest, ProgressiveDownsample2DegradesCorrectly) {
   ASSERT_TRUE(test::DecodeFile(dparams, compressed, &output_d2, nullptr));
 
   // 0 if reading all the passes, ~15 if skipping the 8x pass.
-  float butteraugli_distance_down2_full =
-      ButteraugliDistance(output, output_d2, cparams.ba_params, GetJxlCms(),
-                          /*distmap=*/nullptr, nullptr);
+  float butteraugli_distance_down2_full = ButteraugliDistance(
+      output.frames, output_d2.frames, cparams.ba_params, GetJxlCms(),
+      /*distmap=*/nullptr, nullptr);
 
   EXPECT_LE(butteraugli_distance_down2_full, 3.0f);
   EXPECT_GE(butteraugli_distance_down2_full, 1.0f);
@@ -378,9 +383,10 @@ TEST(PassesTest, RoundtripSmallNoGaborishPasses) {
 
   CodecInOut io2;
   Roundtrip(&io, cparams, {}, pool, &io2);
-  EXPECT_THAT(ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
-                                  /*distmap=*/nullptr, pool),
-              IsSlightlyBelow(1.2));
+  EXPECT_THAT(
+      ButteraugliDistance(io.frames, io2.frames, cparams.ba_params, GetJxlCms(),
+                          /*distmap=*/nullptr, pool),
+      IsSlightlyBelow(1.2));
 }
 
 }  // namespace

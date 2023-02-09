@@ -600,7 +600,9 @@ float ButteraugliDistance(const extras::PackedPixelFile& a,
   EXPECT_TRUE(ConvertPackedPixelFileToCodecInOut(a, pool, &io0));
   CodecInOut io1;
   EXPECT_TRUE(ConvertPackedPixelFileToCodecInOut(b, pool, &io1));
-  return ButteraugliDistance(io0, io1, ButteraugliParams(), GetJxlCms(),
+  // TODO(eustas): simplify?
+  return ButteraugliDistance(io0.frames, io1.frames, ButteraugliParams(),
+                             GetJxlCms(),
                              /*distmap=*/nullptr, pool);
 }
 

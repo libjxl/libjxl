@@ -14,6 +14,7 @@
 #include "lib/jxl/base/file_io.h"
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_color_management.h"
+#include "lib/jxl/enc_fields.h"
 #include "lib/jxl/enc_file.h"
 #include "lib/jxl/enc_frame.h"
 #include "lib/jxl/enc_heuristics.h"
@@ -463,7 +464,7 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
 
   metadata->m.xyb_encoded = cparams.color_transform == ColorTransform::kXYB;
 
-  JXL_RETURN_IF_ERROR(WriteHeaders(metadata.get(), &writer, nullptr));
+  JXL_RETURN_IF_ERROR(WriteCodestreamHeaders(metadata.get(), &writer, nullptr));
   writer.ZeroPadToByte();
 
   while (true) {

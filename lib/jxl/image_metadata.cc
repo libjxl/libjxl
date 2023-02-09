@@ -15,6 +15,8 @@
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_management.h"
 #include "lib/jxl/fields.h"
+#include "lib/jxl/frame_header.h"
+#include "lib/jxl/quantizer.h"
 
 namespace jxl {
 BitDepth::BitDepth() { Bundle::Init(this); }
