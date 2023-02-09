@@ -254,6 +254,25 @@ void ReadLine(const uint8_t* row_in, size_t xsize, size_t c,
   }
 }
 
+void CopyCoefficients(j_compress_ptr cinfo,
+                      std::vector<std::vector<coeff_t>>* all_coeffs) {
+  for (int c = 0; c < cinfo->num_components; c++) {
+    jpeg_component_info* comp = &cinfo->comp_info[c];
+    const size_t xsize_blocks = comp->width_in_blocks;
+    const size_t ysize_blocks = comp->height_in_blocks;
+    std::vector<coeff_t> coeffs(xsize_blocks * ysize_blocks * kDCTBlockSize);
+    for (size_t by = 0; by < ysize_blocks; ++by) {
+      JBLOCKARRAY ba = (*cinfo->mem->access_virt_barray)(
+          reinterpret_cast<j_common_ptr>(cinfo),
+          cinfo->master->coeff_buffers[c], by, 1, false);
+      JXL_ASSERT(sizeof(coeff_t) == sizeof(JCOEF));
+      memcpy(&coeffs[by * xsize_blocks * kDCTBlockSize], ba[0],
+             xsize_blocks * sizeof(ba[0][0]));
+    }
+    all_coeffs->emplace_back(std::move(coeffs));
+  }
+}
+
 struct ProgressiveScan {
   int Ss, Se, Ah, Al;
   bool interleaved;
@@ -374,6 +393,84 @@ void ValidateScanScript(j_compress_ptr cinfo) {
         JPEGLI_ERROR("Incomplete scan of component %d and frequency %d", c, k);
       }
     }
+  }
+}
+
+void ProcessCompressionParams(j_compress_ptr cinfo) {
+  if (cinfo->dest == nullptr) {
+    JPEGLI_ERROR("Missing destination.");
+  }
+  if (cinfo->image_width < 1 || cinfo->image_height < 1 ||
+      cinfo->input_components < 1) {
+    JPEGLI_ERROR("Empty input image.");
+  }
+  if (cinfo->image_width > static_cast<int>(JPEG_MAX_DIMENSION) ||
+      cinfo->image_height > static_cast<int>(JPEG_MAX_DIMENSION) ||
+      cinfo->input_components > static_cast<int>(kMaxComponents)) {
+    JPEGLI_ERROR("Input image too big.");
+  }
+  if (cinfo->num_components < 1 ||
+      cinfo->num_components > static_cast<int>(kMaxComponents)) {
+    JPEGLI_ERROR("Invalid number of components.");
+  }
+  if (cinfo->data_precision != kJpegPrecision) {
+    JPEGLI_ERROR("Invalid data precision");
+  }
+  if (cinfo->arith_code) {
+    JPEGLI_ERROR("Arithmetic coding is not implemented.");
+  }
+  if (cinfo->CCIR601_sampling) {
+    JPEGLI_ERROR("CCIR601 sampling is not implemented.");
+  }
+  if (cinfo->restart_interval > 65535u) {
+    JPEGLI_ERROR("Restart interval too big");
+  }
+  jpeg_comp_master* m = cinfo->master;
+  m->next_marker_byte = nullptr;
+  if (cinfo->scan_info != nullptr) {
+    cinfo->progressive_mode =
+        cinfo->scan_info->Ss != 0 || cinfo->scan_info->Se != DCTSIZE2 - 1;
+    ValidateScanScript(cinfo);
+  } else {
+    cinfo->progressive_mode = cinfo->master->progressive_level > 0;
+  }
+  cinfo->max_h_samp_factor = cinfo->max_v_samp_factor = 1;
+  for (int c = 0; c < cinfo->num_components; ++c) {
+    jpeg_component_info* comp = &cinfo->comp_info[c];
+    if (comp->component_index != c) {
+      JPEGLI_ERROR("Invalid component index");
+    }
+    for (int j = 0; j < c; ++j) {
+      if (cinfo->comp_info[j].component_id == comp->component_id) {
+        JPEGLI_ERROR("Duplicate component id %d", comp->component_id);
+      }
+    }
+    if (comp->h_samp_factor == 0 || comp->v_samp_factor == 0) {
+      JPEGLI_ERROR("Invalid sampling factor 0");
+    }
+    cinfo->max_h_samp_factor =
+        std::max(comp->h_samp_factor, cinfo->max_h_samp_factor);
+    cinfo->max_v_samp_factor =
+        std::max(comp->v_samp_factor, cinfo->max_v_samp_factor);
+  }
+  size_t iMCU_width = DCTSIZE * cinfo->max_h_samp_factor;
+  size_t iMCU_height = DCTSIZE * cinfo->max_v_samp_factor;
+  size_t total_iMCU_cols = DivCeil(cinfo->image_width, iMCU_width);
+  cinfo->total_iMCU_rows = DivCeil(cinfo->image_height, iMCU_height);
+  m->xsize_blocks = total_iMCU_cols * cinfo->max_h_samp_factor;
+  m->ysize_blocks = cinfo->total_iMCU_rows * cinfo->max_v_samp_factor;
+  for (int c = 0; c < cinfo->num_components; ++c) {
+    jpeg_component_info* comp = &cinfo->comp_info[c];
+    if (cinfo->max_h_samp_factor % comp->h_samp_factor != 0 ||
+        cinfo->max_v_samp_factor % comp->v_samp_factor != 0) {
+      JPEGLI_ERROR("Non-integral sampling ratios are not supported.");
+    }
+    const size_t h_factor = cinfo->max_h_samp_factor / comp->h_samp_factor;
+    const size_t v_factor = cinfo->max_v_samp_factor / comp->v_samp_factor;
+    comp->downsampled_width = DivCeil(cinfo->image_width, h_factor);
+    comp->downsampled_height = DivCeil(cinfo->image_height, v_factor);
+    comp->width_in_blocks = DivCeil(comp->downsampled_width, DCTSIZE);
+    comp->height_in_blocks = DivCeil(comp->downsampled_height, DCTSIZE);
   }
 }
 
@@ -613,83 +710,8 @@ void jpegli_suppress_tables(j_compress_ptr cinfo, boolean suppress) {
 
 void jpegli_start_compress(j_compress_ptr cinfo, boolean write_all_tables) {
   CheckState(cinfo, jpegli::kEncStart);
-  if (cinfo->dest == nullptr) {
-    JPEGLI_ERROR("Missing destination.");
-  }
-  if (cinfo->image_width < 1 || cinfo->image_height < 1 ||
-      cinfo->input_components < 1) {
-    JPEGLI_ERROR("Empty input image.");
-  }
-  if (cinfo->image_width > static_cast<int>(JPEG_MAX_DIMENSION) ||
-      cinfo->image_height > static_cast<int>(JPEG_MAX_DIMENSION) ||
-      cinfo->input_components > static_cast<int>(jpegli::kMaxComponents)) {
-    JPEGLI_ERROR("Input image too big.");
-  }
-  if (cinfo->num_components < 1 ||
-      cinfo->num_components > static_cast<int>(jpegli::kMaxComponents)) {
-    JPEGLI_ERROR("Invalid number of components.");
-  }
-  if (cinfo->data_precision != jpegli::kJpegPrecision) {
-    JPEGLI_ERROR("Invalid data precision");
-  }
-  if (cinfo->arith_code) {
-    JPEGLI_ERROR("Arithmetic coding is not implemented.");
-  }
-  if (cinfo->CCIR601_sampling) {
-    JPEGLI_ERROR("CCIR601 sampling is not implemented.");
-  }
-  if (cinfo->restart_interval > 65535u) {
-    JPEGLI_ERROR("Restart interval too big");
-  }
-  cinfo->global_state = jpegli::kEncHeader;
+  jpegli::ProcessCompressionParams(cinfo);
   jpeg_comp_master* m = cinfo->master;
-  cinfo->next_scanline = 0;
-  m->next_marker_byte = nullptr;
-  if (cinfo->scan_info != nullptr) {
-    cinfo->progressive_mode =
-        cinfo->scan_info->Ss != 0 || cinfo->scan_info->Se != DCTSIZE2 - 1;
-    jpegli::ValidateScanScript(cinfo);
-  } else {
-    cinfo->progressive_mode = cinfo->master->progressive_level > 0;
-  }
-  cinfo->max_h_samp_factor = cinfo->max_v_samp_factor = 1;
-  for (int c = 0; c < cinfo->num_components; ++c) {
-    jpeg_component_info* comp = &cinfo->comp_info[c];
-    if (comp->component_index != c) {
-      JPEGLI_ERROR("Invalid component index");
-    }
-    for (int j = 0; j < c; ++j) {
-      if (cinfo->comp_info[j].component_id == comp->component_id) {
-        JPEGLI_ERROR("Duplicate component id %d", comp->component_id);
-      }
-    }
-    if (comp->h_samp_factor == 0 || comp->v_samp_factor == 0) {
-      JPEGLI_ERROR("Invalid sampling factor 0");
-    }
-    cinfo->max_h_samp_factor =
-        std::max(comp->h_samp_factor, cinfo->max_h_samp_factor);
-    cinfo->max_v_samp_factor =
-        std::max(comp->v_samp_factor, cinfo->max_v_samp_factor);
-  }
-  size_t iMCU_width = DCTSIZE * cinfo->max_h_samp_factor;
-  size_t iMCU_height = DCTSIZE * cinfo->max_v_samp_factor;
-  size_t total_iMCU_cols = jpegli::DivCeil(cinfo->image_width, iMCU_width);
-  cinfo->total_iMCU_rows = jpegli::DivCeil(cinfo->image_height, iMCU_height);
-  m->xsize_blocks = total_iMCU_cols * cinfo->max_h_samp_factor;
-  m->ysize_blocks = cinfo->total_iMCU_rows * cinfo->max_v_samp_factor;
-  for (int c = 0; c < cinfo->num_components; ++c) {
-    jpeg_component_info* comp = &cinfo->comp_info[c];
-    if (cinfo->max_h_samp_factor % comp->h_samp_factor != 0 ||
-        cinfo->max_v_samp_factor % comp->v_samp_factor != 0) {
-      JPEGLI_ERROR("Non-integral sampling ratios are not supported.");
-    }
-    const size_t h_factor = cinfo->max_h_samp_factor / comp->h_samp_factor;
-    const size_t v_factor = cinfo->max_v_samp_factor / comp->v_samp_factor;
-    comp->downsampled_width = jpegli::DivCeil(cinfo->image_width, h_factor);
-    comp->downsampled_height = jpegli::DivCeil(cinfo->image_height, v_factor);
-    comp->width_in_blocks = jpegli::DivCeil(comp->downsampled_width, DCTSIZE);
-    comp->height_in_blocks = jpegli::DivCeil(comp->downsampled_height, DCTSIZE);
-  }
   size_t stride = m->xsize_blocks * DCTSIZE;
   for (int c = 0; c < cinfo->input_components; ++c) {
     m->input_buffer[c].Allocate(m->ysize_blocks * DCTSIZE, stride);
@@ -697,6 +719,19 @@ void jpegli_start_compress(j_compress_ptr cinfo, boolean write_all_tables) {
   if (write_all_tables) {
     jpegli_suppress_tables(cinfo, FALSE);
   }
+  cinfo->next_scanline = 0;
+  cinfo->global_state = jpegli::kEncHeader;
+}
+
+void jpegli_write_coefficients(j_compress_ptr cinfo,
+                               jvirt_barray_ptr* coef_arrays) {
+  CheckState(cinfo, jpegli::kEncStart);
+  jpegli::ProcessCompressionParams(cinfo);
+  (*cinfo->mem->realize_virt_arrays)(reinterpret_cast<j_common_ptr>(cinfo));
+  cinfo->master->coeff_buffers = coef_arrays;
+  jpegli_suppress_tables(cinfo, FALSE);
+  cinfo->next_scanline = cinfo->image_height;
+  cinfo->global_state = jpegli::kEncWriteCoeffs;
 }
 
 void jpegli_write_tables(j_compress_ptr cinfo) {
@@ -722,7 +757,7 @@ void jpegli_write_tables(j_compress_ptr cinfo) {
 
 void jpegli_write_m_header(j_compress_ptr cinfo, int marker,
                            unsigned int datalen) {
-  CheckState(cinfo, jpegli::kEncHeader);
+  CheckState(cinfo, jpegli::kEncHeader, jpegli::kEncWriteCoeffs);
   jpeg_comp_master* m = cinfo->master;
   if (datalen > jpegli::kMaxBytesInMarker) {
     JPEGLI_ERROR("Invalid marker length %u", datalen);
@@ -846,12 +881,14 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
                  cinfo->image_height, cinfo->next_scanline);
   }
 
-  if (!cinfo->raw_data_in) {
+  if (!cinfo->raw_data_in && cinfo->global_state != jpegli::kEncWriteCoeffs) {
     jpegli::ColorTransform(cinfo);
     jpegli::PadInputToBlockMultiple(cinfo);
     jpegli::DownsampleComponents(cinfo);
   }
-  jpegli::ComputeAdaptiveQuantField(cinfo);
+  if (cinfo->global_state != jpegli::kEncWriteCoeffs) {
+    jpegli::ComputeAdaptiveQuantField(cinfo);
+  }
 
   //
   // Start writing to the bitstream
@@ -884,7 +921,11 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
   jpegli::EncodeSOF(cinfo);
 
   std::vector<std::vector<jpegli::coeff_t>> coeffs;
-  jpegli::ComputeDCTCoefficients(cinfo, &coeffs);
+  if (cinfo->global_state == jpegli::kEncWriteCoeffs) {
+    jpegli::CopyCoefficients(cinfo, &coeffs);
+  } else {
+    jpegli::ComputeDCTCoefficients(cinfo, &coeffs);
+  }
 
   if (cinfo->scan_info == nullptr) {
     jpegli::SetDefaultScanScript(cinfo);
