@@ -104,7 +104,7 @@ void jpegli_CreateDecompress(j_decompress_ptr cinfo, int version,
   if (structsize != sizeof(*cinfo)) {
     JPEGLI_ERROR("jpeg_decompress_struct has wrong size.");
   }
-  cinfo->mem = jpegli::CreateMemoryManager();
+  jpegli::InitMemoryManager(reinterpret_cast<j_common_ptr>(cinfo));
   cinfo->is_decompressor = TRUE;
   cinfo->src = nullptr;
   cinfo->marker_list = nullptr;
