@@ -131,7 +131,7 @@ Status EncodeFile(const CompressParams& params, const CodecInOut* io,
   // Clean up passes_enc_state in case it gets reused.
   for (size_t i = 0; i < 4; i++) {
     passes_enc_state->shared.dc_frames[i] = Image3F();
-    passes_enc_state->shared.reference_frames[i].storage = ImageBundle();
+    passes_enc_state->shared.reference_frames[i].frame = ImageBundle();
   }
 
   *compressed = std::move(writer).TakeBytes();
