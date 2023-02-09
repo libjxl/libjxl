@@ -392,7 +392,7 @@ void jpegli_CreateCompress(j_compress_ptr cinfo, int version,
   if (structsize != sizeof(*cinfo)) {
     JPEGLI_ERROR("jpegli_compress_struct has wrong size.");
   }
-  cinfo->mem = jpegli::CreateMemoryManager();
+  jpegli::InitMemoryManager(reinterpret_cast<j_common_ptr>(cinfo));
   cinfo->progress = nullptr;
   cinfo->is_decompressor = FALSE;
   cinfo->global_state = jpegli::kEncStart;
