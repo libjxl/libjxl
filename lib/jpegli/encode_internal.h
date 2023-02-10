@@ -76,6 +76,7 @@ struct jpeg_comp_master {
   std::array<jpegli::HuffmanCodeTable, jpegli::kMaxHuffmanTables> ac_huff_table;
   jpegli::RowBuffer<float> quant_field;
   float quant_field_max = jpegli::kDefaultQuantFieldMax;
+  jvirt_barray_ptr* coeff_buffers = nullptr;
 };
 
 #endif  // LIB_JPEGLI_ENCODE_INTERNAL_H_
