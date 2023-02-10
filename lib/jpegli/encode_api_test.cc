@@ -301,6 +301,8 @@ void TestDecodedImage(const TestConfig& config,
     jpeg_save_markers(&cinfo, kSpecialMarker, 0xffff);
   }
   EXPECT_EQ(JPEG_REACHED_SOS, jpeg_read_header(&cinfo, /*require_image=*/TRUE));
+  jxl::msan::UnpoisonMemory(cinfo.comp_info,
+                            cinfo.num_components * sizeof(cinfo.comp_info[0]));
   EXPECT_EQ(config.xsize, cinfo.image_width);
   EXPECT_EQ(config.ysize, cinfo.image_height);
   EXPECT_EQ(config.input_components, cinfo.num_components);
@@ -329,7 +331,6 @@ void TestDecodedImage(const TestConfig& config,
     }
     EXPECT_TRUE(marker_found);
   }
-#if !JXL_MEMORY_SANITIZER
   if (config.custom_component_ids) {
     for (int i = 0; i < cinfo.num_components; ++i) {
       EXPECT_EQ(cinfo.comp_info[i].component_id, config.comp_id[i]);
@@ -347,13 +348,13 @@ void TestDecodedImage(const TestConfig& config,
     }
     for (const auto& table : config.quant_tables) {
       JQUANT_TBL* quant_table = cinfo.quant_tbl_ptrs[table.slot_idx];
+      jxl::msan::UnpoisonMemory(quant_table, sizeof(*quant_table));
       ASSERT_TRUE(quant_table != nullptr);
       for (int k = 0; k < DCTSIZE2; ++k) {
         EXPECT_EQ(quant_table->quantval[k], table.quantval[k]);
       }
     }
   }
-#endif
   if (config.write_coeffs) {
     j_common_ptr comptr = reinterpret_cast<j_common_ptr>(&cinfo);
     jvirt_barray_ptr* coef_arrays = jpeg_read_coefficients(&cinfo);
@@ -379,12 +380,10 @@ void TestDecodedImage(const TestConfig& config,
         ASSERT_LE(cinfo.input_scan_number, script.num_scans);
         const jpeg_scan_info& scan = script.scans[cinfo.input_scan_number - 1];
         ASSERT_EQ(cinfo.comps_in_scan, scan.comps_in_scan);
-#if !JXL_MEMORY_SANITIZER
         for (int i = 0; i < cinfo.comps_in_scan; ++i) {
           EXPECT_EQ(cinfo.cur_comp_info[i]->component_index,
                     scan.component_index[i]);
         }
-#endif
         EXPECT_EQ(cinfo.Ss, scan.Ss);
         EXPECT_EQ(cinfo.Se, scan.Se);
         EXPECT_EQ(cinfo.Ah, scan.Ah);
