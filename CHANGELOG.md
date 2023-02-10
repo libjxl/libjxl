@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 ### Changed 
- - changed a name of a cjxl flag from `photon_noise` to `photon_noise_iso`
+ - changed the name of the cjxl flag `photon_noise` to `photon_noise_iso`
 
 ## [0.8.0] - 2022-01-18
 
