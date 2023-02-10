@@ -982,6 +982,9 @@ JxlEncoderFrameSettings* JxlEncoderFrameSettingsCreate(
     opts->values.lossless = false;
   }
   opts->values.cparams.level = enc->codestream_level;
+  opts->values.cparams.ec_distance.resize(enc->metadata.m.num_extra_channels,
+                                          -1);
+
   JxlEncoderFrameSettings* ret = opts.get();
   enc->encoder_options.emplace_back(std::move(opts));
   return ret;
@@ -1028,6 +1031,33 @@ JxlEncoderStatus JxlEncoderSetFrameDistance(
     distance = 0.01f;
   }
   frame_settings->values.cparams.butteraugli_distance = distance;
+  return JXL_ENC_SUCCESS;
+}
+
+JxlEncoderStatus JxlEncoderSetExtraChannelDistance(
+    JxlEncoderFrameSettings* frame_settings, size_t index, float distance) {
+  if (index >= frame_settings->enc->metadata.m.num_extra_channels) {
+    return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
+                         "Invalid value for the index of extra channel");
+  }
+  if (distance != -1.f && (distance < 0.f || distance > 25.f)) {
+    return JXL_API_ERROR(
+        frame_settings->enc, JXL_ENC_ERR_API_USAGE,
+        "Distance has to be -1 or in [0.0..25.0] (corresponding to "
+        "quality in [0.0..100.0])");
+  }
+  if (distance > 0.f && distance < 0.01f) {
+    distance = 0.01f;
+  }
+
+  if (index >= frame_settings->values.cparams.ec_distance.size()) {
+    // This can only happen if JxlEncoderFrameSettingsCreate() was called before
+    // JxlEncoderSetBasicInfo().
+    frame_settings->values.cparams.ec_distance.resize(
+        frame_settings->enc->metadata.m.num_extra_channels, -1);
+  }
+
+  frame_settings->values.cparams.ec_distance[index] = distance;
   return JXL_ENC_SUCCESS;
 }
 
