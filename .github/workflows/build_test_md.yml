@@ -24,9 +24,9 @@ jobs:
           - name: asan
           - name: release-nojpeg
           - name: release:gcc8
-      runs-on: ubuntu-latest
-      steps:
-        - run: 'echo "markdown only changes: no build required"'
+    runs-on: ubuntu-latest
+    steps:
+      - run: 'echo "markdown only changes: no build required"'
 
   windows_msys:
     name: Windows MSYS2 / ${{ matrix.msystem }}
