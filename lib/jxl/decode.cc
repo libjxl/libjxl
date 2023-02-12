@@ -720,7 +720,7 @@ void JxlDecoderRewindDecodingState(JxlDecoder* dec) {
   dec->recon_output_jpeg = JpegReconStage::kNone;
 #endif
 
-  dec->events_wanted = 0;
+  dec->events_wanted = dec->orig_events_wanted;
   dec->basic_info_size_hint = InitialBasicInfoSizeHint();
   dec->have_container = 0;
   dec->box_count = 0;
@@ -773,6 +773,7 @@ void JxlDecoderReset(JxlDecoder* dec) {
   dec->coalescing = true;
   dec->desired_intensity_target = 0;
   dec->orig_events_wanted = 0;
+  dec->events_wanted = 0;
   dec->frame_references.clear();
   dec->frame_saved_as.clear();
   dec->frame_external_to_internal.clear();
