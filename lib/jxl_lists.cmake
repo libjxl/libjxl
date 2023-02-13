@@ -449,6 +449,62 @@ set(JPEGXL_INTERNAL_GBENCH_SOURCES
   jxl/tf_gbench.cc
 )
 
+set(JPEGXL_INTERNAL_JPEGLI_SOURCES
+  jpegli/adaptive_quantization.cc
+  jpegli/adaptive_quantization.h
+  jpegli/bitstream.cc
+  jpegli/bitstream.h
+  jpegli/color_transform.cc
+  jpegli/color_transform.h
+  jpegli/common.cc
+  jpegli/common.h
+  jpegli/common_internal.h
+  jpegli/dct.cc
+  jpegli/dct.h
+  jpegli/decode.cc
+  jpegli/decode.h
+  jpegli/decode_internal.h
+  jpegli/decode_marker.cc
+  jpegli/decode_marker.h
+  jpegli/decode_scan.cc
+  jpegli/decode_scan.h
+  jpegli/destination_manager.cc
+  jpegli/encode.cc
+  jpegli/encode.h
+  jpegli/encode_internal.h
+  jpegli/entropy_coding.cc
+  jpegli/entropy_coding.h
+  jpegli/error.cc
+  jpegli/error.h
+  jpegli/huffman.cc
+  jpegli/huffman.h
+  jpegli/idct.cc
+  jpegli/idct.h
+  jpegli/memory_manager.cc
+  jpegli/memory_manager.h
+  jpegli/quant.cc
+  jpegli/quant.h
+  jpegli/render.cc
+  jpegli/render.h
+  jpegli/source_manager.cc
+  jpegli/source_manager.h
+  jpegli/upsample.cc
+  jpegli/upsample.h
+)
+
+set(JPEGXL_INTERNAL_JPEGLI_TESTLIB_FILES
+  jpegli/test_utils.h
+)
+
+set(JPEGXL_INTERNAL_JPEGLI_TESTS
+  jpegli/decode_api_test.cc
+  jpegli/encode_api_test.cc
+)
+
+set(JPEGXL_INTERNAL_JPEGLI_WRAPPER_SOURCES
+  jpegli/libjpeg_wrapper.cc
+)
+
 set(JPEGXL_INTERNAL_PROFILER_SOURCES
   profiler/profiler.cc
   profiler/profiler.h

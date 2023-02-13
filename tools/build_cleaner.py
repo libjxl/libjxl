@@ -74,14 +74,16 @@ def SplitLibFiles(repo_files):
   srcs, _ = Filter(srcs, HasSuffixFn('.cc', '.h', '.ui'))
   srcs.sort()
 
-  # TODO(eustas): why?
-  _, srcs = Filter(srcs, HasPrefixFn('jpegli'))
+  # Let's keep Jpegli sources a bit separate for a while.
+  jpegli_srcs, srcs = Filter(srcs, HasPrefixFn('jpegli'))
   # TODO(eustas): move to tools?
   _, srcs = Filter(srcs, HasSuffixFn('gbench_main.cc'))
 
   # First pick files scattered across directories.
   tests, srcs = Filter(srcs, HasSuffixFn('_test.cc'))
+  jpegli_tests, jpegli_srcs = Filter(jpegli_srcs, HasSuffixFn('_test.cc'))
   testlib_files, srcs = Filter(srcs, ContainsFn('test'))
+  jpegli_testlib_files, jpegli_srcs = Filter(jpegli_srcs, ContainsFn('test'))
   gbench_sources, srcs = Filter(srcs, HasSuffixFn('_gbench.cc'))
 
   extras_sources, srcs = Filter(srcs, HasPrefixFn('extras/'))
@@ -91,6 +93,9 @@ def SplitLibFiles(repo_files):
   threads_sources, srcs = Filter(srcs, HasPrefixFn('threads/'))
 
   Check(len(srcs) == 0, 'Orphan source files: ' + str(srcs))
+
+  jpegli_wrapper_sources, jpegli_srcs = Filter(jpegli_srcs, HasSuffixFn('libjpeg_wrapper.cc'))
+  jpegli_sources = jpegli_srcs
 
   threads_public_headers, public_headers = Filter(
       public_headers, ContainsFn('_parallel_runner'))
@@ -129,10 +134,12 @@ def SplitLibFiles(repo_files):
     'dec_jpeg_sources': dec_jpeg_sources, 'dec_sources': dec_sources,
     'enc_sources': enc_sources,
     'extras_for_tools_sources': extras_for_tools_sources,
-    'extras_sources': extras_sources,
-    'gbench_sources': gbench_sources, 'profiler_sources': profiler_sources,
-    'public_headers': public_headers, 'testlib_files': testlib_files,
-    'tests': tests, 'threads_public_headers': threads_public_headers,
+    'extras_sources': extras_sources, 'gbench_sources': gbench_sources,
+    'jpegli_sources': jpegli_sources, 'jpegli_testlib_files': jpegli_testlib_files,
+    'jpegli_tests': jpegli_tests, 'jpegli_wrapper_sources' : jpegli_wrapper_sources,
+    'profiler_sources': profiler_sources, 'public_headers': public_headers,
+    'testlib_files': testlib_files, 'tests': tests,
+    'threads_public_headers': threads_public_headers,
     'threads_sources': threads_sources,
   }
 

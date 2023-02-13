@@ -8,6 +8,10 @@
 #include "gtest/gtest.h"
 #include "lib/jxl/base/file_io.h"
 
+#if !defined(TEST_DATA_PATH)
+#include "tools/cpp/runfiles/runfiles.h"
+#endif
+
 // googletest before 1.10 didn't define INSTANTIATE_TEST_SUITE_P() but instead
 // used INSTANTIATE_TEST_CASE_P which is now deprecated.
 #ifdef INSTANTIATE_TEST_SUITE_P
@@ -18,9 +22,22 @@
 
 namespace jpegli {
 
+#if defined(TEST_DATA_PATH)
+std::string GetTestDataPath(const std::string& filename) {
+  return std::string(TEST_DATA_PATH "/") + filename;
+}
+#else
+using bazel::tools::cpp::runfiles::Runfiles;
+const std::unique_ptr<Runfiles> kRunfiles(Runfiles::Create(""));
+std::string GetTestDataPath(const std::string& filename) {
+  return kRunfiles->Rlocation("__main__/testdata/" + filename);
+}
+#endif
+
 static inline std::vector<uint8_t> ReadTestData(const std::string& filename) {
-  std::string full_path = std::string(TEST_DATA_PATH "/") + filename;
+  std::string full_path = GetTestDataPath(filename);
   std::vector<uint8_t> data;
+  fprintf(stderr, "ReadTestData %s\n", full_path.c_str());
   JXL_CHECK(jxl::ReadFile(full_path, &data));
   printf("Test data %s is %d bytes long.\n", filename.c_str(),
          static_cast<int>(data.size()));
