@@ -3,6 +3,7 @@ package(default_visibility = ['//:__subpackages__'])
 load('jxl_lists.bzl',
     'libjxl_base_sources',
     'libjxl_codec_apng_sources',
+    'libjxl_codec_exr_sources',
     'libjxl_codec_gif_sources',
     'libjxl_codec_jpegli_sources',
     'libjxl_codec_jpg_sources',
@@ -34,6 +35,7 @@ load('jxl_lists.bzl',
 
 load('jxl_vars.bzl',
     'libjxl_deps_brotli',
+    'libjxl_deps_exr',
     'libjxl_deps_gif',
     'libjxl_deps_gtest',
     'libjxl_deps_hwy_nanobenchmark',
@@ -136,7 +138,7 @@ cc_library(
     deps = [':jpegxl_private'],
 )
 
-CODEC_FILES = libjxl_codec_apng_sources + libjxl_codec_gif_sources + libjxl_codec_jpegli_sources + libjxl_codec_jpg_sources + libjxl_codec_jxl_sources + libjxl_codec_npy_sources + libjxl_codec_pgx_sources + libjxl_codec_pnm_sources
+CODEC_FILES = libjxl_codec_apng_sources + libjxl_codec_exr_sources + libjxl_codec_gif_sources + libjxl_codec_jpegli_sources + libjxl_codec_jpg_sources + libjxl_codec_jxl_sources + libjxl_codec_npy_sources + libjxl_codec_pgx_sources + libjxl_codec_pnm_sources
 CODEC_SRCS = [path for path in CODEC_FILES if path.endswith('.cc')]
 CODEC_HDRS = [path for path in CODEC_FILES if path.endswith('.h')]
 
@@ -158,7 +160,7 @@ cc_library(
     hdrs = CODEC_HDRS,
     defines = [
         'JPEGXL_ENABLE_APNG=1',
-        'JPEGXL_ENABLE_EXR=0', # TODO(eustas): add
+        'JPEGXL_ENABLE_EXR=1',
         'JPEGXL_ENABLE_GIF=1',
         'JPEGXL_ENABLE_JPEG=1',
         'JPEGXL_ENABLE_JPEGLI=1',
@@ -168,7 +170,7 @@ cc_library(
         ':jpegxl_private',
         ':jpegxl_threads',
         ':jpegxl_version'
-    ] + libjxl_deps_gif + libjxl_deps_jpeg + libjxl_deps_png
+    ] + libjxl_deps_exr + libjxl_deps_gif + libjxl_deps_jpeg + libjxl_deps_png
 )
 
 TESTLIB_FILES = libjxl_testlib_files + libjxl_jpegli_testlib_files
