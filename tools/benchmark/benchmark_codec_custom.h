@@ -40,6 +40,7 @@
 namespace jxl {
 
 ImageCodec* CreateNewCustomCodec(const BenchmarkArgs& args);
+Status AddCommandLineOptionsCustomCodec(BenchmarkArgs* args);
 
 }  // namespace jxl
 
