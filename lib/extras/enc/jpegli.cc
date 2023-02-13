@@ -26,14 +26,6 @@ void MyErrorExit(j_common_ptr cinfo) {
   longjmp(*env, 1);
 }
 
-bool IsSRGBEncoding(const JxlColorEncoding& c) {
-  return ((c.color_space == JXL_COLOR_SPACE_RGB ||
-           c.color_space == JXL_COLOR_SPACE_GRAY) &&
-          c.primaries == JXL_PRIMARIES_SRGB &&
-          c.white_point == JXL_WHITE_POINT_D65 &&
-          c.transfer_function == JXL_TRANSFER_FUNCTION_SRGB);
-}
-
 Status VerifyInput(const PackedPixelFile& ppf) {
   const JxlBasicInfo& info = ppf.info;
   JXL_RETURN_IF_ERROR(Encoder::VerifyBasicInfo(info));

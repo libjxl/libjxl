@@ -1,10 +1,9 @@
 package(default_visibility = ['//:__subpackages__'])
 
-load('lib.bzl',
+load('jxl_lists.bzl',
     'libjxl_codec_apng_sources',
-    #'libjxl_codec_exr_sources',
     'libjxl_codec_gif_sources',
-    #'libjxl_codec_jpegli_sources',
+    'libjxl_codec_jpegli_sources',
     'libjxl_codec_jpg_sources',
     'libjxl_codec_jxl_sources',
     'libjxl_codec_npy_sources',
@@ -16,16 +15,37 @@ load('lib.bzl',
     'libjxl_enc_sources',
     'libjxl_extras_for_tools_sources',
     'libjxl_extras_sources',
-    #'libjxl_gbench_sources',
+    'libjxl_jpegli_sources',
+    'libjxl_jpegli_testlib_files',
+    'libjxl_jpegli_tests',
     'libjxl_major_version',
     'libjxl_minor_version',
     'libjxl_patch_version',
-    #'libjxl_profiler_sources',
     'libjxl_public_headers',
     'libjxl_testlib_files',
     'libjxl_tests',
     'libjxl_threads_public_headers',
     'libjxl_threads_sources',
+    #'libjxl_codec_exr_sources',
+    #'libjxl_gbench_sources',
+    #'libjxl_profiler_sources',
+)
+
+load('jxl_vars.bzl',
+    'libjxl_deps_brotli',
+    'libjxl_deps_gif',
+    'libjxl_deps_gtest',
+    'libjxl_deps_hwy_nanobenchmark',
+    'libjxl_deps_hwy_test_util',
+    'libjxl_deps_hwy',
+    'libjxl_deps_jpeg',
+    'libjxl_deps_jxl_box',
+    'libjxl_deps_png',
+    'libjxl_deps_runfiles',
+    'libjxl_deps_skcms',
+    'libjxl_deps_testdata',
+    'libjxl_test_shards',
+    'libjxl_test_timeouts',
 )
 
 load('@bazel_skylib//rules:expand_template.bzl', 'expand_template')
@@ -87,11 +107,7 @@ cc_library(
     defines = ['JPEGXL_ENABLE_SKCMS=1'],
     deps = [
         ':jpegxl_version',
-        '@brotli//:brotlidec',
-        '@brotli//:brotlienc',
-        '@highway//:hwy',
-        '@skcms//:skcms',
-    ],
+    ] + libjxl_deps_brotli + libjxl_deps_hwy + libjxl_deps_skcms
 )
 
 cc_library(
@@ -103,9 +119,20 @@ cc_library(
     deps = [':jpegxl_private'],
 )
 
-CODEC_FILES = libjxl_codec_apng_sources + libjxl_codec_gif_sources + libjxl_codec_jpg_sources + libjxl_codec_jxl_sources + libjxl_codec_npy_sources + libjxl_codec_pgx_sources + libjxl_codec_pnm_sources
+CODEC_FILES = libjxl_codec_apng_sources + libjxl_codec_gif_sources + libjxl_codec_jpegli_sources + libjxl_codec_jpg_sources + libjxl_codec_jxl_sources + libjxl_codec_npy_sources + libjxl_codec_pgx_sources + libjxl_codec_pnm_sources
 CODEC_SRCS = [path for path in CODEC_FILES if path.endswith('.cc')]
 CODEC_HDRS = [path for path in CODEC_FILES if path.endswith('.h')]
+
+cc_library(
+    name = 'jpegli',
+    srcs = libjxl_jpegli_sources,
+    hdrs = [
+        'jpegli/common_internal.h', # TODO(eustas): should not be here
+    ],
+    deps = [
+        ':jpegxl_private',
+    ] + libjxl_deps_hwy + libjxl_deps_jpeg,
+)
 
 # TODO(eustas): build codecs separately?
 cc_library(
@@ -117,69 +144,44 @@ cc_library(
         'JPEGXL_ENABLE_EXR=0', # TODO(eustas): add
         'JPEGXL_ENABLE_GIF=1',
         'JPEGXL_ENABLE_JPEG=1',
+        'JPEGXL_ENABLE_JPEGLI=1',
     ],
     deps = [
+        ':jpegli',
         ':jpegxl_private',
         ':jpegxl_threads',
-        ':jpegxl_version',
-        '@gif//:gif',
-        '@libjpeg_turbo//:jpeg',
-        '@png//:png',
-    ],
+        ':jpegxl_version'
+    ] + libjxl_deps_gif + libjxl_deps_jpeg + libjxl_deps_png
 )
+
+TESTLIB_FILES = libjxl_testlib_files + libjxl_jpegli_testlib_files
 
 cc_library(
     name = 'test_utils',
     testonly = 1,
-    srcs = [src for src in libjxl_testlib_files if not src.endswith('.h')],
-    hdrs = [src for src in libjxl_testlib_files if src.endswith('.h')],
+    srcs = [src for src in TESTLIB_FILES if not src.endswith('.h')],
+    hdrs = [src for src in TESTLIB_FILES if src.endswith('.h')],
     deps = [
         ':jpegxl_extras',
         ':jpegxl_private',
-        '@bazel_tools//tools/cpp/runfiles',
-    ],
+        ':jpegli',
+    ] + libjxl_deps_runfiles
 )
 
-TESTS = [src.partition('.')[0] for src in libjxl_tests]
-
-# TODO(eustas): move to lib.bzl?
-TEST_SHARDS = {
-    'jxl/ans_test' : 2,
-    'jxl/linalg_test' : 2,
-    'jxl/modular_test' : 4,
-    'jxl/roundtrip_test' : 4,
-    'jxl/xorshift128plus_test' : 2,
-    'jxl/ac_strategy_test' : 10, # TODO(eustas): separate heavy shard
-    'jxl/dct_test' : 32,
-    'jxl/decode_test' : 10, # TODO(eustas): separate heavy shard
-    'jxl/fast_dct_test' : 8, # TODO(eustas): separate ultra-heavy shard
-    'jxl/fast_math_test' : 10, # TODO(eustas): separate heavy shard
-    'jxl/jxl_test' : 10, # TODO(eustas): separate heavy shard
-    'jxl/render_pipeline/render_pipeline_test' : 10, # ? ->
-}
-
-# TODO(eustas): move to lib.bzl?
-TEST_TIMEOUTS = {
-    'jxl/fast_dct_test' : 'long',
-    'jxl/dct_test' : 'long',
-}
+TESTS = [src.partition('.')[0] for src in libjxl_tests + libjxl_jpegli_tests]
 
 [
     cc_test(
         name = test,
         srcs = [test + '.cc'],
         data = ['//:testdata'],
-        timeout = TEST_TIMEOUTS.get(test, 'moderate'),
-        shard_count = TEST_SHARDS.get(test, 1),
+        timeout = libjxl_test_timeouts.get(test, 'moderate'),
+        shard_count = libjxl_test_shards.get(test, 1),
         deps = [
             ':jpegxl_extras',
             ':jpegxl_private',
             ':jpegxl_threads',  # Some tests use the public threads API.
             ':test_utils',
-            '@googletest//:gtest_main',
-            '@highway//:hwy_test_util',
-            '@highway//:nanobenchmark',
-            '//tools:box',
-        ],
+        ] + libjxl_deps_gtest + libjxl_deps_hwy_test_util + libjxl_deps_hwy_nanobenchmark + libjxl_deps_jxl_box
     ) for test in TESTS
 ]

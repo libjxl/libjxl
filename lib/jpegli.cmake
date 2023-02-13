@@ -4,49 +4,7 @@
 # license that can be found in the LICENSE file.
 
 include(compatibility.cmake)
-
-set(JPEGLI_INTERNAL_SOURCES
-  jpegli/adaptive_quantization.h
-  jpegli/adaptive_quantization.cc
-  jpegli/bitstream.h
-  jpegli/bitstream.cc
-  jpegli/color_transform.h
-  jpegli/color_transform.cc
-  jpegli/common_internal.h
-  jpegli/common.h
-  jpegli/common.cc
-  jpegli/dct.h
-  jpegli/dct.cc
-  jpegli/decode.h
-  jpegli/decode.cc
-  jpegli/decode_internal.h
-  jpegli/decode_marker.h
-  jpegli/decode_marker.cc
-  jpegli/decode_scan.h
-  jpegli/decode_scan.cc
-  jpegli/destination_manager.cc
-  jpegli/encode.h
-  jpegli/encode.cc
-  jpegli/encode_internal.h
-  jpegli/entropy_coding.h
-  jpegli/entropy_coding.cc
-  jpegli/error.h
-  jpegli/error.cc
-  jpegli/huffman.h
-  jpegli/huffman.cc
-  jpegli/idct.h
-  jpegli/idct.cc
-  jpegli/memory_manager.h
-  jpegli/memory_manager.cc
-  jpegli/quant.h
-  jpegli/quant.cc
-  jpegli/render.h
-  jpegli/render.cc
-  jpegli/source_manager.h
-  jpegli/source_manager.cc
-  jpegli/upsample.h
-  jpegli/upsample.cc
-)
+include(jxl_lists.cmake)
 
 set(JPEGLI_INTERNAL_LIBS
   hwy
@@ -55,7 +13,7 @@ set(JPEGLI_INTERNAL_LIBS
   ${ATOMICS_LIBRARIES}
 )
 
-add_library(jpegli-static STATIC EXCLUDE_FROM_ALL "${JPEGLI_INTERNAL_SOURCES}")
+add_library(jpegli-static STATIC EXCLUDE_FROM_ALL "${JPEGXL_INTERNAL_JPEGLI_SOURCES}")
 target_compile_options(jpegli-static PRIVATE "${JPEGXL_INTERNAL_FLAGS}")
 target_compile_options(jpegli-static PUBLIC ${JPEGXL_COVERAGE_FLAGS})
 set_property(TARGET jpegli-static PROPERTY POSITION_INDEPENDENT_CODE ON)
@@ -73,17 +31,13 @@ target_link_libraries(jpegli-static PUBLIC ${JPEGLI_INTERNAL_LIBS})
 #
 
 if(BUILD_TESTING)
-set(TEST_FILES
-  jpegli/decode_api_test.cc
-  jpegli/encode_api_test.cc
-)
-
+# TODO(eustas): merge into jxl_tests.cmake?
 # Individual test binaries:
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tests)
-foreach (TESTFILE IN LISTS TEST_FILES)
+foreach (TESTFILE IN LISTS JPEGXL_INTERNAL_JPEGLI_TESTS)
   # The TESTNAME is the name without the extension or directory.
   get_filename_component(TESTNAME ${TESTFILE} NAME_WE)
-  add_executable(${TESTNAME} ${TESTFILE} jpegli/test_utils.h)
+  add_executable(${TESTNAME} ${TESTFILE} ${JPEGXL_INTERNAL_JPEGLI_TESTLIB_FILES})
   target_compile_options(${TESTNAME} PRIVATE
     ${JPEGXL_INTERNAL_FLAGS}
     # Add coverage flags to the test binary so code in the private headers of
@@ -130,7 +84,7 @@ set(JPEGLI_LIBJPEG_OBJ_COMPILE_DEFINITIONS
   JPEGLI_LIBJPEG_PATCH_VERSION=${JPEGLI_LIBJPEG_PATCH_VERSION}
 )
 
-add_library(jpegli-libjpeg-obj OBJECT jpegli/libjpeg_wrapper.cc)
+add_library(jpegli-libjpeg-obj OBJECT "${JPEGXL_INTERNAL_JPEGLI_WRAPPER_SOURCES}")
 target_compile_options(jpegli-libjpeg-obj PRIVATE ${JPEGXL_INTERNAL_FLAGS})
 target_compile_options(jpegli-libjpeg-obj PUBLIC ${JPEGXL_COVERAGE_FLAGS})
 set_property(TARGET jpegli-libjpeg-obj PROPERTY POSITION_INDEPENDENT_CODE ON)

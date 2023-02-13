@@ -183,9 +183,9 @@ TEST(JpegliTest, JpegliYUVChromaSubsamplingEncodeTest) {
 
   std::vector<uint8_t> compressed;
   JpegSettings settings;
-  for (const std::string& sampling : {"440", "422", "420"}) {
+  for (const char* sampling : {"440", "422", "420"}) {
     settings.xyb = false;
-    settings.chroma_subsampling = sampling;
+    settings.chroma_subsampling = std::string(sampling);
     ASSERT_TRUE(EncodeJpeg(ppf_in, settings, nullptr, &compressed));
 
     PackedPixelFile ppf_out;

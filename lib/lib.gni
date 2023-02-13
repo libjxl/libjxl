@@ -449,6 +449,62 @@ libjxl_gbench_sources = [
     "jxl/tf_gbench.cc",
 ]
 
+libjxl_jpegli_sources = [
+    "jpegli/adaptive_quantization.cc",
+    "jpegli/adaptive_quantization.h",
+    "jpegli/bitstream.cc",
+    "jpegli/bitstream.h",
+    "jpegli/color_transform.cc",
+    "jpegli/color_transform.h",
+    "jpegli/common.cc",
+    "jpegli/common.h",
+    "jpegli/common_internal.h",
+    "jpegli/dct.cc",
+    "jpegli/dct.h",
+    "jpegli/decode.cc",
+    "jpegli/decode.h",
+    "jpegli/decode_internal.h",
+    "jpegli/decode_marker.cc",
+    "jpegli/decode_marker.h",
+    "jpegli/decode_scan.cc",
+    "jpegli/decode_scan.h",
+    "jpegli/destination_manager.cc",
+    "jpegli/encode.cc",
+    "jpegli/encode.h",
+    "jpegli/encode_internal.h",
+    "jpegli/entropy_coding.cc",
+    "jpegli/entropy_coding.h",
+    "jpegli/error.cc",
+    "jpegli/error.h",
+    "jpegli/huffman.cc",
+    "jpegli/huffman.h",
+    "jpegli/idct.cc",
+    "jpegli/idct.h",
+    "jpegli/memory_manager.cc",
+    "jpegli/memory_manager.h",
+    "jpegli/quant.cc",
+    "jpegli/quant.h",
+    "jpegli/render.cc",
+    "jpegli/render.h",
+    "jpegli/source_manager.cc",
+    "jpegli/source_manager.h",
+    "jpegli/upsample.cc",
+    "jpegli/upsample.h",
+]
+
+libjxl_jpegli_testlib_files = [
+    "jpegli/test_utils.h",
+]
+
+libjxl_jpegli_tests = [
+    "jpegli/decode_api_test.cc",
+    "jpegli/encode_api_test.cc",
+]
+
+libjxl_jpegli_wrapper_sources = [
+    "jpegli/libjpeg_wrapper.cc",
+]
+
 libjxl_major_version = 0
 
 libjxl_minor_version = 9
