@@ -726,6 +726,15 @@ bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
     return false;
   }
 
+  // this sets some basic_info properties
+  jxl_save_opts.SetModel(jxl_save_opts.is_linear);
+
+  if (JXL_ENC_SUCCESS !=
+      JxlEncoderSetBasicInfo(enc.get(), &jxl_save_opts.basic_info)) {
+    g_printerr(SAVE_PROC " Error: JxlEncoderSetBasicInfo failed\n");
+    return false;
+  }
+
   // try to use ICC profile
   if (!icc.empty() && !jxl_save_opts.is_gray) {
     if (JXL_ENC_SUCCESS ==
@@ -782,15 +791,6 @@ bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
     jxl_save_opts.lossless = false;
     JxlEncoderSetFrameLossless(frame_settings, false);
     JxlEncoderSetFrameDistance(frame_settings, jxl_save_opts.distance);
-  }
-
-  // this sets some basic_info properties
-  jxl_save_opts.SetModel(jxl_save_opts.is_linear);
-
-  if (JXL_ENC_SUCCESS !=
-      JxlEncoderSetBasicInfo(enc.get(), &jxl_save_opts.basic_info)) {
-    g_printerr(SAVE_PROC " Error: JxlEncoderSetBasicInfo failed\n");
-    return false;
   }
 
   // convert precision and colorspace
