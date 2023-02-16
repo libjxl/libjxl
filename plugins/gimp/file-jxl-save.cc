@@ -831,11 +831,7 @@ bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
     g_clear_object(&buffer);
 
     // use babl to fix gamma mismatch issues
-    if (jxl_save_opts.icc_attached) {
-      jxl_save_opts.SetModel(jxl_save_opts.is_linear);
-    } else {
-      jxl_save_opts.SetModel(!jxl_save_opts.is_linear);
-    }
+    jxl_save_opts.SetModel(jxl_save_opts.is_linear);
     jxl_save_opts.pixel_format.data_type = JXL_TYPE_FLOAT;
     jxl_save_opts.SetBablType("float");
     const Babl* destination_format =
