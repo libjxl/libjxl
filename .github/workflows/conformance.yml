@@ -124,6 +124,7 @@ jobs:
         mkdir -p ${CCACHE_DIR}
         echo "max_size = 200M" > ${CCACHE_DIR}/ccache.conf
         CMAKE_FLAGS="${{ matrix.cflags }}" \
+        TARGETS="tools/djxl" \
         ./ci.sh ${{ matrix.build_type || 'release' }} -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
           -DCMAKE_C_COMPILER_LAUNCHER=ccache \
