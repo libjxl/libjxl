@@ -38,7 +38,7 @@ Status VerifyInput(const PackedPixelFile& ppf) {
   const PackedImage& image = ppf.frames[0].color;
   JXL_RETURN_IF_ERROR(Encoder::VerifyImageSize(image, info));
   if (image.format.data_type == JXL_TYPE_FLOAT16) {
-    return JXL_FAILURE("FLOAT16 input is not supprted.");
+    return JXL_FAILURE("FLOAT16 input is not supported.");
   }
   JXL_RETURN_IF_ERROR(Encoder::VerifyBitDepth(image.format.data_type,
                                               info.bits_per_sample,

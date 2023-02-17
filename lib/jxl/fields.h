@@ -35,16 +35,15 @@ struct BitWriter;
 
 // Reads/writes a given (fixed) number of bits <= 32.
 namespace BitsCoder {
-size_t MaxEncodedBits(const size_t bits);
+size_t MaxEncodedBits(size_t bits);
 
-Status CanEncode(const size_t bits, const uint32_t value,
+Status CanEncode(size_t bits, uint32_t value,
                  size_t* JXL_RESTRICT encoded_bits);
 
-uint32_t Read(const size_t bits, BitReader* JXL_RESTRICT reader);
+uint32_t Read(size_t bits, BitReader* JXL_RESTRICT reader);
 
 // Returns false if the value is too large to encode.
-Status Write(const size_t bits, const uint32_t value,
-             BitWriter* JXL_RESTRICT writer);
+Status Write(size_t bits, uint32_t value, BitWriter* JXL_RESTRICT writer);
 }  // namespace BitsCoder
 
 // Encodes u32 using a lookup table and/or extra bits, governed by a per-field

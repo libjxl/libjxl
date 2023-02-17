@@ -1462,7 +1462,7 @@ Where cmd is one of:
  benchmark Run the benchmark over the default corpus.
  fast_benchmark Run the benchmark over the small corpus.
 
- coverage  Buils and run tests with coverage support. Runs coverage_report as
+ coverage  Build and run tests with coverage support. Runs coverage_report as
            well.
  coverage_report Generate HTML, XML and text coverage report after a coverage
            run.

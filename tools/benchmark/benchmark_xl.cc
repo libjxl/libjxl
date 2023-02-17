@@ -1102,7 +1102,8 @@ class Benchmark {
         },
         "Benchmark tasks"));
     if (Args()->show_progress) fprintf(stderr, "\n");
-    return std::accumulate(errors_thread.begin(), errors_thread.end(), 0);
+    return std::accumulate(errors_thread.begin(), errors_thread.end(),
+                           size_t(0));
   }
 };
 

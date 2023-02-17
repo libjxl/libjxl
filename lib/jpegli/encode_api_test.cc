@@ -21,7 +21,7 @@
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/sanitizers.h"
 
-#define ARRAYSIZE(X) (sizeof(X) / sizeof((X)[0]))
+#define ARRAY_SIZE(X) (sizeof(X) / sizeof((X)[0]))
 
 #define ERROR_HANDLER_SETUP(action)                                           \
   jpeg_error_mgr jerr;                                                        \
@@ -66,11 +66,11 @@ struct ScanScript {
 };
 
 static constexpr ScanScript kTestScript[] = {
-    {ARRAYSIZE(kScript1), kScript1},
-    {ARRAYSIZE(kScript2), kScript2},
-    {ARRAYSIZE(kScript3), kScript3},
+    {ARRAY_SIZE(kScript1), kScript1},
+    {ARRAY_SIZE(kScript2), kScript2},
+    {ARRAY_SIZE(kScript3), kScript3},
 };
-static constexpr size_t kNumTestScripts = ARRAYSIZE(kTestScript);
+static constexpr size_t kNumTestScripts = ARRAY_SIZE(kTestScript);
 
 struct CustomQuantTable {
   int slot_idx = 0;
@@ -1500,7 +1500,7 @@ TEST(ErrorHandlingTest, InvalidScanScript2) {
   jpegli_set_defaults(&cinfo);
   static constexpr jpeg_scan_info kScript[] = {{2, {0, 1}, 0, 63, 0, 0}};  //
   cinfo.scan_info = kScript;
-  cinfo.num_scans = ARRAYSIZE(kScript);
+  cinfo.num_scans = ARRAY_SIZE(kScript);
   jpegli_start_compress(&cinfo, TRUE);
   EXPECT_FAILURE();
 }
@@ -1517,7 +1517,7 @@ TEST(ErrorHandlingTest, InvalidScanScript3) {
   jpegli_set_defaults(&cinfo);
   static constexpr jpeg_scan_info kScript[] = {{5, {0}, 0, 63, 0, 0}};  //
   cinfo.scan_info = kScript;
-  cinfo.num_scans = ARRAYSIZE(kScript);
+  cinfo.num_scans = ARRAY_SIZE(kScript);
   jpegli_start_compress(&cinfo, TRUE);
   EXPECT_FAILURE();
 }
@@ -1534,7 +1534,7 @@ TEST(ErrorHandlingTest, InvalidScanScript4) {
   jpegli_set_defaults(&cinfo);
   static constexpr jpeg_scan_info kScript[] = {{2, {0, 0}, 0, 63, 0, 0}};  //
   cinfo.scan_info = kScript;
-  cinfo.num_scans = ARRAYSIZE(kScript);
+  cinfo.num_scans = ARRAY_SIZE(kScript);
   jpegli_start_compress(&cinfo, TRUE);
   EXPECT_FAILURE();
 }
@@ -1551,7 +1551,7 @@ TEST(ErrorHandlingTest, InvalidScanScript5) {
   jpegli_set_defaults(&cinfo);
   static constexpr jpeg_scan_info kScript[] = {{2, {1, 0}, 0, 63, 0, 0}};  //
   cinfo.scan_info = kScript;
-  cinfo.num_scans = ARRAYSIZE(kScript);
+  cinfo.num_scans = ARRAY_SIZE(kScript);
   jpegli_start_compress(&cinfo, TRUE);
   EXPECT_FAILURE();
 }
@@ -1568,7 +1568,7 @@ TEST(ErrorHandlingTest, InvalidScanScript6) {
   jpegli_set_defaults(&cinfo);
   static constexpr jpeg_scan_info kScript[] = {{1, {0}, 0, 64, 0, 0}};  //
   cinfo.scan_info = kScript;
-  cinfo.num_scans = ARRAYSIZE(kScript);
+  cinfo.num_scans = ARRAY_SIZE(kScript);
   jpegli_start_compress(&cinfo, TRUE);
   EXPECT_FAILURE();
 }
@@ -1585,7 +1585,7 @@ TEST(ErrorHandlingTest, InvalidScanScript7) {
   jpegli_set_defaults(&cinfo);
   static constexpr jpeg_scan_info kScript[] = {{1, {0}, 2, 1, 0, 0}};  //
   cinfo.scan_info = kScript;
-  cinfo.num_scans = ARRAYSIZE(kScript);
+  cinfo.num_scans = ARRAY_SIZE(kScript);
   jpegli_start_compress(&cinfo, TRUE);
   EXPECT_FAILURE();
 }
@@ -1604,7 +1604,7 @@ TEST(ErrorHandlingTest, InvalidScanScript8) {
       {1, {0}, 0, 63, 0, 0}, {1, {1}, 0, 0, 0, 0}, {1, {1}, 1, 63, 0, 0}  //
   };
   cinfo.scan_info = kScript;
-  cinfo.num_scans = ARRAYSIZE(kScript);
+  cinfo.num_scans = ARRAY_SIZE(kScript);
   jpegli_start_compress(&cinfo, TRUE);
   EXPECT_FAILURE();
 }
@@ -1623,7 +1623,7 @@ TEST(ErrorHandlingTest, InvalidScanScript9) {
       {1, {0}, 0, 1, 0, 0}, {1, {0}, 2, 63, 0, 0},  //
   };
   cinfo.scan_info = kScript;
-  cinfo.num_scans = ARRAYSIZE(kScript);
+  cinfo.num_scans = ARRAY_SIZE(kScript);
   jpegli_start_compress(&cinfo, TRUE);
   EXPECT_FAILURE();
 }
@@ -1642,7 +1642,7 @@ TEST(ErrorHandlingTest, InvalidScanScript10) {
       {2, {0, 1}, 0, 0, 0, 0}, {2, {0, 1}, 1, 63, 0, 0}  //
   };
   cinfo.scan_info = kScript;
-  cinfo.num_scans = ARRAYSIZE(kScript);
+  cinfo.num_scans = ARRAY_SIZE(kScript);
   jpegli_start_compress(&cinfo, TRUE);
   EXPECT_FAILURE();
 }
@@ -1661,7 +1661,7 @@ TEST(ErrorHandlingTest, InvalidScanScript11) {
       {1, {0}, 1, 63, 0, 0}, {1, {0}, 0, 0, 0, 0}  //
   };
   cinfo.scan_info = kScript;
-  cinfo.num_scans = ARRAYSIZE(kScript);
+  cinfo.num_scans = ARRAY_SIZE(kScript);
   jpegli_start_compress(&cinfo, TRUE);
   EXPECT_FAILURE();
 }
@@ -1680,7 +1680,7 @@ TEST(ErrorHandlingTest, InvalidScanScript12) {
       {1, {0}, 0, 0, 10, 1}, {1, {0}, 0, 0, 1, 0}, {1, {0}, 1, 63, 0, 0}  //
   };
   cinfo.scan_info = kScript;
-  cinfo.num_scans = ARRAYSIZE(kScript);
+  cinfo.num_scans = ARRAY_SIZE(kScript);
   jpegli_start_compress(&cinfo, TRUE);
   EXPECT_FAILURE();
 }
@@ -1702,7 +1702,7 @@ TEST(ErrorHandlingTest, InvalidScanScript13) {
       {1, {0}, 1, 63, 0, 0}  //
   };
   cinfo.scan_info = kScript;
-  cinfo.num_scans = ARRAYSIZE(kScript);
+  cinfo.num_scans = ARRAY_SIZE(kScript);
   jpegli_start_compress(&cinfo, TRUE);
   EXPECT_FAILURE();
 }

@@ -636,7 +636,7 @@ struct JxlDecoderStruct {
   // This returns false if the user didn't subscribe to any events that
   // require the codestream (e.g. only subscribed to metadata boxes), or all
   // parts of the codestream that are subscribed to (e.g. only basic info) have
-  // already occured.
+  // already occurred.
   bool CanUseMoreCodestreamInput() const {
     // The decoder can set this to finished early if all relevant events were
     // processed, so this check works.
@@ -890,11 +890,11 @@ JxlDecoderStatus JxlDecoderSubscribeEvents(JxlDecoder* dec, int events_wanted) {
 }
 
 JxlDecoderStatus JxlDecoderSetKeepOrientation(JxlDecoder* dec,
-                                              JXL_BOOL keep_orientation) {
+                                              JXL_BOOL skip_reorientation) {
   if (dec->stage != DecoderStage::kInited) {
     return JXL_API_ERROR("Must set keep_orientation option before starting");
   }
-  dec->keep_orientation = !!keep_orientation;
+  dec->keep_orientation = !!skip_reorientation;
   return JXL_DEC_SUCCESS;
 }
 

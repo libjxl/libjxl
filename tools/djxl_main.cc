@@ -165,7 +165,7 @@ struct DecompressArgs {
     if (num_threads < -1) {
       fprintf(
           stderr,
-          "Invalid flag value for --num_threads: must be -1, 0 or postive.\n");
+          "Invalid flag value for --num_threads: must be -1, 0 or positive.\n");
       return false;
     }
     return true;

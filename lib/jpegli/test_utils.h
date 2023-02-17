@@ -23,14 +23,16 @@
 namespace jpegli {
 
 #if defined(TEST_DATA_PATH)
-std::string GetTestDataPath(const std::string& filename) {
+template <typename S>
+std::string GetTestDataPath(S filename) {
   return std::string(TEST_DATA_PATH "/") + filename;
 }
 #else
 using bazel::tools::cpp::runfiles::Runfiles;
 const std::unique_ptr<Runfiles> kRunfiles(Runfiles::Create(""));
-std::string GetTestDataPath(const std::string& filename) {
-  return kRunfiles->Rlocation("__main__/testdata/" + filename);
+template <typename S>
+std::string GetTestDataPath(S filename) {
+  return kRunfiles->Rlocation("__main__/testdata/" + std::string(filename));
 }
 #endif
 

@@ -225,7 +225,7 @@ class ReadVisitor : public VisitorBase {
     if (pos_after_ext_size_ == 0) return true;
 
     // Not enough bytes as set by BeginExtensions or earlier. Do not return
-    // this as an JXL_FAILURE or false (which can also propagate to error
+    // this as a JXL_FAILURE or false (which can also propagate to error
     // through e.g. JXL_RETURN_IF_ERROR), since this may be used while
     // silently checking whether there are enough bytes. If this case must be
     // treated as an error, reader_>Close() will do this, just like is already

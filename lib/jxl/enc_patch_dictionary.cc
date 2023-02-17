@@ -525,7 +525,7 @@ std::vector<PatchInfo> FindTextLikePatches(
   }
 
   // Remove duplicates.
-  constexpr size_t kMinPatchOccurences = 2;
+  constexpr size_t kMinPatchOccurrences = 2;
   std::sort(info.begin(), info.end());
   size_t unique = 0;
   for (size_t i = 1; i < info.size(); i++) {
@@ -533,13 +533,13 @@ std::vector<PatchInfo> FindTextLikePatches(
       info[unique].second.insert(info[unique].second.end(),
                                  info[i].second.begin(), info[i].second.end());
     } else {
-      if (info[unique].second.size() >= kMinPatchOccurences) {
+      if (info[unique].second.size() >= kMinPatchOccurrences) {
         unique++;
       }
       info[unique] = info[i];
     }
   }
-  if (info[unique].second.size() >= kMinPatchOccurences) {
+  if (info[unique].second.size() >= kMinPatchOccurrences) {
     unique++;
   }
   info.resize(unique);

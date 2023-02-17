@@ -28,9 +28,8 @@ namespace jxl {
 struct AuxOut;
 
 // Only call if splines.HasAny().
-void EncodeSplines(const Splines& splines, BitWriter* writer,
-                   const size_t layer, const HistogramParams& histogram_params,
-                   AuxOut* aux_out);
+void EncodeSplines(const Splines& splines, BitWriter* writer, size_t layer,
+                   const HistogramParams& histogram_params, AuxOut* aux_out);
 
 Splines FindSplines(const Image3F& opsin);
 

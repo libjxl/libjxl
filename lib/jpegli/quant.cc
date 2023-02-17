@@ -550,7 +550,7 @@ void FinalizeQuantMatrices(j_compress_ptr cinfo) {
              cinfo->quant_tbl_ptrs[1] == nullptr) {
     // No custom quantization tables were specified, so we set our default
     // YCbCr quantization tables here. We could not do this earlier in
-    // jpegli_set_defaults() becase it may depend on the ICC profile and
+    // jpegli_set_defaults() because it may depend on the ICC profile and
     // pixel values.
     cinfo->comp_info[2].quant_tbl_no = 2;
     float global_scale = kGlobalScaleYCbCr;
