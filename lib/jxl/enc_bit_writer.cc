@@ -85,7 +85,7 @@ void BitWriter::Allotment::PrivateReclaim(BitWriter* JXL_RESTRICT writer,
 }
 
 void BitWriter::AppendByteAligned(const Span<const uint8_t>& span) {
-  if (!span.size()) return;
+  if (span.empty()) return;
   storage_.resize(storage_.size() + span.size() + 1);  // extra zero padding
 
   // Concatenate by copying bytes because both source and destination are bytes.

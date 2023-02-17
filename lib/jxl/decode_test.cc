@@ -2042,7 +2042,7 @@ TEST(DecodeTest, ExtraBytesAfterCompressedStream) {
     } else if (box_format == kCSBF_Multi_Other_Terminated) {
       last_unknown_box_size = unk3_box_size + 8;
     } else if (box_format == kCSBF_Multi_Last_Empty_Other) {
-      // If boxes are not required, the decoder wont consume the last empty
+      // If boxes are not required, the decoder won't consume the last empty
       // jxlp box.
       last_unknown_box_size = 12 + unk3_box_size + 8;
     }
@@ -2442,7 +2442,7 @@ TEST(DecodeTest, AlignTest) {
         jxl::Span<const uint8_t>(compressed.data(), compressed.size()), format,
         use_callback, /*set_buffer_early=*/false,
         /*use_resizable_runner=*/false, /*require_boxes=*/false,
-        /*expect_succes=*/true);
+        /*expect_success=*/true);
     EXPECT_EQ(expected_line_bytes * ysize, pixels2.size());
     EXPECT_EQ(0u, jxl::test::ComparePixels(pixels.data(), pixels2.data(), xsize,
                                            ysize, format_orig, format));

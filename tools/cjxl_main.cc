@@ -912,7 +912,7 @@ void ProcessFlags(const jxl::extras::Codec codec,
 
   if (args->num_threads < -1) {
     std::cerr
-        << "Invalid flag value for --num_threads: must be -1, 0 or postive."
+        << "Invalid flag value for --num_threads: must be -1, 0 or positive."
         << std::endl;
     exit(EXIT_FAILURE);
   }

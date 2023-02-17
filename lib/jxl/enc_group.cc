@@ -155,7 +155,7 @@ retry:
   }
   if (goretry) goto retry;
   // Heuristic for improving accuracy of high-frequency patterns
-  // occuring in an environment with no medium-frequency masking
+  // occurring in an environment with no medium-frequency masking
   // patterns. This should be improved later to be done in X and B
   // planes too as 32x32 and larger transforms become rather ugly
   // when this is not compensated for.

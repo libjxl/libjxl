@@ -531,8 +531,8 @@ namespace {
 // Returns a copy of buf from offset to offset+size, or a new zeroed vector if
 // the result would have been out of bounds taking integer overflow into
 // account.
-const std::vector<uint8_t> SliceSpan(const jxl::Span<const uint8_t>& buf,
-                                     size_t offset, size_t size) {
+std::vector<uint8_t> SliceSpan(const jxl::Span<const uint8_t>& buf,
+                               size_t offset, size_t size) {
   if (offset + size >= buf.size()) {
     return std::vector<uint8_t>(size, 0);
   }

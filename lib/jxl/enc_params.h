@@ -169,7 +169,7 @@ struct CompressParams {
     }
     // if no explicit ec_distance given, and using vardct, then the modular part
     // is empty or not lossless
-    if (!modular_mode && !ec_distance.size()) return false;
+    if (!modular_mode && ec_distance.empty()) return false;
     // all modular channels are encoded at distance 0
     return true;
   }

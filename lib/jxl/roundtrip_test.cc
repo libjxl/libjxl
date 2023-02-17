@@ -57,8 +57,8 @@ jxl::CodecInOut ConvertTestImage(const std::vector<uint8_t>& buf,
         io.metadata.m.SetAlphaBits(16);
         break;
       default:
-        EXPECT_TRUE(false) << "Roundtrip tests for data type "
-                           << pixel_format.data_type << " not yet implemented.";
+        ADD_FAILURE() << "Roundtrip tests for data type "
+                      << pixel_format.data_type << " not yet implemented.";
     }
   }
   size_t bitdepth = 0;
@@ -80,8 +80,8 @@ jxl::CodecInOut ConvertTestImage(const std::vector<uint8_t>& buf,
       io.metadata.m.SetUintSamples(16);
       break;
     default:
-      EXPECT_TRUE(false) << "Roundtrip tests for data type "
-                         << pixel_format.data_type << " not yet implemented.";
+      ADD_FAILURE() << "Roundtrip tests for data type "
+                    << pixel_format.data_type << " not yet implemented.";
   }
   jxl::ColorEncoding color_encoding;
   if (!icc_profile.empty()) {
@@ -101,7 +101,7 @@ jxl::CodecInOut ConvertTestImage(const std::vector<uint8_t>& buf,
 }
 
 template <typename T>
-T ConvertTestPixel(const float val);
+T ConvertTestPixel(float val);
 
 template <>
 float ConvertTestPixel<float>(const float val) {
@@ -169,7 +169,7 @@ void EncodeWithEncoder(JxlEncoder* enc, std::vector<uint8_t>* compressed) {
   EXPECT_EQ(JXL_ENC_SUCCESS, process_result);
 }
 
-// Generates some pixels using using some dimensions and pixel_format,
+// Generates some pixels using some dimensions and pixel_format,
 // compresses them, and verifies that the decoded version is similar to the
 // original pixels.
 // TODO(firsching): change this to be a parameterized test, like in
