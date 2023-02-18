@@ -85,6 +85,7 @@ set(JPEGLI_LIBJPEG_OBJ_COMPILE_DEFINITIONS
 )
 
 add_library(jpegli-libjpeg-obj OBJECT "${JPEGXL_INTERNAL_JPEGLI_WRAPPER_SOURCES}")
+target_include_directories(jpegli-libjpeg-obj PUBLIC "${JPEG_INCLUDE_DIRS}")
 target_compile_options(jpegli-libjpeg-obj PRIVATE ${JPEGXL_INTERNAL_FLAGS})
 target_compile_options(jpegli-libjpeg-obj PUBLIC ${JPEGXL_COVERAGE_FLAGS})
 set_property(TARGET jpegli-libjpeg-obj PROPERTY POSITION_INDEPENDENT_CODE ON)
