@@ -3,7 +3,7 @@
 Various trade-offs between encode speed and compression performance can be selected in libjxl. In `cjxl`, this is done via the `--effort` (`-e`) option.
 Higher effort means slower encoding; generally the higher the effort, the more coding tools are used, computationally more expensive heuristics are used,
 and more exhaustive search is performed. 
-Generally there are efforts range between `1` and `9`, but there is also `e10` you pass the flag `--allow_expert_options` (in combination with "lossless", i.e. `-d 0`). It is considered an expert option because it can be extremely slow.
+Generally efforts range between `1` and `9`, but there is also `e10` you pass the flag `--allow_expert_options` (in combination with "lossless", i.e. `-d 0`). It is considered an expert option because it can be extremely slow.
 
 
 For lossy compression, higher effort results in better visual quality at a given filesize, and also better
