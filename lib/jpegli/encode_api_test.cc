@@ -13,10 +13,10 @@
 #include <cmath>
 #include <vector>
 
-#include "gtest/gtest.h"
 #include "lib/jpegli/common_internal.h"
 #include "lib/jpegli/encode.h"
 #include "lib/jpegli/test_utils.h"
+#include "lib/jpegli/testing.h"
 #include "lib/jxl/base/file_io.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/sanitizers.h"

@@ -5,7 +5,6 @@
 
 #include <string>
 
-#include "gtest/gtest.h"
 #include "lib/extras/codec.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/padded_bytes.h"
@@ -13,12 +12,14 @@
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/enc_cache.h"
+#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_file.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_test_utils.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testdata.h"
+#include "lib/jxl/testing.h"
 
 namespace jxl {
 namespace {
@@ -97,7 +98,7 @@ TEST_P(SpeedTierTest, Roundtrip) {
   cparams.speed_tier = params.speed_tier;
 
   CodecInOut io2;
-  test::Roundtrip(&io, cparams, {}, nullptr, &io2);
+  EXPECT_OK(test::Roundtrip(&io, cparams, {}, &io2, _));
 
   // Can be 2.2 in non-hare mode.
   EXPECT_LE(

@@ -173,7 +173,11 @@ TESTS = [src.partition('.')[0] for src in libjxl_tests + libjxl_jpegli_tests]
 [
     cc_test(
         name = test,
-        srcs = [test + '.cc'],
+        srcs = [
+            test + '.cc',
+            'jxl/testing.h',
+            'jpegli/testing.h',
+        ],
         data = ['//:testdata'],
         timeout = libjxl_test_timeouts.get(test, 'moderate'),
         shard_count = libjxl_test_shards.get(test, 1),

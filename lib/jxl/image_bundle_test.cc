@@ -5,9 +5,9 @@
 
 #include "lib/jxl/image_bundle.h"
 
-#include "gtest/gtest.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_bit_writer.h"
+#include "lib/jxl/testing.h"
 
 namespace jxl {
 namespace {

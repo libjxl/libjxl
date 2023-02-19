@@ -345,6 +345,7 @@ foreach(FUZZER IN LISTS FUZZER_BINARIES)
   else()
     target_link_libraries("${BINARY}"
       jxl_extras-static
+      jxl_testlib-static
       jxl_tool
     )
   endif()

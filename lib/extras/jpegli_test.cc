@@ -20,6 +20,7 @@
 #include "lib/extras/enc/jpegli.h"
 #include "lib/extras/enc/jpg.h"
 #include "lib/extras/packed_image.h"
+#include "lib/jpegli/testing.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"

@@ -11,7 +11,6 @@
 #include <array>
 #include <utility>
 
-#include "gtest/gtest.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/override.h"
@@ -29,6 +28,7 @@
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/test_utils.h"
+#include "lib/jxl/testing.h"
 
 namespace jxl {
 
@@ -166,7 +166,8 @@ void TestGradient(ThreadPool* pool, uint32_t color0, uint32_t color1,
   PassesEncoderState enc_state;
   EXPECT_TRUE(EncodeFile(cparams, &io, &enc_state, &compressed, GetJxlCms(),
                          aux_out, pool));
-  EXPECT_TRUE(test::DecodeFile({}, compressed, &io2, pool));
+  EXPECT_TRUE(
+      test::DecodeFile({}, Span<const uint8_t>(compressed), &io2, pool));
   EXPECT_TRUE(
       io2.Main().TransformTo(io2.metadata.m.color_encoding, GetJxlCms(), pool));
 

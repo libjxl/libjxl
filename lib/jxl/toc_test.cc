@@ -5,12 +5,12 @@
 
 #include "lib/jxl/toc.h"
 
-#include "gtest/gtest.h"
 #include "lib/jxl/base/random.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_toc.h"
+#include "lib/jxl/testing.h"
 
 namespace jxl {
 namespace {

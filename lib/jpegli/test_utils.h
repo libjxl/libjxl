@@ -3,21 +3,15 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#ifndef LIB_JPEGLI_TEST_UTILS_H_
+#define LIB_JPEGLI_TEST_UTILS_H_
+
 #include <vector>
 
-#include "gtest/gtest.h"
 #include "lib/jxl/base/file_io.h"
 
 #if !defined(TEST_DATA_PATH)
 #include "tools/cpp/runfiles/runfiles.h"
-#endif
-
-// googletest before 1.10 didn't define INSTANTIATE_TEST_SUITE_P() but instead
-// used INSTANTIATE_TEST_CASE_P which is now deprecated.
-#ifdef INSTANTIATE_TEST_SUITE_P
-#define JPEGLI_INSTANTIATE_TEST_SUITE_P INSTANTIATE_TEST_SUITE_P
-#else
-#define JPEGLI_INSTANTIATE_TEST_SUITE_P INSTANTIATE_TEST_CASE_P
 #endif
 
 namespace jpegli {
@@ -142,3 +136,5 @@ static inline bool ReadPNM(const std::vector<uint8_t>& data, size_t* xsize,
 }
 
 }  // namespace jpegli
+
+#endif  // LIB_JPEGLI_TEST_UTILS_H_

@@ -14,6 +14,7 @@
 #include "lib/jxl/image_test_utils.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testdata.h"
+#include "lib/jxl/testing.h"
 
 namespace jxl {
 
@@ -315,8 +316,8 @@ TEST(SplinesTest, Drawing) {
   ASSERT_TRUE(io_actual.frames[0].TransformTo(io_expected.Main().c_current(),
                                               GetJxlCms()));
 
-  VerifyRelativeError(*io_expected.Main().color(), *io_actual.Main().color(),
-                      1e-2f, 1e-1f);
+  ASSERT_OK(VerifyRelativeError(*io_expected.Main().color(),
+                                *io_actual.Main().color(), 1e-2f, 1e-1f, _));
 }
 
 TEST(SplinesTest, ClearedEveryFrame) {
@@ -328,8 +329,8 @@ TEST(SplinesTest, ClearedEveryFrame) {
   CodecInOut io_actual;
   const PaddedBytes bytes_actual =
       ReadTestData("jxl/spline_on_first_frame.jxl");
-  ASSERT_TRUE(test::DecodeFile({}, bytes_actual, &io_actual,
-                               /*pool=*/nullptr));
+  ASSERT_TRUE(
+      test::DecodeFile({}, Span<const uint8_t>(bytes_actual), &io_actual));
 
   ASSERT_TRUE(
       io_actual.frames[0].TransformTo(ColorEncoding::SRGB(), GetJxlCms()));
@@ -341,8 +342,8 @@ TEST(SplinesTest, ClearedEveryFrame) {
       }
     }
   }
-  VerifyRelativeError(*io_expected.Main().color(), *io_actual.Main().color(),
-                      1e-2f, 1e-1f);
+  ASSERT_OK(VerifyRelativeError(*io_expected.Main().color(),
+                                *io_actual.Main().color(), 1e-2f, 1e-1f, _));
 }
 
 }  // namespace jxl

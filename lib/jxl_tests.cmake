@@ -4,6 +4,29 @@
 include(compatibility.cmake)
 include(jxl_lists.cmake)
 
+if(BUILD_TESTING OR JPEGXL_ENABLE_TOOLS)
+# Library with test-only code shared between all tests / fuzzers.
+add_library(jxl_testlib-static STATIC ${JPEGXL_INTERNAL_TESTLIB_FILES})
+target_compile_options(jxl_testlib-static PRIVATE
+  ${JPEGXL_INTERNAL_FLAGS}
+  ${JPEGXL_COVERAGE_FLAGS}
+)
+target_compile_definitions(jxl_testlib-static PUBLIC
+  -DTEST_DATA_PATH="${JPEGXL_TEST_DATA_PATH}")
+target_include_directories(jxl_testlib-static PUBLIC
+  "${PROJECT_SOURCE_DIR}"
+)
+target_link_libraries(jxl_testlib-static
+  hwy
+  jxl_extras-static
+  jxl-static
+)
+endif()
+
+if(NOT BUILD_TESTING)
+  return()
+endif()
+
 list(APPEND JPEGXL_INTERNAL_TESTS
   # TODO(deymo): Move this to tools/
   ../tools/box/box_test.cc
@@ -11,19 +34,6 @@ list(APPEND JPEGXL_INTERNAL_TESTS
 )
 
 find_package(GTest)
-
-# Library with test-only code shared between all tests.
-add_library(jxl_testlib-static STATIC ${JPEGXL_INTERNAL_TESTLIB_FILES})
-  target_compile_options(jxl_testlib-static PRIVATE
-    ${JPEGXL_INTERNAL_FLAGS}
-    ${JPEGXL_COVERAGE_FLAGS}
-  )
-target_compile_definitions(jxl_testlib-static PUBLIC
-  -DTEST_DATA_PATH="${JPEGXL_TEST_DATA_PATH}")
-target_include_directories(jxl_testlib-static PUBLIC
-  "${PROJECT_SOURCE_DIR}"
-)
-target_link_libraries(jxl_testlib-static hwy jxl-static)
 
 # Individual test binaries:
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tests)
@@ -57,11 +67,11 @@ foreach (TESTFILE IN LISTS JPEGXL_INTERNAL_TESTS)
   )
   target_link_libraries(${TESTNAME}
     box
-    jxl_extras-static
-    jxl_testlib-static
     gmock
     GTest::GTest
     GTest::Main
+    jxl_extras-static
+    jxl_testlib-static
   )
   # Output test targets in the test directory.
   set_target_properties(${TESTNAME} PROPERTIES PREFIX "tests/")

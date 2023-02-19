@@ -16,12 +16,14 @@
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/file_io.h"
+#include "lib/jxl/base/random.h"
 #include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_xyb.h"
 #include "lib/jxl/image_test_utils.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testdata.h"
+#include "lib/jxl/testing.h"
 
 namespace jxl {
 
@@ -156,7 +158,7 @@ class ColorManagementTest
     double max_rel = 4E-7;
 #endif
     if (c.IsGray()) max_rel = 2E-5;
-    VerifyRelativeError(in, *out, max_l1, max_rel);
+    ASSERT_OK(VerifyRelativeError(in, *out, max_l1, max_rel, _));
   }
 };
 JXL_GTEST_INSTANTIATE_TEST_SUITE_P(ColorManagementTestInstantiation,
