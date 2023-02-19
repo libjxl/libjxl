@@ -6,7 +6,6 @@
 #include "jxl/encode.h"
 
 #include "enc_color_management.h"
-#include "gtest/gtest.h"
 #include "jxl/decode.h"
 #include "jxl/decode_cxx.h"
 #include "jxl/encode_cxx.h"
@@ -16,8 +15,10 @@
 #include "lib/jxl/encode_internal.h"
 #include "lib/jxl/jpeg/dec_jpeg_data.h"
 #include "lib/jxl/jpeg/dec_jpeg_data_writer.h"
+#include "lib/jxl/test_image.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testdata.h"
+#include "lib/jxl/testing.h"
 
 TEST(EncodeTest, AddFrameAfterCloseInputTest) {
   JxlEncoderPtr enc = JxlEncoderMake(nullptr);
@@ -213,7 +214,7 @@ void VerifyFrameEncoding(size_t xsize, size_t ysize, JxlEncoder* enc,
   jxl::CodecInOut decoded_io;
   EXPECT_TRUE(jxl::test::DecodeFile(
       {}, jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
-      &decoded_io, /*pool=*/nullptr));
+      &decoded_io));
 
   EXPECT_LE(
       ComputeDistance2(input_io.Main(), decoded_io.Main(), jxl::GetJxlCms()),
@@ -1353,7 +1354,7 @@ TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGFrameTest)) {
       jxl::CodecInOut decoded_io;
       EXPECT_TRUE(jxl::test::DecodeFile(
           {}, jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
-          &decoded_io, /*pool=*/nullptr));
+          &decoded_io));
 
       EXPECT_LE(
           ComputeDistance2(orig_io.Main(), decoded_io.Main(), jxl::GetJxlCms()),

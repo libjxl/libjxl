@@ -82,6 +82,9 @@ def SplitLibFiles(repo_files):
   # First pick files scattered across directories.
   tests, srcs = Filter(srcs, HasSuffixFn('_test.cc'))
   jpegli_tests, jpegli_srcs = Filter(jpegli_srcs, HasSuffixFn('_test.cc'))
+  # TODO(eustas): move to separate list?
+  _, srcs = Filter(srcs, ContainsFn('testing.h'))
+  _, jpegli_srcs = Filter(jpegli_srcs, ContainsFn('testing.h'))
   testlib_files, srcs = Filter(srcs, ContainsFn('test'))
   jpegli_testlib_files, jpegli_srcs = Filter(jpegli_srcs, ContainsFn('test'))
   gbench_sources, srcs = Filter(srcs, HasSuffixFn('_gbench.cc'))

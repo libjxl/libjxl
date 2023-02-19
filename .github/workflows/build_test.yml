@@ -468,7 +468,7 @@ jobs:
         run: bazel build -c opt ...:all
       - name: Test
         if: |
-          true || github.event_name == 'push' ||
+          github.event_name == 'push' ||
           (github.event_name == 'pull_request' &&
            contains(github.event.pull_request.labels.*.name, 'CI:full'))
         run: bazel test -c opt --test_output=errors ...:all

@@ -9,7 +9,6 @@
 #include <cstdio>
 #include <vector>
 
-#include "gtest/gtest.h"
 #include "jxl/codestream_header.h"
 #include "jxl/decode.h"
 #include "jxl/decode_cxx.h"
@@ -19,6 +18,7 @@
 #include "lib/extras/codec.h"
 #include "lib/jxl/dec_external_image.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
+#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_comparator.h"
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/encode_internal.h"
@@ -26,6 +26,7 @@
 #include "lib/jxl/image_test_utils.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testdata.h"
+#include "lib/jxl/testing.h"
 
 namespace {
 
@@ -416,8 +417,8 @@ void VerifyRoundtripCompression(
   }
 
   if (lossless && !already_downsampled) {
-    EXPECT_TRUE(jxl::SamePixels(*original_io.Main().color(),
-                                *decoded_io.Main().color()));
+    EXPECT_OK(jxl::SamePixels(*original_io.Main().color(),
+                              *decoded_io.Main().color(), _));
   } else {
     jxl::ButteraugliParams ba;
     float butteraugli_score = ButteraugliDistance(

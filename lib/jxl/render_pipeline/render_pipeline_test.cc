@@ -12,9 +12,11 @@
 #include <utility>
 #include <vector>
 
-#include "gtest/gtest.h"
 #include "lib/extras/codec.h"
 #include "lib/jxl/dec_frame.h"
+#include "lib/jxl/enc_cache.h"
+#include "lib/jxl/enc_color_management.h"
+#include "lib/jxl/enc_file.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/fake_parallel_runner_testonly.h"
 #include "lib/jxl/icc_codec.h"
@@ -24,6 +26,7 @@
 #include "lib/jxl/size_constraints.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testdata.h"
+#include "lib/jxl/testing.h"
 
 namespace jxl {
 namespace {
@@ -238,12 +241,12 @@ TEST_P(RenderPipelineTestParam, PipelineTest) {
 #endif
     Image3F def = std::move(*io_default.frames[i].color());
     Image3F pip = std::move(*io_slow_pipeline.frames[i].color());
-    VerifyRelativeError(pip, def, kMaxError, kMaxError);
+    ASSERT_OK(VerifyRelativeError(pip, def, kMaxError, kMaxError, _));
     for (size_t ec = 0; ec < io_default.frames[i].extra_channels().size();
          ec++) {
-      VerifyRelativeError(io_slow_pipeline.frames[i].extra_channels()[ec],
-                          io_default.frames[i].extra_channels()[ec], kMaxError,
-                          kMaxError);
+      ASSERT_OK(VerifyRelativeError(
+          io_slow_pipeline.frames[i].extra_channels()[ec],
+          io_default.frames[i].extra_channels()[ec], kMaxError, kMaxError, _));
     }
   }
 }
@@ -549,12 +552,13 @@ TEST(RenderPipelineDecodingTest, Animation) {
 
     Image3F fast_pipeline = std::move(*io_default.frames[i].color());
     Image3F slow_pipeline = std::move(*io_slow_pipeline.frames[i].color());
-    VerifyRelativeError(slow_pipeline, fast_pipeline, kMaxError, kMaxError);
+    ASSERT_OK(VerifyRelativeError(slow_pipeline, fast_pipeline, kMaxError,
+                                  kMaxError, _))
     for (size_t ec = 0; ec < io_default.frames[i].extra_channels().size();
          ec++) {
-      VerifyRelativeError(io_slow_pipeline.frames[i].extra_channels()[ec],
-                          io_default.frames[i].extra_channels()[ec], kMaxError,
-                          kMaxError);
+      ASSERT_OK(VerifyRelativeError(
+          io_slow_pipeline.frames[i].extra_channels()[ec],
+          io_default.frames[i].extra_channels()[ec], kMaxError, kMaxError, _));
     }
   }
 }

@@ -13,7 +13,6 @@
 #include <utility>
 #include <vector>
 
-#include "gtest/gtest.h"
 #include "jxl/decode_cxx.h"
 #include "jxl/resizable_parallel_runner_cxx.h"
 #include "jxl/thread_parallel_runner_cxx.h"
@@ -42,8 +41,10 @@
 #include "lib/jxl/icc_codec.h"
 #include "lib/jxl/image_metadata.h"
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
+#include "lib/jxl/test_image.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testdata.h"
+#include "lib/jxl/testing.h"
 #include "lib/jxl/toc.h"
 
 ////////////////////////////////////////////////////////////////////////////////
