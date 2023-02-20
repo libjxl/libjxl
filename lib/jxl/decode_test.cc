@@ -441,9 +441,9 @@ PaddedBytes CreateTestJXLCodestream(Span<const uint8_t> pixels, size_t xsize,
 }
 
 JxlDecoderStatus ProcessInputIgnoreBoxes(JxlDecoder* dec) {
-  JxlDecoderStatus status;
-  while ((status = JxlDecoderProcessInput(dec)) == JXL_DEC_BOX) {
-    continue;
+  JxlDecoderStatus status = JXL_DEC_BOX;
+  while (status == JXL_DEC_BOX) {
+    status = JxlDecoderProcessInput(dec);
   }
   return status;
 }
