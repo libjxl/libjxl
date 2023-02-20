@@ -19,15 +19,13 @@ import sys
 import tempfile
 
 
-HEAD = """
-# Copyright (c) the JPEG XL Project Authors. All rights reserved.
+HEAD = """# Copyright (c) the JPEG XL Project Authors. All rights reserved.
 #
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
 # This file is generated, do not modify by manually.
-# Run `tools/build_cleaner.py --update` to regenerate it.
-"""
+# Run `tools/build_cleaner.py --update` to regenerate it."""
 
 
 def RepoFiles(src_dir):
@@ -223,7 +221,7 @@ def BuildCleaner(args):
 
   okay = [
     MaybeUpdateFile(args, 'lib/jxl_lists.cmake', '\n'.join(cmake_chunks)),
-    MaybeUpdateFile(args, 'lib/lib.gni', '\n'.join(gni_chunks)),
+    MaybeUpdateFile(args, 'lib/jxl_lists.bzl', '\n'.join(gni_chunks)),
   ]
   return all(okay)
 
