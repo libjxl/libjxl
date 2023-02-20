@@ -28,7 +28,7 @@ TEST(BlendingTest, Crops) {
     const PaddedBytes compressed_frame = ReadTestData(filename.str());
     CodecInOut frame;
     ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(compressed_frame), &frame));
-    EXPECT_OK(SamePixels(ib.color(), *frame.Main().color(), _));
+    JXL_EXPECT_OK(SamePixels(ib.color(), *frame.Main().color(), _));
     ++i;
   }
 }

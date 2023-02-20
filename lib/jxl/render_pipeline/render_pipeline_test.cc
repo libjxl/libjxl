@@ -241,10 +241,10 @@ TEST_P(RenderPipelineTestParam, PipelineTest) {
 #endif
     Image3F def = std::move(*io_default.frames[i].color());
     Image3F pip = std::move(*io_slow_pipeline.frames[i].color());
-    ASSERT_OK(VerifyRelativeError(pip, def, kMaxError, kMaxError, _));
+    JXL_ASSERT_OK(VerifyRelativeError(pip, def, kMaxError, kMaxError, _));
     for (size_t ec = 0; ec < io_default.frames[i].extra_channels().size();
          ec++) {
-      ASSERT_OK(VerifyRelativeError(
+      JXL_ASSERT_OK(VerifyRelativeError(
           io_slow_pipeline.frames[i].extra_channels()[ec],
           io_default.frames[i].extra_channels()[ec], kMaxError, kMaxError, _));
     }
@@ -552,11 +552,11 @@ TEST(RenderPipelineDecodingTest, Animation) {
 
     Image3F fast_pipeline = std::move(*io_default.frames[i].color());
     Image3F slow_pipeline = std::move(*io_slow_pipeline.frames[i].color());
-    ASSERT_OK(VerifyRelativeError(slow_pipeline, fast_pipeline, kMaxError,
-                                  kMaxError, _))
+    JXL_ASSERT_OK(VerifyRelativeError(slow_pipeline, fast_pipeline, kMaxError,
+                                      kMaxError, _))
     for (size_t ec = 0; ec < io_default.frames[i].extra_channels().size();
          ec++) {
-      ASSERT_OK(VerifyRelativeError(
+      JXL_ASSERT_OK(VerifyRelativeError(
           io_slow_pipeline.frames[i].extra_channels()[ec],
           io_default.frames[i].extra_channels()[ec], kMaxError, kMaxError, _));
     }

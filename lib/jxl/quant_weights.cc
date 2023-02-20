@@ -1103,7 +1103,7 @@ struct DequantMatricesLibraryDef {
 };
 }  // namespace
 
-const DequantMatrices::DequantLibraryInternal DequantMatrices::LibraryInit() {
+DequantMatrices::DequantLibraryInternal DequantMatrices::LibraryInit() {
   static_assert(kNum == 17,
                 "Update this function when adding new quantization kinds.");
   static_assert(kNumPredefinedTables == 1,

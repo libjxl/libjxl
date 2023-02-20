@@ -98,7 +98,7 @@ TEST_P(SpeedTierTest, Roundtrip) {
   cparams.speed_tier = params.speed_tier;
 
   CodecInOut io2;
-  EXPECT_OK(test::Roundtrip(&io, cparams, {}, &io2, _));
+  JXL_EXPECT_OK(test::Roundtrip(&io, cparams, {}, &io2, _));
 
   // Can be 2.2 in non-hare mode.
   EXPECT_LE(

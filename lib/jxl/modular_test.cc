@@ -58,9 +58,9 @@ void TestLosslessGroups(size_t group_size_shift) {
   io.ShrinkTo(io.xsize() / 4, io.ysize() / 4);
 
   size_t compressed_size;
-  EXPECT_OK(Roundtrip(&io, cparams, {}, &io_out, _, &compressed_size));
+  JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io_out, _, &compressed_size));
   EXPECT_LE(compressed_size, 280000u);
-  EXPECT_OK(SamePixels(*io.Main().color(), *io_out.Main().color(), _));
+  JXL_EXPECT_OK(SamePixels(*io.Main().color(), *io_out.Main().color(), _));
 }
 
 TEST(ModularTest, RoundtripLosslessGroups128) { TestLosslessGroups(0); }
@@ -91,9 +91,9 @@ TEST(ModularTest, RoundtripLosslessCustomWP_PermuteRCT) {
   io.ShrinkTo(100, 100);
 
   size_t compressed_size;
-  EXPECT_OK(Roundtrip(&io, cparams, {}, &io_out, _, &compressed_size));
+  JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io_out, _, &compressed_size));
   EXPECT_LE(compressed_size, 10150u);
-  EXPECT_OK(SamePixels(*io.Main().color(), *io_out.Main().color(), _));
+  JXL_EXPECT_OK(SamePixels(*io.Main().color(), *io_out.Main().color(), _));
 }
 
 TEST(ModularTest, RoundtripLossyDeltaPalette) {
@@ -112,7 +112,7 @@ TEST(ModularTest, RoundtripLossyDeltaPalette) {
   io.ShrinkTo(300, 100);
 
   size_t compressed_size;
-  EXPECT_OK(Roundtrip(&io, cparams, {}, &io_out, _, &compressed_size));
+  JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io_out, _, &compressed_size));
   EXPECT_LE(compressed_size, 6800u);
   cparams.ba_params.intensity_target = 80.0f;
   EXPECT_THAT(ButteraugliDistance(io.frames, io_out.frames, cparams.ba_params,
@@ -136,7 +136,7 @@ TEST(ModularTest, RoundtripLossyDeltaPaletteWP) {
   io.ShrinkTo(300, 100);
 
   size_t compressed_size;
-  EXPECT_OK(Roundtrip(&io, cparams, {}, &io_out, _, &compressed_size));
+  JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io_out, _, &compressed_size));
   EXPECT_LE(compressed_size, 7000u);
   cparams.ba_params.intensity_target = 80.0f;
   EXPECT_THAT(ButteraugliDistance(io.frames, io_out.frames, cparams.ba_params,
@@ -158,7 +158,7 @@ TEST(ModularTest, RoundtripLossy) {
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io));
 
   size_t compressed_size;
-  EXPECT_OK(Roundtrip(&io, cparams, {}, &io_out, _, &compressed_size));
+  JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io_out, _, &compressed_size));
   EXPECT_LE(compressed_size, 30000u);
   cparams.ba_params.intensity_target = 80.0f;
   EXPECT_THAT(ButteraugliDistance(io.frames, io_out.frames, cparams.ba_params,
@@ -184,7 +184,7 @@ TEST(ModularTest, RoundtripLossy16) {
   io.metadata.m.color_encoding = ColorEncoding::SRGB();
 
   size_t compressed_size;
-  EXPECT_OK(Roundtrip(&io, cparams, {}, &io_out, _, &compressed_size));
+  JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io_out, _, &compressed_size));
   EXPECT_LE(compressed_size, 300u);
   cparams.ba_params.intensity_target = 80.0f;
   EXPECT_THAT(ButteraugliDistance(io.frames, io_out.frames, cparams.ba_params,
@@ -262,9 +262,9 @@ TEST(ModularTest, RoundtripLosslessCustomSqueeze) {
 
   CodecInOut io2;
   size_t compressed_size;
-  EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _, &compressed_size));
+  JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _, &compressed_size));
   EXPECT_LE(compressed_size, 265000u);
-  EXPECT_OK(SamePixels(*io.Main().color(), *io2.Main().color(), _));
+  JXL_EXPECT_OK(SamePixels(*io.Main().color(), *io2.Main().color(), _));
 }
 
 struct RoundtripLosslessConfig {
@@ -347,7 +347,7 @@ TEST_P(ModularTestParam, RoundtripLossless) {
   cparams.responsive = responsive;
   CodecInOut io2;
   size_t compressed_size;
-  EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _, &compressed_size));
+  JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _, &compressed_size));
   EXPECT_LE(compressed_size, bitdepth * xsize * ysize / 3);
   EXPECT_LE(0, ComputeDistance2(io.Main(), io2.Main(), GetJxlCms()));
   size_t different = 0;
@@ -401,9 +401,9 @@ TEST(ModularTest, RoundtripLosslessCustomFloat) {
 
   CodecInOut io2;
   size_t compressed_size;
-  EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _, &compressed_size));
+  JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _, &compressed_size));
   EXPECT_LE(compressed_size, 23000u);
-  EXPECT_OK(SamePixels(*io.Main().color(), *io2.Main().color(), _));
+  JXL_EXPECT_OK(SamePixels(*io.Main().color(), *io2.Main().color(), _));
 }
 
 void WriteHeaders(BitWriter* writer, size_t xsize, size_t ysize) {

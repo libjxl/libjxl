@@ -133,7 +133,7 @@ void TestDirac2D(size_t xsize, size_t ysize, double sigma) {
   const double max_l1 = sigma < 1.5 ? 5E-3 : 6E-4;
   const size_t border = 2 * sigma;
 
-  ASSERT_OK(VerifyRelativeError(expected, out, max_l1, 1E-8, _, border));
+  JXL_ASSERT_OK(VerifyRelativeError(expected, out, max_l1, 1E-8, _, border));
 }
 
 TEST(GaussBlurTest, Test2D) {
@@ -205,7 +205,7 @@ void TestRandom(size_t xsize, size_t ysize, float min, float max, double sigma,
       GaussianKernel(static_cast<int>(4 * sigma), static_cast<float>(sigma));
   const ImageF expected = Convolve(in, kernel);
 
-  ASSERT_OK(VerifyRelativeError(expected, out, max_l1, max_rel, _, border));
+  JXL_ASSERT_OK(VerifyRelativeError(expected, out, max_l1, max_rel, _, border));
 }
 
 void TestRandomForSizes(float min, float max, double sigma) {

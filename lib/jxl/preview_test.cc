@@ -49,7 +49,7 @@ TEST(PreviewTest, RoundtripGivenPreview) {
   cparams.speed_tier = SpeedTier::kSquirrel;
 
   CodecInOut io2;
-  EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _));
+  JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _));
   EXPECT_EQ(preview_xsize, io2.metadata.m.preview_size.xsize());
   EXPECT_EQ(preview_ysize, io2.metadata.m.preview_size.ysize());
   EXPECT_EQ(preview_xsize, io2.preview_frame.xsize());

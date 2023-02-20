@@ -45,7 +45,7 @@ TEST(PassesTest, RoundtripSmallPasses) {
   cparams.progressive_mode = true;
 
   CodecInOut io2;
-  EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _));
+  JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _));
   EXPECT_THAT(
       ButteraugliDistance(io.frames, io2.frames, cparams.ba_params, GetJxlCms(),
                           /*distmap=*/nullptr),
@@ -64,7 +64,7 @@ TEST(PassesTest, RoundtripUnalignedPasses) {
   cparams.progressive_mode = true;
 
   CodecInOut io2;
-  EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _));
+  JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _));
   EXPECT_THAT(
       ButteraugliDistance(io.frames, io2.frames, cparams.ba_params, GetJxlCms(),
                           /*distmap=*/nullptr),
@@ -86,8 +86,8 @@ TEST(PassesTest, RoundtripMultiGroupPasses) {
     cparams.butteraugli_distance = target_distance;
     cparams.progressive_mode = true;
     CodecInOut io2;
-    EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _,
-                        /* compressed_size */ nullptr, &pool));
+    JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _,
+                            /* compressed_size */ nullptr, &pool));
     EXPECT_THAT(ButteraugliDistance(io.frames, io2.frames, cparams.ba_params,
                                     GetJxlCms(),
                                     /*distmap=*/nullptr, &pool),
@@ -109,8 +109,8 @@ TEST(PassesTest, RoundtripLargeFastPasses) {
   cparams.progressive_mode = true;
 
   CodecInOut io2;
-  EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _, /* comrpessed_size */ nullptr,
-                      &pool));
+  JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _,
+                          /* comrpessed_size */ nullptr, &pool));
 }
 
 // Checks for differing size/distance in two consecutive runs of distance 2,
@@ -133,11 +133,11 @@ TEST(PassesTest, RoundtripProgressiveConsistent) {
 
     CodecInOut io2;
     size_t size2;
-    EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _, &size2, &pool));
+    JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _, &size2, &pool));
 
     CodecInOut io3;
     size_t size3;
-    EXPECT_OK(Roundtrip(&io, cparams, {}, &io3, _, &size3, &pool));
+    JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io3, _, &size3, &pool));
 
     // Exact same compressed size.
     EXPECT_EQ(size2, size3);
@@ -390,7 +390,7 @@ TEST(PassesTest, RoundtripSmallNoGaborishPasses) {
   cparams.progressive_mode = true;
 
   CodecInOut io2;
-  EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _));
+  JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _));
   EXPECT_THAT(
       ButteraugliDistance(io.frames, io2.frames, cparams.ba_params, GetJxlCms(),
                           /*distmap=*/nullptr),
