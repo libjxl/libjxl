@@ -445,8 +445,11 @@ void ProcessCompressionParams(j_compress_ptr cinfo) {
         JPEGLI_ERROR("Duplicate component id %d", comp->component_id);
       }
     }
-    if (comp->h_samp_factor == 0 || comp->v_samp_factor == 0) {
-      JPEGLI_ERROR("Invalid sampling factor 0");
+    if (comp->h_samp_factor <= 0 || comp->v_samp_factor <= 0 ||
+        comp->h_samp_factor > MAX_SAMP_FACTOR ||
+        comp->v_samp_factor > MAX_SAMP_FACTOR) {
+      JPEGLI_ERROR("Invalid sampling factor %d x %d", comp->h_samp_factor,
+                   comp->v_samp_factor);
     }
     cinfo->max_h_samp_factor =
         std::max(comp->h_samp_factor, cinfo->max_h_samp_factor);

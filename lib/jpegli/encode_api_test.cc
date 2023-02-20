@@ -180,8 +180,7 @@ void ConvertPixel(const uint8_t* input_rgb, uint8_t* out,
     out[0] = static_cast<uint8_t>(std::round(Y * kMul));
   } else if (colorspace == JCS_RGB || colorspace == JCS_UNKNOWN) {
     for (size_t c = 0; c < num_channels; ++c) {
-      size_t copy_channels = std::min<size_t>(3, num_channels - c);
-      memcpy(out + c, input_rgb, copy_channels);
+      out[c] = input_rgb[std::min<size_t>(2, c)];
     }
   } else if (colorspace == JCS_YCbCr) {
     float Y = 0.299f * r + 0.587f * g + 0.114f * b;
@@ -642,6 +641,57 @@ std::vector<TestConfig> GenerateTests() {
     config.max_dist = 2.5;
     all_tests.push_back(config);
   }
+  for (int h0_samp : {1, 2, 4}) {
+    for (int v0_samp : {1, 2, 4}) {
+      for (int h2_samp : {1, 2, 4}) {
+        for (int v2_samp : {1, 2, 4}) {
+          TestConfig config;
+          config.xsize = 137;
+          config.ysize = 75;
+          config.custom_sampling = true;
+          config.h_sampling[0] = h0_samp;
+          config.v_sampling[0] = v0_samp;
+          config.h_sampling[2] = h2_samp;
+          config.v_sampling[2] = v2_samp;
+          config.max_bpp = 2.5;
+          config.max_dist = 12.0;
+          all_tests.push_back(config);
+        }
+      }
+    }
+  }
+  for (int h0_samp : {1, 3}) {
+    for (int v0_samp : {1, 3}) {
+      for (int h2_samp : {1, 3}) {
+        for (int v2_samp : {1, 3}) {
+          TestConfig config;
+          config.xsize = 205;
+          config.ysize = 99;
+          config.custom_sampling = true;
+          config.h_sampling[0] = h0_samp;
+          config.v_sampling[0] = v0_samp;
+          config.h_sampling[2] = h2_samp;
+          config.v_sampling[2] = v2_samp;
+          config.max_bpp = 2.5;
+          config.max_dist = 10.0;
+          all_tests.push_back(config);
+        }
+      }
+    }
+  }
+  for (int h0_samp : {1, 2, 3, 4}) {
+    for (int v0_samp : {1, 2, 3, 4}) {
+      TestConfig config;
+      config.xsize = 217;
+      config.ysize = 129;
+      config.custom_sampling = true;
+      config.h_sampling[0] = h0_samp;
+      config.v_sampling[0] = v0_samp;
+      config.max_bpp = 2.0;
+      config.max_dist = 5.5;
+      all_tests.push_back(config);
+    }
+  }
   for (size_t p = 0; p < kNumTestScripts; ++p) {
     TestConfig config;
     config.progressive_id = p + 1;
@@ -875,8 +925,8 @@ std::vector<TestConfig> GenerateTests() {
   {
     TestConfig config;
     config.xsize = config.ysize = 256;
-    config.max_bpp = 1.45;
-    config.max_dist = 2.2;
+    config.max_bpp = 1.7;
+    config.max_dist = 2.3;
     config.add_marker = true;
     all_tests.push_back(config);
   }
@@ -885,8 +935,8 @@ std::vector<TestConfig> GenerateTests() {
     config.xsize = config.ysize = 256;
     config.progressive_level = 0;
     config.optimize_coding = false;
-    config.max_bpp = 1.5;
-    config.max_dist = 2.2;
+    config.max_bpp = 1.8;
+    config.max_dist = 2.3;
     all_tests.push_back(config);
     config.use_flat_dc_luma_code = true;
     all_tests.push_back(config);
@@ -1718,6 +1768,37 @@ TEST(ErrorHandlingTest, RestartIntervalTooBig) {
   cinfo.input_components = 1;
   jpegli_set_defaults(&cinfo);
   cinfo.restart_interval = 1000000;
+  jpegli_start_compress(&cinfo, TRUE);
+  EXPECT_FAILURE();
+}
+
+TEST(ErrorHandlingTest, SamplingFactorTooBig) {
+  MyClientData data;
+  jpeg_compress_struct cinfo;
+  ERROR_HANDLER_SETUP(return );
+  jpegli_create_compress(&cinfo);
+  jpegli_mem_dest(&cinfo, &data.buffer, &data.size);
+  cinfo.image_width = 1;
+  cinfo.image_height = 1;
+  cinfo.input_components = 3;
+  jpegli_set_defaults(&cinfo);
+  cinfo.comp_info[0].h_samp_factor = 5;
+  jpegli_start_compress(&cinfo, TRUE);
+  EXPECT_FAILURE();
+}
+
+TEST(ErrorHandlingTest, NonIntegralSamplingRatio) {
+  MyClientData data;
+  jpeg_compress_struct cinfo;
+  ERROR_HANDLER_SETUP(return );
+  jpegli_create_compress(&cinfo);
+  jpegli_mem_dest(&cinfo, &data.buffer, &data.size);
+  cinfo.image_width = 1;
+  cinfo.image_height = 1;
+  cinfo.input_components = 3;
+  jpegli_set_defaults(&cinfo);
+  cinfo.comp_info[0].h_samp_factor = 3;
+  cinfo.comp_info[1].h_samp_factor = 2;
   jpegli_start_compress(&cinfo, TRUE);
   EXPECT_FAILURE();
 }
