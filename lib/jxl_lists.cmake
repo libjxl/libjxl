@@ -1,4 +1,3 @@
-
 # Copyright (c) the JPEG XL Project Authors. All rights reserved.
 #
 # Use of this source code is governed by a BSD-style
@@ -6,7 +5,6 @@
 
 # This file is generated, do not modify by manually.
 # Run `tools/build_cleaner.py --update` to regenerate it.
-
 set(JPEGXL_INTERNAL_CODEC_APNG_SOURCES
   extras/dec/apng.cc
   extras/dec/apng.h
