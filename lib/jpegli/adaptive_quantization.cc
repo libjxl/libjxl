@@ -648,12 +648,16 @@ jxl::ImageF InitialQuantField(const float butteraugli_target,
 
 void ComputeAdaptiveQuantField(j_compress_ptr cinfo) {
   jpeg_comp_master* m = cinfo->master;
+  const size_t xsize_blocks = DivCeil(cinfo->image_width, DCTSIZE);
+  const size_t ysize_blocks = DivCeil(cinfo->image_height, DCTSIZE);
   int y_channel = cinfo->jpeg_color_space == JCS_RGB ? 1 : 0;
   jpeg_component_info* y_comp = &cinfo->comp_info[y_channel];
-  m->quant_field.Allocate(y_comp->height_in_blocks, y_comp->width_in_blocks);
+  m->quant_field.Allocate(ysize_blocks, xsize_blocks);
   if (m->use_adaptive_quantization &&
       y_comp->h_samp_factor == cinfo->max_h_samp_factor &&
       y_comp->v_samp_factor == cinfo->max_v_samp_factor) {
+    JXL_ASSERT(y_comp->width_in_blocks == xsize_blocks);
+    JXL_ASSERT(y_comp->height_in_blocks == ysize_blocks);
     jxl::ImageF input(y_comp->width_in_blocks * DCTSIZE,
                       y_comp->height_in_blocks * DCTSIZE);
     for (size_t y = 0; y < input.ysize(); ++y) {
@@ -669,8 +673,8 @@ void ComputeAdaptiveQuantField(j_compress_ptr cinfo) {
     }
   } else {
     m->quant_field_max = kDefaultQuantFieldMax;
-    for (size_t y = 0; y < y_comp->height_in_blocks; ++y) {
-      m->quant_field.FillRow(y, m->quant_field_max, y_comp->width_in_blocks);
+    for (size_t y = 0; y < ysize_blocks; ++y) {
+      m->quant_field.FillRow(y, m->quant_field_max, xsize_blocks);
     }
   }
 }
