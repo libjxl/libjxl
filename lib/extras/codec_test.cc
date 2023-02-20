@@ -411,7 +411,8 @@ void DecodeRoundtrip(const std::string& pathname, ThreadPool* pool,
     max_l1 *= 1.5;
     max_rel *= 3.0;
   }
-  ASSERT_OK(VerifyRelativeError(ib1.color(), ib2.color(), max_l1, max_rel, _));
+  JXL_ASSERT_OK(
+      VerifyRelativeError(ib1.color(), ib2.color(), max_l1, max_rel, _));
 
   // Simulate the encoder removing profile and decoder restoring it.
   if (!ib2.metadata()->color_encoding.WantICC()) {

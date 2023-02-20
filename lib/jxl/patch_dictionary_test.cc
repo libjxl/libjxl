@@ -29,10 +29,10 @@ TEST(PatchDictionaryTest, GrayscaleModular) {
   CodecInOut io2;
   // Without patches: ~25k
   size_t compressed_size;
-  EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _, &compressed_size));
+  JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _, &compressed_size));
   EXPECT_LE(compressed_size, 8000u);
-  ASSERT_OK(VerifyRelativeError(*io.Main().color(), *io2.Main().color(), 1e-7f,
-                                0, _));
+  JXL_ASSERT_OK(VerifyRelativeError(*io.Main().color(), *io2.Main().color(),
+                                    1e-7f, 0, _));
 }
 
 TEST(PatchDictionaryTest, GrayscaleVarDCT) {
@@ -46,7 +46,7 @@ TEST(PatchDictionaryTest, GrayscaleVarDCT) {
   CodecInOut io2;
   // Without patches: ~47k
   size_t compressed_size;
-  EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _, &compressed_size));
+  JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _, &compressed_size));
   EXPECT_LE(compressed_size, 14000u);
   // Without patches: ~1.2
   EXPECT_LE(

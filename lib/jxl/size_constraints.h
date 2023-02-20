@@ -7,6 +7,7 @@
 #define LIB_JXL_SIZE_CONSTRAINTS_H_
 
 #include <cstdint>
+#include <type_traits>
 
 #include "lib/jxl/base/status.h"
 

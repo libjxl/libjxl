@@ -34,7 +34,7 @@ TEST(OpsinInverseTest, LinearInverseInverts) {
   opsin_params.Init(/*intensity_target=*/255.0f);
   OpsinToLinearInplace(&opsin, /*pool=*/nullptr, opsin_params);
 
-  ASSERT_OK(VerifyRelativeError(linear, opsin, 3E-3, 2E-4, _));
+  JXL_ASSERT_OK(VerifyRelativeError(linear, opsin, 3E-3, 2E-4, _));
 }
 
 TEST(OpsinInverseTest, YcbCrInverts) {
@@ -50,7 +50,7 @@ TEST(OpsinInverseTest, YcbCrInverts) {
   Image3F rgb2(rgb.xsize(), rgb.ysize());
   YcbcrToRgb(ycbcr, &rgb2, Rect(rgb));
 
-  ASSERT_OK(VerifyRelativeError(rgb, rgb2, 4E-5, 4E-7, _));
+  JXL_ASSERT_OK(VerifyRelativeError(rgb, rgb2, 4E-5, 4E-7, _));
 }
 
 }  // namespace

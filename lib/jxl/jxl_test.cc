@@ -318,7 +318,8 @@ TEST(JxlTest, RoundtripRGBToGrayscale) {
   CodecInOut io2;
   EXPECT_FALSE(io.Main().IsGray());
   size_t compressed_size;
-  EXPECT_OK(Roundtrip(&io, cparams, dparams, &io2, _, &compressed_size, &pool));
+  JXL_EXPECT_OK(
+      Roundtrip(&io, cparams, dparams, &io2, _, &compressed_size, &pool));
   EXPECT_LE(compressed_size, 55000u);
   EXPECT_TRUE(io2.Main().IsGray());
 
@@ -568,7 +569,7 @@ TEST(JxlTest, RoundtripImageBundleOriginalBits) {
 
     io.metadata.m.SetUintSamples(bit_depth);
     CodecInOut io2;
-    EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _));
+    JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _));
 
     EXPECT_EQ(bit_depth, io2.metadata.m.bit_depth.bits_per_sample);
     EXPECT_FALSE(io2.metadata.m.bit_depth.floating_point_sample);
@@ -605,7 +606,7 @@ TEST(JxlTest, RoundtripImageBundleOriginalBits) {
     io.metadata.m.bit_depth.exponent_bits_per_sample = exponent_bit_depth;
 
     CodecInOut io2;
-    EXPECT_OK(Roundtrip(&io, cparams, {}, &io2));
+    JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2));
 
     EXPECT_EQ(bit_depth, io2.metadata.m.bit_depth.bits_per_sample);
     EXPECT_TRUE(io2.metadata.m.bit_depth.floating_point_sample);

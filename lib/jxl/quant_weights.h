@@ -371,7 +371,7 @@ class DequantMatrices {
   // Return the array of library kNumPredefinedTables QuantEncoding entries as
   // a constexpr array. Use Library() to obtain a pointer to the copy in the
   // .cc file.
-  static const DequantLibraryInternal LibraryInit();
+  static DequantLibraryInternal LibraryInit();
 
   // Returns aligned memory.
   JXL_INLINE const float* Matrix(size_t quant_kind, size_t c) const {

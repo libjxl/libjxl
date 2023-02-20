@@ -25,7 +25,7 @@ void TestPacked(const size_t xsize, const size_t ysize) {
   RandomFillImage(&image1);
   const std::vector<T>& packed = PackedFromImage(image1);
   const Plane<T>& image2 = ImageFromPacked(packed, xsize, ysize);
-  EXPECT_OK(SamePixels(image1, image2, _));
+  JXL_EXPECT_OK(SamePixels(image1, image2, _));
 }
 
 TEST(ImageTest, TestPacked) {

@@ -158,7 +158,7 @@ class ColorManagementTest
     double max_rel = 4E-7;
 #endif
     if (c.IsGray()) max_rel = 2E-5;
-    ASSERT_OK(VerifyRelativeError(in, *out, max_l1, max_rel, _));
+    JXL_ASSERT_OK(VerifyRelativeError(in, *out, max_l1, max_rel, _));
   }
 };
 JXL_GTEST_INSTANTIATE_TEST_SUITE_P(ColorManagementTestInstantiation,

@@ -58,13 +58,13 @@ MATCHER_P(IsSlightlyBelow, max, "") {
   return max * 0.75 <= arg && arg <= max * 1.0;
 }
 
-#define EXPECT_OK(F)           \
+#define JXL_EXPECT_OK(F)       \
   {                            \
     std::stringstream _;       \
     EXPECT_TRUE(F) << _.str(); \
   }
 
-#define ASSERT_OK(F)           \
+#define JXL_ASSERT_OK(F)       \
   {                            \
     std::stringstream _;       \
     ASSERT_TRUE(F) << _.str(); \

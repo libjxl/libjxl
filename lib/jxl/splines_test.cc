@@ -316,8 +316,8 @@ TEST(SplinesTest, Drawing) {
   ASSERT_TRUE(io_actual.frames[0].TransformTo(io_expected.Main().c_current(),
                                               GetJxlCms()));
 
-  ASSERT_OK(VerifyRelativeError(*io_expected.Main().color(),
-                                *io_actual.Main().color(), 1e-2f, 1e-1f, _));
+  JXL_ASSERT_OK(VerifyRelativeError(
+      *io_expected.Main().color(), *io_actual.Main().color(), 1e-2f, 1e-1f, _));
 }
 
 TEST(SplinesTest, ClearedEveryFrame) {
@@ -342,8 +342,8 @@ TEST(SplinesTest, ClearedEveryFrame) {
       }
     }
   }
-  ASSERT_OK(VerifyRelativeError(*io_expected.Main().color(),
-                                *io_actual.Main().color(), 1e-2f, 1e-1f, _));
+  JXL_ASSERT_OK(VerifyRelativeError(
+      *io_expected.Main().color(), *io_actual.Main().color(), 1e-2f, 1e-1f, _));
 }
 
 }  // namespace jxl

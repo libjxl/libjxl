@@ -42,7 +42,7 @@ void TestRoundTrip(const Image3F& in, float max_l1) {
   ConvolveGaborish(in.Plane(1), 0, 0, null_pool, &fwd.Plane(1));
   ConvolveGaborish(in.Plane(2), 0, 0, null_pool, &fwd.Plane(2));
   GaborishInverse(&fwd, 0.92718927264540152f, null_pool);
-  ASSERT_OK(VerifyRelativeError(in, fwd, max_l1, 1E-4f, _));
+  JXL_ASSERT_OK(VerifyRelativeError(in, fwd, max_l1, 1E-4f, _));
 }
 
 TEST(GaborishTest, TestZero) {

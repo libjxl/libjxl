@@ -417,8 +417,8 @@ void VerifyRoundtripCompression(
   }
 
   if (lossless && !already_downsampled) {
-    EXPECT_OK(jxl::SamePixels(*original_io.Main().color(),
-                              *decoded_io.Main().color(), _));
+    JXL_EXPECT_OK(jxl::SamePixels(*original_io.Main().color(),
+                                  *decoded_io.Main().color(), _));
   } else {
     jxl::ButteraugliParams ba;
     float butteraugli_score = ButteraugliDistance(
