@@ -997,7 +997,7 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
     }
     size_t num_dht = cinfo->master->scan_coding_info[i].num_huffman_codes;
     if (num_dht > 0) {
-      jpegli::EncodeDHT(cinfo, &huffman_codes[dht_index], num_dht);
+      jpegli::EncodeDHT(cinfo, huffman_codes.data() + dht_index, num_dht);
       dht_index += num_dht;
     }
     jpegli::EncodeSOS(cinfo, i);
