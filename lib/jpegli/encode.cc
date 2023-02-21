@@ -955,8 +955,10 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
       last_restart_interval = cinfo->restart_interval;
     }
     size_t num_dht = cinfo->master->scan_coding_info[i].num_huffman_codes;
-    jpegli::EncodeDHT(cinfo, &huffman_codes[dht_index], num_dht);
-    dht_index += num_dht;
+    if (num_dht > 0) {
+      jpegli::EncodeDHT(cinfo, &huffman_codes[dht_index], num_dht);
+      dht_index += num_dht;
+    }
     jpegli::EncodeSOS(cinfo, i);
     if (!jpegli::EncodeScan(cinfo, coeffs, i)) {
       JPEGLI_ERROR("Failed to encode scan.");
