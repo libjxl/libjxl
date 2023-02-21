@@ -497,6 +497,7 @@ set(JPEGXL_INTERNAL_JPEGLI_TESTLIB_FILES
 set(JPEGXL_INTERNAL_JPEGLI_TESTS
   jpegli/decode_api_test.cc
   jpegli/encode_api_test.cc
+  jpegli/transcode_api_test.cc
 )
 
 set(JPEGXL_INTERNAL_JPEGLI_WRAPPER_SOURCES

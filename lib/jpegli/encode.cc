@@ -705,6 +705,47 @@ void jpegli_set_progressive_level(j_compress_ptr cinfo, int level) {
   cinfo->master->progressive_level = level;
 }
 
+void jpegli_copy_critical_parameters(j_decompress_ptr srcinfo,
+                                     j_compress_ptr cinfo) {
+  CheckState(cinfo, jpegli::kEncStart);
+  // Image parameters.
+  cinfo->image_width = srcinfo->image_width;
+  cinfo->image_height = srcinfo->image_height;
+  cinfo->input_components = srcinfo->num_components;
+  cinfo->in_color_space = srcinfo->jpeg_color_space;
+  cinfo->input_gamma = srcinfo->output_gamma;
+  // Compression parameters.
+  jpegli_set_defaults(cinfo);
+  jpegli_set_colorspace(cinfo, srcinfo->jpeg_color_space);
+  if (cinfo->num_components != srcinfo->num_components) {
+    return JPEGLI_ERROR("Mismatch between src colorspace and components");
+  }
+  cinfo->data_precision = srcinfo->data_precision;
+  cinfo->CCIR601_sampling = srcinfo->CCIR601_sampling;
+  cinfo->JFIF_major_version = srcinfo->JFIF_major_version;
+  cinfo->JFIF_minor_version = srcinfo->JFIF_minor_version;
+  cinfo->density_unit = srcinfo->density_unit;
+  cinfo->X_density = srcinfo->X_density;
+  cinfo->Y_density = srcinfo->Y_density;
+  for (int c = 0; c < cinfo->num_components; ++c) {
+    jpeg_component_info* srccomp = &srcinfo->comp_info[c];
+    jpeg_component_info* dstcomp = &cinfo->comp_info[c];
+    dstcomp->component_id = srccomp->component_id;
+    dstcomp->h_samp_factor = srccomp->h_samp_factor;
+    dstcomp->v_samp_factor = srccomp->v_samp_factor;
+    dstcomp->quant_tbl_no = srccomp->quant_tbl_no;
+  }
+  for (int i = 0; i < NUM_QUANT_TBLS; ++i) {
+    if (!srcinfo->quant_tbl_ptrs[i]) continue;
+    if (cinfo->quant_tbl_ptrs[i] == nullptr) {
+      cinfo->quant_tbl_ptrs[i] = jpegli::Allocate<JQUANT_TBL>(cinfo, 1);
+    }
+    memcpy(cinfo->quant_tbl_ptrs[i], srcinfo->quant_tbl_ptrs[i],
+           sizeof(JQUANT_TBL));
+    cinfo->quant_tbl_ptrs[i]->sent_table = FALSE;
+  }
+}
+
 void jpegli_suppress_tables(j_compress_ptr cinfo, boolean suppress) {
   jpegli::SetSentTableFlag(cinfo->quant_tbl_ptrs, NUM_QUANT_TBLS, suppress);
   jpegli::SetSentTableFlag(cinfo->dc_huff_tbl_ptrs, NUM_HUFF_TBLS, suppress);
