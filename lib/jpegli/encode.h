@@ -64,6 +64,9 @@ void jpegli_simple_progression(j_compress_ptr cinfo);
 
 void jpegli_suppress_tables(j_compress_ptr cinfo, boolean suppress);
 
+void jpegli_copy_critical_parameters(j_decompress_ptr srcinfo,
+                                     j_compress_ptr dstinfo);
+
 void jpegli_write_m_header(j_compress_ptr cinfo, int marker,
                            unsigned int datalen);
 

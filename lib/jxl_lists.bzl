@@ -497,6 +497,7 @@ libjxl_jpegli_testlib_files = [
 libjxl_jpegli_tests = [
     "jpegli/decode_api_test.cc",
     "jpegli/encode_api_test.cc",
+    "jpegli/transcode_api_test.cc",
 ]
 
 libjxl_jpegli_wrapper_sources = [
