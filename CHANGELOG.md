@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed 
  - changed the name of the cjxl flag `photon_noise` to `photon_noise_iso`
 
-## [0.8.0] - 2022-01-18
+## [0.8.0] - 2023-01-18
 
 ### Added
  - decoder API: new function `JxlDecoderSetImageBitDepth` to set the bit depth
