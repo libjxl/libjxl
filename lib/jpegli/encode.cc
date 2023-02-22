@@ -484,6 +484,20 @@ void SetSentTableFlag(T** table_ptrs, size_t num, boolean val) {
   }
 }
 
+void WriteFileHeader(j_compress_ptr cinfo) {
+  (*cinfo->dest->init_destination)(cinfo);
+  // SOI
+  WriteOutput(cinfo, {0xFF, 0xD8});
+  // APP0
+  if (cinfo->write_JFIF_header) {
+    EncodeAPP0(cinfo);
+  }
+  // APP14
+  if (cinfo->write_Adobe_marker) {
+    EncodeAPP14(cinfo);
+  }
+}
+
 }  // namespace jpegli
 
 void jpegli_CreateCompress(j_compress_ptr cinfo, int version,
@@ -763,6 +777,8 @@ void jpegli_start_compress(j_compress_ptr cinfo, boolean write_all_tables) {
   if (write_all_tables) {
     jpegli_suppress_tables(cinfo, FALSE);
   }
+  (*cinfo->mem->realize_virt_arrays)(reinterpret_cast<j_common_ptr>(cinfo));
+  jpegli::WriteFileHeader(cinfo);
   cinfo->next_scanline = 0;
   cinfo->global_state = jpegli::kEncHeader;
 }
@@ -774,6 +790,7 @@ void jpegli_write_coefficients(j_compress_ptr cinfo,
   (*cinfo->mem->realize_virt_arrays)(reinterpret_cast<j_common_ptr>(cinfo));
   cinfo->master->coeff_buffers = coef_arrays;
   jpegli_suppress_tables(cinfo, FALSE);
+  jpegli::WriteFileHeader(cinfo);
   cinfo->next_scanline = cinfo->image_height;
   cinfo->global_state = jpegli::kEncWriteCoeffs;
 }
@@ -815,6 +832,7 @@ void jpegli_write_m_header(j_compress_ptr cinfo, int marker,
   marker_data[1] = marker;
   marker_data[2] = (datalen + 2) >> 8;
   marker_data[3] = (datalen + 2) & 0xff;
+  jpegli::WriteOutput(cinfo, &marker_data[0], 4);
   m->special_markers.emplace_back(std::move(marker_data));
   m->next_marker_byte = &m->special_markers.back()[4];
 }
@@ -823,12 +841,15 @@ void jpegli_write_m_byte(j_compress_ptr cinfo, int val) {
   if (cinfo->master->next_marker_byte == nullptr) {
     JPEGLI_ERROR("Marker header missing.");
   }
-  *cinfo->master->next_marker_byte++ = val;
+  *cinfo->master->next_marker_byte = val;
+  jpegli::WriteOutput(cinfo, cinfo->master->next_marker_byte, 1);
+  cinfo->master->next_marker_byte++;
 }
 
 void jpegli_write_marker(j_compress_ptr cinfo, int marker,
                          const JOCTET* dataptr, unsigned int datalen) {
   jpegli_write_m_header(cinfo, marker, datalen);
+  jpegli::WriteOutput(cinfo, dataptr, datalen);
   memcpy(cinfo->master->next_marker_byte, dataptr, datalen);
   cinfo->master->next_marker_byte = nullptr;
 }
@@ -932,29 +953,6 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
   }
   if (cinfo->global_state != jpegli::kEncWriteCoeffs) {
     jpegli::ComputeAdaptiveQuantField(cinfo);
-  }
-
-  //
-  // Start writing to the bitstream
-  //
-  (*cinfo->dest->init_destination)(cinfo);
-
-  // SOI
-  jpegli::WriteOutput(cinfo, {0xFF, 0xD8});
-
-  // APP0
-  if (cinfo->write_JFIF_header) {
-    jpegli::EncodeAPP0(cinfo);
-  }
-
-  // APP14
-  if (cinfo->write_Adobe_marker) {
-    jpegli::EncodeAPP14(cinfo);
-  }
-
-  // APPn, COM
-  for (const auto& v : cinfo->master->special_markers) {
-    jpegli::WriteOutput(cinfo, v);
   }
 
   // DQT
