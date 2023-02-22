@@ -6,6 +6,7 @@
 #include "lib/jxl/enc_xyb.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdlib>
 
 #undef HWY_TARGET_INCLUDE
