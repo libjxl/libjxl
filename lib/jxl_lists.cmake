@@ -491,6 +491,7 @@ set(JPEGXL_INTERNAL_JPEGLI_SOURCES
 )
 
 set(JPEGXL_INTERNAL_JPEGLI_TESTLIB_FILES
+  jpegli/test_utils.cc
   jpegli/test_utils.h
 )
 
@@ -536,7 +537,6 @@ set(JPEGXL_INTERNAL_TESTLIB_FILES
   jxl/test_image.h
   jxl/test_utils.cc
   jxl/test_utils.h
-  jxl/testdata.h
 )
 
 set(JPEGXL_INTERNAL_TESTS

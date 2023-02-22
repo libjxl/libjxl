@@ -27,7 +27,6 @@
 #include "lib/jxl/size_constraints.h"
 #include "lib/jxl/test_image.h"
 #include "lib/jxl/test_utils.h"
-#include "lib/jxl/testdata.h"
 
 namespace jxl {
 namespace extras {
@@ -37,7 +36,7 @@ using test::ButteraugliDistance;
 using test::TestImage;
 
 Status ReadTestImage(const std::string& pathname, PackedPixelFile* ppf) {
-  const PaddedBytes encoded = ReadTestData(pathname);
+  const PaddedBytes encoded = jxl::test::ReadTestData(pathname);
   ColorHints color_hints;
   if (pathname.find(".ppm") != std::string::npos) {
     color_hints.Add("color_space", "RGB_D65_SRG_Rel_SRG");

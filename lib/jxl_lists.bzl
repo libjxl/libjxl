@@ -491,6 +491,7 @@ libjxl_jpegli_sources = [
 ]
 
 libjxl_jpegli_testlib_files = [
+    "jpegli/test_utils.cc",
     "jpegli/test_utils.h",
 ]
 
@@ -542,7 +543,6 @@ libjxl_testlib_files = [
     "jxl/test_image.h",
     "jxl/test_utils.cc",
     "jxl/test_utils.h",
-    "jxl/testdata.h",
 ]
 
 libjxl_tests = [

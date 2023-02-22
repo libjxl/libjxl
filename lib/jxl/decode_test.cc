@@ -43,7 +43,6 @@
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
 #include "lib/jxl/test_image.h"
 #include "lib/jxl/test_utils.h"
-#include "lib/jxl/testdata.h"
 #include "lib/jxl/testing.h"
 #include "lib/jxl/toc.h"
 
@@ -1618,7 +1617,7 @@ TEST(DecodeTest, PixelTestWithICCProfileLossless) {
       std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
           dec, jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
           format, /*use_callback=*/false, /*set_buffer_early=*/false,
-          /*use_resizable_runner=*/false, /*reuqire_boxes=*/false,
+          /*use_resizable_runner=*/false, /*require_boxes=*/false,
           /*expect_success=*/true);
       JxlDecoderReset(dec);
       EXPECT_EQ(num_pixels * channels * 4, pixels2.size());
@@ -4828,7 +4827,7 @@ TEST(DecodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGReconstructTestCodestream)) {
 
 TEST(DecodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGReconstructionTest)) {
   const std::string jpeg_path = "jxl/flower/flower.png.im_q85_420.jpg";
-  const jxl::PaddedBytes orig = jxl::ReadTestData(jpeg_path);
+  const jxl::PaddedBytes orig = jxl::test::ReadTestData(jpeg_path);
   jxl::CodecInOut orig_io;
   ASSERT_TRUE(
       jxl::jpeg::DecodeImageJPG(jxl::Span<const uint8_t>(orig), &orig_io));
@@ -4862,8 +4861,8 @@ TEST(DecodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGReconstructionTest)) {
 TEST(DecodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGReconstructionMetadataTest)) {
   const std::string jpeg_path = "jxl/jpeg_reconstruction/1x1_exif_xmp.jpg";
   const std::string jxl_path = "jxl/jpeg_reconstruction/1x1_exif_xmp.jxl";
-  const jxl::PaddedBytes jpeg = jxl::ReadTestData(jpeg_path);
-  const jxl::PaddedBytes jxl = jxl::ReadTestData(jxl_path);
+  const jxl::PaddedBytes jpeg = jxl::test::ReadTestData(jpeg_path);
+  const jxl::PaddedBytes jxl = jxl::test::ReadTestData(jxl_path);
   VerifyJPEGReconstruction(jxl, jpeg);
 }
 
@@ -4934,7 +4933,7 @@ bool BoxTypeEquals(const std::string& type_string, JxlBoxType type) {
 
 TEST(DecodeTest, ExtentedBoxSizeTest) {
   const std::string jxl_path = "jxl/boxes/square-extended-size-container.jxl";
-  const jxl::PaddedBytes orig = jxl::ReadTestData(jxl_path);
+  const jxl::PaddedBytes orig = jxl::test::ReadTestData(jxl_path);
   JxlDecoder* dec = JxlDecoderCreate(nullptr);
 
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSubscribeEvents(dec, JXL_DEC_BOX));

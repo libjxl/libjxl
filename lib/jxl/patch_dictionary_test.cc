@@ -9,7 +9,6 @@
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/image_test_utils.h"
 #include "lib/jxl/test_utils.h"
-#include "lib/jxl/testdata.h"
 #include "lib/jxl/testing.h"
 
 namespace jxl {
@@ -18,7 +17,7 @@ namespace {
 using ::jxl::test::Roundtrip;
 
 TEST(PatchDictionaryTest, GrayscaleModular) {
-  const PaddedBytes orig = ReadTestData("jxl/grayscale_patches.png");
+  const PaddedBytes orig = jxl::test::ReadTestData("jxl/grayscale_patches.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io));
 
@@ -36,7 +35,7 @@ TEST(PatchDictionaryTest, GrayscaleModular) {
 }
 
 TEST(PatchDictionaryTest, GrayscaleVarDCT) {
-  const PaddedBytes orig = ReadTestData("jxl/grayscale_patches.png");
+  const PaddedBytes orig = jxl::test::ReadTestData("jxl/grayscale_patches.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io));
 

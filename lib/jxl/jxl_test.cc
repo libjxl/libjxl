@@ -44,7 +44,6 @@
 #include "lib/jxl/modular/options.h"
 #include "lib/jxl/test_image.h"
 #include "lib/jxl/test_utils.h"
-#include "lib/jxl/testdata.h"
 #include "lib/jxl/testing.h"
 #include "tools/box/box.h"
 
@@ -97,8 +96,8 @@ TEST(JxlTest, RoundtripMarker) {
 
 TEST(JxlTest, RoundtripTinyFast) {
   ThreadPool* pool = nullptr;
-  const PaddedBytes orig =
-      ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  const PaddedBytes orig = jxl::test::ReadTestData(
+      "external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   TestImage t;
   t.DecodeFromBytes(orig).ClearMetadata().SetDimensions(32, 32);
 
@@ -112,8 +111,8 @@ TEST(JxlTest, RoundtripTinyFast) {
 
 TEST(JxlTest, RoundtripSmallD1) {
   ThreadPool* pool = nullptr;
-  const PaddedBytes orig =
-      ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  const PaddedBytes orig = jxl::test::ReadTestData(
+      "external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   TestImage t;
   t.DecodeFromBytes(orig).ClearMetadata();
   size_t xsize = t.ppf().info.xsize / 8;
@@ -139,8 +138,8 @@ TEST(JxlTest, RoundtripSmallD1) {
 }
 TEST(JxlTest, RoundtripResample2) {
   ThreadPool* pool = nullptr;
-  const PaddedBytes orig =
-      ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  const PaddedBytes orig = jxl::test::ReadTestData(
+      "external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   TestImage t;
   t.DecodeFromBytes(orig).ClearMetadata();
 
@@ -155,8 +154,8 @@ TEST(JxlTest, RoundtripResample2) {
 
 TEST(JxlTest, RoundtripResample2Slow) {
   ThreadPool* pool = nullptr;
-  const PaddedBytes orig =
-      ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  const PaddedBytes orig = jxl::test::ReadTestData(
+      "external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   TestImage t;
   t.DecodeFromBytes(orig).ClearMetadata();
 
@@ -172,7 +171,7 @@ TEST(JxlTest, RoundtripResample2Slow) {
 
 TEST(JxlTest, RoundtripResample2MT) {
   ThreadPoolInternal pool(4);
-  const PaddedBytes orig = ReadTestData("jxl/flower/flower.png");
+  const PaddedBytes orig = jxl::test::ReadTestData("jxl/flower/flower.png");
   // image has to be large enough to have multiple groups after downsampling
   TestImage t;
   t.DecodeFromBytes(orig).ClearMetadata();
@@ -191,7 +190,7 @@ TEST(JxlTest, RoundtripResample2MT) {
 TEST(JxlTest, RoundtripOutOfOrderProcessing) {
   FakeParallelRunner fake_pool(/*order_seed=*/123, /*num_threads=*/8);
   ThreadPool pool(&JxlFakeParallelRunner, &fake_pool);
-  const PaddedBytes orig = ReadTestData("jxl/flower/flower.png");
+  const PaddedBytes orig = jxl::test::ReadTestData("jxl/flower/flower.png");
   TestImage t;
   t.DecodeFromBytes(orig).ClearMetadata();
   // Image size is selected so that the block border needed is larger than the
@@ -210,7 +209,7 @@ TEST(JxlTest, RoundtripOutOfOrderProcessing) {
 TEST(JxlTest, RoundtripOutOfOrderProcessingBorder) {
   FakeParallelRunner fake_pool(/*order_seed=*/47, /*num_threads=*/8);
   ThreadPool pool(&JxlFakeParallelRunner, &fake_pool);
-  const PaddedBytes orig = ReadTestData("jxl/flower/flower.png");
+  const PaddedBytes orig = jxl::test::ReadTestData("jxl/flower/flower.png");
   TestImage t;
   t.DecodeFromBytes(orig).ClearMetadata();
   // Image size is selected so that the block border needed is larger than the
@@ -229,8 +228,8 @@ TEST(JxlTest, RoundtripOutOfOrderProcessingBorder) {
 
 TEST(JxlTest, RoundtripResample4) {
   ThreadPool* pool = nullptr;
-  const PaddedBytes orig =
-      ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  const PaddedBytes orig = jxl::test::ReadTestData(
+      "external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   TestImage t;
   t.DecodeFromBytes(orig).ClearMetadata();
 
@@ -244,8 +243,8 @@ TEST(JxlTest, RoundtripResample4) {
 
 TEST(JxlTest, RoundtripResample8) {
   ThreadPool* pool = nullptr;
-  const PaddedBytes orig =
-      ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  const PaddedBytes orig = jxl::test::ReadTestData(
+      "external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   TestImage t;
   t.DecodeFromBytes(orig).ClearMetadata();
 
@@ -259,8 +258,8 @@ TEST(JxlTest, RoundtripResample8) {
 
 TEST(JxlTest, RoundtripUnalignedD2) {
   ThreadPool* pool = nullptr;
-  const PaddedBytes orig =
-      ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  const PaddedBytes orig = jxl::test::ReadTestData(
+      "external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   TestImage t;
   t.DecodeFromBytes(orig).ClearMetadata();
   size_t xsize = t.ppf().info.xsize / 12;
@@ -276,7 +275,7 @@ TEST(JxlTest, RoundtripUnalignedD2) {
 }
 
 TEST(JxlTest, RoundtripMultiGroup) {
-  const PaddedBytes orig = ReadTestData("jxl/flower/flower.png");
+  const PaddedBytes orig = jxl::test::ReadTestData("jxl/flower/flower.png");
   TestImage t;
   t.DecodeFromBytes(orig).ClearMetadata().SetDimensions(600, 1024);
 
@@ -303,7 +302,7 @@ TEST(JxlTest, RoundtripMultiGroup) {
 
 TEST(JxlTest, RoundtripRGBToGrayscale) {
   ThreadPoolInternal pool(4);
-  const PaddedBytes orig = ReadTestData("jxl/flower/flower.png");
+  const PaddedBytes orig = jxl::test::ReadTestData("jxl/flower/flower.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
   io.ShrinkTo(600, 1024);
@@ -349,7 +348,7 @@ TEST(JxlTest, RoundtripRGBToGrayscale) {
 
 TEST(JxlTest, RoundtripLargeFast) {
   ThreadPoolInternal pool(8);
-  const PaddedBytes orig = ReadTestData("jxl/flower/flower.png");
+  const PaddedBytes orig = jxl::test::ReadTestData("jxl/flower/flower.png");
   TestImage t;
   t.DecodeFromBytes(orig).ClearMetadata();
 
@@ -363,8 +362,8 @@ TEST(JxlTest, RoundtripLargeFast) {
 
 TEST(JxlTest, RoundtripDotsForceEpf) {
   ThreadPoolInternal pool(8);
-  const PaddedBytes orig =
-      ReadTestData("external/wesaturate/500px/cvo9xd_keong_macan_srgb8.png");
+  const PaddedBytes orig = jxl::test::ReadTestData(
+      "external/wesaturate/500px/cvo9xd_keong_macan_srgb8.png");
   TestImage t;
   t.DecodeFromBytes(orig).ClearMetadata();
 
@@ -383,7 +382,7 @@ TEST(JxlTest, RoundtripDotsForceEpf) {
 // Failing this may be a sign of race conditions or invalid memory accesses.
 TEST(JxlTest, RoundtripD2Consistent) {
   ThreadPoolInternal pool(8);
-  const PaddedBytes orig = ReadTestData("jxl/flower/flower.png");
+  const PaddedBytes orig = jxl::test::ReadTestData("jxl/flower/flower.png");
   TestImage t;
   t.DecodeFromBytes(orig).ClearMetadata();
 
@@ -413,7 +412,7 @@ TEST(JxlTest, RoundtripD2Consistent) {
 
 // Same as above, but for full image, testing multiple groups.
 TEST(JxlTest, RoundtripLargeConsistent) {
-  const PaddedBytes orig = ReadTestData("jxl/flower/flower.png");
+  const PaddedBytes orig = jxl::test::ReadTestData("jxl/flower/flower.png");
   TestImage t;
   t.DecodeFromBytes(orig).ClearMetadata();
 
@@ -445,8 +444,8 @@ TEST(JxlTest, RoundtripLargeConsistent) {
 
 TEST(JxlTest, RoundtripSmallNL) {
   ThreadPool* pool = nullptr;
-  const PaddedBytes orig =
-      ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  const PaddedBytes orig = jxl::test::ReadTestData(
+      "external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   TestImage t;
   t.DecodeFromBytes(orig).ClearMetadata();
   size_t xsize = t.ppf().info.xsize / 8;
@@ -460,8 +459,8 @@ TEST(JxlTest, RoundtripSmallNL) {
 
 TEST(JxlTest, RoundtripNoGaborishNoAR) {
   ThreadPool* pool = nullptr;
-  const PaddedBytes orig =
-      ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  const PaddedBytes orig = jxl::test::ReadTestData(
+      "external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   TestImage t;
   t.DecodeFromBytes(orig).ClearMetadata();
 
@@ -476,8 +475,8 @@ TEST(JxlTest, RoundtripNoGaborishNoAR) {
 
 TEST(JxlTest, RoundtripSmallNoGaborish) {
   ThreadPool* pool = nullptr;
-  const PaddedBytes orig =
-      ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  const PaddedBytes orig = jxl::test::ReadTestData(
+      "external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   TestImage t;
   t.DecodeFromBytes(orig).ClearMetadata();
   size_t xsize = t.ppf().info.xsize / 8;
@@ -618,7 +617,7 @@ TEST(JxlTest, RoundtripImageBundleOriginalBits) {
 #endif
 
 TEST(JxlTest, RoundtripGrayscale) {
-  const PaddedBytes orig = ReadTestData(
+  const PaddedBytes orig = jxl::test::ReadTestData(
       "external/wesaturate/500px/cvo9xd_keong_macan_grayscale.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io));
@@ -695,8 +694,8 @@ TEST(JxlTest, RoundtripGrayscale) {
 }
 
 TEST(JxlTest, RoundtripAlpha) {
-  const PaddedBytes orig =
-      ReadTestData("external/wesaturate/500px/tmshre_riaphotographs_alpha.png");
+  const PaddedBytes orig = jxl::test::ReadTestData(
+      "external/wesaturate/500px/tmshre_riaphotographs_alpha.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io));
 
@@ -737,8 +736,8 @@ TEST(JxlTest, RoundtripAlpha) {
 }
 
 TEST(JxlTest, RoundtripAlphaPremultiplied) {
-  const PaddedBytes orig =
-      ReadTestData("external/wesaturate/500px/tmshre_riaphotographs_alpha.png");
+  const PaddedBytes orig = jxl::test::ReadTestData(
+      "external/wesaturate/500px/tmshre_riaphotographs_alpha.png");
   CodecInOut io, io_nopremul;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io));
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io_nopremul));
@@ -805,8 +804,8 @@ TEST(JxlTest, RoundtripAlphaPremultiplied) {
 
 TEST(JxlTest, RoundtripAlphaResampling) {
   ThreadPool* pool = nullptr;
-  const PaddedBytes orig =
-      ReadTestData("external/wesaturate/500px/tmshre_riaphotographs_alpha.png");
+  const PaddedBytes orig = jxl::test::ReadTestData(
+      "external/wesaturate/500px/tmshre_riaphotographs_alpha.png");
   TestImage t;
   t.DecodeFromBytes(orig).ClearMetadata();
   ASSERT_NE(t.ppf().info.xsize, 0);
@@ -824,8 +823,8 @@ TEST(JxlTest, RoundtripAlphaResampling) {
 
 TEST(JxlTest, RoundtripAlphaResamplingOnlyAlpha) {
   ThreadPool* pool = nullptr;
-  const PaddedBytes orig =
-      ReadTestData("external/wesaturate/500px/tmshre_riaphotographs_alpha.png");
+  const PaddedBytes orig = jxl::test::ReadTestData(
+      "external/wesaturate/500px/tmshre_riaphotographs_alpha.png");
   TestImage t;
   t.DecodeFromBytes(orig).ClearMetadata();
   ASSERT_NE(t.ppf().info.xsize, 0);
@@ -842,8 +841,8 @@ TEST(JxlTest, RoundtripAlphaResamplingOnlyAlpha) {
 
 TEST(JxlTest, RoundtripAlphaNonMultipleOf8) {
   ThreadPool* pool = nullptr;
-  const PaddedBytes orig =
-      ReadTestData("external/wesaturate/500px/tmshre_riaphotographs_alpha.png");
+  const PaddedBytes orig = jxl::test::ReadTestData(
+      "external/wesaturate/500px/tmshre_riaphotographs_alpha.png");
   TestImage t;
   t.DecodeFromBytes(orig).ClearMetadata().SetDimensions(12, 12);
   ASSERT_NE(t.ppf().info.xsize, 0);
@@ -902,8 +901,8 @@ JXLCompressParams CompressParamsForLossless() {
 
 TEST(JxlTest, JXL_SLOW_TEST(RoundtripLossless8)) {
   ThreadPoolInternal pool(8);
-  const PaddedBytes orig =
-      ReadTestData("external/wesaturate/500px/tmshre_riaphotographs_srgb8.png");
+  const PaddedBytes orig = jxl::test::ReadTestData(
+      "external/wesaturate/500px/tmshre_riaphotographs_srgb8.png");
   TestImage t;
   t.DecodeFromBytes(orig).ClearMetadata();
 
@@ -916,8 +915,8 @@ TEST(JxlTest, JXL_SLOW_TEST(RoundtripLossless8)) {
 
 TEST(JxlTest, JXL_SLOW_TEST(RoundtripLossless8ThunderGradient)) {
   ThreadPoolInternal pool(8);
-  const PaddedBytes orig =
-      ReadTestData("external/wesaturate/500px/tmshre_riaphotographs_srgb8.png");
+  const PaddedBytes orig = jxl::test::ReadTestData(
+      "external/wesaturate/500px/tmshre_riaphotographs_srgb8.png");
   TestImage t;
   t.DecodeFromBytes(orig).ClearMetadata();
 
@@ -932,8 +931,8 @@ TEST(JxlTest, JXL_SLOW_TEST(RoundtripLossless8ThunderGradient)) {
 
 TEST(JxlTest, JXL_SLOW_TEST(RoundtripLossless8LightningGradient)) {
   ThreadPoolInternal pool(8);
-  const PaddedBytes orig =
-      ReadTestData("external/wesaturate/500px/tmshre_riaphotographs_srgb8.png");
+  const PaddedBytes orig = jxl::test::ReadTestData(
+      "external/wesaturate/500px/tmshre_riaphotographs_srgb8.png");
   TestImage t;
   t.DecodeFromBytes(orig).ClearMetadata();
 
@@ -949,8 +948,8 @@ TEST(JxlTest, JXL_SLOW_TEST(RoundtripLossless8LightningGradient)) {
 
 TEST(JxlTest, JXL_SLOW_TEST(RoundtripLossless8Falcon)) {
   ThreadPoolInternal pool(8);
-  const PaddedBytes orig =
-      ReadTestData("external/wesaturate/500px/tmshre_riaphotographs_srgb8.png");
+  const PaddedBytes orig = jxl::test::ReadTestData(
+      "external/wesaturate/500px/tmshre_riaphotographs_srgb8.png");
   TestImage t;
   t.DecodeFromBytes(orig).ClearMetadata();
 
@@ -964,8 +963,8 @@ TEST(JxlTest, JXL_SLOW_TEST(RoundtripLossless8Falcon)) {
 
 TEST(JxlTest, RoundtripLossless8Alpha) {
   ThreadPool* pool = nullptr;
-  const PaddedBytes orig =
-      ReadTestData("external/wesaturate/500px/tmshre_riaphotographs_alpha.png");
+  const PaddedBytes orig = jxl::test::ReadTestData(
+      "external/wesaturate/500px/tmshre_riaphotographs_alpha.png");
   TestImage t;
   t.DecodeFromBytes(orig).ClearMetadata();
   ASSERT_EQ(t.ppf().info.alpha_bits, 8);
@@ -1057,8 +1056,8 @@ TEST(JxlTest, RoundtripLossless16AlphaNotMisdetectedAs8Bit) {
 
 TEST(JxlTest, RoundtripDots) {
   ThreadPool* pool = nullptr;
-  const PaddedBytes orig =
-      ReadTestData("external/wesaturate/500px/cvo9xd_keong_macan_srgb8.png");
+  const PaddedBytes orig = jxl::test::ReadTestData(
+      "external/wesaturate/500px/cvo9xd_keong_macan_srgb8.png");
   TestImage t;
   t.DecodeFromBytes(orig).ClearMetadata();
   ASSERT_NE(t.ppf().info.xsize, 0);
@@ -1078,8 +1077,8 @@ TEST(JxlTest, RoundtripDots) {
 
 TEST(JxlTest, RoundtripNoise) {
   ThreadPool* pool = nullptr;
-  const PaddedBytes orig =
-      ReadTestData("external/wesaturate/500px/cvo9xd_keong_macan_srgb8.png");
+  const PaddedBytes orig = jxl::test::ReadTestData(
+      "external/wesaturate/500px/cvo9xd_keong_macan_srgb8.png");
   TestImage t;
   t.DecodeFromBytes(orig).ClearMetadata();
   ASSERT_NE(t.ppf().info.xsize, 0);
@@ -1098,7 +1097,7 @@ TEST(JxlTest, RoundtripNoise) {
 
 TEST(JxlTest, RoundtripLossless8Gray) {
   ThreadPool* pool = nullptr;
-  const PaddedBytes orig = ReadTestData(
+  const PaddedBytes orig = jxl::test::ReadTestData(
       "external/wesaturate/500px/cvo9xd_keong_macan_grayscale.png");
   TestImage t;
   t.SetColorEncoding("Gra_D65_Rel_SRG").DecodeFromBytes(orig).ClearMetadata();
@@ -1121,7 +1120,7 @@ TEST(JxlTest, RoundtripLossless8Gray) {
 
 TEST(JxlTest, RoundtripAnimation) {
   ThreadPool* pool = nullptr;
-  const PaddedBytes orig = ReadTestData("jxl/traffic_light.gif");
+  const PaddedBytes orig = jxl::test::ReadTestData("jxl/traffic_light.gif");
   TestImage t;
   t.DecodeFromBytes(orig).ClearMetadata();
   EXPECT_EQ(4, t.ppf().frames.size());
@@ -1145,7 +1144,7 @@ TEST(JxlTest, RoundtripAnimation) {
 
 TEST(JxlTest, RoundtripLosslessAnimation) {
   ThreadPool* pool = nullptr;
-  const PaddedBytes orig = ReadTestData("jxl/traffic_light.gif");
+  const PaddedBytes orig = jxl::test::ReadTestData("jxl/traffic_light.gif");
   TestImage t;
   t.DecodeFromBytes(orig).ClearMetadata();
   EXPECT_EQ(4, t.ppf().frames.size());
@@ -1165,7 +1164,7 @@ TEST(JxlTest, RoundtripLosslessAnimation) {
 
 TEST(JxlTest, RoundtripAnimationPatches) {
   ThreadPool* pool = nullptr;
-  const PaddedBytes orig = ReadTestData("jxl/animation_patches.gif");
+  const PaddedBytes orig = jxl::test::ReadTestData("jxl/animation_patches.gif");
 
   TestImage t;
   t.DecodeFromBytes(orig).ClearMetadata();
@@ -1231,7 +1230,8 @@ void RoundtripJpegToPixels(const PaddedBytes& jpeg_in,
 
 TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression444)) {
   ThreadPoolInternal pool(8);
-  const PaddedBytes orig = ReadTestData("jxl/flower/flower.png.im_q85_444.jpg");
+  const PaddedBytes orig =
+      jxl::test::ReadTestData("jxl/flower/flower.png.im_q85_444.jpg");
   // JPEG size is 696,659 bytes.
   EXPECT_NEAR(RoundtripJpeg(orig, &pool), 568940u, 10);
 }
@@ -1240,7 +1240,8 @@ TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression444)) {
 
 TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionToPixels)) {
   ThreadPoolInternal pool(8);
-  const PaddedBytes orig = ReadTestData("jxl/flower/flower.png.im_q85_444.jpg");
+  const PaddedBytes orig =
+      jxl::test::ReadTestData("jxl/flower/flower.png.im_q85_444.jpg");
   TestImage t;
   t.DecodeFromBytes(orig);
 
@@ -1251,7 +1252,8 @@ TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionToPixels)) {
 
 TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionToPixels420)) {
   ThreadPoolInternal pool(8);
-  const PaddedBytes orig = ReadTestData("jxl/flower/flower.png.im_q85_420.jpg");
+  const PaddedBytes orig =
+      jxl::test::ReadTestData("jxl/flower/flower.png.im_q85_420.jpg");
   TestImage t;
   t.DecodeFromBytes(orig);
 
@@ -1263,7 +1265,8 @@ TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionToPixels420)) {
 TEST(JxlTest,
      JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionToPixels420EarlyFlush)) {
   ThreadPoolInternal pool(8);
-  const PaddedBytes orig = ReadTestData("jxl/flower/flower.png.im_q85_420.jpg");
+  const PaddedBytes orig =
+      jxl::test::ReadTestData("jxl/flower/flower.png.im_q85_420.jpg");
   TestImage t;
   t.DecodeFromBytes(orig);
 
@@ -1278,7 +1281,8 @@ TEST(JxlTest,
 TEST(JxlTest,
      JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionToPixels420Mul16)) {
   ThreadPoolInternal pool(8);
-  const PaddedBytes orig = ReadTestData("jxl/flower/flower_cropped.jpg");
+  const PaddedBytes orig =
+      jxl::test::ReadTestData("jxl/flower/flower_cropped.jpg");
   TestImage t;
   t.DecodeFromBytes(orig);
 
@@ -1291,7 +1295,7 @@ TEST(JxlTest,
      JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionToPixels_asymmetric)) {
   ThreadPoolInternal pool(8);
   const PaddedBytes orig =
-      ReadTestData("jxl/flower/flower.png.im_q85_asymmetric.jpg");
+      jxl::test::ReadTestData("jxl/flower/flower.png.im_q85_asymmetric.jpg");
   TestImage t;
   t.DecodeFromBytes(orig);
 
@@ -1305,14 +1309,15 @@ TEST(JxlTest,
 TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionGray)) {
   ThreadPoolInternal pool(8);
   const PaddedBytes orig =
-      ReadTestData("jxl/flower/flower.png.im_q85_gray.jpg");
+      jxl::test::ReadTestData("jxl/flower/flower.png.im_q85_gray.jpg");
   // JPEG size is 456,528 bytes.
   EXPECT_NEAR(RoundtripJpeg(orig, &pool), 387496u, 200);
 }
 
 TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression420)) {
   ThreadPoolInternal pool(8);
-  const PaddedBytes orig = ReadTestData("jxl/flower/flower.png.im_q85_420.jpg");
+  const PaddedBytes orig =
+      jxl::test::ReadTestData("jxl/flower/flower.png.im_q85_420.jpg");
   // JPEG size is 546,797 bytes.
   EXPECT_NEAR(RoundtripJpeg(orig, &pool), 455560u, 10);
 }
@@ -1320,8 +1325,8 @@ TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression420)) {
 TEST(JxlTest,
      JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression_luma_subsample)) {
   ThreadPoolInternal pool(8);
-  const PaddedBytes orig =
-      ReadTestData("jxl/flower/flower.png.im_q85_luma_subsample.jpg");
+  const PaddedBytes orig = jxl::test::ReadTestData(
+      "jxl/flower/flower.png.im_q85_luma_subsample.jpg");
   // JPEG size is 400,724 bytes.
   EXPECT_NEAR(RoundtripJpeg(orig, &pool), 325354u, 10);
 }
@@ -1330,21 +1335,23 @@ TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression444_12)) {
   // 444 JPEG that has an interesting sampling-factor (1x2, 1x2, 1x2).
   ThreadPoolInternal pool(8);
   const PaddedBytes orig =
-      ReadTestData("jxl/flower/flower.png.im_q85_444_1x2.jpg");
+      jxl::test::ReadTestData("jxl/flower/flower.png.im_q85_444_1x2.jpg");
   // JPEG size is 703,874 bytes.
   EXPECT_NEAR(RoundtripJpeg(orig, &pool), 569679u, 10);
 }
 
 TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression422)) {
   ThreadPoolInternal pool(8);
-  const PaddedBytes orig = ReadTestData("jxl/flower/flower.png.im_q85_422.jpg");
+  const PaddedBytes orig =
+      jxl::test::ReadTestData("jxl/flower/flower.png.im_q85_422.jpg");
   // JPEG size is 522,057 bytes.
   EXPECT_NEAR(RoundtripJpeg(orig, &pool), 499282u, 10);
 }
 
 TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression440)) {
   ThreadPoolInternal pool(8);
-  const PaddedBytes orig = ReadTestData("jxl/flower/flower.png.im_q85_440.jpg");
+  const PaddedBytes orig =
+      jxl::test::ReadTestData("jxl/flower/flower.png.im_q85_440.jpg");
   // JPEG size is 603,623 bytes.
   EXPECT_NEAR(RoundtripJpeg(orig, &pool), 501151u, 10);
 }
@@ -1354,7 +1361,7 @@ TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression_asymmetric)) {
   // the other.
   ThreadPoolInternal pool(8);
   const PaddedBytes orig =
-      ReadTestData("jxl/flower/flower.png.im_q85_asymmetric.jpg");
+      jxl::test::ReadTestData("jxl/flower/flower.png.im_q85_asymmetric.jpg");
   // JPEG size is 604,601 bytes.
   EXPECT_EQ(RoundtripJpeg(orig, &pool), 500602u);
 }
@@ -1362,14 +1369,14 @@ TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression_asymmetric)) {
 TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression420Progr)) {
   ThreadPoolInternal pool(8);
   const PaddedBytes orig =
-      ReadTestData("jxl/flower/flower.png.im_q85_420_progr.jpg");
+      jxl::test::ReadTestData("jxl/flower/flower.png.im_q85_420_progr.jpg");
   // JPEG size is 522,057 bytes.
   EXPECT_NEAR(RoundtripJpeg(orig, &pool), 455499u, 10);
 }
 
 TEST(JxlTest, RoundtripProgressive) {
   ThreadPoolInternal pool(4);
-  const PaddedBytes orig = ReadTestData("jxl/flower/flower.png");
+  const PaddedBytes orig = jxl::test::ReadTestData("jxl/flower/flower.png");
   TestImage t;
   t.DecodeFromBytes(orig).ClearMetadata().SetDimensions(600, 1024);
 
@@ -1385,7 +1392,7 @@ TEST(JxlTest, RoundtripProgressive) {
 
 TEST(JxlTest, RoundtripProgressiveLevel2Slow) {
   ThreadPoolInternal pool(8);
-  const PaddedBytes orig = ReadTestData("jxl/flower/flower.png");
+  const PaddedBytes orig = jxl::test::ReadTestData("jxl/flower/flower.png");
   TestImage t;
   t.DecodeFromBytes(orig).ClearMetadata().SetDimensions(600, 1024);
 
@@ -1441,7 +1448,7 @@ TEST(JxlTest, LosslessPNMRoundtrip) {
       std::string filename = "jxl/flower/flower_small." +
                              std::string(kChannels[channels]) + ".depth" +
                              std::to_string(bit_depth) + extension;
-      const PaddedBytes orig = ReadTestData(filename);
+      const PaddedBytes orig = jxl::test::ReadTestData(filename);
       test::TestImage t;
       if (channels < 3) t.SetColorEncoding("Gra_D65_Rel_SRG");
       t.DecodeFromBytes(orig);

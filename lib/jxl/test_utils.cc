@@ -5,7 +5,11 @@
 
 #include "lib/jxl/test_utils.h"
 
+#include <memory>
+#include <string>
+
 #include "lib/extras/packed_image_convert.h"
+#include "lib/jxl/base/file_io.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/enc_butteraugli_pnorm.h"
@@ -14,8 +18,35 @@
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_file.h"
 
+#if !defined(TEST_DATA_PATH)
+#include "tools/cpp/runfiles/runfiles.h"
+#endif
+
 namespace jxl {
 namespace test {
+
+#if defined(TEST_DATA_PATH)
+std::string GetTestDataPath(const std::string& filename) {
+  return std::string(TEST_DATA_PATH "/") + filename;
+}
+#else
+using bazel::tools::cpp::runfiles::Runfiles;
+const std::unique_ptr<Runfiles> kRunfiles(Runfiles::Create(""));
+std::string GetTestDataPath(const std::string& filename) {
+  std::string root(JPEGXL_ROOT_PACKAGE "/testdata/");
+  return kRunfiles->Rlocation(root + filename);
+}
+#endif
+
+PaddedBytes ReadTestData(const std::string& filename) {
+  std::string full_path = GetTestDataPath(filename);
+  PaddedBytes data;
+  fprintf(stderr, "ReadTestData %s\n", full_path.c_str());
+  JXL_CHECK(jxl::ReadFile(full_path, &data));
+  printf("Test data %s is %d bytes long.\n", filename.c_str(),
+         static_cast<int>(data.size()));
+  return data;
+}
 
 Status DecodeFile(extras::JXLDecompressParams dparams,
                   const Span<const uint8_t> file, CodecInOut* JXL_RESTRICT io,

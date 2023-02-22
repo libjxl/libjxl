@@ -34,6 +34,9 @@ struct AuxOut;
 
 namespace test {
 
+std::string GetTestDataPath(const std::string& filename);
+PaddedBytes ReadTestData(const std::string& filename);
+
 void JxlBasicInfoSetFromPixelFormat(JxlBasicInfo* basic_info,
                                     const JxlPixelFormat* pixel_format);
 

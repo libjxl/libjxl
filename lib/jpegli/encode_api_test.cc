@@ -3,12 +3,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-/* clang-format off */
-#include <stdio.h>
-#include <jpeglib.h>
-#include <setjmp.h>
-/* clang-format on */
-
 #include <algorithm>
 #include <cmath>
 #include <vector>
@@ -16,6 +10,7 @@
 #include "lib/jpegli/encode.h"
 #include "lib/jpegli/test_utils.h"
 #include "lib/jpegli/testing.h"
+#include "lib/jxl/sanitizers.h"
 
 namespace jpegli {
 namespace {
@@ -140,7 +135,7 @@ std::vector<TestConfig> GenerateTests() {
       all_tests.push_back(config);
     }
   }
-  for (size_t p = 0; p < kNumTestScripts; ++p) {
+  for (int p = 0; p < kNumTestScripts; ++p) {
     TestConfig config;
     config.jparams.progressive_id = p + 1;
     config.max_bpp = 1.5;

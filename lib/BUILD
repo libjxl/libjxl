@@ -44,6 +44,7 @@ load('jxl_vars.bzl',
     'libjxl_deps_runfiles',
     'libjxl_deps_skcms',
     'libjxl_deps_testdata',
+    'libjxl_root_package',
     'libjxl_test_shards',
     'libjxl_test_timeouts',
 )
@@ -161,6 +162,9 @@ cc_library(
     testonly = 1,
     srcs = [src for src in TESTLIB_FILES if not src.endswith('.h')],
     hdrs = [src for src in TESTLIB_FILES if src.endswith('.h')],
+    defines = [
+        'JPEGXL_ROOT_PACKAGE=\'"' + libjxl_root_package + '"\'',
+    ],
     deps = [
         ':jpegxl_extras',
         ':jpegxl_private',

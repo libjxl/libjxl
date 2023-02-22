@@ -28,7 +28,6 @@
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_test_utils.h"
 #include "lib/jxl/test_utils.h"
-#include "lib/jxl/testdata.h"
 #include "lib/jxl/testing.h"
 
 namespace jxl {
@@ -357,7 +356,7 @@ TEST(CodecTest, LosslessPNMRoundtrip) {
       std::string filename = "jxl/flower/flower_small." +
                              std::string(kChannels[channels]) + ".depth" +
                              std::to_string(bit_depth) + extension;
-      const PaddedBytes orig = ReadTestData(filename);
+      const PaddedBytes orig = jxl::test::ReadTestData(filename);
 
       PackedPixelFile ppf;
       ColorHints color_hints;
@@ -381,7 +380,7 @@ TEST(CodecTest, LosslessPNMRoundtrip) {
 void DecodeRoundtrip(const std::string& pathname, ThreadPool* pool,
                      CodecInOut& io,
                      const ColorHints& color_hints = ColorHints()) {
-  const PaddedBytes orig = ReadTestData(pathname);
+  const PaddedBytes orig = jxl::test::ReadTestData(pathname);
   JXL_CHECK(
       SetFromBytes(Span<const uint8_t>(orig), color_hints, &io, pool, nullptr));
   const ImageBundle& ib1 = io.Main();
@@ -611,8 +610,8 @@ TEST(CodecTest, EncodeToPNG) {
   std::unique_ptr<Encoder> png_encoder = Encoder::FromExtension(".png");
   ASSERT_THAT(png_encoder, NotNull());
 
-  const PaddedBytes original_png =
-      ReadTestData("external/wesaturate/500px/tmshre_riaphotographs_srgb8.png");
+  const PaddedBytes original_png = jxl::test::ReadTestData(
+      "external/wesaturate/500px/tmshre_riaphotographs_srgb8.png");
   PackedPixelFile ppf;
   ASSERT_TRUE(extras::DecodeBytes(Span<const uint8_t>(original_png),
                                   ColorHints(), SizeConstraints(), &ppf));
