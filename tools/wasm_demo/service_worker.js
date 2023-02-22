@@ -27,6 +27,7 @@
  */
 
 (() => {
+  const FORCE_COP = true;
   // Embedded (baked-in) responses for faster turn-around.
   const EMBEDDED = {
     'client_worker.js': '$client_worker.js$',
@@ -146,6 +147,25 @@
     return originalResponse;
   };
 
+  const reportError = (err) => {
+    // console.error(err);
+  };
+
+  const upgradeResponse = (response) => {
+    if (response.status === 0) {
+      return response;
+    }
+
+    const newHeaders = new Headers(response.headers);
+    setCopHeaders(newHeaders);
+
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: newHeaders,
+    });
+  };
+
   // Process fetch request; either bypass, or serve embedded resource,
   // or upgrade.
   const onFetch = async (event) => {
@@ -170,6 +190,11 @@
         event.respondWith(wrapImageRequest(clientId, request));
       }
       return;
+    }
+
+    if (FORCE_COP) {
+      event.respondWith(
+          fetch(event.request).then(upgradeResponse).catch(reportError));
     }
   };
 
@@ -236,15 +261,15 @@
 
   // Executed in HTML page environment.
   const maybeRegisterServiceWorker = () => {
-    if (!window.isSecureContext) {
-      config.log('Secure context is required for this ServiceWorker.');
-      return;
-    }
-
     const config = {
       log: console.log,
       error: console.error,
       ...window.serviceWorkerConfig  // add overrides
+    }
+
+    if (!window.isSecureContext) {
+      config.log('Secure context is required for this ServiceWorker.');
+      return;
     }
 
     const onServiceWorkerRegistrationSuccess = (registration) => {
