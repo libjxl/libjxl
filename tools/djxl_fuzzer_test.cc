@@ -10,7 +10,6 @@
 #include "jxl/thread_parallel_runner.h"
 #include "jxl/thread_parallel_runner_cxx.h"
 #include "lib/jxl/test_utils.h"
-#include "lib/jxl/testdata.h"
 #include "lib/jxl/testing.h"
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size);
@@ -39,6 +38,6 @@ TEST_P(DjxlFuzzerTest, TestOne) {
   std::ostringstream os;
   os << "oss-fuzz/clusterfuzz-testcase-minimized-djxl_fuzzer-" << id;
   printf("Testing %s\n", os.str().c_str());
-  const jxl::PaddedBytes input = jxl::ReadTestData(os.str());
+  const jxl::PaddedBytes input = jxl::test::ReadTestData(os.str());
   LLVMFuzzerTestOneInput(input.data(), input.size());
 }

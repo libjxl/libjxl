@@ -3,12 +3,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-/* clang-format off */
-#include <stdio.h>
-#include <jpeglib.h>
-#include <setjmp.h>
-/* clang-format on */
-
 #include <vector>
 
 #include "lib/jpegli/encode.h"

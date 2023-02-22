@@ -25,7 +25,6 @@
 #include "lib/jxl/render_pipeline/test_render_pipeline_stages.h"
 #include "lib/jxl/size_constraints.h"
 #include "lib/jxl/test_utils.h"
-#include "lib/jxl/testdata.h"
 #include "lib/jxl/testing.h"
 
 namespace jxl {
@@ -182,7 +181,7 @@ TEST_P(RenderPipelineTestParam, PipelineTest) {
   // border handling bugs.
   FakeParallelRunner fake_pool(/*order_seed=*/123, /*num_threads=*/8);
   ThreadPool pool(&JxlFakeParallelRunner, &fake_pool);
-  const PaddedBytes orig = ReadTestData(config.input_path);
+  const PaddedBytes orig = jxl::test::ReadTestData(config.input_path);
 
   CodecInOut io;
   if (config.jpeg_transcode) {
@@ -533,7 +532,7 @@ TEST(RenderPipelineDecodingTest, Animation) {
   ThreadPool pool(&JxlFakeParallelRunner, &fake_pool);
 
   PaddedBytes compressed =
-      ReadTestData("jxl/blending/cropped_traffic_light.jxl");
+      jxl::test::ReadTestData("jxl/blending/cropped_traffic_light.jxl");
 
   CodecInOut io_default;
   ASSERT_TRUE(DecodeFile(Span<const uint8_t>(compressed),

@@ -17,7 +17,6 @@
 #include "lib/jxl/jpeg/dec_jpeg_data_writer.h"
 #include "lib/jxl/test_image.h"
 #include "lib/jxl/test_utils.h"
-#include "lib/jxl/testdata.h"
 #include "lib/jxl/testing.h"
 
 TEST(EncodeTest, AddFrameAfterCloseInputTest) {
@@ -60,7 +59,7 @@ TEST(EncodeTest, AddJPEGAfterCloseTest) {
   JxlEncoderCloseInput(enc.get());
 
   const std::string jpeg_path = "jxl/flower/flower.png.im_q85_420.jpg";
-  const jxl::PaddedBytes orig = jxl::ReadTestData(jpeg_path);
+  const jxl::PaddedBytes orig = jxl::test::ReadTestData(jpeg_path);
 
   JxlEncoderFrameSettings* frame_settings =
       JxlEncoderFrameSettingsCreate(enc.get(), NULL);
@@ -815,7 +814,7 @@ TEST(EncodeTest, CodestreamLevelVerificationTest) {
 
 TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGReconstructionTest)) {
   const std::string jpeg_path = "jxl/flower/flower.png.im_q85_420.jpg";
-  const jxl::PaddedBytes orig = jxl::ReadTestData(jpeg_path);
+  const jxl::PaddedBytes orig = jxl::test::ReadTestData(jpeg_path);
 
   JxlEncoderPtr enc = JxlEncoderMake(nullptr);
   JxlEncoderFrameSettings* frame_settings =
@@ -1305,7 +1304,7 @@ TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGFrameTest)) {
       // cannot set color encoding if basic info is not set
       if (skip_basic_info && !skip_color_encoding) continue;
       const std::string jpeg_path = "jxl/flower/flower_cropped.jpg";
-      const jxl::PaddedBytes orig = jxl::ReadTestData(jpeg_path);
+      const jxl::PaddedBytes orig = jxl::test::ReadTestData(jpeg_path);
       jxl::CodecInOut orig_io;
       ASSERT_TRUE(SetFromBytes(jxl::Span<const uint8_t>(orig), &orig_io,
                                /*pool=*/nullptr));

@@ -22,7 +22,6 @@
 #include "lib/jxl/headers.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/test_utils.h"
-#include "lib/jxl/testdata.h"
 #include "lib/jxl/testing.h"
 
 namespace jxl {
@@ -30,8 +29,8 @@ namespace {
 using test::Roundtrip;
 
 TEST(PreviewTest, RoundtripGivenPreview) {
-  const PaddedBytes orig =
-      ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  const PaddedBytes orig = jxl::test::ReadTestData(
+      "external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io));
   io.ShrinkTo(io.xsize() / 8, io.ysize() / 8);

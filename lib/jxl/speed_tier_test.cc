@@ -18,7 +18,6 @@
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_test_utils.h"
 #include "lib/jxl/test_utils.h"
-#include "lib/jxl/testdata.h"
 #include "lib/jxl/testing.h"
 
 namespace jxl {
@@ -82,8 +81,8 @@ JXL_GTEST_INSTANTIATE_TEST_SUITE_P(
                                         /*shrink8=*/true}));
 
 TEST_P(SpeedTierTest, Roundtrip) {
-  const PaddedBytes orig =
-      ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  const PaddedBytes orig = jxl::test::ReadTestData(
+      "external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CodecInOut io;
   ThreadPoolInternal pool(8);
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));

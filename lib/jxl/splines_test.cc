@@ -13,7 +13,6 @@
 #include "lib/jxl/enc_splines.h"
 #include "lib/jxl/image_test_utils.h"
 #include "lib/jxl/test_utils.h"
-#include "lib/jxl/testdata.h"
 #include "lib/jxl/testing.h"
 
 namespace jxl {
@@ -278,7 +277,7 @@ TEST(SplinesTest, DuplicatePoints) {
 
 TEST(SplinesTest, Drawing) {
   CodecInOut io_expected;
-  const PaddedBytes orig = ReadTestData("jxl/splines.pfm");
+  const PaddedBytes orig = jxl::test::ReadTestData("jxl/splines.pfm");
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io_expected,
                            /*pool=*/nullptr));
 
@@ -323,12 +322,12 @@ TEST(SplinesTest, Drawing) {
 TEST(SplinesTest, ClearedEveryFrame) {
   CodecInOut io_expected;
   const PaddedBytes bytes_expected =
-      ReadTestData("jxl/spline_on_first_frame.png");
+      jxl::test::ReadTestData("jxl/spline_on_first_frame.png");
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(bytes_expected), &io_expected,
                            /*pool=*/nullptr));
   CodecInOut io_actual;
   const PaddedBytes bytes_actual =
-      ReadTestData("jxl/spline_on_first_frame.jxl");
+      jxl::test::ReadTestData("jxl/spline_on_first_frame.jxl");
   ASSERT_TRUE(
       test::DecodeFile({}, Span<const uint8_t>(bytes_actual), &io_actual));
 

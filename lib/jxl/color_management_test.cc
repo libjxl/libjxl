@@ -22,7 +22,6 @@
 #include "lib/jxl/enc_xyb.h"
 #include "lib/jxl/image_test_utils.h"
 #include "lib/jxl/test_utils.h"
-#include "lib/jxl/testdata.h"
 #include "lib/jxl/testing.h"
 
 namespace jxl {
@@ -206,7 +205,8 @@ TEST_F(ColorManagementTest, sRGBChromaticity) {
 }
 
 TEST_F(ColorManagementTest, D2700Chromaticity) {
-  PaddedBytes icc = ReadTestData("jxl/color_management/sRGB-D2700.icc");
+  PaddedBytes icc =
+      jxl::test::ReadTestData("jxl/color_management/sRGB-D2700.icc");
   ColorEncoding sRGB_D2700;
   ASSERT_TRUE(sRGB_D2700.SetICC(std::move(icc)));
 
@@ -220,7 +220,8 @@ TEST_F(ColorManagementTest, D2700Chromaticity) {
 }
 
 TEST_F(ColorManagementTest, D2700ToSRGB) {
-  PaddedBytes icc = ReadTestData("jxl/color_management/sRGB-D2700.icc");
+  PaddedBytes icc =
+      jxl::test::ReadTestData("jxl/color_management/sRGB-D2700.icc");
   ColorEncoding sRGB_D2700;
   ASSERT_TRUE(sRGB_D2700.SetICC(std::move(icc)));
 
