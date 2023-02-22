@@ -692,10 +692,12 @@ bool EncodeScan(j_compress_ptr cinfo,
             size_t block_x = mcu_x * n_blocks_x + ix;
             size_t block_idx = block_y * comp->width_in_blocks + block_x;
             size_t num_zero_runs = 0;
-            const coeff_t* block = &coeffs[comp_idx][block_idx << 6];
+            const coeff_t* block;
             if (block_x >= comp->width_in_blocks ||
                 block_y >= comp->height_in_blocks) {
               block = kDummyBlock;
+            } else {
+              block = &coeffs[comp_idx][block_idx << 6];
             }
             bool ok;
             if (!is_progressive) {
