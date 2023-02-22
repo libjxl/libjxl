@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <atomic>
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/enc_xyb.cc"
