@@ -288,7 +288,7 @@ endif()  # BUILD_SHARED_LIBS
 
 # Add a pkg-config file for libjxl.
 set(JPEGXL_LIBRARY_REQUIRES
-    "libhwy libbrotlicommon libbrotlienc libbrotlidec")
+    "libhwy libbrotlienc libbrotlidec")
 if(NOT JPEGXL_ENABLE_SKCMS)
   set(JPEGXL_LIBRARY_REQUIRES "${JPEGXL_LIBRARY_REQUIRES} lcms2")
 endif()
