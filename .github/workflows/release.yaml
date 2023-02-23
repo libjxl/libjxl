@@ -20,7 +20,8 @@ on:
   pull_request:
     types: [opened, reopened, labeled, synchronize]
     paths-ignore:
-      - '**md'
+      - '**.md'
+      - 'AUTHORS'
   release:
     types: [ published ]
 
