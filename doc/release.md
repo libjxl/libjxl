@@ -128,7 +128,8 @@ To help update it, run this helper command (in a Debian-based system):
 This will update the version in the following files:
 
  * `lib/CMakeLists.txt`
- * `lib/lib.gni`, automatically updated with `tools/build_cleaner.py --update`.
+ * `lib/lib.gni`, automatically updated with
+   `tools/scripts/build_cleaner.py --update`.
  * `debian/changelog` to create the Debian package release with the new version.
    Debian changelog shouldn't repeat the library changelog, instead it should
    include changes to the packaging scripts.

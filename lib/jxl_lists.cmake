@@ -4,7 +4,8 @@
 # license that can be found in the LICENSE file.
 
 # This file is generated, do not modify by manually.
-# Run `tools/build_cleaner.py --update` to regenerate it.
+# Run `tools/scripts/build_cleaner.py --update` to regenerate it.
+
 set(JPEGXL_INTERNAL_CODEC_APNG_SOURCES
   extras/dec/apng.cc
   extras/dec/apng.h

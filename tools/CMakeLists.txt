@@ -458,7 +458,7 @@ find_program (BASH_PROGRAM bash)
 if(BASH_PROGRAM AND $<TARGET_EXISTS:cjxl> AND $<TARGET_EXISTS:djxl> AND $<TARGET_EXISTS:ssimulacra_main>)
   add_test(
     NAME roundtrip_test
-    COMMAND ${BASH_PROGRAM} ${CMAKE_CURRENT_SOURCE_DIR}/roundtrip_test.sh
+    COMMAND ${BASH_PROGRAM} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/roundtrip_test.sh
             ${CMAKE_BINARY_DIR})
   if (CMAKE_CROSSCOMPILING_EMULATOR)
     set_tests_properties(roundtrip_test PROPERTIES ENVIRONMENT "EMULATOR=${CMAKE_CROSSCOMPILING_EMULATOR}")

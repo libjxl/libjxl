@@ -25,7 +25,8 @@ HEAD = """# Copyright (c) the JPEG XL Project Authors. All rights reserved.
 # license that can be found in the LICENSE file.
 
 # This file is generated, do not modify by manually.
-# Run `tools/build_cleaner.py --update` to regenerate it."""
+# Run `tools/scripts/build_cleaner.py --update` to regenerate it.
+"""
 
 
 def RepoFiles(src_dir):
@@ -229,7 +230,7 @@ def BuildCleaner(args):
 def main():
   parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument('--src-dir',
-    default=os.path.realpath(os.path.join( os.path.dirname(__file__), '..')),
+    default=os.path.realpath(os.path.join( os.path.dirname(__file__), '../..')),
     help='path to the build directory')
   parser.add_argument('--update', default=False, action='store_true',
     help='update the build files instead of only checking')
