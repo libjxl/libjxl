@@ -16,8 +16,8 @@ cleanup() {
 trap cleanup EXIT
 
 
-CJXL=$(realpath $(dirname "$0"))/../build/tools/cjxl
-DJXL=$(realpath $(dirname "$0"))/../build/tools/djxl
+CJXL=$(realpath $(dirname "$0"))/../../build/tools/cjxl
+DJXL=$(realpath $(dirname "$0"))/../../build/tools/djxl
 
 ${CJXL} "$@" ${TMPDIR}/x.jxl &>/dev/null
 S1=$(${DJXL} ${TMPDIR}/x.jxl --print_read_bytes -s 1 2>&1 | grep 'Decoded' | grep -o '[0-9]*')

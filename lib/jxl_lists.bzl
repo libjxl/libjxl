@@ -4,7 +4,8 @@
 # license that can be found in the LICENSE file.
 
 # This file is generated, do not modify by manually.
-# Run `tools/build_cleaner.py --update` to regenerate it.
+# Run `tools/scripts/build_cleaner.py --update` to regenerate it.
+
 libjxl_codec_apng_sources = [
     "extras/dec/apng.cc",
     "extras/dec/apng.h",

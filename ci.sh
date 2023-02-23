@@ -796,7 +796,7 @@ _cmd_ossfuzz() {
     -e MSAN_LIBS_PATH="/work/msan" \
     -e JPEGXL_EXTRA_ARGS="${jpegxl_extra_args}" \
     -v "${MYDIR}":/src/libjxl \
-    -v "${MYDIR}/tools/ossfuzz-build.sh":/src/build.sh \
+    -v "${MYDIR}/tools/scripts/ossfuzz-build.sh":/src/build.sh \
     -v "${real_build_dir}":/work \
     gcr.io/oss-fuzz/libjxl
 }
@@ -1203,11 +1203,11 @@ cmd_lint() {
 
   local ret=0
   local build_patch="${tmpdir}/build_cleaner.patch"
-  if ! "${MYDIR}/tools/build_cleaner.py" >"${build_patch}"; then
+  if ! "${MYDIR}/tools/scripts/build_cleaner.py" >"${build_patch}"; then
     ret=1
     echo "build_cleaner.py findings:" >&2
     "${COLORDIFF_BIN}" <"${build_patch}"
-    echo "Run \`tools/build_cleaner.py --update\` to apply them" >&2
+    echo "Run \`tools/scripts/build_cleaner.py --update\` to apply them" >&2
   fi
 
   local installed=()
@@ -1416,7 +1416,7 @@ cmd_bump_version() {
     -i .github/workflows/conformance.yml
 
   # Update lib.gni
-  tools/build_cleaner.py --update
+  tools/scripts/build_cleaner.py --update
 
   # Mark the previous version as "unstable".
   DEBCHANGE_RELEASE_HEURISTIC=log dch -M --distribution unstable --release ''
@@ -1434,7 +1434,7 @@ cmd_authors() {
   readarray -t names < <(git log --format='%an' "${MR_ANCESTOR_SHA}..${MR_HEAD_SHA}")
   for i in "${!names[@]}"; do
     echo "Checking name '${names[$i]}' with email '${emails[$i]}' ..."
-    "${MYDIR}"/tools/check_author.py "${emails[$i]}" "${names[$i]}"
+    "${MYDIR}"/tools/scripts/check_author.py "${emails[$i]}" "${names[$i]}"
   done
 }
 

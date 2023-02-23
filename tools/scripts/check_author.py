@@ -90,7 +90,7 @@ def main():
                       help='name of the commit author to check')
   parser.add_argument(
       '--source-dir',
-      default=os.path.dirname(os.path.dirname(os.path.realpath(__file__))),
+      default=os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__)))),
       help='path to the source directory where the AUTHORS file is located')
   parser.add_argument('--dry-run', default=False, action='store_true',
                       help='Don\'t return an exit code in case of failure')

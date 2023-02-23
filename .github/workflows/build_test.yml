@@ -217,7 +217,7 @@ jobs:
       continue-on-error: true
       if: matrix.mode == 'release' || matrix.name == 'release'
       run: |
-        tools/build_stats.py --save build/stats.json \
+        tools/scripts/build_stats.py --save build/stats.json \
           --max-stack ${{ matrix.max_stack || '0' }} \
           cjxl djxl libjxl.so libjxl_dec.so
     # Check that we can build the example project against the installed libs.

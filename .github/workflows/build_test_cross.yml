@@ -173,7 +173,7 @@ jobs:
         BUILD_TARGET: ${{ matrix.build_target }}
     - name: Build stats ${{ matrix.build_target }}
       run: |
-        tools/build_stats.py --save build/stats.json \
+        tools/scripts/build_stats.py --save build/stats.json \
           --binutils ${{ matrix.build_target }}- \
           --max-stack ${{ matrix.max_stack || '0' }} \
           cjxl djxl libjxl.so libjxl_dec.so
