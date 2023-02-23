@@ -27,7 +27,12 @@
  */
 
 (() => {
+  // Set COOP/COEP headers for document/script responses; use when this can not
+  // be done on server side (e.g. GitHub Pages).
   const FORCE_COP = true;
+  // Interpret 'content-type: application/octet-stream' as JXL; use when server
+  // does not set appropriate content type (e.g. GitHub Pages).
+  const FORCE_DECODING = true;
   // Embedded (baked-in) responses for faster turn-around.
   const EMBEDDED = {
     'client_worker.js': '$client_worker.js$',
@@ -122,7 +127,9 @@
         reader.read().then(onRead);
       }
     };
-    reader.read(new SharedArrayBuffer(65536)).then(onRead);
+    // const view = new SharedArrayBuffer(65536);
+    const view = new Uint8Array(65536);
+    reader.read(view).then(onRead);
 
     let modifiedResponseHeaders = new Headers(originalResponse.headers);
     modifiedResponseHeaders.delete('Content-Length');
@@ -140,7 +147,11 @@
     let originalResponse = await fetch(modifiedRequest);
     let contentType = originalResponse.headers.get('Content-Type');
 
-    if (contentType === 'image/jxl') {
+    let isJxlResponse = (contentType === 'image/jxl');
+    if (FORCE_DECODING && contentType === 'application/octet-stream') {
+      isJxlResponse = true;
+    }
+    if (isJxlResponse) {
       return wrapImageResponse(clientId, originalResponse);
     }
 
