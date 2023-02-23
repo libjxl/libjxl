@@ -5,6 +5,7 @@
 
 #include "lib/jpegli/bitstream.h"
 
+#include "lib/jpegli/entropy_coding.h"
 #include "lib/jpegli/error.h"
 #include "lib/jxl/base/bits.h"
 
@@ -157,7 +158,7 @@ void DCTCodingStateInit(DCTCodingState* s) {
   s->refinement_bits_.reserve(kJPEGMaxCorrectionBits);
 }
 
-static JXL_INLINE void WriteSymbol(int symbol, HuffmanCodeTable* table,
+static JXL_INLINE void WriteSymbol(int symbol, const HuffmanCodeTable* table,
                                    JpegBitWriter* bw) {
   WriteBits(bw, table->depth[symbol], table->code[symbol]);
 }
@@ -517,7 +518,7 @@ void EncodeSOS(j_compress_ptr cinfo, int scan_index) {
   for (int i = 0; i < scan_info->comps_in_scan; ++i) {
     int comp_idx = scan_info->component_index[i];
     data[pos++] = cinfo->comp_info[comp_idx].component_id;
-    data[pos++] = (sci.dc_tbl_idx[i] << 4u) + sci.ac_tbl_idx[i];
+    data[pos++] = (sci.dc_tbl_idx[i] << 4u) + (sci.ac_tbl_idx[i] - 4);
   }
   data[pos++] = scan_info->Ss;
   data[pos++] = scan_info->Se;
@@ -554,10 +555,9 @@ void EncodeDHT(j_compress_ptr cinfo, const JPEGHuffmanCode* huffman_codes,
     size_t index = huff.slot_id;
     HuffmanCodeTable* huff_table;
     if (index & 0x10) {
-      index -= 0x10;
-      huff_table = &cinfo->master->ac_huff_table[index];
+      huff_table = &cinfo->master->huff_tables[index - 12];
     } else {
-      huff_table = &cinfo->master->dc_huff_table[index];
+      huff_table = &cinfo->master->huff_tables[index];
     }
     // TODO(eustas): cache
     // TODO(eustas): set up non-existing symbols
@@ -682,8 +682,8 @@ bool EncodeScan(j_compress_ptr cinfo,
       for (int i = 0; i < scan_info->comps_in_scan; ++i) {
         int comp_idx = scan_info->component_index[i];
         jpeg_component_info* comp = &cinfo->comp_info[comp_idx];
-        HuffmanCodeTable* dc_huff = &m->dc_huff_table[sci.dc_tbl_idx[i]];
-        HuffmanCodeTable* ac_huff = &m->ac_huff_table[sci.ac_tbl_idx[i]];
+        HuffmanCodeTable* dc_huff = &m->huff_tables[sci.dc_tbl_idx[i]];
+        HuffmanCodeTable* ac_huff = &m->huff_tables[sci.ac_tbl_idx[i]];
         int n_blocks_y = is_interleaved ? comp->v_samp_factor : 1;
         int n_blocks_x = is_interleaved ? comp->h_samp_factor : 1;
         for (int iy = 0; iy < n_blocks_y; ++iy) {
@@ -725,6 +725,142 @@ bool EncodeScan(j_compress_ptr cinfo,
   if (!bw.healthy) return false;
 
   return true;
+}
+
+struct Token {
+  uint8_t histo_idx;
+  uint8_t symbol;
+  uint16_t bits;
+  Token(int i, int s, int b) : histo_idx(i), symbol(s), bits(b) {}
+};
+
+void ComputeTokens(j_compress_ptr cinfo,
+                   const std::vector<std::vector<coeff_t>>& coeffs,
+                   std::vector<Token>* tokens) {
+  tokens->reserve(cinfo->image_width * cinfo->image_height);
+  int MCUs_per_row = DivCeil(cinfo->image_width, 8 * cinfo->max_h_samp_factor);
+  int MCU_rows = DivCeil(cinfo->image_height, 8 * cinfo->max_v_samp_factor);
+  coeff_t last_dc_coeff[MAX_COMPS_IN_SCAN] = {0};
+  for (int mcu_y = 0; mcu_y < MCU_rows; ++mcu_y) {
+    for (int mcu_x = 0; mcu_x < MCUs_per_row; ++mcu_x) {
+      for (int c = 0; c < cinfo->num_components; ++c) {
+        jpeg_component_info* comp = &cinfo->comp_info[c];
+        int histo_dc = c;
+        int histo_ac = c + 4;
+        for (int iy = 0; iy < comp->v_samp_factor; ++iy) {
+          for (int ix = 0; ix < comp->h_samp_factor; ++ix) {
+            size_t block_y = mcu_y * comp->v_samp_factor + iy;
+            size_t block_x = mcu_x * comp->h_samp_factor + ix;
+            size_t block_idx = block_y * comp->width_in_blocks + block_x;
+            if (block_x >= comp->width_in_blocks ||
+                block_y >= comp->height_in_blocks) {
+              tokens->push_back(Token(histo_dc, 0, 0));
+              tokens->push_back(Token(histo_ac, 0, 0));
+              continue;
+            }
+            const coeff_t* block = &coeffs[c][block_idx << 6];
+            coeff_t temp2;
+            coeff_t temp;
+            temp2 = block[0];
+            temp = temp2 - last_dc_coeff[c];
+            last_dc_coeff[c] = temp2;
+            temp2 = temp;
+            if (temp < 0) {
+              temp = -temp;
+              temp2--;
+            }
+            int dc_nbits =
+                (temp == 0) ? 0 : (jxl::FloorLog2Nonzero<uint32_t>(temp) + 1);
+            int dc_mask = (1 << dc_nbits) - 1;
+            tokens->push_back(Token(histo_dc, dc_nbits, temp2 & dc_mask));
+            int r = 0;
+            for (int k = 1; k < 64; ++k) {
+              if ((temp = block[kJPEGNaturalOrder[k]]) == 0) {
+                r++;
+                continue;
+              }
+              if (temp < 0) {
+                temp = -temp;
+                temp2 = ~temp;
+              } else {
+                temp2 = temp;
+              }
+              while (r > 15) {
+                tokens->push_back(Token(histo_ac, 0xf0, 0));
+                r -= 16;
+              }
+              int ac_nbits = jxl::FloorLog2Nonzero<uint32_t>(temp) + 1;
+              int ac_mask = (1 << ac_nbits) - 1;
+              int symbol = (r << 4u) + ac_nbits;
+              tokens->push_back(Token(histo_ac, symbol, temp2 & ac_mask));
+              r = 0;
+            }
+            if (r > 0) {
+              tokens->push_back(Token(histo_ac, 0, 0));
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+void WriteTokens(const Token* tokens, size_t num_tokens,
+                 const HuffmanCodeTable* huff_tables, const int* context_map,
+                 JpegBitWriter* bw) {
+  for (size_t i = 0; i < num_tokens; ++i) {
+    Token t = tokens[i];
+    int nbits = t.symbol & 0xf;
+    WriteSymbol(t.symbol, &huff_tables[context_map[t.histo_idx]], bw);
+    if (nbits > 0) {
+      WriteBits(bw, nbits, t.bits);
+    }
+  }
+}
+
+void EncodeSingleScan(j_compress_ptr cinfo,
+                      const std::vector<std::vector<coeff_t>>& coeffs) {
+  std::vector<Token> tokens;
+  ComputeTokens(cinfo, coeffs, &tokens);
+  Histogram histograms[8] = {};
+  for (Token t : tokens) {
+    ++histograms[t.histo_idx].count[t.symbol];
+  }
+  JpegClusteredHistograms dc_clusters;
+  ClusterJpegHistograms(histograms, 4, &dc_clusters);
+  JpegClusteredHistograms ac_clusters;
+  ClusterJpegHistograms(histograms + 4, 4, &ac_clusters);
+
+  std::vector<JPEGHuffmanCode> huffman_codes;
+  for (size_t i = 0; i < dc_clusters.histograms.size(); ++i) {
+    AddJpegHuffmanCode(dc_clusters.histograms[i], i, &huffman_codes);
+  }
+  for (size_t i = 0; i < ac_clusters.histograms.size(); ++i) {
+    AddJpegHuffmanCode(ac_clusters.histograms[i], 0x10 + i, &huffman_codes);
+  }
+
+  int context_map[8];
+  ScanCodingInfo sci;
+  for (int c = 0; c < cinfo->num_components; ++c) {
+    sci.dc_tbl_idx[c] = dc_clusters.histogram_indexes[c];
+    sci.ac_tbl_idx[c] = ac_clusters.histogram_indexes[c] + 4;
+    context_map[c] = sci.dc_tbl_idx[c];
+    context_map[c + 4] = sci.ac_tbl_idx[c];
+  }
+  sci.num_huffman_codes = huffman_codes.size();
+  cinfo->master->scan_coding_info.emplace_back(std::move(sci));
+  EncodeDHT(cinfo, huffman_codes.data(), huffman_codes.size());
+  EncodeSOS(cinfo, 0);
+
+  JpegBitWriter bw;
+  JpegBitWriterInit(&bw, cinfo);
+  HuffmanCodeTable* huff_tables = cinfo->master->huff_tables;
+  WriteTokens(tokens.data(), tokens.size(), huff_tables, context_map, &bw);
+  JumpToByteBoundary(&bw);
+  JpegBitWriterFinish(&bw);
+  if (!bw.healthy) {
+    JPEGLI_ERROR("Failed to encode scan.");
+  }
 }
 
 }  // namespace jpegli

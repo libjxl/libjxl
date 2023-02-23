@@ -32,26 +32,16 @@ float HistogramCost(const jxl::Histogram& histo) {
   }
   return header_bits + data_bits;
 }
+}  // namespace
 
-struct Histogram {
-  int count[kJpegHuffmanAlphabetSize];
-  Histogram() { memset(count, 0, sizeof(count)); }
-};
-
-struct JpegClusteredHistograms {
-  std::vector<jxl::Histogram> histograms;
-  std::vector<uint32_t> histogram_indexes;
-  std::vector<uint32_t> slot_ids;
-};
-
-void ClusterJpegHistograms(const std::vector<Histogram>& jpeg_in,
+void ClusterJpegHistograms(const Histogram* histo_data, size_t num,
                            JpegClusteredHistograms* clusters) {
   std::vector<jxl::Histogram> histograms;
-  for (const auto& h : jpeg_in) {
+  for (size_t idx = 0; idx < num; ++idx) {
     jxl::Histogram histo;
     histo.data_.resize(kJpegHuffmanAlphabetSize);
     for (size_t i = 0; i < histo.data_.size(); ++i) {
-      histo.data_[i] = h.count[i];
+      histo.data_[i] = histo_data[idx].count[i];
       histo.total_count_ += histo.data_[i];
     }
     histograms.push_back(histo);
@@ -141,6 +131,7 @@ void AddJpegHuffmanCode(const jxl::Histogram& histogram, size_t slot_id,
   huff_codes->emplace_back(std::move(huff_code));
 }
 
+namespace {
 void SetJpegHuffmanCode(const JpegClusteredHistograms& clusters,
                         size_t histogram_id, size_t slot_id_offset,
                         std::vector<uint32_t>& slot_histograms,
@@ -148,11 +139,12 @@ void SetJpegHuffmanCode(const JpegClusteredHistograms& clusters,
                         std::vector<JPEGHuffmanCode>* huff_codes) {
   JXL_ASSERT(histogram_id < clusters.histogram_indexes.size());
   uint32_t histogram_index = clusters.histogram_indexes[histogram_id];
-  *slot_id = clusters.slot_ids[histogram_index];
-  if (slot_histograms[*slot_id] != histogram_index) {
+  uint32_t id = clusters.slot_ids[histogram_index];
+  *slot_id = id + (slot_id_offset / 4);
+  if (slot_histograms[id] != histogram_index) {
     AddJpegHuffmanCode(clusters.histograms[histogram_index],
-                       slot_id_offset + *slot_id, huff_codes);
-    slot_histograms[*slot_id] = histogram_index;
+                       slot_id_offset + id, huff_codes);
+    slot_histograms[id] = histogram_index;
   }
 }
 
@@ -591,7 +583,7 @@ void CopyHuffmanCodes(j_compress_ptr cinfo,
     for (int j = 0; j < si->comps_in_scan; ++j) {
       int ci = si->component_index[j];
       sci.dc_tbl_idx[j] = cinfo->comp_info[ci].dc_tbl_no;
-      sci.ac_tbl_idx[j] = cinfo->comp_info[ci].ac_tbl_no;
+      sci.ac_tbl_idx[j] = cinfo->comp_info[ci].ac_tbl_no + 4;
     }
     if (i == 0) {
       sci.num_huffman_codes = huffman_codes->size();
@@ -630,11 +622,13 @@ void OptimizeHuffmanCodes(
 
   // Cluster DC histograms.
   JpegClusteredHistograms dc_clusters;
-  ClusterJpegHistograms(dc_histograms, &dc_clusters);
+  ClusterJpegHistograms(dc_histograms.data(), dc_histograms.size(),
+                        &dc_clusters);
 
   // Cluster AC histograms.
   JpegClusteredHistograms ac_clusters;
-  ClusterJpegHistograms(ac_histograms, &ac_clusters);
+  ClusterJpegHistograms(ac_histograms.data(), ac_histograms.size(),
+                        &ac_clusters);
 
   // Add the first 4 DC and AC histograms in the first DHT segment.
   std::vector<uint32_t> dc_slot_histograms;

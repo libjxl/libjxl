@@ -456,6 +456,10 @@ void ProcessCompressionParams(j_compress_ptr cinfo) {
     cinfo->max_v_samp_factor =
         std::max(comp->v_samp_factor, cinfo->max_v_samp_factor);
   }
+  if (cinfo->num_components == 1 &&
+      (cinfo->max_h_samp_factor != 1 || cinfo->max_v_samp_factor != 1)) {
+    JPEGLI_ERROR("Sampling is not supported for simgle component image.");
+  }
   size_t iMCU_width = DCTSIZE * cinfo->max_h_samp_factor;
   size_t iMCU_height = DCTSIZE * cinfo->max_v_samp_factor;
   size_t total_iMCU_cols = DivCeil(cinfo->image_width, iMCU_width);
@@ -495,6 +499,39 @@ void WriteFileHeader(j_compress_ptr cinfo) {
   // APP14
   if (cinfo->write_Adobe_marker) {
     EncodeAPP14(cinfo);
+  }
+}
+
+void EncodeScans(j_compress_ptr cinfo,
+                 const std::vector<std::vector<coeff_t>>& coeffs) {
+  if (cinfo->num_scans == 1 && cinfo->optimize_coding &&
+      cinfo->restart_interval == 0 && cinfo->restart_in_rows == 0) {
+    EncodeSingleScan(cinfo, coeffs);
+    return;
+  }
+  std::vector<JPEGHuffmanCode> huffman_codes;
+  if (cinfo->optimize_coding || cinfo->progressive_mode) {
+    OptimizeHuffmanCodes(cinfo, coeffs, &huffman_codes);
+  } else {
+    CopyHuffmanCodes(cinfo, &huffman_codes);
+  }
+  size_t dht_index = 0;
+  size_t last_restart_interval = 0;
+  for (int i = 0; i < cinfo->num_scans; ++i) {
+    cinfo->restart_interval = RestartIntervalForScan(cinfo, i);
+    if (cinfo->restart_interval != last_restart_interval) {
+      EncodeDRI(cinfo);
+      last_restart_interval = cinfo->restart_interval;
+    }
+    size_t num_dht = cinfo->master->scan_coding_info[i].num_huffman_codes;
+    if (num_dht > 0) {
+      EncodeDHT(cinfo, huffman_codes.data() + dht_index, num_dht);
+      dht_index += num_dht;
+    }
+    EncodeSOS(cinfo, i);
+    if (!EncodeScan(cinfo, coeffs, i)) {
+      JPEGLI_ERROR("Failed to encode scan.");
+    }
   }
 }
 
@@ -978,32 +1015,7 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
     jpegli::ValidateScanScript(cinfo);
   }
 
-  std::vector<jpegli::JPEGHuffmanCode> huffman_codes;
-  if (cinfo->optimize_coding || cinfo->progressive_mode) {
-    jpegli::OptimizeHuffmanCodes(cinfo, coeffs, &huffman_codes);
-  } else {
-    jpegli::CopyHuffmanCodes(cinfo, &huffman_codes);
-  }
-
-  // DRI, DHT, SOS, scan data
-  size_t dht_index = 0;
-  size_t last_restart_interval = 0;
-  for (int i = 0; i < cinfo->num_scans; ++i) {
-    cinfo->restart_interval = jpegli::RestartIntervalForScan(cinfo, i);
-    if (cinfo->restart_interval != last_restart_interval) {
-      jpegli::EncodeDRI(cinfo);
-      last_restart_interval = cinfo->restart_interval;
-    }
-    size_t num_dht = cinfo->master->scan_coding_info[i].num_huffman_codes;
-    if (num_dht > 0) {
-      jpegli::EncodeDHT(cinfo, huffman_codes.data() + dht_index, num_dht);
-      dht_index += num_dht;
-    }
-    jpegli::EncodeSOS(cinfo, i);
-    if (!jpegli::EncodeScan(cinfo, coeffs, i)) {
-      JPEGLI_ERROR("Failed to encode scan.");
-    }
-  }
+  jpegli::EncodeScans(cinfo, coeffs);
 
   // EOI
   jpegli::WriteOutput(cinfo, {0xFF, 0xD9});
