@@ -666,15 +666,20 @@ void ComputeAdaptiveQuantField(j_compress_ptr cinfo) {
     }
     jxl::ImageF qf =
         jpegli::InitialQuantField(m->distance, input, nullptr, m->distance);
-    float qfmin;
-    ImageMinMax(qf, &qfmin, &m->quant_field_max);
+    float qfmin, qfmax;
+    ImageMinMax(qf, &qfmin, &qfmax);
+    m->quant_field_max = qfmax;
     for (size_t y = 0; y < y_comp->height_in_blocks; ++y) {
-      m->quant_field.CopyRow(y, qf.Row(y), y_comp->width_in_blocks);
+      const float* row_in = qf.Row(y);
+      float* row_out = m->quant_field.Row(y);
+      for (size_t x = 0; x < y_comp->width_in_blocks; ++x) {
+        row_out[x] = (qfmax / row_in[x]) - 1.0f;
+      }
     }
   } else {
     m->quant_field_max = kDefaultQuantFieldMax;
     for (size_t y = 0; y < ysize_blocks; ++y) {
-      m->quant_field.FillRow(y, m->quant_field_max, xsize_blocks);
+      m->quant_field.FillRow(y, 0.0f, xsize_blocks);
     }
   }
 }
