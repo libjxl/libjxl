@@ -267,6 +267,8 @@ instructions:
 
  * Finally click "Publish release" and go celebrate with the team. 🎉
 
+ * Make sure to manually push the commit of the release also to https://gitlab.com/wg1/jpeg-xl.
+
 ### How to build downstream projects
 
 ```bash
