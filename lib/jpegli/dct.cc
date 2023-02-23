@@ -13,6 +13,7 @@
 #include <hwy/highway.h>
 
 #include "lib/jxl/enc_transforms.h"
+
 HWY_BEFORE_NAMESPACE();
 namespace jpegli {
 namespace HWY_NAMESPACE {
@@ -20,11 +21,33 @@ namespace HWY_NAMESPACE {
 constexpr float kZeroBiasMulXYB[] = {0.5f, 0.5f, 0.5f};
 constexpr float kZeroBiasMulYCbCr[] = {0.7f, 1.0f, 0.8f};
 
+void QuantizeBlock(const float* dct, const float* qmc, const float zero_bias,
+                   coeff_t* block) {
+  for (size_t iy = 0, i = 0; iy < 8; iy++) {
+    for (size_t ix = 0; ix < 8; ix++, i++) {
+      float coeff = 2040 * dct[ix * 8 + iy] * qmc[i];
+      int cc = std::abs(coeff) < zero_bias ? 0 : std::round(coeff);
+      block[i] = cc;
+    }
+  }
+  // Center DC values around zero.
+  block[0] = std::round((2040 * dct[0] - 1024) * qmc[0]);
+}
+
+void QuantizeBlockNoAQ(const float* dct, const float* qmc, coeff_t* block) {
+  for (size_t iy = 0, i = 0; iy < 8; iy++) {
+    for (size_t ix = 0; ix < 8; ix++, i++) {
+      block[i] = std::round(2040 * dct[ix * 8 + iy] * qmc[i]);
+    }
+  }
+  // Center DC values around zero.
+  block[0] = std::round((2040 * dct[0] - 1024) * qmc[0]);
+}
+
 void ComputeDCTCoefficients(
     j_compress_ptr cinfo,
     std::vector<std::vector<jpegli::coeff_t> >* all_coeffs) {
   jpeg_comp_master* m = cinfo->master;
-  float qfmax = m->quant_field_max;
   std::vector<float> zero_bias_mul(cinfo->num_components, 0.5f);
   const bool xyb = m->xyb_mode && cinfo->jpeg_color_space == JCS_RGB;
   if (m->distance <= 1.0f) {
@@ -50,26 +73,22 @@ void ComputeDCTCoefficients(
     }
     RowBuffer<float>* plane = &m->input_buffer[c];
     for (size_t by = 0, bix = 0; by < ysize_blocks; by++) {
+      const float* row = plane->Row(8 * by);
       for (size_t bx = 0; bx < xsize_blocks; bx++, bix++) {
         coeff_t* block = &coeffs[bix * kDCTBlockSize];
         HWY_ALIGN float dct[kDCTBlockSize];
-        TransformFromPixels(jxl::AcStrategy::Type::DCT,
-                            plane->Row(8 * by) + 8 * bx, plane->stride(), dct,
-                            scratch_space);
-        // Create more zeros in areas where jpeg xl would have used a lower
-        // quantization multiplier.
-        float relq = qfmax / m->quant_field.Row(by * v_factor)[bx * h_factor];
-        float zero_bias = 0.5f + zero_bias_mul[c] * (relq - 1.0f);
-        zero_bias = std::min(1.5f, zero_bias);
-        for (size_t iy = 0, i = 0; iy < 8; iy++) {
-          for (size_t ix = 0; ix < 8; ix++, i++) {
-            float coeff = 2040 * dct[ix * 8 + iy] * qmc[i];
-            int cc = std::abs(coeff) < zero_bias ? 0 : std::round(coeff);
-            block[i] = cc;
-          }
+        TransformFromPixels(jxl::AcStrategy::Type::DCT, row + 8 * bx,
+                            plane->stride(), dct, scratch_space);
+        if (m->use_adaptive_quantization) {
+          // Create more zeros in areas where jpeg xl would have used a lower
+          // quantization multiplier.
+          float relq = m->quant_field.Row(by * v_factor)[bx * h_factor];
+          float zero_bias = 0.5f + zero_bias_mul[c] * relq;
+          zero_bias = std::min(1.5f, zero_bias);
+          QuantizeBlock(dct, &qmc[0], zero_bias, block);
+        } else {
+          QuantizeBlockNoAQ(dct, &qmc[0], block);
         }
-        // Center DC values around zero.
-        block[0] = std::round((2040 * dct[0] - 1024) * qmc[0]);
       }
     }
     all_coeffs->emplace_back(std::move(coeffs));
