@@ -27,8 +27,11 @@ void EncodeDQT(j_compress_ptr cinfo);
 bool EncodeDRI(j_compress_ptr cinfo);
 
 bool EncodeScan(j_compress_ptr cinfo,
-                const std::vector<std::vector<jpegli::coeff_t>>& coeffs,
+                const std::vector<std::vector<coeff_t>>& coeffs,
                 int scan_index);
+
+void EncodeSingleScan(j_compress_ptr cinfo,
+                      const std::vector<std::vector<coeff_t>>& coeffs);
 
 }  // namespace jpegli
 
