@@ -7,6 +7,7 @@
 
 #include "lib/jpegli/entropy_coding.h"
 #include "lib/jpegli/error.h"
+#include "lib/jpegli/memory_manager.h"
 #include "lib/jxl/base/bits.h"
 
 namespace jpegli {
@@ -733,20 +734,114 @@ struct Token {
   Token(int i, int s, int b) : histo_idx(i), symbol(s), bits(b) {}
 };
 
-void ComputeTokens(j_compress_ptr cinfo,
-                   std::vector<Token>* tokens) {
-  jpeg_comp_master* m = cinfo->master;
-  tokens->reserve(cinfo->image_width * cinfo->image_height);
+void ComputeTokensForBlock(const coeff_t* block, int histo_dc, int histo_ac,
+                           coeff_t* last_dc_coeff, Token** tokens_ptr) {
+  Token* next_token = *tokens_ptr;
+  coeff_t temp2;
+  coeff_t temp;
+  temp2 = block[0];
+  temp = temp2 - *last_dc_coeff;
+  *last_dc_coeff = temp2;
+  temp2 = temp;
+  if (temp < 0) {
+    temp = -temp;
+    temp2--;
+  }
+  int dc_nbits = (temp == 0) ? 0 : (jxl::FloorLog2Nonzero<uint32_t>(temp) + 1);
+  int dc_mask = (1 << dc_nbits) - 1;
+  *next_token++ = Token(histo_dc, dc_nbits, temp2 & dc_mask);
+  int r = 0;
+  for (int k = 1; k < 64; ++k) {
+    if ((temp = block[kJPEGNaturalOrder[k]]) == 0) {
+      r++;
+      continue;
+    }
+    if (temp < 0) {
+      temp = -temp;
+      temp2 = ~temp;
+    } else {
+      temp2 = temp;
+    }
+    while (r > 15) {
+      *next_token++ = Token(histo_ac, 0xf0, 0);
+      r -= 16;
+    }
+    int ac_nbits = jxl::FloorLog2Nonzero<uint32_t>(temp) + 1;
+    int ac_mask = (1 << ac_nbits) - 1;
+    int symbol = (r << 4u) + ac_nbits;
+    *next_token++ = Token(histo_ac, symbol, temp2 & ac_mask);
+    r = 0;
+  }
+  if (r > 0) {
+    *next_token++ = Token(histo_ac, 0, 0);
+  }
+  *tokens_ptr = next_token;
+}
+
+struct TokenArray {
+  Token* tokens = nullptr;
+  size_t num_tokens = 0;
+};
+
+size_t MaxNumTokensPerMCURow(j_compress_ptr cinfo) {
   int MCUs_per_row = DivCeil(cinfo->image_width, 8 * cinfo->max_h_samp_factor);
-  int MCU_rows = DivCeil(cinfo->image_height, 8 * cinfo->max_v_samp_factor);
+  size_t blocks_per_mcu = 0;
+  for (int c = 0; c < cinfo->num_components; ++c) {
+    jpeg_component_info* comp = &cinfo->comp_info[c];
+    blocks_per_mcu += comp->h_samp_factor * comp->v_samp_factor;
+  }
+  return kDCTBlockSize * blocks_per_mcu * MCUs_per_row;
+}
+
+size_t EstimateNumTokens(j_compress_ptr cinfo, size_t mcu_y, size_t ysize_mcus,
+                         size_t num_tokens, size_t max_per_row) {
+  size_t estimate;
+  if (mcu_y == 0) {
+    estimate = 16 * max_per_row;
+  } else {
+    estimate = (4 * ysize_mcus * num_tokens) / (3 * mcu_y);
+  }
+  size_t mcus_left = ysize_mcus - mcu_y;
+  return std::min(mcus_left * max_per_row,
+                  std::max(max_per_row, estimate - num_tokens));
+}
+
+void ComputeTokens(j_compress_ptr cinfo,
+                   std::vector<TokenArray>* token_arrays) {
+  jpeg_comp_master* m = cinfo->master;
+  TokenArray ta;
+  Token* next_token = ta.tokens;
+  size_t num_tokens = 0;
+  size_t total_num_tokens = 0;
+  size_t max_tokens_per_mcu_row = MaxNumTokensPerMCURow(cinfo);
+  int xsize_mcus = DivCeil(cinfo->image_width, 8 * cinfo->max_h_samp_factor);
+  int ysize_mcus = DivCeil(cinfo->image_height, 8 * cinfo->max_v_samp_factor);
   coeff_t last_dc_coeff[MAX_COMPS_IN_SCAN] = {0};
-  for (int mcu_y = 0; mcu_y < MCU_rows; ++mcu_y) {
-    for (int mcu_x = 0; mcu_x < MCUs_per_row; ++mcu_x) {
+  for (int mcu_y = 0, mcu_ix = 0; mcu_y < ysize_mcus; ++mcu_y) {
+    ta.num_tokens = next_token - ta.tokens;
+    if (ta.num_tokens + max_tokens_per_mcu_row > num_tokens) {
+      if (ta.tokens) {
+        token_arrays->push_back(ta);
+        total_num_tokens += ta.num_tokens;
+      }
+      num_tokens = EstimateNumTokens(cinfo, mcu_y, ysize_mcus, total_num_tokens,
+                                     max_tokens_per_mcu_row);
+      ta.tokens = Allocate<Token>(cinfo, num_tokens, JPOOL_IMAGE);
+      next_token = ta.tokens;
+    }
+    if (cinfo->max_h_samp_factor == 1 && cinfo->max_v_samp_factor == 1) {
+      for (int mcu_x = 0; mcu_x < xsize_mcus; ++mcu_x, ++mcu_ix) {
+        for (int c = 0; c < cinfo->num_components; ++c) {
+          ComputeTokensForBlock(&m->coefficients[c][mcu_ix << 6], c, c + 4,
+                                &last_dc_coeff[c], &next_token);
+        }
+      }
+      continue;
+    }
+    for (int mcu_x = 0; mcu_x < xsize_mcus; ++mcu_x, ++mcu_ix) {
       for (int c = 0; c < cinfo->num_components; ++c) {
         jpeg_component_info* comp = &cinfo->comp_info[c];
         coeff_t* coeffs = m->coefficients[c];
-        int histo_dc = c;
-        int histo_ac = c + 4;
         for (int iy = 0; iy < comp->v_samp_factor; ++iy) {
           for (int ix = 0; ix < comp->h_samp_factor; ++ix) {
             size_t block_y = mcu_y * comp->v_samp_factor + iy;
@@ -754,55 +849,19 @@ void ComputeTokens(j_compress_ptr cinfo,
             size_t block_idx = block_y * comp->width_in_blocks + block_x;
             if (block_x >= comp->width_in_blocks ||
                 block_y >= comp->height_in_blocks) {
-              tokens->push_back(Token(histo_dc, 0, 0));
-              tokens->push_back(Token(histo_ac, 0, 0));
+              *next_token++ = Token(c, 0, 0);
+              *next_token++ = Token(c + 4, 0, 0);
               continue;
             }
-            const coeff_t* block = &coeffs[block_idx << 6];
-            coeff_t temp2;
-            coeff_t temp;
-            temp2 = block[0];
-            temp = temp2 - last_dc_coeff[c];
-            last_dc_coeff[c] = temp2;
-            temp2 = temp;
-            if (temp < 0) {
-              temp = -temp;
-              temp2--;
-            }
-            int dc_nbits =
-                (temp == 0) ? 0 : (jxl::FloorLog2Nonzero<uint32_t>(temp) + 1);
-            int dc_mask = (1 << dc_nbits) - 1;
-            tokens->push_back(Token(histo_dc, dc_nbits, temp2 & dc_mask));
-            int r = 0;
-            for (int k = 1; k < 64; ++k) {
-              if ((temp = block[kJPEGNaturalOrder[k]]) == 0) {
-                r++;
-                continue;
-              }
-              if (temp < 0) {
-                temp = -temp;
-                temp2 = ~temp;
-              } else {
-                temp2 = temp;
-              }
-              while (r > 15) {
-                tokens->push_back(Token(histo_ac, 0xf0, 0));
-                r -= 16;
-              }
-              int ac_nbits = jxl::FloorLog2Nonzero<uint32_t>(temp) + 1;
-              int ac_mask = (1 << ac_nbits) - 1;
-              int symbol = (r << 4u) + ac_nbits;
-              tokens->push_back(Token(histo_ac, symbol, temp2 & ac_mask));
-              r = 0;
-            }
-            if (r > 0) {
-              tokens->push_back(Token(histo_ac, 0, 0));
-            }
+            ComputeTokensForBlock(&coeffs[block_idx << 6], c, c + 4,
+                                  &last_dc_coeff[c], &next_token);
           }
         }
       }
     }
   }
+  ta.num_tokens = next_token - ta.tokens;
+  token_arrays->push_back(ta);
 }
 
 void WriteTokens(const Token* tokens, size_t num_tokens,
@@ -818,12 +877,22 @@ void WriteTokens(const Token* tokens, size_t num_tokens,
   }
 }
 
-void EncodeSingleScan(j_compress_ptr cinfo) {
-  std::vector<Token> tokens;
-  ComputeTokens(cinfo, &tokens);
-  Histogram histograms[8] = {};
-  for (Token t : tokens) {
+void BuildHistograms(const Token* tokens, size_t num_tokens,
+                     Histogram* histograms) {
+  for (size_t j = 0; j < num_tokens; ++j) {
+    Token t = tokens[j];
     ++histograms[t.histo_idx].count[t.symbol];
+  }
+}
+
+void EncodeSingleScan(j_compress_ptr cinfo) {
+  std::vector<TokenArray> token_arrays;
+  ComputeTokens(cinfo, &token_arrays);
+  Histogram histograms[8] = {};
+  for (size_t i = 0; i < token_arrays.size(); ++i) {
+    Token* tokens = token_arrays[i].tokens;
+    size_t num_tokens = token_arrays[i].num_tokens;
+    BuildHistograms(tokens, num_tokens, histograms);
   }
   JpegClusteredHistograms dc_clusters;
   ClusterJpegHistograms(histograms, 4, &dc_clusters);
@@ -854,7 +923,11 @@ void EncodeSingleScan(j_compress_ptr cinfo) {
   JpegBitWriter bw;
   JpegBitWriterInit(&bw, cinfo);
   HuffmanCodeTable* huff_tables = cinfo->master->huff_tables;
-  WriteTokens(tokens.data(), tokens.size(), huff_tables, context_map, &bw);
+  for (size_t i = 0; i < token_arrays.size(); ++i) {
+    Token* tokens = token_arrays[i].tokens;
+    size_t num_tokens = token_arrays[i].num_tokens;
+    WriteTokens(tokens, num_tokens, huff_tables, context_map, &bw);
+  }
   JumpToByteBoundary(&bw);
   JpegBitWriterFinish(&bw);
   if (!bw.healthy) {
