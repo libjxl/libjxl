@@ -8,11 +8,11 @@
 
 // Decodes JPG pixels and metadata in memory using the libjpegli library.
 
+#include <jxl/types.h>
 #include <stdint.h>
 
 #include <vector>
 
-#include "jxl/types.h"
 #include "lib/extras/packed_image.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"

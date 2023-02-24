@@ -10,13 +10,13 @@
 
 // Macros and functions useful for tests.
 
+#include <jxl/codestream_header.h>
 #include <stddef.h>
 #include <stdint.h>
 
 #include <ostream>
 #include <vector>
 
-#include "jxl/codestream_header.h"
 #include "lib/extras/dec/jxl.h"
 #include "lib/extras/enc/jxl.h"
 #include "lib/extras/packed_image.h"

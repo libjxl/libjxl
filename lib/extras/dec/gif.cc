@@ -6,13 +6,13 @@
 #include "lib/extras/dec/gif.h"
 
 #include <gif_lib.h>
+#include <jxl/codestream_header.h>
 #include <string.h>
 
 #include <memory>
 #include <utility>
 #include <vector>
 
-#include "jxl/codestream_header.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/sanitizers.h"
 #include "lib/jxl/size_constraints.h"

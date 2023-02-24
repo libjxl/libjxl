@@ -3,8 +3,11 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include "jxl/decode.h"
-
+#include <jxl/decode.h>
+#include <jxl/decode_cxx.h>
+#include <jxl/resizable_parallel_runner_cxx.h>
+#include <jxl/thread_parallel_runner_cxx.h>
+#include <jxl/types.h>
 #include <stdint.h>
 #include <stdlib.h>
 
@@ -13,10 +16,6 @@
 #include <utility>
 #include <vector>
 
-#include "jxl/decode_cxx.h"
-#include "jxl/resizable_parallel_runner_cxx.h"
-#include "jxl/thread_parallel_runner_cxx.h"
-#include "jxl/types.h"
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/color_description.h"
 #include "lib/jxl/base/byte_order.h"

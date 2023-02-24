@@ -5,10 +5,11 @@
 
 #include "lib/extras/packed_image_convert.h"
 
+#include <jxl/color_encoding.h>
+#include <jxl/types.h>
+
 #include <cstdint>
 
-#include "jxl/color_encoding.h"
-#include "jxl/types.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/color_management.h"

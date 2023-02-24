@@ -7,15 +7,16 @@
 #ifndef LIB_JXL_ENCODE_INTERNAL_H_
 #define LIB_JXL_ENCODE_INTERNAL_H_
 
+#include <jxl/encode.h>
+#include <jxl/memory_manager.h>
+#include <jxl/parallel_runner.h>
+#include <jxl/types.h>
+
 #include <deque>
 #include <vector>
 
-#include "enc_fast_lossless.h"
-#include "jxl/encode.h"
-#include "jxl/memory_manager.h"
-#include "jxl/parallel_runner.h"
-#include "jxl/types.h"
 #include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/enc_fast_lossless.h"
 #include "lib/jxl/enc_frame.h"
 #include "lib/jxl/memory_manager_internal.h"
 

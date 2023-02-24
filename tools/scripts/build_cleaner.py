@@ -96,7 +96,10 @@ def SplitLibFiles(repo_files):
 
   Check(len(srcs) == 0, 'Orphan source files: ' + str(srcs))
 
-  jpegli_wrapper_sources, jpegli_srcs = Filter(jpegli_srcs, HasSuffixFn('libjpeg_wrapper.cc'))
+  base_sources, lib_srcs = Filter(lib_srcs, HasPrefixFn('jxl/base/'))
+
+  jpegli_wrapper_sources, jpegli_srcs = Filter(
+      jpegli_srcs, HasSuffixFn('libjpeg_wrapper.cc'))
   jpegli_sources = jpegli_srcs
 
   threads_public_headers, public_headers = Filter(
@@ -132,13 +135,15 @@ def SplitLibFiles(repo_files):
   # TODO(lode): further prune dec_srcs: only those files that the decoder
   # absolutely needs, and or not only for encoding, should be listed here.
 
-  return codecs | {'dec_box_sources': dec_box_sources,
-    'dec_jpeg_sources': dec_jpeg_sources, 'dec_sources': dec_sources,
-    'enc_sources': enc_sources,
+  return codecs | {'base_sources': base_sources, 
+    'dec_box_sources': dec_box_sources, 'dec_jpeg_sources': dec_jpeg_sources,
+    'dec_sources': dec_sources, 'enc_sources': enc_sources,
     'extras_for_tools_sources': extras_for_tools_sources,
     'extras_sources': extras_sources, 'gbench_sources': gbench_sources,
-    'jpegli_sources': jpegli_sources, 'jpegli_testlib_files': jpegli_testlib_files,
-    'jpegli_tests': jpegli_tests, 'jpegli_wrapper_sources' : jpegli_wrapper_sources,
+    'jpegli_sources': jpegli_sources,
+    'jpegli_testlib_files': jpegli_testlib_files,
+    'jpegli_tests': jpegli_tests,
+    'jpegli_wrapper_sources' : jpegli_wrapper_sources,
     'profiler_sources': profiler_sources, 'public_headers': public_headers,
     'testlib_files': testlib_files, 'tests': tests,
     'threads_public_headers': threads_public_headers,
@@ -213,7 +218,8 @@ def BuildCleaner(args):
   cmake_chunks = [HEAD]
   cmake_parts = lists
   for var in sorted(cmake_parts):
-    cmake_chunks.append(FormatCMakeVar('JPEGXL_INTERNAL_' + var.upper(), cmake_parts[var]))
+    cmake_chunks.append(FormatCMakeVar(
+        'JPEGXL_INTERNAL_' + var.upper(), cmake_parts[var]))
 
   gni_chunks = [HEAD]
   gni_parts = version | lists

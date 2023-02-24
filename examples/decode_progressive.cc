@@ -7,17 +7,16 @@
 // passed in chunks). The example outputs the intermediate steps to PAM files.
 
 #include <inttypes.h>
+#include <jxl/decode.h>
+#include <jxl/decode_cxx.h>
+#include <jxl/resizable_parallel_runner.h>
+#include <jxl/resizable_parallel_runner_cxx.h>
 #include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
 #include <vector>
-
-#include "jxl/decode.h"
-#include "jxl/decode_cxx.h"
-#include "jxl/resizable_parallel_runner.h"
-#include "jxl/resizable_parallel_runner_cxx.h"
 
 bool WritePAM(const char* filename, const uint8_t* buffer, size_t w, size_t h) {
   FILE* fp = fopen(filename, "wb");

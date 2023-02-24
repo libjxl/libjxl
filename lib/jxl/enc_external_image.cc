@@ -5,6 +5,7 @@
 
 #include "lib/jxl/enc_external_image.h"
 
+#include <jxl/types.h>
 #include <string.h>
 
 #include <algorithm>
@@ -13,7 +14,6 @@
 #include <utility>
 #include <vector>
 
-#include "jxl/types.h"
 #include "lib/jxl/alpha.h"
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/printf_macros.h"

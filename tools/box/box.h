@@ -8,13 +8,15 @@
 #ifndef TOOLS_BOX_BOX_H_
 #define TOOLS_BOX_BOX_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/codec_in_out.h"
-#include "lib/jxl/enc_file.h"
 
 namespace jpegxl {
 namespace tools {

@@ -5,9 +5,9 @@
 
 #include "tools/box/box.h"
 
-#include "lib/jxl/base/byte_order.h"  // for GetMaximumBrunsliEncodedSize
-#include "lib/jxl/jpeg/dec_jpeg_data.h"
-#include "lib/jxl/jpeg/jpeg_data.h"
+#include <string.h>
+
+#include "lib/jxl/base/byte_order.h"
 
 namespace jpegxl {
 namespace tools {
