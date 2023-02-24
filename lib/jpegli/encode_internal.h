@@ -72,6 +72,7 @@ struct jpeg_comp_master {
   uint8_t* next_marker_byte = nullptr;
   JpegliDataType data_type = JPEGLI_TYPE_UINT8;
   JpegliEndianness endianness = JPEGLI_NATIVE_ENDIAN;
+  std::array<jpegli::coeff_t*, jpegli::kMaxComponents> coefficients;
   jpegli::HuffmanCodeTable huff_tables[8];
   std::array<jpegli::HuffmanCodeTable, jpegli::kMaxHuffmanTables> dc_huff_table;
   std::array<jpegli::HuffmanCodeTable, jpegli::kMaxHuffmanTables> ac_huff_table;

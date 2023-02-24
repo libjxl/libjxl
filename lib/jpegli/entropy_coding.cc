@@ -347,9 +347,9 @@ bool ProcessRefinementBits(const coeff_t* coeffs, Histogram* ac_histo, int Ss,
 }
 
 bool ProcessScan(j_compress_ptr cinfo,
-                 const std::vector<std::vector<jpegli::coeff_t> >& coeffs,
                  size_t scan_index, int* histo_index, Histogram* dc_histograms,
                  Histogram* ac_histograms) {
+  jpeg_comp_master* m = cinfo->master;
   size_t restart_interval = RestartIntervalForScan(cinfo, scan_index);
   int restarts_to_go = restart_interval;
   coeff_t last_dc_coeff[MAX_COMPS_IN_SCAN] = {0};
@@ -391,6 +391,7 @@ bool ProcessScan(j_compress_ptr cinfo,
       for (int i = 0; i < scan_info->comps_in_scan; ++i) {
         int comp_idx = scan_info->component_index[i];
         jpeg_component_info* comp = &cinfo->comp_info[comp_idx];
+        coeff_t* coeffs = m->coefficients[comp_idx];
         int histo_idx = *histo_index + i;
         Histogram* dc_histo = &dc_histograms[histo_idx];
         Histogram* ac_histo = &ac_histograms[histo_idx];
@@ -402,7 +403,7 @@ bool ProcessScan(j_compress_ptr cinfo,
             size_t block_x = mcu_x * n_blocks_x + ix;
             size_t block_idx = block_y * comp->width_in_blocks + block_x;
             size_t num_zero_runs = 0;
-            const coeff_t* block = &coeffs[comp_idx][block_idx << 6];
+            const coeff_t* block = &coeffs[block_idx << 6];
             if (block_x >= comp->width_in_blocks ||
                 block_y >= comp->height_in_blocks) {
               block = kDummyBlock;
@@ -431,12 +432,11 @@ bool ProcessScan(j_compress_ptr cinfo,
 }
 
 void ProcessJpeg(j_compress_ptr cinfo,
-                 const std::vector<std::vector<jpegli::coeff_t> >& coeffs,
                  std::vector<Histogram>* dc_histograms,
                  std::vector<Histogram>* ac_histograms) {
   int histo_index = 0;
   for (int i = 0; i < cinfo->num_scans; ++i) {
-    if (!ProcessScan(cinfo, coeffs, i, &histo_index, &(*dc_histograms)[0],
+    if (!ProcessScan(cinfo, i, &histo_index, &(*dc_histograms)[0],
                      &(*ac_histograms)[0])) {
       JPEGLI_ERROR("Invalid scan.");
     }
@@ -607,10 +607,8 @@ size_t RestartIntervalForScan(j_compress_ptr cinfo, size_t scan_index) {
   }
 }
 
-void OptimizeHuffmanCodes(
-    j_compress_ptr cinfo,
-    const std::vector<std::vector<jpegli::coeff_t> >& coeffs,
-    std::vector<JPEGHuffmanCode>* huffman_codes) {
+void OptimizeHuffmanCodes(j_compress_ptr cinfo,
+                          std::vector<JPEGHuffmanCode>* huffman_codes) {
   // Gather histograms.
   size_t num_histo = 0;
   for (int i = 0; i < cinfo->num_scans; ++i) {
@@ -618,7 +616,7 @@ void OptimizeHuffmanCodes(
   }
   std::vector<Histogram> dc_histograms(num_histo);
   std::vector<Histogram> ac_histograms(num_histo);
-  ProcessJpeg(cinfo, coeffs, &dc_histograms, &ac_histograms);
+  ProcessJpeg(cinfo, &dc_histograms, &ac_histograms);
 
   // Cluster DC histograms.
   JpegClusteredHistograms dc_clusters;

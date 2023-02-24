@@ -42,10 +42,8 @@ void ClusterJpegHistograms(const Histogram* histo_data, size_t num,
 void AddJpegHuffmanCode(const jxl::Histogram& histogram, size_t slot_id,
                         std::vector<JPEGHuffmanCode>* huff_codes);
 
-void OptimizeHuffmanCodes(
-    j_compress_ptr cinfo,
-    const std::vector<std::vector<jpegli::coeff_t> >& coeffs,
-    std::vector<JPEGHuffmanCode>* huffman_codes);
+void OptimizeHuffmanCodes(j_compress_ptr cinfo,
+                          std::vector<JPEGHuffmanCode>* huffman_codes);
 
 }  // namespace jpegli
 
