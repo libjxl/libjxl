@@ -17,8 +17,7 @@
 
 namespace jpegli {
 
-void ComputeDCTCoefficients(j_compress_ptr cinfo,
-                            std::vector<std::vector<jpegli::coeff_t> >* coeffs);
+void ComputeDCTCoefficients(j_compress_ptr cinfo);
 
 }  // namespace jpegli
 

@@ -12,6 +12,7 @@
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 
+#include "lib/jpegli/memory_manager.h"
 #include "lib/jxl/enc_transforms.h"
 
 HWY_BEFORE_NAMESPACE();
@@ -136,9 +137,7 @@ void QuantizeBlockNoAQ(const float* dct, const float* qmc, int32_t* block) {
 
 static constexpr float kDCBias = 128.0f / 255.0f;
 
-void ComputeDCTCoefficients(
-    j_compress_ptr cinfo,
-    std::vector<std::vector<jpegli::coeff_t> >* all_coeffs) {
+void ComputeDCTCoefficients(j_compress_ptr cinfo) {
   jpeg_comp_master* m = cinfo->master;
   std::vector<float> zero_bias_mul(cinfo->num_components, 0.5f);
   const bool xyb = m->xyb_mode && cinfo->jpeg_color_space == JCS_RGB;
@@ -158,7 +157,9 @@ void ComputeDCTCoefficients(
     JXL_DASSERT(cinfo->max_v_samp_factor % comp->v_samp_factor == 0);
     const int h_factor = cinfo->max_h_samp_factor / comp->h_samp_factor;
     const int v_factor = cinfo->max_v_samp_factor / comp->v_samp_factor;
-    std::vector<coeff_t> coeffs(xsize_blocks * ysize_blocks * kDCTBlockSize);
+    size_t num_coeffs = xsize_blocks * ysize_blocks * kDCTBlockSize;
+    coeff_t* coeffs = Allocate<coeff_t>(cinfo, num_coeffs, JPOOL_IMAGE_ALIGNED);
+    m->coefficients[c] = coeffs;
     JQUANT_TBL* quant_table = cinfo->quant_tbl_ptrs[comp->quant_tbl_no];
     std::vector<float> qmc(kDCTBlockSize);
     for (size_t k = 0; k < kDCTBlockSize; k++) {
@@ -189,7 +190,6 @@ void ComputeDCTCoefficients(
         block[0] = std::round((dct1[0] - kDCBias) * qmc[0]);
       }
     }
-    all_coeffs->emplace_back(std::move(coeffs));
   }
 }
 
@@ -203,9 +203,8 @@ namespace jpegli {
 
 HWY_EXPORT(ComputeDCTCoefficients);
 
-void ComputeDCTCoefficients(
-    j_compress_ptr cinfo, std::vector<std::vector<jpegli::coeff_t> >* coeffs) {
-  HWY_DYNAMIC_DISPATCH(ComputeDCTCoefficients)(cinfo, coeffs);
+void ComputeDCTCoefficients(j_compress_ptr cinfo) {
+  HWY_DYNAMIC_DISPATCH(ComputeDCTCoefficients)(cinfo);
 }
 
 }  // namespace jpegli

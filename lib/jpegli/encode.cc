@@ -254,13 +254,15 @@ void ReadLine(const uint8_t* row_in, size_t xsize, size_t c,
   }
 }
 
-void CopyCoefficients(j_compress_ptr cinfo,
-                      std::vector<std::vector<coeff_t>>* all_coeffs) {
+void CopyCoefficients(j_compress_ptr cinfo) {
+  jpeg_comp_master* m = cinfo->master;
   for (int c = 0; c < cinfo->num_components; c++) {
     jpeg_component_info* comp = &cinfo->comp_info[c];
     const size_t xsize_blocks = comp->width_in_blocks;
     const size_t ysize_blocks = comp->height_in_blocks;
-    std::vector<coeff_t> coeffs(xsize_blocks * ysize_blocks * kDCTBlockSize);
+    const size_t num_coeffs = xsize_blocks * ysize_blocks * kDCTBlockSize;
+    coeff_t* coeffs = Allocate<coeff_t>(cinfo, num_coeffs, JPOOL_IMAGE_ALIGNED);
+    m->coefficients[c] = coeffs;
     for (size_t by = 0; by < ysize_blocks; ++by) {
       JBLOCKARRAY ba = (*cinfo->mem->access_virt_barray)(
           reinterpret_cast<j_common_ptr>(cinfo),
@@ -269,7 +271,6 @@ void CopyCoefficients(j_compress_ptr cinfo,
       memcpy(&coeffs[by * xsize_blocks * kDCTBlockSize], ba[0],
              xsize_blocks * sizeof(ba[0][0]));
     }
-    all_coeffs->emplace_back(std::move(coeffs));
   }
 }
 
@@ -502,16 +503,15 @@ void WriteFileHeader(j_compress_ptr cinfo) {
   }
 }
 
-void EncodeScans(j_compress_ptr cinfo,
-                 const std::vector<std::vector<coeff_t>>& coeffs) {
+void EncodeScans(j_compress_ptr cinfo) {
   if (cinfo->num_scans == 1 && cinfo->optimize_coding &&
       cinfo->restart_interval == 0 && cinfo->restart_in_rows == 0) {
-    EncodeSingleScan(cinfo, coeffs);
+    EncodeSingleScan(cinfo);
     return;
   }
   std::vector<JPEGHuffmanCode> huffman_codes;
   if (cinfo->optimize_coding || cinfo->progressive_mode) {
-    OptimizeHuffmanCodes(cinfo, coeffs, &huffman_codes);
+    OptimizeHuffmanCodes(cinfo, &huffman_codes);
   } else {
     CopyHuffmanCodes(cinfo, &huffman_codes);
   }
@@ -529,7 +529,7 @@ void EncodeScans(j_compress_ptr cinfo,
       dht_index += num_dht;
     }
     EncodeSOS(cinfo, i);
-    if (!EncodeScan(cinfo, coeffs, i)) {
+    if (!EncodeScan(cinfo, i)) {
       JPEGLI_ERROR("Failed to encode scan.");
     }
   }
@@ -1000,11 +1000,10 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
   // SOF
   jpegli::EncodeSOF(cinfo);
 
-  std::vector<std::vector<jpegli::coeff_t>> coeffs;
   if (cinfo->global_state == jpegli::kEncWriteCoeffs) {
-    jpegli::CopyCoefficients(cinfo, &coeffs);
+    jpegli::CopyCoefficients(cinfo);
   } else {
-    jpegli::ComputeDCTCoefficients(cinfo, &coeffs);
+    jpegli::ComputeDCTCoefficients(cinfo);
   }
 
   if (cinfo->scan_info == nullptr) {
@@ -1015,7 +1014,7 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
     jpegli::ValidateScanScript(cinfo);
   }
 
-  jpegli::EncodeScans(cinfo, coeffs);
+  jpegli::EncodeScans(cinfo);
 
   // EOI
   jpegli::WriteOutput(cinfo, {0xFF, 0xD9});

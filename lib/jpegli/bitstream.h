@@ -26,12 +26,9 @@ void EncodeDHT(j_compress_ptr cinfo, const JPEGHuffmanCode* huffman_codes,
 void EncodeDQT(j_compress_ptr cinfo);
 bool EncodeDRI(j_compress_ptr cinfo);
 
-bool EncodeScan(j_compress_ptr cinfo,
-                const std::vector<std::vector<coeff_t>>& coeffs,
-                int scan_index);
+bool EncodeScan(j_compress_ptr cinfo, int scan_index);
 
-void EncodeSingleScan(j_compress_ptr cinfo,
-                      const std::vector<std::vector<coeff_t>>& coeffs);
+void EncodeSingleScan(j_compress_ptr cinfo);
 
 }  // namespace jpegli
 

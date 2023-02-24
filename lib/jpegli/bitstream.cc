@@ -626,9 +626,7 @@ bool EncodeDRI(j_compress_ptr cinfo) {
   return true;
 }
 
-bool EncodeScan(j_compress_ptr cinfo,
-                const std::vector<std::vector<coeff_t>>& coeffs,
-                int scan_index) {
+bool EncodeScan(j_compress_ptr cinfo, int scan_index) {
   jpeg_comp_master* m = cinfo->master;
   const int restart_interval = cinfo->restart_interval;
   int restarts_to_go = restart_interval;
@@ -682,6 +680,7 @@ bool EncodeScan(j_compress_ptr cinfo,
       for (int i = 0; i < scan_info->comps_in_scan; ++i) {
         int comp_idx = scan_info->component_index[i];
         jpeg_component_info* comp = &cinfo->comp_info[comp_idx];
+        coeff_t* coeffs = m->coefficients[comp_idx];
         HuffmanCodeTable* dc_huff = &m->huff_tables[sci.dc_tbl_idx[i]];
         HuffmanCodeTable* ac_huff = &m->huff_tables[sci.ac_tbl_idx[i]];
         int n_blocks_y = is_interleaved ? comp->v_samp_factor : 1;
@@ -697,7 +696,7 @@ bool EncodeScan(j_compress_ptr cinfo,
                 block_y >= comp->height_in_blocks) {
               block = kDummyBlock;
             } else {
-              block = &coeffs[comp_idx][block_idx << 6];
+              block = &coeffs[block_idx << 6];
             }
             bool ok;
             if (!is_progressive) {
@@ -735,8 +734,8 @@ struct Token {
 };
 
 void ComputeTokens(j_compress_ptr cinfo,
-                   const std::vector<std::vector<coeff_t>>& coeffs,
                    std::vector<Token>* tokens) {
+  jpeg_comp_master* m = cinfo->master;
   tokens->reserve(cinfo->image_width * cinfo->image_height);
   int MCUs_per_row = DivCeil(cinfo->image_width, 8 * cinfo->max_h_samp_factor);
   int MCU_rows = DivCeil(cinfo->image_height, 8 * cinfo->max_v_samp_factor);
@@ -745,6 +744,7 @@ void ComputeTokens(j_compress_ptr cinfo,
     for (int mcu_x = 0; mcu_x < MCUs_per_row; ++mcu_x) {
       for (int c = 0; c < cinfo->num_components; ++c) {
         jpeg_component_info* comp = &cinfo->comp_info[c];
+        coeff_t* coeffs = m->coefficients[c];
         int histo_dc = c;
         int histo_ac = c + 4;
         for (int iy = 0; iy < comp->v_samp_factor; ++iy) {
@@ -758,7 +758,7 @@ void ComputeTokens(j_compress_ptr cinfo,
               tokens->push_back(Token(histo_ac, 0, 0));
               continue;
             }
-            const coeff_t* block = &coeffs[c][block_idx << 6];
+            const coeff_t* block = &coeffs[block_idx << 6];
             coeff_t temp2;
             coeff_t temp;
             temp2 = block[0];
@@ -818,10 +818,9 @@ void WriteTokens(const Token* tokens, size_t num_tokens,
   }
 }
 
-void EncodeSingleScan(j_compress_ptr cinfo,
-                      const std::vector<std::vector<coeff_t>>& coeffs) {
+void EncodeSingleScan(j_compress_ptr cinfo) {
   std::vector<Token> tokens;
-  ComputeTokens(cinfo, coeffs, &tokens);
+  ComputeTokens(cinfo, &tokens);
   Histogram histograms[8] = {};
   for (Token t : tokens) {
     ++histograms[t.histo_idx].count[t.symbol];
