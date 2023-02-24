@@ -6,11 +6,11 @@
 #ifndef LIB_JXL_BASE_THREAD_POOL_INTERNAL_H_
 #define LIB_JXL_BASE_THREAD_POOL_INTERNAL_H_
 
+#include <jxl/parallel_runner.h>
 #include <stddef.h>
 
 #include <cmath>
 
-#include "jxl/parallel_runner.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/threads/thread_parallel_runner_internal.h"
 

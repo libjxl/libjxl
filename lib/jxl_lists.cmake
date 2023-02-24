@@ -6,6 +6,32 @@
 # This file is generated, do not modify by manually.
 # Run `tools/scripts/build_cleaner.py --update` to regenerate it.
 
+set(JPEGXL_INTERNAL_BASE_SOURCES
+  jxl/base/arch_macros.h
+  jxl/base/bits.h
+  jxl/base/byte_order.h
+  jxl/base/cache_aligned.cc
+  jxl/base/cache_aligned.h
+  jxl/base/compiler_specific.h
+  jxl/base/data_parallel.cc
+  jxl/base/data_parallel.h
+  jxl/base/file_io.h
+  jxl/base/iaca.h
+  jxl/base/os_macros.h
+  jxl/base/override.h
+  jxl/base/padded_bytes.cc
+  jxl/base/padded_bytes.h
+  jxl/base/printf_macros.h
+  jxl/base/profiler.h
+  jxl/base/random.cc
+  jxl/base/random.h
+  jxl/base/sanitizer_definitions.h
+  jxl/base/scope_guard.h
+  jxl/base/span.h
+  jxl/base/status.h
+  jxl/base/thread_pool_internal.h
+)
+
 set(JPEGXL_INTERNAL_CODEC_APNG_SOURCES
   extras/dec/apng.cc
   extras/dec/apng.h
@@ -92,29 +118,6 @@ set(JPEGXL_INTERNAL_DEC_SOURCES
   jxl/ans_common.cc
   jxl/ans_common.h
   jxl/ans_params.h
-  jxl/base/arch_macros.h
-  jxl/base/bits.h
-  jxl/base/byte_order.h
-  jxl/base/cache_aligned.cc
-  jxl/base/cache_aligned.h
-  jxl/base/compiler_specific.h
-  jxl/base/data_parallel.cc
-  jxl/base/data_parallel.h
-  jxl/base/file_io.h
-  jxl/base/iaca.h
-  jxl/base/os_macros.h
-  jxl/base/override.h
-  jxl/base/padded_bytes.cc
-  jxl/base/padded_bytes.h
-  jxl/base/printf_macros.h
-  jxl/base/profiler.h
-  jxl/base/random.cc
-  jxl/base/random.h
-  jxl/base/sanitizer_definitions.h
-  jxl/base/scope_guard.h
-  jxl/base/span.h
-  jxl/base/status.h
-  jxl/base/thread_pool_internal.h
   jxl/blending.cc
   jxl/blending.h
   jxl/chroma_from_luma.cc

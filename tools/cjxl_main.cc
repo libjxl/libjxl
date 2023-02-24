@@ -11,6 +11,12 @@
 // also require a change to the range-check here. The advantage is
 // that this minimizes the size of libjxl.
 
+#include <jxl/codestream_header.h>
+#include <jxl/encode.h>
+#include <jxl/encode_cxx.h>
+#include <jxl/thread_parallel_runner.h>
+#include <jxl/thread_parallel_runner_cxx.h>
+#include <jxl/types.h>
 #include <stdint.h>
 
 #include <cmath>
@@ -23,12 +29,6 @@
 #include <type_traits>
 #include <vector>
 
-#include "jxl/codestream_header.h"
-#include "jxl/encode.h"
-#include "jxl/encode_cxx.h"
-#include "jxl/thread_parallel_runner.h"
-#include "jxl/thread_parallel_runner_cxx.h"
-#include "jxl/types.h"
 #include "lib/extras/dec/apng.h"
 #include "lib/extras/dec/color_hints.h"
 #include "lib/extras/dec/exr.h"

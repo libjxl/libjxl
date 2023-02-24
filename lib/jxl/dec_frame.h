@@ -6,10 +6,10 @@
 #ifndef LIB_JXL_DEC_FRAME_H_
 #define LIB_JXL_DEC_FRAME_H_
 
+#include <jxl/decode.h>
+#include <jxl/types.h>
 #include <stdint.h>
 
-#include "jxl/decode.h"
-#include "jxl/types.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/span.h"

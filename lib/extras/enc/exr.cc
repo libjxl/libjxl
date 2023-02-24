@@ -9,10 +9,10 @@
 #include <ImfIO.h>
 #include <ImfRgbaFile.h>
 #include <ImfStandardAttributes.h>
+#include <jxl/codestream_header.h>
 
 #include <vector>
 
-#include "jxl/codestream_header.h"
 #include "lib/extras/packed_image.h"
 #include "lib/jxl/base/byte_order.h"
 

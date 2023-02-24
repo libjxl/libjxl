@@ -1,6 +1,7 @@
 package(default_visibility = ['//:__subpackages__'])
 
 load('jxl_lists.bzl',
+    'libjxl_base_sources',
     'libjxl_codec_apng_sources',
     'libjxl_codec_gif_sources',
     'libjxl_codec_jpegli_sources',
@@ -101,12 +102,27 @@ cc_library(
 )
 
 cc_library(
-    name = 'jpegxl_private',
-    srcs = libjxl_dec_sources + libjxl_dec_box_sources + libjxl_dec_jpeg_sources + libjxl_enc_sources,
+    name = 'includes',
     hdrs = libjxl_public_headers + [JXL_EXPORT_H],
     strip_include_prefix = 'include',
+)
+
+cc_library(
+    name = 'base',
+    srcs = [path for path in libjxl_base_sources if path.endswith('.cc')],
+    hdrs = [path for path in libjxl_base_sources if path.endswith('.h')],
+    deps = [
+        ':includes',
+    ] + libjxl_deps_hwy,  # TODO(eustas): for cache_aligned
+)
+
+cc_library(
+    name = 'jpegxl_private',
+    srcs = libjxl_dec_sources + libjxl_dec_box_sources + libjxl_dec_jpeg_sources + libjxl_enc_sources,
     defines = ['JPEGXL_ENABLE_SKCMS=1'],
     deps = [
+        ':base',
+        ':includes',
         ':jpegxl_version',
     ] + libjxl_deps_brotli + libjxl_deps_hwy + libjxl_deps_skcms
 )

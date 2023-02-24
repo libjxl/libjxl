@@ -8,10 +8,10 @@
 
 // Interleaved image for color transforms and Codec.
 
+#include <jxl/types.h>
 #include <stddef.h>
 #include <stdint.h>
 
-#include "jxl/types.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/status.h"

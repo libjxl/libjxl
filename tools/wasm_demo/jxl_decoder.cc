@@ -5,13 +5,13 @@
 
 #include "tools/wasm_demo/jxl_decoder.h"
 
+#include <jxl/decode.h>
+#include <jxl/decode_cxx.h>
+#include <jxl/thread_parallel_runner_cxx.h>
+
 #include <cstring>
 #include <memory>
 #include <vector>
-
-#include "jxl/decode.h"
-#include "jxl/decode_cxx.h"
-#include "jxl/thread_parallel_runner_cxx.h"
 
 extern "C" {
 

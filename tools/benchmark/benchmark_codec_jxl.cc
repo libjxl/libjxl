@@ -4,6 +4,8 @@
 // license that can be found in the LICENSE file.
 #include "tools/benchmark/benchmark_codec_jxl.h"
 
+#include <jxl/thread_parallel_runner_cxx.h>
+
 #include <cstdint>
 #include <cstdlib>
 #include <functional>
@@ -12,7 +14,6 @@
 #include <utility>
 #include <vector>
 
-#include "jxl/thread_parallel_runner_cxx.h"
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/jxl.h"
 #if JPEGXL_ENABLE_JPEG

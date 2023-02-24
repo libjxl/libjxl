@@ -6,12 +6,11 @@
 // This example prints information from the main codestream header.
 
 #include <inttypes.h>
+#include <jxl/decode.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#include "jxl/decode.h"
 
 int PrintBasicInfo(FILE* file, int verbose) {
   uint8_t* data = NULL;

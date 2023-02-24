@@ -5,10 +5,10 @@
 
 #include "lib/extras/enc/jpegli.h"
 
+#include <jxl/codestream_header.h>
 #include <setjmp.h>
 #include <stdint.h>
 
-#include "jxl/codestream_header.h"
 #include "lib/extras/enc/encode.h"
 #include "lib/jpegli/encode.h"
 #include "lib/jxl/enc_color_management.h"

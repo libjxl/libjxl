@@ -5,10 +5,11 @@
 
 #include "tools/wasm_demo/jxl_decompressor.h"
 
+#include <jxl/thread_parallel_runner_cxx.h>
+
 #include <cstring>
 #include <memory>
 
-#include "jxl/thread_parallel_runner_cxx.h"
 #include "lib/extras/dec/jxl.h"
 #include "tools/wasm_demo/no_png.h"
 

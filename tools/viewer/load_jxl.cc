@@ -5,15 +5,15 @@
 
 #include "tools/viewer/load_jxl.h"
 
+#include <jxl/decode.h>
+#include <jxl/decode_cxx.h>
+#include <jxl/thread_parallel_runner_cxx.h>
+#include <jxl/types.h>
 #include <stdint.h>
 
 #include <QElapsedTimer>
 #include <QFile>
 
-#include "jxl/decode.h"
-#include "jxl/decode_cxx.h"
-#include "jxl/thread_parallel_runner_cxx.h"
-#include "jxl/types.h"
 #include "lcms2.h"
 
 namespace jxl {

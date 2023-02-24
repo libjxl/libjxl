@@ -7,12 +7,12 @@
 
 #include "lib/extras/dec/jpegli.h"
 
+#include <jxl/color_encoding.h>
 #include <stdint.h>
 
 #include <memory>
 #include <string>
 
-#include "jxl/color_encoding.h"
 #include "lib/extras/dec/color_hints.h"
 #include "lib/extras/dec/decode.h"
 #include "lib/extras/dec/jpg.h"
