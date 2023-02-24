@@ -8,6 +8,11 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
+
+#include <hwy/aligned_allocator.h>
+
+#include "lib/jxl/base/compiler_specific.h"  // for ssize_t
 
 namespace jpegli {
 
@@ -31,8 +36,11 @@ constexpr inline T1 DivCeil(T1 a, T2 b) {
 }
 
 constexpr size_t kDCTBlockSize = 64;
+// This is set to the same value as MAX_COMPS_IN_SCAN, because that is the
+// maximum number of channels the libjpeg-turbo decoder can decode.
 constexpr int kMaxComponents = 4;
 constexpr int kMaxQuantTables = 4;
+constexpr int kJpegPrecision = 8;
 constexpr int kMaxHuffmanTables = 4;
 constexpr size_t kJpegHuffmanMaxBitLength = 16;
 constexpr int kJpegHuffmanAlphabetSize = 256;
@@ -71,6 +79,37 @@ constexpr uint32_t kJPEGZigZagOrder[64] = {
   35, 36, 48, 49, 57, 58, 62, 63
 };
 /* clang-format on */
+
+template <typename T>
+class RowBuffer {
+ public:
+  void Allocate(size_t num_rows, size_t stride) {
+    ysize_ = num_rows;
+    stride_ = stride;
+    data_ = hwy::AllocateAligned<T>(ysize_ * stride_);
+  }
+
+  T* Row(ssize_t y) { return &data_[((ysize_ + y) % ysize_) * stride_]; }
+
+  size_t stride() const { return stride_; }
+  size_t memstride() const { return stride_ * sizeof(T); }
+
+  void CopyRow(ssize_t y, const T* src, size_t len) {
+    memcpy(Row(y), src, len * sizeof(T));
+  }
+
+  void FillRow(ssize_t y, T val, size_t len) {
+    T* row = Row(y);
+    for (size_t x = 0; x < len; ++x) {
+      row[x] = val;
+    }
+  }
+
+ private:
+  size_t ysize_ = 0;
+  size_t stride_ = 0;
+  hwy::AlignedFreeUniquePtr<T[]> data_;
+};
 
 }  // namespace jpegli
 

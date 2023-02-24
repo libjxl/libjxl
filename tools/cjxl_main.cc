@@ -54,7 +54,7 @@ namespace tools {
 
 namespace {
 inline bool ParsePhotonNoiseParameter(const char* arg, float* out) {
-  return strncmp(arg, "ISO", 3) == 0 && ParseFloat(arg + 3, out) && *out > 0;
+  return ParseFloat(arg, out) && *out >= 0;
 }
 inline bool ParseIntensityTarget(const char* arg, float* out) {
   return ParseFloat(arg, out) && *out > 0;
@@ -126,6 +126,15 @@ struct CompressArgs {
         "    Recommended range: 0.5 .. 3.0. Allowed range: 0.0 ... 25.0.\n"
         "    Mutually exclusive with --quality.",
         &distance, &ParseFloat);
+
+    opt_alpha_distance_id = cmdline->AddOptionValue(
+        'a', "alpha_distance", "maxError",
+        "Max. butteraugli distance for the alpha channel, lower = higher "
+        "quality.\n"
+        "    0.0 = mathematically lossless. 1.0 = visually lossless.\n"
+        "    Default is to use the same value as for the color image.\n"
+        "    Recommended range: 0.5 .. 3.0. Allowed range: 0.0 ... 25.0.",
+        &alpha_distance, &ParseFloat);
 
     // High-level options
     opt_quality_id = cmdline->AddOptionValue(
@@ -249,7 +258,7 @@ struct CompressArgs {
                            &disable_output, &SetBooleanTrue, 1);
 
     cmdline->AddOptionValue(
-        '\0', "photon_noise", "ISO3200",
+        '\0', "photon_noise_iso", "3200",
         "Adds noise to the image emulating photographic film noise. "
         "The higher the given number, the grainier the image will be. "
         "As an example, a value of 100 gives low noise whereas a value "
@@ -488,6 +497,7 @@ struct CompressArgs {
   int64_t codestream_level = -1;
   int64_t responsive = -1;
   float distance = 1.0;
+  float alpha_distance = 1.0;
   size_t effort = 7;
   size_t brotli_effort = 9;
   std::string frame_indexing;
@@ -501,6 +511,7 @@ struct CompressArgs {
   CommandLineParser::OptionId opt_lossless_jpeg_id = -1;
   CommandLineParser::OptionId opt_responsive_id = -1;
   CommandLineParser::OptionId opt_distance_id = -1;
+  CommandLineParser::OptionId opt_alpha_distance_id = -1;
   CommandLineParser::OptionId opt_quality_id = -1;
   CommandLineParser::OptionId opt_modular_group_size_id = -1;
 };
@@ -647,6 +658,8 @@ void SetDistanceFromFlags(CommandLineParser* cmdline, CompressArgs* args,
                           jxl::extras::JXLCompressParams* params,
                           const jxl::extras::Codec& codec) {
   bool distance_set = cmdline->GetOption(args->opt_distance_id)->matched();
+  bool alpha_distance_set =
+      cmdline->GetOption(args->opt_alpha_distance_id)->matched();
   bool quality_set = cmdline->GetOption(args->opt_quality_id)->matched();
   if (((distance_set && (args->distance != 0.0)) ||
        (quality_set && (args->quality != 100))) &&
@@ -677,6 +690,8 @@ void SetDistanceFromFlags(CommandLineParser* cmdline, CompressArgs* args,
     args->lossless_jpeg = 0;
   }
   params->distance = args->distance;
+  params->alpha_distance =
+      alpha_distance_set ? args->alpha_distance : params->distance;
 }
 
 void ProcessFlags(const jxl::extras::Codec codec,
@@ -897,7 +912,7 @@ void ProcessFlags(const jxl::extras::Codec codec,
 
   if (args->num_threads < -1) {
     std::cerr
-        << "Invalid flag value for --num_threads: must be -1, 0 or postive."
+        << "Invalid flag value for --num_threads: must be -1, 0 or positive."
         << std::endl;
     exit(EXIT_FAILURE);
   }

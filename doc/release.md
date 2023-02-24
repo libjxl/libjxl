@@ -29,7 +29,7 @@ number. Released tags don't each one have their own release branch, all releases
 from the same MAJOR.MINOR version will share the same branch. The first commit
 after the branch-off points between the main branch and the release branch
 should be tagged with the suffix `-snapshot` and the name of the next
-MAJOR.MINOR version, in order to get meaningful ouput for `git describe`.
+MAJOR.MINOR version, in order to get meaningful output for `git describe`.
 
 The main purpose of the release branch is to stabilize the code before a
 release. This involves including fixes to existing bugs but **not** including
@@ -128,13 +128,15 @@ To help update it, run this helper command (in a Debian-based system):
 This will update the version in the following files:
 
  * `lib/CMakeLists.txt`
- * `lib/lib.gni`, automatically updated with `tools/build_cleaner.py --update`.
+ * `lib/lib.gni`, automatically updated with
+   `tools/scripts/build_cleaner.py --update`.
  * `debian/changelog` to create the Debian package release with the new version.
    Debian changelog shouldn't repeat the library changelog, instead it should
    include changes to the packaging scripts.
- 
-If there were incompatible API/ABI changes, make sure to also adapt the 
-corresponding section in 
+ * `.github/workflows/conformance.yml`
+
+If there were incompatible API/ABI changes, make sure to also adapt the
+corresponding section in
 [CMakeLists.txt](https://github.com/libjxl/libjxl/blob/main/lib/CMakeLists.txt#L12).
 
 ## Cherry-pick fixes to a release
@@ -265,6 +267,8 @@ instructions:
    to see the results.
 
  * Finally click "Publish release" and go celebrate with the team. 🎉
+
+ * Make sure to manually push the commit of the release also to https://gitlab.com/wg1/jpeg-xl.
 
 ### How to build downstream projects
 

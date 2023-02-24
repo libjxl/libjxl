@@ -70,7 +70,7 @@ void ProcessSOF(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
   cinfo->image_height = ReadUint16(data, &pos);
   cinfo->image_width = ReadUint16(data, &pos);
   cinfo->num_components = ReadUint8(data, &pos);
-  JPEG_VERIFY_INPUT(cinfo->data_precision, 8, 8);
+  JPEG_VERIFY_INPUT(cinfo->data_precision, kJpegPrecision, kJpegPrecision);
   JPEG_VERIFY_INPUT(cinfo->image_height, 1, kMaxDimPixels);
   JPEG_VERIFY_INPUT(cinfo->image_width, 1, kMaxDimPixels);
   JPEG_VERIFY_INPUT(cinfo->num_components, 1, kMaxComponents);
@@ -104,6 +104,7 @@ void ProcessSOF(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
     cinfo->max_v_samp_factor =
         std::max(cinfo->max_v_samp_factor, v_samp_factor);
     uint8_t quant_tbl_idx = ReadUint8(data, &pos);
+    comp->quant_tbl_no = quant_tbl_idx;
     comp->quant_table = cinfo->quant_tbl_ptrs[quant_tbl_idx];
     if (comp->quant_table == nullptr) {
       JPEGLI_ERROR("Quantization table with index %u not found", quant_tbl_idx);

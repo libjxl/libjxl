@@ -3,11 +3,11 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include "lib/jxl/optimize.h"
+#include "lib/jxl/enc_optimize.h"
 
 #include <stdio.h>
 
-#include "gtest/gtest.h"
+#include "lib/jxl/testing.h"
 
 namespace jxl {
 namespace optimize {

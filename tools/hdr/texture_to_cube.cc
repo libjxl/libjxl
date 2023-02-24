@@ -8,6 +8,7 @@
 
 #include "lib/extras/codec.h"
 #include "lib/jxl/base/thread_pool_internal.h"
+#include "lib/jxl/image_bundle.h"
 #include "tools/args.h"
 #include "tools/cmdline.h"
 

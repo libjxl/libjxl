@@ -65,6 +65,10 @@ CMake, Emscripten SDK and V8 are pre-installed.
 ## Building and testing the project
 
 ```bash
+# If your node version is <16.4.0, you might need to update to a newer version or override
+# the node binary with a version which supports SIMD:
+echo "NODE_JS='/path/to/node_binary'" >> $EMSDK/.emscripten
+
 # Setup EMSDK and other environment variables. In practice EMSDK is set to be
 # $OPT/emsdk.
 source $OPT/emsdk/emsdk_env.sh

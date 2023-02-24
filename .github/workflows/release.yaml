@@ -19,6 +19,8 @@ on:
       - v*.*.x
   pull_request:
     types: [opened, reopened, labeled, synchronize]
+    paths-ignore:
+      - '**md'
   release:
     types: [ published ]
 
@@ -29,6 +31,7 @@ jobs:
     steps:
     - name: Install build deps
       run: |
+        sudo rm -f /var/lib/man-db/auto-update
         sudo apt update
         sudo apt install -y \
           asciidoc \
@@ -124,6 +127,7 @@ jobs:
 
     - name: Install build deps
       run: |
+        rm -f /var/lib/man-db/auto-update
         apt update
         DEBIAN_FRONTEND=noninteractive apt install -y \
           build-essential \
@@ -332,6 +336,7 @@ jobs:
         set -x
         mkdir build
         cmake -Bbuild -H. ${{ matrix.arch }} \
+          -DJPEGXL_STATIC=ON \
           -DBUILD_TESTING=OFF \
           -DCMAKE_BUILD_TYPE=Release \
           -DCMAKE_INSTALL_PREFIX=`pwd`/prefix \

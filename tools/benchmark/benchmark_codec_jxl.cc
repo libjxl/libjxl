@@ -20,7 +20,6 @@
 #endif
 #include "lib/extras/packed_image_convert.h"
 #include "lib/extras/time.h"
-#include "lib/jxl/aux_out.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/padded_bytes.h"
@@ -178,6 +177,9 @@ class JxlCodec : public ImageCodec {
         return JXL_FAILURE("failed to parse uniform quant parameter %s",
                            param.c_str());
       }
+    } else if (param[0] == 'D') {
+      cparams_.ec_distance.clear();
+      cparams_.ec_distance.push_back(strtof(param.substr(1).c_str(), nullptr));
     } else if (param.substr(0, kMaxPassesPrefix.size()) == kMaxPassesPrefix) {
       std::istringstream parser(param.substr(kMaxPassesPrefix.size()));
       parser >> dparams_.max_passes;
@@ -265,7 +267,14 @@ class JxlCodec : public ImageCodec {
                   ThreadPoolInternal* pool, std::vector<uint8_t>* compressed,
                   jpegxl::tools::SpeedStats* speed_stats) override {
     if (!jxlargs->debug_image_dir.empty()) {
-      cinfo_.dump_image = [](const CodecInOut& io, const std::string& path) {
+      cinfo_.dump_image = [](Image3F&& image,
+                             const ColorEncoding& color_encoding,
+                             const std::string& path) -> Status {
+        CodecInOut io;
+        // Always save to 16-bit png.
+        io.metadata.m.SetUintSamples(16);
+        io.metadata.m.color_encoding = color_encoding;
+        io.SetFromImage(std::move(image), io.metadata.m.color_encoding);
         return EncodeToFile(io, path);
       };
       cinfo_.debug_prefix =

@@ -32,6 +32,7 @@
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/codec_in_out.h"
+#include "lib/jxl/image_bundle.h"
 #include "tools/benchmark/benchmark_utils.h"
 #include "tools/cmdline.h"
 
@@ -75,6 +76,15 @@ class JPEGCodec : public ImageCodec {
     }
     if (param == "std") {
       use_std_tables_ = true;
+      return true;
+    }
+    if (param[0] == 'Q') {
+      libjpeg_quality_ = strtol(param.substr(1).c_str(), nullptr, 10);
+      return true;
+    }
+    if (param.compare(0, 3, "YUV") == 0) {
+      if (param.size() != 6) return false;
+      libjpeg_chroma_subsampling_ = param.substr(3);
       return true;
     }
     if (param == "dec-jpegli") {
@@ -160,10 +170,10 @@ class JPEGCodec : public ImageCodec {
       if (progressive_id_ >= 0) {
         settings.progressive_level = progressive_id_;
       }
-      if (!chroma_subsampling_.empty()) {
-        settings.chroma_subsampling = chroma_subsampling_;
-      }
+      settings.chroma_subsampling = chroma_subsampling_;
       settings.use_adaptive_quantization = enable_adaptive_quant_;
+      settings.libjpeg_quality = libjpeg_quality_;
+      settings.libjpeg_chroma_subsampling = libjpeg_chroma_subsampling_;
       const double start = Now();
       JXL_RETURN_IF_ERROR(extras::EncodeJpeg(ppf, settings, pool, compressed));
       const double end = Now();
@@ -232,6 +242,8 @@ class JPEGCodec : public ImageCodec {
 #if JPEGXL_ENABLE_JPEGLI
   bool xyb_mode_ = false;
   bool use_std_tables_ = false;
+  int libjpeg_quality_ = 0;
+  std::string libjpeg_chroma_subsampling_;
 #endif
   // JPEG decoder and its parameters
   std::string jpeg_decoder_ = "libjpeg";

@@ -13,6 +13,8 @@ on:
       - v*.*.x
   pull_request:
     types: [opened, reopened, labeled, synchronize]
+    paths-ignore:
+      - '**md'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
@@ -115,6 +117,7 @@ jobs:
     steps:
     - name: Install build deps
       run: |
+        sudo rm -f /var/lib/man-db/auto-update
         sudo apt update
         sudo apt install -y \
           ccache \
@@ -214,7 +217,7 @@ jobs:
       continue-on-error: true
       if: matrix.mode == 'release' || matrix.name == 'release'
       run: |
-        tools/build_stats.py --save build/stats.json \
+        tools/scripts/build_stats.py --save build/stats.json \
           --max-stack ${{ matrix.max_stack || '0' }} \
           cjxl djxl libjxl.so libjxl_dec.so
     # Check that we can build the example project against the installed libs.
@@ -367,6 +370,7 @@ jobs:
       shell: bash
       run: |
         set -x
+        sudo rm -f /var/lib/man-db/auto-update
         sudo apt update
         pkgs=(
           # Build dependencies
@@ -464,7 +468,7 @@ jobs:
         run: bazel build -c opt ...:all
       - name: Test
         if: |
-          true || github.event_name == 'push' ||
+          github.event_name == 'push' ||
           (github.event_name == 'pull_request' &&
            contains(github.event.pull_request.labels.*.name, 'CI:full'))
         run: bazel test -c opt --test_output=errors ...:all

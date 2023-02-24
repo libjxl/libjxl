@@ -6,7 +6,6 @@
 #include "jxl/encode.h"
 
 #include "enc_color_management.h"
-#include "gtest/gtest.h"
 #include "jxl/decode.h"
 #include "jxl/decode_cxx.h"
 #include "jxl/encode_cxx.h"
@@ -16,8 +15,9 @@
 #include "lib/jxl/encode_internal.h"
 #include "lib/jxl/jpeg/dec_jpeg_data.h"
 #include "lib/jxl/jpeg/dec_jpeg_data_writer.h"
+#include "lib/jxl/test_image.h"
 #include "lib/jxl/test_utils.h"
-#include "lib/jxl/testdata.h"
+#include "lib/jxl/testing.h"
 
 TEST(EncodeTest, AddFrameAfterCloseInputTest) {
   JxlEncoderPtr enc = JxlEncoderMake(nullptr);
@@ -59,7 +59,7 @@ TEST(EncodeTest, AddJPEGAfterCloseTest) {
   JxlEncoderCloseInput(enc.get());
 
   const std::string jpeg_path = "jxl/flower/flower.png.im_q85_420.jpg";
-  const jxl::PaddedBytes orig = jxl::ReadTestData(jpeg_path);
+  const jxl::PaddedBytes orig = jxl::test::ReadTestData(jpeg_path);
 
   JxlEncoderFrameSettings* frame_settings =
       JxlEncoderFrameSettingsCreate(enc.get(), NULL);
@@ -213,7 +213,7 @@ void VerifyFrameEncoding(size_t xsize, size_t ysize, JxlEncoder* enc,
   jxl::CodecInOut decoded_io;
   EXPECT_TRUE(jxl::test::DecodeFile(
       {}, jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
-      &decoded_io, /*pool=*/nullptr));
+      &decoded_io));
 
   EXPECT_LE(
       ComputeDistance2(input_io.Main(), decoded_io.Main(), jxl::GetJxlCms()),
@@ -392,7 +392,7 @@ TEST(EncodeTest, frame_settingsTest) {
     EXPECT_EQ(JXL_ENC_SUCCESS,
               JxlEncoderFrameSettingsSetOption(
                   frame_settings, JXL_ENC_FRAME_SETTING_PROGRESSIVE_DC, 2));
-    VerifyFrameEncoding(63, 129, enc.get(), frame_settings, 2803,
+    VerifyFrameEncoding(63, 129, enc.get(), frame_settings, 2830,
                         /*lossy_use_original_profile=*/false);
     EXPECT_EQ(false, enc->last_used_cparams.responsive);
     EXPECT_EQ(true, enc->last_used_cparams.progressive_mode);
@@ -503,7 +503,7 @@ TEST(EncodeTest, LossyEncoderUseOriginalProfileTest) {
     ASSERT_NE(nullptr, enc.get());
     JxlEncoderFrameSettings* frame_settings =
         JxlEncoderFrameSettingsCreate(enc.get(), NULL);
-    VerifyFrameEncoding(63, 129, enc.get(), frame_settings, 5181, true);
+    VerifyFrameEncoding(63, 129, enc.get(), frame_settings, 5190, true);
   }
   {
     JxlEncoderPtr enc = JxlEncoderMake(nullptr);
@@ -513,7 +513,7 @@ TEST(EncodeTest, LossyEncoderUseOriginalProfileTest) {
     EXPECT_EQ(JXL_ENC_SUCCESS,
               JxlEncoderFrameSettingsSetOption(
                   frame_settings, JXL_ENC_FRAME_SETTING_PROGRESSIVE_DC, 2));
-    VerifyFrameEncoding(63, 129, enc.get(), frame_settings, 5580, true);
+    VerifyFrameEncoding(63, 129, enc.get(), frame_settings, 5644, true);
   }
   {
     JxlEncoderPtr enc = JxlEncoderMake(nullptr);
@@ -523,7 +523,7 @@ TEST(EncodeTest, LossyEncoderUseOriginalProfileTest) {
     ASSERT_EQ(JXL_ENC_SUCCESS,
               JxlEncoderFrameSettingsSetOption(
                   frame_settings, JXL_ENC_FRAME_SETTING_EFFORT, 8));
-    VerifyFrameEncoding(63, 129, enc.get(), frame_settings, 4647, true);
+    VerifyFrameEncoding(63, 129, enc.get(), frame_settings, 4676, true);
   }
 }
 
@@ -531,8 +531,8 @@ namespace {
 // Returns a copy of buf from offset to offset+size, or a new zeroed vector if
 // the result would have been out of bounds taking integer overflow into
 // account.
-const std::vector<uint8_t> SliceSpan(const jxl::Span<const uint8_t>& buf,
-                                     size_t offset, size_t size) {
+std::vector<uint8_t> SliceSpan(const jxl::Span<const uint8_t>& buf,
+                               size_t offset, size_t size) {
   if (offset + size >= buf.size()) {
     return std::vector<uint8_t>(size, 0);
   }
@@ -814,7 +814,7 @@ TEST(EncodeTest, CodestreamLevelVerificationTest) {
 
 TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGReconstructionTest)) {
   const std::string jpeg_path = "jxl/flower/flower.png.im_q85_420.jpg";
-  const jxl::PaddedBytes orig = jxl::ReadTestData(jpeg_path);
+  const jxl::PaddedBytes orig = jxl::test::ReadTestData(jpeg_path);
 
   JxlEncoderPtr enc = JxlEncoderMake(nullptr);
   JxlEncoderFrameSettings* frame_settings =
@@ -1304,7 +1304,7 @@ TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGFrameTest)) {
       // cannot set color encoding if basic info is not set
       if (skip_basic_info && !skip_color_encoding) continue;
       const std::string jpeg_path = "jxl/flower/flower_cropped.jpg";
-      const jxl::PaddedBytes orig = jxl::ReadTestData(jpeg_path);
+      const jxl::PaddedBytes orig = jxl::test::ReadTestData(jpeg_path);
       jxl::CodecInOut orig_io;
       ASSERT_TRUE(SetFromBytes(jxl::Span<const uint8_t>(orig), &orig_io,
                                /*pool=*/nullptr));
@@ -1353,7 +1353,7 @@ TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGFrameTest)) {
       jxl::CodecInOut decoded_io;
       EXPECT_TRUE(jxl::test::DecodeFile(
           {}, jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
-          &decoded_io, /*pool=*/nullptr));
+          &decoded_io));
 
       EXPECT_LE(
           ComputeDistance2(orig_io.Main(), decoded_io.Main(), jxl::GetJxlCms()),

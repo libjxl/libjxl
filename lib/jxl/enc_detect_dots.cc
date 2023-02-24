@@ -27,10 +27,10 @@
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/convolve.h"
+#include "lib/jxl/enc_linalg.h"
+#include "lib/jxl/enc_optimize.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_ops.h"
-#include "lib/jxl/linalg.h"
-#include "lib/jxl/optimize.h"
 
 // Set JXL_DEBUG_DOT_DETECT to 1 to enable debugging.
 #ifndef JXL_DEBUG_DOT_DETECT
@@ -38,7 +38,7 @@
 #endif
 
 #if JXL_DEBUG_DOT_DETECT
-#include "lib/jxl/aux_out.h"
+#include "lib/jxl/enc_aux_out.h"
 #endif
 
 HWY_BEFORE_NAMESPACE();

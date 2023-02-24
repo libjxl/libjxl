@@ -20,7 +20,6 @@
 #include <hwy/highway.h>
 
 #include "lib/jxl/ac_strategy.h"
-#include "lib/jxl/aux_out.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/profiler.h"
@@ -33,6 +32,7 @@
 #include "lib/jxl/convolve.h"
 #include "lib/jxl/dec_cache.h"
 #include "lib/jxl/dec_group.h"
+#include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_group.h"
@@ -714,8 +714,8 @@ ImageF TileDistMap(const ImageF& distmap, int tile_size, int margin,
   return tile_distmap;
 }
 
-constexpr float kDcQuantPow = 0.66f;
-static const float kDcQuant = 1.1f;
+constexpr float kDcQuantPow = 0.87f;
+static const float kDcQuant = 1.29f;
 static const float kAcQuant = 0.841f;
 
 void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
@@ -1018,7 +1018,7 @@ void AdjustQuantField(const AcStrategyImage& ac_strategy, const Rect& rect,
 }
 
 float InitialQuantDC(float butteraugli_target) {
-  const float kDcMul = 1.5;  // Butteraugli target where non-linearity kicks in.
+  const float kDcMul = 0.3;  // Butteraugli target where non-linearity kicks in.
   const float butteraugli_target_dc = std::max<float>(
       0.5f * butteraugli_target,
       std::min<float>(butteraugli_target,

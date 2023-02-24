@@ -1,5 +1,10 @@
 #!/bin/sh
 #
+# Copyright (c) the JPEG XL Project Authors. All rights reserved.
+#
+# Use of this source code is governed by a BSD-style
+# license that can be found in the LICENSE file.
+#
 # Bisects JPEG XL encoding quality parameter to reach a given
 # target byte-size.
 # (To be used directly, or as a template for tailored processing.)

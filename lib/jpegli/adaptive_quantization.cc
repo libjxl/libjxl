@@ -19,11 +19,12 @@
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 
-#include "lib/jpegli/common_internal.h"
+#include "lib/jpegli/encode_internal.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/image.h"
+#include "lib/jxl/image_ops.h"
 HWY_BEFORE_NAMESPACE();
 namespace jpegli {
 namespace HWY_NAMESPACE {
@@ -643,6 +644,44 @@ jxl::ImageF InitialQuantField(const float butteraugli_target,
   const float quant_ac = kAcQuant / butteraugli_target;
   return HWY_DYNAMIC_DISPATCH(AdaptiveQuantizationMap)(
       butteraugli_target, opsin_y, quant_ac * rescale, pool);
+}
+
+void ComputeAdaptiveQuantField(j_compress_ptr cinfo) {
+  jpeg_comp_master* m = cinfo->master;
+  const size_t xsize_blocks = DivCeil(cinfo->image_width, DCTSIZE);
+  const size_t ysize_blocks = DivCeil(cinfo->image_height, DCTSIZE);
+  int y_channel = cinfo->jpeg_color_space == JCS_RGB ? 1 : 0;
+  jpeg_component_info* y_comp = &cinfo->comp_info[y_channel];
+  m->quant_field.Allocate(ysize_blocks, xsize_blocks);
+  if (m->use_adaptive_quantization &&
+      y_comp->h_samp_factor == cinfo->max_h_samp_factor &&
+      y_comp->v_samp_factor == cinfo->max_v_samp_factor) {
+    JXL_ASSERT(y_comp->width_in_blocks == xsize_blocks);
+    JXL_ASSERT(y_comp->height_in_blocks == ysize_blocks);
+    jxl::ImageF input(y_comp->width_in_blocks * DCTSIZE,
+                      y_comp->height_in_blocks * DCTSIZE);
+    for (size_t y = 0; y < input.ysize(); ++y) {
+      memcpy(input.Row(y), m->input_buffer[y_channel].Row(y),
+             input.xsize() * sizeof(float));
+    }
+    jxl::ImageF qf =
+        jpegli::InitialQuantField(m->distance, input, nullptr, m->distance);
+    float qfmin, qfmax;
+    ImageMinMax(qf, &qfmin, &qfmax);
+    m->quant_field_max = qfmax;
+    for (size_t y = 0; y < y_comp->height_in_blocks; ++y) {
+      const float* row_in = qf.Row(y);
+      float* row_out = m->quant_field.Row(y);
+      for (size_t x = 0; x < y_comp->width_in_blocks; ++x) {
+        row_out[x] = (qfmax / row_in[x]) - 1.0f;
+      }
+    }
+  } else {
+    m->quant_field_max = kDefaultQuantFieldMax;
+    for (size_t y = 0; y < ysize_blocks; ++y) {
+      m->quant_field.FillRow(y, 0.0f, xsize_blocks);
+    }
+  }
 }
 
 }  // namespace jpegli

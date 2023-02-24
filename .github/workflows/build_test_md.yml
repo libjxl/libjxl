@@ -1,0 +1,41 @@
+# Copyright (c) the JPEG XL Project Authors. All rights reserved.
+#
+# Use of this source code is governed by a BSD-style
+# license that can be found in the LICENSE file.
+
+# Workflow for building and running tests.
+
+name: Build/Test
+on:
+  pull_request:
+    types: [opened, reopened, labeled, synchronize]
+    paths:
+      - '**.md'
+jobs:
+  ubuntu-build:
+    name: Ubuntu Build ${{ matrix.name }}
+    # Include all names of required jobs here
+    strategy:
+      matrix:
+        include:
+          - name: release
+          - name: debug
+          - name: scalar
+          - name: asan
+          - name: release-nojpeg
+          - name: release:gcc8
+    runs-on: ubuntu-latest
+    steps:
+      - run: 'echo "markdown only changes: no build required"'
+
+  windows_msys:
+    name: Windows MSYS2 / ${{ matrix.msystem }}
+    # Include all msystem of required jobs here
+    strategy:
+      matrix:
+          include:
+           - msystem: clang64
+           - msystem: clang32
+    runs-on: ubuntu-latest
+    steps:
+      - run: 'echo "markdown only changes: no build required"'

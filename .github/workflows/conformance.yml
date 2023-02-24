@@ -13,6 +13,8 @@ on:
       - v*.*.x
   pull_request:
     types: [opened, reopened, labeled, synchronize]
+    paths-ignore:
+      - '**md'
 
 env:
   LIBJXL_VERSION:  0.9.0
@@ -23,7 +25,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  warmup: # If necessary, fetch files just once, before tests are run. 
+  warmup: # If necessary, fetch files just once, before tests are run.
     name: Warmup caches
     runs-on: ubuntu-latest
     steps:
@@ -70,6 +72,7 @@ jobs:
     steps:
     - name: Install build deps
       run: |
+        sudo rm -f /var/lib/man-db/auto-update
         sudo apt update
         sudo apt install -y \
           ccache \
@@ -121,6 +124,7 @@ jobs:
         mkdir -p ${CCACHE_DIR}
         echo "max_size = 200M" > ${CCACHE_DIR}/ccache.conf
         CMAKE_FLAGS="${{ matrix.cflags }}" \
+        TARGETS="tools/djxl" \
         ./ci.sh ${{ matrix.build_type || 'release' }} -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
           -DCMAKE_C_COMPILER_LAUNCHER=ccache \

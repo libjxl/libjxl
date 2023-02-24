@@ -6,12 +6,10 @@
 #include "tools/jni/org/jpeg/jpegxl/wrapper/decoder_jni.h"
 
 #include <jni.h>
+#include <jxl/decode.h>
+#include <jxl/thread_parallel_runner.h>
 
 #include <cstdlib>
-
-#include "jxl/decode.h"
-#include "jxl/thread_parallel_runner.h"
-#include "lib/jxl/base/status.h"
 
 namespace {
 
@@ -34,11 +32,11 @@ bool BufferToSpan(JNIEnv* env, jobject buffer, uint8_t** data, size_t* size) {
   return StaticCast(env->GetDirectBufferCapacity(buffer), size);
 }
 
-int ToStatusCode(const jxl::Status& status) {
-  if (status) return 0;
-  if (status.IsFatalError()) return -1;
-  return 1;  // Non-fatal -> not enough input.
-}
+enum class Status { OK = 0, FATAL_ERROR = -1, NOT_ENOUGH_INPUT = 1 };
+
+bool IsOk(Status status) { return status == Status::OK; }
+
+#define FAILURE(M) Status::FATAL_ERROR
 
 constexpr const size_t kLastPixelFormat = 3;
 constexpr const size_t kNoPixelFormat = static_cast<size_t>(-1);
@@ -64,28 +62,27 @@ JxlPixelFormat ToPixelFormat(size_t pixel_format) {
   }
 }
 
-jxl::Status DoDecode(JNIEnv* env, jobject data_buffer, size_t* info_pixels_size,
-                     size_t* info_icc_size, JxlBasicInfo* info,
-                     size_t pixel_format, jobject pixels_buffer,
-                     jobject icc_buffer) {
-  if (data_buffer == nullptr) return JXL_FAILURE("No data buffer");
+Status DoDecode(JNIEnv* env, jobject data_buffer, size_t* info_pixels_size,
+                size_t* info_icc_size, JxlBasicInfo* info, size_t pixel_format,
+                jobject pixels_buffer, jobject icc_buffer) {
+  if (data_buffer == nullptr) return FAILURE("No data buffer");
 
   uint8_t* data = nullptr;
   size_t data_size = 0;
   if (!BufferToSpan(env, data_buffer, &data, &data_size)) {
-    return JXL_FAILURE("Failed to access data buffer");
+    return FAILURE("Failed to access data buffer");
   }
 
   uint8_t* pixels = nullptr;
   size_t pixels_size = 0;
   if (!BufferToSpan(env, pixels_buffer, &pixels, &pixels_size)) {
-    return JXL_FAILURE("Failed to access pixels buffer");
+    return FAILURE("Failed to access pixels buffer");
   }
 
   uint8_t* icc = nullptr;
   size_t icc_size = 0;
   if (!BufferToSpan(env, icc_buffer, &icc, &icc_size)) {
-    return JXL_FAILURE("Failed to access ICC buffer");
+    return FAILURE("Failed to access ICC buffer");
   }
 
   JxlDecoder* dec = JxlDecoderCreate(NULL);
@@ -105,40 +102,40 @@ jxl::Status DoDecode(JNIEnv* env, jobject data_buffer, size_t* info_pixels_size,
   auto status =
       JxlDecoderSetParallelRunner(dec, JxlThreadParallelRunner, runner);
   if (status != JXL_DEC_SUCCESS) {
-    return JXL_FAILURE("Failed to set parallel runner");
+    return FAILURE("Failed to set parallel runner");
   }
   status = JxlDecoderSubscribeEvents(
       dec, JXL_DEC_BASIC_INFO | JXL_DEC_FULL_IMAGE | JXL_DEC_COLOR_ENCODING);
   if (status != JXL_DEC_SUCCESS) {
-    return JXL_FAILURE("Failed to subscribe for events");
+    return FAILURE("Failed to subscribe for events");
   }
   status = JxlDecoderSetInput(dec, data, data_size);
   if (status != JXL_DEC_SUCCESS) {
-    return JXL_FAILURE("Failed to set input");
+    return FAILURE("Failed to set input");
   }
   status = JxlDecoderProcessInput(dec);
   if (status == JXL_DEC_NEED_MORE_INPUT) {
-    return JXL_STATUS(jxl::StatusCode::kNotEnoughBytes, "Not enough input");
+    return Status::NOT_ENOUGH_INPUT;
   }
   if (status != JXL_DEC_BASIC_INFO) {
-    return JXL_FAILURE("Unexpected notification (want: basic info)");
+    return FAILURE("Unexpected notification (want: basic info)");
   }
   if (info_pixels_size) {
     JxlPixelFormat format = ToPixelFormat(pixel_format);
     status = JxlDecoderImageOutBufferSize(dec, &format, info_pixels_size);
     if (status != JXL_DEC_SUCCESS) {
-      return JXL_FAILURE("Failed to get pixels size");
+      return FAILURE("Failed to get pixels size");
     }
   }
   if (info) {
     status = JxlDecoderGetBasicInfo(dec, info);
     if (status != JXL_DEC_SUCCESS) {
-      return JXL_FAILURE("Failed to get basic info");
+      return FAILURE("Failed to get basic info");
     }
   }
   status = JxlDecoderProcessInput(dec);
   if (status != JXL_DEC_COLOR_ENCODING) {
-    return JXL_FAILURE("Unexpected notification (want: color encoding)");
+    return FAILURE("Unexpected notification (want: color encoding)");
   }
   if (info_icc_size) {
     JxlPixelFormat format = ToPixelFormat(pixel_format);
@@ -151,33 +148,31 @@ jxl::Status DoDecode(JNIEnv* env, jobject data_buffer, size_t* info_pixels_size,
     status = JxlDecoderGetColorAsICCProfile(
         dec, &format, JXL_COLOR_PROFILE_TARGET_DATA, icc, icc_size);
     if (status != JXL_DEC_SUCCESS) {
-      return JXL_FAILURE("Failed to get ICC");
+      return FAILURE("Failed to get ICC");
     }
   }
   if (pixels) {
     JxlPixelFormat format = ToPixelFormat(pixel_format);
     status = JxlDecoderProcessInput(dec);
     if (status != JXL_DEC_NEED_IMAGE_OUT_BUFFER) {
-      return JXL_FAILURE("Unexpected notification (want: need out buffer)");
+      return FAILURE("Unexpected notification (want: need out buffer)");
     }
     status = JxlDecoderSetImageOutBuffer(dec, &format, pixels, pixels_size);
     if (status != JXL_DEC_SUCCESS) {
-      return JXL_FAILURE("Failed to set out buffer");
+      return FAILURE("Failed to set out buffer");
     }
     status = JxlDecoderProcessInput(dec);
     if (status != JXL_DEC_FULL_IMAGE) {
-      return JXL_FAILURE("Unexpected notification (want: full image)");
+      return FAILURE("Unexpected notification (want: full image)");
     }
     status = JxlDecoderProcessInput(dec);
     if (status != JXL_DEC_SUCCESS) {
-      return JXL_FAILURE("Unexpected notification (want: success)");
+      return FAILURE("Unexpected notification (want: success)");
     }
   }
 
-  return true;
+  return Status::OK;
 }
-
-#undef FAILURE
 
 }  // namespace
 
@@ -196,18 +191,18 @@ Java_org_jpeg_jpegxl_wrapper_DecoderJni_nativeGetBasicInfo(
   size_t icc_size = 0;
   size_t pixel_format = 0;
 
-  jxl::Status status = true;
+  Status status = Status::OK;
 
-  if (status) {
+  if (IsOk(status)) {
     pixel_format = context[0];
     if (pixel_format == kNoPixelFormat) {
       // OK
     } else if (pixel_format > kLastPixelFormat) {
-      status = JXL_FAILURE("Unrecognized pixel format");
+      status = FAILURE("Unrecognized pixel format");
     }
   }
 
-  if (status) {
+  if (IsOk(status)) {
     bool want_output_size = (pixel_format != kNoPixelFormat);
     if (want_output_size) {
       status = DoDecode(
@@ -221,17 +216,17 @@ Java_org_jpeg_jpegxl_wrapper_DecoderJni_nativeGetBasicInfo(
     }
   }
 
-  if (status) {
+  if (IsOk(status)) {
     bool ok = true;
     ok &= StaticCast(info.xsize, context + 1);
     ok &= StaticCast(info.ysize, context + 2);
     ok &= StaticCast(pixels_size, context + 3);
     ok &= StaticCast(icc_size, context + 4);
     ok &= StaticCast(info.alpha_bits, context + 5);
-    if (!ok) status = JXL_FAILURE("Invalid value");
+    if (!ok) status = FAILURE("Invalid value");
   }
 
-  context[0] = ToStatusCode(status);
+  context[0] = static_cast<int>(status);
 
   env->SetIntArrayRegion(ctx, 0, 6, context);
 }
@@ -251,25 +246,27 @@ JNIEXPORT void JNICALL Java_org_jpeg_jpegxl_wrapper_DecoderJni_nativeGetPixels(
 
   size_t pixel_format = 0;
 
-  jxl::Status status = true;
+  Status status = Status::OK;
 
-  if (status) {
+  if (IsOk(status)) {
     // Unlike getBasicInfo, "no-pixel-format" is not supported.
     pixel_format = context[0];
     if (pixel_format > kLastPixelFormat) {
-      status = JXL_FAILURE("Unrecognized pixel format");
+      status = FAILURE("Unrecognized pixel format");
     }
   }
 
-  if (status) {
+  if (IsOk(status)) {
     status = DoDecode(env, data_buffer, /* info_pixels_size= */ nullptr,
                       /* info_icc_size= */ nullptr, /* info= */ nullptr,
                       pixel_format, pixels_buffer, icc_buffer);
   }
 
-  context[0] = ToStatusCode(status);
+  context[0] = static_cast<int>(status);
   env->SetIntArrayRegion(ctx, 0, 1, context);
 }
+
+#undef FAILURE
 
 #ifdef __cplusplus
 }

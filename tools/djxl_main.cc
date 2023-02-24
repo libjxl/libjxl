@@ -55,7 +55,7 @@ struct DecompressArgs {
 
     cmdline->AddOptionFlag('\0', "disable_output",
                            "No output file will be written (for benchmarking)",
-                           &disable_output, &SetBooleanTrue, 1);
+                           &disable_output, &SetBooleanTrue);
 
     cmdline->AddOptionValue('\0', "num_threads", "N",
                             "Number of worker threads (-1 == use machine "
@@ -165,7 +165,7 @@ struct DecompressArgs {
     if (num_threads < -1) {
       fprintf(
           stderr,
-          "Invalid flag value for --num_threads: must be -1, 0 or postive.\n");
+          "Invalid flag value for --num_threads: must be -1, 0 or positive.\n");
       return false;
     }
     return true;

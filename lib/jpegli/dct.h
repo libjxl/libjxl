@@ -14,13 +14,10 @@
 #include <vector>
 
 #include "lib/jpegli/encode_internal.h"
-#include "lib/jxl/image.h"
 
 namespace jpegli {
 
-void ComputeDCTCoefficients(j_compress_ptr cinfo, const jxl::Image3F& opsin,
-                            float distance, const bool xyb,
-                            const jxl::ImageF& qf, const float* qm,
+void ComputeDCTCoefficients(j_compress_ptr cinfo,
                             std::vector<std::vector<jpegli::coeff_t> >* coeffs);
 
 }  // namespace jpegli

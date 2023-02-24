@@ -13,6 +13,8 @@ on:
       - v*.*.x
   pull_request:
     types: [opened, reopened, labeled, synchronize]
+    paths-ignore:
+      - '**md'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
@@ -20,7 +22,7 @@ concurrency:
 
 jobs:
   cross_compile_ubuntu:
-    name: Cross-compiling ${{ matrix.build_target }} ${{ matrix.variant }} 
+    name: Cross-compiling ${{ matrix.build_target }} ${{ matrix.variant }}
     runs-on: [ubuntu-22.04]
     container:
       image: debian:bullseye
@@ -69,6 +71,7 @@ jobs:
       shell: bash
       run: |
         set -x
+        rm -f /var/lib/man-db/auto-update
         apt-get update -y
         apt-get install -y ca-certificates debian-ports-archive-keyring
 
@@ -170,7 +173,7 @@ jobs:
         BUILD_TARGET: ${{ matrix.build_target }}
     - name: Build stats ${{ matrix.build_target }}
       run: |
-        tools/build_stats.py --save build/stats.json \
+        tools/scripts/build_stats.py --save build/stats.json \
           --binutils ${{ matrix.build_target }}- \
           --max-stack ${{ matrix.max_stack || '0' }} \
           cjxl djxl libjxl.so libjxl_dec.so

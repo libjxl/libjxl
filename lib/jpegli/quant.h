@@ -13,15 +13,7 @@
 
 namespace jpegli {
 
-enum QuantMode {
-  QUANT_XYB,
-  QUANT_YUV,
-  QUANT_STD,
-  NUM_QUANT_MODES,
-};
-
-void AddJpegQuantMatrices(j_compress_ptr cinfo, QuantMode mode, float dc_scale,
-                          float ac_scale, float* qm);
+void FinalizeQuantMatrices(j_compress_ptr cinfo);
 
 }  // namespace jpegli
 
