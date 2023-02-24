@@ -10,8 +10,64 @@
 #include "lib/jpegli/memory_manager.h"
 #include "lib/jxl/base/bits.h"
 
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "lib/jpegli/bitstream.cc"
+#include <hwy/foreach_target.h>
+#include <hwy/highway.h>
+
+HWY_BEFORE_NAMESPACE();
+namespace jpegli {
+namespace HWY_NAMESPACE {
+
+// These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::Add;
+using hwy::HWY_NAMESPACE::AndNot;
+using hwy::HWY_NAMESPACE::Eq;
+using hwy::HWY_NAMESPACE::GetLane;
+
+int NumNonZero8x8ExceptDC(const coeff_t* block) {
+  const HWY_CAPPED(coeff_t, 8) di;
+
+  const auto zero = Zero(di);
+  // Add FFFF for every zero coefficient, negate to get #zeros.
+  auto neg_sum_zero = zero;
+
+  {
+    // First row has DC, so mask
+    const size_t y = 0;
+    HWY_ALIGN const coeff_t dc_mask_lanes[8] = {-1};
+
+    for (size_t x = 0; x < 8; x += Lanes(di)) {
+      const auto dc_mask = Load(di, dc_mask_lanes + x);
+
+      // DC counts as zero so we don't include it in nzeros.
+      const auto coef = AndNot(dc_mask, Load(di, &block[y * 8 + x]));
+
+      neg_sum_zero = Add(neg_sum_zero, VecFromMask(di, Eq(coef, zero)));
+    }
+  }
+
+  // Remaining rows: no mask
+  for (size_t y = 1; y < 8; y++) {
+    for (size_t x = 0; x < 8; x += Lanes(di)) {
+      const auto coef = Load(di, &block[y * 8 + x]);
+      neg_sum_zero = Add(neg_sum_zero, VecFromMask(di, Eq(coef, zero)));
+    }
+  }
+
+  // We want 64 - sum_zero, add because neg_sum_zero is already negated.
+  return kDCTBlockSize + GetLane(SumOfLanes(di, neg_sum_zero));
+}
+
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
+}  // namespace jpegli
+HWY_AFTER_NAMESPACE();
+
+#if HWY_ONCE
 namespace jpegli {
 namespace {
+HWY_EXPORT(NumNonZero8x8ExceptDC);
 
 // JpegBitWriter: buffer size
 const size_t kJpegBitWriterChunkSize = 16384;
@@ -741,21 +797,31 @@ void ComputeTokensForBlock(const coeff_t* block, int histo_dc, int histo_ac,
   coeff_t temp;
   temp2 = block[0];
   temp = temp2 - *last_dc_coeff;
-  *last_dc_coeff = temp2;
-  temp2 = temp;
-  if (temp < 0) {
-    temp = -temp;
-    temp2--;
-  }
-  int dc_nbits = (temp == 0) ? 0 : (jxl::FloorLog2Nonzero<uint32_t>(temp) + 1);
-  int dc_mask = (1 << dc_nbits) - 1;
-  *next_token++ = Token(histo_dc, dc_nbits, temp2 & dc_mask);
-  int r = 0;
-  for (int k = 1; k < 64; ++k) {
-    if ((temp = block[kJPEGNaturalOrder[k]]) == 0) {
-      r++;
-      continue;
+  if (temp == 0) {
+    *next_token++ = Token(histo_dc, 0, 0);
+  } else {
+    *last_dc_coeff = temp2;
+    temp2 = temp;
+    if (temp < 0) {
+      temp = -temp;
+      temp2--;
     }
+    int dc_nbits = jxl::FloorLog2Nonzero<uint32_t>(temp) + 1;
+    int dc_mask = (1 << dc_nbits) - 1;
+    *next_token++ = Token(histo_dc, dc_nbits, temp2 & dc_mask);
+  }
+  int num_nonzeros = HWY_DYNAMIC_DISPATCH(NumNonZero8x8ExceptDC)(block);
+  for (int k = 1; k < 64; ++k) {
+    if (num_nonzeros == 0) {
+      *next_token++ = Token(histo_ac, 0, 0);
+      break;
+    }
+    int r = 0;
+    while ((temp = block[kJPEGNaturalOrder[k]]) == 0) {
+      r++;
+      k++;
+    }
+    --num_nonzeros;
     if (temp < 0) {
       temp = -temp;
       temp2 = ~temp;
@@ -770,10 +836,6 @@ void ComputeTokensForBlock(const coeff_t* block, int histo_dc, int histo_ac,
     int ac_mask = (1 << ac_nbits) - 1;
     int symbol = (r << 4u) + ac_nbits;
     *next_token++ = Token(histo_ac, symbol, temp2 & ac_mask);
-    r = 0;
-  }
-  if (r > 0) {
-    *next_token++ = Token(histo_ac, 0, 0);
   }
   *tokens_ptr = next_token;
 }
@@ -936,3 +998,4 @@ void EncodeSingleScan(j_compress_ptr cinfo) {
 }
 
 }  // namespace jpegli
+#endif  // HWY_ONCE
