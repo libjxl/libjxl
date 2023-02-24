@@ -35,6 +35,7 @@ set(JPEGXL_INTERNAL_FLAGS
   -fmerge-all-constants
   -fno-builtin-fwrite
   -fno-builtin-fread
+  -fsized-deallocation
 
   # WARN_FLAGS
   -Wall
@@ -103,7 +104,6 @@ if (WIN32)
   endif()  # Clang
 else()  # WIN32
   list(APPEND JPEGXL_INTERNAL_FLAGS
-    -fsized-deallocation
     -fno-exceptions
 
     # Language flags
