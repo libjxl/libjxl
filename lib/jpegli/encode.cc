@@ -213,11 +213,13 @@ void DownsampleComponents(j_compress_ptr cinfo) {
   }
 }
 
-void ReadLine(const uint8_t* row_in, size_t xsize, size_t c,
-              size_t num_components, JpegliDataType data_type,
-              JpegliEndianness endianness, float* row_out) {
+void ReadLine(const uint8_t* row_in, size_t xsize, size_t num_components,
+              JpegliDataType data_type, JpegliEndianness endianness,
+              float* row_out[kMaxComponents]) {
   if (row_in == nullptr) {
-    memset(row_out, 0, xsize * sizeof(row_out[0]));
+    for (size_t c = 0; c < num_components; ++c) {
+      memset(row_out[c], 0, xsize * sizeof(row_out[c][0]));
+    }
     return;
   }
   static constexpr double kMul16 = 1.0 / 257.0;
@@ -227,29 +229,56 @@ void ReadLine(const uint8_t* row_in, size_t xsize, size_t c,
       (endianness == JPEGLI_LITTLE_ENDIAN ||
        (endianness == JPEGLI_NATIVE_ENDIAN && IsLittleEndian()));
   if (data_type == JPEGLI_TYPE_UINT8) {
-    const uint8_t* p = &row_in[c];
-    for (size_t x = 0; x < xsize; ++x, p += pwidth) {
-      row_out[x] = p[0];
+    if (num_components == 1) {
+      const uint8_t* p = row_in;
+      for (size_t x = 0; x < xsize; ++x, ++p) {
+        row_out[0][x] = p[0];
+      }
+    } else if (num_components == 3) {
+      const uint8_t* p = row_in;
+      float* JXL_RESTRICT row0 = row_out[0];
+      float* JXL_RESTRICT row1 = row_out[1];
+      float* JXL_RESTRICT row2 = row_out[2];
+      for (size_t x = 0; x < xsize; ++x, p += 3) {
+        row0[x] = p[0];
+        row1[x] = p[1];
+        row2[x] = p[2];
+      }
+    } else {
+      for (size_t c = 0; c < num_components; ++c) {
+        const uint8_t* p = &row_in[c];
+        for (size_t x = 0; x < xsize; ++x, p += pwidth) {
+          row_out[c][x] = p[0];
+        }
+      }
     }
   } else if (data_type == JPEGLI_TYPE_UINT16 && is_little_endian) {
-    const uint8_t* p = &row_in[c * 2];
-    for (size_t x = 0; x < xsize; ++x, p += pwidth) {
-      row_out[x] = LoadLE16(p) * kMul16;
+    for (size_t c = 0; c < num_components; ++c) {
+      const uint8_t* p = &row_in[c * 2];
+      for (size_t x = 0; x < xsize; ++x, p += pwidth) {
+        row_out[c][x] = LoadLE16(p) * kMul16;
+      }
     }
   } else if (data_type == JPEGLI_TYPE_UINT16 && !is_little_endian) {
-    const uint8_t* p = &row_in[c * 2];
-    for (size_t x = 0; x < xsize; ++x, p += pwidth) {
-      row_out[x] = LoadBE16(p) * kMul16;
+    for (size_t c = 0; c < num_components; ++c) {
+      const uint8_t* p = &row_in[c * 2];
+      for (size_t x = 0; x < xsize; ++x, p += pwidth) {
+        row_out[c][x] = LoadBE16(p) * kMul16;
+      }
     }
   } else if (data_type == JPEGLI_TYPE_FLOAT && is_little_endian) {
-    const uint8_t* p = &row_in[c * 4];
-    for (size_t x = 0; x < xsize; ++x, p += pwidth) {
-      row_out[x] = LoadLEFloat(p) * kMulFloat;
+    for (size_t c = 0; c < num_components; ++c) {
+      const uint8_t* p = &row_in[c * 4];
+      for (size_t x = 0; x < xsize; ++x, p += pwidth) {
+        row_out[c][x] = LoadLEFloat(p) * kMulFloat;
+      }
     }
   } else if (data_type == JPEGLI_TYPE_FLOAT && !is_little_endian) {
-    const uint8_t* p = &row_in[c * 4];
-    for (size_t x = 0; x < xsize; ++x, p += pwidth) {
-      row_out[x] = LoadBEFloat(p) * kMulFloat;
+    for (size_t c = 0; c < num_components; ++c) {
+      const uint8_t* p = &row_in[c * 4];
+      for (size_t x = 0; x < xsize; ++x, p += pwidth) {
+        row_out[c][x] = LoadBEFloat(p) * kMulFloat;
+      }
     }
   }
 }
@@ -935,12 +964,13 @@ JDIMENSION jpegli_write_scanlines(j_compress_ptr cinfo, JSAMPARRAY scanlines,
   if (num_lines + cinfo->next_scanline > cinfo->image_height) {
     num_lines = cinfo->image_height - cinfo->next_scanline;
   }
-  for (int c = 0; c < cinfo->input_components; ++c) {
-    for (size_t i = 0; i < num_lines; ++i) {
-      jpegli::ReadLine(scanlines[i], cinfo->image_width, c,
-                       cinfo->num_components, m->data_type, m->endianness,
-                       m->input_buffer[c].Row(cinfo->next_scanline + i));
+  float* rows[jpegli::kMaxComponents];
+  for (size_t i = 0; i < num_lines; ++i) {
+    for (int c = 0; c < cinfo->input_components; ++c) {
+      rows[c] = m->input_buffer[c].Row(cinfo->next_scanline + i);
     }
+    jpegli::ReadLine(scanlines[i], cinfo->image_width, cinfo->input_components,
+                     m->data_type, m->endianness, rows);
   }
   cinfo->next_scanline += num_lines;
   return num_lines;
@@ -962,6 +992,7 @@ JDIMENSION jpegli_write_raw_data(j_compress_ptr cinfo, JSAMPIMAGE data,
     JPEGLI_ERROR("Missing input lines, minimum is %u", iMCU_height);
   }
   size_t iMCU_y = cinfo->next_scanline / iMCU_height;
+  float* rows[jpegli::kMaxComponents];
   for (int c = 0; c < cinfo->num_components; ++c) {
     JSAMPARRAY plane = data[c];
     jpeg_component_info* comp = &cinfo->comp_info[c];
@@ -969,8 +1000,8 @@ JDIMENSION jpegli_write_raw_data(j_compress_ptr cinfo, JSAMPIMAGE data,
     size_t ysize = comp->v_samp_factor * DCTSIZE;
     size_t y0 = iMCU_y * ysize;
     for (size_t i = 0; i < ysize; ++i) {
-      jpegli::ReadLine(plane[i], xsize, 0, 1, m->data_type, m->endianness,
-                       m->input_buffer[c].Row(y0 + i));
+      rows[0] = m->input_buffer[c].Row(y0 + i);
+      jpegli::ReadLine(plane[i], xsize, 1, m->data_type, m->endianness, rows);
     }
   }
   cinfo->next_scanline += iMCU_height;
