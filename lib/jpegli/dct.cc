@@ -20,21 +20,28 @@ namespace jpegli {
 namespace HWY_NAMESPACE {
 
 // These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::Abs;
+using hwy::HWY_NAMESPACE::DemoteTo;
+using hwy::HWY_NAMESPACE::Ge;
+using hwy::HWY_NAMESPACE::IfThenElseZero;
 using hwy::HWY_NAMESPACE::Mul;
+using hwy::HWY_NAMESPACE::Rebind;
 using hwy::HWY_NAMESPACE::Round;
 
 constexpr float kZeroBiasMulXYB[] = {0.5f, 0.5f, 0.5f};
 constexpr float kZeroBiasMulYCbCr[] = {0.7f, 1.0f, 0.8f};
 
-using D8 = HWY_CAPPED(float, 8);
-using DI8 = HWY_CAPPED(int32_t, 8);
-constexpr D8 d8;
-constexpr DI8 di8;
+using D = HWY_FULL(float);
+using DI = HWY_FULL(int32_t);
+using DI16 = Rebind<int16_t, DI>;
+constexpr D d;
+constexpr DI di;
+constexpr DI16 di16;
 
 #if HWY_CAP_GE256
 JXL_INLINE void Transpose8x8Block(const float* JXL_RESTRICT from,
                                   float* JXL_RESTRICT to) {
-  const D8 d;
+  const HWY_CAPPED(float, 8) d;
   auto i0 = Load(d, from);
   auto i1 = Load(d, from + 1 * 8);
   auto i2 = Load(d, from + 2 * 8);
@@ -119,19 +126,23 @@ JXL_INLINE void Transpose8x8Block(const float* JXL_RESTRICT from,
 
 void QuantizeBlock(const float* dct, const float* qmc, const float zero_bias,
                    coeff_t* block) {
-  for (size_t k = 0; k < kDCTBlockSize; ++k) {
-    float coeff = dct[k] * qmc[k];
-    int cc = std::abs(coeff) < zero_bias ? 0 : std::round(coeff);
-    block[k] = cc;
+  const auto threshold = Set(d, zero_bias);
+  for (size_t k = 0; k < kDCTBlockSize; k += Lanes(d)) {
+    const auto val = Load(d, dct + k);
+    const auto q = Load(d, qmc + k);
+    const auto qval = Mul(val, q);
+    const auto nzero_mask = Ge(Abs(qval), threshold);
+    const auto ival = ConvertTo(di, IfThenElseZero(nzero_mask, Round(qval)));
+    Store(DemoteTo(di16, ival), di16, block + k);
   }
 }
 
-void QuantizeBlockNoAQ(const float* dct, const float* qmc, int32_t* block) {
-  for (size_t k = 0; k < kDCTBlockSize; k += Lanes(d8)) {
-    const auto val = Load(d8, dct + k);
-    const auto q = Load(d8, qmc + k);
-    const auto ival = ConvertTo(di8, Round(Mul(val, q)));
-    Store(ival, di8, block + k);
+void QuantizeBlockNoAQ(const float* dct, const float* qmc, coeff_t* block) {
+  for (size_t k = 0; k < kDCTBlockSize; k += Lanes(d)) {
+    const auto val = Load(d, dct + k);
+    const auto q = Load(d, qmc + k);
+    const auto ival = ConvertTo(di, Round(Mul(val, q)));
+    Store(DemoteTo(di16, ival), di16, block + k);
   }
 }
 
@@ -148,7 +159,7 @@ void ComputeDCTCoefficients(j_compress_ptr cinfo) {
   }
   HWY_ALIGN float dct0[kDCTBlockSize];
   HWY_ALIGN float dct1[kDCTBlockSize];
-  HWY_ALIGN int32_t blocki[kDCTBlockSize];
+  HWY_ALIGN float qmc[kDCTBlockSize];
   for (int c = 0; c < cinfo->num_components; c++) {
     jpeg_component_info* comp = &cinfo->comp_info[c];
     const size_t xsize_blocks = comp->width_in_blocks;
@@ -161,7 +172,6 @@ void ComputeDCTCoefficients(j_compress_ptr cinfo) {
     coeff_t* coeffs = Allocate<coeff_t>(cinfo, num_coeffs, JPOOL_IMAGE_ALIGNED);
     m->coefficients[c] = coeffs;
     JQUANT_TBL* quant_table = cinfo->quant_tbl_ptrs[comp->quant_tbl_no];
-    std::vector<float> qmc(kDCTBlockSize);
     for (size_t k = 0; k < kDCTBlockSize; k++) {
       qmc[k] = 8.0f / quant_table->quantval[k];
     }
@@ -181,10 +191,7 @@ void ComputeDCTCoefficients(j_compress_ptr cinfo) {
           zero_bias = std::min(1.5f, zero_bias);
           QuantizeBlock(dct1, &qmc[0], zero_bias, block);
         } else {
-          QuantizeBlockNoAQ(dct1, &qmc[0], blocki);
-          for (size_t k = 0; k < kDCTBlockSize; ++k) {
-            block[k] = blocki[k];
-          }
+          QuantizeBlockNoAQ(dct1, &qmc[0], block);
         }
         // Center DC values around zero.
         block[0] = std::round((dct1[0] - kDCBias) * qmc[0]);
