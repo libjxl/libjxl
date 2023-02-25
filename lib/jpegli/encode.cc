@@ -220,8 +220,8 @@ void ReadLine(const uint8_t* row_in, size_t xsize, size_t c,
     memset(row_out, 0, xsize * sizeof(row_out[0]));
     return;
   }
-  static constexpr double kMul8 = 1.0 / 255.0;
-  static constexpr double kMul16 = 1.0 / 65535.0;
+  static constexpr double kMul16 = 1.0 / 257.0;
+  static constexpr double kMulFloat = 255.0;
   const int pwidth = num_components * jpegli_bytes_per_sample(data_type);
   bool is_little_endian =
       (endianness == JPEGLI_LITTLE_ENDIAN ||
@@ -229,7 +229,7 @@ void ReadLine(const uint8_t* row_in, size_t xsize, size_t c,
   if (data_type == JPEGLI_TYPE_UINT8) {
     const uint8_t* p = &row_in[c];
     for (size_t x = 0; x < xsize; ++x, p += pwidth) {
-      row_out[x] = p[0] * kMul8;
+      row_out[x] = p[0];
     }
   } else if (data_type == JPEGLI_TYPE_UINT16 && is_little_endian) {
     const uint8_t* p = &row_in[c * 2];
@@ -244,12 +244,12 @@ void ReadLine(const uint8_t* row_in, size_t xsize, size_t c,
   } else if (data_type == JPEGLI_TYPE_FLOAT && is_little_endian) {
     const uint8_t* p = &row_in[c * 4];
     for (size_t x = 0; x < xsize; ++x, p += pwidth) {
-      row_out[x] = LoadLEFloat(p);
+      row_out[x] = LoadLEFloat(p) * kMulFloat;
     }
   } else if (data_type == JPEGLI_TYPE_FLOAT && !is_little_endian) {
     const uint8_t* p = &row_in[c * 4];
     for (size_t x = 0; x < xsize; ++x, p += pwidth) {
-      row_out[x] = LoadBEFloat(p);
+      row_out[x] = LoadBEFloat(p) * kMulFloat;
     }
   }
 }

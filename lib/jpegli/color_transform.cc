@@ -82,7 +82,7 @@ void RGBToYCbCr(float* JXL_RESTRICT row0, float* JXL_RESTRICT row1,
 
   // Full-range BT.601 as defined by JFIF Clause 7:
   // https://www.itu.int/rec/T-REC-T.871-201105-I/en
-  const auto c128 = Set(df, 128.0f / 255);
+  const auto c128 = Set(df, 128.0f);
   const auto kR = Set(df, 0.299f);  // NTSC luma
   const auto kG = Set(df, 0.587f);
   const auto kB = Set(df, 0.114f);
@@ -115,7 +115,7 @@ void CMYKToYCCK(float* JXL_RESTRICT row0, float* JXL_RESTRICT row1,
                 float* JXL_RESTRICT row2, float* JXL_RESTRICT row3,
                 size_t xsize) {
   const HWY_CAPPED(float, 8) df;
-  const auto unity = Set(df, 1.0f);
+  const auto unity = Set(df, 255.0f);
   for (size_t x = 0; x < xsize; x += Lanes(df)) {
     Store(Sub(unity, Load(df, row0 + x)), df, row0 + x);
     Store(Sub(unity, Load(df, row1 + x)), df, row1 + x);

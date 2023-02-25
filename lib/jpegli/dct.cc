@@ -135,7 +135,7 @@ void QuantizeBlockNoAQ(const float* dct, const float* qmc, int32_t* block) {
   }
 }
 
-static constexpr float kDCBias = 128.0f / 255.0f;
+static constexpr float kDCBias = 128.0f;
 
 void ComputeDCTCoefficients(j_compress_ptr cinfo) {
   jpeg_comp_master* m = cinfo->master;
@@ -163,7 +163,7 @@ void ComputeDCTCoefficients(j_compress_ptr cinfo) {
     JQUANT_TBL* quant_table = cinfo->quant_tbl_ptrs[comp->quant_tbl_no];
     std::vector<float> qmc(kDCTBlockSize);
     for (size_t k = 0; k < kDCTBlockSize; k++) {
-      qmc[k] = 2040.0f / quant_table->quantval[k];
+      qmc[k] = 8.0f / quant_table->quantval[k];
     }
     RowBuffer<float>* plane = &m->input_buffer[c];
     for (size_t by = 0, bix = 0; by < ysize_blocks; by++) {

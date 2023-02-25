@@ -653,6 +653,7 @@ void ComputeAdaptiveQuantField(j_compress_ptr cinfo) {
   int y_channel = cinfo->jpeg_color_space == JCS_RGB ? 1 : 0;
   jpeg_component_info* y_comp = &cinfo->comp_info[y_channel];
   m->quant_field.Allocate(ysize_blocks, xsize_blocks);
+  static constexpr float kScale = 1.0f / 255.0f;
   if (m->use_adaptive_quantization &&
       y_comp->h_samp_factor == cinfo->max_h_samp_factor &&
       y_comp->v_samp_factor == cinfo->max_v_samp_factor) {
@@ -664,6 +665,7 @@ void ComputeAdaptiveQuantField(j_compress_ptr cinfo) {
       memcpy(input.Row(y), m->input_buffer[y_channel].Row(y),
              input.xsize() * sizeof(float));
     }
+    ScaleImage(kScale, &input);
     jxl::ImageF qf =
         jpegli::InitialQuantField(m->distance, input, nullptr, m->distance);
     float qfmin, qfmax;
