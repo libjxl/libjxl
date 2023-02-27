@@ -26,6 +26,7 @@ jobs:
     name: Ubuntu Build ${{ matrix.name }}
     runs-on: ${{ matrix.os || 'ubuntu-latest' }}
     strategy:
+      fail-fast: false
       matrix:
         # We have one job per "name" in the matrix. Attributes are set on the
         # specific job names.

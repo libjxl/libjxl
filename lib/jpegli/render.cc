@@ -397,7 +397,7 @@ void ProcessOutput(j_decompress_ptr cinfo, size_t* num_output_rows,
           JXL_ASSERT(y == static_cast<size_t>(yc));
           for (int yix = 0; yix < vfactor; ++yix) {
             memcpy(render_out->Row(yix), raw_out->Row(yc + yix),
-                   raw_out->memstride());
+                   raw_out->xsize() * sizeof(float));
           }
         }
       }

@@ -488,6 +488,8 @@ libjxl_jpegli_sources = [
     "jpegli/quant.h",
     "jpegli/render.cc",
     "jpegli/render.h",
+    "jpegli/simd.cc",
+    "jpegli/simd.h",
     "jpegli/source_manager.cc",
     "jpegli/source_manager.h",
     "jpegli/upsample.cc",
