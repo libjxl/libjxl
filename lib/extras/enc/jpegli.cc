@@ -295,6 +295,7 @@ Status EncodeJpeg(const PackedPixelFile& ppf, const JpegSettings& jpeg_settings,
         &cinfo, jpeg_settings.use_adaptive_quantization);
     jpegli_set_distance(&cinfo, jpeg_settings.distance);
     jpegli_set_progressive_level(&cinfo, jpeg_settings.progressive_level);
+    cinfo.optimize_coding = jpeg_settings.optimize_coding;
     if (!jpeg_settings.app_data.empty()) {
       // Make sure jpegli_start_compress() does not write any APP markers.
       cinfo.write_JFIF_header = false;
