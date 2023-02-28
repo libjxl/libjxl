@@ -13,7 +13,7 @@
 # limitations under the License.
 
 add_library(skcms-obj OBJECT EXCLUDE_FROM_ALL skcms/skcms.cc)
-target_include_directories(skcms-obj PUBLIC "${CMAKE_CURRENT_LIST_DIR}/skcms/")
+target_include_directories(skcms-obj PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/skcms/>")
 
 # This library is meant to be compiled/used by external libs (such as plugins)
 # that need to use skcms. We use a wrapper for libjxl.

@@ -16,14 +16,10 @@ function(_set_jxl_threads _target)
   set_property(TARGET ${_target} PROPERTY POSITION_INDEPENDENT_CODE ON)
 
   target_include_directories(${_target}
-    PRIVATE
-      "${PROJECT_SOURCE_DIR}"
-    PUBLIC
-      "${CMAKE_CURRENT_SOURCE_DIR}/include"
-      "${CMAKE_CURRENT_BINARY_DIR}/include")
+    PRIVATE "${PROJECT_SOURCE_DIR}")
 
   target_link_libraries(${_target}
-    PUBLIC ${JPEGXL_COVERAGE_FLAGS} Threads::Threads
+    PUBLIC ${JPEGXL_COVERAGE_FLAGS} Threads::Threads jxl_includes
   )
 
   set_target_properties(${_target} PROPERTIES
@@ -38,6 +34,7 @@ function(_set_jxl_threads _target)
     set_target_properties(${_target} PROPERTIES OUTPUT_NAME "jxl_threads")
   endif()
   install(TARGETS ${_target}
+    EXPORT JxlTargets
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})

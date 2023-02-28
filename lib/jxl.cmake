@@ -93,10 +93,16 @@ foreach(path ${JPEGXL_INTERNAL_PUBLIC_HEADERS})
 endforeach()
 
 add_library(jxl_includes INTERFACE)
-target_include_directories(jxl_includes SYSTEM INTERFACE
+target_include_directories(jxl_includes INTERFACE
   "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>"
+  "$<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/include>"
+  "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>"
 )
 add_dependencies(jxl_includes jxl_export)
+
+# Export the headers as JPEGXL::headers
+set_target_properties(jxl_includes PROPERTIES EXPORT_NAME "headers")
+install(TARGETS jxl_includes EXPORT JxlTargets)
 
 # Base headers / utilities.
 add_library(jxl_base-obj OBJECT ${JPEGXL_INTERNAL_BASE_SOURCES})
@@ -231,7 +237,7 @@ if (NOT WIN32 OR MINGW)
   set_target_properties(jxl-static PROPERTIES OUTPUT_NAME "jxl")
   set_target_properties(jxl_dec-static PROPERTIES OUTPUT_NAME "jxl_dec")
 endif()
-install(TARGETS jxl-static DESTINATION ${CMAKE_INSTALL_LIBDIR})
+install(TARGETS jxl-static EXPORT JxlTargets DESTINATION ${CMAKE_INSTALL_LIBDIR})
 install(TARGETS jxl_dec-static DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
 if (BUILD_SHARED_LIBS)
@@ -295,6 +301,7 @@ endforeach()
 # contains symbols also in libjxl which would conflict if programs try to use
 # both.
 install(TARGETS jxl
+  EXPORT JxlTargets
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})

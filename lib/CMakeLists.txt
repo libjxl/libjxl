@@ -154,6 +154,52 @@ install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/jxl
 install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include/jxl
   DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
 
+# Destination of CMake files
+if(NOT DEFINED JPEGXL_INSTALL_CMAKEDIR)
+  set(JPEGXL_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/JPEGXL")
+endif()
+
+# Find modules also need to be installed for non-vendored libraries
+if(JPEGXL_FORCE_SYSTEM_BROTLI)
+  list(APPEND JPEGXL_FIND_MODULES "${PROJECT_SOURCE_DIR}/cmake/FindBrotli.cmake")
+endif()
+if(JPEGXL_FORCE_SYSTEM_HWY)
+  list(APPEND JPEGXL_FIND_MODULES "${PROJECT_SOURCE_DIR}/cmake/FindHWY.cmake")
+endif()
+if(JPEGXL_FORCE_SYSTEM_LCMS2 AND NOT JPEGXL_ENABLE_SKCMS)
+  list(APPEND JPEGXL_FIND_MODULES "${PROJECT_SOURCE_DIR}/cmake/FindLCMS2.cmake")
+endif()
+
+# Prepare and install the CMake config files
+include(CMakePackageConfigHelpers)
+configure_package_config_file("${CMAKE_CURRENT_SOURCE_DIR}/JPEGXLConfig.cmake.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/JPEGXLConfig.cmake"
+  INSTALL_DESTINATION "${JPEGXL_INSTALL_CMAKEDIR}")
+
+write_basic_package_version_file("${CMAKE_CURRENT_BINARY_DIR}/JPEGXLConfigVersion.cmake"
+  VERSION "${JPEGXL_LIBRARY_VERSION}"
+  COMPATIBILITY SameMinorVersion)
+
+install(FILES
+  "${CMAKE_CURRENT_BINARY_DIR}/JPEGXLConfig.cmake"
+  "${CMAKE_CURRENT_BINARY_DIR}/JPEGXLConfigVersion.cmake"
+  ${JPEGXL_FIND_MODULES}
+  DESTINATION "${JPEGXL_INSTALL_CMAKEDIR}")
+
+# Export the library targets
+install(EXPORT JxlTargets
+  FILE "JPEGXLTargets.cmake"
+  NAMESPACE JPEGXL::
+  DESTINATION "${JPEGXL_INSTALL_CMAKEDIR}")
+
+# If vendored dependencies were used, they also need to be exported
+if(HAS_EXPORTED_VENDORED_DEPS)
+  install(EXPORT JxlDeps 
+    FILE "JPEGXLDeps.cmake"
+    NAMESPACE JPEGXLDeps::
+    DESTINATION "${JPEGXL_INSTALL_CMAKEDIR}")
+endif()
+
 if(BUILD_TESTING)
   cmake_policy(SET CMP0057 NEW)  # https://gitlab.kitware.com/cmake/cmake/issues/18198
   include(GoogleTest)

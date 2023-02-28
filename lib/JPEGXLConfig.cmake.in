@@ -1,0 +1,54 @@
+@PACKAGE_INIT@
+
+# Save which library was vendored
+set(JPEGXL_USES_SYSTEM_BROTLI @JPEGXL_FORCE_SYSTEM_BROTLI@)
+set(JPEGXL_USES_SYSTEM_LCMS2  @JPEGXL_FORCE_SYSTEM_LCMS2@)
+set(JPEGXL_USES_SKCMS         @JPEGXL_ENABLE_SKCMS@)
+set(JPEGXL_USES_TCMALLOC      @JPEGXL_ENABLE_TCMALLOC@)
+set(JPEGXL_USES_VENDORED_DEPS @HAS_EXPORTED_VENDORED_DEPS@)
+
+# Every non-vendored target linked needs to be available
+include(CMakeFindDependencyMacro)
+
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}")
+
+if(NOT TARGET Threads::Threads)
+  find_dependency(Threads)
+endif()
+
+if(NOT HWY_FOUND)
+  find_dependency(HWY 1.0.0)
+endif()
+
+if(JPEGXL_USES_SYSTEM_BROTLI AND NOT Brotli_FOUND)
+  find_dependency(Brotli)
+endif()
+
+if(JPEGXL_USES_SYSTEM_LCMS2 AND NOT LCMS2_FOUND AND NOT JPEGXL_USES_SKCMS)
+  find_dependency(LCMS2 2.13)
+endif()
+
+if(JPEGXL_USES_TCMALLOC AND NOT TARGET PkgConfig::TCMallocMinimal)
+  find_dependency(PkgConfig)
+  pkg_check_modules(TCMallocMinimal REQUIRED IMPORTED_TARGET libtcmalloc_minimal)
+endif()
+
+list(REMOVE_ITEM CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}")
+
+# Vendored dependencies have special targets
+if(JPEGXL_USES_VENDORED_DEPS)
+  include("${CMAKE_CURRENT_LIST_DIR}/JPEGXLDeps.cmake")
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/JPEGXLTargets.cmake")
+
+# In static-only builds, create an alias
+if(TARGET JPEGXL::jxl-static AND NOT TARGET JPEGXL::jxl)
+  add_library(JPEGXL::jxl ALIAS JPEGXL::jxl-static)
+endif()
+  
+if(TARGET JPEGXL::jxl_threads-static AND NOT TARGET JPEGXL::jxl_threads)
+  add_library(JPEGXL::jxl_threads ALIAS JPEGXL::jxl_threads-static)
+endif()
+
+check_required_components(Jxl)

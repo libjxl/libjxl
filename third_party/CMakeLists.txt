@@ -69,6 +69,7 @@ else()
   add_subdirectory(brotli)
   configure_file("${CMAKE_CURRENT_SOURCE_DIR}/brotli/LICENSE"
                  ${PROJECT_BINARY_DIR}/LICENSE.brotli COPYONLY)
+  list(APPEND VENDORED_DEPENDENCIES brotlienc brotlidec brotlicommon)
   if(APPLE)
     if(NOT DEFINED CMAKE_MACOSX_RPATH)
       # Use @rpath in install_name when CMAKE_MACOSX_RPATH is not set.
@@ -103,6 +104,9 @@ if (JPEGXL_ENABLE_SKCMS OR JPEGXL_ENABLE_PLUGINS)
   include(skcms.cmake)
   configure_file("${CMAKE_CURRENT_SOURCE_DIR}/skcms/LICENSE"
                  ${PROJECT_BINARY_DIR}/LICENSE.skcms COPYONLY)
+  if(NOT JPEGXL_BUNDLE_SKCMS)
+    list(APPEND VENDORED_DEPENDENCIES skcms skcms-obj)
+  endif()
 endif ()
 if (JPEGXL_ENABLE_VIEWERS OR NOT JPEGXL_ENABLE_SKCMS)
   if( NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/lcms/.git" OR JPEGXL_FORCE_SYSTEM_LCMS2 )
@@ -114,6 +118,10 @@ if (JPEGXL_ENABLE_VIEWERS OR NOT JPEGXL_ENABLE_SKCMS)
     include(lcms2.cmake)
     configure_file("${CMAKE_CURRENT_SOURCE_DIR}/lcms/COPYING"
                    ${PROJECT_BINARY_DIR}/LICENSE.lcms COPYONLY)
+    # Only install it when it is a dependency of the library
+    if(NOT JPEGXL_ENABLE_SKCMS)
+      list(APPEND VENDORED_DEPENDENCIES lcms2)
+    endif()
   endif()
 endif()
 
@@ -173,3 +181,15 @@ if (JPEGXL_ENABLE_SJPEG)
   configure_file("${CMAKE_CURRENT_SOURCE_DIR}/sjpeg/COPYING"
                  ${PROJECT_BINARY_DIR}/LICENSE.sjpeg COPYONLY)
 endif ()
+
+# Export vendored dependencies used by the core libraries
+set(HAS_EXPORTED_VENDORED_DEPS FALSE PARENT_SCOPE)
+if(DEFINED VENDORED_DEPENDENCIES)
+  install(TARGETS ${VENDORED_DEPENDENCIES} 
+    EXPORT JxlDeps
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+  set(HAS_EXPORTED_VENDORED_DEPS TRUE PARENT_SCOPE)
+endif()
