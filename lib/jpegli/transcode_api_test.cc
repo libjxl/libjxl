@@ -85,7 +85,9 @@ TEST_P(TranscodeAPITestParam, TestAPI) {
   TestImage output0, output1;
   DecodeWithLibjpeg(CompressParams(), compressed, PIXELS, &output0);
   DecodeWithLibjpeg(CompressParams(), transcoded, PIXELS, &output1);
-  VerifyOutputImage(output0, output1, 0.0);
+  ASSERT_EQ(output0.pixels.size(), output1.pixels.size());
+  EXPECT_EQ(0, memcmp(output0.pixels.data(), output1.pixels.data(),
+                      output0.pixels.size()));
 }
 
 std::vector<TestConfig> GenerateTests() {
