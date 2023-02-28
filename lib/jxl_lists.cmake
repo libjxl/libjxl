@@ -482,6 +482,8 @@ set(JPEGXL_INTERNAL_JPEGLI_SOURCES
   jpegli/huffman.h
   jpegli/idct.cc
   jpegli/idct.h
+  jpegli/input.cc
+  jpegli/input.h
   jpegli/memory_manager.cc
   jpegli/memory_manager.h
   jpegli/quant.cc

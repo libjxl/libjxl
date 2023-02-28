@@ -16,9 +16,9 @@
 #include "lib/jpegli/encode_internal.h"
 #include "lib/jpegli/entropy_coding.h"
 #include "lib/jpegli/error.h"
+#include "lib/jpegli/input.h"
 #include "lib/jpegli/memory_manager.h"
 #include "lib/jpegli/quant.h"
-#include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/span.h"
 
 namespace jpegli {
@@ -210,76 +210,6 @@ void DownsampleComponents(j_compress_ptr cinfo) {
     const int v_factor = cinfo->max_v_samp_factor / comp->v_samp_factor;
     Downsample(&m->input_buffer[c], m->xsize_blocks * DCTSIZE,
                m->ysize_blocks * DCTSIZE, h_factor, v_factor);
-  }
-}
-
-void ReadLine(const uint8_t* row_in, size_t xsize, size_t num_components,
-              JpegliDataType data_type, JpegliEndianness endianness,
-              float* row_out[kMaxComponents]) {
-  if (row_in == nullptr) {
-    for (size_t c = 0; c < num_components; ++c) {
-      memset(row_out[c], 0, xsize * sizeof(row_out[c][0]));
-    }
-    return;
-  }
-  static constexpr double kMul16 = 1.0 / 257.0;
-  static constexpr double kMulFloat = 255.0;
-  const int pwidth = num_components * jpegli_bytes_per_sample(data_type);
-  bool is_little_endian =
-      (endianness == JPEGLI_LITTLE_ENDIAN ||
-       (endianness == JPEGLI_NATIVE_ENDIAN && IsLittleEndian()));
-  if (data_type == JPEGLI_TYPE_UINT8) {
-    if (num_components == 1) {
-      const uint8_t* p = row_in;
-      for (size_t x = 0; x < xsize; ++x, ++p) {
-        row_out[0][x] = p[0];
-      }
-    } else if (num_components == 3) {
-      const uint8_t* p = row_in;
-      float* JXL_RESTRICT row0 = row_out[0];
-      float* JXL_RESTRICT row1 = row_out[1];
-      float* JXL_RESTRICT row2 = row_out[2];
-      for (size_t x = 0; x < xsize; ++x, p += 3) {
-        row0[x] = p[0];
-        row1[x] = p[1];
-        row2[x] = p[2];
-      }
-    } else {
-      for (size_t c = 0; c < num_components; ++c) {
-        const uint8_t* p = &row_in[c];
-        for (size_t x = 0; x < xsize; ++x, p += pwidth) {
-          row_out[c][x] = p[0];
-        }
-      }
-    }
-  } else if (data_type == JPEGLI_TYPE_UINT16 && is_little_endian) {
-    for (size_t c = 0; c < num_components; ++c) {
-      const uint8_t* p = &row_in[c * 2];
-      for (size_t x = 0; x < xsize; ++x, p += pwidth) {
-        row_out[c][x] = LoadLE16(p) * kMul16;
-      }
-    }
-  } else if (data_type == JPEGLI_TYPE_UINT16 && !is_little_endian) {
-    for (size_t c = 0; c < num_components; ++c) {
-      const uint8_t* p = &row_in[c * 2];
-      for (size_t x = 0; x < xsize; ++x, p += pwidth) {
-        row_out[c][x] = LoadBE16(p) * kMul16;
-      }
-    }
-  } else if (data_type == JPEGLI_TYPE_FLOAT && is_little_endian) {
-    for (size_t c = 0; c < num_components; ++c) {
-      const uint8_t* p = &row_in[c * 4];
-      for (size_t x = 0; x < xsize; ++x, p += pwidth) {
-        row_out[c][x] = LoadLEFloat(p) * kMulFloat;
-      }
-    }
-  } else if (data_type == JPEGLI_TYPE_FLOAT && !is_little_endian) {
-    for (size_t c = 0; c < num_components; ++c) {
-      const uint8_t* p = &row_in[c * 4];
-      for (size_t x = 0; x < xsize; ++x, p += pwidth) {
-        row_out[c][x] = LoadBEFloat(p) * kMulFloat;
-      }
-    }
   }
 }
 
@@ -785,6 +715,13 @@ void jpegli_set_progressive_level(j_compress_ptr cinfo, int level) {
   cinfo->master->progressive_level = level;
 }
 
+void jpegli_set_input_format(j_compress_ptr cinfo, JpegliDataType data_type,
+                             JpegliEndianness endianness) {
+  CheckState(cinfo, jpegli::kEncStart);
+  cinfo->master->data_type = data_type;
+  cinfo->master->endianness = endianness;
+}
+
 void jpegli_copy_critical_parameters(j_decompress_ptr srcinfo,
                                      j_compress_ptr dstinfo) {
   CheckState(dstinfo, jpegli::kEncStart);
@@ -841,6 +778,7 @@ void jpegli_start_compress(j_compress_ptr cinfo, boolean write_all_tables) {
   for (int c = 0; c < cinfo->input_components; ++c) {
     m->input_buffer[c].Allocate(m->ysize_blocks * DCTSIZE, stride);
   }
+  jpegli::ChooseInputMethod(cinfo);
   if (write_all_tables) {
     jpegli_suppress_tables(cinfo, FALSE);
   }
@@ -946,13 +884,6 @@ void jpegli_write_icc_profile(j_compress_ptr cinfo, const JOCTET* icc_data_ptr,
   cinfo->master->next_marker_byte = nullptr;
 }
 
-void jpegli_set_input_format(j_compress_ptr cinfo, JpegliDataType data_type,
-                             JpegliEndianness endianness) {
-  CheckState(cinfo, jpegli::kEncHeader);
-  cinfo->master->data_type = data_type;
-  cinfo->master->endianness = endianness;
-}
-
 JDIMENSION jpegli_write_scanlines(j_compress_ptr cinfo, JSAMPARRAY scanlines,
                                   JDIMENSION num_lines) {
   CheckState(cinfo, jpegli::kEncHeader, jpegli::kEncReadImage);
@@ -969,8 +900,13 @@ JDIMENSION jpegli_write_scanlines(j_compress_ptr cinfo, JSAMPARRAY scanlines,
     for (int c = 0; c < cinfo->input_components; ++c) {
       rows[c] = m->input_buffer[c].Row(cinfo->next_scanline + i);
     }
-    jpegli::ReadLine(scanlines[i], cinfo->image_width, cinfo->input_components,
-                     m->data_type, m->endianness, rows);
+    if (scanlines[i] == nullptr) {
+      for (int c = 0; c < cinfo->input_components; ++c) {
+        memset(rows[c], 0, cinfo->image_width * sizeof(rows[c][0]));
+      }
+      continue;
+    }
+    (*m->input_method)(scanlines[i], cinfo->image_width, rows);
   }
   cinfo->next_scanline += num_lines;
   return num_lines;
@@ -1001,7 +937,11 @@ JDIMENSION jpegli_write_raw_data(j_compress_ptr cinfo, JSAMPIMAGE data,
     size_t y0 = iMCU_y * ysize;
     for (size_t i = 0; i < ysize; ++i) {
       rows[0] = m->input_buffer[c].Row(y0 + i);
-      jpegli::ReadLine(plane[i], xsize, 1, m->data_type, m->endianness, rows);
+      if (plane[i] == nullptr) {
+        memset(rows[0], 0, xsize * sizeof(rows[0][0]));
+        continue;
+      }
+      (*m->input_method)(plane[i], xsize, rows);
     }
   }
   cinfo->next_scanline += iMCU_height;
