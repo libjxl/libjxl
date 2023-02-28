@@ -177,7 +177,7 @@ void ComputeDCTCoefficients(j_compress_ptr cinfo) {
     }
     RowBuffer<float>* plane = &m->input_buffer[c];
     for (size_t by = 0, bix = 0; by < ysize_blocks; by++) {
-      const float* row = plane->Row(8 * by);
+      const float* row = plane->DirectRow(8 * by);
       for (size_t bx = 0; bx < xsize_blocks; bx++, bix++) {
         coeff_t* block = &coeffs[bix * kDCTBlockSize];
         TransformFromPixels(jxl::AcStrategy::Type::DCT, row + 8 * bx,
@@ -186,7 +186,7 @@ void ComputeDCTCoefficients(j_compress_ptr cinfo) {
         if (m->use_adaptive_quantization) {
           // Create more zeros in areas where jpeg xl would have used a lower
           // quantization multiplier.
-          float relq = m->quant_field.Row(by * v_factor)[bx * h_factor];
+          float relq = m->quant_field.DirectRow(by * v_factor)[bx * h_factor];
           float zero_bias = 0.5f + zero_bias_mul[c] * relq;
           zero_bias = std::min(1.5f, zero_bias);
           QuantizeBlock(dct1, &qmc[0], zero_bias, block);

@@ -124,14 +124,14 @@ jobs:
       with:
         submodules: true
         fetch-depth: 1
-    - name: Build
+    - name: Configure
       run: |
         CMAKE_FLAGS="${{ matrix.cmake_flags }}" ./ci.sh release \
           -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
           -DJPEGXL_ENABLE_JNI=OFF \
           ${{ join(matrix.cmake_args, ' ') }}
       env:
-        SKIP_TEST: 1
+        SKIP_BUILD: 1
         BUILD_TARGET: ${{ matrix.build_target }}
     - name: Setup tmate session
       uses: mxschmitt/action-tmate@v3

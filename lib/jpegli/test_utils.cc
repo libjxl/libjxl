@@ -8,6 +8,7 @@
 #include <cmath>
 
 #include "lib/jpegli/encode.h"
+#include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/file_io.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/sanitizers.h"
@@ -160,37 +161,59 @@ void SetNumChannels(J_COLOR_SPACE colorspace, size_t* channels) {
 }
 
 void ConvertPixel(const uint8_t* input_rgb, uint8_t* out,
-                  J_COLOR_SPACE colorspace, size_t num_channels) {
+                  J_COLOR_SPACE colorspace, size_t num_channels,
+                  JpegliDataType data_type, bool swap_endianness) {
   const float kMul = 255.0f;
   const float r = input_rgb[0] / kMul;
   const float g = input_rgb[1] / kMul;
   const float b = input_rgb[2] / kMul;
+  uint8_t out8[MAX_COMPONENTS];
   if (colorspace == JCS_GRAYSCALE) {
     const float Y = 0.299f * r + 0.587f * g + 0.114f * b;
-    out[0] = static_cast<uint8_t>(std::round(Y * kMul));
+    out8[0] = static_cast<uint8_t>(std::round(Y * kMul));
   } else if (colorspace == JCS_RGB || colorspace == JCS_UNKNOWN) {
     for (size_t c = 0; c < num_channels; ++c) {
-      out[c] = input_rgb[std::min<size_t>(2, c)];
+      out8[c] = input_rgb[std::min<size_t>(2, c)];
     }
   } else if (colorspace == JCS_YCbCr) {
     float Y = 0.299f * r + 0.587f * g + 0.114f * b;
     float Cb = -0.168736f * r - 0.331264f * g + 0.5f * b + 0.5f;
     float Cr = 0.5f * r - 0.418688f * g - 0.081312f * b + 0.5f;
-    out[0] = static_cast<uint8_t>(std::round(Y * kMul));
-    out[1] = static_cast<uint8_t>(std::round(Cb * kMul));
-    out[2] = static_cast<uint8_t>(std::round(Cr * kMul));
+    out8[0] = static_cast<uint8_t>(std::round(Y * kMul));
+    out8[1] = static_cast<uint8_t>(std::round(Cb * kMul));
+    out8[2] = static_cast<uint8_t>(std::round(Cr * kMul));
   } else if (colorspace == JCS_CMYK) {
     float K = 1.0f - std::max(r, std::max(g, b));
     float scaleK = 1.0f / (1.0f - K);
     float C = (1.0f - K - r) * scaleK;
     float M = (1.0f - K - g) * scaleK;
     float Y = (1.0f - K - b) * scaleK;
-    out[0] = static_cast<uint8_t>(std::round(C * kMul));
-    out[1] = static_cast<uint8_t>(std::round(M * kMul));
-    out[2] = static_cast<uint8_t>(std::round(Y * kMul));
-    out[3] = static_cast<uint8_t>(std::round(K * kMul));
+    out8[0] = static_cast<uint8_t>(std::round(C * kMul));
+    out8[1] = static_cast<uint8_t>(std::round(M * kMul));
+    out8[2] = static_cast<uint8_t>(std::round(Y * kMul));
+    out8[3] = static_cast<uint8_t>(std::round(K * kMul));
   } else {
     JXL_ABORT("Colorspace %d not supported", colorspace);
+  }
+  if (data_type == JPEGLI_TYPE_UINT8) {
+    memcpy(out, out8, num_channels);
+  } else if (data_type == JPEGLI_TYPE_UINT16) {
+    for (size_t c = 0; c < num_channels; ++c) {
+      uint16_t val = (out8[c] << 8) + out8[c];
+      val |= 0x40;  // Make little-endian and big-endian assymetric
+      if (swap_endianness) {
+        val = JXL_BSWAP16(val);
+      }
+      memcpy(&out[sizeof(val) * c], &val, sizeof(val));
+    }
+  } else if (data_type == JPEGLI_TYPE_FLOAT) {
+    for (size_t c = 0; c < num_channels; ++c) {
+      float val = out8[c] / 255.0f;
+      if (swap_endianness) {
+        val = BSwapFloat(val);
+      }
+      memcpy(&out[sizeof(val) * c], &val, sizeof(val));
+    }
   }
 }
 
@@ -210,8 +233,12 @@ void GeneratePixels(TestImage* img) {
   size_t x0 = (xsize - img->xsize) / 2;
   size_t y0 = (ysize - img->ysize) / 2;
   SetNumChannels(img->color_space, &img->components);
-  size_t out_bytes_per_pixel = img->components;
+  size_t out_bytes_per_pixel =
+      jpegli_bytes_per_sample(img->data_type) * img->components;
   size_t out_stride = img->xsize * out_bytes_per_pixel;
+  bool swap_endianness =
+      (img->endianness == JPEGLI_LITTLE_ENDIAN && !IsLittleEndian()) ||
+      (img->endianness == JPEGLI_BIG_ENDIAN && IsLittleEndian());
   img->pixels.resize(img->ysize * out_stride);
   for (size_t iy = 0; iy < img->ysize; ++iy) {
     size_t y = y0 + iy;
@@ -220,7 +247,7 @@ void GeneratePixels(TestImage* img) {
       size_t idx_in = y * in_stride + x * in_bytes_per_pixel;
       size_t idx_out = iy * out_stride + ix * out_bytes_per_pixel;
       ConvertPixel(&pixels[idx_in], &img->pixels[idx_out], img->color_space,
-                   img->components);
+                   img->components, img->data_type, swap_endianness);
     }
   }
 }
@@ -329,6 +356,7 @@ bool EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
   } else if (jparams.progressive_level >= 0) {
     jpegli_set_progressive_level(&cinfo, jparams.progressive_level);
   }
+  jpegli_set_input_format(&cinfo, input.data_type, input.endianness);
   cinfo.restart_interval = jparams.restart_interval;
   cinfo.restart_in_rows = jparams.restart_in_rows;
   cinfo.optimize_coding = jparams.optimize_coding;
@@ -403,7 +431,8 @@ bool EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
       }
     }
   } else {
-    size_t stride = cinfo.image_width * cinfo.input_components;
+    size_t stride = cinfo.image_width * cinfo.input_components *
+                    jpegli_bytes_per_sample(input.data_type);
     std::vector<uint8_t> row_bytes(stride);
     for (size_t y = 0; y < cinfo.image_height; ++y) {
       memcpy(&row_bytes[0], &input.pixels[y * stride], stride);
@@ -578,17 +607,35 @@ void VerifyOutputImage(const TestImage& input, const TestImage& output,
                             input.coeffs[c].size()));
     }
   } else {
-    JXL_CHECK(output.pixels.size() == input.pixels.size());
-    const double mul = 1.0 / 255.0;
+    size_t num_samples = input.xsize * input.ysize * input.components;
+    auto get_sample = [&](const TestImage& im, size_t idx) -> double {
+      size_t bytes_per_sample = jpegli_bytes_per_sample(im.data_type);
+      bool is_little_endian =
+          (im.endianness == JPEGLI_LITTLE_ENDIAN ||
+           (im.endianness == JPEGLI_NATIVE_ENDIAN && IsLittleEndian()));
+      size_t offset = idx * bytes_per_sample;
+      JXL_CHECK(offset < im.pixels.size());
+      const uint8_t* p = &im.pixels[offset];
+      if (im.data_type == JPEGLI_TYPE_UINT8) {
+        static const double mul8 = 1.0 / 255.0;
+        return p[0] * mul8;
+      } else if (im.data_type == JPEGLI_TYPE_UINT16) {
+        static const double mul16 = 1.0 / 65535.0;
+        return (is_little_endian ? LoadLE16(p) : LoadBE16(p)) * mul16;
+      } else if (im.data_type == JPEGLI_TYPE_FLOAT) {
+        return (is_little_endian ? LoadLEFloat(p) : LoadBEFloat(p));
+      }
+      return 0.0;
+    };
     double diff2 = 0.0;
-    for (size_t i = 0; i < input.pixels.size(); ++i) {
-      double sample_orig = input.pixels[i] * mul;
-      double sample_output = output.pixels[i] * mul;
+    for (size_t i = 0; i < num_samples; ++i) {
+      double sample_orig = get_sample(input, i);
+      double sample_output = get_sample(output, i);
       double diff = sample_orig - sample_output;
       diff2 += diff * diff;
     }
-    double rms = std::sqrt(diff2 / input.pixels.size()) / mul;
-    // printf("rms: %f\n", rms);
+    double rms = std::sqrt(diff2 / num_samples) * 255.0;
+    printf("rms: %f\n", rms);
     JXL_CHECK(rms <= max_rms);
   }
 }

@@ -395,6 +395,24 @@ std::vector<TestConfig> GenerateTests() {
       }
     }
   }
+  for (JpegliDataType data_type : {JPEGLI_TYPE_UINT16, JPEGLI_TYPE_FLOAT}) {
+    for (JpegliEndianness endianness :
+         {JPEGLI_LITTLE_ENDIAN, JPEGLI_BIG_ENDIAN, JPEGLI_NATIVE_ENDIAN}) {
+      J_COLOR_SPACE colorspace[4] = {JCS_GRAYSCALE, JCS_UNKNOWN, JCS_RGB,
+                                     JCS_CMYK};
+      float max_bpp[4] = {1.25, 2.5, 1.45, 3.75};
+      for (int channels = 1; channels <= 4; ++channels) {
+        TestConfig config;
+        config.input.data_type = data_type;
+        config.input.endianness = endianness;
+        config.input.components = channels;
+        config.input.color_space = colorspace[channels - 1];
+        config.max_bpp = max_bpp[channels - 1];
+        config.max_dist = 2.2;
+        all_tests.push_back(config);
+      }
+    }
+  }
   return all_tests;
 };
 
@@ -415,8 +433,26 @@ std::string ColorSpaceName(J_COLOR_SPACE colorspace) {
   }
 }
 
+std::string InputMethod(JpegliDataType data_type, JpegliEndianness endianness) {
+  std::string retval;
+  if (data_type == JPEGLI_TYPE_UINT8) {
+    return "UINT8";
+  } else if (data_type == JPEGLI_TYPE_UINT16) {
+    retval = "UINT16";
+  } else if (data_type == JPEGLI_TYPE_FLOAT) {
+    retval = "FLOAT";
+  }
+  if (endianness == JPEGLI_LITTLE_ENDIAN) {
+    retval += "LE";
+  } else if (endianness == JPEGLI_BIG_ENDIAN) {
+    retval += "BE";
+  }
+  return retval;
+}
+
 std::ostream& operator<<(std::ostream& os, const TestConfig& c) {
   os << c.input.xsize << "x" << c.input.ysize;
+  os << InputMethod(c.input.data_type, c.input.endianness);
   os << ColorSpaceName(c.input.color_space);
   if (c.input.color_space == JCS_UNKNOWN) {
     os << c.input.components;

@@ -301,6 +301,13 @@ Status EncodeJpeg(const PackedPixelFile& ppf, const JpegSettings& jpeg_settings,
       cinfo.write_JFIF_header = false;
       cinfo.write_Adobe_marker = false;
     }
+    const PackedImage& image = ppf.frames[0].color;
+    if (jpeg_settings.xyb) {
+      jpegli_set_input_format(&cinfo, JPEGLI_TYPE_FLOAT, JPEGLI_NATIVE_ENDIAN);
+    } else {
+      jpegli_set_input_format(&cinfo, ConvertDataType(image.format.data_type),
+                              ConvertEndianness(image.format.endianness));
+    }
     jpegli_start_compress(&cinfo, TRUE);
     if (!jpeg_settings.app_data.empty()) {
       JXL_RETURN_IF_ERROR(WriteAppData(&cinfo, jpeg_settings.app_data));
@@ -310,10 +317,8 @@ Status EncodeJpeg(const PackedPixelFile& ppf, const JpegSettings& jpeg_settings,
       jpegli_write_icc_profile(&cinfo, output_encoding.ICC().data(),
                                output_encoding.ICC().size());
     }
-    const PackedImage& image = ppf.frames[0].color;
     const uint8_t* pixels = reinterpret_cast<const uint8_t*>(image.pixels());
     if (jpeg_settings.xyb) {
-      jpegli_set_input_format(&cinfo, JPEGLI_TYPE_FLOAT, JPEGLI_NATIVE_ENDIAN);
       float* src_buf = c_transform.BufSrc(0);
       float* dst_buf = c_transform.BufDst(0);
       for (size_t y = 0; y < image.ysize; ++y) {
@@ -349,8 +354,6 @@ Status EncodeJpeg(const PackedPixelFile& ppf, const JpegSettings& jpeg_settings,
         jpegli_write_scanlines(&cinfo, row, 1);
       }
     } else {
-      jpegli_set_input_format(&cinfo, ConvertDataType(image.format.data_type),
-                              ConvertEndianness(image.format.endianness));
       row_bytes.resize(image.stride);
       for (size_t y = 0; y < info.ysize; ++y) {
         memcpy(&row_bytes[0], pixels + y * image.stride, image.stride);
