@@ -188,8 +188,8 @@ TEST(JpegliTest, JpegliYUVEncodeTest) {
 
   PackedPixelFile ppf_out;
   ASSERT_TRUE(DecodeWithLibjpeg(compressed, &ppf_out));
-  EXPECT_THAT(BitsPerPixel(ppf_in, compressed), IsSlightlyBelow(1.68f));
-  EXPECT_THAT(ButteraugliDistance(ppf_in, ppf_out), IsSlightlyBelow(1.28f));
+  EXPECT_THAT(BitsPerPixel(ppf_in, compressed), IsSlightlyBelow(1.67f));
+  EXPECT_THAT(ButteraugliDistance(ppf_in, ppf_out), IsSlightlyBelow(1.32f));
 }
 
 TEST(JpegliTest, JpegliYUVChromaSubsamplingEncodeTest) {
@@ -208,8 +208,8 @@ TEST(JpegliTest, JpegliYUVChromaSubsamplingEncodeTest) {
 
     PackedPixelFile ppf_out;
     ASSERT_TRUE(DecodeWithLibjpeg(compressed, &ppf_out));
-    EXPECT_LE(BitsPerPixel(ppf_in, compressed), 1.6f);
-    EXPECT_LE(ButteraugliDistance(ppf_in, ppf_out), 1.8f);
+    EXPECT_LE(BitsPerPixel(ppf_in, compressed), 1.55f);
+    EXPECT_LE(ButteraugliDistance(ppf_in, ppf_out), 1.82f);
   }
 }
 
@@ -228,8 +228,8 @@ TEST(JpegliTest, JpegliYUVEncodeTestNoAq) {
 
   PackedPixelFile ppf_out;
   ASSERT_TRUE(DecodeWithLibjpeg(compressed, &ppf_out));
-  EXPECT_THAT(BitsPerPixel(ppf_in, compressed), IsSlightlyBelow(1.72f));
-  EXPECT_THAT(ButteraugliDistance(ppf_in, ppf_out), IsSlightlyBelow(1.45f));
+  EXPECT_THAT(BitsPerPixel(ppf_in, compressed), IsSlightlyBelow(1.76f));
+  EXPECT_THAT(ButteraugliDistance(ppf_in, ppf_out), IsSlightlyBelow(1.32f));
 }
 
 TEST(JpegliTest, JpegliHDRRoundtripTest) {

@@ -555,7 +555,7 @@ HWY_EXPORT(PerBlockModulations);
 namespace {
 
 constexpr float kDcQuantPow = 0.66f;
-static const float kDcQuant = 1.1f;
+static const float kDcQuant = 1.913f;
 static const float kAcQuant = 0.841f;
 
 }  // namespace
@@ -567,11 +567,7 @@ float InitialQuantDC(float butteraugli_target) {
       std::min<float>(butteraugli_target,
                       kDcMul * std::pow((1.0f / kDcMul) * butteraugli_target,
                                         kDcQuantPow)));
-  // We want the maximum DC value to be at most 2**15 * kInvDCQuant / quant_dc.
-  // The maximum DC value might not be in the kXybRange because of inverse
-  // gaborish, so we add some slack to the maximum theoretical quant obtained
-  // this way (64).
-  return std::min(kDcQuant / butteraugli_target_dc, 50.f);
+  return kDcQuant / butteraugli_target_dc;
 }
 
 void AdaptiveQuantizationMap(const float butteraugli_target,
@@ -606,7 +602,6 @@ void ComputeAdaptiveQuantField(j_compress_ptr cinfo) {
         qfmax = std::max(qfmax, row[x]);
       }
     }
-    m->quant_field_max = qfmax;
     for (size_t y = 0; y < ysize_blocks; ++y) {
       float* row = m->quant_field.DirectRow(y);
       for (size_t x = 0; x < xsize_blocks; ++x) {
@@ -614,7 +609,6 @@ void ComputeAdaptiveQuantField(j_compress_ptr cinfo) {
       }
     }
   } else {
-    m->quant_field_max = kDefaultQuantFieldMax;
     for (size_t y = 0; y < ysize_blocks; ++y) {
       m->quant_field.FillRow(y, 0.0f, xsize_blocks);
     }

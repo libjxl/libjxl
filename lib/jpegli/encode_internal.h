@@ -39,7 +39,6 @@ struct JPEGHuffmanCode {
 const int kJPEGMaxCorrectionBits = 1u << 16;
 
 constexpr int kDefaultProgressiveLevel = 2;
-constexpr float kDefaultQuantFieldMax = 0.575f;
 
 struct HuffmanCodeTable {
   int depth[256];
@@ -79,7 +78,6 @@ struct jpeg_comp_master {
   std::array<jpegli::HuffmanCodeTable, jpegli::kMaxHuffmanTables> dc_huff_table;
   std::array<jpegli::HuffmanCodeTable, jpegli::kMaxHuffmanTables> ac_huff_table;
   jpegli::RowBuffer<float> quant_field;
-  float quant_field_max = jpegli::kDefaultQuantFieldMax;
   jvirt_barray_ptr* coeff_buffers = nullptr;
 };
 
