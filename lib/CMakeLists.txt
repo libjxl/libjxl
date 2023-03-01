@@ -124,10 +124,15 @@ else()  # WIN32
 endif()  # WIN32
 
 # Internal flags for coverage builds:
+set(JPEGXL_COVERAGE_FLAGS)
+set(JPEGXL_COVERAGE_LINK_FLAGS)
 if(JPEGXL_ENABLE_COVERAGE)
 set(JPEGXL_COVERAGE_FLAGS
     -g -O0 -fprofile-arcs -ftest-coverage
     -DJXL_ENABLE_ASSERT=0 -DJXL_ENABLE_CHECK=0
+)
+set(JPEGXL_COVERAGE_LINK_FLAGS
+    --coverage
 )
 endif()  # JPEGXL_ENABLE_COVERAGE
 endif()  #!MSVC
