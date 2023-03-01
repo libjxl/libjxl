@@ -7,21 +7,21 @@
 
 #include "lib/jpegli/encode_internal.h"
 #include "lib/jpegli/error.h"
-#include "lib/jxl/enc_cluster.h"
-#include "lib/jxl/enc_huffman_tree.h"
+#include "lib/jpegli/huffman.h"
+#include "lib/jxl/base/bits.h"
 
 namespace jpegli {
 namespace {
 
-float HistogramCost(const jxl::Histogram& histo) {
+float HistogramCost(const Histogram& histo) {
   std::vector<uint32_t> counts(kJpegHuffmanAlphabetSize + 1);
   std::vector<uint8_t> depths(kJpegHuffmanAlphabetSize + 1);
   for (size_t i = 0; i < kJpegHuffmanAlphabetSize; ++i) {
-    counts[i] = histo.data_[i];
+    counts[i] = histo.count[i];
   }
   counts[kJpegHuffmanAlphabetSize] = 1;
-  jxl::CreateHuffmanTree(counts.data(), counts.size(), kJpegHuffmanMaxBitLength,
-                         &depths[0]);
+  CreateHuffmanTree(counts.data(), counts.size(), kJpegHuffmanMaxBitLength,
+                    &depths[0]);
   size_t header_bits = (1 + kJpegHuffmanMaxBitLength) * 8;
   size_t data_bits = 0;
   for (size_t i = 0; i < kJpegHuffmanAlphabetSize; ++i) {
@@ -32,36 +32,39 @@ float HistogramCost(const jxl::Histogram& histo) {
   }
   return header_bits + data_bits;
 }
+
+void AddHistograms(const Histogram& a, const Histogram& b, Histogram* c) {
+  for (size_t i = 0; i < kJpegHuffmanAlphabetSize; ++i) {
+    c->count[i] = a.count[i] + b.count[i];
+  }
+}
+
+bool IsEmptyHistogram(const Histogram& histo) {
+  for (size_t i = 0; i < kJpegHuffmanAlphabetSize; ++i) {
+    if (histo.count[i]) return false;
+  }
+  return true;
+}
+
 }  // namespace
 
-void ClusterJpegHistograms(const Histogram* histo_data, size_t num,
+void ClusterJpegHistograms(const Histogram* histograms, size_t num,
                            JpegClusteredHistograms* clusters) {
-  std::vector<jxl::Histogram> histograms;
-  for (size_t idx = 0; idx < num; ++idx) {
-    jxl::Histogram histo;
-    histo.data_.resize(kJpegHuffmanAlphabetSize);
-    for (size_t i = 0; i < histo.data_.size(); ++i) {
-      histo.data_[i] = histo_data[idx].count[i];
-      histo.total_count_ += histo.data_[i];
-    }
-    histograms.push_back(histo);
-  }
-  clusters->histogram_indexes.resize(histograms.size());
+  clusters->histogram_indexes.resize(num);
   std::vector<uint32_t> slot_histograms;
   std::vector<float> slot_costs;
-  for (size_t i = 0; i < histograms.size(); ++i) {
-    const jxl::Histogram& cur = histograms[i];
-    if (cur.total_count_ == 0) {
+  for (size_t i = 0; i < num; ++i) {
+    const Histogram& cur = histograms[i];
+    if (IsEmptyHistogram(cur)) {
       continue;
     }
     float best_cost = HistogramCost(cur);
     size_t best_slot = slot_histograms.size();
     for (size_t j = 0; j < slot_histograms.size(); ++j) {
       size_t prev_idx = slot_histograms[j];
-      const jxl::Histogram& prev = clusters->histograms[prev_idx];
-      jxl::Histogram combined;
-      combined.AddHistogram(prev);
-      combined.AddHistogram(cur);
+      const Histogram& prev = clusters->histograms[prev_idx];
+      Histogram combined;
+      AddHistograms(prev, cur, &combined);
       float combined_cost = HistogramCost(combined);
       float cost = combined_cost - slot_costs[j];
       if (cost < best_cost) {
@@ -88,7 +91,8 @@ void ClusterJpegHistograms(const Histogram* histo_data, size_t num,
     } else {
       // Merge this histogram with a previous one.
       size_t histogram_index = slot_histograms[best_slot];
-      clusters->histograms[histogram_index].AddHistogram(cur);
+      const Histogram& prev = clusters->histograms[histogram_index];
+      AddHistograms(prev, cur, &clusters->histograms[histogram_index]);
       clusters->histogram_indexes[i] = histogram_index;
       JXL_ASSERT(clusters->slot_ids[histogram_index] == best_slot);
       slot_costs[best_slot] += best_cost;
@@ -96,15 +100,15 @@ void ClusterJpegHistograms(const Histogram* histo_data, size_t num,
   }
 }
 
-void BuildJpegHuffmanCode(const jxl::Histogram& histo, JPEGHuffmanCode* huff) {
+void BuildJpegHuffmanCode(const Histogram& histo, JPEGHuffmanCode* huff) {
   std::vector<uint32_t> counts(kJpegHuffmanAlphabetSize + 1);
   std::vector<uint8_t> depths(kJpegHuffmanAlphabetSize + 1);
   for (size_t j = 0; j < kJpegHuffmanAlphabetSize; ++j) {
-    counts[j] = histo.data_[j];
+    counts[j] = histo.count[j];
   }
   counts[kJpegHuffmanAlphabetSize] = 1;
-  jxl::CreateHuffmanTree(counts.data(), counts.size(), kJpegHuffmanMaxBitLength,
-                         &depths[0]);
+  CreateHuffmanTree(counts.data(), counts.size(), kJpegHuffmanMaxBitLength,
+                    &depths[0]);
   std::fill(std::begin(huff->counts), std::end(huff->counts), 0);
   std::fill(std::begin(huff->values), std::end(huff->values), 0);
   for (size_t i = 0; i <= kJpegHuffmanAlphabetSize; ++i) {
@@ -123,7 +127,7 @@ void BuildJpegHuffmanCode(const jxl::Histogram& histo, JPEGHuffmanCode* huff) {
   }
 }
 
-void AddJpegHuffmanCode(const jxl::Histogram& histogram, size_t slot_id,
+void AddJpegHuffmanCode(const Histogram& histogram, size_t slot_id,
                         std::vector<JPEGHuffmanCode>* huff_codes) {
   JPEGHuffmanCode huff_code;
   huff_code.slot_id = slot_id;

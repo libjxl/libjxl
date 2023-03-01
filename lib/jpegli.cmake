@@ -8,7 +8,6 @@ include(jxl_lists.cmake)
 
 set(JPEGLI_INTERNAL_LIBS
   hwy
-  jxl-static
   Threads::Threads
   ${ATOMICS_LIBRARIES}
 )

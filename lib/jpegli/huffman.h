@@ -32,6 +32,18 @@ struct HuffmanTableEntry {
 void BuildJpegHuffmanTable(const uint32_t* count, const uint32_t* symbols,
                            HuffmanTableEntry* lut);
 
+// This function will create a Huffman tree.
+//
+// The (data,length) contains the population counts.
+// The tree_limit is the maximum bit depth of the Huffman codes.
+//
+// The depth contains the tree, i.e., how many bits are used for
+// the symbol.
+//
+// See http://en.wikipedia.org/wiki/Huffman_coding
+void CreateHuffmanTree(const uint32_t* data, size_t length, int tree_limit,
+                       uint8_t* depth);
+
 }  // namespace jpegli
 
 #endif  // LIB_JPEGLI_HUFFMAN_H_
