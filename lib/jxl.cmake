@@ -112,12 +112,7 @@ target_include_directories(jxl_base-obj PUBLIC
   ${JXL_HWY_INCLUDE_DIRS}
 )
 
-# Unfortunately this is not possible until CMake 3.13:
-# target_link_libraries(jxl_base-obj PUBLIC jxl_includes)
-target_include_directories(jxl_base-obj SYSTEM PUBLIC
-  "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>"
-)
-add_dependencies(jxl_base-obj jxl_export)
+jxl_link_libraries(jxl_base-obj jxl_includes)
 
 # Decoder-only object library
 add_library(jxl_dec-obj OBJECT ${JPEGXL_INTERNAL_DEC_SOURCES})
@@ -132,12 +127,7 @@ target_include_directories(jxl_dec-obj PUBLIC
 target_compile_definitions(jxl_dec-obj PUBLIC
   ${OBJ_COMPILE_DEFINITIONS}
 )
-# Unfortunately this is not possible until CMake 3.13:
-# target_link_libraries(jxl_dec-obj PUBLIC jxl_base-obj)
-target_include_directories(jxl_dec-obj SYSTEM PUBLIC
-  "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>"
-)
-add_dependencies(jxl_dec-obj jxl_base-obj)
+jxl_link_libraries(jxl_dec-obj jxl_base-obj)
 if (JPEGXL_ENABLE_PROFILER)
 target_link_libraries(jxl_dec-obj PUBLIC jxl_profiler)
 endif()
@@ -155,7 +145,7 @@ target_include_directories(jxl_enc-obj PUBLIC
 target_compile_definitions(jxl_enc-obj PUBLIC
   ${OBJ_COMPILE_DEFINITIONS}
 )
-target_link_libraries(jxl_enc-obj PUBLIC jxl_base-obj)
+jxl_link_libraries(jxl_enc-obj jxl_base-obj)
 if (JPEGXL_ENABLE_PROFILER)
 target_link_libraries(jxl_enc-obj PUBLIC jxl_profiler)
 endif()

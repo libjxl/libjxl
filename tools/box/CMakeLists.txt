@@ -9,9 +9,7 @@ add_library(box STATIC EXCLUDE_FROM_ALL
 )
 # This library can be included into position independent binaries.
 set_target_properties(box PROPERTIES POSITION_INDEPENDENT_CODE TRUE)
-target_link_libraries(box
-  jxl_base-obj
-)
+jxl_link_libraries(box jxl_base-obj)
 target_include_directories(box
   PRIVATE
   "${PROJECT_SOURCE_DIR}"
