@@ -19,7 +19,6 @@
 #include "lib/jpegli/input.h"
 #include "lib/jpegli/memory_manager.h"
 #include "lib/jpegli/quant.h"
-#include "lib/jxl/base/span.h"
 
 namespace jpegli {
 

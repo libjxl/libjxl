@@ -14,7 +14,6 @@
 #include <vector>
 
 #include "lib/jpegli/encode_internal.h"
-#include "lib/jxl/enc_cluster.h"
 
 namespace jpegli {
 
@@ -31,7 +30,7 @@ struct Histogram {
 };
 
 struct JpegClusteredHistograms {
-  std::vector<jxl::Histogram> histograms;
+  std::vector<Histogram> histograms;
   std::vector<uint32_t> histogram_indexes;
   std::vector<uint32_t> slot_ids;
 };
@@ -39,7 +38,7 @@ struct JpegClusteredHistograms {
 void ClusterJpegHistograms(const Histogram* histo_data, size_t num,
                            JpegClusteredHistograms* clusters);
 
-void AddJpegHuffmanCode(const jxl::Histogram& histogram, size_t slot_id,
+void AddJpegHuffmanCode(const Histogram& histogram, size_t slot_id,
                         std::vector<JPEGHuffmanCode>* huff_codes);
 
 void OptimizeHuffmanCodes(j_compress_ptr cinfo,
