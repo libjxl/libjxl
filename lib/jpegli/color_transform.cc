@@ -10,6 +10,10 @@
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 
+#include "lib/jpegli/encode_internal.h"
+#include "lib/jpegli/error.h"
+#include "lib/jxl/base/compiler_specific.h"
+
 HWY_BEFORE_NAMESPACE();
 namespace jpegli {
 namespace HWY_NAMESPACE {
@@ -76,10 +80,11 @@ void YCbCrToRGB(float* JXL_RESTRICT row0, float* JXL_RESTRICT row1,
   }
 }
 
-void RGBToYCbCr(float* JXL_RESTRICT row0, float* JXL_RESTRICT row1,
-                float* JXL_RESTRICT row2, size_t xsize) {
+void RGBToYCbCr(float* row[kMaxComponents], size_t xsize) {
   const HWY_CAPPED(float, 8) df;
-
+  float* JXL_RESTRICT row0 = row[0];
+  float* JXL_RESTRICT row1 = row[1];
+  float* JXL_RESTRICT row2 = row[2];
   // Full-range BT.601 as defined by JFIF Clause 7:
   // https://www.itu.int/rec/T-REC-T.871-201105-I/en
   const auto c128 = Set(df, 128.0f);
@@ -111,17 +116,18 @@ void RGBToYCbCr(float* JXL_RESTRICT row0, float* JXL_RESTRICT row1,
   }
 }
 
-void CMYKToYCCK(float* JXL_RESTRICT row0, float* JXL_RESTRICT row1,
-                float* JXL_RESTRICT row2, float* JXL_RESTRICT row3,
-                size_t xsize) {
+void CMYKToYCCK(float* row[kMaxComponents], size_t xsize) {
   const HWY_CAPPED(float, 8) df;
+  float* JXL_RESTRICT row0 = row[0];
+  float* JXL_RESTRICT row1 = row[1];
+  float* JXL_RESTRICT row2 = row[2];
   const auto unity = Set(df, 255.0f);
   for (size_t x = 0; x < xsize; x += Lanes(df)) {
     Store(Sub(unity, Load(df, row0 + x)), df, row0 + x);
     Store(Sub(unity, Load(df, row1 + x)), df, row1 + x);
     Store(Sub(unity, Load(df, row2 + x)), df, row2 + x);
   }
-  RGBToYCbCr(row0, row1, row2, xsize);
+  RGBToYCbCr(row, xsize);
 }
 
 // NOLINTNEXTLINE(google-readability-namespace-comments)
@@ -137,12 +143,6 @@ HWY_EXPORT(YCCKToCMYK);
 HWY_EXPORT(YCbCrToRGB);
 HWY_EXPORT(RGBToYCbCr);
 
-void CMYKToYCCK(float* JXL_RESTRICT row0, float* JXL_RESTRICT row1,
-                float* JXL_RESTRICT row2, float* JXL_RESTRICT row3,
-                size_t xsize) {
-  return HWY_DYNAMIC_DISPATCH(CMYKToYCCK)(row0, row1, row2, row3, xsize);
-}
-
 void YCCKToCMYK(float* JXL_RESTRICT row0, float* JXL_RESTRICT row1,
                 float* JXL_RESTRICT row2, float* JXL_RESTRICT row3,
                 size_t xsize) {
@@ -154,9 +154,86 @@ void YCbCrToRGB(float* JXL_RESTRICT row0, float* JXL_RESTRICT row1,
   return HWY_DYNAMIC_DISPATCH(YCbCrToRGB)(row0, row1, row2, xsize);
 }
 
-void RGBToYCbCr(float* JXL_RESTRICT row0, float* JXL_RESTRICT row1,
-                float* JXL_RESTRICT row2, size_t xsize) {
-  return HWY_DYNAMIC_DISPATCH(RGBToYCbCr)(row0, row1, row2, xsize);
+bool CheckColorSpaceComponents(int num_components, J_COLOR_SPACE colorspace) {
+  switch (colorspace) {
+    case JCS_GRAYSCALE:
+      return num_components == 1;
+    case JCS_RGB:
+    case JCS_YCbCr:
+    case JCS_EXT_RGB:
+    case JCS_EXT_BGR:
+      return num_components == 3;
+    case JCS_CMYK:
+    case JCS_YCCK:
+    case JCS_EXT_RGBX:
+    case JCS_EXT_BGRX:
+    case JCS_EXT_XBGR:
+    case JCS_EXT_XRGB:
+    case JCS_EXT_RGBA:
+    case JCS_EXT_BGRA:
+    case JCS_EXT_ABGR:
+    case JCS_EXT_ARGB:
+      return num_components == 4;
+    default:
+      // Unrecognized colorspaces can have any number of channels, since no
+      // color transform will be performed on them.
+      return true;
+  }
+}
+
+void NullTransform(float* row[kMaxComponents], size_t len) {}
+
+void ChooseColorTransform(j_compress_ptr cinfo) {
+  jpeg_comp_master* m = cinfo->master;
+  if (!CheckColorSpaceComponents(cinfo->input_components,
+                                 cinfo->in_color_space)) {
+    JPEGLI_ERROR("Invalid number of input components %d for colorspace %d",
+                 cinfo->input_components, cinfo->in_color_space);
+  }
+  if (!CheckColorSpaceComponents(cinfo->num_components,
+                                 cinfo->jpeg_color_space)) {
+    JPEGLI_ERROR("Invalid number of components %d for colorspace %d",
+                 cinfo->num_components, cinfo->jpeg_color_space);
+  }
+  if (cinfo->jpeg_color_space == cinfo->in_color_space) {
+    if (cinfo->num_components != cinfo->input_components) {
+      JPEGLI_ERROR("Input/output components mismatch:  %d vs %d",
+                   cinfo->input_components, cinfo->num_components);
+    }
+    // No color transform requested.
+    m->color_transform = NullTransform;
+    return;
+  }
+
+  if (cinfo->in_color_space == JCS_RGB && m->xyb_mode) {
+    JPEGLI_ERROR("Color transform on XYB colorspace is not supported.");
+  }
+
+  m->color_transform = nullptr;
+  if (cinfo->jpeg_color_space == JCS_GRAYSCALE) {
+    if (cinfo->in_color_space == JCS_RGB) {
+      m->color_transform = HWY_DYNAMIC_DISPATCH(RGBToYCbCr);
+    } else if (cinfo->in_color_space == JCS_YCbCr ||
+               cinfo->in_color_space == JCS_YCCK) {
+      // Since the first luminance channel is the grayscale version of the
+      // image, nothing to do here
+      m->color_transform = NullTransform;
+    }
+  } else if (cinfo->jpeg_color_space == JCS_YCbCr) {
+    if (cinfo->in_color_space == JCS_RGB) {
+      m->color_transform = HWY_DYNAMIC_DISPATCH(RGBToYCbCr);
+    }
+  } else if (cinfo->jpeg_color_space == JCS_YCCK) {
+    if (cinfo->in_color_space == JCS_CMYK) {
+      m->color_transform = HWY_DYNAMIC_DISPATCH(CMYKToYCCK);
+    }
+  }
+
+  if (m->color_transform == nullptr) {
+    // TODO(szabadka) Support more color transforms.
+    JPEGLI_ERROR("Unsupported color transform %d -> %d", cinfo->in_color_space,
+                 cinfo->jpeg_color_space);
+  }
 }
 
 }  // namespace jpegli
