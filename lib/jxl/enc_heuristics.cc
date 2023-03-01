@@ -881,6 +881,7 @@ Status DefaultEncoderHeuristics::LossyFrameHeuristics(
     if (cparams.speed_tier <= SpeedTier::kSquirrel) {
       cfl_heuristics.ComputeTile(r, *opsin, enc_state->shared.matrices,
                                  /*ac_strategy=*/nullptr,
+                                 /*raw_quant_field=*/nullptr,
                                  /*quantizer=*/nullptr, /*fast=*/false, thread,
                                  &enc_state->shared.cmap);
     }
@@ -905,7 +906,7 @@ Status DefaultEncoderHeuristics::LossyFrameHeuristics(
     if (cparams.speed_tier <= SpeedTier::kHare) {
       cfl_heuristics.ComputeTile(
           r, *opsin, enc_state->shared.matrices, &enc_state->shared.ac_strategy,
-          &enc_state->shared.quantizer,
+          &enc_state->shared.raw_quant_field, &enc_state->shared.quantizer,
           /*fast=*/cparams.speed_tier >= SpeedTier::kWombat, thread,
           &enc_state->shared.cmap);
     }
