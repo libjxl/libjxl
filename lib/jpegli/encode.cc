@@ -386,13 +386,6 @@ void ProcessCompressionParams(j_compress_ptr cinfo) {
   }
   jpeg_comp_master* m = cinfo->master;
   m->next_marker_byte = nullptr;
-  if (cinfo->scan_info != nullptr) {
-    cinfo->progressive_mode =
-        cinfo->scan_info->Ss != 0 || cinfo->scan_info->Se != DCTSIZE2 - 1;
-    ValidateScanScript(cinfo);
-  } else {
-    cinfo->progressive_mode = cinfo->master->progressive_level > 0;
-  }
   cinfo->max_h_samp_factor = cinfo->max_v_samp_factor = 1;
   for (int c = 0; c < cinfo->num_components; ++c) {
     jpeg_component_info* comp = &cinfo->comp_info[c];
@@ -438,6 +431,12 @@ void ProcessCompressionParams(j_compress_ptr cinfo) {
     comp->width_in_blocks = DivCeil(comp->downsampled_width, DCTSIZE);
     comp->height_in_blocks = DivCeil(comp->downsampled_height, DCTSIZE);
   }
+  if (cinfo->scan_info == nullptr) {
+    SetDefaultScanScript(cinfo);
+  }
+  cinfo->progressive_mode =
+      cinfo->scan_info->Ss != 0 || cinfo->scan_info->Se != DCTSIZE2 - 1;
+  ValidateScanScript(cinfo);
 }
 
 template <typename T>
@@ -459,6 +458,12 @@ void WriteFileHeader(j_compress_ptr cinfo) {
   if (cinfo->write_Adobe_marker) {
     EncodeAPP14(cinfo);
   }
+}
+
+void WriteFrameHeader(j_compress_ptr cinfo) {
+  jpegli::FinalizeQuantMatrices(cinfo);
+  jpegli::EncodeDQT(cinfo);
+  jpegli::EncodeSOF(cinfo);
 }
 
 void EncodeScans(j_compress_ptr cinfo) {
@@ -889,6 +894,9 @@ JDIMENSION jpegli_write_scanlines(j_compress_ptr cinfo, JSAMPARRAY scanlines,
   if (cinfo->raw_data_in) {
     JPEGLI_ERROR("jpegli_write_raw_data() must be called for raw data mode.");
   }
+  if (cinfo->global_state == jpegli::kEncHeader) {
+    jpegli::WriteFrameHeader(cinfo);
+  }
   cinfo->global_state = jpegli::kEncReadImage;
   jpeg_comp_master* m = cinfo->master;
   if (num_lines + cinfo->next_scanline > cinfo->image_height) {
@@ -916,6 +924,9 @@ JDIMENSION jpegli_write_raw_data(j_compress_ptr cinfo, JSAMPIMAGE data,
   CheckState(cinfo, jpegli::kEncHeader, jpegli::kEncReadImage);
   if (!cinfo->raw_data_in) {
     JPEGLI_ERROR("jpegli_write_raw_data(): raw data mode was not set");
+  }
+  if (cinfo->global_state == jpegli::kEncHeader) {
+    jpegli::WriteFrameHeader(cinfo);
   }
   cinfo->global_state = jpegli::kEncReadImage;
   jpeg_comp_master* m = cinfo->master;
@@ -954,37 +965,20 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
                  cinfo->image_height, cinfo->next_scanline);
   }
 
-  if (!cinfo->raw_data_in && cinfo->global_state != jpegli::kEncWriteCoeffs) {
-    jpegli::ColorTransform(cinfo);
-    jpegli::PadInputToBlockMultiple(cinfo);
-    jpegli::DownsampleComponents(cinfo);
-  }
-  if (cinfo->global_state != jpegli::kEncWriteCoeffs) {
-    jpegli::ComputeAdaptiveQuantField(cinfo);
-  }
-
-  // DQT
-  jpegli::FinalizeQuantMatrices(cinfo);
-  jpegli::EncodeDQT(cinfo);
-
-  // SOF
-  jpegli::EncodeSOF(cinfo);
-
   if (cinfo->global_state == jpegli::kEncWriteCoeffs) {
+    jpegli::WriteFrameHeader(cinfo);
     jpegli::CopyCoefficients(cinfo);
+    jpegli::EncodeScans(cinfo);
   } else {
+    if (!cinfo->raw_data_in) {
+      jpegli::ColorTransform(cinfo);
+      jpegli::PadInputToBlockMultiple(cinfo);
+      jpegli::DownsampleComponents(cinfo);
+    }
+    jpegli::ComputeAdaptiveQuantField(cinfo);
     jpegli::ComputeDCTCoefficients(cinfo);
+    jpegli::EncodeScans(cinfo);
   }
-
-  if (cinfo->scan_info == nullptr) {
-    jpegli::SetDefaultScanScript(cinfo);
-    // This should never fail since we are generating the scan script above, but
-    // if there is a bug in the scan script generation code, it is better to
-    // fail here than to create a corrupt JPEG file.
-    jpegli::ValidateScanScript(cinfo);
-  }
-
-  jpegli::EncodeScans(cinfo);
 
   // EOI
   jpegli::WriteOutput(cinfo, {0xFF, 0xD9});

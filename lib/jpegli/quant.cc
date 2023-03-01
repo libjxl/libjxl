@@ -532,14 +532,14 @@ void FinalizeQuantMatrices(j_compress_ptr cinfo) {
 
   // Global scale is chosen in a way that butteraugli 3-norm matches libjpeg
   // with the same quality setting. Fitted for quality 90 on jyrki31 corpus.
-  constexpr float kGlobalScaleXYB = 0.86747522f;
-  constexpr float kGlobalScaleYCbCr = 1.03148720f;
+  constexpr float kGlobalScaleXYB = 1.44563150f;
+  constexpr float kGlobalScaleYCbCr = 1.73480749f;
 
   float ac_scale, dc_scale;
   const float* base_quant_matrix;
 
   if (cinfo->jpeg_color_space == JCS_RGB && m->xyb_mode) {
-    ac_scale = kGlobalScaleXYB * m->distance / m->quant_field_max;
+    ac_scale = kGlobalScaleXYB * m->distance;
     dc_scale = kGlobalScaleXYB / InitialQuantDC(m->distance);
     base_quant_matrix = kBaseQuantMatrixXYB;
   } else if (cinfo->jpeg_color_space == JCS_YCbCr && !m->use_std_tables &&
@@ -561,7 +561,7 @@ void FinalizeQuantMatrices(j_compress_ptr cinfo) {
     } else if (cicp_tf == kTransferFunctionHLG) {
       global_scale *= .5f;
     }
-    ac_scale = global_scale * m->distance / m->quant_field_max;
+    ac_scale = global_scale * m->distance;
     dc_scale = global_scale / InitialQuantDC(m->distance);
     base_quant_matrix = kBaseQuantMatrixYCbCr;
   } else {

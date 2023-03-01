@@ -359,9 +359,13 @@ std::vector<TestConfig> GenerateTests() {
     config.jparams.add_marker = true;
     all_tests.push_back(config);
   }
-  {
+  for (JpegIOMode input_mode : {PIXELS, RAW_DATA}) {
     TestConfig config;
     config.input.xsize = config.input.ysize = 256;
+    config.input_mode = input_mode;
+    if (input_mode == RAW_DATA) {
+      config.input.color_space = JCS_YCbCr;
+    }
     config.jparams.progressive_level = 0;
     config.jparams.optimize_coding = false;
     config.max_bpp = 1.8;
