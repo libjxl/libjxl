@@ -67,93 +67,6 @@ void InitializeCompressParams(j_compress_ptr cinfo) {
   cinfo->Y_density = 1;
 }
 
-bool CheckColorSpaceComponents(int num_components, J_COLOR_SPACE colorspace) {
-  switch (colorspace) {
-    case JCS_GRAYSCALE:
-      return num_components == 1;
-    case JCS_RGB:
-    case JCS_YCbCr:
-    case JCS_EXT_RGB:
-    case JCS_EXT_BGR:
-      return num_components == 3;
-    case JCS_CMYK:
-    case JCS_YCCK:
-    case JCS_EXT_RGBX:
-    case JCS_EXT_BGRX:
-    case JCS_EXT_XBGR:
-    case JCS_EXT_XRGB:
-    case JCS_EXT_RGBA:
-    case JCS_EXT_BGRA:
-    case JCS_EXT_ABGR:
-    case JCS_EXT_ARGB:
-      return num_components == 4;
-    default:
-      // Unrecognized colorspaces can have any number of channels, since no
-      // color transform will be performed on them.
-      return true;
-  }
-}
-
-void ColorTransform(j_compress_ptr cinfo) {
-  jpeg_comp_master* m = cinfo->master;
-
-  if (!CheckColorSpaceComponents(cinfo->input_components,
-                                 cinfo->in_color_space)) {
-    JPEGLI_ERROR("Invalid number of input components %d for colorspace %d",
-                 cinfo->input_components, cinfo->in_color_space);
-  }
-  if (!CheckColorSpaceComponents(cinfo->num_components,
-                                 cinfo->jpeg_color_space)) {
-    JPEGLI_ERROR("Invalid number of components %d for colorspace %d",
-                 cinfo->num_components, cinfo->jpeg_color_space);
-  }
-
-  if (cinfo->jpeg_color_space == cinfo->in_color_space) {
-    if (cinfo->num_components != cinfo->input_components) {
-      JPEGLI_ERROR("Input/output components mismatch:  %d vs %d",
-                   cinfo->input_components, cinfo->num_components);
-    }
-    // No color transform requested.
-    return;
-  }
-
-  if (cinfo->in_color_space == JCS_RGB && m->xyb_mode) {
-    JPEGLI_ERROR("Color transform on XYB colorspace is not supported.");
-  }
-
-  if (cinfo->jpeg_color_space == JCS_GRAYSCALE) {
-    if (cinfo->in_color_space == JCS_RGB) {
-      for (size_t y = 0; y < cinfo->image_height; ++y) {
-        RGBToYCbCr(m->input_buffer[0].Row(y), m->input_buffer[1].Row(y),
-                   m->input_buffer[2].Row(y), cinfo->image_width);
-      }
-    } else if (cinfo->in_color_space == JCS_YCbCr ||
-               cinfo->in_color_space == JCS_YCCK) {
-      // Since the first luminance channel is the grayscale version of the
-      // image, nothing to do here
-    }
-  } else if (cinfo->jpeg_color_space == JCS_YCbCr) {
-    if (cinfo->in_color_space == JCS_RGB) {
-      for (size_t y = 0; y < cinfo->image_height; ++y) {
-        RGBToYCbCr(m->input_buffer[0].Row(y), m->input_buffer[1].Row(y),
-                   m->input_buffer[2].Row(y), cinfo->image_width);
-      }
-    }
-  } else if (cinfo->jpeg_color_space == JCS_YCCK) {
-    if (cinfo->in_color_space == JCS_CMYK) {
-      for (size_t y = 0; y < cinfo->image_height; ++y) {
-        CMYKToYCCK(m->input_buffer[0].Row(y), m->input_buffer[1].Row(y),
-                   m->input_buffer[2].Row(y), m->input_buffer[3].Row(y),
-                   cinfo->image_width);
-      }
-    }
-  } else {
-    // TODO(szabadka) Support more color transforms.
-    JPEGLI_ERROR("Unsupported color transform %d -> %d", cinfo->in_color_space,
-                 cinfo->jpeg_color_space);
-  }
-}
-
 void PadInputToBlockMultiple(j_compress_ptr cinfo) {
   jpeg_comp_master* m = cinfo->master;
   const size_t xsize_padded = m->xsize_blocks * DCTSIZE;
@@ -783,6 +696,9 @@ void jpegli_start_compress(j_compress_ptr cinfo, boolean write_all_tables) {
     m->input_buffer[c].Allocate(m->ysize_blocks * DCTSIZE, stride);
   }
   jpegli::ChooseInputMethod(cinfo);
+  if (!cinfo->raw_data_in) {
+    jpegli::ChooseColorTransform(cinfo);
+  }
   if (write_all_tables) {
     jpegli_suppress_tables(cinfo, FALSE);
   }
@@ -914,6 +830,7 @@ JDIMENSION jpegli_write_scanlines(j_compress_ptr cinfo, JSAMPARRAY scanlines,
       continue;
     }
     (*m->input_method)(scanlines[i], cinfo->image_width, rows);
+    (*m->color_transform)(rows, cinfo->image_width);
   }
   cinfo->next_scanline += num_lines;
   return num_lines;
@@ -971,7 +888,6 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
     jpegli::EncodeScans(cinfo);
   } else {
     if (!cinfo->raw_data_in) {
-      jpegli::ColorTransform(cinfo);
       jpegli::PadInputToBlockMultiple(cinfo);
       jpegli::DownsampleComponents(cinfo);
     }

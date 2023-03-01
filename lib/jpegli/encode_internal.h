@@ -73,6 +73,7 @@ struct jpeg_comp_master {
   JpegliEndianness endianness = JPEGLI_NATIVE_ENDIAN;
   void (*input_method)(const uint8_t* row_in, size_t len,
                        float* row_out[jpegli::kMaxComponents]);
+  void (*color_transform)(float* row[jpegli::kMaxComponents], size_t len);
   std::array<jpegli::coeff_t*, jpegli::kMaxComponents> coefficients;
   jpegli::HuffmanCodeTable huff_tables[8];
   std::array<jpegli::HuffmanCodeTable, jpegli::kMaxHuffmanTables> dc_huff_table;
