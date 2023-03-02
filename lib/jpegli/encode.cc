@@ -13,6 +13,7 @@
 #include "lib/jpegli/bitstream.h"
 #include "lib/jpegli/color_transform.h"
 #include "lib/jpegli/dct.h"
+#include "lib/jpegli/downsample.h"
 #include "lib/jpegli/encode_internal.h"
 #include "lib/jpegli/entropy_coding.h"
 #include "lib/jpegli/error.h"
@@ -38,13 +39,6 @@ void CheckState(j_compress_ptr cinfo, int state1, int state2) {
   }
 }
 
-float LinearQualityToDistance(int scale_factor) {
-  scale_factor = std::min(5000, std::max(0, scale_factor));
-  int quality =
-      scale_factor < 100 ? 100 - scale_factor / 2 : 5000 / scale_factor;
-  return jpegli_quality_to_distance(quality);
-}
-
 // Initialize cinfo fields that are not dependent on input image. This is shared
 // between jpegli_CreateCompress() and jpegli_set_defaults()
 void InitializeCompressParams(j_compress_ptr cinfo) {
@@ -67,81 +61,17 @@ void InitializeCompressParams(j_compress_ptr cinfo) {
   cinfo->Y_density = 1;
 }
 
-void PadInputToBlockMultiple(j_compress_ptr cinfo) {
-  jpeg_comp_master* m = cinfo->master;
-  const size_t xsize_padded = m->xsize_blocks * DCTSIZE;
-  const size_t ysize_padded = m->ysize_blocks * DCTSIZE;
-  for (int c = 0; c < cinfo->num_components; ++c) {
-    for (size_t y = 0; y < cinfo->image_height; ++y) {
-      float* row = m->input_buffer[c].Row(y);
-      const float last_val = row[cinfo->image_width - 1];
-      for (size_t x = cinfo->image_width; x < xsize_padded; ++x) {
-        row[x] = last_val;
-      }
-    }
-    const float* last_row = m->input_buffer[c].Row(cinfo->image_height - 1);
-    for (size_t y = cinfo->image_height; y < ysize_padded; ++y) {
-      m->input_buffer[c].CopyRow(y, last_row, xsize_padded);
-    }
-  }
+float LinearQualityToDistance(int scale_factor) {
+  scale_factor = std::min(5000, std::max(0, scale_factor));
+  int quality =
+      scale_factor < 100 ? 100 - scale_factor / 2 : 5000 / scale_factor;
+  return jpegli_quality_to_distance(quality);
 }
 
-void Downsample(RowBuffer<float>* image, size_t orig_xsize, size_t orig_ysize,
-                size_t factor_x, size_t factor_y) {
-  if (factor_x == 1 && factor_y == 1) {
-    return;
-  }
-  size_t xsize = orig_xsize / factor_x;
-  size_t ysize = orig_ysize / factor_y;
-  for (size_t y = 0; y < ysize; y++) {
-    float* row_out = image->Row(y);
-    for (size_t x = 0; x < xsize; x++) {
-      size_t cnt = 0;
-      float sum = 0;
-      for (size_t iy = 0; iy < factor_y && iy + factor_y * y < orig_ysize;
-           iy++) {
-        const float* row_in = image->Row(factor_y * y + iy);
-        for (size_t ix = 0; ix < factor_x && ix + factor_x * x < orig_xsize;
-             ix++) {
-          sum += row_in[x * factor_x + ix];
-          cnt++;
-        }
-      }
-      row_out[x] = sum / cnt;
-    }
-  }
-}
-
-void DownsampleComponents(j_compress_ptr cinfo) {
-  jpeg_comp_master* m = cinfo->master;
-  for (int c = 0; c < cinfo->num_components; c++) {
-    jpeg_component_info* comp = &cinfo->comp_info[c];
-    JXL_DASSERT(cinfo->max_h_samp_factor % comp->h_samp_factor == 0);
-    JXL_DASSERT(cinfo->max_v_samp_factor % comp->v_samp_factor == 0);
-    const int h_factor = cinfo->max_h_samp_factor / comp->h_samp_factor;
-    const int v_factor = cinfo->max_v_samp_factor / comp->v_samp_factor;
-    Downsample(&m->input_buffer[c], m->xsize_blocks * DCTSIZE,
-               m->ysize_blocks * DCTSIZE, h_factor, v_factor);
-  }
-}
-
-void CopyCoefficients(j_compress_ptr cinfo) {
-  jpeg_comp_master* m = cinfo->master;
-  for (int c = 0; c < cinfo->num_components; c++) {
-    jpeg_component_info* comp = &cinfo->comp_info[c];
-    const size_t xsize_blocks = comp->width_in_blocks;
-    const size_t ysize_blocks = comp->height_in_blocks;
-    const size_t num_coeffs = xsize_blocks * ysize_blocks * kDCTBlockSize;
-    coeff_t* coeffs = Allocate<coeff_t>(cinfo, num_coeffs, JPOOL_IMAGE_ALIGNED);
-    m->coefficients[c] = coeffs;
-    for (size_t by = 0; by < ysize_blocks; ++by) {
-      JBLOCKARRAY ba = (*cinfo->mem->access_virt_barray)(
-          reinterpret_cast<j_common_ptr>(cinfo),
-          cinfo->master->coeff_buffers[c], by, 1, false);
-      JXL_ASSERT(sizeof(coeff_t) == sizeof(JCOEF));
-      memcpy(&coeffs[by * xsize_blocks * kDCTBlockSize], ba[0],
-             xsize_blocks * sizeof(ba[0][0]));
-    }
+template <typename T>
+void SetSentTableFlag(T** table_ptrs, size_t num, boolean val) {
+  for (size_t i = 0; i < num; ++i) {
+    if (table_ptrs[i]) table_ptrs[i]->sent_table = val;
   }
 }
 
@@ -331,6 +261,7 @@ void ProcessCompressionParams(j_compress_ptr cinfo) {
   cinfo->total_iMCU_rows = DivCeil(cinfo->image_height, iMCU_height);
   m->xsize_blocks = total_iMCU_cols * cinfo->max_h_samp_factor;
   m->ysize_blocks = cinfo->total_iMCU_rows * cinfo->max_v_samp_factor;
+
   for (int c = 0; c < cinfo->num_components; ++c) {
     jpeg_component_info* comp = &cinfo->comp_info[c];
     if (cinfo->max_h_samp_factor % comp->h_samp_factor != 0 ||
@@ -352,31 +283,79 @@ void ProcessCompressionParams(j_compress_ptr cinfo) {
   ValidateScanScript(cinfo);
 }
 
-template <typename T>
-void SetSentTableFlag(T** table_ptrs, size_t num, boolean val) {
-  for (size_t i = 0; i < num; ++i) {
-    if (table_ptrs[i]) table_ptrs[i]->sent_table = val;
+void ReadInputRow(j_compress_ptr cinfo, const uint8_t* scanline,
+                  float* row[kMaxComponents]) {
+  jpeg_comp_master* m = cinfo->master;
+  for (int c = 0; c < cinfo->input_components; ++c) {
+    row[c] = m->input_buffer[c].DirectRow(cinfo->next_scanline);
+  }
+  ++cinfo->next_scanline;
+  if (scanline == nullptr) {
+    for (int c = 0; c < cinfo->input_components; ++c) {
+      memset(row[c], 0, cinfo->image_width * sizeof(row[c][0]));
+    }
+    return;
+  }
+  (*m->input_method)(scanline, cinfo->image_width, row);
+}
+
+void PadInputBuffer(j_compress_ptr cinfo, float* row[kMaxComponents]) {
+  jpeg_comp_master* m = cinfo->master;
+  const size_t len0 = cinfo->image_width;
+  const size_t len1 = m->xsize_blocks * DCTSIZE;
+  for (int c = 0; c < cinfo->num_components; ++c) {
+    float last_val = row[c][len0 - 1];
+    for (size_t x = len0; x < len1; ++x) {
+      row[c][x] = last_val;
+    }
+  }
+  if (cinfo->next_scanline == cinfo->image_height) {
+    size_t num_rows = m->ysize_blocks * DCTSIZE - cinfo->image_height;
+    for (size_t i = 0; i < num_rows; ++i) {
+      for (int c = 0; c < cinfo->input_components; ++c) {
+        float* dest = m->input_buffer[c].DirectRow(cinfo->next_scanline);
+        memcpy(dest, row[c], len1 * sizeof(dest[0]));
+      }
+      ++cinfo->next_scanline;
+    }
+  }
+}
+
+void CopyCoefficients(j_compress_ptr cinfo) {
+  jpeg_comp_master* m = cinfo->master;
+  for (int c = 0; c < cinfo->num_components; c++) {
+    jpeg_component_info* comp = &cinfo->comp_info[c];
+    const size_t xsize_blocks = comp->width_in_blocks;
+    const size_t ysize_blocks = comp->height_in_blocks;
+    const size_t num_coeffs = xsize_blocks * ysize_blocks * kDCTBlockSize;
+    coeff_t* coeffs = Allocate<coeff_t>(cinfo, num_coeffs, JPOOL_IMAGE_ALIGNED);
+    m->coefficients[c] = coeffs;
+    for (size_t by = 0; by < ysize_blocks; ++by) {
+      JBLOCKARRAY ba = (*cinfo->mem->access_virt_barray)(
+          reinterpret_cast<j_common_ptr>(cinfo),
+          cinfo->master->coeff_buffers[c], by, 1, false);
+      JXL_ASSERT(sizeof(coeff_t) == sizeof(JCOEF));
+      memcpy(&coeffs[by * xsize_blocks * kDCTBlockSize], ba[0],
+             xsize_blocks * sizeof(ba[0][0]));
+    }
   }
 }
 
 void WriteFileHeader(j_compress_ptr cinfo) {
   (*cinfo->dest->init_destination)(cinfo);
-  // SOI
-  WriteOutput(cinfo, {0xFF, 0xD8});
-  // APP0
+  WriteOutput(cinfo, {0xFF, 0xD8});  // SOI
   if (cinfo->write_JFIF_header) {
     EncodeAPP0(cinfo);
   }
-  // APP14
   if (cinfo->write_Adobe_marker) {
     EncodeAPP14(cinfo);
   }
 }
 
 void WriteFrameHeader(j_compress_ptr cinfo) {
-  jpegli::FinalizeQuantMatrices(cinfo);
-  jpegli::EncodeDQT(cinfo);
-  jpegli::EncodeSOF(cinfo);
+  FinalizeQuantMatrices(cinfo);
+  EncodeDQT(cinfo);
+  EncodeSOF(cinfo);
 }
 
 void EncodeScans(j_compress_ptr cinfo) {
@@ -698,6 +677,7 @@ void jpegli_start_compress(j_compress_ptr cinfo, boolean write_all_tables) {
   jpegli::ChooseInputMethod(cinfo);
   if (!cinfo->raw_data_in) {
     jpegli::ChooseColorTransform(cinfo);
+    jpegli::ChooseDownsampleMethods(cinfo);
   }
   if (write_all_tables) {
     jpegli_suppress_tables(cinfo, FALSE);
@@ -726,17 +706,13 @@ void jpegli_write_tables(j_compress_ptr cinfo) {
     JPEGLI_ERROR("Missing destination.");
   }
   (*cinfo->dest->init_destination)(cinfo);
-  // SOI
-  jpegli::WriteOutput(cinfo, {0xFF, 0xD8});
-  // DQT
+  jpegli::WriteOutput(cinfo, {0xFF, 0xD8});  // SOI
   jpegli::FinalizeQuantMatrices(cinfo);
   jpegli::EncodeDQT(cinfo);
-  // DHT
   std::vector<jpegli::JPEGHuffmanCode> huffman_codes;
   jpegli::CopyHuffmanCodes(cinfo, &huffman_codes);
   jpegli::EncodeDHT(cinfo, huffman_codes.data(), huffman_codes.size());
-  // EOI
-  jpegli::WriteOutput(cinfo, {0xFF, 0xD9});
+  jpegli::WriteOutput(cinfo, {0xFF, 0xD9});  // EOI
   (*cinfo->dest->term_destination)(cinfo);
   jpegli_suppress_tables(cinfo, TRUE);
 }
@@ -819,20 +795,15 @@ JDIMENSION jpegli_write_scanlines(j_compress_ptr cinfo, JSAMPARRAY scanlines,
     num_lines = cinfo->image_height - cinfo->next_scanline;
   }
   float* rows[jpegli::kMaxComponents];
+  size_t iMCU_height = DCTSIZE * cinfo->max_v_samp_factor;
   for (size_t i = 0; i < num_lines; ++i) {
-    for (int c = 0; c < cinfo->input_components; ++c) {
-      rows[c] = m->input_buffer[c].Row(cinfo->next_scanline + i);
-    }
-    if (scanlines[i] == nullptr) {
-      for (int c = 0; c < cinfo->input_components; ++c) {
-        memset(rows[c], 0, cinfo->image_width * sizeof(rows[c][0]));
-      }
-      continue;
-    }
-    (*m->input_method)(scanlines[i], cinfo->image_width, rows);
+    jpegli::ReadInputRow(cinfo, scanlines[i], rows);
     (*m->color_transform)(rows, cinfo->image_width);
+    jpegli::PadInputBuffer(cinfo, rows);
+    if (cinfo->next_scanline % iMCU_height == 0) {
+      jpegli::DownsampleInputBuffer(cinfo);
+    }
   }
-  cinfo->next_scanline += num_lines;
   return num_lines;
 }
 
@@ -887,17 +858,12 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
     jpegli::CopyCoefficients(cinfo);
     jpegli::EncodeScans(cinfo);
   } else {
-    if (!cinfo->raw_data_in) {
-      jpegli::PadInputToBlockMultiple(cinfo);
-      jpegli::DownsampleComponents(cinfo);
-    }
     jpegli::ComputeAdaptiveQuantField(cinfo);
     jpegli::ComputeDCTCoefficients(cinfo);
     jpegli::EncodeScans(cinfo);
   }
 
-  // EOI
-  jpegli::WriteOutput(cinfo, {0xFF, 0xD9});
+  jpegli::WriteOutput(cinfo, {0xFF, 0xD9});  // EOI
   (*cinfo->dest->term_destination)(cinfo);
 
   // Release memory and reset global state.
