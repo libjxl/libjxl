@@ -275,6 +275,19 @@ void ProcessCompressionParams(j_compress_ptr cinfo) {
     comp->width_in_blocks = DivCeil(comp->downsampled_width, DCTSIZE);
     comp->height_in_blocks = DivCeil(comp->downsampled_height, DCTSIZE);
   }
+  // Disable adaptive quantization for subsampled luma channel.
+  int y_channel = cinfo->jpeg_color_space == JCS_RGB ? 1 : 0;
+  jpeg_component_info* y_comp = &cinfo->comp_info[y_channel];
+  if (y_comp->h_samp_factor != cinfo->max_h_samp_factor &&
+      y_comp->v_samp_factor != cinfo->max_v_samp_factor) {
+    m->use_adaptive_quantization = false;
+  }
+  if (m->use_adaptive_quantization) {
+    const size_t vecsize = VectorSize();
+    const size_t xsize_padded = DivCeil(2 * m->xsize_blocks, vecsize) * vecsize;
+    m->pre_erosion.Allocate(m->ysize_blocks * 2 + 2, xsize_padded);
+    m->quant_field.Allocate(m->ysize_blocks, m->xsize_blocks);
+  }
   if (cinfo->scan_info == nullptr) {
     SetDefaultScanScript(cinfo);
   }
@@ -304,20 +317,46 @@ void PadInputBuffer(j_compress_ptr cinfo, float* row[kMaxComponents]) {
   const size_t len0 = cinfo->image_width;
   const size_t len1 = m->xsize_blocks * DCTSIZE;
   for (int c = 0; c < cinfo->num_components; ++c) {
+    // Pad row to a multiple of the iMCU width, plus create a border of 1
+    // repeated pixel for adaptive quant field calculation.
     float last_val = row[c][len0 - 1];
-    for (size_t x = len0; x < len1; ++x) {
+    for (size_t x = len0; x <= len1; ++x) {
       row[c][x] = last_val;
     }
+    row[c][-1] = row[c][0];
   }
   if (cinfo->next_scanline == cinfo->image_height) {
     size_t num_rows = m->ysize_blocks * DCTSIZE - cinfo->image_height;
     for (size_t i = 0; i < num_rows; ++i) {
       for (int c = 0; c < cinfo->input_components; ++c) {
-        float* dest = m->input_buffer[c].DirectRow(cinfo->next_scanline);
-        memcpy(dest, row[c], len1 * sizeof(dest[0]));
+        float* dest = m->input_buffer[c].DirectRow(cinfo->next_scanline) - 1;
+        memcpy(dest, row[c] - 1, (len1 + 2) * sizeof(dest[0]));
       }
       ++cinfo->next_scanline;
     }
+  }
+}
+
+void ProcessiMCURow(j_compress_ptr cinfo) {
+  JXL_ASSERT(cinfo->master->next_iMCU_row < cinfo->total_iMCU_rows);
+  if (!cinfo->raw_data_in) {
+    DownsampleInputBuffer(cinfo);
+  }
+  jpegli::ComputeAdaptiveQuantField(cinfo);
+  ++cinfo->master->next_iMCU_row;
+}
+
+void ProcessiMCURows(j_compress_ptr cinfo) {
+  size_t iMCU_height = DCTSIZE * cinfo->max_v_samp_factor;
+  // To have context rows both above and below the current iMCU row, we delay
+  // processing the first iMCU row and process two iMCU rows after we receive
+  // the last input row.
+  if (cinfo->next_scanline % iMCU_height == 0 &&
+      cinfo->next_scanline > iMCU_height) {
+    jpegli::ProcessiMCURow(cinfo);
+  }
+  if (cinfo->next_scanline >= cinfo->image_height) {
+    jpegli::ProcessiMCURow(cinfo);
   }
 }
 
@@ -685,6 +724,7 @@ void jpegli_start_compress(j_compress_ptr cinfo, boolean write_all_tables) {
   (*cinfo->mem->realize_virt_arrays)(reinterpret_cast<j_common_ptr>(cinfo));
   jpegli::WriteFileHeader(cinfo);
   cinfo->next_scanline = 0;
+  m->next_iMCU_row = 0;
   cinfo->global_state = jpegli::kEncHeader;
 }
 
@@ -795,14 +835,11 @@ JDIMENSION jpegli_write_scanlines(j_compress_ptr cinfo, JSAMPARRAY scanlines,
     num_lines = cinfo->image_height - cinfo->next_scanline;
   }
   float* rows[jpegli::kMaxComponents];
-  size_t iMCU_height = DCTSIZE * cinfo->max_v_samp_factor;
   for (size_t i = 0; i < num_lines; ++i) {
     jpegli::ReadInputRow(cinfo, scanlines[i], rows);
     (*m->color_transform)(rows, cinfo->image_width);
     jpegli::PadInputBuffer(cinfo, rows);
-    if (cinfo->next_scanline % iMCU_height == 0) {
-      jpegli::DownsampleInputBuffer(cinfo);
-    }
+    jpegli::ProcessiMCURows(cinfo);
   }
   return num_lines;
 }
@@ -833,16 +870,20 @@ JDIMENSION jpegli_write_raw_data(j_compress_ptr cinfo, JSAMPIMAGE data,
     size_t xsize = comp->width_in_blocks * DCTSIZE;
     size_t ysize = comp->v_samp_factor * DCTSIZE;
     size_t y0 = iMCU_y * ysize;
+    auto& buffer = m->input_buffer[c];
     for (size_t i = 0; i < ysize; ++i) {
-      rows[0] = m->input_buffer[c].Row(y0 + i);
+      rows[0] = buffer.Row(y0 + i);
       if (plane[i] == nullptr) {
         memset(rows[0], 0, xsize * sizeof(rows[0][0]));
-        continue;
+      } else {
+        (*m->input_method)(plane[i], xsize, rows);
       }
-      (*m->input_method)(plane[i], xsize, rows);
+      // We need a border of 1 repeated pixel for adaptive quant field.
+      buffer.PadRow(y0 + i, xsize, /*border=*/1);
     }
   }
   cinfo->next_scanline += iMCU_height;
+  jpegli::ProcessiMCURows(cinfo);
   return iMCU_height;
 }
 
@@ -858,7 +899,6 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
     jpegli::CopyCoefficients(cinfo);
     jpegli::EncodeScans(cinfo);
   } else {
-    jpegli::ComputeAdaptiveQuantField(cinfo);
     jpegli::ComputeDCTCoefficients(cinfo);
     jpegli::EncodeScans(cinfo);
   }

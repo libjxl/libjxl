@@ -80,8 +80,10 @@ struct jpeg_comp_master {
   jpegli::HuffmanCodeTable huff_tables[8];
   std::array<jpegli::HuffmanCodeTable, jpegli::kMaxHuffmanTables> dc_huff_table;
   std::array<jpegli::HuffmanCodeTable, jpegli::kMaxHuffmanTables> ac_huff_table;
+  jpegli::RowBuffer<float> pre_erosion;
   jpegli::RowBuffer<float> quant_field;
   jvirt_barray_ptr* coeff_buffers = nullptr;
+  size_t next_iMCU_row;
 };
 
 #endif  // LIB_JPEGLI_ENCODE_INTERNAL_H_

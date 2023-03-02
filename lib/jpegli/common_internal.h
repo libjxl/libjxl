@@ -114,8 +114,20 @@ class RowBuffer {
   size_t ysize() const { return ysize_; };
   size_t stride() const { return stride_; }
 
-  void CopyRow(ssize_t y, const T* src, size_t len) {
-    memcpy(Row(y), src, len * sizeof(T));
+  void PadRow(size_t y, size_t from, int border) {
+    float* row = DirectRow(y);
+    for (int offset = -border; offset < 0; ++offset) {
+      row[offset] = row[0];
+    }
+    float last_val = row[from - 1];
+    for (size_t x = from; x < xsize_ + border; ++x) {
+      row[x] = last_val;
+    }
+  }
+
+  void CopyRow(ssize_t dst_row, ssize_t src_row, int border) {
+    memcpy(Row(dst_row) - border, Row(src_row) - border,
+           (xsize_ + 2 * border) * sizeof(T));
   }
 
   void FillRow(ssize_t y, T val, size_t len) {

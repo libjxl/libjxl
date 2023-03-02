@@ -315,9 +315,10 @@ V HfModulation(const D d, const size_t x, const size_t y,
 }
 
 void PerBlockModulations(const float butteraugli_target,
-                         const RowBuffer<float>& input, const float scale,
-                         RowBuffer<float>* aq_map) {
-  float base_level = 0.48f * scale;
+                         const RowBuffer<float>& input, const size_t yb0,
+                         const size_t yblen, RowBuffer<float>* aq_map) {
+  static const float kAcQuant = 0.841f;
+  float base_level = 0.48f * kAcQuant;
   float kDampenRampStart = 2.0f;
   float kDampenRampEnd = 14.0f;
   float dampen = 1.0f;
@@ -328,11 +329,12 @@ void PerBlockModulations(const float butteraugli_target,
       dampen = 0;
     }
   }
-  const float mul = scale * dampen;
+  const float mul = kAcQuant * dampen;
   const float add = (1.0f - dampen) * base_level;
-  for (size_t iy = 0; iy < aq_map->ysize(); iy++) {
-    const size_t y = iy * 8;
-    float* const JXL_RESTRICT row_out = aq_map->DirectRow(iy);
+  for (size_t iy = 0; iy < yblen; iy++) {
+    const size_t yb = yb0 + iy;
+    const size_t y = yb * 8;
+    float* const JXL_RESTRICT row_out = aq_map->DirectRow(yb);
     const HWY_CAPPED(float, 8) df;
     for (size_t ix = 0; ix < aq_map->xsize(); ix++) {
       size_t x = ix * 8;
@@ -389,11 +391,10 @@ void UpdateMin4(const V v, V& min0, V& min1, V& min2, V& min3) {
 
 // Computes a linear combination of the 4 lowest values of the 3x3 neighborhood
 // of each pixel. Output is downsampled 2x.
-void FuzzyErosion(const RowBuffer<float>& pre_erosion,
-                  RowBuffer<float>* aq_map) {
+void FuzzyErosion(const RowBuffer<float>& pre_erosion, const size_t yb0,
+                  const size_t yblen, RowBuffer<float>* aq_map) {
   int xsize_blocks = aq_map->xsize();
-  int xsize = pre_erosion.xsize() - 2;
-  int ysize = pre_erosion.ysize() - 2;
+  int xsize = pre_erosion.xsize();
   RowBuffer<float> tmp;
   tmp.Allocate(2, xsize);
   HWY_FULL(float) d;
@@ -401,10 +402,11 @@ void FuzzyErosion(const RowBuffer<float>& pre_erosion,
   const auto mul1 = Set(d, 0.075f);
   const auto mul2 = Set(d, 0.06f);
   const auto mul3 = Set(d, 0.05f);
-  for (int y = 0; y < ysize; ++y) {
-    const float* JXL_RESTRICT rowt = &pre_erosion.DirectRow(y)[1];
-    const float* JXL_RESTRICT rowm = &pre_erosion.DirectRow(y + 1)[1];
-    const float* JXL_RESTRICT rowb = &pre_erosion.DirectRow(y + 2)[1];
+  for (size_t iy = 0; iy < 2 * yblen; ++iy) {
+    size_t y = 2 * yb0 + iy;
+    const float* JXL_RESTRICT rowt = pre_erosion.DirectRow(y);
+    const float* JXL_RESTRICT rowm = pre_erosion.DirectRow(y + 1);
+    const float* JXL_RESTRICT rowb = pre_erosion.DirectRow(y + 2);
     float* row_out = tmp.DirectRow(y % 2);
     for (int x = 0; x < xsize; x += Lanes(d)) {
       int xm1 = x - 1;
@@ -423,9 +425,9 @@ void FuzzyErosion(const RowBuffer<float>& pre_erosion,
                          Add(Mul(mul2, min2), Mul(mul3, min3)));
       Store(v, d, row_out + x);
     }
-    if (y % 2 == 1) {
+    if (iy % 2 == 1) {
       const float* JXL_RESTRICT row_out0 = tmp.DirectRow(0);
-      float* JXL_RESTRICT aq_out = aq_map->DirectRow(y / 2);
+      float* JXL_RESTRICT aq_out = aq_map->DirectRow(yb0 + iy / 2);
       for (int bx = 0, x = 0; bx < xsize_blocks; ++bx, x += 2) {
         aq_out[bx] =
             (row_out[x] + row_out[x + 1] + row_out0[x] + row_out0[x + 1]);
@@ -434,18 +436,14 @@ void FuzzyErosion(const RowBuffer<float>& pre_erosion,
   }
 }
 
-void ComputePreErosion(const RowBuffer<float>& input, const size_t xsize_blocks,
-                       const size_t ysize_blocks,
-                       RowBuffer<float>* pre_erosion) {
-  const size_t xsize = xsize_blocks * 8;
-  const size_t ysize = ysize_blocks * 8;
-
-  const size_t vecsize = HWY_LANES(float);
-  const size_t xsize_padded = DivCeil(2 * xsize_blocks, vecsize) * vecsize;
-
+void ComputePreErosion(const RowBuffer<float>& input, const size_t y0,
+                       const size_t ylen, RowBuffer<float>* pre_erosion) {
+  const size_t xsize = input.xsize();
+  const size_t xsize_out = input.xsize() / 4;
+  const size_t y0_out = y0 / 4;
+  const int border = 1;
   hwy::AlignedFreeUniquePtr<float[]> diff_buffer =
-      hwy::AllocateAligned<float>(input.xsize() + 8);
-  pre_erosion->Allocate(ysize_blocks * 2 + 2, xsize_padded + 2);
+      hwy::AllocateAligned<float>(xsize + 8);
 
   // The XYB gamma is 3.0 to be able to decode faster with two muls.
   // Butteraugli's gamma is matching the gamma of human eye, around 2.6.
@@ -454,89 +452,58 @@ void ComputePreErosion(const RowBuffer<float>& input, const size_t xsize_blocks,
   // for quantization uses.
   static const float match_gamma_offset = 0.019 / kInputScaling;
 
-  const HWY_FULL(float) df;
+  const HWY_CAPPED(float, 8) df;
 
   static const float limit = 0.2f;
   // Computes image (padded to multiple of 8x8) of local pixel differences.
   // Subsample both directions by 4.
-  for (size_t y = 0; y < ysize; ++y) {
-    size_t y2 = y + 1 < ysize ? y + 1 : y;
+  for (size_t iy = 0; iy < ylen; ++iy) {
+    size_t y = y0 + iy;
+    size_t y2 = y + 1 < input.ysize() ? y + 1 : y;
     size_t y1 = y > 0 ? y - 1 : y;
-
     const float* row_in = input.DirectRow(y);
     const float* row_in1 = input.DirectRow(y1);
     const float* row_in2 = input.DirectRow(y2);
     float* JXL_RESTRICT row_out = diff_buffer.get();
-
-    auto scalar_pixel = [&](size_t x) {
-      const size_t x2 = x + 1 < xsize ? x + 1 : x;
-      const size_t x1 = x > 0 ? x - 1 : x;
-      const float base =
-          0.25f * (row_in2[x] + row_in1[x] + row_in[x1] + row_in[x2]);
-      const float gammac = RatioOfDerivativesOfCubicRootToSimpleGamma(
-          row_in[x] + match_gamma_offset);
-      float diff = gammac * (row_in[x] - base);
-      diff *= diff;
-      if (diff >= limit) {
-        diff = limit;
-      }
-      diff = MaskingSqrt(diff);
-      if ((y % 4) != 0) {
-        row_out[x] += diff;
-      } else {
-        row_out[x] = diff;
-      }
-    };
-
-    size_t x = 0;
-    // First pixel of the row.
-    scalar_pixel(x);
-    ++x;
-    // SIMD
     const auto match_gamma_offset_v = Set(df, match_gamma_offset);
     const auto quarter = Set(df, 0.25f);
-    for (; x + 1 + Lanes(df) < xsize; x += Lanes(df)) {
+    for (size_t x = 0; x < xsize; x += Lanes(df)) {
       const auto in = LoadU(df, row_in + x);
       const auto in_r = LoadU(df, row_in + x + 1);
       const auto in_l = LoadU(df, row_in + x - 1);
       const auto in_t = LoadU(df, row_in2 + x);
       const auto in_b = LoadU(df, row_in1 + x);
-      auto base = Mul(quarter, Add(Add(in_r, in_l), Add(in_t, in_b)));
-      auto gammacv =
+      const auto base = Mul(quarter, Add(Add(in_r, in_l), Add(in_t, in_b)));
+      const auto gammacv =
           RatioOfDerivativesOfCubicRootToSimpleGamma</*invert=*/false>(
               df, Add(in, match_gamma_offset_v));
       auto diff = Mul(gammacv, Sub(in, base));
       diff = Mul(diff, diff);
       diff = Min(diff, Set(df, limit));
       diff = MaskingSqrt(df, diff);
-      if ((y & 3) != 0) {
+      if ((iy & 3) != 0) {
         diff = Add(diff, LoadU(df, row_out + x));
       }
       StoreU(diff, df, row_out + x);
     }
-    // Scalar
-    for (; x < xsize; ++x) {
-      scalar_pixel(x);
-    }
-    if (y % 4 == 3) {
-      float* row_dout = &pre_erosion->DirectRow(1 + y / 4)[1];
-      size_t x = 0;
-      for (; x < 2 * xsize_blocks; x++) {
+    if (iy % 4 == 3) {
+      size_t y_out = 1 + y0_out + iy / 4;
+      float* row_dout = pre_erosion->DirectRow(y_out);
+      for (size_t x = 0; x < xsize_out; x++) {
         row_dout[x] = (row_out[x * 4] + row_out[x * 4 + 1] +
                        row_out[x * 4 + 2] + row_out[x * 4 + 3]) *
                       0.25f;
       }
-      row_dout[-1] = row_dout[0];
-      for (; x < xsize_padded + 1; ++x) {
-        row_dout[x] = row_dout[2 * xsize_blocks - 1];
-      }
+      pre_erosion->PadRow(y_out, xsize_out, border);
     }
   }
-  memcpy(pre_erosion->DirectRow(0), pre_erosion->DirectRow(1),
-         pre_erosion->xsize() * sizeof(float));
-  memcpy(pre_erosion->DirectRow(1 + 2 * ysize_blocks),
-         pre_erosion->DirectRow(2 * ysize_blocks),
-         pre_erosion->xsize() * sizeof(float));
+  if (y0 == 0) {
+    pre_erosion->CopyRow(0, 1, border);
+  }
+  if (y0 + ylen == input.ysize()) {
+    size_t ysize_out = input.ysize() / 4;
+    pre_erosion->CopyRow(ysize_out + 1, ysize_out, border);
+  }
 }
 
 }  // namespace
@@ -556,7 +523,6 @@ namespace {
 
 constexpr float kDcQuantPow = 0.66f;
 static const float kDcQuant = 1.913f;
-static const float kAcQuant = 0.841f;
 
 }  // namespace
 
@@ -570,47 +536,36 @@ float InitialQuantDC(float butteraugli_target) {
   return kDcQuant / butteraugli_target_dc;
 }
 
-void AdaptiveQuantizationMap(const float butteraugli_target,
-                             const RowBuffer<float>& input,
-                             RowBuffer<float>* aq_map) {
-  RowBuffer<float> pre_erosion;
-  HWY_DYNAMIC_DISPATCH(ComputePreErosion)
-  (input, aq_map->xsize(), aq_map->ysize(), &pre_erosion);
-  HWY_DYNAMIC_DISPATCH(FuzzyErosion)(pre_erosion, aq_map);
-  HWY_DYNAMIC_DISPATCH(PerBlockModulations)
-  (butteraugli_target, input, kAcQuant, aq_map);
-}
-
 void ComputeAdaptiveQuantField(j_compress_ptr cinfo) {
   jpeg_comp_master* m = cinfo->master;
-  const size_t xsize_blocks = DivCeil(cinfo->image_width, DCTSIZE);
-  const size_t ysize_blocks = DivCeil(cinfo->image_height, DCTSIZE);
+  if (!m->use_adaptive_quantization) {
+    return;
+  }
   int y_channel = cinfo->jpeg_color_space == JCS_RGB ? 1 : 0;
-  jpeg_component_info* y_comp = &cinfo->comp_info[y_channel];
-  m->quant_field.Allocate(ysize_blocks, xsize_blocks);
-  if (m->use_adaptive_quantization &&
-      y_comp->h_samp_factor == cinfo->max_h_samp_factor &&
-      y_comp->v_samp_factor == cinfo->max_v_samp_factor) {
-    JXL_ASSERT(y_comp->width_in_blocks == xsize_blocks);
-    JXL_ASSERT(y_comp->height_in_blocks == ysize_blocks);
-    jpegli::AdaptiveQuantizationMap(m->distance, m->input_buffer[y_channel],
-                                    &m->quant_field);
-    float qfmax = std::numeric_limits<float>::lowest();
-    for (size_t y = 0; y < ysize_blocks; ++y) {
-      const float* row = m->quant_field.DirectRow(y);
-      for (size_t x = 0; x < xsize_blocks; ++x) {
-        qfmax = std::max(qfmax, row[x]);
-      }
-    }
-    for (size_t y = 0; y < ysize_blocks; ++y) {
-      float* row = m->quant_field.DirectRow(y);
-      for (size_t x = 0; x < xsize_blocks; ++x) {
-        row[x] = (qfmax / row[x]) - 1.0f;
-      }
-    }
+  const RowBuffer<float>& input = m->input_buffer[y_channel];
+  const size_t yb0 = m->next_iMCU_row * cinfo->max_v_samp_factor;
+  const size_t yblen = cinfo->max_v_samp_factor;
+  size_t y0 = yb0 * DCTSIZE;
+  size_t ylen = cinfo->max_v_samp_factor * DCTSIZE;
+  bool is_last_iMCU_row = (y0 + ylen == input.ysize());
+  if (y0 == 0) {
+    ylen += 4;
   } else {
-    for (size_t y = 0; y < ysize_blocks; ++y) {
-      m->quant_field.FillRow(y, 0.0f, xsize_blocks);
+    y0 += 4;
+  }
+  if (is_last_iMCU_row) {
+    ylen -= 4;
+  }
+  HWY_DYNAMIC_DISPATCH(ComputePreErosion)
+  (input, y0, ylen, &m->pre_erosion);
+  HWY_DYNAMIC_DISPATCH(FuzzyErosion)
+  (m->pre_erosion, yb0, yblen, &m->quant_field);
+  HWY_DYNAMIC_DISPATCH(PerBlockModulations)
+  (m->distance, input, yb0, yblen, &m->quant_field);
+  for (int y = 0; y < cinfo->max_v_samp_factor; ++y) {
+    float* row = m->quant_field.DirectRow(yb0 + y);
+    for (size_t x = 0; x < m->xsize_blocks; ++x) {
+      row[x] = (0.6f / row[x]) - 1.0f;
     }
   }
 }

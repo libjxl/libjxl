@@ -282,8 +282,9 @@ void DownsampleInputBuffer(j_compress_ptr cinfo) {
     return;
   }
   jpeg_comp_master* m = cinfo->master;
-  const size_t y0 = cinfo->next_scanline - DCTSIZE * cinfo->max_v_samp_factor;
-  const size_t y1 = cinfo->next_scanline;
+  const size_t iMCU_height = DCTSIZE * cinfo->max_v_samp_factor;
+  const size_t y0 = m->next_iMCU_row * iMCU_height;
+  const size_t y1 = y0 + iMCU_height;
   const size_t xsize_padded = m->xsize_blocks * DCTSIZE;
   for (int c = 0; c < cinfo->num_components; c++) {
     jpeg_component_info* comp = &cinfo->comp_info[c];
