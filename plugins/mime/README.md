@@ -4,7 +4,7 @@ As `image/jxl` is now supported by [shared-mine-info 2.2](https://gitlab.freedes
 
 You can test if your system correctly understand the MIME type of JPEG XL image by obtaining an JPEG XL image, e.g. with
 ```bash
-wget https://github.com/libjxl/conformance/blob/master/testcases/bicycles/input.jxl
+wget https://raw.githubusercontent.com/libjxl/conformance/master/testcases/bicycles/input.jxl
 ```
 and with that sample JPEG XL file `input.jxl` (or any other valid JPEG XL file), run any of the following commands:
 ```bash
