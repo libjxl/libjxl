@@ -471,6 +471,8 @@ set(JPEGXL_INTERNAL_JPEGLI_SOURCES
   jpegli/decode_scan.cc
   jpegli/decode_scan.h
   jpegli/destination_manager.cc
+  jpegli/downsample.cc
+  jpegli/downsample.h
   jpegli/encode.cc
   jpegli/encode.h
   jpegli/encode_internal.h
