@@ -66,14 +66,14 @@ TEST(JxlTest, RoundtripSinglePixel) {
   TestImage t;
   t.SetDimensions(1, 1).AddFrame().ZeroFill();
   PackedPixelFile ppf_out;
-  EXPECT_EQ(Roundtrip(t.ppf(), {}, {}, nullptr, &ppf_out), 54);
+  EXPECT_EQ(Roundtrip(t.ppf(), {}, {}, nullptr, &ppf_out), 55);
 }
 
 TEST(JxlTest, RoundtripSinglePixelWithAlpha) {
   TestImage t;
   t.SetDimensions(1, 1).SetChannels(4).AddFrame().ZeroFill();
   PackedPixelFile ppf_out;
-  EXPECT_EQ(Roundtrip(t.ppf(), {}, {}, nullptr, &ppf_out), 58);
+  EXPECT_EQ(Roundtrip(t.ppf(), {}, {}, nullptr, &ppf_out), 59);
 }
 
 // Changing serialized signature causes Decode to fail.
@@ -270,7 +270,7 @@ TEST(JxlTest, RoundtripUnalignedD2) {
   cparams.distance = 2.0;
 
   PackedPixelFile ppf_out;
-  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, pool, &ppf_out), 482, 10);
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, pool, &ppf_out), 493, 10);
   EXPECT_THAT(ButteraugliDistance(t.ppf(), ppf_out), IsSlightlyBelow(1.72));
 }
 
@@ -297,7 +297,7 @@ TEST(JxlTest, RoundtripMultiGroup) {
   auto run_kitten = std::async(std::launch::async, test, SpeedTier::kKitten,
                                1.0f, 51595u, 11.7);
   auto run_wombat = std::async(std::launch::async, test, SpeedTier::kWombat,
-                               2.0f, 31000u, 20.0);
+                               2.0f, 31722u, 20.0);
 }
 
 TEST(JxlTest, RoundtripRGBToGrayscale) {
@@ -469,7 +469,7 @@ TEST(JxlTest, RoundtripNoGaborishNoAR) {
   cparams.AddOption(JXL_ENC_FRAME_SETTING_GABORISH, 0);
 
   PackedPixelFile ppf_out;
-  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, pool, &ppf_out), 37241, 100);
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, pool, &ppf_out), 37335, 100);
   EXPECT_THAT(ButteraugliDistance(t.ppf(), ppf_out), IsSlightlyBelow(1.8));
 }
 
@@ -488,7 +488,7 @@ TEST(JxlTest, RoundtripSmallNoGaborish) {
 
   PackedPixelFile ppf_out;
   EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, pool, &ppf_out), 749, 20);
-  EXPECT_THAT(ButteraugliDistance(t.ppf(), ppf_out), IsSlightlyBelow(1.4));
+  EXPECT_THAT(ButteraugliDistance(t.ppf(), ppf_out), IsSlightlyBelow(1.05));
 }
 
 TEST(JxlTest, RoundtripSmallPatchesAlpha) {
@@ -513,8 +513,8 @@ TEST(JxlTest, RoundtripSmallPatchesAlpha) {
   cparams.distance = 0.1f;
 
   PackedPixelFile ppf_out;
-  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, pool, &ppf_out), 620, 70);
-  EXPECT_THAT(ButteraugliDistance(t.ppf(), ppf_out), IsSlightlyBelow(0.02f));
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, pool, &ppf_out), 708, 70);
+  EXPECT_THAT(ButteraugliDistance(t.ppf(), ppf_out), IsSlightlyBelow(0.016f));
 }
 
 TEST(JxlTest, RoundtripSmallPatches) {
@@ -538,8 +538,8 @@ TEST(JxlTest, RoundtripSmallPatches) {
   cparams.distance = 0.1f;
 
   PackedPixelFile ppf_out;
-  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, pool, &ppf_out), 500, 100);
-  EXPECT_THAT(ButteraugliDistance(t.ppf(), ppf_out), IsSlightlyBelow(0.02f));
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, pool, &ppf_out), 605, 100);
+  EXPECT_THAT(ButteraugliDistance(t.ppf(), ppf_out), IsSlightlyBelow(0.016f));
 }
 
 // TODO(szabadka) Add encoder and decoder API functions that accept frame
@@ -730,7 +730,7 @@ TEST(JxlTest, RoundtripAlpha) {
       EXPECT_THAT(ButteraugliDistance(io.frames, io2.frames, cparams.ba_params,
                                       GetJxlCms(),
                                       /*distmap=*/nullptr),
-                  IsSlightlyBelow(1.25));
+                  IsSlightlyBelow(1.5));
     }
   }
 }
@@ -789,7 +789,7 @@ TEST(JxlTest, RoundtripAlphaPremultiplied) {
           EXPECT_THAT(ButteraugliDistance(io.frames, io2.frames,
                                           cparams.ba_params, GetJxlCms(),
                                           /*distmap=*/nullptr),
-                      IsSlightlyBelow(1.25));
+                      IsSlightlyBelow(1.5));
           EXPECT_TRUE(io2.UnpremultiplyAlpha());
           EXPECT_FALSE(io2.Main().AlphaIsPremultiplied());
         }
@@ -884,7 +884,7 @@ TEST(JxlTest, RoundtripAlpha16) {
 
   PackedPixelFile ppf_out;
   // TODO(szabadka) Investigate big size difference on i686
-  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, &pool, &ppf_out), 3620, 50);
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, &pool, &ppf_out), 3515, 50);
   EXPECT_THAT(ButteraugliDistance(t.ppf(), ppf_out), IsSlightlyBelow(0.7));
 }
 
@@ -1091,7 +1091,7 @@ TEST(JxlTest, RoundtripNoise) {
   cparams.AddOption(JXL_ENC_FRAME_SETTING_NOISE, 1);
 
   PackedPixelFile ppf_out;
-  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, pool, &ppf_out), 40616, 750);
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, pool, &ppf_out), 41456, 750);
   EXPECT_THAT(ButteraugliDistance(t.ppf(), ppf_out), IsSlightlyBelow(1.7));
 }
 
@@ -1386,7 +1386,7 @@ TEST(JxlTest, RoundtripProgressive) {
   cparams.AddOption(JXL_ENC_FRAME_SETTING_RESPONSIVE, 1);
 
   PackedPixelFile ppf_out;
-  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, &pool, &ppf_out), 55254, 750);
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, &pool, &ppf_out), 56307, 750);
   EXPECT_THAT(ButteraugliDistance(t.ppf(), ppf_out), IsSlightlyBelow(1.4));
 }
 

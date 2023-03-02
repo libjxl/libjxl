@@ -20,9 +20,9 @@ void GaborishInverse(Image3F* in_out, float mul, ThreadPool* pool) {
 
   // Only an approximation. One or even two 3x3, and rank-1 (separable) 5x5
   // are insufficient.
-  constexpr float kGaborish[5] = {
-      -0.092359145662814029f,  -0.039253623634014627f, 0.016176494530216929f,
-      0.00083458437774987476f, 0.004512465323949319f,
+  static const float kGaborish[5] = {
+      -0.088188686933903332f, -0.043510240843796254f, 0.016038526595420832f,
+      0.0013932467887255813f, 0.0042737176783204326f,
   };
   /*
     better would be:
