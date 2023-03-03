@@ -76,7 +76,11 @@ struct jpeg_comp_master {
   void (*color_transform)(float* row[jpegli::kMaxComponents], size_t len);
   void (*downsample_method[jpegli::kMaxComponents])(
       float* rows_in[MAX_SAMP_FACTOR], size_t len, float* row_out);
-  std::array<jpegli::coeff_t*, jpegli::kMaxComponents> coefficients;
+  float* quant_mul[jpegli::kMaxComponents];
+  float zero_bias_mul[jpegli::kMaxComponents];
+  jpegli::coeff_t* coefficients[jpegli::kMaxComponents];
+  int h_factor[jpegli::kMaxComponents];
+  int v_factor[jpegli::kMaxComponents];
   jpegli::HuffmanCodeTable huff_tables[8];
   std::array<jpegli::HuffmanCodeTable, jpegli::kMaxHuffmanTables> dc_huff_table;
   std::array<jpegli::HuffmanCodeTable, jpegli::kMaxHuffmanTables> ac_huff_table;
