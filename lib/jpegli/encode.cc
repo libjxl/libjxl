@@ -294,7 +294,7 @@ void AllocateBuffers(j_compress_ptr cinfo) {
   jpeg_comp_master* m = cinfo->master;
   for (int c = 0; c < cinfo->input_components; ++c) {
     size_t stride = m->xsize_blocks * DCTSIZE;
-    m->input_buffer[c].Allocate(m->ysize_blocks * DCTSIZE, stride);
+    m->input_buffer[c].Allocate(cinfo, m->ysize_blocks * DCTSIZE, stride);
   }
   m->coeff_buffers =
       Allocate<jvirt_barray_ptr>(cinfo, cinfo->num_components, JPOOL_IMAGE);
@@ -309,8 +309,11 @@ void AllocateBuffers(j_compress_ptr cinfo) {
   if (m->use_adaptive_quantization) {
     const size_t vecsize = VectorSize();
     const size_t xsize_padded = DivCeil(2 * m->xsize_blocks, vecsize) * vecsize;
-    m->pre_erosion.Allocate(m->ysize_blocks * 2 + 2, xsize_padded);
-    m->quant_field.Allocate(m->ysize_blocks, m->xsize_blocks);
+    m->diff_buffer = Allocate<float>(cinfo, m->xsize_blocks * DCTSIZE + 8,
+                                     JPOOL_IMAGE_ALIGNED);
+    m->fuzzy_erosion_tmp.Allocate(cinfo, 2, xsize_padded);
+    m->pre_erosion.Allocate(cinfo, m->ysize_blocks * 2 + 2, xsize_padded);
+    m->quant_field.Allocate(cinfo, m->ysize_blocks, m->xsize_blocks);
   }
 }
 

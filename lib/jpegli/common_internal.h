@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <hwy/aligned_allocator.h>
 
+#include "lib/jpegli/memory_manager.h"
 #include "lib/jpegli/simd.h"
 #include "lib/jxl/base/compiler_specific.h"  // for ssize_t
 #include "lib/jxl/base/status.h"             // for JXL_CHECK
@@ -91,7 +92,8 @@ constexpr uint32_t kJPEGZigZagOrder[64] = {
 template <typename T>
 class RowBuffer {
  public:
-  void Allocate(size_t num_rows, size_t rowsize) {
+  template <typename CInfoType>
+  void Allocate(CInfoType cinfo, size_t num_rows, size_t rowsize) {
     size_t vec_size = std::max(VectorSize(), sizeof(T));
     JXL_CHECK(vec_size % sizeof(T) == 0);
     size_t alignment = std::max<size_t>(HWY_ALIGNMENT, vec_size);
@@ -101,7 +103,7 @@ class RowBuffer {
     ysize_ = num_rows;
     stride_ = memstride / sizeof(T);
     offset_ = alignment / sizeof(T);
-    data_ = hwy::AllocateAligned<T>(ysize_ * stride_);
+    data_ = ::jpegli::Allocate<T>(cinfo, ysize_ * stride_, JPOOL_IMAGE_ALIGNED);
   }
 
   T* Row(ssize_t y) const {
@@ -142,7 +144,7 @@ class RowBuffer {
   size_t ysize_ = 0;
   size_t stride_ = 0;
   size_t offset_ = 0;
-  hwy::AlignedFreeUniquePtr<T[]> data_;
+  T* data_;
 };
 
 }  // namespace jpegli

@@ -83,6 +83,8 @@ struct jpeg_comp_master {
   jpegli::HuffmanCodeTable huff_tables[8];
   std::array<jpegli::HuffmanCodeTable, jpegli::kMaxHuffmanTables> dc_huff_table;
   std::array<jpegli::HuffmanCodeTable, jpegli::kMaxHuffmanTables> ac_huff_table;
+  float* diff_buffer;
+  jpegli::RowBuffer<float> fuzzy_erosion_tmp;
   jpegli::RowBuffer<float> pre_erosion;
   jpegli::RowBuffer<float> quant_field;
   jvirt_barray_ptr* coeff_buffers = nullptr;
