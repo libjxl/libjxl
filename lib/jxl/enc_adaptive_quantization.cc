@@ -196,18 +196,18 @@ template <class D, class V>
 V ColorModulation(const D d, const size_t x, const size_t y,
                   const ImageF& xyb_x, const ImageF& xyb_y, const ImageF& xyb_b,
                   const double butteraugli_target, V out_val) {
-  static const float kStrengthMul = 3.0;
+  static const float kStrengthMul = 4.0;
   static const float kRedRampStart = 0.045;
   static const float kRedRampLength = 0.09;
   static const float kBlueRampLength = 0.086890611400405895;
   static const float kBlueRampStart = 0.26973418507870539;
-  const float strength = kStrengthMul * (1.0f - 0.25f * butteraugli_target);
+  const float strength = kStrengthMul * (1.0f - 0.15f * butteraugli_target);
   if (strength < 0) {
     return out_val;
   }
   // x values are smaller than y and b values, need to take the difference into
   // account.
-  const float red_strength = strength * 6.5;
+  const float red_strength = strength * 6.0f;
   const float blue_strength = strength;
   {
     // Reduce some bits from areas not blue or red.
@@ -217,7 +217,8 @@ V ColorModulation(const D d, const size_t x, const size_t y,
   // Calculate how much of the 8x8 block is covered with blue or red.
   auto blue_coverage = Zero(d);
   auto red_coverage = Zero(d);
-  auto bias_y = Set(d, 0.15f);
+  auto bias_y = Set(d, 0.2f);
+  auto bias_y_add = Set(d, 0.1f);
   for (size_t dy = 0; dy < 8; ++dy) {
     const float* const JXL_RESTRICT row_in_x = xyb_x.Row(y + dy);
     const float* const JXL_RESTRICT row_in_y = xyb_y.Row(y + dy);
@@ -225,8 +226,8 @@ V ColorModulation(const D d, const size_t x, const size_t y,
     for (size_t dx = 0; dx < 8; dx += Lanes(d)) {
       const auto pixel_y = Load(d, row_in_y + x + dx);
       // Estimate redness-greeness relative to the intensity.
-      const auto pixel_xpy =
-          Div(Abs(Load(d, row_in_x + x + dx)), Max(pixel_y, bias_y));
+      const auto pixel_xpy = Div(Abs(Load(d, row_in_x + x + dx)),
+                                 Max(Add(bias_y_add, pixel_y), bias_y));
       const auto pixel_x =
           Max(Set(d, 0.0f), Sub(pixel_xpy, Set(d, kRedRampStart)));
       const auto pixel_b =
@@ -715,8 +716,8 @@ ImageF TileDistMap(const ImageF& distmap, int tile_size, int margin,
 }
 
 constexpr float kDcQuantPow = 0.87f;
-static const float kDcQuant = 1.29f;
-static const float kAcQuant = 0.839f;
+static const float kDcQuant = 1.295f;
+static const float kAcQuant = 0.854f;
 
 void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
                           PassesEncoderState* enc_state,
