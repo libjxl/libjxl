@@ -268,10 +268,10 @@ void ProcessCompressionParams(j_compress_ptr cinfo) {
         cinfo->max_v_samp_factor % comp->v_samp_factor != 0) {
       JPEGLI_ERROR("Non-integral sampling ratios are not supported.");
     }
-    const size_t h_factor = cinfo->max_h_samp_factor / comp->h_samp_factor;
-    const size_t v_factor = cinfo->max_v_samp_factor / comp->v_samp_factor;
-    comp->downsampled_width = DivCeil(cinfo->image_width, h_factor);
-    comp->downsampled_height = DivCeil(cinfo->image_height, v_factor);
+    m->h_factor[c] = cinfo->max_h_samp_factor / comp->h_samp_factor;
+    m->v_factor[c] = cinfo->max_v_samp_factor / comp->v_samp_factor;
+    comp->downsampled_width = DivCeil(cinfo->image_width, m->h_factor[c]);
+    comp->downsampled_height = DivCeil(cinfo->image_height, m->v_factor[c]);
     comp->width_in_blocks = DivCeil(comp->downsampled_width, DCTSIZE);
     comp->height_in_blocks = DivCeil(comp->downsampled_height, DCTSIZE);
   }
@@ -282,18 +282,33 @@ void ProcessCompressionParams(j_compress_ptr cinfo) {
       y_comp->v_samp_factor != cinfo->max_v_samp_factor) {
     m->use_adaptive_quantization = false;
   }
-  if (m->use_adaptive_quantization) {
-    const size_t vecsize = VectorSize();
-    const size_t xsize_padded = DivCeil(2 * m->xsize_blocks, vecsize) * vecsize;
-    m->pre_erosion.Allocate(m->ysize_blocks * 2 + 2, xsize_padded);
-    m->quant_field.Allocate(m->ysize_blocks, m->xsize_blocks);
-  }
   if (cinfo->scan_info == nullptr) {
     SetDefaultScanScript(cinfo);
   }
   cinfo->progressive_mode =
       cinfo->scan_info->Ss != 0 || cinfo->scan_info->Se != DCTSIZE2 - 1;
   ValidateScanScript(cinfo);
+}
+
+void AllocateBuffers(j_compress_ptr cinfo) {
+  jpeg_comp_master* m = cinfo->master;
+  for (int c = 0; c < cinfo->input_components; ++c) {
+    size_t stride = m->xsize_blocks * DCTSIZE;
+    m->input_buffer[c].Allocate(m->ysize_blocks * DCTSIZE, stride);
+  }
+  for (int c = 0; c < cinfo->num_components; ++c) {
+    jpeg_component_info* comp = &cinfo->comp_info[c];
+    const size_t xsize_blocks = comp->width_in_blocks;
+    const size_t ysize_blocks = comp->height_in_blocks;
+    size_t ncoeffs = xsize_blocks * ysize_blocks * DCTSIZE2;
+    m->coefficients[c] = Allocate<coeff_t>(cinfo, ncoeffs, JPOOL_IMAGE_ALIGNED);
+  }
+  if (m->use_adaptive_quantization) {
+    const size_t vecsize = VectorSize();
+    const size_t xsize_padded = DivCeil(2 * m->xsize_blocks, vecsize) * vecsize;
+    m->pre_erosion.Allocate(m->ysize_blocks * 2 + 2, xsize_padded);
+    m->quant_field.Allocate(m->ysize_blocks, m->xsize_blocks);
+  }
 }
 
 void ReadInputRow(j_compress_ptr cinfo, const uint8_t* scanline,
@@ -343,6 +358,7 @@ void ProcessiMCURow(j_compress_ptr cinfo) {
     DownsampleInputBuffer(cinfo);
   }
   jpegli::ComputeAdaptiveQuantField(cinfo);
+  jpegli::ComputeDCTCoefficients(cinfo);
   ++cinfo->master->next_iMCU_row;
 }
 
@@ -708,11 +724,7 @@ void jpegli_suppress_tables(j_compress_ptr cinfo, boolean suppress) {
 void jpegli_start_compress(j_compress_ptr cinfo, boolean write_all_tables) {
   CheckState(cinfo, jpegli::kEncStart);
   jpegli::ProcessCompressionParams(cinfo);
-  jpeg_comp_master* m = cinfo->master;
-  size_t stride = m->xsize_blocks * DCTSIZE;
-  for (int c = 0; c < cinfo->input_components; ++c) {
-    m->input_buffer[c].Allocate(m->ysize_blocks * DCTSIZE, stride);
-  }
+  jpegli::AllocateBuffers(cinfo);
   jpegli::ChooseInputMethod(cinfo);
   if (!cinfo->raw_data_in) {
     jpegli::ChooseColorTransform(cinfo);
@@ -724,7 +736,7 @@ void jpegli_start_compress(j_compress_ptr cinfo, boolean write_all_tables) {
   (*cinfo->mem->realize_virt_arrays)(reinterpret_cast<j_common_ptr>(cinfo));
   jpegli::WriteFileHeader(cinfo);
   cinfo->next_scanline = 0;
-  m->next_iMCU_row = 0;
+  cinfo->master->next_iMCU_row = 0;
   cinfo->global_state = jpegli::kEncHeader;
 }
 
@@ -899,7 +911,6 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
     jpegli::CopyCoefficients(cinfo);
     jpegli::EncodeScans(cinfo);
   } else {
-    jpegli::ComputeDCTCoefficients(cinfo);
     jpegli::EncodeScans(cinfo);
   }
 

@@ -31,9 +31,6 @@ using hwy::HWY_NAMESPACE::Rebind;
 using hwy::HWY_NAMESPACE::Round;
 using hwy::HWY_NAMESPACE::Sub;
 
-constexpr float kZeroBiasMulXYB[] = {0.5f, 0.5f, 0.5f};
-constexpr float kZeroBiasMulYCbCr[] = {0.7f, 1.0f, 0.8f};
-
 using D = HWY_FULL(float);
 using D8 = HWY_CAPPED(float, 8);
 using DI = HWY_FULL(int32_t);
@@ -308,46 +305,33 @@ static constexpr float kDCBias = 128.0f;
 
 void ComputeDCTCoefficients(j_compress_ptr cinfo) {
   jpeg_comp_master* m = cinfo->master;
-  std::vector<float> zero_bias_mul(cinfo->num_components, 0.5f);
-  const bool xyb = m->xyb_mode && cinfo->jpeg_color_space == JCS_RGB;
-  if (m->distance <= 1.0f) {
-    for (int c = 0; c < 3 && c < cinfo->num_components; ++c) {
-      zero_bias_mul[c] = xyb ? kZeroBiasMulXYB[c] : kZeroBiasMulYCbCr[c];
-    }
-  }
   HWY_ALIGN float dct[kDCTBlockSize];
   HWY_ALIGN float scratch_space[kDCTBlockSize];
-  HWY_ALIGN float qmc[kDCTBlockSize];
   for (int c = 0; c < cinfo->num_components; c++) {
     jpeg_component_info* comp = &cinfo->comp_info[c];
-    const size_t xsize_blocks = comp->width_in_blocks;
-    const size_t ysize_blocks = comp->height_in_blocks;
-    JXL_DASSERT(cinfo->max_h_samp_factor % comp->h_samp_factor == 0);
-    JXL_DASSERT(cinfo->max_v_samp_factor % comp->v_samp_factor == 0);
-    const int h_factor = cinfo->max_h_samp_factor / comp->h_samp_factor;
-    const int v_factor = cinfo->max_v_samp_factor / comp->v_samp_factor;
-    size_t num_coeffs = xsize_blocks * ysize_blocks * kDCTBlockSize;
-    coeff_t* coeffs = Allocate<coeff_t>(cinfo, num_coeffs, JPOOL_IMAGE_ALIGNED);
-    m->coefficients[c] = coeffs;
-    JQUANT_TBL* quant_table = cinfo->quant_tbl_ptrs[comp->quant_tbl_no];
-    for (size_t k = 0; k < kDCTBlockSize; k++) {
-      qmc[k] = 8.0f / quant_table->quantval[k];
-    }
+    coeff_t* coeffs = m->coefficients[c];
+    float* qmc = m->quant_mul[c];
     RowBuffer<float>* plane = &m->input_buffer[c];
-    for (size_t by = 0, bix = 0; by < ysize_blocks; by++) {
+    const int h_factor = m->h_factor[c];
+    const int v_factor = m->v_factor[c];
+    size_t by0 = m->next_iMCU_row * comp->v_samp_factor;
+    for (int iy = 0; iy < comp->v_samp_factor; iy++) {
+      size_t by = by0 + iy;
+      if (by >= comp->height_in_blocks) continue;
       const float* row = plane->DirectRow(8 * by);
-      for (size_t bx = 0; bx < xsize_blocks; bx++, bix++) {
+      for (size_t bx = 0; bx < comp->width_in_blocks; bx++) {
+        size_t bix = by * comp->width_in_blocks + bx;
         coeff_t* block = &coeffs[bix * kDCTBlockSize];
         TransformFromPixels(row + 8 * bx, plane->stride(), dct, scratch_space);
         if (m->use_adaptive_quantization) {
           // Create more zeros in areas where jpeg xl would have used a lower
           // quantization multiplier.
           float relq = m->quant_field.DirectRow(by * v_factor)[bx * h_factor];
-          float zero_bias = 0.5f + zero_bias_mul[c] * relq;
+          float zero_bias = 0.5f + m->zero_bias_mul[c] * relq;
           zero_bias = std::min(1.5f, zero_bias);
-          QuantizeBlock(dct, &qmc[0], zero_bias, block);
+          QuantizeBlock(dct, qmc, zero_bias, block);
         } else {
-          QuantizeBlockNoAQ(dct, &qmc[0], block);
+          QuantizeBlockNoAQ(dct, qmc, block);
         }
         // Center DC values around zero.
         block[0] = std::round((dct[0] - kDCBias) * qmc[0]);
