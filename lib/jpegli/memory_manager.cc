@@ -10,6 +10,7 @@
 #include <hwy/aligned_allocator.h>
 #include <vector>
 
+#include "lib/jpegli/common_internal.h"
 #include "lib/jpegli/error.h"
 
 struct jvirt_sarray_control {
@@ -55,8 +56,14 @@ template <typename T>
 T** Alloc2dArray(j_common_ptr cinfo, int pool_id, JDIMENSION samplesperrow,
                  JDIMENSION numrows) {
   T** array = Allocate<T*>(cinfo, numrows, pool_id);
+  // Always use aligned allocator for large 2d arrays.
+  if (pool_id < JPOOL_NUMPOOLS) {
+    pool_id += JPOOL_NUMPOOLS;
+  }
+  size_t stride = RoundUpTo(samplesperrow, HWY_ALIGNMENT);
+  T* buffer = Allocate<T>(cinfo, numrows * stride, pool_id);
   for (size_t i = 0; i < numrows; ++i) {
-    array[i] = Allocate<T>(cinfo, samplesperrow, pool_id);
+    array[i] = &buffer[i * stride];
   }
   return array;
 }
