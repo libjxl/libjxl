@@ -110,14 +110,12 @@ class RowBuffer {
     return &data_[((ysize_ + y) % ysize_) * stride_ + offset_];
   }
 
-  T* DirectRow(size_t y) const { return &data_[y * stride_ + offset_]; }
-
   size_t xsize() const { return xsize_; };
   size_t ysize() const { return ysize_; };
   size_t stride() const { return stride_; }
 
   void PadRow(size_t y, size_t from, int border) {
-    float* row = DirectRow(y);
+    float* row = Row(y);
     for (int offset = -border; offset < 0; ++offset) {
       row[offset] = row[0];
     }

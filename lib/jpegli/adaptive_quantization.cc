@@ -265,10 +265,11 @@ V GammaModulation(const D d, const size_t x, const size_t y,
   auto overall_ratio = Zero(d);
   const auto bias = Set(d, kBias);
   const auto scale = Set(d, kScale);
+  const float* const JXL_RESTRICT block_start = input.Row(y) + x;
   for (size_t dy = 0; dy < 8; ++dy) {
-    const float* const JXL_RESTRICT row_in_y = input.DirectRow(y + dy);
+    const float* const JXL_RESTRICT row_in = block_start + dy * input.stride();
     for (size_t dx = 0; dx < 8; dx += Lanes(d)) {
-      const auto iny = Add(Load(d, row_in_y + x + dx), bias);
+      const auto iny = Add(Load(d, row_in + dx), bias);
       const auto ratio_g =
           RatioOfDerivativesOfCubicRootToSimpleGamma</*invert=*/true>(d, iny);
       overall_ratio = Add(overall_ratio, ratio_g);
@@ -295,10 +296,11 @@ V HfModulation(const D d, const size_t x, const size_t y,
   static const float kSumCoeff = -2.0052193233688884f * kInputScaling / 112.0;
   auto sumcoeff = Set(d, kSumCoeff);
 
+  const float* const JXL_RESTRICT block_start = input.Row(y) + x;
   for (size_t dy = 0; dy < 8; ++dy) {
-    const float* JXL_RESTRICT row_in = input.DirectRow(y + dy) + x;
+    const float* JXL_RESTRICT row_in = block_start + dy * input.stride();
     const float* JXL_RESTRICT row_in_next =
-        dy == 7 ? row_in : input.DirectRow(y + dy + 1) + x;
+        dy == 7 ? row_in : row_in + input.stride();
 
     for (size_t dx = 0; dx < 8; dx += Lanes(d)) {
       const auto p = Load(d, row_in + dx);
@@ -334,7 +336,7 @@ void PerBlockModulations(const float butteraugli_target,
   for (size_t iy = 0; iy < yblen; iy++) {
     const size_t yb = yb0 + iy;
     const size_t y = yb * 8;
-    float* const JXL_RESTRICT row_out = aq_map->DirectRow(yb);
+    float* const JXL_RESTRICT row_out = aq_map->Row(yb);
     const HWY_CAPPED(float, 8) df;
     for (size_t ix = 0; ix < aq_map->xsize(); ix++) {
       size_t x = ix * 8;
@@ -403,10 +405,10 @@ void FuzzyErosion(const RowBuffer<float>& pre_erosion, const size_t yb0,
   const auto mul3 = Set(d, 0.05f);
   for (size_t iy = 0; iy < 2 * yblen; ++iy) {
     size_t y = 2 * yb0 + iy;
-    const float* JXL_RESTRICT rowt = pre_erosion.DirectRow(y);
-    const float* JXL_RESTRICT rowm = pre_erosion.DirectRow(y + 1);
-    const float* JXL_RESTRICT rowb = pre_erosion.DirectRow(y + 2);
-    float* row_out = tmp->DirectRow(y % 2);
+    const float* JXL_RESTRICT rowt = pre_erosion.Row(y - 1);
+    const float* JXL_RESTRICT rowm = pre_erosion.Row(y);
+    const float* JXL_RESTRICT rowb = pre_erosion.Row(y + 1);
+    float* row_out = tmp->Row(y);
     for (int x = 0; x < xsize; x += Lanes(d)) {
       int xm1 = x - 1;
       int xp1 = x + 1;
@@ -425,8 +427,8 @@ void FuzzyErosion(const RowBuffer<float>& pre_erosion, const size_t yb0,
       Store(v, d, row_out + x);
     }
     if (iy % 2 == 1) {
-      const float* JXL_RESTRICT row_out0 = tmp->DirectRow(0);
-      float* JXL_RESTRICT aq_out = aq_map->DirectRow(yb0 + iy / 2);
+      const float* JXL_RESTRICT row_out0 = tmp->Row(y - 1);
+      float* JXL_RESTRICT aq_out = aq_map->Row(yb0 + iy / 2);
       for (int bx = 0, x = 0; bx < xsize_blocks; ++bx, x += 2) {
         aq_out[bx] =
             (row_out[x] + row_out[x + 1] + row_out0[x] + row_out0[x + 1]);
@@ -435,13 +437,11 @@ void FuzzyErosion(const RowBuffer<float>& pre_erosion, const size_t yb0,
   }
 }
 
-void ComputePreErosion(const RowBuffer<float>& input, const size_t y0,
-                       const size_t ylen, float* diff_buffer,
-                       RowBuffer<float>* pre_erosion) {
-  const size_t xsize = input.xsize();
-  const size_t xsize_out = input.xsize() / 4;
+void ComputePreErosion(const RowBuffer<float>& input, const size_t xsize,
+                       const size_t y0, const size_t ylen, int border,
+                       float* diff_buffer, RowBuffer<float>* pre_erosion) {
+  const size_t xsize_out = xsize / 4;
   const size_t y0_out = y0 / 4;
-  const int border = 1;
 
   // The XYB gamma is 3.0 to be able to decode faster with two muls.
   // Butteraugli's gamma is matching the gamma of human eye, around 2.6.
@@ -457,11 +457,9 @@ void ComputePreErosion(const RowBuffer<float>& input, const size_t y0,
   // Subsample both directions by 4.
   for (size_t iy = 0; iy < ylen; ++iy) {
     size_t y = y0 + iy;
-    size_t y2 = y + 1 < input.ysize() ? y + 1 : y;
-    size_t y1 = y > 0 ? y - 1 : y;
-    const float* row_in = input.DirectRow(y);
-    const float* row_in1 = input.DirectRow(y1);
-    const float* row_in2 = input.DirectRow(y2);
+    const float* row_in = input.Row(y);
+    const float* row_in1 = input.Row(y + 1);
+    const float* row_in2 = input.Row(y - 1);
     float* JXL_RESTRICT row_out = diff_buffer;
     const auto match_gamma_offset_v = Set(df, match_gamma_offset);
     const auto quarter = Set(df, 0.25f);
@@ -485,8 +483,8 @@ void ComputePreErosion(const RowBuffer<float>& input, const size_t y0,
       StoreU(diff, df, row_out + x);
     }
     if (iy % 4 == 3) {
-      size_t y_out = 1 + y0_out + iy / 4;
-      float* row_dout = pre_erosion->DirectRow(y_out);
+      size_t y_out = y0_out + iy / 4;
+      float* row_dout = pre_erosion->Row(y_out);
       for (size_t x = 0; x < xsize_out; x++) {
         row_dout[x] = (row_out[x * 4] + row_out[x * 4 + 1] +
                        row_out[x * 4 + 2] + row_out[x * 4 + 3]) *
@@ -494,13 +492,6 @@ void ComputePreErosion(const RowBuffer<float>& input, const size_t y0,
       }
       pre_erosion->PadRow(y_out, xsize_out, border);
     }
-  }
-  if (y0 == 0) {
-    pre_erosion->CopyRow(0, 1, border);
-  }
-  if (y0 + ylen == input.ysize()) {
-    size_t ysize_out = input.ysize() / 4;
-    pre_erosion->CopyRow(ysize_out + 1, ysize_out, border);
   }
 }
 
@@ -521,6 +512,7 @@ namespace {
 
 constexpr float kDcQuantPow = 0.66f;
 static const float kDcQuant = 1.913f;
+static constexpr int kPreErosionBorder = 1;
 
 }  // namespace
 
@@ -540,29 +532,45 @@ void ComputeAdaptiveQuantField(j_compress_ptr cinfo) {
     return;
   }
   int y_channel = cinfo->jpeg_color_space == JCS_RGB ? 1 : 0;
+  jpeg_component_info* y_comp = &cinfo->comp_info[y_channel];
+  if (m->next_iMCU_row == 0) {
+    m->input_buffer[y_channel].CopyRow(-1, 0, 1);
+  }
+  if (m->next_iMCU_row + 1 == cinfo->total_iMCU_rows) {
+    size_t last_row = m->ysize_blocks * DCTSIZE - 1;
+    m->input_buffer[y_channel].CopyRow(last_row + 1, last_row, 1);
+  }
   const RowBuffer<float>& input = m->input_buffer[y_channel];
+  const size_t xsize_blocks = y_comp->width_in_blocks;
+  const size_t xsize = xsize_blocks * DCTSIZE;
   const size_t yb0 = m->next_iMCU_row * cinfo->max_v_samp_factor;
   const size_t yblen = cinfo->max_v_samp_factor;
   size_t y0 = yb0 * DCTSIZE;
   size_t ylen = cinfo->max_v_samp_factor * DCTSIZE;
-  bool is_last_iMCU_row = (y0 + ylen == input.ysize());
   if (y0 == 0) {
     ylen += 4;
   } else {
     y0 += 4;
   }
-  if (is_last_iMCU_row) {
+  if (m->next_iMCU_row + 1 == cinfo->total_iMCU_rows) {
     ylen -= 4;
   }
   HWY_DYNAMIC_DISPATCH(ComputePreErosion)
-  (input, y0, ylen, m->diff_buffer, &m->pre_erosion);
+  (input, xsize, y0, ylen, kPreErosionBorder, m->diff_buffer, &m->pre_erosion);
+  if (y0 == 0) {
+    m->pre_erosion.CopyRow(-1, 0, kPreErosionBorder);
+  }
+  if (m->next_iMCU_row + 1 == cinfo->total_iMCU_rows) {
+    size_t last_row = m->ysize_blocks * 2 - 1;
+    m->pre_erosion.CopyRow(last_row + 1, last_row, kPreErosionBorder);
+  }
   HWY_DYNAMIC_DISPATCH(FuzzyErosion)
   (m->pre_erosion, yb0, yblen, &m->fuzzy_erosion_tmp, &m->quant_field);
   HWY_DYNAMIC_DISPATCH(PerBlockModulations)
   (m->distance, input, yb0, yblen, &m->quant_field);
   for (int y = 0; y < cinfo->max_v_samp_factor; ++y) {
-    float* row = m->quant_field.DirectRow(yb0 + y);
-    for (size_t x = 0; x < m->xsize_blocks; ++x) {
+    float* row = m->quant_field.Row(yb0 + y);
+    for (size_t x = 0; x < xsize_blocks; ++x) {
       row[x] = (0.6f / row[x]) - 1.0f;
     }
   }
