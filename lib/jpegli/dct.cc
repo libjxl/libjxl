@@ -309,19 +309,23 @@ void ComputeDCTCoefficients(j_compress_ptr cinfo) {
   HWY_ALIGN float scratch_space[kDCTBlockSize];
   for (int c = 0; c < cinfo->num_components; c++) {
     jpeg_component_info* comp = &cinfo->comp_info[c];
-    coeff_t* coeffs = m->coefficients[c];
+    int by0 = m->next_iMCU_row * comp->v_samp_factor;
+    int block_rows_left = comp->height_in_blocks - by0;
+    int max_block_rows = std::min(comp->v_samp_factor, block_rows_left);
+    JBLOCKARRAY ba = (*cinfo->mem->access_virt_barray)(
+        reinterpret_cast<j_common_ptr>(cinfo), m->coeff_buffers[c], by0,
+        max_block_rows, true);
     float* qmc = m->quant_mul[c];
     RowBuffer<float>* plane = &m->input_buffer[c];
     const int h_factor = m->h_factor[c];
     const int v_factor = m->v_factor[c];
-    size_t by0 = m->next_iMCU_row * comp->v_samp_factor;
     for (int iy = 0; iy < comp->v_samp_factor; iy++) {
       size_t by = by0 + iy;
       if (by >= comp->height_in_blocks) continue;
+      JBLOCKROW brow = ba[iy];
       const float* row = plane->DirectRow(8 * by);
       for (size_t bx = 0; bx < comp->width_in_blocks; bx++) {
-        size_t bix = by * comp->width_in_blocks + bx;
-        coeff_t* block = &coeffs[bix * kDCTBlockSize];
+        JCOEF* block = &brow[bx][0];
         TransformFromPixels(row + 8 * bx, plane->stride(), dct, scratch_space);
         if (m->use_adaptive_quantization) {
           // Create more zeros in areas where jpeg xl would have used a lower

@@ -296,12 +296,15 @@ void AllocateBuffers(j_compress_ptr cinfo) {
     size_t stride = m->xsize_blocks * DCTSIZE;
     m->input_buffer[c].Allocate(m->ysize_blocks * DCTSIZE, stride);
   }
+  m->coeff_buffers =
+      Allocate<jvirt_barray_ptr>(cinfo, cinfo->num_components, JPOOL_IMAGE);
   for (int c = 0; c < cinfo->num_components; ++c) {
     jpeg_component_info* comp = &cinfo->comp_info[c];
     const size_t xsize_blocks = comp->width_in_blocks;
     const size_t ysize_blocks = comp->height_in_blocks;
-    size_t ncoeffs = xsize_blocks * ysize_blocks * DCTSIZE2;
-    m->coefficients[c] = Allocate<coeff_t>(cinfo, ncoeffs, JPOOL_IMAGE_ALIGNED);
+    m->coeff_buffers[c] = (*cinfo->mem->request_virt_barray)(
+        reinterpret_cast<j_common_ptr>(cinfo), JPOOL_IMAGE, /*pre_zero=*/false,
+        xsize_blocks, ysize_blocks, comp->v_samp_factor);
   }
   if (m->use_adaptive_quantization) {
     const size_t vecsize = VectorSize();
@@ -373,26 +376,6 @@ void ProcessiMCURows(j_compress_ptr cinfo) {
   }
   if (cinfo->next_scanline >= cinfo->image_height) {
     jpegli::ProcessiMCURow(cinfo);
-  }
-}
-
-void CopyCoefficients(j_compress_ptr cinfo) {
-  jpeg_comp_master* m = cinfo->master;
-  for (int c = 0; c < cinfo->num_components; c++) {
-    jpeg_component_info* comp = &cinfo->comp_info[c];
-    const size_t xsize_blocks = comp->width_in_blocks;
-    const size_t ysize_blocks = comp->height_in_blocks;
-    const size_t num_coeffs = xsize_blocks * ysize_blocks * kDCTBlockSize;
-    coeff_t* coeffs = Allocate<coeff_t>(cinfo, num_coeffs, JPOOL_IMAGE_ALIGNED);
-    m->coefficients[c] = coeffs;
-    for (size_t by = 0; by < ysize_blocks; ++by) {
-      JBLOCKARRAY ba = (*cinfo->mem->access_virt_barray)(
-          reinterpret_cast<j_common_ptr>(cinfo),
-          cinfo->master->coeff_buffers[c], by, 1, false);
-      JXL_ASSERT(sizeof(coeff_t) == sizeof(JCOEF));
-      memcpy(&coeffs[by * xsize_blocks * kDCTBlockSize], ba[0],
-             xsize_blocks * sizeof(ba[0][0]));
-    }
   }
 }
 
@@ -908,11 +891,9 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
 
   if (cinfo->global_state == jpegli::kEncWriteCoeffs) {
     jpegli::WriteFrameHeader(cinfo);
-    jpegli::CopyCoefficients(cinfo);
-    jpegli::EncodeScans(cinfo);
-  } else {
-    jpegli::EncodeScans(cinfo);
   }
+
+  jpegli::EncodeScans(cinfo);
 
   jpegli::WriteOutput(cinfo, {0xFF, 0xD9});  // EOI
   (*cinfo->dest->term_destination)(cinfo);

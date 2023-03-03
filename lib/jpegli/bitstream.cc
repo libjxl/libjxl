@@ -721,7 +721,19 @@ bool EncodeScan(j_compress_ptr cinfo, int scan_index) {
   const int Se = scan_info->Se;
   constexpr coeff_t kDummyBlock[DCTSIZE2] = {0};
 
+  JBLOCKARRAY ba[MAX_COMPS_IN_SCAN];
   for (int mcu_y = 0; mcu_y < MCU_rows; ++mcu_y) {
+    for (int i = 0; i < scan_info->comps_in_scan; ++i) {
+      int comp_idx = scan_info->component_index[i];
+      jpeg_component_info* comp = &cinfo->comp_info[comp_idx];
+      int n_blocks_y = is_interleaved ? comp->v_samp_factor : 1;
+      int by0 = mcu_y * n_blocks_y;
+      int block_rows_left = comp->height_in_blocks - by0;
+      int max_block_rows = std::min(n_blocks_y, block_rows_left);
+      ba[i] = (*cinfo->mem->access_virt_barray)(
+          reinterpret_cast<j_common_ptr>(cinfo), m->coeff_buffers[comp_idx],
+          by0, max_block_rows, false);
+    }
     for (int mcu_x = 0; mcu_x < MCUs_per_row; ++mcu_x) {
       // Possibly emit a restart marker.
       if (restart_interval > 0 && restarts_to_go == 0) {
@@ -737,7 +749,6 @@ bool EncodeScan(j_compress_ptr cinfo, int scan_index) {
       for (int i = 0; i < scan_info->comps_in_scan; ++i) {
         int comp_idx = scan_info->component_index[i];
         jpeg_component_info* comp = &cinfo->comp_info[comp_idx];
-        coeff_t* coeffs = m->coefficients[comp_idx];
         HuffmanCodeTable* dc_huff = &m->huff_tables[sci.dc_tbl_idx[i]];
         HuffmanCodeTable* ac_huff = &m->huff_tables[sci.ac_tbl_idx[i]];
         int n_blocks_y = is_interleaved ? comp->v_samp_factor : 1;
@@ -746,14 +757,13 @@ bool EncodeScan(j_compress_ptr cinfo, int scan_index) {
           for (int ix = 0; ix < n_blocks_x; ++ix) {
             size_t block_y = mcu_y * n_blocks_y + iy;
             size_t block_x = mcu_x * n_blocks_x + ix;
-            size_t block_idx = block_y * comp->width_in_blocks + block_x;
             size_t num_zero_runs = 0;
             const coeff_t* block;
             if (block_x >= comp->width_in_blocks ||
                 block_y >= comp->height_in_blocks) {
               block = kDummyBlock;
             } else {
-              block = &coeffs[block_idx << 6];
+              block = &ba[i][iy][block_x][0];
             }
             bool ok;
             if (!is_progressive) {
@@ -879,7 +889,8 @@ void ComputeTokens(j_compress_ptr cinfo,
   int xsize_mcus = DivCeil(cinfo->image_width, 8 * cinfo->max_h_samp_factor);
   int ysize_mcus = DivCeil(cinfo->image_height, 8 * cinfo->max_v_samp_factor);
   coeff_t last_dc_coeff[MAX_COMPS_IN_SCAN] = {0};
-  for (int mcu_y = 0, mcu_ix = 0; mcu_y < ysize_mcus; ++mcu_y) {
+  JBLOCKARRAY ba[MAX_COMPS_IN_SCAN];
+  for (int mcu_y = 0; mcu_y < ysize_mcus; ++mcu_y) {
     ta.num_tokens = next_token - ta.tokens;
     if (ta.num_tokens + max_tokens_per_mcu_row > num_tokens) {
       if (ta.tokens) {
@@ -891,31 +902,38 @@ void ComputeTokens(j_compress_ptr cinfo,
       ta.tokens = Allocate<Token>(cinfo, num_tokens, JPOOL_IMAGE);
       next_token = ta.tokens;
     }
+    for (int c = 0; c < cinfo->num_components; ++c) {
+      jpeg_component_info* comp = &cinfo->comp_info[c];
+      int by0 = mcu_y * comp->v_samp_factor;
+      int block_rows_left = comp->height_in_blocks - by0;
+      int max_block_rows = std::min(comp->v_samp_factor, block_rows_left);
+      ba[c] = (*cinfo->mem->access_virt_barray)(
+          reinterpret_cast<j_common_ptr>(cinfo), m->coeff_buffers[c], by0,
+          max_block_rows, false);
+    }
     if (cinfo->max_h_samp_factor == 1 && cinfo->max_v_samp_factor == 1) {
-      for (int mcu_x = 0; mcu_x < xsize_mcus; ++mcu_x, ++mcu_ix) {
+      for (int mcu_x = 0; mcu_x < xsize_mcus; ++mcu_x) {
         for (int c = 0; c < cinfo->num_components; ++c) {
-          ComputeTokensForBlock(&m->coefficients[c][mcu_ix << 6], c, c + 4,
+          ComputeTokensForBlock(&ba[c][0][mcu_x][0], c, c + 4,
                                 &last_dc_coeff[c], &next_token);
         }
       }
       continue;
     }
-    for (int mcu_x = 0; mcu_x < xsize_mcus; ++mcu_x, ++mcu_ix) {
+    for (int mcu_x = 0; mcu_x < xsize_mcus; ++mcu_x) {
       for (int c = 0; c < cinfo->num_components; ++c) {
         jpeg_component_info* comp = &cinfo->comp_info[c];
-        coeff_t* coeffs = m->coefficients[c];
         for (int iy = 0; iy < comp->v_samp_factor; ++iy) {
           for (int ix = 0; ix < comp->h_samp_factor; ++ix) {
             size_t block_y = mcu_y * comp->v_samp_factor + iy;
             size_t block_x = mcu_x * comp->h_samp_factor + ix;
-            size_t block_idx = block_y * comp->width_in_blocks + block_x;
             if (block_x >= comp->width_in_blocks ||
                 block_y >= comp->height_in_blocks) {
               *next_token++ = Token(c, 0, 0);
               *next_token++ = Token(c + 4, 0, 0);
               continue;
             }
-            ComputeTokensForBlock(&coeffs[block_idx << 6], c, c + 4,
+            ComputeTokensForBlock(&ba[c][iy][block_x][0], c, c + 4,
                                   &last_dc_coeff[c], &next_token);
           }
         }

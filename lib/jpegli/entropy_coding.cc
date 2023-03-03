@@ -383,7 +383,19 @@ bool ProcessScan(j_compress_ptr cinfo,
   const int Se = scan_info->Se;
   constexpr coeff_t kDummyBlock[DCTSIZE2] = {0};
 
+  JBLOCKARRAY ba[MAX_COMPS_IN_SCAN];
   for (int mcu_y = 0; mcu_y < MCU_rows; ++mcu_y) {
+    for (int i = 0; i < scan_info->comps_in_scan; ++i) {
+      int comp_idx = scan_info->component_index[i];
+      jpeg_component_info* comp = &cinfo->comp_info[comp_idx];
+      int n_blocks_y = is_interleaved ? comp->v_samp_factor : 1;
+      int by0 = mcu_y * n_blocks_y;
+      int block_rows_left = comp->height_in_blocks - by0;
+      int max_block_rows = std::min(n_blocks_y, block_rows_left);
+      ba[i] = (*cinfo->mem->access_virt_barray)(
+          reinterpret_cast<j_common_ptr>(cinfo), m->coeff_buffers[comp_idx],
+          by0, max_block_rows, false);
+    }
     for (int mcu_x = 0; mcu_x < MCUs_per_row; ++mcu_x) {
       // Possibly emit a restart marker.
       if (restart_interval > 0 && restarts_to_go == 0) {
@@ -395,7 +407,6 @@ bool ProcessScan(j_compress_ptr cinfo,
       for (int i = 0; i < scan_info->comps_in_scan; ++i) {
         int comp_idx = scan_info->component_index[i];
         jpeg_component_info* comp = &cinfo->comp_info[comp_idx];
-        coeff_t* coeffs = m->coefficients[comp_idx];
         int histo_idx = *histo_index + i;
         Histogram* dc_histo = &dc_histograms[histo_idx];
         Histogram* ac_histo = &ac_histograms[histo_idx];
@@ -405,12 +416,13 @@ bool ProcessScan(j_compress_ptr cinfo,
           for (int ix = 0; ix < n_blocks_x; ++ix) {
             size_t block_y = mcu_y * n_blocks_y + iy;
             size_t block_x = mcu_x * n_blocks_x + ix;
-            size_t block_idx = block_y * comp->width_in_blocks + block_x;
             size_t num_zero_runs = 0;
-            const coeff_t* block = &coeffs[block_idx << 6];
+            const coeff_t* block;
             if (block_x >= comp->width_in_blocks ||
                 block_y >= comp->height_in_blocks) {
               block = kDummyBlock;
+            } else {
+              block = &ba[i][iy][block_x][0];
             }
             bool ok;
             if (!is_progressive) {

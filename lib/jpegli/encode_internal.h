@@ -78,7 +78,6 @@ struct jpeg_comp_master {
       float* rows_in[MAX_SAMP_FACTOR], size_t len, float* row_out);
   float* quant_mul[jpegli::kMaxComponents];
   float zero_bias_mul[jpegli::kMaxComponents];
-  jpegli::coeff_t* coefficients[jpegli::kMaxComponents];
   int h_factor[jpegli::kMaxComponents];
   int v_factor[jpegli::kMaxComponents];
   jpegli::HuffmanCodeTable huff_tables[8];
