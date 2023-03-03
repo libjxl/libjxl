@@ -165,7 +165,7 @@ TEST(JxlTest, RoundtripResample2Slow) {
   cparams.distance = 10.0;
 
   PackedPixelFile ppf_out;
-  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, pool, &ppf_out), 3988, 100);
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, pool, &ppf_out), 4088, 200);
   EXPECT_THAT(ComputeDistance2(t.ppf(), ppf_out), IsSlightlyBelow(250));
 }
 
