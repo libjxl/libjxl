@@ -263,32 +263,33 @@ void PrepareForOutput(j_decompress_ptr cinfo) {
     const auto& comp = cinfo->comp_info[c];
     const size_t stride = m->iMCU_cols_ * cinfo->max_h_samp_factor * DCTSIZE;
     m->raw_height_[c] = cinfo->total_iMCU_rows * comp.v_samp_factor * DCTSIZE;
-    m->raw_output_[c].Allocate(3 * comp.v_samp_factor * DCTSIZE, stride);
-    m->render_output_[c].Allocate(cinfo->max_v_samp_factor, stride);
+    m->raw_output_[c].Allocate(cinfo, 3 * comp.v_samp_factor * DCTSIZE, stride);
+    m->render_output_[c].Allocate(cinfo, cinfo->max_v_samp_factor, stride);
   }
-  m->idct_scratch_ = hwy::AllocateAligned<float>(DCTSIZE2 * 2);
+  m->idct_scratch_ = Allocate<float>(cinfo, DCTSIZE2 * 2, JPOOL_IMAGE_ALIGNED);
   size_t MCU_row_stride = m->iMCU_cols_ * cinfo->max_h_samp_factor * DCTSIZE;
-  m->upsample_scratch_ = hwy::AllocateAligned<float>(
-      MCU_row_stride + kPaddingLeft + kPaddingRight);
+  m->upsample_scratch_ =
+      Allocate<float>(cinfo, MCU_row_stride + kPaddingLeft + kPaddingRight,
+                      JPOOL_IMAGE_ALIGNED);
   size_t bytes_per_sample = jpegli_bytes_per_sample(m->output_data_type_);
   size_t bytes_per_pixel = cinfo->out_color_components * bytes_per_sample;
-  m->output_scratch_ =
-      hwy::AllocateAligned<uint8_t>(bytes_per_pixel * kTempOutputLen);
+  m->output_scratch_ = Allocate<uint8_t>(
+      cinfo, bytes_per_pixel * kTempOutputLen, JPOOL_IMAGE_ALIGNED);
   size_t coeffs_per_block = cinfo->num_components * DCTSIZE2;
-  m->nonzeros_ = hwy::AllocateAligned<int>(coeffs_per_block);
-  m->sumabs_ = hwy::AllocateAligned<int>(coeffs_per_block);
-  memset(m->nonzeros_.get(), 0, coeffs_per_block * sizeof(m->nonzeros_[0]));
-  memset(m->sumabs_.get(), 0, coeffs_per_block * sizeof(m->sumabs_[0]));
+  m->nonzeros_ = Allocate<int>(cinfo, coeffs_per_block, JPOOL_IMAGE_ALIGNED);
+  m->sumabs_ = Allocate<int>(cinfo, coeffs_per_block, JPOOL_IMAGE_ALIGNED);
+  memset(m->nonzeros_, 0, coeffs_per_block * sizeof(m->nonzeros_[0]));
+  memset(m->sumabs_, 0, coeffs_per_block * sizeof(m->sumabs_[0]));
   m->num_processed_blocks_.resize(cinfo->num_components);
   for (int c = 0; c < cinfo->num_components; ++c) {
     m->num_processed_blocks_[c] = 0;
   }
-  m->biases_ = hwy::AllocateAligned<float>(coeffs_per_block);
-  memset(m->biases_.get(), 0, coeffs_per_block * sizeof(m->biases_[0]));
+  m->biases_ = Allocate<float>(cinfo, coeffs_per_block, JPOOL_IMAGE_ALIGNED);
+  memset(m->biases_, 0, coeffs_per_block * sizeof(m->biases_[0]));
   cinfo->output_iMCU_row = 0;
   cinfo->output_scanline = 0;
   const float kDequantScale = 1.0f / (8 * 255);
-  m->dequant_ = hwy::AllocateAligned<float>(coeffs_per_block);
+  m->dequant_ = Allocate<float>(cinfo, coeffs_per_block, JPOOL_IMAGE_ALIGNED);
   for (int c = 0; c < cinfo->num_components; c++) {
     const auto& comp = cinfo->comp_info[c];
     JQUANT_TBL* table = comp.quant_table;
@@ -331,7 +332,7 @@ void DecodeCurrentiMCURow(j_decompress_ptr cinfo) {
       float* JXL_RESTRICT row_out = raw_out->Row(by * DCTSIZE);
       for (size_t bx = 0; bx < compinfo.width_in_blocks; ++bx) {
         InverseTransformBlock(&row_in[bx * DCTSIZE2], &m->dequant_[k0],
-                              &m->biases_[k0], m->idct_scratch_.get(),
+                              &m->biases_[k0], m->idct_scratch_,
                               &row_out[bx * DCTSIZE], raw_out->stride());
       }
     }
@@ -354,7 +355,7 @@ void ProcessRawOutput(j_decompress_ptr cinfo, JSAMPIMAGE data) {
         size_t len = std::min(comp_width - x0, kTempOutputLen);
         uint8_t* output = data[c][y - y0];
         WriteToOutput(rows, 0, x0, len, 1, m->output_data_type_,
-                      m->swap_endianness_, m->output_scratch_.get(), output);
+                      m->swap_endianness_, m->output_scratch_, output);
       }
     }
   }
@@ -428,8 +429,7 @@ void ProcessOutput(j_decompress_ptr cinfo, size_t* num_output_rows,
             uint8_t* output = scanlines[*num_output_rows];
             WriteToOutput(rows, m->xoffset_, x0, len,
                           cinfo->out_color_components, m->output_data_type_,
-                          m->swap_endianness_, m->output_scratch_.get(),
-                          output);
+                          m->swap_endianness_, m->output_scratch_, output);
           }
         }
         JXL_ASSERT(cinfo->output_scanline == y + yix);
@@ -446,7 +446,7 @@ void ProcessOutput(j_decompress_ptr cinfo, size_t* num_output_rows,
         size_t y0 = imcu_row * compinfo.v_samp_factor * DCTSIZE;
         for (int iy = 0; iy < compinfo.v_samp_factor * DCTSIZE; ++iy) {
           float* JXL_RESTRICT row = raw_out->Row(y0 + iy);
-          Upsample2Horizontal(row, m->upsample_scratch_.get(),
+          Upsample2Horizontal(row, m->upsample_scratch_,
                               xsize_blocks * DCTSIZE);
         }
       }

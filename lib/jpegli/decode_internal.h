@@ -103,18 +103,18 @@ struct jpeg_decomp_master {
   std::array<jpegli::RowBuffer<float>, jpegli::kMaxComponents> raw_output_;
   std::array<jpegli::RowBuffer<float>, jpegli::kMaxComponents> render_output_;
 
-  hwy::AlignedFreeUniquePtr<float[]> idct_scratch_;
-  hwy::AlignedFreeUniquePtr<float[]> upsample_scratch_;
-  hwy::AlignedFreeUniquePtr<uint8_t[]> output_scratch_;
-  hwy::AlignedFreeUniquePtr<float[]> dequant_;
+  float* idct_scratch_;
+  float* upsample_scratch_;
+  uint8_t* output_scratch_;
+  float* dequant_;
 
   // Per channel and per frequency statistics about the number of nonzeros and
   // the sum of coefficient absolute values, used in dequantization bias
   // computation.
-  hwy::AlignedFreeUniquePtr<int[]> nonzeros_;
-  hwy::AlignedFreeUniquePtr<int[]> sumabs_;
+  int* nonzeros_;
+  int* sumabs_;
   std::vector<size_t> num_processed_blocks_;
-  hwy::AlignedFreeUniquePtr<float[]> biases_;
+  float* biases_;
 };
 
 #endif  // LIB_JPEGLI_DECODE_INTERNAL_H_
