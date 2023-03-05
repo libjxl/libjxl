@@ -594,6 +594,42 @@ void DecodeWithLibjpeg(const CompressParams& jparams,
 }
 
 void VerifyOutputImage(const TestImage& input, const TestImage& output,
+                       size_t start_line, size_t num_lines, double max_rms) {
+  size_t stride = input.xsize * input.components;
+  size_t num_samples = num_lines * stride;
+  size_t start_offset = start_line * stride;
+  auto get_sample = [&](const TestImage& im, size_t idx) -> double {
+    size_t bytes_per_sample = jpegli_bytes_per_sample(im.data_type);
+    bool is_little_endian =
+        (im.endianness == JPEGLI_LITTLE_ENDIAN ||
+         (im.endianness == JPEGLI_NATIVE_ENDIAN && IsLittleEndian()));
+    size_t offset = start_offset + idx * bytes_per_sample;
+    JXL_CHECK(offset < im.pixels.size());
+    const uint8_t* p = &im.pixels[offset];
+    if (im.data_type == JPEGLI_TYPE_UINT8) {
+      static const double mul8 = 1.0 / 255.0;
+      return p[0] * mul8;
+    } else if (im.data_type == JPEGLI_TYPE_UINT16) {
+      static const double mul16 = 1.0 / 65535.0;
+      return (is_little_endian ? LoadLE16(p) : LoadBE16(p)) * mul16;
+    } else if (im.data_type == JPEGLI_TYPE_FLOAT) {
+      return (is_little_endian ? LoadLEFloat(p) : LoadBEFloat(p));
+    }
+    return 0.0;
+  };
+  double diff2 = 0.0;
+  for (size_t i = 0; i < num_samples; ++i) {
+    double sample_orig = get_sample(input, i);
+    double sample_output = get_sample(output, i);
+    double diff = sample_orig - sample_output;
+    diff2 += diff * diff;
+  }
+  double rms = std::sqrt(diff2 / num_samples) * 255.0;
+  // printf("rms: %f\n", rms);
+  JXL_CHECK(rms <= max_rms);
+}
+
+void VerifyOutputImage(const TestImage& input, const TestImage& output,
                        double max_rms) {
   JXL_CHECK(output.xsize == input.xsize);
   JXL_CHECK(output.ysize == input.ysize);
@@ -607,36 +643,7 @@ void VerifyOutputImage(const TestImage& input, const TestImage& output,
                             input.coeffs[c].size()));
     }
   } else {
-    size_t num_samples = input.xsize * input.ysize * input.components;
-    auto get_sample = [&](const TestImage& im, size_t idx) -> double {
-      size_t bytes_per_sample = jpegli_bytes_per_sample(im.data_type);
-      bool is_little_endian =
-          (im.endianness == JPEGLI_LITTLE_ENDIAN ||
-           (im.endianness == JPEGLI_NATIVE_ENDIAN && IsLittleEndian()));
-      size_t offset = idx * bytes_per_sample;
-      JXL_CHECK(offset < im.pixels.size());
-      const uint8_t* p = &im.pixels[offset];
-      if (im.data_type == JPEGLI_TYPE_UINT8) {
-        static const double mul8 = 1.0 / 255.0;
-        return p[0] * mul8;
-      } else if (im.data_type == JPEGLI_TYPE_UINT16) {
-        static const double mul16 = 1.0 / 65535.0;
-        return (is_little_endian ? LoadLE16(p) : LoadBE16(p)) * mul16;
-      } else if (im.data_type == JPEGLI_TYPE_FLOAT) {
-        return (is_little_endian ? LoadLEFloat(p) : LoadBEFloat(p));
-      }
-      return 0.0;
-    };
-    double diff2 = 0.0;
-    for (size_t i = 0; i < num_samples; ++i) {
-      double sample_orig = get_sample(input, i);
-      double sample_output = get_sample(output, i);
-      double diff = sample_orig - sample_output;
-      diff2 += diff * diff;
-    }
-    double rms = std::sqrt(diff2 / num_samples) * 255.0;
-    printf("rms: %f\n", rms);
-    JXL_CHECK(rms <= max_rms);
+    VerifyOutputImage(input, output, 0, output.ysize, max_rms);
   }
 }
 

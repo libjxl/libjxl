@@ -205,6 +205,9 @@ void DecodeWithLibjpeg(const CompressParams& jparams,
                        JpegIOMode output_mode, TestImage* output);
 
 void VerifyOutputImage(const TestImage& input, const TestImage& output,
+                       size_t start_line, size_t num_lines, double max_rms);
+
+void VerifyOutputImage(const TestImage& input, const TestImage& output,
                        double max_rms);
 
 }  // namespace jpegli
