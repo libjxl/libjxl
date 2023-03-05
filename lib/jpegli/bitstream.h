@@ -30,6 +30,11 @@ bool EncodeScan(j_compress_ptr cinfo, int scan_index);
 
 void EncodeSingleScan(j_compress_ptr cinfo);
 
+void JpegBitWriterInit(JpegBitWriter* bw, j_compress_ptr cinfo);
+void JumpToByteBoundary(JpegBitWriter* bw);
+void JpegBitWriterFinish(JpegBitWriter* bw);
+void WriteiMCURow(j_compress_ptr cinfo);
+
 }  // namespace jpegli
 
 #endif  // LIB_JPEGLI_BITSTREAM_H_

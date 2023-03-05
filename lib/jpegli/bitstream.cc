@@ -5,6 +5,7 @@
 
 #include "lib/jpegli/bitstream.h"
 
+#include "lib/jpegli/dct.h"
 #include "lib/jpegli/entropy_coding.h"
 #include "lib/jpegli/error.h"
 #include "lib/jpegli/memory_manager.h"
@@ -72,17 +73,6 @@ HWY_EXPORT(NumNonZero8x8ExceptDC);
 // JpegBitWriter: buffer size
 const size_t kJpegBitWriterChunkSize = 16384;
 
-// Handles the packing of bits into output bytes.
-struct JpegBitWriter {
-  j_compress_ptr cinfo;
-  std::vector<uint8_t> buffer;
-  uint8_t* data;
-  size_t pos;
-  uint64_t put_buffer;
-  int put_bits;
-  bool healthy;
-};
-
 // Holds data that is buffered between 8x8 blocks in progressive mode.
 struct DCTCodingState {
   // The run length of end-of-band symbols in a progressive scan.
@@ -99,6 +89,7 @@ struct DCTCodingState {
 static JXL_INLINE uint64_t HasZeroByte(uint64_t x) {
   return (x - 0x0101010101010101ULL) & ~x & 0x8080808080808080ULL;
 }
+}  // namespace
 
 void JpegBitWriterInit(JpegBitWriter* bw, j_compress_ptr cinfo) {
   bw->cinfo = cinfo;
@@ -110,11 +101,16 @@ void JpegBitWriterInit(JpegBitWriter* bw, j_compress_ptr cinfo) {
   bw->healthy = true;
 }
 
+void EmptyBitWriterBuffer(JpegBitWriter* bw) {
+  WriteOutput(bw->cinfo, bw->data, bw->pos);
+  bw->data = bw->buffer.data();
+  bw->pos = 0;
+}
+
+namespace {
 static JXL_INLINE void Reserve(JpegBitWriter* bw, size_t n_bytes) {
   if (JXL_UNLIKELY((bw->pos + n_bytes) > kJpegBitWriterChunkSize)) {
-    WriteOutput(bw->cinfo, bw->data, bw->pos);
-    bw->data = bw->buffer.data();
-    bw->pos = 0;
+    EmptyBitWriterBuffer(bw);
   }
 }
 
@@ -179,6 +175,7 @@ void EmitMarker(JpegBitWriter* bw, int marker) {
   bw->data[bw->pos++] = 0xFF;
   bw->data[bw->pos++] = marker;
 }
+}  // namespace
 
 void JumpToByteBoundary(JpegBitWriter* bw) {
   size_t n_bits = bw->put_bits & 7u;
@@ -208,6 +205,7 @@ void JpegBitWriterFinish(JpegBitWriter* bw) {
   bw->pos = 0;
 }
 
+namespace {
 void DCTCodingStateInit(DCTCodingState* s) {
   s->eob_run_ = 0;
   s->cur_ac_huff_ = nullptr;
@@ -299,35 +297,41 @@ bool BuildHuffmanCodeTable(const JPEGHuffmanCode& huff,
   return true;
 }
 
-bool EncodeDCTBlockSequential(const coeff_t* coeffs, HuffmanCodeTable* dc_huff,
-                              HuffmanCodeTable* ac_huff, int num_zero_runs,
-                              coeff_t* last_dc_coeff, JpegBitWriter* bw) {
+bool EncodeDCTBlockSequential(const coeff_t* block, HuffmanCodeTable* dc_huff,
+                              HuffmanCodeTable* ac_huff, coeff_t* last_dc_coeff,
+                              JpegBitWriter* bw) {
   coeff_t temp2;
   coeff_t temp;
-  temp2 = coeffs[0];
+  temp2 = block[0];
   temp = temp2 - *last_dc_coeff;
-  *last_dc_coeff = temp2;
-  temp2 = temp;
-  if (temp < 0) {
-    temp = -temp;
-    if (temp < 0) return false;
-    temp2--;
-  }
-  int dc_nbits = (temp == 0) ? 0 : (jxl::FloorLog2Nonzero<uint32_t>(temp) + 1);
-  WriteSymbol(dc_nbits, dc_huff, bw);
-  if (dc_nbits >= 12) return false;
-  if (dc_nbits > 0) {
-    WriteBits(bw, dc_nbits, temp2 & ((1u << dc_nbits) - 1));
-  }
-  int r = 0;
-  for (int k = 1; k < 64; ++k) {
-    if ((temp = coeffs[kJPEGNaturalOrder[k]]) == 0) {
-      r++;
-      continue;
-    }
+  if (temp == 0) {
+    WriteSymbol(0, dc_huff, bw);
+  } else {
+    *last_dc_coeff = temp2;
+    temp2 = temp;
     if (temp < 0) {
       temp = -temp;
-      if (temp < 0) return false;
+      temp2--;
+    }
+    int dc_nbits = jxl::FloorLog2Nonzero<uint32_t>(temp) + 1;
+    int dc_mask = (1 << dc_nbits) - 1;
+    WriteSymbol(dc_nbits, dc_huff, bw);
+    WriteBits(bw, dc_nbits, temp2 & dc_mask);
+  }
+  int num_nonzeros = HWY_DYNAMIC_DISPATCH(NumNonZero8x8ExceptDC)(block);
+  for (int k = 1; k < 64; ++k) {
+    if (num_nonzeros == 0) {
+      WriteSymbol(0, ac_huff, bw);
+      break;
+    }
+    int r = 0;
+    while ((temp = block[kJPEGNaturalOrder[k]]) == 0) {
+      r++;
+      k++;
+    }
+    --num_nonzeros;
+    if (temp < 0) {
+      temp = -temp;
       temp2 = ~temp;
     } else {
       temp2 = temp;
@@ -337,26 +341,17 @@ bool EncodeDCTBlockSequential(const coeff_t* coeffs, HuffmanCodeTable* dc_huff,
       r -= 16;
     }
     int ac_nbits = jxl::FloorLog2Nonzero<uint32_t>(temp) + 1;
-    if (ac_nbits >= 16) return false;
+    int ac_mask = (1 << ac_nbits) - 1;
     int symbol = (r << 4u) + ac_nbits;
     WriteSymbol(symbol, ac_huff, bw);
-    WriteBits(bw, ac_nbits, temp2 & ((1 << ac_nbits) - 1));
-    r = 0;
-  }
-  for (int i = 0; i < num_zero_runs; ++i) {
-    WriteSymbol(0xf0, ac_huff, bw);
-    r -= 16;
-  }
-  if (r > 0) {
-    WriteSymbol(0, ac_huff, bw);
+    WriteBits(bw, ac_nbits, temp2 & ac_mask);
   }
   return true;
 }
 
 bool EncodeDCTBlockProgressive(const coeff_t* coeffs, HuffmanCodeTable* dc_huff,
                                HuffmanCodeTable* ac_huff, int Ss, int Se,
-                               int Al, int num_zero_runs,
-                               DCTCodingState* coding_state,
+                               int Al, DCTCodingState* coding_state,
                                coeff_t* last_dc_coeff, JpegBitWriter* bw) {
   bool eob_run_allowed = Ss > 0;
   coeff_t temp2;
@@ -410,13 +405,6 @@ bool EncodeDCTBlockProgressive(const coeff_t* coeffs, HuffmanCodeTable* dc_huff,
     WriteSymbol(symbol, ac_huff, bw);
     WriteBits(bw, nbits, temp2 & ((1 << nbits) - 1));
     r = 0;
-  }
-  if (num_zero_runs > 0) {
-    Flush(coding_state, bw);
-    for (int i = 0; i < num_zero_runs; ++i) {
-      WriteSymbol(0xf0, ac_huff, bw);
-      r -= 16;
-    }
   }
   if (r > 0) {
     BufferEndOfBand(coding_state, ac_huff, nullptr, bw);
@@ -503,6 +491,10 @@ void WriteOutput(j_compress_ptr cinfo, const uint8_t* buf, size_t bufsize) {
     pos += len;
     cinfo->dest->free_in_buffer -= len;
     cinfo->dest->next_output_byte += len;
+    if (cinfo->dest->free_in_buffer == 0 &&
+        !(*cinfo->dest->empty_output_buffer)(cinfo)) {
+      JPEGLI_ERROR("Destination suspension is not supported.");
+    }
   }
 }
 
@@ -757,7 +749,6 @@ bool EncodeScan(j_compress_ptr cinfo, int scan_index) {
           for (int ix = 0; ix < n_blocks_x; ++ix) {
             size_t block_y = mcu_y * n_blocks_y + iy;
             size_t block_x = mcu_x * n_blocks_x + ix;
-            size_t num_zero_runs = 0;
             const coeff_t* block;
             if (block_x >= comp->width_in_blocks ||
                 block_y >= comp->height_in_blocks) {
@@ -768,11 +759,10 @@ bool EncodeScan(j_compress_ptr cinfo, int scan_index) {
             bool ok;
             if (!is_progressive) {
               ok = EncodeDCTBlockSequential(block, dc_huff, ac_huff,
-                                            num_zero_runs, last_dc_coeff + i,
-                                            &bw);
+                                            last_dc_coeff + i, &bw);
             } else if (Ah == 0) {
               ok = EncodeDCTBlockProgressive(block, dc_huff, ac_huff, Ss, Se,
-                                             Al, num_zero_runs, &coding_state,
+                                             Al, &coding_state,
                                              last_dc_coeff + i, &bw);
             } else {
               ok = EncodeRefinementBits(block, ac_huff, Ss, Se, Al,
@@ -1013,6 +1003,48 @@ void EncodeSingleScan(j_compress_ptr cinfo) {
   if (!bw.healthy) {
     JPEGLI_ERROR("Failed to encode scan.");
   }
+}
+
+void WriteiMCURow(j_compress_ptr cinfo) {
+  jpeg_comp_master* m = cinfo->master;
+  JpegBitWriter* bw = &m->bw;
+  int xsize_mcus = DivCeil(cinfo->image_width, 8 * cinfo->max_h_samp_factor);
+  int mcu_y = m->next_iMCU_row;
+  float* tmp = m->dct_buffer;
+  JCOEF* block = m->coeff_block;
+  for (int mcu_x = 0; mcu_x < xsize_mcus; ++mcu_x) {
+    for (int c = 0; c < cinfo->num_components; ++c) {
+      jpeg_component_info* comp = &cinfo->comp_info[c];
+      HuffmanCodeTable* dc_huff = &m->huff_tables[comp->dc_tbl_no];
+      HuffmanCodeTable* ac_huff = &m->huff_tables[comp->ac_tbl_no + 4];
+      float* qmc = m->quant_mul[c];
+      const size_t stride = m->raw_data[c]->stride();
+      const int h_factor = m->h_factor[c];
+      const int v_factor = m->v_factor[c];
+      const float zero_bias_mul = m->zero_bias_mul[c];
+      float aq_strength = 0.0f;
+      for (int iy = 0; iy < comp->v_samp_factor; ++iy) {
+        for (int ix = 0; ix < comp->h_samp_factor; ++ix) {
+          size_t by = mcu_y * comp->v_samp_factor + iy;
+          size_t bx = mcu_x * comp->h_samp_factor + ix;
+          if (bx >= comp->width_in_blocks || by >= comp->height_in_blocks) {
+            WriteSymbol(0, dc_huff, bw);
+            WriteSymbol(0, ac_huff, bw);
+            continue;
+          }
+          const float* row = m->raw_data[c]->Row(8 * by);
+          if (m->use_adaptive_quantization) {
+            aq_strength = m->quant_field.Row(by * v_factor)[bx * h_factor];
+          }
+          ComputeCoefficientBlock(row + 8 * bx, stride, qmc, aq_strength,
+                                  zero_bias_mul, tmp, block);
+          EncodeDCTBlockSequential(block, dc_huff, ac_huff,
+                                   &m->last_dc_coeff[c], bw);
+        }
+      }
+    }
+  }
+  EmptyBitWriterBuffer(bw);
 }
 
 }  // namespace jpegli

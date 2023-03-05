@@ -54,6 +54,17 @@ struct ScanCodingInfo {
 
 typedef int16_t coeff_t;
 
+// Handles the packing of bits into output bytes.
+struct JpegBitWriter {
+  j_compress_ptr cinfo;
+  std::vector<uint8_t> buffer;
+  uint8_t* data;
+  size_t pos;
+  uint64_t put_buffer;
+  int put_bits;
+  bool healthy;
+};
+
 }  // namespace jpegli
 
 struct jpeg_comp_master {
@@ -82,6 +93,7 @@ struct jpeg_comp_master {
   float zero_bias_mul[jpegli::kMaxComponents];
   int h_factor[jpegli::kMaxComponents];
   int v_factor[jpegli::kMaxComponents];
+  std::vector<jpegli::JPEGHuffmanCode> huffman_codes;
   jpegli::HuffmanCodeTable huff_tables[8];
   std::array<jpegli::HuffmanCodeTable, jpegli::kMaxHuffmanTables> dc_huff_table;
   std::array<jpegli::HuffmanCodeTable, jpegli::kMaxHuffmanTables> ac_huff_table;
@@ -91,6 +103,12 @@ struct jpeg_comp_master {
   jpegli::RowBuffer<float> quant_field;
   jvirt_barray_ptr* coeff_buffers = nullptr;
   size_t next_iMCU_row;
+  size_t last_dht_index;
+  size_t last_restart_interval;
+  JCOEF last_dc_coeff[MAX_COMPS_IN_SCAN];
+  jpegli::JpegBitWriter bw;
+  float* dct_buffer;
+  JCOEF* coeff_block;
 };
 
 #endif  // LIB_JPEGLI_ENCODE_INTERNAL_H_
