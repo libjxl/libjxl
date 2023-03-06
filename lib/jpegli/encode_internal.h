@@ -57,7 +57,9 @@ typedef int16_t coeff_t;
 }  // namespace jpegli
 
 struct jpeg_comp_master {
-  std::array<jpegli::RowBuffer<float>, jpegli::kMaxComponents> input_buffer;
+  jpegli::RowBuffer<float> input_buffer[jpegli::kMaxComponents];
+  jpegli::RowBuffer<float> downsampler_output[jpegli::kMaxComponents];
+  jpegli::RowBuffer<float>* raw_data[jpegli::kMaxComponents];
   float distance = 1.0;
   bool force_baseline = true;
   bool xyb_mode = false;

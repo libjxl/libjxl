@@ -278,7 +278,7 @@ void ProcessCompressionParams(j_compress_ptr cinfo) {
   // Disable adaptive quantization for subsampled luma channel.
   int y_channel = cinfo->jpeg_color_space == JCS_RGB ? 1 : 0;
   jpeg_component_info* y_comp = &cinfo->comp_info[y_channel];
-  if (y_comp->h_samp_factor != cinfo->max_h_samp_factor &&
+  if (y_comp->h_samp_factor != cinfo->max_h_samp_factor ||
       y_comp->v_samp_factor != cinfo->max_v_samp_factor) {
     m->use_adaptive_quantization = false;
   }
@@ -292,9 +292,29 @@ void ProcessCompressionParams(j_compress_ptr cinfo) {
 
 void AllocateBuffers(j_compress_ptr cinfo) {
   jpeg_comp_master* m = cinfo->master;
-  for (int c = 0; c < cinfo->input_components; ++c) {
-    size_t stride = m->xsize_blocks * DCTSIZE;
-    m->input_buffer[c].Allocate(cinfo, m->ysize_blocks * DCTSIZE, stride);
+  size_t iMCU_width = DCTSIZE * cinfo->max_h_samp_factor;
+  size_t iMCU_height = DCTSIZE * cinfo->max_v_samp_factor;
+  size_t total_iMCU_cols = DivCeil(cinfo->image_width, iMCU_width);
+  if (!cinfo->raw_data_in) {
+    for (int c = 0; c < cinfo->input_components; ++c) {
+      size_t xsize = total_iMCU_cols * iMCU_width;
+      size_t ysize = 3 * iMCU_height;
+      m->input_buffer[c].Allocate(cinfo, ysize, xsize);
+    }
+  }
+  for (int c = 0; c < cinfo->num_components; ++c) {
+    jpeg_component_info* comp = &cinfo->comp_info[c];
+    size_t xsize = total_iMCU_cols * comp->h_samp_factor * DCTSIZE;
+    size_t ysize = 3 * comp->v_samp_factor * DCTSIZE;
+    if (cinfo->raw_data_in) {
+      m->input_buffer[c].Allocate(cinfo, ysize, xsize);
+      m->raw_data[c] = &m->input_buffer[c];
+    } else if (m->h_factor[c] == 1 && m->v_factor[c] == 1) {
+      m->raw_data[c] = &m->input_buffer[c];
+    } else {
+      m->downsampler_output[c].Allocate(cinfo, ysize, xsize);
+      m->raw_data[c] = &m->downsampler_output[c];
+    }
   }
   m->coeff_buffers =
       Allocate<jvirt_barray_ptr>(cinfo, cinfo->num_components, JPOOL_IMAGE);
@@ -307,13 +327,16 @@ void AllocateBuffers(j_compress_ptr cinfo) {
         xsize_blocks, ysize_blocks, comp->v_samp_factor);
   }
   if (m->use_adaptive_quantization) {
+    int y_channel = cinfo->jpeg_color_space == JCS_RGB ? 1 : 0;
+    jpeg_component_info* y_comp = &cinfo->comp_info[y_channel];
+    const size_t xsize_blocks = y_comp->width_in_blocks;
     const size_t vecsize = VectorSize();
-    const size_t xsize_padded = DivCeil(2 * m->xsize_blocks, vecsize) * vecsize;
-    m->diff_buffer = Allocate<float>(cinfo, m->xsize_blocks * DCTSIZE + 8,
-                                     JPOOL_IMAGE_ALIGNED);
+    const size_t xsize_padded = DivCeil(2 * xsize_blocks, vecsize) * vecsize;
+    m->diff_buffer =
+        Allocate<float>(cinfo, xsize_blocks * DCTSIZE + 8, JPOOL_IMAGE_ALIGNED);
     m->fuzzy_erosion_tmp.Allocate(cinfo, 2, xsize_padded);
-    m->pre_erosion.Allocate(cinfo, m->ysize_blocks * 2 + 2, xsize_padded);
-    m->quant_field.Allocate(cinfo, m->ysize_blocks, m->xsize_blocks);
+    m->pre_erosion.Allocate(cinfo, 6 * cinfo->max_v_samp_factor, xsize_padded);
+    m->quant_field.Allocate(cinfo, cinfo->max_v_samp_factor, xsize_blocks);
   }
 }
 
@@ -321,7 +344,7 @@ void ReadInputRow(j_compress_ptr cinfo, const uint8_t* scanline,
                   float* row[kMaxComponents]) {
   jpeg_comp_master* m = cinfo->master;
   for (int c = 0; c < cinfo->input_components; ++c) {
-    row[c] = m->input_buffer[c].DirectRow(cinfo->next_scanline);
+    row[c] = m->input_buffer[c].Row(cinfo->next_scanline);
   }
   ++cinfo->next_scanline;
   if (scanline == nullptr) {
@@ -350,7 +373,7 @@ void PadInputBuffer(j_compress_ptr cinfo, float* row[kMaxComponents]) {
     size_t num_rows = m->ysize_blocks * DCTSIZE - cinfo->image_height;
     for (size_t i = 0; i < num_rows; ++i) {
       for (int c = 0; c < cinfo->input_components; ++c) {
-        float* dest = m->input_buffer[c].DirectRow(cinfo->next_scanline) - 1;
+        float* dest = m->input_buffer[c].Row(cinfo->next_scanline) - 1;
         memcpy(dest, row[c] - 1, (len1 + 2) * sizeof(dest[0]));
       }
       ++cinfo->next_scanline;

@@ -316,21 +316,21 @@ void ComputeDCTCoefficients(j_compress_ptr cinfo) {
         reinterpret_cast<j_common_ptr>(cinfo), m->coeff_buffers[c], by0,
         max_block_rows, true);
     float* qmc = m->quant_mul[c];
-    RowBuffer<float>* plane = &m->input_buffer[c];
+    RowBuffer<float>* plane = m->raw_data[c];
     const int h_factor = m->h_factor[c];
     const int v_factor = m->v_factor[c];
     for (int iy = 0; iy < comp->v_samp_factor; iy++) {
       size_t by = by0 + iy;
       if (by >= comp->height_in_blocks) continue;
       JBLOCKROW brow = ba[iy];
-      const float* row = plane->DirectRow(8 * by);
+      const float* row = plane->Row(8 * by);
       for (size_t bx = 0; bx < comp->width_in_blocks; bx++) {
         JCOEF* block = &brow[bx][0];
         TransformFromPixels(row + 8 * bx, plane->stride(), dct, scratch_space);
         if (m->use_adaptive_quantization) {
           // Create more zeros in areas where jpeg xl would have used a lower
           // quantization multiplier.
-          float relq = m->quant_field.DirectRow(by * v_factor)[bx * h_factor];
+          float relq = m->quant_field.Row(by * v_factor)[bx * h_factor];
           float zero_bias = 0.5f + m->zero_bias_mul[c] * relq;
           zero_bias = std::min(1.5f, zero_bias);
           QuantizeBlock(dct, qmc, zero_bias, block);
