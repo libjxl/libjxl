@@ -1,0 +1,40 @@
+# Copyright (c) the JPEG XL Project Authors. All rights reserved.
+#
+# Use of this source code is governed by a BSD-style
+# license that can be found in the LICENSE file.
+
+# Workflow for building and running tests.
+
+name: Update branch with updated submodule on libjxl
+
+on: repository_dispatch
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 'Cloning libjxl'
+        uses: actions/checkout@v2
+        with:
+          submodules: recursive
+          fetch-depth: 0 # otherwise, there would be errors pushing refs to the destination repository.
+
+      - name: Pull & update highway
+        working-directory: ./third_party/highway
+        run: |
+          git fetch origin
+          git checkout origin/master
+      - name: Commit
+        run: |
+          git config user.email "actions@github.com"
+          git config user.name "GitHub Actions - update submodules"
+          git add --all
+          git commit -m "Update highway submodule" || echo "No changes to commit"
+      
+      - name: Push changes
+        uses: ad-m/github-push-action@master
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          branch: 'refs/heads/test_highway'
+          force: true
