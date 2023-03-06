@@ -1,8 +1,7 @@
 name: Update branch with updated submodule on libjxl
 
-on:
-  pull_request:
-    types: [opened, reopened, synchronize]
+on: repository_dispatch
+
 jobs:
   update:
     runs-on: ubuntu-latest
