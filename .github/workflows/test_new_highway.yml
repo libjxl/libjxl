@@ -31,4 +31,4 @@ jobs:
         uses: ad-m/github-push-action@master
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          branch: test_highway
+          branch: HEAD:refs/heads/test_highway
