@@ -19,12 +19,15 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0 # otherwise, there would be errors pushing refs to the destination repository.
-
       - name: Pull & update highway
         working-directory: ./third_party/highway
         run: |
           git fetch origin
           git checkout origin/master
+      - name: Update deps.sh
+        run: |
+          NEWHASH=`git submodule status third_party/highway | cut -d' ' -f1 | cut -c2-`
+          sed -i "s/\(THIRD_PARTY_HIGHWAY=\"\)[^\"]*/\1$NEWHASH/" deps.sh
       - name: Commit
         run: |
           git config user.email "actions@github.com"
