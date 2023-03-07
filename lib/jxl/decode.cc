@@ -1253,11 +1253,8 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec) {
       Span<const uint8_t> span;
       JXL_API_RETURN_IF_ERROR(dec->GetCodestreamInput(&span));
       auto reader = GetBitReader(span);
-      bool output_needed =
-          (dec->preview_frame ? (dec->events_wanted & JXL_DEC_PREVIEW_IMAGE)
-                              : (dec->events_wanted & JXL_DEC_FULL_IMAGE));
       jxl::Status status = dec->frame_dec->InitFrame(
-          reader.get(), dec->ib.get(), dec->preview_frame, output_needed);
+          reader.get(), dec->ib.get(), dec->preview_frame);
       if (!reader->AllReadsWithinBounds() ||
           status.code() == StatusCode::kNotEnoughBytes) {
         return dec->RequestMoreInput();
@@ -1270,6 +1267,12 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec) {
       if (!CheckSizeLimit(dec, frame_dim.xsize_upsampled_padded,
                           frame_dim.ysize_upsampled_padded)) {
         return JXL_API_ERROR("frame is too large");
+      }
+      bool output_needed =
+          (dec->preview_frame ? (dec->events_wanted & JXL_DEC_PREVIEW_IMAGE)
+                              : (dec->events_wanted & JXL_DEC_FULL_IMAGE));
+      if (output_needed) {
+        JXL_API_RETURN_IF_ERROR(dec->frame_dec->InitFrameOutput());
       }
       if (dec->cpu_limit_base != 0) {
         // No overflow, checked in CheckSizeLimit.

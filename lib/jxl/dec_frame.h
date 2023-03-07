@@ -50,10 +50,12 @@ class FrameDecoder {
   void SetCoalescing(bool c) { coalescing_ = c; }
 
   // Read FrameHeader and table of contents from the given BitReader.
-  // Also checks frame dimensions for their limits, and sets the output
-  // image buffer.
   Status InitFrame(BitReader* JXL_RESTRICT br, ImageBundle* decoded,
-                   bool is_preview, bool output_needed);
+                   bool is_preview);
+
+  // Checks frame dimensions for their limits, and sets the output
+  // image buffer.
+  Status InitFrameOutput();
 
   struct SectionInfo {
     BitReader* JXL_RESTRICT br;
