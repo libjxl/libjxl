@@ -23,6 +23,8 @@ jobs:
       - name: Pull & update highway
         working-directory: ./third_party/highway
         run: |
+          git config user.email "firsching@google.com"
+          git config user.name "GitHub Actions - update submodules"
           git fetch origin
           git checkout origin/master
       - name: Update deps.sh
