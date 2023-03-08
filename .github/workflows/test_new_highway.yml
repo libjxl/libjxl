@@ -18,6 +18,7 @@ jobs:
         uses: actions/checkout@v2
         with:
           submodules: recursive
+          token:  ${{ secrets.TOKEN }}
           fetch-depth: 0 # otherwise, there would be errors pushing refs to the destination repository.
       - name: Pull & update highway
         working-directory: ./third_party/highway
@@ -30,14 +31,12 @@ jobs:
           sed -i "s/\(THIRD_PARTY_HIGHWAY=\"\)[^\"]*/\1$NEWHASH/" deps.sh
       - name: Commit
         run: |
-          git config user.email "actions@github.com"
-          git config user.name "GitHub Actions - update submodules"
           git add --all
           git commit -m "Update highway submodule" || echo "No changes to commit"
       
       - name: Push changes
         uses: ad-m/github-push-action@master
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          github_token: ${{ secrets.TOKEN }}
           branch: 'refs/heads/test_highway'
           force: true
