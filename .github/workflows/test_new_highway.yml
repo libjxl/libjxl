@@ -23,8 +23,6 @@ jobs:
       - name: Pull & update highway
         working-directory: ./third_party/highway
         run: |
-          git config user.email "firsching@google.com"
-          git config user.name "GitHub Actions - update submodules"
           git fetch origin
           git checkout origin/master
       - name: Update deps.sh
@@ -33,6 +31,8 @@ jobs:
           sed -i "s/\(THIRD_PARTY_HIGHWAY=\"\)[^\"]*/\1$NEWHASH/" deps.sh
       - name: Commit
         run: |
+          git config user.email "firsching@google.com"
+          git config user.name "GitHub Actions - update submodules"
           git add --all
           git commit -m "Update highway submodule" || echo "No changes to commit"
       
