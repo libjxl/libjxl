@@ -65,6 +65,7 @@ foreach (TESTFILE IN LISTS JPEGXL_INTERNAL_TESTS)
     # the library is also instrumented when running tests that execute it.
     ${JPEGXL_COVERAGE_FLAGS}
   )
+  set_target_properties(${TESTNAME} PROPERTIES LINK_FLAGS "${JPEGXL_COVERAGE_LINK_FLAGS}")
   target_link_libraries(${TESTNAME}
     box
     gmock
