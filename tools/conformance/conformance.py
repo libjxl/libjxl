@@ -34,7 +34,7 @@ def CompareNPY(ref, ref_icc, dec, dec_icc, frame_idx, rmse_limit, peak_error):
     if ref_icc != dec_icc:
         # Transform colors before comparison.
         if num_channels < 3:
-            return Failure(f"Only RGB images are supported")
+            return Failure("Only RGB images are supported")
         dec_clr = dec_frame[:, :, 0:3]
         dec_frame[:, :, 0:3] = lcms2.convert_pixels(dec_icc, ref_icc, dec_clr)
 
