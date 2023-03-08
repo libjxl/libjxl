@@ -12,4 +12,4 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - run: pip install --user ruff
-    - run: ruff --format=github --line-length=102 --select=E402,E722,F401,F841 --target-version=py37 .
+    - run: ruff --format=github --line-length=134 --select=E402,E722,F401,F841 --target-version=py37 .
