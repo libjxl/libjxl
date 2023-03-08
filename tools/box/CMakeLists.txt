@@ -22,5 +22,5 @@ add_executable(box_list
 target_link_libraries(box_list
   box
 )
-target_link_options(box_list PRIVATE ${JPEGXL_COVERAGE_LINK_FLAGS})
+set_target_properties(box_list PROPERTIES LINK_FLAGS "${JPEGXL_COVERAGE_LINK_FLAGS}")
 endif()  # JPEGXL_ENABLE_DEVTOOLS
