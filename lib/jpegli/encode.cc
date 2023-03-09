@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "lib/jpegli/adaptive_quantization.h"
+#include "lib/jpegli/bit_writer.h"
 #include "lib/jpegli/bitstream.h"
 #include "lib/jpegli/color_transform.h"
 #include "lib/jpegli/dct.h"
@@ -317,7 +318,7 @@ void AllocateBuffers(j_compress_ptr cinfo) {
     }
   }
   m->dct_buffer = Allocate<float>(cinfo, 2 * DCTSIZE2, JPOOL_IMAGE_ALIGNED);
-  m->coeff_block = Allocate<JCOEF>(cinfo, DCTSIZE2, JPOOL_IMAGE_ALIGNED);
+  m->block_tmp = Allocate<int32_t>(cinfo, DCTSIZE2 * 4, JPOOL_IMAGE_ALIGNED);
   m->coeff_buffers =
       Allocate<jvirt_barray_ptr>(cinfo, cinfo->num_components, JPOOL_IMAGE);
   for (int c = 0; c < cinfo->num_components; ++c) {
@@ -405,6 +406,7 @@ void ProcessiMCURow(j_compress_ptr cinfo) {
   jpegli::ComputeAdaptiveQuantField(cinfo);
   if (IsStreamingSupported(cinfo)) {
     jpegli::WriteiMCURow(cinfo);
+    jpegli::EmptyBitWriterBuffer(&cinfo->master->bw);
   } else {
     jpegli::ComputeDCTCoefficients(cinfo);
   }
@@ -451,7 +453,9 @@ void WriteScanHeader(j_compress_ptr cinfo, size_t scan_idx) {
   }
   size_t num_dht = cinfo->master->scan_coding_info[scan_idx].num_huffman_codes;
   if (num_dht > 0) {
-    EncodeDHT(cinfo, m->huffman_codes.data() + m->last_dht_index, num_dht);
+    bool pre_shifted = IsStreamingSupported(cinfo);
+    EncodeDHT(cinfo, m->huffman_codes.data() + m->last_dht_index, num_dht,
+              pre_shifted);
     m->last_dht_index += num_dht;
   }
   EncodeSOS(cinfo, scan_idx);

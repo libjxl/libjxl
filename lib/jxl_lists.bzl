@@ -455,6 +455,7 @@ libjxl_gbench_sources = [
 libjxl_jpegli_sources = [
     "jpegli/adaptive_quantization.cc",
     "jpegli/adaptive_quantization.h",
+    "jpegli/bit_writer.h",
     "jpegli/bitstream.cc",
     "jpegli/bitstream.h",
     "jpegli/color_transform.cc",
@@ -462,6 +463,7 @@ libjxl_jpegli_sources = [
     "jpegli/common.cc",
     "jpegli/common.h",
     "jpegli/common_internal.h",
+    "jpegli/dct-inl.h",
     "jpegli/dct.cc",
     "jpegli/dct.h",
     "jpegli/decode.cc",
@@ -497,6 +499,7 @@ libjxl_jpegli_sources = [
     "jpegli/simd.h",
     "jpegli/source_manager.cc",
     "jpegli/source_manager.h",
+    "jpegli/transpose-inl.h",
     "jpegli/upsample.cc",
     "jpegli/upsample.h",
 ]

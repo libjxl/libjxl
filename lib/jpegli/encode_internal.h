@@ -15,6 +15,7 @@
 #include <array>
 #include <vector>
 
+#include "lib/jpegli/bit_writer.h"
 #include "lib/jpegli/common_internal.h"
 #include "lib/jpegli/encode.h"
 
@@ -38,6 +39,8 @@ struct JPEGHuffmanCode {
 // DCTCodingState: maximum number of correction bits to buffer
 const int kJPEGMaxCorrectionBits = 1u << 16;
 
+static constexpr float kDCBias = 128.0f;
+
 constexpr int kDefaultProgressiveLevel = 2;
 
 struct HuffmanCodeTable {
@@ -53,17 +56,6 @@ struct ScanCodingInfo {
 };
 
 typedef int16_t coeff_t;
-
-// Handles the packing of bits into output bytes.
-struct JpegBitWriter {
-  j_compress_ptr cinfo;
-  std::vector<uint8_t> buffer;
-  uint8_t* data;
-  size_t pos;
-  uint64_t put_buffer;
-  int put_bits;
-  bool healthy;
-};
 
 }  // namespace jpegli
 
@@ -108,7 +100,7 @@ struct jpeg_comp_master {
   JCOEF last_dc_coeff[MAX_COMPS_IN_SCAN];
   jpegli::JpegBitWriter bw;
   float* dct_buffer;
-  JCOEF* coeff_block;
+  int32_t* block_tmp;
 };
 
 #endif  // LIB_JPEGLI_ENCODE_INTERNAL_H_

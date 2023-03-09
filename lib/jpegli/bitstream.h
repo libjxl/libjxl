@@ -13,16 +13,12 @@
 
 namespace jpegli {
 
-void WriteOutput(j_compress_ptr cinfo, const uint8_t* buf, size_t bufsize);
-void WriteOutput(j_compress_ptr cinfo, const std::vector<uint8_t>& bytes);
-void WriteOutput(j_compress_ptr cinfo, std::initializer_list<uint8_t> bytes);
-
 void EncodeAPP0(j_compress_ptr cinfo);
 void EncodeAPP14(j_compress_ptr cinfo);
 void EncodeSOF(j_compress_ptr cinfo);
 void EncodeSOS(j_compress_ptr cinfo, int scan_index);
 void EncodeDHT(j_compress_ptr cinfo, const JPEGHuffmanCode* huffman_codes,
-               size_t num_huffman_codes);
+               size_t num_huffman_codes, bool pre_shifted = false);
 void EncodeDQT(j_compress_ptr cinfo);
 bool EncodeDRI(j_compress_ptr cinfo);
 
@@ -30,9 +26,6 @@ bool EncodeScan(j_compress_ptr cinfo, int scan_index);
 
 void EncodeSingleScan(j_compress_ptr cinfo);
 
-void JpegBitWriterInit(JpegBitWriter* bw, j_compress_ptr cinfo);
-void JumpToByteBoundary(JpegBitWriter* bw);
-void JpegBitWriterFinish(JpegBitWriter* bw);
 void WriteiMCURow(j_compress_ptr cinfo);
 
 }  // namespace jpegli
