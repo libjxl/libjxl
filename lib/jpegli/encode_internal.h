@@ -71,6 +71,7 @@ struct jpeg_comp_master {
   int progressive_level = jpegli::kDefaultProgressiveLevel;
   size_t xsize_blocks = 0;
   size_t ysize_blocks = 0;
+  size_t blocks_per_iMCU_row = 0;
   std::vector<jpegli::ScanCodingInfo> scan_coding_info;
   std::vector<std::vector<uint8_t>> special_markers;
   uint8_t* next_marker_byte = nullptr;
@@ -94,6 +95,7 @@ struct jpeg_comp_master {
   jpegli::RowBuffer<float> pre_erosion;
   jpegli::RowBuffer<float> quant_field;
   jvirt_barray_ptr* coeff_buffers = nullptr;
+  size_t next_input_row;
   size_t next_iMCU_row;
   size_t last_dht_index;
   size_t last_restart_interval;

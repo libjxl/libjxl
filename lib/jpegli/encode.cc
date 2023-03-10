@@ -263,6 +263,7 @@ void ProcessCompressionParams(j_compress_ptr cinfo) {
   m->xsize_blocks = total_iMCU_cols * cinfo->max_h_samp_factor;
   m->ysize_blocks = cinfo->total_iMCU_rows * cinfo->max_v_samp_factor;
 
+  size_t blocks_per_iMCU = 0;
   for (int c = 0; c < cinfo->num_components; ++c) {
     jpeg_component_info* comp = &cinfo->comp_info[c];
     if (cinfo->max_h_samp_factor % comp->h_samp_factor != 0 ||
@@ -275,7 +276,9 @@ void ProcessCompressionParams(j_compress_ptr cinfo) {
     comp->downsampled_height = DivCeil(cinfo->image_height, m->v_factor[c]);
     comp->width_in_blocks = DivCeil(comp->downsampled_width, DCTSIZE);
     comp->height_in_blocks = DivCeil(comp->downsampled_height, DCTSIZE);
+    blocks_per_iMCU += comp->h_samp_factor * comp->v_samp_factor;
   }
+  m->blocks_per_iMCU_row = total_iMCU_cols * blocks_per_iMCU;
   // Disable adaptive quantization for subsampled luma channel.
   int y_channel = cinfo->jpeg_color_space == JCS_RGB ? 1 : 0;
   jpeg_component_info* y_comp = &cinfo->comp_info[y_channel];
@@ -347,9 +350,9 @@ void ReadInputRow(j_compress_ptr cinfo, const uint8_t* scanline,
                   float* row[kMaxComponents]) {
   jpeg_comp_master* m = cinfo->master;
   for (int c = 0; c < cinfo->input_components; ++c) {
-    row[c] = m->input_buffer[c].Row(cinfo->next_scanline);
+    row[c] = m->input_buffer[c].Row(m->next_input_row);
   }
-  ++cinfo->next_scanline;
+  ++m->next_input_row;
   if (scanline == nullptr) {
     for (int c = 0; c < cinfo->input_components; ++c) {
       memset(row[c], 0, cinfo->image_width * sizeof(row[c][0]));
@@ -372,14 +375,14 @@ void PadInputBuffer(j_compress_ptr cinfo, float* row[kMaxComponents]) {
     }
     row[c][-1] = row[c][0];
   }
-  if (cinfo->next_scanline == cinfo->image_height) {
+  if (m->next_input_row == cinfo->image_height) {
     size_t num_rows = m->ysize_blocks * DCTSIZE - cinfo->image_height;
     for (size_t i = 0; i < num_rows; ++i) {
       for (int c = 0; c < cinfo->input_components; ++c) {
-        float* dest = m->input_buffer[c].Row(cinfo->next_scanline) - 1;
+        float* dest = m->input_buffer[c].Row(m->next_input_row) - 1;
         memcpy(dest, row[c] - 1, (len1 + 2) * sizeof(dest[0]));
       }
-      ++cinfo->next_scanline;
+      ++m->next_input_row;
     }
   }
 }
@@ -403,27 +406,26 @@ void ProcessiMCURow(j_compress_ptr cinfo) {
   if (!cinfo->raw_data_in) {
     DownsampleInputBuffer(cinfo);
   }
-  jpegli::ComputeAdaptiveQuantField(cinfo);
+  ComputeAdaptiveQuantField(cinfo);
   if (IsStreamingSupported(cinfo)) {
-    jpegli::WriteiMCURow(cinfo);
-    jpegli::EmptyBitWriterBuffer(&cinfo->master->bw);
+    WriteiMCURow(cinfo);
   } else {
-    jpegli::ComputeDCTCoefficients(cinfo);
+    ComputeDCTCoefficients(cinfo);
   }
   ++cinfo->master->next_iMCU_row;
 }
 
 void ProcessiMCURows(j_compress_ptr cinfo) {
+  jpeg_comp_master* m = cinfo->master;
   size_t iMCU_height = DCTSIZE * cinfo->max_v_samp_factor;
   // To have context rows both above and below the current iMCU row, we delay
   // processing the first iMCU row and process two iMCU rows after we receive
   // the last input row.
-  if (cinfo->next_scanline % iMCU_height == 0 &&
-      cinfo->next_scanline > iMCU_height) {
-    jpegli::ProcessiMCURow(cinfo);
+  if (m->next_input_row % iMCU_height == 0 && m->next_input_row > iMCU_height) {
+    ProcessiMCURow(cinfo);
   }
-  if (cinfo->next_scanline >= cinfo->image_height) {
-    jpegli::ProcessiMCURow(cinfo);
+  if (m->next_input_row >= cinfo->image_height) {
+    ProcessiMCURow(cinfo);
   }
 }
 
@@ -464,11 +466,10 @@ void WriteScanHeader(j_compress_ptr cinfo, size_t scan_idx) {
 void WriteHeaderMarkers(j_compress_ptr cinfo) {
   jpegli::WriteFrameHeader(cinfo);
   if (IsStreamingSupported(cinfo)) {
-    jpegli::CopyHuffmanCodes(cinfo);
-    jpegli::WriteScanHeader(cinfo, 0);
+    CopyHuffmanCodes(cinfo);
+    WriteScanHeader(cinfo, 0);
     memset(cinfo->master->last_dc_coeff, 0,
            sizeof(cinfo->master->last_dc_coeff));
-    JpegBitWriterInit(&cinfo->master->bw, cinfo);
   }
 }
 
@@ -781,7 +782,9 @@ void jpegli_start_compress(j_compress_ptr cinfo, boolean write_all_tables) {
   }
   (*cinfo->mem->realize_virt_arrays)(reinterpret_cast<j_common_ptr>(cinfo));
   jpegli::WriteFileHeader(cinfo);
+  jpegli::JpegBitWriterInit(cinfo);
   cinfo->next_scanline = 0;
+  cinfo->master->next_input_row = 0;
   cinfo->master->next_iMCU_row = 0;
   cinfo->master->last_restart_interval = 0;
   cinfo->master->last_dht_index = 0;
@@ -797,6 +800,8 @@ void jpegli_write_coefficients(j_compress_ptr cinfo,
   cinfo->master->coeff_buffers = coef_arrays;
   jpegli_suppress_tables(cinfo, FALSE);
   jpegli::WriteFileHeader(cinfo);
+  jpegli::JpegBitWriterInit(cinfo);
+  cinfo->master->next_input_row = cinfo->image_height;
   cinfo->next_scanline = cinfo->image_height;
   cinfo->master->last_restart_interval = 0;
   cinfo->master->last_dht_index = 0;
@@ -898,14 +903,30 @@ JDIMENSION jpegli_write_scanlines(j_compress_ptr cinfo, JSAMPARRAY scanlines,
   if (num_lines + cinfo->next_scanline > cinfo->image_height) {
     num_lines = cinfo->image_height - cinfo->next_scanline;
   }
+  JDIMENSION prev_scanline = cinfo->next_scanline;
+  size_t input_lag = (std::min<size_t>(cinfo->image_height, m->next_input_row) -
+                      cinfo->next_scanline);
+  if (input_lag > num_lines) {
+    JPEGLI_ERROR("Need at least %u lines to continue", input_lag);
+  }
+  if (input_lag > 0) {
+    if (!jpegli::EmptyBitWriterBuffer(&m->bw)) {
+      return 0;
+    }
+    cinfo->next_scanline += input_lag;
+  }
   float* rows[jpegli::kMaxComponents];
-  for (size_t i = 0; i < num_lines; ++i) {
+  for (size_t i = input_lag; i < num_lines; ++i) {
     jpegli::ReadInputRow(cinfo, scanlines[i], rows);
     (*m->color_transform)(rows, cinfo->image_width);
     jpegli::PadInputBuffer(cinfo, rows);
     jpegli::ProcessiMCURows(cinfo);
+    if (!jpegli::EmptyBitWriterBuffer(&m->bw)) {
+      break;
+    }
+    ++cinfo->next_scanline;
   }
-  return num_lines;
+  return cinfo->next_scanline - prev_scanline;
 }
 
 JDIMENSION jpegli_write_raw_data(j_compress_ptr cinfo, JSAMPIMAGE data,
@@ -926,7 +947,15 @@ JDIMENSION jpegli_write_raw_data(j_compress_ptr cinfo, JSAMPIMAGE data,
   if (num_lines < iMCU_height) {
     JPEGLI_ERROR("Missing input lines, minimum is %u", iMCU_height);
   }
-  size_t iMCU_y = cinfo->next_scanline / iMCU_height;
+  if (cinfo->next_scanline < m->next_input_row) {
+    JXL_ASSERT(m->next_input_row - cinfo->next_scanline == iMCU_height);
+    if (!jpegli::EmptyBitWriterBuffer(&m->bw)) {
+      return 0;
+    }
+    cinfo->next_scanline = m->next_input_row;
+    return iMCU_height;
+  }
+  size_t iMCU_y = m->next_input_row / iMCU_height;
   float* rows[jpegli::kMaxComponents];
   for (int c = 0; c < cinfo->num_components; ++c) {
     JSAMPARRAY plane = data[c];
@@ -946,8 +975,12 @@ JDIMENSION jpegli_write_raw_data(j_compress_ptr cinfo, JSAMPIMAGE data,
       buffer.PadRow(y0 + i, xsize, /*border=*/1);
     }
   }
-  cinfo->next_scanline += iMCU_height;
+  m->next_input_row += iMCU_height;
   jpegli::ProcessiMCURows(cinfo);
+  if (!jpegli::EmptyBitWriterBuffer(&m->bw)) {
+    return 0;
+  }
+  cinfo->next_scanline += iMCU_height;
   return iMCU_height;
 }
 
@@ -964,8 +997,10 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
   }
 
   if (jpegli::IsStreamingSupported(cinfo)) {
-    JumpToByteBoundary(&m->bw);
-    JpegBitWriterFinish(&m->bw);
+    jpegli::JumpToByteBoundary(&m->bw);
+    if (!jpegli::EmptyBitWriterBuffer(&m->bw)) {
+      JPEGLI_ERROR("Output suspension is not supported in finish_compress");
+    }
     if (!m->bw.healthy) {
       JPEGLI_ERROR("Failed to encode scan.");
     }

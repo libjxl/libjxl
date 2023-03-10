@@ -13,6 +13,10 @@
 
 namespace jpegli {
 
+void WriteOutput(j_compress_ptr cinfo, const uint8_t* buf, size_t bufsize);
+void WriteOutput(j_compress_ptr cinfo, const std::vector<uint8_t>& bytes);
+void WriteOutput(j_compress_ptr cinfo, std::initializer_list<uint8_t> bytes);
+
 void EncodeAPP0(j_compress_ptr cinfo);
 void EncodeAPP14(j_compress_ptr cinfo);
 void EncodeSOF(j_compress_ptr cinfo);
