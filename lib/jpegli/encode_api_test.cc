@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "lib/jpegli/encode.h"
+#include "lib/jpegli/error.h"
 #include "lib/jpegli/test_utils.h"
 #include "lib/jpegli/testing.h"
 #include "lib/jxl/sanitizers.h"
@@ -1266,6 +1267,48 @@ TEST(ErrorHandlingTest, NonIntegralSamplingRatio) {
   cinfo.comp_info[0].h_samp_factor = 3;
   cinfo.comp_info[1].h_samp_factor = 2;
   jpegli_start_compress(&cinfo, TRUE);
+  EXPECT_FAILURE();
+}
+
+constexpr const char* kAddOnTable[] = {"First message",
+                                       "Second message with int param %d",
+                                       "Third message with string param %s"};
+
+TEST(ErrorHandlingTest, AddOnTableNoParam) {
+  MyClientData data;
+  jpeg_compress_struct cinfo = {};
+  ERROR_HANDLER_SETUP(return );
+  cinfo.err->addon_message_table = kAddOnTable;
+  cinfo.err->first_addon_message = 10000;
+  cinfo.err->last_addon_message = 10002;
+  cinfo.err->msg_code = 10000;
+  (*cinfo.err->error_exit)(reinterpret_cast<j_common_ptr>(&cinfo));
+  EXPECT_FAILURE();
+}
+
+TEST(ErrorHandlingTest, AddOnTableIntParam) {
+  MyClientData data;
+  jpeg_compress_struct cinfo = {};
+  ERROR_HANDLER_SETUP(return );
+  cinfo.err->addon_message_table = kAddOnTable;
+  cinfo.err->first_addon_message = 10000;
+  cinfo.err->last_addon_message = 10002;
+  cinfo.err->msg_code = 10001;
+  cinfo.err->msg_parm.i[0] = 17;
+  (*cinfo.err->error_exit)(reinterpret_cast<j_common_ptr>(&cinfo));
+  EXPECT_FAILURE();
+}
+
+TEST(ErrorHandlingTest, AddOnTableNoStringParam) {
+  MyClientData data;
+  jpeg_compress_struct cinfo = {};
+  ERROR_HANDLER_SETUP(return );
+  cinfo.err->addon_message_table = kAddOnTable;
+  cinfo.err->first_addon_message = 10000;
+  cinfo.err->last_addon_message = 10002;
+  cinfo.err->msg_code = 10002;
+  memcpy(cinfo.err->msg_parm.s, "MESSAGE PARAM", 14);
+  (*cinfo.err->error_exit)(reinterpret_cast<j_common_ptr>(&cinfo));
   EXPECT_FAILURE();
 }
 

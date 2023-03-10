@@ -770,6 +770,7 @@ void jpegli_suppress_tables(j_compress_ptr cinfo, boolean suppress) {
 
 void jpegli_start_compress(j_compress_ptr cinfo, boolean write_all_tables) {
   CheckState(cinfo, jpegli::kEncStart);
+  (*cinfo->err->reset_error_mgr)(reinterpret_cast<j_common_ptr>(cinfo));
   jpegli::ProcessCompressionParams(cinfo);
   jpegli::AllocateBuffers(cinfo);
   jpegli::ChooseInputMethod(cinfo);
@@ -795,6 +796,7 @@ void jpegli_start_compress(j_compress_ptr cinfo, boolean write_all_tables) {
 void jpegli_write_coefficients(j_compress_ptr cinfo,
                                jvirt_barray_ptr* coef_arrays) {
   CheckState(cinfo, jpegli::kEncStart);
+  (*cinfo->err->reset_error_mgr)(reinterpret_cast<j_common_ptr>(cinfo));
   jpegli::ProcessCompressionParams(cinfo);
   (*cinfo->mem->realize_virt_arrays)(reinterpret_cast<j_common_ptr>(cinfo));
   cinfo->master->coeff_buffers = coef_arrays;
@@ -814,6 +816,7 @@ void jpegli_write_tables(j_compress_ptr cinfo) {
   if (cinfo->dest == nullptr) {
     JPEGLI_ERROR("Missing destination.");
   }
+  (*cinfo->err->reset_error_mgr)(reinterpret_cast<j_common_ptr>(cinfo));
   (*cinfo->dest->init_destination)(cinfo);
   jpeg_comp_master* m = cinfo->master;
   jpegli::WriteOutput(cinfo, {0xFF, 0xD8});  // SOI
