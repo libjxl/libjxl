@@ -30,6 +30,12 @@
 #elif (defined(__x86_64__) || defined(_M_X64)) && !defined(_MSC_VER)
 #include <immintrin.h>
 
+// manually add _mm512_cvtsi512_si32 definition on MacOS Mojave
+// copied from gcc 11.1.0 include/avx512fintrin.h line 14367-14373
+#if __APPLE__ && defined(__clang__) && defined(__MAC_10_0)
+inline int __attribute__ ((__gnu_inline__, __always_inline__, __artificial__)) _mm512_cvtsi512_si32 (__m512i __A) { __v16si __B = (__v16si) __A; return __B[0]; }
+#endif
+
 // TODO(veluca): MSVC support for dynamic dispatch.
 #if defined(__clang__) || defined(__GNUC__)
 
