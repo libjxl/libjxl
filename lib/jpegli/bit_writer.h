@@ -13,40 +13,11 @@
 #include <string.h>
 /* clang-format on */
 
-#include "lib/jpegli/error.h"
+#include <vector>
+
 #include "lib/jxl/base/compiler_specific.h"
 
 namespace jpegli {
-
-static JXL_INLINE void WriteOutput(j_compress_ptr cinfo, const uint8_t* buf,
-                                   size_t bufsize) {
-  size_t pos = 0;
-  while (pos < bufsize) {
-    if (cinfo->dest->free_in_buffer == 0 &&
-        !(*cinfo->dest->empty_output_buffer)(cinfo)) {
-      JPEGLI_ERROR("Destination suspension is not supported.");
-    }
-    size_t len = std::min<size_t>(cinfo->dest->free_in_buffer, bufsize - pos);
-    memcpy(cinfo->dest->next_output_byte, buf + pos, len);
-    pos += len;
-    cinfo->dest->free_in_buffer -= len;
-    cinfo->dest->next_output_byte += len;
-    if (cinfo->dest->free_in_buffer == 0 &&
-        !(*cinfo->dest->empty_output_buffer)(cinfo)) {
-      JPEGLI_ERROR("Destination suspension is not supported.");
-    }
-  }
-}
-
-static JXL_INLINE void WriteOutput(j_compress_ptr cinfo,
-                                   const std::vector<uint8_t>& bytes) {
-  WriteOutput(cinfo, bytes.data(), bytes.size());
-}
-
-static JXL_INLINE void WriteOutput(j_compress_ptr cinfo,
-                                   std::initializer_list<uint8_t> bytes) {
-  WriteOutput(cinfo, bytes.begin(), bytes.size());
-}
 
 // Handles the packing of bits into output bytes.
 struct JpegBitWriter {
@@ -54,41 +25,22 @@ struct JpegBitWriter {
   std::vector<uint8_t> buffer;
   uint8_t* data;
   size_t pos;
+  size_t output_pos;
   uint64_t put_buffer;
   int free_bits;
   bool healthy;
 };
 
-// JpegBitWriter: buffer size
-const size_t kJpegBitWriterChunkSize = 16384;
+void JpegBitWriterInit(j_compress_ptr cinfo);
+
+bool EmptyBitWriterBuffer(JpegBitWriter* bw);
+
+void JumpToByteBoundary(JpegBitWriter* bw);
 
 // Returns non-zero if and only if x has a zero byte, i.e. one of
 // x & 0xff, x & 0xff00, ..., x & 0xff00000000000000 is zero.
 static JXL_INLINE uint64_t HasZeroByte(uint64_t x) {
   return (x - 0x0101010101010101ULL) & ~x & 0x8080808080808080ULL;
-}
-
-static JXL_INLINE void JpegBitWriterInit(JpegBitWriter* bw,
-                                         j_compress_ptr cinfo) {
-  bw->cinfo = cinfo;
-  bw->buffer.resize(kJpegBitWriterChunkSize);
-  bw->data = bw->buffer.data();
-  bw->pos = 0;
-  bw->put_buffer = 0;
-  bw->free_bits = 64;
-  bw->healthy = true;
-}
-
-static JXL_INLINE void EmptyBitWriterBuffer(JpegBitWriter* bw) {
-  WriteOutput(bw->cinfo, bw->data, bw->pos);
-  bw->data = bw->buffer.data();
-  bw->pos = 0;
-}
-
-static JXL_INLINE void Reserve(JpegBitWriter* bw, size_t n_bytes) {
-  if (JXL_UNLIKELY((bw->pos + n_bytes) > kJpegBitWriterChunkSize)) {
-    EmptyBitWriterBuffer(bw);
-  }
 }
 
 /**
@@ -107,7 +59,6 @@ static JXL_INLINE void DischargeBitBuffer(JpegBitWriter* bw) {
   // The JPEG format requires that after every 0xff byte in the entropy
   // coded section, there is a zero byte, therefore we first check if any of
   // the bytes of put_buffer is 0xFF.
-  Reserve(bw, 16);
   if (HasZeroByte(~bw->put_buffer)) {
     // We have a 0xFF byte somewhere, examine each byte and append a zero
     // byte if necessary.
@@ -152,36 +103,6 @@ static JXL_INLINE void WriteBits(JpegBitWriter* bw, int nbits, uint64_t bits) {
   }
   bw->put_buffer <<= nbits;
   bw->put_buffer |= bits;
-}
-
-static JXL_INLINE void EmitMarker(JpegBitWriter* bw, int marker) {
-  Reserve(bw, 2);
-  bw->data[bw->pos++] = 0xFF;
-  bw->data[bw->pos++] = marker;
-}
-
-static JXL_INLINE void JumpToByteBoundary(JpegBitWriter* bw) {
-  size_t n_bits = bw->free_bits & 7u;
-  if (n_bits > 0) {
-    WriteBits(bw, n_bits, (1u << n_bits) - 1);
-  }
-  Reserve(bw, 16);
-  bw->put_buffer <<= bw->free_bits;
-  while (bw->free_bits <= 56) {
-    int c = (bw->put_buffer >> 56) & 0xFF;
-    EmitByte(bw, c);
-    bw->put_buffer <<= 8;
-    bw->free_bits += 8;
-  }
-  bw->put_buffer = 0;
-  bw->free_bits = 64;
-}
-
-static JXL_INLINE void JpegBitWriterFinish(JpegBitWriter* bw) {
-  if (bw->pos == 0) return;
-  WriteOutput(bw->cinfo, bw->data, bw->pos);
-  bw->data = nullptr;
-  bw->pos = 0;
 }
 
 }  // namespace jpegli

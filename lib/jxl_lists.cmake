@@ -455,6 +455,7 @@ set(JPEGXL_INTERNAL_GBENCH_SOURCES
 set(JPEGXL_INTERNAL_JPEGLI_SOURCES
   jpegli/adaptive_quantization.cc
   jpegli/adaptive_quantization.h
+  jpegli/bit_writer.cc
   jpegli/bit_writer.h
   jpegli/bitstream.cc
   jpegli/bitstream.h
@@ -512,6 +513,7 @@ set(JPEGXL_INTERNAL_JPEGLI_TESTLIB_FILES
 set(JPEGXL_INTERNAL_JPEGLI_TESTS
   jpegli/decode_api_test.cc
   jpegli/encode_api_test.cc
+  jpegli/output_suspension_test.cc
   jpegli/streaming_test.cc
   jpegli/transcode_api_test.cc
 )

@@ -455,6 +455,7 @@ libjxl_gbench_sources = [
 libjxl_jpegli_sources = [
     "jpegli/adaptive_quantization.cc",
     "jpegli/adaptive_quantization.h",
+    "jpegli/bit_writer.cc",
     "jpegli/bit_writer.h",
     "jpegli/bitstream.cc",
     "jpegli/bitstream.h",
@@ -512,6 +513,7 @@ libjxl_jpegli_testlib_files = [
 libjxl_jpegli_tests = [
     "jpegli/decode_api_test.cc",
     "jpegli/encode_api_test.cc",
+    "jpegli/output_suspension_test.cc",
     "jpegli/streaming_test.cc",
     "jpegli/transcode_api_test.cc",
 ]

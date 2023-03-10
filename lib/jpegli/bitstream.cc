@@ -543,6 +543,30 @@ bool EncodeRefinementBits(const coeff_t* coeffs, HuffmanCodeTable* ac_huff,
 
 }  // namespace
 
+void WriteOutput(j_compress_ptr cinfo, const uint8_t* buf, size_t bufsize) {
+  size_t pos = 0;
+  while (pos < bufsize) {
+    if (cinfo->dest->free_in_buffer == 0 &&
+        !(*cinfo->dest->empty_output_buffer)(cinfo)) {
+      JXL_ABORT();
+      JPEGLI_ERROR("Destination suspension is not supported in markers.");
+    }
+    size_t len = std::min<size_t>(cinfo->dest->free_in_buffer, bufsize - pos);
+    memcpy(cinfo->dest->next_output_byte, buf + pos, len);
+    pos += len;
+    cinfo->dest->free_in_buffer -= len;
+    cinfo->dest->next_output_byte += len;
+  }
+}
+
+void WriteOutput(j_compress_ptr cinfo, const std::vector<uint8_t>& bytes) {
+  WriteOutput(cinfo, bytes.data(), bytes.size());
+}
+
+void WriteOutput(j_compress_ptr cinfo, std::initializer_list<uint8_t> bytes) {
+  WriteOutput(cinfo, bytes.begin(), bytes.size());
+}
+
 void EncodeAPP0(j_compress_ptr cinfo) {
   WriteOutput(cinfo,
               {0xff, 0xe0, 0, 16, 'J', 'F', 'I', 'F', '\0',
@@ -711,15 +735,18 @@ bool EncodeDRI(j_compress_ptr cinfo) {
   return true;
 }
 
+static JXL_INLINE void EmitMarker(JpegBitWriter* bw, int marker) {
+  bw->data[bw->pos++] = 0xFF;
+  bw->data[bw->pos++] = marker;
+}
+
 bool EncodeScan(j_compress_ptr cinfo, int scan_index) {
   jpeg_comp_master* m = cinfo->master;
   const int restart_interval = cinfo->restart_interval;
   int restarts_to_go = restart_interval;
   int next_restart_marker = 0;
 
-  JpegBitWriter bw;
-  JpegBitWriterInit(&bw, cinfo);
-
+  JpegBitWriter* bw = &m->bw;
   coeff_t last_dc_coeff[MAX_COMPS_IN_SCAN] = {0};
   DCTCodingState coding_state;
   DCTCodingStateInit(&coding_state);
@@ -765,9 +792,9 @@ bool EncodeScan(j_compress_ptr cinfo, int scan_index) {
     for (int mcu_x = 0; mcu_x < MCUs_per_row; ++mcu_x) {
       // Possibly emit a restart marker.
       if (restart_interval > 0 && restarts_to_go == 0) {
-        Flush(&coding_state, &bw);
-        JumpToByteBoundary(&bw);
-        EmitMarker(&bw, 0xD0 + next_restart_marker);
+        Flush(&coding_state, bw);
+        JumpToByteBoundary(bw);
+        EmitMarker(bw, 0xD0 + next_restart_marker);
         next_restart_marker += 1;
         next_restart_marker &= 0x7;
         restarts_to_go = restart_interval;
@@ -795,14 +822,14 @@ bool EncodeScan(j_compress_ptr cinfo, int scan_index) {
             bool ok;
             if (!is_progressive) {
               ok = EncodeDCTBlockSequential(block, dc_huff, ac_huff,
-                                            last_dc_coeff + i, &bw);
+                                            last_dc_coeff + i, bw);
             } else if (Ah == 0) {
               ok = EncodeDCTBlockProgressive(block, dc_huff, ac_huff, Ss, Se,
                                              Al, &coding_state,
-                                             last_dc_coeff + i, &bw);
+                                             last_dc_coeff + i, bw);
             } else {
               ok = EncodeRefinementBits(block, ac_huff, Ss, Se, Al,
-                                        &coding_state, &bw);
+                                        &coding_state, bw);
             }
             if (!ok) return false;
           }
@@ -810,11 +837,16 @@ bool EncodeScan(j_compress_ptr cinfo, int scan_index) {
       }
       --restarts_to_go;
     }
+    if (!EmptyBitWriterBuffer(bw)) {
+      JPEGLI_ERROR("Output suspension is not supported in finish_compress");
+    }
   }
-  Flush(&coding_state, &bw);
-  JumpToByteBoundary(&bw);
-  JpegBitWriterFinish(&bw);
-  if (!bw.healthy) return false;
+  Flush(&coding_state, bw);
+  JumpToByteBoundary(bw);
+  if (!EmptyBitWriterBuffer(bw)) {
+    JPEGLI_ERROR("Output suspension is not supported in finish_compress");
+  }
+  if (!bw->healthy) return false;
 
   return true;
 }
@@ -970,15 +1002,23 @@ void ComputeTokens(j_compress_ptr cinfo,
   token_arrays->push_back(ta);
 }
 
-void WriteTokens(const Token* tokens, size_t num_tokens,
+void WriteTokens(j_compress_ptr cinfo, const Token* tokens, size_t num_tokens,
                  const HuffmanCodeTable* huff_tables, const int* context_map,
                  JpegBitWriter* bw) {
+  size_t cycle_len = bw->buffer.size() / 8;
+  size_t next_cycle = cycle_len;
   for (size_t i = 0; i < num_tokens; ++i) {
     Token t = tokens[i];
     int nbits = t.symbol & 0xf;
     WriteSymbol(t.symbol, &huff_tables[context_map[t.histo_idx]], bw);
     if (nbits > 0) {
       WriteBits(bw, nbits, t.bits);
+    }
+    if (--next_cycle == 0) {
+      if (!EmptyBitWriterBuffer(bw)) {
+        JPEGLI_ERROR("Output suspension is not supported in finish_compress");
+      }
+      next_cycle = cycle_len;
     }
   }
 }
@@ -1026,17 +1066,18 @@ void EncodeSingleScan(j_compress_ptr cinfo) {
   EncodeDHT(cinfo, huffman_codes.data(), huffman_codes.size());
   EncodeSOS(cinfo, 0);
 
-  JpegBitWriter bw;
-  JpegBitWriterInit(&bw, cinfo);
+  JpegBitWriter* bw = &cinfo->master->bw;
   HuffmanCodeTable* huff_tables = cinfo->master->huff_tables;
   for (size_t i = 0; i < token_arrays.size(); ++i) {
     Token* tokens = token_arrays[i].tokens;
     size_t num_tokens = token_arrays[i].num_tokens;
-    WriteTokens(tokens, num_tokens, huff_tables, context_map, &bw);
+    WriteTokens(cinfo, tokens, num_tokens, huff_tables, context_map, bw);
   }
-  JumpToByteBoundary(&bw);
-  JpegBitWriterFinish(&bw);
-  if (!bw.healthy) {
+  JumpToByteBoundary(bw);
+  if (!EmptyBitWriterBuffer(bw)) {
+    JPEGLI_ERROR("Output suspension is not supported in finish_compress");
+  }
+  if (!bw->healthy) {
     JPEGLI_ERROR("Failed to encode scan.");
   }
 }
