@@ -61,8 +61,6 @@ jobs:
           - name: asan
             skip_install: true
           - name: coverage
-            apt_pkgs: gcovr
-            # Coverage builds require a bit more RAM.
             env_test_stack_size: 2048
           # Build with support for decoding to JPEG bytes disabled. Produces a
           # smaller build if only decoding to pixels is needed.
@@ -171,12 +169,15 @@ jobs:
         repository: llvm/llvm-project
         ref: llvmorg-7.0.1
         path: llvm_root
-
     - name: Sphinx dependencies
       # Dependencies for sphinx HTML documentation
       if: matrix.name == 'release'
       run: |
         pip3 install -r doc/sphinx/requirements.txt
+    - name: Install gcovr
+      if: matrix.name == 'coverage'
+      run: pip install gcovr
+
     - name: Git environment
       id: git-env
       run: |
