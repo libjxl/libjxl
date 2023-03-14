@@ -24,6 +24,7 @@ libjxl_deps_testdata = ['//:testdata']
 libjxl_test_shards = {
     'jpegli/decode_api_test' : 10,
     'jpegli/encode_api_test' : 4,
+    'jpegli/output_suspension_test' : 2,
     'jxl/ans_test' : 2,
     'jxl/linalg_test' : 2,
     'jxl/modular_test' : 4,
