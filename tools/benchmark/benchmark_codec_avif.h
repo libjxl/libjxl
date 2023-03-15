@@ -10,11 +10,13 @@
 #include "tools/benchmark/benchmark_args.h"
 #include "tools/benchmark/benchmark_codec.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 ImageCodec* CreateNewAvifCodec(const BenchmarkArgs& args);
 
 // Registers the avif-specific command line options.
 Status AddCommandLineOptionsAvifCodec(BenchmarkArgs* args);
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
 
 #endif  // TOOLS_BENCHMARK_BENCHMARK_CODEC_AVIF_H_

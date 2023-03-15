@@ -15,7 +15,8 @@
 #include "tools/icc_detect/icc_detect.h"
 #include "tools/viewer/load_jxl.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 
 namespace {
 
@@ -127,4 +128,5 @@ void ViewerWindow::refreshImage() {
   }
 }
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl

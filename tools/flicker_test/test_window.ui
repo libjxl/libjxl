@@ -64,7 +64,7 @@
         </item>
        </layout>
       </widget>
-      <widget class="jxl::SplitView" name="splitView"/>
+      <widget class="jpegxl::tools::SplitView" name="splitView"/>
       <widget class="QWidget" name="finalPage">
        <layout class="QVBoxLayout" name="verticalLayout_3">
         <item>
@@ -104,7 +104,7 @@
  </widget>
  <customwidgets>
   <customwidget>
-   <class>jxl::SplitView</class>
+   <class>jpegxl::tools::SplitView</class>
    <extends>QWidget</extends>
    <header>tools/flicker_test/split_view.h</header>
    <container>1</container>

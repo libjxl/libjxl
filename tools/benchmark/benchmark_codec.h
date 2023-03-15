@@ -26,7 +26,12 @@
 #include "tools/cmdline.h"
 #include "tools/speed_stats.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
+
+using ::jxl::CodecInOut;
+using ::jxl::Span;
+using ::jxl::ThreadPoolInternal;
 
 // Thread-compatible.
 class ImageCodec {
@@ -89,6 +94,7 @@ using ImageCodecPtr = std::unique_ptr<ImageCodec>;
 // then ParseParameters of the codec gets called with the part behind the colon.
 ImageCodecPtr CreateImageCodec(const std::string& description);
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
 
 #endif  // TOOLS_BENCHMARK_BENCHMARK_CODEC_H_

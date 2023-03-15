@@ -17,7 +17,8 @@
 #include <QPoint>
 #include <QRect>
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 
 SplitImageRenderer::SplitImageRenderer(QWidget* const parent)
     : QWidget(parent) {
@@ -236,4 +237,5 @@ void SplitImageRenderer::setRenderingMode(const RenderingMode newMode) {
   emit renderingModeChanged(mode_);
 }
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl

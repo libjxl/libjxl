@@ -6,7 +6,15 @@
 #include "lib/jxl/dec_ans.h"
 #include "lib/jxl/entropy_coder.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
+
+using ::jxl::ANSCode;
+using ::jxl::ANSSymbolReader;
+using ::jxl::BitReader;
+using ::jxl::BitReaderScopedCloser;
+using ::jxl::Span;
+using ::jxl::Status;
 
 int TestOneInput(const uint8_t* data, size_t size) {
   if (size < 2) return 0;
@@ -28,7 +36,7 @@ int TestOneInput(const uint8_t* data, size_t size) {
     const size_t maxreads = size * 8;
     size_t numreads = 0;
     int context = 0;
-    while (DivCeil(br.TotalBitsConsumed(), kBitsPerByte) < size &&
+    while (jxl::DivCeil(br.TotalBitsConsumed(), jxl::kBitsPerByte) < size &&
            numreads <= maxreads) {
       int code = ansreader.ReadHybridUint(context, &br, context_map);
       context = code % numContexts;
@@ -39,8 +47,9 @@ int TestOneInput(const uint8_t* data, size_t size) {
   return 0;
 }
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
-  return jxl::TestOneInput(data, size);
+  return jpegxl::tools::TestOneInput(data, size);
 }

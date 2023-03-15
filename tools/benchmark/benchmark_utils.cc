@@ -27,7 +27,8 @@
 
 extern char** environ;
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 TemporaryFile::TemporaryFile(std::string basename, std::string extension) {
   const auto extension_size = 1 + extension.size();
   temp_filename_ = std::move(basename) + "_XXXXXX." + std::move(extension);
@@ -84,11 +85,13 @@ Status RunCommand(const std::string& command,
   return WIFEXITED(wstatus) && WEXITSTATUS(wstatus) == EXIT_SUCCESS;
 }
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
 
 #else
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 
 TemporaryFile::TemporaryFile(std::string basename, std::string extension) {}
 TemporaryFile::~TemporaryFile() {}
@@ -104,6 +107,7 @@ Status RunCommand(const std::string& command,
   return JXL_FAILURE("Not supported on this build");
 }
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
 
 #endif  // _MSC_VER

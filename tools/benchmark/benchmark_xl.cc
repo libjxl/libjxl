@@ -51,8 +51,21 @@
 #include "tools/speed_stats.h"
 #include "tools/ssimulacra2.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 namespace {
+
+using ::jxl::ButteraugliParams;
+using ::jxl::CodecInOut;
+using ::jxl::ColorEncoding;
+using ::jxl::Image3F;
+using ::jxl::ImageBundle;
+using ::jxl::ImageF;
+using ::jxl::PaddedBytes;
+using ::jxl::Rng;
+using ::jxl::Status;
+using ::jxl::ThreadPool;
+using ::jxl::ThreadPoolInternal;
 
 Status WriteImage(Image3F&& image, ThreadPool* pool,
                   const std::string& filename) {
@@ -65,7 +78,7 @@ Status WriteImage(Image3F&& image, ThreadPool* pool,
 
 Status ReadPNG(const std::string& filename, Image3F* image) {
   CodecInOut io;
-  JXL_CHECK(SetFromFile(filename, extras::ColorHints(), &io));
+  JXL_CHECK(jxl::SetFromFile(filename, jxl::extras::ColorHints(), &io));
   *image = CopyImage(*io.Main().color());
   return true;
 }
@@ -120,7 +133,7 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
     for (size_t i = 0; i < Args()->encode_reps; ++i) {
       if (codec->CanRecompressJpeg() && (ext == ".jpg" || ext == ".jpeg")) {
         std::string data_in;
-        JXL_CHECK(ReadFile(filename, &data_in));
+        JXL_CHECK(jxl::ReadFile(filename, &data_in));
         JXL_CHECK(
             codec->RecompressJpeg(filename, data_in, compressed, &speed_stats));
       } else {
@@ -147,7 +160,7 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
 
   if (valid && Args()->decode_only) {
     std::vector<uint8_t> data_in;
-    JXL_CHECK(ReadFile(filename, &data_in));
+    JXL_CHECK(jxl::ReadFile(filename, &data_in));
     compressed->insert(compressed->end(), data_in.begin(), data_in.end());
   }
 
@@ -229,10 +242,10 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
         if (fabs(params.intensity_target - 255.0f) < 1e-3) {
           params.intensity_target = 80.0;
         }
-        distance = ButteraugliDistance(ib1, ib2, params, GetJxlCms(), &distmap,
-                                       inner_pool);
+        distance = ButteraugliDistance(ib1, ib2, params, jxl::GetJxlCms(),
+                                       &distmap, inner_pool);
         // Ensure pixels in range 0-1
-        s->distance_2 += ComputeDistance2(ib1, ib2, GetJxlCms());
+        s->distance_2 += ComputeDistance2(ib1, ib2, jxl::GetJxlCms());
       } else {
         // TODO(veluca): re-upsample and compute proper distance.
         distance = 1e+4f;
@@ -298,14 +311,14 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
       std::string compressed_str(
           reinterpret_cast<const char*>(compressed->data()),
           compressed->size());
-      JXL_CHECK(WriteFile(compressed_str, compressed_fn));
+      JXL_CHECK(jxl::WriteFile(compressed_str, compressed_fn));
     }
     if (Args()->save_decompressed && valid) {
       // For verifying HDR: scale output.
       if (Args()->mul_output != 0.0) {
         fprintf(stderr, "WARNING: scaling outputs by %f\n", Args()->mul_output);
         JXL_CHECK(ib2.TransformTo(ColorEncoding::LinearSRGB(ib2.IsGray()),
-                                  GetJxlCms(), inner_pool));
+                                  jxl::GetJxlCms(), inner_pool));
         ScaleImage(static_cast<float>(Args()->mul_output), ib2.color());
       }
 
@@ -313,10 +326,12 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
                              ib2.metadata()->bit_depth.bits_per_sample,
                              decompressed_fn));
       if (!skip_butteraugli) {
-        float good = Args()->heatmap_good > 0.0f ? Args()->heatmap_good
-                                                 : ButteraugliFuzzyInverse(1.5);
-        float bad = Args()->heatmap_bad > 0.0f ? Args()->heatmap_bad
-                                               : ButteraugliFuzzyInverse(0.5);
+        float good = Args()->heatmap_good > 0.0f
+                         ? Args()->heatmap_good
+                         : jxl::ButteraugliFuzzyInverse(1.5);
+        float bad = Args()->heatmap_bad > 0.0f
+                        ? Args()->heatmap_bad
+                        : jxl::ButteraugliFuzzyInverse(0.5);
         if (Args()->save_heatmap) {
           JXL_CHECK(WriteImage(CreateHeatMapImage(distmap, good, bad),
                                inner_pool, heatmap_fn));
@@ -578,7 +593,8 @@ void WriteHtmlReport(const std::string& codec_desc,
   }
   out_html += "</body>\n";
   out_html += toggle_js;
-  JXL_CHECK(WriteFile(out_html, outdir + "/index." + codec_name + ".html"));
+  JXL_CHECK(
+      jxl::WriteFile(out_html, outdir + "/index." + codec_name + ".html"));
 }
 
 // Prints the detailed and aggregate statistics, in the correct order but as
@@ -812,7 +828,7 @@ class Benchmark {
 
       std::unique_ptr<ThreadPoolInternal> pool;
       std::vector<std::unique_ptr<ThreadPoolInternal>> inner_pools;
-      InitThreads(static_cast<int>(tasks.size()), &pool, &inner_pools);
+      InitThreads(tasks.size(), &pool, &inner_pools);
 
       const std::vector<CodecInOut> loaded_images =
           LoadImages(fnames, jpeg_transcoding_requested, pool.get());
@@ -830,20 +846,23 @@ class Benchmark {
     if (Args()->profiler) {
       PROFILER_PRINT_RESULTS();
     }
-    CacheAligned::PrintStats();
+    jxl::CacheAligned::PrintStats();
     return ret;
   }
 
  private:
-  static int NumOuterThreads(const int num_hw_threads, const int num_tasks) {
-    int num_threads = Args()->num_threads;
+  static size_t NumOuterThreads(const size_t num_hw_threads,
+                                const size_t num_tasks) {
     // Default to #cores
-    if (num_threads < 0) num_threads = num_hw_threads;
+    size_t num_threads = num_hw_threads;
+    if (Args()->num_threads >= 0) {
+      num_threads = static_cast<size_t>(Args()->num_threads);
+    }
 
     // As a safety precaution, limit the number of threads to 4x the number of
     // available CPUs.
     num_threads =
-        std::min<int>(num_threads, 4 * std::thread::hardware_concurrency());
+        std::min<size_t>(num_threads, 4 * std::thread::hardware_concurrency());
 
     // Don't create more threads than there are tasks (pointless/wasteful).
     num_threads = std::min(num_threads, num_tasks);
@@ -854,14 +873,21 @@ class Benchmark {
     return num_threads;
   }
 
-  static int NumInnerThreads(const int num_hw_threads, const int num_threads) {
-    int num_inner = Args()->inner_threads;
+  static int NumInnerThreads(const size_t num_hw_threads,
+                             const size_t num_threads) {
+    size_t num_inner;
 
     // Default: distribute remaining cores among tasks.
-    if (num_inner < 0) {
-      const int cores_for_outer = num_hw_threads - num_threads;
-      num_inner =
-          num_threads == 0 ? num_hw_threads : cores_for_outer / num_threads;
+    if (Args()->inner_threads < 0) {
+      if (num_threads == 0) {
+        num_inner = num_hw_threads;
+      } else if (num_hw_threads <= num_threads) {
+        num_inner = 1;
+      } else {
+        num_inner = (num_hw_threads - num_threads) / num_threads;
+      }
+    } else {
+      num_inner = static_cast<size_t>(Args()->inner_threads);
     }
 
     // Just one thread is counterproductive.
@@ -871,20 +897,21 @@ class Benchmark {
   }
 
   static void InitThreads(
-      const int num_tasks, std::unique_ptr<ThreadPoolInternal>* pool,
+      size_t num_tasks, std::unique_ptr<ThreadPoolInternal>* pool,
       std::vector<std::unique_ptr<ThreadPoolInternal>>* inner_pools) {
-    const int num_hw_threads = std::thread::hardware_concurrency();
-    const int num_threads = NumOuterThreads(num_hw_threads, num_tasks);
-    const int num_inner = NumInnerThreads(num_hw_threads, num_threads);
+    const size_t num_hw_threads = std::thread::hardware_concurrency();
+    const size_t num_threads = NumOuterThreads(num_hw_threads, num_tasks);
+    const size_t num_inner = NumInnerThreads(num_hw_threads, num_threads);
 
     fprintf(stderr,
-            "%d total threads, %d tasks, %d threads, %d inner threads\n",
+            "%" PRIuS " total threads, %" PRIuS " tasks, %" PRIuS
+            " threads, %" PRIuS " inner threads\n",
             num_hw_threads, num_tasks, num_threads, num_inner);
 
     pool->reset(new ThreadPoolInternal(num_threads));
     // Main thread OR worker threads in pool each get a possibly empty nested
     // pool (helps use all available cores when #tasks < #threads)
-    for (size_t i = 0; i < (*pool)->NumThreads(); ++i) {
+    for (size_t i = 0; i < num_threads; ++i) {
       inner_pools->emplace_back(new ThreadPoolInternal(num_inner));
     }
   }
@@ -1001,42 +1028,44 @@ class Benchmark {
     PROFILER_FUNC;
     std::vector<CodecInOut> loaded_images;
     loaded_images.resize(fnames.size());
-    JXL_CHECK(RunOnPool(
-        pool, 0, static_cast<uint32_t>(fnames.size()), ThreadPool::NoInit,
-        [&](const uint32_t task, size_t /*thread*/) {
-          const size_t i = static_cast<size_t>(task);
-          Status ok = true;
+    const auto process_image = [&](const uint32_t task, size_t /*thread*/) {
+      const size_t i = static_cast<size_t>(task);
+      Status ok = true;
 
-          if (!Args()->decode_only) {
-            PaddedBytes encoded;
-            ok = ReadFile(fnames[i], &encoded) &&
-                 (jpeg_transcoding_requested
-                      ? jpeg::DecodeImageJPG(Span<const uint8_t>(encoded),
-                                             &loaded_images[i])
-                      : SetFromBytes(Span<const uint8_t>(encoded),
-                                     Args()->color_hints, &loaded_images[i]));
-            if (ok && Args()->intensity_target != 0) {
-              loaded_images[i].metadata.m.SetIntensityTarget(
-                  Args()->intensity_target);
-            }
+      if (!Args()->decode_only) {
+        PaddedBytes encoded;
+        ok = ReadFile(fnames[i], &encoded);
+        if (ok) {
+          if (jpeg_transcoding_requested) {
+            ok = jxl::jpeg::DecodeImageJPG(Span<const uint8_t>(encoded),
+                                           &loaded_images[i]);
+          } else {
+            ok = jxl::SetFromBytes(Span<const uint8_t>(encoded),
+                                   Args()->color_hints, &loaded_images[i]);
           }
-          if (!ok) {
-            if (!Args()->silent_errors) {
-              fprintf(stderr, "Failed to load image %s\n", fnames[i].c_str());
-            }
-            return;
-          }
+        }
+        if (ok && Args()->intensity_target != 0) {
+          loaded_images[i].metadata.m.SetIntensityTarget(
+              Args()->intensity_target);
+        }
+      }
+      if (!ok) {
+        if (!Args()->silent_errors) {
+          fprintf(stderr, "Failed to load image %s\n", fnames[i].c_str());
+        }
+        return;
+      }
 
-          if (!Args()->decode_only && Args()->override_bitdepth != 0) {
-            if (Args()->override_bitdepth == 32) {
-              loaded_images[i].metadata.m.SetFloat32Samples();
-            } else {
-              loaded_images[i].metadata.m.SetUintSamples(
-                  Args()->override_bitdepth);
-            }
-          }
-        },
-        "Load images"));
+      if (!Args()->decode_only && Args()->override_bitdepth != 0) {
+        if (Args()->override_bitdepth == 32) {
+          loaded_images[i].metadata.m.SetFloat32Samples();
+        } else {
+          loaded_images[i].metadata.m.SetUintSamples(Args()->override_bitdepth);
+        }
+      }
+    };
+    JXL_CHECK(jxl::RunOnPool(pool, 0, static_cast<uint32_t>(fnames.size()),
+                             ThreadPool::NoInit, process_image, "Load images"));
     return loaded_images;
   }
 
@@ -1130,6 +1159,9 @@ int BenchmarkMain(int argc, const char** argv) {
 }
 
 }  // namespace
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
 
-int main(int argc, const char** argv) { return jxl::BenchmarkMain(argc, argv); }
+int main(int argc, const char** argv) {
+  return jpegxl::tools::BenchmarkMain(argc, argv);
+}

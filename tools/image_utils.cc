@@ -12,14 +12,20 @@
 namespace jpegxl {
 namespace tools {
 
-jxl::Status TransformCodecInOutTo(jxl::CodecInOut& io,
-                                  const jxl::ColorEncoding& c_desired,
+using ::jxl::CodecInOut;
+using ::jxl::ColorEncoding;
+using ::jxl::ImageBundle;
+using ::jxl::Status;
+using ::jxl::ThreadPool;
+
+jxl::Status TransformCodecInOutTo(CodecInOut& io,
+                                  const ColorEncoding& c_desired,
                                   const JxlCmsInterface& cms,
-                                  jxl::ThreadPool* pool) {
+                                  ThreadPool* pool) {
   if (io.metadata.m.have_preview) {
     JXL_RETURN_IF_ERROR(io.preview_frame.TransformTo(c_desired, cms, pool));
   }
-  for (jxl::ImageBundle& ib : io.frames) {
+  for (ImageBundle& ib : io.frames) {
     JXL_RETURN_IF_ERROR(ib.TransformTo(c_desired, cms, pool));
   }
   return true;

@@ -14,7 +14,8 @@
 #include <QWidget>
 #include <random>
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 
 class SplitView : public QWidget {
   Q_OBJECT
@@ -79,6 +80,7 @@ class SplitView : public QWidget {
   QElapsedTimer viewingStartTime_;
 };
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
 
 #endif  // TOOLS_FLICKER_TEST_SPLIT_VIEW_H_

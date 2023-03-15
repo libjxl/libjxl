@@ -8,7 +8,8 @@
 #include <QMouseEvent>
 #include <QPainter>
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 
 SplitView::SplitView(QWidget* const parent)
     : QWidget(parent), g_(std::random_device()()) {
@@ -164,4 +165,5 @@ void SplitView::updateMinimumSize() {
   setMinimumHeight(std::max(original_.height(), altered_.height()));
 }
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl

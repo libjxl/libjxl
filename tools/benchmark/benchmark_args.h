@@ -23,7 +23,12 @@
 #include "tools/args.h"
 #include "tools/cmdline.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
+
+using ::jxl::ColorEncoding;
+using ::jxl::Override;
+using ::jxl::Status;
 
 std::vector<std::string> SplitString(const std::string& s, char c);
 
@@ -171,6 +176,7 @@ struct BenchmarkArgs {
 // Returns singleton
 BenchmarkArgs* Args();
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
 
 #endif  // TOOLS_BENCHMARK_BENCHMARK_ARGS_H_

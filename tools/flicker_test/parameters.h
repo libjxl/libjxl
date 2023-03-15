@@ -8,7 +8,8 @@
 
 #include <QSettings>
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 
 struct FlickerTestParameters {
   QString originalFolder;
@@ -27,6 +28,7 @@ struct FlickerTestParameters {
   void saveTo(QSettings* settings) const;
 };
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
 
 #endif  // TOOLS_FLICKER_TEST_PARAMETERS_H_

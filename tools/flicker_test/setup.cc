@@ -11,7 +11,8 @@
 #include <QMessageBox>
 #include <QPushButton>
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 
 FlickerTestWizard::FlickerTestWizard(QWidget* const parent)
     : QWizard(parent), settings_("JPEG XL project", "Flickering test") {
@@ -148,4 +149,5 @@ bool FlickerTestWizard::validateCurrentPage() {
   return QWizard::validateCurrentPage();
 }
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl

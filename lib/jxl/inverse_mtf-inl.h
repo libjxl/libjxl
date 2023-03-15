@@ -58,8 +58,8 @@ inline void InverseMoveToFrontTransform(uint8_t* v, int v_len) {
   }
 #if JXL_MEMORY_SANITIZER
   const HWY_CAPPED(uint8_t, 64) d;
-  for (i = 0; i < Lanes(d); ++i) {
-    mtf[256 + i] = 0;
+  for (size_t j = 0; j < Lanes(d); ++j) {
+    mtf[256 + j] = 0;
   }
 #endif  // JXL_MEMORY_SANITIZER
   for (i = 0; i < v_len; ++i) {

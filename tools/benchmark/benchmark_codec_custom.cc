@@ -22,7 +22,10 @@
 #include "lib/jxl/image_bundle.h"
 #include "tools/benchmark/benchmark_utils.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
+
+using ::jxl::ThreadPoolInternal;
 
 struct CustomCodecArgs {
   std::string extension;
@@ -54,9 +57,9 @@ namespace {
 template <typename F>
 Status ReportCodecRunningTime(F&& function, std::string output_filename,
                               jpegxl::tools::SpeedStats* const speed_stats) {
-  const double start = Now();
+  const double start = jxl::Now();
   JXL_RETURN_IF_ERROR(function());
-  const double end = Now();
+  const double end = jxl::Now();
   const std::string time_filename =
       GetBaseName(std::move(output_filename)) + ".time";
   std::ifstream time_stream(time_filename);
@@ -133,9 +136,9 @@ class CustomCodec : public ImageCodec {
     if (!custom_args->colorspace.empty()) {
       JxlColorEncoding colorspace;
       JXL_RETURN_IF_ERROR(
-          ParseDescription(custom_args->colorspace, &colorspace));
+          jxl::ParseDescription(custom_args->colorspace, &colorspace));
       JXL_RETURN_IF_ERROR(
-          ConvertExternalToInternalColorEncoding(colorspace, &c_enc));
+          jxl::ConvertExternalToInternalColorEncoding(colorspace, &c_enc));
     }
     JXL_RETURN_IF_ERROR(EncodeToFile(*io, c_enc, bits, in_filename, pool));
     std::vector<std::string> arguments = compress_args_;
@@ -146,7 +149,7 @@ class CustomCodec : public ImageCodec {
           return RunCommand(compress_command_, arguments, custom_args->quiet);
         },
         encoded_filename, speed_stats));
-    return ReadFile(encoded_filename, compressed);
+    return jxl::ReadFile(encoded_filename, compressed);
   }
 
   Status Decompress(const std::string& filename,
@@ -160,7 +163,7 @@ class CustomCodec : public ImageCodec {
     JXL_RETURN_IF_ERROR(encoded_file.GetFileName(&encoded_filename));
     JXL_RETURN_IF_ERROR(out_file.GetFileName(&out_filename));
 
-    JXL_RETURN_IF_ERROR(WriteFile(compressed, encoded_filename));
+    JXL_RETURN_IF_ERROR(jxl::WriteFile(compressed, encoded_filename));
     JXL_RETURN_IF_ERROR(ReportCodecRunningTime(
         [&, this] {
           return RunCommand(
@@ -169,11 +172,11 @@ class CustomCodec : public ImageCodec {
               custom_args->quiet);
         },
         out_filename, speed_stats));
-    extras::ColorHints hints;
+    jxl::extras::ColorHints hints;
     if (!custom_args->colorspace.empty()) {
       hints.Add("color_space", custom_args->colorspace);
     }
-    JXL_RETURN_IF_ERROR(SetFromFile(out_filename, hints, io, pool));
+    JXL_RETURN_IF_ERROR(jxl::SetFromFile(out_filename, hints, io, pool));
     io->metadata.m.SetIntensityTarget(saved_intensity_target_);
     return true;
   }
@@ -193,15 +196,18 @@ ImageCodec* CreateNewCustomCodec(const BenchmarkArgs& args) {
   return new CustomCodec(args);
 }
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
 
 #else
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 
 ImageCodec* CreateNewCustomCodec(const BenchmarkArgs& args) { return nullptr; }
 Status AddCommandLineOptionsCustomCodec(BenchmarkArgs* args) { return true; }
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
 
 #endif  // _MSC_VER

@@ -6,7 +6,13 @@
 #include "lib/jxl/enc_icc_codec.h"
 #include "lib/jxl/icc_codec.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
+
+using ::jxl::AuxOut;
+using ::jxl::BitReader;
+using ::jxl::PaddedBytes;
+using ::jxl::Span;
 
 int TestOneInput(const uint8_t* data, size_t size) {
 #if defined(JXL_ICC_FUZZER_ONLY_WRITE)
@@ -29,7 +35,7 @@ int TestOneInput(const uint8_t* data, size_t size) {
     // Reading parses the compressed format.
     BitReader br(Span<const uint8_t>(data, size));
     PaddedBytes result;
-    (void)ReadICC(&br, &result);
+    (void)jxl::ReadICC(&br, &result);
     (void)br.Close();
   } else {
     // Writing parses the original ICC profile.
@@ -39,21 +45,21 @@ int TestOneInput(const uint8_t* data, size_t size) {
     AuxOut aux;
     // Writing should support any random bytestream so must succeed, make
     // fuzzer fail if not.
-    JXL_ASSERT(WriteICC(icc, &writer, 0, &aux));
+    JXL_ASSERT(jxl::WriteICC(icc, &writer, 0, &aux));
   }
 #else  // JXL_ICC_FUZZER_SLOW_TEST
   if (read) {
     // Reading (unpredicting) parses the compressed format.
     PaddedBytes result;
-    (void)UnpredictICC(data, size, &result);
+    (void)jxl::UnpredictICC(data, size, &result);
   } else {
     // Writing (predicting) parses the original ICC profile.
     PaddedBytes result;
     // Writing should support any random bytestream so must succeed, make
     // fuzzer fail if not.
-    JXL_ASSERT(PredictICC(data, size, &result));
+    JXL_ASSERT(jxl::PredictICC(data, size, &result));
     PaddedBytes reconstructed;
-    JXL_ASSERT(UnpredictICC(result.data(), result.size(), &reconstructed));
+    JXL_ASSERT(jxl::UnpredictICC(result.data(), result.size(), &reconstructed));
     JXL_ASSERT(reconstructed.size() == size);
     JXL_ASSERT(memcmp(data, reconstructed.data(), size) == 0);
   }
@@ -61,8 +67,9 @@ int TestOneInput(const uint8_t* data, size_t size) {
   return 0;
 }
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
-  return jxl::TestOneInput(data, size);
+  return jpegxl::tools::TestOneInput(data, size);
 }

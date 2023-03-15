@@ -16,6 +16,7 @@
 
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/jxl.h"
+#include "lib/extras/enc/encode.h"
 #if JPEGXL_ENABLE_JPEG
 #include "lib/extras/enc/jpg.h"
 #endif
@@ -38,7 +39,22 @@
 #include "tools/benchmark/benchmark_stats.h"
 #include "tools/cmdline.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
+
+using ::jxl::AuxOut;
+using ::jxl::ColorTransform;
+using ::jxl::CompressParams;
+using ::jxl::Image3F;
+using ::jxl::PaddedBytes;
+using ::jxl::PassesEncoderState;
+using ::jxl::Predictor;
+using ::jxl::SpeedTier;
+using ::jxl::ThreadPoolInternal;
+using ::jxl::extras::EncodedImage;
+using ::jxl::extras::Encoder;
+using ::jxl::extras::JXLDecompressParams;
+using ::jxl::extras::PackedPixelFile;
 
 // Output function for EncodeBrunsli.
 size_t OutputToBytes(void* data, const uint8_t* buf, size_t count) {
@@ -309,15 +325,15 @@ class JxlCodec : public ImageCodec {
 
 #if JPEGXL_ENABLE_JPEG
     if (normalize_bitrate_ && cparams_.butteraugli_distance > 0.0f) {
-      extras::PackedPixelFile ppf;
+      PackedPixelFile ppf;
       JxlPixelFormat format = {0, JXL_TYPE_UINT8, JXL_BIG_ENDIAN, 0};
       JXL_RETURN_IF_ERROR(ConvertCodecInOutToPackedPixelFile(
           *io, format, io->metadata.m.color_encoding, pool, &ppf));
-      extras::EncodedImage encoded;
-      std::unique_ptr<extras::Encoder> encoder = extras::GetJPEGEncoder();
+      EncodedImage encoded;
+      std::unique_ptr<Encoder> encoder = jxl::extras::GetJPEGEncoder();
       encoder->SetOption("q", "95");
       JXL_RETURN_IF_ERROR(encoder->Encode(ppf, &encoded, pool));
-      float jpeg_bits = encoded.bitstreams.back().size() * kBitsPerByte;
+      float jpeg_bits = encoded.bitstreams.back().size() * jxl::kBitsPerByte;
       float jpeg_bitrate = jpeg_bits / (io->xsize() * io->ysize());
       // Formula fitted on jyrki31 corpus for distances between 1.0 and 8.0.
       cparams_.target_bitrate = (jpeg_bitrate * 0.36f /
@@ -325,13 +341,13 @@ class JxlCodec : public ImageCodec {
     }
 #endif
 
-    const double start = Now();
+    const double start = jxl::Now();
     PassesEncoderState passes_encoder_state;
     PaddedBytes compressed_padded;
-    JXL_RETURN_IF_ERROR(EncodeFile(cparams_, io, &passes_encoder_state,
-                                   &compressed_padded, GetJxlCms(), &cinfo_,
-                                   pool));
-    const double end = Now();
+    JXL_RETURN_IF_ERROR(jxl::EncodeFile(cparams_, io, &passes_encoder_state,
+                                        &compressed_padded, jxl::GetJxlCms(),
+                                        &cinfo_, pool));
+    const double end = jxl::Now();
     compressed->assign(compressed_padded.begin(), compressed_padded.end());
     speed_stats->NotifyElapsed(end - start);
     return true;
@@ -352,12 +368,12 @@ class JxlCodec : public ImageCodec {
     // originals, so we must set the option to keep the original orientation
     // instead.
     dparams_.keep_orientation = true;
-    extras::PackedPixelFile ppf;
+    PackedPixelFile ppf;
     size_t decoded_bytes;
-    const double start = Now();
-    JXL_RETURN_IF_ERROR(DecodeImageJXL(compressed.data(), compressed.size(),
-                                       dparams_, &decoded_bytes, &ppf));
-    const double end = Now();
+    const double start = jxl::Now();
+    JXL_RETURN_IF_ERROR(jxl::extras::DecodeImageJXL(
+        compressed.data(), compressed.size(), dparams_, &decoded_bytes, &ppf));
+    const double end = jxl::Now();
     speed_stats->NotifyElapsed(end - start);
     JXL_RETURN_IF_ERROR(ConvertPackedPixelFileToCodecInOut(ppf, pool, io));
     return true;
@@ -374,7 +390,7 @@ class JxlCodec : public ImageCodec {
   AuxOut cinfo_;
   CompressParams cparams_;
   bool has_ctransform_ = false;
-  extras::JXLDecompressParams dparams_;
+  JXLDecompressParams dparams_;
   bool uint8_ = false;
   bool normalize_bitrate_ = false;
 };
@@ -383,4 +399,5 @@ ImageCodec* CreateNewJxlCodec(const BenchmarkArgs& args) {
   return new JxlCodec(args);
 }
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
