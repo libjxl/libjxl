@@ -401,6 +401,11 @@ bool IsStreamingSupported(j_compress_ptr cinfo) {
   return true;
 }
 
+bool IsSinglePassOptimizerSupported(j_compress_ptr cinfo) {
+  return cinfo->num_scans == 1 && cinfo->optimize_coding &&
+         cinfo->restart_interval == 0 && cinfo->restart_in_rows == 0;
+}
+
 void ProcessiMCURow(j_compress_ptr cinfo) {
   JXL_ASSERT(cinfo->master->next_iMCU_row < cinfo->total_iMCU_rows);
   if (!cinfo->raw_data_in) {
@@ -427,6 +432,33 @@ void ProcessiMCURows(j_compress_ptr cinfo) {
   if (m->next_input_row >= cinfo->image_height) {
     ProcessiMCURow(cinfo);
   }
+}
+
+void InitProgressMonitor(j_compress_ptr cinfo) {
+  if (cinfo->progress == nullptr) {
+    return;
+  }
+  if (IsStreamingSupported(cinfo)) {
+    // We have only one input pass.
+    cinfo->progress->total_passes = 1;
+  } else if (IsSinglePassOptimizerSupported(cinfo)) {
+    // We have one input pass and an encode pass for each scan.
+    cinfo->progress->total_passes = 1 + cinfo->num_scans;
+  } else {
+    // We have one input pass, a histogram pass for each scan, and an encode
+    // pass for each scan.
+    cinfo->progress->total_passes = 1 + 2 * cinfo->num_scans;
+  }
+}
+
+void ProgressMonitorInputPass(j_compress_ptr cinfo) {
+  if (cinfo->progress == nullptr) {
+    return;
+  }
+  cinfo->progress->completed_passes = 0;
+  cinfo->progress->pass_counter = cinfo->next_scanline;
+  cinfo->progress->pass_limit = cinfo->image_height;
+  (*cinfo->progress->progress_monitor)(reinterpret_cast<j_common_ptr>(cinfo));
 }
 
 void WriteFileHeader(j_compress_ptr cinfo) {
@@ -474,8 +506,7 @@ void WriteHeaderMarkers(j_compress_ptr cinfo) {
 }
 
 void EncodeScans(j_compress_ptr cinfo) {
-  if (cinfo->num_scans == 1 && cinfo->optimize_coding &&
-      cinfo->restart_interval == 0 && cinfo->restart_in_rows == 0) {
+  if (IsSinglePassOptimizerSupported(cinfo)) {
     EncodeSingleScan(cinfo);
     return;
   }
@@ -772,6 +803,7 @@ void jpegli_start_compress(j_compress_ptr cinfo, boolean write_all_tables) {
   CheckState(cinfo, jpegli::kEncStart);
   (*cinfo->err->reset_error_mgr)(reinterpret_cast<j_common_ptr>(cinfo));
   jpegli::ProcessCompressionParams(cinfo);
+  jpegli::InitProgressMonitor(cinfo);
   jpegli::AllocateBuffers(cinfo);
   jpegli::ChooseInputMethod(cinfo);
   if (!cinfo->raw_data_in) {
@@ -798,6 +830,7 @@ void jpegli_write_coefficients(j_compress_ptr cinfo,
   CheckState(cinfo, jpegli::kEncStart);
   (*cinfo->err->reset_error_mgr)(reinterpret_cast<j_common_ptr>(cinfo));
   jpegli::ProcessCompressionParams(cinfo);
+  jpegli::InitProgressMonitor(cinfo);
   (*cinfo->mem->realize_virt_arrays)(reinterpret_cast<j_common_ptr>(cinfo));
   cinfo->master->coeff_buffers = coef_arrays;
   jpegli_suppress_tables(cinfo, FALSE);
@@ -898,6 +931,7 @@ JDIMENSION jpegli_write_scanlines(j_compress_ptr cinfo, JSAMPARRAY scanlines,
   if (cinfo->raw_data_in) {
     JPEGLI_ERROR("jpegli_write_raw_data() must be called for raw data mode.");
   }
+  jpegli::ProgressMonitorInputPass(cinfo);
   if (cinfo->global_state == jpegli::kEncHeader) {
     jpegli::WriteHeaderMarkers(cinfo);
   }
@@ -938,6 +972,7 @@ JDIMENSION jpegli_write_raw_data(j_compress_ptr cinfo, JSAMPIMAGE data,
   if (!cinfo->raw_data_in) {
     JPEGLI_ERROR("jpegli_write_raw_data(): raw data mode was not set");
   }
+  jpegli::ProgressMonitorInputPass(cinfo);
   if (cinfo->global_state == jpegli::kEncHeader) {
     jpegli::WriteHeaderMarkers(cinfo);
   }

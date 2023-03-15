@@ -740,6 +740,17 @@ static JXL_INLINE void EmitMarker(JpegBitWriter* bw, int marker) {
   bw->data[bw->pos++] = marker;
 }
 
+void ProgressMonitorEncodePass(j_compress_ptr cinfo, size_t scan_index,
+                               size_t mcu_y) {
+  if (cinfo->progress == nullptr) {
+    return;
+  }
+  cinfo->progress->completed_passes = 1 + scan_index;
+  cinfo->progress->pass_counter = mcu_y;
+  cinfo->progress->pass_limit = cinfo->total_iMCU_rows;
+  (*cinfo->progress->progress_monitor)(reinterpret_cast<j_common_ptr>(cinfo));
+}
+
 bool EncodeScan(j_compress_ptr cinfo, int scan_index) {
   jpeg_comp_master* m = cinfo->master;
   const int restart_interval = cinfo->restart_interval;
@@ -778,6 +789,7 @@ bool EncodeScan(j_compress_ptr cinfo, int scan_index) {
 
   JBLOCKARRAY ba[MAX_COMPS_IN_SCAN];
   for (int mcu_y = 0; mcu_y < MCU_rows; ++mcu_y) {
+    ProgressMonitorEncodePass(cinfo, scan_index, mcu_y);
     for (int i = 0; i < scan_info->comps_in_scan; ++i) {
       int comp_idx = scan_info->component_index[i];
       jpeg_component_info* comp = &cinfo->comp_info[comp_idx];
@@ -949,6 +961,7 @@ void ComputeTokens(j_compress_ptr cinfo,
   coeff_t last_dc_coeff[MAX_COMPS_IN_SCAN] = {0};
   JBLOCKARRAY ba[MAX_COMPS_IN_SCAN];
   for (int mcu_y = 0; mcu_y < ysize_mcus; ++mcu_y) {
+    ProgressMonitorEncodePass(cinfo, 0, mcu_y);
     ta.num_tokens = next_token - ta.tokens;
     if (ta.num_tokens + max_tokens_per_mcu_row > num_tokens) {
       if (ta.tokens) {
