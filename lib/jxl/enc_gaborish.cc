@@ -19,11 +19,13 @@ void GaborishInverse(Image3F* in_out, float mul, ThreadPool* pool) {
   JXL_ASSERT(mul >= 0.0f);
 
   // Only an approximation. One or even two 3x3, and rank-1 (separable) 5x5
-  // are insufficient.
+  // are insufficient. The numbers here have been obtained by butteraugli
+  // based optimizing the whole system and the errors produced are likely
+  // more favorable for good rate-distortion compromises rather than
+  // just using mathematical optimization to find the inverse.
   static const float kGaborish[5] = {
-      -0.088188686933903332f, -0.043510240843796254f, 0.016038526595420832f,
-      0.0013932467887255813f, 0.0042737176783204326f,
-  };
+      -0.090881924078487886f, -0.043663953593472138f, 0.01392497846646211f,
+      0.0036189602184591141f, 0.0030557936884763499f};
   /*
     better would be:
       1.0 - mul * (4 * (kGaborish[0] + kGaborish[1] +
