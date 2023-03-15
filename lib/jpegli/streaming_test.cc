@@ -92,20 +92,9 @@ TEST_P(StreamingTestParam, TestStreaming) {
   TestImage output;
   GeneratePixels(&input);
   const auto try_catch_block = [&]() {
-    jpeg_error_mgr jerr;
-    jmp_buf env;
-    dinfo.err = jpegli_std_error(&jerr);
-    if (setjmp(env)) {
-      FAIL();
-    }
-    dinfo.client_data = reinterpret_cast<void*>(&env);
-    dinfo.err->error_exit = [](j_common_ptr cinfo) {
-      (*cinfo->err->output_message)(cinfo);
-      jmp_buf* env = reinterpret_cast<jmp_buf*>(cinfo->client_data);
-      longjmp(*env, 1);
-    };
-    cinfo.err = dinfo.err;
-    cinfo.client_data = dinfo.client_data;
+    ERROR_HANDLER_SETUP(jpegli);
+    dinfo.err = cinfo.err;
+    dinfo.client_data = cinfo.client_data;
     // Create a pair of compressor and decompressor objects, where the
     // compressor's output is connected to the decompressor's input.
     jpegli_create_decompress(&dinfo);
@@ -156,14 +145,14 @@ TEST_P(StreamingTestParam, TestStreaming) {
       // we expect that the compressor's output buffer was filled at least once
       // while emitting the first compressed iMCU row.
       if (yin == std::min<size_t>(2 * iMCU_height, cinfo.image_height)) {
-        ASSERT_EQ(JPEG_REACHED_SOS,
+        EXPECT_EQ(JPEG_REACHED_SOS,
                   jpegli_read_header(&dinfo, /*require_image=*/TRUE));
         output.xsize = dinfo.image_width;
         output.ysize = dinfo.image_height;
         output.components = dinfo.num_components;
-        ASSERT_EQ(output.xsize, input.xsize);
-        ASSERT_EQ(output.ysize, input.ysize);
-        ASSERT_EQ(output.components, input.components);
+        EXPECT_EQ(output.xsize, input.xsize);
+        EXPECT_EQ(output.ysize, input.ysize);
+        EXPECT_EQ(output.components, input.components);
         EXPECT_TRUE(jpegli_start_decompress(&dinfo));
         output.pixels.resize(output.ysize * stride);
         if (yin < cinfo.image_height) {
@@ -190,7 +179,7 @@ TEST_P(StreamingTestParam, TestStreaming) {
         rows_out[i] =
             reinterpret_cast<JSAMPLE*>(&output.pixels[(yout + i) * stride]);
       }
-      ASSERT_EQ(lines_out,
+      EXPECT_EQ(lines_out,
                 jpegli_read_scanlines(&dinfo, &rows_out[0], lines_out));
       VerifyOutputImage(input, output, yout, lines_out, 3.8f);
       yout += lines_out;
@@ -199,8 +188,9 @@ TEST_P(StreamingTestParam, TestStreaming) {
         EXPECT_TRUE(jpegli_finish_decompress(&dinfo));
       }
     }
+    return true;
   };
-  try_catch_block();
+  EXPECT_TRUE(try_catch_block());
   jpegli_destroy_decompress(&dinfo);
   jpegli_destroy_compress(&cinfo);
 }
@@ -223,12 +213,8 @@ std::vector<TestConfig> GenerateTests() {
 }
 
 std::ostream& operator<<(std::ostream& os, const TestConfig& c) {
-  os << c.input.xsize << "x" << c.input.ysize;
-  os << "SAMP";
-  for (size_t i = 0; i < c.input.components; ++i) {
-    os << "_";
-    os << c.jparams.h_sampling[i] << "x" << c.jparams.v_sampling[i];
-  }
+  os << c.input;
+  os << c.jparams;
   return os;
 }
 

@@ -5,10 +5,11 @@
 
 #include <vector>
 
-#include "lib/jpegli/encode.h"
 #include "lib/jpegli/decode.h"
+#include "lib/jpegli/encode.h"
 #include "lib/jpegli/test_utils.h"
 #include "lib/jpegli/testing.h"
+#include "lib/jxl/base/status.h"
 
 namespace jpegli {
 namespace {
@@ -19,35 +20,25 @@ void TranscodeWithJpegli(const std::vector<uint8_t>& jpeg_input,
   jpeg_compress_struct cinfo = {};
   uint8_t* transcoded_data = nullptr;
   unsigned long transcoded_size;
-  const auto try_catch_block = [&]() {
-    jpeg_error_mgr jerr;
-    jmp_buf env;
-    dinfo.err = jpegli_std_error(&jerr);
-    if (setjmp(env)) {
-      FAIL();
-    }
-    dinfo.client_data = reinterpret_cast<void*>(&env);
-    dinfo.err->error_exit = [](j_common_ptr cinfo) {
-      (*cinfo->err->output_message)(cinfo);
-      jmp_buf* env = reinterpret_cast<jmp_buf*>(cinfo->client_data);
-      longjmp(*env, 1);
-    };
+  const auto try_catch_block = [&]() -> bool {
+    ERROR_HANDLER_SETUP(jpegli);
+    dinfo.err = cinfo.err;
+    dinfo.client_data = cinfo.client_data;
     jpegli_create_decompress(&dinfo);
     jpegli_mem_src(&dinfo, jpeg_input.data(), jpeg_input.size());
     EXPECT_EQ(JPEG_REACHED_SOS,
               jpegli_read_header(&dinfo, /*require_image=*/TRUE));
     jvirt_barray_ptr* coef_arrays = jpegli_read_coefficients(&dinfo);
-    ASSERT_TRUE(coef_arrays != nullptr);
-    cinfo.err = dinfo.err;
-    cinfo.client_data = dinfo.client_data;
+    JXL_CHECK(coef_arrays != nullptr);
     jpegli_create_compress(&cinfo);
     jpegli_mem_dest(&cinfo, &transcoded_data, &transcoded_size);
     jpegli_copy_critical_parameters(&dinfo, &cinfo);
     jpegli_write_coefficients(&cinfo, coef_arrays);
     jpegli_finish_compress(&cinfo);
     jpegli_finish_decompress(&dinfo);
+    return true;
   };
-  try_catch_block();
+  ASSERT_TRUE(try_catch_block());
   jpegli_destroy_decompress(&dinfo);
   jpegli_destroy_compress(&cinfo);
   if (transcoded_data) {
@@ -83,8 +74,8 @@ TEST_P(TranscodeAPITestParam, TestAPI) {
 
   // Verify that transcoding is lossless.
   TestImage output0, output1;
-  DecodeWithLibjpeg(CompressParams(), compressed, PIXELS, &output0);
-  DecodeWithLibjpeg(CompressParams(), transcoded, PIXELS, &output1);
+  DecodeWithLibjpeg(CompressParams(), DecompressParams(), compressed, &output0);
+  DecodeWithLibjpeg(CompressParams(), DecompressParams(), transcoded, &output1);
   ASSERT_EQ(output0.pixels.size(), output1.pixels.size());
   EXPECT_EQ(0, memcmp(output0.pixels.data(), output1.pixels.data(),
                       output0.pixels.size()));
@@ -112,14 +103,8 @@ std::vector<TestConfig> GenerateTests() {
 }
 
 std::ostream& operator<<(std::ostream& os, const TestConfig& c) {
-  os << c.input.xsize << "x" << c.input.ysize;
-  if (!c.jparams.h_sampling.empty()) {
-    os << "SAMP";
-    for (size_t i = 0; i < c.input.components; ++i) {
-      os << "_";
-      os << c.jparams.h_sampling[i] << "x" << c.jparams.v_sampling[i];
-    }
-  }
+  os << c.input;
+  os << c.jparams;
   return os;
 }
 

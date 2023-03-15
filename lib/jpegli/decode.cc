@@ -277,7 +277,8 @@ boolean jpegli_start_output(j_decompress_ptr cinfo, int scan_number) {
   if (!cinfo->buffered_image) {
     JPEGLI_ERROR("jpegli_start_output: buffered image mode was not set");
   }
-  if (cinfo->global_state != jpegli::kDecProcessScan) {
+  if (cinfo->global_state != jpegli::kDecProcessScan &&
+      cinfo->global_state != jpegli::kDecProcessMarkers) {
     JPEGLI_ERROR("jpegli_start_output: unexpected state %d",
                  cinfo->global_state);
   }

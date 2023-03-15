@@ -19,43 +19,10 @@
 namespace jpegli {
 namespace {
 
-void DecodeWithLibJpeg(const std::vector<uint8_t>& compressed,
-                       volatile size_t* xsize, volatile size_t* ysize,
-                       volatile size_t* num_channels,
-                       std::vector<uint8_t>* pixels) {
-  jpeg_decompress_struct cinfo = {};
-  jpeg_error_mgr jerr;
-  cinfo.err = jpeg_std_error(&jerr);
-  jmp_buf env;
-  if (setjmp(env)) {
-    FAIL();
-  }
-  cinfo.client_data = static_cast<void*>(&env);
-  cinfo.err->error_exit = [](j_common_ptr cinfo) {
-    (*cinfo->err->output_message)(cinfo);
-    jmp_buf* env = static_cast<jmp_buf*>(cinfo->client_data);
-    longjmp(*env, 1);
-  };
-  jpeg_create_decompress(&cinfo);
-  jpeg_mem_src(&cinfo, compressed.data(), compressed.size());
-  jpeg_read_header(&cinfo, TRUE);
-  *xsize = cinfo.image_width;
-  *ysize = cinfo.image_height;
-  jpeg_start_decompress(&cinfo);
-  *num_channels = cinfo.output_components;
-  const size_t stride = cinfo.output_components * cinfo.image_width;
-  pixels->resize(cinfo.image_height * stride);
-  for (size_t y = 0; y < cinfo.image_height; ++y) {
-    JSAMPROW rows[] = {&(*pixels)[stride * y]};
-    jpeg_read_scanlines(&cinfo, rows, 1);
-    jxl::msan::UnpoisonMemory(rows[0], stride);
-  }
-  jpeg_finish_decompress(&cinfo);
-  jpeg_destroy_decompress(&cinfo);
-}
-
 static constexpr uint8_t kFakeEoiMarker[2] = {0xff, 0xd9};
 
+// Custom source manager that refills the input buffer in chunks, simulating
+// a file reader with a fixed buffer size.
 class SourceManager {
  public:
   SourceManager(const uint8_t* data, size_t len, size_t max_chunk_size)
@@ -65,39 +32,27 @@ class SourceManager {
     pub_.skip_input_data = skip_input_data;
     pub_.resync_to_restart = jpegli_resync_to_restart;
     pub_.term_source = term_source;
+    pub_.init_source = init_source;
+    pub_.fill_input_buffer = fill_input_buffer;
+    if (max_chunk_size_ == 0) max_chunk_size_ = len;
   }
 
-  size_t TotalBytes() const { return pos_; }
-  size_t UnprocessedBytes() const { return pub_.bytes_in_buffer; }
+  ~SourceManager() {
+    EXPECT_EQ(0, pub_.bytes_in_buffer);
+    EXPECT_EQ(len_, pos_);
+  }
 
- protected:
+ private:
   jpeg_source_mgr pub_;
   const uint8_t* data_;
   size_t len_;
   size_t pos_;
   size_t max_chunk_size_;
 
- private:
-  static void skip_input_data(j_decompress_ptr cinfo, long num_bytes) {}
-
-  static void term_source(j_decompress_ptr cinfo) {}
-};
-
-// Custom source manager that refills the input buffer in chunks, simulating
-// a file reader with a fixed buffer size.
-class ChunkedSourceManager : public SourceManager {
- public:
-  ChunkedSourceManager(const uint8_t* data, size_t len, size_t max_chunk_size)
-      : SourceManager(data, len, max_chunk_size) {
-    pub_.init_source = init_source;
-    pub_.fill_input_buffer = fill_input_buffer;
-  }
-
- private:
   static void init_source(j_decompress_ptr cinfo) { fill_input_buffer(cinfo); }
 
   static boolean fill_input_buffer(j_decompress_ptr cinfo) {
-    auto src = reinterpret_cast<ChunkedSourceManager*>(cinfo->src);
+    auto src = reinterpret_cast<SourceManager*>(cinfo->src);
     if (src->pos_ < src->len_) {
       size_t chunk_size = std::min(src->len_ - src->pos_, src->max_chunk_size_);
       src->pub_.next_input_byte = src->data_ + src->pos_;
@@ -109,464 +64,219 @@ class ChunkedSourceManager : public SourceManager {
     src->pos_ += src->pub_.bytes_in_buffer;
     return TRUE;
   }
+
+  static void skip_input_data(j_decompress_ptr cinfo, long num_bytes) {}
+
+  static void term_source(j_decompress_ptr cinfo) {}
 };
 
-class SuspendingSourceManager : public SourceManager {
- public:
-  SuspendingSourceManager(const uint8_t* data, size_t len,
-                          size_t max_chunk_size)
-      : SourceManager(data, len, max_chunk_size) {
-    pub_.init_source = init_source;
-    pub_.fill_input_buffer = fill_input_buffer;
-  }
-
-  bool LoadNextChunk() {
-    if (pos_ >= len_) {
-      return false;
+void SetDecompressParams(const DecompressParams& dparams,
+                         j_decompress_ptr cinfo) {
+  jpegli_set_output_format(cinfo, dparams.data_type, dparams.endianness);
+  cinfo->raw_data_out = dparams.output_mode == RAW_DATA;
+  cinfo->do_block_smoothing = dparams.do_block_smoothing;
+  if (dparams.set_out_color_space) {
+    cinfo->out_color_space = dparams.out_color_space;
+    if (dparams.out_color_space == JCS_UNKNOWN) {
+      cinfo->jpeg_color_space = JCS_UNKNOWN;
     }
-    if (pub_.bytes_in_buffer > 0) {
-      EXPECT_LE(pub_.bytes_in_buffer, buffer_.size());
-      memmove(&buffer_[0], pub_.next_input_byte, pub_.bytes_in_buffer);
+  }
+}
+
+void ReadOutputImage(const DecompressParams& dparams, j_decompress_ptr cinfo,
+                     TestImage* output) {
+  JDIMENSION xoffset = 0;
+  JDIMENSION yoffset = 0;
+  JDIMENSION xsize_cropped = cinfo->output_width;
+  JDIMENSION ysize_cropped = cinfo->output_height;
+  if (dparams.crop_output) {
+    xoffset = xsize_cropped = cinfo->output_width / 3;
+    yoffset = ysize_cropped = cinfo->output_height / 3;
+    jpegli_crop_scanline(cinfo, &xoffset, &xsize_cropped);
+  }
+  output->ysize = ysize_cropped;
+  output->xsize = cinfo->output_width;
+  output->components = cinfo->num_components;
+  output->data_type = dparams.data_type;
+  output->endianness = dparams.endianness;
+  size_t bytes_per_sample = jpegli_bytes_per_sample(dparams.data_type);
+  if (cinfo->raw_data_out) {
+    for (int c = 0; c < cinfo->num_components; ++c) {
+      size_t xsize = cinfo->comp_info[c].width_in_blocks * DCTSIZE;
+      size_t ysize = cinfo->comp_info[c].height_in_blocks * DCTSIZE;
+      std::vector<uint8_t> plane(ysize * xsize * bytes_per_sample);
+      output->raw_data.emplace_back(std::move(plane));
     }
-    size_t chunk_size = std::min(len_ - pos_, max_chunk_size_);
-    buffer_.resize(pub_.bytes_in_buffer + chunk_size);
-    memcpy(&buffer_[pub_.bytes_in_buffer], data_ + pos_, chunk_size);
-    pub_.next_input_byte = &buffer_[0];
-    pub_.bytes_in_buffer += chunk_size;
-    pos_ += chunk_size;
-    return true;
+  } else {
+    output->AllocatePixels();
   }
-
- private:
-  std::vector<uint8_t> buffer_;
-
-  static void init_source(j_decompress_ptr cinfo) {
-    auto src = reinterpret_cast<SuspendingSourceManager*>(cinfo->src);
-    src->pub_.next_input_byte = nullptr;
-    src->pub_.bytes_in_buffer = 0;
+  size_t total_output_lines = 0;
+  while (cinfo->output_scanline < cinfo->output_height) {
+    size_t max_lines;
+    size_t num_output_lines;
+    if (cinfo->raw_data_out) {
+      max_lines = cinfo->max_v_samp_factor * DCTSIZE;
+      std::vector<std::vector<JSAMPROW>> rowdata(cinfo->num_components);
+      std::vector<JSAMPARRAY> data(cinfo->num_components);
+      for (int c = 0; c < cinfo->num_components; ++c) {
+        size_t vfactor = cinfo->comp_info[c].v_samp_factor;
+        size_t cheight = cinfo->comp_info[c].height_in_blocks * DCTSIZE;
+        size_t num_lines = vfactor * DCTSIZE;
+        rowdata[c].resize(num_lines);
+        size_t y0 = cinfo->output_iMCU_row * num_lines;
+        for (size_t i = 0; i < num_lines; ++i) {
+          rowdata[c][i] =
+              y0 + i < cheight ? &output->raw_data[c][y0 + i] : nullptr;
+        }
+        data[c] = &rowdata[c][0];
+      }
+      num_output_lines = jpegli_read_raw_data(cinfo, &data[0], max_lines);
+    } else {
+      size_t max_output_lines = dparams.max_output_lines;
+      if (max_output_lines == 0) max_output_lines = cinfo->output_height;
+      if (cinfo->output_scanline < yoffset) {
+        max_lines = yoffset - cinfo->output_scanline;
+        num_output_lines = jpegli_skip_scanlines(cinfo, max_lines);
+      } else if (cinfo->output_scanline >= yoffset + ysize_cropped) {
+        max_lines = cinfo->output_height - cinfo->output_scanline;
+        num_output_lines = jpegli_skip_scanlines(cinfo, max_lines);
+      } else {
+        size_t lines_left = yoffset + ysize_cropped - cinfo->output_scanline;
+        max_lines = std::min<size_t>(max_output_lines, lines_left);
+        size_t stride =
+            cinfo->output_width * cinfo->num_components * bytes_per_sample;
+        std::vector<JSAMPROW> scanlines(max_lines);
+        for (size_t i = 0; i < max_lines; ++i) {
+          size_t yidx = cinfo->output_scanline - yoffset + i;
+          scanlines[i] = &output->pixels[yidx * stride];
+        }
+        num_output_lines =
+            jpegli_read_scanlines(cinfo, &scanlines[0], max_lines);
+      }
+    }
+    total_output_lines += num_output_lines;
+    EXPECT_EQ(total_output_lines, cinfo->output_scanline);
+    EXPECT_EQ(num_output_lines, max_lines);
   }
-  static boolean fill_input_buffer(j_decompress_ptr cinfo) { return FALSE; }
-};
-
-enum SourceManagerType {
-  SOURCE_MGR_CHUNKED,
-  SOURCE_MGR_SUSPENDING,
-  SOURCE_MGR_STDIO,
-};
+}
 
 struct TestConfig {
   std::string fn;
   std::string fn_desc;
-  size_t chunk_size = 0;
-  size_t max_output_lines = 0;
-  float max_distance = 1.0;
-  SourceManagerType source_mgr = SOURCE_MGR_CHUNKED;
-  bool pre_consume_input = false;
-  bool buffered_image_mode = false;
-  bool crop = false;
-  bool raw_output = false;
-  JpegliDataType data_type = JPEGLI_TYPE_UINT8;
-  JpegliEndianness endianness = JPEGLI_NATIVE_ENDIAN;
+  TestImage input;
+  CompressParams jparams;
+  DecompressParams dparams;
 };
 
-bool LoadNextChunk(const TestConfig& config, j_decompress_ptr cinfo) {
-  if (config.source_mgr == SOURCE_MGR_SUSPENDING) {
-    auto src = reinterpret_cast<SuspendingSourceManager*>(cinfo->src);
-    return src->LoadNextChunk();
+std::vector<uint8_t> GetTestJpegData(TestConfig& config) {
+  if (!config.fn.empty()) {
+    return ReadTestData(config.fn.c_str());
   }
-  return false;
-}
-
-std::string DataTypeString(JpegliDataType type) {
-  switch (type) {
-    case JPEGLI_TYPE_UINT8:
-      return "UINT8";
-    case JPEGLI_TYPE_UINT16:
-      return "UINT16";
-    case JPEGLI_TYPE_FLOAT:
-      return "FLOAT";
-    default:
-      return "UNKNOWN";
-  }
-}
-
-std::string EndiannessString(JpegliEndianness endianness) {
-  if (endianness == JPEGLI_BIG_ENDIAN) {
-    return "BE";
-  } else if (endianness == JPEGLI_LITTLE_ENDIAN) {
-    return "LE";
-  }
-  return "";
+  GeneratePixels(&config.input);
+  std::vector<uint8_t> compressed;
+  JXL_CHECK(EncodeWithJpegli(config.input, config.jparams, &compressed));
+  return compressed;
 }
 
 class DecodeAPITestParam : public ::testing::TestWithParam<TestConfig> {};
 
 TEST_P(DecodeAPITestParam, TestAPI) {
   TestConfig config = GetParam();
-  const std::vector<uint8_t> compressed = ReadTestData(config.fn.c_str());
-
-  // These has to be volatile to make setjmp/longjmp work.
-  volatile size_t xsize, ysize, num_channels;
-  std::vector<uint8_t> orig;
-  DecodeWithLibJpeg(compressed, &xsize, &ysize, &num_channels, &orig);
-
+  const DecompressParams& dparams = config.dparams;
+  const std::vector<uint8_t> compressed = GetTestJpegData(config);
+  SourceManager src(compressed.data(), compressed.size(), dparams.chunk_size);
+  TestImage output0;
   jpeg_decompress_struct cinfo;
-  jpeg_error_mgr jerr;
-  cinfo.err = jpegli_std_error(&jerr);
-  jmp_buf env;
-  if (setjmp(env)) {
-    FAIL();
-  }
-  cinfo.client_data = static_cast<void*>(&env);
-  cinfo.err->error_exit = [](j_common_ptr cinfo) {
-    (*cinfo->err->output_message)(cinfo);
-    jmp_buf* env = static_cast<jmp_buf*>(cinfo->client_data);
-    longjmp(*env, 1);
-  };
-
-  jpegli_create_decompress(&cinfo);
-
-  size_t chunk_size = config.chunk_size;
-  if (chunk_size == 0) chunk_size = compressed.size();
-  ChunkedSourceManager src_chunked(compressed.data(), compressed.size(),
-                                   chunk_size);
-  SuspendingSourceManager src_susp(compressed.data(), compressed.size(),
-                                   chunk_size);
-  std::string jpg_full_path = GetTestDataPath(config.fn);
-  jxl::FileWrapper testfile(jpg_full_path, "rb");
-  ASSERT_TRUE(testfile != nullptr);
-  if (config.source_mgr == SOURCE_MGR_CHUNKED) {
-    cinfo.src = reinterpret_cast<jpeg_source_mgr*>(&src_chunked);
-  } else if (config.source_mgr == SOURCE_MGR_SUSPENDING) {
-    cinfo.src = reinterpret_cast<jpeg_source_mgr*>(&src_susp);
-  } else if (config.source_mgr == SOURCE_MGR_STDIO) {
-    jpegli_stdio_src(&cinfo, testfile);
-  }
-
-  if (config.pre_consume_input) {
-    for (;;) {
-      int status = jpegli_consume_input(&cinfo);
-      if (status == JPEG_SUSPENDED) {
-        ASSERT_TRUE(LoadNextChunk(config, &cinfo));
-      } else if (status == JPEG_REACHED_SOS) {
-        break;
-      }
-    }
-  } else {
-    for (;;) {
-      int status = jpegli_read_header(&cinfo, /*require_image=*/TRUE);
-      if (status == JPEG_SUSPENDED) {
-        ASSERT_TRUE(LoadNextChunk(config, &cinfo));
-      } else {
-        ASSERT_EQ(status, JPEG_HEADER_OK);
-        break;
-      }
-    }
-  }
-
-  ASSERT_EQ(JPEG_REACHED_SOS, jpegli_consume_input(&cinfo));
-
-  EXPECT_EQ(xsize, cinfo.image_width);
-  EXPECT_EQ(ysize, cinfo.image_height);
-  EXPECT_EQ(num_channels, cinfo.num_components);
-
-  jpegli_set_output_format(&cinfo, config.data_type, config.endianness);
-
-  if (jpegli_has_multiple_scans(&cinfo) && config.buffered_image_mode) {
-    cinfo.buffered_image = TRUE;
-  }
-
-  if (cinfo.max_v_samp_factor > 1 && config.raw_output) {
-    cinfo.raw_data_out = TRUE;
-  }
-
-  if (config.pre_consume_input) {
+  const auto try_catch_block = [&]() -> bool {
+    ERROR_HANDLER_SETUP(jpegli);
+    jpegli_create_decompress(&cinfo);
+    cinfo.src = reinterpret_cast<jpeg_source_mgr*>(&src);
+    jpegli_read_header(&cinfo, /*require_image=*/TRUE);
+    SetDecompressParams(dparams, &cinfo);
     jpegli_start_decompress(&cinfo);
-  } else if (cinfo.buffered_image) {
-    EXPECT_TRUE(jpegli_start_decompress(&cinfo));
-  } else {
-    while (!jpegli_start_decompress(&cinfo)) {
-      ASSERT_TRUE(LoadNextChunk(config, &cinfo));
-    }
-  }
-
-  EXPECT_EQ(xsize, cinfo.output_width);
-  EXPECT_EQ(ysize, cinfo.output_height);
-  EXPECT_EQ(num_channels, cinfo.out_color_components);
-
-  JDIMENSION xoffset = 0;
-  JDIMENSION yoffset = 0;
-  JDIMENSION xsize_cropped = xsize;
-  JDIMENSION ysize_cropped = ysize;
-  if (config.crop && !config.raw_output) {
-    xoffset = xsize_cropped = xsize / 3;
-    yoffset = ysize_cropped = ysize / 3;
-    jpegli_crop_scanline(&cinfo, &xoffset, &xsize_cropped);
-  }
-
-  std::vector<uint8_t> cropped(xsize_cropped * ysize_cropped * num_channels);
-  for (size_t y = 0; y < ysize_cropped; ++y) {
-    for (size_t x = 0; x < xsize_cropped; ++x) {
-      size_t crop_ix = y * xsize_cropped + x;
-      size_t orig_ix = (yoffset + y) * xsize + xoffset + x;
-      for (size_t c = 0; c < num_channels; ++c) {
-        cropped[crop_ix * num_channels + c] = orig[orig_ix * num_channels + c];
-      }
-    }
-  }
-
-  size_t bytes_per_sample = jpegli_bytes_per_sample(config.data_type);
-  size_t stride = cinfo.output_width * cinfo.num_components * bytes_per_sample;
-  size_t max_output_lines = config.max_output_lines;
-  if (max_output_lines == 0) max_output_lines = cinfo.output_height;
-
-  if (config.pre_consume_input) {
-    for (;;) {
-      int status = jpegli_consume_input(&cinfo);
-      if (status == JPEG_SUSPENDED) {
-        ASSERT_TRUE(LoadNextChunk(config, &cinfo));
-      } else if (status == JPEG_REACHED_EOI) {
-        break;
-      }
-    }
-  }
-
-  while (!jpegli_input_complete(&cinfo)) {
-    if (cinfo.buffered_image) {
-      EXPECT_TRUE(jpegli_start_output(&cinfo, cinfo.input_scan_number));
-    }
-
-    if (cinfo.raw_data_out) {
-      std::vector<std::vector<uint8_t>> planes;
-      std::vector<size_t> strides(cinfo.num_components);
-      for (int c = 0; c < cinfo.num_components; ++c) {
-        size_t xsize = cinfo.comp_info[c].width_in_blocks * DCTSIZE;
-        strides[c] = xsize * bytes_per_sample;
-        size_t ysize = cinfo.comp_info[c].height_in_blocks * DCTSIZE;
-        std::vector<uint8_t> plane(ysize * stride);
-        planes.emplace_back(std::move(plane));
-      }
-      size_t total_output_lines = 0;
-      for (;;) {
-        size_t max_lines = cinfo.max_v_samp_factor * DCTSIZE;
-        std::vector<std::vector<JSAMPROW>> rowdata(cinfo.num_components);
-        std::vector<JSAMPARRAY> data(cinfo.num_components);
-        for (int c = 0; c < cinfo.num_components; ++c) {
-          size_t vfactor = cinfo.comp_info[c].v_samp_factor;
-          size_t cheight = cinfo.comp_info[c].height_in_blocks * DCTSIZE;
-          size_t num_lines = vfactor * DCTSIZE;
-          rowdata[c].resize(num_lines);
-          size_t y0 = cinfo.output_iMCU_row * num_lines;
-          for (size_t i = 0; i < num_lines; ++i) {
-            rowdata[c][i] = y0 + i < cheight ? &planes[c][y0 + i] : nullptr;
-          }
-          data[c] = &rowdata[c][0];
-        }
-        size_t num_output_lines =
-            jpegli_read_raw_data(&cinfo, &data[0], max_lines);
-        total_output_lines += num_output_lines;
-        EXPECT_EQ(total_output_lines, cinfo.output_scanline);
-        if (cinfo.output_scanline >= cinfo.output_height) {
-          break;
-        }
-        if (config.pre_consume_input) {
-          EXPECT_EQ(num_output_lines, max_lines);
-        } else if (num_output_lines < max_lines) {
-          ASSERT_TRUE(LoadNextChunk(config, &cinfo));
-        }
-        // TODO(szabadka) Add expectations on the raw data.
-      }
-    } else {
-      std::vector<uint8_t> output(ysize_cropped * stride);
-      size_t total_output_lines = 0;
-      for (;;) {
-        size_t num_output_lines;
-        size_t max_lines;
-        if (cinfo.output_scanline < yoffset) {
-          max_lines = yoffset - cinfo.output_scanline;
-          num_output_lines = jpegli_skip_scanlines(&cinfo, max_lines);
-        } else if (cinfo.output_scanline >= yoffset + ysize_cropped) {
-          max_lines = cinfo.output_height - cinfo.output_scanline;
-          num_output_lines = jpegli_skip_scanlines(&cinfo, max_lines);
-        } else {
-          size_t lines_left = yoffset + ysize_cropped - cinfo.output_scanline;
-          max_lines = std::min<size_t>(max_output_lines, lines_left);
-          std::vector<JSAMPROW> scanlines(max_lines);
-          for (size_t i = 0; i < max_lines; ++i) {
-            size_t yidx = cinfo.output_scanline - yoffset + i;
-            scanlines[i] = &output[yidx * stride];
-          }
-          num_output_lines =
-              jpegli_read_scanlines(&cinfo, &scanlines[0], max_lines);
-        }
-        total_output_lines += num_output_lines;
-        EXPECT_EQ(total_output_lines, cinfo.output_scanline);
-        if (cinfo.output_scanline >= cinfo.output_height) {
-          break;
-        }
-        if (config.pre_consume_input) {
-          EXPECT_EQ(num_output_lines, max_lines);
-        } else if (num_output_lines < max_lines) {
-          ASSERT_TRUE(LoadNextChunk(config, &cinfo));
-        }
-      }
-      ASSERT_EQ(output.size(), cropped.size() * bytes_per_sample);
-      bool is_little_endian =
-          (config.endianness == JPEGLI_LITTLE_ENDIAN ||
-           (config.endianness == JPEGLI_NATIVE_ENDIAN && IsLittleEndian()));
-      const double kMul8 = 1.0 / 255.0;
-      const double kMul16 = 1.0 / 65535.0;
-      double diff2 = 0.0;
-      for (size_t i = 0; i < cropped.size(); ++i) {
-        double sample_orig = cropped[i] * kMul8;
-        double sample_output = 0.0;
-        if (config.data_type == JPEGLI_TYPE_UINT8) {
-          sample_output = output[i] * kMul8;
-        } else if (config.data_type == JPEGLI_TYPE_UINT16) {
-          sample_output = is_little_endian ? LoadLE16(&output[2 * i])
-                                           : LoadBE16(&output[2 * i]);
-          sample_output *= kMul16;
-        } else if (config.data_type == JPEGLI_TYPE_FLOAT) {
-          sample_output = is_little_endian ? LoadLEFloat(&output[4 * i])
-                                           : LoadBEFloat(&output[4 * i]);
-        }
-        double diff = sample_orig - sample_output;
-        diff2 += diff * diff;
-      }
-      double rms = std::sqrt(diff2 / cropped.size()) / kMul8;
-      double max_dist = config.max_distance;
-      if (!cinfo.buffered_image || jpegli_input_complete(&cinfo)) {
-        EXPECT_LE(rms, max_dist);
-      } else {
-        EXPECT_LE(rms, max_dist * 20.0);
-      }
-    }
-    if (!cinfo.buffered_image || jpegli_input_complete(&cinfo)) {
-      EXPECT_EQ(cinfo.input_iMCU_row, cinfo.total_iMCU_rows);
-    }
-    if (cinfo.buffered_image) {
-      if (config.pre_consume_input) {
-        EXPECT_TRUE(jpegli_finish_output(&cinfo));
-      } else {
-        while (!jpegli_finish_output(&cinfo)) {
-          ASSERT_TRUE(LoadNextChunk(config, &cinfo));
-        }
-      }
-    } else {
-      break;
-    }
-  }
-
-  if (config.pre_consume_input || cinfo.buffered_image) {
-    EXPECT_TRUE(jpegli_finish_decompress(&cinfo));
-  } else {
-    while (!jpegli_finish_decompress(&cinfo)) {
-      ASSERT_TRUE(LoadNextChunk(config, &cinfo));
-    }
-  }
-  EXPECT_TRUE(jpegli_input_complete(&cinfo));
-  if (config.source_mgr == SOURCE_MGR_CHUNKED) {
-    EXPECT_EQ(0, src_chunked.UnprocessedBytes());
-    EXPECT_EQ(src_chunked.TotalBytes(), compressed.size());
-  } else if (config.source_mgr == SOURCE_MGR_SUSPENDING) {
-    EXPECT_EQ(0, src_susp.UnprocessedBytes());
-    EXPECT_EQ(src_susp.TotalBytes(), compressed.size());
-  }
-
+    ReadOutputImage(dparams, &cinfo, &output0);
+    jpegli_finish_decompress(&cinfo);
+    return true;
+  };
+  ASSERT_TRUE(try_catch_block());
   jpegli_destroy_decompress(&cinfo);
+
+  TestImage output1;
+  DecodeWithLibjpeg(CompressParams(), dparams, compressed, &output1);
+  VerifyOutputImage(output1, output0, 1.0f);
 }
 
-std::vector<TestConfig> GenerateTests() {
+class DecodeAPITestParamBuffered : public ::testing::TestWithParam<TestConfig> {
+};
+
+TEST_P(DecodeAPITestParamBuffered, TestAPI) {
+  TestConfig config = GetParam();
+  const DecompressParams& dparams = config.dparams;
+  const std::vector<uint8_t> compressed = GetTestJpegData(config);
+  SourceManager src(compressed.data(), compressed.size(), dparams.chunk_size);
+  std::vector<TestImage> output_progression0;
+  jpeg_decompress_struct cinfo;
+  const auto try_catch_block = [&]() -> bool {
+    ERROR_HANDLER_SETUP(jpegli);
+    jpegli_create_decompress(&cinfo);
+    cinfo.src = reinterpret_cast<jpeg_source_mgr*>(&src);
+    jpegli_read_header(&cinfo, /*require_image=*/TRUE);
+    SetDecompressParams(dparams, &cinfo);
+    cinfo.buffered_image = TRUE;
+    jpegli_start_decompress(&cinfo);
+    EXPECT_FALSE(jpegli_input_complete(&cinfo));
+    while (!jpegli_input_complete(&cinfo)) {
+      jpegli_start_output(&cinfo, cinfo.input_scan_number);
+      TestImage output;
+      ReadOutputImage(dparams, &cinfo, &output);
+      output_progression0.emplace_back(std::move(output));
+      jpegli_finish_output(&cinfo);
+    }
+    jpegli_finish_decompress(&cinfo);
+    return true;
+  };
+  ASSERT_TRUE(try_catch_block());
+  jpegli_destroy_decompress(&cinfo);
+
+  std::vector<TestImage> output_progression1;
+  DecodeAllScansWithLibjpeg(CompressParams(), dparams, compressed,
+                            &output_progression1);
+  ASSERT_EQ(output_progression0.size(), output_progression1.size());
+  for (size_t i = 0; i < output_progression0.size(); ++i) {
+    const TestImage& output = output_progression0[i];
+    const TestImage& expected = output_progression1[i];
+    VerifyOutputImage(expected, output, 1.0);
+  }
+}
+
+std::vector<TestConfig> GenerateTests(bool buffered) {
   std::vector<TestConfig> all_tests;
   {
     std::vector<std::pair<std::string, std::string>> testfiles({
-        {"jxl/flower/flower.png.im_q85_444.jpg", "Q85YUV444"},
-        {"jxl/flower/flower.png.im_q85_420.jpg", "Q85YUV420"},
+        {"jxl/flower/flower.png.im_q85_420_progr.jpg", "Q85YUV420PROGR"},
         {"jxl/flower/flower.png.im_q85_420_R13B.jpg", "Q85YUV420R13B"},
+        {"jxl/flower/flower.png.im_q85_444.jpg", "Q85YUV444"},
     });
-    for (const auto& it : testfiles) {
+    for (size_t i = 0; i < (buffered ? 1u : testfiles.size()); ++i) {
+      TestConfig config;
+      config.fn = testfiles[i].first;
+      config.fn_desc = testfiles[i].second;
       for (size_t chunk_size : {0, 1, 64, 65536}) {
+        config.dparams.chunk_size = chunk_size;
         for (size_t max_output_lines : {0, 1, 8, 16}) {
-          TestConfig config;
-          config.fn = it.first;
-          config.fn_desc = it.second;
-          config.chunk_size = chunk_size;
-          config.max_output_lines = max_output_lines;
+          config.dparams.max_output_lines = max_output_lines;
+          config.dparams.output_mode = PIXELS;
           all_tests.push_back(config);
-          if (config.chunk_size != 0) {
-            config.source_mgr = SOURCE_MGR_SUSPENDING;
-            all_tests.push_back(config);
-          } else {
-            config.source_mgr = SOURCE_MGR_STDIO;
-            all_tests.push_back(config);
-          }
+        }
+        {
+          config.dparams.max_output_lines = 16;
+          config.dparams.output_mode = RAW_DATA;
+          all_tests.push_back(config);
         }
       }
     }
   }
 
-  {
-    for (size_t chunk_size : {0, 65536}) {
-      for (size_t max_output_lines : {0, 16}) {
-        for (bool pre_consume : {false, true}) {
-          for (bool buffered : {false, true}) {
-            for (bool crop : {false, true}) {
-              TestConfig config;
-              config.fn = "jxl/flower/flower.png.im_q85_420_progr.jpg";
-              config.fn_desc = "Q85YUV420PROGR";
-              config.chunk_size = chunk_size;
-              config.max_output_lines = max_output_lines;
-              config.pre_consume_input = pre_consume;
-              config.buffered_image_mode = buffered;
-              config.crop = crop;
-              all_tests.push_back(config);
-              if (config.chunk_size != 0) {
-                config.source_mgr = SOURCE_MGR_SUSPENDING;
-                all_tests.push_back(config);
-              }
-              if (config.max_output_lines == 0 && !config.crop) {
-                config.raw_output = true;
-                all_tests.push_back(config);
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-
-  {
-    std::vector<std::pair<std::string, std::string>> testfiles({
-        {"jxl/flower/flower.png.im_q85_422.jpg", "Q85YUV422"},
-        {"jxl/flower/flower.png.im_q85_440.jpg", "Q85YUV440"},
-        {"jxl/flower/flower.png.im_q85_444_1x2.jpg", "Q85YUV444_1x2"},
-        {"jxl/flower/flower.png.im_q85_asymmetric.jpg", "Q85Asymmetric"},
-        {"jxl/flower/flower.png.im_q85_gray.jpg", "Q85Gray"},
-        {"jxl/flower/flower.png.im_q85_luma_subsample.jpg", "Q85LumaSubsample"},
-        {"jxl/flower/flower.png.im_q85_rgb.jpg", "Q85RGB"},
-        {"jxl/flower/flower.png.im_q85_rgb_subsample_blue.jpg",
-         "Q85RGBSubsampleBlue"},
-    });
-    for (const auto& it : testfiles) {
-      for (size_t chunk_size : {0, 64}) {
-        for (size_t max_output_lines : {0, 16}) {
-          for (bool pre_consume : {false, true}) {
-            TestConfig config;
-            config.fn = it.first;
-            config.fn_desc = it.second;
-            config.chunk_size = chunk_size;
-            config.max_output_lines = max_output_lines;
-            config.pre_consume_input = pre_consume;
-            all_tests.push_back(config);
-            if (config.chunk_size != 0) {
-              config.source_mgr = SOURCE_MGR_SUSPENDING;
-              all_tests.push_back(config);
-            }
-          }
-        }
-      }
-    }
-  }
   {
     std::vector<std::pair<std::string, std::string>> testfiles({
         {"jxl/flower/flower_small.q85_444_non_interleaved.jpg",
@@ -577,86 +287,100 @@ std::vector<TestConfig> GenerateTests() {
          "Q85YUV444PartiallyInterleaved"},
         {"jxl/flower/flower_small.q85_420_partially_interleaved.jpg",
          "Q85YUV420PartiallyInterleaved"},
+        {"jxl/flower/flower.png.im_q85_422.jpg", "Q85YUV422"},
+        {"jxl/flower/flower.png.im_q85_440.jpg", "Q85YUV440"},
+        {"jxl/flower/flower.png.im_q85_444_1x2.jpg", "Q85YUV444_1x2"},
+        {"jxl/flower/flower.png.im_q85_asymmetric.jpg", "Q85Asymmetric"},
+        {"jxl/flower/flower.png.im_q85_gray.jpg", "Q85Gray"},
+        {"jxl/flower/flower.png.im_q85_luma_subsample.jpg", "Q85LumaSubsample"},
+        {"jxl/flower/flower.png.im_q85_rgb.jpg", "Q85RGB"},
+        {"jxl/flower/flower.png.im_q85_rgb_subsample_blue.jpg",
+         "Q85RGBSubsampleBlue"},
+        {"jxl/flower/flower_small.cmyk.jpg", "CMYK"},
     });
-    for (const auto& it : testfiles) {
-      for (size_t chunk_size : {0, 64}) {
-        for (size_t max_output_lines : {0, 16}) {
-          TestConfig config;
-          config.fn = it.first;
-          config.fn_desc = it.second;
-          config.chunk_size = chunk_size;
-          config.max_output_lines = max_output_lines;
-          all_tests.push_back(config);
-        }
-      }
-    }
-  }
-  {
-    for (JpegliDataType type : {JPEGLI_TYPE_UINT16, JPEGLI_TYPE_FLOAT}) {
-      for (JpegliEndianness endianness :
-           {JPEGLI_NATIVE_ENDIAN, JPEGLI_LITTLE_ENDIAN, JPEGLI_BIG_ENDIAN}) {
+    for (size_t i = 0; i < (buffered ? 4u : testfiles.size()); ++i) {
+      for (JpegIOMode output_mode : {PIXELS, RAW_DATA}) {
         TestConfig config;
-        config.fn = "jxl/flower/flower.png.im_q85_444.jpg";
-        config.fn_desc = "Q85YUV444";
-        config.data_type = type;
-        config.endianness = endianness;
+        config.fn = testfiles[i].first;
+        config.fn_desc = testfiles[i].second;
+        config.dparams.output_mode = output_mode;
         all_tests.push_back(config);
       }
     }
   }
+
+  if (buffered) {
+    return all_tests;
+  }
+
+  for (JpegliDataType type : {JPEGLI_TYPE_UINT16, JPEGLI_TYPE_FLOAT}) {
+    for (JpegliEndianness endianness :
+         {JPEGLI_NATIVE_ENDIAN, JPEGLI_LITTLE_ENDIAN, JPEGLI_BIG_ENDIAN}) {
+      TestConfig config;
+      config.dparams.data_type = type;
+      config.dparams.endianness = endianness;
+      all_tests.push_back(config);
+    }
+  }
   {
     TestConfig config;
-    config.fn = "jxl/flower/flower_small.cmyk.jpg";
-    config.fn_desc = "CMYK";
+    config.dparams.crop_output = true;
     all_tests.push_back(config);
   }
   return all_tests;
 }
 
-std::ostream& operator<<(std::ostream& os, const TestConfig& c) {
-  os << c.fn_desc;
-  if (c.source_mgr == SOURCE_MGR_STDIO) {
-    os << "Stdio";
-  } else if (c.chunk_size == 0) {
+std::ostream& operator<<(std::ostream& os, const DecompressParams& dparams) {
+  if (dparams.chunk_size == 0) {
     os << "CompleteInput";
   } else {
-    os << "InputChunks" << c.chunk_size;
-    if (c.source_mgr == SOURCE_MGR_SUSPENDING) {
-      os << "Suspending";
-    }
+    os << "InputChunks" << dparams.chunk_size;
   }
-  if (c.pre_consume_input) {
-    os << "PreConsume";
-  }
-  if (c.max_output_lines == 0) {
+  if (dparams.max_output_lines == 0) {
     os << "CompleteOutput";
   } else {
-    os << "OutputLines" << c.max_output_lines;
+    os << "OutputLines" << dparams.max_output_lines;
   }
-  if (c.buffered_image_mode) {
-    os << "Buffered";
+  if (dparams.output_mode == RAW_DATA) {
+    os << "RawDataOut";
   }
-  if (c.crop) {
+  os << IOMethodName(dparams.data_type, dparams.endianness);
+  if (dparams.set_out_color_space) {
+    os << "OutColor" << ColorSpaceName(dparams.out_color_space);
+  }
+  if (dparams.crop_output) {
     os << "Crop";
-  } else if (c.raw_output) {
-    os << "Raw";
   }
-  os << DataTypeString(c.data_type);
-  if (c.data_type != JPEGLI_TYPE_UINT8) {
-    os << EndiannessString(c.endianness);
+  if (dparams.do_block_smoothing) {
+    os << "BlockSmoothing";
   }
   return os;
 }
 
-std::string TestDescription(
-    const testing::TestParamInfo<DecodeAPITestParam::ParamType>& info) {
+std::ostream& operator<<(std::ostream& os, const TestConfig& c) {
+  if (!c.fn.empty()) {
+    os << c.fn_desc;
+  } else {
+    os << c.input;
+  }
+  os << c.jparams;
+  os << c.dparams;
+  return os;
+}
+
+std::string TestDescription(const testing::TestParamInfo<TestConfig>& info) {
   std::stringstream name;
   name << info.param;
   return name.str();
 }
 
 JPEGLI_INSTANTIATE_TEST_SUITE_P(DecodeAPITest, DecodeAPITestParam,
-                                testing::ValuesIn(GenerateTests()),
+                                testing::ValuesIn(GenerateTests(false)),
+                                TestDescription);
+
+JPEGLI_INSTANTIATE_TEST_SUITE_P(DecodeAPITestBuffered,
+                                DecodeAPITestParamBuffered,
+                                testing::ValuesIn(GenerateTests(true)),
                                 TestDescription);
 
 }  // namespace
