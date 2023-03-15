@@ -64,19 +64,8 @@ TEST_P(OutputSuspensionTestParam, PixelData) {
   GeneratePixels(&input);
   DestinationManager dest;
   std::vector<uint8_t> compressed;
-  const auto try_catch_block = [&]() {
-    jpeg_error_mgr jerr;
-    jmp_buf env;
-    cinfo.err = jpegli_std_error(&jerr);
-    if (setjmp(env)) {
-      FAIL();
-    }
-    cinfo.client_data = reinterpret_cast<void*>(&env);
-    cinfo.err->error_exit = [](j_common_ptr cinfo) {
-      (*cinfo->err->output_message)(cinfo);
-      jmp_buf* env = reinterpret_cast<jmp_buf*>(cinfo->client_data);
-      longjmp(*env, 1);
-    };
+  const auto try_catch_block = [&]() -> bool {
+    ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
     cinfo.dest = reinterpret_cast<jpeg_destination_mgr*>(&dest);
 
@@ -113,11 +102,12 @@ TEST_P(OutputSuspensionTestParam, PixelData) {
     dest.EmptyTo(&compressed, kFinalBufferSize);
     jpegli_finish_compress(&cinfo);
     dest.EmptyTo(&compressed);
+    return true;
   };
-  try_catch_block();
+  ASSERT_TRUE(try_catch_block());
   jpegli_destroy_compress(&cinfo);
   TestImage output;
-  DecodeWithLibjpeg(CompressParams(), compressed, PIXELS, &output);
+  DecodeWithLibjpeg(CompressParams(), DecompressParams(), compressed, &output);
   VerifyOutputImage(input, output, 2.5);
 }
 
@@ -130,19 +120,8 @@ TEST_P(OutputSuspensionTestParam, RawData) {
   GenerateRawData(config.jparams, &input);
   DestinationManager dest;
   std::vector<uint8_t> compressed;
-  const auto try_catch_block = [&]() {
-    jpeg_error_mgr jerr;
-    jmp_buf env;
-    cinfo.err = jpegli_std_error(&jerr);
-    if (setjmp(env)) {
-      FAIL();
-    }
-    cinfo.client_data = reinterpret_cast<void*>(&env);
-    cinfo.err->error_exit = [](j_common_ptr cinfo) {
-      (*cinfo->err->output_message)(cinfo);
-      jmp_buf* env = reinterpret_cast<jmp_buf*>(cinfo->client_data);
-      longjmp(*env, 1);
-    };
+  const auto try_catch_block = [&]() -> bool {
+    ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
     cinfo.dest = reinterpret_cast<jpeg_destination_mgr*>(&dest);
     cinfo.image_width = input.xsize;
@@ -182,12 +161,16 @@ TEST_P(OutputSuspensionTestParam, RawData) {
     dest.EmptyTo(&compressed, kFinalBufferSize);
     jpegli_finish_compress(&cinfo);
     dest.EmptyTo(&compressed);
+    return true;
   };
   try_catch_block();
   jpegli_destroy_compress(&cinfo);
+  DecompressParams dparams;
+  dparams.set_out_color_space = true;
+  dparams.out_color_space = JCS_YCbCr;
+  dparams.output_mode = RAW_DATA;
   TestImage output;
-  output.color_space = JCS_YCbCr;
-  DecodeWithLibjpeg(CompressParams(), compressed, PIXELS, &output);
+  DecodeWithLibjpeg(CompressParams(), dparams, compressed, &output);
   VerifyOutputImage(input, output, 3.5);
 }
 
@@ -215,12 +198,8 @@ std::vector<TestConfig> GenerateTests() {
 }
 
 std::ostream& operator<<(std::ostream& os, const TestConfig& c) {
-  os << c.input.xsize << "x" << c.input.ysize;
-  os << "SAMP";
-  for (size_t i = 0; i < c.input.components; ++i) {
-    os << "_";
-    os << c.jparams.h_sampling[i] << "x" << c.jparams.v_sampling[i];
-  }
+  os << c.input;
+  os << c.jparams;
   os << "Lines" << c.lines_batch_size;
   os << "BufSize" << c.buffer_size;
   return os;

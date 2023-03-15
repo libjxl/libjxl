@@ -30,27 +30,19 @@ constexpr inline T1 DivCeil(T1 a, T2 b) {
   return (a + b - 1) / b;
 }
 
-struct MyClientData {
-  jmp_buf env;
-  unsigned char* buffer = nullptr;
-  unsigned long size = 0;
-  unsigned char* table_stream = nullptr;
-  unsigned long table_stream_size = 0;
-};
-
-#define ERROR_HANDLER_SETUP(action)                                           \
-  jpeg_error_mgr jerr;                                                        \
-  cinfo.err = jpegli_std_error(&jerr);                                        \
-  if (setjmp(data.env)) {                                                     \
-    action;                                                                   \
-  }                                                                           \
-  cinfo.client_data = reinterpret_cast<void*>(&data);                         \
-  cinfo.err->error_exit = [](j_common_ptr cinfo) {                            \
-    (*cinfo->err->output_message)(cinfo);                                     \
-    MyClientData* data = reinterpret_cast<MyClientData*>(cinfo->client_data); \
-    if (data->buffer) free(data->buffer);                                     \
-    jpegli_destroy(cinfo);                                                    \
-    longjmp(data->env, 1);                                                    \
+#define ERROR_HANDLER_SETUP(flavor)                                \
+  jpeg_error_mgr jerr;                                             \
+  jmp_buf env;                                                     \
+  cinfo.err = flavor##_std_error(&jerr);                           \
+  if (setjmp(env)) {                                               \
+    return false;                                                  \
+  }                                                                \
+  cinfo.client_data = reinterpret_cast<void*>(&env);               \
+  cinfo.err->error_exit = [](j_common_ptr cinfo) {                 \
+    (*cinfo->err->output_message)(cinfo);                          \
+    jmp_buf* env = reinterpret_cast<jmp_buf*>(cinfo->client_data); \
+    flavor##_destroy(cinfo);                                       \
+    longjmp(*env, 1);                                              \
   };
 
 static constexpr int kSpecialMarker = 0xe5;
@@ -86,6 +78,10 @@ static constexpr ScanScript kTestScript[] = {
 };
 static constexpr int kNumTestScripts = ARRAY_SIZE(kTestScript);
 
+std::string IOMethodName(JpegliDataType data_type, JpegliEndianness endianness);
+
+std::string ColorSpaceName(J_COLOR_SPACE colorspace);
+
 enum JpegIOMode {
   PIXELS,
   RAW_DATA,
@@ -104,8 +100,8 @@ struct CustomQuantTable {
 };
 
 struct TestImage {
-  size_t xsize = 0;
-  size_t ysize = 0;
+  size_t xsize = 2268;
+  size_t ysize = 1512;
   J_COLOR_SPACE color_space = JCS_RGB;
   size_t components = 3;
   JpegliDataType data_type = JPEGLI_TYPE_UINT8;
@@ -113,7 +109,13 @@ struct TestImage {
   std::vector<uint8_t> pixels;
   std::vector<std::vector<uint8_t>> raw_data;
   std::vector<std::vector<JCOEF>> coeffs;
+  void AllocatePixels() {
+    pixels.resize(ysize * xsize * components *
+                  jpegli_bytes_per_sample(data_type));
+  }
 };
+
+std::ostream& operator<<(std::ostream& os, const TestImage& input);
 
 struct CompressParams {
   int quality = 90;
@@ -152,6 +154,20 @@ struct CompressParams {
   int comp_height(const TestImage& input, int c) const {
     return DivCeil(input.ysize * v_samp(c), max_v_sample() * DCTSIZE) * DCTSIZE;
   }
+};
+
+std::ostream& operator<<(std::ostream& os, const CompressParams& jparams);
+
+struct DecompressParams {
+  size_t chunk_size = 65536;
+  size_t max_output_lines = 16;
+  JpegIOMode output_mode = PIXELS;
+  JpegliDataType data_type = JPEGLI_TYPE_UINT8;
+  JpegliEndianness endianness = JPEGLI_NATIVE_ENDIAN;
+  bool set_out_color_space = false;
+  J_COLOR_SPACE out_color_space = JCS_UNKNOWN;
+  bool crop_output = false;
+  bool do_block_smoothing = false;
 };
 
 std::string GetTestDataPath(const std::string& filename);
@@ -200,9 +216,14 @@ bool EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
 
 // Verifies that an image encoded with libjpegli can be decoded with libjpeg,
 // and checks that the jpeg coding metadata matches jparams.
+void DecodeAllScansWithLibjpeg(const CompressParams& jparams,
+                               const DecompressParams& dparams,
+                               const std::vector<uint8_t>& compressed,
+                               std::vector<TestImage>* output_progression);
 void DecodeWithLibjpeg(const CompressParams& jparams,
+                       const DecompressParams& dparams,
                        const std::vector<uint8_t>& compressed,
-                       JpegIOMode output_mode, TestImage* output);
+                       TestImage* output);
 
 void VerifyOutputImage(const TestImage& input, const TestImage& output,
                        size_t start_line, size_t num_lines, double max_rms);

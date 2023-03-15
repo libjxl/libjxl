@@ -513,7 +513,10 @@ set(JPEGXL_INTERNAL_JPEGLI_TESTLIB_FILES
 set(JPEGXL_INTERNAL_JPEGLI_TESTS
   jpegli/decode_api_test.cc
   jpegli/encode_api_test.cc
+  jpegli/error_handling_test.cc
+  jpegli/input_suspension_test.cc
   jpegli/output_suspension_test.cc
+  jpegli/source_manager_test.cc
   jpegli/streaming_test.cc
   jpegli/transcode_api_test.cc
 )
