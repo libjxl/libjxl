@@ -10,6 +10,7 @@
 
 #include "lib/jxl/base/status.h"
 
+// Forward declarations.
 namespace jxl {
 class CodecInOut;
 struct ColorEncoding;

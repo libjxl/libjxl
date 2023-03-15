@@ -18,8 +18,15 @@
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 namespace {
+
+using ::jxl::CodecInOut;
+using ::jxl::ColorEncoding;
+using ::jxl::Image3F;
+using ::jxl::ImageBundle;
+using ::jxl::ThreadPool;
 
 void PrintXybRange() {
   Image3F linear(1u << 16, 257);
@@ -43,7 +50,7 @@ void PrintXybRange() {
   const ImageBundle& ib = io.Main();
   ThreadPool* null_pool = nullptr;
   Image3F opsin(ib.xsize(), ib.ysize());
-  (void)ToXYB(ib, null_pool, &opsin, GetJxlCms());
+  (void)jxl::ToXYB(ib, null_pool, &opsin, jxl::GetJxlCms());
   for (size_t c = 0; c < 3; ++c) {
     float minval = 1e10f;
     float maxval = -1e10f;
@@ -75,6 +82,7 @@ void PrintXybRange() {
 }
 
 }  // namespace
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
 
-int main() { jxl::PrintXybRange(); }
+int main() { jpegxl::tools::PrintXybRange(); }

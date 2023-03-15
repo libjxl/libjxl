@@ -15,7 +15,10 @@
 #include "lib/jxl/base/file_io.h"
 #include "lib/jxl/base/status.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
+
+using ::jxl::Status;
 
 // Checks if the file exists, either as file or as directory
 bool PathExists(const std::string& fname);
@@ -48,6 +51,7 @@ Status MatchFiles(const std::string& pattern, std::vector<std::string>* list);
 
 std::string JoinPath(const std::string& first, const std::string& second);
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
 
 #endif  // TOOLS_BENCHMARK_BENCHMARK_FILE_IO_H_

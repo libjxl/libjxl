@@ -24,7 +24,17 @@
     }                                                                          \
   } while (false)
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
+
+using ::jxl::CodecInOut;
+using ::jxl::ImageBundle;
+using ::jxl::PaddedBytes;
+using ::jxl::Primaries;
+using ::jxl::Span;
+using ::jxl::ThreadPoolInternal;
+using ::jxl::TransferFunction;
+using ::jxl::WhitePoint;
 
 namespace {
 
@@ -55,7 +65,7 @@ bool ParseChromaSubsampling(const char* arg, avifPixelFormat* subsampling) {
 }
 
 void SetUpAvifColor(const ColorEncoding& color, avifImage* const image) {
-  bool need_icc = color.white_point != WhitePoint::kD65;
+  bool need_icc = (color.white_point != WhitePoint::kD65);
 
   image->matrixCoefficients = AVIF_MATRIX_COEFFICIENTS_BT709;
   if (!color.HasPrimaries()) {
@@ -214,9 +224,9 @@ class AvifCodec : public ImageCodec {
 
   Status Compress(const std::string& filename, const CodecInOut* io,
                   ThreadPoolInternal* pool, std::vector<uint8_t>* compressed,
-                  jpegxl::tools::SpeedStats* speed_stats) override {
+                  SpeedStats* speed_stats) override {
     double elapsed_convert_image = 0;
-    const double start = Now();
+    const double start = jxl::Now();
     {
       const auto depth =
           std::min<int>(16, io->metadata.m.bit_depth.bits_per_sample);
@@ -258,14 +268,14 @@ class AvifCodec : public ImageCodec {
         avifRGBImageAllocatePixels(&rgb_image);
         std::unique_ptr<avifRGBImage, void (*)(avifRGBImage*)> pixels_freer(
             &rgb_image, &avifRGBImageFreePixels);
-        const double start_convert_image = Now();
+        const double start_convert_image = jxl::Now();
         JXL_RETURN_IF_ERROR(ConvertToExternal(
             ib, depth, /*float_out=*/false,
             /*num_channels=*/ib.HasAlpha() ? 4 : 3, JXL_NATIVE_ENDIAN,
             /*stride=*/rgb_image.rowBytes, pool, rgb_image.pixels,
             rgb_image.rowBytes * rgb_image.height,
             /*out_callback=*/{}, jxl::Orientation::kIdentity));
-        const double end_convert_image = Now();
+        const double end_convert_image = jxl::Now();
         elapsed_convert_image += end_convert_image - start_convert_image;
         JXL_RETURN_IF_AVIF_ERROR(avifImageRGBToYUV(image.get(), &rgb_image));
         JXL_RETURN_IF_AVIF_ERROR(avifEncoderAddImage(
@@ -276,7 +286,7 @@ class AvifCodec : public ImageCodec {
       compressed->assign(buffer.data, buffer.data + buffer.size);
       avifRWDataFree(&buffer);
     }
-    const double end = Now();
+    const double end = jxl::Now();
     speed_stats->NotifyElapsed(end - start - elapsed_convert_image);
     return true;
   }
@@ -284,11 +294,11 @@ class AvifCodec : public ImageCodec {
   Status Decompress(const std::string& filename,
                     const Span<const uint8_t> compressed,
                     ThreadPoolInternal* pool, CodecInOut* io,
-                    jpegxl::tools::SpeedStats* speed_stats) override {
+                    SpeedStats* speed_stats) override {
     io->frames.clear();
     io->dec_pixels = 0;
     double elapsed_convert_image = 0;
-    const double start = Now();
+    const double start = jxl::Now();
     {
       std::unique_ptr<avifDecoder, void (*)(avifDecoder*)> decoder(
           avifDecoderCreate(), &avifDecoderDestroy);
@@ -316,7 +326,7 @@ class AvifCodec : public ImageCodec {
         std::unique_ptr<avifRGBImage, void (*)(avifRGBImage*)> pixels_freer(
             &rgb_image, &avifRGBImageFreePixels);
         JXL_RETURN_IF_AVIF_ERROR(avifImageYUVToRGB(decoder->image, &rgb_image));
-        const double start_convert_image = Now();
+        const double start_convert_image = jxl::Now();
         {
           JxlPixelFormat format = {
               (has_alpha ? 4u : 3u),
@@ -331,14 +341,14 @@ class AvifCodec : public ImageCodec {
           io->frames.push_back(std::move(ib));
           io->dec_pixels += rgb_image.width * rgb_image.height;
         }
-        const double end_convert_image = Now();
+        const double end_convert_image = jxl::Now();
         elapsed_convert_image += end_convert_image - start_convert_image;
       }
       if (next_image != AVIF_RESULT_NO_IMAGES_REMAINING) {
         JXL_RETURN_IF_AVIF_ERROR(next_image);
       }
     }
-    const double end = Now();
+    const double end = jxl::Now();
     speed_stats->NotifyElapsed(end - start - elapsed_convert_image);
     return true;
   }
@@ -357,4 +367,5 @@ ImageCodec* CreateNewAvifCodec(const BenchmarkArgs& args) {
   return new AvifCodec(args);
 }
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl

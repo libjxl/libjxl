@@ -12,22 +12,22 @@
 #include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/codec_in_out.h"
 
-namespace jxl {
+namespace {
 
 int TestOneInput(const uint8_t* data, size_t size) {
-  CodecInOut io;
+  jxl::CodecInOut io;
   io.constraints.dec_max_xsize = 1u << 16;
   io.constraints.dec_max_ysize = 1u << 16;
   io.constraints.dec_max_pixels = 1u << 22;
-  ThreadPoolInternal pool(0);
+  jxl::ThreadPoolInternal pool(0);
 
-  (void)SetFromBytes(Span<const uint8_t>(data, size), &io, &pool);
+  (void)jxl::SetFromBytes(jxl::Span<const uint8_t>(data, size), &io, &pool);
 
   return 0;
 }
 
-}  // namespace jxl
+}  // namespace
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
-  return jxl::TestOneInput(data, size);
+  return TestOneInput(data, size);
 }

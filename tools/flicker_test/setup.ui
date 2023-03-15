@@ -328,7 +328,7 @@
   <widget class="QWizardPage" name="spacingPage">
    <layout class="QVBoxLayout" name="verticalLayout_3" stretch="1,0,0">
     <item>
-     <widget class="jxl::SplitView" name="spacingDemo" native="true"/>
+     <widget class="jpegxl::tools::SplitView" name="spacingDemo" native="true"/>
     </item>
     <item>
      <spacer name="verticalSpacer_2">
@@ -389,7 +389,7 @@
  </widget>
  <customwidgets>
   <customwidget>
-   <class>jxl::SplitView</class>
+   <class>jpegxl::tools::SplitView</class>
    <extends>QWidget</extends>
    <header>tools/flicker_test/split_view.h</header>
    <container>1</container>

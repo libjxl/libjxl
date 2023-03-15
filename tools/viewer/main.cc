@@ -12,7 +12,7 @@ int main(int argc, char** argv) {
   QStringList arguments = application.arguments();
   arguments.removeFirst();
 
-  jxl::ViewerWindow window;
+  jpegxl::tools::ViewerWindow window;
   window.show();
 
   if (!arguments.empty()) {

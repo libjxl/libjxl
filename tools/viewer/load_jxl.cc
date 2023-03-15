@@ -16,7 +16,8 @@
 
 #include "lcms2.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 
 namespace {
 
@@ -171,4 +172,5 @@ QImage loadJxlImage(const QString& filename, const QByteArray& targetIccProfile,
   return result;
 }
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl

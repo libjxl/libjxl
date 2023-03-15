@@ -10,7 +10,21 @@
 #include "lib/jxl/modular/encoding/encoding.h"
 #include "lib/jxl/modular/transform/transform.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
+
+using ::jxl::BitReader;
+using ::jxl::BitReaderScopedCloser;
+using ::jxl::Channel;
+using ::jxl::GroupHeader;
+using ::jxl::Image;
+using ::jxl::ModularOptions;
+using ::jxl::pixel_type;
+using ::jxl::Rng;
+using ::jxl::Span;
+using ::jxl::Status;
+using ::jxl::Transform;
+using ::jxl::weighted::Header;
 
 namespace {
 void FillChannel(Channel& ch, Rng& rng) {
@@ -50,8 +64,8 @@ int TestOneInput(const uint8_t* data, size_t size) {
 
   size_t w_orig = static_cast<size_t>(reader.ReadFixedBits<16>());
   size_t h_orig = static_cast<size_t>(reader.ReadFixedBits<16>());
-  size_t w = DivCeil(w_orig, upsampling);
-  size_t h = DivCeil(h_orig, upsampling);
+  size_t w = jxl::DivCeil(w_orig, upsampling);
+  size_t h = jxl::DivCeil(h_orig, upsampling);
 
   if ((nb_chans == 2) || ((nb_chans + nb_extra) == 0) || (w * h == 0) ||
       ((w_orig * h_orig * (nb_chans + nb_extra)) > (1 << 23))) {
@@ -80,21 +94,22 @@ int TestOneInput(const uint8_t* data, size_t size) {
     Channel& ch = image.channel[c];
     ch.hshift = hshift[c];
     ch.vshift = vshift[c];
-    ch.shrink(DivCeil(w, 1 << hshift[c]), DivCeil(h, 1 << vshift[c]));
+    ch.shrink(jxl::DivCeil(w, 1 << hshift[c]), jxl::DivCeil(h, 1 << vshift[c]));
   }
 
   for (size_t ec = 0; ec < nb_extra; ec++) {
     Channel& ch = image.channel[ec + nb_chans];
     size_t ch_up = ec_upsampling[ec];
-    int up_level = CeilLog2Nonzero(ch_up) - CeilLog2Nonzero(upsampling);
-    ch.shrink(DivCeil(w_orig, ch_up), DivCeil(h_orig, ch_up));
+    int up_level =
+        jxl::CeilLog2Nonzero(ch_up) - jxl::CeilLog2Nonzero(upsampling);
+    ch.shrink(jxl::DivCeil(w_orig, ch_up), jxl::DivCeil(h_orig, ch_up));
     ch.hshift = ch.vshift = up_level;
   }
 
   GroupHeader header;
-  if (!Bundle::Read(&reader, &header)) return 0;
-  weighted::Header w_header;
-  if (!Bundle::Read(&reader, &w_header)) return 0;
+  if (!jxl::Bundle::Read(&reader, &header)) return 0;
+  Header w_header;
+  if (!jxl::Bundle::Read(&reader, &w_header)) return 0;
 
   // TODO(eustas): give it a try?
   if (!reader.AllReadsWithinBounds()) return 0;
@@ -122,16 +137,17 @@ int TestOneInput(const uint8_t* data, size_t size) {
     const Channel& ch = image.channel[c];
     AssertEq(ch.hshift, hshift[c]);
     AssertEq(ch.vshift, vshift[c]);
-    AssertEq(ch.w, DivCeil(w, 1 << hshift[c]));
-    AssertEq(ch.h, DivCeil(h, 1 << vshift[c]));
+    AssertEq(ch.w, jxl::DivCeil(w, 1 << hshift[c]));
+    AssertEq(ch.h, jxl::DivCeil(h, 1 << vshift[c]));
   }
 
   for (size_t ec = 0; ec < nb_extra; ec++) {
     const Channel& ch = image.channel[ec + nb_chans];
     size_t ch_up = ec_upsampling[ec];
-    int up_level = CeilLog2Nonzero(ch_up) - CeilLog2Nonzero(upsampling);
-    AssertEq(ch.w, DivCeil(w_orig, ch_up));
-    AssertEq(ch.h, DivCeil(h_orig, ch_up));
+    int up_level =
+        jxl::CeilLog2Nonzero(ch_up) - jxl::CeilLog2Nonzero(upsampling);
+    AssertEq(ch.w, jxl::DivCeil(w_orig, ch_up));
+    AssertEq(ch.h, jxl::DivCeil(h_orig, ch_up));
     AssertEq(ch.hshift, up_level);
     AssertEq(ch.vshift, up_level);
   }
@@ -139,8 +155,9 @@ int TestOneInput(const uint8_t* data, size_t size) {
   return 0;
 }
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
-  return jxl::TestOneInput(data, size);
+  return jpegxl::tools::TestOneInput(data, size);
 }

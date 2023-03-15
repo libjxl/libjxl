@@ -36,7 +36,10 @@
 #include "tools/benchmark/benchmark_utils.h"
 #include "tools/cmdline.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
+
+using ::jxl::ThreadPoolInternal;
 
 class JPEGCodec : public ImageCodec {
  public:
@@ -140,11 +143,11 @@ class JPEGCodec : public ImageCodec {
       }
       arguments.push_back("-optimize");
       arguments.push_back(in_filename);
-      const double start = Now();
+      const double start = jxl::Now();
       JXL_RETURN_IF_ERROR(RunCommand(compress_command, arguments, false));
-      const double end = Now();
+      const double end = jxl::Now();
       speed_stats->NotifyElapsed(end - start);
-      return ReadFile(encoded_filename, compressed);
+      return jxl::ReadFile(encoded_filename, compressed);
 #else
       return JXL_FAILURE("Not supported on this build");
 #endif
@@ -153,7 +156,7 @@ class JPEGCodec : public ImageCodec {
     double elapsed = 0.0;
     if (jpeg_encoder_ == "jpegli") {
 #if JPEGXL_ENABLE_JPEGLI
-      extras::PackedPixelFile ppf;
+      jxl::extras::PackedPixelFile ppf;
       size_t bits_per_sample = io->metadata.m.bit_depth.bits_per_sample;
       JxlPixelFormat format = {
           0,  // num_channels is ignored by the converter
@@ -161,7 +164,7 @@ class JPEGCodec : public ImageCodec {
           JXL_BIG_ENDIAN, 0};
       JXL_RETURN_IF_ERROR(ConvertCodecInOutToPackedPixelFile(
           *io, format, io->metadata.m.color_encoding, pool, &ppf));
-      extras::JpegSettings settings;
+      jxl::extras::JpegSettings settings;
       settings.xyb = xyb_mode_;
       if (!xyb_mode_) {
         settings.use_std_quant_tables = use_std_tables_;
@@ -179,18 +182,20 @@ class JPEGCodec : public ImageCodec {
       settings.libjpeg_quality = libjpeg_quality_;
       settings.libjpeg_chroma_subsampling = libjpeg_chroma_subsampling_;
       settings.optimize_coding = !fix_codes_;
-      const double start = Now();
-      JXL_RETURN_IF_ERROR(extras::EncodeJpeg(ppf, settings, pool, compressed));
-      const double end = Now();
+      const double start = jxl::Now();
+      JXL_RETURN_IF_ERROR(
+          jxl::extras::EncodeJpeg(ppf, settings, pool, compressed));
+      const double end = jxl::Now();
       elapsed = end - start;
 #endif
     } else {
-      extras::PackedPixelFile ppf;
+      jxl::extras::PackedPixelFile ppf;
       JxlPixelFormat format = {0, JXL_TYPE_UINT8, JXL_BIG_ENDIAN, 0};
-      JXL_RETURN_IF_ERROR(ConvertCodecInOutToPackedPixelFile(
+      JXL_RETURN_IF_ERROR(jxl::extras::ConvertCodecInOutToPackedPixelFile(
           *io, format, io->metadata.m.color_encoding, pool, &ppf));
-      extras::EncodedImage encoded;
-      std::unique_ptr<extras::Encoder> encoder = extras::GetJPEGEncoder();
+      jxl::extras::EncodedImage encoded;
+      std::unique_ptr<jxl::extras::Encoder> encoder =
+          jxl::extras::GetJPEGEncoder();
       std::ostringstream os;
       os << static_cast<int>(std::round(q_target_));
       encoder->SetOption("q", os.str());
@@ -204,9 +209,9 @@ class JPEGCodec : public ImageCodec {
       if (fix_codes_) {
         encoder->SetOption("optimize", "OFF");
       }
-      const double start = Now();
+      const double start = jxl::Now();
       JXL_RETURN_IF_ERROR(encoder->Encode(ppf, &encoded, pool));
-      const double end = Now();
+      const double end = jxl::Now();
       elapsed = end - start;
       *compressed = encoded.bitstreams.back();
     }
@@ -218,26 +223,27 @@ class JPEGCodec : public ImageCodec {
                     const Span<const uint8_t> compressed,
                     ThreadPoolInternal* pool, CodecInOut* io,
                     jpegxl::tools::SpeedStats* speed_stats) override {
-    extras::PackedPixelFile ppf;
+    jxl::extras::PackedPixelFile ppf;
     if (jpeg_decoder_ == "jpegli") {
 #if JPEGXL_ENABLE_JPEGLI
       std::vector<uint8_t> jpeg_bytes(compressed.data(),
                                       compressed.data() + compressed.size());
-      const double start = Now();
+      const double start = jxl::Now();
       JxlDataType data_type = bitdepth_ > 8 ? JXL_TYPE_UINT16 : JXL_TYPE_UINT8;
       JXL_RETURN_IF_ERROR(
-          extras::DecodeJpeg(jpeg_bytes, data_type, pool, &ppf));
-      const double end = Now();
+          jxl::extras::DecodeJpeg(jpeg_bytes, data_type, pool, &ppf));
+      const double end = jxl::Now();
       speed_stats->NotifyElapsed(end - start);
 #endif
     } else {
-      const double start = Now();
-      JXL_RETURN_IF_ERROR(DecodeImageJPG(compressed, extras::ColorHints(),
-                                         SizeConstraints(), &ppf));
-      const double end = Now();
+      const double start = jxl::Now();
+      JXL_RETURN_IF_ERROR(jxl::extras::DecodeImageJPG(
+          compressed, jxl::extras::ColorHints(), jxl::SizeConstraints(), &ppf));
+      const double end = jxl::Now();
       speed_stats->NotifyElapsed(end - start);
     }
-    JXL_RETURN_IF_ERROR(ConvertPackedPixelFileToCodecInOut(ppf, pool, io));
+    JXL_RETURN_IF_ERROR(
+        jxl::extras::ConvertPackedPixelFileToCodecInOut(ppf, pool, io));
     return true;
   }
 
@@ -266,4 +272,5 @@ ImageCodec* CreateNewJPEGCodec(const BenchmarkArgs& args) {
   return new JPEGCodec(args);
 }
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl

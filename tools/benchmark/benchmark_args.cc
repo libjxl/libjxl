@@ -32,7 +32,8 @@
 #include "tools/benchmark/benchmark_codec_avif.h"
 #endif  // BENCHMARK_AVIF
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 
 std::vector<std::string> SplitString(const std::string& s, char c) {
   std::vector<std::string> result;
@@ -236,8 +237,8 @@ Status BenchmarkArgs::ValidateArgs() {
     fprintf(stderr, "Missing --input filename(s).\n");
     return false;
   }
-  if (extras::CodecFromExtension(output_extension, &bits_per_sample) ==
-      extras::Codec::kUnknown) {
+  if (jxl::extras::CodecFromExtension(output_extension, &bits_per_sample) ==
+      jxl::extras::Codec::kUnknown) {
     JXL_WARNING("Unrecognized output_extension %s, try .png",
                 output_extension.c_str());
     return false;  // already warned
@@ -248,7 +249,7 @@ Status BenchmarkArgs::ValidateArgs() {
   if (!output_description.empty()) {
     // Validate, but also create the profile (only needs to happen once).
     JxlColorEncoding output_encoding_external;
-    if (!ParseDescription(output_description, &output_encoding_external)) {
+    if (!jxl::ParseDescription(output_description, &output_encoding_external)) {
       JXL_WARNING("Unrecognized output_description %s, try RGB_D65_SRG_Rel_Lin",
                   output_description.c_str());
       return false;  // already warned
@@ -281,4 +282,5 @@ Status BenchmarkArgs::ValidateArgs() {
   return true;
 }
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl

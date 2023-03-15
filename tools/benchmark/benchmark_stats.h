@@ -14,7 +14,10 @@
 
 #include "lib/jxl/enc_aux_out.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
+
+using ::jxl::AuxOut;
 
 std::string StringPrintf(const char* format, ...);
 
@@ -77,6 +80,7 @@ std::string PrintAggregate(
     size_t num_extra_metrics,
     const std::vector<std::vector<ColumnValue>>& aggregate);
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
 
 #endif  // TOOLS_BENCHMARK_BENCHMARK_STATS_H_

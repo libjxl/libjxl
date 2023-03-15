@@ -12,7 +12,8 @@
 
 #include "tools/viewer/ui_viewer_window.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 
 class ViewerWindow : public QMainWindow {
   Q_OBJECT
@@ -36,6 +37,7 @@ class ViewerWindow : public QMainWindow {
   bool hasWarnedAboutMonitorProfile_ = false;
 };
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
 
 #endif  // TOOLS_VIEWER_VIEWER_WINDOW_H_

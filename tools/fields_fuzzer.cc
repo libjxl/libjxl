@@ -15,7 +15,15 @@
 #include "lib/jxl/modular/encoding/encoding.h"
 #include "lib/jxl/modular/transform/transform.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
+
+using ::jxl::BitReader;
+using ::jxl::CodecMetadata;
+using ::jxl::CustomTransformData;
+using ::jxl::ImageMetadata;
+using ::jxl::SizeHeader;
+using ::jxl::Span;
 
 int TestOneInput(const uint8_t* data, size_t size) {
   // Global parameters used by some headers.
@@ -26,20 +34,20 @@ int TestOneInput(const uint8_t* data, size_t size) {
   BitReader reader(Span<const uint8_t>(data + 1, size - 1));
 #define FUZZER_CASE_HEADER(number, classname, ...) \
   case number: {                                   \
-    classname header{__VA_ARGS__};                 \
-    (void)Bundle::Read(&reader, &header);          \
+    ::jxl::classname header{__VA_ARGS__};          \
+    (void)jxl::Bundle::Read(&reader, &header);     \
     break;                                         \
   }
   switch (data[0]) {
     case 0: {
       SizeHeader size_header;
-      (void)ReadSizeHeader(&reader, &size_header);
+      (void)jxl::ReadSizeHeader(&reader, &size_header);
       break;
     }
 
     case 1: {
       ImageMetadata metadata;
-      (void)ReadImageMetadata(&reader, &metadata);
+      (void)jxl::ReadImageMetadata(&reader, &metadata);
       break;
     }
 
@@ -69,7 +77,7 @@ int TestOneInput(const uint8_t* data, size_t size) {
     default: {
       CustomTransformData transform_data;
       transform_data.nonserialized_xyb_encoded = true;
-      (void)Bundle::Read(&reader, &transform_data);
+      (void)jxl::Bundle::Read(&reader, &transform_data);
       break;
     }
   }
@@ -78,8 +86,9 @@ int TestOneInput(const uint8_t* data, size_t size) {
   return 0;
 }
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
-  return jxl::TestOneInput(data, size);
+  return jpegxl::tools::TestOneInput(data, size);
 }

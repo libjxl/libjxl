@@ -18,17 +18,30 @@
 #include "lib/jxl/image_metadata.h"
 #include "tools/viewer/load_jxl.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
+
+using jxl::CodecInOut;
+using jxl::ColorEncoding;
+using jxl::Image3F;
+using jxl::ImageBundle;
+using jxl::PaddedBytes;
+using jxl::Rect;
+using jxl::Span;
+using jxl::Status;
+using jxl::ThreadPool;
+using jxl::ThreadPoolInternal;
+using jxl::extras::ColorHints;
 
 namespace {
 
-Status loadFromFile(const QString& filename,
-                    const extras::ColorHints& color_hints,
+Status loadFromFile(const QString& filename, const ColorHints& color_hints,
                     CodecInOut* const decoded, ThreadPool* const pool) {
   PaddedBytes compressed;
-  JXL_RETURN_IF_ERROR(ReadFile(filename.toStdString(), &compressed));
+  JXL_RETURN_IF_ERROR(jxl::ReadFile(filename.toStdString(), &compressed));
   const Span<const uint8_t> compressed_span(compressed);
-  return SetFromBytes(compressed_span, color_hints, decoded, pool, nullptr);
+  return jxl::SetFromBytes(compressed_span, color_hints, decoded, pool,
+                           nullptr);
 }
 
 }  // namespace
@@ -36,10 +49,12 @@ Status loadFromFile(const QString& filename,
 bool canLoadImageWithExtension(QString extension) {
   extension = extension.toLower();
   size_t bitsPerSampleUnused;
-  return extension == "jxl" || extension == "j" || extension == "brn" ||
-         extras::CodecFromExtension("." + extension.toStdString(),
-                                    &bitsPerSampleUnused) !=
-             jxl::extras::Codec::kUnknown;
+  if (extension == "jxl" || extension == "j" || extension == "brn") {
+    return true;
+  }
+  const auto codec = jxl::extras::CodecFromExtension(
+      "." + extension.toStdString(), &bitsPerSampleUnused);
+  return codec != jxl::extras::Codec::kUnknown;
 }
 
 QImage loadImage(const QString& filename, const QByteArray& targetIccProfile,
@@ -53,7 +68,7 @@ QImage loadImage(const QString& filename, const QByteArray& targetIccProfile,
   static ThreadPoolInternal pool(QThread::idealThreadCount());
 
   CodecInOut decoded;
-  extras::ColorHints color_hints;
+  ColorHints color_hints;
   if (!sourceColorSpaceHint.isEmpty()) {
     color_hints.Add("color_space", sourceColorSpaceHint.toStdString());
   }
@@ -72,14 +87,15 @@ QImage loadImage(const QString& filename, const QByteArray& targetIccProfile,
     targetColorSpace = ColorEncoding::SRGB(ib.IsGray());
   }
   Image3F converted;
-  if (!ib.CopyTo(Rect(ib), targetColorSpace, GetJxlCms(), &converted, &pool)) {
+  if (!ib.CopyTo(Rect(ib), targetColorSpace, jxl::GetJxlCms(), &converted,
+                 &pool)) {
     return QImage();
   }
 
   QImage image(converted.xsize(), converted.ysize(), QImage::Format_ARGB32);
 
   const auto ScaleAndClamp = [](const float x) {
-    return Clamp1(x * 255 + .5f, 0.f, 255.f);
+    return jxl::Clamp1(x * 255 + .5f, 0.f, 255.f);
   };
 
   if (ib.HasAlpha()) {
@@ -110,4 +126,5 @@ QImage loadImage(const QString& filename, const QByteArray& targetIccProfile,
   return image;
 }
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl

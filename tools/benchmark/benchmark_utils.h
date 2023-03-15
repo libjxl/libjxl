@@ -11,7 +11,10 @@
 
 #include "lib/jxl/base/status.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
+
+using ::jxl::Status;
 
 class TemporaryFile final {
  public:
@@ -33,6 +36,7 @@ Status RunCommand(const std::string& command,
                   const std::vector<std::string>& arguments,
                   bool quiet = false);
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
 
 #endif  // TOOLS_BENCHMARK_BENCHMARK_UTILS_H_

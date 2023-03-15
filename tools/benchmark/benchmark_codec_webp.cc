@@ -27,7 +27,13 @@
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/sanitizers.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
+
+using ::jxl::ImageBundle;
+using ::jxl::ImageMetadata;
+using ::jxl::ThreadPool;
+using ::jxl::ThreadPoolInternal;
 
 // Sets image data from 8-bit sRGB pixel array in bytes.
 // Amount of input bytes per pixel must be:
@@ -37,7 +43,7 @@ Status FromSRGB(const size_t xsize, const size_t ysize, const bool is_gray,
                 const JxlEndianness endianness, const uint8_t* pixels,
                 const uint8_t* end, ThreadPool* pool, ImageBundle* ib) {
   const ColorEncoding& c = ColorEncoding::SRGB(is_gray);
-  const size_t bits_per_sample = (is_16bit ? 2 : 1) * kBitsPerByte;
+  const size_t bits_per_sample = (is_16bit ? 2 : 1) * jxl::kBitsPerByte;
   const uint32_t num_channels = (is_gray ? 1 : 3) + (has_alpha ? 1 : 0);
   JxlDataType data_type = is_16bit ? JXL_TYPE_UINT16 : JXL_TYPE_UINT8;
   JxlPixelFormat format = {num_channels, data_type, endianness, 0};
@@ -87,7 +93,7 @@ class WebPCodec : public ImageCodec {
   Status Compress(const std::string& filename, const CodecInOut* io,
                   ThreadPoolInternal* pool, std::vector<uint8_t>* compressed,
                   jpegxl::tools::SpeedStats* speed_stats) override {
-    const double start = Now();
+    const double start = jxl::Now();
     const ImageBundle& ib = io->Main();
 
     if (ib.HasAlpha() && ib.metadata()->GetAlphaBits() > 8) {
@@ -99,8 +105,8 @@ class WebPCodec : public ImageCodec {
     ImageBundle store(&metadata);
     const ImageBundle* transformed;
     const ColorEncoding& c_desired = ColorEncoding::SRGB(false);
-    JXL_RETURN_IF_ERROR(TransformIfNeeded(ib, c_desired, GetJxlCms(), pool,
-                                          &store, &transformed));
+    JXL_RETURN_IF_ERROR(jxl::TransformIfNeeded(ib, c_desired, jxl::GetJxlCms(),
+                                               pool, &store, &transformed));
     size_t xsize = ib.oriented_xsize();
     size_t ysize = ib.oriented_ysize();
     size_t stride = xsize * num_chans;
@@ -153,7 +159,7 @@ class WebPCodec : public ImageCodec {
     } else {
       return false;
     }
-    const double end = Now();
+    const double end = jxl::Now();
     speed_stats->NotifyElapsed(end - start);
     return true;
   }
@@ -177,11 +183,11 @@ class WebPCodec : public ImageCodec {
     buf->colorspace = MODE_RGBA;
     const uint8_t* webp_data = compressed.data();
     const int webp_size = compressed.size();
-    const double start = Now();
+    const double start = jxl::Now();
     if (WebPDecode(webp_data, webp_size, &config) != VP8_STATUS_OK) {
       return JXL_FAILURE("WebPDecode failed");
     }
-    const double end = Now();
+    const double end = jxl::Now();
     speed_stats->NotifyElapsed(end - start);
     JXL_CHECK(buf->u.RGBA.stride == buf->width * 4);
 
@@ -191,7 +197,7 @@ class WebPCodec : public ImageCodec {
     const uint8_t* data_end = data_begin + buf->width * buf->height * 4;
     // The image data is initialized by libwebp, which we are not instrumenting
     // with msan.
-    msan::UnpoisonMemory(data_begin, data_end - data_begin);
+    jxl::msan::UnpoisonMemory(data_begin, data_end - data_begin);
     if (io->metadata.m.color_encoding.IsGray() != is_gray) {
       // TODO(lode): either ensure is_gray matches what the color profile says,
       // or set a correct color profile, e.g.
@@ -261,7 +267,7 @@ class WebPCodec : public ImageCodec {
     WebPPictureFree(&pic);
     // Compressed image data is initialized by libwebp, which we are not
     // instrumenting with msan.
-    msan::UnpoisonMemory(compressed->data(), compressed->size());
+    jxl::msan::UnpoisonMemory(compressed->data(), compressed->size());
     return ok;
   }
 
@@ -276,4 +282,5 @@ ImageCodec* CreateNewWebPCodec(const BenchmarkArgs& args) {
   return new WebPCodec(args);
 }
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl

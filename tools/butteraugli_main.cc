@@ -28,8 +28,15 @@
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
 
-namespace jxl {
 namespace {
+
+using jxl::ButteraugliParams;
+using jxl::CodecInOut;
+using jxl::ColorEncoding;
+using jxl::Image3F;
+using jxl::ImageF;
+using jxl::Status;
+using jxl::ThreadPoolInternal;
 
 Status WriteImage(Image3F&& image, const std::string& filename) {
   ThreadPoolInternal pool(4);
@@ -37,7 +44,7 @@ Status WriteImage(Image3F&& image, const std::string& filename) {
   io.metadata.m.SetUintSamples(8);
   io.metadata.m.color_encoding = ColorEncoding::SRGB();
   io.SetFromImage(std::move(image), io.metadata.m.color_encoding);
-  return EncodeToFile(io, filename, &pool);
+  return jxl::EncodeToFile(io, filename, &pool);
 }
 
 Status RunButteraugli(const char* pathname1, const char* pathname2,
@@ -45,20 +52,20 @@ Status RunButteraugli(const char* pathname1, const char* pathname2,
                       const std::string& raw_distmap_filename,
                       const std::string& colorspace_hint, double p,
                       float intensity_target) {
-  extras::ColorHints color_hints;
+  jxl::extras::ColorHints color_hints;
   if (!colorspace_hint.empty()) {
     color_hints.Add("color_space", colorspace_hint);
   }
 
   CodecInOut io1;
   ThreadPoolInternal pool(4);
-  if (!SetFromFile(pathname1, color_hints, &io1, &pool)) {
+  if (!jxl::SetFromFile(pathname1, color_hints, &io1, &pool)) {
     fprintf(stderr, "Failed to read image from %s\n", pathname1);
     return false;
   }
 
   CodecInOut io2;
-  if (!SetFromFile(pathname2, color_hints, &io2, &pool)) {
+  if (!jxl::SetFromFile(pathname2, color_hints, &io2, &pool)) {
     fprintf(stderr, "Failed to read image from %s\n", pathname2);
     return false;
   }
@@ -79,18 +86,18 @@ Status RunButteraugli(const char* pathname1, const char* pathname2,
   ba_params.hf_asymmetry = 1.0f;
   ba_params.xmul = 1.0f;
   ba_params.intensity_target = intensity_target;
-  const float distance = ButteraugliDistance(io1.Main(), io2.Main(), ba_params,
-                                             GetJxlCms(), &distmap, &pool);
+  const float distance = jxl::ButteraugliDistance(
+      io1.Main(), io2.Main(), ba_params, jxl::GetJxlCms(), &distmap, &pool);
   printf("%.10f\n", distance);
 
-  double pnorm = ComputeDistanceP(distmap, ba_params, p);
+  double pnorm = jxl::ComputeDistanceP(distmap, ba_params, p);
   printf("%g-norm: %f\n", p, pnorm);
 
   if (!distmap_filename.empty()) {
-    float good = ButteraugliFuzzyInverse(1.5);
-    float bad = ButteraugliFuzzyInverse(0.5);
-    JXL_CHECK(
-        WriteImage(CreateHeatMapImage(distmap, good, bad), distmap_filename));
+    float good = jxl::ButteraugliFuzzyInverse(1.5);
+    float bad = jxl::ButteraugliFuzzyInverse(0.5);
+    JXL_CHECK(WriteImage(jxl::CreateHeatMapImage(distmap, good, bad),
+                         distmap_filename));
   }
   if (!raw_distmap_filename.empty()) {
     FILE* out = fopen(raw_distmap_filename.c_str(), "w");
@@ -106,7 +113,6 @@ Status RunButteraugli(const char* pathname1, const char* pathname2,
 }
 
 }  // namespace
-}  // namespace jxl
 
 int main(int argc, char** argv) {
   if (argc < 3) {
@@ -152,8 +158,6 @@ int main(int argc, char** argv) {
     }
   }
 
-  return jxl::RunButteraugli(argv[1], argv[2], distmap, raw_distmap, colorspace,
-                             p, intensity_target)
-             ? 0
-             : 1;
+  return !RunButteraugli(argv[1], argv[2], distmap, raw_distmap, colorspace, p,
+                         intensity_target);
 }

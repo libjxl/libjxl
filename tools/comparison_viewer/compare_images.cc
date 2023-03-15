@@ -87,13 +87,14 @@ int main(int argc, char** argv) {
     parser.showHelp(EXIT_FAILURE);
   }
 
-  jxl::SplitImageView view;
+  jpegxl::tools::SplitImageView view;
 
-  const QByteArray monitorIccProfile = jxl::GetMonitorIccProfile(&view);
+  const QByteArray monitorIccProfile =
+      jpegxl::tools::GetMonitorIccProfile(&view);
 
   const QString leftImagePath = arguments.takeFirst();
-  QImage leftImage = jxl::loadImage(leftImagePath, monitorIccProfile,
-                                    intensityTarget, colorSpaceHint);
+  QImage leftImage = jpegxl::tools::loadImage(leftImagePath, monitorIccProfile,
+                                              intensityTarget, colorSpaceHint);
   if (leftImage.isNull()) {
     displayLoadingError(leftImagePath);
     return EXIT_FAILURE;
@@ -101,8 +102,8 @@ int main(int argc, char** argv) {
   view.setLeftImage(std::move(leftImage));
 
   const QString rightImagePath = arguments.takeFirst();
-  QImage rightImage = jxl::loadImage(rightImagePath, monitorIccProfile,
-                                     intensityTarget, colorSpaceHint);
+  QImage rightImage = jpegxl::tools::loadImage(
+      rightImagePath, monitorIccProfile, intensityTarget, colorSpaceHint);
   if (rightImage.isNull()) {
     displayLoadingError(rightImagePath);
     return EXIT_FAILURE;
@@ -111,8 +112,8 @@ int main(int argc, char** argv) {
 
   if (!arguments.empty()) {
     const QString middleImagePath = arguments.takeFirst();
-    QImage middleImage = jxl::loadImage(middleImagePath, monitorIccProfile,
-                                        intensityTarget, colorSpaceHint);
+    QImage middleImage = jpegxl::tools::loadImage(
+        middleImagePath, monitorIccProfile, intensityTarget, colorSpaceHint);
     if (middleImage.isNull()) {
       displayLoadingError(middleImagePath);
       return EXIT_FAILURE;

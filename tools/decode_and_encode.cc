@@ -13,7 +13,6 @@
 #include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/codec_in_out.h"
 
-namespace jxl {
 namespace {
 
 // Reads an input file (typically PNM) with color_space hint and writes to an
@@ -27,16 +26,16 @@ int Convert(int argc, char** argv) {
   const std::string& desc = argv[2];
   const std::string& pathname_out = argv[3];
 
-  CodecInOut io;
-  extras::ColorHints color_hints;
-  ThreadPoolInternal pool(4);
+  jxl::CodecInOut io;
+  jxl::extras::ColorHints color_hints;
+  jxl::ThreadPoolInternal pool(4);
   color_hints.Add("color_space", desc);
-  if (!SetFromFile(pathname_in, color_hints, &io, &pool)) {
+  if (!jxl::SetFromFile(pathname_in, color_hints, &io, &pool)) {
     fprintf(stderr, "Failed to read %s\n", pathname_in.c_str());
     return 1;
   }
 
-  if (!EncodeToFile(io, pathname_out, &pool)) {
+  if (!jxl::EncodeToFile(io, pathname_out, &pool)) {
     fprintf(stderr, "Failed to write %s\n", pathname_out.c_str());
     return 1;
   }
@@ -45,6 +44,5 @@ int Convert(int argc, char** argv) {
 }
 
 }  // namespace
-}  // namespace jxl
 
-int main(int argc, char** argv) { return jxl::Convert(argc, argv); }
+int main(int argc, char** argv) { return Convert(argc, argv); }

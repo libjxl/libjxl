@@ -14,12 +14,14 @@
 #include "tools/benchmark/benchmark_args.h"
 #include "tools/benchmark/benchmark_codec.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 ImageCodec* CreateNewPNGCodec(const BenchmarkArgs& args);
 
 // Registers the png-specific command line options.
 Status AddCommandLineOptionsPNGCodec(BenchmarkArgs* args);
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
 
 #endif
 

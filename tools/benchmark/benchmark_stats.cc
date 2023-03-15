@@ -17,7 +17,8 @@
 #include "lib/jxl/base/status.h"
 #include "tools/benchmark/benchmark_args.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 namespace {
 
 // Computes longest codec name from Args()->codec, for table alignment.
@@ -169,7 +170,7 @@ void BenchmarkStats::PrintMoreStats() const {
   if (Args()->print_more_stats) {
     jxl_stats.Print();
     size_t total_bits = jxl_stats.aux_out.TotalBits();
-    size_t compressed_bits = total_compressed_size * kBitsPerByte;
+    size_t compressed_bits = total_compressed_size * jxl::kBitsPerByte;
     if (total_bits != compressed_bits) {
       printf("Total layer bits: %" PRIuS " vs total compressed bits: %" PRIuS
              "  (%.2f%% accounted for)\n",
@@ -377,4 +378,5 @@ std::string PrintAggregate(
   return PrintFormattedEntries(num_extra_metrics, result);
 }
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
