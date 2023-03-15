@@ -337,6 +337,17 @@ bool ProcessRefinementBits(const coeff_t* coeffs, Histogram* ac_histo, int Ss,
   return true;
 }
 
+void ProgressMonitorHistogramPass(j_compress_ptr cinfo, size_t scan_index,
+                                  size_t mcu_y) {
+  if (cinfo->progress == nullptr) {
+    return;
+  }
+  cinfo->progress->completed_passes = 1 + scan_index;
+  cinfo->progress->pass_counter = mcu_y;
+  cinfo->progress->pass_limit = cinfo->total_iMCU_rows;
+  (*cinfo->progress->progress_monitor)(reinterpret_cast<j_common_ptr>(cinfo));
+}
+
 bool ProcessScan(j_compress_ptr cinfo,
                  size_t scan_index, int* histo_index, Histogram* dc_histograms,
                  Histogram* ac_histograms) {
@@ -372,6 +383,7 @@ bool ProcessScan(j_compress_ptr cinfo,
 
   JBLOCKARRAY ba[MAX_COMPS_IN_SCAN];
   for (int mcu_y = 0; mcu_y < MCU_rows; ++mcu_y) {
+    ProgressMonitorHistogramPass(cinfo, scan_index, mcu_y);
     for (int i = 0; i < scan_info->comps_in_scan; ++i) {
       int comp_idx = scan_info->component_index[i];
       jpeg_component_info* comp = &cinfo->comp_info[comp_idx];
