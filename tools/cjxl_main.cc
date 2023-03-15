@@ -375,9 +375,8 @@ struct CompressArgs {
         '\0', "modular_lossy_palette",
         "[modular encoding] quantize to a palette that has fewer entries than "
         "would be necessary for perfect preservation; for the time being, it "
-        "is "
-        "recommended to set --palette=0 with this option to use the default "
-        "palette only",
+        "is recommended to set --modular_palette_colors=0 with this option to "
+        "use the default palette only",
         &modular_lossy_palette, &SetBooleanTrue, 1);
 
     cmdline->AddOptionValue(
