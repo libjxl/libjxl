@@ -26,33 +26,17 @@ void GaborishInverse(Image3F* in_out, float mul, ThreadPool* pool) {
   static const float kGaborish[5] = {
       -0.090881924078487886f, -0.043663953593472138f, 0.01392497846646211f,
       0.0036189602184591141f, 0.0030557936884763499f};
-  /*
-    better would be:
-      1.0 - mul * (4 * (kGaborish[0] + kGaborish[1] +
-                        kGaborish[2] + kGaborish[4]) +
-                   8 * (kGaborish[3]));
-  */
-  WeightsSymmetric5 weights = {{HWY_REP4(1.0f)},
-                               {HWY_REP4(mul * kGaborish[0])},
-                               {HWY_REP4(mul * kGaborish[2])},
-                               {HWY_REP4(mul * kGaborish[1])},
-                               {HWY_REP4(mul * kGaborish[4])},
-                               {HWY_REP4(mul * kGaborish[3])}};
-  double sum = static_cast<double>(weights.c[0]);
-  sum += 4 * weights.r[0];
-  sum += 4 * weights.R[0];
-  sum += 4 * weights.d[0];
-  sum += 4 * weights.D[0];
-  sum += 8 * weights.L[0];
+  const double sum = 1.0 + mul * 4 *
+                               (kGaborish[0] + kGaborish[1] + kGaborish[2] +
+                                kGaborish[4] + 2 * kGaborish[3]);
   const float normalize = static_cast<float>(1.0 / sum);
-  for (size_t i = 0; i < 4; ++i) {
-    weights.c[i] *= normalize;
-    weights.r[i] *= normalize;
-    weights.R[i] *= normalize;
-    weights.d[i] *= normalize;
-    weights.D[i] *= normalize;
-    weights.L[i] *= normalize;
-  }
+  const float normalize_mul = mul * normalize;
+  WeightsSymmetric5 weights = {{HWY_REP4(normalize)},
+                               {HWY_REP4(normalize_mul * kGaborish[0])},
+                               {HWY_REP4(normalize_mul * kGaborish[2])},
+                               {HWY_REP4(normalize_mul * kGaborish[1])},
+                               {HWY_REP4(normalize_mul * kGaborish[4])},
+                               {HWY_REP4(normalize_mul * kGaborish[3])}};
 
   // Reduce memory footprint by only allocating a single plane and swapping it
   // into the output Image3F. Better still would be tiling.
