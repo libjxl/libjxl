@@ -80,6 +80,7 @@ void ReadOutputImage(const DecompressParams& dparams, j_decompress_ptr cinfo,
   output->xsize = cinfo->output_width;
   output->components = cinfo->num_components;
   if (cinfo->raw_data_out) {
+    output->color_space = cinfo->jpeg_color_space;
     for (int c = 0; c < cinfo->num_components; ++c) {
       size_t xsize = cinfo->comp_info[c].width_in_blocks * DCTSIZE;
       size_t ysize = cinfo->comp_info[c].height_in_blocks * DCTSIZE;
@@ -87,6 +88,7 @@ void ReadOutputImage(const DecompressParams& dparams, j_decompress_ptr cinfo,
       output->raw_data.emplace_back(std::move(plane));
     }
   } else {
+    output->color_space = cinfo->out_color_space;
     output->AllocatePixels();
   }
   size_t total_output_lines = 0;
@@ -98,14 +100,14 @@ void ReadOutputImage(const DecompressParams& dparams, j_decompress_ptr cinfo,
       std::vector<std::vector<JSAMPROW>> rowdata(cinfo->num_components);
       std::vector<JSAMPARRAY> data(cinfo->num_components);
       for (int c = 0; c < cinfo->num_components; ++c) {
-        size_t vfactor = cinfo->comp_info[c].v_samp_factor;
-        size_t cheight = cinfo->comp_info[c].height_in_blocks * DCTSIZE;
-        size_t num_lines = vfactor * DCTSIZE;
+        size_t xsize = cinfo->comp_info[c].width_in_blocks * DCTSIZE;
+        size_t ysize = cinfo->comp_info[c].height_in_blocks * DCTSIZE;
+        size_t num_lines = cinfo->comp_info[c].v_samp_factor * DCTSIZE;
         rowdata[c].resize(num_lines);
         size_t y0 = cinfo->output_iMCU_row * num_lines;
         for (size_t i = 0; i < num_lines; ++i) {
           rowdata[c][i] =
-              y0 + i < cheight ? &output->raw_data[c][y0 + i] : nullptr;
+              y0 + i < ysize ? &output->raw_data[c][(y0 + i) * xsize] : nullptr;
         }
         data[c] = &rowdata[c][0];
       }

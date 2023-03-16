@@ -75,8 +75,8 @@ void ProcessSOF(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
   JPEG_VERIFY_INPUT(cinfo->image_width, 1, kMaxDimPixels);
   JPEG_VERIFY_INPUT(cinfo->num_components, 1, kMaxComponents);
   JPEG_VERIFY_LEN(3 * cinfo->num_components);
-  cinfo->comp_info =
-      jpegli::Allocate<jpeg_component_info>(cinfo, cinfo->num_components);
+  cinfo->comp_info = jpegli::Allocate<jpeg_component_info>(
+      cinfo, cinfo->num_components, JPOOL_IMAGE);
   m->components_.resize(cinfo->num_components);
 
   // Read sampling factors and quant table index for each component.
@@ -520,7 +520,8 @@ void SaveMarker(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
 
   // Insert new saved marker to the head of the list.
   jpeg_saved_marker_ptr next = cinfo->marker_list;
-  cinfo->marker_list = jpegli::Allocate<jpeg_marker_struct>(cinfo, 1);
+  cinfo->marker_list =
+      jpegli::Allocate<jpeg_marker_struct>(cinfo, 1, JPOOL_IMAGE);
   cinfo->marker_list->next = next;
   cinfo->marker_list->marker = marker;
   cinfo->marker_list->original_length = payload_size;

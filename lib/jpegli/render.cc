@@ -104,6 +104,13 @@ void StoreUnsignedRow(float* JXL_RESTRICT input[3], size_t x0, size_t len,
       auto v0 = Mul(Clamp(zero, Load(d, &input[0][x0 + i]), one), mul);
       Store(DemoteTo(du, NearestInt(v0)), du, &output[i]);
     }
+  } else if (num_channels == 2) {
+    for (size_t i = 0; i < len; i += Lanes(d)) {
+      auto v0 = Mul(Clamp(zero, Load(d, &input[0][x0 + i]), one), mul);
+      auto v1 = Mul(Clamp(zero, Load(d, &input[1][x0 + i]), one), mul);
+      StoreInterleaved2(DemoteTo(du, NearestInt(v0)),
+                        DemoteTo(du, NearestInt(v1)), du, &output[2 * i]);
+    }
   } else if (num_channels == 3) {
     for (size_t i = 0; i < len; i += Lanes(d)) {
       auto v0 = Mul(Clamp(zero, Load(d, &input[0][x0 + i]), one), mul);
@@ -135,12 +142,24 @@ void StoreFloatRow(float* JXL_RESTRICT input[3], size_t x0, size_t len,
                    size_t num_channels, float* output) {
   const HWY_CAPPED(float, 8) d;
   if (num_channels == 1) {
-    memcpy(output, input[0], len * sizeof(output[0]));
+    memcpy(output, input[0] + x0, len * sizeof(output[0]));
+  } else if (num_channels == 2) {
+    for (size_t i = 0; i < len; i += Lanes(d)) {
+      StoreInterleaved2(LoadU(d, &input[0][x0 + i]),
+                        LoadU(d, &input[1][x0 + i]), d, &output[2 * i]);
+    }
   } else if (num_channels == 3) {
     for (size_t i = 0; i < len; i += Lanes(d)) {
       StoreInterleaved3(LoadU(d, &input[0][x0 + i]),
                         LoadU(d, &input[1][x0 + i]),
                         LoadU(d, &input[2][x0 + i]), d, &output[3 * i]);
+    }
+  } else if (num_channels == 4) {
+    for (size_t i = 0; i < len; i += Lanes(d)) {
+      StoreInterleaved4(LoadU(d, &input[0][x0 + i]),
+                        LoadU(d, &input[1][x0 + i]),
+                        LoadU(d, &input[2][x0 + i]),
+                        LoadU(d, &input[3][x0 + i]), d, &output[4 * i]);
     }
   }
 }
@@ -297,6 +316,7 @@ void PrepareForOutput(j_decompress_ptr cinfo) {
       m->dequant_[c * DCTSIZE2 + k] = table->quantval[k] * kDequantScale;
     }
   }
+  ChooseColorTransform(cinfo);
 }
 
 void DecodeCurrentiMCURow(j_decompress_ptr cinfo) {
@@ -354,6 +374,7 @@ void ProcessRawOutput(j_decompress_ptr cinfo, JSAMPIMAGE data) {
         float* rows[3] = {m->raw_output_[c].Row(y)};
         size_t len = std::min(comp_width - x0, kTempOutputLen);
         uint8_t* output = data[c][y - y0];
+        DecenterRow(rows[0] + x0, len);
         WriteToOutput(rows, 0, x0, len, 1, m->output_data_type_,
                       m->swap_endianness_, m->output_scratch_, output);
       }
@@ -408,20 +429,10 @@ void ProcessOutput(j_decompress_ptr cinfo, size_t* num_output_rows,
         for (int c = 0; c < cinfo->out_color_components; ++c) {
           rows[c] = m->render_output_[c].Row(yix);
         }
-        if (cinfo->jpeg_color_space == JCS_YCCK) {
-          YCCKToCMYK(rows[0], rows[1], rows[2], rows[3],
-                     xsize_blocks * DCTSIZE);
-        } else if (cinfo->jpeg_color_space == JCS_YCbCr) {
-          YCbCrToRGB(rows[0], rows[1], rows[2], xsize_blocks * DCTSIZE);
-        } else {
-          for (int c = 0; c < cinfo->out_color_components; ++c) {
-            // Libjpeg encoder converts all unsigned input values to signed
-            // ones, i.e. for 8 bit input from [0..255] to [-128..127]. For
-            // YCbCr jpegs this is undone in the YCbCr -> RGB conversion above
-            // by adding 128 to Y channel, but for grayscale and RGB jpegs we
-            // need to undo it here channel by channel.
-            DecenterRow(rows[c], xsize_blocks * DCTSIZE);
-          }
+        (*m->color_transform)(rows, xsize_blocks * DCTSIZE);
+        for (int c = 0; c < cinfo->out_color_components; ++c) {
+          // Undo the centering of the sample values around zero.
+          DecenterRow(rows[c], xsize_blocks * DCTSIZE);
         }
         for (size_t x0 = 0; x0 < cinfo->output_width; x0 += kTempOutputLen) {
           size_t len = std::min(cinfo->output_width - x0, kTempOutputLen);

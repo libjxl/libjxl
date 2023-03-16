@@ -10,6 +10,7 @@
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 
+#include "lib/jpegli/decode_internal.h"
 #include "lib/jpegli/encode_internal.h"
 #include "lib/jpegli/error.h"
 #include "lib/jxl/base/compiler_specific.h"
@@ -25,50 +26,21 @@ using hwy::HWY_NAMESPACE::Mul;
 using hwy::HWY_NAMESPACE::MulAdd;
 using hwy::HWY_NAMESPACE::Sub;
 
-void YCCKToCMYK(float* JXL_RESTRICT row0, float* JXL_RESTRICT row1,
-                float* JXL_RESTRICT row2, float* JXL_RESTRICT row3,
-                size_t xsize) {
+void YCbCrToRGB(float* row[kMaxComponents], size_t xsize) {
   const HWY_CAPPED(float, 8) df;
+  float* JXL_RESTRICT row0 = row[0];
+  float* JXL_RESTRICT row1 = row[1];
+  float* JXL_RESTRICT row2 = row[2];
 
   // Full-range BT.601 as defined by JFIF Clause 7:
   // https://www.itu.int/rec/T-REC-T.871-201105-I/en
-  // After, C = 1-R, M = 1-G, Y = 1-B, K = K.
-  const auto c128 = Set(df, 128.0f / 255);
-  const auto crcr = Set(df, 1.402f);
-  const auto cgcb = Set(df, -0.114f * 1.772f / 0.587f);
-  const auto cgcr = Set(df, -0.299f * 1.402f / 0.587f);
-  const auto cbcb = Set(df, 1.772f);
-  const auto unity = Set(df, 1.0f);
-
-  for (size_t x = 0; x < xsize; x += Lanes(df)) {
-    const auto y_vec = Add(Load(df, row0 + x), c128);
-    const auto cb_vec = Load(df, row1 + x);
-    const auto cr_vec = Load(df, row2 + x);
-    const auto r_vec = Sub(unity, MulAdd(crcr, cr_vec, y_vec));
-    const auto g_vec =
-        Sub(unity, MulAdd(cgcr, cr_vec, MulAdd(cgcb, cb_vec, y_vec)));
-    const auto b_vec = Sub(unity, MulAdd(cbcb, cb_vec, y_vec));
-    Store(r_vec, df, row0 + x);
-    Store(g_vec, df, row1 + x);
-    Store(b_vec, df, row2 + x);
-    Store(Add(Load(df, row3 + x), c128), df, row3 + x);
-  }
-}
-
-void YCbCrToRGB(float* JXL_RESTRICT row0, float* JXL_RESTRICT row1,
-                float* JXL_RESTRICT row2, size_t xsize) {
-  const HWY_CAPPED(float, 8) df;
-
-  // Full-range BT.601 as defined by JFIF Clause 7:
-  // https://www.itu.int/rec/T-REC-T.871-201105-I/en
-  const auto c128 = Set(df, 128.0f / 255);
   const auto crcr = Set(df, 1.402f);
   const auto cgcb = Set(df, -0.114f * 1.772f / 0.587f);
   const auto cgcr = Set(df, -0.299f * 1.402f / 0.587f);
   const auto cbcb = Set(df, 1.772f);
 
   for (size_t x = 0; x < xsize; x += Lanes(df)) {
-    const auto y_vec = Add(Load(df, row0 + x), c128);
+    const auto y_vec = Load(df, row0 + x);
     const auto cb_vec = Load(df, row1 + x);
     const auto cr_vec = Load(df, row2 + x);
     const auto r_vec = MulAdd(crcr, cr_vec, y_vec);
@@ -77,6 +49,20 @@ void YCbCrToRGB(float* JXL_RESTRICT row0, float* JXL_RESTRICT row1,
     Store(r_vec, df, row0 + x);
     Store(g_vec, df, row1 + x);
     Store(b_vec, df, row2 + x);
+  }
+}
+
+void YCCKToCMYK(float* row[kMaxComponents], size_t xsize) {
+  const HWY_CAPPED(float, 8) df;
+  float* JXL_RESTRICT row0 = row[0];
+  float* JXL_RESTRICT row1 = row[1];
+  float* JXL_RESTRICT row2 = row[2];
+  YCbCrToRGB(row, xsize);
+  const auto offset = Set(df, -1.0f / 255.0f);
+  for (size_t x = 0; x < xsize; x += Lanes(df)) {
+    Store(Sub(offset, Load(df, row0 + x)), df, row0 + x);
+    Store(Sub(offset, Load(df, row1 + x)), df, row1 + x);
+    Store(Sub(offset, Load(df, row2 + x)), df, row2 + x);
   }
 }
 
@@ -142,17 +128,6 @@ HWY_EXPORT(CMYKToYCCK);
 HWY_EXPORT(YCCKToCMYK);
 HWY_EXPORT(YCbCrToRGB);
 HWY_EXPORT(RGBToYCbCr);
-
-void YCCKToCMYK(float* JXL_RESTRICT row0, float* JXL_RESTRICT row1,
-                float* JXL_RESTRICT row2, float* JXL_RESTRICT row3,
-                size_t xsize) {
-  return HWY_DYNAMIC_DISPATCH(YCCKToCMYK)(row0, row1, row2, row3, xsize);
-}
-
-void YCbCrToRGB(float* JXL_RESTRICT row0, float* JXL_RESTRICT row1,
-                float* JXL_RESTRICT row2, size_t xsize) {
-  return HWY_DYNAMIC_DISPATCH(YCbCrToRGB)(row0, row1, row2, xsize);
-}
 
 bool CheckColorSpaceComponents(int num_components, J_COLOR_SPACE colorspace) {
   switch (colorspace) {
@@ -233,6 +208,46 @@ void ChooseColorTransform(j_compress_ptr cinfo) {
     // TODO(szabadka) Support more color transforms.
     JPEGLI_ERROR("Unsupported color transform %d -> %d", cinfo->in_color_space,
                  cinfo->jpeg_color_space);
+  }
+}
+
+void ChooseColorTransform(j_decompress_ptr cinfo) {
+  jpeg_decomp_master* m = cinfo->master;
+  if (!CheckColorSpaceComponents(cinfo->out_color_components,
+                                 cinfo->out_color_space)) {
+    JPEGLI_ERROR("Invalid number of output components %d for colorspace %d",
+                 cinfo->out_color_components, cinfo->out_color_space);
+  }
+  if (!CheckColorSpaceComponents(cinfo->num_components,
+                                 cinfo->jpeg_color_space)) {
+    JPEGLI_ERROR("Invalid number of components %d for colorspace %d",
+                 cinfo->num_components, cinfo->jpeg_color_space);
+  }
+  if (cinfo->jpeg_color_space == cinfo->out_color_space) {
+    if (cinfo->num_components != cinfo->out_color_components) {
+      JPEGLI_ERROR("Input/output components mismatch:  %d vs %d",
+                   cinfo->num_components, cinfo->out_color_components);
+    }
+    // No color transform requested.
+    m->color_transform = NullTransform;
+    return;
+  }
+
+  m->color_transform = nullptr;
+  if (cinfo->jpeg_color_space == JCS_YCbCr) {
+    if (cinfo->out_color_space == JCS_RGB) {
+      m->color_transform = HWY_DYNAMIC_DISPATCH(YCbCrToRGB);
+    }
+  } else if (cinfo->jpeg_color_space == JCS_YCCK) {
+    if (cinfo->out_color_space == JCS_CMYK) {
+      m->color_transform = HWY_DYNAMIC_DISPATCH(YCCKToCMYK);
+    }
+  }
+
+  if (m->color_transform == nullptr) {
+    // TODO(szabadka) Support more color transforms.
+    JPEGLI_ERROR("Unsupported color transform %d -> %d",
+                 cinfo->jpeg_color_space, cinfo->out_color_space);
   }
 }
 

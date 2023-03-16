@@ -628,8 +628,10 @@ void jpegli_set_colorspace(j_compress_ptr cinfo, J_COLOR_SPACE colorspace) {
   }
   // Adobe marker is only needed to distinguish CMYK and YCCK JPEGs.
   cinfo->write_Adobe_marker = (cinfo->jpeg_color_space == JCS_YCCK);
-  cinfo->comp_info =
-      jpegli::Allocate<jpeg_component_info>(cinfo, jpegli::kMaxComponents);
+  if (cinfo->comp_info == nullptr) {
+    cinfo->comp_info =
+        jpegli::Allocate<jpeg_component_info>(cinfo, jpegli::kMaxComponents);
+  }
   memset(cinfo->comp_info, 0,
          jpegli::kMaxComponents * sizeof(jpeg_component_info));
   for (int c = 0; c < cinfo->num_components; ++c) {
