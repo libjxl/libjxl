@@ -17,7 +17,6 @@
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/span.h"
-#include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/dec_external_image.h"
 #include "lib/jxl/enc_color_management.h"
@@ -26,6 +25,7 @@
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/sanitizers.h"
+#include "tools/thread_pool_internal.h"
 
 namespace jpegxl {
 namespace tools {
@@ -33,7 +33,6 @@ namespace tools {
 using ::jxl::ImageBundle;
 using ::jxl::ImageMetadata;
 using ::jxl::ThreadPool;
-using ::jxl::ThreadPoolInternal;
 
 // Sets image data from 8-bit sRGB pixel array in bytes.
 // Amount of input bytes per pixel must be:

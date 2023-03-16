@@ -10,8 +10,8 @@
 #include "lib/extras/codec.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/codec_in_out.h"
+#include "tools/thread_pool_internal.h"
 
 namespace {
 
@@ -28,7 +28,7 @@ int Convert(int argc, char** argv) {
 
   jxl::CodecInOut io;
   jxl::extras::ColorHints color_hints;
-  jxl::ThreadPoolInternal pool(4);
+  jpegxl::tools::ThreadPoolInternal pool(4);
   color_hints.Add("color_space", desc);
   if (!jxl::SetFromFile(pathname_in, color_hints, &io, &pool)) {
     fprintf(stderr, "Failed to read %s\n", pathname_in.c_str());

@@ -20,7 +20,6 @@
 #include "lib/extras/enc/encode.h"
 #include "lib/extras/packed_image_convert.h"
 #include "lib/jxl/base/random.h"
-#include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/color_management.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/enc_color_management.h"
@@ -31,6 +30,9 @@
 #include "lib/jxl/testing.h"
 
 namespace jxl {
+
+using test::ThreadPoolForTests;
+
 namespace extras {
 namespace {
 
@@ -315,7 +317,7 @@ void TestRoundTrip(const TestImageParams& params, ThreadPool* pool) {
 }
 
 TEST(CodecTest, TestRoundTrip) {
-  ThreadPoolInternal pool(12);
+  ThreadPoolForTests pool(12);
 
   TestImageParams params;
   params.xsize = 7;
@@ -345,7 +347,7 @@ TEST(CodecTest, TestRoundTrip) {
 }
 
 TEST(CodecTest, LosslessPNMRoundtrip) {
-  ThreadPoolInternal pool(12);
+  ThreadPoolForTests pool(12);
 
   static const char* kChannels[] = {"", "g", "ga", "rgb", "rgba"};
   static const char* kExtension[] = {"", ".pgm", ".pam", ".ppm", ".pam"};
@@ -422,7 +424,7 @@ void DecodeRoundtrip(const std::string& pathname, ThreadPool* pool,
 
 #if 0
 TEST(CodecTest, TestMetadataSRGB) {
-  ThreadPoolInternal pool(12);
+  ThreadPoolForTests pool(12);
 
   const char* paths[] = {"external/raw.pixls/DJI-FC6310-16bit_srgb8_v4_krita.png",
                          "external/raw.pixls/Google-Pixel2XL-16bit_srgb8_v4_krita.png",
@@ -450,7 +452,7 @@ TEST(CodecTest, TestMetadataSRGB) {
 }
 
 TEST(CodecTest, TestMetadataLinear) {
-  ThreadPoolInternal pool(12);
+  ThreadPoolForTests pool(12);
 
   const char* paths[3] = {
       "external/raw.pixls/Google-Pixel2XL-16bit_acescg_g1_v4_krita.png",
@@ -483,7 +485,7 @@ TEST(CodecTest, TestMetadataLinear) {
 }
 
 TEST(CodecTest, TestMetadataICC) {
-  ThreadPoolInternal pool(12);
+  ThreadPoolForTests pool(12);
 
   const char* paths[] = {
       "external/raw.pixls/DJI-FC6310-16bit_709_v4_krita.png",
@@ -510,7 +512,7 @@ TEST(CodecTest, TestMetadataICC) {
 }
 
 TEST(CodecTest, Testexternal/pngsuite) {
-  ThreadPoolInternal pool(12);
+  ThreadPoolForTests pool(12);
 
   // Ensure we can load PNG with text, japanese UTF-8, compressed text.
   CodecInOut tmp1;
@@ -556,7 +558,7 @@ void VerifyWideGamutMetadata(const std::string& relative_pathname,
 }
 
 TEST(CodecTest, TestWideGamut) {
-  ThreadPoolInternal pool(12);
+  ThreadPoolForTests pool(12);
   // VerifyWideGamutMetadata("external/wide-gamut-tests/P3-sRGB-color-bars.png",
   //                        Primaries::kP3, &pool);
   VerifyWideGamutMetadata("external/wide-gamut-tests/P3-sRGB-color-ring.png",

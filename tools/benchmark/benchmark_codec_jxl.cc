@@ -50,7 +50,6 @@ using ::jxl::PaddedBytes;
 using ::jxl::PassesEncoderState;
 using ::jxl::Predictor;
 using ::jxl::SpeedTier;
-using ::jxl::ThreadPoolInternal;
 using ::jxl::extras::EncodedImage;
 using ::jxl::extras::Encoder;
 using ::jxl::extras::JXLDecompressParams;

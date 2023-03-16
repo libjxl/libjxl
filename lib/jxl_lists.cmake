@@ -29,7 +29,6 @@ set(JPEGXL_INTERNAL_BASE_SOURCES
   jxl/base/scope_guard.h
   jxl/base/span.h
   jxl/base/status.h
-  jxl/base/thread_pool_internal.h
 )
 
 set(JPEGXL_INTERNAL_CODEC_APNG_SOURCES

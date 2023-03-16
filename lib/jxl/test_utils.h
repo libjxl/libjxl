@@ -27,6 +27,7 @@
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/enc_params.h"
+#include "lib/threads/thread_parallel_runner_internal.h"
 
 namespace jxl {
 
@@ -140,6 +141,19 @@ bool SamePixels(const extras::PackedImage& a, const extras::PackedImage& b);
 
 bool SamePixels(const extras::PackedPixelFile& a,
                 const extras::PackedPixelFile& b);
+
+class ThreadPoolForTests : public ThreadPool {
+ public:
+  explicit ThreadPoolForTests(int num_worker_threads)
+      : ThreadPool(&jpegxl::ThreadParallelRunner::Runner,
+                   static_cast<void*>(&runner_)),
+        runner_(num_worker_threads) {}
+  ThreadPoolForTests(const ThreadPoolForTests&) = delete;
+  ThreadPoolForTests& operator&(const ThreadPoolForTests&) = delete;
+
+ private:
+  jpegxl::ThreadParallelRunner runner_;
+};
 
 }  // namespace test
 

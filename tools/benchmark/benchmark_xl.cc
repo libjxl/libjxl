@@ -32,7 +32,6 @@
 #include "lib/jxl/base/random.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
@@ -50,6 +49,7 @@
 #include "tools/codec_config.h"
 #include "tools/speed_stats.h"
 #include "tools/ssimulacra2.h"
+#include "tools/thread_pool_internal.h"
 
 namespace jpegxl {
 namespace tools {
@@ -65,7 +65,6 @@ using ::jxl::PaddedBytes;
 using ::jxl::Rng;
 using ::jxl::Status;
 using ::jxl::ThreadPool;
-using ::jxl::ThreadPoolInternal;
 
 Status WriteImage(Image3F&& image, ThreadPool* pool,
                   const std::string& filename) {

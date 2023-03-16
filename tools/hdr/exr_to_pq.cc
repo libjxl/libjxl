@@ -10,11 +10,11 @@
 #include "lib/extras/dec/decode.h"
 #include "lib/extras/packed_image_convert.h"
 #include "lib/jxl/base/file_io.h"
-#include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/image_bundle.h"
 #include "tools/cmdline.h"
 #include "tools/image_utils.h"
+#include "tools/thread_pool_internal.h"
 
 namespace {
 
@@ -42,7 +42,7 @@ bool ParseLuminanceInfo(const char* argument, LuminanceInfo* luminance_info) {
 }  // namespace
 
 int main(int argc, const char** argv) {
-  jxl::ThreadPoolInternal pool;
+  jpegxl::tools::ThreadPoolInternal pool;
 
   jpegxl::tools::CommandLineParser parser;
   LuminanceInfo luminance_info;

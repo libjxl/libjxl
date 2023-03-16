@@ -7,13 +7,13 @@
 #include <stdlib.h>
 
 #include "lib/extras/codec.h"
-#include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/image_metadata.h"
 #include "tools/args.h"
 #include "tools/cmdline.h"
+#include "tools/thread_pool_internal.h"
 
 int main(int argc, const char** argv) {
-  jxl::ThreadPoolInternal pool;
+  jpegxl::tools::ThreadPoolInternal pool;
 
   jpegxl::tools::CommandLineParser parser;
   size_t N = 64;

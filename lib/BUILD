@@ -107,6 +107,7 @@ cc_library(
     name = 'includes',
     hdrs = libjxl_public_headers + [JXL_EXPORT_H],
     strip_include_prefix = 'include',
+    deps = [":jpegxl_version"],
 )
 
 cc_library(
@@ -125,7 +126,6 @@ cc_library(
     deps = [
         ':base',
         ':includes',
-        ':jpegxl_version',
     ] + libjxl_deps_brotli + libjxl_deps_hwy + libjxl_deps_skcms
 )
 
