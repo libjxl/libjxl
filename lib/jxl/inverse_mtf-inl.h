@@ -27,10 +27,18 @@ using hwy::HWY_NAMESPACE::Load;
 using hwy::HWY_NAMESPACE::LoadU;
 using hwy::HWY_NAMESPACE::StoreU;
 
+// TODO(eustas): remove when MSYS2-Clang32 is fixed.
+#if defined(_WIN32) && !defined(_WIN64) && defined(__clang__) && \
+    !defined(_MSC_VER)
+#define JXL_SHORT_MTF 255
+#else
+#define JXL_SHORT_MTF 4
+#endif
+
 inline void MoveToFront(uint8_t* v, uint8_t index) {
   uint8_t value = v[index];
   uint8_t i = index;
-  if (i < 4) {
+  if (i < JXL_SHORT_MTF) {
     for (; i; --i) v[i] = v[i - 1];
   } else {
     const HWY_CAPPED(uint8_t, 64) d;
@@ -49,6 +57,8 @@ inline void MoveToFront(uint8_t* v, uint8_t index) {
   }
   v[0] = value;
 }
+
+#undef JXL_SHORT_MTF
 
 inline void InverseMoveToFrontTransform(uint8_t* v, int v_len) {
   uint8_t mtf[256 + 64];
