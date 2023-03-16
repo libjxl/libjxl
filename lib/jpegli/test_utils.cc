@@ -158,6 +158,8 @@ std::string ColorSpaceName(J_COLOR_SPACE colorspace) {
       return "YCbCr";
     case JCS_CMYK:
       return "CMYK";
+    case JCS_YCCK:
+      return "YCCK";
     default:
       return "";
   }
@@ -675,10 +677,10 @@ void ReadOutputPass(j_decompress_ptr cinfo, const DecompressParams& dparams,
   output->xsize = xsize_cropped;
   output->ysize = ysize_cropped;
   output->components = cinfo->out_color_components;
-  output->color_space = cinfo->out_color_space;
   if (dparams.output_mode == PIXELS) {
     size_t stride = output->xsize * output->components;
     output->pixels.resize(output->ysize * stride);
+    output->color_space = cinfo->out_color_space;
     if (yoffset > 0) {
       jpeg_skip_scanlines(cinfo, yoffset);
     }
@@ -693,6 +695,7 @@ void ReadOutputPass(j_decompress_ptr cinfo, const DecompressParams& dparams,
       jpeg_skip_scanlines(cinfo, cinfo->output_height - cinfo->output_scanline);
     }
   } else if (dparams.output_mode == RAW_DATA) {
+    output->color_space = cinfo->jpeg_color_space;
     for (int c = 0; c < cinfo->num_components; ++c) {
       size_t xsize = cinfo->comp_info[c].width_in_blocks * DCTSIZE;
       size_t ysize = cinfo->comp_info[c].height_in_blocks * DCTSIZE;
@@ -704,14 +707,14 @@ void ReadOutputPass(j_decompress_ptr cinfo, const DecompressParams& dparams,
       std::vector<std::vector<JSAMPROW>> rowdata(cinfo->num_components);
       std::vector<JSAMPARRAY> data(cinfo->num_components);
       for (int c = 0; c < cinfo->num_components; ++c) {
-        size_t vfactor = cinfo->comp_info[c].v_samp_factor;
-        size_t cheight = cinfo->comp_info[c].height_in_blocks * DCTSIZE;
-        size_t num_lines = vfactor * DCTSIZE;
+        size_t xsize = cinfo->comp_info[c].width_in_blocks * DCTSIZE;
+        size_t ysize = cinfo->comp_info[c].height_in_blocks * DCTSIZE;
+        size_t num_lines = cinfo->comp_info[c].v_samp_factor * DCTSIZE;
         rowdata[c].resize(num_lines);
         size_t y0 = cinfo->output_iMCU_row * num_lines;
         for (size_t i = 0; i < num_lines; ++i) {
           rowdata[c][i] =
-              y0 + i < cheight ? &output->raw_data[c][y0 + i] : nullptr;
+              y0 + i < ysize ? &output->raw_data[c][(y0 + i) * xsize] : nullptr;
         }
         data[c] = &rowdata[c][0];
       }
@@ -849,7 +852,7 @@ void VerifyOutputImage(const TestImage& input, const TestImage& output,
     for (size_t c = 0; c < input.raw_data.size(); ++c) {
       JXL_CHECK(c < output.raw_data.size());
       num_samples += input.raw_data[c].size();
-      for (size_t i = 0; i < input.raw_data.size(); ++i) {
+      for (size_t i = 0; i < input.raw_data[c].size(); ++i) {
         double sample_orig = get_sample(input, input.raw_data[c], i);
         double sample_output = get_sample(output, output.raw_data[c], i);
         double diff = sample_orig - sample_output;
@@ -867,6 +870,7 @@ void VerifyOutputImage(const TestImage& input, const TestImage& output,
   JXL_CHECK(output.xsize == input.xsize);
   JXL_CHECK(output.ysize == input.ysize);
   JXL_CHECK(output.components == input.components);
+  JXL_CHECK(output.color_space == input.color_space);
   if (!input.coeffs.empty()) {
     JXL_CHECK(input.coeffs.size() == input.components);
     JXL_CHECK(output.coeffs.size() == input.components);

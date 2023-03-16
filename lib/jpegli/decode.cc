@@ -22,7 +22,6 @@
 namespace jpegli {
 
 void InitializeImage(j_decompress_ptr cinfo) {
-  cinfo->jpeg_color_space = JCS_UNKNOWN;
   cinfo->restart_interval = 0;
   cinfo->saw_JFIF_marker = FALSE;
   cinfo->JFIF_major_version = 1;
@@ -32,13 +31,37 @@ void InitializeImage(j_decompress_ptr cinfo) {
   cinfo->Y_density = 1;
   cinfo->saw_Adobe_marker = FALSE;
   cinfo->Adobe_transform = 0;
-  for (int i = 0; i < NUM_QUANT_TBLS; ++i) {
-    cinfo->quant_tbl_ptrs[i] = nullptr;
-  }
-  for (int i = 0; i < NUM_HUFF_TBLS; ++i) {
-    cinfo->dc_huff_tbl_ptrs[i] = nullptr;
-    cinfo->ac_huff_tbl_ptrs[i] = nullptr;
-  }
+  cinfo->marker_list = nullptr;
+  cinfo->comp_info = nullptr;
+  cinfo->input_scan_number = 0;
+  cinfo->output_scanline = 0;
+  cinfo->unread_marker = 0;
+  // We set all these to zero since we don't yet support arithmetic coding.
+  memset(cinfo->arith_dc_L, 0, sizeof(cinfo->arith_dc_L));
+  memset(cinfo->arith_dc_U, 0, sizeof(cinfo->arith_dc_U));
+  memset(cinfo->arith_ac_K, 0, sizeof(cinfo->arith_ac_K));
+}
+
+void InitializeDecompressParams(j_decompress_ptr cinfo) {
+  cinfo->jpeg_color_space = JCS_UNKNOWN;
+  cinfo->out_color_space = JCS_UNKNOWN;
+  cinfo->scale_num = 1;
+  cinfo->scale_denom = 1;
+  cinfo->output_gamma = 0.0f;
+  cinfo->buffered_image = FALSE;
+  cinfo->raw_data_out = FALSE;
+  cinfo->dct_method = JDCT_DEFAULT;
+  cinfo->do_fancy_upsampling = TRUE;
+  cinfo->do_block_smoothing = FALSE;
+  cinfo->quantize_colors = FALSE;
+  cinfo->dither_mode = JDITHER_FS;
+  cinfo->two_pass_quantize = FALSE;
+  cinfo->desired_number_of_colors = 256;
+  cinfo->enable_1pass_quant = FALSE;
+  cinfo->enable_external_quant = FALSE;
+  cinfo->enable_2pass_quant = FALSE;
+  cinfo->actual_number_of_colors = 0;
+  cinfo->colormap = nullptr;
 }
 
 int ConsumeInput(j_decompress_ptr cinfo) {
@@ -105,20 +128,21 @@ void jpegli_CreateDecompress(j_decompress_ptr cinfo, int version,
     JPEGLI_ERROR("jpeg_decompress_struct has wrong size.");
   }
   jpegli::InitMemoryManager(reinterpret_cast<j_common_ptr>(cinfo));
-  cinfo->progress = nullptr;
   cinfo->is_decompressor = TRUE;
+  cinfo->progress = nullptr;
   cinfo->src = nullptr;
-  cinfo->marker_list = nullptr;
-  cinfo->input_scan_number = 0;
-  cinfo->quantize_colors = FALSE;
-  cinfo->desired_number_of_colors = 0;
+  for (int i = 0; i < NUM_QUANT_TBLS; i++) {
+    cinfo->quant_tbl_ptrs[i] = nullptr;
+  }
+  for (int i = 0; i < NUM_HUFF_TBLS; i++) {
+    cinfo->dc_huff_tbl_ptrs[i] = nullptr;
+    cinfo->ac_huff_tbl_ptrs[i] = nullptr;
+  }
+  jpegli::InitializeImage(cinfo);
+  jpegli::InitializeDecompressParams(cinfo);
   cinfo->global_state = jpegli::kDecStart;
-  cinfo->buffered_image = FALSE;
-  cinfo->raw_data_out = FALSE;
-  cinfo->output_scanline = 0;
   cinfo->sample_range_limit = nullptr;  // not used
   cinfo->rec_outbuf_height = 1;         // output works with any buffer height
-  cinfo->unread_marker = 0;             // not used
   // TODO(szabadka) Fill this in for progressive mode.
   cinfo->coef_bits = nullptr;
   cinfo->master = new jpeg_decomp_master;
@@ -441,6 +465,7 @@ boolean jpegli_finish_decompress(j_decompress_ptr cinfo) {
       return FALSE;
     }
   }
+  (*cinfo->src->term_source)(cinfo);
   jpegli_abort_decompress(cinfo);
   return TRUE;
 }
@@ -449,6 +474,10 @@ boolean jpegli_resync_to_restart(j_decompress_ptr cinfo, int desired) {
   // The default resync_to_restart will just throw an error.
   JPEGLI_ERROR("Invalid restart marker found.");
   return TRUE;
+}
+
+void jpegli_new_colormap(j_decompress_ptr cinfo) {
+  // TODO(szabadka) Implement external colormap support.
 }
 
 void jpegli_set_output_format(j_decompress_ptr cinfo, JpegliDataType data_type,

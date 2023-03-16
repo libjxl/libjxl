@@ -89,6 +89,8 @@ void jpegli_abort_decompress(j_decompress_ptr cinfo);
 
 void jpegli_destroy_decompress(j_decompress_ptr cinfo);
 
+void jpegli_new_colormap(j_decompress_ptr cinfo);
+
 //
 // New API functions that are not available in libjpeg
 //

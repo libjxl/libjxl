@@ -239,3 +239,5 @@ void jpeg_destroy_compress(j_compress_ptr cinfo) {
 boolean jpeg_resync_to_restart(j_decompress_ptr cinfo, int desired) {
   return jpegli_resync_to_restart(cinfo, desired);
 }
+
+void jpeg_new_colormap(j_decompress_ptr cinfo) { jpegli_new_colormap(cinfo); }

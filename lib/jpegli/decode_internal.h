@@ -103,6 +103,8 @@ struct jpeg_decomp_master {
   std::array<jpegli::RowBuffer<float>, jpegli::kMaxComponents> raw_output_;
   std::array<jpegli::RowBuffer<float>, jpegli::kMaxComponents> render_output_;
 
+  void (*color_transform)(float* row[jpegli::kMaxComponents], size_t len);
+
   float* idct_scratch_;
   float* upsample_scratch_;
   uint8_t* output_scratch_;

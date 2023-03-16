@@ -101,6 +101,7 @@ void ReadOutputImage(const DecompressParams& dparams, j_decompress_ptr cinfo,
   output->endianness = dparams.endianness;
   size_t bytes_per_sample = jpegli_bytes_per_sample(dparams.data_type);
   if (cinfo->raw_data_out) {
+    output->color_space = cinfo->jpeg_color_space;
     for (int c = 0; c < cinfo->num_components; ++c) {
       size_t xsize = cinfo->comp_info[c].width_in_blocks * DCTSIZE;
       size_t ysize = cinfo->comp_info[c].height_in_blocks * DCTSIZE;
@@ -108,6 +109,7 @@ void ReadOutputImage(const DecompressParams& dparams, j_decompress_ptr cinfo,
       output->raw_data.emplace_back(std::move(plane));
     }
   } else {
+    output->color_space = cinfo->out_color_space;
     output->AllocatePixels();
   }
   size_t total_output_lines = 0;
@@ -119,14 +121,14 @@ void ReadOutputImage(const DecompressParams& dparams, j_decompress_ptr cinfo,
       std::vector<std::vector<JSAMPROW>> rowdata(cinfo->num_components);
       std::vector<JSAMPARRAY> data(cinfo->num_components);
       for (int c = 0; c < cinfo->num_components; ++c) {
-        size_t vfactor = cinfo->comp_info[c].v_samp_factor;
-        size_t cheight = cinfo->comp_info[c].height_in_blocks * DCTSIZE;
-        size_t num_lines = vfactor * DCTSIZE;
+        size_t xsize = cinfo->comp_info[c].width_in_blocks * DCTSIZE;
+        size_t ysize = cinfo->comp_info[c].height_in_blocks * DCTSIZE;
+        size_t num_lines = cinfo->comp_info[c].v_samp_factor * DCTSIZE;
         rowdata[c].resize(num_lines);
         size_t y0 = cinfo->output_iMCU_row * num_lines;
         for (size_t i = 0; i < num_lines; ++i) {
           rowdata[c][i] =
-              y0 + i < cheight ? &output->raw_data[c][y0 + i] : nullptr;
+              y0 + i < ysize ? &output->raw_data[c][(y0 + i) * xsize] : nullptr;
         }
         data[c] = &rowdata[c][0];
       }
@@ -313,19 +315,52 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
     return all_tests;
   }
 
-  for (JpegliDataType type : {JPEGLI_TYPE_UINT16, JPEGLI_TYPE_FLOAT}) {
+  for (JpegliDataType type :
+       {JPEGLI_TYPE_UINT8, JPEGLI_TYPE_UINT16, JPEGLI_TYPE_FLOAT}) {
     for (JpegliEndianness endianness :
          {JPEGLI_NATIVE_ENDIAN, JPEGLI_LITTLE_ENDIAN, JPEGLI_BIG_ENDIAN}) {
-      TestConfig config;
-      config.dparams.data_type = type;
-      config.dparams.endianness = endianness;
-      all_tests.push_back(config);
+      if (type == JPEGLI_TYPE_UINT8 && endianness != JPEGLI_NATIVE_ENDIAN) {
+        continue;
+      }
+      for (int channels = 1; channels <= 4; ++channels) {
+        TestConfig config;
+        config.dparams.data_type = type;
+        config.dparams.endianness = endianness;
+        config.input.color_space = JCS_UNKNOWN;
+        config.input.components = channels;
+        config.dparams.set_out_color_space = true;
+        config.dparams.out_color_space = JCS_UNKNOWN;
+        all_tests.push_back(config);
+      }
     }
   }
   {
     TestConfig config;
     config.dparams.crop_output = true;
     all_tests.push_back(config);
+  }
+  for (J_COLOR_SPACE jpeg_color_space : {JCS_RGB, JCS_YCbCr}) {
+    for (J_COLOR_SPACE out_color_space : {JCS_RGB, JCS_YCbCr}) {
+      if (jpeg_color_space == JCS_RGB && out_color_space == JCS_YCbCr) continue;
+      TestConfig config;
+      config.jparams.set_jpeg_colorspace = true;
+      config.jparams.jpeg_color_space = jpeg_color_space;
+      config.dparams.set_out_color_space = true;
+      config.dparams.out_color_space = out_color_space;
+      all_tests.push_back(config);
+    }
+  }
+  for (J_COLOR_SPACE jpeg_color_space : {JCS_CMYK, JCS_YCCK}) {
+    for (J_COLOR_SPACE out_color_space : {JCS_CMYK, JCS_YCCK}) {
+      if (jpeg_color_space == JCS_CMYK && out_color_space == JCS_YCCK) continue;
+      TestConfig config;
+      config.input.color_space = JCS_CMYK;
+      config.jparams.set_jpeg_colorspace = true;
+      config.jparams.jpeg_color_space = jpeg_color_space;
+      config.dparams.set_out_color_space = true;
+      config.dparams.out_color_space = out_color_space;
+      all_tests.push_back(config);
+    }
   }
   return all_tests;
 }

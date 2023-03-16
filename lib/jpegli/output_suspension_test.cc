@@ -116,6 +116,7 @@ TEST_P(OutputSuspensionTestParam, RawData) {
   TestConfig config = GetParam();
   if (config.lines_batch_size != 1) return;
   TestImage& input = config.input;
+  input.color_space = JCS_YCbCr;
   GeneratePixels(&input);
   GenerateRawData(config.jparams, &input);
   DestinationManager dest;
@@ -166,8 +167,6 @@ TEST_P(OutputSuspensionTestParam, RawData) {
   try_catch_block();
   jpegli_destroy_compress(&cinfo);
   DecompressParams dparams;
-  dparams.set_out_color_space = true;
-  dparams.out_color_space = JCS_YCbCr;
   dparams.output_mode = RAW_DATA;
   TestImage output;
   DecodeWithLibjpeg(CompressParams(), dparams, compressed, &output);
