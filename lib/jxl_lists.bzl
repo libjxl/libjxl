@@ -29,7 +29,6 @@ libjxl_base_sources = [
     "jxl/base/scope_guard.h",
     "jxl/base/span.h",
     "jxl/base/status.h",
-    "jxl/base/thread_pool_internal.h",
 ]
 
 libjxl_codec_apng_sources = [

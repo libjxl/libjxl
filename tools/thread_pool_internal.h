@@ -3,8 +3,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#ifndef LIB_JXL_BASE_THREAD_POOL_INTERNAL_H_
-#define LIB_JXL_BASE_THREAD_POOL_INTERNAL_H_
+#ifndef TOOLS_THREAD_POOL_INTERNAL_H_
+#define TOOLS_THREAD_POOL_INTERNAL_H_
 
 #include <jxl/parallel_runner.h>
 #include <stddef.h>
@@ -14,14 +14,11 @@
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/threads/thread_parallel_runner_internal.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 
-// Helper class to pass an internal ThreadPool-like object using threads. This
-// is only suitable for tests or tools that access the internal API of JPEG XL.
-// In other cases the caller will provide a JxlParallelRunner() for handling
-// this. This class uses jpegxl::ThreadParallelRunner (from jpegxl_threads
-// library). For interface details check jpegxl::ThreadParallelRunner.
-class ThreadPoolInternal : public ThreadPool {
+// Helper class to pass an internal ThreadPool-like object using threads.
+class ThreadPoolInternal : public jxl::ThreadPool {
  public:
   // Starts the given number of worker threads and blocks until they are ready.
   // "num_worker_threads" defaults to one per hyperthread. If zero, all tasks
@@ -36,17 +33,12 @@ class ThreadPoolInternal : public ThreadPool {
   ThreadPoolInternal& operator&(const ThreadPoolInternal&) = delete;
 
   size_t NumThreads() const { return runner_.NumThreads(); }
-  size_t NumWorkerThreads() const { return runner_.NumWorkerThreads(); }
-
-  template <class Func>
-  void RunOnEachThread(const Func& func) {
-    runner_.RunOnEachThread(func);
-  }
 
  private:
   jpegxl::ThreadParallelRunner runner_;
 };
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
 
-#endif  // LIB_JXL_BASE_THREAD_POOL_INTERNAL_H_
+#endif  // TOOLS_THREAD_POOL_INTERNAL_H_

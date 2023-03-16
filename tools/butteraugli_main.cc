@@ -16,7 +16,6 @@
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/butteraugli/butteraugli.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
@@ -27,16 +26,17 @@
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
+#include "tools/thread_pool_internal.h"
 
 namespace {
 
+using jpegxl::tools::ThreadPoolInternal;
 using jxl::ButteraugliParams;
 using jxl::CodecInOut;
 using jxl::ColorEncoding;
 using jxl::Image3F;
 using jxl::ImageF;
 using jxl::Status;
-using jxl::ThreadPoolInternal;
 
 Status WriteImage(Image3F&& image, const std::string& filename) {
   ThreadPoolInternal pool(4);

@@ -29,7 +29,6 @@
 #include "lib/jxl/base/file_io.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/span.h"
-#include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/enc_ans.h"
 #include "lib/jxl/enc_aux_out.h"
@@ -41,6 +40,7 @@
 #include "lib/jxl/encode_internal.h"
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
+#include "tools/thread_pool_internal.h"
 
 namespace {
 
@@ -457,7 +457,7 @@ int main(int argc, const char** argv) {
     specs.back().params.noise = true;
     specs.back().override_decoder_spec = 0;
 
-    jxl::ThreadPoolInternal pool{num_threads};
+    jpegxl::tools::ThreadPoolInternal pool{num_threads};
     const auto generate = [&specs, dest_dir, regenerate, quiet](
                               const uint32_t task, size_t /* thread */) {
       const ImageSpec& spec = specs[task];

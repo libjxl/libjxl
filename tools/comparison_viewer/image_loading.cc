@@ -11,11 +11,11 @@
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/color_hints.h"
 #include "lib/jxl/base/file_io.h"
-#include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/color_management.h"
 #include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_metadata.h"
+#include "tools/thread_pool_internal.h"
 #include "tools/viewer/load_jxl.h"
 
 namespace jpegxl {
@@ -30,7 +30,6 @@ using jxl::Rect;
 using jxl::Span;
 using jxl::Status;
 using jxl::ThreadPool;
-using jxl::ThreadPoolInternal;
 using jxl::extras::ColorHints;
 
 namespace {

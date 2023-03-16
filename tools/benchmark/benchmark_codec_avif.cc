@@ -9,11 +9,11 @@
 #include "lib/extras/time.h"
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/span.h"
-#include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/dec_external_image.h"
 #include "lib/jxl/enc_external_image.h"
 #include "tools/cmdline.h"
+#include "tools/thread_pool_internal.h"
 
 #define JXL_RETURN_IF_AVIF_ERROR(result)                                       \
   do {                                                                         \
@@ -32,7 +32,6 @@ using ::jxl::ImageBundle;
 using ::jxl::PaddedBytes;
 using ::jxl::Primaries;
 using ::jxl::Span;
-using ::jxl::ThreadPoolInternal;
 using ::jxl::TransferFunction;
 using ::jxl::WhitePoint;
 

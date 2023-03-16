@@ -46,7 +46,6 @@ namespace jpegxl {
 namespace tools {
 
 using ::jxl::Image3F;
-using ::jxl::ThreadPoolInternal;
 
 void ImageCodec::ParseParameters(const std::string& parameters) {
   params_ = parameters;

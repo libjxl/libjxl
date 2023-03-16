@@ -64,11 +64,6 @@ class ThreadParallelRunner {
   // Waits for all threads to exit.
   ~ThreadParallelRunner();
 
-  // Returns number of worker threads created (some may be sleeping and never
-  // wake up in time to participate in Run). Useful for characterizing
-  // performance; 0 means "run on main thread".
-  size_t NumWorkerThreads() const { return num_worker_threads_; }
-
   // Returns maximum number of main/worker threads that may call Func. Useful
   // for allocating per-thread storage.
   size_t NumThreads() const { return num_threads_; }
