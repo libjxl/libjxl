@@ -49,7 +49,7 @@ class SourceManager {
   size_t pos_;
   size_t max_chunk_size_;
 
-  static void init_source(j_decompress_ptr cinfo) { fill_input_buffer(cinfo); }
+  static void init_source(j_decompress_ptr cinfo) {}
 
   static boolean fill_input_buffer(j_decompress_ptr cinfo) {
     auto src = reinterpret_cast<SourceManager*>(cinfo->src);
@@ -199,6 +199,8 @@ TEST_P(DecodeAPITestParam, TestAPI) {
     cinfo.src = reinterpret_cast<jpeg_source_mgr*>(&src);
     jpegli_read_header(&cinfo, /*require_image=*/TRUE);
     SetDecompressParams(dparams, &cinfo);
+    VerifyHeader(config.jparams, &cinfo);
+    VerifyRestartInterval(config.jparams, &cinfo);
     jpegli_start_decompress(&cinfo);
     ReadOutputImage(dparams, &cinfo, &output0);
     jpegli_finish_decompress(&cinfo);
@@ -229,6 +231,7 @@ TEST_P(DecodeAPITestParamBuffered, TestAPI) {
     EXPECT_EQ(JPEG_REACHED_SOS,
               jpegli_read_header(&cinfo, /*require_image=*/TRUE));
     SetDecompressParams(dparams, &cinfo);
+    VerifyHeader(config.jparams, &cinfo);
     cinfo.buffered_image = TRUE;
     EXPECT_TRUE(jpegli_start_decompress(&cinfo));
     // start decompress should not read the whole input in buffered image mode
@@ -242,6 +245,8 @@ TEST_P(DecodeAPITestParamBuffered, TestAPI) {
       // input_scan_number
       EXPECT_EQ(cinfo.output_scan_number, cinfo.input_scan_number);
       EXPECT_EQ(cinfo.input_scan_number, sos_marker_cnt);
+      VerifyScanHeader(config.jparams, &cinfo);
+      VerifyRestartInterval(config.jparams, &cinfo);
       TestImage output;
       ReadOutputImage(dparams, &cinfo, &output);
       output_progression0.emplace_back(std::move(output));
@@ -378,6 +383,29 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
       config.dparams.out_color_space = out_color_space;
       all_tests.push_back(config);
     }
+  }
+  for (int p = 0; p < kNumTestScripts; ++p) {
+    TestConfig config;
+    config.jparams.progressive_id = p + 1;
+    all_tests.push_back(config);
+  }
+  for (size_t l = 0; l <= 2; ++l) {
+    TestConfig config;
+    config.jparams.progressive_level = l;
+    all_tests.push_back(config);
+  }
+  for (size_t r : {1, 17, 1024}) {
+    for (size_t chunk_size : {1, 65536}) {
+      TestConfig config;
+      config.dparams.chunk_size = chunk_size;
+      config.jparams.restart_interval = r;
+      all_tests.push_back(config);
+    }
+  }
+  for (size_t rr : {1, 3, 8, 100}) {
+    TestConfig config;
+    config.jparams.restart_in_rows = rr;
+    all_tests.push_back(config);
   }
   return all_tests;
 }

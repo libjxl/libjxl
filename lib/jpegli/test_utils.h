@@ -158,6 +158,11 @@ struct CompressParams {
 
 std::ostream& operator<<(std::ostream& os, const CompressParams& jparams);
 
+void VerifyHeader(const CompressParams& jparams, j_decompress_ptr cinfo);
+void VerifyRestartInterval(const CompressParams& jparams,
+                           j_decompress_ptr cinfo);
+void VerifyScanHeader(const CompressParams& jparams, j_decompress_ptr cinfo);
+
 struct DecompressParams {
   size_t chunk_size = 65536;
   size_t max_output_lines = 16;
