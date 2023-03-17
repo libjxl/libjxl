@@ -8,6 +8,7 @@
 name: Update branch with updated submodule on libjxl
 
 on:
+  workflow_dispatch:
   schedule:
     - cron: '37 2 * * *' # Daily on 02:37 UTC
 
