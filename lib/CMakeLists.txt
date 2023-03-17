@@ -154,9 +154,6 @@ install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/jxl
 install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include/jxl
   DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
 
-# Profiler for libjxl
-include(jxl_profiler.cmake)
-
 if(BUILD_TESTING)
   cmake_policy(SET CMP0057 NEW)  # https://gitlab.kitware.com/cmake/cmake/issues/18198
   include(GoogleTest)

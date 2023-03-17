@@ -22,6 +22,7 @@ set(JPEGXL_INTERNAL_BASE_SOURCES
   jxl/base/padded_bytes.cc
   jxl/base/padded_bytes.h
   jxl/base/printf_macros.h
+  jxl/base/profiler.cc
   jxl/base/profiler.h
   jxl/base/random.cc
   jxl/base/random.h
@@ -29,6 +30,7 @@ set(JPEGXL_INTERNAL_BASE_SOURCES
   jxl/base/scope_guard.h
   jxl/base/span.h
   jxl/base/status.h
+  jxl/base/tsc_timer.h
 )
 
 set(JPEGXL_INTERNAL_CODEC_APNG_SOURCES
@@ -519,12 +521,6 @@ set(JPEGXL_INTERNAL_JPEGLI_TESTS
 
 set(JPEGXL_INTERNAL_JPEGLI_WRAPPER_SOURCES
   jpegli/libjpeg_wrapper.cc
-)
-
-set(JPEGXL_INTERNAL_PROFILER_SOURCES
-  profiler/profiler.cc
-  profiler/profiler.h
-  profiler/tsc_timer.h
 )
 
 set(JPEGXL_INTERNAL_PUBLIC_HEADERS

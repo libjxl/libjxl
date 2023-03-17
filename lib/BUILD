@@ -28,9 +28,7 @@ load('jxl_lists.bzl',
     'libjxl_tests',
     'libjxl_threads_public_headers',
     'libjxl_threads_sources',
-    #'libjxl_codec_exr_sources',
     #'libjxl_gbench_sources',
-    #'libjxl_profiler_sources',
 )
 
 load('jxl_vars.bzl',
