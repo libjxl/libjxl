@@ -96,7 +96,9 @@ void ReadOutputImage(const DecompressParams& dparams, j_decompress_ptr cinfo,
     size_t max_lines;
     size_t num_output_lines;
     if (cinfo->raw_data_out) {
-      max_lines = cinfo->max_v_samp_factor * DCTSIZE;
+      size_t iMCU_height = cinfo->max_v_samp_factor * DCTSIZE;
+      EXPECT_EQ(cinfo->output_scanline, cinfo->output_iMCU_row * iMCU_height);
+      max_lines = iMCU_height;
       std::vector<std::vector<JSAMPROW>> rowdata(cinfo->num_components);
       std::vector<JSAMPARRAY> data(cinfo->num_components);
       for (int c = 0; c < cinfo->num_components; ++c) {
@@ -204,15 +206,26 @@ TEST_P(InputSuspensionTestParam, InputOutputLockStepBuffered) {
 
     EXPECT_TRUE(jpegli_start_decompress(&cinfo));
     EXPECT_FALSE(jpegli_input_complete(&cinfo));
+    EXPECT_EQ(0, cinfo.output_scan_number);
 
+    int sos_marker_cnt = 1;  // read_header reads the first SOS marker
     while (!jpegli_input_complete(&cinfo)) {
+      EXPECT_EQ(cinfo.input_scan_number, sos_marker_cnt);
       EXPECT_TRUE(jpegli_start_output(&cinfo, cinfo.input_scan_number));
+      // start output sets output_scan_number, but does not change
+      // input_scan_number
+      EXPECT_EQ(cinfo.output_scan_number, cinfo.input_scan_number);
+      EXPECT_EQ(cinfo.input_scan_number, sos_marker_cnt);
       TestImage output;
       ReadOutputImage(dparams, &cinfo, &src, &output);
       output_progression0.emplace_back(std::move(output));
+      // read scanlines/read raw data does not change input/output scan number
+      EXPECT_EQ(cinfo.input_scan_number, sos_marker_cnt);
+      EXPECT_EQ(cinfo.output_scan_number, cinfo.input_scan_number);
       while (!jpegli_finish_output(&cinfo)) {
         JXL_CHECK(src.LoadNextChunk());
       }
+      ++sos_marker_cnt;  // finish output reads the next SOS marker or EOI
     }
 
     EXPECT_TRUE(jpegli_finish_decompress(&cinfo));
@@ -236,6 +249,9 @@ TEST_P(InputSuspensionTestParam, PreConsumeInputBuffered) {
   TestConfig config = GetParam();
   const DecompressParams& dparams = config.dparams;
   const std::vector<uint8_t> compressed = ReadTestData(config.fn.c_str());
+  std::vector<TestImage> output_progression1;
+  DecodeAllScansWithLibjpeg(CompressParams(), dparams, compressed,
+                            &output_progression1);
   SourceManager src(compressed.data(), compressed.size(), dparams.chunk_size);
   TestImage output0;
   jpeg_decompress_struct cinfo;
@@ -255,6 +271,9 @@ TEST_P(InputSuspensionTestParam, PreConsumeInputBuffered) {
     cinfo.raw_data_out = dparams.output_mode == RAW_DATA;
 
     EXPECT_TRUE(jpegli_start_decompress(&cinfo));
+    EXPECT_FALSE(jpegli_input_complete(&cinfo));
+    EXPECT_EQ(1, cinfo.input_scan_number);
+    EXPECT_EQ(0, cinfo.output_scan_number);
 
     while ((status = jpegli_consume_input(&cinfo)) != JPEG_REACHED_EOI) {
       if (status == JPEG_SUSPENDED) {
@@ -263,8 +282,17 @@ TEST_P(InputSuspensionTestParam, PreConsumeInputBuffered) {
     }
 
     EXPECT_TRUE(jpegli_input_complete(&cinfo));
+    EXPECT_EQ(output_progression1.size(), cinfo.input_scan_number);
+    EXPECT_EQ(0, cinfo.output_scan_number);
+
     EXPECT_TRUE(jpegli_start_output(&cinfo, cinfo.input_scan_number));
+    EXPECT_EQ(output_progression1.size(), cinfo.input_scan_number);
+    EXPECT_EQ(cinfo.output_scan_number, cinfo.input_scan_number);
+
     ReadOutputImage(dparams, &cinfo, nullptr, &output0);
+    EXPECT_EQ(output_progression1.size(), cinfo.input_scan_number);
+    EXPECT_EQ(cinfo.output_scan_number, cinfo.input_scan_number);
+
     EXPECT_TRUE(jpegli_finish_output(&cinfo));
     EXPECT_TRUE(jpegli_finish_decompress(&cinfo));
     return true;
@@ -272,9 +300,7 @@ TEST_P(InputSuspensionTestParam, PreConsumeInputBuffered) {
   ASSERT_TRUE(try_catch_block());
   jpegli_destroy_decompress(&cinfo);
 
-  TestImage output1;
-  DecodeWithLibjpeg(CompressParams(), dparams, compressed, &output1);
-  VerifyOutputImage(output1, output0, 1.0f);
+  VerifyOutputImage(output_progression1.back(), output0, 1.0f);
 }
 
 TEST_P(InputSuspensionTestParam, PreConsumeInputNonBuffered) {

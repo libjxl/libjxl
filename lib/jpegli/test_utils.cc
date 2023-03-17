@@ -644,8 +644,7 @@ void VerifyRestartInterval(const CompressParams& jparams,
 }
 
 void VerifyScanHeader(const CompressParams& jparams, j_decompress_ptr cinfo) {
-  JXL_CHECK(cinfo->input_scan_number >= 0);
-  JXL_CHECK(jpeg_start_output(cinfo, cinfo->input_scan_number));
+  JXL_CHECK(cinfo->input_scan_number > 0);
   if (jparams.progressive_id > 0) {
     JXL_CHECK(jparams.progressive_id <= kNumTestScripts);
     const ScanScript& script = kTestScript[jparams.progressive_id - 1];
@@ -703,7 +702,8 @@ void ReadOutputPass(j_decompress_ptr cinfo, const DecompressParams& dparams,
       output->raw_data.emplace_back(std::move(plane));
     }
     while (cinfo->output_scanline < cinfo->output_height) {
-      size_t max_lines = cinfo->max_v_samp_factor * DCTSIZE;
+      size_t iMCU_height = cinfo->max_v_samp_factor * DCTSIZE;
+      JXL_CHECK(cinfo->output_scanline == cinfo->output_iMCU_row * iMCU_height);
       std::vector<std::vector<JSAMPROW>> rowdata(cinfo->num_components);
       std::vector<JSAMPARRAY> data(cinfo->num_components);
       for (int c = 0; c < cinfo->num_components; ++c) {
@@ -718,9 +718,12 @@ void ReadOutputPass(j_decompress_ptr cinfo, const DecompressParams& dparams,
         }
         data[c] = &rowdata[c][0];
       }
-      JXL_CHECK(max_lines == jpeg_read_raw_data(cinfo, &data[0], max_lines));
+      JXL_CHECK(iMCU_height ==
+                jpeg_read_raw_data(cinfo, &data[0], iMCU_height));
     }
   }
+  JXL_CHECK(cinfo->total_iMCU_rows ==
+            DivCeil(cinfo->output_height, cinfo->max_v_samp_factor * DCTSIZE));
 }
 
 void ReadCoefficients(j_decompress_ptr cinfo, TestImage* output) {
@@ -767,13 +770,27 @@ void DecodeAllScansWithLibjpeg(const CompressParams& jparams,
     VerifyHeader(jparams, &cinfo);
     JXL_CHECK(dparams.output_mode != COEFFICIENTS);
     JXL_CHECK(jpeg_start_decompress(&cinfo));
+    // start decompress should not read the whole input in buffered image mode
+    JXL_CHECK(!jpeg_input_complete(&cinfo));
+    JXL_CHECK(cinfo.output_scan_number == 0);
+    int sos_marker_cnt = 1;  // read header reads the first SOS marker
     while (!jpeg_input_complete(&cinfo)) {
+      JXL_CHECK(cinfo.input_scan_number == sos_marker_cnt);
+      JXL_CHECK(jpeg_start_output(&cinfo, cinfo.input_scan_number));
+      // start output sets output_scan_number, but does not change
+      // input_scan_number
+      JXL_CHECK(cinfo.output_scan_number == cinfo.input_scan_number);
+      JXL_CHECK(cinfo.input_scan_number == sos_marker_cnt);
       VerifyScanHeader(jparams, &cinfo);
       VerifyRestartInterval(jparams, &cinfo);
       TestImage output;
       ReadOutputPass(&cinfo, dparams, &output);
       output_progression->emplace_back(std::move(output));
+      // read scanlines/read raw data does not change input/output scan number
+      JXL_CHECK(cinfo.input_scan_number == sos_marker_cnt);
+      JXL_CHECK(cinfo.output_scan_number == cinfo.input_scan_number);
       JXL_CHECK(jpeg_finish_output(&cinfo));
+      ++sos_marker_cnt;  // finish output reads the next SOS marker or EOI
     }
     JXL_CHECK(jpeg_finish_decompress(&cinfo));
     return true;
