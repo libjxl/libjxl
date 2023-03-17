@@ -116,6 +116,9 @@ bool IsInputReady(j_decompress_ptr cinfo) {
   if (cinfo->input_scan_number < cinfo->output_scan_number) {
     return false;
   }
+  if (cinfo->input_iMCU_row == cinfo->total_iMCU_rows) {
+    return true;
+  }
   return cinfo->input_iMCU_row > cinfo->output_iMCU_row;
 }
 

@@ -117,7 +117,9 @@ void ReadOutputImage(const DecompressParams& dparams, j_decompress_ptr cinfo,
     size_t max_lines;
     size_t num_output_lines;
     if (cinfo->raw_data_out) {
-      max_lines = cinfo->max_v_samp_factor * DCTSIZE;
+      size_t iMCU_height = cinfo->max_v_samp_factor * DCTSIZE;
+      EXPECT_EQ(cinfo->output_scanline, cinfo->output_iMCU_row * iMCU_height);
+      max_lines = iMCU_height;
       std::vector<std::vector<JSAMPROW>> rowdata(cinfo->num_components);
       std::vector<JSAMPARRAY> data(cinfo->num_components);
       for (int c = 0; c < cinfo->num_components; ++c) {
@@ -160,6 +162,8 @@ void ReadOutputImage(const DecompressParams& dparams, j_decompress_ptr cinfo,
     EXPECT_EQ(total_output_lines, cinfo->output_scanline);
     EXPECT_EQ(num_output_lines, max_lines);
   }
+  EXPECT_EQ(cinfo->total_iMCU_rows,
+            DivCeil(cinfo->output_height, cinfo->max_v_samp_factor * DCTSIZE));
 }
 
 struct TestConfig {
@@ -222,17 +226,30 @@ TEST_P(DecodeAPITestParamBuffered, TestAPI) {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_decompress(&cinfo);
     cinfo.src = reinterpret_cast<jpeg_source_mgr*>(&src);
-    jpegli_read_header(&cinfo, /*require_image=*/TRUE);
+    EXPECT_EQ(JPEG_REACHED_SOS,
+              jpegli_read_header(&cinfo, /*require_image=*/TRUE));
     SetDecompressParams(dparams, &cinfo);
     cinfo.buffered_image = TRUE;
-    jpegli_start_decompress(&cinfo);
+    EXPECT_TRUE(jpegli_start_decompress(&cinfo));
+    // start decompress should not read the whole input in buffered image mode
     EXPECT_FALSE(jpegli_input_complete(&cinfo));
+    EXPECT_EQ(0, cinfo.output_scan_number);
+    int sos_marker_cnt = 1;  // read_header reads the first SOS marker
     while (!jpegli_input_complete(&cinfo)) {
-      jpegli_start_output(&cinfo, cinfo.input_scan_number);
+      EXPECT_EQ(cinfo.input_scan_number, sos_marker_cnt);
+      EXPECT_TRUE(jpegli_start_output(&cinfo, cinfo.input_scan_number));
+      // start output sets output_scan_number, but does not change
+      // input_scan_number
+      EXPECT_EQ(cinfo.output_scan_number, cinfo.input_scan_number);
+      EXPECT_EQ(cinfo.input_scan_number, sos_marker_cnt);
       TestImage output;
       ReadOutputImage(dparams, &cinfo, &output);
       output_progression0.emplace_back(std::move(output));
-      jpegli_finish_output(&cinfo);
+      // read scanlines/read raw data does not change input/output scan number
+      EXPECT_EQ(cinfo.input_scan_number, sos_marker_cnt);
+      EXPECT_EQ(cinfo.output_scan_number, cinfo.input_scan_number);
+      EXPECT_TRUE(jpegli_finish_output(&cinfo));
+      ++sos_marker_cnt;  // finish output reads the next SOS marker or EOI
     }
     jpegli_finish_decompress(&cinfo);
     return true;
