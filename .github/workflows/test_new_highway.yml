@@ -9,7 +9,7 @@ name: Update branch with updated submodule on libjxl
 
 on:
   schedule:
-    - cron: '37 2 * * *' # Daily on 02:37
+    - cron: '37 2 * * *' # Daily on 02:37 UTC
 
 jobs:
   update:
