@@ -7,7 +7,9 @@
 
 name: Update branch with updated submodule on libjxl
 
-on: repository_dispatch
+on:
+  schedule:
+    - cron: '37 2 * * *' # Daily on 02:37
 
 jobs:
   update:
