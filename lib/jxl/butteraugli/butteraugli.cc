@@ -33,9 +33,9 @@
 #include <new>
 #include <vector>
 
-#if PROFILER_ENABLED
+#if JXL_PROFILER_ENABLED
 #include <chrono>
-#endif  // PROFILER_ENABLED
+#endif  // JXL_PROFILER_ENABLED
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/butteraugli/butteraugli.cc"
@@ -1868,13 +1868,13 @@ bool ButteraugliInterface(const Image3F& rgb0, const Image3F& rgb1,
 bool ButteraugliInterface(const Image3F& rgb0, const Image3F& rgb1,
                           const ButteraugliParams& params, ImageF& diffmap,
                           double& diffvalue) {
-#if PROFILER_ENABLED
+#if JXL_PROFILER_ENABLED
   auto trace_start = std::chrono::steady_clock::now();
 #endif
   if (!ButteraugliDiffmap(rgb0, rgb1, params, diffmap)) {
     return false;
   }
-#if PROFILER_ENABLED
+#if JXL_PROFILER_ENABLED
   auto trace_end = std::chrono::steady_clock::now();
   std::chrono::duration<double> elapsed = trace_end - trace_start;
   const size_t mp = rgb0.xsize() * rgb0.ysize();

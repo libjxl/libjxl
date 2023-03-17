@@ -26,10 +26,6 @@ if (JPEGXL_ENABLE_TRANSCODE_JPEG OR JPEGXL_ENABLE_BOXES)
 list(APPEND JPEGXL_DEC_INTERNAL_LIBS brotlidec brotlicommon)
 endif()
 
-if(JPEGXL_ENABLE_PROFILER)
-list(APPEND JPEGXL_DEC_INTERNAL_LIBS jxl_profiler)
-endif()
-
 set(JPEGXL_INTERNAL_LIBS
   ${JPEGXL_DEC_INTERNAL_LIBS}
   brotlienc
@@ -114,6 +110,10 @@ target_include_directories(jxl_base-obj PUBLIC
 
 jxl_link_libraries(jxl_base-obj jxl_includes)
 
+if(JPEGXL_ENABLE_PROFILER)
+  target_compile_definitions(jxl_base-obj PUBLIC -DJXL_PROFILER_ENABLED=1)
+endif()
+
 # Decoder-only object library
 add_library(jxl_dec-obj OBJECT ${JPEGXL_INTERNAL_DEC_SOURCES})
 target_compile_options(jxl_dec-obj PRIVATE ${JPEGXL_INTERNAL_FLAGS})
@@ -128,9 +128,6 @@ target_compile_definitions(jxl_dec-obj PUBLIC
   ${OBJ_COMPILE_DEFINITIONS}
 )
 jxl_link_libraries(jxl_dec-obj jxl_base-obj)
-if (JPEGXL_ENABLE_PROFILER)
-target_link_libraries(jxl_dec-obj PUBLIC jxl_profiler)
-endif()
 
 # Object library. This is used to hold the set of objects and properties.
 add_library(jxl_enc-obj OBJECT ${JPEGXL_INTERNAL_ENC_SOURCES})
@@ -146,9 +143,6 @@ target_compile_definitions(jxl_enc-obj PUBLIC
   ${OBJ_COMPILE_DEFINITIONS}
 )
 jxl_link_libraries(jxl_enc-obj jxl_base-obj)
-if (JPEGXL_ENABLE_PROFILER)
-target_link_libraries(jxl_enc-obj PUBLIC jxl_profiler)
-endif()
 
 #TODO(lode): don't depend on CMS for the core library
 if (JPEGXL_ENABLE_SKCMS)

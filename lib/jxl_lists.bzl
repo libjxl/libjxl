@@ -22,6 +22,7 @@ libjxl_base_sources = [
     "jxl/base/padded_bytes.cc",
     "jxl/base/padded_bytes.h",
     "jxl/base/printf_macros.h",
+    "jxl/base/profiler.cc",
     "jxl/base/profiler.h",
     "jxl/base/random.cc",
     "jxl/base/random.h",
@@ -29,6 +30,7 @@ libjxl_base_sources = [
     "jxl/base/scope_guard.h",
     "jxl/base/span.h",
     "jxl/base/status.h",
+    "jxl/base/tsc_timer.h",
 ]
 
 libjxl_codec_apng_sources = [
@@ -529,12 +531,6 @@ libjxl_major_version = 0
 libjxl_minor_version = 9
 
 libjxl_patch_version = 0
-
-libjxl_profiler_sources = [
-    "profiler/profiler.cc",
-    "profiler/profiler.h",
-    "profiler/tsc_timer.h",
-]
 
 libjxl_public_headers = [
     "include/jxl/butteraugli.h",

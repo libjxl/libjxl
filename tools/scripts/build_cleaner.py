@@ -90,7 +90,6 @@ def SplitLibFiles(repo_files):
 
   extras_sources, srcs = Filter(srcs, HasPrefixFn('extras/'))
   lib_srcs, srcs = Filter(srcs, HasPrefixFn('jxl/'))
-  profiler_sources, srcs = Filter(srcs, HasPrefixFn('profiler/'))
   public_headers, srcs = Filter(srcs, HasPrefixFn('include/jxl/'))
   threads_sources, srcs = Filter(srcs, HasPrefixFn('threads/'))
 
@@ -144,7 +143,7 @@ def SplitLibFiles(repo_files):
     'jpegli_testlib_files': jpegli_testlib_files,
     'jpegli_tests': jpegli_tests,
     'jpegli_wrapper_sources' : jpegli_wrapper_sources,
-    'profiler_sources': profiler_sources, 'public_headers': public_headers,
+    'public_headers': public_headers,
     'testlib_files': testlib_files, 'tests': tests,
     'threads_public_headers': threads_public_headers,
     'threads_sources': threads_sources,
