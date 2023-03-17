@@ -84,7 +84,7 @@ struct BitReaderState {
       --pos_;
       // If we give back a 0 byte, we need to check if it was a 0xff/0x00 escape
       // sequence, and if yes, we need to give back one more byte.
-      if (((pos_ == len_) ||
+      if (((pos_ == len_ && pos_ == next_marker_pos_) ||
            (pos_ > 0 && pos_ < next_marker_pos_ && data_[pos_] == 0)) &&
           (data_[pos_ - 1] == 0xff)) {
         --pos_;
@@ -376,6 +376,31 @@ void RestoreMCUCodingState(j_decompress_ptr cinfo) {
   }
 }
 
+bool FinishScan(j_decompress_ptr cinfo, const uint8_t* data, const size_t len,
+                size_t* pos) {
+  jpeg_decomp_master* m = cinfo->master;
+  if (m->eobrun_ > 0) {
+    JPEGLI_ERROR("End-of-block run too long.");
+  }
+  if (m->codestream_bits_ahead_ == 0) {
+    return true;
+  }
+  if (data[*pos] == 0xff) {
+    // After last br.FinishStream we checked that there is at least 2 bytes
+    // in the buffer.
+    JXL_DASSERT(*pos + 1 < len);
+    // br.FinishStream would have detected an early marker.
+    JXL_DASSERT(data[*pos + 1] == 0);
+    *pos += 2;
+    AdvanceInput(cinfo, 2);
+  } else {
+    *pos += 1;
+    AdvanceInput(cinfo, 1);
+  }
+  m->codestream_bits_ahead_ = 0;
+  return true;
+}
+
 }  // namespace
 
 int ProcessScan(j_decompress_ptr cinfo) {
@@ -389,13 +414,8 @@ int ProcessScan(j_decompress_ptr cinfo) {
   for (;;) {
     // Handle the restart intervals.
     if (cinfo->restart_interval > 0 && m->restarts_to_go_ == 0) {
-      if (m->eobrun_ > 0) {
-        JPEGLI_ERROR("End-of-block run too long.");
-      }
-      if (m->codestream_bits_ahead_ > 0) {
-        ++pos;
-        AdvanceInput(cinfo, 1);
-        m->codestream_bits_ahead_ = 0;
+      if (!FinishScan(cinfo, data, len, &pos)) {
+        return JPEG_SUSPENDED;
       }
       if (pos + 2 > len) {
         return JPEG_SUSPENDED;
@@ -403,8 +423,7 @@ int ProcessScan(j_decompress_ptr cinfo) {
       int expected_marker = 0xd0 + m->next_restart_marker_;
       int marker = data[pos + 1];
       if (marker != expected_marker) {
-        JPEGLI_ERROR("Did not find expected restart marker %d actual %d",
-                     expected_marker, marker);
+        JPEGLI_ERROR("RST marker mismatch: %x vs %x", marker, expected_marker);
         // TODO(szabadka) Use source manager's resync_to_restart callback here.
       }
       m->next_restart_marker_ += 1;
@@ -488,14 +507,8 @@ int ProcessScan(j_decompress_ptr cinfo) {
       ++m->scan_mcu_row_;
       m->scan_mcu_col_ = 0;
       if (m->scan_mcu_row_ == cinfo->MCU_rows_in_scan) {
-        // Current scan is done, skip any remaining bits in the last byte.
-        if (m->codestream_bits_ahead_ > 0) {
-          ++pos;
-          AdvanceInput(cinfo, 1);
-          m->codestream_bits_ahead_ = 0;
-        }
-        if (m->eobrun_ > 0) {
-          JPEGLI_ERROR("End-of-block run too long.");
+        if (!FinishScan(cinfo, data, len, &pos)) {
+          return JPEG_SUSPENDED;
         }
         break;
       } else if ((m->scan_mcu_row_ % m->mcu_rows_per_iMCU_row_) == 0) {

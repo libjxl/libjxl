@@ -86,6 +86,9 @@ int ConsumeInput(j_decompress_ptr cinfo) {
     if (!(*cinfo->src->fill_input_buffer)(cinfo)) {
       return status;
     }
+    if (src->bytes_in_buffer == 0) {
+      JPEGLI_ERROR("Empty input.");
+    }
     // Save the end of the current input so that we can restore it after the
     // input processing succeeds.
     last_input_byte = cinfo->src->next_input_byte + src->bytes_in_buffer;

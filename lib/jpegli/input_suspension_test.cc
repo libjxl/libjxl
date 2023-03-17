@@ -29,6 +29,7 @@ struct SourceManager {
     pub_.skip_input_data = skip_input_data;
     pub_.resync_to_restart = jpegli_resync_to_restart;
     pub_.term_source = term_source;
+    if (max_chunk_size_ == 0) max_chunk_size_ = len;
   }
 
   ~SourceManager() {
@@ -144,15 +145,27 @@ void ReadOutputImage(const DecompressParams& dparams, j_decompress_ptr cinfo,
 struct TestConfig {
   std::string fn;
   std::string fn_desc;
+  TestImage input;
+  CompressParams jparams;
   DecompressParams dparams;
 };
+
+std::vector<uint8_t> GetTestJpegData(TestConfig& config) {
+  if (!config.fn.empty()) {
+    return ReadTestData(config.fn.c_str());
+  }
+  GeneratePixels(&config.input);
+  std::vector<uint8_t> compressed;
+  JXL_CHECK(EncodeWithJpegli(config.input, config.jparams, &compressed));
+  return compressed;
+}
 
 class InputSuspensionTestParam : public ::testing::TestWithParam<TestConfig> {};
 
 TEST_P(InputSuspensionTestParam, InputOutputLockStepNonBuffered) {
   TestConfig config = GetParam();
   const DecompressParams& dparams = config.dparams;
-  const std::vector<uint8_t> compressed = ReadTestData(config.fn.c_str());
+  const std::vector<uint8_t> compressed = GetTestJpegData(config);
   SourceManager src(compressed.data(), compressed.size(), dparams.chunk_size);
   TestImage output0;
   jpeg_decompress_struct cinfo;
@@ -188,7 +201,7 @@ TEST_P(InputSuspensionTestParam, InputOutputLockStepNonBuffered) {
 TEST_P(InputSuspensionTestParam, InputOutputLockStepBuffered) {
   TestConfig config = GetParam();
   const DecompressParams& dparams = config.dparams;
-  const std::vector<uint8_t> compressed = ReadTestData(config.fn.c_str());
+  const std::vector<uint8_t> compressed = GetTestJpegData(config);
   SourceManager src(compressed.data(), compressed.size(), dparams.chunk_size);
   std::vector<TestImage> output_progression0;
   jpeg_decompress_struct cinfo;
@@ -248,7 +261,7 @@ TEST_P(InputSuspensionTestParam, InputOutputLockStepBuffered) {
 TEST_P(InputSuspensionTestParam, PreConsumeInputBuffered) {
   TestConfig config = GetParam();
   const DecompressParams& dparams = config.dparams;
-  const std::vector<uint8_t> compressed = ReadTestData(config.fn.c_str());
+  const std::vector<uint8_t> compressed = GetTestJpegData(config);
   std::vector<TestImage> output_progression1;
   DecodeAllScansWithLibjpeg(CompressParams(), dparams, compressed,
                             &output_progression1);
@@ -306,7 +319,7 @@ TEST_P(InputSuspensionTestParam, PreConsumeInputBuffered) {
 TEST_P(InputSuspensionTestParam, PreConsumeInputNonBuffered) {
   TestConfig config = GetParam();
   const DecompressParams& dparams = config.dparams;
-  const std::vector<uint8_t> compressed = ReadTestData(config.fn.c_str());
+  const std::vector<uint8_t> compressed = GetTestJpegData(config);
   SourceManager src(compressed.data(), compressed.size(), dparams.chunk_size);
   TestImage output0;
   jpeg_decompress_struct cinfo;
@@ -368,11 +381,24 @@ std::vector<TestConfig> GenerateTests() {
       }
     }
   }
+  for (size_t r : {1, 17, 1024}) {
+    for (size_t chunk_size : {1, 65536}) {
+      TestConfig config;
+      config.dparams.chunk_size = chunk_size;
+      config.jparams.restart_interval = r;
+      all_tests.push_back(config);
+    }
+  }
   return all_tests;
 }
 
 std::ostream& operator<<(std::ostream& os, const TestConfig& c) {
-  os << c.fn_desc;
+  if (!c.fn.empty()) {
+    os << c.fn_desc;
+  } else {
+    os << c.input;
+  }
+  os << c.jparams;
   if (c.dparams.chunk_size == 0) {
     os << "CompleteInput";
   } else {
