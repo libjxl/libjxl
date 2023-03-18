@@ -585,6 +585,9 @@ void SetDecompressParams(const DecompressParams& dparams,
 }
 
 void VerifyHeader(const CompressParams& jparams, j_decompress_ptr cinfo) {
+  if (jparams.set_jpeg_colorspace) {
+    JXL_CHECK(cinfo->jpeg_color_space == jparams.jpeg_color_space);
+  }
   if (jparams.override_JFIF >= 0) {
     JXL_CHECK(cinfo->saw_JFIF_marker == jparams.override_JFIF);
   }
@@ -633,16 +636,6 @@ void VerifyHeader(const CompressParams& jparams, j_decompress_ptr cinfo) {
   }
 }
 
-void VerifyRestartInterval(const CompressParams& jparams,
-                           j_decompress_ptr cinfo) {
-  if (jparams.restart_interval > 0) {
-    JXL_CHECK(cinfo->restart_interval == jparams.restart_interval);
-  } else if (jparams.restart_in_rows > 0) {
-    JXL_CHECK(cinfo->restart_interval ==
-              jparams.restart_in_rows * cinfo->MCUs_per_row);
-  }
-}
-
 void VerifyScanHeader(const CompressParams& jparams, j_decompress_ptr cinfo) {
   JXL_CHECK(cinfo->input_scan_number > 0);
   if (jparams.progressive_id > 0) {
@@ -659,6 +652,53 @@ void VerifyScanHeader(const CompressParams& jparams, j_decompress_ptr cinfo) {
     JXL_CHECK(cinfo->Se == scan.Se);
     JXL_CHECK(cinfo->Ah == scan.Ah);
     JXL_CHECK(cinfo->Al == scan.Al);
+  }
+  if (jparams.restart_interval > 0) {
+    JXL_CHECK(cinfo->restart_interval == jparams.restart_interval);
+  } else if (jparams.restart_in_rows > 0) {
+    JXL_CHECK(cinfo->restart_interval ==
+              jparams.restart_in_rows * cinfo->MCUs_per_row);
+  }
+  if (!jparams.optimize_coding) {
+    if (cinfo->jpeg_color_space == JCS_RGB) {
+      JXL_CHECK(cinfo->comp_info[0].dc_tbl_no == 0);
+      JXL_CHECK(cinfo->comp_info[1].dc_tbl_no == 0);
+      JXL_CHECK(cinfo->comp_info[2].dc_tbl_no == 0);
+      JXL_CHECK(cinfo->comp_info[0].ac_tbl_no == 0);
+      JXL_CHECK(cinfo->comp_info[1].ac_tbl_no == 0);
+      JXL_CHECK(cinfo->comp_info[2].ac_tbl_no == 0);
+    } else if (cinfo->jpeg_color_space == JCS_YCbCr) {
+      JXL_CHECK(cinfo->comp_info[0].dc_tbl_no == 0);
+      JXL_CHECK(cinfo->comp_info[1].dc_tbl_no == 1);
+      JXL_CHECK(cinfo->comp_info[2].dc_tbl_no == 1);
+      JXL_CHECK(cinfo->comp_info[0].ac_tbl_no == 0);
+      JXL_CHECK(cinfo->comp_info[1].ac_tbl_no == 1);
+      JXL_CHECK(cinfo->comp_info[2].ac_tbl_no == 1);
+    } else if (cinfo->jpeg_color_space == JCS_CMYK) {
+      JXL_CHECK(cinfo->comp_info[0].dc_tbl_no == 0);
+      JXL_CHECK(cinfo->comp_info[1].dc_tbl_no == 0);
+      JXL_CHECK(cinfo->comp_info[2].dc_tbl_no == 0);
+      JXL_CHECK(cinfo->comp_info[3].dc_tbl_no == 0);
+      JXL_CHECK(cinfo->comp_info[0].ac_tbl_no == 0);
+      JXL_CHECK(cinfo->comp_info[1].ac_tbl_no == 0);
+      JXL_CHECK(cinfo->comp_info[2].ac_tbl_no == 0);
+      JXL_CHECK(cinfo->comp_info[3].ac_tbl_no == 0);
+    } else if (cinfo->jpeg_color_space == JCS_YCCK) {
+      JXL_CHECK(cinfo->comp_info[0].dc_tbl_no == 0);
+      JXL_CHECK(cinfo->comp_info[1].dc_tbl_no == 1);
+      JXL_CHECK(cinfo->comp_info[2].dc_tbl_no == 1);
+      JXL_CHECK(cinfo->comp_info[3].dc_tbl_no == 0);
+      JXL_CHECK(cinfo->comp_info[0].ac_tbl_no == 0);
+      JXL_CHECK(cinfo->comp_info[1].ac_tbl_no == 1);
+      JXL_CHECK(cinfo->comp_info[2].ac_tbl_no == 1);
+      JXL_CHECK(cinfo->comp_info[3].ac_tbl_no == 0);
+    }
+    if (jparams.use_flat_dc_luma_code) {
+      JHUFF_TBL* tbl = cinfo->dc_huff_tbl_ptrs[0];
+      for (int i = 0; i < 15; ++i) {
+        JXL_CHECK(tbl->huffval[i] == i);
+      }
+    }
   }
 }
 
@@ -782,7 +822,6 @@ void DecodeAllScansWithLibjpeg(const CompressParams& jparams,
       JXL_CHECK(cinfo.output_scan_number == cinfo.input_scan_number);
       JXL_CHECK(cinfo.input_scan_number == sos_marker_cnt);
       VerifyScanHeader(jparams, &cinfo);
-      VerifyRestartInterval(jparams, &cinfo);
       TestImage output;
       ReadOutputPass(&cinfo, dparams, &output);
       output_progression->emplace_back(std::move(output));
@@ -819,7 +858,7 @@ void DecodeWithLibjpeg(const CompressParams& jparams,
       ReadCoefficients(&cinfo, output);
     } else {
       JXL_CHECK(jpeg_start_decompress(&cinfo));
-      VerifyRestartInterval(jparams, &cinfo);
+      VerifyScanHeader(jparams, &cinfo);
       ReadOutputPass(&cinfo, dparams, output);
     }
     JXL_CHECK(jpeg_finish_decompress(&cinfo));
@@ -829,8 +868,8 @@ void DecodeWithLibjpeg(const CompressParams& jparams,
   jpeg_destroy_decompress(&cinfo);
 }
 
-void VerifyOutputImage(const TestImage& input, const TestImage& output,
-                       size_t start_line, size_t num_lines, double max_rms) {
+double DistanceRms(const TestImage& input, const TestImage& output,
+                   size_t start_line, size_t num_lines) {
   size_t stride = input.xsize * input.components;
   size_t start_offset = start_line * stride;
   auto get_sample = [&](const TestImage& im, const std::vector<uint8_t>& data,
@@ -877,7 +916,16 @@ void VerifyOutputImage(const TestImage& input, const TestImage& output,
       }
     }
   }
-  double rms = std::sqrt(diff2 / num_samples) * 255.0;
+  return std::sqrt(diff2 / num_samples) * 255.0;
+}
+
+double DistanceRms(const TestImage& input, const TestImage& output) {
+  return DistanceRms(input, output, 0, output.ysize);
+}
+
+void VerifyOutputImage(const TestImage& input, const TestImage& output,
+                       size_t start_line, size_t num_lines, double max_rms) {
+  double rms = DistanceRms(input, output, start_line, num_lines);
   printf("rms: %f\n", rms);
   JXL_CHECK(rms <= max_rms);
 }

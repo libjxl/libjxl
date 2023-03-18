@@ -354,7 +354,11 @@ void ProcessDHT(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
     if (is_ac_table) {
       JPEG_VERIFY_INPUT(total_count, 0, kJpegHuffmanAlphabetSize);
     } else {
-      JPEG_VERIFY_INPUT(total_count, 0, kJpegDCAlphabetSize);
+      // Allow symbols up to 15 here, we check later whether any invalid symbols
+      // are actually decoded.
+      // TODO(szabadka) Make sure decoder works (does not crash) with up to
+      // 15-nbits DC symbols and then increase kJpegDCAlphabetSize.
+      JPEG_VERIFY_INPUT(total_count, 0, 16);
     }
     JPEG_VERIFY_LEN(total_count);
     // Symbol values sorted by increasing bit lengths.
@@ -363,7 +367,7 @@ void ProcessDHT(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
     for (int i = 0; i < total_count; ++i) {
       int value = ReadUint8(data, &pos);
       if (!is_ac_table) {
-        JPEG_VERIFY_INPUT(value, 0, kJpegDCAlphabetSize - 1);
+        JPEG_VERIFY_INPUT(value, 0, 15);
       }
       if (values_seen[value]) {
         return JPEGLI_ERROR("Duplicate Huffman code value %d", value);

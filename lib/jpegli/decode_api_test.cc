@@ -200,8 +200,8 @@ TEST_P(DecodeAPITestParam, TestAPI) {
     jpegli_read_header(&cinfo, /*require_image=*/TRUE);
     SetDecompressParams(dparams, &cinfo);
     VerifyHeader(config.jparams, &cinfo);
-    VerifyRestartInterval(config.jparams, &cinfo);
     jpegli_start_decompress(&cinfo);
+    VerifyScanHeader(config.jparams, &cinfo);
     ReadOutputImage(dparams, &cinfo, &output0);
     jpegli_finish_decompress(&cinfo);
     return true;
@@ -211,7 +211,14 @@ TEST_P(DecodeAPITestParam, TestAPI) {
 
   TestImage output1;
   DecodeWithLibjpeg(CompressParams(), dparams, compressed, &output1);
-  VerifyOutputImage(output1, output0, 1.0f);
+
+  if (!config.jparams.quant_tables.empty()) {
+    double rms0 = DistanceRms(config.input, output0);
+    double rms1 = DistanceRms(config.input, output1);
+    EXPECT_LE(rms0, rms1 * 1.01);
+  } else {
+    VerifyOutputImage(output1, output0, 1.0f);
+  }
 }
 
 class DecodeAPITestParamBuffered : public ::testing::TestWithParam<TestConfig> {
@@ -246,7 +253,6 @@ TEST_P(DecodeAPITestParamBuffered, TestAPI) {
       EXPECT_EQ(cinfo.output_scan_number, cinfo.input_scan_number);
       EXPECT_EQ(cinfo.input_scan_number, sos_marker_cnt);
       VerifyScanHeader(config.jparams, &cinfo);
-      VerifyRestartInterval(config.jparams, &cinfo);
       TestImage output;
       ReadOutputImage(dparams, &cinfo, &output);
       output_progression0.emplace_back(std::move(output));
@@ -406,6 +412,126 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
     TestConfig config;
     config.jparams.restart_in_rows = rr;
     all_tests.push_back(config);
+  }
+  for (int type : {0, 1, 10, 100, 10000}) {
+    for (int scale : {1, 50, 100, 200, 500}) {
+      for (bool add_raw : {false, true}) {
+        for (bool baseline : {true, false}) {
+          if (!baseline && (add_raw || type * scale < 25500)) continue;
+          TestConfig config;
+          config.input.xsize = 64;
+          config.input.ysize = 64;
+          CustomQuantTable table;
+          table.table_type = type;
+          table.scale_factor = scale;
+          table.force_baseline = baseline;
+          table.add_raw = add_raw;
+          table.Generate();
+          config.jparams.quant_tables.push_back(table);
+          config.jparams.quant_indexes = {0, 0, 0};
+          all_tests.push_back(config);
+        }
+      }
+    }
+  }
+  for (int qidx = 0; qidx < 8; ++qidx) {
+    if (qidx == 3) continue;
+    TestConfig config;
+    config.input.xsize = 256;
+    config.input.ysize = 256;
+    config.jparams.quant_indexes = {(qidx >> 2) & 1, (qidx >> 1) & 1,
+                                    (qidx >> 0) & 1};
+    all_tests.push_back(config);
+  }
+  for (int qidx = 0; qidx < 8; ++qidx) {
+    for (int slot_idx = 0; slot_idx < 2; ++slot_idx) {
+      if (qidx == 0 && slot_idx == 0) continue;
+      TestConfig config;
+      config.input.xsize = 256;
+      config.input.ysize = 256;
+      config.jparams.quant_indexes = {(qidx >> 2) & 1, (qidx >> 1) & 1,
+                                      (qidx >> 0) & 1};
+      CustomQuantTable table;
+      table.slot_idx = slot_idx;
+      table.Generate();
+      config.jparams.quant_tables.push_back(table);
+      all_tests.push_back(config);
+    }
+  }
+  for (int qidx = 0; qidx < 8; ++qidx) {
+    for (bool xyb : {false, true}) {
+      TestConfig config;
+      config.input.xsize = 256;
+      config.input.ysize = 256;
+      config.jparams.xyb_mode = xyb;
+      config.jparams.quant_indexes = {(qidx >> 2) & 1, (qidx >> 1) & 1,
+                                      (qidx >> 0) & 1};
+      {
+        CustomQuantTable table;
+        table.slot_idx = 0;
+        table.Generate();
+        config.jparams.quant_tables.push_back(table);
+      }
+      {
+        CustomQuantTable table;
+        table.slot_idx = 1;
+        table.table_type = 20;
+        table.Generate();
+        config.jparams.quant_tables.push_back(table);
+      }
+      all_tests.push_back(config);
+    }
+  }
+  for (bool xyb : {false, true}) {
+    TestConfig config;
+    config.input.xsize = 256;
+    config.input.ysize = 256;
+    config.jparams.xyb_mode = xyb;
+    config.jparams.quant_indexes = {0, 1, 2};
+    {
+      CustomQuantTable table;
+      table.slot_idx = 0;
+      table.Generate();
+      config.jparams.quant_tables.push_back(table);
+    }
+    {
+      CustomQuantTable table;
+      table.slot_idx = 1;
+      table.table_type = 20;
+      table.Generate();
+      config.jparams.quant_tables.push_back(table);
+    }
+    {
+      CustomQuantTable table;
+      table.slot_idx = 2;
+      table.table_type = 30;
+      table.Generate();
+      config.jparams.quant_tables.push_back(table);
+    }
+    all_tests.push_back(config);
+  }
+  for (J_COLOR_SPACE jpeg_color_space : {JCS_RGB, JCS_YCbCr}) {
+    for (bool flat_dc_luma : {false, true}) {
+      TestConfig config;
+      config.jparams.set_jpeg_colorspace = true;
+      config.jparams.jpeg_color_space = jpeg_color_space;
+      config.jparams.progressive_level = 0;
+      config.jparams.optimize_coding = false;
+      config.jparams.use_flat_dc_luma_code = flat_dc_luma;
+      all_tests.push_back(config);
+    }
+  }
+  for (J_COLOR_SPACE jpeg_color_space : {JCS_CMYK, JCS_YCCK}) {
+    for (bool flat_dc_luma : {false, true}) {
+      TestConfig config;
+      config.input.color_space = JCS_CMYK;
+      config.jparams.set_jpeg_colorspace = true;
+      config.jparams.jpeg_color_space = jpeg_color_space;
+      config.jparams.progressive_level = 0;
+      config.jparams.optimize_coding = false;
+      config.jparams.use_flat_dc_luma_code = flat_dc_luma;
+      all_tests.push_back(config);
+    }
   }
   return all_tests;
 }

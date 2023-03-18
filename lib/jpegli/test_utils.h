@@ -159,8 +159,6 @@ struct CompressParams {
 std::ostream& operator<<(std::ostream& os, const CompressParams& jparams);
 
 void VerifyHeader(const CompressParams& jparams, j_decompress_ptr cinfo);
-void VerifyRestartInterval(const CompressParams& jparams,
-                           j_decompress_ptr cinfo);
 void VerifyScanHeader(const CompressParams& jparams, j_decompress_ptr cinfo);
 
 struct DecompressParams {
@@ -229,6 +227,11 @@ void DecodeWithLibjpeg(const CompressParams& jparams,
                        const DecompressParams& dparams,
                        const std::vector<uint8_t>& compressed,
                        TestImage* output);
+
+double DistanceRms(const TestImage& input, const TestImage& output,
+                   size_t start_line, size_t num_lines);
+
+double DistanceRms(const TestImage& input, const TestImage& output);
 
 void VerifyOutputImage(const TestImage& input, const TestImage& output,
                        size_t start_line, size_t num_lines, double max_rms);
