@@ -1200,7 +1200,7 @@ cmd_fuzz() {
 cmd_lint() {
   merge_request_commits
   { set +x; } 2>/dev/null
-  local versions=(${1:-6.0 7 8 9 10 11 12 13 14 15 16})
+  local versions=(${1:-16 15 14 13 12 11 10 9 8 7 6.0})
   local clang_format_bins=("${versions[@]/#/clang-format-}" clang-format)
   local tmpdir=$(mktemp -d)
   CLEANUP_FILES+=("${tmpdir}")
