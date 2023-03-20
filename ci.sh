@@ -1196,11 +1196,11 @@ cmd_fuzz() {
   )
 }
 
-# Runs the linter (clang-format) on the pending CLs.
+# Runs the linters (clang-format, build_cleaner, buildirier) on the pending CLs.
 cmd_lint() {
   merge_request_commits
   { set +x; } 2>/dev/null
-  local versions=(${1:-6.0 7 8 9 10 11})
+  local versions=(${1:-6.0 7 8 9 10 11 12 13 14 15 16})
   local clang_format_bins=("${versions[@]/#/clang-format-}" clang-format)
   local tmpdir=$(mktemp -d)
   CLEANUP_FILES+=("${tmpdir}")
@@ -1212,6 +1212,22 @@ cmd_lint() {
     echo "build_cleaner.py findings:" >&2
     "${COLORDIFF_BIN}" <"${build_patch}"
     echo "Run \`tools/scripts/build_cleaner.py --update\` to apply them" >&2
+  fi
+
+  # It is ok, if buildifier is not installed.
+  if which buildifier >/dev/null; then
+    local buildifier_patch="${tmpdir}/buildifier.patch"
+    local bazel_files=`git -C ${MYDIR} ls-files | grep -E "/BUILD$|WORKSPACE|.bzl$"`
+    set -x
+    buildifier -d ${bazel_files} >"${buildifier_patch}"|| true
+    { set +x; } 2>/dev/null
+    if [ -s "${buildifier_patch}" ]; then
+      ret=1
+      echo 'buildifier have found some problems in Bazel build files:' >&2
+      "${COLORDIFF_BIN}" <"${buildifier_patch}"
+      echo 'To fix them run (from the base directory):' >&2
+      echo '  buildifier `git ls-files | grep -E "/BUILD$|WORKSPACE|.bzl$"`' >&2
+    fi
   fi
 
   local installed=()

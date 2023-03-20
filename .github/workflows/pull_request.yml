@@ -30,13 +30,16 @@ jobs:
         sudo apt update
         sudo apt install -y \
           clang-format \
-          clang-format-11 \
-          clang-format-12 \
-          clang-format-13 \
           clang-format-14 \
+          clang-format-15 \
         #
     - name: Checkout the source
       uses: actions/checkout@v2
-    - name: clang-format
-      run:
+    - name: Install buildifier
+      run: |
+        eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+        brew install buildifier
+    - name: lint
+      run: |
+        eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
         ./ci.sh lint >&2
