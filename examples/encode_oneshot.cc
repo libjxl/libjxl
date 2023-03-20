@@ -228,6 +228,7 @@ bool WriteFile(const std::vector<uint8_t>& bytes, const char* filename) {
   if (fwrite(bytes.data(), sizeof(uint8_t), bytes.size(), file) !=
       bytes.size()) {
     fprintf(stderr, "Could not write bytes to %s\n", filename);
+    fclose(file);
     return false;
   }
   if (fclose(file) != 0) {
