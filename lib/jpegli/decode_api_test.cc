@@ -197,6 +197,9 @@ TEST_P(DecodeAPITestParam, TestAPI) {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_decompress(&cinfo);
     cinfo.src = reinterpret_cast<jpeg_source_mgr*>(&src);
+    if (config.jparams.add_marker) {
+      jpegli_save_markers(&cinfo, kSpecialMarker, 0xffff);
+    }
     jpegli_read_header(&cinfo, /*require_image=*/TRUE);
     SetDecompressParams(dparams, &cinfo);
     VerifyHeader(config.jparams, &cinfo);
@@ -532,6 +535,36 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
       config.jparams.use_flat_dc_luma_code = flat_dc_luma;
       all_tests.push_back(config);
     }
+  }
+  {
+    TestConfig config;
+    config.input.xsize = config.input.ysize = 128;
+    config.jparams.comp_ids = {7, 17, 177};
+    all_tests.push_back(config);
+  }
+  for (int override_JFIF : {-1, 0, 1}) {
+    for (int override_Adobe : {-1, 0, 1}) {
+      if (override_JFIF == -1 && override_Adobe == -1) continue;
+      TestConfig config;
+      config.input.xsize = config.input.ysize = 128;
+      config.jparams.override_JFIF = override_JFIF;
+      config.jparams.override_Adobe = override_Adobe;
+      all_tests.push_back(config);
+    }
+  }
+  for (int xsize : {1, 7, 8, 9, 15, 16, 17}) {
+    for (int ysize : {1, 7, 8, 9, 15, 16, 17}) {
+      TestConfig config;
+      config.input.xsize = xsize;
+      config.input.ysize = ysize;
+      all_tests.push_back(config);
+    }
+  }
+  {
+    TestConfig config;
+    config.input.xsize = config.input.ysize = 256;
+    config.jparams.add_marker = true;
+    all_tests.push_back(config);
   }
   return all_tests;
 }

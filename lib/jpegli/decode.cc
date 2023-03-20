@@ -31,6 +31,7 @@ void InitializeImage(j_decompress_ptr cinfo) {
   cinfo->Y_density = 1;
   cinfo->saw_Adobe_marker = FALSE;
   cinfo->Adobe_transform = 0;
+  cinfo->CCIR601_sampling = FALSE;  // not used
   cinfo->marker_list = nullptr;
   cinfo->comp_info = nullptr;
   cinfo->input_scan_number = 0;
