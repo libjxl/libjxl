@@ -7,6 +7,8 @@
 
 #include <string.h>
 
+#include <hwy/base.h>
+
 #include "lib/jpegli/decode_internal.h"
 #include "lib/jpegli/error.h"
 #include "lib/jpegli/source_manager.h"
@@ -344,11 +346,16 @@ void SaveMCUCodingState(j_decompress_ptr cinfo) {
   for (int i = 0; i < cinfo->comps_in_scan; ++i) {
     const jpeg_component_info* comp = cinfo->cur_comp_info[i];
     DecJPEGComponent* c = &m->components_[comp->component_index];
-    int block_x = m->scan_mcu_col_ * comp->MCU_width;
+    size_t block_x = m->scan_mcu_col_ * comp->MCU_width;
     for (int iy = 0; iy < comp->MCU_height; ++iy) {
-      int block_y = m->scan_mcu_row_ * comp->MCU_height + iy;
-      size_t ncoeffs = comp->MCU_width * DCTSIZE2;
-      int block_idx = (block_y * comp->width_in_blocks + block_x) * DCTSIZE2;
+      size_t block_y = m->scan_mcu_row_ * comp->MCU_height + iy;
+      if (block_y >= comp->height_in_blocks) {
+        continue;
+      }
+      size_t nblocks =
+          std::min<size_t>(comp->MCU_width, comp->width_in_blocks - block_x);
+      size_t ncoeffs = nblocks * DCTSIZE2;
+      size_t block_idx = (block_y * comp->width_in_blocks + block_x) * DCTSIZE2;
       coeff_t* coeffs = &c->coeffs[block_idx];
       memcpy(&m->mcu_.coeffs[offset], coeffs, ncoeffs * sizeof(coeffs[0]));
       offset += ncoeffs;
@@ -364,11 +371,16 @@ void RestoreMCUCodingState(j_decompress_ptr cinfo) {
   for (int i = 0; i < cinfo->comps_in_scan; ++i) {
     const jpeg_component_info* comp = cinfo->cur_comp_info[i];
     DecJPEGComponent* c = &m->components_[comp->component_index];
-    int block_x = m->scan_mcu_col_ * comp->MCU_width;
+    size_t block_x = m->scan_mcu_col_ * comp->MCU_width;
     for (int iy = 0; iy < comp->MCU_height; ++iy) {
-      int block_y = m->scan_mcu_row_ * comp->MCU_height + iy;
-      size_t ncoeffs = comp->MCU_width * DCTSIZE2;
-      int block_idx = (block_y * comp->width_in_blocks + block_x) * DCTSIZE2;
+      size_t block_y = m->scan_mcu_row_ * comp->MCU_height + iy;
+      if (block_y >= comp->height_in_blocks) {
+        continue;
+      }
+      size_t nblocks =
+          std::min<size_t>(comp->MCU_width, comp->width_in_blocks - block_x);
+      size_t ncoeffs = nblocks * DCTSIZE2;
+      size_t block_idx = (block_y * comp->width_in_blocks + block_x) * DCTSIZE2;
       coeff_t* coeffs = &c->coeffs[block_idx];
       memcpy(coeffs, &m->mcu_.coeffs[offset], ncoeffs * sizeof(coeffs[0]));
       offset += ncoeffs;
@@ -445,6 +457,7 @@ int ProcessScan(j_decompress_ptr cinfo) {
     }
 
     // Decode one MCU.
+    HWY_ALIGN_MAX coeff_t dummy_block[DCTSIZE2];
     bool scan_ok = true;
     for (int i = 0; i < cinfo->comps_in_scan; ++i) {
       const jpeg_component_info* comp = cinfo->cur_comp_info[i];
@@ -454,11 +467,19 @@ int ProcessScan(j_decompress_ptr cinfo) {
       const HuffmanTableEntry* ac_lut =
           &m->ac_huff_lut_[comp->ac_tbl_no * kJpegHuffmanLutSize];
       for (int iy = 0; iy < comp->MCU_height; ++iy) {
-        int block_y = m->scan_mcu_row_ * comp->MCU_height + iy;
+        size_t block_y = m->scan_mcu_row_ * comp->MCU_height + iy;
         for (int ix = 0; ix < comp->MCU_width; ++ix) {
-          int block_x = m->scan_mcu_col_ * comp->MCU_width + ix;
-          int block_idx = block_y * comp->width_in_blocks + block_x;
+          size_t block_x = m->scan_mcu_col_ * comp->MCU_width + ix;
+          size_t block_idx = block_y * comp->width_in_blocks + block_x;
           coeff_t* coeffs = &c->coeffs[block_idx * DCTSIZE2];
+          if (block_x >= comp->width_in_blocks ||
+              block_y >= comp->height_in_blocks) {
+            // Note that it is OK that dummy_block is uninitialized because
+            // it will never be used in any branches, even in the RefineDCTBlock
+            // case, because only DC scans can be interleaved and we don't use
+            // the zero-ness of the DC coeff in the DC refinement code-path.
+            coeffs = dummy_block;
+          }
           if (cinfo->Ah == 0) {
             if (!DecodeDCTBlock(dc_lut, ac_lut, cinfo->Ss, cinfo->Se, cinfo->Al,
                                 &m->eobrun_, &br,
