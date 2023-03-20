@@ -400,22 +400,22 @@ std::vector<TestConfig> GenerateTests() {
   {
     TestConfig config;
     config.jparams.comp_ids = {7, 17, 177};
-    config.max_bpp = 1.45;
-    config.max_dist = 2.2;
+    config.input.xsize = config.input.ysize = 128;
+    config.max_bpp = 2.1;
+    config.max_dist = 2.4;
     all_tests.push_back(config);
   }
-  {
-    TestConfig config;
-    config.max_bpp = 1.45;
-    config.max_dist = 2.2;
-    config.jparams.override_JFIF = 1;
-    all_tests.push_back(config);
-    config.jparams.override_JFIF = 0;
-    config.jparams.override_Adobe = 1;
-    all_tests.push_back(config);
-    config.jparams.override_JFIF = 1;
-    config.jparams.override_Adobe = 1;
-    all_tests.push_back(config);
+  for (int override_JFIF : {-1, 0, 1}) {
+    for (int override_Adobe : {-1, 0, 1}) {
+      if (override_JFIF == -1 && override_Adobe == -1) continue;
+      TestConfig config;
+      config.input.xsize = config.input.ysize = 128;
+      config.jparams.override_JFIF = override_JFIF;
+      config.jparams.override_Adobe = override_Adobe;
+      config.max_bpp = 2.1;
+      config.max_dist = 2.4;
+      all_tests.push_back(config);
+    }
   }
   {
     TestConfig config;

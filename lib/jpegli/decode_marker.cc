@@ -530,7 +530,8 @@ void SaveMarker(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
   cinfo->marker_list->marker = marker;
   cinfo->marker_list->original_length = payload_size;
   cinfo->marker_list->data_length = payload_size;
-  cinfo->marker_list->data = jpegli::Allocate<uint8_t>(cinfo, payload_size);
+  cinfo->marker_list->data =
+      jpegli::Allocate<uint8_t>(cinfo, payload_size, JPOOL_IMAGE);
   memcpy(cinfo->marker_list->data, payload, payload_size);
 }
 

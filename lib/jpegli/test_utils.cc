@@ -245,7 +245,7 @@ std::ostream& operator<<(std::ostream& os, const CompressParams& jparams) {
     os << (jparams.override_JFIF ? "AddJFIF" : "NoJFIF");
   }
   if (jparams.override_Adobe >= 0) {
-    os << (jparams.override_JFIF ? "AddAdobe" : "NoAdobe");
+    os << (jparams.override_Adobe ? "AddAdobe" : "NoAdobe");
   }
   if (jparams.add_marker) {
     os << "AddMarker";
@@ -638,6 +638,11 @@ void VerifyHeader(const CompressParams& jparams, j_decompress_ptr cinfo) {
 
 void VerifyScanHeader(const CompressParams& jparams, j_decompress_ptr cinfo) {
   JXL_CHECK(cinfo->input_scan_number > 0);
+  if (cinfo->progressive_mode) {
+    JXL_CHECK(cinfo->Ss != 0 || cinfo->Se != 63);
+  } else {
+    JXL_CHECK(cinfo->Ss == 0 && cinfo->Se == 63);
+  }
   if (jparams.progressive_id > 0) {
     JXL_CHECK(jparams.progressive_id <= kNumTestScripts);
     const ScanScript& script = kTestScript[jparams.progressive_id - 1];
