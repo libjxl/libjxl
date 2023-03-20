@@ -29,7 +29,11 @@ bool WritePAM(const char* filename, const uint8_t* buffer, size_t w, size_t h) {
           "\nDEPTH 4\nMAXVAL 255\nTUPLTYPE "
           "RGB_ALPHA\nENDHDR\n",
           static_cast<uint64_t>(w), static_cast<uint64_t>(h));
-  fwrite(buffer, 1, w * h * 4, fp);
+  size_t num_bytes = w * h * 4;
+  if (fwrite(buffer, 1, num_bytes, fp) != num_bytes) {
+    fclose(fp);
+    return false;
+  };
   if (fclose(fp) != 0) {
     return false;
   }

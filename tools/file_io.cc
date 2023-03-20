@@ -59,6 +59,7 @@ bool WriteFile(const char* filename, const std::vector<uint8_t>& bytes) {
             "Could not write to file\n"
             "Error: %s",
             strerror(errno));
+    fclose(file);
     return false;
   }
   if (fclose(file) != 0) {
