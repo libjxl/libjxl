@@ -18,7 +18,6 @@
 namespace jpegli {
 namespace {
 
-constexpr int kMaxSampling = 2;
 constexpr int kMaxDimPixels = 65535;
 constexpr uint8_t kIccProfileTag[12] = "ICC_PROFILE";
 
@@ -95,8 +94,8 @@ void ProcessSOF(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
     int factor = ReadUint8(data, &pos);
     int h_samp_factor = factor >> 4;
     int v_samp_factor = factor & 0xf;
-    JPEG_VERIFY_INPUT(h_samp_factor, 1, kMaxSampling);
-    JPEG_VERIFY_INPUT(v_samp_factor, 1, kMaxSampling);
+    JPEG_VERIFY_INPUT(h_samp_factor, 1, MAX_SAMP_FACTOR);
+    JPEG_VERIFY_INPUT(v_samp_factor, 1, MAX_SAMP_FACTOR);
     comp->h_samp_factor = h_samp_factor;
     comp->v_samp_factor = v_samp_factor;
     cinfo->max_h_samp_factor =
@@ -157,10 +156,10 @@ void ProcessSOF(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
         cinfo->max_v_samp_factor % comp->v_samp_factor != 0) {
       JPEGLI_ERROR("Non-integral subsampling ratios.");
     }
-    int h_factor = cinfo->max_h_samp_factor / comp->h_samp_factor;
-    int v_factor = cinfo->max_v_samp_factor / comp->v_samp_factor;
-    comp->downsampled_width = DivCeil(cinfo->image_width, h_factor);
-    comp->downsampled_height = DivCeil(cinfo->image_height, v_factor);
+    m->h_factor[i] = cinfo->max_h_samp_factor / comp->h_samp_factor;
+    m->v_factor[i] = cinfo->max_v_samp_factor / comp->v_samp_factor;
+    comp->downsampled_width = DivCeil(cinfo->image_width, m->h_factor[i]);
+    comp->downsampled_height = DivCeil(cinfo->image_height, m->v_factor[i]);
     comp->width_in_blocks = DivCeil(comp->downsampled_width, DCTSIZE);
     comp->height_in_blocks = DivCeil(comp->downsampled_height, DCTSIZE);
     const uint64_t num_blocks =

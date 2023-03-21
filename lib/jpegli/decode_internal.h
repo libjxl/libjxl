@@ -71,6 +71,8 @@ struct jpeg_decomp_master {
 
   // Fields defined by SOF marker.
   size_t iMCU_cols_;
+  int h_factor[jpegli::kMaxComponents];
+  int v_factor[jpegli::kMaxComponents];
 
   // Initialized at strat of frame.
   uint16_t scan_progression_[jpegli::kMaxComponents][DCTSIZE2];
