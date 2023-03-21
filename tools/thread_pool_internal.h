@@ -6,36 +6,40 @@
 #ifndef TOOLS_THREAD_POOL_INTERNAL_H_
 #define TOOLS_THREAD_POOL_INTERNAL_H_
 
-#include <jxl/parallel_runner.h>
+#include <jxl/thread_parallel_runner_cxx.h>
 #include <stddef.h>
 
 #include <cmath>
+#include <thread>  // NOLINT
 
 #include "lib/jxl/base/data_parallel.h"
-#include "lib/threads/thread_parallel_runner_internal.h"
 
 namespace jpegxl {
 namespace tools {
 
+using ::jxl::ThreadPool;
+
 // Helper class to pass an internal ThreadPool-like object using threads.
-class ThreadPoolInternal : public jxl::ThreadPool {
+class ThreadPoolInternal {
  public:
   // Starts the given number of worker threads and blocks until they are ready.
   // "num_worker_threads" defaults to one per hyperthread. If zero, all tasks
   // run on the main thread.
   explicit ThreadPoolInternal(
-      int num_worker_threads = std::thread::hardware_concurrency())
-      : ThreadPool(&jpegxl::ThreadParallelRunner::Runner,
-                   static_cast<void*>(&runner_)),
-        runner_(num_worker_threads) {}
+      size_t num_threads = std::thread::hardware_concurrency()) {
+    runner_ =
+        JxlThreadParallelRunnerMake(/* memory_manager */ nullptr, num_threads);
+    pool_ =
+        jxl::make_unique<ThreadPool>(JxlThreadParallelRunner, runner_.get());
+  }
 
   ThreadPoolInternal(const ThreadPoolInternal&) = delete;
   ThreadPoolInternal& operator&(const ThreadPoolInternal&) = delete;
-
-  size_t NumThreads() const { return runner_.NumThreads(); }
+  ThreadPool* operator&() { return pool_.get(); }
 
  private:
-  jpegxl::ThreadParallelRunner runner_;
+  JxlThreadParallelRunnerPtr runner_;
+  std::unique_ptr<ThreadPool> pool_;
 };
 
 }  // namespace tools

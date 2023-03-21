@@ -44,7 +44,7 @@ class PNGCodec : public ImageCodec {
   Status ParseParam(const std::string& param) override { return true; }
 
   Status Compress(const std::string& filename, const CodecInOut* io,
-                  ThreadPoolInternal* pool, std::vector<uint8_t>* compressed,
+                  ThreadPool* pool, std::vector<uint8_t>* compressed,
                   jpegxl::tools::SpeedStats* speed_stats) override {
     const size_t bits = io->metadata.m.bit_depth.bits_per_sample;
     const double start = jxl::Now();
@@ -57,8 +57,8 @@ class PNGCodec : public ImageCodec {
   }
 
   Status Decompress(const std::string& /*filename*/,
-                    const Span<const uint8_t> compressed,
-                    ThreadPoolInternal* pool, CodecInOut* io,
+                    const Span<const uint8_t> compressed, ThreadPool* pool,
+                    CodecInOut* io,
                     jpegxl::tools::SpeedStats* speed_stats) override {
     jxl::extras::PackedPixelFile ppf;
     const double start = jxl::Now();

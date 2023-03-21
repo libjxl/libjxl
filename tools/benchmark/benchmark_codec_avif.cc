@@ -32,10 +32,22 @@ using ::jxl::ImageBundle;
 using ::jxl::PaddedBytes;
 using ::jxl::Primaries;
 using ::jxl::Span;
+using ::jxl::ThreadPool;
 using ::jxl::TransferFunction;
 using ::jxl::WhitePoint;
 
 namespace {
+
+size_t GetNumThreads(ThreadPool* pool) {
+  size_t result = 0;
+  const auto count_threads = [&](const size_t num_threads) {
+    result = num_threads;
+    return true;
+  };
+  const auto no_op = [&](const uint32_t /*task*/, size_t /*thread*/) {};
+  (void)jxl::RunOnPool(pool, 0, 1, count_threads, no_op, "Compress");
+  return result;
+}
 
 struct AvifArgs {
   avifPixelFormat chroma_subsampling = AVIF_PIXEL_FORMAT_YUV444;
@@ -222,9 +234,10 @@ class AvifCodec : public ImageCodec {
   }
 
   Status Compress(const std::string& filename, const CodecInOut* io,
-                  ThreadPoolInternal* pool, std::vector<uint8_t>* compressed,
+                  ThreadPool* pool, std::vector<uint8_t>* compressed,
                   SpeedStats* speed_stats) override {
     double elapsed_convert_image = 0;
+    size_t max_threads = GetNumThreads(pool);
     const double start = jxl::Now();
     {
       const auto depth =
@@ -238,7 +251,7 @@ class AvifCodec : public ImageCodec {
       encoder->tileColsLog2 = log2_cols;
       encoder->tileRowsLog2 = log2_rows;
       encoder->speed = speed_;
-      encoder->maxThreads = pool->NumThreads();
+      encoder->maxThreads = max_threads;
       for (const auto& opts : codec_specific_options_) {
         avifEncoderSetCodecSpecificOption(encoder.get(), opts.first.c_str(),
                                           opts.second.c_str());
@@ -291,18 +304,18 @@ class AvifCodec : public ImageCodec {
   }
 
   Status Decompress(const std::string& filename,
-                    const Span<const uint8_t> compressed,
-                    ThreadPoolInternal* pool, CodecInOut* io,
-                    SpeedStats* speed_stats) override {
+                    const Span<const uint8_t> compressed, ThreadPool* pool,
+                    CodecInOut* io, SpeedStats* speed_stats) override {
     io->frames.clear();
     io->dec_pixels = 0;
+    size_t max_threads = GetNumThreads(pool);
     double elapsed_convert_image = 0;
     const double start = jxl::Now();
     {
       std::unique_ptr<avifDecoder, void (*)(avifDecoder*)> decoder(
           avifDecoderCreate(), &avifDecoderDestroy);
       decoder->codecChoice = decoder_;
-      decoder->maxThreads = pool->NumThreads();
+      decoder->maxThreads = max_threads;
       JXL_RETURN_IF_AVIF_ERROR(avifDecoderSetIOMemory(
           decoder.get(), compressed.data(), compressed.size()));
       JXL_RETURN_IF_AVIF_ERROR(avifDecoderParse(decoder.get()));

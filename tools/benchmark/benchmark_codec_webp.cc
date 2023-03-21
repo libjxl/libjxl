@@ -90,7 +90,7 @@ class WebPCodec : public ImageCodec {
   }
 
   Status Compress(const std::string& filename, const CodecInOut* io,
-                  ThreadPoolInternal* pool, std::vector<uint8_t>* compressed,
+                  ThreadPool* pool, std::vector<uint8_t>* compressed,
                   jpegxl::tools::SpeedStats* speed_stats) override {
     const double start = jxl::Now();
     const ImageBundle& ib = io->Main();
@@ -164,8 +164,8 @@ class WebPCodec : public ImageCodec {
   }
 
   Status Decompress(const std::string& filename,
-                    const Span<const uint8_t> compressed,
-                    ThreadPoolInternal* pool, CodecInOut* io,
+                    const Span<const uint8_t> compressed, ThreadPool* pool,
+                    CodecInOut* io,
                     jpegxl::tools::SpeedStats* speed_stats) override {
     WebPDecoderConfig config;
 #ifdef MEMORY_SANITIZER

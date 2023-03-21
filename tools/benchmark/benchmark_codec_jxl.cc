@@ -280,7 +280,7 @@ class JxlCodec : public ImageCodec {
   }
 
   Status Compress(const std::string& filename, const CodecInOut* io,
-                  ThreadPoolInternal* pool, std::vector<uint8_t>* compressed,
+                  ThreadPool* pool, std::vector<uint8_t>* compressed,
                   jpegxl::tools::SpeedStats* speed_stats) override {
     if (!jxlargs->debug_image_dir.empty()) {
       cinfo_.dump_image = [](Image3F&& image,
@@ -353,8 +353,8 @@ class JxlCodec : public ImageCodec {
   }
 
   Status Decompress(const std::string& filename,
-                    const Span<const uint8_t> compressed,
-                    ThreadPoolInternal* pool, CodecInOut* io,
+                    const Span<const uint8_t> compressed, ThreadPool* pool,
+                    CodecInOut* io,
                     jpegxl::tools::SpeedStats* speed_stats) override {
     dparams_.runner = pool->runner();
     dparams_.runner_opaque = pool->runner_opaque();

@@ -331,7 +331,7 @@ int main(int argc, const char** argv) {
   const char* dest_dir = nullptr;
   bool regenerate = false;
   bool quiet = false;
-  int num_threads = std::thread::hardware_concurrency();
+  size_t num_threads = std::thread::hardware_concurrency();
   for (int optind = 1; optind < argc;) {
     if (!strcmp(argv[optind], "-r")) {
       regenerate = true;

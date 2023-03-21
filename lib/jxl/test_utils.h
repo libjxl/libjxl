@@ -11,6 +11,7 @@
 // Macros and functions useful for tests.
 
 #include <jxl/codestream_header.h>
+#include <jxl/thread_parallel_runner_cxx.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -27,7 +28,6 @@
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/enc_params.h"
-#include "lib/threads/thread_parallel_runner_internal.h"
 
 namespace jxl {
 
@@ -142,17 +142,21 @@ bool SamePixels(const extras::PackedImage& a, const extras::PackedImage& b);
 bool SamePixels(const extras::PackedPixelFile& a,
                 const extras::PackedPixelFile& b);
 
-class ThreadPoolForTests : public ThreadPool {
+class ThreadPoolForTests {
  public:
-  explicit ThreadPoolForTests(int num_worker_threads)
-      : ThreadPool(&jpegxl::ThreadParallelRunner::Runner,
-                   static_cast<void*>(&runner_)),
-        runner_(num_worker_threads) {}
+  explicit ThreadPoolForTests(int num_threads) {
+    runner_ =
+        JxlThreadParallelRunnerMake(/* memory_manager */ nullptr, num_threads);
+    pool_ =
+        jxl::make_unique<ThreadPool>(JxlThreadParallelRunner, runner_.get());
+  }
   ThreadPoolForTests(const ThreadPoolForTests&) = delete;
   ThreadPoolForTests& operator&(const ThreadPoolForTests&) = delete;
+  ThreadPool* operator&() { return pool_.get(); }
 
  private:
-  jpegxl::ThreadParallelRunner runner_;
+  JxlThreadParallelRunnerPtr runner_;
+  std::unique_ptr<ThreadPool> pool_;
 };
 
 }  // namespace test
