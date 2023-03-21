@@ -215,7 +215,8 @@ TEST_P(DecodeAPITestParam, TestAPI) {
   TestImage output1;
   DecodeWithLibjpeg(CompressParams(), dparams, compressed, &output1);
 
-  if (!config.jparams.quant_tables.empty()) {
+  if (!config.jparams.quant_tables.empty() ||
+      !config.jparams.h_sampling.empty()) {
     double rms0 = DistanceRms(config.input, output0);
     double rms1 = DistanceRms(config.input, output1);
     EXPECT_LE(rms0, rms1 * 1.01);
@@ -565,6 +566,52 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
     config.input.xsize = config.input.ysize = 256;
     config.jparams.add_marker = true;
     all_tests.push_back(config);
+  }
+  for (int h0_samp : {1, 2, 3, 4}) {
+    for (int v0_samp : {1, 2, 3, 4}) {
+      for (int dxb = 0; dxb < h0_samp; ++dxb) {
+        for (int dyb = 0; dyb < v0_samp; ++dyb) {
+          for (int dx = 0; dx < 2; ++dx) {
+            for (int dy = 0; dy < 2; ++dy) {
+              TestConfig config;
+              config.input.xsize = 128 + dyb * 8 + dy;
+              config.input.ysize = 256 + dxb * 8 + dx;
+              config.jparams.h_sampling = {h0_samp, 1, 1};
+              config.jparams.v_sampling = {v0_samp, 1, 1};
+              all_tests.push_back(config);
+            }
+          }
+        }
+      }
+    }
+  }
+  for (int h0_samp : {1, 2, 4}) {
+    for (int v0_samp : {1, 2, 4}) {
+      for (int h2_samp : {1, 2, 4}) {
+        for (int v2_samp : {1, 2, 4}) {
+          TestConfig config;
+          config.input.xsize = 137;
+          config.input.ysize = 75;
+          config.jparams.h_sampling = {h0_samp, 1, h2_samp};
+          config.jparams.v_sampling = {v0_samp, 1, v2_samp};
+          all_tests.push_back(config);
+        }
+      }
+    }
+  }
+  for (int h0_samp : {1, 3}) {
+    for (int v0_samp : {1, 3}) {
+      for (int h2_samp : {1, 3}) {
+        for (int v2_samp : {1, 3}) {
+          TestConfig config;
+          config.input.xsize = 205;
+          config.input.ysize = 99;
+          config.jparams.h_sampling = {h0_samp, 1, h2_samp};
+          config.jparams.v_sampling = {v0_samp, 1, v2_samp};
+          all_tests.push_back(config);
+        }
+      }
+    }
   }
   return all_tests;
 }

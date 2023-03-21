@@ -413,19 +413,24 @@ void ProcessOutput(j_decompress_ptr cinfo, size_t* num_output_rows,
         RowBuffer<float>* render_out = &m->render_output_[c];
         const auto& compinfo = cinfo->comp_info[c];
         size_t yc = (y / vfactor) * compinfo.v_samp_factor;
-        if (compinfo.v_samp_factor < vfactor) {
-          const float* JXL_RESTRICT row_mid = raw_out->Row(yc);
-          const float* JXL_RESTRICT row_top =
-              yc == 0 ? row_mid : raw_out->Row(yc - 1);
-          const float* JXL_RESTRICT row_bot =
-              yc + 1 == m->raw_height_[c] ? row_mid : raw_out->Row(yc + 1);
-          Upsample2Vertical(row_top, row_mid, row_bot, render_out->Row(0),
-                            render_out->Row(1), xsize_blocks * DCTSIZE);
-        } else {
-          JXL_ASSERT(y == static_cast<size_t>(yc));
-          for (int yix = 0; yix < vfactor; ++yix) {
-            memcpy(render_out->Row(yix), raw_out->Row(yc + yix),
-                   raw_out->xsize() * sizeof(float));
+        for (int dy = 0; dy < compinfo.v_samp_factor; ++dy) {
+          if (m->v_factor[c] == 2) {
+            size_t ymid = yc + dy;
+            const float* JXL_RESTRICT row_mid = raw_out->Row(ymid);
+            const float* JXL_RESTRICT row_top =
+                ymid == 0 ? row_mid : raw_out->Row(ymid - 1);
+            const float* JXL_RESTRICT row_bot = ymid + 1 == m->raw_height_[c]
+                                                    ? row_mid
+                                                    : raw_out->Row(ymid + 1);
+            Upsample2Vertical(
+                row_top, row_mid, row_bot, render_out->Row(2 * dy),
+                render_out->Row(2 * dy + 1), xsize_blocks * DCTSIZE);
+          } else {
+            for (int yix = 0; yix < m->v_factor[c]; ++yix) {
+              size_t ymid = yc + dy;
+              memcpy(render_out->Row(m->v_factor[c] * dy + yix),
+                     raw_out->Row(ymid), raw_out->xsize() * sizeof(float));
+            }
           }
         }
       }
@@ -458,13 +463,26 @@ void ProcessOutput(j_decompress_ptr cinfo, size_t* num_output_rows,
     DecodeCurrentiMCURow(cinfo);
     for (int c = 0; c < cinfo->num_components; ++c) {
       const auto& compinfo = cinfo->comp_info[c];
-      if (compinfo.h_samp_factor < cinfo->max_h_samp_factor) {
+      if (m->h_factor[c] == 2) {
         RowBuffer<float>* raw_out = &m->raw_output_[c];
         size_t y0 = imcu_row * compinfo.v_samp_factor * DCTSIZE;
         for (int iy = 0; iy < compinfo.v_samp_factor * DCTSIZE; ++iy) {
           float* JXL_RESTRICT row = raw_out->Row(y0 + iy);
           Upsample2Horizontal(row, m->upsample_scratch_,
                               xsize_blocks * DCTSIZE);
+        }
+      } else if (m->h_factor[c] > 2) {
+        RowBuffer<float>* raw_out = &m->raw_output_[c];
+        size_t y0 = imcu_row * compinfo.v_samp_factor * DCTSIZE;
+        for (int iy = 0; iy < compinfo.v_samp_factor * DCTSIZE; ++iy) {
+          float* JXL_RESTRICT row = raw_out->Row(y0 + iy);
+          float* JXL_RESTRICT tmp = m->upsample_scratch_;
+          size_t xlen = xsize_blocks * DCTSIZE;
+          // TODO(szabadka) SIMDify this.
+          for (size_t x = 0; x < xlen; ++x) {
+            tmp[x] = row[x / m->h_factor[c]];
+          }
+          memcpy(row, tmp, xlen * sizeof(tmp[0]));
         }
       }
     }
