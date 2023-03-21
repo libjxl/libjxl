@@ -157,8 +157,12 @@ void ProcessSOF(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
         cinfo->max_v_samp_factor % comp->v_samp_factor != 0) {
       JPEGLI_ERROR("Non-integral subsampling ratios.");
     }
-    comp->width_in_blocks = m->iMCU_cols_ * comp->h_samp_factor;
-    comp->height_in_blocks = cinfo->total_iMCU_rows * comp->v_samp_factor;
+    int h_factor = cinfo->max_h_samp_factor / comp->h_samp_factor;
+    int v_factor = cinfo->max_v_samp_factor / comp->v_samp_factor;
+    comp->downsampled_width = DivCeil(cinfo->image_width, h_factor);
+    comp->downsampled_height = DivCeil(cinfo->image_height, v_factor);
+    comp->width_in_blocks = DivCeil(comp->downsampled_width, DCTSIZE);
+    comp->height_in_blocks = DivCeil(comp->downsampled_height, DCTSIZE);
     const uint64_t num_blocks =
         static_cast<uint64_t>(comp->width_in_blocks) * comp->height_in_blocks;
     c->coeffs = hwy::AllocateAligned<coeff_t>(num_blocks * DCTSIZE2);

@@ -610,28 +610,42 @@ void VerifyHeader(const CompressParams& jparams, j_decompress_ptr cinfo) {
   }
   jxl::msan::UnpoisonMemory(
       cinfo->comp_info, cinfo->num_components * sizeof(cinfo->comp_info[0]));
-  if (!jparams.comp_ids.empty()) {
-    for (int i = 0; i < cinfo->num_components; ++i) {
-      JXL_CHECK(cinfo->comp_info[i].component_id == jparams.comp_ids[i]);
+  int max_h_samp_factor = 1;
+  int max_v_samp_factor = 1;
+  for (int i = 0; i < cinfo->num_components; ++i) {
+    jpeg_component_info* comp = &cinfo->comp_info[i];
+    if (!jparams.comp_ids.empty()) {
+      JXL_CHECK(comp->component_id == jparams.comp_ids[i]);
     }
+    if (!jparams.h_sampling.empty()) {
+      JXL_CHECK(comp->h_samp_factor == jparams.h_sampling[i]);
+    }
+    if (!jparams.v_sampling.empty()) {
+      JXL_CHECK(comp->v_samp_factor == jparams.v_sampling[i]);
+    }
+    if (!jparams.quant_indexes.empty()) {
+      JXL_CHECK(comp->quant_tbl_no == jparams.quant_indexes[i]);
+    }
+    max_h_samp_factor = std::max(max_h_samp_factor, comp->h_samp_factor);
+    max_v_samp_factor = std::max(max_v_samp_factor, comp->v_samp_factor);
   }
-  if (!jparams.h_sampling.empty()) {
-    for (int i = 0; i < cinfo->num_components; ++i) {
-      JXL_CHECK(cinfo->comp_info[i].h_samp_factor == jparams.h_sampling[i]);
-      JXL_CHECK(cinfo->comp_info[i].v_samp_factor == jparams.v_sampling[i]);
-    }
+  JXL_CHECK(max_h_samp_factor == cinfo->max_h_samp_factor);
+  JXL_CHECK(max_v_samp_factor == cinfo->max_v_samp_factor);
+  for (int i = 0; i < cinfo->num_components; ++i) {
+    jpeg_component_info* comp = &cinfo->comp_info[i];
+    JXL_CHECK(comp->width_in_blocks ==
+              DivCeil(cinfo->image_width * comp->h_samp_factor,
+                      max_h_samp_factor * DCTSIZE));
+    JXL_CHECK(comp->height_in_blocks ==
+              DivCeil(cinfo->image_height * comp->v_samp_factor,
+                      max_v_samp_factor * DCTSIZE));
   }
-  if (!jparams.quant_indexes.empty()) {
-    for (int i = 0; i < cinfo->num_components; ++i) {
-      JXL_CHECK(cinfo->comp_info[i].quant_tbl_no == jparams.quant_indexes[i]);
-    }
-    for (const auto& table : jparams.quant_tables) {
-      JQUANT_TBL* quant_table = cinfo->quant_tbl_ptrs[table.slot_idx];
-      jxl::msan::UnpoisonMemory(quant_table, sizeof(*quant_table));
-      JXL_CHECK(quant_table != nullptr);
-      for (int k = 0; k < DCTSIZE2; ++k) {
-        JXL_CHECK(quant_table->quantval[k] == table.quantval[k]);
-      }
+  for (const auto& table : jparams.quant_tables) {
+    JQUANT_TBL* quant_table = cinfo->quant_tbl_ptrs[table.slot_idx];
+    jxl::msan::UnpoisonMemory(quant_table, sizeof(*quant_table));
+    JXL_CHECK(quant_table != nullptr);
+    for (int k = 0; k < DCTSIZE2; ++k) {
+      JXL_CHECK(quant_table->quantval[k] == table.quantval[k]);
     }
   }
 }
@@ -700,6 +714,7 @@ void VerifyScanHeader(const CompressParams& jparams, j_decompress_ptr cinfo) {
     }
     if (jparams.use_flat_dc_luma_code) {
       JHUFF_TBL* tbl = cinfo->dc_huff_tbl_ptrs[0];
+      jxl::msan::UnpoisonMemory(tbl, sizeof(*tbl));
       for (int i = 0; i < 15; ++i) {
         JXL_CHECK(tbl->huffval[i] == i);
       }

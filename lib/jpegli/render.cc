@@ -331,6 +331,9 @@ void DecodeCurrentiMCURow(j_decompress_ptr cinfo) {
       // Update statistics for this iMCU row.
       for (int iy = 0; iy < compinfo.v_samp_factor; ++iy) {
         size_t by = block_row + iy;
+        if (by >= compinfo.height_in_blocks) {
+          continue;
+        }
         size_t bix = by * compinfo.width_in_blocks;
         int16_t* JXL_RESTRICT coeffs = &comp.coeffs[bix * DCTSIZE2];
         size_t num = compinfo.width_in_blocks * DCTSIZE2;
@@ -347,6 +350,9 @@ void DecodeCurrentiMCURow(j_decompress_ptr cinfo) {
     RowBuffer<float>* raw_out = &m->raw_output_[c];
     for (int iy = 0; iy < compinfo.v_samp_factor; ++iy) {
       size_t by = block_row + iy;
+      if (by >= compinfo.height_in_blocks) {
+        continue;
+      }
       size_t bix = by * compinfo.width_in_blocks;
       int16_t* JXL_RESTRICT row_in = &comp.coeffs[bix * DCTSIZE2];
       float* JXL_RESTRICT row_out = raw_out->Row(by * DCTSIZE);
