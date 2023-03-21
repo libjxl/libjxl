@@ -98,7 +98,7 @@ std::string CodecToExtension(std::string codec_name, char sep) {
 
 void DoCompress(const std::string& filename, const CodecInOut& io,
                 const std::vector<std::string>& extra_metrics_commands,
-                ImageCodec* codec, ThreadPoolInternal* inner_pool,
+                ImageCodec* codec, ThreadPool* inner_pool,
                 std::vector<uint8_t>* compressed, BenchmarkStats* s) {
   PROFILER_FUNC;
   ++s->total_input_files;
@@ -830,10 +830,10 @@ class Benchmark {
       InitThreads(tasks.size(), &pool, &inner_pools);
 
       const std::vector<CodecInOut> loaded_images =
-          LoadImages(fnames, jpeg_transcoding_requested, pool.get());
+          LoadImages(fnames, jpeg_transcoding_requested, &*pool);
 
       if (RunTasks(methods, extra_metrics_names, extra_metrics_commands, fnames,
-                   loaded_images, pool.get(), inner_pools, &tasks) != 0) {
+                   loaded_images, &*pool, inner_pools, &tasks) != 0) {
         ret = EXIT_FAILURE;
         if (!Args()->silent_errors) {
           fprintf(stderr, "There were error(s) in the benchmark.\n");
@@ -1093,7 +1093,7 @@ class Benchmark {
   static size_t RunTasks(
       const StringVec& methods, const StringVec& extra_metrics_names,
       const StringVec& extra_metrics_commands, const StringVec& fnames,
-      const std::vector<CodecInOut>& loaded_images, ThreadPoolInternal* pool,
+      const std::vector<CodecInOut>& loaded_images, ThreadPool* pool,
       const std::vector<std::unique_ptr<ThreadPoolInternal>>& inner_pools,
       std::vector<Task>* tasks) {
     PROFILER_FUNC;
@@ -1110,7 +1110,7 @@ class Benchmark {
     }
 
     std::vector<uint64_t> errors_thread;
-    JXL_CHECK(RunOnPool(
+    JXL_CHECK(jxl::RunOnPool(
         pool, 0, tasks->size(),
         [&](const size_t num_threads) {
           // Reduce false sharing by only writing every 8th slot (64 bytes).
@@ -1123,7 +1123,7 @@ class Benchmark {
           t.image = &image;
           std::vector<uint8_t> compressed;
           DoCompress(fnames[t.idx_image], image, extra_metrics_commands,
-                     t.codec.get(), inner_pools[thread].get(), &compressed,
+                     t.codec.get(), &*inner_pools[thread], &compressed,
                      &t.stats);
           printer.TaskDone(i, t);
           errors_thread[8 * thread] += t.stats.total_errors;

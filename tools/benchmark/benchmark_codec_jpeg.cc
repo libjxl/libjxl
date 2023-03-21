@@ -109,7 +109,7 @@ class JPEGCodec : public ImageCodec {
   }
 
   Status Compress(const std::string& filename, const CodecInOut* io,
-                  ThreadPoolInternal* pool, std::vector<uint8_t>* compressed,
+                  ThreadPool* pool, std::vector<uint8_t>* compressed,
                   jpegxl::tools::SpeedStats* speed_stats) override {
     if (jpeg_encoder_.find("cjpeg") != std::string::npos) {
 // Not supported on Windows due to Linux-specific functions.
@@ -218,8 +218,8 @@ class JPEGCodec : public ImageCodec {
   }
 
   Status Decompress(const std::string& filename,
-                    const Span<const uint8_t> compressed,
-                    ThreadPoolInternal* pool, CodecInOut* io,
+                    const Span<const uint8_t> compressed, ThreadPool* pool,
+                    CodecInOut* io,
                     jpegxl::tools::SpeedStats* speed_stats) override {
     jxl::extras::PackedPixelFile ppf;
     if (jpeg_decoder_ == "jpegli") {

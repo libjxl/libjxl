@@ -248,7 +248,7 @@ TESTS = [path.partition(".")[0] for path in libjxl_tests + libjxl_jpegli_tests]
         deps = [
             ":jpegxl_extras",
             ":jpegxl_private",
-            ":jpegxl_threads",  # Some tests use the public threads API.
+            ":jpegxl_threads",
             ":test_utils",
         ] + libjxl_deps_gtest + libjxl_deps_hwy_test_util + libjxl_deps_hwy_nanobenchmark + libjxl_deps_jxl_box,
     )
