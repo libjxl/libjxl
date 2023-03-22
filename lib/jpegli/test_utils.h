@@ -171,6 +171,8 @@ struct DecompressParams {
   J_COLOR_SPACE out_color_space = JCS_UNKNOWN;
   bool crop_output = false;
   bool do_block_smoothing = false;
+  int scale_num = 1;
+  int scale_denom = 1;
 };
 
 std::string GetTestDataPath(const std::string& filename);

@@ -582,6 +582,8 @@ void SetDecompressParams(const DecompressParams& dparams,
       cinfo->jpeg_color_space = JCS_UNKNOWN;
     }
   }
+  cinfo->scale_num = dparams.scale_num;
+  cinfo->scale_denom = dparams.scale_denom;
 }
 
 void VerifyHeader(const CompressParams& jparams, j_decompress_ptr cinfo) {
@@ -783,7 +785,7 @@ void ReadOutputPass(j_decompress_ptr cinfo, const DecompressParams& dparams,
     }
   }
   JXL_CHECK(cinfo->total_iMCU_rows ==
-            DivCeil(cinfo->output_height, cinfo->max_v_samp_factor * DCTSIZE));
+            DivCeil(cinfo->image_height, cinfo->max_v_samp_factor * DCTSIZE));
 }
 
 void ReadCoefficients(j_decompress_ptr cinfo, TestImage* output) {
