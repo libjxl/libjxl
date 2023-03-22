@@ -29,8 +29,7 @@ class ThreadPoolInternal {
       size_t num_threads = std::thread::hardware_concurrency()) {
     runner_ =
         JxlThreadParallelRunnerMake(/* memory_manager */ nullptr, num_threads);
-    pool_ =
-        jxl::make_unique<ThreadPool>(JxlThreadParallelRunner, runner_.get());
+    pool_.reset(new ThreadPool(JxlThreadParallelRunner, runner_.get()));
   }
 
   ThreadPoolInternal(const ThreadPoolInternal&) = delete;

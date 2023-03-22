@@ -14,14 +14,10 @@
 #include <string.h>
 
 #include <string>
-#include <vector>
+#include <utility>
 
-#include "lib/extras/dec/color_hints.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/codec_in_out.h"  // DecoderHints
-#include "lib/jxl/enc_gaborish.h"
-#include "lib/jxl/modular/options.h"
 
 namespace jpegxl {
 namespace tools {
@@ -54,8 +50,8 @@ static inline bool ParseFloatPair(const char* arg,
   return true;
 }
 
-static inline bool ParseAndAppendKeyValue(const char* arg,
-                                          jxl::extras::ColorHints* out) {
+template <typename Map>
+static inline bool ParseAndAppendKeyValue(const char* arg, Map* out) {
   const char* eq = strchr(arg, '=');
   if (!eq) {
     fprintf(stderr, "Expected argument as 'key=value' but received '%s'\n",
@@ -64,24 +60,6 @@ static inline bool ParseAndAppendKeyValue(const char* arg,
   }
   std::string key(arg, eq);
   out->Add(key, std::string(eq + 1));
-  return true;
-}
-
-static inline bool ParsePredictor(const char* arg, jxl::Predictor* out) {
-  char* end;
-  uint64_t p = static_cast<uint64_t>(strtoull(arg, &end, 0));
-  if (end[0] != '\0') {
-    fprintf(stderr, "Invalid predictor: %s.\n", arg);
-    return JXL_FAILURE("Args");
-  }
-  if (p >= jxl::kNumModularEncoderPredictors) {
-    fprintf(stderr,
-            "Invalid predictor value %" PRIu64 ", must be less than %" PRIu64
-            ".\n",
-            p, static_cast<uint64_t>(jxl::kNumModularEncoderPredictors));
-    return JXL_FAILURE("Args");
-  }
-  *out = static_cast<jxl::Predictor>(p);
   return true;
 }
 

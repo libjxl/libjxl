@@ -66,12 +66,12 @@ add_library(jxl_tool STATIC EXCLUDE_FROM_ALL
   codec_config.cc
   speed_stats.cc
   file_io.cc
-  image_utils.cc
   tool_version.cc
 )
 target_compile_options(jxl_tool PUBLIC "${JPEGXL_INTERNAL_FLAGS}")
 target_include_directories(jxl_tool PUBLIC "${PROJECT_SOURCE_DIR}")
-target_link_libraries(jxl_tool jxl-static hwy)
+target_link_libraries(jxl_tool PUBLIC hwy)
+jxl_link_libraries(jxl_tool jxl_base-obj)
 
 # The JPEGXL_VERSION is set from the builders.
 if(NOT DEFINED JPEGXL_VERSION OR JPEGXL_VERSION STREQUAL "")

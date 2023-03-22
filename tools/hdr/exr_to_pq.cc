@@ -13,7 +13,7 @@
 #include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/image_bundle.h"
 #include "tools/cmdline.h"
-#include "tools/image_utils.h"
+#include "tools/hdr/image_utils.h"
 #include "tools/thread_pool_internal.h"
 
 namespace {
@@ -92,8 +92,8 @@ int main(int argc, const char** argv) {
   linear_rec_2020.primaries = jxl::Primaries::k2100;
   linear_rec_2020.tf.SetTransferFunction(jxl::TransferFunction::kLinear);
   JXL_CHECK(linear_rec_2020.CreateICC());
-  JXL_CHECK(jpegxl::tools::TransformCodecInOutTo(image, linear_rec_2020,
-                                                 jxl::GetJxlCms(), &pool));
+  JXL_CHECK(
+      jpegxl::tools::TransformCodecInOutTo(image, linear_rec_2020, &pool));
 
   float primaries_xyz[9];
   const jxl::PrimariesCIExy primaries = image.Main().c_current().GetPrimaries();
@@ -152,8 +152,7 @@ int main(int argc, const char** argv) {
   jxl::ColorEncoding pq = image.Main().c_current();
   pq.tf.SetTransferFunction(jxl::TransferFunction::kPQ);
   JXL_CHECK(pq.CreateICC());
-  JXL_CHECK(
-      jpegxl::tools::TransformCodecInOutTo(image, pq, jxl::GetJxlCms(), &pool));
+  JXL_CHECK(jpegxl::tools::TransformCodecInOutTo(image, pq, &pool));
   image.metadata.m.color_encoding = pq;
   JXL_CHECK(jxl::EncodeToFile(image, output_filename, &pool));
 }
