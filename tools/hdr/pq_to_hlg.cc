@@ -12,7 +12,7 @@
 #include "lib/jxl/enc_color_management.h"
 #include "tools/args.h"
 #include "tools/cmdline.h"
-#include "tools/image_utils.h"
+#include "tools/hdr/image_utils.h"
 #include "tools/thread_pool_internal.h"
 
 int main(int argc, const char** argv) {
@@ -75,8 +75,7 @@ int main(int argc, const char** argv) {
   hlg.white_point = jxl::WhitePoint::kD65;
   hlg.tf.SetTransferFunction(jxl::TransferFunction::kHLG);
   JXL_CHECK(hlg.CreateICC());
-  JXL_CHECK(jpegxl::tools::TransformCodecInOutTo(image, hlg, jxl::GetJxlCms(),
-                                                 &pool));
+  JXL_CHECK(jpegxl::tools::TransformCodecInOutTo(image, hlg, &pool));
   image.metadata.m.color_encoding = hlg;
   JXL_CHECK(jxl::EncodeToFile(image, output_filename, &pool));
 }

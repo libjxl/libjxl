@@ -320,7 +320,7 @@ struct CompressArgs {
         'x', "dec-hints", "key=value",
         "color_space indicates the ColorEncoding, see Description();\n"
         "icc_pathname refers to a binary file containing an ICC profile.",
-        &color_hints, &ParseAndAppendKeyValue, 1);
+        &color_hints, &ParseAndAppendKeyValue<jxl::extras::ColorHints>, 1);
 
     cmdline->AddOptionValue(
         '\0', "override_bitdepth", "0=use from image, 1-32=override",
