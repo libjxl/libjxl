@@ -81,6 +81,8 @@ void SetDecompressParams(const DecompressParams& dparams,
       cinfo->jpeg_color_space = JCS_UNKNOWN;
     }
   }
+  cinfo->scale_num = dparams.scale_num;
+  cinfo->scale_denom = dparams.scale_denom;
 }
 
 void ReadOutputImage(const DecompressParams& dparams, j_decompress_ptr cinfo,
@@ -163,7 +165,7 @@ void ReadOutputImage(const DecompressParams& dparams, j_decompress_ptr cinfo,
     EXPECT_EQ(num_output_lines, max_lines);
   }
   EXPECT_EQ(cinfo->total_iMCU_rows,
-            DivCeil(cinfo->output_height, cinfo->max_v_samp_factor * DCTSIZE));
+            DivCeil(cinfo->image_height, cinfo->max_v_samp_factor * DCTSIZE));
 }
 
 struct TestConfig {
@@ -172,6 +174,7 @@ struct TestConfig {
   TestImage input;
   CompressParams jparams;
   DecompressParams dparams;
+  bool compare_to_orig = false;
 };
 
 std::vector<uint8_t> GetTestJpegData(TestConfig& config) {
@@ -215,8 +218,7 @@ TEST_P(DecodeAPITestParam, TestAPI) {
   TestImage output1;
   DecodeWithLibjpeg(CompressParams(), dparams, compressed, &output1);
 
-  if (!config.jparams.quant_tables.empty() ||
-      !config.jparams.h_sampling.empty()) {
+  if (config.compare_to_orig) {
     double rms0 = DistanceRms(config.input, output0);
     double rms1 = DistanceRms(config.input, output1);
     EXPECT_LE(rms0, rms1 * 1.01);
@@ -347,6 +349,14 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
     return all_tests;
   }
 
+  for (int h_samp : {1, 2}) {
+    for (int v_samp : {1, 2}) {
+      TestConfig config;
+      config.jparams.h_sampling = {h_samp, 1, 1};
+      config.jparams.v_sampling = {v_samp, 1, 1};
+      all_tests.push_back(config);
+    }
+  }
   for (JpegliDataType type :
        {JPEGLI_TYPE_UINT8, JPEGLI_TYPE_UINT16, JPEGLI_TYPE_FLOAT}) {
     for (JpegliEndianness endianness :
@@ -433,6 +443,7 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
           table.Generate();
           config.jparams.quant_tables.push_back(table);
           config.jparams.quant_indexes = {0, 0, 0};
+          config.compare_to_orig = true;
           all_tests.push_back(config);
         }
       }
@@ -483,6 +494,7 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
         table.Generate();
         config.jparams.quant_tables.push_back(table);
       }
+      config.compare_to_orig = true;
       all_tests.push_back(config);
     }
   }
@@ -512,6 +524,7 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
       table.Generate();
       config.jparams.quant_tables.push_back(table);
     }
+    config.compare_to_orig = true;
     all_tests.push_back(config);
   }
   for (J_COLOR_SPACE jpeg_color_space : {JCS_RGB, JCS_YCbCr}) {
@@ -578,6 +591,7 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
               config.input.ysize = 256 + dxb * 8 + dx;
               config.jparams.h_sampling = {h0_samp, 1, 1};
               config.jparams.v_sampling = {v0_samp, 1, 1};
+              config.compare_to_orig = true;
               all_tests.push_back(config);
             }
           }
@@ -594,6 +608,7 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
           config.input.ysize = 75;
           config.jparams.h_sampling = {h0_samp, 1, h2_samp};
           config.jparams.v_sampling = {v0_samp, 1, v2_samp};
+          config.compare_to_orig = true;
           all_tests.push_back(config);
         }
       }
@@ -610,6 +625,20 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
           config.jparams.v_sampling = {v0_samp, 1, v2_samp};
           all_tests.push_back(config);
         }
+      }
+    }
+  }
+  for (int scale_num = 1; scale_num <= 16; ++scale_num) {
+    if (scale_num == 8) continue;
+    for (bool crop : {false, true}) {
+      for (int samp : {1, 2}) {
+        TestConfig config;
+        config.jparams.h_sampling = {samp, 1, 1};
+        config.jparams.v_sampling = {samp, 1, 1};
+        config.dparams.scale_num = scale_num;
+        config.dparams.scale_denom = 8;
+        config.dparams.crop_output = crop;
+        all_tests.push_back(config);
       }
     }
   }
@@ -639,6 +668,9 @@ std::ostream& operator<<(std::ostream& os, const DecompressParams& dparams) {
   }
   if (dparams.do_block_smoothing) {
     os << "BlockSmoothing";
+  }
+  if (dparams.scale_num != 1 || dparams.scale_denom != 1) {
+    os << "Scale" << dparams.scale_num << "_" << dparams.scale_denom;
   }
   return os;
 }

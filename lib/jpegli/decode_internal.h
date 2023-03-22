@@ -100,10 +100,17 @@ struct jpeg_decomp_master {
   JSAMPARRAY scanlines_;
   JDIMENSION max_lines_;
   size_t num_output_rows_;
+  int min_scaled_dct_size;
+  int scaled_dct_size[jpegli::kMaxComponents];
 
   std::array<size_t, jpegli::kMaxComponents> raw_height_;
   std::array<jpegli::RowBuffer<float>, jpegli::kMaxComponents> raw_output_;
   std::array<jpegli::RowBuffer<float>, jpegli::kMaxComponents> render_output_;
+
+  void (*inverse_transform[jpegli::kMaxComponents])(
+      const int16_t* JXL_RESTRICT qblock, const float* JXL_RESTRICT dequant,
+      const float* JXL_RESTRICT biases, float* JXL_RESTRICT scratch_space,
+      float* JXL_RESTRICT output, size_t output_stride, size_t dctsize);
 
   void (*color_transform)(float* row[jpegli::kMaxComponents], size_t len);
 

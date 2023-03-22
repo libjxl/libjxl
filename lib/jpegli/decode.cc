@@ -256,9 +256,39 @@ void jpegli_calc_output_dimensions(j_decompress_ptr cinfo) {
   if (!m->found_sof_) {
     JPEGLI_ERROR("No SOF marker found.");
   }
-  // Resampling is not yet implemented.
-  cinfo->output_width = cinfo->image_width;
-  cinfo->output_height = cinfo->image_height;
+  if (cinfo->raw_data_out) {
+    if (cinfo->scale_num != 1 || cinfo->scale_denom != 1) {
+      JPEGLI_ERROR("Output scaling is not supported in raw output mode");
+    }
+  }
+  if (cinfo->scale_num != 1 || cinfo->scale_denom != 1) {
+    int dctsize = 16;
+    while (cinfo->scale_num * DCTSIZE <= cinfo->scale_denom * (dctsize - 1)) {
+      --dctsize;
+    }
+    m->min_scaled_dct_size = dctsize;
+    cinfo->output_width =
+        jpegli::DivCeil(cinfo->image_width * dctsize, DCTSIZE);
+    cinfo->output_height =
+        jpegli::DivCeil(cinfo->image_height * dctsize, DCTSIZE);
+    for (int c = 0; c < cinfo->num_components; ++c) {
+      m->scaled_dct_size[c] = m->min_scaled_dct_size;
+      // Prefer IDCT scaling over 2x upsampling.
+      while (m->scaled_dct_size[c] < DCTSIZE && (m->v_factor[c] % 2) == 0 &&
+             (m->h_factor[c] % 2) == 0) {
+        m->scaled_dct_size[c] *= 2;
+        m->v_factor[c] /= 2;
+        m->h_factor[c] /= 2;
+      }
+    }
+  } else {
+    cinfo->output_width = cinfo->image_width;
+    cinfo->output_height = cinfo->image_height;
+    m->min_scaled_dct_size = DCTSIZE;
+    for (int c = 0; c < cinfo->num_components; ++c) {
+      m->scaled_dct_size[c] = DCTSIZE;
+    }
+  }
   cinfo->output_components = cinfo->out_color_components;
   cinfo->rec_outbuf_height = 1;
 }
@@ -382,11 +412,15 @@ JDIMENSION jpegli_skip_scanlines(j_decompress_ptr cinfo, JDIMENSION num_lines) {
 
 void jpegli_crop_scanline(j_decompress_ptr cinfo, JDIMENSION* xoffset,
                           JDIMENSION* width) {
+  jpeg_decomp_master* m = cinfo->master;
   if ((cinfo->global_state != jpegli::kDecProcessScan &&
        cinfo->global_state != jpegli::kDecProcessMarkers) ||
       cinfo->output_scanline != 0) {
     JPEGLI_ERROR("jpegli_crop_decompress: unexpected state %d",
                  cinfo->global_state);
+  }
+  if (cinfo->raw_data_out) {
+    JPEGLI_ERROR("Output cropping is not supported in raw data mode");
   }
   if (xoffset == nullptr || width == nullptr || *width == 0 ||
       *xoffset + *width > cinfo->output_width) {
@@ -394,7 +428,8 @@ void jpegli_crop_scanline(j_decompress_ptr cinfo, JDIMENSION* xoffset,
   }
   // TODO(szabadka) Skip the IDCT for skipped over blocks.
   size_t xend = *xoffset + *width;
-  *xoffset = (*xoffset / DCTSIZE) * DCTSIZE;
+  size_t iMCU_width = m->min_scaled_dct_size * cinfo->max_h_samp_factor;
+  *xoffset = (*xoffset / iMCU_width) * iMCU_width;
   *width = xend - *xoffset;
   cinfo->master->xoffset_ = *xoffset;
   cinfo->output_width = *width;

@@ -101,31 +101,31 @@ void StoreUnsignedRow(float* JXL_RESTRICT input[3], size_t x0, size_t len,
 #endif
   if (num_channels == 1) {
     for (size_t i = 0; i < len; i += Lanes(d)) {
-      auto v0 = Mul(Clamp(zero, Load(d, &input[0][x0 + i]), one), mul);
-      Store(DemoteTo(du, NearestInt(v0)), du, &output[i]);
+      auto v0 = Mul(Clamp(zero, LoadU(d, &input[0][x0 + i]), one), mul);
+      StoreU(DemoteTo(du, NearestInt(v0)), du, &output[i]);
     }
   } else if (num_channels == 2) {
     for (size_t i = 0; i < len; i += Lanes(d)) {
-      auto v0 = Mul(Clamp(zero, Load(d, &input[0][x0 + i]), one), mul);
-      auto v1 = Mul(Clamp(zero, Load(d, &input[1][x0 + i]), one), mul);
+      auto v0 = Mul(Clamp(zero, LoadU(d, &input[0][x0 + i]), one), mul);
+      auto v1 = Mul(Clamp(zero, LoadU(d, &input[1][x0 + i]), one), mul);
       StoreInterleaved2(DemoteTo(du, NearestInt(v0)),
                         DemoteTo(du, NearestInt(v1)), du, &output[2 * i]);
     }
   } else if (num_channels == 3) {
     for (size_t i = 0; i < len; i += Lanes(d)) {
-      auto v0 = Mul(Clamp(zero, Load(d, &input[0][x0 + i]), one), mul);
-      auto v1 = Mul(Clamp(zero, Load(d, &input[1][x0 + i]), one), mul);
-      auto v2 = Mul(Clamp(zero, Load(d, &input[2][x0 + i]), one), mul);
+      auto v0 = Mul(Clamp(zero, LoadU(d, &input[0][x0 + i]), one), mul);
+      auto v1 = Mul(Clamp(zero, LoadU(d, &input[1][x0 + i]), one), mul);
+      auto v2 = Mul(Clamp(zero, LoadU(d, &input[2][x0 + i]), one), mul);
       StoreInterleaved3(DemoteTo(du, NearestInt(v0)),
                         DemoteTo(du, NearestInt(v1)),
                         DemoteTo(du, NearestInt(v2)), du, &output[3 * i]);
     }
   } else if (num_channels == 4) {
     for (size_t i = 0; i < len; i += Lanes(d)) {
-      auto v0 = Mul(Clamp(zero, Load(d, &input[0][x0 + i]), one), mul);
-      auto v1 = Mul(Clamp(zero, Load(d, &input[1][x0 + i]), one), mul);
-      auto v2 = Mul(Clamp(zero, Load(d, &input[2][x0 + i]), one), mul);
-      auto v3 = Mul(Clamp(zero, Load(d, &input[3][x0 + i]), one), mul);
+      auto v0 = Mul(Clamp(zero, LoadU(d, &input[0][x0 + i]), one), mul);
+      auto v1 = Mul(Clamp(zero, LoadU(d, &input[1][x0 + i]), one), mul);
+      auto v2 = Mul(Clamp(zero, LoadU(d, &input[2][x0 + i]), one), mul);
+      auto v3 = Mul(Clamp(zero, LoadU(d, &input[3][x0 + i]), one), mul);
       StoreInterleaved4(DemoteTo(du, NearestInt(v0)),
                         DemoteTo(du, NearestInt(v1)),
                         DemoteTo(du, NearestInt(v2)),
@@ -278,18 +278,19 @@ void ComputeOptimalLaplacianBiases(const int num_blocks, const int* nonzeros,
 
 void PrepareForOutput(j_decompress_ptr cinfo) {
   jpeg_decomp_master* m = cinfo->master;
+  size_t iMCU_width = cinfo->max_h_samp_factor * m->min_scaled_dct_size;
+  size_t output_stride = m->iMCU_cols_ * iMCU_width;
   for (int c = 0; c < cinfo->num_components; ++c) {
     const auto& comp = cinfo->comp_info[c];
-    const size_t stride = m->iMCU_cols_ * cinfo->max_h_samp_factor * DCTSIZE;
-    m->raw_height_[c] = cinfo->total_iMCU_rows * comp.v_samp_factor * DCTSIZE;
-    m->raw_output_[c].Allocate(cinfo, 3 * comp.v_samp_factor * DCTSIZE, stride);
-    m->render_output_[c].Allocate(cinfo, cinfo->max_v_samp_factor, stride);
+    size_t cheight = comp.v_samp_factor * m->scaled_dct_size[c];
+    m->raw_height_[c] = cinfo->total_iMCU_rows * cheight;
+    m->raw_output_[c].Allocate(cinfo, 3 * cheight, output_stride);
+    m->render_output_[c].Allocate(cinfo, cinfo->max_v_samp_factor,
+                                  output_stride);
   }
-  m->idct_scratch_ = Allocate<float>(cinfo, DCTSIZE2 * 2, JPOOL_IMAGE_ALIGNED);
-  size_t MCU_row_stride = m->iMCU_cols_ * cinfo->max_h_samp_factor * DCTSIZE;
-  m->upsample_scratch_ =
-      Allocate<float>(cinfo, MCU_row_stride + kPaddingLeft + kPaddingRight,
-                      JPOOL_IMAGE_ALIGNED);
+  m->idct_scratch_ = Allocate<float>(cinfo, 5 * DCTSIZE2, JPOOL_IMAGE_ALIGNED);
+  m->upsample_scratch_ = Allocate<float>(
+      cinfo, output_stride + kPaddingLeft + kPaddingRight, JPOOL_IMAGE_ALIGNED);
   size_t bytes_per_sample = jpegli_bytes_per_sample(m->output_data_type_);
   size_t bytes_per_pixel = cinfo->out_color_components * bytes_per_sample;
   m->output_scratch_ = Allocate<uint8_t>(
@@ -316,6 +317,7 @@ void PrepareForOutput(j_decompress_ptr cinfo) {
       m->dequant_[c * DCTSIZE2 + k] = table->quantval[k] * kDequantScale;
     }
   }
+  ChooseInverseTransform(cinfo);
   ChooseColorTransform(cinfo);
 }
 
@@ -354,12 +356,14 @@ void DecodeCurrentiMCURow(j_decompress_ptr cinfo) {
         continue;
       }
       size_t bix = by * compinfo.width_in_blocks;
+      size_t dctsize = m->scaled_dct_size[c];
       int16_t* JXL_RESTRICT row_in = &comp.coeffs[bix * DCTSIZE2];
-      float* JXL_RESTRICT row_out = raw_out->Row(by * DCTSIZE);
+      float* JXL_RESTRICT row_out = raw_out->Row(by * dctsize);
       for (size_t bx = 0; bx < compinfo.width_in_blocks; ++bx) {
-        InverseTransformBlock(&row_in[bx * DCTSIZE2], &m->dequant_[k0],
-                              &m->biases_[k0], m->idct_scratch_,
-                              &row_out[bx * DCTSIZE], raw_out->stride());
+        (*m->inverse_transform[c])(&row_in[bx * DCTSIZE2], &m->dequant_[k0],
+                                   &m->biases_[k0], m->idct_scratch_,
+                                   &row_out[bx * dctsize], raw_out->stride(),
+                                   dctsize);
       }
     }
   }
@@ -393,10 +397,12 @@ void ProcessRawOutput(j_decompress_ptr cinfo, JSAMPIMAGE data) {
 void ProcessOutput(j_decompress_ptr cinfo, size_t* num_output_rows,
                    JSAMPARRAY scanlines, size_t max_output_rows) {
   jpeg_decomp_master* m = cinfo->master;
-  size_t xsize_blocks = DivCeil(cinfo->image_width, DCTSIZE);
   const int vfactor = cinfo->max_v_samp_factor;
+  const int hfactor = cinfo->max_h_samp_factor;
   const size_t imcu_row = cinfo->output_iMCU_row;
-  const size_t imcu_height = vfactor * DCTSIZE;
+  const size_t imcu_height = vfactor * m->min_scaled_dct_size;
+  const size_t imcu_width = hfactor * m->min_scaled_dct_size;
+  const size_t output_width = m->iMCU_cols_ * imcu_width;
   if (imcu_row == cinfo->total_iMCU_rows ||
       (imcu_row > 1 && cinfo->output_scanline < (imcu_row - 1) * imcu_height)) {
     // We are ready to output some scanlines.
@@ -411,9 +417,9 @@ void ProcessOutput(j_decompress_ptr cinfo, size_t* num_output_rows,
       for (int c = 0; c < cinfo->num_components; ++c) {
         RowBuffer<float>* raw_out = &m->raw_output_[c];
         RowBuffer<float>* render_out = &m->render_output_[c];
-        const auto& compinfo = cinfo->comp_info[c];
-        size_t yc = (y / vfactor) * compinfo.v_samp_factor;
-        for (int dy = 0; dy < compinfo.v_samp_factor; ++dy) {
+        int line_groups = vfactor / m->v_factor[c];
+        size_t yc = y / m->v_factor[c];
+        for (int dy = 0; dy < line_groups; ++dy) {
           if (m->v_factor[c] == 2) {
             size_t ymid = yc + dy;
             const float* JXL_RESTRICT row_mid = raw_out->Row(ymid);
@@ -422,9 +428,9 @@ void ProcessOutput(j_decompress_ptr cinfo, size_t* num_output_rows,
             const float* JXL_RESTRICT row_bot = ymid + 1 == m->raw_height_[c]
                                                     ? row_mid
                                                     : raw_out->Row(ymid + 1);
-            Upsample2Vertical(
-                row_top, row_mid, row_bot, render_out->Row(2 * dy),
-                render_out->Row(2 * dy + 1), xsize_blocks * DCTSIZE);
+            Upsample2Vertical(row_top, row_mid, row_bot,
+                              render_out->Row(2 * dy),
+                              render_out->Row(2 * dy + 1), output_width);
           } else {
             for (int yix = 0; yix < m->v_factor[c]; ++yix) {
               size_t ymid = yc + dy;
@@ -440,10 +446,10 @@ void ProcessOutput(j_decompress_ptr cinfo, size_t* num_output_rows,
         for (int c = 0; c < cinfo->out_color_components; ++c) {
           rows[c] = m->render_output_[c].Row(yix);
         }
-        (*m->color_transform)(rows, xsize_blocks * DCTSIZE);
+        (*m->color_transform)(rows, output_width);
         for (int c = 0; c < cinfo->out_color_components; ++c) {
           // Undo the centering of the sample values around zero.
-          DecenterRow(rows[c], xsize_blocks * DCTSIZE);
+          DecenterRow(rows[c], output_width);
         }
         for (size_t x0 = 0; x0 < cinfo->output_width; x0 += kTempOutputLen) {
           size_t len = std::min(cinfo->output_width - x0, kTempOutputLen);
@@ -463,26 +469,23 @@ void ProcessOutput(j_decompress_ptr cinfo, size_t* num_output_rows,
     DecodeCurrentiMCURow(cinfo);
     for (int c = 0; c < cinfo->num_components; ++c) {
       const auto& compinfo = cinfo->comp_info[c];
+      RowBuffer<float>* raw_out = &m->raw_output_[c];
+      size_t cheight = compinfo.v_samp_factor * m->scaled_dct_size[c];
+      size_t y0 = imcu_row * cheight;
       if (m->h_factor[c] == 2) {
-        RowBuffer<float>* raw_out = &m->raw_output_[c];
-        size_t y0 = imcu_row * compinfo.v_samp_factor * DCTSIZE;
-        for (int iy = 0; iy < compinfo.v_samp_factor * DCTSIZE; ++iy) {
+        for (size_t iy = 0; iy < cheight; ++iy) {
           float* JXL_RESTRICT row = raw_out->Row(y0 + iy);
-          Upsample2Horizontal(row, m->upsample_scratch_,
-                              xsize_blocks * DCTSIZE);
+          Upsample2Horizontal(row, m->upsample_scratch_, output_width);
         }
       } else if (m->h_factor[c] > 2) {
-        RowBuffer<float>* raw_out = &m->raw_output_[c];
-        size_t y0 = imcu_row * compinfo.v_samp_factor * DCTSIZE;
-        for (int iy = 0; iy < compinfo.v_samp_factor * DCTSIZE; ++iy) {
+        for (size_t iy = 0; iy < cheight; ++iy) {
           float* JXL_RESTRICT row = raw_out->Row(y0 + iy);
           float* JXL_RESTRICT tmp = m->upsample_scratch_;
-          size_t xlen = xsize_blocks * DCTSIZE;
           // TODO(szabadka) SIMDify this.
-          for (size_t x = 0; x < xlen; ++x) {
+          for (size_t x = 0; x < output_width; ++x) {
             tmp[x] = row[x / m->h_factor[c]];
           }
-          memcpy(row, tmp, xlen * sizeof(tmp[0]));
+          memcpy(row, tmp, output_width * sizeof(tmp[0]));
         }
       }
     }
