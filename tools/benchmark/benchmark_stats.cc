@@ -62,7 +62,7 @@ struct ColumnDescriptor {
   bool more;  // Whether to print only if more_columns is enabled
 };
 
-static const ColumnDescriptor ExtraMetricDescriptor() {
+static ColumnDescriptor ExtraMetricDescriptor() {
   ColumnDescriptor d{{"DO NOT USE"}, 12, 4, TYPE_POSITIVE_FLOAT, false};
   return d;
 }

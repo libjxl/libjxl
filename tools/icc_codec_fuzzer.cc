@@ -9,10 +9,13 @@
 namespace jpegxl {
 namespace tools {
 
+using ::jxl::PaddedBytes;
+
+#ifdef JXL_ICC_FUZZER_SLOW_TEST
 using ::jxl::AuxOut;
 using ::jxl::BitReader;
-using ::jxl::PaddedBytes;
 using ::jxl::Span;
+#endif
 
 int TestOneInput(const uint8_t* data, size_t size) {
 #if defined(JXL_ICC_FUZZER_ONLY_WRITE)
