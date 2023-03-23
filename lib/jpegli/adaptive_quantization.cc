@@ -360,12 +360,6 @@ V MaskingSqrt(const D d, V v) {
   return Mul(Set(d, 0.25f), Sqrt(MulAdd(v, Sqrt(mul_v), offset_v)));
 }
 
-float MaskingSqrt(const float v) {
-  using DScalar = HWY_CAPPED(float, 1);
-  auto vscalar = Load(DScalar(), &v);
-  return GetLane(MaskingSqrt(DScalar(), vscalar));
-}
-
 template <typename V>
 void Sort4(V& min0, V& min1, V& min2, V& min3) {
   const auto tmp0 = Min(min0, min1);

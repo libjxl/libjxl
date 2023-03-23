@@ -24,12 +24,10 @@ namespace HWY_NAMESPACE {
 // These templates are not found via ADL.
 using hwy::HWY_NAMESPACE::Abs;
 using hwy::HWY_NAMESPACE::Add;
-using hwy::HWY_NAMESPACE::Clamp;
 using hwy::HWY_NAMESPACE::Gt;
 using hwy::HWY_NAMESPACE::IfThenElseZero;
 using hwy::HWY_NAMESPACE::Mul;
 using hwy::HWY_NAMESPACE::MulAdd;
-using hwy::HWY_NAMESPACE::NearestInt;
 using hwy::HWY_NAMESPACE::NegMulAdd;
 using hwy::HWY_NAMESPACE::Rebind;
 using hwy::HWY_NAMESPACE::Sub;
