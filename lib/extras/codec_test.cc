@@ -277,7 +277,7 @@ void TestRoundTrip(const TestImageParams& params, ThreadPool* pool) {
                     params.is_gray ? "Gra_D65_Rel_SRG" : "RGB_D65_SRG_Rel_SRG");
   }
   ASSERT_TRUE(DecodeBytes(Span<const uint8_t>(encoded.bitstreams[0]),
-                          color_hints, SizeConstraints(), &ppf_out));
+                          color_hints, &ppf_out));
   if (params.codec == Codec::kPNG && ppf_out.icc.empty()) {
     // Decoding a PNG may drop the ICC profile if there's a valid cICP chunk.
     // Rendering intent is not preserved in this case.
@@ -365,7 +365,7 @@ TEST(CodecTest, LosslessPNMRoundtrip) {
       color_hints.Add("color_space",
                       channels < 3 ? "Gra_D65_Rel_SRG" : "RGB_D65_SRG_Rel_SRG");
       ASSERT_TRUE(DecodeBytes(Span<const uint8_t>(orig.data(), orig.size()),
-                              color_hints, SizeConstraints(), &ppf));
+                              color_hints, &ppf));
 
       EncodedImage encoded;
       auto encoder = Encoder::FromExtension(extension);
@@ -383,8 +383,7 @@ void DecodeRoundtrip(const std::string& pathname, ThreadPool* pool,
                      CodecInOut& io,
                      const ColorHints& color_hints = ColorHints()) {
   const PaddedBytes orig = jxl::test::ReadTestData(pathname);
-  JXL_CHECK(
-      SetFromBytes(Span<const uint8_t>(orig), color_hints, &io, pool, nullptr));
+  JXL_CHECK(SetFromBytes(Span<const uint8_t>(orig), color_hints, &io, pool));
   const ImageBundle& ib1 = io.Main();
 
   // Encode/Decode again to make sure Encode carries through all metadata.
@@ -393,8 +392,8 @@ void DecodeRoundtrip(const std::string& pathname, ThreadPool* pool,
                    io.metadata.m.bit_depth.bits_per_sample, &encoded, pool));
 
   CodecInOut io2;
-  JXL_CHECK(SetFromBytes(Span<const uint8_t>(encoded), color_hints, &io2, pool,
-                         nullptr));
+  JXL_CHECK(
+      SetFromBytes(Span<const uint8_t>(encoded), color_hints, &io2, pool));
   const ImageBundle& ib2 = io2.Main();
   EXPECT_EQ(Description(ib1.metadata()->color_encoding),
             Description(ib2.metadata()->color_encoding));
@@ -616,7 +615,7 @@ TEST(CodecTest, EncodeToPNG) {
       "external/wesaturate/500px/tmshre_riaphotographs_srgb8.png");
   PackedPixelFile ppf;
   ASSERT_TRUE(extras::DecodeBytes(Span<const uint8_t>(original_png),
-                                  ColorHints(), SizeConstraints(), &ppf));
+                                  ColorHints(), &ppf));
 
   const JxlPixelFormat& format = ppf.frames.front().color.format;
   ASSERT_THAT(
@@ -632,7 +631,7 @@ TEST(CodecTest, EncodeToPNG) {
   PackedPixelFile decoded_ppf;
   ASSERT_TRUE(
       extras::DecodeBytes(Span<const uint8_t>(encoded_png.bitstreams.front()),
-                          ColorHints(), SizeConstraints(), &decoded_ppf));
+                          ColorHints(), &decoded_ppf));
 
   ASSERT_EQ(decoded_ppf.info.bits_per_sample, ppf.info.bits_per_sample);
   ASSERT_EQ(decoded_ppf.frames.size(), 1);

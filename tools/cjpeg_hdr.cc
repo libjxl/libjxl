@@ -11,7 +11,6 @@
 #include "lib/extras/codec.h"
 #include "lib/extras/enc/jpegli.h"
 #include "lib/jxl/base/file_io.h"
-#include "lib/jxl/codec_in_out.h"
 
 namespace jpegxl {
 namespace tools {
@@ -29,8 +28,7 @@ int HBDJPEGMain(int argc, const char* argv[]) {
   }
   jxl::extras::PackedPixelFile ppf;
   if (!jxl::extras::DecodeBytes(jxl::Span<const uint8_t>(encoded),
-                                jxl::extras::ColorHints{},
-                                jxl::SizeConstraints{}, &ppf)) {
+                                jxl::extras::ColorHints{}, &ppf)) {
     fprintf(stderr, "Failed to decode input image %s.\n", argv[1]);
     return 1;
   }

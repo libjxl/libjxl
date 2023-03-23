@@ -22,7 +22,6 @@
 #include <fstream>
 
 #include "lib/jxl/base/file_io.h"
-#include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/image_bundle.h"
 
 extern char** environ;

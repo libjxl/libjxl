@@ -42,7 +42,6 @@
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/exif.h"
-#include "lib/jxl/size_constraints.h"
 #include "tools/args.h"
 #include "tools/cmdline.h"
 #include "tools/codec_config.h"
@@ -580,37 +579,30 @@ jxl::Status GetPixeldata(const std::vector<uint8_t>& image_data,
   jxl::Span<const uint8_t> encoded(image_data);
 
   ppf.info.orientation = JXL_ORIENT_IDENTITY;
-  jxl::SizeConstraints size_constraints;
 
   const auto choose_codec = [&]() {
 #if JPEGXL_ENABLE_APNG
-    if (jxl::extras::DecodeImageAPNG(encoded, color_hints, size_constraints,
-                                     &ppf)) {
+    if (jxl::extras::DecodeImageAPNG(encoded, color_hints, &ppf)) {
       return jxl::extras::Codec::kPNG;
     }
 #endif
-    if (jxl::extras::DecodeImagePGX(encoded, color_hints, size_constraints,
-                                    &ppf)) {
+    if (jxl::extras::DecodeImagePGX(encoded, color_hints, &ppf)) {
       return jxl::extras::Codec::kPGX;
-    } else if (jxl::extras::DecodeImagePNM(encoded, color_hints,
-                                           size_constraints, &ppf)) {
+    } else if (jxl::extras::DecodeImagePNM(encoded, color_hints, &ppf)) {
       return jxl::extras::Codec::kPNM;
     }
 #if JPEGXL_ENABLE_GIF
-    if (jxl::extras::DecodeImageGIF(encoded, color_hints, size_constraints,
-                                    &ppf)) {
+    if (jxl::extras::DecodeImageGIF(encoded, color_hints, &ppf)) {
       return jxl::extras::Codec::kGIF;
     }
 #endif
 #if JPEGXL_ENABLE_JPEG
-    if (jxl::extras::DecodeImageJPG(encoded, color_hints, size_constraints,
-                                    &ppf)) {
+    if (jxl::extras::DecodeImageJPG(encoded, color_hints, &ppf)) {
       return jxl::extras::Codec::kJPG;
     }
 #endif
 #if JPEGXL_ENABLE_EXR
-    if (jxl::extras::DecodeImageEXR(encoded, color_hints, size_constraints,
-                                    &ppf)) {
+    if (jxl::extras::DecodeImageEXR(encoded, color_hints, &ppf)) {
       return jxl::extras::Codec::kEXR;
     }
 #endif

@@ -24,7 +24,6 @@
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
-#include "lib/jxl/size_constraints.h"
 #include "lib/jxl/test_image.h"
 #include "lib/jxl/test_utils.h"
 
@@ -43,8 +42,7 @@ Status ReadTestImage(const std::string& pathname, PackedPixelFile* ppf) {
   } else if (pathname.find(".pgm") != std::string::npos) {
     color_hints.Add("color_space", "Gra_D65_Rel_SRG");
   }
-  return DecodeBytes(Span<const uint8_t>(encoded), color_hints,
-                     SizeConstraints(), ppf);
+  return DecodeBytes(Span<const uint8_t>(encoded), color_hints, ppf);
 }
 
 std::vector<uint8_t> GetAppData(const std::vector<uint8_t>& compressed) {
@@ -67,8 +65,7 @@ std::vector<uint8_t> GetAppData(const std::vector<uint8_t>& compressed) {
 
 Status DecodeWithLibjpeg(const std::vector<uint8_t>& compressed,
                          PackedPixelFile* ppf) {
-  return DecodeImageJPG(Span<const uint8_t>(compressed), ColorHints(),
-                        SizeConstraints(), ppf);
+  return DecodeImageJPG(Span<const uint8_t>(compressed), ColorHints(), ppf);
 }
 
 Status EncodeWithLibjpeg(const PackedPixelFile& ppf, int quality,

@@ -63,7 +63,7 @@ class PNGCodec : public ImageCodec {
     jxl::extras::PackedPixelFile ppf;
     const double start = jxl::Now();
     JXL_RETURN_IF_ERROR(jxl::extras::DecodeImageAPNG(
-        compressed, jxl::extras::ColorHints(), jxl::SizeConstraints(), &ppf));
+        compressed, jxl::extras::ColorHints(), &ppf));
     const double end = jxl::Now();
     speed_stats->NotifyElapsed(end - start);
     JXL_RETURN_IF_ERROR(
