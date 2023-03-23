@@ -9,7 +9,7 @@
 </head>
 <body>
 <div id="log" style="padding:2px; border: solid 1px #000; background-color: #CCC; margin:2px; height: 8em; font-family: monospace; overflow-y: auto; font-size: 8px;"></div>
-<script type="text/javascript">
+<script>
 // WASM module.
 let jxlModule = null;
 // Flag; if true, then HDR color space / 16 bit output is supported.
@@ -335,6 +335,6 @@ let onJxlModuleReady = () => {
 document.addEventListener('DOMContentLoaded', onDomContentLoaded);
 </script>
 
-<script type="text/javascript" src="jxl_decoder.js"></script>
+<script src="jxl_decoder.js"></script>
 </body>
 </html>

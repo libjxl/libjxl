@@ -34,7 +34,7 @@ struct JpegClusteredHistograms {
   std::vector<uint32_t> slot_ids;
 };
 
-void ClusterJpegHistograms(const Histogram* histo_data, size_t num,
+void ClusterJpegHistograms(const Histogram* histograms, size_t num,
                            JpegClusteredHistograms* clusters);
 
 void AddJpegHuffmanCode(const Histogram& histogram, size_t slot_id,
