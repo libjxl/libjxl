@@ -126,6 +126,10 @@ struct jpeg_decomp_master {
   int* sumabs_;
   std::vector<size_t> num_processed_blocks_;
   float* biases_;
+#define SAVED_COEFS 10
+  // This holds the coef_bits of the scan before the current scan,
+  // i.e. the bottom half when rendering incomplete scans.
+  int (*coef_bits_latch)[SAVED_COEFS];
 };
 
 #endif  // LIB_JPEGLI_DECODE_INTERNAL_H_
