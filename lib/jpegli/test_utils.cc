@@ -313,7 +313,7 @@ void ConvertPixel(const uint8_t* input_rgb, uint8_t* out,
   } else if (data_type == JPEGLI_TYPE_UINT16) {
     for (size_t c = 0; c < num_channels; ++c) {
       uint16_t val = (out8[c] << 8) + out8[c];
-      val |= 0x40;  // Make little-endian and big-endian assymetric
+      val |= 0x40;  // Make little-endian and big-endian asymmetric
       if (swap_endianness) {
         val = JXL_BSWAP16(val);
       }
