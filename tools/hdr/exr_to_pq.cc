@@ -81,8 +81,7 @@ int main(int argc, const char** argv) {
   std::vector<uint8_t> input_bytes;
   JXL_CHECK(jxl::ReadFile(input_filename, &input_bytes));
   JXL_CHECK(jxl::extras::DecodeBytes(jxl::Span<const uint8_t>(input_bytes),
-                                     jxl::extras::ColorHints(),
-                                     jxl::SizeConstraints(), &ppf));
+                                     jxl::extras::ColorHints(), &ppf));
 
   jxl::CodecInOut image;
   JXL_CHECK(

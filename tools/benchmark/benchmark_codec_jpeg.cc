@@ -236,7 +236,7 @@ class JPEGCodec : public ImageCodec {
     } else {
       const double start = jxl::Now();
       JXL_RETURN_IF_ERROR(jxl::extras::DecodeImageJPG(
-          compressed, jxl::extras::ColorHints(), jxl::SizeConstraints(), &ppf));
+          compressed, jxl::extras::ColorHints(), &ppf));
       const double end = jxl::Now();
       speed_stats->NotifyElapsed(end - start);
     }

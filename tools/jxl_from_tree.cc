@@ -12,6 +12,7 @@
 #include <unordered_map>
 
 #include "lib/jxl/base/file_io.h"
+#include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_fields.h"

@@ -7,6 +7,7 @@
 #include <stdint.h>
 
 #include "lib/extras/codec.h"
+#include "lib/extras/size_constraints.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/codec_in_out.h"
@@ -16,12 +17,14 @@ namespace {
 
 int TestOneInput(const uint8_t* data, size_t size) {
   jxl::CodecInOut io;
-  io.constraints.dec_max_xsize = 1u << 16;
-  io.constraints.dec_max_ysize = 1u << 16;
-  io.constraints.dec_max_pixels = 1u << 22;
+  jxl::SizeConstraints constraints;
+  constraints.dec_max_xsize = 1u << 16;
+  constraints.dec_max_ysize = 1u << 16;
+  constraints.dec_max_pixels = 1u << 22;
   jpegxl::tools::ThreadPoolInternal pool(0);
 
-  (void)jxl::SetFromBytes(jxl::Span<const uint8_t>(data, size), &io, &pool);
+  (void)jxl::SetFromBytes(jxl::Span<const uint8_t>(data, size), &io, &pool,
+                          &constraints);
 
   return 0;
 }

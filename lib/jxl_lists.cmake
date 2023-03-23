@@ -290,7 +290,6 @@ set(JPEGXL_INTERNAL_DEC_SOURCES
   jxl/render_pipeline/stage_ycbcr.h
   jxl/sanitizers.h
   jxl/simd_util-inl.h
-  jxl/size_constraints.h
   jxl/splines.cc
   jxl/splines.h
   jxl/toc.cc
@@ -440,6 +439,7 @@ set(JPEGXL_INTERNAL_EXTRAS_SOURCES
   extras/exif.cc
   extras/exif.h
   extras/packed_image.h
+  extras/size_constraints.h
   extras/time.cc
   extras/time.h
 )

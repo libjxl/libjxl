@@ -24,7 +24,6 @@
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/luminance.h"
-#include "lib/jxl/size_constraints.h"
 
 namespace jxl {
 
@@ -148,10 +147,6 @@ class CodecInOut {
     eci->alpha_associated = false;
     return true;
   }
-
-  // -- DECODER INPUT:
-
-  SizeConstraints constraints;
 
   // -- DECODER OUTPUT:
 

@@ -14,9 +14,9 @@
 #include <utility>
 #include <vector>
 
+#include "lib/extras/size_constraints.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/sanitizers.h"
-#include "lib/jxl/size_constraints.h"
 
 namespace jxl {
 namespace extras {
@@ -164,9 +164,8 @@ void MyOutputMessage(j_common_ptr cinfo) {
 }  // namespace
 
 Status DecodeImageJPG(const Span<const uint8_t> bytes,
-                      const ColorHints& color_hints,
-                      const SizeConstraints& constraints,
-                      PackedPixelFile* ppf) {
+                      const ColorHints& color_hints, PackedPixelFile* ppf,
+                      const SizeConstraints* constraints) {
   // Don't do anything for non-JPEG files (no need to report an error)
   if (!IsJPG(bytes)) return false;
 
@@ -205,8 +204,7 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes,
     if (read_header_result == JPEG_SUSPENDED) {
       return failure("truncated JPEG input");
     }
-    if (!VerifyDimensions(&constraints, cinfo.image_width,
-                          cinfo.image_height)) {
+    if (!VerifyDimensions(constraints, cinfo.image_width, cinfo.image_height)) {
       return failure("image too big");
     }
     // Might cause CPU-zip bomb.

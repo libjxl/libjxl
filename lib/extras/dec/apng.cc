@@ -45,13 +45,13 @@
 #include <utility>
 #include <vector>
 
+#include "lib/extras/size_constraints.h"
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/scope_guard.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/sanitizers.h"
-#include "lib/jxl/size_constraints.h"
 #include "png.h" /* original (unpatched) libpng is ok */
 
 namespace jxl {
@@ -554,9 +554,8 @@ int processing_finish(png_structp png_ptr, png_infop info_ptr,
 }  // namespace
 
 Status DecodeImageAPNG(const Span<const uint8_t> bytes,
-                       const ColorHints& color_hints,
-                       const SizeConstraints& constraints,
-                       PackedPixelFile* ppf) {
+                       const ColorHints& color_hints, PackedPixelFile* ppf,
+                       const SizeConstraints* constraints) {
   Reader r;
   unsigned int id, j, w, h, w0, h0, x0, y0;
   unsigned int delay_num, delay_den, dop, bop, rowbytes, imagesize;
@@ -735,7 +734,7 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
                                                  : JXL_COLOR_SPACE_RGB);
           ppf->info.xsize = w;
           ppf->info.ysize = h;
-          JXL_RETURN_IF_ERROR(VerifyDimensions(&constraints, w, h));
+          JXL_RETURN_IF_ERROR(VerifyDimensions(constraints, w, h));
           num_channels =
               ppf->info.num_color_channels + (ppf->info.alpha_bits ? 1 : 0);
           format = {
