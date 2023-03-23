@@ -214,7 +214,7 @@ struct JxlEncoderStruct {
   // requires position indices to point to codestream bytes,
   // so we need to keep track of the total of flushed or queue
   // codestream bytes. These bytes may be in a single jxlc box
-  // or accross multiple jxlp boxes.
+  // or across multiple jxlp boxes.
   size_t codestream_bytes_written_beginning_of_frame;
   size_t codestream_bytes_written_end_of_frame;
   jxl::JxlEncoderFrameIndexBox frame_index_box;

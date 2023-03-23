@@ -244,7 +244,7 @@ typedef struct {
    */
   uint32_t intrinsic_xsize;
 
-  /** Intrinsic heigth of the image.
+  /** Intrinsic height of the image.
    * The intrinsic size can be different from the actual size in pixels
    * (as given by xsize and ysize) and it denotes the recommended dimensions
    * for displaying the image, i.e. applications are advised to resample the

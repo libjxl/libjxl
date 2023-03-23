@@ -2,7 +2,7 @@
 
 As `image/jxl` is now supported by [shared-mine-info 2.2](https://gitlab.freedesktop.org/xdg/shared-mime-info/-/releases/2.2), it should not be necessary anymore to install this plugin.
 
-You can test if your system correctly understand the MIME type of JPEG XL image by obtaining an JPEG XL image, e.g. with
+You can test if your system correctly understand the MIME type of JPEG XL image by obtaining a JPEG XL image, e.g. with
 ```bash
 wget https://raw.githubusercontent.com/libjxl/conformance/master/testcases/bicycles/input.jxl
 ```
