@@ -245,6 +245,22 @@ void ProcessSOS(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
   const uint16_t scan_bitmask =
       cinfo->Ah == 0 ? (0xffff << cinfo->Al) : (1u << cinfo->Al);
   const uint16_t refinement_bitmask = (1 << cinfo->Al) - 1;
+  if (!cinfo->coef_bits) {
+    cinfo->coef_bits =
+        Allocate<int[DCTSIZE2]>(cinfo, cinfo->num_components, JPOOL_IMAGE);
+    m->coef_bits_latch =
+        Allocate<int[SAVED_COEFS]>(cinfo, cinfo->num_components, JPOOL_IMAGE);
+
+    for (int c = 0; c < cinfo->num_components; ++c) {
+      for (int i = 0; i < DCTSIZE2; ++i) {
+        cinfo->coef_bits[c][i] = -1;
+        if (i < SAVED_COEFS) {
+          m->coef_bits_latch[c][i] = -1;
+        }
+      }
+    }
+  }
+
   for (int i = 0; i < cinfo->comps_in_scan; ++i) {
     int comp_idx = cinfo->cur_comp_info[i]->component_index;
     for (int k = cinfo->Ss; k <= cinfo->Se; ++k) {
@@ -260,6 +276,10 @@ void ProcessSOS(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
             comp_idx, k, m->scan_progression_[i][k], scan_bitmask);
       }
       m->scan_progression_[comp_idx][k] |= scan_bitmask;
+      if (k < SAVED_COEFS) {
+        m->coef_bits_latch[comp_idx][k] = cinfo->coef_bits[comp_idx][k];
+      }
+      cinfo->coef_bits[comp_idx][k] = cinfo->Al;
     }
   }
   if (cinfo->Al > 10) {
