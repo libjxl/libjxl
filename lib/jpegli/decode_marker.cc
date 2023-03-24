@@ -276,7 +276,9 @@ void ProcessSOS(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
             comp_idx, k, m->scan_progression_[i][k], scan_bitmask);
       }
       m->scan_progression_[comp_idx][k] |= scan_bitmask;
-      m->coef_bits_latch[comp_idx][k] = cinfo->coef_bits[comp_idx][k];
+      if (k < SAVED_COEFS) {
+        m->coef_bits_latch[comp_idx][k] = cinfo->coef_bits[comp_idx][k];
+      }
       cinfo->coef_bits[comp_idx][k] = cinfo->Al;
     }
   }

@@ -34,6 +34,7 @@ std::string GetTestDataPath(const std::string& filename) {
 
 std::vector<uint8_t> ReadTestData(const std::string& filename) {
   std::string full_path = GetTestDataPath(filename);
+  fprintf(stderr, "full_path: %s\n", full_path.c_str());
   std::vector<uint8_t> data;
   fprintf(stderr, "ReadTestData %s\n", full_path.c_str());
   JXL_CHECK(jxl::ReadFile(full_path, &data));
