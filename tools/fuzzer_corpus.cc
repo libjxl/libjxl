@@ -175,7 +175,6 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
   }
   io.metadata.m.SetAlphaBits(spec.alpha_bit_depth, spec.alpha_is_premultiplied);
   io.metadata.m.orientation = spec.orientation;
-  io.dec_pixels = spec.width * spec.height;
   io.frames.clear();
   io.frames.reserve(spec.num_frames);
 
