@@ -16,6 +16,7 @@ set(JPEGXL_INTERNAL_BASE_SOURCES
   jxl/base/data_parallel.cc
   jxl/base/data_parallel.h
   jxl/base/file_io.h
+  jxl/base/float.h
   jxl/base/iaca.h
   jxl/base/os_macros.h
   jxl/base/override.h
