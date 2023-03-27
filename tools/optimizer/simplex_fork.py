@@ -60,19 +60,19 @@ def EvalCacheForget():
 
 def RandomizedJxlCodecs():
   retval = []
-  minval = 0.15
+  minval = 0.12
   maxval = 0.3
   rangeval = maxval/minval
-  steps = 2
+  steps = 11
   for i in range(steps):
     mul = minval * rangeval**(float(i)/(steps - 1))
     mul *= 0.99 + 0.05 * random.random()
-    retval.append("jxl:epf2:d%.3f" % mul)
-  steps = 2
+    retval.append("jxl:d%.4f" % mul)
+  steps = 11
   for i in range(steps - 1):
     mul = minval * rangeval**(float(i+0.5)/(steps - 1))
     mul *= 0.99 + 0.05 * random.random()
-    retval.append("jxl:epf0:d%.3f" % mul)
+    retval.append("jxl:d%.4f" % mul)
   return ",".join(retval)
 
 g_codecs = RandomizedJxlCodecs()
@@ -102,7 +102,7 @@ def Eval(vec, binary_name, cached=True):
       (binary_name,
        '--input',
        '/usr/local/google/home/jyrki/newcorpus/split/*.png',
-       '--error_pnorm=8',
+       '--error_pnorm=10',
        '--more_columns',
        '--codec', g_codecs),
       stdout=subprocess.PIPE,
@@ -122,9 +122,11 @@ def Eval(vec, binary_name, cached=True):
     sys.stdout.flush()
     if line[0:3] == b'jxl':
       bpp = line.split()[3]
+      bpp = 1.0
       dist_pnorm = line.split()[8]
+      dist_max = line.split()[6]
       vec[0] *= float(dist_pnorm) * float(bpp) / 16.0
-      #vec[0] *= (float(dist_max) * float(bpp) / 16.0) ** 0.2
+      vec[0] *= (float(dist_max) * float(bpp) / 16.0) ** 0.01
       n += 1
       found_score = True
       distance = float(line.split()[0].split(b'd')[-1])

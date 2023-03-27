@@ -49,20 +49,10 @@ void QuantizeBlockAC(const Quantizer& quantizer, const bool error_diffusion,
   const float* JXL_RESTRICT qm = quantizer.InvDequantMatrix(quant_kind, c);
   float qac = quantizer.Scale() * (*quant);
   // Not SIMD-fied for now.
-  float thres[4] = {0.58f, 0.66f, 0.66f, 0.7f};
-  if (c == 0) {
-    for (int i = 1; i < 4; ++i) {
-      thres[i] = 0.71f;
-    }
-  }
-  if (c == 2) {
-    for (int i = 1; i < 4; ++i) {
-      thres[i] = 0.75f;
-    }
-  }
+  float thres[4] = {0.58f, 0.62f, 0.62f, 0.62f};
   if (xsize > 1 || ysize > 1) {
     for (int i = 0; i < 4; ++i) {
-      thres[i] -= Clamp1(0.003f * xsize * ysize, 0.f, (c > 0 ? 0.08f : 0.12f));
+      thres[i] -= Clamp1(0.003f * xsize * ysize, 0.f, 0.08f);
       if (thres[i] < 0.54) {
         thres[i] = 0.54;
       }
@@ -181,20 +171,10 @@ bool AdjustQuantBlockAC(const Quantizer& quantizer, size_t c,
 
   const float* JXL_RESTRICT qm = quantizer.InvDequantMatrix(quant_kind, c);
   float qac = quantizer.Scale() * (*quant);
-  float thres[4] = {0.58f, 0.66f, 0.66f, 0.7f};
-  if (c == 0) {
-    for (int i = 1; i < 4; ++i) {
-      thres[i] = 0.71f;
-    }
-  }
-  if (c == 2) {
-    for (int i = 1; i < 4; ++i) {
-      thres[i] = 0.75f;
-    }
-  }
+  float thres[4] = {0.58f, 0.62f, 0.62f, 0.62f};
   if (xsize > 1 || ysize > 1) {
     for (int i = 0; i < 4; ++i) {
-      thres[i] -= Clamp1(0.003f * xsize * ysize, 0.f, (c > 0 ? 0.08f : 0.12f));
+      thres[i] -= Clamp1(0.003f * xsize * ysize, 0.f, 0.08f);
       if (thres[i] < 0.54) {
         thres[i] = 0.54;
       }
