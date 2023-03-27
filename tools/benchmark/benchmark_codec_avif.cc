@@ -307,7 +307,6 @@ class AvifCodec : public ImageCodec {
                     const Span<const uint8_t> compressed, ThreadPool* pool,
                     CodecInOut* io, SpeedStats* speed_stats) override {
     io->frames.clear();
-    io->dec_pixels = 0;
     size_t max_threads = GetNumThreads(pool);
     double elapsed_convert_image = 0;
     const double start = jxl::Now();
@@ -351,7 +350,6 @@ class AvifCodec : public ImageCodec {
               rgb_image.width, rgb_image.height, color, rgb_image.depth, format,
               pool, &ib));
           io->frames.push_back(std::move(ib));
-          io->dec_pixels += rgb_image.width * rgb_image.height;
         }
         const double end_convert_image = jxl::Now();
         elapsed_convert_image += end_convert_image - start_convert_image;

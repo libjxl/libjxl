@@ -169,14 +169,12 @@ Status ConvertPackedPixelFileToCodecInOut(const PackedPixelFile& ppf,
   }
 
   // Convert the pixels
-  io->dec_pixels = 0;
   io->frames.clear();
   for (const auto& frame : ppf.frames) {
     ImageBundle bundle(&io->metadata.m);
     JXL_RETURN_IF_ERROR(
         ConvertPackedFrameToImageBundle(ppf.info, frame, *io, pool, &bundle));
     io->frames.push_back(std::move(bundle));
-    io->dec_pixels += frame.color.xsize * frame.color.ysize;
   }
 
   if (ppf.info.exponent_bits_per_sample == 0) {

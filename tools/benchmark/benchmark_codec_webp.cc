@@ -211,7 +211,6 @@ class WebPCodec : public ImageCodec {
                                data_begin, data_end, pool, &io->Main());
     WebPFreeDecBuffer(buf);
     JXL_RETURN_IF_ERROR(ok);
-    io->dec_pixels = buf->width * buf->height;
     return true;
   }
 

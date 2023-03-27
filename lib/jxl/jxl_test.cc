@@ -18,6 +18,7 @@
 #include "lib/extras/codec.h"
 #include "lib/extras/enc/encode.h"
 #include "lib/extras/packed_image.h"
+#include "lib/jxl/alpha.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/override.h"
@@ -735,6 +736,61 @@ TEST(JxlTest, RoundtripAlpha) {
   }
 }
 
+namespace {
+// Performs "PremultiplyAlpha" for each ImageBundle (preview/frames).
+bool PremultiplyAlpha(CodecInOut& io) {
+  const auto doPremultiplyAlpha = [](ImageBundle& bundle) {
+    if (!bundle.HasAlpha()) return;
+    if (!bundle.HasColor()) return;
+    auto* color = bundle.color();
+    const auto* alpha = bundle.alpha();
+    JXL_CHECK(color->ysize() == alpha->ysize());
+    JXL_CHECK(color->xsize() == alpha->xsize());
+    for (size_t y = 0; y < color->ysize(); y++) {
+      ::jxl::PremultiplyAlpha(color->PlaneRow(0, y), color->PlaneRow(1, y),
+                              color->PlaneRow(2, y), alpha->Row(y),
+                              color->xsize());
+    }
+  };
+  ExtraChannelInfo* eci = io.metadata.m.Find(ExtraChannel::kAlpha);
+  if (eci == nullptr || eci->alpha_associated) return false;
+  if (io.metadata.m.have_preview) {
+    doPremultiplyAlpha(io.preview_frame);
+  }
+  for (ImageBundle& ib : io.frames) {
+    doPremultiplyAlpha(ib);
+  }
+  eci->alpha_associated = true;
+  return true;
+}
+
+bool UnpremultiplyAlpha(CodecInOut& io) {
+  const auto doUnpremultiplyAlpha = [](ImageBundle& bundle) {
+    if (!bundle.HasAlpha()) return;
+    if (!bundle.HasColor()) return;
+    auto* color = bundle.color();
+    const auto* alpha = bundle.alpha();
+    JXL_CHECK(color->ysize() == alpha->ysize());
+    JXL_CHECK(color->xsize() == alpha->xsize());
+    for (size_t y = 0; y < color->ysize(); y++) {
+      ::jxl::UnpremultiplyAlpha(color->PlaneRow(0, y), color->PlaneRow(1, y),
+                                color->PlaneRow(2, y), alpha->Row(y),
+                                color->xsize());
+    }
+  };
+  ExtraChannelInfo* eci = io.metadata.m.Find(ExtraChannel::kAlpha);
+  if (eci == nullptr || !eci->alpha_associated) return false;
+  if (io.metadata.m.have_preview) {
+    doUnpremultiplyAlpha(io.preview_frame);
+  }
+  for (ImageBundle& ib : io.frames) {
+    doUnpremultiplyAlpha(ib);
+  }
+  eci->alpha_associated = false;
+  return true;
+}
+}  // namespace
+
 TEST(JxlTest, RoundtripAlphaPremultiplied) {
   const PaddedBytes orig = jxl::test::ReadTestData(
       "external/wesaturate/500px/tmshre_riaphotographs_alpha.png");
@@ -752,7 +808,7 @@ TEST(JxlTest, RoundtripAlphaPremultiplied) {
   cparams.butteraugli_distance = 1.0;
 
   EXPECT_FALSE(io.Main().AlphaIsPremultiplied());
-  EXPECT_TRUE(io.PremultiplyAlpha());
+  EXPECT_TRUE(PremultiplyAlpha(io));
   EXPECT_TRUE(io.Main().AlphaIsPremultiplied());
 
   EXPECT_FALSE(io_nopremul.Main().AlphaIsPremultiplied());
@@ -790,7 +846,7 @@ TEST(JxlTest, RoundtripAlphaPremultiplied) {
                                           cparams.ba_params, GetJxlCms(),
                                           /*distmap=*/nullptr),
                       IsSlightlyBelow(1.5));
-          EXPECT_TRUE(io2.UnpremultiplyAlpha());
+          EXPECT_TRUE(UnpremultiplyAlpha(io2));
           EXPECT_FALSE(io2.Main().AlphaIsPremultiplied());
         }
         EXPECT_THAT(ButteraugliDistance(io_nopremul.frames, io2.frames,
