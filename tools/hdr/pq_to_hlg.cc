@@ -61,6 +61,7 @@ int main(int argc, const char** argv) {
   if (max_nits > 0) {
     image.metadata.m.SetIntensityTarget(max_nits);
   }
+  const jxl::Primaries original_primaries = image.Main().c_current().primaries;
   JXL_CHECK(jxl::ToneMapTo({0, 1000}, &image, &pool));
   JXL_CHECK(jxl::HlgInverseOOTF(&image.Main(), 1.2f, &pool));
   JXL_CHECK(jxl::GamutMap(&image, preserve_saturation, &pool));
@@ -71,7 +72,7 @@ int main(int argc, const char** argv) {
 
   jxl::ColorEncoding hlg;
   hlg.SetColorSpace(jxl::ColorSpace::kRGB);
-  hlg.primaries = jxl::Primaries::k2100;
+  hlg.primaries = original_primaries;
   hlg.white_point = jxl::WhitePoint::kD65;
   hlg.tf.SetTransferFunction(jxl::TransferFunction::kHLG);
   JXL_CHECK(hlg.CreateICC());
