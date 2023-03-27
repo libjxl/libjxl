@@ -12,12 +12,6 @@
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/image_bundle.h"
 
-// Forward declarations.
-namespace jxl {
-struct ColorEncoding;
-class ThreadPool;
-}  // namespace jxl
-
 namespace jpegxl {
 namespace tools {
 
