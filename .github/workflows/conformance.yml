@@ -35,7 +35,7 @@ jobs:
       with:
         repository: libjxl/conformance
         # TODO(eustas): move ref to a global variable / file?
-        ref: 5399ecf01e50ec5230912aa2df82286dc1c379c9
+        ref: 3e55a021da11b98f0a0f523e2966057ae892c221
         path: conformance
     - name: Cache
       uses: actions/cache@v2
@@ -167,7 +167,7 @@ jobs:
       uses: actions/checkout@v2
       with:
         repository: libjxl/conformance
-        ref: 5399ecf01e50ec5230912aa2df82286dc1c379c9
+        ref: 3e55a021da11b98f0a0f523e2966057ae892c221
         path: conformance
     - name: Cache
       uses: actions/cache@v2
