@@ -372,6 +372,30 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
           fprintf(stderr, "JxlDecoderGetColorAsICCProfile failed\n");
           return false;
         }
+
+        if (dparams.color_space.empty() && !ppf->info.uses_original_profile) {
+          // The image is encoded in a different color space than its original
+          // ICC profile, which we cannot convert back to without a CMS. Let us
+          // then pick a better fallback color space than the linear sRGB that
+          // libjxl would otherwise give us.
+          color_encoding.color_space = JXL_COLOR_SPACE_RGB;
+          const bool float_output = format.data_type == JXL_TYPE_FLOAT ||
+                                    format.data_type == JXL_TYPE_FLOAT16;
+          color_encoding.transfer_function = float_output
+                                                 ? JXL_TRANSFER_FUNCTION_LINEAR
+                                                 : JXL_TRANSFER_FUNCTION_SRGB;
+          color_encoding.rendering_intent = JXL_RENDERING_INTENT_RELATIVE;
+          color_encoding.primaries = float_output ? JXL_PRIMARIES_SRGB
+                                     : format.data_type == JXL_TYPE_UINT8
+                                         ? JXL_PRIMARIES_P3
+                                         : JXL_PRIMARIES_2100;
+          color_encoding.white_point = JXL_WHITE_POINT_D65;
+
+          if (JXL_DEC_SUCCESS !=
+              JxlDecoderSetPreferredColorProfile(dec, &color_encoding)) {
+            fprintf(stderr, "Warning: failed to set fallback color space.\n");
+          }
+        }
       }
     } else if (status == JXL_DEC_FRAME) {
       jxl::extras::PackedFrame frame(ppf->info.xsize, ppf->info.ysize, format);
