@@ -854,14 +854,12 @@ Status DefaultEncoderHeuristics::LossyFrameHeuristics(
 
   // Apply inverse-gaborish.
   if (shared.frame_header.loop_filter.gab) {
-    // Do slightly more inverse-gaborish for low distances, slightly
-    // less for high distances. Precise gaborish seems to only create
-    // ringing at higher distances, but allows pixels to be more
-    // precisely represented at low distances.
-    float weight = 0.98987070817630862f;
-    float butteraugli = std::min<float>(cparams.butteraugli_distance, 2.0f);
-    static const float kWeightSlope = 0.0026643710656232291;
-    weight -= (butteraugli - 1.0) * kWeightSlope;
+    // Unsure why better to do some more gaborish on X and B than Y.
+    float weight[3] = {
+        1.0036278514398933f,
+        0.99406123118127299f,
+        0.99719338015886894f,
+    };
     GaborishInverse(opsin, weight, pool);
   }
 
