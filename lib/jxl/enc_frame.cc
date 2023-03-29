@@ -529,12 +529,15 @@ struct PixelStatsForChromacityAdjustment {
         float cur_y = plane_y->Row(ty)[tx];
         float cur_b = plane_b->Row(ty)[tx];
         float exposed_b = cur_b - cur_y * 1.2;
+        float diff_b = cur_b - cur_y;
         float prev_row = plane_b->Row(ty - 1)[tx];
         float prev = plane_b->Row(ty)[tx - 1];
-        xmax = std::max(xmax, std::abs(cur_b - prev));
-        ymax = std::max(ymax, std::abs(cur_b - prev_row));
+        float diff_prev_row = prev_row - plane_y->Row(ty - 1)[tx];
+        float diff_prev = prev - plane_y->Row(ty)[tx - 1];
+        xmax = std::max(xmax, std::abs(diff_b - diff_prev));
+        ymax = std::max(ymax, std::abs(diff_b - diff_prev_row));
         if (exposed_b >= 0) {
-          exposed_b *= fabs(cur_b - 0.5 * (prev_row + prev));
+          exposed_b *= fabs(cur_b - prev) + fabs(cur_b - prev_row);
           eb = std::max(eb, exposed_b);
         }
       }
@@ -550,20 +553,20 @@ struct PixelStatsForChromacityAdjustment {
     if (dx >= 0.03) {
       return 2;
     }
-    if (dx >= 0.01) {
+    if (dx >= 0.017) {
       return 1;
     }
     return 0;
   }
   int HowMuchIsBChannelPixelized() {
-    int add = exposed_blue >= 0.055 ? 1 : 0;
-    if (db > 0.8) {
+    int add = exposed_blue >= 0.13 ? 1 : 0;
+    if (db > 0.38) {
       return 2 + add;
     }
-    if (db > 0.75) {
+    if (db > 0.33) {
       return 1 + add;
     }
-    if (db > 0.7) {
+    if (db > 0.28) {
       return add;
     }
     return 0;
