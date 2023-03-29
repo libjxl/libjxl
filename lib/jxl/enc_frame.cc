@@ -501,6 +501,75 @@ void SimplifyInvisible(Image3F* image, const ImageF& alpha, bool lossless) {
   }
 }
 
+struct PixelStatsForChromacityAdjustment {
+  float dx = 0;
+  float db = 0;
+  float exposed_blue = 0;
+  float CalcPlane(const ImageF* JXL_RESTRICT plane) const {
+    float xmax = 0;
+    float ymax = 0;
+    for (size_t ty = 1; ty < plane->ysize(); ++ty) {
+      for (size_t tx = 1; tx < plane->xsize(); ++tx) {
+        float cur = plane->Row(ty)[tx];
+        float prev_row = plane->Row(ty - 1)[tx];
+        float prev = plane->Row(ty)[tx - 1];
+        xmax = std::max(xmax, std::abs(cur - prev));
+        ymax = std::max(ymax, std::abs(cur - prev_row));
+      }
+    }
+    return std::max(xmax, ymax);
+  }
+  void CalcExposedBlue(const ImageF* JXL_RESTRICT plane_y,
+                       const ImageF* JXL_RESTRICT plane_b) {
+    float eb = 0;
+    float xmax = 0;
+    float ymax = 0;
+    for (size_t ty = 1; ty < plane_y->ysize(); ++ty) {
+      for (size_t tx = 1; tx < plane_y->xsize(); ++tx) {
+        float cur_y = plane_y->Row(ty)[tx];
+        float cur_b = plane_b->Row(ty)[tx];
+        float exposed_b = cur_b - cur_y * 1.2;
+        float prev_row = plane_b->Row(ty - 1)[tx];
+        float prev = plane_b->Row(ty)[tx - 1];
+        xmax = std::max(xmax, std::abs(cur_b - prev));
+        ymax = std::max(ymax, std::abs(cur_b - prev_row));
+        if (exposed_b >= 0) {
+          exposed_b *= fabs(cur_b - 0.5 * (prev_row + prev));
+          eb = std::max(eb, exposed_b);
+        }
+      }
+    }
+    exposed_blue = eb;
+    db = std::max(xmax, ymax);
+  }
+  void Calc(const Image3F* JXL_RESTRICT opsin) {
+    dx = CalcPlane(&opsin->Plane(0));
+    CalcExposedBlue(&opsin->Plane(1), &opsin->Plane(2));
+  }
+  int HowMuchIsXChannelPixelized() {
+    if (dx >= 0.03) {
+      return 2;
+    }
+    if (dx >= 0.01) {
+      return 1;
+    }
+    return 0;
+  }
+  int HowMuchIsBChannelPixelized() {
+    int add = exposed_blue >= 0.055 ? 1 : 0;
+    if (db > 0.8) {
+      return 2 + add;
+    }
+    if (db > 0.75) {
+      return 1 + add;
+    }
+    if (db > 0.7) {
+      return add;
+    }
+    return 0;
+  }
+};
+
 }  // namespace
 
 class LossyFrameEncoder {
@@ -528,6 +597,8 @@ class LossyFrameEncoder {
     PassesSharedState& shared = enc_state_->shared;
 
     if (!enc_state_->cparams.max_error_mode) {
+      // Compute chromacity adjustments using two approaches.
+      // 1) Distance based approach for chromacity adjustment:
       float x_qm_scale_steps[2] = {1.25f, 9.0f};
       shared.frame_header.x_qm_scale = 2;
       for (float x_qm_scale_step : x_qm_scale_steps) {
@@ -540,6 +611,20 @@ class LossyFrameEncoder {
         // faithful to original even with extreme (5-10x) zooming.
         shared.frame_header.x_qm_scale++;
       }
+      // 2) Pixel-based approach for chromacity adjustment:
+      // look at the individual pixels and make a guess how difficult
+      // the image would be based on the worst case pixel.
+      PixelStatsForChromacityAdjustment pixel_stats;
+      if (enc_state_->cparams.speed_tier <= SpeedTier::kWombat) {
+        pixel_stats.Calc(opsin);
+      }
+      // For X take the most severe adjustment.
+      shared.frame_header.x_qm_scale =
+          std::max<int>(shared.frame_header.x_qm_scale,
+                        2 + pixel_stats.HowMuchIsXChannelPixelized());
+      // B only ajudsted by pixel-based approach.
+      shared.frame_header.b_qm_scale =
+          2 + pixel_stats.HowMuchIsBChannelPixelized();
     }
 
     JXL_RETURN_IF_ERROR(enc_state_->heuristics->LossyFrameHeuristics(
