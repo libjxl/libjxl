@@ -261,6 +261,11 @@ void jpegli_calc_output_dimensions(j_decompress_ptr cinfo) {
       JPEGLI_ERROR("Output scaling is not supported in raw output mode");
     }
   }
+  for (int c = 0; c < cinfo->num_components; ++c) {
+    jpeg_component_info* comp = &cinfo->comp_info[c];
+    m->h_factor[c] = cinfo->max_h_samp_factor / comp->h_samp_factor;
+    m->v_factor[c] = cinfo->max_v_samp_factor / comp->v_samp_factor;
+  }
   if (cinfo->scale_num != 1 || cinfo->scale_denom != 1) {
     int dctsize = 16;
     while (cinfo->scale_num * DCTSIZE <= cinfo->scale_denom * (dctsize - 1)) {
