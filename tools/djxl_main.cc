@@ -9,6 +9,7 @@
 #include <jxl/types.h>
 
 #include <climits>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
