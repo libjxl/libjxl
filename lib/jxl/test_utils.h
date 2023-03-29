@@ -131,6 +131,10 @@ float ButteraugliDistance(const extras::PackedPixelFile& a,
                           const extras::PackedPixelFile& b,
                           ThreadPool* pool = nullptr);
 
+float Butteraugli3Norm(const extras::PackedPixelFile& a,
+                       const extras::PackedPixelFile& b,
+                       ThreadPool* pool = nullptr);
+
 float ComputeDistance2(const extras::PackedPixelFile& a,
                        const extras::PackedPixelFile& b);
 

@@ -7,6 +7,7 @@
 
 #include <cmath>
 
+#include "lib/jpegli/decode.h"
 #include "lib/jpegli/encode.h"
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/file_io.h"
@@ -570,8 +571,58 @@ bool EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
   return success;
 }
 
+void SetScanDecompressParams(const DecompressParams& dparams,
+                             j_decompress_ptr cinfo, int scan_number,
+                             bool is_jpegli) {
+  const ScanDecompressParams* sparams = nullptr;
+  for (const auto& sp : dparams.scan_params) {
+    if (scan_number <= sp.max_scan_number) {
+      sparams = &sp;
+      break;
+    }
+  }
+  if (sparams == nullptr) {
+    return;
+  }
+  if (dparams.quantize_colors) {
+    cinfo->dither_mode = sparams->dither_mode;
+    if (sparams->color_quant_mode == CQUANT_1PASS) {
+      cinfo->two_pass_quantize = FALSE;
+      cinfo->colormap = nullptr;
+    } else if (sparams->color_quant_mode == CQUANT_2PASS) {
+      JXL_CHECK(cinfo->out_color_space = JCS_RGB);
+      cinfo->two_pass_quantize = TRUE;
+      cinfo->colormap = nullptr;
+    } else if (sparams->color_quant_mode == CQUANT_EXTERNAL) {
+      JXL_CHECK(cinfo->out_color_space = JCS_RGB);
+      cinfo->two_pass_quantize = FALSE;
+      bool have_colormap = cinfo->colormap != nullptr;
+      cinfo->actual_number_of_colors = kTestColorMapNumColors;
+      cinfo->colormap = (*cinfo->mem->alloc_sarray)(
+          reinterpret_cast<j_common_ptr>(cinfo), JPOOL_IMAGE,
+          cinfo->actual_number_of_colors, 3);
+      jxl::msan::UnpoisonMemory(cinfo->colormap, 3 * sizeof(JSAMPROW));
+      for (int i = 0; i < kTestColorMapNumColors; ++i) {
+        cinfo->colormap[0][i] = (kTestColorMap[i] >> 16) & 0xff;
+        cinfo->colormap[1][i] = (kTestColorMap[i] >> 8) & 0xff;
+        cinfo->colormap[2][i] = (kTestColorMap[i] >> 0) & 0xff;
+      }
+      if (have_colormap) {
+        if (is_jpegli) {
+          jpegli_new_colormap(cinfo);
+        } else {
+          jpeg_new_colormap(cinfo);
+        }
+      }
+    } else if (sparams->color_quant_mode == CQUANT_REUSE) {
+      JXL_CHECK(cinfo->out_color_space = JCS_RGB);
+      JXL_CHECK(cinfo->colormap);
+    }
+  }
+}
+
 void SetDecompressParams(const DecompressParams& dparams,
-                         j_decompress_ptr cinfo) {
+                         j_decompress_ptr cinfo, bool is_jpegli) {
   cinfo->do_block_smoothing = dparams.do_block_smoothing;
   if (dparams.output_mode == RAW_DATA) {
     cinfo->raw_data_out = TRUE;
@@ -584,6 +635,27 @@ void SetDecompressParams(const DecompressParams& dparams,
   }
   cinfo->scale_num = dparams.scale_num;
   cinfo->scale_denom = dparams.scale_denom;
+  cinfo->quantize_colors = dparams.quantize_colors;
+  cinfo->desired_number_of_colors = dparams.desired_number_of_colors;
+  if (!dparams.scan_params.empty()) {
+    if (cinfo->buffered_image) {
+      for (const auto& sparams : dparams.scan_params) {
+        if (sparams.color_quant_mode == CQUANT_1PASS) {
+          cinfo->enable_1pass_quant = TRUE;
+        } else if (sparams.color_quant_mode == CQUANT_2PASS) {
+          cinfo->enable_2pass_quant = TRUE;
+        } else if (sparams.color_quant_mode == CQUANT_EXTERNAL) {
+          cinfo->enable_external_quant = TRUE;
+        }
+      }
+      SetScanDecompressParams(dparams, cinfo, 1, is_jpegli);
+    } else {
+      SetScanDecompressParams(dparams, cinfo, kLastScan, is_jpegli);
+    }
+  }
+  if (is_jpegli) {
+    jpegli_set_output_format(cinfo, dparams.data_type, dparams.endianness);
+  }
 }
 
 void VerifyHeader(const CompressParams& jparams, j_decompress_ptr cinfo) {
@@ -724,6 +796,19 @@ void VerifyScanHeader(const CompressParams& jparams, j_decompress_ptr cinfo) {
   }
 }
 
+void UnmapColors(uint8_t* row, size_t xsize, int components,
+                 JSAMPARRAY colormap, size_t num_colors) {
+  JXL_CHECK(colormap != nullptr);
+  std::vector<uint8_t> tmp(xsize * components);
+  for (size_t x = 0; x < xsize; ++x) {
+    JXL_CHECK(row[x] < num_colors);
+    for (int c = 0; c < components; ++c) {
+      tmp[x * components + c] = colormap[c][row[x]];
+    }
+  }
+  memcpy(row, tmp.data(), tmp.size());
+}
+
 void ReadOutputPass(j_decompress_ptr cinfo, const DecompressParams& dparams,
                     TestImage* output) {
   JDIMENSION xoffset = 0;
@@ -734,10 +819,20 @@ void ReadOutputPass(j_decompress_ptr cinfo, const DecompressParams& dparams,
     xoffset = xsize_cropped = cinfo->output_width / 3;
     yoffset = ysize_cropped = cinfo->output_height / 3;
     jpeg_crop_scanline(cinfo, &xoffset, &xsize_cropped);
+    JXL_CHECK(xsize_cropped == cinfo->output_width);
   }
   output->xsize = xsize_cropped;
   output->ysize = ysize_cropped;
   output->components = cinfo->out_color_components;
+  if (cinfo->quantize_colors) {
+    jxl::msan::UnpoisonMemory(cinfo->colormap, cinfo->out_color_components *
+                                                   sizeof(cinfo->colormap[0]));
+    for (int c = 0; c < cinfo->out_color_components; ++c) {
+      jxl::msan::UnpoisonMemory(
+          cinfo->colormap[c],
+          cinfo->actual_number_of_colors * sizeof(cinfo->colormap[c][0]));
+    }
+  }
   if (dparams.output_mode == PIXELS) {
     size_t stride = output->xsize * output->components;
     output->pixels.resize(output->ysize * stride);
@@ -751,6 +846,10 @@ void ReadOutputPass(j_decompress_ptr cinfo, const DecompressParams& dparams,
       jxl::msan::UnpoisonMemory(
           rows[0], sizeof(JSAMPLE) * cinfo->output_components * output->xsize);
       JXL_CHECK(1 == jpeg_read_scanlines(cinfo, rows, 1));
+      if (cinfo->quantize_colors) {
+        UnmapColors(rows[0], cinfo->output_width, cinfo->out_color_components,
+                    cinfo->colormap, cinfo->actual_number_of_colors);
+      }
     }
     if (cinfo->output_scanline < cinfo->output_height) {
       jpeg_skip_scanlines(cinfo, cinfo->output_height - cinfo->output_scanline);
@@ -828,7 +927,7 @@ void DecodeAllScansWithLibjpeg(const CompressParams& jparams,
     JXL_CHECK(JPEG_REACHED_SOS ==
               jpeg_read_header(&cinfo, /*require_image=*/TRUE));
     cinfo.buffered_image = TRUE;
-    SetDecompressParams(dparams, &cinfo);
+    SetDecompressParams(dparams, &cinfo, /*is_jpegli=*/false);
     VerifyHeader(jparams, &cinfo);
     JXL_CHECK(dparams.output_mode != COEFFICIENTS);
     JXL_CHECK(jpeg_start_decompress(&cinfo));
@@ -838,6 +937,8 @@ void DecodeAllScansWithLibjpeg(const CompressParams& jparams,
     int sos_marker_cnt = 1;  // read header reads the first SOS marker
     while (!jpeg_input_complete(&cinfo)) {
       JXL_CHECK(cinfo.input_scan_number == sos_marker_cnt);
+      SetScanDecompressParams(dparams, &cinfo, cinfo.input_scan_number,
+                              /*is_jpegli=*/false);
       JXL_CHECK(jpeg_start_output(&cinfo, cinfo.input_scan_number));
       // start output sets output_scan_number, but does not change
       // input_scan_number
@@ -874,7 +975,7 @@ void DecodeWithLibjpeg(const CompressParams& jparams,
     }
     JXL_CHECK(JPEG_REACHED_SOS ==
               jpeg_read_header(&cinfo, /*require_image=*/TRUE));
-    SetDecompressParams(dparams, &cinfo);
+    SetDecompressParams(dparams, &cinfo, /*is_jpegli=*/false);
     VerifyHeader(jparams, &cinfo);
     if (dparams.output_mode == COEFFICIENTS) {
       ReadCoefficients(&cinfo, output);

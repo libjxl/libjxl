@@ -97,9 +97,6 @@ struct jpeg_decomp_master {
   bool swap_endianness_ = false;
   size_t xoffset_ = 0;
 
-  JSAMPARRAY scanlines_;
-  JDIMENSION max_lines_;
-  size_t num_output_rows_;
   int min_scaled_dct_size;
   int scaled_dct_size[jpegli::kMaxComponents];
 
@@ -118,6 +115,19 @@ struct jpeg_decomp_master {
   float* upsample_scratch_;
   uint8_t* output_scratch_;
   float* dequant_;
+  // 1 = 1pass, 2 = 2pass, 3 = external
+  int quant_mode_;
+  int quant_pass_;
+  int num_colors_[jpegli::kMaxComponents];
+  uint8_t* colormap_lut_;
+  uint8_t* pixels_;
+  JSAMPARRAY scanlines_;
+  std::vector<std::vector<uint8_t>> candidate_lists_;
+  bool regenerate_inverse_colormap_;
+  float* dither_[jpegli::kMaxComponents];
+  float* error_row_[2 * jpegli::kMaxComponents];
+  size_t dither_size_;
+  size_t dither_mask_;
 
   // Per channel and per frequency statistics about the number of nonzeros and
   // the sum of coefficient absolute values, used in dequantization bias

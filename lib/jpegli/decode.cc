@@ -9,6 +9,7 @@
 
 #include <vector>
 
+#include "lib/jpegli/color_quantize.h"
 #include "lib/jpegli/decode_internal.h"
 #include "lib/jpegli/decode_marker.h"
 #include "lib/jpegli/decode_scan.h"
@@ -37,10 +38,24 @@ void InitializeImage(j_decompress_ptr cinfo) {
   cinfo->input_scan_number = 0;
   cinfo->output_scanline = 0;
   cinfo->unread_marker = 0;
+  cinfo->coef_bits = nullptr;
   // We set all these to zero since we don't yet support arithmetic coding.
   memset(cinfo->arith_dc_L, 0, sizeof(cinfo->arith_dc_L));
   memset(cinfo->arith_dc_U, 0, sizeof(cinfo->arith_dc_U));
   memset(cinfo->arith_ac_K, 0, sizeof(cinfo->arith_ac_K));
+  // Initialize the private fields.
+  for (int i = 0; i < 16; ++i) {
+    cinfo->master->app_marker_parsers[i] = nullptr;
+  }
+  cinfo->master->com_marker_parser = nullptr;
+  cinfo->master->colormap_lut_ = nullptr;
+  cinfo->master->pixels_ = nullptr;
+  cinfo->master->scanlines_ = nullptr;
+  cinfo->master->regenerate_inverse_colormap_ = true;
+  for (int i = 0; i < kMaxComponents; ++i) {
+    cinfo->master->dither_[i] = nullptr;
+    cinfo->master->error_row_[i] = nullptr;
+  }
 }
 
 void InitializeDecompressParams(j_decompress_ptr cinfo) {
@@ -126,6 +141,67 @@ bool IsInputReady(j_decompress_ptr cinfo) {
   return cinfo->input_iMCU_row > cinfo->output_iMCU_row;
 }
 
+bool ReadOutputPass(j_decompress_ptr cinfo) {
+  jpeg_decomp_master* m = cinfo->master;
+  if (!m->pixels_) {
+    size_t stride = cinfo->out_color_components * cinfo->output_width;
+    size_t num_samples = cinfo->output_height * stride;
+    m->pixels_ = Allocate<uint8_t>(cinfo, num_samples, JPOOL_IMAGE);
+    m->scanlines_ =
+        Allocate<JSAMPROW>(cinfo, cinfo->output_height, JPOOL_IMAGE);
+    for (size_t i = 0; i < cinfo->output_height; ++i) {
+      m->scanlines_[i] = &m->pixels_[i * stride];
+    }
+  }
+  size_t num_output_rows = 0;
+  while (num_output_rows < cinfo->output_height) {
+    if (IsInputReady(cinfo)) {
+      ProcessOutput(cinfo, &num_output_rows, m->scanlines_,
+                    cinfo->output_height);
+    } else if (ConsumeInput(cinfo) == JPEG_SUSPENDED) {
+      return false;
+    }
+  }
+  cinfo->output_scanline = 0;
+  cinfo->output_iMCU_row = 0;
+  return true;
+}
+
+boolean PrepareQuantizedOutput(j_decompress_ptr cinfo) {
+  jpeg_decomp_master* m = cinfo->master;
+  if (cinfo->raw_data_out) {
+    JPEGLI_ERROR("Color quantization is not supported in raw data mode.");
+  }
+  if (m->output_data_type_ != JPEGLI_TYPE_UINT8) {
+    JPEGLI_ERROR("Color quantization must use 8-bit mode.");
+  }
+  m->quant_mode_ = cinfo->colormap ? 3 : cinfo->two_pass_quantize ? 2 : 1;
+  if (m->quant_mode_ > 1 && cinfo->dither_mode == JDITHER_ORDERED) {
+    JPEGLI_WARN("Changing dither mode to JDITHER_FS");
+    cinfo->dither_mode = JDITHER_FS;
+  }
+  if (m->quant_mode_ == 1) {
+    ChooseColorMap1Pass(cinfo);
+  } else if (m->quant_mode_ == 2) {
+    m->quant_pass_ = 0;
+    if (!ReadOutputPass(cinfo)) {
+      return FALSE;
+    }
+    ChooseColorMap2Pass(cinfo);
+  }
+  if (m->quant_mode_ == 2 ||
+      (m->quant_mode_ == 3 && m->regenerate_inverse_colormap_)) {
+    CreateInverseColorMap(cinfo);
+  }
+  if (cinfo->dither_mode == JDITHER_ORDERED) {
+    CreateOrderedDitherTables(cinfo);
+  } else if (cinfo->dither_mode == JDITHER_FS) {
+    InitFSDitherState(cinfo);
+  }
+  m->quant_pass_ = 1;
+  return TRUE;
+}
+
 }  // namespace jpegli
 
 void jpegli_CreateDecompress(j_decompress_ptr cinfo, int version,
@@ -145,18 +221,12 @@ void jpegli_CreateDecompress(j_decompress_ptr cinfo, int version,
     cinfo->dc_huff_tbl_ptrs[i] = nullptr;
     cinfo->ac_huff_tbl_ptrs[i] = nullptr;
   }
-  jpegli::InitializeImage(cinfo);
   jpegli::InitializeDecompressParams(cinfo);
   cinfo->global_state = jpegli::kDecStart;
   cinfo->sample_range_limit = nullptr;  // not used
   cinfo->rec_outbuf_height = 1;         // output works with any buffer height
-  // TODO(szabadka) Fill this in for progressive mode.
-  cinfo->coef_bits = nullptr;
   cinfo->master = new jpeg_decomp_master;
-  for (int i = 0; i < 16; ++i) {
-    cinfo->master->app_marker_parsers[i] = nullptr;
-  }
-  cinfo->master->com_marker_parser = nullptr;
+  jpegli::InitializeImage(cinfo);
 }
 
 void jpegli_destroy_decompress(j_decompress_ptr cinfo) {
@@ -294,7 +364,8 @@ void jpegli_calc_output_dimensions(j_decompress_ptr cinfo) {
       m->scaled_dct_size[c] = DCTSIZE;
     }
   }
-  cinfo->output_components = cinfo->out_color_components;
+  cinfo->output_components =
+      cinfo->quantize_colors ? 1 : cinfo->out_color_components;
   cinfo->rec_outbuf_height = 1;
 }
 
@@ -336,10 +407,15 @@ boolean jpegli_start_decompress(j_decompress_ptr cinfo) {
   }
   cinfo->output_scan_number = cinfo->input_scan_number;
   jpegli::PrepareForOutput(cinfo);
-  return TRUE;
+  if (cinfo->quantize_colors) {
+    return jpegli::PrepareQuantizedOutput(cinfo);
+  } else {
+    return TRUE;
+  }
 }
 
 boolean jpegli_start_output(j_decompress_ptr cinfo, int scan_number) {
+  jpeg_decomp_master* m = cinfo->master;
   if (!cinfo->buffered_image) {
     JPEGLI_ERROR("jpegli_start_output: buffered image mode was not set");
   }
@@ -349,13 +425,17 @@ boolean jpegli_start_output(j_decompress_ptr cinfo, int scan_number) {
                  cinfo->global_state);
   }
   cinfo->output_scan_number = std::max(1, scan_number);
-  if (cinfo->master->found_eoi_) {
+  if (m->found_eoi_) {
     cinfo->output_scan_number =
         std::min(cinfo->output_scan_number, cinfo->input_scan_number);
   }
   // TODO(szabadka): Figure out how much we can reuse.
   jpegli::PrepareForOutput(cinfo);
-  return TRUE;
+  if (cinfo->quantize_colors) {
+    return jpegli::PrepareQuantizedOutput(cinfo);
+  } else {
+    return TRUE;
+  }
 }
 
 boolean jpegli_finish_output(j_decompress_ptr cinfo) {
@@ -524,7 +604,21 @@ boolean jpegli_resync_to_restart(j_decompress_ptr cinfo, int desired) {
 }
 
 void jpegli_new_colormap(j_decompress_ptr cinfo) {
-  // TODO(szabadka) Implement external colormap support.
+  if (cinfo->global_state != jpegli::kDecProcessScan &&
+      cinfo->global_state != jpegli::kDecProcessMarkers) {
+    JPEGLI_ERROR("jpegli_new_colormap: unexpected state %d",
+                 cinfo->global_state);
+  }
+  if (!cinfo->buffered_image) {
+    JPEGLI_ERROR("jpegli_new_colormap: not in  buffered image mode");
+  }
+  if (!cinfo->enable_external_quant) {
+    JPEGLI_ERROR("external quantization was not enabled");
+  }
+  if (!cinfo->quantize_colors || cinfo->colormap == nullptr) {
+    JPEGLI_ERROR("jpegli_new_colormap: not in external colormap mode");
+  }
+  cinfo->master->regenerate_inverse_colormap_ = true;
 }
 
 void jpegli_set_output_format(j_decompress_ptr cinfo, JpegliDataType data_type,

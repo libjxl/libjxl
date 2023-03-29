@@ -20,8 +20,17 @@
 namespace jxl {
 namespace extras {
 
+struct JpegDecompressParams {
+  JxlDataType output_data_type = JXL_TYPE_UINT8;
+  JxlEndianness output_endianness = JXL_NATIVE_ENDIAN;
+  int num_colors = 0;
+  bool two_pass_quant = true;
+  // 0 = none, 1 = ordered, 2 = Floyd-Steinberg
+  int dither_mode = 2;
+};
+
 Status DecodeJpeg(const std::vector<uint8_t>& compressed,
-                  JxlDataType output_data_type, ThreadPool* pool,
+                  const JpegDecompressParams& dparams, ThreadPool* pool,
                   PackedPixelFile* ppf);
 
 }  // namespace extras

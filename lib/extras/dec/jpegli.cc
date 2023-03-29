@@ -82,6 +82,19 @@ JpegliDataType ConvertDataType(JxlDataType type) {
   }
 }
 
+JpegliEndianness ConvertEndianness(JxlEndianness type) {
+  switch (type) {
+    case JXL_NATIVE_ENDIAN:
+      return JPEGLI_NATIVE_ENDIAN;
+    case JXL_BIG_ENDIAN:
+      return JPEGLI_BIG_ENDIAN;
+    case JXL_LITTLE_ENDIAN:
+      return JPEGLI_LITTLE_ENDIAN;
+    default:
+      return JPEGLI_NATIVE_ENDIAN;
+  }
+}
+
 void MyErrorExit(j_common_ptr cinfo) {
   jmp_buf* env = static_cast<jmp_buf*>(cinfo->client_data);
   (*cinfo->err->output_message)(cinfo);
@@ -98,10 +111,23 @@ void MyOutputMessage(j_common_ptr cinfo) {
 #endif
 }
 
+void UnmapColors(uint8_t* row, size_t xsize, int components,
+                 JSAMPARRAY colormap, size_t num_colors) {
+  JXL_CHECK(colormap != nullptr);
+  std::vector<uint8_t> tmp(xsize * components);
+  for (size_t x = 0; x < xsize; ++x) {
+    JXL_CHECK(row[x] < num_colors);
+    for (int c = 0; c < components; ++c) {
+      tmp[x * components + c] = colormap[c][row[x]];
+    }
+  }
+  memcpy(row, tmp.data(), tmp.size());
+}
+
 }  // namespace
 
 Status DecodeJpeg(const std::vector<uint8_t>& compressed,
-                  JxlDataType output_data_type, ThreadPool* pool,
+                  const JpegDecompressParams& dparams, ThreadPool* pool,
                   PackedPixelFile* ppf) {
   // Don't do anything for non-JPEG files (no need to report an error)
   if (!IsJPG(compressed)) return false;
@@ -165,9 +191,9 @@ Status DecodeJpeg(const std::vector<uint8_t>& compressed,
 
     ppf->info.xsize = cinfo.image_width;
     ppf->info.ysize = cinfo.image_height;
-    if (output_data_type == JXL_TYPE_UINT8) {
+    if (dparams.output_data_type == JXL_TYPE_UINT8) {
       ppf->info.bits_per_sample = 8;
-    } else if (output_data_type == JXL_TYPE_UINT16) {
+    } else if (dparams.output_data_type == JXL_TYPE_UINT16) {
       ppf->info.bits_per_sample = 16;
     } else {
       return failure("unsupported data type");
@@ -182,22 +208,31 @@ Status DecodeJpeg(const std::vector<uint8_t>& compressed,
     ppf->info.num_color_channels = nbcomp;
     ppf->info.orientation = JXL_ORIENT_IDENTITY;
 
-    jpegli_set_output_format(&cinfo, ConvertDataType(output_data_type),
-                             JPEGLI_NATIVE_ENDIAN);
+    jpegli_set_output_format(&cinfo, ConvertDataType(dparams.output_data_type),
+                             ConvertEndianness(dparams.output_endianness));
+
+    if (dparams.num_colors > 0) {
+      cinfo.quantize_colors = TRUE;
+      cinfo.desired_number_of_colors = dparams.num_colors;
+      cinfo.two_pass_quantize = dparams.two_pass_quant;
+      cinfo.dither_mode = (J_DITHER_MODE)dparams.dither_mode;
+    }
+
     jpegli_start_decompress(&cinfo);
-    JXL_ASSERT(cinfo.output_components == nbcomp);
+    JXL_ASSERT(cinfo.out_color_components == nbcomp);
 
     const JxlPixelFormat format{
         /*num_channels=*/static_cast<uint32_t>(nbcomp),
-        output_data_type,
-        /*endianness=*/JXL_NATIVE_ENDIAN,
+        dparams.output_data_type,
+        dparams.output_endianness,
         /*align=*/0,
     };
     ppf->frames.clear();
     // Allocates the frame buffer.
     ppf->frames.emplace_back(cinfo.image_width, cinfo.image_height, format);
     const auto& frame = ppf->frames.back();
-    JXL_ASSERT(sizeof(JSAMPLE) * cinfo.output_components * cinfo.image_width <=
+    JXL_ASSERT(sizeof(JSAMPLE) * cinfo.out_color_components *
+                   cinfo.image_width <=
                frame.color.stride);
 
     for (size_t y = 0; y < cinfo.image_height; ++y) {
@@ -205,8 +240,10 @@ Status DecodeJpeg(const std::vector<uint8_t>& compressed,
           static_cast<uint8_t*>(frame.color.pixels()) +
           frame.color.stride * y)};
       jpegli_read_scanlines(&cinfo, rows, 1);
-      msan::UnpoisonMemory(rows[0], sizeof(JSAMPLE) * cinfo.output_components *
-                                        cinfo.image_width);
+      if (dparams.num_colors > 0) {
+        UnmapColors(rows[0], cinfo.output_width, cinfo.out_color_components,
+                    cinfo.colormap, cinfo.actual_number_of_colors);
+      }
     }
 
     jpegli_finish_decompress(&cinfo);

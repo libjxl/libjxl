@@ -78,6 +78,15 @@ static constexpr ScanScript kTestScript[] = {
 };
 static constexpr int kNumTestScripts = ARRAY_SIZE(kTestScript);
 
+static constexpr int kLastScan = 0xffff;
+
+static uint32_t kTestColorMap[] = {
+    0x000000, 0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0x00ffff,
+    0xff00ff, 0xffffff, 0x6251fc, 0x45d9c7, 0xa7f059, 0xd9a945,
+    0xfa4e44, 0xceaffc, 0xbad7db, 0xc1f0b1, 0xdbca9a, 0xfacac5,
+    0xf201ff, 0x0063db, 0x00f01c, 0xdbb204, 0xf12f0c, 0x7ba1dc};
+static constexpr int kTestColorMapNumColors = ARRAY_SIZE(kTestColorMap);
+
 std::string IOMethodName(JpegliDataType data_type, JpegliEndianness endianness);
 
 std::string ColorSpaceName(J_COLOR_SPACE colorspace);
@@ -161,6 +170,19 @@ std::ostream& operator<<(std::ostream& os, const CompressParams& jparams);
 void VerifyHeader(const CompressParams& jparams, j_decompress_ptr cinfo);
 void VerifyScanHeader(const CompressParams& jparams, j_decompress_ptr cinfo);
 
+enum ColorQuantMode {
+  CQUANT_1PASS,
+  CQUANT_2PASS,
+  CQUANT_EXTERNAL,
+  CQUANT_REUSE,
+};
+
+struct ScanDecompressParams {
+  int max_scan_number;
+  J_DITHER_MODE dither_mode;
+  ColorQuantMode color_quant_mode;
+};
+
 struct DecompressParams {
   size_t chunk_size = 65536;
   size_t max_output_lines = 16;
@@ -173,7 +195,20 @@ struct DecompressParams {
   bool do_block_smoothing = false;
   int scale_num = 1;
   int scale_denom = 1;
+  bool quantize_colors = false;
+  int desired_number_of_colors = 256;
+  std::vector<ScanDecompressParams> scan_params;
 };
+
+void SetDecompressParams(const DecompressParams& dparams,
+                         j_decompress_ptr cinfo, bool is_jpegli);
+
+void SetScanDecompressParams(const DecompressParams& dparams,
+                             j_decompress_ptr cinfo, int scan_number,
+                             bool is_jpegli);
+
+void UnmapColors(uint8_t* row, size_t xsize, int components,
+                 JSAMPARRAY colormap, size_t num_colors);
 
 std::string GetTestDataPath(const std::string& filename);
 std::vector<uint8_t> ReadTestData(const std::string& filename);
