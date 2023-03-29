@@ -909,7 +909,7 @@ class Benchmark {
     pool->reset(new ThreadPoolInternal(num_threads));
     // Main thread OR worker threads in pool each get a possibly empty nested
     // pool (helps use all available cores when #tasks < #threads)
-    for (size_t i = 0; i < num_threads; ++i) {
+    for (size_t i = 0; i < std::max<size_t>(num_threads, 1); ++i) {
       inner_pools->emplace_back(new ThreadPoolInternal(num_inner));
     }
   }

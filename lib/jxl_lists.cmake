@@ -461,6 +461,8 @@ set(JPEGXL_INTERNAL_JPEGLI_SOURCES
   jpegli/bit_writer.h
   jpegli/bitstream.cc
   jpegli/bitstream.h
+  jpegli/color_quantize.cc
+  jpegli/color_quantize.h
   jpegli/color_transform.cc
   jpegli/color_transform.h
   jpegli/common.cc

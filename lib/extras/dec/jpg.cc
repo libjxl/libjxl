@@ -161,11 +161,25 @@ void MyOutputMessage(j_common_ptr cinfo) {
 #endif
 }
 
+void UnmapColors(uint8_t* row, size_t xsize, int components,
+                 JSAMPARRAY colormap, size_t num_colors) {
+  JXL_CHECK(colormap != nullptr);
+  std::vector<uint8_t> tmp(xsize * components);
+  for (size_t x = 0; x < xsize; ++x) {
+    JXL_CHECK(row[x] < num_colors);
+    for (int c = 0; c < components; ++c) {
+      tmp[x * components + c] = colormap[c][row[x]];
+    }
+  }
+  memcpy(row, tmp.data(), tmp.size());
+}
+
 }  // namespace
 
 Status DecodeImageJPG(const Span<const uint8_t> bytes,
                       const ColorHints& color_hints, PackedPixelFile* ppf,
-                      const SizeConstraints* constraints) {
+                      const SizeConstraints* constraints,
+                      const JPGDecompressParams* dparams) {
   // Don't do anything for non-JPEG files (no need to report an error)
   if (!IsJPG(bytes)) return false;
 
@@ -248,8 +262,15 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes,
     ppf->info.num_color_channels = nbcomp;
     ppf->info.orientation = JXL_ORIENT_IDENTITY;
 
+    if (dparams && dparams->num_colors > 0) {
+      cinfo.quantize_colors = TRUE;
+      cinfo.desired_number_of_colors = dparams->num_colors;
+      cinfo.two_pass_quantize = dparams->two_pass_quant;
+      cinfo.dither_mode = (J_DITHER_MODE)dparams->dither_mode;
+    }
+
     jpeg_start_decompress(&cinfo);
-    JXL_ASSERT(cinfo.output_components == nbcomp);
+    JXL_ASSERT(cinfo.out_color_components == nbcomp);
     JxlDataType data_type =
         ppf->info.bits_per_sample <= 8 ? JXL_TYPE_UINT8 : JXL_TYPE_UINT16;
 
@@ -263,9 +284,19 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes,
     // Allocates the frame buffer.
     ppf->frames.emplace_back(cinfo.image_width, cinfo.image_height, format);
     const auto& frame = ppf->frames.back();
-    JXL_ASSERT(sizeof(JSAMPLE) * cinfo.output_components * cinfo.image_width <=
+    JXL_ASSERT(sizeof(JSAMPLE) * cinfo.out_color_components *
+                   cinfo.image_width <=
                frame.color.stride);
 
+    if (cinfo.quantize_colors) {
+      jxl::msan::UnpoisonMemory(cinfo.colormap, cinfo.out_color_components *
+                                                    sizeof(cinfo.colormap[0]));
+      for (int c = 0; c < cinfo.out_color_components; ++c) {
+        jxl::msan::UnpoisonMemory(
+            cinfo.colormap[c],
+            cinfo.actual_number_of_colors * sizeof(cinfo.colormap[c][0]));
+      }
+    }
     for (size_t y = 0; y < cinfo.image_height; ++y) {
       JSAMPROW rows[] = {reinterpret_cast<JSAMPLE*>(
           static_cast<uint8_t*>(frame.color.pixels()) +
@@ -273,6 +304,10 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes,
       jpeg_read_scanlines(&cinfo, rows, 1);
       msan::UnpoisonMemory(rows[0], sizeof(JSAMPLE) * cinfo.output_components *
                                         cinfo.image_width);
+      if (dparams && dparams->num_colors > 0) {
+        UnmapColors(rows[0], cinfo.output_width, cinfo.out_color_components,
+                    cinfo.colormap, cinfo.actual_number_of_colors);
+      }
     }
 
     jpeg_finish_decompress(&cinfo);

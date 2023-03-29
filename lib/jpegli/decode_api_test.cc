@@ -70,21 +70,6 @@ class SourceManager {
   static void term_source(j_decompress_ptr cinfo) {}
 };
 
-void SetDecompressParams(const DecompressParams& dparams,
-                         j_decompress_ptr cinfo) {
-  jpegli_set_output_format(cinfo, dparams.data_type, dparams.endianness);
-  cinfo->raw_data_out = dparams.output_mode == RAW_DATA;
-  cinfo->do_block_smoothing = dparams.do_block_smoothing;
-  if (dparams.set_out_color_space) {
-    cinfo->out_color_space = dparams.out_color_space;
-    if (dparams.out_color_space == JCS_UNKNOWN) {
-      cinfo->jpeg_color_space = JCS_UNKNOWN;
-    }
-  }
-  cinfo->scale_num = dparams.scale_num;
-  cinfo->scale_denom = dparams.scale_denom;
-}
-
 void ReadOutputImage(const DecompressParams& dparams, j_decompress_ptr cinfo,
                      TestImage* output) {
   JDIMENSION xoffset = 0;
@@ -98,7 +83,7 @@ void ReadOutputImage(const DecompressParams& dparams, j_decompress_ptr cinfo,
   }
   output->ysize = ysize_cropped;
   output->xsize = cinfo->output_width;
-  output->components = cinfo->num_components;
+  output->components = cinfo->out_color_components;
   output->data_type = dparams.data_type;
   output->endianness = dparams.endianness;
   size_t bytes_per_sample = jpegli_bytes_per_sample(dparams.data_type);
@@ -149,8 +134,8 @@ void ReadOutputImage(const DecompressParams& dparams, j_decompress_ptr cinfo,
       } else {
         size_t lines_left = yoffset + ysize_cropped - cinfo->output_scanline;
         max_lines = std::min<size_t>(max_output_lines, lines_left);
-        size_t stride =
-            cinfo->output_width * cinfo->num_components * bytes_per_sample;
+        size_t stride = cinfo->output_width * cinfo->out_color_components *
+                        bytes_per_sample;
         std::vector<JSAMPROW> scanlines(max_lines);
         for (size_t i = 0; i < max_lines; ++i) {
           size_t yidx = cinfo->output_scanline - yoffset + i;
@@ -158,6 +143,13 @@ void ReadOutputImage(const DecompressParams& dparams, j_decompress_ptr cinfo,
         }
         num_output_lines =
             jpegli_read_scanlines(cinfo, &scanlines[0], max_lines);
+        if (cinfo->quantize_colors) {
+          for (size_t i = 0; i < num_output_lines; ++i) {
+            UnmapColors(scanlines[i], cinfo->output_width,
+                        cinfo->out_color_components, cinfo->colormap,
+                        cinfo->actual_number_of_colors);
+          }
+        }
       }
     }
     total_output_lines += num_output_lines;
@@ -175,6 +167,8 @@ struct TestConfig {
   CompressParams jparams;
   DecompressParams dparams;
   bool compare_to_orig = false;
+  float max_tolerance_factor = 1.01f;
+  float max_rms_dist = 1.0f;
 };
 
 std::vector<uint8_t> GetTestJpegData(TestConfig& config) {
@@ -194,6 +188,10 @@ TEST_P(DecodeAPITestParam, TestAPI) {
   const DecompressParams& dparams = config.dparams;
   const std::vector<uint8_t> compressed = GetTestJpegData(config);
   SourceManager src(compressed.data(), compressed.size(), dparams.chunk_size);
+
+  TestImage output1;
+  DecodeWithLibjpeg(CompressParams(), dparams, compressed, &output1);
+
   TestImage output0;
   jpeg_decompress_struct cinfo;
   const auto try_catch_block = [&]() -> bool {
@@ -204,7 +202,7 @@ TEST_P(DecodeAPITestParam, TestAPI) {
       jpegli_save_markers(&cinfo, kSpecialMarker, 0xffff);
     }
     jpegli_read_header(&cinfo, /*require_image=*/TRUE);
-    SetDecompressParams(dparams, &cinfo);
+    SetDecompressParams(dparams, &cinfo, /*is_jpegli=*/true);
     VerifyHeader(config.jparams, &cinfo);
     jpegli_start_decompress(&cinfo);
     VerifyScanHeader(config.jparams, &cinfo);
@@ -215,15 +213,15 @@ TEST_P(DecodeAPITestParam, TestAPI) {
   ASSERT_TRUE(try_catch_block());
   jpegli_destroy_decompress(&cinfo);
 
-  TestImage output1;
-  DecodeWithLibjpeg(CompressParams(), dparams, compressed, &output1);
-
   if (config.compare_to_orig) {
     double rms0 = DistanceRms(config.input, output0);
     double rms1 = DistanceRms(config.input, output1);
-    EXPECT_LE(rms0, rms1 * 1.01);
+    printf("rms: %f  vs  %f\n", rms0, rms1);
+    EXPECT_LE(rms0, rms1 * config.max_tolerance_factor);
   } else {
-    VerifyOutputImage(output1, output0, 1.0f);
+    double rms = DistanceRms(output0, output1);
+    printf("rms: %f\n", rms);
+    EXPECT_LE(rms, config.max_rms_dist);
   }
 }
 
@@ -235,6 +233,11 @@ TEST_P(DecodeAPITestParamBuffered, TestAPI) {
   const DecompressParams& dparams = config.dparams;
   const std::vector<uint8_t> compressed = GetTestJpegData(config);
   SourceManager src(compressed.data(), compressed.size(), dparams.chunk_size);
+
+  std::vector<TestImage> output_progression1;
+  DecodeAllScansWithLibjpeg(CompressParams(), dparams, compressed,
+                            &output_progression1);
+
   std::vector<TestImage> output_progression0;
   jpeg_decompress_struct cinfo;
   const auto try_catch_block = [&]() -> bool {
@@ -243,9 +246,9 @@ TEST_P(DecodeAPITestParamBuffered, TestAPI) {
     cinfo.src = reinterpret_cast<jpeg_source_mgr*>(&src);
     EXPECT_EQ(JPEG_REACHED_SOS,
               jpegli_read_header(&cinfo, /*require_image=*/TRUE));
-    SetDecompressParams(dparams, &cinfo);
-    VerifyHeader(config.jparams, &cinfo);
     cinfo.buffered_image = TRUE;
+    SetDecompressParams(dparams, &cinfo, /*is_jpegli=*/true);
+    VerifyHeader(config.jparams, &cinfo);
     EXPECT_TRUE(jpegli_start_decompress(&cinfo));
     // start decompress should not read the whole input in buffered image mode
     EXPECT_FALSE(jpegli_input_complete(&cinfo));
@@ -253,6 +256,8 @@ TEST_P(DecodeAPITestParamBuffered, TestAPI) {
     int sos_marker_cnt = 1;  // read_header reads the first SOS marker
     while (!jpegli_input_complete(&cinfo)) {
       EXPECT_EQ(cinfo.input_scan_number, sos_marker_cnt);
+      SetScanDecompressParams(dparams, &cinfo, cinfo.input_scan_number,
+                              /*is_jpegli=*/true);
       EXPECT_TRUE(jpegli_start_output(&cinfo, cinfo.input_scan_number));
       // start output sets output_scan_number, but does not change
       // input_scan_number
@@ -274,14 +279,20 @@ TEST_P(DecodeAPITestParamBuffered, TestAPI) {
   ASSERT_TRUE(try_catch_block());
   jpegli_destroy_decompress(&cinfo);
 
-  std::vector<TestImage> output_progression1;
-  DecodeAllScansWithLibjpeg(CompressParams(), dparams, compressed,
-                            &output_progression1);
   ASSERT_EQ(output_progression0.size(), output_progression1.size());
   for (size_t i = 0; i < output_progression0.size(); ++i) {
     const TestImage& output = output_progression0[i];
     const TestImage& expected = output_progression1[i];
-    VerifyOutputImage(expected, output, 1.0);
+    if (config.compare_to_orig) {
+      double rms0 = DistanceRms(config.input, output);
+      double rms1 = DistanceRms(config.input, expected);
+      printf("rms: %f  vs  %f\n", rms0, rms1);
+      EXPECT_LE(rms0, rms1 * config.max_tolerance_factor);
+    } else {
+      double rms = DistanceRms(expected, output);
+      printf("rms: %f\n", rms);
+      EXPECT_LE(rms, config.max_rms_dist);
+    }
   }
 }
 
@@ -346,7 +357,72 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
   }
 
   if (buffered) {
+    TestConfig config;
+    config.dparams.quantize_colors = true;
+    config.dparams.scan_params = {
+        {3, JDITHER_NONE, CQUANT_1PASS},  {4, JDITHER_ORDERED, CQUANT_1PASS},
+        {5, JDITHER_FS, CQUANT_1PASS},    {6, JDITHER_NONE, CQUANT_EXTERNAL},
+        {8, JDITHER_NONE, CQUANT_REUSE},  {9, JDITHER_NONE, CQUANT_EXTERNAL},
+        {10, JDITHER_NONE, CQUANT_2PASS}, {11, JDITHER_NONE, CQUANT_REUSE},
+        {12, JDITHER_NONE, CQUANT_2PASS}, {13, JDITHER_FS, CQUANT_2PASS},
+    };
+    config.compare_to_orig = true;
+    config.max_tolerance_factor = 1.02f;
+    all_tests.push_back(config);
+  }
+
+  if (buffered) {
     return all_tests;
+  }
+
+  for (int num_colors : {8, 64, 256}) {
+    for (ColorQuantMode mode : {CQUANT_1PASS, CQUANT_EXTERNAL, CQUANT_2PASS}) {
+      if (mode == CQUANT_EXTERNAL && num_colors != 256) continue;
+      for (J_DITHER_MODE dither : {JDITHER_NONE, JDITHER_ORDERED, JDITHER_FS}) {
+        if (mode == CQUANT_EXTERNAL && dither != JDITHER_NONE) continue;
+        if (mode != CQUANT_1PASS && dither == JDITHER_ORDERED) continue;
+        for (bool crop : {false, true}) {
+          for (bool scale : {false, true}) {
+            for (bool samp : {false, true}) {
+              if ((num_colors != 256) && (crop || scale || samp)) {
+                continue;
+              }
+              if (mode == CQUANT_2PASS && crop) continue;
+              TestConfig config;
+              config.input.xsize = 1024;
+              config.input.ysize = 768;
+              config.dparams.quantize_colors = true;
+              config.dparams.desired_number_of_colors = num_colors;
+              config.dparams.scan_params = {{kLastScan, dither, mode}};
+              config.dparams.crop_output = crop;
+              if (scale) {
+                config.dparams.scale_num = 7;
+                config.dparams.scale_denom = 8;
+              }
+              if (samp) {
+                config.jparams.h_sampling = {2, 1, 1};
+                config.jparams.v_sampling = {2, 1, 1};
+              }
+              if (!scale && !crop) {
+                config.compare_to_orig = true;
+                if (dither != JDITHER_NONE) {
+                  config.max_tolerance_factor = 1.05f;
+                }
+                if (mode == CQUANT_2PASS &&
+                    (num_colors == 8 || dither == JDITHER_FS)) {
+                  // TODO(szabadka) Lower this bound.
+                  config.max_tolerance_factor = 1.5f;
+                }
+              } else {
+                // We only test for buffer overflows, etc.
+                config.max_rms_dist = 100.0f;
+              }
+              all_tests.push_back(config);
+            }
+          }
+        }
+      }
+    }
   }
 
   for (int h_samp : {1, 2}) {
@@ -645,6 +721,32 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
   return all_tests;
 }
 
+std::string QuantMode(ColorQuantMode mode) {
+  switch (mode) {
+    case CQUANT_1PASS:
+      return "1pass";
+    case CQUANT_EXTERNAL:
+      return "External";
+    case CQUANT_2PASS:
+      return "2pass";
+    case CQUANT_REUSE:
+      return "Reuse";
+  }
+  return "";
+}
+
+std::string DitherMode(J_DITHER_MODE mode) {
+  switch (mode) {
+    case JDITHER_NONE:
+      return "No";
+    case JDITHER_ORDERED:
+      return "Ordered";
+    case JDITHER_FS:
+      return "FS";
+  }
+  return "";
+}
+
 std::ostream& operator<<(std::ostream& os, const DecompressParams& dparams) {
   if (dparams.chunk_size == 0) {
     os << "CompleteInput";
@@ -671,6 +773,15 @@ std::ostream& operator<<(std::ostream& os, const DecompressParams& dparams) {
   }
   if (dparams.scale_num != 1 || dparams.scale_denom != 1) {
     os << "Scale" << dparams.scale_num << "_" << dparams.scale_denom;
+  }
+  if (dparams.quantize_colors) {
+    os << "Quant" << dparams.desired_number_of_colors << "colors";
+    for (size_t i = 0; i < dparams.scan_params.size(); ++i) {
+      if (i > 0) os << "_";
+      const auto& sparam = dparams.scan_params[i];
+      os << QuantMode(sparam.color_quant_mode);
+      os << DitherMode(sparam.dither_mode) << "Dither";
+    }
   }
   return os;
 }

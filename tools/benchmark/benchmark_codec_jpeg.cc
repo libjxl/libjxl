@@ -104,6 +104,10 @@ class JPEGCodec : public ImageCodec {
       enable_adaptive_quant_ = false;
       return true;
     }
+    if (param.substr(0, 6) == "cquant") {
+      num_colors_ = strtol(param.substr(6).c_str(), nullptr, 10);
+      return true;
+    }
 #endif
     return false;
   }
@@ -227,16 +231,22 @@ class JPEGCodec : public ImageCodec {
       std::vector<uint8_t> jpeg_bytes(compressed.data(),
                                       compressed.data() + compressed.size());
       const double start = jxl::Now();
-      JxlDataType data_type = bitdepth_ > 8 ? JXL_TYPE_UINT16 : JXL_TYPE_UINT8;
+      jxl::extras::JpegDecompressParams dparams;
+      dparams.output_data_type =
+          bitdepth_ > 8 ? JXL_TYPE_UINT16 : JXL_TYPE_UINT8;
+      dparams.num_colors = num_colors_;
       JXL_RETURN_IF_ERROR(
-          jxl::extras::DecodeJpeg(jpeg_bytes, data_type, pool, &ppf));
+          jxl::extras::DecodeJpeg(jpeg_bytes, dparams, pool, &ppf));
       const double end = jxl::Now();
       speed_stats->NotifyElapsed(end - start);
 #endif
     } else {
       const double start = jxl::Now();
-      JXL_RETURN_IF_ERROR(jxl::extras::DecodeImageJPG(
-          compressed, jxl::extras::ColorHints(), &ppf));
+      jxl::extras::JPGDecompressParams dparams;
+      dparams.num_colors = num_colors_;
+      JXL_RETURN_IF_ERROR(
+          jxl::extras::DecodeImageJPG(compressed, jxl::extras::ColorHints(),
+                                      &ppf, /*constraints=*/nullptr, &dparams));
       const double end = jxl::Now();
       speed_stats->NotifyElapsed(end - start);
     }
@@ -260,6 +270,7 @@ class JPEGCodec : public ImageCodec {
 #endif
   // JPEG decoder and its parameters
   std::string jpeg_decoder_ = "libjpeg";
+  int num_colors_ = 0;
 #if JPEGXL_ENABLE_JPEGLI
   size_t bitdepth_ = 8;
   bool enable_adaptive_quant_ = true;

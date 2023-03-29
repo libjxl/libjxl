@@ -20,17 +20,18 @@
 #include "lib/extras/enc/jpegli.h"
 #include "lib/extras/enc/jpg.h"
 #include "lib/extras/packed_image.h"
-#include "lib/jpegli/testing.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/test_image.h"
 #include "lib/jxl/test_utils.h"
+#include "lib/jxl/testing.h"
 
 namespace jxl {
 namespace extras {
 namespace {
 
+using test::Butteraugli3Norm;
 using test::ButteraugliDistance;
 using test::TestImage;
 
@@ -64,8 +65,10 @@ std::vector<uint8_t> GetAppData(const std::vector<uint8_t>& compressed) {
 }
 
 Status DecodeWithLibjpeg(const std::vector<uint8_t>& compressed,
-                         PackedPixelFile* ppf) {
-  return DecodeImageJPG(Span<const uint8_t>(compressed), ColorHints(), ppf);
+                         PackedPixelFile* ppf,
+                         const JPGDecompressParams* dparams = nullptr) {
+  return DecodeImageJPG(Span<const uint8_t>(compressed), ColorHints(), ppf,
+                        /*constraints=*/nullptr, dparams);
 }
 
 Status EncodeWithLibjpeg(const PackedPixelFile& ppf, int quality,
@@ -104,7 +107,8 @@ TEST(JpegliTest, JpegliSRGBDecodeTest) {
   PackedPixelFile ppf1;
   ASSERT_TRUE(DecodeWithLibjpeg(compressed, &ppf1));
   PackedPixelFile ppf2;
-  ASSERT_TRUE(DecodeJpeg(compressed, JXL_TYPE_UINT8, nullptr, &ppf2));
+  JpegDecompressParams dparams;
+  ASSERT_TRUE(DecodeJpeg(compressed, dparams, nullptr, &ppf2));
   EXPECT_LT(ButteraugliDistance(ppf0, ppf2), ButteraugliDistance(ppf0, ppf1));
 }
 
@@ -121,7 +125,8 @@ TEST(JpegliTest, JpegliGrayscaleDecodeTest) {
   PackedPixelFile ppf1;
   ASSERT_TRUE(DecodeWithLibjpeg(compressed, &ppf1));
   PackedPixelFile ppf2;
-  ASSERT_TRUE(DecodeJpeg(compressed, JXL_TYPE_UINT8, nullptr, &ppf2));
+  JpegDecompressParams dparams;
+  ASSERT_TRUE(DecodeJpeg(compressed, dparams, nullptr, &ppf2));
   EXPECT_LT(ButteraugliDistance(ppf0, ppf2), ButteraugliDistance(ppf0, ppf1));
 }
 
@@ -167,7 +172,8 @@ TEST(JpegliTest, JpegliDecodeTestLargeSmoothArea) {
   ASSERT_TRUE(EncodeWithLibjpeg(ppf0, 90, &compressed));
 
   PackedPixelFile ppf1;
-  ASSERT_TRUE(DecodeJpeg(compressed, JXL_TYPE_UINT8, nullptr, &ppf1));
+  JpegDecompressParams dparams;
+  ASSERT_TRUE(DecodeJpeg(compressed, dparams, nullptr, &ppf1));
   EXPECT_LT(ButteraugliDistance(ppf0, ppf1), 3.0f);
 }
 
@@ -242,7 +248,9 @@ TEST(JpegliTest, JpegliHDRRoundtripTest) {
   ASSERT_TRUE(EncodeJpeg(ppf_in, settings, nullptr, &compressed));
 
   PackedPixelFile ppf_out;
-  ASSERT_TRUE(DecodeJpeg(compressed, JXL_TYPE_UINT16, nullptr, &ppf_out));
+  JpegDecompressParams dparams;
+  dparams.output_data_type = JXL_TYPE_UINT16;
+  ASSERT_TRUE(DecodeJpeg(compressed, dparams, nullptr, &ppf_out));
   EXPECT_THAT(BitsPerPixel(ppf_in, compressed), IsSlightlyBelow(2.95f));
   EXPECT_THAT(ButteraugliDistance(ppf_in, ppf_out), IsSlightlyBelow(1.05f));
 }
@@ -301,6 +309,95 @@ TEST(JpegliTest, JpegliSetAppData) {
   settings.xyb = true;
   EXPECT_FALSE(EncodeJpeg(ppf_in, settings, nullptr, &compressed));
 }
+
+struct TestConfig {
+  int num_colors;
+  int passes;
+  int dither;
+};
+
+class JpegliColorQuantTestParam : public ::testing::TestWithParam<TestConfig> {
+};
+
+TEST_P(JpegliColorQuantTestParam, JpegliColorQuantizeTest) {
+  TestConfig config = GetParam();
+  std::string testimage = "jxl/flower/flower_small.rgb.depth8.ppm";
+  PackedPixelFile ppf0;
+  ASSERT_TRUE(ReadTestImage(testimage, &ppf0));
+  EXPECT_EQ("RGB_D65_SRG_Rel_SRG", Description(ppf0.color_encoding));
+  EXPECT_EQ(8, ppf0.info.bits_per_sample);
+
+  std::vector<uint8_t> compressed;
+  ASSERT_TRUE(EncodeWithLibjpeg(ppf0, 90, &compressed));
+
+  PackedPixelFile ppf1;
+  JPGDecompressParams dparams1;
+  dparams1.two_pass_quant = (config.passes == 2);
+  dparams1.num_colors = config.num_colors;
+  dparams1.dither_mode = config.dither;
+  ASSERT_TRUE(DecodeWithLibjpeg(compressed, &ppf1, &dparams1));
+
+  PackedPixelFile ppf2;
+  JpegDecompressParams dparams2;
+  dparams2.two_pass_quant = (config.passes == 2);
+  dparams2.num_colors = config.num_colors;
+  dparams2.dither_mode = config.dither;
+  ASSERT_TRUE(DecodeJpeg(compressed, dparams2, nullptr, &ppf2));
+
+  double dist1 = Butteraugli3Norm(ppf0, ppf1);
+  double dist2 = Butteraugli3Norm(ppf0, ppf2);
+  printf("distance: %f  vs %f\n", dist2, dist1);
+  if (config.passes == 1) {
+    if (config.num_colors == 16 && config.dither == 2) {
+      // TODO(szabadka) Fix this case.
+      EXPECT_LT(dist2, dist1 * 1.5);
+    } else {
+      EXPECT_LT(dist2, dist1 * 1.05);
+    }
+  } else if (config.num_colors > 64) {
+    // TODO(szabadka) Fix 2pass quantization for <= 64 colors.
+    EXPECT_LT(dist2, dist1 * 1.1);
+  } else if (config.num_colors > 32) {
+    EXPECT_LT(dist2, dist1 * 1.2);
+  } else {
+    EXPECT_LT(dist2, dist1 * 1.7);
+  }
+}
+
+std::vector<TestConfig> GenerateTests() {
+  std::vector<TestConfig> all_tests;
+  for (int num_colors = 8; num_colors <= 256; num_colors *= 2) {
+    for (int passes = 1; passes <= 2; ++passes) {
+      for (int dither = 0; dither < 3; dither += passes) {
+        TestConfig config;
+        config.num_colors = num_colors;
+        config.passes = passes;
+        config.dither = dither;
+        all_tests.push_back(config);
+      }
+    }
+  }
+  return all_tests;
+}
+
+std::ostream& operator<<(std::ostream& os, const TestConfig& c) {
+  static constexpr const char* kDitherModeStr[] = {"No", "Ordered", "FS"};
+  os << c.passes << "pass";
+  os << c.num_colors << "colors";
+  os << kDitherModeStr[c.dither] << "dither";
+  return os;
+}
+
+std::string TestDescription(const testing::TestParamInfo<TestConfig>& info) {
+  std::stringstream name;
+  name << info.param;
+  return name.str();
+}
+
+JXL_GTEST_INSTANTIATE_TEST_SUITE_P(JpegliColorQuantTest,
+                                   JpegliColorQuantTestParam,
+                                   testing::ValuesIn(GenerateTests()),
+                                   TestDescription);
 
 }  // namespace
 }  // namespace extras
