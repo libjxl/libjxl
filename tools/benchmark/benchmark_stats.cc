@@ -150,7 +150,7 @@ void BenchmarkStats::Assimilate(const BenchmarkStats& victim) {
   total_adj_compressed_size += victim.total_adj_compressed_size;
   total_time_encode += victim.total_time_encode;
   total_time_decode += victim.total_time_decode;
-  max_distance = std::max(max_distance, victim.max_distance);
+  max_distance += pow(victim.max_distance, 2.0) * victim.total_input_pixels;
   distance_p_norm += victim.distance_p_norm;
   ssimulacra2 += victim.ssimulacra2;
   distance_2 += victim.distance_2;
@@ -207,6 +207,8 @@ std::vector<ColumnValue> BenchmarkStats::ComputeColumns(
   const double ssimulacra2_avg = ssimulacra2 / total_input_pixels;
   const double bpp_p_norm = p_norm * comp_bpp;
 
+  const double max_distance_avg = sqrt(max_distance / total_input_pixels);
+
   std::vector<ColumnValue> values(
       GetColumnDescriptors(extra_metrics.size()).size());
 
@@ -216,7 +218,7 @@ std::vector<ColumnValue> BenchmarkStats::ComputeColumns(
   values[3].f = comp_bpp;
   values[4].f = compression_speed;
   values[5].f = decompression_speed;
-  values[6].f = static_cast<double>(max_distance);
+  values[6].f = static_cast<double>(max_distance_avg);
   values[7].f = ssimulacra2_avg;
   values[8].f = p_norm;
   values[9].f = psnr;
