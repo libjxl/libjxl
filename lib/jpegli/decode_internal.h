@@ -93,6 +93,7 @@ struct jpeg_decomp_master {
   //
   // Rendering state.
   //
+  int output_passes_done_ = 0;
   JpegliDataType output_data_type_ = JPEGLI_TYPE_UINT8;
   bool swap_endianness_ = false;
   size_t xoffset_ = 0;

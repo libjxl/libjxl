@@ -457,6 +457,9 @@ void ProcessRawOutput(j_decompress_ptr cinfo, JSAMPIMAGE data) {
   }
   ++cinfo->output_iMCU_row;
   cinfo->output_scanline += cinfo->max_v_samp_factor * DCTSIZE;
+  if (cinfo->output_scanline >= cinfo->output_height) {
+    ++m->output_passes_done_;
+  }
 }
 
 void ProcessOutput(j_decompress_ptr cinfo, size_t* num_output_rows,
@@ -524,6 +527,9 @@ void ProcessOutput(j_decompress_ptr cinfo, size_t* num_output_rows,
         JXL_ASSERT(cinfo->output_scanline == y + yix);
         ++cinfo->output_scanline;
         ++(*num_output_rows);
+        if (cinfo->output_scanline == cinfo->output_height) {
+          ++m->output_passes_done_;
+        }
       }
     }
   } else {

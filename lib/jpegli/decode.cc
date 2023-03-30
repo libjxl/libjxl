@@ -52,6 +52,7 @@ void InitializeImage(j_decompress_ptr cinfo) {
     cinfo->master->dither_[i] = nullptr;
     cinfo->master->error_row_[i] = nullptr;
   }
+  cinfo->master->output_passes_done_ = 0;
 }
 
 void InitializeDecompressParams(j_decompress_ptr cinfo) {
@@ -67,7 +68,7 @@ void InitializeDecompressParams(j_decompress_ptr cinfo) {
   cinfo->do_block_smoothing = FALSE;
   cinfo->quantize_colors = FALSE;
   cinfo->dither_mode = JDITHER_FS;
-  cinfo->two_pass_quantize = FALSE;
+  cinfo->two_pass_quantize = TRUE;
   cinfo->desired_number_of_colors = 256;
   cinfo->enable_1pass_quant = FALSE;
   cinfo->enable_external_quant = FALSE;
@@ -79,6 +80,57 @@ void InitializeDecompressParams(j_decompress_ptr cinfo) {
     cinfo->master->app_marker_parsers[i] = nullptr;
   }
   cinfo->master->com_marker_parser = nullptr;
+}
+
+void InitProgressMonitor(j_decompress_ptr cinfo, bool coef_only) {
+  if (!cinfo->progress) return;
+  jpeg_decomp_master* m = cinfo->master;
+  int nc = cinfo->num_components;
+  int estimated_num_scans =
+      cinfo->progressive_mode ? 2 + 3 * nc : (m->is_multiscan_ ? nc : 1);
+  cinfo->progress->pass_limit = cinfo->total_iMCU_rows * estimated_num_scans;
+  cinfo->progress->pass_counter = 0;
+  if (coef_only) {
+    cinfo->progress->total_passes = 1;
+  } else {
+    int input_passes = !cinfo->buffered_image && m->is_multiscan_ ? 1 : 0;
+    bool two_pass_quant =
+        cinfo->quantize_colors && !cinfo->colormap && cinfo->two_pass_quantize;
+    cinfo->progress->total_passes = input_passes + (two_pass_quant ? 2 : 1);
+  }
+  cinfo->progress->completed_passes = 0;
+}
+
+void InitProgressMonitorForOutput(j_decompress_ptr cinfo) {
+  if (!cinfo->progress) return;
+  jpeg_decomp_master* m = cinfo->master;
+  int passes_per_output = cinfo->enable_2pass_quant ? 2 : 1;
+  int output_passes_left = cinfo->buffered_image && !m->found_eoi_ ? 2 : 1;
+  cinfo->progress->total_passes =
+      m->output_passes_done_ + passes_per_output * output_passes_left;
+  cinfo->progress->completed_passes = m->output_passes_done_;
+}
+
+void ProgressMonitorInputPass(j_decompress_ptr cinfo) {
+  if (!cinfo->progress) return;
+  cinfo->progress->pass_counter =
+      ((cinfo->input_scan_number - 1) * cinfo->total_iMCU_rows +
+       cinfo->input_iMCU_row);
+  if (cinfo->progress->pass_counter > cinfo->progress->pass_limit) {
+    cinfo->progress->pass_limit =
+        cinfo->input_scan_number * cinfo->total_iMCU_rows;
+  }
+  (*cinfo->progress->progress_monitor)(reinterpret_cast<j_common_ptr>(cinfo));
+}
+
+void ProgressMonitorOutputPass(j_decompress_ptr cinfo) {
+  if (!cinfo->progress) return;
+  jpeg_decomp_master* m = cinfo->master;
+  int input_passes = !cinfo->buffered_image && m->is_multiscan_ ? 1 : 0;
+  cinfo->progress->pass_counter = cinfo->output_scanline;
+  cinfo->progress->pass_limit = cinfo->output_height;
+  cinfo->progress->completed_passes = input_passes + m->output_passes_done_;
+  (*cinfo->progress->progress_monitor)(reinterpret_cast<j_common_ptr>(cinfo));
 }
 
 int ConsumeInput(j_decompress_ptr cinfo) {
@@ -157,6 +209,7 @@ bool ReadOutputPass(j_decompress_ptr cinfo) {
   size_t num_output_rows = 0;
   while (num_output_rows < cinfo->output_height) {
     if (IsInputReady(cinfo)) {
+      ProgressMonitorOutputPass(cinfo);
       ProcessOutput(cinfo, &num_output_rows, m->scanlines_,
                     cinfo->output_height);
     } else if (ConsumeInput(cinfo) == JPEG_SUSPENDED) {
@@ -386,6 +439,7 @@ boolean jpegli_start_decompress(j_decompress_ptr cinfo) {
   if (cinfo->global_state == jpegli::kDecHeaderDone) {
     jpegli_calc_output_dimensions(cinfo);
     cinfo->global_state = jpegli::kDecProcessScan;
+    jpegli::InitProgressMonitor(cinfo, /*coef_only=*/false);
     if (cinfo->buffered_image == TRUE) {
       cinfo->output_scan_number = 0;
       return TRUE;
@@ -401,6 +455,7 @@ boolean jpegli_start_decompress(j_decompress_ptr cinfo) {
                    cinfo->global_state);
     }
     while (!cinfo->master->found_eoi_) {
+      jpegli::ProgressMonitorInputPass(cinfo);
       int retcode = jpegli::ConsumeInput(cinfo);
       if (retcode == JPEG_SUSPENDED) {
         return FALSE;
@@ -431,6 +486,7 @@ boolean jpegli_start_output(j_decompress_ptr cinfo, int scan_number) {
     cinfo->output_scan_number =
         std::min(cinfo->output_scan_number, cinfo->input_scan_number);
   }
+  jpegli::InitProgressMonitorForOutput(cinfo);
   // TODO(szabadka): Figure out how much we can reuse.
   jpegli::PrepareForOutput(cinfo);
   if (cinfo->quantize_colors) {
@@ -481,6 +537,7 @@ JDIMENSION jpegli_read_scanlines(j_decompress_ptr cinfo, JSAMPARRAY scanlines,
   if (cinfo->output_scanline + max_lines > cinfo->output_height) {
     max_lines = cinfo->output_height - cinfo->output_scanline;
   }
+  jpegli::ProgressMonitorOutputPass(cinfo);
   size_t num_output_rows = 0;
   while (num_output_rows < max_lines) {
     if (jpegli::IsInputReady(cinfo)) {
@@ -534,6 +591,7 @@ JDIMENSION jpegli_read_raw_data(j_decompress_ptr cinfo, JSAMPIMAGE data,
   if (max_lines < iMCU_height) {
     JPEGLI_ERROR("jpegli_read_raw_data: output buffer too small");
   }
+  jpegli::ProgressMonitorOutputPass(cinfo);
   while (!jpegli::IsInputReady(cinfo)) {
     if (jpegli::ConsumeInput(cinfo) == JPEG_SUSPENDED) {
       return 0;
@@ -551,9 +609,11 @@ jvirt_barray_ptr* jpegli_read_coefficients(j_decompress_ptr cinfo) {
     JPEGLI_ERROR("jpegli_read_coefficients: unexpected state %d",
                  cinfo->global_state);
   }
+  jpegli::InitProgressMonitor(cinfo, /*coef_only=*/true);
   cinfo->global_state = jpegli::kDecProcessScan;
   jpeg_decomp_master* m = cinfo->master;
   while (!m->found_eoi_) {
+    jpegli::ProgressMonitorInputPass(cinfo);
     int retcode = jpegli::ConsumeInput(cinfo);
     if (retcode == JPEG_SUSPENDED) {
       return nullptr;
