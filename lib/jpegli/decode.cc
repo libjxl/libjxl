@@ -44,10 +44,6 @@ void InitializeImage(j_decompress_ptr cinfo) {
   memset(cinfo->arith_dc_U, 0, sizeof(cinfo->arith_dc_U));
   memset(cinfo->arith_ac_K, 0, sizeof(cinfo->arith_ac_K));
   // Initialize the private fields.
-  for (int i = 0; i < 16; ++i) {
-    cinfo->master->app_marker_parsers[i] = nullptr;
-  }
-  cinfo->master->com_marker_parser = nullptr;
   cinfo->master->colormap_lut_ = nullptr;
   cinfo->master->pixels_ = nullptr;
   cinfo->master->scanlines_ = nullptr;
@@ -78,6 +74,11 @@ void InitializeDecompressParams(j_decompress_ptr cinfo) {
   cinfo->enable_2pass_quant = FALSE;
   cinfo->actual_number_of_colors = 0;
   cinfo->colormap = nullptr;
+  // Initialize the private fields.
+  for (int i = 0; i < 16; ++i) {
+    cinfo->master->app_marker_parsers[i] = nullptr;
+  }
+  cinfo->master->com_marker_parser = nullptr;
 }
 
 int ConsumeInput(j_decompress_ptr cinfo) {
@@ -221,11 +222,11 @@ void jpegli_CreateDecompress(j_decompress_ptr cinfo, int version,
     cinfo->dc_huff_tbl_ptrs[i] = nullptr;
     cinfo->ac_huff_tbl_ptrs[i] = nullptr;
   }
-  jpegli::InitializeDecompressParams(cinfo);
   cinfo->global_state = jpegli::kDecStart;
   cinfo->sample_range_limit = nullptr;  // not used
   cinfo->rec_outbuf_height = 1;         // output works with any buffer height
   cinfo->master = new jpeg_decomp_master;
+  jpegli::InitializeDecompressParams(cinfo);
   jpegli::InitializeImage(cinfo);
 }
 
@@ -258,6 +259,7 @@ void jpegli_set_marker_processor(j_decompress_ptr cinfo, int marker_code,
 
 int jpegli_consume_input(j_decompress_ptr cinfo) {
   if (cinfo->global_state == jpegli::kDecStart) {
+    (*cinfo->err->reset_error_mgr)(reinterpret_cast<j_common_ptr>(cinfo));
     (*cinfo->src->init_source)(cinfo);
     jpegli::InitializeImage(cinfo);
     cinfo->global_state = jpegli::kDecInHeader;

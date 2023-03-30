@@ -70,6 +70,14 @@ class SourceManager {
   static void term_source(j_decompress_ptr cinfo) {}
 };
 
+uint8_t markers_seen[kMarkerSequenceLen];
+size_t num_markers_seen = 0;
+
+boolean test_marker_processor(j_decompress_ptr cinfo) {
+  markers_seen[num_markers_seen++] = cinfo->unread_marker;
+  return TRUE;
+}
+
 void ReadOutputImage(const DecompressParams& dparams, j_decompress_ptr cinfo,
                      TestImage* output) {
   JDIMENSION xoffset = 0;
@@ -200,10 +208,28 @@ TEST_P(DecodeAPITestParam, TestAPI) {
     cinfo.src = reinterpret_cast<jpeg_source_mgr*>(&src);
     if (config.jparams.add_marker) {
       jpegli_save_markers(&cinfo, kSpecialMarker, 0xffff);
+      num_markers_seen = 0;
+      jpegli_set_marker_processor(&cinfo, 0xe6, test_marker_processor);
+      jpegli_set_marker_processor(&cinfo, 0xe7, test_marker_processor);
+      jpegli_set_marker_processor(&cinfo, 0xe8, test_marker_processor);
     }
     jpegli_read_header(&cinfo, /*require_image=*/TRUE);
+    if (config.jparams.add_marker) {
+      EXPECT_EQ(num_markers_seen, kMarkerSequenceLen);
+      EXPECT_EQ(0, memcmp(markers_seen, kMarkerSequence, num_markers_seen));
+    }
+    // Check that jpegli_calc_output_dimensions can be called multiple times
+    // even with different parameters.
+    cinfo.scale_num = 1;
+    cinfo.scale_denom = 2;
+    jpegli_calc_output_dimensions(&cinfo);
     SetDecompressParams(dparams, &cinfo, /*is_jpegli=*/true);
     VerifyHeader(config.jparams, &cinfo);
+    jpegli_calc_output_dimensions(&cinfo);
+    EXPECT_LE(output1.xsize, cinfo.output_width);
+    if (!config.dparams.crop_output) {
+      EXPECT_EQ(output1.xsize, cinfo.output_width);
+    }
     jpegli_start_decompress(&cinfo);
     VerifyScanHeader(config.jparams, &cinfo);
     ReadOutputImage(dparams, &cinfo, &output0);
@@ -252,6 +278,7 @@ TEST_P(DecodeAPITestParamBuffered, TestAPI) {
     EXPECT_TRUE(jpegli_start_decompress(&cinfo));
     // start decompress should not read the whole input in buffered image mode
     EXPECT_FALSE(jpegli_input_complete(&cinfo));
+    bool has_multiple_scans = jpegli_has_multiple_scans(&cinfo);
     EXPECT_EQ(0, cinfo.output_scan_number);
     int sos_marker_cnt = 1;  // read_header reads the first SOS marker
     while (!jpegli_input_complete(&cinfo)) {
@@ -274,6 +301,7 @@ TEST_P(DecodeAPITestParamBuffered, TestAPI) {
       ++sos_marker_cnt;  // finish output reads the next SOS marker or EOI
     }
     jpegli_finish_decompress(&cinfo);
+    EXPECT_EQ(has_multiple_scans, cinfo.input_scan_number > 1);
     return true;
   };
   ASSERT_TRUE(try_catch_block());

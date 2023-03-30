@@ -583,6 +583,7 @@ uint8_t ProcessNextMarker(j_decompress_ptr cinfo) {
     AdvanceInput(cinfo, num_skipped);
   }
   uint8_t marker = data[pos + 1];
+  cinfo->unread_marker = marker;
   if (!m->found_soi_ && (num_skipped > 0 || marker != 0xd8)) {
     JPEGLI_ERROR("Did not find SOI marker.");
   }
@@ -626,6 +627,7 @@ uint8_t ProcessNextMarker(j_decompress_ptr cinfo) {
   }
   pos += marker_len;
   AdvanceInput(cinfo, marker_len);
+  cinfo->unread_marker = 0;
   return marker;
 }
 
