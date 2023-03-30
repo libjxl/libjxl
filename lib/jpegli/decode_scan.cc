@@ -78,7 +78,7 @@ struct BitReaderState {
   // Sets *pos to the next stream position, and *bit_pos to the bit position
   // within the next byte where parsing should continue.
   // Returns false if the stream ended too early.
-  bool FinishStream(size_t* pos, size_t* bit_pos) {
+  bool FinishStream(j_decompress_ptr cinfo, size_t* pos, size_t* bit_pos) {
     *bit_pos = (8 - (bits_left_ & 7)) & 7;
     // Give back some bytes that we did not use.
     int unused_bytes_left = DivCeil(bits_left_, 8);
@@ -98,6 +98,9 @@ struct BitReaderState {
       return false;
     }
     *pos = pos_;
+    if (*pos == next_marker_pos_) {
+      cinfo->unread_marker = data_[*pos + 1];
+    }
     return true;
   }
 
@@ -498,7 +501,7 @@ int ProcessScan(j_decompress_ptr cinfo) {
     }
     size_t bit_pos;
     size_t stream_pos;
-    bool stream_ok = br.FinishStream(&stream_pos, &bit_pos);
+    bool stream_ok = br.FinishStream(cinfo, &stream_pos, &bit_pos);
     if (stream_pos + 2 > len) {
       // If reading stopped within the last two bytes, we have to request more
       // input even if FinishStream() returned true, since the Huffman code

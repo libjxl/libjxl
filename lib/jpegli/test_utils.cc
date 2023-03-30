@@ -495,6 +495,10 @@ bool EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
       if (jparams.add_marker) {
         jpegli_write_marker(&cinfo, kSpecialMarker, kMarkerData,
                             sizeof(kMarkerData));
+        for (size_t i = 0; i < kMarkerSequenceLen; ++i) {
+          jpegli_write_marker(&cinfo, kMarkerSequence[i], kMarkerData,
+                              ((i + 2) % sizeof(kMarkerData)));
+        }
       }
     }
     if (cinfo.raw_data_in) {

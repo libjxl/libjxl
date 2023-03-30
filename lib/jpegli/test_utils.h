@@ -45,10 +45,13 @@ constexpr inline T1 DivCeil(T1 a, T2 b) {
     longjmp(*env, 1);                                              \
   };
 
+#define ARRAY_SIZE(X) (sizeof(X) / sizeof((X)[0]))
+
 static constexpr int kSpecialMarker = 0xe5;
 static constexpr uint8_t kMarkerData[] = {0, 1, 255, 0, 17};
-
-#define ARRAY_SIZE(X) (sizeof(X) / sizeof((X)[0]))
+static constexpr uint8_t kMarkerSequence[] = {0xe6, 0xe8, 0xe7,
+                                              0xe6, 0xe7, 0xe8};
+static constexpr size_t kMarkerSequenceLen = ARRAY_SIZE(kMarkerSequence);
 
 static constexpr jpeg_scan_info kScript1[] = {
     {3, {0, 1, 2}, 0, 0, 0, 0},
