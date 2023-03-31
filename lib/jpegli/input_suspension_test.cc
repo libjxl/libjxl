@@ -179,11 +179,18 @@ TEST_P(InputSuspensionTestParam, InputOutputLockStepNonBuffered) {
     }
     cinfo.raw_data_out = dparams.output_mode == RAW_DATA;
 
-    while (!jpegli_start_decompress(&cinfo)) {
-      JXL_CHECK(src.LoadNextChunk());
+    if (dparams.output_mode == COEFFICIENTS) {
+      jvirt_barray_ptr* coef_arrays;
+      while ((coef_arrays = jpegli_read_coefficients(&cinfo)) == nullptr) {
+        JXL_CHECK(src.LoadNextChunk());
+      }
+      CopyCoefficients(&cinfo, coef_arrays, &output0);
+    } else {
+      while (!jpegli_start_decompress(&cinfo)) {
+        JXL_CHECK(src.LoadNextChunk());
+      }
+      ReadOutputImage(dparams, &cinfo, &src, &output0);
     }
-
-    ReadOutputImage(dparams, &cinfo, &src, &output0);
 
     while (!jpegli_finish_decompress(&cinfo)) {
       JXL_CHECK(src.LoadNextChunk());
@@ -239,6 +246,11 @@ TEST_P(InputSuspensionTestParam, InputOutputLockStepBuffered) {
         JXL_CHECK(src.LoadNextChunk());
       }
       ++sos_marker_cnt;  // finish output reads the next SOS marker or EOI
+      if (dparams.output_mode == COEFFICIENTS) {
+        jvirt_barray_ptr* coef_arrays = jpegli_read_coefficients(&cinfo);
+        JXL_CHECK(coef_arrays != nullptr);
+        CopyCoefficients(&cinfo, coef_arrays, &output_progression0.back());
+      }
     }
 
     EXPECT_TRUE(jpegli_finish_decompress(&cinfo));
@@ -307,6 +319,11 @@ TEST_P(InputSuspensionTestParam, PreConsumeInputBuffered) {
     EXPECT_EQ(cinfo.output_scan_number, cinfo.input_scan_number);
 
     EXPECT_TRUE(jpegli_finish_output(&cinfo));
+    if (dparams.output_mode == COEFFICIENTS) {
+      jvirt_barray_ptr* coef_arrays = jpegli_read_coefficients(&cinfo);
+      JXL_CHECK(coef_arrays != nullptr);
+      CopyCoefficients(&cinfo, coef_arrays, &output0);
+    }
     EXPECT_TRUE(jpegli_finish_decompress(&cinfo));
     return true;
   };
@@ -337,8 +354,12 @@ TEST_P(InputSuspensionTestParam, PreConsumeInputNonBuffered) {
     EXPECT_EQ(JPEG_REACHED_SOS, jpegli_consume_input(&cinfo));
     cinfo.raw_data_out = dparams.output_mode == RAW_DATA;
 
-    while (!jpegli_start_decompress(&cinfo)) {
-      JXL_CHECK(src.LoadNextChunk());
+    if (dparams.output_mode == COEFFICIENTS) {
+      jpegli_read_coefficients(&cinfo);
+    } else {
+      while (!jpegli_start_decompress(&cinfo)) {
+        JXL_CHECK(src.LoadNextChunk());
+      }
     }
 
     while ((status = jpegli_consume_input(&cinfo)) != JPEG_REACHED_EOI) {
@@ -346,7 +367,15 @@ TEST_P(InputSuspensionTestParam, PreConsumeInputNonBuffered) {
         JXL_CHECK(src.LoadNextChunk());
       }
     }
-    ReadOutputImage(dparams, &cinfo, nullptr, &output0);
+
+    if (dparams.output_mode == COEFFICIENTS) {
+      jvirt_barray_ptr* coef_arrays = jpegli_read_coefficients(&cinfo);
+      JXL_CHECK(coef_arrays != nullptr);
+      CopyCoefficients(&cinfo, coef_arrays, &output0);
+    } else {
+      ReadOutputImage(dparams, &cinfo, nullptr, &output0);
+    }
+
     EXPECT_TRUE(jpegli_finish_decompress(&cinfo));
     return true;
   };
@@ -376,6 +405,8 @@ std::vector<TestConfig> GenerateTests() {
         all_tests.push_back(config);
         if (max_output_lines == 16) {
           config.dparams.output_mode = RAW_DATA;
+          all_tests.push_back(config);
+          config.dparams.output_mode = COEFFICIENTS;
           all_tests.push_back(config);
         }
       }
@@ -410,7 +441,9 @@ std::ostream& operator<<(std::ostream& os, const TestConfig& c) {
     os << "OutputLines" << c.dparams.max_output_lines;
   }
   if (c.dparams.output_mode == RAW_DATA) {
-    os << "Raw";
+    os << "RawDataOut";
+  } else if (c.dparams.output_mode == COEFFICIENTS) {
+    os << "CoeffsOut";
   }
   return os;
 }

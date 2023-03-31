@@ -837,7 +837,7 @@ void ReadOutputPass(j_decompress_ptr cinfo, const DecompressParams& dparams,
           cinfo->actual_number_of_colors * sizeof(cinfo->colormap[c][0]));
     }
   }
-  if (dparams.output_mode == PIXELS) {
+  if (!cinfo->raw_data_out) {
     size_t stride = output->xsize * output->components;
     output->pixels.resize(output->ysize * stride);
     output->color_space = cinfo->out_color_space;
@@ -858,7 +858,7 @@ void ReadOutputPass(j_decompress_ptr cinfo, const DecompressParams& dparams,
     if (cinfo->output_scanline < cinfo->output_height) {
       jpeg_skip_scanlines(cinfo, cinfo->output_height - cinfo->output_scanline);
     }
-  } else if (dparams.output_mode == RAW_DATA) {
+  } else {
     output->color_space = cinfo->jpeg_color_space;
     for (int c = 0; c < cinfo->num_components; ++c) {
       size_t xsize = cinfo->comp_info[c].width_in_blocks * DCTSIZE;
@@ -891,14 +891,13 @@ void ReadOutputPass(j_decompress_ptr cinfo, const DecompressParams& dparams,
             DivCeil(cinfo->image_height, cinfo->max_v_samp_factor * DCTSIZE));
 }
 
-void ReadCoefficients(j_decompress_ptr cinfo, TestImage* output) {
-  j_common_ptr comptr = reinterpret_cast<j_common_ptr>(cinfo);
-  jvirt_barray_ptr* coef_arrays = jpeg_read_coefficients(cinfo);
-  JXL_CHECK(coef_arrays != nullptr);
+void CopyCoefficients(j_decompress_ptr cinfo, jvirt_barray_ptr* coef_arrays,
+                      TestImage* output) {
   output->xsize = cinfo->image_width;
   output->ysize = cinfo->image_height;
   output->components = cinfo->num_components;
   output->color_space = cinfo->out_color_space;
+  j_common_ptr comptr = reinterpret_cast<j_common_ptr>(cinfo);
   for (int c = 0; c < cinfo->num_components; ++c) {
     jpeg_component_info* comp = &cinfo->comp_info[c];
     std::vector<JCOEF> coeffs(comp->width_in_blocks * comp->height_in_blocks *
@@ -933,7 +932,6 @@ void DecodeAllScansWithLibjpeg(const CompressParams& jparams,
     cinfo.buffered_image = TRUE;
     SetDecompressParams(dparams, &cinfo, /*is_jpegli=*/false);
     VerifyHeader(jparams, &cinfo);
-    JXL_CHECK(dparams.output_mode != COEFFICIENTS);
     JXL_CHECK(jpeg_start_decompress(&cinfo));
     // start decompress should not read the whole input in buffered image mode
     JXL_CHECK(!jpeg_input_complete(&cinfo));
@@ -957,6 +955,11 @@ void DecodeAllScansWithLibjpeg(const CompressParams& jparams,
       JXL_CHECK(cinfo.output_scan_number == cinfo.input_scan_number);
       JXL_CHECK(jpeg_finish_output(&cinfo));
       ++sos_marker_cnt;  // finish output reads the next SOS marker or EOI
+      if (dparams.output_mode == COEFFICIENTS) {
+        jvirt_barray_ptr* coef_arrays = jpeg_read_coefficients(&cinfo);
+        JXL_CHECK(coef_arrays != nullptr);
+        CopyCoefficients(&cinfo, coef_arrays, &output_progression->back());
+      }
     }
     JXL_CHECK(jpeg_finish_decompress(&cinfo));
     return true;
@@ -982,7 +985,9 @@ void DecodeWithLibjpeg(const CompressParams& jparams,
     SetDecompressParams(dparams, &cinfo, /*is_jpegli=*/false);
     VerifyHeader(jparams, &cinfo);
     if (dparams.output_mode == COEFFICIENTS) {
-      ReadCoefficients(&cinfo, output);
+      jvirt_barray_ptr* coef_arrays = jpeg_read_coefficients(&cinfo);
+      JXL_CHECK(coef_arrays != nullptr);
+      CopyCoefficients(&cinfo, coef_arrays, output);
     } else {
       JXL_CHECK(jpeg_start_decompress(&cinfo));
       VerifyScanHeader(jparams, &cinfo);

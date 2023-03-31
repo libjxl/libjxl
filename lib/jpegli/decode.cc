@@ -605,18 +605,23 @@ JDIMENSION jpegli_read_raw_data(j_decompress_ptr cinfo, JSAMPIMAGE data,
 }
 
 jvirt_barray_ptr* jpegli_read_coefficients(j_decompress_ptr cinfo) {
-  if (cinfo->global_state != jpegli::kDecHeaderDone) {
+  jpeg_decomp_master* m = cinfo->master;
+  if (!cinfo->buffered_image && cinfo->global_state == jpegli::kDecHeaderDone) {
+    jpegli::InitProgressMonitor(cinfo, /*coef_only=*/true);
+    cinfo->global_state = jpegli::kDecProcessScan;
+  }
+  if (cinfo->global_state != jpegli::kDecProcessScan &&
+      cinfo->global_state != jpegli::kDecProcessMarkers) {
     JPEGLI_ERROR("jpegli_read_coefficients: unexpected state %d",
                  cinfo->global_state);
   }
-  jpegli::InitProgressMonitor(cinfo, /*coef_only=*/true);
-  cinfo->global_state = jpegli::kDecProcessScan;
-  jpeg_decomp_master* m = cinfo->master;
-  while (!m->found_eoi_) {
-    jpegli::ProgressMonitorInputPass(cinfo);
-    int retcode = jpegli::ConsumeInput(cinfo);
-    if (retcode == JPEG_SUSPENDED) {
-      return nullptr;
+  if (!cinfo->buffered_image) {
+    while (!m->found_eoi_) {
+      jpegli::ProgressMonitorInputPass(cinfo);
+      int retcode = jpegli::ConsumeInput(cinfo);
+      if (retcode == JPEG_SUSPENDED) {
+        return nullptr;
+      }
     }
   }
   j_common_ptr comptr = reinterpret_cast<j_common_ptr>(cinfo);
