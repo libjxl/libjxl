@@ -226,9 +226,9 @@ cc_library(
         'JPEGXL_ROOT_PACKAGE=\'"' + libjxl_root_package + '"\'',
     ],
     deps = [
+        ":jpegli",
         ":jpegxl_extras",
         ":jpegxl_private",
-        ":jpegli",
     ] + libjxl_deps_runfiles,
 )
 
