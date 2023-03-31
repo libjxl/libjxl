@@ -276,7 +276,7 @@ void JxlFastLosslessPrepareHeader(JxlFastLosslessFrameState* frame,
       output->Write(2, 0b00);  // No extra channel
     }
     output->Write(1, 0);  // Not XYB
-    if (frame->nb_chans > 1) {
+    if (frame->nb_chans > 2) {
       output->Write(1, 1);  // color_encoding.all_default (sRGB)
     } else {
       output->Write(1, 0);     // color_encoding.all_default false
