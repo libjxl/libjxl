@@ -210,6 +210,9 @@ void SetScanDecompressParams(const DecompressParams& dparams,
                              j_decompress_ptr cinfo, int scan_number,
                              bool is_jpegli);
 
+void CopyCoefficients(j_decompress_ptr cinfo, jvirt_barray_ptr* coef_arrays,
+                      TestImage* output);
+
 void UnmapColors(uint8_t* row, size_t xsize, int components,
                  JSAMPARRAY colormap, size_t num_colors);
 

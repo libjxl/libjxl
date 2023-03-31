@@ -230,9 +230,15 @@ TEST_P(DecodeAPITestParam, TestAPI) {
     if (!config.dparams.crop_output) {
       EXPECT_EQ(output1.xsize, cinfo.output_width);
     }
-    jpegli_start_decompress(&cinfo);
-    VerifyScanHeader(config.jparams, &cinfo);
-    ReadOutputImage(dparams, &cinfo, &output0);
+    if (dparams.output_mode == COEFFICIENTS) {
+      jvirt_barray_ptr* coef_arrays = jpegli_read_coefficients(&cinfo);
+      JXL_CHECK(coef_arrays != nullptr);
+      CopyCoefficients(&cinfo, coef_arrays, &output0);
+    } else {
+      jpegli_start_decompress(&cinfo);
+      VerifyScanHeader(config.jparams, &cinfo);
+      ReadOutputImage(dparams, &cinfo, &output0);
+    }
     jpegli_finish_decompress(&cinfo);
     return true;
   };
@@ -245,9 +251,7 @@ TEST_P(DecodeAPITestParam, TestAPI) {
     printf("rms: %f  vs  %f\n", rms0, rms1);
     EXPECT_LE(rms0, rms1 * config.max_tolerance_factor);
   } else {
-    double rms = DistanceRms(output0, output1);
-    printf("rms: %f\n", rms);
-    EXPECT_LE(rms, config.max_rms_dist);
+    VerifyOutputImage(output0, output1, config.max_rms_dist);
   }
 }
 
@@ -299,6 +303,11 @@ TEST_P(DecodeAPITestParamBuffered, TestAPI) {
       EXPECT_EQ(cinfo.output_scan_number, cinfo.input_scan_number);
       EXPECT_TRUE(jpegli_finish_output(&cinfo));
       ++sos_marker_cnt;  // finish output reads the next SOS marker or EOI
+      if (dparams.output_mode == COEFFICIENTS) {
+        jvirt_barray_ptr* coef_arrays = jpegli_read_coefficients(&cinfo);
+        JXL_CHECK(coef_arrays != nullptr);
+        CopyCoefficients(&cinfo, coef_arrays, &output_progression0.back());
+      }
     }
     jpegli_finish_decompress(&cinfo);
     EXPECT_EQ(has_multiple_scans, cinfo.input_scan_number > 1);
@@ -317,9 +326,7 @@ TEST_P(DecodeAPITestParamBuffered, TestAPI) {
       printf("rms: %f  vs  %f\n", rms0, rms1);
       EXPECT_LE(rms0, rms1 * config.max_tolerance_factor);
     } else {
-      double rms = DistanceRms(expected, output);
-      printf("rms: %f\n", rms);
-      EXPECT_LE(rms, config.max_rms_dist);
+      VerifyOutputImage(expected, output, config.max_rms_dist);
     }
   }
 }
@@ -379,6 +386,21 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
         config.fn = testfiles[i].first;
         config.fn_desc = testfiles[i].second;
         config.dparams.output_mode = output_mode;
+        all_tests.push_back(config);
+      }
+    }
+  }
+
+  for (JpegIOMode output_mode : {PIXELS, RAW_DATA, COEFFICIENTS}) {
+    for (int h_samp : {1, 2}) {
+      for (int v_samp : {1, 2}) {
+        TestConfig config;
+        config.dparams.output_mode = output_mode;
+        config.jparams.h_sampling = {h_samp, 1, 1};
+        config.jparams.v_sampling = {v_samp, 1, 1};
+        if (output_mode == COEFFICIENTS) {
+          config.max_rms_dist = 0.0f;
+        }
         all_tests.push_back(config);
       }
     }
@@ -453,14 +475,6 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
     }
   }
 
-  for (int h_samp : {1, 2}) {
-    for (int v_samp : {1, 2}) {
-      TestConfig config;
-      config.jparams.h_sampling = {h_samp, 1, 1};
-      config.jparams.v_sampling = {v_samp, 1, 1};
-      all_tests.push_back(config);
-    }
-  }
   for (JpegliDataType type :
        {JPEGLI_TYPE_UINT8, JPEGLI_TYPE_UINT16, JPEGLI_TYPE_FLOAT}) {
     for (JpegliEndianness endianness :
@@ -788,6 +802,8 @@ std::ostream& operator<<(std::ostream& os, const DecompressParams& dparams) {
   }
   if (dparams.output_mode == RAW_DATA) {
     os << "RawDataOut";
+  } else if (dparams.output_mode == COEFFICIENTS) {
+    os << "CoeffsOut";
   }
   os << IOMethodName(dparams.data_type, dparams.endianness);
   if (dparams.set_out_color_space) {

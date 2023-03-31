@@ -98,7 +98,7 @@ struct BitReaderState {
       return false;
     }
     *pos = pos_;
-    if (*pos == next_marker_pos_) {
+    if (*pos == next_marker_pos_ && *pos + 1 < len_) {
       cinfo->unread_marker = data_[*pos + 1];
     }
     return true;
