@@ -3826,7 +3826,6 @@ JxlFastLosslessFrameState* JxlFastLosslessPrepareFrame(
     runner = trivial_runner;
   }
 
-  /*
 #if FJXL_ENABLE_AVX512
   if (__builtin_cpu_supports("avx512cd") &&
       __builtin_cpu_supports("avx512vbmi") &&
@@ -3844,7 +3843,6 @@ JxlFastLosslessFrameState* JxlFastLosslessPrepareFrame(
                                            effort, runner_opaque, runner);
   }
 #endif
-*/
 
   return default_implementation::JxlFastLosslessEncodeImpl(
       rgba, width, row_stride, height, nb_chans, bitdepth, big_endian, effort,
