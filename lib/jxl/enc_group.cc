@@ -58,7 +58,16 @@ void QuantizeBlockAC(const Quantizer& quantizer, const bool error_diffusion,
       }
     }
   }
-  if (!error_diffusion) {
+  constexpr size_t kPartialBlockKinds =
+      (1 << AcStrategy::Type::IDENTITY) | (1 << AcStrategy::Type::DCT2X2) |
+      (1 << AcStrategy::Type::DCT4X4) | (1 << AcStrategy::Type::DCT4X8) |
+      (1 << AcStrategy::Type::DCT8X4) | (1 << AcStrategy::Type::AFV0) |
+      (1 << AcStrategy::Type::AFV1) | (1 << AcStrategy::Type::AFV2) |
+      (1 << AcStrategy::Type::AFV3);
+  const bool simple_fast_quantization =
+      (c != 1) || (((1 << quant_kind) & kPartialBlockKinds)) ||
+      !error_diffusion;
+  if (simple_fast_quantization) {
     HWY_CAPPED(float, kBlockDim) df;
     HWY_CAPPED(int32_t, kBlockDim) di;
     HWY_CAPPED(uint32_t, kBlockDim) du;
@@ -122,14 +131,6 @@ retry:
       }
     }
   }
-  if (c != 1) return;
-  constexpr size_t kPartialBlockKinds =
-      (1 << AcStrategy::Type::IDENTITY) | (1 << AcStrategy::Type::DCT2X2) |
-      (1 << AcStrategy::Type::DCT4X4) | (1 << AcStrategy::Type::DCT4X8) |
-      (1 << AcStrategy::Type::DCT8X4) | (1 << AcStrategy::Type::AFV0) |
-      (1 << AcStrategy::Type::AFV1) | (1 << AcStrategy::Type::AFV2) |
-      (1 << AcStrategy::Type::AFV3);
-  if ((1 << quant_kind) & kPartialBlockKinds) return;
   float hfErrorLimit = 0.029f * (xsize * ysize) * kDCTBlockSize * 0.25f;
   bool goretry = false;
   for (int i = 1; i < 4; ++i) {
