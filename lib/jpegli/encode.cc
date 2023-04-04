@@ -229,7 +229,6 @@ void ProcessCompressionParams(j_compress_ptr cinfo) {
     JPEGLI_ERROR("Restart interval too big");
   }
   jpeg_comp_master* m = cinfo->master;
-  m->next_marker_byte = nullptr;
   cinfo->max_h_samp_factor = cinfo->max_v_samp_factor = 1;
   for (int c = 0; c < cinfo->num_components; ++c) {
     jpeg_component_info* comp = &cinfo->comp_info[c];
@@ -294,6 +293,15 @@ void ProcessCompressionParams(j_compress_ptr cinfo) {
   ValidateScanScript(cinfo);
 }
 
+void ResetForImage(j_compress_ptr cinfo) {
+  jpeg_comp_master* m = cinfo->master;
+  m->next_iMCU_row = 0;
+  m->last_restart_interval = 0;
+  m->last_dht_index = 0;
+  m->huffman_codes.clear();
+  m->scan_coding_info.clear();
+}
+
 void AllocateBuffers(j_compress_ptr cinfo) {
   jpeg_comp_master* m = cinfo->master;
   size_t iMCU_width = DCTSIZE * cinfo->max_h_samp_factor;
@@ -319,6 +327,7 @@ void AllocateBuffers(j_compress_ptr cinfo) {
       m->downsampler_output[c].Allocate(cinfo, ysize, xsize);
       m->raw_data[c] = &m->downsampler_output[c];
     }
+    m->quant_mul[c] = Allocate<float>(cinfo, DCTSIZE2, JPOOL_IMAGE_ALIGNED);
   }
   m->dct_buffer = Allocate<float>(cinfo, 2 * DCTSIZE2, JPOOL_IMAGE_ALIGNED);
   m->block_tmp = Allocate<int32_t>(cinfo, DCTSIZE2 * 4, JPOOL_IMAGE_ALIGNED);
@@ -473,7 +482,6 @@ void WriteFileHeader(j_compress_ptr cinfo) {
 }
 
 void WriteFrameHeader(j_compress_ptr cinfo) {
-  FinalizeQuantMatrices(cinfo);
   EncodeDQT(cinfo);
   EncodeSOF(cinfo);
 }
@@ -564,10 +572,16 @@ void jpegli_set_xyb_mode(j_compress_ptr cinfo) {
   cinfo->master->xyb_mode = true;
 }
 
+void jpegli_set_cicp_transfer_function(j_compress_ptr cinfo, int code) {
+  CheckState(cinfo, jpegli::kEncStart);
+  cinfo->master->cicp_transfer_function = code;
+}
+
 void jpegli_set_defaults(j_compress_ptr cinfo) {
   CheckState(cinfo, jpegli::kEncStart);
   jpegli::InitializeCompressParams(cinfo);
   jpegli_default_colorspace(cinfo);
+  jpegli_set_quality(cinfo, 90, TRUE);
   jpegli_set_progressive_level(cinfo, jpegli::kDefaultProgressiveLevel);
   jpegli::AddStandardHuffmanTables(cinfo, /*is_dc=*/false);
   jpegli::AddStandardHuffmanTables(cinfo, /*is_dc=*/true);
@@ -671,9 +685,12 @@ void jpegli_set_colorspace(j_compress_ptr cinfo, J_COLOR_SPACE colorspace) {
   }
 }
 
-void jpegli_set_distance(j_compress_ptr cinfo, float distance) {
+void jpegli_set_distance(j_compress_ptr cinfo, float distance,
+                         boolean force_baseline) {
   CheckState(cinfo, jpegli::kEncStart);
   cinfo->master->distance = distance;
+  cinfo->master->force_baseline = force_baseline;
+  jpegli::SetQuantMatrices(cinfo, /*add_two_chroma_tables=*/true);
 }
 
 float jpegli_quality_to_distance(int quality) {
@@ -688,6 +705,7 @@ void jpegli_set_quality(j_compress_ptr cinfo, int quality,
   CheckState(cinfo, jpegli::kEncStart);
   cinfo->master->distance = jpegli_quality_to_distance(quality);
   cinfo->master->force_baseline = force_baseline;
+  jpegli::SetQuantMatrices(cinfo, /*add_two_chroma_tables=*/false);
 }
 
 void jpegli_set_linear_quality(j_compress_ptr cinfo, int scale_factor,
@@ -695,6 +713,7 @@ void jpegli_set_linear_quality(j_compress_ptr cinfo, int scale_factor,
   CheckState(cinfo, jpegli::kEncStart);
   cinfo->master->distance = jpegli::LinearQualityToDistance(scale_factor);
   cinfo->master->force_baseline = force_baseline;
+  jpegli::SetQuantMatrices(cinfo, /*add_two_chroma_tables=*/false);
 }
 
 int jpegli_quality_scaling(int quality) {
@@ -812,18 +831,16 @@ void jpegli_start_compress(j_compress_ptr cinfo, boolean write_all_tables) {
     jpegli::ChooseColorTransform(cinfo);
     jpegli::ChooseDownsampleMethods(cinfo);
   }
+  jpegli::InitQuantizer(cinfo);
   if (write_all_tables) {
     jpegli_suppress_tables(cinfo, FALSE);
   }
   (*cinfo->mem->realize_virt_arrays)(reinterpret_cast<j_common_ptr>(cinfo));
   jpegli::WriteFileHeader(cinfo);
   jpegli::JpegBitWriterInit(cinfo);
+  jpegli::ResetForImage(cinfo);
   cinfo->next_scanline = 0;
   cinfo->master->next_input_row = 0;
-  cinfo->master->next_iMCU_row = 0;
-  cinfo->master->last_restart_interval = 0;
-  cinfo->master->last_dht_index = 0;
-  cinfo->master->huffman_codes.clear();
   cinfo->global_state = jpegli::kEncHeader;
 }
 
@@ -838,11 +855,9 @@ void jpegli_write_coefficients(j_compress_ptr cinfo,
   jpegli_suppress_tables(cinfo, FALSE);
   jpegli::WriteFileHeader(cinfo);
   jpegli::JpegBitWriterInit(cinfo);
-  cinfo->master->next_input_row = cinfo->image_height;
+  jpegli::ResetForImage(cinfo);
   cinfo->next_scanline = cinfo->image_height;
-  cinfo->master->last_restart_interval = 0;
-  cinfo->master->last_dht_index = 0;
-  cinfo->master->huffman_codes.clear();
+  cinfo->master->next_input_row = cinfo->image_height;
   cinfo->global_state = jpegli::kEncWriteCoeffs;
 }
 
@@ -855,7 +870,6 @@ void jpegli_write_tables(j_compress_ptr cinfo) {
   (*cinfo->dest->init_destination)(cinfo);
   jpeg_comp_master* m = cinfo->master;
   jpegli::WriteOutput(cinfo, {0xFF, 0xD8});  // SOI
-  jpegli::FinalizeQuantMatrices(cinfo);
   jpegli::EncodeDQT(cinfo);
   jpegli::CopyHuffmanCodes(cinfo);
   jpegli::EncodeDHT(cinfo, m->huffman_codes.data(), m->huffman_codes.size());
@@ -867,7 +881,6 @@ void jpegli_write_tables(j_compress_ptr cinfo) {
 void jpegli_write_m_header(j_compress_ptr cinfo, int marker,
                            unsigned int datalen) {
   CheckState(cinfo, jpegli::kEncHeader, jpegli::kEncWriteCoeffs);
-  jpeg_comp_master* m = cinfo->master;
   if (datalen > jpegli::kMaxBytesInMarker) {
     JPEGLI_ERROR("Invalid marker length %u", datalen);
   }
@@ -881,25 +894,17 @@ void jpegli_write_m_header(j_compress_ptr cinfo, int marker,
   marker_data[2] = (datalen + 2) >> 8;
   marker_data[3] = (datalen + 2) & 0xff;
   jpegli::WriteOutput(cinfo, &marker_data[0], 4);
-  m->special_markers.emplace_back(std::move(marker_data));
-  m->next_marker_byte = &m->special_markers.back()[4];
 }
 
 void jpegli_write_m_byte(j_compress_ptr cinfo, int val) {
-  if (cinfo->master->next_marker_byte == nullptr) {
-    JPEGLI_ERROR("Marker header missing.");
-  }
-  *cinfo->master->next_marker_byte = val;
-  jpegli::WriteOutput(cinfo, cinfo->master->next_marker_byte, 1);
-  cinfo->master->next_marker_byte++;
+  uint8_t data = val;
+  jpegli::WriteOutput(cinfo, &data, 1);
 }
 
 void jpegli_write_marker(j_compress_ptr cinfo, int marker,
                          const JOCTET* dataptr, unsigned int datalen) {
   jpegli_write_m_header(cinfo, marker, datalen);
   jpegli::WriteOutput(cinfo, dataptr, datalen);
-  memcpy(cinfo->master->next_marker_byte, dataptr, datalen);
-  cinfo->master->next_marker_byte = nullptr;
 }
 
 void jpegli_write_icc_profile(j_compress_ptr cinfo, const JOCTET* icc_data_ptr,
@@ -924,7 +929,6 @@ void jpegli_write_icc_profile(j_compress_ptr cinfo, const JOCTET* icc_data_ptr,
       ++begin;
     }
   }
-  cinfo->master->next_marker_byte = nullptr;
 }
 
 JDIMENSION jpegli_write_scanlines(j_compress_ptr cinfo, JSAMPARRAY scanlines,

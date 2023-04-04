@@ -46,17 +46,17 @@ struct jpeg_decomp_master {
   // Input handling state.
   //
   // Number of bits after codestream_pos_ that were already processed.
-  size_t codestream_bits_ahead_ = 0;
+  size_t codestream_bits_ahead_;
 
   //
   // Marker data processing state.
   //
-  bool found_soi_ = false;
-  bool found_dri_ = false;
-  bool found_sof_ = false;
-  bool found_eoi_ = false;
-  size_t icc_index_ = 0;
-  size_t icc_total_ = 0;
+  bool found_soi_;
+  bool found_dri_;
+  bool found_sof_;
+  bool found_eoi_;
+  size_t icc_index_;
+  size_t icc_total_;
   std::vector<uint8_t> icc_profile_;
   std::vector<jpegli::DecJPEGComponent> components_;
   std::vector<jpegli::HuffmanTableEntry> dc_huff_lut_;
@@ -93,10 +93,10 @@ struct jpeg_decomp_master {
   //
   // Rendering state.
   //
-  int output_passes_done_ = 0;
+  int output_passes_done_;
   JpegliDataType output_data_type_ = JPEGLI_TYPE_UINT8;
   bool swap_endianness_ = false;
-  size_t xoffset_ = 0;
+  size_t xoffset_;
 
   int min_scaled_dct_size;
   int scaled_dct_size[jpegli::kMaxComponents];

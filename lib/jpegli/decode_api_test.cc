@@ -189,6 +189,167 @@ std::vector<uint8_t> GetTestJpegData(TestConfig& config) {
   return compressed;
 }
 
+void TestAPINonBuffered(const CompressParams& jparams,
+                        const DecompressParams& dparams,
+                        const TestImage& expected_output,
+                        j_decompress_ptr cinfo, TestImage* output) {
+  if (jparams.add_marker) {
+    jpegli_save_markers(cinfo, kSpecialMarker, 0xffff);
+    num_markers_seen = 0;
+    jpegli_set_marker_processor(cinfo, 0xe6, test_marker_processor);
+    jpegli_set_marker_processor(cinfo, 0xe7, test_marker_processor);
+    jpegli_set_marker_processor(cinfo, 0xe8, test_marker_processor);
+  }
+  jpegli_read_header(cinfo, /*require_image=*/TRUE);
+  if (jparams.add_marker) {
+    EXPECT_EQ(num_markers_seen, kMarkerSequenceLen);
+    EXPECT_EQ(0, memcmp(markers_seen, kMarkerSequence, num_markers_seen));
+  }
+  // Check that jpegli_calc_output_dimensions can be called multiple times
+  // even with different parameters.
+  if (!cinfo->raw_data_out) {
+    cinfo->scale_num = 1;
+    cinfo->scale_denom = 2;
+  }
+  jpegli_calc_output_dimensions(cinfo);
+  SetDecompressParams(dparams, cinfo, /*is_jpegli=*/true);
+  VerifyHeader(jparams, cinfo);
+  jpegli_calc_output_dimensions(cinfo);
+  EXPECT_LE(expected_output.xsize, cinfo->output_width);
+  if (!dparams.crop_output) {
+    EXPECT_EQ(expected_output.xsize, cinfo->output_width);
+  }
+  if (dparams.output_mode == COEFFICIENTS) {
+    jvirt_barray_ptr* coef_arrays = jpegli_read_coefficients(cinfo);
+    JXL_CHECK(coef_arrays != nullptr);
+    CopyCoefficients(cinfo, coef_arrays, output);
+  } else {
+    jpegli_start_decompress(cinfo);
+    VerifyScanHeader(jparams, cinfo);
+    ReadOutputImage(dparams, cinfo, output);
+  }
+  jpegli_finish_decompress(cinfo);
+}
+
+void TestAPIBuffered(const CompressParams& jparams,
+                     const DecompressParams& dparams, j_decompress_ptr cinfo,
+                     std::vector<TestImage>* output_progression) {
+  EXPECT_EQ(JPEG_REACHED_SOS,
+            jpegli_read_header(cinfo, /*require_image=*/TRUE));
+  cinfo->buffered_image = TRUE;
+  SetDecompressParams(dparams, cinfo, /*is_jpegli=*/true);
+  VerifyHeader(jparams, cinfo);
+  EXPECT_TRUE(jpegli_start_decompress(cinfo));
+  // start decompress should not read the whole input in buffered image mode
+  EXPECT_FALSE(jpegli_input_complete(cinfo));
+  bool has_multiple_scans = jpegli_has_multiple_scans(cinfo);
+  EXPECT_EQ(0, cinfo->output_scan_number);
+  int sos_marker_cnt = 1;  // read_header reads the first SOS marker
+  while (!jpegli_input_complete(cinfo)) {
+    EXPECT_EQ(cinfo->input_scan_number, sos_marker_cnt);
+    SetScanDecompressParams(dparams, cinfo, cinfo->input_scan_number,
+                            /*is_jpegli=*/true);
+    EXPECT_TRUE(jpegli_start_output(cinfo, cinfo->input_scan_number));
+    // start output sets output_scan_number, but does not change
+    // input_scan_number
+    EXPECT_EQ(cinfo->output_scan_number, cinfo->input_scan_number);
+    EXPECT_EQ(cinfo->input_scan_number, sos_marker_cnt);
+    VerifyScanHeader(jparams, cinfo);
+    TestImage output;
+    ReadOutputImage(dparams, cinfo, &output);
+    output_progression->emplace_back(std::move(output));
+    // read scanlines/read raw data does not change input/output scan number
+    EXPECT_EQ(cinfo->input_scan_number, sos_marker_cnt);
+    EXPECT_EQ(cinfo->output_scan_number, cinfo->input_scan_number);
+    EXPECT_TRUE(jpegli_finish_output(cinfo));
+    ++sos_marker_cnt;  // finish output reads the next SOS marker or EOI
+    if (dparams.output_mode == COEFFICIENTS) {
+      jvirt_barray_ptr* coef_arrays = jpegli_read_coefficients(cinfo);
+      JXL_CHECK(coef_arrays != nullptr);
+      CopyCoefficients(cinfo, coef_arrays, &output_progression->back());
+    }
+  }
+  jpegli_finish_decompress(cinfo);
+  EXPECT_EQ(has_multiple_scans, cinfo->input_scan_number > 1);
+}
+
+TEST(DecodeAPITest, ReuseCinfo) {
+  TestImage input, output, expected;
+  std::vector<TestImage> output_progression, expected_output_progression;
+  CompressParams jparams;
+  DecompressParams dparams;
+  std::vector<uint8_t> compressed;
+  jpeg_decompress_struct cinfo;
+  const auto try_catch_block = [&]() -> bool {
+    ERROR_HANDLER_SETUP(jpegli);
+    jpegli_create_decompress(&cinfo);
+    input.xsize = 129;
+    input.ysize = 73;
+    for (int h_samp : {2, 1}) {
+      for (int v_samp : {2, 1}) {
+        jparams.h_sampling = {h_samp, 1, 1};
+        jparams.v_sampling = {v_samp, 1, 1};
+        printf("Generating input with %dx%d chroma subsampling\n", h_samp,
+               v_samp);
+        GeneratePixels(&input);
+        JXL_CHECK(EncodeWithJpegli(input, jparams, &compressed));
+        for (JpegIOMode output_mode : {PIXELS, RAW_DATA, COEFFICIENTS}) {
+          for (bool crop : {true, false}) {
+            if (crop && output_mode != PIXELS) continue;
+            for (int scale_num : {1, 2, 3, 4, 7, 8, 13, 16}) {
+              if (scale_num != 8 && output_mode != PIXELS) continue;
+              int scale_denom = 8;
+              while (scale_num % 2 == 0 && scale_denom % 2 == 0) {
+                scale_num /= 2;
+                scale_denom /= 2;
+              }
+              printf("Decoding with output mode %d output scaling %d/%d %s\n",
+                     output_mode, scale_num, scale_denom,
+                     crop ? "with cropped output" : "");
+              dparams.output_mode = output_mode;
+              dparams.scale_num = scale_num;
+              dparams.scale_denom = scale_denom;
+              expected.Clear();
+              DecodeWithLibjpeg(jparams, dparams, compressed, &expected);
+              output.Clear();
+              cinfo.buffered_image = false;
+              cinfo.raw_data_out = false;
+              cinfo.scale_num = cinfo.scale_denom = 1;
+              jpegli_mem_src(&cinfo, compressed.data(), compressed.size());
+              jpegli_read_header(&cinfo, /*require_image=*/TRUE);
+              jpegli_abort_decompress(&cinfo);
+              jpegli_mem_src(&cinfo, compressed.data(), compressed.size());
+              TestAPINonBuffered(jparams, dparams, expected, &cinfo, &output);
+              float max_rms = output_mode == COEFFICIENTS ? 0.0f : 1.0f;
+              if (scale_num == 1 && scale_denom == 8 && h_samp != v_samp) {
+                max_rms = 5.0f;  // libjpeg does not do fancy upsampling
+              }
+              VerifyOutputImage(expected, output, max_rms);
+              printf("Decoding in buffered image mode\n");
+              expected_output_progression.clear();
+              DecodeAllScansWithLibjpeg(jparams, dparams, compressed,
+                                        &expected_output_progression);
+              output_progression.clear();
+              jpegli_mem_src(&cinfo, compressed.data(), compressed.size());
+              TestAPIBuffered(jparams, dparams, &cinfo, &output_progression);
+              JXL_CHECK(output_progression.size() ==
+                        expected_output_progression.size());
+              for (size_t i = 0; i < output_progression.size(); ++i) {
+                const TestImage& output = output_progression[i];
+                const TestImage& expected = expected_output_progression[i];
+                VerifyOutputImage(expected, output, max_rms);
+              }
+            }
+          }
+        }
+      }
+    }
+    return true;
+  };
+  ASSERT_TRUE(try_catch_block());
+  jpegli_destroy_decompress(&cinfo);
+}
+
 class DecodeAPITestParam : public ::testing::TestWithParam<TestConfig> {};
 
 TEST_P(DecodeAPITestParam, TestAPI) {
@@ -206,40 +367,7 @@ TEST_P(DecodeAPITestParam, TestAPI) {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_decompress(&cinfo);
     cinfo.src = reinterpret_cast<jpeg_source_mgr*>(&src);
-    if (config.jparams.add_marker) {
-      jpegli_save_markers(&cinfo, kSpecialMarker, 0xffff);
-      num_markers_seen = 0;
-      jpegli_set_marker_processor(&cinfo, 0xe6, test_marker_processor);
-      jpegli_set_marker_processor(&cinfo, 0xe7, test_marker_processor);
-      jpegli_set_marker_processor(&cinfo, 0xe8, test_marker_processor);
-    }
-    jpegli_read_header(&cinfo, /*require_image=*/TRUE);
-    if (config.jparams.add_marker) {
-      EXPECT_EQ(num_markers_seen, kMarkerSequenceLen);
-      EXPECT_EQ(0, memcmp(markers_seen, kMarkerSequence, num_markers_seen));
-    }
-    // Check that jpegli_calc_output_dimensions can be called multiple times
-    // even with different parameters.
-    cinfo.scale_num = 1;
-    cinfo.scale_denom = 2;
-    jpegli_calc_output_dimensions(&cinfo);
-    SetDecompressParams(dparams, &cinfo, /*is_jpegli=*/true);
-    VerifyHeader(config.jparams, &cinfo);
-    jpegli_calc_output_dimensions(&cinfo);
-    EXPECT_LE(output1.xsize, cinfo.output_width);
-    if (!config.dparams.crop_output) {
-      EXPECT_EQ(output1.xsize, cinfo.output_width);
-    }
-    if (dparams.output_mode == COEFFICIENTS) {
-      jvirt_barray_ptr* coef_arrays = jpegli_read_coefficients(&cinfo);
-      JXL_CHECK(coef_arrays != nullptr);
-      CopyCoefficients(&cinfo, coef_arrays, &output0);
-    } else {
-      jpegli_start_decompress(&cinfo);
-      VerifyScanHeader(config.jparams, &cinfo);
-      ReadOutputImage(dparams, &cinfo, &output0);
-    }
-    jpegli_finish_decompress(&cinfo);
+    TestAPINonBuffered(config.jparams, dparams, output1, &cinfo, &output0);
     return true;
   };
   ASSERT_TRUE(try_catch_block());
@@ -274,43 +402,7 @@ TEST_P(DecodeAPITestParamBuffered, TestAPI) {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_decompress(&cinfo);
     cinfo.src = reinterpret_cast<jpeg_source_mgr*>(&src);
-    EXPECT_EQ(JPEG_REACHED_SOS,
-              jpegli_read_header(&cinfo, /*require_image=*/TRUE));
-    cinfo.buffered_image = TRUE;
-    SetDecompressParams(dparams, &cinfo, /*is_jpegli=*/true);
-    VerifyHeader(config.jparams, &cinfo);
-    EXPECT_TRUE(jpegli_start_decompress(&cinfo));
-    // start decompress should not read the whole input in buffered image mode
-    EXPECT_FALSE(jpegli_input_complete(&cinfo));
-    bool has_multiple_scans = jpegli_has_multiple_scans(&cinfo);
-    EXPECT_EQ(0, cinfo.output_scan_number);
-    int sos_marker_cnt = 1;  // read_header reads the first SOS marker
-    while (!jpegli_input_complete(&cinfo)) {
-      EXPECT_EQ(cinfo.input_scan_number, sos_marker_cnt);
-      SetScanDecompressParams(dparams, &cinfo, cinfo.input_scan_number,
-                              /*is_jpegli=*/true);
-      EXPECT_TRUE(jpegli_start_output(&cinfo, cinfo.input_scan_number));
-      // start output sets output_scan_number, but does not change
-      // input_scan_number
-      EXPECT_EQ(cinfo.output_scan_number, cinfo.input_scan_number);
-      EXPECT_EQ(cinfo.input_scan_number, sos_marker_cnt);
-      VerifyScanHeader(config.jparams, &cinfo);
-      TestImage output;
-      ReadOutputImage(dparams, &cinfo, &output);
-      output_progression0.emplace_back(std::move(output));
-      // read scanlines/read raw data does not change input/output scan number
-      EXPECT_EQ(cinfo.input_scan_number, sos_marker_cnt);
-      EXPECT_EQ(cinfo.output_scan_number, cinfo.input_scan_number);
-      EXPECT_TRUE(jpegli_finish_output(&cinfo));
-      ++sos_marker_cnt;  // finish output reads the next SOS marker or EOI
-      if (dparams.output_mode == COEFFICIENTS) {
-        jvirt_barray_ptr* coef_arrays = jpegli_read_coefficients(&cinfo);
-        JXL_CHECK(coef_arrays != nullptr);
-        CopyCoefficients(&cinfo, coef_arrays, &output_progression0.back());
-      }
-    }
-    jpegli_finish_decompress(&cinfo);
-    EXPECT_EQ(has_multiple_scans, cinfo.input_scan_number > 1);
+    TestAPIBuffered(config.jparams, dparams, &cinfo, &output_progression0);
     return true;
   };
   ASSERT_TRUE(try_catch_block());

@@ -66,15 +66,14 @@ struct jpeg_comp_master {
   float distance = 1.0;
   bool force_baseline = true;
   bool xyb_mode = false;
+  uint8_t cicp_transfer_function = 2;  // unknown transfer function code
   bool use_std_tables = false;
   bool use_adaptive_quantization = true;
   int progressive_level = jpegli::kDefaultProgressiveLevel;
-  size_t xsize_blocks = 0;
-  size_t ysize_blocks = 0;
-  size_t blocks_per_iMCU_row = 0;
+  size_t xsize_blocks;
+  size_t ysize_blocks;
+  size_t blocks_per_iMCU_row;
   std::vector<jpegli::ScanCodingInfo> scan_coding_info;
-  std::vector<std::vector<uint8_t>> special_markers;
-  uint8_t* next_marker_byte = nullptr;
   JpegliDataType data_type = JPEGLI_TYPE_UINT8;
   JpegliEndianness endianness = JPEGLI_NATIVE_ENDIAN;
   void (*input_method)(const uint8_t* row_in, size_t len,

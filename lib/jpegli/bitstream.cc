@@ -548,7 +548,6 @@ void WriteOutput(j_compress_ptr cinfo, const uint8_t* buf, size_t bufsize) {
   while (pos < bufsize) {
     if (cinfo->dest->free_in_buffer == 0 &&
         !(*cinfo->dest->empty_output_buffer)(cinfo)) {
-      JXL_ABORT();
       JPEGLI_ERROR("Destination suspension is not supported in markers.");
     }
     size_t len = std::min<size_t>(cinfo->dest->free_in_buffer, bufsize - pos);

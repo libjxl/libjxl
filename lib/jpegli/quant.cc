@@ -435,83 +435,13 @@ static const float kBaseQuantMatrixStd[] = {
     99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f,  //
     99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f,  //
     99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f,  //
-    // c = 2
-    17.0f, 18.0f, 24.0f, 47.0f, 99.0f, 99.0f, 99.0f, 99.0f,  //
-    18.0f, 21.0f, 26.0f, 66.0f, 99.0f, 99.0f, 99.0f, 99.0f,  //
-    24.0f, 26.0f, 56.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f,  //
-    47.0f, 66.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f,  //
-    99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f,  //
-    99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f,  //
-    99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f,  //
-    99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f, 99.0f,  //
 };
 
 constexpr float kZeroBiasMulXYB[] = {0.5f, 0.5f, 0.5f};
 constexpr float kZeroBiasMulYCbCr[] = {0.7f, 1.0f, 0.8f};
 
-constexpr unsigned char kCICPTagSignature[4] = {0x63, 0x69, 0x63, 0x70};
-constexpr size_t kCICPTagSize = 12;
 constexpr uint8_t kTransferFunctionPQ = 16;
 constexpr uint8_t kTransferFunctionHLG = 18;
-
-void LookupCICPTransferFunction(
-    const std::vector<std::vector<uint8_t>>& special_markers, uint8_t* tf) {
-  *tf = 2;  // Unknown transfer function code
-  size_t last_index = 0;
-  size_t cicp_offset = 0;
-  size_t cicp_length = 0;
-  uint8_t cicp_tag[kCICPTagSize] = {};
-  size_t cicp_pos = 0;
-  for (const auto& marker : special_markers) {
-    if (marker.size() < 18 || marker[1] != kICCMarker ||
-        (marker[2] << 8u) + marker[3] + 2u != marker.size() ||
-        memcmp(&marker[4], kICCSignature, 12) != 0) {
-      continue;
-    }
-    uint8_t index = marker[16];
-    uint8_t total = marker[17];
-    const uint8_t* payload = marker.data() + 18;
-    const size_t payload_size = marker.size() - 18;
-    if (index != last_index + 1 || index > total) {
-      return;
-    }
-    if (last_index == 0) {
-      // Look up the offset of the CICP tag from the first chunk of ICC data.
-      if (payload_size < 132) {
-        return;
-      }
-      uint32_t tag_count = LoadBE32(&payload[128]);
-      if (payload_size < 132 + 12 * tag_count) {
-        return;
-      }
-      for (uint32_t i = 0; i < tag_count; ++i) {
-        if (memcmp(&payload[132 + 12 * i], kCICPTagSignature, 4) == 0) {
-          cicp_offset = LoadBE32(&payload[136 + 12 * i]);
-          cicp_length = LoadBE32(&payload[140 + 12 * i]);
-        }
-      }
-      if (cicp_length < kCICPTagSize) {
-        return;
-      }
-    }
-    if (cicp_offset < payload_size) {
-      size_t n_bytes =
-          std::min(payload_size - cicp_offset, kCICPTagSize - cicp_pos);
-      memcpy(&cicp_tag[cicp_pos], &payload[cicp_offset], n_bytes);
-      cicp_pos += n_bytes;
-      if (cicp_pos == kCICPTagSize) {
-        break;
-      }
-      cicp_offset = 0;
-    } else {
-      cicp_offset -= payload_size;
-    }
-    ++last_index;
-  }
-  if (cicp_pos >= kCICPTagSize && memcmp(cicp_tag, kCICPTagSignature, 4) == 0) {
-    *tf = cicp_tag[9];
-  }
-}
 
 float DistanceToLinearQuality(float distance) {
   if (distance <= 0.1f) {
@@ -531,7 +461,7 @@ float DistanceToLinearQuality(float distance) {
 
 }  // namespace
 
-void FinalizeQuantMatrices(j_compress_ptr cinfo) {
+void SetQuantMatrices(j_compress_ptr cinfo, bool add_two_chroma_tables) {
   jpeg_comp_master* m = cinfo->master;
   const bool xyb = m->xyb_mode && cinfo->jpeg_color_space == JCS_RGB;
 
@@ -541,58 +471,51 @@ void FinalizeQuantMatrices(j_compress_ptr cinfo) {
   constexpr float kGlobalScaleYCbCr = 1.73480749f;
 
   float ac_scale, dc_scale;
-  const float* base_quant_matrix;
+  const float* base_quant_matrix[NUM_QUANT_TBLS];
+  int num_base_tables;
 
   if (xyb) {
     ac_scale = kGlobalScaleXYB * m->distance;
     dc_scale = kGlobalScaleXYB / InitialQuantDC(m->distance);
-    base_quant_matrix = kBaseQuantMatrixXYB;
-  } else if (cinfo->jpeg_color_space == JCS_YCbCr && !m->use_std_tables &&
-             cinfo->comp_info[0].quant_tbl_no == 0 &&
-             cinfo->comp_info[1].quant_tbl_no == 1 &&
-             cinfo->comp_info[2].quant_tbl_no == 1 &&
-             cinfo->quant_tbl_ptrs[0] == nullptr &&
-             cinfo->quant_tbl_ptrs[1] == nullptr) {
-    // No custom quantization tables were specified, so we set our default
-    // YCbCr quantization tables here. We could not do this earlier in
-    // jpegli_set_defaults() because it may depend on the ICC profile and
-    // pixel values.
-    cinfo->comp_info[2].quant_tbl_no = 2;
+    num_base_tables = 3;
+    base_quant_matrix[0] = kBaseQuantMatrixXYB;
+    base_quant_matrix[1] = kBaseQuantMatrixXYB + DCTSIZE2;
+    base_quant_matrix[2] = kBaseQuantMatrixXYB + 2 * DCTSIZE2;
+  } else if (cinfo->jpeg_color_space == JCS_YCbCr && !m->use_std_tables) {
     float global_scale = kGlobalScaleYCbCr;
-    uint8_t cicp_tf;
-    LookupCICPTransferFunction(m->special_markers, &cicp_tf);
-    if (cicp_tf == kTransferFunctionPQ) {
+    if (m->cicp_transfer_function == kTransferFunctionPQ) {
       global_scale *= .4f;
-    } else if (cicp_tf == kTransferFunctionHLG) {
+    } else if (m->cicp_transfer_function == kTransferFunctionHLG) {
       global_scale *= .5f;
     }
     ac_scale = global_scale * m->distance;
     dc_scale = global_scale / InitialQuantDC(m->distance);
-    base_quant_matrix = kBaseQuantMatrixYCbCr;
+    if (add_two_chroma_tables) {
+      cinfo->comp_info[2].quant_tbl_no = 2;
+      num_base_tables = 3;
+      base_quant_matrix[0] = kBaseQuantMatrixYCbCr;
+      base_quant_matrix[1] = kBaseQuantMatrixYCbCr + DCTSIZE2;
+      base_quant_matrix[2] = kBaseQuantMatrixYCbCr + 2 * DCTSIZE2;
+    } else {
+      num_base_tables = 2;
+      base_quant_matrix[0] = kBaseQuantMatrixYCbCr;
+      // Use the Cr table for both Cb and Cr.
+      base_quant_matrix[1] = kBaseQuantMatrixYCbCr + 2 * DCTSIZE2;
+    }
   } else {
     dc_scale = ac_scale = 0.01f * DistanceToLinearQuality(m->distance);
-    base_quant_matrix = kBaseQuantMatrixStd;
+    num_base_tables = 2;
+    base_quant_matrix[0] = kBaseQuantMatrixStd;
+    base_quant_matrix[1] = kBaseQuantMatrixStd + DCTSIZE2;
   }
 
   int quant_max = m->force_baseline ? 255 : 32767U;
-  for (int c = 0; c < cinfo->num_components; ++c) {
-    int quant_idx = cinfo->comp_info[c].quant_tbl_no;
-    if (quant_idx < 0 || quant_idx >= NUM_QUANT_TBLS) {
-      JPEGLI_ERROR("Invalid quant table index %d for component %d", quant_idx,
-                   c);
-    }
+  for (int quant_idx = 0; quant_idx < num_base_tables; ++quant_idx) {
+    const float* base_qm = base_quant_matrix[quant_idx];
     JQUANT_TBL** qtable = &cinfo->quant_tbl_ptrs[quant_idx];
-    if (*qtable != nullptr) {
-      // A custom quantization table was already set for this component, nothing
-      // more to do here.
-      continue;
+    if (*qtable == nullptr) {
+      *qtable = jpegli_alloc_quant_table(reinterpret_cast<j_common_ptr>(cinfo));
     }
-    if (quant_idx > 2) {
-      JPEGLI_ERROR("Missing quantization table %d for component %d", quant_idx,
-                   c);
-    }
-    const float* base_qm = &base_quant_matrix[quant_idx * DCTSIZE2];
-    *qtable = jpegli_alloc_quant_table(reinterpret_cast<j_common_ptr>(cinfo));
     for (int k = 0; k < DCTSIZE2; ++k) {
       float scale = (k == 0 ? dc_scale : ac_scale);
       int qval = std::round(scale * base_qm[k]);
@@ -600,11 +523,19 @@ void FinalizeQuantMatrices(j_compress_ptr cinfo) {
     }
     (*qtable)->sent_table = FALSE;
   }
+}
+
+void InitQuantizer(j_compress_ptr cinfo) {
+  jpeg_comp_master* m = cinfo->master;
+  const bool xyb = m->xyb_mode && cinfo->jpeg_color_space == JCS_RGB;
   // Compute quantization multupliers from the quant table values.
   for (int c = 0; c < cinfo->num_components; ++c) {
     int quant_idx = cinfo->comp_info[c].quant_tbl_no;
     JQUANT_TBL* quant_table = cinfo->quant_tbl_ptrs[quant_idx];
-    m->quant_mul[c] = Allocate<float>(cinfo, DCTSIZE2, JPOOL_IMAGE_ALIGNED);
+    if (!quant_table) {
+      JPEGLI_ERROR("Missing quantization table %d for component %d", quant_idx,
+                   c);
+    }
     for (size_t k = 0; k < DCTSIZE2; k++) {
       int val = quant_table->quantval[k];
       if (val == 0) {

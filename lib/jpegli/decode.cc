@@ -44,15 +44,29 @@ void InitializeImage(j_decompress_ptr cinfo) {
   memset(cinfo->arith_dc_U, 0, sizeof(cinfo->arith_dc_U));
   memset(cinfo->arith_ac_K, 0, sizeof(cinfo->arith_ac_K));
   // Initialize the private fields.
-  cinfo->master->colormap_lut_ = nullptr;
-  cinfo->master->pixels_ = nullptr;
-  cinfo->master->scanlines_ = nullptr;
-  cinfo->master->regenerate_inverse_colormap_ = true;
+  jpeg_decomp_master* m = cinfo->master;
+  m->codestream_bits_ahead_ = 0;
+  m->found_soi_ = false;
+  m->found_dri_ = false;
+  m->found_sof_ = false;
+  m->found_eoi_ = false;
+  m->icc_index_ = 0;
+  m->icc_total_ = 0;
+  m->icc_profile_.clear();
+  m->components_.clear();
+  m->dc_huff_lut_.clear();
+  m->ac_huff_lut_.clear();
+  memset(m->huff_slot_defined_, 0, sizeof(m->huff_slot_defined_));
+  m->colormap_lut_ = nullptr;
+  m->pixels_ = nullptr;
+  m->scanlines_ = nullptr;
+  m->regenerate_inverse_colormap_ = true;
   for (int i = 0; i < kMaxComponents; ++i) {
-    cinfo->master->dither_[i] = nullptr;
-    cinfo->master->error_row_[i] = nullptr;
+    m->dither_[i] = nullptr;
+    m->error_row_[i] = nullptr;
   }
-  cinfo->master->output_passes_done_ = 0;
+  m->output_passes_done_ = 0;
+  m->xoffset_ = 0;
 }
 
 void InitializeDecompressParams(j_decompress_ptr cinfo) {
