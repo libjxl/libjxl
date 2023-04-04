@@ -396,18 +396,166 @@ void GenerateRawData(const CompressParams& jparams, TestImage* img) {
 
 void GenerateCoeffs(const CompressParams& jparams, TestImage* img) {
   for (size_t c = 0; c < img->components; ++c) {
-    size_t xsize_blocks = jparams.comp_width(*img, c) / DCTSIZE;
-    size_t ysize_blocks = jparams.comp_height(*img, c) / DCTSIZE;
+    int xsize_blocks = jparams.comp_width(*img, c) / DCTSIZE;
+    int ysize_blocks = jparams.comp_height(*img, c) / DCTSIZE;
     std::vector<JCOEF> plane(ysize_blocks * xsize_blocks * DCTSIZE2);
-    for (size_t by = 0; by < ysize_blocks; ++by) {
-      for (size_t bx = 0; bx < xsize_blocks; ++bx) {
-        for (size_t k = 0; k < DCTSIZE2; ++k) {
-          plane[(by * xsize_blocks + bx) * DCTSIZE2 + k] = (bx - by) / (k + 1);
+    for (int by = 0; by < ysize_blocks; ++by) {
+      for (int bx = 0; bx < xsize_blocks; ++bx) {
+        JCOEF* block = &plane[(by * xsize_blocks + bx) * DCTSIZE2];
+        for (int k = 0; k < DCTSIZE2; ++k) {
+          block[k] = (bx - by) / (k + 1);
         }
       }
     }
     img->coeffs.emplace_back(std::move(plane));
   }
+}
+
+void EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
+                      j_compress_ptr cinfo) {
+  cinfo->image_width = input.xsize;
+  cinfo->image_height = input.ysize;
+  cinfo->input_components = input.components;
+  cinfo->in_color_space = input.color_space;
+  if (jparams.xyb_mode) {
+    jpegli_set_xyb_mode(cinfo);
+  }
+  if (jparams.libjpeg_mode) {
+    jpegli_enable_adaptive_quantization(cinfo, FALSE);
+    jpegli_use_standard_quant_tables(cinfo);
+    jpegli_set_progressive_level(cinfo, 0);
+  }
+  jpegli_set_defaults(cinfo);
+  jpegli_set_quality(cinfo, jparams.quality, TRUE);
+  if (jparams.override_JFIF >= 0) {
+    cinfo->write_JFIF_header = jparams.override_JFIF;
+  }
+  if (jparams.override_Adobe >= 0) {
+    cinfo->write_Adobe_marker = jparams.override_Adobe;
+  }
+  if (jparams.set_jpeg_colorspace) {
+    jpegli_set_colorspace(cinfo, jparams.jpeg_color_space);
+  }
+  if (!jparams.comp_ids.empty()) {
+    for (int c = 0; c < cinfo->num_components; ++c) {
+      cinfo->comp_info[c].component_id = jparams.comp_ids[c];
+    }
+  }
+  if (!jparams.h_sampling.empty()) {
+    for (int c = 0; c < cinfo->num_components; ++c) {
+      cinfo->comp_info[c].h_samp_factor = jparams.h_sampling[c];
+      cinfo->comp_info[c].v_samp_factor = jparams.v_sampling[c];
+    }
+  }
+  if (!jparams.quant_indexes.empty()) {
+    for (int c = 0; c < cinfo->num_components; ++c) {
+      cinfo->comp_info[c].quant_tbl_no = jparams.quant_indexes[c];
+    }
+    for (const auto& table : jparams.quant_tables) {
+      if (table.add_raw) {
+        cinfo->quant_tbl_ptrs[table.slot_idx] =
+            jpegli_alloc_quant_table((j_common_ptr)cinfo);
+        for (int k = 0; k < DCTSIZE2; ++k) {
+          cinfo->quant_tbl_ptrs[table.slot_idx]->quantval[k] =
+              table.quantval[k];
+        }
+        cinfo->quant_tbl_ptrs[table.slot_idx]->sent_table = FALSE;
+      } else {
+        jpegli_add_quant_table(cinfo, table.slot_idx, &table.basic_table[0],
+                               table.scale_factor, table.force_baseline);
+      }
+    }
+  }
+  if (jparams.progressive_id > 0) {
+    const ScanScript& script = kTestScript[jparams.progressive_id - 1];
+    cinfo->scan_info = script.scans;
+    cinfo->num_scans = script.num_scans;
+  } else if (jparams.progressive_level >= 0) {
+    jpegli_set_progressive_level(cinfo, jparams.progressive_level);
+  }
+  jpegli_set_input_format(cinfo, input.data_type, input.endianness);
+  cinfo->restart_interval = jparams.restart_interval;
+  cinfo->restart_in_rows = jparams.restart_in_rows;
+  cinfo->optimize_coding = jparams.optimize_coding;
+  cinfo->raw_data_in = !input.raw_data.empty();
+  if (!jparams.optimize_coding && jparams.use_flat_dc_luma_code) {
+    JHUFF_TBL* tbl = cinfo->dc_huff_tbl_ptrs[0];
+    memset(tbl, 0, sizeof(*tbl));
+    tbl->bits[4] = 15;
+    for (int i = 0; i < 15; ++i) tbl->huffval[i] = i;
+  }
+  if (input.coeffs.empty()) {
+    jpegli_start_compress(cinfo, TRUE);
+    if (jparams.add_marker) {
+      jpegli_write_marker(cinfo, kSpecialMarker, kMarkerData,
+                          sizeof(kMarkerData));
+      for (size_t i = 0; i < kMarkerSequenceLen; ++i) {
+        jpegli_write_marker(cinfo, kMarkerSequence[i], kMarkerData,
+                            ((i + 2) % sizeof(kMarkerData)));
+      }
+    }
+  }
+  if (cinfo->raw_data_in) {
+    // Need to copy because jpeg API requires non-const pointers.
+    std::vector<std::vector<uint8_t>> raw_data = input.raw_data;
+    size_t max_lines = jparams.max_v_sample() * DCTSIZE;
+    std::vector<std::vector<JSAMPROW>> rowdata(cinfo->num_components);
+    std::vector<JSAMPARRAY> data(cinfo->num_components);
+    for (int c = 0; c < cinfo->num_components; ++c) {
+      rowdata[c].resize(jparams.v_samp(c) * DCTSIZE);
+      data[c] = &rowdata[c][0];
+    }
+    while (cinfo->next_scanline < cinfo->image_height) {
+      for (int c = 0; c < cinfo->num_components; ++c) {
+        size_t cwidth = cinfo->comp_info[c].width_in_blocks * DCTSIZE;
+        size_t cheight = cinfo->comp_info[c].height_in_blocks * DCTSIZE;
+        size_t num_lines = jparams.v_samp(c) * DCTSIZE;
+        size_t y0 = (cinfo->next_scanline / max_lines) * num_lines;
+        for (size_t i = 0; i < num_lines; ++i) {
+          rowdata[c][i] =
+              (y0 + i < cheight ? &raw_data[c][(y0 + i) * cwidth] : nullptr);
+        }
+      }
+      size_t num_lines = jpegli_write_raw_data(cinfo, &data[0], max_lines);
+      JXL_CHECK(num_lines == max_lines);
+    }
+  } else if (!input.coeffs.empty()) {
+    j_common_ptr comptr = reinterpret_cast<j_common_ptr>(cinfo);
+    jvirt_barray_ptr* coef_arrays = reinterpret_cast<jvirt_barray_ptr*>((
+        *cinfo->mem->alloc_small)(
+        comptr, JPOOL_IMAGE, cinfo->num_components * sizeof(jvirt_barray_ptr)));
+    for (int c = 0; c < cinfo->num_components; ++c) {
+      size_t xsize_blocks = jparams.comp_width(input, c) / DCTSIZE;
+      size_t ysize_blocks = jparams.comp_height(input, c) / DCTSIZE;
+      coef_arrays[c] = (*cinfo->mem->request_virt_barray)(
+          comptr, JPOOL_IMAGE, FALSE, xsize_blocks, ysize_blocks, 1);
+    }
+    jpegli_write_coefficients(cinfo, coef_arrays);
+    if (jparams.add_marker) {
+      jpegli_write_marker(cinfo, kSpecialMarker, kMarkerData,
+                          sizeof(kMarkerData));
+    }
+    for (int c = 0; c < cinfo->num_components; ++c) {
+      jpeg_component_info* comp = &cinfo->comp_info[c];
+      for (size_t by = 0; by < comp->height_in_blocks; ++by) {
+        JBLOCKARRAY ba = (*cinfo->mem->access_virt_barray)(
+            comptr, coef_arrays[c], by, 1, true);
+        size_t stride = comp->width_in_blocks * sizeof(JBLOCK);
+        size_t offset = by * comp->width_in_blocks * DCTSIZE2;
+        memcpy(ba[0], &input.coeffs[c][offset], stride);
+      }
+    }
+  } else {
+    size_t stride = cinfo->image_width * cinfo->input_components *
+                    jpegli_bytes_per_sample(input.data_type);
+    std::vector<uint8_t> row_bytes(stride);
+    for (size_t y = 0; y < cinfo->image_height; ++y) {
+      memcpy(&row_bytes[0], &input.pixels[y * stride], stride);
+      JSAMPROW row[] = {row_bytes.data()};
+      jpegli_write_scanlines(cinfo, row, 1);
+    }
+  }
+  jpegli_finish_compress(cinfo);
 }
 
 bool EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
@@ -419,150 +567,7 @@ bool EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
     jpegli_mem_dest(&cinfo, &buffer, &buffer_size);
-    cinfo.image_width = input.xsize;
-    cinfo.image_height = input.ysize;
-    cinfo.input_components = input.components;
-    cinfo.in_color_space = input.color_space;
-    if (jparams.xyb_mode) {
-      jpegli_set_xyb_mode(&cinfo);
-    }
-    jpegli_set_defaults(&cinfo);
-    if (jparams.override_JFIF >= 0) {
-      cinfo.write_JFIF_header = jparams.override_JFIF;
-    }
-    if (jparams.override_Adobe >= 0) {
-      cinfo.write_Adobe_marker = jparams.override_Adobe;
-    }
-    if (jparams.set_jpeg_colorspace) {
-      jpegli_set_colorspace(&cinfo, jparams.jpeg_color_space);
-    }
-    if (!jparams.comp_ids.empty()) {
-      for (int c = 0; c < cinfo.num_components; ++c) {
-        cinfo.comp_info[c].component_id = jparams.comp_ids[c];
-      }
-    }
-    if (!jparams.h_sampling.empty()) {
-      for (int c = 0; c < cinfo.num_components; ++c) {
-        cinfo.comp_info[c].h_samp_factor = jparams.h_sampling[c];
-        cinfo.comp_info[c].v_samp_factor = jparams.v_sampling[c];
-      }
-    }
-    if (!jparams.quant_indexes.empty()) {
-      for (int c = 0; c < cinfo.num_components; ++c) {
-        cinfo.comp_info[c].quant_tbl_no = jparams.quant_indexes[c];
-      }
-      for (const auto& table : jparams.quant_tables) {
-        if (table.add_raw) {
-          cinfo.quant_tbl_ptrs[table.slot_idx] =
-              jpegli_alloc_quant_table((j_common_ptr)&cinfo);
-          for (int k = 0; k < DCTSIZE2; ++k) {
-            cinfo.quant_tbl_ptrs[table.slot_idx]->quantval[k] =
-                table.quantval[k];
-          }
-          cinfo.quant_tbl_ptrs[table.slot_idx]->sent_table = FALSE;
-        } else {
-          jpegli_add_quant_table(&cinfo, table.slot_idx, &table.basic_table[0],
-                                 table.scale_factor, table.force_baseline);
-        }
-      }
-    }
-    if (jparams.progressive_id > 0) {
-      const ScanScript& script = kTestScript[jparams.progressive_id - 1];
-      cinfo.scan_info = script.scans;
-      cinfo.num_scans = script.num_scans;
-    } else if (jparams.progressive_level >= 0) {
-      jpegli_set_progressive_level(&cinfo, jparams.progressive_level);
-    }
-    jpegli_set_input_format(&cinfo, input.data_type, input.endianness);
-    cinfo.restart_interval = jparams.restart_interval;
-    cinfo.restart_in_rows = jparams.restart_in_rows;
-    cinfo.optimize_coding = jparams.optimize_coding;
-    cinfo.raw_data_in = !input.raw_data.empty();
-    if (!jparams.optimize_coding && jparams.use_flat_dc_luma_code) {
-      JHUFF_TBL* tbl = cinfo.dc_huff_tbl_ptrs[0];
-      memset(tbl, 0, sizeof(*tbl));
-      tbl->bits[4] = 15;
-      for (int i = 0; i < 15; ++i) tbl->huffval[i] = i;
-    }
-    jpegli_set_quality(&cinfo, jparams.quality, TRUE);
-    if (jparams.libjpeg_mode) {
-      jpegli_enable_adaptive_quantization(&cinfo, FALSE);
-      jpegli_use_standard_quant_tables(&cinfo);
-      jpegli_set_progressive_level(&cinfo, 0);
-    }
-    if (input.coeffs.empty()) {
-      jpegli_start_compress(&cinfo, TRUE);
-      if (jparams.add_marker) {
-        jpegli_write_marker(&cinfo, kSpecialMarker, kMarkerData,
-                            sizeof(kMarkerData));
-        for (size_t i = 0; i < kMarkerSequenceLen; ++i) {
-          jpegli_write_marker(&cinfo, kMarkerSequence[i], kMarkerData,
-                              ((i + 2) % sizeof(kMarkerData)));
-        }
-      }
-    }
-    if (cinfo.raw_data_in) {
-      // Need to copy because jpeg API requires non-const pointers.
-      std::vector<std::vector<uint8_t>> raw_data = input.raw_data;
-      size_t max_lines = jparams.max_v_sample() * DCTSIZE;
-      std::vector<std::vector<JSAMPROW>> rowdata(cinfo.num_components);
-      std::vector<JSAMPARRAY> data(cinfo.num_components);
-      for (int c = 0; c < cinfo.num_components; ++c) {
-        rowdata[c].resize(jparams.v_samp(c) * DCTSIZE);
-        data[c] = &rowdata[c][0];
-      }
-      while (cinfo.next_scanline < cinfo.image_height) {
-        for (int c = 0; c < cinfo.num_components; ++c) {
-          size_t cwidth = cinfo.comp_info[c].width_in_blocks * DCTSIZE;
-          size_t cheight = cinfo.comp_info[c].height_in_blocks * DCTSIZE;
-          size_t num_lines = jparams.v_samp(c) * DCTSIZE;
-          size_t y0 = (cinfo.next_scanline / max_lines) * num_lines;
-          for (size_t i = 0; i < num_lines; ++i) {
-            rowdata[c][i] =
-                (y0 + i < cheight ? &raw_data[c][(y0 + i) * cwidth] : nullptr);
-          }
-        }
-        size_t num_lines = jpegli_write_raw_data(&cinfo, &data[0], max_lines);
-        JXL_CHECK(num_lines == max_lines);
-      }
-    } else if (!input.coeffs.empty()) {
-      j_common_ptr comptr = reinterpret_cast<j_common_ptr>(&cinfo);
-      jvirt_barray_ptr* coef_arrays =
-          reinterpret_cast<jvirt_barray_ptr*>((*cinfo.mem->alloc_small)(
-              comptr, JPOOL_IMAGE,
-              cinfo.num_components * sizeof(jvirt_barray_ptr)));
-      for (int c = 0; c < cinfo.num_components; ++c) {
-        size_t xsize_blocks = jparams.comp_width(input, c) / DCTSIZE;
-        size_t ysize_blocks = jparams.comp_height(input, c) / DCTSIZE;
-        coef_arrays[c] = (*cinfo.mem->request_virt_barray)(
-            comptr, JPOOL_IMAGE, FALSE, xsize_blocks, ysize_blocks, 1);
-      }
-      jpegli_write_coefficients(&cinfo, coef_arrays);
-      if (jparams.add_marker) {
-        jpegli_write_marker(&cinfo, kSpecialMarker, kMarkerData,
-                            sizeof(kMarkerData));
-      }
-      for (int c = 0; c < cinfo.num_components; ++c) {
-        jpeg_component_info* comp = &cinfo.comp_info[c];
-        for (size_t by = 0; by < comp->height_in_blocks; ++by) {
-          JBLOCKARRAY ba = (*cinfo.mem->access_virt_barray)(
-              comptr, coef_arrays[c], by, 1, true);
-          size_t stride = comp->width_in_blocks * sizeof(JBLOCK);
-          size_t offset = by * comp->width_in_blocks * DCTSIZE2;
-          memcpy(ba[0], &input.coeffs[c][offset], stride);
-        }
-      }
-    } else {
-      size_t stride = cinfo.image_width * cinfo.input_components *
-                      jpegli_bytes_per_sample(input.data_type);
-      std::vector<uint8_t> row_bytes(stride);
-      for (size_t y = 0; y < cinfo.image_height; ++y) {
-        memcpy(&row_bytes[0], &input.pixels[y * stride], stride);
-        JSAMPROW row[] = {row_bytes.data()};
-        jpegli_write_scanlines(&cinfo, row, 1);
-      }
-    }
-    jpegli_finish_compress(&cinfo);
+    EncodeWithJpegli(input, jparams, &cinfo);
     return true;
   };
   bool success = try_catch_block();

@@ -26,14 +26,19 @@ struct TestConfig {
 
 class EncodeAPITestParam : public ::testing::TestWithParam<TestConfig> {};
 
+void GenerateInput(JpegIOMode input_mode, const CompressParams& jparams,
+                   TestImage* input) {
+  GeneratePixels(input);
+  if (input_mode == RAW_DATA) {
+    GenerateRawData(jparams, input);
+  } else if (input_mode == COEFFICIENTS) {
+    GenerateCoeffs(jparams, input);
+  }
+}
+
 TEST_P(EncodeAPITestParam, TestAPI) {
   TestConfig config = GetParam();
-  GeneratePixels(&config.input);
-  if (config.input_mode == RAW_DATA) {
-    GenerateRawData(config.jparams, &config.input);
-  } else if (config.input_mode == COEFFICIENTS) {
-    GenerateCoeffs(config.jparams, &config.input);
-  }
+  GenerateInput(config.input_mode, config.jparams, &config.input);
   std::vector<uint8_t> compressed;
   ASSERT_TRUE(EncodeWithJpegli(config.input, config.jparams, &compressed));
   double bpp =
@@ -48,6 +53,99 @@ TEST_P(EncodeAPITestParam, TestAPI) {
   TestImage output;
   DecodeWithLibjpeg(config.jparams, dparams, compressed, &output);
   VerifyOutputImage(config.input, output, config.max_dist);
+}
+
+TEST(EncodeAPITest, ReuseCinfoSameImageTwice) {
+  TestImage input;
+  input.xsize = 129;
+  input.ysize = 73;
+  CompressParams jparams;
+  GenerateInput(PIXELS, jparams, &input);
+  uint8_t* buffer = nullptr;
+  unsigned long buffer_size = 0;
+  std::vector<uint8_t> compressed0;
+  std::vector<uint8_t> compressed1;
+  jpeg_compress_struct cinfo;
+  const auto try_catch_block = [&]() -> bool {
+    ERROR_HANDLER_SETUP(jpegli);
+    jpegli_create_compress(&cinfo);
+    jpegli_mem_dest(&cinfo, &buffer, &buffer_size);
+    EncodeWithJpegli(input, jparams, &cinfo);
+    compressed0.assign(buffer, buffer + buffer_size);
+    jpegli_mem_dest(&cinfo, &buffer, &buffer_size);
+    EncodeWithJpegli(input, jparams, &cinfo);
+    compressed1.assign(buffer, buffer + buffer_size);
+    return true;
+  };
+  EXPECT_TRUE(try_catch_block());
+  jpegli_destroy_compress(&cinfo);
+  if (buffer) free(buffer);
+  ASSERT_EQ(compressed0.size(), compressed1.size());
+  EXPECT_EQ(0,
+            memcmp(compressed0.data(), compressed1.data(), compressed0.size()));
+}
+
+TEST(EncodeAPITest, ReuseCinfoChangeParams) {
+  TestImage input, output;
+  CompressParams jparams;
+  DecompressParams dparams;
+  uint8_t* buffer = nullptr;
+  unsigned long buffer_size = 0;
+  std::vector<uint8_t> compressed;
+  jpeg_compress_struct cinfo;
+  const auto max_rms = [](int q, int hs, int vs) {
+    if (hs == 1 && vs == 1) return q == 90 ? 2.2 : 0.6;
+    if (hs == 2 && vs == 2) return q == 90 ? 2.8 : 1.2;
+    return q == 90 ? 2.4 : 1.0;
+  };
+  const auto try_catch_block = [&]() -> bool {
+    ERROR_HANDLER_SETUP(jpegli);
+    jpegli_create_compress(&cinfo);
+    input.xsize = 129;
+    input.ysize = 73;
+    dparams.set_out_color_space = true;
+    for (JpegIOMode input_mode : {PIXELS, RAW_DATA, PIXELS, COEFFICIENTS}) {
+      for (int h_samp : {2, 1}) {
+        for (int v_samp : {2, 1}) {
+          for (int quality : {90, 100}) {
+            input.Clear();
+            input.color_space = (input_mode == RAW_DATA ? JCS_YCbCr : JCS_RGB);
+            jparams.quality = quality;
+            jparams.h_sampling = {h_samp, 1, 1};
+            jparams.v_sampling = {v_samp, 1, 1};
+            printf(
+                "Generating input with quality %d chroma subsampling %dx%d "
+                "input mode %d\n",
+                quality, h_samp, v_samp, input_mode);
+            GenerateInput(input_mode, jparams, &input);
+            jpegli_mem_dest(&cinfo, &buffer, &buffer_size);
+            if (input_mode != COEFFICIENTS) {
+              cinfo.image_width = input.xsize;
+              cinfo.image_height = input.ysize;
+              cinfo.input_components = input.components;
+              jpegli_set_defaults(&cinfo);
+              jpegli_start_compress(&cinfo, TRUE);
+              jpegli_abort_compress(&cinfo);
+              jpegli_mem_dest(&cinfo, &buffer, &buffer_size);
+            }
+            EncodeWithJpegli(input, jparams, &cinfo);
+            compressed.resize(buffer_size);
+            std::copy_n(buffer, buffer_size, compressed.data());
+            dparams.output_mode =
+                input_mode == COEFFICIENTS ? COEFFICIENTS : PIXELS;
+            dparams.out_color_space = input.color_space;
+            output.Clear();
+            DecodeWithLibjpeg(jparams, dparams, compressed, &output);
+            VerifyOutputImage(input, output, max_rms(quality, h_samp, v_samp));
+          }
+        }
+      }
+    }
+    return true;
+  };
+  EXPECT_TRUE(try_catch_block());
+  jpegli_destroy_compress(&cinfo);
+  if (buffer) free(buffer);
 }
 
 TEST(EncodeAPITest, AbbreviatedStreams) {
@@ -115,8 +213,8 @@ std::vector<TestConfig> GenerateTests() {
   std::vector<TestConfig> all_tests;
   {
     TestConfig config;
-    config.max_bpp = 1.45;
-    config.max_dist = 2.2;
+    config.max_bpp = 1.5;
+    config.max_dist = 2.0;
     all_tests.push_back(config);
   }
   {
@@ -130,31 +228,31 @@ std::vector<TestConfig> GenerateTests() {
     TestConfig config;
     config.jparams.quality = 80;
     config.max_bpp = 0.95;
-    config.max_dist = 2.9;
+    config.max_dist = 2.7;
     all_tests.push_back(config);
   }
   {
     TestConfig config;
     config.jparams.h_sampling = {2, 1, 1};
     config.jparams.v_sampling = {2, 1, 1};
-    config.max_bpp = 1.25;
-    config.max_dist = 2.9;
+    config.max_bpp = 1.3;
+    config.max_dist = 2.3;
     all_tests.push_back(config);
   }
   {
     TestConfig config;
     config.jparams.h_sampling = {1, 1, 1};
     config.jparams.v_sampling = {2, 1, 1};
-    config.max_bpp = 1.35;
-    config.max_dist = 2.5;
+    config.max_bpp = 1.4;
+    config.max_dist = 2.1;
     all_tests.push_back(config);
   }
   {
     TestConfig config;
     config.jparams.h_sampling = {2, 1, 1};
     config.jparams.v_sampling = {1, 1, 1};
-    config.max_bpp = 1.35;
-    config.max_dist = 2.5;
+    config.max_bpp = 1.4;
+    config.max_dist = 2.1;
     all_tests.push_back(config);
   }
   for (int h0_samp : {1, 2, 4}) {
@@ -204,15 +302,15 @@ std::vector<TestConfig> GenerateTests() {
   for (int p = 0; p < kNumTestScripts; ++p) {
     TestConfig config;
     config.jparams.progressive_id = p + 1;
-    config.max_bpp = 1.5;
-    config.max_dist = 2.2;
+    config.max_bpp = 1.6;
+    config.max_dist = 2.0;
     all_tests.push_back(config);
   }
   for (size_t l = 0; l <= 2; ++l) {
     TestConfig config;
     config.jparams.progressive_level = l;
-    config.max_bpp = 1.5;
-    config.max_dist = 2.2;
+    config.max_bpp = 1.6;
+    config.max_dist = 2.0;
     all_tests.push_back(config);
   }
   {
@@ -232,7 +330,7 @@ std::vector<TestConfig> GenerateTests() {
   {
     TestConfig config;
     config.input.color_space = JCS_YCbCr;
-    config.max_bpp = 1.45;
+    config.max_bpp = 1.5;
     config.max_dist = 1.35;
     all_tests.push_back(config);
   }
@@ -306,7 +404,7 @@ std::vector<TestConfig> GenerateTests() {
           config.jparams.quant_indexes = {0, 0, 0};
           float q = (type == 0 ? 16 : type) * scale * 0.01f;
           if (baseline && !add_raw) q = std::max(1.0f, std::min(255.0f, q));
-          config.max_bpp = 1.3f + 25.0f / q;
+          config.max_bpp = 1.5f + 25.0f / q;
           config.max_dist = 0.6f + 0.25f * q;
           all_tests.push_back(config);
         }
@@ -320,8 +418,8 @@ std::vector<TestConfig> GenerateTests() {
     config.input.ysize = 256;
     config.jparams.quant_indexes = {(qidx >> 2) & 1, (qidx >> 1) & 1,
                                     (qidx >> 0) & 1};
-    config.max_bpp = 2.6;
-    config.max_dist = 2.5;
+    config.max_bpp = 2.2;
+    config.max_dist = 2.8;
     all_tests.push_back(config);
   }
   for (int qidx = 0; qidx < 8; ++qidx) {
@@ -336,8 +434,8 @@ std::vector<TestConfig> GenerateTests() {
       table.slot_idx = slot_idx;
       table.Generate();
       config.jparams.quant_tables.push_back(table);
-      config.max_bpp = 2.6;
-      config.max_dist = 2.75;
+      config.max_bpp = 2.4;
+      config.max_dist = 2.8;
       all_tests.push_back(config);
     }
   }
@@ -420,12 +518,12 @@ std::vector<TestConfig> GenerateTests() {
   {
     TestConfig config;
     config.input.xsize = config.input.ysize = 256;
-    config.max_bpp = 1.7;
-    config.max_dist = 2.3;
+    config.max_bpp = 1.75;
+    config.max_dist = 2.0;
     config.jparams.add_marker = true;
     all_tests.push_back(config);
   }
-  for (JpegIOMode input_mode : {PIXELS, RAW_DATA}) {
+  for (JpegIOMode input_mode : {PIXELS, RAW_DATA, COEFFICIENTS}) {
     TestConfig config;
     config.input.xsize = config.input.ysize = 256;
     config.input_mode = input_mode;
@@ -434,8 +532,12 @@ std::vector<TestConfig> GenerateTests() {
     }
     config.jparams.progressive_level = 0;
     config.jparams.optimize_coding = false;
-    config.max_bpp = 1.8;
-    config.max_dist = 2.3;
+    config.max_bpp = 1.9;
+    config.max_dist = 2.0;
+    if (input_mode == COEFFICIENTS) {
+      config.max_bpp = 3.5;
+      config.max_dist = 0.0;
+    }
     all_tests.push_back(config);
     config.jparams.use_flat_dc_luma_code = true;
     all_tests.push_back(config);
@@ -470,7 +572,7 @@ std::vector<TestConfig> GenerateTests() {
          {JPEGLI_LITTLE_ENDIAN, JPEGLI_BIG_ENDIAN, JPEGLI_NATIVE_ENDIAN}) {
       J_COLOR_SPACE colorspace[4] = {JCS_GRAYSCALE, JCS_UNKNOWN, JCS_RGB,
                                      JCS_CMYK};
-      float max_bpp[4] = {1.25, 2.5, 1.45, 3.75};
+      float max_bpp[4] = {1.25, 2.5, 1.5, 3.75};
       for (int channels = 1; channels <= 4; ++channels) {
         TestConfig config;
         config.input.data_type = data_type;

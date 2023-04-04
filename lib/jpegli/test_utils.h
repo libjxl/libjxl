@@ -125,6 +125,11 @@ struct TestImage {
     pixels.resize(ysize * xsize * components *
                   jpegli_bytes_per_sample(data_type));
   }
+  void Clear() {
+    pixels.clear();
+    raw_data.clear();
+    coeffs.clear();
+  }
 };
 
 std::ostream& operator<<(std::ostream& os, const TestImage& input);
@@ -256,6 +261,9 @@ void GeneratePixels(TestImage* img);
 void GenerateRawData(const CompressParams& jparams, TestImage* img);
 
 void GenerateCoeffs(const CompressParams& jparams, TestImage* img);
+
+void EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
+                      j_compress_ptr cinfo);
 
 bool EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
                       std::vector<uint8_t>* compressed);
