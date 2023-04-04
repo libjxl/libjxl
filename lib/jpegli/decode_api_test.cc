@@ -60,6 +60,7 @@ class SourceManager {
     } else {
       src->pub_.next_input_byte = kFakeEoiMarker;
       src->pub_.bytes_in_buffer = 2;
+      src->len_ += 2;
     }
     src->pos_ += src->pub_.bytes_in_buffer;
     return TRUE;
@@ -177,15 +178,20 @@ struct TestConfig {
   bool compare_to_orig = false;
   float max_tolerance_factor = 1.01f;
   float max_rms_dist = 1.0f;
+  float max_diff = 35.0f;
 };
 
 std::vector<uint8_t> GetTestJpegData(TestConfig& config) {
-  if (!config.fn.empty()) {
-    return ReadTestData(config.fn.c_str());
-  }
-  GeneratePixels(&config.input);
   std::vector<uint8_t> compressed;
-  JXL_CHECK(EncodeWithJpegli(config.input, config.jparams, &compressed));
+  if (!config.fn.empty()) {
+    compressed = ReadTestData(config.fn.c_str());
+  } else {
+    GeneratePixels(&config.input);
+    JXL_CHECK(EncodeWithJpegli(config.input, config.jparams, &compressed));
+  }
+  if (config.dparams.size_factor < 1.0f) {
+    compressed.resize(compressed.size() * config.dparams.size_factor);
+  }
   return compressed;
 }
 
@@ -270,7 +276,9 @@ void TestAPIBuffered(const CompressParams& jparams,
     }
   }
   jpegli_finish_decompress(cinfo);
-  EXPECT_EQ(has_multiple_scans, cinfo->input_scan_number > 1);
+  if (dparams.size_factor == 1.0f) {
+    EXPECT_EQ(has_multiple_scans, cinfo->input_scan_number > 1);
+  }
 }
 
 TEST(DecodeAPITest, ReuseCinfo) {
@@ -379,7 +387,7 @@ TEST_P(DecodeAPITestParam, TestAPI) {
     printf("rms: %f  vs  %f\n", rms0, rms1);
     EXPECT_LE(rms0, rms1 * config.max_tolerance_factor);
   } else {
-    VerifyOutputImage(output0, output1, config.max_rms_dist);
+    VerifyOutputImage(output0, output1, config.max_rms_dist, config.max_diff);
   }
 }
 
@@ -418,7 +426,7 @@ TEST_P(DecodeAPITestParamBuffered, TestAPI) {
       printf("rms: %f  vs  %f\n", rms0, rms1);
       EXPECT_LE(rms0, rms1 * config.max_tolerance_factor);
     } else {
-      VerifyOutputImage(expected, output, config.max_rms_dist);
+      VerifyOutputImage(expected, output, config.max_rms_dist, config.max_diff);
     }
   }
 }
@@ -498,6 +506,32 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
     }
   }
 
+  for (float size_factor : {0.1f, 0.33f, 0.5f, 0.75f}) {
+    for (int prog_id : {-1, 0, 1}) {
+      for (int samp : {1, 2}) {
+        for (JpegIOMode output_mode : {PIXELS, RAW_DATA}) {
+          TestConfig config;
+          config.input.xsize = 517;
+          config.input.ysize = 523;
+          config.jparams.h_sampling = {samp, 1, 1};
+          config.jparams.v_sampling = {samp, 1, 1};
+          if (prog_id >= 0) {
+            config.jparams.progressive_level = 0;
+            config.jparams.progressive_id = prog_id;
+          }
+          config.dparams.size_factor = size_factor;
+          config.dparams.output_mode = output_mode;
+          // The last partially available block can behave differently.
+          // TODO(szabadka) Figure out if we can make the behaviour more
+          // similar.
+          config.max_rms_dist = samp == 1 ? 1.5f : 3.0f;
+          config.max_diff = 255.0f;
+          all_tests.push_back(config);
+        }
+      }
+    }
+  }
+
   if (buffered) {
     TestConfig config;
     config.dparams.quantize_colors = true;
@@ -558,6 +592,7 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
               } else {
                 // We only test for buffer overflows, etc.
                 config.max_rms_dist = 100.0f;
+                config.max_diff = 255.0f;
               }
               all_tests.push_back(config);
             }
@@ -886,6 +921,9 @@ std::ostream& operator<<(std::ostream& os, const DecompressParams& dparams) {
     os << "CompleteInput";
   } else {
     os << "InputChunks" << dparams.chunk_size;
+  }
+  if (dparams.size_factor < 1.0f) {
+    os << "Partial" << static_cast<int>(dparams.size_factor * 100) << "p";
   }
   if (dparams.max_output_lines == 0) {
     os << "CompleteOutput";

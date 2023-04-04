@@ -192,6 +192,7 @@ struct ScanDecompressParams {
 };
 
 struct DecompressParams {
+  float size_factor = 1.0f;
   size_t chunk_size = 65536;
   size_t max_output_lines = 16;
   JpegIOMode output_mode = PIXELS;
@@ -280,15 +281,18 @@ void DecodeWithLibjpeg(const CompressParams& jparams,
                        TestImage* output);
 
 double DistanceRms(const TestImage& input, const TestImage& output,
-                   size_t start_line, size_t num_lines);
+                   size_t start_line, size_t num_lines,
+                   double* max_diff = nullptr);
 
-double DistanceRms(const TestImage& input, const TestImage& output);
+double DistanceRms(const TestImage& input, const TestImage& output,
+                   double* max_diff = nullptr);
 
 void VerifyOutputImage(const TestImage& input, const TestImage& output,
-                       size_t start_line, size_t num_lines, double max_rms);
+                       size_t start_line, size_t num_lines, double max_rms,
+                       double max_diff = 255.0);
 
 void VerifyOutputImage(const TestImage& input, const TestImage& output,
-                       double max_rms);
+                       double max_rms, double max_diff = 255.0);
 
 }  // namespace jpegli
 

@@ -36,6 +36,9 @@ void InitializeImage(j_decompress_ptr cinfo) {
   cinfo->marker_list = nullptr;
   cinfo->comp_info = nullptr;
   cinfo->input_scan_number = 0;
+  cinfo->input_iMCU_row = 0;
+  cinfo->output_scan_number = 0;
+  cinfo->output_iMCU_row = 0;
   cinfo->output_scanline = 0;
   cinfo->unread_marker = 0;
   cinfo->coef_bits = nullptr;

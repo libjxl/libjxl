@@ -92,10 +92,12 @@ struct BitReaderState {
         --pos_;
       }
     }
-    if (pos_ > next_marker_pos_) {
+    if (pos_ >= next_marker_pos_) {
       *pos = next_marker_pos_;
-      // Data ran out before the scan was complete.
-      return false;
+      if (pos_ > next_marker_pos_ || *bit_pos > 0) {
+        // Data ran out before the scan was complete.
+        return false;
+      }
     }
     *pos = pos_;
     if (*pos == next_marker_pos_ && *pos + 1 < len_) {
@@ -511,14 +513,16 @@ int ProcessScan(j_decompress_ptr cinfo) {
       RestoreMCUCodingState(cinfo);
       return JPEG_SUSPENDED;
     }
-    if (!scan_ok) {
-      JPEGLI_ERROR("Failed to decode DCT block");
-    }
     if (!stream_ok) {
       // We hit a marker during parsing.
       JXL_DASSERT(data[stream_pos] == 0xff);
       JXL_DASSERT(data[stream_pos + 1] != 0);
-      JPEGLI_ERROR("Unexpected end of scan.");
+      RestoreMCUCodingState(cinfo);
+      JPEGLI_WARN("Incomplete scan detected.");
+      return JPEG_SCAN_COMPLETED;
+    }
+    if (!scan_ok) {
+      JPEGLI_ERROR("Failed to decode DCT block");
     }
     m->codestream_bits_ahead_ = bit_pos;
     pos = stream_pos;
