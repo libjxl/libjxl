@@ -35,12 +35,17 @@ void ReadOutputImage(j_decompress_ptr cinfo, TestImage* output) {
 struct TestConfig {
   std::string fn;
   std::string fn_desc;
+  DecompressParams dparams;
 };
 
 class SourceManagerTestParam : public ::testing::TestWithParam<TestConfig> {};
 
 TEST_P(SourceManagerTestParam, TestStdioSourceManager) {
   TestConfig config = GetParam();
+  if (config.dparams.size_factor != 1.0) {
+    // TODO(szabadka) Add truncated test files.
+    return;
+  }
   jxl::FileWrapper testfile(GetTestDataPath(config.fn), "rb");
   ASSERT_TRUE(testfile != nullptr);
   TestImage output0;
@@ -64,6 +69,9 @@ TEST_P(SourceManagerTestParam, TestStdioSourceManager) {
 TEST_P(SourceManagerTestParam, TestMemSourceManager) {
   TestConfig config = GetParam();
   std::vector<uint8_t> compressed = ReadTestData(config.fn.c_str());
+  if (config.dparams.size_factor < 1.0f) {
+    compressed.resize(compressed.size() * config.dparams.size_factor);
+  }
   TestImage output0;
   jpeg_decompress_struct cinfo;
   const auto try_catch_block = [&]() -> bool {
@@ -90,10 +98,13 @@ std::vector<TestConfig> GenerateTests() {
         {"jxl/flower/flower.png.im_q85_420_R13B.jpg", "Q85YUV420R13B"},
     });
     for (const auto& it : testfiles) {
-      TestConfig config;
-      config.fn = it.first;
-      config.fn_desc = it.second;
-      all_tests.push_back(config);
+      for (float size_factor : {0.1f, 0.33f, 0.5f, 0.75f}) {
+        TestConfig config;
+        config.fn = it.first;
+        config.fn_desc = it.second;
+        config.dparams.size_factor = size_factor;
+        all_tests.push_back(config);
+      }
     }
     return all_tests;
   }
@@ -101,6 +112,9 @@ std::vector<TestConfig> GenerateTests() {
 
 std::ostream& operator<<(std::ostream& os, const TestConfig& c) {
   os << c.fn_desc;
+  if (c.dparams.size_factor < 1.0f) {
+    os << "Partial" << static_cast<int>(c.dparams.size_factor * 100) << "p";
+  }
   return os;
 }
 

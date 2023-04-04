@@ -11,6 +11,7 @@
 #include "lib/jpegli/encode.h"
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/file_io.h"
+#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/sanitizers.h"
 
@@ -852,9 +853,9 @@ void ReadOutputPass(j_decompress_ptr cinfo, const DecompressParams& dparams,
     for (size_t y = 0; y < output->ysize; ++y) {
       JSAMPROW rows[] = {
           reinterpret_cast<JSAMPLE*>(&output->pixels[y * stride])};
+      JXL_CHECK(1 == jpeg_read_scanlines(cinfo, rows, 1));
       jxl::msan::UnpoisonMemory(
           rows[0], sizeof(JSAMPLE) * cinfo->output_components * output->xsize);
-      JXL_CHECK(1 == jpeg_read_scanlines(cinfo, rows, 1));
       if (cinfo->quantize_colors) {
         UnmapColors(rows[0], cinfo->output_width, cinfo->out_color_components,
                     cinfo->colormap, cinfo->actual_number_of_colors);
@@ -1005,8 +1006,19 @@ void DecodeWithLibjpeg(const CompressParams& jparams,
   jpeg_destroy_decompress(&cinfo);
 }
 
+void DumpImage(const TestImage& image, const std::string fn) {
+  JXL_CHECK(image.components == 1 || image.components == 3);
+  jxl::FileWrapper f(fn.c_str(), "wb");
+  size_t bytes_per_sample = jpegli_bytes_per_sample(image.data_type);
+  uint32_t maxval = (1u << (8 * bytes_per_sample)) - 1;
+  char type = image.components == 1 ? '5' : '6';
+  fprintf(f, "P%c\n%" PRIuS " %" PRIuS "\n%u\n", type, image.xsize, image.ysize,
+          maxval);
+  fwrite(image.pixels.data(), 1, image.pixels.size(), f);
+}
+
 double DistanceRms(const TestImage& input, const TestImage& output,
-                   size_t start_line, size_t num_lines) {
+                   size_t start_line, size_t num_lines, double* max_diff) {
   size_t stride = input.xsize * input.components;
   size_t start_offset = start_line * stride;
   auto get_sample = [&](const TestImage& im, const std::vector<uint8_t>& data,
@@ -1031,12 +1043,14 @@ double DistanceRms(const TestImage& input, const TestImage& output,
   };
   double diff2 = 0.0;
   size_t num_samples = 0;
+  if (max_diff) *max_diff = 0.0;
   if (!input.pixels.empty() && !output.pixels.empty()) {
     num_samples = num_lines * stride;
     for (size_t i = 0; i < num_samples; ++i) {
       double sample_orig = get_sample(input, input.pixels, i);
       double sample_output = get_sample(output, output.pixels, i);
       double diff = sample_orig - sample_output;
+      if (max_diff) *max_diff = std::max(*max_diff, 255.0 * std::abs(diff));
       diff2 += diff * diff;
     }
   } else {
@@ -1049,6 +1063,7 @@ double DistanceRms(const TestImage& input, const TestImage& output,
         double sample_orig = get_sample(input, input.raw_data[c], i);
         double sample_output = get_sample(output, output.raw_data[c], i);
         double diff = sample_orig - sample_output;
+        if (max_diff) *max_diff = std::max(*max_diff, 255.0 * std::abs(diff));
         diff2 += diff * diff;
       }
     }
@@ -1056,19 +1071,23 @@ double DistanceRms(const TestImage& input, const TestImage& output,
   return std::sqrt(diff2 / num_samples) * 255.0;
 }
 
-double DistanceRms(const TestImage& input, const TestImage& output) {
-  return DistanceRms(input, output, 0, output.ysize);
+double DistanceRms(const TestImage& input, const TestImage& output,
+                   double* max_diff) {
+  return DistanceRms(input, output, 0, output.ysize, max_diff);
 }
 
 void VerifyOutputImage(const TestImage& input, const TestImage& output,
-                       size_t start_line, size_t num_lines, double max_rms) {
-  double rms = DistanceRms(input, output, start_line, num_lines);
-  printf("rms: %f\n", rms);
+                       size_t start_line, size_t num_lines, double max_rms,
+                       double max_diff) {
+  double max_d;
+  double rms = DistanceRms(input, output, start_line, num_lines, &max_d);
+  printf("rms: %f  max diff: %f\n", rms, max_d);
   JXL_CHECK(rms <= max_rms);
+  JXL_CHECK(max_d <= max_diff);
 }
 
 void VerifyOutputImage(const TestImage& input, const TestImage& output,
-                       double max_rms) {
+                       double max_rms, double max_diff) {
   JXL_CHECK(output.xsize == input.xsize);
   JXL_CHECK(output.ysize == input.ysize);
   JXL_CHECK(output.components == input.components);
@@ -1082,7 +1101,7 @@ void VerifyOutputImage(const TestImage& input, const TestImage& output,
                             input.coeffs[c].size()));
     }
   } else {
-    VerifyOutputImage(input, output, 0, output.ysize, max_rms);
+    VerifyOutputImage(input, output, 0, output.ysize, max_rms, max_diff);
   }
 }
 
