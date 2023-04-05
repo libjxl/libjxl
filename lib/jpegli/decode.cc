@@ -168,9 +168,7 @@ int ConsumeInput(j_decompress_ptr cinfo) {
     }
     size_t pos = 0;
     if (cinfo->global_state == kDecProcessScan) {
-      size_t bit_pos = m->codestream_bits_ahead_;
-      status = ProcessScan(cinfo, data, len, &pos, &bit_pos);
-      m->codestream_bits_ahead_ = bit_pos;
+      status = ProcessScan(cinfo, data, len, &pos, &m->codestream_bits_ahead_);
     } else {
       status = ProcessMarkers(cinfo, data, len, &pos);
     }
@@ -183,22 +181,42 @@ int ConsumeInput(j_decompress_ptr cinfo) {
       if (bytes_left <= src->bytes_in_buffer) {
         src->next_input_byte += (src->bytes_in_buffer - bytes_left);
         src->bytes_in_buffer = bytes_left;
+        m->input_buffer_.clear();
+        m->input_buffer_pos_ = 0;
       }
     }
-    if (status == kResyncNeeded) {
-      // TODO(szabadka) Call cinfo->src->resync_to_restart
-      JPEGLI_ERROR("Could not find next restart marker");
+    if (status == kHandleRestart) {
+      JXL_DASSERT(m->input_buffer_.size() <=
+                  m->input_buffer_pos_ + src->bytes_in_buffer);
+      m->input_buffer_.clear();
+      m->input_buffer_pos_ = 0;
+      if (cinfo->unread_marker == 0xd0 + m->next_restart_marker_) {
+        cinfo->unread_marker = 0;
+      } else {
+        if (!(*cinfo->src->resync_to_restart)(cinfo, m->next_restart_marker_)) {
+          return JPEG_SUSPENDED;
+        }
+      }
+      m->next_restart_marker_ += 1;
+      m->next_restart_marker_ &= 0x7;
+      m->restarts_to_go_ = cinfo->restart_interval;
+      if (cinfo->unread_marker != 0) {
+        JPEGLI_WARN("Failed to resync to next restart marker, skipping scan.");
+        return JPEG_SCAN_COMPLETED;
+      }
+      continue;
     }
     if (status != kNeedMoreInput) {
       break;
     }
     if (m->input_buffer_.empty()) {
+      JXL_DASSERT(m->input_buffer_pos_ == 0);
       m->input_buffer_.assign(src->next_input_byte,
                               src->next_input_byte + src->bytes_in_buffer);
-      m->input_buffer_pos_ = 0;
     }
     if (!(*cinfo->src->fill_input_buffer)(cinfo)) {
       m->input_buffer_.clear();
+      m->input_buffer_pos_ = 0;
       return JPEG_SUSPENDED;
     }
     if (src->bytes_in_buffer == 0) {
@@ -700,8 +718,10 @@ boolean jpegli_finish_decompress(j_decompress_ptr cinfo) {
 }
 
 boolean jpegli_resync_to_restart(j_decompress_ptr cinfo, int desired) {
-  // The default resync_to_restart will just throw an error.
-  JPEGLI_ERROR("Invalid restart marker found.");
+  JPEGLI_WARN("Invalid restart marker found: 0x%02x vs 0x%02x.",
+              cinfo->unread_marker, 0xd0 + desired);
+  // This is a trivial implementation, we just let the decoder skip the entire
+  // scan and attempt to render the partial input.
   return TRUE;
 }
 

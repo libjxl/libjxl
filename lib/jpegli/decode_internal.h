@@ -21,7 +21,7 @@
 namespace jpegli {
 
 static constexpr int kNeedMoreInput = 100;
-static constexpr int kResyncNeeded = 101;
+static constexpr int kHandleRestart = 101;
 
 typedef int16_t coeff_t;
 
