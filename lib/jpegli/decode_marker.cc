@@ -60,9 +60,9 @@ void ProcessSOF(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
     JPEGLI_ERROR("Duplicate SOF marker.");
   }
   m->found_sof_ = true;
-  cinfo->progressive_mode = (data[1] == 0xc2);
+  cinfo->progressive_mode = (cinfo->unread_marker == 0xc2);
   cinfo->arith_code = 0;
-  size_t pos = 4;
+  size_t pos = 2;
   JPEG_VERIFY_LEN(6);
   cinfo->data_precision = ReadUint8(data, &pos);
   cinfo->image_height = ReadUint16(data, &pos);
@@ -174,7 +174,7 @@ void ProcessSOS(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
   if (!m->found_sof_) {
     JPEGLI_ERROR("Unexpected SOS marker.");
   }
-  size_t pos = 4;
+  size_t pos = 2;
   JPEG_VERIFY_LEN(1);
   cinfo->comps_in_scan = ReadUint8(data, &pos);
   JPEG_VERIFY_INPUT(cinfo->comps_in_scan, 1, cinfo->num_components);
@@ -330,7 +330,7 @@ void ProcessDHT(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
   constexpr int kLutSize = NUM_HUFF_TBLS * kJpegHuffmanLutSize;
   m->dc_huff_lut_.resize(kLutSize);
   m->ac_huff_lut_.resize(kLutSize);
-  size_t pos = 4;
+  size_t pos = 2;
   if (pos == len) {
     return JPEGLI_ERROR("DHT marker: no Huffman table found");
   }
@@ -425,7 +425,7 @@ void ProcessDQT(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
   if (m->found_sof_) {
     JPEGLI_ERROR("Updating quant tables between scans is not supported.");
   }
-  size_t pos = 4;
+  size_t pos = 2;
   if (pos == len) {
     return JPEGLI_ERROR("DQT marker: no quantization table found");
   }
@@ -460,7 +460,7 @@ void ProcessDRI(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
     return JPEGLI_ERROR("Duplicate DRI marker.");
   }
   m->found_dri_ = true;
-  size_t pos = 4;
+  size_t pos = 2;
   JPEG_VERIFY_LEN(2);
   cinfo->restart_interval = ReadUint16(data, &pos);
   JPEG_VERIFY_MARKER_END();
@@ -468,9 +468,9 @@ void ProcessDRI(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
 
 void ProcessAPP(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
   jpeg_decomp_master* m = cinfo->master;
-  const uint8_t marker = data[1];
-  const uint8_t* payload = data + 4;
-  size_t payload_size = len - 4;
+  const uint8_t marker = cinfo->unread_marker;
+  const uint8_t* payload = data + 2;
+  size_t payload_size = len - 2;
   if (m->app_marker_parsers[marker - 0xe0] != nullptr) {
     (*m->app_marker_parsers[marker - 0xe0])(cinfo);
     return;
@@ -540,9 +540,9 @@ void ProcessEOI(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
 }
 
 void SaveMarker(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
-  const uint8_t marker = data[1];
-  const uint8_t* payload = data + 4;
-  size_t payload_size = len - 4;
+  const uint8_t marker = cinfo->unread_marker;
+  const uint8_t* payload = data + 2;
+  size_t payload_size = len - 2;
 
   // Insert new saved marker to the head of the list.
   jpeg_saved_marker_ptr next = cinfo->marker_list;
@@ -560,39 +560,47 @@ void SaveMarker(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
 uint8_t ProcessNextMarker(j_decompress_ptr cinfo, const uint8_t* const data,
                           const size_t len, size_t* pos) {
   jpeg_decomp_master* m = cinfo->master;
-  // kIsValidMarker[i] == 1 means (0xc0 + i) is a valid marker.
-  static const uint8_t kIsValidMarker[] = {
-      1, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1,
-      1, 1, 1, 1, 1, 1, 0, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-      1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0,
-  };
-  // Skip bytes between markers.
   size_t num_skipped = 0;
-  while (*pos + 1 < len && (data[*pos] != 0xff || data[*pos + 1] < 0xc0 ||
-                            !kIsValidMarker[data[*pos + 1] - 0xc0])) {
-    ++(*pos);
-    ++num_skipped;
+  uint8_t marker = cinfo->unread_marker;
+  if (marker == 0) {
+    // kIsValidMarker[i] == 1 means (0xc0 + i) is a valid marker.
+    static const uint8_t kIsValidMarker[] = {
+        1, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 0, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0,
+    };
+    // Skip bytes between markers.
+    while (*pos + 1 < len && (data[*pos] != 0xff || data[*pos + 1] < 0xc0 ||
+                              !kIsValidMarker[data[*pos + 1] - 0xc0])) {
+      ++(*pos);
+      ++num_skipped;
+    }
+    if (*pos + 2 > len) {
+      return 0;
+    }
+    marker = data[*pos + 1];
+    if (num_skipped > 0) {
+      if (m->found_soi_) {
+        JPEGLI_WARN("Skipped %d bytes before marker 0x%02x", (int)num_skipped,
+                    marker);
+      } else {
+        JPEGLI_ERROR("Did not find SOI marker.");
+      }
+    }
+    *pos += 2;
+    cinfo->unread_marker = marker;
   }
-  if (*pos + 2 > len) {
-    return 0;
-  }
-  uint8_t marker = data[*pos + 1];
-  if (num_skipped > 0) {
-    JPEGLI_WARN("Skipped %d bytes before marker 0x%02x", (int)num_skipped,
-                marker);
-  }
-  cinfo->unread_marker = marker;
-  if (!m->found_soi_ && (num_skipped > 0 || marker != 0xd8)) {
+  if (!m->found_soi_ && marker != 0xd8) {
     JPEGLI_ERROR("Did not find SOI marker.");
   }
   const uint8_t* marker_data = &data[*pos];
-  size_t marker_len = 2;
+  size_t marker_len = 0;
   if (marker != 0xd8 && marker != 0xd9) {
-    if (*pos + 4 > len) {
+    if (*pos + 2 > len) {
       return 0;
     }
-    marker_len += (data[*pos + 2] << 8) + data[*pos + 3];
-    if (marker_len < 4) {
+    marker_len += (data[*pos] << 8) + data[*pos + 1];
+    if (marker_len < 2) {
       JPEGLI_ERROR("Invalid marker length");
     }
     if (*pos + marker_len > len) {

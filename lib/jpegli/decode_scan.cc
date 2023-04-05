@@ -77,7 +77,7 @@ struct BitReaderState {
   // Sets *pos to the next stream position, and *bit_pos to the bit position
   // within the next byte where parsing should continue.
   // Returns false if the stream ended too early.
-  bool FinishStream(j_decompress_ptr cinfo, size_t* pos, size_t* bit_pos) {
+  bool FinishStream(size_t* pos, size_t* bit_pos) {
     *bit_pos = (8 - (bits_left_ & 7)) & 7;
     // Give back some bytes that we did not use.
     int unused_bytes_left = DivCeil(bits_left_, 8);
@@ -99,9 +99,6 @@ struct BitReaderState {
       }
     }
     *pos = pos_;
-    if (*pos == next_marker_pos_ && *pos + 1 < len_) {
-      cinfo->unread_marker = data_[*pos + 1];
-    }
     return true;
   }
 
@@ -431,18 +428,22 @@ int ProcessScan(j_decompress_ptr cinfo, const uint8_t* const data,
       if (!FinishScan(cinfo, data, len, pos, bit_pos)) {
         return kNeedMoreInput;
       }
+      // Go to the next marker, warn if we had to skip any data.
+      size_t num_skipped = 0;
+      while (*pos + 1 < len && (data[*pos] != 0xff || data[*pos + 1] == 0 ||
+                                data[*pos + 1] == 0xff)) {
+        ++(*pos);
+        ++num_skipped;
+      }
+      if (num_skipped > 0) {
+        JPEGLI_WARN("Skipped %d bytes before restart marker", (int)num_skipped);
+      }
       if (*pos + 2 > len) {
         return kNeedMoreInput;
       }
-      if (data[*pos] == 0xff &&
-          data[*pos + 1] == 0xd0 + m->next_restart_marker_) {
-        m->next_restart_marker_ += 1;
-        m->next_restart_marker_ &= 0x7;
-        m->restarts_to_go_ = cinfo->restart_interval;
-        *pos += 2;
-      } else {
-        return kResyncNeeded;
-      }
+      cinfo->unread_marker = data[*pos + 1];
+      *pos += 2;
+      return kHandleRestart;
     }
 
     size_t start_pos = *pos;
@@ -496,7 +497,7 @@ int ProcessScan(j_decompress_ptr cinfo, const uint8_t* const data,
     }
     size_t new_pos;
     size_t new_bit_pos;
-    bool stream_ok = br.FinishStream(cinfo, &new_pos, &new_bit_pos);
+    bool stream_ok = br.FinishStream(&new_pos, &new_bit_pos);
     if (new_pos + 2 > len) {
       // If reading stopped within the last two bytes, we have to request more
       // input even if FinishStream() returned true, since the Huffman code
