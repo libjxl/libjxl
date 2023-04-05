@@ -349,6 +349,7 @@ void jpegli_abort_decompress(j_decompress_ptr cinfo) {
 
 void jpegli_save_markers(j_decompress_ptr cinfo, int marker_code,
                          unsigned int length_limit) {
+  // TODO(szabadka) Limit our memory usage by taking into account length_limit.
   jpeg_decomp_master* m = cinfo->master;
   m->markers_to_save_.insert(marker_code);
 }
