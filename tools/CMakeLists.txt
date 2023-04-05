@@ -174,6 +174,7 @@ if(JPEGXL_ENABLE_DEVTOOLS)
     exr_to_pq
     pq_to_hlg
     render_hlg
+    local_tone_map
     tone_map
     texture_to_cube
     generate_lut_template
@@ -191,6 +192,7 @@ if(JPEGXL_ENABLE_DEVTOOLS)
   add_executable(exr_to_pq hdr/exr_to_pq.cc)
   add_executable(pq_to_hlg hdr/pq_to_hlg.cc)
   add_executable(render_hlg hdr/render_hlg.cc)
+  add_executable(local_tone_map hdr/local_tone_map.cc)
   add_executable(tone_map hdr/tone_map.cc)
   add_executable(texture_to_cube hdr/texture_to_cube.cc)
   add_executable(generate_lut_template hdr/generate_lut_template.cc)
