@@ -472,6 +472,11 @@ void ProcessAPP(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
   const uint8_t* payload = data + 2;
   size_t payload_size = len - 2;
   if (m->app_marker_parsers[marker - 0xe0] != nullptr) {
+    // TODO(szabadka) At this point we have already buffered the whole marker
+    // segment, so the source manager's input is in an unexpected position
+    // from the applications's point of view. Fix this by only buffering the
+    // important markers that we will process.
+    // TODO(szabadka) Handle FALSE return value.
     (*m->app_marker_parsers[marker - 0xe0])(cinfo);
     return;
   }
@@ -604,6 +609,8 @@ uint8_t ProcessNextMarker(j_decompress_ptr cinfo, const uint8_t* const data,
       JPEGLI_ERROR("Invalid marker length");
     }
     if (*pos + marker_len > len) {
+      // TODO(szabadka) Limit out memory usage by using the skip_input_data
+      // source manager callback on APP markers that are not saved.
       return 0;
     }
     if (m->markers_to_save_.find(marker) != m->markers_to_save_.end()) {
