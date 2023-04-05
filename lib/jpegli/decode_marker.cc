@@ -12,7 +12,6 @@
 #include "lib/jpegli/error.h"
 #include "lib/jpegli/huffman.h"
 #include "lib/jpegli/memory_manager.h"
-#include "lib/jpegli/source_manager.h"
 #include "lib/jxl/base/printf_macros.h"
 
 namespace jpegli {
@@ -558,10 +557,8 @@ void SaveMarker(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
   memcpy(cinfo->marker_list->data, payload, payload_size);
 }
 
-uint8_t ProcessNextMarker(j_decompress_ptr cinfo) {
-  const uint8_t* data = cinfo->src->next_input_byte;
-  size_t len = cinfo->src->bytes_in_buffer;
-  size_t pos = 0;
+uint8_t ProcessNextMarker(j_decompress_ptr cinfo, const uint8_t* const data,
+                          const size_t len, size_t* pos) {
   jpeg_decomp_master* m = cinfo->master;
   // kIsValidMarker[i] == 1 means (0xc0 + i) is a valid marker.
   static const uint8_t kIsValidMarker[] = {
@@ -571,33 +568,34 @@ uint8_t ProcessNextMarker(j_decompress_ptr cinfo) {
   };
   // Skip bytes between markers.
   size_t num_skipped = 0;
-  while (pos + 1 < len && (data[pos] != 0xff || data[pos + 1] < 0xc0 ||
-                           !kIsValidMarker[data[pos + 1] - 0xc0])) {
-    ++(pos);
+  while (*pos + 1 < len && (data[*pos] != 0xff || data[*pos + 1] < 0xc0 ||
+                            !kIsValidMarker[data[*pos + 1] - 0xc0])) {
+    ++(*pos);
     ++num_skipped;
   }
-  if (pos + 2 > len) {
+  if (*pos + 2 > len) {
     return 0;
   }
+  uint8_t marker = data[*pos + 1];
   if (num_skipped > 0) {
-    AdvanceInput(cinfo, num_skipped);
+    JPEGLI_WARN("Skipped %d bytes before marker 0x%02x", (int)num_skipped,
+                marker);
   }
-  uint8_t marker = data[pos + 1];
   cinfo->unread_marker = marker;
   if (!m->found_soi_ && (num_skipped > 0 || marker != 0xd8)) {
     JPEGLI_ERROR("Did not find SOI marker.");
   }
-  const uint8_t* marker_data = &data[pos];
+  const uint8_t* marker_data = &data[*pos];
   size_t marker_len = 2;
   if (marker != 0xd8 && marker != 0xd9) {
-    if (pos + 4 > len) {
+    if (*pos + 4 > len) {
       return 0;
     }
-    marker_len += (data[pos + 2] << 8) + data[pos + 3];
+    marker_len += (data[*pos + 2] << 8) + data[*pos + 3];
     if (marker_len < 4) {
       JPEGLI_ERROR("Invalid marker length");
     }
-    if (pos + marker_len > len) {
+    if (*pos + marker_len > len) {
       return 0;
     }
     if (m->markers_to_save_.find(marker) != m->markers_to_save_.end()) {
@@ -625,17 +623,17 @@ uint8_t ProcessNextMarker(j_decompress_ptr cinfo) {
   } else {
     JPEGLI_ERROR("Unexpected marker 0x%x", marker);
   }
-  pos += marker_len;
-  AdvanceInput(cinfo, marker_len);
+  *pos += marker_len;
   cinfo->unread_marker = 0;
   return marker;
 }
 
 }  // namespace
 
-int ProcessMarkers(j_decompress_ptr cinfo) {
+int ProcessMarkers(j_decompress_ptr cinfo, const uint8_t* const data,
+                   const size_t len, size_t* pos) {
   for (;;) {
-    uint8_t marker = ProcessNextMarker(cinfo);
+    uint8_t marker = ProcessNextMarker(cinfo, data, len, pos);
     if (marker == 0) {
       break;
     } else if (marker == 0xd9) {
@@ -644,7 +642,7 @@ int ProcessMarkers(j_decompress_ptr cinfo) {
       return JPEG_REACHED_SOS;
     }
   }
-  return JPEG_SUSPENDED;
+  return kNeedMoreInput;
 }
 
 }  // namespace jpegli

@@ -16,7 +16,6 @@
 #include "lib/jpegli/error.h"
 #include "lib/jpegli/memory_manager.h"
 #include "lib/jpegli/render.h"
-#include "lib/jpegli/source_manager.h"
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/status.h"
 
@@ -48,6 +47,8 @@ void InitializeImage(j_decompress_ptr cinfo) {
   memset(cinfo->arith_ac_K, 0, sizeof(cinfo->arith_ac_K));
   // Initialize the private fields.
   jpeg_decomp_master* m = cinfo->master;
+  m->input_buffer_.clear();
+  m->input_buffer_pos_ = 0;
   m->codestream_bits_ahead_ = 0;
   m->found_soi_ = false;
   m->found_dri_ = false;
@@ -151,41 +152,61 @@ void ProgressMonitorOutputPass(j_decompress_ptr cinfo) {
 }
 
 int ConsumeInput(j_decompress_ptr cinfo) {
+  jpeg_decomp_master* m = cinfo->master;
   jpeg_source_mgr* src = cinfo->src;
   std::vector<uint8_t> buffer;
-  const uint8_t* last_input_byte = src->next_input_byte + src->bytes_in_buffer;
   int status;
   for (;;) {
-    if (cinfo->global_state == kDecProcessScan) {
-      status = ProcessScan(cinfo);
+    const uint8_t* data;
+    size_t len;
+    if (m->input_buffer_.empty()) {
+      data = cinfo->src->next_input_byte;
+      len = cinfo->src->bytes_in_buffer;
     } else {
-      status = ProcessMarkers(cinfo);
+      data = &m->input_buffer_[m->input_buffer_pos_];
+      len = m->input_buffer_.size() - m->input_buffer_pos_;
     }
-    if (status != JPEG_SUSPENDED) {
+    size_t pos = 0;
+    if (cinfo->global_state == kDecProcessScan) {
+      size_t bit_pos = m->codestream_bits_ahead_;
+      status = ProcessScan(cinfo, data, len, &pos, &bit_pos);
+      m->codestream_bits_ahead_ = bit_pos;
+    } else {
+      status = ProcessMarkers(cinfo, data, len, &pos);
+    }
+    if (m->input_buffer_.empty()) {
+      cinfo->src->next_input_byte += pos;
+      cinfo->src->bytes_in_buffer -= pos;
+    } else {
+      m->input_buffer_pos_ += pos;
+      size_t bytes_left = m->input_buffer_.size() - m->input_buffer_pos_;
+      if (bytes_left <= src->bytes_in_buffer) {
+        src->next_input_byte += (src->bytes_in_buffer - bytes_left);
+        src->bytes_in_buffer = bytes_left;
+      }
+    }
+    if (status == kResyncNeeded) {
+      // TODO(szabadka) Call cinfo->src->resync_to_restart
+      JPEGLI_ERROR("Could not find next restart marker");
+    }
+    if (status != kNeedMoreInput) {
       break;
     }
-    if (buffer.size() != src->bytes_in_buffer) {
-      // Save the unprocessed bytes in the input to a temporary buffer.
-      buffer.assign(src->next_input_byte,
-                    src->next_input_byte + src->bytes_in_buffer);
+    if (m->input_buffer_.empty()) {
+      m->input_buffer_.assign(src->next_input_byte,
+                              src->next_input_byte + src->bytes_in_buffer);
+      m->input_buffer_pos_ = 0;
     }
     if (!(*cinfo->src->fill_input_buffer)(cinfo)) {
-      return status;
+      m->input_buffer_.clear();
+      return JPEG_SUSPENDED;
     }
     if (src->bytes_in_buffer == 0) {
       JPEGLI_ERROR("Empty input.");
     }
-    // Save the end of the current input so that we can restore it after the
-    // input processing succeeds.
-    last_input_byte = cinfo->src->next_input_byte + src->bytes_in_buffer;
-    // Extend the temporary buffer with the new bytes and point the input to it.
-    buffer.insert(buffer.end(), src->next_input_byte, last_input_byte);
-    src->next_input_byte = buffer.data();
-    src->bytes_in_buffer = buffer.size();
+    m->input_buffer_.insert(m->input_buffer_.end(), src->next_input_byte,
+                            src->next_input_byte + src->bytes_in_buffer);
   }
-  // Restore the input pointer in case we had to change it to a temporary
-  // buffer earlier.
-  src->next_input_byte = last_input_byte - src->bytes_in_buffer;
   if (status == JPEG_SCAN_COMPLETED) {
     cinfo->global_state = kDecProcessMarkers;
   } else if (status == JPEG_REACHED_SOS) {
@@ -473,8 +494,7 @@ boolean jpegli_start_decompress(j_decompress_ptr cinfo) {
     }
     while (!cinfo->master->found_eoi_) {
       jpegli::ProgressMonitorInputPass(cinfo);
-      int retcode = jpegli::ConsumeInput(cinfo);
-      if (retcode == JPEG_SUSPENDED) {
+      if (jpegli::ConsumeInput(cinfo) == JPEG_SUSPENDED) {
         return FALSE;
       }
     }
@@ -635,8 +655,7 @@ jvirt_barray_ptr* jpegli_read_coefficients(j_decompress_ptr cinfo) {
   if (!cinfo->buffered_image) {
     while (!m->found_eoi_) {
       jpegli::ProgressMonitorInputPass(cinfo);
-      int retcode = jpegli::ConsumeInput(cinfo);
-      if (retcode == JPEG_SUSPENDED) {
+      if (jpegli::ConsumeInput(cinfo) == JPEG_SUSPENDED) {
         return nullptr;
       }
     }
@@ -671,8 +690,7 @@ boolean jpegli_finish_decompress(j_decompress_ptr cinfo) {
                  cinfo->global_state);
   }
   while (!cinfo->master->found_eoi_) {
-    int retcode = jpegli::ConsumeInput(cinfo);
-    if (retcode == JPEG_SUSPENDED) {
+    if (jpegli::ConsumeInput(cinfo) == JPEG_SUSPENDED) {
       return FALSE;
     }
   }

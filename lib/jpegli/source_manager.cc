@@ -3,8 +3,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include "lib/jpegli/source_manager.h"
-
 #include "lib/jpegli/decode.h"
 #include "lib/jpegli/error.h"
 #include "lib/jpegli/memory_manager.h"

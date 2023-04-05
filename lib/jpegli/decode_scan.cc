@@ -11,7 +11,6 @@
 
 #include "lib/jpegli/decode_internal.h"
 #include "lib/jpegli/error.h"
-#include "lib/jpegli/source_manager.h"
 #include "lib/jxl/base/status.h"
 
 namespace jpegli {
@@ -394,12 +393,14 @@ void RestoreMCUCodingState(j_decompress_ptr cinfo) {
 }
 
 bool FinishScan(j_decompress_ptr cinfo, const uint8_t* data, const size_t len,
-                size_t* pos) {
+                size_t* pos, size_t* bit_pos) {
   jpeg_decomp_master* m = cinfo->master;
   if (m->eobrun_ > 0) {
     JPEGLI_ERROR("End-of-block run too long.");
   }
-  if (m->codestream_bits_ahead_ == 0) {
+  m->eobrun_ = -1;
+  memset(m->last_dc_coeff_, 0, sizeof(m->last_dc_coeff_));
+  if (*bit_pos == 0) {
     return true;
   }
   if (data[*pos] == 0xff) {
@@ -409,53 +410,45 @@ bool FinishScan(j_decompress_ptr cinfo, const uint8_t* data, const size_t len,
     // br.FinishStream would have detected an early marker.
     JXL_DASSERT(data[*pos + 1] == 0);
     *pos += 2;
-    AdvanceInput(cinfo, 2);
   } else {
     *pos += 1;
-    AdvanceInput(cinfo, 1);
   }
-  m->codestream_bits_ahead_ = 0;
+  *bit_pos = 0;
   return true;
 }
 
 }  // namespace
 
-int ProcessScan(j_decompress_ptr cinfo) {
-  const uint8_t* data = cinfo->src->next_input_byte;
-  size_t len = cinfo->src->bytes_in_buffer;
+int ProcessScan(j_decompress_ptr cinfo, const uint8_t* const data,
+                const size_t len, size_t* pos, size_t* bit_pos) {
   if (len == 0) {
-    return JPEG_SUSPENDED;
+    return kNeedMoreInput;
   }
-  size_t pos = 0;
   jpeg_decomp_master* m = cinfo->master;
   for (;;) {
     // Handle the restart intervals.
     if (cinfo->restart_interval > 0 && m->restarts_to_go_ == 0) {
-      if (!FinishScan(cinfo, data, len, &pos)) {
-        return JPEG_SUSPENDED;
+      if (!FinishScan(cinfo, data, len, pos, bit_pos)) {
+        return kNeedMoreInput;
       }
-      if (pos + 2 > len) {
-        return JPEG_SUSPENDED;
+      if (*pos + 2 > len) {
+        return kNeedMoreInput;
       }
-      int expected_marker = 0xd0 + m->next_restart_marker_;
-      int marker = data[pos + 1];
-      if (marker != expected_marker) {
-        JPEGLI_ERROR("RST marker mismatch: %x vs %x", marker, expected_marker);
-        // TODO(szabadka) Use source manager's resync_to_restart callback here.
+      if (data[*pos] == 0xff &&
+          data[*pos + 1] == 0xd0 + m->next_restart_marker_) {
+        m->next_restart_marker_ += 1;
+        m->next_restart_marker_ &= 0x7;
+        m->restarts_to_go_ = cinfo->restart_interval;
+        *pos += 2;
+      } else {
+        return kResyncNeeded;
       }
-      m->next_restart_marker_ += 1;
-      m->next_restart_marker_ &= 0x7;
-      m->restarts_to_go_ = cinfo->restart_interval;
-      memset(m->last_dc_coeff_, 0, sizeof(m->last_dc_coeff_));
-      m->eobrun_ = -1;  // fresh start
-      pos += 2;
-      AdvanceInput(cinfo, 2);
     }
 
-    size_t start_pos = pos;
+    size_t start_pos = *pos;
     BitReaderState br(data, len, start_pos);
-    if (m->codestream_bits_ahead_ > 0) {
-      br.ReadBits(m->codestream_bits_ahead_);
+    if (*bit_pos > 0) {
+      br.ReadBits(*bit_pos);
     }
     if (start_pos + kMaxMCUByteSize > len) {
       SaveMCUCodingState(cinfo);
@@ -501,22 +494,24 @@ int ProcessScan(j_decompress_ptr cinfo) {
         }
       }
     }
-    size_t bit_pos;
-    size_t stream_pos;
-    bool stream_ok = br.FinishStream(cinfo, &stream_pos, &bit_pos);
-    if (stream_pos + 2 > len) {
+    size_t new_pos;
+    size_t new_bit_pos;
+    bool stream_ok = br.FinishStream(cinfo, &new_pos, &new_bit_pos);
+    if (new_pos + 2 > len) {
       // If reading stopped within the last two bytes, we have to request more
       // input even if FinishStream() returned true, since the Huffman code
       // reader could have peaked ahead some bits past the current input chunk
       // and thus the last prefix code length could have been wrong. We can do
       // this because a valid JPEG bit stream has two extra bytes at the end.
       RestoreMCUCodingState(cinfo);
-      return JPEG_SUSPENDED;
+      return kNeedMoreInput;
     }
+    *pos = new_pos;
+    *bit_pos = new_bit_pos;
     if (!stream_ok) {
       // We hit a marker during parsing.
-      JXL_DASSERT(data[stream_pos] == 0xff);
-      JXL_DASSERT(data[stream_pos + 1] != 0);
+      JXL_DASSERT(data[*pos] == 0xff);
+      JXL_DASSERT(data[*pos + 1] != 0);
       RestoreMCUCodingState(cinfo);
       JPEGLI_WARN("Incomplete scan detected.");
       return JPEG_SCAN_COMPLETED;
@@ -524,9 +519,6 @@ int ProcessScan(j_decompress_ptr cinfo) {
     if (!scan_ok) {
       JPEGLI_ERROR("Failed to decode DCT block");
     }
-    m->codestream_bits_ahead_ = bit_pos;
-    pos = stream_pos;
-    AdvanceInput(cinfo, pos - start_pos);
     if (m->restarts_to_go_ > 0) {
       --m->restarts_to_go_;
     }
@@ -535,8 +527,8 @@ int ProcessScan(j_decompress_ptr cinfo) {
       ++m->scan_mcu_row_;
       m->scan_mcu_col_ = 0;
       if (m->scan_mcu_row_ == cinfo->MCU_rows_in_scan) {
-        if (!FinishScan(cinfo, data, len, &pos)) {
-          return JPEG_SUSPENDED;
+        if (!FinishScan(cinfo, data, len, pos, bit_pos)) {
+          return kNeedMoreInput;
         }
         break;
       } else if ((m->scan_mcu_row_ % m->mcu_rows_per_iMCU_row_) == 0) {
