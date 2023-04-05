@@ -20,21 +20,29 @@ namespace jpegli {
 namespace {
 
 static constexpr uint8_t kFakeEoiMarker[2] = {0xff, 0xd9};
+static constexpr size_t kNumSourceBuffers = 4;
 
 // Custom source manager that refills the input buffer in chunks, simulating
 // a file reader with a fixed buffer size.
 class SourceManager {
  public:
   SourceManager(const uint8_t* data, size_t len, size_t max_chunk_size)
-      : data_(data), len_(len), pos_(0), max_chunk_size_(max_chunk_size) {
-    pub_.next_input_byte = nullptr;
-    pub_.bytes_in_buffer = 0;
+      : data_(data), len_(len), max_chunk_size_(max_chunk_size) {
     pub_.skip_input_data = skip_input_data;
     pub_.resync_to_restart = jpegli_resync_to_restart;
     pub_.term_source = term_source;
     pub_.init_source = init_source;
     pub_.fill_input_buffer = fill_input_buffer;
     if (max_chunk_size_ == 0) max_chunk_size_ = len;
+    buffers_.resize(kNumSourceBuffers, std::vector<uint8_t>(max_chunk_size_));
+    Reset();
+  }
+
+  void Reset() {
+    pub_.next_input_byte = nullptr;
+    pub_.bytes_in_buffer = 0;
+    pos_ = 0;
+    chunk_idx_ = 0;
   }
 
   ~SourceManager() {
@@ -46,8 +54,10 @@ class SourceManager {
   jpeg_source_mgr pub_;
   const uint8_t* data_;
   size_t len_;
+  size_t chunk_idx_;
   size_t pos_;
   size_t max_chunk_size_;
+  std::vector<std::vector<uint8_t>> buffers_;
 
   static void init_source(j_decompress_ptr cinfo) {}
 
@@ -55,7 +65,10 @@ class SourceManager {
     auto src = reinterpret_cast<SourceManager*>(cinfo->src);
     if (src->pos_ < src->len_) {
       size_t chunk_size = std::min(src->len_ - src->pos_, src->max_chunk_size_);
-      src->pub_.next_input_byte = src->data_ + src->pos_;
+      size_t next_idx = ++src->chunk_idx_ % kNumSourceBuffers;
+      uint8_t* next_buffer = src->buffers_[next_idx].data();
+      memcpy(next_buffer, src->data_ + src->pos_, chunk_size);
+      src->pub_.next_input_byte = next_buffer;
       src->pub_.bytes_in_buffer = chunk_size;
     } else {
       src->pub_.next_input_byte = kFakeEoiMarker;
@@ -323,10 +336,11 @@ TEST(DecodeAPITest, ReuseCinfo) {
               cinfo.buffered_image = false;
               cinfo.raw_data_out = false;
               cinfo.scale_num = cinfo.scale_denom = 1;
-              jpegli_mem_src(&cinfo, compressed.data(), compressed.size());
+              SourceManager src(compressed.data(), compressed.size(), 1u << 12);
+              cinfo.src = reinterpret_cast<jpeg_source_mgr*>(&src);
               jpegli_read_header(&cinfo, /*require_image=*/TRUE);
               jpegli_abort_decompress(&cinfo);
-              jpegli_mem_src(&cinfo, compressed.data(), compressed.size());
+              src.Reset();
               TestAPINonBuffered(jparams, dparams, expected, &cinfo, &output);
               float max_rms = output_mode == COEFFICIENTS ? 0.0f : 1.0f;
               if (scale_num == 1 && scale_denom == 8 && h_samp != v_samp) {
@@ -338,7 +352,7 @@ TEST(DecodeAPITest, ReuseCinfo) {
               DecodeAllScansWithLibjpeg(jparams, dparams, compressed,
                                         &expected_output_progression);
               output_progression.clear();
-              jpegli_mem_src(&cinfo, compressed.data(), compressed.size());
+              src.Reset();
               TestAPIBuffered(jparams, dparams, &cinfo, &output_progression);
               JXL_CHECK(output_progression.size() ==
                         expected_output_progression.size());

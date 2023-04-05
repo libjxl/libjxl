@@ -20,6 +20,9 @@
 
 namespace jpegli {
 
+static constexpr int kNeedMoreInput = 100;
+static constexpr int kResyncNeeded = 101;
+
 typedef int16_t coeff_t;
 
 // Represents one component of a jpeg file.
@@ -45,6 +48,8 @@ struct jpeg_decomp_master {
   //
   // Input handling state.
   //
+  std::vector<uint8_t> input_buffer_;
+  size_t input_buffer_pos_;
   // Number of bits after codestream_pos_ that were already processed.
   size_t codestream_bits_ahead_;
 

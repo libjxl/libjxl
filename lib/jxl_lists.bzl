@@ -503,7 +503,6 @@ libjxl_jpegli_sources = [
     "jpegli/simd.cc",
     "jpegli/simd.h",
     "jpegli/source_manager.cc",
-    "jpegli/source_manager.h",
     "jpegli/transpose-inl.h",
     "jpegli/upsample.cc",
     "jpegli/upsample.h",
