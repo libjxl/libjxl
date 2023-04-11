@@ -378,10 +378,14 @@ void PrepareForOutput(j_decompress_ptr cinfo) {
   cinfo->output_iMCU_row = 0;
   cinfo->output_scanline = 0;
   const float kDequantScale = 1.0f / (8 * 255);
-  m->dequant_ = Allocate<float>(cinfo, coeffs_per_block, JPOOL_IMAGE_ALIGNED);
+  if (m->dequant_ == nullptr) {
+    m->dequant_ = Allocate<float>(cinfo, coeffs_per_block, JPOOL_IMAGE_ALIGNED);
+    memset(m->dequant_, 0, coeffs_per_block * sizeof(float));
+  }
   for (int c = 0; c < cinfo->num_components; c++) {
     const auto& comp = cinfo->comp_info[c];
     JQUANT_TBL* table = comp.quant_table;
+    if (table == nullptr) continue;
     for (size_t k = 0; k < DCTSIZE2; ++k) {
       m->dequant_[c * DCTSIZE2 + k] = table->quantval[k] * kDequantScale;
     }

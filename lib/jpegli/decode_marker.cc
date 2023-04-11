@@ -101,12 +101,13 @@ void ProcessSOF(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
         std::max(cinfo->max_h_samp_factor, h_samp_factor);
     cinfo->max_v_samp_factor =
         std::max(cinfo->max_v_samp_factor, v_samp_factor);
-    uint8_t quant_tbl_idx = ReadUint8(data, &pos);
+    int quant_tbl_idx = ReadUint8(data, &pos);
+    JPEG_VERIFY_INPUT(quant_tbl_idx, 0, NUM_QUANT_TBLS - 1);
     comp->quant_tbl_no = quant_tbl_idx;
-    comp->quant_table = cinfo->quant_tbl_ptrs[quant_tbl_idx];
-    if (comp->quant_table == nullptr) {
+    if (cinfo->quant_tbl_ptrs[quant_tbl_idx] == nullptr) {
       JPEGLI_ERROR("Quantization table with index %u not found", quant_tbl_idx);
     }
+    comp->quant_table = nullptr;  // will be allocated after SOS marker
   }
   JPEG_VERIFY_MARKER_END();
 
@@ -297,6 +298,15 @@ void ProcessSOS(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
       return JPEGLI_ERROR(
           "SOS marker: Could not find AC Huffman table with index %d",
           ac_tbl_idx);
+    }
+  }
+  // Copy quantization tables into comp_info.
+  for (int i = 0; i < cinfo->comps_in_scan; ++i) {
+    jpeg_component_info* comp = cinfo->cur_comp_info[i];
+    if (comp->quant_table == nullptr) {
+      comp->quant_table = Allocate<JQUANT_TBL>(cinfo, 1, JPOOL_IMAGE);
+      memcpy(comp->quant_table, cinfo->quant_tbl_ptrs[comp->quant_tbl_no],
+             sizeof(JQUANT_TBL));
     }
   }
   cinfo->MCU_rows_in_scan = cinfo->total_iMCU_rows;

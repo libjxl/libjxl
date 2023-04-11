@@ -71,6 +71,7 @@ void InitializeImage(j_decompress_ptr cinfo) {
   }
   m->output_passes_done_ = 0;
   m->xoffset_ = 0;
+  m->dequant_ = nullptr;
 }
 
 void InitializeDecompressParams(j_decompress_ptr cinfo) {
