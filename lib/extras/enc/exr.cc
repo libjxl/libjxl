@@ -110,7 +110,7 @@ Status EncodeImageEXR(const PackedImage& image, const JxlBasicInfo& info,
   chromaticities.white =
       Imath::V2f(c_enc.white_point_xy[0], c_enc.white_point_xy[1]);
   OpenEXR::addChromaticities(header, chromaticities);
-  OpenEXR::addWhiteLuminance(header, 255.0f);
+  OpenEXR::addWhiteLuminance(header, info.intensity_target);
 
   auto loadFloat =
       format.endianness == JXL_BIG_ENDIAN ? LoadBEFloat : LoadLEFloat;
