@@ -66,7 +66,6 @@ struct jpeg_decomp_master {
   std::vector<jpegli::DecJPEGComponent> components_;
   std::vector<jpegli::HuffmanTableEntry> dc_huff_lut_;
   std::vector<jpegli::HuffmanTableEntry> ac_huff_lut_;
-  uint8_t huff_slot_defined_[256] = {};
   std::set<int> markers_to_save_;
   jpeg_marker_parser_method app_marker_parsers[16];
   jpeg_marker_parser_method com_marker_parser;

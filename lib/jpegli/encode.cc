@@ -18,6 +18,7 @@
 #include "lib/jpegli/encode_internal.h"
 #include "lib/jpegli/entropy_coding.h"
 #include "lib/jpegli/error.h"
+#include "lib/jpegli/huffman.h"
 #include "lib/jpegli/input.h"
 #include "lib/jpegli/memory_manager.h"
 #include "lib/jpegli/quant.h"
@@ -580,8 +581,10 @@ void jpegli_set_defaults(j_compress_ptr cinfo) {
   jpegli_default_colorspace(cinfo);
   jpegli_set_quality(cinfo, 90, TRUE);
   jpegli_set_progressive_level(cinfo, jpegli::kDefaultProgressiveLevel);
-  jpegli::AddStandardHuffmanTables(cinfo, /*is_dc=*/false);
-  jpegli::AddStandardHuffmanTables(cinfo, /*is_dc=*/true);
+  jpegli::AddStandardHuffmanTables(reinterpret_cast<j_common_ptr>(cinfo),
+                                   /*is_dc=*/false);
+  jpegli::AddStandardHuffmanTables(reinterpret_cast<j_common_ptr>(cinfo),
+                                   /*is_dc=*/true);
 }
 
 void jpegli_default_colorspace(j_compress_ptr cinfo) {

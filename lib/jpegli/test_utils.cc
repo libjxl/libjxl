@@ -256,6 +256,8 @@ std::ostream& operator<<(std::ostream& os, const CompressParams& jparams) {
     os << "FixedTree";
     if (jparams.use_flat_dc_luma_code) {
       os << "FlatDCLuma";
+    } else if (jparams.omit_standard_tables) {
+      os << "OmitDHT";
     }
   }
   return os;
@@ -486,7 +488,16 @@ void EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
     for (int i = 0; i < 15; ++i) tbl->huffval[i] = i;
   }
   if (input.coeffs.empty()) {
-    jpegli_start_compress(cinfo, TRUE);
+    bool write_all_tables = TRUE;
+    if (!jparams.optimize_coding && !jparams.use_flat_dc_luma_code &&
+        jparams.omit_standard_tables) {
+      write_all_tables = FALSE;
+      cinfo->dc_huff_tbl_ptrs[0]->sent_table = TRUE;
+      cinfo->dc_huff_tbl_ptrs[1]->sent_table = TRUE;
+      cinfo->ac_huff_tbl_ptrs[0]->sent_table = TRUE;
+      cinfo->ac_huff_tbl_ptrs[1]->sent_table = TRUE;
+    }
+    jpegli_start_compress(cinfo, write_all_tables);
     if (jparams.add_marker) {
       jpegli_write_marker(cinfo, kSpecialMarker, kMarkerData,
                           sizeof(kMarkerData));

@@ -817,6 +817,13 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
   }
   {
     TestConfig config;
+    config.jparams.progressive_level = 0;
+    config.jparams.optimize_coding = false;
+    config.jparams.omit_standard_tables = true;
+    all_tests.push_back(config);
+  }
+  {
+    TestConfig config;
     config.input.xsize = config.input.ysize = 128;
     config.jparams.comp_ids = {7, 17, 177};
     all_tests.push_back(config);

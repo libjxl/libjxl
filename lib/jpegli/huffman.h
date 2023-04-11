@@ -44,6 +44,11 @@ void BuildJpegHuffmanTable(const uint32_t* count, const uint32_t* symbols,
 void CreateHuffmanTree(const uint32_t* data, size_t length, int tree_limit,
                        uint8_t* depth);
 
+void ValidateHuffmanTable(j_common_ptr cinfo, const JHUFF_TBL* table,
+                          bool is_dc);
+
+void AddStandardHuffmanTables(j_common_ptr cinfo, bool is_dc);
+
 }  // namespace jpegli
 
 #endif  // LIB_JPEGLI_HUFFMAN_H_
