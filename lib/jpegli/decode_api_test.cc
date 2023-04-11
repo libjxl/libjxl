@@ -508,14 +508,20 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
   for (JpegIOMode output_mode : {PIXELS, RAW_DATA, COEFFICIENTS}) {
     for (int h_samp : {1, 2}) {
       for (int v_samp : {1, 2}) {
-        TestConfig config;
-        config.dparams.output_mode = output_mode;
-        config.jparams.h_sampling = {h_samp, 1, 1};
-        config.jparams.v_sampling = {v_samp, 1, 1};
-        if (output_mode == COEFFICIENTS) {
-          config.max_rms_dist = 0.0f;
+        for (bool fancy : {true, false}) {
+          if (!fancy && (output_mode != PIXELS || h_samp * v_samp == 1)) {
+            continue;
+          }
+          TestConfig config;
+          config.dparams.output_mode = output_mode;
+          config.dparams.do_fancy_upsampling = fancy;
+          config.jparams.h_sampling = {h_samp, 1, 1};
+          config.jparams.v_sampling = {v_samp, 1, 1};
+          if (output_mode == COEFFICIENTS) {
+            config.max_rms_dist = 0.0f;
+          }
+          all_tests.push_back(config);
         }
-        all_tests.push_back(config);
       }
     }
   }
@@ -958,6 +964,9 @@ std::ostream& operator<<(std::ostream& os, const DecompressParams& dparams) {
   }
   if (dparams.do_block_smoothing) {
     os << "BlockSmoothing";
+  }
+  if (!dparams.do_fancy_upsampling) {
+    os << "NoFancyUpsampling";
   }
   if (dparams.scale_num != 1 || dparams.scale_denom != 1) {
     os << "Scale" << dparams.scale_num << "_" << dparams.scale_denom;

@@ -202,6 +202,7 @@ struct DecompressParams {
   J_COLOR_SPACE out_color_space = JCS_UNKNOWN;
   bool crop_output = false;
   bool do_block_smoothing = false;
+  bool do_fancy_upsampling = true;
   int scale_num = 1;
   int scale_denom = 1;
   bool quantize_colors = false;

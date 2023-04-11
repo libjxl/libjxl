@@ -488,7 +488,7 @@ void ProcessOutput(j_decompress_ptr cinfo, size_t* num_output_rows,
         int line_groups = vfactor / m->v_factor[c];
         size_t yc = y / m->v_factor[c];
         for (int dy = 0; dy < line_groups; ++dy) {
-          if (m->v_factor[c] == 2) {
+          if (cinfo->do_fancy_upsampling && m->v_factor[c] == 2) {
             size_t ymid = yc + dy;
             const float* JXL_RESTRICT row_mid = raw_out->Row(ymid);
             const float* JXL_RESTRICT row_top =
@@ -535,16 +535,17 @@ void ProcessOutput(j_decompress_ptr cinfo, size_t* num_output_rows,
   } else {
     DecodeCurrentiMCURow(cinfo);
     for (int c = 0; c < cinfo->num_components; ++c) {
+      if (m->h_factor[c] == 1) continue;
       const auto& compinfo = cinfo->comp_info[c];
       RowBuffer<float>* raw_out = &m->raw_output_[c];
       size_t cheight = compinfo.v_samp_factor * m->scaled_dct_size[c];
       size_t y0 = imcu_row * cheight;
-      if (m->h_factor[c] == 2) {
+      if (cinfo->do_fancy_upsampling && m->h_factor[c] == 2) {
         for (size_t iy = 0; iy < cheight; ++iy) {
           float* JXL_RESTRICT row = raw_out->Row(y0 + iy);
           Upsample2Horizontal(row, m->upsample_scratch_, output_width);
         }
-      } else if (m->h_factor[c] > 2) {
+      } else {
         for (size_t iy = 0; iy < cheight; ++iy) {
           float* JXL_RESTRICT row = raw_out->Row(y0 + iy);
           float* JXL_RESTRICT tmp = m->upsample_scratch_;
