@@ -481,11 +481,6 @@ void WriteFileHeader(j_compress_ptr cinfo) {
   }
 }
 
-void WriteFrameHeader(j_compress_ptr cinfo) {
-  EncodeDQT(cinfo);
-  EncodeSOF(cinfo);
-}
-
 void WriteScanHeader(j_compress_ptr cinfo, size_t scan_idx) {
   jpeg_comp_master* m = cinfo->master;
   cinfo->restart_interval = RestartIntervalForScan(cinfo, scan_idx);
@@ -504,13 +499,12 @@ void WriteScanHeader(j_compress_ptr cinfo, size_t scan_idx) {
 }
 
 void WriteHeaderMarkers(j_compress_ptr cinfo) {
-  jpegli::WriteFrameHeader(cinfo);
-  if (IsStreamingSupported(cinfo)) {
-    CopyHuffmanCodes(cinfo);
-    WriteScanHeader(cinfo, 0);
-    memset(cinfo->master->last_dc_coeff, 0,
-           sizeof(cinfo->master->last_dc_coeff));
-  }
+  bool is_baseline = true;
+  CopyHuffmanCodes(cinfo, &is_baseline);
+  EncodeDQT(cinfo, &is_baseline);
+  EncodeSOF(cinfo, is_baseline);
+  WriteScanHeader(cinfo, 0);
+  memset(cinfo->master->last_dc_coeff, 0, sizeof(cinfo->master->last_dc_coeff));
 }
 
 void EncodeScans(j_compress_ptr cinfo) {
@@ -518,11 +512,14 @@ void EncodeScans(j_compress_ptr cinfo) {
     EncodeSingleScan(cinfo);
     return;
   }
+  bool is_baseline = false;
   if (cinfo->optimize_coding || cinfo->progressive_mode) {
-    OptimizeHuffmanCodes(cinfo);
+    OptimizeHuffmanCodes(cinfo, &is_baseline);
   } else {
-    CopyHuffmanCodes(cinfo);
+    CopyHuffmanCodes(cinfo, &is_baseline);
   }
+  EncodeDQT(cinfo, &is_baseline);
+  EncodeSOF(cinfo, is_baseline);
   for (int i = 0; i < cinfo->num_scans; ++i) {
     WriteScanHeader(cinfo, i);
     if (!EncodeScan(cinfo, i)) {
@@ -868,10 +865,11 @@ void jpegli_write_tables(j_compress_ptr cinfo) {
   }
   (*cinfo->err->reset_error_mgr)(reinterpret_cast<j_common_ptr>(cinfo));
   (*cinfo->dest->init_destination)(cinfo);
+  bool is_baseline = true;
   jpeg_comp_master* m = cinfo->master;
   jpegli::WriteOutput(cinfo, {0xFF, 0xD8});  // SOI
-  jpegli::EncodeDQT(cinfo);
-  jpegli::CopyHuffmanCodes(cinfo);
+  jpegli::EncodeDQT(cinfo, &is_baseline);
+  jpegli::CopyHuffmanCodes(cinfo, &is_baseline);
   jpegli::EncodeDHT(cinfo, m->huffman_codes.data(), m->huffman_codes.size());
   jpegli::WriteOutput(cinfo, {0xFF, 0xD9});  // EOI
   (*cinfo->dest->term_destination)(cinfo);
@@ -938,7 +936,8 @@ JDIMENSION jpegli_write_scanlines(j_compress_ptr cinfo, JSAMPARRAY scanlines,
     JPEGLI_ERROR("jpegli_write_raw_data() must be called for raw data mode.");
   }
   jpegli::ProgressMonitorInputPass(cinfo);
-  if (cinfo->global_state == jpegli::kEncHeader) {
+  if (cinfo->global_state == jpegli::kEncHeader &&
+      jpegli::IsStreamingSupported(cinfo)) {
     jpegli::WriteHeaderMarkers(cinfo);
   }
   cinfo->global_state = jpegli::kEncReadImage;
@@ -979,7 +978,8 @@ JDIMENSION jpegli_write_raw_data(j_compress_ptr cinfo, JSAMPIMAGE data,
     JPEGLI_ERROR("jpegli_write_raw_data(): raw data mode was not set");
   }
   jpegli::ProgressMonitorInputPass(cinfo);
-  if (cinfo->global_state == jpegli::kEncHeader) {
+  if (cinfo->global_state == jpegli::kEncHeader &&
+      jpegli::IsStreamingSupported(cinfo)) {
     jpegli::WriteHeaderMarkers(cinfo);
   }
   cinfo->global_state = jpegli::kEncReadImage;
@@ -1034,10 +1034,6 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
   if (cinfo->next_scanline < cinfo->image_height) {
     JPEGLI_ERROR("Incomplete image, expected %d rows, got %d",
                  cinfo->image_height, cinfo->next_scanline);
-  }
-
-  if (cinfo->global_state == jpegli::kEncWriteCoeffs) {
-    jpegli::WriteFrameHeader(cinfo);
   }
 
   if (jpegli::IsStreamingSupported(cinfo)) {

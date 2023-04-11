@@ -584,8 +584,14 @@ void EncodeAPP14(j_compress_ptr cinfo) {
                       0, 0, color_transform});
 }
 
-void EncodeSOF(j_compress_ptr cinfo) {
-  const uint8_t marker = cinfo->progressive_mode ? 0xc2 : 0xc1;
+void EncodeSOF(j_compress_ptr cinfo, bool is_baseline) {
+  if (cinfo->data_precision != kJpegPrecision) {
+    is_baseline = false;
+    JPEGLI_ERROR("Unsupported data precision %d", cinfo->data_precision);
+  }
+  const uint8_t marker = cinfo->progressive_mode ? 0xc2
+                         : is_baseline           ? 0xc0
+                                                 : 0xc1;
   const size_t n_comps = cinfo->num_components;
   const size_t marker_len = 8 + 3 * n_comps;
   std::vector<uint8_t> data(marker_len + 2);
@@ -693,7 +699,7 @@ void EncodeDHT(j_compress_ptr cinfo, const JPEGHuffmanCode* huffman_codes,
   }
 }
 
-void EncodeDQT(j_compress_ptr cinfo) {
+void EncodeDQT(j_compress_ptr cinfo, bool* is_baseline) {
   uint8_t data[4 + NUM_QUANT_TBLS * (1 + 2 * DCTSIZE2)];  // 520 bytes
   size_t pos = 0;
   data[pos++] = 0xFF;
@@ -701,10 +707,18 @@ void EncodeDQT(j_compress_ptr cinfo) {
   pos += 2;  // Length will be filled in later.
   for (int i = 0; i < NUM_QUANT_TBLS; ++i) {
     JQUANT_TBL* quant_table = cinfo->quant_tbl_ptrs[i];
-    if (quant_table == nullptr || quant_table->sent_table) continue;
+    if (quant_table == nullptr) {
+      continue;
+    }
     int precision = 0;
     for (size_t k = 0; k < DCTSIZE2; ++k) {
-      if (quant_table->quantval[k] > 255) precision = 1;
+      if (quant_table->quantval[k] > 255) {
+        precision = 1;
+        *is_baseline = false;
+      }
+    }
+    if (quant_table->sent_table) {
+      continue;
     }
     data[pos++] = (precision << 4) + i;
     for (size_t j = 0; j < DCTSIZE2; ++j) {
@@ -1065,9 +1079,14 @@ void EncodeSingleScan(j_compress_ptr cinfo) {
     AddJpegHuffmanCode(ac_clusters.histograms[i], 0x10 + i, &huffman_codes);
   }
 
+  bool is_baseline = true;
   int context_map[8];
   ScanCodingInfo sci;
   for (int c = 0; c < cinfo->num_components; ++c) {
+    if (dc_clusters.histogram_indexes[c] > 1 ||
+        ac_clusters.histogram_indexes[c] > 1) {
+      is_baseline = false;
+    }
     sci.dc_tbl_idx[c] = dc_clusters.histogram_indexes[c];
     sci.ac_tbl_idx[c] = ac_clusters.histogram_indexes[c] + 4;
     context_map[c] = sci.dc_tbl_idx[c];
@@ -1075,6 +1094,8 @@ void EncodeSingleScan(j_compress_ptr cinfo) {
   }
   sci.num_huffman_codes = huffman_codes.size();
   cinfo->master->scan_coding_info.emplace_back(std::move(sci));
+  EncodeDQT(cinfo, &is_baseline);
+  EncodeSOF(cinfo, is_baseline);
   EncodeDHT(cinfo, huffman_codes.data(), huffman_codes.size());
   EncodeSOS(cinfo, 0);
 
