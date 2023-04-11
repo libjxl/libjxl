@@ -454,6 +454,10 @@ void ProcessDQT(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
   JPEG_VERIFY_MARKER_END();
 }
 
+void ProcessDNL(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
+  // Ignore marker.
+}
+
 void ProcessDRI(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
   jpeg_decomp_master* m = cinfo->master;
   if (m->found_dri_) {
@@ -625,6 +629,8 @@ uint8_t ProcessNextMarker(j_decompress_ptr cinfo, const uint8_t* const data,
     ProcessSOS(cinfo, marker_data, marker_len);
   } else if (marker == 0xdb) {
     ProcessDQT(cinfo, marker_data, marker_len);
+  } else if (marker == 0xdc) {
+    ProcessDNL(cinfo, marker_data, marker_len);
   } else if (marker == 0xdd) {
     ProcessDRI(cinfo, marker_data, marker_len);
   } else if (marker >= 0xe0 && marker <= 0xef) {
