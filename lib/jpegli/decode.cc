@@ -397,7 +397,7 @@ bool IsInputReady(j_decompress_ptr cinfo) {
   if (cinfo->input_iMCU_row == cinfo->total_iMCU_rows) {
     return true;
   }
-  return cinfo->input_iMCU_row > cinfo->output_iMCU_row;
+  return cinfo->input_iMCU_row > cinfo->output_iMCU_row + 2;
 }
 
 bool ReadOutputPass(j_decompress_ptr cinfo) {

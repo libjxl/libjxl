@@ -121,6 +121,7 @@ struct jpeg_decomp_master {
   float* idct_scratch_;
   float* upsample_scratch_;
   uint8_t* output_scratch_;
+  int16_t* smoothing_scratch_;
   float* dequant_;
   // 1 = 1pass, 2 = 2pass, 3 = external
   int quant_mode_;
@@ -147,6 +148,7 @@ struct jpeg_decomp_master {
   // This holds the coef_bits of the scan before the current scan,
   // i.e. the bottom half when rendering incomplete scans.
   int (*coef_bits_latch)[SAVED_COEFS];
+  int (*prev_coef_bits_latch)[SAVED_COEFS];
 };
 
 #endif  // LIB_JPEGLI_DECODE_INTERNAL_H_

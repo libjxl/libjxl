@@ -5,6 +5,7 @@
 
 #include "lib/jpegli/decode_scan.h"
 
+#include <jpeglib.h>
 #include <string.h>
 
 #include <hwy/base.h>
