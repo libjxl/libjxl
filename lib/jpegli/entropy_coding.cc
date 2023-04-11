@@ -139,11 +139,14 @@ namespace {
 void SetJpegHuffmanCode(const JpegClusteredHistograms& clusters,
                         size_t histogram_id, size_t slot_id_offset,
                         std::vector<uint32_t>& slot_histograms,
-                        uint32_t* slot_id,
+                        uint32_t* slot_id, bool* is_baseline,
                         std::vector<JPEGHuffmanCode>* huff_codes) {
   JXL_ASSERT(histogram_id < clusters.histogram_indexes.size());
   uint32_t histogram_index = clusters.histogram_indexes[histogram_id];
   uint32_t id = clusters.slot_ids[histogram_index];
+  if (id > 1) {
+    *is_baseline = false;
+  }
   *slot_id = id + (slot_id_offset / 4);
   if (slot_histograms[id] != histogram_index) {
     AddJpegHuffmanCode(clusters.histograms[histogram_index],
@@ -583,10 +586,13 @@ void AddStandardHuffmanTables(j_compress_ptr cinfo, bool is_dc) {
   }
 }
 
-void CopyHuffmanCodes(j_compress_ptr cinfo) {
+void CopyHuffmanCodes(j_compress_ptr cinfo, bool* is_baseline) {
   jpeg_comp_master* m = cinfo->master;
   for (int c = 0; c < cinfo->num_components; ++c) {
     jpeg_component_info* comp = &cinfo->comp_info[c];
+    if (comp->dc_tbl_no > 1 || comp->ac_tbl_no > 1) {
+      *is_baseline = false;
+    }
     CopyHuffmanTable(cinfo, comp->dc_tbl_no, /*is_dc=*/true, &m->huffman_codes);
     CopyHuffmanTable(cinfo, comp->ac_tbl_no, /*is_dc=*/false,
                      &m->huffman_codes);
@@ -621,7 +627,7 @@ size_t RestartIntervalForScan(j_compress_ptr cinfo, size_t scan_index) {
   }
 }
 
-void OptimizeHuffmanCodes(j_compress_ptr cinfo) {
+void OptimizeHuffmanCodes(j_compress_ptr cinfo, bool* is_baseline) {
   jpeg_comp_master* m = cinfo->master;
   // Gather histograms.
   size_t num_histo = 0;
@@ -666,9 +672,9 @@ void OptimizeHuffmanCodes(j_compress_ptr cinfo) {
     ScanCodingInfo sci;
     for (int c = 0; c < cinfo->scan_info[i].comps_in_scan; ++c) {
       SetJpegHuffmanCode(dc_clusters, histogram_id, 0, dc_slot_histograms,
-                         &sci.dc_tbl_idx[c], &m->huffman_codes);
+                         &sci.dc_tbl_idx[c], is_baseline, &m->huffman_codes);
       SetJpegHuffmanCode(ac_clusters, histogram_id, 0x10, ac_slot_histograms,
-                         &sci.ac_tbl_idx[c], &m->huffman_codes);
+                         &sci.ac_tbl_idx[c], is_baseline, &m->huffman_codes);
       ++histogram_id;
     }
     sci.num_huffman_codes = m->huffman_codes.size() - num_huffman_codes_sent;
