@@ -245,22 +245,6 @@ void ProcessSOS(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
   const uint16_t scan_bitmask =
       cinfo->Ah == 0 ? (0xffff << cinfo->Al) : (1u << cinfo->Al);
   const uint16_t refinement_bitmask = (1 << cinfo->Al) - 1;
-  if (!cinfo->coef_bits) {
-    cinfo->coef_bits =
-        Allocate<int[DCTSIZE2]>(cinfo, cinfo->num_components, JPOOL_IMAGE);
-    m->coef_bits_latch =
-        Allocate<int[SAVED_COEFS]>(cinfo, cinfo->num_components, JPOOL_IMAGE);
-
-    for (int c = 0; c < cinfo->num_components; ++c) {
-      for (int i = 0; i < DCTSIZE2; ++i) {
-        cinfo->coef_bits[c][i] = -1;
-        if (i < SAVED_COEFS) {
-          m->coef_bits_latch[c][i] = -1;
-        }
-      }
-    }
-  }
-
   for (int i = 0; i < cinfo->comps_in_scan; ++i) {
     int comp_idx = cinfo->cur_comp_info[i]->component_index;
     for (int k = cinfo->Ss; k <= cinfo->Se; ++k) {
@@ -276,70 +260,17 @@ void ProcessSOS(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
             comp_idx, k, m->scan_progression_[i][k], scan_bitmask);
       }
       m->scan_progression_[comp_idx][k] |= scan_bitmask;
-      if (k < SAVED_COEFS) {
-        m->coef_bits_latch[comp_idx][k] = cinfo->coef_bits[comp_idx][k];
-      }
-      cinfo->coef_bits[comp_idx][k] = cinfo->Al;
     }
   }
   if (cinfo->Al > 10) {
     return JPEGLI_ERROR("Scan parameter Al=%d is not supported.", cinfo->Al);
   }
-  // Check that all the Huffman tables needed for this scan are defined.
-  for (int i = 0; i < cinfo->comps_in_scan; ++i) {
-    int dc_tbl_idx = cinfo->cur_comp_info[i]->dc_tbl_no;
-    int ac_tbl_idx = cinfo->cur_comp_info[i]->ac_tbl_no;
-    if (cinfo->Ss == 0 && !m->huff_slot_defined_[dc_tbl_idx]) {
-      return JPEGLI_ERROR(
-          "SOS marker: Could not find DC Huffman table with index %d",
-          dc_tbl_idx);
-    }
-    if (cinfo->Se > 0 && !m->huff_slot_defined_[ac_tbl_idx + 16]) {
-      return JPEGLI_ERROR(
-          "SOS marker: Could not find AC Huffman table with index %d",
-          ac_tbl_idx);
-    }
-  }
-  // Copy quantization tables into comp_info.
-  for (int i = 0; i < cinfo->comps_in_scan; ++i) {
-    jpeg_component_info* comp = cinfo->cur_comp_info[i];
-    if (comp->quant_table == nullptr) {
-      comp->quant_table = Allocate<JQUANT_TBL>(cinfo, 1, JPOOL_IMAGE);
-      memcpy(comp->quant_table, cinfo->quant_tbl_ptrs[comp->quant_tbl_no],
-             sizeof(JQUANT_TBL));
-    }
-  }
-  cinfo->MCU_rows_in_scan = cinfo->total_iMCU_rows;
-  cinfo->MCUs_per_row = m->iMCU_cols_;
-  m->mcu_rows_per_iMCU_row_ = 1;
-  if (!is_interleaved) {
-    const auto& comp = *cinfo->cur_comp_info[0];
-    cinfo->MCUs_per_row = DivCeil(cinfo->image_width * comp.h_samp_factor,
-                                  cinfo->max_h_samp_factor * DCTSIZE);
-    cinfo->MCU_rows_in_scan = DivCeil(cinfo->image_height * comp.v_samp_factor,
-                                      cinfo->max_v_samp_factor * DCTSIZE);
-    m->mcu_rows_per_iMCU_row_ = cinfo->cur_comp_info[0]->v_samp_factor;
-  }
-  memset(m->last_dc_coeff_, 0, sizeof(m->last_dc_coeff_));
-  m->restarts_to_go_ = cinfo->restart_interval;
-  m->next_restart_marker_ = 0;
-  m->eobrun_ = -1;
-  m->scan_mcu_row_ = 0;
-  m->scan_mcu_col_ = 0;
-  m->codestream_bits_ahead_ = 0;
-  m->mcu_.coeffs.resize(cinfo->blocks_in_MCU * DCTSIZE2);
-  ++cinfo->input_scan_number;
-  cinfo->input_iMCU_row = 0;
 }
 
 // Reads the Define Huffman Table (DHT) marker segment and builds the Huffman
 // decoding table in either dc_huff_lut_ or ac_huff_lut_, depending on the type
 // and solt_id of Huffman code being read.
 void ProcessDHT(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
-  jpeg_decomp_master* m = cinfo->master;
-  constexpr int kLutSize = NUM_HUFF_TBLS * kJpegHuffmanLutSize;
-  m->dc_huff_lut_.resize(kLutSize);
-  m->ac_huff_lut_.resize(kLutSize);
   size_t pos = 2;
   if (pos == len) {
     return JPEGLI_ERROR("DHT marker: no Huffman table found");
@@ -349,39 +280,25 @@ void ProcessDHT(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
     // The index of the Huffman code in the current set of Huffman codes. For AC
     // component Huffman codes, 0x10 is added to the index.
     int slot_id = ReadUint8(data, &pos);
-    m->huff_slot_defined_[slot_id] = 1;
     int huffman_index = slot_id;
     int is_ac_table = (slot_id & 0x10) != 0;
-    HuffmanTableEntry* huff_lut;
     JHUFF_TBL** table;
     if (is_ac_table) {
       huffman_index -= 0x10;
       JPEG_VERIFY_INPUT(huffman_index, 0, NUM_HUFF_TBLS - 1);
-      huff_lut = &m->ac_huff_lut_[huffman_index * kJpegHuffmanLutSize];
       table = &cinfo->ac_huff_tbl_ptrs[huffman_index];
     } else {
       JPEG_VERIFY_INPUT(huffman_index, 0, NUM_HUFF_TBLS - 1);
-      huff_lut = &m->dc_huff_lut_[huffman_index * kJpegHuffmanLutSize];
       table = &cinfo->dc_huff_tbl_ptrs[huffman_index];
     }
     if (*table == nullptr) {
       *table = jpegli_alloc_huff_table(reinterpret_cast<j_common_ptr>(cinfo));
     }
-    // Bit length histogram
-    std::array<uint32_t, kJpegHuffmanMaxBitLength + 1> counts = {};
-    counts[0] = 0;
     int total_count = 0;
-    int space = 1 << kJpegHuffmanMaxBitLength;
-    int max_depth = 1;
     for (size_t i = 1; i <= kJpegHuffmanMaxBitLength; ++i) {
       int count = ReadUint8(data, &pos);
-      if (count != 0) {
-        max_depth = i;
-      }
-      counts[i] = count;
       (*table)->bits[i] = count;
       total_count += count;
-      space -= count * (1 << (kJpegHuffmanMaxBitLength - i));
     }
     if (is_ac_table) {
       JPEG_VERIFY_INPUT(total_count, 0, kJpegHuffmanAlphabetSize);
@@ -393,39 +310,16 @@ void ProcessDHT(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
       JPEG_VERIFY_INPUT(total_count, 0, 16);
     }
     JPEG_VERIFY_LEN(total_count);
-    // Symbol values sorted by increasing bit lengths.
-    std::array<uint32_t, kJpegHuffmanAlphabetSize + 1> values = {};
-    std::vector<bool> values_seen(256, false);
     for (int i = 0; i < total_count; ++i) {
       int value = ReadUint8(data, &pos);
       if (!is_ac_table) {
         JPEG_VERIFY_INPUT(value, 0, 15);
       }
-      if (values_seen[value]) {
-        return JPEGLI_ERROR("Duplicate Huffman code value %d", value);
-      }
-      values_seen[value] = true;
-      values[i] = value;
       (*table)->huffval[i] = value;
     }
     for (int i = total_count; i < kJpegHuffmanAlphabetSize; ++i) {
       (*table)->huffval[i] = 0;
     }
-    // Add an invalid symbol that will have the all 1 code.
-    ++counts[max_depth];
-    values[total_count] = kJpegHuffmanAlphabetSize;
-    space -= (1 << (kJpegHuffmanMaxBitLength - max_depth));
-    if (space < 0) {
-      JPEGLI_ERROR("Invalid Huffman code lengths.");
-    } else if (space > 0 && huff_lut[0].value != 0xffff) {
-      // Re-initialize the values to an invalid symbol so that we can recognize
-      // it when reading the bit stream using a Huffman code with space > 0.
-      for (int i = 0; i < kJpegHuffmanLutSize; ++i) {
-        huff_lut[i].bits = 0;
-        huff_lut[i].value = 0xffff;
-      }
-    }
-    BuildJpegHuffmanTable(&counts[0], &values[0], huff_lut);
   }
   JPEG_VERIFY_MARKER_END();
 }

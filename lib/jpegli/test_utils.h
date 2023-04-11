@@ -152,6 +152,7 @@ struct CompressParams {
   int restart_in_rows = 0;
   bool optimize_coding = true;
   bool use_flat_dc_luma_code = false;
+  bool omit_standard_tables = false;
   bool xyb_mode = false;
   bool libjpeg_mode = false;
 
