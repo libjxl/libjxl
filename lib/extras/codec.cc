@@ -134,6 +134,7 @@ Status Encode(const CodecInOut& io, const extras::Codec codec,
       ConvertCodecInOutToPackedPixelFile(io, format, c_desired, pool, &ppf));
   ppf.info.bits_per_sample = bits_per_sample;
   if (format.data_type == JXL_TYPE_FLOAT) {
+    ppf.info.bits_per_sample = 32;
     ppf.info.exponent_bits_per_sample = 8;
   }
   extras::EncodedImage encoded_image;

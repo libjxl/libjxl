@@ -8,8 +8,8 @@
 
 #include "lib/extras/codec.h"
 #include "lib/extras/tone_mapping.h"
+#include "lib/jxl/base/file_io.h"
 #include "lib/jxl/enc_color_management.h"
-#include "lib/jxl/image_bundle.h"
 #include "tools/args.h"
 #include "tools/cmdline.h"
 #include "tools/hdr/image_utils.h"
@@ -84,6 +84,13 @@ int main(int argc, const char** argv) {
   } else {
     c_out.tf.SetTransferFunction(jxl::TransferFunction::kSRGB);
   }
+
+  if (jxl::extras::CodecFromExtension(jxl::Extension(output_filename)) ==
+      jxl::extras::Codec::kEXR) {
+    c_out.tf.SetTransferFunction(jxl::TransferFunction::kLinear);
+    image.metadata.m.SetFloat16Samples();
+  }
+
   JXL_CHECK(c_out.CreateICC());
   JXL_CHECK(jpegxl::tools::TransformCodecInOutTo(image, c_out, &pool));
   image.metadata.m.color_encoding = c_out;
