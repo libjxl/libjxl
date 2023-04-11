@@ -93,11 +93,6 @@ void InitializeDecompressParams(j_decompress_ptr cinfo) {
   cinfo->enable_2pass_quant = FALSE;
   cinfo->actual_number_of_colors = 0;
   cinfo->colormap = nullptr;
-  // Initialize the private fields.
-  for (int i = 0; i < 16; ++i) {
-    cinfo->master->app_marker_parsers[i] = nullptr;
-  }
-  cinfo->master->com_marker_parser = nullptr;
 }
 
 void InitProgressMonitor(j_decompress_ptr cinfo, bool coef_only) {
@@ -291,8 +286,14 @@ boolean PrepareQuantizedOutput(j_decompress_ptr cinfo) {
     cinfo->dither_mode = JDITHER_FS;
   }
   if (m->quant_mode_ == 1) {
+    if (!cinfo->enable_1pass_quant) {
+      JPEGLI_ERROR("1-pass quantizer was not enabled");
+    }
     ChooseColorMap1Pass(cinfo);
   } else if (m->quant_mode_ == 2) {
+    if (!cinfo->enable_2pass_quant) {
+      JPEGLI_ERROR("2-pass quantizer was not enabled");
+    }
     m->quant_pass_ = 0;
     if (!ReadOutputPass(cinfo)) {
       return FALSE;
@@ -335,6 +336,10 @@ void jpegli_CreateDecompress(j_decompress_ptr cinfo, int version,
   cinfo->sample_range_limit = nullptr;  // not used
   cinfo->rec_outbuf_height = 1;         // output works with any buffer height
   cinfo->master = new jpeg_decomp_master;
+  for (int i = 0; i < 16; ++i) {
+    cinfo->master->app_marker_parsers[i] = nullptr;
+  }
+  cinfo->master->com_marker_parser = nullptr;
   jpegli::InitializeDecompressParams(cinfo);
   jpegli::InitializeImage(cinfo);
 }
@@ -371,6 +376,7 @@ int jpegli_consume_input(j_decompress_ptr cinfo) {
   if (cinfo->global_state == jpegli::kDecStart) {
     (*cinfo->err->reset_error_mgr)(reinterpret_cast<j_common_ptr>(cinfo));
     (*cinfo->src->init_source)(cinfo);
+    jpegli::InitializeDecompressParams(cinfo);
     jpegli::InitializeImage(cinfo);
     cinfo->global_state = jpegli::kDecInHeader;
   }
@@ -496,6 +502,16 @@ boolean jpegli_start_decompress(j_decompress_ptr cinfo) {
   if (cinfo->global_state == jpegli::kDecHeaderDone) {
     jpegli_calc_output_dimensions(cinfo);
     cinfo->global_state = jpegli::kDecProcessScan;
+    if (cinfo->quantize_colors) {
+      if (cinfo->colormap != nullptr) {
+        cinfo->enable_external_quant = TRUE;
+      } else if (cinfo->two_pass_quantize &&
+                 cinfo->out_color_space == JCS_RGB) {
+        cinfo->enable_2pass_quant = TRUE;
+      } else {
+        cinfo->enable_1pass_quant = TRUE;
+      }
+    }
     jpegli::InitProgressMonitor(cinfo, /*coef_only=*/false);
     if (cinfo->buffered_image == TRUE) {
       cinfo->output_scan_number = 0;
@@ -736,7 +752,7 @@ void jpegli_new_colormap(j_decompress_ptr cinfo) {
     JPEGLI_ERROR("jpegli_new_colormap: not in  buffered image mode");
   }
   if (!cinfo->enable_external_quant) {
-    JPEGLI_ERROR("external quantization was not enabled");
+    JPEGLI_ERROR("external colormap quantizer was not enabled");
   }
   if (!cinfo->quantize_colors || cinfo->colormap == nullptr) {
     JPEGLI_ERROR("jpegli_new_colormap: not in external colormap mode");
