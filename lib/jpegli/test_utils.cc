@@ -634,6 +634,7 @@ void SetScanDecompressParams(const DecompressParams& dparams,
 void SetDecompressParams(const DecompressParams& dparams,
                          j_decompress_ptr cinfo, bool is_jpegli) {
   cinfo->do_block_smoothing = dparams.do_block_smoothing;
+  cinfo->do_fancy_upsampling = dparams.do_fancy_upsampling;
   if (dparams.output_mode == RAW_DATA) {
     cinfo->raw_data_out = TRUE;
   }
