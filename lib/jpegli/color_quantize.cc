@@ -17,7 +17,7 @@ namespace jpegli {
 namespace {
 
 static constexpr int kNumColorCellBits[kMaxComponents] = {3, 4, 3, 3};
-static constexpr int kCompW[kMaxComponents] = {2, 3, 1};
+static constexpr int kCompW[kMaxComponents] = {2, 3, 1, 1};
 
 int Pow(int a, int b) {
   int r = 1;
@@ -255,6 +255,9 @@ static int BuildRGBColorIndex(const uint8_t* const image, int const num_pixels,
 }  // namespace
 
 void ChooseColorMap2Pass(j_decompress_ptr cinfo) {
+  if (cinfo->out_color_space != JCS_RGB) {
+    JPEGLI_ERROR("Two-pass quantizer must use RGB output color space.");
+  }
   jpeg_decomp_master* m = cinfo->master;
   const size_t num_pixels = cinfo->output_width * cinfo->output_height;
   const int max_color_count = num_pixels;
