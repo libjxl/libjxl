@@ -243,6 +243,7 @@ TEST_P(InputSuspensionTestParam, InputOutputLockStepNonBuffered) {
     while (jpegli_read_header(&cinfo, TRUE) == JPEG_SUSPENDED) {
       JXL_CHECK(src.LoadNextChunk());
     }
+    SetDecompressParams(dparams, &cinfo, true);
     if (config.jparams.add_marker) {
       EXPECT_EQ(num_markers_seen, kMarkerSequenceLen);
       EXPECT_EQ(0, memcmp(markers_seen, kMarkerSequence, num_markers_seen));
@@ -292,11 +293,13 @@ TEST_P(InputSuspensionTestParam, InputOutputLockStepBuffered) {
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_decompress(&cinfo);
+
     cinfo.src = reinterpret_cast<jpeg_source_mgr*>(&src);
 
     while (jpegli_read_header(&cinfo, TRUE) == JPEG_SUSPENDED) {
       JXL_CHECK(src.LoadNextChunk());
     }
+    SetDecompressParams(dparams, &cinfo, true);
 
     cinfo.buffered_image = TRUE;
     cinfo.raw_data_out = dparams.output_mode == RAW_DATA;

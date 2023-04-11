@@ -7,7 +7,11 @@
 
 #include <string.h>
 
+#include <array>
+#include <atomic>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <hwy/aligned_allocator.h>
 
 #include "lib/jpegli/color_quantize.h"
@@ -58,7 +62,6 @@ using hwy::HWY_NAMESPACE::Rebind;
 using hwy::HWY_NAMESPACE::ShiftLeftSame;
 using hwy::HWY_NAMESPACE::ShiftRightSame;
 using hwy::HWY_NAMESPACE::Vec;
-
 using D = HWY_FULL(float);
 using DI = HWY_FULL(int32_t);
 constexpr D d;
@@ -344,6 +347,211 @@ void ComputeOptimalLaplacianBiases(const int num_blocks, const int* nonzeros,
   }
 }
 
+constexpr std::array<int, SAVED_COEFS> Q_POS = {0, 1, 8,  16, 9,
+                                                2, 3, 10, 17, 24};
+
+bool is_nonzero_quantizers(const JQUANT_TBL* qtable) {
+  return std::all_of(Q_POS.begin(), Q_POS.end(),
+                     [&](int pos) { return qtable->quantval[pos] != 0; });
+}
+
+// Determine whether smoothing should be applied during decompression
+bool do_smoothing(j_decompress_ptr cinfo) {
+  jpeg_decomp_master* m = cinfo->master;
+  bool smoothing_useful = false;
+
+  if (!cinfo->progressive_mode || cinfo->coef_bits == nullptr) {
+    return false;
+  }
+  auto coef_bits_latch = m->coef_bits_latch;
+  auto prev_coef_bits_latch = m->prev_coef_bits_latch;
+
+  for (int ci = 0; ci < cinfo->num_components; ci++) {
+    jpeg_component_info* compptr = &cinfo->comp_info[ci];
+    JQUANT_TBL* qtable = compptr->quant_table;
+    int* coef_bits = cinfo->coef_bits[ci];
+    int* prev_coef_bits = cinfo->coef_bits[ci + cinfo->num_components];
+
+    // Return early if conditions for smoothing are not met
+    if (qtable == nullptr || !is_nonzero_quantizers(qtable) ||
+        coef_bits[0] < 0) {
+      return false;
+    }
+
+    coef_bits_latch[ci][0] = coef_bits[0];
+
+    for (int coefi = 1; coefi < SAVED_COEFS; coefi++) {
+      prev_coef_bits_latch[ci][coefi] =
+          cinfo->input_scan_number > 1 ? prev_coef_bits[coefi] : -1;
+      if (coef_bits[coefi] != 0) {
+        smoothing_useful = true;
+      }
+      coef_bits_latch[ci][coefi] = coef_bits[coefi];
+    }
+  }
+
+  return smoothing_useful;
+}
+
+void PredictSmooth(j_decompress_ptr cinfo, const int16_t* blocks, int component,
+                   size_t ix, size_t iy) {
+  const size_t imcu_row = cinfo->output_iMCU_row;
+  int16_t* scratch = cinfo->master->smoothing_scratch_;
+  std::vector<int> Q_VAL(SAVED_COEFS);
+  int* coef_bits;
+
+  std::array<std::array<int, 5>, 5> dc_values;
+  auto& compinfo = cinfo->comp_info[component];
+
+  memcpy(scratch, blocks, DCTSIZE2 * sizeof(blocks[0]));
+
+  const int16_t* prev_row =
+      imcu_row > 0 ? blocks - DCTSIZE2 * compinfo.width_in_blocks : blocks;
+  const int16_t* prev_prev_row =
+      imcu_row > 1 ? blocks - DCTSIZE2 * 2 * compinfo.width_in_blocks
+                   : prev_row;
+
+  const int16_t* next_row = imcu_row + 1 < cinfo->total_iMCU_rows
+                                ? blocks + DCTSIZE2 * compinfo.width_in_blocks
+                                : blocks;
+  const int16_t* next_next_row =
+      imcu_row + 2 < cinfo->total_iMCU_rows
+          ? blocks + DCTSIZE2 * 2 * compinfo.width_in_blocks
+          : next_row;
+
+  int prev_block_ind = ix ? -DCTSIZE2 : 0;
+  int prev_prev_block_ind = ix > 1 ? -2 * DCTSIZE2 : prev_block_ind;
+  int next_block_ind = ix + 1 < compinfo.width_in_blocks ? DCTSIZE2 : 0;
+  int next_next_block_ind =
+      ix + 2 < compinfo.width_in_blocks ? DCTSIZE2 * 2 : next_block_ind;
+
+  std::array<const int16_t*, 5> row_ptrs = {prev_prev_row, prev_row, blocks,
+                                            next_row, next_next_row};
+  std::array<int, 5> block_inds = {prev_prev_block_ind, prev_block_ind, 0,
+                                   next_block_ind, next_next_block_ind};
+
+  for (int r = 0; r < 5; ++r) {
+    for (int c = 0; c < 5; ++c) {
+      dc_values[r][c] = row_ptrs[r][block_inds[c]];
+    }
+  }
+  // Get the correct coef_bits: In case of an incomplete scan, we use the
+  // prev coeficients.
+  if (cinfo->output_iMCU_row + 1 > cinfo->input_iMCU_row) {
+    coef_bits = cinfo->master->prev_coef_bits_latch[component];
+  } else {
+    coef_bits = cinfo->master->coef_bits_latch[component];
+  }
+
+  bool change_dc = true;
+  for (int i = 1; i < SAVED_COEFS; i++) {
+    if (coef_bits[i] != -1) {
+      change_dc = false;
+      break;
+    }
+  }
+
+  JQUANT_TBL* quanttbl = cinfo->quant_tbl_ptrs[compinfo.quant_tbl_no];
+  for (size_t i = 0; i < 6; ++i) {
+    Q_VAL[i] = quanttbl->quantval[Q_POS[i]];
+  }
+  if (change_dc) {
+    for (size_t i = 6; i < SAVED_COEFS; ++i) {
+      Q_VAL[i] = quanttbl->quantval[Q_POS[i]];
+    }
+  }
+  auto calculate_dct_value = [&](int coef_index) {
+    int num = 0;
+    int pred;
+    int Al;
+    // we use the symmetry of the smoothing matrices by transposing the 5x5 dc
+    // matrix in that case.
+    bool swap_indices = coef_index == 2 || coef_index == 5 || coef_index == 8 ||
+                        coef_index == 9;
+    auto dc = [&](int i, int j) {
+      return swap_indices ? dc_values[j][i] : dc_values[i][j];
+    };
+    Al = coef_bits[coef_index];
+    switch (coef_index) {
+      case 0:
+        // set the DC
+        num = (-2 * dc(0, 0) - 6 * dc(0, 1) - 8 * dc(0, 2) - 6 * dc(0, 3) -
+               2 * dc(0, 4) - 6 * dc(1, 0) + 6 * dc(1, 1) + 42 * dc(1, 2) +
+               6 * dc(1, 3) - 6 * dc(1, 4) - 8 * dc(2, 0) + 42 * dc(2, 1) +
+               152 * dc(2, 2) + 42 * dc(2, 3) - 8 * dc(2, 4) - 6 * dc(3, 0) +
+               6 * dc(3, 1) + 42 * dc(3, 2) + 6 * dc(3, 3) - 6 * dc(3, 4) -
+               2 * dc(4, 0) - 6 * dc(4, 1) - 8 * dc(4, 2) - 6 * dc(4, 3) -
+               2 * dc(4, 4));
+        // special case: for the DC the dequantization is different
+        Al = 0;
+        break;
+      case 1:
+      case 2:
+        // set Q01 or Q10
+        num = (change_dc ? (-dc(0, 0) - dc(0, 1) + dc(0, 3) + dc(0, 4) -
+                            3 * dc(1, 0) + 13 * dc(1, 1) - 13 * dc(1, 3) +
+                            3 * dc(1, 4) - 3 * dc(2, 0) + 38 * dc(2, 1) -
+                            38 * dc(2, 3) + 3 * dc(2, 4) - 3 * dc(3, 0) +
+                            13 * dc(3, 1) - 13 * dc(3, 3) + 3 * dc(3, 4) -
+                            dc(4, 0) - dc(4, 1) + dc(4, 3) + dc(4, 4))
+                         : (-7 * dc(2, 0) + 50 * dc(2, 1) - 50 * dc(2, 3) +
+                            7 * dc(2, 4)));
+        break;
+      case 3:
+      case 5:
+        // set Q02 or Q20
+        num = (change_dc
+                   ? dc(0, 2) + 2 * dc(1, 1) + 7 * dc(1, 2) + 2 * dc(1, 3) -
+                         5 * dc(2, 1) - 14 * dc(2, 2) - 5 * dc(2, 3) +
+                         2 * dc(3, 1) + 7 * dc(3, 2) + 2 * dc(3, 3) + dc(4, 2)
+                   : (-dc(0, 2) + 13 * dc(1, 2) - 24 * dc(2, 2) +
+                      13 * dc(3, 2) - dc(4, 2)));
+        break;
+      case 4:
+        // set Q11
+        num =
+            (change_dc ? -dc(0, 0) + dc(0, 4) + 9 * dc(1, 1) - 9 * dc(1, 3) -
+                             9 * dc(3, 1) + 9 * dc(3, 3) + dc(4, 0) - dc(4, 4)
+                       : (dc(1, 4) + dc(3, 0) - 10 * dc(3, 1) + 10 * dc(3, 3) -
+                          dc(0, 1) - dc(3, 4) + dc(4, 1) - dc(4, 3) + dc(0, 3) -
+                          dc(1, 0) + 10 * dc(1, 1) - 10 * dc(1, 3)));
+        break;
+      case 6:
+      case 9:
+        // set Q03 or Q30
+        num = (dc(1, 1) - dc(1, 3) + 2 * dc(2, 1) - 2 * dc(2, 3) + dc(3, 1) -
+               dc(3, 3));
+        break;
+      case 7:
+      case 8:
+        // set Q12 and Q21
+        num = (dc(1, 1) - 3 * dc(1, 2) + dc(1, 3) - dc(3, 1) + 3 * dc(3, 2) -
+               dc(3, 3));
+        break;
+    }
+    num = Q_VAL[0] * num;
+    if (num >= 0) {
+      pred = ((Q_VAL[coef_index] << 7) + num) / (Q_VAL[coef_index] << 8);
+      if (Al > 0 && pred >= (1 << Al)) pred = (1 << Al) - 1;
+    } else {
+      pred = ((Q_VAL[coef_index] << 7) - num) / (Q_VAL[coef_index] << 8);
+      if (Al > 0 && pred >= (1 << Al)) pred = (1 << Al) - 1;
+      pred = -pred;
+    }
+    return static_cast<int16_t>(pred);
+  };
+
+  int loop_end = change_dc ? SAVED_COEFS : 6;
+  for (int i = 1; i < loop_end; ++i) {
+    if (coef_bits[i] != 0 && scratch[Q_POS[i]] == 0) {
+      scratch[Q_POS[i]] = calculate_dct_value(i);
+    }
+  }
+  if (change_dc) {
+    scratch[0] = calculate_dct_value(0);
+  }
+}
+
 void PrepareForOutput(j_decompress_ptr cinfo) {
   jpeg_decomp_master* m = cinfo->master;
   size_t iMCU_width = cinfo->max_h_samp_factor * m->min_scaled_dct_size;
@@ -364,6 +572,10 @@ void PrepareForOutput(j_decompress_ptr cinfo) {
   size_t scratch_stride = RoundUpTo(output_stride, HWY_ALIGNMENT);
   m->output_scratch_ = Allocate<uint8_t>(
       cinfo, bytes_per_pixel * scratch_stride, JPOOL_IMAGE_ALIGNED);
+  m->smoothing_scratch_ =
+      Allocate<int16_t>(cinfo, DCTSIZE2, JPOOL_IMAGE_ALIGNED);
+  bool smoothing = do_smoothing(cinfo);
+  m->apply_smoothing = smoothing && cinfo->do_block_smoothing;
   size_t coeffs_per_block = cinfo->num_components * DCTSIZE2;
   m->nonzeros_ = Allocate<int>(cinfo, coeffs_per_block, JPOOL_IMAGE_ALIGNED);
   m->sumabs_ = Allocate<int>(cinfo, coeffs_per_block, JPOOL_IMAGE_ALIGNED);
@@ -438,10 +650,18 @@ void DecodeCurrentiMCURow(j_decompress_ptr cinfo) {
       int16_t* JXL_RESTRICT row_in = &ba[c][iy][0][0];
       float* JXL_RESTRICT row_out = raw_out->Row(by * dctsize);
       for (size_t bx = 0; bx < compinfo.width_in_blocks; ++bx) {
-        (*m->inverse_transform[c])(&row_in[bx * DCTSIZE2], &m->dequant_[k0],
-                                   &m->biases_[k0], m->idct_scratch_,
-                                   &row_out[bx * dctsize], raw_out->stride(),
-                                   dctsize);
+        if (m->apply_smoothing) {
+          PredictSmooth(cinfo, &row_in[bx * DCTSIZE2], c, bx, by);
+          (*m->inverse_transform[c])(m->smoothing_scratch_, &m->dequant_[k0],
+                                     &m->biases_[k0], m->idct_scratch_,
+                                     &row_out[bx * dctsize], raw_out->stride(),
+                                     dctsize);
+        } else {
+          (*m->inverse_transform[c])(&row_in[bx * DCTSIZE2], &m->dequant_[k0],
+                                     &m->biases_[k0], m->idct_scratch_,
+                                     &row_out[bx * dctsize], raw_out->stride(),
+                                     dctsize);
+        }
       }
       if (m->streaming_mode_) {
         memset(row_in, 0, compinfo.width_in_blocks * sizeof(JBLOCK));
