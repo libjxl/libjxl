@@ -333,6 +333,17 @@ int ConsumeInput(j_decompress_ptr cinfo) {
       }
       continue;
     }
+    if (status == kHandleMarkerProcessor) {
+      JXL_DASSERT(m->input_buffer_.size() <=
+                  m->input_buffer_pos_ + src->bytes_in_buffer);
+      m->input_buffer_.clear();
+      m->input_buffer_pos_ = 0;
+      if (!(*GetMarkerProcessor(cinfo))(cinfo)) {
+        return JPEG_SUSPENDED;
+      }
+      cinfo->unread_marker = 0;
+      continue;
+    }
     if (status != kNeedMoreInput) {
       break;
     }

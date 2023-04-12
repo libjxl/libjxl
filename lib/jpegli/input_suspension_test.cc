@@ -70,10 +70,44 @@ struct SourceManager {
 
   static boolean fill_input_buffer(j_decompress_ptr cinfo) { return FALSE; }
 
-  static void skip_input_data(j_decompress_ptr cinfo, long num_bytes) {}
+  static void skip_input_data(j_decompress_ptr cinfo, long num_bytes) {
+    auto src = reinterpret_cast<SourceManager*>(cinfo->src);
+    if (num_bytes <= 0) {
+      return;
+    }
+    if (src->pub_.bytes_in_buffer >= static_cast<size_t>(num_bytes)) {
+      src->pub_.bytes_in_buffer -= num_bytes;
+      src->pub_.next_input_byte += num_bytes;
+    } else {
+      src->pos_ += num_bytes - src->pub_.bytes_in_buffer;
+      src->pub_.bytes_in_buffer = 0;
+    }
+  }
 
   static void term_source(j_decompress_ptr cinfo) {}
 };
+
+uint8_t markers_seen[kMarkerSequenceLen];
+size_t num_markers_seen = 0;
+
+uint8_t get_next_byte(j_decompress_ptr cinfo) {
+  cinfo->src->bytes_in_buffer--;
+  return *cinfo->src->next_input_byte++;
+}
+
+boolean test_marker_processor(j_decompress_ptr cinfo) {
+  markers_seen[num_markers_seen] = cinfo->unread_marker;
+  if (cinfo->src->bytes_in_buffer < 2) {
+    return FALSE;
+  }
+  size_t marker_len = (get_next_byte(cinfo) << 8) + get_next_byte(cinfo);
+  EXPECT_EQ(2 + ((num_markers_seen + 2) % sizeof(kMarkerData)), marker_len);
+  if (marker_len > 2) {
+    (*cinfo->src->skip_input_data)(cinfo, marker_len - 2);
+  }
+  ++num_markers_seen;
+  return TRUE;
+}
 
 void ReadOutputImage(const DecompressParams& dparams, j_decompress_ptr cinfo,
                      SourceManager* src, TestImage* output) {
@@ -174,9 +208,21 @@ TEST_P(InputSuspensionTestParam, InputOutputLockStepNonBuffered) {
     jpegli_create_decompress(&cinfo);
     cinfo.src = reinterpret_cast<jpeg_source_mgr*>(&src);
 
+    if (config.jparams.add_marker) {
+      jpegli_save_markers(&cinfo, kSpecialMarker, 0xffff);
+      num_markers_seen = 0;
+      jpegli_set_marker_processor(&cinfo, 0xe6, test_marker_processor);
+      jpegli_set_marker_processor(&cinfo, 0xe7, test_marker_processor);
+      jpegli_set_marker_processor(&cinfo, 0xe8, test_marker_processor);
+    }
     while (jpegli_read_header(&cinfo, TRUE) == JPEG_SUSPENDED) {
       JXL_CHECK(src.LoadNextChunk());
     }
+    if (config.jparams.add_marker) {
+      EXPECT_EQ(num_markers_seen, kMarkerSequenceLen);
+      EXPECT_EQ(0, memcmp(markers_seen, kMarkerSequence, num_markers_seen));
+    }
+    VerifyHeader(config.jparams, &cinfo);
     cinfo.raw_data_out = dparams.output_mode == RAW_DATA;
 
     if (dparams.output_mode == COEFFICIENTS) {
@@ -207,6 +253,7 @@ TEST_P(InputSuspensionTestParam, InputOutputLockStepNonBuffered) {
 
 TEST_P(InputSuspensionTestParam, InputOutputLockStepBuffered) {
   TestConfig config = GetParam();
+  if (config.jparams.add_marker) return;
   const DecompressParams& dparams = config.dparams;
   const std::vector<uint8_t> compressed = GetTestJpegData(config);
   SourceManager src(compressed.data(), compressed.size(), dparams.chunk_size);
@@ -272,6 +319,7 @@ TEST_P(InputSuspensionTestParam, InputOutputLockStepBuffered) {
 
 TEST_P(InputSuspensionTestParam, PreConsumeInputBuffered) {
   TestConfig config = GetParam();
+  if (config.jparams.add_marker) return;
   const DecompressParams& dparams = config.dparams;
   const std::vector<uint8_t> compressed = GetTestJpegData(config);
   std::vector<TestImage> output_progression1;
@@ -335,6 +383,7 @@ TEST_P(InputSuspensionTestParam, PreConsumeInputBuffered) {
 
 TEST_P(InputSuspensionTestParam, PreConsumeInputNonBuffered) {
   TestConfig config = GetParam();
+  if (config.jparams.add_marker) return;
   const DecompressParams& dparams = config.dparams;
   const std::vector<uint8_t> compressed = GetTestJpegData(config);
   SourceManager src(compressed.data(), compressed.size(), dparams.chunk_size);
@@ -419,6 +468,14 @@ std::vector<TestConfig> GenerateTests() {
       config.jparams.restart_interval = r;
       all_tests.push_back(config);
     }
+  }
+  for (size_t chunk_size : {1, 4, 1024}) {
+    TestConfig config;
+    config.input.xsize = 256;
+    config.input.ysize = 256;
+    config.dparams.chunk_size = chunk_size;
+    config.jparams.add_marker = true;
+    all_tests.push_back(config);
   }
   return all_tests;
 }

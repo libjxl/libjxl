@@ -379,15 +379,6 @@ void ProcessAPP(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
   const uint8_t marker = cinfo->unread_marker;
   const uint8_t* payload = data + 2;
   size_t payload_size = len - 2;
-  if (m->app_marker_parsers[marker - 0xe0] != nullptr) {
-    // TODO(szabadka) At this point we have already buffered the whole marker
-    // segment, so the source manager's input is in an unexpected position
-    // from the applications's point of view. Fix this by only buffering the
-    // important markers that we will process.
-    // TODO(szabadka) Handle FALSE return value.
-    (*m->app_marker_parsers[marker - 0xe0])(cinfo);
-    return;
-  }
   if (marker == 0xE0) {
     if (payload_size >= 14 && memcmp(payload, "JFIF", 4) == 0) {
       cinfo->saw_JFIF_marker = TRUE;
@@ -434,10 +425,7 @@ void ProcessAPP(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
 }
 
 void ProcessCOM(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
-  jpeg_decomp_master* m = cinfo->master;
-  if (m->com_marker_parser != nullptr) {
-    (*m->com_marker_parser)(cinfo);
-  }
+  // Ignore marker.
 }
 
 void ProcessSOI(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
@@ -489,7 +477,7 @@ uint8_t ProcessNextMarker(j_decompress_ptr cinfo, const uint8_t* const data,
       ++num_skipped;
     }
     if (*pos + 2 > len) {
-      return 0;
+      return kNeedMoreInput;
     }
     marker = data[*pos + 1];
     if (num_skipped > 0) {
@@ -506,20 +494,23 @@ uint8_t ProcessNextMarker(j_decompress_ptr cinfo, const uint8_t* const data,
   if (!m->found_soi_ && marker != 0xd8) {
     JPEGLI_ERROR("Did not find SOI marker.");
   }
+  if (GetMarkerProcessor(cinfo)) {
+    return kHandleMarkerProcessor;
+  }
   const uint8_t* marker_data = &data[*pos];
   size_t marker_len = 0;
   if (marker != 0xd8 && marker != 0xd9) {
     if (*pos + 2 > len) {
-      return 0;
+      return kNeedMoreInput;
     }
     marker_len += (data[*pos] << 8) + data[*pos + 1];
     if (marker_len < 2) {
       JPEGLI_ERROR("Invalid marker length");
     }
     if (*pos + marker_len > len) {
-      // TODO(szabadka) Limit out memory usage by using the skip_input_data
+      // TODO(szabadka) Limit our memory usage by using the skip_input_data
       // source manager callback on APP markers that are not saved.
-      return 0;
+      return kNeedMoreInput;
     }
     if (m->markers_to_save_.find(marker) != m->markers_to_save_.end()) {
       SaveMarker(cinfo, marker_data, marker_len);
@@ -550,24 +541,36 @@ uint8_t ProcessNextMarker(j_decompress_ptr cinfo, const uint8_t* const data,
   }
   *pos += marker_len;
   cinfo->unread_marker = 0;
-  return marker;
+  if (marker == 0xda) {
+    return JPEG_REACHED_SOS;
+  } else if (marker == 0xd9) {
+    return JPEG_REACHED_EOI;
+  }
+  return kProcessNextMarker;
 }
 
 }  // namespace
 
+jpeg_marker_parser_method GetMarkerProcessor(j_decompress_ptr cinfo) {
+  jpeg_decomp_master* m = cinfo->master;
+  uint8_t marker = cinfo->unread_marker;
+  jpeg_marker_parser_method callback = nullptr;
+  if (marker >= 0xe0 && marker <= 0xef) {
+    callback = m->app_marker_parsers[marker - 0xe0];
+  } else if (marker == 0xfe) {
+    callback = m->com_marker_parser;
+  }
+  return callback;
+}
+
 int ProcessMarkers(j_decompress_ptr cinfo, const uint8_t* const data,
                    const size_t len, size_t* pos) {
   for (;;) {
-    uint8_t marker = ProcessNextMarker(cinfo, data, len, pos);
-    if (marker == 0) {
-      break;
-    } else if (marker == 0xd9) {
-      return JPEG_REACHED_EOI;
-    } else if (marker == 0xda) {
-      return JPEG_REACHED_SOS;
+    int status = ProcessNextMarker(cinfo, data, len, pos);
+    if (status != kProcessNextMarker) {
+      return status;
     }
   }
-  return kNeedMoreInput;
 }
 
 }  // namespace jpegli
