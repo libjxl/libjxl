@@ -260,6 +260,9 @@ std::ostream& operator<<(std::ostream& os, const CompressParams& jparams) {
       os << "OmitDHT";
     }
   }
+  if (jparams.smoothing_factor != 0) {
+    os << "SF" << jparams.smoothing_factor;
+  }
   return os;
 }
 
@@ -479,6 +482,7 @@ void EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
   jpegli_set_input_format(cinfo, input.data_type, input.endianness);
   cinfo->restart_interval = jparams.restart_interval;
   cinfo->restart_in_rows = jparams.restart_in_rows;
+  cinfo->smoothing_factor = jparams.smoothing_factor;
   cinfo->optimize_coding = jparams.optimize_coding;
   cinfo->raw_data_in = !input.raw_data.empty();
   if (!jparams.optimize_coding && jparams.use_flat_dc_luma_code) {

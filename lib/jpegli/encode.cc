@@ -229,6 +229,9 @@ void ProcessCompressionParams(j_compress_ptr cinfo) {
   if (cinfo->restart_interval > 65535u) {
     JPEGLI_ERROR("Restart interval too big");
   }
+  if (cinfo->smoothing_factor < 0 || cinfo->smoothing_factor > 100) {
+    JPEGLI_ERROR("Invalid smoothing factor %d", cinfo->smoothing_factor);
+  }
   jpeg_comp_master* m = cinfo->master;
   cinfo->max_h_samp_factor = cinfo->max_v_samp_factor = 1;
   for (int c = 0; c < cinfo->num_components; ++c) {
@@ -308,11 +311,11 @@ void AllocateBuffers(j_compress_ptr cinfo) {
   size_t iMCU_width = DCTSIZE * cinfo->max_h_samp_factor;
   size_t iMCU_height = DCTSIZE * cinfo->max_v_samp_factor;
   size_t total_iMCU_cols = DivCeil(cinfo->image_width, iMCU_width);
+  size_t xsize_full = total_iMCU_cols * iMCU_width;
+  size_t ysize_full = 3 * iMCU_height;
   if (!cinfo->raw_data_in) {
     for (int c = 0; c < cinfo->input_components; ++c) {
-      size_t xsize = total_iMCU_cols * iMCU_width;
-      size_t ysize = 3 * iMCU_height;
-      m->input_buffer[c].Allocate(cinfo, ysize, xsize);
+      m->input_buffer[c].Allocate(cinfo, ysize_full, xsize_full);
     }
   }
   for (int c = 0; c < cinfo->num_components; ++c) {
@@ -321,12 +324,16 @@ void AllocateBuffers(j_compress_ptr cinfo) {
     size_t ysize = 3 * comp->v_samp_factor * DCTSIZE;
     if (cinfo->raw_data_in) {
       m->input_buffer[c].Allocate(cinfo, ysize, xsize);
-      m->raw_data[c] = &m->input_buffer[c];
-    } else if (m->h_factor[c] == 1 && m->v_factor[c] == 1) {
-      m->raw_data[c] = &m->input_buffer[c];
-    } else {
-      m->downsampler_output[c].Allocate(cinfo, ysize, xsize);
-      m->raw_data[c] = &m->downsampler_output[c];
+    }
+    m->smooth_input[c] = &m->input_buffer[c];
+    if (!cinfo->raw_data_in && cinfo->smoothing_factor) {
+      m->smooth_input[c] = Allocate<RowBuffer<float>>(cinfo, 1, JPOOL_IMAGE);
+      m->smooth_input[c]->Allocate(cinfo, ysize_full, xsize_full);
+    }
+    m->raw_data[c] = m->smooth_input[c];
+    if (!cinfo->raw_data_in && (m->h_factor[c] > 1 || m->v_factor[c] > 1)) {
+      m->raw_data[c] = Allocate<RowBuffer<float>>(cinfo, 1, JPOOL_IMAGE);
+      m->raw_data[c]->Allocate(cinfo, ysize, xsize);
     }
     m->quant_mul[c] = Allocate<float>(cinfo, DCTSIZE2, JPOOL_IMAGE_ALIGNED);
   }
@@ -419,6 +426,7 @@ bool IsSinglePassOptimizerSupported(j_compress_ptr cinfo) {
 void ProcessiMCURow(j_compress_ptr cinfo) {
   JXL_ASSERT(cinfo->master->next_iMCU_row < cinfo->total_iMCU_rows);
   if (!cinfo->raw_data_in) {
+    ApplyInputSmoothing(cinfo);
     DownsampleInputBuffer(cinfo);
   }
   ComputeAdaptiveQuantField(cinfo);

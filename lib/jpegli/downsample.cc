@@ -293,8 +293,8 @@ void DownsampleInputBuffer(j_compress_ptr cinfo) {
     if (h_factor == 1 && v_factor == 1) {
       continue;
     }
-    auto& input = m->input_buffer[c];
-    auto& output = m->downsampler_output[c];
+    auto& input = *m->smooth_input[c];
+    auto& output = *m->raw_data[c];
     const size_t yout0 = y0 / v_factor;
     float* rows_in[MAX_SAMP_FACTOR];
     for (size_t yin = y0, yout = yout0; yin < y1; yin += v_factor, ++yout) {
@@ -303,6 +303,51 @@ void DownsampleInputBuffer(j_compress_ptr cinfo) {
       }
       float* row_out = output.Row(yout);
       (*m->downsample_method[c])(rows_in, xsize_padded, row_out);
+    }
+  }
+}
+
+void ApplyInputSmoothing(j_compress_ptr cinfo) {
+  if (!cinfo->smoothing_factor) {
+    return;
+  }
+  jpeg_comp_master* m = cinfo->master;
+  const float kW1 = cinfo->smoothing_factor / 1024.0;
+  const float kW0 = 1.0f - 8.0f * kW1;
+  const size_t iMCU_height = DCTSIZE * cinfo->max_v_samp_factor;
+  const ssize_t y0 = m->next_iMCU_row * iMCU_height;
+  const ssize_t y1 = y0 + iMCU_height;
+  const ssize_t xsize_padded = m->xsize_blocks * DCTSIZE;
+  for (int c = 0; c < cinfo->num_components; c++) {
+    auto& input = m->input_buffer[c];
+    auto& output = *m->smooth_input[c];
+    if (m->next_iMCU_row == 0) {
+      input.CopyRow(-1, 0, 1);
+    }
+    if (m->next_iMCU_row + 1 == cinfo->total_iMCU_rows) {
+      size_t last_row = m->ysize_blocks * DCTSIZE - 1;
+      input.CopyRow(last_row + 1, last_row, 1);
+    }
+    // TODO(szabadka) SIMDify this.
+    for (ssize_t y = y0; y < y1; ++y) {
+      const float* row_t = input.Row(y - 1);
+      const float* row_m = input.Row(y);
+      const float* row_b = input.Row(y + 1);
+      float* row_out = output.Row(y);
+      for (ssize_t x = 0; x < xsize_padded; ++x) {
+        float val_tl = row_t[x - 1];
+        float val_tm = row_t[x];
+        float val_tr = row_t[x + 1];
+        float val_ml = row_m[x - 1];
+        float val_mm = row_m[x];
+        float val_mr = row_m[x + 1];
+        float val_bl = row_b[x - 1];
+        float val_bm = row_b[x];
+        float val_br = row_b[x + 1];
+        float val1 = (val_tl + val_tm + val_tr + val_ml + val_mr + val_bl +
+                      val_bm + val_br);
+        row_out[x] = val_mm * kW0 + val1 * kW1;
+      }
     }
   }
 }
