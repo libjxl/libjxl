@@ -585,6 +585,21 @@ std::vector<TestConfig> GenerateTests() {
       }
     }
   }
+  for (int smoothing : {1, 5, 50, 100}) {
+    for (int h_sampling : {1, 2}) {
+      for (int v_sampling : {1, 2}) {
+        TestConfig config;
+        config.input.xsize = 257;
+        config.input.ysize = 265;
+        config.jparams.smoothing_factor = smoothing;
+        config.jparams.h_sampling = {h_sampling, 1, 1};
+        config.jparams.v_sampling = {v_sampling, 1, 1};
+        config.max_bpp = 1.8;
+        config.max_dist = 3.0f;
+        all_tests.push_back(config);
+      }
+    }
+  }
   return all_tests;
 };
 

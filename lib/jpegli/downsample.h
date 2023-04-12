@@ -17,6 +17,8 @@ void ChooseDownsampleMethods(j_compress_ptr cinfo);
 
 void DownsampleInputBuffer(j_compress_ptr cinfo);
 
+void ApplyInputSmoothing(j_compress_ptr cinfo);
+
 }  // namespace jpegli
 
 #endif  // LIB_JPEGLI_DOWNSAMPLE_H_

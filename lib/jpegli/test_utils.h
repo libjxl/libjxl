@@ -150,6 +150,7 @@ struct CompressParams {
   int progressive_level = -1;
   unsigned int restart_interval = 0;
   int restart_in_rows = 0;
+  int smoothing_factor = 0;
   bool optimize_coding = true;
   bool use_flat_dc_luma_code = false;
   bool omit_standard_tables = false;

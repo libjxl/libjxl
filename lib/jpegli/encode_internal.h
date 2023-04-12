@@ -61,7 +61,7 @@ typedef int16_t coeff_t;
 
 struct jpeg_comp_master {
   jpegli::RowBuffer<float> input_buffer[jpegli::kMaxComponents];
-  jpegli::RowBuffer<float> downsampler_output[jpegli::kMaxComponents];
+  jpegli::RowBuffer<float>* smooth_input[jpegli::kMaxComponents];
   jpegli::RowBuffer<float>* raw_data[jpegli::kMaxComponents];
   float distance = 1.0;
   bool force_baseline = true;
