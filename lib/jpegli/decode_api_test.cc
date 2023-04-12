@@ -79,7 +79,19 @@ class SourceManager {
     return TRUE;
   }
 
-  static void skip_input_data(j_decompress_ptr cinfo, long num_bytes) {}
+  static void skip_input_data(j_decompress_ptr cinfo, long num_bytes) {
+    auto src = reinterpret_cast<SourceManager*>(cinfo->src);
+    if (num_bytes <= 0) {
+      return;
+    }
+    if (src->pub_.bytes_in_buffer >= static_cast<size_t>(num_bytes)) {
+      src->pub_.bytes_in_buffer -= num_bytes;
+      src->pub_.next_input_byte += num_bytes;
+    } else {
+      src->pos_ += num_bytes - src->pub_.bytes_in_buffer;
+      src->pub_.bytes_in_buffer = 0;
+    }
+  }
 
   static void term_source(j_decompress_ptr cinfo) {}
 };
@@ -87,8 +99,22 @@ class SourceManager {
 uint8_t markers_seen[kMarkerSequenceLen];
 size_t num_markers_seen = 0;
 
+uint8_t get_next_byte(j_decompress_ptr cinfo) {
+  if (cinfo->src->bytes_in_buffer == 0) {
+    (*cinfo->src->fill_input_buffer)(cinfo);
+  }
+  cinfo->src->bytes_in_buffer--;
+  return *cinfo->src->next_input_byte++;
+}
+
 boolean test_marker_processor(j_decompress_ptr cinfo) {
-  markers_seen[num_markers_seen++] = cinfo->unread_marker;
+  markers_seen[num_markers_seen] = cinfo->unread_marker;
+  size_t marker_len = (get_next_byte(cinfo) << 8) + get_next_byte(cinfo);
+  EXPECT_EQ(2 + ((num_markers_seen + 2) % sizeof(kMarkerData)), marker_len);
+  if (marker_len > 2) {
+    (*cinfo->src->skip_input_data)(cinfo, marker_len - 2);
+  }
+  ++num_markers_seen;
   return TRUE;
 }
 
@@ -846,9 +872,10 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
       all_tests.push_back(config);
     }
   }
-  {
+  for (size_t chunk_size : {0, 1, 64, 65536}) {
     TestConfig config;
     config.input.xsize = config.input.ysize = 256;
+    config.dparams.chunk_size = chunk_size;
     config.jparams.add_marker = true;
     all_tests.push_back(config);
   }
