@@ -315,6 +315,16 @@ std::vector<TestConfig> GenerateTests() {
   }
   {
     TestConfig config;
+    config.input_mode = COEFFICIENTS;
+    config.jparams.h_sampling = {2, 1, 1};
+    config.jparams.v_sampling = {2, 1, 1};
+    config.jparams.progressive_level = 0;
+    config.max_bpp = 16;
+    config.max_dist = 0.0;
+    all_tests.push_back(config);
+  }
+  {
+    TestConfig config;
     config.jparams.xyb_mode = true;
     config.max_bpp = 1.5;
     config.max_dist = 3.5;
