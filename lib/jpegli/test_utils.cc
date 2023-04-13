@@ -544,7 +544,8 @@ void EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
       size_t xsize_blocks = jparams.comp_width(input, c) / DCTSIZE;
       size_t ysize_blocks = jparams.comp_height(input, c) / DCTSIZE;
       coef_arrays[c] = (*cinfo->mem->request_virt_barray)(
-          comptr, JPOOL_IMAGE, FALSE, xsize_blocks, ysize_blocks, 1);
+          comptr, JPOOL_IMAGE, FALSE, xsize_blocks, ysize_blocks,
+          cinfo->comp_info[c].v_samp_factor);
     }
     jpegli_write_coefficients(cinfo, coef_arrays);
     if (jparams.add_marker) {
