@@ -317,6 +317,25 @@ void ResetForImage(j_compress_ptr cinfo) {
   m->scan_coding_info.clear();
 }
 
+bool IsStreamingSupported(j_compress_ptr cinfo) {
+  if (cinfo->global_state == kEncWriteCoeffs) {
+    return false;
+  }
+  // TODO(szabadka) Remove this restriction.
+  if (cinfo->restart_interval > 0 || cinfo->restart_in_rows > 0) {
+    return false;
+  }
+  if (cinfo->optimize_coding || cinfo->progressive_mode) {
+    return false;
+  }
+  return true;
+}
+
+bool IsSinglePassOptimizerSupported(j_compress_ptr cinfo) {
+  return cinfo->num_scans == 1 && cinfo->optimize_coding &&
+         cinfo->restart_interval == 0 && cinfo->restart_in_rows == 0;
+}
+
 void AllocateBuffers(j_compress_ptr cinfo) {
   jpeg_comp_master* m = cinfo->master;
   size_t iMCU_width = DCTSIZE * cinfo->max_h_samp_factor;
@@ -350,15 +369,17 @@ void AllocateBuffers(j_compress_ptr cinfo) {
   }
   m->dct_buffer = Allocate<float>(cinfo, 2 * DCTSIZE2, JPOOL_IMAGE_ALIGNED);
   m->block_tmp = Allocate<int32_t>(cinfo, DCTSIZE2 * 4, JPOOL_IMAGE_ALIGNED);
-  m->coeff_buffers =
-      Allocate<jvirt_barray_ptr>(cinfo, cinfo->num_components, JPOOL_IMAGE);
-  for (int c = 0; c < cinfo->num_components; ++c) {
-    jpeg_component_info* comp = &cinfo->comp_info[c];
-    const size_t xsize_blocks = comp->width_in_blocks;
-    const size_t ysize_blocks = comp->height_in_blocks;
-    m->coeff_buffers[c] = (*cinfo->mem->request_virt_barray)(
-        reinterpret_cast<j_common_ptr>(cinfo), JPOOL_IMAGE, /*pre_zero=*/false,
-        xsize_blocks, ysize_blocks, comp->v_samp_factor);
+  if (!IsStreamingSupported(cinfo)) {
+    m->coeff_buffers =
+        Allocate<jvirt_barray_ptr>(cinfo, cinfo->num_components, JPOOL_IMAGE);
+    for (int c = 0; c < cinfo->num_components; ++c) {
+      jpeg_component_info* comp = &cinfo->comp_info[c];
+      const size_t xsize_blocks = comp->width_in_blocks;
+      const size_t ysize_blocks = comp->height_in_blocks;
+      m->coeff_buffers[c] = (*cinfo->mem->request_virt_barray)(
+          reinterpret_cast<j_common_ptr>(cinfo), JPOOL_IMAGE,
+          /*pre_zero=*/false, xsize_blocks, ysize_blocks, comp->v_samp_factor);
+    }
   }
   if (m->use_adaptive_quantization) {
     int y_channel = cinfo->jpeg_color_space == JCS_RGB ? 1 : 0;
@@ -413,25 +434,6 @@ void PadInputBuffer(j_compress_ptr cinfo, float* row[kMaxComponents]) {
       ++m->next_input_row;
     }
   }
-}
-
-bool IsStreamingSupported(j_compress_ptr cinfo) {
-  if (cinfo->global_state == kEncWriteCoeffs) {
-    return false;
-  }
-  // TODO(szabadka) Remove this restriction.
-  if (cinfo->restart_interval > 0 || cinfo->restart_in_rows > 0) {
-    return false;
-  }
-  if (cinfo->optimize_coding || cinfo->progressive_mode) {
-    return false;
-  }
-  return true;
-}
-
-bool IsSinglePassOptimizerSupported(j_compress_ptr cinfo) {
-  return cinfo->num_scans == 1 && cinfo->optimize_coding &&
-         cinfo->restart_interval == 0 && cinfo->restart_in_rows == 0;
 }
 
 void ProcessiMCURow(j_compress_ptr cinfo) {
