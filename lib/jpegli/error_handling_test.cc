@@ -864,6 +864,29 @@ TEST(ErrorHandlingTest, InvalidScanScript13) {
   if (buffer) free(buffer);
 }
 
+TEST(ErrorHandlingTest, MCUSizeTooBig) {
+  uint8_t* buffer = nullptr;
+  unsigned long buffer_size = 0;
+  jpeg_compress_struct cinfo;
+  const auto try_catch_block = [&]() -> bool {
+    ERROR_HANDLER_SETUP(jpegli);
+    jpegli_create_compress(&cinfo);
+    jpegli_mem_dest(&cinfo, &buffer, &buffer_size);
+    cinfo.image_width = 1;
+    cinfo.image_height = 1;
+    cinfo.input_components = 3;
+    jpegli_set_defaults(&cinfo);
+    jpegli_set_progressive_level(&cinfo, 0);
+    cinfo.comp_info[0].h_samp_factor = 3;
+    cinfo.comp_info[0].v_samp_factor = 3;
+    jpegli_start_compress(&cinfo, TRUE);
+    return true;
+  };
+  EXPECT_FALSE(try_catch_block());
+  jpegli_destroy_compress(&cinfo);
+  if (buffer) free(buffer);
+}
+
 TEST(ErrorHandlingTest, RestartIntervalTooBig) {
   uint8_t* buffer = nullptr;
   unsigned long buffer_size = 0;

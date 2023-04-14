@@ -190,6 +190,17 @@ void ValidateScanScript(j_compress_ptr cinfo) {
         }
       }
     }
+    if (si.comps_in_scan > 1) {
+      size_t mcu_size = 0;
+      for (int j = 0; j < si.comps_in_scan; ++j) {
+        int ci = si.component_index[j];
+        jpeg_component_info* comp = &cinfo->comp_info[ci];
+        mcu_size += comp->h_samp_factor * comp->v_samp_factor;
+      }
+      if (mcu_size > C_MAX_BLOCKS_IN_MCU) {
+        JPEGLI_ERROR("MCU size too big");
+      }
+    }
   }
   for (int c = 0; c < cinfo->num_components; ++c) {
     for (int k = 0; k < DCTSIZE2; ++k) {
