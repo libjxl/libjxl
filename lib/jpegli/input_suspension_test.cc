@@ -247,7 +247,7 @@ TEST_P(InputSuspensionTestParam, InputOutputLockStepNonBuffered) {
   jpegli_destroy_decompress(&cinfo);
 
   TestImage output1;
-  DecodeWithLibjpeg(CompressParams(), dparams, compressed, &output1);
+  DecodeWithLibjpeg(config.jparams, dparams, compressed, &output1);
   VerifyOutputImage(output1, output0, 1.0f);
 }
 
@@ -307,7 +307,7 @@ TEST_P(InputSuspensionTestParam, InputOutputLockStepBuffered) {
   jpegli_destroy_decompress(&cinfo);
 
   std::vector<TestImage> output_progression1;
-  DecodeAllScansWithLibjpeg(CompressParams(), dparams, compressed,
+  DecodeAllScansWithLibjpeg(config.jparams, dparams, compressed,
                             &output_progression1);
   ASSERT_EQ(output_progression0.size(), output_progression1.size());
   for (size_t i = 0; i < output_progression0.size(); ++i) {
@@ -323,7 +323,7 @@ TEST_P(InputSuspensionTestParam, PreConsumeInputBuffered) {
   const DecompressParams& dparams = config.dparams;
   const std::vector<uint8_t> compressed = GetTestJpegData(config);
   std::vector<TestImage> output_progression1;
-  DecodeAllScansWithLibjpeg(CompressParams(), dparams, compressed,
+  DecodeAllScansWithLibjpeg(config.jparams, dparams, compressed,
                             &output_progression1);
   SourceManager src(compressed.data(), compressed.size(), dparams.chunk_size);
   TestImage output0;
@@ -432,7 +432,7 @@ TEST_P(InputSuspensionTestParam, PreConsumeInputNonBuffered) {
   jpegli_destroy_decompress(&cinfo);
 
   TestImage output1;
-  DecodeWithLibjpeg(CompressParams(), dparams, compressed, &output1);
+  DecodeWithLibjpeg(config.jparams, dparams, compressed, &output1);
   VerifyOutputImage(output1, output0, 1.0f);
 }
 
@@ -465,6 +465,7 @@ std::vector<TestConfig> GenerateTests() {
     for (size_t chunk_size : {1, 65536}) {
       TestConfig config;
       config.dparams.chunk_size = chunk_size;
+      config.jparams.progressive_mode = 2;
       config.jparams.restart_interval = r;
       all_tests.push_back(config);
     }

@@ -171,7 +171,7 @@ std::string IOMethodName(JpegliDataType data_type,
                          JpegliEndianness endianness) {
   std::string retval;
   if (data_type == JPEGLI_TYPE_UINT8) {
-    return "UINT8";
+    return "";
   } else if (data_type == JPEGLI_TYPE_UINT16) {
     retval = "UINT16";
   } else if (data_type == JPEGLI_TYPE_FLOAT) {
@@ -185,10 +185,30 @@ std::string IOMethodName(JpegliDataType data_type,
   return retval;
 }
 
+std::string SamplingId(const CompressParams& jparams) {
+  std::stringstream os;
+  JXL_CHECK(jparams.h_sampling.size() == jparams.v_sampling.size());
+  if (!jparams.h_sampling.empty()) {
+    size_t len = jparams.h_sampling.size();
+    while (len > 1 && jparams.h_sampling[len - 1] == 1 &&
+           jparams.v_sampling[len - 1] == 1) {
+      --len;
+    }
+    os << "SAMP";
+    for (size_t i = 0; i < len; ++i) {
+      if (i > 0) os << "_";
+      os << jparams.h_sampling[i] << "x" << jparams.v_sampling[i];
+    }
+  }
+  return os.str();
+}
+
 std::ostream& operator<<(std::ostream& os, const TestImage& input) {
   os << input.xsize << "x" << input.ysize;
   os << IOMethodName(input.data_type, input.endianness);
-  os << ColorSpaceName(input.color_space);
+  if (input.color_space != JCS_RGB) {
+    os << "InputColor" << ColorSpaceName(input.color_space);
+  }
   if (input.color_space == JCS_UNKNOWN) {
     os << input.components;
   }
@@ -196,16 +216,10 @@ std::ostream& operator<<(std::ostream& os, const TestImage& input) {
 }
 
 std::ostream& operator<<(std::ostream& os, const CompressParams& jparams) {
+  os << "Q" << jparams.quality;
+  os << SamplingId(jparams);
   if (jparams.set_jpeg_colorspace) {
     os << "JpegColor" << ColorSpaceName(jparams.jpeg_color_space);
-  }
-  os << "Q" << jparams.quality;
-  if (!jparams.h_sampling.empty()) {
-    os << "SAMP";
-    for (size_t i = 0; i < jparams.h_sampling.size(); ++i) {
-      os << "_";
-      os << jparams.h_sampling[i] << "x" << jparams.v_sampling[i];
-    }
   }
   if (!jparams.comp_ids.empty()) {
     os << "CID";
@@ -226,17 +240,26 @@ std::ostream& operator<<(std::ostream& os, const CompressParams& jparams) {
                                     : "");
     }
   }
-  if (jparams.progressive_id > 0) {
-    os << "P" << jparams.progressive_id;
+  if (jparams.progressive_mode >= 0) {
+    os << "P" << jparams.progressive_mode;
+  }
+  if (jparams.optimize_coding == 1) {
+    JXL_CHECK(jparams.progressive_mode <= 0);
+    os << "OptimizedCode";
+  } else if (jparams.optimize_coding == 0) {
+    JXL_CHECK(jparams.progressive_mode <= 0);
+    os << "FixedCode";
+    if (jparams.use_flat_dc_luma_code) {
+      os << "FlatDCLuma";
+    } else if (jparams.omit_standard_tables) {
+      os << "OmitDHT";
+    }
   }
   if (jparams.restart_interval > 0) {
     os << "R" << jparams.restart_interval;
   }
   if (jparams.restart_in_rows > 0) {
     os << "RR" << jparams.restart_in_rows;
-  }
-  if (jparams.progressive_level >= 0) {
-    os << "PL" << jparams.progressive_level;
   }
   if (jparams.xyb_mode) {
     os << "XYB";
@@ -251,14 +274,6 @@ std::ostream& operator<<(std::ostream& os, const CompressParams& jparams) {
   }
   if (jparams.add_marker) {
     os << "AddMarker";
-  }
-  if (!jparams.optimize_coding) {
-    os << "FixedTree";
-    if (jparams.use_flat_dc_luma_code) {
-      os << "FlatDCLuma";
-    } else if (jparams.omit_standard_tables) {
-      os << "OmitDHT";
-    }
   }
   if (jparams.smoothing_factor != 0) {
     os << "SF" << jparams.smoothing_factor;
@@ -472,20 +487,24 @@ void EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
       }
     }
   }
-  if (jparams.progressive_id > 0) {
-    const ScanScript& script = kTestScript[jparams.progressive_id - 1];
+  if (jparams.progressive_mode > 2) {
+    const ScanScript& script = kTestScript[jparams.progressive_mode - 3];
     cinfo->scan_info = script.scans;
     cinfo->num_scans = script.num_scans;
-  } else if (jparams.progressive_level >= 0) {
-    jpegli_set_progressive_level(cinfo, jparams.progressive_level);
+  } else if (jparams.progressive_mode >= 0) {
+    jpegli_set_progressive_level(cinfo, jparams.progressive_mode);
   }
   jpegli_set_input_format(cinfo, input.data_type, input.endianness);
   cinfo->restart_interval = jparams.restart_interval;
   cinfo->restart_in_rows = jparams.restart_in_rows;
   cinfo->smoothing_factor = jparams.smoothing_factor;
-  cinfo->optimize_coding = jparams.optimize_coding;
+  if (jparams.optimize_coding == 1) {
+    cinfo->optimize_coding = TRUE;
+  } else if (jparams.optimize_coding == 0) {
+    cinfo->optimize_coding = FALSE;
+  }
   cinfo->raw_data_in = !input.raw_data.empty();
-  if (!jparams.optimize_coding && jparams.use_flat_dc_luma_code) {
+  if (jparams.optimize_coding == 0 && jparams.use_flat_dc_luma_code) {
     JHUFF_TBL* tbl = cinfo->dc_huff_tbl_ptrs[0];
     memset(tbl, 0, sizeof(*tbl));
     tbl->bits[4] = 15;
@@ -493,7 +512,7 @@ void EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
   }
   if (input.coeffs.empty()) {
     bool write_all_tables = TRUE;
-    if (!jparams.optimize_coding && !jparams.use_flat_dc_luma_code &&
+    if (jparams.optimize_coding == 0 && !jparams.use_flat_dc_luma_code &&
         jparams.omit_standard_tables) {
       write_all_tables = FALSE;
       cinfo->dc_huff_tbl_ptrs[0]->sent_table = TRUE;
@@ -758,9 +777,9 @@ void VerifyScanHeader(const CompressParams& jparams, j_decompress_ptr cinfo) {
   } else {
     JXL_CHECK(cinfo->Ss == 0 && cinfo->Se == 63);
   }
-  if (jparams.progressive_id > 0) {
-    JXL_CHECK(jparams.progressive_id <= kNumTestScripts);
-    const ScanScript& script = kTestScript[jparams.progressive_id - 1];
+  if (jparams.progressive_mode > 2) {
+    JXL_CHECK(jparams.progressive_mode < 3 + kNumTestScripts);
+    const ScanScript& script = kTestScript[jparams.progressive_mode - 3];
     JXL_CHECK(cinfo->input_scan_number <= script.num_scans);
     const jpeg_scan_info& scan = script.scans[cinfo->input_scan_number - 1];
     JXL_CHECK(cinfo->comps_in_scan == scan.comps_in_scan);
@@ -779,7 +798,7 @@ void VerifyScanHeader(const CompressParams& jparams, j_decompress_ptr cinfo) {
     JXL_CHECK(cinfo->restart_interval ==
               jparams.restart_in_rows * cinfo->MCUs_per_row);
   }
-  if (!jparams.optimize_coding) {
+  if (jparams.progressive_mode == 0 && jparams.optimize_coding == 0) {
     if (cinfo->jpeg_color_space == JCS_RGB) {
       JXL_CHECK(cinfo->comp_info[0].dc_tbl_no == 0);
       JXL_CHECK(cinfo->comp_info[1].dc_tbl_no == 0);

@@ -146,12 +146,14 @@ struct CompressParams {
   int override_JFIF = -1;
   int override_Adobe = -1;
   bool add_marker = false;
-  int progressive_id = 0;
-  int progressive_level = -1;
+  // -1 is library default
+  // 0, 1, 2 is set through jpegli_set_progressive_level()
+  // 2 + N is kScriptN
+  int progressive_mode = -1;
   unsigned int restart_interval = 0;
   int restart_in_rows = 0;
   int smoothing_factor = 0;
-  bool optimize_coding = true;
+  int optimize_coding = -1;
   bool use_flat_dc_luma_code = false;
   bool omit_standard_tables = false;
   bool xyb_mode = false;

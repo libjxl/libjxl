@@ -41,7 +41,7 @@ const int kJPEGMaxCorrectionBits = 1u << 16;
 
 static constexpr float kDCBias = 128.0f;
 
-constexpr int kDefaultProgressiveLevel = 2;
+constexpr int kDefaultProgressiveLevel = 0;
 
 struct HuffmanCodeTable {
   int depth[256];
