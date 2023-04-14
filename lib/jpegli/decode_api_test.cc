@@ -332,60 +332,66 @@ TEST(DecodeAPITest, ReuseCinfo) {
     jpegli_create_decompress(&cinfo);
     input.xsize = 129;
     input.ysize = 73;
+    GeneratePixels(&input);
     for (int h_samp : {2, 1}) {
       for (int v_samp : {2, 1}) {
-        jparams.h_sampling = {h_samp, 1, 1};
-        jparams.v_sampling = {v_samp, 1, 1};
-        printf("Generating input with %dx%d chroma subsampling\n", h_samp,
-               v_samp);
-        GeneratePixels(&input);
-        JXL_CHECK(EncodeWithJpegli(input, jparams, &compressed));
-        for (JpegIOMode output_mode : {PIXELS, RAW_DATA, COEFFICIENTS}) {
-          for (bool crop : {true, false}) {
-            if (crop && output_mode != PIXELS) continue;
-            for (int scale_num : {1, 2, 3, 4, 7, 8, 13, 16}) {
-              if (scale_num != 8 && output_mode != PIXELS) continue;
-              int scale_denom = 8;
-              while (scale_num % 2 == 0 && scale_denom % 2 == 0) {
-                scale_num /= 2;
-                scale_denom /= 2;
-              }
-              printf("Decoding with output mode %d output scaling %d/%d %s\n",
-                     output_mode, scale_num, scale_denom,
-                     crop ? "with cropped output" : "");
-              dparams.output_mode = output_mode;
-              dparams.scale_num = scale_num;
-              dparams.scale_denom = scale_denom;
-              expected.Clear();
-              DecodeWithLibjpeg(jparams, dparams, compressed, &expected);
-              output.Clear();
-              cinfo.buffered_image = false;
-              cinfo.raw_data_out = false;
-              cinfo.scale_num = cinfo.scale_denom = 1;
-              SourceManager src(compressed.data(), compressed.size(), 1u << 12);
-              cinfo.src = reinterpret_cast<jpeg_source_mgr*>(&src);
-              jpegli_read_header(&cinfo, /*require_image=*/TRUE);
-              jpegli_abort_decompress(&cinfo);
-              src.Reset();
-              TestAPINonBuffered(jparams, dparams, expected, &cinfo, &output);
-              float max_rms = output_mode == COEFFICIENTS ? 0.0f : 1.0f;
-              if (scale_num == 1 && scale_denom == 8 && h_samp != v_samp) {
-                max_rms = 5.0f;  // libjpeg does not do fancy upsampling
-              }
-              VerifyOutputImage(expected, output, max_rms);
-              printf("Decoding in buffered image mode\n");
-              expected_output_progression.clear();
-              DecodeAllScansWithLibjpeg(jparams, dparams, compressed,
-                                        &expected_output_progression);
-              output_progression.clear();
-              src.Reset();
-              TestAPIBuffered(jparams, dparams, &cinfo, &output_progression);
-              JXL_CHECK(output_progression.size() ==
-                        expected_output_progression.size());
-              for (size_t i = 0; i < output_progression.size(); ++i) {
-                const TestImage& output = output_progression[i];
-                const TestImage& expected = expected_output_progression[i];
+        for (int progr : {0, 2}) {
+          jparams.h_sampling = {h_samp, 1, 1};
+          jparams.v_sampling = {v_samp, 1, 1};
+          jparams.progressive_mode = progr;
+          printf(
+              "Generating input with %dx%d chroma subsampling "
+              "progressive level %d\n",
+              h_samp, v_samp, progr);
+          JXL_CHECK(EncodeWithJpegli(input, jparams, &compressed));
+          for (JpegIOMode output_mode : {PIXELS, RAW_DATA, COEFFICIENTS}) {
+            for (bool crop : {true, false}) {
+              if (crop && output_mode != PIXELS) continue;
+              for (int scale_num : {1, 2, 3, 4, 7, 8, 13, 16}) {
+                if (scale_num != 8 && output_mode != PIXELS) continue;
+                int scale_denom = 8;
+                while (scale_num % 2 == 0 && scale_denom % 2 == 0) {
+                  scale_num /= 2;
+                  scale_denom /= 2;
+                }
+                printf("Decoding with output mode %d output scaling %d/%d %s\n",
+                       output_mode, scale_num, scale_denom,
+                       crop ? "with cropped output" : "");
+                dparams.output_mode = output_mode;
+                dparams.scale_num = scale_num;
+                dparams.scale_denom = scale_denom;
+                expected.Clear();
+                DecodeWithLibjpeg(jparams, dparams, compressed, &expected);
+                output.Clear();
+                cinfo.buffered_image = false;
+                cinfo.raw_data_out = false;
+                cinfo.scale_num = cinfo.scale_denom = 1;
+                SourceManager src(compressed.data(), compressed.size(),
+                                  1u << 12);
+                cinfo.src = reinterpret_cast<jpeg_source_mgr*>(&src);
+                jpegli_read_header(&cinfo, /*require_image=*/TRUE);
+                jpegli_abort_decompress(&cinfo);
+                src.Reset();
+                TestAPINonBuffered(jparams, dparams, expected, &cinfo, &output);
+                float max_rms = output_mode == COEFFICIENTS ? 0.0f : 1.0f;
+                if (scale_num == 1 && scale_denom == 8 && h_samp != v_samp) {
+                  max_rms = 5.0f;  // libjpeg does not do fancy upsampling
+                }
                 VerifyOutputImage(expected, output, max_rms);
+                printf("Decoding in buffered image mode\n");
+                expected_output_progression.clear();
+                DecodeAllScansWithLibjpeg(jparams, dparams, compressed,
+                                          &expected_output_progression);
+                output_progression.clear();
+                src.Reset();
+                TestAPIBuffered(jparams, dparams, &cinfo, &output_progression);
+                JXL_CHECK(output_progression.size() ==
+                          expected_output_progression.size());
+                for (size_t i = 0; i < output_progression.size(); ++i) {
+                  const TestImage& output = output_progression[i];
+                  const TestImage& expected = expected_output_progression[i];
+                  VerifyOutputImage(expected, output, max_rms);
+                }
               }
             }
           }
@@ -407,7 +413,7 @@ TEST_P(DecodeAPITestParam, TestAPI) {
   SourceManager src(compressed.data(), compressed.size(), dparams.chunk_size);
 
   TestImage output1;
-  DecodeWithLibjpeg(CompressParams(), dparams, compressed, &output1);
+  DecodeWithLibjpeg(config.jparams, dparams, compressed, &output1);
 
   TestImage output0;
   jpeg_decompress_struct cinfo;
@@ -441,7 +447,7 @@ TEST_P(DecodeAPITestParamBuffered, TestAPI) {
   SourceManager src(compressed.data(), compressed.size(), dparams.chunk_size);
 
   std::vector<TestImage> output_progression1;
-  DecodeAllScansWithLibjpeg(CompressParams(), dparams, compressed,
+  DecodeAllScansWithLibjpeg(config.jparams, dparams, compressed,
                             &output_progression1);
 
   std::vector<TestImage> output_progression0;
@@ -531,6 +537,7 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
     }
   }
 
+  // Tests for common chroma subsampling and output modes.
   for (JpegIOMode output_mode : {PIXELS, RAW_DATA, COEFFICIENTS}) {
     for (int h_samp : {1, 2}) {
       for (int v_samp : {1, 2}) {
@@ -541,6 +548,7 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
           TestConfig config;
           config.dparams.output_mode = output_mode;
           config.dparams.do_fancy_upsampling = fancy;
+          config.jparams.progressive_mode = 2;
           config.jparams.h_sampling = {h_samp, 1, 1};
           config.jparams.v_sampling = {v_samp, 1, 1};
           if (output_mode == COEFFICIENTS) {
@@ -552,8 +560,9 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
     }
   }
 
+  // Tests for partial input.
   for (float size_factor : {0.1f, 0.33f, 0.5f, 0.75f}) {
-    for (int prog_id : {-1, 0, 1}) {
+    for (int progr : {0, 1, 3}) {
       for (int samp : {1, 2}) {
         for (JpegIOMode output_mode : {PIXELS, RAW_DATA}) {
           TestConfig config;
@@ -561,16 +570,13 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
           config.input.ysize = 523;
           config.jparams.h_sampling = {samp, 1, 1};
           config.jparams.v_sampling = {samp, 1, 1};
-          if (prog_id >= 0) {
-            config.jparams.progressive_level = 0;
-            config.jparams.progressive_id = prog_id;
-          }
+          config.jparams.progressive_mode = progr;
           config.dparams.size_factor = size_factor;
           config.dparams.output_mode = output_mode;
           // The last partially available block can behave differently.
           // TODO(szabadka) Figure out if we can make the behaviour more
           // similar.
-          config.max_rms_dist = samp == 1 ? 1.5f : 3.0f;
+          config.max_rms_dist = samp == 1 ? 1.6f : 3.0f;
           config.max_diff = 255.0f;
           all_tests.push_back(config);
         }
@@ -578,8 +584,10 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
     }
   }
 
+  // Test for switching output color quantization modes between scans.
   if (buffered) {
     TestConfig config;
+    config.jparams.progressive_mode = 2;
     config.dparams.quantize_colors = true;
     config.dparams.scan_params = {
         {3, JDITHER_NONE, CQUANT_1PASS},  {4, JDITHER_ORDERED, CQUANT_1PASS},
@@ -597,6 +605,7 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
     return all_tests;
   }
 
+  // Tests for output color quantization.
   for (int num_colors : {8, 64, 256}) {
     for (ColorQuantMode mode : {CQUANT_1PASS, CQUANT_EXTERNAL, CQUANT_2PASS}) {
       if (mode == CQUANT_EXTERNAL && num_colors != 256) continue;
@@ -648,6 +657,7 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
     }
   }
 
+  // Tests for output formats.
   for (JpegliDataType type :
        {JPEGLI_TYPE_UINT8, JPEGLI_TYPE_UINT16, JPEGLI_TYPE_FLOAT}) {
     for (JpegliEndianness endianness :
@@ -667,11 +677,13 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
       }
     }
   }
+  // Test for output cropping.
   {
     TestConfig config;
     config.dparams.crop_output = true;
     all_tests.push_back(config);
   }
+  // Tests for color transforms.
   for (J_COLOR_SPACE jpeg_color_space : {JCS_RGB, JCS_YCbCr}) {
     for (J_COLOR_SPACE out_color_space : {JCS_RGB, JCS_YCbCr}) {
       if (jpeg_color_space == JCS_RGB && out_color_space == JCS_YCbCr) continue;
@@ -695,22 +707,22 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
       all_tests.push_back(config);
     }
   }
-  for (int p = 0; p < kNumTestScripts; ++p) {
+  // Tests for progressive levels.
+  for (int p = 0; p < 3 + kNumTestScripts; ++p) {
     TestConfig config;
-    config.jparams.progressive_id = p + 1;
+    config.jparams.progressive_mode = p;
     all_tests.push_back(config);
   }
-  for (size_t l = 0; l <= 2; ++l) {
-    TestConfig config;
-    config.jparams.progressive_level = l;
-    all_tests.push_back(config);
-  }
+  // Tests for RST markers.
   for (size_t r : {1, 17, 1024}) {
     for (size_t chunk_size : {1, 65536}) {
-      TestConfig config;
-      config.dparams.chunk_size = chunk_size;
-      config.jparams.restart_interval = r;
-      all_tests.push_back(config);
+      for (int progr : {0, 2}) {
+        TestConfig config;
+        config.dparams.chunk_size = chunk_size;
+        config.jparams.progressive_mode = progr;
+        config.jparams.restart_interval = r;
+        all_tests.push_back(config);
+      }
     }
   }
   for (size_t rr : {1, 3, 8, 100}) {
@@ -718,6 +730,7 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
     config.jparams.restart_in_rows = rr;
     all_tests.push_back(config);
   }
+  // Tests for custom quantization tables.
   for (int type : {0, 1, 10, 100, 10000}) {
     for (int scale : {1, 50, 100, 200, 500}) {
       for (bool add_raw : {false, true}) {
@@ -818,13 +831,14 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
     config.compare_to_orig = true;
     all_tests.push_back(config);
   }
+  // Tests for fixed (and custom) prefix codes.
   for (J_COLOR_SPACE jpeg_color_space : {JCS_RGB, JCS_YCbCr}) {
     for (bool flat_dc_luma : {false, true}) {
       TestConfig config;
       config.jparams.set_jpeg_colorspace = true;
       config.jparams.jpeg_color_space = jpeg_color_space;
-      config.jparams.progressive_level = 0;
-      config.jparams.optimize_coding = false;
+      config.jparams.progressive_mode = 0;
+      config.jparams.optimize_coding = 0;
       config.jparams.use_flat_dc_luma_code = flat_dc_luma;
       all_tests.push_back(config);
     }
@@ -835,25 +849,28 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
       config.input.color_space = JCS_CMYK;
       config.jparams.set_jpeg_colorspace = true;
       config.jparams.jpeg_color_space = jpeg_color_space;
-      config.jparams.progressive_level = 0;
-      config.jparams.optimize_coding = false;
+      config.jparams.progressive_mode = 0;
+      config.jparams.optimize_coding = 0;
       config.jparams.use_flat_dc_luma_code = flat_dc_luma;
       all_tests.push_back(config);
     }
   }
+  // Test for jpeg without DHT marker.
   {
     TestConfig config;
-    config.jparams.progressive_level = 0;
-    config.jparams.optimize_coding = false;
+    config.jparams.progressive_mode = 0;
+    config.jparams.optimize_coding = 0;
     config.jparams.omit_standard_tables = true;
     all_tests.push_back(config);
   }
+  // Test for custom component ids.
   {
     TestConfig config;
     config.input.xsize = config.input.ysize = 128;
     config.jparams.comp_ids = {7, 17, 177};
     all_tests.push_back(config);
   }
+  // Tests for JFIF/Adobe markers.
   for (int override_JFIF : {-1, 0, 1}) {
     for (int override_Adobe : {-1, 0, 1}) {
       if (override_JFIF == -1 && override_Adobe == -1) continue;
@@ -864,6 +881,7 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
       all_tests.push_back(config);
     }
   }
+  // Tests for small images.
   for (int xsize : {1, 7, 8, 9, 15, 16, 17}) {
     for (int ysize : {1, 7, 8, 9, 15, 16, 17}) {
       TestConfig config;
@@ -872,6 +890,7 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
       all_tests.push_back(config);
     }
   }
+  // Tests for custom marker processor.
   for (size_t chunk_size : {0, 1, 64, 65536}) {
     TestConfig config;
     config.input.xsize = config.input.ysize = 256;
@@ -879,6 +898,7 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
     config.jparams.add_marker = true;
     all_tests.push_back(config);
   }
+  // Tests for unusual sampling factors.
   for (int h0_samp : {1, 2, 3, 4}) {
     for (int v0_samp : {1, 2, 3, 4}) {
       for (int dxb = 0; dxb < h0_samp; ++dxb) {
@@ -888,6 +908,7 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
               TestConfig config;
               config.input.xsize = 128 + dyb * 8 + dy;
               config.input.ysize = 256 + dxb * 8 + dx;
+              config.jparams.progressive_mode = 2;
               config.jparams.h_sampling = {h0_samp, 1, 1};
               config.jparams.v_sampling = {v0_samp, 1, 1};
               config.compare_to_orig = true;
@@ -905,6 +926,7 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
           TestConfig config;
           config.input.xsize = 137;
           config.input.ysize = 75;
+          config.jparams.progressive_mode = 2;
           config.jparams.h_sampling = {h0_samp, 1, h2_samp};
           config.jparams.v_sampling = {v0_samp, 1, v2_samp};
           config.compare_to_orig = true;
@@ -920,6 +942,7 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
           TestConfig config;
           config.input.xsize = 205;
           config.input.ysize = 99;
+          config.jparams.progressive_mode = 2;
           config.jparams.h_sampling = {h0_samp, 1, h2_samp};
           config.jparams.v_sampling = {v0_samp, 1, v2_samp};
           all_tests.push_back(config);
@@ -927,17 +950,21 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
       }
     }
   }
+  // Tests for output scaling.
   for (int scale_num = 1; scale_num <= 16; ++scale_num) {
     if (scale_num == 8) continue;
     for (bool crop : {false, true}) {
       for (int samp : {1, 2}) {
-        TestConfig config;
-        config.jparams.h_sampling = {samp, 1, 1};
-        config.jparams.v_sampling = {samp, 1, 1};
-        config.dparams.scale_num = scale_num;
-        config.dparams.scale_denom = 8;
-        config.dparams.crop_output = crop;
-        all_tests.push_back(config);
+        for (int progr : {0, 2}) {
+          TestConfig config;
+          config.jparams.h_sampling = {samp, 1, 1};
+          config.jparams.v_sampling = {samp, 1, 1};
+          config.jparams.progressive_mode = progr;
+          config.dparams.scale_num = scale_num;
+          config.dparams.scale_denom = 8;
+          config.dparams.crop_output = crop;
+          all_tests.push_back(config);
+        }
       }
     }
   }

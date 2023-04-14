@@ -15,6 +15,7 @@ namespace jpegli {
 namespace {
 
 void TranscodeWithJpegli(const std::vector<uint8_t>& jpeg_input,
+                         const CompressParams& jparams,
                          std::vector<uint8_t>* jpeg_output) {
   jpeg_decompress_struct dinfo = {};
   jpeg_compress_struct cinfo = {};
@@ -33,6 +34,8 @@ void TranscodeWithJpegli(const std::vector<uint8_t>& jpeg_input,
     jpegli_create_compress(&cinfo);
     jpegli_mem_dest(&cinfo, &transcoded_data, &transcoded_size);
     jpegli_copy_critical_parameters(&dinfo, &cinfo);
+    jpegli_set_progressive_level(&cinfo, jparams.progressive_mode);
+    cinfo.optimize_coding = jparams.optimize_coding;
     jpegli_write_coefficients(&cinfo, coef_arrays);
     jpegli_finish_compress(&cinfo);
     jpegli_finish_decompress(&dinfo);
@@ -56,26 +59,29 @@ class TranscodeAPITestParam : public ::testing::TestWithParam<TestConfig> {};
 
 TEST_P(TranscodeAPITestParam, TestAPI) {
   TestConfig config = GetParam();
+  CompressParams& jparams = config.jparams;
   GeneratePixels(&config.input);
 
   // Start with sequential non-optimized jpeg.
-  config.jparams.progressive_level = 0;
-  config.jparams.optimize_coding = FALSE;
+  jparams.progressive_mode = 0;
+  jparams.optimize_coding = 0;
   std::vector<uint8_t> compressed;
-  ASSERT_TRUE(EncodeWithJpegli(config.input, config.jparams, &compressed));
+  ASSERT_TRUE(EncodeWithJpegli(config.input, jparams, &compressed));
+  TestImage output0;
+  DecodeWithLibjpeg(jparams, DecompressParams(), compressed, &output0);
 
-  // Transcode with default settings, this will create a progressive jpeg with
-  // optimized Huffman codes.
+  // Transcode to a progressive jpeg with optimized Huffman codes.
   std::vector<uint8_t> transcoded;
-  TranscodeWithJpegli(compressed, &transcoded);
+  jparams.progressive_mode = 2;
+  jparams.optimize_coding = 1;
+  TranscodeWithJpegli(compressed, jparams, &transcoded);
 
   // We expect a size reduction of at least 5%.
   EXPECT_LT(transcoded.size(), compressed.size() * 0.95f);
 
   // Verify that transcoding is lossless.
-  TestImage output0, output1;
-  DecodeWithLibjpeg(CompressParams(), DecompressParams(), compressed, &output0);
-  DecodeWithLibjpeg(CompressParams(), DecompressParams(), transcoded, &output1);
+  TestImage output1;
+  DecodeWithLibjpeg(jparams, DecompressParams(), transcoded, &output1);
   ASSERT_EQ(output0.pixels.size(), output1.pixels.size());
   EXPECT_EQ(0, memcmp(output0.pixels.data(), output1.pixels.data(),
                       output0.pixels.size()));
