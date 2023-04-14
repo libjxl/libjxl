@@ -179,6 +179,7 @@ void ProcessSOS(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
   JPEG_VERIFY_LEN(1);
   cinfo->comps_in_scan = ReadUint8(data, &pos);
   JPEG_VERIFY_INPUT(cinfo->comps_in_scan, 1, cinfo->num_components);
+  JPEG_VERIFY_INPUT(cinfo->comps_in_scan, 1, MAX_COMPS_IN_SCAN);
 
   JPEG_VERIFY_LEN(2 * cinfo->comps_in_scan);
   bool is_interleaved = (cinfo->comps_in_scan > 1);

@@ -254,9 +254,6 @@ void PrepareForScan(j_decompress_ptr cinfo) {
              sizeof(JQUANT_TBL));
     }
   }
-  cinfo->MCU_rows_in_scan = cinfo->total_iMCU_rows;
-  cinfo->MCUs_per_row = m->iMCU_cols_;
-  m->mcu_rows_per_iMCU_row_ = 1;
   if (cinfo->comps_in_scan == 1) {
     const auto& comp = *cinfo->cur_comp_info[0];
     cinfo->MCUs_per_row = DivCeil(cinfo->image_width * comp.h_samp_factor,
@@ -264,6 +261,18 @@ void PrepareForScan(j_decompress_ptr cinfo) {
     cinfo->MCU_rows_in_scan = DivCeil(cinfo->image_height * comp.v_samp_factor,
                                       cinfo->max_v_samp_factor * DCTSIZE);
     m->mcu_rows_per_iMCU_row_ = cinfo->cur_comp_info[0]->v_samp_factor;
+  } else {
+    cinfo->MCU_rows_in_scan = cinfo->total_iMCU_rows;
+    cinfo->MCUs_per_row = m->iMCU_cols_;
+    m->mcu_rows_per_iMCU_row_ = 1;
+    size_t mcu_size = 0;
+    for (int i = 0; i < cinfo->comps_in_scan; ++i) {
+      jpeg_component_info* comp = cinfo->cur_comp_info[i];
+      mcu_size += comp->h_samp_factor * comp->v_samp_factor;
+    }
+    if (mcu_size > D_MAX_BLOCKS_IN_MCU) {
+      JPEGLI_ERROR("MCU size too big");
+    }
   }
   memset(m->last_dc_coeff_, 0, sizeof(m->last_dc_coeff_));
   m->restarts_to_go_ = cinfo->restart_interval;
