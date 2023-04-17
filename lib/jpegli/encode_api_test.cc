@@ -253,6 +253,26 @@ std::vector<TestConfig> GenerateTests() {
     config.max_dist = 2.7;
     all_tests.push_back(config);
   }
+  for (int samp : {1, 2}) {
+    for (int progr : {0, 2}) {
+      for (int optimize : {0, 1}) {
+        if (progr && optimize) continue;
+        TestConfig config;
+        config.input.xsize = 257;
+        config.input.ysize = 265;
+        config.jparams.h_sampling = {samp, 1, 1};
+        config.jparams.v_sampling = {samp, 1, 1};
+        config.jparams.progressive_mode = progr;
+        if (!progr) {
+          config.jparams.optimize_coding = optimize;
+        }
+        config.jparams.use_adaptive_quantization = false;
+        config.max_bpp = 2.0f;
+        config.max_dist = 2.3f;
+        all_tests.push_back(config);
+      }
+    }
+  }
   for (int h0_samp : {1, 2, 4}) {
     for (int v0_samp : {1, 2, 4}) {
       for (int h2_samp : {1, 2, 4}) {

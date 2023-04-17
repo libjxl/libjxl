@@ -255,6 +255,9 @@ std::ostream& operator<<(std::ostream& os, const CompressParams& jparams) {
       os << "OmitDHT";
     }
   }
+  if (!jparams.use_adaptive_quantization) {
+    os << "NoAQ";
+  }
   if (jparams.restart_interval > 0) {
     os << "R" << jparams.restart_interval;
   }
@@ -495,6 +498,7 @@ void EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
     jpegli_set_progressive_level(cinfo, jparams.progressive_mode);
   }
   jpegli_set_input_format(cinfo, input.data_type, input.endianness);
+  jpegli_enable_adaptive_quantization(cinfo, jparams.use_adaptive_quantization);
   cinfo->restart_interval = jparams.restart_interval;
   cinfo->restart_in_rows = jparams.restart_in_rows;
   cinfo->smoothing_factor = jparams.smoothing_factor;
