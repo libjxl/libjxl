@@ -330,7 +330,7 @@ bool IsStreamingSupported(j_compress_ptr cinfo) {
   if (cinfo->restart_interval > 0 || cinfo->restart_in_rows > 0) {
     return false;
   }
-  if (cinfo->optimize_coding || cinfo->progressive_mode) {
+  if (cinfo->optimize_coding || cinfo->num_scans > 1) {
     return false;
   }
   return true;
