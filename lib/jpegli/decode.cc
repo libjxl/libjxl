@@ -57,8 +57,8 @@ void InitializeImage(j_decompress_ptr cinfo) {
   m->icc_index_ = 0;
   m->icc_total_ = 0;
   m->icc_profile_.clear();
-  m->dc_huff_lut_.clear();
-  m->ac_huff_lut_.clear();
+  memset(m->dc_huff_lut_, 0, sizeof(m->dc_huff_lut_));
+  memset(m->ac_huff_lut_, 0, sizeof(m->ac_huff_lut_));
   m->colormap_lut_ = nullptr;
   m->pixels_ = nullptr;
   m->scanlines_ = nullptr;
@@ -147,7 +147,7 @@ void ProgressMonitorOutputPass(j_decompress_ptr cinfo) {
 
 void BuildHuffmanLookupTable(j_decompress_ptr cinfo, JHUFF_TBL* table,
                              HuffmanTableEntry* huff_lut) {
-  std::array<uint32_t, kJpegHuffmanMaxBitLength + 1> counts = {};
+  uint32_t counts[kJpegHuffmanMaxBitLength + 1] = {};
   counts[0] = 0;
   int total_count = 0;
   int space = 1 << kJpegHuffmanMaxBitLength;
@@ -161,14 +161,14 @@ void BuildHuffmanLookupTable(j_decompress_ptr cinfo, JHUFF_TBL* table,
     total_count += count;
     space -= count * (1 << (kJpegHuffmanMaxBitLength - i));
   }
-  std::array<uint32_t, kJpegHuffmanAlphabetSize + 1> values = {};
-  std::vector<bool> values_seen(256, false);
+  uint32_t values[kJpegHuffmanAlphabetSize + 1] = {};
+  uint8_t values_seen[256] = {0};
   for (int i = 0; i < total_count; ++i) {
     int value = table->huffval[i];
     if (values_seen[value]) {
       return JPEGLI_ERROR("Duplicate Huffman code value %d", value);
     }
-    values_seen[value] = true;
+    values_seen[value] = 1;
     values[i] = value;
   }
   // Add an invalid symbol that will have the all 1 code.
@@ -217,9 +217,6 @@ void PrepareForScan(j_decompress_ptr cinfo) {
                            /*is_dc=*/false);
   AddStandardHuffmanTables(reinterpret_cast<j_common_ptr>(cinfo),
                            /*is_dc=*/true);
-  constexpr int kLutSize = NUM_HUFF_TBLS * kJpegHuffmanLutSize;
-  m->dc_huff_lut_.resize(kLutSize);
-  m->ac_huff_lut_.resize(kLutSize);
   // Check that all the Huffman tables needed for this scan are defined and
   // build derived lookup tables.
   for (int i = 0; i < cinfo->comps_in_scan; ++i) {
@@ -280,7 +277,6 @@ void PrepareForScan(j_decompress_ptr cinfo) {
   m->scan_mcu_row_ = 0;
   m->scan_mcu_col_ = 0;
   m->codestream_bits_ahead_ = 0;
-  m->mcu_.coeffs.resize(cinfo->blocks_in_MCU * DCTSIZE2);
   ++cinfo->input_scan_number;
   cinfo->input_iMCU_row = 0;
   PrepareForiMCURow(cinfo);
@@ -295,7 +291,6 @@ int ConsumeInput(j_decompress_ptr cinfo) {
     return JPEG_SUSPENDED;
   }
   jpeg_source_mgr* src = cinfo->src;
-  std::vector<uint8_t> buffer;
   int status;
   for (;;) {
     const uint8_t* data;
@@ -513,10 +508,12 @@ void jpegli_CreateDecompress(j_decompress_ptr cinfo, int version,
   cinfo->sample_range_limit = nullptr;  // not used
   cinfo->rec_outbuf_height = 1;         // output works with any buffer height
   cinfo->master = new jpeg_decomp_master;
+  jpeg_decomp_master* m = cinfo->master;
   for (int i = 0; i < 16; ++i) {
-    cinfo->master->app_marker_parsers[i] = nullptr;
+    m->app_marker_parsers[i] = nullptr;
   }
-  cinfo->master->com_marker_parser = nullptr;
+  m->com_marker_parser = nullptr;
+  memset(m->markers_to_save_, 0, sizeof(m->markers_to_save_));
   jpegli::InitializeDecompressParams(cinfo);
   jpegli::InitializeImage(cinfo);
 }
@@ -533,7 +530,10 @@ void jpegli_save_markers(j_decompress_ptr cinfo, int marker_code,
                          unsigned int length_limit) {
   // TODO(szabadka) Limit our memory usage by taking into account length_limit.
   jpeg_decomp_master* m = cinfo->master;
-  m->markers_to_save_.insert(marker_code);
+  if (marker_code < 0xe0) {
+    JPEGLI_ERROR("jpegli_save_markers: invalid marker code %d", marker_code);
+  }
+  m->markers_to_save_[marker_code - 0xe0] = 1;
 }
 
 void jpegli_set_marker_processor(j_decompress_ptr cinfo, int marker_code,

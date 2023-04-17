@@ -138,10 +138,10 @@ class RowBuffer {
   }
 
  private:
-  size_t xsize_ = 0;
-  size_t ysize_ = 0;
-  size_t stride_ = 0;
-  size_t offset_ = 0;
+  size_t xsize_;
+  size_t ysize_;
+  size_t stride_;
+  size_t offset_;
   T* data_;
 };
 

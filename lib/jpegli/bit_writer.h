@@ -13,8 +13,6 @@
 #include <string.h>
 /* clang-format on */
 
-#include <vector>
-
 #include "lib/jxl/base/compiler_specific.h"
 
 namespace jpegli {
@@ -22,8 +20,8 @@ namespace jpegli {
 // Handles the packing of bits into output bytes.
 struct JpegBitWriter {
   j_compress_ptr cinfo;
-  std::vector<uint8_t> buffer;
   uint8_t* data;
+  size_t len;
   size_t pos;
   size_t output_pos;
   uint64_t put_buffer;

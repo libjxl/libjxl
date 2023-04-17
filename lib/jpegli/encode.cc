@@ -309,12 +309,17 @@ void ProcessCompressionParams(j_compress_ptr cinfo) {
 }
 
 void ResetForImage(j_compress_ptr cinfo) {
+  (*cinfo->err->reset_error_mgr)(reinterpret_cast<j_common_ptr>(cinfo));
+  (*cinfo->dest->init_destination)(cinfo);
   jpeg_comp_master* m = cinfo->master;
   m->next_iMCU_row = 0;
   m->last_restart_interval = 0;
   m->last_dht_index = 0;
-  m->huffman_codes.clear();
-  m->scan_coding_info.clear();
+  m->num_huffman_codes = 0;
+  if (cinfo->num_scans > 0) {
+    m->scan_coding_info =
+        Allocate<ScanCodingInfo>(cinfo, cinfo->num_scans, JPOOL_IMAGE_ALIGNED);
+  }
 }
 
 bool IsStreamingSupported(j_compress_ptr cinfo) {
@@ -493,7 +498,6 @@ void ProgressMonitorInputPass(j_compress_ptr cinfo) {
 }
 
 void WriteFileHeader(j_compress_ptr cinfo) {
-  (*cinfo->dest->init_destination)(cinfo);
   WriteOutput(cinfo, {0xFF, 0xD8});  // SOI
   if (cinfo->write_JFIF_header) {
     EncodeAPP0(cinfo);
@@ -513,7 +517,7 @@ void WriteScanHeader(j_compress_ptr cinfo, size_t scan_idx) {
   size_t num_dht = cinfo->master->scan_coding_info[scan_idx].num_huffman_codes;
   if (num_dht > 0) {
     bool pre_shifted = IsStreamingSupported(cinfo);
-    EncodeDHT(cinfo, m->huffman_codes.data() + m->last_dht_index, num_dht,
+    EncodeDHT(cinfo, m->huffman_codes + m->last_dht_index, num_dht,
               pre_shifted);
     m->last_dht_index += num_dht;
   }
@@ -583,7 +587,17 @@ void jpegli_CreateCompress(j_compress_ptr cinfo, int version,
   memset(cinfo->arith_ac_K, 0, sizeof(cinfo->arith_ac_K));
   cinfo->write_Adobe_marker = false;
   jpegli::InitializeCompressParams(cinfo);
-  cinfo->master = new jpeg_comp_master;
+  cinfo->master = jpegli::Allocate<jpeg_comp_master>(cinfo, 1);
+  cinfo->master->distance = 1.0f;
+  cinfo->master->force_baseline = true;
+  cinfo->master->xyb_mode = false;
+  cinfo->master->cicp_transfer_function = 2;  // unknown transfer function code
+  cinfo->master->use_std_tables = false;
+  cinfo->master->use_adaptive_quantization = true;
+  cinfo->master->progressive_level = jpegli::kDefaultProgressiveLevel;
+  cinfo->master->data_type = JPEGLI_TYPE_UINT8;
+  cinfo->master->endianness = JPEGLI_NATIVE_ENDIAN;
+  cinfo->master->coeff_buffers = nullptr;
 }
 
 void jpegli_set_xyb_mode(j_compress_ptr cinfo) {
@@ -843,7 +857,6 @@ void jpegli_suppress_tables(j_compress_ptr cinfo, boolean suppress) {
 
 void jpegli_start_compress(j_compress_ptr cinfo, boolean write_all_tables) {
   CheckState(cinfo, jpegli::kEncStart);
-  (*cinfo->err->reset_error_mgr)(reinterpret_cast<j_common_ptr>(cinfo));
   jpegli::ProcessCompressionParams(cinfo);
   jpegli::InitProgressMonitor(cinfo);
   jpegli::AllocateBuffers(cinfo);
@@ -857,9 +870,9 @@ void jpegli_start_compress(j_compress_ptr cinfo, boolean write_all_tables) {
     jpegli_suppress_tables(cinfo, FALSE);
   }
   (*cinfo->mem->realize_virt_arrays)(reinterpret_cast<j_common_ptr>(cinfo));
+  jpegli::ResetForImage(cinfo);
   jpegli::WriteFileHeader(cinfo);
   jpegli::JpegBitWriterInit(cinfo);
-  jpegli::ResetForImage(cinfo);
   cinfo->next_scanline = 0;
   cinfo->master->next_input_row = 0;
   cinfo->global_state = jpegli::kEncHeader;
@@ -868,15 +881,14 @@ void jpegli_start_compress(j_compress_ptr cinfo, boolean write_all_tables) {
 void jpegli_write_coefficients(j_compress_ptr cinfo,
                                jvirt_barray_ptr* coef_arrays) {
   CheckState(cinfo, jpegli::kEncStart);
-  (*cinfo->err->reset_error_mgr)(reinterpret_cast<j_common_ptr>(cinfo));
   jpegli::ProcessCompressionParams(cinfo);
   jpegli::InitProgressMonitor(cinfo);
   (*cinfo->mem->realize_virt_arrays)(reinterpret_cast<j_common_ptr>(cinfo));
   cinfo->master->coeff_buffers = coef_arrays;
   jpegli_suppress_tables(cinfo, FALSE);
+  jpegli::ResetForImage(cinfo);
   jpegli::WriteFileHeader(cinfo);
   jpegli::JpegBitWriterInit(cinfo);
-  jpegli::ResetForImage(cinfo);
   cinfo->next_scanline = cinfo->image_height;
   cinfo->master->next_input_row = cinfo->image_height;
   cinfo->global_state = jpegli::kEncWriteCoeffs;
@@ -887,14 +899,13 @@ void jpegli_write_tables(j_compress_ptr cinfo) {
   if (cinfo->dest == nullptr) {
     JPEGLI_ERROR("Missing destination.");
   }
-  (*cinfo->err->reset_error_mgr)(reinterpret_cast<j_common_ptr>(cinfo));
-  (*cinfo->dest->init_destination)(cinfo);
+  jpegli::ResetForImage(cinfo);
   bool is_baseline = true;
   jpeg_comp_master* m = cinfo->master;
   jpegli::WriteOutput(cinfo, {0xFF, 0xD8});  // SOI
   jpegli::EncodeDQT(cinfo, &is_baseline);
   jpegli::CopyHuffmanCodes(cinfo, &is_baseline);
-  jpegli::EncodeDHT(cinfo, m->huffman_codes.data(), m->huffman_codes.size());
+  jpegli::EncodeDHT(cinfo, m->huffman_codes, m->num_huffman_codes);
   jpegli::WriteOutput(cinfo, {0xFF, 0xD9});  // EOI
   (*cinfo->dest->term_destination)(cinfo);
   jpegli_suppress_tables(cinfo, TRUE);

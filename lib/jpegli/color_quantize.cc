@@ -217,15 +217,13 @@ struct WangHasher {
 // appearence in the image.  Return the number of unique colors found.
 // The colors are pre-quantized to 3 * 6 bits precision.
 static int BuildRGBColorIndex(const uint8_t* const image, int const num_pixels,
-                              int* const indexed_image, int* const count,
-                              uint8_t* const red, uint8_t* const green,
-                              uint8_t* const blue) {
+                              int* const count, uint8_t* const red,
+                              uint8_t* const green, uint8_t* const blue) {
   // Impossible because rgb are in the low 24 bits, and the upper 8 bits is 0.
   const uint32_t impossible_pixel_value = 0x10000000;
   std::unordered_map<uint32_t, int, RGBPixelHasher> index_map(1 << 12);
   std::unordered_map<uint32_t, int, RGBPixelHasher>::iterator index_map_lookup;
   const uint8_t* imagep = &image[0];
-  int* indexp = &indexed_image[0];
   uint32_t prev_pixel = impossible_pixel_value;
   int index = 0;
   int n = 0;
@@ -247,7 +245,6 @@ static int BuildRGBColorIndex(const uint8_t* const image, int const num_pixels,
       }
     }
     ++count[index];
-    *indexp++ = index;
   }
   return n;
 }
@@ -260,16 +257,15 @@ void ChooseColorMap2Pass(j_decompress_ptr cinfo) {
   }
   jpeg_decomp_master* m = cinfo->master;
   const size_t num_pixels = cinfo->output_width * cinfo->output_height;
-  const int max_color_count = num_pixels;
+  const int max_color_count = std::max<size_t>(num_pixels, 1u << 18);
   const int max_palette_size = cinfo->desired_number_of_colors;
-  std::unique_ptr<int[]> indexed_image(new int[num_pixels]);
   std::unique_ptr<uint8_t[]> red(new uint8_t[max_color_count]);
   std::unique_ptr<uint8_t[]> green(new uint8_t[max_color_count]);
   std::unique_ptr<uint8_t[]> blue(new uint8_t[max_color_count]);
   std::vector<int> count(max_color_count, 0);
   // number of colors
-  int n = BuildRGBColorIndex(m->pixels_, num_pixels, &indexed_image[0],
-                             &count[0], &red[0], &green[0], &blue[0]);
+  int n = BuildRGBColorIndex(m->pixels_, num_pixels, &count[0], &red[0],
+                             &green[0], &blue[0]);
 
   std::vector<int> dist(n, std::numeric_limits<int>::max());
   std::vector<int> cluster(n);
