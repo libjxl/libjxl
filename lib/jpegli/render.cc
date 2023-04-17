@@ -348,58 +348,6 @@ void ComputeOptimalLaplacianBiases(const int num_blocks, const int* nonzeros,
   }
 }
 
-void PrepareForOutput(j_decompress_ptr cinfo) {
-  jpeg_decomp_master* m = cinfo->master;
-  size_t iMCU_width = cinfo->max_h_samp_factor * m->min_scaled_dct_size;
-  size_t output_stride = m->iMCU_cols_ * iMCU_width;
-  for (int c = 0; c < cinfo->num_components; ++c) {
-    const auto& comp = cinfo->comp_info[c];
-    size_t cheight = comp.v_samp_factor * m->scaled_dct_size[c];
-    m->raw_height_[c] = cinfo->total_iMCU_rows * cheight;
-    m->raw_output_[c].Allocate(cinfo, 3 * cheight, output_stride);
-    m->render_output_[c].Allocate(cinfo, cinfo->max_v_samp_factor,
-                                  output_stride);
-  }
-  m->idct_scratch_ = Allocate<float>(cinfo, 5 * DCTSIZE2, JPOOL_IMAGE_ALIGNED);
-  m->upsample_scratch_ = Allocate<float>(
-      cinfo, output_stride + kPaddingLeft + kPaddingRight, JPOOL_IMAGE_ALIGNED);
-  size_t bytes_per_sample = jpegli_bytes_per_sample(m->output_data_type_);
-  size_t bytes_per_pixel = cinfo->out_color_components * bytes_per_sample;
-  size_t scratch_stride = RoundUpTo(output_stride, HWY_ALIGNMENT);
-  m->output_scratch_ = Allocate<uint8_t>(
-      cinfo, bytes_per_pixel * scratch_stride, JPOOL_IMAGE_ALIGNED);
-  m->smoothing_scratch_ =
-      Allocate<int16_t>(cinfo, DCTSIZE2, JPOOL_IMAGE_ALIGNED);
-  size_t coeffs_per_block = cinfo->num_components * DCTSIZE2;
-  m->nonzeros_ = Allocate<int>(cinfo, coeffs_per_block, JPOOL_IMAGE_ALIGNED);
-  m->sumabs_ = Allocate<int>(cinfo, coeffs_per_block, JPOOL_IMAGE_ALIGNED);
-  memset(m->nonzeros_, 0, coeffs_per_block * sizeof(m->nonzeros_[0]));
-  memset(m->sumabs_, 0, coeffs_per_block * sizeof(m->sumabs_[0]));
-  m->num_processed_blocks_.resize(cinfo->num_components);
-  for (int c = 0; c < cinfo->num_components; ++c) {
-    m->num_processed_blocks_[c] = 0;
-  }
-  m->biases_ = Allocate<float>(cinfo, coeffs_per_block, JPOOL_IMAGE_ALIGNED);
-  memset(m->biases_, 0, coeffs_per_block * sizeof(m->biases_[0]));
-  cinfo->output_iMCU_row = 0;
-  cinfo->output_scanline = 0;
-  const float kDequantScale = 1.0f / (8 * 255);
-  if (m->dequant_ == nullptr) {
-    m->dequant_ = Allocate<float>(cinfo, coeffs_per_block, JPOOL_IMAGE_ALIGNED);
-    memset(m->dequant_, 0, coeffs_per_block * sizeof(float));
-  }
-  for (int c = 0; c < cinfo->num_components; c++) {
-    const auto& comp = cinfo->comp_info[c];
-    JQUANT_TBL* table = comp.quant_table;
-    if (table == nullptr) continue;
-    for (size_t k = 0; k < DCTSIZE2; ++k) {
-      m->dequant_[c * DCTSIZE2 + k] = table->quantval[k] * kDequantScale;
-    }
-  }
-  ChooseInverseTransform(cinfo);
-  ChooseColorTransform(cinfo);
-}
-
 constexpr std::array<int, SAVED_COEFS> Q_POS = {0, 1, 8,  16, 9,
                                                 2, 3, 10, 17, 24};
 
@@ -606,11 +554,64 @@ void PredictSmooth(j_decompress_ptr cinfo, const int16_t* blocks, int component,
   }
 }
 
+void PrepareForOutput(j_decompress_ptr cinfo) {
+  jpeg_decomp_master* m = cinfo->master;
+  size_t iMCU_width = cinfo->max_h_samp_factor * m->min_scaled_dct_size;
+  size_t output_stride = m->iMCU_cols_ * iMCU_width;
+  for (int c = 0; c < cinfo->num_components; ++c) {
+    const auto& comp = cinfo->comp_info[c];
+    size_t cheight = comp.v_samp_factor * m->scaled_dct_size[c];
+    m->raw_height_[c] = cinfo->total_iMCU_rows * cheight;
+    m->raw_output_[c].Allocate(cinfo, 3 * cheight, output_stride);
+    m->render_output_[c].Allocate(cinfo, cinfo->max_v_samp_factor,
+                                  output_stride);
+  }
+  m->idct_scratch_ = Allocate<float>(cinfo, 5 * DCTSIZE2, JPOOL_IMAGE_ALIGNED);
+  m->upsample_scratch_ = Allocate<float>(
+      cinfo, output_stride + kPaddingLeft + kPaddingRight, JPOOL_IMAGE_ALIGNED);
+  size_t bytes_per_sample = jpegli_bytes_per_sample(m->output_data_type_);
+  size_t bytes_per_pixel = cinfo->out_color_components * bytes_per_sample;
+  size_t scratch_stride = RoundUpTo(output_stride, HWY_ALIGNMENT);
+  m->output_scratch_ = Allocate<uint8_t>(
+      cinfo, bytes_per_pixel * scratch_stride, JPOOL_IMAGE_ALIGNED);
+  m->smoothing_scratch_ =
+      Allocate<int16_t>(cinfo, DCTSIZE2, JPOOL_IMAGE_ALIGNED);
+  bool smoothing = do_smoothing(cinfo);
+  m->apply_smoothing = smoothing && cinfo->do_block_smoothing;
+  size_t coeffs_per_block = cinfo->num_components * DCTSIZE2;
+  m->nonzeros_ = Allocate<int>(cinfo, coeffs_per_block, JPOOL_IMAGE_ALIGNED);
+  m->sumabs_ = Allocate<int>(cinfo, coeffs_per_block, JPOOL_IMAGE_ALIGNED);
+  memset(m->nonzeros_, 0, coeffs_per_block * sizeof(m->nonzeros_[0]));
+  memset(m->sumabs_, 0, coeffs_per_block * sizeof(m->sumabs_[0]));
+  m->num_processed_blocks_.resize(cinfo->num_components);
+  for (int c = 0; c < cinfo->num_components; ++c) {
+    m->num_processed_blocks_[c] = 0;
+  }
+  m->biases_ = Allocate<float>(cinfo, coeffs_per_block, JPOOL_IMAGE_ALIGNED);
+  memset(m->biases_, 0, coeffs_per_block * sizeof(m->biases_[0]));
+  cinfo->output_iMCU_row = 0;
+  cinfo->output_scanline = 0;
+  const float kDequantScale = 1.0f / (8 * 255);
+  if (m->dequant_ == nullptr) {
+    m->dequant_ = Allocate<float>(cinfo, coeffs_per_block, JPOOL_IMAGE_ALIGNED);
+    memset(m->dequant_, 0, coeffs_per_block * sizeof(float));
+  }
+  for (int c = 0; c < cinfo->num_components; c++) {
+    const auto& comp = cinfo->comp_info[c];
+    JQUANT_TBL* table = comp.quant_table;
+    if (table == nullptr) continue;
+    for (size_t k = 0; k < DCTSIZE2; ++k) {
+      m->dequant_[c * DCTSIZE2 + k] = table->quantval[k] * kDequantScale;
+    }
+  }
+  ChooseInverseTransform(cinfo);
+  ChooseColorTransform(cinfo);
+}
+
 void DecodeCurrentiMCURow(j_decompress_ptr cinfo) {
   jpeg_decomp_master* m = cinfo->master;
   const size_t imcu_row = cinfo->output_iMCU_row;
   for (int c = 0; c < cinfo->num_components; ++c) {
-    boolean apply_smoothing = cinfo->do_block_smoothing & do_smoothing(cinfo);
     size_t k0 = c * DCTSIZE2;
     auto& comp = m->components_[c];
     auto& compinfo = cinfo->comp_info[c];
@@ -646,7 +647,7 @@ void DecodeCurrentiMCURow(j_decompress_ptr cinfo) {
       int16_t* JXL_RESTRICT row_in = &comp.coeffs[bix * DCTSIZE2];
       float* JXL_RESTRICT row_out = raw_out->Row(by * dctsize);
       for (size_t bx = 0; bx < compinfo.width_in_blocks; ++bx) {
-        if (apply_smoothing) {
+        if (m->apply_smoothing) {
           PredictSmooth(cinfo, &row_in[bx * DCTSIZE2], c, bx, by);
           (*m->inverse_transform[c])(m->smoothing_scratch_, &m->dequant_[k0],
                                      &m->biases_[k0], m->idct_scratch_,

@@ -149,6 +149,7 @@ struct jpeg_decomp_master {
   // i.e. the bottom half when rendering incomplete scans.
   int (*coef_bits_latch)[SAVED_COEFS];
   int (*prev_coef_bits_latch)[SAVED_COEFS];
+  bool apply_smoothing;
 };
 
 #endif  // LIB_JPEGLI_DECODE_INTERNAL_H_

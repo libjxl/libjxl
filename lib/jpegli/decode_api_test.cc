@@ -377,6 +377,11 @@ TEST(DecodeAPITest, ReuseCinfo) {
                 if (scale_num == 1 && scale_denom == 8 && h_samp != v_samp) {
                   max_rms = 5.0f;  // libjpeg does not do fancy upsampling
                 }
+                if (dparams.do_block_smoothing) {
+                  // libjpeg does smoothing for incomplete scans differently at
+                  // the border between current and previous scans.
+                  max_rms = 5.0f;
+                }
                 VerifyOutputImage(expected, output, max_rms);
                 printf("Decoding in buffered image mode\n");
                 expected_output_progression.clear();
@@ -433,6 +438,14 @@ TEST_P(DecodeAPITestParam, TestAPI) {
     printf("rms: %f  vs  %f\n", rms0, rms1);
     EXPECT_LE(rms0, rms1 * config.max_tolerance_factor);
   } else {
+    if (dparams.do_block_smoothing) {
+      config.max_rms_dist = 20.0;
+      for (const auto& param : dparams.scan_params) {
+        if (param.dither_mode != JDITHER_NONE) {
+          config.max_rms_dist = 100.0;
+        }
+      }
+    }
     VerifyOutputImage(output0, output1, config.max_rms_dist, config.max_diff);
   }
 }
@@ -472,6 +485,14 @@ TEST_P(DecodeAPITestParamBuffered, TestAPI) {
       printf("rms: %f  vs  %f\n", rms0, rms1);
       EXPECT_LE(rms0, rms1 * config.max_tolerance_factor);
     } else {
+      if (dparams.do_block_smoothing) {
+        config.max_rms_dist = 20.0;
+        for (const auto& param : dparams.scan_params) {
+          if (param.dither_mode != JDITHER_NONE) {
+            config.max_rms_dist = 100.0;
+          }
+        }
+      }
       VerifyOutputImage(expected, output, config.max_rms_dist, config.max_diff);
     }
   }

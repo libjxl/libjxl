@@ -993,8 +993,10 @@ void DecodeAllScansWithLibjpeg(const CompressParams& jparams,
       ReadOutputPass(&cinfo, dparams, &output);
       output_progression->emplace_back(std::move(output));
       // read scanlines/read raw data does not change input/output scan number
-      JXL_CHECK(cinfo.input_scan_number == sos_marker_cnt);
-      JXL_CHECK(cinfo.output_scan_number == cinfo.input_scan_number);
+      if (!cinfo.progressive_mode) {
+        JXL_CHECK(cinfo.input_scan_number == sos_marker_cnt);
+        JXL_CHECK(cinfo.output_scan_number == cinfo.input_scan_number);
+      }
       JXL_CHECK(jpeg_finish_output(&cinfo));
       ++sos_marker_cnt;  // finish output reads the next SOS marker or EOI
       if (dparams.output_mode == COEFFICIENTS) {
