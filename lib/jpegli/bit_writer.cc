@@ -14,8 +14,8 @@ void JpegBitWriterInit(j_compress_ptr cinfo) {
   JpegBitWriter* bw = &m->bw;
   size_t buffer_size = m->blocks_per_iMCU_row * (DCTSIZE2 * 16 + 8) + (1 << 16);
   bw->cinfo = cinfo;
-  bw->buffer.resize(buffer_size);
-  bw->data = bw->buffer.data();
+  bw->data = Allocate<uint8_t>(cinfo, buffer_size, JPOOL_IMAGE);
+  bw->len = buffer_size;
   bw->pos = 0;
   bw->output_pos = 0;
   bw->put_buffer = 0;

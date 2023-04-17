@@ -77,7 +77,7 @@ void ProcessSOF(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
       cinfo, cinfo->num_components, JPOOL_IMAGE);
 
   // Read sampling factors and quant table index for each component.
-  std::vector<bool> ids_seen(256, false);
+  uint8_t ids_seen[256] = {0};
   cinfo->max_h_samp_factor = 1;
   cinfo->max_v_samp_factor = 1;
   for (int i = 0; i < cinfo->num_components; ++i) {
@@ -87,7 +87,7 @@ void ProcessSOF(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
     if (ids_seen[id]) {  // (cf. section B.2.2, syntax of Ci)
       JPEGLI_ERROR("Duplicate ID %d in SOF.", id);
     }
-    ids_seen[id] = true;
+    ids_seen[id] = 1;
     comp->component_id = id;
     int factor = ReadUint8(data, &pos);
     int h_samp_factor = factor >> 4;
@@ -177,14 +177,14 @@ void ProcessSOS(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
 
   JPEG_VERIFY_LEN(2 * cinfo->comps_in_scan);
   bool is_interleaved = (cinfo->comps_in_scan > 1);
-  std::vector<bool> ids_seen(256, false);
+  uint8_t ids_seen[256] = {0};
   cinfo->blocks_in_MCU = 0;
   for (int i = 0; i < cinfo->comps_in_scan; ++i) {
     int id = ReadUint8(data, &pos);
     if (ids_seen[id]) {  // (cf. section B.2.3, regarding CSj)
       return JPEGLI_ERROR("Duplicate ID %d in SOS.", id);
     }
-    ids_seen[id] = true;
+    ids_seen[id] = 1;
     jpeg_component_info* comp = nullptr;
     for (int j = 0; j < cinfo->num_components; ++j) {
       if (cinfo->comp_info[j].component_id == id) {
@@ -507,7 +507,7 @@ uint8_t ProcessNextMarker(j_decompress_ptr cinfo, const uint8_t* const data,
       // source manager callback on APP markers that are not saved.
       return kNeedMoreInput;
     }
-    if (m->markers_to_save_.find(marker) != m->markers_to_save_.end()) {
+    if (marker >= 0xe0 && m->markers_to_save_[marker - 0xe0]) {
       SaveMarker(cinfo, marker_data, marker_len);
     }
   }

@@ -12,9 +12,6 @@
 #include <jpeglib.h>
 /* clang-format on */
 
-#include <array>
-#include <vector>
-
 #include "lib/jpegli/bit_writer.h"
 #include "lib/jpegli/common_internal.h"
 #include "lib/jpegli/encode.h"
@@ -27,13 +24,13 @@ constexpr int kICCMarker = JPEG_APP0 + 2;
 
 struct JPEGHuffmanCode {
   // Bit length histogram.
-  std::array<uint32_t, kJpegHuffmanMaxBitLength + 1> counts = {};
+  uint32_t counts[kJpegHuffmanMaxBitLength + 1];
   // Symbol values sorted by increasing bit lengths.
-  std::array<uint32_t, kJpegHuffmanAlphabetSize + 1> values = {};
+  uint32_t values[kJpegHuffmanAlphabetSize + 1];
   // The index of the Huffman code in the current set of Huffman codes. For AC
   // component Huffman codes, 0x10 is added to the index.
-  int slot_id = 0;
-  boolean sent_table = FALSE;
+  int slot_id;
+  boolean sent_table;
 };
 
 // DCTCodingState: maximum number of correction bits to buffer
@@ -52,7 +49,7 @@ struct ScanCodingInfo {
   uint32_t dc_tbl_idx[MAX_COMPS_IN_SCAN];
   uint32_t ac_tbl_idx[MAX_COMPS_IN_SCAN];
   // Number of Huffman codes defined in the DHT segment preceding this scan.
-  size_t num_huffman_codes = 0;
+  size_t num_huffman_codes;
 };
 
 typedef int16_t coeff_t;
@@ -63,19 +60,19 @@ struct jpeg_comp_master {
   jpegli::RowBuffer<float> input_buffer[jpegli::kMaxComponents];
   jpegli::RowBuffer<float>* smooth_input[jpegli::kMaxComponents];
   jpegli::RowBuffer<float>* raw_data[jpegli::kMaxComponents];
-  float distance = 1.0;
-  bool force_baseline = true;
-  bool xyb_mode = false;
-  uint8_t cicp_transfer_function = 2;  // unknown transfer function code
-  bool use_std_tables = false;
-  bool use_adaptive_quantization = true;
-  int progressive_level = jpegli::kDefaultProgressiveLevel;
+  float distance;
+  bool force_baseline;
+  bool xyb_mode;
+  uint8_t cicp_transfer_function;
+  bool use_std_tables;
+  bool use_adaptive_quantization;
+  int progressive_level;
   size_t xsize_blocks;
   size_t ysize_blocks;
   size_t blocks_per_iMCU_row;
-  std::vector<jpegli::ScanCodingInfo> scan_coding_info;
-  JpegliDataType data_type = JPEGLI_TYPE_UINT8;
-  JpegliEndianness endianness = JPEGLI_NATIVE_ENDIAN;
+  jpegli::ScanCodingInfo* scan_coding_info;
+  JpegliDataType data_type;
+  JpegliEndianness endianness;
   void (*input_method)(const uint8_t* row_in, size_t len,
                        float* row_out[jpegli::kMaxComponents]);
   void (*color_transform)(float* row[jpegli::kMaxComponents], size_t len);
@@ -85,15 +82,14 @@ struct jpeg_comp_master {
   float zero_bias_mul[jpegli::kMaxComponents];
   int h_factor[jpegli::kMaxComponents];
   int v_factor[jpegli::kMaxComponents];
-  std::vector<jpegli::JPEGHuffmanCode> huffman_codes;
+  jpegli::JPEGHuffmanCode* huffman_codes;
+  size_t num_huffman_codes;
   jpegli::HuffmanCodeTable huff_tables[8];
-  std::array<jpegli::HuffmanCodeTable, jpegli::kMaxHuffmanTables> dc_huff_table;
-  std::array<jpegli::HuffmanCodeTable, jpegli::kMaxHuffmanTables> ac_huff_table;
   float* diff_buffer;
   jpegli::RowBuffer<float> fuzzy_erosion_tmp;
   jpegli::RowBuffer<float> pre_erosion;
   jpegli::RowBuffer<float> quant_field;
-  jvirt_barray_ptr* coeff_buffers = nullptr;
+  jvirt_barray_ptr* coeff_buffers;
   size_t next_input_row;
   size_t next_iMCU_row;
   size_t last_dht_index;

@@ -652,7 +652,7 @@ void EncodeDHT(j_compress_ptr cinfo, const JPEGHuffmanCode* huffman_codes,
     const JPEGHuffmanCode& huff = huffman_codes[i];
     if (huff.sent_table) continue;
     marker_len += kJpegHuffmanMaxBitLength;
-    for (size_t j = 0; j < huff.counts.size(); ++j) {
+    for (size_t j = 0; j <= kJpegHuffmanMaxBitLength; ++j) {
       marker_len += huff.counts[j];
     }
   }
@@ -679,7 +679,7 @@ void EncodeDHT(j_compress_ptr cinfo, const JPEGHuffmanCode* huffman_codes,
     if (huff.sent_table) continue;
     size_t total_count = 0;
     size_t max_length = 0;
-    for (size_t i = 0; i < huff.counts.size(); ++i) {
+    for (size_t i = 0; i <= kJpegHuffmanMaxBitLength; ++i) {
       if (huff.counts[i] != 0) {
         max_length = i;
       }
@@ -1031,7 +1031,7 @@ void ComputeTokens(j_compress_ptr cinfo,
 void WriteTokens(j_compress_ptr cinfo, const Token* tokens, size_t num_tokens,
                  const HuffmanCodeTable* huff_tables, const int* context_map,
                  JpegBitWriter* bw) {
-  size_t cycle_len = bw->buffer.size() / 8;
+  size_t cycle_len = bw->len / 8;
   size_t next_cycle = cycle_len;
   for (size_t i = 0; i < num_tokens; ++i) {
     Token t = tokens[i];
@@ -1071,17 +1071,21 @@ void EncodeSingleScan(j_compress_ptr cinfo) {
   JpegClusteredHistograms ac_clusters;
   ClusterJpegHistograms(histograms + 4, 4, &ac_clusters);
 
-  std::vector<JPEGHuffmanCode> huffman_codes;
+  JPEGHuffmanCode* huffman_codes =
+      Allocate<JPEGHuffmanCode>(cinfo, 8, JPOOL_IMAGE);
+  size_t num_huffman_codes = 0;
   for (size_t i = 0; i < dc_clusters.histograms.size(); ++i) {
-    AddJpegHuffmanCode(dc_clusters.histograms[i], i, &huffman_codes);
+    AddJpegHuffmanCode(dc_clusters.histograms[i], i, huffman_codes,
+                       &num_huffman_codes);
   }
   for (size_t i = 0; i < ac_clusters.histograms.size(); ++i) {
-    AddJpegHuffmanCode(ac_clusters.histograms[i], 0x10 + i, &huffman_codes);
+    AddJpegHuffmanCode(ac_clusters.histograms[i], 0x10 + i, huffman_codes,
+                       &num_huffman_codes);
   }
 
   bool is_baseline = true;
   int context_map[8];
-  ScanCodingInfo sci;
+  ScanCodingInfo sci = {};
   for (int c = 0; c < cinfo->num_components; ++c) {
     if (dc_clusters.histogram_indexes[c] > 1 ||
         ac_clusters.histogram_indexes[c] > 1) {
@@ -1092,11 +1096,11 @@ void EncodeSingleScan(j_compress_ptr cinfo) {
     context_map[c] = sci.dc_tbl_idx[c];
     context_map[c + 4] = sci.ac_tbl_idx[c];
   }
-  sci.num_huffman_codes = huffman_codes.size();
-  cinfo->master->scan_coding_info.emplace_back(std::move(sci));
+  sci.num_huffman_codes = num_huffman_codes;
+  memcpy(cinfo->master->scan_coding_info, &sci, sizeof(sci));
   EncodeDQT(cinfo, &is_baseline);
   EncodeSOF(cinfo, is_baseline);
-  EncodeDHT(cinfo, huffman_codes.data(), huffman_codes.size());
+  EncodeDHT(cinfo, huffman_codes, num_huffman_codes);
   EncodeSOS(cinfo, 0);
 
   JpegBitWriter* bw = &cinfo->master->bw;

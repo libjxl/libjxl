@@ -369,10 +369,7 @@ void PrepareForOutput(j_decompress_ptr cinfo) {
   m->sumabs_ = Allocate<int>(cinfo, coeffs_per_block, JPOOL_IMAGE_ALIGNED);
   memset(m->nonzeros_, 0, coeffs_per_block * sizeof(m->nonzeros_[0]));
   memset(m->sumabs_, 0, coeffs_per_block * sizeof(m->sumabs_[0]));
-  m->num_processed_blocks_.resize(cinfo->num_components);
-  for (int c = 0; c < cinfo->num_components; ++c) {
-    m->num_processed_blocks_[c] = 0;
-  }
+  memset(m->num_processed_blocks_, 0, sizeof(m->num_processed_blocks_));
   m->biases_ = Allocate<float>(cinfo, coeffs_per_block, JPOOL_IMAGE_ALIGNED);
   memset(m->biases_, 0, coeffs_per_block * sizeof(m->biases_[0]));
   cinfo->output_iMCU_row = 0;

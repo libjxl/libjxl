@@ -128,11 +128,12 @@ void BuildJpegHuffmanCode(const Histogram& histo, JPEGHuffmanCode* huff) {
 }
 
 void AddJpegHuffmanCode(const Histogram& histogram, size_t slot_id,
-                        std::vector<JPEGHuffmanCode>* huff_codes) {
-  JPEGHuffmanCode huff_code;
+                        JPEGHuffmanCode* huff_codes, size_t* num_huff_codes) {
+  JPEGHuffmanCode huff_code = {};
   huff_code.slot_id = slot_id;
   BuildJpegHuffmanCode(histogram, &huff_code);
-  huff_codes->emplace_back(std::move(huff_code));
+  memcpy(&huff_codes[*num_huff_codes], &huff_code, sizeof(huff_code));
+  ++(*num_huff_codes);
 }
 
 namespace {
@@ -140,7 +141,7 @@ void SetJpegHuffmanCode(const JpegClusteredHistograms& clusters,
                         size_t histogram_id, size_t slot_id_offset,
                         std::vector<uint32_t>& slot_histograms,
                         uint32_t* slot_id, bool* is_baseline,
-                        std::vector<JPEGHuffmanCode>* huff_codes) {
+                        JPEGHuffmanCode* huff_codes, size_t* num_huff_codes) {
   JXL_ASSERT(histogram_id < clusters.histogram_indexes.size());
   uint32_t histogram_index = clusters.histogram_indexes[histogram_id];
   uint32_t id = clusters.slot_ids[histogram_index];
@@ -150,7 +151,7 @@ void SetJpegHuffmanCode(const JpegClusteredHistograms& clusters,
   *slot_id = id + (slot_id_offset / 4);
   if (slot_histograms[id] != histogram_index) {
     AddJpegHuffmanCode(clusters.histograms[histogram_index],
-                       slot_id_offset + id, huff_codes);
+                       slot_id_offset + id, huff_codes, num_huff_codes);
     slot_histograms[id] = histogram_index;
   }
 }
@@ -460,7 +461,8 @@ void ProcessJpeg(j_compress_ptr cinfo,
 }
 
 void CopyHuffmanTable(j_compress_ptr cinfo, int index, bool is_dc,
-                      std::vector<JPEGHuffmanCode>* huffman_codes) {
+                      JPEGHuffmanCode* huffman_codes,
+                      size_t* num_huffman_codes) {
   const char* type = is_dc ? "DC" : "AC";
   if (index < 0 || index >= NUM_HUFF_TBLS) {
     JPEGLI_ERROR("Invalid %s Huffman table index %d", type, index);
@@ -471,7 +473,7 @@ void CopyHuffmanTable(j_compress_ptr cinfo, int index, bool is_dc,
     JPEGLI_ERROR("Missing %s Huffman table %d", table, index);
   }
   ValidateHuffmanTable(reinterpret_cast<j_common_ptr>(cinfo), table, is_dc);
-  JPEGHuffmanCode huff;
+  JPEGHuffmanCode huff = {};
   size_t max_depth = 0;
   for (size_t i = 1; i <= kJpegHuffmanMaxBitLength; ++i) {
     if (table->bits[i] != 0) max_depth = i;
@@ -484,11 +486,12 @@ void CopyHuffmanTable(j_compress_ptr cinfo, int index, bool is_dc,
   huff.slot_id = index + (is_dc ? 0 : 0x10);
   huff.sent_table = table->sent_table;
   bool have_slot = false;
-  for (size_t i = 0; i < huffman_codes->size(); ++i) {
-    if ((*huffman_codes)[i].slot_id == huff.slot_id) have_slot = true;
+  for (size_t i = 0; i < *num_huffman_codes; ++i) {
+    if (huffman_codes[i].slot_id == huff.slot_id) have_slot = true;
   }
   if (!have_slot) {
-    huffman_codes->emplace_back(std::move(huff));
+    memcpy(&huffman_codes[*num_huffman_codes], &huff, sizeof(huff));
+    ++(*num_huffman_codes);
   }
 }
 
@@ -496,27 +499,30 @@ void CopyHuffmanTable(j_compress_ptr cinfo, int index, bool is_dc,
 
 void CopyHuffmanCodes(j_compress_ptr cinfo, bool* is_baseline) {
   jpeg_comp_master* m = cinfo->master;
+  m->huffman_codes =
+      Allocate<JPEGHuffmanCode>(cinfo, 2 * cinfo->num_components, JPOOL_IMAGE);
   for (int c = 0; c < cinfo->num_components; ++c) {
     jpeg_component_info* comp = &cinfo->comp_info[c];
     if (comp->dc_tbl_no > 1 || comp->ac_tbl_no > 1) {
       *is_baseline = false;
     }
-    CopyHuffmanTable(cinfo, comp->dc_tbl_no, /*is_dc=*/true, &m->huffman_codes);
-    CopyHuffmanTable(cinfo, comp->ac_tbl_no, /*is_dc=*/false,
-                     &m->huffman_codes);
+    CopyHuffmanTable(cinfo, comp->dc_tbl_no, /*is_dc=*/true, m->huffman_codes,
+                     &m->num_huffman_codes);
+    CopyHuffmanTable(cinfo, comp->ac_tbl_no, /*is_dc=*/false, m->huffman_codes,
+                     &m->num_huffman_codes);
   }
   for (int i = 0; i < cinfo->num_scans; ++i) {
     const jpeg_scan_info* si = &cinfo->scan_info[i];
-    ScanCodingInfo sci;
+    ScanCodingInfo sci = {};
     for (int j = 0; j < si->comps_in_scan; ++j) {
       int ci = si->component_index[j];
       sci.dc_tbl_idx[j] = cinfo->comp_info[ci].dc_tbl_no;
       sci.ac_tbl_idx[j] = cinfo->comp_info[ci].ac_tbl_no + 4;
     }
     if (i == 0) {
-      sci.num_huffman_codes = m->huffman_codes.size();
+      sci.num_huffman_codes = m->num_huffman_codes;
     }
-    cinfo->master->scan_coding_info.emplace_back(std::move(sci));
+    memcpy(&m->scan_coding_info[i], &sci, sizeof(sci));
   }
 }
 
@@ -559,16 +565,19 @@ void OptimizeHuffmanCodes(j_compress_ptr cinfo, bool* is_baseline) {
   // Add the first 4 DC and AC histograms in the first DHT segment.
   std::vector<uint32_t> dc_slot_histograms;
   std::vector<uint32_t> ac_slot_histograms;
+  m->huffman_codes = Allocate<JPEGHuffmanCode>(cinfo, num_histo, JPOOL_IMAGE);
   for (size_t i = 0; i < dc_clusters.histograms.size(); ++i) {
     if (i >= 4) break;
     JXL_ASSERT(dc_clusters.slot_ids[i] == i);
-    AddJpegHuffmanCode(dc_clusters.histograms[i], i, &m->huffman_codes);
+    AddJpegHuffmanCode(dc_clusters.histograms[i], i, m->huffman_codes,
+                       &m->num_huffman_codes);
     dc_slot_histograms.push_back(i);
   }
   for (size_t i = 0; i < ac_clusters.histograms.size(); ++i) {
     if (i >= 4) break;
     JXL_ASSERT(ac_clusters.slot_ids[i] == i);
-    AddJpegHuffmanCode(ac_clusters.histograms[i], 0x10 + i, &m->huffman_codes);
+    AddJpegHuffmanCode(ac_clusters.histograms[i], 0x10 + i, m->huffman_codes,
+                       &m->num_huffman_codes);
     ac_slot_histograms.push_back(i);
   }
 
@@ -577,17 +586,19 @@ void OptimizeHuffmanCodes(j_compress_ptr cinfo, bool* is_baseline) {
   size_t histogram_id = 0;
   size_t num_huffman_codes_sent = 0;
   for (int i = 0; i < cinfo->num_scans; ++i) {
-    ScanCodingInfo sci;
+    ScanCodingInfo sci = {};
     for (int c = 0; c < cinfo->scan_info[i].comps_in_scan; ++c) {
       SetJpegHuffmanCode(dc_clusters, histogram_id, 0, dc_slot_histograms,
-                         &sci.dc_tbl_idx[c], is_baseline, &m->huffman_codes);
+                         &sci.dc_tbl_idx[c], is_baseline, m->huffman_codes,
+                         &m->num_huffman_codes);
       SetJpegHuffmanCode(ac_clusters, histogram_id, 0x10, ac_slot_histograms,
-                         &sci.ac_tbl_idx[c], is_baseline, &m->huffman_codes);
+                         &sci.ac_tbl_idx[c], is_baseline, m->huffman_codes,
+                         &m->num_huffman_codes);
       ++histogram_id;
     }
-    sci.num_huffman_codes = m->huffman_codes.size() - num_huffman_codes_sent;
-    num_huffman_codes_sent = m->huffman_codes.size();
-    cinfo->master->scan_coding_info.emplace_back(std::move(sci));
+    sci.num_huffman_codes = m->num_huffman_codes - num_huffman_codes_sent;
+    num_huffman_codes_sent = m->num_huffman_codes;
+    memcpy(&m->scan_coding_info[i], &sci, sizeof(sci));
   }
 }
 
