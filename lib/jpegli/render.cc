@@ -397,9 +397,19 @@ void PrepareForOutput(j_decompress_ptr cinfo) {
 void DecodeCurrentiMCURow(j_decompress_ptr cinfo) {
   jpeg_decomp_master* m = cinfo->master;
   const size_t imcu_row = cinfo->output_iMCU_row;
+  JBLOCKARRAY ba[kMaxComponents];
+  for (int c = 0; c < cinfo->num_components; ++c) {
+    const jpeg_component_info* comp = &cinfo->comp_info[c];
+    int by0 = imcu_row * comp->v_samp_factor;
+    int block_rows_left = comp->height_in_blocks - by0;
+    int max_block_rows = std::min(comp->v_samp_factor, block_rows_left);
+    int offset = m->streaming_mode_ ? 0 : by0;
+    ba[c] = (*cinfo->mem->access_virt_barray)(
+        reinterpret_cast<j_common_ptr>(cinfo), m->coef_arrays[c], offset,
+        max_block_rows, false);
+  }
   for (int c = 0; c < cinfo->num_components; ++c) {
     size_t k0 = c * DCTSIZE2;
-    auto& comp = m->components_[c];
     auto& compinfo = cinfo->comp_info[c];
     size_t block_row = imcu_row * compinfo.v_samp_factor;
     if (ShouldApplyDequantBiases(cinfo, c)) {
@@ -409,8 +419,7 @@ void DecodeCurrentiMCURow(j_decompress_ptr cinfo) {
         if (by >= compinfo.height_in_blocks) {
           continue;
         }
-        size_t bix = by * compinfo.width_in_blocks;
-        int16_t* JXL_RESTRICT coeffs = &comp.coeffs[bix * DCTSIZE2];
+        int16_t* JXL_RESTRICT coeffs = &ba[c][iy][0][0];
         size_t num = compinfo.width_in_blocks * DCTSIZE2;
         GatherBlockStats(coeffs, num, &m->nonzeros_[k0], &m->sumabs_[k0]);
         m->num_processed_blocks_[c] += compinfo.width_in_blocks;
@@ -428,15 +437,17 @@ void DecodeCurrentiMCURow(j_decompress_ptr cinfo) {
       if (by >= compinfo.height_in_blocks) {
         continue;
       }
-      size_t bix = by * compinfo.width_in_blocks;
       size_t dctsize = m->scaled_dct_size[c];
-      int16_t* JXL_RESTRICT row_in = &comp.coeffs[bix * DCTSIZE2];
+      int16_t* JXL_RESTRICT row_in = &ba[c][iy][0][0];
       float* JXL_RESTRICT row_out = raw_out->Row(by * dctsize);
       for (size_t bx = 0; bx < compinfo.width_in_blocks; ++bx) {
         (*m->inverse_transform[c])(&row_in[bx * DCTSIZE2], &m->dequant_[k0],
                                    &m->biases_[k0], m->idct_scratch_,
                                    &row_out[bx * dctsize], raw_out->stride(),
                                    dctsize);
+      }
+      if (m->streaming_mode_) {
+        memset(row_in, 0, compinfo.width_in_blocks * sizeof(JBLOCK));
       }
     }
   }

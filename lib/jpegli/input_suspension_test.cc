@@ -194,6 +194,13 @@ std::vector<uint8_t> GetTestJpegData(TestConfig& config) {
   return compressed;
 }
 
+bool IsSequential(const TestConfig& config) {
+  if (!config.fn.empty()) {
+    return config.fn_desc.find("PROGR") == std::string::npos;
+  }
+  return config.jparams.progressive_mode <= 0;
+}
+
 class InputSuspensionTestParam : public ::testing::TestWithParam<TestConfig> {};
 
 TEST_P(InputSuspensionTestParam, InputOutputLockStepNonBuffered) {
@@ -383,7 +390,7 @@ TEST_P(InputSuspensionTestParam, PreConsumeInputBuffered) {
 
 TEST_P(InputSuspensionTestParam, PreConsumeInputNonBuffered) {
   TestConfig config = GetParam();
-  if (config.jparams.add_marker) return;
+  if (config.jparams.add_marker || IsSequential(config)) return;
   const DecompressParams& dparams = config.dparams;
   const std::vector<uint8_t> compressed = GetTestJpegData(config);
   SourceManager src(compressed.data(), compressed.size(), dparams.chunk_size);

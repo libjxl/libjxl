@@ -70,21 +70,25 @@ TEST_P(TranscodeAPITestParam, TestAPI) {
   TestImage output0;
   DecodeWithLibjpeg(jparams, DecompressParams(), compressed, &output0);
 
-  // Transcode to a progressive jpeg with optimized Huffman codes.
-  std::vector<uint8_t> transcoded;
-  jparams.progressive_mode = 2;
-  jparams.optimize_coding = 1;
-  TranscodeWithJpegli(compressed, jparams, &transcoded);
+  // Transcode first to a sequential optimized jpeg, and then further to
+  // a progressive jpeg.
+  for (int progr : {0, 2}) {
+    std::vector<uint8_t> transcoded;
+    jparams.progressive_mode = progr;
+    jparams.optimize_coding = 1;
+    TranscodeWithJpegli(compressed, jparams, &transcoded);
 
-  // We expect a size reduction of at least 5%.
-  EXPECT_LT(transcoded.size(), compressed.size() * 0.95f);
+    // We expect a size reduction of at least 2%.
+    EXPECT_LT(transcoded.size(), compressed.size() * 0.98f);
 
-  // Verify that transcoding is lossless.
-  TestImage output1;
-  DecodeWithLibjpeg(jparams, DecompressParams(), transcoded, &output1);
-  ASSERT_EQ(output0.pixels.size(), output1.pixels.size());
-  EXPECT_EQ(0, memcmp(output0.pixels.data(), output1.pixels.data(),
-                      output0.pixels.size()));
+    // Verify that transcoding is lossless.
+    TestImage output1;
+    DecodeWithLibjpeg(jparams, DecompressParams(), transcoded, &output1);
+    ASSERT_EQ(output0.pixels.size(), output1.pixels.size());
+    EXPECT_EQ(0, memcmp(output0.pixels.data(), output1.pixels.data(),
+                        output0.pixels.size()));
+    compressed = transcoded;
+  }
 }
 
 std::vector<TestConfig> GenerateTests() {

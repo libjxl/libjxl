@@ -27,13 +27,6 @@ static constexpr int kProcessNextMarker = 103;
 
 typedef int16_t coeff_t;
 
-// Represents one component of a jpeg file.
-struct DecJPEGComponent {
-  // The DCT coefficients of this component, laid out block-by-block, divided
-  // through the quantization matrix values.
-  hwy::AlignedFreeUniquePtr<coeff_t[]> coeffs;
-};
-
 // State of the decoder that has to be saved before decoding one MCU in case
 // we run out of the bitstream.
 struct MCUCodingState {
@@ -54,6 +47,11 @@ struct jpeg_decomp_master {
   size_t input_buffer_pos_;
   // Number of bits after codestream_pos_ that were already processed.
   size_t codestream_bits_ahead_;
+  bool streaming_mode_;
+
+  // Coefficient buffers
+  jvirt_barray_ptr* coef_arrays;
+  JBLOCKARRAY coeff_rows[jpegli::kMaxComponents];
 
   //
   // Marker data processing state.
@@ -65,7 +63,6 @@ struct jpeg_decomp_master {
   size_t icc_index_;
   size_t icc_total_;
   std::vector<uint8_t> icc_profile_;
-  std::vector<jpegli::DecJPEGComponent> components_;
   std::vector<jpegli::HuffmanTableEntry> dc_huff_lut_;
   std::vector<jpegli::HuffmanTableEntry> ac_huff_lut_;
   std::set<int> markers_to_save_;

@@ -346,18 +346,18 @@ void SaveMCUCodingState(j_decompress_ptr cinfo) {
   size_t offset = 0;
   for (int i = 0; i < cinfo->comps_in_scan; ++i) {
     const jpeg_component_info* comp = cinfo->cur_comp_info[i];
-    DecJPEGComponent* c = &m->components_[comp->component_index];
+    int c = comp->component_index;
     size_t block_x = m->scan_mcu_col_ * comp->MCU_width;
     for (int iy = 0; iy < comp->MCU_height; ++iy) {
       size_t block_y = m->scan_mcu_row_ * comp->MCU_height + iy;
+      size_t biy = block_y % comp->v_samp_factor;
       if (block_y >= comp->height_in_blocks) {
         continue;
       }
       size_t nblocks =
           std::min<size_t>(comp->MCU_width, comp->width_in_blocks - block_x);
       size_t ncoeffs = nblocks * DCTSIZE2;
-      size_t block_idx = (block_y * comp->width_in_blocks + block_x) * DCTSIZE2;
-      coeff_t* coeffs = &c->coeffs[block_idx];
+      coeff_t* coeffs = &m->coeff_rows[c][biy][block_x][0];
       memcpy(&m->mcu_.coeffs[offset], coeffs, ncoeffs * sizeof(coeffs[0]));
       offset += ncoeffs;
     }
@@ -371,18 +371,18 @@ void RestoreMCUCodingState(j_decompress_ptr cinfo) {
   size_t offset = 0;
   for (int i = 0; i < cinfo->comps_in_scan; ++i) {
     const jpeg_component_info* comp = cinfo->cur_comp_info[i];
-    DecJPEGComponent* c = &m->components_[comp->component_index];
+    int c = comp->component_index;
     size_t block_x = m->scan_mcu_col_ * comp->MCU_width;
     for (int iy = 0; iy < comp->MCU_height; ++iy) {
       size_t block_y = m->scan_mcu_row_ * comp->MCU_height + iy;
+      size_t biy = block_y % comp->v_samp_factor;
       if (block_y >= comp->height_in_blocks) {
         continue;
       }
       size_t nblocks =
           std::min<size_t>(comp->MCU_width, comp->width_in_blocks - block_x);
       size_t ncoeffs = nblocks * DCTSIZE2;
-      size_t block_idx = (block_y * comp->width_in_blocks + block_x) * DCTSIZE2;
-      coeff_t* coeffs = &c->coeffs[block_idx];
+      coeff_t* coeffs = &m->coeff_rows[c][biy][block_x][0];
       memcpy(coeffs, &m->mcu_.coeffs[offset], ncoeffs * sizeof(coeffs[0]));
       offset += ncoeffs;
     }
@@ -415,6 +415,21 @@ bool FinishScan(j_decompress_ptr cinfo, const uint8_t* data, const size_t len,
 }
 
 }  // namespace
+
+void PrepareForiMCURow(j_decompress_ptr cinfo) {
+  jpeg_decomp_master* m = cinfo->master;
+  for (int i = 0; i < cinfo->comps_in_scan; ++i) {
+    const jpeg_component_info* comp = cinfo->cur_comp_info[i];
+    int c = comp->component_index;
+    int by0 = cinfo->input_iMCU_row * comp->v_samp_factor;
+    int block_rows_left = comp->height_in_blocks - by0;
+    int max_block_rows = std::min(comp->v_samp_factor, block_rows_left);
+    int offset = m->streaming_mode_ ? 0 : by0;
+    m->coeff_rows[c] = (*cinfo->mem->access_virt_barray)(
+        reinterpret_cast<j_common_ptr>(cinfo), m->coef_arrays[c], offset,
+        max_block_rows, true);
+  }
+}
 
 int ProcessScan(j_decompress_ptr cinfo, const uint8_t* const data,
                 const size_t len, size_t* pos, size_t* bit_pos) {
@@ -460,17 +475,17 @@ int ProcessScan(j_decompress_ptr cinfo, const uint8_t* const data,
     bool scan_ok = true;
     for (int i = 0; i < cinfo->comps_in_scan; ++i) {
       const jpeg_component_info* comp = cinfo->cur_comp_info[i];
-      DecJPEGComponent* c = &m->components_[comp->component_index];
+      int c = comp->component_index;
       const HuffmanTableEntry* dc_lut =
           &m->dc_huff_lut_[comp->dc_tbl_no * kJpegHuffmanLutSize];
       const HuffmanTableEntry* ac_lut =
           &m->ac_huff_lut_[comp->ac_tbl_no * kJpegHuffmanLutSize];
       for (int iy = 0; iy < comp->MCU_height; ++iy) {
         size_t block_y = m->scan_mcu_row_ * comp->MCU_height + iy;
+        int biy = block_y % comp->v_samp_factor;
         for (int ix = 0; ix < comp->MCU_width; ++ix) {
           size_t block_x = m->scan_mcu_col_ * comp->MCU_width + ix;
-          size_t block_idx = block_y * comp->width_in_blocks + block_x;
-          coeff_t* coeffs = &c->coeffs[block_idx * DCTSIZE2];
+          coeff_t* coeffs;
           if (block_x >= comp->width_in_blocks ||
               block_y >= comp->height_in_blocks) {
             // Note that it is OK that dummy_block is uninitialized because
@@ -478,6 +493,8 @@ int ProcessScan(j_decompress_ptr cinfo, const uint8_t* const data,
             // case, because only DC scans can be interleaved and we don't use
             // the zero-ness of the DC coeff in the DC refinement code-path.
             coeffs = dummy_block;
+          } else {
+            coeffs = &m->coeff_rows[c][biy][block_x][0];
           }
           if (cinfo->Ah == 0) {
             if (!DecodeDCTBlock(dc_lut, ac_lut, cinfo->Ss, cinfo->Se, cinfo->Al,
@@ -539,8 +556,11 @@ int ProcessScan(j_decompress_ptr cinfo, const uint8_t* const data,
     }
   }
   ++cinfo->input_iMCU_row;
-  return (m->scan_mcu_row_ == cinfo->MCU_rows_in_scan ? JPEG_SCAN_COMPLETED
-                                                      : JPEG_ROW_COMPLETED);
+  if (cinfo->input_iMCU_row < cinfo->total_iMCU_rows) {
+    PrepareForiMCURow(cinfo);
+    return JPEG_ROW_COMPLETED;
+  }
+  return JPEG_SCAN_COMPLETED;
 }
 
 }  // namespace jpegli
