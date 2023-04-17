@@ -31,13 +31,22 @@ namespace {
 
 struct MemoryManager {
   struct jpeg_memory_mgr pub;
-  std::vector<std::vector<void*>> owned_ptrs;
+  std::vector<void*> owned_ptrs[2 * JPOOL_NUMPOOLS];
+  uint64_t pool_memory_usage[2 * JPOOL_NUMPOOLS];
+  uint64_t total_memory_usage;
+  uint64_t peak_memory_usage;
 };
 
 void* Alloc(j_common_ptr cinfo, int pool_id, size_t sizeofobject) {
   MemoryManager* mem = reinterpret_cast<MemoryManager*>(cinfo->mem);
   if (pool_id < 0 || pool_id >= 2 * JPOOL_NUMPOOLS) {
     JPEGLI_ERROR("Invalid pool id %d", pool_id);
+  }
+  if (mem->pub.max_memory_to_use > 0 &&
+      mem->total_memory_usage + static_cast<uint64_t>(sizeofobject) >
+          static_cast<uint64_t>(mem->pub.max_memory_to_use)) {
+    JPEGLI_ERROR("Total memory usage exceeding %ld",
+                 mem->pub.max_memory_to_use);
   }
   void* p;
   if (pool_id < JPOOL_NUMPOOLS) {
@@ -49,6 +58,10 @@ void* Alloc(j_common_ptr cinfo, int pool_id, size_t sizeofobject) {
     JPEGLI_ERROR("Out of memory");
   }
   mem->owned_ptrs[pool_id].push_back(p);
+  mem->pool_memory_usage[pool_id] += sizeofobject;
+  mem->total_memory_usage += sizeofobject;
+  mem->peak_memory_usage =
+      std::max(mem->peak_memory_usage, mem->total_memory_usage);
   return p;
 }
 
@@ -108,6 +121,13 @@ T** AccessVirtualArray(j_common_ptr cinfo, Control* ptr, JDIMENSION start_row,
   return ptr->full_buffer + start_row;
 }
 
+void ClearPool(j_common_ptr cinfo, int pool_id) {
+  MemoryManager* mem = reinterpret_cast<MemoryManager*>(cinfo->mem);
+  mem->owned_ptrs[pool_id].clear();
+  mem->total_memory_usage -= mem->pool_memory_usage[pool_id];
+  mem->pool_memory_usage[pool_id] = 0;
+}
+
 void FreePool(j_common_ptr cinfo, int pool_id) {
   MemoryManager* mem = reinterpret_cast<MemoryManager*>(cinfo->mem);
   if (pool_id < 0 || pool_id >= JPOOL_NUMPOOLS) {
@@ -116,11 +136,11 @@ void FreePool(j_common_ptr cinfo, int pool_id) {
   for (void* ptr : mem->owned_ptrs[pool_id]) {
     free(ptr);
   }
-  mem->owned_ptrs[pool_id].clear();
+  ClearPool(cinfo, pool_id);
   for (void* ptr : mem->owned_ptrs[JPOOL_NUMPOOLS + pool_id]) {
     hwy::FreeAlignedBytes(ptr, nullptr, nullptr);
   }
-  mem->owned_ptrs[JPOOL_NUMPOOLS + pool_id].clear();
+  ClearPool(cinfo, JPOOL_NUMPOOLS + pool_id);
 }
 
 void SelfDestruct(j_common_ptr cinfo) {
@@ -151,7 +171,10 @@ void InitMemoryManager(j_common_ptr cinfo) {
       jpegli::AccessVirtualArray<jvirt_barray_control, JBLOCK>;
   mem->pub.free_pool = jpegli::FreePool;
   mem->pub.self_destruct = jpegli::SelfDestruct;
-  mem->owned_ptrs.resize(2 * JPOOL_NUMPOOLS);
+  mem->pub.max_memory_to_use = 0;
+  mem->total_memory_usage = 0;
+  mem->peak_memory_usage = 0;
+  memset(mem->pool_memory_usage, 0, sizeof(mem->pool_memory_usage));
   cinfo->mem = reinterpret_cast<struct jpeg_memory_mgr*>(mem);
 }
 
