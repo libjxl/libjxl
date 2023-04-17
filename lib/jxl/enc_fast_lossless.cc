@@ -30,9 +30,13 @@
 #elif (defined(__x86_64__) || defined(_M_X64)) && !defined(_MSC_VER)
 #include <immintrin.h>
 
-// manually add _mm512_cvtsi512_si32 definition on MacOS Mojave
+// manually add _mm512_cvtsi512_si32 definition if missing
+// (e.g. with Xcode on macOS Mojave)
 // copied from gcc 11.1.0 include/avx512fintrin.h line 14367-14373
-#if __APPLE__ && defined(__clang__) && defined(__MAC_10_0)
+#if defined(__clang__) \
+    && ((!defined(__apple_build_version__) && __clang_major__ < 10) \
+    || (defined(__apple_build_version__) \
+        && __apple_build_version__ < 12000032))
 inline int __attribute__((__gnu_inline__, __always_inline__, __artificial__))
 _mm512_cvtsi512_si32(__m512i __A) {
   __v16si __B = (__v16si)__A;
