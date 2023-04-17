@@ -97,8 +97,7 @@ inline JXL_NOINLINE bool Debug(const char* format, ...) {
 #define JXL_DEBUG(enabled, format, ...)                         \
   do {                                                          \
     if (enabled) {                                              \
-      ::jxl::Debug(("%s:%d: " format "\n"), __FILE__, __LINE__, \
-                   ##__VA_ARGS__);                              \
+      ::jxl::Debug(("%s:%d: " format "\n"), __FILE__, __LINE__, ##__VA_ARGS__); \
     }                                                           \
   } while (0)
 
