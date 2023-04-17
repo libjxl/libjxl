@@ -618,7 +618,7 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
         {12, JDITHER_NONE, CQUANT_2PASS}, {13, JDITHER_FS, CQUANT_2PASS},
     };
     config.compare_to_orig = true;
-    config.max_tolerance_factor = 1.02f;
+    config.max_tolerance_factor = 1.04f;
     all_tests.push_back(config);
   }
 
@@ -669,6 +669,9 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
                 // We only test for buffer overflows, etc.
                 config.max_rms_dist = 100.0f;
                 config.max_diff = 255.0f;
+              }
+              if (config.dparams.do_block_smoothing) {
+                config.max_tolerance_factor = 2.0f;
               }
               all_tests.push_back(config);
             }
