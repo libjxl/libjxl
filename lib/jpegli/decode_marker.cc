@@ -75,7 +75,6 @@ void ProcessSOF(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
   JPEG_VERIFY_LEN(3 * cinfo->num_components);
   cinfo->comp_info = jpegli::Allocate<jpeg_component_info>(
       cinfo, cinfo->num_components, JPOOL_IMAGE);
-  m->components_.resize(cinfo->num_components);
 
   // Read sampling factors and quant table index for each component.
   std::vector<bool> ids_seen(256, false);
@@ -150,7 +149,6 @@ void ProcessSOF(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
       DivCeil(cinfo->image_width, cinfo->max_h_samp_factor * DCTSIZE);
   // Compute the block dimensions for each component.
   for (int i = 0; i < cinfo->num_components; ++i) {
-    DecJPEGComponent* c = &m->components_[i];
     jpeg_component_info* comp = &cinfo->comp_info[i];
     if (cinfo->max_h_samp_factor % comp->h_samp_factor != 0 ||
         cinfo->max_v_samp_factor % comp->v_samp_factor != 0) {
@@ -162,10 +160,6 @@ void ProcessSOF(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
     comp->downsampled_height = DivCeil(cinfo->image_height, m->v_factor[i]);
     comp->width_in_blocks = DivCeil(comp->downsampled_width, DCTSIZE);
     comp->height_in_blocks = DivCeil(comp->downsampled_height, DCTSIZE);
-    const uint64_t num_blocks =
-        static_cast<uint64_t>(comp->width_in_blocks) * comp->height_in_blocks;
-    c->coeffs = hwy::AllocateAligned<coeff_t>(num_blocks * DCTSIZE2);
-    memset(c->coeffs.get(), 0, num_blocks * DCTSIZE2 * sizeof(coeff_t));
   }
   memset(m->scan_progression_, 0, sizeof(m->scan_progression_));
 }

@@ -57,7 +57,6 @@ void InitializeImage(j_decompress_ptr cinfo) {
   m->icc_index_ = 0;
   m->icc_total_ = 0;
   m->icc_profile_.clear();
-  m->components_.clear();
   m->dc_huff_lut_.clear();
   m->ac_huff_lut_.clear();
   m->colormap_lut_ = nullptr;
@@ -284,11 +283,17 @@ void PrepareForScan(j_decompress_ptr cinfo) {
   m->mcu_.coeffs.resize(cinfo->blocks_in_MCU * DCTSIZE2);
   ++cinfo->input_scan_number;
   cinfo->input_iMCU_row = 0;
+  PrepareForiMCURow(cinfo);
   cinfo->global_state = kDecProcessScan;
 }
 
 int ConsumeInput(j_decompress_ptr cinfo) {
   jpeg_decomp_master* m = cinfo->master;
+  if (cinfo->global_state == kDecProcessScan && m->streaming_mode_ &&
+      cinfo->input_iMCU_row > cinfo->output_iMCU_row) {
+    // Prevent input from getting ahead of output in streaming mode.
+    return JPEG_SUSPENDED;
+  }
   jpeg_source_mgr* src = cinfo->src;
   std::vector<uint8_t> buffer;
   int status;
@@ -466,6 +471,23 @@ boolean PrepareQuantizedOutput(j_decompress_ptr cinfo) {
   }
   m->quant_pass_ = 1;
   return TRUE;
+}
+
+void AllocateCoefficientBuffer(j_decompress_ptr cinfo) {
+  jpeg_decomp_master* m = cinfo->master;
+  j_common_ptr comptr = reinterpret_cast<j_common_ptr>(cinfo);
+  jvirt_barray_ptr* coef_arrays = jpegli::Allocate<jvirt_barray_ptr>(
+      cinfo, cinfo->num_components, JPOOL_IMAGE);
+  for (int c = 0; c < cinfo->num_components; ++c) {
+    jpeg_component_info* comp = &cinfo->comp_info[c];
+    size_t height_in_blocks =
+        m->streaming_mode_ ? comp->v_samp_factor : comp->height_in_blocks;
+    coef_arrays[c] = (*cinfo->mem->request_virt_barray)(
+        comptr, JPOOL_IMAGE, TRUE, comp->width_in_blocks, height_in_blocks,
+        comp->v_samp_factor);
+  }
+  cinfo->master->coef_arrays = coef_arrays;
+  (*cinfo->mem->realize_virt_arrays)(comptr);
 }
 
 }  // namespace jpegli
@@ -654,7 +676,11 @@ boolean jpegli_input_complete(j_decompress_ptr cinfo) {
 }
 
 boolean jpegli_start_decompress(j_decompress_ptr cinfo) {
+  jpeg_decomp_master* m = cinfo->master;
   if (cinfo->global_state == jpegli::kDecHeaderDone) {
+    m->streaming_mode_ = !m->is_multiscan_ && !cinfo->buffered_image &&
+                         (!cinfo->quantize_colors || !cinfo->two_pass_quantize);
+    jpegli::AllocateCoefficientBuffer(cinfo);
     jpegli_calc_output_dimensions(cinfo);
     jpegli::PrepareForScan(cinfo);
     if (cinfo->quantize_colors) {
@@ -672,17 +698,17 @@ boolean jpegli_start_decompress(j_decompress_ptr cinfo) {
       cinfo->output_scan_number = 0;
       return TRUE;
     }
-  } else if (!cinfo->master->is_multiscan_) {
+  } else if (!m->is_multiscan_) {
     JPEGLI_ERROR("jpegli_start_decompress: unexpected state %d",
                  cinfo->global_state);
   }
-  if (cinfo->master->is_multiscan_) {
+  if (m->is_multiscan_) {
     if (cinfo->global_state != jpegli::kDecProcessScan &&
         cinfo->global_state != jpegli::kDecProcessMarkers) {
       JPEGLI_ERROR("jpegli_start_decompress: unexpected state %d",
                    cinfo->global_state);
     }
-    while (!cinfo->master->found_eoi_) {
+    while (!m->found_eoi_) {
       jpegli::ProgressMonitorInputPass(cinfo);
       if (jpegli::ConsumeInput(cinfo) == JPEG_SUSPENDED) {
         return FALSE;
@@ -833,7 +859,9 @@ JDIMENSION jpegli_read_raw_data(j_decompress_ptr cinfo, JSAMPIMAGE data,
 
 jvirt_barray_ptr* jpegli_read_coefficients(j_decompress_ptr cinfo) {
   jpeg_decomp_master* m = cinfo->master;
+  m->streaming_mode_ = false;
   if (!cinfo->buffered_image && cinfo->global_state == jpegli::kDecHeaderDone) {
+    jpegli::AllocateCoefficientBuffer(cinfo);
     jpegli::InitProgressMonitor(cinfo, /*coef_only=*/true);
     jpegli::PrepareForScan(cinfo);
   }
@@ -850,27 +878,7 @@ jvirt_barray_ptr* jpegli_read_coefficients(j_decompress_ptr cinfo) {
       }
     }
   }
-  j_common_ptr comptr = reinterpret_cast<j_common_ptr>(cinfo);
-  jvirt_barray_ptr* coef_arrays = jpegli::Allocate<jvirt_barray_ptr>(
-      cinfo, cinfo->num_components, JPOOL_IMAGE);
-  for (int c = 0; c < cinfo->num_components; ++c) {
-    size_t xsize_blocks = cinfo->comp_info[c].width_in_blocks;
-    size_t ysize_blocks = cinfo->comp_info[c].height_in_blocks;
-    coef_arrays[c] = (*cinfo->mem->request_virt_barray)(
-        comptr, JPOOL_IMAGE, FALSE, xsize_blocks, ysize_blocks, 1);
-  }
-  (*cinfo->mem->realize_virt_arrays)(comptr);
-  for (int c = 0; c < cinfo->num_components; ++c) {
-    jpeg_component_info* comp = &cinfo->comp_info[c];
-    for (size_t by = 0; by < comp->height_in_blocks; ++by) {
-      JBLOCKARRAY ba = (*cinfo->mem->access_virt_barray)(comptr, coef_arrays[c],
-                                                         by, 1, true);
-      size_t stride = comp->width_in_blocks * sizeof(JBLOCK);
-      size_t offset = by * comp->width_in_blocks * DCTSIZE2;
-      memcpy(ba[0], &m->components_[c].coeffs[offset], stride);
-    }
-  }
-  return coef_arrays;
+  return m->coef_arrays;
 }
 
 boolean jpegli_finish_decompress(j_decompress_ptr cinfo) {
