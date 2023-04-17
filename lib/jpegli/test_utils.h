@@ -165,6 +165,7 @@ struct CompressParams {
   bool omit_standard_tables = false;
   bool xyb_mode = false;
   bool libjpeg_mode = false;
+  bool use_adaptive_quantization = true;
 
   int h_samp(int c) const { return h_sampling.empty() ? 1 : h_sampling[c]; }
   int v_samp(int c) const { return v_sampling.empty() ? 1 : v_sampling[c]; }
