@@ -1015,6 +1015,28 @@ void DecodeAllScansWithLibjpeg(const CompressParams& jparams,
 }
 
 void DecodeWithLibjpeg(const CompressParams& jparams,
+                       const DecompressParams& dparams, j_decompress_ptr cinfo,
+                       TestImage* output) {
+  if (jparams.add_marker) {
+    jpeg_save_markers(cinfo, kSpecialMarker, 0xffff);
+  }
+  JXL_CHECK(JPEG_REACHED_SOS ==
+            jpeg_read_header(cinfo, /*require_image=*/TRUE));
+  SetDecompressParams(dparams, cinfo, /*is_jpegli=*/false);
+  VerifyHeader(jparams, cinfo);
+  if (dparams.output_mode == COEFFICIENTS) {
+    jvirt_barray_ptr* coef_arrays = jpeg_read_coefficients(cinfo);
+    JXL_CHECK(coef_arrays != nullptr);
+    CopyCoefficients(cinfo, coef_arrays, output);
+  } else {
+    JXL_CHECK(jpeg_start_decompress(cinfo));
+    VerifyScanHeader(jparams, cinfo);
+    ReadOutputPass(cinfo, dparams, output);
+  }
+  JXL_CHECK(jpeg_finish_decompress(cinfo));
+}
+
+void DecodeWithLibjpeg(const CompressParams& jparams,
                        const DecompressParams& dparams,
                        const std::vector<uint8_t>& compressed,
                        TestImage* output) {
@@ -1023,23 +1045,7 @@ void DecodeWithLibjpeg(const CompressParams& jparams,
     ERROR_HANDLER_SETUP(jpeg);
     jpeg_create_decompress(&cinfo);
     jpeg_mem_src(&cinfo, compressed.data(), compressed.size());
-    if (jparams.add_marker) {
-      jpeg_save_markers(&cinfo, kSpecialMarker, 0xffff);
-    }
-    JXL_CHECK(JPEG_REACHED_SOS ==
-              jpeg_read_header(&cinfo, /*require_image=*/TRUE));
-    SetDecompressParams(dparams, &cinfo, /*is_jpegli=*/false);
-    VerifyHeader(jparams, &cinfo);
-    if (dparams.output_mode == COEFFICIENTS) {
-      jvirt_barray_ptr* coef_arrays = jpeg_read_coefficients(&cinfo);
-      JXL_CHECK(coef_arrays != nullptr);
-      CopyCoefficients(&cinfo, coef_arrays, output);
-    } else {
-      JXL_CHECK(jpeg_start_decompress(&cinfo));
-      VerifyScanHeader(jparams, &cinfo);
-      ReadOutputPass(&cinfo, dparams, output);
-    }
-    JXL_CHECK(jpeg_finish_decompress(&cinfo));
+    DecodeWithLibjpeg(jparams, dparams, &cinfo, output);
     return true;
   };
   JXL_CHECK(try_catch_block());

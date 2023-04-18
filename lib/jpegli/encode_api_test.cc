@@ -3,6 +3,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <stdio.h>
+
 #include <algorithm>
 #include <cmath>
 #include <vector>
@@ -83,6 +85,111 @@ TEST(EncodeAPITest, ReuseCinfoSameImageTwice) {
   ASSERT_EQ(compressed0.size(), compressed1.size());
   EXPECT_EQ(0,
             memcmp(compressed0.data(), compressed1.data(), compressed0.size()));
+}
+
+std::vector<TestConfig> GenerateBasicConfigs() {
+  std::vector<TestConfig> all_configs;
+  for (int samp : {1, 2}) {
+    for (int progr : {0, 2}) {
+      for (int optimize : {0, 1}) {
+        if (progr && optimize) continue;
+        TestConfig config;
+        config.input.xsize = 257 + samp * 37;
+        config.input.ysize = 265 + optimize * 17;
+        config.jparams.h_sampling = {samp, 1, 1};
+        config.jparams.v_sampling = {samp, 1, 1};
+        config.jparams.progressive_mode = progr;
+        config.jparams.optimize_coding = optimize;
+        config.max_dist = 2.35f;
+        GeneratePixels(&config.input);
+        all_configs.push_back(config);
+      }
+    }
+  }
+  return all_configs;
+}
+
+TEST(EncodeAPITest, ReuseCinfoSameMemOutput) {
+  std::vector<TestConfig> all_configs = GenerateBasicConfigs();
+  uint8_t* buffer = nullptr;
+  unsigned long buffer_size = 0;
+  {
+    jpeg_compress_struct cinfo;
+    const auto try_catch_block = [&]() -> bool {
+      ERROR_HANDLER_SETUP(jpegli);
+      jpegli_create_compress(&cinfo);
+      jpegli_mem_dest(&cinfo, &buffer, &buffer_size);
+      for (const TestConfig& config : all_configs) {
+        EncodeWithJpegli(config.input, config.jparams, &cinfo);
+      }
+      return true;
+    };
+    EXPECT_TRUE(try_catch_block());
+    jpegli_destroy_compress(&cinfo);
+  }
+  std::vector<TestImage> all_outputs(all_configs.size());
+  {
+    jpeg_decompress_struct cinfo;
+    const auto try_catch_block = [&]() -> bool {
+      ERROR_HANDLER_SETUP(jpegli);
+      jpeg_create_decompress(&cinfo);
+      jpeg_mem_src(&cinfo, buffer, buffer_size);
+      for (size_t i = 0; i < all_configs.size(); ++i) {
+        DecodeWithLibjpeg(all_configs[i].jparams, DecompressParams(), &cinfo,
+                          &all_outputs[i]);
+      }
+      return true;
+    };
+    EXPECT_TRUE(try_catch_block());
+    jpeg_destroy_decompress(&cinfo);
+  }
+  for (size_t i = 0; i < all_configs.size(); ++i) {
+    VerifyOutputImage(all_configs[i].input, all_outputs[i],
+                      all_configs[i].max_dist);
+  }
+  if (buffer) free(buffer);
+}
+
+TEST(EncodeAPITest, ReuseCinfoSameStdOutput) {
+  std::vector<TestConfig> all_configs = GenerateBasicConfigs();
+  FILE* tmpf = tmpfile();
+  JXL_CHECK(tmpf);
+  {
+    jpeg_compress_struct cinfo;
+    const auto try_catch_block = [&]() -> bool {
+      ERROR_HANDLER_SETUP(jpegli);
+      jpegli_create_compress(&cinfo);
+      jpegli_stdio_dest(&cinfo, tmpf);
+      for (const TestConfig& config : all_configs) {
+        EncodeWithJpegli(config.input, config.jparams, &cinfo);
+      }
+      return true;
+    };
+    EXPECT_TRUE(try_catch_block());
+    jpegli_destroy_compress(&cinfo);
+  }
+  rewind(tmpf);
+  std::vector<TestImage> all_outputs(all_configs.size());
+  {
+    jpeg_decompress_struct cinfo;
+    const auto try_catch_block = [&]() -> bool {
+      ERROR_HANDLER_SETUP(jpegli);
+      jpeg_create_decompress(&cinfo);
+      jpeg_stdio_src(&cinfo, tmpf);
+      for (size_t i = 0; i < all_configs.size(); ++i) {
+        DecodeWithLibjpeg(all_configs[i].jparams, DecompressParams(), &cinfo,
+                          &all_outputs[i]);
+      }
+      return true;
+    };
+    EXPECT_TRUE(try_catch_block());
+    jpeg_destroy_decompress(&cinfo);
+  }
+  for (size_t i = 0; i < all_configs.size(); ++i) {
+    VerifyOutputImage(all_configs[i].input, all_outputs[i],
+                      all_configs[i].max_dist);
+  }
+  fclose(tmpf);
 }
 
 TEST(EncodeAPITest, ReuseCinfoChangeParams) {

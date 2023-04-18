@@ -289,6 +289,9 @@ void DecodeAllScansWithLibjpeg(const CompressParams& jparams,
                                const std::vector<uint8_t>& compressed,
                                std::vector<TestImage>* output_progression);
 void DecodeWithLibjpeg(const CompressParams& jparams,
+                       const DecompressParams& dparams, j_decompress_ptr cinfo,
+                       TestImage* output);
+void DecodeWithLibjpeg(const CompressParams& jparams,
                        const DecompressParams& dparams,
                        const std::vector<uint8_t>& compressed,
                        TestImage* output);
