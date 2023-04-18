@@ -593,7 +593,11 @@ int jpegli_read_header(j_decompress_ptr cinfo, boolean require_image) {
     } else if (retcode == JPEG_REACHED_SOS) {
       break;
     } else if (retcode == JPEG_REACHED_EOI) {
-      JPEGLI_ERROR("jpegli_read_header: unexpected EOI marker.");
+      if (require_image) {
+        JPEGLI_ERROR("jpegli_read_header: unexpected EOI marker.");
+      }
+      jpegli_abort_decompress(cinfo);
+      return JPEG_HEADER_TABLES_ONLY;
     }
   };
   return JPEG_HEADER_OK;
