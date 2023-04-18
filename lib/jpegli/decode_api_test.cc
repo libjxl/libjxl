@@ -503,6 +503,66 @@ TEST(DecodeAPITest, ReuseCinfoSameStdSource) {
   fclose(tmpf);
 }
 
+TEST(DecodeAPITest, AbbreviatedStreams) {
+  uint8_t* table_stream = nullptr;
+  unsigned long table_stream_size = 0;
+  uint8_t* data_stream = nullptr;
+  unsigned long data_stream_size = 0;
+  {
+    jpeg_compress_struct cinfo;
+    const auto try_catch_block = [&]() -> bool {
+      ERROR_HANDLER_SETUP(jpegli);
+      jpegli_create_compress(&cinfo);
+      jpegli_mem_dest(&cinfo, &table_stream, &table_stream_size);
+      cinfo.input_components = 3;
+      cinfo.in_color_space = JCS_RGB;
+      jpegli_set_defaults(&cinfo);
+      jpegli_write_tables(&cinfo);
+      jpegli_mem_dest(&cinfo, &data_stream, &data_stream_size);
+      cinfo.image_width = 1;
+      cinfo.image_height = 1;
+      cinfo.optimize_coding = FALSE;
+      jpegli_set_progressive_level(&cinfo, 0);
+      jpegli_start_compress(&cinfo, FALSE);
+      JSAMPLE image[3] = {0};
+      JSAMPROW row[] = {image};
+      jpegli_write_scanlines(&cinfo, row, 1);
+      jpegli_finish_compress(&cinfo);
+      return true;
+    };
+    EXPECT_TRUE(try_catch_block());
+    EXPECT_LT(data_stream_size, 50);
+    jpegli_destroy_compress(&cinfo);
+  }
+  {
+    jpeg_decompress_struct cinfo = {};
+    const auto try_catch_block = [&]() -> bool {
+      ERROR_HANDLER_SETUP(jpegli);
+      jpegli_create_decompress(&cinfo);
+      jpegli_mem_src(&cinfo, table_stream, table_stream_size);
+      jpegli_read_header(&cinfo, FALSE);
+      jpegli_mem_src(&cinfo, data_stream, data_stream_size);
+      jpegli_read_header(&cinfo, TRUE);
+      EXPECT_EQ(1, cinfo.image_width);
+      EXPECT_EQ(1, cinfo.image_height);
+      EXPECT_EQ(3, cinfo.num_components);
+      jpegli_start_decompress(&cinfo);
+      JSAMPLE image[3] = {0};
+      JSAMPROW row[] = {image};
+      jpegli_read_scanlines(&cinfo, row, 1);
+      EXPECT_EQ(0, image[0]);
+      EXPECT_EQ(0, image[1]);
+      EXPECT_EQ(0, image[2]);
+      jpegli_finish_decompress(&cinfo);
+      return true;
+    };
+    EXPECT_TRUE(try_catch_block());
+    jpegli_destroy_decompress(&cinfo);
+  }
+  if (table_stream) free(table_stream);
+  if (data_stream) free(data_stream);
+}
+
 class DecodeAPITestParam : public ::testing::TestWithParam<TestConfig> {};
 
 TEST_P(DecodeAPITestParam, TestAPI) {
