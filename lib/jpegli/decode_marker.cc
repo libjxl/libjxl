@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "lib/jpegli/common.h"
+#include "lib/jpegli/common_internal.h"
 #include "lib/jpegli/decode_internal.h"
 #include "lib/jpegli/error.h"
 #include "lib/jpegli/huffman.h"
@@ -248,7 +249,7 @@ void ProcessSOS(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
   const uint16_t refinement_bitmask = (1 << cinfo->Al) - 1;
   if (!cinfo->coef_bits) {
     cinfo->coef_bits =
-        Allocate<int[DCTSIZE2]>(cinfo, cinfo->num_components, JPOOL_IMAGE);
+        Allocate<int[DCTSIZE2]>(cinfo, cinfo->num_components * 2, JPOOL_IMAGE);
     m->coef_bits_latch =
         Allocate<int[SAVED_COEFS]>(cinfo, cinfo->num_components, JPOOL_IMAGE);
     m->prev_coef_bits_latch =

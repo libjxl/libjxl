@@ -16,6 +16,7 @@
 
 #include "lib/jpegli/color_quantize.h"
 #include "lib/jpegli/color_transform.h"
+#include "lib/jpegli/common_internal.h"
 #include "lib/jpegli/decode_internal.h"
 #include "lib/jpegli/error.h"
 #include "lib/jpegli/idct.h"
@@ -358,14 +359,14 @@ bool is_nonzero_quantizers(const JQUANT_TBL* qtable) {
 
 // Determine whether smoothing should be applied during decompression
 bool do_smoothing(j_decompress_ptr cinfo) {
+  jpeg_decomp_master* m = cinfo->master;
   bool smoothing_useful = false;
 
   if (!cinfo->progressive_mode || cinfo->coef_bits == nullptr) {
     return false;
   }
-
-  int* coef_bits_latch = &cinfo->master->coef_bits_latch[0][0];
-  int* prev_coef_bits_latch = &cinfo->master->prev_coef_bits_latch[0][0];
+  auto coef_bits_latch = m->coef_bits_latch;
+  auto prev_coef_bits_latch = m->prev_coef_bits_latch;
 
   for (int ci = 0; ci < cinfo->num_components; ci++) {
     jpeg_component_info* compptr = &cinfo->comp_info[ci];
@@ -379,17 +380,17 @@ bool do_smoothing(j_decompress_ptr cinfo) {
       return false;
     }
 
-    coef_bits_latch[0] = coef_bits[0];
+    coef_bits_latch[ci][0] = coef_bits[0];
 
     for (int coefi = 1; coefi < SAVED_COEFS; coefi++) {
-      prev_coef_bits_latch[coefi] =
+      prev_coef_bits_latch[ci][coefi] =
           cinfo->input_scan_number > 1 ? prev_coef_bits[coefi] : -1;
       if (coef_bits[coefi] != 0) {
         smoothing_useful = true;
       }
+      coef_bits_latch[ci][coefi] = coef_bits[coefi];
     }
 
-    prev_coef_bits_latch += SAVED_COEFS;
   }
 
   return smoothing_useful;
@@ -440,9 +441,9 @@ void PredictSmooth(j_decompress_ptr cinfo, const int16_t* blocks, int component,
   // Get the correct coef_bits: In case of an incomplete scan, we use the
   // prev coeficients.
   if (cinfo->output_iMCU_row + 1 > cinfo->input_iMCU_row) {
-    coef_bits = cinfo->master->coef_bits_latch[component];
+    coef_bits = cinfo->master->prev_coef_bits_latch[component];
   } else {
-    coef_bits = cinfo->coef_bits[component];
+    coef_bits = cinfo->master->coef_bits_latch[component];
   }
 
   bool change_dc = true;

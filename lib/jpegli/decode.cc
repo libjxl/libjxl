@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "lib/jpegli/color_quantize.h"
+#include "lib/jpegli/common_internal.h"
 #include "lib/jpegli/decode_internal.h"
 #include "lib/jpegli/decode_marker.h"
 #include "lib/jpegli/decode_scan.h"
@@ -83,7 +84,7 @@ void InitializeDecompressParams(j_decompress_ptr cinfo) {
   cinfo->raw_data_out = FALSE;
   cinfo->dct_method = JDCT_DEFAULT;
   cinfo->do_fancy_upsampling = TRUE;
-  cinfo->do_block_smoothing = FALSE;
+  cinfo->do_block_smoothing = TRUE;
   cinfo->quantize_colors = FALSE;
   cinfo->dither_mode = JDITHER_FS;
   cinfo->two_pass_quantize = TRUE;
@@ -191,26 +192,14 @@ void BuildHuffmanLookupTable(j_decompress_ptr cinfo, JHUFF_TBL* table,
 
 void PrepareForScan(j_decompress_ptr cinfo) {
   jpeg_decomp_master* m = cinfo->master;
-  if (!cinfo->coef_bits) {
-    cinfo->coef_bits =
-        Allocate<int[DCTSIZE2]>(cinfo, cinfo->num_components, JPOOL_IMAGE);
-    m->coef_bits_latch =
-        Allocate<int[SAVED_COEFS]>(cinfo, cinfo->num_components, JPOOL_IMAGE);
-    for (int c = 0; c < cinfo->num_components; ++c) {
-      for (int i = 0; i < DCTSIZE2; ++i) {
-        cinfo->coef_bits[c][i] = -1;
-        if (i < SAVED_COEFS) {
-          m->coef_bits_latch[c][i] = -1;
-        }
-      }
-    }
-  }
   for (int i = 0; i < cinfo->comps_in_scan; ++i) {
+
     int comp_idx = cinfo->cur_comp_info[i]->component_index;
+    int* prev_coef_bits = cinfo->coef_bits[comp_idx + cinfo->num_components];
+    for (int k = std::min(cinfo->Ss, 1); k <= std::max(cinfo->Se, 9); k++) {
+      prev_coef_bits[k] = (cinfo->input_scan_number > 0) ? cinfo->coef_bits[comp_idx][k] : 0;
+    }
     for (int k = cinfo->Ss; k <= cinfo->Se; ++k) {
-      if (k < SAVED_COEFS) {
-        m->coef_bits_latch[comp_idx][k] = cinfo->coef_bits[comp_idx][k];
-      }
       cinfo->coef_bits[comp_idx][k] = cinfo->Al;
     }
   }
