@@ -390,7 +390,6 @@ bool do_smoothing(j_decompress_ptr cinfo) {
       }
       coef_bits_latch[ci][coefi] = coef_bits[coefi];
     }
-
   }
 
   return smoothing_useful;

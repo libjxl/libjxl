@@ -193,11 +193,11 @@ void BuildHuffmanLookupTable(j_decompress_ptr cinfo, JHUFF_TBL* table,
 void PrepareForScan(j_decompress_ptr cinfo) {
   jpeg_decomp_master* m = cinfo->master;
   for (int i = 0; i < cinfo->comps_in_scan; ++i) {
-
     int comp_idx = cinfo->cur_comp_info[i]->component_index;
     int* prev_coef_bits = cinfo->coef_bits[comp_idx + cinfo->num_components];
     for (int k = std::min(cinfo->Ss, 1); k <= std::max(cinfo->Se, 9); k++) {
-      prev_coef_bits[k] = (cinfo->input_scan_number > 0) ? cinfo->coef_bits[comp_idx][k] : 0;
+      prev_coef_bits[k] =
+          (cinfo->input_scan_number > 0) ? cinfo->coef_bits[comp_idx][k] : 0;
     }
     for (int k = cinfo->Ss; k <= cinfo->Se; ++k) {
       cinfo->coef_bits[comp_idx][k] = cinfo->Al;
