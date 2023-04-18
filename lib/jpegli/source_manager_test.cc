@@ -42,18 +42,26 @@ class SourceManagerTestParam : public ::testing::TestWithParam<TestConfig> {};
 
 TEST_P(SourceManagerTestParam, TestStdioSourceManager) {
   TestConfig config = GetParam();
-  if (config.dparams.size_factor != 1.0) {
-    // TODO(szabadka) Add truncated test files.
-    return;
-  }
   jxl::FileWrapper testfile(GetTestDataPath(config.fn), "rb");
-  ASSERT_TRUE(testfile != nullptr);
+  FILE* src = nullptr;
+  if (config.dparams.size_factor != 1.0) {
+    std::vector<uint8_t> compressed = ReadTestData(config.fn.c_str());
+    compressed.resize(compressed.size() * config.dparams.size_factor);
+    src = tmpfile();
+    ASSERT_TRUE(src != nullptr);
+    fwrite(compressed.data(), 1, compressed.size(), src);
+    rewind(src);
+    return;
+  } else {
+    src = testfile;
+  }
+  ASSERT_TRUE(src != nullptr);
   TestImage output0;
   jpeg_decompress_struct cinfo;
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_decompress(&cinfo);
-    jpegli_stdio_src(&cinfo, testfile);
+    jpegli_stdio_src(&cinfo, src);
     ReadOutputImage(&cinfo, &output0);
     return true;
   };
