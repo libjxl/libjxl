@@ -19,9 +19,16 @@
 namespace jpegli {
 namespace {
 
+static constexpr uint8_t kFakeEoiMarker[2] = {0xff, 0xd9};
+
 struct SourceManager {
-  SourceManager(const uint8_t* data, size_t len, size_t max_chunk_size)
-      : data_(data), len_(len), pos_(0), max_chunk_size_(max_chunk_size) {
+  SourceManager(const uint8_t* data, size_t len, size_t max_chunk_size,
+                bool is_partial_file)
+      : data_(data),
+        len_(len),
+        pos_(0),
+        max_chunk_size_(max_chunk_size),
+        is_partial_file_(is_partial_file) {
     pub_.init_source = init_source;
     pub_.fill_input_buffer = fill_input_buffer;
     pub_.next_input_byte = nullptr;
@@ -34,20 +41,24 @@ struct SourceManager {
 
   ~SourceManager() {
     EXPECT_EQ(0, pub_.bytes_in_buffer);
-    EXPECT_EQ(len_, pos_);
+    if (!is_partial_file_) {
+      EXPECT_EQ(len_, pos_);
+    }
   }
 
   bool LoadNextChunk() {
-    if (pos_ >= len_) {
+    if (pos_ >= len_ && !is_partial_file_) {
       return false;
     }
     if (pub_.bytes_in_buffer > 0) {
       EXPECT_LE(pub_.bytes_in_buffer, buffer_.size());
       memmove(&buffer_[0], pub_.next_input_byte, pub_.bytes_in_buffer);
     }
-    size_t chunk_size = std::min(len_ - pos_, max_chunk_size_);
+    size_t chunk_size =
+        pos_ < len_ ? std::min(len_ - pos_, max_chunk_size_) : 2;
     buffer_.resize(pub_.bytes_in_buffer + chunk_size);
-    memcpy(&buffer_[pub_.bytes_in_buffer], data_ + pos_, chunk_size);
+    memcpy(&buffer_[pub_.bytes_in_buffer],
+           pos_ < len_ ? data_ + pos_ : kFakeEoiMarker, chunk_size);
     pub_.next_input_byte = &buffer_[0];
     pub_.bytes_in_buffer += chunk_size;
     pos_ += chunk_size;
@@ -61,6 +72,7 @@ struct SourceManager {
   size_t len_;
   size_t pos_;
   size_t max_chunk_size_;
+  bool is_partial_file_;
 
   static void init_source(j_decompress_ptr cinfo) {
     auto src = reinterpret_cast<SourceManager*>(cinfo->src);
@@ -182,6 +194,7 @@ struct TestConfig {
   TestImage input;
   CompressParams jparams;
   DecompressParams dparams;
+  float max_rms_dist = 1.0f;
 };
 
 std::vector<uint8_t> GetTestJpegData(TestConfig& config) {
@@ -206,8 +219,13 @@ class InputSuspensionTestParam : public ::testing::TestWithParam<TestConfig> {};
 TEST_P(InputSuspensionTestParam, InputOutputLockStepNonBuffered) {
   TestConfig config = GetParam();
   const DecompressParams& dparams = config.dparams;
-  const std::vector<uint8_t> compressed = GetTestJpegData(config);
-  SourceManager src(compressed.data(), compressed.size(), dparams.chunk_size);
+  std::vector<uint8_t> compressed = GetTestJpegData(config);
+  bool is_partial = config.dparams.size_factor < 1.0f;
+  if (is_partial) {
+    compressed.resize(compressed.size() * config.dparams.size_factor);
+  }
+  SourceManager src(compressed.data(), compressed.size(), dparams.chunk_size,
+                    is_partial);
   TestImage output0;
   jpeg_decompress_struct cinfo;
   const auto try_catch_block = [&]() -> bool {
@@ -255,15 +273,20 @@ TEST_P(InputSuspensionTestParam, InputOutputLockStepNonBuffered) {
 
   TestImage output1;
   DecodeWithLibjpeg(config.jparams, dparams, compressed, &output1);
-  VerifyOutputImage(output1, output0, 1.0f);
+  VerifyOutputImage(output1, output0, config.max_rms_dist);
 }
 
 TEST_P(InputSuspensionTestParam, InputOutputLockStepBuffered) {
   TestConfig config = GetParam();
   if (config.jparams.add_marker) return;
   const DecompressParams& dparams = config.dparams;
-  const std::vector<uint8_t> compressed = GetTestJpegData(config);
-  SourceManager src(compressed.data(), compressed.size(), dparams.chunk_size);
+  std::vector<uint8_t> compressed = GetTestJpegData(config);
+  bool is_partial = config.dparams.size_factor < 1.0f;
+  if (is_partial) {
+    compressed.resize(compressed.size() * config.dparams.size_factor);
+  }
+  SourceManager src(compressed.data(), compressed.size(), dparams.chunk_size,
+                    is_partial);
   std::vector<TestImage> output_progression0;
   jpeg_decompress_struct cinfo;
   const auto try_catch_block = [&]() -> bool {
@@ -320,7 +343,7 @@ TEST_P(InputSuspensionTestParam, InputOutputLockStepBuffered) {
   for (size_t i = 0; i < output_progression0.size(); ++i) {
     const TestImage& output = output_progression0[i];
     const TestImage& expected = output_progression1[i];
-    VerifyOutputImage(expected, output, 1.0);
+    VerifyOutputImage(expected, output, config.max_rms_dist);
   }
 }
 
@@ -328,11 +351,16 @@ TEST_P(InputSuspensionTestParam, PreConsumeInputBuffered) {
   TestConfig config = GetParam();
   if (config.jparams.add_marker) return;
   const DecompressParams& dparams = config.dparams;
-  const std::vector<uint8_t> compressed = GetTestJpegData(config);
+  std::vector<uint8_t> compressed = GetTestJpegData(config);
+  bool is_partial = config.dparams.size_factor < 1.0f;
+  if (is_partial) {
+    compressed.resize(compressed.size() * config.dparams.size_factor);
+  }
   std::vector<TestImage> output_progression1;
   DecodeAllScansWithLibjpeg(config.jparams, dparams, compressed,
                             &output_progression1);
-  SourceManager src(compressed.data(), compressed.size(), dparams.chunk_size);
+  SourceManager src(compressed.data(), compressed.size(), dparams.chunk_size,
+                    is_partial);
   TestImage output0;
   jpeg_decompress_struct cinfo;
   const auto try_catch_block = [&]() -> bool {
@@ -385,15 +413,20 @@ TEST_P(InputSuspensionTestParam, PreConsumeInputBuffered) {
   ASSERT_TRUE(try_catch_block());
   jpegli_destroy_decompress(&cinfo);
 
-  VerifyOutputImage(output_progression1.back(), output0, 1.0f);
+  VerifyOutputImage(output_progression1.back(), output0, config.max_rms_dist);
 }
 
 TEST_P(InputSuspensionTestParam, PreConsumeInputNonBuffered) {
   TestConfig config = GetParam();
   if (config.jparams.add_marker || IsSequential(config)) return;
   const DecompressParams& dparams = config.dparams;
-  const std::vector<uint8_t> compressed = GetTestJpegData(config);
-  SourceManager src(compressed.data(), compressed.size(), dparams.chunk_size);
+  std::vector<uint8_t> compressed = GetTestJpegData(config);
+  bool is_partial = config.dparams.size_factor < 1.0f;
+  if (is_partial) {
+    compressed.resize(compressed.size() * config.dparams.size_factor);
+  }
+  SourceManager src(compressed.data(), compressed.size(), dparams.chunk_size,
+                    is_partial);
   TestImage output0;
   jpeg_decompress_struct cinfo;
   const auto try_catch_block = [&]() -> bool {
@@ -440,7 +473,7 @@ TEST_P(InputSuspensionTestParam, PreConsumeInputNonBuffered) {
 
   TestImage output1;
   DecodeWithLibjpeg(config.jparams, dparams, compressed, &output1);
-  VerifyOutputImage(output1, output0, 1.0f);
+  VerifyOutputImage(output1, output0, config.max_rms_dist);
 }
 
 std::vector<TestConfig> GenerateTests() {
@@ -485,6 +518,28 @@ std::vector<TestConfig> GenerateTests() {
     config.jparams.add_marker = true;
     all_tests.push_back(config);
   }
+  // Tests for partial input.
+  for (float size_factor : {0.1f, 0.33f, 0.5f, 0.75f}) {
+    for (int progr : {0, 1, 3}) {
+      for (int samp : {1, 2}) {
+        for (JpegIOMode output_mode : {PIXELS, RAW_DATA}) {
+          TestConfig config;
+          config.input.xsize = 517;
+          config.input.ysize = 523;
+          config.jparams.h_sampling = {samp, 1, 1};
+          config.jparams.v_sampling = {samp, 1, 1};
+          config.jparams.progressive_mode = progr;
+          config.dparams.size_factor = size_factor;
+          config.dparams.output_mode = output_mode;
+          // The last partially available block can behave differently.
+          // TODO(szabadka) Figure out if we can make the behaviour more
+          // similar.
+          config.max_rms_dist = samp == 1 ? 1.7f : 3.0f;
+          all_tests.push_back(config);
+        }
+      }
+    }
+  }
   return all_tests;
 }
 
@@ -499,6 +554,9 @@ std::ostream& operator<<(std::ostream& os, const TestConfig& c) {
     os << "CompleteInput";
   } else {
     os << "InputChunks" << c.dparams.chunk_size;
+  }
+  if (c.dparams.size_factor < 1.0f) {
+    os << "Partial" << static_cast<int>(c.dparams.size_factor * 100) << "p";
   }
   if (c.dparams.max_output_lines == 0) {
     os << "CompleteOutput";
