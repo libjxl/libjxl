@@ -8,6 +8,7 @@
 #include <jpeglib.h>
 #include <string.h>
 
+#include <array>
 #include <atomic>
 #include <cmath>
 #include <cstddef>
