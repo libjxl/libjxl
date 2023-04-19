@@ -104,8 +104,6 @@ inline JXL_NOINLINE bool Debug(const char* format, ...) {
     }                                       \
   } while (0)
 
-#undef JXL_DEBUG_TMP
-
 // JXL_DEBUG version that prints the debug message if the global verbose level
 // defined at compile time by JXL_DEBUG_V_LEVEL is greater or equal than the
 // passed level.
