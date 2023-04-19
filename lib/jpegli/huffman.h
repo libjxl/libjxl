@@ -21,10 +21,6 @@ constexpr int kJpegHuffmanRootTableBits = 8;
 constexpr int kJpegHuffmanLutSize = 758;
 
 struct HuffmanTableEntry {
-  // Initialize the value to an invalid symbol so that we can recognize it
-  // when reading the bit stream using a Huffman code with space > 0.
-  HuffmanTableEntry() : bits(0), value(0xffff) {}
-
   uint8_t bits;    // number of bits used for this symbol
   uint16_t value;  // symbol value or table offset
 };
