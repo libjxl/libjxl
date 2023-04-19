@@ -94,12 +94,17 @@ inline JXL_NOINLINE bool Debug(const char* format, ...) {
 //   #ifndef JXL_DEBUG_MYMODULE
 //   #define JXL_DEBUG_MYMODULE 0
 //   #endif JXL_DEBUG_MYMODULE
-#define JXL_DEBUG(enabled, format, ...)                         \
-  do {                                                          \
-    if (enabled) {                                              \
-      ::jxl::Debug(("%s:%d: " format "\n"), __FILE__, __LINE__, ##__VA_ARGS__); \
-    }                                                           \
+#define JXL_DEBUG_TMP(format, ...) \
+  ::jxl::Debug(("%s:%d: " format "\n"), __FILE__, __LINE__, ##__VA_ARGS__)
+
+#define JXL_DEBUG(enabled, format, ...)     \
+  do {                                      \
+    if (enabled) {                          \
+      JXL_DEBUG_TMP(format, ##__VA_ARGS__); \
+    }                                       \
   } while (0)
+
+#undef JXL_DEBUG_TMP
 
 // JXL_DEBUG version that prints the debug message if the global verbose level
 // defined at compile time by JXL_DEBUG_V_LEVEL is greater or equal than the
