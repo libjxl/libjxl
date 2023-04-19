@@ -118,8 +118,11 @@ jobs:
     - name: Install build deps
       run: |
         sudo rm -f /var/lib/man-db/auto-update
+        sudo gem install apt-spy2
+        sudo apt-spy2 check
+        sudo apt-spy2 fix --commit
         sudo apt update
-        sudo apt -o Acquire::Retries=3 install -y \
+        sudo apt -o install -y \
           ccache \
           clang \
           cmake \
