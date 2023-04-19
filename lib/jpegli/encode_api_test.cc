@@ -129,7 +129,7 @@ TEST(EncodeAPITest, ReuseCinfoSameMemOutput) {
   }
   std::vector<TestImage> all_outputs(all_configs.size());
   {
-    jpeg_decompress_struct cinfo;
+    jpeg_decompress_struct cinfo = {};
     const auto try_catch_block = [&]() -> bool {
       ERROR_HANDLER_SETUP(jpegli);
       jpeg_create_decompress(&cinfo);
@@ -171,7 +171,7 @@ TEST(EncodeAPITest, ReuseCinfoSameStdOutput) {
   rewind(tmpf);
   std::vector<TestImage> all_outputs(all_configs.size());
   {
-    jpeg_decompress_struct cinfo;
+    jpeg_decompress_struct cinfo = {};
     const auto try_catch_block = [&]() -> bool {
       ERROR_HANDLER_SETUP(jpegli);
       jpeg_create_decompress(&cinfo);

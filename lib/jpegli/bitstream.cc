@@ -798,7 +798,7 @@ bool EncodeScan(j_compress_ptr cinfo, int scan_index) {
   const int Ah = scan_info->Ah;
   const int Ss = scan_info->Ss;
   const int Se = scan_info->Se;
-  constexpr coeff_t kDummyBlock[DCTSIZE2] = {0};
+  HWY_ALIGN constexpr coeff_t kDummyBlock[DCTSIZE2] = {0};
 
   JBLOCKARRAY ba[MAX_COMPS_IN_SCAN];
   for (int mcu_y = 0; mcu_y < MCU_rows; ++mcu_y) {
