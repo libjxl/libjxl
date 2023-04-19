@@ -843,10 +843,19 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
     all_tests.push_back(config);
   }
   // Tests for color transforms.
+  for (J_COLOR_SPACE out_color_space : {JCS_RGB, JCS_GRAYSCALE}) {
+    TestConfig config;
+    config.input.xsize = config.input.ysize = 256;
+    config.input.color_space = JCS_GRAYSCALE;
+    config.dparams.set_out_color_space = true;
+    config.dparams.out_color_space = out_color_space;
+    all_tests.push_back(config);
+  }
   for (J_COLOR_SPACE jpeg_color_space : {JCS_RGB, JCS_YCbCr}) {
-    for (J_COLOR_SPACE out_color_space : {JCS_RGB, JCS_YCbCr}) {
+    for (J_COLOR_SPACE out_color_space : {JCS_RGB, JCS_YCbCr, JCS_GRAYSCALE}) {
       if (jpeg_color_space == JCS_RGB && out_color_space == JCS_YCbCr) continue;
       TestConfig config;
+      config.input.xsize = config.input.ysize = 256;
       config.jparams.set_jpeg_colorspace = true;
       config.jparams.jpeg_color_space = jpeg_color_space;
       config.dparams.set_out_color_space = true;
@@ -858,6 +867,7 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
     for (J_COLOR_SPACE out_color_space : {JCS_CMYK, JCS_YCCK}) {
       if (jpeg_color_space == JCS_CMYK && out_color_space == JCS_YCCK) continue;
       TestConfig config;
+      config.input.xsize = config.input.ysize = 256;
       config.input.color_space = JCS_CMYK;
       config.jparams.set_jpeg_colorspace = true;
       config.jparams.jpeg_color_space = jpeg_color_space;

@@ -349,7 +349,9 @@ void AllocateBuffers(j_compress_ptr cinfo) {
   size_t xsize_full = total_iMCU_cols * iMCU_width;
   size_t ysize_full = 3 * iMCU_height;
   if (!cinfo->raw_data_in) {
-    for (int c = 0; c < cinfo->input_components; ++c) {
+    int num_all_components =
+        std::max(cinfo->input_components, cinfo->num_components);
+    for (int c = 0; c < num_all_components; ++c) {
       m->input_buffer[c].Allocate(cinfo, ysize_full, xsize_full);
     }
   }
@@ -403,7 +405,9 @@ void AllocateBuffers(j_compress_ptr cinfo) {
 void ReadInputRow(j_compress_ptr cinfo, const uint8_t* scanline,
                   float* row[kMaxComponents]) {
   jpeg_comp_master* m = cinfo->master;
-  for (int c = 0; c < cinfo->input_components; ++c) {
+  int num_all_components =
+      std::max(cinfo->input_components, cinfo->num_components);
+  for (int c = 0; c < num_all_components; ++c) {
     row[c] = m->input_buffer[c].Row(m->next_input_row);
   }
   ++m->next_input_row;
@@ -432,7 +436,7 @@ void PadInputBuffer(j_compress_ptr cinfo, float* row[kMaxComponents]) {
   if (m->next_input_row == cinfo->image_height) {
     size_t num_rows = m->ysize_blocks * DCTSIZE - cinfo->image_height;
     for (size_t i = 0; i < num_rows; ++i) {
-      for (int c = 0; c < cinfo->input_components; ++c) {
+      for (int c = 0; c < cinfo->num_components; ++c) {
         float* dest = m->input_buffer[c].Row(m->next_input_row) - 1;
         memcpy(dest, row[c] - 1, (len1 + 2) * sizeof(dest[0]));
       }

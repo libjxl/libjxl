@@ -353,6 +353,10 @@ void PrepareForOutput(j_decompress_ptr cinfo) {
     size_t cheight = comp.v_samp_factor * m->scaled_dct_size[c];
     m->raw_height_[c] = cinfo->total_iMCU_rows * cheight;
     m->raw_output_[c].Allocate(cinfo, 3 * cheight, output_stride);
+  }
+  int num_all_components =
+      std::max(cinfo->out_color_components, cinfo->num_components);
+  for (int c = 0; c < num_all_components; ++c) {
     m->render_output_[c].Allocate(cinfo, cinfo->max_v_samp_factor,
                                   output_stride);
   }
@@ -461,7 +465,7 @@ void ProcessRawOutput(j_decompress_ptr cinfo, JSAMPIMAGE data) {
     size_t y0 = cinfo->output_iMCU_row * compinfo.v_samp_factor * DCTSIZE;
     size_t y1 = std::min(y0 + comp_nrows, comp_height);
     for (size_t y = y0; y < y1; ++y) {
-      float* rows[3] = {m->raw_output_[c].Row(y)};
+      float* rows[1] = {m->raw_output_[c].Row(y)};
       uint8_t* output = data[c][y - y0];
       DecenterRow(rows[0], comp_width);
       WriteToOutput(cinfo, rows, 0, comp_width, 1, output);
@@ -522,8 +526,10 @@ void ProcessOutput(j_decompress_ptr cinfo, size_t* num_output_rows,
       }
       for (int yix = 0; yix < vfactor; ++yix) {
         if (y + yix < ybegin || y + yix >= yend) continue;
-        float* rows[4];
-        for (int c = 0; c < cinfo->out_color_components; ++c) {
+        float* rows[kMaxComponents];
+        int num_all_components =
+            std::max(cinfo->out_color_components, cinfo->num_components);
+        for (int c = 0; c < num_all_components; ++c) {
           rows[c] = m->render_output_[c].Row(yix);
         }
         (*m->color_transform)(rows, output_width);

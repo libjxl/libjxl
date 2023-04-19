@@ -50,8 +50,13 @@ TEST_P(EncodeAPITestParam, TestAPI) {
   DecompressParams dparams;
   dparams.output_mode =
       config.input_mode == COEFFICIENTS ? COEFFICIENTS : PIXELS;
-  dparams.set_out_color_space = true;
-  dparams.out_color_space = config.input.color_space;
+  if (config.jparams.set_jpeg_colorspace &&
+      config.jparams.jpeg_color_space == JCS_GRAYSCALE) {
+    ConvertToGrayscale(&config.input);
+  } else {
+    dparams.set_out_color_space = true;
+    dparams.out_color_space = config.input.color_space;
+  }
   TestImage output;
   DecodeWithLibjpeg(config.jparams, dparams, compressed, &output);
   VerifyOutputImage(config.input, output, config.max_dist);
@@ -460,6 +465,35 @@ std::vector<TestConfig> GenerateTests() {
     config.max_dist = 1.7;
     all_tests.push_back(config);
   }
+
+  for (J_COLOR_SPACE in_color_space : {JCS_RGB, JCS_YCbCr, JCS_GRAYSCALE}) {
+    for (J_COLOR_SPACE jpeg_color_space : {JCS_RGB, JCS_YCbCr, JCS_GRAYSCALE}) {
+      if (jpeg_color_space == JCS_RGB && in_color_space == JCS_YCbCr) continue;
+      TestConfig config;
+      config.input.xsize = config.input.ysize = 256;
+      config.input.color_space = in_color_space;
+      config.jparams.set_jpeg_colorspace = true;
+      config.jparams.jpeg_color_space = jpeg_color_space;
+      config.max_bpp = jpeg_color_space == JCS_RGB ? 4.5 : 1.9;
+      config.max_dist = jpeg_color_space == JCS_RGB ? 1.4 : 2.0;
+      all_tests.push_back(config);
+    }
+  }
+  for (J_COLOR_SPACE in_color_space : {JCS_CMYK, JCS_YCCK}) {
+    for (J_COLOR_SPACE jpeg_color_space : {JCS_CMYK, JCS_YCCK}) {
+      if (jpeg_color_space == JCS_CMYK && in_color_space == JCS_YCCK) continue;
+      TestConfig config;
+      config.input.xsize = config.input.ysize = 256;
+      config.input.color_space = in_color_space;
+      if (in_color_space != jpeg_color_space) {
+        config.jparams.set_jpeg_colorspace = true;
+        config.jparams.jpeg_color_space = jpeg_color_space;
+      }
+      config.max_bpp = jpeg_color_space == JCS_CMYK ? 4.0 : 3.6;
+      config.max_dist = jpeg_color_space == JCS_CMYK ? 1.2 : 1.5;
+      all_tests.push_back(config);
+    }
+  }
   {
     TestConfig config;
     config.input.color_space = JCS_YCbCr;
@@ -473,28 +507,6 @@ std::vector<TestConfig> GenerateTests() {
     config.jparams.xyb_mode = xyb;
     config.max_bpp = 1.35;
     config.max_dist = 1.4;
-    all_tests.push_back(config);
-  }
-  {
-    TestConfig config;
-    config.input.color_space = JCS_RGB;
-    config.jparams.set_jpeg_colorspace = true;
-    config.jparams.jpeg_color_space = JCS_RGB;
-    config.jparams.xyb_mode = false;
-    config.max_bpp = 4.0;
-    config.max_dist = 1.4;
-    all_tests.push_back(config);
-  }
-  {
-    TestConfig config;
-    config.input.color_space = JCS_CMYK;
-    config.max_bpp = 4.0;
-    config.max_dist = 1.4;
-    all_tests.push_back(config);
-    config.jparams.set_jpeg_colorspace = true;
-    config.jparams.jpeg_color_space = JCS_YCCK;
-    config.max_bpp = 3.3;
-    config.max_dist = 1.7;
     all_tests.push_back(config);
   }
   for (int channels = 1; channels <= 4; ++channels) {

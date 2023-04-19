@@ -139,7 +139,6 @@ void ProcessSOF(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
     }
     cinfo->out_color_space = JCS_CMYK;
   }
-  cinfo->out_color_components = cinfo->num_components;
 
   // We have checked above that none of the sampling factors are 0, so the max
   // sampling factors can not be 0.
