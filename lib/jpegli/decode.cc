@@ -59,6 +59,14 @@ void InitializeImage(j_decompress_ptr cinfo) {
   m->icc_profile_.clear();
   memset(m->dc_huff_lut_, 0, sizeof(m->dc_huff_lut_));
   memset(m->ac_huff_lut_, 0, sizeof(m->ac_huff_lut_));
+  // Initialize the values to an invalid symbol so that we can recognize it
+  // when reading the bit stream using a Huffman code with space > 0.
+  for (size_t i = 0; i < kAllHuffLutSize; ++i) {
+    m->dc_huff_lut_[i].bits = 0;
+    m->dc_huff_lut_[i].value = 0xffff;
+    m->ac_huff_lut_[i].bits = 0;
+    m->ac_huff_lut_[i].value = 0xffff;
+  }
   m->colormap_lut_ = nullptr;
   m->pixels_ = nullptr;
   m->scanlines_ = nullptr;
