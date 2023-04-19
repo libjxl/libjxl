@@ -119,7 +119,7 @@ jobs:
       run: |
         sudo rm -f /var/lib/man-db/auto-update
         sudo apt update
-        sudo apt install -y \
+        sudo apt -o Acquire::Retries=3 install -y \
           ccache \
           clang \
           cmake \
