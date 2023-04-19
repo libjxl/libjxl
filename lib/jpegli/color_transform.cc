@@ -158,6 +158,16 @@ bool CheckColorSpaceComponents(int num_components, J_COLOR_SPACE colorspace) {
 
 void NullTransform(float* row[kMaxComponents], size_t len) {}
 
+void GrayscaleToRGB(float* row[kMaxComponents], size_t len) {
+  memcpy(row[1], row[0], len * sizeof(row[1][0]));
+  memcpy(row[2], row[0], len * sizeof(row[2][0]));
+}
+
+void GrayscaleToYCbCr(float* row[kMaxComponents], size_t len) {
+  memset(row[1], 0, len * sizeof(row[1][0]));
+  memset(row[2], 0, len * sizeof(row[2][0]));
+}
+
 void ChooseColorTransform(j_compress_ptr cinfo) {
   jpeg_comp_master* m = cinfo->master;
   if (!CheckColorSpaceComponents(cinfo->input_components,
@@ -194,9 +204,15 @@ void ChooseColorTransform(j_compress_ptr cinfo) {
       // image, nothing to do here
       m->color_transform = NullTransform;
     }
+  } else if (cinfo->jpeg_color_space == JCS_RGB) {
+    if (cinfo->in_color_space == JCS_GRAYSCALE) {
+      m->color_transform = GrayscaleToRGB;
+    }
   } else if (cinfo->jpeg_color_space == JCS_YCbCr) {
     if (cinfo->in_color_space == JCS_RGB) {
       m->color_transform = HWY_DYNAMIC_DISPATCH(RGBToYCbCr);
+    } else if (cinfo->in_color_space == JCS_GRAYSCALE) {
+      m->color_transform = GrayscaleToYCbCr;
     }
   } else if (cinfo->jpeg_color_space == JCS_YCCK) {
     if (cinfo->in_color_space == JCS_CMYK) {
@@ -234,9 +250,19 @@ void ChooseColorTransform(j_decompress_ptr cinfo) {
   }
 
   m->color_transform = nullptr;
-  if (cinfo->jpeg_color_space == JCS_YCbCr) {
+  if (cinfo->jpeg_color_space == JCS_GRAYSCALE) {
+    if (cinfo->out_color_space == JCS_RGB) {
+      m->color_transform = GrayscaleToRGB;
+    }
+  } else if (cinfo->jpeg_color_space == JCS_RGB) {
+    if (cinfo->out_color_space == JCS_GRAYSCALE) {
+      m->color_transform = HWY_DYNAMIC_DISPATCH(RGBToYCbCr);
+    }
+  } else if (cinfo->jpeg_color_space == JCS_YCbCr) {
     if (cinfo->out_color_space == JCS_RGB) {
       m->color_transform = HWY_DYNAMIC_DISPATCH(YCbCrToRGB);
+    } else if (cinfo->out_color_space == JCS_GRAYSCALE) {
+      m->color_transform = NullTransform;
     }
   } else if (cinfo->jpeg_color_space == JCS_YCCK) {
     if (cinfo->out_color_space == JCS_CMYK) {

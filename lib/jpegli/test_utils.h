@@ -267,8 +267,7 @@ bool ReadPNM(const std::vector<uint8_t>& data, size_t* xsize, size_t* ysize,
 
 void SetNumChannels(J_COLOR_SPACE colorspace, size_t* channels);
 
-void ConvertPixel(const uint8_t* input_rgb, uint8_t* out,
-                  J_COLOR_SPACE colorspace, size_t num_channels);
+void ConvertToGrayscale(TestImage* img);
 
 void GeneratePixels(TestImage* img);
 

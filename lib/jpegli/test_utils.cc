@@ -298,13 +298,20 @@ void SetNumChannels(J_COLOR_SPACE colorspace, size_t* channels) {
   }
 }
 
+void RGBToYCbCr(float r, float g, float b, float* y, float* cb, float* cr) {
+  *y = 0.299f * r + 0.587f * g + 0.114f * b;
+  *cb = -0.168736f * r - 0.331264f * g + 0.5f * b + 0.5f;
+  *cr = 0.5f * r - 0.418688f * g - 0.081312f * b + 0.5f;
+}
+
 void ConvertPixel(const uint8_t* input_rgb, uint8_t* out,
                   J_COLOR_SPACE colorspace, size_t num_channels,
-                  JpegliDataType data_type, bool swap_endianness) {
+                  JpegliDataType data_type = JPEGLI_TYPE_UINT8,
+                  bool swap_endianness = JPEGLI_NATIVE_ENDIAN) {
   const float kMul = 255.0f;
-  const float r = input_rgb[0] / kMul;
-  const float g = input_rgb[1] / kMul;
-  const float b = input_rgb[2] / kMul;
+  float r = input_rgb[0] / kMul;
+  float g = input_rgb[1] / kMul;
+  float b = input_rgb[2] / kMul;
   uint8_t out8[MAX_COMPONENTS];
   if (colorspace == JCS_GRAYSCALE) {
     const float Y = 0.299f * r + 0.587f * g + 0.114f * b;
@@ -314,21 +321,28 @@ void ConvertPixel(const uint8_t* input_rgb, uint8_t* out,
       out8[c] = input_rgb[std::min<size_t>(2, c)];
     }
   } else if (colorspace == JCS_YCbCr) {
-    float Y = 0.299f * r + 0.587f * g + 0.114f * b;
-    float Cb = -0.168736f * r - 0.331264f * g + 0.5f * b + 0.5f;
-    float Cr = 0.5f * r - 0.418688f * g - 0.081312f * b + 0.5f;
+    float Y, Cb, Cr;
+    RGBToYCbCr(r, g, b, &Y, &Cb, &Cr);
     out8[0] = static_cast<uint8_t>(std::round(Y * kMul));
     out8[1] = static_cast<uint8_t>(std::round(Cb * kMul));
     out8[2] = static_cast<uint8_t>(std::round(Cr * kMul));
-  } else if (colorspace == JCS_CMYK) {
+  } else if (colorspace == JCS_CMYK || colorspace == JCS_YCCK) {
     float K = 1.0f - std::max(r, std::max(g, b));
     float scaleK = 1.0f / (1.0f - K);
-    float C = (1.0f - K - r) * scaleK;
-    float M = (1.0f - K - g) * scaleK;
-    float Y = (1.0f - K - b) * scaleK;
-    out8[0] = static_cast<uint8_t>(std::round(C * kMul));
-    out8[1] = static_cast<uint8_t>(std::round(M * kMul));
-    out8[2] = static_cast<uint8_t>(std::round(Y * kMul));
+    r *= scaleK;
+    g *= scaleK;
+    b *= scaleK;
+    if (colorspace == JCS_CMYK) {
+      out8[0] = static_cast<uint8_t>(std::round((1.0f - r) * kMul));
+      out8[1] = static_cast<uint8_t>(std::round((1.0f - g) * kMul));
+      out8[2] = static_cast<uint8_t>(std::round((1.0f - b) * kMul));
+    } else if (colorspace == JCS_YCCK) {
+      float Y, Cb, Cr;
+      RGBToYCbCr(r, g, b, &Y, &Cb, &Cr);
+      out8[0] = static_cast<uint8_t>(std::round(Y * kMul));
+      out8[1] = static_cast<uint8_t>(std::round(Cb * kMul));
+      out8[2] = static_cast<uint8_t>(std::round(Cr * kMul));
+    }
     out8[3] = static_cast<uint8_t>(std::round(K * kMul));
   } else {
     JXL_ABORT("Colorspace %d not supported", colorspace);
@@ -353,6 +367,21 @@ void ConvertPixel(const uint8_t* input_rgb, uint8_t* out,
       memcpy(&out[sizeof(val) * c], &val, sizeof(val));
     }
   }
+}
+
+void ConvertToGrayscale(TestImage* img) {
+  if (img->color_space == JCS_GRAYSCALE) return;
+  JXL_CHECK(img->data_type == JPEGLI_TYPE_UINT8);
+  for (size_t i = 0; i < img->pixels.size(); i += 3) {
+    if (img->color_space == JCS_RGB) {
+      ConvertPixel(&img->pixels[i], &img->pixels[i / 3], JCS_GRAYSCALE, 1);
+    } else if (img->color_space == JCS_YCbCr) {
+      img->pixels[i / 3] = img->pixels[i];
+    }
+  }
+  img->pixels.resize(img->pixels.size() / 3);
+  img->color_space = JCS_GRAYSCALE;
+  img->components = 1;
 }
 
 void GeneratePixels(TestImage* img) {

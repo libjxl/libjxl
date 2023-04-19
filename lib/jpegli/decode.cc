@@ -671,6 +671,17 @@ void jpegli_calc_output_dimensions(j_decompress_ptr cinfo) {
       m->scaled_dct_size[c] = DCTSIZE;
     }
   }
+  if (cinfo->out_color_space == JCS_GRAYSCALE) {
+    cinfo->out_color_components = 1;
+  } else if (cinfo->out_color_space == JCS_RGB ||
+             cinfo->out_color_space == JCS_YCbCr) {
+    cinfo->out_color_components = 3;
+  } else if (cinfo->out_color_space == JCS_CMYK ||
+             cinfo->out_color_space == JCS_YCCK) {
+    cinfo->out_color_components = 4;
+  } else {
+    cinfo->out_color_components = cinfo->num_components;
+  }
   cinfo->output_components =
       cinfo->quantize_colors ? 1 : cinfo->out_color_components;
   cinfo->rec_outbuf_height = 1;
