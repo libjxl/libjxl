@@ -50,6 +50,7 @@ void InitializeImage(j_decompress_ptr cinfo) {
   m->input_buffer_.clear();
   m->input_buffer_pos_ = 0;
   m->codestream_bits_ahead_ = 0;
+  m->is_multiscan_ = false;
   m->found_soi_ = false;
   m->found_dri_ = false;
   m->found_sof_ = false;
@@ -586,6 +587,9 @@ int jpegli_read_header(j_decompress_ptr cinfo, boolean require_image) {
     JPEGLI_ERROR("jpegli_read_header: unexpected state %d",
                  cinfo->global_state);
   }
+  if (cinfo->src == nullptr) {
+    JPEGLI_ERROR("Missing source.");
+  }
   for (;;) {
     int retcode = jpegli_consume_input(cinfo);
     if (retcode == JPEG_SUSPENDED) {
@@ -900,6 +904,7 @@ jvirt_barray_ptr* jpegli_read_coefficients(j_decompress_ptr cinfo) {
         return nullptr;
       }
     }
+    cinfo->output_scanline = cinfo->output_height;
   }
   return m->coef_arrays;
 }
@@ -909,6 +914,9 @@ boolean jpegli_finish_decompress(j_decompress_ptr cinfo) {
       cinfo->global_state != jpegli::kDecProcessMarkers) {
     JPEGLI_ERROR("jpegli_finish_decompress: unexpected state %d",
                  cinfo->global_state);
+  }
+  if (!cinfo->buffered_image && cinfo->output_scanline < cinfo->output_height) {
+    JPEGLI_ERROR("Incomplete output");
   }
   while (!cinfo->master->found_eoi_) {
     if (jpegli::ConsumeInput(cinfo) == JPEG_SUSPENDED) {

@@ -22,11 +22,11 @@ constexpr uint8_t kIccProfileTag[12] = "ICC_PROFILE";
 
 // Macros for commonly used error conditions.
 
-#define JPEG_VERIFY_LEN(n)                                     \
-  if (pos + (n) > len) {                                       \
-    return JPEGLI_ERROR("Unexpected end of input: pos=%" PRIuS \
-                        " need=%d len=%" PRIuS,                \
-                        pos, static_cast<int>(n), len);        \
+#define JPEG_VERIFY_LEN(n)                                      \
+  if (pos + (n) > len) {                                        \
+    return JPEGLI_ERROR("Unexpected end of marker: pos=%" PRIuS \
+                        " need=%d len=%" PRIuS,                 \
+                        pos, static_cast<int>(n), len);         \
   }
 
 #define JPEG_VERIFY_INPUT(var, low, high)                               \
