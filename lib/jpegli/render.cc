@@ -393,8 +393,8 @@ bool do_smoothing(j_decompress_ptr cinfo) {
   return smoothing_useful;
 }
 
-void PredictSmooth(j_decompress_ptr cinfo, const int16_t* blocks, int component,
-                   size_t ix, size_t iy) {
+void PredictSmooth(j_decompress_ptr cinfo, JBLOCKARRAY blocks, int component,
+                   size_t bx, int iy) {
   const size_t imcu_row = cinfo->output_iMCU_row;
   int16_t* scratch = cinfo->master->smoothing_scratch_;
   std::vector<int> Q_VAL(SAVED_COEFS);
@@ -402,33 +402,32 @@ void PredictSmooth(j_decompress_ptr cinfo, const int16_t* blocks, int component,
 
   std::array<std::array<int, 5>, 5> dc_values;
   auto& compinfo = cinfo->comp_info[component];
+  const size_t by0 = imcu_row * compinfo.v_samp_factor;
+  const size_t by = by0 + iy;
 
-  memcpy(scratch, blocks, DCTSIZE2 * sizeof(blocks[0]));
+  int prev_iy = by > 0 ? iy - 1 : 0;
+  int prev_prev_iy = by > 1 ? iy - 2 : prev_iy;
+  int next_iy = by + 1 < compinfo.height_in_blocks ? iy + 1 : iy;
+  int next_next_iy = by + 2 < compinfo.height_in_blocks ? iy + 2 : next_iy;
 
-  const int16_t* prev_row =
-      imcu_row > 0 ? blocks - DCTSIZE2 * compinfo.width_in_blocks : blocks;
-  const int16_t* prev_prev_row =
-      imcu_row > 1 ? blocks - DCTSIZE2 * 2 * compinfo.width_in_blocks
-                   : prev_row;
+  const int16_t* cur_row = blocks[iy][bx];
+  const int16_t* prev_row = blocks[prev_iy][bx];
+  const int16_t* prev_prev_row = blocks[prev_prev_iy][bx];
+  const int16_t* next_row = blocks[next_iy][bx];
+  const int16_t* next_next_row = blocks[next_next_iy][bx];
 
-  const int16_t* next_row = imcu_row + 1 < cinfo->total_iMCU_rows
-                                ? blocks + DCTSIZE2 * compinfo.width_in_blocks
-                                : blocks;
-  const int16_t* next_next_row =
-      imcu_row + 2 < cinfo->total_iMCU_rows
-          ? blocks + DCTSIZE2 * 2 * compinfo.width_in_blocks
-          : next_row;
-
-  int prev_block_ind = ix ? -DCTSIZE2 : 0;
-  int prev_prev_block_ind = ix > 1 ? -2 * DCTSIZE2 : prev_block_ind;
-  int next_block_ind = ix + 1 < compinfo.width_in_blocks ? DCTSIZE2 : 0;
+  int prev_block_ind = bx ? -DCTSIZE2 : 0;
+  int prev_prev_block_ind = bx > 1 ? -2 * DCTSIZE2 : prev_block_ind;
+  int next_block_ind = bx + 1 < compinfo.width_in_blocks ? DCTSIZE2 : 0;
   int next_next_block_ind =
-      ix + 2 < compinfo.width_in_blocks ? DCTSIZE2 * 2 : next_block_ind;
+      bx + 2 < compinfo.width_in_blocks ? DCTSIZE2 * 2 : next_block_ind;
 
-  std::array<const int16_t*, 5> row_ptrs = {prev_prev_row, prev_row, blocks,
+  std::array<const int16_t*, 5> row_ptrs = {prev_prev_row, prev_row, cur_row,
                                             next_row, next_next_row};
   std::array<int, 5> block_inds = {prev_prev_block_ind, prev_block_ind, 0,
                                    next_block_ind, next_next_block_ind};
+
+  memcpy(scratch, cur_row, DCTSIZE2 * sizeof(cur_row[0]));
 
   for (int r = 0; r < 5; ++r) {
     for (int c = 0; c < 5; ++c) {
@@ -651,7 +650,7 @@ void DecodeCurrentiMCURow(j_decompress_ptr cinfo) {
       float* JXL_RESTRICT row_out = raw_out->Row(by * dctsize);
       for (size_t bx = 0; bx < compinfo.width_in_blocks; ++bx) {
         if (m->apply_smoothing) {
-          PredictSmooth(cinfo, &row_in[bx * DCTSIZE2], c, bx, by);
+          PredictSmooth(cinfo, ba[c], c, bx, iy);
           (*m->inverse_transform[c])(m->smoothing_scratch_, &m->dequant_[k0],
                                      &m->biases_[k0], m->idct_scratch_,
                                      &row_out[bx * dctsize], raw_out->stride(),

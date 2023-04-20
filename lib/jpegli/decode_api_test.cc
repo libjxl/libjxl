@@ -378,11 +378,6 @@ TEST(DecodeAPITest, ReuseCinfo) {
                 if (scale_num == 1 && scale_denom == 8 && h_samp != v_samp) {
                   max_rms = 5.0f;  // libjpeg does not do fancy upsampling
                 }
-                if (dparams.do_block_smoothing) {
-                  // libjpeg does smoothing for incomplete scans differently at
-                  // the border between current and previous scans.
-                  max_rms = 5.0f;
-                }
                 VerifyOutputImage(expected, output, max_rms);
                 printf("Decoding in buffered image mode\n");
                 expected_output_progression.clear();
@@ -537,14 +532,6 @@ TEST_P(DecodeAPITestParam, TestAPI) {
     printf("rms: %f  vs  %f\n", rms0, rms1);
     EXPECT_LE(rms0, rms1 * config.max_tolerance_factor);
   } else {
-    if (dparams.do_block_smoothing) {
-      config.max_rms_dist = 20.0;
-      for (const auto& param : dparams.scan_params) {
-        if (param.dither_mode != JDITHER_NONE) {
-          config.max_rms_dist = 100.0;
-        }
-      }
-    }
     VerifyOutputImage(output0, output1, config.max_rms_dist, config.max_diff);
   }
 }
@@ -584,14 +571,6 @@ TEST_P(DecodeAPITestParamBuffered, TestAPI) {
       printf("rms: %f  vs  %f\n", rms0, rms1);
       EXPECT_LE(rms0, rms1 * config.max_tolerance_factor);
     } else {
-      if (dparams.do_block_smoothing) {
-        config.max_rms_dist = 20.0;
-        for (const auto& param : dparams.scan_params) {
-          if (param.dither_mode != JDITHER_NONE) {
-            config.max_rms_dist = 100.0;
-          }
-        }
-      }
       VerifyOutputImage(expected, output, config.max_rms_dist, config.max_diff);
     }
   }
@@ -704,6 +683,25 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
     }
   }
 
+  // Tests for block smoothing.
+  for (float size_factor : {0.1f, 0.33f, 0.5f, 0.75f, 1.0f}) {
+    for (int samp : {1, 2}) {
+      TestConfig config;
+      config.input.xsize = 517;
+      config.input.ysize = 523;
+      config.jparams.h_sampling = {samp, 1, 1};
+      config.jparams.v_sampling = {samp, 1, 1};
+      config.jparams.progressive_mode = 2;
+      config.dparams.size_factor = size_factor;
+      config.dparams.do_block_smoothing = true;
+      // libjpeg does smoothing for incomplete scans differently at
+      // the border between current and previous scans.
+      config.max_rms_dist = 8.0f;
+      config.max_diff = 255.0f;
+      all_tests.push_back(config);
+    }
+  }
+
   // Test for switching output color quantization modes between scans.
   if (buffered) {
     TestConfig config;
@@ -768,9 +766,6 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
                 // We only test for buffer overflows, etc.
                 config.max_rms_dist = 100.0f;
                 config.max_diff = 255.0f;
-              }
-              if (config.dparams.do_block_smoothing) {
-                config.max_tolerance_factor = 2.0f;
               }
               all_tests.push_back(config);
             }
