@@ -68,7 +68,7 @@ class SplitView : public QWidget {
   Side originalSide_;
   bool clicking_ = false;
   Side clickedSide_;
-  QRect leftRect_, rightRect_;
+  QRectF leftRect_, rightRect_;
   State state_ = State::kDisplaying;
   bool gray_ = false;
   QTimer blankingTimer_;

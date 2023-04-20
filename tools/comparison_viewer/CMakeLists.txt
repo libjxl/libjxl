@@ -3,9 +3,9 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
-find_package(Qt5 QUIET COMPONENTS Concurrent Widgets)
-if (NOT Qt5_FOUND)
-  message(WARNING "Qt5 was not found. The comparison tool will not be built.")
+find_package(Qt6 QUIET COMPONENTS Concurrent Widgets)
+if (NOT Qt6_FOUND)
+  message(WARNING "Qt6 was not found. The comparison tool will not be built.")
   return()
 endif ()
 
@@ -28,7 +28,7 @@ target_include_directories(image_loading PRIVATE
   $<TARGET_PROPERTY:lcms2,INCLUDE_DIRECTORIES>
 )
 target_link_libraries(image_loading PUBLIC
-  Qt5::Widgets
+  Qt6::Widgets
   jxl-static
   jxl_threads-static
   jxl_extras-static
@@ -51,8 +51,8 @@ add_executable(compare_codecs WIN32
 )
 target_link_libraries(compare_codecs
   image_loading
-  Qt5::Concurrent
-  Qt5::Widgets
+  Qt6::Concurrent
+  Qt6::Widgets
   icc_detect
 )
 
@@ -69,6 +69,6 @@ add_executable(compare_images WIN32
 )
 target_link_libraries(compare_images
   image_loading
-  Qt5::Widgets
+  Qt6::Widgets
   icc_detect
 )

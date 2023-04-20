@@ -51,7 +51,7 @@ void ViewerWindow::loadFilesAndDirectories(QStringList entries) {
   filenames_.clear();
   QSet<QString> visited;
   for (const QString& entry : entries) {
-    recursivelyAddSubEntries(entry, &visited, &filenames_);
+    recursivelyAddSubEntries(QFileInfo(entry), &visited, &filenames_);
   }
 
   const bool several = filenames_.size() > 1;

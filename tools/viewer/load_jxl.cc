@@ -136,37 +136,15 @@ QImage loadJxlImage(const QString& filename, const QByteArray& targetIccProfile,
   if (elapsed_ns != nullptr) *elapsed_ns = timer.nsecsElapsed();
 
   QImage result(info.xsize, info.ysize,
-#if QT_VERSION >= QT_VERSION_CHECK(5, 12, 0)
                 info.alpha_premultiplied ? QImage::Format_RGBA64_Premultiplied
-                                         : QImage::Format_RGBA64
-#else
-                info.alpha_premultiplied ? QImage::Format_ARGB32_Premultiplied
-                                         : QImage::Format_ARGB32
-#endif
-  );
+                                         : QImage::Format_RGBA64);
 
   for (int y = 0; y < result.height(); ++y) {
-#if QT_VERSION >= QT_VERSION_CHECK(5, 12, 0)
     QRgba64* const row = reinterpret_cast<QRgba64*>(result.scanLine(y));
-#else
-    QRgb* const row = reinterpret_cast<QRgb*>(result.scanLine(y));
-#endif
     const uint16_t* const data = uint16_pixels.data() + result.width() * y * 4;
     for (int x = 0; x < result.width(); ++x) {
-#if QT_VERSION >= QT_VERSION_CHECK(5, 6, 0)
       row[x] = qRgba64(data[4 * x + 0], data[4 * x + 1], data[4 * x + 2],
-                       data[4 * x + 3])
-#if QT_VERSION < QT_VERSION_CHECK(5, 12, 0)
-                   .toArgb32()
-#endif
-          ;
-#else
-      // Qt version older than 5.6 doesn't have a qRgba64.
-      row[x] = qRgba(data[4 * x + 0] * (255.f / 65535) + .5f,
-                     data[4 * x + 1] * (255.f / 65535) + .5f,
-                     data[4 * x + 2] * (255.f / 65535) + .5f,
-                     data[4 * x + 3] * (255.f / 65535) + .5f);
-#endif
+                       data[4 * x + 3]);
     }
   }
   return result;

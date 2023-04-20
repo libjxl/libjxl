@@ -3,9 +3,9 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
-find_package(Qt5 QUIET COMPONENTS Widgets)
-if (NOT Qt5_FOUND)
-  message(WARNING "Qt5 was not found. The flicker test tool will not be built.")
+find_package(Qt6 QUIET COMPONENTS Widgets)
+if (NOT Qt6_FOUND)
+  message(WARNING "Qt6 was not found. The flicker test tool will not be built.")
   return()
 endif ()
 
@@ -32,7 +32,7 @@ add_executable(flicker_test WIN32
   test_window.ui)
 
 target_link_libraries(flicker_test PUBLIC
-  Qt5::Widgets
+  Qt6::Widgets
   image_loading
   icc_detect
 )

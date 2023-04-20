@@ -11,6 +11,9 @@
   <property name="windowTitle">
    <string>New flicker test</string>
   </property>
+  <property name="wizardStyle">
+   <enum>QWizard::ClassicStyle</enum>
+  </property>
   <property name="options">
    <set>QWizard::NoBackButtonOnStartPage</set>
   </property>

@@ -135,10 +135,6 @@ jobs:
           # GTK plugins
           libgdk-pixbuf2.0-dev:${{ matrix.arch }}
           libgtk2.0-dev:${{ matrix.arch }}
-
-          # QT
-          libqt5x11extras5-dev:${{ matrix.arch }}
-          qtbase5-dev:${{ matrix.arch }}
         )
         if [[ "${{ matrix.build_target }}" != "x86_64-linux-gnu" ]]; then
           pkgs+=(
