@@ -11,7 +11,6 @@
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/color_hints.h"
 #include "lib/jxl/base/file_io.h"
-#include "lib/jxl/color_management.h"
 #include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_metadata.h"

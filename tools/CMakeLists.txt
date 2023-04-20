@@ -6,39 +6,39 @@
 # ICC detection library used by the comparison and viewer tools.
 if(JPEGXL_ENABLE_VIEWERS)
 if(WIN32)
-  find_package(Qt5 QUIET COMPONENTS Widgets)
-  if (NOT Qt5_FOUND)
-    message(WARNING "Qt5 was not found.")
+  find_package(Qt6 QUIET COMPONENTS Widgets)
+  if (NOT Qt6_FOUND)
+    message(WARNING "Qt6 was not found.")
   else()
     add_library(icc_detect STATIC EXCLUDE_FROM_ALL
       icc_detect/icc_detect_win32.cc
       icc_detect/icc_detect.h
     )
     target_include_directories(icc_detect PRIVATE "${PROJECT_SOURCE_DIR}")
-    target_link_libraries(icc_detect PUBLIC Qt5::Widgets)
+    target_link_libraries(icc_detect PUBLIC Qt6::Widgets)
     if(JPEGXL_DEP_LICENSE_DIR)
-      configure_file("${JPEGXL_DEP_LICENSE_DIR}/libqt5widgets5/copyright"
-                     ${PROJECT_BINARY_DIR}/LICENSE.libqt5widgets5 COPYONLY)
+      configure_file("${JPEGXL_DEP_LICENSE_DIR}/libqt6widgets6/copyright"
+                     ${PROJECT_BINARY_DIR}/LICENSE.libqt6widgets6 COPYONLY)
     endif()  # JPEGXL_DEP_LICENSE_DIR
   endif()
 elseif(APPLE)
-  find_package(Qt5 QUIET COMPONENTS Widgets)
-  if (Qt5_FOUND)
+  find_package(Qt6 QUIET COMPONENTS Widgets)
+  if (Qt6_FOUND)
     add_library(icc_detect STATIC EXCLUDE_FROM_ALL
       icc_detect/icc_detect_empty.cc
       icc_detect/icc_detect.h
     )
     target_include_directories(icc_detect PRIVATE "${PROJECT_SOURCE_DIR}")
-    target_link_libraries(icc_detect PUBLIC Qt5::Widgets)
+    target_link_libraries(icc_detect PUBLIC Qt6::Widgets)
   else()
-    message(WARNING "APPLE: Qt5 was not found.")
+    message(WARNING "APPLE: Qt6 was not found.")
   endif()
 else()
-  find_package(Qt5 QUIET COMPONENTS Widgets X11Extras)
+  find_package(Qt6 QUIET COMPONENTS Widgets)
   find_package(ECM QUIET NO_MODULE)
-  if (NOT Qt5_FOUND OR NOT ECM_FOUND)
-    if (NOT Qt5_FOUND)
-      message(WARNING "Qt5 was not found.")
+  if (NOT Qt6_FOUND OR NOT ECM_FOUND)
+    if (NOT Qt6_FOUND)
+      message(WARNING "Qt6 was not found.")
     else()
       message(WARNING "extra-cmake-modules were not found.")
     endif()
@@ -50,7 +50,7 @@ else()
         icc_detect/icc_detect_x11.cc
         icc_detect/icc_detect.h
       )
-      target_link_libraries(icc_detect PUBLIC jxl-static Qt5::Widgets Qt5::X11Extras XCB::XCB)
+      target_link_libraries(icc_detect PUBLIC jxl-static Qt6::Widgets XCB::XCB)
     endif ()
   endif()
 endif()
