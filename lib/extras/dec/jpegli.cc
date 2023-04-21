@@ -138,11 +138,8 @@ Status DecodeJpeg(const std::vector<uint8_t>& compressed,
   // the call to setjmp().
   std::unique_ptr<JSAMPLE[]> row;
 
+  jpeg_decompress_struct cinfo;
   const auto try_catch_block = [&]() -> bool {
-    jpeg_decompress_struct cinfo;
-    // cinfo is initialized by libjpeg, which we are not instrumenting with
-    // msan, therefore we need to initialize cinfo here.
-    msan::UnpoisonMemory(&cinfo, sizeof(cinfo));
     // Setup error handling in jpeg library so we can deal with broken jpegs in
     // the fuzzer.
     jpeg_error_mgr jerr;
@@ -247,11 +244,11 @@ Status DecodeJpeg(const std::vector<uint8_t>& compressed,
     }
 
     jpegli_finish_decompress(&cinfo);
-    jpegli_destroy_decompress(&cinfo);
     return true;
   };
-
-  return try_catch_block();
+  bool success = try_catch_block();
+  jpegli_destroy_decompress(&cinfo);
+  return success;
 }
 
 }  // namespace extras
