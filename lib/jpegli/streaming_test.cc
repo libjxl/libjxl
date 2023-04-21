@@ -160,12 +160,12 @@ TEST_P(StreamingTestParam, TestStreaming) {
         }
       }
 
-      // After four iMCU rows, the compressor has emitted three iMCU rows of
-      // compressed data, of which we expect two full iMCU row of compressed
+      // After six iMCU rows, the compressor has emitted five iMCU rows of
+      // compressed data, of which we expect four full iMCU row of compressed
       // data to be in the decoder's input buffer, but since the decoder also
-      // needs context rows for upsampling, we don't expect any output to be
-      // ready yet.
-      if (yin < 5 * iMCU_height && yin < cinfo.image_height) {
+      // needs context rows for upsampling and smoothing, we don't expect any
+      // output to be ready yet.
+      if (yin < 7 * iMCU_height && yin < cinfo.image_height) {
         continue;
       }
 

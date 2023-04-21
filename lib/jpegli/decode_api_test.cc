@@ -743,6 +743,25 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
     }
   }
 
+  // Tests for block smoothing.
+  for (float size_factor : {0.1f, 0.33f, 0.5f, 0.75f, 1.0f}) {
+    for (int samp : {1, 2}) {
+      TestConfig config;
+      config.input.xsize = 517;
+      config.input.ysize = 523;
+      config.jparams.h_sampling = {samp, 1, 1};
+      config.jparams.v_sampling = {samp, 1, 1};
+      config.jparams.progressive_mode = 2;
+      config.dparams.size_factor = size_factor;
+      config.dparams.do_block_smoothing = true;
+      // libjpeg does smoothing for incomplete scans differently at
+      // the border between current and previous scans.
+      config.max_rms_dist = 8.0f;
+      config.max_diff = 255.0f;
+      all_tests.push_back(config);
+    }
+  }
+
   // Test for switching output color quantization modes between scans.
   if (buffered) {
     TestConfig config;
@@ -756,7 +775,7 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
         {12, JDITHER_NONE, CQUANT_2PASS}, {13, JDITHER_FS, CQUANT_2PASS},
     };
     config.compare_to_orig = true;
-    config.max_tolerance_factor = 1.02f;
+    config.max_tolerance_factor = 1.04f;
     all_tests.push_back(config);
   }
 

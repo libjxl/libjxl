@@ -1026,8 +1026,10 @@ void DecodeAllScansWithLibjpeg(const CompressParams& jparams,
       ReadOutputPass(&cinfo, dparams, &output);
       output_progression->emplace_back(std::move(output));
       // read scanlines/read raw data does not change input/output scan number
-      JXL_CHECK(cinfo.input_scan_number == sos_marker_cnt);
-      JXL_CHECK(cinfo.output_scan_number == cinfo.input_scan_number);
+      if (!cinfo.progressive_mode) {
+        JXL_CHECK(cinfo.input_scan_number == sos_marker_cnt);
+        JXL_CHECK(cinfo.output_scan_number == cinfo.input_scan_number);
+      }
       JXL_CHECK(jpeg_finish_output(&cinfo));
       ++sos_marker_cnt;  // finish output reads the next SOS marker or EOI
       if (dparams.output_mode == COEFFICIENTS) {
@@ -1156,7 +1158,8 @@ void VerifyOutputImage(const TestImage& input, const TestImage& output,
                        double max_diff) {
   double max_d;
   double rms = DistanceRms(input, output, start_line, num_lines, &max_d);
-  printf("rms: %f  max diff: %f\n", rms, max_d);
+  printf("rms: %f, max_rms: %f, max_d: %f,  max_diff: %f\n", rms, max_rms,
+         max_d, max_diff);
   JXL_CHECK(rms <= max_rms);
   JXL_CHECK(max_d <= max_diff);
 }

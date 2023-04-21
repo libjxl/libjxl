@@ -243,6 +243,7 @@ TEST_P(InputSuspensionTestParam, InputOutputLockStepNonBuffered) {
     while (jpegli_read_header(&cinfo, TRUE) == JPEG_SUSPENDED) {
       JXL_CHECK(src.LoadNextChunk());
     }
+    SetDecompressParams(dparams, &cinfo, true);
     if (config.jparams.add_marker) {
       EXPECT_EQ(num_markers_seen, kMarkerSequenceLen);
       EXPECT_EQ(0, memcmp(markers_seen, kMarkerSequence, num_markers_seen));
@@ -292,11 +293,13 @@ TEST_P(InputSuspensionTestParam, InputOutputLockStepBuffered) {
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_decompress(&cinfo);
+
     cinfo.src = reinterpret_cast<jpeg_source_mgr*>(&src);
 
     while (jpegli_read_header(&cinfo, TRUE) == JPEG_SUSPENDED) {
       JXL_CHECK(src.LoadNextChunk());
     }
+    SetDecompressParams(dparams, &cinfo, true);
 
     cinfo.buffered_image = TRUE;
     cinfo.raw_data_out = dparams.output_mode == RAW_DATA;
@@ -377,6 +380,7 @@ TEST_P(InputSuspensionTestParam, PreConsumeInputBuffered) {
     EXPECT_EQ(JPEG_REACHED_SOS, jpegli_consume_input(&cinfo));
     cinfo.buffered_image = TRUE;
     cinfo.raw_data_out = dparams.output_mode == RAW_DATA;
+    cinfo.do_block_smoothing = dparams.do_block_smoothing;
 
     EXPECT_TRUE(jpegli_start_decompress(&cinfo));
     EXPECT_FALSE(jpegli_input_complete(&cinfo));
@@ -442,6 +446,7 @@ TEST_P(InputSuspensionTestParam, PreConsumeInputNonBuffered) {
     }
     EXPECT_EQ(JPEG_REACHED_SOS, jpegli_consume_input(&cinfo));
     cinfo.raw_data_out = dparams.output_mode == RAW_DATA;
+    cinfo.do_block_smoothing = dparams.do_block_smoothing;
 
     if (dparams.output_mode == COEFFICIENTS) {
       jpegli_read_coefficients(&cinfo);
@@ -540,6 +545,23 @@ std::vector<TestConfig> GenerateTests() {
       }
     }
   }
+  // Tests for block smoothing.
+  for (float size_factor : {0.1f, 0.33f, 0.5f, 0.75f, 1.0f}) {
+    for (int samp : {1, 2}) {
+      TestConfig config;
+      config.input.xsize = 517;
+      config.input.ysize = 523;
+      config.jparams.h_sampling = {samp, 1, 1};
+      config.jparams.v_sampling = {samp, 1, 1};
+      config.jparams.progressive_mode = 2;
+      config.dparams.size_factor = size_factor;
+      config.dparams.do_block_smoothing = true;
+      // libjpeg does smoothing for incomplete scans differently at
+      // the border between current and previous scans.
+      config.max_rms_dist = 8.0f;
+      all_tests.push_back(config);
+    }
+  }
   return all_tests;
 }
 
@@ -567,6 +589,9 @@ std::ostream& operator<<(std::ostream& os, const TestConfig& c) {
     os << "RawDataOut";
   } else if (c.dparams.output_mode == COEFFICIENTS) {
     os << "CoeffsOut";
+  }
+  if (c.dparams.do_block_smoothing) {
+    os << "BlockSmoothing";
   }
   return os;
 }
