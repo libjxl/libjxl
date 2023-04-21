@@ -141,7 +141,7 @@ Status DecodeJpeg(const std::vector<uint8_t>& compressed,
   const auto try_catch_block = [&]() -> bool {
     jpeg_decompress_struct cinfo;
     // cinfo is initialized by libjpeg, which we are not instrumenting with
-    // msan, therefore we need to initialize cinfo here.
+    // msan, therefore we don't need to initialize cinfo here.
     msan::UnpoisonMemory(&cinfo, sizeof(cinfo));
     // Setup error handling in jpeg library so we can deal with broken jpegs in
     // the fuzzer.

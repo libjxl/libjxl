@@ -13,6 +13,7 @@
 #include "lib/jpegli/encode.h"
 #include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_xyb.h"
+#include "lib/jxl/sanitizers.h"
 
 namespace jxl {
 namespace extras {
@@ -347,6 +348,9 @@ Status EncodeJpeg(const PackedPixelFile& ppf, const JpegSettings& jpeg_settings,
   ComputePremulAbsorb(255.0f, premul_absorb.get());
 
   jpeg_compress_struct cinfo;
+  // cinfo is initialized by libjpeg, which we are not instrumenting with
+  // msan, therefore we don't need to initialize cinfo here.
+  msan::UnpoisonMemory(&cinfo, sizeof(cinfo));
   const auto try_catch_block = [&]() -> bool {
     jpeg_error_mgr jerr;
     jmp_buf env;

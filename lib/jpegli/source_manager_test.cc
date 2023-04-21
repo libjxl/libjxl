@@ -57,7 +57,7 @@ TEST_P(SourceManagerTestParam, TestStdioSourceManager) {
   }
   ASSERT_TRUE(src != nullptr);
   TestImage output0;
-  jpeg_decompress_struct cinfo;
+  jpeg_decompress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_decompress(&cinfo);
@@ -81,7 +81,7 @@ TEST_P(SourceManagerTestParam, TestMemSourceManager) {
     compressed.resize(compressed.size() * config.dparams.size_factor);
   }
   TestImage output0;
-  jpeg_decompress_struct cinfo;
+  jpeg_decompress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_decompress(&cinfo);

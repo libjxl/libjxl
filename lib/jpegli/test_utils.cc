@@ -631,7 +631,7 @@ bool EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
                       std::vector<uint8_t>* compressed) {
   uint8_t* buffer = nullptr;
   unsigned long buffer_size = 0;
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);

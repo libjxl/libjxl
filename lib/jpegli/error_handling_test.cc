@@ -17,7 +17,7 @@ TEST(EncoderErrorHandlingTest, MinimalSuccess) {
   uint8_t* buffer = nullptr;
   unsigned long buffer_size = 0;
   {
-    jpeg_compress_struct cinfo;
+    jpeg_compress_struct cinfo = {};
     const auto try_catch_block = [&]() -> bool {
       ERROR_HANDLER_SETUP(jpegli);
       jpegli_create_compress(&cinfo);
@@ -61,7 +61,7 @@ TEST(EncoderErrorHandlingTest, MinimalSuccess) {
 }
 
 TEST(EncoderErrorHandlingTest, NoDestination) {
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
@@ -79,7 +79,7 @@ TEST(EncoderErrorHandlingTest, NoDestination) {
 TEST(EncoderErrorHandlingTest, NoImageDimensions) {
   uint8_t* buffer = nullptr;
   unsigned long buffer_size = 0;
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
@@ -97,7 +97,7 @@ TEST(EncoderErrorHandlingTest, NoImageDimensions) {
 TEST(EncoderErrorHandlingTest, ImageTooBig) {
   uint8_t* buffer = nullptr;
   unsigned long buffer_size = 0;
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
@@ -117,7 +117,7 @@ TEST(EncoderErrorHandlingTest, ImageTooBig) {
 TEST(EncoderErrorHandlingTest, NoInputComponents) {
   uint8_t* buffer = nullptr;
   unsigned long buffer_size = 0;
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
@@ -136,7 +136,7 @@ TEST(EncoderErrorHandlingTest, NoInputComponents) {
 TEST(EncoderErrorHandlingTest, TooManyInputComponents) {
   uint8_t* buffer = nullptr;
   unsigned long buffer_size = 0;
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
@@ -156,7 +156,7 @@ TEST(EncoderErrorHandlingTest, TooManyInputComponents) {
 TEST(EncoderErrorHandlingTest, NoSetDefaults) {
   uint8_t* buffer = nullptr;
   unsigned long buffer_size = 0;
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
@@ -179,7 +179,7 @@ TEST(EncoderErrorHandlingTest, NoSetDefaults) {
 TEST(EncoderErrorHandlingTest, NoStartCompress) {
   uint8_t* buffer = nullptr;
   unsigned long buffer_size = 0;
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
@@ -201,7 +201,7 @@ TEST(EncoderErrorHandlingTest, NoStartCompress) {
 TEST(EncoderErrorHandlingTest, NoWriteScanlines) {
   uint8_t* buffer = nullptr;
   unsigned long buffer_size = 0;
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
@@ -222,7 +222,7 @@ TEST(EncoderErrorHandlingTest, NoWriteScanlines) {
 TEST(EncoderErrorHandlingTest, NoWriteAllScanlines) {
   uint8_t* buffer = nullptr;
   unsigned long buffer_size = 0;
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
@@ -246,7 +246,7 @@ TEST(EncoderErrorHandlingTest, NoWriteAllScanlines) {
 TEST(EncoderErrorHandlingTest, InvalidQuantValue) {
   uint8_t* buffer = nullptr;
   unsigned long buffer_size = 0;
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
@@ -274,7 +274,7 @@ TEST(EncoderErrorHandlingTest, InvalidQuantValue) {
 TEST(EncoderErrorHandlingTest, InvalidQuantTableIndex) {
   uint8_t* buffer = nullptr;
   unsigned long buffer_size = 0;
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
@@ -299,7 +299,7 @@ TEST(EncoderErrorHandlingTest, InvalidQuantTableIndex) {
 TEST(EncoderErrorHandlingTest, NumberOfComponentsMismatch1) {
   uint8_t* buffer = nullptr;
   unsigned long buffer_size = 0;
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
@@ -320,7 +320,7 @@ TEST(EncoderErrorHandlingTest, NumberOfComponentsMismatch1) {
 TEST(EncoderErrorHandlingTest, NumberOfComponentsMismatch2) {
   uint8_t* buffer = nullptr;
   unsigned long buffer_size = 0;
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
@@ -341,7 +341,7 @@ TEST(EncoderErrorHandlingTest, NumberOfComponentsMismatch2) {
 TEST(EncoderErrorHandlingTest, NumberOfComponentsMismatch3) {
   uint8_t* buffer = nullptr;
   unsigned long buffer_size = 0;
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
@@ -367,7 +367,7 @@ TEST(EncoderErrorHandlingTest, NumberOfComponentsMismatch3) {
 TEST(EncoderErrorHandlingTest, NumberOfComponentsMismatch4) {
   uint8_t* buffer = nullptr;
   unsigned long buffer_size = 0;
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
@@ -392,7 +392,7 @@ TEST(EncoderErrorHandlingTest, NumberOfComponentsMismatch4) {
 TEST(EncoderErrorHandlingTest, NumberOfComponentsMismatch5) {
   uint8_t* buffer = nullptr;
   unsigned long buffer_size = 0;
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
@@ -417,7 +417,7 @@ TEST(EncoderErrorHandlingTest, NumberOfComponentsMismatch5) {
 TEST(EncoderErrorHandlingTest, NumberOfComponentsMismatch6) {
   uint8_t* buffer = nullptr;
   unsigned long buffer_size = 0;
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
@@ -443,7 +443,7 @@ TEST(EncoderErrorHandlingTest, NumberOfComponentsMismatch6) {
 TEST(EncoderErrorHandlingTest, InvalidColorTransform) {
   uint8_t* buffer = nullptr;
   unsigned long buffer_size = 0;
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
@@ -469,7 +469,7 @@ TEST(EncoderErrorHandlingTest, InvalidColorTransform) {
 TEST(EncoderErrorHandlingTest, DuplicateComponentIds) {
   uint8_t* buffer = nullptr;
   unsigned long buffer_size = 0;
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
@@ -491,7 +491,7 @@ TEST(EncoderErrorHandlingTest, DuplicateComponentIds) {
 TEST(EncoderErrorHandlingTest, InvalidComponentIndex) {
   uint8_t* buffer = nullptr;
   unsigned long buffer_size = 0;
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
@@ -512,7 +512,7 @@ TEST(EncoderErrorHandlingTest, InvalidComponentIndex) {
 TEST(EncoderErrorHandlingTest, ArithmeticCoding) {
   uint8_t* buffer = nullptr;
   unsigned long buffer_size = 0;
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
@@ -533,7 +533,7 @@ TEST(EncoderErrorHandlingTest, ArithmeticCoding) {
 TEST(EncoderErrorHandlingTest, CCIR601Sampling) {
   uint8_t* buffer = nullptr;
   unsigned long buffer_size = 0;
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
@@ -554,7 +554,7 @@ TEST(EncoderErrorHandlingTest, CCIR601Sampling) {
 TEST(EncoderErrorHandlingTest, InvalidScanScript1) {
   uint8_t* buffer = nullptr;
   unsigned long buffer_size = 0;
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
@@ -577,7 +577,7 @@ TEST(EncoderErrorHandlingTest, InvalidScanScript1) {
 TEST(EncoderErrorHandlingTest, InvalidScanScript2) {
   uint8_t* buffer = nullptr;
   unsigned long buffer_size = 0;
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
@@ -600,7 +600,7 @@ TEST(EncoderErrorHandlingTest, InvalidScanScript2) {
 TEST(EncoderErrorHandlingTest, InvalidScanScript3) {
   uint8_t* buffer = nullptr;
   unsigned long buffer_size = 0;
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
@@ -623,7 +623,7 @@ TEST(EncoderErrorHandlingTest, InvalidScanScript3) {
 TEST(EncoderErrorHandlingTest, InvalidScanScript4) {
   uint8_t* buffer = nullptr;
   unsigned long buffer_size = 0;
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
@@ -646,7 +646,7 @@ TEST(EncoderErrorHandlingTest, InvalidScanScript4) {
 TEST(EncoderErrorHandlingTest, InvalidScanScript5) {
   uint8_t* buffer = nullptr;
   unsigned long buffer_size = 0;
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
@@ -669,7 +669,7 @@ TEST(EncoderErrorHandlingTest, InvalidScanScript5) {
 TEST(EncoderErrorHandlingTest, InvalidScanScript6) {
   uint8_t* buffer = nullptr;
   unsigned long buffer_size = 0;
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
@@ -692,7 +692,7 @@ TEST(EncoderErrorHandlingTest, InvalidScanScript6) {
 TEST(EncoderErrorHandlingTest, InvalidScanScript7) {
   uint8_t* buffer = nullptr;
   unsigned long buffer_size = 0;
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
@@ -715,7 +715,7 @@ TEST(EncoderErrorHandlingTest, InvalidScanScript7) {
 TEST(EncoderErrorHandlingTest, InvalidScanScript8) {
   uint8_t* buffer = nullptr;
   unsigned long buffer_size = 0;
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
@@ -740,7 +740,7 @@ TEST(EncoderErrorHandlingTest, InvalidScanScript8) {
 TEST(EncoderErrorHandlingTest, InvalidScanScript9) {
   uint8_t* buffer = nullptr;
   unsigned long buffer_size = 0;
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
@@ -765,7 +765,7 @@ TEST(EncoderErrorHandlingTest, InvalidScanScript9) {
 TEST(EncoderErrorHandlingTest, InvalidScanScript10) {
   uint8_t* buffer = nullptr;
   unsigned long buffer_size = 0;
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
@@ -790,7 +790,7 @@ TEST(EncoderErrorHandlingTest, InvalidScanScript10) {
 TEST(EncoderErrorHandlingTest, InvalidScanScript11) {
   uint8_t* buffer = nullptr;
   unsigned long buffer_size = 0;
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
@@ -815,7 +815,7 @@ TEST(EncoderErrorHandlingTest, InvalidScanScript11) {
 TEST(EncoderErrorHandlingTest, InvalidScanScript12) {
   uint8_t* buffer = nullptr;
   unsigned long buffer_size = 0;
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
@@ -840,7 +840,7 @@ TEST(EncoderErrorHandlingTest, InvalidScanScript12) {
 TEST(EncoderErrorHandlingTest, InvalidScanScript13) {
   uint8_t* buffer = nullptr;
   unsigned long buffer_size = 0;
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
@@ -868,7 +868,7 @@ TEST(EncoderErrorHandlingTest, InvalidScanScript13) {
 TEST(EncoderErrorHandlingTest, MCUSizeTooBig) {
   uint8_t* buffer = nullptr;
   unsigned long buffer_size = 0;
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
@@ -891,7 +891,7 @@ TEST(EncoderErrorHandlingTest, MCUSizeTooBig) {
 TEST(EncoderErrorHandlingTest, RestartIntervalTooBig) {
   uint8_t* buffer = nullptr;
   unsigned long buffer_size = 0;
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
@@ -912,7 +912,7 @@ TEST(EncoderErrorHandlingTest, RestartIntervalTooBig) {
 TEST(EncoderErrorHandlingTest, SamplingFactorTooBig) {
   uint8_t* buffer = nullptr;
   unsigned long buffer_size = 0;
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
@@ -933,7 +933,7 @@ TEST(EncoderErrorHandlingTest, SamplingFactorTooBig) {
 TEST(EncoderErrorHandlingTest, NonIntegralSamplingRatio) {
   uint8_t* buffer = nullptr;
   unsigned long buffer_size = 0;
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
@@ -957,7 +957,7 @@ constexpr const char* kAddOnTable[] = {"First message",
                                        "Third message with string param %s"};
 
 TEST(EncoderErrorHandlingTest, AddOnTableNoParam) {
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
@@ -973,7 +973,7 @@ TEST(EncoderErrorHandlingTest, AddOnTableNoParam) {
 }
 
 TEST(EncoderErrorHandlingTest, AddOnTableIntParam) {
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
@@ -990,7 +990,7 @@ TEST(EncoderErrorHandlingTest, AddOnTableIntParam) {
 }
 
 TEST(EncoderErrorHandlingTest, AddOnTableNoStringParam) {
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);

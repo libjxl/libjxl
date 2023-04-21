@@ -327,7 +327,7 @@ TEST(DecodeAPITest, ReuseCinfo) {
   CompressParams jparams;
   DecompressParams dparams;
   std::vector<uint8_t> compressed;
-  jpeg_decompress_struct cinfo;
+  jpeg_decompress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_decompress(&cinfo);
@@ -427,7 +427,7 @@ TEST(DecodeAPITest, ReuseCinfoSameMemSource) {
   uint8_t* buffer = nullptr;
   unsigned long buffer_size = 0;
   {
-    jpeg_compress_struct cinfo;
+    jpeg_compress_struct cinfo = {};
     const auto try_catch_block = [&]() -> bool {
       ERROR_HANDLER_SETUP(jpegli);
       jpegli_create_compress(&cinfo);
@@ -442,7 +442,7 @@ TEST(DecodeAPITest, ReuseCinfoSameMemSource) {
   }
   std::vector<TestImage> all_outputs(all_configs.size());
   {
-    jpeg_decompress_struct cinfo;
+    jpeg_decompress_struct cinfo = {};
     const auto try_catch_block = [&]() -> bool {
       ERROR_HANDLER_SETUP(jpegli);
       jpegli_create_decompress(&cinfo);
@@ -467,7 +467,7 @@ TEST(DecodeAPITest, ReuseCinfoSameStdSource) {
   FILE* tmpf = tmpfile();
   JXL_CHECK(tmpf);
   {
-    jpeg_compress_struct cinfo;
+    jpeg_compress_struct cinfo = {};
     const auto try_catch_block = [&]() -> bool {
       ERROR_HANDLER_SETUP(jpegli);
       jpegli_create_compress(&cinfo);
@@ -483,7 +483,7 @@ TEST(DecodeAPITest, ReuseCinfoSameStdSource) {
   rewind(tmpf);
   std::vector<TestImage> all_outputs(all_configs.size());
   {
-    jpeg_decompress_struct cinfo;
+    jpeg_decompress_struct cinfo = {};
     const auto try_catch_block = [&]() -> bool {
       ERROR_HANDLER_SETUP(jpegli);
       jpegli_create_decompress(&cinfo);
@@ -509,7 +509,7 @@ TEST(DecodeAPITest, AbbreviatedStreams) {
   uint8_t* data_stream = nullptr;
   unsigned long data_stream_size = 0;
   {
-    jpeg_compress_struct cinfo;
+    jpeg_compress_struct cinfo = {};
     const auto try_catch_block = [&]() -> bool {
       ERROR_HANDLER_SETUP(jpegli);
       jpegli_create_compress(&cinfo);
@@ -575,7 +575,7 @@ TEST_P(DecodeAPITestParam, TestAPI) {
   DecodeWithLibjpeg(config.jparams, dparams, compressed, &output1);
 
   TestImage output0;
-  jpeg_decompress_struct cinfo;
+  jpeg_decompress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_decompress(&cinfo);
@@ -610,7 +610,7 @@ TEST_P(DecodeAPITestParamBuffered, TestAPI) {
                             &output_progression1);
 
   std::vector<TestImage> output_progression0;
-  jpeg_decompress_struct cinfo;
+  jpeg_decompress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_decompress(&cinfo);

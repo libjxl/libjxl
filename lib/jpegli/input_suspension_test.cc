@@ -227,7 +227,7 @@ TEST_P(InputSuspensionTestParam, InputOutputLockStepNonBuffered) {
   SourceManager src(compressed.data(), compressed.size(), dparams.chunk_size,
                     is_partial);
   TestImage output0;
-  jpeg_decompress_struct cinfo;
+  jpeg_decompress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_decompress(&cinfo);
@@ -289,7 +289,7 @@ TEST_P(InputSuspensionTestParam, InputOutputLockStepBuffered) {
   SourceManager src(compressed.data(), compressed.size(), dparams.chunk_size,
                     is_partial);
   std::vector<TestImage> output_progression0;
-  jpeg_decompress_struct cinfo;
+  jpeg_decompress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_decompress(&cinfo);
@@ -365,7 +365,7 @@ TEST_P(InputSuspensionTestParam, PreConsumeInputBuffered) {
   SourceManager src(compressed.data(), compressed.size(), dparams.chunk_size,
                     is_partial);
   TestImage output0;
-  jpeg_decompress_struct cinfo;
+  jpeg_decompress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_decompress(&cinfo);
@@ -432,7 +432,7 @@ TEST_P(InputSuspensionTestParam, PreConsumeInputNonBuffered) {
   SourceManager src(compressed.data(), compressed.size(), dparams.chunk_size,
                     is_partial);
   TestImage output0;
-  jpeg_decompress_struct cinfo;
+  jpeg_decompress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_decompress(&cinfo);

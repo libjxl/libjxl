@@ -72,7 +72,7 @@ TEST(EncodeAPITest, ReuseCinfoSameImageTwice) {
   unsigned long buffer_size = 0;
   std::vector<uint8_t> compressed0;
   std::vector<uint8_t> compressed1;
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto try_catch_block = [&]() -> bool {
     ERROR_HANDLER_SETUP(jpegli);
     jpegli_create_compress(&cinfo);
@@ -119,7 +119,7 @@ TEST(EncodeAPITest, ReuseCinfoSameMemOutput) {
   uint8_t* buffer = nullptr;
   unsigned long buffer_size = 0;
   {
-    jpeg_compress_struct cinfo;
+    jpeg_compress_struct cinfo = {};
     const auto try_catch_block = [&]() -> bool {
       ERROR_HANDLER_SETUP(jpegli);
       jpegli_create_compress(&cinfo);
@@ -160,7 +160,7 @@ TEST(EncodeAPITest, ReuseCinfoSameStdOutput) {
   FILE* tmpf = tmpfile();
   JXL_CHECK(tmpf);
   {
-    jpeg_compress_struct cinfo;
+    jpeg_compress_struct cinfo = {};
     const auto try_catch_block = [&]() -> bool {
       ERROR_HANDLER_SETUP(jpegli);
       jpegli_create_compress(&cinfo);
@@ -204,7 +204,7 @@ TEST(EncodeAPITest, ReuseCinfoChangeParams) {
   uint8_t* buffer = nullptr;
   unsigned long buffer_size = 0;
   std::vector<uint8_t> compressed;
-  jpeg_compress_struct cinfo;
+  jpeg_compress_struct cinfo = {};
   const auto max_rms = [](int q, int hs, int vs) {
     if (hs == 1 && vs == 1) return q == 90 ? 2.2 : 0.6;
     if (hs == 2 && vs == 2) return q == 90 ? 2.8 : 1.2;
@@ -271,7 +271,7 @@ TEST(EncodeAPITest, AbbreviatedStreams) {
   uint8_t* data_stream = nullptr;
   unsigned long data_stream_size = 0;
   {
-    jpeg_compress_struct cinfo;
+    jpeg_compress_struct cinfo = {};
     const auto try_catch_block = [&]() -> bool {
       ERROR_HANDLER_SETUP(jpegli);
       jpegli_create_compress(&cinfo);
