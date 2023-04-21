@@ -479,8 +479,8 @@ Status QuantizedSpline::Dequantize(const Spline::Point& starting_point,
     // realistic area estimate. We leave it out to simplify the calculations,
     // and understand that this way we underestimate the area by a factor of
     // 1/(0.3333*0.3333). This is taken into account in the limits below.
-    uint64_t weight = static_cast<uint64_t>(
-        static_cast<uint64_t>(ceil(inv_quant) * std::abs(sigma_dct_[i])));
+    uint64_t weight =
+        static_cast<uint64_t>((ceil(inv_quant * std::abs(sigma_dct_[i]))));
     width_estimate += weight * weight;
   }
   *total_estimated_area_reached += (width_estimate * manhattan_distance);
