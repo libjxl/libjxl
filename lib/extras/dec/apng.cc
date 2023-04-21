@@ -491,6 +491,12 @@ int processing_start(png_structp& png_ptr, png_infop& info_ptr, void* frame_ptr,
                      std::vector<std::vector<uint8_t>>& chunksInfo) {
   unsigned char header[8] = {137, 80, 78, 71, 13, 10, 26, 10};
 
+  // Cleanup prior decoder, if any.
+  png_destroy_read_struct(&png_ptr, &info_ptr, 0);
+  // Just in case. Not all versions on libpng wipe-out the pointers.
+  png_ptr = nullptr;
+  info_ptr = nullptr;
+
   png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
   info_ptr = png_create_info_struct(png_ptr);
   if (!png_ptr || !info_ptr) return 1;
