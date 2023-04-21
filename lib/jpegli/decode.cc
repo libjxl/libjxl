@@ -889,6 +889,7 @@ jvirt_barray_ptr* jpegli_read_coefficients(j_decompress_ptr cinfo) {
   m->streaming_mode_ = false;
   if (!cinfo->buffered_image && cinfo->global_state == jpegli::kDecHeaderDone) {
     jpegli::AllocateCoefficientBuffer(cinfo);
+    jpegli_calc_output_dimensions(cinfo);
     jpegli::InitProgressMonitor(cinfo, /*coef_only=*/true);
     jpegli::PrepareForScan(cinfo);
   }
