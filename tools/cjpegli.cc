@@ -40,7 +40,7 @@ struct Args {
                                  "PPM, PFM, or PGX",
                                  &file_in);
     cmdline->AddPositionalOption("OUTPUT", /* required = */ true,
-                                 "the compressed JXL output file", &file_out);
+                                 "the compressed JPG output file", &file_out);
 
     cmdline->AddOptionFlag('\0', "disable_output",
                            "No output file will be written (for benchmarking)",
