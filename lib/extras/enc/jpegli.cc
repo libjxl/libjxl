@@ -272,6 +272,7 @@ Status EncodeJpegToTargetSize(const PackedPixelFile& ppf,
     JpegSettings settings = jpeg_settings;
     settings.libjpeg_quality = 0;
     settings.distance = distance;
+    settings.target_size = 0;
     std::vector<uint8_t> compressed;
     JXL_RETURN_IF_ERROR(EncodeJpeg(ppf, settings, pool, &compressed));
     size_t size = compressed.size();
@@ -308,6 +309,10 @@ Status EncodeJpeg(const PackedPixelFile& ppf, const JpegSettings& jpeg_settings,
     size_t target_size = encoded.bitstreams[0].size();
     return EncodeJpegToTargetSize(ppf, jpeg_settings, target_size, pool,
                                   compressed);
+  }
+  if (jpeg_settings.target_size > 0) {
+    return EncodeJpegToTargetSize(ppf, jpeg_settings, jpeg_settings.target_size,
+                                  pool, compressed);
   }
   JXL_RETURN_IF_ERROR(VerifyInput(ppf));
 
