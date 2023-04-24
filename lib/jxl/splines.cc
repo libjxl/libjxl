@@ -641,9 +641,6 @@ Status Splines::InitializeDrawCache(const size_t image_xsize,
     }
     HWY_DYNAMIC_DISPATCH(SegmentsFromPoints)
     (spline, points_to_draw, arc_length, segments_, segments_by_y, &px_limit);
-    if (px_limit == 0) {
-      return JXL_FAILURE("Too many pixels covered with splines");
-    }
   }
   // TODO(firsching) Change this into a JXL_FAILURE for level 5 codestreams.
   if (total_estimated_area_reached >
