@@ -52,7 +52,6 @@ Status ApplyColorHints(const ColorHints& color_hints,
       }));
 
   if (!got_color_space) {
-    JXL_WARNING("No color_space/icc_pathname given, assuming sRGB");
     ppf->color_encoding.color_space =
         is_gray ? JXL_COLOR_SPACE_GRAY : JXL_COLOR_SPACE_RGB;
     ppf->color_encoding.white_point = JXL_WHITE_POINT_D65;
