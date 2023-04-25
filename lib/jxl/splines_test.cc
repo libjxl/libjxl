@@ -50,7 +50,7 @@ std::vector<Spline> DequantizeSplines(const Splines& splines) {
   for (size_t i = 0; i < quantized_splines.size(); ++i) {
     dequantized.emplace_back();
     JXL_CHECK(quantized_splines[i].Dequantize(
-        starting_points[i], kQuantizationAdjustment, kYToX, kYToB, &total,
+        starting_points[i], kQuantizationAdjustment, kYToX, kYToB, 1024, &total,
         dequantized.back()));
   }
   return dequantized;
