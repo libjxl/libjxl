@@ -108,15 +108,10 @@ void DrawSegment(const SplineSegment& segment, const bool add, const size_t y,
 void ComputeSegments(const Spline::Point& center, const float intensity,
                      const float color[3], const float sigma,
                      std::vector<SplineSegment>& segments,
-                     std::vector<std::pair<size_t, size_t>>& segments_by_y,
-                     size_t* pixel_limit) {
-  // In worst case zero-sized dot spans over 2 rows / columns.
-  constexpr const float kThinDotSpan = 2.0f;
+                     std::vector<std::pair<size_t, size_t>>& segments_by_y) {
   // Sanity check sigma, inverse sigma and intensity
   if (!(std::isfinite(sigma) && sigma != 0.0f && std::isfinite(1.0f / sigma) &&
         std::isfinite(intensity))) {
-    // Even no-draw should still be accounted.
-    *pixel_limit -= std::min<size_t>(*pixel_limit, kThinDotSpan * kThinDotSpan);
     return;
   }
 #if JXL_HIGH_PRECISION
@@ -142,20 +137,6 @@ void ComputeSegments(const Spline::Point& center, const float intensity,
   segment.inv_sigma = 1.0f / sigma;
   segment.sigma_over_4_times_intensity = .25f * sigma * intensity;
   segment.maximum_distance = maximum_distance;
-  float cost = 2.0f * maximum_distance + kThinDotSpan;
-  // Check cost^2 fits size_t.
-  if (cost >= static_cast<float>(1 << 15)) {
-    // Too much to rasterize.
-    *pixel_limit = 0;
-    return;
-  }
-  size_t area_cost = static_cast<size_t>(cost * cost);
-  if (area_cost > *pixel_limit) {
-    *pixel_limit = 0;
-    return;
-  }
-  // TODO(eustas): perhaps we should charge less: (y1 - y0) <= cost
-  *pixel_limit -= area_cost;
   ssize_t y0 = center.y - maximum_distance + .5f;
   ssize_t y1 = center.y + maximum_distance + 1.5f;  // one-past-the-end
   for (ssize_t y = std::max<ssize_t>(y0, 0); y < y1; y++) {
@@ -184,8 +165,7 @@ void SegmentsFromPoints(
     const Spline& spline,
     const std::vector<std::pair<Spline::Point, float>>& points_to_draw,
     const float arc_length, std::vector<SplineSegment>& segments,
-    std::vector<std::pair<size_t, size_t>>& segments_by_y,
-    size_t* pixel_limit) {
+    std::vector<std::pair<size_t, size_t>>& segments_by_y) {
   const float inv_arc_length = 1.0f / arc_length;
   int k = 0;
   for (const auto& point_to_draw : points_to_draw) {
@@ -201,11 +181,7 @@ void SegmentsFromPoints(
     }
     const float sigma =
         ContinuousIDCT(spline.sigma_dct, (32 - 1) * progress_along_arc);
-    ComputeSegments(point, multiplier, color, sigma, segments, segments_by_y,
-                    pixel_limit);
-    if (*pixel_limit == 0) {
-      return;
-    }
+    ComputeSegments(point, multiplier, color, sigma, segments, segments_by_y);
   }
 }
 }  // namespace
@@ -346,7 +322,7 @@ void DrawCentripetalCatmullRomSpline(std::vector<Spline::Point> points,
 // TODO(eustas): this method always adds the last point, but never the first
 //               (unless those are one); I believe both ends matter.
 template <typename Points, typename Functor>
-bool ForEachEquallySpacedPoint(const Points& points, const Functor& functor) {
+void ForEachEquallySpacedPoint(const Points& points, const Functor& functor) {
   JXL_ASSERT(!points.empty());
   Spline::Point current = points.front();
   functor(current, kDesiredRenderingDistance);
@@ -356,7 +332,8 @@ bool ForEachEquallySpacedPoint(const Points& points, const Functor& functor) {
     float arclength_from_previous = 0.f;
     for (;;) {
       if (next == points.end()) {
-        return functor(*previous, arclength_from_previous);
+        functor(*previous, arclength_from_previous);
+        return;
       }
       const float arclength_to_next =
           std::sqrt((*next - *previous).SquaredNorm());
@@ -366,9 +343,7 @@ bool ForEachEquallySpacedPoint(const Points& points, const Functor& functor) {
             *previous + ((kDesiredRenderingDistance - arclength_from_previous) /
                          arclength_to_next) *
                             (*next - *previous);
-        if (!functor(current, kDesiredRenderingDistance)) {
-          return false;
-        }
+        functor(current, kDesiredRenderingDistance);
         break;
       }
       arclength_from_previous += arclength_to_next;
@@ -376,7 +351,6 @@ bool ForEachEquallySpacedPoint(const Points& points, const Functor& functor) {
       ++next;
     }
   }
-  return true;
 }
 
 }  // namespace
@@ -601,12 +575,6 @@ Status Splines::InitializeDrawCache(const size_t image_xsize,
   segment_y_start_.clear();
   std::vector<std::pair<size_t, size_t>> segments_by_y;
   Spline spline;
-  float pixel_limit = 16.0f * image_xsize * image_ysize + (1 << 16);
-  // Apply some extra cap to avoid overflows.
-  constexpr size_t kHardPixelLimit = 1u << 30;
-  size_t px_limit = (pixel_limit < static_cast<float>(kHardPixelLimit))
-                        ? static_cast<size_t>(pixel_limit)
-                        : kHardPixelLimit;
   std::vector<Spline::Point> intermediate_points;
   uint64_t total_estimated_area_reached = 0;
   for (size_t i = 0; i < splines_.size(); ++i) {
@@ -622,16 +590,13 @@ Status Splines::InitializeDrawCache(const size_t image_xsize,
           "identical successive control points in spline %" PRIuS, i);
     }
     std::vector<std::pair<Spline::Point, float>> points_to_draw;
-    const auto add_point = [&](const Spline::Point& point,
-                               const float multiplier) -> bool {
+    auto add_point = [&](const Spline::Point& point,
+                               const float multiplier) {
       points_to_draw.emplace_back(point, multiplier);
-      return (points_to_draw.size() <= px_limit);
     };
     intermediate_points.clear();
     DrawCentripetalCatmullRomSpline(spline.control_points, intermediate_points);
-    if (!ForEachEquallySpacedPoint(intermediate_points, add_point)) {
-      return JXL_FAILURE("Too many pixels covered with splines");
-    }
+    ForEachEquallySpacedPoint(intermediate_points, add_point);
     const float arc_length =
         (points_to_draw.size() - 2) * kDesiredRenderingDistance +
         points_to_draw.back().second;
@@ -640,7 +605,7 @@ Status Splines::InitializeDrawCache(const size_t image_xsize,
       continue;
     }
     HWY_DYNAMIC_DISPATCH(SegmentsFromPoints)
-    (spline, points_to_draw, arc_length, segments_, segments_by_y, &px_limit);
+    (spline, points_to_draw, arc_length, segments_, segments_by_y);
   }
   // TODO(firsching) Change this into a JXL_FAILURE for level 5 codestreams.
   if (total_estimated_area_reached >
