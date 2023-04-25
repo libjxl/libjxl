@@ -446,6 +446,24 @@ Status QuantizedSpline::Dequantize(const Spline::Point& starting_point,
     result.color_dct[2][i] += y_to_b * result.color_dct[1][i];
   }
   uint64_t width_estimate = 0;
+
+  uint64_t color[3] = {};
+  for (int c = 0; c < 3; ++c) {
+    for (int i = 0; i < 32; ++i) {
+      color[c] +=
+          static_cast<uint64_t>(ceil(inv_quant * std::abs(color_dct_[c][i])));
+    }
+  }
+  color[0] += static_cast<uint64_t>(ceil(abs(y_to_x))) * color[1];
+  color[2] += static_cast<uint64_t>(ceil(abs(y_to_b))) * color[1];
+  // This is not taking kChannelWeight into account, but up to constant factors
+  // it gives an indication of the influence of the color values on the area
+  // that will need to be rendered.
+  uint64_t logcolor = std::max(
+      uint64_t(1),
+      static_cast<uint64_t>(CeilLog2Nonzero(
+          uint64_t(1) + std::max(color[1], std::max(color[0], color[2])))));
+
   for (int i = 0; i < 32; ++i) {
     const float inv_dct_factor = (i == 0) ? kSqrt0_5 : 1.0f;
     result.sigma_dct[i] =
@@ -454,20 +472,15 @@ Status QuantizedSpline::Dequantize(const Spline::Point& starting_point,
     // realistic area estimate. We leave it out to simplify the calculations,
     // and understand that this way we underestimate the area by a factor of
     // 1/(0.3333*0.3333). This is taken into account in the limits below.
-    uint64_t weight =
-        static_cast<uint64_t>(1 + ceil(inv_quant * std::abs(sigma_dct_[i])));
-    width_estimate += weight * weight;
+    uint64_t weight = std::max(
+        uint64_t(1),
+        static_cast<uint64_t>(ceil(inv_quant * std::abs(sigma_dct_[i]))));
+    width_estimate += weight * weight * logcolor;
   }
   *total_estimated_area_reached += (width_estimate * manhattan_distance);
-  // TODO(firsching) Change this into a JXL_FAILURE for level 5 codestreams.
   if (*total_estimated_area_reached >
-      std::min((image_size + (uint64_t(1) << 18)), (uint64_t(1) << 22))) {
-    JXL_WARNING(
-        "Large total_estimated_area_reached, expect slower decoding: %" PRIu64,
-        *total_estimated_area_reached);
-  }
-  if (*total_estimated_area_reached >
-      std::min((8 * image_size + (uint64_t(1) << 30)), (uint64_t(1) << 34))) {
+      std::min((1024 * image_size + (uint64_t(1) << 32)),
+               (uint64_t(1) << 42))) {
     return JXL_FAILURE("Too large total_estimated_area_reached: %" PRIu64,
                        *total_estimated_area_reached);
   }
@@ -607,6 +620,15 @@ Status Splines::InitializeDrawCache(const size_t image_xsize,
     }
     splines.push_back(spline);
   }
+  // TODO(firsching) Change this into a JXL_FAILURE for level 5 codestreams.
+  if (total_estimated_area_reached >
+      std::min((8 * image_xsize * image_ysize + (uint64_t(1) << 25)),
+               (uint64_t(1) << 30))) {
+    JXL_WARNING(
+        "Large total_estimated_area_reached, expect slower decoding: %" PRIu64,
+        total_estimated_area_reached);
+  }
+
   for (Spline& spline : splines) {
     std::vector<std::pair<Spline::Point, float>> points_to_draw;
     auto add_point = [&](const Spline::Point& point, const float multiplier) {
