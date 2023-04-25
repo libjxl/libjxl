@@ -75,13 +75,13 @@ float ComputeMaskForAcStrategyUse(const float out_val) {
 template <class D, class V>
 V ComputeMask(const D d, const V out_val) {
   const auto kBase = Set(d, -0.74174993f);
-  const auto kMul4 = Set(d, 3.2353257320940401f);
-  const auto kMul2 = Set(d, 12.906028311180409f);
+  const auto kMul4 = Set(d, 4.2353257320940401f);
+  const auto kMul2 = Set(d, 16.906028311180409f);
   const auto kOffset2 = Set(d, 305.04035728311436f);
-  const auto kMul3 = Set(d, 5.0220313103171232f);
+  const auto kMul3 = Set(d, 7.0220313103171232f);
   const auto kOffset3 = Set(d, 2.1925739705298404f);
   const auto kOffset4 = Mul(Set(d, 0.25f), kOffset3);
-  const auto kMul0 = Set(d, 0.74760422233706747f);
+  const auto kMul0 = Set(d, 0.94760422233706747f);
   const auto k1 = Set(d, 1.0f);
 
   // Avoid division by zero.
@@ -271,6 +271,8 @@ V HfModulation(const D d, const size_t x, const size_t y, const ImageF& xyb,
 
   auto sum = Zero(d);  // sum of absolute differences with right and below
 
+  static const float valmin = 0.5748809729418094f;
+  auto valminv = Set(d, valmin);
   for (size_t dy = 0; dy < 8; ++dy) {
     const float* JXL_RESTRICT row_in = xyb.Row(y + dy) + x;
     const float* JXL_RESTRICT row_in_next =
@@ -289,20 +291,30 @@ V HfModulation(const D d, const size_t x, const size_t y, const ImageF& xyb,
       const auto p = Load(d, row_in + dx);
       const auto pr = LoadU(d, row_in + dx + 1);
       const auto mask = BitCast(d, Load(du, kMaskRight + dx));
-      sum = Add(sum, And(mask, AbsDiff(p, pr)));
+      sum = Add(sum, And(mask, Min(valminv, AbsDiff(p, pr))));
 
       const auto pd = Load(d, row_in_next + dx);
-      sum = Add(sum, AbsDiff(p, pd));
+      sum = Add(sum, Min(valminv, AbsDiff(p, pd)));
     }
 #if HWY_TARGET == HWY_SCALAR
     const auto p = Load(d, row_in + 7);
     const auto pd = Load(d, row_in_next + 7);
-    sum = Add(sum, AbsDiff(p, pd));
+    sum = Add(sum, Min(valminv, AbsDiff(p, pd)));
 #endif
   }
+  // more negative value gives more bpp
+  static const float kOffset = -2.6661825930233654;
+  static const float kMul = -0.059830910426238601;
 
   sum = SumOfLanes(d, sum);
-  return MulAdd(sum, Set(d, -2.0052193233688884f / 112), out_val);
+  float scalar_sum = GetLane(sum);
+  static const float maxsum = 7.8420425242625171f;
+  static const float minsum = 0.32138895908214377f;
+  scalar_sum = std::min(maxsum, scalar_sum);
+  scalar_sum = std::max(minsum, scalar_sum);
+  scalar_sum += kOffset;
+  scalar_sum *= kMul;
+  return Add(Set(d, scalar_sum), out_val);
 }
 
 void PerBlockModulations(const float butteraugli_target, const ImageF& xyb_x,
@@ -346,8 +358,8 @@ void PerBlockModulations(const float butteraugli_target, const ImageF& xyb_x,
 
 template <typename D, typename V>
 V MaskingSqrt(const D d, V v) {
-  static const float kLogOffset = 28;
-  static const float kMul = 211.50759899638012f;
+  static const float kLogOffset = 27.788993669157584;
+  static const float kMul = 211.72922529932094f;
   const auto mul_v = Set(d, kMul * 1e8);
   const auto offset_v = Set(d, kLogOffset);
   return Mul(Set(d, 0.25f), Sqrt(MulAdd(v, Sqrt(mul_v), offset_v)));

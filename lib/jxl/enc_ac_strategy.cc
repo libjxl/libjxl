@@ -863,26 +863,26 @@ void ProcessRectACS(PassesEncoderState* JXL_RESTRICT enc_state,
     float entropy_mul;
   };
   static const float k8X16mul1 = -0.55;
-  static const float k8X16mul2 = 0.867;
+  static const float k8X16mul2 = 0.865;
   static const float k8X16base = 1.6;
   const float entropy_mul16X8 =
       k8X16mul2 + k8X16mul1 / (butteraugli_target + k8X16base);
   //  const float entropy_mul16X8 = mul8X16 * 0.91195782912371126f;
 
   static const float k16X16mul1 = -0.35;
-  static const float k16X16mul2 = 0.80;
+  static const float k16X16mul2 = 0.798;
   static const float k16X16base = 2.0;
   const float entropy_mul16X16 =
       k16X16mul2 + k16X16mul1 / (butteraugli_target + k16X16base);
   //  const float entropy_mul16X16 = mul16X16 * 0.83183417727960129f;
 
   static const float k32X16mul1 = -0.1;
-  static const float k32X16mul2 = 0.86;
+  static const float k32X16mul2 = 0.854;
   static const float k32X16base = 2.5;
   const float entropy_mul16X32 =
       k32X16mul2 + k32X16mul1 / (butteraugli_target + k32X16base);
 
-  const float entropy_mul32X32 = 0.94;
+  const float entropy_mul32X32 = 0.93;
   const float entropy_mul64X64 = 1.52f;
   // TODO(jyrki): Consider this feedback in further changes:
   // Also effectively when the multipliers for smaller blocks are

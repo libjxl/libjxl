@@ -60,15 +60,14 @@ def EvalCacheForget():
 
 def RandomizedJxlCodecs():
   retval = []
-  minval = 0.2
-  maxval = 5.3
+  minval = 0.5
+  maxval = 8.3
   rangeval = maxval/minval
-  steps = 11
+  steps = 9
   for i in range(steps):
     mul = minval * rangeval**(float(i)/(steps - 1))
     mul *= 0.99 + 0.05 * random.random()
     retval.append("jxl:d%.4f" % mul)
-  steps = 11
   for i in range(steps - 1):
     mul = minval * rangeval**(float(i+0.5)/(steps - 1))
     mul *= 0.99 + 0.05 * random.random()
@@ -102,7 +101,7 @@ def Eval(vec, binary_name, cached=True):
       (binary_name,
        '--input',
        '/usr/local/google/home/jyrki/newcorpus/split/*.png',
-       '--error_pnorm=5',
+       '--error_pnorm=4',
        '--more_columns',
        '--codec', g_codecs),
       stdout=subprocess.PIPE,
