@@ -558,8 +558,12 @@ void EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
     }
     jpegli_start_compress(cinfo, write_all_tables);
     if (jparams.add_marker) {
-      jpegli_write_marker(cinfo, kSpecialMarker, kMarkerData,
+      jpegli_write_marker(cinfo, kSpecialMarker0, kMarkerData,
                           sizeof(kMarkerData));
+      jpegli_write_m_header(cinfo, kSpecialMarker1, sizeof(kMarkerData));
+      for (size_t p = 0; p < sizeof(kMarkerData); ++p) {
+        jpegli_write_m_byte(cinfo, kMarkerData[p]);
+      }
       for (size_t i = 0; i < kMarkerSequenceLen; ++i) {
         jpegli_write_marker(cinfo, kMarkerSequence[i], kMarkerData,
                             ((i + 2) % sizeof(kMarkerData)));
@@ -607,8 +611,12 @@ void EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
     }
     jpegli_write_coefficients(cinfo, coef_arrays);
     if (jparams.add_marker) {
-      jpegli_write_marker(cinfo, kSpecialMarker, kMarkerData,
+      jpegli_write_marker(cinfo, kSpecialMarker0, kMarkerData,
                           sizeof(kMarkerData));
+      jpegli_write_m_header(cinfo, kSpecialMarker1, sizeof(kMarkerData));
+      for (size_t p = 0; p < sizeof(kMarkerData); ++p) {
+        jpegli_write_m_byte(cinfo, kMarkerData[p]);
+      }
     }
     for (int c = 0; c < cinfo->num_components; ++c) {
       jpeg_component_info* comp = &cinfo->comp_info[c];
@@ -743,6 +751,21 @@ void SetDecompressParams(const DecompressParams& dparams,
   }
 }
 
+void CheckMarkerPresent(j_decompress_ptr cinfo, uint8_t marker_type) {
+  bool marker_found = false;
+  for (jpeg_saved_marker_ptr marker = cinfo->marker_list; marker != nullptr;
+       marker = marker->next) {
+    jxl::msan::UnpoisonMemory(marker, sizeof(*marker));
+    jxl::msan::UnpoisonMemory(marker->data, marker->data_length);
+    if (marker->marker == marker_type &&
+        marker->data_length == sizeof(kMarkerData) &&
+        memcmp(marker->data, kMarkerData, sizeof(kMarkerData)) == 0) {
+      marker_found = true;
+    }
+  }
+  JXL_CHECK(marker_found);
+}
+
 void VerifyHeader(const CompressParams& jparams, j_decompress_ptr cinfo) {
   if (jparams.set_jpeg_colorspace) {
     JXL_CHECK(cinfo->jpeg_color_space == jparams.jpeg_color_space);
@@ -754,18 +777,8 @@ void VerifyHeader(const CompressParams& jparams, j_decompress_ptr cinfo) {
     JXL_CHECK(cinfo->saw_Adobe_marker == jparams.override_Adobe);
   }
   if (jparams.add_marker) {
-    bool marker_found = false;
-    for (jpeg_saved_marker_ptr marker = cinfo->marker_list; marker != nullptr;
-         marker = marker->next) {
-      jxl::msan::UnpoisonMemory(marker, sizeof(*marker));
-      jxl::msan::UnpoisonMemory(marker->data, marker->data_length);
-      if (marker->marker == kSpecialMarker &&
-          marker->data_length == sizeof(kMarkerData) &&
-          memcmp(marker->data, kMarkerData, sizeof(kMarkerData)) == 0) {
-        marker_found = true;
-      }
-    }
-    JXL_CHECK(marker_found);
+    CheckMarkerPresent(cinfo, kSpecialMarker0);
+    CheckMarkerPresent(cinfo, kSpecialMarker1);
   }
   jxl::msan::UnpoisonMemory(
       cinfo->comp_info, cinfo->num_components * sizeof(cinfo->comp_info[0]));
@@ -1006,7 +1019,8 @@ void DecodeAllScansWithLibjpeg(const CompressParams& jparams,
     jpeg_create_decompress(&cinfo);
     jpeg_mem_src(&cinfo, compressed.data(), compressed.size());
     if (jparams.add_marker) {
-      jpeg_save_markers(&cinfo, kSpecialMarker, 0xffff);
+      jpeg_save_markers(&cinfo, kSpecialMarker0, 0xffff);
+      jpeg_save_markers(&cinfo, kSpecialMarker1, 0xffff);
     }
     JXL_CHECK(JPEG_REACHED_SOS ==
               jpeg_read_header(&cinfo, /*require_image=*/TRUE));
@@ -1063,7 +1077,8 @@ void DecodeWithLibjpeg(const CompressParams& jparams,
                        const DecompressParams& dparams, j_decompress_ptr cinfo,
                        TestImage* output) {
   if (jparams.add_marker) {
-    jpeg_save_markers(cinfo, kSpecialMarker, 0xffff);
+    jpeg_save_markers(cinfo, kSpecialMarker0, 0xffff);
+    jpeg_save_markers(cinfo, kSpecialMarker1, 0xffff);
   }
   if (!jparams.icc.empty()) {
     jpeg_save_markers(cinfo, JPEG_APP0 + 2, 0xffff);

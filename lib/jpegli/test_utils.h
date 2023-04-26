@@ -47,7 +47,8 @@ constexpr inline T1 DivCeil(T1 a, T2 b) {
 
 #define ARRAY_SIZE(X) (sizeof(X) / sizeof((X)[0]))
 
-static constexpr int kSpecialMarker = 0xe5;
+static constexpr int kSpecialMarker0 = 0xe5;
+static constexpr int kSpecialMarker1 = 0xe9;
 static constexpr uint8_t kMarkerData[] = {0, 1, 255, 0, 17};
 static constexpr uint8_t kMarkerSequence[] = {0xe6, 0xe8, 0xe7,
                                               0xe6, 0xe7, 0xe8};

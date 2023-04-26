@@ -240,7 +240,8 @@ void TestAPINonBuffered(const CompressParams& jparams,
                         const TestImage& expected_output,
                         j_decompress_ptr cinfo, TestImage* output) {
   if (jparams.add_marker) {
-    jpegli_save_markers(cinfo, kSpecialMarker, 0xffff);
+    jpegli_save_markers(cinfo, kSpecialMarker0, 0xffff);
+    jpegli_save_markers(cinfo, kSpecialMarker1, 0xffff);
     num_markers_seen = 0;
     jpegli_set_marker_processor(cinfo, 0xe6, test_marker_processor);
     jpegli_set_marker_processor(cinfo, 0xe7, test_marker_processor);
