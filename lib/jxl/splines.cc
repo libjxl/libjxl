@@ -455,7 +455,7 @@ Status QuantizedSpline::Dequantize(const Spline::Point& starting_point,
     // and understand that this way we underestimate the area by a factor of
     // 1/(0.3333*0.3333). This is taken into account in the limits below.
     uint64_t weight =
-        static_cast<uint64_t>(ceil(inv_quant * std::abs(sigma_dct_[i])));
+        static_cast<uint64_t>(1 + ceil(inv_quant * std::abs(sigma_dct_[i])));
     width_estimate += weight * weight;
   }
   *total_estimated_area_reached += (width_estimate * manhattan_distance);
@@ -467,7 +467,7 @@ Status QuantizedSpline::Dequantize(const Spline::Point& starting_point,
         *total_estimated_area_reached);
   }
   if (*total_estimated_area_reached >
-      std::min((64 * image_size + (uint64_t(1) << 34)), (uint64_t(1) << 38))) {
+      std::min((8 * image_size + (uint64_t(1) << 30)), (uint64_t(1) << 32))) {
     return JXL_FAILURE("Too large total_estimated_area_reached: %" PRIu64,
                        *total_estimated_area_reached);
   }
