@@ -60,6 +60,7 @@ endif()  # JPEGXL_ENABLE_VIEWERS
 set(TOOL_BINARIES)
 # Tools that depend on jxl internal functions.
 set(INTERNAL_TOOL_BINARIES)
+set(FUZZER_CORPUS_BINARIES)
 
 add_library(jxl_tool STATIC EXCLUDE_FROM_ALL
   cmdline.cc
@@ -166,7 +167,6 @@ endif()  # JPEGXL_ENABLE_TOOLS
 # Other developer tools.
 if(JPEGXL_ENABLE_DEVTOOLS)
   list(APPEND INTERNAL_TOOL_BINARIES
-    fuzzer_corpus
     butteraugli_main
     decode_and_encode
     display_to_hlg
@@ -182,8 +182,6 @@ if(JPEGXL_ENABLE_DEVTOOLS)
     jxl_from_tree
   )
 
-  add_executable(fuzzer_corpus fuzzer_corpus.cc)
-
   add_executable(ssimulacra_main ssimulacra_main.cc ssimulacra.cc)
   add_executable(ssimulacra2 ssimulacra2_main.cc ssimulacra2.cc)
   add_executable(butteraugli_main butteraugli_main.cc)
@@ -197,6 +195,23 @@ if(JPEGXL_ENABLE_DEVTOOLS)
   add_executable(generate_lut_template hdr/generate_lut_template.cc)
   add_executable(xyb_range xyb_range.cc)
   add_executable(jxl_from_tree jxl_from_tree.cc)
+
+  list(APPEND FUZZER_CORPUS_BINARIES djxl_fuzzer_corpus)
+  add_executable(djxl_fuzzer_corpus djxl_fuzzer_corpus.cc)
+  target_link_libraries(djxl_fuzzer_corpus
+    jxl_extras-static
+    jxl_testlib-static
+    jxl_tool
+  )
+  if(JPEG_FOUND AND JPEGXL_ENABLE_JPEGLI)
+    list(APPEND FUZZER_CORPUS_BINARIES jpegli_dec_fuzzer_corpus)
+    add_executable(jpegli_dec_fuzzer_corpus jpegli_dec_fuzzer_corpus.cc)
+    target_link_libraries(jpegli_dec_fuzzer_corpus
+      jpegli-static
+      jxl_tool
+      jxl_threads-static
+    )
+  endif()
 endif()  # JPEGXL_ENABLE_DEVTOOLS
 
 # Benchmark tools.
@@ -291,7 +306,7 @@ foreach(BINARY IN LISTS INTERNAL_TOOL_BINARIES)
   )
 endforeach()
 
-list(APPEND TOOL_BINARIES ${INTERNAL_TOOL_BINARIES})
+list(APPEND TOOL_BINARIES ${INTERNAL_TOOL_BINARIES} ${FUZZER_CORPUS_BINARIES})
 
 foreach(BINARY IN LISTS TOOL_BINARIES)
   if(JPEGXL_EMSCRIPTEN)
@@ -321,6 +336,9 @@ if(JPEGXL_ENABLE_TOOLS)
     set_from_bytes_fuzzer
     transforms_fuzzer
   )
+if(JPEG_FOUND AND JPEGXL_ENABLE_JPEGLI)
+  list(APPEND FUZZER_BINARIES jpegli_dec_fuzzer)
+endif()
 endif()
 
 # Fuzzers.
@@ -342,9 +360,12 @@ foreach(FUZZER IN LISTS FUZZER_BINARIES)
       jxl_dec-static
       jxl_threads-static
     )
+  elseif(FUZZER STREQUAL jpegli_dec_fuzzer)
+    target_include_directories("${BINARY}" PRIVATE "${JPEG_INCLUDE_DIRS}")
+    target_link_libraries("${BINARY}" jpegli-static)
   else()
     target_link_libraries("${BINARY}"
-      jxl_extras-static
+      jxl_extras_nocodec-static
       jxl_testlib-static
       jxl_tool
     )

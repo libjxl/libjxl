@@ -807,8 +807,24 @@ void jpegli_set_progressive_level(j_compress_ptr cinfo, int level) {
 void jpegli_set_input_format(j_compress_ptr cinfo, JpegliDataType data_type,
                              JpegliEndianness endianness) {
   CheckState(cinfo, jpegli::kEncStart);
-  cinfo->master->data_type = data_type;
-  cinfo->master->endianness = endianness;
+  switch (data_type) {
+    case JPEGLI_TYPE_UINT8:
+    case JPEGLI_TYPE_UINT16:
+    case JPEGLI_TYPE_FLOAT:
+      cinfo->master->data_type = data_type;
+      break;
+    default:
+      JPEGLI_ERROR("Unsupported data type %d", data_type);
+  }
+  switch (endianness) {
+    case JPEGLI_NATIVE_ENDIAN:
+    case JPEGLI_LITTLE_ENDIAN:
+    case JPEGLI_BIG_ENDIAN:
+      cinfo->master->endianness = endianness;
+      break;
+    default:
+      JPEGLI_ERROR("Unsupported endianness %d", endianness);
+  }
 }
 
 void jpegli_copy_critical_parameters(j_decompress_ptr srcinfo,

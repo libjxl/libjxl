@@ -18,7 +18,7 @@ target_include_directories(jxl_testlib-static PUBLIC
 )
 target_link_libraries(jxl_testlib-static
   hwy
-  jxl_extras-static
+  jxl_extras_nocodec-static
   jxl-static
 )
 endif()
