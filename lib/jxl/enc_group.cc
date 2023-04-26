@@ -87,7 +87,7 @@ void QuantizeBlockAC(const Quantizer& quantizer, const bool error_diffusion,
   }
 }
 
-bool AdjustQuantBlockAC(const Quantizer& quantizer, size_t c,
+void AdjustQuantBlockAC(const Quantizer& quantizer, size_t c,
                         float qm_multiplier, size_t quant_kind, size_t xsize,
                         size_t ysize, float* thresholds,
                         const float* JXL_RESTRICT block_in, int32_t* quant) {
@@ -101,7 +101,7 @@ bool AdjustQuantBlockAC(const Quantizer& quantizer, size_t c,
       (1 << AcStrategy::Type::DCT8X4) | (1 << AcStrategy::Type::AFV0) |
       (1 << AcStrategy::Type::AFV1) | (1 << AcStrategy::Type::AFV2) |
       (1 << AcStrategy::Type::AFV3);
-  if ((1 << quant_kind) & kPartialBlockKinds) return true;
+  if ((1 << quant_kind) & kPartialBlockKinds) return;
 
   const float* JXL_RESTRICT qm = quantizer.InvDequantMatrix(quant_kind, c);
   float qac = quantizer.Scale() * (*quant);
@@ -134,7 +134,7 @@ bool AdjustQuantBlockAC(const Quantizer& quantizer, size_t c,
         }
       }
       if (v != 0.0f) {
-        hfNonZeros[hfix] += std::abs(val);
+        hfNonZeros[hfix] += std::abs(v);
         if ((y == ysize * kBlockDim - 1 || x == xsize * kBlockDim - 1) &&
             (x >= xsize * 4 && y >= ysize * 4)) {
           sum_of_highest_freq_row_and_column += std::abs(val);
@@ -143,15 +143,10 @@ bool AdjustQuantBlockAC(const Quantizer& quantizer, size_t c,
     }
   }
   if (c == 1) {
-    static const double kLimits[4] = {0.58f, 0.48f, 0.48f, 0.46f};
-    if (hfNonZeros[3] == 0.0) {
-      for (int i = 1; i < 4; ++i) {
-        if (hfNonZeros[i] != 0.0) {
-          continue;
-        }
-        if (hfMaxError[i] > kLimits[i]) {
-          thresholds[i] = 0.999 * hfMaxError[i];
-        }
+    static const double kLimit = 0.49f;
+    for (int i = 1; i < 4; ++i) {
+      if (hfNonZeros[i] == 0.0 && hfMaxError[i] > kLimit) {
+        thresholds[i] = 0.9999 * hfMaxError[i];
       }
     }
   }
@@ -186,7 +181,23 @@ bool AdjustQuantBlockAC(const Quantizer& quantizer, size_t c,
       }
     }
   }
-  return hfNonZeros[0] > 2.0f * xsize * ysize;
+  {
+    // Reduce quant in highly active areas.
+    int32_t div = (xsize + ysize) / 2;
+    int32_t activity = (hfNonZeros[0] + div / 2) / div;
+    int32_t orig_qp_limit = std::max(4, *quant / 2);
+    for (int i = 1; i < 4; ++i) {
+      activity = std::min<int32_t>(activity, (hfNonZeros[i] + div / 2) / div);
+    }
+    if (activity >= 15) {
+      activity = 15;
+    }
+    int32_t qp = *quant - activity;
+    if (qp < orig_qp_limit) {
+      qp = orig_qp_limit;
+    }
+    *quant = qp;
+  }
 }
 
 // NOTE: caller takes care of extracting quant from rect of RawQuantField.
@@ -208,9 +219,8 @@ void QuantizeRoundtripYBlockAC(PassesEncoderState* enc_state, const size_t size,
       float thres[4] = {0.58f, 0.64f, 0.64f, 0.64f};
       int c = clut[ii];
       *quant = quant_orig;
-      bool stop_adjusting =
-          AdjustQuantBlockAC(quantizer, c, val[c], quant_kind, xsize, ysize,
-                             &thres[0], inout + c * size, quant);
+      AdjustQuantBlockAC(quantizer, c, val[c], quant_kind, xsize, ysize,
+                         &thres[0], inout + c * size, quant);
       // Dead zone adjustment
       if (c == 1) {
         for (int k = 0; k < 4; ++k) {
@@ -218,9 +228,6 @@ void QuantizeRoundtripYBlockAC(PassesEncoderState* enc_state, const size_t size,
         }
       }
       max_quant = std::max(*quant, max_quant);
-      if (stop_adjusting) {
-        break;
-      }
     }
     *quant = max_quant;
   }
