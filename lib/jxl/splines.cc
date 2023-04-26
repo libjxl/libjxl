@@ -467,7 +467,7 @@ Status QuantizedSpline::Dequantize(const Spline::Point& starting_point,
         *total_estimated_area_reached);
   }
   if (*total_estimated_area_reached >
-      std::min((8 * image_size + (uint64_t(1) << 30)), (uint64_t(1) << 32))) {
+      std::min((8 * image_size + (uint64_t(1) << 30)), (uint64_t(1) << 34))) {
     return JXL_FAILURE("Too large total_estimated_area_reached: %" PRIu64,
                        *total_estimated_area_reached);
   }
