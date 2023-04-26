@@ -43,10 +43,12 @@ TEST_P(EncodeAPITestParam, TestAPI) {
   GenerateInput(config.input_mode, config.jparams, &config.input);
   std::vector<uint8_t> compressed;
   ASSERT_TRUE(EncodeWithJpegli(config.input, config.jparams, &compressed));
-  double bpp =
-      compressed.size() * 8.0 / (config.input.xsize * config.input.ysize);
-  printf("bpp: %f\n", bpp);
-  EXPECT_LT(bpp, config.max_bpp);
+  if (config.jparams.icc.empty()) {
+    double bpp =
+        compressed.size() * 8.0 / (config.input.xsize * config.input.ysize);
+    printf("bpp: %f\n", bpp);
+    EXPECT_LT(bpp, config.max_bpp);
+  }
   DecompressParams dparams;
   dparams.output_mode =
       config.input_mode == COEFFICIENTS ? COEFFICIENTS : PIXELS;
@@ -670,6 +672,16 @@ std::vector<TestConfig> GenerateTests() {
     config.max_bpp = 1.9;
     config.max_dist = 2.0;
     config.jparams.add_marker = true;
+    all_tests.push_back(config);
+  }
+  for (size_t icc_size : {728, 70000, 1000000}) {
+    TestConfig config;
+    config.input.xsize = config.input.ysize = 256;
+    config.max_dist = 2.0;
+    config.jparams.icc.resize(icc_size);
+    for (size_t i = 0; i < icc_size; ++i) {
+      config.jparams.icc[i] = (i * 17) & 0xff;
+    }
     all_tests.push_back(config);
   }
   for (JpegIOMode input_mode : {PIXELS, RAW_DATA, COEFFICIENTS}) {
