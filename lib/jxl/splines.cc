@@ -607,8 +607,7 @@ Status Splines::InitializeDrawCache(const size_t image_xsize,
     }
     splines.push_back(spline);
   }
-  for (Spline& spline: splines) {
-    Spline spline = splines[i];
+  for (Spline& spline : splines) {
     std::vector<std::pair<Spline::Point, float>> points_to_draw;
     auto add_point = [&](const Spline::Point& point, const float multiplier) {
       points_to_draw.emplace_back(point, multiplier);
