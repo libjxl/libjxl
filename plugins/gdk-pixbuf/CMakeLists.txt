@@ -25,7 +25,7 @@ set_target_properties(pixbufloader-jxl PROPERTIES
 
 # Note: This only needs the decoder library, but we don't install the decoder
 # shared library.
-target_link_libraries(pixbufloader-jxl jxl jxl_threads skcms-interface PkgConfig::Gdk-Pixbuf)
+target_link_libraries(pixbufloader-jxl jxl jxl_threads lcms2 PkgConfig::Gdk-Pixbuf)
 
 execute_process(COMMAND ${PKG_CONFIG_EXECUTABLE} gdk-pixbuf-2.0 --variable gdk_pixbuf_moduledir --define-variable=prefix=${CMAKE_INSTALL_PREFIX} OUTPUT_VARIABLE GDK_PIXBUF_MODULEDIR OUTPUT_STRIP_TRAILING_WHITESPACE)
 install(TARGETS pixbufloader-jxl DESTINATION "${GDK_PIXBUF_MODULEDIR}")
