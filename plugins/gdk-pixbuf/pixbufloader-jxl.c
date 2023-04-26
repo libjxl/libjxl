@@ -9,7 +9,7 @@
 #include <jxl/resizable_parallel_runner.h>
 #include <jxl/types.h>
 
-#include "skcms.h"
+#include "lcms2.h"
 
 #define GDK_PIXBUF_ENABLE_BACKEND
 #include <gdk-pixbuf/gdk-pixbuf.h>
@@ -60,9 +60,10 @@ struct _GdkPixbufJxlAnimation {
   uint64_t tick_duration_us;
   uint64_t repetition_count;  // 0 = loop forever
 
-  // ICC profile, to which `icc` might refer to.
   gpointer icc_buff;
-  skcms_ICCProfile icc;
+  cmsContext context;
+  cmsHPROFILE profile, srgb;
+  cmsHTRANSFORM transform;
 };
 
 #define GDK_TYPE_PIXBUF_JXL_ANIMATION (gdk_pixbuf_jxl_animation_get_type())
@@ -146,6 +147,10 @@ static void gdk_pixbuf_jxl_animation_finalize(GObject *obj) {
   }
   JxlResizableParallelRunnerDestroy(decoder_state->parallel_runner);
   JxlDecoderDestroy(decoder_state->decoder);
+  cmsDeleteTransform(decoder_state->transform);
+  cmsCloseProfile(decoder_state->srgb);
+  cmsCloseProfile(decoder_state->profile);
+  cmsDeleteContext(decoder_state->context);
   g_free(decoder_state->icc_buff);
 }
 
@@ -224,7 +229,7 @@ static gboolean gdk_pixbuf_jxl_animation_iter_advance(
     if (total_duration_ms == 0) total_duration_ms = 1;
     uint64_t loop_offset = current_time_ms % total_duration_ms;
     jxl_iter->current_frame = 0;
-    while (true) {
+    while (TRUE) {
       uint64_t duration =
           g_array_index(jxl_iter->animation->frames, GdkPixbufJxlAnimationFrame,
                         jxl_iter->current_frame)
@@ -334,7 +339,6 @@ static gboolean stop_load(gpointer context, GError **error) {
 static void draw_pixels(void *context, size_t x, size_t y, size_t num_pixels,
                         const void *pixels) {
   GdkPixbufJxlAnimation *decoder_state = context;
-  gboolean has_alpha = decoder_state->pixel_format.num_channels == 4;
 
   GdkPixbuf *output =
       g_array_index(decoder_state->frames, GdkPixbufJxlAnimationFrame,
@@ -345,14 +349,7 @@ static void draw_pixels(void *context, size_t x, size_t y, size_t num_pixels,
                 decoder_state->pixel_format.num_channels * x +
                 gdk_pixbuf_get_rowstride(output) * y;
 
-  skcms_Transform(
-      pixels,
-      has_alpha ? skcms_PixelFormat_RGBA_ffff : skcms_PixelFormat_RGB_fff,
-      decoder_state->alpha_premultiplied ? skcms_AlphaFormat_PremulAsEncoded
-                                         : skcms_AlphaFormat_Unpremul,
-      &decoder_state->icc, dst,
-      has_alpha ? skcms_PixelFormat_RGBA_8888 : skcms_PixelFormat_RGB_888,
-      skcms_AlphaFormat_Unpremul, skcms_sRGB_profile(), num_pixels);
+  cmsDoTransform(decoder_state->transform, pixels, dst, num_pixels);
 }
 
 static gboolean load_increment(gpointer context, const guchar *buf, guint size,
@@ -447,12 +444,37 @@ static gboolean load_increment(gpointer context, const guchar *buf, guint size,
                       "JxlDecoderGetColorAsICCProfile failed");
           return FALSE;
         }
-        if (!skcms_Parse(decoder_state->icc_buff, icc_size,
-                         &decoder_state->icc)) {
+        decoder_state->context = cmsCreateContext(NULL, NULL);
+        if (!decoder_state->context) {
+          g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED,
+                      "Failed to create LCMS2 context");
+          return FALSE;
+        }
+        decoder_state->profile = cmsOpenProfileFromMemTHR(
+            decoder_state->context, decoder_state->icc_buff, icc_size);
+        if (!decoder_state->profile) {
           g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED,
                       "Invalid ICC profile from JXL image decoder");
           return FALSE;
         }
+        decoder_state->srgb = cmsCreate_sRGBProfileTHR(decoder_state->context);
+        if (!decoder_state->srgb) {
+          g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED,
+                      "Failed to create sRGB profile");
+          return FALSE;
+        }
+        decoder_state->transform = cmsCreateTransformTHR(
+            decoder_state->context, decoder_state->profile,
+            decoder_state->has_alpha ? TYPE_RGBA_FLT : TYPE_RGB_FLT,
+            decoder_state->srgb,
+            decoder_state->has_alpha ? TYPE_RGBA_8 : TYPE_RGB_8,
+            INTENT_RELATIVE_COLORIMETRIC, cmsFLAGS_COPY_ALPHA);
+        if (!decoder_state->transform) {
+          g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED,
+                      "Failed to create LCMS2 color transform");
+          return FALSE;
+        }
+
         break;
       }
 
