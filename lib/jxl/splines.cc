@@ -588,10 +588,11 @@ Status Splines::InitializeDrawCache(const size_t image_xsize,
   segment_indices_.clear();
   segment_y_start_.clear();
   std::vector<std::pair<size_t, size_t>> segments_by_y;
-  Spline spline;
   std::vector<Spline::Point> intermediate_points;
   uint64_t total_estimated_area_reached = 0;
+  std::vector<Spline> splines;
   for (size_t i = 0; i < splines_.size(); ++i) {
+    Spline spline;
     JXL_RETURN_IF_ERROR(splines_[i].Dequantize(
         starting_points_[i], quantization_adjustment_, cmap.YtoXRatio(0),
         cmap.YtoBRatio(0), image_xsize * image_ysize,
@@ -604,6 +605,10 @@ Status Splines::InitializeDrawCache(const size_t image_xsize,
       return JXL_FAILURE(
           "identical successive control points in spline %" PRIuS, i);
     }
+    splines.push_back(spline);
+  }
+  for (size_t i = 0; i < splines_.size(); ++i) {
+    Spline spline = splines[i];
     std::vector<std::pair<Spline::Point, float>> points_to_draw;
     auto add_point = [&](const Spline::Point& point, const float multiplier) {
       points_to_draw.emplace_back(point, multiplier);
