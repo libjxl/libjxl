@@ -166,6 +166,7 @@ struct CompressParams {
   bool xyb_mode = false;
   bool libjpeg_mode = false;
   bool use_adaptive_quantization = true;
+  std::vector<uint8_t> icc;
 
   int h_samp(int c) const { return h_sampling.empty() ? 1 : h_sampling[c]; }
   int v_samp(int c) const { return v_sampling.empty() ? 1 : v_sampling[c]; }

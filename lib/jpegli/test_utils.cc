@@ -278,6 +278,9 @@ std::ostream& operator<<(std::ostream& os, const CompressParams& jparams) {
   if (jparams.add_marker) {
     os << "AddMarker";
   }
+  if (!jparams.icc.empty()) {
+    os << "ICCSize" << jparams.icc.size();
+  }
   if (jparams.smoothing_factor != 0) {
     os << "SF" << jparams.smoothing_factor;
   }
@@ -561,6 +564,9 @@ void EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
         jpegli_write_marker(cinfo, kMarkerSequence[i], kMarkerData,
                             ((i + 2) % sizeof(kMarkerData)));
       }
+    }
+    if (!jparams.icc.empty()) {
+      jpegli_write_icc_profile(cinfo, jparams.icc.data(), jparams.icc.size());
     }
   }
   if (cinfo->raw_data_in) {
@@ -1059,8 +1065,19 @@ void DecodeWithLibjpeg(const CompressParams& jparams,
   if (jparams.add_marker) {
     jpeg_save_markers(cinfo, kSpecialMarker, 0xffff);
   }
+  if (!jparams.icc.empty()) {
+    jpeg_save_markers(cinfo, JPEG_APP0 + 2, 0xffff);
+  }
   JXL_CHECK(JPEG_REACHED_SOS ==
             jpeg_read_header(cinfo, /*require_image=*/TRUE));
+  if (!jparams.icc.empty()) {
+    uint8_t* icc_data = nullptr;
+    unsigned int icc_len;
+    JXL_CHECK(jpeg_read_icc_profile(cinfo, &icc_data, &icc_len));
+    JXL_CHECK(icc_data);
+    JXL_CHECK(0 == memcmp(jparams.icc.data(), icc_data, icc_len));
+    free(icc_data);
+  }
   SetDecompressParams(dparams, cinfo, /*is_jpegli=*/false);
   VerifyHeader(jparams, cinfo);
   if (dparams.output_mode == COEFFICIENTS) {

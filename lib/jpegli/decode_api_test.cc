@@ -246,10 +246,21 @@ void TestAPINonBuffered(const CompressParams& jparams,
     jpegli_set_marker_processor(cinfo, 0xe7, test_marker_processor);
     jpegli_set_marker_processor(cinfo, 0xe8, test_marker_processor);
   }
+  if (!jparams.icc.empty()) {
+    jpegli_save_markers(cinfo, JPEG_APP0 + 2, 0xffff);
+  }
   jpegli_read_header(cinfo, /*require_image=*/TRUE);
   if (jparams.add_marker) {
     EXPECT_EQ(num_markers_seen, kMarkerSequenceLen);
     EXPECT_EQ(0, memcmp(markers_seen, kMarkerSequence, num_markers_seen));
+  }
+  if (!jparams.icc.empty()) {
+    uint8_t* icc_data = nullptr;
+    unsigned int icc_len;
+    JXL_CHECK(jpegli_read_icc_profile(cinfo, &icc_data, &icc_len));
+    JXL_CHECK(icc_data);
+    EXPECT_EQ(0, memcmp(jparams.icc.data(), icc_data, icc_len));
+    free(icc_data);
   }
   // Check that jpegli_calc_output_dimensions can be called multiple times
   // even with different parameters.
@@ -1101,6 +1112,16 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
     config.input.xsize = config.input.ysize = 256;
     config.dparams.chunk_size = chunk_size;
     config.jparams.add_marker = true;
+    all_tests.push_back(config);
+  }
+  // Tests for icc profile decoding.
+  for (size_t icc_size : {728, 70000, 1000000}) {
+    TestConfig config;
+    config.input.xsize = config.input.ysize = 256;
+    config.jparams.icc.resize(icc_size);
+    for (size_t i = 0; i < icc_size; ++i) {
+      config.jparams.icc[i] = (i * 17) & 0xff;
+    }
     all_tests.push_back(config);
   }
   // Tests for unusual sampling factors.
