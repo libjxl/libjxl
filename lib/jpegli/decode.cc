@@ -946,8 +946,26 @@ void jpegli_new_colormap(j_decompress_ptr cinfo) {
 
 void jpegli_set_output_format(j_decompress_ptr cinfo, JpegliDataType data_type,
                               JpegliEndianness endianness) {
-  cinfo->master->output_data_type_ = data_type;
-  cinfo->master->swap_endianness_ =
-      ((endianness == JPEGLI_BIG_ENDIAN && IsLittleEndian()) ||
-       (endianness == JPEGLI_LITTLE_ENDIAN && !IsLittleEndian()));
+  switch (data_type) {
+    case JPEGLI_TYPE_UINT8:
+    case JPEGLI_TYPE_UINT16:
+    case JPEGLI_TYPE_FLOAT:
+      cinfo->master->output_data_type_ = data_type;
+      break;
+    default:
+      JPEGLI_ERROR("Unsupported data type %d", data_type);
+  }
+  switch (endianness) {
+    case JPEGLI_NATIVE_ENDIAN:
+      cinfo->master->swap_endianness_ = false;
+      break;
+    case JPEGLI_LITTLE_ENDIAN:
+      cinfo->master->swap_endianness_ = !IsLittleEndian();
+      break;
+    case JPEGLI_BIG_ENDIAN:
+      cinfo->master->swap_endianness_ = IsLittleEndian();
+      break;
+    default:
+      JPEGLI_ERROR("Unsupported endianness %d", endianness);
+  }
 }
