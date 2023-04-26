@@ -293,6 +293,14 @@ void TestAPIBuffered(const CompressParams& jparams,
   int sos_marker_cnt = 1;  // read_header reads the first SOS marker
   while (!jpegli_input_complete(cinfo)) {
     EXPECT_EQ(cinfo->input_scan_number, sos_marker_cnt);
+    if (dparams.skip_scans && (cinfo->input_scan_number % 2) != 1) {
+      int result = JPEG_SUSPENDED;
+      while (result != JPEG_REACHED_SOS && result != JPEG_REACHED_EOI) {
+        result = jpegli_consume_input(cinfo);
+      }
+      if (result == JPEG_REACHED_SOS) ++sos_marker_cnt;
+      continue;
+    }
     SetScanDecompressParams(dparams, cinfo, cinfo->input_scan_number,
                             /*is_jpegli=*/true);
     EXPECT_TRUE(jpegli_start_output(cinfo, cinfo->input_scan_number));
@@ -568,6 +576,7 @@ class DecodeAPITestParam : public ::testing::TestWithParam<TestConfig> {};
 TEST_P(DecodeAPITestParam, TestAPI) {
   TestConfig config = GetParam();
   const DecompressParams& dparams = config.dparams;
+  if (dparams.skip_scans) return;
   const std::vector<uint8_t> compressed = GetTestJpegData(config);
   SourceManager src(compressed.data(), compressed.size(), dparams.chunk_size);
 
@@ -723,21 +732,25 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
   for (float size_factor : {0.1f, 0.33f, 0.5f, 0.75f}) {
     for (int progr : {0, 1, 3}) {
       for (int samp : {1, 2}) {
-        for (JpegIOMode output_mode : {PIXELS, RAW_DATA}) {
-          TestConfig config;
-          config.input.xsize = 517;
-          config.input.ysize = 523;
-          config.jparams.h_sampling = {samp, 1, 1};
-          config.jparams.v_sampling = {samp, 1, 1};
-          config.jparams.progressive_mode = progr;
-          config.dparams.size_factor = size_factor;
-          config.dparams.output_mode = output_mode;
-          // The last partially available block can behave differently.
-          // TODO(szabadka) Figure out if we can make the behaviour more
-          // similar.
-          config.max_rms_dist = samp == 1 ? 1.7f : 3.0f;
-          config.max_diff = 255.0f;
-          all_tests.push_back(config);
+        for (bool skip_scans : {false, true}) {
+          if (skip_scans && (progr != 1 || size_factor < 0.5f)) continue;
+          for (JpegIOMode output_mode : {PIXELS, RAW_DATA}) {
+            TestConfig config;
+            config.input.xsize = 517;
+            config.input.ysize = 523;
+            config.jparams.h_sampling = {samp, 1, 1};
+            config.jparams.v_sampling = {samp, 1, 1};
+            config.jparams.progressive_mode = progr;
+            config.dparams.size_factor = size_factor;
+            config.dparams.output_mode = output_mode;
+            config.dparams.skip_scans = skip_scans;
+            // The last partially available block can behave differently.
+            // TODO(szabadka) Figure out if we can make the behaviour more
+            // similar.
+            config.max_rms_dist = samp == 1 ? 1.7f : 3.0f;
+            config.max_diff = 255.0f;
+            all_tests.push_back(config);
+          }
         }
       }
     }
@@ -746,19 +759,23 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
   // Tests for block smoothing.
   for (float size_factor : {0.1f, 0.33f, 0.5f, 0.75f, 1.0f}) {
     for (int samp : {1, 2}) {
-      TestConfig config;
-      config.input.xsize = 517;
-      config.input.ysize = 523;
-      config.jparams.h_sampling = {samp, 1, 1};
-      config.jparams.v_sampling = {samp, 1, 1};
-      config.jparams.progressive_mode = 2;
-      config.dparams.size_factor = size_factor;
-      config.dparams.do_block_smoothing = true;
-      // libjpeg does smoothing for incomplete scans differently at
-      // the border between current and previous scans.
-      config.max_rms_dist = 8.0f;
-      config.max_diff = 255.0f;
-      all_tests.push_back(config);
+      for (bool skip_scans : {false, true}) {
+        if (skip_scans && size_factor < 0.3f) continue;
+        TestConfig config;
+        config.input.xsize = 517;
+        config.input.ysize = 523;
+        config.jparams.h_sampling = {samp, 1, 1};
+        config.jparams.v_sampling = {samp, 1, 1};
+        config.jparams.progressive_mode = 2;
+        config.dparams.size_factor = size_factor;
+        config.dparams.do_block_smoothing = true;
+        config.dparams.skip_scans = skip_scans;
+        // libjpeg does smoothing for incomplete scans differently at
+        // the border between current and previous scans.
+        config.max_rms_dist = 8.0f;
+        config.max_diff = 255.0f;
+        all_tests.push_back(config);
+      }
     }
   }
 
@@ -1228,6 +1245,9 @@ std::ostream& operator<<(std::ostream& os, const DecompressParams& dparams) {
       os << QuantMode(sparam.color_quant_mode);
       os << DitherMode(sparam.dither_mode) << "Dither";
     }
+  }
+  if (dparams.skip_scans) {
+    os << "SkipScans";
   }
   return os;
 }

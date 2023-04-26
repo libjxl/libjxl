@@ -1014,6 +1014,14 @@ void DecodeAllScansWithLibjpeg(const CompressParams& jparams,
     int sos_marker_cnt = 1;  // read header reads the first SOS marker
     while (!jpeg_input_complete(&cinfo)) {
       JXL_CHECK(cinfo.input_scan_number == sos_marker_cnt);
+      if (dparams.skip_scans && (cinfo.input_scan_number % 2) != 1) {
+        int result = JPEG_SUSPENDED;
+        while (result != JPEG_REACHED_SOS && result != JPEG_REACHED_EOI) {
+          result = jpeg_consume_input(&cinfo);
+        }
+        if (result == JPEG_REACHED_SOS) ++sos_marker_cnt;
+        continue;
+      }
       SetScanDecompressParams(dparams, &cinfo, cinfo.input_scan_number,
                               /*is_jpegli=*/false);
       JXL_CHECK(jpeg_start_output(&cinfo, cinfo.input_scan_number));

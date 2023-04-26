@@ -215,6 +215,7 @@ struct DecompressParams {
   bool crop_output = false;
   bool do_block_smoothing = false;
   bool do_fancy_upsampling = true;
+  bool skip_scans = false;
   int scale_num = 1;
   int scale_denom = 1;
   bool quantize_colors = false;
