@@ -95,6 +95,17 @@ JpegliEndianness ConvertEndianness(JxlEndianness type) {
   }
 }
 
+JxlColorSpace ConvertColorSpace(J_COLOR_SPACE colorspace) {
+  switch (colorspace) {
+    case JCS_GRAYSCALE:
+      return JXL_COLOR_SPACE_GRAY;
+    case JCS_RGB:
+      return JXL_COLOR_SPACE_RGB;
+    default:
+      return JXL_COLOR_SPACE_UNKNOWN;
+  }
+}
+
 void MyErrorExit(j_common_ptr cinfo) {
   jmp_buf* env = static_cast<jmp_buf*>(cinfo->client_data);
   (*cinfo->err->output_message)(cinfo);
@@ -172,13 +183,16 @@ Status DecodeJpeg(const std::vector<uint8_t>& compressed,
     if (nbcomp != 1 && nbcomp != 3) {
       return failure("unsupported number of components in JPEG");
     }
+    if (dparams.force_rgb) {
+      cinfo.out_color_space = JCS_RGB;
+    } else if (dparams.force_grayscale) {
+      cinfo.out_color_space = JCS_GRAYSCALE;
+    }
     if (!ReadICCProfile(&cinfo, &ppf->icc)) {
       ppf->icc.clear();
       // Default to SRGB
-      // Actually, (cinfo.output_components == nbcomp) will be checked after
-      // `jpegli_start_decompress`.
       ppf->color_encoding.color_space =
-          (nbcomp == 1) ? JXL_COLOR_SPACE_GRAY : JXL_COLOR_SPACE_RGB;
+          ConvertColorSpace(cinfo.out_color_space);
       ppf->color_encoding.white_point = JXL_WHITE_POINT_D65;
       ppf->color_encoding.primaries = JXL_PRIMARIES_SRGB;
       ppf->color_encoding.transfer_function = JXL_TRANSFER_FUNCTION_SRGB;
@@ -190,19 +204,21 @@ Status DecodeJpeg(const std::vector<uint8_t>& compressed,
     ppf->info.ysize = cinfo.image_height;
     if (dparams.output_data_type == JXL_TYPE_UINT8) {
       ppf->info.bits_per_sample = 8;
+      ppf->info.exponent_bits_per_sample = 0;
     } else if (dparams.output_data_type == JXL_TYPE_UINT16) {
       ppf->info.bits_per_sample = 16;
+      ppf->info.exponent_bits_per_sample = 0;
+    } else if (dparams.output_data_type == JXL_TYPE_FLOAT) {
+      ppf->info.bits_per_sample = 32;
+      ppf->info.exponent_bits_per_sample = 8;
     } else {
       return failure("unsupported data type");
     }
-    ppf->info.exponent_bits_per_sample = 0;
     ppf->info.uses_original_profile = true;
 
     // No alpha in JPG
     ppf->info.alpha_bits = 0;
     ppf->info.alpha_exponent_bits = 0;
-
-    ppf->info.num_color_channels = nbcomp;
     ppf->info.orientation = JXL_ORIENT_IDENTITY;
 
     jpegli_set_output_format(&cinfo, ConvertDataType(dparams.output_data_type),
@@ -216,10 +232,10 @@ Status DecodeJpeg(const std::vector<uint8_t>& compressed,
     }
 
     jpegli_start_decompress(&cinfo);
-    JXL_ASSERT(cinfo.out_color_components == nbcomp);
 
+    ppf->info.num_color_channels = cinfo.out_color_components;
     const JxlPixelFormat format{
-        /*num_channels=*/static_cast<uint32_t>(nbcomp),
+        /*num_channels=*/static_cast<uint32_t>(cinfo.out_color_components),
         dparams.output_data_type,
         dparams.output_endianness,
         /*align=*/0,
