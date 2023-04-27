@@ -328,6 +328,53 @@ TEST(EncodeAPITest, AbbreviatedStreams) {
   if (data_stream) free(data_stream);
 }
 
+void CopyQuantTables(j_compress_ptr cinfo, uint16_t* quant_tables) {
+  for (int c = 0; c < cinfo->num_components; ++c) {
+    int quant_idx = cinfo->comp_info[c].quant_tbl_no;
+    JQUANT_TBL* quant_table = cinfo->quant_tbl_ptrs[quant_idx];
+    for (int k = 0; k < DCTSIZE2; ++k) {
+      quant_tables[c * DCTSIZE2 + k] = quant_table->quantval[k];
+    }
+  }
+}
+
+TEST(EncodeAPITest, QualitySettings) {
+  // Test that jpegli_set_quality, jpegli_set_linear_quality and
+  // jpegli_quality_scaling are consistent with each other.
+  uint16_t quant_tables0[3 * DCTSIZE2];
+  uint16_t quant_tables1[3 * DCTSIZE2];
+  jpeg_compress_struct cinfo;
+  const auto try_catch_block = [&]() -> bool {
+    ERROR_HANDLER_SETUP(jpegli);
+    jpegli_create_compress(&cinfo);
+    cinfo.input_components = 3;
+    cinfo.in_color_space = JCS_RGB;
+    jpegli_set_defaults(&cinfo);
+    for (boolean baseline : {FALSE, TRUE}) {
+      for (int q = 1; q <= 100; ++q) {
+        jpegli_set_quality(&cinfo, q, baseline);
+        CopyQuantTables(&cinfo, quant_tables0);
+        jpegli_set_linear_quality(&cinfo, jpegli_quality_scaling(q), baseline);
+        CopyQuantTables(&cinfo, quant_tables1);
+        EXPECT_EQ(0,
+                  memcmp(quant_tables0, quant_tables1, sizeof(quant_tables0)));
+      }
+    }
+    return true;
+  };
+  EXPECT_TRUE(try_catch_block());
+  jpegli_destroy_compress(&cinfo);
+  // Test jpegli_quality_scaling for some specific values .
+  EXPECT_EQ(5000, jpegli_quality_scaling(-1));
+  EXPECT_EQ(5000, jpegli_quality_scaling(0));
+  EXPECT_EQ(5000, jpegli_quality_scaling(1));
+  EXPECT_EQ(100, jpegli_quality_scaling(50));
+  EXPECT_EQ(50, jpegli_quality_scaling(75));
+  EXPECT_EQ(20, jpegli_quality_scaling(90));
+  EXPECT_EQ(0, jpegli_quality_scaling(100));
+  EXPECT_EQ(0, jpegli_quality_scaling(101));
+}
+
 std::vector<TestConfig> GenerateTests() {
   std::vector<TestConfig> all_tests;
   for (int h_samp : {1, 2}) {
@@ -437,6 +484,13 @@ std::vector<TestConfig> GenerateTests() {
   for (int p = 0; p < 3 + kNumTestScripts; ++p) {
     TestConfig config;
     config.jparams.progressive_mode = p;
+    config.max_bpp = 1.6;
+    config.max_dist = 2.0;
+    all_tests.push_back(config);
+  }
+  {
+    TestConfig config;
+    config.jparams.simple_progression = true;
     config.max_bpp = 1.6;
     config.max_dist = 2.0;
     all_tests.push_back(config);
