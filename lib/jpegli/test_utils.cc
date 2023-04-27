@@ -1097,6 +1097,7 @@ void DecodeWithLibjpeg(const CompressParams& jparams,
     unsigned int icc_len;
     JXL_CHECK(jpeg_read_icc_profile(cinfo, &icc_data, &icc_len));
     JXL_CHECK(icc_data);
+    jxl::msan::UnpoisonMemory(icc_data, icc_len);
     JXL_CHECK(0 == memcmp(jparams.icc.data(), icc_data, icc_len));
     free(icc_data);
   }

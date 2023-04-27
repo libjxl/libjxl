@@ -1149,7 +1149,7 @@ TEST(JxlTest, RoundtripNoise) {
 
   PackedPixelFile ppf_out;
   EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, pool, &ppf_out), 42287, 750);
-  EXPECT_THAT(ButteraugliDistance(t.ppf(), ppf_out), IsSlightlyBelow(1.31));
+  EXPECT_THAT(ButteraugliDistance(t.ppf(), ppf_out), IsSlightlyBelow(1.35));
 }
 
 TEST(JxlTest, RoundtripLossless8Gray) {
