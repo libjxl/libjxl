@@ -23,6 +23,8 @@ namespace extras {
 struct JpegDecompressParams {
   JxlDataType output_data_type = JXL_TYPE_UINT8;
   JxlEndianness output_endianness = JXL_NATIVE_ENDIAN;
+  bool force_rgb = false;
+  bool force_grayscale = false;
   int num_colors = 0;
   bool two_pass_quant = true;
   // 0 = none, 1 = ordered, 2 = Floyd-Steinberg
