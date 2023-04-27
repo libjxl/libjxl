@@ -6,7 +6,13 @@
 #ifndef LIB_JXL_BASE_FLOAT_H_
 #define LIB_JXL_BASE_FLOAT_H_
 
+#include <jxl/types.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <string.h>
+
 #include "lib/jxl/base/byte_order.h"
+#include "lib/jxl/base/status.h"
 
 namespace jxl {
 
