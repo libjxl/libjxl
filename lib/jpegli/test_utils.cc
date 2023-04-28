@@ -810,6 +810,7 @@ void VerifyHeader(const CompressParams& jparams, j_decompress_ptr cinfo) {
   }
   JXL_CHECK(max_h_samp_factor == cinfo->max_h_samp_factor);
   JXL_CHECK(max_v_samp_factor == cinfo->max_v_samp_factor);
+  int referenced_tables[NUM_QUANT_TBLS] = {};
   for (int i = 0; i < cinfo->num_components; ++i) {
     jpeg_component_info* comp = &cinfo->comp_info[i];
     JXL_CHECK(comp->width_in_blocks ==
@@ -818,11 +819,16 @@ void VerifyHeader(const CompressParams& jparams, j_decompress_ptr cinfo) {
     JXL_CHECK(comp->height_in_blocks ==
               DivCeil(cinfo->image_height * comp->v_samp_factor,
                       max_v_samp_factor * DCTSIZE));
+    referenced_tables[comp->quant_tbl_no] = 1;
   }
   for (const auto& table : jparams.quant_tables) {
     JQUANT_TBL* quant_table = cinfo->quant_tbl_ptrs[table.slot_idx];
-    jxl::msan::UnpoisonMemory(quant_table, sizeof(*quant_table));
+    if (!referenced_tables[table.slot_idx]) {
+      JXL_CHECK(quant_table == nullptr);
+      continue;
+    }
     JXL_CHECK(quant_table != nullptr);
+    jxl::msan::UnpoisonMemory(quant_table, sizeof(*quant_table));
     for (int k = 0; k < DCTSIZE2; ++k) {
       JXL_CHECK(quant_table->quantval[k] == table.quantval[k]);
     }

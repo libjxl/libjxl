@@ -699,16 +699,29 @@ void EncodeDHT(j_compress_ptr cinfo, const JPEGHuffmanCode* huffman_codes,
   }
 }
 
-void EncodeDQT(j_compress_ptr cinfo, bool* is_baseline) {
+void EncodeDQT(j_compress_ptr cinfo, bool write_all_tables, bool* is_baseline) {
   uint8_t data[4 + NUM_QUANT_TBLS * (1 + 2 * DCTSIZE2)];  // 520 bytes
   size_t pos = 0;
   data[pos++] = 0xFF;
   data[pos++] = 0xDB;
   pos += 2;  // Length will be filled in later.
+
+  int send_table[NUM_QUANT_TBLS] = {};
+  if (write_all_tables) {
+    for (int i = 0; i < NUM_QUANT_TBLS; ++i) {
+      if (cinfo->quant_tbl_ptrs[i]) send_table[i] = 1;
+    }
+  } else {
+    for (int c = 0; c < cinfo->num_components; ++c) {
+      send_table[cinfo->comp_info[c].quant_tbl_no] = 1;
+    }
+  }
+
   for (int i = 0; i < NUM_QUANT_TBLS; ++i) {
+    if (!send_table[i]) continue;
     JQUANT_TBL* quant_table = cinfo->quant_tbl_ptrs[i];
     if (quant_table == nullptr) {
-      continue;
+      JPEGLI_ERROR("Missing quant table %d", i);
     }
     int precision = 0;
     for (size_t k = 0; k < DCTSIZE2; ++k) {
@@ -1098,7 +1111,7 @@ void EncodeSingleScan(j_compress_ptr cinfo) {
   }
   sci.num_huffman_codes = num_huffman_codes;
   memcpy(cinfo->master->scan_coding_info, &sci, sizeof(sci));
-  EncodeDQT(cinfo, &is_baseline);
+  EncodeDQT(cinfo, /*write_all_tables=*/false, &is_baseline);
   EncodeSOF(cinfo, is_baseline);
   EncodeDHT(cinfo, huffman_codes, num_huffman_codes);
   EncodeSOS(cinfo, 0);
