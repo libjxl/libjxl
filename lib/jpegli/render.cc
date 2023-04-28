@@ -460,7 +460,7 @@ void PredictSmooth(j_decompress_ptr cinfo, JBLOCKARRAY blocks, int component,
     }
   }
   auto calculate_dct_value = [&](int coef_index) {
-    int num = 0;
+    int64_t num = 0;
     int pred;
     int Al;
     // we use the symmetry of the smoothing matrices by transposing the 5x5 dc
