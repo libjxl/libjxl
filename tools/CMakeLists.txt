@@ -475,15 +475,20 @@ endif()  # JNI_FOUND & Java_FOUND
 endif()  # JPEGXL_ENABLE_JNI
 
 # End-to-end tests for the tools
-if(BUILD_TESTING AND JPEGXL_ENABLE_TOOLS AND JPEGXL_ENABLE_DEVTOOLS AND JPEGXL_ENABLE_TRANSCODE_JPEG AND (NOT JPEGXL_ENABLE_JNI))
+if(JPEGXL_TEST_TOOLS)
 find_program (BASH_PROGRAM bash)
-if(BASH_PROGRAM AND $<TARGET_EXISTS:cjxl> AND $<TARGET_EXISTS:djxl> AND $<TARGET_EXISTS:ssimulacra_main>)
-  add_test(
-    NAME roundtrip_test
-    COMMAND ${BASH_PROGRAM} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/roundtrip_test.sh
-            ${CMAKE_BINARY_DIR})
-  if (CMAKE_CROSSCOMPILING_EMULATOR)
-    set_tests_properties(roundtrip_test PROPERTIES ENVIRONMENT "EMULATOR=${CMAKE_CROSSCOMPILING_EMULATOR}")
+if (BASH_PROGRAM)
+  set(TEST_SCRIPTS)
+  if (JPEGXL_ENABLE_TRANSCODE_JPEG)
+    list(APPEND TEST_SCRIPTS roundtrip_test)
   endif()
-endif()
-endif() # BUILD_TESTING
+  if (JPEG_FOUND AND JPEGXL_ENABLE_JPEGLI)
+    list(APPEND TEST_SCRIPTS jpegli_tools_test)
+  endif()
+  foreach(SCRIPT IN LISTS TEST_SCRIPTS)
+    add_test(NAME ${SCRIPT}
+      COMMAND ${BASH_PROGRAM} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/${SCRIPT}.sh
+      ${CMAKE_BINARY_DIR})
+  endforeach()
+endif()  # BASH_PROGRAM
+endif()  # JPEGXL_TEST_TOOLS
