@@ -23,7 +23,7 @@ void EncodeSOF(j_compress_ptr cinfo, bool is_baseline);
 void EncodeSOS(j_compress_ptr cinfo, int scan_index);
 void EncodeDHT(j_compress_ptr cinfo, const JPEGHuffmanCode* huffman_codes,
                size_t num_huffman_codes, bool pre_shifted = false);
-void EncodeDQT(j_compress_ptr cinfo, bool* is_baseline);
+void EncodeDQT(j_compress_ptr cinfo, bool write_all_tables, bool* is_baseline);
 bool EncodeDRI(j_compress_ptr cinfo);
 
 bool EncodeScan(j_compress_ptr cinfo, int scan_index);

@@ -531,7 +531,7 @@ void WriteScanHeader(j_compress_ptr cinfo, size_t scan_idx) {
 void WriteHeaderMarkers(j_compress_ptr cinfo) {
   bool is_baseline = true;
   CopyHuffmanCodes(cinfo, &is_baseline);
-  EncodeDQT(cinfo, &is_baseline);
+  EncodeDQT(cinfo, /*write_all_tables=*/false, &is_baseline);
   EncodeSOF(cinfo, is_baseline);
   WriteScanHeader(cinfo, 0);
   memset(cinfo->master->last_dc_coeff, 0, sizeof(cinfo->master->last_dc_coeff));
@@ -548,7 +548,7 @@ void EncodeScans(j_compress_ptr cinfo) {
   } else {
     CopyHuffmanCodes(cinfo, &is_baseline);
   }
-  EncodeDQT(cinfo, &is_baseline);
+  EncodeDQT(cinfo, /*write_all_tables=*/false, &is_baseline);
   EncodeSOF(cinfo, is_baseline);
   for (int i = 0; i < cinfo->num_scans; ++i) {
     WriteScanHeader(cinfo, i);
@@ -923,7 +923,7 @@ void jpegli_write_tables(j_compress_ptr cinfo) {
   bool is_baseline = true;
   jpeg_comp_master* m = cinfo->master;
   jpegli::WriteOutput(cinfo, {0xFF, 0xD8});  // SOI
-  jpegli::EncodeDQT(cinfo, &is_baseline);
+  jpegli::EncodeDQT(cinfo, /*write_all_tables=*/true, &is_baseline);
   jpegli::CopyHuffmanCodes(cinfo, &is_baseline);
   jpegli::EncodeDHT(cinfo, m->huffman_codes, m->num_huffman_codes);
   jpegli::WriteOutput(cinfo, {0xFF, 0xD9});  // EOI
