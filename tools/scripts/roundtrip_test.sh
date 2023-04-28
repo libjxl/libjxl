@@ -7,11 +7,9 @@
 # End-to-end roundtrip tests for cjxl and djxl tools.
 
 MYDIR=$(dirname $(realpath "$0"))
-JPEGXL_TEST_DATA_PATH="${MYDIR}/../testdata"
+JPEGXL_TEST_DATA_PATH="${MYDIR}/../../testdata"
 
 set -eux
-
-EMULATOR=${EMULATOR:-}
 
 # Temporary files cleanup hooks.
 CLEANUP_FILES=()
@@ -27,7 +25,7 @@ roundtrip_lossless_pnm_test() {
   local jxlfn="$(mktemp -p "$tmpdir")"
   local outfn="$(mktemp -p "$tmpdir").${infn: -3}"
 
-  "${encoder}" "${infn}" "${jxlfn}" -d 0
+  "${encoder}" "${infn}" "${jxlfn}" -d 0 -e 1
   "${decoder}" "${jxlfn}" "${outfn}"
   diff "${infn}" "${outfn}"
 }
@@ -111,18 +109,12 @@ main() {
     build_dir=$(realpath "${MYDIR}/../../build")
   fi
 
-  if [ -n "${EMULATOR}" ]; then
-      local encoder="${EMULATOR} ${build_dir}/tools/cjxl"
-      local decoder="${EMULATOR} ${build_dir}/tools/djxl"
-      local comparator="${EMULATOR} ${build_dir}/tools/ssimulacra_main"
-  else
-      local encoder="${build_dir}/tools/cjxl"
-      local decoder="${build_dir}/tools/djxl"
-      local comparator="${build_dir}/tools/ssimulacra_main"
-  fi
+  local encoder="${build_dir}/tools/cjxl"
+  local decoder="${build_dir}/tools/djxl"
+  local comparator="${build_dir}/tools/ssimulacra_main"
 
-  roundtrip_test "jxl/flower/flower.png" "-e 1" 0.02
-  roundtrip_test "jxl/flower/flower.png" "-e 1 -d 0.0" 0.0
+  roundtrip_test "jxl/flower/flower_small.rgb.png" "-e 1" 0.02
+  roundtrip_test "jxl/flower/flower_small.rgb.png" "-e 1 -d 0.0" 0.0
   roundtrip_test "jxl/flower/flower_cropped.jpg" "-e 1" 0.0
 
   roundtrip_lossless_pnm_test "jxl/flower/flower_small.rgb.depth1.ppm"

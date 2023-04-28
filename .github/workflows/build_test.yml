@@ -34,6 +34,7 @@ jobs:
         include:
           - name: release
             test_in_pr: true
+            cmake_args: -DJPEGXL_TEST_TOOLS=ON
             # Track static stack size on build and check it doesn't exceed 3 kB.
             env_stack_size: 1
             max_stack: 3000
@@ -115,6 +116,7 @@ jobs:
           cmake \
           doxygen \
           graphviz \
+          imagemagick \
           libbenchmark-dev \
           libbenchmark-tools \
           libbrotli-dev \
