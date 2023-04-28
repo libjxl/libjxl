@@ -217,6 +217,12 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
   ppf->info.exponent_bits_per_sample =
       io.metadata.m.bit_depth.exponent_bits_per_sample;
 
+  ppf->info.intensity_target = io.metadata.m.tone_mapping.intensity_target;
+  ppf->info.linear_below = io.metadata.m.tone_mapping.linear_below;
+  ppf->info.min_nits = io.metadata.m.tone_mapping.min_nits;
+  ppf->info.relative_to_max_display =
+      io.metadata.m.tone_mapping.relative_to_max_display;
+
   ppf->info.alpha_bits = io.metadata.m.GetAlphaBits();
   ppf->info.alpha_premultiplied = alpha_premultiplied;
 
