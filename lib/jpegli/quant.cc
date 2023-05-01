@@ -461,7 +461,8 @@ float DistanceToLinearQuality(float distance) {
 
 }  // namespace
 
-void SetQuantMatrices(j_compress_ptr cinfo, bool add_two_chroma_tables) {
+void SetQuantMatrices(j_compress_ptr cinfo, float distance,
+                      bool add_two_chroma_tables) {
   jpeg_comp_master* m = cinfo->master;
   const bool xyb = m->xyb_mode && cinfo->jpeg_color_space == JCS_RGB;
 
@@ -475,8 +476,8 @@ void SetQuantMatrices(j_compress_ptr cinfo, bool add_two_chroma_tables) {
   int num_base_tables;
 
   if (xyb) {
-    ac_scale = kGlobalScaleXYB * m->distance;
-    dc_scale = kGlobalScaleXYB / InitialQuantDC(m->distance);
+    ac_scale = kGlobalScaleXYB * distance;
+    dc_scale = kGlobalScaleXYB / InitialQuantDC(distance);
     num_base_tables = 3;
     base_quant_matrix[0] = kBaseQuantMatrixXYB;
     base_quant_matrix[1] = kBaseQuantMatrixXYB + DCTSIZE2;
@@ -488,8 +489,8 @@ void SetQuantMatrices(j_compress_ptr cinfo, bool add_two_chroma_tables) {
     } else if (m->cicp_transfer_function == kTransferFunctionHLG) {
       global_scale *= .5f;
     }
-    ac_scale = global_scale * m->distance;
-    dc_scale = global_scale / InitialQuantDC(m->distance);
+    ac_scale = global_scale * distance;
+    dc_scale = global_scale / InitialQuantDC(distance);
     if (add_two_chroma_tables) {
       cinfo->comp_info[2].quant_tbl_no = 2;
       num_base_tables = 3;
@@ -503,7 +504,7 @@ void SetQuantMatrices(j_compress_ptr cinfo, bool add_two_chroma_tables) {
       base_quant_matrix[1] = kBaseQuantMatrixYCbCr + 2 * DCTSIZE2;
     }
   } else {
-    dc_scale = ac_scale = 0.01f * DistanceToLinearQuality(m->distance);
+    dc_scale = ac_scale = 0.01f * DistanceToLinearQuality(distance);
     num_base_tables = 2;
     base_quant_matrix[0] = kBaseQuantMatrixStd;
     base_quant_matrix[1] = kBaseQuantMatrixStd + DCTSIZE2;
@@ -544,8 +545,11 @@ void InitQuantizer(j_compress_ptr cinfo) {
       m->quant_mul[c][k] = 8.0f / val;
     }
   }
+  int y_channel = cinfo->jpeg_color_space == JCS_RGB ? 1 : 0;
+  jpeg_component_info* y_comp = &cinfo->comp_info[y_channel];
+  int y_quant_dc = cinfo->quant_tbl_ptrs[y_comp->quant_tbl_no]->quantval[0];
   for (int c = 0; c < cinfo->num_components; ++c) {
-    if (c < 3 && m->distance <= 1.0f) {
+    if (c < 3 && y_quant_dc <= 2) {
       m->zero_bias_mul[c] = xyb ? kZeroBiasMulXYB[c] : kZeroBiasMulYCbCr[c];
     } else {
       m->zero_bias_mul[c] = 0.5f;

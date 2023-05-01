@@ -316,16 +316,16 @@ V HfModulation(const D d, const size_t x, const size_t y,
   return MulAdd(sum, sumcoeff, out_val);
 }
 
-void PerBlockModulations(const float butteraugli_target,
-                         const RowBuffer<float>& input, const size_t yb0,
-                         const size_t yblen, RowBuffer<float>* aq_map) {
+void PerBlockModulations(const float y_quant_01, const RowBuffer<float>& input,
+                         const size_t yb0, const size_t yblen,
+                         RowBuffer<float>* aq_map) {
   static const float kAcQuant = 0.841f;
   float base_level = 0.48f * kAcQuant;
-  float kDampenRampStart = 2.0f;
-  float kDampenRampEnd = 14.0f;
+  float kDampenRampStart = 9.0f;
+  float kDampenRampEnd = 65.0f;
   float dampen = 1.0f;
-  if (butteraugli_target >= kDampenRampStart) {
-    dampen = 1.0f - ((butteraugli_target - kDampenRampStart) /
+  if (y_quant_01 >= kDampenRampStart) {
+    dampen = 1.0f - ((y_quant_01 - kDampenRampStart) /
                      (kDampenRampEnd - kDampenRampStart));
     if (dampen < 0) {
       dampen = 0;
@@ -527,6 +527,7 @@ void ComputeAdaptiveQuantField(j_compress_ptr cinfo) {
   }
   int y_channel = cinfo->jpeg_color_space == JCS_RGB ? 1 : 0;
   jpeg_component_info* y_comp = &cinfo->comp_info[y_channel];
+  int y_quant_01 = cinfo->quant_tbl_ptrs[y_comp->quant_tbl_no]->quantval[1];
   if (m->next_iMCU_row == 0) {
     m->input_buffer[y_channel].CopyRow(-1, 0, 1);
   }
@@ -561,7 +562,7 @@ void ComputeAdaptiveQuantField(j_compress_ptr cinfo) {
   HWY_DYNAMIC_DISPATCH(FuzzyErosion)
   (m->pre_erosion, yb0, yblen, &m->fuzzy_erosion_tmp, &m->quant_field);
   HWY_DYNAMIC_DISPATCH(PerBlockModulations)
-  (m->distance, input, yb0, yblen, &m->quant_field);
+  (y_quant_01, input, yb0, yblen, &m->quant_field);
   for (int y = 0; y < cinfo->max_v_samp_factor; ++y) {
     float* row = m->quant_field.Row(yb0 + y);
     for (size_t x = 0; x < xsize_blocks; ++x) {
