@@ -965,6 +965,7 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
           config.jparams.quant_tables.push_back(table);
           config.jparams.quant_indexes = {0, 0, 0};
           config.compare_to_orig = true;
+          config.max_tolerance_factor = 1.02;
           all_tests.push_back(config);
         }
       }

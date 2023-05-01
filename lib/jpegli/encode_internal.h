@@ -60,7 +60,6 @@ struct jpeg_comp_master {
   jpegli::RowBuffer<float> input_buffer[jpegli::kMaxComponents];
   jpegli::RowBuffer<float>* smooth_input[jpegli::kMaxComponents];
   jpegli::RowBuffer<float>* raw_data[jpegli::kMaxComponents];
-  float distance;
   bool force_baseline;
   bool xyb_mode;
   uint8_t cicp_transfer_function;

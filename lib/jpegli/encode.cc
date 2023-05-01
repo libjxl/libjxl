@@ -592,7 +592,6 @@ void jpegli_CreateCompress(j_compress_ptr cinfo, int version,
   cinfo->write_Adobe_marker = false;
   jpegli::InitializeCompressParams(cinfo);
   cinfo->master = jpegli::Allocate<jpeg_comp_master>(cinfo, 1);
-  cinfo->master->distance = 1.0f;
   cinfo->master->force_baseline = true;
   cinfo->master->xyb_mode = false;
   cinfo->master->cicp_transfer_function = 2;  // unknown transfer function code
@@ -727,9 +726,8 @@ void jpegli_set_colorspace(j_compress_ptr cinfo, J_COLOR_SPACE colorspace) {
 void jpegli_set_distance(j_compress_ptr cinfo, float distance,
                          boolean force_baseline) {
   CheckState(cinfo, jpegli::kEncStart);
-  cinfo->master->distance = distance;
   cinfo->master->force_baseline = force_baseline;
-  jpegli::SetQuantMatrices(cinfo, /*add_two_chroma_tables=*/true);
+  jpegli::SetQuantMatrices(cinfo, distance, /*add_two_chroma_tables=*/true);
 }
 
 float jpegli_quality_to_distance(int quality) {
@@ -742,17 +740,17 @@ float jpegli_quality_to_distance(int quality) {
 void jpegli_set_quality(j_compress_ptr cinfo, int quality,
                         boolean force_baseline) {
   CheckState(cinfo, jpegli::kEncStart);
-  cinfo->master->distance = jpegli_quality_to_distance(quality);
   cinfo->master->force_baseline = force_baseline;
-  jpegli::SetQuantMatrices(cinfo, /*add_two_chroma_tables=*/false);
+  float distance = jpegli_quality_to_distance(quality);
+  jpegli::SetQuantMatrices(cinfo, distance, /*add_two_chroma_tables=*/false);
 }
 
 void jpegli_set_linear_quality(j_compress_ptr cinfo, int scale_factor,
                                boolean force_baseline) {
   CheckState(cinfo, jpegli::kEncStart);
-  cinfo->master->distance = jpegli::LinearQualityToDistance(scale_factor);
   cinfo->master->force_baseline = force_baseline;
-  jpegli::SetQuantMatrices(cinfo, /*add_two_chroma_tables=*/false);
+  float distance = jpegli::LinearQualityToDistance(scale_factor);
+  jpegli::SetQuantMatrices(cinfo, distance, /*add_two_chroma_tables=*/false);
 }
 
 int jpegli_quality_scaling(int quality) {
