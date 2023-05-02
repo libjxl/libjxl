@@ -73,12 +73,13 @@ jobs:
           -DJPEGXL_ENABLE_VIEWERS=OFF \
           -DJPEGXL_ENABLE_PLUGINS=OFF \
           -DJPEGXL_ENABLE_OPENEXR=OFF \
+          -DJPEGXL_ENABLE_DEVTOOLS=ON \
 
     - name: Package release tarball
       run: |
         cd build
         tar -zcvf ${{ runner.workspace }}/release_file.tar.gz \
-          LICENSE* tools/{cjxl,djxl,benchmark_xl}
+          LICENSE* tools/{cjxl,djxl,benchmark_xl,cjpegli,djpegli,jxlinfo,butteraugli_main,ssimulacra2}
         ln -s ${{ runner.workspace }}/release_file.tar.gz \
           ${{ runner.workspace }}/jxl-linux-x86_64-static-${{ github.event.release.tag_name }}.tar.gz
 
@@ -347,6 +348,7 @@ jobs:
           -DJPEGXL_ENABLE_PLUGINS=OFF \
           -DJPEGXL_ENABLE_TCMALLOC=OFF \
           -DJPEGXL_ENABLE_VIEWERS=OFF \
+          -DJPEGXL_ENABLE_DEVTOOLS=ON \
           -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} \
         #
     - name: Build
