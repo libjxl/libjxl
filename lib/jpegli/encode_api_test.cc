@@ -484,14 +484,15 @@ std::vector<TestConfig> GenerateTests() {
   for (int p = 0; p < 3 + kNumTestScripts; ++p) {
     TestConfig config;
     config.jparams.progressive_mode = p;
-    config.max_bpp = 1.6;
+    const float kMaxBpp[] = {1.59, 1.51, 1.48, 1.59, 1.55, 1.55, 1.51};
+    config.max_bpp = kMaxBpp[p];
     config.max_dist = 2.0;
     all_tests.push_back(config);
   }
   {
     TestConfig config;
     config.jparams.simple_progression = true;
-    config.max_bpp = 1.6;
+    config.max_bpp = 1.48;
     config.max_dist = 2.0;
     all_tests.push_back(config);
   }

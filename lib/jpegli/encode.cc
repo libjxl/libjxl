@@ -793,7 +793,7 @@ void jpegli_enable_adaptive_quantization(j_compress_ptr cinfo, boolean value) {
 
 void jpegli_simple_progression(j_compress_ptr cinfo) {
   CheckState(cinfo, jpegli::kEncStart);
-  jpegli_set_progressive_level(cinfo, jpegli::kDefaultProgressiveLevel);
+  jpegli_set_progressive_level(cinfo, 2);
 }
 
 void jpegli_set_progressive_level(j_compress_ptr cinfo, int level) {
