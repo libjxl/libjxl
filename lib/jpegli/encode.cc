@@ -683,7 +683,7 @@ void jpegli_set_colorspace(j_compress_ptr cinfo, J_COLOR_SPACE colorspace) {
   cinfo->write_Adobe_marker = (cinfo->jpeg_color_space == JCS_YCCK);
   if (cinfo->comp_info == nullptr) {
     cinfo->comp_info =
-        jpegli::Allocate<jpeg_component_info>(cinfo, jpegli::kMaxComponents);
+        jpegli::Allocate<jpeg_component_info>(cinfo, MAX_COMPONENTS);
   }
   memset(cinfo->comp_info, 0,
          jpegli::kMaxComponents * sizeof(jpeg_component_info));
