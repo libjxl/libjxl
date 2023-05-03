@@ -53,6 +53,7 @@ def Average(a, b):
 
 
 eval_hash = {}
+g_best_val = None
 
 def EvalCacheForget():
   global eval_hash
@@ -86,6 +87,7 @@ def Eval(vec, binary_name, cached=True):
   """
   global eval_hash
   global g_codecs
+  global g_best_val
   key = ""
   # os.environ["BUTTERAUGLI_OPTIMIZE"] = "1"
   for i in range(300):
@@ -136,6 +138,11 @@ def Eval(vec, binary_name, cached=True):
     vec[0] = 1e30
   if found_score:
     eval_hash[key] = vec[0]
+    if not g_best_val or vec[0] < g_best_val:
+      g_best_val = vec[0]
+      print("\nSaving best simplex\n")
+      with open("best_simplex.txt", "w") as f:
+        print(vec, file=f)
     return
   vec[0] = 1e33
   return
