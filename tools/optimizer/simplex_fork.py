@@ -13,13 +13,27 @@ of the forked process.
 
 https://en.wikipedia.org/wiki/Nelder%E2%80%93Mead_method
 
-start as ./simplex_fork.py binary dimensions amount
+Usage: ./simplex_fork.py binary dimensions amount [method]
+
+Arguments:
+- binary: A `benchmark_xl` binary compiled to use the specified number of
+  dimensions as environment variables named VAR0, ..., VAR{dimensions - 1}.
+- dimensions: The number of variables to optimize over.
+- amount: The initial step size for the optimization process. It is used
+  to create the initial simplex for the optimization algorithm. A larger
+  value will result in a broader search, while a smaller value will result
+  in a more local search.
+- method (optional): An optimization method supported by scipy.optimize.minimize,
+  e.g., 'Nelder-Mead'. If no method is provided, the trusty simplex search will be
+  used.
 """
 
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 from six.moves import range
+from scipy.optimize import minimize
+import numpy as np
 import copy
 import os
 import random
@@ -230,33 +244,50 @@ def InitialSimplex(vec, dim, amount):
   return retval
 
 
-if len(sys.argv) != 4:
-  print("usage: ", sys.argv[0], "binary-name number-of-dimensions simplex-size")
+def objective_function(vec):
+    vec = [None] + vec.tolist()
+    Eval(vec, g_binary)
+    return vec[0]
+
+if len(sys.argv) not in (4, 5):
+  print("usage: ", sys.argv[0], "binary-name number-of-dimensions simplex-size [method]")
   exit(1)
 
 g_dim = int(sys.argv[2])
 g_amount = float(sys.argv[3])
 g_binary = sys.argv[1]
-g_simplex = InitialSimplex([None] + [0.0] * g_dim,
+
+if len(sys.argv) == 4:
+  g_simplex = InitialSimplex([None] + [0.0] * g_dim,
                            g_dim, 7.0 * g_amount)
-best = g_simplex[0][:]
-g_codecs = RandomizedJxlCodecs()
-g_simplex = InitialSimplex(best, g_dim, g_amount * 2.47)
-best = g_simplex[0][:]
-g_simplex = InitialSimplex(best, g_dim, g_amount)
-best = g_simplex[0][:]
-g_simplex = InitialSimplex(best, g_dim, g_amount * 0.33)
-best = g_simplex[0][:]
-
-for restarts in range(99999):
-  for ii in range(g_dim * 2):
-    g_simplex.sort()
-    print("reflect", ii, g_simplex[0])
-    Reflect(g_simplex, g_binary)
-
-  mulli = 0.1 + 15 * random.random()**2.0
-  g_codecs = RandomizedJxlCodecs()
-  print("\n\n\nRestart", restarts, "mulli", mulli)
-  g_simplex.sort()
   best = g_simplex[0][:]
-  g_simplex = InitialSimplex(best, g_dim, g_amount * mulli)
+  g_codecs = RandomizedJxlCodecs()
+  g_simplex = InitialSimplex(best, g_dim, g_amount * 2.47)
+  best = g_simplex[0][:]
+  g_simplex = InitialSimplex(best, g_dim, g_amount)
+  best = g_simplex[0][:]
+  g_simplex = InitialSimplex(best, g_dim, g_amount * 0.33)
+  best = g_simplex[0][:]
+  for restarts in range(99999):
+    for ii in range(g_dim * 2):
+      g_simplex.sort()
+      print("reflect", ii, g_simplex[0])
+      Reflect(g_simplex, g_binary)
+
+    mulli = 0.1 + 15 * random.random()**2.0
+    g_codecs = RandomizedJxlCodecs()
+    print("\n\n\nRestart", restarts, "mulli", mulli)
+    g_simplex.sort()
+    best = g_simplex[0][:]
+    g_simplex = InitialSimplex(best, g_dim, g_amount * mulli)
+else:
+  # Initial guess for the parameters
+  x0 = np.zeros(g_dim)
+  g_method = sys.argv[4]
+  options = dict()
+  if g_method == 'Nelder-Mead':
+    # TODO define initial simplex for options using g_amount.
+    options = {'xatol': 1e-4, 'fatol': 1e-4,
+                'adaptive': True}
+  result = minimize(objective_function, x0, method=g_method, options=options)
+  print("Optimized variables:", result.x)
