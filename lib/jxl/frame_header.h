@@ -156,8 +156,8 @@ struct YCbCrChromaSubsampling : public Fields {
       maxvs_ = std::max(maxvs_, kVShift[channel_mode_[i]]);
     }
   }
-  static constexpr uint8_t kHShift[4] = {0, 1, 1, 0};
-  static constexpr uint8_t kVShift[4] = {0, 1, 0, 1};
+  static const uint8_t kHShift[4];
+  static const uint8_t kVShift[4];
   uint32_t channel_mode_[3];
   uint8_t maxhs_;
   uint8_t maxvs_;
