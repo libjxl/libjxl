@@ -5,6 +5,26 @@
 # license that can be found in the LICENSE file.
 
 """apply_simplex.py: Updates constants based on results of simplex search.
+
+To use this tool, the simplex search parameters must we wrapped in a bias(n)
+function call that returns the value of the VARn environment variable. The
+tool reads a text file containing the simplex definition that simplex_fork.py
+has written, and updates the target source files by substituting the bias(n)
+function calls with the (n+1)th coordinate of the simplex vector, and also
+simplifies these expressions by evaluating them to a sinlge floating point
+literal.
+
+The tool recognizes and evaluates the following expressions:
+  <constant> + bias(n),
+  <constant> * bias(n),
+  <constant> + <coeff> * bias(n).
+
+The --keep_bias command-line flag can be used to continue an aborted simplex
+search. This will keep the same bias(n) terms in the code, but would update the
+surronding constants.
+
+The --index_min and --index_max flags can be used to update only a subset of the
+bias(n) parameters.
 """
 
 import argparse
@@ -75,7 +95,8 @@ def main():
   parser.add_argument('--simplex', default='best_simplex.txt',
                       help='simplex to apply to the code')
   parser.add_argument('--keep_bias', default=False, action='store_true',
-                     help='keep the bias term in the code')
+                      help='keep the bias term in the code, can be used to ' +
+                      'continue simplex search')
   parser.add_argument('--index_min', type=int, default=0,
                       help='start index of the simplex to apply')
   parser.add_argument('--index_max', type=int, default=9999,
