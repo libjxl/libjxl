@@ -265,10 +265,12 @@ Status EncodeJpegToTargetSize(const PackedPixelFile& ppf,
                               const JpegSettings& jpeg_settings,
                               size_t target_size, ThreadPool* pool,
                               std::vector<uint8_t>* output) {
-  float distance = 1.0f;
   output->clear();
   size_t best_error = std::numeric_limits<size_t>::max();
-  for (int step = 0; step < 10; ++step) {
+  float distance0 = -1.0f;
+  float distance1 = -1.0f;
+  float distance = 1.0f;
+  for (int step = 0; step < 15; ++step) {
     JpegSettings settings = jpeg_settings;
     settings.libjpeg_quality = 0;
     settings.distance = distance;
@@ -285,10 +287,21 @@ Status EncodeJpegToTargetSize(const PackedPixelFile& ppf,
       std::swap(*output, compressed);
     }
     float rel_error = size * 1.0f / target_size;
-    if (std::abs(rel_error - 1.0f) < 0.0005f) {
+    if (std::abs(rel_error - 1.0f) < 0.002f) {
       break;
     }
-    distance *= rel_error;
+    if (size < target_size) {
+      distance1 = distance;
+    } else {
+      distance0 = distance;
+    }
+    if (distance1 == -1) {
+      distance *= std::pow(rel_error, 1.5) * 1.05;
+    } else if (distance0 == -1) {
+      distance *= std::pow(rel_error, 1.5) * 0.95;
+    } else {
+      distance = 0.5 * (distance0 + distance1);
+    }
   }
   return true;
 }

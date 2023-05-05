@@ -47,8 +47,8 @@ cjpegli_test_target_size() {
   "${encoder}" "${infn}" "${jpgfn}" $encargs --target_size "${target_size}"
   "${decoder}" "${jpgfn}" "${outfn}"
   local size="$(wc -c "${jpgfn}" | cut -d' ' -f1)"
-  python3 -c "import sys; sys.exit(not ${target_size} * 0.995 <= ${size})"
-  python3 -c "import sys; sys.exit(not ${target_size} * 1.007 >= ${size})"
+  python3 -c "import sys; sys.exit(not ${target_size} * 0.996 <= ${size})"
+  python3 -c "import sys; sys.exit(not ${target_size} * 1.004 >= ${size})"
 }
 
 djpegli_test() {
