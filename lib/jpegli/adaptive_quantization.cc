@@ -504,21 +504,9 @@ HWY_EXPORT(PerBlockModulations);
 
 namespace {
 
-constexpr float kDcQuantPow = 0.66f;
-static const float kDcQuant = 1.913f;
 static constexpr int kPreErosionBorder = 1;
 
 }  // namespace
-
-float InitialQuantDC(float butteraugli_target) {
-  const float kDcMul = 1.5;  // Butteraugli target where non-linearity kicks in.
-  const float butteraugli_target_dc = std::max<float>(
-      0.5f * butteraugli_target,
-      std::min<float>(butteraugli_target,
-                      kDcMul * std::pow((1.0f / kDcMul) * butteraugli_target,
-                                        kDcQuantPow)));
-  return kDcQuant / butteraugli_target_dc;
-}
 
 void ComputeAdaptiveQuantField(j_compress_ptr cinfo) {
   jpeg_comp_master* m = cinfo->master;
