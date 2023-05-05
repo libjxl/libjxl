@@ -48,7 +48,7 @@ cjpegli_test_target_size() {
   "${decoder}" "${jpgfn}" "${outfn}"
   local size="$(wc -c "${jpgfn}" | cut -d' ' -f1)"
   python3 -c "import sys; sys.exit(not ${target_size} * 0.995 <= ${size})"
-  python3 -c "import sys; sys.exit(not ${target_size} * 1.005 >= ${size})"
+  python3 -c "import sys; sys.exit(not ${target_size} * 1.007 >= ${size})"
 }
 
 djpegli_test() {

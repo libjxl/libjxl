@@ -22,7 +22,7 @@ namespace jpegli {
 namespace {
 static constexpr float kBaseQuantMatrixXYB[] = {
     // c = 0
-    14.4680061340f,
+    7.5629935265f,
     19.8247814178f,
     22.5724945068f,
     20.6706695557f,
@@ -87,7 +87,7 @@ static constexpr float kBaseQuantMatrixXYB[] = {
     66.9702758789f,
     39.9652709961f,
     // c = 1
-    3.1109206676f,
+    1.6262000799f,
     3.2199242115f,
     3.4903779030f,
     3.9148359299f,
@@ -152,7 +152,7 @@ static constexpr float kBaseQuantMatrixXYB[] = {
     7.0478363037f,
     6.9186143875f,
     // c = 2
-    6.3202600479f,
+    3.3038473129f,
     10.0689258575f,
     12.2785224915f,
     14.6041173935f,
@@ -220,7 +220,7 @@ static constexpr float kBaseQuantMatrixXYB[] = {
 
 static const float kBaseQuantMatrixYCbCr[] = {
     // c = 0
-    2.6928002834f,
+    1.4076321125f,
     2.6927082539f,
     2.6927735806f,
     2.9220938683f,
@@ -285,7 +285,7 @@ static const float kBaseQuantMatrixYCbCr[] = {
     5.4524297714f,
     4.3595433235f,
     // c = 1
-    5.3856005669f,
+    2.8152642250f,
     10.4298934937f,
     16.1451492310f,
     15.3725156784f,
@@ -350,7 +350,7 @@ static const float kBaseQuantMatrixYCbCr[] = {
     85.0626754761f,
     112.7605514526f,
     // c = 2
-    5.3856005669f,
+    2.8152642250f,
     5.4735932350f,
     7.3637795448f,
     6.5195322037f,
@@ -459,6 +459,26 @@ float DistanceToLinearQuality(float distance) {
   }
 }
 
+float DistanceToScale(float distance, int k) {
+  constexpr float kExponent[DCTSIZE2] = {
+      1.00f, 0.51f, 0.67f, 0.74f, 1.00f, 1.00f, 1.00f, 1.00f,  //
+      0.51f, 0.66f, 0.69f, 0.87f, 1.00f, 1.00f, 1.00f, 1.00f,  //
+      0.67f, 0.69f, 0.84f, 0.83f, 0.96f, 1.00f, 1.00f, 1.00f,  //
+      0.74f, 0.87f, 0.83f, 1.00f, 1.00f, 0.91f, 0.91f, 1.00f,  //
+      1.00f, 1.00f, 0.96f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f,  //
+      1.00f, 1.00f, 1.00f, 0.91f, 1.00f, 1.00f, 1.00f, 1.00f,  //
+      1.00f, 1.00f, 1.00f, 0.91f, 1.00f, 1.00f, 1.00f, 1.00f,  //
+      1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f,  //
+  };
+  constexpr float kDist0 = 1.5f;  // distance where non-linearity kicks in.
+  if (distance < kDist0) {
+    return distance;
+  }
+  const float exp = kExponent[k];
+  const float mul = std::pow(kDist0, 1.0 - exp);
+  return std::max<float>(0.5f * distance, mul * std::pow(distance, exp));
+}
+
 }  // namespace
 
 void SetQuantMatrices(j_compress_ptr cinfo, float distance,
@@ -471,26 +491,24 @@ void SetQuantMatrices(j_compress_ptr cinfo, float distance,
   constexpr float kGlobalScaleXYB = 1.44563150f;
   constexpr float kGlobalScaleYCbCr = 1.73480749f;
 
-  float ac_scale, dc_scale;
+  float global_scale;
+  bool non_linear_scaling = true;
   const float* base_quant_matrix[NUM_QUANT_TBLS];
   int num_base_tables;
 
   if (xyb) {
-    ac_scale = kGlobalScaleXYB * distance;
-    dc_scale = kGlobalScaleXYB / InitialQuantDC(distance);
+    global_scale = kGlobalScaleXYB;
     num_base_tables = 3;
     base_quant_matrix[0] = kBaseQuantMatrixXYB;
     base_quant_matrix[1] = kBaseQuantMatrixXYB + DCTSIZE2;
     base_quant_matrix[2] = kBaseQuantMatrixXYB + 2 * DCTSIZE2;
   } else if (cinfo->jpeg_color_space == JCS_YCbCr && !m->use_std_tables) {
-    float global_scale = kGlobalScaleYCbCr;
+    global_scale = kGlobalScaleYCbCr;
     if (m->cicp_transfer_function == kTransferFunctionPQ) {
       global_scale *= .4f;
     } else if (m->cicp_transfer_function == kTransferFunctionHLG) {
       global_scale *= .5f;
     }
-    ac_scale = global_scale * distance;
-    dc_scale = global_scale / InitialQuantDC(distance);
     if (add_two_chroma_tables) {
       cinfo->comp_info[2].quant_tbl_no = 2;
       num_base_tables = 3;
@@ -504,7 +522,8 @@ void SetQuantMatrices(j_compress_ptr cinfo, float distance,
       base_quant_matrix[1] = kBaseQuantMatrixYCbCr + 2 * DCTSIZE2;
     }
   } else {
-    dc_scale = ac_scale = 0.01f * DistanceToLinearQuality(distance);
+    global_scale = 0.01f * DistanceToLinearQuality(distance);
+    non_linear_scaling = false;
     num_base_tables = 2;
     base_quant_matrix[0] = kBaseQuantMatrixStd;
     base_quant_matrix[1] = kBaseQuantMatrixStd + DCTSIZE2;
@@ -518,7 +537,10 @@ void SetQuantMatrices(j_compress_ptr cinfo, float distance,
       *qtable = jpegli_alloc_quant_table(reinterpret_cast<j_common_ptr>(cinfo));
     }
     for (int k = 0; k < DCTSIZE2; ++k) {
-      float scale = (k == 0 ? dc_scale : ac_scale);
+      float scale = global_scale;
+      if (non_linear_scaling) {
+        scale *= DistanceToScale(distance, k);
+      }
       int qval = std::round(scale * base_qm[k]);
       (*qtable)->quantval[k] = std::max(1, std::min(qval, quant_max));
     }
