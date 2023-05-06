@@ -704,7 +704,8 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
           JXL_CHECK(w == png_get_image_width(png_ptr, info_ptr));
           JXL_CHECK(h == png_get_image_height(png_ptr, info_ptr));
           int colortype = png_get_color_type(png_ptr, info_ptr);
-          ppf->info.bits_per_sample = png_get_bit_depth(png_ptr, info_ptr);
+          int png_bit_depth = png_get_bit_depth(png_ptr, info_ptr);
+          ppf->info.bits_per_sample = png_bit_depth;
           png_color_8p sigbits = NULL;
           png_get_sBIT(png_ptr, info_ptr, &sigbits);
           if (colortype & 1) {
@@ -750,6 +751,9 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
               /*endianness=*/JXL_BIG_ENDIAN,
               /*align=*/0,
           };
+          if (png_bit_depth > 8 && format.data_type == JXL_TYPE_UINT8) {
+            png_set_strip_16(png_ptr);
+          }
           bytes_per_pixel =
               num_channels * (format.data_type == JXL_TYPE_UINT16 ? 2 : 1);
           rowbytes = w * bytes_per_pixel;
