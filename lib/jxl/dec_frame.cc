@@ -100,12 +100,13 @@ Status DecodeFrame(PassesDecoderState* dec_state, ThreadPool* JXL_RESTRICT pool,
     std::vector<FrameDecoder::SectionInfo> section_info;
     std::vector<FrameDecoder::SectionStatus> section_status;
     size_t pos = header_bytes;
+    size_t index = 0;
     for (auto toc_entry : frame_decoder.Toc()) {
       JXL_RETURN_IF_ERROR(pos + toc_entry.size <= avail_in);
       auto br = make_unique<BitReader>(
           Span<const uint8_t>(next_in + pos, toc_entry.size));
       section_info.emplace_back(
-          FrameDecoder::SectionInfo{br.get(), toc_entry.id});
+          FrameDecoder::SectionInfo{br.get(), toc_entry.id, index++});
       section_closers.emplace_back(
           make_unique<BitReaderScopedCloser>(br.get(), &close_ok));
       section_readers.emplace_back(std::move(br));
