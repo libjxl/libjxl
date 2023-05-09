@@ -58,7 +58,11 @@ class FrameDecoder {
 
   struct SectionInfo {
     BitReader* JXL_RESTRICT br;
+    // Logical index of the section, regardless of any permutation that may be
+    // applied in the table of contents or of the physical position in the file.
     size_t id;
+    // Index of the section in the order of the bytes inside the frame.
+    size_t index;
   };
 
   struct TocEntry {
