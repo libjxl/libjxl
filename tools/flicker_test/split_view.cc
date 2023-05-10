@@ -8,6 +8,8 @@
 #include <QMouseEvent>
 #include <QPainter>
 
+#include "tools/qt_compatibility.h"
+
 namespace jpegxl {
 namespace tools {
 
@@ -38,14 +40,14 @@ SplitView::SplitView(QWidget* const parent)
 
 void SplitView::setOriginalImage(QImage image) {
   original_ = QPixmap::fromImage(std::move(image));
-  original_.setDevicePixelRatio(devicePixelRatio());
+  TransferPixelRatio(this, &original_);
   updateMinimumSize();
   update();
 }
 
 void SplitView::setAlteredImage(QImage image) {
   altered_ = QPixmap::fromImage(std::move(image));
-  altered_.setDevicePixelRatio(devicePixelRatio());
+  TransferPixelRatio(this, &altered_);
   updateMinimumSize();
   update();
 }
@@ -142,16 +144,16 @@ void SplitView::paintEvent(QPaintEvent* const event) {
   QPixmap* const leftImage = imageForSide(Side::kLeft);
   QPixmap* const rightImage = imageForSide(Side::kRight);
 
-  leftRect_ = QRectF(QPoint(), leftImage->deviceIndependentSize());
+  leftRect_ = QRectF(QPoint(), DeviceIndependentSize(leftImage));
   leftRect_.moveCenter(rect().center());
   leftRect_.moveRight(rect().center().x() -
                       (spacing_ / 2 + spacing_ % 2) / devicePixelRatio());
   painter.drawPixmap(leftRect_.topLeft(), *leftImage);
 
-  rightRect_ = QRectF(QPoint(), rightImage->deviceIndependentSize());
+  rightRect_ = QRectF(QPoint(), DeviceIndependentSize(rightImage));
   rightRect_.moveCenter(rect().center());
   rightRect_.moveLeft(rect().center().x() +
-                      (spacing_ / 2) / devicePixelRatio());
+                      (spacing_ / 2) / DevicePixelRatio(this));
   painter.drawPixmap(rightRect_.topLeft(), *rightImage);
 }
 
@@ -165,11 +167,11 @@ void SplitView::startDisplaying() {
 }
 
 void SplitView::updateMinimumSize() {
-  setMinimumWidth(2 * std::max(original_.deviceIndependentSize().width(),
-                               altered_.deviceIndependentSize().width()) +
-                  spacing_ / devicePixelRatio());
-  setMinimumHeight(std::max(original_.deviceIndependentSize().height(),
-                            altered_.deviceIndependentSize().height()));
+  setMinimumWidth(2 * std::max(DeviceIndependentSize(&original_).width(),
+                               DeviceIndependentSize(&altered_).width()) +
+                  spacing_ / DevicePixelRatio(this));
+  setMinimumHeight(std::max(DeviceIndependentSize(&original_).height(),
+                            DeviceIndependentSize(&altered_).height()));
 }
 
 }  // namespace tools

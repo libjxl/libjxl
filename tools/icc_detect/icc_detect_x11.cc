@@ -11,12 +11,10 @@
 #include <stdlib.h>
 #include <xcb/xcb.h>
 
+#include <QApplication>
 #include <memory>
 
-// clang-format off
-#include <QApplication>
-#include <X11/Xlib.h>
-// clang-format on
+#include "tools/qt_compatibility.h"
 
 namespace jpegxl {
 namespace tools {
@@ -36,17 +34,11 @@ using XcbUniquePtr = std::unique_ptr<T, FreeDeleter>;
 
 QByteArray GetMonitorIccProfile(const QWidget* const widget) {
   Q_UNUSED(widget)
-  auto* const qX11App =
-      qGuiApp->nativeInterface<QNativeInterface::QX11Application>();
-  if (qX11App == nullptr) {
+  xcb_connection_t* connection = nullptr;
+  const int screenNumber = DefaultScreenNumber(&connection);
+  if (screenNumber < 0) {
     return QByteArray();
   }
-  xcb_connection_t* const connection = qX11App->connection();
-  if (connection == nullptr) {
-    return QByteArray();
-  }
-
-  const int screenNumber = DefaultScreen(qX11App->display());
 
   const xcb_intern_atom_cookie_t atomRequest =
       xcb_intern_atom(connection, /*only_if_exists=*/1,
