@@ -130,8 +130,8 @@ def Eval(vec, binary_name, cached=True):
       n += 1
       found_score = True
       distance = float(line.split()[0].split(b'd')[-1])
-      faultybpp = 1.0 + 0.43 * ((float(bpp) * distance ** 0.69) - 1.595) ** 2
-      vec[0] *= faultybpp
+      #faultybpp = 1.0 + 0.43 * ((float(bpp) * distance ** 0.69) - 1.595) ** 2
+      #vec[0] *= faultybpp
 
   print("eval: ", vec)
   if (vec[0] <= 0.0):

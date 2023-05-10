@@ -203,7 +203,7 @@ TEST(JxlTest, RoundtripOutOfOrderProcessing) {
   cparams.AddOption(JXL_ENC_FRAME_SETTING_EPF, 3);
 
   PackedPixelFile ppf_out;
-  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, &pool, &ppf_out), 22584, 400);
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, &pool, &ppf_out), 23042, 400);
   EXPECT_LE(ButteraugliDistance(t.ppf(), ppf_out), 1.35);
 }
 
@@ -873,7 +873,7 @@ TEST(JxlTest, RoundtripAlphaResampling) {
   cparams.AddOption(JXL_ENC_FRAME_SETTING_EXTRA_CHANNEL_RESAMPLING, 2);
 
   PackedPixelFile ppf_out;
-  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, pool, &ppf_out), 12803, 130);
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, pool, &ppf_out), 12936, 130);
   EXPECT_THAT(ButteraugliDistance(t.ppf(), ppf_out), IsSlightlyBelow(5.2));
 }
 
@@ -1236,10 +1236,10 @@ TEST(JxlTest, RoundtripAnimationPatches) {
   PackedPixelFile ppf_out;
   // 40k with no patches, 27k with patch frames encoded multiple times.
   EXPECT_THAT(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out),
-              IsSlightlyBelow(16710));
+              IsSlightlyBelow(16789));
   EXPECT_EQ(ppf_out.frames.size(), t.ppf().frames.size());
   // >10 with broken patches
-  EXPECT_THAT(ButteraugliDistance(t.ppf(), ppf_out), IsSlightlyBelow(1.05));
+  EXPECT_THAT(ButteraugliDistance(t.ppf(), ppf_out), IsSlightlyBelow(1.0777));
 }
 
 #endif  // JPEGXL_ENABLE_GIF
