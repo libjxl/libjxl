@@ -602,10 +602,11 @@ class LossyFrameEncoder {
     if (!enc_state_->cparams.max_error_mode) {
       // Compute chromacity adjustments using two approaches.
       // 1) Distance based approach for chromacity adjustment:
-      float x_qm_scale_steps[2] = {1.25f, 9.0f};
+      float x_qm_scale_steps[4] = {1.25f, 7.0f, 15.0f, 24.0f};
       shared.frame_header.x_qm_scale = 2;
       for (float x_qm_scale_step : x_qm_scale_steps) {
-        if (enc_state_->cparams.butteraugli_distance > x_qm_scale_step) {
+        if (enc_state_->cparams.original_butteraugli_distance >
+            x_qm_scale_step) {
           shared.frame_header.x_qm_scale++;
         }
       }

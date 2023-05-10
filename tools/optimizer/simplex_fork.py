@@ -64,7 +64,7 @@ def RandomizedJxlCodecs():
   minval = 0.5
   maxval = 8.3
   rangeval = maxval/minval
-  steps = 9
+  steps = 17
   for i in range(steps):
     mul = minval * rangeval**(float(i)/(steps - 1))
     mul *= 0.99 + 0.05 * random.random()
@@ -130,8 +130,8 @@ def Eval(vec, binary_name, cached=True):
       n += 1
       found_score = True
       distance = float(line.split()[0].split(b'd')[-1])
-      #faultybpp = 1.0 + 0.43 * ((float(bpp) * distance ** 0.74) - 1.57) ** 2
-      #vec[0] *= faultybpp
+      faultybpp = 1.0 + 0.43 * ((float(bpp) * distance ** 0.69) - 1.595) ** 2
+      vec[0] *= faultybpp
 
   print("eval: ", vec)
   if (vec[0] <= 0.0):
@@ -249,7 +249,7 @@ g_simplex = InitialSimplex(best, g_dim, g_amount * 0.33)
 best = g_simplex[0][:]
 
 for restarts in range(99999):
-  for ii in range(g_dim * 2):
+  for ii in range(g_dim * 5):
     g_simplex.sort()
     print("reflect", ii, g_simplex[0])
     Reflect(g_simplex, g_binary)
