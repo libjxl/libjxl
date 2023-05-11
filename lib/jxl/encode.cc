@@ -528,6 +528,12 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
 
       size_t save_as_reference =
           input_frame->option_values.header.layer_info.save_as_reference;
+      if (save_as_reference >= 3) {
+        return JXL_API_ERROR(
+            this, JXL_ENC_ERR_API_USAGE,
+            "Cannot use save_as_reference values >=3 (found: %d)",
+            (int)save_as_reference);
+      }
       ib.use_for_next_frame = !!save_as_reference;
 
       jxl::FrameInfo frame_info;
