@@ -118,7 +118,7 @@ main() {
   cjpegli_test "${rgb_in}" "--chroma_subsampling 422" 88 1.6
   cjpegli_test "${rgb_in}" "--xyb" 87 1.5
   cjpegli_test "${rgb_in}" "--std_quant" 91 2.2
-  cjpegli_test "${rgb_in}" "--noadaptive_quantization" 90 1.8
+  cjpegli_test "${rgb_in}" "--noadaptive_quantization" 90 1.85
   cjpegli_test "${rgb_in}" "-p 1" 89 1.72
   cjpegli_test "${rgb_in}" "-p 0" 89 1.75
   cjpegli_test "${rgb_in}" "-p 0 --fixed_code" 89 1.8

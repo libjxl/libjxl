@@ -107,7 +107,7 @@ std::vector<TestConfig> GenerateBasicConfigs() {
         config.jparams.v_sampling = {samp, 1, 1};
         config.jparams.progressive_mode = progr;
         config.jparams.optimize_coding = optimize;
-        config.max_dist = 2.35f;
+        config.max_dist = 2.4f;
         GeneratePixels(&config.input);
         all_configs.push_back(config);
       }
@@ -389,8 +389,8 @@ std::vector<TestConfig> GenerateTests() {
           if (!progr) {
             config.jparams.optimize_coding = optimize;
           }
-          const float kMaxBpp[4] = {1.6, 1.45, 1.45, 1.35};
-          const float kMaxDist[4] = {1.9, 2.1, 2.1, 2.25};
+          const float kMaxBpp[4] = {1.55, 1.45, 1.45, 1.32};
+          const float kMaxDist[4] = {1.95, 2.1, 2.1, 2.3};
           const int idx = v_samp * 2 + h_samp - 3;
           config.max_bpp =
               kMaxBpp[idx] * (optimize ? 0.97 : 1.0) * (progr ? 0.97 : 1.0);
@@ -428,7 +428,7 @@ std::vector<TestConfig> GenerateTests() {
           config.jparams.optimize_coding = optimize;
         }
         config.jparams.use_adaptive_quantization = false;
-        config.max_bpp = 2.0f;
+        config.max_bpp = 2.05f;
         config.max_dist = 2.3f;
         all_tests.push_back(config);
       }
@@ -531,8 +531,8 @@ std::vector<TestConfig> GenerateTests() {
       config.input.color_space = in_color_space;
       config.jparams.set_jpeg_colorspace = true;
       config.jparams.jpeg_color_space = jpeg_color_space;
-      config.max_bpp = jpeg_color_space == JCS_RGB ? 4.5 : 1.9;
-      config.max_dist = jpeg_color_space == JCS_RGB ? 1.4 : 2.0;
+      config.max_bpp = jpeg_color_space == JCS_RGB ? 4.5 : 1.85;
+      config.max_dist = jpeg_color_space == JCS_RGB ? 1.4 : 2.05;
       all_tests.push_back(config);
     }
   }
@@ -640,8 +640,8 @@ std::vector<TestConfig> GenerateTests() {
       table.slot_idx = slot_idx;
       table.Generate();
       config.jparams.quant_tables.push_back(table);
-      config.max_bpp = 2.4;
-      config.max_dist = 2.8;
+      config.max_bpp = 2.3;
+      config.max_dist = 2.9;
       all_tests.push_back(config);
     }
   }
@@ -666,8 +666,8 @@ std::vector<TestConfig> GenerateTests() {
         table.Generate();
         config.jparams.quant_tables.push_back(table);
       }
-      config.max_bpp = 2.05;
-      config.max_dist = 3.75;
+      config.max_bpp = 2.0;
+      config.max_dist = 3.85;
       all_tests.push_back(config);
     }
   }
@@ -724,15 +724,15 @@ std::vector<TestConfig> GenerateTests() {
   {
     TestConfig config;
     config.input.xsize = config.input.ysize = 256;
-    config.max_bpp = 1.9;
-    config.max_dist = 2.0;
+    config.max_bpp = 1.85;
+    config.max_dist = 2.05;
     config.jparams.add_marker = true;
     all_tests.push_back(config);
   }
   for (size_t icc_size : {728, 70000, 1000000}) {
     TestConfig config;
     config.input.xsize = config.input.ysize = 256;
-    config.max_dist = 2.0;
+    config.max_dist = 2.05;
     config.jparams.icc.resize(icc_size);
     for (size_t i = 0; i < icc_size; ++i) {
       config.jparams.icc[i] = (i * 17) & 0xff;
@@ -748,8 +748,8 @@ std::vector<TestConfig> GenerateTests() {
     }
     config.jparams.progressive_mode = 0;
     config.jparams.optimize_coding = 0;
-    config.max_bpp = 1.9;
-    config.max_dist = 2.0;
+    config.max_bpp = 1.85;
+    config.max_dist = 2.05;
     if (input_mode == COEFFICIENTS) {
       config.max_bpp = 3.5;
       config.max_dist = 0.0;
@@ -813,8 +813,8 @@ std::vector<TestConfig> GenerateTests() {
         config.jparams.smoothing_factor = smoothing;
         config.jparams.h_sampling = {h_sampling, 1, 1};
         config.jparams.v_sampling = {v_sampling, 1, 1};
-        config.max_bpp = 1.9;
-        config.max_dist = 3.0f;
+        config.max_bpp = 1.85;
+        config.max_dist = 3.05f;
         all_tests.push_back(config);
       }
     }

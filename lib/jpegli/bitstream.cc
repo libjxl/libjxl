@@ -189,8 +189,6 @@ void WriteiMCURow(j_compress_ptr cinfo) {
   JpegBitWriter* bw = &m->bw;
   int xsize_mcus = DivCeil(cinfo->image_width, 8 * cinfo->max_h_samp_factor);
   int mcu_y = m->next_iMCU_row;
-  float* JXL_RESTRICT dct = m->dct_buffer;
-  float* JXL_RESTRICT scratch_space = m->dct_buffer + DCTSIZE2;
   int32_t* block = m->block_tmp;
   int32_t* symbols = m->block_tmp + DCTSIZE2;
   int32_t* nonzero_idx = m->block_tmp + 3 * DCTSIZE2;
@@ -213,7 +211,9 @@ void WriteiMCURow(j_compress_ptr cinfo) {
       float* JXL_RESTRICT qmc = m->quant_mul[c];
       const size_t stride = m->raw_data[c]->stride();
       const int h_factor = m->h_factor[c];
-      const float zero_bias_mul = m->zero_bias_mul[c];
+      const float* zero_bias_offset = m->zero_bias_offset[c];
+      const float* zero_bias_mul = m->zero_bias_mul[c];
+      float aq_strength = 0.0f;
       for (int iy = 0; iy < comp->v_samp_factor; ++iy) {
         for (int ix = 0; ix < comp->h_samp_factor; ++ix) {
           size_t by = mcu_y * comp->v_samp_factor + iy;
@@ -223,18 +223,13 @@ void WriteiMCURow(j_compress_ptr cinfo) {
             WriteBits(bw, ac_huff->depth[0], ac_huff->code[0]);
             continue;
           }
-          const float* pixels = imcu_start[c] + (iy * stride + bx) * DCTSIZE;
-          TransformFromPixels(pixels, stride, dct, scratch_space);
           if (m->use_adaptive_quantization) {
-            float relq = qf[iy * qf_stride + bx * h_factor];
-            float zero_bias = 0.5f + zero_bias_mul * relq;
-            zero_bias = std::min(1.5f, zero_bias);
-            QuantizeBlock(dct, qmc, zero_bias, block);
-          } else {
-            QuantizeBlockNoAQ(dct, qmc, block);
+            aq_strength = qf[iy * qf_stride + bx * h_factor];
           }
-          // Center DC values around zero.
-          block[0] = std::round((dct[0] - kDCBias) * qmc[0]);
+          const float* pixels = imcu_start[c] + (iy * stride + bx) * DCTSIZE;
+          ComputeCoefficientBlock(pixels, stride, qmc, aq_strength,
+                                  zero_bias_offset, zero_bias_mul,
+                                  m->dct_buffer, block);
           block[0] -= last_dc_coeff[c];
           last_dc_coeff[c] += block[0];
           WriteBlock(block, symbols, nonzero_idx, dc_huff, ac_huff, bw);

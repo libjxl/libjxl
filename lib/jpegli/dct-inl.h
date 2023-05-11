@@ -11,6 +11,8 @@
 #endif
 
 #include "lib/jpegli/transpose-inl.h"
+#include "lib/jxl/base/compiler_specific.h"
+
 HWY_BEFORE_NAMESPACE();
 namespace jpegli {
 namespace HWY_NAMESPACE {
@@ -27,6 +29,10 @@ using hwy::HWY_NAMESPACE::MulAdd;
 using hwy::HWY_NAMESPACE::Rebind;
 using hwy::HWY_NAMESPACE::Round;
 using hwy::HWY_NAMESPACE::Sub;
+using hwy::HWY_NAMESPACE::Vec;
+
+using D = HWY_FULL(float);
+using DI = HWY_FULL(int32_t);
 
 template <size_t N>
 void AddReverse(const float* JXL_RESTRICT ain1, const float* JXL_RESTRICT ain2,
@@ -190,58 +196,66 @@ void TransformFromPixels(const float* JXL_RESTRICT pixels, size_t pixels_stride,
   Transpose8x8Block(scratch_space, coefficients);
 }
 
-void QuantizeBlock(const float* dct, const float* qmc, const float zero_bias,
-                   coeff_t* block) {
-  HWY_FULL(float) d;
-  HWY_FULL(int32_t) di;
-  Rebind<int16_t, HWY_FULL(int32_t)> di16;
-  const auto threshold = Set(d, zero_bias);
-  for (size_t k = 0; k < kDCTBlockSize; k += Lanes(d)) {
+void StoreQuantizedValue(const Vec<DI>& ival, int16_t* out) {
+  Rebind<int16_t, DI> di16;
+  Store(DemoteTo(di16, ival), di16, out);
+}
+
+void StoreQuantizedValue(const Vec<DI>& ival, int32_t* out) {
+  DI di;
+  Store(ival, di, out);
+}
+
+template <typename T>
+void QuantizeBlock(const float* dct, const float* qmc, float aq_strength,
+                   const float* zero_bias_offset, const float* zero_bias_mul,
+                   T* block) {
+  D d;
+  DI di;
+  const auto aq_mul = Set(d, aq_strength);
+  for (size_t k = 0; k < DCTSIZE2; k += Lanes(d)) {
     const auto val = Load(d, dct + k);
     const auto q = Load(d, qmc + k);
     const auto qval = Mul(val, q);
+    const auto zb_offset = Load(d, zero_bias_offset + k);
+    const auto zb_mul = Load(d, zero_bias_mul + k);
+    const auto threshold = Add(zb_offset, Mul(zb_mul, aq_mul));
     const auto nzero_mask = Ge(Abs(qval), threshold);
     const auto ival = ConvertTo(di, IfThenElseZero(nzero_mask, Round(qval)));
-    Store(DemoteTo(di16, ival), di16, block + k);
+    StoreQuantizedValue(ival, block + k);
   }
 }
 
-void QuantizeBlock(const float* dct, const float* qmc, const float zero_bias,
-                   int32_t* block) {
-  HWY_FULL(float) d;
-  HWY_FULL(int32_t) di;
-  const auto threshold = Set(d, zero_bias);
-  for (size_t k = 0; k < kDCTBlockSize; k += Lanes(d)) {
-    const auto val = Load(d, dct + k);
-    const auto q = Load(d, qmc + k);
-    const auto qval = Mul(val, q);
-    const auto nzero_mask = Ge(Abs(qval), threshold);
-    const auto ival = ConvertTo(di, IfThenElseZero(nzero_mask, Round(qval)));
-    Store(ival, di, block + k);
-  }
-}
-
-void QuantizeBlockNoAQ(const float* dct, const float* qmc, coeff_t* block) {
-  HWY_FULL(float) d;
-  HWY_FULL(int32_t) di;
-  Rebind<int16_t, HWY_FULL(int32_t)> di16;
-  for (size_t k = 0; k < kDCTBlockSize; k += Lanes(d)) {
+template <typename T>
+void QuantizeBlockNoAQ(const float* dct, const float* qmc, T* block) {
+  D d;
+  DI di;
+  for (size_t k = 0; k < DCTSIZE2; k += Lanes(d)) {
     const auto val = Load(d, dct + k);
     const auto q = Load(d, qmc + k);
     const auto ival = ConvertTo(di, Round(Mul(val, q)));
-    Store(DemoteTo(di16, ival), di16, block + k);
+    StoreQuantizedValue(ival, block + k);
   }
 }
 
-void QuantizeBlockNoAQ(const float* dct, const float* qmc, int32_t* block) {
-  HWY_FULL(float) d;
-  HWY_FULL(int32_t) di;
-  for (size_t k = 0; k < kDCTBlockSize; k += Lanes(d)) {
-    const auto val = Load(d, dct + k);
-    const auto q = Load(d, qmc + k);
-    const auto ival = ConvertTo(di, Round(Mul(val, q)));
-    Store(ival, di, block + k);
+template <typename T>
+void ComputeCoefficientBlock(const float* JXL_RESTRICT pixels, size_t stride,
+                             const float* JXL_RESTRICT qmc, float aq_strength,
+                             const float* zero_bias_offset,
+                             const float* zero_bias_mul,
+                             float* JXL_RESTRICT tmp, T* block) {
+  float* JXL_RESTRICT dct = tmp;
+  float* JXL_RESTRICT scratch_space = tmp + DCTSIZE2;
+  TransformFromPixels(pixels, stride, dct, scratch_space);
+  if (aq_strength > 0.0f) {
+    QuantizeBlock(dct, qmc, aq_strength, zero_bias_offset, zero_bias_mul,
+                  block);
+  } else {
+    QuantizeBlockNoAQ(dct, qmc, block);
   }
+  // Center DC values around zero.
+  static constexpr float kDCBias = 128.0f;
+  block[0] = std::round((dct[0] - kDCBias) * qmc[0]);
 }
 
 // NOLINTNEXTLINE(google-readability-namespace-comments)
