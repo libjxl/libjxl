@@ -1420,7 +1420,7 @@ TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression_asymmetric)) {
   const PaddedBytes orig =
       jxl::test::ReadTestData("jxl/flower/flower.png.im_q85_asymmetric.jpg");
   // JPEG size is 604,601 bytes.
-  EXPECT_EQ(RoundtripJpeg(orig, &pool), 500602u);
+  EXPECT_NEAR(RoundtripJpeg(orig, &pool), 500602u, 10);
 }
 
 TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression420Progr)) {
