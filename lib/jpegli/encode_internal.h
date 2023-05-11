@@ -36,8 +36,6 @@ struct JPEGHuffmanCode {
 // DCTCodingState: maximum number of correction bits to buffer
 const int kJPEGMaxCorrectionBits = 1u << 16;
 
-static constexpr float kDCBias = 128.0f;
-
 constexpr int kDefaultProgressiveLevel = 0;
 
 struct HuffmanCodeTable {
@@ -78,7 +76,8 @@ struct jpeg_comp_master {
   void (*downsample_method[jpegli::kMaxComponents])(
       float* rows_in[MAX_SAMP_FACTOR], size_t len, float* row_out);
   float* quant_mul[jpegli::kMaxComponents];
-  float zero_bias_mul[jpegli::kMaxComponents];
+  float* zero_bias_offset[jpegli::kMaxComponents];
+  float* zero_bias_mul[jpegli::kMaxComponents];
   int h_factor[jpegli::kMaxComponents];
   int v_factor[jpegli::kMaxComponents];
   jpegli::JPEGHuffmanCode* huffman_codes;

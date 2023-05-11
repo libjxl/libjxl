@@ -18,7 +18,7 @@ def SourceFileName():
   return "lib/jpegli/quant.cc"
 
 def ScalePattern(scale_type):
-  return "  constexpr float kGlobalScale" + scale_type + " = ";
+  return "constexpr float kGlobalScale" + scale_type + " = ";
 
 def CodecName(scale_type):
   if scale_type == "YCbCr":

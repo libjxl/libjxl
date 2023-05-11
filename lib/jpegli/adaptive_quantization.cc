@@ -554,7 +554,7 @@ void ComputeAdaptiveQuantField(j_compress_ptr cinfo) {
   for (int y = 0; y < cinfo->max_v_samp_factor; ++y) {
     float* row = m->quant_field.Row(yb0 + y);
     for (size_t x = 0; x < xsize_blocks; ++x) {
-      row[x] = (0.6f / row[x]) - 1.0f;
+      row[x] = std::max(0.0f, (0.6f / row[x]) - 1.0f);
     }
   }
 }

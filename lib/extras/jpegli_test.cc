@@ -231,8 +231,8 @@ TEST(JpegliTest, JpegliYUVEncodeTestNoAq) {
 
   PackedPixelFile ppf_out;
   ASSERT_TRUE(DecodeWithLibjpeg(compressed, &ppf_out));
-  EXPECT_THAT(BitsPerPixel(ppf_in, compressed), IsSlightlyBelow(1.76f));
-  EXPECT_THAT(ButteraugliDistance(ppf_in, ppf_out), IsSlightlyBelow(1.32f));
+  EXPECT_THAT(BitsPerPixel(ppf_in, compressed), IsSlightlyBelow(1.85f));
+  EXPECT_THAT(ButteraugliDistance(ppf_in, ppf_out), IsSlightlyBelow(1.25f));
 }
 
 TEST(JpegliTest, JpegliHDRRoundtripTest) {

@@ -399,6 +399,12 @@ void AllocateBuffers(j_compress_ptr cinfo) {
     m->fuzzy_erosion_tmp.Allocate(cinfo, 2, xsize_padded);
     m->pre_erosion.Allocate(cinfo, 6 * cinfo->max_v_samp_factor, xsize_padded);
     m->quant_field.Allocate(cinfo, cinfo->max_v_samp_factor, xsize_blocks);
+    for (int c = 0; c < cinfo->num_components; ++c) {
+      m->zero_bias_offset[c] =
+          Allocate<float>(cinfo, DCTSIZE2, JPOOL_IMAGE_ALIGNED);
+      m->zero_bias_mul[c] =
+          Allocate<float>(cinfo, DCTSIZE2, JPOOL_IMAGE_ALIGNED);
+    }
   }
 }
 

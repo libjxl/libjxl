@@ -11,16 +11,7 @@
 #include <jpeglib.h>
 /* clang-format on */
 
-#include <vector>
-
-#include "lib/jpegli/encode_internal.h"
-
 namespace jpegli {
-
-void ComputeCoefficientBlock(const float* JXL_RESTRICT pixels, size_t stride,
-                             const float* JXL_RESTRICT qmc, float aq_strength,
-                             float zero_bias_mul, float* JXL_RESTRICT tmp,
-                             JCOEF* block);
 
 void ComputeDCTCoefficients(j_compress_ptr cinfo);
 

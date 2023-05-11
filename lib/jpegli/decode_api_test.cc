@@ -477,7 +477,7 @@ TEST(DecodeAPITest, ReuseCinfoSameMemSource) {
     jpegli_destroy_decompress(&cinfo);
   }
   for (size_t i = 0; i < all_configs.size(); ++i) {
-    VerifyOutputImage(all_configs[i].input, all_outputs[i], 2.3f);
+    VerifyOutputImage(all_configs[i].input, all_outputs[i], 2.35f);
   }
   if (buffer) free(buffer);
 }
@@ -518,7 +518,7 @@ TEST(DecodeAPITest, ReuseCinfoSameStdSource) {
     jpegli_destroy_decompress(&cinfo);
   }
   for (size_t i = 0; i < all_configs.size(); ++i) {
-    VerifyOutputImage(all_configs[i].input, all_outputs[i], 2.3f);
+    VerifyOutputImage(all_configs[i].input, all_outputs[i], 2.35f);
   }
   fclose(tmpf);
 }
@@ -759,7 +759,7 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
             // The last partially available block can behave differently.
             // TODO(szabadka) Figure out if we can make the behaviour more
             // similar.
-            config.max_rms_dist = samp == 1 ? 1.7f : 3.0f;
+            config.max_rms_dist = samp == 1 ? 1.75f : 3.0f;
             config.max_diff = 255.0f;
             all_tests.push_back(config);
           }

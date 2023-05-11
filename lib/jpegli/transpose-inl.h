@@ -10,6 +10,8 @@
 #define LIB_JPEGLI_TRANSPOSE_INL_H_
 #endif
 
+#include "lib/jxl/base/compiler_specific.h"
+
 HWY_BEFORE_NAMESPACE();
 namespace jpegli {
 namespace HWY_NAMESPACE {

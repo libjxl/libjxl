@@ -540,7 +540,7 @@ std::vector<TestConfig> GenerateTests() {
           // The last partially available block can behave differently.
           // TODO(szabadka) Figure out if we can make the behaviour more
           // similar.
-          config.max_rms_dist = samp == 1 ? 1.7f : 3.0f;
+          config.max_rms_dist = samp == 1 ? 1.75f : 3.0f;
           all_tests.push_back(config);
         }
       }
