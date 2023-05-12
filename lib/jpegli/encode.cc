@@ -733,7 +733,8 @@ void jpegli_set_distance(j_compress_ptr cinfo, float distance,
                          boolean force_baseline) {
   CheckState(cinfo, jpegli::kEncStart);
   cinfo->master->force_baseline = force_baseline;
-  jpegli::SetQuantMatrices(cinfo, distance, /*add_two_chroma_tables=*/true);
+  float distances[NUM_QUANT_TBLS] = {distance, distance, distance};
+  jpegli::SetQuantMatrices(cinfo, distances, /*add_two_chroma_tables=*/true);
 }
 
 float jpegli_quality_to_distance(int quality) {
@@ -748,7 +749,8 @@ void jpegli_set_quality(j_compress_ptr cinfo, int quality,
   CheckState(cinfo, jpegli::kEncStart);
   cinfo->master->force_baseline = force_baseline;
   float distance = jpegli_quality_to_distance(quality);
-  jpegli::SetQuantMatrices(cinfo, distance, /*add_two_chroma_tables=*/false);
+  float distances[NUM_QUANT_TBLS] = {distance, distance, distance};
+  jpegli::SetQuantMatrices(cinfo, distances, /*add_two_chroma_tables=*/false);
 }
 
 void jpegli_set_linear_quality(j_compress_ptr cinfo, int scale_factor,
@@ -756,8 +758,21 @@ void jpegli_set_linear_quality(j_compress_ptr cinfo, int scale_factor,
   CheckState(cinfo, jpegli::kEncStart);
   cinfo->master->force_baseline = force_baseline;
   float distance = jpegli::LinearQualityToDistance(scale_factor);
-  jpegli::SetQuantMatrices(cinfo, distance, /*add_two_chroma_tables=*/false);
+  float distances[NUM_QUANT_TBLS] = {distance, distance, distance};
+  jpegli::SetQuantMatrices(cinfo, distances, /*add_two_chroma_tables=*/false);
 }
+
+#if JPEG_LIB_VERSION >= 70
+void jpegli_default_qtables(j_compress_ptr cinfo, boolean force_baseline) {
+  CheckState(cinfo, jpegli::kEncStart);
+  cinfo->master->force_baseline = force_baseline;
+  float distances[NUM_QUANT_TBLS];
+  for (int i = 0; i < NUM_QUANT_TBLS; ++i) {
+    distances[i] = jpegli::LinearQualityToDistance(cinfo->q_scale_factor[i]);
+  }
+  jpegli::SetQuantMatrices(cinfo, distances, /*add_two_chroma_tables=*/false);
+}
+#endif
 
 int jpegli_quality_scaling(int quality) {
   quality = std::min(100, std::max(1, quality));
