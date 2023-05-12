@@ -607,7 +607,7 @@ float QuantValsToDistance(j_compress_ptr cinfo) {
 }
 }  // namespace
 
-void SetQuantMatrices(j_compress_ptr cinfo, float distance,
+void SetQuantMatrices(j_compress_ptr cinfo, float distances[NUM_QUANT_TBLS],
                       bool add_two_chroma_tables) {
   jpeg_comp_master* m = cinfo->master;
   const bool xyb = m->xyb_mode && cinfo->jpeg_color_space == JCS_RGB;
@@ -643,7 +643,7 @@ void SetQuantMatrices(j_compress_ptr cinfo, float distance,
       base_quant_matrix[1] = kBaseQuantMatrixYCbCr + 2 * DCTSIZE2;
     }
   } else {
-    global_scale = 0.01f * DistanceToLinearQuality(distance);
+    global_scale = 0.01f;
     non_linear_scaling = false;
     num_base_tables = 2;
     base_quant_matrix[0] = kBaseQuantMatrixStd;
@@ -660,7 +660,9 @@ void SetQuantMatrices(j_compress_ptr cinfo, float distance,
     for (int k = 0; k < DCTSIZE2; ++k) {
       float scale = global_scale;
       if (non_linear_scaling) {
-        scale *= DistanceToScale(distance, k);
+        scale *= DistanceToScale(distances[quant_idx], k);
+      } else {
+        scale *= DistanceToLinearQuality(distances[quant_idx]);
       }
       int qval = std::round(scale * base_qm[k]);
       (*qtable)->quantval[k] = std::max(1, std::min(qval, quant_max));

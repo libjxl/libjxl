@@ -54,6 +54,10 @@ void jpegli_set_quality(j_compress_ptr cinfo, int quality,
 void jpegli_set_linear_quality(j_compress_ptr cinfo, int scale_factor,
                                boolean force_baseline);
 
+#if JPEG_LIB_VERSION >= 70
+void jpegli_default_qtables(j_compress_ptr cinfo, boolean force_baseline);
+#endif
+
 int jpegli_quality_scaling(int quality);
 
 void jpegli_add_quant_table(j_compress_ptr cinfo, int which_tbl,

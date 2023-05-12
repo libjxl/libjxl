@@ -162,6 +162,12 @@ void jpeg_set_linear_quality(j_compress_ptr cinfo, int scale_factor,
   jpegli_set_linear_quality(cinfo, scale_factor, force_baseline);
 }
 
+#if JPEG_LIB_VERSION >= 70
+void jpeg_default_qtables(j_compress_ptr cinfo, boolean force_baseline) {
+  jpegli_default_qtables(cinfo, force_baseline);
+}
+#endif
+
 int jpeg_quality_scaling(int quality) {
   return jpegli_quality_scaling(quality);
 }

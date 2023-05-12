@@ -358,6 +358,15 @@ TEST(EncodeAPITest, QualitySettings) {
         CopyQuantTables(&cinfo, quant_tables1);
         EXPECT_EQ(0,
                   memcmp(quant_tables0, quant_tables1, sizeof(quant_tables0)));
+#if JPEG_LIB_VERSION >= 70
+        for (int i = 0; i < NUM_QUANT_TBLS; ++i) {
+          cinfo.q_scale_factor[i] = jpegli_quality_scaling(q);
+        }
+        jpegli_default_qtables(&cinfo, baseline);
+        CopyQuantTables(&cinfo, quant_tables1);
+        EXPECT_EQ(0,
+                  memcmp(quant_tables0, quant_tables1, sizeof(quant_tables0)));
+#endif
       }
     }
     return true;
