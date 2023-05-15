@@ -621,7 +621,7 @@ boolean jpegli_read_icc_profile(j_decompress_ptr cinfo, JOCTET** icc_data_ptr,
   return TRUE;
 }
 
-void jpegli_calc_output_dimensions(j_decompress_ptr cinfo) {
+void jpegli_core_output_dimensions(j_decompress_ptr cinfo) {
   jpeg_decomp_master* m = cinfo->master;
   if (!m->found_sof_) {
     JPEGLI_ERROR("No SOF marker found.");
@@ -630,11 +630,6 @@ void jpegli_calc_output_dimensions(j_decompress_ptr cinfo) {
     if (cinfo->scale_num != 1 || cinfo->scale_denom != 1) {
       JPEGLI_ERROR("Output scaling is not supported in raw output mode");
     }
-  }
-  for (int c = 0; c < cinfo->num_components; ++c) {
-    jpeg_component_info* comp = &cinfo->comp_info[c];
-    m->h_factor[c] = cinfo->max_h_samp_factor / comp->h_samp_factor;
-    m->v_factor[c] = cinfo->max_v_samp_factor / comp->v_samp_factor;
   }
   if (cinfo->scale_num != 1 || cinfo->scale_denom != 1) {
     int dctsize = 16;
@@ -648,13 +643,6 @@ void jpegli_calc_output_dimensions(j_decompress_ptr cinfo) {
         jpegli::DivCeil(cinfo->image_height * dctsize, DCTSIZE);
     for (int c = 0; c < cinfo->num_components; ++c) {
       m->scaled_dct_size[c] = m->min_scaled_dct_size;
-      // Prefer IDCT scaling over 2x upsampling.
-      while (m->scaled_dct_size[c] < DCTSIZE && (m->v_factor[c] % 2) == 0 &&
-             (m->h_factor[c] % 2) == 0) {
-        m->scaled_dct_size[c] *= 2;
-        m->v_factor[c] /= 2;
-        m->h_factor[c] /= 2;
-      }
     }
   } else {
     cinfo->output_width = cinfo->image_width;
@@ -662,6 +650,27 @@ void jpegli_calc_output_dimensions(j_decompress_ptr cinfo) {
     m->min_scaled_dct_size = DCTSIZE;
     for (int c = 0; c < cinfo->num_components; ++c) {
       m->scaled_dct_size[c] = DCTSIZE;
+    }
+  }
+}
+
+void jpegli_calc_output_dimensions(j_decompress_ptr cinfo) {
+  jpeg_decomp_master* m = cinfo->master;
+  jpegli_core_output_dimensions(cinfo);
+  for (int c = 0; c < cinfo->num_components; ++c) {
+    jpeg_component_info* comp = &cinfo->comp_info[c];
+    m->h_factor[c] = cinfo->max_h_samp_factor / comp->h_samp_factor;
+    m->v_factor[c] = cinfo->max_v_samp_factor / comp->v_samp_factor;
+  }
+  if (cinfo->scale_num != 1 || cinfo->scale_denom != 1) {
+    for (int c = 0; c < cinfo->num_components; ++c) {
+      // Prefer IDCT scaling over 2x upsampling.
+      while (m->scaled_dct_size[c] < DCTSIZE && (m->v_factor[c] % 2) == 0 &&
+             (m->h_factor[c] % 2) == 0) {
+        m->scaled_dct_size[c] *= 2;
+        m->v_factor[c] /= 2;
+        m->h_factor[c] /= 2;
+      }
     }
   }
   if (cinfo->out_color_space == JCS_GRAYSCALE) {

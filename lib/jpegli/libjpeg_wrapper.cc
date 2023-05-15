@@ -102,6 +102,11 @@ int jpeg_consume_input(j_decompress_ptr cinfo) {
   return jpegli_consume_input(cinfo);
 }
 
+#if JPEG_LIB_VERSION >= 80
+void jpeg_core_output_dimensions(j_decompress_ptr cinfo) {
+  jpegli_core_output_dimensions(cinfo);
+}
+#endif
 void jpeg_calc_output_dimensions(j_decompress_ptr cinfo) {
   jpegli_calc_output_dimensions(cinfo);
 }
