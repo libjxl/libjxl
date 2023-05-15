@@ -399,7 +399,7 @@ std::vector<TestConfig> GenerateTests() {
             config.jparams.optimize_coding = optimize;
           }
           const float kMaxBpp[4] = {1.55, 1.45, 1.45, 1.32};
-          const float kMaxDist[4] = {1.95, 2.1, 2.1, 2.3};
+          const float kMaxDist[4] = {1.95, 2.1, 2.1, 2.0};
           const int idx = v_samp * 2 + h_samp - 3;
           config.max_bpp =
               kMaxBpp[idx] * (optimize ? 0.97 : 1.0) * (progr ? 0.97 : 1.0);
