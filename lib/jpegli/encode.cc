@@ -61,6 +61,13 @@ void InitializeCompressParams(j_compress_ptr cinfo) {
   cinfo->density_unit = 0;
   cinfo->X_density = 1;
   cinfo->Y_density = 1;
+#if JPEG_LIB_VERSION >= 70
+  cinfo->scale_num = 1;
+  cinfo->scale_denom = 1;
+  cinfo->do_fancy_downsampling = FALSE;
+  cinfo->min_DCT_h_scaled_size = DCTSIZE;
+  cinfo->min_DCT_v_scaled_size = DCTSIZE;
+#endif
 }
 
 float LinearQualityToDistance(int scale_factor) {
@@ -845,6 +852,14 @@ void jpegli_set_input_format(j_compress_ptr cinfo, JpegliDataType data_type,
       JPEGLI_ERROR("Unsupported endianness %d", endianness);
   }
 }
+
+#if JPEG_LIB_VERSION >= 70
+void jpegli_calc_jpeg_dimensions(j_compress_ptr cinfo) {
+  // Since input scaling is not supported, we just copy the image dimensions.
+  cinfo->jpeg_width = cinfo->image_width;
+  cinfo->jpeg_height = cinfo->image_height;
+}
+#endif
 
 void jpegli_copy_critical_parameters(j_decompress_ptr srcinfo,
                                      j_compress_ptr dstinfo) {

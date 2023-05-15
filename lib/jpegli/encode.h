@@ -68,6 +68,10 @@ void jpegli_simple_progression(j_compress_ptr cinfo);
 
 void jpegli_suppress_tables(j_compress_ptr cinfo, boolean suppress);
 
+#if JPEG_LIB_VERSION >= 70
+void jpegli_calc_jpeg_dimensions(j_compress_ptr cinfo);
+#endif
+
 void jpegli_copy_critical_parameters(j_decompress_ptr srcinfo,
                                      j_compress_ptr dstinfo);
 
