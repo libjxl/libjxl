@@ -187,6 +187,12 @@ void jpeg_suppress_tables(j_compress_ptr cinfo, boolean suppress) {
   jpegli_suppress_tables(cinfo, suppress);
 }
 
+#if JPEG_LIB_VERSION >= 70
+void jpeg_calc_jpeg_dimensions(j_compress_ptr cinfo) {
+  jpegli_calc_jpeg_dimensions(cinfo);
+}
+#endif
+
 void jpeg_copy_critical_parameters(j_decompress_ptr srcinfo,
                                    j_compress_ptr dstinfo) {
   jpegli_copy_critical_parameters(srcinfo, dstinfo);
