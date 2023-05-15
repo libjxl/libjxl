@@ -422,6 +422,18 @@ static const float kBaseQuantMatrixYCbCr[] = {
     113.0502548218f,
 };
 
+static const float k420GlobalScale = 1.2;
+static const float k420Rescale[64] = {
+    0.6386, 0.4213, 0.3994, 0.3333, 0.3143, 0.3367, 0.3612, 0.3794,  //
+    0.4213, 0.4026, 0.3309, 0.3344, 0.3059, 0.3118, 0.4069, 0.3595,  //
+    0.3994, 0.3309, 0.4080, 0.2531, 0.2645, 0.3630, 0.3502, 0.3231,  //
+    0.3333, 0.3344, 0.2531, 0.2960, 0.3153, 0.3476, 0.3430, 0.4004,  //
+    0.3143, 0.3059, 0.2645, 0.3153, 0.2733, 0.3296, 0.3338, 0.3418,  //
+    0.3367, 0.3118, 0.3630, 0.3476, 0.3296, 0.3144, 0.2262, 0.1326,  //
+    0.3612, 0.4069, 0.3502, 0.3430, 0.3338, 0.2262, 0.1000, 0.1000,  //
+    0.3794, 0.3595, 0.3231, 0.4004, 0.3418, 0.1326, 0.1000, 0.3366,  //
+};
+
 static const float kBaseQuantMatrixStd[] = {
     // c = 0
     16.0f, 11.0f, 10.0f, 16.0f, 24.0f, 40.0f, 51.0f, 61.0f,      //
@@ -605,12 +617,24 @@ float QuantValsToDistance(j_compress_ptr cinfo) {
   }
   return distance;
 }
+
+bool IsYUV420(j_compress_ptr cinfo) {
+  return (cinfo->jpeg_color_space == JCS_YCbCr &&
+          cinfo->comp_info[0].h_samp_factor == 2 &&
+          cinfo->comp_info[0].v_samp_factor == 2 &&
+          cinfo->comp_info[1].h_samp_factor == 1 &&
+          cinfo->comp_info[1].v_samp_factor == 1 &&
+          cinfo->comp_info[2].h_samp_factor == 1 &&
+          cinfo->comp_info[2].v_samp_factor == 1);
+}
+
 }  // namespace
 
 void SetQuantMatrices(j_compress_ptr cinfo, float distances[NUM_QUANT_TBLS],
                       bool add_two_chroma_tables) {
   jpeg_comp_master* m = cinfo->master;
   const bool xyb = m->xyb_mode && cinfo->jpeg_color_space == JCS_RGB;
+  const bool is_yuv420 = IsYUV420(cinfo);
 
   float global_scale;
   bool non_linear_scaling = true;
@@ -629,6 +653,9 @@ void SetQuantMatrices(j_compress_ptr cinfo, float distances[NUM_QUANT_TBLS],
       global_scale *= .4f;
     } else if (m->cicp_transfer_function == kTransferFunctionHLG) {
       global_scale *= .5f;
+    }
+    if (is_yuv420) {
+      global_scale *= k420GlobalScale;
     }
     if (add_two_chroma_tables) {
       cinfo->comp_info[2].quant_tbl_no = 2;
@@ -661,6 +688,9 @@ void SetQuantMatrices(j_compress_ptr cinfo, float distances[NUM_QUANT_TBLS],
       float scale = global_scale;
       if (non_linear_scaling) {
         scale *= DistanceToScale(distances[quant_idx], k);
+        if (is_yuv420 && quant_idx > 0) {
+          scale *= k420Rescale[k];
+        }
       } else {
         scale *= DistanceToLinearQuality(distances[quant_idx]);
       }

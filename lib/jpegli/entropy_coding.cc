@@ -470,7 +470,7 @@ void CopyHuffmanTable(j_compress_ptr cinfo, int index, bool is_dc,
   JHUFF_TBL* table =
       is_dc ? cinfo->dc_huff_tbl_ptrs[index] : cinfo->ac_huff_tbl_ptrs[index];
   if (table == nullptr) {
-    JPEGLI_ERROR("Missing %s Huffman table %d", table, index);
+    JPEGLI_ERROR("Missing %s Huffman table %d", type, index);
   }
   ValidateHuffmanTable(reinterpret_cast<j_common_ptr>(cinfo), table, is_dc);
   JPEGHuffmanCode huff = {};

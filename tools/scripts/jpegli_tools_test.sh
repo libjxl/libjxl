@@ -160,7 +160,7 @@ main() {
   cjpegli_test "${rgb_in}" "-q 80" 84 1.2
   cjpegli_test "${rgb_in}" "-q 95" 91.5 2.4
   cjpegli_test "${rgb_in}" "-d 0.5" 92 2.6
-  cjpegli_test "${rgb_in}" "--chroma_subsampling 420" 85.5 1.5
+  cjpegli_test "${rgb_in}" "--chroma_subsampling 420" 87 1.5
   cjpegli_test "${rgb_in}" "--chroma_subsampling 440" 87 1.6
   cjpegli_test "${rgb_in}" "--chroma_subsampling 422" 87 1.6
   cjpegli_test "${rgb_in}" "--std_quant" 91 2.2

@@ -485,7 +485,6 @@ void EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
   jpegli_set_defaults(cinfo);
   cinfo->in_color_space = input.color_space;
   jpegli_default_colorspace(cinfo);
-  jpegli_set_quality(cinfo, jparams.quality, TRUE);
   if (jparams.override_JFIF >= 0) {
     cinfo->write_JFIF_header = jparams.override_JFIF;
   }
@@ -506,6 +505,7 @@ void EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
       cinfo->comp_info[c].v_samp_factor = jparams.v_sampling[c];
     }
   }
+  jpegli_set_quality(cinfo, jparams.quality, TRUE);
   if (!jparams.quant_indexes.empty()) {
     for (int c = 0; c < cinfo->num_components; ++c) {
       cinfo->comp_info[c].quant_tbl_no = jparams.quant_indexes[c];
