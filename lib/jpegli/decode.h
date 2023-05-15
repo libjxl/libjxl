@@ -72,6 +72,9 @@ boolean jpegli_input_complete(j_decompress_ptr cinfo);
 
 int jpegli_consume_input(j_decompress_ptr cinfo);
 
+#if JPEG_LIB_VERSION >= 80
+void jpegli_core_output_dimensions(j_decompress_ptr cinfo);
+#endif
 void jpegli_calc_output_dimensions(j_decompress_ptr cinfo);
 
 void jpegli_save_markers(j_decompress_ptr cinfo, int marker_code,
