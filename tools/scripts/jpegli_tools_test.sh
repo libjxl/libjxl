@@ -139,6 +139,76 @@ djpegli_test() {
   done
 }
 
+# Test decoding of jpeg files with the djpeg binary + jpegli library.
+djpeg_test() {
+  local infn="${JPEGXL_TEST_DATA_PATH}/$1"
+  local encargs="$2"
+  local minscore="$3"
+  local jpgfn="$(mktemp -p "$tmpdir")"
+
+  cjpeg $encargs -outfile "${jpgfn}" "${infn}"
+
+  # Test default behaviour.
+  local outfn="$(mktemp -p "${tmpdir}").pnm"
+  LD_LIBRARY_PATH="${build_dir}/lib/jpegli:${LD_LIBRARY_PATH:-}" \
+    djpeg -outfile "${outfn}" "${jpgfn}"
+  verify_ssimulacra2 "${infn}" "${outfn}" "${minscore}"
+
+  # Test color quantization.
+  local outfn="$(mktemp -p "${tmpdir}").pnm"
+  LD_LIBRARY_PATH="${build_dir}/lib/jpegli:${LD_LIBRARY_PATH:-}" \
+    djpeg -outfile "${outfn}" -colors 128 "${jpgfn}"
+  verify_ssimulacra2 "${infn}" "${outfn}" 48
+
+  local outfn="$(mktemp -p "${tmpdir}").pnm"
+  LD_LIBRARY_PATH="${build_dir}/lib/jpegli:${LD_LIBRARY_PATH:-}" \
+    djpeg -outfile "${outfn}" -colors 128 -onepass -dither fs "${jpgfn}"
+  verify_ssimulacra2 "${infn}" "${outfn}" 30
+
+  local outfn="$(mktemp -p "${tmpdir}").pnm"
+  LD_LIBRARY_PATH="${build_dir}/lib/jpegli:${LD_LIBRARY_PATH:-}" \
+    djpeg -outfile "${outfn}" -colors 128 -onepass -dither ordered "${jpgfn}"
+  verify_ssimulacra2 "${infn}" "${outfn}" 30
+
+  # Test -grayscale flag.
+  local outfn="$(mktemp -p "${tmpdir}").pgm"
+  LD_LIBRARY_PATH="${build_dir}/lib/jpegli:${LD_LIBRARY_PATH:-}" \
+    djpeg -outfile "${outfn}" -grayscale "${jpgfn}"
+  local outfn2="$(mktemp -p "${tmpdir}").pgm"
+  convert "${infn}" -set colorspace Gray "${outfn2}"
+  # JPEG color conversion is in gamma-compressed space, so it will not match
+  # the correct grayscale version very well.
+  verify_ssimulacra2 "${outfn2}" "${outfn}" 60
+
+  # Test -rgb flag.
+  local outfn="$(mktemp -p "${tmpdir}").ppm"
+  LD_LIBRARY_PATH="${build_dir}/lib/jpegli:${LD_LIBRARY_PATH:-}" \
+    djpeg -outfile "${outfn}" -rgb "${jpgfn}"
+  verify_ssimulacra2 "${infn}" "${outfn}" "${minscore}"
+
+  # Test -crop flag.
+  for geometry in 256x256+128+128 256x127+128+117; do
+    local outfn="$(mktemp -p "${tmpdir}").pnm"
+    LD_LIBRARY_PATH="${build_dir}/lib/jpegli:${LD_LIBRARY_PATH:-}" \
+      djpeg -outfile "${outfn}" -crop "${geometry}" "${jpgfn}"
+    local outfn2="$(mktemp -p "${tmpdir}").pnm"
+    convert "${infn}" -crop "${geometry}" "${outfn2}"
+    verify_ssimulacra2 "${outfn2}" "${outfn}" "${minscore}"
+  done
+
+  # Test output scaling.
+  for scale in 1/4 3/8 1/2 5/8 9/8; do
+    local scalepct="$(python3 -c "print(100.0*${scale})")%"
+    local geometry=96x128+0+0
+    local outfn="$(mktemp -p "${tmpdir}").pnm"
+    LD_LIBRARY_PATH="${build_dir}/lib/jpegli:${LD_LIBRARY_PATH:-}" \
+      djpeg -outfile "${outfn}" -scale "${scale}" -crop "${geometry}" "${jpgfn}"
+    local outfn2="$(mktemp -p "${tmpdir}").pnm"
+    convert "${infn}" -scale "${scalepct}" -crop "${geometry}" "${outfn2}"
+    verify_ssimulacra2 "${outfn2}" "${outfn}" 80
+  done
+}
+
 main() {
   local tmpdir=$(mktemp -d)
   CLEANUP_FILES+=("${tmpdir}")
@@ -186,7 +256,8 @@ main() {
   cjpegli_djpegli_test "${rgb_in}" "--xyb" 87 1.5
 
   djpegli_test "${ppm_rgb}" "-q 95" 92
-  djpegli_test "${ppm_gray}" "-q 95" 92
+  djpegli_test "${ppm_rgb}" "-q 95 -sample 1x1" 93
+  djpegli_test "${ppm_gray}" "-q 95 -gray" 94
 
   cjpeg_test "${ppm_rgb}" "" 89 1.9
   cjpeg_test "${ppm_rgb}" "-optimize" 89 1.85
@@ -207,6 +278,10 @@ main() {
   cjpeg_test "${ppm_rgb}" "-q 80" 84 1.6
   cjpeg_test "${ppm_rgb}" "-q 90" 89 2.35
   cjpeg_test "${ppm_rgb}" "-q 100" 95 7.45
+
+  djpeg_test "${ppm_rgb}" "-q 95" 92
+  djpeg_test "${ppm_rgb}" "-q 95 -sample 1x1" 93
+  djpeg_test "${ppm_gray}" "-q 95 -gray" 94
 }
 
 main "$@"
