@@ -115,8 +115,8 @@ void InitProgressMonitor(j_decompress_ptr cinfo, bool coef_only) {
     cinfo->progress->total_passes = 1;
   } else {
     int input_passes = !cinfo->buffered_image && m->is_multiscan_ ? 1 : 0;
-    bool two_pass_quant =
-        cinfo->quantize_colors && !cinfo->colormap && cinfo->two_pass_quantize;
+    bool two_pass_quant = cinfo->quantize_colors && !cinfo->colormap &&
+                          cinfo->two_pass_quantize && cinfo->enable_2pass_quant;
     cinfo->progress->total_passes = input_passes + (two_pass_quant ? 2 : 1);
   }
   cinfo->progress->completed_passes = 0;
@@ -433,20 +433,21 @@ boolean PrepareQuantizedOutput(j_decompress_ptr cinfo) {
   if (m->output_data_type_ != JPEGLI_TYPE_UINT8) {
     JPEGLI_ERROR("Color quantization must use 8-bit mode.");
   }
-  m->quant_mode_ = cinfo->colormap ? 3 : cinfo->two_pass_quantize ? 2 : 1;
+  if (cinfo->colormap) {
+    m->quant_mode_ = 3;
+  } else if (cinfo->two_pass_quantize && cinfo->enable_2pass_quant) {
+    m->quant_mode_ = 2;
+  } else if (cinfo->enable_1pass_quant) {
+    m->quant_mode_ = 1;
+  } else {
+    JPEGLI_ERROR("Invalid quantization mode change");
+  }
   if (m->quant_mode_ > 1 && cinfo->dither_mode == JDITHER_ORDERED) {
-    JPEGLI_WARN("Changing dither mode to JDITHER_FS");
     cinfo->dither_mode = JDITHER_FS;
   }
   if (m->quant_mode_ == 1) {
-    if (!cinfo->enable_1pass_quant) {
-      JPEGLI_ERROR("1-pass quantizer was not enabled");
-    }
     ChooseColorMap1Pass(cinfo);
   } else if (m->quant_mode_ == 2) {
-    if (!cinfo->enable_2pass_quant) {
-      JPEGLI_ERROR("2-pass quantizer was not enabled");
-    }
     m->quant_pass_ = 0;
     if (!ReadOutputPass(cinfo)) {
       return FALSE;
