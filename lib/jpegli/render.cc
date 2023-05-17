@@ -307,10 +307,6 @@ void DecenterRow(float* row, size_t xsize) {
   return HWY_DYNAMIC_DISPATCH(DecenterRow)(row, xsize);
 }
 
-// Padding for horizontal chroma upsampling.
-constexpr size_t kPaddingLeft = 64;
-constexpr size_t kPaddingRight = 64;
-
 bool ShouldApplyDequantBiases(j_decompress_ptr cinfo, int ci) {
   const auto& compinfo = cinfo->comp_info[ci];
   return (compinfo.h_samp_factor == cinfo->max_h_samp_factor &&
@@ -553,47 +549,16 @@ void PredictSmooth(j_decompress_ptr cinfo, JBLOCKARRAY blocks, int component,
 
 void PrepareForOutput(j_decompress_ptr cinfo) {
   jpeg_decomp_master* m = cinfo->master;
-  size_t iMCU_width = cinfo->max_h_samp_factor * m->min_scaled_dct_size;
-  size_t output_stride = m->iMCU_cols_ * iMCU_width;
-  for (int c = 0; c < cinfo->num_components; ++c) {
-    const auto& comp = cinfo->comp_info[c];
-    size_t cheight = comp.v_samp_factor * m->scaled_dct_size[c];
-    m->raw_height_[c] = cinfo->total_iMCU_rows * cheight;
-    m->raw_output_[c].Allocate(cinfo, 3 * cheight, output_stride);
-  }
-  int num_all_components =
-      std::max(cinfo->out_color_components, cinfo->num_components);
-  for (int c = 0; c < num_all_components; ++c) {
-    m->render_output_[c].Allocate(cinfo, cinfo->max_v_samp_factor,
-                                  output_stride);
-  }
-  m->idct_scratch_ = Allocate<float>(cinfo, 5 * DCTSIZE2, JPOOL_IMAGE_ALIGNED);
-  m->upsample_scratch_ = Allocate<float>(
-      cinfo, output_stride + kPaddingLeft + kPaddingRight, JPOOL_IMAGE_ALIGNED);
-  size_t bytes_per_sample = jpegli_bytes_per_sample(m->output_data_type_);
-  size_t bytes_per_pixel = cinfo->out_color_components * bytes_per_sample;
-  size_t scratch_stride = RoundUpTo(output_stride, HWY_ALIGNMENT);
-  m->output_scratch_ = Allocate<uint8_t>(
-      cinfo, bytes_per_pixel * scratch_stride, JPOOL_IMAGE_ALIGNED);
-  m->smoothing_scratch_ =
-      Allocate<int16_t>(cinfo, DCTSIZE2, JPOOL_IMAGE_ALIGNED);
   bool smoothing = do_smoothing(cinfo);
   m->apply_smoothing = smoothing && cinfo->do_block_smoothing;
   size_t coeffs_per_block = cinfo->num_components * DCTSIZE2;
-  m->nonzeros_ = Allocate<int>(cinfo, coeffs_per_block, JPOOL_IMAGE_ALIGNED);
-  m->sumabs_ = Allocate<int>(cinfo, coeffs_per_block, JPOOL_IMAGE_ALIGNED);
   memset(m->nonzeros_, 0, coeffs_per_block * sizeof(m->nonzeros_[0]));
   memset(m->sumabs_, 0, coeffs_per_block * sizeof(m->sumabs_[0]));
   memset(m->num_processed_blocks_, 0, sizeof(m->num_processed_blocks_));
-  m->biases_ = Allocate<float>(cinfo, coeffs_per_block, JPOOL_IMAGE_ALIGNED);
   memset(m->biases_, 0, coeffs_per_block * sizeof(m->biases_[0]));
   cinfo->output_iMCU_row = 0;
   cinfo->output_scanline = 0;
   const float kDequantScale = 1.0f / (8 * 255);
-  if (m->dequant_ == nullptr) {
-    m->dequant_ = Allocate<float>(cinfo, coeffs_per_block, JPOOL_IMAGE_ALIGNED);
-    memset(m->dequant_, 0, coeffs_per_block * sizeof(float));
-  }
   for (int c = 0; c < cinfo->num_components; c++) {
     const auto& comp = cinfo->comp_info[c];
     JQUANT_TBL* table = comp.quant_table;
