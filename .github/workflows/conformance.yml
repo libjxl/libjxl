@@ -17,6 +17,9 @@ on:
       - '**.md'
       - 'AUTHORS'
 
+permissions:
+  contents: read
+
 env:
   LIBJXL_VERSION:  0.9.0
   LIBJXL_ABI_VERSION:  0.9

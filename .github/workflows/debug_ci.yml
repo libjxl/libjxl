@@ -11,6 +11,9 @@ on:
     branches:
       - ci-*-debug
 
+permissions:
+  contents: read
+
 jobs:
   cross_compile_ubuntu:
     name: Cross-compiling ${{ matrix.build_target }} ${{ matrix.variant }} 

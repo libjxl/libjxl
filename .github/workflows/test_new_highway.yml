@@ -12,6 +12,9 @@ on:
   schedule:
     - cron: '37 2 * * *' # Daily on 02:37 UTC
 
+permissions:
+  contents: read
+
 jobs:
   update:
     runs-on: ubuntu-latest
