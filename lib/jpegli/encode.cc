@@ -337,15 +337,10 @@ bool IsStreamingSupported(j_compress_ptr cinfo) {
   if (cinfo->restart_interval > 0 || cinfo->restart_in_rows > 0) {
     return false;
   }
-  if (cinfo->optimize_coding || cinfo->num_scans > 1) {
+  if (cinfo->num_scans > 1) {
     return false;
   }
   return true;
-}
-
-bool IsSinglePassOptimizerSupported(j_compress_ptr cinfo) {
-  return cinfo->num_scans == 1 && cinfo->optimize_coding &&
-         cinfo->restart_interval == 0 && cinfo->restart_in_rows == 0;
 }
 
 void AllocateBuffers(j_compress_ptr cinfo) {
@@ -394,6 +389,15 @@ void AllocateBuffers(j_compress_ptr cinfo) {
           reinterpret_cast<j_common_ptr>(cinfo), JPOOL_IMAGE,
           /*pre_zero=*/false, xsize_blocks, ysize_blocks, comp->v_samp_factor);
     }
+  } else if (cinfo->optimize_coding) {
+    int ysize_mcus = DivCeil(cinfo->image_height, iMCU_height);
+    m->token_arrays = Allocate<TokenArray>(cinfo, ysize_mcus, JPOOL_IMAGE);
+    m->cur_token_array = 0;
+    memset(m->token_arrays, 0, ysize_mcus * sizeof(TokenArray));
+    m->num_tokens = 0;
+    m->total_num_tokens = 0;
+    memset(cinfo->master->last_dc_coeff, 0,
+           sizeof(cinfo->master->last_dc_coeff));
   }
   if (m->use_adaptive_quantization) {
     int y_channel = cinfo->jpeg_color_space == JCS_RGB ? 1 : 0;
@@ -466,6 +470,7 @@ void ProcessiMCURow(j_compress_ptr cinfo) {
   }
   ComputeAdaptiveQuantField(cinfo);
   if (IsStreamingSupported(cinfo)) {
+    ProgressMonitorEncodePass(cinfo, 0);
     WriteiMCURow(cinfo);
   } else {
     ComputeDCTCoefficients(cinfo);
@@ -494,9 +499,6 @@ void InitProgressMonitor(j_compress_ptr cinfo) {
   if (IsStreamingSupported(cinfo)) {
     // We have only one input pass.
     cinfo->progress->total_passes = 1;
-  } else if (IsSinglePassOptimizerSupported(cinfo)) {
-    // We have one input pass and an encode pass for each scan.
-    cinfo->progress->total_passes = 1 + cinfo->num_scans;
   } else {
     // We have one input pass, a histogram pass for each scan, and an encode
     // pass for each scan.
@@ -533,7 +535,7 @@ void WriteScanHeader(j_compress_ptr cinfo, size_t scan_idx) {
   }
   size_t num_dht = cinfo->master->scan_coding_info[scan_idx].num_huffman_codes;
   if (num_dht > 0) {
-    bool pre_shifted = IsStreamingSupported(cinfo);
+    bool pre_shifted = IsStreamingSupported(cinfo) && !cinfo->optimize_coding;
     EncodeDHT(cinfo, m->huffman_codes + m->last_dht_index, num_dht,
               pre_shifted);
     m->last_dht_index += num_dht;
@@ -551,10 +553,6 @@ void WriteHeaderMarkers(j_compress_ptr cinfo) {
 }
 
 void EncodeScans(j_compress_ptr cinfo) {
-  if (IsSinglePassOptimizerSupported(cinfo)) {
-    EncodeSingleScan(cinfo);
-    return;
-  }
   bool is_baseline = false;
   if (cinfo->optimize_coding || cinfo->progressive_mode) {
     OptimizeHuffmanCodes(cinfo, &is_baseline);
@@ -1026,7 +1024,7 @@ JDIMENSION jpegli_write_scanlines(j_compress_ptr cinfo, JSAMPARRAY scanlines,
   }
   jpegli::ProgressMonitorInputPass(cinfo);
   if (cinfo->global_state == jpegli::kEncHeader &&
-      jpegli::IsStreamingSupported(cinfo)) {
+      jpegli::IsStreamingSupported(cinfo) && !cinfo->optimize_coding) {
     jpegli::WriteHeaderMarkers(cinfo);
   }
   cinfo->global_state = jpegli::kEncReadImage;
@@ -1068,7 +1066,7 @@ JDIMENSION jpegli_write_raw_data(j_compress_ptr cinfo, JSAMPIMAGE data,
   }
   jpegli::ProgressMonitorInputPass(cinfo);
   if (cinfo->global_state == jpegli::kEncHeader &&
-      jpegli::IsStreamingSupported(cinfo)) {
+      jpegli::IsStreamingSupported(cinfo) && !cinfo->optimize_coding) {
     jpegli::WriteHeaderMarkers(cinfo);
   }
   cinfo->global_state = jpegli::kEncReadImage;
@@ -1126,12 +1124,16 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
   }
 
   if (jpegli::IsStreamingSupported(cinfo)) {
-    jpegli::JumpToByteBoundary(&m->bw);
-    if (!jpegli::EmptyBitWriterBuffer(&m->bw)) {
-      JPEGLI_ERROR("Output suspension is not supported in finish_compress");
-    }
-    if (!m->bw.healthy) {
-      JPEGLI_ERROR("Failed to encode scan.");
+    if (cinfo->optimize_coding) {
+      jpegli::EncodeSingleScan(cinfo);
+    } else {
+      jpegli::JumpToByteBoundary(&m->bw);
+      if (!jpegli::EmptyBitWriterBuffer(&m->bw)) {
+        JPEGLI_ERROR("Output suspension is not supported in finish_compress");
+      }
+      if (!m->bw.healthy) {
+        JPEGLI_ERROR("Failed to encode scan.");
+      }
     }
   } else {
     jpegli::EncodeScans(cinfo);

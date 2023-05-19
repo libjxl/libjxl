@@ -32,6 +32,8 @@ void EncodeSingleScan(j_compress_ptr cinfo);
 
 void WriteiMCURow(j_compress_ptr cinfo);
 
+void ProgressMonitorEncodePass(j_compress_ptr cinfo, size_t scan_index);
+
 }  // namespace jpegli
 
 #endif  // LIB_JPEGLI_BITSTREAM_H_

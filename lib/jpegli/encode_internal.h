@@ -52,6 +52,18 @@ struct ScanCodingInfo {
 
 typedef int16_t coeff_t;
 
+struct Token {
+  uint8_t histo_idx;
+  uint8_t symbol;
+  uint16_t bits;
+  Token(int i, int s, int b) : histo_idx(i), symbol(s), bits(b) {}
+};
+
+struct TokenArray {
+  Token* tokens;
+  size_t num_tokens;
+};
+
 }  // namespace jpegli
 
 struct jpeg_comp_master {
@@ -96,6 +108,11 @@ struct jpeg_comp_master {
   jpegli::JpegBitWriter bw;
   float* dct_buffer;
   int32_t* block_tmp;
+  jpegli::TokenArray* token_arrays;
+  size_t cur_token_array;
+  jpegli::Token* next_token;
+  size_t num_tokens;
+  size_t total_num_tokens;
 };
 
 #endif  // LIB_JPEGLI_ENCODE_INTERNAL_H_
