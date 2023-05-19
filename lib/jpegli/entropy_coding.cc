@@ -565,7 +565,8 @@ void OptimizeHuffmanCodes(j_compress_ptr cinfo, bool* is_baseline) {
   // Add the first 4 DC and AC histograms in the first DHT segment.
   std::vector<uint32_t> dc_slot_histograms;
   std::vector<uint32_t> ac_slot_histograms;
-  m->huffman_codes = Allocate<JPEGHuffmanCode>(cinfo, num_histo, JPOOL_IMAGE);
+  m->huffman_codes =
+      Allocate<JPEGHuffmanCode>(cinfo, 2 * num_histo, JPOOL_IMAGE);
   for (size_t i = 0; i < dc_clusters.histograms.size(); ++i) {
     if (i >= 4) break;
     JXL_ASSERT(dc_clusters.slot_ids[i] == i);
