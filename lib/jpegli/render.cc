@@ -667,17 +667,19 @@ void ProcessOutput(j_decompress_ptr cinfo, size_t* num_output_rows,
   jpeg_decomp_master* m = cinfo->master;
   const int vfactor = cinfo->max_v_samp_factor;
   const int hfactor = cinfo->max_h_samp_factor;
+  const size_t context = m->need_context_rows_ ? 1 : 0;
   const size_t imcu_row = cinfo->output_iMCU_row;
   const size_t imcu_height = vfactor * m->min_scaled_dct_size;
   const size_t imcu_width = hfactor * m->min_scaled_dct_size;
   const size_t output_width = m->iMCU_cols_ * imcu_width;
   if (imcu_row == cinfo->total_iMCU_rows ||
-      (imcu_row > 1 && cinfo->output_scanline < (imcu_row - 1) * imcu_height)) {
+      (imcu_row > context &&
+       cinfo->output_scanline < (imcu_row - context) * imcu_height)) {
     // We are ready to output some scanlines.
     size_t ybegin = cinfo->output_scanline;
-    size_t yend =
-        (imcu_row == cinfo->total_iMCU_rows ? cinfo->output_height
-                                            : (imcu_row - 1) * imcu_height);
+    size_t yend = (imcu_row == cinfo->total_iMCU_rows
+                       ? cinfo->output_height
+                       : (imcu_row - context) * imcu_height);
     yend = std::min<size_t>(yend, ybegin + max_output_rows - *num_output_rows);
     size_t yb = (ybegin / vfactor) * vfactor;
     size_t ye = DivCeil(yend, vfactor) * vfactor;
