@@ -491,8 +491,9 @@ void AllocateOutputBuffers(j_decompress_ptr cinfo) {
   for (int c = 0; c < cinfo->num_components; ++c) {
     const auto& comp = cinfo->comp_info[c];
     size_t cheight = comp.v_samp_factor * m->scaled_dct_size[c];
+    int downsampled_width = output_stride / m->h_factor[c];
     m->raw_height_[c] = cinfo->total_iMCU_rows * cheight;
-    m->raw_output_[c].Allocate(cinfo, 3 * cheight, output_stride);
+    m->raw_output_[c].Allocate(cinfo, 3 * cheight, downsampled_width);
   }
   int num_all_components =
       std::max(cinfo->out_color_components, cinfo->num_components);
