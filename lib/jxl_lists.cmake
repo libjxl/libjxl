@@ -629,3 +629,8 @@ set(JPEGXL_INTERNAL_THREADS_SOURCES
   threads/thread_parallel_runner_internal.cc
   threads/thread_parallel_runner_internal.h
 )
+
+set(JPEGXL_INTERNAL_CMS_SOURCES
+  jxl/jxl_cms.h
+  jxl/jxl_cms.cc
+)
