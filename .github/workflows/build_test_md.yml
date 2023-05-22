@@ -11,6 +11,10 @@ on:
     types: [opened, reopened, labeled, synchronize]
     paths:
       - '**.md'
+
+permissions:
+  contents: read
+
 jobs:
   ubuntu-build:
     name: Ubuntu Build ${{ matrix.name }}

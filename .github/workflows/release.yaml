@@ -25,6 +25,9 @@ on:
   release:
     types: [ published ]
 
+permissions:
+  contents: read
+
 jobs:
   ubuntu_static_x86_64:
     name: Release linux x86_64 static
