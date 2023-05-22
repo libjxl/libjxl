@@ -31,11 +31,7 @@
 
 #include "lib/extras/dec/apng.h"
 #include "lib/extras/dec/color_hints.h"
-#include "lib/extras/dec/exr.h"
-#include "lib/extras/dec/gif.h"
-#include "lib/extras/dec/jpg.h"
-#include "lib/extras/dec/pgx.h"
-#include "lib/extras/dec/pnm.h"
+#include "lib/extras/dec/decode.h"
 #include "lib/extras/enc/jxl.h"
 #include "lib/extras/time.h"
 #include "lib/jxl/base/override.h"
@@ -92,7 +88,7 @@ struct CompressArgs {
 #if JPEGXL_ENABLE_EXR
                                  "EXR, "
 #endif
-                                 "PPM, PFM, or PGX",
+                                 "PPM, PFM, PGX, or JXL",
                                  &file_in);
     cmdline->AddPositionalOption("OUTPUT", /* required = */ true,
                                  "the compressed JXL output file", &file_out);
@@ -566,56 +562,6 @@ bool IsJPG(const std::vector<uint8_t>& image_data) {
           image_data[1] == 0xD8);
 }
 
-// TODO(tfish): Replace with non-C-API library function.
-// Implementation is in extras/.
-jxl::Status GetPixeldata(const std::vector<uint8_t>& image_data,
-                         const jxl::extras::ColorHints& color_hints,
-                         jxl::extras::PackedPixelFile& ppf,
-                         jxl::extras::Codec& codec) {
-  // Any valid encoding is larger (ensures codecs can read the first few bytes).
-  constexpr size_t kMinBytes = 9;
-
-  if (image_data.size() < kMinBytes) return JXL_FAILURE("Input too small.");
-  jxl::Span<const uint8_t> encoded(image_data);
-
-  ppf.info.orientation = JXL_ORIENT_IDENTITY;
-
-  const auto choose_codec = [&]() {
-#if JPEGXL_ENABLE_APNG
-    if (jxl::extras::DecodeImageAPNG(encoded, color_hints, &ppf)) {
-      return jxl::extras::Codec::kPNG;
-    }
-#endif
-    if (jxl::extras::DecodeImagePGX(encoded, color_hints, &ppf)) {
-      return jxl::extras::Codec::kPGX;
-    } else if (jxl::extras::DecodeImagePNM(encoded, color_hints, &ppf)) {
-      return jxl::extras::Codec::kPNM;
-    }
-#if JPEGXL_ENABLE_GIF
-    if (jxl::extras::DecodeImageGIF(encoded, color_hints, &ppf)) {
-      return jxl::extras::Codec::kGIF;
-    }
-#endif
-#if JPEGXL_ENABLE_JPEG
-    if (jxl::extras::DecodeImageJPG(encoded, color_hints, &ppf)) {
-      return jxl::extras::Codec::kJPG;
-    }
-#endif
-#if JPEGXL_ENABLE_EXR
-    if (jxl::extras::DecodeImageEXR(encoded, color_hints, &ppf)) {
-      return jxl::extras::Codec::kEXR;
-    }
-#endif
-    // TODO(tfish): Bring back PSD.
-    return jxl::extras::Codec::kUnknown;
-  };
-  codec = choose_codec();
-  if (codec == jxl::extras::Codec::kUnknown) {
-    return JXL_FAILURE("Codecs failed to decode input.");
-  }
-  return true;
-}
-
 using flag_check_fn = std::function<std::string(int64_t)>;
 using flag_check_float_fn = std::function<std::string(float)>;
 
@@ -931,7 +877,8 @@ void ProcessFlags(const jxl::extras::Codec codec,
   params->codestream_level = args->codestream_level;
   params->premultiply = args->premultiply;
   params->compress_boxes = args->compress_boxes != jxl::Override::kOff;
-  if (codec == jxl::extras::Codec::kPNM) {
+  if (codec == jxl::extras::Codec::kPNM &&
+      ppf.info.exponent_bits_per_sample == 0) {
     params->input_bitdepth.type = JXL_BIT_DEPTH_FROM_CODESTREAM;
   }
 }
@@ -998,7 +945,9 @@ int main(int argc, char** argv) {
   if (!args.lossless_jpeg) {
     const double t0 = jxl::Now();
     jxl::Status status =
-        jpegxl::tools::GetPixeldata(image_data, args.color_hints, ppf, codec);
+        jxl::extras::DecodeBytes(jxl::Span<const uint8_t>(image_data),
+                                 args.color_hints, &ppf, nullptr, &codec);
+
     if (!status) {
       std::cerr << "Getting pixel data failed." << std::endl;
       exit(EXIT_FAILURE);
