@@ -488,12 +488,21 @@ void AllocateOutputBuffers(j_decompress_ptr cinfo) {
   jpeg_decomp_master* m = cinfo->master;
   size_t iMCU_width = cinfo->max_h_samp_factor * m->min_scaled_dct_size;
   size_t output_stride = m->iMCU_cols_ * iMCU_width;
+  m->need_context_rows_ = false;
+  for (int c = 0; c < cinfo->num_components; ++c) {
+    if (cinfo->do_fancy_upsampling && m->v_factor[c] == 2) {
+      m->need_context_rows_ = true;
+    }
+  }
   for (int c = 0; c < cinfo->num_components; ++c) {
     const auto& comp = cinfo->comp_info[c];
     size_t cheight = comp.v_samp_factor * m->scaled_dct_size[c];
     int downsampled_width = output_stride / m->h_factor[c];
     m->raw_height_[c] = cinfo->total_iMCU_rows * cheight;
-    m->raw_output_[c].Allocate(cinfo, 3 * cheight, downsampled_width);
+    if (m->need_context_rows_) {
+      cheight *= 3;
+    }
+    m->raw_output_[c].Allocate(cinfo, cheight, downsampled_width);
   }
   int num_all_components =
       std::max(cinfo->out_color_components, cinfo->num_components);
