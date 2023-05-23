@@ -13,7 +13,6 @@
 #include "lib/jpegli/bit_writer.h"
 #include "lib/jpegli/bitstream.h"
 #include "lib/jpegli/color_transform.h"
-#include "lib/jpegli/dct.h"
 #include "lib/jpegli/downsample.h"
 #include "lib/jpegli/encode_internal.h"
 #include "lib/jpegli/entropy_coding.h"
@@ -469,12 +468,8 @@ void ProcessiMCURow(j_compress_ptr cinfo) {
     DownsampleInputBuffer(cinfo);
   }
   ComputeAdaptiveQuantField(cinfo);
-  if (IsStreamingSupported(cinfo)) {
-    ProgressMonitorEncodePass(cinfo, 0);
-    WriteiMCURow(cinfo);
-  } else {
-    ComputeDCTCoefficients(cinfo);
-  }
+  bool streaming = IsStreamingSupported(cinfo);
+  EncodeiMCURow(cinfo, streaming);
   ++cinfo->master->next_iMCU_row;
 }
 

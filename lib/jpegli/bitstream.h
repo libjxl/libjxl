@@ -30,7 +30,7 @@ bool EncodeScan(j_compress_ptr cinfo, int scan_index);
 
 void EncodeSingleScan(j_compress_ptr cinfo);
 
-void WriteiMCURow(j_compress_ptr cinfo);
+void EncodeiMCURow(j_compress_ptr cinfo, bool streaming);
 
 void ProgressMonitorEncodePass(j_compress_ptr cinfo, size_t scan_index);
 
