@@ -260,7 +260,7 @@ size_t EstimateNumTokens(j_compress_ptr cinfo, size_t mcu_y, size_t ysize_mcus,
                   std::max(max_per_row, estimate - num_tokens));
 }
 
-void WriteiMCURow(j_compress_ptr cinfo) {
+void EncodeiMCURow(j_compress_ptr cinfo, bool streaming) {
   jpeg_comp_master* m = cinfo->master;
   JpegBitWriter* bw = &m->bw;
   int xsize_mcus = DivCeil(cinfo->image_width, 8 * cinfo->max_h_samp_factor);
@@ -270,7 +270,22 @@ void WriteiMCURow(j_compress_ptr cinfo) {
   int32_t* symbols = m->block_tmp + DCTSIZE2;
   int32_t* nonzero_idx = m->block_tmp + 3 * DCTSIZE2;
   coeff_t* JXL_RESTRICT last_dc_coeff = m->last_dc_coeff;
-  if (cinfo->optimize_coding) {
+  bool output_tokens = streaming && cinfo->optimize_coding;
+  bool output_bits = streaming && !cinfo->optimize_coding;
+  bool save_coefficients = !streaming;
+  JBLOCKARRAY ba[kMaxComponents];
+  if (save_coefficients) {
+    for (int c = 0; c < cinfo->num_components; ++c) {
+      jpeg_component_info* comp = &cinfo->comp_info[c];
+      int by0 = mcu_y * comp->v_samp_factor;
+      int block_rows_left = comp->height_in_blocks - by0;
+      int max_block_rows = std::min(comp->v_samp_factor, block_rows_left);
+      ba[c] = (*cinfo->mem->access_virt_barray)(
+          reinterpret_cast<j_common_ptr>(cinfo), m->coeff_buffers[c], by0,
+          max_block_rows, true);
+    }
+  }
+  if (output_tokens) {
     TokenArray* ta = &m->token_arrays[m->cur_token_array];
     int max_tokens_per_mcu_row = MaxNumTokensPerMCURow(cinfo);
     if (ta->num_tokens + max_tokens_per_mcu_row > m->num_tokens) {
@@ -312,10 +327,10 @@ void WriteiMCURow(j_compress_ptr cinfo) {
           size_t by = mcu_y * comp->v_samp_factor + iy;
           size_t bx = mcu_x * comp->h_samp_factor + ix;
           if (bx >= comp->width_in_blocks || by >= comp->height_in_blocks) {
-            if (cinfo->optimize_coding) {
+            if (output_tokens) {
               *m->next_token++ = Token(c, 0, 0);
               *m->next_token++ = Token(c + 4, 0, 0);
-            } else {
+            } else if (output_bits) {
               WriteBits(bw, dc_huff->depth[0], dc_huff->code[0]);
               WriteBits(bw, ac_huff->depth[0], ac_huff->code[0]);
             }
@@ -328,18 +343,24 @@ void WriteiMCURow(j_compress_ptr cinfo) {
           ComputeCoefficientBlock(pixels, stride, qmc, aq_strength,
                                   zero_bias_offset, zero_bias_mul,
                                   m->dct_buffer, block);
+          if (save_coefficients) {
+            JCOEF* cblock = &ba[c][iy][bx][0];
+            for (int k = 0; k < DCTSIZE2; ++k) {
+              cblock[k] = block[k];
+            }
+          }
           block[0] -= last_dc_coeff[c];
           last_dc_coeff[c] += block[0];
-          if (cinfo->optimize_coding) {
+          if (output_tokens) {
             ComputeTokensForBlock(block, c, c + 4, &m->next_token);
-          } else {
+          } else if (output_bits) {
             WriteBlock(block, symbols, nonzero_idx, dc_huff, ac_huff, bw);
           }
         }
       }
     }
   }
-  if (cinfo->optimize_coding) {
+  if (output_tokens) {
     TokenArray* ta = &m->token_arrays[m->cur_token_array];
     ta->num_tokens = m->next_token - ta->tokens;
   }
@@ -1082,9 +1103,9 @@ void EncodeSingleScan(j_compress_ptr cinfo) {
   }
 }
 
-HWY_EXPORT(WriteiMCURow);
-void WriteiMCURow(j_compress_ptr cinfo) {
-  HWY_DYNAMIC_DISPATCH(WriteiMCURow)(cinfo);
+HWY_EXPORT(EncodeiMCURow);
+void EncodeiMCURow(j_compress_ptr cinfo, bool streaming) {
+  HWY_DYNAMIC_DISPATCH(EncodeiMCURow)(cinfo, streaming);
 }
 
 }  // namespace jpegli

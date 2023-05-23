@@ -469,8 +469,6 @@ set(JPEGXL_INTERNAL_JPEGLI_SOURCES
   jpegli/common.h
   jpegli/common_internal.h
   jpegli/dct-inl.h
-  jpegli/dct.cc
-  jpegli/dct.h
   jpegli/decode.cc
   jpegli/decode.h
   jpegli/decode_internal.h
