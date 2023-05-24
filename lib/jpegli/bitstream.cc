@@ -340,8 +340,8 @@ void EncodeiMCURow(j_compress_ptr cinfo, bool streaming) {
             aq_strength = qf[iy * qf_stride + bx * h_factor];
           }
           const float* pixels = imcu_start[c] + (iy * stride + bx) * DCTSIZE;
-          ComputeCoefficientBlock(pixels, stride, qmc, aq_strength,
-                                  zero_bias_offset, zero_bias_mul,
+          ComputeCoefficientBlock(pixels, stride, qmc, last_dc_coeff[c],
+                                  aq_strength, zero_bias_offset, zero_bias_mul,
                                   m->dct_buffer, block);
           if (save_coefficients) {
             JCOEF* cblock = &ba[c][iy][bx][0];
