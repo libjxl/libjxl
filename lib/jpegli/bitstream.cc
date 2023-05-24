@@ -384,14 +384,14 @@ struct DCTCodingState {
   HuffmanCodeTable* cur_ac_huff_;
   // The sequence of currently buffered refinement bits for a successive
   // approximation scan (one where Ah > 0).
-  std::vector<int> refinement_bits_;
+  int refinement_bits_[DCTSIZE2];
+  int num_refinement_bits_;
 };
 
 void DCTCodingStateInit(DCTCodingState* s) {
   s->eob_run_ = 0;
   s->cur_ac_huff_ = nullptr;
-  s->refinement_bits_.clear();
-  s->refinement_bits_.reserve(kJPEGMaxCorrectionBits);
+  s->num_refinement_bits_ = 0;
 }
 
 static JXL_INLINE void WriteSymbol(int symbol, const HuffmanCodeTable* table,
@@ -411,28 +411,22 @@ static JXL_INLINE void Flush(DCTCodingState* s, JpegBitWriter* bw) {
     }
     s->eob_run_ = 0;
   }
-  for (size_t i = 0; i < s->refinement_bits_.size(); ++i) {
+  for (int i = 0; i < s->num_refinement_bits_; ++i) {
     WriteBits(bw, 1, s->refinement_bits_[i]);
   }
-  s->refinement_bits_.clear();
+  s->num_refinement_bits_ = 0;
 }
 
 // Buffer some more data at the end-of-band (the last non-zero or newly
 // non-zero coefficient within the [Ss, Se] spectral band).
 static JXL_INLINE void BufferEndOfBand(DCTCodingState* s,
                                        HuffmanCodeTable* ac_huff,
-                                       const std::vector<int>* new_bits,
                                        JpegBitWriter* bw) {
   if (s->eob_run_ == 0) {
     s->cur_ac_huff_ = ac_huff;
   }
   ++s->eob_run_;
-  if (new_bits) {
-    s->refinement_bits_.insert(s->refinement_bits_.end(), new_bits->begin(),
-                               new_bits->end());
-  }
-  if (s->eob_run_ == 0x7FFF ||
-      s->refinement_bits_.size() > kJPEGMaxCorrectionBits - kDCTBlockSize + 1) {
+  if (s->eob_run_ == 0x7FFF) {
     Flush(s, bw);
   }
 }
@@ -589,7 +583,7 @@ bool EncodeDCTBlockProgressive(const coeff_t* coeffs, HuffmanCodeTable* dc_huff,
     r = 0;
   }
   if (r > 0) {
-    BufferEndOfBand(coding_state, ac_huff, nullptr, bw);
+    BufferEndOfBand(coding_state, ac_huff, bw);
   }
   return true;
 }
@@ -612,39 +606,44 @@ bool EncodeRefinementBits(const coeff_t* coeffs, HuffmanCodeTable* ac_huff,
     }
   }
   int r = 0;
-  std::vector<int> refinement_bits;
-  refinement_bits.reserve(kDCTBlockSize);
+  int refinement_bits[DCTSIZE2];
+  int num_refinement_bits = 0;
   for (int k = Ss; k <= Se; k++) {
     if (abs_values[k] == 0) {
       r++;
       continue;
     }
+    Flush(coding_state, bw);
     while (r > 15 && k <= eob) {
-      Flush(coding_state, bw);
       WriteSymbol(0xf0, ac_huff, bw);
       r -= 16;
-      for (int bit : refinement_bits) {
-        WriteBits(bw, 1, bit);
+      for (int i = 0; i < num_refinement_bits; ++i) {
+        WriteBits(bw, 1, refinement_bits[i]);
       }
-      refinement_bits.clear();
+      num_refinement_bits = 0;
     }
     if (abs_values[k] > 1) {
-      refinement_bits.push_back(abs_values[k] & 1u);
+      refinement_bits[num_refinement_bits++] = abs_values[k] & 1u;
       continue;
     }
-    Flush(coding_state, bw);
     int symbol = (r << 4u) + 1;
     int new_non_zero_bit = (coeffs[k] < 0) ? 0 : 1;
     WriteSymbol(symbol, ac_huff, bw);
     WriteBits(bw, 1, new_non_zero_bit);
-    for (int bit : refinement_bits) {
-      WriteBits(bw, 1, bit);
+    for (int i = 0; i < num_refinement_bits; ++i) {
+      WriteBits(bw, 1, refinement_bits[i]);
     }
-    refinement_bits.clear();
+    num_refinement_bits = 0;
     r = 0;
   }
-  if (r > 0 || !refinement_bits.empty()) {
-    BufferEndOfBand(coding_state, ac_huff, &refinement_bits, bw);
+  if (num_refinement_bits > 0) {
+    coding_state->num_refinement_bits_ = num_refinement_bits;
+    memcpy(coding_state->refinement_bits_, refinement_bits,
+           num_refinement_bits * sizeof(refinement_bits[0]));
+    coding_state->cur_ac_huff_ = ac_huff;
+    coding_state->eob_run_ = 1;
+  } else if (r > 0) {
+    BufferEndOfBand(coding_state, ac_huff, bw);
   }
   return true;
 }
