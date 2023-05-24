@@ -729,7 +729,7 @@ ImageF TileDistMap(const ImageF& distmap, int tile_size, int margin,
 
 static const float kDcQuantPow = 0.83;
 static const float kDcQuant = 1.095924047623553f;
-static const float kAcQuant = 0.80751132443618624f;
+static const float kAcQuant = 0.81151132443618624f;
 
 void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
                           PassesEncoderState* enc_state,
@@ -784,7 +784,7 @@ void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
       (comparator.GoodQualityScore() < comparator.BadQualityScore());
   const float initial_quant_dc = InitialQuantDC(butteraugli_target);
   AdjustQuantField(enc_state->shared.ac_strategy, Rect(quant_field),
-                   &quant_field);
+                   original_butteraugli, &quant_field);
   ImageF tile_distmap;
   ImageF initial_quant_field = CopyImage(quant_field);
 
@@ -942,7 +942,7 @@ void FindBestQuantizationMaxError(const Image3F& opsin,
   const float initial_quant_dc =
       16 * std::sqrt(0.1f / cparams.butteraugli_distance);
   AdjustQuantField(enc_state->shared.ac_strategy, Rect(quant_field),
-                   &quant_field);
+                   cparams.original_butteraugli_distance, &quant_field);
 
   const float inv_max_err[3] = {1.0f / enc_state->cparams.max_error[0],
                                 1.0f / enc_state->cparams.max_error[1],
@@ -1003,10 +1003,26 @@ void FindBestQuantizationMaxError(const Image3F& opsin,
 }  // namespace
 
 void AdjustQuantField(const AcStrategyImage& ac_strategy, const Rect& rect,
-                      ImageF* quant_field) {
+                      float butteraugli_target, ImageF* quant_field) {
   // Replace the whole quant_field in non-8x8 blocks with the maximum of each
   // 8x8 block.
   size_t stride = quant_field->PixelsPerRow();
+
+  // At low distances it is great to use max, but mean works better
+  // at high distances. We interpolate between them for a distance
+  // range.
+  float mean_max_mixer = 1.0f;
+  {
+    static const float kLimit = 1.54138f;
+    static const float kMul = 0.56391f;
+    static const float kMin = 0.0f;
+    if (butteraugli_target > kLimit) {
+      mean_max_mixer -= (butteraugli_target - kLimit) * kMul;
+      if (mean_max_mixer < kMin) {
+        mean_max_mixer = kMin;
+      }
+    }
+  }
   for (size_t y = 0; y < rect.ysize(); ++y) {
     AcStrategyRow ac_strategy_row = ac_strategy.ConstRow(rect, y);
     float* JXL_RESTRICT quant_row = rect.Row(quant_field, y);
@@ -1016,10 +1032,17 @@ void AdjustQuantField(const AcStrategyImage& ac_strategy, const Rect& rect,
       JXL_ASSERT(x + acs.covered_blocks_x() <= quant_field->xsize());
       JXL_ASSERT(y + acs.covered_blocks_y() <= quant_field->ysize());
       float max = quant_row[x];
+      float mean = 0.0;
       for (size_t iy = 0; iy < acs.covered_blocks_y(); iy++) {
         for (size_t ix = 0; ix < acs.covered_blocks_x(); ix++) {
+          mean += quant_row[x + ix + iy * stride];
           max = std::max(quant_row[x + ix + iy * stride], max);
         }
+      }
+      mean /= acs.covered_blocks_y() * acs.covered_blocks_x();
+      if (acs.covered_blocks_y() * acs.covered_blocks_x() >= 4) {
+        max *= mean_max_mixer;
+        max += (1.0f - mean_max_mixer) * mean;
       }
       for (size_t iy = 0; iy < acs.covered_blocks_y(); iy++) {
         for (size_t ix = 0; ix < acs.covered_blocks_x(); ix++) {
