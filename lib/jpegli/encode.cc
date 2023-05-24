@@ -548,6 +548,27 @@ void WriteHeaderMarkers(j_compress_ptr cinfo) {
 }
 
 void EncodeScans(j_compress_ptr cinfo) {
+  jpeg_comp_master* m = cinfo->master;
+  if (cinfo->global_state == kEncWriteCoeffs) {
+    // Zig-zag shuffle all the blocks. For non-transcoding case it was already
+    // done in EncodeiMCURow().
+    JCOEF tmp[DCTSIZE2];
+    for (int c = 0; c < cinfo->num_components; ++c) {
+      jpeg_component_info* comp = &cinfo->comp_info[c];
+      for (JDIMENSION by = 0; by < comp->height_in_blocks; ++by) {
+        JBLOCKARRAY ba = (*cinfo->mem->access_virt_barray)(
+            reinterpret_cast<j_common_ptr>(cinfo), m->coeff_buffers[c], by, 1,
+            true);
+        for (JDIMENSION bx = 0; bx < comp->width_in_blocks; ++bx) {
+          JCOEF* block = &ba[0][bx][0];
+          for (int k = 0; k < DCTSIZE2; ++k) {
+            tmp[k] = block[kJPEGNaturalOrder[k]];
+          }
+          memcpy(block, tmp, sizeof(tmp));
+        }
+      }
+    }
+  }
   bool is_baseline = false;
   if (cinfo->optimize_coding || cinfo->progressive_mode) {
     OptimizeHuffmanCodes(cinfo, &is_baseline);

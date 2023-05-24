@@ -346,7 +346,7 @@ void EncodeiMCURow(j_compress_ptr cinfo, bool streaming) {
           if (save_coefficients) {
             JCOEF* cblock = &ba[c][iy][bx][0];
             for (int k = 0; k < DCTSIZE2; ++k) {
-              cblock[k] = block[k];
+              cblock[k] = block[kJPEGNaturalOrder[k]];
             }
           }
           block[0] -= last_dc_coeff[c];
@@ -511,7 +511,7 @@ bool EncodeDCTBlockSequential(const coeff_t* block, HuffmanCodeTable* dc_huff,
       break;
     }
     int r = 0;
-    while ((temp = block[kJPEGNaturalOrder[k]]) == 0) {
+    while ((temp = block[k]) == 0) {
       r++;
       k++;
     }
@@ -539,7 +539,6 @@ bool EncodeDCTBlockProgressive(const coeff_t* coeffs, HuffmanCodeTable* dc_huff,
                                HuffmanCodeTable* ac_huff, int Ss, int Se,
                                int Al, DCTCodingState* coding_state,
                                coeff_t* last_dc_coeff, JpegBitWriter* bw) {
-  bool eob_run_allowed = Ss > 0;
   coeff_t temp2;
   coeff_t temp;
   if (Ss == 0) {
@@ -557,14 +556,11 @@ bool EncodeDCTBlockProgressive(const coeff_t* coeffs, HuffmanCodeTable* dc_huff,
     if (nbits > 0) {
       WriteBits(bw, nbits, temp2 & ((1 << nbits) - 1));
     }
-    ++Ss;
-  }
-  if (Ss > Se) {
     return true;
   }
   int r = 0;
   for (int k = Ss; k <= Se; ++k) {
-    if ((temp = coeffs[kJPEGNaturalOrder[k]]) == 0) {
+    if ((temp = coeffs[k]) == 0) {
       r++;
       continue;
     }
@@ -594,9 +590,6 @@ bool EncodeDCTBlockProgressive(const coeff_t* coeffs, HuffmanCodeTable* dc_huff,
   }
   if (r > 0) {
     BufferEndOfBand(coding_state, ac_huff, nullptr, bw);
-    if (!eob_run_allowed) {
-      Flush(coding_state, bw);
-    }
   }
   return true;
 }
@@ -604,19 +597,15 @@ bool EncodeDCTBlockProgressive(const coeff_t* coeffs, HuffmanCodeTable* dc_huff,
 bool EncodeRefinementBits(const coeff_t* coeffs, HuffmanCodeTable* ac_huff,
                           int Ss, int Se, int Al, DCTCodingState* coding_state,
                           JpegBitWriter* bw) {
-  bool eob_run_allowed = Ss > 0;
   if (Ss == 0) {
     // Emit next bit of DC component.
     WriteBits(bw, 1, (coeffs[0] >> Al) & 1);
-    ++Ss;
-  }
-  if (Ss > Se) {
     return true;
   }
   int abs_values[kDCTBlockSize];
   int eob = 0;
   for (int k = Ss; k <= Se; k++) {
-    const coeff_t abs_val = std::abs(coeffs[kJPEGNaturalOrder[k]]);
+    const coeff_t abs_val = std::abs(coeffs[k]);
     abs_values[k] = abs_val >> Al;
     if (abs_values[k] == 1) {
       eob = k;
@@ -645,7 +634,7 @@ bool EncodeRefinementBits(const coeff_t* coeffs, HuffmanCodeTable* ac_huff,
     }
     Flush(coding_state, bw);
     int symbol = (r << 4u) + 1;
-    int new_non_zero_bit = (coeffs[kJPEGNaturalOrder[k]] < 0) ? 0 : 1;
+    int new_non_zero_bit = (coeffs[k] < 0) ? 0 : 1;
     WriteSymbol(symbol, ac_huff, bw);
     WriteBits(bw, 1, new_non_zero_bit);
     for (int bit : refinement_bits) {
@@ -656,9 +645,6 @@ bool EncodeRefinementBits(const coeff_t* coeffs, HuffmanCodeTable* ac_huff,
   }
   if (r > 0 || !refinement_bits.empty()) {
     BufferEndOfBand(coding_state, ac_huff, &refinement_bits, bw);
-    if (!eob_run_allowed) {
-      Flush(coding_state, bw);
-    }
   }
   return true;
 }
