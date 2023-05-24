@@ -33,9 +33,6 @@ struct JPEGHuffmanCode {
   boolean sent_table;
 };
 
-// DCTCodingState: maximum number of correction bits to buffer
-const int kJPEGMaxCorrectionBits = 1u << 16;
-
 constexpr int kDefaultProgressiveLevel = 0;
 
 struct HuffmanCodeTable {

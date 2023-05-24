@@ -179,8 +179,7 @@ static JXL_INLINE void ProcessEndOfBand(DCTState* s, size_t new_refinement_bits,
   }
   ++s->eob_run;
   s->num_refinement_bits += new_refinement_bits;
-  if (s->eob_run == 0x7FFF ||
-      s->num_refinement_bits > kJPEGMaxCorrectionBits - kDCTBlockSize + 1) {
+  if (s->eob_run == 0x7FFF) {
     ProcessFlush(s);
   }
 }
@@ -316,8 +315,8 @@ bool ProcessRefinementBits(const coeff_t* coeffs, Histogram* ac_histo, int Ss,
       r++;
       continue;
     }
+    ProcessFlush(s);
     while (r > 15 && k <= eob) {
-      ProcessFlush(s);
       ++ac_histo->count[0xf0];
       r -= 16;
       num_refinement_bits = 0;
@@ -326,7 +325,6 @@ bool ProcessRefinementBits(const coeff_t* coeffs, Histogram* ac_histo, int Ss,
       ++num_refinement_bits;
       continue;
     }
-    ProcessFlush(s);
     int symbol = (r << 4u) + 1;
     ++ac_histo->count[symbol];
     num_refinement_bits = 0;
