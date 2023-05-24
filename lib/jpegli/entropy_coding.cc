@@ -203,7 +203,7 @@ bool ProcessDCTBlockSequential(const coeff_t* coeffs, Histogram* dc_histo,
   if (dc_nbits >= 12) return false;
   int r = 0;
   for (int k = 1; k < 64; ++k) {
-    if ((temp = coeffs[kJPEGNaturalOrder[k]]) == 0) {
+    if ((temp = coeffs[k]) == 0) {
       r++;
       continue;
     }
@@ -255,7 +255,7 @@ bool ProcessDCTBlockProgressive(const coeff_t* coeffs, Histogram* dc_histo,
   }
   int r = 0;
   for (int k = Ss; k <= Se; ++k) {
-    if ((temp = coeffs[kJPEGNaturalOrder[k]]) == 0) {
+    if ((temp = coeffs[k]) == 0) {
       r++;
       continue;
     }
@@ -303,7 +303,7 @@ bool ProcessRefinementBits(const coeff_t* coeffs, Histogram* ac_histo, int Ss,
   int abs_values[kDCTBlockSize];
   int eob = 0;
   for (int k = Ss; k <= Se; k++) {
-    const coeff_t abs_val = std::abs(coeffs[kJPEGNaturalOrder[k]]);
+    const coeff_t abs_val = std::abs(coeffs[k]);
     abs_values[k] = abs_val >> Al;
     if (abs_values[k] == 1) {
       eob = k;
