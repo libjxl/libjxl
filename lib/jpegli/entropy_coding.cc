@@ -158,7 +158,6 @@ void SetJpegHuffmanCode(const JpegClusteredHistograms& clusters,
 
 struct DCTState {
   int eob_run = 0;
-  size_t num_refinement_bits = 0;
   Histogram* ac_histo = nullptr;
 };
 
@@ -169,16 +168,13 @@ static JXL_INLINE void ProcessFlush(DCTState* s) {
     ++s->ac_histo->count[symbol];
     s->eob_run = 0;
   }
-  s->num_refinement_bits = 0;
 }
 
-static JXL_INLINE void ProcessEndOfBand(DCTState* s, size_t new_refinement_bits,
-                                        Histogram* new_ac_histo) {
+static JXL_INLINE void ProcessEndOfBand(DCTState* s, Histogram* new_ac_histo) {
   if (s->eob_run == 0) {
     s->ac_histo = new_ac_histo;
   }
   ++s->eob_run;
-  s->num_refinement_bits += new_refinement_bits;
   if (s->eob_run == 0x7FFF) {
     ProcessFlush(s);
   }
@@ -232,7 +228,6 @@ bool ProcessDCTBlockSequential(const coeff_t* coeffs, Histogram* dc_histo,
 bool ProcessDCTBlockProgressive(const coeff_t* coeffs, Histogram* dc_histo,
                                 Histogram* ac_histo, int Ss, int Se, int Al,
                                 DCTState* s, coeff_t* last_dc_coeff) {
-  bool eob_run_allowed = Ss > 0;
   coeff_t temp2;
   coeff_t temp;
   if (Ss == 0) {
@@ -247,9 +242,6 @@ bool ProcessDCTBlockProgressive(const coeff_t* coeffs, Histogram* dc_histo,
     }
     int nbits = (temp == 0) ? 0 : (jxl::FloorLog2Nonzero<uint32_t>(temp) + 1);
     ++dc_histo->count[nbits];
-    ++Ss;
-  }
-  if (Ss > Se) {
     return true;
   }
   int r = 0;
@@ -282,58 +274,53 @@ bool ProcessDCTBlockProgressive(const coeff_t* coeffs, Histogram* dc_histo,
     r = 0;
   }
   if (r > 0) {
-    ProcessEndOfBand(s, 0, ac_histo);
-    if (!eob_run_allowed) {
-      ProcessFlush(s);
-    }
+    ProcessEndOfBand(s, ac_histo);
   }
   return true;
 }
 
 bool ProcessRefinementBits(const coeff_t* coeffs, Histogram* ac_histo, int Ss,
                            int Se, int Al, DCTState* s) {
-  bool eob_run_allowed = Ss > 0;
   if (Ss == 0) {
-    ++Ss;
-  }
-  if (Ss > Se) {
     return true;
   }
-  int abs_values[kDCTBlockSize];
+  int num_refinement_bits = 0;
   int eob = 0;
-  for (int k = Ss; k <= Se; k++) {
-    const coeff_t abs_val = std::abs(coeffs[k]);
-    abs_values[k] = abs_val >> Al;
-    if (abs_values[k] == 1) {
-      eob = k;
-    }
-  }
-  int r = 0;
-  size_t num_refinement_bits = 0;
-  for (int k = Ss; k <= Se; k++) {
-    if (abs_values[k] == 0) {
-      r++;
+  for (int k = Se; k >= Ss; k--) {
+    const coeff_t abs_val = std::abs(coeffs[k]) >> Al;
+    if (abs_val == 0) {
       continue;
     }
-    ProcessFlush(s);
-    while (r > 15 && k <= eob) {
-      ++ac_histo->count[0xf0];
-      r -= 16;
-      num_refinement_bits = 0;
-    }
-    if (abs_values[k] > 1) {
+    if (abs_val > 1) {
       ++num_refinement_bits;
       continue;
     }
-    int symbol = (r << 4u) + 1;
-    ++ac_histo->count[symbol];
-    num_refinement_bits = 0;
-    r = 0;
+    eob = k;
+    break;
   }
-  if (r > 0 || num_refinement_bits > 0) {
-    ProcessEndOfBand(s, num_refinement_bits, ac_histo);
-    if (!eob_run_allowed) {
-      ProcessFlush(s);
+  if (eob > 0 || num_refinement_bits > 0) {
+    ProcessFlush(s);
+  }
+  if (num_refinement_bits > 0) {
+    s->ac_histo = ac_histo;
+    s->eob_run = 1;
+  } else if (eob < Se) {
+    ProcessEndOfBand(s, ac_histo);
+  }
+  int r = 0;
+  for (int k = Ss; k <= eob; k++) {
+    const coeff_t abs_val = std::abs(coeffs[k]) >> Al;
+    if (abs_val == 0) {
+      r += 16;
+      continue;
+    }
+    while (r > 240) {
+      ++ac_histo->count[0xf0];
+      r -= 256;
+    }
+    if (abs_val == 1) {
+      ++ac_histo->count[r + 1];
+      r = 0;
     }
   }
   return true;
