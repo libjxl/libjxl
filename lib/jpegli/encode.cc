@@ -377,6 +377,7 @@ void AllocateBuffers(j_compress_ptr cinfo) {
   }
   m->dct_buffer = Allocate<float>(cinfo, 2 * DCTSIZE2, JPOOL_IMAGE_ALIGNED);
   m->block_tmp = Allocate<int32_t>(cinfo, DCTSIZE2 * 4, JPOOL_IMAGE_ALIGNED);
+  memset(m->last_dc_coeff, 0, sizeof(m->last_dc_coeff));
   if (!IsStreamingSupported(cinfo)) {
     m->coeff_buffers =
         Allocate<jvirt_barray_ptr>(cinfo, cinfo->num_components, JPOOL_IMAGE);
@@ -395,8 +396,6 @@ void AllocateBuffers(j_compress_ptr cinfo) {
     memset(m->token_arrays, 0, ysize_mcus * sizeof(TokenArray));
     m->num_tokens = 0;
     m->total_num_tokens = 0;
-    memset(cinfo->master->last_dc_coeff, 0,
-           sizeof(cinfo->master->last_dc_coeff));
   }
   if (m->use_adaptive_quantization) {
     int y_channel = cinfo->jpeg_color_space == JCS_RGB ? 1 : 0;
@@ -544,7 +543,6 @@ void WriteHeaderMarkers(j_compress_ptr cinfo) {
   EncodeDQT(cinfo, /*write_all_tables=*/false, &is_baseline);
   EncodeSOF(cinfo, is_baseline);
   WriteScanHeader(cinfo, 0);
-  memset(cinfo->master->last_dc_coeff, 0, sizeof(cinfo->master->last_dc_coeff));
 }
 
 void EncodeScans(j_compress_ptr cinfo) {
