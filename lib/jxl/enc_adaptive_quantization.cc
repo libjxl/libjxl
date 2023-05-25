@@ -729,7 +729,7 @@ ImageF TileDistMap(const ImageF& distmap, int tile_size, int margin,
 
 static const float kDcQuantPow = 0.83;
 static const float kDcQuant = 1.095924047623553f;
-static const float kAcQuant = 0.81151132443618624f;
+static const float kAcQuant = 0.762;
 
 void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
                           PassesEncoderState* enc_state,
