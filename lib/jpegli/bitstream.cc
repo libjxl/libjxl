@@ -410,11 +410,11 @@ static JXL_INLINE void Flush(DCTCodingState* s, JpegBitWriter* bw) {
       WriteBits(bw, nbits, s->eob_run_ & ((1 << nbits) - 1));
     }
     s->eob_run_ = 0;
+    for (int i = s->num_refinement_bits_ - 1; i >= 0; --i) {
+      WriteBits(bw, 1, s->refinement_bits_[i]);
+    }
+    s->num_refinement_bits_ = 0;
   }
-  for (int i = 0; i < s->num_refinement_bits_; ++i) {
-    WriteBits(bw, 1, s->refinement_bits_[i]);
-  }
-  s->num_refinement_bits_ = 0;
 }
 
 // Buffer some more data at the end-of-band (the last non-zero or newly
@@ -596,25 +596,42 @@ bool EncodeRefinementBits(const coeff_t* coeffs, HuffmanCodeTable* ac_huff,
     WriteBits(bw, 1, (coeffs[0] >> Al) & 1);
     return true;
   }
-  int abs_values[kDCTBlockSize];
-  int eob = 0;
-  for (int k = Ss; k <= Se; k++) {
-    const coeff_t abs_val = std::abs(coeffs[k]);
-    abs_values[k] = abs_val >> Al;
-    if (abs_values[k] == 1) {
-      eob = k;
-    }
-  }
-  int r = 0;
   int refinement_bits[DCTSIZE2];
   int num_refinement_bits = 0;
-  for (int k = Ss; k <= Se; k++) {
-    if (abs_values[k] == 0) {
+  int eob = 0;
+  for (int k = Se; k >= Ss; k--) {
+    const coeff_t abs_val = std::abs(coeffs[k]) >> Al;
+    if (abs_val == 0) {
+      continue;
+    }
+    if (abs_val > 1) {
+      refinement_bits[num_refinement_bits++] = abs_val & 1u;
+      continue;
+    }
+    eob = k;
+    break;
+  }
+  if (eob > 0 || num_refinement_bits > 0) {
+    Flush(coding_state, bw);
+  }
+  if (num_refinement_bits > 0) {
+    coding_state->num_refinement_bits_ = num_refinement_bits;
+    memcpy(coding_state->refinement_bits_, refinement_bits,
+           num_refinement_bits * sizeof(refinement_bits[0]));
+    coding_state->cur_ac_huff_ = ac_huff;
+    coding_state->eob_run_ = 1;
+    num_refinement_bits = 0;
+  } else if (eob < Se) {
+    BufferEndOfBand(coding_state, ac_huff, bw);
+  }
+  int r = 0;
+  for (int k = Ss; k <= eob; k++) {
+    const coeff_t abs_val = std::abs(coeffs[k]) >> Al;
+    if (abs_val == 0) {
       r++;
       continue;
     }
-    Flush(coding_state, bw);
-    while (r > 15 && k <= eob) {
+    while (r > 15) {
       WriteSymbol(0xf0, ac_huff, bw);
       r -= 16;
       for (int i = 0; i < num_refinement_bits; ++i) {
@@ -622,8 +639,8 @@ bool EncodeRefinementBits(const coeff_t* coeffs, HuffmanCodeTable* ac_huff,
       }
       num_refinement_bits = 0;
     }
-    if (abs_values[k] > 1) {
-      refinement_bits[num_refinement_bits++] = abs_values[k] & 1u;
+    if (abs_val > 1) {
+      refinement_bits[num_refinement_bits++] = abs_val & 1u;
       continue;
     }
     int symbol = (r << 4u) + 1;
@@ -635,15 +652,6 @@ bool EncodeRefinementBits(const coeff_t* coeffs, HuffmanCodeTable* ac_huff,
     }
     num_refinement_bits = 0;
     r = 0;
-  }
-  if (num_refinement_bits > 0) {
-    coding_state->num_refinement_bits_ = num_refinement_bits;
-    memcpy(coding_state->refinement_bits_, refinement_bits,
-           num_refinement_bits * sizeof(refinement_bits[0]));
-    coding_state->cur_ac_huff_ = ac_huff;
-    coding_state->eob_run_ = 1;
-  } else if (r > 0) {
-    BufferEndOfBand(coding_state, ac_huff, bw);
   }
   return true;
 }
