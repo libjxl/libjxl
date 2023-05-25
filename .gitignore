@@ -2,7 +2,6 @@
 /build
 /build*
 /bazel*
-/docker/*.log
 
 # The downloaded corpora files for benchmark.
 /third_party/corpora

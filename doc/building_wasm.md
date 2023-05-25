@@ -4,15 +4,12 @@ This file describes the building and testing of JPEG XL
 [Web Assembly](https://webassembly.org/) bundles and wrappers.
 
 These instructions assume an up-to-date Debian/Ubuntu system.
-For other platforms, or if you encounter any difficulties,
-please instead use the [Docker container](developing_in_docker.md).
 
 For the sake of simplicity, it is considered, that the following environment
 variables are set:
 
  * `OPT` - path to the directory containing additional software;
-   the `emsdk` directory with the Emscripten SDK should reside there;
-   in the Docker container (mentioned above) this should be `/opt`
+   the `emsdk` directory with the Emscripten SDK should reside there.
 
 ## Requirements
 
@@ -59,8 +56,6 @@ HOME=$OPT jsvu --os=linux64 "v8@${v8_version}"
 ln -s "$OPT/.jsvu/v8-${v8_version}" "$OPT/.jsvu/v8"
 ```
 
-In [Docker container](developing_in_docker.md)
-CMake, Emscripten SDK and V8 are pre-installed.
 
 ## Building and testing the project
 
@@ -75,10 +70,6 @@ source $OPT/emsdk/emsdk_env.sh
 
 # Specify JS engine binary
 export V8=$OPT/.jsvu/v8
-
-# If building using the jpegxl-builder docker container prefix the following commands with:
-# CMAKE_FLAGS=-I/usr/wasm32/include
-# ex. CMAKE_FLAGS=-I/usr/wasm32/include BUILD_TARGET=wasm32 emconfigure ./ci.sh release
 
 # Either build with regular WASM:
 BUILD_TARGET=wasm32 emconfigure ./ci.sh release
