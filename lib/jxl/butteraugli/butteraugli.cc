@@ -127,7 +127,7 @@ void ConvolutionWithTranspose(const ImageF& in,
       }
     } break;
     case 13: {
-      PROFILER_ZONE("conv15");
+      PROFILER_ZONE("conv13");
       for (size_t y = 0; y < in.ysize(); ++y) {
         const float* BUTTERAUGLI_RESTRICT row_in = in.Row(y) + border1 - offset;
         for (size_t x = border1; x < border2; ++x, ++row_in) {
