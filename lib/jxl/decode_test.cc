@@ -1713,22 +1713,28 @@ double ButteraugliDistance(size_t xsize, size_t ysize,
                            float intensity_out) {
   jxl::CodecInOut in;
   in.metadata.m.color_encoding = color_in;
+  if (color_in.GetColorSpace() == jxl::ColorSpace::kXYB) {
+    in.metadata.m.color_encoding.SetColorSpace(jxl::ColorSpace::kRGB);
+  }
   in.metadata.m.SetIntensityTarget(intensity_in);
   JxlPixelFormat format_in = {static_cast<uint32_t>(color_in.Channels()),
                               JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
   EXPECT_TRUE(jxl::ConvertFromExternal(
       jxl::Span<const uint8_t>(pixels_in.data(), pixels_in.size()), xsize,
-      ysize, color_in,
+      ysize, in.metadata.m.color_encoding,
       /*bits_per_sample=*/16, format_in,
       /*pool=*/nullptr, &in.Main()));
   jxl::CodecInOut out;
   out.metadata.m.color_encoding = color_out;
+  if (color_out.GetColorSpace() == jxl::ColorSpace::kXYB) {
+    out.metadata.m.color_encoding.SetColorSpace(jxl::ColorSpace::kRGB);
+  }
   out.metadata.m.SetIntensityTarget(intensity_out);
   JxlPixelFormat format_out = {static_cast<uint32_t>(color_out.Channels()),
                                JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
   EXPECT_TRUE(jxl::ConvertFromExternal(
       jxl::Span<const uint8_t>(pixels_out.data(), pixels_out.size()), xsize,
-      ysize, color_out,
+      ysize, out.metadata.m.color_encoding,
       /*bits_per_sample=*/16, format_out,
       /*pool=*/nullptr, &out.Main()));
   return ButteraugliDistance(in.frames, out.frames, jxl::ButteraugliParams(),

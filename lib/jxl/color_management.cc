@@ -401,6 +401,14 @@ Status CreateICCCurvParaTag(std::vector<float> params, size_t curve_type,
   return true;
 }
 
+// TODO(jon): This produces an ICC profile corresponding to scaled XYB
+// That is OK if the output will also be scaled XYB, e.g. when outputting
+// to PNG. When outputting to PFM it will be wrong but it doesn't matter
+// since PFM cannot store the ICC profile anyway. But in general the
+// ICC profile returned here should correspond to the pixel data that
+// is produced, so if it's unscaled XYB, this should be a different
+// ICC profile. (I'm not sure if such an ICC profile can even be made,
+// there might be an implicit assumption that samples are in 0..1 range)
 Status CreateICCLutAtoBTagForXYB(PaddedBytes* JXL_RESTRICT tags) {
   WriteICCTag("mAB ", tags->size(), tags);
   // 4 reserved bytes set to 0

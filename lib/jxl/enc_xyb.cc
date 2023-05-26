@@ -20,6 +20,7 @@
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/color_management.h"
+#include "lib/jxl/dec_xyb.h"
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_image_bundle.h"
@@ -323,8 +324,22 @@ const ImageBundle* ToXYB(const ImageBundle& in, ThreadPool* pool,
   ComputePremulAbsorb(in.metadata()->IntensityTarget(), premul_absorb);
 
   const bool want_linear = linear != nullptr;
-
   const ColorEncoding& c_linear_srgb = ColorEncoding::LinearSRGB(in.IsGray());
+
+  // If the input is already XYB, just copy it
+  if (in.c_current().GetColorSpace() == ColorSpace::kXYB) {
+    *xyb = CopyImage(in.color());
+    if (want_linear) {
+      // and convert it to linear sRGB for the slow encode settings
+      OpsinParams opsin_params;
+      opsin_params.Init(in.metadata()->IntensityTarget());
+      linear->SetFromImage(Image3F(xsize, ysize), c_linear_srgb);
+      OpsinToLinear(in.color(), Rect(in.color()), pool, linear->color(),
+                    opsin_params);
+      return linear;
+    }
+    return &in;
+  }
   // Linear sRGB inputs are rare but can be useful for the fastest encoders, for
   // which undoing the sRGB transfer function would be a large part of the cost.
   if (c_linear_srgb.SameColorEncoding(in.c_current())) {

@@ -154,7 +154,9 @@ Status PassesDecoderState::PreparePipeline(ImageBundle* decoded,
     if (frame_header.color_transform == ColorTransform::kYCbCr) {
       builder.AddStage(GetYCbCrStage());
     } else if (frame_header.color_transform == ColorTransform::kXYB) {
-      builder.AddStage(GetXYBStage(output_encoding_info));
+      JxlDataType ptype = main_output.format.data_type;
+      bool scaled_xyb = (ptype == JXL_TYPE_UINT8 || ptype == JXL_TYPE_UINT16);
+      builder.AddStage(GetXYBStage(output_encoding_info, scaled_xyb));
       if (output_encoding_info.color_encoding.GetColorSpace() !=
           ColorSpace::kXYB) {
         linear = true;

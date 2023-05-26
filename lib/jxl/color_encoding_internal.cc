@@ -545,6 +545,7 @@ Status ColorEncoding::VisitFields(Visitor* JXL_RESTRICT visitor) {
       }
     }
 
+    tf.nonserialized_color_space = color_space_;
     JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&tf));
 
     JXL_QUIET_RETURN_IF_ERROR(

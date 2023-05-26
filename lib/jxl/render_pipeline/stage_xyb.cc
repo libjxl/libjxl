@@ -20,11 +20,13 @@ namespace HWY_NAMESPACE {
 
 class XYBStage : public RenderPipelineStage {
  public:
-  explicit XYBStage(const OutputEncodingInfo& output_encoding_info)
+  explicit XYBStage(const OutputEncodingInfo& output_encoding_info,
+                    bool scaled_xyb)
       : RenderPipelineStage(RenderPipelineStage::Settings()),
         opsin_params_(output_encoding_info.opsin_params),
         output_is_xyb_(output_encoding_info.color_encoding.GetColorSpace() ==
-                       ColorSpace::kXYB) {}
+                       ColorSpace::kXYB),
+        scaled_xyb_(scaled_xyb) {}
 
   void ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
                   size_t xextra, size_t xsize, size_t xpos, size_t ypos,
@@ -45,7 +47,8 @@ class XYBStage : public RenderPipelineStage {
     msan::UnpoisonMemory(row2 + xsize, sizeof(float) * (xsize_v - xsize));
     // TODO(eustas): when using frame origin, addresses might be unaligned;
     //               making them aligned will void performance penalty.
-    if (output_is_xyb_) {
+    if (output_is_xyb_ && scaled_xyb_) {
+      // scale XYB to fit in uint types (nominal range of 0..1)
       const auto scale_x = Set(d, kScaledXYBScale[0]);
       const auto scale_y = Set(d, kScaledXYBScale[1]);
       const auto scale_bmy = Set(d, kScaledXYBScale[2]);
@@ -63,6 +66,8 @@ class XYBStage : public RenderPipelineStage {
         StoreU(out_y, d, row1 + x);
         StoreU(out_b, d, row2 + x);
       }
+    } else if (output_is_xyb_) {
+      // no need to do anything, just keep XYB as it is
     } else {
       for (ssize_t x = -xextra; x < (ssize_t)(xsize + xextra); x += Lanes(d)) {
         const auto in_opsin_x = LoadU(d, row0 + x);
@@ -93,11 +98,12 @@ class XYBStage : public RenderPipelineStage {
  private:
   const OpsinParams opsin_params_;
   const bool output_is_xyb_;
+  const bool scaled_xyb_;
 };
 
 std::unique_ptr<RenderPipelineStage> GetXYBStage(
-    const OutputEncodingInfo& output_encoding_info) {
-  return jxl::make_unique<XYBStage>(output_encoding_info);
+    const OutputEncodingInfo& output_encoding_info, bool scaled_xyb) {
+  return jxl::make_unique<XYBStage>(output_encoding_info, scaled_xyb);
 }
 
 // NOLINTNEXTLINE(google-readability-namespace-comments)
@@ -111,8 +117,8 @@ namespace jxl {
 HWY_EXPORT(GetXYBStage);
 
 std::unique_ptr<RenderPipelineStage> GetXYBStage(
-    const OutputEncodingInfo& output_encoding_info) {
-  return HWY_DYNAMIC_DISPATCH(GetXYBStage)(output_encoding_info);
+    const OutputEncodingInfo& output_encoding_info, bool scaled_xyb) {
+  return HWY_DYNAMIC_DISPATCH(GetXYBStage)(output_encoding_info, scaled_xyb);
 }
 
 namespace {

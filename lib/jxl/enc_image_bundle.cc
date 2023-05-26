@@ -37,6 +37,16 @@ Status CopyToT(const ImageMetadata* metadata, const ImageBundle* ib,
   } else {
     out->ShrinkTo(rect.xsize(), rect.ysize());
   }
+
+  const ColorEncoding& c_linear_srgb = ColorEncoding::LinearSRGB(ib->IsGray());
+  if (ib->c_current().GetColorSpace() == ColorSpace::kXYB &&
+      c_desired.SameColorEncoding(c_linear_srgb)) {
+    OpsinParams opsin_params;
+    opsin_params.Init(ib->metadata()->IntensityTarget());
+    OpsinToLinear(ib->color(), rect, pool, out, opsin_params);
+    return true;
+  }
+
   std::atomic<bool> ok{true};
   JXL_RETURN_IF_ERROR(RunOnPool(
       pool, 0, rect.ysize(),
