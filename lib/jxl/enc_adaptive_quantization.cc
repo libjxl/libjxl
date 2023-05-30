@@ -22,7 +22,6 @@
 #include "lib/jxl/ac_strategy.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
-#include "lib/jxl/base/profiler.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/butteraugli/butteraugli.h"
 #include "lib/jxl/coeff_order_fwd.h"
@@ -464,7 +463,6 @@ struct AdaptiveQuantizationImpl {
 
   void ComputeTile(float butteraugli_target, float scale, const Image3F& xyb,
                    const Rect& rect, const int thread, ImageF* mask) {
-    PROFILER_ZONE("aq DiffPrecompute");
     const size_t xsize = xyb.xsize();
     const size_t ysize = xyb.ysize();
 
@@ -583,8 +581,6 @@ ImageF AdaptiveQuantizationMap(const float butteraugli_target,
                                const Image3F& xyb,
                                const FrameDimensions& frame_dim, float scale,
                                ThreadPool* pool, ImageF* mask) {
-  PROFILER_ZONE("aq AdaptiveQuantMap");
-
   AdaptiveQuantizationImpl impl;
   impl.Init(xyb);
   *mask = ImageF(frame_dim.xsize_blocks, frame_dim.ysize_blocks);
@@ -663,7 +659,6 @@ void DumpHeatmaps(const AuxOut* aux_out, float ba_target,
 
 ImageF TileDistMap(const ImageF& distmap, int tile_size, int margin,
                    const AcStrategyImage& ac_strategy) {
-  PROFILER_FUNC;
   const int tile_xsize = (distmap.xsize() + tile_size - 1) / tile_size;
   const int tile_ysize = (distmap.ysize() + tile_size - 1) / tile_size;
   ImageF tile_distmap(tile_xsize, tile_ysize);
@@ -819,7 +814,6 @@ void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
     }
     quantizer.SetQuantField(initial_quant_dc, quant_field, &raw_quant_field);
     ImageBundle dec_linear = RoundtripImage(opsin, enc_state, cms, pool);
-    PROFILER_ZONE("enc Butteraugli");
     float score;
     ImageF diffmap;
     JXL_CHECK(comparator.CompareWith(dec_linear, &diffmap, &score));
@@ -1070,7 +1064,6 @@ float InitialQuantDC(float butteraugli_target) {
 ImageF InitialQuantField(const float butteraugli_target, const Image3F& opsin,
                          const FrameDimensions& frame_dim, ThreadPool* pool,
                          float rescale, ImageF* mask) {
-  PROFILER_FUNC;
   const float quant_ac = kAcQuant / butteraugli_target;
   return HWY_DYNAMIC_DISPATCH(AdaptiveQuantizationMap)(
       butteraugli_target, opsin, frame_dim, quant_ac * rescale, pool, mask);
@@ -1082,18 +1075,15 @@ void FindBestQuantizer(const ImageBundle* linear, const Image3F& opsin,
                        AuxOut* aux_out, double rescale) {
   const CompressParams& cparams = enc_state->cparams;
   if (cparams.max_error_mode) {
-    PROFILER_ZONE("enc find best maxerr");
     FindBestQuantizationMaxError(opsin, enc_state, cms, pool, aux_out);
   } else if (cparams.speed_tier <= SpeedTier::kKitten) {
     // Normal encoding to a butteraugli score.
-    PROFILER_ZONE("enc find best2");
     FindBestQuantization(*linear, opsin, enc_state, cms, pool, aux_out);
   }
 }
 
 ImageBundle RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
                            const JxlCmsInterface& cms, ThreadPool* pool) {
-  PROFILER_ZONE("enc roundtrip");
   std::unique_ptr<PassesDecoderState> dec_state =
       jxl::make_unique<PassesDecoderState>();
   JXL_CHECK(dec_state->output_encoding_info.SetFromMetadata(

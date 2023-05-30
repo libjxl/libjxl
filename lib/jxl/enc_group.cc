@@ -16,7 +16,6 @@
 #include "lib/jxl/ac_strategy.h"
 #include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/base/profiler.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/dct_util.h"
 #include "lib/jxl/dec_transforms-inl.h"
@@ -45,7 +44,6 @@ void QuantizeBlockAC(const Quantizer& quantizer, const bool error_diffusion,
                      size_t xsize, size_t ysize, float* thresholds,
                      const float* JXL_RESTRICT block_in, int32_t* quant,
                      int32_t* JXL_RESTRICT block_out) {
-  PROFILER_FUNC;
   const float* JXL_RESTRICT qm = quantizer.InvDequantMatrix(quant_kind, c);
   float qac = quantizer.Scale() * (*quant);
   // Not SIMD-fied for now.
@@ -264,7 +262,6 @@ void QuantizeRoundtripYBlockAC(PassesEncoderState* enc_state, const size_t size,
   QuantizeBlockAC(quantizer, error_diffusion, 1, 1.0f, quant_kind, xsize, ysize,
                   &thres_y[0], inout + size, quant, quantized + size);
 
-  PROFILER_ZONE("enc quant adjust bias");
   const float* JXL_RESTRICT dequant_matrix =
       quantizer.DequantMatrix(quant_kind, 1);
 
@@ -281,7 +278,6 @@ void QuantizeRoundtripYBlockAC(PassesEncoderState* enc_state, const size_t size,
 
 void ComputeCoefficients(size_t group_idx, PassesEncoderState* enc_state,
                          const Image3F& opsin, Image3F* dc) {
-  PROFILER_FUNC;
   const Rect block_group_rect = enc_state->shared.BlockGroupRect(group_idx);
   const Rect group_rect = enc_state->shared.GroupRect(group_idx);
   const Rect cmap_rect(

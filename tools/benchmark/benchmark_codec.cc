@@ -16,7 +16,6 @@
 #include "lib/extras/time.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/padded_bytes.h"
-#include "lib/jxl/base/profiler.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/codec_in_out.h"
@@ -95,7 +94,6 @@ class NoneCodec : public ImageCodec {
   Status Compress(const std::string& filename, const CodecInOut* io,
                   ThreadPool* pool, std::vector<uint8_t>* compressed,
                   jpegxl::tools::SpeedStats* speed_stats) override {
-    PROFILER_ZONE("NoneCompress");
     const double start = jxl::Now();
     // Encode image size so we "decompress" something of the same size, as
     // required by butteraugli.
@@ -113,7 +111,6 @@ class NoneCodec : public ImageCodec {
                     const Span<const uint8_t> compressed, ThreadPool* pool,
                     CodecInOut* io,
                     jpegxl::tools::SpeedStats* speed_stats) override {
-    PROFILER_ZONE("NoneDecompress");
     const double start = jxl::Now();
     JXL_ASSERT(compressed.size() == 8);
     uint32_t xsize, ysize;
