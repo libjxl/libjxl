@@ -37,26 +37,6 @@ cd emsdk
 ./emsdk activate latest
 ```
 
-[v8](https://v8.dev/) is a JavaScript engine used for running tests.
-v8 has better WASM SIMD support than NodeJS 14.
-To install it use [JSVU](https://github.com/GoogleChromeLabs/jsvu):
-
-```bash
-# Fix some v8 version know to work well.
-export v8_version="8.5.133"
-
-# Install JSVU
-npm install jsvu -g
-
-# Trick JSVU to install to specific location instead of user "home".
-# Note: "os" flag should match the host OS.
-HOME=$OPT jsvu --os=linux64 "v8@${v8_version}"
-
-# Link v8 binary to version-indepentent path.
-ln -s "$OPT/.jsvu/v8-${v8_version}" "$OPT/.jsvu/v8"
-```
-
-
 ## Building and testing the project
 
 ```bash
@@ -67,9 +47,6 @@ echo "NODE_JS='/path/to/node_binary'" >> $EMSDK/.emscripten
 # Setup EMSDK and other environment variables. In practice EMSDK is set to be
 # $OPT/emsdk.
 source $OPT/emsdk/emsdk_env.sh
-
-# Specify JS engine binary
-export V8=$OPT/.jsvu/v8
 
 # Either build with regular WASM:
 BUILD_TARGET=wasm32 emconfigure ./ci.sh release
