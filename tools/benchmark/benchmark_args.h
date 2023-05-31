@@ -152,7 +152,6 @@ struct BenchmarkArgs {
   int num_samples;
   int sample_dimensions;
 
-  bool profiler;
   double error_pnorm;
   bool show_progress;
 

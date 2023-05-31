@@ -194,8 +194,6 @@ Status BenchmarkArgs::AddCommandLineOptions() {
   AddDouble(&error_pnorm, "error_pnorm",
             "smallest p norm for pooling butteraugli values", 3.0);
 
-  AddFlag(&profiler, "profiler", "If true, print profiler results.", false);
-
   AddFlag(&show_progress, "show_progress",
           "Show activity dots per completed file during benchmark.", false);
 

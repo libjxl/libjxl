@@ -28,7 +28,6 @@
 #include "lib/jxl/base/file_io.h"
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/printf_macros.h"
-#include "lib/jxl/base/profiler.h"
 #include "lib/jxl/base/random.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
@@ -100,7 +99,6 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
                 const std::vector<std::string>& extra_metrics_commands,
                 ImageCodec* codec, ThreadPool* inner_pool,
                 std::vector<uint8_t>* compressed, BenchmarkStats* s) {
-  PROFILER_FUNC;
   ++s->total_input_files;
 
   if (io.frames.size() != 1) {
@@ -223,7 +221,6 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
       ImageBundle& ib2 = io2.frames[i];
 
       // Verify output
-      PROFILER_ZONE("Benchmark stats");
       float distance;
       if (SameSize(ib1, ib2)) {
         ButteraugliParams params;
@@ -623,7 +620,6 @@ struct StatPrinter {
   }
 
   void TaskDone(size_t task_index, const Task& t) {
-    PROFILER_FUNC;
     std::lock_guard<std::mutex> guard(mutex);
     tasks_done_++;
     if (Args()->print_details || Args()->show_progress) {
@@ -731,7 +727,6 @@ struct StatPrinter {
   }
 
   void PrintStats(const std::string& method, size_t idx_method) {
-    PROFILER_FUNC;
     // Assimilate all tasks with the same idx_method.
     BenchmarkStats method_stats;
     std::vector<const CodecInOut*> images;
@@ -813,8 +808,6 @@ class Benchmark {
   static int Run() {
     int ret = EXIT_SUCCESS;
     {
-      PROFILER_FUNC;
-
       const StringVec methods = GetMethods();
       const StringVec extra_metrics_names = GetExtraMetricsNames();
       const StringVec extra_metrics_commands = GetExtraMetricsCommands();
@@ -840,10 +833,6 @@ class Benchmark {
       }
     }
 
-    // Must have exited profiler zone above before calling.
-    if (Args()->profiler) {
-      PROFILER_PRINT_RESULTS();
-    }
     jxl::CacheAligned::PrintStats();
     return ret;
   }
@@ -1023,7 +1012,6 @@ class Benchmark {
   static std::vector<CodecInOut> LoadImages(
       const StringVec& fnames, const bool jpeg_transcoding_requested,
       ThreadPool* pool) {
-    PROFILER_FUNC;
     std::vector<CodecInOut> loaded_images;
     loaded_images.resize(fnames.size());
     const auto process_image = [&](const uint32_t task, size_t /*thread*/) {
@@ -1095,7 +1083,6 @@ class Benchmark {
       const std::vector<CodecInOut>& loaded_images, ThreadPool* pool,
       const std::vector<std::unique_ptr<ThreadPoolInternal>>& inner_pools,
       std::vector<Task>* tasks) {
-    PROFILER_FUNC;
     StatPrinter printer(methods, extra_metrics_names, fnames, *tasks);
     if (Args()->print_details_csv) {
       // Print CSV header
