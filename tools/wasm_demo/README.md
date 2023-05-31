@@ -83,7 +83,17 @@ To complete the site few more files are to be added to output directory:
  - `favicon.ico` is an optional site icon
  - `index.html` is an optional site "home" page
 
-It is not guaranteed, but somewhat fresh demo would be hosted on
+In the source code (`service_worker.js`) there are two compile-time constants
+that modify the behaviour of Service Worker:
+
+ - `FORCE_COP` flag allows rewriting responses to add COOP / COEP headers;
+   this is useful when it is difficult / impossible to setup response headers
+   otherwise (e.g. GitHub Pages)
+ - `FORCE_DECODING` flag activate JXL decoding when image response type has
+   `Content-Encoding` header set to `application/octet-stream`; this happens
+   when server does not know the JXL MIME-type
+
+It is not guaranteed, but somewhat fresh demo is hosted on
 `https://jxl-demo.netlify.app/`, e.g.:
 
  - [one line demo](https://jxl-demo.netlify.app/one_line_demo_with_console.html)

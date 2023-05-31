@@ -275,6 +275,7 @@
     const config = {
       log: console.log,
       error: console.error,
+      requestReload: (msg) => window.location.reload(),
       ...window.serviceWorkerConfig  // add overrides
     }
 
@@ -283,8 +284,13 @@
       return;
     }
 
+    const nav = navigator;  // Explicitly capture navigator object.
     const onServiceWorkerRegistrationSuccess = (registration) => {
       config.log('Service Worker registered', registration.scope);
+      if (registration.active && !nav.serviceWorker.controller) {
+        config.requestReload(
+            "Reload to allow Service Worker process all requests");
+    }
     };
 
     const onServiceWorkerRegistrationFailure = (err) => {
