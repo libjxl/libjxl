@@ -61,6 +61,28 @@ struct TokenArray {
   size_t num_tokens;
 };
 
+struct RefToken {
+  uint8_t symbol;
+  uint8_t refbits;
+};
+
+struct ScanTokenInfo {
+  RefToken* tokens;
+  size_t num_tokens;
+  uint8_t* refbits;
+  uint16_t* eobruns;
+  size_t* restarts;
+  size_t num_restarts;
+  size_t num_nonzeros;
+  size_t num_future_nonzeros;
+  size_t token_offset;
+  size_t restart_interval;
+  size_t MCUs_per_row;
+  size_t MCU_rows_in_scan;
+  size_t blocks_in_MCU;
+  size_t num_blocks;
+};
+
 }  // namespace jpegli
 
 struct jpeg_comp_master {
@@ -77,6 +99,7 @@ struct jpeg_comp_master {
   size_t ysize_blocks;
   size_t blocks_per_iMCU_row;
   jpegli::ScanCodingInfo* scan_coding_info;
+  jpegli::ScanTokenInfo* scan_token_info;
   JpegliDataType data_type;
   JpegliEndianness endianness;
   void (*input_method)(const uint8_t* row_in, size_t len,
@@ -110,6 +133,11 @@ struct jpeg_comp_master {
   jpegli::Token* next_token;
   size_t num_tokens;
   size_t total_num_tokens;
+  jpegli::RefToken* next_refinement_token;
+  uint8_t* next_refinement_bit;
+  size_t num_histograms;
+  uint8_t* ac_histogram_offset;
+  uint8_t* context_map;
 };
 
 #endif  // LIB_JPEGLI_ENCODE_INTERNAL_H_

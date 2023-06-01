@@ -491,12 +491,26 @@ std::vector<TestConfig> GenerateTests() {
     }
   }
   for (int p = 0; p < 3 + kNumTestScripts; ++p) {
-    TestConfig config;
-    config.jparams.progressive_mode = p;
-    const float kMaxBpp[] = {1.59, 1.51, 1.48, 1.59, 1.55, 1.55, 1.51};
-    config.max_bpp = kMaxBpp[p];
-    config.max_dist = 2.0;
-    all_tests.push_back(config);
+    for (int samp : {1, 2}) {
+      for (int quality : {100, 90, 1}) {
+        for (int r : {0, 1024, 1}) {
+          TestConfig config;
+          config.input.xsize = 273;
+          config.input.ysize = 265;
+          config.jparams.progressive_mode = p;
+          config.jparams.h_sampling = {samp, 1, 1};
+          config.jparams.v_sampling = {samp, 1, 1};
+          config.jparams.quality = quality;
+          config.jparams.restart_interval = r;
+          config.max_bpp = quality == 100 ? 8.0 : 2.0;
+          if (r == 1) {
+            config.max_bpp += 10.0;
+          }
+          config.max_dist = quality == 1 ? 20.0 : 2.0;
+          all_tests.push_back(config);
+        }
+      }
+    }
   }
   {
     TestConfig config;
