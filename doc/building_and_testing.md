@@ -1,8 +1,7 @@
 # Building and Testing
 
 This file describes the building and testing facilities provided by the `ci.sh`
-script. It assumes you already have the build environment set up, preferably
-Docker (see [instructions](developing_in_docker.md)).
+script. It assumes you already have the build environment set up.
 
 ## Basic building
 
@@ -62,11 +61,7 @@ environment variable in `./ci.sh`. For some targets such the Windows targets
 `ci.sh` sets up extra environment variables that are needed for testing.
 
 This assumes that you already have a cross-compiling environment set up and the
-library dependencies are already installed for the target architecture as well
-which is tricky to do in some cases. For this reason we provide a [jpegxl docker
-container](developing_in_docker.md) already configured to cross-compile and run
-for other architectures which is also used in our continuous integration
-pipeline.
+library dependencies are already installed for the target architecture as well.
 
 For example, to compile for the `aarch64-linux-gnu` target triplet you can run:
 

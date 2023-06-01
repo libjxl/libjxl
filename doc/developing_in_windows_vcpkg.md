@@ -4,7 +4,6 @@ These instructions assume an up-to-date Windows 10 (e.g. build 19041.928) with
 **Microsoft Visual Studio 2019** (e.g. Version 16.9.0 Preview 4.0) installed. If
 unavailable, please use another build environment:
 
-* [Docker container](developing_in_docker.md)
 * [MSYS2 on Windows](developing_in_windows_msys.md)
 * [Crossroad on Linux](developing_with_crossroad.md) (cross compilation for Windows)
 

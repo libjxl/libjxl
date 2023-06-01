@@ -3,7 +3,6 @@
 These instructions assume an up-to-date Debian/Ubuntu system.
 For other platforms, please instead use the following:
 
-* [Developing in Docker](developing_in_docker.md).
 * [Cross Compiling for Windows with Crossroad](developing_with_crossroad.md).
 
 ## Minimum build dependencies
