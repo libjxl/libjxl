@@ -289,8 +289,8 @@
       config.log('Service Worker registered', registration.scope);
       if (registration.active && !nav.serviceWorker.controller) {
         config.requestReload(
-            "Reload to allow Service Worker process all requests");
-    }
+            'Reload to allow Service Worker process all requests');
+      }
     };
 
     const onServiceWorkerRegistrationFailure = (err) => {
