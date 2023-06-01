@@ -19,154 +19,11 @@
 #include <hwy/highway.h>
 
 #include "lib/jpegli/dct-inl.h"
+#include "lib/jpegli/entropy_coding-inl.h"
 
 HWY_BEFORE_NAMESPACE();
 namespace jpegli {
 namespace HWY_NAMESPACE {
-
-// These templates are not found via ADL.
-using hwy::HWY_NAMESPACE::Add;
-using hwy::HWY_NAMESPACE::And;
-using hwy::HWY_NAMESPACE::AndNot;
-using hwy::HWY_NAMESPACE::Compress;
-using hwy::HWY_NAMESPACE::CountTrue;
-using hwy::HWY_NAMESPACE::Eq;
-using hwy::HWY_NAMESPACE::GetLane;
-using hwy::HWY_NAMESPACE::MaskFromVec;
-using hwy::HWY_NAMESPACE::Max;
-using hwy::HWY_NAMESPACE::Not;
-using hwy::HWY_NAMESPACE::Or;
-using hwy::HWY_NAMESPACE::ShiftRight;
-using hwy::HWY_NAMESPACE::Shl;
-using hwy::HWY_NAMESPACE::Sub;
-
-using DI = HWY_FULL(int32_t);
-constexpr DI di;
-
-template <typename T>
-int NumNonZero8x8ExceptDC(const T* block) {
-  const HWY_CAPPED(T, 8) di;
-
-  const auto zero = Zero(di);
-  // Add FFFF for every zero coefficient, negate to get #zeros.
-  auto neg_sum_zero = zero;
-  {
-    // First row has DC, so mask
-    const size_t y = 0;
-    HWY_ALIGN const T dc_mask_lanes[8] = {-1};
-
-    for (size_t x = 0; x < 8; x += Lanes(di)) {
-      const auto dc_mask = Load(di, dc_mask_lanes + x);
-
-      // DC counts as zero so we don't include it in nzeros.
-      const auto coef = AndNot(dc_mask, Load(di, &block[y * 8 + x]));
-
-      neg_sum_zero = Add(neg_sum_zero, VecFromMask(di, Eq(coef, zero)));
-    }
-  }
-  // Remaining rows: no mask
-  for (size_t y = 1; y < 8; y++) {
-    for (size_t x = 0; x < 8; x += Lanes(di)) {
-      const auto coef = Load(di, &block[y * 8 + x]);
-      neg_sum_zero = Add(neg_sum_zero, VecFromMask(di, Eq(coef, zero)));
-    }
-  }
-
-  // We want 64 - sum_zero, add because neg_sum_zero is already negated.
-  return kDCTBlockSize + GetLane(SumOfLanes(di, neg_sum_zero));
-}
-
-int NumNonZero8x8ExceptDC16(const coeff_t* block) {
-  return NumNonZero8x8ExceptDC(block);
-}
-
-void ZigZagShuffle(int32_t* JXL_RESTRICT block) {
-  // TODO(szabadka) SIMDify this.
-  int32_t tmp[DCTSIZE2];
-  for (int k = 0; k < DCTSIZE2; ++k) {
-    tmp[k] = block[kJPEGNaturalOrder[k]];
-  }
-  memcpy(block, tmp, DCTSIZE2 * sizeof(tmp[0]));
-}
-
-template <typename DI, class V>
-JXL_INLINE V NumBits(DI di, const V x) {
-  // TODO(szabadka) Add faster implementations for some specific architectures.
-  const auto b1 = And(x, Set(di, 1));
-  const auto b2 = And(x, Set(di, 2));
-  const auto b3 = Sub((And(x, Set(di, 4))), Set(di, 1));
-  const auto b4 = Sub((And(x, Set(di, 8))), Set(di, 4));
-  const auto b5 = Sub((And(x, Set(di, 16))), Set(di, 11));
-  const auto b6 = Sub((And(x, Set(di, 32))), Set(di, 26));
-  const auto b7 = Sub((And(x, Set(di, 64))), Set(di, 57));
-  const auto b8 = Sub((And(x, Set(di, 128))), Set(di, 120));
-  const auto b9 = Sub((And(x, Set(di, 256))), Set(di, 247));
-  const auto b10 = Sub((And(x, Set(di, 512))), Set(di, 502));
-  const auto b11 = Sub((And(x, Set(di, 1024))), Set(di, 1013));
-  const auto b12 = Sub((And(x, Set(di, 2048))), Set(di, 2036));
-  return Max(Max(Max(Max(b1, b2), Max(b3, b4)), Max(Max(b5, b6), Max(b7, b8))),
-             Max(Max(b9, b10), Max(b11, b12)));
-}
-
-// Coefficient indexes pre-multiplied by 16 for the symbol calculation.
-HWY_ALIGN constexpr int32_t kIndexes[64] = {
-    0,   16,  32,  48,  64,  80,  96,  112, 128, 144, 160, 176,  192,
-    208, 224, 240, 256, 272, 288, 304, 320, 336, 352, 368, 384,  400,
-    416, 432, 448, 464, 480, 496, 512, 528, 544, 560, 576, 592,  608,
-    624, 640, 656, 672, 688, 704, 720, 736, 752, 768, 784, 800,  816,
-    832, 848, 864, 880, 896, 912, 928, 944, 960, 976, 992, 1008,
-};
-
-JXL_INLINE int CompactBlock(int32_t* JXL_RESTRICT block,
-                            int32_t* JXL_RESTRICT nonzero_idx) {
-  const auto zero = Zero(di);
-  HWY_ALIGN constexpr int32_t dc_mask_lanes[HWY_LANES(DI)] = {-1};
-  const auto dc_mask = MaskFromVec(Load(di, dc_mask_lanes));
-  int num_nonzeros = 0;
-  int k = 0;
-  {
-    const auto coef = Load(di, block);
-    const auto idx = Load(di, kIndexes);
-    const auto nonzero_mask = Or(dc_mask, Not(Eq(coef, zero)));
-    const auto nzero_coef = Compress(coef, nonzero_mask);
-    const auto nzero_idx = Compress(idx, nonzero_mask);
-    StoreU(nzero_coef, di, &block[num_nonzeros]);
-    StoreU(nzero_idx, di, &nonzero_idx[num_nonzeros]);
-    num_nonzeros += CountTrue(di, nonzero_mask);
-    k += Lanes(di);
-  }
-  for (; k < DCTSIZE2; k += Lanes(di)) {
-    const auto coef = Load(di, &block[k]);
-    const auto idx = Load(di, &kIndexes[k]);
-    const auto nonzero_mask = Not(Eq(coef, zero));
-    const auto nzero_coef = Compress(coef, nonzero_mask);
-    const auto nzero_idx = Compress(idx, nonzero_mask);
-    StoreU(nzero_coef, di, &block[num_nonzeros]);
-    StoreU(nzero_idx, di, &nonzero_idx[num_nonzeros]);
-    num_nonzeros += CountTrue(di, nonzero_mask);
-  }
-  return num_nonzeros;
-}
-
-JXL_INLINE void ComputeSymbols(const int num_nonzeros,
-                               int32_t* JXL_RESTRICT nonzero_idx,
-                               int32_t* JXL_RESTRICT block,
-                               int32_t* JXL_RESTRICT symbols) {
-  nonzero_idx[-1] = -16;
-  const auto one = Set(di, 1);
-  const auto offset = Set(di, 16);
-  for (int i = 0; i < num_nonzeros; i += Lanes(di)) {
-    const auto idx = Load(di, &nonzero_idx[i]);
-    const auto prev_idx = LoadU(di, &nonzero_idx[i - 1]);
-    const auto coeff = Load(di, &block[i]);
-    const auto nbits = NumBits(di, Abs(coeff));
-    const auto mask = ShiftRight<8 * sizeof(int32_t) - 1>(coeff);
-    const auto bits = And(Add(coeff, mask), Sub(Shl(one, nbits), one));
-    const auto symbol = Sub(Add(nbits, idx), Add(prev_idx, offset));
-    Store(symbol, di, symbols + i);
-    Store(bits, di, block + i);
-  }
-}
 
 void WriteBlock(int32_t* JXL_RESTRICT block, int32_t* JXL_RESTRICT symbols,
                 int32_t* JXL_RESTRICT nonzero_idx, HuffmanCodeTable* dc_huff,
@@ -187,77 +44,6 @@ void WriteBlock(int32_t* JXL_RESTRICT block, int32_t* JXL_RESTRICT symbols,
   if (nonzero_idx[num_nonzeros - 1] < 1008) {
     WriteBits(bw, ac_huff->depth[0], ac_huff->code[0]);
   }
-}
-
-void ComputeTokensForBlock(const int32_t* block, int histo_dc, int histo_ac,
-                           Token** tokens_ptr) {
-  Token* next_token = *tokens_ptr;
-  coeff_t temp2;
-  coeff_t temp;
-  temp = block[0];
-  if (temp == 0) {
-    *next_token++ = Token(histo_dc, 0, 0);
-  } else {
-    temp2 = temp;
-    if (temp < 0) {
-      temp = -temp;
-      temp2--;
-    }
-    int dc_nbits = jxl::FloorLog2Nonzero<uint32_t>(temp) + 1;
-    int dc_mask = (1 << dc_nbits) - 1;
-    *next_token++ = Token(histo_dc, dc_nbits, temp2 & dc_mask);
-  }
-  int num_nonzeros = NumNonZero8x8ExceptDC(block);
-  for (int k = 1; k < 64; ++k) {
-    if (num_nonzeros == 0) {
-      *next_token++ = Token(histo_ac, 0, 0);
-      break;
-    }
-    int r = 0;
-    while ((temp = block[kJPEGNaturalOrder[k]]) == 0) {
-      r++;
-      k++;
-    }
-    --num_nonzeros;
-    if (temp < 0) {
-      temp = -temp;
-      temp2 = ~temp;
-    } else {
-      temp2 = temp;
-    }
-    while (r > 15) {
-      *next_token++ = Token(histo_ac, 0xf0, 0);
-      r -= 16;
-    }
-    int ac_nbits = jxl::FloorLog2Nonzero<uint32_t>(temp) + 1;
-    int ac_mask = (1 << ac_nbits) - 1;
-    int symbol = (r << 4u) + ac_nbits;
-    *next_token++ = Token(histo_ac, symbol, temp2 & ac_mask);
-  }
-  *tokens_ptr = next_token;
-}
-
-size_t MaxNumTokensPerMCURow(j_compress_ptr cinfo) {
-  int MCUs_per_row = DivCeil(cinfo->image_width, 8 * cinfo->max_h_samp_factor);
-  size_t blocks_per_mcu = 0;
-  for (int c = 0; c < cinfo->num_components; ++c) {
-    jpeg_component_info* comp = &cinfo->comp_info[c];
-    blocks_per_mcu += comp->h_samp_factor * comp->v_samp_factor;
-  }
-  return kDCTBlockSize * blocks_per_mcu * MCUs_per_row;
-}
-
-size_t EstimateNumTokens(j_compress_ptr cinfo, size_t mcu_y, size_t ysize_mcus,
-                         size_t num_tokens, size_t max_per_row) {
-  size_t estimate;
-  if (mcu_y == 0) {
-    estimate = 16 * max_per_row;
-  } else {
-    estimate = (4 * ysize_mcus * num_tokens) / (3 * mcu_y);
-  }
-  size_t mcus_left = ysize_mcus - mcu_y;
-  return std::min(mcus_left * max_per_row,
-                  std::max(max_per_row, estimate - num_tokens));
 }
 
 void EncodeiMCURow(j_compress_ptr cinfo, bool streaming) {
@@ -352,7 +138,8 @@ void EncodeiMCURow(j_compress_ptr cinfo, bool streaming) {
           block[0] -= last_dc_coeff[c];
           last_dc_coeff[c] += block[0];
           if (output_tokens) {
-            ComputeTokensForBlock(block, c, c + 4, &m->next_token);
+            ComputeTokensForBlock<int32_t, false>(block, 0, c, c + 4,
+                                                  &m->next_token);
           } else if (output_bits) {
             WriteBlock(block, symbols, nonzero_idx, dc_huff, ac_huff, bw);
           }
@@ -363,6 +150,9 @@ void EncodeiMCURow(j_compress_ptr cinfo, bool streaming) {
   if (output_tokens) {
     TokenArray* ta = &m->token_arrays[m->cur_token_array];
     ta->num_tokens = m->next_token - ta->tokens;
+    ScanTokenInfo* sti = &m->scan_token_info[0];
+    sti->num_tokens = m->total_num_tokens + ta->num_tokens;
+    sti->restarts[0] = sti->num_tokens;
   }
 }
 
@@ -374,62 +164,6 @@ HWY_AFTER_NAMESPACE();
 #if HWY_ONCE
 namespace jpegli {
 namespace {
-HWY_EXPORT(NumNonZero8x8ExceptDC16);
-
-// Holds data that is buffered between 8x8 blocks in progressive mode.
-struct DCTCodingState {
-  // The run length of end-of-band symbols in a progressive scan.
-  int eob_run_;
-  // The huffman table to be used when flushing the state.
-  HuffmanCodeTable* cur_ac_huff_;
-  // The sequence of currently buffered refinement bits for a successive
-  // approximation scan (one where Ah > 0).
-  int refinement_bits_[DCTSIZE2];
-  int num_refinement_bits_;
-};
-
-void DCTCodingStateInit(DCTCodingState* s) {
-  s->eob_run_ = 0;
-  s->cur_ac_huff_ = nullptr;
-  s->num_refinement_bits_ = 0;
-}
-
-static JXL_INLINE void WriteSymbol(int symbol, const HuffmanCodeTable* table,
-                                   JpegBitWriter* bw) {
-  WriteBits(bw, table->depth[symbol], table->code[symbol]);
-}
-
-// Emit all buffered data to the bit stream using the given Huffman code and
-// bit writer.
-static JXL_INLINE void Flush(DCTCodingState* s, JpegBitWriter* bw) {
-  if (s->eob_run_ > 0) {
-    int nbits = jxl::FloorLog2Nonzero<uint32_t>(s->eob_run_);
-    int symbol = nbits << 4u;
-    WriteSymbol(symbol, s->cur_ac_huff_, bw);
-    if (nbits > 0) {
-      WriteBits(bw, nbits, s->eob_run_ & ((1 << nbits) - 1));
-    }
-    s->eob_run_ = 0;
-    for (int i = s->num_refinement_bits_ - 1; i >= 0; --i) {
-      WriteBits(bw, 1, s->refinement_bits_[i]);
-    }
-    s->num_refinement_bits_ = 0;
-  }
-}
-
-// Buffer some more data at the end-of-band (the last non-zero or newly
-// non-zero coefficient within the [Ss, Se] spectral band).
-static JXL_INLINE void BufferEndOfBand(DCTCodingState* s,
-                                       HuffmanCodeTable* ac_huff,
-                                       JpegBitWriter* bw) {
-  if (s->eob_run_ == 0) {
-    s->cur_ac_huff_ = ac_huff;
-  }
-  ++s->eob_run_;
-  if (s->eob_run_ == 0x7FFF) {
-    Flush(s, bw);
-  }
-}
 
 bool BuildHuffmanCodeTable(const JPEGHuffmanCode& huff, HuffmanCodeTable* table,
                            bool pre_shifted = false) {
@@ -473,185 +207,6 @@ bool BuildHuffmanCodeTable(const JPEGHuffmanCode& huff, HuffmanCodeTable* table,
       table->depth[i] += nbits;
       table->code[i] <<= nbits;
     }
-  }
-  return true;
-}
-
-bool EncodeDCTBlockSequential(const coeff_t* block, HuffmanCodeTable* dc_huff,
-                              HuffmanCodeTable* ac_huff, coeff_t* last_dc_coeff,
-                              JpegBitWriter* bw) {
-  coeff_t temp2;
-  coeff_t temp;
-  temp2 = block[0];
-  temp = temp2 - *last_dc_coeff;
-  if (temp == 0) {
-    WriteSymbol(0, dc_huff, bw);
-  } else {
-    *last_dc_coeff = temp2;
-    temp2 = temp;
-    if (temp < 0) {
-      temp = -temp;
-      temp2--;
-    }
-    int dc_nbits = jxl::FloorLog2Nonzero<uint32_t>(temp) + 1;
-    int dc_mask = (1 << dc_nbits) - 1;
-    WriteSymbol(dc_nbits, dc_huff, bw);
-    WriteBits(bw, dc_nbits, temp2 & dc_mask);
-  }
-  int num_nonzeros = HWY_DYNAMIC_DISPATCH(NumNonZero8x8ExceptDC16)(block);
-  for (int k = 1; k < 64; ++k) {
-    if (num_nonzeros == 0) {
-      WriteSymbol(0, ac_huff, bw);
-      break;
-    }
-    int r = 0;
-    while ((temp = block[k]) == 0) {
-      r++;
-      k++;
-    }
-    --num_nonzeros;
-    if (temp < 0) {
-      temp = -temp;
-      temp2 = ~temp;
-    } else {
-      temp2 = temp;
-    }
-    while (r > 15) {
-      WriteSymbol(0xf0, ac_huff, bw);
-      r -= 16;
-    }
-    int ac_nbits = jxl::FloorLog2Nonzero<uint32_t>(temp) + 1;
-    int ac_mask = (1 << ac_nbits) - 1;
-    int symbol = (r << 4u) + ac_nbits;
-    WriteSymbol(symbol, ac_huff, bw);
-    WriteBits(bw, ac_nbits, temp2 & ac_mask);
-  }
-  return true;
-}
-
-bool EncodeDCTBlockProgressive(const coeff_t* coeffs, HuffmanCodeTable* dc_huff,
-                               HuffmanCodeTable* ac_huff, int Ss, int Se,
-                               int Al, DCTCodingState* coding_state,
-                               coeff_t* last_dc_coeff, JpegBitWriter* bw) {
-  coeff_t temp2;
-  coeff_t temp;
-  if (Ss == 0) {
-    temp2 = coeffs[0] >> Al;
-    temp = temp2 - *last_dc_coeff;
-    *last_dc_coeff = temp2;
-    temp2 = temp;
-    if (temp < 0) {
-      temp = -temp;
-      if (temp < 0) return false;
-      temp2--;
-    }
-    int nbits = (temp == 0) ? 0 : (jxl::FloorLog2Nonzero<uint32_t>(temp) + 1);
-    WriteSymbol(nbits, dc_huff, bw);
-    if (nbits > 0) {
-      WriteBits(bw, nbits, temp2 & ((1 << nbits) - 1));
-    }
-    return true;
-  }
-  int r = 0;
-  for (int k = Ss; k <= Se; ++k) {
-    if ((temp = coeffs[k]) == 0) {
-      r++;
-      continue;
-    }
-    if (temp < 0) {
-      temp = -temp;
-      if (temp < 0) return false;
-      temp >>= Al;
-      temp2 = ~temp;
-    } else {
-      temp >>= Al;
-      temp2 = temp;
-    }
-    if (temp == 0) {
-      r++;
-      continue;
-    }
-    Flush(coding_state, bw);
-    while (r > 15) {
-      WriteSymbol(0xf0, ac_huff, bw);
-      r -= 16;
-    }
-    int nbits = jxl::FloorLog2Nonzero<uint32_t>(temp) + 1;
-    int symbol = (r << 4u) + nbits;
-    WriteSymbol(symbol, ac_huff, bw);
-    WriteBits(bw, nbits, temp2 & ((1 << nbits) - 1));
-    r = 0;
-  }
-  if (r > 0) {
-    BufferEndOfBand(coding_state, ac_huff, bw);
-  }
-  return true;
-}
-
-bool EncodeRefinementBits(const coeff_t* coeffs, HuffmanCodeTable* ac_huff,
-                          int Ss, int Se, int Al, DCTCodingState* coding_state,
-                          JpegBitWriter* bw) {
-  if (Ss == 0) {
-    // Emit next bit of DC component.
-    WriteBits(bw, 1, (coeffs[0] >> Al) & 1);
-    return true;
-  }
-  int refinement_bits[DCTSIZE2];
-  int num_refinement_bits = 0;
-  int eob = 0;
-  for (int k = Se; k >= Ss; k--) {
-    const coeff_t abs_val = std::abs(coeffs[k]) >> Al;
-    if (abs_val == 0) {
-      continue;
-    }
-    if (abs_val > 1) {
-      refinement_bits[num_refinement_bits++] = abs_val & 1u;
-      continue;
-    }
-    eob = k;
-    break;
-  }
-  if (eob > 0 || num_refinement_bits > 0) {
-    Flush(coding_state, bw);
-  }
-  if (num_refinement_bits > 0) {
-    coding_state->num_refinement_bits_ = num_refinement_bits;
-    memcpy(coding_state->refinement_bits_, refinement_bits,
-           num_refinement_bits * sizeof(refinement_bits[0]));
-    coding_state->cur_ac_huff_ = ac_huff;
-    coding_state->eob_run_ = 1;
-    num_refinement_bits = 0;
-  } else if (eob < Se) {
-    BufferEndOfBand(coding_state, ac_huff, bw);
-  }
-  int r = 0;
-  for (int k = Ss; k <= eob; k++) {
-    const coeff_t abs_val = std::abs(coeffs[k]) >> Al;
-    if (abs_val == 0) {
-      r++;
-      continue;
-    }
-    while (r > 15) {
-      WriteSymbol(0xf0, ac_huff, bw);
-      r -= 16;
-      for (int i = 0; i < num_refinement_bits; ++i) {
-        WriteBits(bw, 1, refinement_bits[i]);
-      }
-      num_refinement_bits = 0;
-    }
-    if (abs_val > 1) {
-      refinement_bits[num_refinement_bits++] = abs_val & 1u;
-      continue;
-    }
-    int symbol = (r << 4u) + 1;
-    int new_non_zero_bit = (coeffs[k] < 0) ? 0 : 1;
-    WriteSymbol(symbol, ac_huff, bw);
-    WriteBits(bw, 1, new_non_zero_bit);
-    for (int i = 0; i < num_refinement_bits; ++i) {
-      WriteBits(bw, 1, refinement_bits[i]);
-    }
-    num_refinement_bits = 0;
-    r = 0;
   }
   return true;
 }
@@ -869,11 +424,10 @@ void EncodeDQT(j_compress_ptr cinfo, bool write_all_tables, bool* is_baseline) {
   }
 }
 
-bool EncodeDRI(j_compress_ptr cinfo) {
+void EncodeDRI(j_compress_ptr cinfo) {
   WriteOutput(cinfo, {0xFF, 0xDD, 0, 4,
                       static_cast<uint8_t>(cinfo->restart_interval >> 8),
                       static_cast<uint8_t>(cinfo->restart_interval & 0xFF)});
-  return true;
 }
 
 static JXL_INLINE void EmitMarker(JpegBitWriter* bw, int marker) {
@@ -881,141 +435,102 @@ static JXL_INLINE void EmitMarker(JpegBitWriter* bw, int marker) {
   bw->data[bw->pos++] = marker;
 }
 
-void ProgressMonitorEncodePass(j_compress_ptr cinfo, size_t scan_index) {
-  if (cinfo->progress == nullptr) {
-    return;
-  }
-  cinfo->progress->completed_passes = 1 + scan_index;
-  cinfo->progress->pass_counter = cinfo->master->next_iMCU_row;
-  cinfo->progress->pass_limit = cinfo->total_iMCU_rows;
-  (*cinfo->progress->progress_monitor)(reinterpret_cast<j_common_ptr>(cinfo));
+static JXL_INLINE void WriteSymbol(int symbol, const HuffmanCodeTable* table,
+                                   JpegBitWriter* bw) {
+  WriteBits(bw, table->depth[symbol], table->code[symbol]);
 }
 
-bool EncodeScan(j_compress_ptr cinfo, int scan_index) {
+void WriteTokens(j_compress_ptr cinfo, int scan_index, JpegBitWriter* bw) {
   jpeg_comp_master* m = cinfo->master;
-  const int restart_interval = cinfo->restart_interval;
-  int restarts_to_go = restart_interval;
+  HuffmanCodeTable* huff_tables = &m->huff_tables[0];
   int next_restart_marker = 0;
-  m->next_iMCU_row = 0;
-
-  JpegBitWriter* bw = &m->bw;
-  coeff_t last_dc_coeff[MAX_COMPS_IN_SCAN] = {0};
-  DCTCodingState coding_state;
-  DCTCodingStateInit(&coding_state);
-
-  const jpeg_scan_info* scan_info = &cinfo->scan_info[scan_index];
-  const ScanCodingInfo& sci = m->scan_coding_info[scan_index];
-  // "Non-interleaved" means color data comes in separate scans, in other words
-  // each scan can contain only one color component.
-  const bool is_interleaved = (scan_info->comps_in_scan > 1);
-  jpeg_component_info* base_comp =
-      &cinfo->comp_info[scan_info->component_index[0]];
-  // h_group / v_group act as numerators for converting number of blocks to
-  // number of MCU. In interleaved mode it is 1, so MCU is represented with
-  // max_*_samp_factor blocks. In non-interleaved mode we choose numerator to
-  // be the samping factor, consequently MCU is always represented with single
-  // block.
-  const int h_group = is_interleaved ? 1 : base_comp->h_samp_factor;
-  const int v_group = is_interleaved ? 1 : base_comp->v_samp_factor;
-  int MCUs_per_row =
-      DivCeil(cinfo->image_width * h_group, 8 * cinfo->max_h_samp_factor);
-  size_t MCU_rows =
-      DivCeil(cinfo->image_height * v_group, 8 * cinfo->max_v_samp_factor);
-  const bool is_progressive = cinfo->progressive_mode;
-  const int Al = scan_info->Al;
-  const int Ah = scan_info->Ah;
-  const int Ss = scan_info->Ss;
-  const int Se = scan_info->Se;
-  HWY_ALIGN constexpr coeff_t kDummyBlock[DCTSIZE2] = {0};
-
-  JBLOCKARRAY ba[MAX_COMPS_IN_SCAN];
-  for (; m->next_iMCU_row < MCU_rows; ++m->next_iMCU_row) {
-    int mcu_y = m->next_iMCU_row;
-    ProgressMonitorEncodePass(cinfo, scan_index);
-    for (int i = 0; i < scan_info->comps_in_scan; ++i) {
-      int comp_idx = scan_info->component_index[i];
-      jpeg_component_info* comp = &cinfo->comp_info[comp_idx];
-      int n_blocks_y = is_interleaved ? comp->v_samp_factor : 1;
-      int by0 = mcu_y * n_blocks_y;
-      int block_rows_left = comp->height_in_blocks - by0;
-      int max_block_rows = std::min(n_blocks_y, block_rows_left);
-      ba[i] = (*cinfo->mem->access_virt_barray)(
-          reinterpret_cast<j_common_ptr>(cinfo), m->coeff_buffers[comp_idx],
-          by0, max_block_rows, false);
-    }
-    for (int mcu_x = 0; mcu_x < MCUs_per_row; ++mcu_x) {
-      // Possibly emit a restart marker.
-      if (restart_interval > 0 && restarts_to_go == 0) {
-        Flush(&coding_state, bw);
-        JumpToByteBoundary(bw);
-        EmitMarker(bw, 0xD0 + next_restart_marker);
-        next_restart_marker += 1;
-        next_restart_marker &= 0x7;
-        restarts_to_go = restart_interval;
-        memset(last_dc_coeff, 0, sizeof(last_dc_coeff));
-      }
-      // Encode one MCU
-      for (int i = 0; i < scan_info->comps_in_scan; ++i) {
-        int comp_idx = scan_info->component_index[i];
-        jpeg_component_info* comp = &cinfo->comp_info[comp_idx];
-        HuffmanCodeTable* dc_huff = &m->huff_tables[sci.dc_tbl_idx[i]];
-        HuffmanCodeTable* ac_huff = &m->huff_tables[sci.ac_tbl_idx[i]];
-        int n_blocks_y = is_interleaved ? comp->v_samp_factor : 1;
-        int n_blocks_x = is_interleaved ? comp->h_samp_factor : 1;
-        for (int iy = 0; iy < n_blocks_y; ++iy) {
-          for (int ix = 0; ix < n_blocks_x; ++ix) {
-            size_t block_y = mcu_y * n_blocks_y + iy;
-            size_t block_x = mcu_x * n_blocks_x + ix;
-            const coeff_t* block;
-            if (block_x >= comp->width_in_blocks ||
-                block_y >= comp->height_in_blocks) {
-              block = kDummyBlock;
-            } else {
-              block = &ba[i][iy][block_x][0];
-            }
-            bool ok;
-            if (!is_progressive) {
-              ok = EncodeDCTBlockSequential(block, dc_huff, ac_huff,
-                                            last_dc_coeff + i, bw);
-            } else if (Ah == 0) {
-              ok = EncodeDCTBlockProgressive(block, dc_huff, ac_huff, Ss, Se,
-                                             Al, &coding_state,
-                                             last_dc_coeff + i, bw);
-            } else {
-              ok = EncodeRefinementBits(block, ac_huff, Ss, Se, Al,
-                                        &coding_state, bw);
-            }
-            if (!ok) return false;
+  const ScanTokenInfo& sti = m->scan_token_info[scan_index];
+  size_t num_token_arrays = m->cur_token_array + 1;
+  size_t total_tokens = 0;
+  size_t restart_idx = 0;
+  size_t next_restart = sti.restarts[restart_idx];
+  uint8_t* context_map = m->context_map;
+  for (size_t i = 0; i < num_token_arrays; ++i) {
+    Token* tokens = m->token_arrays[i].tokens;
+    size_t num_tokens = m->token_arrays[i].num_tokens;
+    if (sti.token_offset < total_tokens + num_tokens &&
+        total_tokens < sti.token_offset + sti.num_tokens) {
+      size_t start_ix =
+          total_tokens < sti.token_offset ? sti.token_offset - total_tokens : 0;
+      size_t end_ix = std::min(sti.token_offset + sti.num_tokens - total_tokens,
+                               num_tokens);
+      size_t cycle_len = bw->len / 8;
+      size_t next_cycle = cycle_len;
+      for (size_t i = start_ix; i < end_ix; ++i) {
+        if (total_tokens + i == next_restart) {
+          JumpToByteBoundary(bw);
+          EmitMarker(bw, 0xD0 + next_restart_marker);
+          next_restart_marker += 1;
+          next_restart_marker &= 0x7;
+          next_restart = sti.restarts[++restart_idx];
+        }
+        Token t = tokens[i];
+        int nbits = t.symbol & 0xf;
+        WriteSymbol(t.symbol, &huff_tables[context_map[t.histo_idx]], bw);
+        if (nbits > 0) {
+          WriteBits(bw, nbits, t.bits);
+        } else {
+          nbits = t.symbol >> 4;
+          if (nbits > 0 && nbits < 15) {
+            WriteBits(bw, nbits, t.bits);
           }
         }
+        if (--next_cycle == 0) {
+          if (!EmptyBitWriterBuffer(bw)) {
+            JPEGLI_ERROR(
+                "Output suspension is not supported in "
+                "finish_compress");
+          }
+          next_cycle = cycle_len;
+        }
       }
-      --restarts_to_go;
     }
-    if (!EmptyBitWriterBuffer(bw)) {
-      JPEGLI_ERROR("Output suspension is not supported in finish_compress");
-    }
+    total_tokens += num_tokens;
   }
-  Flush(&coding_state, bw);
-  JumpToByteBoundary(bw);
-  if (!EmptyBitWriterBuffer(bw)) {
-    JPEGLI_ERROR("Output suspension is not supported in finish_compress");
-  }
-  if (!bw->healthy) return false;
-
-  return true;
 }
 
-void WriteTokens(j_compress_ptr cinfo, const Token* tokens, size_t num_tokens,
-                 const HuffmanCodeTable* huff_tables, const int* context_map,
-                 JpegBitWriter* bw) {
-  size_t cycle_len = bw->len / 8;
+void WriteACRefinementTokens(j_compress_ptr cinfo, int scan_index,
+                             JpegBitWriter* bw) {
+  jpeg_comp_master* m = cinfo->master;
+  const ScanCodingInfo& sci = m->scan_coding_info[scan_index];
+  const ScanTokenInfo& sti = m->scan_token_info[scan_index];
+  HuffmanCodeTable* ac_huff = &m->huff_tables[sci.ac_tbl_idx[0]];
+  size_t cycle_len = bw->len / 64;
   size_t next_cycle = cycle_len;
-  for (size_t i = 0; i < num_tokens; ++i) {
-    Token t = tokens[i];
-    int nbits = t.symbol & 0xf;
-    WriteSymbol(t.symbol, &huff_tables[context_map[t.histo_idx]], bw);
-    if (nbits > 0) {
-      WriteBits(bw, nbits, t.bits);
+  size_t refbit_idx = 0;
+  size_t eobrun_idx = 0;
+  size_t restart_idx = 0;
+  size_t next_restart = sti.restarts[restart_idx];
+  int next_restart_marker = 0;
+  for (size_t i = 0; i < sti.num_tokens; ++i) {
+    if (i == next_restart) {
+      JumpToByteBoundary(bw);
+      EmitMarker(bw, 0xD0 + next_restart_marker);
+      next_restart_marker += 1;
+      next_restart_marker &= 0x7;
+      next_restart = sti.restarts[++restart_idx];
+    }
+    RefToken token = sti.tokens[i];
+    WriteSymbol(token.symbol & 253, ac_huff, bw);
+    int r = token.symbol >> 4;
+    int nbits = token.symbol & 0xf;
+    if (nbits == 0) {
+      if (r < 15) {
+        if (r > 0) {
+          uint16_t eobrun = sti.eobruns[eobrun_idx++];
+          WriteBits(bw, r, eobrun);
+        }
+      }
+    } else {
+      WriteBits(bw, 1, (nbits >> 1) & 1);
+    }
+    for (int j = 0; j < token.refbits; ++j) {
+      WriteBits(bw, 1, sti.refbits[refbit_idx++]);
     }
     if (--next_cycle == 0) {
       if (!EmptyBitWriterBuffer(bw)) {
@@ -1026,73 +541,52 @@ void WriteTokens(j_compress_ptr cinfo, const Token* tokens, size_t num_tokens,
   }
 }
 
-void BuildHistograms(const Token* tokens, size_t num_tokens,
-                     Histogram* histograms) {
-  for (size_t j = 0; j < num_tokens; ++j) {
-    Token t = tokens[j];
-    ++histograms[t.histo_idx].count[t.symbol];
+void WriteDCRefinementBits(j_compress_ptr cinfo, int scan_index,
+                           JpegBitWriter* bw) {
+  jpeg_comp_master* m = cinfo->master;
+  const ScanTokenInfo& sti = m->scan_token_info[scan_index];
+  size_t restart_idx = 0;
+  size_t next_restart = sti.restarts[restart_idx];
+  int next_restart_marker = 0;
+  size_t cycle_len = bw->len * 4;
+  size_t next_cycle = cycle_len;
+  size_t refbit_idx = 0;
+  for (size_t i = 0; i < sti.num_tokens; ++i) {
+    if (i == next_restart) {
+      JumpToByteBoundary(bw);
+      EmitMarker(bw, 0xD0 + next_restart_marker);
+      next_restart_marker += 1;
+      next_restart_marker &= 0x7;
+      next_restart = sti.restarts[++restart_idx];
+    }
+    WriteBits(bw, 1, sti.refbits[refbit_idx++]);
+    if (--next_cycle == 0) {
+      if (!EmptyBitWriterBuffer(bw)) {
+        JPEGLI_ERROR(
+            "Output suspension is not supported in "
+            "finish_compress");
+      }
+      next_cycle = cycle_len;
+    }
   }
 }
 
-void EncodeSingleScan(j_compress_ptr cinfo) {
-  jpeg_comp_master* m = cinfo->master;
-  Histogram histograms[8] = {};
-  size_t num_token_arrays = m->cur_token_array + 1;
-  for (size_t i = 0; i < num_token_arrays; ++i) {
-    Token* tokens = m->token_arrays[i].tokens;
-    size_t num_tokens = m->token_arrays[i].num_tokens;
-    BuildHistograms(tokens, num_tokens, histograms);
-  }
-  JpegClusteredHistograms dc_clusters;
-  ClusterJpegHistograms(histograms, 4, &dc_clusters);
-  JpegClusteredHistograms ac_clusters;
-  ClusterJpegHistograms(histograms + 4, 4, &ac_clusters);
-
-  JPEGHuffmanCode* huffman_codes =
-      Allocate<JPEGHuffmanCode>(cinfo, 8, JPOOL_IMAGE);
-  size_t num_huffman_codes = 0;
-  for (size_t i = 0; i < dc_clusters.histograms.size(); ++i) {
-    AddJpegHuffmanCode(dc_clusters.histograms[i], i, huffman_codes,
-                       &num_huffman_codes);
-  }
-  for (size_t i = 0; i < ac_clusters.histograms.size(); ++i) {
-    AddJpegHuffmanCode(ac_clusters.histograms[i], 0x10 + i, huffman_codes,
-                       &num_huffman_codes);
-  }
-
-  bool is_baseline = true;
-  int context_map[8];
-  ScanCodingInfo sci = {};
-  for (int c = 0; c < cinfo->num_components; ++c) {
-    if (dc_clusters.histogram_indexes[c] > 1 ||
-        ac_clusters.histogram_indexes[c] > 1) {
-      is_baseline = false;
-    }
-    sci.dc_tbl_idx[c] = dc_clusters.histogram_indexes[c];
-    sci.ac_tbl_idx[c] = ac_clusters.histogram_indexes[c] + 4;
-    context_map[c] = sci.dc_tbl_idx[c];
-    context_map[c + 4] = sci.ac_tbl_idx[c];
-  }
-  sci.num_huffman_codes = num_huffman_codes;
-  memcpy(cinfo->master->scan_coding_info, &sci, sizeof(sci));
-  EncodeDQT(cinfo, /*write_all_tables=*/false, &is_baseline);
-  EncodeSOF(cinfo, is_baseline);
-  EncodeDHT(cinfo, huffman_codes, num_huffman_codes);
-  EncodeSOS(cinfo, 0);
-
+void WriteScanData(j_compress_ptr cinfo, int scan_index) {
+  const jpeg_scan_info* scan_info = &cinfo->scan_info[scan_index];
   JpegBitWriter* bw = &cinfo->master->bw;
-  HuffmanCodeTable* huff_tables = cinfo->master->huff_tables;
-  for (size_t i = 0; i < num_token_arrays; ++i) {
-    Token* tokens = m->token_arrays[i].tokens;
-    size_t num_tokens = m->token_arrays[i].num_tokens;
-    WriteTokens(cinfo, tokens, num_tokens, huff_tables, context_map, bw);
+  if (scan_info->Ah == 0) {
+    WriteTokens(cinfo, scan_index, bw);
+  } else if (scan_info->Ss > 0) {
+    WriteACRefinementTokens(cinfo, scan_index, bw);
+  } else {
+    WriteDCRefinementBits(cinfo, scan_index, bw);
+  }
+  if (!bw->healthy) {
+    JPEGLI_ERROR("Unknown Huffman coded symbol found in scan %d", scan_index);
   }
   JumpToByteBoundary(bw);
   if (!EmptyBitWriterBuffer(bw)) {
     JPEGLI_ERROR("Output suspension is not supported in finish_compress");
-  }
-  if (!bw->healthy) {
-    JPEGLI_ERROR("Failed to encode scan.");
   }
 }
 

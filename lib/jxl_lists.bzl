@@ -479,6 +479,7 @@ libjxl_jpegli_sources = [
     "jpegli/encode.cc",
     "jpegli/encode.h",
     "jpegli/encode_internal.h",
+    "jpegli/entropy_coding-inl.h",
     "jpegli/entropy_coding.cc",
     "jpegli/entropy_coding.h",
     "jpegli/error.cc",

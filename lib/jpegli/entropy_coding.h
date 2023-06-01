@@ -38,6 +38,13 @@ void ClusterJpegHistograms(const Histogram* histograms, size_t num,
 void AddJpegHuffmanCode(const Histogram& histogram, size_t slot_id,
                         JPEGHuffmanCode* huff_codes, size_t* num_huff_codes);
 
+size_t MaxNumTokensPerMCURow(j_compress_ptr cinfo);
+
+void TokenizeJpeg(j_compress_ptr cinfo);
+
+size_t EstimateNumTokens(j_compress_ptr cinfo, size_t mcu_y, size_t ysize_mcus,
+                         size_t num_tokens, size_t max_per_row);
+
 void OptimizeHuffmanCodes(j_compress_ptr cinfo, bool* is_baseline);
 
 }  // namespace jpegli
