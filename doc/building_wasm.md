@@ -55,5 +55,3 @@ BUILD_TARGET=wasm32 emconfigure ./ci.sh release
 # or with SIMD WASM:
 BUILD_TARGET=wasm32 ENABLE_WASM_SIMD=1 emconfigure ./ci.sh release
 ```
-
-
