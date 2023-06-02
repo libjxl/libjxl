@@ -40,16 +40,20 @@ cd emsdk
 ## Building and testing the project
 
 ```bash
-# If your node version is <16.4.0, you might need to update to a newer version or override
-# the node binary with a version which supports SIMD:
-echo "NODE_JS='/path/to/node_binary'" >> $EMSDK/.emscripten
-
 # Setup EMSDK and other environment variables. In practice EMSDK is set to be
 # $OPT/emsdk.
 source $OPT/emsdk/emsdk_env.sh
 
-# Either build with regular WASM:
+# This should set the $EMSDK variable.
+# If your node version is <16.4.0, you might need to update to a newer version or override
+# the node binary with a version which supports SIMD:
+echo "NODE_JS='/path/to/node_binary'" >> $EMSDK/.emscripten
+
+# Assuming you are in the root level of the cloned libjxl repo,
+# either build with regular WASM:
 BUILD_TARGET=wasm32 emconfigure ./ci.sh release
 # or with SIMD WASM:
 BUILD_TARGET=wasm32 ENABLE_WASM_SIMD=1 emconfigure ./ci.sh release
 ```
+
+
