@@ -767,8 +767,26 @@ void OptimizeHuffmanCodes(j_compress_ptr cinfo) {
 
 namespace {
 
-void BuildHuffmanCodeTable(const JHUFF_TBL& table, HuffmanCodeTable* code_table,
-                           bool pre_shifted = false) {
+constexpr uint8_t kNumExtraBits[256] = {
+    0,  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
+    1,  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
+    2,  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
+    3,  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
+    4,  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
+    5,  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
+    6,  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
+    7,  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
+    8,  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
+    9,  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
+    10, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
+    11, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
+    12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
+    13, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
+    14, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
+    0,  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
+};
+
+void BuildHuffmanCodeTable(const JHUFF_TBL& table, HuffmanCodeTable* code) {
   int huff_code[kJpegHuffmanAlphabetSize];
   // +1 for a sentinel element.
   uint32_t huff_size[kJpegHuffmanAlphabetSize + 1];
@@ -782,38 +800,33 @@ void BuildHuffmanCodeTable(const JHUFF_TBL& table, HuffmanCodeTable* code_table,
   int last_p = p;
   huff_size[last_p] = 0;
 
-  int code = 0;
+  int next_code = 0;
   uint32_t si = huff_size[0];
   p = 0;
   while (huff_size[p]) {
     while ((huff_size[p]) == si) {
-      huff_code[p++] = code;
-      code++;
+      huff_code[p++] = next_code;
+      next_code++;
     }
-    code <<= 1;
+    next_code <<= 1;
     si++;
   }
   for (p = 0; p < last_p; p++) {
     int i = table.huffval[p];
-    code_table->depth[i] = huff_size[p];
-    code_table->code[i] = huff_code[p];
-    if (pre_shifted) {
-      int nbits = i & 0xf;
-      code_table->depth[i] += nbits;
-      code_table->code[i] <<= nbits;
-    }
+    int nbits = kNumExtraBits[i];
+    code->depth[i] = huff_size[p] + nbits;
+    code->code[i] = huff_code[p] << nbits;
   }
 }
 
 }  // namespace
 
-void InitEntropyCoder(j_compress_ptr cinfo, bool pre_shifted) {
+void InitEntropyCoder(j_compress_ptr cinfo) {
   jpeg_comp_master* m = cinfo->master;
   m->coding_tables =
       Allocate<HuffmanCodeTable>(cinfo, m->num_huffman_tables, JPOOL_IMAGE);
   for (size_t i = 0; i < m->num_huffman_tables; ++i) {
-    BuildHuffmanCodeTable(m->huffman_tables[i], &m->coding_tables[i],
-                          pre_shifted);
+    BuildHuffmanCodeTable(m->huffman_tables[i], &m->coding_tables[i]);
   }
 }
 

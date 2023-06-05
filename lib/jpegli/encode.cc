@@ -497,8 +497,7 @@ void InitCompress(j_compress_ptr cinfo, boolean write_all_tables) {
   }
   if (!cinfo->optimize_coding && !cinfo->progressive_mode) {
     CopyHuffmanTables(cinfo);
-    bool pre_shifted = IsStreamingSupported(cinfo);
-    InitEntropyCoder(cinfo, pre_shifted);
+    InitEntropyCoder(cinfo);
   }
   (*cinfo->dest->init_destination)(cinfo);
   WriteFileHeader(cinfo);
@@ -1186,7 +1185,7 @@ void jpegli_finish_compress(j_compress_ptr cinfo) {
 
   if (cinfo->optimize_coding || cinfo->progressive_mode) {
     jpegli::OptimizeHuffmanCodes(cinfo);
-    jpegli::InitEntropyCoder(cinfo, /*pre_shifted=*/false);
+    jpegli::InitEntropyCoder(cinfo);
   }
 
   if (!bitstream_done) {
