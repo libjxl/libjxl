@@ -24,7 +24,7 @@ void CopyHuffmanTables(j_compress_ptr cinfo);
 
 void OptimizeHuffmanCodes(j_compress_ptr cinfo);
 
-void InitEntropyCoder(j_compress_ptr cinfo, bool pre_shifted);
+void InitEntropyCoder(j_compress_ptr cinfo);
 
 }  // namespace jpegli
 

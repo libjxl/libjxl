@@ -437,25 +437,6 @@ static JXL_INLINE void EmitMarker(JpegBitWriter* bw, int marker) {
   bw->data[bw->pos++] = marker;
 }
 
-constexpr uint8_t kNumExtraBits[256] = {
-    0,  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
-    1,  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
-    2,  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
-    3,  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
-    4,  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
-    5,  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
-    6,  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
-    7,  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
-    8,  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
-    9,  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
-    10, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
-    11, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
-    12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
-    13, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
-    14, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
-    0,  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
-};
-
 void WriteTokens(j_compress_ptr cinfo, int scan_index, JpegBitWriter* bw) {
   jpeg_comp_master* m = cinfo->master;
   HuffmanCodeTable* coding_tables = &m->coding_tables[0];
@@ -487,11 +468,7 @@ void WriteTokens(j_compress_ptr cinfo, int scan_index, JpegBitWriter* bw) {
         }
         Token t = tokens[i];
         const HuffmanCodeTable* code = &coding_tables[context_map[t.context]];
-        WriteBits(bw, code->depth[t.symbol], code->code[t.symbol]);
-        int nbits = kNumExtraBits[t.symbol];
-        if (nbits > 0) {
-          WriteBits(bw, nbits, t.bits);
-        }
+        WriteBits(bw, code->depth[t.symbol], code->code[t.symbol] | t.bits);
         if (--next_cycle == 0) {
           if (!EmptyBitWriterBuffer(bw)) {
             JPEGLI_ERROR(
@@ -529,7 +506,6 @@ void WriteACRefinementTokens(j_compress_ptr cinfo, int scan_index,
     }
     RefToken t = sti.tokens[i];
     int symbol = t.symbol & 253;
-    int nbits = kNumExtraBits[symbol];
     uint16_t bits = 0;
     if ((symbol & 1) == 0) {
       int r = symbol >> 4;
@@ -539,10 +515,7 @@ void WriteACRefinementTokens(j_compress_ptr cinfo, int scan_index,
     } else {
       bits = (t.symbol >> 1) & 1;
     }
-    WriteBits(bw, code->depth[symbol], code->code[symbol]);
-    if (nbits > 0) {
-      WriteBits(bw, nbits, bits);
-    }
+    WriteBits(bw, code->depth[symbol], code->code[symbol] | bits);
     for (int j = 0; j < t.refbits; ++j) {
       WriteBits(bw, 1, sti.refbits[refbit_idx++]);
     }
