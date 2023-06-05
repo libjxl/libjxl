@@ -159,14 +159,14 @@ int NumNonZero8x8ExceptDC(const T* block) {
 }
 
 template <typename T, bool zig_zag_order>
-void ComputeTokensForBlock(const T* block, int last_dc, int histo_dc,
-                           int histo_ac, Token** tokens_ptr) {
+void ComputeTokensForBlock(const T* block, int last_dc, int dc_ctx, int ac_ctx,
+                           Token** tokens_ptr) {
   Token* next_token = *tokens_ptr;
   coeff_t temp2;
   coeff_t temp;
   temp = block[0] - last_dc;
   if (temp == 0) {
-    *next_token++ = Token(histo_dc, 0, 0);
+    *next_token++ = Token(dc_ctx, 0, 0);
   } else {
     temp2 = temp;
     if (temp < 0) {
@@ -175,12 +175,12 @@ void ComputeTokensForBlock(const T* block, int last_dc, int histo_dc,
     }
     int dc_nbits = jxl::FloorLog2Nonzero<uint32_t>(temp) + 1;
     int dc_mask = (1 << dc_nbits) - 1;
-    *next_token++ = Token(histo_dc, dc_nbits, temp2 & dc_mask);
+    *next_token++ = Token(dc_ctx, dc_nbits, temp2 & dc_mask);
   }
   int num_nonzeros = NumNonZero8x8ExceptDC(block);
   for (int k = 1; k < 64; ++k) {
     if (num_nonzeros == 0) {
-      *next_token++ = Token(histo_ac, 0, 0);
+      *next_token++ = Token(ac_ctx, 0, 0);
       break;
     }
     int r = 0;
@@ -203,13 +203,13 @@ void ComputeTokensForBlock(const T* block, int last_dc, int histo_dc,
       temp2 = temp;
     }
     while (r > 15) {
-      *next_token++ = Token(histo_ac, 0xf0, 0);
+      *next_token++ = Token(ac_ctx, 0xf0, 0);
       r -= 16;
     }
     int ac_nbits = jxl::FloorLog2Nonzero<uint32_t>(temp) + 1;
     int ac_mask = (1 << ac_nbits) - 1;
     int symbol = (r << 4u) + ac_nbits;
-    *next_token++ = Token(histo_ac, symbol, temp2 & ac_mask);
+    *next_token++ = Token(ac_ctx, symbol, temp2 & ac_mask);
   }
   *tokens_ptr = next_token;
 }
