@@ -139,15 +139,15 @@ new_git_repository(
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 SUBSTITUTIONS = {
     "@BITS_IN_JSAMPLE@" : "8",
-    "@BUILD@" : "20230125",
+    "@BUILD@" : "20230208",
     "@CMAKE_PROJECT_NAME@" : "libjpeg-turbo",
     "@COPYRIGHT_YEAR@" : "2023",
     "@INLINE@" : "__inline__",
     "@JPEG_LIB_VERSION@" : "62",
-    "@LIBJPEG_TURBO_VERSION_NUMBER@" : "2001005",
+    "@LIBJPEG_TURBO_VERSION_NUMBER@" : "2001091",
     "@SIZE_T@" : "8",
     "@THREAD_LOCAL@" : "__thread",
-    "@VERSION@" : "2.1.5",
+    "@VERSION@" : "2.1.91",
 }
 YES_DEFINES = [
     "C_ARITH_CODING_SUPPORTED", "D_ARITH_CODING_SUPPORTED",
@@ -190,6 +190,7 @@ cc_library(
         "jcmainct.c",
         "jcmarker.c",
         "jcmaster.c",
+        "jcmaster.h",
         "jcomapi.c",
         "jconfig.h",
         "jconfigint.h",
@@ -239,11 +240,11 @@ cc_library(
         "jmemsys.h",
         "jmorecfg.h",
         "jpeg_nbits_table.h",
-        "jpegcomp.h",
         "jpegint.h",
         "jpeglib.h",
         "jquant1.c",
         "jquant2.c",
+        "jsamplecomp.h",
         "jsimd_none.c",
         "jsimd.h",
         "jsimddct.h",
@@ -266,7 +267,7 @@ cc_library(
 )
     """,
     remote = "https://github.com/libjpeg-turbo/libjpeg-turbo.git",
-    tag = "2.1.4",
+    tag = "2.1.91",
 )
 
 http_archive(
