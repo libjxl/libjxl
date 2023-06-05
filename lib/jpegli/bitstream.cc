@@ -26,23 +26,23 @@ namespace jpegli {
 namespace HWY_NAMESPACE {
 
 void WriteBlock(int32_t* JXL_RESTRICT block, int32_t* JXL_RESTRICT symbols,
-                int32_t* JXL_RESTRICT nonzero_idx, HuffmanCodeTable* dc_huff,
-                HuffmanCodeTable* ac_huff, JpegBitWriter* bw) {
+                int32_t* JXL_RESTRICT nonzero_idx, HuffmanCodeTable* dc_code,
+                HuffmanCodeTable* ac_code, JpegBitWriter* bw) {
   ZigZagShuffle(block);
   int num_nonzeros = CompactBlock(block, nonzero_idx);
   ComputeSymbols(num_nonzeros, nonzero_idx, block, symbols);
   int symbol = symbols[0];
-  WriteBits(bw, dc_huff->depth[symbol], dc_huff->code[symbol] | block[0]);
+  WriteBits(bw, dc_code->depth[symbol], dc_code->code[symbol] | block[0]);
   for (int i = 1; i < num_nonzeros; ++i) {
     symbol = symbols[i];
     while (symbol > 255) {
-      WriteBits(bw, ac_huff->depth[0xf0], ac_huff->code[0xf0]);
+      WriteBits(bw, ac_code->depth[0xf0], ac_code->code[0xf0]);
       symbol -= 256;
     }
-    WriteBits(bw, ac_huff->depth[symbol], ac_huff->code[symbol] | block[i]);
+    WriteBits(bw, ac_code->depth[symbol], ac_code->code[symbol] | block[i]);
   }
   if (nonzero_idx[num_nonzeros - 1] < 1008) {
-    WriteBits(bw, ac_huff->depth[0], ac_huff->code[0]);
+    WriteBits(bw, ac_code->depth[0], ac_code->code[0]);
   }
 }
 
@@ -96,12 +96,16 @@ void EncodeiMCURow(j_compress_ptr cinfo, bool streaming) {
   if (m->use_adaptive_quantization) {
     qf = m->quant_field.Row(0);
   }
+  HuffmanCodeTable* dc_code = nullptr;
+  HuffmanCodeTable* ac_code = nullptr;
   const size_t qf_stride = m->quant_field.stride();
   for (int mcu_x = 0; mcu_x < xsize_mcus; ++mcu_x) {
     for (int c = 0; c < cinfo->num_components; ++c) {
       jpeg_component_info* comp = &cinfo->comp_info[c];
-      HuffmanCodeTable* dc_huff = &m->huff_tables[comp->dc_tbl_no];
-      HuffmanCodeTable* ac_huff = &m->huff_tables[comp->ac_tbl_no + 4];
+      if (output_bits) {
+        dc_code = &m->coding_tables[m->context_map[c]];
+        ac_code = &m->coding_tables[m->context_map[c + 4]];
+      }
       float* JXL_RESTRICT qmc = m->quant_mul[c];
       const size_t stride = m->raw_data[c]->stride();
       const int h_factor = m->h_factor[c];
@@ -117,8 +121,8 @@ void EncodeiMCURow(j_compress_ptr cinfo, bool streaming) {
               *m->next_token++ = Token(c, 0, 0);
               *m->next_token++ = Token(c + 4, 0, 0);
             } else if (output_bits) {
-              WriteBits(bw, dc_huff->depth[0], dc_huff->code[0]);
-              WriteBits(bw, ac_huff->depth[0], ac_huff->code[0]);
+              WriteBits(bw, dc_code->depth[0], dc_code->code[0]);
+              WriteBits(bw, ac_code->depth[0], ac_code->code[0]);
             }
             continue;
           }
@@ -141,7 +145,7 @@ void EncodeiMCURow(j_compress_ptr cinfo, bool streaming) {
             ComputeTokensForBlock<int32_t, false>(block, 0, c, c + 4,
                                                   &m->next_token);
           } else if (output_bits) {
-            WriteBlock(block, symbols, nonzero_idx, dc_huff, ac_huff, bw);
+            WriteBlock(block, symbols, nonzero_idx, dc_code, ac_code, bw);
           }
         }
       }
@@ -163,55 +167,11 @@ HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 namespace jpegli {
-namespace {
+HWY_EXPORT(EncodeiMCURow);
 
-bool BuildHuffmanCodeTable(const JPEGHuffmanCode& huff, HuffmanCodeTable* table,
-                           bool pre_shifted = false) {
-  int huff_code[kJpegHuffmanAlphabetSize];
-  // +1 for a sentinel element.
-  uint32_t huff_size[kJpegHuffmanAlphabetSize + 1];
-  int p = 0;
-  for (size_t l = 1; l <= kJpegHuffmanMaxBitLength; ++l) {
-    int i = huff.counts[l];
-    if (p + i > kJpegHuffmanAlphabetSize + 1) {
-      return false;
-    }
-    while (i--) huff_size[p++] = l;
-  }
-
-  if (p == 0) {
-    return true;
-  }
-
-  // Reuse sentinel element.
-  int last_p = p - 1;
-  huff_size[last_p] = 0;
-
-  int code = 0;
-  uint32_t si = huff_size[0];
-  p = 0;
-  while (huff_size[p]) {
-    while ((huff_size[p]) == si) {
-      huff_code[p++] = code;
-      code++;
-    }
-    code <<= 1;
-    si++;
-  }
-  for (p = 0; p < last_p; p++) {
-    int i = huff.values[p];
-    table->depth[i] = huff_size[p];
-    table->code[i] = huff_code[p];
-    if (pre_shifted) {
-      int nbits = i & 0xf;
-      table->depth[i] += nbits;
-      table->code[i] <<= nbits;
-    }
-  }
-  return true;
+void EncodeiMCURow(j_compress_ptr cinfo, bool streaming) {
+  HWY_DYNAMIC_DISPATCH(EncodeiMCURow)(cinfo, streaming);
 }
-
-}  // namespace
 
 void WriteOutput(j_compress_ptr cinfo, const uint8_t* buf, size_t bufsize) {
   size_t pos = 0;
@@ -254,6 +214,73 @@ void EncodeAPP14(j_compress_ptr cinfo) {
                       0, 0, color_transform});
 }
 
+void WriteFileHeader(j_compress_ptr cinfo) {
+  WriteOutput(cinfo, {0xFF, 0xD8});  // SOI
+  if (cinfo->write_JFIF_header) {
+    EncodeAPP0(cinfo);
+  }
+  if (cinfo->write_Adobe_marker) {
+    EncodeAPP14(cinfo);
+  }
+}
+
+bool EncodeDQT(j_compress_ptr cinfo, bool write_all_tables) {
+  uint8_t data[4 + NUM_QUANT_TBLS * (1 + 2 * DCTSIZE2)];  // 520 bytes
+  size_t pos = 0;
+  data[pos++] = 0xFF;
+  data[pos++] = 0xDB;
+  pos += 2;  // Length will be filled in later.
+
+  int send_table[NUM_QUANT_TBLS] = {};
+  if (write_all_tables) {
+    for (int i = 0; i < NUM_QUANT_TBLS; ++i) {
+      if (cinfo->quant_tbl_ptrs[i]) send_table[i] = 1;
+    }
+  } else {
+    for (int c = 0; c < cinfo->num_components; ++c) {
+      send_table[cinfo->comp_info[c].quant_tbl_no] = 1;
+    }
+  }
+
+  bool is_baseline = true;
+  for (int i = 0; i < NUM_QUANT_TBLS; ++i) {
+    if (!send_table[i]) continue;
+    JQUANT_TBL* quant_table = cinfo->quant_tbl_ptrs[i];
+    if (quant_table == nullptr) {
+      JPEGLI_ERROR("Missing quant table %d", i);
+    }
+    int precision = 0;
+    for (size_t k = 0; k < DCTSIZE2; ++k) {
+      if (quant_table->quantval[k] > 255) {
+        precision = 1;
+        is_baseline = false;
+      }
+    }
+    if (quant_table->sent_table) {
+      continue;
+    }
+    data[pos++] = (precision << 4) + i;
+    for (size_t j = 0; j < DCTSIZE2; ++j) {
+      int val_idx = kJPEGNaturalOrder[j];
+      int val = quant_table->quantval[val_idx];
+      if (val == 0) {
+        JPEGLI_ERROR("Invalid quantval 0.");
+      }
+      if (precision) {
+        data[pos++] = val >> 8;
+      }
+      data[pos++] = val & 0xFFu;
+    }
+    quant_table->sent_table = TRUE;
+  }
+  if (pos > 4) {
+    data[2] = (pos - 2) >> 8u;
+    data[3] = (pos - 2) & 0xFFu;
+    WriteOutput(cinfo, data, pos);
+  }
+  return is_baseline;
+}
+
 void EncodeSOF(j_compress_ptr cinfo, bool is_baseline) {
   if (cinfo->data_precision != kJpegPrecision) {
     is_baseline = false;
@@ -289,9 +316,68 @@ void EncodeSOF(j_compress_ptr cinfo, bool is_baseline) {
   WriteOutput(cinfo, data);
 }
 
+void WriteFrameHeader(j_compress_ptr cinfo) {
+  jpeg_comp_master* m = cinfo->master;
+  bool is_baseline = EncodeDQT(cinfo, /*write_all_tables=*/false);
+  if (cinfo->progressive_mode || cinfo->arith_code ||
+      cinfo->data_precision != 8) {
+    is_baseline = false;
+  }
+  for (size_t i = 0; i < m->num_huffman_tables; ++i) {
+    int slot_id = m->slot_id_map[i];
+    if (slot_id > 0x11 || (slot_id > 0x01 && slot_id < 0x10)) {
+      is_baseline = false;
+    }
+  }
+  EncodeSOF(cinfo, is_baseline);
+}
+
+void EncodeDRI(j_compress_ptr cinfo) {
+  WriteOutput(cinfo, {0xFF, 0xDD, 0, 4,
+                      static_cast<uint8_t>(cinfo->restart_interval >> 8),
+                      static_cast<uint8_t>(cinfo->restart_interval & 0xFF)});
+}
+
+void EncodeDHT(j_compress_ptr cinfo, size_t offset, size_t num) {
+  jpeg_comp_master* m = cinfo->master;
+  size_t marker_len = 2;
+  for (size_t i = 0; i < num; ++i) {
+    const JHUFF_TBL& table = m->huffman_tables[offset + i];
+    if (table.sent_table) continue;
+    marker_len += kJpegHuffmanMaxBitLength + 1;
+    for (size_t j = 0; j <= kJpegHuffmanMaxBitLength; ++j) {
+      marker_len += table.bits[j];
+    }
+  }
+  std::vector<uint8_t> data(marker_len + 2);
+  size_t pos = 0;
+  data[pos++] = 0xFF;
+  data[pos++] = 0xC4;
+  data[pos++] = marker_len >> 8u;
+  data[pos++] = marker_len & 0xFFu;
+  for (size_t i = 0; i < num; ++i) {
+    const JHUFF_TBL& table = m->huffman_tables[offset + i];
+    if (table.sent_table) continue;
+    size_t total_count = 0;
+    for (size_t i = 0; i <= kJpegHuffmanMaxBitLength; ++i) {
+      total_count += table.bits[i];
+    }
+    data[pos++] = m->slot_id_map[offset + i];
+    for (size_t i = 1; i <= kJpegHuffmanMaxBitLength; ++i) {
+      data[pos++] = table.bits[i];
+    }
+    for (size_t i = 0; i < total_count; ++i) {
+      data[pos++] = table.huffval[i];
+    }
+  }
+  if (marker_len > 2) {
+    WriteOutput(cinfo, data);
+  }
+}
+
 void EncodeSOS(j_compress_ptr cinfo, int scan_index) {
+  jpeg_comp_master* m = cinfo->master;
   const jpeg_scan_info* scan_info = &cinfo->scan_info[scan_index];
-  const ScanCodingInfo& sci = cinfo->master->scan_coding_info[scan_index];
   const size_t marker_len = 6 + 2 * scan_info->comps_in_scan;
   std::vector<uint8_t> data(marker_len + 2);
   size_t pos = 0;
@@ -303,7 +389,10 @@ void EncodeSOS(j_compress_ptr cinfo, int scan_index) {
   for (int i = 0; i < scan_info->comps_in_scan; ++i) {
     int comp_idx = scan_info->component_index[i];
     data[pos++] = cinfo->comp_info[comp_idx].component_id;
-    data[pos++] = (sci.dc_tbl_idx[i] << 4u) + (sci.ac_tbl_idx[i] - 4);
+    int dc_slot_id = m->slot_id_map[m->context_map[comp_idx]];
+    int ac_context = m->ac_ctx_offset[scan_index] + i;
+    int ac_slot_id = m->slot_id_map[m->context_map[ac_context]];
+    data[pos++] = (dc_slot_id << 4u) + (ac_slot_id - 16);
   }
   data[pos++] = scan_info->Ss;
   data[pos++] = scan_info->Se;
@@ -311,138 +400,65 @@ void EncodeSOS(j_compress_ptr cinfo, int scan_index) {
   WriteOutput(cinfo, data);
 }
 
-void EncodeDHT(j_compress_ptr cinfo, const JPEGHuffmanCode* huffman_codes,
-               size_t num_huffman_codes, bool pre_shifted) {
-  if (num_huffman_codes == 0) {
-    return;
+void WriteScanHeader(j_compress_ptr cinfo, int scan_index) {
+  jpeg_comp_master* m = cinfo->master;
+  const jpeg_scan_info* scan_info = &cinfo->scan_info[scan_index];
+  cinfo->restart_interval = m->scan_token_info[scan_index].restart_interval;
+  if (cinfo->restart_interval != m->last_restart_interval) {
+    EncodeDRI(cinfo);
+    m->last_restart_interval = cinfo->restart_interval;
   }
-
-  size_t marker_len = 2;
-  for (size_t i = 0; i < num_huffman_codes; ++i) {
-    const JPEGHuffmanCode& huff = huffman_codes[i];
-    if (huff.sent_table) continue;
-    marker_len += kJpegHuffmanMaxBitLength;
-    for (size_t j = 0; j <= kJpegHuffmanMaxBitLength; ++j) {
-      marker_len += huff.counts[j];
+  size_t num_dht = 0;
+  if (scan_index == 0) {
+    // For the first scan we emit all DC and at most 4 AC Huffman codes.
+    for (size_t i = 0, num_ac = 0; i < m->num_huffman_tables; ++i) {
+      if (m->slot_id_map[i] >= 16 && num_ac++ >= 4) break;
+      ++num_dht;
     }
-  }
-  std::vector<uint8_t> data(marker_len + 2);
-  size_t pos = 0;
-  data[pos++] = 0xFF;
-  data[pos++] = 0xC4;
-  data[pos++] = marker_len >> 8u;
-  data[pos++] = marker_len & 0xFFu;
-  for (size_t i = 0; i < num_huffman_codes; ++i) {
-    const JPEGHuffmanCode& huff = huffman_codes[i];
-    size_t index = huff.slot_id;
-    HuffmanCodeTable* huff_table;
-    if (index & 0x10) {
-      huff_table = &cinfo->master->huff_tables[index - 12];
-    } else {
-      huff_table = &cinfo->master->huff_tables[index];
-    }
-    // TODO(eustas): cache
-    // TODO(eustas): set up non-existing symbols
-    if (!BuildHuffmanCodeTable(huff, huff_table, pre_shifted)) {
-      JPEGLI_ERROR("Failed to build Huffman code table.");
-    }
-    if (huff.sent_table) continue;
-    size_t total_count = 0;
-    size_t max_length = 0;
-    for (size_t i = 0; i <= kJpegHuffmanMaxBitLength; ++i) {
-      if (huff.counts[i] != 0) {
-        max_length = i;
-      }
-      total_count += huff.counts[i];
-    }
-    --total_count;
-    data[pos++] = huff.slot_id;
-    for (size_t i = 1; i <= kJpegHuffmanMaxBitLength; ++i) {
-      data[pos++] = (i == max_length ? huff.counts[i] - 1 : huff.counts[i]);
-    }
-    for (size_t i = 0; i < total_count; ++i) {
-      data[pos++] = huff.values[i];
+  } else if (scan_info->Ss > 0) {
+    // For multi-scan sequential and progressive DC scans we have already
+    // emitted all Huffman codes that we need before the first scan. For
+    // progressive AC scans we only need at most one new Huffman code.
+    if (m->context_map[m->ac_ctx_offset[scan_index]] == m->next_dht_index) {
+      num_dht = 1;
     }
   }
-  if (marker_len > 2) {
-    WriteOutput(cinfo, data);
+  if (num_dht > 0) {
+    EncodeDHT(cinfo, m->next_dht_index, num_dht);
+    m->next_dht_index += num_dht;
   }
+  EncodeSOS(cinfo, scan_index);
 }
 
-void EncodeDQT(j_compress_ptr cinfo, bool write_all_tables, bool* is_baseline) {
-  uint8_t data[4 + NUM_QUANT_TBLS * (1 + 2 * DCTSIZE2)];  // 520 bytes
-  size_t pos = 0;
-  data[pos++] = 0xFF;
-  data[pos++] = 0xDB;
-  pos += 2;  // Length will be filled in later.
-
-  int send_table[NUM_QUANT_TBLS] = {};
-  if (write_all_tables) {
-    for (int i = 0; i < NUM_QUANT_TBLS; ++i) {
-      if (cinfo->quant_tbl_ptrs[i]) send_table[i] = 1;
-    }
-  } else {
-    for (int c = 0; c < cinfo->num_components; ++c) {
-      send_table[cinfo->comp_info[c].quant_tbl_no] = 1;
-    }
-  }
-
-  for (int i = 0; i < NUM_QUANT_TBLS; ++i) {
-    if (!send_table[i]) continue;
-    JQUANT_TBL* quant_table = cinfo->quant_tbl_ptrs[i];
-    if (quant_table == nullptr) {
-      JPEGLI_ERROR("Missing quant table %d", i);
-    }
-    int precision = 0;
-    for (size_t k = 0; k < DCTSIZE2; ++k) {
-      if (quant_table->quantval[k] > 255) {
-        precision = 1;
-        *is_baseline = false;
-      }
-    }
-    if (quant_table->sent_table) {
-      continue;
-    }
-    data[pos++] = (precision << 4) + i;
-    for (size_t j = 0; j < DCTSIZE2; ++j) {
-      int val_idx = kJPEGNaturalOrder[j];
-      int val = quant_table->quantval[val_idx];
-      if (val == 0) {
-        JPEGLI_ERROR("Invalid quantval 0.");
-      }
-      if (precision) {
-        data[pos++] = val >> 8;
-      }
-      data[pos++] = val & 0xFFu;
-    }
-    quant_table->sent_table = TRUE;
-  }
-  if (pos > 4) {
-    data[2] = (pos - 2) >> 8u;
-    data[3] = (pos - 2) & 0xFFu;
-    WriteOutput(cinfo, data, pos);
-  }
-}
-
-void EncodeDRI(j_compress_ptr cinfo) {
-  WriteOutput(cinfo, {0xFF, 0xDD, 0, 4,
-                      static_cast<uint8_t>(cinfo->restart_interval >> 8),
-                      static_cast<uint8_t>(cinfo->restart_interval & 0xFF)});
-}
+namespace {
 
 static JXL_INLINE void EmitMarker(JpegBitWriter* bw, int marker) {
   bw->data[bw->pos++] = 0xFF;
   bw->data[bw->pos++] = marker;
 }
 
-static JXL_INLINE void WriteSymbol(int symbol, const HuffmanCodeTable* table,
-                                   JpegBitWriter* bw) {
-  WriteBits(bw, table->depth[symbol], table->code[symbol]);
-}
+constexpr uint8_t kNumExtraBits[256] = {
+    0,  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
+    1,  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
+    2,  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
+    3,  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
+    4,  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
+    5,  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
+    6,  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
+    7,  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
+    8,  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
+    9,  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
+    10, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
+    11, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
+    12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
+    13, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
+    14, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
+    0,  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,  //
+};
 
 void WriteTokens(j_compress_ptr cinfo, int scan_index, JpegBitWriter* bw) {
   jpeg_comp_master* m = cinfo->master;
-  HuffmanCodeTable* huff_tables = &m->huff_tables[0];
+  HuffmanCodeTable* coding_tables = &m->coding_tables[0];
   int next_restart_marker = 0;
   const ScanTokenInfo& sti = m->scan_token_info[scan_index];
   size_t num_token_arrays = m->cur_token_array + 1;
@@ -470,15 +486,11 @@ void WriteTokens(j_compress_ptr cinfo, int scan_index, JpegBitWriter* bw) {
           next_restart = sti.restarts[++restart_idx];
         }
         Token t = tokens[i];
-        int nbits = t.symbol & 0xf;
-        WriteSymbol(t.symbol, &huff_tables[context_map[t.histo_idx]], bw);
+        const HuffmanCodeTable* code = &coding_tables[context_map[t.context]];
+        WriteBits(bw, code->depth[t.symbol], code->code[t.symbol]);
+        int nbits = kNumExtraBits[t.symbol];
         if (nbits > 0) {
           WriteBits(bw, nbits, t.bits);
-        } else {
-          nbits = t.symbol >> 4;
-          if (nbits > 0 && nbits < 15) {
-            WriteBits(bw, nbits, t.bits);
-          }
         }
         if (--next_cycle == 0) {
           if (!EmptyBitWriterBuffer(bw)) {
@@ -497,9 +509,9 @@ void WriteTokens(j_compress_ptr cinfo, int scan_index, JpegBitWriter* bw) {
 void WriteACRefinementTokens(j_compress_ptr cinfo, int scan_index,
                              JpegBitWriter* bw) {
   jpeg_comp_master* m = cinfo->master;
-  const ScanCodingInfo& sci = m->scan_coding_info[scan_index];
   const ScanTokenInfo& sti = m->scan_token_info[scan_index];
-  HuffmanCodeTable* ac_huff = &m->huff_tables[sci.ac_tbl_idx[0]];
+  const uint8_t context = m->ac_ctx_offset[scan_index];
+  const HuffmanCodeTable* code = &m->coding_tables[m->context_map[context]];
   size_t cycle_len = bw->len / 64;
   size_t next_cycle = cycle_len;
   size_t refbit_idx = 0;
@@ -515,21 +527,23 @@ void WriteACRefinementTokens(j_compress_ptr cinfo, int scan_index,
       next_restart_marker &= 0x7;
       next_restart = sti.restarts[++restart_idx];
     }
-    RefToken token = sti.tokens[i];
-    WriteSymbol(token.symbol & 253, ac_huff, bw);
-    int r = token.symbol >> 4;
-    int nbits = token.symbol & 0xf;
-    if (nbits == 0) {
-      if (r < 15) {
-        if (r > 0) {
-          uint16_t eobrun = sti.eobruns[eobrun_idx++];
-          WriteBits(bw, r, eobrun);
-        }
+    RefToken t = sti.tokens[i];
+    int symbol = t.symbol & 253;
+    int nbits = kNumExtraBits[symbol];
+    uint16_t bits = 0;
+    if ((symbol & 1) == 0) {
+      int r = symbol >> 4;
+      if (r > 0 && r < 15) {
+        bits = sti.eobruns[eobrun_idx++];
       }
     } else {
-      WriteBits(bw, 1, (nbits >> 1) & 1);
+      bits = (t.symbol >> 1) & 1;
     }
-    for (int j = 0; j < token.refbits; ++j) {
+    WriteBits(bw, code->depth[symbol], code->code[symbol]);
+    if (nbits > 0) {
+      WriteBits(bw, nbits, bits);
+    }
+    for (int j = 0; j < t.refbits; ++j) {
       WriteBits(bw, 1, sti.refbits[refbit_idx++]);
     }
     if (--next_cycle == 0) {
@@ -571,6 +585,8 @@ void WriteDCRefinementBits(j_compress_ptr cinfo, int scan_index,
   }
 }
 
+}  // namespace
+
 void WriteScanData(j_compress_ptr cinfo, int scan_index) {
   const jpeg_scan_info* scan_info = &cinfo->scan_info[scan_index];
   JpegBitWriter* bw = &cinfo->master->bw;
@@ -588,11 +604,6 @@ void WriteScanData(j_compress_ptr cinfo, int scan_index) {
   if (!EmptyBitWriterBuffer(bw)) {
     JPEGLI_ERROR("Output suspension is not supported in finish_compress");
   }
-}
-
-HWY_EXPORT(EncodeiMCURow);
-void EncodeiMCURow(j_compress_ptr cinfo, bool streaming) {
-  HWY_DYNAMIC_DISPATCH(EncodeiMCURow)(cinfo, streaming);
 }
 
 }  // namespace jpegli

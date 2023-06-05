@@ -494,20 +494,27 @@ std::vector<TestConfig> GenerateTests() {
     for (int samp : {1, 2}) {
       for (int quality : {100, 90, 1}) {
         for (int r : {0, 1024, 1}) {
-          TestConfig config;
-          config.input.xsize = 273;
-          config.input.ysize = 265;
-          config.jparams.progressive_mode = p;
-          config.jparams.h_sampling = {samp, 1, 1};
-          config.jparams.v_sampling = {samp, 1, 1};
-          config.jparams.quality = quality;
-          config.jparams.restart_interval = r;
-          config.max_bpp = quality == 100 ? 8.0 : 2.0;
-          if (r == 1) {
-            config.max_bpp += 10.0;
+          for (int optimize : {0, 1}) {
+            bool progressive = p == 1 || p == 2 || p > 4;
+            if (progressive && !optimize) continue;
+            TestConfig config;
+            config.input.xsize = 273;
+            config.input.ysize = 265;
+            config.jparams.progressive_mode = p;
+            if (!progressive) {
+              config.jparams.optimize_coding = optimize;
+            }
+            config.jparams.h_sampling = {samp, 1, 1};
+            config.jparams.v_sampling = {samp, 1, 1};
+            config.jparams.quality = quality;
+            config.jparams.restart_interval = r;
+            config.max_bpp = quality == 100 ? 8.0 : 2.0;
+            if (r == 1) {
+              config.max_bpp += 10.0;
+            }
+            config.max_dist = quality == 1 ? 20.0 : 2.0;
+            all_tests.push_back(config);
           }
-          config.max_dist = quality == 1 ? 20.0 : 2.0;
-          all_tests.push_back(config);
         }
       }
     }
