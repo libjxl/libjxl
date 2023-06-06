@@ -56,7 +56,6 @@ class CmsStage : public RenderPipelineStage {
   void ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
                   size_t xextra, size_t xsize, size_t xpos, size_t ypos,
                   size_t thread_id) const final {
-    PROFILER_ZONE("Cms");
     fprintf(stderr, "xsize: %zu, xsize_: %zu\n", xsize, xsize_);
     JXL_ASSERT(xsize == xsize_);
     // const HWY_FULL(float) d;
