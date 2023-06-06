@@ -21,11 +21,6 @@
 #include <string>
 #include <utility>
 
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "lib/jxl/enc_color_management.cc"
-#include <hwy/foreach_target.h>
-#include <hwy/highway.h>
-
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/printf_macros.h"
@@ -33,277 +28,16 @@
 #include "lib/jxl/field_encodings.h"
 #include "lib/jxl/matrix_ops.h"
 #include "lib/jxl/transfer_functions-inl.h"
+#include "lib/jxl/jxl_cms_internal.h"
+
 #if JPEGXL_ENABLE_SKCMS
 #include "lib/jxl/enc_jxl_skcms.h"
 #else  // JPEGXL_ENABLE_SKCMS
 #include "lcms2.h"
 #include "lcms2_plugin.h"
 #endif  // JPEGXL_ENABLE_SKCMS
-
-#define JXL_CMS_VERBOSE 0
-
-// Define these only once. We can't use HWY_ONCE here because it is defined as
-// 1 only on the last pass.
-#ifndef LIB_JXL_ENC_COLOR_MANAGEMENT_CC_
-#define LIB_JXL_ENC_COLOR_MANAGEMENT_CC_
-
 namespace jxl {
 namespace {
-struct JxlCms {
-#if JPEGXL_ENABLE_SKCMS
-  PaddedBytes icc_src, icc_dst;
-  skcms_ICCProfile profile_src, profile_dst;
-#else
-  void* lcms_transform;
-#endif
-
-  // These fields are used when the HLG OOTF or inverse OOTF must be applied.
-  bool apply_hlg_ootf;
-  size_t hlg_ootf_num_channels;
-  // Y component of the primaries.
-  std::array<float, 3> hlg_ootf_luminances;
-
-  size_t channels_src;
-  size_t channels_dst;
-  ImageF buf_src;
-  ImageF buf_dst;
-  float intensity_target;
-  bool skip_lcms = false;
-  ExtraTF preprocess = ExtraTF::kNone;
-  ExtraTF postprocess = ExtraTF::kNone;
-};
-
-Status ApplyHlgOotf(JxlCms* t, float* JXL_RESTRICT buf, size_t xsize,
-                    bool forward);
-}  // namespace
-}  // namespace jxl
-
-#endif  // LIB_JXL_ENC_COLOR_MANAGEMENT_CC_
-
-HWY_BEFORE_NAMESPACE();
-namespace jxl {
-namespace HWY_NAMESPACE {
-
-#if JXL_CMS_VERBOSE >= 2
-const size_t kX = 0;  // pixel index, multiplied by 3 for RGB
-#endif
-
-// xform_src = UndoGammaCompression(buf_src).
-Status BeforeTransform(JxlCms* t, const float* buf_src, float* xform_src,
-                       size_t buf_size) {
-  switch (t->preprocess) {
-    case ExtraTF::kNone:
-      JXL_DASSERT(false);  // unreachable
-      break;
-
-    case ExtraTF::kPQ: {
-      // By default, PQ content has an intensity target of 10000, stored
-      // exactly.
-      HWY_FULL(float) df;
-      const auto multiplier = Set(df, t->intensity_target == 10000.f
-                                          ? 1.0f
-                                          : 10000.f / t->intensity_target);
-      for (size_t i = 0; i < buf_size; i += Lanes(df)) {
-        const auto val = Load(df, buf_src + i);
-        const auto result =
-            Mul(multiplier, TF_PQ().DisplayFromEncoded(df, val));
-        Store(result, df, xform_src + i);
-      }
-#if JXL_CMS_VERBOSE >= 2
-      printf("pre in %.4f %.4f %.4f undoPQ %.4f %.4f %.4f\n", buf_src[3 * kX],
-             buf_src[3 * kX + 1], buf_src[3 * kX + 2], xform_src[3 * kX],
-             xform_src[3 * kX + 1], xform_src[3 * kX + 2]);
-#endif
-      break;
-    }
-
-    case ExtraTF::kHLG:
-      for (size_t i = 0; i < buf_size; ++i) {
-        xform_src[i] = static_cast<float>(
-            TF_HLG().DisplayFromEncoded(static_cast<double>(buf_src[i])));
-      }
-      if (t->apply_hlg_ootf) {
-        JXL_RETURN_IF_ERROR(
-            ApplyHlgOotf(t, xform_src, buf_size, /*forward=*/true));
-      }
-#if JXL_CMS_VERBOSE >= 2
-      printf("pre in %.4f %.4f %.4f undoHLG %.4f %.4f %.4f\n", buf_src[3 * kX],
-             buf_src[3 * kX + 1], buf_src[3 * kX + 2], xform_src[3 * kX],
-             xform_src[3 * kX + 1], xform_src[3 * kX + 2]);
-#endif
-      break;
-
-    case ExtraTF::kSRGB:
-      HWY_FULL(float) df;
-      for (size_t i = 0; i < buf_size; i += Lanes(df)) {
-        const auto val = Load(df, buf_src + i);
-        const auto result = TF_SRGB().DisplayFromEncoded(val);
-        Store(result, df, xform_src + i);
-      }
-#if JXL_CMS_VERBOSE >= 2
-      printf("pre in %.4f %.4f %.4f undoSRGB %.4f %.4f %.4f\n", buf_src[3 * kX],
-             buf_src[3 * kX + 1], buf_src[3 * kX + 2], xform_src[3 * kX],
-             xform_src[3 * kX + 1], xform_src[3 * kX + 2]);
-#endif
-      break;
-  }
-  return true;
-}
-
-// Applies gamma compression in-place.
-Status AfterTransform(JxlCms* t, float* JXL_RESTRICT buf_dst, size_t buf_size) {
-  switch (t->postprocess) {
-    case ExtraTF::kNone:
-      JXL_DASSERT(false);  // unreachable
-      break;
-    case ExtraTF::kPQ: {
-      HWY_FULL(float) df;
-      const auto multiplier =
-          Set(df, t->intensity_target == 10000.f ? 1.0f
-                                                 : t->intensity_target * 1e-4f);
-      for (size_t i = 0; i < buf_size; i += Lanes(df)) {
-        const auto val = Load(df, buf_dst + i);
-        const auto result =
-            TF_PQ().EncodedFromDisplay(df, Mul(multiplier, val));
-        Store(result, df, buf_dst + i);
-      }
-#if JXL_CMS_VERBOSE >= 2
-      printf("after PQ enc %.4f %.4f %.4f\n", buf_dst[3 * kX],
-             buf_dst[3 * kX + 1], buf_dst[3 * kX + 2]);
-#endif
-      break;
-    }
-    case ExtraTF::kHLG:
-      if (t->apply_hlg_ootf) {
-        JXL_RETURN_IF_ERROR(
-            ApplyHlgOotf(t, buf_dst, buf_size, /*forward=*/false));
-      }
-      for (size_t i = 0; i < buf_size; ++i) {
-        buf_dst[i] = static_cast<float>(
-            TF_HLG().EncodedFromDisplay(static_cast<double>(buf_dst[i])));
-      }
-#if JXL_CMS_VERBOSE >= 2
-      printf("after HLG enc %.4f %.4f %.4f\n", buf_dst[3 * kX],
-             buf_dst[3 * kX + 1], buf_dst[3 * kX + 2]);
-#endif
-      break;
-    case ExtraTF::kSRGB:
-      HWY_FULL(float) df;
-      for (size_t i = 0; i < buf_size; i += Lanes(df)) {
-        const auto val = Load(df, buf_dst + i);
-        const auto result =
-            TF_SRGB().EncodedFromDisplay(HWY_FULL(float)(), val);
-        Store(result, df, buf_dst + i);
-      }
-#if JXL_CMS_VERBOSE >= 2
-      printf("after SRGB enc %.4f %.4f %.4f\n", buf_dst[3 * kX],
-             buf_dst[3 * kX + 1], buf_dst[3 * kX + 2]);
-#endif
-      break;
-  }
-  return true;
-}
-
-Status DoColorSpaceTransform(void* cms_data, const size_t thread,
-                             const float* buf_src, float* buf_dst,
-                             size_t xsize) {
-  // No lock needed.
-  JxlCms* t = reinterpret_cast<JxlCms*>(cms_data);
-
-  const float* xform_src = buf_src;  // Read-only.
-  if (t->preprocess != ExtraTF::kNone) {
-    float* mutable_xform_src = t->buf_src.Row(thread);  // Writable buffer.
-    JXL_RETURN_IF_ERROR(BeforeTransform(t, buf_src, mutable_xform_src,
-                                        xsize * t->channels_src));
-    xform_src = mutable_xform_src;
-  }
-
-#if JPEGXL_ENABLE_SKCMS
-  if (t->channels_src == 1 && !t->skip_lcms) {
-    // Expand from 1 to 3 channels, starting from the end in case
-    // xform_src == t->buf_src.Row(thread).
-    float* mutable_xform_src = t->buf_src.Row(thread);
-    for (size_t i = 0; i < xsize; ++i) {
-      const size_t x = xsize - i - 1;
-      mutable_xform_src[x * 3] = mutable_xform_src[x * 3 + 1] =
-          mutable_xform_src[x * 3 + 2] = xform_src[x];
-    }
-    xform_src = mutable_xform_src;
-  }
-#else
-  if (t->channels_src == 4 && !t->skip_lcms) {
-    // LCMS does CMYK in a weird way: 0 = white, 100 = max ink
-    float* mutable_xform_src = t->buf_src.Row(thread);
-    for (size_t x = 0; x < xsize * 4; ++x) {
-      mutable_xform_src[x] = 100.f - 100.f * mutable_xform_src[x];
-    }
-    xform_src = mutable_xform_src;
-  }
-#endif
-
-#if JXL_CMS_VERBOSE >= 2
-  // Save inputs for printing before in-place transforms overwrite them.
-  const float in0 = xform_src[3 * kX + 0];
-  const float in1 = xform_src[3 * kX + 1];
-  const float in2 = xform_src[3 * kX + 2];
-#endif
-
-  if (t->skip_lcms) {
-    if (buf_dst != xform_src) {
-      memcpy(buf_dst, xform_src, xsize * t->channels_src * sizeof(*buf_dst));
-    }  // else: in-place, no need to copy
-  } else {
-#if JPEGXL_ENABLE_SKCMS
-    JXL_CHECK(
-        skcms_Transform(xform_src,
-                        (t->channels_src == 4 ? skcms_PixelFormat_RGBA_ffff
-                                              : skcms_PixelFormat_RGB_fff),
-                        skcms_AlphaFormat_Opaque, &t->profile_src, buf_dst,
-                        skcms_PixelFormat_RGB_fff, skcms_AlphaFormat_Opaque,
-                        &t->profile_dst, xsize));
-#else   // JPEGXL_ENABLE_SKCMS
-    cmsDoTransform(t->lcms_transform, xform_src, buf_dst,
-                   static_cast<cmsUInt32Number>(xsize));
-#endif  // JPEGXL_ENABLE_SKCMS
-  }
-#if JXL_CMS_VERBOSE >= 2
-  printf("xform skip%d: %.4f %.4f %.4f (%p) -> (%p) %.4f %.4f %.4f\n",
-         t->skip_lcms, in0, in1, in2, xform_src, buf_dst, buf_dst[3 * kX],
-         buf_dst[3 * kX + 1], buf_dst[3 * kX + 2]);
-#endif
-
-#if JPEGXL_ENABLE_SKCMS
-  if (t->channels_dst == 1 && !t->skip_lcms) {
-    // Contract back from 3 to 1 channel, this time forward.
-    float* grayscale_buf_dst = t->buf_dst.Row(thread);
-    for (size_t x = 0; x < xsize; ++x) {
-      grayscale_buf_dst[x] = buf_dst[x * 3];
-    }
-    buf_dst = grayscale_buf_dst;
-  }
-#endif
-
-  if (t->postprocess != ExtraTF::kNone) {
-    JXL_RETURN_IF_ERROR(AfterTransform(t, buf_dst, xsize * t->channels_dst));
-  }
-  return true;
-}
-
-// NOLINTNEXTLINE(google-readability-namespace-comments)
-}  // namespace HWY_NAMESPACE
-}  // namespace jxl
-HWY_AFTER_NAMESPACE();
-
-#if HWY_ONCE
-namespace jxl {
-namespace {
-
-HWY_EXPORT(DoColorSpaceTransform);
-int DoColorSpaceTransform(void* t, size_t thread, const float* buf_src,
-                          float* buf_dst, size_t xsize) {
-  return HWY_DYNAMIC_DISPATCH(DoColorSpaceTransform)(t, thread, buf_src,
-                                                     buf_dst, xsize);
-}
 
 // Define to 1 on OS X as a workaround for older LCMS lacking MD5.
 #define JXL_CMS_OLD_VERSION 0
@@ -364,32 +98,6 @@ Status CreateProfileXYZ(const cmsContext context,
 }
 
 #endif  // !JPEGXL_ENABLE_SKCMS
-
-#if JPEGXL_ENABLE_SKCMS
-// IMPORTANT: icc must outlive profile.
-Status DecodeProfile(const uint8_t* icc, size_t size,
-                     skcms_ICCProfile* const profile) {
-  if (!skcms_Parse(icc, size, profile)) {
-    return JXL_FAILURE("Failed to parse ICC profile with %" PRIuS " bytes",
-                       size);
-  }
-  return true;
-}
-#else  // JPEGXL_ENABLE_SKCMS
-Status DecodeProfile(const cmsContext context, const PaddedBytes& icc,
-                     Profile* profile) {
-  profile->reset(cmsOpenProfileFromMemTHR(context, icc.data(), icc.size()));
-  if (profile->get() == nullptr) {
-    return JXL_FAILURE("Failed to decode profile");
-  }
-
-  // WARNING: due to the LCMS MD5 issue mentioned above, many existing
-  // profiles have incorrect MD5, so do not even bother checking them nor
-  // generating warning clutter.
-
-  return true;
-}
-#endif  // JPEGXL_ENABLE_SKCMS
 
 #if JPEGXL_ENABLE_SKCMS
 
@@ -800,105 +508,6 @@ cmsContext GetContext() {
 
 #endif  // JPEGXL_ENABLE_SKCMS
 
-Status GetPrimariesLuminances(const ColorEncoding& encoding,
-                              float luminances[3]) {
-  // Explanation:
-  // We know that the three primaries must sum to white:
-  //
-  // [Xr, Xg, Xb;     [1;     [Xw;
-  //  Yr, Yg, Yb;  ×   1;  =   Yw;
-  //  Zr, Zg, Zb]      1]      Zw]
-  //
-  // By noting that X = x·(X+Y+Z), Y = y·(X+Y+Z) and Z = z·(X+Y+Z) (note the
-  // lower case indicating chromaticity), and factoring the totals (X+Y+Z) out
-  // of the left matrix and into the all-ones vector, we get:
-  //
-  // [xr, xg, xb;     [Xr + Yr + Zr;     [Xw;
-  //  yr, yg, yb;  ×   Xg + Yg + Zg;  =   Yw;
-  //  zr, zg, zb]      Xb + Yb + Zb]      Zw]
-  //
-  // Which makes it apparent that we can compute those totals as:
-  //
-  //                  [Xr + Yr + Zr;     inv([xr, xg, xb;      [Xw;
-  //                   Xg + Yg + Zg;  =       yr, yg, yb;   ×   Yw;
-  //                   Xb + Yb + Zb]          zr, zg, zb])      Zw]
-  //
-  // From there, by multiplying each total by its corresponding y, we get Y for
-  // that primary.
-
-  float white_XYZ[3];
-  JXL_RETURN_IF_ERROR(
-      CIEXYZFromWhiteCIExy(encoding.GetWhitePoint(), white_XYZ));
-
-  const PrimariesCIExy primaries = encoding.GetPrimaries();
-  double chromaticities[3][3] = {
-      {primaries.r.x, primaries.g.x, primaries.b.x},
-      {primaries.r.y, primaries.g.y, primaries.b.y},
-      {1 - primaries.r.x - primaries.r.y, 1 - primaries.g.x - primaries.g.y,
-       1 - primaries.b.x - primaries.b.y}};
-  JXL_RETURN_IF_ERROR(Inv3x3Matrix(&chromaticities[0][0]));
-  const double ys[3] = {primaries.r.y, primaries.g.y, primaries.b.y};
-  for (size_t i = 0; i < 3; ++i) {
-    luminances[i] = ys[i] * (chromaticities[i][0] * white_XYZ[0] +
-                             chromaticities[i][1] * white_XYZ[1] +
-                             chromaticities[i][2] * white_XYZ[2]);
-  }
-  return true;
-}
-
-Status ApplyHlgOotf(JxlCms* t, float* JXL_RESTRICT buf, size_t xsize,
-                    bool forward) {
-  if (295 <= t->intensity_target && t->intensity_target <= 305) {
-    // The gamma is approximately 1 so this can essentially be skipped.
-    return true;
-  }
-  float gamma = 1.2f * std::pow(1.111f, std::log2(t->intensity_target * 1e-3f));
-  if (!forward) gamma = 1.f / gamma;
-
-  switch (t->hlg_ootf_num_channels) {
-    case 1:
-      for (size_t x = 0; x < xsize; ++x) {
-        buf[x] = std::pow(buf[x], gamma);
-      }
-      break;
-
-    case 3:
-      for (size_t x = 0; x < xsize; x += 3) {
-        const float luminance = buf[x] * t->hlg_ootf_luminances[0] +
-                                buf[x + 1] * t->hlg_ootf_luminances[1] +
-                                buf[x + 2] * t->hlg_ootf_luminances[2];
-        const float ratio = std::pow(luminance, gamma - 1);
-        if (std::isfinite(ratio)) {
-          buf[x] *= ratio;
-          buf[x + 1] *= ratio;
-          buf[x + 2] *= ratio;
-          if (forward && gamma < 1) {
-            // If gamma < 1, the ratio above will be > 1 which can push bright
-            // saturated highlights out of gamut. There are several possible
-            // ways to bring them back in-gamut; this one preserves hue and
-            // saturation at the slight expense of luminance. If !forward, the
-            // previously-applied forward OOTF with gamma > 1 already pushed
-            // those highlights down and we are simply putting them back where
-            // they were so this is not necessary.
-            const float maximum =
-                std::max(buf[x], std::max(buf[x + 1], buf[x + 2]));
-            if (maximum > 1) {
-              const float normalizer = 1.f / maximum;
-              buf[x] *= normalizer;
-              buf[x + 1] *= normalizer;
-              buf[x + 2] *= normalizer;
-            }
-          }
-        }
-      }
-      break;
-
-    default:
-      return JXL_FAILURE("HLG OOTF not implemented for %" PRIuS " channels",
-                         t->hlg_ootf_num_channels);
-  }
-  return true;
-}
 
 bool ApplyCICP(const uint8_t color_primaries,
                const uint8_t transfer_characteristics,
@@ -1038,20 +647,8 @@ void ColorEncoding::DecideIfWantICC() {
   want_icc_ = false;
 }
 
-namespace {
+namespace {}  // namespace
 
-}  // namespace
 
-const JxlCmsInterface& GetJxlCms() {
-  static constexpr JxlCmsInterface kInterface = {
-      /*init_data=*/nullptr,
-      /*init=*/&JxlCmsInit,
-      /*get_src_buf=*/&JxlCmsGetSrcBuf,
-      /*get_dst_buf=*/&JxlCmsGetDstBuf,
-      /*run=*/&DoColorSpaceTransform,
-      /*destroy=*/&JxlCmsDestroy};
-  return kInterface;
-}
 
 }  // namespace jxl
-#endif  // HWY_ONCE

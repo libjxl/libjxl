@@ -133,6 +133,8 @@ function(strip_static OUTPUT_VAR LIB_LIST)
   set(${OUTPUT_VAR} ${out_list} PARENT_SCOPE)
 endfunction()
 
+include(jxl_cms.cmake)
+
 # The jxl library definition.
 include(jxl.cmake)
 
@@ -141,7 +143,6 @@ if(JPEGXL_ENABLE_TOOLS)
   include(jxl_extras.cmake)
 endif()
 include(jxl_threads.cmake)
-include(jxl_cms.cmake)
 find_package(JPEG)
 if (JPEG_FOUND AND JPEGXL_ENABLE_JPEGLI)
   include(jpegli.cmake)

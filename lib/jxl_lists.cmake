@@ -632,5 +632,6 @@ set(JPEGXL_INTERNAL_THREADS_SOURCES
 
 set(JPEGXL_INTERNAL_CMS_SOURCES
   jxl/jxl_cms.h
+  jxl/jxl_cms_internal.h
   jxl/jxl_cms.cc
 )

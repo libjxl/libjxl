@@ -5,8 +5,8 @@
 #ifndef LIB_JXL_JXL_CMS_H_
 #define LIB_JXL_JXL_CMS_H_
 
-#include "lib/jxl/color_management.h"
+#include <jxl/cms_interface.h>
 
 const JxlCmsInterface& GetJxlCms();
 
-#endif
+#endif // LIB_JXL_JXL_CMS_H_
