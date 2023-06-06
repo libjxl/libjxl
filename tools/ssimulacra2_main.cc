@@ -43,14 +43,21 @@ int main(int argc, char** argv) {
 
   jxl::CodecInOut io1;
   jxl::CodecInOut io2;
-  JXL_CHECK(SetFromFile(argv[1], jxl::extras::ColorHints(), &io1));
+  if (!SetFromFile(argv[1], jxl::extras::ColorHints(), &io1)) {
+    fprintf(stderr, "Could not load original image: %s\n", argv[1]);
+    return 1;
+  }
 
   if (io1.xsize() < 8 || io1.ysize() < 8) {
     fprintf(stderr, "Minimum image size is 8x8 pixels\n");
     return 1;
   }
 
-  JXL_CHECK(SetFromFile(argv[2], jxl::extras::ColorHints(), &io2));
+  if (!SetFromFile(argv[2], jxl::extras::ColorHints(), &io2)) {
+    fprintf(stderr, "Could not load distorted image: %s\n", argv[2]);
+    return 1;
+  }
+
   if (io1.xsize() != io2.xsize() || io1.ysize() != io2.ysize()) {
     fprintf(stderr, "Image size mismatch\n");
     return 1;
