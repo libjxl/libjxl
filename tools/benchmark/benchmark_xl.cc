@@ -239,16 +239,17 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
         }
         distance = ButteraugliDistance(ib1, ib2, params, jxl::GetJxlCms(),
                                        &distmap, inner_pool);
-        // Ensure pixels in range 0-1
-        s->distance_2 += ComputeDistance2(ib1, ib2, jxl::GetJxlCms());
       } else {
         // TODO(veluca): re-upsample and compute proper distance.
         distance = 1e+4f;
         distmap = ImageF(1, 1);
         distmap.Row(0)[0] = distance;
-        s->distance_2 += distance;
       }
       // Update stats
+      s->psnr +=
+          compressed->size()
+              ? jxl::ComputePSNR(ib1, ib2, jxl::GetJxlCms()) * input_pixels
+              : 0;
       s->distance_p_norm +=
           ComputeDistanceP(distmap, ButteraugliParams(), Args()->error_pnorm) *
           input_pixels;
@@ -670,17 +671,12 @@ struct StatPrinter {
     double comp_bpp =
         t.stats.total_compressed_size * 8.0 / t.stats.total_input_pixels;
     double p_norm = t.stats.distance_p_norm / t.stats.total_input_pixels;
+    double psnr = t.stats.psnr / t.stats.total_input_pixels;
     double bpp_p_norm = p_norm * comp_bpp;
 
     const double adj_comp_bpp =
         t.stats.total_adj_compressed_size * 8.0 / t.stats.total_input_pixels;
 
-    const double rmse =
-        std::sqrt(t.stats.distance_2 / t.stats.total_input_pixels);
-    const double psnr = t.stats.total_compressed_size == 0 ? 0.0
-                        : (t.stats.distance_2 == 0)
-                            ? 99.99
-                            : (20 * std::log10(1 / rmse));
     size_t pixels = t.stats.total_input_pixels;
 
     const double enc_mps =

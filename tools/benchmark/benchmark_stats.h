@@ -64,8 +64,7 @@ struct BenchmarkStats {
   float max_distance = -1.0;  // Max butteraugli score
   // sum of 8th powers of butteraugli distmap pixels.
   double distance_p_norm = 0.0;
-  // sum of 2nd powers of differences between R, G, B.
-  double distance_2 = 0.0;
+  double psnr = 0.0;
   double ssimulacra2 = 0.0;
   std::vector<float> distances;
   size_t total_errors = 0;
