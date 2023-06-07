@@ -463,8 +463,8 @@ jobs:
       - name: Patch
         run: |
           cd third_party/highway
-          git fetch origin f670ea580bb70b4113b63b9cdaa42ba9b10cd13a
-          git checkout f670ea580bb70b4113b63b9cdaa42ba9b10cd13a
+          git fetch origin 31fbbd7ce1e4179a32d86688cd67316556f582bf
+          git checkout 31fbbd7ce1e4179a32d86688cd67316556f582bf
           git apply ${{ github.workspace }}/.github/workflows/highway.patch
       - name: Build
         run: bazel build -c opt ...:all
