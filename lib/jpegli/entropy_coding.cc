@@ -352,9 +352,8 @@ void ProgressMonitorHistogramPass(j_compress_ptr cinfo, size_t scan_index,
   (*cinfo->progress->progress_monitor)(reinterpret_cast<j_common_ptr>(cinfo));
 }
 
-bool ProcessScan(j_compress_ptr cinfo,
-                 size_t scan_index, int* histo_index, Histogram* dc_histograms,
-                 Histogram* ac_histograms) {
+bool ProcessScan(j_compress_ptr cinfo, size_t scan_index, int* histo_index,
+                 Histogram* dc_histograms, Histogram* ac_histograms) {
   jpeg_comp_master* m = cinfo->master;
   size_t restart_interval = RestartIntervalForScan(cinfo, scan_index);
   int restarts_to_go = restart_interval;
@@ -448,8 +447,7 @@ bool ProcessScan(j_compress_ptr cinfo,
   return true;
 }
 
-void ProcessJpeg(j_compress_ptr cinfo,
-                 std::vector<Histogram>* dc_histograms,
+void ProcessJpeg(j_compress_ptr cinfo, std::vector<Histogram>* dc_histograms,
                  std::vector<Histogram>* ac_histograms) {
   int histo_index = 0;
   for (int i = 0; i < cinfo->num_scans; ++i) {

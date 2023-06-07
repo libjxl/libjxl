@@ -3,8 +3,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include "tools/icc_detect/icc_detect.h"
-
 #include <stdint.h>
 #include <stdlib.h>
 #include <xcb/xcb.h>
@@ -12,6 +10,8 @@
 #include <QX11Info>
 #include <algorithm>
 #include <memory>
+
+#include "tools/icc_detect/icc_detect.h"
 
 namespace jpegxl {
 namespace tools {

@@ -133,6 +133,11 @@ function(strip_static OUTPUT_VAR LIB_LIST)
   set(${OUTPUT_VAR} ${out_list} PARENT_SCOPE)
 endfunction()
 
+add_library(jxl_includes INTERFACE)
+target_include_directories(jxl_includes SYSTEM INTERFACE
+  "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>"
+)
+
 include(jxl_cms.cmake)
 
 # The jxl library definition.

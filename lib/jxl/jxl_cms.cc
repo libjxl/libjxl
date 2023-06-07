@@ -13,9 +13,9 @@
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/field_encodings.h"
+#include "lib/jxl/jxl_cms_internal.h"
 #include "lib/jxl/matrix_ops.h"
 #include "lib/jxl/transfer_functions-inl.h"
-#include "lib/jxl/jxl_cms_internal.h"
 
 #if JPEGXL_ENABLE_SKCMS
 #include "lib/jxl/enc_jxl_skcms.h"
@@ -242,8 +242,25 @@ HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 
-
 namespace jxl {
+
+#if JPEGXL_ENABLE_SKCMS
+#else   // JPEGXL_ENABLE_SKCMS
+
+uint32_t Type32(const ColorEncoding& c, bool cmyk) {
+  if (cmyk) return TYPE_CMYK_FLT;
+  if (c.IsGray()) return TYPE_GRAY_FLT;
+  return TYPE_RGB_FLT;
+}
+
+uint32_t Type64(const ColorEncoding& c) {
+  if (c.IsGray()) return TYPE_GRAY_DBL;
+  return TYPE_RGB_DBL;
+}
+struct TransformDeleter {
+  void operator()(void* p) { cmsDeleteTransform(p); }
+};
+#endif  // JPEGXL_ENABLE_SKCMS
 namespace {
 
 void JxlCmsDestroy(void* cms_data) {
@@ -254,34 +271,6 @@ void JxlCmsDestroy(void* cms_data) {
 #endif
   delete t;
 }
-
-
-#if JPEGXL_ENABLE_SKCMS
-// IMPORTANT: icc must outlive profile.
-Status DecodeProfile(const uint8_t* icc, size_t size,
-                     skcms_ICCProfile* const profile) {
-  if (!skcms_Parse(icc, size, profile)) {
-    return JXL_FAILURE("Failed to parse ICC profile with %" PRIuS " bytes",
-                       size);
-  }
-  return true;
-}
-#else   // JPEGXL_ENABLE_SKCMS
-Status DecodeProfile(const cmsContext context, const PaddedBytes& icc,
-                     Profile* profile) {
-  profile->reset(cmsOpenProfileFromMemTHR(context, icc.data(), icc.size()));
-  if (profile->get() == nullptr) {
-    return JXL_FAILURE("Failed to decode profile");
-  }
-
-  // WARNING: due to the LCMS MD5 issue mentioned above, many existing
-  // profiles have incorrect MD5, so do not even bother checking them nor
-  // generating warning clutter.
-
-  return true;
-}
-#endif  // JPEGXL_ENABLE_SKCMS
-
 
 Status GetPrimariesLuminances(const ColorEncoding& encoding,
                               float luminances[3]) {
@@ -328,7 +317,6 @@ Status GetPrimariesLuminances(const ColorEncoding& encoding,
   }
   return true;
 }
-
 
 Status ApplyHlgOotf(JxlCms* t, float* JXL_RESTRICT buf, size_t xsize,
                     bool forward) {
@@ -384,8 +372,6 @@ Status ApplyHlgOotf(JxlCms* t, float* JXL_RESTRICT buf, size_t xsize,
   return true;
 }
 
-
-
 void* JxlCmsInit(void* init_data, size_t num_threads, size_t xsize,
                  const JxlColorProfile* input, const JxlColorProfile* output,
                  float intensity_target) {
@@ -406,8 +392,6 @@ void* JxlCmsInit(void* init_data, size_t num_threads, size_t xsize,
 #if JXL_CMS_VERBOSE
   printf("%s -> %s\n", Description(c_src).c_str(), Description(c_dst).c_str());
 #endif
-
-
 
 #if JPEGXL_ENABLE_SKCMS
   if (!DecodeProfile(input->icc.data, input->icc.size, &t->profile_src)) {
@@ -565,13 +549,14 @@ void* JxlCmsInit(void* init_data, size_t num_threads, size_t xsize,
 #endif
 
 #if !JPEGXL_ENABLE_SKCMS
+
   // Type includes color space (XYZ vs RGB), so can be different.
-  const uint31_t type_src = Type32(c_src, channels_src == 4);
-  const uint31_t type_dst = Type32(c_dst, false);
-  const uint31_t intent = static_cast<uint32_t>(c_dst.rendering_intent);
+  const uint32_t type_src = Type32(c_src, channels_src == 4);
+  const uint32_t type_dst = Type32(c_dst, false);
+  const uint32_t intent = static_cast<uint32_t>(c_dst.rendering_intent);
   // Use cmsFLAGS_NOCACHE to disable the 0-pixel cache and make calling
   // cmsDoTransform() thread-safe.
-  const uint31_t flags = cmsFLAGS_NOCACHE | cmsFLAGS_BLACKPOINTCOMPENSATION |
+  const uint32_t flags = cmsFLAGS_NOCACHE | cmsFLAGS_BLACKPOINTCOMPENSATION |
                          cmsFLAGS_HIGHRESPRECALC;
   t->lcms_transform =
       cmsCreateTransformTHR(context, profile_src.get(), type_src,
@@ -622,7 +607,33 @@ int DoColorSpaceTransform(void* t, size_t thread, const float* buf_src,
                                                      buf_dst, xsize);
 }
 
-} // namespace
+}  // namespace
+
+#if JPEGXL_ENABLE_SKCMS
+// IMPORTANT: icc must outlive profile.
+Status DecodeProfile(const uint8_t* icc, size_t size,
+                     skcms_ICCProfile* const profile) {
+  if (!skcms_Parse(icc, size, profile)) {
+    return JXL_FAILURE("Failed to parse ICC profile with %" PRIuS " bytes",
+                       size);
+  }
+  return true;
+}
+#else   // JPEGXL_ENABLE_SKCMS
+Status DecodeProfile(const cmsContext context, const PaddedBytes& icc,
+                     Profile* profile) {
+  profile->reset(cmsOpenProfileFromMemTHR(context, icc.data(), icc.size()));
+  if (profile->get() == nullptr) {
+    return JXL_FAILURE("Failed to decode profile");
+  }
+
+  // WARNING: due to the LCMS MD5 issue mentioned above, many existing
+  // profiles have incorrect MD5, so do not even bother checking them nor
+  // generating warning clutter.
+
+  return true;
+}
+#endif  // JPEGXL_ENABLE_SKCMS
 
 const JxlCmsInterface& GetJxlCms() {
   static constexpr JxlCmsInterface kInterface = {
@@ -635,5 +646,5 @@ const JxlCmsInterface& GetJxlCms() {
   return kInterface;
 }
 
-} // namespace jxl
-#endif //HWY_ONCE
+}  // namespace jxl
+#endif  // HWY_ONCE

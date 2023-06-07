@@ -93,10 +93,7 @@ foreach(path ${JPEGXL_INTERNAL_PUBLIC_HEADERS})
   )
 endforeach()
 
-add_library(jxl_includes INTERFACE)
-target_include_directories(jxl_includes SYSTEM INTERFACE
-  "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>"
-)
+
 add_dependencies(jxl_includes jxl_export)
 
 # Base headers / utilities.
@@ -176,6 +173,8 @@ add_library(jxl_dec-static STATIC
 )
 target_link_libraries(jxl_dec-static
   PUBLIC ${JPEGXL_COVERAGE_FLAGS} ${JPEGXL_DEC_INTERNAL_LIBS} jxl_includes)
+target_link_libraries(jxl_dec-static
+  PRIVATE jxl_cms-static)
 
 # The list of objects in the static and shared libraries.
 set(JPEGXL_INTERNAL_OBJECTS
@@ -253,7 +252,7 @@ set_target_properties(jxl PROPERTIES
 add_library(jxl_dec SHARED $<TARGET_OBJECTS:jxl_base-obj> $<TARGET_OBJECTS:jxl_dec-obj>)
 strip_static(JPEGXL_DEC_INTERNAL_SHARED_LIBS JPEGXL_DEC_INTERNAL_LIBS)
 target_link_libraries(jxl_dec PUBLIC ${JPEGXL_COVERAGE_FLAGS} jxl_includes)
-target_link_libraries(jxl_dec PRIVATE ${JPEGXL_DEC_INTERNAL_SHARED_LIBS})
+target_link_libraries(jxl_dec PRIVATE ${JPEGXL_DEC_INTERNAL_SHARED_LIBS}, jxl_cms-static)
 # Shared library include path contains only the "include/" paths.
 set_target_properties(jxl_dec PROPERTIES
   VERSION ${JPEGXL_LIBRARY_VERSION}

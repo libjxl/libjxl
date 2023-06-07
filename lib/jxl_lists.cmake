@@ -34,6 +34,12 @@ set(JPEGXL_INTERNAL_BASE_SOURCES
   jxl/base/tsc_timer.h
 )
 
+set(JPEGXL_INTERNAL_CMS_SOURCES
+  jxl/jxl_cms.cc
+  jxl/jxl_cms.h
+  jxl/jxl_cms_internal.h
+)
+
 set(JPEGXL_INTERNAL_CODEC_APNG_SOURCES
   extras/dec/apng.cc
   extras/dec/apng.h
@@ -628,10 +634,4 @@ set(JPEGXL_INTERNAL_THREADS_SOURCES
   threads/thread_parallel_runner.cc
   threads/thread_parallel_runner_internal.cc
   threads/thread_parallel_runner_internal.h
-)
-
-set(JPEGXL_INTERNAL_CMS_SOURCES
-  jxl/jxl_cms.h
-  jxl/jxl_cms_internal.h
-  jxl/jxl_cms.cc
 )

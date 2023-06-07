@@ -34,6 +34,12 @@ libjxl_base_sources = [
     "jxl/base/tsc_timer.h",
 ]
 
+libjxl_cms_sources = [
+    "jxl/jxl_cms.cc",
+    "jxl/jxl_cms.h",
+    "jxl/jxl_cms_internal.h",
+]
+
 libjxl_codec_apng_sources = [
     "extras/dec/apng.cc",
     "extras/dec/apng.h",

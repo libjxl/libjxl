@@ -9,4 +9,4 @@
 
 const JxlCmsInterface& GetJxlCms();
 
-#endif // LIB_JXL_JXL_CMS_H_
+#endif  // LIB_JXL_JXL_CMS_H_

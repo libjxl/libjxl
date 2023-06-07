@@ -15,6 +15,9 @@ target_include_directories(jxl_cms-static PUBLIC
 "${JXL_HWY_INCLUDE_DIRS}"
 )
 
+jxl_link_libraries(jxl_cms-static jxl_includes)
+target_link_libraries(jxl_cms-static
+  PUBLIC ${JPEGXL_COVERAGE_FLAGS} ${JPEGXL_DEC_INTERNAL_LIBS} jxl_includes)
 
 if (JPEGXL_ENABLE_SKCMS)
   target_include_directories(jxl_cms-static PRIVATE

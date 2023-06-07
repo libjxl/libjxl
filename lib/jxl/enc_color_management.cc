@@ -26,9 +26,9 @@
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/field_encodings.h"
+#include "lib/jxl/jxl_cms_internal.h"
 #include "lib/jxl/matrix_ops.h"
 #include "lib/jxl/transfer_functions-inl.h"
-#include "lib/jxl/jxl_cms_internal.h"
 
 #if JPEGXL_ENABLE_SKCMS
 #include "lib/jxl/enc_jxl_skcms.h"
@@ -75,14 +75,6 @@ JXL_MUST_USE_RESULT cmsCIEXYZ D50_XYZ() {
 
 // RAII
 
-struct ProfileDeleter {
-  void operator()(void* p) { cmsCloseProfile(p); }
-};
-using Profile = std::unique_ptr<void, ProfileDeleter>;
-
-struct TransformDeleter {
-  void operator()(void* p) { cmsDeleteTransform(p); }
-};
 using Transform = std::unique_ptr<void, TransformDeleter>;
 
 struct CurveDeleter {
@@ -256,17 +248,6 @@ void DetectTransferFunction(const skcms_ICCProfile& profile,
 }
 
 #else  // JPEGXL_ENABLE_SKCMS
-
-uint32_t Type32(const ColorEncoding& c, bool cmyk) {
-  if (cmyk) return TYPE_CMYK_FLT;
-  if (c.IsGray()) return TYPE_GRAY_FLT;
-  return TYPE_RGB_FLT;
-}
-
-uint32_t Type64(const ColorEncoding& c) {
-  if (c.IsGray()) return TYPE_GRAY_DBL;
-  return TYPE_RGB_DBL;
-}
 
 ColorSpace ColorSpaceFromProfile(const Profile& profile) {
   switch (cmsGetColorSpace(profile.get())) {
@@ -490,24 +471,7 @@ void DetectTransferFunction(const cmsContext context, const Profile& profile,
   c->tf.SetTransferFunction(TransferFunction::kUnknown);
 }
 
-void ErrorHandler(cmsContext context, cmsUInt32Number code, const char* text) {
-  JXL_WARNING("LCMS error %u: %s", code, text);
-}
-
-// Returns a context for the current thread, creating it if necessary.
-cmsContext GetContext() {
-  static thread_local void* context_;
-  if (context_ == nullptr) {
-    context_ = cmsCreateContext(nullptr, nullptr);
-    JXL_ASSERT(context_ != nullptr);
-
-    cmsSetLogErrorHandlerTHR(static_cast<cmsContext>(context_), &ErrorHandler);
-  }
-  return static_cast<cmsContext>(context_);
-}
-
 #endif  // JPEGXL_ENABLE_SKCMS
-
 
 bool ApplyCICP(const uint8_t color_primaries,
                const uint8_t transfer_characteristics,
@@ -648,7 +612,5 @@ void ColorEncoding::DecideIfWantICC() {
 }
 
 namespace {}  // namespace
-
-
 
 }  // namespace jxl

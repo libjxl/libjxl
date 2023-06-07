@@ -5,10 +5,6 @@
 
 #include "tools/comparison_viewer/split_image_renderer.h"
 
-#include <algorithm>
-#include <cmath>
-#include <utility>
-
 #include <QEvent>
 #include <QGuiApplication>
 #include <QPainter>
@@ -16,6 +12,9 @@
 #include <QPen>
 #include <QPoint>
 #include <QRect>
+#include <algorithm>
+#include <cmath>
+#include <utility>
 
 namespace jpegxl {
 namespace tools {

@@ -53,13 +53,33 @@ Status ApplyHlgOotf(JxlCms* t, float* JXL_RESTRICT buf, size_t xsize,
 #if JPEGXL_ENABLE_SKCMS
 Status DecodeProfile(const uint8_t* icc, size_t size,
                      skcms_ICCProfile* const profile);
-#else   // JPEGXL_ENABLE_SKCMS
+#else  // JPEGXL_ENABLE_SKCMS
+
+struct ProfileDeleter {
+  void operator()(void* p) { cmsCloseProfile(p); }
+};
+using Profile = std::unique_ptr<void, ProfileDeleter>;
+
+void ErrorHandler(cmsContext context, cmsUInt32Number code, const char* text) {
+  JXL_WARNING("LCMS error %u: %s", code, text);
+}
+
+// Returns a context for the current thread, creating it if necessary.
+cmsContext GetContext() {
+  static thread_local void* context_;
+  if (context_ == nullptr) {
+    context_ = cmsCreateContext(nullptr, nullptr);
+    JXL_ASSERT(context_ != nullptr);
+
+    cmsSetLogErrorHandlerTHR(static_cast<cmsContext>(context_), &ErrorHandler);
+  }
+  return static_cast<cmsContext>(context_);
+}
+
 Status DecodeProfile(const cmsContext context, const PaddedBytes& icc,
                      Profile* profile);
 #endif
 
 }  // namespace jxl
 
-
-
-#endif // LIB_JXL_JXL_CMS_INTERNAL_H_
+#endif  // LIB_JXL_JXL_CMS_INTERNAL_H_
