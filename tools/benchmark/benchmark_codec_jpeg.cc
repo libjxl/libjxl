@@ -62,7 +62,6 @@ class JPEGCodec : public ImageCodec {
     }
 #endif
     if (param.compare(0, 3, "yuv") == 0) {
-      if (param.size() != 6) return false;
       chroma_subsampling_ = param.substr(3);
       return true;
     }
@@ -208,6 +207,15 @@ class JPEGCodec : public ImageCodec {
       if (progressive_id_ >= 0) {
         encoder->SetOption("progressive", std::to_string(progressive_id_));
       }
+#if JPEGXL_ENABLE_JPEGLI
+      if (libjpeg_quality_ > 0) {
+        encoder->SetOption("libjpeg_quality", std::to_string(libjpeg_quality_));
+      }
+      if (!libjpeg_chroma_subsampling_.empty()) {
+        encoder->SetOption("libjpeg_chroma_subsampling",
+                           libjpeg_chroma_subsampling_);
+      }
+#endif
       if (fix_codes_) {
         encoder->SetOption("optimize", "OFF");
       }
