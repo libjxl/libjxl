@@ -153,7 +153,7 @@ void BenchmarkStats::Assimilate(const BenchmarkStats& victim) {
   max_distance += pow(victim.max_distance, 2.0) * victim.total_input_pixels;
   distance_p_norm += victim.distance_p_norm;
   ssimulacra2 += victim.ssimulacra2;
-  distance_2 += victim.distance_2;
+  psnr += victim.psnr;
   distances.insert(distances.end(), victim.distances.begin(),
                    victim.distances.end());
   total_errors += victim.total_errors;
@@ -198,14 +198,10 @@ std::vector<ColumnValue> BenchmarkStats::ComputeColumns(
       ComputeSpeed(total_input_pixels, total_time_encode);
   const double decompression_speed =
       ComputeSpeed(total_input_pixels, total_time_decode);
-  // Already weighted, no need to divide by #channels.
-  const double rmse = std::sqrt(distance_2 / total_input_pixels);
-  const double psnr = total_compressed_size == 0 ? 0.0
-                      : (distance_2 == 0)        ? 99.99
-                                                 : (20 * std::log10(1 / rmse));
-  const double p_norm = distance_p_norm / total_input_pixels;
+  const double psnr_avg = psnr / total_input_pixels;
+  const double p_norm_avg = distance_p_norm / total_input_pixels;
   const double ssimulacra2_avg = ssimulacra2 / total_input_pixels;
-  const double bpp_p_norm = p_norm * comp_bpp;
+  const double bpp_p_norm = p_norm_avg * comp_bpp;
 
   const double max_distance_avg = sqrt(max_distance / total_input_pixels);
 
@@ -220,8 +216,8 @@ std::vector<ColumnValue> BenchmarkStats::ComputeColumns(
   values[5].f = decompression_speed;
   values[6].f = static_cast<double>(max_distance_avg);
   values[7].f = ssimulacra2_avg;
-  values[8].f = p_norm;
-  values[9].f = psnr;
+  values[8].f = p_norm_avg;
+  values[9].f = psnr_avg;
   values[10].f = adj_comp_bpp;
   // The DCT2, DCT4, AFV and DCT4X8 are applied to an 8x8 block by having 4x4
   // DCT2X2s, 2x2 DCT4x4s/AFVs, or 2x1 DCT4X8s, filling the whole 8x8 blocks.
