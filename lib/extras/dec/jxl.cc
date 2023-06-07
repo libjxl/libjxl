@@ -146,7 +146,9 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
   bool can_reconstruct_jpeg = false;
   std::vector<uint8_t> jpeg_data_chunk;
   if (jpeg_bytes != nullptr) {
-    jpeg_data_chunk.resize(16384);
+    // This bound is very likely to be enough to hold the entire
+    // reconstructed JPEG, to avoid having to do expensive retries.
+    jpeg_data_chunk.resize(bytes_size * 3 / 2 + 1024);
     jpeg_bytes->resize(0);
   }
 
