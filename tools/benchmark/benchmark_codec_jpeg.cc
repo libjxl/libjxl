@@ -39,6 +39,50 @@
 namespace jpegxl {
 namespace tools {
 
+struct JPEGArgs {
+  std::string base_quant_fn;
+  float search_q_start;
+  float search_q_min;
+  float search_q_max;
+  int search_max_iters;
+  float search_tolerance;
+  float search_q_precision;
+  float search_first_iter_slope;
+};
+
+static JPEGArgs* const jpegargs = new JPEGArgs;
+
+#define SET_ENCODER_ARG(name)                                  \
+  if (jpegargs->name > 0) {                                    \
+    encoder->SetOption(#name, std::to_string(jpegargs->name)); \
+  }
+
+Status AddCommandLineOptionsJPEGCodec(BenchmarkArgs* args) {
+  args->AddString(&jpegargs->base_quant_fn, "qtables",
+                  "Custom base quantization tables.");
+  args->AddFloat(&jpegargs->search_q_start, "search_q_start",
+                 "Starting quality for quality-to-target search", 0.0f);
+  args->AddFloat(&jpegargs->search_q_min, "search_q_min",
+                 "Minimum quality for quality-to-target search", 0.0f);
+  args->AddFloat(&jpegargs->search_q_max, "search_q_max",
+                 "Maximum quality for quality-to-target search", 0.0f);
+  args->AddFloat(&jpegargs->search_tolerance, "search_tolerance",
+                 "Percentage value, if quality-to-target search result "
+                 "relative error is within this, search stops.",
+                 0.0f);
+  args->AddFloat(&jpegargs->search_q_precision, "search_q_precision",
+                 "If last quality change in quality-to-target search is "
+                 "within this value, search stops.",
+                 0.0f);
+  args->AddFloat(&jpegargs->search_first_iter_slope, "search_first_iter_slope",
+                 "Slope of first extrapolation step in quality-to-target "
+                 "search.",
+                 0.0f);
+  args->AddSigned(&jpegargs->search_max_iters, "search_max_iters",
+                  "Maximum search steps in quality-to-target search.", 0);
+  return true;
+}
+
 class JPEGCodec : public ImageCodec {
  public:
   explicit JPEGCodec(const BenchmarkArgs& args) : ImageCodec(args) {}
@@ -65,21 +109,16 @@ class JPEGCodec : public ImageCodec {
       chroma_subsampling_ = param.substr(3);
       return true;
     }
+    if (param.compare(0, 4, "psnr") == 0) {
+      psnr_target_ = std::stof(param.substr(4));
+      return true;
+    }
     if (param[0] == 'p') {
       progressive_id_ = strtol(param.substr(1).c_str(), nullptr, 10);
       return true;
     }
     if (param == "fix") {
       fix_codes_ = true;
-      return true;
-    }
-#if JPEGXL_ENABLE_JPEGLI
-    if (param == "xyb") {
-      xyb_mode_ = true;
-      return true;
-    }
-    if (param == "std") {
-      use_std_tables_ = true;
       return true;
     }
     if (param[0] == 'Q') {
@@ -91,16 +130,25 @@ class JPEGCodec : public ImageCodec {
       libjpeg_chroma_subsampling_ = param.substr(3);
       return true;
     }
+    if (param == "noaq") {
+      enable_adaptive_quant_ = false;
+      return true;
+    }
+#if JPEGXL_ENABLE_JPEGLI
+    if (param == "xyb") {
+      xyb_mode_ = true;
+      return true;
+    }
+    if (param == "std") {
+      use_std_tables_ = true;
+      return true;
+    }
     if (param == "dec-jpegli") {
       jpeg_decoder_ = "jpegli";
       return true;
     }
     if (param.substr(0, 2) == "bd") {
       bitdepth_ = strtol(param.substr(2).c_str(), nullptr, 10);
-      return true;
-    }
-    if (param == "noaq") {
-      enable_adaptive_quant_ = false;
       return true;
     }
     if (param.substr(0, 6) == "cquant") {
@@ -207,7 +255,6 @@ class JPEGCodec : public ImageCodec {
       if (progressive_id_ >= 0) {
         encoder->SetOption("progressive", std::to_string(progressive_id_));
       }
-#if JPEGXL_ENABLE_JPEGLI
       if (libjpeg_quality_ > 0) {
         encoder->SetOption("libjpeg_quality", std::to_string(libjpeg_quality_));
       }
@@ -215,10 +262,25 @@ class JPEGCodec : public ImageCodec {
         encoder->SetOption("libjpeg_chroma_subsampling",
                            libjpeg_chroma_subsampling_);
       }
-#endif
       if (fix_codes_) {
         encoder->SetOption("optimize", "OFF");
       }
+      if (!enable_adaptive_quant_) {
+        encoder->SetOption("adaptive_q", "OFF");
+      }
+      if (psnr_target_ > 0) {
+        encoder->SetOption("psnr", std::to_string(psnr_target_));
+      }
+      if (!jpegargs->base_quant_fn.empty()) {
+        encoder->SetOption("base_quant_fn", jpegargs->base_quant_fn);
+      }
+      SET_ENCODER_ARG(search_q_start);
+      SET_ENCODER_ARG(search_q_min);
+      SET_ENCODER_ARG(search_q_max);
+      SET_ENCODER_ARG(search_q_precision);
+      SET_ENCODER_ARG(search_tolerance);
+      SET_ENCODER_ARG(search_first_iter_slope);
+      SET_ENCODER_ARG(search_max_iters);
       const double start = jxl::Now();
       JXL_RETURN_IF_ERROR(encoder->Encode(ppf, &encoded, pool));
       const double end = jxl::Now();
@@ -269,19 +331,20 @@ class JPEGCodec : public ImageCodec {
   std::string chroma_subsampling_;
   int progressive_id_ = -1;
   bool fix_codes_ = false;
+  float psnr_target_ = 0.0f;
   bool enc_quality_set_ = false;
+  int libjpeg_quality_ = 0;
+  std::string libjpeg_chroma_subsampling_;
 #if JPEGXL_ENABLE_JPEGLI
   bool xyb_mode_ = false;
   bool use_std_tables_ = false;
-  int libjpeg_quality_ = 0;
-  std::string libjpeg_chroma_subsampling_;
 #endif
+  bool enable_adaptive_quant_ = true;
   // JPEG decoder and its parameters
   std::string jpeg_decoder_ = "libjpeg";
   int num_colors_ = 0;
 #if JPEGXL_ENABLE_JPEGLI
   size_t bitdepth_ = 8;
-  bool enable_adaptive_quant_ = true;
 #endif
 };
 
