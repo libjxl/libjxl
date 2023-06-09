@@ -31,16 +31,25 @@ set(JPEGXL_INTERNAL_LIBS
   brotlienc
 )
 
+set(JPEGXL_INTERNAL_INCLUDE_DIRS
+  "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>"
+  "${JXL_HWY_INCLUDE_DIRS}"
+  "$<BUILD_INTERFACE:$<TARGET_PROPERTY:brotlicommon,INTERFACE_INCLUDE_DIRECTORIES>>"
+)
+
+#TODO(lode): don't depend on CMS for the core library
 if (JPEGXL_ENABLE_SKCMS)
   list(APPEND JPEGXL_INTERNAL_FLAGS -DJPEGXL_ENABLE_SKCMS=1)
+  list(APPEND JPEGXL_INTERNAL_INCLUDE_DIRS $<TARGET_PROPERTY:skcms,INCLUDE_DIRECTORIES>)
   if (JPEGXL_BUNDLE_SKCMS)
     list(APPEND JPEGXL_INTERNAL_FLAGS -DJPEGXL_BUNDLE_SKCMS=1)
     # skcms objects are later added to JPEGXL_INTERNAL_OBJECTS
   else ()
-    list(APPEND JPEGXL_INTERNAL_LIBS skcms)
+    list(APPEND JPEGXL_DEC_INTERNAL_LIBS skcms)
   endif ()
 else ()
-  list(APPEND JPEGXL_INTERNAL_LIBS lcms2)
+list(APPEND JPEGXL_DEC_INTERNAL_LIBS lcms2)
+  list(APPEND JPEGXL_INTERNAL_INCLUDE_DIRS $<TARGET_PROPERTY:lcms2,INCLUDE_DIRECTORIES>)
 endif ()
 
 if (JPEGXL_ENABLE_TRANSCODE_JPEG)
@@ -116,9 +125,7 @@ target_compile_options(jxl_dec-obj PRIVATE ${JPEGXL_INTERNAL_FLAGS})
 target_compile_options(jxl_dec-obj PUBLIC ${JPEGXL_COVERAGE_FLAGS})
 set_property(TARGET jxl_dec-obj PROPERTY POSITION_INDEPENDENT_CODE ON)
 target_include_directories(jxl_dec-obj PUBLIC
-  "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>"
-  "${JXL_HWY_INCLUDE_DIRS}"
-  "$<BUILD_INTERFACE:$<TARGET_PROPERTY:brotlicommon,INTERFACE_INCLUDE_DIRECTORIES>>"
+  ${JPEGXL_INTERNAL_INCLUDE_DIRS}
 )
 target_compile_definitions(jxl_dec-obj PUBLIC
   ${OBJ_COMPILE_DEFINITIONS}
@@ -131,25 +138,12 @@ target_compile_options(jxl_enc-obj PRIVATE ${JPEGXL_INTERNAL_FLAGS})
 target_compile_options(jxl_enc-obj PUBLIC ${JPEGXL_COVERAGE_FLAGS})
 set_property(TARGET jxl_enc-obj PROPERTY POSITION_INDEPENDENT_CODE ON)
 target_include_directories(jxl_enc-obj PUBLIC
-  ${PROJECT_SOURCE_DIR}
-  ${JXL_HWY_INCLUDE_DIRS}
-  $<TARGET_PROPERTY:brotlicommon,INTERFACE_INCLUDE_DIRECTORIES>
+  ${JPEGXL_INTERNAL_INCLUDE_DIRS}
 )
 target_compile_definitions(jxl_enc-obj PUBLIC
   ${OBJ_COMPILE_DEFINITIONS}
 )
 jxl_link_libraries(jxl_enc-obj jxl_base-obj)
-
-#TODO(lode): don't depend on CMS for the core library
-if (JPEGXL_ENABLE_SKCMS)
-  target_include_directories(jxl_enc-obj PRIVATE
-    $<TARGET_PROPERTY:skcms,INCLUDE_DIRECTORIES>
-  )
-else ()
-  target_include_directories(jxl_enc-obj PRIVATE
-    $<TARGET_PROPERTY:lcms2,INCLUDE_DIRECTORIES>
-  )
-endif ()
 
 set_target_properties(jxl_dec-obj PROPERTIES
   CXX_VISIBILITY_PRESET hidden
@@ -163,24 +157,26 @@ set_target_properties(jxl_enc-obj PROPERTIES
   DEFINE_SYMBOL JXL_INTERNAL_LIBRARY_BUILD
 )
 
+# The list of objects in the static and shared libraries.
+set(JPEGXL_DEC_INTERNAL_OBJECTS
+  $<TARGET_OBJECTS:jxl_base-obj>
+  $<TARGET_OBJECTS:jxl_dec-obj>
+)
+
+if (JPEGXL_ENABLE_SKCMS AND JPEGXL_BUNDLE_SKCMS)
+  list(APPEND JPEGXL_DEC_INTERNAL_OBJECTS $<TARGET_OBJECTS:skcms-obj>)
+endif()
+
+set(JPEGXL_INTERNAL_OBJECTS
+  ${JPEGXL_DEC_INTERNAL_OBJECTS}
+  $<TARGET_OBJECTS:jxl_enc-obj>
+)
+
 # Private static library. This exposes all the internal functions and is used
 # for tests.
-add_library(jxl_dec-static STATIC
-  $<TARGET_OBJECTS:jxl_base-obj>
-  $<TARGET_OBJECTS:jxl_dec-obj>
-)
+add_library(jxl_dec-static STATIC ${JPEGXL_DEC_INTERNAL_OBJECTS})
 target_link_libraries(jxl_dec-static
   PUBLIC ${JPEGXL_COVERAGE_FLAGS} ${JPEGXL_DEC_INTERNAL_LIBS} jxl_includes)
-
-# The list of objects in the static and shared libraries.
-set(JPEGXL_INTERNAL_OBJECTS
-  $<TARGET_OBJECTS:jxl_base-obj>
-  $<TARGET_OBJECTS:jxl_enc-obj>
-  $<TARGET_OBJECTS:jxl_dec-obj>
-)
-if (JPEGXL_ENABLE_SKCMS AND JPEGXL_BUNDLE_SKCMS)
-  list(APPEND JPEGXL_INTERNAL_OBJECTS $<TARGET_OBJECTS:skcms-obj>)
-endif()
 
 # Private static library. This exposes all the internal functions and is used
 # for tests.
@@ -245,7 +241,7 @@ set_target_properties(jxl PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 
 # Public shared decoder library.
-add_library(jxl_dec SHARED $<TARGET_OBJECTS:jxl_base-obj> $<TARGET_OBJECTS:jxl_dec-obj>)
+add_library(jxl_dec SHARED ${JPEGXL_DEC_INTERNAL_OBJECTS})
 strip_static(JPEGXL_DEC_INTERNAL_SHARED_LIBS JPEGXL_DEC_INTERNAL_LIBS)
 target_link_libraries(jxl_dec PUBLIC ${JPEGXL_COVERAGE_FLAGS} jxl_includes)
 target_link_libraries(jxl_dec PRIVATE ${JPEGXL_DEC_INTERNAL_SHARED_LIBS})

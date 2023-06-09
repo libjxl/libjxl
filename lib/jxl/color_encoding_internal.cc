@@ -13,7 +13,15 @@
 #include "lib/jxl/color_management.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/fields.h"
+#include "lib/jxl/jxl_cms_internal.h"
 #include "lib/jxl/matrix_ops.h"
+
+#if JPEGXL_ENABLE_SKCMS
+#include "lib/jxl/jxl_skcms.h"
+#else  // JPEGXL_ENABLE_SKCMS
+#include "lcms2.h"
+#include "lcms2_plugin.h"
+#endif  // JPEGXL_ENABLE_SKCMS
 
 namespace jxl {
 namespace {
@@ -201,6 +209,380 @@ Status ConvertExternalToInternalRenderingIntent(
   }
   return JXL_FAILURE("Invalid RenderingIntent enum value");
 }
+
+bool ApplyCICP(const uint8_t color_primaries,
+               const uint8_t transfer_characteristics,
+               const uint8_t matrix_coefficients, const uint8_t full_range,
+               ColorEncoding* JXL_RESTRICT c) {
+  if (matrix_coefficients != 0) return false;
+  if (full_range != 1) return false;
+
+  const auto primaries = static_cast<Primaries>(color_primaries);
+  const auto tf = static_cast<TransferFunction>(transfer_characteristics);
+  if (tf == TransferFunction::kUnknown || !EnumValid(tf)) return false;
+  if (primaries == Primaries::kCustom ||
+      !(color_primaries == 12 || EnumValid(primaries))) {
+    return false;
+  }
+  c->SetColorSpace(ColorSpace::kRGB);
+  c->tf.SetTransferFunction(tf);
+  if (primaries == Primaries::kP3) {
+    c->white_point = WhitePoint::kDCI;
+    c->primaries = Primaries::kP3;
+  } else if (color_primaries == 12) {
+    c->white_point = WhitePoint::kD65;
+    c->primaries = Primaries::kP3;
+  } else {
+    c->white_point = WhitePoint::kD65;
+    c->primaries = primaries;
+  }
+  return true;
+}
+
+#if JPEGXL_ENABLE_SKCMS
+
+ColorSpace ColorSpaceFromProfile(const skcms_ICCProfile& profile) {
+  switch (profile.data_color_space) {
+    case skcms_Signature_RGB:
+    case skcms_Signature_CMYK:
+      // spec says CMYK is encoded as RGB (the kBlack extra channel signals that
+      // it is actually CMYK)
+      return ColorSpace::kRGB;
+    case skcms_Signature_Gray:
+      return ColorSpace::kGray;
+    default:
+      return ColorSpace::kUnknown;
+  }
+}
+
+// vector_out := matmul(matrix, vector_in)
+void MatrixProduct(const skcms_Matrix3x3& matrix, const float vector_in[3],
+                   float vector_out[3]) {
+  for (int i = 0; i < 3; ++i) {
+    vector_out[i] = 0;
+    for (int j = 0; j < 3; ++j) {
+      vector_out[i] += matrix.vals[i][j] * vector_in[j];
+    }
+  }
+}
+
+void DetectTransferFunction(const skcms_ICCProfile& profile,
+                            ColorEncoding* JXL_RESTRICT c) {
+  if (c->tf.SetImplicit()) return;
+
+  float gamma[3] = {};
+  if (profile.has_trc) {
+    const auto IsGamma = [](const skcms_TransferFunction& tf) {
+      return tf.a == 1 && tf.b == 0 &&
+             /* if b and d are zero, it is fine for c not to be */ tf.d == 0 &&
+             tf.e == 0 && tf.f == 0;
+    };
+    for (int i = 0; i < 3; ++i) {
+      if (profile.trc[i].table_entries == 0 &&
+          IsGamma(profile.trc->parametric)) {
+        gamma[i] = 1.f / profile.trc->parametric.g;
+      } else {
+        skcms_TransferFunction approximate_tf;
+        float max_error;
+        if (skcms_ApproximateCurve(&profile.trc[i], &approximate_tf,
+                                   &max_error)) {
+          if (IsGamma(approximate_tf)) {
+            gamma[i] = 1.f / approximate_tf.g;
+          }
+        }
+      }
+    }
+  }
+  if (gamma[0] != 0 && std::abs(gamma[0] - gamma[1]) < 1e-4f &&
+      std::abs(gamma[1] - gamma[2]) < 1e-4f) {
+    if (c->tf.SetGamma(gamma[0])) {
+      skcms_ICCProfile profile_test;
+      PaddedBytes bytes;
+      if (MaybeCreateProfile(*c, &bytes) &&
+          DecodeProfile(bytes.data(), bytes.size(), &profile_test) &&
+          skcms_ApproximatelyEqualProfiles(&profile, &profile_test)) {
+        return;
+      }
+    }
+  }
+
+  for (TransferFunction tf : Values<TransferFunction>()) {
+    // Can only create profile from known transfer function.
+    if (tf == TransferFunction::kUnknown) continue;
+
+    c->tf.SetTransferFunction(tf);
+
+    skcms_ICCProfile profile_test;
+    PaddedBytes bytes;
+    if (MaybeCreateProfile(*c, &bytes) &&
+        DecodeProfile(bytes.data(), bytes.size(), &profile_test) &&
+        skcms_ApproximatelyEqualProfiles(&profile, &profile_test)) {
+      return;
+    }
+  }
+
+  c->tf.SetTransferFunction(TransferFunction::kUnknown);
+}
+
+JXL_MUST_USE_RESULT CIExy CIExyFromXYZ(const float XYZ[3]) {
+  const float factor = 1.f / (XYZ[0] + XYZ[1] + XYZ[2]);
+  CIExy xy;
+  xy.x = XYZ[0] * factor;
+  xy.y = XYZ[1] * factor;
+  return xy;
+}
+
+// Returns white point that was specified when creating the profile.
+JXL_MUST_USE_RESULT Status UnadaptedWhitePoint(const skcms_ICCProfile& profile,
+                                               CIExy* out) {
+  float media_white_point_XYZ[3];
+  if (!skcms_GetWTPT(&profile, media_white_point_XYZ)) {
+    return JXL_FAILURE("ICC profile does not contain WhitePoint tag");
+  }
+  skcms_Matrix3x3 CHAD;
+  if (!skcms_GetCHAD(&profile, &CHAD)) {
+    // If there is no chromatic adaptation matrix, it means that the white point
+    // is already unadapted.
+    *out = CIExyFromXYZ(media_white_point_XYZ);
+    return true;
+  }
+  // Otherwise, it has been adapted to the PCS white point using said matrix,
+  // and the adaptation needs to be undone.
+  skcms_Matrix3x3 inverse_CHAD;
+  if (!skcms_Matrix3x3_invert(&CHAD, &inverse_CHAD)) {
+    return JXL_FAILURE("Non-invertible ChromaticAdaptation matrix");
+  }
+  float unadapted_white_point_XYZ[3];
+  MatrixProduct(inverse_CHAD, media_white_point_XYZ, unadapted_white_point_XYZ);
+  *out = CIExyFromXYZ(unadapted_white_point_XYZ);
+  return true;
+}
+
+Status IdentifyPrimaries(const skcms_ICCProfile& profile,
+                         const CIExy& wp_unadapted, ColorEncoding* c) {
+  if (!c->HasPrimaries()) return true;
+
+  skcms_Matrix3x3 CHAD, inverse_CHAD;
+  if (skcms_GetCHAD(&profile, &CHAD)) {
+    JXL_RETURN_IF_ERROR(skcms_Matrix3x3_invert(&CHAD, &inverse_CHAD));
+  } else {
+    static constexpr skcms_Matrix3x3 kLMSFromXYZ = {
+        {{0.8951, 0.2664, -0.1614},
+         {-0.7502, 1.7135, 0.0367},
+         {0.0389, -0.0685, 1.0296}}};
+    static constexpr skcms_Matrix3x3 kXYZFromLMS = {
+        {{0.9869929, -0.1470543, 0.1599627},
+         {0.4323053, 0.5183603, 0.0492912},
+         {-0.0085287, 0.0400428, 0.9684867}}};
+    static constexpr float kWpD50XYZ[3] = {0.96420288, 1.0, 0.82490540};
+    float wp_unadapted_XYZ[3];
+    JXL_RETURN_IF_ERROR(CIEXYZFromWhiteCIExy(wp_unadapted, wp_unadapted_XYZ));
+    float wp_D50_LMS[3], wp_unadapted_LMS[3];
+    MatrixProduct(kLMSFromXYZ, kWpD50XYZ, wp_D50_LMS);
+    MatrixProduct(kLMSFromXYZ, wp_unadapted_XYZ, wp_unadapted_LMS);
+    inverse_CHAD = {{{wp_unadapted_LMS[0] / wp_D50_LMS[0], 0, 0},
+                     {0, wp_unadapted_LMS[1] / wp_D50_LMS[1], 0},
+                     {0, 0, wp_unadapted_LMS[2] / wp_D50_LMS[2]}}};
+    inverse_CHAD = skcms_Matrix3x3_concat(&kXYZFromLMS, &inverse_CHAD);
+    inverse_CHAD = skcms_Matrix3x3_concat(&inverse_CHAD, &kLMSFromXYZ);
+  }
+
+  float XYZ[3];
+  PrimariesCIExy primaries;
+  CIExy* const chromaticities[] = {&primaries.r, &primaries.g, &primaries.b};
+  for (int i = 0; i < 3; ++i) {
+    float RGB[3] = {};
+    RGB[i] = 1;
+    skcms_Transform(RGB, skcms_PixelFormat_RGB_fff, skcms_AlphaFormat_Opaque,
+                    &profile, XYZ, skcms_PixelFormat_RGB_fff,
+                    skcms_AlphaFormat_Opaque, skcms_XYZD50_profile(), 1);
+    float unadapted_XYZ[3];
+    MatrixProduct(inverse_CHAD, XYZ, unadapted_XYZ);
+    *chromaticities[i] = CIExyFromXYZ(unadapted_XYZ);
+  }
+  return c->SetPrimaries(primaries);
+}
+
+#else  // JPEGXL_ENABLE_SKCMS
+
+ColorSpace ColorSpaceFromProfile(const Profile& profile) {
+  switch (cmsGetColorSpace(profile.get())) {
+    case cmsSigRgbData:
+    case cmsSigCmykData:
+      return ColorSpace::kRGB;
+    case cmsSigGrayData:
+      return ColorSpace::kGray;
+    default:
+      return ColorSpace::kUnknown;
+  }
+}
+
+// (LCMS interface requires xyY but we omit the Y for white points/primaries.)
+
+JXL_MUST_USE_RESULT CIExy CIExyFromxyY(const cmsCIExyY& xyY) {
+  CIExy xy;
+  xy.x = xyY.x;
+  xy.y = xyY.y;
+  return xy;
+}
+
+JXL_MUST_USE_RESULT CIExy CIExyFromXYZ(const cmsCIEXYZ& XYZ) {
+  cmsCIExyY xyY;
+  cmsXYZ2xyY(/*Dest=*/&xyY, /*Source=*/&XYZ);
+  return CIExyFromxyY(xyY);
+}
+
+void DetectTransferFunction(const cmsContext context, const Profile& profile,
+                            ColorEncoding* JXL_RESTRICT c) {
+  if (c->tf.SetImplicit()) return;
+
+  float gamma = 0;
+  if (const auto* gray_trc = reinterpret_cast<const cmsToneCurve*>(
+          cmsReadTag(profile.get(), cmsSigGrayTRCTag))) {
+    const double estimated_gamma =
+        cmsEstimateGamma(gray_trc, /*precision=*/1e-4);
+    if (estimated_gamma > 0) {
+      gamma = 1. / estimated_gamma;
+    }
+  } else {
+    float rgb_gamma[3] = {};
+    int i = 0;
+    for (const auto tag :
+         {cmsSigRedTRCTag, cmsSigGreenTRCTag, cmsSigBlueTRCTag}) {
+      if (const auto* trc = reinterpret_cast<const cmsToneCurve*>(
+              cmsReadTag(profile.get(), tag))) {
+        const double estimated_gamma =
+            cmsEstimateGamma(trc, /*precision=*/1e-4);
+        if (estimated_gamma > 0) {
+          rgb_gamma[i] = 1. / estimated_gamma;
+        }
+      }
+      ++i;
+    }
+    if (rgb_gamma[0] != 0 && std::abs(rgb_gamma[0] - rgb_gamma[1]) < 1e-4f &&
+        std::abs(rgb_gamma[1] - rgb_gamma[2]) < 1e-4f) {
+      gamma = rgb_gamma[0];
+    }
+  }
+
+  if (gamma != 0 && c->tf.SetGamma(gamma)) {
+    PaddedBytes icc_test;
+    if (MaybeCreateProfile(*c, &icc_test) &&
+        ProfileEquivalentToICC(context, profile, icc_test, *c)) {
+      return;
+    }
+  }
+
+  for (TransferFunction tf : Values<TransferFunction>()) {
+    // Can only create profile from known transfer function.
+    if (tf == TransferFunction::kUnknown) continue;
+
+    c->tf.SetTransferFunction(tf);
+
+    PaddedBytes icc_test;
+    if (MaybeCreateProfile(*c, &icc_test) &&
+        ProfileEquivalentToICC(context, profile, icc_test, *c)) {
+      return;
+    }
+  }
+
+  c->tf.SetTransferFunction(TransferFunction::kUnknown);
+}
+
+// Returns white point that was specified when creating the profile.
+// NOTE: we can't just use cmsSigMediaWhitePointTag because its interpretation
+// differs between ICC versions.
+JXL_MUST_USE_RESULT cmsCIEXYZ UnadaptedWhitePoint(const cmsContext context,
+                                                  const Profile& profile,
+                                                  const ColorEncoding& c) {
+  const cmsCIEXYZ* white_point = static_cast<const cmsCIEXYZ*>(
+      cmsReadTag(profile.get(), cmsSigMediaWhitePointTag));
+  if (white_point != nullptr &&
+      cmsReadTag(profile.get(), cmsSigChromaticAdaptationTag) == nullptr) {
+    // No chromatic adaptation matrix: the white point is already unadapted.
+    return *white_point;
+  }
+
+  cmsCIEXYZ XYZ = {1.0, 1.0, 1.0};
+  Profile profile_xyz;
+  if (!CreateProfileXYZ(context, &profile_xyz)) return XYZ;
+  // Array arguments are one per profile.
+  cmsHPROFILE profiles[2] = {profile.get(), profile_xyz.get()};
+  // Leave white point unchanged - that is what we're trying to extract.
+  cmsUInt32Number intents[2] = {INTENT_ABSOLUTE_COLORIMETRIC,
+                                INTENT_ABSOLUTE_COLORIMETRIC};
+  cmsBool black_compensation[2] = {0, 0};
+  cmsFloat64Number adaption[2] = {0.0, 0.0};
+  // Only transforming a single pixel, so skip expensive optimizations.
+  cmsUInt32Number flags = cmsFLAGS_NOOPTIMIZE | cmsFLAGS_HIGHRESPRECALC;
+  Transform xform(cmsCreateExtendedTransform(
+      context, 2, profiles, black_compensation, intents, adaption, nullptr, 0,
+      Type64(c), TYPE_XYZ_DBL, flags));
+  if (!xform) return XYZ;  // TODO(lode): return error
+
+  // xy are relative, so magnitude does not matter if we ignore output Y.
+  const cmsFloat64Number in[3] = {1.0, 1.0, 1.0};
+  cmsDoTransform(xform.get(), in, &XYZ.X, 1);
+  return XYZ;
+}
+
+Status IdentifyPrimaries(const cmsContext context, const Profile& profile,
+                         const cmsCIEXYZ& wp_unadapted, ColorEncoding* c) {
+  if (!c->HasPrimaries()) return true;
+  if (ColorSpaceFromProfile(profile) == ColorSpace::kUnknown) return true;
+
+  // These were adapted to the profile illuminant before storing in the profile.
+  const cmsCIEXYZ* adapted_r = static_cast<const cmsCIEXYZ*>(
+      cmsReadTag(profile.get(), cmsSigRedColorantTag));
+  const cmsCIEXYZ* adapted_g = static_cast<const cmsCIEXYZ*>(
+      cmsReadTag(profile.get(), cmsSigGreenColorantTag));
+  const cmsCIEXYZ* adapted_b = static_cast<const cmsCIEXYZ*>(
+      cmsReadTag(profile.get(), cmsSigBlueColorantTag));
+
+  cmsCIEXYZ converted_rgb[3];
+  if (adapted_r == nullptr || adapted_g == nullptr || adapted_b == nullptr) {
+    // No colorant tag, determine the XYZ coordinates of the primaries by
+    // converting from the colorspace.
+    Profile profile_xyz;
+    if (!CreateProfileXYZ(context, &profile_xyz)) {
+      return JXL_FAILURE("Failed to retrieve colorants");
+    }
+    // Array arguments are one per profile.
+    cmsHPROFILE profiles[2] = {profile.get(), profile_xyz.get()};
+    cmsUInt32Number intents[2] = {INTENT_RELATIVE_COLORIMETRIC,
+                                  INTENT_RELATIVE_COLORIMETRIC};
+    cmsBool black_compensation[2] = {0, 0};
+    cmsFloat64Number adaption[2] = {0.0, 0.0};
+    // Only transforming three pixels, so skip expensive optimizations.
+    cmsUInt32Number flags = cmsFLAGS_NOOPTIMIZE | cmsFLAGS_HIGHRESPRECALC;
+    Transform xform(cmsCreateExtendedTransform(
+        context, 2, profiles, black_compensation, intents, adaption, nullptr, 0,
+        Type64(*c), TYPE_XYZ_DBL, flags));
+    if (!xform) return JXL_FAILURE("Failed to retrieve colorants");
+
+    const cmsFloat64Number in[9] = {1.0, 0.0, 0.0, 0.0, 1.0,
+                                    0.0, 0.0, 0.0, 1.0};
+    cmsDoTransform(xform.get(), in, &converted_rgb->X, 3);
+    adapted_r = &converted_rgb[0];
+    adapted_g = &converted_rgb[1];
+    adapted_b = &converted_rgb[2];
+  }
+
+  // TODO(janwas): no longer assume Bradford and D50.
+  // Undo the chromatic adaptation.
+  const cmsCIEXYZ d50 = D50_XYZ();
+
+  cmsCIEXYZ r, g, b;
+  cmsAdaptToIlluminant(&r, &d50, &wp_unadapted, adapted_r);
+  cmsAdaptToIlluminant(&g, &d50, &wp_unadapted, adapted_g);
+  cmsAdaptToIlluminant(&b, &d50, &wp_unadapted, adapted_b);
+
+  const PrimariesCIExy rgb = {CIExyFromXYZ(r), CIExyFromXYZ(g),
+                              CIExyFromXYZ(b)};
+  return c->SetPrimaries(rgb);
+}
+
+#endif  // !JPEGXL_ENABLE_SKCMS
 
 }  // namespace
 
@@ -568,6 +950,96 @@ Status ColorEncoding::VisitFields(Visitor* JXL_RESTRICT visitor) {
   } else {
     if (ICC().empty()) return JXL_FAILURE("Empty ICC");
   }
+
+  return true;
+}
+
+Status ColorEncoding::SetFieldsFromICC() {
+  // In case parsing fails, mark the ColorEncoding as invalid.
+  SetColorSpace(ColorSpace::kUnknown);
+  tf.SetTransferFunction(TransferFunction::kUnknown);
+
+  if (icc_.empty()) return JXL_FAILURE("Empty ICC profile");
+
+#if JPEGXL_ENABLE_SKCMS
+  if (icc_.size() < 128) {
+    return JXL_FAILURE("ICC file too small");
+  }
+
+  skcms_ICCProfile profile;
+  JXL_RETURN_IF_ERROR(skcms_Parse(icc_.data(), icc_.size(), &profile));
+
+  // skcms does not return the rendering intent, so get it from the file. It
+  // is encoded as big-endian 32-bit integer in bytes 60..63.
+  uint32_t rendering_intent32 = icc_[67];
+  if (rendering_intent32 > 3 || icc_[64] != 0 || icc_[65] != 0 ||
+      icc_[66] != 0) {
+    return JXL_FAILURE("Invalid rendering intent %u\n", rendering_intent32);
+  }
+  // ICC and RenderingIntent have the same values (0..3).
+  rendering_intent = static_cast<RenderingIntent>(rendering_intent32);
+
+  if (profile.has_CICP && ApplyCICP(profile.CICP.color_primaries,
+                                    profile.CICP.transfer_characteristics,
+                                    profile.CICP.matrix_coefficients,
+                                    profile.CICP.video_full_range_flag, this)) {
+    return true;
+  }
+
+  SetColorSpace(ColorSpaceFromProfile(profile));
+  cmyk_ = (profile.data_color_space == skcms_Signature_CMYK);
+
+  CIExy wp_unadapted;
+  JXL_RETURN_IF_ERROR(UnadaptedWhitePoint(profile, &wp_unadapted));
+  JXL_RETURN_IF_ERROR(SetWhitePoint(wp_unadapted));
+
+  // Relies on color_space.
+  JXL_RETURN_IF_ERROR(IdentifyPrimaries(profile, wp_unadapted, this));
+
+  // Relies on color_space/white point/primaries being set already.
+  DetectTransferFunction(profile, this);
+#else  // JPEGXL_ENABLE_SKCMS
+
+  const cmsContext context = GetContext();
+
+  Profile profile;
+  JXL_RETURN_IF_ERROR(DecodeProfile(context, icc_, &profile));
+
+  static constexpr size_t kCICPSize = 12;
+  static constexpr auto kCICPSignature =
+      static_cast<cmsTagSignature>(0x63696370);
+  uint8_t cicp_buffer[kCICPSize];
+  if (cmsReadRawTag(profile.get(), kCICPSignature, cicp_buffer, kCICPSize) ==
+          kCICPSize &&
+      ApplyCICP(cicp_buffer[8], cicp_buffer[9], cicp_buffer[10],
+                cicp_buffer[11], this)) {
+    return true;
+  }
+
+  const cmsUInt32Number rendering_intent32 =
+      cmsGetHeaderRenderingIntent(profile.get());
+  if (rendering_intent32 > 3) {
+    return JXL_FAILURE("Invalid rendering intent %u\n", rendering_intent32);
+  }
+  // ICC and RenderingIntent have the same values (0..3).
+  rendering_intent = static_cast<RenderingIntent>(rendering_intent32);
+
+  SetColorSpace(ColorSpaceFromProfile(profile));
+  if (cmsGetColorSpace(profile.get()) == cmsSigCmykData) {
+    cmyk_ = true;
+    return true;
+  }
+
+  const cmsCIEXYZ wp_unadapted = UnadaptedWhitePoint(context, profile, *this);
+  JXL_RETURN_IF_ERROR(SetWhitePoint(CIExyFromXYZ(wp_unadapted)));
+
+  // Relies on color_space.
+  JXL_RETURN_IF_ERROR(IdentifyPrimaries(context, profile, wp_unadapted, this));
+
+  // Relies on color_space/white point/primaries being set already.
+  DetectTransferFunction(context, profile, this);
+
+#endif  // JPEGXL_ENABLE_SKCMS
 
   return true;
 }
