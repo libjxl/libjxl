@@ -213,7 +213,7 @@ Status BenchmarkArgs::AddCommandLineOptions() {
 
   if (!AddCommandLineOptionsCustomCodec(this)) return false;
   if (!AddCommandLineOptionsJxlCodec(this)) return false;
-#ifdef BENCHMARK_JPEG
+#ifdef JPEGXL_ENABLE_JPEG
   if (!AddCommandLineOptionsJPEGCodec(this)) return false;
 #endif  // BENCHMARK_JPEG
 #if JPEGXL_ENABLE_APNG
