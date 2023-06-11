@@ -144,7 +144,9 @@ struct CompressArgs {
     cmdline->AddOptionValue(
         'e', "effort", "EFFORT",
         "Encoder effort setting. Range: 1 .. 9.\n"
-        "    Default: 7. Higher number is more effort (slower).",
+        "Default: 7. Higher numbers allow more computation, generally "
+        "producing smaller files at same quality. For lossy output, higher "
+        "effort should more accurately reach the target quality.",
         &effort, &ParseUnsigned, -1);
 
     cmdline->AddOptionValue('\0', "compress_boxes", "0|1",
