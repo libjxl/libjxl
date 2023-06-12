@@ -44,6 +44,8 @@ struct JPEGArgs {
   float search_q_start;
   float search_q_min;
   float search_q_max;
+  float search_d_min;
+  float search_d_max;
   int search_max_iters;
   float search_tolerance;
   float search_q_precision;
@@ -66,6 +68,10 @@ Status AddCommandLineOptionsJPEGCodec(BenchmarkArgs* args) {
                  "Minimum quality for quality-to-target search", 0.0f);
   args->AddFloat(&jpegargs->search_q_max, "search_q_max",
                  "Maximum quality for quality-to-target search", 0.0f);
+  args->AddFloat(&jpegargs->search_d_min, "search_d_min",
+                 "Minimum distance for quality-to-target search", 0.0f);
+  args->AddFloat(&jpegargs->search_d_max, "search_d_max",
+                 "Maximum distance for quality-to-target search", 0.0f);
   args->AddFloat(&jpegargs->search_tolerance, "search_tolerance",
                  "Percentage value, if quality-to-target search result "
                  "relative error is within this, search stops.",
@@ -225,6 +231,18 @@ class JPEGCodec : public ImageCodec {
       }
       if (progressive_id_ >= 0) {
         settings.progressive_level = progressive_id_;
+      }
+      if (psnr_target_ > 0) {
+        settings.psnr_target = psnr_target_;
+      }
+      if (jpegargs->search_tolerance > 0) {
+        settings.search_tolerance = 0.01f * jpegargs->search_tolerance;
+      }
+      if (jpegargs->search_d_min > 0) {
+        settings.min_distance = jpegargs->search_d_min;
+      }
+      if (jpegargs->search_d_max > 0) {
+        settings.max_distance = jpegargs->search_d_max;
       }
       settings.chroma_subsampling = chroma_subsampling_;
       settings.use_adaptive_quantization = enable_adaptive_quant_;

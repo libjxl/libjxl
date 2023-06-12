@@ -478,6 +478,8 @@ set(JPEGXL_INTERNAL_JPEGLI_SOURCES
   jpegli/downsample.h
   jpegli/encode.cc
   jpegli/encode.h
+  jpegli/encode_finish.cc
+  jpegli/encode_finish.h
   jpegli/encode_internal.h
   jpegli/encode_streaming.cc
   jpegli/encode_streaming.h

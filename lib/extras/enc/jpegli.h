@@ -31,6 +31,11 @@ struct JpegSettings {
   std::string chroma_subsampling;
   int libjpeg_quality = 0;
   std::string libjpeg_chroma_subsampling;
+  // Parameters for selecting distance based on PSNR target.
+  float psnr_target = 0.0f;
+  float search_tolerance = 0.01;
+  float min_distance = 0.1f;
+  float max_distance = 25.0f;
   // If not empty, must contain concatenated APP marker segments. In this case,
   // these and only these APP marker segments will be written to the JPEG
   // output. In xyb mode app_data must not contain an ICC profile, in this

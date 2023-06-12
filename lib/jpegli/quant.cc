@@ -703,7 +703,7 @@ void SetQuantMatrices(j_compress_ptr cinfo, float distances[NUM_QUANT_TBLS],
   }
 }
 
-void InitQuantizer(j_compress_ptr cinfo) {
+void InitQuantizer(j_compress_ptr cinfo, QuantPass pass) {
   jpeg_comp_master* m = cinfo->master;
   // Compute quantization multupliers from the quant table values.
   for (int c = 0; c < cinfo->num_components; ++c) {
@@ -718,7 +718,17 @@ void InitQuantizer(j_compress_ptr cinfo) {
       if (val == 0) {
         JPEGLI_ERROR("Invalid quantval 0.");
       }
-      m->quant_mul[c][k] = 8.0f / val;
+      switch (pass) {
+        case QuantPass::NO_SEARCH:
+          m->quant_mul[c][k] = 8.0f / val;
+          break;
+        case QuantPass::SEARCH_FIRST_PASS:
+          m->quant_mul[c][k] = 128.0f;
+          break;
+        case QuantPass::SEARCH_SECOND_PASS:
+          m->quant_mul[c][kJPEGZigZagOrder[k]] = 1.0f / (16 * val);
+          break;
+      }
     }
   }
   if (m->use_adaptive_quantization) {
