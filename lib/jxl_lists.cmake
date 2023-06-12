@@ -210,6 +210,7 @@ set(JPEGXL_INTERNAL_DEC_SOURCES
   jxl/image_metadata.h
   jxl/image_ops.h
   jxl/inverse_mtf-inl.h
+  jxl/jxl_cms_internal.h
   jxl/jxl_inspection.h
   jxl/jxl_skcms.h
   jxl/lehmer_code.h

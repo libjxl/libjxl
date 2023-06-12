@@ -31,6 +31,7 @@
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/field_encodings.h"
+#include "lib/jxl/jxl_cms_internal.h"
 #include "lib/jxl/matrix_ops.h"
 #include "lib/jxl/transfer_functions-inl.h"
 #if JPEGXL_ENABLE_SKCMS
@@ -44,41 +45,6 @@
 
 // Define these only once. We can't use HWY_ONCE here because it is defined as
 // 1 only on the last pass.
-#ifndef LIB_JXL_ENC_COLOR_MANAGEMENT_CC_
-#define LIB_JXL_ENC_COLOR_MANAGEMENT_CC_
-
-namespace jxl {
-namespace {
-struct JxlCms {
-#if JPEGXL_ENABLE_SKCMS
-  PaddedBytes icc_src, icc_dst;
-  skcms_ICCProfile profile_src, profile_dst;
-#else
-  void* lcms_transform;
-#endif
-
-  // These fields are used when the HLG OOTF or inverse OOTF must be applied.
-  bool apply_hlg_ootf;
-  size_t hlg_ootf_num_channels;
-  // Y component of the primaries.
-  std::array<float, 3> hlg_ootf_luminances;
-
-  size_t channels_src;
-  size_t channels_dst;
-  ImageF buf_src;
-  ImageF buf_dst;
-  float intensity_target;
-  bool skip_lcms = false;
-  ExtraTF preprocess = ExtraTF::kNone;
-  ExtraTF postprocess = ExtraTF::kNone;
-};
-
-Status ApplyHlgOotf(JxlCms* t, float* JXL_RESTRICT buf, size_t xsize,
-                    bool forward);
-}  // namespace
-}  // namespace jxl
-
-#endif  // LIB_JXL_ENC_COLOR_MANAGEMENT_CC_
 
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
