@@ -757,7 +757,7 @@ ImageBundle RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
 
   PassesDecoderState::PipelineOptions options;
   options.use_slow_render_pipeline = false;
-  options.coalescing = true;
+  options.coalescing = false;
   options.render_spotcolors = false;
 
   // Same as dec_state->shared->frame_header.nonserialized_metadata->m
@@ -833,8 +833,8 @@ void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
     size_t orig_xsize;
     size_t orig_ysize;
   } t(const_cast<ImageBundle&>(linear),
-      enc_state->shared.frame_header.nonserialized_metadata->xsize(),
-      enc_state->shared.frame_header.nonserialized_metadata->ysize());
+      enc_state->shared.frame_header.frame_size.xsize,
+      enc_state->shared.frame_header.frame_size.ysize);
 
   const float butteraugli_target = cparams.butteraugli_distance;
   const float original_butteraugli = cparams.original_butteraugli_distance;
