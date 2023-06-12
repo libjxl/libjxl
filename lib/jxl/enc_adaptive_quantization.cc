@@ -726,6 +726,79 @@ static const float kDcQuantPow = 0.83;
 static const float kDcQuant = 1.095924047623553f;
 static const float kAcQuant = 0.7738;
 
+// Computes the decoded image for a given set of compression parameters.
+ImageBundle RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
+                           const JxlCmsInterface& cms, ThreadPool* pool) {
+  std::unique_ptr<PassesDecoderState> dec_state =
+      jxl::make_unique<PassesDecoderState>();
+  JXL_CHECK(dec_state->output_encoding_info.SetFromMetadata(
+      *enc_state->shared.metadata));
+  dec_state->shared = &enc_state->shared;
+  JXL_ASSERT(opsin.ysize() % kBlockDim == 0);
+
+  const size_t xsize_groups = DivCeil(opsin.xsize(), kGroupDim);
+  const size_t ysize_groups = DivCeil(opsin.ysize(), kGroupDim);
+  const size_t num_groups = xsize_groups * ysize_groups;
+
+  size_t num_special_frames = enc_state->special_frames.size();
+
+  std::unique_ptr<ModularFrameEncoder> modular_frame_encoder =
+      jxl::make_unique<ModularFrameEncoder>(enc_state->shared.frame_header,
+                                            enc_state->cparams);
+  JXL_CHECK(InitializePassesEncoder(opsin, cms, pool, enc_state,
+                                    modular_frame_encoder.get(), nullptr));
+  JXL_CHECK(dec_state->Init());
+  JXL_CHECK(dec_state->InitForAC(pool));
+
+  ImageBundle decoded(&enc_state->shared.metadata->m);
+  decoded.origin = enc_state->shared.frame_header.frame_origin;
+  decoded.SetFromImage(Image3F(opsin.xsize(), opsin.ysize()),
+                       dec_state->output_encoding_info.color_encoding);
+
+  PassesDecoderState::PipelineOptions options;
+  options.use_slow_render_pipeline = false;
+  options.coalescing = true;
+  options.render_spotcolors = false;
+
+  // Same as dec_state->shared->frame_header.nonserialized_metadata->m
+  const ImageMetadata& metadata = *decoded.metadata();
+
+  JXL_CHECK(dec_state->PreparePipeline(&decoded, options));
+
+  hwy::AlignedUniquePtr<GroupDecCache[]> group_dec_caches;
+  const auto allocate_storage = [&](const size_t num_threads) -> Status {
+    JXL_RETURN_IF_ERROR(
+        dec_state->render_pipeline->PrepareForThreads(num_threads,
+                                                      /*use_group_ids=*/false));
+    group_dec_caches = hwy::MakeUniqueAlignedArray<GroupDecCache>(num_threads);
+    return true;
+  };
+  const auto process_group = [&](const uint32_t group_index,
+                                 const size_t thread) {
+    if (dec_state->shared->frame_header.loop_filter.epf_iters > 0) {
+      ComputeSigma(dec_state->shared->BlockGroupRect(group_index),
+                   dec_state.get());
+    }
+    RenderPipelineInput input =
+        dec_state->render_pipeline->GetInputBuffers(group_index, thread);
+    JXL_CHECK(DecodeGroupForRoundtrip(
+        enc_state->coeffs, group_index, dec_state.get(),
+        &group_dec_caches[thread], thread, input, &decoded, nullptr));
+    for (size_t c = 0; c < metadata.num_extra_channels; c++) {
+      std::pair<ImageF*, Rect> ri = input.GetBuffer(3 + c);
+      FillPlane(0.0f, ri.first, ri.second);
+    }
+    input.Done();
+  };
+  JXL_CHECK(RunOnPool(pool, 0, num_groups, allocate_storage, process_group,
+                      "AQ loop"));
+
+  // Ensure we don't create any new special frames.
+  enc_state->special_frames.resize(num_special_frames);
+
+  return decoded;
+}
+
 void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
                           PassesEncoderState* enc_state,
                           const JxlCmsInterface& cms, ThreadPool* pool,
@@ -1080,78 +1153,6 @@ void FindBestQuantizer(const ImageBundle* linear, const Image3F& opsin,
     // Normal encoding to a butteraugli score.
     FindBestQuantization(*linear, opsin, enc_state, cms, pool, aux_out);
   }
-}
-
-ImageBundle RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
-                           const JxlCmsInterface& cms, ThreadPool* pool) {
-  std::unique_ptr<PassesDecoderState> dec_state =
-      jxl::make_unique<PassesDecoderState>();
-  JXL_CHECK(dec_state->output_encoding_info.SetFromMetadata(
-      *enc_state->shared.metadata));
-  dec_state->shared = &enc_state->shared;
-  JXL_ASSERT(opsin.ysize() % kBlockDim == 0);
-
-  const size_t xsize_groups = DivCeil(opsin.xsize(), kGroupDim);
-  const size_t ysize_groups = DivCeil(opsin.ysize(), kGroupDim);
-  const size_t num_groups = xsize_groups * ysize_groups;
-
-  size_t num_special_frames = enc_state->special_frames.size();
-
-  std::unique_ptr<ModularFrameEncoder> modular_frame_encoder =
-      jxl::make_unique<ModularFrameEncoder>(enc_state->shared.frame_header,
-                                            enc_state->cparams);
-  JXL_CHECK(InitializePassesEncoder(opsin, cms, pool, enc_state,
-                                    modular_frame_encoder.get(), nullptr));
-  JXL_CHECK(dec_state->Init());
-  JXL_CHECK(dec_state->InitForAC(pool));
-
-  ImageBundle decoded(&enc_state->shared.metadata->m);
-  decoded.origin = enc_state->shared.frame_header.frame_origin;
-  decoded.SetFromImage(Image3F(opsin.xsize(), opsin.ysize()),
-                       dec_state->output_encoding_info.color_encoding);
-
-  PassesDecoderState::PipelineOptions options;
-  options.use_slow_render_pipeline = false;
-  options.coalescing = true;
-  options.render_spotcolors = false;
-
-  // Same as dec_state->shared->frame_header.nonserialized_metadata->m
-  const ImageMetadata& metadata = *decoded.metadata();
-
-  JXL_CHECK(dec_state->PreparePipeline(&decoded, options));
-
-  hwy::AlignedUniquePtr<GroupDecCache[]> group_dec_caches;
-  const auto allocate_storage = [&](const size_t num_threads) -> Status {
-    JXL_RETURN_IF_ERROR(
-        dec_state->render_pipeline->PrepareForThreads(num_threads,
-                                                      /*use_group_ids=*/false));
-    group_dec_caches = hwy::MakeUniqueAlignedArray<GroupDecCache>(num_threads);
-    return true;
-  };
-  const auto process_group = [&](const uint32_t group_index,
-                                 const size_t thread) {
-    if (dec_state->shared->frame_header.loop_filter.epf_iters > 0) {
-      ComputeSigma(dec_state->shared->BlockGroupRect(group_index),
-                   dec_state.get());
-    }
-    RenderPipelineInput input =
-        dec_state->render_pipeline->GetInputBuffers(group_index, thread);
-    JXL_CHECK(DecodeGroupForRoundtrip(
-        enc_state->coeffs, group_index, dec_state.get(),
-        &group_dec_caches[thread], thread, input, &decoded, nullptr));
-    for (size_t c = 0; c < metadata.num_extra_channels; c++) {
-      std::pair<ImageF*, Rect> ri = input.GetBuffer(3 + c);
-      FillPlane(0.0f, ri.first, ri.second);
-    }
-    input.Done();
-  };
-  JXL_CHECK(RunOnPool(pool, 0, num_groups, allocate_storage, process_group,
-                      "AQ loop"));
-
-  // Ensure we don't create any new special frames.
-  enc_state->special_frames.resize(num_special_frames);
-
-  return decoded;
 }
 
 }  // namespace jxl
