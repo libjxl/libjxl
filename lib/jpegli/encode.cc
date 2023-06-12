@@ -454,13 +454,18 @@ void AllocateBuffers(j_compress_ptr cinfo) {
         Allocate<float>(cinfo, xsize_blocks * DCTSIZE + 8, JPOOL_IMAGE_ALIGNED);
     m->fuzzy_erosion_tmp.Allocate(cinfo, 2, xsize_padded);
     m->pre_erosion.Allocate(cinfo, 6 * cinfo->max_v_samp_factor, xsize_padded);
-    m->quant_field.Allocate(cinfo, cinfo->max_v_samp_factor, xsize_blocks);
-    for (int c = 0; c < cinfo->num_components; ++c) {
-      m->zero_bias_offset[c] =
-          Allocate<float>(cinfo, DCTSIZE2, JPOOL_IMAGE_ALIGNED);
-      m->zero_bias_mul[c] =
-          Allocate<float>(cinfo, DCTSIZE2, JPOOL_IMAGE_ALIGNED);
-    }
+    size_t qf_height = cinfo->max_v_samp_factor;
+    m->quant_field.Allocate(cinfo, qf_height, xsize_blocks);
+  } else {
+    m->quant_field.Allocate(cinfo, 1, m->xsize_blocks);
+    m->quant_field.FillRow(0, 0, m->xsize_blocks);
+  }
+  for (int c = 0; c < cinfo->num_components; ++c) {
+    m->zero_bias_offset[c] =
+        Allocate<float>(cinfo, DCTSIZE2, JPOOL_IMAGE_ALIGNED);
+    m->zero_bias_mul[c] = Allocate<float>(cinfo, DCTSIZE2, JPOOL_IMAGE_ALIGNED);
+    memset(m->zero_bias_mul[c], 0, DCTSIZE2 * sizeof(float));
+    memset(m->zero_bias_offset[c], 0, DCTSIZE2 * sizeof(float));
   }
 }
 
@@ -481,6 +486,7 @@ void InitProgressMonitor(j_compress_ptr cinfo) {
 // Common setup code between streaming and transcoding code paths. Called in
 // both jpegli_start_compress() and jpegli_write_coefficients().
 void InitCompress(j_compress_ptr cinfo, boolean write_all_tables) {
+  jpeg_comp_master* m = cinfo->master;
   (*cinfo->err->reset_error_mgr)(reinterpret_cast<j_common_ptr>(cinfo));
   ProcessCompressionParams(cinfo);
   InitProgressMonitor(cinfo);
@@ -503,7 +509,6 @@ void InitCompress(j_compress_ptr cinfo, boolean write_all_tables) {
   (*cinfo->dest->init_destination)(cinfo);
   WriteFileHeader(cinfo);
   JpegBitWriterInit(cinfo);
-  jpeg_comp_master* m = cinfo->master;
   m->next_iMCU_row = 0;
   m->last_restart_interval = 0;
   m->next_dht_index = 0;
@@ -659,8 +664,8 @@ void jpegli_CreateCompress(j_compress_ptr cinfo, int version,
   memset(cinfo->arith_dc_U, 0, sizeof(cinfo->arith_dc_U));
   memset(cinfo->arith_ac_K, 0, sizeof(cinfo->arith_ac_K));
   cinfo->write_Adobe_marker = false;
-  jpegli::InitializeCompressParams(cinfo);
   cinfo->master = jpegli::Allocate<jpeg_comp_master>(cinfo, 1);
+  jpegli::InitializeCompressParams(cinfo);
   cinfo->master->force_baseline = true;
   cinfo->master->xyb_mode = false;
   cinfo->master->cicp_transfer_function = 2;  // unknown transfer function code

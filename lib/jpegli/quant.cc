@@ -745,6 +745,13 @@ void InitQuantizer(j_compress_ptr cinfo) {
         }
       }
     }
+  } else if (cinfo->jpeg_color_space == JCS_YCbCr) {
+    for (int c = 0; c < cinfo->num_components; ++c) {
+      for (int k = 0; k < DCTSIZE2; ++k) {
+        m->zero_bias_offset[c][k] =
+            k == 0 ? kZeroBiasOffsetYCbCrDC[c] : kZeroBiasOffsetYCbCrAC[c];
+      }
+    }
   }
 }
 
