@@ -50,6 +50,7 @@ For all browsers and to track browsers progress see [Can I Use](https://caniuse.
 - [Affinity (since V2)](https://affinity.serif.com/en-gb/whats-new/)
 - [darktable (since 4.2)](https://github.com/darktable-org/darktable/releases/tag/release-4.2.0)
 - [GIMP (since 2.99.8)](https://www.gimp.org/news/2021/10/20/gimp-2-99-8-released/); plugin for older versions available in libjxl repo
+- [Graphic Converter (since 11.5)](https://www.lemkesoft.de/en/products/graphicconverter/)
 - [Krita](https://invent.kde.org/graphics/krita/-/commit/13e5d2e5b9f0eac5c8064b7767f0b62264a0797b)
 - [Paint.NET](https://www.getpaint.net/index.html); supported since 4.3.12 - requires a [plugin](https://github.com/0xC0000054/pdn-jpegxl) to be downloaded and installed.
 - Photoshop: no plugin available yet, no official support yet
