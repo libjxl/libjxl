@@ -211,6 +211,7 @@ libjxl_dec_sources = [
     "jxl/image_ops.h",
     "jxl/inverse_mtf-inl.h",
     "jxl/jxl_inspection.h",
+    "jxl/jxl_skcms.h"
     "jxl/lehmer_code.h",
     "jxl/loop_filter.cc",
     "jxl/loop_filter.h",
@@ -359,7 +360,6 @@ libjxl_enc_sources = [
     "jxl/enc_icc_codec.h",
     "jxl/enc_image_bundle.cc",
     "jxl/enc_image_bundle.h",
-    "jxl/jxl_skcms.h",
     "jxl/enc_linalg.cc",
     "jxl/enc_linalg.h",
     "jxl/enc_modular.cc",
