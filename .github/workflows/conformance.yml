@@ -15,7 +15,7 @@ on:
     types: [opened, reopened, labeled, synchronize]
 
 env:
-  LIBJXL_VERSION:  0.8.1
+  LIBJXL_VERSION:  0.8.2
   LIBJXL_ABI_VERSION:  0.8
 
 concurrency:
@@ -23,7 +23,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  warmup: # If necessary, fetch files just once, before tests are run. 
+  warmup: # If necessary, fetch files just once, before tests are run.
     name: Warmup caches
     runs-on: ubuntu-latest
     steps:
