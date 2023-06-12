@@ -3,15 +3,15 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#ifndef LIB_JXL_ENC_JXL_SKCMS_H_
-#define LIB_JXL_ENC_JXL_SKCMS_H_
+#ifndef LIB_JXL_JXL_SKCMS_H_
+#define LIB_JXL_JXL_SKCMS_H_
 
 // skcms wrapper to rename the skcms symbols to avoid conflicting names with
 // other projects using skcms as well. When using JPEGXL_BUNDLE_SKCMS the
 // bundled functions will be renamed from skcms_ to jxl_skcms_
 
 #ifdef SKCMS_API
-#error "Must include enc_jxl_skcms.h and not skcms.h directly"
+#error "Must include jxl_skcms.h and not skcms.h directly"
 #endif  // SKCMS_API
 
 #if JPEGXL_BUNDLE_SKCMS
@@ -51,4 +51,4 @@
 
 #include "skcms.h"
 
-#endif  // LIB_JXL_ENC_JXL_SKCMS_H_
+#endif  // LIB_JXL_JXL_SKCMS_H_

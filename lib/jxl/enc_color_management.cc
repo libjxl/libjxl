@@ -34,7 +34,7 @@
 #include "lib/jxl/matrix_ops.h"
 #include "lib/jxl/transfer_functions-inl.h"
 #if JPEGXL_ENABLE_SKCMS
-#include "lib/jxl/enc_jxl_skcms.h"
+#include "lib/jxl/jxl_skcms.h"
 #else  // JPEGXL_ENABLE_SKCMS
 #include "lcms2.h"
 #include "lcms2_plugin.h"

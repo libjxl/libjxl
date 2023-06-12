@@ -359,7 +359,7 @@ libjxl_enc_sources = [
     "jxl/enc_icc_codec.h",
     "jxl/enc_image_bundle.cc",
     "jxl/enc_image_bundle.h",
-    "jxl/enc_jxl_skcms.h",
+    "jxl/jxl_skcms.h",
     "jxl/enc_linalg.cc",
     "jxl/enc_linalg.h",
     "jxl/enc_modular.cc",
