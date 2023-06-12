@@ -96,7 +96,6 @@ typedef enum {
   JXL_ENC_ERR_GENERIC = 1,
 
   /** Out of memory
-   *  TODO(jon): actually catch this and return this error
    */
   JXL_ENC_ERR_OOM = 2,
 

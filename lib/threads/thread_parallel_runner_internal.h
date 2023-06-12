@@ -150,6 +150,7 @@ class ThreadParallelRunner {
   uint32_t workers_ready_ = 0;
   std::condition_variable worker_start_cv_;
   WorkerCommand worker_start_command_;
+  bool oom_ = false;
 
   // Written by main thread, read by workers (after mutex lock/unlock).
   JxlParallelRunFunction data_func_;

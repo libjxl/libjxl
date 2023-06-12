@@ -125,6 +125,7 @@ struct BitWriter {
     assert(data == nullptr);
     // Leave some padding.
     data.reset(static_cast<uint8_t*>(malloc(maximum_bit_size / 8 + 64)));
+    if (data.get() == nullptr) throw std::bad_alloc();
   }
 
   void Write(uint32_t count, uint64_t bits) {
@@ -186,6 +187,7 @@ struct JxlFastLosslessFrameState {
   size_t bit_writer_byte_pos = 0;
   size_t bits_in_buffer = 0;
   uint64_t bit_buffer = 0;
+  bool oom = false;
 };
 
 size_t JxlFastLosslessOutputSize(const JxlFastLosslessFrameState* frame) {
@@ -3672,6 +3674,7 @@ JxlFastLosslessFrameState* LLEnc(const unsigned char* rgba, size_t width,
   }
 
   auto run_one = [&](size_t g) {
+    if (frame_state->oom) return;
     size_t xg = g % num_groups_x;
     size_t yg = g / num_groups_x;
     size_t group_id =
@@ -3681,13 +3684,17 @@ JxlFastLosslessFrameState* LLEnc(const unsigned char* rgba, size_t width,
     size_t x0 = xg * 256;
     size_t y0 = yg * 256;
     auto& gd = frame_state->group_data[group_id];
-    if (collided) {
-      WriteACSection(rgba, x0, y0, xs, ys, stride, onegroup, bitdepth, nb_chans,
-                     big_endian, hcode, gd);
+    try {
+      if (collided) {
+        WriteACSection(rgba, x0, y0, xs, ys, stride, onegroup, bitdepth,
+                       nb_chans, big_endian, hcode, gd);
 
-    } else {
-      WriteACSectionPalette(rgba, x0, y0, xs, ys, stride, onegroup, hcode,
-                            lookup.data(), nb_chans, gd[0]);
+      } else {
+        WriteACSectionPalette(rgba, x0, y0, xs, ys, stride, onegroup, hcode,
+                              lookup.data(), nb_chans, gd[0]);
+      }
+    } catch (const std::bad_alloc&) {
+      frame_state->oom = true;
     }
   };
 
@@ -3695,7 +3702,7 @@ JxlFastLosslessFrameState* LLEnc(const unsigned char* rgba, size_t width,
       runner_opaque, &run_one,
       +[](void* r, size_t i) { (*reinterpret_cast<decltype(&run_one)>(r))(i); },
       num_groups_x * num_groups_y);
-
+  if (frame_state->oom) throw std::bad_alloc();
   return frame_state;
 }
 
@@ -3812,6 +3819,7 @@ size_t JxlFastLosslessEncode(const unsigned char* rgba, size_t width,
                                /*is_last=*/1);
   size_t output_size = JxlFastLosslessMaxRequiredOutput(frame_state);
   *output = (unsigned char*)malloc(output_size);
+  if (*output == nullptr) throw std::bad_alloc();
   size_t written = 0;
   size_t total = 0;
   while ((written = JxlFastLosslessWriteOutput(frame_state, *output + total,

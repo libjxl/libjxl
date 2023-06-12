@@ -568,12 +568,17 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
         ib.origin.y0 = input_frame->option_values.header.layer_info.crop_y0;
       }
       JXL_ASSERT(writer.BitsWritten() == 0);
-      if (!jxl::EncodeFrame(input_frame->option_values.cparams, frame_info,
-                            &metadata, input_frame->frame, &enc_state, cms,
-                            thread_pool.get(), &writer,
-                            /*aux_out=*/nullptr)) {
-        return JXL_API_ERROR(this, JXL_ENC_ERR_GENERIC,
-                             "Failed to encode frame");
+      try {
+        if (!jxl::EncodeFrame(input_frame->option_values.cparams, frame_info,
+                              &metadata, input_frame->frame, &enc_state, cms,
+                              thread_pool.get(), &writer,
+                              /*aux_out=*/nullptr)) {
+          return JXL_API_ERROR(this, JXL_ENC_ERR_GENERIC,
+                               "Failed to encode frame");
+        }
+      } catch (std::bad_alloc const&) {
+        return JXL_API_ERROR(this, JXL_ENC_ERR_OOM,
+                             "Out of memory during frame encoding");
       }
       codestream_bytes_written_beginning_of_frame =
           codestream_bytes_written_end_of_frame;
@@ -1804,14 +1809,20 @@ JxlEncoderStatus JxlEncoderAddImageFrame(
           pool, 0, count, jxl::ThreadPool::NoInit,
           [&](size_t i, size_t) { fun(opaque, i); }, "Encode fast lossless"));
     };
-    QueueFastLosslessFrame(
-        frame_settings,
-        JxlFastLosslessPrepareFrame(
-            reinterpret_cast<const unsigned char*>(buffer), xsize, row_size,
-            ysize, pixel_format->num_channels,
-            frame_settings->enc->metadata.m.bit_depth.bits_per_sample,
-            big_endian, /*effort=*/2, frame_settings->enc->thread_pool.get(),
-            runner));
+    try {
+      QueueFastLosslessFrame(
+          frame_settings,
+          JxlFastLosslessPrepareFrame(
+              reinterpret_cast<const unsigned char*>(buffer), xsize, row_size,
+              ysize, pixel_format->num_channels,
+              frame_settings->enc->metadata.m.bit_depth.bits_per_sample,
+              big_endian, /*effort=*/2, frame_settings->enc->thread_pool.get(),
+              runner));
+    } catch (const std::bad_alloc&) {
+      return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_OOM,
+                           "Not enough memory to queue fast lossless frame");
+    }
+
     return JXL_ENC_SUCCESS;
   }
 
@@ -1888,12 +1899,17 @@ JxlEncoderStatus JxlEncoderAddImageFrame(
       GetBitDepth(frame_settings->values.image_bit_depth,
                   frame_settings->enc->metadata.m, *pixel_format);
   const uint8_t* uint8_buffer = reinterpret_cast<const uint8_t*>(buffer);
-  if (!jxl::ConvertFromExternal(
-          jxl::Span<const uint8_t>(uint8_buffer, size), xsize, ysize, c_current,
-          bits_per_sample, *pixel_format,
-          frame_settings->enc->thread_pool.get(), &(queued_frame->frame))) {
-    return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
-                         "Invalid input buffer");
+  try {
+    if (!jxl::ConvertFromExternal(
+            jxl::Span<const uint8_t>(uint8_buffer, size), xsize, ysize,
+            c_current, bits_per_sample, *pixel_format,
+            frame_settings->enc->thread_pool.get(), &(queued_frame->frame))) {
+      return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
+                           "Invalid input buffer");
+    }
+  } catch (const std::bad_alloc&) {
+    return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_OOM,
+                         "Not enough memory to allocate input buffer");
   }
   if (frame_settings->values.lossless &&
       frame_settings->enc->metadata.m.xyb_encoded) {
@@ -1990,12 +2006,18 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelBuffer(
       frame_settings->enc->metadata.m.extra_channel_info[index], ec_format);
   const uint8_t* uint8_buffer = reinterpret_cast<const uint8_t*>(buffer);
   auto queued_frame = frame_settings->enc->input_queue.back().frame.get();
-  if (!jxl::ConvertFromExternal(jxl::Span<const uint8_t>(uint8_buffer, size),
-                                xsize, ysize, bits_per_sample, ec_format, 0,
-                                frame_settings->enc->thread_pool.get(),
-                                &queued_frame->frame.extra_channels()[index])) {
-    return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
-                         "Failed to set buffer for extra channel");
+  try {
+    if (!jxl::ConvertFromExternal(
+            jxl::Span<const uint8_t>(uint8_buffer, size), xsize, ysize,
+            bits_per_sample, ec_format, 0,
+            frame_settings->enc->thread_pool.get(),
+            &queued_frame->frame.extra_channels()[index])) {
+      return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
+                           "Failed to set buffer for extra channel");
+    }
+  } catch (const std::bad_alloc&) {
+    return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_OOM,
+                         "Not enough memory to allocate input buffer");
   }
   queued_frame->ec_initialized[index] = 1;
 
@@ -2023,8 +2045,14 @@ JxlEncoderStatus JxlEncoderProcessOutput(JxlEncoder* enc, uint8_t** next_out,
       enc->output_byte_queue.erase(enc->output_byte_queue.begin(),
                                    enc->output_byte_queue.begin() + to_copy);
     } else if (!enc->output_fast_frame_queue.empty()) {
-      size_t count = JxlFastLosslessWriteOutput(
-          enc->output_fast_frame_queue.front().get(), *next_out, *avail_out);
+      size_t count;
+      try {
+        count = JxlFastLosslessWriteOutput(
+            enc->output_fast_frame_queue.front().get(), *next_out, *avail_out);
+      } catch (const std::bad_alloc&) {
+        return JXL_API_ERROR(enc, JXL_ENC_ERR_OOM,
+                             "Not enough memory to do fast lossless encoding");
+      }
       *next_out += count;
       *avail_out -= count;
       if (count == 0) {
