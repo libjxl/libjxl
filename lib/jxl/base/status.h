@@ -326,11 +326,6 @@ inline JXL_FORMAT(2, 3) Status
 
 template <typename T>
 class JXL_MUST_USE_RESULT StatusOr {
-  union Storage {
-    char dummy_;
-    T data_;
-  } storage_;
-
   static_assert(!std::is_convertible<StatusCode, T>::value &&
                     !std::is_convertible<T, StatusCode>::value,
                 "You cannot make a StatusOr with a type convertible from or to "
@@ -338,8 +333,6 @@ class JXL_MUST_USE_RESULT StatusOr {
   static_assert(std::is_move_constructible<T>::value &&
                     std::is_move_assignable<T>::value,
                 "T must be move constructible and move assignable");
-
-  StatusCode code_;
 
  public:
   // NOLINTNEXTLINE(google-explicit-constructor)
@@ -362,13 +355,17 @@ class JXL_MUST_USE_RESULT StatusOr {
     code_ = other.code_;
   }
 
-  StatusOr operator=(StatusOr&& other) noexcept {
+  StatusOr& operator=(StatusOr&& other) noexcept {
+    if (this == &other) return *this;
     if (ok() && other.ok()) {
       storage_.data_ = std::move(other.storage_.data_);
     } else if (other.ok()) {
       new (&storage_.data_) T(std::move(other.storage_.data_));
+    } else if (ok()) {
+      storage_.data_.~T();
     }
     code_ = other.code_;
+    return *this;
   }
 
   StatusOr(const StatusOr&) = delete;
@@ -389,6 +386,16 @@ class JXL_MUST_USE_RESULT StatusOr {
       storage_.data_.~T();
     }
   }
+
+ private:
+  union Storage {
+    char dummy_;
+    T data_;
+    Storage() {}
+    ~Storage() {}
+  } storage_;
+
+  StatusCode code_;
 };
 
 #define JXL_ASSIGN_OR_RETURN(lhs, statusor) \
@@ -399,7 +406,7 @@ class JXL_MUST_USE_RESULT StatusOr {
 #define PRIVATE_JXL_ASSIGN_OR_RETURN_IMPL(name, lhs, statusor) \
   auto name = std::move(statusor);                             \
   JXL_RETURN_IF_ERROR(name.status());                          \
-  lhs = std::move(statusor).value();
+  lhs = std::move(name).value();
 // NOLINTEND(bugprone-macro-parentheses)
 
 }  // namespace jxl
