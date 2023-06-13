@@ -13,6 +13,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include <type_traits>
+#include <utility>
+
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/sanitizer_definitions.h"
 
@@ -320,6 +323,84 @@ inline JXL_FORMAT(2, 3) Status
 #endif  // JXL_CRASH_ON_ERROR
   return status;
 }
+
+template <typename T>
+class JXL_MUST_USE_RESULT StatusOr {
+  union Storage {
+    char dummy_;
+    T data_;
+  } storage_;
+
+  static_assert(!std::is_convertible<StatusCode, T>::value &&
+                    !std::is_convertible<T, StatusCode>::value,
+                "You cannot make a StatusOr with a type convertible from or to "
+                "StatusCode");
+  static_assert(std::is_move_constructible<T>::value &&
+                    std::is_move_assignable<T>::value,
+                "T must be move constructible and move assignable");
+
+  StatusCode code_;
+
+ public:
+  // NOLINTNEXTLINE(google-explicit-constructor)
+  StatusOr(StatusCode code) : code_(code) {
+    JXL_ASSERT(code_ != StatusCode::kOk);
+  }
+
+  // NOLINTNEXTLINE(google-explicit-constructor)
+  StatusOr(Status status) : StatusOr(status.code()) {}
+
+  // NOLINTNEXTLINE(google-explicit-constructor)
+  StatusOr(T&& value) : code_(StatusCode::kOk) {
+    new (&storage_.data_) T(std::move(value));
+  }
+
+  StatusOr(StatusOr&& other) noexcept {
+    if (other.ok()) {
+      new (&storage_.data_) T(std::move(other.storage_.data_));
+    }
+    code_ = other.code_;
+  }
+
+  StatusOr operator=(StatusOr&& other) noexcept {
+    if (ok() && other.ok()) {
+      storage_.data_ = std::move(other.storage_.data_);
+    } else if (other.ok()) {
+      new (&storage_.data_) T(std::move(other.storage_.data_));
+    }
+    code_ = other.code_;
+  }
+
+  StatusOr(const StatusOr&) = delete;
+  StatusOr operator=(const StatusOr&) = delete;
+
+  bool ok() const { return code_ == StatusCode::kOk; }
+  Status status() const { return code_; }
+
+  // Only call this if you are absolutely sure that `ok()` is true.
+  // Ideally, never call this manually and rely on JXL_ASSIGN_OR_RETURN.
+  T value() && {
+    JXL_ASSERT(ok());
+    return std::move(storage_.data_);
+  }
+
+  ~StatusOr() {
+    if (code_ == StatusCode::kOk) {
+      storage_.data_.~T();
+    }
+  }
+};
+
+#define JXL_ASSIGN_OR_RETURN(lhs, statusor) \
+  PRIVATE_JXL_ASSIGN_OR_RETURN_IMPL(        \
+      assign_or_return_temporary_variable##__LINE__, lhs, statusor)
+
+// NOLINTBEGIN(bugprone-macro-parentheses)
+#define PRIVATE_JXL_ASSIGN_OR_RETURN_IMPL(name, lhs, statusor) \
+  auto name = std::move(statusor);                             \
+  JXL_RETURN_IF_ERROR(name.status());                          \
+  lhs = std::move(statusor).value();
+// NOLINTEND(bugprone-macro-parentheses)
 
 }  // namespace jxl
 
