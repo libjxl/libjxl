@@ -215,6 +215,7 @@ bool WriteOptionalOutput(const std::string& filename,
 std::string Filename(const std::string& base, const std::string& extension,
                      int layer_index, int frame_index, int num_layers,
                      int num_frames) {
+  if (base == "-") return "-";
   auto digits = [](int n) { return 1 + static_cast<int>(std::log10(n)); };
   std::string out = base;
   if (num_frames > 1) {
@@ -355,12 +356,18 @@ int main(int argc, const char* argv[]) {
   std::string extension;
   if (args.file_out && !args.disable_output) {
     filename_out = std::string(args.file_out);
-    size_t pos = filename_out.find_last_of('.');
+    size_t pos = filename_out.find_first_of(':');
     if (pos < filename_out.size()) {
-      base = filename_out.substr(0, pos);
-      extension = filename_out.substr(pos);
+      base = filename_out.substr(pos + 1);
+      extension = "." + filename_out.substr(0, pos);
     } else {
-      base = filename_out;
+      pos = filename_out.find_last_of('.');
+      if (pos < filename_out.size()) {
+        base = filename_out.substr(0, pos);
+        extension = filename_out.substr(pos);
+      } else {
+        base = filename_out;
+      }
     }
   }
   const jxl::extras::Codec codec = jxl::extras::CodecFromExtension(extension);
@@ -416,7 +423,8 @@ int main(int argc, const char* argv[]) {
     if (!bytes.empty()) {
       if (!args.quiet) fprintf(stderr, "Reconstructed to JPEG.\n");
       if (!filename_out.empty() &&
-          !jpegxl::tools::WriteFile(filename_out.c_str(), bytes)) {
+          !jpegxl::tools::WriteFile(base == "-" ? "-" : filename_out.c_str(),
+                                    bytes)) {
         return EXIT_FAILURE;
       }
     }
