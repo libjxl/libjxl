@@ -97,7 +97,7 @@ One dependency that `build_site.py` requires is [uglifyjs](https://github.com/mi
 ```
 npm install uglify-js -g
 ```
-If you followed the [wasm build instructions](./docs/building_wasm.md),
+If you followed the [wasm build instructions](../../docs/building_wasm.md),
 assuming you are in the root level of the cloned libjxl repo a typical call to
 build the site would be
 ```bash
