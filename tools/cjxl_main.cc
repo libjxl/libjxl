@@ -711,6 +711,7 @@ void ProcessFlags(const jxl::extras::Codec codec,
   ProcessFlag("already_downsampled",
               static_cast<int64_t>(args->already_downsampled),
               JXL_ENC_FRAME_SETTING_ALREADY_DOWNSAMPLED, params);
+  if (args->already_downsampled) params->already_downsampled = args->resampling;
 
   SetDistanceFromFlags(cmdline, args, params, codec);
 
