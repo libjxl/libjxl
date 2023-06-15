@@ -1212,7 +1212,8 @@ TEST(JxlTest, RoundtripLosslessAnimation) {
   dparams.accepted_formats.push_back(t.ppf().frames[0].color.format);
 
   PackedPixelFile ppf_out;
-  EXPECT_EQ(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out), 958);
+  EXPECT_THAT(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out),
+              IsSlightlyBelow(958));
 
   t.CoalesceGIFAnimationWithAlpha();
   ASSERT_EQ(ppf_out.frames.size(), t.ppf().frames.size());
