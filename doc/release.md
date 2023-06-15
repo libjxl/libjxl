@@ -182,6 +182,15 @@ commits you need to cherry-pick, ideally in the same order they were merged on
 the `main` branch. At the end you will have a local branch with multiple commits
 on top of the release branch.
 
+To update the version number, for example from v0.8.0 to v0.8.1 run this helper
+command (in a Debian-based system):
+
+```bash
+./ci.sh bump_version 0.8.1
+```
+
+as described above and commit the changes.
+
 Finally, upload your changes to *your fork* like normal, except that when
 creating a pull request select the desired release branch as a target:
 
