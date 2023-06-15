@@ -55,3 +55,8 @@ BUILD_TARGET=wasm32 emconfigure ./ci.sh release
 # or with SIMD WASM:
 BUILD_TARGET=wasm32 ENABLE_WASM_SIMD=1 emconfigure ./ci.sh release
 ```
+
+## Example site
+
+Once you have build the wasm binary, you can give it a try by building a site
+that decodes jxl images, see [wasm_demo](../tools/wasm_demo/README.md).
