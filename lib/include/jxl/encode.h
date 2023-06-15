@@ -957,6 +957,26 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
                                                    const JxlBasicInfo* info);
 
 /**
+ * Sets the upsampling method the decoder will use in case there are frames
+ * with JXL_ENC_FRAME_SETTING_RESAMPLING set. This is useful in combination
+ * with the JXL_ENC_FRAME_SETTING_ALREADY_DOWNSAMPLED option, to control the
+ * type of upsampling that will be used.
+ *
+ * @param enc encoder object.
+ * @param factor upsampling factor to configure (1, 2, 4 or 8; for 1 this
+ * function has no effect at all)
+ * @param mode upsampling mode to use for this upsampling:
+ * -1: default (good for photographic images, no signaling overhead)
+ * 0: nearest neighbor (good for pixel art)
+ * 1: 'pixel dots' (same as NN for 2x, diamond-shaped 'pixel dots' for 4x/8x)
+ * @return JXL_ENC_SUCCESS if the operation was successful,
+ * JXL_ENC_ERROR or JXL_ENC_NOT_SUPPORTED otherwise
+ */
+JXL_EXPORT JxlEncoderStatus JxlEncoderSetUpsamplingMode(JxlEncoder* enc,
+                                                        const int64_t factor,
+                                                        const int64_t mode);
+
+/**
  * Initializes a JxlExtraChannelInfo struct to default values.
  * For forwards-compatibility, this function has to be called before values
  * are assigned to the struct fields.

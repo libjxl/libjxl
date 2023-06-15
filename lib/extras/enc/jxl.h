@@ -52,6 +52,7 @@ struct JXLCompressParams {
   // that the library chooses a default).
   float intensity_target = 0;
   int already_downsampled = 1;
+  int upsampling_mode = -1;
   // Overrides for bitdepth, codestream level and alpha premultiply.
   size_t override_bitdepth = 0;
   int32_t codestream_level = -1;

@@ -308,6 +308,13 @@ struct CompressArgs {
                            &already_downsampled, &SetBooleanTrue, 2);
 
     cmdline->AddOptionValue(
+        '\0', "upsampling_mode", "-1|0|1",
+        "Upsampling mode the decoder should use. Mostly useful in combination "
+        "with --already_downsampled. Value -1 means default (non-separable "
+        "upsampling), 0 means nearest neighbor (useful for pixel art)",
+        &upsampling_mode, &ParseInt64, 2);
+
+    cmdline->AddOptionValue(
         '\0', "epf", "-1|0|1|2|3",
         "Edge preserving filter level, 0-3. "
         "Default -1 means encoder chooses, 0-3 set a strength.",
@@ -478,6 +485,7 @@ struct CompressArgs {
   bool modular_lossy_palette = false;
   int32_t premultiply = -1;
   bool already_downsampled = false;
+  int64_t upsampling_mode = -1;
   jxl::Override jpeg_reconstruction_cfl = jxl::Override::kDefault;
   jxl::Override modular = jxl::Override::kDefault;
   jxl::Override keep_invisible = jxl::Override::kDefault;
@@ -894,6 +902,7 @@ void ProcessFlags(const jxl::extras::Codec codec,
   params->codestream_level = args->codestream_level;
   params->premultiply = args->premultiply;
   params->compress_boxes = args->compress_boxes != jxl::Override::kOff;
+  params->upsampling_mode = args->upsampling_mode;
   if (codec == jxl::extras::Codec::kPNM &&
       ppf.info.exponent_bits_per_sample == 0) {
     params->input_bitdepth.type = JXL_BIT_DEPTH_FROM_CODESTREAM;
