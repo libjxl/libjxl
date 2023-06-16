@@ -96,10 +96,12 @@ set_target_properties(jpeg PROPERTIES
 set_property(TARGET jpeg APPEND_STRING PROPERTY
   LINK_FLAGS " -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/jpegli/jpeg.version.${JPEGLI_LIBJPEG_LIBRARY_SOVERSION}")
 
-install(TARGETS jpeg
-  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+if (JPEGXL_INSTALL_JPEGLI_LIBJPEG)
+  install(TARGETS jpeg
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+endif()
 
 # This hides the default visibility symbols from static libraries bundled into
 # the shared library. In particular this prevents exposing symbols from hwy
