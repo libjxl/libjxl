@@ -44,6 +44,7 @@ download_corpus() {
 create_report() {
   local corpus="$1"
   local codec="$2"
+  shift 2
   local rev="$(git rev-parse --short HEAD)"
   local originals="${URLROOT}/corpora/${corpus}"
   if git diff HEAD --quiet; then
@@ -63,12 +64,13 @@ create_report() {
    cd "${BUILD_DIR}"
    tools/benchmark_xl \
      --output_dir "${output_dir}" \
-     --input "${HOME}/corpora/${corpus}/*.png" \
+     --input "${HOME}/corpora/${corpus}/*.??g" \
      --codec="${codec}" \
      --save_compressed \
      --write_html_report \
      "${use_decompressed}" \
-     --originals_url="${originals}"
+     --originals_url="${originals}" \
+     $@
    gsutil -m rsync "${output_dir}" "${GSROOT}/${bucket}"
    echo "You can view evaluation results at:"
    echo "${url}"
@@ -93,7 +95,7 @@ cmd_report() {
     export LD_LIBRARY_PATH="${HOME}/mozjpeg/build:${LD_LIBRARY_PATH:-}"
   fi
   build_libjxl
-  create_report "${corpus}" "${codec}"
+  create_report "$@"
 }
 
 main() {
