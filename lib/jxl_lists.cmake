@@ -300,7 +300,6 @@ set(JPEGXL_INTERNAL_DEC_SOURCES
 set(JPEGXL_INTERNAL_ENC_SOURCES
   jxl/butteraugli/butteraugli.cc
   jxl/butteraugli/butteraugli.h
-  jxl/butteraugli_wrapper.cc
   jxl/enc_ac_strategy.cc
   jxl/enc_ac_strategy.h
   jxl/enc_adaptive_quantization.cc
@@ -529,8 +528,6 @@ set(JPEGXL_INTERNAL_JPEGLI_WRAPPER_SOURCES
 )
 
 set(JPEGXL_INTERNAL_PUBLIC_HEADERS
-  include/jxl/butteraugli.h
-  include/jxl/butteraugli_cxx.h
   include/jxl/cms_interface.h
   include/jxl/codestream_header.h
   include/jxl/color_encoding.h
@@ -568,7 +565,6 @@ set(JPEGXL_INTERNAL_TESTS
   jxl/bit_reader_test.cc
   jxl/bits_test.cc
   jxl/blending_test.cc
-  jxl/butteraugli_test.cc
   jxl/byte_order_test.cc
   jxl/coeff_order_test.cc
   jxl/color_encoding_internal_test.cc
