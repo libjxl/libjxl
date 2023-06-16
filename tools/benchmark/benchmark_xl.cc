@@ -672,6 +672,7 @@ struct StatPrinter {
         t.stats.total_compressed_size * 8.0 / t.stats.total_input_pixels;
     double p_norm = t.stats.distance_p_norm / t.stats.total_input_pixels;
     double psnr = t.stats.psnr / t.stats.total_input_pixels;
+    double ssimulacra2 = t.stats.ssimulacra2 / t.stats.total_input_pixels;
     double bpp_p_norm = p_norm * comp_bpp;
 
     const double adj_comp_bpp =
@@ -709,10 +710,11 @@ struct StatPrinter {
       printf(
           "error:%" PRIdS "    size:%8" PRIdS "    pixels:%9" PRIdS
           "    enc_speed:%8.8f    dec_speed:%8.8f    bpp:%10.8f    dist:%10.8f"
-          "    psnr:%10.8f    p:%10.8f    bppp:%10.8f    qabpp:%10.8f ",
+          "    psnr:%10.8f    ssimulacra2:%.2f   p:%10.8f    bppp:%10.8f    "
+          "qabpp:%10.8f ",
           t.stats.total_errors, t.stats.total_compressed_size, pixels, enc_mps,
-          dec_mps, comp_bpp, t.stats.max_distance, psnr, p_norm, bpp_p_norm,
-          adj_comp_bpp);
+          dec_mps, comp_bpp, t.stats.max_distance, psnr, ssimulacra2, p_norm,
+          bpp_p_norm, adj_comp_bpp);
       for (size_t i = 0; i < t.stats.extra_metrics.size(); i++) {
         printf(" %s:%.8f", (*extra_metrics_names_)[i].c_str(),
                t.stats.extra_metrics[i]);
