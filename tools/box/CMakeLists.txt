@@ -21,6 +21,7 @@ add_executable(box_list
 )
 target_link_libraries(box_list
   box
+  ${ATOMICS_LIBRARIES}
 )
 set_target_properties(box_list PROPERTIES LINK_FLAGS "${JPEGXL_COVERAGE_LINK_FLAGS}")
 endif()  # JPEGXL_ENABLE_DEVTOOLS
