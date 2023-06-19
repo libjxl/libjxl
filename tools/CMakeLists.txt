@@ -66,7 +66,6 @@ add_library(jxl_tool STATIC EXCLUDE_FROM_ALL
   cmdline.cc
   codec_config.cc
   speed_stats.cc
-  file_io.cc
   tool_version.cc
 )
 target_compile_options(jxl_tool PUBLIC "${JPEGXL_INTERNAL_FLAGS}")

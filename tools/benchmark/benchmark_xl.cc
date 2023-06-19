@@ -25,7 +25,6 @@
 #include "lib/jxl/base/cache_aligned.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
-#include "lib/jxl/base/file_io.h"
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/random.h"
@@ -46,6 +45,7 @@
 #include "tools/benchmark/benchmark_stats.h"
 #include "tools/benchmark/benchmark_utils.h"
 #include "tools/codec_config.h"
+#include "tools/file_io.h"
 #include "tools/speed_stats.h"
 #include "tools/ssimulacra2.h"
 #include "tools/thread_pool_internal.h"
@@ -129,8 +129,8 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
   if (valid && !Args()->decode_only) {
     for (size_t i = 0; i < Args()->encode_reps; ++i) {
       if (codec->CanRecompressJpeg() && (ext == ".jpg" || ext == ".jpeg")) {
-        std::string data_in;
-        JXL_CHECK(jxl::ReadFile(filename, &data_in));
+        std::vector<uint8_t> data_in;
+        JXL_CHECK(jpegxl::tools::ReadFile(filename, &data_in));
         JXL_CHECK(
             codec->RecompressJpeg(filename, data_in, compressed, &speed_stats));
       } else {
@@ -157,7 +157,7 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
 
   if (valid && Args()->decode_only) {
     std::vector<uint8_t> data_in;
-    JXL_CHECK(jxl::ReadFile(filename, &data_in));
+    JXL_CHECK(jpegxl::tools::ReadFile(filename, &data_in));
     compressed->insert(compressed->end(), data_in.begin(), data_in.end());
   }
 
@@ -304,10 +304,7 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
 #endif
     JXL_CHECK(MakeDir(outdir));
     if (Args()->save_compressed) {
-      std::string compressed_str(
-          reinterpret_cast<const char*>(compressed->data()),
-          compressed->size());
-      JXL_CHECK(jxl::WriteFile(compressed_str, compressed_fn));
+      JXL_CHECK(jpegxl::tools::WriteFile(compressed_fn, *compressed));
     }
     if (Args()->save_decompressed && valid) {
       // For verifying HDR: scale output.
@@ -397,7 +394,7 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
 // Makes a base64 data URI for embedded image in HTML
 std::string Base64Image(const std::string& filename) {
   PaddedBytes bytes;
-  if (!ReadFile(filename, &bytes)) {
+  if (!jpegxl::tools::ReadFile(filename, &bytes)) {
     return "";
   }
   static const char* symbols =
@@ -589,8 +586,8 @@ void WriteHtmlReport(const std::string& codec_desc,
   }
   out_html += "</body>\n";
   out_html += toggle_js;
-  JXL_CHECK(
-      jxl::WriteFile(out_html, outdir + "/index." + codec_name + ".html"));
+  JXL_CHECK(jpegxl::tools::WriteFile(outdir + "/index." + codec_name + ".html",
+                                     out_html));
 }
 
 // Prints the detailed and aggregate statistics, in the correct order but as
@@ -1018,7 +1015,7 @@ class Benchmark {
 
       if (!Args()->decode_only) {
         PaddedBytes encoded;
-        ok = ReadFile(fnames[i], &encoded);
+        ok = jpegxl::tools::ReadFile(fnames[i], &encoded);
         if (ok) {
           if (jpeg_transcoding_requested) {
             ok = jxl::jpeg::DecodeImageJPG(Span<const uint8_t>(encoded),

@@ -12,7 +12,6 @@
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/color_hints.h"
 #include "lib/jxl/base/data_parallel.h"
-#include "lib/jxl/base/file_io.h"
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
@@ -26,6 +25,7 @@
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
+#include "tools/file_io.h"
 #include "tools/thread_pool_internal.h"
 
 namespace {

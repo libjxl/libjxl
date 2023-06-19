@@ -11,7 +11,6 @@
 #include <istream>
 #include <unordered_map>
 
-#include "lib/jxl/base/file_io.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_color_management.h"
@@ -24,6 +23,7 @@
 #include "lib/jxl/modular/encoding/enc_ma.h"
 #include "lib/jxl/modular/encoding/encoding.h"
 #include "lib/jxl/splines.h"
+#include "tools/file_io.h"
 
 namespace jpegxl {
 namespace tools {
@@ -524,9 +524,7 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
 
   compressed = std::move(writer).TakeBytes();
 
-  if (!strcmp(out, "-")) {
-    fwrite(compressed.data(), 1, compressed.size(), stdout);
-  } else if (!WriteFile(compressed, out)) {
+  if (!jpegxl::tools::WriteFile(out, compressed)) {
     fprintf(stderr, "Failed to write to \"%s\"\n", out);
     return 1;
   }

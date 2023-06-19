@@ -180,8 +180,7 @@ int DJpegliMain(int argc, const char* argv[]) {
     fprintf(stderr, "Encode failed\n");
     return EXIT_FAILURE;
   }
-  if (!jpegxl::tools::WriteFile(filename_out.c_str(),
-                                encoded_image.bitstreams[0])) {
+  if (!jpegxl::tools::WriteFile(filename_out, encoded_image.bitstreams[0])) {
     fprintf(stderr, "Failed to write output file %s\n", filename_out.c_str());
     return EXIT_FAILURE;
   }

@@ -26,8 +26,8 @@
 #include "lib/extras/enc/pgx.h"
 #include "lib/extras/enc/pnm.h"
 #include "lib/extras/packed_image_convert.h"
-#include "lib/jxl/base/file_io.h"
 #include "lib/jxl/image_bundle.h"
+#include "tools/file_io.h"
 
 namespace jxl {
 namespace {
@@ -55,7 +55,7 @@ Status SetFromFile(const std::string& pathname,
                    ThreadPool* pool, const SizeConstraints* constraints,
                    extras::Codec* orig_codec) {
   std::vector<uint8_t> encoded;
-  JXL_RETURN_IF_ERROR(ReadFile(pathname, &encoded));
+  JXL_RETURN_IF_ERROR(jpegxl::tools::ReadFile(pathname, &encoded));
   JXL_RETURN_IF_ERROR(SetFromBytes(Span<const uint8_t>(encoded), color_hints,
                                    io, pool, constraints, orig_codec));
   return true;
@@ -151,7 +151,7 @@ Status Encode(const CodecInOut& io, const extras::Codec codec,
 Status EncodeToFile(const CodecInOut& io, const ColorEncoding& c_desired,
                     size_t bits_per_sample, const std::string& pathname,
                     ThreadPool* pool) {
-  const std::string extension = Extension(pathname);
+  const std::string extension = jpegxl::tools::Extension(pathname);
   const extras::Codec codec =
       extras::CodecFromExtension(extension, &bits_per_sample);
 
@@ -181,7 +181,7 @@ Status EncodeToFile(const CodecInOut& io, const ColorEncoding& c_desired,
 
   std::vector<uint8_t> encoded;
   return Encode(io, codec, c_desired, bits_per_sample, &encoded, pool) &&
-         WriteFile(encoded, pathname);
+         jpegxl::tools::WriteFile(pathname, encoded);
 }
 
 Status EncodeToFile(const CodecInOut& io, const std::string& pathname,

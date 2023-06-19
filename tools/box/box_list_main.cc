@@ -12,10 +12,10 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "lib/jxl/base/file_io.h"
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "tools/box/box.h"
+#include "tools/file_io.h"
 
 namespace jpegxl {
 namespace tools {
@@ -27,7 +27,7 @@ int RunMain(int argc, const char* argv[]) {
   }
 
   jxl::PaddedBytes compressed;
-  if (!jxl::ReadFile(argv[1], &compressed)) return 1;
+  if (!ReadFile(argv[1], &compressed)) return 1;
   fprintf(stderr, "Read %" PRIuS " compressed bytes\n", compressed.size());
 
   const uint8_t* in = compressed.data();

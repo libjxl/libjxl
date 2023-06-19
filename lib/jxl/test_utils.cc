@@ -9,7 +9,6 @@
 #include <string>
 
 #include "lib/extras/packed_image_convert.h"
-#include "lib/jxl/base/file_io.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/enc_butteraugli_pnorm.h"
@@ -17,6 +16,7 @@
 #include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_file.h"
+#include "tools/file_io.h"
 
 #if !defined(TEST_DATA_PATH)
 #include "tools/cpp/runfiles/runfiles.h"
@@ -42,7 +42,7 @@ PaddedBytes ReadTestData(const std::string& filename) {
   std::string full_path = GetTestDataPath(filename);
   PaddedBytes data;
   fprintf(stderr, "ReadTestData %s\n", full_path.c_str());
-  JXL_CHECK(jxl::ReadFile(full_path, &data));
+  JXL_CHECK(jpegxl::tools::ReadFile(full_path, &data));
   printf("Test data %s is %d bytes long.\n", filename.c_str(),
          static_cast<int>(data.size()));
   return data;

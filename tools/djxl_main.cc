@@ -209,7 +209,7 @@ bool WriteOptionalOutput(const std::string& filename,
   if (filename.empty() || bytes.empty()) {
     return true;
   }
-  return jpegxl::tools::WriteFile(filename.data(), bytes);
+  return jpegxl::tools::WriteFile(filename, bytes);
 }
 
 std::string Filename(const std::string& base, const std::string& extension,
@@ -356,19 +356,8 @@ int main(int argc, const char* argv[]) {
   std::string extension;
   if (args.file_out && !args.disable_output) {
     filename_out = std::string(args.file_out);
-    size_t pos = filename_out.find_first_of(':');
-    if (pos < filename_out.size()) {
-      base = filename_out.substr(pos + 1);
-      extension = "." + filename_out.substr(0, pos);
-    } else {
-      pos = filename_out.find_last_of('.');
-      if (pos < filename_out.size()) {
-        base = filename_out.substr(0, pos);
-        extension = filename_out.substr(pos);
-      } else {
-        base = filename_out;
-      }
-    }
+    base = jpegxl::tools::Basename(filename_out);
+    extension = jpegxl::tools::Extension(filename_out);
   }
   const jxl::extras::Codec codec = jxl::extras::CodecFromExtension(extension);
   if (codec == jxl::extras::Codec::kEXR) {
