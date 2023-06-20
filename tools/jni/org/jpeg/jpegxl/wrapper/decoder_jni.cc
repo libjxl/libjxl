@@ -138,15 +138,13 @@ Status DoDecode(JNIEnv* env, jobject data_buffer, size_t* info_pixels_size,
     return FAILURE("Unexpected notification (want: color encoding)");
   }
   if (info_icc_size) {
-    JxlPixelFormat format = ToPixelFormat(pixel_format);
-    status = JxlDecoderGetICCProfileSize(
-        dec, &format, JXL_COLOR_PROFILE_TARGET_DATA, info_icc_size);
+    status = JxlDecoderGetICCProfileSize(dec, JXL_COLOR_PROFILE_TARGET_DATA,
+                                         info_icc_size);
     if (status != JXL_DEC_SUCCESS) *info_icc_size = 0;
   }
   if (icc && icc_size > 0) {
-    JxlPixelFormat format = ToPixelFormat(pixel_format);
-    status = JxlDecoderGetColorAsICCProfile(
-        dec, &format, JXL_COLOR_PROFILE_TARGET_DATA, icc, icc_size);
+    status = JxlDecoderGetColorAsICCProfile(dec, JXL_COLOR_PROFILE_TARGET_DATA,
+                                            icc, icc_size);
     if (status != JXL_DEC_SUCCESS) {
       return FAILURE("Failed to get ICC");
     }

@@ -40,11 +40,10 @@ int TestOneInput(const uint8_t* data, size_t size) {
     return 0;
   }
 
-  JxlPixelFormat format = {4, JXL_TYPE_FLOAT, JXL_LITTLE_ENDIAN, 0};
-  JxlDecoderGetColorAsEncodedProfile(
-      dec, &format, JXL_COLOR_PROFILE_TARGET_ORIGINAL, nullptr);
+  JxlDecoderGetColorAsEncodedProfile(dec, JXL_COLOR_PROFILE_TARGET_ORIGINAL,
+                                     nullptr);
   size_t dec_profile_size;
-  JxlDecoderGetICCProfileSize(dec, &format, JXL_COLOR_PROFILE_TARGET_ORIGINAL,
+  JxlDecoderGetICCProfileSize(dec, JXL_COLOR_PROFILE_TARGET_ORIGINAL,
                               &dec_profile_size);
 
   JxlDecoderDestroy(dec);

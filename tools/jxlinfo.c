@@ -214,14 +214,12 @@ int PrintBasicInfo(FILE* file, int verbose) {
         fprintf(stderr, "Invalid orientation\n");
       }
     } else if (status == JXL_DEC_COLOR_ENCODING) {
-      JxlPixelFormat format = {4, JXL_TYPE_FLOAT, JXL_LITTLE_ENDIAN, 0};
       printf("Color space: ");
 
       JxlColorEncoding color_encoding;
       if (JXL_DEC_SUCCESS ==
-          JxlDecoderGetColorAsEncodedProfile(dec, &format,
-                                             JXL_COLOR_PROFILE_TARGET_ORIGINAL,
-                                             &color_encoding)) {
+          JxlDecoderGetColorAsEncodedProfile(
+              dec, JXL_COLOR_PROFILE_TARGET_ORIGINAL, &color_encoding)) {
         const char* const cs_string[4] = {"RGB", "Grayscale", "XYB", "Unknown"};
         const char* const wp_string[12] = {"", "D65", "Custom", "", "",  "",
                                            "", "",    "",       "", "E", "P3"};
@@ -265,8 +263,7 @@ int PrintBasicInfo(FILE* file, int verbose) {
         // instead.
         size_t profile_size;
         if (JXL_DEC_SUCCESS !=
-            JxlDecoderGetICCProfileSize(dec, &format,
-                                        JXL_COLOR_PROFILE_TARGET_ORIGINAL,
+            JxlDecoderGetICCProfileSize(dec, JXL_COLOR_PROFILE_TARGET_ORIGINAL,
                                         &profile_size)) {
           fprintf(stderr, "JxlDecoderGetICCProfileSize failed\n");
           continue;
@@ -277,10 +274,9 @@ int PrintBasicInfo(FILE* file, int verbose) {
           continue;
         }
         uint8_t* profile = (uint8_t*)malloc(profile_size);
-        if (JXL_DEC_SUCCESS !=
-            JxlDecoderGetColorAsICCProfile(dec, &format,
-                                           JXL_COLOR_PROFILE_TARGET_ORIGINAL,
-                                           profile, profile_size)) {
+        if (JXL_DEC_SUCCESS != JxlDecoderGetColorAsICCProfile(
+                                   dec, JXL_COLOR_PROFILE_TARGET_ORIGINAL,
+                                   profile, profile_size)) {
           fprintf(stderr, "JxlDecoderGetColorAsICCProfile failed\n");
           free(profile);
           continue;
