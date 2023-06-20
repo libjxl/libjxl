@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
    of extra channels (like alpha) separately.
 
 ### Removed
+ - API: the Butteraugli API (`jxl/butteraugli.h`) was removed.
 
 ### Changed 
  - changed the name of the cjxl flag `photon_noise` to `photon_noise_iso`
