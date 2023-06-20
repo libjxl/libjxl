@@ -3,8 +3,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#ifndef TOOLS_FILE_IO_H_
-#define TOOLS_FILE_IO_H_
+#ifndef LIB_EXTRAS_FILE_IO_H_
+#define LIB_EXTRAS_FILE_IO_H_
 
 #include <errno.h>
 #include <limits.h>
@@ -19,8 +19,7 @@
 
 #include "lib/extras/codec.h"
 
-namespace jpegxl {
-namespace tools {
+namespace jxl {
 
 // RAII, ensures files are closed even when returning early.
 class FileWrapper {
@@ -166,7 +165,6 @@ static inline std::string Extension(std::string filename) {
   }
 }
 
-}  // namespace tools
-}  // namespace jpegxl
+}  // namespace jxl
 
-#endif  // TOOLS_FILE_IO_H_
+#endif  // LIB_EXTRAS_FILE_IO_H_

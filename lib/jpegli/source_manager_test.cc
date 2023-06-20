@@ -8,11 +8,11 @@
 #include <cmath>
 #include <vector>
 
+#include "lib/extras/file_io.h"
 #include "lib/jpegli/decode.h"
 #include "lib/jpegli/test_utils.h"
 #include "lib/jpegli/testing.h"
 #include "lib/jxl/base/status.h"
-#include "tools/file_io.h"
 
 namespace jpegli {
 namespace {
@@ -42,7 +42,7 @@ class SourceManagerTestParam : public ::testing::TestWithParam<TestConfig> {};
 
 TEST_P(SourceManagerTestParam, TestStdioSourceManager) {
   TestConfig config = GetParam();
-  jpegxl::tools::FileWrapper testfile(GetTestDataPath(config.fn), "rb");
+  jxl::FileWrapper testfile(GetTestDataPath(config.fn), "rb");
   FILE* src = nullptr;
   if (config.dparams.size_factor != 1.0) {
     std::vector<uint8_t> compressed = ReadTestData(config.fn.c_str());

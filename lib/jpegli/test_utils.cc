@@ -7,13 +7,13 @@
 
 #include <cmath>
 
+#include "lib/extras/file_io.h"
 #include "lib/jpegli/decode.h"
 #include "lib/jpegli/encode.h"
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/sanitizers.h"
-#include "tools/file_io.h"
 
 #if !defined(TEST_DATA_PATH)
 #include "tools/cpp/runfiles/runfiles.h"
@@ -38,7 +38,7 @@ std::vector<uint8_t> ReadTestData(const std::string& filename) {
   std::string full_path = GetTestDataPath(filename);
   std::vector<uint8_t> data;
   fprintf(stderr, "ReadTestData %s\n", full_path.c_str());
-  JXL_CHECK(jpegxl::tools::ReadFile(full_path, &data));
+  JXL_CHECK(jxl::ReadFile(full_path, &data));
   printf("Test data %s is %d bytes long.\n", filename.c_str(),
          static_cast<int>(data.size()));
   return data;
@@ -1137,7 +1137,7 @@ void DecodeWithLibjpeg(const CompressParams& jparams,
 
 void DumpImage(const TestImage& image, const std::string fn) {
   JXL_CHECK(image.components == 1 || image.components == 3);
-  jpegxl::tools::FileWrapper f(fn.c_str(), "wb");
+  jxl::FileWrapper f(fn.c_str(), "wb");
   size_t bytes_per_sample = jpegli_bytes_per_sample(image.data_type);
   uint32_t maxval = (1u << (8 * bytes_per_sample)) - 1;
   char type = image.components == 1 ? '5' : '6';

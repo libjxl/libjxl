@@ -15,11 +15,11 @@
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/color_description.h"
 #include "lib/extras/enc/apng.h"
+#include "lib/extras/file_io.h"
 #include "lib/extras/time.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/image_bundle.h"
 #include "tools/benchmark/benchmark_utils.h"
-#include "tools/file_io.h"
 #include "tools/thread_pool_internal.h"
 
 namespace jpegxl {
@@ -147,7 +147,7 @@ class CustomCodec : public ImageCodec {
           return RunCommand(compress_command_, arguments, custom_args->quiet);
         },
         encoded_filename, speed_stats));
-    return jpegxl::tools::ReadFile(encoded_filename, compressed);
+    return jxl::ReadFile(encoded_filename, compressed);
   }
 
   Status Decompress(const std::string& filename,
@@ -161,7 +161,7 @@ class CustomCodec : public ImageCodec {
     JXL_RETURN_IF_ERROR(encoded_file.GetFileName(&encoded_filename));
     JXL_RETURN_IF_ERROR(out_file.GetFileName(&out_filename));
 
-    JXL_RETURN_IF_ERROR(jpegxl::tools::WriteFile(encoded_filename, compressed));
+    JXL_RETURN_IF_ERROR(jxl::WriteFile(encoded_filename, compressed));
     JXL_RETURN_IF_ERROR(ReportCodecRunningTime(
         [&, this] {
           return RunCommand(

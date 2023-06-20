@@ -12,10 +12,10 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "lib/extras/file_io.h"
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "tools/box/box.h"
-#include "tools/file_io.h"
 
 namespace jpegxl {
 namespace tools {

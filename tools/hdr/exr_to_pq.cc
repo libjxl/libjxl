@@ -8,11 +8,11 @@
 
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/decode.h"
+#include "lib/extras/file_io.h"
 #include "lib/extras/packed_image_convert.h"
 #include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/image_bundle.h"
 #include "tools/cmdline.h"
-#include "tools/file_io.h"
 #include "tools/hdr/image_utils.h"
 #include "tools/thread_pool_internal.h"
 
@@ -79,7 +79,7 @@ int main(int argc, const char** argv) {
 
   jxl::extras::PackedPixelFile ppf;
   std::vector<uint8_t> input_bytes;
-  JXL_CHECK(jpegxl::tools::ReadFile(input_filename, &input_bytes));
+  JXL_CHECK(jxl::ReadFile(input_filename, &input_bytes));
   JXL_CHECK(jxl::extras::DecodeBytes(jxl::Span<const uint8_t>(input_bytes),
                                      jxl::extras::ColorHints(), &ppf));
 

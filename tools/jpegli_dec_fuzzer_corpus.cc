@@ -22,10 +22,10 @@
 #include <random>
 #include <vector>
 
+#include "lib/extras/file_io.h"
 #include "lib/jpegli/encode.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/random.h"
-#include "tools/file_io.h"
 #include "tools/thread_pool_internal.h"
 
 namespace {
@@ -237,7 +237,7 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
     compressed.push_back(dis256(mt));
   }
 
-  if (!jpegxl::tools::WriteFile(output_fn, compressed)) {
+  if (!jxl::WriteFile(output_fn, compressed)) {
     return false;
   }
   if (!quiet) {

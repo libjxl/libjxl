@@ -27,13 +27,13 @@
 #if JPEGXL_ENABLE_JPEGLI
 #include "lib/jpegli/encode.h"
 #endif
+#include "lib/extras/file_io.h"
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/image_bundle.h"
 #include "tools/benchmark/benchmark_utils.h"
 #include "tools/cmdline.h"
-#include "tools/file_io.h"
 #include "tools/thread_pool_internal.h"
 
 namespace jpegxl {
@@ -202,7 +202,7 @@ class JPEGCodec : public ImageCodec {
       JXL_RETURN_IF_ERROR(RunCommand(compress_command, arguments, false));
       const double end = jxl::Now();
       speed_stats->NotifyElapsed(end - start);
-      return jpegxl::tools::ReadFile(encoded_filename, compressed);
+      return jxl::ReadFile(encoded_filename, compressed);
 #else
       return JXL_FAILURE("Not supported on this build");
 #endif

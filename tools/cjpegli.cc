@@ -11,13 +11,13 @@
 
 #include "lib/extras/codec.h"
 #include "lib/extras/enc/jpegli.h"
+#include "lib/extras/file_io.h"
 #include "lib/extras/time.h"
 #include "lib/jpegli/encode.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/span.h"
 #include "tools/args.h"
 #include "tools/cmdline.h"
-#include "tools/file_io.h"
 #include "tools/speed_stats.h"
 
 namespace jpegxl {
@@ -202,7 +202,7 @@ int CJpegliMain(int argc, const char* argv[]) {
   }
 
   std::vector<uint8_t> input_bytes;
-  if (!jpegxl::tools::ReadFile(args.file_in, &input_bytes)) {
+  if (!jxl::ReadFile(args.file_in, &input_bytes)) {
     fprintf(stderr, "Failed to read input image %s\n", args.file_in);
     return EXIT_FAILURE;
   }
@@ -246,7 +246,7 @@ int CJpegliMain(int argc, const char* argv[]) {
   }
 
   if (args.file_out && !args.disable_output) {
-    if (!jpegxl::tools::WriteFile(args.file_out, jpeg_bytes)) {
+    if (!jxl::WriteFile(args.file_out, jpeg_bytes)) {
       fprintf(stderr, "Could not write jpeg to %s\n", args.file_out);
       return EXIT_FAILURE;
     }
