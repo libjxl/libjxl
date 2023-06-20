@@ -148,16 +148,16 @@ void AdjustQuantBlockAC(const Quantizer& quantizer, size_t c,
   }
   if (c == 1 && sum_of_vals < std::max(xsize, ysize)) {
     static const double kLimit[4] = {
-      0.46,
-      0.46,
-      0.46,
-      0.46,
+        0.46,
+        0.46,
+        0.46,
+        0.46,
     };
     static const double kMul[4] = {
-      0.9999,
-      0.9999,
-      0.9999,
-      0.9999,
+        0.9999,
+        0.9999,
+        0.9999,
+        0.9999,
     };
     const int32_t orig_quant = *quant;
     int32_t new_quant = *quant;
@@ -178,7 +178,6 @@ void AdjustQuantBlockAC(const Quantizer& quantizer, size_t c,
     } else if (hfNonZeros[0] == 0.0 && hfMaxError[0] > kLimit[0]) {
       thresholds[0] = kMul[0] * hfMaxError[0] * new_quant / orig_quant;
     }
-
   }
   // Heuristic for improving accuracy of high-frequency patterns
   // occurring in an environment with no medium-frequency masking
