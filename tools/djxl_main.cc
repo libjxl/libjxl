@@ -39,122 +39,143 @@ struct DecompressArgs {
   DecompressArgs() = default;
 
   void AddCommandLineOptions(CommandLineParser* cmdline) {
-    cmdline->AddPositionalOption("INPUT", /* required = */ true,
-                                 "The compressed input file.", &file_in);
+    cmdline->AddPositionalOption(
+        "INPUT", /* required = */ true,
+        "The compressed input file (JXL). Use '-' for input from stdin.",
+        &file_in);
 
-    cmdline->AddPositionalOption("OUTPUT", /* required = */ true,
-                                 "The output can be (A)PNG with ICC, JPG, or "
-                                 "PPM/PFM.",
-                                 &file_out);
+    cmdline->AddPositionalOption(
+        "OUTPUT", /* required = */ true,
+        "The output can be "
+#if JPEGXL_ENABLE_APNG
+        "PNG, APNG, "
+#endif
+#if JPEGXL_ENABLE_JPEG
+        "JPEG, "
+#else
+        "JPEG (lossless reconstruction only), "
+#endif
+#if JPEGXL_ENABLE_EXR
+        "EXR, "
+#endif
+        "PPM, PFM, or PAM. Use '-' for output to stdout.\n"
+        "    The output format is selected based on the extension or a prefix "
+        "(e.g. 'png:-')",
+        &file_out);
 
     cmdline->AddOptionFlag('V', "version", "Print version number and exit.",
-                           &version, &SetBooleanTrue);
+                           &version, &SetBooleanTrue, 1);
 
     cmdline->AddOptionValue('\0', "num_reps", "N",
                             "Sets the number of times to decompress the image. "
-                            "Used for benchmarking, the default is 1.",
-                            &num_reps, &ParseUnsigned);
+                            "Useful for benchmarking. Default is 1.",
+                            &num_reps, &ParseUnsigned, 2);
 
     cmdline->AddOptionFlag('\0', "disable_output",
                            "No output file will be written (for benchmarking)",
-                           &disable_output, &SetBooleanTrue);
+                           &disable_output, &SetBooleanTrue, 2);
 
     cmdline->AddOptionValue('\0', "num_threads", "N",
                             "Number of worker threads (-1 == use machine "
                             "default, 0 == do not use multithreading).",
-                            &num_threads, &ParseSigned);
+                            &num_threads, &ParseSigned, 1);
 
     opt_bits_per_sample_id = cmdline->AddOptionValue(
         '\0', "bits_per_sample", "N",
-        "Sets the output bit depth. The 0 value (default for PNM output) "
-        "means the original (input) bit depth. The -1 value (default for "
-        "other codecs) means the full bit depth of the output pixel "
-        "format.",
-        &bits_per_sample, &ParseSigned);
+        "Sets the output bit depth. The value 0 (default for PNM) "
+        "means the original (input) bit depth.\n"
+        "    The value -1 (default for other codecs) means it depends on the "
+        "output format capabilities\n"
+        "    and the input bit depth (e.g. decoding a 12-bit image to PNG will "
+        "produce a 16-bit PNG).",
+        &bits_per_sample, &ParseSigned, 2);
 
     cmdline->AddOptionValue('\0', "display_nits", "N",
                             "If set to a non-zero value, tone maps the image "
                             "the given peak display luminance.",
-                            &display_nits, &ParseDouble);
+                            &display_nits, &ParseDouble, 1);
 
-    cmdline->AddOptionValue('\0', "color_space", "COLORSPACE_DESC",
-                            "Sets the output color space of the image. This "
-                            "flag has no effect if the image is not XYB "
-                            "encoded.",
-                            &color_space, &ParseString);
+    cmdline->AddOptionValue(
+        '\0', "color_space", "COLORSPACE_DESC",
+        "Sets the desired output color space of the image. For example:\n"
+        "      --color_space=RGB_D65_SRG_Per_SRG is sRGB with perceptual "
+        "rendering intent\n"
+        "      --color_space=RGB_D65_202_Rel_PeQ is Rec.2100 PQ with relative "
+        "rendering intent",
+        &color_space, &ParseString, 1);
 
-    cmdline->AddOptionValue('s', "downsampling", "N",
-                            "If set and the input JXL stream is progressive "
-                            "and contains hints for target downsampling "
-                            "ratios, the decoder will skip any progressive "
-                            "passes that are not needed to produce a partially "
-                            "decoded image intended for this downsampling "
-                            "ratio.",
-                            &downsampling, &ParseUint32);
+    cmdline->AddOptionValue('s', "downsampling", "1|2|4|8",
+                            "If the input JXL stream is contains hints for "
+                            "target downsampling ratios,\n"
+                            "    only decode what is needed to produce an "
+                            "image intended for this downsampling ratio.",
+                            &downsampling, &ParseUint32, 2);
 
     cmdline->AddOptionFlag('\0', "allow_partial_files",
                            "Allow decoding of truncated files.",
-                           &allow_partial_files, &SetBooleanTrue);
+                           &allow_partial_files, &SetBooleanTrue, 2);
 
 #if JPEGXL_ENABLE_JPEG
     cmdline->AddOptionFlag(
         'j', "pixels_to_jpeg",
-        "By default, if the input JPEG XL contains a recompressed JPEG file, "
-        "djxl reconstructs the exact original JPEG file. This flag causes the "
-        "decoder to instead decode the image to pixels and encode a new "
-        "(lossy) JPEG. The output file if provided must be a .jpg or .jpeg "
-        "file.",
-        &pixels_to_jpeg, &SetBooleanTrue);
+        "By default, if the input JXL is a recompressed JPEG file, "
+        "djxl reconstructs that JPEG file.\n"
+        "    This flag causes the decoder to instead decode to pixels and "
+        "encode a new (lossy) JPEG.",
+        &pixels_to_jpeg, &SetBooleanTrue, 2);
 
-    opt_jpeg_quality_id = cmdline->AddOptionValue(
-        'q', "jpeg_quality", "N",
-        "Sets the JPEG output quality, default is 95. Setting an output "
-        "quality implies --pixels_to_jpeg.",
-        &jpeg_quality, &ParseUnsigned);
+    opt_jpeg_quality_id =
+        cmdline->AddOptionValue('q', "jpeg_quality", "N",
+                                "Sets the JPEG output quality, default is 95. "
+                                "Setting this option implies --pixels_to_jpeg.",
+                                &jpeg_quality, &ParseUnsigned, 2);
 #endif
 
 #if JPEGXL_ENABLE_SJPEG
     cmdline->AddOptionFlag('\0', "use_sjpeg",
                            "Use sjpeg instead of libjpeg for JPEG output.",
-                           &use_sjpeg, &SetBooleanTrue);
+                           &use_sjpeg, &SetBooleanTrue, 3);
 #endif
 
     cmdline->AddOptionFlag('\0', "norender_spotcolors",
-                           "Disables rendering spot colors.",
-                           &render_spotcolors, &SetBooleanFalse);
+                           "Disables rendering of spot colors.",
+                           &render_spotcolors, &SetBooleanFalse, 2);
 
     cmdline->AddOptionValue('\0', "preview_out", "FILENAME",
                             "If specified, writes the preview image to this "
                             "file.",
-                            &preview_out, &ParseString);
+                            &preview_out, &ParseString, 2);
 
     cmdline->AddOptionValue(
         '\0', "icc_out", "FILENAME",
         "If specified, writes the ICC profile of the decoded image to "
         "this file.",
-        &icc_out, &ParseString);
+        &icc_out, &ParseString, 2);
 
     cmdline->AddOptionValue(
         '\0', "orig_icc_out", "FILENAME",
         "If specified, writes the ICC profile of the original image to "
-        "this file. This can be different from the ICC profile of the "
-        "decoded image if --color_space was specified, or if the image "
-        "was XYB encoded and the color conversion to the original "
-        "profile was not supported by the decoder.",
-        &orig_icc_out, &ParseString);
+        "this file\n"
+        "    This can be different from the ICC profile of the "
+        "decoded image if --color_space was specified.",
+        &orig_icc_out, &ParseString, 3);
 
-    cmdline->AddOptionValue(
-        '\0', "metadata_out", "FILENAME",
-        "If specified, writes decoded metadata info to this file in "
-        "JSON format. Used by the conformance test script",
-        &metadata_out, &ParseString);
+    cmdline->AddOptionValue('\0', "metadata_out", "FILENAME",
+                            "If specified, writes metadata info to a JSON "
+                            "file. Used by the conformance test script",
+                            &metadata_out, &ParseString, 3);
 
     cmdline->AddOptionFlag('\0', "print_read_bytes",
                            "Print total number of decoded bytes.",
-                           &print_read_bytes, &SetBooleanTrue);
+                           &print_read_bytes, &SetBooleanTrue, 3);
 
     cmdline->AddOptionFlag('\0', "quiet", "Silence output (except for errors).",
-                           &quiet, &SetBooleanTrue);
+                           &quiet, &SetBooleanTrue, 2);
+
+    cmdline->AddOptionFlag('v', "verbose",
+                           "Verbose output; can be repeated and also applies "
+                           "to help (!).",
+                           &verbose, &SetBooleanTrue);
   }
 
   // Validate the passed arguments, checking whether all passed options are
@@ -176,6 +197,7 @@ struct DecompressArgs {
   const char* file_in = nullptr;
   const char* file_out = nullptr;
   bool version = false;
+  bool verbose = false;
   size_t num_reps = 1;
   bool disable_output = false;
   int32_t num_threads = -1;
@@ -318,7 +340,7 @@ int main(int argc, const char* argv[]) {
     fprintf(stderr, "JPEG XL decoder %s\n", version.c_str());
   }
 
-  if (cmdline.HelpFlagPassed()) {
+  if (cmdline.HelpFlagPassed() || !args.file_in) {
     cmdline.PrintHelp();
     return EXIT_SUCCESS;
   }

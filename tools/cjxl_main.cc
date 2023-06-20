@@ -88,7 +88,7 @@ struct CompressArgs {
 #if JPEGXL_ENABLE_EXR
                                  "EXR, "
 #endif
-                                 "PPM, PFM, PGX, or JXL",
+                                 "PPM, PFM, PAM, PGX, or JXL",
                                  &file_in);
     cmdline->AddPositionalOption("OUTPUT", /* required = */ true,
                                  "the compressed JXL output file", &file_out);
