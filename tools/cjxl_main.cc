@@ -147,7 +147,8 @@ struct CompressArgs {
         "    Default: 7. Higher numbers allow more computation "
         "at the expense of time.\n"
         "    For lossless, generally it will produce smaller files.\n"
-        "    For lossy, higher effort should more accurately reach the target quality.",
+        "    For lossy, higher effort should more accurately reach "
+        "the target quality.",
         &effort, &ParseUnsigned, -1);
 
     cmdline->AddOptionValue('\0', "compress_boxes", "0|1",
