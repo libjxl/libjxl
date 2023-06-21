@@ -57,9 +57,16 @@ download_github() {
   mv "${local_fn}.tmp" "${local_fn}"
 }
 
+is_git_repository() {
+    local dir="$1"
+    local toplevel=$(git rev-parse --show-toplevel)
+
+    [[ "${dir}" == "${toplevel}" ]]
+}
+
 
 main() {
-  if git -C "${MYDIR}" rev-parse; then
+  if is_git_repository "${MYDIR}"; then
     cat >&2 <<EOF
 Current directory is a git repository, downloading dependencies via git:
 
