@@ -144,9 +144,10 @@ struct CompressArgs {
     cmdline->AddOptionValue(
         'e', "effort", "EFFORT",
         "Encoder effort setting. Range: 1 .. 9.\n"
-        "Default: 7. Higher numbers allow more computation, generally "
-        "producing smaller files at same quality. For lossy output, higher "
-        "effort should more accurately reach the target quality.",
+        "    Default: 7. Higher numbers allow more computation "
+        "at the expense of time.\n"
+        "    For lossless, generally it will produce smaller files at the same quality.\n"
+        "    For lossy, higher effort should more accurately reach the target quality.",
         &effort, &ParseUnsigned, -1);
 
     cmdline->AddOptionValue('\0', "compress_boxes", "0|1",
@@ -188,14 +189,16 @@ struct CompressArgs {
     cmdline->AddOptionValue(
         '\0', "center_x", "-1..XSIZE",
         "Determines the horizontal position of center for the center-first "
-        "group order.\n    Default -1 means 'middle of the image', "
+        "group order.\n"
+        "    Default -1 means 'middle of the image', "
         "values [0..xsize) set this to a particular coordinate.",
         &center_x, &ParseInt64, 2);
 
     cmdline->AddOptionValue(
         '\0', "center_y", "-1..YSIZE",
         "Determines the vertical position of center for the center-first "
-        "group order.\n    Default -1 means 'middle of the image', "
+        "group order.\n"
+        "    Default -1 means 'middle of the image', "
         "values [0..ysize) set this to a particular coordinate.",
         &center_y, &ParseInt64, 2);
 
