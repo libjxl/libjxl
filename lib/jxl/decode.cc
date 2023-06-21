@@ -2775,21 +2775,14 @@ namespace {
 template <typename T>
 JxlDecoderStatus VerifyOutputBitDepth(JxlBitDepth bit_depth, const T& metadata,
                                       JxlPixelFormat format) {
-  if ((format.data_type == JXL_TYPE_FLOAT ||
-       format.data_type == JXL_TYPE_FLOAT16) &&
-      bit_depth.type != JXL_BIT_DEPTH_FROM_PIXEL_FORMAT) {
-    return JXL_API_ERROR(
-        "Only JXL_BIT_DEPTH_FROM_PIXEL_FORMAT is implemented "
-        "for float types.");
-  }
   uint32_t bits_per_sample = GetBitDepth(bit_depth, metadata, format);
   if (format.data_type == JXL_TYPE_UINT8 &&
       (bits_per_sample == 0 || bits_per_sample > 8)) {
-    return JXL_API_ERROR("Inavlid bit depth %u for uint8 output",
+    return JXL_API_ERROR("Invalid bit depth %u for uint8 output",
                          bits_per_sample);
   } else if (format.data_type == JXL_TYPE_UINT16 &&
              (bits_per_sample == 0 || bits_per_sample > 16)) {
-    return JXL_API_ERROR("Inavlid bit depth %u for uint16 output",
+    return JXL_API_ERROR("Invalid bit depth %u for uint16 output",
                          bits_per_sample);
   }
   return JXL_DEC_SUCCESS;
