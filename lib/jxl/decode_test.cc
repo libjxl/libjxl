@@ -517,12 +517,12 @@ std::vector<uint8_t> DecodeWithAPI(JxlDecoder* dec,
   if (status == JXL_DEC_COLOR_ENCODING) {
     size_t icc_size = 0;
     EXPECT_EQ(JXL_DEC_SUCCESS,
-              JxlDecoderGetICCProfileSize(
-                  dec, &format, JXL_COLOR_PROFILE_TARGET_DATA, &icc_size));
+              JxlDecoderGetICCProfileSize(dec, JXL_COLOR_PROFILE_TARGET_DATA,
+                                          &icc_size));
     icc->resize(icc_size);
-    EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetColorAsICCProfile(
-                                   dec, &format, JXL_COLOR_PROFILE_TARGET_DATA,
-                                   icc->data(), icc_size));
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderGetColorAsICCProfile(dec, JXL_COLOR_PROFILE_TARGET_DATA,
+                                             icc->data(), icc_size));
 
     status = process_input(dec);
   }
@@ -976,7 +976,6 @@ TEST(DecodeTest, IccProfileTestOriginal) {
   jxl::PaddedBytes icc_profile = GetIccTestProfile();
   bool xyb_encoded = false;
   std::vector<uint8_t> data = GetIccTestHeader(icc_profile, xyb_encoded);
-  JxlPixelFormat format = {4, JXL_TYPE_FLOAT, JXL_LITTLE_ENDIAN, 0};
 
   JxlDecoder* dec = JxlDecoderCreate(nullptr);
   EXPECT_EQ(JXL_DEC_SUCCESS,
@@ -997,40 +996,37 @@ TEST(DecodeTest, IccProfileTestOriginal) {
   // has an ICC profile instead
   EXPECT_EQ(JXL_DEC_ERROR,
             JxlDecoderGetColorAsEncodedProfile(
-                dec, &format, JXL_COLOR_PROFILE_TARGET_ORIGINAL, nullptr));
+                dec, JXL_COLOR_PROFILE_TARGET_ORIGINAL, nullptr));
 
   size_t dec_profile_size;
-  EXPECT_EQ(
-      JXL_DEC_SUCCESS,
-      JxlDecoderGetICCProfileSize(
-          dec, &format, JXL_COLOR_PROFILE_TARGET_ORIGINAL, &dec_profile_size));
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderGetICCProfileSize(dec, JXL_COLOR_PROFILE_TARGET_ORIGINAL,
+                                        &dec_profile_size));
 
   // Check that can get return status with NULL size
   EXPECT_EQ(JXL_DEC_SUCCESS,
-            JxlDecoderGetICCProfileSize(
-                dec, &format, JXL_COLOR_PROFILE_TARGET_ORIGINAL, nullptr));
+            JxlDecoderGetICCProfileSize(dec, JXL_COLOR_PROFILE_TARGET_ORIGINAL,
+                                        nullptr));
 
   // The profiles must be equal. This requires they have equal size, and if
   // they do, we can get the profile and compare the contents.
   EXPECT_EQ(icc_profile.size(), dec_profile_size);
   if (icc_profile.size() == dec_profile_size) {
     jxl::PaddedBytes icc_profile2(icc_profile.size());
-    EXPECT_EQ(JXL_DEC_SUCCESS,
-              JxlDecoderGetColorAsICCProfile(
-                  dec, &format, JXL_COLOR_PROFILE_TARGET_ORIGINAL,
-                  icc_profile2.data(), icc_profile2.size()));
+    EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetColorAsICCProfile(
+                                   dec, JXL_COLOR_PROFILE_TARGET_ORIGINAL,
+                                   icc_profile2.data(), icc_profile2.size()));
     EXPECT_EQ(icc_profile, icc_profile2);
   }
 
   // the data is not xyb_encoded, so same result expected for the pixel data
   // color profile
-  EXPECT_EQ(JXL_DEC_ERROR,
-            JxlDecoderGetColorAsEncodedProfile(
-                dec, &format, JXL_COLOR_PROFILE_TARGET_DATA, nullptr));
+  EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderGetColorAsEncodedProfile(
+                               dec, JXL_COLOR_PROFILE_TARGET_DATA, nullptr));
 
-  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetICCProfileSize(
-                                 dec, &format, JXL_COLOR_PROFILE_TARGET_DATA,
-                                 &dec_profile_size));
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderGetICCProfileSize(dec, JXL_COLOR_PROFILE_TARGET_DATA,
+                                        &dec_profile_size));
   EXPECT_EQ(icc_profile.size(), dec_profile_size);
 
   JxlDecoderDestroy(dec);
@@ -1041,8 +1037,6 @@ TEST(DecodeTest, IccProfileTestXybEncoded) {
   jxl::PaddedBytes icc_profile = GetIccTestProfile();
   bool xyb_encoded = true;
   std::vector<uint8_t> data = GetIccTestHeader(icc_profile, xyb_encoded);
-  JxlPixelFormat format = {4, JXL_TYPE_FLOAT, JXL_LITTLE_ENDIAN, 0};
-  JxlPixelFormat format_int = {4, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0};
 
   JxlDecoder* dec = JxlDecoderCreate(nullptr);
   EXPECT_EQ(JXL_DEC_SUCCESS,
@@ -1063,50 +1057,46 @@ TEST(DecodeTest, IccProfileTestXybEncoded) {
   // has an ICC profile instead
   EXPECT_EQ(JXL_DEC_ERROR,
             JxlDecoderGetColorAsEncodedProfile(
-                dec, &format, JXL_COLOR_PROFILE_TARGET_ORIGINAL, nullptr));
+                dec, JXL_COLOR_PROFILE_TARGET_ORIGINAL, nullptr));
 
   // Check that can get return status with NULL size
   EXPECT_EQ(JXL_DEC_SUCCESS,
-            JxlDecoderGetICCProfileSize(
-                dec, &format, JXL_COLOR_PROFILE_TARGET_ORIGINAL, nullptr));
+            JxlDecoderGetICCProfileSize(dec, JXL_COLOR_PROFILE_TARGET_ORIGINAL,
+                                        nullptr));
 
   size_t dec_profile_size;
-  EXPECT_EQ(
-      JXL_DEC_SUCCESS,
-      JxlDecoderGetICCProfileSize(
-          dec, &format, JXL_COLOR_PROFILE_TARGET_ORIGINAL, &dec_profile_size));
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderGetICCProfileSize(dec, JXL_COLOR_PROFILE_TARGET_ORIGINAL,
+                                        &dec_profile_size));
 
   // The profiles must be equal. This requires they have equal size, and if
   // they do, we can get the profile and compare the contents.
   EXPECT_EQ(icc_profile.size(), dec_profile_size);
   if (icc_profile.size() == dec_profile_size) {
     jxl::PaddedBytes icc_profile2(icc_profile.size());
-    EXPECT_EQ(JXL_DEC_SUCCESS,
-              JxlDecoderGetColorAsICCProfile(
-                  dec, &format, JXL_COLOR_PROFILE_TARGET_ORIGINAL,
-                  icc_profile2.data(), icc_profile2.size()));
+    EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetColorAsICCProfile(
+                                   dec, JXL_COLOR_PROFILE_TARGET_ORIGINAL,
+                                   icc_profile2.data(), icc_profile2.size()));
     EXPECT_EQ(icc_profile, icc_profile2);
   }
 
   // Data is xyb_encoded, so the data profile is a different profile, encoded
   // as structured profile.
-  EXPECT_EQ(JXL_DEC_SUCCESS,
-            JxlDecoderGetColorAsEncodedProfile(
-                dec, &format, JXL_COLOR_PROFILE_TARGET_DATA, nullptr));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetColorAsEncodedProfile(
+                                 dec, JXL_COLOR_PROFILE_TARGET_DATA, nullptr));
   JxlColorEncoding pixel_encoding;
   EXPECT_EQ(JXL_DEC_SUCCESS,
             JxlDecoderGetColorAsEncodedProfile(
-                dec, &format, JXL_COLOR_PROFILE_TARGET_DATA, &pixel_encoding));
+                dec, JXL_COLOR_PROFILE_TARGET_DATA, &pixel_encoding));
   EXPECT_EQ(JXL_PRIMARIES_SRGB, pixel_encoding.primaries);
   // The API returns LINEAR by default when the colorspace cannot be represented
   // by enum values.
   EXPECT_EQ(JXL_TRANSFER_FUNCTION_LINEAR, pixel_encoding.transfer_function);
 
   // Test the same but with integer format.
-  EXPECT_EQ(
-      JXL_DEC_SUCCESS,
-      JxlDecoderGetColorAsEncodedProfile(
-          dec, &format_int, JXL_COLOR_PROFILE_TARGET_DATA, &pixel_encoding));
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderGetColorAsEncodedProfile(
+                dec, JXL_COLOR_PROFILE_TARGET_DATA, &pixel_encoding));
   EXPECT_EQ(JXL_PRIMARIES_SRGB, pixel_encoding.primaries);
   EXPECT_EQ(JXL_TRANSFER_FUNCTION_LINEAR, pixel_encoding.transfer_function);
 
@@ -1119,16 +1109,16 @@ TEST(DecodeTest, IccProfileTestXybEncoded) {
             JxlDecoderSetPreferredColorProfile(dec, &pixel_encoding_srgb));
   EXPECT_EQ(JXL_DEC_SUCCESS,
             JxlDecoderGetColorAsEncodedProfile(
-                dec, &format, JXL_COLOR_PROFILE_TARGET_DATA, &pixel_encoding));
+                dec, JXL_COLOR_PROFILE_TARGET_DATA, &pixel_encoding));
   EXPECT_EQ(JXL_TRANSFER_FUNCTION_SRGB, pixel_encoding.transfer_function);
 
   // The decoder can also output this as a generated ICC profile anyway, and
   // we're certain that it will differ from the above defined profile since
   // the sRGB data should not have swapped R/G/B primaries.
 
-  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetICCProfileSize(
-                                 dec, &format, JXL_COLOR_PROFILE_TARGET_DATA,
-                                 &dec_profile_size));
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderGetICCProfileSize(dec, JXL_COLOR_PROFILE_TARGET_DATA,
+                                        &dec_profile_size));
   // We don't need to dictate exactly what size the generated ICC profile
   // must be (since there are many ways to represent the same color space),
   // but it should not be zero.
@@ -1136,7 +1126,7 @@ TEST(DecodeTest, IccProfileTestXybEncoded) {
   jxl::PaddedBytes icc_profile2(dec_profile_size);
   if (0 != dec_profile_size) {
     EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetColorAsICCProfile(
-                                   dec, &format, JXL_COLOR_PROFILE_TARGET_DATA,
+                                   dec, JXL_COLOR_PROFILE_TARGET_DATA,
                                    icc_profile2.data(), icc_profile2.size()));
     // expected not equal
     EXPECT_NE(icc_profile, icc_profile2);
@@ -1155,16 +1145,16 @@ TEST(DecodeTest, IccProfileTestXybEncoded) {
             JxlDecoderSetPreferredColorProfile(dec, &pixel_encoding_linear));
   EXPECT_EQ(JXL_DEC_SUCCESS,
             JxlDecoderGetColorAsEncodedProfile(
-                dec, &format, JXL_COLOR_PROFILE_TARGET_DATA, &pixel_encoding));
+                dec, JXL_COLOR_PROFILE_TARGET_DATA, &pixel_encoding));
   EXPECT_EQ(JXL_TRANSFER_FUNCTION_LINEAR, pixel_encoding.transfer_function);
-  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetICCProfileSize(
-                                 dec, &format, JXL_COLOR_PROFILE_TARGET_DATA,
-                                 &dec_profile_size));
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderGetICCProfileSize(dec, JXL_COLOR_PROFILE_TARGET_DATA,
+                                        &dec_profile_size));
   EXPECT_NE(0u, dec_profile_size);
   jxl::PaddedBytes icc_profile3(dec_profile_size);
   if (0 != dec_profile_size) {
     EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetColorAsICCProfile(
-                                   dec, &format, JXL_COLOR_PROFILE_TARGET_DATA,
+                                   dec, JXL_COLOR_PROFILE_TARGET_DATA,
                                    icc_profile3.data(), icc_profile3.size()));
     // expected not equal to the previously set preferred profile.
     EXPECT_NE(icc_profile2, icc_profile3);
@@ -1181,7 +1171,6 @@ TEST(DecodeTest, IccProfileTestXybEncoded) {
 TEST(DecodeTest, ICCPartialTest) {
   jxl::PaddedBytes icc_profile = GetIccTestProfile();
   std::vector<uint8_t> data = GetIccTestHeader(icc_profile, false);
-  JxlPixelFormat format = {4, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0};
 
   const uint8_t* next_in = data.data();
   size_t avail_in = 0;
@@ -1228,9 +1217,8 @@ TEST(DecodeTest, ICCPartialTest) {
       // Sanity check that the ICC profile was decoded correctly
       size_t dec_profile_size;
       EXPECT_EQ(JXL_DEC_SUCCESS,
-                JxlDecoderGetICCProfileSize(dec, &format,
-                                            JXL_COLOR_PROFILE_TARGET_ORIGINAL,
-                                            &dec_profile_size));
+                JxlDecoderGetICCProfileSize(
+                    dec, JXL_COLOR_PROFILE_TARGET_ORIGINAL, &dec_profile_size));
       EXPECT_EQ(icc_profile.size(), dec_profile_size);
 
     } else if (status == JXL_DEC_SUCCESS) {
@@ -1695,7 +1683,7 @@ std::string GetOrigProfile(JxlDecoder* dec) {
   JxlColorEncoding c;
   JxlColorProfileTarget target = JXL_COLOR_PROFILE_TARGET_ORIGINAL;
   EXPECT_EQ(JXL_DEC_SUCCESS,
-            JxlDecoderGetColorAsEncodedProfile(dec, nullptr, target, &c));
+            JxlDecoderGetColorAsEncodedProfile(dec, target, &c));
   return ColorDescription(c);
 }
 
@@ -1703,7 +1691,7 @@ std::string GetDataProfile(JxlDecoder* dec) {
   JxlColorEncoding c;
   JxlColorProfileTarget target = JXL_COLOR_PROFILE_TARGET_DATA;
   EXPECT_EQ(JXL_DEC_SUCCESS,
-            JxlDecoderGetColorAsEncodedProfile(dec, nullptr, target, &c));
+            JxlDecoderGetColorAsEncodedProfile(dec, target, &c));
   return ColorDescription(c);
 }
 

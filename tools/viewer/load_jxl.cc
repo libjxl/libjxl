@@ -98,12 +98,11 @@ QImage loadJxlImage(const QString& filename, const QByteArray& targetIccProfile,
   size_t icc_size;
   EXPECT_EQ(JXL_DEC_SUCCESS,
             JxlDecoderGetICCProfileSize(
-                dec.get(), &format, JXL_COLOR_PROFILE_TARGET_DATA, &icc_size));
+                dec.get(), JXL_COLOR_PROFILE_TARGET_DATA, &icc_size));
   std::vector<uint8_t> icc_profile(icc_size);
-  EXPECT_EQ(JXL_DEC_SUCCESS,
-            JxlDecoderGetColorAsICCProfile(
-                dec.get(), &format, JXL_COLOR_PROFILE_TARGET_DATA,
-                icc_profile.data(), icc_profile.size()));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetColorAsICCProfile(
+                                 dec.get(), JXL_COLOR_PROFILE_TARGET_DATA,
+                                 icc_profile.data(), icc_profile.size()));
 
   std::vector<float> float_pixels(pixel_count * 4);
   EXPECT_EQ(JXL_DEC_NEED_IMAGE_OUT_BUFFER, JxlDecoderProcessInput(dec.get()));

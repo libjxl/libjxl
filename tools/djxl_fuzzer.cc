@@ -80,10 +80,10 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
   auto dec = JxlDecoderMake(nullptr);
   if (JXL_DEC_SUCCESS !=
       JxlDecoderSubscribeEvents(
-          dec.get(), JXL_DEC_BASIC_INFO | JXL_DEC_EXTENSIONS |
-                         JXL_DEC_COLOR_ENCODING | JXL_DEC_PREVIEW_IMAGE |
-                         JXL_DEC_FRAME | JXL_DEC_FULL_IMAGE |
-                         JXL_DEC_JPEG_RECONSTRUCTION | JXL_DEC_BOX)) {
+          dec.get(), JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING |
+                         JXL_DEC_PREVIEW_IMAGE | JXL_DEC_FRAME |
+                         JXL_DEC_FULL_IMAGE | JXL_DEC_JPEG_RECONSTRUCTION |
+                         JXL_DEC_BOX)) {
     return false;
   }
   if (JXL_DEC_SUCCESS != JxlDecoderSetParallelRunner(dec.get(),
@@ -110,7 +110,6 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
   }
 
   bool seen_basic_info = false;
-  bool seen_extensions = false;
   bool seen_color_encoding = false;
   bool seen_preview = false;
   bool seen_need_image_out = false;
@@ -273,12 +272,6 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
         }
         Consume(ec_name.cbegin(), ec_name.cend());
       }
-    } else if (status == JXL_DEC_EXTENSIONS) {
-      if (!seen_basic_info) abort();     // expected basic info first
-      if (seen_color_encoding) abort();  // should happen after this
-      if (seen_extensions) abort();      // already seen extensions
-      seen_extensions = true;
-      // TODO(eustas): get extensions?
     } else if (status == JXL_DEC_COLOR_ENCODING) {
       if (!seen_basic_info) abort();     // expected basic info first
       if (seen_color_encoding) abort();  // already seen color encoding
@@ -287,14 +280,13 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
       // Get the ICC color profile of the pixel data
       size_t icc_size;
       if (JXL_DEC_SUCCESS !=
-          JxlDecoderGetICCProfileSize(
-              dec.get(), &format, JXL_COLOR_PROFILE_TARGET_DATA, &icc_size)) {
+          JxlDecoderGetICCProfileSize(dec.get(), JXL_COLOR_PROFILE_TARGET_DATA,
+                                      &icc_size)) {
         return false;
       }
       icc_profile->resize(icc_size);
       if (JXL_DEC_SUCCESS != JxlDecoderGetColorAsICCProfile(
-                                 dec.get(), &format,
-                                 JXL_COLOR_PROFILE_TARGET_DATA,
+                                 dec.get(), JXL_COLOR_PROFILE_TARGET_DATA,
                                  icc_profile->data(), icc_profile->size())) {
         return false;
       }
