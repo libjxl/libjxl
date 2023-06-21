@@ -50,6 +50,19 @@ if(CHECK_PIE_SUPPORTED)
   endif()
 endif()
 
+if(PROVISION_DEPENDENCIES)
+  # Run script to provision dependencies.
+  find_program (BASH_PROGRAM bash)
+  if(BASH_PROGRAM)
+    execute_process(
+      COMMAND ${BASH_PROGRAM} ${CMAKE_CURRENT_SOURCE_DIR}/deps.sh
+      RESULT_VARIABLE PROVISION_DEPENDENCIES_RESULT)
+  endif()
+  if(NOT PROVISION_DEPENDENCIES_RESULT EQUAL "0")
+    message(FATAL_ERROR "${CMAKE_CURRENT_SOURCE_DIR}/deps.sh failed with ${PROVISION_DEPENDENCIES_RESULT}")
+  endif()
+endif()
+
 ### Project build options:
 if(CXX_FUZZERS_SUPPORTED)
   # Enabled by default except on arm64, Windows and Apple builds.
