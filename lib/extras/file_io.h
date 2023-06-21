@@ -3,32 +3,23 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#ifndef LIB_JXL_BASE_FILE_IO_H_
-#define LIB_JXL_BASE_FILE_IO_H_
+#ifndef LIB_EXTRAS_FILE_IO_H_
+#define LIB_EXTRAS_FILE_IO_H_
 
-// Helper functions for reading/writing files.
-
+#include <errno.h>
+#include <limits.h>
+#include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 #include <sys/stat.h>
 
 #include <list>
 #include <string>
 #include <vector>
 
-#include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/base/padded_bytes.h"
-#include "lib/jxl/base/status.h"
+#include "lib/extras/codec.h"
 
 namespace jxl {
-
-// Returns extension including the dot, or empty string if none. Assumes
-// filename is not a hidden file (e.g. ".bashrc"). May be called with a pathname
-// if the filename contains a dot and/or no other path component does.
-static inline std::string Extension(const std::string& filename) {
-  const size_t pos = filename.rfind('.');
-  if (pos == std::string::npos) return std::string();
-  return filename.substr(pos);
-}
 
 // RAII, ensures files are closed even when returning early.
 class FileWrapper {
@@ -57,7 +48,12 @@ class FileWrapper {
   ~FileWrapper() {
     if (file_ != nullptr && close_on_delete_) {
       const int err = fclose(file_);
-      JXL_CHECK(err == 0);
+      if (err) {
+        fprintf(stderr,
+                "Could not close file\n"
+                "Error: %s",
+                strerror(errno));
+      }
     }
   }
 
@@ -74,11 +70,11 @@ class FileWrapper {
 };
 
 template <typename ContainerType>
-static inline Status ReadFile(const std::string& pathname,
-                              ContainerType* JXL_RESTRICT bytes) {
-  FileWrapper f(pathname, "rb");
-  if (f == nullptr)
-    return JXL_FAILURE("Failed to open file for reading: %s", pathname.c_str());
+static inline bool ReadFile(const std::string& filename,
+                            ContainerType* JXL_RESTRICT bytes) {
+  FileWrapper f(filename, "rb");
+
+  if (!f) return false;
 
   // Get size of file in bytes
   const int64_t size = f.size();
@@ -92,7 +88,7 @@ static inline Status ReadFile(const std::string& pathname,
       std::vector<uint8_t> chunk(16 * 1024);
       const size_t bytes_read = fread(chunk.data(), 1, chunk.size(), f);
       if (ferror(f) || bytes_read > chunk.size()) {
-        return JXL_FAILURE("Error reading %s", pathname.c_str());
+        return false;
       }
 
       chunk.resize(bytes_read);
@@ -107,47 +103,68 @@ static inline Status ReadFile(const std::string& pathname,
     bytes->resize(total_size);
     size_t pos = 0;
     for (const auto& chunk : chunks) {
-      // Needed in case ContainerType is std::string, whose data() is const.
-      char* bytes_writable = reinterpret_cast<char*>(&(*bytes)[0]);
-      memcpy(bytes_writable + pos, chunk.data(), chunk.size());
+      memcpy(bytes->data() + pos, chunk.data(), chunk.size());
       pos += chunk.size();
     }
   } else {
     // Size is known, read the file directly.
     bytes->resize(static_cast<size_t>(size));
-    size_t pos = 0;
-    while (pos < bytes->size()) {
-      // Needed in case ContainerType is std::string, whose data() is const.
-      char* bytes_writable = reinterpret_cast<char*>(&(*bytes)[0]);
-      const size_t bytes_read =
-          fread(bytes_writable + pos, 1, bytes->size() - pos, f);
-      if (bytes_read == 0) return JXL_FAILURE("Failed to read");
-      pos += bytes_read;
-    }
-    JXL_ASSERT(pos == bytes->size());
+
+    const size_t bytes_read = fread(bytes->data(), 1, bytes->size(), f);
+    if (bytes_read != static_cast<size_t>(size)) return false;
   }
+
   return true;
 }
 
 template <typename ContainerType>
-static inline Status WriteFile(const ContainerType& bytes,
-                               const std::string& pathname) {
-  FileWrapper f(pathname, "wb");
-  if (f == nullptr)
-    return JXL_FAILURE("Failed to open file for writing: %s", pathname.c_str());
-
-  size_t pos = 0;
-  while (pos < bytes.size()) {
-    const size_t bytes_written =
-        fwrite(bytes.data() + pos, 1, bytes.size() - pos, f);
-    if (bytes_written == 0) return JXL_FAILURE("Failed to write");
-    pos += bytes_written;
+static inline bool WriteFile(const std::string& filename,
+                             const ContainerType& bytes) {
+  FileWrapper file(filename, "wb");
+  if (!file) {
+    fprintf(stderr,
+            "Could not open %s for writing\n"
+            "Error: %s",
+            filename.c_str(), strerror(errno));
+    return false;
   }
-  JXL_ASSERT(pos == bytes.size());
-
+  if (fwrite(bytes.data(), 1, bytes.size(), file) != bytes.size()) {
+    fprintf(stderr,
+            "Could not write to file\n"
+            "Error: %s",
+            strerror(errno));
+    return false;
+  }
   return true;
+}
+
+static inline std::string Basename(std::string filename) {
+  size_t pos = filename.find_first_of(':');
+  if (pos < filename.size()) {
+    return filename.substr(pos + 1);
+  } else {
+    pos = filename.find_last_of('.');
+    if (pos < filename.size()) {
+      return filename.substr(0, pos);
+    } else {
+      return filename;
+    }
+  }
+}
+static inline std::string Extension(std::string filename) {
+  size_t pos = filename.find_first_of(':');
+  if (pos < filename.size()) {
+    return "." + filename.substr(0, pos);
+  } else {
+    pos = filename.find_last_of('.');
+    if (pos < filename.size()) {
+      return filename.substr(pos);
+    } else {
+      return "";
+    }
+  }
 }
 
 }  // namespace jxl
 
-#endif  // LIB_JXL_BASE_FILE_IO_H_
+#endif  // LIB_EXTRAS_FILE_IO_H_

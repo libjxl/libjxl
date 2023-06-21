@@ -12,10 +12,10 @@
 
 #include "lib/extras/dec/jpegli.h"
 #include "lib/extras/enc/encode.h"
+#include "lib/extras/file_io.h"
 #include "lib/extras/time.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "tools/cmdline.h"
-#include "tools/file_io.h"
 #include "tools/speed_stats.h"
 
 namespace jpegxl {
@@ -118,7 +118,7 @@ int DJpegliMain(int argc, const char* argv[]) {
   }
 
   std::vector<uint8_t> jpeg_bytes;
-  if (!jpegxl::tools::ReadFile(args.file_in, &jpeg_bytes)) {
+  if (!jxl::ReadFile(args.file_in, &jpeg_bytes)) {
     fprintf(stderr, "Failed to read input image %s\n", args.file_in);
     return EXIT_FAILURE;
   }
@@ -180,8 +180,7 @@ int DJpegliMain(int argc, const char* argv[]) {
     fprintf(stderr, "Encode failed\n");
     return EXIT_FAILURE;
   }
-  if (!jpegxl::tools::WriteFile(filename_out.c_str(),
-                                encoded_image.bitstreams[0])) {
+  if (!jxl::WriteFile(filename_out, encoded_image.bitstreams[0])) {
     fprintf(stderr, "Failed to write output file %s\n", filename_out.c_str());
     return EXIT_FAILURE;
   }

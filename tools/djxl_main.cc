@@ -24,12 +24,12 @@
 #include "lib/extras/dec/jxl.h"
 #include "lib/extras/enc/encode.h"
 #include "lib/extras/enc/pnm.h"
+#include "lib/extras/file_io.h"
 #include "lib/extras/packed_image.h"
 #include "lib/extras/time.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "tools/cmdline.h"
 #include "tools/codec_config.h"
-#include "tools/file_io.h"
 #include "tools/speed_stats.h"
 
 namespace jpegxl {
@@ -231,7 +231,7 @@ bool WriteOptionalOutput(const std::string& filename,
   if (filename.empty() || bytes.empty()) {
     return true;
   }
-  return jpegxl::tools::WriteFile(filename.data(), bytes);
+  return jxl::WriteFile(filename, bytes);
 }
 
 std::string Filename(const std::string& base, const std::string& extension,
@@ -353,7 +353,7 @@ int main(int argc, const char* argv[]) {
 
   std::vector<uint8_t> compressed;
   // Reading compressed JPEG XL input
-  if (!jpegxl::tools::ReadFile(args.file_in, &compressed)) {
+  if (!jxl::ReadFile(args.file_in, &compressed)) {
     fprintf(stderr, "couldn't load %s\n", args.file_in);
     return EXIT_FAILURE;
   }
@@ -378,19 +378,8 @@ int main(int argc, const char* argv[]) {
   std::string extension;
   if (args.file_out && !args.disable_output) {
     filename_out = std::string(args.file_out);
-    size_t pos = filename_out.find_first_of(':');
-    if (pos < filename_out.size()) {
-      base = filename_out.substr(pos + 1);
-      extension = "." + filename_out.substr(0, pos);
-    } else {
-      pos = filename_out.find_last_of('.');
-      if (pos < filename_out.size()) {
-        base = filename_out.substr(0, pos);
-        extension = filename_out.substr(pos);
-      } else {
-        base = filename_out;
-      }
-    }
+    base = jxl::Basename(filename_out);
+    extension = jxl::Extension(filename_out);
   }
   const jxl::extras::Codec codec = jxl::extras::CodecFromExtension(extension);
   if (codec == jxl::extras::Codec::kEXR) {
@@ -445,8 +434,7 @@ int main(int argc, const char* argv[]) {
     if (!bytes.empty()) {
       if (!args.quiet) fprintf(stderr, "Reconstructed to JPEG.\n");
       if (!filename_out.empty() &&
-          !jpegxl::tools::WriteFile(base == "-" ? "-" : filename_out.c_str(),
-                                    bytes)) {
+          !jxl::WriteFile(base == "-" ? "-" : filename_out.c_str(), bytes)) {
         return EXIT_FAILURE;
       }
     }
@@ -504,7 +492,7 @@ int main(int argc, const char* argv[]) {
             (i == 0 ? encoded_image.bitstreams[j]
                     : encoded_image.extra_channel_bitstreams[i - 1][j]);
         std::string fn = Filename(base, extension, i, j, nlayers, nframes);
-        if (!jpegxl::tools::WriteFile(fn.c_str(), bitstream)) {
+        if (!jxl::WriteFile(fn.c_str(), bitstream)) {
           return EXIT_FAILURE;
         }
       }

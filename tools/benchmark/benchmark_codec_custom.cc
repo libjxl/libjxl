@@ -15,8 +15,8 @@
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/color_description.h"
 #include "lib/extras/enc/apng.h"
+#include "lib/extras/file_io.h"
 #include "lib/extras/time.h"
-#include "lib/jxl/base/file_io.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/image_bundle.h"
 #include "tools/benchmark/benchmark_utils.h"
@@ -161,7 +161,7 @@ class CustomCodec : public ImageCodec {
     JXL_RETURN_IF_ERROR(encoded_file.GetFileName(&encoded_filename));
     JXL_RETURN_IF_ERROR(out_file.GetFileName(&out_filename));
 
-    JXL_RETURN_IF_ERROR(jxl::WriteFile(compressed, encoded_filename));
+    JXL_RETURN_IF_ERROR(jxl::WriteFile(encoded_filename, compressed));
     JXL_RETURN_IF_ERROR(ReportCodecRunningTime(
         [&, this] {
           return RunCommand(

@@ -7,8 +7,8 @@
 #include <stdlib.h>
 
 #include "lib/extras/codec.h"
+#include "lib/extras/file_io.h"
 #include "lib/extras/tone_mapping.h"
-#include "lib/jxl/base/file_io.h"
 #include "lib/jxl/enc_color_management.h"
 #include "tools/args.h"
 #include "tools/cmdline.h"

@@ -67,7 +67,7 @@ class ImageCodec {
 
   virtual Status CanRecompressJpeg() const { return false; }
   virtual Status RecompressJpeg(const std::string& filename,
-                                const std::string& data,
+                                const std::vector<uint8_t>& data,
                                 std::vector<uint8_t>* compressed,
                                 jpegxl::tools::SpeedStats* speed_stats) {
     return false;

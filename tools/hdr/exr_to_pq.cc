@@ -8,8 +8,8 @@
 
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/decode.h"
+#include "lib/extras/file_io.h"
 #include "lib/extras/packed_image_convert.h"
-#include "lib/jxl/base/file_io.h"
 #include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/image_bundle.h"
 #include "tools/cmdline.h"

@@ -8,8 +8,8 @@
 #include <memory>
 #include <string>
 
+#include "lib/extras/file_io.h"
 #include "lib/extras/packed_image_convert.h"
-#include "lib/jxl/base/file_io.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/enc_butteraugli_pnorm.h"

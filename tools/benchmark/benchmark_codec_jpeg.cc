@@ -27,7 +27,7 @@
 #if JPEGXL_ENABLE_JPEGLI
 #include "lib/jpegli/encode.h"
 #endif
-#include "lib/jxl/base/file_io.h"
+#include "lib/extras/file_io.h"
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/codec_in_out.h"

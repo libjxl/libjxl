@@ -33,6 +33,7 @@
 #include "lib/extras/dec/color_hints.h"
 #include "lib/extras/dec/decode.h"
 #include "lib/extras/enc/jxl.h"
+#include "lib/extras/file_io.h"
 #include "lib/extras/time.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/printf_macros.h"
@@ -41,7 +42,6 @@
 #include "tools/args.h"
 #include "tools/cmdline.h"
 #include "tools/codec_config.h"
-#include "tools/file_io.h"
 #include "tools/speed_stats.h"
 
 namespace jpegxl {
@@ -931,7 +931,7 @@ int main(int argc, char** argv) {
   std::vector<uint8_t>* jpeg_bytes = nullptr;
   double decode_mps = 0;
   size_t pixels = 0;
-  if (!jpegxl::tools::ReadFile(args.file_in, &image_data)) {
+  if (!jxl::ReadFile(args.file_in, &image_data)) {
     std::cerr << "Reading image data failed." << std::endl;
     exit(EXIT_FAILURE);
   }
@@ -1006,7 +1006,7 @@ int main(int argc, char** argv) {
   }
 
   if (args.file_out && !args.disable_output) {
-    if (!jpegxl::tools::WriteFile(args.file_out, compressed)) {
+    if (!jxl::WriteFile(args.file_out, compressed)) {
       std::cerr << "Could not write jxl file." << std::endl;
       return EXIT_FAILURE;
     }

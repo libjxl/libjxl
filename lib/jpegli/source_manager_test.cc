@@ -8,10 +8,10 @@
 #include <cmath>
 #include <vector>
 
+#include "lib/extras/file_io.h"
 #include "lib/jpegli/decode.h"
 #include "lib/jpegli/test_utils.h"
 #include "lib/jpegli/testing.h"
-#include "lib/jxl/base/file_io.h"
 #include "lib/jxl/base/status.h"
 
 namespace jpegli {
