@@ -63,17 +63,18 @@ struct DecompressArgs {
         "(e.g. 'png:-')",
         &file_out);
 
+    cmdline->AddHelpText("\nBasic options:", 0);
+
     cmdline->AddOptionFlag('V', "version", "Print version number and exit.",
-                           &version, &SetBooleanTrue, 1);
+                           &version, &SetBooleanTrue, 0);
+    cmdline->AddOptionFlag('\0', "quiet", "Silence output (except for errors).",
+                           &quiet, &SetBooleanTrue, 0);
+    cmdline->AddOptionFlag('v', "verbose",
+                           "Verbose output; can be repeated and also applies "
+                           "to help (!).",
+                           &verbose, &SetBooleanTrue);
 
-    cmdline->AddOptionValue('\0', "num_reps", "N",
-                            "Sets the number of times to decompress the image. "
-                            "Useful for benchmarking. Default is 1.",
-                            &num_reps, &ParseUnsigned, 2);
-
-    cmdline->AddOptionFlag('\0', "disable_output",
-                           "No output file will be written (for benchmarking)",
-                           &disable_output, &SetBooleanTrue, 2);
+    cmdline->AddHelpText("\nAdvanced options:", 1);
 
     cmdline->AddOptionValue('\0', "num_threads", "N",
                             "Number of worker threads (-1 == use machine "
@@ -88,7 +89,7 @@ struct DecompressArgs {
         "output format capabilities\n"
         "    and the input bit depth (e.g. decoding a 12-bit image to PNG will "
         "produce a 16-bit PNG).",
-        &bits_per_sample, &ParseSigned, 2);
+        &bits_per_sample, &ParseSigned, 1);
 
     cmdline->AddOptionValue('\0', "display_nits", "N",
                             "If set to a non-zero value, tone maps the image "
@@ -109,11 +110,11 @@ struct DecompressArgs {
                             "target downsampling ratios,\n"
                             "    only decode what is needed to produce an "
                             "image intended for this downsampling ratio.",
-                            &downsampling, &ParseUint32, 2);
+                            &downsampling, &ParseUint32, 1);
 
     cmdline->AddOptionFlag('\0', "allow_partial_files",
                            "Allow decoding of truncated files.",
-                           &allow_partial_files, &SetBooleanTrue, 2);
+                           &allow_partial_files, &SetBooleanTrue, 1);
 
 #if JPEGXL_ENABLE_JPEG
     cmdline->AddOptionFlag(
@@ -122,19 +123,30 @@ struct DecompressArgs {
         "djxl reconstructs that JPEG file.\n"
         "    This flag causes the decoder to instead decode to pixels and "
         "encode a new (lossy) JPEG.",
-        &pixels_to_jpeg, &SetBooleanTrue, 2);
+        &pixels_to_jpeg, &SetBooleanTrue, 1);
 
     opt_jpeg_quality_id =
         cmdline->AddOptionValue('q', "jpeg_quality", "N",
                                 "Sets the JPEG output quality, default is 95. "
                                 "Setting this option implies --pixels_to_jpeg.",
-                                &jpeg_quality, &ParseUnsigned, 2);
+                                &jpeg_quality, &ParseUnsigned, 1);
 #endif
+
+    cmdline->AddHelpText("\nOptions for experimentation / benchmarking:", 2);
+
+    cmdline->AddOptionValue('\0', "num_reps", "N",
+                            "Sets the number of times to decompress the image. "
+                            "Useful for benchmarking. Default is 1.",
+                            &num_reps, &ParseUnsigned, 2);
+
+    cmdline->AddOptionFlag('\0', "disable_output",
+                           "No output file will be written (for benchmarking)",
+                           &disable_output, &SetBooleanTrue, 2);
 
 #if JPEGXL_ENABLE_SJPEG
     cmdline->AddOptionFlag('\0', "use_sjpeg",
                            "Use sjpeg instead of libjpeg for JPEG output.",
-                           &use_sjpeg, &SetBooleanTrue, 3);
+                           &use_sjpeg, &SetBooleanTrue, 2);
 #endif
 
     cmdline->AddOptionFlag('\0', "norender_spotcolors",
@@ -158,24 +170,16 @@ struct DecompressArgs {
         "this file\n"
         "    This can be different from the ICC profile of the "
         "decoded image if --color_space was specified.",
-        &orig_icc_out, &ParseString, 3);
+        &orig_icc_out, &ParseString, 2);
 
     cmdline->AddOptionValue('\0', "metadata_out", "FILENAME",
                             "If specified, writes metadata info to a JSON "
                             "file. Used by the conformance test script",
-                            &metadata_out, &ParseString, 3);
+                            &metadata_out, &ParseString, 2);
 
     cmdline->AddOptionFlag('\0', "print_read_bytes",
                            "Print total number of decoded bytes.",
-                           &print_read_bytes, &SetBooleanTrue, 3);
-
-    cmdline->AddOptionFlag('\0', "quiet", "Silence output (except for errors).",
-                           &quiet, &SetBooleanTrue, 2);
-
-    cmdline->AddOptionFlag('v', "verbose",
-                           "Verbose output; can be repeated and also applies "
-                           "to help (!).",
-                           &verbose, &SetBooleanTrue);
+                           &print_read_bytes, &SetBooleanTrue, 2);
   }
 
   // Validate the passed arguments, checking whether all passed options are

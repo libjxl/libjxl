@@ -53,7 +53,15 @@ class CommandLineParser {
     // Returns whether the option should be displayed as required in the help
     // output. No effect on validation.
     virtual bool required() const = 0;
+
+    // Returns whether the option is not really an option but just help text
+    virtual bool help_only() const = 0;
   };
+
+  // Add help text
+  void AddHelpText(const char* help_text, int verbosity_level = 0) {
+    options_.emplace_back(new CmdHelpText(help_text, verbosity_level));
+  }
 
   // Add a positional argument. Returns the id of the added option or
   // kOptionError on error.
@@ -114,6 +122,36 @@ class CommandLineParser {
   std::vector<const char*> PositionalArgs() const;
 
  private:
+  // Help text only.
+  class CmdHelpText : public CmdOptionInterface {
+   public:
+    CmdHelpText(const char* help_text, int verbosity_level)
+        : help_text_(help_text), verbosity_level_(verbosity_level) {}
+
+    std::string help_flags() const override { return ""; }
+    const char* help_text() const override { return help_text_; }
+    int verbosity_level() const override { return verbosity_level_; }
+    bool matched() const override { return false; }
+
+    bool Match(const char* arg, bool parse_options) const override {
+      return false;
+    }
+
+    bool Parse(const int argc, const char* argv[], int* i) override {
+      return true;
+    }
+
+    bool positional() const override { return false; }
+
+    bool required() const override { return false; }
+
+    bool help_only() const override { return true; }
+
+   private:
+    const char* help_text_;
+    const int verbosity_level_;
+  };
+
   // A positional argument.
   class CmdOptionPositional : public CmdOptionInterface {
    public:
@@ -149,6 +187,8 @@ class CommandLineParser {
     bool positional() const override { return true; }
 
     bool required() const override { return required_; }
+
+    bool help_only() const override { return false; }
 
    private:
     const char* name_;
@@ -251,6 +291,8 @@ class CommandLineParser {
       // Only used for help display of positional arguments.
       return false;
     }
+
+    bool help_only() const override { return false; }
 
    private:
     // Returns whether arg matches the short_name flag of this option.

@@ -94,21 +94,8 @@ struct CompressArgs {
                                  "the compressed JXL output file", &file_out);
 
     // Flags.
-    // TODO(lode): also add options to add exif/xmp/other metadata in the
-    // container.
-    cmdline->AddOptionValue(
-        '\0', "container", "0|1",
-        "0 = Do not encode using container format (strip "
-        "Exif/XMP/JPEG bitstream reconstruction data).\n"
-        "    1 = Force using container format. Default: use only if needed.",
-        &container, &ParseOverride, 1);
 
-    cmdline->AddOptionValue(
-        '\0', "jpeg_store_metadata", "0|1",
-        ("If --lossless_jpeg=1, store JPEG reconstruction "
-         "metadata in the JPEG XL container.\n"
-         "    This allows reconstruction of the JPEG codestream. Default: 1."),
-        &jpeg_store_metadata, &ParseUnsigned, 2);
+    cmdline->AddHelpText("\nBasic options:", 0);
 
     // Target distance/size/bpp
     opt_distance_id = cmdline->AddOptionValue(
@@ -120,15 +107,6 @@ struct CompressArgs {
         "    Recommended range: 0.5 .. 3.0. Allowed range: 0.0 ... 25.0. "
         "Mutually exclusive with --quality.",
         &distance, &ParseFloat);
-
-    opt_alpha_distance_id = cmdline->AddOptionValue(
-        'a', "alpha_distance", "A_DISTANCE",
-        "Target visual distance for the alpha channel, lower = higher "
-        "quality.\n"
-        "    0.0 = mathematically lossless. 1.0 = visually lossless.\n"
-        "    Default is to use the same value as for the color image.\n"
-        "    Recommended range: 0.5 .. 3.0. Allowed range: 0.0 ... 25.0.",
-        &alpha_distance, &ParseFloat, 1);
 
     // High-level options
     opt_quality_id = cmdline->AddOptionValue(
@@ -149,7 +127,48 @@ struct CompressArgs {
         "    For lossless, generally it will produce smaller files.\n"
         "    For lossy, higher effort should more accurately reach "
         "the target quality.",
-        &effort, &ParseUnsigned, -1);
+        &effort, &ParseUnsigned);
+
+    cmdline->AddOptionFlag('V', "version",
+                           "Print encoder library version number and exit.",
+                           &version, &SetBooleanTrue);
+    cmdline->AddOptionFlag('\0', "quiet", "Be more silent", &quiet,
+                           &SetBooleanTrue);
+    cmdline->AddOptionFlag('v', "verbose",
+                           "Verbose output; can be repeated and also applies "
+                           "to help (!).",
+                           &verbose, &SetBooleanTrue);
+
+    cmdline->AddHelpText("\nAdvanced options:", 1);
+
+    opt_alpha_distance_id = cmdline->AddOptionValue(
+        'a', "alpha_distance", "A_DISTANCE",
+        "Target visual distance for the alpha channel, lower = higher "
+        "quality.\n"
+        "    0.0 = mathematically lossless. 1.0 = visually lossless.\n"
+        "    Default is to use the same value as for the color image.\n"
+        "    Recommended range: 0.5 .. 3.0. Allowed range: 0.0 ... 25.0.",
+        &alpha_distance, &ParseFloat, 1);
+
+    cmdline->AddOptionFlag('p', "progressive",
+                           "Enable (more) progressive/responsive decoding.",
+                           &progressive, &SetBooleanTrue, 1);
+
+    cmdline->AddOptionValue(
+        '\0', "group_order", "0|1",
+        "Order in which 256x256 groups are stored "
+        "in the codestream for progressive rendering.\n"
+        "    0 = scanline order, 1 = center-first order. Default: 0.",
+        &group_order, &ParseOverride, 1);
+
+    // TODO(lode): also add options to add exif/xmp/other metadata in the
+    // container.
+    cmdline->AddOptionValue(
+        '\0', "container", "0|1",
+        "0 = Do not encode using container format (strip "
+        "Exif/XMP/JPEG bitstream reconstruction data).\n"
+        "    1 = Force using container format. Default: use only if needed.",
+        &container, &ParseOverride, 1);
 
     cmdline->AddOptionValue('\0', "compress_boxes", "0|1",
                             "Disable/enable Brotli compression for metadata "
@@ -162,14 +181,71 @@ struct CompressArgs {
         "    Default: 9. Higher number is more effort (slower).",
         &brotli_effort, &ParseUnsigned, 1);
 
+    cmdline->AddOptionValue(
+        'm', "modular", "0|1",
+        "Use modular mode (default = encoder chooses, 0 = enforce VarDCT, "
+        "1 = enforce modular mode).",
+        &modular, &ParseOverride, 1);
+
+    // JPEG modes: parallel Brunsli, pixels to JPEG, or JPEG to Brunsli
+    opt_lossless_jpeg_id = cmdline->AddOptionValue(
+        'j', "lossless_jpeg", "0|1",
+        "If the input is JPEG, losslessly transcode JPEG, "
+        "rather than using reencode pixels.",
+        &lossless_jpeg, &ParseUnsigned, 1);
+
+    cmdline->AddOptionValue(
+        '\0', "num_threads", "N",
+        "Number of worker threads (-1 == use machine default, "
+        "0 == do not use multithreading).",
+        &num_threads, &ParseSigned, 1);
+
+    cmdline->AddOptionValue(
+        '\0', "photon_noise_iso", "ISO_FILM_SPEED",
+        "Adds noise to the image emulating photographic film or sensor noise.\n"
+        "    Higher number = grainier image, e.g. 100 gives a low amount of "
+        "noise,\n"
+        "    3200 gives a lot of noise. Default is 0.",
+        &photon_noise_iso, &ParsePhotonNoiseParameter, 1);
+
+    cmdline->AddOptionValue(
+        '\0', "intensity_target", "N",
+        "Upper bound on the intensity level present in the image, in nits.\n"
+        "    Default is 0, which means 'choose a sensible default "
+        "value based on the color encoding.",
+        &intensity_target, &ParseIntensityTarget, 1);
+
+    cmdline->AddOptionValue(
+        'x', "dec-hints", "key=value",
+        "This is useful for 'raw' formats like PPM that do not contain "
+        "colorspace information.\n"
+        "    The key 'color_space' indicates an enumerated ColorEncoding, for "
+        "example:\n"
+        "      -x color_space=RGB_D65_SRG_Per_SRG is sRGB with perceptual "
+        "rendering intent\n"
+        "      -x color_space=RGB_D65_202_Rel_PeQ is Rec.2100 PQ with relative "
+        "rendering intent\n"
+        "    The key 'icc_pathname' refers to a binary file containing an ICC "
+        "profile.",
+        &color_hints, &ParseAndAppendKeyValue<jxl::extras::ColorHints>, 1);
+
+    cmdline->AddHelpText("\nExpert options:", 2);
+
+    cmdline->AddOptionValue(
+        '\0', "jpeg_store_metadata", "0|1",
+        ("If --lossless_jpeg=1, store JPEG reconstruction "
+         "metadata in the JPEG XL container.\n"
+         "    This allows reconstruction of the JPEG codestream. Default: 1."),
+        &jpeg_store_metadata, &ParseUnsigned, 2);
+
+    cmdline->AddOptionValue('\0', "codestream_level", "K",
+                            "The codestream level. Either `-1`, `5` or `10`.",
+                            &codestream_level, &ParseInt64, 2);
+
     cmdline->AddOptionValue('\0', "faster_decoding", "0|1|2|3|4",
                             "0 = default, higher values improve decode speed "
                             "at the expense of quality or density.",
                             &faster_decoding, &ParseUnsigned, 2);
-
-    cmdline->AddOptionFlag('p', "progressive",
-                           "Enable (more) progressive/responsive decoding.",
-                           &progressive, &SetBooleanTrue, 1);
 
     cmdline->AddOptionValue('\0', "premultiply", "-1|0|1",
                             "Force premultiplied (associated) alpha.",
@@ -179,13 +255,6 @@ struct CompressArgs {
                             "disable/enable preserving color of invisible "
                             "pixels (default: 1 if lossless, 0 if lossy).",
                             &keep_invisible, &ParseOverride, 2);
-
-    cmdline->AddOptionValue(
-        '\0', "group_order", "0|1",
-        "Order in which 256x256 groups are stored "
-        "in the codestream for progressive rendering.\n"
-        "    0 = scanline order, 1 = center-first order. Default: 0.",
-        &group_order, &ParseOverride, 1);
 
     cmdline->AddOptionValue(
         '\0', "center_x", "-1..XSIZE",
@@ -218,65 +287,12 @@ struct CompressArgs {
         "Progressive-DC setting. Valid values are: -1, 0, 1, 2.",
         &progressive_dc, &ParseInt64, 2);
 
-    cmdline->AddOptionValue(
-        'm', "modular", "0|1",
-        "Use modular mode (default = encoder chooses, 0 = enforce VarDCT, "
-        "1 = enforce modular mode).",
-        &modular, &ParseOverride, 1);
-
-    // JPEG modes: parallel Brunsli, pixels to JPEG, or JPEG to Brunsli
-    opt_lossless_jpeg_id = cmdline->AddOptionValue(
-        'j', "lossless_jpeg", "0|1",
-        "If the input is JPEG, losslessly transcode JPEG, "
-        "rather than using reencode pixels.",
-        &lossless_jpeg, &ParseUnsigned, 1);
-
-    cmdline->AddOptionValue(
-        '\0', "jpeg_reconstruction_cfl", "0|1",
-        "Enable/disable chroma-from-luma (CFL) for lossless "
-        "JPEG reconstruction.",
-        &jpeg_reconstruction_cfl, &ParseOverride, 3);
-
-    cmdline->AddOptionValue(
-        '\0', "num_threads", "N",
-        "Number of worker threads (-1 == use machine default, "
-        "0 == do not use multithreading).",
-        &num_threads, &ParseSigned, 1);
-
-    cmdline->AddOptionValue('\0', "num_reps", "N",
-                            "How many times to compress. (For benchmarking).",
-                            &num_reps, &ParseUnsigned, 2);
-
-    cmdline->AddOptionFlag('\0', "disable_output",
-                           "No output file will be written (for benchmarking)",
-                           &disable_output, &SetBooleanTrue, 2);
-
-    cmdline->AddOptionValue(
-        '\0', "photon_noise_iso", "ISO_FILM_SPEED",
-        "Adds noise to the image emulating photographic film or sensor noise.\n"
-        "    Higher number = grainier image, e.g. 100 gives a low amount of "
-        "noise,\n"
-        "    3200 gives a lot of noise. Default is 0.",
-        &photon_noise_iso, &ParsePhotonNoiseParameter, 1);
-
-    cmdline->AddOptionValue(
-        '\0', "dots", "0|1",
-        "Force disable/enable dots generation. "
-        "(not provided = default, 0 = disable, 1 = enable).",
-        &dots, &ParseOverride, 2);
-
-    cmdline->AddOptionValue(
-        '\0', "patches", "0|1",
-        "Force disable/enable patches generation. "
-        "(not provided = default, 0 = disable, 1 = enable).",
-        &patches, &ParseOverride, 2);
-
     cmdline->AddOptionValue('\0', "resampling", "-1|1|2|4|8",
                             "Resampling for color channels. Default of -1 "
                             "applies resampling only for very low quality.\n"
                             "    1 = downsampling (1x1), 2 = 2x2 downsampling, "
                             "4 = 4x4 downsampling, 8 = 8x8 downsampling.",
-                            &resampling, &ParseInt64, 1);
+                            &resampling, &ParseInt64, 2);
 
     cmdline->AddOptionValue('\0', "ec_resampling", "-1|1|2|4|8",
                             "Resampling for extra channels. Same as "
@@ -299,114 +315,38 @@ struct CompressArgs {
                             "is 'encoder chooses'",
                             &gaborish, &ParseOverride, 2);
 
-    cmdline->AddOptionValue(
-        '\0', "intensity_target", "N",
-        "Upper bound on the intensity level present in the image, in nits.\n"
-        "    Default is 0, which means 'choose a sensible default "
-        "value based on the color encoding.",
-        &intensity_target, &ParseIntensityTarget, 1);
-
-    cmdline->AddOptionValue(
-        'x', "dec-hints", "key=value",
-        "This is useful for 'raw' formats like PPM that do not contain "
-        "colorspace information.\n"
-        "    The key 'color_space' indicates an enumerated ColorEncoding, for "
-        "example:\n"
-        "      -x color_space=RGB_D65_SRG_Per_SRG is sRGB with perceptual "
-        "rendering intent\n"
-        "      -x color_space=RGB_D65_202_Rel_PeQ is Rec.2100 PQ with relative "
-        "rendering intent\n"
-        "    The key 'icc_pathname' refers to a binary file containing an ICC "
-        "profile.",
-        &color_hints, &ParseAndAppendKeyValue<jxl::extras::ColorHints>, 1);
-
     cmdline->AddOptionValue('\0', "override_bitdepth", "BITDEPTH",
                             "Default is zero (use the input image bit depth); "
                             "if nonzero, override the bit depth",
                             &override_bitdepth, &ParseUnsigned, 2);
 
-    // modular mode options
-    cmdline->AddOptionValue(
-        'I', "iterations", "PERCENT",
-        "[modular encoding] Percentage of pixels used to learn MA trees. "
-        "Higher values use\n"
-        "    more encoder memory and can result in better compression. Default "
-        "of -1 means\n"
-        "    the encoder chooses. Zero means no MA trees are used.",
-        &modular_ma_tree_learning_percent, &ParseFloat, 3);
+    cmdline->AddHelpText("\nOptions for experimentation / benchmarking:", 3);
 
     cmdline->AddOptionValue(
-        'C', "modular_colorspace", "K",
-        ("[modular encoding] color transform: -1 = default (try several per "
-         "group, depending\n"
-         "    on effort), 0 = RGB (none), 1-41 = fixed RCT (6 = YCoCg)."),
-        &modular_colorspace, &ParseInt64, 3);
+        '\0', "jpeg_reconstruction_cfl", "0|1",
+        "Enable/disable chroma-from-luma (CFL) for lossless "
+        "JPEG reconstruction.",
+        &jpeg_reconstruction_cfl, &ParseOverride, 3);
 
-    opt_modular_group_size_id = cmdline->AddOptionValue(
-        'g', "modular_group_size", "K",
-        "[modular encoding] group size: -1 = default (let the encoder "
-        "choose),\n"
-        "    0 = 128x128, 1 = 256x256, 2 = 512x512, 3 = 1024x1024.",
-        &modular_group_size, &ParseInt64, 2);
+    cmdline->AddOptionValue('\0', "num_reps", "N",
+                            "How many times to compress. (For benchmarking).",
+                            &num_reps, &ParseUnsigned, 3);
 
-    cmdline->AddOptionValue(
-        'P', "modular_predictor", "K",
-        "[modular encoding] predictor(s) to use: 0=zero, 1=left, 2=top, "
-        "3=avg0, 4=select,\n"
-        "    5=gradient, 6=weighted, 7=topright, 8=topleft, 9=leftleft, "
-        "10=avg1, 11=avg2, 12=avg3,\n"
-        "    13=toptop predictive average, 14=mix 5 and 6, 15=mix everything.\n"
-        "    Default is 14 at effort < 9 and 15 at effort 9.",
-        &modular_predictor, &ParseInt64, 2);
+    cmdline->AddOptionFlag('\0', "disable_output",
+                           "No output file will be written (for benchmarking)",
+                           &disable_output, &SetBooleanTrue, 3);
 
     cmdline->AddOptionValue(
-        'E', "modular_nb_prev_channels", "K",
-        "[modular encoding] number of extra MA tree properties to use.",
-        &modular_nb_prev_channels, &ParseInt64, 3);
+        '\0', "dots", "0|1",
+        "Force disable/enable dots generation. "
+        "(not provided = default, 0 = disable, 1 = enable).",
+        &dots, &ParseOverride, 3);
 
     cmdline->AddOptionValue(
-        '\0', "modular_palette_colors", "K",
-        "[modular encoding] Use palette if number of colors is smaller "
-        "than or equal to this.",
-        &modular_palette_colors, &ParseInt64, 2);
-
-    cmdline->AddOptionFlag('\0', "modular_lossy_palette",
-                           "[modular encoding] quantize to a delta palette in "
-                           "a lossy way; it is recommended\n"
-                           "    to set --modular_palette_colors=0 with this "
-                           "option to use the default palette only.",
-                           &modular_lossy_palette, &SetBooleanTrue, 1);
-
-    cmdline->AddOptionValue(
-        'X', "pre-compact", "PERCENT",
-        "[modular encoding] Use global channel palette if the number of "
-        "sample values is smaller\n"
-        "    than this percentage of the nominal range. ",
-        &modular_channel_colors_global_percent, &ParseFloat, 3);
-
-    cmdline->AddOptionValue(
-        'Y', "post-compact", "PERCENT",
-        "[modular encoding] Use local (per-group) channel palette if the "
-        "number of sample values is\n"
-        "    smaller than this percentage of the nominal range.",
-        &modular_channel_colors_group_percent, &ParseFloat, 3);
-
-    cmdline->AddOptionValue('\0', "codestream_level", "K",
-                            "The codestream level. Either `-1`, `5` or `10`.",
-                            &codestream_level, &ParseInt64, 2);
-
-    opt_responsive_id = cmdline->AddOptionValue(
-        'R', "responsive", "K",
-        "[modular encoding] do Squeeze transform, 0=false, "
-        "1=true (default: 1 if lossy, 0 if lossless)",
-        &responsive, &ParseInt64, 2);
-
-    cmdline->AddOptionFlag('V', "version",
-                           "Print encoder library version number and exit.",
-                           &version, &SetBooleanTrue, 1);
-
-    cmdline->AddOptionFlag('\0', "quiet", "Be more silent", &quiet,
-                           &SetBooleanTrue, 1);
+        '\0', "patches", "0|1",
+        "Force disable/enable patches generation. "
+        "(not provided = default, 0 = disable, 1 = enable).",
+        &patches, &ParseOverride, 3);
 
     cmdline->AddOptionValue(
         '\0', "frame_indexing", "INDICES",
@@ -414,7 +354,7 @@ struct CompressArgs {
         "INDICES is of the form '^(0*|1[01]*)'. The i-th position indicates "
         "whether the\n"
         "    i-th frame will be indexed in the frame index box.",
-        &frame_indexing, &ParseString, 2);
+        &frame_indexing, &ParseString, 3);
 
     cmdline->AddOptionFlag('\0', "allow_expert_options",
                            "Allow specifying advanced options; this allows "
@@ -423,10 +363,74 @@ struct CompressArgs {
                            "cost of a massive speed hit.",
                            &allow_expert_options, &SetBooleanTrue, 3);
 
-    cmdline->AddOptionFlag('v', "verbose",
-                           "Verbose output; can be repeated and also applies "
-                           "to help (!).",
-                           &verbose, &SetBooleanTrue);
+    cmdline->AddHelpText("\nModular mode options:", 4);
+
+    // modular mode options
+    cmdline->AddOptionValue(
+        'I', "iterations", "PERCENT",
+        "Percentage of pixels used to learn MA trees. Higher values use\n"
+        "    more encoder memory and can result in better compression. Default "
+        "of -1 means\n"
+        "    the encoder chooses. Zero means no MA trees are used.",
+        &modular_ma_tree_learning_percent, &ParseFloat, 4);
+
+    cmdline->AddOptionValue(
+        'C', "modular_colorspace", "K",
+        ("Color transform: -1 = default (try several per group, depending\n"
+         "    on effort), 0 = RGB (none), 1-41 = fixed RCT (6 = YCoCg)."),
+        &modular_colorspace, &ParseInt64, 4);
+
+    opt_modular_group_size_id = cmdline->AddOptionValue(
+        'g', "modular_group_size", "K",
+        "Group size: -1 = default (let the encoder choose),\n"
+        "    0 = 128x128, 1 = 256x256, 2 = 512x512, 3 = 1024x1024.",
+        &modular_group_size, &ParseInt64, 4);
+
+    cmdline->AddOptionValue(
+        'P', "modular_predictor", "K",
+        "Predictor(s) to use: 0=zero, 1=left, 2=top, 3=avg0, 4=select,\n"
+        "    5=gradient, 6=weighted, 7=topright, 8=topleft, 9=leftleft, "
+        "10=avg1, 11=avg2, 12=avg3,\n"
+        "    13=toptop predictive average, 14=mix 5 and 6, 15=mix everything.\n"
+        "    Default is 14 at effort < 9 and 15 at effort 9.",
+        &modular_predictor, &ParseInt64, 4);
+
+    cmdline->AddOptionValue(
+        'E', "modular_nb_prev_channels", "K",
+        "Number of extra (previous-channel) MA tree properties to use.",
+        &modular_nb_prev_channels, &ParseInt64, 4);
+
+    cmdline->AddOptionValue(
+        '\0', "modular_palette_colors", "K",
+        "Use palette if number of colors is smaller than or equal to this.",
+        &modular_palette_colors, &ParseInt64, 4);
+
+    cmdline->AddOptionFlag(
+        '\0', "modular_lossy_palette",
+        "Use delta palette in a lossy way; it is recommended to also\n"
+        "    set --modular_palette_colors=0 with this "
+        "option to use the default palette only.",
+        &modular_lossy_palette, &SetBooleanTrue, 4);
+
+    cmdline->AddOptionValue('X', "pre-compact", "PERCENT",
+                            "Use global channel palette if the number of "
+                            "sample values is smaller\n"
+                            "    than this percentage of the nominal range. ",
+                            &modular_channel_colors_global_percent, &ParseFloat,
+                            4);
+
+    cmdline->AddOptionValue(
+        'Y', "post-compact", "PERCENT",
+        "Use local (per-group) channel palette if the "
+        "number of sample values is\n"
+        "    smaller than this percentage of the nominal range.",
+        &modular_channel_colors_group_percent, &ParseFloat, 4);
+
+    opt_responsive_id =
+        cmdline->AddOptionValue('R', "responsive", "K",
+                                "Do the Squeeze transform, 0=false, "
+                                "1=true (default: 1 if lossy, 0 if lossless)",
+                                &responsive, &ParseInt64, 4);
   }
 
   // Common flags.

@@ -34,6 +34,10 @@ void CommandLineParser::PrintHelp() const {
       showed_all = false;
       continue;
     }
+    if (option->help_only()) {
+      fprintf(out, "%s\n", option->help_text());
+      continue;
+    }
     fprintf(out, " %s\n", option->help_flags().c_str());
     const char* help_text = option->help_text();
     if (help_text) {
