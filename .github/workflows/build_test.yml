@@ -33,7 +33,7 @@ jobs:
       matrix:
         # We have one job per "name" in the matrix. Attributes are set on the
         # specific job names.
-        name: [release, debug, asan, msan, scalar]
+        name: [release, debug, asan, msan, scalar, lcms2]
         include:
           - name: release
             test_in_pr: true
@@ -58,6 +58,10 @@ jobs:
           - name: scalar
             mode: release
             cxxflags: -DHWY_COMPILE_ONLY_SCALAR -DFJXL_ENABLE_AVX2=0 -DFJXL_ENABLE_AVX512=0
+          # Build with SKCMS disabled in order to test LCMS2
+          - name: lcms2
+            mode: release
+            cmake_args: -DJPEGXL_ENABLE_SKCMS=OFF
           # Disabling optional features to speed up msan build a little bit.
           - name: msan
             os: ubuntu-20.04
