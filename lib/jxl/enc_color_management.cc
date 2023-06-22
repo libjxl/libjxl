@@ -982,6 +982,14 @@ Status ColorEncoding::SetFieldsFromICC() {
   Profile profile;
   JXL_RETURN_IF_ERROR(DecodeProfile(context, icc_, &profile));
 
+  const cmsUInt32Number rendering_intent32 =
+      cmsGetHeaderRenderingIntent(profile.get());
+  if (rendering_intent32 > 3) {
+    return JXL_FAILURE("Invalid rendering intent %u\n", rendering_intent32);
+  }
+  // ICC and RenderingIntent have the same values (0..3).
+  rendering_intent = static_cast<RenderingIntent>(rendering_intent32);
+
   static constexpr size_t kCICPSize = 12;
   static constexpr auto kCICPSignature =
       static_cast<cmsTagSignature>(0x63696370);
@@ -992,14 +1000,6 @@ Status ColorEncoding::SetFieldsFromICC() {
                 cicp_buffer[11], this)) {
     return true;
   }
-
-  const cmsUInt32Number rendering_intent32 =
-      cmsGetHeaderRenderingIntent(profile.get());
-  if (rendering_intent32 > 3) {
-    return JXL_FAILURE("Invalid rendering intent %u\n", rendering_intent32);
-  }
-  // ICC and RenderingIntent have the same values (0..3).
-  rendering_intent = static_cast<RenderingIntent>(rendering_intent32);
 
   SetColorSpace(ColorSpaceFromProfile(profile));
   if (cmsGetColorSpace(profile.get()) == cmsSigCmykData) {
