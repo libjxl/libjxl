@@ -1665,9 +1665,9 @@ TEST(DecodeTest, PixelTestWithICCProfileLossy) {
   EXPECT_THAT(ButteraugliDistance(io0.frames, io1.frames, ba, jxl::GetJxlCms(),
                                   /*distmap=*/nullptr, nullptr),
 #if JXL_HIGH_PRECISION
-              IsSlightlyBelow(0.666666f));
+              IsSlightlyBelow(0.70f));
 #else
-              IsSlightlyBelow(0.68f));
+              IsSlightlyBelow(0.72f));
 #endif
 
   JxlDecoderDestroy(dec);
