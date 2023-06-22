@@ -221,6 +221,10 @@ if(JPEGXL_ENABLE_TCMALLOC)
   target_link_libraries(jxl-static PUBLIC PkgConfig::TCMallocMinimal)
 endif()  # JPEGXL_ENABLE_TCMALLOC
 
+if (NOT JPEGXL_ENABLE_SKCMS)
+  target_link_libraries(jxl-static PUBLIC lcms::lcms2)
+endif()
+
 # Install the static library too, but as jxl.a file without the -static except
 # in Windows.
 if (NOT WIN32 OR MINGW)
@@ -303,7 +307,7 @@ endif()  # BUILD_SHARED_LIBS
 set(JPEGXL_LIBRARY_REQUIRES
     "libhwy libbrotlienc libbrotlidec")
 if(NOT JPEGXL_ENABLE_SKCMS)
-  set(JPEGXL_LIBRARY_REQUIRES "${JPEGXL_LIBRARY_REQUIRES} lcms2")
+  set(JPEGXL_LIBRARY_REQUIRES "${JPEGXL_LIBRARY_REQUIRES} lcms::lcms2")
 endif()
 
 # Allow adding prefix if CMAKE_INSTALL_INCLUDEDIR not absolute.
