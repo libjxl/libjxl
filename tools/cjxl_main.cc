@@ -535,31 +535,37 @@ std::string DistanceFromArgs(const CompressArgs& args) {
 }
 
 void PrintMode(jxl::extras::PackedPixelFile& ppf, const double decode_mps,
-               size_t num_bytes, const CompressArgs& args) {
+               size_t num_bytes, const CompressArgs& args,
+               jpegxl::tools::CommandLineParser& cmdline) {
   const char* mode = ModeFromArgs(args);
   const std::string distance = DistanceFromArgs(args);
   if (args.lossless_jpeg) {
-    fprintf(stderr, "Read JPEG image with %" PRIuS " bytes.\n", num_bytes);
+    cmdline.VerbosePrintf(1, "Read JPEG image with %" PRIuS " bytes.\n",
+                          num_bytes);
   } else {
-    fprintf(stderr,
-            "Read %" PRIuS "x%" PRIuS " image, %" PRIuS " bytes, %.1f MP/s\n",
-            static_cast<size_t>(ppf.info.xsize),
-            static_cast<size_t>(ppf.info.ysize), num_bytes, decode_mps);
+    cmdline.VerbosePrintf(
+        1, "Read %" PRIuS "x%" PRIuS " image, %" PRIuS " bytes, %.1f MP/s\n",
+        static_cast<size_t>(ppf.info.xsize),
+        static_cast<size_t>(ppf.info.ysize), num_bytes, decode_mps);
   }
-  fprintf(stderr, "Encoding [%s%s, %s, effort: %" PRIuS,
-          (args.container == jxl::Override::kOn ? "Container | " : ""), mode,
-          distance.c_str(), args.effort);
+  cmdline.VerbosePrintf(
+      0, "Encoding [%s%s, %s, effort: %" PRIuS,
+      (args.container == jxl::Override::kOn ? "Container | " : ""), mode,
+      distance.c_str(), args.effort);
   if (args.container == jxl::Override::kOn) {
     if (args.lossless_jpeg && args.jpeg_store_metadata)
-      fprintf(stderr, " | JPEG reconstruction data");
+      cmdline.VerbosePrintf(0, " | JPEG reconstruction data");
     if (!ppf.metadata.exif.empty())
-      fprintf(stderr, " | %" PRIuS "-byte Exif", ppf.metadata.exif.size());
+      cmdline.VerbosePrintf(0, " | %" PRIuS "-byte Exif",
+                            ppf.metadata.exif.size());
     if (!ppf.metadata.xmp.empty())
-      fprintf(stderr, " | %" PRIuS "-byte XMP", ppf.metadata.xmp.size());
+      cmdline.VerbosePrintf(0, " | %" PRIuS "-byte XMP",
+                            ppf.metadata.xmp.size());
     if (!ppf.metadata.jumbf.empty())
-      fprintf(stderr, " | %" PRIuS "-byte JUMBF", ppf.metadata.jumbf.size());
+      cmdline.VerbosePrintf(0, " | %" PRIuS "-byte JUMBF",
+                            ppf.metadata.jumbf.size());
   }
-  fprintf(stderr, "], \n");
+  cmdline.VerbosePrintf(0, "]\n");
 }
 
 bool IsJPG(const std::vector<uint8_t>& image_data) {
@@ -989,7 +995,7 @@ int main(int argc, char** argv) {
   }
 
   if (!args.quiet) {
-    PrintMode(ppf, decode_mps, image_data.size(), args);
+    PrintMode(ppf, decode_mps, image_data.size(), args, cmdline);
   }
 
   size_t num_worker_threads = JxlThreadParallelRunnerDefaultNumWorkerThreads();
@@ -1022,20 +1028,23 @@ int main(int argc, char** argv) {
     }
   }
   if (!args.quiet) {
-    fprintf(stderr, "Compressed to %" PRIuS " bytes ", compressed.size());
+    cmdline.VerbosePrintf(0, "Compressed to %" PRIuS " bytes ",
+                          compressed.size());
     // For lossless jpeg-reconstruction, we don't print some stats, since we
     // don't have easy access to the image dimensions.
     if (args.container == jxl::Override::kOn) {
-      fprintf(stderr, "including container ");
+      cmdline.VerbosePrintf(0, "including container ");
     }
     if (!args.lossless_jpeg) {
       const double bpp =
           static_cast<double>(compressed.size() * jxl::kBitsPerByte) / pixels;
-      fprintf(stderr, "(%.3f bpp%s).\n", bpp / ppf.frames.size(),
-              ppf.frames.size() == 1 ? "" : "/frame");
-      JXL_CHECK(stats.Print(num_worker_threads));
+      cmdline.VerbosePrintf(0, "(%.3f bpp%s).\n", bpp / ppf.frames.size(),
+                            ppf.frames.size() == 1 ? "" : "/frame");
+      if (cmdline.verbosity > 0) {
+        JXL_CHECK(stats.Print(num_worker_threads));
+      }
     } else {
-      fprintf(stderr, "\n");
+      cmdline.VerbosePrintf(0, "\n");
     }
   }
   return EXIT_SUCCESS;

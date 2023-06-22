@@ -6,6 +6,7 @@
 #ifndef TOOLS_CMDLINE_H_
 #define TOOLS_CMDLINE_H_
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -120,6 +121,9 @@ class CommandLineParser {
 
   // Return the remaining positional args
   std::vector<const char*> PositionalArgs() const;
+
+  // Conditionally print a message to stderr
+  void VerbosePrintf(int min_verbosity, const char* format, ...) const;
 
  private:
   // Help text only.

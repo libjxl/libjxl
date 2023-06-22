@@ -362,7 +362,8 @@ int main(int argc, const char* argv[]) {
     return EXIT_FAILURE;
   }
   if (!args.quiet) {
-    fprintf(stderr, "Read %" PRIuS " compressed bytes.\n", compressed.size());
+    cmdline.VerbosePrintf(1, "Read %" PRIuS " compressed bytes.\n",
+                          compressed.size());
   }
 
   if (!args.file_out && !args.disable_output) {
@@ -436,7 +437,7 @@ int main(int argc, const char* argv[]) {
       }
     }
     if (!bytes.empty()) {
-      if (!args.quiet) fprintf(stderr, "Reconstructed to JPEG.\n");
+      if (!args.quiet) cmdline.VerbosePrintf(0, "Reconstructed to JPEG.\n");
       if (!filename_out.empty() &&
           !jxl::WriteFile(base == "-" ? "-" : filename_out.c_str(), bytes)) {
         return EXIT_FAILURE;
@@ -465,7 +466,7 @@ int main(int argc, const char* argv[]) {
         return EXIT_FAILURE;
       }
     }
-    if (!args.quiet) fprintf(stderr, "Decoded to pixels.\n");
+    if (!args.quiet) cmdline.VerbosePrintf(0, "Decoded to pixels.\n");
     if (args.print_read_bytes) {
       fprintf(stderr, "Decoded bytes: %" PRIuS "\n", decoded_bytes);
     }
@@ -483,6 +484,7 @@ int main(int argc, const char* argv[]) {
 #endif
     jxl::extras::EncodedImage encoded_image;
     if (encoder) {
+      if (!args.quiet) cmdline.VerbosePrintf(2, "Encoding decoded image\n");
       if (!encoder->Encode(ppf, &encoded_image)) {
         fprintf(stderr, "Encode failed\n");
         return EXIT_FAILURE;
@@ -499,6 +501,8 @@ int main(int argc, const char* argv[]) {
         if (!jxl::WriteFile(fn.c_str(), bitstream)) {
           return EXIT_FAILURE;
         }
+        if (!args.quiet)
+          cmdline.VerbosePrintf(1, "Wrote output to %s\n", fn.c_str());
       }
     }
     if (!WriteOptionalOutput(args.preview_out,
@@ -509,7 +513,7 @@ int main(int argc, const char* argv[]) {
       return EXIT_FAILURE;
     }
   }
-  if (!args.quiet) {
+  if (!args.quiet && cmdline.verbosity > 0) {
     stats.Print(num_worker_threads);
   }
   return EXIT_SUCCESS;

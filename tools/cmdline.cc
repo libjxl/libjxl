@@ -44,8 +44,9 @@ void CommandLineParser::PrintHelp() const {
       fprintf(out, "    %s\n", help_text);
     }
   }
-  fprintf(out, " -h, --help\n    Prints this help message%s.\n",
-          (showed_all ? "" : " (use -v to see more options)"));
+  fprintf(out, "\n -h, --help\n    Prints this help message. %s\n",
+          (showed_all ? "All options are shown above."
+                      : "Add -v to see more options."));
 }
 
 bool CommandLineParser::Parse(int argc, const char* argv[]) {
@@ -93,6 +94,16 @@ bool CommandLineParser::Parse(int argc, const char* argv[]) {
     }
   }
   return true;
+}
+
+void CommandLineParser::VerbosePrintf(int min_verbosity, const char* format,
+                                      ...) const {
+  if (min_verbosity > verbosity) return;
+  va_list args;
+  va_start(args, format);
+  vfprintf(stderr, format, args);
+  fflush(stderr);
+  va_end(args);
 }
 
 }  // namespace tools
