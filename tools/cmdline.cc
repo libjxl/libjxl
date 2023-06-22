@@ -29,7 +29,9 @@ void CommandLineParser::PrintHelp() const {
   fprintf(out, " [OPTIONS...]\n");
 
   bool showed_all = true;
+  int max_verbosity = 0;
   for (const auto& option : options_) {
+    max_verbosity = std::max(option->verbosity_level(), max_verbosity);
     if (option->verbosity_level() > verbosity) {
       showed_all = false;
       continue;
@@ -44,9 +46,13 @@ void CommandLineParser::PrintHelp() const {
       fprintf(out, "    %s\n", help_text);
     }
   }
-  fprintf(out, "\n -h, --help\n    Prints this help message. %s\n",
-          (showed_all ? "All options are shown above."
-                      : "Add -v to see more options."));
+  fprintf(out, "\n -h, --help\n    Prints this help message. ");
+  if (showed_all) {
+    fprintf(out, "All options are shown above.\n");
+  } else {
+    fprintf(out, "Add -v (up to a total of %i times) to see more options.\n",
+            max_verbosity);
+  }
 }
 
 bool CommandLineParser::Parse(int argc, const char* argv[]) {

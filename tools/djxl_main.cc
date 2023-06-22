@@ -513,7 +513,7 @@ int main(int argc, const char* argv[]) {
       return EXIT_FAILURE;
     }
   }
-  if (!args.quiet && cmdline.verbosity > 0) {
+  if (!args.quiet) {
     stats.Print(num_worker_threads);
   }
   return EXIT_SUCCESS;

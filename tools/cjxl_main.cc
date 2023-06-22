@@ -1028,8 +1028,13 @@ int main(int argc, char** argv) {
     }
   }
   if (!args.quiet) {
-    cmdline.VerbosePrintf(0, "Compressed to %" PRIuS " bytes ",
-                          compressed.size());
+    if (compressed.size() < 100000) {
+      cmdline.VerbosePrintf(0, "Compressed to %" PRIuS " bytes ",
+                            compressed.size());
+    } else {
+      cmdline.VerbosePrintf(0, "Compressed to %.1f kB ",
+                            compressed.size() * 0.001);
+    }
     // For lossless jpeg-reconstruction, we don't print some stats, since we
     // don't have easy access to the image dimensions.
     if (args.container == jxl::Override::kOn) {
@@ -1040,9 +1045,7 @@ int main(int argc, char** argv) {
           static_cast<double>(compressed.size() * jxl::kBitsPerByte) / pixels;
       cmdline.VerbosePrintf(0, "(%.3f bpp%s).\n", bpp / ppf.frames.size(),
                             ppf.frames.size() == 1 ? "" : "/frame");
-      if (cmdline.verbosity > 0) {
-        JXL_CHECK(stats.Print(num_worker_threads));
-      }
+      JXL_CHECK(stats.Print(num_worker_threads));
     } else {
       cmdline.VerbosePrintf(0, "\n");
     }
