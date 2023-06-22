@@ -62,6 +62,7 @@ jobs:
           - name: lcms2
             mode: release
             test_in_pr: true
+            apt_pkgs: liblcms2-dev
             cmake_args: -DJPEGXL_ENABLE_SKCMS=OFF
           # Disabling optional features to speed up msan build a little bit.
           - name: msan
