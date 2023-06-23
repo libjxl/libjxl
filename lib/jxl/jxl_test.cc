@@ -1432,6 +1432,23 @@ TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression420Progr)) {
   EXPECT_NEAR(RoundtripJpeg(orig, &pool), 455499u, 10);
 }
 
+TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionMetadata)) {
+  ThreadPoolForTests pool(8);
+  const PaddedBytes orig =
+      jxl::test::ReadTestData("jxl/jpeg_reconstruction/1x1_exif_xmp.jpg");
+  // JPEG size is 4290 bytes
+  EXPECT_NEAR(RoundtripJpeg(orig, &pool), 1390u, 10);
+}
+
+TEST(JxlTest,
+     JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionOrientationICC)) {
+  ThreadPoolForTests pool(8);
+  const PaddedBytes orig =
+      jxl::test::ReadTestData("jxl/jpeg_reconstruction/sideways_bench.jpg");
+  // JPEG size is 15252 bytes
+  EXPECT_NEAR(RoundtripJpeg(orig, &pool), 11967u, 10);
+}
+
 TEST(JxlTest, RoundtripProgressive) {
   ThreadPoolForTests pool(4);
   const PaddedBytes orig = jxl::test::ReadTestData("jxl/flower/flower.png");
