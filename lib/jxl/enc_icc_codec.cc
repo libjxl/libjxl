@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "lib/jxl/base/byte_order.h"
+#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/enc_ans.h"
 #include "lib/jxl/enc_aux_out.h"
@@ -399,7 +400,11 @@ Status WriteICC(const PaddedBytes& icc, BitWriter* JXL_RESTRICT writer,
   params.force_huffman = true;
   BuildAndEncodeHistograms(params, kNumICCContexts, tokens, &code, &context_map,
                            writer, layer, aux_out);
+  printf("Writing %" PRIuS " tokens, now at position %" PRIuS "\n",
+         tokens[0].size(), writer->BitsWritten());
   WriteTokens(tokens[0], code, context_map, writer, layer, aux_out);
+  printf("Wrote %" PRIuS " tokens, now at position %" PRIuS "\n",
+         tokens[0].size(), writer->BitsWritten());
   return true;
 }
 
