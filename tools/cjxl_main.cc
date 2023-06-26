@@ -33,7 +33,6 @@
 #include "lib/extras/dec/color_hints.h"
 #include "lib/extras/dec/decode.h"
 #include "lib/extras/enc/jxl.h"
-#include "lib/extras/file_io.h"
 #include "lib/extras/time.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/printf_macros.h"
@@ -42,6 +41,7 @@
 #include "tools/args.h"
 #include "tools/cmdline.h"
 #include "tools/codec_config.h"
+#include "tools/file_io.h"
 #include "tools/speed_stats.h"
 
 namespace jpegxl {
@@ -227,7 +227,7 @@ struct CompressArgs {
         "rendering intent\n"
         "    The key 'icc_pathname' refers to a binary file containing an ICC "
         "profile.",
-        &color_hints, &ParseAndAppendKeyValue<jxl::extras::ColorHints>, 1);
+        &color_hints_proxy, &ParseAndAppendKeyValue<ColorHintsProxy>, 1);
 
     cmdline->AddHelpText("\nExpert options:", 2);
 
@@ -444,7 +444,7 @@ struct CompressArgs {
   jxl::Override print_profile = jxl::Override::kDefault;
 
   // Decoding source image flags
-  jxl::extras::ColorHints color_hints;
+  ColorHintsProxy color_hints_proxy;
 
   // JXL flags
   size_t override_bitdepth = 0;
@@ -947,7 +947,7 @@ int main(int argc, char** argv) {
   std::vector<uint8_t>* jpeg_bytes = nullptr;
   double decode_mps = 0;
   size_t pixels = 0;
-  if (!jxl::ReadFile(args.file_in, &image_data)) {
+  if (!jpegxl::tools::ReadFile(args.file_in, &image_data)) {
     std::cerr << "Reading image data failed." << std::endl;
     exit(EXIT_FAILURE);
   }
@@ -956,9 +956,9 @@ int main(int argc, char** argv) {
   ProcessFlags(codec, ppf, jpeg_bytes, &cmdline, &args, &params);
   if (!args.lossless_jpeg) {
     const double t0 = jxl::Now();
-    jxl::Status status =
-        jxl::extras::DecodeBytes(jxl::Span<const uint8_t>(image_data),
-                                 args.color_hints, &ppf, nullptr, &codec);
+    jxl::Status status = jxl::extras::DecodeBytes(
+        jxl::Span<const uint8_t>(image_data), args.color_hints_proxy.target,
+        &ppf, nullptr, &codec);
 
     if (!status) {
       std::cerr << "Getting pixel data failed." << std::endl;
@@ -1022,7 +1022,7 @@ int main(int argc, char** argv) {
   }
 
   if (args.file_out && !args.disable_output) {
-    if (!jxl::WriteFile(args.file_out, compressed)) {
+    if (!jpegxl::tools::WriteFile(args.file_out, compressed)) {
       std::cerr << "Could not write jxl file." << std::endl;
       return EXIT_FAILURE;
     }

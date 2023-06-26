@@ -25,7 +25,6 @@
 #if JPEGXL_ENABLE_JPEG
 #include "lib/extras/codec.h"
 #endif
-#include "lib/extras/file_io.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/span.h"
@@ -40,6 +39,7 @@
 #include "lib/jxl/encode_internal.h"
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
+#include "tools/file_io.h"
 #include "tools/thread_pool_internal.h"
 
 namespace {
@@ -283,7 +283,7 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
     }
   }
 
-  if (!jxl::WriteFile(output_fn, compressed)) return 1;
+  if (!jpegxl::tools::WriteFile(output_fn, compressed)) return 1;
   if (!quiet) {
     std::unique_lock<std::mutex> lock(stderr_mutex);
     std::cerr << "Stored " << output_fn << " size: " << compressed.size()

@@ -113,7 +113,7 @@ struct BenchmarkArgs {
   bool silent_errors;
   bool save_compressed;
   bool save_decompressed;
-  std::string output_extension;    // see CodecFromExtension
+  std::string output_extension;    // see CodecFromPath
   std::string output_description;  // see ParseDescription
   ColorEncoding output_encoding;   // determined by output_description
 

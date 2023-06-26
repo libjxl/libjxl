@@ -20,7 +20,6 @@
 
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/color_hints.h"
-#include "lib/extras/file_io.h"
 #include "lib/extras/time.h"
 #include "lib/jxl/alpha.h"
 #include "lib/jxl/base/cache_aligned.h"
@@ -46,6 +45,7 @@
 #include "tools/benchmark/benchmark_stats.h"
 #include "tools/benchmark/benchmark_utils.h"
 #include "tools/codec_config.h"
+#include "tools/file_io.h"
 #include "tools/speed_stats.h"
 #include "tools/ssimulacra2.h"
 #include "tools/thread_pool_internal.h"
@@ -71,12 +71,16 @@ Status WriteImage(Image3F&& image, ThreadPool* pool,
   io.metadata.m.SetUintSamples(8);
   io.metadata.m.color_encoding = ColorEncoding::SRGB();
   io.SetFromImage(std::move(image), io.metadata.m.color_encoding);
-  return EncodeToFile(io, filename, pool);
+  std::vector<uint8_t> encoded;
+  return Encode(io, filename, &encoded, pool) && WriteFile(filename, encoded);
 }
 
 Status ReadPNG(const std::string& filename, Image3F* image) {
   CodecInOut io;
-  JXL_CHECK(jxl::SetFromFile(filename, jxl::extras::ColorHints(), &io));
+  std::vector<uint8_t> encoded;
+  JXL_CHECK(ReadFile(filename, &encoded));
+  JXL_CHECK(jxl::SetFromBytes(jxl::Span<const uint8_t>(encoded),
+                              jxl::extras::ColorHints(), &io));
   *image = CopyImage(*io.Main().color());
   return true;
 }
@@ -130,7 +134,7 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
     for (size_t i = 0; i < Args()->encode_reps; ++i) {
       if (codec->CanRecompressJpeg() && (ext == ".jpg" || ext == ".jpeg")) {
         std::vector<uint8_t> data_in;
-        JXL_CHECK(jxl::ReadFile(filename, &data_in));
+        JXL_CHECK(ReadFile(filename, &data_in));
         JXL_CHECK(
             codec->RecompressJpeg(filename, data_in, compressed, &speed_stats));
       } else {
@@ -157,7 +161,7 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
 
   if (valid && Args()->decode_only) {
     std::vector<uint8_t> data_in;
-    JXL_CHECK(jxl::ReadFile(filename, &data_in));
+    JXL_CHECK(ReadFile(filename, &data_in));
     compressed->insert(compressed->end(), data_in.begin(), data_in.end());
   }
 
@@ -304,7 +308,7 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
 #endif
     JXL_CHECK(MakeDir(outdir));
     if (Args()->save_compressed) {
-      JXL_CHECK(jxl::WriteFile(compressed_fn, *compressed));
+      JXL_CHECK(WriteFile(compressed_fn, *compressed));
     }
     if (Args()->save_decompressed && valid) {
       // For verifying HDR: scale output.
@@ -315,9 +319,11 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
         ScaleImage(static_cast<float>(Args()->mul_output), ib2.color());
       }
 
-      JXL_CHECK(EncodeToFile(io2, *c_desired,
-                             ib2.metadata()->bit_depth.bits_per_sample,
-                             decompressed_fn));
+      std::vector<uint8_t> encoded;
+      JXL_CHECK(Encode(io2, *c_desired,
+                       ib2.metadata()->bit_depth.bits_per_sample,
+                       decompressed_fn, &encoded));
+      JXL_CHECK(WriteFile(decompressed_fn, encoded));
       if (!skip_butteraugli) {
         float good = Args()->heatmap_good > 0.0f
                          ? Args()->heatmap_good
@@ -346,10 +352,13 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
 
     // Convert everything to non-linear SRGB - this is what most metrics expect.
     const ColorEncoding& c_desired = ColorEncoding::SRGB(io.Main().IsGray());
-    JXL_CHECK(EncodeToFile(io, c_desired,
-                           io.metadata.m.bit_depth.bits_per_sample, tmp_in_fn));
-    JXL_CHECK(EncodeToFile(
-        io2, c_desired, io.metadata.m.bit_depth.bits_per_sample, tmp_out_fn));
+    std::vector<uint8_t> encoded;
+    JXL_CHECK(Encode(io, c_desired, io.metadata.m.bit_depth.bits_per_sample,
+                     tmp_in_fn, &encoded));
+    JXL_CHECK(WriteFile(tmp_in_fn, encoded));
+    JXL_CHECK(Encode(io2, c_desired, io.metadata.m.bit_depth.bits_per_sample,
+                     tmp_out_fn, &encoded));
+    JXL_CHECK(WriteFile(tmp_out_fn, encoded));
     if (io.metadata.m.IntensityTarget() != io2.metadata.m.IntensityTarget()) {
       fprintf(stderr,
               "WARNING: original and decoded have different intensity targets "
@@ -394,7 +403,7 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
 // Makes a base64 data URI for embedded image in HTML
 std::string Base64Image(const std::string& filename) {
   PaddedBytes bytes;
-  if (!jxl::ReadFile(filename, &bytes)) {
+  if (!ReadFile(filename, &bytes)) {
     return "";
   }
   static const char* symbols =
@@ -586,8 +595,7 @@ void WriteHtmlReport(const std::string& codec_desc,
   }
   out_html += "</body>\n";
   out_html += toggle_js;
-  JXL_CHECK(
-      jxl::WriteFile(outdir + "/index." + codec_name + ".html", out_html));
+  JXL_CHECK(WriteFile(outdir + "/index." + codec_name + ".html", out_html));
 }
 
 // Prints the detailed and aggregate statistics, in the correct order but as
@@ -1015,7 +1023,7 @@ class Benchmark {
 
       if (!Args()->decode_only) {
         PaddedBytes encoded;
-        ok = jxl::ReadFile(fnames[i], &encoded);
+        ok = ReadFile(fnames[i], &encoded);
         if (ok) {
           if (jpeg_transcoding_requested) {
             ok = jxl::jpeg::DecodeImageJPG(Span<const uint8_t>(encoded),

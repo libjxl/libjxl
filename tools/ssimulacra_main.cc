@@ -9,6 +9,7 @@
 #include "lib/jxl/color_management.h"
 #include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/image_bundle.h"
+#include "tools/file_io.h"
 #include "tools/ssimulacra.h"
 
 namespace ssimulacra {
@@ -34,12 +35,15 @@ int Run(int argc, char** argv) {
   }
   if (argc < input_arg + 2) return PrintUsage(argv);
 
-  jxl::CodecInOut io1;
-  jxl::CodecInOut io2;
-  JXL_CHECK(SetFromFile(argv[input_arg], jxl::extras::ColorHints(), &io1));
-  JXL_CHECK(SetFromFile(argv[input_arg + 1], jxl::extras::ColorHints(), &io2));
-  jxl::ImageBundle& ib1 = io1.Main();
-  jxl::ImageBundle& ib2 = io2.Main();
+  jxl::CodecInOut io[2];
+  for (size_t i = 0; i < 2; ++i) {
+    std::vector<uint8_t> encoded;
+    JXL_CHECK(jpegxl::tools::ReadFile(argv[input_arg + i], &encoded));
+    JXL_CHECK(jxl::SetFromBytes(jxl::Span<const uint8_t>(encoded),
+                                jxl::extras::ColorHints(), &io[i]));
+  }
+  jxl::ImageBundle& ib1 = io[0].Main();
+  jxl::ImageBundle& ib2 = io[1].Main();
   JXL_CHECK(ib1.TransformTo(jxl::ColorEncoding::LinearSRGB(ib1.IsGray()),
                             jxl::GetJxlCms(), nullptr));
   JXL_CHECK(ib2.TransformTo(jxl::ColorEncoding::LinearSRGB(ib2.IsGray()),

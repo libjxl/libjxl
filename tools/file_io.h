@@ -3,8 +3,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#ifndef LIB_EXTRAS_FILE_IO_H_
-#define LIB_EXTRAS_FILE_IO_H_
+#ifndef TOOLS_FILE_IO_H_
+#define TOOLS_FILE_IO_H_
 
 #include <errno.h>
 #include <limits.h>
@@ -17,9 +17,12 @@
 #include <string>
 #include <vector>
 
-#include "lib/extras/codec.h"
+#include "lib/jxl/base/compiler_specific.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
+
+namespace {
 
 // RAII, ensures files are closed even when returning early.
 class FileWrapper {
@@ -68,6 +71,8 @@ class FileWrapper {
   bool close_on_delete_ = true;
   int64_t size_ = -1;
 };
+
+}  // namespace
 
 template <typename ContainerType>
 static inline bool ReadFile(const std::string& filename,
@@ -138,33 +143,7 @@ static inline bool WriteFile(const std::string& filename,
   return true;
 }
 
-static inline std::string Basename(std::string filename) {
-  size_t pos = filename.find_first_of(':');
-  if (pos < filename.size()) {
-    return filename.substr(pos + 1);
-  } else {
-    pos = filename.find_last_of('.');
-    if (pos < filename.size()) {
-      return filename.substr(0, pos);
-    } else {
-      return filename;
-    }
-  }
-}
-static inline std::string Extension(std::string filename) {
-  size_t pos = filename.find_first_of(':');
-  if (pos < filename.size()) {
-    return "." + filename.substr(0, pos);
-  } else {
-    pos = filename.find_last_of('.');
-    if (pos < filename.size()) {
-      return filename.substr(pos);
-    } else {
-      return "";
-    }
-  }
-}
+}  // namespace tools
+}  // namespace jpegxl
 
-}  // namespace jxl
-
-#endif  // LIB_EXTRAS_FILE_IO_H_
+#endif  // TOOLS_FILE_IO_H_
