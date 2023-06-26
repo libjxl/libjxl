@@ -10,10 +10,10 @@
 
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/color_hints.h"
-#include "lib/extras/file_io.h"
 #include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_metadata.h"
+#include "tools/file_io.h"
 #include "tools/thread_pool_internal.h"
 #include "tools/viewer/load_jxl.h"
 
@@ -36,7 +36,8 @@ namespace {
 Status loadFromFile(const QString& filename, const ColorHints& color_hints,
                     CodecInOut* const decoded, ThreadPool* const pool) {
   PaddedBytes compressed;
-  JXL_RETURN_IF_ERROR(jxl::ReadFile(filename.toStdString(), &compressed));
+  JXL_RETURN_IF_ERROR(
+      jpegxl::tools::ReadFile(filename.toStdString(), &compressed));
   const Span<const uint8_t> compressed_span(compressed);
   return jxl::SetFromBytes(compressed_span, color_hints, decoded, pool,
                            nullptr);
@@ -46,12 +47,10 @@ Status loadFromFile(const QString& filename, const ColorHints& color_hints,
 
 bool canLoadImageWithExtension(QString extension) {
   extension = extension.toLower();
-  size_t bitsPerSampleUnused;
   if (extension == "jxl" || extension == "j" || extension == "brn") {
     return true;
   }
-  const auto codec = jxl::extras::CodecFromExtension(
-      "." + extension.toStdString(), &bitsPerSampleUnused);
+  const auto codec = jxl::extras::CodecFromPath("." + extension.toStdString());
   return codec != jxl::extras::Codec::kUnknown;
 }
 

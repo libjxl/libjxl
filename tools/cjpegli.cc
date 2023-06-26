@@ -11,13 +11,13 @@
 
 #include "lib/extras/codec.h"
 #include "lib/extras/enc/jpegli.h"
-#include "lib/extras/file_io.h"
 #include "lib/extras/time.h"
 #include "lib/jpegli/encode.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/span.h"
 #include "tools/args.h"
 #include "tools/cmdline.h"
+#include "tools/file_io.h"
 #include "tools/speed_stats.h"
 
 namespace jpegxl {
@@ -50,7 +50,7 @@ struct Args {
         'x', "dec-hints", "key=value",
         "color_space indicates the ColorEncoding, see Description();\n"
         "    icc_pathname refers to a binary file containing an ICC profile.",
-        &color_hints, &ParseAndAppendKeyValue<jxl::extras::ColorHints>, 1);
+        &color_hints_proxy, &ParseAndAppendKeyValue<ColorHintsProxy>, 1);
 
     opt_distance_id = cmdline->AddOptionValue(
         'd', "distance", "maxError",
@@ -119,7 +119,7 @@ struct Args {
   const char* file_in = nullptr;
   const char* file_out = nullptr;
   bool disable_output = false;
-  jxl::extras::ColorHints color_hints;
+  ColorHintsProxy color_hints_proxy;
   jxl::extras::JpegSettings settings;
   int quality = 90;
   size_t num_reps = 1;
@@ -202,14 +202,14 @@ int CJpegliMain(int argc, const char* argv[]) {
   }
 
   std::vector<uint8_t> input_bytes;
-  if (!jxl::ReadFile(args.file_in, &input_bytes)) {
+  if (!ReadFile(args.file_in, &input_bytes)) {
     fprintf(stderr, "Failed to read input image %s\n", args.file_in);
     return EXIT_FAILURE;
   }
 
   jxl::extras::PackedPixelFile ppf;
   if (!jxl::extras::DecodeBytes(jxl::Span<const uint8_t>(input_bytes),
-                                args.color_hints, &ppf)) {
+                                args.color_hints_proxy.target, &ppf)) {
     fprintf(stderr, "Failed to decode input image %s\n", args.file_in);
     return EXIT_FAILURE;
   }
@@ -246,7 +246,7 @@ int CJpegliMain(int argc, const char* argv[]) {
   }
 
   if (args.file_out && !args.disable_output) {
-    if (!jxl::WriteFile(args.file_out, jpeg_bytes)) {
+    if (!WriteFile(args.file_out, jpeg_bytes)) {
       fprintf(stderr, "Could not write jpeg to %s\n", args.file_out);
       return EXIT_FAILURE;
     }

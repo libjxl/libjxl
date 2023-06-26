@@ -9,9 +9,11 @@
 #include "lib/extras/codec.h"
 #include "lib/extras/hlg.h"
 #include "lib/extras/tone_mapping.h"
+#include "lib/jxl/base/span.h"
 #include "lib/jxl/enc_color_management.h"
 #include "tools/args.h"
 #include "tools/cmdline.h"
+#include "tools/file_io.h"
 #include "tools/hdr/image_utils.h"
 #include "tools/thread_pool_internal.h"
 
@@ -65,9 +67,11 @@ int main(int argc, const char** argv) {
     return EXIT_FAILURE;
   }
 
+  std::vector<uint8_t> encoded;
+  JXL_CHECK(jpegxl::tools::ReadFile(input_filename, &encoded));
   jxl::CodecInOut image;
-  JXL_CHECK(jxl::SetFromFile(input_filename, jxl::extras::ColorHints(), &image,
-                             &pool));
+  JXL_CHECK(jxl::SetFromBytes(jxl::Span<const uint8_t>(encoded),
+                              jxl::extras::ColorHints(), &image, &pool));
   image.metadata.m.SetIntensityTarget(max_nits);
   JXL_CHECK(jxl::HlgInverseOOTF(
       &image.Main(), jxl::GetHlgGamma(max_nits, surround_nits), &pool));
@@ -82,5 +86,6 @@ int main(int argc, const char** argv) {
   JXL_CHECK(hlg.CreateICC());
   JXL_CHECK(jpegxl::tools::TransformCodecInOutTo(image, hlg, &pool));
   image.metadata.m.color_encoding = hlg;
-  JXL_CHECK(jxl::EncodeToFile(image, output_filename, &pool));
+  JXL_CHECK(jxl::Encode(image, output_filename, &encoded, &pool));
+  JXL_CHECK(jpegxl::tools::WriteFile(output_filename, encoded));
 }

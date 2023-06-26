@@ -291,7 +291,8 @@ class JxlCodec : public ImageCodec {
         io.metadata.m.SetUintSamples(16);
         io.metadata.m.color_encoding = color_encoding;
         io.SetFromImage(std::move(image), io.metadata.m.color_encoding);
-        return EncodeToFile(io, path);
+        std::vector<uint8_t> encoded;
+        return Encode(io, path, &encoded) && WriteFile(path, encoded);
       };
       cinfo_.debug_prefix =
           JoinPath(jxlargs->debug_image_dir, FileBaseName(filename)) +

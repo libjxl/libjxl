@@ -15,11 +15,11 @@
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/color_description.h"
 #include "lib/extras/enc/apng.h"
-#include "lib/extras/file_io.h"
 #include "lib/extras/time.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/image_bundle.h"
 #include "tools/benchmark/benchmark_utils.h"
+#include "tools/file_io.h"
 #include "tools/thread_pool_internal.h"
 
 namespace jpegxl {
@@ -138,7 +138,9 @@ class CustomCodec : public ImageCodec {
       JXL_RETURN_IF_ERROR(
           jxl::ConvertExternalToInternalColorEncoding(colorspace, &c_enc));
     }
-    JXL_RETURN_IF_ERROR(EncodeToFile(*io, c_enc, bits, in_filename, pool));
+    std::vector<uint8_t> encoded;
+    JXL_RETURN_IF_ERROR(Encode(*io, c_enc, bits, in_filename, &encoded, pool));
+    JXL_RETURN_IF_ERROR(WriteFile(in_filename, encoded));
     std::vector<std::string> arguments = compress_args_;
     arguments.push_back(in_filename);
     arguments.push_back(encoded_filename);
@@ -147,7 +149,7 @@ class CustomCodec : public ImageCodec {
           return RunCommand(compress_command_, arguments, custom_args->quiet);
         },
         encoded_filename, speed_stats));
-    return jxl::ReadFile(encoded_filename, compressed);
+    return ReadFile(encoded_filename, compressed);
   }
 
   Status Decompress(const std::string& filename,
@@ -161,7 +163,7 @@ class CustomCodec : public ImageCodec {
     JXL_RETURN_IF_ERROR(encoded_file.GetFileName(&encoded_filename));
     JXL_RETURN_IF_ERROR(out_file.GetFileName(&out_filename));
 
-    JXL_RETURN_IF_ERROR(jxl::WriteFile(encoded_filename, compressed));
+    JXL_RETURN_IF_ERROR(WriteFile(encoded_filename, compressed));
     JXL_RETURN_IF_ERROR(ReportCodecRunningTime(
         [&, this] {
           return RunCommand(
@@ -174,7 +176,10 @@ class CustomCodec : public ImageCodec {
     if (!custom_args->colorspace.empty()) {
       hints.Add("color_space", custom_args->colorspace);
     }
-    JXL_RETURN_IF_ERROR(jxl::SetFromFile(out_filename, hints, io, pool));
+    std::vector<uint8_t> encoded;
+    JXL_RETURN_IF_ERROR(ReadFile(out_filename, &encoded));
+    JXL_RETURN_IF_ERROR(
+        jxl::SetFromBytes(jxl::Span<const uint8_t>(encoded), hints, io, pool));
     io->metadata.m.SetIntensityTarget(saved_intensity_target_);
     return true;
   }

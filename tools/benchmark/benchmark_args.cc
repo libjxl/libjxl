@@ -230,12 +230,11 @@ Status BenchmarkArgs::AddCommandLineOptions() {
 }
 
 Status BenchmarkArgs::ValidateArgs() {
-  size_t bits_per_sample = 0;  // unused
   if (input.empty()) {
     fprintf(stderr, "Missing --input filename(s).\n");
     return false;
   }
-  if (jxl::extras::CodecFromExtension(output_extension, &bits_per_sample) ==
+  if (jxl::extras::CodecFromPath(output_extension) ==
       jxl::extras::Codec::kUnknown) {
     JXL_WARNING("Unrecognized output_extension %s, try .png",
                 output_extension.c_str());

@@ -8,11 +8,11 @@
 
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/decode.h"
-#include "lib/extras/file_io.h"
 #include "lib/extras/packed_image_convert.h"
 #include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/image_bundle.h"
 #include "tools/cmdline.h"
+#include "tools/file_io.h"
 #include "tools/hdr/image_utils.h"
 #include "tools/thread_pool_internal.h"
 
@@ -79,7 +79,7 @@ int main(int argc, const char** argv) {
 
   jxl::extras::PackedPixelFile ppf;
   std::vector<uint8_t> input_bytes;
-  JXL_CHECK(jxl::ReadFile(input_filename, &input_bytes));
+  JXL_CHECK(jpegxl::tools::ReadFile(input_filename, &input_bytes));
   JXL_CHECK(jxl::extras::DecodeBytes(jxl::Span<const uint8_t>(input_bytes),
                                      jxl::extras::ColorHints(), &ppf));
 
@@ -153,5 +153,7 @@ int main(int argc, const char** argv) {
   JXL_CHECK(pq.CreateICC());
   JXL_CHECK(jpegxl::tools::TransformCodecInOutTo(image, pq, &pool));
   image.metadata.m.color_encoding = pq;
-  JXL_CHECK(jxl::EncodeToFile(image, output_filename, &pool));
+  std::vector<uint8_t> encoded;
+  JXL_CHECK(jxl::Encode(image, output_filename, &encoded, &pool));
+  JXL_CHECK(jpegxl::tools::WriteFile(output_filename, encoded));
 }

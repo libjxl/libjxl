@@ -11,10 +11,10 @@
 
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/color_hints.h"
-#include "lib/extras/file_io.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/printf_macros.h"
+#include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/butteraugli/butteraugli.h"
 #include "lib/jxl/codec_in_out.h"
@@ -26,6 +26,7 @@
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
+#include "tools/file_io.h"
 #include "tools/thread_pool_internal.h"
 
 namespace {
@@ -44,7 +45,10 @@ Status WriteImage(Image3F&& image, const std::string& filename) {
   io.metadata.m.SetUintSamples(8);
   io.metadata.m.color_encoding = ColorEncoding::SRGB();
   io.SetFromImage(std::move(image), io.metadata.m.color_encoding);
-  return jxl::EncodeToFile(io, filename, &pool);
+
+  std::vector<uint8_t> encoded;
+  return jxl::Encode(io, filename, &encoded, &pool) &&
+         jpegxl::tools::WriteFile(filename, encoded);
 }
 
 Status RunButteraugli(const char* pathname1, const char* pathname2,
@@ -57,19 +61,24 @@ Status RunButteraugli(const char* pathname1, const char* pathname2,
     color_hints.Add("color_space", colorspace_hint);
   }
 
-  CodecInOut io1;
+  const char* pathname[2] = {pathname1, pathname2};
+  CodecInOut io[2];
   ThreadPoolInternal pool(4);
-  if (!jxl::SetFromFile(pathname1, color_hints, &io1, &pool)) {
-    fprintf(stderr, "Failed to read image from %s\n", pathname1);
-    return false;
+  for (size_t i = 0; i < 2; ++i) {
+    std::vector<uint8_t> encoded;
+    if (!jpegxl::tools::ReadFile(pathname[i], &encoded)) {
+      fprintf(stderr, "Failed to read image from %s\n", pathname[i]);
+      return false;
+    }
+    if (!jxl::SetFromBytes(jxl::Span<const uint8_t>(encoded), color_hints,
+                           &io[i], &pool)) {
+      fprintf(stderr, "Failed to decode image from %s\n", pathname[i]);
+      return false;
+    }
   }
 
-  CodecInOut io2;
-  if (!jxl::SetFromFile(pathname2, color_hints, &io2, &pool)) {
-    fprintf(stderr, "Failed to read image from %s\n", pathname2);
-    return false;
-  }
-
+  CodecInOut& io1 = io[0];
+  CodecInOut& io2 = io[1];
   if (io1.xsize() != io2.xsize()) {
     fprintf(stderr, "Width mismatch: %" PRIuS " %" PRIuS "\n", io1.xsize(),
             io2.xsize());

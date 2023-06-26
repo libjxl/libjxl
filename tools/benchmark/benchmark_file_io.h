@@ -12,8 +12,8 @@
 #include <string>
 #include <vector>
 
-#include "lib/extras/file_io.h"
 #include "lib/jxl/base/status.h"
+#include "tools/file_io.h"
 
 namespace jpegxl {
 namespace tools {
