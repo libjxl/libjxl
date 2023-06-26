@@ -126,7 +126,7 @@ if(JPEGXL_ENABLE_TOOLS)
   add_executable(cjxl cjxl_main.cc)
   target_link_libraries(cjxl
     jxl
-    jxl_extras_codec-static
+    jxl_extras_codec
     jxl_threads
     jxl_tool
   )
@@ -136,7 +136,7 @@ if(JPEGXL_ENABLE_TOOLS)
   add_executable(djxl djxl_main.cc)
   target_link_libraries(djxl
     jxl
-    jxl_extras_codec-static
+    jxl_extras_codec
     jxl_threads
     jxl_tool
   )

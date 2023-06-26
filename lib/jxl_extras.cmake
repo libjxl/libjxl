@@ -164,6 +164,15 @@ if (BUILD_SHARED_LIBS)
 add_library(jxl_extras_codec SHARED $<TARGET_OBJECTS:jxl_extras_codec-obj>)
 target_compile_definitions(jxl_extras_codec PUBLIC ${JXL_EXTRAS_CODEC_PUBLIC_DEFINITIONS})
 target_link_libraries(jxl_extras_codec PRIVATE ${JXL_EXTRAS_CODEC_INTERNAL_LIBRARIES} jxl)
+set_target_properties(jxl_extras_codec PROPERTIES
+  VERSION ${JPEGXL_LIBRARY_VERSION}
+  SOVERSION ${JPEGXL_LIBRARY_SOVERSION}
+  LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
+install(TARGETS jxl_extras_codec
+  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
 else()
 add_library(jxl_extras_codec ALIAS jxl_extras_codec-static)
 endif()  # BUILD_SHARED_LIBS
