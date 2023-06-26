@@ -3734,13 +3734,18 @@ void AnalyzeCodestream(const jxl::PaddedBytes& data,
       jxl::Span<const uint8_t>(codestream.data(), codestream.size()));
   ASSERT_EQ(br.ReadFixedBits<16>(), 0x0AFF);
   jxl::CodecMetadata metadata;
-  EXPECT_TRUE(ReadSizeHeader(&br, &metadata.size));
-  EXPECT_TRUE(ReadImageMetadata(&br, &metadata.m));
+  ASSERT_TRUE(ReadSizeHeader(&br, &metadata.size));
+  ASSERT_TRUE(ReadImageMetadata(&br, &metadata.m));
   streampos->basic_info =
       add_offset(br.TotalBitsConsumed() / jxl::kBitsPerByte);
   metadata.transform_data.nonserialized_xyb_encoded = metadata.m.xyb_encoded;
-  EXPECT_TRUE(jxl::Bundle::Read(&br, &metadata.transform_data));
-  EXPECT_TRUE(br.JumpToByteBoundary());
+  ASSERT_TRUE(jxl::Bundle::Read(&br, &metadata.transform_data));
+  if (metadata.m.color_encoding.WantICC()) {
+    jxl::PaddedBytes icc;
+    ASSERT_TRUE(jxl::ReadICC(&br, &icc));
+    ASSERT_TRUE(metadata.m.color_encoding.SetICCRaw(std::move(icc)));
+  }
+  ASSERT_TRUE(br.JumpToByteBoundary());
   bool has_preview = metadata.m.have_preview;
   while (br.TotalBitsConsumed() < br.TotalBytes() * jxl::kBitsPerByte) {
     FramePositions p;
@@ -3750,7 +3755,7 @@ void AnalyzeCodestream(const jxl::PaddedBytes& data,
       frame_header.nonserialized_is_preview = true;
       has_preview = false;
     }
-    EXPECT_TRUE(ReadFrameHeader(&br, &frame_header));
+    ASSERT_TRUE(ReadFrameHeader(&br, &frame_header));
     p.header_end =
         add_offset(jxl::DivCeil(br.TotalBitsConsumed(), jxl::kBitsPerByte));
     jxl::FrameDimensions frame_dim = frame_header.ToFrameDimensions();
@@ -3760,7 +3765,7 @@ void AnalyzeCodestream(const jxl::PaddedBytes& data,
         frame_header.passes.num_passes, /*has_ac_global=*/true);
     std::vector<uint64_t> section_offsets;
     std::vector<uint32_t> section_sizes;
-    EXPECT_TRUE(ReadGroupOffsets(toc_entries, &br, &section_offsets,
+    ASSERT_TRUE(ReadGroupOffsets(toc_entries, &br, &section_offsets,
                                  &section_sizes, &groups_total_size));
     EXPECT_EQ(br.TotalBitsConsumed() % jxl::kBitsPerByte, 0);
     size_t sections_start = br.TotalBitsConsumed() / jxl::kBitsPerByte;
