@@ -12,7 +12,6 @@
 #include "lib/extras/codec.h"
 #include "lib/extras/enc/jpegli.h"
 #include "lib/extras/time.h"
-#include "lib/jpegli/encode.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/span.h"
 #include "tools/args.h"
@@ -65,7 +64,7 @@ struct Args {
         "Quality setting (is remapped to --distance)."
         "    Default is quality 90.\n"
         "    Quality values roughly match libjpeg quality.\n"
-        "    Recommended range: 68 .. 96. Allowed range: 0 .. 100.\n"
+        "    Recommended range: 68 .. 96. Allowed range: 1 .. 100.\n"
         "    Mutually exclusive with --distance and --target_size.",
         &quality, &ParseSigned);
 
@@ -136,7 +135,7 @@ bool ValidateArgs(const Args& args) {
     fprintf(stderr, "Invalid --distance argument\n");
     return false;
   }
-  if (args.quality < 0 || args.quality > 100) {
+  if (args.quality <= 0 || args.quality > 100) {
     fprintf(stderr, "Invalid --quality argument\n");
     return false;
   }
@@ -169,7 +168,7 @@ bool SetDistance(const Args& args, const CommandLineParser& cmdline,
     return false;
   }
   if (quality_set) {
-    settings->distance = jpegli_quality_to_distance(args.quality);
+    settings->quality = args.quality;
   }
   return true;
 }

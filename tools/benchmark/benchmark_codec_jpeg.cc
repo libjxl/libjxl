@@ -24,9 +24,6 @@
 #include "lib/extras/packed_image.h"
 #include "lib/extras/packed_image_convert.h"
 #include "lib/extras/time.h"
-#if JPEGXL_ENABLE_JPEGLI
-#include "lib/jpegli/encode.h"
-#endif
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/codec_in_out.h"
@@ -228,7 +225,7 @@ class JPEGCodec : public ImageCodec {
         settings.use_std_quant_tables = use_std_tables_;
       }
       if (enc_quality_set_) {
-        settings.distance = jpegli_quality_to_distance(q_target_);
+        settings.quality = q_target_;
       } else {
         settings.distance = butteraugli_target_;
       }
