@@ -23,6 +23,7 @@ load(
     "libjxl_extras_for_tools_sources",
     "libjxl_extras_sources",
     #'libjxl_gbench_sources',
+    "libjxl_jpegli_libjpeg_helper_files",
     "libjxl_jpegli_sources",
     "libjxl_jpegli_testlib_files",
     "libjxl_jpegli_tests",
@@ -214,7 +215,7 @@ cc_library(
     ] + libjxl_deps_exr + libjxl_deps_gif + libjxl_deps_jpeg + libjxl_deps_png,
 )
 
-TESTLIB_FILES = libjxl_testlib_files + libjxl_jpegli_testlib_files
+TESTLIB_FILES = libjxl_testlib_files + libjxl_jpegli_testlib_files + libjxl_jpegli_libjpeg_helper_files
 
 cc_library(
     name = "test_utils",

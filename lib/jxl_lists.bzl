@@ -449,6 +449,11 @@ libjxl_gbench_sources = [
     "jxl/tf_gbench.cc",
 ]
 
+libjxl_jpegli_libjpeg_helper_files = [
+    "jpegli/libjpeg_test_util.cc",
+    "jpegli/libjpeg_test_util.h",
+]
+
 libjxl_jpegli_sources = [
     "jpegli/adaptive_quantization.cc",
     "jpegli/adaptive_quantization.h",
@@ -502,11 +507,14 @@ libjxl_jpegli_sources = [
     "jpegli/simd.h",
     "jpegli/source_manager.cc",
     "jpegli/transpose-inl.h",
+    "jpegli/types.h",
     "jpegli/upsample.cc",
     "jpegli/upsample.h",
 ]
 
 libjxl_jpegli_testlib_files = [
+    "jpegli/test_params.h",
+    "jpegli/test_utils-inl.h",
     "jpegli/test_utils.cc",
     "jpegli/test_utils.h",
 ]
