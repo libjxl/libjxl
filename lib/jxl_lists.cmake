@@ -415,6 +415,8 @@ set(JPEGXL_INTERNAL_EXTRAS_FOR_TOOLS_SOURCES
   extras/codec.h
   extras/hlg.cc
   extras/hlg.h
+  extras/metrics.cc
+  extras/metrics.h
   extras/packed_image_convert.cc
   extras/packed_image_convert.h
   extras/tone_mapping.cc
@@ -432,8 +434,6 @@ set(JPEGXL_INTERNAL_EXTRAS_SOURCES
   extras/enc/encode.h
   extras/exif.cc
   extras/exif.h
-  extras/metrics.cc
-  extras/metrics.h
   extras/packed_image.h
   extras/size_constraints.h
   extras/time.cc
