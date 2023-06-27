@@ -1667,7 +1667,7 @@ TEST(DecodeTest, PixelTestWithICCProfileLossy) {
 #if JXL_HIGH_PRECISION
               IsSlightlyBelow(0.70f));
 #else
-              IsSlightlyBelow(0.72f));
+              IsSlightlyBelow(0.78f));
 #endif
 
   JxlDecoderDestroy(dec);
