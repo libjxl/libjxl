@@ -10,7 +10,7 @@
 
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/jxl.h"
-#include "lib/jxl/enc_butteraugli_pnorm.h"
+#include "lib/extras/metrics.h"
 #include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/encode_internal.h"
 #include "lib/jxl/jpeg/dec_jpeg_data.h"

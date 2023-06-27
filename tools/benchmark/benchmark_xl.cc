@@ -20,6 +20,7 @@
 
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/color_hints.h"
+#include "lib/extras/metrics.h"
 #include "lib/extras/time.h"
 #include "lib/jxl/alpha.h"
 #include "lib/jxl/base/cache_aligned.h"
@@ -33,7 +34,6 @@
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
-#include "lib/jxl/enc_butteraugli_pnorm.h"
 #include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"

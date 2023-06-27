@@ -27,7 +27,6 @@
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/color_management.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
-#include "lib/jxl/enc_butteraugli_pnorm.h"
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_file.h"

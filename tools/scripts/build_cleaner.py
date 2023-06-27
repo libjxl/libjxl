@@ -114,7 +114,8 @@ def SplitLibFiles(repo_files):
 
   # TODO(eustas): move to separate folder?
   extras_for_tools_sources, extras_sources = Filter(extras_sources, ContainsFn(
-    '/codec', '/hlg', '/packed_image_convert', '/render_hdr', '/tone_mapping'))
+    '/codec', '/hlg', '/metrics', '/packed_image_convert', '/render_hdr',
+    '/tone_mapping'))
 
   # Source files only needed by the encoder or by tools (including decoding
   # tools), but not by the decoder library.

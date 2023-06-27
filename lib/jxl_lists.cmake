@@ -314,8 +314,6 @@ set(JPEGXL_INTERNAL_ENC_SOURCES
   jxl/enc_bit_writer.h
   jxl/enc_butteraugli_comparator.cc
   jxl/enc_butteraugli_comparator.h
-  jxl/enc_butteraugli_pnorm.cc
-  jxl/enc_butteraugli_pnorm.h
   jxl/enc_cache.cc
   jxl/enc_cache.h
   jxl/enc_chroma_from_luma.cc
@@ -417,6 +415,8 @@ set(JPEGXL_INTERNAL_EXTRAS_FOR_TOOLS_SOURCES
   extras/codec.h
   extras/hlg.cc
   extras/hlg.h
+  extras/metrics.cc
+  extras/metrics.h
   extras/packed_image_convert.cc
   extras/packed_image_convert.h
   extras/tone_mapping.cc
