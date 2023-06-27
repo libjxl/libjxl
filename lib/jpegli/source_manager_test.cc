@@ -54,8 +54,6 @@ TEST_P(SourceManagerTestParam, TestStdioSourceManager) {
   std::vector<uint8_t> compressed = ReadTestData(config.fn.c_str());
   if (config.dparams.size_factor < 1.0) {
     compressed.resize(compressed.size() * config.dparams.size_factor);
-    // TODO(eustas): fix?
-    GTEST_SKIP() << "Partial stdio tests not working yet";
   }
   FILE* src = MemOpen(compressed);
   ASSERT_TRUE(src);
@@ -74,8 +72,7 @@ TEST_P(SourceManagerTestParam, TestStdioSourceManager) {
   jpegli_destroy_decompress(&cinfo);
 
   TestImage output1;
-  DecodeWithLibjpeg(CompressParams(), DecompressParams(),
-                    ReadTestData(config.fn.c_str()), &output1);
+  DecodeWithLibjpeg(CompressParams(), DecompressParams(), compressed, &output1);
   VerifyOutputImage(output1, output0, 1.0f);
 }
 
