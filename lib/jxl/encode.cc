@@ -1239,15 +1239,7 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetOption(
         return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
                              "Option value has to be in [-1..3]");
       }
-      // TODO(lode): the default behavior of this parameter for cjxl is
-      // to choose 1 or 2 depending on the situation. This behavior needs to be
-      // implemented either in the C++ library by allowing to set this to -1, or
-      // kept in cjxl and set it to 1 or 2 using this API.
-      if (value == -1) {
-        frame_settings->values.cparams.modular_group_size_shift = 1;
-      } else {
-        frame_settings->values.cparams.modular_group_size_shift = value;
-      }
+      frame_settings->values.cparams.modular_group_size_shift = value;
       return JXL_ENC_SUCCESS;
     case JXL_ENC_FRAME_SETTING_MODULAR_PREDICTOR:
       if (value < -1 || value > 15) {

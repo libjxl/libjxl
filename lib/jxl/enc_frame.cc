@@ -297,7 +297,17 @@ Status MakeFrameHeader(const CompressParams& cparams,
 
   if (cparams.modular_mode) {
     frame_header->encoding = FrameEncoding::kModular;
-    frame_header->group_size_shift = cparams.modular_group_size_shift;
+    if (cparams.modular_group_size_shift == -1) {
+      frame_header->group_size_shift = 1;
+      // no point using groups when only one group is full and the others are
+      // less than half full: multithreading will not really help much, while
+      // compression does suffer
+      if (ib.xsize() <= 400 && ib.ysize() <= 400) {
+        frame_header->group_size_shift = 2;
+      }
+    } else {
+      frame_header->group_size_shift = cparams.modular_group_size_shift;
+    }
   }
 
   frame_header->chroma_subsampling = ib.chroma_subsampling;
@@ -1229,7 +1239,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
             }
             for (Predictor pred : {Predictor::Zero, Predictor::Variable}) {
               cparams_attempt.options.predictor = pred;
-              for (int g : {0, 1, 3}) {
+              for (int g : {0, -1, 3}) {
                 cparams_attempt.modular_group_size_shift = g;
                 for (Override patches : {Override::kDefault, Override::kOff}) {
                   cparams_attempt.patches = patches;
