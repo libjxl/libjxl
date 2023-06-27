@@ -424,6 +424,9 @@ Status EncodeJpeg(const PackedPixelFile& ppf, const JpegSettings& jpeg_settings,
       jpegli_set_psnr(&cinfo, jpeg_settings.psnr_target,
                       jpeg_settings.search_tolerance,
                       jpeg_settings.min_distance, jpeg_settings.max_distance);
+    } else if (jpeg_settings.quality > 0.0) {
+      float distance = jpegli_quality_to_distance(jpeg_settings.quality);
+      jpegli_set_distance(&cinfo, distance, TRUE);
     } else {
       jpegli_set_distance(&cinfo, jpeg_settings.distance, TRUE);
     }

@@ -23,6 +23,7 @@ namespace extras {
 struct JpegSettings {
   bool xyb = false;
   size_t target_size = 0;
+  float quality = 0.0f;
   float distance = 1.f;
   bool use_adaptive_quantization = true;
   bool use_std_quant_tables = false;
