@@ -36,7 +36,10 @@ file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tests)
 foreach (TESTFILE IN LISTS JPEGXL_INTERNAL_JPEGLI_TESTS)
   # The TESTNAME is the name without the extension or directory.
   get_filename_component(TESTNAME ${TESTFILE} NAME_WE)
-  add_executable(${TESTNAME} ${TESTFILE} ${JPEGXL_INTERNAL_JPEGLI_TESTLIB_FILES})
+  add_executable(${TESTNAME} ${TESTFILE}
+    ${JPEGXL_INTERNAL_JPEGLI_TESTLIB_FILES}
+    ${JPEGXL_INTERNAL_JPEGLI_LIBJPEG_HELPER_FILES}
+  )
   target_compile_options(${TESTNAME} PRIVATE
     ${JPEGXL_INTERNAL_FLAGS}
     # Add coverage flags to the test binary so code in the private headers of

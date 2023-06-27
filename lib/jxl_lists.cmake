@@ -449,6 +449,11 @@ set(JPEGXL_INTERNAL_GBENCH_SOURCES
   jxl/tf_gbench.cc
 )
 
+set(JPEGXL_INTERNAL_JPEGLI_LIBJPEG_HELPER_FILES
+  jpegli/libjpeg_test_util.cc
+  jpegli/libjpeg_test_util.h
+)
+
 set(JPEGXL_INTERNAL_JPEGLI_SOURCES
   jpegli/adaptive_quantization.cc
   jpegli/adaptive_quantization.h
@@ -502,11 +507,14 @@ set(JPEGXL_INTERNAL_JPEGLI_SOURCES
   jpegli/simd.h
   jpegli/source_manager.cc
   jpegli/transpose-inl.h
+  jpegli/types.h
   jpegli/upsample.cc
   jpegli/upsample.h
 )
 
 set(JPEGXL_INTERNAL_JPEGLI_TESTLIB_FILES
+  jpegli/test_params.h
+  jpegli/test_utils-inl.h
   jpegli/test_utils.cc
   jpegli/test_utils.h
 )

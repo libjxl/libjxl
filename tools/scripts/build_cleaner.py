@@ -86,6 +86,8 @@ def SplitLibFiles(repo_files):
   _, jpegli_srcs = Filter(jpegli_srcs, ContainsFn('testing.h'))
   testlib_files, srcs = Filter(srcs, ContainsFn('test'))
   jpegli_testlib_files, jpegli_srcs = Filter(jpegli_srcs, ContainsFn('test'))
+  jpegli_libjpeg_helper_files, jpegli_testlib_files = Filter(
+    jpegli_testlib_files, ContainsFn('libjpeg_test_util'))
   gbench_sources, srcs = Filter(srcs, HasSuffixFn('_gbench.cc'))
 
   extras_sources, srcs = Filter(srcs, HasPrefixFn('extras/'))
@@ -142,6 +144,7 @@ def SplitLibFiles(repo_files):
     'extras_sources': extras_sources, 'gbench_sources': gbench_sources,
     'jpegli_sources': jpegli_sources,
     'jpegli_testlib_files': jpegli_testlib_files,
+    'jpegli_libjpeg_helper_files': jpegli_libjpeg_helper_files,
     'jpegli_tests': jpegli_tests,
     'jpegli_wrapper_sources' : jpegli_wrapper_sources,
     'public_headers': public_headers,
