@@ -81,7 +81,8 @@ Status ReadPNG(const std::string& filename, Image3F* image) {
   JXL_CHECK(ReadFile(filename, &encoded));
   JXL_CHECK(jxl::SetFromBytes(jxl::Span<const uint8_t>(encoded),
                               jxl::extras::ColorHints(), &io));
-  *image = CopyImage(*io.Main().color());
+  *image = Image3F(io.xsize(), io.ysize());
+  CopyImageTo(*io.Main().color(), image);
   return true;
 }
 

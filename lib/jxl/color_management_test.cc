@@ -377,7 +377,8 @@ TEST_F(ColorManagementTest, XYBProfile) {
   Image3F opsin(kNumColors, 1);
   ToXYB(ib, nullptr, &opsin, cms, nullptr);
 
-  Image3F opsin2 = CopyImage(opsin);
+  Image3F opsin2(kNumColors, 1);
+  CopyImageTo(opsin, &opsin2);
   ScaleXYB(&opsin2);
 
   float* src = xform.BufSrc(0);

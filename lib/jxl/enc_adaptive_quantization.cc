@@ -854,7 +854,8 @@ void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
   AdjustQuantField(enc_state->shared.ac_strategy, Rect(quant_field),
                    original_butteraugli, &quant_field);
   ImageF tile_distmap;
-  ImageF initial_quant_field = CopyImage(quant_field);
+  ImageF initial_quant_field(quant_field.xsize(), quant_field.ysize());
+  CopyImageTo(quant_field, &initial_quant_field);
 
   float initial_qf_min, initial_qf_max;
   ImageMinMax(initial_quant_field, &initial_qf_min, &initial_qf_max);
@@ -892,7 +893,7 @@ void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
     JXL_CHECK(comparator.CompareWith(dec_linear, &diffmap, &score));
     if (!lower_is_better) {
       score = -score;
-      diffmap = ScaleImage(-1.0f, diffmap);
+      ScaleImage(-1.0f, &diffmap);
     }
     tile_distmap = TileDistMap(diffmap, 8 * cparams.resampling, 0,
                                enc_state->shared.ac_strategy);

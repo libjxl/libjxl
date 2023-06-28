@@ -1513,9 +1513,11 @@ Status EncodeFrame(const CompressParams& cparams_orig,
   }
   if (cparams.ec_resampling != 1 && !cparams.already_downsampled) {
     extra_channels = &extra_channels_storage;
-    for (size_t i = 0; i < ib.extra_channels().size(); i++) {
-      extra_channels_storage.emplace_back(CopyImage(ib.extra_channels()[i]));
-      DownsampleImage(&extra_channels_storage.back(), cparams.ec_resampling);
+    for (const ImageF& ec : ib.extra_channels()) {
+      ImageF d_ec(ec.xsize(), ec.ysize());
+      CopyImageTo(ec, &d_ec);
+      DownsampleImage(&d_ec, cparams.ec_resampling);
+      extra_channels_storage.emplace_back(std::move(d_ec));
     }
   }
   // needs to happen *AFTER* VarDCT-ComputeEncodingData.
