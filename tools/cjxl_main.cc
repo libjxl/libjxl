@@ -776,9 +776,6 @@ void ProcessFlags(const jxl::extras::Codec codec,
   }
 
   // Modular mode related.
-  // TODO(firsching): consider doing more validation after image size is
-  // known, i.e. set to 512 if 256 would be silly using
-  // opt_modular_group_size_id.
   ProcessFlag("modular_group_size", args->modular_group_size,
               JXL_ENC_FRAME_SETTING_MODULAR_GROUP_SIZE, params,
               [](int64_t x) -> std::string {

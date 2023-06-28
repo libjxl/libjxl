@@ -4533,6 +4533,7 @@ TEST(DecodeTest, FlushTestLosslessProgressiveAlpha) {
   params.cparams.SetLossless();
   params.cparams.speed_tier = jxl::SpeedTier::kThunder;
   params.cparams.responsive = 1;
+  params.cparams.modular_group_size_shift = 1;
   params.preview_mode = jxl::kSmallPreview;
   jxl::PaddedBytes data = jxl::CreateTestJXLCodestream(
       jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize,
