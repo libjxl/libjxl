@@ -515,8 +515,7 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
   const ANSCode *code = &code_storage;
   const std::vector<uint8_t> *context_map = &context_map_storage;
   if (!header.use_global_tree) {
-    size_t max_tree_size = 1024;
-    const size_t max_tree_size_cap = static_cast<size_t>(1 << 20);
+    uint64_t max_tree_size = 1024;
     for (size_t i = 0; i < nb_channels; i++) {
       Channel &channel = image.channel[i];
       if (i >= image.nb_meta_channels && (channel.w > options->max_chan_size ||
@@ -525,11 +524,8 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
       }
       uint64_t pixels = channel.w * channel.h;
       max_tree_size += pixels;
-      if (max_tree_size < pixels || max_tree_size >= max_tree_size_cap) {
-        max_tree_size = max_tree_size_cap;
-        break;
-      }
     }
+    max_tree_size = std::min(static_cast<uint64_t>(1 << 20), max_tree_size);
     JXL_RETURN_IF_ERROR(DecodeTree(br, &tree_storage, max_tree_size));
     JXL_RETURN_IF_ERROR(DecodeHistograms(br, (tree_storage.size() + 1) / 2,
                                          &code_storage, &context_map_storage));
