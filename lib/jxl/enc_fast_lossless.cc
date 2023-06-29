@@ -202,6 +202,11 @@ size_t JxlFastLosslessOutputSize(const JxlFastLosslessFrameState* frame) {
   return frame->header.bytes_written + total_size_groups;
 }
 
+size_t JxlFastLosslessMaxRequiredOutput(
+    const JxlFastLosslessFrameState* frame) {
+  return JxlFastLosslessOutputSize(frame) + 32;
+}
+
 void JxlFastLosslessPrepareHeader(JxlFastLosslessFrameState* frame,
                                   int add_image_header, int is_last) {
   BitWriter* output = &frame->header;
@@ -3810,7 +3815,7 @@ size_t JxlFastLosslessEncode(const unsigned char* rgba, size_t width,
       runner_opaque, runner);
   JxlFastLosslessPrepareHeader(frame_state, /*add_image_header=*/1,
                                /*is_last=*/1);
-  size_t output_size = JxlFastLosslessOutputSize(frame_state) + 32;
+  size_t output_size = JxlFastLosslessMaxRequiredOutput(frame_state);
   *output = (unsigned char*)malloc(output_size);
   size_t written = 0;
   size_t total = 0;

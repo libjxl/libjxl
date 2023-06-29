@@ -58,8 +58,14 @@ JxlFastLosslessFrameState* JxlFastLosslessPrepareFrame(
 void JxlFastLosslessPrepareHeader(JxlFastLosslessFrameState* frame,
                                   int add_image_header, int is_last);
 
-// Actual size of the frame once it is encoded. Cannot be called before
+// Upper bound on the required output size, including any padding that may be
+// required by JxlFastLosslessWriteOutput. Cannot be called before
 // JxlFastLosslessPrepareHeader.
+size_t JxlFastLosslessMaxRequiredOutput(const JxlFastLosslessFrameState* frame);
+
+// Actual size of the frame once it is encoded. This is not identical to
+// JxlFastLosslessMaxRequiredOutput because JxlFastLosslessWriteOutput may
+// require extra padding.
 size_t JxlFastLosslessOutputSize(const JxlFastLosslessFrameState* frame);
 
 // Writes the frame to the given output buffer. Returns the number of bytes that
