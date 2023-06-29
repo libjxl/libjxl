@@ -7,10 +7,7 @@
 // shared library that is API- and ABI-compatible with libjpeg-turbo's version
 // of libjpeg.so.
 
-/* clang-format off */
-#include <stdio.h>
 #include <jpeglib.h>
-/* clang-format on */
 
 #include "lib/jpegli/common.h"
 #include "lib/jpegli/decode.h"

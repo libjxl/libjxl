@@ -363,7 +363,6 @@ foreach(FUZZER IN LISTS FUZZER_BINARIES)
       jxl_threads-static
     )
   elseif(FUZZER STREQUAL jpegli_dec_fuzzer)
-    target_include_directories("${BINARY}" PRIVATE "${JPEG_INCLUDE_DIRS}")
     target_link_libraries("${BINARY}" jpegli-static)
   else()
     target_link_libraries("${BINARY}"

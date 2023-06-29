@@ -6,11 +6,8 @@
 #ifndef LIB_JPEGLI_DECODE_SCAN_H_
 #define LIB_JPEGLI_DECODE_SCAN_H_
 
-/* clang-format off */
-#include <stdint.h>
-#include <stdio.h>
 #include <jpeglib.h>
-/* clang-format on */
+#include <stdint.h>
 
 namespace jpegli {
 

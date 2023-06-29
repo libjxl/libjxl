@@ -81,7 +81,7 @@ if(JPEG_FOUND AND JPEGXL_ENABLE_JPEGLI)
     -DJPEGXL_ENABLE_JPEGLI=1
   )
   target_include_directories(jxl_extras_jpegli-obj PRIVATE
-    "${JPEG_INCLUDE_DIRS}"
+    "${CMAKE_CURRENT_BINARY_DIR}/include/jpegli"
   )
   list(APPEND JXL_EXTRAS_OBJECT_LIBRARIES jxl_extras_jpegli-obj)
   list(APPEND JXL_EXTRAS_OBJECTS $<TARGET_OBJECTS:jxl_extras_jpegli-obj>)
