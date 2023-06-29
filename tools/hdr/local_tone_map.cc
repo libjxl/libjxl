@@ -195,6 +195,48 @@ Image3F Downsample(const Image3F& image, ThreadPool* const pool) {
                  Downsample(image.Plane(2), pool));
 }
 
+Image3F PadImageMirror(const Image3F& in, const size_t xborder,
+                       const size_t yborder) {
+  size_t xsize = in.xsize();
+  size_t ysize = in.ysize();
+  Image3F out(xsize + 2 * xborder, ysize + 2 * yborder);
+  if (xborder > xsize || yborder > ysize) {
+    for (size_t c = 0; c < 3; c++) {
+      for (int32_t y = 0; y < static_cast<int32_t>(out.ysize()); y++) {
+        float* row_out = out.PlaneRow(c, y);
+        const float* row_in = in.PlaneRow(
+            c, Mirror(y - static_cast<int32_t>(yborder), in.ysize()));
+        for (int32_t x = 0; x < static_cast<int32_t>(out.xsize()); x++) {
+          int32_t xin = Mirror(x - static_cast<int32_t>(xborder), in.xsize());
+          row_out[x] = row_in[xin];
+        }
+      }
+    }
+    return out;
+  }
+  CopyImageTo(Rect(in), in, Rect(xborder, yborder, xsize, ysize), &out);
+  for (size_t c = 0; c < 3; c++) {
+    // Horizontal pad.
+    for (size_t y = 0; y < ysize; y++) {
+      for (size_t x = 0; x < xborder; x++) {
+        out.PlaneRow(c, y + yborder)[x] =
+            in.ConstPlaneRow(c, y)[xborder - x - 1];
+        out.PlaneRow(c, y + yborder)[x + xsize + xborder] =
+            in.ConstPlaneRow(c, y)[xsize - 1 - x];
+      }
+    }
+    // Vertical pad.
+    for (size_t y = 0; y < yborder; y++) {
+      memcpy(out.PlaneRow(c, y), out.ConstPlaneRow(c, 2 * yborder - 1 - y),
+             out.xsize() * sizeof(float));
+      memcpy(out.PlaneRow(c, y + ysize + yborder),
+             out.ConstPlaneRow(c, ysize + yborder - 1 - y),
+             out.xsize() * sizeof(float));
+    }
+  }
+  return out;
+}
+
 Image3F Upsample(const Image3F& image, const bool odd_width,
                  const bool odd_height, ThreadPool* const pool) {
   const Image3F padded = PadImageMirror(image, 1, 1);
@@ -216,7 +258,8 @@ Image3F Upsample(const Image3F& image, const bool odd_width,
   }
   Image3F result(2 * image.xsize() - (odd_width ? 1 : 0),
                  2 * image.ysize() - (odd_height ? 1 : 0));
-  CopyImageTo(Rect(2, 2, result.xsize(), result.ysize()), filtered, &result);
+  CopyImageTo(Rect(2, 2, result.xsize(), result.ysize()), filtered,
+              Rect(result), &result);
   return result;
 }
 
@@ -239,7 +282,7 @@ std::vector<Image3F> LaplacianPyramid(Image3F image, int num_levels,
     Image3F downsampled = Downsample(image, pool);
     const bool odd_width = image.xsize() % 2 != 0;
     const bool odd_height = image.ysize() % 2 != 0;
-    SubtractFrom(Upsample(downsampled, odd_width, odd_height, pool), &image);
+    Subtract(image, Upsample(downsampled, odd_width, odd_height, pool), &image);
     pyramid[i] = std::move(image);
     image = std::move(downsampled);
   }
@@ -255,7 +298,7 @@ Image3F ReconstructFromLaplacianPyramid(std::vector<Image3F> pyramid,
     const bool odd_width = it->xsize() % 2 != 0;
     const bool odd_height = it->ysize() % 2 != 0;
     result = Upsample(result, odd_width, odd_height, pool);
-    AddTo(*it, &result);
+    AddTo(Rect(result), *it, &result);
   }
   return result;
 }
@@ -319,7 +362,7 @@ Image3F ExposureFusion(std::vector<Image3F> images, int num_levels,
       if (pyramid[k].xsize() == 0) {
         pyramid[k] = std::move(product);
       } else {
-        AddTo(product, &pyramid[k]);
+        AddTo(Rect(product), product, &pyramid[k]);
       }
     }
   }
@@ -407,8 +450,9 @@ int main(int argc, const char** argv) {
 
   if (max_nits <= 4 * jxl::kDefaultIntensityTarget) {
     jxl::CodecInOut sRGB_image;
-    sRGB_image.SetFromImage(jxl::CopyImage(*image.Main().color()),
-                            image.Main().c_current());
+    jxl::Image3F color(image.xsize(), image.ysize());
+    CopyImageTo(*image.Main().color(), &color);
+    sRGB_image.SetFromImage(std::move(color), image.Main().c_current());
     JXL_CHECK(sRGB_image.Main().TransformTo(jxl::ColorEncoding::SRGB(),
                                             jxl::GetJxlCms(), &pool));
     input_images.push_back(std::move(*sRGB_image.Main().color()));
@@ -418,8 +462,9 @@ int main(int argc, const char** argv) {
     const float target = std::ldexp(jxl::kDefaultIntensityTarget, 2 - i);
     if (target >= max_nits) continue;
     jxl::CodecInOut tone_mapped_image;
-    tone_mapped_image.SetFromImage(jxl::CopyImage(*image.Main().color()),
-                                   image.Main().c_current());
+    jxl::Image3F color(image.xsize(), image.ysize());
+    CopyImageTo(*image.Main().color(), &color);
+    tone_mapped_image.SetFromImage(std::move(color), image.Main().c_current());
     tone_mapped_image.metadata.m.SetIntensityTarget(
         image.metadata.m.IntensityTarget());
     JXL_CHECK(jxl::ToneMapTo({0, target}, &tone_mapped_image, &pool));
