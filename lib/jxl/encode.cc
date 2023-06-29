@@ -258,13 +258,6 @@ JxlEncoderStatus CheckValidBitdepth(uint32_t bits_per_sample,
 
 JxlEncoderStatus VerifyInputBitDepth(JxlBitDepth bit_depth,
                                      JxlPixelFormat format) {
-  if ((format.data_type == JXL_TYPE_FLOAT ||
-       format.data_type == JXL_TYPE_FLOAT16) &&
-      bit_depth.type != JXL_BIT_DEPTH_FROM_PIXEL_FORMAT) {
-    return JXL_API_ERROR_NOSET(
-        "Only JXL_BIT_DEPTH_FROM_PIXEL_FORMAT is "
-        "implemented for float types.");
-  }
   return JXL_ENC_SUCCESS;
 }
 

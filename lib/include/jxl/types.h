@@ -101,7 +101,8 @@ typedef struct {
   size_t align;
 } JxlPixelFormat;
 
-/** Settings for the interpretation of the input and output buffers.
+/** Settings for the interpretation of UINT input and output buffers.
+ *  (buffers using a FLOAT data type are not affected by this)
  */
 typedef enum {
   /** This is the default setting, where the encoder expects the input pixels
