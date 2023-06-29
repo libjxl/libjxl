@@ -322,6 +322,12 @@ struct CompressArgs {
 
     cmdline->AddHelpText("\nOptions for experimentation / benchmarking:", 3);
 
+    cmdline->AddOptionValue('\0', "noise", "0|1",
+                            "Force disable/enable adaptive noise generation "
+                            "(experimental). Default "
+                            "is 'encoder chooses'",
+                            &noise, &ParseOverride, 3);
+
     cmdline->AddOptionValue(
         '\0', "jpeg_reconstruction_cfl", "0|1",
         "Enable/disable chroma-from-luma (CFL) for lossless "
@@ -477,6 +483,7 @@ struct CompressArgs {
   jxl::Override gaborish = jxl::Override::kDefault;
   jxl::Override group_order = jxl::Override::kDefault;
   jxl::Override compress_boxes = jxl::Override::kDefault;
+  jxl::Override noise = jxl::Override::kDefault;
 
   size_t faster_decoding = 0;
   int64_t resampling = -1;
@@ -655,6 +662,7 @@ void ProcessFlags(const jxl::extras::Codec codec,
   ProcessBoolFlag(args->patches, JXL_ENC_FRAME_SETTING_PATCHES, params);
   ProcessBoolFlag(args->gaborish, JXL_ENC_FRAME_SETTING_GABORISH, params);
   ProcessBoolFlag(args->group_order, JXL_ENC_FRAME_SETTING_GROUP_ORDER, params);
+  ProcessBoolFlag(args->noise, JXL_ENC_FRAME_SETTING_NOISE, params);
 
   params->allow_expert_options = args->allow_expert_options;
 

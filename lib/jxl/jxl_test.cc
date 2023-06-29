@@ -1134,7 +1134,7 @@ TEST(JxlTest, RoundtripDots) {
 TEST(JxlTest, RoundtripNoise) {
   ThreadPool* pool = nullptr;
   const PaddedBytes orig = jxl::test::ReadTestData(
-      "external/wesaturate/500px/cvo9xd_keong_macan_srgb8.png");
+      "external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   TestImage t;
   t.DecodeFromBytes(orig).ClearMetadata();
   ASSERT_NE(t.ppf().info.xsize, 0);
@@ -1147,8 +1147,8 @@ TEST(JxlTest, RoundtripNoise) {
   cparams.AddOption(JXL_ENC_FRAME_SETTING_NOISE, 1);
 
   PackedPixelFile ppf_out;
-  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, pool, &ppf_out), 41385, 750);
-  EXPECT_THAT(ButteraugliDistance(t.ppf(), ppf_out), IsSlightlyBelow(1.48));
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, pool, &ppf_out), 38244, 750);
+  EXPECT_THAT(ButteraugliDistance(t.ppf(), ppf_out), IsSlightlyBelow(1.3));
 }
 
 TEST(JxlTest, RoundtripLossless8Gray) {
