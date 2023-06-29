@@ -202,11 +202,6 @@ size_t JxlFastLosslessOutputSize(const JxlFastLosslessFrameState* frame) {
   return frame->header.bytes_written + total_size_groups;
 }
 
-size_t JxlFastLosslessMaxRequiredOutput(
-    const JxlFastLosslessFrameState* frame) {
-  return JxlFastLosslessOutputSize(frame) + 32;
-}
-
 void JxlFastLosslessPrepareHeader(JxlFastLosslessFrameState* frame,
                                   int add_image_header, int is_last) {
   BitWriter* output = &frame->header;
@@ -225,6 +220,7 @@ void JxlFastLosslessPrepareHeader(JxlFastLosslessFrameState* frame,
 
   bool have_alpha = (frame->nb_chans == 2 || frame->nb_chans == 4);
 
+#if FJXL_STANDALONE
   if (add_image_header) {
     // Signature
     output->Write(16, 0x0AFF);
@@ -301,6 +297,9 @@ void JxlFastLosslessPrepareHeader(JxlFastLosslessFrameState* frame,
     // No ICC, no preview. Frame should start at byte boundery.
     output->ZeroPadToByte();
   }
+#else
+  assert(!add_image_header);
+#endif
 
   // Handcrafted frame header.
   output->Write(1, 0);     // all_default
@@ -3800,6 +3799,7 @@ namespace AVX512 {
 
 extern "C" {
 
+#if FJXL_STANDALONE
 size_t JxlFastLosslessEncode(const unsigned char* rgba, size_t width,
                              size_t row_stride, size_t height, size_t nb_chans,
                              size_t bitdepth, int big_endian, int effort,
@@ -3810,7 +3810,7 @@ size_t JxlFastLosslessEncode(const unsigned char* rgba, size_t width,
       runner_opaque, runner);
   JxlFastLosslessPrepareHeader(frame_state, /*add_image_header=*/1,
                                /*is_last=*/1);
-  size_t output_size = JxlFastLosslessMaxRequiredOutput(frame_state);
+  size_t output_size = JxlFastLosslessOutputSize(frame_state) + 32;
   *output = (unsigned char*)malloc(output_size);
   size_t written = 0;
   size_t total = 0;
@@ -3820,6 +3820,7 @@ size_t JxlFastLosslessEncode(const unsigned char* rgba, size_t width,
   }
   return total;
 }
+#endif
 
 JxlFastLosslessFrameState* JxlFastLosslessPrepareFrame(
     const unsigned char* rgba, size_t width, size_t row_stride, size_t height,
