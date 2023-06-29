@@ -6,10 +6,7 @@
 #ifndef LIB_JPEGLI_COLOR_QUANTIZE_H_
 #define LIB_JPEGLI_COLOR_QUANTIZE_H_
 
-/* clang-format off */
-#include <stdio.h>
 #include <jpeglib.h>
-/* clang-format on */
 
 namespace jpegli {
 

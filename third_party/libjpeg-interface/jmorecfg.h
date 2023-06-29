@@ -354,29 +354,4 @@ static const int rgb_pixelsize[JPEG_NUMCS] = {
   -1
 };
 
-/* Definitions for speed-related optimizations. */
-
-/* On some machines (notably 68000 series) "int" is 32 bits, but multiplying
- * two 16-bit shorts is faster than multiplying two ints.  Define MULTIPLIER
- * as short on such a machine.  MULTIPLIER must be at least 16 bits wide.
- */
-
-#ifndef MULTIPLIER
-#ifndef WITH_SIMD
-#define MULTIPLIER  int         /* type for fastest integer multiply */
-#else
-#define MULTIPLIER  short       /* prefer 16-bit with SIMD for parellelism */
-#endif
-#endif
-
-
-/* FAST_FLOAT should be either float or double, whichever is done faster
- * by your compiler.  (Note that this type is only used in the floating point
- * DCT routines, so it only matters if you've defined DCT_FLOAT_SUPPORTED.)
- */
-
-#ifndef FAST_FLOAT
-#define FAST_FLOAT  float
-#endif
-
 #endif /* JPEG_INTERNAL_OPTIONS */

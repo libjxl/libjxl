@@ -7,6 +7,8 @@
  * libjpeg-turbo Modifications:
  * Copyright (C) 2009-2011, 2013-2014, 2016-2017, 2020, D. R. Commander.
  * Copyright (C) 2015, Google, Inc.
+ * JPEG XL Modifications:
+ * Copyright (c) the JPEG XL Project Authors.
  * For conditions of distribution and use, see the accompanying README.ijg
  * file.
  *
@@ -17,6 +19,8 @@
 
 #ifndef JPEGLIB_H
 #define JPEGLIB_H
+
+#include <stdio.h>  /* Needed for FILE and size_t */
 
 /*
  * First we include the configuration files that record how this

@@ -6,12 +6,9 @@
 #ifndef LIB_JPEGLI_IDCT_H_
 #define LIB_JPEGLI_IDCT_H_
 
-/* clang-format off */
-#include <stdio.h>
 #include <jpeglib.h>
 #include <stddef.h>
 #include <stdint.h>
-/* clang-format on */
 
 #include "lib/jxl/base/compiler_specific.h"
 
