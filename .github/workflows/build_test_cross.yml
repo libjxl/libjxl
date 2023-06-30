@@ -30,6 +30,7 @@ jobs:
     runs-on: [ubuntu-22.04]
     container:
       image: debian:bullseye
+    timeout-minutes: 600
     strategy:
       fail-fast: false
       matrix:
