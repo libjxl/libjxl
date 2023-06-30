@@ -157,7 +157,8 @@ void PatchDictionaryEncoder::SubtractFrom(const PatchDictionary& pdic,
           } else if (mode == PatchBlendMode::kNone) {
             // Nothing to do.
           } else {
-            JXL_ABORT("Blending mode %u not yet implemented", (uint32_t)mode);
+            JXL_UNREACHABLE("Blending mode %u not yet implemented",
+                            (uint32_t)mode);
           }
         }
       }

@@ -43,49 +43,6 @@ struct ButteraugliParams {
   float intensity_target = 80.0f;
 };
 
-// ButteraugliInterface defines the public interface for butteraugli.
-//
-// It calculates the difference between rgb0 and rgb1.
-//
-// rgb0 and rgb1 contain the images. rgb0[c][px] and rgb1[c][px] contains
-// the red image for c == 0, green for c == 1, blue for c == 2. Location index
-// px is calculated as y * xsize + x.
-//
-// Value of pixels of images rgb0 and rgb1 need to be represented as raw
-// intensity. Most image formats store gamma corrected intensity in pixel
-// values. This gamma correction has to be removed, by applying the following
-// function to values in the 0-1 range:
-// butteraugli_val = pow(input_val, gamma);
-// A typical value of gamma is 2.2. It is usually stored in the image header.
-// Take care not to confuse that value with its inverse. The gamma value should
-// be always greater than one.
-// Butteraugli does not work as intended if the caller does not perform
-// gamma correction.
-//
-// hf_asymmetry is a multiplier for penalizing new HF artifacts more than
-// blurring away features (1.0 -> neutral).
-//
-// diffmap will contain an image of the size xsize * ysize, containing
-// localized differences for values px (indexed with the px the same as rgb0
-// and rgb1). diffvalue will give a global score of similarity.
-//
-// A diffvalue smaller than kButteraugliGood indicates that images can be
-// observed as the same image.
-// diffvalue larger than kButteraugliBad indicates that a difference between
-// the images can be observed.
-// A diffvalue between kButteraugliGood and kButteraugliBad indicates that
-// a subtle difference can be observed between the images.
-//
-// Returns true on success.
-bool ButteraugliInterface(const Image3F &rgb0, const Image3F &rgb1,
-                          const ButteraugliParams &params, ImageF &diffmap,
-                          double &diffvalue);
-
-// Deprecated (calls the previous function)
-bool ButteraugliInterface(const Image3F &rgb0, const Image3F &rgb1,
-                          float hf_asymmetry, float xmul, ImageF &diffmap,
-                          double &diffvalue);
-
 // Converts the butteraugli score into fuzzy class values that are continuous
 // at the class boundary. The class boundary location is based on human
 // raters, but the slope is arbitrary. Particularly, it does not reflect
@@ -189,13 +146,6 @@ class ButteraugliComparator {
   mutable BlurTemp blur_temp_;
   std::unique_ptr<ButteraugliComparator> sub_;
 };
-
-// Deprecated.
-bool ButteraugliDiffmap(const Image3F &rgb0, const Image3F &rgb1,
-                        double hf_asymmetry, double xmul, ImageF &diffmap);
-
-bool ButteraugliDiffmap(const Image3F &rgb0, const Image3F &rgb1,
-                        const ButteraugliParams &params, ImageF &diffmap);
 
 double ButteraugliScoreFromDiffmap(const ImageF &diffmap,
                                    const ButteraugliParams *params = nullptr);

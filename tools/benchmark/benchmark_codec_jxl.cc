@@ -76,7 +76,6 @@ struct JxlArgs {
   Override dots;
   Override patches;
 
-  bool log_search_state;
   std::string debug_image_dir;
 };
 
@@ -108,9 +107,6 @@ Status AddCommandLineOptionsJxlCodec(BenchmarkArgs* args) {
                     "Enable(1)/disable(0) dots generation.");
   args->AddOverride(&jxlargs->patches, "patches",
                     "Enable(1)/disable(0) patch dictionary.");
-
-  args->AddFlag(&jxlargs->log_search_state, "log_search_state",
-                "Print out debug info for tortoise mode AQ loop.", false);
 
   args->AddString(
       &jxlargs->debug_image_dir, "debug_image_dir",
@@ -320,8 +316,6 @@ class JxlCodec : public ImageCodec {
         cparams_.modular_mode && !has_ctransform_) {
       cparams_.color_transform = ColorTransform::kXYB;
     }
-
-    cparams_.log_search_state = jxlargs->log_search_state;
 
 #if JPEGXL_ENABLE_JPEG
     if (normalize_bitrate_ && cparams_.butteraugli_distance > 0.0f) {

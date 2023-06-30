@@ -55,11 +55,12 @@ const char* LayerName(size_t layer) {
     case kLayerModularAcGroup:
       return "ModularAcGroup";
     default:
-      JXL_ABORT("Invalid layer %d\n", static_cast<int>(layer));
+      JXL_UNREACHABLE("Invalid layer %d\n", static_cast<int>(layer));
   }
 }
 
 void AuxOut::LayerTotals::Print(size_t num_inputs) const {
+#if JXL_DEBUG_V_LEVEL > 0
   printf("%10" PRId64, static_cast<int64_t>(total_bits));
   if (histogram_bits != 0) {
     printf("   [c/i:%6.2f | hst:%8" PRId64 " | ex:%8" PRId64 " | h+c+e:%12.3f",
@@ -70,6 +71,7 @@ void AuxOut::LayerTotals::Print(size_t num_inputs) const {
     printf("]");
   }
   printf("\n");
+#endif
 }
 
 void AuxOut::Assimilate(const AuxOut& victim) {
@@ -100,6 +102,7 @@ void AuxOut::Assimilate(const AuxOut& victim) {
 }
 
 void AuxOut::Print(size_t num_inputs) const {
+#if JXL_DEBUG_V_LEVEL > 0
   if (num_inputs == 0) return;
 
   LayerTotals all_layers;
@@ -147,6 +150,7 @@ void AuxOut::Print(size_t num_inputs) const {
            total_blocks, total_positions,
            100.0 * total_blocks / total_positions);
   }
+#endif
 }
 
 template <typename T>

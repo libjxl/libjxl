@@ -182,23 +182,7 @@ void ConvolutionWithTranspose(const ImageF& in,
       break;
     }
     default:
-      printf("Warning: Unexpected kernel size! %" PRIuS "\n", len);
-      for (size_t y = 0; y < in.ysize(); ++y) {
-        const float* BUTTERAUGLI_RESTRICT row_in = in.Row(y);
-        for (size_t x = border1; x < border2; ++x) {
-          const int d = x - offset;
-          float* BUTTERAUGLI_RESTRICT row_out = out->Row(x);
-          float sum = 0.0f;
-          size_t j;
-          for (j = 0; j <= len / 2; ++j) {
-            sum += row_in[d + j] * scaled_kernel[j];
-          }
-          for (; j < len; ++j) {
-            sum += row_in[d + j] * scaled_kernel[len - 1 - j];
-          }
-          row_out[y] = sum;
-        }
-      }
+      JXL_UNREACHABLE("Kernel size %" PRIuS " not implemented", len);
   }
   // left border
   for (size_t x = 0; x < border1; ++x) {
@@ -1772,83 +1756,6 @@ double ButteraugliScoreFromDiffmap(const ImageF& diffmap,
     }
   }
   return retval;
-}
-
-bool ButteraugliDiffmap(const Image3F& rgb0, const Image3F& rgb1,
-                        double hf_asymmetry, double xmul, ImageF& diffmap) {
-  ButteraugliParams params;
-  params.hf_asymmetry = hf_asymmetry;
-  params.xmul = xmul;
-  return ButteraugliDiffmap(rgb0, rgb1, params, diffmap);
-}
-
-bool ButteraugliDiffmap(const Image3F& rgb0, const Image3F& rgb1,
-                        const ButteraugliParams& params, ImageF& diffmap) {
-  const size_t xsize = rgb0.xsize();
-  const size_t ysize = rgb0.ysize();
-  if (xsize < 1 || ysize < 1) {
-    return JXL_FAILURE("Zero-sized image");
-  }
-  if (!SameSize(rgb0, rgb1)) {
-    return JXL_FAILURE("Size mismatch");
-  }
-  static const int kMax = 8;
-  if (xsize < kMax || ysize < kMax) {
-    // Butteraugli values for small (where xsize or ysize is smaller
-    // than 8 pixels) images are non-sensical, but most likely it is
-    // less disruptive to try to compute something than just give up.
-    // Temporarily extend the borders of the image to fit 8 x 8 size.
-    size_t xborder = xsize < kMax ? (kMax - xsize) / 2 : 0;
-    size_t yborder = ysize < kMax ? (kMax - ysize) / 2 : 0;
-    size_t xscaled = std::max<size_t>(kMax, xsize);
-    size_t yscaled = std::max<size_t>(kMax, ysize);
-    Image3F scaled0(xscaled, yscaled);
-    Image3F scaled1(xscaled, yscaled);
-    for (int i = 0; i < 3; ++i) {
-      for (size_t y = 0; y < yscaled; ++y) {
-        for (size_t x = 0; x < xscaled; ++x) {
-          size_t x2 =
-              std::min<size_t>(xsize - 1, x > xborder ? x - xborder : 0);
-          size_t y2 =
-              std::min<size_t>(ysize - 1, y > yborder ? y - yborder : 0);
-          scaled0.PlaneRow(i, y)[x] = rgb0.PlaneRow(i, y2)[x2];
-          scaled1.PlaneRow(i, y)[x] = rgb1.PlaneRow(i, y2)[x2];
-        }
-      }
-    }
-    ImageF diffmap_scaled;
-    const bool ok =
-        ButteraugliDiffmap(scaled0, scaled1, params, diffmap_scaled);
-    diffmap = ImageF(xsize, ysize);
-    for (size_t y = 0; y < ysize; ++y) {
-      for (size_t x = 0; x < xsize; ++x) {
-        diffmap.Row(y)[x] = diffmap_scaled.Row(y + yborder)[x + xborder];
-      }
-    }
-    return ok;
-  }
-  ButteraugliComparator butteraugli(rgb0, params);
-  butteraugli.Diffmap(rgb1, diffmap);
-  return true;
-}
-
-bool ButteraugliInterface(const Image3F& rgb0, const Image3F& rgb1,
-                          float hf_asymmetry, float xmul, ImageF& diffmap,
-                          double& diffvalue) {
-  ButteraugliParams params;
-  params.hf_asymmetry = hf_asymmetry;
-  params.xmul = xmul;
-  return ButteraugliInterface(rgb0, rgb1, params, diffmap, diffvalue);
-}
-
-bool ButteraugliInterface(const Image3F& rgb0, const Image3F& rgb1,
-                          const ButteraugliParams& params, ImageF& diffmap,
-                          double& diffvalue) {
-  if (!ButteraugliDiffmap(rgb0, rgb1, params, diffmap)) {
-    return false;
-  }
-  diffvalue = ButteraugliScoreFromDiffmap(diffmap, &params);
-  return true;
 }
 
 double ButteraugliFuzzyClass(double score) {
