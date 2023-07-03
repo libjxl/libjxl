@@ -44,12 +44,18 @@
 // sensitive to some kind of degradation. Unfortunately image quality
 // is still more of an art than science.
 
+// Set JXL_DEBUG_AC_STRATEGY to 1 to enable debugging.
+#ifndef JXL_DEBUG_AC_STRATEGY
+#define JXL_DEBUG_AC_STRATEGY 0
+#endif
+
 // This must come before the begin/end_target, but HWY_ONCE is only true
 // after that, so use an "include guard".
 #ifndef LIB_JXL_ENC_AC_STRATEGY_
 #define LIB_JXL_ENC_AC_STRATEGY_
 // Parameters of the heuristic are marked with a OPTIMIZE comment.
 namespace jxl {
+namespace {
 
 // Debugging utilities.
 
@@ -262,6 +268,7 @@ void DumpAcStrategy(const AcStrategyImage& ac_strategy, size_t xsize,
   aux_out->DumpImage(tag, color_acs);
 }
 
+}  // namespace
 }  // namespace jxl
 #endif  // LIB_JXL_ENC_AC_STRATEGY_
 
@@ -1156,7 +1163,7 @@ void AcStrategyHeuristics::Finalize(AuxOut* aux_out) {
         ac_strategy.CountBlocks(AcStrategy::Type::DCT64X64);
   }
 
-  if (WantDebugOutput(aux_out)) {
+  if (JXL_DEBUG_AC_STRATEGY && WantDebugOutput(aux_out)) {
     DumpAcStrategy(ac_strategy, enc_state->shared.frame_dim.xsize,
                    enc_state->shared.frame_dim.ysize, "ac_strategy", aux_out);
   }
