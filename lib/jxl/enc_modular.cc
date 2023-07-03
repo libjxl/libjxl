@@ -178,7 +178,7 @@ Tree PredefinedTree(ModularOptions::TreeKind tree_kind, size_t total_pixels) {
     return MakeFixedTree(kGradientProp, cutoffs, Predictor::Gradient,
                          total_pixels);
   }
-  JXL_ABORT("Unreachable");
+  JXL_UNREACHABLE("Unreachable");
   return {};
 }
 

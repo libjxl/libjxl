@@ -66,7 +66,7 @@ std::string ExtensionFromCodec(Codec codec, const bool is_gray,
     case Codec::kUnknown:
       return std::string();
   }
-  JXL_UNREACHABLE;
+  JXL_UNREACHABLE("Add codec");
   return std::string();
 }
 

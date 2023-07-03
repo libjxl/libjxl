@@ -124,7 +124,6 @@ struct CompressParams {
 
   // Prints extra information during/after encoding.
   bool verbose = false;
-  bool log_search_state = false;
 
   ButteraugliParams ba_params;
 

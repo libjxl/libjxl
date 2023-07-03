@@ -35,7 +35,7 @@ std::string ToString(ColorSpace color_space) {
       return "CS?";
   }
   // Should not happen - visitor fails if enum is invalid.
-  JXL_ABORT("Invalid ColorSpace %u", static_cast<uint32_t>(color_space));
+  JXL_UNREACHABLE("Invalid ColorSpace %u", static_cast<uint32_t>(color_space));
 }
 
 std::string ToString(WhitePoint white_point) {
@@ -50,7 +50,7 @@ std::string ToString(WhitePoint white_point) {
       return "DCI";
   }
   // Should not happen - visitor fails if enum is invalid.
-  JXL_ABORT("Invalid WhitePoint %u", static_cast<uint32_t>(white_point));
+  JXL_UNREACHABLE("Invalid WhitePoint %u", static_cast<uint32_t>(white_point));
 }
 
 std::string ToString(Primaries primaries) {
@@ -65,7 +65,7 @@ std::string ToString(Primaries primaries) {
       return "Cst";
   }
   // Should not happen - visitor fails if enum is invalid.
-  JXL_ABORT("Invalid Primaries %u", static_cast<uint32_t>(primaries));
+  JXL_UNREACHABLE("Invalid Primaries %u", static_cast<uint32_t>(primaries));
 }
 
 std::string ToString(TransferFunction transfer_function) {
@@ -86,8 +86,8 @@ std::string ToString(TransferFunction transfer_function) {
       return "TF?";
   }
   // Should not happen - visitor fails if enum is invalid.
-  JXL_ABORT("Invalid TransferFunction %u",
-            static_cast<uint32_t>(transfer_function));
+  JXL_UNREACHABLE("Invalid TransferFunction %u",
+                  static_cast<uint32_t>(transfer_function));
 }
 
 std::string ToString(RenderingIntent rendering_intent) {
@@ -102,8 +102,8 @@ std::string ToString(RenderingIntent rendering_intent) {
       return "Abs";
   }
   // Should not happen - visitor fails if enum is invalid.
-  JXL_ABORT("Invalid RenderingIntent %u",
-            static_cast<uint32_t>(rendering_intent));
+  JXL_UNREACHABLE("Invalid RenderingIntent %u",
+                  static_cast<uint32_t>(rendering_intent));
 }
 
 static double F64FromCustomxyI32(const int32_t i) { return i * 1E-6; }
@@ -314,7 +314,7 @@ CIExy ColorEncoding::GetWhitePoint() const {
       xy.x = xy.y = 1.0 / 3;
       return xy;
   }
-  JXL_ABORT("Invalid WhitePoint %u", static_cast<uint32_t>(white_point));
+  JXL_UNREACHABLE("Invalid WhitePoint %u", static_cast<uint32_t>(white_point));
 }
 
 Status ColorEncoding::SetWhitePoint(const CIExy& xy) {
@@ -376,7 +376,7 @@ PrimariesCIExy ColorEncoding::GetPrimaries() const {
       xy.b.y = 0.060;
       return xy;
   }
-  JXL_ABORT("Invalid Primaries %u", static_cast<uint32_t>(primaries));
+  JXL_UNREACHABLE("Invalid Primaries %u", static_cast<uint32_t>(primaries));
 }
 
 Status ColorEncoding::SetPrimaries(const PrimariesCIExy& xy) {
