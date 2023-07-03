@@ -630,38 +630,43 @@ HWY_EXPORT(AdaptiveQuantizationMap);
 
 namespace {
 
-#if JXL_DEBUG_ADAPTIVE_QUANTIZATION
+// If true, prints the quantization maps at each iteration.
+constexpr bool FLAGS_dump_quant_state = false;
+
 void DumpHeatmap(const AuxOut* aux_out, const std::string& label,
                  const ImageF& image, float good_threshold,
                  float bad_threshold) {
-  Image3F heatmap = CreateHeatMapImage(image, good_threshold, bad_threshold);
-  char filename[200];
-  snprintf(filename, sizeof(filename), "%s%05d", label.c_str(),
-           aux_out->num_butteraugli_iters);
-  aux_out->DumpImage(filename, heatmap);
+  if (JXL_DEBUG_ADAPTIVE_QUANTIZATION) {
+    Image3F heatmap = CreateHeatMapImage(image, good_threshold, bad_threshold);
+    char filename[200];
+    snprintf(filename, sizeof(filename), "%s%05d", label.c_str(),
+             aux_out->num_butteraugli_iters);
+    aux_out->DumpImage(filename, heatmap);
+  }
 }
 
 void DumpHeatmaps(const AuxOut* aux_out, float ba_target,
                   const ImageF& quant_field, const ImageF& tile_heatmap,
                   const ImageF& bt_diffmap) {
-  if (!WantDebugOutput(aux_out)) return;
-  ImageF inv_qmap(quant_field.xsize(), quant_field.ysize());
-  for (size_t y = 0; y < quant_field.ysize(); ++y) {
-    const float* JXL_RESTRICT row_q = quant_field.ConstRow(y);
-    float* JXL_RESTRICT row_inv_q = inv_qmap.Row(y);
-    for (size_t x = 0; x < quant_field.xsize(); ++x) {
-      row_inv_q[x] = 1.0f / row_q[x];  // never zero
+  if (JXL_DEBUG_ADAPTIVE_QUANTIZATION) {
+    if (!WantDebugOutput(aux_out)) return;
+    ImageF inv_qmap(quant_field.xsize(), quant_field.ysize());
+    for (size_t y = 0; y < quant_field.ysize(); ++y) {
+      const float* JXL_RESTRICT row_q = quant_field.ConstRow(y);
+      float* JXL_RESTRICT row_inv_q = inv_qmap.Row(y);
+      for (size_t x = 0; x < quant_field.xsize(); ++x) {
+        row_inv_q[x] = 1.0f / row_q[x];  // never zero
+      }
     }
+    DumpHeatmap(aux_out, "quant_heatmap", inv_qmap, 4.0f * ba_target,
+                6.0f * ba_target);
+    DumpHeatmap(aux_out, "tile_heatmap", tile_heatmap, ba_target,
+                1.5f * ba_target);
+    // matches heat maps produced by the command line tool.
+    DumpHeatmap(aux_out, "bt_diffmap", bt_diffmap, ButteraugliFuzzyInverse(1.5),
+                ButteraugliFuzzyInverse(0.5));
   }
-  DumpHeatmap(aux_out, "quant_heatmap", inv_qmap, 4.0f * ba_target,
-              6.0f * ba_target);
-  DumpHeatmap(aux_out, "tile_heatmap", tile_heatmap, ba_target,
-              1.5f * ba_target);
-  // matches heat maps produced by the command line tool.
-  DumpHeatmap(aux_out, "bt_diffmap", bt_diffmap, ButteraugliFuzzyInverse(1.5),
-              ButteraugliFuzzyInverse(0.5));
 }
-#endif
 
 ImageF TileDistMap(const ImageF& distmap, int tile_size, int margin,
                    const AcStrategyImage& ac_strategy) {
@@ -883,15 +888,15 @@ void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
     iters = 2;
   }
   for (int i = 0; i < iters + 1; ++i) {
-#if JXL_DEBUG_ADAPTIVE_QUANTIZATION
-    printf("\nQuantization field:\n");
-    for (size_t y = 0; y < quant_field.ysize(); ++y) {
-      for (size_t x = 0; x < quant_field.xsize(); ++x) {
-        printf(" %.5f", quant_field.Row(y)[x]);
+    if (JXL_DEBUG_ADAPTIVE_QUANTIZATION) {
+      printf("\nQuantization field:\n");
+      for (size_t y = 0; y < quant_field.ysize(); ++y) {
+        for (size_t x = 0; x < quant_field.xsize(); ++x) {
+          printf(" %.5f", quant_field.Row(y)[x]);
+        }
+        printf("\n");
       }
-      printf("\n");
     }
-#endif
     quantizer.SetQuantField(initial_quant_dc, quant_field, &raw_quant_field);
     ImageBundle dec_linear = RoundtripImage(opsin, enc_state, cms, pool);
     float score;
@@ -903,26 +908,24 @@ void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
     }
     tile_distmap = TileDistMap(diffmap, 8 * cparams.resampling, 0,
                                enc_state->shared.ac_strategy);
-#if JXL_DEBUG_ADAPTIVE_QUANTIZATION
-    if (WantDebugOutput(aux_out)) {
+    if (JXL_DEBUG_ADAPTIVE_QUANTIZATION && WantDebugOutput(aux_out)) {
       aux_out->DumpImage(("dec" + ToString(i)).c_str(), *dec_linear.color());
       DumpHeatmaps(aux_out, butteraugli_target, quant_field, tile_distmap,
                    diffmap);
     }
-#endif
     if (aux_out != nullptr) ++aux_out->num_butteraugli_iters;
-#if JXL_DEBUG_ADAPTIVE_QUANTIZATION
-    float minval, maxval;
-    ImageMinMax(quant_field, &minval, &maxval);
-    printf("\nButteraugli iter: %d/%d\n", i, cparams.max_butteraugli_iters);
-    printf("Butteraugli distance: %f  (target = %f)\n", score,
-           original_butteraugli);
-    printf("quant range: %f ... %f  DC quant: %f\n", minval, maxval,
-           initial_quant_dc);
-    if (FLAGS_dump_quant_state) {
-      quantizer.DumpQuantizationMap(raw_quant_field);
+    if (JXL_DEBUG_ADAPTIVE_QUANTIZATION) {
+      float minval, maxval;
+      ImageMinMax(quant_field, &minval, &maxval);
+      printf("\nButteraugli iter: %d/%d\n", i, cparams.max_butteraugli_iters);
+      printf("Butteraugli distance: %f  (target = %f)\n", score,
+             original_butteraugli);
+      printf("quant range: %f ... %f  DC quant: %f\n", minval, maxval,
+             initial_quant_dc);
+      if (FLAGS_dump_quant_state) {
+        quantizer.DumpQuantizationMap(raw_quant_field);
+      }
     }
-#endif
 
     if (i == iters) break;
 
@@ -1026,17 +1029,13 @@ void FindBestQuantizationMaxError(const Image3F& opsin,
 
   for (int i = 0; i < cparams.max_butteraugli_iters + 1; ++i) {
     quantizer.SetQuantField(initial_quant_dc, quant_field, &raw_quant_field);
-#if JXL_DEBUG_ADAPTIVE_QUANTIZATION
-    if (aux_out) {
+    if (JXL_DEBUG_ADAPTIVE_QUANTIZATION && aux_out) {
       aux_out->DumpXybImage(("ops" + ToString(i)).c_str(), opsin);
     }
-#endif
     ImageBundle decoded = RoundtripImage(opsin, enc_state, cms, pool);
-#if JXL_DEBUG_ADAPTIVE_QUANTIZATION
-    if (aux_out) {
+    if (JXL_DEBUG_ADAPTIVE_QUANTIZATION && aux_out) {
       aux_out->DumpXybImage(("dec" + ToString(i)).c_str(), *decoded.color());
     }
-#endif
     for (size_t by = 0; by < enc_state->shared.frame_dim.ysize_blocks; by++) {
       AcStrategyRow ac_strategy_row =
           enc_state->shared.ac_strategy.ConstRow(by);
