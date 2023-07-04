@@ -318,11 +318,12 @@ else ()
   )
 
   # TODO(eustas): JXL currently compiles, but does not pass tests...
-  if (NOT JXL_HWY_DISABLED_TARGETS_FORCED AND NOT JPEGXL_ENABLE_SIZELESS_VECTORS)
-    set(HWY_DISABLED_TARGETS "${HWY_DISABLED_TARGETS}|HWY_SVE|HWY_SVE2|HWY_SVE_256|HWY_SVE2_128|HWY_RVV")
-    message("Warning: HWY_SVE, HWY_SVE2, HWY_SVE_256, HWY_SVE2_128 and HWY_RVV CPU targets are disabled")
+  if (NOT JXL_HWY_DISABLED_TARGETS_FORCED)
+    if (NOT JPEGXL_ENABLE_SIZELESS_VECTORS)
+      set(HWY_DISABLED_TARGETS "${HWY_DISABLED_TARGETS}|HWY_SVE|HWY_SVE2|HWY_SVE_256|HWY_SVE2_128|HWY_RVV")
+    endif()
+    add_definitions(-DHWY_DISABLED_TARGETS=\(${HWY_DISABLED_TARGETS}\))
   endif()
-  add_definitions(-DHWY_DISABLED_TARGETS=\(${HWY_DISABLED_TARGETS}\))
 
   # In CMake before 3.12 it is problematic to pass repeated flags like -Xclang.
   # For this reason we place them in CMAKE_CXX_FLAGS instead.
