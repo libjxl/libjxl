@@ -449,6 +449,8 @@ libjxl_gbench_sources = [
     "jxl/tf_gbench.cc",
 ]
 
+libjxl_jpegli_lib_version = 62
+
 libjxl_jpegli_libjpeg_helper_files = [
     "jpegli/libjpeg_test_util.cc",
     "jpegli/libjpeg_test_util.h",
