@@ -202,6 +202,18 @@ def FormatCMakeVar(name, var):
     return f'set({name} {var})\n'
 
 
+def GetJpegLibVersion(src_dir):
+  with open(os.path.join(src_dir, 'CMakeLists.txt'), 'r') as f:
+    cmake_text = f.read()
+    print(cmake_text)
+    m = re.search(r'set\(JPEGLI_LIBJPEG_LIBRARY_SOVERSION "([0-9]+)"',
+                  cmake_text)
+    version = m.group(1)
+    if len(version) == 1:
+      version += "0"
+    return version
+
+
 def BuildCleaner(args):
   repo_files = RepoFiles(args.src_dir)
 
@@ -215,6 +227,8 @@ def BuildCleaner(args):
     #   set(_varname_ _capture_decimal_)
     match = re.search(r'set\(' + cmake_var + r' ([0-9]+)\)', cmake_text)
     version[var] = match.group(1)
+
+  version['jpegli_lib_version'] = GetJpegLibVersion(args.src_dir)
 
   lists = SplitLibFiles(repo_files)
 

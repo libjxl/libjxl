@@ -4,13 +4,13 @@
 #define JPEG_LIB_VERSION  @JPEG_LIB_VERSION@
 
 /* Support arithmetic encoding */
-#cmakedefine C_ARITH_CODING_SUPPORTED 0
+#define C_ARITH_CODING_SUPPORTED 0
 
 /* Support arithmetic decoding */
-#cmakedefine D_ARITH_CODING_SUPPORTED 0
+#define D_ARITH_CODING_SUPPORTED 0
 
 /* Support in-memory source/destination managers */
-#cmakedefine MEM_SRCDST_SUPPORTED 1
+#define MEM_SRCDST_SUPPORTED 1
 
 /*
  * Define BITS_IN_JSAMPLE as either

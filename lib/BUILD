@@ -23,6 +23,7 @@ load(
     "libjxl_extras_for_tools_sources",
     "libjxl_extras_sources",
     #'libjxl_gbench_sources',
+    "libjxl_jpegli_lib_version",
     "libjxl_jpegli_libjpeg_helper_files",
     "libjxl_jpegli_sources",
     "libjxl_jpegli_testlib_files",
@@ -56,6 +57,7 @@ load(
     "libjxl_test_timeouts",
 )
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
+load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 
 DEFAULT_VISIBILITY = ["//:__subpackages__"]
 
@@ -124,12 +126,53 @@ cc_library(
     strip_include_prefix = INCLUDES_DIR,
 )
 
+JPEGLI_JCONFIG_H = INCLUDES_DIR + "/jpegli/jconfig.h"
+
+JPEGLI_JMORECFG_H = INCLUDES_DIR + "/jpegli/jmorecfg.h"
+
+JPEGLI_JPEGLIB_H = INCLUDES_DIR + "/jpegli/jpeglib.h"
+
+expand_template(
+    name = "expand_jconfig",
+    out = JPEGLI_JCONFIG_H,
+    compatible_with = DEFAULT_COMPATIBILITY,
+    substitutions = {
+        "@JPEG_LIB_VERSION@": str(libjxl_jpegli_lib_version),
+    },
+    template = "//:third_party/libjpeg-interface/jconfig.h.in",
+)
+
+copy_file(
+    name = "copy_jmorecfg",
+    src = "//:third_party/libjpeg-interface/jmorecfg.h",
+    out = JPEGLI_JMORECFG_H,
+    compatible_with = DEFAULT_COMPATIBILITY,
+)
+
+copy_file(
+    name = "copy_jpeglib",
+    src = "//:third_party/libjpeg-interface/jpeglib.h",
+    out = JPEGLI_JPEGLIB_H,
+    compatible_with = DEFAULT_COMPATIBILITY,
+)
+
 cc_library(
     name = "includes",
     hdrs = libjxl_public_headers + [JXL_EXPORT_H],
     compatible_with = DEFAULT_COMPATIBILITY,
     strip_include_prefix = INCLUDES_DIR,
     deps = [":jxl_version"],
+)
+
+cc_library(
+    name = "libjpeg_includes",
+    hdrs = [
+        JPEGLI_JCONFIG_H,
+        JPEGLI_JMORECFG_H,
+        JPEGLI_JPEGLIB_H,
+    ],
+    compatible_with = DEFAULT_COMPATIBILITY,
+    strip_include_prefix = INCLUDES_DIR + "/jpegli",
 )
 
 cc_library(
@@ -191,7 +234,8 @@ cc_library(
     compatible_with = DEFAULT_COMPATIBILITY,
     deps = [
         ":jpegxl_private",
-    ] + libjxl_deps_hwy + libjxl_deps_jpeg,
+        ":libjpeg_includes",
+    ] + libjxl_deps_hwy,
 )
 
 # TODO(eustas): build codecs separately?
