@@ -335,6 +335,12 @@ typedef enum {
    */
   JXL_ENC_FRAME_SETTING_JPEG_COMPRESS_BOXES = 33,
 
+  /** Control what kind of buffering is used, when using chunked image frames.
+   * 0 = can't buffer anything, 1 = can buffer intermediate data,
+   * 2 = can buffer the output, 3 = minimize buffer usage
+   */
+  JXL_ENC_FRAME_SETTING_BUFFERING = 34,
+
   /** Enum value not to be used as an option. This value is added to force the
    * C compiler to have the enum to take a known size.
    */
@@ -629,6 +635,45 @@ JxlEncoderAddJPEGFrame(const JxlEncoderFrameSettings* frame_settings,
 JXL_EXPORT JxlEncoderStatus JxlEncoderAddImageFrame(
     const JxlEncoderFrameSettings* frame_settings,
     const JxlPixelFormat* pixel_format, const void* buffer, size_t size);
+
+/**
+ * TODO(firsching): add documentation
+ *
+ */
+typedef void (*JxlEncoderOutputCallback)(void* run_opaque, size_t pos,
+                                         size_t num_bytes);
+
+/**
+ * TODO(firsching): add documentation
+ *
+ */
+JXL_EXPORT JxlEncoderStatus
+JxlEncoderSetOutputCallback(JxlEncoderOutputCallback callback);
+
+/**
+ * TODO(firsching): add documentation
+ *
+ * @param frame_settings
+ * @return JXL_ENC_SUCCESS on success, JXL_ENC_ERROR on error
+ */
+JXL_EXPORT JxlEncoderStatus
+JxlEncoderChunkedImageFrameStart(const JxlEncoderFrameSettings* frame_settings);
+
+/**
+ * TODO(firsching): add documentation
+ *
+ * @param frame_settings
+ * @param pixel_format for pixels. Object owned by the caller and its contents
+ * are copied internally.
+ * @param x horizontal position of the top-left corner of the processed group.
+ * Must be divisible by 1024.
+ * @param y vertical postition of the top-left corner of the processed group.
+ * Must be divisible by 1024.
+ * @return JXL_EXPORT
+ */
+JXL_EXPORT JxlEncoderStatus JxlEncoderChunkedImageFrameAddPart(
+    const JxlEncoderFrameSettings* frame_settings,
+    const JxlPixelFormat* pixel_format, size_t x, size_t y);
 
 /**
  * Sets the buffer to read pixels from for an extra channel at a given index.
