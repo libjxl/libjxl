@@ -336,7 +336,7 @@ typedef enum {
   JXL_ENC_FRAME_SETTING_JPEG_COMPRESS_BOXES = 33,
 
   /** Control what kind of buffering is used, when using chunked image frames.
-   * 0 = can't buffer anything, 1 = can buffer intermediate data,
+   * 0 = can buffer anything, 1 = can buffer intermediate data,
    * 2 = can buffer the output, 3 = minimize buffer usage
    */
   JXL_ENC_FRAME_SETTING_BUFFERING = 34,
