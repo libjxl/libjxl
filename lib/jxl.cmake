@@ -307,7 +307,7 @@ endif()  # BUILD_SHARED_LIBS
 set(JPEGXL_LIBRARY_REQUIRES
     "libhwy libbrotlienc libbrotlidec")
 if(NOT JPEGXL_ENABLE_SKCMS)
-  set(JPEGXL_LIBRARY_REQUIRES "${JPEGXL_LIBRARY_REQUIRES} lcms::lcms2")
+  set(JPEGXL_LIBRARY_REQUIRES "${JPEGXL_LIBRARY_REQUIRES} lcms2")
 endif()
 
 # Allow adding prefix if CMAKE_INSTALL_INCLUDEDIR not absolute.
