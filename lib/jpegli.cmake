@@ -140,6 +140,9 @@ if (JPEGXL_INSTALL_JPEGLI_LIBJPEG)
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+  install(
+    DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/include/jpegli/"
+    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
 endif()
 
 # This hides the default visibility symbols from static libraries bundled into
