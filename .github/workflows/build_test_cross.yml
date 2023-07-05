@@ -26,22 +26,24 @@ concurrency:
 
 jobs:
   cross_compile_ubuntu:
-    name: Cross-compiling ${{ matrix.build_target }} ${{ matrix.variant }}
+    name: Cross-compiling ${{ matrix.identifier }} - ${{ matrix.shard_number }}/4
     runs-on: [ubuntu-22.04]
     container:
       image: debian:bullseye
-    timeout-minutes: 600
     strategy:
       fail-fast: false
       matrix:
+        shard_number: [0, 1, 2, 3]
+        identifier: [arm64, arm64-sve, arm64-lowprecision, armhf, i386]
         include:
           - arch: arm64
+            identifier: arm64
             build_target: aarch64-linux-gnu
             cmake_args:
              - -DCMAKE_CROSSCOMPILING_EMULATOR=/usr/bin/qemu-aarch64-static
 
           - arch: arm64
-            variant: SVE
+            identifier: arm64-sve
             build_target: aarch64-linux-gnu
             cmake_args:
              - -DCMAKE_CROSSCOMPILING_EMULATOR=/usr/bin/qemu-aarch64-static
@@ -53,17 +55,19 @@ jobs:
             disable_tests: true
 
           - arch: arm64
-            variant: lowprecision
+            identifier: arm64-lowprecision
             build_target: aarch64-linux-gnu
             cmake_args:
              - -DCMAKE_CROSSCOMPILING_EMULATOR=/usr/bin/qemu-aarch64-static
              - -DCMAKE_CXX_FLAGS=-DJXL_HIGH_PRECISION=0
 
           - arch: armhf
+            identifier: armhf
             build_target: arm-linux-gnueabihf
             cmake_args: [-DCMAKE_CROSSCOMPILING_EMULATOR=/usr/bin/qemu-arm-static]
 
           - arch: i386
+            identifier: i386
             test_in_pr: true
             build_target: i686-linux-gnu
 
@@ -182,6 +186,6 @@ jobs:
     - name: Test
       if: env.WILL_RUN_TESTS == 'true'
       run: |
-        ./ci.sh test
+        ./ci.sh test -I ${{ matrix.shard_number }},,4
       env:
         BUILD_TARGET: ${{ matrix.build_target }}
