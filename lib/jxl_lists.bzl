@@ -214,7 +214,7 @@ libjxl_dec_sources = [
     "jxl/jxl_cms.h",
     "jxl/jxl_cms_internal.h"
     "jxl/jxl_inspection.h",
-    "jxl/jxl_skcms.h"
+    "jxl/jxl_skcms.h",
     "jxl/lehmer_code.h",
     "jxl/loop_filter.cc",
     "jxl/loop_filter.h",
