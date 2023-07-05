@@ -13,7 +13,15 @@
 #include "lib/jxl/color_management.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/fields.h"
+#include "lib/jxl/jxl_cms_internal.h"
 #include "lib/jxl/matrix_ops.h"
+
+#if JPEGXL_ENABLE_SKCMS
+#include "lib/jxl/jxl_skcms.h"
+#else  // JPEGXL_ENABLE_SKCMS
+#include "lcms2.h"
+#include "lcms2_plugin.h"
+#endif  // JPEGXL_ENABLE_SKCMS
 
 namespace jxl {
 namespace {
