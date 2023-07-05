@@ -212,7 +212,7 @@ libjxl_dec_sources = [
     "jxl/inverse_mtf-inl.h",
     "jxl/jxl_cms.cc",
     "jxl/jxl_cms.h",
-    "jxl/jxl_cms_internal.h"
+    "jxl/jxl_cms_internal.h",
     "jxl/jxl_inspection.h",
     "jxl/jxl_skcms.h",
     "jxl/lehmer_code.h",
