@@ -6,8 +6,9 @@
 #ifndef LIB_JPEGLI_MEMORY_MANAGER_H_
 #define LIB_JPEGLI_MEMORY_MANAGER_H_
 
-#include <jpeglib.h>
 #include <stdlib.h>
+
+#include "lib/jpegli/common.h"
 
 #define JPOOL_PERMANENT_ALIGNED (JPOOL_NUMPOOLS + JPOOL_PERMANENT)
 #define JPOOL_IMAGE_ALIGNED (JPOOL_NUMPOOLS + JPOOL_IMAGE)

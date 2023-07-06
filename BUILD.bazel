@@ -20,8 +20,3 @@ filegroup(
         "testdata/position_encoding/*.txt",
     ]),
 )
-
-exports_files(["third_party/libjpeg-interface/jconfig.h.in",
-               "third_party/libjpeg-interface/jmorecfg.h",
-               "third_party/libjpeg-interface/jpeglib.h",
-               ])

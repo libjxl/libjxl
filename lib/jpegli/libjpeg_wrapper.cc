@@ -7,8 +7,6 @@
 // shared library that is API- and ABI-compatible with libjpeg-turbo's version
 // of libjpeg.so.
 
-#include <jpeglib.h>
-
 #include "lib/jpegli/common.h"
 #include "lib/jpegli/decode.h"
 #include "lib/jpegli/encode.h"

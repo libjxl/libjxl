@@ -6,8 +6,9 @@
 #ifndef LIB_JPEGLI_DECODE_SCAN_H_
 #define LIB_JPEGLI_DECODE_SCAN_H_
 
-#include <jpeglib.h>
 #include <stdint.h>
+
+#include "lib/jpegli/common.h"
 
 namespace jpegli {
 

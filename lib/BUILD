@@ -132,26 +132,23 @@ JPEGLI_JMORECFG_H = INCLUDES_DIR + "/jpegli/jmorecfg.h"
 
 JPEGLI_JPEGLIB_H = INCLUDES_DIR + "/jpegli/jpeglib.h"
 
-expand_template(
+copy_file(
     name = "expand_jconfig",
+    src = "@libjpeg_turbo//:jconfig.h",
     out = JPEGLI_JCONFIG_H,
     compatible_with = DEFAULT_COMPATIBILITY,
-    substitutions = {
-        "@JPEG_LIB_VERSION@": str(libjxl_jpegli_lib_version),
-    },
-    template = "//:third_party/libjpeg-interface/jconfig.h.in",
 )
 
 copy_file(
     name = "copy_jmorecfg",
-    src = "//:third_party/libjpeg-interface/jmorecfg.h",
+    src = "@libjpeg_turbo//:jmorecfg.h",
     out = JPEGLI_JMORECFG_H,
     compatible_with = DEFAULT_COMPATIBILITY,
 )
 
 copy_file(
     name = "copy_jpeglib",
-    src = "//:third_party/libjpeg-interface/jpeglib.h",
+    src = "@libjpeg_turbo//:jpeglib.h",
     out = JPEGLI_JPEGLIB_H,
     compatible_with = DEFAULT_COMPATIBILITY,
 )
