@@ -347,9 +347,10 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
       }
       size_t icc_size = 0;
       JxlColorProfileTarget target = JXL_COLOR_PROFILE_TARGET_DATA;
+      ppf->color_encoding.color_space = JXL_COLOR_SPACE_UNKNOWN;
       if (JXL_DEC_SUCCESS != JxlDecoderGetColorAsEncodedProfile(
-                                 dec, target, &ppf->color_encoding)) {
-        ppf->color_encoding.color_space = JXL_COLOR_SPACE_UNKNOWN;
+                                 dec, target, &ppf->color_encoding) ||
+          dparams.need_icc) {
         // only get ICC if it is not an Enum color encoding
         if (JXL_DEC_SUCCESS !=
             JxlDecoderGetICCProfileSize(dec, target, &icc_size)) {
