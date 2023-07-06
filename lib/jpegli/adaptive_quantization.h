@@ -6,8 +6,7 @@
 #ifndef LIB_JPEGLI_ADAPTIVE_QUANTIZATION_H_
 #define LIB_JPEGLI_ADAPTIVE_QUANTIZATION_H_
 
-#include <jpeglib.h>
-#include <stddef.h>
+#include "lib/jpegli/common.h"
 
 namespace jpegli {
 

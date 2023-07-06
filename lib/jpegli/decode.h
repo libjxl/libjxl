@@ -20,8 +20,6 @@
 #ifndef LIB_JPEGLI_DECODE_H_
 #define LIB_JPEGLI_DECODE_H_
 
-#include <jpeglib.h>
-
 #include "lib/jpegli/common.h"
 
 #if defined(__cplusplus) || defined(c_plusplus)

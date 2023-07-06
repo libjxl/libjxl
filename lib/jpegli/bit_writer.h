@@ -6,10 +6,10 @@
 #ifndef LIB_JPEGLI_BIT_WRITER_H_
 #define LIB_JPEGLI_BIT_WRITER_H_
 
-#include <jpeglib.h>
 #include <stdint.h>
 #include <string.h>
 
+#include "lib/jpegli/common.h"
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/compiler_specific.h"
 

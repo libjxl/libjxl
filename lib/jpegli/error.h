@@ -6,9 +6,10 @@
 #ifndef LIB_JPEGLI_ERROR_H_
 #define LIB_JPEGLI_ERROR_H_
 
-#include <jpeglib.h>
 #include <stdarg.h>
 #include <stdint.h>
+
+#include "lib/jpegli/common.h"
 
 namespace jpegli {
 

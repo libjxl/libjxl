@@ -12,6 +12,10 @@ set(JPEGLI_INTERNAL_LIBS
   ${ATOMICS_LIBRARIES}
 )
 
+# JPEGLIB setup
+set(BITS_IN_JSAMPLE 8)
+set(MEM_SRCDST_SUPPORTED 1)
+
 if(JPEGLI_LIBJPEG_LIBRARY_SOVERSION STREQUAL "62")
   set(JPEG_LIB_VERSION 62)
 elseif(JPEGLI_LIBJPEG_LIBRARY_SOVERSION STREQUAL "7")
@@ -21,11 +25,12 @@ elseif(JPEGLI_LIBJPEG_LIBRARY_SOVERSION STREQUAL "8")
 endif()
 
 configure_file(
-  ../third_party/libjpeg-interface/jconfig.h.in include/jpegli/jconfig.h)
+  ../third_party/libjpeg-turbo/jconfig.h.in include/jpegli/jconfig.h)
 configure_file(
-  ../third_party/libjpeg-interface/jpeglib.h include/jpegli/jpeglib.h COPY_ONLY)
+  ../third_party/libjpeg-turbo/jpeglib.h include/jpegli/jpeglib.h
+  COPY_ONLY)
 configure_file(
-  ../third_party/libjpeg-interface/jmorecfg.h include/jpegli/jmorecfg.h
+  ../third_party/libjpeg-turbo/jmorecfg.h include/jpegli/jmorecfg.h
   COPY_ONLY)
 
 add_library(jpegli-static STATIC EXCLUDE_FROM_ALL "${JPEGXL_INTERNAL_JPEGLI_SOURCES}")
