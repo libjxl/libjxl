@@ -95,6 +95,7 @@ JxlParallelRetCode ThreadParallelRunner::Runner(
   if (self->depth_.fetch_add(-1, std::memory_order_acq_rel) != 1) {
     return -1;
   }
+  if (self->oom_) throw std::bad_alloc();
   return 0;
 }
 
@@ -135,8 +136,13 @@ void ThreadParallelRunner::RunRange(ThreadParallelRunner* self,
     if (my_begin >= my_end) {
       break;
     }
-    for (uint32_t task = my_begin; task < my_end; ++task) {
-      self->data_func_(self->jpegxl_opaque_, task, thread);
+    for (uint32_t task = my_begin; task < my_end && !self->oom_; ++task) {
+      try {
+        self->data_func_(self->jpegxl_opaque_, task, thread);
+      } catch (const std::bad_alloc&) {
+        self->oom_ = true;
+        break;
+      }
     }
   }
 }

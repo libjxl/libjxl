@@ -104,7 +104,6 @@ else ()
   else()  # WIN32
     list(APPEND JPEGXL_INTERNAL_FLAGS
       -fsized-deallocation
-      -fno-exceptions
 
       # Language flags
       -fmath-errno
@@ -113,7 +112,6 @@ else ()
     if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
       list(APPEND JPEGXL_INTERNAL_FLAGS
         -fnew-alignment=8
-        -fno-cxx-exceptions
         -fno-slp-vectorize
         -fno-vectorize
 

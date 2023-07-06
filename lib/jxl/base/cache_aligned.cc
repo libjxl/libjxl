@@ -81,12 +81,12 @@ void* CacheAligned::Allocate(const size_t payload_size, size_t offset) {
   const int flags = MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE;
   void* allocated =
       mmap(nullptr, allocated_size, PROT_READ | PROT_WRITE, flags, -1, 0);
-  if (allocated == MAP_FAILED) return nullptr;
+  if (allocated == MAP_FAILED) throw std::bad_alloc();
   const uintptr_t aligned = reinterpret_cast<uintptr_t>(allocated);
 #else
   const size_t allocated_size = kAlias + offset + payload_size;
   void* allocated = malloc(allocated_size);
-  if (allocated == nullptr) return nullptr;
+  if (allocated == nullptr) throw std::bad_alloc();
   // Always round up even if already aligned - we already asked for kAlias
   // extra bytes and there's no way to give them back.
   uintptr_t aligned = reinterpret_cast<uintptr_t>(allocated) + kAlias;
