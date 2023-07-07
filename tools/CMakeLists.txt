@@ -142,8 +142,7 @@ if(JPEGXL_ENABLE_TOOLS)
   )
   list(APPEND TOOL_BINARIES djxl)
 
-  find_package(JPEG)
-  if(JPEG_FOUND AND JPEGXL_ENABLE_JPEGLI)
+  if(JPEGXL_ENABLE_JPEGLI)
     # Depends on parts of jxl_extras that are only built if libjpeg is found and
     # jpegli is enabled.
     add_executable(cjpegli cjpegli.cc)
@@ -205,7 +204,7 @@ if(JPEGXL_ENABLE_DEVTOOLS)
     jxl_testlib-static
     jxl_tool
   )
-  if(JPEG_FOUND AND JPEGXL_ENABLE_JPEGLI)
+  if(JPEGXL_ENABLE_JPEGLI)
     list(APPEND FUZZER_CORPUS_BINARIES jpegli_dec_fuzzer_corpus)
     add_executable(jpegli_dec_fuzzer_corpus jpegli_dec_fuzzer_corpus.cc)
     target_link_libraries(jpegli_dec_fuzzer_corpus
@@ -232,6 +231,8 @@ if(JPEGXL_ENABLE_BENCHMARK AND JPEGXL_ENABLE_TOOLS)
     benchmark/benchmark_utils.h
     benchmark/benchmark_codec_custom.cc
     benchmark/benchmark_codec_custom.h
+    benchmark/benchmark_codec_jpeg.cc
+    benchmark/benchmark_codec_jpeg.h
     benchmark/benchmark_codec_jxl.cc
     benchmark/benchmark_codec_jxl.h
     ssimulacra2.cc
@@ -242,14 +243,6 @@ if(JPEGXL_ENABLE_BENCHMARK AND JPEGXL_ENABLE_TOOLS)
   # MINGW doesn't support glob.h.
   target_compile_definitions(benchmark_xl PRIVATE "-DHAS_GLOB=0")
   endif() # MINGW
-
-  find_package(JPEG)
-  if(JPEG_FOUND)
-    target_sources(benchmark_xl PRIVATE
-      "${CMAKE_CURRENT_LIST_DIR}/benchmark/benchmark_codec_jpeg.cc"
-      "${CMAKE_CURRENT_LIST_DIR}/benchmark/benchmark_codec_jpeg.h"
-    )
-  endif ()
 
   if(NOT JPEGXL_BUNDLE_LIBPNG)
     find_package(PNG)
@@ -338,7 +331,7 @@ if(JPEGXL_ENABLE_TOOLS)
     set_from_bytes_fuzzer
     transforms_fuzzer
   )
-if(JPEG_FOUND AND JPEGXL_ENABLE_JPEGLI)
+if(JPEGXL_ENABLE_JPEGLI)
   list(APPEND FUZZER_BINARIES jpegli_dec_fuzzer)
 endif()
 endif()
@@ -479,7 +472,8 @@ if(JPEGXL_TEST_TOOLS)
 find_program (BASH_PROGRAM bash)
 if (BASH_PROGRAM)
   set(TEST_SCRIPTS)
-  if (JPEGXL_ENABLE_TRANSCODE_JPEG)
+  find_package(JPEG)
+  if (JPEG_FOUND AND JPEGXL_ENABLE_TRANSCODE_JPEG)
     list(APPEND TEST_SCRIPTS roundtrip_test)
   endif()
   if (JPEG_FOUND AND JPEGXL_ENABLE_JPEGLI)

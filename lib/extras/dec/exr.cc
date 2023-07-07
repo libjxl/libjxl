@@ -5,16 +5,19 @@
 
 #include "lib/extras/dec/exr.h"
 
+#if JPEGXL_ENABLE_EXR
 #include <ImfChromaticitiesAttribute.h>
 #include <ImfIO.h>
 #include <ImfRgbaFile.h>
 #include <ImfStandardAttributes.h>
+#endif
 
 #include <vector>
 
 namespace jxl {
 namespace extras {
 
+#if JPEGXL_ENABLE_EXR
 namespace {
 
 namespace OpenEXR = OPENEXR_IMF_NAMESPACE;
@@ -60,10 +63,20 @@ class InMemoryIStream : public OpenEXR::IStream {
 };
 
 }  // namespace
+#endif
+
+bool CanDecodeEXR() {
+#if JPEGXL_ENABLE_EXR
+  return true;
+#else
+  return false;
+#endif
+}
 
 Status DecodeImageEXR(Span<const uint8_t> bytes, const ColorHints& color_hints,
                       PackedPixelFile* ppf,
                       const SizeConstraints* constraints) {
+#if JPEGXL_ENABLE_EXR
   InMemoryIStream is(bytes);
 
 #ifdef __EXCEPTIONS
@@ -179,6 +192,9 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, const ColorHints& color_hints,
   }
   ppf->info.intensity_target = intensity_target;
   return true;
+#else
+  return false;
+#endif
 }
 
 }  // namespace extras

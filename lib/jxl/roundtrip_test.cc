@@ -783,8 +783,8 @@ TEST(RoundtripTest, TestICCProfile) {
   JxlDecoderDestroy(dec);
 }
 
-#if JPEGXL_ENABLE_JPEG  // Loading .jpg files requires libjpeg support.
 TEST(RoundtripTest, JXL_TRANSCODE_JPEG_TEST(TestJPEGReconstruction)) {
+  TEST_LIBJPEG_SUPPORT();
   const std::string jpeg_path = "jxl/flower/flower.png.im_q85_420.jpg";
   const jxl::PaddedBytes orig = jxl::test::ReadTestData(jpeg_path);
   jxl::CodecInOut orig_io;
@@ -830,4 +830,3 @@ TEST(RoundtripTest, JXL_TRANSCODE_JPEG_TEST(TestJPEGReconstruction)) {
   ASSERT_EQ(used, orig.size());
   EXPECT_EQ(0, memcmp(reconstructed_buffer.data(), orig.data(), used));
 }
-#endif  // JPEGXL_ENABLE_JPEG

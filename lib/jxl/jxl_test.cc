@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "lib/extras/codec.h"
+#include "lib/extras/dec/decode.h"
 #include "lib/extras/enc/encode.h"
 #include "lib/extras/packed_image.h"
 #include "lib/jxl/alpha.h"
@@ -1172,9 +1173,11 @@ TEST(JxlTest, RoundtripLossless8Gray) {
   EXPECT_EQ(ppf_out.info.bits_per_sample, 8);
 }
 
-#if JPEGXL_ENABLE_GIF
-
 TEST(JxlTest, RoundtripAnimation) {
+  if (!jxl::extras::CanDecode(jxl::extras::Codec::kGIF)) {
+    fprintf(stderr, "Skipping test because of missing GIF decoder.\n");
+    return;
+  }
   ThreadPool* pool = nullptr;
   const PaddedBytes orig = jxl::test::ReadTestData("jxl/traffic_light.gif");
   TestImage t;
@@ -1199,6 +1202,10 @@ TEST(JxlTest, RoundtripAnimation) {
 }
 
 TEST(JxlTest, RoundtripLosslessAnimation) {
+  if (!jxl::extras::CanDecode(jxl::extras::Codec::kGIF)) {
+    fprintf(stderr, "Skipping test because of missing GIF decoder.\n");
+    return;
+  }
   ThreadPool* pool = nullptr;
   const PaddedBytes orig = jxl::test::ReadTestData("jxl/traffic_light.gif");
   TestImage t;
@@ -1220,6 +1227,10 @@ TEST(JxlTest, RoundtripLosslessAnimation) {
 }
 
 TEST(JxlTest, RoundtripAnimationPatches) {
+  if (!jxl::extras::CanDecode(jxl::extras::Codec::kGIF)) {
+    fprintf(stderr, "Skipping test because of missing GIF decoder.\n");
+    return;
+  }
   ThreadPool* pool = nullptr;
   const PaddedBytes orig = jxl::test::ReadTestData("jxl/animation_patches.gif");
 
@@ -1241,8 +1252,6 @@ TEST(JxlTest, RoundtripAnimationPatches) {
   // >10 with broken patches
   EXPECT_THAT(ButteraugliDistance(t.ppf(), ppf_out), IsSlightlyBelow(1.0999));
 }
-
-#endif  // JPEGXL_ENABLE_GIF
 
 size_t RoundtripJpeg(const PaddedBytes& jpeg_in, ThreadPool* pool) {
   std::vector<uint8_t> jpeg_bytes(jpeg_in.data(),
@@ -1293,9 +1302,8 @@ TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression444)) {
   EXPECT_NEAR(RoundtripJpeg(orig, &pool), 568940u, 10);
 }
 
-#if JPEGXL_ENABLE_JPEG
-
 TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionToPixels)) {
+  TEST_LIBJPEG_SUPPORT();
   ThreadPoolForTests pool(8);
   const PaddedBytes orig =
       jxl::test::ReadTestData("jxl/flower/flower.png.im_q85_444.jpg");
@@ -1308,6 +1316,7 @@ TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionToPixels)) {
 }
 
 TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionToPixels420)) {
+  TEST_LIBJPEG_SUPPORT();
   ThreadPoolForTests pool(8);
   const PaddedBytes orig =
       jxl::test::ReadTestData("jxl/flower/flower.png.im_q85_420.jpg");
@@ -1321,6 +1330,7 @@ TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionToPixels420)) {
 
 TEST(JxlTest,
      JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionToPixels420EarlyFlush)) {
+  TEST_LIBJPEG_SUPPORT();
   ThreadPoolForTests pool(8);
   const PaddedBytes orig =
       jxl::test::ReadTestData("jxl/flower/flower.png.im_q85_420.jpg");
@@ -1337,6 +1347,7 @@ TEST(JxlTest,
 
 TEST(JxlTest,
      JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionToPixels420Mul16)) {
+  TEST_LIBJPEG_SUPPORT();
   ThreadPoolForTests pool(8);
   const PaddedBytes orig =
       jxl::test::ReadTestData("jxl/flower/flower_cropped.jpg");
@@ -1350,6 +1361,7 @@ TEST(JxlTest,
 
 TEST(JxlTest,
      JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionToPixels_asymmetric)) {
+  TEST_LIBJPEG_SUPPORT();
   ThreadPoolForTests pool(8);
   const PaddedBytes orig =
       jxl::test::ReadTestData("jxl/flower/flower.png.im_q85_asymmetric.jpg");
@@ -1360,8 +1372,6 @@ TEST(JxlTest,
   RoundtripJpegToPixels(orig, {}, &pool, &ppf_out);
   EXPECT_THAT(ComputeDistance2(t.ppf(), ppf_out), IsSlightlyBelow(10));
 }
-
-#endif
 
 TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionGray)) {
   ThreadPoolForTests pool(8);

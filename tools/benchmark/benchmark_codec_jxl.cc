@@ -17,9 +17,7 @@
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/jxl.h"
 #include "lib/extras/enc/encode.h"
-#if JPEGXL_ENABLE_JPEG
 #include "lib/extras/enc/jpg.h"
-#endif
 #include "lib/extras/packed_image_convert.h"
 #include "lib/extras/time.h"
 #include "lib/jxl/base/data_parallel.h"
@@ -311,7 +309,6 @@ class JxlCodec : public ImageCodec {
       cparams_.color_transform = ColorTransform::kXYB;
     }
 
-#if JPEGXL_ENABLE_JPEG
     if (normalize_bitrate_ && cparams_.butteraugli_distance > 0.0f) {
       PackedPixelFile ppf;
       JxlPixelFormat format = {0, JXL_TYPE_UINT8, JXL_BIG_ENDIAN, 0};
@@ -319,6 +316,10 @@ class JxlCodec : public ImageCodec {
           *io, format, io->metadata.m.color_encoding, pool, &ppf));
       EncodedImage encoded;
       std::unique_ptr<Encoder> encoder = jxl::extras::GetJPEGEncoder();
+      if (!encoder.get()) {
+        fprintf(stderr, "libjpeg codec is not supported\n");
+        return false;
+      }
       encoder->SetOption("q", "95");
       JXL_RETURN_IF_ERROR(encoder->Encode(ppf, &encoded, pool));
       float jpeg_bits = encoded.bitstreams.back().size() * jxl::kBitsPerByte;
@@ -327,7 +328,6 @@ class JxlCodec : public ImageCodec {
       cparams_.target_bitrate = (jpeg_bitrate * 0.36f /
                                  (0.6f * cparams_.butteraugli_distance + 0.4f));
     }
-#endif
 
     const double start = jxl::Now();
     PassesEncoderState passes_encoder_state;

@@ -22,9 +22,7 @@
 #include <random>
 #include <vector>
 
-#if JPEGXL_ENABLE_JPEG
 #include "lib/extras/codec.h"
-#endif
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/span.h"
@@ -227,16 +225,15 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
   jxl::CompressParams params;
   params.speed_tier = spec.params.speed_tier;
 
-#if JPEGXL_ENABLE_JPEG
   if (spec.is_reconstructible_jpeg) {
     // If this image is supposed to be a reconstructible JPEG, collect the JPEG
     // metadata and encode it in the beginning of the compressed bytes.
     std::vector<uint8_t> jpeg_bytes;
     io.jpeg_quality = 70;
-    JXL_RETURN_IF_ERROR(jxl::Encode(io, jxl::extras::Codec::kJPG,
-                                    io.metadata.m.color_encoding,
-                                    /*bits_per_sample=*/8, &jpeg_bytes,
-                                    /*pool=*/nullptr));
+    JXL_QUIET_RETURN_IF_ERROR(jxl::Encode(io, jxl::extras::Codec::kJPG,
+                                          io.metadata.m.color_encoding,
+                                          /*bits_per_sample=*/8, &jpeg_bytes,
+                                          /*pool=*/nullptr));
     JXL_RETURN_IF_ERROR(jxl::jpeg::DecodeImageJPG(
         jxl::Span<const uint8_t>(jpeg_bytes.data(), jpeg_bytes.size()), &io));
     jxl::PaddedBytes jpeg_data;
@@ -252,7 +249,6 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
     jxl::AppendBoxHeader(jxl::MakeBoxType("jxlc"), 0, true, &header);
     compressed.append(header);
   }
-#endif
 
   params.modular_mode = spec.params.modular_mode;
   params.color_transform = spec.params.color_transform;
@@ -409,12 +405,8 @@ int main(int argc, const char** argv) {
             for (uint32_t num_frames : {1, 3}) {
               spec.num_frames = num_frames;
               for (uint32_t preview : {0, 1}) {
-#if JPEGXL_ENABLE_JPEG
                 for (bool reconstructible_jpeg : {false, true}) {
                   spec.is_reconstructible_jpeg = reconstructible_jpeg;
-#else   // JPEGXL_ENABLE_JPEG
-                spec.is_reconstructible_jpeg = false;
-#endif  // JPEGXL_ENABLE_JPEG
                   for (const auto& params : params_list) {
                     spec.params = params;
 
@@ -438,9 +430,7 @@ int main(int argc, const char** argv) {
                       specs.push_back(spec);
                     }
                   }
-#if JPEGXL_ENABLE_JPEG
                 }
-#endif  // JPEGXL_ENABLE_JPEG
               }
             }
           }

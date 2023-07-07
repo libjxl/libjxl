@@ -26,9 +26,7 @@
 #include "lib/jxl/image_ops.h"
 #include "tools/benchmark/benchmark_args.h"
 #include "tools/benchmark/benchmark_codec_custom.h"
-#ifdef JPEGXL_ENABLE_JPEG
 #include "tools/benchmark/benchmark_codec_jpeg.h"
-#endif  // JPEG_ENABLE_JPEG
 #include "tools/benchmark/benchmark_codec_jxl.h"
 #include "tools/benchmark/benchmark_codec_png.h"
 #include "tools/benchmark/benchmark_stats.h"
@@ -144,14 +142,10 @@ ImageCodecPtr CreateImageCodec(const std::string& description) {
   } else if (name == "custom") {
     result.reset(CreateNewCustomCodec(*Args()));
 #endif
-#ifdef JPEGXL_ENABLE_JPEG
   } else if (name == "jpeg") {
     result.reset(CreateNewJPEGCodec(*Args()));
-#endif  // BENCHMARK_JPEG
-#if JPEGXL_ENABLE_APNG
   } else if (name == "png") {
     result.reset(CreateNewPNGCodec(*Args()));
-#endif
   } else if (name == "none") {
     result.reset(new NoneCodec(*Args()));
 #ifdef BENCHMARK_WEBP
@@ -162,7 +156,8 @@ ImageCodecPtr CreateImageCodec(const std::string& description) {
   } else if (name == "avif") {
     result.reset(CreateNewAvifCodec(*Args()));
 #endif  // BENCHMARK_AVIF
-  } else {
+  }
+  if (!result.get()) {
     JXL_ABORT("Unknown image codec: %s", name.c_str());
   }
   result->set_description(description);

@@ -18,6 +18,7 @@
 #include <ostream>
 #include <vector>
 
+#include "lib/extras/dec/decode.h"
 #include "lib/extras/dec/jxl.h"
 #include "lib/extras/enc/jxl.h"
 #include "lib/extras/packed_image.h"
@@ -28,6 +29,14 @@
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/enc_params.h"
+
+#define TEST_LIBJPEG_SUPPORT()                                              \
+  do {                                                                      \
+    if (!jxl::extras::CanDecode(jxl::extras::Codec::kJPG)) {                \
+      fprintf(stderr, "Skipping test because of missing libjpeg codec.\n"); \
+      return;                                                               \
+    }                                                                       \
+  } while (0)
 
 namespace jxl {
 

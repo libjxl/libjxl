@@ -5,8 +5,10 @@
 
 #include "lib/extras/enc/jpg.h"
 
+#if JPEGXL_ENABLE_JPEG
 #include <jpeglib.h>
 #include <setjmp.h>
+#endif
 #include <stdint.h>
 
 #include <algorithm>
@@ -31,6 +33,7 @@
 namespace jxl {
 namespace extras {
 
+#if JPEGXL_ENABLE_JPEG
 namespace {
 
 constexpr unsigned char kICCSignature[12] = {
@@ -583,9 +586,14 @@ class JPEGEncoder : public Encoder {
 };
 
 }  // namespace
+#endif
 
 std::unique_ptr<Encoder> GetJPEGEncoder() {
+#if JPEGXL_ENABLE_JPEG
   return jxl::make_unique<JPEGEncoder>();
+#else
+  return nullptr;
+#endif
 }
 
 }  // namespace extras

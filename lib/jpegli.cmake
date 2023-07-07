@@ -27,11 +27,9 @@ endif()
 configure_file(
   ../third_party/libjpeg-turbo/jconfig.h.in include/jpegli/jconfig.h)
 configure_file(
-  ../third_party/libjpeg-turbo/jpeglib.h include/jpegli/jpeglib.h
-  COPY_ONLY)
+  ../third_party/libjpeg-turbo/jpeglib.h include/jpegli/jpeglib.h COPYONLY)
 configure_file(
-  ../third_party/libjpeg-turbo/jmorecfg.h include/jpegli/jmorecfg.h
-  COPY_ONLY)
+  ../third_party/libjpeg-turbo/jmorecfg.h include/jpegli/jmorecfg.h COPYONLY)
 
 add_library(jpegli-static STATIC EXCLUDE_FROM_ALL "${JPEGXL_INTERNAL_JPEGLI_SOURCES}")
 target_compile_options(jpegli-static PRIVATE "${JPEGXL_INTERNAL_FLAGS}")
@@ -52,7 +50,8 @@ target_link_libraries(jpegli-static PUBLIC ${JPEGLI_INTERNAL_LIBS})
 # Tests for jpegli-static
 #
 
-if(BUILD_TESTING)
+find_package(JPEG)
+if(JPEG_FOUND AND BUILD_TESTING)
 # TODO(eustas): merge into jxl_tests.cmake?
 
 add_library(jpegli_libjpeg_util-obj OBJECT

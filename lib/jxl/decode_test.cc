@@ -269,22 +269,22 @@ PaddedBytes CreateTestJXLCodestream(Span<const uint8_t> pixels, size_t xsize,
                                   &io.Main()));
   jxl::PaddedBytes jpeg_data;
   if (params.jpeg_codestream != nullptr) {
-#if JPEGXL_ENABLE_JPEG
-    std::vector<uint8_t> jpeg_bytes;
-    io.jpeg_quality = 70;
-    EXPECT_TRUE(Encode(io, extras::Codec::kJPG, io.metadata.m.color_encoding,
-                       /*bits_per_sample=*/8, &jpeg_bytes, &pool));
-    params.jpeg_codestream->append(jpeg_bytes.data(),
-                                   jpeg_bytes.data() + jpeg_bytes.size());
-    EXPECT_TRUE(jxl::jpeg::DecodeImageJPG(
-        jxl::Span<const uint8_t>(jpeg_bytes.data(), jpeg_bytes.size()), &io));
-    EXPECT_TRUE(
-        EncodeJPEGData(*io.Main().jpeg_data, &jpeg_data, params.cparams));
-    io.metadata.m.xyb_encoded = false;
-#else   // JPEGXL_ENABLE_JPEG
-    JXL_ABORT(
-        "unable to create reconstructible JPEG without JPEG support enabled");
-#endif  // JPEGXL_ENABLE_JPEG
+    if (jxl::extras::CanDecode(jxl::extras::Codec::kJPG)) {
+      std::vector<uint8_t> jpeg_bytes;
+      io.jpeg_quality = 70;
+      EXPECT_TRUE(Encode(io, extras::Codec::kJPG, io.metadata.m.color_encoding,
+                         /*bits_per_sample=*/8, &jpeg_bytes, &pool));
+      params.jpeg_codestream->append(jpeg_bytes.data(),
+                                     jpeg_bytes.data() + jpeg_bytes.size());
+      EXPECT_TRUE(jxl::jpeg::DecodeImageJPG(
+          jxl::Span<const uint8_t>(jpeg_bytes.data(), jpeg_bytes.size()), &io));
+      EXPECT_TRUE(
+          EncodeJPEGData(*io.Main().jpeg_data, &jpeg_data, params.cparams));
+      io.metadata.m.xyb_encoded = false;
+    } else {
+      JXL_ABORT(
+          "unable to create reconstructible JPEG without JPEG support enabled");
+    }
   }
   if (params.preview_mode) {
     io.preview_frame = io.Main().Copy();
@@ -2302,12 +2302,11 @@ void TestPartialStream(bool reconstructible_jpeg) {
 // should return JXL_DEC_NEED_MORE_INPUT, not error.
 TEST(DecodeTest, PixelPartialTest) { TestPartialStream(false); }
 
-#if JPEGXL_ENABLE_JPEG
 // Tests the return status when trying to decode JPEG bytes on incomplete file.
 TEST(DecodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGPartialTest)) {
+  TEST_LIBJPEG_SUPPORT();
   TestPartialStream(true);
 }
-#endif  // JPEGXL_ENABLE_JPEG
 
 // The DC event still exists, but is no longer implemented, it is deprecated.
 TEST(DecodeTest, DCNotGettableTest) {
@@ -4031,8 +4030,8 @@ TEST(DecodeTest, InputHandlingTestOneShot) {
   }
 }
 
-#if JPEGXL_ENABLE_JPEG
 TEST(DecodeTest, JXL_TRANSCODE_JPEG_TEST(InputHandlingTestJPEGOneshot)) {
+  TEST_LIBJPEG_SUPPORT();
   size_t xsize = 123;
   size_t ysize = 77;
   size_t channels = 3;
@@ -4122,7 +4121,6 @@ TEST(DecodeTest, JXL_TRANSCODE_JPEG_TEST(InputHandlingTestJPEGOneshot)) {
     }
   }
 }
-#endif  // JPEGXL_ENABLE_JPEG
 
 TEST(DecodeTest, InputHandlingTestStreaming) {
   size_t xsize = 508, ysize = 470;
@@ -4805,8 +4803,8 @@ void VerifyJPEGReconstruction(const jxl::PaddedBytes& container,
   EXPECT_EQ(0, memcmp(reconstructed_buffer.data(), jpeg_bytes.data(), used));
 }
 
-#if JPEGXL_ENABLE_JPEG
 TEST(DecodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGReconstructTestCodestream)) {
+  TEST_LIBJPEG_SUPPORT();
   size_t xsize = 123;
   size_t ysize = 77;
   size_t channels = 3;
@@ -4823,7 +4821,6 @@ TEST(DecodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGReconstructTestCodestream)) {
       channels, params);
   VerifyJPEGReconstruction(compressed, jpeg_codestream);
 }
-#endif  // JPEGXL_ENABLE_JPEG
 
 TEST(DecodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGReconstructionTest)) {
   const std::string jpeg_path = "jxl/flower/flower.png.im_q85_420.jpg";
