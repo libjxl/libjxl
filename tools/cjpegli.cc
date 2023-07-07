@@ -9,7 +9,7 @@
 
 #include <vector>
 
-#include "lib/extras/codec.h"
+#include "lib/extras/dec/decode.h"
 #include "lib/extras/enc/jpegli.h"
 #include "lib/extras/time.h"
 #include "lib/jxl/base/printf_macros.h"
@@ -25,18 +25,18 @@ namespace {
 
 struct Args {
   void AddCommandLineOptions(CommandLineParser* cmdline) {
-    cmdline->AddPositionalOption("INPUT", /* required = */ true,
-                                 "the input can be "
-#if JPEGXL_ENABLE_APNG
-                                 "PNG, APNG, "
-#endif
-#if JPEGXL_ENABLE_GIF
-                                 "GIF, "
-#endif
-#if JPEGXL_ENABLE_EXR
-                                 "EXR, "
-#endif
-                                 "PPM, PFM, or PGX",
+    std::string input_help("the input can be ");
+    if (jxl::extras::CanDecode(jxl::extras::Codec::kPNG)) {
+      input_help.append("PNG, APNG, ");
+    }
+    if (jxl::extras::CanDecode(jxl::extras::Codec::kGIF)) {
+      input_help.append("GIF, ");
+    }
+    if (jxl::extras::CanDecode(jxl::extras::Codec::kEXR)) {
+      input_help.append("EXR, ");
+    }
+    input_help.append("PPM, PFM, or PGX");
+    cmdline->AddPositionalOption("INPUT", /* required = */ true, input_help,
                                  &file_in);
     cmdline->AddPositionalOption("OUTPUT", /* required = */ true,
                                  "the compressed JPG output file", &file_out);

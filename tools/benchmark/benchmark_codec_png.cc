@@ -3,8 +3,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#if JPEGXL_ENABLE_APNG
-
 #include "tools/benchmark/benchmark_codec_png.h"
 
 #include <stddef.h>
@@ -73,10 +71,14 @@ class PNGCodec : public ImageCodec {
 };
 
 ImageCodec* CreateNewPNGCodec(const BenchmarkArgs& args) {
-  return new PNGCodec(args);
+  if (jxl::extras::GetAPNGEncoder() &&
+      jxl::extras::CanDecode(jxl::extras::Codec::kPNG)) {
+    return new PNGCodec(args);
+  } else {
+    return nullptr;
+  }
 }
 
 }  // namespace tools
 }  // namespace jpegxl
 
-#endif

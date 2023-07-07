@@ -20,6 +20,7 @@
 
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/color_hints.h"
+#include "lib/extras/enc/apng.h"
 #include "lib/extras/metrics.h"
 #include "lib/extras/time.h"
 #include "lib/jxl/alpha.h"
@@ -300,11 +301,12 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
     std::string compressed_fn =
         outdir + "/" + name + CodecToExtension(codec_name, ':');
     std::string decompressed_fn = compressed_fn + Args()->output_extension;
-#if JPEGXL_ENABLE_APNG
-    std::string heatmap_fn = compressed_fn + ".heatmap.png";
-#else
-    std::string heatmap_fn = compressed_fn + ".heatmap.ppm";
-#endif
+    std::string heatmap_fn;
+    if (jxl::extras::GetAPNGEncoder()) {
+      heatmap_fn = compressed_fn + ".heatmap.png";
+    } else {
+      heatmap_fn = compressed_fn + ".heatmap.ppm";
+    }
     JXL_CHECK(MakeDir(outdir));
     if (Args()->save_compressed) {
       JXL_CHECK(WriteFile(compressed_fn, *compressed));

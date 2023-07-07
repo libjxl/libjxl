@@ -45,11 +45,14 @@
 #include "lib/extras/exif.h"
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/printf_macros.h"
+#if JPEGXL_ENABLE_APNG
 #include "png.h" /* original (unpatched) libpng is ok */
+#endif
 
 namespace jxl {
 namespace extras {
 
+#if JPEGXL_ENABLE_APNG
 namespace {
 
 constexpr unsigned char kExifSignature[6] = {0x45, 0x78, 0x69,
@@ -413,9 +416,14 @@ Status APNGEncoder::EncodePackedPixelFileToAPNG(
 }
 
 }  // namespace
+#endif
 
 std::unique_ptr<Encoder> GetAPNGEncoder() {
+#if JPEGXL_ENABLE_APNG
   return jxl::make_unique<APNGEncoder>();
+#else
+  return nullptr;
+#endif
 }
 
 }  // namespace extras

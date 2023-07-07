@@ -263,6 +263,10 @@ class JPEGCodec : public ImageCodec {
       jxl::extras::EncodedImage encoded;
       std::unique_ptr<jxl::extras::Encoder> encoder =
           jxl::extras::GetJPEGEncoder();
+      if (!encoder.get()) {
+        fprintf(stderr, "libjpeg codec is not supported\n");
+        return false;
+      }
       std::ostringstream os;
       os << static_cast<int>(std::round(q_target_));
       encoder->SetOption("q", os.str());

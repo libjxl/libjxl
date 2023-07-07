@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "lib/extras/dec/jpegli.h"
+#include "lib/extras/enc/apng.h"
 #include "lib/extras/enc/encode.h"
 #include "lib/extras/time.h"
 #include "lib/jxl/base/printf_macros.h"
@@ -24,17 +25,16 @@ namespace {
 
 struct Args {
   void AddCommandLineOptions(CommandLineParser* cmdline) {
+    std::string output_help("The output can be ");
+    if (jxl::extras::GetAPNGEncoder()) {
+      output_help.append("PNG, ");
+    }
+    output_help.append("PFM or PPM/PGM/PNM");
     cmdline->AddPositionalOption("INPUT", /* required = */ true,
                                  "The JPG input file.", &file_in);
 
-    cmdline->AddPositionalOption("OUTPUT", /* required = */ true,
-                                 "The output can be "
-#if JPEGXL_ENABLE_APNG
-                                 "PNG, "
-#endif
-                                 "PFM or PPM/PGM/PNM",
+    cmdline->AddPositionalOption("OUTPUT", /* required = */ true, output_help,
                                  &file_out);
-
     cmdline->AddOptionFlag('\0', "disable_output",
                            "No output file will be written (for benchmarking)",
                            &disable_output, &SetBooleanTrue);

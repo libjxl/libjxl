@@ -23,7 +23,10 @@
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/decode.h"
 #include "lib/extras/dec/jxl.h"
+#include "lib/extras/enc/apng.h"
 #include "lib/extras/enc/encode.h"
+#include "lib/extras/enc/exr.h"
+#include "lib/extras/enc/jpg.h"
 #include "lib/extras/enc/pnm.h"
 #include "lib/extras/packed_image.h"
 #include "lib/extras/time.h"
@@ -40,29 +43,29 @@ struct DecompressArgs {
   DecompressArgs() = default;
 
   void AddCommandLineOptions(CommandLineParser* cmdline) {
+    std::string output_help("The output can be ");
+    if (jxl::extras::GetAPNGEncoder()) {
+      output_help.append("PNG, APNG, ");
+    }
+    if (jxl::extras::GetJPEGEncoder()) {
+      output_help.append("JPEG, ");
+    } else {
+      output_help.append("JPEG (lossless reconstruction only), ");
+    }
+    if (jxl::extras::GetEXREncoder()) {
+      output_help.append("EXR, ");
+    }
+    output_help.append(
+        "PPM, PFM, or PAM. Use '-' for output to stdout.\n"
+        "    The output format is selected based on the extension or a prefix "
+        "(e.g. 'png:-')");
     cmdline->AddPositionalOption(
         "INPUT", /* required = */ true,
         "The compressed input file (JXL). Use '-' for input from stdin.",
         &file_in);
 
-    cmdline->AddPositionalOption(
-        "OUTPUT", /* required = */ true,
-        "The output can be "
-#if JPEGXL_ENABLE_APNG
-        "PNG, APNG, "
-#endif
-#if JPEGXL_ENABLE_JPEG
-        "JPEG, "
-#else
-        "JPEG (lossless reconstruction only), "
-#endif
-#if JPEGXL_ENABLE_EXR
-        "EXR, "
-#endif
-        "PPM, PFM, or PAM. Use '-' for output to stdout.\n"
-        "    The output format is selected based on the extension or a prefix "
-        "(e.g. 'png:-')",
-        &file_out);
+    cmdline->AddPositionalOption("OUTPUT", /* required = */ true, output_help,
+                                 &file_out);
 
     cmdline->AddHelpText("\nBasic options:", 0);
 
@@ -117,21 +120,21 @@ struct DecompressArgs {
                            "Allow decoding of truncated files.",
                            &allow_partial_files, &SetBooleanTrue, 1);
 
-#if JPEGXL_ENABLE_JPEG
-    cmdline->AddOptionFlag(
-        'j', "pixels_to_jpeg",
-        "By default, if the input JXL is a recompressed JPEG file, "
-        "djxl reconstructs that JPEG file.\n"
-        "    This flag causes the decoder to instead decode to pixels and "
-        "encode a new (lossy) JPEG.",
-        &pixels_to_jpeg, &SetBooleanTrue, 1);
+    if (jxl::extras::GetJPEGEncoder()) {
+      cmdline->AddOptionFlag(
+          'j', "pixels_to_jpeg",
+          "By default, if the input JXL is a recompressed JPEG file, "
+          "djxl reconstructs that JPEG file.\n"
+          "    This flag causes the decoder to instead decode to pixels and "
+          "encode a new (lossy) JPEG.",
+          &pixels_to_jpeg, &SetBooleanTrue, 1);
 
-    opt_jpeg_quality_id =
-        cmdline->AddOptionValue('q', "jpeg_quality", "N",
-                                "Sets the JPEG output quality, default is 95. "
-                                "Setting this option implies --pixels_to_jpeg.",
-                                &jpeg_quality, &ParseUnsigned, 1);
-#endif
+      opt_jpeg_quality_id = cmdline->AddOptionValue(
+          'q', "jpeg_quality", "N",
+          "Sets the JPEG output quality, default is 95. "
+          "Setting this option implies --pixels_to_jpeg.",
+          &jpeg_quality, &ParseUnsigned, 1);
+    }
 
     cmdline->AddHelpText("\nOptions for experimentation / benchmarking:", 2);
 
@@ -397,7 +400,8 @@ int main(int argc, const char* argv[]) {
     args.color_space = force_colorspace;
   }
   if (codec == jxl::extras::Codec::kPNM && extension != ".pfm" &&
-      !cmdline.GetOption(args.opt_jpeg_quality_id)->matched()) {
+      (args.opt_jpeg_quality_id < 0 ||
+       !cmdline.GetOption(args.opt_jpeg_quality_id)->matched())) {
     args.bits_per_sample = 0;
   }
 
@@ -413,12 +417,11 @@ int main(int argc, const char* argv[]) {
       /*memory_manager=*/nullptr, num_worker_threads);
 
   bool decode_to_pixels = (codec != jxl::extras::Codec::kJPG);
-#if JPEGXL_ENABLE_JPEG
-  if (args.pixels_to_jpeg ||
-      cmdline.GetOption(args.opt_jpeg_quality_id)->matched()) {
+  if (args.opt_jpeg_quality_id >= 0 &&
+      (args.pixels_to_jpeg ||
+       cmdline.GetOption(args.opt_jpeg_quality_id)->matched())) {
     decode_to_pixels = true;
   }
-#endif
 
   size_t num_reps = args.num_reps;
   if (!decode_to_pixels) {
@@ -473,13 +476,11 @@ int main(int argc, const char* argv[]) {
     if (args.print_read_bytes) {
       fprintf(stderr, "Decoded bytes: %" PRIuS "\n", decoded_bytes);
     }
-#if JPEGXL_ENABLE_JPEG
     if (encoder) {
       std::ostringstream os;
       os << args.jpeg_quality;
       encoder->SetOption("q", os.str());
     }
-#endif
 #if JPEGXL_ENABLE_SJPEG
     if (encoder && args.use_sjpeg) {
       encoder->SetOption("jpeg_encoder", "sjpeg");

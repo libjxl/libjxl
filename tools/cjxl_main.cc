@@ -71,24 +71,24 @@ enum CjxlRetCode : int {
 struct CompressArgs {
   // CompressArgs() = default;
   void AddCommandLineOptions(CommandLineParser* cmdline) {
+    std::string input_help("the input can be ");
+    if (jxl::extras::CanDecode(jxl::extras::Codec::kPNG)) {
+      input_help.append("PNG, APNG, ");
+    }
+    if (jxl::extras::CanDecode(jxl::extras::Codec::kGIF)) {
+      input_help.append("GIF, ");
+    }
+    if (jxl::extras::CanDecode(jxl::extras::Codec::kJPG)) {
+      input_help.append("JPEG, ");
+    } else {
+      input_help.append("JPEG (lossless recompression only), ");
+    }
+    if (jxl::extras::CanDecode(jxl::extras::Codec::kEXR)) {
+      input_help.append("EXR, ");
+    }
+    input_help.append("PPM, PFM, PAM, PGX, or JXL");
     // Positional arguments.
-    cmdline->AddPositionalOption("INPUT", /* required = */ true,
-                                 "the input can be "
-#if JPEGXL_ENABLE_APNG
-                                 "PNG, APNG, "
-#endif
-#if JPEGXL_ENABLE_GIF
-                                 "GIF, "
-#endif
-#if JPEGXL_ENABLE_JPEG
-                                 "JPEG, "
-#else
-                                 "JPEG (lossless recompression only), "
-#endif
-#if JPEGXL_ENABLE_EXR
-                                 "EXR, "
-#endif
-                                 "PPM, PFM, PAM, PGX, or JXL",
+    cmdline->AddPositionalOption("INPUT", /* required = */ true, input_help,
                                  &file_in);
     cmdline->AddPositionalOption("OUTPUT", /* required = */ true,
                                  "the compressed JXL output file", &file_out);

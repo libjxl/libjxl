@@ -20,9 +20,7 @@
 #include "tools/benchmark/benchmark_codec_custom.h"  // for AddCommand..
 #include "tools/benchmark/benchmark_codec_jpeg.h"  // for AddCommand..
 #include "tools/benchmark/benchmark_codec_jxl.h"
-#if JPEGXL_ENABLE_APNG
 #include "tools/benchmark/benchmark_codec_png.h"
-#endif
 
 #ifdef BENCHMARK_WEBP
 #include "tools/benchmark/benchmark_codec_webp.h"
@@ -213,12 +211,9 @@ Status BenchmarkArgs::AddCommandLineOptions() {
 
   if (!AddCommandLineOptionsCustomCodec(this)) return false;
   if (!AddCommandLineOptionsJxlCodec(this)) return false;
-#ifdef JPEGXL_ENABLE_JPEG
   if (!AddCommandLineOptionsJPEGCodec(this)) return false;
-#endif  // BENCHMARK_JPEG
-#if JPEGXL_ENABLE_APNG
   if (!AddCommandLineOptionsPNGCodec(this)) return false;
-#endif
+
 #ifdef BENCHMARK_WEBP
   if (!AddCommandLineOptionsWebPCodec(this)) return false;
 #endif  // BENCHMARK_WEBP
