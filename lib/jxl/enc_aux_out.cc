@@ -92,10 +92,6 @@ void AuxOut::Assimilate(const AuxOut& victim) {
   num_dct32x64_blocks += victim.num_dct32x64_blocks;
   num_dct64_blocks += victim.num_dct64_blocks;
   num_butteraugli_iters += victim.num_butteraugli_iters;
-  for (size_t i = 0; i < dc_pred_usage.size(); ++i) {
-    dc_pred_usage[i] += victim.dc_pred_usage[i];
-    dc_pred_usage_xb[i] += victim.dc_pred_usage_xb[i];
-  }
   max_quant_rescale = std::max(max_quant_rescale, victim.max_quant_rescale);
   min_quant_rescale = std::min(min_quant_rescale, victim.min_quant_rescale);
   max_bitrate_error = std::max(max_bitrate_error, victim.max_bitrate_error);
@@ -129,19 +125,6 @@ void AuxOut::Print(size_t num_inputs) const {
     }
     printf("Total image size           ");
     all_layers.Print(num_inputs);
-
-    const uint32_t dc_pred_total =
-        std::accumulate(dc_pred_usage.begin(), dc_pred_usage.end(), 0u);
-    const uint32_t dc_pred_total_xb =
-        std::accumulate(dc_pred_usage_xb.begin(), dc_pred_usage_xb.end(), 0u);
-    if (dc_pred_total + dc_pred_total_xb != 0) {
-      printf("\nDC pred     Y                XB:\n");
-      for (size_t i = 0; i < dc_pred_usage.size(); ++i) {
-        printf("  %6u (%5.2f%%)    %6u (%5.2f%%)\n", dc_pred_usage[i],
-               100.0 * dc_pred_usage[i] / dc_pred_total, dc_pred_usage_xb[i],
-               100.0 * dc_pred_usage_xb[i] / dc_pred_total_xb);
-      }
-    }
 
     size_t total_blocks = 0;
     size_t total_positions = 0;

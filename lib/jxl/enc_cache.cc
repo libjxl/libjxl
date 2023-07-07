@@ -199,10 +199,6 @@ Status InitializePassesEncoder(const Image3F& opsin, const JxlCmsInterface& cms,
                                 ThreadPool::NoInit, compute_ac_meta,
                                 "Compute AC Metadata"));
 
-  if (aux_out != nullptr) {
-    aux_out->InspectImage3F("compressed_image:InitializeFrameEncCache:dc_dec",
-                            shared.dc_storage);
-  }
   return true;
 }
 

@@ -1354,10 +1354,6 @@ Status EncodeFrame(const CompressParams& cparams_orig,
                           ib.alpha(), lossless);
       }
     }
-    if (aux_out != nullptr) {
-      JXL_RETURN_IF_ERROR(
-          aux_out->InspectImage3F("enc_frame:OpsinDynamicsImage", opsin));
-    }
     if (frame_header->encoding == FrameEncoding::kVarDCT) {
       PadImageToBlockMultipleInPlace(&opsin);
       JXL_RETURN_IF_ERROR(lossy_frame_encoder.ComputeEncodingData(

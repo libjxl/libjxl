@@ -270,11 +270,6 @@ class JxlCodec : public ImageCodec {
     return true;
   }
 
-  bool IsJpegTranscoder() const override {
-    // TODO(veluca): figure out when to turn this on.
-    return false;
-  }
-
   Status Compress(const std::string& filename, const CodecInOut* io,
                   ThreadPool* pool, std::vector<uint8_t>* compressed,
                   jpegxl::tools::SpeedStats* speed_stats) override {
@@ -307,7 +302,6 @@ class JxlCodec : public ImageCodec {
 
     cparams_.noise = jxlargs->noise;
 
-    cparams_.quant_border_bias = static_cast<float>(jxlargs->quant_bias);
     cparams_.ba_params.hf_asymmetry = static_cast<float>(jxlargs->hf_asymmetry);
     cparams_.ba_params.xmul = static_cast<float>(jxlargs->xmul);
 

@@ -15,7 +15,6 @@
 #include <string>
 
 #include "lib/jxl/image.h"
-#include "lib/jxl/jxl_inspection.h"
 
 namespace jxl {
 
@@ -90,19 +89,6 @@ struct AuxOut {
   template <typename T>
   void DumpPlaneNormalized(const char* label, const Plane<T>& image) const;
 
-  void SetInspectorImage3F(const jxl::InspectorImage3F& inspector) {
-    inspector_image3f_ = inspector;
-  }
-
-  // Allows hooking intermediate data inspection into various places of the
-  // processing pipeline. Returns true iff processing should proceed.
-  bool InspectImage3F(const char* label, const Image3F& image) {
-    if (inspector_image3f_ != nullptr) {
-      return inspector_image3f_(label, image);
-    }
-    return true;
-  }
-
   std::array<LayerTotals, kNumImageLayers> layers;
   size_t num_blocks = 0;
 
@@ -119,9 +105,6 @@ struct AuxOut {
   size_t num_dct32x64_blocks = 0;
   size_t num_dct64_blocks = 0;
 
-  std::array<uint32_t, 8> dc_pred_usage = {{0}};
-  std::array<uint32_t, 8> dc_pred_usage_xb = {{0}};
-
   int num_butteraugli_iters = 0;
 
   float max_quant_rescale = 1.0f;
@@ -132,12 +115,6 @@ struct AuxOut {
   // If not empty, additional debugging information (e.g. debug images) is
   // saved in files with this prefix.
   std::string debug_prefix;
-
-  // By how much the decoded image was downsampled relative to the encoded
-  // image.
-  size_t downsampling = 1;
-
-  jxl::InspectorImage3F inspector_image3f_;
 
   std::function<Status(Image3F&&, const ColorEncoding&, const std::string&)>
       dump_image = nullptr;
