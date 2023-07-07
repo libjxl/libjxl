@@ -510,9 +510,6 @@ struct CompressArgs {
 
   bool allow_expert_options = false;
 
-  // Will get passed on to AuxOut.
-  // jxl::InspectorImage3F inspector_image3f;
-
   // References (ids) of specific options to check if they were matched.
   CommandLineParser::OptionId opt_lossless_jpeg_id = -1;
   CommandLineParser::OptionId opt_responsive_id = -1;

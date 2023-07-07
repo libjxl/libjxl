@@ -210,7 +210,6 @@ libjxl_dec_sources = [
     "jxl/image_metadata.h",
     "jxl/image_ops.h",
     "jxl/inverse_mtf-inl.h",
-    "jxl/jxl_inspection.h",
     "jxl/lehmer_code.h",
     "jxl/loop_filter.cc",
     "jxl/loop_filter.h",

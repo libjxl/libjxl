@@ -65,7 +65,6 @@ struct CompressParams {
   // butteraugli distance, positive values mean quantize everywhere with that
   // value.
   float uniform_quant = 0.0f;
-  float quant_border_bias = 0.0f;
 
   // Try to achieve a maximum pixel-by-pixel error on each channel.
   bool max_error_mode = false;

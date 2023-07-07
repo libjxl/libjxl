@@ -50,10 +50,6 @@ class ImageCodec {
 
   virtual Status ParseParam(const std::string& param);
 
-  // Returns true iff the codec instance (including parameters) will operate
-  // only with quantized DCT (JPEG) coefficients in input.
-  virtual bool IsJpegTranscoder() const { return false; }
-
   virtual Status Compress(const std::string& filename, const CodecInOut* io,
                           ThreadPool* pool, std::vector<uint8_t>* compressed,
                           jpegxl::tools::SpeedStats* speed_stats) = 0;

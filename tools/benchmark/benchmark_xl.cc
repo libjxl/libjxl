@@ -213,9 +213,7 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
     valid = false;
   }
 
-  bool lossless = codec->IsJpegTranscoder();
-  bool skip_butteraugli =
-      Args()->skip_butteraugli || Args()->decode_only || lossless;
+  bool skip_butteraugli = Args()->skip_butteraugli || Args()->decode_only;
   ImageF distmap;
   float max_distance = 1.0f;
 
@@ -816,17 +814,14 @@ class Benchmark {
       const StringVec extra_metrics_names = GetExtraMetricsNames();
       const StringVec extra_metrics_commands = GetExtraMetricsCommands();
       const StringVec fnames = GetFilenames();
-      bool jpeg_transcoding_requested;
       // (non-const because Task.stats are updated)
-      std::vector<Task> tasks =
-          CreateTasks(methods, fnames, &jpeg_transcoding_requested);
+      std::vector<Task> tasks = CreateTasks(methods, fnames);
 
       std::unique_ptr<ThreadPoolInternal> pool;
       std::vector<std::unique_ptr<ThreadPoolInternal>> inner_pools;
       InitThreads(tasks.size(), &pool, &inner_pools);
 
-      const std::vector<CodecInOut> loaded_images =
-          LoadImages(fnames, jpeg_transcoding_requested, &*pool);
+      const std::vector<CodecInOut> loaded_images = LoadImages(fnames, &*pool);
 
       if (RunTasks(methods, extra_metrics_names, extra_metrics_commands, fnames,
                    loaded_images, &*pool, inner_pools, &tasks) != 0) {
@@ -1013,9 +1008,8 @@ class Benchmark {
   }
 
   // (Load only once, not for every codec)
-  static std::vector<CodecInOut> LoadImages(
-      const StringVec& fnames, const bool jpeg_transcoding_requested,
-      ThreadPool* pool) {
+  static std::vector<CodecInOut> LoadImages(const StringVec& fnames,
+                                            ThreadPool* pool) {
     std::vector<CodecInOut> loaded_images;
     loaded_images.resize(fnames.size());
     const auto process_image = [&](const uint32_t task, size_t /*thread*/) {
@@ -1026,13 +1020,8 @@ class Benchmark {
         PaddedBytes encoded;
         ok = ReadFile(fnames[i], &encoded);
         if (ok) {
-          if (jpeg_transcoding_requested) {
-            ok = jxl::jpeg::DecodeImageJPG(Span<const uint8_t>(encoded),
-                                           &loaded_images[i]);
-          } else {
-            ok = jxl::SetFromBytes(Span<const uint8_t>(encoded),
-                                   Args()->color_hints, &loaded_images[i]);
-          }
+          ok = jxl::SetFromBytes(Span<const uint8_t>(encoded),
+                                 Args()->color_hints, &loaded_images[i]);
         }
         if (ok && Args()->intensity_target != 0) {
           loaded_images[i].metadata.m.SetIntensityTarget(
@@ -1060,17 +1049,14 @@ class Benchmark {
   }
 
   static std::vector<Task> CreateTasks(const StringVec& methods,
-                                       const StringVec& fnames,
-                                       bool* jpeg_transcoding_requested) {
+                                       const StringVec& fnames) {
     std::vector<Task> tasks;
     tasks.reserve(methods.size() * fnames.size());
-    *jpeg_transcoding_requested = false;
     for (size_t idx_image = 0; idx_image < fnames.size(); ++idx_image) {
       for (size_t idx_method = 0; idx_method < methods.size(); ++idx_method) {
         tasks.emplace_back();
         Task& t = tasks.back();
         t.codec = CreateImageCodec(methods[idx_method]);
-        *jpeg_transcoding_requested |= t.codec->IsJpegTranscoder();
         t.idx_image = idx_image;
         t.idx_method = idx_method;
         // t.stats is default-initialized.
