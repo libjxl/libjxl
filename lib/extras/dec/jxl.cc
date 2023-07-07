@@ -12,6 +12,8 @@
 #include "lib/extras/dec/color_description.h"
 #include "lib/extras/enc/encode.h"
 #include "lib/jxl/base/printf_macros.h"
+// TODO(firsching): refactor code so that SetJxlCms() can be used as argument in
+// JxlDecoderSetCms below
 #include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/exif.h"
 
