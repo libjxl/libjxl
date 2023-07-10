@@ -344,7 +344,7 @@ typedef enum {
    last (will not work with progressive)
 
    When the image dimensions is smaller than 2048 x 2048 all the options are the
-   same Using 1, 2 or 3 can result increasingly in less compression density.
+   same. Using 1, 2 or 3 can result increasingly in less compression density.
    */
   JXL_ENC_FRAME_SETTING_BUFFERING = 34,
 
