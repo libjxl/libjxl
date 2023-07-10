@@ -1265,11 +1265,11 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec) {
         // No overflow, checked in CheckSizeLimit.
         size_t num_pixels = frame_dim.xsize * frame_dim.ysize;
         if (dec->used_cpu_base + num_pixels < dec->used_cpu_base) {
-          return JXL_INPUT_ERROR("used too much CPU");
+          return JXL_INPUT_ERROR("image too large");
         }
         dec->used_cpu_base += num_pixels;
         if (dec->used_cpu_base > dec->cpu_limit_base) {
-          return JXL_INPUT_ERROR("used too much CPU");
+          return JXL_INPUT_ERROR("image too large");
         }
       }
       dec->remaining_frame_size = dec->frame_dec->SumSectionSizes();
@@ -2043,7 +2043,7 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
   JxlDecoderStatus status = HandleBoxes(dec);
 
   if (status == JXL_DEC_NEED_MORE_INPUT && dec->input_closed) {
-    return JXL_INPUT_ERROR("missing input");
+    return JXL_INPUT_ERROR("premature end of input");
   }
 
   // Even if the box handling returns success, certain types of
@@ -2266,8 +2266,7 @@ JxlDecoderStatus JxlDecoderGetColorAsICCProfile(const JxlDecoder* dec,
   JxlDecoderStatus status =
       JxlDecoderGetICCProfileSize(dec, target, &wanted_size);
   if (status != JXL_DEC_SUCCESS) return status;
-  if (size < wanted_size)
-    return JXL_INPUT_ERROR("ICC profile output too small");
+  if (size < wanted_size) return JXL_API_ERROR("ICC profile output too small");
 
   const jxl::ColorEncoding* jxl_color_encoding = nullptr;
   status = GetColorEncodingForTarget(dec, target, &jxl_color_encoding);
@@ -2300,7 +2299,7 @@ JxlDecoderStatus PrepareSizeCheck(const JxlDecoder* dec,
   *bits = BitsPerChannel(format->data_type);
 
   if (*bits == 0) {
-    JXL_API_ERROR("Invalid/unsupported data type");
+    return JXL_API_ERROR("Invalid/unsupported data type");
   }
 
   return JXL_DEC_SUCCESS;
