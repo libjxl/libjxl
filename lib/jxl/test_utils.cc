@@ -12,14 +12,13 @@
 
 #include "lib/extras/metrics.h"
 #include "lib/extras/packed_image_convert.h"
+#include "lib/jxl/base/float.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_file.h"
-#include "lib/jxl/base/float.h"
-
 
 #if !defined(TEST_DATA_PATH)
 #include "tools/cpp/runfiles/runfiles.h"

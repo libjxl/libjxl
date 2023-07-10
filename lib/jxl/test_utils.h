@@ -105,7 +105,6 @@ jxl::CodecInOut SomeTestImageToCodecInOut(const std::vector<uint8_t>& buf,
 
 bool Near(double expected, double value, double max_dist);
 
-
 float LoadLEFloat16(const uint8_t* p);
 
 float LoadBEFloat16(const uint8_t* p);
