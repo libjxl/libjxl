@@ -32,7 +32,10 @@ namespace jxl {
 
 namespace {
 
-bool ans_fuzzer_friendly_ = false;
+#if !JXL_IS_DEBUG_BUILD
+constexpr
+#endif
+    bool ans_fuzzer_friendly_ = false;
 
 static const int kMaxNumSymbolsForSmallCode = 4;
 
