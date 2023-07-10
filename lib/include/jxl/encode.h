@@ -336,8 +336,13 @@ typedef enum {
   JXL_ENC_FRAME_SETTING_JPEG_COMPRESS_BOXES = 33,
 
   /** Control what kind of buffering is used, when using chunked image frames.
-   * 0 = can buffer anything, 1 = can buffer intermediate data,
-   * 2 = can buffer the output, 3 = minimize buffer usage
+   * 0 = buffers everything, basically the same as non-streamed code path (mainly for testing)
+   * 1 = can buffer internal data (the tokens)
+   * 2 = can buffer the output
+   * 3 = minimize buffer usage: streamed input and streamed output, writing TOC last 
+         (will not work with progressive)
+    When the image dimensions is smaller than 2048 x 2048 all the options are the same
+   Using 1, 2 or 3 can result increasingly in less compression density.
    */
   JXL_ENC_FRAME_SETTING_BUFFERING = 34,
 
@@ -666,14 +671,16 @@ JxlEncoderChunkedImageFrameStart(const JxlEncoderFrameSettings* frame_settings);
  * @param pixel_format for pixels. Object owned by the caller and its contents
  * are copied internally.
  * @param x horizontal position of the top-left corner of the processed group.
- * Must be divisible by 1024.
- * @param y vertical postition of the top-left corner of the processed group.
- * Must be divisible by 1024.
+ * Must be divisible by 2048.
+ * @param y vertical position of the top-left corner of the processed group.
+ * Must be divisible by 2048.
  * @return JXL_EXPORT
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderChunkedImageFrameAddPart(
-    const JxlEncoderFrameSettings* frame_settings,
-    const JxlPixelFormat* pixel_format, size_t x, size_t y);
+    const JxlEncoderFrameSettings* frame_settings, size_t x, size_t y,
+    const JxlPixelFormat* pixel_format, 
+    const void* input_data, 
+    size_t input_size);
 
 /**
  * Sets the buffer to read pixels from for an extra channel at a given index.
