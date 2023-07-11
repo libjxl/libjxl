@@ -668,6 +668,7 @@ JxlEncoderChunkedImageFrameStart(const JxlEncoderFrameSettings* frame_settings);
 
 /**
  * TODO(firsching): add documentation
+ * We process exactly one 2048x2048 DC-group.
  *
  * @param frame_settings
  * @param x horizontal position of the top-left corner of the processed group.
