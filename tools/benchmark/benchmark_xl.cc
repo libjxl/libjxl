@@ -251,9 +251,9 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
       }
       // Update stats
       s->psnr +=
-          compressed->size()
-              ? jxl::ComputePSNR(ib1, ib2, jxl::GetJxlCms()) * input_pixels
-              : 0;
+          compressed->empty()
+              ? 0
+              : jxl::ComputePSNR(ib1, ib2, jxl::GetJxlCms()) * input_pixels;
       s->distance_p_norm +=
           ComputeDistanceP(distmap, ButteraugliParams(), Args()->error_pnorm) *
           input_pixels;

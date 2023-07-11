@@ -21,7 +21,6 @@ namespace extras {
 namespace {
 
 namespace OpenEXR = OPENEXR_IMF_NAMESPACE;
-namespace Imath = IMATH_NAMESPACE;
 
 // OpenEXR::Int64 is deprecated in favor of using uint64_t directly, but using
 // uint64_t as recommended causes build failures with previous OpenEXR versions
@@ -158,6 +157,7 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, const ColorHints& color_hints,
            std::min(input.dataWindow().max.x, input.displayWindow().max.x);
            ++exr_x) {
         const int image_x = exr_x - input.displayWindow().min.x;
+        // TODO(eustas): UB: OpenEXR::Rgba is not TriviallyCopyable
         memcpy(row + image_x * pixel_size,
                input_row + (exr_x - input.dataWindow().min.x), pixel_size);
       }
