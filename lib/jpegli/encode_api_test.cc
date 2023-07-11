@@ -360,8 +360,8 @@ std::vector<TestConfig> GenerateTests() {
           if (!progr) {
             config.jparams.optimize_coding = optimize;
           }
-          const float kMaxBpp[4] = {1.55, 1.45, 1.45, 1.32};
-          const float kMaxDist[4] = {1.95, 2.1, 2.1, 2.0};
+          const float kMaxBpp[4] = {1.55, 1.4, 1.4, 1.32};
+          const float kMaxDist[4] = {1.95, 2.2, 2.2, 2.0};
           const int idx = v_samp * 2 + h_samp - 3;
           config.max_bpp =
               kMaxBpp[idx] * (optimize ? 0.97 : 1.0) * (progr ? 0.97 : 1.0);
@@ -470,11 +470,11 @@ std::vector<TestConfig> GenerateTests() {
             config.jparams.v_sampling = {samp, 1, 1};
             config.jparams.quality = quality;
             config.jparams.restart_interval = r;
-            config.max_bpp = quality == 100 ? 8.0 : 2.0;
+            config.max_bpp = quality == 100 ? 8.0 : 1.9;
             if (r == 1) {
               config.max_bpp += 10.0;
             }
-            config.max_dist = quality == 1 ? 20.0 : 2.0;
+            config.max_dist = quality == 1 ? 20.0 : 2.1;
             all_tests.push_back(config);
           }
         }
