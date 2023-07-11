@@ -20,7 +20,7 @@ namespace jpegli {
 // Return value is one of:
 //   * JPEG_SUSPENDED, if the current input buffer ends before the next SOS or
 //       EOI marker. Input buffer refill is handled by the caller;
-//   * JPEG_REACHED_SOS, if the the next SOS marker is found;
+//   * JPEG_REACHED_SOS, if the next SOS marker is found;
 //   * JPEG_REACHED_EOR, if the end of the input is found.
 int ProcessMarkers(j_decompress_ptr cinfo, const uint8_t* const data,
                    const size_t len, size_t* pos);
