@@ -147,6 +147,7 @@ TEST(ModularTest, RoundtripLossy) {
   CompressParams cparams;
   cparams.modular_mode = true;
   cparams.butteraugli_distance = 2.f;
+  cparams.SetCms(GetJxlCms());
 
   CodecInOut io_out;
 

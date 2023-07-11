@@ -48,12 +48,12 @@ Status VerifyInput(const PackedPixelFile& ppf) {
   return true;
 }
 
-Status GetColorEncoding(const PackedPixelFile& ppf,
+Status GetColorEncoding(const PackedPixelFile& ppf, const JxlCmsInterface* cms,
                         ColorEncoding* color_encoding) {
   if (!ppf.icc.empty()) {
     PaddedBytes icc;
     icc.assign(ppf.icc.data(), ppf.icc.data() + ppf.icc.size());
-    JXL_RETURN_IF_ERROR(color_encoding->SetICC(std::move(icc)));
+    JXL_RETURN_IF_ERROR(color_encoding->SetICC(std::move(icc), cms));
   } else {
     JXL_RETURN_IF_ERROR(ConvertExternalToInternalColorEncoding(
         ppf.color_encoding, color_encoding));
@@ -326,10 +326,12 @@ Status EncodeJpeg(const PackedPixelFile& ppf, const JpegSettings& jpeg_settings,
   }
   JXL_RETURN_IF_ERROR(VerifyInput(ppf));
 
-  ColorEncoding color_encoding;
-  JXL_RETURN_IF_ERROR(GetColorEncoding(ppf, &color_encoding));
+  const JxlCmsInterface& cms = GetJxlCms();
 
-  ColorSpaceTransform c_transform(GetJxlCms());
+  ColorEncoding color_encoding;
+  JXL_RETURN_IF_ERROR(GetColorEncoding(ppf, &cms, &color_encoding));
+
+  ColorSpaceTransform c_transform(cms);
   ColorEncoding xyb_encoding;
   if (jpeg_settings.xyb) {
     if (ppf.info.num_color_channels != 3) {

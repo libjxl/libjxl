@@ -46,6 +46,7 @@ TEST(PreviewTest, RoundtripGivenPreview) {
   CompressParams cparams;
   cparams.butteraugli_distance = 2.0;
   cparams.speed_tier = SpeedTier::kSquirrel;
+  cparams.SetCms(GetJxlCms());
 
   CodecInOut io2;
   JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _));
