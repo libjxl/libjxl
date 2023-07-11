@@ -12,7 +12,6 @@ namespace tools {
 using ::jxl::PaddedBytes;
 
 #ifdef JXL_ICC_FUZZER_SLOW_TEST
-using ::jxl::AuxOut;
 using ::jxl::BitReader;
 using ::jxl::Span;
 #endif
@@ -45,10 +44,9 @@ int TestOneInput(const uint8_t* data, size_t size) {
     PaddedBytes icc;
     icc.assign(data, data + size);
     BitWriter writer;
-    AuxOut aux;
     // Writing should support any random bytestream so must succeed, make
     // fuzzer fail if not.
-    JXL_ASSERT(jxl::WriteICC(icc, &writer, 0, &aux));
+    JXL_ASSERT(jxl::WriteICC(icc, &writer, 0, nullptr));
   }
 #else  // JXL_ICC_FUZZER_SLOW_TEST
   if (read) {

@@ -99,10 +99,10 @@ TEST_P(SpeedTierTest, Roundtrip) {
   JXL_EXPECT_OK(test::Roundtrip(&io, cparams, {}, &io2, _));
 
   // Can be 2.2 in non-hare mode.
-  EXPECT_LE(
-      ButteraugliDistance(io.frames, io2.frames, cparams.ba_params, GetJxlCms(),
-                          /*distmap=*/nullptr, /*pool=*/nullptr),
-      2.8);
+  EXPECT_LE(ButteraugliDistance(io.frames, io2.frames, ButteraugliParams(),
+                                GetJxlCms(),
+                                /*distmap=*/nullptr, /*pool=*/nullptr),
+            2.8);
 }
 }  // namespace
 }  // namespace jxl

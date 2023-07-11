@@ -39,8 +39,8 @@ namespace jxl {
 
 namespace {
 // Plot tree (if enabled) and predictor usage map.
-constexpr bool kWantDebug = false;
-constexpr bool kPrintTree = false;
+constexpr bool kWantDebug = true;
+// constexpr bool kPrintTree = false;
 
 inline std::array<uint8_t, 3> PredictorColor(Predictor p) {
   switch (p) {
@@ -367,11 +367,14 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
       }
     }
   }
-  if (kWantDebug && WantDebugOutput(aux_out)) {
-    aux_out->DumpImage(
+  /* TODO(szabadka): Add cparams to the call stack here.
+  if (kWantDebug && WantDebugOutput(cparams)) {
+    DumpImage(
+        cparams,
         ("pred_" + ToString(group_id) + "_" + ToString(chan)).c_str(),
         predictor_img);
   }
+  */
   *tokenpp = tokenp;
   return true;
 }
@@ -467,9 +470,11 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
     JXL_ASSERT(tree->size() == decoded_tree.size());
     tree_storage = std::move(decoded_tree);
 
+    /* TODO(szabadka) Add text output callback
     if (kWantDebug && kPrintTree && WantDebugOutput(aux_out)) {
       PrintTree(*tree, aux_out->debug_prefix + "/tree_" + ToString(group_id));
-    }
+    } */
+
     // Write tree
     BuildAndEncodeHistograms(HistogramParams(), kNumTreeContexts, tree_tokens,
                              &code, &context_map, writer, kLayerModularTree,

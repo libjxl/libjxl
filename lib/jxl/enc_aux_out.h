@@ -14,8 +14,6 @@
 #include <functional>
 #include <string>
 
-#include "lib/jxl/image.h"
-
 namespace jxl {
 
 struct ColorEncoding;
@@ -81,14 +79,6 @@ struct AuxOut {
     return total;
   }
 
-  template <typename T>
-  void DumpImage(const char* label, const Image3<T>& image) const;
-
-  void DumpXybImage(const char* label, const Image3F& image) const;
-
-  template <typename T>
-  void DumpPlaneNormalized(const char* label, const Plane<T>& image) const;
-
   std::array<LayerTotals, kNumImageLayers> layers;
   size_t num_blocks = 0;
 
@@ -106,35 +96,7 @@ struct AuxOut {
   size_t num_dct64_blocks = 0;
 
   int num_butteraugli_iters = 0;
-
-  float max_quant_rescale = 1.0f;
-  float min_quant_rescale = 1.0f;
-  float min_bitrate_error = 0.0f;
-  float max_bitrate_error = 0.0f;
-
-  // If not empty, additional debugging information (e.g. debug images) is
-  // saved in files with this prefix.
-  std::string debug_prefix;
-
-  std::function<Status(Image3F&&, const ColorEncoding&, const std::string&)>
-      dump_image = nullptr;
 };
-
-extern template void AuxOut::DumpImage(const char* label,
-                                       const Image3<float>& image) const;
-extern template void AuxOut::DumpImage(const char* label,
-                                       const Image3<uint8_t>& image) const;
-extern template void AuxOut::DumpPlaneNormalized(
-    const char* label, const Plane<float>& image) const;
-extern template void AuxOut::DumpPlaneNormalized(
-    const char* label, const Plane<uint8_t>& image) const;
-
-// Used to skip image creation if they won't be written to debug directory.
-static inline bool WantDebugOutput(const AuxOut* aux_out) {
-  // Need valid pointer and filename.
-  return aux_out != nullptr && !aux_out->debug_prefix.empty();
-}
-
 }  // namespace jxl
 
 #endif  // LIB_JXL_AUX_OUT_H_

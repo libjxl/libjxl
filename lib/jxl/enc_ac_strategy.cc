@@ -26,6 +26,7 @@
 #include "lib/jxl/convolve.h"
 #include "lib/jxl/dct_scales.h"
 #include "lib/jxl/enc_aux_out.h"
+#include "lib/jxl/enc_debug_image.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/enc_transforms-inl.h"
 #include "lib/jxl/entropy_coder.h"
@@ -213,7 +214,8 @@ const uint8_t* TypeMask(const uint8_t& raw_strategy) {
 }
 
 void DumpAcStrategy(const AcStrategyImage& ac_strategy, size_t xsize,
-                    size_t ysize, const char* tag, AuxOut* aux_out) {
+                    size_t ysize, const char* tag, AuxOut* aux_out,
+                    const CompressParams& cparams) {
   Image3F color_acs(xsize, ysize);
   for (size_t y = 0; y < ysize; y++) {
     float* JXL_RESTRICT rows[3] = {
@@ -265,7 +267,7 @@ void DumpAcStrategy(const AcStrategyImage& ac_strategy, size_t xsize,
       }
     }
   }
-  aux_out->DumpImage(tag, color_acs);
+  DumpImage(cparams, tag, color_acs);
 }
 
 }  // namespace
@@ -1163,9 +1165,11 @@ void AcStrategyHeuristics::Finalize(AuxOut* aux_out) {
         ac_strategy.CountBlocks(AcStrategy::Type::DCT64X64);
   }
 
-  if (JXL_DEBUG_AC_STRATEGY && WantDebugOutput(aux_out)) {
+  // if (JXL_DEBUG_AC_STRATEGY && WantDebugOutput(aux_out)) {
+  if (JXL_DEBUG_AC_STRATEGY && WantDebugOutput(enc_state->cparams)) {
     DumpAcStrategy(ac_strategy, enc_state->shared.frame_dim.xsize,
-                   enc_state->shared.frame_dim.ysize, "ac_strategy", aux_out);
+                   enc_state->shared.frame_dim.ysize, "ac_strategy", aux_out,
+                   enc_state->cparams);
   }
 }
 
