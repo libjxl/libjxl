@@ -1,0 +1,35 @@
+name: Mirror to GitLab
+
+on:
+  push:
+    branches:
+      - main
+      - v*.*.x
+
+env:
+  BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout source
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0  # Disable shallow clone
+
+    - name: Set up SSH
+      run: |
+        mkdir -p ~/.ssh/
+        chmod 700 ~/.ssh/
+        echo "${{ secrets.GITLAB_DEPLOY_KEY }}" > ~/.ssh/id_ed25519
+        chmod 400 ~/.ssh/id_ed25519
+        ssh-keyscan gitlab.com >> ~/.ssh/known_hosts
+
+    - name: Push to GitLab
+      env:
+        GIT_SSH_COMMAND: ssh -v -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=no
+      run: |
+        git remote add gitlab git@gitlab.com:wg1/jpeg-xl.git
+        git push gitlab $BRANCH_NAME:$BRANCH_NAME
