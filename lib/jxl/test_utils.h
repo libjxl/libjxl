@@ -105,9 +105,6 @@ jxl::CodecInOut SomeTestImageToCodecInOut(const std::vector<uint8_t>& buf,
 
 bool Near(double expected, double value, double max_dist);
 
-// Based on highway scalar implementation, for testing
-float LoadFloat16(uint16_t bits16);
-
 float LoadLEFloat16(const uint8_t* p);
 
 float LoadBEFloat16(const uint8_t* p);
