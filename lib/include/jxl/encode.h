@@ -18,6 +18,7 @@
 #include <jxl/jxl_export.h>
 #include <jxl/memory_manager.h>
 #include <jxl/parallel_runner.h>
+#include <jxl/stats.h>
 #include <jxl/version.h>
 
 #if defined(__cplusplus) || defined(c_plusplus)
@@ -1151,6 +1152,57 @@ JXL_EXPORT void JxlColorEncodingSetToLinearSRGB(
  * @param enc encoder object.
  */
 JXL_EXPORT void JxlEncoderAllowExpertOptions(JxlEncoder* enc);
+
+/**
+ * Function type for @ref JxlEncoderSetDebugImageCallback.
+ *
+ * The callback may be called simultaneously by different threads when using a
+ * threaded parallel runner, on different debug images.
+ *
+ * @param opaque optional user data, as given to @ref
+ *   JxlEncoderSetDebugImageCallback.
+ * @param label label of debug image, can be used in filenames
+ * @param xsize width of debug image
+ * @param ysize height of debug image
+ * @param color color encoding of debug image
+ * @param pixels pixel data of debug image as big-endian 16-bit unsigned
+ *   samples. The memory is not owned by the user, and is only valid during the
+ *   time the callback is running.
+ */
+typedef void (*JxlDebugImageCallback)(void* opaque, const char* label,
+                                      size_t xsize, size_t ysize,
+                                      const JxlColorEncoding* color,
+                                      const uint16_t* pixels);
+
+/**
+ * Sets the given debug image callback that will be used by the encoder to
+ * output various debug images during encoding.
+ *
+ * This only has any effect if the encoder was compiled with the appropiate
+ * debug build flags.
+ *
+ * @param frame_settings set of options and metadata for this frame. Also
+ * includes reference to the encoder object.
+ * @param callback used to return the debug image
+ * @param opaque user supplied parameter to the image callback
+ */
+JXL_EXPORT void JxlEncoderSetDebugImageCallback(
+    JxlEncoderFrameSettings* frame_settings, JxlDebugImageCallback callback,
+    void* opaque);
+
+/**
+ * Sets the given stats object for gathering various statistics during encoding.
+ *
+ * This only has any effect if the encoder was compiled with the appropiate
+ * debug build flags.
+ *
+ * @param frame_settings set of options and metadata for this frame. Also
+ * includes reference to the encoder object.
+ * @param stats object that can be used to query the gathered stats (created
+ *   by @ref JxlEncoderStatsCreate)
+ */
+JXL_EXPORT void JxlEncoderCollectStats(JxlEncoderFrameSettings* frame_settings,
+                                       JxlEncoderStats* stats);
 
 #if defined(__cplusplus) || defined(c_plusplus)
 }

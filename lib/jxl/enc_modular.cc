@@ -43,7 +43,7 @@
 namespace jxl {
 
 namespace {
-constexpr bool kPrintTree = false;
+// constexpr bool kPrintTree = false;
 
 // Squeeze default quantization factors
 // these quantization factors are for -Q 50  (other qualities simply scale the
@@ -1083,6 +1083,7 @@ Status ModularFrameEncoder::PrepareEncoding(const FrameHeader& frame_header,
   JXL_ASSERT(tree_.size() == decoded_tree.size());
   tree_ = std::move(decoded_tree);
 
+  /* TODO(szabadka) Add text output callback to cparams
   if (kPrintTree && WantDebugOutput(aux_out)) {
     if (frame_header.dc_level > 0) {
       PrintTree(tree_, aux_out->debug_prefix + "/dc_frame_level" +
@@ -1090,17 +1091,13 @@ Status ModularFrameEncoder::PrepareEncoding(const FrameHeader& frame_header,
     } else {
       PrintTree(tree_, aux_out->debug_prefix + "/global_tree");
     }
-  }
+  } */
 
   image_widths_.resize(num_streams);
   JXL_RETURN_IF_ERROR(RunOnPool(
       pool, 0, num_streams, ThreadPool::NoInit,
       [&](const uint32_t stream_id, size_t /* thread */) {
         AuxOut my_aux_out;
-        if (aux_out) {
-          my_aux_out.dump_image = aux_out->dump_image;
-          my_aux_out.debug_prefix = aux_out->debug_prefix;
-        }
         tokens_[stream_id].clear();
         JXL_CHECK(ModularGenericCompress(
             stream_images_[stream_id], stream_options_[stream_id],

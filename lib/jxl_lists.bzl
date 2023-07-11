@@ -327,6 +327,8 @@ libjxl_enc_sources = [
     "jxl/enc_comparator.h",
     "jxl/enc_context_map.cc",
     "jxl/enc_context_map.h",
+    "jxl/enc_debug_image.cc",
+    "jxl/enc_debug_image.h",
     "jxl/enc_detect_dots.cc",
     "jxl/enc_detect_dots.h",
     "jxl/enc_dot_dictionary.cc",
@@ -551,6 +553,7 @@ libjxl_public_headers = [
     "include/jxl/encode_cxx.h",
     "include/jxl/memory_manager.h",
     "include/jxl/parallel_runner.h",
+    "include/jxl/stats.h",
     "include/jxl/types.h",
 ]
 
