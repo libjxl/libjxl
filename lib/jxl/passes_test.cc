@@ -44,6 +44,7 @@ TEST(PassesTest, RoundtripSmallPasses) {
   CompressParams cparams;
   cparams.butteraugli_distance = 1.0;
   cparams.progressive_mode = true;
+  cparams.SetCms(GetJxlCms());
 
   CodecInOut io2;
   JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _));
@@ -63,6 +64,7 @@ TEST(PassesTest, RoundtripUnalignedPasses) {
   CompressParams cparams;
   cparams.butteraugli_distance = 2.0;
   cparams.progressive_mode = true;
+  cparams.SetCms(GetJxlCms());
 
   CodecInOut io2;
   JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _));
@@ -86,6 +88,7 @@ TEST(PassesTest, RoundtripMultiGroupPasses) {
     CompressParams cparams;
     cparams.butteraugli_distance = target_distance;
     cparams.progressive_mode = true;
+    cparams.SetCms(GetJxlCms());
     CodecInOut io2;
     JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _,
                             /* compressed_size */ nullptr, &pool));
@@ -108,10 +111,11 @@ TEST(PassesTest, RoundtripLargeFastPasses) {
   CompressParams cparams;
   cparams.speed_tier = SpeedTier::kSquirrel;
   cparams.progressive_mode = true;
+  cparams.SetCms(GetJxlCms());
 
   CodecInOut io2;
   JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _,
-                          /* comrpessed_size */ nullptr, &pool));
+                          /* compressed_size */ nullptr, &pool));
 }
 
 // Checks for differing size/distance in two consecutive runs of distance 2,
@@ -127,6 +131,7 @@ TEST(PassesTest, RoundtripProgressiveConsistent) {
   cparams.speed_tier = SpeedTier::kSquirrel;
   cparams.progressive_mode = true;
   cparams.butteraugli_distance = 2.0;
+  cparams.SetCms(GetJxlCms());
 
   // Try each xsize mod kBlockDim to verify right border handling.
   for (size_t xsize = 48; xsize > 40; --xsize) {
@@ -389,6 +394,7 @@ TEST(PassesTest, RoundtripSmallNoGaborishPasses) {
   cparams.gaborish = Override::kOff;
   cparams.butteraugli_distance = 1.0;
   cparams.progressive_mode = true;
+  cparams.SetCms(GetJxlCms());
 
   CodecInOut io2;
   JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _));

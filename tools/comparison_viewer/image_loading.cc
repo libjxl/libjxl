@@ -75,17 +75,18 @@ QImage loadImage(const QString& filename, const QByteArray& targetIccProfile,
   decoded.metadata.m.SetIntensityTarget(intensityTarget);
   const ImageBundle& ib = decoded.Main();
 
+  const JxlCmsInterface& cms = jxl::GetJxlCms();
+
   ColorEncoding targetColorSpace;
   PaddedBytes icc;
   icc.assign(reinterpret_cast<const uint8_t*>(targetIccProfile.data()),
              reinterpret_cast<const uint8_t*>(targetIccProfile.data() +
                                               targetIccProfile.size()));
-  if (!targetColorSpace.SetICC(std::move(icc))) {
+  if (!targetColorSpace.SetICC(std::move(icc), &cms)) {
     targetColorSpace = ColorEncoding::SRGB(ib.IsGray());
   }
   Image3F converted;
-  if (!ib.CopyTo(Rect(ib), targetColorSpace, jxl::GetJxlCms(), &converted,
-                 &pool)) {
+  if (!ib.CopyTo(Rect(ib), targetColorSpace, cms, &converted, &pool)) {
     return QImage();
   }
 

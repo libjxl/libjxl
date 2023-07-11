@@ -107,6 +107,13 @@ struct CompressParams {
   // Default: on for lossless, off for lossy
   Override keep_invisible = Override::kDefault;
 
+  JxlCmsInterface cms;
+  bool cms_set = false;
+  void SetCms(const JxlCmsInterface& cms) {
+    this->cms = cms;
+    cms_set = true;
+  }
+
   // Force usage of CfL when doing JPEG recompression. This can have unexpected
   // effects on the decoded pixels, while still being JPEG-compliant and
   // allowing reconstruction of the original JPEG.

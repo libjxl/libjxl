@@ -806,6 +806,7 @@ TEST(JxlTest, RoundtripAlphaPremultiplied) {
 
   CompressParams cparams;
   cparams.butteraugli_distance = 1.0;
+  cparams.SetCms(GetJxlCms());
 
   EXPECT_FALSE(io.Main().AlphaIsPremultiplied());
   EXPECT_TRUE(PremultiplyAlpha(io));

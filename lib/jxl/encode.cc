@@ -695,7 +695,8 @@ JxlEncoderStatus JxlEncoderSetICCProfile(JxlEncoder* enc,
   }
   jxl::PaddedBytes icc;
   icc.assign(icc_profile, icc_profile + size);
-  if (!enc->metadata.m.color_encoding.SetICC(std::move(icc))) {
+  if (!enc->metadata.m.color_encoding.SetICC(
+          std::move(icc), enc->cms_set ? &enc->cms : nullptr)) {
     return JXL_API_ERROR(enc, JXL_ENC_ERR_BAD_INPUT,
                          "ICC profile could not be set");
   }
@@ -718,8 +719,8 @@ JxlEncoderStatus JxlEncoderSetICCProfile(JxlEncoder* enc,
     jxl::SetIntensityTarget(&enc->metadata.m);
   }
 
-  if (!enc->basic_info.uses_original_profile) {
-    enc->metadata.m.color_encoding.DecideIfWantICC();
+  if (!enc->basic_info.uses_original_profile && enc->cms_set) {
+    enc->metadata.m.color_encoding.DecideIfWantICC(enc->cms);
   }
 
   return JXL_ENC_SUCCESS;
@@ -1396,6 +1397,7 @@ JxlEncoder* JxlEncoderCreate(const JxlMemoryManager* memory_manager) {
   enc->memory_manager = local_memory_manager;
   // TODO(sboukortt): add an API function to set this.
   enc->cms = jxl::GetJxlCms();
+  enc->cms_set = true;
 
   // Initialize all the field values.
   JxlEncoderReset(enc);
@@ -1478,6 +1480,7 @@ int JxlEncoderGetRequiredCodestreamLevel(const JxlEncoder* enc) {
 void JxlEncoderSetCms(JxlEncoder* enc, JxlCmsInterface cms) {
   jxl::msan::MemoryIsInitialized(&cms, sizeof(cms));
   enc->cms = cms;
+  enc->cms_set = true;
 }
 
 JxlEncoderStatus JxlEncoderSetParallelRunner(JxlEncoder* enc,

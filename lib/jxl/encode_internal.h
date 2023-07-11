@@ -202,6 +202,7 @@ struct JxlEncoderStruct {
   jxl::MemoryManagerUniquePtr<jxl::ThreadPool> thread_pool{
       nullptr, jxl::MemoryManagerDeleteHelper(&memory_manager)};
   JxlCmsInterface cms;
+  bool cms_set;
   std::vector<jxl::MemoryManagerUniquePtr<JxlEncoderFrameSettings>>
       encoder_options;
 
