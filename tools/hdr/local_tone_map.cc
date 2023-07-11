@@ -324,7 +324,7 @@ Image3F ReconstructFromLaplacianPyramid(std::vector<Image3F> pyramid,
 //
 //   laplacian_pyramid[i] = gaussian_pyramid[i] − gaussian_pyramid[i + 1].
 //   (The last item of the Laplacian pyramid is just the last one from the
-//    Gaussian pyramid without substraction.)
+//    Gaussian pyramid without subtraction.)
 //
 // From there, the original image can be reconstructed by adding all the images
 // from the Laplacian pyramid together. (If desired, the Gaussian pyramid can be

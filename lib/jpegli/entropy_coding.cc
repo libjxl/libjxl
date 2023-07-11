@@ -638,7 +638,7 @@ void CopyHuffmanTable(j_compress_ptr cinfo, int index, bool is_dc,
   if (index < 0 || index >= NUM_HUFF_TBLS) {
     JPEGLI_ERROR("Invalid %s Huffman table index %d", type, index);
   }
-  // Check if we have alreay copied this Huffman table.
+  // Check if we have already copied this Huffman table.
   int slot_idx = index + (is_dc ? 0 : NUM_HUFF_TBLS);
   if (inv_slot_map[slot_idx] != -1) {
     return;

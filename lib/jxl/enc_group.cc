@@ -46,7 +46,7 @@ void QuantizeBlockAC(const Quantizer& quantizer, const bool error_diffusion,
                      int32_t* JXL_RESTRICT block_out) {
   const float* JXL_RESTRICT qm = quantizer.InvDequantMatrix(quant_kind, c);
   float qac = quantizer.Scale() * (*quant);
-  // Not SIMD-fied for now.
+  // Not SIMD-ified for now.
   if (c != 1 && (xsize > 1 || ysize > 1)) {
     for (int i = 0; i < 4; ++i) {
       thresholds[i] -= Clamp1(0.003f * xsize * ysize, 0.f, 0.08f);
