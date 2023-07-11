@@ -340,7 +340,7 @@ typedef enum {
    (mainly for testing)
    * 1 = can buffer internal data (the tokens)
    * 2 = can buffer the output
-   * 3 = minimize buffer usage: streamed input and streamed output, writing TOC
+   * 3 = minimize buffer usage: streamed input and chunked output, writing TOC
    last (will not work with progressive)
 
    When the image dimensions is smaller than 2048 x 2048 all the options are the
