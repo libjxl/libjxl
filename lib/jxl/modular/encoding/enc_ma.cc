@@ -32,6 +32,7 @@ namespace HWY_NAMESPACE {
 using hwy::HWY_NAMESPACE::Eq;
 using hwy::HWY_NAMESPACE::IfThenElse;
 using hwy::HWY_NAMESPACE::Lt;
+using hwy::HWY_NAMESPACE::Max;
 
 const HWY_FULL(float) df;
 const HWY_FULL(int32_t) di;
