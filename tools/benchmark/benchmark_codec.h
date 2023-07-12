@@ -61,6 +61,8 @@ class ImageCodec {
 
   virtual void GetMoreStats(BenchmarkStats* stats) {}
 
+  virtual bool IgnoreAlpha() const { return false; }
+
   virtual Status CanRecompressJpeg() const { return false; }
   virtual Status RecompressJpeg(const std::string& filename,
                                 const std::vector<uint8_t>& data,
