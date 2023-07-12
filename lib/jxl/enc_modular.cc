@@ -362,7 +362,9 @@ ModularFrameEncoder::ModularFrameEncoder(const FrameHeader& frame_header,
       // Same, but for the non-Squeeze case.
       prop_order = {0, 1, 15, 9, 10, 11, 12, 13, 14, 2, 3, 4, 5, 6, 7, 8};
       // if few groups, don't use group as a property
-      if (num_streams < 30) prop_order.erase(prop_order.begin() + 1);
+      if (num_streams < 30 && cparams_.speed_tier > SpeedTier::kTortoise) {
+        prop_order.erase(prop_order.begin() + 1);
+      }
     }
     switch (cparams_.speed_tier) {
       case SpeedTier::kHare:
