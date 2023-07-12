@@ -1278,6 +1278,13 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetOption(
     case JXL_ENC_FRAME_SETTING_JPEG_COMPRESS_BOXES:
       frame_settings->values.cparams.jpeg_compress_boxes = value;
       return JXL_ENC_SUCCESS;
+    case JXL_ENC_FRAME_SETTING_BUFFERING:
+      if (value < 0 || value > 3) {
+        return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_NOT_SUPPORTED,
+                             "Buffering has to be in [0..3]");
+      }
+      return JXL_ENC_SUCCESS;
+
     default:
       return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_NOT_SUPPORTED,
                            "Unknown option");
@@ -1367,6 +1374,7 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetFloatOption(
     case JXL_ENC_FRAME_SETTING_BROTLI_EFFORT:
     case JXL_ENC_FRAME_SETTING_FILL_ENUM:
     case JXL_ENC_FRAME_SETTING_JPEG_COMPRESS_BOXES:
+    case JXL_ENC_FRAME_SETTING_BUFFERING:
       return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_NOT_SUPPORTED,
                            "Int option, try setting it with "
                            "JxlEncoderFrameSettingsSetOption");

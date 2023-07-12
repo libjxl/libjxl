@@ -336,6 +336,19 @@ typedef enum {
    */
   JXL_ENC_FRAME_SETTING_JPEG_COMPRESS_BOXES = 33,
 
+  /** Control what kind of buffering is used, when using chunked image frames.
+   * 0 = buffers everything, basically the same as non-streamed code path
+   (mainly for testing)
+   * 1 = can buffer internal data (the tokens)
+   * 2 = can buffer the output
+   * 3 = minimize buffer usage: streamed input and chunked output, writing TOC
+   last (will not work with progressive)
+
+   When the image dimensions is smaller than 2048 x 2048 all the options are the
+   same. Using 1, 2 or 3 can result increasingly in less compression density.
+   */
+  JXL_ENC_FRAME_SETTING_BUFFERING = 34,
+
   /** Enum value not to be used as an option. This value is added to force the
    * C compiler to have the enum to take a known size.
    */
@@ -630,6 +643,49 @@ JxlEncoderAddJPEGFrame(const JxlEncoderFrameSettings* frame_settings,
 JXL_EXPORT JxlEncoderStatus JxlEncoderAddImageFrame(
     const JxlEncoderFrameSettings* frame_settings,
     const JxlPixelFormat* pixel_format, const void* buffer, size_t size);
+
+/**
+ * TODO(firsching): add documentation
+ *
+ */
+typedef void (*JxlEncoderOutputCallback)(void* run_opaque, size_t pos,
+                                         size_t num_bytes);
+
+/**
+ * TODO(firsching): add documentation
+ *
+ */
+JXL_EXPORT JxlEncoderStatus
+JxlEncoderSetOutputCallback(JxlEncoderOutputCallback callback);
+
+/**
+ * TODO(firsching): add documentation
+ *
+ * @param frame_settings
+ * @return JXL_ENC_SUCCESS on success, JXL_ENC_ERROR on error
+ */
+JXL_EXPORT JxlEncoderStatus
+JxlEncoderChunkedImageFrameStart(const JxlEncoderFrameSettings* frame_settings);
+
+/**
+ * TODO(firsching): add documentation
+ * We process exactly one 2048x2048 DC-group.
+ *
+ * @param frame_settings
+ * @param x horizontal position of the top-left corner of the processed group.
+ * Must be divisible by 2048.
+ * @param y vertical position of the top-left corner of the processed group.
+ * Must be divisible by 2048.
+ * @param pixel_format for pixels. Object owned by the caller and its contents
+ * are copied internally.
+ * @param input_data the input buffer.
+ * @param input_size size of the input data in bytes.
+ * @return JXL_EXPORT
+ */
+JXL_EXPORT JxlEncoderStatus JxlEncoderChunkedImageFrameAddPart(
+    const JxlEncoderFrameSettings* frame_settings, size_t x, size_t y,
+    const JxlPixelFormat* pixel_format, const void* input_data,
+    size_t input_size);
 
 /**
  * Sets the buffer to read pixels from for an extra channel at a given index.
