@@ -733,9 +733,9 @@ std::vector<int32_t> QuantizeHistogram(const std::vector<uint32_t> &histogram,
   // TODO(veluca): selecting distinct quantiles is likely not the best
   // way to go about this.
   std::vector<int32_t> thresholds;
-  size_t sum = std::accumulate(histogram.begin(), histogram.end(), 0LU);
-  size_t cumsum = 0;
-  size_t threshold = 1;
+  uint64_t sum = std::accumulate(histogram.begin(), histogram.end(), 0LU);
+  uint64_t cumsum = 0;
+  uint64_t threshold = 1;
   for (size_t i = 0; i + 1 < histogram.size(); i++) {
     cumsum += histogram[i];
     if (cumsum >= threshold * sum / num_chunks) {
