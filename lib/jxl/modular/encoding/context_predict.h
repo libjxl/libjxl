@@ -589,6 +589,18 @@ inline PredictionResult PredictTreeWP(Properties *p, size_t w,
       p, w, pp, onerow, x, y, Predictor::Zero, &tree_lookup, &references,
       wp_state, /*predictions=*/nullptr);
 }
+inline PredictionResult PredictTreeWPNEC(Properties *p, size_t w,
+                                         const pixel_type *JXL_RESTRICT pp,
+                                         const intptr_t onerow, const int x,
+                                         const int y,
+                                         const MATreeLookup &tree_lookup,
+                                         const Channel &references,
+                                         weighted::State *wp_state) {
+  return detail::Predict<detail::kUseTree | detail::kUseWP |
+                         detail::kNoEdgeCases>(
+      p, w, pp, onerow, x, y, Predictor::Zero, &tree_lookup, &references,
+      wp_state, /*predictions=*/nullptr);
+}
 
 inline PredictionResult PredictLearn(Properties *p, size_t w,
                                      const pixel_type *JXL_RESTRICT pp,
@@ -609,6 +621,29 @@ inline void PredictLearnAll(Properties *p, size_t w,
                             pixel_type_w *predictions) {
   detail::Predict<detail::kForceComputeProperties | detail::kUseWP |
                   detail::kAllPredictions>(
+      p, w, pp, onerow, x, y, Predictor::Zero,
+      /*lookup=*/nullptr, &references, wp_state, predictions);
+}
+inline PredictionResult PredictLearnNEC(Properties *p, size_t w,
+                                        const pixel_type *JXL_RESTRICT pp,
+                                        const intptr_t onerow, const int x,
+                                        const int y, Predictor predictor,
+                                        const Channel &references,
+                                        weighted::State *wp_state) {
+  return detail::Predict<detail::kForceComputeProperties | detail::kUseWP |
+                         detail::kNoEdgeCases>(
+      p, w, pp, onerow, x, y, predictor, /*lookup=*/nullptr, &references,
+      wp_state, /*predictions=*/nullptr);
+}
+
+inline void PredictLearnAllNEC(Properties *p, size_t w,
+                               const pixel_type *JXL_RESTRICT pp,
+                               const intptr_t onerow, const int x, const int y,
+                               const Channel &references,
+                               weighted::State *wp_state,
+                               pixel_type_w *predictions) {
+  detail::Predict<detail::kForceComputeProperties | detail::kUseWP |
+                  detail::kAllPredictions | detail::kNoEdgeCases>(
       p, w, pp, onerow, x, y, Predictor::Zero,
       /*lookup=*/nullptr, &references, wp_state, predictions);
 }

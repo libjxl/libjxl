@@ -348,11 +348,9 @@ ModularFrameEncoder::ModularFrameEncoder(const FrameHeader& frame_header,
     }
   }
 
-  if (cparams_.speed_tier > SpeedTier::kWombat) {
-    cparams_.options.splitting_heuristics_node_threshold = 192;
-  } else {
-    cparams_.options.splitting_heuristics_node_threshold = 96;
-  }
+  cparams_.options.splitting_heuristics_node_threshold =
+      82 + 14 * static_cast<int>(cparams_.speed_tier);
+
   {
     // Set properties.
     std::vector<uint32_t> prop_order;
@@ -363,17 +361,31 @@ ModularFrameEncoder::ModularFrameEncoder(const FrameHeader& frame_header,
     } else {
       // Same, but for the non-Squeeze case.
       prop_order = {0, 1, 15, 9, 10, 11, 12, 13, 14, 2, 3, 4, 5, 6, 7, 8};
+      // if few groups, don't use group as a property
+      if (num_streams < 30 && cparams_.speed_tier > SpeedTier::kTortoise) {
+        prop_order.erase(prop_order.begin() + 1);
+      }
     }
     switch (cparams_.speed_tier) {
+      case SpeedTier::kHare:
+        cparams_.options.splitting_heuristics_properties.assign(
+            prop_order.begin(), prop_order.begin() + 4);
+        cparams_.options.max_property_values = 24;
+        break;
+      case SpeedTier::kWombat:
+        cparams_.options.splitting_heuristics_properties.assign(
+            prop_order.begin(), prop_order.begin() + 5);
+        cparams_.options.max_property_values = 32;
+        break;
       case SpeedTier::kSquirrel:
         cparams_.options.splitting_heuristics_properties.assign(
-            prop_order.begin(), prop_order.begin() + 8);
-        cparams_.options.max_property_values = 32;
+            prop_order.begin(), prop_order.begin() + 7);
+        cparams_.options.max_property_values = 48;
         break;
       case SpeedTier::kKitten:
         cparams_.options.splitting_heuristics_properties.assign(
             prop_order.begin(), prop_order.begin() + 10);
-        cparams_.options.max_property_values = 64;
+        cparams_.options.max_property_values = 96;
         break;
       case SpeedTier::kTortoise:
         cparams_.options.splitting_heuristics_properties = prop_order;
@@ -381,7 +393,7 @@ ModularFrameEncoder::ModularFrameEncoder(const FrameHeader& frame_header,
         break;
       default:
         cparams_.options.splitting_heuristics_properties.assign(
-            prop_order.begin(), prop_order.begin() + 6);
+            prop_order.begin(), prop_order.begin() + 3);
         cparams_.options.max_property_values = 16;
         break;
     }
