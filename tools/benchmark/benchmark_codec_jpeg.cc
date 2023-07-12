@@ -162,6 +162,8 @@ class JPEGCodec : public ImageCodec {
     return false;
   }
 
+  bool IgnoreAlpha() const override { return true; }
+
   Status Compress(const std::string& filename, const CodecInOut* io,
                   ThreadPool* pool, std::vector<uint8_t>* compressed,
                   jpegxl::tools::SpeedStats* speed_stats) override {
@@ -208,17 +210,17 @@ class JPEGCodec : public ImageCodec {
 #endif
     }
 
+    jxl::extras::PackedPixelFile ppf;
+    size_t bits_per_sample = io->metadata.m.bit_depth.bits_per_sample;
+    JxlPixelFormat format = {
+        0,  // num_channels is ignored by the converter
+        bits_per_sample <= 8 ? JXL_TYPE_UINT8 : JXL_TYPE_UINT16, JXL_BIG_ENDIAN,
+        0};
+    JXL_RETURN_IF_ERROR(ConvertCodecInOutToPackedPixelFile(
+        *io, format, io->metadata.m.color_encoding, pool, &ppf));
     double elapsed = 0.0;
     if (jpeg_encoder_ == "jpegli") {
 #if JPEGXL_ENABLE_JPEGLI
-      jxl::extras::PackedPixelFile ppf;
-      size_t bits_per_sample = io->metadata.m.bit_depth.bits_per_sample;
-      JxlPixelFormat format = {
-          0,  // num_channels is ignored by the converter
-          bits_per_sample <= 8 ? JXL_TYPE_UINT8 : JXL_TYPE_UINT16,
-          JXL_BIG_ENDIAN, 0};
-      JXL_RETURN_IF_ERROR(ConvertCodecInOutToPackedPixelFile(
-          *io, format, io->metadata.m.color_encoding, pool, &ppf));
       jxl::extras::JpegSettings settings;
       settings.xyb = xyb_mode_;
       if (!xyb_mode_) {
@@ -256,10 +258,6 @@ class JPEGCodec : public ImageCodec {
       elapsed = end - start;
 #endif
     } else {
-      jxl::extras::PackedPixelFile ppf;
-      JxlPixelFormat format = {0, JXL_TYPE_UINT8, JXL_BIG_ENDIAN, 0};
-      JXL_RETURN_IF_ERROR(jxl::extras::ConvertCodecInOutToPackedPixelFile(
-          *io, format, io->metadata.m.color_encoding, pool, &ppf));
       jxl::extras::EncodedImage encoded;
       std::unique_ptr<jxl::extras::Encoder> encoder =
           jxl::extras::GetJPEGEncoder();

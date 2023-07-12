@@ -29,9 +29,6 @@ void MyErrorExit(j_common_ptr cinfo) {
 Status VerifyInput(const PackedPixelFile& ppf) {
   const JxlBasicInfo& info = ppf.info;
   JXL_RETURN_IF_ERROR(Encoder::VerifyBasicInfo(info));
-  if (info.alpha_bits > 0) {
-    return JXL_FAILURE("Alpha is not supported for JPEG output.");
-  }
   if (ppf.frames.size() != 1) {
     return JXL_FAILURE("JPEG input must have exactly one frame.");
   }
@@ -491,10 +488,25 @@ Status EncodeJpeg(const PackedPixelFile& ppf, const JpegSettings& jpeg_settings,
       }
     } else {
       row_bytes.resize(image.stride);
-      for (size_t y = 0; y < info.ysize; ++y) {
-        memcpy(&row_bytes[0], pixels + y * image.stride, image.stride);
-        JSAMPROW row[] = {row_bytes.data()};
-        jpegli_write_scanlines(&cinfo, row, 1);
+      if (cinfo.num_components == (int)image.format.num_channels) {
+        for (size_t y = 0; y < info.ysize; ++y) {
+          memcpy(&row_bytes[0], pixels + y * image.stride, image.stride);
+          JSAMPROW row[] = {row_bytes.data()};
+          jpegli_write_scanlines(&cinfo, row, 1);
+        }
+      } else {
+        for (size_t y = 0; y < info.ysize; ++y) {
+          int bytes_per_channel =
+              PackedImage::BitsPerChannel(image.format.data_type) / 8;
+          int bytes_per_pixel = cinfo.num_components * bytes_per_channel;
+          for (size_t x = 0; x < info.xsize; ++x) {
+            memcpy(&row_bytes[x * bytes_per_pixel],
+                   &pixels[y * image.stride + x * image.pixel_stride()],
+                   bytes_per_pixel);
+          }
+          JSAMPROW row[] = {row_bytes.data()};
+          jpegli_write_scanlines(&cinfo, row, 1);
+        }
       }
     }
     jpegli_finish_compress(&cinfo);

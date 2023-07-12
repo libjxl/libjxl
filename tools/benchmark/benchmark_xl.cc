@@ -241,8 +241,9 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
         if (fabs(params.intensity_target - 255.0f) < 1e-3) {
           params.intensity_target = 80.0;
         }
-        distance = ButteraugliDistance(ib1, ib2, params, jxl::GetJxlCms(),
-                                       &distmap, inner_pool);
+        distance =
+            ButteraugliDistance(ib1, ib2, params, jxl::GetJxlCms(), &distmap,
+                                inner_pool, codec->IgnoreAlpha());
       } else {
         // TODO(veluca): re-upsample and compute proper distance.
         distance = 1e+4f;
