@@ -90,7 +90,7 @@ TEST(ModularTest, RoundtripLosslessCustomWP_PermuteRCT) {
 
   size_t compressed_size;
   JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io_out, _, &compressed_size));
-  EXPECT_LE(compressed_size, 10150u);
+  EXPECT_LE(compressed_size, 10169u);
   JXL_EXPECT_OK(SamePixels(*io.Main().color(), *io_out.Main().color(), _));
 }
 

@@ -735,12 +735,12 @@ std::vector<int32_t> QuantizeHistogram(const std::vector<uint32_t> &histogram,
   std::vector<int32_t> thresholds;
   size_t sum = std::accumulate(histogram.begin(), histogram.end(), 0LU);
   size_t cumsum = 0;
-  size_t threshold = 0;
+  size_t threshold = 1;
   for (size_t i = 0; i + 1 < histogram.size(); i++) {
     cumsum += histogram[i];
-    if (cumsum > (threshold + 1) * sum / num_chunks) {
+    if (cumsum >= threshold * sum / num_chunks) {
       thresholds.push_back(i);
-      while (cumsum >= (threshold + 1) * sum / num_chunks) threshold++;
+      while (cumsum > threshold * sum / num_chunks) threshold++;
     }
   }
   return thresholds;
