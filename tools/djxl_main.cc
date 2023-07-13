@@ -147,11 +147,9 @@ struct DecompressArgs {
                            "No output file will be written (for benchmarking)",
                            &disable_output, &SetBooleanTrue, 2);
 
-#if JPEGXL_ENABLE_SJPEG
     cmdline->AddOptionFlag('\0', "use_sjpeg",
                            "Use sjpeg instead of libjpeg for JPEG output.",
                            &use_sjpeg, &SetBooleanTrue, 2);
-#endif
 
     cmdline->AddOptionFlag('\0', "norender_spotcolors",
                            "Disables rendering of spot colors.",
@@ -481,11 +479,9 @@ int main(int argc, const char* argv[]) {
       os << args.jpeg_quality;
       encoder->SetOption("q", os.str());
     }
-#if JPEGXL_ENABLE_SJPEG
     if (encoder && args.use_sjpeg) {
       encoder->SetOption("jpeg_encoder", "sjpeg");
     }
-#endif
     jxl::extras::EncodedImage encoded_image;
     if (encoder) {
       if (!args.quiet) cmdline.VerbosePrintf(2, "Encoding decoded image\n");
