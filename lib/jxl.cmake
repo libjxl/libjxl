@@ -222,7 +222,7 @@ if(JPEGXL_ENABLE_TCMALLOC)
 endif()  # JPEGXL_ENABLE_TCMALLOC
 
 if (NOT JPEGXL_ENABLE_SKCMS)
-  target_link_libraries(jxl-static PUBLIC lcms::lcms2)
+  target_link_libraries(jxl-static PUBLIC lcms2)
 endif()
 
 # Install the static library too, but as jxl.a file without the -static except
