@@ -407,13 +407,40 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
       pixel_type *JXL_RESTRICT p = channel.Row(y);
       InitPropsRow(&properties, static_props, y);
       PrecomputeReferences(channel, y, *image, chan, &references);
-      for (size_t x = 0; x < channel.w; x++) {
-        PredictionResult res =
-            PredictTreeWP(&properties, channel.w, p + x, onerow, x, y,
-                          tree_lookup, references, &wp_state);
-        uint64_t v = reader->ReadHybridUintClustered(res.context, br);
-        p[x] = make_pixel(v, res.multiplier, res.guess);
-        wp_state.UpdateErrors(p[x], x, y, channel.w);
+      if (y > 1 && channel.w > 8 && references.w == 0) {
+        for (size_t x = 0; x < 2; x++) {
+          PredictionResult res =
+              PredictTreeWP(&properties, channel.w, p + x, onerow, x, y,
+                            tree_lookup, references, &wp_state);
+          uint64_t v = reader->ReadHybridUintClustered(res.context, br);
+          p[x] = make_pixel(v, res.multiplier, res.guess);
+          wp_state.UpdateErrors(p[x], x, y, channel.w);
+        }
+        for (size_t x = 2; x < channel.w - 2; x++) {
+          PredictionResult res =
+              PredictTreeWPNEC(&properties, channel.w, p + x, onerow, x, y,
+                               tree_lookup, references, &wp_state);
+          uint64_t v = reader->ReadHybridUintClustered(res.context, br);
+          p[x] = make_pixel(v, res.multiplier, res.guess);
+          wp_state.UpdateErrors(p[x], x, y, channel.w);
+        }
+        for (size_t x = channel.w - 2; x < channel.w; x++) {
+          PredictionResult res =
+              PredictTreeWP(&properties, channel.w, p + x, onerow, x, y,
+                            tree_lookup, references, &wp_state);
+          uint64_t v = reader->ReadHybridUintClustered(res.context, br);
+          p[x] = make_pixel(v, res.multiplier, res.guess);
+          wp_state.UpdateErrors(p[x], x, y, channel.w);
+        }
+      } else {
+        for (size_t x = 0; x < channel.w; x++) {
+          PredictionResult res =
+              PredictTreeWP(&properties, channel.w, p + x, onerow, x, y,
+                            tree_lookup, references, &wp_state);
+          uint64_t v = reader->ReadHybridUintClustered(res.context, br);
+          p[x] = make_pixel(v, res.multiplier, res.guess);
+          wp_state.UpdateErrors(p[x], x, y, channel.w);
+        }
       }
     }
   }
