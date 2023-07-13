@@ -42,8 +42,6 @@ add_library(lcms2 STATIC EXCLUDE_FROM_ALL
   lcms/src/lcms2_internal.h
 )
 
-add_library(lcms::lcms2 ALIAS lcms2)
-
 target_include_directories(lcms2
     PUBLIC "${CMAKE_CURRENT_LIST_DIR}/lcms/include")
 # This warning triggers with gcc-8.
