@@ -346,8 +346,14 @@ class ANSSymbolReader {
         }
         // TODO(eustas): overflow; mark BitReader as unhealthy
         if (num_to_copy_ < lz77_min_length_) return 0;
-        return ReadHybridUintClustered<uses_lz77>(ctx,
-                                                  br);  // will trigger a copy.
+        // the code below is the same as doing this:
+        //        return ReadHybridUintClustered<uses_lz77>(ctx, br);
+        // but gcc doesn't like recursive inlining
+
+        size_t ret = lz77_window_[(copy_pos_++) & kWindowMask];
+        num_to_copy_--;
+        lz77_window_[(num_decoded_++) & kWindowMask] = ret;
+        return ret;
       }
     }
     size_t ret = ReadHybridUintConfig(configs[ctx], token, br);
