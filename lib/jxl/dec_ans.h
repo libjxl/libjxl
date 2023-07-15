@@ -301,8 +301,9 @@ class ANSSymbolReader {
     if (configs[lz77_ctx_].split_token > 1) return false;
     return true;
   }
+  bool UsesLZ77() { return lz77_window_ != nullptr; }
 
-  // Takes a *clustered* idx.
+  // Takes a *clustered* idx. Inlined, for use in hot paths.
   template <bool uses_lz77>
   JXL_INLINE size_t ReadHybridUintClustered(size_t ctx,
                                             BitReader* JXL_RESTRICT br) {
@@ -362,8 +363,9 @@ class ANSSymbolReader {
     return ret;
   }
 
-  JXL_INLINE size_t ReadHybridUint(size_t ctx, BitReader* JXL_RESTRICT br,
-                                   const std::vector<uint8_t>& context_map) {
+  // not inlined, for use in non-hot paths
+  size_t ReadHybridUint(size_t ctx, BitReader* JXL_RESTRICT br,
+                        const std::vector<uint8_t>& context_map) {
     return ReadHybridUintClustered<true>(context_map[ctx], br);
   }
 

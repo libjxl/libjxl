@@ -209,6 +209,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
           }
         }
       }
+      return true;
     } else if (uses_lz77 && predictor == Predictor::Gradient && offset == 0 &&
                multiplier == 1 && reader->HuffRleOnly()) {
       JXL_DEBUG_V(8, "Gradient RLE (fjxl) very fast track.");
@@ -242,6 +243,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
           r[x] = sv + guess;
         }
       }
+      return true;
     } else if (predictor == Predictor::Gradient && offset == 0 &&
                multiplier == 1) {
       JXL_DEBUG_V(8, "Gradient very fast track.");
@@ -257,39 +259,8 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
           r[x] = make_pixel(v, 1, guess);
         }
       }
-    } else if (predictor != Predictor::Weighted) {
-      // special optimized case: no wp
-      JXL_DEBUG_V(8, "Quite fast track.");
-      const intptr_t onerow = channel.plane.PixelsPerRow();
-      for (size_t y = 0; y < channel.h; y++) {
-        pixel_type *JXL_RESTRICT r = channel.Row(y);
-        for (size_t x = 0; x < channel.w; x++) {
-          PredictionResult pred =
-              PredictNoTreeNoWP(channel.w, r + x, onerow, x, y, predictor);
-          pixel_type_w g = pred.guess + offset;
-          uint64_t v = reader->ReadHybridUintClustered<uses_lz77>(ctx_id, br);
-          // NOTE: pred.multiplier is unset.
-          r[x] = make_pixel(v, multiplier, g);
-        }
-      }
-    } else {
-      JXL_DEBUG_V(8, "Somewhat fast track.");
-      const intptr_t onerow = channel.plane.PixelsPerRow();
-      weighted::State wp_state(wp_header, channel.w, channel.h);
-      for (size_t y = 0; y < channel.h; y++) {
-        pixel_type *JXL_RESTRICT r = channel.Row(y);
-        for (size_t x = 0; x < channel.w; x++) {
-          pixel_type_w g = PredictNoTreeWP(channel.w, r + x, onerow, x, y,
-                                           predictor, &wp_state)
-                               .guess +
-                           offset;
-          uint64_t v = reader->ReadHybridUintClustered<uses_lz77>(ctx_id, br);
-          r[x] = make_pixel(v, multiplier, g);
-          wp_state.UpdateErrors(r[x], x, y, channel.w);
-        }
-      }
+      return true;
     }
-    return true;
   }
 
   // Check if this tree is a WP-only tree with a small enough property value
@@ -327,7 +298,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
                           static_cast<pixel_type_w>(offsets[pos]) + guess);
       }
     }
-  } else if (is_wp_only) {
+  } else if (!uses_lz77 && is_wp_only) {
     JXL_DEBUG_V(8, "WP fast track.");
     const intptr_t onerow = channel.plane.PixelsPerRow();
     weighted::State wp_state(wp_header, channel.w, channel.h);
@@ -414,7 +385,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
       pixel_type *JXL_RESTRICT p = channel.Row(y);
       InitPropsRow(&properties, static_props, y);
       PrecomputeReferences(channel, y, *image, chan, &references);
-      if (y > 1 && channel.w > 8 && references.w == 0) {
+      if (!uses_lz77 && y > 1 && channel.w > 8 && references.w == 0) {
         for (size_t x = 0; x < 2; x++) {
           PredictionResult res =
               PredictTreeWP(&properties, channel.w, p + x, onerow, x, y,
@@ -589,12 +560,12 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
          channel.h > options->max_chan_size)) {
       break;
     }
-    if (code->lz77.enabled) {
-      JXL_RETURN_IF_ERROR(DecodeModularChannelMAANS<true>(
+    if (reader.UsesLZ77()) {
+      JXL_RETURN_IF_ERROR(DecodeModularChannelMAANS<1>(
           br, &reader, *context_map, *tree, header.wp_header, next_channel,
           group_id, &image));
     } else {
-      JXL_RETURN_IF_ERROR(DecodeModularChannelMAANS<false>(
+      JXL_RETURN_IF_ERROR(DecodeModularChannelMAANS<0>(
           br, &reader, *context_map, *tree, header.wp_header, next_channel,
           group_id, &image));
     }
