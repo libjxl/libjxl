@@ -561,11 +561,11 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
       break;
     }
     if (reader.UsesLZ77()) {
-      JXL_RETURN_IF_ERROR(DecodeModularChannelMAANS<1>(
+      JXL_RETURN_IF_ERROR(DecodeModularChannelMAANS</*uses_lz77=*/true>(
           br, &reader, *context_map, *tree, header.wp_header, next_channel,
           group_id, &image));
     } else {
-      JXL_RETURN_IF_ERROR(DecodeModularChannelMAANS<0>(
+      JXL_RETURN_IF_ERROR(DecodeModularChannelMAANS</*uses_lz77=*/false>(
           br, &reader, *context_map, *tree, header.wp_header, next_channel,
           group_id, &image));
     }

@@ -459,7 +459,7 @@ Status DecodeACVarBlock(size_t ctx_offset, size_t log2_covered_blocks,
       block_ctx_map.NonZeroContext(predicted_nzeros, block_ctx) + ctx_offset;
 
   size_t nzeros =
-      decoder->ReadHybridUintClustered<uses_lz77>(context_map[nzero_ctx], br);
+      decoder->ReadHybridUintInlined<uses_lz77>(nzero_ctx, br, context_map);
   if (nzeros + covered_blocks > size) {
     return JXL_FAILURE("Invalid AC: nzeros too large");
   }
@@ -479,7 +479,7 @@ Status DecodeACVarBlock(size_t ctx_offset, size_t log2_covered_blocks,
         histo_offset + ZeroDensityContext(nzeros, k, covered_blocks,
                                           log2_covered_blocks, prev);
     const size_t u_coeff =
-        decoder->ReadHybridUintClustered<uses_lz77>(context_map[ctx], br);
+        decoder->ReadHybridUintInlined<uses_lz77>(ctx, br, context_map);
     // Hand-rolled version of UnpackSigned, shifting before the conversion to
     // signed integer to avoid undefined behavior of shifting negative numbers.
     const size_t magnitude = u_coeff >> 1;

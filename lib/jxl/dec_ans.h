@@ -363,10 +363,18 @@ class ANSSymbolReader {
     return ret;
   }
 
+  // inlined, for use in hot paths
+  template <bool uses_lz77>
+  JXL_INLINE size_t
+  ReadHybridUintInlined(size_t ctx, BitReader* JXL_RESTRICT br,
+                        const std::vector<uint8_t>& context_map) {
+    return ReadHybridUintClustered<uses_lz77>(context_map[ctx], br);
+  }
+
   // not inlined, for use in non-hot paths
   size_t ReadHybridUint(size_t ctx, BitReader* JXL_RESTRICT br,
                         const std::vector<uint8_t>& context_map) {
-    return ReadHybridUintClustered<true>(context_map[ctx], br);
+    return ReadHybridUintClustered</*uses_lz77=*/true>(context_map[ctx], br);
   }
 
   // ctx is a *clustered* context!

@@ -66,7 +66,8 @@ Status DecodeContextMap(std::vector<uint8_t>* context_map, size_t* num_htrees,
     size_t i = 0;
     uint32_t maxsym = 0;
     while (i < context_map->size()) {
-      uint32_t sym = reader.ReadHybridUintClustered<1>(dummy_ctx_map[0], input);
+      uint32_t sym = reader.ReadHybridUintInlined</*uses_lz77=*/true>(
+          0, input, dummy_ctx_map);
       maxsym = sym > maxsym ? sym : maxsym;
       (*context_map)[i] = sym;
       i++;
