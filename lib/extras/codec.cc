@@ -61,7 +61,7 @@ Status Encode(const CodecInOut& io, const extras::Codec codec,
   switch (codec) {
     case extras::Codec::kPNG:
       encoder = extras::GetAPNGEncoder();
-      if (encoder.get()) {
+      if (encoder) {
         break;
       } else {
         return JXL_FAILURE("JPEG XL was built without (A)PNG support");
@@ -69,7 +69,7 @@ Status Encode(const CodecInOut& io, const extras::Codec codec,
     case extras::Codec::kJPG:
       format.data_type = JXL_TYPE_UINT8;
       encoder = extras::GetJPEGEncoder();
-      if (encoder.get()) {
+      if (encoder) {
         os << io.jpeg_quality;
         encoder->SetOption("q", os.str());
         break;
@@ -97,7 +97,7 @@ Status Encode(const CodecInOut& io, const extras::Codec codec,
     case extras::Codec::kEXR:
       format.data_type = JXL_TYPE_FLOAT;
       encoder = extras::GetEXREncoder();
-      if (encoder.get()) {
+      if (encoder) {
         break;
       } else {
         return JXL_FAILURE("JPEG XL was built without OpenEXR support");

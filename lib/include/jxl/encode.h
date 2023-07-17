@@ -1234,7 +1234,7 @@ typedef void (*JxlDebugImageCallback)(void* opaque, const char* label,
  * Sets the given debug image callback that will be used by the encoder to
  * output various debug images during encoding.
  *
- * This only has any effect if the encoder was compiled with the appropiate
+ * This only has any effect if the encoder was compiled with the appropriate
  * debug build flags.
  *
  * @param frame_settings set of options and metadata for this frame. Also
@@ -1249,7 +1249,7 @@ JXL_EXPORT void JxlEncoderSetDebugImageCallback(
 /**
  * Sets the given stats object for gathering various statistics during encoding.
  *
- * This only has any effect if the encoder was compiled with the appropiate
+ * This only has any effect if the encoder was compiled with the appropriate
  * debug build flags.
  *
  * @param frame_settings set of options and metadata for this frame. Also
