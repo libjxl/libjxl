@@ -47,11 +47,11 @@ void QuantizeBlockAC(const Quantizer& quantizer, const bool error_diffusion,
   const float* JXL_RESTRICT qm = quantizer.InvDequantMatrix(quant_kind, c);
   float qac = quantizer.Scale() * (*quant);
   // Not SIMD-ified for now.
-  if (c != 1 && (xsize > 1 || ysize > 1)) {
+  if (c != 1 && xsize * ysize >= 4) {
     for (int i = 0; i < 4; ++i) {
-      thresholds[i] -= Clamp1(0.003f * xsize * ysize, 0.f, 0.08f);
-      if (thresholds[i] < 0.54) {
-        thresholds[i] = 0.54;
+      thresholds[i] -= 0.00744f * xsize * ysize;
+      if (thresholds[i] < 0.5) {
+        thresholds[i] = 0.5;
       }
     }
   }
