@@ -780,6 +780,9 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
             break;
           }
         } else if (id == kId_fdAT && isAnimated) {
+          if (!hasInfo) {
+            return JXL_FAILURE("fDAT chunk before iDAT");
+          }
           png_save_uint_32(chunk.data() + 4, chunk.size() - 16);
           memcpy(chunk.data() + 8, "IDAT", 4);
           if (processing_data(png_ptr, info_ptr, chunk.data() + 4,
