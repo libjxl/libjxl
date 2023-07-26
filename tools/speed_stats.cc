@@ -85,10 +85,10 @@ std::string SummaryStat(double value, const char* unit,
   // Note flipped order: higher elapsed = lower mpps.
   const double value_min = value / s.max;
   const double value_max = value / s.min;
-  const double stdev = value / s.variability;
 
   char variability[20] = {'\0'};
   if (s.variability != 0.0) {
+    const double stdev = value / s.variability;
     snprintf(variability, sizeof(variability), " (stdev %.3f)", stdev);
   }
 
