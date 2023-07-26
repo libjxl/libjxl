@@ -21,7 +21,7 @@ jobs:
 
     steps:
       - name: 'Cloning libjxl'
-        uses: actions/checkout@v2
+        uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
         with:
           submodules: recursive
           persist-credentials: false # otherwise, the wrong auhtentication is used in the push
@@ -43,7 +43,7 @@ jobs:
           git commit -m "Update highway submodule" || echo "No changes to commit"
       
       - name: Push changes
-        uses: ad-m/github-push-action@master
+        uses: ad-m/github-push-action@40bf560936a8022e68a3c00e7d2abefaf01305a6 # v0.6.0
         with:
           github_token: ${{ secrets.TOKEN }}
           branch: 'refs/heads/test_highway'

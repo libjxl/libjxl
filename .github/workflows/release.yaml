@@ -59,7 +59,7 @@ jobs:
         echo "CXX=clang++" >> $GITHUB_ENV
 
     - name: Checkout the source
-      uses: actions/checkout@v2
+      uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
       with:
         submodules: true
         fetch-depth: 1
@@ -87,14 +87,14 @@ jobs:
           ${{ runner.workspace }}/jxl-linux-x86_64-static-${{ github.event.release.tag_name }}.tar.gz
 
     - name: Upload artifacts
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
       with:
         name: jxl-linux-x86_64-static
         path: ${{ runner.workspace }}/release_file.tar.gz
 
     - name: Upload binaries to release
       if: github.event_name == 'release'
-      uses: AButler/upload-release-assets@v2.0
+      uses: AButler/upload-release-assets@c94805dc72e4b20745f543da0f62eaee7722df7a # v2.0.2
       with:
         files: ${{ runner.workspace }}/jxl-linux-x86_64-static-${{ github.event.release.tag_name }}.tar.gz
         repo-token: ${{ secrets.GITHUB_TOKEN }}
@@ -179,7 +179,7 @@ jobs:
         git config --global --add safe.directory /__w/libjxl/libjxl
 
     - name: Checkout the source
-      uses: actions/checkout@v2
+      uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
       with:
         submodules: true
         fetch-depth: 1
@@ -254,7 +254,7 @@ jobs:
         ./ci.sh debian_stats
 
     - name: Upload artifacts
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
       with:
         name: ${{ steps.env.outputs.artifact_name }}
         path: |
@@ -270,7 +270,7 @@ jobs:
 
     - name: Upload binaries to release
       if: github.event_name == 'release'
-      uses: AButler/upload-release-assets@v2.0
+      uses: AButler/upload-release-assets@c94805dc72e4b20745f543da0f62eaee7722df7a # v2.0.2
       with:
         files: ${{ steps.env.outputs.artifact_name }}-${{ github.event.release.tag_name }}.tar.gz
         repo-token: ${{ secrets.GITHUB_TOKEN }}
@@ -295,12 +295,12 @@ jobs:
 
     steps:
     - name: Checkout the source
-      uses: actions/checkout@v2
+      uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
       with:
         submodules: true
         fetch-depth: 2
 
-    - uses: actions/cache@v2
+    - uses: actions/cache@88522ab9f39a2ea568f7027eddc7d8d8bc9d59c8 # v3.3.1
       id: cache-vcpkg
       with:
         path: vcpkg
@@ -374,7 +374,7 @@ jobs:
         cp third_party/brotli/LICENSE prefix/bin/LICENSE.brotli
         cp LICENSE prefix/bin/LICENSE.libjxl
     - name: Upload artifacts
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
       with:
         name: jxl-${{matrix.triplet}}
         path: |
@@ -389,7 +389,7 @@ jobs:
 
     - name: Upload binaries to release
       if: github.event_name == 'release'
-      uses: AButler/upload-release-assets@v2.0
+      uses: AButler/upload-release-assets@c94805dc72e4b20745f543da0f62eaee7722df7a # v2.0.2
       with:
         files: jxl-${{matrix.triplet}}.zip
         repo-token: ${{ secrets.GITHUB_TOKEN }}

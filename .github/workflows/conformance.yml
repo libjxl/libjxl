@@ -34,14 +34,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout the conformance source
-      uses: actions/checkout@v2
+      uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
       with:
         repository: libjxl/conformance
         # TODO(eustas): move ref to a global variable / file?
         ref: b2be0d8dcba40cc4a53fb4a15b78f59636192892
         path: conformance
     - name: Cache
-      uses: actions/cache@v2
+      uses: actions/cache@88522ab9f39a2ea568f7027eddc7d8d8bc9d59c8 # v3.3.1
       with:
         path: ${{ github.workspace }}/conformance/.objects
         key: conformance-refs
@@ -103,7 +103,7 @@ jobs:
         echo "CC=clang" >> $GITHUB_ENV
         echo "CXX=clang++" >> $GITHUB_ENV
     - name: Checkout the jxl source
-      uses: actions/checkout@v2
+      uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
       with:
         submodules: true
         fetch-depth: 2
@@ -113,7 +113,7 @@ jobs:
         echo "::set-output name=parent::$(git rev-parse ${{ github.sha }}^)"
       shell: bash
     - name: ccache
-      uses: actions/cache@v2
+      uses: actions/cache@88522ab9f39a2ea568f7027eddc7d8d8bc9d59c8 # v3.3.1
       with:
         path: ${{ env.CCACHE_DIR }}
         # When the cache hits the key it is not updated, so if this is a rebuild
@@ -142,7 +142,7 @@ jobs:
         cp build/libjxl_extras_codec.so.${{ env.LIBJXL_VERSION }} build/tools/conformance
       env:
         SKIP_TEST: 1
-    - uses: actions/upload-artifact@v2
+    - uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
       with:
         name: conformance_binary-${{ matrix.name }}
         path: |
@@ -169,20 +169,20 @@ jobs:
       run: |
         pip install numpy
     - name: Checkout the conformance source
-      uses: actions/checkout@v2
+      uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
       with:
         repository: libjxl/conformance
         ref: b2be0d8dcba40cc4a53fb4a15b78f59636192892
         path: conformance
     - name: Cache
-      uses: actions/cache@v2
+      uses: actions/cache@88522ab9f39a2ea568f7027eddc7d8d8bc9d59c8 # v3.3.1
       with:
         path: ${{ github.workspace }}/conformance/.objects
         key: conformance-refs
     - name: Download and link conformance files
       run: |
         ${{ github.workspace }}/conformance/scripts/download_and_symlink.sh
-    - uses: actions/download-artifact@v2
+    - uses: actions/download-artifact@9bc31d5ccc31df68ecc42ccf4149144866c47d8a # v3.0.2
       with:
         name: conformance_binary-${{ matrix.target }}
     - name: Run conformance tests

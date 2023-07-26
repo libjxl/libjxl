@@ -143,7 +143,7 @@ jobs:
         echo "CC=${{ matrix.cc || 'clang' }}" >> $GITHUB_ENV
         echo "CXX=${{ matrix.cxx || 'clang++' }}" >> $GITHUB_ENV
     - name: Checkout the source
-      uses: actions/checkout@v2
+      uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
       with:
         submodules: true
         fetch-depth: 2
@@ -156,13 +156,13 @@ jobs:
         echo "LLVM_ROOT=${LLVM_ROOT}" >> $GITHUB_ENV
     - name: Cache LLVM sources
       if: matrix.name == 'msan'
-      uses: actions/cache@v2
+      uses: actions/cache@88522ab9f39a2ea568f7027eddc7d8d8bc9d59c8 # v3.3.1
       with:
         path: ${{ env.LLVM_ROOT }}
         key: llvm
     - name: Checkout the LLVM source
       if: matrix.name == 'msan'
-      uses: actions/checkout@v2
+      uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
       with:
         submodules: false
         repository: llvm/llvm-project
@@ -183,7 +183,7 @@ jobs:
         echo "::set-output name=parent::$(git rev-parse ${{ github.sha }}^)"
       shell: bash
     - name: ccache
-      uses: actions/cache@v2
+      uses: actions/cache@88522ab9f39a2ea568f7027eddc7d8d8bc9d59c8 # v3.3.1
       with:
         path: ${{ env.CCACHE_DIR }}
         # When the cache hits the key it is not updated, so if this is a rebuild
@@ -261,7 +261,7 @@ jobs:
         ./ci.sh coverage_report
     - name: Coverage upload to Codecov
       if: github.event_name == 'push' && matrix.name == 'coverage'
-      uses: codecov/codecov-action@v2
+      uses: codecov/codecov-action@eaaf4bedf32dbdc6b720b63067d99c4d77d6047d # v3.1.4
       with:
         flags: unittests
         files: build/coverage.xml
@@ -304,11 +304,11 @@ jobs:
         shell: msys2 {0}
     steps:
       - name: Checkout the source
-        uses: actions/checkout@v2
+        uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
         with:
           submodules: true
           fetch-depth: 1
-      - uses: msys2/setup-msys2@v2
+      - uses: msys2/setup-msys2@07aeda7763550b267746a772dcea5e5ac3340b36 # v2
         with:
           msystem: ${{ matrix.msystem }}
           update: true
@@ -364,7 +364,7 @@ jobs:
           - variant: simd-256
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
       with:
         submodules: true
         fetch-depth: 1
@@ -391,7 +391,7 @@ jobs:
         echo "::set-output name=parent::$(git rev-parse ${{ github.sha }}^)"
       shell: bash
     - name: ccache
-      uses: actions/cache@v2
+      uses: actions/cache@88522ab9f39a2ea568f7027eddc7d8d8bc9d59c8 # v3.3.1
       with:
         path: ${{ env.CCACHE_DIR }}
         key: build-wasm-${{ runner.os }}-${{ github.sha }}-${{ matrix.variant }}
@@ -399,7 +399,7 @@ jobs:
           build-wasm-${{ runner.os }}-${{ steps.git-env.outputs.parent }}-${{ matrix.variant }}
 
     - name: Install node
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@e33196f7422957bea03ed53f6fbb155025ffc7b8 # v3.7.0
       with:
         node-version: ${{env.NODE_VERSION}}
 
@@ -407,7 +407,7 @@ jobs:
       run: which node >> $HOME/.base_node_path
 
     - name: Install emsdk
-      uses: mymindstorm/setup-emsdk@v11
+      uses: mymindstorm/setup-emsdk@ab889da2abbcbb280f91ec4c215d3bb4f3a8f775 # v12
       # TODO(deymo): We could cache this action but it doesn't work when running
       # in a matrix.
       with:
@@ -455,7 +455,7 @@ jobs:
 
     steps:
       - name: Checkout the source
-        uses: actions/checkout@v2
+        uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
         with:
           submodules: true
           fetch-depth: 1
