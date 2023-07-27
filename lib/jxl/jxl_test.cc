@@ -1262,6 +1262,7 @@ size_t RoundtripJpeg(const PaddedBytes& jpeg_in, ThreadPool* pool) {
                                      &compressed));
 
   jxl::JXLDecompressParams dparams;
+  test::DefaultAcceptedFormats(dparams);
   test::SetThreadParallelRunner(dparams, pool);
   std::vector<uint8_t> out;
   jxl::PackedPixelFile ppf;
@@ -1290,6 +1291,7 @@ void RoundtripJpegToPixels(const PaddedBytes& jpeg_in,
   EXPECT_TRUE(extras::EncodeImageJXL({}, extras::PackedPixelFile(), &jpeg_bytes,
                                      &compressed));
 
+  test::DefaultAcceptedFormats(dparams);
   test::SetThreadParallelRunner(dparams, pool);
   EXPECT_TRUE(DecodeImageJXL(compressed.data(), compressed.size(), dparams,
                              nullptr, ppf_out, nullptr));

@@ -82,6 +82,13 @@ struct ColorHintsProxy {
       JXL_RETURN_IF_ERROR(ReadFile(value, &icc));
       const char* data = reinterpret_cast<const char*>(icc.data());
       target.Add("icc", std::string(data, data + icc.size()));
+    } else if (key == "exif" || key == "xmp" || key == "jumbf") {
+      std::vector<uint8_t> metadata;
+      JXL_RETURN_IF_ERROR(ReadFile(value, &metadata));
+      const char* data = reinterpret_cast<const char*>(metadata.data());
+      target.Add(key, std::string(data, data + metadata.size()));
+    } else if (key == "strip") {
+      target.Add(value, "");
     } else {
       target.Add(key, value);
     }

@@ -122,7 +122,9 @@ Status DecodeBytes(const Span<const uint8_t> bytes,
     JXLDecompressParams dparams = {};
     size_t decoded_bytes;
     if (DecodeImageJXL(bytes.data(), bytes.size(), dparams, &decoded_bytes,
-                       ppf)) {
+                       ppf) &&
+        ApplyColorHints(color_hints, true, ppf->info.num_color_channels == 1,
+                        ppf)) {
       return Codec::kJXL;
     }
     if (DecodeImageGIF(bytes, color_hints, ppf, constraints)) {

@@ -161,8 +161,6 @@ struct CompressArgs {
         "    0 = scanline order, 1 = center-first order. Default: 0.",
         &group_order, &ParseOverride, 1);
 
-    // TODO(lode): also add options to add exif/xmp/other metadata in the
-    // container.
     cmdline->AddOptionValue(
         '\0', "container", "0|1",
         "0 = Do not encode using container format (strip "
@@ -217,8 +215,9 @@ struct CompressArgs {
 
     cmdline->AddOptionValue(
         'x', "dec-hints", "key=value",
-        "This is useful for 'raw' formats like PPM that do not contain "
-        "colorspace information.\n"
+        "This is useful for 'raw' formats like PPM that cannot store "
+        "colorspace information\n"
+        "    and metadata, or to strip or modify metadata in formats that do.\n"
         "    The key 'color_space' indicates an enumerated ColorEncoding, for "
         "example:\n"
         "      -x color_space=RGB_D65_SRG_Per_SRG is sRGB with perceptual "
@@ -226,7 +225,11 @@ struct CompressArgs {
         "      -x color_space=RGB_D65_202_Rel_PeQ is Rec.2100 PQ with relative "
         "rendering intent\n"
         "    The key 'icc_pathname' refers to a binary file containing an ICC "
-        "profile.",
+        "profile.\n"
+        "    The keys 'exif', 'xmp', and 'jumbf' refer to a binary file "
+        "containing metadata;\n"
+        "    existing metadata of the same type will be overwritten.\n"
+        "    Specific metadata can be stripped using e.g. -x strip=exif",
         &color_hints_proxy, &ParseAndAppendKeyValue<ColorHintsProxy>, 1);
 
     cmdline->AddHelpText("\nExpert options:", 2);
@@ -895,6 +898,19 @@ void ProcessFlags(const jxl::extras::Codec codec,
       ppf.info.exponent_bits_per_sample == 0) {
     params->input_bitdepth.type = JXL_BIT_DEPTH_FROM_CODESTREAM;
   }
+
+  // If a metadata field is set to an empty value, it is stripped.
+  // Make sure we also strip it when the input image is read with AddJPEGFrame
+  (void)args->color_hints_proxy.target.Foreach(
+      [&params](const std::string& key,
+                const std::string& value) -> jxl::Status {
+        if (value == "") {
+          if (key == "exif") params->jpeg_strip_exif = true;
+          if (key == "xmp") params->jpeg_strip_xmp = true;
+          if (key == "jumbf") params->jpeg_strip_jumbf = true;
+        }
+        return true;
+      });
 }
 
 }  // namespace tools
@@ -986,14 +1002,24 @@ int main(int argc, char** argv) {
 
   ProcessFlags(codec, ppf, jpeg_bytes, &cmdline, &args, &params);
 
+  if (!ppf.metadata.exif.empty()) {
+    jxl::InterpretExif(ppf.metadata.exif, &ppf.info.orientation);
+  }
+
   if (!ppf.metadata.exif.empty() || !ppf.metadata.xmp.empty() ||
       !ppf.metadata.jumbf.empty() || !ppf.metadata.iptc.empty() ||
       (args.lossless_jpeg && args.jpeg_store_metadata)) {
-    args.container = jxl::Override::kOn;
-  }
-
-  if (!ppf.metadata.exif.empty()) {
-    jxl::InterpretExif(ppf.metadata.exif, &ppf.info.orientation);
+    if (args.container == jxl::Override::kDefault) {
+      args.container = jxl::Override::kOn;
+    } else if (args.container == jxl::Override::kOff) {
+      cmdline.VerbosePrintf(
+          1, "Stripping all metadata due to explicit container=0\n");
+      ppf.metadata.exif.clear();
+      ppf.metadata.xmp.clear();
+      ppf.metadata.jumbf.clear();
+      ppf.metadata.iptc.clear();
+      args.jpeg_store_metadata = 0;
+    }
   }
 
   if (!args.quiet) {

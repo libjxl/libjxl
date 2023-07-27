@@ -87,6 +87,18 @@ bool EncodeImageJXL(const JXLCompressParams& params, const PackedPixelFile& ppf,
       fprintf(stderr, "Storing JPEG metadata failed.\n");
       return false;
     }
+    if (!params.jpeg_store_metadata && params.jpeg_strip_exif) {
+      JxlEncoderFrameSettingsSetOption(settings,
+                                       JXL_ENC_FRAME_SETTING_JPEG_KEEP_EXIF, 0);
+    }
+    if (!params.jpeg_store_metadata && params.jpeg_strip_xmp) {
+      JxlEncoderFrameSettingsSetOption(settings,
+                                       JXL_ENC_FRAME_SETTING_JPEG_KEEP_XMP, 0);
+    }
+    if (params.jpeg_strip_jumbf) {
+      JxlEncoderFrameSettingsSetOption(
+          settings, JXL_ENC_FRAME_SETTING_JPEG_KEEP_JUMBF, 0);
+    }
     if (JXL_ENC_SUCCESS != JxlEncoderAddJPEGFrame(settings, jpeg_bytes->data(),
                                                   jpeg_bytes->size())) {
       fprintf(stderr, "JxlEncoderAddJPEGFrame() failed.\n");

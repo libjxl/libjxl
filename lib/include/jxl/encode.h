@@ -349,6 +349,30 @@ typedef enum {
    */
   JXL_ENC_FRAME_SETTING_BUFFERING = 34,
 
+  /** Keep or discard Exif metadata boxes derived from a JPEG frame when using
+   * JxlEncoderAddJPEGFrame. This has no effect on boxes added using
+   * JxlEncoderAddBox. When JxlEncoderStoreJPEGMetadata is set to 1, this option
+   * cannot be set to 0. Even when Exif metadata is discarded, the orientation
+   * will still be applied. 0 = discard Exif metadata, 1 = keep Exif metadata
+   * (default).
+   */
+  JXL_ENC_FRAME_SETTING_JPEG_KEEP_EXIF = 35,
+
+  /** Keep or discard XMP metadata boxes derived from a JPEG frame when using
+   * JxlEncoderAddJPEGFrame. This has no effect on boxes added using
+   * JxlEncoderAddBox. When JxlEncoderStoreJPEGMetadata is set to 1, this option
+   * cannot be set to 0. 0 = discard XMP metadata, 1 = keep XMP metadata
+   * (default).
+   */
+  JXL_ENC_FRAME_SETTING_JPEG_KEEP_XMP = 36,
+
+  /** Keep or discard JUMBF metadata boxes derived from a JPEG frame when using
+   * JxlEncoderAddJPEGFrame. This has no effect on boxes added using
+   * JxlEncoderAddBox. 0 = discard JUMBF metadata, 1 = keep JUMBF metadata
+   * (default).
+   */
+  JXL_ENC_FRAME_SETTING_JPEG_KEEP_JUMBF = 37,
+
   /** Enum value not to be used as an option. This value is added to force the
    * C compiler to have the enum to take a known size.
    */

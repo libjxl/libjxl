@@ -1285,6 +1285,15 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetOption(
                              "Buffering has to be in [0..3]");
       }
       return JXL_ENC_SUCCESS;
+    case JXL_ENC_FRAME_SETTING_JPEG_KEEP_EXIF:
+      frame_settings->values.cparams.jpeg_keep_exif = value;
+      return JXL_ENC_SUCCESS;
+    case JXL_ENC_FRAME_SETTING_JPEG_KEEP_XMP:
+      frame_settings->values.cparams.jpeg_keep_xmp = value;
+      return JXL_ENC_SUCCESS;
+    case JXL_ENC_FRAME_SETTING_JPEG_KEEP_JUMBF:
+      frame_settings->values.cparams.jpeg_keep_jumbf = value;
+      return JXL_ENC_SUCCESS;
 
     default:
       return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_NOT_SUPPORTED,
@@ -1376,6 +1385,9 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetFloatOption(
     case JXL_ENC_FRAME_SETTING_FILL_ENUM:
     case JXL_ENC_FRAME_SETTING_JPEG_COMPRESS_BOXES:
     case JXL_ENC_FRAME_SETTING_BUFFERING:
+    case JXL_ENC_FRAME_SETTING_JPEG_KEEP_EXIF:
+    case JXL_ENC_FRAME_SETTING_JPEG_KEEP_XMP:
+    case JXL_ENC_FRAME_SETTING_JPEG_KEEP_JUMBF:
       return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_NOT_SUPPORTED,
                            "Int option, try setting it with "
                            "JxlEncoderFrameSettingsSetOption");
@@ -1567,7 +1579,8 @@ JxlEncoderStatus JxlEncoderAddJPEGFrame(
         frame_settings->enc->metadata.m.orientation);
     jxl::InterpretExif(io.blobs.exif, &orientation);
     frame_settings->enc->metadata.m.orientation = orientation;
-
+  }
+  if (!io.blobs.exif.empty() && frame_settings->values.cparams.jpeg_keep_exif) {
     size_t exif_size = io.blobs.exif.size();
     // Exif data in JPEG is limited to 64k
     if (exif_size > 0xFFFF) {
@@ -1581,19 +1594,26 @@ JxlEncoderStatus JxlEncoderAddJPEGFrame(
     JxlEncoderAddBox(frame_settings->enc, "Exif", exif.data(), exif_size,
                      frame_settings->values.cparams.jpeg_compress_boxes);
   }
-  if (!io.blobs.xmp.empty()) {
+  if (!io.blobs.xmp.empty() && frame_settings->values.cparams.jpeg_keep_xmp) {
     JxlEncoderUseBoxes(frame_settings->enc);
     JxlEncoderAddBox(frame_settings->enc, "xml ", io.blobs.xmp.data(),
                      io.blobs.xmp.size(),
                      frame_settings->values.cparams.jpeg_compress_boxes);
   }
-  if (!io.blobs.jumbf.empty()) {
+  if (!io.blobs.jumbf.empty() &&
+      frame_settings->values.cparams.jpeg_keep_jumbf) {
     JxlEncoderUseBoxes(frame_settings->enc);
     JxlEncoderAddBox(frame_settings->enc, "jumb", io.blobs.jumbf.data(),
                      io.blobs.jumbf.size(),
                      frame_settings->values.cparams.jpeg_compress_boxes);
   }
   if (frame_settings->enc->store_jpeg_metadata) {
+    if (!frame_settings->values.cparams.jpeg_keep_exif ||
+        !frame_settings->values.cparams.jpeg_keep_xmp) {
+      return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
+                           "Need to preserve EXIF and XMP to allow JPEG "
+                           "bitstream reconstruction");
+    }
     jxl::jpeg::JPEGData data_in = *io.Main().jpeg_data;
     jxl::PaddedBytes jpeg_data;
     if (!jxl::jpeg::EncodeJPEGData(data_in, &jpeg_data,

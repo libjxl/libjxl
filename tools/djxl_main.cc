@@ -43,7 +43,7 @@ struct DecompressArgs {
   DecompressArgs() = default;
 
   void AddCommandLineOptions(CommandLineParser* cmdline) {
-    std::string output_help("The output can be ");
+    std::string output_help("The output format can be ");
     if (jxl::extras::GetAPNGEncoder()) {
       output_help.append("PNG, APNG, ");
     }
@@ -56,9 +56,11 @@ struct DecompressArgs {
       output_help.append("EXR, ");
     }
     output_help.append(
-        "PPM, PFM, or PAM. Use '-' for output to stdout.\n"
-        "    The output format is selected based on the extension or a prefix "
-        "(e.g. 'png:-')");
+        "PPM, PFM, or PAM.\n"
+        "    To extract metadata, use output format EXIF, XMP, or JUMBF.\n"
+        "    The format is selected based on extension ('filename.png') or "
+        "prefix ('png:filename').\n"
+        "    Use '-' for output to stdout (e.g. 'ppm:-')");
     cmdline->AddPositionalOption(
         "INPUT", /* required = */ true,
         "The compressed input file (JXL). Use '-' for input from stdin.",
