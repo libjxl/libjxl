@@ -498,7 +498,7 @@ bool EncodeDCTBlockSequential(const coeff_t* coeffs, HuffmanCodeTable* dc_huff,
   // of catching it and returning error)
   if (dc_nbits >= 12) return false;
 #endif
-  WriteBits(bw, dc_nbits, temp & ((1u << dc_nbits) - 1));
+  if (dc_nbits) WriteBits(bw, dc_nbits, temp & ((1u << dc_nbits) - 1));
   int16_t r = 0;
 
   for (size_t i = 1; i < 64; i++) {
@@ -558,9 +558,7 @@ bool EncodeDCTBlockProgressive(const coeff_t* coeffs, HuffmanCodeTable* dc_huff,
     }
     int nbits = (temp == 0) ? 0 : (FloorLog2Nonzero<uint32_t>(temp) + 1);
     WriteSymbol(nbits, dc_huff, bw);
-    if (nbits > 0) {
-      WriteBits(bw, nbits, temp2 & ((1 << nbits) - 1));
-    }
+    if (nbits) WriteBits(bw, nbits, temp2 & ((1 << nbits) - 1));
     ++Ss;
   }
   if (Ss > Se) {
