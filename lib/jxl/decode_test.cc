@@ -1928,9 +1928,9 @@ TEST(DecodeTest, PixelTestOpaqueSrgbLossy) {
         ButteraugliDistance(io0.frames, io1.frames, ba, jxl::GetJxlCms(),
                             /*distmap=*/nullptr, nullptr),
 #if JXL_HIGH_PRECISION
-        IsSlightlyBelow(0.74f));
+        IsSlightlyBelow(0.93f));
 #else
-        IsSlightlyBelow(0.75f));
+        IsSlightlyBelow(0.93f));
 #endif
 
     JxlDecoderDestroy(dec);

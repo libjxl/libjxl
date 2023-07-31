@@ -123,7 +123,7 @@ def Eval(vec, binary_name, cached=True):
     sys.stdout.flush()
     if line[0:3] == b'jxl':
       bpp = line.split()[3]
-      dist_pnorm = line.split()[7]
+      dist_pnorm = line.split()[9]
       dist_max = line.split()[6]
       vec[0] *= float(dist_pnorm) * float(bpp) / 16.0
       #vec[0] *= (float(dist_max) * float(bpp) / 16.0) ** 0.01
