@@ -63,15 +63,14 @@ class Rec2408ToneMapper {
         Min(Set(df_, target_range_.second),
             ZeroIfNegative(
                 Mul(Set(df_, 10000), TF_PQ().DisplayFromEncoded(df_, e4))));
-
-    const V ratio = Div(new_luminance, luminance);
-    const V inv_target_peak = Set(df_, inv_target_peak_);
+    const V min_luminance = Set(df_, 1e-6f);
+    const auto use_cap = Le(luminance, min_luminance);
+    const V ratio = Div(new_luminance, Max(luminance, min_luminance));
+    const V cap = Mul(new_luminance, Set(df_, inv_target_peak_));
     const V normalizer = Set(df_, normalizer_);
     const V multiplier = Mul(ratio, normalizer);
     for (V* const val : {red, green, blue}) {
-      *val = IfThenElse(Le(luminance, Set(df_, 1e-6f)),
-                        Mul(new_luminance, inv_target_peak),
-                        Mul(*val, multiplier));
+      *val = IfThenElse(use_cap, cap, Mul(*val, multiplier));
     }
   }
 
