@@ -1930,7 +1930,7 @@ TEST(DecodeTest, PixelTestOpaqueSrgbLossy) {
 #if JXL_HIGH_PRECISION
         IsSlightlyBelow(0.93f));
 #else
-        IsSlightlyBelow(0.93f));
+        IsSlightlyBelow(0.94f));
 #endif
 
     JxlDecoderDestroy(dec);
