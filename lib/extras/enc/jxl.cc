@@ -89,7 +89,21 @@ bool EncodeImageJXL(const JXLCompressParams& params, const PackedPixelFile& ppf,
     }
     if (JXL_ENC_SUCCESS != JxlEncoderAddJPEGFrame(settings, jpeg_bytes->data(),
                                                   jpeg_bytes->size())) {
-      fprintf(stderr, "JxlEncoderAddJPEGFrame() failed.\n");
+      JxlEncoderError error = JxlEncoderGetError(enc);
+      if (error == JXL_ENC_ERR_BAD_INPUT) {
+        fprintf(stderr,
+                "Error while decoding the JPEG image. It may be corrupt (e.g. "
+                "truncated) or of an unsupported type (e.g. CMYK).\n");
+      } else if (error == JXL_ENC_ERR_JBRD) {
+        fprintf(stderr,
+                "JPEG bitstream reconstruction data could not be created. "
+                "Possibly there is too much tail data.\n"
+                "Try using --jpeg_store_metadata 0, to losslessly "
+                "recompress the JPEG image data without bitstream "
+                "reconstruction data.\n");
+      } else {
+        fprintf(stderr, "JxlEncoderAddJPEGFrame() failed.\n");
+      }
       return false;
     }
   } else {
