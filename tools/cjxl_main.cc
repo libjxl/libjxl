@@ -163,9 +163,8 @@ struct CompressArgs {
 
     cmdline->AddOptionValue(
         '\0', "container", "0|1",
-        "0 = Do not encode using container format (strip "
-        "Exif/XMP/JPEG bitstream reconstruction data).\n"
-        "    1 = Force using container format. Default: use only if needed.",
+        "0 = Avoid the container format unless it is needed (default)\n"
+        "    1 = Force using the container format even if it is not needed.",
         &container, &ParseOverride, 1);
 
     cmdline->AddOptionValue('\0', "compress_boxes", "0|1",
