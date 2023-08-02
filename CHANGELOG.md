@@ -15,6 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `JxlEncoderChunkedImageFrameStart`,
   - `JxlEncoderChunkedImageFrameAddPart` and new
   - `JXL_ENC_FRAME_SETTING_BUFFERING` enum value.
+ - encoder API: new options for more fine-grained control over metadata
+   preservation when using `JxlEncoderAddJPEGFrame`:
+  - `JXL_ENC_FRAME_SETTING_JPEG_KEEP_EXIF`
+  - `JXL_ENC_FRAME_SETTING_JPEG_KEEP_XMP`
+  - `JXL_ENC_FRAME_SETTING_JPEG_KEEP_JUMBF`
+ - cjxl can now be used to explicitly add/update/strip Exif/XMP/JUMBF metadata using
+   the decoder-hints syntax, e.g. `cjxl input.ppm -x exif=input.exif output.jxl`
+ - djxl can now be used to extract Exif/XMP/JUMBF metadata
+
 ### Removed
  - API: the Butteraugli API (`jxl/butteraugli.h`) was removed.
  - encoder and decoder API: all deprecated functions were removed:
