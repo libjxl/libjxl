@@ -163,7 +163,7 @@ jobs:
         echo "CC=${{ matrix.c_compiler || 'clang-11' }}" >> $GITHUB_ENV
         echo "CXX=${{ matrix.cxx_compiler || 'clang++-11' }}" >> $GITHUB_ENV
     - name: Checkout the source
-      uses: actions/checkout@v2
+      uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
       with:
         submodules: true
         fetch-depth: 1
