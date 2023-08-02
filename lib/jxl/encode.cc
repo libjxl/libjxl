@@ -802,6 +802,7 @@ JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
                                             info->exponent_bits_per_sample)) {
     return JXL_API_ERROR(enc, JXL_ENC_ERR_API_USAGE, "Invalid bit depth");
   }
+
   enc->metadata.m.bit_depth.bits_per_sample = info->bits_per_sample;
   enc->metadata.m.bit_depth.exponent_bits_per_sample =
       info->exponent_bits_per_sample;
@@ -917,6 +918,55 @@ void JxlEncoderInitExtraChannelInfo(JxlExtraChannelType type,
   info->spot_color[2] = 0;
   info->spot_color[3] = 0;
   info->cfa_channel = 0;
+}
+
+JXL_EXPORT JxlEncoderStatus JxlEncoderSetUpsamplingMode(JxlEncoder* enc,
+                                                        const int64_t factor,
+                                                        const int64_t mode) {
+  // for convenience, allow calling this with factor 1 and just make it a no-op
+  if (factor == 1) return JXL_ENC_SUCCESS;
+  if (factor != 2 && factor != 4 && factor != 8)
+    return JXL_API_ERROR(enc, JXL_ENC_ERR_API_USAGE,
+                         "Invalid upsampling factor");
+  if (mode < -1)
+    return JXL_API_ERROR(enc, JXL_ENC_ERR_API_USAGE, "Invalid upsampling mode");
+  if (mode > 1)
+    return JXL_API_ERROR(enc, JXL_ENC_ERR_NOT_SUPPORTED,
+                         "Unsupported upsampling mode");
+
+  const size_t count = (factor == 2 ? 15 : (factor == 4 ? 55 : 210));
+  auto& td = enc->metadata.transform_data;
+  float* weights = (factor == 2 ? td.upsampling2_weights
+                                : (factor == 4 ? td.upsampling4_weights
+                                               : td.upsampling8_weights));
+  if (mode == -1) {
+    // Default fancy upsampling: don't signal custom weights
+    enc->metadata.transform_data.custom_weights_mask &= ~(factor >> 1);
+  } else if (mode == 0) {
+    // Nearest neighbor upsampling
+    enc->metadata.transform_data.custom_weights_mask |= (factor >> 1);
+    memset(weights, 0, sizeof(float) * count);
+    if (factor == 2) {
+      weights[9] = 1.f;
+    } else if (factor == 4) {
+      for (int i : {19, 24, 49}) weights[i] = 1.f;
+    } else if (factor == 8) {
+      for (int i : {39, 44, 49, 54, 119, 124, 129, 174, 179, 204}) {
+        weights[i] = 1.f;
+      }
+    }
+  } else if (mode == 1) {
+    // 'Pixel dots' upsampling (nearest-neighbor with cut corners)
+    JxlEncoderSetUpsamplingMode(enc, factor, 0);
+    if (factor == 4) {
+      weights[19] = 0.f;
+      weights[24] = 0.5f;
+    } else if (factor == 8) {
+      for (int i : {39, 44, 49, 119}) weights[i] = 0.f;
+      for (int i : {54, 124}) weights[i] = 0.5f;
+    }
+  }
+  return JXL_ENC_SUCCESS;
 }
 
 JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelInfo(

@@ -147,6 +147,12 @@ bool EncodeImageJXL(const JXLCompressParams& params, const PackedPixelFile& ppf,
       return false;
     }
     if (JXL_ENC_SUCCESS !=
+        JxlEncoderSetUpsamplingMode(enc, params.already_downsampled,
+                                    params.upsampling_mode)) {
+      fprintf(stderr, "JxlEncoderSetUpsamplingMode() failed.\n");
+      return false;
+    }
+    if (JXL_ENC_SUCCESS !=
         JxlEncoderSetFrameBitDepth(settings, &params.input_bitdepth)) {
       fprintf(stderr, "JxlEncoderSetFrameBitDepth() failed.\n");
       return false;
