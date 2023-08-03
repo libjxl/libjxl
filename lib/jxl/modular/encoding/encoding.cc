@@ -318,10 +318,11 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
       {
         size_t offset = 0;
         pixel_type_w left = y ? rtop[x] : 0;
+        pixel_type_w toptop = y ? rtoptop[x] : 0;
         pixel_type_w topright = (x + 1 < channel.w && y ? rtop[x + 1] : left);
         int32_t guess = wp_state.Predict</*compute_properties=*/true>(
-            x, y, channel.w, left, left, topright, left, rtoptop[x],
-            &properties, offset);
+            x, y, channel.w, left, left, topright, left, toptop, &properties,
+            offset);
         uint32_t pos =
             kPropRangeFast + std::min(std::max(-kPropRangeFast, properties[0]),
                                       kPropRangeFast - 1);
