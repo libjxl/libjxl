@@ -238,9 +238,10 @@ Status JPEGData::VisitFields(Visitor* visitor) {
                                        Bits(8), 0, &hc.counts[i]));
       num_symbols += hc.counts[i];
     }
-    if (num_symbols < 1) {
+    if (num_symbols == 0) {
       // Actually, at least 2 symbols are required, since one of them is EOI.
-      return JXL_FAILURE("Empty Huffman table");
+      // This case is used to represent an empty DHT marker.
+      continue;
     }
     if (num_symbols > hc.values.size()) {
       return JXL_FAILURE("Huffman code too large (%" PRIuS ")", num_symbols);
