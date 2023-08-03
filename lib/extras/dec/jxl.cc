@@ -338,6 +338,8 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
                   "Warning: --color_space ignored because the image is "
                   "not XYB encoded.\n");
         } else {
+          // TODO(firsching) : make sure we can use GetJxlCms here.
+          // JxlDecoderSetCms(dec, &GetJxlCms());
           if (JXL_DEC_SUCCESS !=
               JxlDecoderSetPreferredColorProfile(dec, &color_encoding)) {
             fprintf(stderr, "Failed to set color space.\n");

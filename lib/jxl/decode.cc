@@ -2330,6 +2330,10 @@ JxlDecoderStatus JxlDecoderFlushImage(JxlDecoder* dec) {
   return JXL_DEC_SUCCESS;
 }
 
+JXL_EXPORT void JxlDecoderSetCms(JxlDecoder* dec, const JxlCmsInterface* cms) {
+  dec->passes_state->output_encoding_info.color_management_system = *cms;
+}
+
 JXL_EXPORT JxlDecoderStatus JxlDecoderPreviewOutBufferSize(
     const JxlDecoder* dec, const JxlPixelFormat* format, size_t* size) {
   size_t bits;
@@ -2645,28 +2649,54 @@ JxlDecoderStatus JxlDecoderGetFrameName(const JxlDecoder* dec, char* name,
 
 JxlDecoderStatus JxlDecoderSetPreferredColorProfile(
     JxlDecoder* dec, const JxlColorEncoding* color_encoding) {
+  return JxlDecoderSetOutputColorProfile(dec, color_encoding, nullptr, 0);
+}
+
+JxlDecoderStatus JxlDecoderSetOutputColorProfile(
+    JxlDecoder* dec, const JxlColorEncoding* color_encoding,
+    const uint8_t* icc_data, size_t icc_size) {
+  if ((color_encoding != nullptr) && (icc_data != nullptr)) {
+    return JXL_API_ERROR("cannot set both color_encoding and icc_data");
+  }
+  if ((color_encoding == nullptr) && (icc_data == nullptr)) {
+    return JXL_API_ERROR("one of color_encoding and icc_data must be set");
+  }
   if (!dec->got_all_headers) {
     return JXL_API_ERROR("color info not yet available");
   }
   if (dec->post_headers) {
     return JXL_API_ERROR("too late to set the color encoding");
   }
-  if (dec->image_metadata.color_encoding.IsGray() &&
-      color_encoding->color_space != JXL_COLOR_SPACE_GRAY &&
-      dec->image_out_buffer_set && dec->image_out_format.num_channels < 3) {
-    return JXL_API_ERROR("Number of channels is too low for color output");
-  }
-  if (color_encoding->color_space == JXL_COLOR_SPACE_UNKNOWN) {
-    return JXL_API_ERROR("Unknown output colorspace");
-  }
-  jxl::ColorEncoding c_out;
-  JXL_API_RETURN_IF_ERROR(
-      ConvertExternalToInternalColorEncoding(*color_encoding, &c_out));
-  JXL_API_RETURN_IF_ERROR(!c_out.ICC().empty());
+  // TODO(firsching): check if cms has been set
   auto& output_encoding = dec->passes_state->output_encoding_info;
-  if (!c_out.SameColorEncoding(output_encoding.color_encoding)) {
-    JXL_API_RETURN_IF_ERROR(output_encoding.MaybeSetColorEncoding(c_out));
-    dec->image_metadata.color_encoding = output_encoding.color_encoding;
+  if (color_encoding) {
+    if (dec->image_metadata.color_encoding.IsGray() &&
+        color_encoding->color_space != JXL_COLOR_SPACE_GRAY &&
+        dec->image_out_buffer_set && dec->image_out_format.num_channels < 3) {
+      return JXL_API_ERROR("Number of channels is too low for color output");
+    }
+    if (color_encoding->color_space == JXL_COLOR_SPACE_UNKNOWN) {
+      return JXL_API_ERROR("Unknown output colorspace");
+    }
+    jxl::ColorEncoding c_out;
+    JXL_API_RETURN_IF_ERROR(
+        ConvertExternalToInternalColorEncoding(*color_encoding, &c_out));
+    JXL_API_RETURN_IF_ERROR(!c_out.ICC().empty());
+    if (!c_out.SameColorEncoding(output_encoding.color_encoding)) {
+      JXL_API_RETURN_IF_ERROR(output_encoding.MaybeSetColorEncoding(c_out));
+      dec->image_metadata.color_encoding = output_encoding.color_encoding;
+    }
+    return JXL_DEC_SUCCESS;
+  }
+  // icc_data != nullptr
+  // TODO(firsching): implement setting output color profile from icc_data.
+  jxl::ColorEncoding c_dst;
+  jxl::PaddedBytes padded_icc;
+  padded_icc.assign(icc_data, icc_data + icc_size);
+  if (!c_dst.SetICC(std::move(padded_icc),
+                    &output_encoding.color_management_system)) {
+    return JXL_API_ERROR(
+        "setting output color profile from icc_data not yet implemented.");
   }
   return JXL_DEC_SUCCESS;
 }
