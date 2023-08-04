@@ -3,11 +3,19 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <gtest/gtest.h>
 #include <jxl/decode.h>
 #include <jxl/decode_cxx.h>
 #include <jxl/encode.h>
 #include <jxl/encode_cxx.h>
 
+#include <cstddef>
+#include <cstdint>
+#include <ostream>
+#include <vector>
+
+#include "gtest/gtest.h"
+#include "jxl/types.h"
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/jxl.h"
 #include "lib/extras/metrics.h"
@@ -1402,3 +1410,201 @@ TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGFrameTest)) {
     }
   }
 }
+
+namespace {
+class JxlStreamingAdapter {
+ public:
+  JxlStreamingAdapter(JxlEncoder* encoder, bool return_large_buffers,
+                      bool can_seek)
+      : return_large_buffers_(return_large_buffers) {
+    struct JxlEncoderOutputProcessor output_processor;
+    output_processor.opaque = this;
+    output_processor.get_buffer = [](void* opaque, size_t* size) {
+      return static_cast<JxlStreamingAdapter*>(opaque)->GetBuffer(size);
+    };
+    if (can_seek) {
+      output_processor.seek = [](void* opaque, int64_t offset) {
+        return static_cast<JxlStreamingAdapter*>(opaque)->Seek(offset);
+      };
+    }
+    output_processor.advance_watermark = [](void* opaque, uint64_t offset) {
+      return static_cast<JxlStreamingAdapter*>(opaque)->AdvanceWatermark(
+          offset);
+    };
+    output_processor.release_buffer = [](void* opaque, size_t written_bytes) {
+      return static_cast<JxlStreamingAdapter*>(opaque)->ReleaseBuffer(
+          written_bytes);
+    };
+    EXPECT_EQ(JxlEncoderSetOutputProcessor(encoder, output_processor),
+              JXL_ENC_SUCCESS);
+  }
+
+  const std::vector<uint8_t>& output() const { return output_; }
+
+  void* GetBuffer(size_t* size) {
+    if (!return_large_buffers_) {
+      *size = 1;
+    }
+    if (position_ + *size > output_.size()) {
+      output_.resize(position_ + *size, 0xDA);
+    }
+    if (return_large_buffers_) {
+      *size = output_.size() - position_;
+    }
+    return output_.data() + position_;
+  }
+
+  void ReleaseBuffer(size_t written_bytes) {
+    // TODO: check no more bytes were written.
+    Seek(written_bytes);
+  }
+
+  void Seek(int64_t offset) {
+    if (offset < 0) {
+      EXPECT_GE(position_, static_cast<uint64_t>(-offset));
+    }
+    position_ += offset;
+    EXPECT_GE(position_, watermark_);
+  }
+
+  void AdvanceWatermark(uint64_t offset) {
+    EXPECT_GE(offset + watermark_, watermark_);
+    EXPECT_GE(offset + watermark_, offset);
+    watermark_ += offset;
+  }
+
+  void CheckFinalWatermarkPosition() { EXPECT_EQ(watermark_, output_.size()); }
+
+ private:
+  std::vector<uint8_t> output_;
+  size_t position_ = 0;
+  size_t watermark_ = 0;
+  bool return_large_buffers_;
+};
+
+struct OutputCallbackTestParam {
+  size_t bitmask;
+  bool use_container() const { return bitmask & 0x1; }
+  bool return_large_buffers() const { return bitmask & 0x2; }
+  bool multiple_frames() const { return bitmask & 0x4; }
+  bool fast_lossless() const { return bitmask & 0x8; }
+  bool can_seek() const { return bitmask & 0x10; }
+
+  static std::vector<OutputCallbackTestParam> All() {
+    std::vector<OutputCallbackTestParam> params;
+    for (size_t bitmask = 0; bitmask < 32; bitmask++) {
+      params.push_back(OutputCallbackTestParam{bitmask});
+    }
+    return params;
+  }
+};
+
+std::ostream& operator<<(std::ostream& out, OutputCallbackTestParam p) {
+  if (p.use_container()) {
+    out << "WithContainer";
+  } else {
+    out << "WithoutContainer";
+  }
+  if (p.return_large_buffers()) {
+    out << "WithLargeBuffers";
+  } else {
+    out << "WithSmallBuffers";
+  }
+  if (p.multiple_frames()) out << "WithMultipleFrames";
+  if (p.fast_lossless()) out << "FastLossless";
+  if (!p.can_seek()) out << "CannotSeek";
+  return out;
+}
+
+}  // namespace
+
+struct EncodeOutputCallbackTest
+    : public testing::Test,
+      public testing::WithParamInterface<OutputCallbackTestParam> {};
+
+TEST_P(EncodeOutputCallbackTest, OutputCallback) {
+  const OutputCallbackTestParam p = GetParam();
+  size_t xsize = 257;
+  size_t ysize = 259;
+  jxl::test::TestImage image;
+  image.SetDimensions(xsize, ysize)
+      .SetDataType(JXL_TYPE_UINT8)
+      .SetChannels(3)
+      .SetAllBitDepths(p.use_container() ? 16 : 8);
+  image.AddFrame().RandomFill();
+  const auto& frame = image.ppf().frames[0].color;
+  JxlBasicInfo basic_info;
+  jxl::test::JxlBasicInfoSetFromPixelFormat(&basic_info, &frame.format);
+  basic_info.xsize = xsize;
+  basic_info.ysize = ysize;
+
+  std::vector<uint8_t> compressed = std::vector<uint8_t>(64);
+
+  {
+    JxlEncoderPtr enc = JxlEncoderMake(nullptr);
+    ASSERT_NE(nullptr, enc.get());
+    JxlEncoderFrameSettings* frame_settings =
+        JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+    if (p.fast_lossless()) {
+      JxlEncoderSetFrameLossless(frame_settings, JXL_TRUE);
+      JxlEncoderFrameSettingsSetOption(frame_settings,
+                                       JXL_ENC_FRAME_SETTING_EFFORT, 1);
+    }
+    EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
+    JxlColorEncoding color_encoding;
+    JxlColorEncodingSetToSRGB(&color_encoding, /*is_gray=*/false);
+    EXPECT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderSetColorEncoding(enc.get(), &color_encoding));
+    if (p.use_container()) {
+      JxlEncoderSetCodestreamLevel(enc.get(), 10);
+    }
+
+    EXPECT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderAddImageFrame(frame_settings, &frame.format,
+                                      frame.pixels(), frame.pixels_size));
+    if (p.multiple_frames()) {
+      EXPECT_EQ(JXL_ENC_SUCCESS,
+                JxlEncoderAddImageFrame(frame_settings, &frame.format,
+                                        frame.pixels(), frame.pixels_size));
+    }
+
+    uint8_t* next_out = compressed.data();
+    size_t avail_out = compressed.size();
+    JxlEncoderCloseFrames(enc.get());
+    ProcessEncoder(enc.get(), compressed, next_out, avail_out);
+  }
+
+  {
+    JxlEncoderPtr enc = JxlEncoderMake(nullptr);
+    ASSERT_NE(nullptr, enc.get());
+    JxlStreamingAdapter streaming_adapter(enc.get(), p.return_large_buffers(),
+                                          p.can_seek());
+    JxlEncoderFrameSettings* frame_settings =
+        JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+    if (p.fast_lossless()) {
+      JxlEncoderSetFrameLossless(frame_settings, JXL_TRUE);
+      JxlEncoderFrameSettingsSetOption(frame_settings,
+                                       JXL_ENC_FRAME_SETTING_EFFORT, 1);
+    }
+    EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
+    JxlColorEncoding color_encoding;
+    JxlColorEncodingSetToSRGB(&color_encoding, /*is_gray=*/false);
+    EXPECT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderSetColorEncoding(enc.get(), &color_encoding));
+
+    EXPECT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderAddImageFrame(frame_settings, &frame.format,
+                                      frame.pixels(), frame.pixels_size));
+    if (p.multiple_frames()) {
+      EXPECT_EQ(JXL_ENC_SUCCESS,
+                JxlEncoderAddImageFrame(frame_settings, &frame.format,
+                                        frame.pixels(), frame.pixels_size));
+    }
+    JxlEncoderCloseInput(enc.get());
+    streaming_adapter.CheckFinalWatermarkPosition();
+    EXPECT_EQ(streaming_adapter.output(), compressed);
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(AllOptions, EncodeOutputCallbackTest,
+                         testing::ValuesIn(OutputCallbackTestParam::All()));

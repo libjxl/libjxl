@@ -1425,6 +1425,7 @@ void JxlEncoderReset(JxlEncoder* enc) {
   enc->use_container = false;
   enc->use_boxes = false;
   enc->codestream_level = -1;
+  enc->output_processor = JxlEncoderOutputProcessorWrapper();
   JxlEncoderInitBasicInfo(&enc->basic_info);
 }
 
@@ -1891,6 +1892,10 @@ JxlEncoderStatus JxlEncoderAddBox(JxlEncoder* enc, const JxlBoxType type,
         enc, JXL_ENC_ERR_API_USAGE,
         "must set JxlEncoderUseBoxes at the beginning to add boxes");
   }
+  if (enc->boxes_closed) {
+    return JXL_API_ERROR(enc, JXL_ENC_ERR_API_USAGE,
+                         "Box input already closed");
+  }
   if (compress_box) {
     if (memcmp("jxl", type, 3) == 0) {
       return JXL_API_ERROR(
@@ -1977,8 +1982,39 @@ void JxlEncoderCloseInput(JxlEncoder* enc) {
   JxlEncoderCloseFrames(enc);
   JxlEncoderCloseBoxes(enc);
 }
+
+JXL_EXPORT JxlEncoderStatus JxlEncoderFlushInput(JxlEncoder* enc) {
+  while (enc->input_queue.empty()) {
+    if (enc->RefillOutputByteQueue() != JXL_ENC_SUCCESS) {
+      return JXL_ENC_ERROR;
+    }
+  }
+  return JXL_ENC_SUCCESS;
+}
+
+JXL_EXPORT JxlEncoderStatus JxlEncoderSetOutputProcessor(
+    JxlEncoder* enc, JxlEncoderOutputProcessor output_processor) {
+  if (enc->output_processor.NumBytesWritten() != 0) {
+    return JXL_API_ERROR(
+        enc, JXL_ENC_ERR_API_USAGE,
+        "Set an output processor when some output was already produced");
+  }
+  if (!output_processor.advance_watermark || !output_processor.get_buffer ||
+      !output_processor.release_buffer) {
+    return JXL_API_ERROR(enc, JXL_ENC_ERR_API_USAGE,
+                         "Missing output processor functions");
+  }
+  enc->output_processor = JxlEncoderOutputProcessorWrapper(output_processor);
+  return JXL_ENC_SUCCESS;
+}
+
 JxlEncoderStatus JxlEncoderProcessOutput(JxlEncoder* enc, uint8_t** next_out,
                                          size_t* avail_out) {
+  if (!enc->output_processor.SetProcessOutputBuffer(next_out, avail_out)) {
+    return JXL_API_ERROR(enc, JXL_ENC_ERR_API_USAGE,
+                         "Cannot call JxlEncoderProcessOutput after calling "
+                         "JxlEncoderSetOutputProcessor");
+  }
   while (*avail_out >= 32 &&
          (!enc->output_byte_queue.empty() ||
           !enc->output_fast_frame_queue.empty() || !enc->input_queue.empty())) {

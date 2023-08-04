@@ -13,6 +13,7 @@
 #include <jxl/types.h>
 
 #include <deque>
+#include <memory>
 #include <vector>
 
 #include "lib/jxl/base/data_parallel.h"
@@ -194,6 +195,57 @@ void AppendBoxHeader(const jxl::BoxType& type, size_t size, bool unbounded,
 
 }  // namespace jxl
 
+class JxlEncoderOutputProcessorWrapper {
+ public:
+  JxlEncoderOutputProcessorWrapper() = default;
+  explicit JxlEncoderOutputProcessorWrapper(JxlEncoderOutputProcessor processor)
+      : external_output_processor_(
+            jxl::make_unique<JxlEncoderOutputProcessor>(processor)) {}
+
+  size_t NumBytesWritten() const { return num_bytes_written_; }
+
+  /*
+    void* GetBufferAt(size_t pos, size_t size) {
+      if (external_output_processor_) {
+        return external_output_processor_->get_buffer_at(
+            external_output_processor_.get(), pos, size);
+      }
+      return GetRequiredBufferAt(pos, size);
+    }
+
+    void* GetRequiredBufferAt(size_t pos, size_t size) {
+      if (external_output_processor_) {
+        return external_output_processor_->get_required_buffer_at(
+            external_output_processor_.get(), pos, size);
+      }
+      JXL_ASSERT(pos >= num_bytes_finalized_);
+
+      return nullptr;
+    }
+
+    void ReleaseBuffer() {
+      if (external_output_processor_) {
+        return external_output_processor_->release_buffer(
+            external_output_processor_.get());
+      }
+      // noop
+    }
+  */
+
+    bool SetProcessOutputBuffer(uint8_t** next_out, size_t* avail_out) {
+      if (external_output_processor_) return false;
+      this->next_out = next_out;
+      this->avail_out = avail_out;
+      return true;
+    }
+
+ private:
+  uint8_t** next_out;
+  size_t* avail_out;
+  size_t num_bytes_written_ = 0;
+  std::unique_ptr<JxlEncoderOutputProcessor> external_output_processor_;
+};
+
 // Internal use only struct, can only be initialized correctly by
 // JxlEncoderCreate.
 struct JxlEncoderStruct {
@@ -208,6 +260,8 @@ struct JxlEncoderStruct {
   size_t num_queued_frames;
   size_t num_queued_boxes;
   std::vector<jxl::JxlEncoderQueuedInput> input_queue;
+  JxlEncoderOutputProcessorWrapper output_processor;
+
   std::deque<uint8_t> output_byte_queue;
   std::deque<jxl::FJXLFrameUniquePtr> output_fast_frame_queue;
 
