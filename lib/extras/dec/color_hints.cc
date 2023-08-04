@@ -7,7 +7,10 @@
 
 #include <jxl/encode.h>
 
+#include <vector>
+
 #include "lib/extras/dec/color_description.h"
+#include "lib/jxl/base/status.h"
 
 namespace jxl {
 namespace extras {

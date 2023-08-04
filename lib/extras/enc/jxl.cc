@@ -5,6 +5,7 @@
 
 #include "lib/extras/enc/jxl.h"
 
+#include <jxl/encode.h>
 #include <jxl/encode_cxx.h>
 
 #include "lib/jxl/exif.h"
