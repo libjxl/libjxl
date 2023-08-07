@@ -126,7 +126,7 @@ jobs:
       run: |
         artifact_name="jxl-debs-amd64-${matrix_os/:/-}"
         echo ${artifact_name}
-        echo "::set-output name=artifact_name::${artifact_name}"
+        echo "artifact_name=${artifact_name}" >> $GITHUB_OUTPUT
       env:
         matrix_os: ${{ matrix.os }}
 

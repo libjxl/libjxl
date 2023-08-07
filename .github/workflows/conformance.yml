@@ -110,7 +110,7 @@ jobs:
     - name: Git environment
       id: git-env
       run: |
-        echo "::set-output name=parent::$(git rev-parse ${{ github.sha }}^)"
+        echo "parent=$(git rev-parse ${{ github.sha }}^)" >> $GITHUB_OUTPUT
       shell: bash
     - name: ccache
       uses: actions/cache@88522ab9f39a2ea568f7027eddc7d8d8bc9d59c8 # v3.3.1
