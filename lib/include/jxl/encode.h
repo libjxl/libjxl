@@ -19,10 +19,7 @@
 #include <jxl/memory_manager.h>
 #include <jxl/parallel_runner.h>
 #include <jxl/stats.h>
-#include <jxl/types.h>
 #include <jxl/version.h>
-
-#include <cstdint>
 
 #if defined(__cplusplus) || defined(c_plusplus)
 extern "C" {
@@ -648,43 +645,33 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderAddImageFrame(
     const JxlPixelFormat* pixel_format, const void* buffer, size_t size);
 
 /**
- * @brief
- *
  * TODO
  *
  */
 struct JxlEncoderOutputProcessor {
   /**
-   * @brief
    * TODO
    */
   void* opaque;
 
   /**
-   * @brief
    * TODO
-   *
    * size of 0 = asked to stop
    */
   void* (*get_buffer)(void* opaque, size_t* size);
 
   /**
-   * @brief
-   *
    * TODO
    */
   void (*release_buffer)(void* opaque, size_t written_bytes);
 
   /**
-   * @brief
-   *
+   * TODO
    * Can only be done when there is no buffer.
    */
   void (*seek)(void* opaque, int64_t offset);
 
   /**
-   * @brief
-   *
    * TODO
    */
   void (*advance_watermark)(void* opaque, uint64_t offset);
@@ -692,10 +679,11 @@ struct JxlEncoderOutputProcessor {
 
 /**
  * TODO(firsching): add documentation
- *
+ * @param enc encoder object.
+ * @param output_processor the struct containing the callbacks
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderSetOutputProcessor(
-    JxlEncoder* enc, JxlEncoderOutputProcessor output_processor);
+    JxlEncoder* enc, struct JxlEncoderOutputProcessor output_processor);
 
 /**
  * TODO(firsching): add documentation
