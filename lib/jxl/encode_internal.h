@@ -199,7 +199,9 @@ class JxlEncoderOutputProcessorWrapper {
  public:
   JxlEncoderOutputProcessorWrapper() = default;
   explicit JxlEncoderOutputProcessorWrapper(JxlEncoderOutputProcessor processor)
-      : external_output_processor_(
+      : next_out(nullptr),
+        avail_out(nullptr),
+        external_output_processor_(
             jxl::make_unique<JxlEncoderOutputProcessor>(processor)) {}
 
   size_t NumBytesWritten() const { return num_bytes_written_; }
