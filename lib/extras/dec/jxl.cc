@@ -166,7 +166,7 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
                JXL_DEC_BOX);
     if (accepted_formats.empty()) {
       // decoding just the metadata, not the pixel data
-      events ^= JXL_DEC_FULL_IMAGE;
+      events ^= (JXL_DEC_FULL_IMAGE | JXL_DEC_PREVIEW_IMAGE);
     }
   }
   if (JXL_DEC_SUCCESS != JxlDecoderSubscribeEvents(dec, events)) {
