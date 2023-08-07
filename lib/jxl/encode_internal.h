@@ -232,12 +232,12 @@ class JxlEncoderOutputProcessorWrapper {
     }
   */
 
-    bool SetProcessOutputBuffer(uint8_t** next_out, size_t* avail_out) {
-      if (external_output_processor_) return false;
-      this->next_out = next_out;
-      this->avail_out = avail_out;
-      return true;
-    }
+  bool SetProcessOutputBuffer(uint8_t** next_out, size_t* avail_out) {
+    if (external_output_processor_) return false;
+    this->next_out = next_out;
+    this->avail_out = avail_out;
+    return true;
+  }
 
  private:
   uint8_t** next_out;
