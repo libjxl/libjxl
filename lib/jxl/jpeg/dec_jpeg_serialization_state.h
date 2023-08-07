@@ -18,6 +18,7 @@ namespace jpeg {
 struct HuffmanCodeTable {
   int8_t depth[256];
   uint16_t code[256];
+  bool initialized = false;
   void InitDepths(int value = 0) {
     std::fill(std::begin(depth), std::end(depth), value);
   }
