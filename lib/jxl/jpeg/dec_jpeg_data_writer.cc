@@ -379,6 +379,7 @@ bool EncodeDHT(const JPEGData& jpg, SerializationState* state) {
     if (!BuildHuffmanCodeTable(huff, huff_table)) {
       return false;
     }
+    huff_table->initialized = true;
     size_t total_count = 0;
     size_t max_length = 0;
     for (size_t i = 0; i < huff.counts.size(); ++i) {
@@ -498,7 +499,9 @@ bool EncodeDCTBlockSequential(const coeff_t* coeffs, HuffmanCodeTable* dc_huff,
   // of catching it and returning error)
   if (dc_nbits >= 12) return false;
 #endif
-  if (dc_nbits) WriteBits(bw, dc_nbits, temp & ((1u << dc_nbits) - 1));
+  if (dc_nbits) {
+    WriteBits(bw, dc_nbits, temp & ((1u << dc_nbits) - 1));
+  }
   int16_t r = 0;
 
   for (size_t i = 1; i < 64; i++) {
@@ -558,7 +561,9 @@ bool EncodeDCTBlockProgressive(const coeff_t* coeffs, HuffmanCodeTable* dc_huff,
     }
     int nbits = (temp == 0) ? 0 : (FloorLog2Nonzero<uint32_t>(temp) + 1);
     WriteSymbol(nbits, dc_huff, bw);
-    if (nbits) WriteBits(bw, nbits, temp2 & ((1 << nbits) - 1));
+    if (nbits) {
+      WriteBits(bw, nbits, temp2 & ((1 << nbits) - 1));
+    }
     ++Ss;
   }
   if (Ss > Se) {
@@ -747,6 +752,7 @@ SerializationStatus JXL_NOINLINE DoEncodeScan(const JPEGData& jpg,
 
   // DC-only is defined by [0..0] spectral range.
   const bool want_ac = ((Ss != 0) || (Se != 0));
+  const bool want_dc = (Ss == 0);
   // TODO: support streaming decoding again.
   const bool complete_ac = true;
   const bool has_ac = true;
@@ -790,6 +796,12 @@ SerializationStatus JXL_NOINLINE DoEncodeScan(const JPEGData& jpg,
         size_t ac_tbl_idx = si.ac_tbl_idx;
         HuffmanCodeTable* dc_huff = &state->dc_huff_table[dc_tbl_idx];
         HuffmanCodeTable* ac_huff = &state->ac_huff_table[ac_tbl_idx];
+        if (want_dc && !dc_huff->initialized) {
+          return SerializationStatus::ERROR;
+        }
+        if (want_ac && !ac_huff->initialized) {
+          return SerializationStatus::ERROR;
+        }
         int n_blocks_y = is_interleaved ? c.v_samp_factor : 1;
         int n_blocks_x = is_interleaved ? c.h_samp_factor : 1;
         // compressed size per block cannot be more than 512 bytes per component
