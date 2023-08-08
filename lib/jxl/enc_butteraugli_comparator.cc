@@ -8,7 +8,7 @@
 #include <algorithm>
 #include <vector>
 
-#include "lib/jxl/color_management.h"
+#include "lib/jxl/dec_color_management.h"
 #include "lib/jxl/enc_image_bundle.h"
 
 namespace jxl {

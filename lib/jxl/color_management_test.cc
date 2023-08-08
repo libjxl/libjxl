@@ -3,7 +3,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include "lib/jxl/color_management.h"
+#include "lib/jxl/dec_color_management.h"
 
 #include <stdint.h>
 #include <stdio.h>

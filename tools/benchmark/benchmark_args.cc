@@ -16,7 +16,7 @@
 #include "lib/extras/dec/color_description.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
-#include "lib/jxl/color_management.h"
+#include "lib/jxl/dec_color_management.h"
 #include "tools/benchmark/benchmark_codec_custom.h"  // for AddCommand..
 #include "tools/benchmark/benchmark_codec_jpeg.h"  // for AddCommand..
 #include "tools/benchmark/benchmark_codec_jxl.h"
