@@ -17,8 +17,8 @@
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
-#include "lib/jxl/dec_color_management.h"
 #include "lib/jxl/common.h"
+#include "lib/jxl/dec_color_management.h"
 #include "lib/jxl/image.h"
 
 namespace jxl {

@@ -23,8 +23,8 @@
 #include "lib/jxl/base/cache_aligned.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/printf_macros.h"
-#include "lib/jxl/dec_color_management.h"
 #include "lib/jxl/common.h"
+#include "lib/jxl/dec_color_management.h"
 #include "lib/jxl/sanitizers.h"
 #include "lib/jxl/transfer_functions-inl.h"
 

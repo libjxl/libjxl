@@ -10,8 +10,8 @@
 #include <array>
 #include <cmath>
 
-#include "lib/jxl/dec_color_management.h"
 #include "lib/jxl/common.h"
+#include "lib/jxl/dec_color_management.h"
 #include "lib/jxl/fields.h"
 #include "lib/jxl/matrix_ops.h"
 
