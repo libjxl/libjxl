@@ -11,8 +11,8 @@
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/dec_external_image.h"
-#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_external_image.h"
+#include "lib/jxl/jxl_cms.h"
 #include "tools/cmdline.h"
 #include "tools/thread_pool_internal.h"
 

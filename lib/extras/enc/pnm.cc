@@ -17,12 +17,12 @@
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_management.h"
 #include "lib/jxl/dec_external_image.h"
-#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_image_bundle.h"
 #include "lib/jxl/fields.h"  // AllDefault
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
+#include "lib/jxl/jxl_cms.h"
 
 namespace jxl {
 namespace extras {

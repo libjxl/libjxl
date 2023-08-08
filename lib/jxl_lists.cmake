@@ -30,6 +30,12 @@ set(JPEGXL_INTERNAL_BASE_SOURCES
   jxl/base/status.h
 )
 
+set(JPEGXL_INTERNAL_CMS_SOURCES
+  jxl/jxl_cms.cc
+  jxl/jxl_cms.h
+  jxl/jxl_skcms.h
+)
+
 set(JPEGXL_INTERNAL_CODEC_APNG_SOURCES
   extras/dec/apng.cc
   extras/dec/apng.h
@@ -323,8 +329,6 @@ set(JPEGXL_INTERNAL_ENC_SOURCES
   jxl/enc_cluster.h
   jxl/enc_coeff_order.cc
   jxl/enc_coeff_order.h
-  jxl/enc_color_management.cc
-  jxl/enc_color_management.h
   jxl/enc_comparator.cc
   jxl/enc_comparator.h
   jxl/enc_context_map.cc
@@ -362,7 +366,6 @@ set(JPEGXL_INTERNAL_ENC_SOURCES
   jxl/enc_icc_codec.h
   jxl/enc_image_bundle.cc
   jxl/enc_image_bundle.h
-  jxl/enc_jxl_skcms.h
   jxl/enc_linalg.cc
   jxl/enc_linalg.h
   jxl/enc_modular.cc

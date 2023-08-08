@@ -29,10 +29,10 @@ Design:
 #include <cmath>
 
 #include "lib/jxl/base/printf_macros.h"
-#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_xyb.h"
 #include "lib/jxl/gauss_blur.h"
 #include "lib/jxl/image_ops.h"
+#include "lib/jxl/jxl_cms.h"
 
 namespace {
 

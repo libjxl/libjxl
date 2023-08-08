@@ -7,7 +7,7 @@
 
 #include <cmath>
 
-#include "lib/jxl/enc_color_management.h"
+#include "lib/jxl/jxl_cms.h"
 
 namespace jxl {
 

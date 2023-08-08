@@ -134,6 +134,7 @@ function(strip_static OUTPUT_VAR LIB_LIST)
 endfunction()
 
 # The jxl library definition.
+include(jxl_cms.cmake)
 include(jxl.cmake)
 
 # Other libraries outside the core jxl library.

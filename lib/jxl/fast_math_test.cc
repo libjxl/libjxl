@@ -9,8 +9,8 @@
 
 #include "lib/jxl/base/random.h"
 #include "lib/jxl/dec_xyb-inl.h"
-#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_xyb.h"
+#include "lib/jxl/jxl_cms.h"
 #include "lib/jxl/testing.h"
 #include "lib/jxl/transfer_functions-inl.h"
 

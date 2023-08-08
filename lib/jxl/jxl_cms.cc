@@ -3,7 +3,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include "lib/jxl/enc_color_management.h"
+#include "lib/jxl/jxl_cms.h"
 
 #ifndef JPEGXL_ENABLE_SKCMS
 #define JPEGXL_ENABLE_SKCMS 0
@@ -22,7 +22,7 @@
 #include <utility>
 
 #undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "lib/jxl/enc_color_management.cc"
+#define HWY_TARGET_INCLUDE "lib/jxl/jxl_cms.cc"
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 
@@ -35,7 +35,7 @@
 #include "lib/jxl/matrix_ops.h"
 #include "lib/jxl/transfer_functions-inl.h"
 #if JPEGXL_ENABLE_SKCMS
-#include "lib/jxl/enc_jxl_skcms.h"
+#include "lib/jxl/jxl_skcms.h"
 #else  // JPEGXL_ENABLE_SKCMS
 #include "lcms2.h"
 #include "lcms2_plugin.h"
@@ -45,8 +45,8 @@
 
 // Define these only once. We can't use HWY_ONCE here because it is defined as
 // 1 only on the last pass.
-#ifndef LIB_JXL_ENC_COLOR_MANAGEMENT_CC_
-#define LIB_JXL_ENC_COLOR_MANAGEMENT_CC_
+#ifndef LIB_JXL_JXL_CMS_CC
+#define LIB_JXL_JXL_CMS_CC
 
 namespace jxl {
 namespace {
@@ -79,7 +79,7 @@ Status ApplyHlgOotf(JxlCms* t, float* JXL_RESTRICT buf, size_t xsize,
 }  // namespace
 }  // namespace jxl
 
-#endif  // LIB_JXL_ENC_COLOR_MANAGEMENT_CC_
+#endif  // LIB_JXL_JXL_CMS_CC_
 
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
@@ -375,7 +375,7 @@ Status DecodeProfile(const uint8_t* icc, size_t size,
   }
   return true;
 }
-#else  // JPEGXL_ENABLE_SKCMS
+#else   // JPEGXL_ENABLE_SKCMS
 Status DecodeProfile(const cmsContext context, Span<const uint8_t> icc,
                      Profile* profile) {
   profile->reset(cmsOpenProfileFromMemTHR(context, icc.data(), icc.size()));
@@ -1125,7 +1125,7 @@ void* JxlCmsInit(void* init_data, size_t num_threads, size_t xsize,
     c_linear_src.tf.SetTransferFunction(TransferFunction::kLinear);
 #if JPEGXL_ENABLE_SKCMS
     skcms_ICCProfile new_src;
-#else  // JPEGXL_ENABLE_SKCMS
+#else   // JPEGXL_ENABLE_SKCMS
     Profile new_src;
 #endif  // JPEGXL_ENABLE_SKCMS
         // Only enable ExtraTF if profile creation succeeded.
