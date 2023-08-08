@@ -5,6 +5,7 @@
 
 #include "lib/jxl/dec_group.h"
 
+#include <emmintrin.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -81,13 +82,26 @@ constexpr D d;
 constexpr DI di;
 constexpr DI16 di16;
 
-// TODO(veluca): consider SIMDfying.
 void Transpose8x8InPlace(int32_t* JXL_RESTRICT block) {
+#if defined(__SSE2__)
   for (size_t x = 0; x < 8; x++) {
     for (size_t y = x + 1; y < 8; y++) {
-      std::swap(block[y * 8 + x], block[x * 8 + y]);
+      __m128i a = _mm_loadu_si128((__m128i*)(block + y * 8 + x));
+      __m128i b = _mm_loadu_si128((__m128i*)(block + x * 8 + y));
+      _mm_storeu_si128((__m128i*)(block + y * 8 + x), b);
+      _mm_storeu_si128((__m128i*)(block + x * 8 + y), a);
     }
   }
+#else
+  // Fallback: Non-SIMD implementation
+  for (size_t x = 0; x < 8; x++) {
+    for (size_t y = x + 1; y < 8; y++) {
+      int32_t temp = block[y * 8 + x];
+      block[y * 8 + x] = block[x * 8 + y];
+      block[x * 8 + y] = temp;
+    }
+  }
+#endif
 }
 
 template <ACType ac_type>
@@ -629,10 +643,42 @@ struct GetBlockFromEncoder : public GetBlock {
     for (size_t c = 0; c < 3; c++) {
       // for each pass
       for (size_t i = 0; i < quantized_ac->size(); i++) {
-        for (size_t k = 0; k < size; k++) {
-          // TODO(veluca): SIMD.
-          block[c].ptr32[k] +=
-              rows[i][c][offset + k] * (1 << shift_for_pass[i]);
+        const int32_t* rowPtr = rows[i][c];
+        const int32_t* offsetPtr = rowPtr + offset;
+        ACPtr& acPtr = block[c];
+
+        for (size_t k = 0; k < size; k += 4) {
+          __m128i acc = _mm_setzero_si128();
+          __m128i rowData;
+
+#if defined(__SSE2__)
+          // Load data from memory
+          rowData = _mm_loadu_si128((__m128i*)(offsetPtr + k));
+
+          // Multiply by shift value
+          __m128i shifts = _mm_set1_epi32(1 << shift_for_pass[i]);
+          __m128i lo = _mm_mullo_epi16(rowData, shifts);
+          __m128i hi = _mm_mullo_epi16(_mm_srli_si128(rowData, 8), shifts);
+
+          // Combine the results
+          lo = _mm_unpacklo_epi16(lo, hi);
+          lo = _mm_srai_epi32(lo, 16);
+          acc = _mm_add_epi32(lo, acc);
+#else
+          // Fallback: Non-SIMD implementation
+          rowData = _mm_set_epi32(offsetPtr[k + 3], offsetPtr[k + 2],
+                                  offsetPtr[k + 1], offsetPtr[k]);
+          int32_t shift = 1 << shift_for_pass[i];
+          acc = _mm_set_epi32(acPtr.ptr32[k + 3], acPtr.ptr32[k + 2],
+                              acPtr.ptr32[k + 1], acPtr.ptr32[k]);
+          acc = _mm_add_epi32(
+              _mm_srai_epi32(_mm_mullo_epi32(rowData, _mm_set1_epi32(shift)),
+                             16),
+              acc);
+#endif
+
+          // Store the result back to memory
+          _mm_storeu_si128((__m128i*)(acPtr.ptr32 + k), acc);
         }
       }
     }
