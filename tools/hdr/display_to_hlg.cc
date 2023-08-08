@@ -10,7 +10,7 @@
 #include "lib/extras/hlg.h"
 #include "lib/extras/tone_mapping.h"
 #include "lib/jxl/base/span.h"
-#include "lib/jxl/enc_color_management.h"
+#include "lib/jxl/jxl_cms.h"
 #include "tools/args.h"
 #include "tools/cmdline.h"
 #include "tools/file_io.h"

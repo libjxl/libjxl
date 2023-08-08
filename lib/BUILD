@@ -7,6 +7,7 @@
 load(
     "jxl_lists.bzl",
     "libjxl_base_sources",
+    "libjxl_cms_sources",
     "libjxl_codec_apng_sources",
     "libjxl_codec_exr_sources",
     "libjxl_codec_gif_sources",
@@ -184,7 +185,7 @@ cc_library(
 
 cc_library(
     name = "jpegxl",
-    srcs = libjxl_dec_sources + libjxl_dec_box_sources + libjxl_dec_jpeg_sources + libjxl_enc_sources,
+    srcs = libjxl_dec_sources + libjxl_dec_box_sources + libjxl_dec_jpeg_sources + libjxl_enc_sources + libjxl_cms_sources,
     compatible_with = DEFAULT_COMPATIBILITY,
     defines = ["JPEGXL_ENABLE_SKCMS=1"],
     deps = [
@@ -197,7 +198,7 @@ cc_library(
     name = "jpegxl_private",
     hdrs = [
         path
-        for path in libjxl_dec_sources + libjxl_dec_box_sources + libjxl_dec_jpeg_sources + libjxl_enc_sources
+        for path in libjxl_dec_sources + libjxl_dec_box_sources + libjxl_dec_jpeg_sources + libjxl_enc_sources + libjxl_cms_sources
         if path.endswith(".h") and not path.endswith("-inl.h")
     ],
     compatible_with = DEFAULT_COMPATIBILITY,

@@ -133,22 +133,29 @@ def SplitLibFiles(repo_files):
     'jxl/decode_to_jpeg.cc', 'jxl/decode_to_jpeg.h'))
   dec_box_sources, dec_sources = Filter(dec_sources, HasPrefixFn(
     'jxl/box_content_decoder.cc', 'jxl/box_content_decoder.h'))
+  cms_sources, dec_sources = Filter(dec_sources, HasPrefixFn(
+    'jxl/jxl_cms.cc', 'jxl/jxl_cms.h', 'jxl/jxl_skcms.h'))
 
   # TODO(lode): further prune dec_srcs: only those files that the decoder
   # absolutely needs, and or not only for encoding, should be listed here.
 
-  return codecs | {'base_sources': base_sources, 
-    'dec_box_sources': dec_box_sources, 'dec_jpeg_sources': dec_jpeg_sources,
-    'dec_sources': dec_sources, 'enc_sources': enc_sources,
+  return codecs | {'base_sources': base_sources,
+    'cms_sources': cms_sources,
+    'dec_box_sources': dec_box_sources,
+    'dec_jpeg_sources': dec_jpeg_sources,
+    'dec_sources': dec_sources,
+    'enc_sources': enc_sources,
     'extras_for_tools_sources': extras_for_tools_sources,
-    'extras_sources': extras_sources, 'gbench_sources': gbench_sources,
+    'extras_sources': extras_sources,
+    'gbench_sources': gbench_sources,
     'jpegli_sources': jpegli_sources,
     'jpegli_testlib_files': jpegli_testlib_files,
     'jpegli_libjpeg_helper_files': jpegli_libjpeg_helper_files,
     'jpegli_tests': jpegli_tests,
     'jpegli_wrapper_sources' : jpegli_wrapper_sources,
     'public_headers': public_headers,
-    'testlib_files': testlib_files, 'tests': tests,
+    'testlib_files': testlib_files,
+    'tests': tests,
     'threads_public_headers': threads_public_headers,
     'threads_sources': threads_sources,
   }

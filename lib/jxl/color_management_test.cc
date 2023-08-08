@@ -15,9 +15,9 @@
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/random.h"
-#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_xyb.h"
 #include "lib/jxl/image_test_utils.h"
+#include "lib/jxl/jxl_cms.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"
 
@@ -172,14 +172,10 @@ class ColorManagementTest
     ASSERT_TRUE(xform_fwd.Run(thread, in.Row(0), xform_fwd.BufDst(thread)));
     ASSERT_TRUE(xform_rev.Run(thread, xform_fwd.BufDst(thread), out->Row(0)));
 
-#if JPEGXL_ENABLE_SKCMS
+    // With lcms2, this value is lower: 5E-5
     double max_l1 = 7E-4;
-    double max_rel = 4E-7;
-#else
-    double max_l1 = 5E-5;
     // Most are lower; reached 3E-7 with D60 AP0.
     double max_rel = 4E-7;
-#endif
     if (c.IsGray()) max_rel = 2E-5;
     JXL_ASSERT_OK(VerifyRelativeError(in, *out, max_l1, max_rel, _));
   }

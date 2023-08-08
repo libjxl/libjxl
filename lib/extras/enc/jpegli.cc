@@ -11,8 +11,8 @@
 
 #include "lib/extras/enc/encode.h"
 #include "lib/jpegli/encode.h"
-#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_xyb.h"
+#include "lib/jxl/jxl_cms.h"
 
 namespace jxl {
 namespace extras {

@@ -31,17 +31,6 @@ set(JPEGXL_INTERNAL_LIBS
   brotlienc
 )
 
-if (JPEGXL_ENABLE_SKCMS)
-  list(APPEND JPEGXL_INTERNAL_FLAGS -DJPEGXL_ENABLE_SKCMS=1)
-  if (JPEGXL_BUNDLE_SKCMS)
-    list(APPEND JPEGXL_INTERNAL_FLAGS -DJPEGXL_BUNDLE_SKCMS=1)
-    # skcms objects are later added to JPEGXL_INTERNAL_OBJECTS
-  else ()
-    list(APPEND JPEGXL_INTERNAL_LIBS skcms)
-  endif ()
-else ()
-  list(APPEND JPEGXL_INTERNAL_LIBS lcms2)
-endif ()
 
 if (JPEGXL_ENABLE_TRANSCODE_JPEG)
   list(APPEND JPEGXL_INTERNAL_FLAGS -DJPEGXL_ENABLE_TRANSCODE_JPEG=1)
@@ -140,16 +129,6 @@ target_compile_definitions(jxl_enc-obj PUBLIC
 )
 jxl_link_libraries(jxl_enc-obj jxl_base-obj)
 
-#TODO(lode): don't depend on CMS for the core library
-if (JPEGXL_ENABLE_SKCMS)
-  target_include_directories(jxl_enc-obj PRIVATE
-    $<TARGET_PROPERTY:skcms,INCLUDE_DIRECTORIES>
-  )
-else ()
-  target_include_directories(jxl_enc-obj PRIVATE
-    $<TARGET_PROPERTY:lcms2,INCLUDE_DIRECTORIES>
-  )
-endif ()
 
 set_target_properties(jxl_dec-obj PROPERTIES
   CXX_VISIBILITY_PRESET hidden
@@ -178,9 +157,6 @@ set(JPEGXL_INTERNAL_OBJECTS
   $<TARGET_OBJECTS:jxl_enc-obj>
   $<TARGET_OBJECTS:jxl_dec-obj>
 )
-if (JPEGXL_ENABLE_SKCMS AND JPEGXL_BUNDLE_SKCMS)
-  list(APPEND JPEGXL_INTERNAL_OBJECTS $<TARGET_OBJECTS:skcms-obj>)
-endif()
 
 # Private static library. This exposes all the internal functions and is used
 # for tests.
@@ -189,6 +165,7 @@ endif()
 add_library(jxl-static STATIC ${JPEGXL_INTERNAL_OBJECTS})
 target_link_libraries(jxl-static
   PUBLIC ${JPEGXL_COVERAGE_FLAGS} ${JPEGXL_INTERNAL_LIBS} jxl_includes)
+target_link_libraries(jxl-static PRIVATE jxl_cms)
 target_include_directories(jxl-static PUBLIC
   "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>")
 
@@ -236,6 +213,7 @@ if (BUILD_SHARED_LIBS)
 add_library(jxl SHARED ${JPEGXL_INTERNAL_OBJECTS})
 strip_static(JPEGXL_INTERNAL_SHARED_LIBS JPEGXL_INTERNAL_LIBS)
 target_link_libraries(jxl PUBLIC ${JPEGXL_COVERAGE_FLAGS} jxl_includes)
+target_link_libraries(jxl PRIVATE jxl_cms)
 target_link_libraries(jxl PRIVATE ${JPEGXL_INTERNAL_SHARED_LIBS})
 # Shared library include path contains only the "include/" paths.
 set_target_properties(jxl PROPERTIES

@@ -6,7 +6,7 @@
 #include "benchmark/benchmark.h"
 #include "lib/extras/codec.h"
 #include "lib/extras/tone_mapping.h"
-#include "lib/jxl/enc_color_management.h"
+#include "lib/jxl/jxl_cms.h"
 
 namespace jxl {
 

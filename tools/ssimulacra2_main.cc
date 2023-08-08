@@ -7,7 +7,7 @@
 
 #include "lib/extras/codec.h"
 #include "lib/jxl/color_management.h"
-#include "lib/jxl/enc_color_management.h"
+#include "lib/jxl/jxl_cms.h"
 #include "tools/file_io.h"
 #include "tools/ssimulacra2.h"
 
