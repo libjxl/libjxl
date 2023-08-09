@@ -251,7 +251,10 @@ bool load_file(unsigned char** out, size_t* outsize, const char* filename) {
     return false;
   }
   *out = (unsigned char*)malloc(*outsize);
-  if (!(*out)) return false;
+  if (!(*out)) {
+    fclose(file);
+    return false;
+  }
   size_t readsize;
   readsize = fread(*out, 1, *outsize, file);
   fclose(file);
