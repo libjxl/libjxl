@@ -8,8 +8,6 @@
 #include <jxl/encode.h>
 #include <jxl/encode_cxx.h>
 
-#include <cstddef>
-#include <cstdint>
 #include <ostream>
 #include <vector>
 
@@ -1421,13 +1419,14 @@ class JxlStreamingAdapter {
       return static_cast<JxlStreamingAdapter*>(opaque)->GetBuffer(size);
     };
     if (can_seek) {
-      output_processor.seek = [](void* opaque, int64_t offset) {
-        return static_cast<JxlStreamingAdapter*>(opaque)->Seek(offset);
+      output_processor.seek = [](void* opaque, uint64_t position) {
+        return static_cast<JxlStreamingAdapter*>(opaque)->Seek(position);
       };
     }
-    output_processor.advance_watermark = [](void* opaque, uint64_t offset) {
-      return static_cast<JxlStreamingAdapter*>(opaque)->AdvanceWatermark(
-          offset);
+    output_processor.set_watermark = [](void* opaque,
+                                        uint64_t watermark_position) {
+      return static_cast<JxlStreamingAdapter*>(opaque)->SetWatermark(
+          watermark_position);
     };
     output_processor.release_buffer = [](void* opaque, size_t written_bytes) {
       return static_cast<JxlStreamingAdapter*>(opaque)->ReleaseBuffer(
@@ -1453,22 +1452,19 @@ class JxlStreamingAdapter {
   }
 
   void ReleaseBuffer(size_t written_bytes) {
-    // TODO: check no more bytes were written.
+    // TODO(veluca): check no more bytes were written.
     Seek(written_bytes);
   }
 
-  void Seek(int64_t offset) {
-    if (offset < 0) {
-      EXPECT_GE(position_, static_cast<uint64_t>(-offset));
-    }
-    position_ += offset;
-    EXPECT_GE(position_, watermark_);
+  void Seek(uint64_t position) {
+    EXPECT_GE(position, watermark_);
+    position_ = position;
   }
 
-  void AdvanceWatermark(uint64_t offset) {
-    EXPECT_GE(offset + watermark_, watermark_);
-    EXPECT_GE(offset + watermark_, offset);
-    watermark_ += offset;
+  void SetWatermark(uint64_t watermark_position) {
+    EXPECT_GE(watermark_position, watermark_);
+    watermark_ = watermark_position;
+    EXPECT_GE(position_, watermark_);
   }
 
   void CheckFinalWatermarkPosition() { EXPECT_EQ(watermark_, output_.size()); }

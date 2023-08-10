@@ -645,7 +645,9 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderAddImageFrame(
     const JxlPixelFormat* pixel_format, const void* buffer, size_t size);
 
 /**
- * TODO
+ * TODO: explain state of this processor
+ * either having an active buffer or not. When having an active buffer you can
+ * release_buffer and then
  *
  */
 struct JxlEncoderOutputProcessor {
@@ -656,25 +658,46 @@ struct JxlEncoderOutputProcessor {
 
   /**
    * TODO
-   * size of 0 = asked to stop
+   *
+   * If size is 0 and the returned value is NULL, this will be interpreted as
+   * asking output writing to stop, and the library will return an error.
+   * mandatory
+   * TODO(veluca): this is not implemented yet.
+   *
+   *
+   * @param opaque user supplied parameters to the callback
+   * @param size points to a suggested buffer size when called; must be set to
+   * the size of the returned buffer once the function returns.
    */
   void* (*get_buffer)(void* opaque, size_t* size);
 
   /**
    * TODO
+   * mandatory
+   * The advances the position number of bytes by `written_bytes` many bytes.
+   *
+   * @param opaque user supplied parameters to the callback
+   * @param written_bytes the number of bytes written.
+   *
    */
   void (*release_buffer)(void* opaque, size_t written_bytes);
 
   /**
    * TODO
+   * not mandatory, can be NULL
    * Can only be done when there is no buffer.
+   *
+   * @param opaque user supplied parameters to the callback
    */
-  void (*seek)(void* opaque, int64_t offset);
+  void (*seek)(void* opaque, uint64_t position);
 
   /**
-   * TODO
+   *
+   * mandatory
+   * @param opaque user supplied parameters to the callback
+   * @param offset in number of bytes
    */
-  void (*advance_watermark)(void* opaque, uint64_t offset);
+  void (*set_watermark)(void* opaque, uint64_t watermark_position);
 };
 
 /**

@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_fast_lossless.h"
 #include "lib/jxl/enc_frame.h"
@@ -196,6 +197,44 @@ void AppendBoxHeader(const jxl::BoxType& type, size_t size, bool unbounded,
 }  // namespace jxl
 
 class JxlEncoderOutputProcessorWrapper {
+  friend class Buffer;
+  class Buffer {
+    public:
+      size_t size() const { return size_; };
+      uint8_t* data() { return data_; }
+
+      Buffer(uint8_t* buffer, size_t size, JxlEncoderOutputProcessorWrapper* wrapper): data_(buffer), size_(size), wrapper_(wrapper) {}
+      ~Buffer() {
+        release();
+      }
+
+      Buffer(const Buffer&) = delete;
+      Buffer(Buffer&& other) noexcept : Buffer(other.data_, other.size_, other.wrapper_) {
+        other.data_ = nullptr;
+        other.size_ = 0;
+      }
+
+      void release() {
+        if (this->data_) {
+          wrapper_->ReleaseBuffer();
+        }
+        data_ = nullptr;
+        size_ = 0;
+      }
+
+      Buffer& operator=(const Buffer&) = delete;
+      Buffer& operator=(Buffer&& other) noexcept {
+        data_ = other.data_;
+        size_ = other.size_;
+        wrapper_ = other.wrapper_;
+        return *this;
+      }
+    private:
+      uint8_t* data_;
+      size_t size_;
+      JxlEncoderOutputProcessorWrapper* wrapper_;
+  };
+
  public:
   JxlEncoderOutputProcessorWrapper() = default;
   explicit JxlEncoderOutputProcessorWrapper(JxlEncoderOutputProcessor processor)
@@ -205,6 +244,8 @@ class JxlEncoderOutputProcessorWrapper {
             jxl::make_unique<JxlEncoderOutputProcessor>(processor)) {}
 
   size_t NumBytesWritten() const { return num_bytes_written_; }
+
+
 
   /*
     void* GetBufferAt(size_t pos, size_t size) {
@@ -234,6 +275,14 @@ class JxlEncoderOutputProcessorWrapper {
     }
   */
 
+  jxl::StatusOr<Buffer> GetBuffer(size_t pos, size_t size) {
+    return jxl::StatusCode::kGenericError;
+  }
+
+
+
+
+
   bool SetProcessOutputBuffer(uint8_t** next_out, size_t* avail_out) {
     if (external_output_processor_) return false;
     this->next_out = next_out;
@@ -241,10 +290,17 @@ class JxlEncoderOutputProcessorWrapper {
     return true;
   }
 
+
  private:
+
+  void ReleaseBuffer() {
+    // TODO
+  }
+
   uint8_t** next_out;
   size_t* avail_out;
   size_t num_bytes_written_ = 0;
+
   std::unique_ptr<JxlEncoderOutputProcessor> external_output_processor_;
 };
 

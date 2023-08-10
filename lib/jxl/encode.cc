@@ -1999,7 +1999,7 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetOutputProcessor(
         enc, JXL_ENC_ERR_API_USAGE,
         "Set an output processor when some output was already produced");
   }
-  if (!output_processor.advance_watermark || !output_processor.get_buffer ||
+  if (!output_processor.set_watermark|| !output_processor.get_buffer ||
       !output_processor.release_buffer) {
     return JXL_API_ERROR(enc, JXL_ENC_ERR_API_USAGE,
                          "Missing output processor functions");
