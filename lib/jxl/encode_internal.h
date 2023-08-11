@@ -11,12 +11,16 @@
 #include <jxl/memory_manager.h>
 #include <jxl/parallel_runner.h>
 #include <jxl/types.h>
+#include <sys/types.h>
 
+#include <cstddef>
 #include <deque>
+#include <map>
 #include <memory>
 #include <vector>
 
 #include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_fast_lossless.h"
@@ -203,20 +207,34 @@ class JxlEncoderOutputProcessorWrapper {
       size_t size() const { return size_; };
       uint8_t* data() { return data_; }
 
-      Buffer(uint8_t* buffer, size_t size, JxlEncoderOutputProcessorWrapper* wrapper): data_(buffer), size_(size), wrapper_(wrapper) {}
+      Buffer(uint8_t* buffer, size_t size, size_t bytes_used,
+             JxlEncoderOutputProcessorWrapper* wrapper)
+          : data_(buffer),
+            size_(size),
+            bytes_used_(bytes_used),
+            wrapper_(wrapper) {}
       ~Buffer() {
         release();
       }
 
       Buffer(const Buffer&) = delete;
-      Buffer(Buffer&& other) noexcept : Buffer(other.data_, other.size_, other.wrapper_) {
-        other.data_ = nullptr;
-        other.size_ = 0;
+      Buffer(Buffer&& other) noexcept
+          : Buffer(other.data_, other.size_, other.bytes_used_,
+                   other.wrapper_) {
+      other.data_ = nullptr;
+      other.size_ = 0;
+      }
+
+      void advance(size_t count) {
+      JXL_ASSERT(count <= size_);
+      data_ += count;
+      size_ -= count;
+      bytes_used_ += count;
       }
 
       void release() {
         if (this->data_) {
-          wrapper_->ReleaseBuffer();
+        wrapper_->ReleaseBuffer(bytes_used_);
         }
         data_ = nullptr;
         size_ = 0;
@@ -232,74 +250,204 @@ class JxlEncoderOutputProcessorWrapper {
     private:
       uint8_t* data_;
       size_t size_;
+      size_t bytes_used_;
       JxlEncoderOutputProcessorWrapper* wrapper_;
   };
 
  public:
   JxlEncoderOutputProcessorWrapper() = default;
   explicit JxlEncoderOutputProcessorWrapper(JxlEncoderOutputProcessor processor)
-      : next_out(nullptr),
-        avail_out(nullptr),
-        external_output_processor_(
+      : external_output_processor_(
             jxl::make_unique<JxlEncoderOutputProcessor>(processor)) {}
 
-  size_t NumBytesWritten() const { return num_bytes_written_; }
+  bool HasAvailOut() const { return avail_out_ != nullptr; }
 
+  // Caller can never overwrite a previously-written buffer. Asking for a buffer
+  // with `min_size` such that `position + min_size` overlaps with a
+  // previously-written buffer is invalid.
+  jxl::StatusOr<Buffer> GetBuffer(size_t min_size, size_t requested_size) {
+      if (stop_requested_) return jxl::StatusCode::kNotEnoughBytes;
 
+      // If we support seeking, output_position_ == position_.
+      // Otherwise, output_position_ <= position_.
+      JXL_ASSERT(output_position_ <= position_);
+      size_t additional_size = position_ - output_position_;
 
-  /*
-    void* GetBufferAt(size_t pos, size_t size) {
       if (external_output_processor_) {
-        return external_output_processor_->get_buffer_at(
-            external_output_processor_.get(), pos, size);
+        size_t size = requested_size + additional_size;
+        uint8_t* user_buffer =
+            static_cast<uint8_t*>(external_output_processor_->get_buffer(
+                external_output_processor_->opaque, &size));
+        if (size == 0 || user_buffer == nullptr) {
+        stop_requested_ = true;
+        return jxl::StatusCode::kNotEnoughBytes;
+        }
+        if (size < min_size + additional_size) {
+        external_output_processor_->release_buffer(
+            external_output_processor_->opaque, 0);
+        } else {
+        internal_buffers_.emplace(position_, InternalBuffer());
+        return Buffer(user_buffer + additional_size, size - additional_size, 0,
+                      this);
+        }
+      } else {
+        if (min_size + additional_size < *avail_out_) {
+        internal_buffers_.emplace(position_, InternalBuffer());
+        return Buffer(*next_out_ + additional_size,
+                      *avail_out_ - additional_size, 0, this);
+        }
       }
-      return GetRequiredBufferAt(pos, size);
-    }
 
-    void* GetRequiredBufferAt(size_t pos, size_t size) {
-      if (external_output_processor_) {
-        return external_output_processor_->get_required_buffer_at(
-            external_output_processor_.get(), pos, size);
+      // Otherwise, we need to allocate our own buffer.
+      auto it = internal_buffers_.emplace(position_, InternalBuffer()).first;
+      InternalBuffer& buffer = it->second;
+      size_t alloc_size = requested_size;
+      it++;
+      if (it != internal_buffers_.end()) {
+        alloc_size = std::min(alloc_size, it->first - position_);
+        JXL_ASSERT(alloc_size >= min_size);
       }
-      JXL_ASSERT(pos >= num_bytes_finalized_);
-
-      return nullptr;
-    }
-
-    void ReleaseBuffer() {
-      if (external_output_processor_) {
-        return external_output_processor_->release_buffer(
-            external_output_processor_.get());
-      }
-      // noop
-    }
-  */
-
-  jxl::StatusOr<Buffer> GetBuffer(size_t pos, size_t size) {
-    return jxl::StatusCode::kGenericError;
+      buffer.owned_data.resize(alloc_size);
+      return Buffer(buffer.owned_data.data(), alloc_size, 0, this);
   }
 
-
-
-
-
-  bool SetProcessOutputBuffer(uint8_t** next_out, size_t* avail_out) {
-    if (external_output_processor_) return false;
-    this->next_out = next_out;
-    this->avail_out = avail_out;
-    return true;
+  void Seek(size_t pos) {
+      if (external_output_processor_ && external_output_processor_->seek) {
+        external_output_processor_->seek(external_output_processor_->opaque,
+                                         pos);
+        output_position_ = pos;
+      }
+      JXL_ASSERT(pos >= watermark_position_);
+      position_ = pos;
   }
 
+  void SetWatermark(size_t pos) {
+      if (external_output_processor_) {
+        external_output_processor_->set_watermark(
+            external_output_processor_->opaque, pos);
+      }
+      watermark_position_ = pos;
+      FlushOutput();
+  }
+
+  size_t CurrentPosition() const { return position_; }
+
+  bool SetAvailOut(uint8_t** next_out, size_t* avail_out) {
+      if (external_output_processor_) return false;
+      avail_out_ = avail_out;
+      next_out_ = next_out;
+      FlushOutput();
+      return true;
+  }
+
+  bool WasStopRequested() const { return stop_requested_; }
 
  private:
+  void ReleaseBuffer(size_t bytes_used) {
+      auto it = internal_buffers_.find(position_);
+      if (bytes_used == 0) {
+        internal_buffers_.erase(it);
+        return;
+      }
+      JXL_ASSERT(it != internal_buffers_.end());
+      it->second.written_bytes = bytes_used;
+      if (external_output_processor_ && external_output_processor_->seek &&
+          !it->second.owned_data.empty()) {
+        external_output_processor_->seek(external_output_processor_->opaque,
+                                         position_);
+        output_position_ = position_;
+        while (output_position_ < position_ + bytes_used) {
+        size_t num_to_write = position_ + bytes_used - output_position_;
+        if (!AppendBufferToExternalProcessor(
+                it->second.owned_data.data() + output_position_ - position_,
+                num_to_write)) {
+          return;
+        }
+        }
+      }
+      position_ += bytes_used;
 
-  void ReleaseBuffer() {
-    // TODO
+      it++;
+      if (it != internal_buffers_.end()) {
+        JXL_ASSERT(it->first >= position_);
+      }
   }
 
-  uint8_t** next_out;
-  size_t* avail_out;
-  size_t num_bytes_written_ = 0;
+  // Tries to write all the bytes up to the watermark position.
+  void FlushOutput() {
+      while (output_position_ < watermark_position_ &&
+             (avail_out_ == nullptr || *avail_out_ > 0)) {
+        JXL_ASSERT(!internal_buffers_.empty());
+        auto it = internal_buffers_.begin();
+        // If this fails, we are trying to move the watermark past data that was
+        // not written yet. This is a library programming error.
+        JXL_ASSERT(output_position_ >= it->first);
+        JXL_ASSERT(it->second.written_bytes != 0);
+        size_t buffer_last_byte = it->first + it->second.written_bytes;
+        if (!it->second.owned_data.empty()) {
+        size_t start_in_buffer = output_position_ - it->first;
+        // Guaranteed by the invariant on `internal_buffers_`.
+        JXL_ASSERT(buffer_last_byte > output_position_);
+        size_t num_to_write =
+            std::min(buffer_last_byte, watermark_position_) - output_position_;
+        if (avail_out_ != nullptr) {
+          size_t n = std::min(num_to_write, *avail_out_);
+          memcpy(*next_out_, it->second.owned_data.data() + start_in_buffer, n);
+          *avail_out_ -= n;
+          *next_out_ += n;
+          output_position_ += n;
+        } else {
+          if (!AppendBufferToExternalProcessor(
+                  it->second.owned_data.data() + start_in_buffer,
+                  num_to_write)) {
+            return;
+          }
+        }
+        }
+        if (buffer_last_byte == output_position_) {
+        internal_buffers_.erase(it);
+        }
+      }
+  }
+
+  bool AppendBufferToExternalProcessor(void* data, size_t count) {
+      JXL_ASSERT(external_output_processor_);
+      size_t n = count;
+      void* user_buffer = external_output_processor_->get_buffer(
+          external_output_processor_->opaque, &n);
+      if (user_buffer == nullptr || n == 0) {
+        stop_requested_ = true;
+        return false;
+      }
+      n = std::min(n, count);
+      memcpy(user_buffer, data, n);
+      external_output_processor_->release_buffer(
+          external_output_processor_->opaque, n);
+      output_position_ += n;
+      return true;
+  }
+
+  struct InternalBuffer {
+      // Bytes in the range `[consumed_bytes, written_bytes)` need to be flushed
+      // out.
+      size_t written_bytes = 0;
+      // If data has been buffered, it is stored in `owned_data`.
+      jxl::PaddedBytes owned_data;
+  };
+
+  // Invariant: `internal_buffers_` does not contain chunks that are entirely
+  // below the output position.
+  std::map<size_t, InternalBuffer> internal_buffers_;
+
+  uint8_t** next_out_ = nullptr;
+  size_t* avail_out_ = nullptr;
+  size_t position_ = 0;
+  size_t watermark_position_ = 0;
+  // Either the position of the `external_output_processor_` or the position
+  // `next_out_` points to.
+  size_t output_position_ = 0;
+
+  bool stop_requested_ = false;
 
   std::unique_ptr<JxlEncoderOutputProcessor> external_output_processor_;
 };

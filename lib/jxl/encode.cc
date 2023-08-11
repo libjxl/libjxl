@@ -1994,7 +1994,7 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderFlushInput(JxlEncoder* enc) {
 
 JXL_EXPORT JxlEncoderStatus JxlEncoderSetOutputProcessor(
     JxlEncoder* enc, JxlEncoderOutputProcessor output_processor) {
-  if (enc->output_processor.NumBytesWritten() != 0) {
+  if (enc->output_processor.HasAvailOut()) {
     return JXL_API_ERROR(
         enc, JXL_ENC_ERR_API_USAGE,
         "Set an output processor when some output was already produced");
@@ -2010,7 +2010,7 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetOutputProcessor(
 
 JxlEncoderStatus JxlEncoderProcessOutput(JxlEncoder* enc, uint8_t** next_out,
                                          size_t* avail_out) {
-  if (!enc->output_processor.SetProcessOutputBuffer(next_out, avail_out)) {
+  if (!enc->output_processor.SetAvailOut(next_out, avail_out)) {
     return JXL_API_ERROR(enc, JXL_ENC_ERR_API_USAGE,
                          "Cannot call JxlEncoderProcessOutput after calling "
                          "JxlEncoderSetOutputProcessor");
