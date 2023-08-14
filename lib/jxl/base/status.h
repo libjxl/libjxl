@@ -313,6 +313,8 @@ class JXL_MUST_USE_RESULT Status {
     return static_cast<int32_t>(code_) > 0;
   }
 
+  static constexpr Status Ok() { return Status(StatusCode::kOk); }
+
  private:
   StatusCode code_;
 };
@@ -419,7 +421,7 @@ class JXL_MUST_USE_RESULT StatusOr {
 
 // NOLINTBEGIN(bugprone-macro-parentheses)
 #define PRIVATE_JXL_ASSIGN_OR_RETURN_IMPL(name, lhs, statusor) \
-  auto name = std::move(statusor);                             \
+  auto name = statusor;                                        \
   JXL_RETURN_IF_ERROR(name.status());                          \
   lhs = std::move(name).value();
 // NOLINTEND(bugprone-macro-parentheses)

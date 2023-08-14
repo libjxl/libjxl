@@ -16,8 +16,10 @@
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/span.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/enc_aux_out.h"
+#include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_fast_lossless.h"
@@ -52,7 +54,73 @@
    JXL_ENC_ERROR)
 #endif  // JXL_CRASH_ON_ERROR
 
-namespace jxl {}  // namespace jxl
+namespace jxl {
+size_t WriteBoxHeader(const jxl::BoxType& type, size_t size, bool unbounded,
+                      bool force_large_box, uint8_t* output) {
+  uint64_t box_size = 0;
+  bool large_size = false;
+  if (!unbounded) {
+    if (box_size >= kLargeBoxContentSizeThreshold || force_large_box) {
+      large_size = true;
+      // TODO: send a separate CL for this (+ test),
+      // quick fix in the old code: box_size += 8
+      box_size = size + kLargeBoxHeaderSize;
+    } else {
+      box_size = size + kSmallBoxHeaderSize;
+    }
+  }
+
+  size_t idx = 0;
+  {
+    const uint64_t store = large_size ? 1 : box_size;
+    for (size_t i = 0; i < 4; i++) {
+      output[idx++] = store >> (8 * (3 - i)) & 0xff;
+    }
+  }
+  for (size_t i = 0; i < 4; i++) {
+    output[idx++] = type[i];
+  }
+
+  if (large_size) {
+    for (size_t i = 0; i < 8; i++) {
+      output[idx++] = box_size >> (8 * (7 - i)) & 0xff;
+    }
+  }
+  return idx;
+}
+}
+
+
+template <typename WriteBox>
+jxl::Status JxlEncoderStruct::AppendBox(const jxl::BoxType& type,
+                                        bool unbounded, size_t box_max_size,
+                                        const WriteBox& write_box) {
+  size_t current_position = output_processor.CurrentPosition();
+  bool large_box = false;
+  if (box_max_size >= jxl::kLargeBoxContentSizeThreshold && !unbounded) {
+    output_processor.Seek(current_position + jxl::kLargeBoxHeaderSize);
+    large_box = true;
+  } else {
+    output_processor.Seek(current_position + jxl::kSmallBoxHeaderSize);
+  }
+  size_t box_contents_start = output_processor.CurrentPosition();
+  JXL_RETURN_IF_ERROR(write_box());
+  size_t box_contents_end = output_processor.CurrentPosition();
+  output_processor.Seek(current_position);
+  JXL_ASSERT(box_contents_end >= box_contents_start);
+  if (box_contents_end - box_contents_start > box_max_size) {
+    return JXL_API_ERROR(
+        this, JXL_ENC_ERR_GENERIC,
+        "Internal error: upper bound on box size was violated");
+  }
+  JXL_ASSIGN_OR_RETURN(auto buffer, output_processor.GetBuffer(
+                                        box_contents_start - current_position));
+  jxl::WriteBoxHeader(type, box_contents_end - box_contents_start, unbounded,
+                      large_box, buffer.data());
+  output_processor.Seek(box_contents_end);
+  output_processor.SetWatermark(box_contents_end);
+  return jxl::Status::Ok();
+}
 
 uint32_t JxlEncoderVersion(void) {
   return JPEGXL_MAJOR_VERSION * 1000000 + JPEGXL_MINOR_VERSION * 1000 +
@@ -60,11 +128,10 @@ uint32_t JxlEncoderVersion(void) {
 }
 
 namespace {
-template <typename T>
-void AppendJxlpBoxCounter(uint32_t counter, bool last, T* output) {
+void WriteJxlpBoxCounter(uint32_t counter, bool last, uint8_t* output) {
   if (last) counter |= 0x80000000;
   for (size_t i = 0; i < 4; i++) {
-    output->push_back(counter >> (8 * (3 - i)) & 0xff);
+    *(output++) = counter >> (8 * (3 - i)) & 0xff;
   }
 }
 
@@ -340,7 +407,7 @@ bool EncodeFrameIndexBox(const jxl::JxlEncoderFrameIndexBox& frame_index_box,
 
 }  // namespace
 
-JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
+jxl::Status JxlEncoderStruct::RefillOutputByteQueue() {
   jxl::PaddedBytes bytes;
 
   jxl::JxlEncoderQueuedInput& input = input_queue[0];
@@ -405,16 +472,21 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
 
     if (MustUseContainer()) {
       // Add "JXL " and ftyp box.
-      output_byte_queue.insert(
-          output_byte_queue.end(), jxl::kContainerHeader,
-          jxl::kContainerHeader + sizeof(jxl::kContainerHeader));
+      {
+        JXL_ASSIGN_OR_RETURN(auto buffer, output_processor.GetBuffer(
+                                              sizeof(jxl::kContainerHeader)));
+        memcpy(buffer.data(), jxl::kContainerHeader,
+               sizeof(jxl::kContainerHeader));
+      }
       if (codestream_level != 5) {
         // Add jxll box directly after the ftyp box to indicate the codestream
         // level.
-        output_byte_queue.insert(
-            output_byte_queue.end(), jxl::kLevelBoxHeader,
-            jxl::kLevelBoxHeader + sizeof(jxl::kLevelBoxHeader));
-        output_byte_queue.push_back(codestream_level);
+        JXL_ASSIGN_OR_RETURN(
+            auto buffer,
+            output_processor.GetBuffer(sizeof(jxl::kLevelBoxHeader) + 1));
+        memcpy(buffer.data(), jxl::kLevelBoxHeader,
+               sizeof(jxl::kLevelBoxHeader));
+        buffer.data()[sizeof(jxl::kLevelBoxHeader)] = codestream_level;
       }
 
       // Whether to write the basic info and color profile header of the
@@ -428,20 +500,28 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
           (use_boxes && (!input.frame && !input.fast_lossless_frame));
 
       if (partial_header) {
-        jxl::AppendBoxHeader(jxl::MakeBoxType("jxlp"), bytes.size() + 4,
-                             /*unbounded=*/false, &output_byte_queue);
-        AppendJxlpBoxCounter(jxlp_counter++, /*last=*/false,
-                             &output_byte_queue);
-        output_byte_queue.insert(output_byte_queue.end(), bytes.data(),
-                                 bytes.data() + bytes.size());
+        JXL_RETURN_IF_ERROR(AppendBox(
+            jxl::MakeBoxType("jxlp"), /*unbounded=*/false, bytes.size() + 4,
+            [&]() {
+              JXL_ASSIGN_OR_RETURN(
+                  auto buffer, output_processor.GetBuffer(bytes.size() + 4));
+              WriteJxlpBoxCounter(jxlp_counter++, /*last=*/false,
+                                  buffer.data());
+              memcpy(buffer.data() + 4, bytes.data(), bytes.size());
+              return jxl::Status::Ok();
+            }));
         bytes.clear();
       }
 
       if (store_jpeg_metadata && !jpeg_metadata.empty()) {
-        jxl::AppendBoxHeader(jxl::MakeBoxType("jbrd"), jpeg_metadata.size(),
-                             false, &output_byte_queue);
-        output_byte_queue.insert(output_byte_queue.end(), jpeg_metadata.begin(),
-                                 jpeg_metadata.end());
+        JXL_RETURN_IF_ERROR(AppendBox(
+            jxl::MakeBoxType("jbrd"), /*unbounded=*/false, jpeg_metadata.size(),
+            [&]() {
+              JXL_ASSIGN_OR_RETURN(auto buffer, output_processor.GetBuffer(
+                                                    jpeg_metadata.size()));
+              memcpy(buffer.data(), jpeg_metadata.data(), jpeg_metadata.size());
+              return jxl::Status::Ok();
+            }));
       }
     }
     wrote_bytes = true;
@@ -453,7 +533,10 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
     jxl::MemoryManagerUniquePtr<jxl::JxlEncoderQueuedFrame> input_frame =
         std::move(input.frame);
     if (input.fast_lossless_frame) {
+      /*
+      // TODO
       output_fast_frame_queue.push_back(std::move(input.fast_lossless_frame));
+      */
     }
     input_queue.erase(input_queue.begin());
     num_queued_frames--;
@@ -582,12 +665,15 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
       bytes.append(std::move(writer).TakeBytes());
       codestream_byte_size = bytes.size();
     } else {
+#if 0
+      TODO
       JXL_CHECK(!output_fast_frame_queue.empty());
       JxlFastLosslessPrepareHeader(output_fast_frame_queue.front().get(),
                                    /*add_image_header=*/0, last_frame);
       codestream_byte_size =
           JxlFastLosslessOutputSize(output_fast_frame_queue.front().get()) +
           bytes.size();
+#endif
     }
 
     if (MustUseContainer()) {
@@ -595,26 +681,46 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
         // If this is the last frame and no jxlp boxes were used yet, it's
         // slighly more efficient to write a jxlc box since it has 4 bytes
         // less overhead.
-        jxl::AppendBoxHeader(jxl::MakeBoxType("jxlc"), codestream_byte_size,
-                             /*unbounded=*/false, &output_byte_queue);
+        JXL_RETURN_IF_ERROR(AppendBox(
+            jxl::MakeBoxType("jxlc"), /*unbounded=*/false, codestream_byte_size,
+            [&]() {
+              JXL_ASSIGN_OR_RETURN(auto buffer, output_processor.GetBuffer(
+                                                    codestream_byte_size));
+              memcpy(buffer.data(), bytes.data(), bytes.size());
+              return jxl::Status::Ok();
+            }));
       } else {
-        jxl::AppendBoxHeader(jxl::MakeBoxType("jxlp"), codestream_byte_size + 4,
-                             /*unbounded=*/false, &output_byte_queue);
-        AppendJxlpBoxCounter(jxlp_counter++, last_frame, &output_byte_queue);
+        JXL_RETURN_IF_ERROR(AppendBox(
+            jxl::MakeBoxType("jxlp"), /*unbounded=*/false,
+            codestream_byte_size + 4, [&]() {
+              JXL_ASSIGN_OR_RETURN(auto buffer, output_processor.GetBuffer(
+                                                    codestream_byte_size + 4));
+              WriteJxlpBoxCounter(jxlp_counter++, last_frame, buffer.data());
+              memcpy(buffer.data() + 4, bytes.data(), bytes.size());
+              return jxl::Status::Ok();
+            }));
       }
+    } else {
+      JXL_ASSIGN_OR_RETURN(auto buffer,
+                           output_processor.GetBuffer(codestream_byte_size));
+      memcpy(buffer.data(), bytes.data(), bytes.size());
     }
-
-    output_byte_queue.insert(output_byte_queue.end(), bytes.data(),
-                             bytes.data() + bytes.size());
 
     if (input_frame) {
       last_used_cparams = input_frame->option_values.cparams;
     }
     if (last_frame && frame_index_box.StoreFrameIndexBox()) {
-      bytes.clear();
+      jxl::BitWriter writer;
       EncodeFrameIndexBox(frame_index_box, writer);
-      jxl::AppendBoxHeader(jxl::MakeBoxType("jxli"), bytes.size(),
-                           /*unbounded=*/false, &output_byte_queue);
+      writer.ZeroPadToByte();
+      size_t jxli_size = writer.BitsWritten() / 8;
+      JXL_RETURN_IF_ERROR(AppendBox(
+          jxl::MakeBoxType("jxli"), /*unbounded=*/false, jxli_size, [&]() {
+            JXL_ASSIGN_OR_RETURN(auto buffer,
+                                 output_processor.GetBuffer(jxli_size));
+            memcpy(buffer.data(), writer.GetSpan().data(), jxli_size);
+            return jxl::Status::Ok();
+          }));
     }
   } else {
     // Not a frame, so is a box instead
@@ -636,19 +742,18 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
         return JXL_API_ERROR(this, JXL_ENC_ERR_GENERIC,
                              "Brotli compression for brob box failed");
       }
-      jxl::AppendBoxHeader(jxl::MakeBoxType("brob"), compressed.size(), false,
-                           &output_byte_queue);
-      output_byte_queue.insert(output_byte_queue.end(), compressed.data(),
-                               compressed.data() + compressed.size());
-    } else {
-      jxl::AppendBoxHeader(box->type, box->contents.size(), false,
-                           &output_byte_queue);
-      output_byte_queue.insert(output_byte_queue.end(), box->contents.data(),
-                               box->contents.data() + box->contents.size());
+      JXL_RETURN_IF_ERROR(AppendBox(
+          box->compress_box ? jxl::MakeBoxType("brob") : box->type,
+          /*unbounded=*/false, compressed.size(), [&]() {
+            JXL_ASSIGN_OR_RETURN(auto buffer,
+                                 output_processor.GetBuffer(compressed.size()));
+            memcpy(buffer.data(), compressed.data(), compressed.size());
+            return jxl::Status::Ok();
+          }));
     }
   }
 
-  return JXL_ENC_SUCCESS;
+  return jxl::Status::Ok();
 }
 
 JxlEncoderStatus JxlEncoderSetColorEncoding(JxlEncoder* enc,
@@ -1409,8 +1514,6 @@ void JxlEncoderReset(JxlEncoder* enc) {
   enc->num_queued_frames = 0;
   enc->num_queued_boxes = 0;
   enc->encoder_options.clear();
-  enc->output_byte_queue.clear();
-  enc->output_fast_frame_queue.clear();
   enc->codestream_bytes_written_beginning_of_frame = 0;
   enc->codestream_bytes_written_end_of_frame = 0;
   enc->wrote_bytes = false;
@@ -2015,34 +2118,13 @@ JxlEncoderStatus JxlEncoderProcessOutput(JxlEncoder* enc, uint8_t** next_out,
                          "Cannot call JxlEncoderProcessOutput after calling "
                          "JxlEncoderSetOutputProcessor");
   }
-  while (*avail_out >= 32 &&
-         (!enc->output_byte_queue.empty() ||
-          !enc->output_fast_frame_queue.empty() || !enc->input_queue.empty())) {
-    if (!enc->output_byte_queue.empty()) {
-      size_t to_copy = std::min(*avail_out, enc->output_byte_queue.size());
-      std::copy_n(enc->output_byte_queue.begin(), to_copy, *next_out);
-      *next_out += to_copy;
-      *avail_out -= to_copy;
-      enc->output_byte_queue.erase(enc->output_byte_queue.begin(),
-                                   enc->output_byte_queue.begin() + to_copy);
-    } else if (!enc->output_fast_frame_queue.empty()) {
-      size_t count = JxlFastLosslessWriteOutput(
-          enc->output_fast_frame_queue.front().get(), *next_out, *avail_out);
-      *next_out += count;
-      *avail_out -= count;
-      if (count == 0) {
-        enc->output_fast_frame_queue.pop_front();
-      }
-
-    } else if (!enc->input_queue.empty()) {
-      if (enc->RefillOutputByteQueue() != JXL_ENC_SUCCESS) {
-        return JXL_ENC_ERROR;
-      }
+  while (*avail_out != 0 && !enc->input_queue.empty()) {
+    if (enc->RefillOutputByteQueue() != JXL_ENC_SUCCESS) {
+      return JXL_ENC_ERROR;
     }
   }
 
-  if (!enc->output_byte_queue.empty() ||
-      !enc->output_fast_frame_queue.empty() || !enc->input_queue.empty()) {
+  if (!enc->input_queue.empty() || enc->output_processor.HasOutputToWrite()) {
     return JXL_ENC_NEED_MORE_OUTPUT;
   }
   return JXL_ENC_SUCCESS;

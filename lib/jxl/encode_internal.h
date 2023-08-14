@@ -14,7 +14,7 @@
 #include <sys/types.h>
 
 #include <cstddef>
-#include <deque>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <vector>
@@ -167,35 +167,25 @@ struct JxlEncoderQueuedInput {
                                             JxlFastLosslessFreeFrameState};
 };
 
+static constexpr size_t kSmallBoxHeaderSize = 8;
+static constexpr size_t kLargeBoxHeaderSize = 16;
+static constexpr size_t kLargeBoxContentSizeThreshold =
+    0x100000000ull - kSmallBoxHeaderSize;
+
+size_t WriteBoxHeader(const jxl::BoxType& type, size_t size, bool unbounded,
+                      bool force_large_box, uint8_t* output);
+
 // Appends a JXL container box header with given type, size, and unbounded
 // properties to output.
 template <typename T>
 void AppendBoxHeader(const jxl::BoxType& type, size_t size, bool unbounded,
                      T* output) {
-  uint64_t box_size = 0;
-  bool large_size = false;
-  if (!unbounded) {
-    box_size = size + 8;
-    if (box_size >= 0x100000000ull) {
-      large_size = true;
-    }
-  }
-
-  {
-    const uint64_t store = large_size ? 1 : box_size;
-    for (size_t i = 0; i < 4; i++) {
-      output->push_back(store >> (8 * (3 - i)) & 0xff);
-    }
-  }
-  for (size_t i = 0; i < 4; i++) {
-    output->push_back(type[i]);
-  }
-
-  if (large_size) {
-    for (size_t i = 0; i < 8; i++) {
-      output->push_back(box_size >> (8 * (7 - i)) & 0xff);
-    }
-  }
+  size_t current_size = output->size();
+  output->resize(current_size + kLargeBoxHeaderSize);
+  size_t header_size =
+      WriteBoxHeader(type, size, unbounded, /*force_large_box=*/false,
+                     output->data() + current_size);
+  output->resize(current_size + header_size);
 }
 
 }  // namespace jxl
@@ -265,8 +255,10 @@ class JxlEncoderOutputProcessorWrapper {
   // Caller can never overwrite a previously-written buffer. Asking for a buffer
   // with `min_size` such that `position + min_size` overlaps with a
   // previously-written buffer is invalid.
-  jxl::StatusOr<Buffer> GetBuffer(size_t min_size, size_t requested_size) {
+  jxl::StatusOr<Buffer> GetBuffer(size_t min_size, size_t requested_size = 0) {
       if (stop_requested_) return jxl::StatusCode::kNotEnoughBytes;
+      if (requested_size == 0) requested_size = min_size;
+      JXL_ASSERT(requested_size >= min_size);
 
       // If we support seeking, output_position_ == position_.
       // Otherwise, output_position_ <= position_.
@@ -341,6 +333,7 @@ class JxlEncoderOutputProcessorWrapper {
   }
 
   bool WasStopRequested() const { return stop_requested_; }
+  bool HasOutputToWrite() const { return output_position_ < watermark_position_; }
 
  private:
   void ReleaseBuffer(size_t bytes_used) {
@@ -468,9 +461,6 @@ struct JxlEncoderStruct {
   std::vector<jxl::JxlEncoderQueuedInput> input_queue;
   JxlEncoderOutputProcessorWrapper output_processor;
 
-  std::deque<uint8_t> output_byte_queue;
-  std::deque<jxl::FJXLFrameUniquePtr> output_fast_frame_queue;
-
   // How many codestream bytes have been written, i.e.,
   // content of jxlc and jxlp boxes. Frame index box jxli
   // requires position indices to point to codestream bytes,
@@ -516,17 +506,20 @@ struct JxlEncoderStruct {
 
   // Takes the first frame in the input_queue, encodes it, and appends
   // the bytes to the output_byte_queue.
-  JxlEncoderStatus RefillOutputByteQueue();
+  jxl::Status RefillOutputByteQueue();
 
   bool MustUseContainer() const {
     return use_container || (codestream_level != 5 && codestream_level != -1) ||
            store_jpeg_metadata || use_boxes;
   }
 
-  // Appends the bytes of a JXL box header with the provided type and size to
-  // the end of the output_byte_queue. If unbounded is true, the size won't be
-  // added to the header and the box will be assumed to continue until EOF.
-  void AppendBoxHeader(const jxl::BoxType& type, size_t size, bool unbounded);
+  // `write_box` must never seek before the position the output wrapper was at
+  // the moment of the call, and must leave the output wrapper such that its
+  // position is one byte past the end of the written box.
+  // TODO(veluca): add a function for appending a box that we already have the contents of.
+  template <typename WriteBox>
+  jxl::Status AppendBox(const jxl::BoxType& type, bool unbounded,
+                        size_t box_max_size, const WriteBox& write_box);
 };
 
 struct JxlEncoderFrameSettingsStruct {
