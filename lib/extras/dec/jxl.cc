@@ -13,6 +13,7 @@
 #include "lib/extras/enc/encode.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/exif.h"
+#include "lib/jxl/jxl_cms.h"
 
 namespace jxl {
 namespace extras {
@@ -339,7 +340,7 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
                   "not XYB encoded.\n");
         } else {
           // TODO(firsching) : make sure we can use GetJxlCms here.
-          // JxlDecoderSetCms(dec, &GetJxlCms());
+          JxlDecoderSetCms(dec, &GetJxlCms());
           if (JXL_DEC_SUCCESS !=
               JxlDecoderSetPreferredColorProfile(dec, &color_encoding)) {
             fprintf(stderr, "Failed to set color space.\n");
