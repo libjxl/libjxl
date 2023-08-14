@@ -50,7 +50,7 @@ TEST(PassesTest, RoundtripSmallPasses) {
   EXPECT_THAT(ButteraugliDistance(io.frames, io2.frames, ButteraugliParams(),
                                   *JxlGetDefaultCms(),
                                   /*distmap=*/nullptr),
-              IsSlightlyBelow(1.1));
+              IsSlightlyBelow(0.8222));
 }
 
 TEST(PassesTest, RoundtripUnalignedPasses) {
@@ -97,7 +97,7 @@ TEST(PassesTest, RoundtripMultiGroupPasses) {
                 IsSlightlyBelow(target_distance + threshold));
   };
 
-  auto run1 = std::async(std::launch::async, test, 1.0f, 0.5f);
+  auto run1 = std::async(std::launch::async, test, 1.0f, 0.15f);
   auto run2 = std::async(std::launch::async, test, 2.0f, 0.0f);
 }
 
