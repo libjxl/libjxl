@@ -2331,8 +2331,12 @@ JxlDecoderStatus JxlDecoderFlushImage(JxlDecoder* dec) {
   return JXL_DEC_SUCCESS;
 }
 
-JXL_EXPORT void JxlDecoderSetCms(JxlDecoder* dec, const JxlCmsInterface* cms) {
-  dec->passes_state->output_encoding_info.color_management_system = *cms;
+JXL_EXPORT JxlDecoderStatus JxlDecoderSetCms(JxlDecoder* dec, const JxlCmsInterface* cms) {
+  if (cms->init_data == nullptr){
+    return JXL_DEC_ERROR;
+  }
+  dec->passes_state->output_encoding_info.color_management_system = cms;
+  return JXL_DEC_SUCCESS;
 }
 
 JXL_EXPORT JxlDecoderStatus JxlDecoderPreviewOutBufferSize(
@@ -2669,15 +2673,11 @@ JxlDecoderStatus JxlDecoderSetOutputColorProfile(
     return JXL_API_ERROR("too late to set the color encoding");
   }
   // TODO(firsching): hande the non-icc case
-  if (dec->passes_state->output_encoding_info.color_management_system
-              .init_data == nullptr &&
+  if ((dec->passes_state->output_encoding_info.color_management_system == nullptr) &&
       (icc_data != nullptr)) {
     return JXL_API_ERROR(
         "must set color management system via JxlDecoderSetCms");
   }
-  fprintf(stderr, "cms: %p\n",
-          dec->passes_state->output_encoding_info.color_management_system
-              .init_data);
   auto& output_encoding = dec->passes_state->output_encoding_info;
   if (color_encoding) {
     if (dec->image_metadata.color_encoding.IsGray() &&
@@ -2704,7 +2704,7 @@ JxlDecoderStatus JxlDecoderSetOutputColorProfile(
   jxl::PaddedBytes padded_icc;
   padded_icc.assign(icc_data, icc_data + icc_size);
   if (!c_dst.SetICC(std::move(padded_icc),
-                    &output_encoding.color_management_system)) {
+                    output_encoding.color_management_system)) {
     return JXL_API_ERROR(
         "setting output color profile from icc_data not yet implemented.");
   }

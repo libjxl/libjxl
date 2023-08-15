@@ -8,6 +8,7 @@
 
 // XYB -> linear sRGB.
 
+#include <memory>
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
@@ -56,7 +57,7 @@ struct OutputEncodingInfo {
   float luminances[3];
   // Used for the HLG inverse OOTF and PQ tone mapping.
   float desired_intensity_target;
-  JxlCmsInterface color_management_system;
+  const JxlCmsInterface* color_management_system = nullptr;
 
   Status SetFromMetadata(const CodecMetadata& metadata);
   Status MaybeSetColorEncoding(const ColorEncoding& c_desired);

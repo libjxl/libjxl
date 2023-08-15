@@ -51,9 +51,12 @@ class CmsStage : public RenderPipelineStage {
     const bool output_is_xyb =
         output_encoding_info_.color_encoding.GetColorSpace() ==
         ColorSpace::kXYB;
-    fprintf(stderr, "output_is_xyb: %d ", output_is_xyb);
-    return !output_encoding_info_.color_encoding_is_original &&
-           not_mixing_color_and_grey && !output_is_xyb;
+    fprintf(stderr, "output_is_xyb: %d , non_mix: %d ,"
+    "!output_encoding_info_.color_encoding_is_original: %d\n", !output_is_xyb,
+    not_mixing_color_and_grey, !output_encoding_info_.color_encoding_is_original);
+
+    return (output_encoding_info_.color_management_system != nullptr) && !output_encoding_info_.color_encoding_is_original &&
+           not_mixing_color_and_grey 
   }
 
   void ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
@@ -121,7 +124,7 @@ class CmsStage : public RenderPipelineStage {
 
   Status PrepareForThreads(size_t num_threads) override {
     color_space_transform = jxl::make_unique<jxl::ColorSpaceTransform>(
-        output_encoding_info_.color_management_system);
+        *output_encoding_info_.color_management_system);
     JXL_RETURN_IF_ERROR(color_space_transform->Init(
         c_src_, output_encoding_info_.color_encoding,
         output_encoding_info_.desired_intensity_target, xsize_, num_threads));
