@@ -13,9 +13,6 @@ on:
       - v*.*.x
   pull_request:
     types: [opened, reopened, labeled, synchronize]
-    paths-ignore:
-      - '**.md'
-      - 'AUTHORS'
 
 permissions:
   contents: read
