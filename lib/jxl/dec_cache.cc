@@ -198,8 +198,8 @@ Status PassesDecoderState::PreparePipeline(ImageBundle* decoded,
 
     auto cms_stage = GetCmsStage(output_encoding_info);
     if (cms_stage) {
-      //  builder.AddStage(std::move(cms_stage));
-      //  linear = false;
+      builder.AddStage(std::move(cms_stage));
+      linear = false;
     }
 
     auto tone_mapping_stage = GetToneMappingStage(output_encoding_info);

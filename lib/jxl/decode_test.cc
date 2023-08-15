@@ -1784,6 +1784,19 @@ void SetPreferredColorProfileTest(
   uint32_t num_channels = c_in.Channels();
   std::vector<uint8_t> pixels =
       jxl::test::GetSomeTestImage(xsize, ysize, num_channels, 0);
+  // pixels = {35, 77, 122};
+  fprintf(stderr, "pixels size: %zu\n", pixels.size());
+  // for (auto i: pixels)
+  //   fprintf(stderr," ..%hhu", i);
+  fprintf(stderr, "\n");
+  //fprintf(stderr, " in Oth: pixel: %hhu %hhu %hhu\n", pixels[0], pixels[1],
+   //       pixels[2]);
+  for (size_t i = 0; i < 3; i++) {
+    fprintf(stderr, "in pix %zu: %f\n", i,
+            ((static_cast<size_t>(pixels[2 * i]) << 8) +
+             (static_cast<size_t>(pixels[2 * i + 1]))) /
+                65536.0);
+  }
   JxlPixelFormat format = {num_channels, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
   std::string color_space_in = Description(c_in);
   float intensity_in = c_in.tf.IsPQ() ? 10000 : 255;
@@ -1797,8 +1810,14 @@ void SetPreferredColorProfileTest(
   all_encodings.push_back(
       {jxl::ColorSpace::kXYB, jxl::WhitePoint::kD65, jxl::Primaries::kCustom,
        jxl::TransferFunction::kUnknown, jxl::RenderingIntent::kPerceptual});
-  for (const auto& c1 : all_encodings) {
+
+  std::vector<jxl::test::ColorEncodingDescriptor> all_encodings_short;
+  all_encodings_short.assign(all_encodings.begin(), all_encodings.end());
+  for (const auto& c1 : all_encodings_short) {
     jxl::ColorEncoding c_out = jxl::test::ColorEncodingFromDescriptor(c1);
+    std::string color_space_out = Description(c_out);
+    printf("Testing input color space %s with output color space %s\n",
+           color_space_in.c_str(), color_space_out.c_str());
     float intensity_out = intensity_in;
     if (c_out.GetColorSpace() != jxl::ColorSpace::kXYB) {
       if (c_out.rendering_intent != jxl::RenderingIntent::kRelative) {
@@ -1818,7 +1837,7 @@ void SetPreferredColorProfileTest(
       // this case too.
       continue;
     }
-    std::string color_space_out = Description(c_out);
+    // std::string color_space_out = Description(c_out);
     if (color_space_in == color_space_out) continue;
     printf("Testing input color space %s with output color space %s\n",
            color_space_in.c_str(), color_space_out.c_str());
@@ -1844,6 +1863,8 @@ void SetPreferredColorProfileTest(
       JxlDecoderDestroy(dec);
       continue;
     }
+    JxlCmsInterface cms = jxl::GetJxlCms();
+    JxlDecoderSetCms(dec, &cms);  // Add status/don't return void?!!
     EXPECT_EQ(JXL_DEC_SUCCESS,
               JxlDecoderSetPreferredColorProfile(dec, &encoding_out));
     EXPECT_EQ(GetOrigProfile(dec), color_space_in);
@@ -1858,6 +1879,14 @@ void SetPreferredColorProfileTest(
     EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetImageOutBuffer(
                                    dec, &out_format, out.data(), out.size()));
     EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec));
+    fprintf(stderr, "buffer_size: %zu\n", buffer_size);
+    fprintf(stderr, "out Oth: pixel: %hhu %hhu %hhu\n", out[0], out[1], out[2]);
+    for (size_t i = 0; i < 3; i++) {
+      fprintf(stderr, "out pix %zu: %f\n", i,
+              ((static_cast<size_t>(out[2 * i]) << 8) +
+               (static_cast<size_t>(out[2 * i + 1]))) /
+                  65536.0);
+    }
     double dist = ButteraugliDistance(xsize, ysize, pixels, c_in, intensity_in,
                                       out, c_out, intensity_out);
     if (c_in.white_point == c_out.white_point) {
