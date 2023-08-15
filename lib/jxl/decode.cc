@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <functional>
 #include <memory>
 #include <utility>
@@ -2667,7 +2668,16 @@ JxlDecoderStatus JxlDecoderSetOutputColorProfile(
   if (dec->post_headers) {
     return JXL_API_ERROR("too late to set the color encoding");
   }
-  // TODO(firsching): check if cms has been set
+  // TODO(firsching): hande the non-icc case
+  if (dec->passes_state->output_encoding_info.color_management_system
+              .init_data == nullptr &&
+      (icc_data != nullptr)) {
+    return JXL_API_ERROR(
+        "must set color management system via JxlDecoderSetCms");
+  }
+  fprintf(stderr, "cms: %p\n",
+          dec->passes_state->output_encoding_info.color_management_system
+              .init_data);
   auto& output_encoding = dec->passes_state->output_encoding_info;
   if (color_encoding) {
     if (dec->image_metadata.color_encoding.IsGray() &&

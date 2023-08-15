@@ -51,6 +51,7 @@ class CmsStage : public RenderPipelineStage {
     const bool output_is_xyb =
         output_encoding_info_.color_encoding.GetColorSpace() ==
         ColorSpace::kXYB;
+    fprintf(stderr, "output_is_xyb: %d ", output_is_xyb);
     return !output_encoding_info_.color_encoding_is_original &&
            not_mixing_color_and_grey && !output_is_xyb;
   }

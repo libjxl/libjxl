@@ -491,7 +491,7 @@ class ColorSpaceTransform {
     if (c_dst.IsCMYK())
       return JXL_FAILURE("Conversion to CMYK is not supported");
     output_profile.num_channels = c_dst.Channels();
-    fprintf(stderr, "cms_: %p input: %p output: %p\n", &input_profile, &output_profile, &cms_);
+    fprintf(stderr, "cms_.init_data: %p \n", &cms_.init_data);
     cms_data_ = cms_.init(cms_.init_data, num_threads, xsize, &input_profile,
                           &output_profile, intensity_target);
     JXL_RETURN_IF_ERROR(cms_data_ != nullptr);
