@@ -668,27 +668,30 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderAddImageFrame(
     const JxlEncoderFrameSettings* frame_settings,
     const JxlPixelFormat* pixel_format, const void* buffer, size_t size);
 
-
 /**
- * The JxlEncoderOutputProcessor structure provides an interface for the encoder's
- * output processing. Users of the library, who want to do streaming encoding, should implement the required callbacks
- * for buffering, writing, seeking (if supported), and watermarking
- * during the encoding process.
+ * The JxlEncoderOutputProcessor structure provides an interface for the
+ * encoder's output processing. Users of the library, who want to do streaming
+ * encoding, should implement the required callbacks for buffering, writing,
+ * seeking (if supported), and watermarking during the encoding process.
  *
  * At a high level, the processor can be in one of two states:
  * - With an active buffer: This indicates that a buffer has been acquired using
  *   `get_buffer` and encoded data can be written to it.
- * - Without an active buffer: In this state, no data can be written. A new buffer
- *   must be acquired after releasing any previously active buffer.
+ * - Without an active buffer: In this state, no data can be written. A new
+ * buffer must be acquired after releasing any previously active buffer.
  *
  * It is not allowed to acquire more than one buffer at a given time.
  *
- * The JxlEncoder OuputProcessor interacts with `position` and `watermark`, which have the following meaning.
+ * The JxlEncoder OuputProcessor interacts with `position` and `watermark`,
+ * which have the following meaning.
  * - position: TODO
  * - watermark: TODO
+ *
+ * All fields but `seek` are required, `seek` is optional and can be NULL.
  */
 struct JxlEncoderOutputProcessor {
   /**
+   * Required.
    * An opaque pointer that the client can use to store custom data.
    * This data will be passed to the associated callback functions.
    */
@@ -708,15 +711,16 @@ struct JxlEncoderOutputProcessor {
    * @param opaque user supplied parameters to the callback
    * @param size points to a suggested buffer size when called; must be set to
    * the size of the returned buffer once the function returns.
-   * @return a pointer to the acquired buffer or NULL to indicate a stop condition.
+   * @return a pointer to the acquired buffer or NULL to indicate a stop
+   * condition.
    */
   void* (*get_buffer)(void* opaque, size_t* size);
 
   /**
    * Required.
-   * Notifies the user of library that the current buffer's data has been written and
-   * can be released. This function should advance the current position of
-   * the buffer by `written_bytes` number of bytes.
+   * Notifies the user of library that the current buffer's data has been
+   * written and can be released. This function should advance the current
+   * position of the buffer by `written_bytes` number of bytes.
    *
    * @param opaque user supplied parameters to the callback
    * @param written_bytes the number of bytes written to the buffer.
@@ -727,7 +731,8 @@ struct JxlEncoderOutputProcessor {
    * Optional, can be NULL
    * Seeks to a specific position in the output. This function is optional and
    * can be set to NULL if the output doesn't support seeking. Can only be done
-   * when there is no buffer. Cannot be used to seek before the watermark position.
+   * when there is no buffer. Cannot be used to seek before the watermark
+   * position.
    *
    * @param opaque user supplied parameters to the callback
    * @param position the position to seek to, in bytes.
@@ -735,6 +740,7 @@ struct JxlEncoderOutputProcessor {
   void (*seek)(void* opaque, uint64_t position);
 
   /**
+   * Required.
    * Sets a watermark on the output data, at a specific position.
    * Seeking will never request a position before the watermark.
    *
