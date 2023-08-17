@@ -1422,6 +1422,8 @@ class JxlStreamingAdapter {
       output_processor.seek = [](void* opaque, uint64_t position) {
         return static_cast<JxlStreamingAdapter*>(opaque)->Seek(position);
       };
+    } else {
+      output_processor.seek = nullptr;
     }
     output_processor.set_watermark = [](void* opaque,
                                         uint64_t watermark_position) {
@@ -1439,6 +1441,7 @@ class JxlStreamingAdapter {
   const std::vector<uint8_t>& output() const { return output_; }
 
   void* GetBuffer(size_t* size) {
+    fprintf(stderr, "GET BUFFER %zu\n", *size);
     if (!return_large_buffers_) {
       *size = 1;
     }
@@ -1452,16 +1455,19 @@ class JxlStreamingAdapter {
   }
 
   void ReleaseBuffer(size_t written_bytes) {
+    fprintf(stderr, "RELEASE BUFFER %zu\n", written_bytes);
     // TODO(veluca): check no more bytes were written.
-    Seek(written_bytes);
+    Seek(position_ + written_bytes);
   }
 
   void Seek(uint64_t position) {
+    fprintf(stderr, "SEEK %zu\n", position);
     EXPECT_GE(position, watermark_);
     position_ = position;
   }
 
   void SetWatermark(uint64_t watermark_position) {
+    fprintf(stderr, "SETWATERMARK %zu\n", watermark_position);
     EXPECT_GE(watermark_position, watermark_);
     watermark_ = watermark_position;
     EXPECT_GE(position_, watermark_);
@@ -1534,23 +1540,21 @@ TEST_P(EncodeOutputCallbackTest, OutputCallback) {
 
   std::vector<uint8_t> compressed = std::vector<uint8_t>(64);
 
-  {
-    JxlEncoderPtr enc = JxlEncoderMake(nullptr);
-    ASSERT_NE(nullptr, enc.get());
+  auto configure_encoder = [&](JxlEncoderStruct* enc) {
     JxlEncoderFrameSettings* frame_settings =
-        JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+        JxlEncoderFrameSettingsCreate(enc, NULL);
     if (p.fast_lossless()) {
       JxlEncoderSetFrameLossless(frame_settings, JXL_TRUE);
       JxlEncoderFrameSettingsSetOption(frame_settings,
                                        JXL_ENC_FRAME_SETTING_EFFORT, 1);
     }
-    EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
+    EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc, &basic_info));
     JxlColorEncoding color_encoding;
     JxlColorEncodingSetToSRGB(&color_encoding, /*is_gray=*/false);
     EXPECT_EQ(JXL_ENC_SUCCESS,
-              JxlEncoderSetColorEncoding(enc.get(), &color_encoding));
+              JxlEncoderSetColorEncoding(enc, &color_encoding));
     if (p.use_container()) {
-      JxlEncoderSetCodestreamLevel(enc.get(), 10);
+      JxlEncoderSetCodestreamLevel(enc, 10);
     }
 
     EXPECT_EQ(JXL_ENC_SUCCESS,
@@ -1561,7 +1565,12 @@ TEST_P(EncodeOutputCallbackTest, OutputCallback) {
                 JxlEncoderAddImageFrame(frame_settings, &frame.format,
                                         frame.pixels(), frame.pixels_size));
     }
+  };
 
+  {
+    JxlEncoderPtr enc = JxlEncoderMake(nullptr);
+    ASSERT_NE(nullptr, enc.get());
+    configure_encoder(enc.get());
     uint8_t* next_out = compressed.data();
     size_t avail_out = compressed.size();
     JxlEncoderCloseFrames(enc.get());
@@ -1573,28 +1582,9 @@ TEST_P(EncodeOutputCallbackTest, OutputCallback) {
     ASSERT_NE(nullptr, enc.get());
     JxlStreamingAdapter streaming_adapter(enc.get(), p.return_large_buffers(),
                                           p.can_seek());
-    JxlEncoderFrameSettings* frame_settings =
-        JxlEncoderFrameSettingsCreate(enc.get(), NULL);
-    if (p.fast_lossless()) {
-      JxlEncoderSetFrameLossless(frame_settings, JXL_TRUE);
-      JxlEncoderFrameSettingsSetOption(frame_settings,
-                                       JXL_ENC_FRAME_SETTING_EFFORT, 1);
-    }
-    EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
-    JxlColorEncoding color_encoding;
-    JxlColorEncodingSetToSRGB(&color_encoding, /*is_gray=*/false);
-    EXPECT_EQ(JXL_ENC_SUCCESS,
-              JxlEncoderSetColorEncoding(enc.get(), &color_encoding));
-
-    EXPECT_EQ(JXL_ENC_SUCCESS,
-              JxlEncoderAddImageFrame(frame_settings, &frame.format,
-                                      frame.pixels(), frame.pixels_size));
-    if (p.multiple_frames()) {
-      EXPECT_EQ(JXL_ENC_SUCCESS,
-                JxlEncoderAddImageFrame(frame_settings, &frame.format,
-                                        frame.pixels(), frame.pixels_size));
-    }
+    configure_encoder(enc.get());
     JxlEncoderCloseInput(enc.get());
+    EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderFlushInput(enc.get()));
     streaming_adapter.CheckFinalWatermarkPosition();
     EXPECT_EQ(streaming_adapter.output(), compressed);
   }

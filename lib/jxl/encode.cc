@@ -15,6 +15,7 @@
 
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/codec_in_out.h"
@@ -54,7 +55,220 @@
    JXL_ENC_ERROR)
 #endif  // JXL_CRASH_ON_ERROR
 
+jxl::StatusOr<JxlOutputProcessorBuffer>
+JxlEncoderOutputProcessorWrapper::GetBuffer(size_t min_size,
+                                            size_t requested_size) {
+  fprintf(stderr, "GetBuffer: %zu - %zu\n", min_size, requested_size);
+  JXL_ASSERT(min_size > 0);
+  JXL_ASSERT(!has_buffer_);
+  if (stop_requested_) return jxl::StatusCode::kNotEnoughBytes;
+  if (requested_size == 0) requested_size = min_size;
+  JXL_ASSERT(requested_size >= min_size);
+
+  // If we support seeking, output_position_ == position_.
+  // Otherwise, output_position_ <= position_.
+  JXL_ASSERT(output_position_ <= position_);
+  size_t additional_size = position_ - output_position_;
+
+  if (external_output_processor_) {
+    // TODO(veluca): here, we cannot just ask for a larger buffer, as it will be
+    // released with a prefix of the buffer that has not been written yet.
+    // Figure out if there is a good way to do this more efficiently.
+    if (additional_size == 0) {
+      size_t size = requested_size + additional_size;
+      uint8_t* user_buffer =
+          static_cast<uint8_t*>(external_output_processor_->get_buffer(
+              external_output_processor_->opaque, &size));
+      if (size == 0 || user_buffer == nullptr) {
+        stop_requested_ = true;
+        return jxl::StatusCode::kNotEnoughBytes;
+      }
+      if (size < min_size + additional_size) {
+        external_output_processor_->release_buffer(
+            external_output_processor_->opaque, 0);
+      } else {
+        internal_buffers_.emplace(position_, InternalBuffer());
+        this->has_buffer_ = true;
+        return JxlOutputProcessorBuffer(user_buffer + additional_size,
+                                        size - additional_size, 0, this);
+      }
+    }
+  } else {
+    if (min_size + additional_size < *avail_out_) {
+      internal_buffers_.emplace(position_, InternalBuffer());
+      this->has_buffer_ = true;
+      return JxlOutputProcessorBuffer(*next_out_ + additional_size,
+                                      *avail_out_ - additional_size, 0, this);
+    }
+  }
+
+  // Otherwise, we need to allocate our own buffer.
+  auto it = internal_buffers_.emplace(position_, InternalBuffer()).first;
+  InternalBuffer& buffer = it->second;
+  size_t alloc_size = requested_size;
+  it++;
+  if (it != internal_buffers_.end()) {
+    alloc_size = std::min(alloc_size, it->first - position_);
+    JXL_ASSERT(alloc_size >= min_size);
+  }
+  buffer.owned_data.resize(alloc_size);
+  this->has_buffer_ = true;
+  return JxlOutputProcessorBuffer(buffer.owned_data.data(), alloc_size, 0,
+                                  this);
+}
+
+void JxlEncoderOutputProcessorWrapper::Seek(size_t pos) {
+  fprintf(stderr, "Seek: %zu\n", pos);
+  JXL_ASSERT(!has_buffer_);
+  if (external_output_processor_ && external_output_processor_->seek) {
+    external_output_processor_->seek(external_output_processor_->opaque, pos);
+    output_position_ = pos;
+  }
+  JXL_ASSERT(pos >= watermark_position_);
+  position_ = pos;
+}
+
+void JxlEncoderOutputProcessorWrapper::SetWatermark(size_t pos) {
+  fprintf(stderr, "SetWatermark: %zu\n", pos);
+  JXL_ASSERT(!has_buffer_);
+  if (external_output_processor_ && external_output_processor_->seek) {
+    external_output_processor_->set_watermark(
+        external_output_processor_->opaque, pos);
+  }
+  watermark_position_ = pos;
+  FlushOutput();
+}
+
+bool JxlEncoderOutputProcessorWrapper::SetAvailOut(uint8_t** next_out,
+                                                   size_t* avail_out) {
+  if (external_output_processor_) return false;
+  avail_out_ = avail_out;
+  next_out_ = next_out;
+  FlushOutput();
+  return true;
+}
+
+void JxlEncoderOutputProcessorWrapper::ReleaseBuffer(size_t bytes_used) {
+  fprintf(stderr, "ReleaseBuffer: %zu\n", bytes_used);
+  JXL_ASSERT(has_buffer_);
+  has_buffer_ = false;
+  auto it = internal_buffers_.find(position_);
+  if (it->second.owned_data.empty() && external_output_processor_) {
+    external_output_processor_->release_buffer(
+        external_output_processor_->opaque, bytes_used);
+  }
+  if (bytes_used == 0) {
+    internal_buffers_.erase(it);
+    return;
+  }
+  JXL_ASSERT(it != internal_buffers_.end());
+  it->second.written_bytes = bytes_used;
+  if (external_output_processor_ && external_output_processor_->seek &&
+      !it->second.owned_data.empty()) {
+    external_output_processor_->seek(external_output_processor_->opaque,
+                                     position_);
+    output_position_ = position_;
+    while (output_position_ < position_ + bytes_used) {
+      size_t num_to_write = position_ + bytes_used - output_position_;
+      if (!AppendBufferToExternalProcessor(
+              it->second.owned_data.data() + output_position_ - position_,
+              num_to_write)) {
+        return;
+      }
+    }
+    it->second.owned_data.clear();
+  }
+  position_ += bytes_used;
+
+  it++;
+  if (it != internal_buffers_.end()) {
+    JXL_ASSERT(it->first >= position_);
+  }
+}
+
+// Tries to write all the bytes up to the watermark position.
+void JxlEncoderOutputProcessorWrapper::FlushOutput() {
+  fprintf(stderr, "FlushOutput\n");
+  JXL_ASSERT(!has_buffer_);
+  while (output_position_ < watermark_position_ &&
+         (avail_out_ == nullptr || *avail_out_ > 0)) {
+    fprintf(stderr, "%zu %zu %zu\n", output_position_, watermark_position_,
+            avail_out_ ? *avail_out_ : 0);
+    JXL_ASSERT(!internal_buffers_.empty());
+    auto it = internal_buffers_.begin();
+    fprintf(stderr, "writing (pos %zu cs %zu allocated %zu) output pos: %zu\n",
+            it->first, it->second.written_bytes, it->second.owned_data.size(),
+            output_position_);
+    // If this fails, we are trying to move the watermark past data that was
+    // not written yet. This is a library programming error.
+    JXL_ASSERT(output_position_ >= it->first);
+    JXL_ASSERT(it->second.written_bytes != 0);
+    size_t buffer_last_byte = it->first + it->second.written_bytes;
+    fprintf(stderr, "od: %zu %zu\n", it->second.owned_data.size(),
+            buffer_last_byte);
+    if (!it->second.owned_data.empty()) {
+      size_t start_in_buffer = output_position_ - it->first;
+      fprintf(stderr, "sib: %zu\n", start_in_buffer);
+      // Guaranteed by the invariant on `internal_buffers_`.
+      JXL_ASSERT(buffer_last_byte > output_position_);
+      size_t num_to_write =
+          std::min(buffer_last_byte, watermark_position_) - output_position_;
+      if (avail_out_ != nullptr) {
+        size_t n = std::min(num_to_write, *avail_out_);
+        fprintf(stderr, "n: %zu\n", n);
+        memcpy(*next_out_, it->second.owned_data.data() + start_in_buffer, n);
+        *avail_out_ -= n;
+        *next_out_ += n;
+        fprintf(stderr, "increasing output_position_ = %zu by n = %zu\n",
+                output_position_, n);
+        output_position_ += n;
+      } else {
+        if (!AppendBufferToExternalProcessor(
+                it->second.owned_data.data() + start_in_buffer, num_to_write)) {
+          return;
+        }
+      }
+    } else {
+      fprintf(stderr, "setting output_position_ to %zu\n", output_position_);
+      size_t advance =
+          std::min(buffer_last_byte, watermark_position_) - output_position_;
+      output_position_ += advance;
+      if (avail_out_ != nullptr) {
+        *next_out_ += advance;
+        *avail_out_ -= advance;
+      }
+    }
+    if (buffer_last_byte == output_position_) {
+      fprintf(stderr, "erasing internal buffer\n");
+      internal_buffers_.erase(it);
+    }
+    if (external_output_processor_ && !external_output_processor_->seek) {
+      external_output_processor_->set_watermark(
+          external_output_processor_->opaque, output_position_);
+    }
+  }
+}
+
+bool JxlEncoderOutputProcessorWrapper::AppendBufferToExternalProcessor(
+    void* data, size_t count) {
+  JXL_ASSERT(external_output_processor_);
+  size_t n = count;
+  void* user_buffer = external_output_processor_->get_buffer(
+      external_output_processor_->opaque, &n);
+  if (user_buffer == nullptr || n == 0) {
+    stop_requested_ = true;
+    return false;
+  }
+  n = std::min(n, count);
+  memcpy(user_buffer, data, n);
+  external_output_processor_->release_buffer(external_output_processor_->opaque,
+                                             n);
+  output_position_ += n;
+  return true;
+}
+
 namespace jxl {
+
 size_t WriteBoxHeader(const jxl::BoxType& type, size_t size, bool unbounded,
                       bool force_large_box, uint8_t* output) {
   uint64_t box_size = 0;
@@ -109,17 +323,23 @@ jxl::Status JxlEncoderStruct::AppendBox(const jxl::BoxType& type,
   output_processor.Seek(current_position);
   JXL_ASSERT(box_contents_end >= box_contents_start);
   if (box_contents_end - box_contents_start > box_max_size) {
-    return JXL_API_ERROR(
-        this, JXL_ENC_ERR_GENERIC,
-        "Internal error: upper bound on box size was violated");
+    return JXL_API_ERROR(this, JXL_ENC_ERR_GENERIC,
+                         "Internal error: upper bound on box size was "
+                         "violated, upper bound: %" PRIuS ", actual: %" PRIuS,
+                         box_max_size, box_contents_end - box_contents_start);
   }
-  JXL_ASSIGN_OR_RETURN(auto buffer, output_processor.GetBuffer(
-                                        box_contents_start - current_position));
-  jxl::WriteBoxHeader(type, box_contents_end - box_contents_start, unbounded,
-                      large_box, buffer.data());
+  // We need to release the buffer before Seek.
+  {
+    JXL_ASSIGN_OR_RETURN(
+        auto buffer,
+        output_processor.GetBuffer(box_contents_start - current_position));
+    buffer.advance(jxl::WriteBoxHeader(type,
+                                       box_contents_end - box_contents_start,
+                                       unbounded, large_box, buffer.data()));
+  }
   output_processor.Seek(box_contents_end);
   output_processor.SetWatermark(box_contents_end);
-  return jxl::Status::Ok();
+  return jxl::OkStatus();
 }
 
 uint32_t JxlEncoderVersion(void) {
@@ -128,11 +348,14 @@ uint32_t JxlEncoderVersion(void) {
 }
 
 namespace {
-void WriteJxlpBoxCounter(uint32_t counter, bool last, uint8_t* output) {
+void WriteJxlpBoxCounter(uint32_t counter, bool last,
+                         JxlOutputProcessorBuffer& buffer) {
   if (last) counter |= 0x80000000;
+  uint8_t buf[4];
   for (size_t i = 0; i < 4; i++) {
-    *(output++) = counter >> (8 * (3 - i)) & 0xff;
+    buf[i] = counter >> (8 * (3 - i)) & 0xff;
   }
+  buffer.append(buf, 4);
 }
 
 void QueueFrame(
@@ -407,7 +630,7 @@ bool EncodeFrameIndexBox(const jxl::JxlEncoderFrameIndexBox& frame_index_box,
 
 }  // namespace
 
-jxl::Status JxlEncoderStruct::RefillOutputByteQueue() {
+jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
   jxl::PaddedBytes bytes;
 
   jxl::JxlEncoderQueuedInput& input = input_queue[0];
@@ -474,19 +697,17 @@ jxl::Status JxlEncoderStruct::RefillOutputByteQueue() {
       // Add "JXL " and ftyp box.
       {
         JXL_ASSIGN_OR_RETURN(auto buffer, output_processor.GetBuffer(
-                                              sizeof(jxl::kContainerHeader)));
-        memcpy(buffer.data(), jxl::kContainerHeader,
-               sizeof(jxl::kContainerHeader));
+                                              jxl::kContainerHeader.size()));
+        buffer.append(jxl::kContainerHeader);
       }
       if (codestream_level != 5) {
         // Add jxll box directly after the ftyp box to indicate the codestream
         // level.
-        JXL_ASSIGN_OR_RETURN(
-            auto buffer,
-            output_processor.GetBuffer(sizeof(jxl::kLevelBoxHeader) + 1));
-        memcpy(buffer.data(), jxl::kLevelBoxHeader,
-               sizeof(jxl::kLevelBoxHeader));
-        buffer.data()[sizeof(jxl::kLevelBoxHeader)] = codestream_level;
+        JXL_ASSIGN_OR_RETURN(auto buffer, output_processor.GetBuffer(
+                                              jxl::kLevelBoxHeader.size() + 1));
+        buffer.append(jxl::kLevelBoxHeader);
+        uint8_t cl = codestream_level;
+        buffer.append(&cl, 1);
       }
 
       // Whether to write the basic info and color profile header of the
@@ -505,10 +726,9 @@ jxl::Status JxlEncoderStruct::RefillOutputByteQueue() {
             [&]() {
               JXL_ASSIGN_OR_RETURN(
                   auto buffer, output_processor.GetBuffer(bytes.size() + 4));
-              WriteJxlpBoxCounter(jxlp_counter++, /*last=*/false,
-                                  buffer.data());
-              memcpy(buffer.data() + 4, bytes.data(), bytes.size());
-              return jxl::Status::Ok();
+              WriteJxlpBoxCounter(jxlp_counter++, /*last=*/false, buffer);
+              buffer.append(bytes);
+              return jxl::OkStatus();
             }));
         bytes.clear();
       }
@@ -519,8 +739,8 @@ jxl::Status JxlEncoderStruct::RefillOutputByteQueue() {
             [&]() {
               JXL_ASSIGN_OR_RETURN(auto buffer, output_processor.GetBuffer(
                                                     jpeg_metadata.size()));
-              memcpy(buffer.data(), jpeg_metadata.data(), jpeg_metadata.size());
-              return jxl::Status::Ok();
+              buffer.append(jpeg_metadata);
+              return jxl::OkStatus();
             }));
       }
     }
@@ -581,8 +801,6 @@ jxl::Status JxlEncoderStruct::RefillOutputByteQueue() {
     }
 
     bool last_frame = frames_closed && !num_queued_frames;
-
-    size_t codestream_byte_size = 0;
 
     jxl::BitWriter writer;
 
@@ -663,7 +881,6 @@ jxl::Status JxlEncoderStruct::RefillOutputByteQueue() {
       // the first frame, and the codestream header was not encoded as jxlp
       // above.
       bytes.append(std::move(writer).TakeBytes());
-      codestream_byte_size = bytes.size();
     } else {
 #if 0
       TODO
@@ -682,28 +899,31 @@ jxl::Status JxlEncoderStruct::RefillOutputByteQueue() {
         // slighly more efficient to write a jxlc box since it has 4 bytes
         // less overhead.
         JXL_RETURN_IF_ERROR(AppendBox(
-            jxl::MakeBoxType("jxlc"), /*unbounded=*/false, codestream_byte_size,
-            [&]() {
-              JXL_ASSIGN_OR_RETURN(auto buffer, output_processor.GetBuffer(
-                                                    codestream_byte_size));
-              memcpy(buffer.data(), bytes.data(), bytes.size());
-              return jxl::Status::Ok();
+            jxl::MakeBoxType("jxlc"), /*unbounded=*/false, bytes.size(), [&]() {
+              JXL_ASSIGN_OR_RETURN(auto buffer,
+                                   output_processor.GetBuffer(bytes.size()));
+              buffer.append(bytes);
+              return jxl::OkStatus();
             }));
       } else {
         JXL_RETURN_IF_ERROR(AppendBox(
-            jxl::MakeBoxType("jxlp"), /*unbounded=*/false,
-            codestream_byte_size + 4, [&]() {
-              JXL_ASSIGN_OR_RETURN(auto buffer, output_processor.GetBuffer(
-                                                    codestream_byte_size + 4));
-              WriteJxlpBoxCounter(jxlp_counter++, last_frame, buffer.data());
-              memcpy(buffer.data() + 4, bytes.data(), bytes.size());
-              return jxl::Status::Ok();
+            jxl::MakeBoxType("jxlp"), /*unbounded=*/false, bytes.size() + 4,
+            [&]() {
+              JXL_ASSIGN_OR_RETURN(
+                  auto buffer, output_processor.GetBuffer(bytes.size() + 4));
+              WriteJxlpBoxCounter(jxlp_counter++, last_frame, buffer);
+              buffer.append(bytes);
+              return jxl::OkStatus();
             }));
       }
-    } else {
-      JXL_ASSIGN_OR_RETURN(auto buffer,
-                           output_processor.GetBuffer(codestream_byte_size));
-      memcpy(buffer.data(), bytes.data(), bytes.size());
+    } else if (!bytes.empty()) {  // should never happen when code is ready.
+      size_t position = output_processor.CurrentPosition();
+      {
+        JXL_ASSIGN_OR_RETURN(auto buffer,
+                             output_processor.GetBuffer(bytes.size()));
+        buffer.append(bytes);
+      }
+      output_processor.SetWatermark(position + bytes.size());
     }
 
     if (input_frame) {
@@ -718,8 +938,8 @@ jxl::Status JxlEncoderStruct::RefillOutputByteQueue() {
           jxl::MakeBoxType("jxli"), /*unbounded=*/false, jxli_size, [&]() {
             JXL_ASSIGN_OR_RETURN(auto buffer,
                                  output_processor.GetBuffer(jxli_size));
-            memcpy(buffer.data(), writer.GetSpan().data(), jxli_size);
-            return jxl::Status::Ok();
+            buffer.append(writer.GetSpan());
+            return jxl::OkStatus();
           }));
     }
   } else {
@@ -747,13 +967,13 @@ jxl::Status JxlEncoderStruct::RefillOutputByteQueue() {
           /*unbounded=*/false, compressed.size(), [&]() {
             JXL_ASSIGN_OR_RETURN(auto buffer,
                                  output_processor.GetBuffer(compressed.size()));
-            memcpy(buffer.data(), compressed.data(), compressed.size());
-            return jxl::Status::Ok();
+            buffer.append(compressed);
+            return jxl::OkStatus();
           }));
     }
   }
 
-  return jxl::Status::Ok();
+  return jxl::OkStatus();
 }
 
 JxlEncoderStatus JxlEncoderSetColorEncoding(JxlEncoder* enc,
@@ -2087,8 +2307,8 @@ void JxlEncoderCloseInput(JxlEncoder* enc) {
 }
 
 JXL_EXPORT JxlEncoderStatus JxlEncoderFlushInput(JxlEncoder* enc) {
-  while (enc->input_queue.empty()) {
-    if (enc->RefillOutputByteQueue() != JXL_ENC_SUCCESS) {
+  while (!enc->input_queue.empty()) {
+    if (!enc->ProcessOneEnqueuedInput()) {
       return JXL_ENC_ERROR;
     }
   }
@@ -2119,7 +2339,7 @@ JxlEncoderStatus JxlEncoderProcessOutput(JxlEncoder* enc, uint8_t** next_out,
                          "JxlEncoderSetOutputProcessor");
   }
   while (*avail_out != 0 && !enc->input_queue.empty()) {
-    if (enc->RefillOutputByteQueue() != JXL_ENC_SUCCESS) {
+    if (!enc->ProcessOneEnqueuedInput()) {
       return JXL_ENC_ERROR;
     }
   }

@@ -240,8 +240,8 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
     JXL_RETURN_IF_ERROR(
         EncodeJPEGData(*io.Main().jpeg_data, &jpeg_data, params));
     std::vector<uint8_t> header;
-    header.insert(header.end(), jxl::kContainerHeader,
-                  jxl::kContainerHeader + sizeof(jxl::kContainerHeader));
+    header.insert(header.end(), jxl::kContainerHeader.begin(),
+                  jxl::kContainerHeader.end());
     jxl::AppendBoxHeader(jxl::MakeBoxType("jbrd"), jpeg_data.size(), false,
                          &header);
     header.insert(header.end(), jpeg_data.data(),

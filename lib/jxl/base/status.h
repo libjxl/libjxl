@@ -8,6 +8,7 @@
 
 // Error handling: Status return type + helper macros.
 
+#include <jxl/encode.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -16,6 +17,7 @@
 #include <type_traits>
 #include <utility>
 
+#include "lib/include/jxl/encode.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/sanitizer_definitions.h"
 
@@ -300,6 +302,21 @@ class JXL_MUST_USE_RESULT Status {
       : code_(ok ? StatusCode::kOk : StatusCode::kGenericError) {}
 
   // NOLINTNEXTLINE(google-explicit-constructor)
+  Status(JxlEncoderStatus enc_status) {
+    switch (enc_status) {
+      case JXL_ENC_SUCCESS:
+        code_ = StatusCode::kOk;
+        return;
+      case JXL_ENC_NEED_MORE_OUTPUT:
+        code_ = StatusCode::kNotEnoughBytes;
+        return;
+      default:
+        code_ = StatusCode::kGenericError;
+        return;
+    }
+  }
+
+  // NOLINTNEXTLINE(google-explicit-constructor)
   constexpr Status(StatusCode code) : code_(code) {}
 
   // We also want implicit cast to bool to check for return values of functions.
@@ -313,11 +330,11 @@ class JXL_MUST_USE_RESULT Status {
     return static_cast<int32_t>(code_) > 0;
   }
 
-  static constexpr Status Ok() { return Status(StatusCode::kOk); }
-
  private:
   StatusCode code_;
 };
+
+static constexpr Status OkStatus() { return Status(StatusCode::kOk); }
 
 // Helper function to create a Status and print the debug message or abort when
 // needed.

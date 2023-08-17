@@ -710,6 +710,12 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetOutputProcessor(
 
 /**
  * TODO(firsching): add documentation
+ * @param enc encoder object.
+ */
+JXL_EXPORT JxlEncoderStatus JxlEncoderFlushInput(JxlEncoder* enc);
+
+/**
+ * TODO(firsching): add documentation
  *
  * @param frame_settings
  * @return JXL_ENC_SUCCESS on success, JXL_ENC_ERROR on error
