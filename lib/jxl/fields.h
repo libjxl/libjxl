@@ -372,6 +372,8 @@ class VisitorBase : public Visitor {
 };
 }  // namespace fields_internal
 
+Status CheckHasEnoughBits(Visitor* visitor, size_t bits);
+
 }  // namespace jxl
 
 #endif  // LIB_JXL_FIELDS_H_

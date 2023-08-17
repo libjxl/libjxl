@@ -94,6 +94,7 @@ TEST_P(SpeedTierTest, Roundtrip) {
 
   CompressParams cparams;
   cparams.speed_tier = params.speed_tier;
+  cparams.SetCms(GetJxlCms());
 
   CodecInOut io2;
   JXL_EXPECT_OK(test::Roundtrip(&io, cparams, {}, &io2, _));

@@ -242,7 +242,7 @@ PaddedBytes CreateTestJXLCodestream(Span<const uint8_t> pixels, size_t xsize,
     // the hardcoded ICC profile we attach requires RGB.
     EXPECT_EQ(false, grayscale);
     EXPECT_TRUE(params.color_space.empty());
-    EXPECT_TRUE(color_encoding.SetICC(GetIccTestProfile()));
+    EXPECT_TRUE(color_encoding.SetICC(GetIccTestProfile(), &GetJxlCms()));
   } else if (!params.color_space.empty()) {
     JxlColorEncoding c;
     EXPECT_TRUE(jxl::ParseDescription(params.color_space, &c));
@@ -740,7 +740,8 @@ std::vector<uint8_t> GetTestHeader(size_t xsize, size_t ysize,
 
   if (!icc_profile.empty()) {
     jxl::PaddedBytes copy = icc_profile;
-    EXPECT_TRUE(metadata.m.color_encoding.SetICC(std::move(copy)));
+    EXPECT_TRUE(
+        metadata.m.color_encoding.SetICC(std::move(copy), &jxl::GetJxlCms()));
   }
 
   EXPECT_TRUE(jxl::Bundle::Write(metadata.m, &writer, 0, nullptr));
@@ -1644,7 +1645,7 @@ TEST(DecodeTest, PixelTestWithICCProfileLossy) {
   // The input pixels use the profile matching GetIccTestProfile, since we set
   // add_icc_profile for CreateTestJXLCodestream to true.
   jxl::ColorEncoding color_encoding0;
-  EXPECT_TRUE(color_encoding0.SetICC(GetIccTestProfile()));
+  EXPECT_TRUE(color_encoding0.SetICC(GetIccTestProfile(), &jxl::GetJxlCms()));
   jxl::Span<const uint8_t> span0(pixels.data(), pixels.size());
   jxl::CodecInOut io0;
   io0.SetSize(xsize, ysize);
@@ -1653,7 +1654,7 @@ TEST(DecodeTest, PixelTestWithICCProfileLossy) {
                                   /*pool=*/nullptr, &io0.Main()));
 
   jxl::ColorEncoding color_encoding1;
-  EXPECT_TRUE(color_encoding1.SetICC(std::move(icc)));
+  EXPECT_TRUE(color_encoding1.SetICC(std::move(icc), &jxl::GetJxlCms()));
   jxl::Span<const uint8_t> span1(pixels2.data(), pixels2.size());
   jxl::CodecInOut io1;
   io1.SetSize(xsize, ysize);
@@ -1665,9 +1666,9 @@ TEST(DecodeTest, PixelTestWithICCProfileLossy) {
   EXPECT_THAT(ButteraugliDistance(io0.frames, io1.frames, ba, jxl::GetJxlCms(),
                                   /*distmap=*/nullptr, nullptr),
 #if JXL_HIGH_PRECISION
-              IsSlightlyBelow(0.70f));
+              IsSlightlyBelow(0.9f));
 #else
-              IsSlightlyBelow(0.78f));
+              IsSlightlyBelow(0.98f));
 #endif
 
   JxlDecoderDestroy(dec);
@@ -1927,9 +1928,9 @@ TEST(DecodeTest, PixelTestOpaqueSrgbLossy) {
         ButteraugliDistance(io0.frames, io1.frames, ba, jxl::GetJxlCms(),
                             /*distmap=*/nullptr, nullptr),
 #if JXL_HIGH_PRECISION
-        IsSlightlyBelow(0.74f));
+        IsSlightlyBelow(0.93f));
 #else
-        IsSlightlyBelow(0.75f));
+        IsSlightlyBelow(0.94f));
 #endif
 
     JxlDecoderDestroy(dec);

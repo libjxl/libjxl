@@ -527,7 +527,7 @@ TEST(EncodeTest, LossyEncoderUseOriginalProfileTest) {
     ASSERT_EQ(JXL_ENC_SUCCESS,
               JxlEncoderFrameSettingsSetOption(
                   frame_settings, JXL_ENC_FRAME_SETTING_EFFORT, 8));
-    VerifyFrameEncoding(63, 129, enc.get(), frame_settings, 7173, true);
+    VerifyFrameEncoding(63, 129, enc.get(), frame_settings, 7228, true);
   }
 }
 
@@ -846,6 +846,7 @@ TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGReconstructionTest)) {
   EXPECT_EQ(JXL_ENC_SUCCESS, process_result);
 
   jxl::extras::JXLDecompressParams dparams;
+  jxl::test::DefaultAcceptedFormats(dparams);
   std::vector<uint8_t> decoded_jpeg_bytes;
   jxl::extras::PackedPixelFile ppf;
   EXPECT_TRUE(DecodeImageJXL(compressed.data(), compressed.size(), dparams,
@@ -887,6 +888,7 @@ TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(ProgressiveJPEGReconstructionTest)) {
   EXPECT_EQ(JXL_ENC_SUCCESS, process_result);
 
   jxl::extras::JXLDecompressParams dparams;
+  jxl::test::DefaultAcceptedFormats(dparams);
   std::vector<uint8_t> decoded_jpeg_bytes;
   jxl::extras::PackedPixelFile ppf;
   EXPECT_TRUE(DecodeImageJXL(compressed.data(), compressed.size(), dparams,

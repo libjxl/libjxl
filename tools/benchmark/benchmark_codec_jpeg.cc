@@ -261,7 +261,7 @@ class JPEGCodec : public ImageCodec {
       jxl::extras::EncodedImage encoded;
       std::unique_ptr<jxl::extras::Encoder> encoder =
           jxl::extras::GetJPEGEncoder();
-      if (!encoder.get()) {
+      if (!encoder) {
         fprintf(stderr, "libjpeg codec is not supported\n");
         return false;
       }

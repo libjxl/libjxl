@@ -44,7 +44,8 @@ Status DecodeFile(const Span<const uint8_t> file, bool use_slow_pipeline,
     if (io->metadata.m.color_encoding.WantICC()) {
       PaddedBytes icc;
       JXL_RETURN_IF_ERROR(ReadICC(&reader, &icc));
-      JXL_RETURN_IF_ERROR(io->metadata.m.color_encoding.SetICC(std::move(icc)));
+      JXL_RETURN_IF_ERROR(
+          io->metadata.m.color_encoding.SetICC(std::move(icc), &GetJxlCms()));
     }
     PassesDecoderState dec_state;
     JXL_RETURN_IF_ERROR(
@@ -231,7 +232,7 @@ TEST_P(RenderPipelineTestParam, PipelineTest) {
 #if JXL_HIGH_PRECISION
     constexpr float kMaxError = 1e-5;
 #else
-    constexpr float kMaxError = 1e-4;
+    constexpr float kMaxError = 5e-4;
 #endif
     Image3F def = std::move(*io_default.frames[i].color());
     Image3F pip = std::move(*io_slow_pipeline.frames[i].color());

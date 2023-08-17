@@ -131,7 +131,8 @@ Status ConvertExternalToInternalWhitePoint(const JxlWhitePoint external,
       *internal = WhitePoint::kDCI;
       return true;
   }
-  return JXL_FAILURE("Invalid WhitePoint enum value");
+  return JXL_FAILURE("Invalid WhitePoint enum value %d",
+                     static_cast<int>(external));
 }
 
 Status ConvertExternalToInternalPrimaries(const JxlPrimaries external,
@@ -418,6 +419,44 @@ Status ColorEncoding::SetPrimaries(const PrimariesCIExy& xy) {
 Status ColorEncoding::CreateICC() {
   InternalRemoveICC();
   return MaybeCreateProfile(*this, &icc_);
+}
+
+Status ColorEncoding::SetFieldsFromICC(const JxlCmsInterface& cms) {
+  // In case parsing fails, mark the ColorEncoding as invalid.
+  SetColorSpace(ColorSpace::kUnknown);
+  tf.SetTransferFunction(TransferFunction::kUnknown);
+
+  if (icc_.empty()) return JXL_FAILURE("Empty ICC profile");
+
+  JxlColorEncoding external;
+  JXL_BOOL cmyk;
+  JXL_RETURN_IF_ERROR(cms.set_fields_from_icc(cms.set_fields_data, icc_.data(),
+                                              icc_.size(), &external, &cmyk));
+  if (cmyk) {
+    cmyk_ = true;
+    return true;
+  }
+  PaddedBytes icc = std::move(icc_);
+  JXL_RETURN_IF_ERROR(ConvertExternalToInternalColorEncoding(external, this));
+  icc_ = std::move(icc);
+  return true;
+}
+
+void ColorEncoding::DecideIfWantICC(const JxlCmsInterface& cms) {
+  if (icc_.empty()) return;
+
+  JxlColorEncoding c;
+  JXL_BOOL cmyk;
+  if (!cms.set_fields_from_icc(cms.set_fields_data, icc_.data(), icc_.size(),
+                               &c, &cmyk)) {
+    return;
+  }
+  if (cmyk) return;
+
+  PaddedBytes new_icc;
+  if (!MaybeCreateProfile(*this, &new_icc)) return;
+
+  want_icc_ = false;
 }
 
 std::string Description(const ColorEncoding& c_in) {

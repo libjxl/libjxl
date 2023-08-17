@@ -76,8 +76,15 @@ class SourceManager {
   static boolean fill_input_buffer(j_decompress_ptr cinfo) {
     auto src = reinterpret_cast<SourceManager*>(cinfo->src);
     if (src->pos_ < src->len_) {
-      size_t chunk_size = std::min(src->len_ - src->pos_, src->max_chunk_size_);
+      size_t remaining = src->len_ - src->pos_;
+      size_t chunk_size = std::min(remaining, src->max_chunk_size_);
       size_t next_idx = ++src->chunk_idx_ % kNumSourceBuffers;
+      // Larger number of chunks causes fuzzer timuout.
+      if (src->chunk_idx_ >= (1u << 15)) {
+        chunk_size = remaining;
+        next_idx = src->buffers_.size();
+        src->buffers_.emplace_back(chunk_size);
+      }
       uint8_t* next_buffer = src->buffers_[next_idx].data();
       memcpy(next_buffer, src->data_ + src->pos_, chunk_size);
       src->pub_.next_input_byte = next_buffer;

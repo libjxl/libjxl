@@ -253,7 +253,7 @@ void TestRoundTrip(const TestImageParams& params, ThreadPool* pool) {
 
   EncodedImage encoded;
   auto encoder = Encoder::FromExtension(extension);
-  if (!encoder.get()) {
+  if (!encoder) {
     fprintf(stderr, "Skipping test because of missing codec support.\n");
     return;
   }
@@ -411,7 +411,7 @@ TEST(CodecTest, EncodeToPNG) {
   ThreadPool* const pool = nullptr;
 
   std::unique_ptr<Encoder> png_encoder = Encoder::FromExtension(".png");
-  if (!png_encoder.get()) {
+  if (!png_encoder) {
     fprintf(stderr, "Skipping test because of missing codec support.\n");
     return;
   }

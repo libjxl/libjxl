@@ -87,7 +87,8 @@ jxl::CodecInOut ConvertTestImage(const std::vector<uint8_t>& buf,
   jxl::ColorEncoding color_encoding;
   if (!icc_profile.empty()) {
     jxl::PaddedBytes icc_profile_copy(icc_profile);
-    EXPECT_TRUE(color_encoding.SetICC(std::move(icc_profile_copy)));
+    EXPECT_TRUE(
+        color_encoding.SetICC(std::move(icc_profile_copy), &jxl::GetJxlCms()));
   } else if (pixel_format.data_type == JXL_TYPE_FLOAT) {
     color_encoding = jxl::ColorEncoding::LinearSRGB(is_gray);
   } else {

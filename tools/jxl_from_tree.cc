@@ -470,7 +470,7 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
   io.SetFromImage(std::move(image), ColorEncoding::SRGB());
   io.SetSize((width + x0) * cparams.resampling,
              (height + y0) * cparams.resampling);
-  io.metadata.m.color_encoding.DecideIfWantICC();
+  io.metadata.m.color_encoding.DecideIfWantICC(jxl::GetJxlCms());
   cparams.options.zero_tokens = true;
   cparams.palette_colors = 0;
   cparams.channel_colors_pre_transform_percent = 0;
