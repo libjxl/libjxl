@@ -682,7 +682,7 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderAddImageFrame(
  *
  * It is not allowed to acquire more than one buffer at a given time.
  *
- * The JxlEncoder OuputProcessor interacts with `position` and `watermark`,
+ * The JxlEncoder OutputProcessor interacts with `position` and `watermark`,
  * which have the following meaning.
  *
  * - position: Represents the current position, in bytes, within the output
