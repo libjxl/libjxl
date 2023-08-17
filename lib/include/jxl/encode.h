@@ -684,8 +684,14 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderAddImageFrame(
  *
  * The JxlEncoder OuputProcessor interacts with `position` and `watermark`,
  * which have the following meaning.
- * - position: TODO
- * - watermark: TODO
+ *
+ * - position: Represents the current position, in bytes, within the output
+ * stream where the encoded data will be written next. This position moves
+ * forward as data is written, and can also be adjusted through the optional
+ * seek callback, if provided. At this position the next write will occur.
+ *
+ * - watermark:  A position in the output stream that ensures all bytes before
+ * this point are finalized and won't be changed by later writes.
  *
  * All fields but `seek` are required, `seek` is optional and can be NULL.
  */
