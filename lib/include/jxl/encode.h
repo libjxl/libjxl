@@ -645,57 +645,74 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderAddImageFrame(
     const JxlPixelFormat* pixel_format, const void* buffer, size_t size);
 
 /**
- * TODO: explain state of this processor
- * either having an active buffer or not. When having an active buffer you can
- * release_buffer and then
+ * The JxlEncoderOutputProcessor structure represents an output processor
+ * for the encoder. It provides mechanisms to handle buffering, writing,
+ * seeking, and watermarking during the encoding process.
  *
+ * At a high level, the processor can be in one of two states:
+ * - With an active buffer: meaning it has acquired a buffer using
+ *   `get_buffer` and can write encoded data to it.
+ * - Without an active buffer: which means no data can be written until
+ *   another buffer is acquired after releasing the current active buffer.
+ *
+ * It is not allowed to acquire more than one buffer at a given time.
  */
 struct JxlEncoderOutputProcessor {
   /**
-   * TODO
+   * An opaque pointer that the client can use to store custom data.
+   * This data will be passed to the associated callback functions.
    */
   void* opaque;
 
   /**
-   * TODO
+   * Required.
+   * Acquires a buffer into which the library will write the output data.
    *
-   * If size is 0 and the returned value is NULL, this will be interpreted as
-   * asking output writing to stop, and the library will return an error.
-   * mandatory
-   * TODO(veluca): this is not implemented yet.
+   * If the `size` argument points to 0 and the returned value is NULL, this
+   * will be interpreted as asking the output writing to stop. In such a case,
+   * the library will return an error. The client is expected to set the size of
+   * the returned buffer based on the suggested `size` when this function is
+   * called.
    *
    *
    * @param opaque user supplied parameters to the callback
    * @param size points to a suggested buffer size when called; must be set to
    * the size of the returned buffer once the function returns.
+   * @return a pointer to the acquired buffer or NULL to indicate an error or
+   * stop condition.
    */
   void* (*get_buffer)(void* opaque, size_t* size);
 
   /**
-   * TODO
-   * mandatory
-   * The advances the position number of bytes by `written_bytes` many bytes.
+   * Required.
+   * Notifies the library that the current buffer's data has been written and
+   * can be released. This function should advance the current position of
+   * the buffer by `written_bytes` number of bytes.
    *
    * @param opaque user supplied parameters to the callback
-   * @param written_bytes the number of bytes written.
-   *
+   * @param written_bytes the number of bytes written to the buffer.
    */
   void (*release_buffer)(void* opaque, size_t written_bytes);
 
   /**
-   * TODO
-   * not mandatory, can be NULL
-   * Can only be done when there is no buffer.
+   * Optional, can be NULL
+   * Seeks to a specific position in the output. This function is optional and
+   * can be set to NULL if the output doesn't support seeking. Can only be done
+   * when there is no buffer.
    *
+   * @param opaque user supplied parameters to the callback
    * @param opaque user supplied parameters to the callback
    */
   void (*seek)(void* opaque, uint64_t position);
 
   /**
+   * Sets a watermark on the output data, at a specific position. This can be
+   * used to mark certain sections of the data for reference or for special
+   * processing.
    *
-   * mandatory
    * @param opaque user supplied parameters to the callback
-   * @param offset in number of bytes
+   * @param watermark_position the position, in bytes, where the watermark
+   * should be set.
    */
   void (*set_watermark)(void* opaque, uint64_t watermark_position);
 };
