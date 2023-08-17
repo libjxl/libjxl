@@ -668,18 +668,24 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderAddImageFrame(
     const JxlEncoderFrameSettings* frame_settings,
     const JxlPixelFormat* pixel_format, const void* buffer, size_t size);
 
+
 /**
- * The JxlEncoderOutputProcessor structure represents an output processor
- * for the encoder. It provides mechanisms to handle buffering, writing,
- * seeking, and watermarking during the encoding process.
+ * The JxlEncoderOutputProcessor structure provides an interface for the encoder's
+ * output processing. Users of the library, who want to do streaming encoding, should implement the required callbacks
+ * for buffering, writing, seeking (if supported), and watermarking
+ * during the encoding process.
  *
  * At a high level, the processor can be in one of two states:
- * - With an active buffer: meaning it has acquired a buffer using
- *   `get_buffer` and can write encoded data to it.
- * - Without an active buffer: which means no data can be written until
- *   another buffer is acquired after releasing the current active buffer.
+ * - With an active buffer: This indicates that a buffer has been acquired using
+ *   `get_buffer` and encoded data can be written to it.
+ * - Without an active buffer: In this state, no data can be written. A new buffer
+ *   must be acquired after releasing any previously active buffer.
  *
  * It is not allowed to acquire more than one buffer at a given time.
+ *
+ * The JxlEncoder OuputProcessor interacts with `position` and `watermark`, which have the following meaning.
+ * - position: TODO
+ * - watermark: TODO
  */
 struct JxlEncoderOutputProcessor {
   /**
@@ -729,9 +735,8 @@ struct JxlEncoderOutputProcessor {
   void (*seek)(void* opaque, uint64_t position);
 
   /**
-   * Sets a watermark on the output data, at a specific position. This can be
-   * used to mark certain sections of the data for reference or for special
-   * processing.
+   * Sets a watermark on the output data, at a specific position.
+   * Seeking will never request a position before the watermark.
    *
    * @param opaque user supplied parameters to the callback
    * @param watermark_position the position, in bytes, where the watermark
@@ -745,6 +750,8 @@ struct JxlEncoderOutputProcessor {
  * encoder will handle buffering, writing, seeking (if supported), and
  * watermarking during the encoding process.
  *
+ * This should not be used when using @ref JxlEncoderProcessOutput.
+ *
  * @param enc encoder object.
  * @param output_processor the struct containing the callbacks for managing
  * output.
@@ -757,6 +764,12 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetOutputProcessor(
  * Flushes any buffered input in the encoder, ensuring that all available input
  * data has been processed and written to the output.
  *
+ * This function can only be used after @ref JxlEncoderSetOutputProcessor.
+ * Before making the last call to @ref JxlEncoderFlushInput, users should call
+ *
+ * This should not be used when using @ref JxlEncoderProcessOutput.
+ *
+ * @ref CloseInput to signal the end of input data.
  * @param enc encoder object.
  * @return JXL_ENC_SUCCESS on success, JXL_ENC_ERROR on error.
  */
