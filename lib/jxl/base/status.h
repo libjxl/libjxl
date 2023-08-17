@@ -17,7 +17,6 @@
 #include <utility>
 
 #include "jxl/encode.h"
-#include "lib/include/jxl/encode.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/sanitizer_definitions.h"
 
