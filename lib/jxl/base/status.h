@@ -8,7 +8,6 @@
 
 // Error handling: Status return type + helper macros.
 
-#include <jxl/encode.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -17,6 +16,7 @@
 #include <type_traits>
 #include <utility>
 
+#include "jxl/encode.h"
 #include "lib/include/jxl/encode.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/sanitizer_definitions.h"
