@@ -678,14 +678,13 @@ struct JxlEncoderOutputProcessor {
    * @param opaque user supplied parameters to the callback
    * @param size points to a suggested buffer size when called; must be set to
    * the size of the returned buffer once the function returns.
-   * @return a pointer to the acquired buffer or NULL to indicate an error or
-   * stop condition.
+   * @return a pointer to the acquired buffer or NULL to indicate a stop condition.
    */
   void* (*get_buffer)(void* opaque, size_t* size);
 
   /**
    * Required.
-   * Notifies the library that the current buffer's data has been written and
+   * Notifies the user of library that the current buffer's data has been written and
    * can be released. This function should advance the current position of
    * the buffer by `written_bytes` number of bytes.
    *
@@ -698,10 +697,10 @@ struct JxlEncoderOutputProcessor {
    * Optional, can be NULL
    * Seeks to a specific position in the output. This function is optional and
    * can be set to NULL if the output doesn't support seeking. Can only be done
-   * when there is no buffer.
+   * when there is no buffer. Cannot be used to seek before the watermark position.
    *
    * @param opaque user supplied parameters to the callback
-   * @param opaque user supplied parameters to the callback
+   * @param position the position to seek to, in bytes.
    */
   void (*seek)(void* opaque, uint64_t position);
 
