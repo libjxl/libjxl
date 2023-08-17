@@ -11,10 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
  - encoder API: add `JxlEncoderSetExtraChannelDistance` to adjust the quality
    of extra channels (like alpha) separately.
  - encoder API: new api functions for streaming encoding:
-  - `JxlEncoderSetOutputCallback`,
-  - `JxlEncoderChunkedImageFrameStart`,
-  - `JxlEncoderChunkedImageFrameAddPart` and new
-  - `JXL_ENC_FRAME_SETTING_BUFFERING` enum value.
+  - `JxlEncoderSetOutputProcessor`
+  - `JxlEncoderFlushInput` and
+  - `JxlEncoderOutputProcessor` struct
 ### Removed
  - API: the Butteraugli API (`jxl/butteraugli.h`) was removed.
  - encoder and decoder API: all deprecated functions were removed:
