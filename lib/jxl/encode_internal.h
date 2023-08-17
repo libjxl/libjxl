@@ -391,8 +391,6 @@ struct JxlEncoderStruct {
   // `write_box` must never seek before the position the output wrapper was at
   // the moment of the call, and must leave the output wrapper such that its
   // position is one byte past the end of the written box.
-  // TODO(veluca): add a function for appending a box that we already have the
-  // contents of.
   template <typename WriteBox>
   jxl::Status AppendBox(const jxl::BoxType& type, bool unbounded,
                         size_t box_max_size, const WriteBox& write_box);
