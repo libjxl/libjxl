@@ -781,7 +781,7 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetOutputProcessor(
  *
  * This should not be used when using @ref JxlEncoderProcessOutput.
  *
- * @ref CloseInput to signal the end of input data.
+ * @ref JxlEncoderCloseInput to signal the end of input data.
  * @param enc encoder object.
  * @return JXL_ENC_SUCCESS on success, JXL_ENC_ERROR on error.
  */
