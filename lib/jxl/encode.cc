@@ -60,7 +60,6 @@
 jxl::StatusOr<JxlOutputProcessorBuffer>
 JxlEncoderOutputProcessorWrapper::GetBuffer(size_t min_size,
                                             size_t requested_size) {
-  fprintf(stderr, "GetBuffer: %zu - %zu\n", min_size, requested_size);
   JXL_ASSERT(min_size > 0);
   JXL_ASSERT(!has_buffer_);
   if (stop_requested_) return jxl::StatusCode::kNotEnoughBytes;
@@ -119,7 +118,6 @@ JxlEncoderOutputProcessorWrapper::GetBuffer(size_t min_size,
 }
 
 void JxlEncoderOutputProcessorWrapper::Seek(size_t pos) {
-  fprintf(stderr, "Seek: %zu\n", pos);
   JXL_ASSERT(!has_buffer_);
   if (external_output_processor_ && external_output_processor_->seek) {
     external_output_processor_->seek(external_output_processor_->opaque, pos);
@@ -130,7 +128,6 @@ void JxlEncoderOutputProcessorWrapper::Seek(size_t pos) {
 }
 
 void JxlEncoderOutputProcessorWrapper::SetWatermark(size_t pos) {
-  fprintf(stderr, "SetWatermark: %zu\n", pos);
   JXL_ASSERT(!has_buffer_);
   if (external_output_processor_ && external_output_processor_->seek) {
     external_output_processor_->set_watermark(
@@ -150,7 +147,6 @@ bool JxlEncoderOutputProcessorWrapper::SetAvailOut(uint8_t** next_out,
 }
 
 void JxlEncoderOutputProcessorWrapper::ReleaseBuffer(size_t bytes_used) {
-  fprintf(stderr, "ReleaseBuffer: %zu\n", bytes_used);
   JXL_ASSERT(has_buffer_);
   has_buffer_ = false;
   auto it = internal_buffers_.find(position_);
@@ -189,39 +185,27 @@ void JxlEncoderOutputProcessorWrapper::ReleaseBuffer(size_t bytes_used) {
 
 // Tries to write all the bytes up to the watermark position.
 void JxlEncoderOutputProcessorWrapper::FlushOutput() {
-  fprintf(stderr, "FlushOutput\n");
   JXL_ASSERT(!has_buffer_);
   while (output_position_ < watermark_position_ &&
          (avail_out_ == nullptr || *avail_out_ > 0)) {
-    fprintf(stderr, "%zu %zu %zu\n", output_position_, watermark_position_,
-            avail_out_ ? *avail_out_ : 0);
     JXL_ASSERT(!internal_buffers_.empty());
     auto it = internal_buffers_.begin();
-    fprintf(stderr, "writing (pos %zu cs %zu allocated %zu) output pos: %zu\n",
-            it->first, it->second.written_bytes, it->second.owned_data.size(),
-            output_position_);
     // If this fails, we are trying to move the watermark past data that was
     // not written yet. This is a library programming error.
     JXL_ASSERT(output_position_ >= it->first);
     JXL_ASSERT(it->second.written_bytes != 0);
     size_t buffer_last_byte = it->first + it->second.written_bytes;
-    fprintf(stderr, "od: %zu %zu\n", it->second.owned_data.size(),
-            buffer_last_byte);
     if (!it->second.owned_data.empty()) {
       size_t start_in_buffer = output_position_ - it->first;
-      fprintf(stderr, "sib: %zu\n", start_in_buffer);
       // Guaranteed by the invariant on `internal_buffers_`.
       JXL_ASSERT(buffer_last_byte > output_position_);
       size_t num_to_write =
           std::min(buffer_last_byte, watermark_position_) - output_position_;
       if (avail_out_ != nullptr) {
         size_t n = std::min(num_to_write, *avail_out_);
-        fprintf(stderr, "n: %zu\n", n);
         memcpy(*next_out_, it->second.owned_data.data() + start_in_buffer, n);
         *avail_out_ -= n;
         *next_out_ += n;
-        fprintf(stderr, "increasing output_position_ = %zu by n = %zu\n",
-                output_position_, n);
         output_position_ += n;
       } else {
         if (!AppendBufferToExternalProcessor(
@@ -230,7 +214,6 @@ void JxlEncoderOutputProcessorWrapper::FlushOutput() {
         }
       }
     } else {
-      fprintf(stderr, "setting output_position_ to %zu\n", output_position_);
       size_t advance =
           std::min(buffer_last_byte, watermark_position_) - output_position_;
       output_position_ += advance;
@@ -240,7 +223,6 @@ void JxlEncoderOutputProcessorWrapper::FlushOutput() {
       }
     }
     if (buffer_last_byte == output_position_) {
-      fprintf(stderr, "erasing internal buffer\n");
       internal_buffers_.erase(it);
     }
     if (external_output_processor_ && !external_output_processor_->seek) {

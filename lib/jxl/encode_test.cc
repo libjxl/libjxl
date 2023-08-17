@@ -1335,14 +1335,6 @@ TEST(EncodeTest, JXL_BOXES_TEST(BoxTest)) {
         FAIL();  // unexpected status
       }
     }
-    for (size_t i = 0; i < xml_size; i++) {
-      fprintf(stderr, "%c", dec_exif_box[i]);
-    }
-    fprintf(stderr, "\n");
-    for (size_t i = 0; i < xml_size; i++) {
-      fprintf(stderr, "%c", xml_data[i]);
-    }
-    fprintf(stderr, "\n");
     EXPECT_EQ(0, memcmp(exif_data, dec_exif_box.data(), exif_size));
     EXPECT_EQ(0, memcmp(xml_data, dec_xml_box.data(), xml_size));
   }
@@ -1451,7 +1443,6 @@ class JxlStreamingAdapter {
   }
 
   void* GetBuffer(size_t* size) {
-    fprintf(stderr, "GET BUFFER %zu\n", *size);
     if (!return_large_buffers_) {
       *size = 1;
     }
@@ -1465,19 +1456,16 @@ class JxlStreamingAdapter {
   }
 
   void ReleaseBuffer(size_t written_bytes) {
-    fprintf(stderr, "RELEASE BUFFER %zu\n", written_bytes);
     // TODO(veluca): check no more bytes were written.
     Seek(position_ + written_bytes);
   }
 
   void Seek(uint64_t position) {
-    fprintf(stderr, "SEEK %zu\n", position);
     EXPECT_GE(position, watermark_);
     position_ = position;
   }
 
   void SetWatermark(uint64_t watermark_position) {
-    fprintf(stderr, "SETWATERMARK %zu\n", watermark_position);
     EXPECT_GE(watermark_position, watermark_);
     watermark_ = watermark_position;
     EXPECT_GE(position_, watermark_);

@@ -277,7 +277,6 @@ class JxlOutputProcessorBuffer {
   }
 
   void advance(size_t count) {
-      fprintf(stderr, "advance: count=%zu, size_=%zu\n", count, size_);
       JXL_ASSERT(count <= size_);
       data_ += count;
       size_ -= count;
