@@ -718,16 +718,24 @@ struct JxlEncoderOutputProcessor {
 };
 
 /**
- * TODO(firsching): add documentation
+ * Sets the output processor for the encoder. This processor determines how the
+ * encoder will handle buffering, writing, seeking (if supported), and
+ * watermarking during the encoding process.
+ *
  * @param enc encoder object.
- * @param output_processor the struct containing the callbacks
+ * @param output_processor the struct containing the callbacks for managing
+ * output.
+ * @return JXL_ENC_SUCCESS on success, JXL_ENC_ERROR on error.
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderSetOutputProcessor(
     JxlEncoder* enc, struct JxlEncoderOutputProcessor output_processor);
 
 /**
- * TODO(firsching): add documentation
+ * Flushes any buffered input in the encoder, ensuring that all available input
+ * data has been processed and written to the output.
+ *
  * @param enc encoder object.
+ * @return JXL_ENC_SUCCESS on success, JXL_ENC_ERROR on error.
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderFlushInput(JxlEncoder* enc);
 
