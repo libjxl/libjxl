@@ -33,7 +33,7 @@ jobs:
           git checkout origin/master
       - name: Update deps.sh
         run: |
-          NEWHASH=`git submodule status third_party/highway | cut -d' ' -f1 | cut -c2-`
+          NEWHASH=`git submodule status third_party/highway | cut -d' ' -f2 | cut -c2-`
           sed -i "s/\(THIRD_PARTY_HIGHWAY=\"\)[^\"]*/\1$NEWHASH/" deps.sh
       - name: Commit
         run: |
@@ -41,7 +41,7 @@ jobs:
           git config user.name "GitHub Actions - update submodules"
           git add --all
           git commit -m "Update highway submodule" || echo "No changes to commit"
-      
+
       - name: Push changes
         uses: ad-m/github-push-action@master
         with:
