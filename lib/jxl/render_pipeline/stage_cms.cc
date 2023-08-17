@@ -55,8 +55,9 @@ class CmsStage : public RenderPipelineStage {
     "!output_encoding_info_.color_encoding_is_original: %d\n", !output_is_xyb,
     not_mixing_color_and_grey, !output_encoding_info_.color_encoding_is_original);
 
-    return (output_encoding_info_.color_management_system != nullptr) && !output_encoding_info_.color_encoding_is_original &&
-           not_mixing_color_and_grey 
+    return (output_encoding_info_.color_management_system != nullptr) &&
+           !output_encoding_info_.color_encoding_is_original &&
+           not_mixing_color_and_grey;
   }
 
   void ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
