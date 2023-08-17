@@ -15,6 +15,7 @@
 
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
@@ -962,12 +963,22 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
         return JXL_API_ERROR(this, JXL_ENC_ERR_GENERIC,
                              "Brotli compression for brob box failed");
       }
+
       JXL_RETURN_IF_ERROR(AppendBox(
-          box->compress_box ? jxl::MakeBoxType("brob") : box->type,
+          jxl::MakeBoxType("brob"),
           /*unbounded=*/false, compressed.size(), [&]() {
             JXL_ASSIGN_OR_RETURN(auto buffer,
                                  output_processor.GetBuffer(compressed.size()));
             buffer.append(compressed);
+            return jxl::OkStatus();
+          }));
+    } else {
+      JXL_RETURN_IF_ERROR(AppendBox(
+          box->type,
+          /*unbounded=*/false, box->contents.size(), [&]() {
+            JXL_ASSIGN_OR_RETURN(
+                auto buffer, output_processor.GetBuffer(box->contents.size()));
+            buffer.append(box->contents);
             return jxl::OkStatus();
           }));
     }

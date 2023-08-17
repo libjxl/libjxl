@@ -1335,7 +1335,14 @@ TEST(EncodeTest, JXL_BOXES_TEST(BoxTest)) {
         FAIL();  // unexpected status
       }
     }
-
+    for (size_t i = 0; i < xml_size; i++) {
+      fprintf(stderr, "%c", dec_exif_box[i]);
+    }
+    fprintf(stderr, "\n");
+    for (size_t i = 0; i < xml_size; i++) {
+      fprintf(stderr, "%c", xml_data[i]);
+    }
+    fprintf(stderr, "\n");
     EXPECT_EQ(0, memcmp(exif_data, dec_exif_box.data(), exif_size));
     EXPECT_EQ(0, memcmp(xml_data, dec_xml_box.data(), xml_size));
   }
