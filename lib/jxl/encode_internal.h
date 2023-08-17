@@ -219,7 +219,9 @@ class JxlEncoderOutputProcessorWrapper {
   bool SetAvailOut(uint8_t** next_out, size_t* avail_out);
 
   bool WasStopRequested() const { return stop_requested_; }
-  bool HasOutputToWrite() const { return output_position_ < watermark_position_; }
+  bool HasOutputToWrite() const {
+    return output_position_ < watermark_position_;
+  }
 
  private:
   void ReleaseBuffer(size_t bytes_used);
@@ -230,11 +232,11 @@ class JxlEncoderOutputProcessorWrapper {
   bool AppendBufferToExternalProcessor(void* data, size_t count);
 
   struct InternalBuffer {
-      // Bytes in the range `[consumed_bytes, written_bytes)` need to be flushed
-      // out.
-      size_t written_bytes = 0;
-      // If data has been buffered, it is stored in `owned_data`.
-      jxl::PaddedBytes owned_data;
+    // Bytes in the range `[consumed_bytes, written_bytes)` need to be flushed
+    // out.
+    size_t written_bytes = 0;
+    // If data has been buffered, it is stored in `owned_data`.
+    jxl::PaddedBytes owned_data;
   };
 
   // Invariant: `internal_buffers_` does not contain chunks that are entirely
@@ -272,43 +274,43 @@ class JxlOutputProcessorBuffer {
   JxlOutputProcessorBuffer(JxlOutputProcessorBuffer&& other) noexcept
       : JxlOutputProcessorBuffer(other.data_, other.size_, other.bytes_used_,
                                  other.wrapper_) {
-      other.data_ = nullptr;
-      other.size_ = 0;
+    other.data_ = nullptr;
+    other.size_ = 0;
   }
 
   void advance(size_t count) {
-      JXL_ASSERT(count <= size_);
-      data_ += count;
-      size_ -= count;
-      bytes_used_ += count;
+    JXL_ASSERT(count <= size_);
+    data_ += count;
+    size_ -= count;
+    bytes_used_ += count;
   }
 
   void release() {
-      if (this->data_) {
+    if (this->data_) {
       wrapper_->ReleaseBuffer(bytes_used_);
-      }
-      data_ = nullptr;
-      size_ = 0;
+    }
+    data_ = nullptr;
+    size_ = 0;
   }
 
   void append(const void* data, size_t count) {
-      memcpy(data_, data, count);
-      advance(count);
+    memcpy(data_, data, count);
+    advance(count);
   }
 
   template <typename T>
   void append(const T& data) {
-      static_assert(sizeof(*std::begin(data)) == 1, "Cannot append non-bytes");
-      append(&*std::begin(data), std::end(data) - std::begin(data));
+    static_assert(sizeof(*std::begin(data)) == 1, "Cannot append non-bytes");
+    append(&*std::begin(data), std::end(data) - std::begin(data));
   }
 
   JxlOutputProcessorBuffer& operator=(const JxlOutputProcessorBuffer&) = delete;
   JxlOutputProcessorBuffer& operator=(
       JxlOutputProcessorBuffer&& other) noexcept {
-      data_ = other.data_;
-      size_ = other.size_;
-      wrapper_ = other.wrapper_;
-      return *this;
+    data_ = other.data_;
+    size_ = other.size_;
+    wrapper_ = other.wrapper_;
+    return *this;
   }
 
  private:
@@ -389,7 +391,8 @@ struct JxlEncoderStruct {
   // `write_box` must never seek before the position the output wrapper was at
   // the moment of the call, and must leave the output wrapper such that its
   // position is one byte past the end of the written box.
-  // TODO(veluca): add a function for appending a box that we already have the contents of.
+  // TODO(veluca): add a function for appending a box that we already have the
+  // contents of.
   template <typename WriteBox>
   jxl::Status AppendBox(const jxl::BoxType& type, bool unbounded,
                         size_t box_max_size, const WriteBox& write_box);

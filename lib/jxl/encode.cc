@@ -285,8 +285,7 @@ size_t WriteBoxHeader(const jxl::BoxType& type, size_t size, bool unbounded,
   }
   return idx;
 }
-}
-
+}  // namespace jxl
 
 template <typename WriteBox>
 jxl::Status JxlEncoderStruct::AppendBox(const jxl::BoxType& type,
@@ -752,7 +751,8 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
   if (input.frame || input.fast_lossless_frame) {
     jxl::MemoryManagerUniquePtr<jxl::JxlEncoderQueuedFrame> input_frame =
         std::move(input.frame);
-    jxl::FJXLFrameUniquePtr fast_lossless_frame = std::move(input.fast_lossless_frame);
+    jxl::FJXLFrameUniquePtr fast_lossless_frame =
+        std::move(input.fast_lossless_frame);
     input_queue.erase(input_queue.begin());
     num_queued_frames--;
     if (input_frame) {
@@ -887,8 +887,7 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
       JXL_CHECK(fast_lossless_frame);
       JxlFastLosslessPrepareHeader(fast_lossless_frame.get(),
                                    /*add_image_header=*/0, last_frame);
-      size_t fl_size =
-          JxlFastLosslessOutputSize(fast_lossless_frame.get());
+      size_t fl_size = JxlFastLosslessOutputSize(fast_lossless_frame.get());
       codestream_upper_bound = fl_size + bytes.size();
       append_frame_codestream = [&]() {
         if (!bytes.empty()) {
@@ -915,8 +914,7 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
         // less overhead.
         JXL_RETURN_IF_ERROR(
             AppendBox(jxl::MakeBoxType("jxlc"), /*unbounded=*/false,
-                      codestream_upper_bound,
-                      append_frame_codestream));
+                      codestream_upper_bound, append_frame_codestream));
       } else {
         JXL_RETURN_IF_ERROR(AppendBox(
             jxl::MakeBoxType("jxlp"), /*unbounded=*/false,
@@ -2321,7 +2319,7 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetOutputProcessor(
         enc, JXL_ENC_ERR_API_USAGE,
         "Set an output processor when some output was already produced");
   }
-  if (!output_processor.set_watermark|| !output_processor.get_buffer ||
+  if (!output_processor.set_watermark || !output_processor.get_buffer ||
       !output_processor.release_buffer) {
     return JXL_API_ERROR(enc, JXL_ENC_ERR_API_USAGE,
                          "Missing output processor functions");
