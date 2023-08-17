@@ -1445,7 +1445,10 @@ class JxlStreamingAdapter {
               JXL_ENC_SUCCESS);
   }
 
-  const std::vector<uint8_t>& output() const { return output_; }
+  std::vector<uint8_t> output() && {
+    output_.resize(position_);
+    return std::move(output_);
+  }
 
   void* GetBuffer(size_t* size) {
     fprintf(stderr, "GET BUFFER %zu\n", *size);
@@ -1480,7 +1483,7 @@ class JxlStreamingAdapter {
     EXPECT_GE(position_, watermark_);
   }
 
-  void CheckFinalWatermarkPosition() { EXPECT_EQ(watermark_, output_.size()); }
+  void CheckFinalWatermarkPosition() const { EXPECT_EQ(watermark_, position_); }
 
  private:
   std::vector<uint8_t> output_;
@@ -1593,7 +1596,7 @@ TEST_P(EncodeOutputCallbackTest, OutputCallback) {
     JxlEncoderCloseInput(enc.get());
     EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderFlushInput(enc.get()));
     streaming_adapter.CheckFinalWatermarkPosition();
-    EXPECT_EQ(streaming_adapter.output(), compressed);
+    EXPECT_EQ(std::move(streaming_adapter).output(), compressed);
   }
 }
 

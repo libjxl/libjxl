@@ -394,6 +394,10 @@ struct JxlEncoderStruct {
   template <typename WriteBox>
   jxl::Status AppendBox(const jxl::BoxType& type, bool unbounded,
                         size_t box_max_size, const WriteBox& write_box);
+
+  template <typename BoxContents>
+  jxl::Status AppendBoxWithContents(const jxl::BoxType& type,
+                                    const BoxContents& contents);
 };
 
 struct JxlEncoderFrameSettingsStruct {

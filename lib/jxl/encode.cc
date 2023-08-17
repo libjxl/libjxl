@@ -33,6 +33,7 @@
 #include "lib/jxl/exif.h"
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
 #include "lib/jxl/luminance.h"
+#include "lib/jxl/memory_manager_internal.h"
 #include "lib/jxl/sanitizers.h"
 
 // Debug-printing failure macro similar to JXL_FAILURE, but for the status code
@@ -63,8 +64,7 @@ JxlEncoderOutputProcessorWrapper::GetBuffer(size_t min_size,
   JXL_ASSERT(min_size > 0);
   JXL_ASSERT(!has_buffer_);
   if (stop_requested_) return jxl::StatusCode::kNotEnoughBytes;
-  if (requested_size == 0) requested_size = min_size;
-  JXL_ASSERT(requested_size >= min_size);
+  requested_size = std::max(min_size, requested_size);
 
   // If we support seeking, output_position_ == position_.
   // Otherwise, output_position_ <= position_.
@@ -341,6 +341,29 @@ jxl::Status JxlEncoderStruct::AppendBox(const jxl::BoxType& type,
   output_processor.Seek(box_contents_end);
   output_processor.SetWatermark(box_contents_end);
   return jxl::OkStatus();
+}
+
+template <typename T>
+jxl::Status AppendData(JxlEncoderOutputProcessorWrapper& output_processor,
+                       const T& data) {
+  size_t size = std::end(data) - std::begin(data);
+  size_t written = 0;
+  while (written < size) {
+    JXL_ASSIGN_OR_RETURN(auto buffer,
+                         output_processor.GetBuffer(1, size - written));
+    size_t n = std::min(size - written, buffer.size());
+    buffer.append(data.data() + written, n);
+    written += n;
+  }
+  return jxl::OkStatus();
+}
+
+template <typename BoxContents>
+jxl::Status JxlEncoderStruct::AppendBoxWithContents(
+    const jxl::BoxType& type, const BoxContents& contents) {
+  size_t size = std::end(contents) - std::begin(contents);
+  return AppendBox(type, /*unbounded=*/false, size,
+                   [&]() { return AppendData(output_processor, contents); });
 }
 
 uint32_t JxlEncoderVersion(void) {
@@ -735,14 +758,8 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
       }
 
       if (store_jpeg_metadata && !jpeg_metadata.empty()) {
-        JXL_RETURN_IF_ERROR(AppendBox(
-            jxl::MakeBoxType("jbrd"), /*unbounded=*/false, jpeg_metadata.size(),
-            [&]() {
-              JXL_ASSIGN_OR_RETURN(auto buffer, output_processor.GetBuffer(
-                                                    jpeg_metadata.size()));
-              buffer.append(jpeg_metadata);
-              return jxl::OkStatus();
-            }));
+        JXL_RETURN_IF_ERROR(
+            AppendBoxWithContents(jxl::MakeBoxType("jbrd"), jpeg_metadata));
       }
     }
     wrote_bytes = true;
@@ -753,12 +770,7 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
   if (input.frame || input.fast_lossless_frame) {
     jxl::MemoryManagerUniquePtr<jxl::JxlEncoderQueuedFrame> input_frame =
         std::move(input.frame);
-    if (input.fast_lossless_frame) {
-      /*
-      // TODO
-      output_fast_frame_queue.push_back(std::move(input.fast_lossless_frame));
-      */
-    }
+    jxl::FJXLFrameUniquePtr fast_lossless_frame = std::move(input.fast_lossless_frame);
     input_queue.erase(input_queue.begin());
     num_queued_frames--;
     if (input_frame) {
@@ -804,6 +816,9 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
     bool last_frame = frames_closed && !num_queued_frames;
 
     jxl::BitWriter writer;
+
+    std::function<jxl::Status()> append_frame_codestream;
+    size_t codestream_upper_bound = 0;
 
     if (input_frame) {
       jxl::PassesEncoderState enc_state;
@@ -882,16 +897,33 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
       // the first frame, and the codestream header was not encoded as jxlp
       // above.
       bytes.append(std::move(writer).TakeBytes());
+      codestream_upper_bound = bytes.size();
+      append_frame_codestream = [&]() {
+        return AppendData(output_processor, bytes);
+      };
     } else {
-#if 0
-      TODO
-      JXL_CHECK(!output_fast_frame_queue.empty());
-      JxlFastLosslessPrepareHeader(output_fast_frame_queue.front().get(),
+      JXL_CHECK(fast_lossless_frame);
+      JxlFastLosslessPrepareHeader(fast_lossless_frame.get(),
                                    /*add_image_header=*/0, last_frame);
-      codestream_byte_size =
-          JxlFastLosslessOutputSize(output_fast_frame_queue.front().get()) +
-          bytes.size();
-#endif
+      size_t fl_size =
+          JxlFastLosslessOutputSize(fast_lossless_frame.get());
+      codestream_upper_bound = fl_size + bytes.size();
+      append_frame_codestream = [&]() {
+        if (!bytes.empty()) {
+          JXL_RETURN_IF_ERROR(AppendData(output_processor, bytes));
+        }
+        size_t written = 0;
+        while (true) {
+          JXL_ASSIGN_OR_RETURN(
+              auto buffer, output_processor.GetBuffer(32, fl_size - written));
+          size_t n = JxlFastLosslessWriteOutput(fast_lossless_frame.get(),
+                                                buffer.data(), buffer.size());
+          if (n == 0) break;
+          buffer.advance(n);
+          written += n;
+        };
+        return jxl::OkStatus();
+      };
     }
 
     if (MustUseContainer()) {
@@ -899,32 +931,25 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
         // If this is the last frame and no jxlp boxes were used yet, it's
         // slighly more efficient to write a jxlc box since it has 4 bytes
         // less overhead.
-        JXL_RETURN_IF_ERROR(AppendBox(
-            jxl::MakeBoxType("jxlc"), /*unbounded=*/false, bytes.size(), [&]() {
-              JXL_ASSIGN_OR_RETURN(auto buffer,
-                                   output_processor.GetBuffer(bytes.size()));
-              buffer.append(bytes);
-              return jxl::OkStatus();
-            }));
+        JXL_RETURN_IF_ERROR(
+            AppendBox(jxl::MakeBoxType("jxlc"), /*unbounded=*/false,
+                      codestream_upper_bound,
+                      append_frame_codestream));
       } else {
         JXL_RETURN_IF_ERROR(AppendBox(
-            jxl::MakeBoxType("jxlp"), /*unbounded=*/false, bytes.size() + 4,
-            [&]() {
-              JXL_ASSIGN_OR_RETURN(
-                  auto buffer, output_processor.GetBuffer(bytes.size() + 4));
-              WriteJxlpBoxCounter(jxlp_counter++, last_frame, buffer);
-              buffer.append(bytes);
-              return jxl::OkStatus();
+            jxl::MakeBoxType("jxlp"), /*unbounded=*/false,
+            codestream_upper_bound + 4, [&]() {
+              {
+                JXL_ASSIGN_OR_RETURN(auto buffer,
+                                     output_processor.GetBuffer(4));
+                WriteJxlpBoxCounter(jxlp_counter++, last_frame, buffer);
+              }
+              return append_frame_codestream();
             }));
       }
-    } else if (!bytes.empty()) {  // should never happen when code is ready.
-      size_t position = output_processor.CurrentPosition();
-      {
-        JXL_ASSIGN_OR_RETURN(auto buffer,
-                             output_processor.GetBuffer(bytes.size()));
-        buffer.append(bytes);
-      }
-      output_processor.SetWatermark(position + bytes.size());
+    } else {
+      JXL_RETURN_IF_ERROR(append_frame_codestream());
+      output_processor.SetWatermark(output_processor.CurrentPosition());
     }
 
     if (input_frame) {
@@ -934,14 +959,8 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
       jxl::BitWriter writer;
       EncodeFrameIndexBox(frame_index_box, writer);
       writer.ZeroPadToByte();
-      size_t jxli_size = writer.BitsWritten() / 8;
-      JXL_RETURN_IF_ERROR(AppendBox(
-          jxl::MakeBoxType("jxli"), /*unbounded=*/false, jxli_size, [&]() {
-            JXL_ASSIGN_OR_RETURN(auto buffer,
-                                 output_processor.GetBuffer(jxli_size));
-            buffer.append(writer.GetSpan());
-            return jxl::OkStatus();
-          }));
+      JXL_RETURN_IF_ERROR(
+          AppendBoxWithContents(jxl::MakeBoxType("jxli"), writer.GetSpan()));
     }
   } else {
     // Not a frame, so is a box instead
@@ -964,23 +983,10 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
                              "Brotli compression for brob box failed");
       }
 
-      JXL_RETURN_IF_ERROR(AppendBox(
-          jxl::MakeBoxType("brob"),
-          /*unbounded=*/false, compressed.size(), [&]() {
-            JXL_ASSIGN_OR_RETURN(auto buffer,
-                                 output_processor.GetBuffer(compressed.size()));
-            buffer.append(compressed);
-            return jxl::OkStatus();
-          }));
+      JXL_RETURN_IF_ERROR(
+          AppendBoxWithContents(jxl::MakeBoxType("brob"), compressed));
     } else {
-      JXL_RETURN_IF_ERROR(AppendBox(
-          box->type,
-          /*unbounded=*/false, box->contents.size(), [&]() {
-            JXL_ASSIGN_OR_RETURN(
-                auto buffer, output_processor.GetBuffer(box->contents.size()));
-            buffer.append(box->contents);
-            return jxl::OkStatus();
-          }));
+      JXL_RETURN_IF_ERROR(AppendBoxWithContents(box->type, box->contents));
     }
   }
 
