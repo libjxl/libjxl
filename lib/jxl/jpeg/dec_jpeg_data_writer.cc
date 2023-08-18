@@ -1034,8 +1034,8 @@ Status WriteJpegInternal(const JPEGData& jpg, const JPEGOutput& out,
 }  // namespace
 
 Status WriteJpeg(const JPEGData& jpg, const JPEGOutput& out) {
-  SerializationState ss;
-  return WriteJpegInternal(jpg, out, &ss);
+  auto ss = jxl::make_unique<SerializationState>();
+  return WriteJpegInternal(jpg, out, ss.get());
 }
 
 }  // namespace jpeg
