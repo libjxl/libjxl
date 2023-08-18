@@ -53,6 +53,7 @@ For all browsers and to track browsers progress see [Can I Use](https://caniuse.
 - [Graphic Converter (since 11.5)](https://www.lemkesoft.de/en/products/graphicconverter/)
 - [Krita](https://invent.kde.org/graphics/krita/-/commit/13e5d2e5b9f0eac5c8064b7767f0b62264a0797b)
 - [Paint.NET](https://www.getpaint.net/index.html); supported since 4.3.12 - requires a [plugin](https://github.com/0xC0000054/pdn-jpegxl) to be downloaded and installed.
+- [Photopea](https://www.photopea.com/); supported thanks to a [plugin](https://github.com/photopea/photopea/issues/5957) that just needs to be activated 
 - Photoshop: no plugin available yet, no official support yet
 
 ## Image viewers
