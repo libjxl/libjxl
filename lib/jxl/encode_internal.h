@@ -219,6 +219,9 @@ class JxlEncoderOutputProcessorWrapper {
   bool SetAvailOut(uint8_t** next_out, size_t* avail_out);
 
   bool WasStopRequested() const { return stop_requested_; }
+  bool OutputProcessorSet() const {
+    return external_output_processor_ == nullptr;
+  }
   bool HasOutputToWrite() const {
     return output_position_ < finalized_position_;
   }
