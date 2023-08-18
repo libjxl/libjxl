@@ -60,7 +60,8 @@ class AcStrategyRoundtrip : public ::hwy::TestWithParamTargetAndT<int> {
         float* dc = idct + AcStrategy::kMaxCoeffArea;
         std::fill_n(dc, AcStrategy::kMaxCoeffArea, 0);
         dc[y * acs.covered_blocks_x() * 8 + x] = 0.2;
-        LowestFrequenciesFromDC(type, dc, acs.covered_blocks_x() * 8, coeffs);
+        LowestFrequenciesFromDC(type, dc, acs.covered_blocks_x() * 8, coeffs,
+                                scratch_space);
         DCFromLowestFrequencies(type, coeffs, idct, acs.covered_blocks_x() * 8);
         std::fill_n(dc, AcStrategy::kMaxCoeffArea, 0);
         dc[y * acs.covered_blocks_x() * 8 + x] = 0.2;
@@ -102,7 +103,8 @@ class AcStrategyRoundtripDownsample
         float* dc = idct + AcStrategy::kMaxCoeffArea;
         std::fill_n(dc, AcStrategy::kMaxCoeffArea, 0);
         dc[y * acs.covered_blocks_x() * 8 + x] = 0.2f;
-        LowestFrequenciesFromDC(type, dc, acs.covered_blocks_x() * 8, coeffs);
+        LowestFrequenciesFromDC(type, dc, acs.covered_blocks_x() * 8, coeffs,
+                                scratch_space);
         TransformToPixels(type, coeffs, idct, acs.covered_blocks_x() * 8,
                           scratch_space);
         std::fill_n(coeffs, AcStrategy::kMaxCoeffArea, 0.0f);

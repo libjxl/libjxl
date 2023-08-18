@@ -40,7 +40,7 @@ jobs:
               -DJPEGLI_LIBJPEG_LIBRARY_SOVERSION="8"
             # Track static stack size on build and check it doesn't exceed 3 kB.
             env_stack_size: 1
-            max_stack: 3000
+            max_stack: 2400
             # Conformance tooling test requires numpy.
             apt_pkgs: graphviz python3-numpy
           - name: lowprecision
