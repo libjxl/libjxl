@@ -753,6 +753,8 @@ struct JxlEncoderOutputProcessor {
    * Sets a finalized position on the output data, at a specific position.
    * Seeking will never request a position before the finalized position.
    *
+   * Will only be called if there is no active buffer.
+   *
    * @param opaque user supplied parameters to the callback
    * @param finalized_position the position, in bytes, where the finalized
    * position should be set.
