@@ -2390,7 +2390,7 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetOutputProcessor(
   if (enc->output_processor.HasAvailOut()) {
     return JXL_API_ERROR(
         enc, JXL_ENC_ERR_API_USAGE,
-        "Set an output processor when some output was already produced");
+        "Cannot set an output processor when some output was already produced");
   }
   if (!output_processor.set_finalized_position ||
       !output_processor.get_buffer || !output_processor.release_buffer) {
