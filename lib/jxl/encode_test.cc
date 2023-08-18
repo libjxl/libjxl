@@ -1566,6 +1566,7 @@ TEST_P(EncodeOutputCallbackTest, OutputCallback) {
                 JxlEncoderAddImageFrame(frame_settings, &frame.format,
                                         frame.pixels(), frame.pixels_size));
     }
+    JxlEncoderCloseInput(enc);
   };
 
   {
@@ -1574,7 +1575,6 @@ TEST_P(EncodeOutputCallbackTest, OutputCallback) {
     configure_encoder(enc.get());
     uint8_t* next_out = compressed.data();
     size_t avail_out = compressed.size();
-    JxlEncoderCloseFrames(enc.get());
     ProcessEncoder(enc.get(), compressed, next_out, avail_out);
   }
 
@@ -1584,7 +1584,6 @@ TEST_P(EncodeOutputCallbackTest, OutputCallback) {
     JxlStreamingAdapter streaming_adapter(enc.get(), p.return_large_buffers(),
                                           p.can_seek());
     configure_encoder(enc.get());
-    JxlEncoderCloseInput(enc.get());
     EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderFlushInput(enc.get()));
     streaming_adapter.CheckFinalWatermarkPosition();
     EXPECT_EQ(std::move(streaming_adapter).output(), compressed);
