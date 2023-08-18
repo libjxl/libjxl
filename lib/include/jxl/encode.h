@@ -707,7 +707,8 @@ struct JxlEncoderOutputProcessor {
 
   /**
    * Required.
-   * Acquires a buffer into which the library will write the output data.
+   * Acquires a buffer at the current position into which the library will write
+   * the output data.
    *
    * If the `size` argument points to 0 and the returned value is NULL, this
    * will be interpreted as asking the output writing to stop. In such a case,
