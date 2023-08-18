@@ -1535,8 +1535,7 @@ TEST_P(EncodeOutputCallbackTest, OutputCallback) {
       .SetAllBitDepths(p.use_container() ? 16 : 8);
   image.AddFrame().RandomFill();
   const auto& frame = image.ppf().frames[0].color;
-  JxlBasicInfo basic_info;
-  jxl::test::JxlBasicInfoSetFromPixelFormat(&basic_info, &frame.format);
+  JxlBasicInfo basic_info = image.ppf().info;
   basic_info.xsize = xsize;
   basic_info.ysize = ysize;
 
