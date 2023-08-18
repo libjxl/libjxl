@@ -672,7 +672,8 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderAddImageFrame(
  * The JxlEncoderOutputProcessor structure provides an interface for the
  * encoder's output processing. Users of the library, who want to do streaming
  * encoding, should implement the required callbacks for buffering, writing,
- * seeking (if supported), and watermarking during the encoding process.
+ * seeking (if supported), and setting a finalized position during the encoding
+ * process.
  *
  * At a high level, the processor can be in one of two states:
  * - With an active buffer: This indicates that a buffer has been acquired using
@@ -682,16 +683,16 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderAddImageFrame(
  *
  * It is not allowed to acquire more than one buffer at a given time.
  *
- * The JxlEncoder OutputProcessor interacts with `position` and `watermark`,
- * which have the following meaning.
+ * The JxlEncoder OutputProcessor interacts with `position` and `finalized
+ * position`, which have the following meaning.
  *
  * - position: Represents the current position, in bytes, within the output
  * stream where the encoded data will be written next. This position moves
  * forward as data is written, and can also be adjusted through the optional
  * seek callback, if provided. At this position the next write will occur.
  *
- * - watermark:  A position in the output stream that ensures all bytes before
- * this point are finalized and won't be changed by later writes.
+ * - finalized position:  A position in the output stream that ensures all bytes
+ * before this point are finalized and won't be changed by later writes.
  *
  * All fields but `seek` are required, `seek` is optional and can be NULL.
  */
@@ -737,7 +738,7 @@ struct JxlEncoderOutputProcessor {
    * Optional, can be NULL
    * Seeks to a specific position in the output. This function is optional and
    * can be set to NULL if the output doesn't support seeking. Can only be done
-   * when there is no buffer. Cannot be used to seek before the watermark
+   * when there is no buffer. Cannot be used to seek before the finalized
    * position.
    *
    * @param opaque user supplied parameters to the callback
@@ -747,20 +748,20 @@ struct JxlEncoderOutputProcessor {
 
   /**
    * Required.
-   * Sets a watermark on the output data, at a specific position.
-   * Seeking will never request a position before the watermark.
+   * Sets a finalized position on the output data, at a specific position.
+   * Seeking will never request a position before the finalized position.
    *
    * @param opaque user supplied parameters to the callback
-   * @param watermark_position the position, in bytes, where the watermark
-   * should be set.
+   * @param finalized_position the position, in bytes, where the finalized
+   * position should be set.
    */
-  void (*set_watermark)(void* opaque, uint64_t watermark_position);
+  void (*set_finalized_position)(void* opaque, uint64_t finalized_position);
 };
 
 /**
  * Sets the output processor for the encoder. This processor determines how the
  * encoder will handle buffering, writing, seeking (if supported), and
- * watermarking during the encoding process.
+ * setting a finalized position during the encoding process.
  *
  * This should not be used when using @ref JxlEncoderProcessOutput.
  *

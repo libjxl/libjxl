@@ -1426,10 +1426,10 @@ class JxlStreamingAdapter {
     } else {
       output_processor.seek = nullptr;
     }
-    output_processor.set_watermark = [](void* opaque,
-                                        uint64_t watermark_position) {
+    output_processor.set_finalized_position = [](void* opaque,
+                                                 uint64_t finalized_position) {
       return static_cast<JxlStreamingAdapter*>(opaque)->SetWatermark(
-          watermark_position);
+          finalized_position);
     };
     output_processor.release_buffer = [](void* opaque, size_t written_bytes) {
       return static_cast<JxlStreamingAdapter*>(opaque)->ReleaseBuffer(
@@ -1463,22 +1463,24 @@ class JxlStreamingAdapter {
   }
 
   void Seek(uint64_t position) {
-    EXPECT_GE(position, watermark_);
+    EXPECT_GE(position, finalized_position_);
     position_ = position;
   }
 
-  void SetWatermark(uint64_t watermark_position) {
-    EXPECT_GE(watermark_position, watermark_);
-    watermark_ = watermark_position;
-    EXPECT_GE(position_, watermark_);
+  void SetWatermark(uint64_t finalized_position) {
+    EXPECT_GE(finalized_position, finalized_position_);
+    finalized_position_ = finalized_position;
+    EXPECT_GE(position_, finalized_position_);
   }
 
-  void CheckFinalWatermarkPosition() const { EXPECT_EQ(watermark_, position_); }
+  void CheckFinalWatermarkPosition() const {
+    EXPECT_EQ(finalized_position_, position_);
+  }
 
  private:
   std::vector<uint8_t> output_;
   size_t position_ = 0;
-  size_t watermark_ = 0;
+  size_t finalized_position_ = 0;
   bool return_large_buffers_;
 };
 

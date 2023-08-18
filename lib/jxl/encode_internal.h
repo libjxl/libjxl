@@ -220,13 +220,13 @@ class JxlEncoderOutputProcessorWrapper {
 
   bool WasStopRequested() const { return stop_requested_; }
   bool HasOutputToWrite() const {
-    return output_position_ < watermark_position_;
+    return output_position_ < finalized_position_;
   }
 
  private:
   void ReleaseBuffer(size_t bytes_used);
 
-  // Tries to write all the bytes up to the watermark position.
+  // Tries to write all the bytes up to the finalized position.
   void FlushOutput();
 
   bool AppendBufferToExternalProcessor(void* data, size_t count);
@@ -246,7 +246,7 @@ class JxlEncoderOutputProcessorWrapper {
   uint8_t** next_out_ = nullptr;
   size_t* avail_out_ = nullptr;
   size_t position_ = 0;
-  size_t watermark_position_ = 0;
+  size_t finalized_position_ = 0;
   // Either the position of the `external_output_processor_` or the position
   // `next_out_` points to.
   size_t output_position_ = 0;

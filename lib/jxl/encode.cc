@@ -123,17 +123,17 @@ void JxlEncoderOutputProcessorWrapper::Seek(size_t pos) {
     external_output_processor_->seek(external_output_processor_->opaque, pos);
     output_position_ = pos;
   }
-  JXL_ASSERT(pos >= watermark_position_);
+  JXL_ASSERT(pos >= finalized_position_);
   position_ = pos;
 }
 
 void JxlEncoderOutputProcessorWrapper::SetWatermark(size_t pos) {
   JXL_ASSERT(!has_buffer_);
   if (external_output_processor_ && external_output_processor_->seek) {
-    external_output_processor_->set_watermark(
+    external_output_processor_->set_finalized_position(
         external_output_processor_->opaque, pos);
   }
-  watermark_position_ = pos;
+  finalized_position_ = pos;
   FlushOutput();
 }
 
@@ -183,15 +183,15 @@ void JxlEncoderOutputProcessorWrapper::ReleaseBuffer(size_t bytes_used) {
   }
 }
 
-// Tries to write all the bytes up to the watermark position.
+// Tries to write all the bytes up to the finalized position.
 void JxlEncoderOutputProcessorWrapper::FlushOutput() {
   JXL_ASSERT(!has_buffer_);
-  while (output_position_ < watermark_position_ &&
+  while (output_position_ < finalized_position_ &&
          (avail_out_ == nullptr || *avail_out_ > 0)) {
     JXL_ASSERT(!internal_buffers_.empty());
     auto it = internal_buffers_.begin();
-    // If this fails, we are trying to move the watermark past data that was
-    // not written yet. This is a library programming error.
+    // If this fails, we are trying to move the finalized position past data
+    // that was not written yet. This is a library programming error.
     JXL_ASSERT(output_position_ >= it->first);
     JXL_ASSERT(it->second.written_bytes != 0);
     size_t buffer_last_byte = it->first + it->second.written_bytes;
@@ -200,7 +200,7 @@ void JxlEncoderOutputProcessorWrapper::FlushOutput() {
       // Guaranteed by the invariant on `internal_buffers_`.
       JXL_ASSERT(buffer_last_byte > output_position_);
       size_t num_to_write =
-          std::min(buffer_last_byte, watermark_position_) - output_position_;
+          std::min(buffer_last_byte, finalized_position_) - output_position_;
       if (avail_out_ != nullptr) {
         size_t n = std::min(num_to_write, *avail_out_);
         memcpy(*next_out_, it->second.owned_data.data() + start_in_buffer, n);
@@ -215,7 +215,7 @@ void JxlEncoderOutputProcessorWrapper::FlushOutput() {
       }
     } else {
       size_t advance =
-          std::min(buffer_last_byte, watermark_position_) - output_position_;
+          std::min(buffer_last_byte, finalized_position_) - output_position_;
       output_position_ += advance;
       if (avail_out_ != nullptr) {
         *next_out_ += advance;
@@ -226,7 +226,7 @@ void JxlEncoderOutputProcessorWrapper::FlushOutput() {
       internal_buffers_.erase(it);
     }
     if (external_output_processor_ && !external_output_processor_->seek) {
-      external_output_processor_->set_watermark(
+      external_output_processor_->set_finalized_position(
           external_output_processor_->opaque, output_position_);
     }
   }
@@ -2392,8 +2392,8 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetOutputProcessor(
         enc, JXL_ENC_ERR_API_USAGE,
         "Set an output processor when some output was already produced");
   }
-  if (!output_processor.set_watermark || !output_processor.get_buffer ||
-      !output_processor.release_buffer) {
+  if (!output_processor.set_finalized_position ||
+      !output_processor.get_buffer || !output_processor.release_buffer) {
     return JXL_API_ERROR(enc, JXL_ENC_ERR_API_USAGE,
                          "Missing output processor functions");
   }
