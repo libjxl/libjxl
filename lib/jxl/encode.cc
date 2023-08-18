@@ -2377,7 +2377,9 @@ void JxlEncoderCloseInput(JxlEncoder* enc) {
 }
 
 JXL_EXPORT JxlEncoderStatus JxlEncoderFlushInput(JxlEncoder* enc) {
-  while (!enc->input_queue.empty()) {
+TODO:
+  check that JxlEncoderSetOutputProcessor has been called before !while (
+      !enc->input_queue.empty()) {
     if (!enc->ProcessOneEnqueuedInput()) {
       return JXL_ENC_ERROR;
     }

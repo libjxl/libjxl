@@ -232,8 +232,8 @@ class JxlEncoderOutputProcessorWrapper {
   bool AppendBufferToExternalProcessor(void* data, size_t count);
 
   struct InternalBuffer {
-    // Bytes in the range `[consumed_bytes, written_bytes)` need to be flushed
-    // out.
+    // Bytes in the range `[output_position_ - start_of_the_buffer,
+    // written_bytes)` need to be flushed out.
     size_t written_bytes = 0;
     // If data has been buffered, it is stored in `owned_data`.
     jxl::PaddedBytes owned_data;
@@ -245,7 +245,9 @@ class JxlEncoderOutputProcessorWrapper {
 
   uint8_t** next_out_ = nullptr;
   size_t* avail_out_ = nullptr;
+  // Where the next GetBuffer call will write bytes to.
   size_t position_ = 0;
+  // The position for either the user-given output_processor, or next_out.
   size_t finalized_position_ = 0;
   // Either the position of the `external_output_processor_` or the position
   // `next_out_` points to.
