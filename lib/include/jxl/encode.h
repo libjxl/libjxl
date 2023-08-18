@@ -681,15 +681,16 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderAddImageFrame(
  * - Without an active buffer: In this state, no data can be written. A new
  * buffer must be acquired after releasing any previously active buffer.
  *
- * It is not allowed to acquire more than one buffer at a given time.
+ * The library will not acquire more than one buffer at a given time.
  *
- * The JxlEncoder OutputProcessor interacts with `position` and `finalized
+ * The state of the processor includes with `position` and `finalized
  * position`, which have the following meaning.
  *
  * - position: Represents the current position, in bytes, within the output
  * stream where the encoded data will be written next. This position moves
- * forward as data is written, and can also be adjusted through the optional
- * seek callback, if provided. At this position the next write will occur.
+ * forward with each `release_buffer` call as data is written, and can also be
+ * adjusted through the optional seek callback, if provided. At this position
+ * the next write will occur.
  *
  * - finalized position:  A position in the output stream that ensures all bytes
  * before this point are finalized and won't be changed by later writes.
@@ -779,10 +780,10 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetOutputProcessor(
  *
  * This function can only be used after @ref JxlEncoderSetOutputProcessor.
  * Before making the last call to @ref JxlEncoderFlushInput, users should call
+ * @ref JxlEncoderCloseInput to signal the end of input data.
  *
  * This should not be used when using @ref JxlEncoderProcessOutput.
  *
- * @ref JxlEncoderCloseInput to signal the end of input data.
  * @param enc encoder object.
  * @return JXL_ENC_SUCCESS on success, JXL_ENC_ERROR on error.
  */
