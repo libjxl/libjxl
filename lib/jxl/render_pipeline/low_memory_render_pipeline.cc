@@ -359,6 +359,9 @@ void LowMemoryRenderPipeline::Init() {
 
 void LowMemoryRenderPipeline::PrepareForThreadsInternal(size_t num,
                                                         bool use_group_ids) {
+  for (const auto& stage: stages_) {
+    fprintf(stderr, "%s\n", stage->GetName());
+  }
   const auto& shifts = channel_shifts_[0];
 
   use_group_ids_ = use_group_ids;

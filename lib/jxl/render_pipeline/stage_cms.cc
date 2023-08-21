@@ -51,8 +51,9 @@ class CmsStage : public RenderPipelineStage {
     const bool output_is_xyb =
         output_encoding_info_.color_encoding.GetColorSpace() ==
         ColorSpace::kXYB;
-    fprintf(stderr, "output_is_xyb: %d , non_mix: %d ,"
+    fprintf(stderr, "output_is_xyb: %d , cms_defined : %d, non_mix: %d ,"
     "!output_encoding_info_.color_encoding_is_original: %d\n", !output_is_xyb,
+    output_encoding_info_.color_management_system != nullptr,
     not_mixing_color_and_grey, !output_encoding_info_.color_encoding_is_original);
 
     return (output_encoding_info_.color_management_system != nullptr) &&
@@ -74,7 +75,7 @@ class CmsStage : public RenderPipelineStage {
     float* JXL_RESTRICT row1 = GetInputRow(input_rows, 1, 0);
     float* JXL_RESTRICT row2 = GetInputRow(input_rows, 2, 0);
     if (thread_id == 0) {
-      // fprintf(stderr, "row in: %f %f %f\n", row0[0], row1[0], row2[0]);
+      fprintf(stderr, "row in: %f %f %f\n", row0[0], row1[0], row2[0]);
     }
     float* mutable_buf_src = color_space_transform->BufSrc(thread_id);
     for (size_t x = 0; x < xsize; x++) {
@@ -95,7 +96,7 @@ class CmsStage : public RenderPipelineStage {
       row2[x] = buf_dst[3 * x + 2];
     }
     if (thread_id == 0) {
-      // fprintf(stderr, "row out: %f %f %f\n", row0[0], row1[0], row2[0]);
+      fprintf(stderr, "row out: %f %f %f\n", row0[0], row1[0], row2[0]);
     }
   }
   RenderPipelineChannelMode GetChannelMode(size_t c) const final {
@@ -126,6 +127,7 @@ class CmsStage : public RenderPipelineStage {
   Status PrepareForThreads(size_t num_threads) override {
     color_space_transform = jxl::make_unique<jxl::ColorSpaceTransform>(
         *output_encoding_info_.color_management_system);
+    fprintf(stderr, "des int target: %f\n", output_encoding_info_.desired_intensity_target);
     JXL_RETURN_IF_ERROR(color_space_transform->Init(
         c_src_, output_encoding_info_.color_encoding,
         output_encoding_info_.desired_intensity_target, xsize_, num_threads));
@@ -137,6 +139,7 @@ std::unique_ptr<RenderPipelineStage> GetCmsStage(
     const OutputEncodingInfo& output_encoding_info) {
   auto stage = jxl::make_unique<CmsStage>(output_encoding_info);
   if (!stage->IsNeeded()) return nullptr;
+  fprintf(stderr, "returning cms stage...\n");
   return stage;
 }
 

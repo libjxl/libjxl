@@ -75,7 +75,7 @@ Status Encoder::VerifyImageSize(const PackedImage& image,
       (info.num_color_channels + (info.alpha_bits > 0 ? 1 : 0));
   if (image.xsize != info.xsize || image.ysize != info.ysize ||
       image.format.num_channels != info_num_channels) {
-    return JXL_FAILURE("Frame size does not match image size");
+    return JXL_FAILURE("Frame size does not match image size: x: %zu, %u", image.xsize, info.xsize);
   }
   return true;
 }

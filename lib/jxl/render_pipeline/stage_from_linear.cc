@@ -105,11 +105,15 @@ class FromLinearStage : public RenderPipelineStage {
   void ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
                   size_t xextra, size_t xsize, size_t xpos, size_t ypos,
                   size_t thread_id) const final {
+
     const HWY_FULL(float) d;
     const size_t xsize_v = RoundUpTo(xsize, Lanes(d));
     float* JXL_RESTRICT row0 = GetInputRow(input_rows, 0, 0);
     float* JXL_RESTRICT row1 = GetInputRow(input_rows, 1, 0);
     float* JXL_RESTRICT row2 = GetInputRow(input_rows, 2, 0);
+    if (thread_id == 0) {
+      fprintf(stderr, "row in: %f %f %f\n", row0[0], row1[0], row2[0]);
+    }
     // All calculations are lane-wise, still some might require
     // value-dependent behaviour (e.g. NearestInt). Temporary unpoison last
     // vector tail.
