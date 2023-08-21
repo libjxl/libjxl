@@ -1591,5 +1591,6 @@ TEST_P(EncodeOutputCallbackTest, OutputCallback) {
   }
 }
 
-JXL_GTEST_INSTANTIATE_TEST_SUITE_P(AllOptions, EncodeOutputCallbackTest,
-                         testing::ValuesIn(OutputCallbackTestParam::All()));
+JXL_GTEST_INSTANTIATE_TEST_SUITE_P(
+    AllOptions, EncodeOutputCallbackTest,
+    testing::ValuesIn(OutputCallbackTestParam::All()));
