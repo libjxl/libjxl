@@ -8,7 +8,6 @@
 
 // Error handling: Status return type + helper macros.
 
-#include <jxl/encode.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -299,21 +298,6 @@ class JXL_MUST_USE_RESULT Status {
   // NOLINTNEXTLINE(google-explicit-constructor)
   constexpr Status(bool ok)
       : code_(ok ? StatusCode::kOk : StatusCode::kGenericError) {}
-
-  // NOLINTNEXTLINE(google-explicit-constructor)
-  Status(JxlEncoderStatus enc_status) {
-    switch (enc_status) {
-      case JXL_ENC_SUCCESS:
-        code_ = StatusCode::kOk;
-        return;
-      case JXL_ENC_NEED_MORE_OUTPUT:
-        code_ = StatusCode::kNotEnoughBytes;
-        return;
-      default:
-        code_ = StatusCode::kGenericError;
-        return;
-    }
-  }
 
   // NOLINTNEXTLINE(google-explicit-constructor)
   constexpr Status(StatusCode code) : code_(code) {}

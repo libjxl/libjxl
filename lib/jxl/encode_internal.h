@@ -220,7 +220,7 @@ class JxlEncoderOutputProcessorWrapper {
 
   bool WasStopRequested() const { return stop_requested_; }
   bool OutputProcessorSet() const {
-    return external_output_processor_ == nullptr;
+    return external_output_processor_ != nullptr;
   }
   bool HasOutputToWrite() const {
     return output_position_ < finalized_position_;
