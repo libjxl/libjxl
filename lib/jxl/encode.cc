@@ -593,7 +593,7 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
     if (MustUseContainer()) {
       if (last_frame && jxlp_counter == 0) {
         // If this is the last frame and no jxlp boxes were used yet, it's
-        // slighly more efficient to write a jxlc box since it has 4 bytes
+        // slightly more efficient to write a jxlc box since it has 4 bytes
         // less overhead.
         jxl::AppendBoxHeader(jxl::MakeBoxType("jxlc"), codestream_byte_size,
                              /*unbounded=*/false, &output_byte_queue);
