@@ -249,7 +249,8 @@ jobs:
       run: |
         sort build/Testing/Temporary/CTestCostData.txt -k 3 -n | tail -n 20 || true
     - name: Build HTML documentation (sphinx/readthetdocs)
-      if: matrix.name == 'release'
+      # temporarily disabled
+      if: matrix.name == 'release' && false
       run: |
         cmake --build build -- rtd-html
     - name: Coverage report
