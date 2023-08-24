@@ -919,7 +919,8 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
                                    /*add_image_header=*/0, last_frame);
       size_t fl_size = JxlFastLosslessOutputSize(fast_lossless_frame.get());
       codestream_upper_bound = fl_size + bytes.size();
-      append_frame_codestream = [&bytes, &fast_lossless_frame, fl_size, this]() {
+      append_frame_codestream = [&bytes, &fast_lossless_frame, fl_size,
+                                 this]() {
         if (!bytes.empty()) {
           JXL_RETURN_IF_ERROR(AppendData(output_processor, bytes));
         }
