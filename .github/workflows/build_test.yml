@@ -212,8 +212,6 @@ jobs:
     - name: ccache stats
       run: ccache --show-stats
     - name: Build stats ${{ matrix.name }}
-      # TODO(eustas): Dozens of symbols fail with 'exceeds stack limit'
-      continue-on-error: true
       if: matrix.mode == 'release' || matrix.name == 'release'
       run: |
         tools/scripts/build_stats.py --save build/stats.json \

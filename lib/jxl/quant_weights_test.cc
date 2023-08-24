@@ -179,7 +179,7 @@ TEST_P(QuantWeightsTargetTest, DCTUniform) {
                              1.0f / kUniformQuant};
   DequantMatricesSetCustomDC(&dequant_matrices, dc_quant);
 
-  HWY_ALIGN_MAX float scratch_space[16 * 16 * 2];
+  HWY_ALIGN_MAX float scratch_space[16 * 16 * 5];
 
   // DCT8
   {
