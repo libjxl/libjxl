@@ -1429,7 +1429,7 @@ class JxlStreamingAdapter {
     }
     output_processor.set_finalized_position = [](void* opaque,
                                                  uint64_t finalized_position) {
-      return static_cast<JxlStreamingAdapter*>(opaque)->SetWatermark(
+      return static_cast<JxlStreamingAdapter*>(opaque)->SetFinalizedPosition(
           finalized_position);
     };
     output_processor.release_buffer = [](void* opaque, size_t written_bytes) {
@@ -1468,7 +1468,7 @@ class JxlStreamingAdapter {
     position_ = position;
   }
 
-  void SetWatermark(uint64_t finalized_position) {
+  void SetFinalizedPosition(uint64_t finalized_position) {
     EXPECT_GE(finalized_position, finalized_position_);
     finalized_position_ = finalized_position;
     EXPECT_GE(position_, finalized_position_);

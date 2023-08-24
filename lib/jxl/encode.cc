@@ -157,7 +157,7 @@ void JxlEncoderOutputProcessorWrapper::Seek(size_t pos) {
   position_ = pos;
 }
 
-void JxlEncoderOutputProcessorWrapper::SetWatermark(size_t pos) {
+void JxlEncoderOutputProcessorWrapper::SetFinalizedPosition(size_t pos) {
   JXL_ASSERT(!has_buffer_);
   if (external_output_processor_ && external_output_processor_->seek) {
     external_output_processor_->set_finalized_position(
@@ -180,15 +180,16 @@ void JxlEncoderOutputProcessorWrapper::ReleaseBuffer(size_t bytes_used) {
   JXL_ASSERT(has_buffer_);
   has_buffer_ = false;
   auto it = internal_buffers_.find(position_);
+  JXL_ASSERT(it != internal_buffers_.end());
   if (it->second.owned_data.empty() && external_output_processor_) {
     external_output_processor_->release_buffer(
         external_output_processor_->opaque, bytes_used);
+    output_position_ += bytes_used;
   }
   if (bytes_used == 0) {
     internal_buffers_.erase(it);
     return;
   }
-  JXL_ASSERT(it != internal_buffers_.end());
   it->second.written_bytes = bytes_used;
   if (external_output_processor_ && external_output_processor_->seek &&
       !it->second.owned_data.empty()) {
@@ -350,7 +351,7 @@ jxl::Status JxlEncoderStruct::AppendBox(const jxl::BoxType& type,
                                        unbounded, large_box, buffer.data()));
   }
   output_processor.Seek(box_contents_end);
-  output_processor.SetWatermark(box_contents_end);
+  output_processor.SetFinalizedPosition(box_contents_end);
   return jxl::OkStatus();
 }
 
@@ -960,7 +961,7 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
       }
     } else {
       JXL_RETURN_IF_ERROR(append_frame_codestream());
-      output_processor.SetWatermark(output_processor.CurrentPosition());
+      output_processor.SetFinalizedPosition(output_processor.CurrentPosition());
     }
 
     if (input_frame) {

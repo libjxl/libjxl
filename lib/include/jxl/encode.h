@@ -683,8 +683,8 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderAddImageFrame(
  *
  * The library will not acquire more than one buffer at a given time.
  *
- * The state of the processor includes with `position` and `finalized
- * position`, which have the following meaning.
+ * The state of the processor includes `position` and `finalized position`,
+ * which have the following meaning.
  *
  * - position: Represents the current position, in bytes, within the output
  * stream where the encoded data will be written next. This position moves
@@ -715,7 +715,6 @@ struct JxlEncoderOutputProcessor {
    * the library will return an error. The client is expected to set the size of
    * the returned buffer based on the suggested `size` when this function is
    * called.
-   *
    *
    * @param opaque user supplied parameters to the callback
    * @param size points to a suggested buffer size when called; must be set to

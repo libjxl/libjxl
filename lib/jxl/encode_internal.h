@@ -212,7 +212,7 @@ class JxlEncoderOutputProcessorWrapper {
 
   void Seek(size_t pos);
 
-  void SetWatermark(size_t pos);
+  void SetFinalizedPosition(size_t pos);
 
   size_t CurrentPosition() const { return position_; }
 
@@ -250,7 +250,7 @@ class JxlEncoderOutputProcessorWrapper {
   size_t* avail_out_ = nullptr;
   // Where the next GetBuffer call will write bytes to.
   size_t position_ = 0;
-  // The position for either the user-given output_processor, or next_out.
+  // The position of the last SetFinalizedPosition call.
   size_t finalized_position_ = 0;
   // Either the position of the `external_output_processor_` or the position
   // `next_out_` points to.
