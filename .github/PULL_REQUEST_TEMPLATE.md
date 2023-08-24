@@ -8,7 +8,7 @@
 
 - [ ] **CLA Signed**: Have you signed the [Contributor License Agreement](https://code.google.com/legal/individual-cla-v1.0.html) (individual or corporate, as appropriate)? Only contributions from signed contributors can be accepted.
 - [ ] **Authors**: If this is your first contribution, have you added your name to the [AUTHORS](AUTHORS) file?
-- [ ] **Code Style**: Have you ensured your code adheres to the project's coding style guidelines? You can use the ./ci.sh lint tool for automatic code formatting.
+- [ ] **Code Style**: Have you ensured your code adheres to the project's coding style guidelines? You can use `./ci.sh lint` for automatic code formatting.
 
 
 Please review the full [contributing guidelines](https://github.com/libjxl/libjxl/blob/main/CONTRIBUTING.md) for more details.
