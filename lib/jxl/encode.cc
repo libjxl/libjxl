@@ -920,12 +920,12 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
       size_t fl_size = JxlFastLosslessOutputSize(fast_lossless_frame.get());
       codestream_upper_bound = fl_size + bytes.size();
       append_frame_codestream = [&]() {
+        size_t fl_size = JxlFastLosslessOutputSize(fast_lossless_frame.get());
         if (!bytes.empty()) {
           JXL_RETURN_IF_ERROR(AppendData(output_processor, bytes));
         }
         size_t written = 0;
-        // TODO: fix this properly, fl_size should never be 0...
-        while (fl_size) {
+        while (true) {
           JXL_ASSIGN_OR_RETURN(
               auto buffer, output_processor.GetBuffer(32, fl_size - written));
           size_t n = JxlFastLosslessWriteOutput(fast_lossless_frame.get(),
