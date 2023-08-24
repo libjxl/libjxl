@@ -910,7 +910,7 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
       // above.
       bytes.append(std::move(writer).TakeBytes());
       codestream_upper_bound = bytes.size();
-      append_frame_codestream = [&]() {
+      append_frame_codestream = [&bytes, this]() {
         return AppendData(output_processor, bytes);
       };
     } else {
@@ -919,8 +919,7 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
                                    /*add_image_header=*/0, last_frame);
       size_t fl_size = JxlFastLosslessOutputSize(fast_lossless_frame.get());
       codestream_upper_bound = fl_size + bytes.size();
-      append_frame_codestream = [&]() {
-        size_t fl_size = JxlFastLosslessOutputSize(fast_lossless_frame.get());
+      append_frame_codestream = [&bytes, &fast_lossless_frame, fl_size, this]() {
         if (!bytes.empty()) {
           JXL_RETURN_IF_ERROR(AppendData(output_processor, bytes));
         }
