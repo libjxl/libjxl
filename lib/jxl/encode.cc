@@ -184,7 +184,6 @@ void JxlEncoderOutputProcessorWrapper::ReleaseBuffer(size_t bytes_used) {
   if (it->second.owned_data.empty() && external_output_processor_) {
     external_output_processor_->release_buffer(
         external_output_processor_->opaque, bytes_used);
-    output_position_ += bytes_used;
   }
   if (bytes_used == 0) {
     internal_buffers_.erase(it);
