@@ -10,7 +10,7 @@
 #include <cmath>
 #include <hwy/aligned_allocator.h>
 #include <hwy/base.h>  // HWY_ALIGN_MAX
-#include <hwy/tests/test_util-inl.h>
+#include <hwy/tests/hwy_gtest.h>
 #include <utility>
 
 #include "lib/jxl/base/random.h"
@@ -19,6 +19,7 @@
 #include "lib/jxl/dec_transforms_testonly.h"
 #include "lib/jxl/enc_transforms.h"
 #include "lib/jxl/simd_util.h"
+#include "lib/jxl/testing.h"
 
 namespace jxl {
 namespace {

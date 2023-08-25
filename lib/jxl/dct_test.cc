@@ -12,7 +12,7 @@
 #define HWY_TARGET_INCLUDE "lib/jxl/dct_test.cc"
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
-#include <hwy/tests/test_util-inl.h>
+#include <hwy/tests/hwy_gtest.h>
 
 #include "lib/jxl/common.h"
 #include "lib/jxl/dct-inl.h"
@@ -20,6 +20,7 @@
 #include "lib/jxl/dct_scales.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/test_utils.h"
+#include "lib/jxl/testing.h"
 
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
