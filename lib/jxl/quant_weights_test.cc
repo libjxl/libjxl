@@ -9,7 +9,7 @@
 #include <algorithm>
 #include <cmath>
 #include <hwy/base.h>  // HWY_ALIGN_MAX
-#include <hwy/tests/test_util-inl.h>
+#include <hwy/tests/hwy_gtest.h>
 #include <numeric>
 
 #include "lib/jxl/base/random.h"
@@ -18,6 +18,7 @@
 #include "lib/jxl/enc_modular.h"
 #include "lib/jxl/enc_quant_weights.h"
 #include "lib/jxl/enc_transforms.h"
+#include "lib/jxl/testing.h"
 
 namespace jxl {
 namespace {
