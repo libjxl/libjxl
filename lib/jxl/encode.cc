@@ -184,36 +184,60 @@ void JxlEncoderOutputProcessorWrapper::ReleaseBuffer(size_t bytes_used) {
   has_buffer_ = false;
   auto it = internal_buffers_.find(position_);
   JXL_ASSERT(it != internal_buffers_.end());
-  if (it->second.owned_data.empty() && external_output_processor_) {
-    external_output_processor_->release_buffer(
-        external_output_processor_->opaque, bytes_used);
-    output_position_ += bytes_used;
-  }
   if (bytes_used == 0) {
+    if (external_output_processor_) {
+      external_output_processor_->release_buffer(
+          external_output_processor_->opaque, bytes_used);
+    }
     internal_buffers_.erase(it);
     return;
   }
   it->second.written_bytes = bytes_used;
-  if (external_output_processor_ && external_output_processor_->seek &&
-      !it->second.owned_data.empty()) {
-    external_output_processor_->seek(external_output_processor_->opaque,
-                                     position_);
-    output_position_ = position_;
-    while (output_position_ < position_ + bytes_used) {
-      size_t num_to_write = position_ + bytes_used - output_position_;
-      if (!AppendBufferToExternalProcessor(
-              it->second.owned_data.data() + output_position_ - position_,
-              num_to_write)) {
-        return;
-      }
-    }
-    it->second.owned_data.clear();
-  }
   position_ += bytes_used;
 
-  it++;
-  if (it != internal_buffers_.end()) {
-    JXL_ASSERT(it->first >= position_);
+  auto it_to_next = it;
+  it_to_next++;
+  if (it_to_next != internal_buffers_.end()) {
+    JXL_ASSERT(it_to_next->first >= position_);
+  }
+
+  if (external_output_processor_) {
+    // If the buffer was given by the user, tell the user it is not needed
+    // anymore.
+    if (it->second.owned_data.empty()) {
+      external_output_processor_->release_buffer(
+          external_output_processor_->opaque, bytes_used);
+      // If we don't support seeking, this implies we will never modify again
+      // the bytes that were written so far. Advance the finalized position and
+      // flush the output to clean up the internal buffers.
+      if (!external_output_processor_->seek) {
+        finalized_position_ += bytes_used;
+        FlushOutput();
+        JXL_ASSERT(output_position_ == finalized_position_);
+        JXL_ASSERT(output_position_ == position_);
+      } else {
+        // Otherwise, advance the output position accordingly.
+        output_position_ += bytes_used;
+        JXL_ASSERT(output_position_ >= finalized_position_);
+        JXL_ASSERT(output_position_ == position_);
+      }
+    } else if (external_output_processor_->seek) {
+      // If we had buffered the data internally, flush it out to the external
+      // processor if we can.
+      external_output_processor_->seek(external_output_processor_->opaque,
+                                       position_ - bytes_used);
+      output_position_ = position_ - bytes_used;
+      while (output_position_ < position_) {
+        size_t num_to_write = position_ - output_position_;
+        if (!AppendBufferToExternalProcessor(it->second.owned_data.data() +
+                                                 output_position_ - position_ +
+                                                 bytes_used,
+                                             num_to_write)) {
+          return;
+        }
+      }
+      it->second.owned_data.clear();
+    }
   }
 }
 

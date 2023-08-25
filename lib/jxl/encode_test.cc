@@ -1515,7 +1515,11 @@ std::ostream& operator<<(std::ostream& out, OutputCallbackTestParam p) {
   }
   if (p.multiple_frames()) out << "WithMultipleFrames";
   if (p.fast_lossless()) out << "FastLossless";
-  if (!p.can_seek()) out << "CannotSeek";
+  if (!p.can_seek()) {
+    out << "CannotSeek";
+  } else {
+    out << "CanSeek";
+  }
   return out;
 }
 
