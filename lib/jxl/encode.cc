@@ -96,6 +96,9 @@ JxlEncoderOutputProcessorWrapper::GetBuffer(size_t min_size,
   requested_size = std::max(min_size, requested_size);
 
   // If we support seeking, output_position_ == position_.
+  if (external_output_processor_ && external_output_processor_->seek) {
+    JXL_ASSERT(output_position_ == position_);
+  }
   // Otherwise, output_position_ <= position_.
   JXL_ASSERT(output_position_ <= position_);
   size_t additional_size = position_ - output_position_;
@@ -184,6 +187,7 @@ void JxlEncoderOutputProcessorWrapper::ReleaseBuffer(size_t bytes_used) {
   if (it->second.owned_data.empty() && external_output_processor_) {
     external_output_processor_->release_buffer(
         external_output_processor_->opaque, bytes_used);
+    output_position_ += bytes_used;
   }
   if (bytes_used == 0) {
     internal_buffers_.erase(it);
