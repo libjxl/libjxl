@@ -159,7 +159,7 @@ HWY_NOINLINE void TestFastIDCT() {
   int16_t* idct = idct_mem.get();
 
   auto scratch_space_mem = hwy::AllocateAligned<float>(
-      N * M * 2 + 3 * std::max(N, M) * MaxLanes(HWY_FULL(float)));
+      N * M * 2 + 3 * std::max(N, M) * MaxLanes(HWY_FULL(float)()));
   float* scratch_space = scratch_space_mem.get();
   auto scratch_space_i_mem = hwy::AllocateAligned<int16_t>(N * M * 2);
   int16_t* scratch_space_i = scratch_space_i_mem.get();
