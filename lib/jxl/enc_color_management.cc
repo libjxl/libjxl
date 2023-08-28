@@ -192,8 +192,7 @@ Status AfterTransform(JxlCms* t, float* JXL_RESTRICT buf_dst, size_t buf_size) {
       HWY_FULL(float) df;
       for (size_t i = 0; i < buf_size; i += Lanes(df)) {
         const auto val = Load(df, buf_dst + i);
-        const auto result =
-            TF_SRGB().EncodedFromDisplay(df, val);
+        const auto result = TF_SRGB().EncodedFromDisplay(df, val);
         Store(result, df, buf_dst + i);
       }
 #if JXL_CMS_VERBOSE >= 2
