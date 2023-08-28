@@ -238,6 +238,11 @@ jobs:
         # Gimp 2.8 is not supported.
         sed -i '/Package: libjxl-gimp-plugin/,/^$/d' debian/control
 
+    - name: Configure hwy
+      if: ${{ github.event_name == 'schedule' || github.event_name == 'release' || contains(github.event.pull_request.labels.*.name, 'CI:full') }}
+      run: |
+        echo "HWY_PKG_OPTIONS=" >> $GITHUB_ENV
+
     - name: Build hwy
       run: |
         apt build-dep -y ./third_party/highway
