@@ -121,7 +121,7 @@ JxlEncoderOutputProcessorWrapper::GetBuffer(size_t min_size,
             external_output_processor_->opaque, 0);
       } else {
         internal_buffers_.emplace(position_, InternalBuffer());
-        this->has_buffer_ = true;
+        has_buffer_ = true;
         return JxlOutputProcessorBuffer(user_buffer + additional_size,
                                         size - additional_size, 0, this);
       }
@@ -129,7 +129,7 @@ JxlEncoderOutputProcessorWrapper::GetBuffer(size_t min_size,
   } else {
     if (min_size + additional_size < *avail_out_) {
       internal_buffers_.emplace(position_, InternalBuffer());
-      this->has_buffer_ = true;
+      has_buffer_ = true;
       return JxlOutputProcessorBuffer(*next_out_ + additional_size,
                                       *avail_out_ - additional_size, 0, this);
     }
@@ -145,7 +145,7 @@ JxlEncoderOutputProcessorWrapper::GetBuffer(size_t min_size,
     JXL_ASSERT(alloc_size >= min_size);
   }
   buffer.owned_data.resize(alloc_size);
-  this->has_buffer_ = true;
+  has_buffer_ = true;
   return JxlOutputProcessorBuffer(buffer.owned_data.data(), alloc_size, 0,
                                   this);
 }
