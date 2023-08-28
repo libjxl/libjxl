@@ -116,14 +116,13 @@ JxlEncoderOutputProcessorWrapper::GetBuffer(size_t min_size,
         stop_requested_ = true;
         return jxl::StatusCode::kNotEnoughBytes;
       }
-      if (size < min_size + additional_size) {
+      if (size < min_size) {
         external_output_processor_->release_buffer(
             external_output_processor_->opaque, 0);
       } else {
         internal_buffers_.emplace(position_, InternalBuffer());
         has_buffer_ = true;
-        return JxlOutputProcessorBuffer(user_buffer + additional_size,
-                                        size - additional_size, 0, this);
+        return JxlOutputProcessorBuffer(user_buffer, size, 0, this);
       }
     }
   } else {
