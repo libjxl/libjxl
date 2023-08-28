@@ -108,7 +108,7 @@ JxlEncoderOutputProcessorWrapper::GetBuffer(size_t min_size,
     // released with a prefix of the buffer that has not been written yet.
     // Figure out if there is a good way to do this more efficiently.
     if (additional_size == 0) {
-      size_t size = requested_size + additional_size;
+      size_t size = requested_size;
       uint8_t* user_buffer =
           static_cast<uint8_t*>(external_output_processor_->get_buffer(
               external_output_processor_->opaque, &size));
