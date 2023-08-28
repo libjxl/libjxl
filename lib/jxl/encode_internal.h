@@ -212,7 +212,7 @@ class JxlEncoderOutputProcessorWrapper {
 
   void Seek(size_t pos);
 
-  void SetFinalizedPosition(size_t pos);
+  void SetFinalizedPosition();
 
   size_t CurrentPosition() const { return position_; }
 

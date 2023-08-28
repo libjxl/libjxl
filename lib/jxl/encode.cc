@@ -160,13 +160,13 @@ void JxlEncoderOutputProcessorWrapper::Seek(size_t pos) {
   position_ = pos;
 }
 
-void JxlEncoderOutputProcessorWrapper::SetFinalizedPosition(size_t pos) {
+void JxlEncoderOutputProcessorWrapper::SetFinalizedPosition() {
   JXL_ASSERT(!has_buffer_);
   if (external_output_processor_ && external_output_processor_->seek) {
     external_output_processor_->set_finalized_position(
-        external_output_processor_->opaque, pos);
+        external_output_processor_->opaque, position_);
   }
-  finalized_position_ = pos;
+  finalized_position_ = position_;
   FlushOutput();
 }
 
@@ -378,7 +378,7 @@ jxl::Status JxlEncoderStruct::AppendBox(const jxl::BoxType& type,
                                        unbounded, large_box, buffer.data()));
   }
   output_processor.Seek(box_contents_end);
-  output_processor.SetFinalizedPosition(box_contents_end);
+  output_processor.SetFinalizedPosition();
   return jxl::OkStatus();
 }
 
@@ -988,7 +988,7 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
       }
     } else {
       JXL_RETURN_IF_ERROR(append_frame_codestream());
-      output_processor.SetFinalizedPosition(output_processor.CurrentPosition());
+      output_processor.SetFinalizedPosition();
     }
 
     if (input_frame) {
