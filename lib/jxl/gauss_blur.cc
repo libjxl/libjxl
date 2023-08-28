@@ -216,7 +216,7 @@ struct OutputStore {
   void operator()(const V& out, float* JXL_RESTRICT pos,
                   ptrdiff_t offset) const {
     // Stream helps for large images but is slower for images that fit in cache.
-    HWY_FULL(float) df;
+    const HWY_FULL(float) df;
     Store(out, df, pos + offset);
   }
 };
@@ -227,7 +227,7 @@ class SingleInput {
  public:
   explicit SingleInput(const float* pos) : pos_(pos) {}
   Vec<HWY_FULL(float)> operator()(const size_t offset) const {
-    HWY_FULL(float) df;
+    const HWY_FULL(float) df;
     return Load(df, pos_ + offset);
   }
   const float* pos_;
@@ -239,7 +239,7 @@ class TwoInputs {
  public:
   TwoInputs(const float* pos1, const float* pos2) : pos1_(pos1), pos2_(pos2) {}
   Vec<HWY_FULL(float)> operator()(const size_t offset) const {
-    HWY_FULL(float) df;
+    const HWY_FULL(float) df;
     const auto in1 = Load(df, pos1_ + offset);
     const auto in2 = Load(df, pos2_ + offset);
     return Add(in1, in2);
