@@ -211,8 +211,7 @@ void JxlEncoderOutputProcessorWrapper::ReleaseBuffer(size_t bytes_used) {
       // the bytes that were written so far. Advance the finalized position and
       // flush the output to clean up the internal buffers.
       if (!external_output_processor_->seek) {
-        finalized_position_ += bytes_used;
-        FlushOutput();
+        SetFinalizedPosition();
         JXL_ASSERT(output_position_ == finalized_position_);
         JXL_ASSERT(output_position_ == position_);
       } else {
