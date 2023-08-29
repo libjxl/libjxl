@@ -33,6 +33,7 @@ jobs:
         name: [release, debug, asan, msan, scalar]
         include:
           - name: release
+            mode: release
             test_in_pr: true
             cmake_args: >-
               -DJPEGXL_TEST_TOOLS=ON
@@ -106,7 +107,11 @@ jobs:
       # Whether we track the stack size.
       STACK_SIZE: ${{ matrix.env_stack_size }}
       TEST_STACK_LIMIT: ${{ matrix.env_test_stack_size }}
-      WILL_RUN_TESTS: ${{ github.event_name == 'push' || (github.event_name == 'pull_request' && (matrix.test_in_pr || contains(github.event.pull_request.labels.*.name, 'CI:full'))) }}
+      WILL_TEST: ${{  github.event_name == 'push' || (github.event_name == 'pull_request' && matrix.name != 'coverage' && (matrix.test_in_pr || contains(github.event.pull_request.labels.*.name, 'CI:full'))) }}
+      WILL_BUILD: ${{ github.event_name == 'push' || (github.event_name == 'pull_request' && matrix.name != 'coverage') }}
+      WILL_BENCH: ${{ matrix.name == 'release' || (github.event_name == 'push' && matrix.mode == 'release') }}
+      WILL_DOC: ${{ matrix.name == 'release' }}
+      WILL_COV: ${{ github.event_name == 'push' && matrix.name == 'coverage' }}
 
     steps:
     - name: Install build deps
@@ -151,12 +156,14 @@ jobs:
         LLVM_ROOT=${GITHUB_WORKSPACE}/llvm_root
         mkdir -p ${LLVM_ROOT}
         echo "LLVM_ROOT=${LLVM_ROOT}" >> $GITHUB_ENV
+
     - name: Cache LLVM sources
       if: matrix.name == 'msan'
       uses: actions/cache@88522ab9f39a2ea568f7027eddc7d8d8bc9d59c8 # v3.3.1
       with:
         path: ${{ env.LLVM_ROOT }}
         key: llvm
+
     - name: Checkout the LLVM source
       if: matrix.name == 'msan'
       uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
@@ -165,13 +172,15 @@ jobs:
         repository: llvm/llvm-project
         ref: llvmorg-7.0.1
         path: llvm_root
+
     - name: Sphinx dependencies
       # Dependencies for sphinx HTML documentation
-      if: matrix.name == 'release'
+      if: env.WILL_DOC == 'true'
       run: |
         pip3 install -r doc/sphinx/requirements.txt
+
     - name: Install gcovr
-      if: matrix.name == 'coverage'
+      if: env.WILL_COV == 'true'
       run: pip install gcovr
 
     - name: Git environment
@@ -179,6 +188,7 @@ jobs:
       run: |
         echo "parent=$(git rev-parse ${{ github.sha }}^)" >> $GITHUB_OUTPUT
       shell: bash
+
     - name: ccache
       uses: actions/cache@88522ab9f39a2ea568f7027eddc7d8d8bc9d59c8 # v3.3.1
       with:
@@ -190,13 +200,14 @@ jobs:
         key: build-${{ runner.os }}-${{ github.sha }}-${{ matrix.name }}
         restore-keys: |
           build-${{ runner.os }}-${{ steps.git-env.outputs.parent }}-${{ matrix.name }}
+
     - name: Build
-      if: matrix.name != 'coverage' || env.WILL_RUN_TESTS == 'true'
+      if: env.WILL_BUILD == 'true'
       run: |
         mkdir -p ${CCACHE_DIR}
         echo "max_size = 200M" > ${CCACHE_DIR}/ccache.conf
         mode="${{ matrix.mode }}"
-        build_tests=$([ "$WILL_RUN_TESTS" == "true" ] && echo "ON" || echo "OFF")
+        build_tests=$([ "$WILL_TEST" == "true" ] && echo "ON" || echo "OFF")
         [[ -n "${mode}" ]] || mode="${{ matrix.name }}"
         ./ci.sh ${mode} -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
@@ -206,22 +217,25 @@ jobs:
       env:
         SKIP_TEST: 1
         CMAKE_CXX_FLAGS: ${{ matrix.cxxflags }}
+
     - name: Build stats
+      if: env.WILL_BUILD == 'true'
       run: |
         awk '!/^#/ {total[$4]+=($2-$1);cntr[$4]+=1} END {for (key in total) print total[key]/cntr[key] " " key}' build/.ninja_log | sort -n | tail -n 25
+
     - name: ccache stats
       run: ccache --show-stats
+
     - name: Build stats ${{ matrix.name }}
-      if: matrix.mode == 'release' || matrix.name == 'release'
+      if: env.WILL_BUILD == 'true' && matrix.mode == 'release'
       run: |
         tools/scripts/build_stats.py --save build/stats.json \
           --max-stack ${{ matrix.max_stack || '0' }} \
           cjxl djxl libjxl.so libjxl_dec.so
+
     # Check that we can build the example project against the installed libs.
     - name: Install and build examples
-      if: |
-        (matrix.mode == 'release' || matrix.name == 'release') &&
-        !matrix.skip_install
+      if: env.WILL_BUILD == 'true' && matrix.mode == 'release' && !matrix.skip_install
       run: |
         set -x
         sudo cmake --build build -- install
@@ -237,44 +251,46 @@ jobs:
         build-example/encode_oneshot_static test.pfm test-static.jxl
         build-example/decode_oneshot test.jxl dec.pfm dec.icc
         build-example/decode_oneshot_static test.jxl dec-static.pfm dec-static.icc
+
     # Run the tests on push and when requested in pull_request.
     - name: Test ${{ matrix.mode }}
-      if: env.WILL_RUN_TESTS == 'true'
+      if: env.WILL_TEST == 'true'
       run: |
         ./ci.sh test ${{ matrix.ctest_args }}
+
     # Print the running time summary for the slowest tests.
     - name: Test runtime stats
+      if: env.WILL_TEST == 'true'
       run: |
         sort build/Testing/Temporary/CTestCostData.txt -k 3 -n | tail -n 20 || true
+
     - name: Build HTML documentation (sphinx/readthetdocs)
-      if: matrix.name == 'release'
+      if: env.WILL_DOC == 'true'
       run: |
         cmake --build build -- rtd-html
+
     - name: Coverage report
-      if: github.event_name == 'push' && matrix.name == 'coverage'
+      if: env.WILL_COV == 'true'
       run: |
         ./ci.sh coverage_report
+
     - name: Coverage upload to Codecov
-      if: github.event_name == 'push' && matrix.name == 'coverage'
+      if: env.WILL_COV == 'true'
       uses: codecov/codecov-action@eaaf4bedf32dbdc6b720b63067d99c4d77d6047d # v3.1.4
       with:
         flags: unittests
         files: build/coverage.xml
+
     - name: Fast benchmark ${{ matrix.mode }}
-      if: |
-        matrix.name != 'coverage' && (github.event_name == 'push' ||
-        (github.event_name == 'pull_request' && (
-         matrix.test_in_pr ||
-         contains(github.event.pull_request.labels.*.name, 'CI:full'))))
+      if: env.WILL_BENCH == 'true'
       run: |
         STORE_IMAGES=0 ./ci.sh fast_benchmark
+
     # Run gbench once, just to make sure it runs, not for actual benchmarking.
     # This doesn't work on msan because we use gbench library from the system
     # which is not instrumented by msan.
     - name: gbench check
-      if: |
-        matrix.name == 'release' || (
-          github.event_name == 'push' && matrix.name != 'msan')
+      if: env.WILL_BENCH == 'true'
       run: |
         ./ci.sh gbench --benchmark_min_time=0
 
