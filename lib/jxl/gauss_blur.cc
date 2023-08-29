@@ -381,7 +381,7 @@ void FastGaussianVertical(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
                           ImageF* JXL_RESTRICT out) {
   JXL_CHECK(SameSize(in, *out));
 
-  constexpr HWY_FULL(float) df;
+  const HWY_FULL(float) df;
   constexpr size_t kCacheLineLanes = 64 / sizeof(float);
   constexpr size_t kVN = MaxLanes(df);
   constexpr size_t kCacheLineVectors =
