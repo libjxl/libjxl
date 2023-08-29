@@ -18,6 +18,7 @@ Please add missing software to this list.
 - Edge: behind a flag since version 91, start with `.\msedge.exe --enable-features=JXL`
 - Opera: behind a flag since version 77.
 - Basilisk: supported since version v2023.01.07, [release notes](https://www.basilisk-browser.org/releasenotes.shtml)
+- Librewolf: [enabled by default](https://gitlab.com/librewolf-community/browser/source/-/merge_requests/53)
 - Pale Moon: supported since version 31.4.0, [release notes](https://www.palemoon.org/releasenotes-archived.shtml#v31.4.0)
 - Waterfox: [enabled by default](https://github.com/WaterfoxCo/Waterfox/pull/2936)
 
@@ -60,6 +61,7 @@ For all browsers and to track browsers progress see [Can I Use](https://caniuse.
 - [XnView](https://www.xnview.com/en/)
 - [ImageGlass](https://imageglass.org/)
 - [IrfanView](https://www.irfanview.com/); supported since 4.59 - requires a [plugin](https://www.irfanview.com/plugins.htm) to be downloaded and enabled.
+- [nsxiv](https://codeberg.org/nsxiv/nsxiv)
 - [Tachiyomi](https://github.com/tachiyomiorg/tachiyomi/releases/tag/v0.12.1)
 - Any viewer based on Qt, KDE, GDK-pixbuf, EFL, ImageMagick, libvips or imlib2 (see above)
   - Qt viewers: gwenview, digiKam, KolourPaint, KPhotoAlbum, LXImage-Qt, qimgv, qView, nomacs, VookiImageViewer, PhotoQt
