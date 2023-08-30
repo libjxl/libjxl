@@ -967,7 +967,7 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
     if (MustUseContainer()) {
       if (last_frame && jxlp_counter == 0) {
         // If this is the last frame and no jxlp boxes were used yet, it's
-        // slighly more efficient to write a jxlc box since it has 4 bytes
+        // slightly more efficient to write a jxlc box since it has 4 bytes
         // less overhead.
         JXL_RETURN_IF_ERROR(
             AppendBox(jxl::MakeBoxType("jxlc"), /*unbounded=*/false,

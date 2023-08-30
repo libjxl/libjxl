@@ -845,7 +845,7 @@ void ProcessRectACS(PassesEncoderState* JXL_RESTRICT enc_state,
   // 2. Merging them into larger transforms where possibly, but
   // starting from the smallest transforms (16x8 and 8x16).
   // Additional complication: 16x8 and 8x16 are considered
-  // simultanouesly and fairly against each other.
+  // simultaneously and fairly against each other.
   // We are looking at 64x64 squares since the YtoX and YtoB
   // maps happen to be at that resolution, and having
   // integral transforms cross these boundaries leads to
