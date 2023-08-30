@@ -165,9 +165,7 @@ class TF_709 {
 // Perceptual Quantization
 class TF_PQ {
  public:
-  TF_PQ() = delete;
-
-  explicit TF_PQ(float display_intensity_target)
+  explicit TF_PQ(float display_intensity_target = kDefaultIntensityTarget)
       : display_scaling_factor_to_10000_nits_(display_intensity_target *
                                               (1.0f / 10000.0f)),
         display_scaling_factor_from_10000_nits_(10000.0f /
