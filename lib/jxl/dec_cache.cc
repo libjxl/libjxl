@@ -5,7 +5,9 @@
 
 #include "lib/jxl/dec_cache.h"
 
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/blending.h"
+#include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/render_pipeline/stage_blending.h"
 #include "lib/jxl/render_pipeline/stage_chroma_upsampling.h"
 #include "lib/jxl/render_pipeline/stage_cms.h"
@@ -196,29 +198,49 @@ Status PassesDecoderState::PreparePipeline(ImageBundle* decoded,
       }
     }
 
-    auto cms_stage = GetCmsStage(output_encoding_info);
-    if (cms_stage) {
-      builder.AddStage(std::move(cms_stage));
-      linear = false;
-    }
+    ColorEncoding linear_color_encoding = ColorEncoding::LinearSRGB(
+        output_encoding_info.orig_color_encoding.IsGray());
 
     auto tone_mapping_stage = GetToneMappingStage(output_encoding_info);
+    fprintf(stderr, "tone_mapping_stage: %p\n", tone_mapping_stage.get());
     if (tone_mapping_stage) {
+    fprintf(stderr, "linear in tone_mapping_stage-if: %d\n", linear);
       if (!linear) {
         auto to_linear_stage = GetToLinearStage(output_encoding_info);
         if (!to_linear_stage) {
-          return JXL_FAILURE(
-              "attempting to perform tone mapping on colorspace not "
-              "convertible to linear");
+          if (!output_encoding_info.color_management_system) {
+            return JXL_FAILURE("Cannot tonemap this colorspace without a CMS");
+          }
+          auto cms_stage = GetCmsStage(
+              output_encoding_info.color_management_system,
+              output_encoding_info.orig_color_encoding, linear_color_encoding,
+              output_encoding_info.orig_intensity_target);
+          if (cms_stage) {
+            builder.AddStage(std::move(cms_stage));
+          }
+        } else {
+          builder.AddStage(std::move(to_linear_stage));
         }
-        builder.AddStage(std::move(to_linear_stage));
         linear = true;
       }
       builder.AddStage(std::move(tone_mapping_stage));
     }
+    fprintf(stderr, "linear after: %d\n", linear);
 
     if (linear) {
-      builder.AddStage(GetFromLinearStage(output_encoding_info));
+      auto from_linear_stage = GetFromLinearStage(output_encoding_info);
+      if (from_linear_stage) {
+        fprintf(stderr, "adding from_linear_stage\n");
+        builder.AddStage(std::move(from_linear_stage));
+      } else {
+        auto cms_stage = GetCmsStage(
+            output_encoding_info.color_management_system, linear_color_encoding,
+            output_encoding_info.color_encoding,
+            output_encoding_info.desired_intensity_target);
+        if (cms_stage) {
+          builder.AddStage(std::move(cms_stage));
+        }
+      }
       linear = false;
     }
 

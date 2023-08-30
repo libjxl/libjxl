@@ -29,53 +29,39 @@ namespace HWY_NAMESPACE {
 
 class CmsStage : public RenderPipelineStage {
  public:
-  explicit CmsStage(OutputEncodingInfo output_encoding_info)
+  CmsStage(const JxlCmsInterface* cms, const ColorEncoding& input,
+           const ColorEncoding& output, float intensity_target)
       : RenderPipelineStage(RenderPipelineStage::Settings()),
-        output_encoding_info_(std::move(output_encoding_info)) {
-    bool orig_grey = output_encoding_info_.orig_color_encoding.IsGray();
-    fprintf(stderr, "xyb_encoded: %d\n", output_encoding_info_.xyb_encoded);
-    c_src_ = output_encoding_info_.xyb_encoded
-                 ? ColorEncoding::LinearSRGB(orig_grey)
-                 : output_encoding_info_.orig_color_encoding;
-    fprintf(stderr, "c_src_: %s\n", Description(c_src_).c_str());
-    fprintf(stderr, "dst: %s\n",
-            Description(output_encoding_info_.color_encoding).c_str());
+        cms_(cms),
+        c_input_(input),
+        c_output_(output),
+        intensity_target_(intensity_target) {
+    fprintf(stderr, "c_src_: %s\n", Description(c_input_).c_str());
+    fprintf(stderr, "dst: %s\n", Description(c_output_).c_str());
   }
 
   bool IsNeeded() const {
-    const size_t channels_src = (c_src_.IsCMYK() ? 4 : c_src_.Channels());
-    const size_t channels_dst = output_encoding_info_.color_encoding.Channels();
-    const bool not_mixing_color_and_grey =
-        (channels_src == channels_dst ||
-         (channels_src == 4 && channels_dst == 3));
-    const bool output_is_xyb =
-        output_encoding_info_.color_encoding.GetColorSpace() ==
-        ColorSpace::kXYB;
-    fprintf(stderr, "output_is_xyb: %d , cms_defined : %d, non_mix: %d ,"
-    "!output_encoding_info_.color_encoding_is_original: %d\n", !output_is_xyb,
-    output_encoding_info_.color_management_system != nullptr,
-    not_mixing_color_and_grey, !output_encoding_info_.color_encoding_is_original);
-
-    return (output_encoding_info_.color_management_system != nullptr) &&
-           !output_encoding_info_.color_encoding_is_original &&
-           not_mixing_color_and_grey;
+    // TODO(veluca): check if input and output color encodings are approximately
+    // the same.
+    return true;
   }
 
   void ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
                   size_t xextra, size_t xsize, size_t xpos, size_t ypos,
                   size_t thread_id) const final {
+    JXL_ASSERT(false);
     JXL_ASSERT(xsize == xsize_);
     // const HWY_FULL(float) d;
     // const size_t xsize_v = RoundUpTo(xsize, Lanes(d));
     //(void)xsize_v;
 
-    // TODO(firsching): handle grey case seperately
+    // TODO(firsching): CMYK, grayscale
     //  interleave
     float* JXL_RESTRICT row0 = GetInputRow(input_rows, 0, 0);
     float* JXL_RESTRICT row1 = GetInputRow(input_rows, 1, 0);
     float* JXL_RESTRICT row2 = GetInputRow(input_rows, 2, 0);
     if (thread_id == 0) {
-      fprintf(stderr, "row in: %f %f %f\n", row0[0], row1[0], row2[0]);
+      // fprintf(stderr, "row in: %f %f %f\n", row0[0], row1[0], row2[0]);
     }
     float* mutable_buf_src = color_space_transform->BufSrc(thread_id);
     for (size_t x = 0; x < xsize; x++) {
@@ -96,10 +82,11 @@ class CmsStage : public RenderPipelineStage {
       row2[x] = buf_dst[3 * x + 2];
     }
     if (thread_id == 0) {
-      fprintf(stderr, "row out: %f %f %f\n", row0[0], row1[0], row2[0]);
+      // fprintf(stderr, "row out: %f %f %f\n", row0[0], row1[0], row2[0]);
     }
   }
   RenderPipelineChannelMode GetChannelMode(size_t c) const final {
+    // TODO(veluca): CMYK? Gray?
     return c < 3 ? RenderPipelineChannelMode::kInPlace
                  : RenderPipelineChannelMode::kIgnored;
   }
@@ -107,10 +94,12 @@ class CmsStage : public RenderPipelineStage {
   const char* GetName() const override { return "Cms"; }
 
  private:
-  OutputEncodingInfo output_encoding_info_;
   size_t xsize_;
   std::unique_ptr<jxl::ColorSpaceTransform> color_space_transform;
-  ColorEncoding c_src_;
+  const JxlCmsInterface* cms_;
+  ColorEncoding c_input_;
+  ColorEncoding c_output_;
+  float intensity_target_;
 
   void SetInputSizes(
       const std::vector<std::pair<size_t, size_t>>& input_sizes) override {
@@ -125,19 +114,18 @@ class CmsStage : public RenderPipelineStage {
   }
 
   Status PrepareForThreads(size_t num_threads) override {
-    color_space_transform = jxl::make_unique<jxl::ColorSpaceTransform>(
-        *output_encoding_info_.color_management_system);
-    fprintf(stderr, "des int target: %f\n", output_encoding_info_.desired_intensity_target);
+    color_space_transform = jxl::make_unique<jxl::ColorSpaceTransform>(*cms_);
     JXL_RETURN_IF_ERROR(color_space_transform->Init(
-        c_src_, output_encoding_info_.color_encoding,
-        output_encoding_info_.desired_intensity_target, xsize_, num_threads));
+        c_input_, c_output_, intensity_target_, xsize_, num_threads));
     return true;
   }
 };
 
-std::unique_ptr<RenderPipelineStage> GetCmsStage(
-    const OutputEncodingInfo& output_encoding_info) {
-  auto stage = jxl::make_unique<CmsStage>(output_encoding_info);
+std::unique_ptr<RenderPipelineStage> GetCmsStage(const JxlCmsInterface* cms,
+                                                 const ColorEncoding& input,
+                                                 const ColorEncoding& output,
+                                                 float intensity_target) {
+  auto stage = jxl::make_unique<CmsStage>(cms, input, output, intensity_target);
   if (!stage->IsNeeded()) return nullptr;
   fprintf(stderr, "returning cms stage...\n");
   return stage;
@@ -153,9 +141,12 @@ namespace jxl {
 
 HWY_EXPORT(GetCmsStage);
 
-std::unique_ptr<RenderPipelineStage> GetCmsStage(
-    const OutputEncodingInfo& output_encoding_info) {
-  return HWY_DYNAMIC_DISPATCH(GetCmsStage)(output_encoding_info);
+std::unique_ptr<RenderPipelineStage> GetCmsStage(const JxlCmsInterface* cms,
+                                                 const ColorEncoding& input,
+                                                 const ColorEncoding& output,
+                                                 float intensity_target) {
+  return HWY_DYNAMIC_DISPATCH(GetCmsStage)(cms, input, output,
+                                           intensity_target);
 }
 
 }  // namespace jxl

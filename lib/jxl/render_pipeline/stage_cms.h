@@ -13,13 +13,16 @@
 #include <utility>
 #include <vector>
 
+#include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/dec_xyb.h"
 #include "lib/jxl/render_pipeline/render_pipeline_stage.h"
 
 namespace jxl {
 
-std::unique_ptr<RenderPipelineStage> GetCmsStage(
-    const OutputEncodingInfo& output_encoding_info);
+std::unique_ptr<RenderPipelineStage> GetCmsStage(const JxlCmsInterface* cms,
+                                                 const ColorEncoding& input,
+                                                 const ColorEncoding& output,
+                                                 float intensity_target);
 
 }  // namespace jxl
 

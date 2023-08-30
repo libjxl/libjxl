@@ -2660,10 +2660,12 @@ JxlDecoderStatus JxlDecoderSetPreferredColorProfile(
 JxlDecoderStatus JxlDecoderSetOutputColorProfile(
     JxlDecoder* dec, const JxlColorEncoding* color_encoding,
     const uint8_t* icc_data, size_t icc_size) {
+  fprintf(stderr, "in JxlDecoderSetOutputColorProfile\n");
   if ((color_encoding != nullptr) && (icc_data != nullptr)) {
     return JXL_API_ERROR("cannot set both color_encoding and icc_data");
   }
   if ((color_encoding == nullptr) && (icc_data == nullptr)) {
+    fprintf(stderr,"icc_data: %p", icc_data);
     return JXL_API_ERROR("one of color_encoding and icc_data must be set");
   }
   if (!dec->got_all_headers) {
