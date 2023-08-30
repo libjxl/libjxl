@@ -1839,7 +1839,7 @@ JxlEncoder* JxlEncoderCreate(const JxlMemoryManager* memory_manager) {
   JxlEncoder* enc = new (alloc) JxlEncoder();
   enc->memory_manager = local_memory_manager;
   // TODO(sboukortt): add an API function to set this.
-  enc->cms = jxl::GetJxlCms();
+  enc->cms = *JxlGetDefaultCms();
   enc->cms_set = true;
 
   // Initialize all the field values.

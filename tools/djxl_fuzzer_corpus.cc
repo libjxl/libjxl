@@ -264,7 +264,7 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
   jxl::PaddedBytes compressed_image;
   bool ok =
       jxl::EncodeFile(params, &io, &passes_encoder_state, &compressed_image,
-                      jxl::GetJxlCms(), &aux_out, nullptr);
+                      *JxlGetDefaultCms(), &aux_out, nullptr);
   if (!ok) return false;
   compressed.append(compressed_image);
 

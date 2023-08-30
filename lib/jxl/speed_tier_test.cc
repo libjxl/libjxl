@@ -94,14 +94,14 @@ TEST_P(SpeedTierTest, Roundtrip) {
 
   CompressParams cparams;
   cparams.speed_tier = params.speed_tier;
-  cparams.SetCms(GetJxlCms());
+  cparams.SetCms(*JxlGetDefaultCms());
 
   CodecInOut io2;
   JXL_EXPECT_OK(test::Roundtrip(&io, cparams, {}, &io2, _));
 
   // Can be 2.2 in non-hare mode.
   EXPECT_LE(ButteraugliDistance(io.frames, io2.frames, ButteraugliParams(),
-                                GetJxlCms(),
+                                *JxlGetDefaultCms(),
                                 /*distmap=*/nullptr, /*pool=*/nullptr),
             2.8);
 }

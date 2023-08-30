@@ -221,7 +221,7 @@ void VerifyFrameEncoding(size_t xsize, size_t ysize, JxlEncoder* enc,
       &decoded_io));
 
   EXPECT_LE(
-      ComputeDistance2(input_io.Main(), decoded_io.Main(), jxl::GetJxlCms()),
+      ComputeDistance2(input_io.Main(), decoded_io.Main(), *JxlGetDefaultCms()),
 #if JXL_HIGH_PRECISION
       1.84);
 #else
@@ -260,7 +260,7 @@ TEST(EncodeTest, CmsTest) {
   JxlEncoderPtr enc = JxlEncoderMake(nullptr);
   EXPECT_NE(nullptr, enc.get());
   bool cms_called = false;
-  JxlCmsInterface cms = jxl::GetJxlCms();
+  JxlCmsInterface cms = *JxlGetDefaultCms();
   struct InitData {
     void* original_init_data;
     jpegxl_cms_init_func original_init;
@@ -1402,9 +1402,9 @@ TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGFrameTest)) {
           {}, jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
           &decoded_io));
 
-      EXPECT_LE(
-          ComputeDistance2(orig_io.Main(), decoded_io.Main(), jxl::GetJxlCms()),
-          3.5);
+      EXPECT_LE(ComputeDistance2(orig_io.Main(), decoded_io.Main(),
+                                 *JxlGetDefaultCms()),
+                3.5);
     }
   }
 }

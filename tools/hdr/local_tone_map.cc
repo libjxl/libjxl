@@ -454,7 +454,7 @@ int main(int argc, const char** argv) {
     CopyImageTo(*image.Main().color(), &color);
     sRGB_image.SetFromImage(std::move(color), image.Main().c_current());
     JXL_CHECK(sRGB_image.Main().TransformTo(jxl::ColorEncoding::SRGB(),
-                                            jxl::GetJxlCms(), &pool));
+                                            *JxlGetDefaultCms(), &pool));
     input_images.push_back(std::move(*sRGB_image.Main().color()));
   }
 
@@ -470,7 +470,7 @@ int main(int argc, const char** argv) {
     JXL_CHECK(jxl::ToneMapTo({0, target}, &tone_mapped_image, &pool));
     JXL_CHECK(jxl::GamutMap(&tone_mapped_image, preserve_saturation, &pool));
     JXL_CHECK(tone_mapped_image.Main().TransformTo(jxl::ColorEncoding::SRGB(),
-                                                   jxl::GetJxlCms(), &pool));
+                                                   *JxlGetDefaultCms(), &pool));
     input_images.push_back(std::move(*tone_mapped_image.Main().color()));
   }
 

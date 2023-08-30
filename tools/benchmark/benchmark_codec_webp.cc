@@ -104,8 +104,8 @@ class WebPCodec : public ImageCodec {
     ImageBundle store(&metadata);
     const ImageBundle* transformed;
     const ColorEncoding& c_desired = ColorEncoding::SRGB(false);
-    JXL_RETURN_IF_ERROR(jxl::TransformIfNeeded(ib, c_desired, jxl::GetJxlCms(),
-                                               pool, &store, &transformed));
+    JXL_RETURN_IF_ERROR(jxl::TransformIfNeeded(
+        ib, c_desired, *JxlGetDefaultCms(), pool, &store, &transformed));
     size_t xsize = ib.oriented_xsize();
     size_t ysize = ib.oriented_ysize();
     size_t stride = xsize * num_chans;

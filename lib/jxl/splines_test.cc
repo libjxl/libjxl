@@ -315,7 +315,7 @@ TEST(SplinesTest, Drawing) {
   CopyImageTo(image, &image2);
   io_actual.SetFromImage(std::move(image2), ColorEncoding::SRGB());
   ASSERT_TRUE(io_actual.frames[0].TransformTo(io_expected.Main().c_current(),
-                                              GetJxlCms()));
+                                              *JxlGetDefaultCms()));
 
   JXL_ASSERT_OK(VerifyRelativeError(
       *io_expected.Main().color(), *io_actual.Main().color(), 1e-2f, 1e-1f, _));
@@ -333,8 +333,8 @@ TEST(SplinesTest, ClearedEveryFrame) {
   ASSERT_TRUE(
       test::DecodeFile({}, Span<const uint8_t>(bytes_actual), &io_actual));
 
-  ASSERT_TRUE(
-      io_actual.frames[0].TransformTo(ColorEncoding::SRGB(), GetJxlCms()));
+  ASSERT_TRUE(io_actual.frames[0].TransformTo(ColorEncoding::SRGB(),
+                                              *JxlGetDefaultCms()));
   for (size_t c = 0; c < 3; ++c) {
     for (size_t y = 0; y < io_actual.ysize(); ++y) {
       float* const JXL_RESTRICT row = io_actual.Main().color()->PlaneRow(c, y);

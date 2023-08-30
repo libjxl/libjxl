@@ -470,7 +470,7 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
   io.SetFromImage(std::move(image), ColorEncoding::SRGB());
   io.SetSize((width + x0) * cparams.resampling,
              (height + y0) * cparams.resampling);
-  io.metadata.m.color_encoding.DecideIfWantICC(jxl::GetJxlCms());
+  io.metadata.m.color_encoding.DecideIfWantICC(*JxlGetDefaultCms());
   cparams.options.zero_tokens = true;
   cparams.palette_colors = 0;
   cparams.channel_colors_pre_transform_percent = 0;
@@ -507,7 +507,7 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
 
     JXL_RETURN_IF_ERROR(jxl::EncodeFrame(
         cparams, info, metadata.get(), io.frames[0], &enc_state,
-        jxl::GetJxlCms(), nullptr, &writer, nullptr));
+        *JxlGetDefaultCms(), nullptr, &writer, nullptr));
     if (!have_next) break;
     tree.clear();
     spline_data.splines.clear();

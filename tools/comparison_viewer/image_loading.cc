@@ -75,7 +75,7 @@ QImage loadImage(const QString& filename, const QByteArray& targetIccProfile,
   decoded.metadata.m.SetIntensityTarget(intensityTarget);
   const ImageBundle& ib = decoded.Main();
 
-  const JxlCmsInterface& cms = jxl::GetJxlCms();
+  const JxlCmsInterface& cms = *JxlGetDefaultCms();
 
   ColorEncoding targetColorSpace;
   PaddedBytes icc;

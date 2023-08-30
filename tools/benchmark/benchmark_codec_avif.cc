@@ -126,7 +126,7 @@ Status ReadAvifColor(const avifImage* const image, ColorEncoding* const color) {
   if (image->icc.size != 0) {
     PaddedBytes icc;
     icc.assign(image->icc.data, image->icc.data + image->icc.size);
-    return color->SetICC(std::move(icc), &jxl::GetJxlCms());
+    return color->SetICC(std::move(icc), JxlGetDefaultCms());
   }
 
   color->white_point = WhitePoint::kD65;

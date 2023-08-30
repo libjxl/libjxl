@@ -45,9 +45,9 @@ int Run(int argc, char** argv) {
   jxl::ImageBundle& ib1 = io[0].Main();
   jxl::ImageBundle& ib2 = io[1].Main();
   JXL_CHECK(ib1.TransformTo(jxl::ColorEncoding::LinearSRGB(ib1.IsGray()),
-                            jxl::GetJxlCms(), nullptr));
+                            *JxlGetDefaultCms(), nullptr));
   JXL_CHECK(ib2.TransformTo(jxl::ColorEncoding::LinearSRGB(ib2.IsGray()),
-                            jxl::GetJxlCms(), nullptr));
+                            *JxlGetDefaultCms(), nullptr));
   jxl::Image3F& img1 = *ib1.color();
   jxl::Image3F& img2 = *ib2.color();
   if (img1.xsize() != img2.xsize() || img1.ysize() != img2.ysize()) {

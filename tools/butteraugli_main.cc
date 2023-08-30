@@ -96,7 +96,7 @@ Status RunButteraugli(const char* pathname1, const char* pathname2,
   ba_params.xmul = 1.0f;
   ba_params.intensity_target = intensity_target;
   const float distance = jxl::ButteraugliDistance(
-      io1.Main(), io2.Main(), ba_params, jxl::GetJxlCms(), &distmap, &pool);
+      io1.Main(), io2.Main(), ba_params, *JxlGetDefaultCms(), &distmap, &pool);
   printf("%.10f\n", distance);
 
   double pnorm = jxl::ComputeDistanceP(distmap, ba_params, p);

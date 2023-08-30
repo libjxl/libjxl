@@ -115,7 +115,7 @@ Status ConvertPackedPixelFileToCodecInOut(const PackedPixelFile& ppf,
   if (!ppf.icc.empty()) {
     PaddedBytes icc;
     icc.append(ppf.icc);
-    const JxlCmsInterface& cms = GetJxlCms();
+    const JxlCmsInterface& cms = *JxlGetDefaultCms();
     if (!io->metadata.m.color_encoding.SetICC(std::move(icc), &cms)) {
       fprintf(stderr, "Warning: error setting ICC profile, assuming SRGB\n");
       io->metadata.m.color_encoding = ColorEncoding::SRGB(is_gray);
@@ -279,7 +279,7 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
     const ImageBundle* transformed;
     // TODO(firsching): handle the transform here.
     JXL_RETURN_IF_ERROR(TransformIfNeeded(*to_color_transform, c_desired,
-                                          GetJxlCms(), pool, &store,
+                                          *JxlGetDefaultCms(), pool, &store,
                                           &transformed));
 
     JXL_RETURN_IF_ERROR(ConvertToExternal(

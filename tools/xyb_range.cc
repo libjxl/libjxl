@@ -50,7 +50,7 @@ void PrintXybRange() {
   const ImageBundle& ib = io.Main();
   ThreadPool* null_pool = nullptr;
   Image3F opsin(ib.xsize(), ib.ysize());
-  (void)jxl::ToXYB(ib, null_pool, &opsin, jxl::GetJxlCms());
+  (void)jxl::ToXYB(ib, null_pool, &opsin, *JxlGetDefaultCms());
   for (size_t c = 0; c < 3; ++c) {
     float minval = 1e10f;
     float maxval = -1e10f;

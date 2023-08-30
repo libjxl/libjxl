@@ -30,7 +30,7 @@ TEST(OpsinInverseTest, LinearInverseInverts) {
   io.SetFromImage(std::move(linear2), io.metadata.m.color_encoding);
   ThreadPool* null_pool = nullptr;
   Image3F opsin(io.xsize(), io.ysize());
-  (void)ToXYB(io.Main(), null_pool, &opsin, GetJxlCms());
+  (void)ToXYB(io.Main(), null_pool, &opsin, *JxlGetDefaultCms());
 
   OpsinParams opsin_params;
   opsin_params.Init(/*intensity_target=*/255.0f);

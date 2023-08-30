@@ -5,11 +5,15 @@
 
 #include "lib/jxl/jxl_cms.h"
 
+#include "lib/jxl/image.h"
+
 #ifndef JPEGXL_ENABLE_SKCMS
 #define JPEGXL_ENABLE_SKCMS 0
 #endif
 
+#include <jxl/cms_interface.h>
 #include <math.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -20,6 +24,7 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/jxl_cms.cc"
@@ -28,10 +33,15 @@
 
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/color_encoding_internal.h"
+#include "lib/jxl/color_management.h"
+#include "lib/jxl/common.h"
 #include "lib/jxl/field_encodings.h"
+#include "lib/jxl/image.h"
 #include "lib/jxl/matrix_ops.h"
 #include "lib/jxl/transfer_functions-inl.h"
 #if JPEGXL_ENABLE_SKCMS
@@ -1271,7 +1281,7 @@ float* JxlCmsGetDstBuf(void* cms_data, size_t thread) {
 
 }  // namespace
 
-const JxlCmsInterface& GetJxlCms() {
+extern "C" const JxlCmsInterface* JxlGetDefaultCms() {
   static constexpr JxlCmsInterface kInterface = {
       /*set_fields_data=*/nullptr,
       /*set_fields_from_icc=*/&JxlCmsSetFieldsFromICC,
@@ -1281,7 +1291,7 @@ const JxlCmsInterface& GetJxlCms() {
       /*get_dst_buf=*/&JxlCmsGetDstBuf,
       /*run=*/&DoColorSpaceTransform,
       /*destroy=*/&JxlCmsDestroy};
-  return kInterface;
+  return &kInterface;
 }
 
 }  // namespace jxl

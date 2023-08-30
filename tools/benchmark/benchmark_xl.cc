@@ -242,7 +242,7 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
           params.intensity_target = 80.0;
         }
         distance =
-            ButteraugliDistance(ib1, ib2, params, jxl::GetJxlCms(), &distmap,
+            ButteraugliDistance(ib1, ib2, params, *JxlGetDefaultCms(), &distmap,
                                 inner_pool, codec->IgnoreAlpha());
       } else {
         // TODO(veluca): re-upsample and compute proper distance.
@@ -254,7 +254,7 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
       s->psnr +=
           compressed->empty()
               ? 0
-              : jxl::ComputePSNR(ib1, ib2, jxl::GetJxlCms()) * input_pixels;
+              : jxl::ComputePSNR(ib1, ib2, *JxlGetDefaultCms()) * input_pixels;
       s->distance_p_norm +=
           ComputeDistanceP(distmap, ButteraugliParams(), Args()->error_pnorm) *
           input_pixels;
@@ -317,7 +317,7 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
       if (Args()->mul_output != 0.0) {
         fprintf(stderr, "WARNING: scaling outputs by %f\n", Args()->mul_output);
         JXL_CHECK(ib2.TransformTo(ColorEncoding::LinearSRGB(ib2.IsGray()),
-                                  jxl::GetJxlCms(), inner_pool));
+                                  *JxlGetDefaultCms(), inner_pool));
         ScaleImage(static_cast<float>(Args()->mul_output), ib2.color());
       }
 

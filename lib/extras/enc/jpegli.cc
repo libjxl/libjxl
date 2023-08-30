@@ -9,6 +9,7 @@
 #include <setjmp.h>
 #include <stdint.h>
 
+#include "jxl/cms_interface.h"
 #include "lib/extras/enc/encode.h"
 #include "lib/jpegli/encode.h"
 #include "lib/jxl/enc_xyb.h"
@@ -326,7 +327,7 @@ Status EncodeJpeg(const PackedPixelFile& ppf, const JpegSettings& jpeg_settings,
   }
   JXL_RETURN_IF_ERROR(VerifyInput(ppf));
 
-  const JxlCmsInterface& cms = GetJxlCms();
+  const JxlCmsInterface& cms = *JxlGetDefaultCms();
 
   ColorEncoding color_encoding;
   JXL_RETURN_IF_ERROR(GetColorEncoding(ppf, &cms, &color_encoding));

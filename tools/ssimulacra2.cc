@@ -435,12 +435,12 @@ Msssim ComputeSSIMULACRA2(const jxl::ImageBundle& orig,
   dist2.ClearExtraChannels();
 
   JXL_CHECK(orig2.TransformTo(jxl::ColorEncoding::LinearSRGB(orig2.IsGray()),
-                              jxl::GetJxlCms()));
+                              *JxlGetDefaultCms()));
   JXL_CHECK(dist2.TransformTo(jxl::ColorEncoding::LinearSRGB(dist2.IsGray()),
-                              jxl::GetJxlCms()));
+                              *JxlGetDefaultCms()));
 
-  jxl::ToXYB(orig2, nullptr, &img1, jxl::GetJxlCms(), nullptr);
-  jxl::ToXYB(dist2, nullptr, &img2, jxl::GetJxlCms(), nullptr);
+  jxl::ToXYB(orig2, nullptr, &img1, *JxlGetDefaultCms(), nullptr);
+  jxl::ToXYB(dist2, nullptr, &img2, *JxlGetDefaultCms(), nullptr);
   MakePositiveXYB(img1);
   MakePositiveXYB(img2);
 
@@ -458,8 +458,8 @@ Msssim ComputeSSIMULACRA2(const jxl::ImageBundle& orig,
                          jxl::ColorEncoding::LinearSRGB(dist2.IsGray()));
       img1.ShrinkTo(orig2.xsize(), orig2.ysize());
       img2.ShrinkTo(orig2.xsize(), orig2.ysize());
-      jxl::ToXYB(orig2, nullptr, &img1, jxl::GetJxlCms(), nullptr);
-      jxl::ToXYB(dist2, nullptr, &img2, jxl::GetJxlCms(), nullptr);
+      jxl::ToXYB(orig2, nullptr, &img1, *JxlGetDefaultCms(), nullptr);
+      jxl::ToXYB(dist2, nullptr, &img2, *JxlGetDefaultCms(), nullptr);
       MakePositiveXYB(img1);
       MakePositiveXYB(img2);
     }

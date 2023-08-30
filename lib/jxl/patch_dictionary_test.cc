@@ -49,7 +49,7 @@ TEST(PatchDictionaryTest, GrayscaleVarDCT) {
   EXPECT_LE(compressed_size, 14000u);
   // Without patches: ~1.2
   EXPECT_LE(ButteraugliDistance(io.frames, io2.frames, ButteraugliParams(),
-                                GetJxlCms(),
+                                *JxlGetDefaultCms(),
                                 /*distmap=*/nullptr),
             1.1);
 }

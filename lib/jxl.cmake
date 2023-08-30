@@ -72,7 +72,8 @@ set_target_properties(jxl_export PROPERTIES
 generate_export_header(jxl_export
   BASE_NAME JXL
   EXPORT_FILE_NAME include/jxl/jxl_export.h)
-# Place all public headers in a single directory.
+
+  # Place all public headers in a single directory.
 foreach(path ${JPEGXL_INTERNAL_PUBLIC_HEADERS})
   configure_file(
     ${path}
@@ -80,6 +81,7 @@ foreach(path ${JPEGXL_INTERNAL_PUBLIC_HEADERS})
     COPYONLY
   )
 endforeach()
+
 
 add_library(jxl_includes INTERFACE)
 target_include_directories(jxl_includes SYSTEM INTERFACE
