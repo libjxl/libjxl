@@ -168,8 +168,8 @@ class TF_PQ {
   explicit TF_PQ(float display_intensity_target)
       : display_scaling_factor_to_10000_nits_(display_intensity_target *
                                               (1.0f / 10000.0f)),
-        display_scaling_factor_from_10000_nits_(
-            1.0f / display_scaling_factor_to_10000_nits_) {}
+        display_scaling_factor_from_10000_nits_(10000.0f /
+                                                display_intensity_target) {}
 
   // EOTF (defines the PQ approach). e = encoded.
   JXL_INLINE double DisplayFromEncoded(double e) const {
