@@ -525,3 +525,23 @@ endif ()
 
 # Binary tools
 add_subdirectory(tools)
+
+
+macro(list_test_targets out dir)
+  get_property(dir_targets DIRECTORY ${dir} PROPERTY BUILDSYSTEM_TARGETS)
+  foreach(target ${dir_targets})
+    if (target MATCHES ".*_test")
+      list(APPEND ${out} ${target})
+    endif()
+  endforeach()
+  get_property(subdirectories DIRECTORY ${dir} PROPERTY SUBDIRECTORIES)
+  foreach(subdir ${subdirectories})
+    list_test_targets(${out} ${subdir})
+  endforeach()
+endmacro()
+
+set(all_tests_list)
+list_test_targets(all_tests_list ${CMAKE_CURRENT_SOURCE_DIR})
+
+add_custom_target(all_tests)
+add_dependencies(all_tests ${all_tests_list})
