@@ -17,6 +17,7 @@ permissions:
 
 jobs:
   update:
+    if: github.repository_owner == 'libjxl'
     runs-on: ubuntu-latest
 
     steps:
@@ -41,7 +42,7 @@ jobs:
           git config user.name "GitHub Actions - update submodules"
           git add --all
           git commit -m "Update highway submodule" || echo "No changes to commit"
-      
+
       - name: Push changes
         uses: ad-m/github-push-action@40bf560936a8022e68a3c00e7d2abefaf01305a6 # v0.6.0
         with:
