@@ -274,8 +274,8 @@ class TF_PQ {
   static constexpr double kC2 = (2413.0 / 4096) * 32;
   static constexpr double kC3 = (2392.0 / 4096) * 32;
 
-  float display_scaling_factor_to_10000_nits_ = 0.0;
-  float display_scaling_factor_from_10000_nits_ = 0.0;
+  const float display_scaling_factor_to_10000_nits_;
+  const float display_scaling_factor_from_10000_nits_;
 };
 
 // sRGB
