@@ -165,7 +165,7 @@ class TF_709 {
 // Perceptual Quantization
 class TF_PQ {
  public:
-  explicit TF_PQ(float display_intensity_target = 255.0)
+  explicit TF_PQ(float display_intensity_target)
       : display_scaling_factor_to_10000_nits_(display_intensity_target *
                                               (1.0f / 10000.0f)),
         display_scaling_factor_from_10000_nits_(10000.0f /
@@ -274,8 +274,8 @@ class TF_PQ {
   static constexpr double kC2 = (2413.0 / 4096) * 32;
   static constexpr double kC3 = (2392.0 / 4096) * 32;
 
-  const float display_scaling_factor_to_10000_nits_;
-  const float display_scaling_factor_from_10000_nits_;
+  const float display_scaling_factor_to_10000_nits_ = 0.0;
+  const float display_scaling_factor_from_10000_nits_ = 0.0;
 };
 
 // sRGB
