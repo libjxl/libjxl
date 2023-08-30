@@ -18,6 +18,7 @@ env:
 
 jobs:
   mirror:
+    if: github.repository_owner == 'libjxl'
     runs-on: ubuntu-latest
 
     steps:
