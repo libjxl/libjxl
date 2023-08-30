@@ -22,15 +22,14 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  cross_compile_ubuntu:
-    name: Cross-compiling ${{ matrix.identifier }} - ${{ matrix.shard_number }}/4
+  compile:
+    name: Cross-compiling ${{ matrix.identifier }}
     runs-on: [ubuntu-22.04]
     container:
       image: debian:bullseye
     strategy:
       fail-fast: false
       matrix:
-        shard_number: [0, 1, 2, 3]
         identifier: [arm64, arm64-sve, arm64-lowprecision, armhf, i386]
         include:
           - arch: arm64
@@ -70,7 +69,7 @@ jobs:
 
     env:
       BUILD_DIR: build
-      WILL_RUN_TESTS: ${{ (github.event_name == 'push' || (github.event_name == 'pull_request' && (matrix.test_in_pr || contains(github.event.pull_request.labels.*.name, 'CI:full')))) && !matrix.disable_tests }}
+      WILL_RUN_TESTS: ${{ (github.event_name == 'push' || (github.event_name == 'pull_request' && (matrix.test_in_pr || contains(github.event.pull_request.labels.*.name, 'CI:full')))) }}
 
     steps:
     - name: Setup apt
@@ -116,6 +115,7 @@ jobs:
           ninja-build
           pkg-config
           qemu-user-static
+          unzip
           xdg-utils
           xvfb
 
@@ -159,11 +159,13 @@ jobs:
         DEBIAN_FRONTEND=noninteractive apt install -y "${pkgs[@]}"
         echo "CC=${{ matrix.c_compiler || 'clang-11' }}" >> $GITHUB_ENV
         echo "CXX=${{ matrix.cxx_compiler || 'clang++-11' }}" >> $GITHUB_ENV
+
     - name: Checkout the source
       uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac # v4.0.0
       with:
         submodules: true
         fetch-depth: 1
+
     - name: Build
       run: |
         CMAKE_FLAGS="${{ matrix.cmake_flags }}" ./ci.sh release \
@@ -173,16 +175,157 @@ jobs:
       env:
         SKIP_TEST: 1
         BUILD_TARGET: ${{ matrix.build_target }}
-    - name: Build stats ${{ matrix.build_target }}
+        TARGETS: ${{ env.WILL_RUN_TESTS == 'true' && 'all_tests cjxl djxl libjxl.so libjxl_dec.so' || 'all' }}
+
+    - name: Build stats
       run: |
         tools/scripts/build_stats.py --save build/stats.json \
           --binutils ${{ matrix.build_target }}- \
           --max-stack ${{ matrix.max_stack || '0' }} \
           cjxl djxl libjxl.so libjxl_dec.so
-    # Run the tests on push and when requested in pull_request.
-    - name: Test
+
+    - name: Cleanup
       if: env.WILL_RUN_TESTS == 'true'
       run: |
-        ./ci.sh test -I ${{ matrix.shard_number }},,4
-      env:
-        BUILD_TARGET: ${{ matrix.build_target }}
+        find ./build -regextype egrep -type f -regex '.*\.(a|h|jar|log|o)'
+        find ./build -type f -executable > executable.lst
+
+    - name: Test ranging
+      if: ${{ !matrix.disable_tests }}
+      run: |
+          mkdir -p ./build/Testing/Temporary
+          unzip ./tools/scripts/test_cost-${{ matrix.identifier }}.zip -d ./build/Testing/Temporary
+
+    - uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
+      if: env.WILL_RUN_TESTS == 'true'
+      with:
+        name: cross_binary-${{ matrix.identifier }}
+        path: |
+          build/
+          ci.sh
+          executable.lst
+          testdata/
+        retention-days: 1
+
+  test:
+    name: Testing ${{ matrix.identifier }} shard ${{ matrix.shard_number }}
+    needs: compile
+    runs-on: [ubuntu-22.04]
+    container:
+      image: debian:bullseye
+    strategy:
+      fail-fast: false
+      matrix:
+        shard_number: [0, 1, 2, 3, 4, 5, 6, 7]
+        identifier: [arm64, arm64-lowprecision, armhf, i386]
+        include:
+          - arch: arm64
+          - identifier: arm64
+            last_shard: 8
+
+          #- arch: arm64
+          #- identifier: arm64-sve
+          #  last_shard: 4
+
+          - arch: arm64
+            identifier: arm64-lowprecision
+            last_shard: 8
+
+          - arch: armhf
+            identifier: armhf
+            last_shard: 8
+
+          - arch: i386
+            identifier: i386
+            test_in_pr: true
+            last_shard: 1
+
+    env:
+      BUILD_DIR: build
+      UPLOAD_TEST_COST: false
+      LAST_SHARD: ${{ false && 1 || matrix.last_shard}}
+      # Run the tests on push and when requested in pull_request.
+      WILL_RUN_TESTS: ${{ (github.event_name == 'push' || (github.event_name == 'pull_request' && (matrix.test_in_pr || contains(github.event.pull_request.labels.*.name, 'CI:full')))) }}
+
+    steps:
+    - name: Setup apt
+      if: matrix.shard_number < env.LAST_SHARD
+      shell: bash
+      run: |
+        set -x
+        rm -f /var/lib/man-db/auto-update
+        apt-get update -y
+        apt-get install -y ca-certificates debian-ports-archive-keyring
+
+        dpkg --add-architecture "${{ matrix.arch }}"
+
+        # Update the sources.list with the split of supported architectures.
+        bkplist="/etc/apt/sources.list.bkp"
+        mv /etc/apt/sources.list "${bkplist}"
+
+        newlist="/etc/apt/sources.list"
+        rm -f "${newlist}"
+
+        main_list="amd64,${{ matrix.arch }}"
+        port_list=""
+        if [[ "${{ matrix.arch }}" == "i386" ]]; then
+          main_list="amd64,i386"
+        else
+          port_list="${{ matrix.arch }}"
+        fi
+
+        grep -v -E '^#' "${bkplist}" |
+          sed -E "s;^deb (http[^ ]+) (.*)\$;deb [arch=${main_list}] \\1 \\2\ndeb-src [arch=${main_list}] \\1 \\2;" \
+          | tee -a "${newlist}"
+
+    - name: Install build deps
+      if: matrix.shard_number < env.LAST_SHARD
+      shell: bash
+      run: |
+        set -x
+        apt update
+        pkgs=(
+          # Build dependencies
+          cmake
+          qemu-user-static
+
+          # Dependencies
+          libbrotli-dev:${{ matrix.arch }}
+          libgif-dev:${{ matrix.arch }}
+          libjpeg-dev:${{ matrix.arch }}
+          libpng-dev:${{ matrix.arch }}
+          libwebp-dev:${{ matrix.arch }}
+
+          # For OpenEXR:
+          libilmbase-dev:${{ matrix.arch }}
+          libopenexr-dev:${{ matrix.arch }}
+        )
+        DEBIAN_FRONTEND=noninteractive apt install -y "${pkgs[@]}"
+
+    - uses: actions/download-artifact@9bc31d5ccc31df68ecc42ccf4149144866c47d8a # v3.0.2
+      if: (matrix.shard_number < env.LAST_SHARD)
+      with:
+        name: cross_binary-${{ matrix.identifier }}
+
+    - name: Prepare
+      if: (env.UPLOAD_TEST_COST == 'true') && (matrix.shard_number == 0)
+      run: |
+        rm build/Testing/Temporary/CTestCostData.txt
+
+    - name: Test
+      if: (matrix.shard_number < env.LAST_SHARD) && (env.WILL_RUN_TESTS == 'true')
+      run: |
+        chmod +x ./ci.sh
+        chmod +x `cat executable.lst`
+        ./ci.sh test \
+          -I ${{ matrix.shard_number }},,${{ env.LAST_SHARD }} \
+          -E '(bash_test|conformance_tooling_test|test_jxl_jni_wrapper)'
+
+    - uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
+      name: Upload test cost
+      if: (env.UPLOAD_TEST_COST == 'true') && (matrix.shard_number == 0) && (env.WILL_RUN_TESTS == 'true')
+      with:
+        name: test_cost-${{ matrix.identifier }}
+        path: |
+          build/Testing/Temporary/CTestCostData.txt
+        retention-days: 1
