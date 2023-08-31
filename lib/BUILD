@@ -97,6 +97,17 @@ genrule(
     compatible_with = DEFAULT_COMPATIBILITY,
 )
 
+
+JXL_CMS_EXPORT_H = INCLUDES_DIR + "/jxl/jxl_cms_export.h"
+
+genrule(
+    name = "create_jxl_cms_export",
+    outs = [JXL_CMS_EXPORT_H],
+    cmd = "echo '" + EXPORT_TEMPLATE.replace("@", "JXL_CMS") + "' > $@",
+    compatible_with = DEFAULT_COMPATIBILITY,
+)
+
+
 JXL_THREADS_EXPORT_H = INCLUDES_DIR + "/jxl/jxl_threads_export.h"
 
 genrule(
