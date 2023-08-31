@@ -34,7 +34,6 @@ libjxl_cms_sources = [
     "jxl/jxl_cms.cc",
     "jxl/jxl_cms.h",
     "jxl/jxl_skcms.h",
-    "jxl/jxl_cms_export.h"
 ]
 
 libjxl_codec_apng_sources = [
