@@ -14,13 +14,17 @@
 @addtogroup libjxl
 @{
 
-@defgroup libjxl_decoder JPEG XL Decoder
+@defgroup libjxl_decoder JPEG XL Decoder API
 
-@defgroup libjxl_encoder JPEG XL Encoder
+@defgroup libjxl_encoder JPEG XL Encoder API
 
-@defgroup libjxl_common JPEG XL common definitions
+@defgroup libjxl_common Common API concepts
 
-@defgroup libjxl_butteraugli Butteraugli metric
+@defgroup libjxl_metadata Image and frame metadata
+
+@defgroup libjxl_color Color encoding and conversion
+
+@defgroup libjxl_cpp C++ helpers
 
 @}
 
