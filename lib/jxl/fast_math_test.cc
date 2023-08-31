@@ -143,10 +143,11 @@ HWY_NOINLINE void TestFastPQEFD() {
   Rng rng(1);
   float max_abs_err = 0;
   HWY_FULL(float) d;
+  TF_PQ tf_pq(/*display_intensity_target=*/11111.0);
   for (size_t i = 0; i < kNumTrials; i++) {
     const float f = rng.UniformF(0.0f, 1.0f);
-    const float actual = GetLane(TF_PQ().EncodedFromDisplay(d, Set(d, f)));
-    const float expected = TF_PQ().EncodedFromDisplay(f);
+    const float actual = GetLane(tf_pq.EncodedFromDisplay(d, Set(d, f)));
+    const float expected = tf_pq.EncodedFromDisplay(f);
     const float abs_err = std::abs(expected - actual);
     EXPECT_LT(abs_err, 7e-7) << "f = " << f;
     max_abs_err = std::max(max_abs_err, abs_err);
@@ -191,10 +192,11 @@ HWY_NOINLINE void TestFastPQDFE() {
   Rng rng(1);
   float max_abs_err = 0;
   HWY_FULL(float) d;
+  TF_PQ tf_pq(/*display_intensity_target=*/11111.0);
   for (size_t i = 0; i < kNumTrials; i++) {
     const float f = rng.UniformF(0.0f, 1.0f);
-    const float actual = GetLane(TF_PQ().DisplayFromEncoded(d, Set(d, f)));
-    const float expected = TF_PQ().DisplayFromEncoded(f);
+    const float actual = GetLane(tf_pq.DisplayFromEncoded(d, Set(d, f)));
+    const float expected = tf_pq.DisplayFromEncoded(f);
     const float abs_err = std::abs(expected - actual);
     EXPECT_LT(abs_err, 3E-6) << "f = " << f;
     max_abs_err = std::max(max_abs_err, abs_err);
