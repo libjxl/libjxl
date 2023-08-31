@@ -125,7 +125,7 @@ def SplitLibFiles(repo_files):
   # TODO(eustas): rename butteraugli_wrapper.cc to butteraugli.cc?
   # TODO(eustas): is it possible to make butteraugli more standalone?
   enc_sources, lib_srcs = Filter(lib_srcs, ContainsFn('/enc_', '/butteraugli',
-    'jxl/encode.cc', 'jxl/encode_internal.h'
+    'jxl/encode.cc', 'jxl/encode_internal.h', 'jxl/convolve_separable', 'jxl/gauss_blur.'
   ))
 
   # The remaining of the files are in the dec_library.
