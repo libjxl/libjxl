@@ -107,6 +107,8 @@ class Rec2408ToneMapper {
   const float green_Y_;
   const float blue_Y_;
 
+  const TF_PQ tf_pq_ = TF_PQ(/*display_intensity_target=*/1.0);
+
   const float pq_mastering_min_ = InvEOTF(source_range_.first);
   const float pq_mastering_max_ = InvEOTF(source_range_.second);
   const float pq_mastering_range_ = pq_mastering_max_ - pq_mastering_min_;
@@ -123,8 +125,6 @@ class Rec2408ToneMapper {
 
   const float normalizer_ = source_range_.second / target_range_.second;
   const float inv_target_peak_ = 1.f / target_range_.second;
-
-  const TF_PQ tf_pq_ = TF_PQ(/*display_intensity_target=*/1.0);
 };
 
 class HlgOOTF {
