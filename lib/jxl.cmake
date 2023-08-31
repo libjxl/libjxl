@@ -179,6 +179,8 @@ target_include_directories(jxl-static PUBLIC
 # use dllimport in tests and other tools that require the static library.
 target_compile_definitions(jxl-static INTERFACE -DJXL_EXPORT=)
 target_compile_definitions(jxl_dec-static INTERFACE -DJXL_EXPORT=)
+target_compile_definitions(jxl-static INTERFACE -DJXL_CMS_EXPORT=)
+target_compile_definitions(jxl_dec-static INTERFACE -DJXL_CMS_EXPORT=)
 
 # TODO(deymo): Move TCMalloc linkage to the tools/ directory since the library
 # shouldn't do any allocs anyway.
