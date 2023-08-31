@@ -165,7 +165,10 @@ copy_file(
 
 cc_library(
     name = "includes",
-    hdrs = libjxl_public_headers + [JXL_EXPORT_H, JXL_CMS_EXPORT_H],
+    hdrs = libjxl_public_headers + [
+        JXL_EXPORT_H,
+        JXL_CMS_EXPORT_H,
+    ],
     compatible_with = DEFAULT_COMPATIBILITY,
     strip_include_prefix = INCLUDES_DIR,
     deps = [":jxl_version"],
