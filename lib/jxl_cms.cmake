@@ -25,12 +25,12 @@ generate_export_header(jxl_cms_export
 
 add_library(jxl_cms OBJECT
   ${JPEGXL_INTERNAL_CMS_SOURCES}
-  $<TARGET_OBJECTS:hwy>
 )
 
 target_compile_options(jxl_cms PRIVATE "${JPEGXL_INTERNAL_FLAGS}")
 set_target_properties(jxl_cms PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_link_libraries(jxl_cms PRIVATE jxl_includes)
+target_link_libraries(jxl_cms INTERFACE hwy)
 target_include_directories(jxl_cms PRIVATE $<TARGET_PROPERTY:hwy,INCLUDE_DIRECTORIES>)
 add_dependencies(jxl_cms jxl_cms_export)
 
