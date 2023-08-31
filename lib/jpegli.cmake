@@ -89,7 +89,6 @@ foreach (TESTFILE IN LISTS JPEGXL_INTERNAL_JPEGLI_TESTS)
   target_link_libraries(${TESTNAME}
     hwy
     jpegli-static
-    jxl_cms
     gmock
     GTest::GTest
     GTest::Main
