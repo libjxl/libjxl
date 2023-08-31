@@ -9,7 +9,6 @@
 #include <setjmp.h>
 #include <stdint.h>
 
-#include "jxl/cms_interface.h"
 #include "lib/extras/enc/encode.h"
 #include "lib/jpegli/encode.h"
 #include "lib/jxl/enc_xyb.h"
