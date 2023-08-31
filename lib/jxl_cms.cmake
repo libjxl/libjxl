@@ -30,7 +30,7 @@ add_library(jxl_cms OBJECT
 
 target_compile_options(jxl_cms PRIVATE "${JPEGXL_INTERNAL_FLAGS}")
 set_target_properties(jxl_cms PROPERTIES POSITION_INDEPENDENT_CODE ON)
-target_include_directories(jxl_cms PRIVATE $<TARGET_PROPERTY:jxl_includes,INCLUDE_DIRECTORIES>)
+target_link_directories(jxl_cms PRIVATE jxl_includes)
 add_dependencies(jxl_cms jxl_cms_export)
 
 target_include_directories(jxl_cms PUBLIC
