@@ -161,6 +161,7 @@ add_library(jxl_extras_codec-static STATIC
 target_link_libraries(jxl_extras_codec-static PRIVATE
   ${JXL_EXTRAS_CODEC_INTERNAL_LIBRARIES}
   jxl
+  jxl_cms
 )
 
 ### Shared library that does not depend on internal parts of jxl library.
