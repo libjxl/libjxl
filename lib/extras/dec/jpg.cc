@@ -266,7 +266,7 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes,
     ppf->info.bits_per_sample = BITS_IN_JSAMPLE;
     JXL_ASSERT(BITS_IN_JSAMPLE == 8 || BITS_IN_JSAMPLE == 16);
     ppf->info.exponent_bits_per_sample = 0;
-    ppf->info.uses_original_profile = true;
+    ppf->info.uses_original_profile = 1;
 
     // No alpha in JPG
     ppf->info.alpha_bits = 0;
@@ -278,7 +278,7 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes,
     if (dparams && dparams->num_colors > 0) {
       cinfo.quantize_colors = TRUE;
       cinfo.desired_number_of_colors = dparams->num_colors;
-      cinfo.two_pass_quantize = dparams->two_pass_quant;
+      cinfo.two_pass_quantize = static_cast<boolean>(dparams->two_pass_quant);
       cinfo.dither_mode = (J_DITHER_MODE)dparams->dither_mode;
     }
 

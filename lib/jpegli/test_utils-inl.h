@@ -212,8 +212,8 @@ void SetScanDecompressParams(const DecompressParams& dparams,
 
 void SetDecompressParams(const DecompressParams& dparams,
                          j_decompress_ptr cinfo) {
-  cinfo->do_block_smoothing = dparams.do_block_smoothing;
-  cinfo->do_fancy_upsampling = dparams.do_fancy_upsampling;
+  cinfo->do_block_smoothing = static_cast<boolean>(dparams.do_block_smoothing);
+  cinfo->do_fancy_upsampling = static_cast<boolean>(dparams.do_fancy_upsampling);
   if (dparams.output_mode == RAW_DATA) {
     cinfo->raw_data_out = TRUE;
   }
@@ -225,7 +225,7 @@ void SetDecompressParams(const DecompressParams& dparams,
   }
   cinfo->scale_num = dparams.scale_num;
   cinfo->scale_denom = dparams.scale_denom;
-  cinfo->quantize_colors = dparams.quantize_colors;
+  cinfo->quantize_colors = static_cast<boolean>(dparams.quantize_colors);
   cinfo->desired_number_of_colors = dparams.desired_number_of_colors;
   if (!dparams.scan_params.empty()) {
     if (cinfo->buffered_image) {
@@ -420,7 +420,7 @@ void CopyCoefficients(j_decompress_ptr cinfo, jvirt_barray_ptr* coef_arrays,
                               DCTSIZE2);
     for (size_t by = 0; by < comp->height_in_blocks; ++by) {
       JBLOCKARRAY ba = (*cinfo->mem->access_virt_barray)(comptr, coef_arrays[c],
-                                                         by, 1, true);
+                                                         by, 1, 1);
       size_t stride = comp->width_in_blocks * sizeof(JBLOCK);
       size_t offset = by * comp->width_in_blocks * DCTSIZE2;
       memcpy(&coeffs[offset], ba[0], stride);

@@ -69,7 +69,7 @@ struct DestinationManager {
     dst->bytes_in_buffer = dst_buf.size();
     src->next_output_byte = src_buf.data();
     src->free_in_buffer = src_buf.size();
-    return true;
+    return 1;
   }
 
   static void term_destination(j_compress_ptr cinfo) {

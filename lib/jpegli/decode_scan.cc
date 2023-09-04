@@ -427,7 +427,7 @@ void PrepareForiMCURow(j_decompress_ptr cinfo) {
     int offset = m->streaming_mode_ ? 0 : by0;
     m->coeff_rows[c] = (*cinfo->mem->access_virt_barray)(
         reinterpret_cast<j_common_ptr>(cinfo), m->coef_arrays[c], offset,
-        max_block_rows, true);
+        max_block_rows, 1);
   }
 }
 

@@ -175,7 +175,7 @@ bool EncodeJxlOneshot(const std::vector<float>& pixels, const uint32_t xsize,
 
   JxlColorEncoding color_encoding = {};
   JxlColorEncodingSetToSRGB(&color_encoding,
-                            /*is_gray=*/pixel_format.num_channels < 3);
+                            /*is_gray=*/static_cast<int>(pixel_format.num_channels < 3));
   if (JXL_ENC_SUCCESS !=
       JxlEncoderSetColorEncoding(enc.get(), &color_encoding)) {
     fprintf(stderr, "JxlEncoderSetColorEncoding failed\n");

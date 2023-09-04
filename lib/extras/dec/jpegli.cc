@@ -227,7 +227,7 @@ Status DecodeJpeg(const std::vector<uint8_t>& compressed,
     if (dparams.num_colors > 0) {
       cinfo.quantize_colors = TRUE;
       cinfo.desired_number_of_colors = dparams.num_colors;
-      cinfo.two_pass_quantize = dparams.two_pass_quant;
+      cinfo.two_pass_quantize = static_cast<boolean>(dparams.two_pass_quant);
       cinfo.dither_mode = (J_DITHER_MODE)dparams.dither_mode;
     }
 

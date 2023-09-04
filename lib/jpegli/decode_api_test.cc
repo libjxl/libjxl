@@ -299,7 +299,7 @@ void TestAPIBuffered(const CompressParams& jparams,
   EXPECT_TRUE(jpegli_start_decompress(cinfo));
   // start decompress should not read the whole input in buffered image mode
   EXPECT_FALSE(jpegli_input_complete(cinfo));
-  bool has_multiple_scans = jpegli_has_multiple_scans(cinfo);
+  bool has_multiple_scans = jpegli_has_multiple_scans(cinfo) != 0;
   EXPECT_EQ(0, cinfo->output_scan_number);
   int sos_marker_cnt = 1;  // read_header reads the first SOS marker
   while (!jpegli_input_complete(cinfo)) {
@@ -382,8 +382,8 @@ TEST(DecodeAPITest, ReuseCinfo) {
                 expected.Clear();
                 DecodeWithLibjpeg(jparams, dparams, compressed, &expected);
                 output.Clear();
-                cinfo.buffered_image = false;
-                cinfo.raw_data_out = false;
+                cinfo.buffered_image = 0;
+                cinfo.raw_data_out = 0;
                 cinfo.scale_num = cinfo.scale_denom = 1;
                 SourceManager src(compressed.data(), compressed.size(),
                                   1u << 12);

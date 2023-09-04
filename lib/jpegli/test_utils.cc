@@ -529,7 +529,7 @@ void EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
         cinfo->quant_tbl_ptrs[table.slot_idx]->sent_table = FALSE;
       } else {
         jpegli_add_quant_table(cinfo, table.slot_idx, &table.basic_table[0],
-                               table.scale_factor, table.force_baseline);
+                               table.scale_factor, static_cast<boolean>(table.force_baseline));
       }
     }
   }
@@ -545,7 +545,7 @@ void EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
     jpegli_set_progressive_level(cinfo, jparams.progressive_mode);
   }
   jpegli_set_input_format(cinfo, input.data_type, input.endianness);
-  jpegli_enable_adaptive_quantization(cinfo, jparams.use_adaptive_quantization);
+  jpegli_enable_adaptive_quantization(cinfo, static_cast<boolean>(jparams.use_adaptive_quantization));
   cinfo->restart_interval = jparams.restart_interval;
   cinfo->restart_in_rows = jparams.restart_in_rows;
   cinfo->smoothing_factor = jparams.smoothing_factor;
@@ -554,7 +554,7 @@ void EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
   } else if (jparams.optimize_coding == 0) {
     cinfo->optimize_coding = FALSE;
   }
-  cinfo->raw_data_in = !input.raw_data.empty();
+  cinfo->raw_data_in = static_cast<boolean>(!input.raw_data.empty());
   if (jparams.optimize_coding == 0 && jparams.use_flat_dc_luma_code) {
     JHUFF_TBL* tbl = cinfo->dc_huff_tbl_ptrs[0];
     memset(tbl, 0, sizeof(*tbl));
@@ -571,7 +571,7 @@ void EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
       cinfo->ac_huff_tbl_ptrs[0]->sent_table = TRUE;
       cinfo->ac_huff_tbl_ptrs[1]->sent_table = TRUE;
     }
-    jpegli_start_compress(cinfo, write_all_tables);
+    jpegli_start_compress(cinfo, static_cast<boolean>(write_all_tables));
     if (jparams.add_marker) {
       jpegli_write_marker(cinfo, kSpecialMarker0, kMarkerData,
                           sizeof(kMarkerData));
@@ -637,7 +637,7 @@ void EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
       jpeg_component_info* comp = &cinfo->comp_info[c];
       for (size_t by = 0; by < comp->height_in_blocks; ++by) {
         JBLOCKARRAY ba = (*cinfo->mem->access_virt_barray)(
-            comptr, coef_arrays[c], by, 1, true);
+            comptr, coef_arrays[c], by, 1, 1);
         size_t stride = comp->width_in_blocks * sizeof(JBLOCK);
         size_t offset = by * comp->width_in_blocks * DCTSIZE2;
         memcpy(ba[0], &input.coeffs[c][offset], stride);
