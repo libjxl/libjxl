@@ -146,7 +146,9 @@ target_link_libraries(jxl_extras-static PUBLIC
   ${JXL_EXTRAS_CODEC_INTERNAL_LIBRARIES}
   jxl-static
   jxl_threads-static
+  jxl_cms
 )
+
 if(JPEGXL_ENABLE_JPEGLI)
   target_compile_definitions(jxl_extras-static PUBLIC -DJPEGXL_ENABLE_JPEGLI=1)
   target_link_libraries(jxl_extras-static PRIVATE jpegli-static)
