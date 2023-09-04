@@ -111,7 +111,6 @@ jobs:
         os:
         - ubuntu:22.04
         - ubuntu:20.04
-        - ubuntu:18.04
         - debian:buster
         - debian:bullseye
         - debian:bookworm
@@ -139,40 +138,6 @@ jobs:
           build-essential \
           devscripts \
         #
-
-    - name: Install git (only 18.04)
-      if: matrix.os == 'ubuntu:18.04'
-        # Ubuntu 18.04 ships with git 2.17 but we need 2.18 or newer for
-        # actions/checkout@v2 to work
-      shell: 'bash'
-      run: |
-        apt install -y \
-          libcurl4-openssl-dev \
-          libexpat1-dev \
-          libssl-dev \
-          wget \
-          zlib1g-dev \
-        #
-        git_version="2.32.0"
-        wget -nv \
-          "https://github.com/git/git/archive/refs/tags/v${git_version}.tar.gz"
-        tar -zxf "v${git_version}.tar.gz"
-        cd "git-${git_version}"
-        make prefix=/usr -j4 install
-
-    - name: Install gcc-8 (only 18.04)
-      if: matrix.os == 'ubuntu:18.04'
-        # Compiler bug workaround: install and use gcc-8
-      shell: 'bash'
-      run: |
-        apt install -y \
-          gcc-8 \
-          g++-8 \
-        #
-        update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-8 100
-        update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-8 100
-        update-alternatives --set g++ /usr/bin/g++-8
-        update-alternatives --set gcc /usr/bin/gcc-8
 
     - name: Set git safe dir
       run: |
@@ -212,32 +177,12 @@ jobs:
           dch -M --distribution unstable --release ''
         fi
 
-    - name: Install gtest (only 18.04)
-      if: matrix.os == 'ubuntu:18.04'
-        # In Ubuntu 18.04 no package installed the libgtest.a. libgtest-dev
-        # installs the source files only.
-      run: |
-        apt install -y libgtest-dev cmake
-        for prj in googletest googlemock; do
-          (cd /usr/src/googletest/${prj}/ &&
-           cmake CMakeLists.txt -DCMAKE_INSTALL_PREFIX=/usr &&
-           make all install)
-        done
-        # Remove libgmock-dev dependency in Ubuntu 18.04. It doesn't exist there.
-        sed '/libgmock-dev,/d' -i debian/control
-
     - name: Install gmock-dev (debian:sid)
       # gtest-dev cmake depends on gmock-dev, but it is not installed by the
       # package.
       if: matrix.os == 'debian:sid'
       run: |
         apt install -y libgmock-dev
-
-    - name: Remove libjxl-gimp-plugin package (only 18.04)
-      if: matrix.os == 'ubuntu:18.04'
-      run: |
-        # Gimp 2.8 is not supported.
-        sed -i '/Package: libjxl-gimp-plugin/,/^$/d' debian/control
 
     - name: Configure hwy
       if: ${{ github.event_name == 'schedule' || github.event_name == 'release' || contains(github.event.pull_request.labels.*.name, 'CI:full') }}
