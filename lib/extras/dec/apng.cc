@@ -734,8 +734,18 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
             ppf->info.num_color_channels = 3;
             ppf->color_encoding.color_space = JXL_COLOR_SPACE_RGB;
             if (sigbits && sigbits->red == sigbits->green &&
-                sigbits->green == sigbits->blue)
+                sigbits->green == sigbits->blue) {
               ppf->info.bits_per_sample = sigbits->red;
+            } else if (sigbits) {
+              int maxbps = std::max(sigbits->red,
+                                    std::max(sigbits->green, sigbits->blue));
+              JXL_WARNING(
+                  "sBIT chunk: bit depths for R, G, and B are not the same (%i "
+                  "%i %i), while in JPEG XL they have to be the same. Setting "
+                  "RGB bit depth to %i.",
+                  sigbits->red, sigbits->green, sigbits->blue, maxbps);
+              ppf->info.bits_per_sample = maxbps;
+            }
           } else {
             ppf->info.num_color_channels = 1;
             ppf->color_encoding.color_space = JXL_COLOR_SPACE_GRAY;
@@ -745,10 +755,6 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
               png_get_valid(png_ptr, info_ptr, PNG_INFO_tRNS)) {
             ppf->info.alpha_bits = ppf->info.bits_per_sample;
             if (sigbits) {
-              if (sigbits->alpha &&
-                  sigbits->alpha != ppf->info.bits_per_sample) {
-                return JXL_FAILURE("Unsupported alpha bit-depth");
-              }
               ppf->info.alpha_bits = sigbits->alpha;
             }
           } else {
