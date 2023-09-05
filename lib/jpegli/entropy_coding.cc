@@ -100,9 +100,9 @@ void TokenizeACProgressiveScan(j_compress_ptr cinfo, int scan_index,
   sti->token_offset = m->total_num_tokens + ta->num_tokens;
   sti->restarts = Allocate<size_t>(cinfo, num_restarts, JPOOL_IMAGE);
   for (JDIMENSION by = 0; by < comp->height_in_blocks; ++by) {
-    JBLOCKARRAY ba = (*cinfo->mem->access_virt_barray)(
-        reinterpret_cast<j_common_ptr>(cinfo), m->coeff_buffers[comp_idx], by,
-        1, 0);
+    JBLOCKARRAY ba =
+        (*cinfo->mem->access_virt_barray)(reinterpret_cast<j_common_ptr>(cinfo),
+                                          m->coeff_buffers[comp_idx], by, 1, 0);
     // Each coefficient can appear in at most one token, but we have to reserve
     // one extra EOBrun token that was rolled over from the previous block-row
     // and has to be flushed at the end.
@@ -227,9 +227,9 @@ void TokenizeACRefinementScan(j_compress_ptr cinfo, int scan_index,
   uint16_t* next_eobrun = sti->eobruns;
   size_t restart_idx = 0;
   for (JDIMENSION by = 0; by < comp->height_in_blocks; ++by) {
-    JBLOCKARRAY ba = (*cinfo->mem->access_virt_barray)(
-        reinterpret_cast<j_common_ptr>(cinfo), m->coeff_buffers[comp_idx], by,
-        1, 0);
+    JBLOCKARRAY ba =
+        (*cinfo->mem->access_virt_barray)(reinterpret_cast<j_common_ptr>(cinfo),
+                                          m->coeff_buffers[comp_idx], by, 1, 0);
     for (JDIMENSION bx = 0; bx < comp->width_in_blocks; ++bx) {
       if (restart_interval > 0 && restarts_to_go == 0) {
         sti->restarts[restart_idx++] = next_token - sti->tokens;

@@ -323,8 +323,8 @@ void ProcessCompressionParams(j_compress_ptr cinfo) {
   if (cinfo->scan_info == nullptr) {
     SetDefaultScanScript(cinfo);
   }
-  cinfo->progressive_mode =
-      static_cast<boolean>(cinfo->scan_info->Ss != 0 || cinfo->scan_info->Se != DCTSIZE2 - 1);
+  cinfo->progressive_mode = static_cast<boolean>(
+      cinfo->scan_info->Ss != 0 || cinfo->scan_info->Se != DCTSIZE2 - 1);
   ValidateScanScript(cinfo);
   m->scan_token_info =
       Allocate<ScanTokenInfo>(cinfo, cinfo->num_scans, JPOOL_IMAGE);
@@ -763,7 +763,8 @@ void jpegli_set_colorspace(j_compress_ptr cinfo, J_COLOR_SPACE colorspace) {
       JPEGLI_ERROR("Unsupported jpeg colorspace %d", colorspace);
   }
   // Adobe marker is only needed to distinguish CMYK and YCCK JPEGs.
-  cinfo->write_Adobe_marker = static_cast<boolean>(cinfo->jpeg_color_space == JCS_YCCK);
+  cinfo->write_Adobe_marker =
+      static_cast<boolean>(cinfo->jpeg_color_space == JCS_YCCK);
   if (cinfo->comp_info == nullptr) {
     cinfo->comp_info =
         jpegli::Allocate<jpeg_component_info>(cinfo, MAX_COMPONENTS);

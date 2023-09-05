@@ -115,8 +115,9 @@ void InitProgressMonitor(j_decompress_ptr cinfo, bool coef_only) {
     cinfo->progress->total_passes = 1;
   } else {
     int input_passes = !cinfo->buffered_image && m->is_multiscan_ ? 1 : 0;
-    bool two_pass_quant = (cinfo->quantize_colors != 0) && (cinfo->colormap == nullptr) &&
-                          (cinfo->two_pass_quantize != 0) && (cinfo->enable_2pass_quant != 0);
+    bool two_pass_quant =
+        (cinfo->quantize_colors != 0) && (cinfo->colormap == nullptr) &&
+        (cinfo->two_pass_quantize != 0) && (cinfo->enable_2pass_quant != 0);
     cinfo->progress->total_passes = input_passes + (two_pass_quant ? 2 : 1);
   }
   cinfo->progress->completed_passes = 0;
@@ -751,8 +752,9 @@ boolean jpegli_input_complete(j_decompress_ptr cinfo) {
 boolean jpegli_start_decompress(j_decompress_ptr cinfo) {
   jpeg_decomp_master* m = cinfo->master;
   if (cinfo->global_state == jpegli::kDecHeaderDone) {
-    m->streaming_mode_ = !m->is_multiscan_ && (cinfo->buffered_image == 0) &&
-                         ((cinfo->quantize_colors == 0) || (cinfo->two_pass_quantize == 0));
+    m->streaming_mode_ =
+        !m->is_multiscan_ && (cinfo->buffered_image == 0) &&
+        ((cinfo->quantize_colors == 0) || (cinfo->two_pass_quantize == 0));
     jpegli::AllocateCoefficientBuffer(cinfo);
     jpegli_calc_output_dimensions(cinfo);
     jpegli::PrepareForScan(cinfo);

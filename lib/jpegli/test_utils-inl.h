@@ -213,7 +213,8 @@ void SetScanDecompressParams(const DecompressParams& dparams,
 void SetDecompressParams(const DecompressParams& dparams,
                          j_decompress_ptr cinfo) {
   cinfo->do_block_smoothing = static_cast<boolean>(dparams.do_block_smoothing);
-  cinfo->do_fancy_upsampling = static_cast<boolean>(dparams.do_fancy_upsampling);
+  cinfo->do_fancy_upsampling =
+      static_cast<boolean>(dparams.do_fancy_upsampling);
   if (dparams.output_mode == RAW_DATA) {
     cinfo->raw_data_out = TRUE;
   }
@@ -419,8 +420,8 @@ void CopyCoefficients(j_decompress_ptr cinfo, jvirt_barray_ptr* coef_arrays,
     std::vector<JCOEF> coeffs(comp->width_in_blocks * comp->height_in_blocks *
                               DCTSIZE2);
     for (size_t by = 0; by < comp->height_in_blocks; ++by) {
-      JBLOCKARRAY ba = (*cinfo->mem->access_virt_barray)(comptr, coef_arrays[c],
-                                                         by, 1, 1);
+      JBLOCKARRAY ba =
+          (*cinfo->mem->access_virt_barray)(comptr, coef_arrays[c], by, 1, 1);
       size_t stride = comp->width_in_blocks * sizeof(JBLOCK);
       size_t offset = by * comp->width_in_blocks * DCTSIZE2;
       memcpy(&coeffs[offset], ba[0], stride);
