@@ -112,6 +112,7 @@ jobs:
       WILL_BENCH: ${{ matrix.name == 'release' || (github.event_name == 'push' && matrix.mode == 'release') }}
       WILL_DOC: ${{ matrix.name == 'release' }}
       WILL_COV: ${{ github.event_name == 'push' && matrix.name == 'coverage' }}
+      JPEGXL_OPT_DBG: true
 
     steps:
     - name: Install build deps

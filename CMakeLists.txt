@@ -357,6 +357,11 @@ else ()
 
   # Force build with optimizations in release mode.
   set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O2")
+  # Also optimize debug build; this is "unofficial", so it goes through ENV
+  if(DEFINED ENV{JPEGXL_OPT_DBG})
+    # Not the same thing as release_with_debug
+    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O2")
+  endif()
 
   add_compile_options(
     # Ignore this to allow redefining __DATE__ and others.
