@@ -188,7 +188,8 @@ struct CompressArgs {
     opt_lossless_jpeg_id = cmdline->AddOptionValue(
         'j', "lossless_jpeg", "0|1",
         "If the input is JPEG, losslessly transcode JPEG, "
-        "rather than using reencode pixels.",
+        "rather than using reencode pixels. Default is 1 (losslessly "
+        "transcode)",
         &lossless_jpeg, &ParseUnsigned, 1);
 
     cmdline->AddOptionValue(
