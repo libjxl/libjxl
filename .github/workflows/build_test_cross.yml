@@ -249,7 +249,7 @@ jobs:
 
     steps:
     - name: Setup apt
-      if: matrix.shard_number < env.LAST_SHARD
+      if: (matrix.shard_number < env.LAST_SHARD) && (env.WILL_RUN_TESTS == 'true')
       shell: bash
       run: |
         set -x
@@ -279,7 +279,7 @@ jobs:
           | tee -a "${newlist}"
 
     - name: Install build deps
-      if: matrix.shard_number < env.LAST_SHARD
+      if: (matrix.shard_number < env.LAST_SHARD) && (env.WILL_RUN_TESTS == 'true')
       shell: bash
       run: |
         set -x
@@ -303,12 +303,12 @@ jobs:
         DEBIAN_FRONTEND=noninteractive apt install -y "${pkgs[@]}"
 
     - uses: actions/download-artifact@9bc31d5ccc31df68ecc42ccf4149144866c47d8a # v3.0.2
-      if: (matrix.shard_number < env.LAST_SHARD)
+      if: (matrix.shard_number < env.LAST_SHARD) && (env.WILL_RUN_TESTS == 'true')
       with:
         name: cross_binary-${{ matrix.identifier }}
 
     - name: Prepare
-      if: (env.UPLOAD_TEST_COST == 'true') && (matrix.shard_number == 0)
+      if: (env.UPLOAD_TEST_COST == 'true') && (matrix.shard_number == 0) && (env.WILL_RUN_TESTS == 'true')
       run: |
         rm build/Testing/Temporary/CTestCostData.txt
 
