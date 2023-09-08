@@ -15,9 +15,9 @@
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/random.h"
-#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_xyb.h"
 #include "lib/jxl/image_test_utils.h"
+#include "lib/jxl/jxl_cms.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"
 
@@ -156,7 +156,7 @@ class ColorManagementTest
   static void VerifyPixelRoundTrip(const ColorEncoding& c) {
     Globals* g = Globals::GetInstance();
     const ColorEncoding& c_native = c.IsGray() ? g->c_gray : g->c_native;
-    const JxlCmsInterface& cms = GetJxlCms();
+    const JxlCmsInterface& cms = *JxlGetDefaultCms();
     ColorSpaceTransform xform_fwd(cms);
     ColorSpaceTransform xform_rev(cms);
     const float intensity_target =
@@ -172,14 +172,10 @@ class ColorManagementTest
     ASSERT_TRUE(xform_fwd.Run(thread, in.Row(0), xform_fwd.BufDst(thread)));
     ASSERT_TRUE(xform_rev.Run(thread, xform_fwd.BufDst(thread), out->Row(0)));
 
-#if JPEGXL_ENABLE_SKCMS
+    // With lcms2, this value is lower: 5E-5
     double max_l1 = 7E-4;
-    double max_rel = 4E-7;
-#else
-    double max_l1 = 5E-5;
     // Most are lower; reached 3E-7 with D60 AP0.
     double max_rel = 4E-7;
-#endif
     if (c.IsGray()) max_rel = 2E-5;
     JXL_ASSERT_OK(VerifyRelativeError(in, *out, max_l1, max_rel, _));
   }
@@ -199,7 +195,7 @@ TEST_P(ColorManagementTest, VerifyAllProfiles) {
 
   // Can set an equivalent ColorEncoding from the generated ICC profile.
   ColorEncoding c3;
-  ASSERT_TRUE(c3.SetICC(PaddedBytes(c.ICC()), &GetJxlCms()));
+  ASSERT_TRUE(c3.SetICC(PaddedBytes(c.ICC()), JxlGetDefaultCms()));
   EXPECT_THAT(c3, HasSameFieldsAs(c));
 
   VerifyPixelRoundTrip(c);
@@ -232,7 +228,7 @@ TEST_F(ColorManagementTest, D2700Chromaticity) {
   PaddedBytes icc =
       jxl::test::ReadTestData("jxl/color_management/sRGB-D2700.icc");
   ColorEncoding sRGB_D2700;
-  ASSERT_TRUE(sRGB_D2700.SetICC(std::move(icc), &GetJxlCms()));
+  ASSERT_TRUE(sRGB_D2700.SetICC(std::move(icc), JxlGetDefaultCms()));
 
   EXPECT_THAT(sRGB_D2700.GetWhitePoint(), CIExyIs(0.45986, 0.41060));
   // The illuminant-relative chromaticities of this profile's primaries are the
@@ -244,7 +240,7 @@ TEST_F(ColorManagementTest, D2700Chromaticity) {
 }
 
 TEST_F(ColorManagementTest, D2700ToSRGB) {
-  const JxlCmsInterface& cms = GetJxlCms();
+  const JxlCmsInterface& cms = *JxlGetDefaultCms();
   PaddedBytes icc =
       jxl::test::ReadTestData("jxl/color_management/sRGB-D2700.icc");
   ColorEncoding sRGB_D2700;
@@ -273,7 +269,7 @@ TEST_F(ColorManagementTest, P3HlgTo2020Hlg) {
   rec2020_hlg.primaries = Primaries::k2100;
   ASSERT_TRUE(rec2020_hlg.CreateICC());
 
-  ColorSpaceTransform transform(GetJxlCms());
+  ColorSpaceTransform transform(*JxlGetDefaultCms());
   ASSERT_TRUE(transform.Init(p3_hlg, rec2020_hlg, 1000, 1, 1));
   const float p3_hlg_values[3] = {0., 0.75, 0.};
   float rec2020_hlg_values[3];
@@ -291,7 +287,7 @@ TEST_F(ColorManagementTest, HlgOotf) {
   p3_hlg.tf.SetTransferFunction(TransferFunction::kHLG);
   ASSERT_TRUE(p3_hlg.CreateICC());
 
-  ColorSpaceTransform transform_to_1000(GetJxlCms());
+  ColorSpaceTransform transform_to_1000(*JxlGetDefaultCms());
   ASSERT_TRUE(
       transform_to_1000.Init(p3_hlg, ColorEncoding::LinearSRGB(), 1000, 1, 1));
   // HDR reference white: https://www.itu.int/pub/R-REP-BT.2408-4-2021
@@ -304,7 +300,7 @@ TEST_F(ColorManagementTest, HlgOotf) {
               ElementsAre(FloatNear(0.203, 1e-3), FloatNear(0.203, 1e-3),
                           FloatNear(0.203, 1e-3)));
 
-  ColorSpaceTransform transform_to_400(GetJxlCms());
+  ColorSpaceTransform transform_to_400(*JxlGetDefaultCms());
   ASSERT_TRUE(
       transform_to_400.Init(p3_hlg, ColorEncoding::LinearSRGB(), 400, 1, 1));
   ASSERT_TRUE(transform_to_400.Run(0, p3_hlg_values, linear_srgb_values));
@@ -319,7 +315,7 @@ TEST_F(ColorManagementTest, HlgOotf) {
               ElementsAre(FloatNear(0.201, 1e-3), FloatNear(0.201, 1e-3),
                           FloatNear(0.050, 1e-3)));
 
-  ColorSpaceTransform transform_from_400(GetJxlCms());
+  ColorSpaceTransform transform_from_400(*JxlGetDefaultCms());
   ASSERT_TRUE(
       transform_from_400.Init(ColorEncoding::LinearSRGB(), p3_hlg, 400, 1, 1));
   linear_srgb_values[0] = linear_srgb_values[1] = linear_srgb_values[2] = 0.250;
@@ -334,7 +330,7 @@ TEST_F(ColorManagementTest, HlgOotf) {
   grayscale_hlg.tf.SetTransferFunction(TransferFunction::kHLG);
   ASSERT_TRUE(grayscale_hlg.CreateICC());
 
-  ColorSpaceTransform grayscale_transform(GetJxlCms());
+  ColorSpaceTransform grayscale_transform(*JxlGetDefaultCms());
   ASSERT_TRUE(grayscale_transform.Init(
       grayscale_hlg, ColorEncoding::LinearSRGB(/*is_gray=*/true), 1000, 1, 1));
   const float grayscale_hlg_value = 0.75;
@@ -353,7 +349,7 @@ TEST_F(ColorManagementTest, XYBProfile) {
 
   static const size_t kGridDim = 17;
   static const size_t kNumColors = kGridDim * kGridDim * kGridDim;
-  const JxlCmsInterface& cms = GetJxlCms();
+  const JxlCmsInterface& cms = *JxlGetDefaultCms();
   ColorSpaceTransform xform(cms);
   ASSERT_TRUE(
       xform.Init(c_xyb, c_native, kDefaultIntensityTarget, kNumColors, 1));

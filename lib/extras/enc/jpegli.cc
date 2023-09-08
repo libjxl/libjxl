@@ -11,8 +11,8 @@
 
 #include "lib/extras/enc/encode.h"
 #include "lib/jpegli/encode.h"
-#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_xyb.h"
+#include "lib/jxl/jxl_cms.h"
 
 namespace jxl {
 namespace extras {
@@ -326,7 +326,7 @@ Status EncodeJpeg(const PackedPixelFile& ppf, const JpegSettings& jpeg_settings,
   }
   JXL_RETURN_IF_ERROR(VerifyInput(ppf));
 
-  const JxlCmsInterface& cms = GetJxlCms();
+  const JxlCmsInterface& cms = *JxlGetDefaultCms();
 
   ColorEncoding color_encoding;
   JXL_RETURN_IF_ERROR(GetColorEncoding(ppf, &cms, &color_encoding));

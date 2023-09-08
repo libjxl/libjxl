@@ -9,7 +9,6 @@
 #include "lib/extras/codec.h"
 #include "lib/extras/hlg.h"
 #include "lib/extras/tone_mapping.h"
-#include "lib/jxl/enc_color_management.h"
 #include "tools/args.h"
 #include "tools/cmdline.h"
 #include "tools/hdr/image_utils.h"

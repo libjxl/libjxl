@@ -30,12 +30,12 @@
 #include "lib/jxl/enc_ans.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_cache.h"
-#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_file.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/encode_internal.h"
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
+#include "lib/jxl/jxl_cms.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
 #include "tools/file_io.h"
 #include "tools/thread_pool_internal.h"
@@ -264,7 +264,7 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
   jxl::PaddedBytes compressed_image;
   bool ok =
       jxl::EncodeFile(params, &io, &passes_encoder_state, &compressed_image,
-                      jxl::GetJxlCms(), &aux_out, nullptr);
+                      *JxlGetDefaultCms(), &aux_out, nullptr);
   if (!ok) return false;
   compressed.append(compressed_image);
 

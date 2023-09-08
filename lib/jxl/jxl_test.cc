@@ -28,7 +28,6 @@
 #include "lib/jxl/color_management.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/enc_cache.h"
-#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_file.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/fake_parallel_runner_testonly.h"
@@ -40,6 +39,7 @@
 #include "lib/jxl/jpeg/dec_jpeg_data_writer.h"
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
 #include "lib/jxl/jpeg/jpeg_data.h"
+#include "lib/jxl/jxl_cms.h"
 #include "lib/jxl/modular/options.h"
 #include "lib/jxl/test_image.h"
 #include "lib/jxl/test_utils.h"
@@ -325,7 +325,7 @@ TEST(JxlTest, RoundtripRGBToGrayscale) {
   // Convert original to grayscale here, because TransformTo refuses to
   // convert between grayscale and RGB.
   ColorEncoding srgb_lin = ColorEncoding::LinearSRGB(/*is_gray=*/false);
-  ASSERT_TRUE(io.frames[0].TransformTo(srgb_lin, GetJxlCms()));
+  ASSERT_TRUE(io.frames[0].TransformTo(srgb_lin, *JxlGetDefaultCms()));
   Image3F* color = io.Main().color();
   for (size_t y = 0; y < color->ysize(); ++y) {
     float* row_r = color->PlaneRow(0, y);
@@ -337,11 +337,11 @@ TEST(JxlTest, RoundtripRGBToGrayscale) {
     }
   }
   ColorEncoding srgb_gamma = ColorEncoding::SRGB(/*is_gray=*/false);
-  ASSERT_TRUE(io.frames[0].TransformTo(srgb_gamma, GetJxlCms()));
+  ASSERT_TRUE(io.frames[0].TransformTo(srgb_gamma, *JxlGetDefaultCms()));
   io.metadata.m.color_encoding = io2.Main().c_current();
   io.Main().OverrideProfile(io2.Main().c_current());
   EXPECT_THAT(ButteraugliDistance(io.frames, io2.frames, ButteraugliParams(),
-                                  GetJxlCms(),
+                                  *JxlGetDefaultCms(),
                                   /*distmap=*/nullptr, &pool),
               IsSlightlyBelow(1.36));
 }
@@ -637,15 +637,15 @@ TEST(JxlTest, RoundtripGrayscale) {
     cparams.butteraugli_distance = 1.0;
 
     PaddedBytes compressed;
-    EXPECT_TRUE(EncodeFile(cparams, &io, &enc_state, &compressed, GetJxlCms(),
-                           aux_out));
+    EXPECT_TRUE(EncodeFile(cparams, &io, &enc_state, &compressed,
+                           *JxlGetDefaultCms(), aux_out));
     CodecInOut io2;
     EXPECT_TRUE(test::DecodeFile({}, Span<const uint8_t>(compressed), &io2));
     EXPECT_TRUE(io2.Main().IsGray());
 
     EXPECT_LE(compressed.size(), 7000u);
     EXPECT_THAT(ButteraugliDistance(io.frames, io2.frames, ButteraugliParams(),
-                                    GetJxlCms(),
+                                    *JxlGetDefaultCms(),
                                     /*distmap=*/nullptr),
                 IsSlightlyBelow(1.6));
   }
@@ -657,15 +657,15 @@ TEST(JxlTest, RoundtripGrayscale) {
     cparams.butteraugli_distance = 8.0;
 
     PaddedBytes compressed;
-    EXPECT_TRUE(EncodeFile(cparams, &io, &enc_state, &compressed, GetJxlCms(),
-                           aux_out));
+    EXPECT_TRUE(EncodeFile(cparams, &io, &enc_state, &compressed,
+                           *JxlGetDefaultCms(), aux_out));
     CodecInOut io2;
     EXPECT_TRUE(test::DecodeFile({}, Span<const uint8_t>(compressed), &io2));
     EXPECT_TRUE(io2.Main().IsGray());
 
     EXPECT_LE(compressed.size(), 1300u);
     EXPECT_THAT(ButteraugliDistance(io.frames, io2.frames, ButteraugliParams(),
-                                    GetJxlCms(),
+                                    *JxlGetDefaultCms(),
                                     /*distmap=*/nullptr),
                 IsSlightlyBelow(6.0));
   }
@@ -675,8 +675,8 @@ TEST(JxlTest, RoundtripGrayscale) {
     cparams.butteraugli_distance = 1.0;
 
     PaddedBytes compressed;
-    EXPECT_TRUE(EncodeFile(cparams, &io, &enc_state, &compressed, GetJxlCms(),
-                           aux_out));
+    EXPECT_TRUE(EncodeFile(cparams, &io, &enc_state, &compressed,
+                           *JxlGetDefaultCms(), aux_out));
 
     CodecInOut io2;
     JXLDecompressParams dparams;
@@ -687,7 +687,7 @@ TEST(JxlTest, RoundtripGrayscale) {
 
     EXPECT_LE(compressed.size(), 7000u);
     EXPECT_THAT(ButteraugliDistance(io.frames, io2.frames, ButteraugliParams(),
-                                    GetJxlCms(),
+                                    *JxlGetDefaultCms(),
                                     /*distmap=*/nullptr),
                 IsSlightlyBelow(1.6));
   }
@@ -714,8 +714,8 @@ TEST(JxlTest, RoundtripAlpha) {
   PassesEncoderState enc_state;
   AuxOut* aux_out = nullptr;
   PaddedBytes compressed;
-  EXPECT_TRUE(
-      EncodeFile(cparams, &io, &enc_state, &compressed, GetJxlCms(), aux_out));
+  EXPECT_TRUE(EncodeFile(cparams, &io, &enc_state, &compressed,
+                         *JxlGetDefaultCms(), aux_out));
 
   EXPECT_LE(compressed.size(), 10077u);
 
@@ -728,7 +728,7 @@ TEST(JxlTest, RoundtripAlpha) {
       EXPECT_TRUE(
           test::DecodeFile(dparams, Span<const uint8_t>(compressed), &io2));
       EXPECT_THAT(ButteraugliDistance(io.frames, io2.frames,
-                                      ButteraugliParams(), GetJxlCms(),
+                                      ButteraugliParams(), *JxlGetDefaultCms(),
                                       /*distmap=*/nullptr),
                   IsSlightlyBelow(1.15));
     }
@@ -805,7 +805,7 @@ TEST(JxlTest, RoundtripAlphaPremultiplied) {
 
   CompressParams cparams;
   cparams.butteraugli_distance = 1.0;
-  cparams.SetCms(GetJxlCms());
+  cparams.SetCms(*JxlGetDefaultCms());
 
   EXPECT_FALSE(io.Main().AlphaIsPremultiplied());
   EXPECT_TRUE(PremultiplyAlpha(io));
@@ -816,8 +816,8 @@ TEST(JxlTest, RoundtripAlphaPremultiplied) {
   PassesEncoderState enc_state;
   AuxOut* aux_out = nullptr;
   PaddedBytes compressed;
-  EXPECT_TRUE(
-      EncodeFile(cparams, &io, &enc_state, &compressed, GetJxlCms(), aux_out));
+  EXPECT_TRUE(EncodeFile(cparams, &io, &enc_state, &compressed,
+                         *JxlGetDefaultCms(), aux_out));
   EXPECT_LE(compressed.size(), 10000u);
 
   for (bool use_image_callback : {false, true}) {
@@ -842,17 +842,19 @@ TEST(JxlTest, RoundtripAlphaPremultiplied) {
 
         EXPECT_EQ(unpremul_alpha, !io2.Main().AlphaIsPremultiplied());
         if (!unpremul_alpha) {
-          EXPECT_THAT(ButteraugliDistance(io.frames, io2.frames,
-                                          ButteraugliParams(), GetJxlCms(),
-                                          /*distmap=*/nullptr),
-                      IsSlightlyBelow(1.111));
+          EXPECT_THAT(
+              ButteraugliDistance(io.frames, io2.frames, ButteraugliParams(),
+                                  *JxlGetDefaultCms(),
+                                  /*distmap=*/nullptr),
+              IsSlightlyBelow(1.111));
           EXPECT_TRUE(UnpremultiplyAlpha(io2));
           EXPECT_FALSE(io2.Main().AlphaIsPremultiplied());
         }
-        EXPECT_THAT(ButteraugliDistance(io_nopremul.frames, io2.frames,
-                                        ButteraugliParams(), GetJxlCms(),
-                                        /*distmap=*/nullptr),
-                    IsSlightlyBelow(1.55));
+        EXPECT_THAT(
+            ButteraugliDistance(io_nopremul.frames, io2.frames,
+                                ButteraugliParams(), *JxlGetDefaultCms(),
+                                /*distmap=*/nullptr),
+            IsSlightlyBelow(1.55));
       }
     }
   }

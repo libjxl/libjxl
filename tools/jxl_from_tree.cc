@@ -13,11 +13,11 @@
 
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/enc_cache.h"
-#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_fields.h"
 #include "lib/jxl/enc_file.h"
 #include "lib/jxl/enc_frame.h"
 #include "lib/jxl/enc_heuristics.h"
+#include "lib/jxl/jxl_cms.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
 #include "lib/jxl/modular/encoding/enc_debug_tree.h"
 #include "lib/jxl/modular/encoding/enc_ma.h"
@@ -470,7 +470,7 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
   io.SetFromImage(std::move(image), ColorEncoding::SRGB());
   io.SetSize((width + x0) * cparams.resampling,
              (height + y0) * cparams.resampling);
-  io.metadata.m.color_encoding.DecideIfWantICC(jxl::GetJxlCms());
+  io.metadata.m.color_encoding.DecideIfWantICC(*JxlGetDefaultCms());
   cparams.options.zero_tokens = true;
   cparams.palette_colors = 0;
   cparams.channel_colors_pre_transform_percent = 0;
@@ -507,7 +507,7 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
 
     JXL_RETURN_IF_ERROR(jxl::EncodeFrame(
         cparams, info, metadata.get(), io.frames[0], &enc_state,
-        jxl::GetJxlCms(), nullptr, &writer, nullptr));
+        *JxlGetDefaultCms(), nullptr, &writer, nullptr));
     if (!have_next) break;
     tree.clear();
     spline_data.splines.clear();

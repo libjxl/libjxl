@@ -610,6 +610,14 @@ Status ColorEncoding::VisitFields(Visitor* JXL_RESTRICT visitor) {
 
 void ConvertInternalToExternalColorEncoding(const ColorEncoding& internal,
                                             JxlColorEncoding* external) {
+  if (!internal.HaveFields()) {
+    external->color_space = JXL_COLOR_SPACE_UNKNOWN;
+    external->primaries = JXL_PRIMARIES_CUSTOM;
+    external->rendering_intent = JXL_RENDERING_INTENT_PERCEPTUAL;  //?
+    external->transfer_function = JXL_TRANSFER_FUNCTION_UNKNOWN;
+    external->white_point = JXL_WHITE_POINT_CUSTOM;
+    return;
+  }
   external->color_space = static_cast<JxlColorSpace>(internal.GetColorSpace());
 
   external->white_point = static_cast<JxlWhitePoint>(internal.white_point);

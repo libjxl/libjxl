@@ -19,12 +19,12 @@
 #include "lib/extras/codec.h"
 #include "lib/jxl/dec_external_image.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
-#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_comparator.h"
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/encode_internal.h"
 #include "lib/jxl/icc_codec.h"
 #include "lib/jxl/image_test_utils.h"
+#include "lib/jxl/jxl_cms.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"
 
@@ -88,7 +88,7 @@ jxl::CodecInOut ConvertTestImage(const std::vector<uint8_t>& buf,
   if (!icc_profile.empty()) {
     jxl::PaddedBytes icc_profile_copy(icc_profile);
     EXPECT_TRUE(
-        color_encoding.SetICC(std::move(icc_profile_copy), &jxl::GetJxlCms()));
+        color_encoding.SetICC(std::move(icc_profile_copy), JxlGetDefaultCms()));
   } else if (pixel_format.data_type == JXL_TYPE_FLOAT) {
     color_encoding = jxl::ColorEncoding::LinearSRGB(is_gray);
   } else {
@@ -421,7 +421,7 @@ void VerifyRoundtripCompression(
   } else {
     jxl::ButteraugliParams ba;
     float butteraugli_score = ButteraugliDistance(
-        original_io.frames, decoded_io.frames, ba, jxl::GetJxlCms(),
+        original_io.frames, decoded_io.frames, ba, *JxlGetDefaultCms(),
         /*distmap=*/nullptr, nullptr);
     EXPECT_LE(butteraugli_score, 2.0f);
   }
@@ -652,7 +652,7 @@ TEST(RoundtripTest, ExtraBoxesTest) {
 
   jxl::ButteraugliParams ba;
   float butteraugli_score = ButteraugliDistance(
-      original_io.frames, decoded_io.frames, ba, jxl::GetJxlCms(),
+      original_io.frames, decoded_io.frames, ba, *JxlGetDefaultCms(),
       /*distmap=*/nullptr, nullptr);
   EXPECT_LE(butteraugli_score, 2.0f);
 }

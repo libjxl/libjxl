@@ -323,8 +323,6 @@ set(JPEGXL_INTERNAL_ENC_SOURCES
   jxl/enc_cluster.h
   jxl/enc_coeff_order.cc
   jxl/enc_coeff_order.h
-  jxl/enc_color_management.cc
-  jxl/enc_color_management.h
   jxl/enc_comparator.cc
   jxl/enc_comparator.h
   jxl/enc_context_map.cc
@@ -362,7 +360,6 @@ set(JPEGXL_INTERNAL_ENC_SOURCES
   jxl/enc_icc_codec.h
   jxl/enc_image_bundle.cc
   jxl/enc_image_bundle.h
-  jxl/enc_jxl_skcms.h
   jxl/enc_linalg.cc
   jxl/enc_linalg.h
   jxl/enc_modular.cc
@@ -411,6 +408,9 @@ set(JPEGXL_INTERNAL_ENC_SOURCES
   jxl/modular/transform/enc_squeeze.h
   jxl/modular/transform/enc_transform.cc
   jxl/modular/transform/enc_transform.h
+  jxl/jxl_cms.cc
+  jxl/jxl_cms.h
+  jxl/jxl_skcms.h
 )
 
 set(JPEGXL_INTERNAL_EXTRAS_FOR_TOOLS_SOURCES
