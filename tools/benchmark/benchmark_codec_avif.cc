@@ -11,8 +11,8 @@
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/dec_external_image.h"
-#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_external_image.h"
+#include "lib/jxl/jxl_cms.h"
 #include "tools/cmdline.h"
 #include "tools/thread_pool_internal.h"
 
@@ -126,7 +126,7 @@ Status ReadAvifColor(const avifImage* const image, ColorEncoding* const color) {
   if (image->icc.size != 0) {
     PaddedBytes icc;
     icc.assign(image->icc.data, image->icc.data + image->icc.size);
-    return color->SetICC(std::move(icc), &jxl::GetJxlCms());
+    return color->SetICC(std::move(icc), JxlGetDefaultCms());
   }
 
   color->white_point = WhitePoint::kD65;

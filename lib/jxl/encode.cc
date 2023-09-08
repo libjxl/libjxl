@@ -22,7 +22,6 @@
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_bit_writer.h"
-#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_fast_lossless.h"
 #include "lib/jxl/enc_fields.h"
@@ -32,6 +31,7 @@
 #include "lib/jxl/encode_internal.h"
 #include "lib/jxl/exif.h"
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
+#include "lib/jxl/jxl_cms.h"
 #include "lib/jxl/luminance.h"
 #include "lib/jxl/memory_manager_internal.h"
 #include "lib/jxl/sanitizers.h"
@@ -1839,7 +1839,7 @@ JxlEncoder* JxlEncoderCreate(const JxlMemoryManager* memory_manager) {
   JxlEncoder* enc = new (alloc) JxlEncoder();
   enc->memory_manager = local_memory_manager;
   // TODO(sboukortt): add an API function to set this.
-  enc->cms = jxl::GetJxlCms();
+  enc->cms = *JxlGetDefaultCms();
   enc->cms_set = true;
 
   // Initialize all the field values.

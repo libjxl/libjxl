@@ -16,9 +16,9 @@
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/enc_cache.h"
-#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_file.h"
+#include "lib/jxl/jxl_cms.h"
 
 #if !defined(TEST_DATA_PATH)
 #include "tools/cpp/runfiles/runfiles.h"
@@ -175,8 +175,8 @@ bool Roundtrip(const CodecInOut* io, const CompressParams& cparams,
 
   std::unique_ptr<PassesEncoderState> enc_state =
       jxl::make_unique<PassesEncoderState>();
-  JXL_CHECK(EncodeFile(cparams, io, enc_state.get(), &compressed, GetJxlCms(),
-                       aux_out, pool));
+  JXL_CHECK(EncodeFile(cparams, io, enc_state.get(), &compressed,
+                       *JxlGetDefaultCms(), aux_out, pool));
 
   for (const ImageBundle& ib1 : io->frames) {
     metadata_encodings_1.push_back(ib1.metadata()->color_encoding);
@@ -544,7 +544,7 @@ float ButteraugliDistance(const extras::PackedPixelFile& a,
   JXL_CHECK(ConvertPackedPixelFileToCodecInOut(b, pool, &io1));
   // TODO(eustas): simplify?
   return ButteraugliDistance(io0.frames, io1.frames, ButteraugliParams(),
-                             GetJxlCms(),
+                             *JxlGetDefaultCms(),
                              /*distmap=*/nullptr, pool);
 }
 
@@ -556,7 +556,8 @@ float Butteraugli3Norm(const extras::PackedPixelFile& a,
   JXL_CHECK(ConvertPackedPixelFileToCodecInOut(b, pool, &io1));
   ButteraugliParams ba;
   ImageF distmap;
-  ButteraugliDistance(io0.frames, io1.frames, ba, GetJxlCms(), &distmap, pool);
+  ButteraugliDistance(io0.frames, io1.frames, ba, *JxlGetDefaultCms(), &distmap,
+                      pool);
   return ComputeDistanceP(distmap, ba, 3);
 }
 
@@ -566,7 +567,7 @@ float ComputeDistance2(const extras::PackedPixelFile& a,
   JXL_CHECK(ConvertPackedPixelFileToCodecInOut(a, nullptr, &io0));
   CodecInOut io1;
   JXL_CHECK(ConvertPackedPixelFileToCodecInOut(b, nullptr, &io1));
-  return ComputeDistance2(io0.Main(), io1.Main(), GetJxlCms());
+  return ComputeDistance2(io0.Main(), io1.Main(), *JxlGetDefaultCms());
 }
 
 bool SameAlpha(const extras::PackedPixelFile& a,

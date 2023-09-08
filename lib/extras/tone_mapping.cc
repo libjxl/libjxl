@@ -11,8 +11,8 @@
 #include <hwy/highway.h>
 
 #include "lib/jxl/dec_tone_mapping-inl.h"
-#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/image_bundle.h"
+#include "lib/jxl/jxl_cms.h"
 
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
@@ -35,7 +35,8 @@ Status ToneMapFrame(const std::pair<float, float> display_nits,
   linear_rec2020.white_point = WhitePoint::kD65;
   linear_rec2020.tf.SetTransferFunction(TransferFunction::kLinear);
   JXL_RETURN_IF_ERROR(linear_rec2020.CreateICC());
-  JXL_RETURN_IF_ERROR(ib->TransformTo(linear_rec2020, GetJxlCms(), pool));
+  JXL_RETURN_IF_ERROR(
+      ib->TransformTo(linear_rec2020, *JxlGetDefaultCms(), pool));
 
   Rec2408ToneMapper<decltype(df)> tone_mapper(
       {ib->metadata()->tone_mapping.min_nits,
@@ -72,7 +73,8 @@ Status GamutMapFrame(ImageBundle* const ib, float preserve_saturation,
   linear_rec2020.white_point = WhitePoint::kD65;
   linear_rec2020.tf.SetTransferFunction(TransferFunction::kLinear);
   JXL_RETURN_IF_ERROR(linear_rec2020.CreateICC());
-  JXL_RETURN_IF_ERROR(ib->TransformTo(linear_rec2020, GetJxlCms(), pool));
+  JXL_RETURN_IF_ERROR(
+      ib->TransformTo(linear_rec2020, *JxlGetDefaultCms(), pool));
 
   JXL_RETURN_IF_ERROR(RunOnPool(
       pool, 0, ib->ysize(), ThreadPool::NoInit,

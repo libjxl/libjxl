@@ -15,13 +15,13 @@
 #include "lib/extras/codec.h"
 #include "lib/jxl/dec_frame.h"
 #include "lib/jxl/enc_cache.h"
-#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_file.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/fake_parallel_runner_testonly.h"
 #include "lib/jxl/icc_codec.h"
 #include "lib/jxl/image_test_utils.h"
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
+#include "lib/jxl/jxl_cms.h"
 #include "lib/jxl/render_pipeline/test_render_pipeline_stages.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"
@@ -44,8 +44,8 @@ Status DecodeFile(const Span<const uint8_t> file, bool use_slow_pipeline,
     if (io->metadata.m.color_encoding.WantICC()) {
       PaddedBytes icc;
       JXL_RETURN_IF_ERROR(ReadICC(&reader, &icc));
-      JXL_RETURN_IF_ERROR(
-          io->metadata.m.color_encoding.SetICC(std::move(icc), &GetJxlCms()));
+      JXL_RETURN_IF_ERROR(io->metadata.m.color_encoding.SetICC(
+          std::move(icc), JxlGetDefaultCms()));
     }
     PassesDecoderState dec_state;
     JXL_RETURN_IF_ERROR(
@@ -218,7 +218,7 @@ TEST_P(RenderPipelineTestParam, PipelineTest) {
   PassesEncoderState enc_state;
   enc_state.shared.image_features.splines = config.splines;
   ASSERT_TRUE(EncodeFile(config.cparams, &io, &enc_state, &compressed,
-                         GetJxlCms(), /*aux_out=*/nullptr, &pool));
+                         *JxlGetDefaultCms(), /*aux_out=*/nullptr, &pool));
 
   CodecInOut io_default;
   ASSERT_TRUE(DecodeFile(Span<const uint8_t>(compressed),

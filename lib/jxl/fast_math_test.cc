@@ -9,8 +9,8 @@
 
 #include "lib/jxl/base/random.h"
 #include "lib/jxl/dec_xyb-inl.h"
-#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_xyb.h"
+#include "lib/jxl/jxl_cms.h"
 #include "lib/jxl/testing.h"
 #include "lib/jxl/transfer_functions-inl.h"
 
@@ -232,7 +232,7 @@ HWY_NOINLINE void TestFastXYB() {
         ib.SetFromImage(std::move(chunk), ColorEncoding::SRGB());
         Image3F xyb(kChunk * kChunk, kChunk);
         std::vector<uint8_t> roundtrip(kChunk * kChunk * kChunk * 3);
-        ToXYB(ib, nullptr, &xyb, GetJxlCms());
+        ToXYB(ib, nullptr, &xyb, *JxlGetDefaultCms());
         for (int y = 0; y < kChunk; y++) {
           const float* xyba[4] = {xyb.PlaneRow(0, y), xyb.PlaneRow(1, y),
                                   xyb.PlaneRow(2, y), nullptr};
