@@ -133,7 +133,7 @@ jobs:
         SKIP_BUILD: 1
         BUILD_TARGET: ${{ matrix.build_target }}
     - name: Setup tmate session
-      uses: mxschmitt/action-tmate@53a5c23a925969671a6bb98ea70a4f650928ef93 # v3.16
+      uses: mxschmitt/action-tmate@a283f9441d2d96eb62436dc46d7014f5d357ac22 # v3.17
 
 
 
