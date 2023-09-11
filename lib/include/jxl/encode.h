@@ -21,6 +21,8 @@
 #include <jxl/stats.h>
 #include <jxl/version.h>
 
+#include "jxl/types.h"
+
 #if defined(__cplusplus) || defined(c_plusplus)
 extern "C" {
 #endif
@@ -790,6 +792,61 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetOutputProcessor(
  * @return JXL_ENC_SUCCESS on success, JXL_ENC_ERROR on error.
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderFlushInput(JxlEncoder* enc);
+
+/**
+ * @brief x
+ *
+ */
+struct JxlChunkedFrameInputSource {
+  /**
+   * @brief x
+   *
+   */
+  void* opaque;
+
+  /**
+   * @brief x
+   *
+   */
+  void (*get_color_channels_pixel_format)(void* opaque,
+                                          JxlPixelFormat* pixel_format);
+
+  /**
+   * @brief x
+   *
+   */
+  const void* (*get_color_channel_data_at)(void* opaque, size_t xpos,
+                                           size_t ypos, size_t num_pixels);
+
+  /**
+   * @brief x
+   *
+   */
+  void (*get_extra_channel_pixel_format)(void* opaque, size_t ec_index,
+                                         JxlPixelFormat* pixel_format);
+
+  /**
+   * @brief x
+   *
+   */
+  const void* (*get_extra_channel_data_at)(void* opaque, size_t ec_index,
+                                           size_t xpos, size_t ypos,
+                                           size_t num_pixels);
+
+  /**
+   * @brief x
+   *
+   */
+  void (*release_current_data)(void* opaque);
+};
+
+/**
+ * @brief x
+ *
+ */
+JXL_EXPORT JxlEncoderStatus JxlEncoderAddChunkedFrame(
+    const JxlEncoderFrameSettings* frame_settings, JXL_BOOL is_last_frame,
+    struct JxlChunkedFrameInputSource* chunked_frame_input);
 
 /**
  * Sets the buffer to read pixels from for an extra channel at a given index.

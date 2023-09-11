@@ -16,6 +16,7 @@
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/jxl.h"
 #include "lib/extras/metrics.h"
+#include "lib/extras/packed_image.h"
 #include "lib/jxl/encode_internal.h"
 #include "lib/jxl/jpeg/dec_jpeg_data.h"
 #include "lib/jxl/jpeg/dec_jpeg_data_writer.h"
@@ -23,6 +24,7 @@
 #include "lib/jxl/test_image.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"
+#include "tools/file_io.h"
 
 TEST(EncodeTest, AddFrameAfterCloseInputTest) {
   JxlEncoderPtr enc = JxlEncoderMake(nullptr);
@@ -1598,3 +1600,128 @@ TEST_P(EncodeOutputCallbackTest, OutputCallback) {
 JXL_GTEST_INSTANTIATE_TEST_SUITE_P(
     AllOptions, EncodeOutputCallbackTest,
     testing::ValuesIn(OutputCallbackTestParam::All()));
+
+class JxlChunkedFrameInputSourceAdapter {
+ public:
+  // Constructor to wrap the image data or any other state
+  explicit JxlChunkedFrameInputSourceAdapter(jxl::extras::PackedPixelFile ppf)
+      : ppf_(std::move(ppf)) {}
+
+  static void GetColorChannelsPixelFormat(void* opaque,
+                                          JxlPixelFormat* pixel_format) {
+    JxlChunkedFrameInputSourceAdapter* self =
+        static_cast<JxlChunkedFrameInputSourceAdapter*>(opaque);
+    *pixel_format = self->ppf_.frames[0].color.format;
+  }
+
+  static const void* GetColorChannelDataAt(void* opaque, size_t xpos,
+                                           size_t ypos, size_t num_pixels) {
+    JxlChunkedFrameInputSourceAdapter* self =
+        static_cast<JxlChunkedFrameInputSourceAdapter*>(opaque);
+    auto& ppf = self->ppf_;
+    size_t num_channels = ppf.frames[0].color.format.num_channels;
+    JxlDataType data_type = ppf.frames[0].color.format.data_type;
+    size_t bytes_per_pixel =
+        num_channels * jxl::extras::PackedImage::BitsPerChannel(data_type) / 8;
+    return static_cast<uint8_t*>(ppf.frames[0].color.pixels()) +
+           bytes_per_pixel * xpos + ypos * ppf.frames[0].color.stride;
+  }
+
+  static void GetExtraChannelPixelFormat(void* opaque, size_t ec_index,
+                                         JxlPixelFormat* pixel_format) {
+    // TODO
+  }
+
+  static const void* GetExtraChannelDataAt(void* opaque, size_t ec_index,
+                                           size_t xpos, size_t ypos,
+                                           size_t num_pixels) {
+    // TODO
+    return nullptr;
+  }
+
+  static void ReleaseCurrentData(void* opaque) {
+    // TODO
+  }
+
+ private:
+  const jxl::extras::PackedPixelFile ppf_;
+};
+
+TEST(EncodeTest, ChunkedFrameTest) {
+  size_t xsize = 257;
+  size_t ysize = 259;
+  jxl::test::TestImage image;
+  image.SetDimensions(xsize, ysize)
+      .SetDataType(JXL_TYPE_UINT8)
+      .SetChannels(3)
+      .SetAllBitDepths(8);
+  image.AddFrame().RandomFill();
+  const auto& frame = image.ppf().frames[0].color;
+  JxlBasicInfo basic_info = image.ppf().info;
+  basic_info.xsize = xsize;
+  basic_info.ysize = ysize;
+
+  std::vector<uint8_t> compressed = std::vector<uint8_t>(64);
+  std::vector<uint8_t> streaming_compressed = std::vector<uint8_t>(64);
+
+  auto configure_encoder = [&](JxlEncoderStruct* enc) {
+    // JxlEncoderFrameSettingsSetOption(frame_settings,
+    //                                  JXL_ENC_FRAME_SETTING_EFFORT, 1);
+    EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc, &basic_info));
+    JxlColorEncoding color_encoding;
+    JxlColorEncodingSetToSRGB(&color_encoding, /*is_gray=*/false);
+    EXPECT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderSetColorEncoding(enc, &color_encoding));
+  };
+  {
+    JxlEncoderPtr enc = JxlEncoderMake(nullptr);
+    ASSERT_NE(nullptr, enc.get());
+    configure_encoder(enc.get());
+    JxlEncoderFrameSettings* frame_settings =
+        JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+    EXPECT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderAddImageFrame(frame_settings, &frame.format,
+                                      frame.pixels(), frame.pixels_size));
+    JxlEncoderCloseInput(enc.get());
+    uint8_t* next_out = compressed.data();
+    size_t avail_out = compressed.size();
+    ProcessEncoder(enc.get(), compressed, next_out, avail_out);
+  }
+
+  {
+    JxlEncoderPtr enc = JxlEncoderMake(nullptr);
+    ASSERT_NE(nullptr, enc.get());
+    configure_encoder(enc.get());
+    JxlEncoderFrameSettings* frame_settings =
+        JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+    JxlChunkedFrameInputSourceAdapter chunked_frame_adapter(
+        std::move(image.ppf()));
+    JxlChunkedFrameInputSource chunked_frame_input;
+    chunked_frame_input.opaque = &chunked_frame_adapter;
+    chunked_frame_input.get_color_channels_pixel_format =
+        JxlChunkedFrameInputSourceAdapter::GetColorChannelsPixelFormat;
+    chunked_frame_input.get_color_channel_data_at =
+        JxlChunkedFrameInputSourceAdapter::GetColorChannelDataAt;
+    chunked_frame_input.get_extra_channel_pixel_format =
+        JxlChunkedFrameInputSourceAdapter::GetExtraChannelPixelFormat;
+    chunked_frame_input.get_extra_channel_data_at =
+        JxlChunkedFrameInputSourceAdapter::GetExtraChannelDataAt;
+    chunked_frame_input.release_current_data =
+        JxlChunkedFrameInputSourceAdapter::ReleaseCurrentData;
+
+    EXPECT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderAddChunkedFrame(frame_settings, JXL_TRUE,
+                                        &chunked_frame_input));
+    // JxlEncoderCloseInput(enc.get());
+    uint8_t* next_out = streaming_compressed.data();
+    size_t avail_out = streaming_compressed.size();
+    ProcessEncoder(enc.get(), streaming_compressed, next_out, avail_out);
+  }
+
+  fprintf(stderr, "streaming_compressed size:%zu compressed_size:%zu\n",
+          streaming_compressed.size(), compressed.size());
+  jpegxl::tools::WriteFile("/tmp/streaming_compressed.jxl",
+                           streaming_compressed);
+  jpegxl::tools::WriteFile("/tmp/compressed.jxl", compressed);
+  EXPECT_EQ(streaming_compressed, compressed);
+}

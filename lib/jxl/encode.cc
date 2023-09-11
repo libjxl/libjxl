@@ -2327,6 +2327,77 @@ JxlEncoderStatus JxlEncoderAddImageFrame(
   return JxlErrorOrStatus::Success();
 }
 
+JxlEncoderStatus JxlEncoderAddChunkedFrame(
+    const JxlEncoderFrameSettings* frame_settings, JXL_BOOL is_last_frame,
+    struct JxlChunkedFrameInputSource* chunked_frame_input) {
+  size_t xsize, ysize;
+  if (GetCurrentDimensions(frame_settings, xsize, ysize) != JXL_ENC_SUCCESS) {
+    return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_GENERIC,
+                         "bad dimensions");
+  }
+  // TODO(veluca): implement this without immediately buffering the whole frame.
+  JxlPixelFormat color_pixel_format;
+  chunked_frame_input->get_color_channels_pixel_format(
+      chunked_frame_input->opaque, &color_pixel_format);
+  size_t bytes_per_pixel = color_pixel_format.num_channels *
+                           BitsPerChannel(color_pixel_format.data_type) / 8;
+  std::vector<uint8_t> color_data(bytes_per_pixel * xsize * ysize);
+  for (size_t y = 0; y < ysize; y++) {
+    const void* buffer = chunked_frame_input->get_color_channel_data_at(
+        chunked_frame_input->opaque, 0, y, xsize);
+    if (!buffer) {
+      return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_GENERIC,
+                           "no buffer for color channels given");
+    }
+    auto stride = xsize * bytes_per_pixel;
+    memcpy(color_data.data() + y * stride, buffer, bytes_per_pixel * xsize);
+    chunked_frame_input->release_current_data(chunked_frame_input->opaque);
+  }
+  auto status = JxlEncoderAddImageFrame(frame_settings, &color_pixel_format,
+                                        color_data.data(), color_data.size());
+  if (status != JXL_ENC_SUCCESS) return status;
+  bool already_have_alpha = color_pixel_format.num_channels == 2 ||
+                            color_pixel_format.num_channels == 4;
+  for (size_t ec = 0; ec < frame_settings->enc->metadata.m.num_extra_channels;
+       ec++) {
+    if (frame_settings->enc->metadata.m.extra_channel_info[ec].type ==
+        jxl::ExtraChannel::kAlpha) {
+      if (already_have_alpha) {
+        // Skip this alpha channel, but still request additional alpha channels
+        // if they exist.
+        already_have_alpha = false;
+        continue;
+      }
+    }
+
+    JxlPixelFormat pixel_format;
+    chunked_frame_input->get_extra_channel_pixel_format(
+        chunked_frame_input->opaque, ec, &pixel_format);
+    size_t bytes_per_pixel =
+        pixel_format.num_channels * BitsPerChannel(pixel_format.data_type) / 8;
+    std::vector<uint8_t> data(bytes_per_pixel * xsize * ysize);
+    for (size_t y = 0; y < ysize; y++) {
+      const void* buffer = chunked_frame_input->get_extra_channel_data_at(
+          chunked_frame_input->opaque, ec, 0, y, xsize);
+      if (!buffer) {
+        return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_GENERIC,
+                             "no buffer for extra channel given");
+      }
+      memcpy(data.data(), buffer, bytes_per_pixel * xsize);
+      chunked_frame_input->release_current_data(chunked_frame_input->opaque);
+    }
+    auto status = JxlEncoderSetExtraChannelBuffer(frame_settings, &pixel_format,
+                                                  data.data(), data.size(), ec);
+    if (status != JXL_ENC_SUCCESS) return status;
+  }
+
+  if (is_last_frame) {
+    JxlEncoderCloseInput(frame_settings->enc);
+  }
+  return JxlErrorOrStatus::Success();
+  // return JxlEncoderFlushInput(frame_settings->enc);
+}
+
 JxlEncoderStatus JxlEncoderUseBoxes(JxlEncoder* enc) {
   if (enc->wrote_bytes) {
     return JXL_API_ERROR(enc, JXL_ENC_ERR_API_USAGE,
