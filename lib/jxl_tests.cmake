@@ -20,6 +20,7 @@ target_link_libraries(jxl_testlib-static
   hwy
   jxl_extras_nocodec-static
   jxl-static
+  jxl_cms-static
 )
 endif()
 

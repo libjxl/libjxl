@@ -242,6 +242,9 @@ jobs:
         sudo cmake --build build -- install
         cmake -Bbuild-example -Hexamples -G Ninja
         cmake --build build-example
+        ls -la /usr/local/lib/
+        ldd build-example/encode_oneshot
+        ldd /usr/local/lib/libjxl_cms.so
         if ldd build-example/decode_oneshot_static | grep libjxl; then
           echo "decode_oneshot_static is not using the static lib" >&2
           exit 1

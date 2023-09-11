@@ -30,6 +30,12 @@ set(JPEGXL_INTERNAL_BASE_SOURCES
   jxl/base/status.h
 )
 
+set(JPEGXL_INTERNAL_CMS_SOURCES
+  jxl/jxl_cms.cc
+  jxl/jxl_cms.h
+  jxl/jxl_skcms.h
+)
+
 set(JPEGXL_INTERNAL_CODEC_APNG_SOURCES
   extras/dec/apng.cc
   extras/dec/apng.h
@@ -408,9 +414,6 @@ set(JPEGXL_INTERNAL_ENC_SOURCES
   jxl/modular/transform/enc_squeeze.h
   jxl/modular/transform/enc_transform.cc
   jxl/modular/transform/enc_transform.h
-  jxl/jxl_cms.cc
-  jxl/jxl_cms.h
-  jxl/jxl_skcms.h
 )
 
 set(JPEGXL_INTERNAL_EXTRAS_FOR_TOOLS_SOURCES

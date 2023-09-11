@@ -12,7 +12,7 @@ function(jxl_discover_tests TESTNAME)
 endfunction()
 
 function(jxl_link_libraries DST SRC)
-  if (CMAKE_VERSION VERSION_LESS "3.13.5")
+  if (CMAKE_VERSION VERSION_LESS "3.13.4")
     target_include_directories(${DST} SYSTEM PUBLIC
        $<BUILD_INTERFACE:$<TARGET_PROPERTY:${SRC},INTERFACE_SYSTEM_INCLUDE_DIRECTORIES>>
     )

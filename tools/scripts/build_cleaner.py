@@ -140,11 +140,11 @@ def SplitLibFiles(repo_files):
   # absolutely needs, and or not only for encoding, should be listed here.
 
   return codecs | {'base_sources': base_sources,
-    # 'cms_sources': cms_sources,
+    'cms_sources': cms_sources,
     'dec_box_sources': dec_box_sources,
     'dec_jpeg_sources': dec_jpeg_sources,
     'dec_sources': dec_sources,
-    'enc_sources': enc_sources + cms_sources,
+    'enc_sources': enc_sources,
     'extras_for_tools_sources': extras_for_tools_sources,
     'extras_sources': extras_sources,
     'gbench_sources': gbench_sources,

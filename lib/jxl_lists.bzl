@@ -30,6 +30,12 @@ libjxl_base_sources = [
     "jxl/base/status.h",
 ]
 
+libjxl_cms_sources = [
+    "jxl/jxl_cms.cc",
+    "jxl/jxl_cms.h",
+    "jxl/jxl_skcms.h",
+]
+
 libjxl_codec_apng_sources = [
     "extras/dec/apng.cc",
     "extras/dec/apng.h",
@@ -408,9 +414,6 @@ libjxl_enc_sources = [
     "jxl/modular/transform/enc_squeeze.h",
     "jxl/modular/transform/enc_transform.cc",
     "jxl/modular/transform/enc_transform.h",
-    "jxl/jxl_cms.cc",
-    "jxl/jxl_cms.h",
-    "jxl/jxl_skcms.h",
 ]
 
 libjxl_extras_for_tools_sources = [

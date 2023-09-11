@@ -135,6 +135,7 @@ jobs:
         cp tools/conformance/lcms2.py build/tools/conformance
         cp build/tools/djxl build/tools/conformance
         cp build/libjxl.so.${{ env.LIBJXL_VERSION }} build/tools/conformance
+        cp build/libjxl_cms.so.${{ env.LIBJXL_VERSION }} build/tools/conformance
         cp build/libjxl_threads.so.${{ env.LIBJXL_VERSION }} build/tools/conformance
         cp build/libjxl_extras_codec.so.${{ env.LIBJXL_VERSION }} build/tools/conformance
       env:
@@ -147,6 +148,7 @@ jobs:
           build/tools/conformance/lcms2.py
           build/tools/conformance/djxl
           build/tools/conformance/libjxl.so.${{ env.LIBJXL_VERSION }}
+          build/tools/conformance/libjxl_cms.so.${{ env.LIBJXL_VERSION }}
           build/tools/conformance/libjxl_threads.so.${{ env.LIBJXL_VERSION }}
           build/tools/conformance/libjxl_extras_codec.so.${{ env.LIBJXL_VERSION }}
     - name: ccache stats
@@ -186,6 +188,7 @@ jobs:
       run: |
         chmod +x djxl
         ln -s libjxl.so.${{ env.LIBJXL_VERSION }} libjxl.so.${{ env.LIBJXL_ABI_VERSION }}
+        ln -s libjxl_cms.so.${{ env.LIBJXL_VERSION }} libjxl_cms.so.${{ env.LIBJXL_ABI_VERSION }}
         ln -s libjxl_threads.so.${{ env.LIBJXL_VERSION }} libjxl_threads.so.${{ env.LIBJXL_ABI_VERSION }}
         ln -s libjxl_extras_codec.so.${{ env.LIBJXL_VERSION }} libjxl_extras_codec.so.${{ env.LIBJXL_ABI_VERSION }}
         export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:`pwd`
