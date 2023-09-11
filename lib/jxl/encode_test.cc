@@ -1695,19 +1695,13 @@ TEST(EncodeTest, ChunkedFrameTest) {
         JxlEncoderFrameSettingsCreate(enc.get(), NULL);
     JxlChunkedFrameInputSourceAdapter chunked_frame_adapter(
         std::move(image.ppf()));
-    JxlChunkedFrameInputSource chunked_frame_input;
-    chunked_frame_input.opaque = &chunked_frame_adapter;
-    chunked_frame_input.get_color_channels_pixel_format =
-        JxlChunkedFrameInputSourceAdapter::GetColorChannelsPixelFormat;
-    chunked_frame_input.get_color_channel_data_at =
-        JxlChunkedFrameInputSourceAdapter::GetColorChannelDataAt;
-    chunked_frame_input.get_extra_channel_pixel_format =
-        JxlChunkedFrameInputSourceAdapter::GetExtraChannelPixelFormat;
-    chunked_frame_input.get_extra_channel_data_at =
-        JxlChunkedFrameInputSourceAdapter::GetExtraChannelDataAt;
-    chunked_frame_input.release_current_data =
-        JxlChunkedFrameInputSourceAdapter::ReleaseCurrentData;
-
+    JxlChunkedFrameInputSource chunked_frame_input = {
+        &chunked_frame_adapter,
+        JxlChunkedFrameInputSourceAdapter::GetColorChannelsPixelFormat,
+        JxlChunkedFrameInputSourceAdapter::GetColorChannelDataAt,
+        JxlChunkedFrameInputSourceAdapter::GetExtraChannelPixelFormat,
+        JxlChunkedFrameInputSourceAdapter::GetExtraChannelDataAt,
+        JxlChunkedFrameInputSourceAdapter::ReleaseCurrentData};
     EXPECT_EQ(JXL_ENC_SUCCESS,
               JxlEncoderAddChunkedFrame(frame_settings, JXL_TRUE,
                                         &chunked_frame_input));
