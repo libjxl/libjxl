@@ -24,7 +24,6 @@
 #include "lib/jxl/test_image.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"
-#include "tools/file_io.h"
 
 TEST(EncodeTest, AddFrameAfterCloseInputTest) {
   JxlEncoderPtr enc = JxlEncoderMake(nullptr);
@@ -1718,10 +1717,5 @@ TEST(EncodeTest, ChunkedFrameTest) {
     ProcessEncoder(enc.get(), streaming_compressed, next_out, avail_out);
   }
 
-  fprintf(stderr, "streaming_compressed size:%zu compressed_size:%zu\n",
-          streaming_compressed.size(), compressed.size());
-  jpegxl::tools::WriteFile("/tmp/streaming_compressed.jxl",
-                           streaming_compressed);
-  jpegxl::tools::WriteFile("/tmp/compressed.jxl", compressed);
   EXPECT_EQ(streaming_compressed, compressed);
 }
