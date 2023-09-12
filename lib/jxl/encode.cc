@@ -2383,7 +2383,8 @@ JxlEncoderStatus JxlEncoderAddChunkedFrame(
         return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_GENERIC,
                              "no buffer for extra channel given");
       }
-      memcpy(data.data(), buffer, bytes_per_pixel * xsize);
+      auto stride = xsize * bytes_per_pixel;
+      memcpy(data.data() + y * stride, buffer, bytes_per_pixel * xsize);
       chunked_frame_input->release_current_data(chunked_frame_input->opaque);
     }
     auto status = JxlEncoderSetExtraChannelBuffer(frame_settings, &pixel_format,
