@@ -196,7 +196,7 @@ jobs:
           mkdir -p ./build/Testing/Temporary
           unzip ./tools/scripts/test_cost-${{ matrix.identifier }}.zip -d ./build/Testing/Temporary
 
-    - uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
+    - uses: actions/upload-artifact@a8a3f3ad30e3422c9c7b888a15615d19a852ae32 # v3.1.3
       if: env.WILL_RUN_TESTS == 'true'
       with:
         name: cross_binary-${{ matrix.identifier }}
@@ -321,7 +321,7 @@ jobs:
           -I ${{ matrix.shard_number }},,${{ env.LAST_SHARD }} \
           -E '(bash_test|conformance_tooling_test|test_jxl_jni_wrapper)'
 
-    - uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
+    - uses: actions/upload-artifact@a8a3f3ad30e3422c9c7b888a15615d19a852ae32 # v3.1.3
       name: Upload test cost
       if: (env.UPLOAD_TEST_COST == 'true') && (matrix.shard_number == 0) && (env.WILL_RUN_TESTS == 'true')
       with:
