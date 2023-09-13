@@ -1351,7 +1351,7 @@ std::string nameBoxTest(
 }
 
 INSTANTIATE_TEST_SUITE_P(EncodeBoxParamsTest, EncodeBoxTest,
-                         ::testing::Combine(::testing::Values(false, true)),
+                         testing::Combine(testing::Values(false, true)),
                          nameBoxTest);
 
 TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGFrameTest)) {
