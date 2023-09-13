@@ -832,6 +832,7 @@ struct JxlChunkedFrameInputSource {
    * @param opaque user supplied parameters to the callback
    * @param ec_index zero-indexed index of the extra channel
    * @param pixel_format pointer to receive the pixel format
+   */
   void (*get_extra_channel_pixel_format)(void* opaque, size_t ec_index,
                                          JxlPixelFormat* pixel_format);
 
