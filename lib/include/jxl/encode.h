@@ -794,48 +794,68 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetOutputProcessor(
 JXL_EXPORT JxlEncoderStatus JxlEncoderFlushInput(JxlEncoder* enc);
 
 /**
- * @brief x
- *
+ * This struct provides callback functions to retrieve pixel data in a streaming
+ * manner instead of requiring the entire frame data in memory at once.
  */
 struct JxlChunkedFrameInputSource {
   /**
-   * @brief x
-   *
+   * A pointer to any user-defined data or state. This can be used to pass
+   * information to the callback functions.
    */
   void* opaque;
 
   /**
-   * @brief x
+   * Callback to get the pixel format of color channels.
    *
+   * @param opaque user supplied parameters to the callback
+   * @param pixel_format format for pixels
    */
   void (*get_color_channels_pixel_format)(void* opaque,
                                           JxlPixelFormat* pixel_format);
 
   /**
-   * @brief x
+   * Callback to retrieve color channel data for a specific location.
    *
+   * @param opaque user supplied parameters to the callback
+   * @param xpos horizontal position for the data.
+   * @param ypos vertical position for the data.
+   * @param num_pixels number of pixels to retrieve from the specified starting
+   * position.
+   * @return pointer to the retrieved pixel data.
    */
   const void* (*get_color_channel_data_at)(void* opaque, size_t xpos,
                                            size_t ypos, size_t num_pixels);
 
   /**
-   * @brief x
+   * Callback to get the pixel format of extra channels.
    *
-   */
+   * @param opaque user supplied parameters to the callback
+   * @param ec_index zero-indexed index of the extra channel
+   * @param pixel_format pointer to receive the pixel format
   void (*get_extra_channel_pixel_format)(void* opaque, size_t ec_index,
                                          JxlPixelFormat* pixel_format);
 
   /**
-   * @brief x
+   * Callback to retrieve a specific extra channel data for a specific location.
    *
+   * @param opaque user supplied parameters to the callback
+   * @param ec_index zero-indexed index of the extra channel being queried.
+   * @param xpos horizontal position for the data
+   * @param ypos vertical position for the data
+   * @param num_pixels number of pixels to retrieve from the specified starting
+  position.
+   * @return pointer to the retrieved pixel data.
    */
   const void* (*get_extra_channel_data_at)(void* opaque, size_t ec_index,
                                            size_t xpos, size_t ypos,
                                            size_t num_pixels);
 
   /**
-   * @brief x
+   * Callback to release any temporary data or resources. This function is
+   * called after encoding the frame, giving an opportunity to free any
+   * resources or memory allocated during the process.
    *
+   * @param opaque user supplied parameters to the callback
    */
   void (*release_current_data)(void* opaque);
 };
