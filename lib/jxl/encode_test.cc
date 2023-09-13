@@ -1350,9 +1350,10 @@ std::string nameBoxTest(
     return (std::get<0>(info.param) ? "C" : "Unc") + std::string("ompressed");
 }
 
-INSTANTIATE_TEST_SUITE_P(EncodeBoxParamsTest, EncodeBoxTest,
-                         testing::Combine(testing::Values(false, true)),
-                         nameBoxTest);
+JXL_GTEST_INSTANTIATE_TEST_SUITE_P(EncodeBoxParamsTest, EncodeBoxTest,
+                                   testing::Combine(testing::Values(false,
+                                                                    true)),
+                                   nameBoxTest);
 
 TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGFrameTest)) {
   TEST_LIBJPEG_SUPPORT();
