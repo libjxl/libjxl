@@ -1656,7 +1656,8 @@ class JxlChunkedFrameInputSourceAdapter {
   }
 
   static void ReleaseCurrentData(void* opaque) {
-    // TODO
+    // No dynamic memory is allocated in GetColorChannelDataAt or
+    // GetExtraChannelDataAt. Therefore, no cleanup is required here.
   }
 
  private:
@@ -1667,11 +1668,12 @@ class JxlChunkedFrameInputSourceAdapter {
 struct ChunkedFrameTestParam {
   size_t bitmask;
   bool with_extra_channels() const { return bitmask & 0x1; }
-  // TODO add more parameters here, e.g. alpha, multiple frame, fast_lossless
+  bool color_includes_alpha() const { return bitmask & 0x2; }
+  // TODO add more parameters here, e.g. multiple frames, fast_lossless
 
   static std::vector<ChunkedFrameTestParam> All() {
     std::vector<ChunkedFrameTestParam> params;
-    for (size_t bitmask = 0; bitmask < 2; bitmask++) {
+    for (size_t bitmask = 0; bitmask < 4; bitmask++) {
       params.push_back(ChunkedFrameTestParam{bitmask});
     }
     return params;
@@ -1680,9 +1682,14 @@ struct ChunkedFrameTestParam {
 
 std::ostream& operator<<(std::ostream& out, ChunkedFrameTestParam p) {
   if (p.with_extra_channels()) {
-    out << "WithExtraChannels";
+    out << "WithExtraChannels_";
   } else {
-    out << "WithoutExtraChannels";
+    out << "WithoutExtraChannels_";
+  }
+  if (p.color_includes_alpha()) {
+    out << "ColorIncludesAlpha_";
+  } else {
+    out << "ColorWithoutAlpha_";
   }
   return out;
 }
@@ -1691,7 +1698,6 @@ struct EncodeChunkedFrameTest
     : public testing::Test,
       public testing::WithParamInterface<ChunkedFrameTestParam> {};
 
-// TODO: fill in the rest to make ChunkedFrameTest a parameterized test
 TEST_P(EncodeChunkedFrameTest, ChunkedFrame) {
   const ChunkedFrameTestParam p = GetParam();
   (void)p;
@@ -1701,7 +1707,7 @@ TEST_P(EncodeChunkedFrameTest, ChunkedFrame) {
   jxl::test::TestImage image;
   image.SetDimensions(xsize, ysize)
       .SetDataType(JXL_TYPE_UINT8)
-      .SetChannels(3)
+      .SetChannels(p.color_includes_alpha() ? 4 : 3)
       .SetAllBitDepths(8);
   image.AddFrame().RandomFill();
   jxl::test::TestImage ec_image;
@@ -1715,7 +1721,8 @@ TEST_P(EncodeChunkedFrameTest, ChunkedFrame) {
   JxlBasicInfo basic_info = image.ppf().info;
   basic_info.xsize = xsize;
   basic_info.ysize = ysize;
-  basic_info.num_extra_channels = number_extra_channels;
+  basic_info.num_extra_channels =
+      number_extra_channels + p.color_includes_alpha();
   std::vector<uint8_t> compressed = std::vector<uint8_t>(64);
   std::vector<uint8_t> streaming_compressed = std::vector<uint8_t>(64);
 
