@@ -1340,8 +1340,6 @@ TEST_P(EncodeBoxTest, JXL_BOXES_TEST(BoxTest)) {
   // Test with uncompressed boxes and with brob boxes
   bool compress_box = std::get<0>(GetParam());
   size_t xml_box_size = std::get<1>(GetParam());
-  // TODO(firsching): use xml_box_size
-  (void)xml_box_size;
   // Tests adding two metadata boxes with the encoder: an exif box before the
   // image frame, and an xml box after the image frame. Then verifies the
   // decoder can decode them, they are in the expected place, and have the
@@ -1396,9 +1394,12 @@ TEST_P(EncodeBoxTest, JXL_BOXES_TEST(BoxTest)) {
   ProcessEncoder(enc.get(), compressed, next_out, avail_out);
 
   // Add a late metadata box
-  constexpr const char* xml_test_string = "<some random xml data>";
-  const uint8_t* xml_data = reinterpret_cast<const uint8_t*>(xml_test_string);
-  size_t xml_size = strlen(xml_test_string);
+  std::string xml_test_string = "<some random xml data>";
+  // Fills with spaces if the string is shorter than xml_box_size
+  xml_test_string.resize(xml_box_size, ' ');
+  const uint8_t* xml_data =
+      reinterpret_cast<const uint8_t*>(xml_test_string.c_str());
+  size_t xml_size = xml_box_size;
   JxlEncoderAddBox(enc.get(), "XML ", xml_data, xml_size, compress_box);
 
   // Indicate this is the last box
@@ -1469,9 +1470,9 @@ std::string nameBoxTest(
 
 JXL_GTEST_INSTANTIATE_TEST_SUITE_P(
     EncodeBoxParamsTest, EncodeBoxTest,
-    testing::Combine(testing::Values(false, true),
-                     testing::Values(256,
-                                     jxl::kLargeBoxContentSizeThreshold + 77)),
+    ::testing::Combine(
+        ::testing::Values(false, true),
+        ::testing::Values(256, jxl::kLargeBoxContentSizeThreshold + 77)),
     nameBoxTest);
 
 TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGFrameTest)) {
