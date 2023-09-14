@@ -1221,11 +1221,15 @@ TEST(EncodeTest, CroppedFrameTest) {
   EXPECT_EQ(true, seen_frame);
 }
 
-struct EncodeBoxTest : public testing::TestWithParam<std::tuple<bool>> {};
+struct EncodeBoxTest : public testing::TestWithParam<std::tuple<bool, size_t>> {
+};
 
 TEST_P(EncodeBoxTest, JXL_BOXES_TEST(BoxTest)) {
   // Test with uncompressed boxes and with brob boxes
   bool compress_box = std::get<0>(GetParam());
+  size_t xml_box_size = std::get<1>(GetParam());
+  // TODO(firsching): use xml_box_size
+  (void)xml_box_size;
   // Tests adding two metadata boxes with the encoder: an exif box before the
   // image frame, and an xml box after the image frame. Then verifies the
   // decoder can decode them, they are in the expected place, and have the
@@ -1346,14 +1350,17 @@ TEST_P(EncodeBoxTest, JXL_BOXES_TEST(BoxTest)) {
 }
 
 std::string nameBoxTest(
-    const ::testing::TestParamInfo<std::tuple<bool>>& info) {
-    return (std::get<0>(info.param) ? "C" : "Unc") + std::string("ompressed");
+    const ::testing::TestParamInfo<std::tuple<bool, size_t>>& info) {
+    return (std::get<0>(info.param) ? "C" : "Unc") + std::string("ompressed") +
+           "_BoxSize_" + std::to_string((std::get<1>(info.param)));
 }
 
-JXL_GTEST_INSTANTIATE_TEST_SUITE_P(EncodeBoxParamsTest, EncodeBoxTest,
-                                   testing::Combine(testing::Values(false,
-                                                                    true)),
-                                   nameBoxTest);
+JXL_GTEST_INSTANTIATE_TEST_SUITE_P(
+    EncodeBoxParamsTest, EncodeBoxTest,
+    testing::Combine(testing::Values(false, true),
+                     testing::Values(256,
+                                     jxl::kLargeBoxContentSizeThreshold + 77)),
+    nameBoxTest);
 
 TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGFrameTest)) {
   TEST_LIBJPEG_SUPPORT();
