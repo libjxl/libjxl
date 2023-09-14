@@ -1777,7 +1777,7 @@ TEST_P(DecodeAllEncodingsTest, PreserveOriginalProfileTest) {
 namespace {
 void SetPreferredColorProfileTest(
     const jxl::test::ColorEncodingDescriptor& from) {
-  size_t xsize = 123, ysize = 77;
+  size_t xsize = 123, ysize = 177;
   int events = JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING | JXL_DEC_FULL_IMAGE;
   jxl::ColorEncoding c_in = jxl::test::ColorEncodingFromDescriptor(from);
   if (c_in.rendering_intent != jxl::RenderingIntent::kRelative) return;
