@@ -69,6 +69,7 @@ For all browsers and to track browsers progress see [Can I Use](https://caniuse.
 
 ## Online tools
 
+- [Gumlet](https://www.gumlet.com/blog/jpeg-xl/)
 - [Squoosh](https://squoosh.app/)
 - [Cloudinary](https://cloudinary.com/blog/cloudinary_supports_jpeg_xl)
 - [MConverter](https://mconverter.eu/)
