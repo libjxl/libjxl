@@ -49,7 +49,6 @@ class CmsStage : public RenderPipelineStage {
   void ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
                   size_t xextra, size_t xsize, size_t xpos, size_t ypos,
                   size_t thread_id) const final {
-    JXL_ASSERT(false);
     JXL_ASSERT(xsize == xsize_);
     // const HWY_FULL(float) d;
     // const size_t xsize_v = RoundUpTo(xsize, Lanes(d));

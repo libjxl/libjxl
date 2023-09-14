@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file.
 
 #include "lib/jxl/render_pipeline/stage_from_linear.h"
+#include "lib/jxl/color_encoding_internal.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/render_pipeline/stage_from_linear.cc"
@@ -152,6 +153,8 @@ std::unique_ptr<FromLinearStage<Op>> MakeFromLinearStage(Op&& op) {
 
 std::unique_ptr<RenderPipelineStage> GetFromLinearStage(
     const OutputEncodingInfo& output_encoding_info) {
+  if (output_encoding_info.color_encoding.WantICC()) return nullptr;
+  fprintf(stderr, "from_linear: output=%s\n", Description(output_encoding_info.color_encoding).c_str());
   if (output_encoding_info.color_encoding.tf.IsLinear()) {
     return MakeFromLinearStage(MakePerChannelOp(OpLinear()));
   } else if (output_encoding_info.color_encoding.tf.IsSRGB()) {

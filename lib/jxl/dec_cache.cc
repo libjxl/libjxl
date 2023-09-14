@@ -229,6 +229,7 @@ Status PassesDecoderState::PreparePipeline(ImageBundle* decoded,
 
     if (linear) {
       auto from_linear_stage = GetFromLinearStage(output_encoding_info);
+      fprintf(stderr, "from_linear_stage: %p\n", from_linear_stage.get());
       if (from_linear_stage) {
         fprintf(stderr, "adding from_linear_stage\n");
         builder.AddStage(std::move(from_linear_stage));

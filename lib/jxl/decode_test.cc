@@ -1813,15 +1813,17 @@ void SetPreferredColorProfileTest(
   jpegxl::tools::WriteFile("/tmp/out.jxl", data);
 
   auto all_encodings = jxl::test::AllEncodings();
-  all_encodings.push_back(
-      {jxl::ColorSpace::kXYB, jxl::WhitePoint::kD65, jxl::Primaries::kCustom,
-       jxl::TransferFunction::kUnknown, jxl::RenderingIntent::kPerceptual});
+  //all_encodings.push_back(
+  //    {jxl::ColorSpace::kXYB, jxl::WhitePoint::kD65, jxl::Primaries::kCustom,
+  //     jxl::TransferFunction::kUnknown, jxl::RenderingIntent::kPerceptual});
   // for (size_t i = 39; i < 40; i++){
   //   all_encodings.push_back(all_encodings_[i]);
   // }
-  //std::vector<jxl::test::ColorEncodingDescriptor> some_encodings;
-  //some_encodings.push_back(all_encodings[13]);
-  for (const auto& c1 : all_encodings) {
+  std::vector<jxl::test::ColorEncodingDescriptor> some_encodings;
+  some_encodings.push_back(all_encodings[29]);
+  size_t i = 0;
+  for (const auto& c1 : some_encodings) {
+    fprintf(stderr, "i: %zu\n", i++);
     jxl::ColorEncoding c_out = jxl::test::ColorEncodingFromDescriptor(c1);
     float intensity_out = intensity_in;
     if (c_out.GetColorSpace() != jxl::ColorSpace::kXYB) {
@@ -1914,9 +1916,9 @@ void SetPreferredColorProfileTest(
     jxl::ColorEncoding internal_encoding_out;
     (void) ConvertExternalToInternalColorEncoding(encoding_out, &internal_encoding_out);
     (void) internal_encoding_out.CreateICC();
-    jxl::ColorEncoding internal_from_icc;
+    //jxl::ColorEncoding internal_from_icc;
     jxl::PaddedBytes rewritten_icc = internal_encoding_out.ICC();
-    //(void) internal_from_icc.SetICC(std::move(rewritten_icc), &jxl::GetJxlCms());
+    //(void) SetICC(std::move(rewritten_icc), nullptr);
     //JxlColorEncoding new_encoding_out;
     //(void) jxl::ConvertInternalToExternalColorEncoding(internal_from_icc, &new_encoding_out);
     // this is different
@@ -1928,10 +1930,10 @@ void SetPreferredColorProfileTest(
       JxlDecoderDestroy(dec);
       continue;
     }
-    //EXPECT_EQ(JXL_DEC_SUCCESS,
-    //          JxlDecoderSetPreferredColorProfile(dec, &new_encoding_out));
     EXPECT_EQ(JXL_DEC_SUCCESS,
-              JxlDecoderSetOutputColorProfile(dec, nullptr, rewritten_icc.data(), rewritten_icc.size()));
+              JxlDecoderSetOutputColorProfile(dec,nullptr, rewritten_icc.data(), rewritten_icc.size()));
+    //EXPECT_EQ(JXL_DEC_SUCCESS,
+    //          JxlDecoderSetPreferredColorProfile(dec, &encoding_out));
     EXPECT_EQ(GetOrigProfile(dec), color_space_in);
     //EXPECT_EQ(GetDataProfile(dec), color_space_out);
     EXPECT_EQ(JXL_DEC_NEED_IMAGE_OUT_BUFFER, JxlDecoderProcessInput(dec));
