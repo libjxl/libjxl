@@ -2330,7 +2330,8 @@ JxlEncoderStatus JxlEncoderAddImageFrame(
 JxlEncoderStatus JxlEncoderAddChunkedFrame(
     const JxlEncoderFrameSettings* frame_settings, JXL_BOOL is_last_frame,
     struct JxlChunkedFrameInputSource* chunked_frame_input) {
-  size_t xsize, ysize;
+  size_t xsize;
+  size_t ysize;
   if (GetCurrentDimensions(frame_settings, xsize, ysize) != JXL_ENC_SUCCESS) {
     return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_GENERIC,
                          "bad dimensions");
@@ -2342,17 +2343,21 @@ JxlEncoderStatus JxlEncoderAddChunkedFrame(
   size_t bytes_per_pixel = color_pixel_format.num_channels *
                            BitsPerChannel(color_pixel_format.data_type) / 8;
   std::vector<uint8_t> color_data(bytes_per_pixel * xsize * ysize);
-  for (size_t y = 0; y < ysize; y++) {
-    const void* buffer = chunked_frame_input->get_color_channel_data_at(
-        chunked_frame_input->opaque, 0, y, xsize);
-    if (!buffer) {
-      return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_GENERIC,
-                           "no buffer for color channels given");
-    }
-    auto stride = xsize * bytes_per_pixel;
-    memcpy(color_data.data() + y * stride, buffer, bytes_per_pixel * xsize);
-    chunked_frame_input->release_current_data(chunked_frame_input->opaque);
+  size_t row_offset = 0;
+  const void* buffer = chunked_frame_input->get_color_channel_data_at(
+      chunked_frame_input->opaque, 0, 0, xsize, ysize, &row_offset);
+  if (!buffer) {
+    return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_GENERIC,
+                         "no buffer for color channels given");
   }
+  auto stride = xsize * bytes_per_pixel;
+  for (size_t y = 0; y < ysize; y++) {
+    memcpy(color_data.data() + y * stride,
+           static_cast<const uint8_t*>(buffer) + y * row_offset,
+           bytes_per_pixel * xsize);
+  }
+  chunked_frame_input->release_buffer(chunked_frame_input->opaque, buffer);
+
   auto status = JxlEncoderAddImageFrame(frame_settings, &color_pixel_format,
                                         color_data.data(), color_data.size());
   if (status != JXL_ENC_SUCCESS) return status;
@@ -2376,17 +2381,19 @@ JxlEncoderStatus JxlEncoderAddChunkedFrame(
     size_t bytes_per_pixel =
         pixel_format.num_channels * BitsPerChannel(pixel_format.data_type) / 8;
     std::vector<uint8_t> data(bytes_per_pixel * xsize * ysize);
-    for (size_t y = 0; y < ysize; y++) {
-      const void* buffer = chunked_frame_input->get_extra_channel_data_at(
-          chunked_frame_input->opaque, ec, 0, y, xsize);
-      if (!buffer) {
-        return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_GENERIC,
-                             "no buffer for extra channel given");
-      }
-      auto stride = xsize * bytes_per_pixel;
-      memcpy(data.data() + y * stride, buffer, bytes_per_pixel * xsize);
-      chunked_frame_input->release_current_data(chunked_frame_input->opaque);
+    auto stride = xsize * bytes_per_pixel;
+    const void* buffer = chunked_frame_input->get_extra_channel_data_at(
+        chunked_frame_input->opaque, ec, 0, 0, xsize, ysize, &row_offset);
+    if (!buffer) {
+      return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_GENERIC,
+                           "no buffer for extra channel given");
     }
+    for (size_t y = 0; y < ysize; y++) {
+      memcpy(data.data() + y * stride,
+             static_cast<const uint8_t*>(buffer) + y * row_offset,
+             bytes_per_pixel * xsize);
+    }
+    chunked_frame_input->release_buffer(chunked_frame_input->opaque, buffer);
     auto status = JxlEncoderSetExtraChannelBuffer(frame_settings, &pixel_format,
                                                   data.data(), data.size(), ec);
     if (status != JXL_ENC_SUCCESS) return status;

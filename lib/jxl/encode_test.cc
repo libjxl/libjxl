@@ -1618,7 +1618,8 @@ class JxlChunkedFrameInputSourceAdapter {
   }
 
   static const void* GetColorChannelDataAt(void* opaque, size_t xpos,
-                                           size_t ypos, size_t num_pixels) {
+                                           size_t ypos, size_t xsize,
+                                           size_t ysize, size_t* row_offset) {
     JxlChunkedFrameInputSourceAdapter* self =
         static_cast<JxlChunkedFrameInputSourceAdapter*>(opaque);
     auto& ppf = self->colorchannel_;
@@ -1626,6 +1627,7 @@ class JxlChunkedFrameInputSourceAdapter {
     JxlDataType data_type = ppf.frames[0].color.format.data_type;
     size_t bytes_per_pixel =
         num_channels * jxl::extras::PackedImage::BitsPerChannel(data_type) / 8;
+    *row_offset = ppf.frames[0].color.stride;
     return static_cast<uint8_t*>(ppf.frames[0].color.pixels()) +
            bytes_per_pixel * xpos + ypos * ppf.frames[0].color.stride;
   }
@@ -1641,7 +1643,8 @@ class JxlChunkedFrameInputSourceAdapter {
 
   static const void* GetExtraChannelDataAt(void* opaque, size_t ec_index,
                                            size_t xpos, size_t ypos,
-                                           size_t num_pixels) {
+                                           size_t xsize, size_t ysize,
+                                           size_t* row_offset) {
     // In this test, we we the same color channel data, so `ec_index` is never
     // used
     JxlChunkedFrameInputSourceAdapter* self =
@@ -1650,12 +1653,12 @@ class JxlChunkedFrameInputSourceAdapter {
     JxlDataType data_type = ppf.frames[0].color.format.data_type;
     size_t bytes_per_pixel =
         jxl::extras::PackedImage::BitsPerChannel(data_type) / 8;
+    *row_offset = ppf.frames[0].color.stride;
     return static_cast<uint8_t*>(ppf.frames[0].color.pixels()) +
            bytes_per_pixel * xpos + ypos * ppf.frames[0].color.stride;
-    return nullptr;
   }
 
-  static void ReleaseCurrentData(void* opaque) {
+  static void ReleaseCurrentData(void* opaque, const void* buffer) {
     // No dynamic memory is allocated in GetColorChannelDataAt or
     // GetExtraChannelDataAt. Therefore, no cleanup is required here.
   }

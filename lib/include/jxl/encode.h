@@ -805,7 +805,13 @@ struct JxlChunkedFrameInputSource {
   void* opaque;
 
   /**
-   * Callback to get the pixel format of color channels.
+   * Get the pixel format that color channel data will be provided in.
+   * When called, `pixel_format` points to a suggested pixel format; if
+   * color channel data can be given in this pixel format, processing might
+   * be more efficient.
+   *
+   * This function will be called exactly once, before any call to
+   * get_color_channel_at.
    *
    * @param opaque user supplied parameters to the callback
    * @param pixel_format format for pixels
@@ -814,51 +820,84 @@ struct JxlChunkedFrameInputSource {
                                           JxlPixelFormat* pixel_format);
 
   /**
-   * Callback to retrieve color channel data for a specific location.
+   * Callback to retrieve a rectangle of color channel data at a specific
+   * location. It is guaranteed that xpos and ypos are multiples of 128. xsize,
+   * ysize will be multiples of 128, unless the resulting rectangle would be out
+   * of image bounds. Moreover, xsize and ysize will be at most 2048. The
+   * returned data will be assumed to be in the format returned by the
+   * (preceding) call to get_color_channels_pixel_format, except the `align`
+   * parameter of the pixel format will be ignored. Instead, the `i`-th row will
+   * be assumed to start at position `return_value + i * *row_offset`.
+   *
+   * Note that multiple calls to `get_color_channel_data_at` may happen before a
+   * call to `release_buffer`.
    *
    * @param opaque user supplied parameters to the callback
    * @param xpos horizontal position for the data.
    * @param ypos vertical position for the data.
-   * @param num_pixels number of pixels to retrieve from the specified starting
-   * position.
+   * @param xsize horizontal size of the requested rectangle of data.
+   * @param ysize vertical size of the requested rectangle of data.
+   * @param row_offset pointer to a the byte offset between consecutive rows of
+   * the retrieved pixel data.
    * @return pointer to the retrieved pixel data.
    */
   const void* (*get_color_channel_data_at)(void* opaque, size_t xpos,
-                                           size_t ypos, size_t num_pixels);
+                                           size_t ypos, size_t xsize,
+                                           size_t ysize, size_t* row_offset);
 
   /**
-   * Callback to get the pixel format of extra channels.
+   * Get the pixel format that color channel data will be provided in.
+   * When called, `pixel_format` points to a suggested pixel format; if
+   * color channel data can be given in this pixel format, processing might
+   * be more efficient.
+   *
+   * This function will be called exactly once per index, before any call to
+   * get_extra_channel_data_at with that given index.
    *
    * @param opaque user supplied parameters to the callback
    * @param ec_index zero-indexed index of the extra channel
-   * @param pixel_format pointer to receive the pixel format
+   * @param pixel_format format for extra channel data
    */
   void (*get_extra_channel_pixel_format)(void* opaque, size_t ec_index,
                                          JxlPixelFormat* pixel_format);
 
   /**
-   * Callback to retrieve a specific extra channel data for a specific location.
+   * Callback to retrieve a rectangle of extra channel `ec_index` data at a
+   * specific location. It is guaranteed that xpos and ypos are multiples of
+   * 128. xsize, ysize will be multiples of 128, unless the resulting rectangle
+   * would be out of image bounds. Moreover, xsize and ysize will be at most
+   * 2048. The returned data will be assumed to be in the format returned by the
+   * (preceding) call to get_extra_channels_pixel_format_at with the
+   * corresponding extra channel index `ec_index`, except the `align` parameter
+   * of the pixel format will be ignored. Instead, the `i`-th row will be
+   * assumed to start at position `return_value + i * *row_offset`.
+   *
+   * Note that multiple calls to `get_extra_channel_data_at` may happen before a
+   * call to `release_buffer`.
    *
    * @param opaque user supplied parameters to the callback
-   * @param ec_index zero-indexed index of the extra channel being queried.
-   * @param xpos horizontal position for the data
-   * @param ypos vertical position for the data
-   * @param num_pixels number of pixels to retrieve from the specified starting
-  position.
+   * @param xpos horizontal position for the data.
+   * @param ypos vertical position for the data.
+   * @param xsize horizontal size of the requested rectangle of data.
+   * @param ysize vertical size of the requested rectangle of data.
+   * @param row_offset pointer to a the byte offset between consecutive rows of
+   * the retrieved pixel data.
    * @return pointer to the retrieved pixel data.
    */
   const void* (*get_extra_channel_data_at)(void* opaque, size_t ec_index,
                                            size_t xpos, size_t ypos,
-                                           size_t num_pixels);
+                                           size_t xsize, size_t ysize,
+                                           size_t* row_offset);
 
   /**
-   * Callback to release any temporary data or resources. This function is
-   * called after encoding the frame, giving an opportunity to free any
-   * resources or memory allocated during the process.
+   * Releases the buffer `buf` (obtained through a call to
+   * `get_color_channel_data_at` or `get_extra_channel_data_at`). This function
+   * will be called exactly once per call to `get_color_channel_data_at` or
+   * `get_extra_channel_data_at`.
    *
    * @param opaque user supplied parameters to the callback
    */
-  void (*release_current_data)(void* opaque);
+  void (*release_buffer)(void* opaque, const void* buf);
 };
 
 /**
