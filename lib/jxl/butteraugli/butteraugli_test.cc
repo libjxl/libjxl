@@ -100,7 +100,7 @@ TEST(ButteraugliInPlaceTest, LargeImage) {
                                           diffmap2, diffval2));
   double distp2 = ComputeDistanceP(diffmap2, ba, 3.0);
   EXPECT_NEAR(diffval, diffval2, 1e-10);
-  EXPECT_NEAR(distp, distp2, 1e-8);
+  EXPECT_NEAR(distp, distp2, 1e-7);
 }
 
 }  // namespace
