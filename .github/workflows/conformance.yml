@@ -30,6 +30,11 @@ jobs:
     name: Warmup caches
     runs-on: ubuntu-latest
     steps:
+    - name: Harden Runner
+      uses: step-security/harden-runner@8ca2b8b2ece13480cda6dacd3511b49857a23c09 # v2.5.1
+      with:
+        egress-policy: audit
+
     - name: Checkout the conformance source
       uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac # v4.0.0
       with:
@@ -71,6 +76,11 @@ jobs:
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
     steps:
+    - name: Harden Runner
+      uses: step-security/harden-runner@8ca2b8b2ece13480cda6dacd3511b49857a23c09 # v2.5.1
+      with:
+        egress-policy: audit
+
     - name: Install build deps
       run: |
         sudo rm -f /var/lib/man-db/auto-update
@@ -162,6 +172,11 @@ jobs:
         name: [main_level5, main_level10]
         target: [AVX3, AVX2, SSE4, SSSE3, EMU128, SCALAR, SCALAR_ASAN]
     steps:
+    - name: Harden Runner
+      uses: step-security/harden-runner@8ca2b8b2ece13480cda6dacd3511b49857a23c09 # v2.5.1
+      with:
+        egress-policy: audit
+
     - name: Install deps
       run: |
         pip install numpy

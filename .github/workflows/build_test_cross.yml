@@ -72,6 +72,11 @@ jobs:
       WILL_RUN_TESTS: ${{ (github.event_name == 'push' || (github.event_name == 'pull_request' && (matrix.test_in_pr || contains(github.event.pull_request.labels.*.name, 'CI:full')))) }}
 
     steps:
+    - name: Harden Runner
+      uses: step-security/harden-runner@8ca2b8b2ece13480cda6dacd3511b49857a23c09 # v2.5.1
+      with:
+        egress-policy: audit
+
     - name: Setup apt
       shell: bash
       run: |
@@ -248,6 +253,11 @@ jobs:
       WILL_RUN_TESTS: ${{ (github.event_name == 'push' || (github.event_name == 'pull_request' && (matrix.test_in_pr || contains(github.event.pull_request.labels.*.name, 'CI:full')))) }}
 
     steps:
+    - name: Harden Runner
+      uses: step-security/harden-runner@8ca2b8b2ece13480cda6dacd3511b49857a23c09 # v2.5.1
+      with:
+        egress-policy: audit
+
     - name: Setup apt
       if: (matrix.shard_number < env.LAST_SHARD) && (env.WILL_RUN_TESTS == 'true')
       shell: bash
