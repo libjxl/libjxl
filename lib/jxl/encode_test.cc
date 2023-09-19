@@ -10,8 +10,10 @@
 
 #include <cstddef>
 #include <cstdio>
+#include <cstring>
 #include <ostream>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include "jxl/types.h"

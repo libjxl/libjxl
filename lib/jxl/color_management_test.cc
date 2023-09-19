@@ -5,6 +5,7 @@
 
 #include "lib/jxl/color_management.h"
 
+#include <jxl/cms_interface.h>
 #include <stdint.h>
 
 #include <algorithm>
@@ -14,6 +15,7 @@
 
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/random.h"
 #include "lib/jxl/enc_xyb.h"
 #include "lib/jxl/image_test_utils.h"
