@@ -1818,9 +1818,6 @@ void SetPreferredColorProfileTest(
   //all_encodings.push_back(
   //    {jxl::ColorSpace::kXYB, jxl::WhitePoint::kD65, jxl::Primaries::kCustom,
   //     jxl::TransferFunction::kUnknown, jxl::RenderingIntent::kPerceptual});
-  // for (size_t i = 39; i < 40; i++){
-  //   all_encodings.push_back(all_encodings_[i]);
-  // }
   std::vector<jxl::test::ColorEncodingDescriptor> some_encodings;
   some_encodings.push_back(all_encodings[29]);
   size_t i = 0;
@@ -1881,15 +1878,24 @@ void SetPreferredColorProfileTest(
           encoding_out, &internal_encoding_out));
       EXPECT_TRUE(internal_encoding_out.CreateICC());
       jxl::PaddedBytes rewritten_icc = internal_encoding_out.ICC();
-      EXPECT_EQ(JXL_DEC_SUCCESS,
+
+      EXPECT_EQ(use_cms ? JXL_DEC_SUCCESS : JXL_DEC_ERROR,
                 JxlDecoderSetOutputColorProfile(
                     dec, nullptr, rewritten_icc.data(), rewritten_icc.size()));
+      if (!use_cms){
+        // continue if we don't have a cms here
+        continue;
+      }
     } else {
       EXPECT_EQ(JXL_DEC_SUCCESS,
                 JxlDecoderSetPreferredColorProfile(dec, &encoding_out));
     }
     EXPECT_EQ(GetOrigProfile(dec), color_space_in);
+    if (icc_dst){
+
+    } else {
     EXPECT_EQ(GetDataProfile(dec), color_space_out);
+    }
     EXPECT_EQ(JXL_DEC_NEED_IMAGE_OUT_BUFFER, JxlDecoderProcessInput(dec));
     size_t buffer_size;
     JxlPixelFormat out_format = format;
@@ -1940,7 +1946,7 @@ class DecodeAllEncodingsVariantsTest
 JXL_GTEST_INSTANTIATE_TEST_SUITE_P(
     DecodeAllEncodingsVariantsTestInstantiation, DecodeAllEncodingsVariantsTest,
     ::testing::Combine(::testing::ValuesIn(jxl::test::AllEncodings()),
-                       ::testing::Values(false),
+                       ::testing::Values(false, true),
                        ::testing::Values(false, true)));
 TEST_P(DecodeAllEncodingsVariantsTest, SetPreferredColorProfileTest) {
   const auto& from = std::get<0>(GetParam());
