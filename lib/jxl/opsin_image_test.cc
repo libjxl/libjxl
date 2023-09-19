@@ -3,8 +3,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include <hwy/tests/hwy_gtest.h>
-
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/color_management.h"
 #include "lib/jxl/dec_xyb.h"
