@@ -23,6 +23,7 @@ CMAKE_CXX_COMPILER_LAUNCHER=${CMAKE_CXX_COMPILER_LAUNCHER:-}
 CMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM:-}
 SKIP_BUILD="${SKIP_BUILD:-0}"
 SKIP_TEST="${SKIP_TEST:-0}"
+FASTER_MSAN_BUILD="${FASTER_MSAN_BUILD:-0}"
 TARGETS="${TARGETS:-all doc}"
 TEST_SELECTOR="${TEST_SELECTOR:-}"
 BUILD_TARGET="${BUILD_TARGET:-}"
@@ -666,7 +667,6 @@ cmd_msan() {
   local msan_c_flags=(
     -fsanitize=memory
     -fno-omit-frame-pointer
-    -fsanitize-memory-track-origins
 
     -DJXL_ENABLE_ASSERT=1
     -g
@@ -675,6 +675,13 @@ cmd_msan() {
     # Force gtest to not use the cxxbai.
     -DGTEST_HAS_CXXABI_H_=0
   )
+  if [[ "${FASTER_MSAN_BUILD}" -ne "1" ]]; then
+    msan_c_flags=(
+      "${msan_c_flags[@]}"
+      -fsanitize-memory-track-origins
+    )
+  fi
+
   local msan_cxx_flags=(
     "${msan_c_flags[@]}"
 
