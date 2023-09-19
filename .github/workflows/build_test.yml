@@ -113,6 +113,7 @@ jobs:
       WILL_DOC: ${{ matrix.name == 'release' }}
       WILL_COV: ${{ github.event_name == 'push' && matrix.name == 'coverage' }}
       JPEGXL_OPT_DBG: true
+      FASTER_MSAN_BUILD: 1
 
     steps:
     - name: Install build deps
