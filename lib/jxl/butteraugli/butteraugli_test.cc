@@ -6,6 +6,7 @@
 #include "lib/jxl/butteraugli/butteraugli.h"
 
 #include <jxl/types.h>
+#include <stddef.h>
 
 #include <algorithm>
 #include <utility>

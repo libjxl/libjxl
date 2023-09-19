@@ -3,6 +3,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <jxl/cms_interface.h>
 #include <jxl/decode.h>
 #include <jxl/decode_cxx.h>
 #include <jxl/encode.h>
@@ -14,6 +15,7 @@
 #include <ostream>
 #include <string>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 #include "jxl/types.h"
