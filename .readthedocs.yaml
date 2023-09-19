@@ -14,7 +14,6 @@ sphinx:
 build:
    os: ubuntu-22.04
    tools:
-      python:
-      version: "3"
+      python: "3"
       install:
       - requirements: doc/sphinx/requirements.txt
