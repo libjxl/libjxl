@@ -35,7 +35,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: ["cpp", "java", "javascript", "python", "typescript"]
+        language: ["cpp"]
         # CodeQL supports [ $supported-codeql-languages ]
         # Learn more about CodeQL language support at https://aka.ms/codeql-docs/language-support
 
@@ -56,21 +56,50 @@ jobs:
           # If you wish to specify custom queries, you can do so here or in a config file.
           # By default, queries listed here will override any specified in a config file.
           # Prefix the list here with "+" to use these queries and those in the config file.
+          
+      - name: Install build deps
+        run: |
+          sudo rm -f /var/lib/man-db/auto-update
+          sudo apt update
+          sudo apt install -y \
+            ccache \
+            clang \
+            cmake \
+            doxygen \
+            graphviz \
+            imagemagick \
+            libbenchmark-dev \
+            libbenchmark-tools \
+            libbrotli-dev \
+            libgdk-pixbuf2.0-dev \
+            libgif-dev \
+            libgtest-dev \
+            libgtk2.0-dev  \
+            libjpeg-dev \
+            libjpeg-turbo-progs \
+            libopenexr-dev \
+            libpng-dev \
+            libwebp-dev \
+            ninja-build \
+            pkg-config \
+            xvfb \
+            ${{ matrix.apt_pkgs }} \
+          #
+          echo "CC=${{ matrix.cc || 'clang' }}" >> $GITHUB_ENV
+          echo "CXX=${{ matrix.cxx || 'clang++' }}" >> $GITHUB_ENV
+      - name: Checkout the source
+        uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac # v4.0.0
+        with:
+          submodules: true
+          fetch-depth: 2
 
-      # Autobuild attempts to build any compiled languages  (C/C++, C#, or Java).
-      # If this step fails, then you should remove it and run the build manually (see below)
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@6a28655e3dcb49cb0840ea372fd6d17733edd8a4 # v2.21.8
 
-      # ℹ️ Command-line programs to run using the OS shell.
-      # 📚 See https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#jobsjob_idstepsrun
-
-      #   If the Autobuild fails above, remove it and uncomment the following three lines.
-      #   modify them (or add more) to build your code if your project, please refer to the EXAMPLE below for guidance.
-
-      # - run: |
-      #   echo "Run, Build Application using script"
-      #   ./location_of_script_within_repo/buildscript.sh
+      - name: Build
+        run: |
+          ./ci.sh opt -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
+            -DBUILD_TESTING=OFF
+        env:
+          SKIP_TEST: 1
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@6a28655e3dcb49cb0840ea372fd6d17733edd8a4 # v2.21.8
