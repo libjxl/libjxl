@@ -15,5 +15,5 @@ build:
    os: ubuntu-22.04
    tools:
       python: "3"
-      install:
-      - requirements: doc/sphinx/requirements.txt
+         install:
+            - requirements: doc/sphinx/requirements.txt
