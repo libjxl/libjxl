@@ -19,4 +19,4 @@ build:
 
 python:
    install:
-   - requirements: docs/sphinx/requirements.txt
+   - requirements: doc/sphinx/requirements.txt
