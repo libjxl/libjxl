@@ -28,7 +28,10 @@ typedef enum {
    * value implies that num_color_channels in JxlBasicInfo is 1, any other value
    * implies num_color_channels is 3. */
   JXL_COLOR_SPACE_GRAY,
-  /** XYB (opsin) color space */
+  /** XYB (opsin) color space. When used with floating point sample value types,
+   * this is unscaled XYB as it is used internally in JPEG XL. When used with
+   * uint sample value types, this is XYB scaled to suitable ranges for that.
+   * The ICC profile generated for this color space applies to scaled XYB. */
   JXL_COLOR_SPACE_XYB,
   /** None of the other table entries describe the color space appropriately */
   JXL_COLOR_SPACE_UNKNOWN,
