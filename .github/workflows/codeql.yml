@@ -1,0 +1,112 @@
+# Copyright (c) the JPEG XL Project Authors. All rights reserved.
+#
+# Use of this source code is governed by a BSD-style
+# license that can be found in the LICENSE file.
+
+# For most projects, this workflow file will not need changing; you simply need
+# to commit it to your repository.
+#
+# You may wish to alter this file to override the set of languages analyzed,
+# or to provide custom queries or build logic.
+#
+# ******** NOTE ********
+# We have attempted to detect the languages in your repository. Please check
+# the `language` matrix defined below to confirm you have the correct set of
+# supported CodeQL languages.
+#
+name: "CodeQL"
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    # The branches below must be a subset of the branches above
+    branches: ["main"]
+  schedule:
+    - cron: "0 0 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ["cpp"]
+        # CodeQL supports [ $supported-codeql-languages ]
+        # Learn more about CodeQL language support at https://aka.ms/codeql-docs/language-support
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@8ca2b8b2ece13480cda6dacd3511b49857a23c09 # v2.5.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository
+        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+
+      # Initializes the CodeQL tools for scanning.
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@6a28655e3dcb49cb0840ea372fd6d17733edd8a4 # v2.21.8
+        with:
+          languages: ${{ matrix.language }}
+          # If you wish to specify custom queries, you can do so here or in a config file.
+          # By default, queries listed here will override any specified in a config file.
+          # Prefix the list here with "+" to use these queries and those in the config file.
+
+      - name: Install build deps
+        run: |
+          sudo rm -f /var/lib/man-db/auto-update
+          sudo apt update
+          sudo apt install -y \
+            ccache \
+            clang \
+            cmake \
+            doxygen \
+            graphviz \
+            imagemagick \
+            libbenchmark-dev \
+            libbenchmark-tools \
+            libbrotli-dev \
+            libgdk-pixbuf2.0-dev \
+            libgif-dev \
+            libgtest-dev \
+            libgtk2.0-dev  \
+            libjpeg-dev \
+            libjpeg-turbo-progs \
+            libopenexr-dev \
+            libpng-dev \
+            libwebp-dev \
+            ninja-build \
+            pkg-config \
+            xvfb \
+            ${{ matrix.apt_pkgs }} \
+          #
+          echo "CC=${{ matrix.cc || 'clang' }}" >> $GITHUB_ENV
+          echo "CXX=${{ matrix.cxx || 'clang++' }}" >> $GITHUB_ENV
+      - name: Checkout the source
+        uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac # v4.0.0
+        with:
+          submodules: true
+          fetch-depth: 2
+
+
+      - name: Build
+        run: |
+          ./ci.sh opt -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
+            -DBUILD_TESTING=OFF
+        env:
+          SKIP_TEST: 1
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@6a28655e3dcb49cb0840ea372fd6d17733edd8a4 # v2.21.8
+        with:
+          category: "/language:${{matrix.language}}"
