@@ -197,7 +197,7 @@ def FormatGniVar(name, var):
   if type(var) is list:
     contents = FormatList(var, '    "', '",')
     return f'{name} = [\n{contents}]\n'
-  else:  # TODO: do we need scalar strings?
+  else:  # TODO(eustas): do we need scalar strings?
     return f'{name} = {var}\n'
 
 
@@ -205,7 +205,7 @@ def FormatCMakeVar(name, var):
   if type(var) is list:
     contents = FormatList(var, '  ', '')
     return f'set({name}\n{contents})\n'
-  else:  # TODO: do we need scalar strings?
+  else:  # TODO(eustas): do we need scalar strings?
     return f'set({name} {var})\n'
 
 
