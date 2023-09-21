@@ -20,6 +20,7 @@
 #include <string>
 #include <vector>
 
+#include "lib/extras/alpha_blend.h"
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/decode.h"
 #include "lib/extras/dec/jxl.h"
@@ -198,6 +199,18 @@ struct DecompressArgs {
                             "file. Used by the conformance test script",
                             &metadata_out, &ParseString, 2);
 
+    cmdline->AddOptionValue('\0', "background", "#NNNNNN",
+                            "Specifies the background color for the "
+                            "--alpha_blend option. Recognized values are "
+                            "'black', 'white' (default), or '#NNNNNN'",
+                            &background_spec, &ParseString, 2);
+
+    cmdline->AddOptionFlag('\0', "alpha_blend",
+                           "Blends alpha channel with the color image using "
+                           "background color specified by --background "
+                           "(default is white).",
+                           &alpha_blend, &SetBooleanTrue, 2);
+
     cmdline->AddOptionFlag('\0', "print_read_bytes",
                            "Print total number of decoded bytes.",
                            &print_read_bytes, &SetBooleanTrue, 2);
@@ -241,6 +254,8 @@ struct DecompressArgs {
   std::string icc_out;
   std::string orig_icc_out;
   std::string metadata_out;
+  std::string background_spec = "white";
+  bool alpha_blend = false;
   bool print_read_bytes = false;
   bool quiet = false;
   // References (ids) of specific options to check if they were matched.
@@ -284,6 +299,43 @@ std::string Filename(const std::string& base, const std::string& extension,
     out.append(extension);
   }
   return out;
+}
+
+void AddFormatsWithAlphaChannel(std::vector<JxlPixelFormat>* formats) {
+  auto add_format = [&](JxlPixelFormat format) {
+    for (auto f : *formats) {
+      if (memcmp(&f, &format, sizeof(format)) == 0) return;
+    }
+    formats->push_back(format);
+  };
+  size_t num_formats = formats->size();
+  for (size_t i = 0; i < num_formats; ++i) {
+    JxlPixelFormat format = (*formats)[i];
+    if (format.num_channels == 1 || format.num_channels == 3) {
+      ++format.num_channels;
+      add_format(format);
+    }
+  }
+}
+
+bool ParseBackgroundColor(const std::string& background_desc,
+                          float background[3]) {
+  if (background_desc == "black") {
+    background[0] = background[1] = background[2] = 0.0f;
+    return true;
+  }
+  if (background_desc == "white") {
+    background[0] = background[1] = background[2] = 1.0f;
+    return true;
+  }
+  if (background_desc.size() != 7 || background_desc[0] != '#') {
+    return false;
+  }
+  uint32_t color = std::stoi(background_desc.substr(1), nullptr, 16);
+  background[0] = ((color >> 16) & 0xff) * (1.0f / 255);
+  background[1] = ((color >> 8) & 0xff) * (1.0f / 255);
+  background[2] = (color & 0xff) * (1.0f / 255);
+  return true;
 }
 
 bool DecompressJxlReconstructJPEG(const jpegxl::tools::DecompressArgs& args,
@@ -480,6 +532,9 @@ int main(int argc, const char* argv[]) {
         return EXIT_FAILURE;
       }
       accepted_formats = encoder->AcceptedFormats();
+      if (args.alpha_blend) {
+        AddFormatsWithAlphaChannel(&accepted_formats);
+      }
     }
     jxl::extras::PackedPixelFile ppf;
     size_t decoded_bytes = 0;
@@ -494,6 +549,14 @@ int main(int argc, const char* argv[]) {
     if (!args.quiet) cmdline.VerbosePrintf(0, "Decoded to pixels.\n");
     if (args.print_read_bytes) {
       fprintf(stderr, "Decoded bytes: %" PRIuS "\n", decoded_bytes);
+    }
+    if (args.alpha_blend) {
+      float background[3];
+      if (!ParseBackgroundColor(args.background_spec, background)) {
+        fprintf(stderr, "Invalid background color %s\n",
+                args.background_spec.c_str());
+      }
+      AlphaBlend(&ppf, background);
     }
     if (encoder) {
       std::ostringstream os;
