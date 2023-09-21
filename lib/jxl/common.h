@@ -208,7 +208,7 @@ static inline JXL_MAYBE_UNUSED uint64_t DecodeVarInt(const uint8_t* input,
     // If the next-byte flag is not set, stop
     if ((input[*pos + i] & 128) == 0) break;
   }
-  // TODO: Return a decoding error if i == 10.
+  // TODO(user): Return a decoding error if i == 10.
   *pos += i + 1;
   return ret;
 }

@@ -320,7 +320,7 @@ std::vector<ConnectedComponent> FindCC(const ImageF& energy, double t_low,
   return ans;
 }
 
-// TODO (sggonzalez): Adapt this function for the different color spaces or
+// TODO(sggonzalez): Adapt this function for the different color spaces or
 // remove it if the color space with the best performance does not need it
 void ComputeDotLosses(GaussianEllipse* ellipse, const ConnectedComponent& cc,
                       const Image3F& img, const Image3F& background) {

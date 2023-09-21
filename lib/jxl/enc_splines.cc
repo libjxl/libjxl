@@ -91,7 +91,7 @@ void EncodeSplines(const Splines& splines, BitWriter* writer,
 }
 
 Splines FindSplines(const Image3F& opsin) {
-  // TODO: implement spline detection.
+  // TODO(user): implement spline detection.
   return {};
 }
 

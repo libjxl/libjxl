@@ -282,9 +282,9 @@ class BlobsReaderPNG {
       }
       metadata->exif = std::move(bytes);
     } else if (type == "iptc") {
-      // TODO (jon): Deal with IPTC in some way
+      // TODO(jon): Deal with IPTC in some way
     } else if (type == "8bim") {
-      // TODO (jon): Deal with 8bim in some way
+      // TODO(jon): Deal with 8bim in some way
     } else if (type == "xmp") {
       if (!metadata->xmp.empty()) {
         JXL_WARNING("overwriting XMP (%" PRIuS " bytes) with base16 (%" PRIuS
