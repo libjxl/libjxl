@@ -44,7 +44,9 @@ struct OutputEncodingInfo {
   // Fields depending on output color encoding
   //
   ColorEncoding color_encoding;
+  ColorEncoding linear_color_encoding;
   bool color_encoding_is_original;
+
   // Contains an opsin matrix that converts to the primaries of the output
   // encoding.
   OpsinParams opsin_params;

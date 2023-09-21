@@ -1801,7 +1801,7 @@ void SetPreferredColorProfileTest(
   std::vector<uint8_t> pixels =
       jxl::test::GetSomeTestImage(xsize, ysize, num_channels, 0);
   for (size_t i = 0; i < 6; i ++){
-    pixels[i] = i<2 ? 255 : 0;
+    pixels[i] = i<2 ? 127 : 0;
   }
 
   JxlPixelFormat format = {num_channels, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
@@ -1816,11 +1816,11 @@ void SetPreferredColorProfileTest(
   jpegxl::tools::WriteFile("/tmp/out.jxl", data);
 
   auto all_encodings = jxl::test::AllEncodings();
-  //all_encodings.push_back(
-  //    {jxl::ColorSpace::kXYB, jxl::WhitePoint::kD65, jxl::Primaries::kCustom,
-  //     jxl::TransferFunction::kUnknown, jxl::RenderingIntent::kPerceptual});
+  all_encodings.push_back(
+      {jxl::ColorSpace::kXYB, jxl::WhitePoint::kD65, jxl::Primaries::kCustom,
+       jxl::TransferFunction::kUnknown, jxl::RenderingIntent::kPerceptual});
   std::vector<jxl::test::ColorEncodingDescriptor> some_encodings;
-  some_encodings.push_back(all_encodings[29]);
+  some_encodings.push_back(all_encodings[25]);
   size_t i = 0;
   for (const auto& c1 : all_encodings) {
     fprintf(stderr, "i: %zu\n", i++);

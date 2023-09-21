@@ -60,7 +60,7 @@ class CmsStage : public RenderPipelineStage {
     float* JXL_RESTRICT row1 = GetInputRow(input_rows, 1, 0);
     float* JXL_RESTRICT row2 = GetInputRow(input_rows, 2, 0);
     if (thread_id == 0) {
-      //fprintf(stderr, "row in: %f %f %f\n", row0[0], row1[0], row2[0]);
+      fprintf(stderr, "row in: %f %f %f\n", row0[0], row1[0], row2[0]);
     }
     float* mutable_buf_src = color_space_transform->BufSrc(thread_id);
     for (size_t x = 0; x < xsize; x++) {
@@ -81,7 +81,7 @@ class CmsStage : public RenderPipelineStage {
       row2[x] = buf_dst[3 * x + 2];
     }
     if (thread_id == 0) {
-      //fprintf(stderr, "row out: %f %f %f\n", row0[0], row1[0], row2[0]);
+      fprintf(stderr, "row out: %f %f %f\n", row0[0], row1[0], row2[0]);
     }
   }
   RenderPipelineChannelMode GetChannelMode(size_t c) const final {

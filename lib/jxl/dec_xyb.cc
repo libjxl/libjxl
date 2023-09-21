@@ -5,7 +5,9 @@
 
 #include "lib/jxl/dec_xyb.h"
 
+#include <signal.h>
 #include <string.h>
+#include "lib/jxl/color_encoding_internal.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/dec_xyb.cc"
@@ -248,9 +250,13 @@ Status OutputEncodingInfo::MaybeSetColorEncoding(
 }
 
 Status OutputEncodingInfo::SetColorEncoding(const ColorEncoding& c_desired) {
+  // raise(SIGTRAP);
   color_encoding = c_desired;
+  linear_color_encoding = color_encoding;
+  linear_color_encoding.tf.SetTransferFunction(TransferFunction::kLinear);
+  JXL_RETURN_IF_ERROR(linear_color_encoding.CreateICC());
   color_encoding_is_original = orig_color_encoding.SameColorEncoding(c_desired);
-
+  fprintf(stderr, "---------->%s\n", Description(c_desired).c_str());
   // Compute the opsin inverse matrix and luminances based on primaries and
   // white point.
   float inverse_matrix[9];

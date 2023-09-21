@@ -203,9 +203,8 @@ Status PassesDecoderState::PreparePipeline(ImageBundle* decoded,
        linear_color_encoding = ColorEncoding::LinearSRGB(
         output_encoding_info.orig_color_encoding.IsGray());
     } else {
-      linear_color_encoding = output_encoding_info.color_encoding;
-      linear_color_encoding.tf.SetTransferFunction(TransferFunction::kLinear);
-      JXL_RETURN_IF_ERROR(linear_color_encoding.CreateICC());
+      linear_color_encoding = output_encoding_info.linear_color_encoding;
+  fprintf(stderr, "==========->%s\n", Description(linear_color_encoding).c_str());
     }
 
     auto tone_mapping_stage = GetToneMappingStage(output_encoding_info);
