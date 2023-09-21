@@ -1821,7 +1821,7 @@ void SetPreferredColorProfileTest(
   std::vector<jxl::test::ColorEncodingDescriptor> some_encodings;
   some_encodings.push_back(all_encodings[29]);
   size_t i = 0;
-  for (const auto& c1 : some_encodings) {
+  for (const auto& c1 : all_encodings) {
     fprintf(stderr, "i: %zu\n", i++);
     jxl::ColorEncoding c_out = jxl::test::ColorEncodingFromDescriptor(c1);
     float intensity_out = intensity_in;
@@ -1940,6 +1940,20 @@ TEST(DecodeTest, SetPreferredColorProfileTestFromGray) {
   SetPreferredColorProfileTest(gray, false, false);
 }
 
+static std::string DecodeAllEncodingsVariantsTestName(
+    const ::testing::TestParamInfo<
+        std::tuple<jxl::test::ColorEncodingDescriptor, bool, bool>>& info) {
+  const auto& encoding = std::get<0>(info.param);
+  bool icc_dst = std::get<1>(info.param);
+  bool use_cms = std::get<2>(info.param);
+
+  std::string encoding_name = Description(ColorEncodingFromDescriptor(encoding));
+
+   return "From_" + encoding_name +
+         (icc_dst ? "_with_icc_dst" : "_without_icc_dst") +
+         (use_cms ? "_with_cms" : "_without_cms");
+}
+
 class DecodeAllEncodingsVariantsTest
     : public ::testing::TestWithParam<
           std::tuple<jxl::test::ColorEncodingDescriptor, bool, bool>> {};
@@ -1947,7 +1961,8 @@ JXL_GTEST_INSTANTIATE_TEST_SUITE_P(
     DecodeAllEncodingsVariantsTestInstantiation, DecodeAllEncodingsVariantsTest,
     ::testing::Combine(::testing::ValuesIn(jxl::test::AllEncodings()),
                        ::testing::Values(false, true),
-                       ::testing::Values(false, true)));
+                       ::testing::Values(false, true)),
+                       DecodeAllEncodingsVariantsTestName);
 TEST_P(DecodeAllEncodingsVariantsTest, SetPreferredColorProfileTest) {
   const auto& from = std::get<0>(GetParam());
   bool icc_dst = std::get<1>(GetParam());
