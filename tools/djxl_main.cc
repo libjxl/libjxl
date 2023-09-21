@@ -149,6 +149,23 @@ struct DecompressArgs {
                            "No output file will be written (for benchmarking)",
                            &disable_output, &SetBooleanTrue, 2);
 
+    cmdline->AddOptionFlag('\0', "output_extra_channels",
+                           "If set, all extra channels will be written either "
+                           "as part of the main output file (e.g. alpha "
+                           "channel in png) or as separate output files with "
+                           "suffix -ecN in their names. If not set, the "
+                           "(first) alpha channel will only be written when "
+                           "the output format supports alpha channels and all "
+                           "other extra channels won't be decoded.",
+                           &output_extra_channels, &SetBooleanTrue, 2);
+
+    cmdline->AddOptionFlag('\0', "output_frames",
+                           "If set, all frames will be written either as part "
+                           "of the main output file if that supports "
+                           "animation, or as separate output files with "
+                           "suffix -N in their names.",
+                           &output_frames, &SetBooleanTrue, 2);
+
     cmdline->AddOptionFlag('\0', "use_sjpeg",
                            "Use sjpeg instead of libjpeg for JPEG output.",
                            &use_sjpeg, &SetBooleanTrue, 2);
@@ -218,6 +235,8 @@ struct DecompressArgs {
   size_t jpeg_quality = 95;
   bool use_sjpeg = false;
   bool render_spotcolors = true;
+  bool output_extra_channels = false;
+  bool output_frames = false;
   std::string preview_out;
   std::string icc_out;
   std::string orig_icc_out;
@@ -492,8 +511,10 @@ int main(int argc, const char* argv[]) {
         return EXIT_FAILURE;
       }
     }
-    size_t nlayers = 1 + encoded_image.extra_channel_bitstreams.size();
-    size_t nframes = encoded_image.bitstreams.size();
+    size_t nlayers = args.output_extra_channels
+                         ? 1 + encoded_image.extra_channel_bitstreams.size()
+                         : 1;
+    size_t nframes = args.output_frames ? encoded_image.bitstreams.size() : 1;
     for (size_t i = 0; i < nlayers; ++i) {
       for (size_t j = 0; j < nframes; ++j) {
         const std::vector<uint8_t>& bitstream =
