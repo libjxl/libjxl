@@ -253,7 +253,7 @@ std::string Filename(const std::string& base, const std::string& extension,
     snprintf(buf.data(), buf.size(), "-%0*d", digits(num_frames), frame_index);
     out.append(buf.data());
   }
-  if (num_layers > 1) {
+  if (num_layers > 1 && layer_index > 0) {
     std::vector<char> buf(4 + digits(num_layers));
     snprintf(buf.data(), buf.size(), "-ec%0*d", digits(num_layers),
              layer_index);
