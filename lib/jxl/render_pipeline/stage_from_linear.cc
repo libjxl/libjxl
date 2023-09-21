@@ -113,7 +113,7 @@ class FromLinearStage : public RenderPipelineStage {
     float* JXL_RESTRICT row1 = GetInputRow(input_rows, 1, 0);
     float* JXL_RESTRICT row2 = GetInputRow(input_rows, 2, 0);
     if (thread_id == 0) {
-      // fprintf(stderr, "row in: %f %f %f\n", row0[0], row1[0], row2[0]);
+      //fprintf(stderr, "row in in stage linear: %f %f %f\n", row0[0], row1[0], row2[0]);
     }
     // All calculations are lane-wise, still some might require
     // value-dependent behaviour (e.g. NearestInt). Temporary unpoison last
@@ -133,6 +133,9 @@ class FromLinearStage : public RenderPipelineStage {
     msan::PoisonMemory(row0 + xsize, sizeof(float) * (xsize_v - xsize));
     msan::PoisonMemory(row1 + xsize, sizeof(float) * (xsize_v - xsize));
     msan::PoisonMemory(row2 + xsize, sizeof(float) * (xsize_v - xsize));
+    if (thread_id == 0) {
+      //fprintf(stderr, "row out: %f %f %f\n", row0[0], row1[0], row2[0]);
+    }
   }
 
   RenderPipelineChannelMode GetChannelMode(size_t c) const final {

@@ -1800,9 +1800,10 @@ void SetPreferredColorProfileTest(
   uint32_t num_channels = c_in.Channels();
   std::vector<uint8_t> pixels =
       jxl::test::GetSomeTestImage(xsize, ysize, num_channels, 0);
-  //for (size_t i = 0; i < 6; i ++){
-  //  pixels[i] = 255;
-  //}
+  for (size_t i = 0; i < 6; i ++){
+    pixels[i] = i<2 ? 255 : 0;
+  }
+
   JxlPixelFormat format = {num_channels, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
   std::string color_space_in = Description(c_in);
   float intensity_in = c_in.tf.IsPQ() ? 10000 : 255;

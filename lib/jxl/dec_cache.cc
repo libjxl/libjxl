@@ -198,8 +198,15 @@ Status PassesDecoderState::PreparePipeline(ImageBundle* decoded,
       }
     }
 
-    ColorEncoding linear_color_encoding = ColorEncoding::LinearSRGB(
+    ColorEncoding linear_color_encoding;
+    if (frame_header.color_transform != ColorTransform::kXYB) {
+       linear_color_encoding = ColorEncoding::LinearSRGB(
         output_encoding_info.orig_color_encoding.IsGray());
+    } else {
+      linear_color_encoding = output_encoding_info.color_encoding;
+      linear_color_encoding.tf.SetTransferFunction(TransferFunction::kLinear);
+      JXL_RETURN_IF_ERROR(linear_color_encoding.CreateICC());
+    }
 
     auto tone_mapping_stage = GetToneMappingStage(output_encoding_info);
     fprintf(stderr, "tone_mapping_stage: %p\n", tone_mapping_stage.get());
