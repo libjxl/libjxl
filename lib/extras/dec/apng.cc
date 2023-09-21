@@ -754,8 +754,12 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
           if (colortype & 4 ||
               png_get_valid(png_ptr, info_ptr, PNG_INFO_tRNS)) {
             ppf->info.alpha_bits = ppf->info.bits_per_sample;
-            if (sigbits) {
-              ppf->info.alpha_bits = sigbits->alpha;
+            if (sigbits && sigbits->alpha != ppf->info.bits_per_sample) {
+              JXL_WARNING(
+                  "sBIT chunk: bit depths for RGBA are inconsistent "
+                  "(%i %i %i %i). Setting A bitdepth to %i.",
+                  sigbits->red, sigbits->green, sigbits->blue, sigbits->alpha,
+                  ppf->info.bits_per_sample);
             }
           } else {
             ppf->info.alpha_bits = 0;
