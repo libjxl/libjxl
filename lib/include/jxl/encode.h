@@ -827,7 +827,8 @@ struct JxlChunkedFrameInputSource {
    * returned data will be assumed to be in the format returned by the
    * (preceding) call to get_color_channels_pixel_format, except the `align`
    * parameter of the pixel format will be ignored. Instead, the `i`-th row will
-   * be assumed to start at position `return_value + i * *row_offset`.
+   * be assumed to start at position `return_value + i * *row_offset`, with the
+   * value of `*row_offset` decided by the callee.
    *
    * Note that multiple calls to `get_color_channel_data_at` may happen before a
    * call to `release_buffer`.
@@ -870,7 +871,8 @@ struct JxlChunkedFrameInputSource {
    * (preceding) call to get_extra_channels_pixel_format_at with the
    * corresponding extra channel index `ec_index`, except the `align` parameter
    * of the pixel format will be ignored. Instead, the `i`-th row will be
-   * assumed to start at position `return_value + i * *row_offset`.
+   * assumed to start at position `return_value + i * *row_offset`, with the
+   * value of `*row_offset` decided by the callee.
    *
    * Note that multiple calls to `get_extra_channel_data_at` may happen before a
    * call to `release_buffer`.
@@ -906,7 +908,7 @@ struct JxlChunkedFrameInputSource {
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderAddChunkedFrame(
     const JxlEncoderFrameSettings* frame_settings, JXL_BOOL is_last_frame,
-    struct JxlChunkedFrameInputSource* chunked_frame_input);
+    struct JxlChunkedFrameInputSource chunked_frame_input);
 
 /**
  * Sets the buffer to read pixels from for an extra channel at a given index.
