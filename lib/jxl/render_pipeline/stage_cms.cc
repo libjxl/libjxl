@@ -41,8 +41,12 @@ class CmsStage : public RenderPipelineStage {
   }
 
   bool IsNeeded() const {
+    fprintf(stderr, "in IsNeeded: input: %s, output: %s\n",
+      Description(c_input_).c_str(),
+      Description(c_output_).c_str());
     // TODO(veluca): check if input and output color encodings are approximately
     // the same.
+
     return true;
   }
 

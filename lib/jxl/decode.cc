@@ -2706,7 +2706,6 @@ JxlDecoderStatus JxlDecoderSetOutputColorProfile(
   jxl::PaddedBytes padded_icc;
   padded_icc.assign(icc_data, icc_data + icc_size);
   if (!c_dst.SetICC(std::move(padded_icc),
-  //revert me: instead of nullptr put output_encoding.color_management_system
                     output_encoding.color_management_system)) {
     return JXL_API_ERROR(
         "setting output color profile from icc_data not yet implemented.");

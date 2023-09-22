@@ -156,8 +156,8 @@ std::unique_ptr<FromLinearStage<Op>> MakeFromLinearStage(Op&& op) {
 
 std::unique_ptr<RenderPipelineStage> GetFromLinearStage(
     const OutputEncodingInfo& output_encoding_info) {
-  if (output_encoding_info.color_encoding.WantICC()) return nullptr;
   fprintf(stderr, "from_linear: output=%s\n", Description(output_encoding_info.color_encoding).c_str());
+  if (output_encoding_info.color_encoding.WantICC()) return nullptr;
   if (output_encoding_info.color_encoding.tf.IsLinear()) {
     return MakeFromLinearStage(MakePerChannelOp(OpLinear()));
   } else if (output_encoding_info.color_encoding.tf.IsSRGB()) {

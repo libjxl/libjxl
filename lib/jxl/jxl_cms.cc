@@ -41,7 +41,7 @@
 #include "lcms2_plugin.h"
 #endif  // JPEGXL_ENABLE_SKCMS
 
-#define JXL_CMS_VERBOSE 0
+#define JXL_CMS_VERBOSE 3
 
 // Define these only once. We can't use HWY_ONCE here because it is defined as
 // 1 only on the last pass.
