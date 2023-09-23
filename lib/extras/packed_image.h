@@ -91,7 +91,7 @@ class PackedImage {
       case JXL_TYPE_UINT16: {
         uint16_t val;
         memcpy(&val, data, 2);
-        return swap_endianness_ ? JXL_BSWAP16(val) : val;
+        return (swap_endianness_ ? JXL_BSWAP16(val) : val) * (1.0f / 65535);
       }
       case JXL_TYPE_FLOAT: {
         float val;
