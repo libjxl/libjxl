@@ -3,6 +3,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <gtest/gtest.h>
 #include <jxl/codestream_header.h>
 #include <jxl/decode.h>
 #include <jxl/decode_cxx.h>
@@ -1487,24 +1488,26 @@ class JxlStreamingAdapter {
   bool return_large_buffers_;
 };
 
-struct OutputCallbackTestParam {
+struct StreamingTestParam {
   size_t bitmask;
   bool use_container() const { return bitmask & 0x1; }
   bool return_large_buffers() const { return bitmask & 0x2; }
   bool multiple_frames() const { return bitmask & 0x4; }
   bool fast_lossless() const { return bitmask & 0x8; }
   bool can_seek() const { return bitmask & 0x10; }
+  bool with_extra_channels() const { return bitmask & 0x20; }
+  bool color_includes_alpha() const { return bitmask & 0x40; }
 
-  static std::vector<OutputCallbackTestParam> All() {
-    std::vector<OutputCallbackTestParam> params;
-    for (size_t bitmask = 0; bitmask < 32; bitmask++) {
-      params.push_back(OutputCallbackTestParam{bitmask});
+  static std::vector<StreamingTestParam> All() {
+    std::vector<StreamingTestParam> params;
+    for (size_t bitmask = 0; bitmask < 128; bitmask++) {
+      params.push_back(StreamingTestParam{bitmask});
     }
     return params;
   }
 };
 
-std::ostream& operator<<(std::ostream& out, OutputCallbackTestParam p) {
+std::ostream& operator<<(std::ostream& out, StreamingTestParam p) {
   if (p.use_container()) {
     out << "WithContainer";
   } else {
@@ -1522,17 +1525,26 @@ std::ostream& operator<<(std::ostream& out, OutputCallbackTestParam p) {
   } else {
     out << "CanSeek";
   }
+  if (p.with_extra_channels()) {
+    out << "WithExtraChannels_";
+  } else {
+    out << "WithoutExtraChannels_";
+  }
+  if (p.color_includes_alpha()) {
+    out << "ColorIncludesAlpha_";
+  } else {
+    out << "ColorWithoutAlpha_";
+  }
   return out;
 }
 
 }  // namespace
 
-struct EncodeOutputCallbackTest
-    : public testing::Test,
-      public testing::WithParamInterface<OutputCallbackTestParam> {};
+struct EncoderStreamingTest
+    : public testing::TestWithParam<StreamingTestParam> {};
 
-TEST_P(EncodeOutputCallbackTest, OutputCallback) {
-  const OutputCallbackTestParam p = GetParam();
+TEST_P(EncoderStreamingTest, OutputCallback) {
+  const StreamingTestParam p = GetParam();
   size_t xsize = 257;
   size_t ysize = 259;
   jxl::test::TestImage image;
@@ -1596,10 +1608,6 @@ TEST_P(EncodeOutputCallbackTest, OutputCallback) {
     EXPECT_EQ(std::move(streaming_adapter).output(), compressed);
   }
 }
-
-JXL_GTEST_INSTANTIATE_TEST_SUITE_P(
-    AllOptions, EncodeOutputCallbackTest,
-    testing::ValuesIn(OutputCallbackTestParam::All()));
 
 class JxlChunkedFrameInputSourceAdapter {
  public:
@@ -1678,41 +1686,8 @@ class JxlChunkedFrameInputSourceAdapter {
   const jxl::extras::PackedPixelFile extra_channel_;
 };
 
-struct ChunkedFrameTestParam {
-  size_t bitmask;
-  bool with_extra_channels() const { return bitmask & 0x1; }
-  bool color_includes_alpha() const { return bitmask & 0x2; }
-  // TODO add more parameters here, e.g. multiple frames, fast_lossless
-
-  static std::vector<ChunkedFrameTestParam> All() {
-    std::vector<ChunkedFrameTestParam> params;
-    for (size_t bitmask = 0; bitmask < 4; bitmask++) {
-      params.push_back(ChunkedFrameTestParam{bitmask});
-    }
-    return params;
-  }
-};
-
-std::ostream& operator<<(std::ostream& out, ChunkedFrameTestParam p) {
-  if (p.with_extra_channels()) {
-    out << "WithExtraChannels_";
-  } else {
-    out << "WithoutExtraChannels_";
-  }
-  if (p.color_includes_alpha()) {
-    out << "ColorIncludesAlpha_";
-  } else {
-    out << "ColorWithoutAlpha_";
-  }
-  return out;
-}
-
-struct EncodeChunkedFrameTest
-    : public testing::Test,
-      public testing::WithParamInterface<ChunkedFrameTestParam> {};
-
-TEST_P(EncodeChunkedFrameTest, ChunkedFrame) {
-  const ChunkedFrameTestParam p = GetParam();
+TEST_P(EncoderStreamingTest, ChunkedFrame) {
+  const StreamingTestParam p = GetParam();
   size_t xsize = 257;
   size_t ysize = 259;
   size_t number_extra_channels = p.with_extra_channels() ? 5 : 0;
@@ -1794,71 +1769,16 @@ TEST_P(EncodeChunkedFrameTest, ChunkedFrame) {
   EXPECT_EQ(streaming_compressed, compressed);
 }
 
-JXL_GTEST_INSTANTIATE_TEST_SUITE_P(
-    AllOptions, EncodeChunkedFrameTest,
-    testing::ValuesIn(ChunkedFrameTestParam::All()));
-
-struct InputStreamingTestParam {
-  OutputCallbackTestParam outputCallbackParam;
-  ChunkedFrameTestParam chunkedFrameParam;
-  bool outputCallbackBool;
-  bool chunkedFrameBool;
-
-  static std::vector<InputStreamingTestParam> All() {
-    std::vector<InputStreamingTestParam> params;
-
-    std::vector<OutputCallbackTestParam> outputParams =
-        OutputCallbackTestParam::All();
-    auto chunkedParams = ChunkedFrameTestParam::All();
-
-    for (bool oBool : {true, false}) {
-      for (bool cBool : {true, false}) {
-        for (size_t i = 0; i < outputParams.size(); i++) {
-          for (size_t j = 0; j < chunkedParams.size(); j++) {
-            if (oBool || cBool) {
-              if (oBool ||
-                  (i == 0)) {  // only add one test case if oBool is false
-                if (cBool ||
-                    (j == 0)) {  // only add one test case if cBool is false
-                  params.push_back(InputStreamingTestParam{
-                      outputParams[i], chunkedParams[j], oBool, cBool});
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-
-    return params;
-  }
-};
-
-std::ostream& operator<<(std::ostream& out, InputStreamingTestParam p) {
-  out << p.outputCallbackParam << "_" << p.chunkedFrameParam;
-  out << (p.outputCallbackBool ? "_OutputCallbackBoolTrue"
-                               : "_OutputCallbackBoolFalse");
-  out << (p.chunkedFrameBool ? "_ChunkedFrameBoolTrue"
-                             : "_ChunkedFrameBoolFalse");
-  return out;
-}
-
-struct InputStreamingTest
-    : public testing::Test,
-      public testing::WithParamInterface<InputStreamingTestParam> {};
-
-TEST_P(InputStreamingTest, InputStreaming) {
-  const InputStreamingTestParam p = GetParam();
-  (void)p;
+TEST_P(EncoderStreamingTest, ChunkedAndOutputCallback) {
+  const StreamingTestParam p = GetParam();
   size_t xsize = 257;
   size_t ysize = 259;
-  size_t number_extra_channels =
-      p.chunkedFrameParam.with_extra_channels() ? 5 : 0;
+  size_t number_extra_channels = p.with_extra_channels() ? 5 : 0;
   jxl::test::TestImage image;
   image.SetDimensions(xsize, ysize)
       .SetDataType(JXL_TYPE_UINT8)
-      .SetChannels(p.chunkedFrameParam.color_includes_alpha() ? 4 : 3)
-      .SetAllBitDepths(p.outputCallbackParam.use_container() ? 16 : 8);
+      .SetChannels(p.color_includes_alpha() ? 4 : 3)
+      .SetAllBitDepths(p.use_container() ? 16 : 8);
   image.AddFrame().RandomFill();
   jxl::test::TestImage ec_image;
   ec_image.SetDimensions(xsize, ysize)
@@ -1874,16 +1794,15 @@ TEST_P(InputStreamingTest, InputStreaming) {
   basic_info.ysize = ysize;
 
   basic_info.num_extra_channels =
-      number_extra_channels + p.chunkedFrameParam.color_includes_alpha();
+      number_extra_channels + p.color_includes_alpha();
 
   std::vector<uint8_t> compressed = std::vector<uint8_t>(64);
-  std::vector<uint8_t> streaming_compressed = std::vector<uint8_t>(64);
 
   // common code for both with and without streaming
   auto configure_encoder = [&](JxlEncoderStruct* enc) {
     JxlEncoderFrameSettings* frame_settings =
         JxlEncoderFrameSettingsCreate(enc, NULL);
-    if (p.outputCallbackParam.fast_lossless()) {
+    if (p.fast_lossless()) {
       JxlEncoderSetFrameLossless(frame_settings, JXL_TRUE);
       JxlEncoderFrameSettingsSetOption(frame_settings,
                                        JXL_ENC_FRAME_SETTING_EFFORT, 1);
@@ -1893,7 +1812,7 @@ TEST_P(InputStreamingTest, InputStreaming) {
     JxlColorEncodingSetToSRGB(&color_encoding, /*is_gray=*/false);
     EXPECT_EQ(JXL_ENC_SUCCESS,
               JxlEncoderSetColorEncoding(enc, &color_encoding));
-    if (p.outputCallbackParam.use_container()) {
+    if (p.use_container()) {
       JxlEncoderSetCodestreamLevel(enc, 10);
     }
     for (size_t i = 0; i < number_extra_channels; i++) {
@@ -1920,10 +1839,16 @@ TEST_P(InputStreamingTest, InputStreaming) {
                     frame_settings, &ec_frame.format, ec_frame.pixels(),
                     ec_frame.pixels_size, i));
     }
-    if (p.outputCallbackParam.multiple_frames()) {
+    if (p.multiple_frames()) {
       EXPECT_EQ(JXL_ENC_SUCCESS,
                 JxlEncoderAddImageFrame(frame_settings, &frame.format,
                                         frame.pixels(), frame.pixels_size));
+      for (size_t i = 0; i < number_extra_channels; i++) {
+        EXPECT_EQ(JXL_ENC_SUCCESS,
+                  JxlEncoderSetExtraChannelBuffer(
+                      frame_settings, &ec_frame.format, ec_frame.pixels(),
+                      ec_frame.pixels_size, i));
+      }
     }
     JxlEncoderCloseInput(enc.get());
     uint8_t* next_out = compressed.data();
@@ -1938,39 +1863,26 @@ TEST_P(InputStreamingTest, InputStreaming) {
     configure_encoder(enc.get());
     JxlEncoderFrameSettings* frame_settings =
         JxlEncoderFrameSettingsCreate(enc.get(), NULL);
-    if (p.chunkedFrameBool) {
-      JxlChunkedFrameInputSourceAdapter chunked_frame_adapter(
-          std::move(image.ppf()), std::move(ec_image.ppf()));
+    JxlStreamingAdapter streaming_adapter =
+        JxlStreamingAdapter(enc.get(), p.return_large_buffers(), p.can_seek());
+
+    JxlChunkedFrameInputSourceAdapter chunked_frame_adapter(
+        std::move(image.ppf()), std::move(ec_image.ppf()));
+    EXPECT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderAddChunkedFrame(
+                  frame_settings, p.multiple_frames() ? JXL_FALSE : JXL_TRUE,
+                  chunked_frame_adapter.GetInputSource()));
+
+    if (p.multiple_frames()) {
       EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderAddChunkedFrame(
                                      frame_settings, JXL_TRUE,
                                      chunked_frame_adapter.GetInputSource()));
     }
-
-    if (p.outputCallbackBool) {
-      JxlStreamingAdapter streaming_adapter = JxlStreamingAdapter(
-          enc.get(), p.outputCallbackParam.return_large_buffers(),
-          p.outputCallbackParam.can_seek());
-      EXPECT_EQ(JXL_ENC_SUCCESS,
-                JxlEncoderAddImageFrame(frame_settings, &frame.format,
-                                        frame.pixels(), frame.pixels_size));
-      if (p.outputCallbackParam.multiple_frames()) {
-        EXPECT_EQ(JXL_ENC_SUCCESS,
-                  JxlEncoderAddImageFrame(frame_settings, &frame.format,
-                                          frame.pixels(), frame.pixels_size));
-      }
-      JxlEncoderCloseInput(enc.get());
-      EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderFlushInput(enc.get()));
       streaming_adapter.CheckFinalWatermarkPosition();
       EXPECT_EQ(std::move(streaming_adapter).output(), compressed);
-    } else {
-      uint8_t* next_out = streaming_compressed.data();
-      size_t avail_out = streaming_compressed.size();
-      ProcessEncoder(enc.get(), streaming_compressed, next_out, avail_out);
-      EXPECT_EQ(streaming_compressed, compressed);
-    }
   }
 }
 
 JXL_GTEST_INSTANTIATE_TEST_SUITE_P(
-    InputStreamingTestInstantiation, InputStreamingTest,
-    testing::ValuesIn(InputStreamingTestParam::All()));
+    EncoderStreamingTest, EncoderStreamingTest,
+    testing::ValuesIn(StreamingTestParam::All()));
