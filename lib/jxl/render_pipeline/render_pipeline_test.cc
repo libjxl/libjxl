@@ -42,8 +42,10 @@ Status DecodeFile(const Span<const uint8_t> file, bool use_slow_pipeline,
         io->metadata.m.xyb_encoded;
     JXL_RETURN_IF_ERROR(Bundle::Read(&reader, &io->metadata.transform_data));
     if (io->metadata.m.color_encoding.WantICC()) {
-      PaddedBytes icc;
-      JXL_RETURN_IF_ERROR(ReadICC(&reader, &icc));
+      PaddedBytes icc_data;
+      JXL_RETURN_IF_ERROR(ReadICC(&reader, &icc_data));
+      IccBytes icc;
+      Span<const uint8_t>(icc_data).AppendTo(&icc);
       JXL_RETURN_IF_ERROR(io->metadata.m.color_encoding.SetICC(
           std::move(icc), JxlGetDefaultCms()));
     }

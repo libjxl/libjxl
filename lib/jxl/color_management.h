@@ -13,7 +13,6 @@
 
 #include <vector>
 
-#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/common.h"
@@ -30,8 +29,7 @@ enum class ExtraTF {
 
 // NOTE: for XYB colorspace, the created profile can be used to transform a
 // *scaled* XYB image (created by ScaleXYB()) to another colorspace.
-Status MaybeCreateProfile(const ColorEncoding& c,
-                          PaddedBytes* JXL_RESTRICT icc);
+Status MaybeCreateProfile(const ColorEncoding& c, IccBytes* JXL_RESTRICT icc);
 
 Status CIEXYZFromWhiteCIExy(const CIExy& xy, float XYZ[3]);
 

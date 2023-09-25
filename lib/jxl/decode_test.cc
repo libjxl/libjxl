@@ -115,7 +115,7 @@ size_t exif_uncompressed_size = 94;
 // but with, on purpose, rXYZ, bXYZ and gXYZ (the RGB primaries) switched to a
 // different order to ensure the profile does not match any known profile, so
 // the encoder cannot encode it in a compact struct instead.
-jxl::PaddedBytes GetIccTestProfile() {
+jxl::IccBytes GetIccTestProfile() {
   const uint8_t* profile = reinterpret_cast<const uint8_t*>(
       "\0\0\3\200lcms\0040\0\0mntrRGB XYZ "
       "\a\344\0\a\0\27\0\21\0$"
@@ -149,7 +149,7 @@ jxl::PaddedBytes GetIccTestProfile() {
       "\0l\0emluc\0\0\0\0\0\0\0\1\0\0\0\fenUS\0\0\0\26\0\0\0\34\0I\0m\0a\0g\0e"
       "\0 \0c\0o\0d\0e\0c\0\0");
   size_t profile_size = 896;
-  jxl::PaddedBytes icc_profile;
+  jxl::IccBytes icc_profile;
   icc_profile.assign(profile, profile + profile_size);
   return icc_profile;
 }
@@ -683,7 +683,7 @@ std::vector<uint8_t> GetTestHeader(size_t xsize, size_t ysize,
                                    size_t alpha_bits, bool xyb_encoded,
                                    bool have_container, bool metadata_default,
                                    bool insert_extra_box,
-                                   const jxl::PaddedBytes& icc_profile) {
+                                   const jxl::IccBytes& icc_profile) {
   jxl::BitWriter writer;
   jxl::BitWriter::Allotment allotment(&writer, 65536);  // Large enough
 
@@ -739,7 +739,7 @@ std::vector<uint8_t> GetTestHeader(size_t xsize, size_t ysize,
   }
 
   if (!icc_profile.empty()) {
-    jxl::PaddedBytes copy = icc_profile;
+    jxl::IccBytes copy = icc_profile;
     EXPECT_TRUE(
         metadata.m.color_encoding.SetICC(std::move(copy), JxlGetDefaultCms()));
   }
@@ -959,7 +959,7 @@ TEST(DecodeTest, BasicInfoSizeHintTest) {
   JxlDecoderDestroy(dec);
 }
 
-std::vector<uint8_t> GetIccTestHeader(const jxl::PaddedBytes& icc_profile,
+std::vector<uint8_t> GetIccTestHeader(const jxl::IccBytes& icc_profile,
                                       bool xyb_encoded) {
   size_t xsize = 50;
   size_t ysize = 50;
@@ -974,7 +974,7 @@ std::vector<uint8_t> GetIccTestHeader(const jxl::PaddedBytes& icc_profile,
 
 // Tests the case where pixels and metadata ICC profile are the same
 TEST(DecodeTest, IccProfileTestOriginal) {
-  jxl::PaddedBytes icc_profile = GetIccTestProfile();
+  jxl::IccBytes icc_profile = GetIccTestProfile();
   bool xyb_encoded = false;
   std::vector<uint8_t> data = GetIccTestHeader(icc_profile, xyb_encoded);
 
@@ -1013,7 +1013,7 @@ TEST(DecodeTest, IccProfileTestOriginal) {
   // they do, we can get the profile and compare the contents.
   EXPECT_EQ(icc_profile.size(), dec_profile_size);
   if (icc_profile.size() == dec_profile_size) {
-    jxl::PaddedBytes icc_profile2(icc_profile.size());
+    jxl::IccBytes icc_profile2(icc_profile.size());
     EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetColorAsICCProfile(
                                    dec, JXL_COLOR_PROFILE_TARGET_ORIGINAL,
                                    icc_profile2.data(), icc_profile2.size()));
@@ -1035,7 +1035,7 @@ TEST(DecodeTest, IccProfileTestOriginal) {
 
 // Tests the case where pixels and metadata ICC profile are different
 TEST(DecodeTest, IccProfileTestXybEncoded) {
-  jxl::PaddedBytes icc_profile = GetIccTestProfile();
+  jxl::IccBytes icc_profile = GetIccTestProfile();
   bool xyb_encoded = true;
   std::vector<uint8_t> data = GetIccTestHeader(icc_profile, xyb_encoded);
 
@@ -1074,7 +1074,7 @@ TEST(DecodeTest, IccProfileTestXybEncoded) {
   // they do, we can get the profile and compare the contents.
   EXPECT_EQ(icc_profile.size(), dec_profile_size);
   if (icc_profile.size() == dec_profile_size) {
-    jxl::PaddedBytes icc_profile2(icc_profile.size());
+    jxl::IccBytes icc_profile2(icc_profile.size());
     EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetColorAsICCProfile(
                                    dec, JXL_COLOR_PROFILE_TARGET_ORIGINAL,
                                    icc_profile2.data(), icc_profile2.size()));
@@ -1124,7 +1124,7 @@ TEST(DecodeTest, IccProfileTestXybEncoded) {
   // must be (since there are many ways to represent the same color space),
   // but it should not be zero.
   EXPECT_NE(0u, dec_profile_size);
-  jxl::PaddedBytes icc_profile2(dec_profile_size);
+  jxl::IccBytes icc_profile2(dec_profile_size);
   if (0 != dec_profile_size) {
     EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetColorAsICCProfile(
                                    dec, JXL_COLOR_PROFILE_TARGET_DATA,
@@ -1152,7 +1152,7 @@ TEST(DecodeTest, IccProfileTestXybEncoded) {
             JxlDecoderGetICCProfileSize(dec, JXL_COLOR_PROFILE_TARGET_DATA,
                                         &dec_profile_size));
   EXPECT_NE(0u, dec_profile_size);
-  jxl::PaddedBytes icc_profile3(dec_profile_size);
+  jxl::IccBytes icc_profile3(dec_profile_size);
   if (0 != dec_profile_size) {
     EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetColorAsICCProfile(
                                    dec, JXL_COLOR_PROFILE_TARGET_DATA,
@@ -1170,7 +1170,7 @@ TEST(DecodeTest, IccProfileTestXybEncoded) {
 // handle the case of not enough input bytes with StatusCode::kNotEnoughBytes
 // rather than fatal error status codes.
 TEST(DecodeTest, ICCPartialTest) {
-  jxl::PaddedBytes icc_profile = GetIccTestProfile();
+  jxl::IccBytes icc_profile = GetIccTestProfile();
   std::vector<uint8_t> data = GetIccTestHeader(icc_profile, false);
 
   const uint8_t* next_in = data.data();
@@ -1633,12 +1633,12 @@ TEST(DecodeTest, PixelTestWithICCProfileLossy) {
 
   JxlPixelFormat format = {channels, JXL_TYPE_FLOAT, JXL_LITTLE_ENDIAN, 0};
 
-  jxl::PaddedBytes icc;
+  jxl::PaddedBytes icc_data;
   std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
       dec, jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
       format, /*use_callback=*/false, /*set_buffer_early=*/true,
       /*use_resizable_runner=*/false, /*require_boxes=*/false,
-      /*expect_success=*/true, /*icc=*/&icc);
+      /*expect_success=*/true, /*icc=*/&icc_data);
   JxlDecoderReset(dec);
   EXPECT_EQ(num_pixels * channels * 4, pixels2.size());
 
@@ -1654,6 +1654,8 @@ TEST(DecodeTest, PixelTestWithICCProfileLossy) {
                                   /*pool=*/nullptr, &io0.Main()));
 
   jxl::ColorEncoding color_encoding1;
+  jxl::IccBytes icc;
+  jxl::Span<const uint8_t>(icc_data).AppendTo(&icc);
   EXPECT_TRUE(color_encoding1.SetICC(std::move(icc), JxlGetDefaultCms()));
   jxl::Span<const uint8_t> span1(pixels2.data(), pixels2.size());
   jxl::CodecInOut io1;
@@ -3743,8 +3745,10 @@ void AnalyzeCodestream(const jxl::PaddedBytes& data,
   metadata.transform_data.nonserialized_xyb_encoded = metadata.m.xyb_encoded;
   ASSERT_TRUE(jxl::Bundle::Read(&br, &metadata.transform_data));
   if (metadata.m.color_encoding.WantICC()) {
-    jxl::PaddedBytes icc;
-    ASSERT_TRUE(jxl::ReadICC(&br, &icc));
+    jxl::PaddedBytes icc_data;
+    ASSERT_TRUE(jxl::ReadICC(&br, &icc_data));
+    jxl::IccBytes icc;
+    jxl::Span<const uint8_t>(icc_data).AppendTo(&icc);
     ASSERT_TRUE(metadata.m.color_encoding.SetICCRaw(std::move(icc)));
   }
   ASSERT_TRUE(br.JumpToByteBoundary());

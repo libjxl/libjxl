@@ -86,7 +86,8 @@ jxl::CodecInOut ConvertTestImage(const std::vector<uint8_t>& buf,
   }
   jxl::ColorEncoding color_encoding;
   if (!icc_profile.empty()) {
-    jxl::PaddedBytes icc_profile_copy(icc_profile);
+    jxl::IccBytes icc_profile_copy;
+    jxl::Span<const uint8_t>(icc_profile).AppendTo(&icc_profile_copy);
     EXPECT_TRUE(
         color_encoding.SetICC(std::move(icc_profile_copy), JxlGetDefaultCms()));
   } else if (pixel_format.data_type == JXL_TYPE_FLOAT) {

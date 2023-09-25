@@ -376,7 +376,7 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
   return true;
 }
 
-Status WriteICC(const PaddedBytes& icc, BitWriter* JXL_RESTRICT writer,
+Status WriteICC(const IccBytes& icc, BitWriter* JXL_RESTRICT writer,
                 size_t layer, AuxOut* JXL_RESTRICT aux_out) {
   if (icc.empty()) return JXL_FAILURE("ICC must be non-empty");
   PaddedBytes enc;

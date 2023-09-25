@@ -33,7 +33,6 @@
 
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
-#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
@@ -62,7 +61,7 @@ namespace jxl {
 namespace {
 struct JxlCms {
 #if JPEGXL_ENABLE_SKCMS
-  PaddedBytes icc_src, icc_dst;
+  IccBytes icc_src, icc_dst;
   skcms_ICCProfile profile_src, profile_dst;
 #else
   void* lcms_transform;
@@ -522,7 +521,7 @@ void DetectTransferFunction(const skcms_ICCProfile& profile,
       std::abs(gamma[1] - gamma[2]) < 1e-4f) {
     if (c->tf.SetGamma(gamma[0])) {
       skcms_ICCProfile profile_test;
-      PaddedBytes bytes;
+      IccBytes bytes;
       if (MaybeCreateProfile(*c, &bytes) &&
           DecodeProfile(bytes.data(), bytes.size(), &profile_test) &&
           skcms_ApproximatelyEqualProfiles(&profile, &profile_test)) {
@@ -538,7 +537,7 @@ void DetectTransferFunction(const skcms_ICCProfile& profile,
     c->tf.SetTransferFunction(tf);
 
     skcms_ICCProfile profile_test;
-    PaddedBytes bytes;
+    IccBytes bytes;
     if (MaybeCreateProfile(*c, &bytes) &&
         DecodeProfile(bytes.data(), bytes.size(), &profile_test) &&
         skcms_ApproximatelyEqualProfiles(&profile, &profile_test)) {
@@ -576,7 +575,7 @@ ColorSpace ColorSpaceFromProfile(const Profile& profile) {
 
 // "profile1" is pre-decoded to save time in DetectTransferFunction.
 Status ProfileEquivalentToICC(const cmsContext context, const Profile& profile1,
-                              const PaddedBytes& icc, const ColorEncoding& c) {
+                              const IccBytes& icc, const ColorEncoding& c) {
   const uint32_t type_src = Type64(c);
 
   Profile profile2;
@@ -762,7 +761,7 @@ void DetectTransferFunction(const cmsContext context, const Profile& profile,
   }
 
   if (gamma != 0 && c->tf.SetGamma(gamma)) {
-    PaddedBytes icc_test;
+    IccBytes icc_test;
     if (MaybeCreateProfile(*c, &icc_test) &&
         ProfileEquivalentToICC(context, profile, icc_test, *c)) {
       return;
@@ -775,7 +774,7 @@ void DetectTransferFunction(const cmsContext context, const Profile& profile,
 
     c->tf.SetTransferFunction(tf);
 
-    PaddedBytes icc_test;
+    IccBytes icc_test;
     if (MaybeCreateProfile(*c, &icc_test) &&
         ProfileEquivalentToICC(context, profile, icc_test, *c)) {
       return;
@@ -1056,7 +1055,7 @@ void* JxlCmsInit(void* init_data, size_t num_threads, size_t xsize,
                  float intensity_target) {
   auto cms = static_cast<const JxlCmsInterface*>(init_data);
   auto t = jxl::make_unique<JxlCms>();
-  PaddedBytes icc_src, icc_dst;
+  IccBytes icc_src, icc_dst;
   icc_src.assign(input->icc.data, input->icc.data + input->icc.size);
   ColorEncoding c_src;
   if (!c_src.SetICC(std::move(icc_src), cms)) {

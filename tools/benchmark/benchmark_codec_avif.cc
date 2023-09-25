@@ -7,7 +7,6 @@
 #include <avif/avif.h>
 
 #include "lib/extras/time.h"
-#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/dec_external_image.h"
@@ -29,8 +28,8 @@ namespace jpegxl {
 namespace tools {
 
 using ::jxl::CodecInOut;
+using ::jxl::IccBytes;
 using ::jxl::ImageBundle;
-using ::jxl::PaddedBytes;
 using ::jxl::Primaries;
 using ::jxl::Span;
 using ::jxl::ThreadPool;
@@ -124,7 +123,7 @@ void SetUpAvifColor(const ColorEncoding& color, avifImage* const image) {
 
 Status ReadAvifColor(const avifImage* const image, ColorEncoding* const color) {
   if (image->icc.size != 0) {
-    PaddedBytes icc;
+    IccBytes icc;
     icc.assign(image->icc.data, image->icc.data + image->icc.size);
     return color->SetICC(std::move(icc), JxlGetDefaultCms());
   }
