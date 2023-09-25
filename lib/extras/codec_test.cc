@@ -108,8 +108,7 @@ std::vector<uint8_t> GenerateICC(JxlColorEncoding color_encoding) {
   ColorEncoding c;
   JXL_CHECK(ConvertExternalToInternalColorEncoding(color_encoding, &c));
   JXL_CHECK(c.CreateICC());
-  PaddedBytes icc = c.ICC();
-  return std::vector<uint8_t>(icc.begin(), icc.end());
+  return c.ICC();
 }
 
 void StoreRandomValue(uint8_t* out, Rng* rng, JxlPixelFormat format,

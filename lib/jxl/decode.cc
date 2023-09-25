@@ -1057,8 +1057,8 @@ JxlDecoderStatus JxlDecoderReadAllHeaders(JxlDecoder* dec) {
       // Other non-successful status is an error
       return JXL_DEC_ERROR;
     }
-    PaddedBytes icc;
-    status = dec->icc_reader.Process(reader.get(), &icc);
+    PaddedBytes decoded_icc;
+    status = dec->icc_reader.Process(reader.get(), &decoded_icc);
     if (status.code() == StatusCode::kNotEnoughBytes) {
       return dec->RequestMoreInput();
     }
@@ -1066,6 +1066,8 @@ JxlDecoderStatus JxlDecoderReadAllHeaders(JxlDecoder* dec) {
       // Other non-successful status is an error
       return JXL_DEC_ERROR;
     }
+    IccBytes icc;
+    Span<const uint8_t>(decoded_icc).AppendTo(&icc);
     if (!dec->metadata.m.color_encoding.SetICCRaw(std::move(icc))) {
       return JXL_DEC_ERROR;
     }

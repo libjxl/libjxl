@@ -20,11 +20,12 @@
 #include <vector>
 
 #include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/field_encodings.h"
 
 namespace jxl {
+
+using IccBytes = std::vector<uint8_t>;
 
 // (All CIE units are for the standard 1931 2 degree observer)
 
@@ -244,7 +245,7 @@ struct ColorEncoding : public Fields {
   // - between calling InternalRemoveICC() and CreateICC() in tests;
   // - WantICC() == true and SetICC() was not yet called;
   // - after a failed call to SetSRGB(), SetICC(), or CreateICC().
-  const PaddedBytes& ICC() const { return icc_; }
+  const IccBytes& ICC() const { return icc_; }
 
   // Internal only, do not call except from tests.
   void InternalRemoveICC() { icc_.clear(); }
@@ -252,7 +253,7 @@ struct ColorEncoding : public Fields {
   // Returns true if `icc` is assigned and decoded successfully. If so,
   // subsequent WantICC() will return true until DecideIfWantICC() changes it.
   // Returning false indicates data has been lost.
-  Status SetICC(PaddedBytes&& icc, const JxlCmsInterface* cms) {
+  Status SetICC(IccBytes&& icc, const JxlCmsInterface* cms) {
     if (icc.empty()) return false;
     icc_ = std::move(icc);
 
@@ -276,7 +277,7 @@ struct ColorEncoding : public Fields {
   // space. Functions to get and set fields, such as SetWhitePoint, cannot be
   // used anymore after this and functions such as IsSRGB return false no matter
   // what the contents of the icc profile.
-  Status SetICCRaw(PaddedBytes&& icc) {
+  Status SetICCRaw(IccBytes&& icc) {
     if (icc.empty()) return false;
     icc_ = std::move(icc);
 
@@ -417,7 +418,7 @@ struct ColorEncoding : public Fields {
   // ICC bytes may be used. The color_space_ field is still valid.
   bool have_fields_ = true;
 
-  PaddedBytes icc_;  // Valid ICC profile
+  IccBytes icc_;  // Valid ICC profile
 
   ColorSpace color_space_;  // Can be kUnknown
   bool cmyk_ = false;
@@ -513,8 +514,8 @@ class ColorSpaceTransform {
   JxlCmsInterface cms_;
   void* cms_data_ = nullptr;
   // The interface may retain pointers into these.
-  PaddedBytes icc_src_;
-  PaddedBytes icc_dst_;
+  IccBytes icc_src_;
+  IccBytes icc_dst_;
   size_t xsize_;
 };
 

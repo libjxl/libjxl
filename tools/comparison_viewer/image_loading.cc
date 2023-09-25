@@ -22,6 +22,7 @@ namespace tools {
 
 using jxl::CodecInOut;
 using jxl::ColorEncoding;
+using jxl::IccBytes;
 using jxl::Image3F;
 using jxl::ImageBundle;
 using jxl::PaddedBytes;
@@ -78,7 +79,7 @@ QImage loadImage(const QString& filename, const QByteArray& targetIccProfile,
   const JxlCmsInterface& cms = *JxlGetDefaultCms();
 
   ColorEncoding targetColorSpace;
-  PaddedBytes icc;
+  IccBytes icc;
   icc.assign(reinterpret_cast<const uint8_t*>(targetIccProfile.data()),
              reinterpret_cast<const uint8_t*>(targetIccProfile.data() +
                                               targetIccProfile.size()));

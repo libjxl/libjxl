@@ -314,7 +314,7 @@ TestImage& TestImage::SetColorEncoding(const std::string& description) {
   JXL_CHECK(
       ConvertExternalToInternalColorEncoding(ppf_.color_encoding, &c_enc));
   JXL_CHECK(c_enc.CreateICC());
-  PaddedBytes icc = c_enc.ICC();
+  IccBytes icc = c_enc.ICC();
   ppf_.icc.assign(icc.begin(), icc.end());
   return *this;
 }

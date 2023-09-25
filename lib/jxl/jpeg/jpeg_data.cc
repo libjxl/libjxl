@@ -449,7 +449,8 @@ void JPEGData::CalculateMcuSize(const JPEGScanInfo& scan, int* MCUs_per_row,
 
 #if JPEGXL_ENABLE_TRANSCODE_JPEG
 
-Status SetJPEGDataFromICC(const PaddedBytes& icc, jpeg::JPEGData* jpeg_data) {
+Status SetJPEGDataFromICC(const std::vector<uint8_t>& icc,
+                          jpeg::JPEGData* jpeg_data) {
   size_t icc_pos = 0;
   for (size_t i = 0; i < jpeg_data->app_data.size(); i++) {
     if (jpeg_data->app_marker_type[i] != jpeg::AppMarkerType::kICC) {
