@@ -1664,7 +1664,7 @@ class JxlChunkedFrameInputSourceAdapter {
   }
 
   JxlChunkedFrameInputSource GetInputSource() {
-    return JxlChunkedFrameInputSource {
+    return JxlChunkedFrameInputSource{
         this,
         JxlChunkedFrameInputSourceAdapter::GetColorChannelsPixelFormat,
         JxlChunkedFrameInputSourceAdapter::GetColorChannelDataAt,
@@ -1713,7 +1713,6 @@ struct EncodeChunkedFrameTest
 
 TEST_P(EncodeChunkedFrameTest, ChunkedFrame) {
   const ChunkedFrameTestParam p = GetParam();
-  (void)p;
   size_t xsize = 257;
   size_t ysize = 259;
   size_t number_extra_channels = p.with_extra_channels() ? 5 : 0;
@@ -1784,9 +1783,9 @@ TEST_P(EncodeChunkedFrameTest, ChunkedFrame) {
         JxlEncoderFrameSettingsCreate(enc.get(), NULL);
     JxlChunkedFrameInputSourceAdapter chunked_frame_adapter(
         std::move(image.ppf()), std::move(ec_image.ppf()));
-    EXPECT_EQ(JXL_ENC_SUCCESS,
-              JxlEncoderAddChunkedFrame(frame_settings, JXL_TRUE,
-                                        chunked_frame_adapter.GetInputSource()));
+    EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderAddChunkedFrame(
+                                   frame_settings, JXL_TRUE,
+                                   chunked_frame_adapter.GetInputSource()));
     // JxlEncoderCloseInput(enc.get());
     uint8_t* next_out = streaming_compressed.data();
     size_t avail_out = streaming_compressed.size();
@@ -1798,3 +1797,180 @@ TEST_P(EncodeChunkedFrameTest, ChunkedFrame) {
 JXL_GTEST_INSTANTIATE_TEST_SUITE_P(
     AllOptions, EncodeChunkedFrameTest,
     testing::ValuesIn(ChunkedFrameTestParam::All()));
+
+struct InputStreamingTestParam {
+  OutputCallbackTestParam outputCallbackParam;
+  ChunkedFrameTestParam chunkedFrameParam;
+  bool outputCallbackBool;
+  bool chunkedFrameBool;
+
+  static std::vector<InputStreamingTestParam> All() {
+    std::vector<InputStreamingTestParam> params;
+
+    std::vector<OutputCallbackTestParam> outputParams =
+        OutputCallbackTestParam::All();
+    auto chunkedParams = ChunkedFrameTestParam::All();
+
+    for (bool oBool : {true, false}) {
+      for (bool cBool : {true, false}) {
+        for (size_t i = 0; i < outputParams.size(); i++) {
+          for (size_t j = 0; j < chunkedParams.size(); j++) {
+            if (oBool || cBool) {
+              if (oBool ||
+                  (i == 0)) {  // only add one test case if oBool is false
+                if (cBool ||
+                    (j == 0)) {  // only add one test case if cBool is false
+                  params.push_back(InputStreamingTestParam{
+                      outputParams[i], chunkedParams[j], oBool, cBool});
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return params;
+  }
+};
+
+std::ostream& operator<<(std::ostream& out, InputStreamingTestParam p) {
+  out << p.outputCallbackParam << "_" << p.chunkedFrameParam;
+  out << (p.outputCallbackBool ? "_OutputCallbackBoolTrue"
+                               : "_OutputCallbackBoolFalse");
+  out << (p.chunkedFrameBool ? "_ChunkedFrameBoolTrue"
+                             : "_ChunkedFrameBoolFalse");
+  return out;
+}
+
+struct InputStreamingTest
+    : public testing::Test,
+      public testing::WithParamInterface<InputStreamingTestParam> {};
+
+TEST_P(InputStreamingTest, InputStreaming) {
+  const InputStreamingTestParam p = GetParam();
+  (void)p;
+  size_t xsize = 257;
+  size_t ysize = 259;
+  size_t number_extra_channels =
+      p.chunkedFrameParam.with_extra_channels() ? 5 : 0;
+  jxl::test::TestImage image;
+  image.SetDimensions(xsize, ysize)
+      .SetDataType(JXL_TYPE_UINT8)
+      .SetChannels(p.chunkedFrameParam.color_includes_alpha() ? 4 : 3)
+      .SetAllBitDepths(p.outputCallbackParam.use_container() ? 16 : 8);
+  image.AddFrame().RandomFill();
+  jxl::test::TestImage ec_image;
+  ec_image.SetDimensions(xsize, ysize)
+      .SetDataType(JXL_TYPE_UINT8)
+      .SetChannels(1)
+      .SetAllBitDepths(8);
+  ec_image.AddFrame().RandomFill();
+
+  const auto& frame = image.ppf().frames[0].color;
+  const auto& ec_frame = ec_image.ppf().frames[0].color;
+  JxlBasicInfo basic_info = image.ppf().info;
+  basic_info.xsize = xsize;
+  basic_info.ysize = ysize;
+
+  basic_info.num_extra_channels =
+      number_extra_channels + p.chunkedFrameParam.color_includes_alpha();
+
+  std::vector<uint8_t> compressed = std::vector<uint8_t>(64);
+  std::vector<uint8_t> streaming_compressed = std::vector<uint8_t>(64);
+
+  // common code for both with and without streaming
+  auto configure_encoder = [&](JxlEncoderStruct* enc) {
+    JxlEncoderFrameSettings* frame_settings =
+        JxlEncoderFrameSettingsCreate(enc, NULL);
+    if (p.outputCallbackParam.fast_lossless()) {
+      JxlEncoderSetFrameLossless(frame_settings, JXL_TRUE);
+      JxlEncoderFrameSettingsSetOption(frame_settings,
+                                       JXL_ENC_FRAME_SETTING_EFFORT, 1);
+    }
+    EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc, &basic_info));
+    JxlColorEncoding color_encoding;
+    JxlColorEncodingSetToSRGB(&color_encoding, /*is_gray=*/false);
+    EXPECT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderSetColorEncoding(enc, &color_encoding));
+    if (p.outputCallbackParam.use_container()) {
+      JxlEncoderSetCodestreamLevel(enc, 10);
+    }
+    for (size_t i = 0; i < number_extra_channels; i++) {
+      JxlExtraChannelInfo channel_info;
+      JxlExtraChannelType channel_type = JXL_CHANNEL_THERMAL;
+      JxlEncoderInitExtraChannelInfo(channel_type, &channel_info);
+      EXPECT_EQ(JXL_ENC_SUCCESS,
+                JxlEncoderSetExtraChannelInfo(enc, i, &channel_info));
+    }
+  };
+  // without streaming
+  {
+    JxlEncoderPtr enc = JxlEncoderMake(nullptr);
+    ASSERT_NE(nullptr, enc.get());
+    configure_encoder(enc.get());
+    JxlEncoderFrameSettings* frame_settings =
+        JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+    EXPECT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderAddImageFrame(frame_settings, &frame.format,
+                                      frame.pixels(), frame.pixels_size));
+    for (size_t i = 0; i < number_extra_channels; i++) {
+      EXPECT_EQ(JXL_ENC_SUCCESS,
+                JxlEncoderSetExtraChannelBuffer(
+                    frame_settings, &ec_frame.format, ec_frame.pixels(),
+                    ec_frame.pixels_size, i));
+    }
+    if (p.outputCallbackParam.multiple_frames()) {
+      EXPECT_EQ(JXL_ENC_SUCCESS,
+                JxlEncoderAddImageFrame(frame_settings, &frame.format,
+                                        frame.pixels(), frame.pixels_size));
+    }
+    JxlEncoderCloseInput(enc.get());
+    uint8_t* next_out = compressed.data();
+    size_t avail_out = compressed.size();
+    ProcessEncoder(enc.get(), compressed, next_out, avail_out);
+  }
+
+  // with streaming
+  {
+    JxlEncoderPtr enc = JxlEncoderMake(nullptr);
+    ASSERT_NE(nullptr, enc.get());
+    configure_encoder(enc.get());
+    JxlEncoderFrameSettings* frame_settings =
+        JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+    if (p.chunkedFrameBool) {
+      JxlChunkedFrameInputSourceAdapter chunked_frame_adapter(
+          std::move(image.ppf()), std::move(ec_image.ppf()));
+      EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderAddChunkedFrame(
+                                     frame_settings, JXL_TRUE,
+                                     chunked_frame_adapter.GetInputSource()));
+    }
+
+    if (p.outputCallbackBool) {
+      JxlStreamingAdapter streaming_adapter = JxlStreamingAdapter(
+          enc.get(), p.outputCallbackParam.return_large_buffers(),
+          p.outputCallbackParam.can_seek());
+      EXPECT_EQ(JXL_ENC_SUCCESS,
+                JxlEncoderAddImageFrame(frame_settings, &frame.format,
+                                        frame.pixels(), frame.pixels_size));
+      if (p.outputCallbackParam.multiple_frames()) {
+        EXPECT_EQ(JXL_ENC_SUCCESS,
+                  JxlEncoderAddImageFrame(frame_settings, &frame.format,
+                                          frame.pixels(), frame.pixels_size));
+      }
+      JxlEncoderCloseInput(enc.get());
+      EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderFlushInput(enc.get()));
+      streaming_adapter.CheckFinalWatermarkPosition();
+      EXPECT_EQ(std::move(streaming_adapter).output(), compressed);
+    } else {
+      uint8_t* next_out = streaming_compressed.data();
+      size_t avail_out = streaming_compressed.size();
+      ProcessEncoder(enc.get(), streaming_compressed, next_out, avail_out);
+      EXPECT_EQ(streaming_compressed, compressed);
+    }
+  }
+}
+
+JXL_GTEST_INSTANTIATE_TEST_SUITE_P(
+    InputStreamingTestInstantiation, InputStreamingTest,
+    testing::ValuesIn(InputStreamingTestParam::All()));
