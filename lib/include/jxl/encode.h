@@ -910,7 +910,9 @@ struct JxlChunkedFrameInputSource {
  * chunked or streaming manner, which can be especially useful when dealing with
  * large images that may not fit entirely in memory or when trying to optimize
  * memory usage. The input data is provided through callbacks defined in the
- * `JxlChunkedFrameInputSource` struct.
+ * `JxlChunkedFrameInputSource` struct. Once the frame data has been completely
+ * retrieved, this function will flush the input and close it if it is the last
+ * frame.
  *
  * @param frame_settings set of options and metadata for this frame. Also
  * includes reference to the encoder object.
