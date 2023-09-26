@@ -3,8 +3,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include <jxl/codestream_header.h>
 #include <jxl/cms_interface.h>
+#include <jxl/codestream_header.h>
 #include <jxl/decode.h>
 #include <jxl/decode_cxx.h>
 #include <jxl/encode.h>
@@ -1866,8 +1866,8 @@ TEST_P(EncoderStreamingTest, ChunkedAndOutputCallback) {
                                      frame_settings, JXL_TRUE,
                                      chunked_frame_adapter.GetInputSource()));
     }
-      streaming_adapter.CheckFinalWatermarkPosition();
-      EXPECT_EQ(std::move(streaming_adapter).output(), compressed);
+    streaming_adapter.CheckFinalWatermarkPosition();
+    EXPECT_EQ(std::move(streaming_adapter).output(), compressed);
   }
 }
 
