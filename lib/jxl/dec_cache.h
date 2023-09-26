@@ -127,6 +127,7 @@ struct PassesDecoderState {
     bool use_slow_render_pipeline;
     bool coalescing;
     bool render_spotcolors;
+    bool render_noise;
   };
 
   Status PreparePipeline(ImageBundle* decoded, PipelineOptions options);

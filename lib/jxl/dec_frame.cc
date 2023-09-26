@@ -645,6 +645,7 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
     pipeline_options.use_slow_render_pipeline = use_slow_rendering_pipeline_;
     pipeline_options.coalescing = coalescing_;
     pipeline_options.render_spotcolors = render_spotcolors_;
+    pipeline_options.render_noise = true;
     JXL_RETURN_IF_ERROR(
         dec_state_->PreparePipeline(decoded_, pipeline_options));
     FinalizeDC();
