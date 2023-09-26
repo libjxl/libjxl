@@ -904,8 +904,22 @@ struct JxlChunkedFrameInputSource {
 };
 
 /**
- * @brief x
+ * @brief Adds a frame to the encoder using a chunked input source.
  *
+ * This function gives a way to encode a frame by providing pixel data in a
+ * chunked or streaming manner, which can be especially useful when dealing with
+ * large images that may not fit entirely in memory or when trying to optimize
+ * memory usage. The input data is provided through callbacks defined in the
+ * `JxlChunkedFrameInputSource` struct.
+ *
+ * @param frame_settings set of options and metadata for this frame. Also
+ * includes reference to the encoder object.
+ * @param is_last_frame indicates if this is the last frame.
+ * @param chunked_frame_input struct providing callback methods for retrieving
+ * pixel data in chunks.
+ *
+ * @return Returns a status indicating the success or failure of adding the
+ * frame.
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderAddChunkedFrame(
     const JxlEncoderFrameSettings* frame_settings, JXL_BOOL is_last_frame,
