@@ -795,7 +795,7 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetOutputProcessor(
 JXL_EXPORT JxlEncoderStatus JxlEncoderFlushInput(JxlEncoder* enc);
 
 /**
- * This struct provides callback functions to retrieve pixel data in a streaming
+ * This struct provides callback functions to pass pixel data in a streaming
  * manner instead of requiring the entire frame data in memory at once.
  */
 struct JxlChunkedFrameInputSource {
