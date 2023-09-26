@@ -436,7 +436,7 @@ Status ColorEncoding::SetFieldsFromICC(const JxlCmsInterface& cms) {
     cmyk_ = true;
     return true;
   }
-  PaddedBytes icc = std::move(icc_);
+  IccBytes icc = std::move(icc_);
   JXL_RETURN_IF_ERROR(ConvertExternalToInternalColorEncoding(external, this));
   icc_ = std::move(icc);
   return true;
@@ -453,7 +453,7 @@ void ColorEncoding::DecideIfWantICC(const JxlCmsInterface& cms) {
   }
   if (cmyk) return;
 
-  PaddedBytes new_icc;
+  IccBytes new_icc;
   if (!MaybeCreateProfile(*this, &new_icc)) return;
 
   want_icc_ = false;

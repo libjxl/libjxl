@@ -12,6 +12,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <hwy/aligned_allocator.h>
 #include <vector>
 
 #include "lib/jxl/base/compiler_specific.h"

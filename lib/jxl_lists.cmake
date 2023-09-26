@@ -427,6 +427,8 @@ set(JPEGXL_INTERNAL_EXTRAS_FOR_TOOLS_SOURCES
 )
 
 set(JPEGXL_INTERNAL_EXTRAS_SOURCES
+  extras/alpha_blend.cc
+  extras/alpha_blend.h
   extras/dec/color_description.cc
   extras/dec/color_description.h
   extras/dec/color_hints.cc
@@ -576,6 +578,7 @@ set(JPEGXL_INTERNAL_TESTS
   jxl/bit_reader_test.cc
   jxl/bits_test.cc
   jxl/blending_test.cc
+  jxl/butteraugli/butteraugli_test.cc
   jxl/byte_order_test.cc
   jxl/coeff_order_test.cc
   jxl/color_encoding_internal_test.cc

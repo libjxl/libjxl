@@ -24,6 +24,7 @@
 
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_tone_mapping-inl.h"
 #include "lib/jxl/field_encodings.h"
@@ -192,9 +193,9 @@ bool CanToneMap(const ColorEncoding& encoding) {
            encoding.white_point == WhitePoint::kD65));
 }
 
-void ICCComputeMD5(const PaddedBytes& data, uint8_t sum[16])
+void ICCComputeMD5(const IccBytes& data, uint8_t sum[16])
     JXL_NO_SANITIZE("unsigned-integer-overflow") {
-  PaddedBytes data64 = data;
+  IccBytes data64 = data;
   data64.push_back(128);
   // Add bytes such that ((size + 8) & 63) == 0.
   size_t extra = ((64 - ((data64.size() + 8) & 63)) & 63);
@@ -292,7 +293,7 @@ Status CreateICCRGBMatrix(CIExy r, CIExy g, CIExy b, CIExy w, float result[9]) {
   return true;
 }
 
-void WriteICCUint32(uint32_t value, size_t pos, PaddedBytes* JXL_RESTRICT icc) {
+void WriteICCUint32(uint32_t value, size_t pos, IccBytes* JXL_RESTRICT icc) {
   if (icc->size() < pos + 4) icc->resize(pos + 4);
   (*icc)[pos + 0] = (value >> 24u) & 255;
   (*icc)[pos + 1] = (value >> 16u) & 255;
@@ -300,25 +301,24 @@ void WriteICCUint32(uint32_t value, size_t pos, PaddedBytes* JXL_RESTRICT icc) {
   (*icc)[pos + 3] = value & 255;
 }
 
-void WriteICCUint16(uint16_t value, size_t pos, PaddedBytes* JXL_RESTRICT icc) {
+void WriteICCUint16(uint16_t value, size_t pos, IccBytes* JXL_RESTRICT icc) {
   if (icc->size() < pos + 2) icc->resize(pos + 2);
   (*icc)[pos + 0] = (value >> 8u) & 255;
   (*icc)[pos + 1] = value & 255;
 }
 
-void WriteICCUint8(uint8_t value, size_t pos, PaddedBytes* JXL_RESTRICT icc) {
+void WriteICCUint8(uint8_t value, size_t pos, IccBytes* JXL_RESTRICT icc) {
   if (icc->size() < pos + 1) icc->resize(pos + 1);
   (*icc)[pos] = value;
 }
 
 // Writes a 4-character tag
-void WriteICCTag(const char* value, size_t pos, PaddedBytes* JXL_RESTRICT icc) {
+void WriteICCTag(const char* value, size_t pos, IccBytes* JXL_RESTRICT icc) {
   if (icc->size() < pos + 4) icc->resize(pos + 4);
   memcpy(icc->data() + pos, value, 4);
 }
 
-Status WriteICCS15Fixed16(float value, size_t pos,
-                          PaddedBytes* JXL_RESTRICT icc) {
+Status WriteICCS15Fixed16(float value, size_t pos, IccBytes* JXL_RESTRICT icc) {
   // "nextafterf" for 32768.0f towards zero are:
   // 32767.998046875, 32767.99609375, 32767.994140625
   // Even the first value works well,...
@@ -331,8 +331,7 @@ Status WriteICCS15Fixed16(float value, size_t pos,
   return true;
 }
 
-Status CreateICCHeader(const ColorEncoding& c,
-                       PaddedBytes* JXL_RESTRICT header) {
+Status CreateICCHeader(const ColorEncoding& c, IccBytes* JXL_RESTRICT header) {
   // TODO(lode): choose color management engine name, e.g. "skia" if
   // integrated in skia.
   static const char* kCmm = "jxl ";
@@ -387,7 +386,7 @@ Status CreateICCHeader(const ColorEncoding& c,
 }
 
 void AddToICCTagTable(const char* tag, size_t offset, size_t size,
-                      PaddedBytes* JXL_RESTRICT tagtable,
+                      IccBytes* JXL_RESTRICT tagtable,
                       std::vector<size_t>* offsets) {
   WriteICCTag(tag, tagtable->size(), tagtable);
   // writing true offset deferred to later
@@ -396,8 +395,7 @@ void AddToICCTagTable(const char* tag, size_t offset, size_t size,
   WriteICCUint32(size, tagtable->size(), tagtable);
 }
 
-void FinalizeICCTag(PaddedBytes* JXL_RESTRICT tags, size_t* offset,
-                    size_t* size) {
+void FinalizeICCTag(IccBytes* JXL_RESTRICT tags, size_t* offset, size_t* size) {
   while ((tags->size() & 3) != 0) {
     tags->push_back(0);
   }
@@ -407,7 +405,7 @@ void FinalizeICCTag(PaddedBytes* JXL_RESTRICT tags, size_t* offset,
 
 // The input text must be ASCII, writing other characters to UTF-16 is not
 // implemented.
-void CreateICCMlucTag(const std::string& text, PaddedBytes* JXL_RESTRICT tags) {
+void CreateICCMlucTag(const std::string& text, IccBytes* JXL_RESTRICT tags) {
   WriteICCTag("mluc", tags->size(), tags);
   WriteICCUint32(0, tags->size(), tags);
   WriteICCUint32(1, tags->size(), tags);
@@ -421,7 +419,7 @@ void CreateICCMlucTag(const std::string& text, PaddedBytes* JXL_RESTRICT tags) {
   }
 }
 
-Status CreateICCXYZTag(float xyz[3], PaddedBytes* JXL_RESTRICT tags) {
+Status CreateICCXYZTag(float xyz[3], IccBytes* JXL_RESTRICT tags) {
   WriteICCTag("XYZ ", tags->size(), tags);
   WriteICCUint32(0, tags->size(), tags);
   for (size_t i = 0; i < 3; ++i) {
@@ -430,7 +428,7 @@ Status CreateICCXYZTag(float xyz[3], PaddedBytes* JXL_RESTRICT tags) {
   return true;
 }
 
-Status CreateICCChadTag(float chad[9], PaddedBytes* JXL_RESTRICT tags) {
+Status CreateICCChadTag(float chad[9], IccBytes* JXL_RESTRICT tags) {
   WriteICCTag("sf32", tags->size(), tags);
   WriteICCUint32(0, tags->size(), tags);
   for (size_t i = 0; i < 9; i++) {
@@ -439,9 +437,9 @@ Status CreateICCChadTag(float chad[9], PaddedBytes* JXL_RESTRICT tags) {
   return true;
 }
 
-void MaybeCreateICCCICPTag(const ColorEncoding& c,
-                           PaddedBytes* JXL_RESTRICT tags, size_t* offset,
-                           size_t* size, PaddedBytes* JXL_RESTRICT tagtable,
+void MaybeCreateICCCICPTag(const ColorEncoding& c, IccBytes* JXL_RESTRICT tags,
+                           size_t* offset, size_t* size,
+                           IccBytes* JXL_RESTRICT tagtable,
                            std::vector<size_t>* offsets) {
   if (c.GetColorSpace() != ColorSpace::kRGB) {
     return;
@@ -478,7 +476,7 @@ void MaybeCreateICCCICPTag(const ColorEncoding& c,
 }
 
 void CreateICCCurvCurvTag(const std::vector<uint16_t>& curve,
-                          PaddedBytes* JXL_RESTRICT tags) {
+                          IccBytes* JXL_RESTRICT tags) {
   size_t pos = tags->size();
   tags->resize(tags->size() + 12 + curve.size() * 2, 0);
   WriteICCTag("curv", pos, tags);
@@ -491,7 +489,7 @@ void CreateICCCurvCurvTag(const std::vector<uint16_t>& curve,
 
 // Writes 12 + 4*params.size() bytes
 Status CreateICCCurvParaTag(std::vector<float> params, size_t curve_type,
-                            PaddedBytes* JXL_RESTRICT tags) {
+                            IccBytes* JXL_RESTRICT tags) {
   WriteICCTag("para", tags->size(), tags);
   WriteICCUint32(0, tags->size(), tags);
   WriteICCUint16(curve_type, tags->size(), tags);
@@ -502,7 +500,7 @@ Status CreateICCCurvParaTag(std::vector<float> params, size_t curve_type,
   return true;
 }
 
-Status CreateICCLutAtoBTagForXYB(PaddedBytes* JXL_RESTRICT tags) {
+Status CreateICCLutAtoBTagForXYB(IccBytes* JXL_RESTRICT tags) {
   WriteICCTag("mAB ", tags->size(), tags);
   // 4 reserved bytes set to 0
   WriteICCUint32(0, tags->size(), tags);
@@ -605,8 +603,7 @@ Status CreateICCLutAtoBTagForXYB(PaddedBytes* JXL_RESTRICT tags) {
   return true;
 }
 
-Status CreateICCLutAtoBTagForHDR(ColorEncoding c,
-                                 PaddedBytes* JXL_RESTRICT tags) {
+Status CreateICCLutAtoBTagForHDR(ColorEncoding c, IccBytes* JXL_RESTRICT tags) {
   static constexpr size_t k3DLutDim = 9;
   WriteICCTag("mft1", tags->size(), tags);
   // 4 reserved bytes set to 0
@@ -662,7 +659,7 @@ Status CreateICCLutAtoBTagForHDR(ColorEncoding c,
 }
 
 // Some software (Apple Safari, Preview) requires this.
-Status CreateICCNoOpBToATag(PaddedBytes* JXL_RESTRICT tags) {
+Status CreateICCNoOpBToATag(IccBytes* JXL_RESTRICT tags) {
   WriteICCTag("mBA ", tags->size(), tags);
   // 4 reserved bytes set to 0
   WriteICCUint32(0, tags->size(), tags);
@@ -692,9 +689,8 @@ Status CreateICCNoOpBToATag(PaddedBytes* JXL_RESTRICT tags) {
 
 }  // namespace
 
-Status MaybeCreateProfile(const ColorEncoding& c,
-                          PaddedBytes* JXL_RESTRICT icc) {
-  PaddedBytes header, tagtable, tags;
+Status MaybeCreateProfile(const ColorEncoding& c, IccBytes* JXL_RESTRICT icc) {
+  IccBytes header, tagtable, tags;
 
   if (c.GetColorSpace() == ColorSpace::kUnknown || c.tf.IsUnknown()) {
     return false;  // Not an error
@@ -855,14 +851,14 @@ Status MaybeCreateProfile(const ColorEncoding& c,
   WriteICCUint32(header.size() + tagtable.size() + tags.size(), 0, &header);
 
   *icc = header;
-  icc->append(tagtable);
-  icc->append(tags);
+  Span<const uint8_t>(tagtable).AppendTo(icc);
+  Span<const uint8_t>(tags).AppendTo(icc);
 
   // The MD5 checksum must be computed on the profile with profile flags,
   // rendering intent, and region of the checksum itself, set to 0.
   // TODO(lode): manually verify with a reliable tool that this creates correct
   // signature (profile id) for ICC profiles.
-  PaddedBytes icc_sum = *icc;
+  IccBytes icc_sum = *icc;
   if (icc_sum.size() >= 64 + 4) {
     memset(icc_sum.data() + 44, 0, 4);
     memset(icc_sum.data() + 64, 0, 4);

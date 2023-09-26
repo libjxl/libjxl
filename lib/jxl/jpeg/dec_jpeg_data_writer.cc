@@ -756,7 +756,7 @@ SerializationStatus JXL_NOINLINE DoEncodeScan(const JPEGData& jpg,
   // DC-only is defined by [0..0] spectral range.
   const bool want_ac = ((Ss != 0) || (Se != 0));
   const bool want_dc = (Ss == 0);
-  // TODO: support streaming decoding again.
+  // TODO(user): support streaming decoding again.
   const bool complete_ac = true;
   const bool has_ac = true;
   if (want_ac && !has_ac) return SerializationStatus::NEEDS_MORE_INPUT;

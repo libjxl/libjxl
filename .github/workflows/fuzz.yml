@@ -30,8 +30,13 @@ jobs:
   fuzzing:
     runs-on: ubuntu-latest
     steps:
+    - name: Harden Runner
+      uses: step-security/harden-runner@8ca2b8b2ece13480cda6dacd3511b49857a23c09 # v2.5.1
+      with:
+        egress-policy: audit
+
     - name: Checkout source
-      uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac # v4.0.0
+      uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608 # v4.1.0
       id: checkout
       with:
         # The build_fuzzers action checks out the code to the storage/libjxl
@@ -41,18 +46,18 @@ jobs:
         submodules: true
     - name: Build Fuzzers
       id: build
-      uses: google/oss-fuzz/infra/cifuzz/actions/build_fuzzers@master
+      uses: google/oss-fuzz/infra/cifuzz/actions/build_fuzzers@71ecd5d4e4bf9a6edc19c9fa6d2422fb528bca4f # master
       with:
         oss-fuzz-project-name: 'libjxl'
         language: c++
     - name: Run Fuzzers
-      uses: google/oss-fuzz/infra/cifuzz/actions/run_fuzzers@master
+      uses: google/oss-fuzz/infra/cifuzz/actions/run_fuzzers@71ecd5d4e4bf9a6edc19c9fa6d2422fb528bca4f # master
       with:
         oss-fuzz-project-name: 'libjxl'
         language: c++
         fuzz-seconds: 600
     - name: Upload Crash
-      uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
+      uses: actions/upload-artifact@a8a3f3ad30e3422c9c7b888a15615d19a852ae32 # v3.1.3
       if: failure() && steps.build.outcome == 'success'
       with:
         name: artifacts

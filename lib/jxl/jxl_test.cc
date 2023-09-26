@@ -579,7 +579,7 @@ TEST(JxlTest, RoundtripImageBundleOriginalBits) {
   // Test various existing and non-existing floating point formats
   for (uint32_t bit_depth = 8; bit_depth <= 32; bit_depth++) {
     if (bit_depth != 32) {
-      // TODO: test other float types once they work
+      // TODO(user): test other float types once they work
       break;
     }
 

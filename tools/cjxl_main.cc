@@ -188,7 +188,8 @@ struct CompressArgs {
     opt_lossless_jpeg_id = cmdline->AddOptionValue(
         'j', "lossless_jpeg", "0|1",
         "If the input is JPEG, losslessly transcode JPEG, "
-        "rather than using reencode pixels.",
+        "rather than using reencode pixels. Default is 1 (losslessly "
+        "transcode)",
         &lossless_jpeg, &ParseUnsigned, 1);
 
     cmdline->AddOptionValue(
@@ -623,11 +624,15 @@ void SetDistanceFromFlags(CommandLineParser* cmdline, CompressArgs* args,
   bool alpha_distance_set =
       cmdline->GetOption(args->opt_alpha_distance_id)->matched();
   bool quality_set = cmdline->GetOption(args->opt_quality_id)->matched();
-  if (((distance_set && (args->distance != 0.0)) ||
-       (quality_set && (args->quality != 100))) &&
-      args->lossless_jpeg) {
-    std::cerr << "Must not set quality below 100 nor non-zero distance in "
-                 "combination with --lossless_jpeg=1."
+  if ((distance_set && (args->distance != 0.0)) && args->lossless_jpeg) {
+    std::cerr << "Must not set non-zero distance in combination with "
+                 "--lossless_jpeg=1, which is set by default."
+              << std::endl;
+    exit(EXIT_FAILURE);
+  }
+  if ((quality_set && (args->quality != 100)) && args->lossless_jpeg) {
+    std::cerr << "Must not set quality below 100 in combination with "
+                 "--lossless_jpeg=1, which is set by default"
               << std::endl;
     exit(EXIT_FAILURE);
   }
@@ -644,6 +649,7 @@ void SetDistanceFromFlags(CommandLineParser* cmdline, CompressArgs* args,
     args->distance = distance;
     distance_set = true;
   }
+
   if (!distance_set) {
     bool lossy_input = (codec == jxl::extras::Codec::kJPG ||
                         codec == jxl::extras::Codec::kGIF);

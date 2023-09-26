@@ -20,6 +20,7 @@
 #include <jxl/parallel_runner.h>
 #include <jxl/stats.h>
 #include <jxl/version.h>
+#include <stdint.h>
 
 #include "jxl/types.h"
 

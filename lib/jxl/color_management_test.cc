@@ -5,6 +5,7 @@
 
 #include "lib/jxl/color_management.h"
 
+#include <jxl/cms_interface.h>
 #include <stdint.h>
 
 #include <algorithm>
@@ -14,6 +15,7 @@
 
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/random.h"
 #include "lib/jxl/enc_xyb.h"
 #include "lib/jxl/image_test_utils.h"
@@ -195,7 +197,7 @@ TEST_P(ColorManagementTest, VerifyAllProfiles) {
 
   // Can set an equivalent ColorEncoding from the generated ICC profile.
   ColorEncoding c3;
-  ASSERT_TRUE(c3.SetICC(PaddedBytes(c.ICC()), JxlGetDefaultCms()));
+  ASSERT_TRUE(c3.SetICC(IccBytes(c.ICC()), JxlGetDefaultCms()));
   EXPECT_THAT(c3, HasSameFieldsAs(c));
 
   VerifyPixelRoundTrip(c);
@@ -225,8 +227,10 @@ TEST_F(ColorManagementTest, sRGBChromaticity) {
 }
 
 TEST_F(ColorManagementTest, D2700Chromaticity) {
-  PaddedBytes icc =
+  PaddedBytes icc_data =
       jxl::test::ReadTestData("jxl/color_management/sRGB-D2700.icc");
+  IccBytes icc;
+  Span<const uint8_t>(icc_data).AppendTo(&icc);
   ColorEncoding sRGB_D2700;
   ASSERT_TRUE(sRGB_D2700.SetICC(std::move(icc), JxlGetDefaultCms()));
 
@@ -241,8 +245,10 @@ TEST_F(ColorManagementTest, D2700Chromaticity) {
 
 TEST_F(ColorManagementTest, D2700ToSRGB) {
   const JxlCmsInterface& cms = *JxlGetDefaultCms();
-  PaddedBytes icc =
+  PaddedBytes icc_data =
       jxl::test::ReadTestData("jxl/color_management/sRGB-D2700.icc");
+  IccBytes icc;
+  Span<const uint8_t>(icc_data).AppendTo(&icc);
   ColorEncoding sRGB_D2700;
   ASSERT_TRUE(sRGB_D2700.SetICC(std::move(icc), &cms));
 

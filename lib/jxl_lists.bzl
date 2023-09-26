@@ -427,6 +427,8 @@ libjxl_extras_for_tools_sources = [
 ]
 
 libjxl_extras_sources = [
+    "extras/alpha_blend.cc",
+    "extras/alpha_blend.h",
     "extras/dec/color_description.cc",
     "extras/dec/color_description.h",
     "extras/dec/color_hints.cc",
@@ -584,6 +586,7 @@ libjxl_tests = [
     "jxl/bit_reader_test.cc",
     "jxl/bits_test.cc",
     "jxl/blending_test.cc",
+    "jxl/butteraugli/butteraugli_test.cc",
     "jxl/byte_order_test.cc",
     "jxl/coeff_order_test.cc",
     "jxl/color_encoding_internal_test.cc",

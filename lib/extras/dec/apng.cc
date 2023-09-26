@@ -282,9 +282,9 @@ class BlobsReaderPNG {
       }
       metadata->exif = std::move(bytes);
     } else if (type == "iptc") {
-      // TODO (jon): Deal with IPTC in some way
+      // TODO(jon): Deal with IPTC in some way
     } else if (type == "8bim") {
-      // TODO (jon): Deal with 8bim in some way
+      // TODO(jon): Deal with 8bim in some way
     } else if (type == "xmp") {
       if (!metadata->xmp.empty()) {
         JXL_WARNING("overwriting XMP (%" PRIuS " bytes) with base16 (%" PRIuS
@@ -754,8 +754,12 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
           if (colortype & 4 ||
               png_get_valid(png_ptr, info_ptr, PNG_INFO_tRNS)) {
             ppf->info.alpha_bits = ppf->info.bits_per_sample;
-            if (sigbits) {
-              ppf->info.alpha_bits = sigbits->alpha;
+            if (sigbits && sigbits->alpha != ppf->info.bits_per_sample) {
+              JXL_WARNING(
+                  "sBIT chunk: bit depths for RGBA are inconsistent "
+                  "(%i %i %i %i). Setting A bitdepth to %i.",
+                  sigbits->red, sigbits->green, sigbits->blue, sigbits->alpha,
+                  ppf->info.bits_per_sample);
             }
           } else {
             ppf->info.alpha_bits = 0;

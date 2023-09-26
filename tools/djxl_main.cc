@@ -20,6 +20,7 @@
 #include <string>
 #include <vector>
 
+#include "lib/extras/alpha_blend.h"
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/decode.h"
 #include "lib/extras/dec/jxl.h"
@@ -149,6 +150,23 @@ struct DecompressArgs {
                            "No output file will be written (for benchmarking)",
                            &disable_output, &SetBooleanTrue, 2);
 
+    cmdline->AddOptionFlag('\0', "output_extra_channels",
+                           "If set, all extra channels will be written either "
+                           "as part of the main output file (e.g. alpha "
+                           "channel in png) or as separate output files with "
+                           "suffix -ecN in their names. If not set, the "
+                           "(first) alpha channel will only be written when "
+                           "the output format supports alpha channels and all "
+                           "other extra channels won't be decoded.",
+                           &output_extra_channels, &SetBooleanTrue, 2);
+
+    cmdline->AddOptionFlag('\0', "output_frames",
+                           "If set, all frames will be written either as part "
+                           "of the main output file if that supports "
+                           "animation, or as separate output files with "
+                           "suffix -N in their names.",
+                           &output_frames, &SetBooleanTrue, 2);
+
     cmdline->AddOptionFlag('\0', "use_sjpeg",
                            "Use sjpeg instead of libjpeg for JPEG output.",
                            &use_sjpeg, &SetBooleanTrue, 2);
@@ -180,6 +198,18 @@ struct DecompressArgs {
                             "If specified, writes metadata info to a JSON "
                             "file. Used by the conformance test script",
                             &metadata_out, &ParseString, 2);
+
+    cmdline->AddOptionValue('\0', "background", "#NNNNNN",
+                            "Specifies the background color for the "
+                            "--alpha_blend option. Recognized values are "
+                            "'black', 'white' (default), or '#NNNNNN'",
+                            &background_spec, &ParseString, 2);
+
+    cmdline->AddOptionFlag('\0', "alpha_blend",
+                           "Blends alpha channel with the color image using "
+                           "background color specified by --background "
+                           "(default is white).",
+                           &alpha_blend, &SetBooleanTrue, 2);
 
     cmdline->AddOptionFlag('\0', "print_read_bytes",
                            "Print total number of decoded bytes.",
@@ -218,10 +248,14 @@ struct DecompressArgs {
   size_t jpeg_quality = 95;
   bool use_sjpeg = false;
   bool render_spotcolors = true;
+  bool output_extra_channels = false;
+  bool output_frames = false;
   std::string preview_out;
   std::string icc_out;
   std::string orig_icc_out;
   std::string metadata_out;
+  std::string background_spec = "white";
+  bool alpha_blend = false;
   bool print_read_bytes = false;
   bool quiet = false;
   // References (ids) of specific options to check if they were matched.
@@ -253,7 +287,7 @@ std::string Filename(const std::string& base, const std::string& extension,
     snprintf(buf.data(), buf.size(), "-%0*d", digits(num_frames), frame_index);
     out.append(buf.data());
   }
-  if (num_layers > 1) {
+  if (num_layers > 1 && layer_index > 0) {
     std::vector<char> buf(4 + digits(num_layers));
     snprintf(buf.data(), buf.size(), "-ec%0*d", digits(num_layers),
              layer_index);
@@ -265,6 +299,43 @@ std::string Filename(const std::string& base, const std::string& extension,
     out.append(extension);
   }
   return out;
+}
+
+void AddFormatsWithAlphaChannel(std::vector<JxlPixelFormat>* formats) {
+  auto add_format = [&](JxlPixelFormat format) {
+    for (auto f : *formats) {
+      if (memcmp(&f, &format, sizeof(format)) == 0) return;
+    }
+    formats->push_back(format);
+  };
+  size_t num_formats = formats->size();
+  for (size_t i = 0; i < num_formats; ++i) {
+    JxlPixelFormat format = (*formats)[i];
+    if (format.num_channels == 1 || format.num_channels == 3) {
+      ++format.num_channels;
+      add_format(format);
+    }
+  }
+}
+
+bool ParseBackgroundColor(const std::string& background_desc,
+                          float background[3]) {
+  if (background_desc == "black") {
+    background[0] = background[1] = background[2] = 0.0f;
+    return true;
+  }
+  if (background_desc == "white") {
+    background[0] = background[1] = background[2] = 1.0f;
+    return true;
+  }
+  if (background_desc.size() != 7 || background_desc[0] != '#') {
+    return false;
+  }
+  uint32_t color = std::stoi(background_desc.substr(1), nullptr, 16);
+  background[0] = ((color >> 16) & 0xff) * (1.0f / 255);
+  background[1] = ((color >> 8) & 0xff) * (1.0f / 255);
+  background[2] = (color & 0xff) * (1.0f / 255);
+  return true;
 }
 
 bool DecompressJxlReconstructJPEG(const jpegxl::tools::DecompressArgs& args,
@@ -461,6 +532,9 @@ int main(int argc, const char* argv[]) {
         return EXIT_FAILURE;
       }
       accepted_formats = encoder->AcceptedFormats();
+      if (args.alpha_blend) {
+        AddFormatsWithAlphaChannel(&accepted_formats);
+      }
     }
     jxl::extras::PackedPixelFile ppf;
     size_t decoded_bytes = 0;
@@ -475,6 +549,14 @@ int main(int argc, const char* argv[]) {
     if (!args.quiet) cmdline.VerbosePrintf(0, "Decoded to pixels.\n");
     if (args.print_read_bytes) {
       fprintf(stderr, "Decoded bytes: %" PRIuS "\n", decoded_bytes);
+    }
+    if (args.alpha_blend) {
+      float background[3];
+      if (!ParseBackgroundColor(args.background_spec, background)) {
+        fprintf(stderr, "Invalid background color %s\n",
+                args.background_spec.c_str());
+      }
+      AlphaBlend(&ppf, background);
     }
     if (encoder) {
       std::ostringstream os;
@@ -492,8 +574,10 @@ int main(int argc, const char* argv[]) {
         return EXIT_FAILURE;
       }
     }
-    size_t nlayers = 1 + encoded_image.extra_channel_bitstreams.size();
-    size_t nframes = encoded_image.bitstreams.size();
+    size_t nlayers = args.output_extra_channels
+                         ? 1 + encoded_image.extra_channel_bitstreams.size()
+                         : 1;
+    size_t nframes = args.output_frames ? encoded_image.bitstreams.size() : 1;
     for (size_t i = 0; i < nlayers; ++i) {
       for (size_t j = 0; j < nframes; ++j) {
         const std::vector<uint8_t>& bitstream =

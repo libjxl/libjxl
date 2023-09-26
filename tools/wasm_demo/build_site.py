@@ -137,7 +137,7 @@ if __name__ == "__main__":
     else:
       shutil.copy(path, output_path.absolute())
 
-  # TODO: uglify
+  # TODO(eustas): uglify
   for name in COPY_BIN:
     shutil.copy(binary_path.joinpath(name), output_path.absolute())
 

@@ -315,7 +315,7 @@ size_t WriteBoxHeader(const jxl::BoxType& type, size_t size, bool unbounded,
   if (!unbounded) {
     if (box_size >= kLargeBoxContentSizeThreshold || force_large_box) {
       large_size = true;
-      // TODO: send a separate CL for this (+ test),
+      // TODO(firsching): send a separate CL for this (+ test),
       // quick fix in the old code: box_size += 8
       box_size = size + kLargeBoxHeaderSize;
     } else {
@@ -1072,7 +1072,7 @@ JxlEncoderStatus JxlEncoderSetICCProfile(JxlEncoder* enc,
     return JXL_API_ERROR(enc, JXL_ENC_ERR_API_USAGE,
                          "ICC profile is already set");
   }
-  jxl::PaddedBytes icc;
+  jxl::IccBytes icc;
   icc.assign(icc_profile, icc_profile + size);
   if (!enc->metadata.m.color_encoding.SetICC(
           std::move(icc), enc->cms_set ? &enc->cms : nullptr)) {

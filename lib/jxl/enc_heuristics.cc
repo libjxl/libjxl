@@ -686,7 +686,7 @@ void DownsampleImage2_Iterative(Image3F* opsin) {
                        downsampled.ysize() - kBlockDim);
 
   Image3F rgb(opsin->xsize(), opsin->ysize());
-  OpsinParams opsin_params;  // TODO: use the ones that are actually used
+  OpsinParams opsin_params;  // TODO(user): use the ones that are actually used
   opsin_params.Init(kDefaultIntensityTarget);
   OpsinToLinear(*opsin, Rect(rgb), nullptr, &rgb, opsin_params);
 
