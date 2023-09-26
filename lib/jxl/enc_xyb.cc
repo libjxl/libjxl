@@ -18,7 +18,6 @@
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
-#include "lib/jxl/color_management.h"
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_image_bundle.h"
 #include "lib/jxl/fast_math-inl.h"
@@ -228,7 +227,7 @@ Image3F TransformToLinearRGB(const Image3F& in,
                              ThreadPool* pool) {
   ColorSpaceTransform c_transform(cms);
   bool is_gray = color_encoding.IsGray();
-  const ColorEncoding& c_desired = ColorEncoding::LinearSRGB(is_gray);
+  const ColorEncoding& c_desired = ColorEncodingLinearSRGB(is_gray);
   Image3F out(in.xsize(), in.ysize());
   std::atomic<bool> ok{true};
   JXL_CHECK(RunOnPool(
@@ -292,7 +291,7 @@ void Image3FToXYB(const Image3F& in, const ColorEncoding& color_encoding,
   ComputePremulAbsorb(intensity_target, premul_absorb);
 
   bool is_gray = color_encoding.IsGray();
-  const ColorEncoding& c_linear_srgb = ColorEncoding::LinearSRGB(is_gray);
+  const ColorEncoding& c_linear_srgb = ColorEncodingLinearSRGB(is_gray);
   if (c_linear_srgb.SameColorEncoding(color_encoding)) {
     JXL_CHECK(LinearSRGBToXYB(in, premul_absorb, pool, xyb));
   } else if (color_encoding.IsSRGB()) {
@@ -320,7 +319,7 @@ const ImageBundle* ToXYB(const ImageBundle& in, ThreadPool* pool,
 
   const bool want_linear = linear != nullptr;
 
-  const ColorEncoding& c_linear_srgb = ColorEncoding::LinearSRGB(in.IsGray());
+  const ColorEncoding& c_linear_srgb = ColorEncodingLinearSRGB(in.IsGray());
   // Linear sRGB inputs are rare but can be useful for the fastest encoders, for
   // which undoing the sRGB transfer function would be a large part of the cost.
   if (c_linear_srgb.SameColorEncoding(in.c_current())) {
@@ -500,10 +499,10 @@ Status RgbToYcbcr(const ImageF& r_plane, const ImageF& g_plane,
 Image3F OpsinDynamicsImage(const Image3B& srgb8, const JxlCmsInterface& cms) {
   ImageMetadata metadata;
   metadata.SetUintSamples(8);
-  metadata.color_encoding = ColorEncoding::SRGB();
+  metadata.color_encoding = ColorEncodingSRGB();
   ImageBundle ib(&metadata);
   ib.SetFromImage(ConvertToFloat(srgb8), metadata.color_encoding);
-  JXL_CHECK(ib.TransformTo(ColorEncoding::LinearSRGB(ib.IsGray()), cms));
+  JXL_CHECK(ib.TransformTo(ColorEncodingLinearSRGB(ib.IsGray()), cms));
   ThreadPool* null_pool = nullptr;
   Image3F xyb(srgb8.xsize(), srgb8.ysize());
 

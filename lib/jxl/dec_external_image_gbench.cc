@@ -22,7 +22,7 @@ void BM_DecExternalImage_ConvertImageRGBA(benchmark::State& state) {
   ImageBundle ib(&im);
   Image3F color(xsize, ysize);
   ZeroFillImage(&color);
-  ib.SetFromImage(std::move(color), ColorEncoding::SRGB());
+  ib.SetFromImage(std::move(color), ColorEncodingSRGB());
   ImageF alpha(xsize, ysize);
   ZeroFillImage(&alpha);
   ib.SetAlpha(std::move(alpha));

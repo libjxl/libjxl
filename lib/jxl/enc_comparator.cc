@@ -11,7 +11,7 @@
 #include <algorithm>
 
 #include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/color_management.h"
+#include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/enc_gamma_correct.h"
 #include "lib/jxl/enc_image_bundle.h"
 
@@ -74,13 +74,13 @@ float ComputeScore(const ImageBundle& rgb0, const ImageBundle& rgb1,
   ImageMetadata metadata0 = *rgb0.metadata();
   ImageBundle store0(&metadata0);
   const ImageBundle* linear_srgb0;
-  JXL_CHECK(TransformIfNeeded(rgb0, ColorEncoding::LinearSRGB(rgb0.IsGray()),
-                              cms, pool, &store0, &linear_srgb0));
+  JXL_CHECK(TransformIfNeeded(rgb0, ColorEncodingLinearSRGB(rgb0.IsGray()), cms,
+                              pool, &store0, &linear_srgb0));
   ImageMetadata metadata1 = *rgb1.metadata();
   ImageBundle store1(&metadata1);
   const ImageBundle* linear_srgb1;
-  JXL_CHECK(TransformIfNeeded(rgb1, ColorEncoding::LinearSRGB(rgb1.IsGray()),
-                              cms, pool, &store1, &linear_srgb1));
+  JXL_CHECK(TransformIfNeeded(rgb1, ColorEncodingLinearSRGB(rgb1.IsGray()), cms,
+                              pool, &store1, &linear_srgb1));
 
   // No alpha: skip blending, only need a single call to Butteraugli.
   if (ignore_alpha || (!rgb0.HasAlpha() && !rgb1.HasAlpha())) {

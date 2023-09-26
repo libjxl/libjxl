@@ -10,16 +10,13 @@
 #include <array>
 #include <cmath>
 
-#include "lib/jxl/color_management.h"
+#include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/fields.h"
 #include "lib/jxl/matrix_ops.h"
 
 namespace jxl {
 namespace {
-
-// Highest reasonable value for the gamma of a transfer curve.
-constexpr uint32_t kMaxGamma = 8192;
 
 // These strings are baked into Description - do not change.
 
@@ -104,15 +101,6 @@ std::string ToString(RenderingIntent rendering_intent) {
   // Should not happen - visitor fails if enum is invalid.
   JXL_UNREACHABLE("Invalid RenderingIntent %u",
                   static_cast<uint32_t>(rendering_intent));
-}
-
-static double F64FromCustomxyI32(const int32_t i) { return i * 1E-6; }
-static Status F64ToCustomxyI32(const double f, int32_t* JXL_RESTRICT i) {
-  if (!(-4 <= f && f <= 4)) {
-    return JXL_FAILURE("F64 out of bounds for CustomxyI32");
-  }
-  *i = static_cast<int32_t>(roundf(f * 1E6));
-  return true;
 }
 
 Status ConvertExternalToInternalWhitePoint(const JxlWhitePoint external,
@@ -205,54 +193,6 @@ Status ConvertExternalToInternalRenderingIntent(
 
 }  // namespace
 
-CIExy Customxy::Get() const {
-  CIExy xy;
-  xy.x = F64FromCustomxyI32(x);
-  xy.y = F64FromCustomxyI32(y);
-  return xy;
-}
-
-Status Customxy::Set(const CIExy& xy) {
-  JXL_RETURN_IF_ERROR(F64ToCustomxyI32(xy.x, &x));
-  JXL_RETURN_IF_ERROR(F64ToCustomxyI32(xy.y, &y));
-  size_t extension_bits, total_bits;
-  if (!Bundle::CanEncode(*this, &extension_bits, &total_bits)) {
-    return JXL_FAILURE("Unable to encode XY %f %f", xy.x, xy.y);
-  }
-  return true;
-}
-
-bool CustomTransferFunction::SetImplicit() {
-  if (nonserialized_color_space == ColorSpace::kXYB) {
-    if (!SetGamma(1.0 / 3)) JXL_ASSERT(false);
-    return true;
-  }
-  return false;
-}
-
-Status CustomTransferFunction::SetGamma(double gamma) {
-  if (gamma < (1.0f / kMaxGamma) || gamma > 1.0) {
-    return JXL_FAILURE("Invalid gamma %f", gamma);
-  }
-
-  have_gamma_ = false;
-  if (ApproxEq(gamma, 1.0)) {
-    transfer_function_ = TransferFunction::kLinear;
-    return true;
-  }
-  if (ApproxEq(gamma, 1.0 / 2.6)) {
-    transfer_function_ = TransferFunction::kDCI;
-    return true;
-  }
-  // Don't translate 0.45.. to kSRGB nor k709 - that might change pixel
-  // values because those curves also have a linear part.
-
-  have_gamma_ = true;
-  gamma_ = roundf(gamma * kGammaMul);
-  transfer_function_ = TransferFunction::kUnknown;
-  return true;
-}
-
 namespace {
 
 std::array<ColorEncoding, 2> CreateC2(const Primaries pr,
@@ -282,12 +222,12 @@ std::array<ColorEncoding, 2> CreateC2(const Primaries pr,
 
 }  // namespace
 
-const ColorEncoding& ColorEncoding::SRGB(bool is_gray) {
+const ColorEncoding& ColorEncodingSRGB(bool is_gray) {
   static std::array<ColorEncoding, 2> c2 =
       CreateC2(Primaries::kSRGB, TransferFunction::kSRGB);
   return c2[is_gray];
 }
-const ColorEncoding& ColorEncoding::LinearSRGB(bool is_gray) {
+const ColorEncoding& ColorEncodingLinearSRGB(bool is_gray) {
   static std::array<ColorEncoding, 2> c2 =
       CreateC2(Primaries::kSRGB, TransferFunction::kLinear);
   return c2[is_gray];
@@ -416,49 +356,6 @@ Status ColorEncoding::SetPrimaries(const PrimariesCIExy& xy) {
   return true;
 }
 
-Status ColorEncoding::CreateICC() {
-  InternalRemoveICC();
-  return MaybeCreateProfile(*this, &icc_);
-}
-
-Status ColorEncoding::SetFieldsFromICC(const JxlCmsInterface& cms) {
-  // In case parsing fails, mark the ColorEncoding as invalid.
-  SetColorSpace(ColorSpace::kUnknown);
-  tf.SetTransferFunction(TransferFunction::kUnknown);
-
-  if (icc_.empty()) return JXL_FAILURE("Empty ICC profile");
-
-  JxlColorEncoding external;
-  JXL_BOOL cmyk;
-  JXL_RETURN_IF_ERROR(cms.set_fields_from_icc(cms.set_fields_data, icc_.data(),
-                                              icc_.size(), &external, &cmyk));
-  if (cmyk) {
-    cmyk_ = true;
-    return true;
-  }
-  IccBytes icc = std::move(icc_);
-  JXL_RETURN_IF_ERROR(ConvertExternalToInternalColorEncoding(external, this));
-  icc_ = std::move(icc);
-  return true;
-}
-
-void ColorEncoding::DecideIfWantICC(const JxlCmsInterface& cms) {
-  if (icc_.empty()) return;
-
-  JxlColorEncoding c;
-  JXL_BOOL cmyk;
-  if (!cms.set_fields_from_icc(cms.set_fields_data, icc_.data(), icc_.size(),
-                               &c, &cmyk)) {
-    return;
-  }
-  if (cmyk) return;
-
-  IccBytes new_icc;
-  if (!MaybeCreateProfile(*this, &new_icc)) return;
-
-  want_icc_ = false;
-}
-
 std::string Description(const ColorEncoding& c_in) {
   // Copy required for Implicit*
   ColorEncoding c = c_in;
@@ -507,102 +404,125 @@ std::string Description(const ColorEncoding& c_in) {
   return d;
 }
 
-Customxy::Customxy() { Bundle::Init(this); }
-Status Customxy::VisitFields(Visitor* JXL_RESTRICT visitor) {
-  uint32_t ux = PackSigned(x);
+CustomxyProxy::CustomxyProxy(Customxy* ref, bool init, bool*) : ref(ref) {
+  if (init) Bundle::Init(this);
+}
+Status CustomxyProxy::VisitFields(Visitor* JXL_RESTRICT visitor) {
+  uint32_t ux = PackSigned(ref->x);
   JXL_QUIET_RETURN_IF_ERROR(visitor->U32(Bits(19), BitsOffset(19, 524288),
                                          BitsOffset(20, 1048576),
                                          BitsOffset(21, 2097152), 0, &ux));
-  x = UnpackSigned(ux);
-  uint32_t uy = PackSigned(y);
+  ref->x = UnpackSigned(ux);
+  uint32_t uy = PackSigned(ref->y);
   JXL_QUIET_RETURN_IF_ERROR(visitor->U32(Bits(19), BitsOffset(19, 524288),
                                          BitsOffset(20, 1048576),
                                          BitsOffset(21, 2097152), 0, &uy));
-  y = UnpackSigned(uy);
+  ref->y = UnpackSigned(uy);
   return true;
 }
 
-CustomTransferFunction::CustomTransferFunction() { Bundle::Init(this); }
-Status CustomTransferFunction::VisitFields(Visitor* JXL_RESTRICT visitor) {
-  if (visitor->Conditional(!SetImplicit())) {
-    JXL_QUIET_RETURN_IF_ERROR(visitor->Bool(false, &have_gamma_));
+CustomTransferFunctionProxy::CustomTransferFunctionProxy(
+    CustomTransferFunction* ref, bool init, bool*)
+    : ref(ref) {
+  if (init) Bundle::Init(this);
+}
+Status CustomTransferFunctionProxy::VisitFields(Visitor* JXL_RESTRICT visitor) {
+  if (visitor->Conditional(!ref->SetImplicit())) {
+    JXL_QUIET_RETURN_IF_ERROR(visitor->Bool(false, &ref->have_gamma_));
 
-    if (visitor->Conditional(have_gamma_)) {
+    if (visitor->Conditional(ref->have_gamma_)) {
       // Gamma is represented as a 24-bit int, the exponent used is
       // gamma_ / 1e7. Valid values are (0, 1]. On the low end side, we also
       // limit it to kMaxGamma/1e7.
-      JXL_QUIET_RETURN_IF_ERROR(visitor->Bits(24, kGammaMul, &gamma_));
-      if (gamma_ > kGammaMul ||
-          static_cast<uint64_t>(gamma_) * kMaxGamma < kGammaMul) {
-        return JXL_FAILURE("Invalid gamma %u", gamma_);
+      JXL_QUIET_RETURN_IF_ERROR(
+          visitor->Bits(24, CustomTransferFunction::kGammaMul, &ref->gamma_));
+      if (ref->gamma_ > CustomTransferFunction::kGammaMul ||
+          static_cast<uint64_t>(ref->gamma_) *
+                  CustomTransferFunction::kMaxGamma <
+              CustomTransferFunction::kGammaMul) {
+        return JXL_FAILURE("Invalid gamma %u", ref->gamma_);
       }
     }
 
-    if (visitor->Conditional(!have_gamma_)) {
+    if (visitor->Conditional(!ref->have_gamma_)) {
       JXL_QUIET_RETURN_IF_ERROR(
-          visitor->Enum(TransferFunction::kSRGB, &transfer_function_));
+          visitor->Enum(TransferFunction::kSRGB, &ref->transfer_function_));
     }
   }
 
   return true;
 }
 
-ColorEncoding::ColorEncoding() { Bundle::Init(this); }
-Status ColorEncoding::VisitFields(Visitor* JXL_RESTRICT visitor) {
-  if (visitor->AllDefault(*this, &all_default)) {
+ColorEncodingProxy::ColorEncodingProxy(ColorEncoding* ref, bool init,
+                                       bool* all_default)
+    : ref(ref), all_default(all_default) {
+  if (init) Bundle::Init(this);
+}
+Status ColorEncodingProxy::VisitFields(Visitor* JXL_RESTRICT visitor) {
+  bool is_initializing = visitor->IsInitializing();
+
+  if (visitor->AllDefault(*this, all_default)) {
     // Overwrite all serialized fields, but not any nonserialized_*.
     visitor->SetDefault(this);
     return true;
   }
 
-  JXL_QUIET_RETURN_IF_ERROR(visitor->Bool(false, &want_icc_));
+  JXL_QUIET_RETURN_IF_ERROR(visitor->Bool(false, &ref->want_icc_));
 
   // Always send even if want_icc_ because this affects decoding.
   // We can skip the white point/primaries because they do not.
-  JXL_QUIET_RETURN_IF_ERROR(visitor->Enum(ColorSpace::kRGB, &color_space_));
+  JXL_QUIET_RETURN_IF_ERROR(
+      visitor->Enum(ColorSpace::kRGB, &ref->color_space_));
 
-  if (visitor->Conditional(!WantICC())) {
+  if (visitor->Conditional(!ref->WantICC())) {
     // Serialize enums. NOTE: we set the defaults to the most common values so
     // ImageMetadata.all_default is true in the common case.
 
-    if (visitor->Conditional(!ImplicitWhitePoint())) {
-      JXL_QUIET_RETURN_IF_ERROR(visitor->Enum(WhitePoint::kD65, &white_point));
-      if (visitor->Conditional(white_point == WhitePoint::kCustom)) {
-        JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&white_));
+    if (visitor->Conditional(!ref->ImplicitWhitePoint())) {
+      JXL_QUIET_RETURN_IF_ERROR(
+          visitor->Enum(WhitePoint::kD65, &ref->white_point));
+      if (visitor->Conditional(ref->white_point == WhitePoint::kCustom)) {
+        CustomxyProxy white_proxy(&ref->white_, is_initializing);
+        JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&white_proxy));
       }
     }
 
-    if (visitor->Conditional(HasPrimaries())) {
-      JXL_QUIET_RETURN_IF_ERROR(visitor->Enum(Primaries::kSRGB, &primaries));
-      if (visitor->Conditional(primaries == Primaries::kCustom)) {
-        JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&red_));
-        JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&green_));
-        JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&blue_));
+    if (visitor->Conditional(ref->HasPrimaries())) {
+      JXL_QUIET_RETURN_IF_ERROR(
+          visitor->Enum(Primaries::kSRGB, &ref->primaries));
+      if (visitor->Conditional(ref->primaries == Primaries::kCustom)) {
+        CustomxyProxy red_proxy(&ref->red_, is_initializing);
+        JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&red_proxy));
+        CustomxyProxy green_proxy(&ref->green_, is_initializing);
+        JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&green_proxy));
+        CustomxyProxy blue_proxy(&ref->blue_, is_initializing);
+        JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&blue_proxy));
       }
     }
 
-    JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&tf));
+    CustomTransferFunctionProxy tf_proxy(&ref->tf, is_initializing);
+    JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&tf_proxy));
 
     JXL_QUIET_RETURN_IF_ERROR(
-        visitor->Enum(RenderingIntent::kRelative, &rendering_intent));
+        visitor->Enum(RenderingIntent::kRelative, &ref->rendering_intent));
 
     // We didn't have ICC, so all fields should be known.
-    if (color_space_ == ColorSpace::kUnknown || tf.IsUnknown()) {
-      return JXL_FAILURE(
-          "No ICC but cs %u and tf %u%s",
-          static_cast<unsigned int>(color_space_),
-          tf.IsGamma() ? 0
-                       : static_cast<unsigned int>(tf.GetTransferFunction()),
-          tf.IsGamma() ? "(gamma)" : "");
+    if (ref->color_space_ == ColorSpace::kUnknown || ref->tf.IsUnknown()) {
+      return JXL_FAILURE("No ICC but cs %u and tf %u%s",
+                         static_cast<unsigned int>(ref->color_space_),
+                         ref->tf.IsGamma() ? 0
+                                           : static_cast<unsigned int>(
+                                                 ref->tf.GetTransferFunction()),
+                         ref->tf.IsGamma() ? "(gamma)" : "");
     }
 
-    JXL_RETURN_IF_ERROR(CreateICC());
+    JXL_RETURN_IF_ERROR(ref->CreateICC());
   }
 
-  if (WantICC() && visitor->IsReading()) {
+  if (ref->WantICC() && visitor->IsReading()) {
     // Haven't called SetICC() yet, do nothing.
   } else {
-    if (ICC().empty()) return JXL_FAILURE("Empty ICC");
+    if (ref->ICC().empty()) return JXL_FAILURE("Empty ICC");
   }
 
   return true;

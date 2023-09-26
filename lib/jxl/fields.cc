@@ -64,6 +64,8 @@ struct InitVisitor : public VisitorBase {
     // Bundle::Init for their fields).
     return true;
   }
+
+  bool IsInitializing() const override { return true; }
 };
 
 // Similar to InitVisitor, but also initializes nested fields.
@@ -105,6 +107,8 @@ struct SetDefaultVisitor : public VisitorBase {
     JXL_RETURN_IF_ERROR(Bool(true, all_default));
     return false;
   }
+
+  bool IsInitializing() const override { return true; }
 };
 
 class AllDefaultVisitor : public VisitorBase {

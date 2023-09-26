@@ -229,7 +229,7 @@ HWY_NOINLINE void TestFastXYB() {
             }
           }
         }
-        ib.SetFromImage(std::move(chunk), ColorEncoding::SRGB());
+        ib.SetFromImage(std::move(chunk), ColorEncodingSRGB());
         Image3F xyb(kChunk * kChunk, kChunk);
         std::vector<uint8_t> roundtrip(kChunk * kChunk * kChunk * 3);
         ToXYB(ib, nullptr, &xyb, *JxlGetDefaultCms());

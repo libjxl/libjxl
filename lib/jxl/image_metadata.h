@@ -335,6 +335,7 @@ struct ImageMetadata : public Fields {
   bool xyb_encoded;
 
   ColorEncoding color_encoding;
+  mutable bool color_encoding_all_default;
 
   // These values are initialized to defaults such that the 'extra_fields'
   // condition in VisitFields uses correctly initialized values.

@@ -42,7 +42,7 @@ Status FromSRGB(const size_t xsize, const size_t ysize, const bool is_gray,
                 const bool has_alpha, const bool is_16bit,
                 const JxlEndianness endianness, const uint8_t* pixels,
                 const uint8_t* end, ThreadPool* pool, ImageBundle* ib) {
-  const ColorEncoding& c = ColorEncoding::SRGB(is_gray);
+  const ColorEncoding& c = jxl::ColorEncodingSRGB(is_gray);
   const size_t bits_per_sample = (is_16bit ? 2 : 1) * jxl::kBitsPerByte;
   const uint32_t num_channels = (is_gray ? 1 : 3) + (has_alpha ? 1 : 0);
   JxlDataType data_type = is_16bit ? JXL_TYPE_UINT16 : JXL_TYPE_UINT8;
@@ -104,7 +104,7 @@ class WebPCodec : public ImageCodec {
     ImageMetadata metadata = io->metadata.m;
     ImageBundle store(&metadata);
     const ImageBundle* transformed;
-    const ColorEncoding& c_desired = ColorEncoding::SRGB(false);
+    const ColorEncoding& c_desired = jxl::ColorEncodingSRGB(false);
     JXL_RETURN_IF_ERROR(jxl::TransformIfNeeded(
         ib, c_desired, *JxlGetDefaultCms(), pool, &store, &transformed));
     size_t xsize = ib.oriented_xsize();
@@ -201,7 +201,7 @@ class WebPCodec : public ImageCodec {
     if (io->metadata.m.color_encoding.IsGray() != is_gray) {
       // TODO(lode): either ensure is_gray matches what the color profile says,
       // or set a correct color profile, e.g.
-      // io->metadata.m.color_encoding = ColorEncoding::SRGB(is_gray);
+      // io->metadata.m.color_encoding = ColorEncodingSRGB(is_gray);
       // Return a standard failure because SetFromSRGB triggers a fatal assert
       // for this instead.
       return JXL_FAILURE("Color profile is-gray mismatch");

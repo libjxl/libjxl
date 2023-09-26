@@ -27,7 +27,7 @@ void BM_EncExternalImage_ConvertImageRGBA(benchmark::State& state) {
       JXL_CHECK(ConvertFromExternal(
           Span<const uint8_t>(interleaved.data(), interleaved.size()), xsize,
           ysize,
-          /*c_current=*/ColorEncoding::SRGB(),
+          /*c_current=*/ColorEncodingSRGB(),
           /*bits_per_sample=*/8, format,
           /*pool=*/nullptr, &ib));
     }

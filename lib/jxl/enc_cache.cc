@@ -111,7 +111,7 @@ Status InitializePassesEncoder(const Image3F& opsin, const JxlCmsInterface& cms,
     // (but EncodeFrame will skip RGB->XYB conversion anyway)
     ib.SetFromImage(
         std::move(dc),
-        ColorEncoding::LinearSRGB(shared.metadata->m.color_encoding.IsGray()));
+        ColorEncodingLinearSRGB(shared.metadata->m.color_encoding.IsGray()));
     if (!ib.metadata()->extra_channel_info.empty()) {
       // Add dummy extra channels to the patch image: dc_level frames do not yet
       // support extra channels, but the codec expects that the amount of extra

@@ -467,7 +467,7 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
     PrintTree(tree, tree_out);
   }
   Image3F image(width, height);
-  io.SetFromImage(std::move(image), ColorEncoding::SRGB());
+  io.SetFromImage(std::move(image), jxl::ColorEncodingSRGB());
   io.SetSize((width + x0) * cparams.resampling,
              (height + y0) * cparams.resampling);
   io.metadata.m.color_encoding.DecideIfWantICC(*JxlGetDefaultCms());
@@ -518,7 +518,7 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
       return 1;
     }
     Image3F image(width, height);
-    io.SetFromImage(std::move(image), ColorEncoding::SRGB());
+    io.SetFromImage(std::move(image), jxl::ColorEncodingSRGB());
     io.frames[0].blend = true;
   }
 

@@ -2253,10 +2253,9 @@ JxlEncoderStatus JxlEncoderAddImageFrame(
   if (!frame_settings->enc->color_encoding_set) {
     if ((pixel_format->data_type == JXL_TYPE_FLOAT) ||
         (pixel_format->data_type == JXL_TYPE_FLOAT16)) {
-      c_current =
-          jxl::ColorEncoding::LinearSRGB(pixel_format->num_channels < 3);
+      c_current = jxl::ColorEncodingLinearSRGB(pixel_format->num_channels < 3);
     } else {
-      c_current = jxl::ColorEncoding::SRGB(pixel_format->num_channels < 3);
+      c_current = jxl::ColorEncodingSRGB(pixel_format->num_channels < 3);
     }
   } else {
     c_current = frame_settings->enc->metadata.m.color_encoding;
@@ -2553,14 +2552,14 @@ JxlEncoderStatus JxlEncoderSetFrameBitDepth(
 
 void JxlColorEncodingSetToSRGB(JxlColorEncoding* color_encoding,
                                JXL_BOOL is_gray) {
-  ConvertInternalToExternalColorEncoding(jxl::ColorEncoding::SRGB(is_gray),
+  ConvertInternalToExternalColorEncoding(jxl::ColorEncodingSRGB(is_gray),
                                          color_encoding);
 }
 
 void JxlColorEncodingSetToLinearSRGB(JxlColorEncoding* color_encoding,
                                      JXL_BOOL is_gray) {
-  ConvertInternalToExternalColorEncoding(
-      jxl::ColorEncoding::LinearSRGB(is_gray), color_encoding);
+  ConvertInternalToExternalColorEncoding(jxl::ColorEncodingLinearSRGB(is_gray),
+                                         color_encoding);
 }
 
 void JxlEncoderAllowExpertOptions(JxlEncoder* enc) {

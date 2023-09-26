@@ -55,9 +55,9 @@ int main(int argc, const char** argv) {
 
   jxl::CodecInOut output;
   output.metadata.m.bit_depth.bits_per_sample = 16;
-  output.SetFromImage(std::move(image), jxl::ColorEncoding::SRGB());
+  output.SetFromImage(std::move(image), jxl::ColorEncodingSRGB());
   std::vector<uint8_t> encoded;
-  JXL_CHECK(jxl::Encode(output, jxl::ColorEncoding::SRGB(), 16, output_filename,
+  JXL_CHECK(jxl::Encode(output, jxl::ColorEncodingSRGB(), 16, output_filename,
                         &encoded, &pool));
   JXL_CHECK(jpegxl::tools::WriteFile(output_filename, encoded));
 }

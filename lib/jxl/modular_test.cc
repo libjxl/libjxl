@@ -19,7 +19,6 @@
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
-#include "lib/jxl/color_management.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/enc_cache.h"
@@ -175,9 +174,8 @@ TEST(ModularTest, RoundtripLossy16) {
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io));
   JXL_CHECK(!io.metadata.m.have_preview);
   JXL_CHECK(io.frames.size() == 1);
-  JXL_CHECK(
-      io.frames[0].TransformTo(ColorEncoding::SRGB(), *JxlGetDefaultCms()));
-  io.metadata.m.color_encoding = ColorEncoding::SRGB();
+  JXL_CHECK(io.frames[0].TransformTo(ColorEncodingSRGB(), *JxlGetDefaultCms()));
+  io.metadata.m.color_encoding = ColorEncodingSRGB();
 
   size_t compressed_size;
   JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io_out, _, &compressed_size));
@@ -310,7 +308,7 @@ TEST_P(ModularTestParam, RoundtripLossless) {
 
   CodecInOut io;
   io.SetSize(xsize, ysize);
-  io.metadata.m.color_encoding = jxl::ColorEncoding::SRGB(false);
+  io.metadata.m.color_encoding = jxl::ColorEncodingSRGB(false);
   io.metadata.m.SetUintSamples(bitdepth);
 
   double factor = ((1lu << bitdepth) - 1lu);
@@ -331,7 +329,7 @@ TEST_P(ModularTestParam, RoundtripLossless) {
       }
     }
   }
-  io.SetFromImage(std::move(noise_added), jxl::ColorEncoding::SRGB(false));
+  io.SetFromImage(std::move(noise_added), jxl::ColorEncodingSRGB(false));
 
   CompressParams cparams;
   cparams.modular_mode = true;
@@ -409,7 +407,7 @@ void WriteHeaders(BitWriter* writer, size_t xsize, size_t ysize) {
   CodecMetadata metadata;
   EXPECT_TRUE(metadata.size.Set(xsize, ysize));
   EXPECT_TRUE(WriteSizeHeader(metadata.size, writer, 0, nullptr));
-  metadata.m.color_encoding = ColorEncoding::LinearSRGB(/*is_gray=*/true);
+  metadata.m.color_encoding = ColorEncodingLinearSRGB(/*is_gray=*/true);
   metadata.m.xyb_encoded = false;
   metadata.m.SetUintSamples(31);
   EXPECT_TRUE(WriteImageMetadata(metadata.m, writer, 0, nullptr));

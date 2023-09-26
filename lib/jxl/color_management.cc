@@ -3,8 +3,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include "lib/jxl/color_management.h"
-
 #include <math.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -17,6 +15,8 @@
 #include <string>
 #include <utility>
 
+#include "lib/jxl/color_encoding_internal.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/color_management.cc"
 #include <hwy/foreach_target.h>
@@ -26,6 +26,7 @@
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/dec_tone_mapping-inl.h"
 #include "lib/jxl/field_encodings.h"
 #include "lib/jxl/matrix_ops.h"

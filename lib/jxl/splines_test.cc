@@ -313,7 +313,7 @@ TEST(SplinesTest, Drawing) {
   CodecInOut io_actual;
   Image3F image2(320, 320);
   CopyImageTo(image, &image2);
-  io_actual.SetFromImage(std::move(image2), ColorEncoding::SRGB());
+  io_actual.SetFromImage(std::move(image2), ColorEncodingSRGB());
   ASSERT_TRUE(io_actual.frames[0].TransformTo(io_expected.Main().c_current(),
                                               *JxlGetDefaultCms()));
 
@@ -333,7 +333,7 @@ TEST(SplinesTest, ClearedEveryFrame) {
   ASSERT_TRUE(
       test::DecodeFile({}, Span<const uint8_t>(bytes_actual), &io_actual));
 
-  ASSERT_TRUE(io_actual.frames[0].TransformTo(ColorEncoding::SRGB(),
+  ASSERT_TRUE(io_actual.frames[0].TransformTo(ColorEncodingSRGB(),
                                               *JxlGetDefaultCms()));
   for (size_t c = 0; c < 3; ++c) {
     for (size_t y = 0; y < io_actual.ysize(); ++y) {

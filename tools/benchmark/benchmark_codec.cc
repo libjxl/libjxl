@@ -20,7 +20,6 @@
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
-#include "lib/jxl/color_management.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
@@ -117,7 +116,7 @@ class NoneCodec : public ImageCodec {
     Image3F image(xsize, ysize);
     ZeroFillImage(&image);
     io->metadata.m.SetFloat32Samples();
-    io->metadata.m.color_encoding = ColorEncoding::SRGB();
+    io->metadata.m.color_encoding = jxl::ColorEncodingSRGB();
     io->SetFromImage(std::move(image), io->metadata.m.color_encoding);
     const double end = jxl::Now();
     speed_stats->NotifyElapsed(end - start);

@@ -17,7 +17,6 @@
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
-#include "lib/jxl/color_management.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_file.h"
@@ -155,7 +154,7 @@ void TestGradient(ThreadPool* pool, uint32_t color0, uint32_t color1,
 
   CodecInOut io;
   io.metadata.m.SetUintSamples(8);
-  io.metadata.m.color_encoding = ColorEncoding::SRGB();
+  io.metadata.m.color_encoding = ColorEncodingSRGB();
   io.SetFromImage(std::move(gradient), io.metadata.m.color_encoding);
 
   CodecInOut io2;

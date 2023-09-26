@@ -230,7 +230,7 @@ Status OutputEncodingInfo::SetFromMetadata(const CodecMetadata& metadata) {
   bool orig_grey = orig_color_encoding.IsGray();
   return SetColorEncoding(!xyb_encoded || orig_ok
                               ? orig_color_encoding
-                              : ColorEncoding::LinearSRGB(orig_grey));
+                              : ColorEncodingLinearSRGB(orig_grey));
 }
 
 Status OutputEncodingInfo::MaybeSetColorEncoding(
@@ -262,7 +262,7 @@ Status OutputEncodingInfo::SetColorEncoding(const ColorEncoding& c_desired) {
        c_desired.white_point != WhitePoint::kD65) &&
       !c_desired.IsGray()) {
     float srgb_to_xyzd50[9];
-    const auto& srgb = ColorEncoding::SRGB(/*is_gray=*/false);
+    const auto& srgb = ColorEncodingSRGB(/*is_gray=*/false);
     JXL_CHECK(PrimariesToXYZD50(
         srgb.GetPrimaries().r.x, srgb.GetPrimaries().r.y,
         srgb.GetPrimaries().g.x, srgb.GetPrimaries().g.y,

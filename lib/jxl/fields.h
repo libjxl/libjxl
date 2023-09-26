@@ -251,6 +251,8 @@ class Visitor {
 
   // Overridden by ReadVisitor. Enables dynamically-sized fields.
   virtual bool IsReading() const { return false; }
+  // Overridden by InitVisitor. Enables proxy fields.
+  virtual bool IsInitializing() const { return false; }
 
   virtual Status BeginExtensions(uint64_t* JXL_RESTRICT extensions) = 0;
   virtual Status EndExtensions() = 0;

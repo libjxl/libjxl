@@ -8,7 +8,7 @@
 #include <algorithm>
 #include <vector>
 
-#include "lib/jxl/color_management.h"
+#include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/enc_image_bundle.h"
 
 namespace jxl {
@@ -21,7 +21,7 @@ Status JxlButteraugliComparator::SetReferenceImage(const ImageBundle& ref) {
   const ImageBundle* ref_linear_srgb;
   ImageMetadata metadata = *ref.metadata();
   ImageBundle store(&metadata);
-  if (!TransformIfNeeded(ref, ColorEncoding::LinearSRGB(ref.IsGray()), cms_,
+  if (!TransformIfNeeded(ref, ColorEncodingLinearSRGB(ref.IsGray()), cms_,
                          /*pool=*/nullptr, &store, &ref_linear_srgb)) {
     return false;
   }
@@ -45,8 +45,7 @@ Status JxlButteraugliComparator::CompareWith(const ImageBundle& actual,
   const ImageBundle* actual_linear_srgb;
   ImageMetadata metadata = *actual.metadata();
   ImageBundle store(&metadata);
-  if (!TransformIfNeeded(actual, ColorEncoding::LinearSRGB(actual.IsGray()),
-                         cms_,
+  if (!TransformIfNeeded(actual, ColorEncodingLinearSRGB(actual.IsGray()), cms_,
                          /*pool=*/nullptr, &store, &actual_linear_srgb)) {
     return false;
   }

@@ -25,7 +25,6 @@
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
-#include "lib/jxl/color_management.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_file.h"
@@ -324,7 +323,7 @@ TEST(JxlTest, RoundtripRGBToGrayscale) {
 
   // Convert original to grayscale here, because TransformTo refuses to
   // convert between grayscale and RGB.
-  ColorEncoding srgb_lin = ColorEncoding::LinearSRGB(/*is_gray=*/false);
+  ColorEncoding srgb_lin = ColorEncodingLinearSRGB(/*is_gray=*/false);
   ASSERT_TRUE(io.frames[0].TransformTo(srgb_lin, *JxlGetDefaultCms()));
   Image3F* color = io.Main().color();
   for (size_t y = 0; y < color->ysize(); ++y) {
@@ -336,7 +335,7 @@ TEST(JxlTest, RoundtripRGBToGrayscale) {
       row_r[x] = row_g[x] = row_b[x] = luma;
     }
   }
-  ColorEncoding srgb_gamma = ColorEncoding::SRGB(/*is_gray=*/false);
+  ColorEncoding srgb_gamma = ColorEncodingSRGB(/*is_gray=*/false);
   ASSERT_TRUE(io.frames[0].TransformTo(srgb_gamma, *JxlGetDefaultCms()));
   io.metadata.m.color_encoding = io2.Main().c_current();
   io.Main().OverrideProfile(io2.Main().c_current());
@@ -552,8 +551,8 @@ TEST(JxlTest, RoundtripImageBundleOriginalBits) {
   Image3F image(1, 1);
   ZeroFillImage(&image);
   CodecInOut io;
-  io.metadata.m.color_encoding = ColorEncoding::LinearSRGB();
-  io.SetFromImage(std::move(image), ColorEncoding::LinearSRGB());
+  io.metadata.m.color_encoding = ColorEncodingLinearSRGB();
+  io.SetFromImage(std::move(image), ColorEncodingLinearSRGB());
 
   CompressParams cparams;
 

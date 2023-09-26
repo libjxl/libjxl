@@ -124,10 +124,10 @@ set(JPEGXL_INTERNAL_DEC_SOURCES
   jxl/coeff_order.cc
   jxl/coeff_order.h
   jxl/coeff_order_fwd.h
+  jxl/color_encoding_external.h
   jxl/color_encoding_internal.cc
   jxl/color_encoding_internal.h
   jxl/color_management.cc
-  jxl/color_management.h
   jxl/common.h
   jxl/compressed_dc.cc
   jxl/compressed_dc.h

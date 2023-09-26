@@ -6,7 +6,6 @@
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
-#include "lib/jxl/color_management.h"
 #include "lib/jxl/dec_xyb.h"
 #include "lib/jxl/enc_xyb.h"
 #include "lib/jxl/image.h"
@@ -24,7 +23,7 @@ TEST(OpsinInverseTest, LinearInverseInverts) {
 
   CodecInOut io;
   io.metadata.m.SetFloat32Samples();
-  io.metadata.m.color_encoding = ColorEncoding::LinearSRGB();
+  io.metadata.m.color_encoding = ColorEncodingLinearSRGB();
   Image3F linear2(128, 128);
   CopyImageTo(linear, &linear2);
   io.SetFromImage(std::move(linear2), io.metadata.m.color_encoding);

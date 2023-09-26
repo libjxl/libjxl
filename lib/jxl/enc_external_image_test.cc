@@ -28,15 +28,15 @@ TEST(ExternalImageTest, InvalidSize) {
   const uint8_t buf[10 * 100 * 8] = {};
   EXPECT_FALSE(ConvertFromExternal(
       Span<const uint8_t>(buf, 10), /*xsize=*/10, /*ysize=*/100,
-      /*c_current=*/ColorEncoding::SRGB(),
+      /*c_current=*/ColorEncodingSRGB(),
       /*bits_per_sample=*/16, format, nullptr, &ib));
   EXPECT_FALSE(ConvertFromExternal(
       Span<const uint8_t>(buf, sizeof(buf) - 1), /*xsize=*/10, /*ysize=*/100,
-      /*c_current=*/ColorEncoding::SRGB(),
+      /*c_current=*/ColorEncodingSRGB(),
       /*bits_per_sample=*/16, format, nullptr, &ib));
   EXPECT_TRUE(
       ConvertFromExternal(Span<const uint8_t>(buf, sizeof(buf)), /*xsize=*/10,
-                          /*ysize=*/100, /*c_current=*/ColorEncoding::SRGB(),
+                          /*ysize=*/100, /*c_current=*/ColorEncodingSRGB(),
                           /*bits_per_sample=*/16, format, nullptr, &ib));
 }
 #endif
@@ -55,7 +55,7 @@ TEST(ExternalImageTest, AlphaMissing) {
   // be ignored.
   EXPECT_TRUE(ConvertFromExternal(Span<const uint8_t>(buf, sizeof(buf)), xsize,
                                   ysize,
-                                  /*c_current=*/ColorEncoding::SRGB(),
+                                  /*c_current=*/ColorEncodingSRGB(),
                                   /*bits_per_sample=*/8, format, nullptr, &ib));
   EXPECT_FALSE(ib.HasAlpha());
 }
@@ -72,7 +72,7 @@ TEST(ExternalImageTest, AlphaPremultiplied) {
 
   JxlPixelFormat format = {4, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
   EXPECT_TRUE(BufferToImageBundle(format, xsize, ysize, buf, size, nullptr,
-                                  ColorEncoding::SRGB(), &ib));
+                                  ColorEncodingSRGB(), &ib));
 }
 
 }  // namespace

@@ -4,7 +4,7 @@
 // license that can be found in the LICENSE file.
 
 #include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/color_management.h"
+#include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/dec_xyb.h"
 #include "lib/jxl/enc_xyb.h"
 #include "lib/jxl/image.h"
@@ -28,7 +28,7 @@ void LinearSrgbToOpsin(float rgb_r, float rgb_g, float rgb_b,
 
   ImageMetadata metadata;
   metadata.SetFloat32Samples();
-  metadata.color_encoding = ColorEncoding::LinearSRGB();
+  metadata.color_encoding = ColorEncodingLinearSRGB();
   ImageBundle ib(&metadata);
   ib.SetFromImage(std::move(linear), metadata.color_encoding);
   Image3F opsin(1, 1);

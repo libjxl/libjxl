@@ -91,9 +91,9 @@ jxl::CodecInOut ConvertTestImage(const std::vector<uint8_t>& buf,
     EXPECT_TRUE(
         color_encoding.SetICC(std::move(icc_profile_copy), JxlGetDefaultCms()));
   } else if (pixel_format.data_type == JXL_TYPE_FLOAT) {
-    color_encoding = jxl::ColorEncoding::LinearSRGB(is_gray);
+    color_encoding = jxl::ColorEncodingLinearSRGB(is_gray);
   } else {
-    color_encoding = jxl::ColorEncoding::SRGB(is_gray);
+    color_encoding = jxl::ColorEncodingSRGB(is_gray);
   }
   EXPECT_TRUE(
       ConvertFromExternal(jxl::Span<const uint8_t>(buf.data(), buf.size()),

@@ -453,7 +453,7 @@ int main(int argc, const char** argv) {
     jxl::Image3F color(image.xsize(), image.ysize());
     CopyImageTo(*image.Main().color(), &color);
     sRGB_image.SetFromImage(std::move(color), image.Main().c_current());
-    JXL_CHECK(sRGB_image.Main().TransformTo(jxl::ColorEncoding::SRGB(),
+    JXL_CHECK(sRGB_image.Main().TransformTo(jxl::ColorEncodingSRGB(),
                                             *JxlGetDefaultCms(), &pool));
     input_images.push_back(std::move(*sRGB_image.Main().color()));
   }
@@ -469,7 +469,7 @@ int main(int argc, const char** argv) {
         image.metadata.m.IntensityTarget());
     JXL_CHECK(jxl::ToneMapTo({0, target}, &tone_mapped_image, &pool));
     JXL_CHECK(jxl::GamutMap(&tone_mapped_image, preserve_saturation, &pool));
-    JXL_CHECK(tone_mapped_image.Main().TransformTo(jxl::ColorEncoding::SRGB(),
+    JXL_CHECK(tone_mapped_image.Main().TransformTo(jxl::ColorEncodingSRGB(),
                                                    *JxlGetDefaultCms(), &pool));
     input_images.push_back(std::move(*tone_mapped_image.Main().color()));
   }
@@ -483,7 +483,7 @@ int main(int argc, const char** argv) {
       midtoneness_weight, midtoneness_sigma, &pool);
 
   jxl::CodecInOut output;
-  output.SetFromImage(std::move(fused), jxl::ColorEncoding::SRGB());
+  output.SetFromImage(std::move(fused), jxl::ColorEncodingSRGB());
 
   JXL_CHECK(jxl::Encode(output, output_filename, &encoded, &pool));
   JXL_CHECK(jpegxl::tools::WriteFile(output_filename, encoded));

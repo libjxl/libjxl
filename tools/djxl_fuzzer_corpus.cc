@@ -178,9 +178,9 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
 
   jxl::ColorEncoding c;
   if (spec.num_channels == 1) {
-    c = jxl::ColorEncoding::LinearSRGB(true);
+    c = jxl::ColorEncodingLinearSRGB(true);
   } else if (spec.num_channels == 3) {
-    c = jxl::ColorEncoding::SRGB();
+    c = jxl::ColorEncodingSRGB();
   }
 
   uint8_t hash[16];

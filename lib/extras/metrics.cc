@@ -130,14 +130,14 @@ void ComputeSumOfSquares(const ImageBundle& ib1, const ImageBundle& ib2,
   Image3F copy1;
   if (!ib1.IsSRGB()) {
     JXL_CHECK(
-        ib1.CopyTo(Rect(ib1), ColorEncoding::SRGB(ib1.IsGray()), cms, &copy1));
+        ib1.CopyTo(Rect(ib1), ColorEncodingSRGB(ib1.IsGray()), cms, &copy1));
     srgb1 = &copy1;
   }
   const Image3F* srgb2 = &ib2.color();
   Image3F copy2;
   if (!ib2.IsSRGB()) {
     JXL_CHECK(
-        ib2.CopyTo(Rect(ib2), ColorEncoding::SRGB(ib2.IsGray()), cms, &copy2));
+        ib2.CopyTo(Rect(ib2), ColorEncodingSRGB(ib2.IsGray()), cms, &copy2));
     srgb2 = &copy2;
   }
 

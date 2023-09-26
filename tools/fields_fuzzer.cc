@@ -38,6 +38,15 @@ int TestOneInput(const uint8_t* data, size_t size) {
     (void)jxl::Bundle::Read(&reader, &header);     \
     break;                                         \
   }
+#define FUZZER_CASE_HEADER_PROXY(number, classname, ...)        \
+  case number: {                                                \
+    bool all_default;                                           \
+    ::jxl::classname header{__VA_ARGS__};                       \
+    ::jxl::classname##Proxy proxy{&header, true, &all_default}; \
+    (void)jxl::Bundle::Read(&reader, &proxy);                   \
+    break;                                                      \
+  }
+
   switch (data[0]) {
     case 0: {
       SizeHeader size_header;
@@ -57,9 +66,9 @@ int TestOneInput(const uint8_t* data, size_t size) {
       FUZZER_CASE_HEADER(5, AnimationHeader)
       FUZZER_CASE_HEADER(6, BitDepth)
       FUZZER_CASE_HEADER(7, BlendingInfo)
-      FUZZER_CASE_HEADER(8, ColorEncoding)
-      FUZZER_CASE_HEADER(9, CustomTransferFunction)
-      FUZZER_CASE_HEADER(10, Customxy)
+      FUZZER_CASE_HEADER_PROXY(8, ColorEncoding)
+      FUZZER_CASE_HEADER_PROXY(9, CustomTransferFunction)
+      FUZZER_CASE_HEADER_PROXY(10, Customxy)
       FUZZER_CASE_HEADER(11, ExtraChannelInfo)
       FUZZER_CASE_HEADER(12, GroupHeader)
       FUZZER_CASE_HEADER(13, weighted::Header)

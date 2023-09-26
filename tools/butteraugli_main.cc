@@ -20,7 +20,6 @@
 #include "lib/jxl/butteraugli/butteraugli.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
-#include "lib/jxl/color_management.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
@@ -43,7 +42,7 @@ Status WriteImage(Image3F&& image, const std::string& filename) {
   ThreadPoolInternal pool(4);
   CodecInOut io;
   io.metadata.m.SetUintSamples(8);
-  io.metadata.m.color_encoding = ColorEncoding::SRGB();
+  io.metadata.m.color_encoding = jxl::ColorEncodingSRGB();
   io.SetFromImage(std::move(image), io.metadata.m.color_encoding);
 
   std::vector<uint8_t> encoded;

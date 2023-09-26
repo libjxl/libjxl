@@ -70,7 +70,7 @@ Status WriteImage(Image3F&& image, ThreadPool* pool,
                   const std::string& filename) {
   CodecInOut io;
   io.metadata.m.SetUintSamples(8);
-  io.metadata.m.color_encoding = ColorEncoding::SRGB();
+  io.metadata.m.color_encoding = jxl::ColorEncodingSRGB();
   io.SetFromImage(std::move(image), io.metadata.m.color_encoding);
   std::vector<uint8_t> encoded;
   return Encode(io, filename, &encoded, pool) && WriteFile(filename, encoded);
@@ -316,7 +316,7 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
       // For verifying HDR: scale output.
       if (Args()->mul_output != 0.0) {
         fprintf(stderr, "WARNING: scaling outputs by %f\n", Args()->mul_output);
-        JXL_CHECK(ib2.TransformTo(ColorEncoding::LinearSRGB(ib2.IsGray()),
+        JXL_CHECK(ib2.TransformTo(jxl::ColorEncodingLinearSRGB(ib2.IsGray()),
                                   *JxlGetDefaultCms(), inner_pool));
         ScaleImage(static_cast<float>(Args()->mul_output), ib2.color());
       }
@@ -353,7 +353,7 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
     JXL_CHECK(tmp_res.GetFileName(&tmp_res_fn));
 
     // Convert everything to non-linear SRGB - this is what most metrics expect.
-    const ColorEncoding& c_desired = ColorEncoding::SRGB(io.Main().IsGray());
+    const ColorEncoding& c_desired = jxl::ColorEncodingSRGB(io.Main().IsGray());
     std::vector<uint8_t> encoded;
     JXL_CHECK(Encode(io, c_desired, io.metadata.m.bit_depth.bits_per_sample,
                      tmp_in_fn, &encoded));

@@ -225,7 +225,7 @@ Status SetColorEncodingFromJpegData(const jpeg::JPEGData& jpg,
 
   if (icc_profile.empty()) {
     bool is_gray = (jpg.components.size() == 1);
-    *color_encoding = ColorEncoding::SRGB(is_gray);
+    *color_encoding = ColorEncodingSRGB(is_gray);
     return true;
   }
 

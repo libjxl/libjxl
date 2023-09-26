@@ -12,7 +12,6 @@
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
-#include "lib/jxl/color_management.h"
 #include "lib/jxl/enc_xyb.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
@@ -45,7 +44,7 @@ void PrintXybRange() {
   }
   CodecInOut io;
   io.metadata.m.SetUintSamples(8);
-  io.metadata.m.color_encoding = ColorEncoding::LinearSRGB();
+  io.metadata.m.color_encoding = jxl::ColorEncodingLinearSRGB();
   io.SetFromImage(std::move(linear), io.metadata.m.color_encoding);
   const ImageBundle& ib = io.Main();
   ThreadPool* null_pool = nullptr;

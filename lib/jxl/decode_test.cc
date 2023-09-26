@@ -249,7 +249,7 @@ PaddedBytes CreateTestJXLCodestream(Span<const uint8_t> pixels, size_t xsize,
     EXPECT_TRUE(ConvertExternalToInternalColorEncoding(c, &color_encoding));
     EXPECT_EQ(color_encoding.IsGray(), grayscale);
   } else {
-    color_encoding = jxl::ColorEncoding::SRGB(/*is_gray=*/grayscale);
+    color_encoding = jxl::ColorEncodingSRGB(/*is_gray=*/grayscale);
   }
   ThreadPool pool(nullptr, nullptr);
   io.metadata.m.SetUintSamples(bitdepth);
@@ -1103,7 +1103,7 @@ TEST(DecodeTest, IccProfileTestXybEncoded) {
 
   // Test after setting the preferred color profile to non-linear sRGB:
   // for XYB images with ICC profile, this setting is expected to take effect.
-  jxl::ColorEncoding temp_jxl_srgb = jxl::ColorEncoding::SRGB(false);
+  jxl::ColorEncoding temp_jxl_srgb = jxl::ColorEncodingSRGB(false);
   JxlColorEncoding pixel_encoding_srgb;
   ConvertInternalToExternalColorEncoding(temp_jxl_srgb, &pixel_encoding_srgb);
   EXPECT_EQ(JXL_DEC_SUCCESS,
@@ -1137,7 +1137,7 @@ TEST(DecodeTest, IccProfileTestXybEncoded) {
   // returned JXL_COLOR_PROFILE_TARGET_DATA ICC profile is correctly
   // updated.
 
-  jxl::ColorEncoding temp_jxl_linear = jxl::ColorEncoding::LinearSRGB(false);
+  jxl::ColorEncoding temp_jxl_linear = jxl::ColorEncodingLinearSRGB(false);
   JxlColorEncoding pixel_encoding_linear;
   ConvertInternalToExternalColorEncoding(temp_jxl_linear,
                                          &pixel_encoding_linear);
@@ -1316,7 +1316,7 @@ TEST_P(DecodeTestParam, PixelTest) {
   if (config.orientation > 1 && !config.keep_orientation) {
     jxl::Span<const uint8_t> bytes(pixels.data(), pixels.size());
     jxl::ColorEncoding color_encoding =
-        jxl::ColorEncoding::SRGB(config.grayscale);
+        jxl::ColorEncodingSRGB(config.grayscale);
 
     jxl::CodecInOut io;
     if (config.include_alpha) io.metadata.m.SetAlphaBits(16);
@@ -1911,7 +1911,7 @@ TEST(DecodeTest, PixelTestOpaqueSrgbLossy) {
     JxlDecoderReset(dec);
     EXPECT_EQ(num_pixels * channels, pixels2.size());
 
-    jxl::ColorEncoding color_encoding0 = jxl::ColorEncoding::SRGB(false);
+    jxl::ColorEncoding color_encoding0 = jxl::ColorEncodingSRGB(false);
     jxl::Span<const uint8_t> span0(pixels.data(), pixels.size());
     jxl::CodecInOut io0;
     io0.SetSize(xsize, ysize);
@@ -1919,7 +1919,7 @@ TEST(DecodeTest, PixelTestOpaqueSrgbLossy) {
                                     /*bits_per_sample=*/16, format_orig,
                                     /*pool=*/nullptr, &io0.Main()));
 
-    jxl::ColorEncoding color_encoding1 = jxl::ColorEncoding::SRGB(false);
+    jxl::ColorEncoding color_encoding1 = jxl::ColorEncodingSRGB(false);
     jxl::Span<const uint8_t> span1(pixels2.data(), pixels2.size());
     jxl::CodecInOut io1;
     EXPECT_TRUE(ConvertFromExternal(span1, xsize, ysize, color_encoding1,
@@ -1966,7 +1966,7 @@ TEST(DecodeTest, PixelTestOpaqueSrgbLossyNoise) {
     JxlDecoderReset(dec);
     EXPECT_EQ(num_pixels * channels, pixels2.size());
 
-    jxl::ColorEncoding color_encoding0 = jxl::ColorEncoding::SRGB(false);
+    jxl::ColorEncoding color_encoding0 = jxl::ColorEncodingSRGB(false);
     jxl::Span<const uint8_t> span0(pixels.data(), pixels.size());
     jxl::CodecInOut io0;
     io0.SetSize(xsize, ysize);
@@ -1974,7 +1974,7 @@ TEST(DecodeTest, PixelTestOpaqueSrgbLossyNoise) {
                                     /*bits_per_sample=*/16, format_orig,
                                     /*pool=*/nullptr, &io0.Main()));
 
-    jxl::ColorEncoding color_encoding1 = jxl::ColorEncoding::SRGB(false);
+    jxl::ColorEncoding color_encoding1 = jxl::ColorEncodingSRGB(false);
     jxl::Span<const uint8_t> span1(pixels2.data(), pixels2.size());
     jxl::CodecInOut io1;
     EXPECT_TRUE(ConvertFromExternal(span1, xsize, ysize, color_encoding1,
@@ -2371,7 +2371,7 @@ TEST(DecodeTest, PreviewTest) {
     EXPECT_EQ(JXL_DEC_SUCCESS,
               JxlDecoderPreviewOutBufferSize(dec, &format, &buffer_size));
 
-    jxl::ColorEncoding c_srgb = jxl::ColorEncoding::SRGB(false);
+    jxl::ColorEncoding c_srgb = jxl::ColorEncodingSRGB(false);
     jxl::CodecInOut io0;
     EXPECT_TRUE(jxl::ConvertFromExternal(
         jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize,
@@ -2458,7 +2458,7 @@ TEST(DecodeTest, AnimationTest) {
   jxl::CodecInOut io;
   io.SetSize(xsize, ysize);
   io.metadata.m.SetUintSamples(16);
-  io.metadata.m.color_encoding = jxl::ColorEncoding::SRGB(false);
+  io.metadata.m.color_encoding = jxl::ColorEncodingSRGB(false);
   io.metadata.m.have_animation = true;
   io.frames.clear();
   io.frames.reserve(num_frames);
@@ -2474,7 +2474,7 @@ TEST(DecodeTest, AnimationTest) {
 
     EXPECT_TRUE(ConvertFromExternal(
         jxl::Span<const uint8_t>(frames[i].data(), frames[i].size()), xsize,
-        ysize, jxl::ColorEncoding::SRGB(/*is_gray=*/false),
+        ysize, jxl::ColorEncodingSRGB(/*is_gray=*/false),
         /*bits_per_sample=*/16, format,
         /*pool=*/nullptr, &bundle));
     bundle.duration = frame_durations[i];
@@ -2561,7 +2561,7 @@ TEST(DecodeTest, AnimationTestStreaming) {
   jxl::CodecInOut io;
   io.SetSize(xsize, ysize);
   io.metadata.m.SetUintSamples(16);
-  io.metadata.m.color_encoding = jxl::ColorEncoding::SRGB(false);
+  io.metadata.m.color_encoding = jxl::ColorEncodingSRGB(false);
   io.metadata.m.have_animation = true;
   io.frames.clear();
   io.frames.reserve(num_frames);
@@ -2577,7 +2577,7 @@ TEST(DecodeTest, AnimationTestStreaming) {
 
     EXPECT_TRUE(ConvertFromExternal(
         jxl::Span<const uint8_t>(frames[i].data(), frames[i].size()), xsize,
-        ysize, jxl::ColorEncoding::SRGB(/*is_gray=*/false),
+        ysize, jxl::ColorEncodingSRGB(/*is_gray=*/false),
         /*bits_per_sample=*/16, format,
         /*pool=*/nullptr, &bundle));
     bundle.duration = frame_durations[i];
@@ -2775,7 +2775,7 @@ TEST(DecodeTest, SkipCurrentFrameTest) {
   jxl::CodecInOut io;
   io.SetSize(xsize, ysize);
   io.metadata.m.SetUintSamples(16);
-  io.metadata.m.color_encoding = jxl::ColorEncoding::SRGB(false);
+  io.metadata.m.color_encoding = jxl::ColorEncodingSRGB(false);
   io.metadata.m.have_animation = true;
   io.frames.clear();
   io.frames.reserve(num_frames);
@@ -2795,7 +2795,7 @@ TEST(DecodeTest, SkipCurrentFrameTest) {
 
     EXPECT_TRUE(ConvertFromExternal(
         jxl::Span<const uint8_t>(frames[i].data(), frames[i].size()), xsize,
-        ysize, jxl::ColorEncoding::SRGB(/*is_gray=*/false),
+        ysize, jxl::ColorEncodingSRGB(/*is_gray=*/false),
         /*bits_per_sample=*/16, format,
         /*pool=*/nullptr, &bundle));
     bundle.duration = frame_durations[i];
@@ -2889,7 +2889,7 @@ TEST(DecodeTest, SkipFrameTest) {
   jxl::CodecInOut io;
   io.SetSize(xsize, ysize);
   io.metadata.m.SetUintSamples(16);
-  io.metadata.m.color_encoding = jxl::ColorEncoding::SRGB(false);
+  io.metadata.m.color_encoding = jxl::ColorEncodingSRGB(false);
   io.metadata.m.have_animation = true;
   io.frames.clear();
   io.frames.reserve(num_frames);
@@ -2909,7 +2909,7 @@ TEST(DecodeTest, SkipFrameTest) {
 
     EXPECT_TRUE(ConvertFromExternal(
         jxl::Span<const uint8_t>(frames[i].data(), frames[i].size()), xsize,
-        ysize, jxl::ColorEncoding::SRGB(/*is_gray=*/false),
+        ysize, jxl::ColorEncodingSRGB(/*is_gray=*/false),
         /*bits_per_sample=*/16, format,
         /*pool=*/nullptr, &bundle));
     bundle.duration = frame_durations[i];
@@ -3025,7 +3025,7 @@ TEST(DecodeTest, SkipFrameWithBlendingTest) {
   jxl::CodecInOut io;
   io.SetSize(xsize, ysize);
   io.metadata.m.SetUintSamples(16);
-  io.metadata.m.color_encoding = jxl::ColorEncoding::SRGB(false);
+  io.metadata.m.color_encoding = jxl::ColorEncodingSRGB(false);
   io.metadata.m.have_animation = true;
   io.frames.clear();
   io.frames.reserve(num_frames);
@@ -3044,7 +3044,7 @@ TEST(DecodeTest, SkipFrameWithBlendingTest) {
       EXPECT_TRUE(ConvertFromExternal(
           jxl::Span<const uint8_t>(frame_internal.data(),
                                    frame_internal.size()),
-          xsize, ysize, jxl::ColorEncoding::SRGB(/*is_gray=*/false),
+          xsize, ysize, jxl::ColorEncodingSRGB(/*is_gray=*/false),
           /*bits_per_sample=*/16, format,
           /*pool=*/nullptr, &bundle_internal));
       bundle_internal.duration = 0;
@@ -3059,7 +3059,7 @@ TEST(DecodeTest, SkipFrameWithBlendingTest) {
     jxl::ImageBundle bundle(&io.metadata.m);
     EXPECT_TRUE(ConvertFromExternal(
         jxl::Span<const uint8_t>(frame.data(), frame.size()), xsize, ysize,
-        jxl::ColorEncoding::SRGB(/*is_gray=*/false),
+        jxl::ColorEncodingSRGB(/*is_gray=*/false),
         /*bits_per_sample=*/16, format,
         /*pool=*/nullptr, &bundle));
     bundle.duration = frame_durations[i];
@@ -3243,7 +3243,7 @@ TEST(DecodeTest, SkipFrameWithAlphaBlendingTest) {
   jxl::CodecInOut io;
   io.SetSize(xsize, ysize);
   io.metadata.m.SetUintSamples(16);
-  io.metadata.m.color_encoding = jxl::ColorEncoding::SRGB(false);
+  io.metadata.m.color_encoding = jxl::ColorEncodingSRGB(false);
   io.metadata.m.have_animation = true;
   io.frames.clear();
   io.frames.reserve(num_frames + 5);
@@ -3268,7 +3268,7 @@ TEST(DecodeTest, SkipFrameWithAlphaBlendingTest) {
       EXPECT_TRUE(ConvertFromExternal(
           jxl::Span<const uint8_t>(frame_internal.data(),
                                    frame_internal.size()),
-          xsize / 2, ysize / 2, jxl::ColorEncoding::SRGB(/*is_gray=*/false),
+          xsize / 2, ysize / 2, jxl::ColorEncodingSRGB(/*is_gray=*/false),
           /*bits_per_sample=*/16, format,
           /*pool=*/nullptr, &bundle_internal));
       bundle_internal.duration = 0;
@@ -3288,7 +3288,7 @@ TEST(DecodeTest, SkipFrameWithAlphaBlendingTest) {
     jxl::ImageBundle bundle(&io.metadata.m);
     EXPECT_TRUE(ConvertFromExternal(
         jxl::Span<const uint8_t>(frame.data(), frame.size()), cropxsize,
-        cropysize, jxl::ColorEncoding::SRGB(/*is_gray=*/false),
+        cropysize, jxl::ColorEncodingSRGB(/*is_gray=*/false),
         /*bits_per_sample=*/16, format,
         /*pool=*/nullptr, &bundle));
     bundle.duration = 5 + i;
@@ -3534,7 +3534,7 @@ TEST(DecodeTest, OrientedCroppedFrameTest) {
     jxl::CodecInOut io;
     io.SetSize(xsize, ysize);
     io.metadata.m.SetUintSamples(16);
-    io.metadata.m.color_encoding = jxl::ColorEncoding::SRGB(false);
+    io.metadata.m.color_encoding = jxl::ColorEncodingSRGB(false);
     io.metadata.m.orientation = orientation;
     io.frames.clear();
     io.SetSize(xsize, ysize);
@@ -3550,7 +3550,7 @@ TEST(DecodeTest, OrientedCroppedFrameTest) {
       jxl::ImageBundle bundle(&io.metadata.m);
       EXPECT_TRUE(ConvertFromExternal(
           jxl::Span<const uint8_t>(frame.data(), frame.size()), cropxsize,
-          cropysize, jxl::ColorEncoding::SRGB(/*is_gray=*/false),
+          cropysize, jxl::ColorEncodingSRGB(/*is_gray=*/false),
           /*bits_per_sample=*/16, format,
           /*pool=*/nullptr, &bundle));
       bundle.origin = {cropx0, cropy0};
@@ -4637,7 +4637,7 @@ TEST_P(DecodeProgressiveTest, ProgressiveEventTest) {
     std::vector<uint8_t> pixels =
         jxl::test::GetSomeTestImage(xsize, ysize, num_channels, 0);
     JxlPixelFormat format = {num_channels, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
-    jxl::ColorEncoding color_encoding = jxl::ColorEncoding::SRGB(false);
+    jxl::ColorEncoding color_encoding = jxl::ColorEncodingSRGB(false);
     jxl::CodecInOut io;
     EXPECT_TRUE(jxl::ConvertFromExternal(
         jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize,
@@ -5376,7 +5376,7 @@ TEST(DecodeTest, SpotColorTest) {
   jxl::ThreadPool* pool = nullptr;
   jxl::CodecInOut io;
   size_t xsize = 55, ysize = 257;
-  io.metadata.m.color_encoding = jxl::ColorEncoding::LinearSRGB();
+  io.metadata.m.color_encoding = jxl::ColorEncodingLinearSRGB();
   jxl::Image3F main(xsize, ysize);
   jxl::ImageF spot(xsize, ysize);
   jxl::ZeroFillImage(&main);
@@ -5390,7 +5390,7 @@ TEST(DecodeTest, SpotColorTest) {
       rows[x] = ((x ^ y) & 255) * (1.f / 255.f);
     }
   }
-  io.SetFromImage(std::move(main), jxl::ColorEncoding::LinearSRGB());
+  io.SetFromImage(std::move(main), jxl::ColorEncodingLinearSRGB());
   jxl::ExtraChannelInfo info;
   info.bit_depth.bits_per_sample = 8;
   info.dim_shift = 0;

@@ -340,7 +340,7 @@ Status EncodeJpeg(const PackedPixelFile& ppf, const JpegSettings& jpeg_settings,
     if (HasICCProfile(jpeg_settings.app_data)) {
       return JXL_FAILURE("APP data ICC profile is not supported in XYB mode.");
     }
-    const ColorEncoding& c_desired = ColorEncoding::LinearSRGB(false);
+    const ColorEncoding& c_desired = ColorEncodingLinearSRGB(false);
     JXL_RETURN_IF_ERROR(
         c_transform.Init(color_encoding, c_desired, 255.0f, ppf.info.xsize, 1));
     xyb_encoding.SetColorSpace(jxl::ColorSpace::kXYB);

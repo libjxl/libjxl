@@ -12,7 +12,6 @@
 
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
-#include "lib/jxl/color_management.h"
 #include "lib/jxl/dec_external_image.h"
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_image_bundle.h"
@@ -117,7 +116,7 @@ Status ConvertPackedPixelFileToCodecInOut(const PackedPixelFile& ppf,
     const JxlCmsInterface& cms = *JxlGetDefaultCms();
     if (!io->metadata.m.color_encoding.SetICC(std::move(icc), &cms)) {
       fprintf(stderr, "Warning: error setting ICC profile, assuming SRGB\n");
-      io->metadata.m.color_encoding = ColorEncoding::SRGB(is_gray);
+      io->metadata.m.color_encoding = ColorEncodingSRGB(is_gray);
     } else {
       if (io->metadata.m.color_encoding.IsGray() != is_gray) {
         // E.g. JPG image has 3 channels, but gray ICC.

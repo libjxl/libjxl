@@ -87,6 +87,7 @@ Status Bundle::Write(const Fields& fields, BitWriter* writer, size_t layer,
 Status BitsCoder::Write(const size_t bits, const uint32_t value,
                         BitWriter* JXL_RESTRICT writer) {
   if (value >= (1ULL << bits)) {
+    __builtin_trap();
     return JXL_FAILURE("Value %d too large to encode in %" PRIu64 " bits",
                        value, static_cast<uint64_t>(bits));
   }

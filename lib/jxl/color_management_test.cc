@@ -3,8 +3,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include "lib/jxl/color_management.h"
-
 #include <jxl/cms_interface.h>
 #include <stdint.h>
 
@@ -17,6 +15,7 @@
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/random.h"
+#include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/enc_xyb.h"
 #include "lib/jxl/image_test_utils.h"
 #include "lib/jxl/jxl_cms.h"
@@ -98,8 +97,8 @@ struct Globals {
     out_gray = ImageF(kWidth, 1);
     out_color = ImageF(kWidth * 3, 1);
 
-    c_native = ColorEncoding::LinearSRGB(/*is_gray=*/false);
-    c_gray = ColorEncoding::LinearSRGB(/*is_gray=*/true);
+    c_native = ColorEncodingLinearSRGB(/*is_gray=*/false);
+    c_gray = ColorEncodingLinearSRGB(/*is_gray=*/true);
   }
 
   static ImageF GenerateGray() {
@@ -219,7 +218,7 @@ testing::Matcher<PrimariesCIExy> PrimariesAre(
 }
 
 TEST_F(ColorManagementTest, sRGBChromaticity) {
-  const ColorEncoding sRGB = ColorEncoding::SRGB();
+  const ColorEncoding sRGB = ColorEncodingSRGB();
   EXPECT_THAT(sRGB.GetWhitePoint(), CIExyIs(0.3127, 0.3290));
   EXPECT_THAT(sRGB.GetPrimaries(),
               PrimariesAre(CIExyIs(0.64, 0.33), CIExyIs(0.30, 0.60),
@@ -253,7 +252,7 @@ TEST_F(ColorManagementTest, D2700ToSRGB) {
   ASSERT_TRUE(sRGB_D2700.SetICC(std::move(icc), &cms));
 
   ColorSpaceTransform transform(cms);
-  ASSERT_TRUE(transform.Init(sRGB_D2700, ColorEncoding::SRGB(),
+  ASSERT_TRUE(transform.Init(sRGB_D2700, ColorEncodingSRGB(),
                              kDefaultIntensityTarget, 1, 1));
   const float sRGB_D2700_values[3] = {0.863, 0.737, 0.490};
   float sRGB_values[3];
@@ -295,7 +294,7 @@ TEST_F(ColorManagementTest, HlgOotf) {
 
   ColorSpaceTransform transform_to_1000(*JxlGetDefaultCms());
   ASSERT_TRUE(
-      transform_to_1000.Init(p3_hlg, ColorEncoding::LinearSRGB(), 1000, 1, 1));
+      transform_to_1000.Init(p3_hlg, ColorEncodingLinearSRGB(), 1000, 1, 1));
   // HDR reference white: https://www.itu.int/pub/R-REP-BT.2408-4-2021
   float p3_hlg_values[3] = {0.75, 0.75, 0.75};
   float linear_srgb_values[3];
@@ -308,7 +307,7 @@ TEST_F(ColorManagementTest, HlgOotf) {
 
   ColorSpaceTransform transform_to_400(*JxlGetDefaultCms());
   ASSERT_TRUE(
-      transform_to_400.Init(p3_hlg, ColorEncoding::LinearSRGB(), 400, 1, 1));
+      transform_to_400.Init(p3_hlg, ColorEncodingLinearSRGB(), 400, 1, 1));
   ASSERT_TRUE(transform_to_400.Run(0, p3_hlg_values, linear_srgb_values));
   // On a 400-nit display, it should be 100 cd/m².
   EXPECT_THAT(linear_srgb_values,
@@ -323,7 +322,7 @@ TEST_F(ColorManagementTest, HlgOotf) {
 
   ColorSpaceTransform transform_from_400(*JxlGetDefaultCms());
   ASSERT_TRUE(
-      transform_from_400.Init(ColorEncoding::LinearSRGB(), p3_hlg, 400, 1, 1));
+      transform_from_400.Init(ColorEncodingLinearSRGB(), p3_hlg, 400, 1, 1));
   linear_srgb_values[0] = linear_srgb_values[1] = linear_srgb_values[2] = 0.250;
   ASSERT_TRUE(transform_from_400.Run(0, linear_srgb_values, p3_hlg_values));
   EXPECT_THAT(p3_hlg_values,
@@ -338,7 +337,7 @@ TEST_F(ColorManagementTest, HlgOotf) {
 
   ColorSpaceTransform grayscale_transform(*JxlGetDefaultCms());
   ASSERT_TRUE(grayscale_transform.Init(
-      grayscale_hlg, ColorEncoding::LinearSRGB(/*is_gray=*/true), 1000, 1, 1));
+      grayscale_hlg, ColorEncodingLinearSRGB(/*is_gray=*/true), 1000, 1, 1));
   const float grayscale_hlg_value = 0.75;
   float linear_grayscale_value;
   ASSERT_TRUE(grayscale_transform.Run(0, &grayscale_hlg_value,
@@ -351,7 +350,7 @@ TEST_F(ColorManagementTest, XYBProfile) {
   c_xyb.SetColorSpace(ColorSpace::kXYB);
   c_xyb.rendering_intent = RenderingIntent::kPerceptual;
   ASSERT_TRUE(c_xyb.CreateICC());
-  ColorEncoding c_native = ColorEncoding::LinearSRGB(false);
+  ColorEncoding c_native = ColorEncodingLinearSRGB(false);
 
   static const size_t kGridDim = 17;
   static const size_t kNumColors = kGridDim * kGridDim * kGridDim;

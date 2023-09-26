@@ -54,19 +54,19 @@ void DumpPlaneNormalizedT(const CompressParams& cparams, const char* label,
       }
     }
   }
-  DumpImageT(cparams, label, ColorEncoding::SRGB(), normalized);
+  DumpImageT(cparams, label, ColorEncodingSRGB(), normalized);
 }
 
 }  // namespace
 
 void DumpImage(const CompressParams& cparams, const char* label,
                const Image3<float>& image) {
-  DumpImageT(cparams, label, ColorEncoding::SRGB(), image);
+  DumpImageT(cparams, label, ColorEncodingSRGB(), image);
 }
 
 void DumpImage(const CompressParams& cparams, const char* label,
                const Image3<uint8_t>& image) {
-  DumpImageT(cparams, label, ColorEncoding::SRGB(), image);
+  DumpImageT(cparams, label, ColorEncodingSRGB(), image);
 }
 
 void DumpXybImage(const CompressParams& cparams, const char* label,
@@ -78,7 +78,7 @@ void DumpXybImage(const CompressParams& cparams, const char* label,
   opsin_params.Init(kDefaultIntensityTarget);
   OpsinToLinear(image, Rect(linear), nullptr, &linear, opsin_params);
 
-  DumpImageT(cparams, label, ColorEncoding::LinearSRGB(), linear);
+  DumpImageT(cparams, label, ColorEncodingLinearSRGB(), linear);
 }
 
 void DumpPlaneNormalized(const CompressParams& cparams, const char* label,

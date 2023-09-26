@@ -84,7 +84,7 @@ QImage loadImage(const QString& filename, const QByteArray& targetIccProfile,
              reinterpret_cast<const uint8_t*>(targetIccProfile.data() +
                                               targetIccProfile.size()));
   if (!targetColorSpace.SetICC(std::move(icc), &cms)) {
-    targetColorSpace = ColorEncoding::SRGB(ib.IsGray());
+    targetColorSpace = ColorEncodingSRGB(ib.IsGray());
   }
   Image3F converted;
   if (!ib.CopyTo(Rect(ib), targetColorSpace, cms, &converted, &pool)) {

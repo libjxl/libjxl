@@ -11,7 +11,7 @@
 #include "lib/jxl/alpha.h"
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/padded_bytes.h"
-#include "lib/jxl/color_management.h"
+#include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/fields.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/quantizer.h"
@@ -333,7 +333,9 @@ Status ImageMetadata::VisitFields(Visitor* JXL_RESTRICT visitor) {
   }
 
   JXL_QUIET_RETURN_IF_ERROR(visitor->Bool(true, &xyb_encoded));
-  JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&color_encoding));
+  ColorEncodingProxy color_encoding_proxy(
+      &color_encoding, visitor->IsInitializing(), &color_encoding_all_default);
+  JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&color_encoding_proxy));
   if (visitor->Conditional(extra_fields)) {
     JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&tone_mapping));
   }
