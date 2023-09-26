@@ -9,7 +9,7 @@
 #include <jxl/resizable_parallel_runner.h>
 #include <jxl/types.h>
 
-#include "lcms2.h"
+#include "jxl/color_encoding.h"
 
 #define GDK_PIXBUF_ENABLE_BACKEND
 #include <gdk-pixbuf/gdk-pixbuf.h>
@@ -59,11 +59,6 @@ struct _GdkPixbufJxlAnimation {
   uint64_t total_duration_ms;
   uint64_t tick_duration_us;
   uint64_t repetition_count;  // 0 = loop forever
-
-  gpointer icc_buff;
-  cmsContext context;
-  cmsHPROFILE profile, srgb;
-  cmsHTRANSFORM transform;
 };
 
 #define GDK_TYPE_PIXBUF_JXL_ANIMATION (gdk_pixbuf_jxl_animation_get_type())
@@ -147,11 +142,6 @@ static void gdk_pixbuf_jxl_animation_finalize(GObject *obj) {
   }
   JxlResizableParallelRunnerDestroy(decoder_state->parallel_runner);
   JxlDecoderDestroy(decoder_state->decoder);
-  cmsDeleteTransform(decoder_state->transform);
-  cmsCloseProfile(decoder_state->srgb);
-  cmsCloseProfile(decoder_state->profile);
-  cmsDeleteContext(decoder_state->context);
-  g_free(decoder_state->icc_buff);
 }
 
 static void gdk_pixbuf_jxl_animation_class_init(
@@ -311,6 +301,12 @@ static gpointer begin_load(GdkPixbufModuleSizeFunc size_func,
                 "JxlDecoderSetParallelRunner failed: %x", status);
     goto cleanup;
   }
+  if ((status = JxlDecoderSetCms(decoder_state->decoder, JxlGetDefaultCms())) !=
+      JXL_DEC_SUCCESS) {
+    g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED,
+                "JxlDecoderSetParallelRunner failed: %x", status);
+    goto cleanup;
+  }
   if ((status = JxlDecoderSubscribeEvents(
            decoder_state->decoder, JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING |
                                        JXL_DEC_FULL_IMAGE | JXL_DEC_FRAME)) !=
@@ -320,7 +316,7 @@ static gpointer begin_load(GdkPixbufModuleSizeFunc size_func,
     goto cleanup;
   }
 
-  decoder_state->pixel_format.data_type = JXL_TYPE_FLOAT;
+  decoder_state->pixel_format.data_type = JXL_TYPE_UINT8;
   decoder_state->pixel_format.endianness = JXL_NATIVE_ENDIAN;
 
   return decoder_state;
@@ -334,22 +330,6 @@ cleanup:
 static gboolean stop_load(gpointer context, GError **error) {
   g_object_unref(context);
   return TRUE;
-}
-
-static void draw_pixels(void *context, size_t x, size_t y, size_t num_pixels,
-                        const void *pixels) {
-  GdkPixbufJxlAnimation *decoder_state = context;
-
-  GdkPixbuf *output =
-      g_array_index(decoder_state->frames, GdkPixbufJxlAnimationFrame,
-                    decoder_state->frames->len - 1)
-          .data;
-
-  guchar *dst = gdk_pixbuf_get_pixels(output) +
-                decoder_state->pixel_format.num_channels * x +
-                gdk_pixbuf_get_rowstride(output) * y;
-
-  cmsDoTransform(decoder_state->transform, pixels, dst, num_pixels);
 }
 
 static gboolean load_increment(gpointer context, const guchar *buf, guint size,
@@ -377,6 +357,18 @@ static gboolean load_increment(gpointer context, const guchar *buf, guint size,
       case JXL_DEC_NEED_MORE_INPUT: {
         JxlDecoderReleaseInput(decoder_state->decoder);
         return TRUE;
+      }
+      case JXL_DEC_COLOR_ENCODING: {
+        JxlColorEncoding color_encoding;
+        JxlColorEncodingSetToSRGB(&color_encoding, JXL_FALSE);
+        JxlDecoderStatus status;
+        if ((status = JxlDecoderSetPreferredColorProfile(
+                 decoder_state->decoder, &color_encoding)) != JXL_DEC_SUCCESS) {
+          g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED,
+                      "JxlDecoderSetPreferredColorProfile failed: %x", status);
+          return FALSE;
+        }
+        break;
       }
 
       case JXL_DEC_BASIC_INFO: {
@@ -416,63 +408,6 @@ static gboolean load_increment(gpointer context, const guchar *buf, guint size,
         JxlResizableParallelRunnerSetThreads(
             decoder_state->parallel_runner,
             JxlResizableParallelRunnerSuggestThreads(info.xsize, info.ysize));
-        break;
-      }
-
-      case JXL_DEC_COLOR_ENCODING: {
-        // Get the ICC color profile of the pixel data
-        size_t icc_size;
-        if (JXL_DEC_SUCCESS != JxlDecoderGetICCProfileSize(
-                                   decoder_state->decoder,
-                                   JXL_COLOR_PROFILE_TARGET_DATA, &icc_size)) {
-          g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED,
-                      "JxlDecoderGetICCProfileSize failed");
-          return FALSE;
-        }
-        if (!(decoder_state->icc_buff = g_malloc(icc_size))) {
-          g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED,
-                      "Allocating ICC profile failed");
-          return FALSE;
-        }
-        if (JXL_DEC_SUCCESS !=
-            JxlDecoderGetColorAsICCProfile(decoder_state->decoder,
-                                           JXL_COLOR_PROFILE_TARGET_DATA,
-                                           decoder_state->icc_buff, icc_size)) {
-          g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED,
-                      "JxlDecoderGetColorAsICCProfile failed");
-          return FALSE;
-        }
-        decoder_state->context = cmsCreateContext(NULL, NULL);
-        if (!decoder_state->context) {
-          g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED,
-                      "Failed to create LCMS2 context");
-          return FALSE;
-        }
-        decoder_state->profile = cmsOpenProfileFromMemTHR(
-            decoder_state->context, decoder_state->icc_buff, icc_size);
-        if (!decoder_state->profile) {
-          g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED,
-                      "Invalid ICC profile from JXL image decoder");
-          return FALSE;
-        }
-        decoder_state->srgb = cmsCreate_sRGBProfileTHR(decoder_state->context);
-        if (!decoder_state->srgb) {
-          g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED,
-                      "Failed to create sRGB profile");
-          return FALSE;
-        }
-        decoder_state->transform = cmsCreateTransformTHR(
-            decoder_state->context, decoder_state->profile,
-            decoder_state->has_alpha ? TYPE_RGBA_FLT : TYPE_RGB_FLT,
-            decoder_state->srgb,
-            decoder_state->has_alpha ? TYPE_RGBA_8 : TYPE_RGB_8,
-            INTENT_RELATIVE_COLORIMETRIC, cmsFLAGS_COPY_ALPHA);
-        if (!decoder_state->transform) {
-          g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED,
-                      "Failed to create LCMS2 color transform");
-          return FALSE;
-        }
-
         break;
       }
 
@@ -519,10 +454,17 @@ static gboolean load_increment(gpointer context, const guchar *buf, guint size,
       }
 
       case JXL_DEC_NEED_IMAGE_OUT_BUFFER: {
+        GdkPixbuf *output =
+            g_array_index(decoder_state->frames, GdkPixbufJxlAnimationFrame,
+                          decoder_state->frames->len - 1)
+                .data;
+
         if (JXL_DEC_SUCCESS !=
-            JxlDecoderSetImageOutCallback(decoder_state->decoder,
-                                          &decoder_state->pixel_format,
-                                          draw_pixels, decoder_state)) {
+            JxlDecoderSetImageOutBuffer(decoder_state->decoder,
+                                        &decoder_state->pixel_format,
+                                        gdk_pixbuf_get_pixels(output),
+                                        gdk_pixbuf_get_rowstride(output) *
+                                            gdk_pixbuf_get_height(output))) {
           g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED,
                       "JxlDecoderSetImageOutCallback failed");
           return FALSE;
