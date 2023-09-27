@@ -31,8 +31,8 @@ Status ToneMapFrame(const std::pair<float, float> display_nits,
 
   ColorEncoding linear_rec2020;
   linear_rec2020.SetColorSpace(ColorSpace::kRGB);
-  linear_rec2020.primaries = Primaries::k2100;
-  linear_rec2020.white_point = WhitePoint::kD65;
+  JXL_RETURN_IF_ERROR(linear_rec2020.SetPrimariesType(Primaries::k2100));
+  JXL_RETURN_IF_ERROR(linear_rec2020.SetWhitePointType(WhitePoint::kD65));
   linear_rec2020.tf.SetTransferFunction(TransferFunction::kLinear);
   JXL_RETURN_IF_ERROR(linear_rec2020.CreateICC());
   JXL_RETURN_IF_ERROR(
@@ -69,8 +69,8 @@ Status GamutMapFrame(ImageBundle* const ib, float preserve_saturation,
 
   ColorEncoding linear_rec2020;
   linear_rec2020.SetColorSpace(ColorSpace::kRGB);
-  linear_rec2020.primaries = Primaries::k2100;
-  linear_rec2020.white_point = WhitePoint::kD65;
+  JXL_RETURN_IF_ERROR(linear_rec2020.SetPrimariesType(Primaries::k2100));
+  JXL_RETURN_IF_ERROR(linear_rec2020.SetWhitePointType(WhitePoint::kD65));
   linear_rec2020.tf.SetTransferFunction(TransferFunction::kLinear);
   JXL_RETURN_IF_ERROR(linear_rec2020.CreateICC());
   JXL_RETURN_IF_ERROR(

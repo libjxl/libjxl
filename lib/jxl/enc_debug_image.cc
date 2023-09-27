@@ -23,7 +23,7 @@ void DumpImageT(const CompressParams& cparams, const char* label,
   if (!cparams.debug_image) return;
   Image3F float_image = ConvertToFloat(image);
   JxlColorEncoding color;
-  ConvertInternalToExternalColorEncoding(color_encoding, &color);
+  color_encoding.ToExternal(&color);
   size_t num_pixels = 3 * image.xsize() * image.ysize();
   std::vector<uint16_t> pixels(num_pixels);
   const ImageF* channels[3];

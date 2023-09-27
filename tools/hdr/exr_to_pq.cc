@@ -87,7 +87,7 @@ int main(int argc, const char** argv) {
       jxl::extras::ConvertPackedPixelFileToCodecInOut(ppf, &pool, &image));
   image.metadata.m.bit_depth.exponent_bits_per_sample = 0;
   jxl::ColorEncoding linear_rec_2020 = image.Main().c_current();
-  linear_rec_2020.primaries = jxl::Primaries::k2100;
+  JXL_CHECK(linear_rec_2020.SetPrimariesType(jxl::Primaries::k2100));
   linear_rec_2020.tf.SetTransferFunction(jxl::TransferFunction::kLinear);
   JXL_CHECK(linear_rec_2020.CreateICC());
   JXL_CHECK(

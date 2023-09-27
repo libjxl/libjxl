@@ -45,10 +45,10 @@ static constexpr size_t kWidth = 16;
 static constexpr size_t kNumThreads = 1;  // only have a single row.
 
 MATCHER_P(HasSameFieldsAs, expected, "") {
-  if (arg.rendering_intent != expected.rendering_intent) {
+  if (arg.GetRenderingIntent() != expected.GetRenderingIntent()) {
     *result_listener << "which has a different rendering intent: "
-                     << ToString(arg.rendering_intent) << " instead of "
-                     << ToString(expected.rendering_intent);
+                     << ToString(arg.GetRenderingIntent()) << " instead of "
+                     << ToString(expected.GetRenderingIntent());
     return false;
   }
   if (arg.GetColorSpace() != expected.GetColorSpace()) {
@@ -57,16 +57,17 @@ MATCHER_P(HasSameFieldsAs, expected, "") {
                      << ToString(expected.GetColorSpace());
     return false;
   }
-  if (arg.white_point != expected.white_point) {
+  if (arg.GetWhitePointType() != expected.GetWhitePointType()) {
     *result_listener << "which has a different white point: "
-                     << ToString(arg.white_point) << " instead of "
-                     << ToString(expected.white_point);
+                     << ToString(arg.GetWhitePointType()) << " instead of "
+                     << ToString(expected.GetWhitePointType());
     return false;
   }
-  if (arg.HasPrimaries() && arg.primaries != expected.primaries) {
+  if (arg.HasPrimaries() &&
+      arg.GetPrimariesType() != expected.GetPrimariesType()) {
     *result_listener << "which has different primaries: "
-                     << ToString(arg.primaries) << " instead of "
-                     << ToString(expected.primaries);
+                     << ToString(arg.GetPrimariesType()) << " instead of "
+                     << ToString(expected.GetPrimariesType());
     return false;
   }
   if (!arg.tf.IsSame(expected.tf)) {
@@ -266,13 +267,13 @@ TEST_F(ColorManagementTest, D2700ToSRGB) {
 TEST_F(ColorManagementTest, P3HlgTo2020Hlg) {
   ColorEncoding p3_hlg;
   p3_hlg.SetColorSpace(ColorSpace::kRGB);
-  p3_hlg.white_point = WhitePoint::kD65;
-  p3_hlg.primaries = Primaries::kP3;
+  ASSERT_TRUE(p3_hlg.SetWhitePointType(WhitePoint::kD65));
+  ASSERT_TRUE(p3_hlg.SetPrimariesType(Primaries::kP3));
   p3_hlg.tf.SetTransferFunction(TransferFunction::kHLG);
   ASSERT_TRUE(p3_hlg.CreateICC());
 
   ColorEncoding rec2020_hlg = p3_hlg;
-  rec2020_hlg.primaries = Primaries::k2100;
+  ASSERT_TRUE(rec2020_hlg.SetPrimariesType(Primaries::k2100));
   ASSERT_TRUE(rec2020_hlg.CreateICC());
 
   ColorSpaceTransform transform(*JxlGetDefaultCms());
@@ -288,8 +289,8 @@ TEST_F(ColorManagementTest, P3HlgTo2020Hlg) {
 TEST_F(ColorManagementTest, HlgOotf) {
   ColorEncoding p3_hlg;
   p3_hlg.SetColorSpace(ColorSpace::kRGB);
-  p3_hlg.white_point = WhitePoint::kD65;
-  p3_hlg.primaries = Primaries::kP3;
+  ASSERT_TRUE(p3_hlg.SetWhitePointType(WhitePoint::kD65));
+  ASSERT_TRUE(p3_hlg.SetPrimariesType(Primaries::kP3));
   p3_hlg.tf.SetTransferFunction(TransferFunction::kHLG);
   ASSERT_TRUE(p3_hlg.CreateICC());
 
@@ -332,7 +333,7 @@ TEST_F(ColorManagementTest, HlgOotf) {
 
   ColorEncoding grayscale_hlg;
   grayscale_hlg.SetColorSpace(ColorSpace::kGray);
-  grayscale_hlg.white_point = WhitePoint::kD65;
+  ASSERT_TRUE(grayscale_hlg.SetWhitePointType(WhitePoint::kD65));
   grayscale_hlg.tf.SetTransferFunction(TransferFunction::kHLG);
   ASSERT_TRUE(grayscale_hlg.CreateICC());
 
@@ -349,7 +350,7 @@ TEST_F(ColorManagementTest, HlgOotf) {
 TEST_F(ColorManagementTest, XYBProfile) {
   ColorEncoding c_xyb;
   c_xyb.SetColorSpace(ColorSpace::kXYB);
-  c_xyb.rendering_intent = RenderingIntent::kPerceptual;
+  ASSERT_TRUE(c_xyb.SetRenderingIntent(RenderingIntent::kPerceptual));
   ASSERT_TRUE(c_xyb.CreateICC());
   ColorEncoding c_native = ColorEncoding::LinearSRGB(false);
 

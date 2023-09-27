@@ -99,14 +99,14 @@ JxlColorEncoding CreateTestColorEncoding(bool is_gray) {
   // Roundtrip through internal color encoding to fill in primaries and white
   // point CIE xy coordinates.
   ColorEncoding c_internal;
-  JXL_CHECK(ConvertExternalToInternalColorEncoding(c, &c_internal));
-  ConvertInternalToExternalColorEncoding(c_internal, &c);
+  JXL_CHECK(c_internal.FromExternal(c));
+  c_internal.ToExternal(&c);
   return c;
 }
 
 std::vector<uint8_t> GenerateICC(JxlColorEncoding color_encoding) {
   ColorEncoding c;
-  JXL_CHECK(ConvertExternalToInternalColorEncoding(color_encoding, &c));
+  JXL_CHECK(c.FromExternal(color_encoding));
   JXL_CHECK(c.CreateICC());
   return c.ICC();
 }

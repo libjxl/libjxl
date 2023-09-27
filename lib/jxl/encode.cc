@@ -1039,8 +1039,7 @@ JxlEncoderStatus JxlEncoderSetColorEncoding(JxlEncoder* enc,
     return JXL_API_ERROR(enc, JXL_ENC_ERR_API_USAGE,
                          "Color encoding is already set");
   }
-  if (!jxl::ConvertExternalToInternalColorEncoding(
-          *color, &enc->metadata.m.color_encoding)) {
+  if (!enc->metadata.m.color_encoding.FromExternal(*color)) {
     return JXL_API_ERROR(enc, JXL_ENC_ERR_GENERIC, "Error in color conversion");
   }
   if (enc->metadata.m.color_encoding.GetColorSpace() ==
@@ -2636,14 +2635,12 @@ JxlEncoderStatus JxlEncoderSetFrameBitDepth(
 
 void JxlColorEncodingSetToSRGB(JxlColorEncoding* color_encoding,
                                JXL_BOOL is_gray) {
-  ConvertInternalToExternalColorEncoding(jxl::ColorEncoding::SRGB(is_gray),
-                                         color_encoding);
+  jxl::ColorEncoding::SRGB(is_gray).ToExternal(color_encoding);
 }
 
 void JxlColorEncodingSetToLinearSRGB(JxlColorEncoding* color_encoding,
                                      JXL_BOOL is_gray) {
-  ConvertInternalToExternalColorEncoding(
-      jxl::ColorEncoding::LinearSRGB(is_gray), color_encoding);
+  jxl::ColorEncoding::LinearSRGB(is_gray).ToExternal(color_encoding);
 }
 
 void JxlEncoderAllowExpertOptions(JxlEncoder* enc) {
