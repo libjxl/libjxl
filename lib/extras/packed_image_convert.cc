@@ -125,8 +125,8 @@ Status ConvertPackedPixelFileToCodecInOut(const PackedPixelFile& ppf,
       }
     }
   } else {
-    JXL_RETURN_IF_ERROR(ConvertExternalToInternalColorEncoding(
-        ppf.color_encoding, &io->metadata.m.color_encoding));
+    JXL_RETURN_IF_ERROR(
+        io->metadata.m.color_encoding.FromExternal(ppf.color_encoding));
     if (io->metadata.m.color_encoding.ICC().empty()) {
       return JXL_FAILURE("Failed to serialize ICC");
     }
@@ -241,7 +241,7 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
 
   // Convert the color encoding
   ppf->icc.assign(c_desired.ICC().begin(), c_desired.ICC().end());
-  ConvertInternalToExternalColorEncoding(c_desired, &ppf->color_encoding);
+  c_desired.ToExternal(&ppf->color_encoding);
 
   // Convert the extra blobs
   ppf->metadata.exif = io.blobs.exif;

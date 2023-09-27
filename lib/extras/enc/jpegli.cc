@@ -55,8 +55,7 @@ Status GetColorEncoding(const PackedPixelFile& ppf, const JxlCmsInterface* cms,
     icc.assign(ppf.icc.data(), ppf.icc.data() + ppf.icc.size());
     JXL_RETURN_IF_ERROR(color_encoding->SetICC(std::move(icc), cms));
   } else {
-    JXL_RETURN_IF_ERROR(ConvertExternalToInternalColorEncoding(
-        ppf.color_encoding, color_encoding));
+    JXL_RETURN_IF_ERROR(color_encoding->FromExternal(ppf.color_encoding));
   }
   if (color_encoding->ICC().empty()) {
     return JXL_FAILURE("Invalid color encoding.");
@@ -344,7 +343,8 @@ Status EncodeJpeg(const PackedPixelFile& ppf, const JpegSettings& jpeg_settings,
     JXL_RETURN_IF_ERROR(
         c_transform.Init(color_encoding, c_desired, 255.0f, ppf.info.xsize, 1));
     xyb_encoding.SetColorSpace(jxl::ColorSpace::kXYB);
-    xyb_encoding.rendering_intent = jxl::RenderingIntent::kPerceptual;
+    JXL_RETURN_IF_ERROR(
+        xyb_encoding.SetRenderingIntent(jxl::RenderingIntent::kPerceptual));
     JXL_RETURN_IF_ERROR(xyb_encoding.CreateICC());
   }
   const ColorEncoding& output_encoding =

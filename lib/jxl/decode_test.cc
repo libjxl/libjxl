@@ -246,7 +246,7 @@ PaddedBytes CreateTestJXLCodestream(Span<const uint8_t> pixels, size_t xsize,
   } else if (!params.color_space.empty()) {
     JxlColorEncoding c;
     EXPECT_TRUE(jxl::ParseDescription(params.color_space, &c));
-    EXPECT_TRUE(ConvertExternalToInternalColorEncoding(c, &color_encoding));
+    EXPECT_TRUE(color_encoding.FromExternal(c));
     EXPECT_EQ(color_encoding.IsGray(), grayscale);
   } else {
     color_encoding = jxl::ColorEncoding::SRGB(/*is_gray=*/grayscale);
@@ -1105,7 +1105,7 @@ TEST(DecodeTest, IccProfileTestXybEncoded) {
   // for XYB images with ICC profile, this setting is expected to take effect.
   jxl::ColorEncoding temp_jxl_srgb = jxl::ColorEncoding::SRGB(false);
   JxlColorEncoding pixel_encoding_srgb;
-  ConvertInternalToExternalColorEncoding(temp_jxl_srgb, &pixel_encoding_srgb);
+  temp_jxl_srgb.ToExternal(&pixel_encoding_srgb);
   EXPECT_EQ(JXL_DEC_SUCCESS,
             JxlDecoderSetPreferredColorProfile(dec, &pixel_encoding_srgb));
   EXPECT_EQ(JXL_DEC_SUCCESS,
@@ -1139,8 +1139,7 @@ TEST(DecodeTest, IccProfileTestXybEncoded) {
 
   jxl::ColorEncoding temp_jxl_linear = jxl::ColorEncoding::LinearSRGB(false);
   JxlColorEncoding pixel_encoding_linear;
-  ConvertInternalToExternalColorEncoding(temp_jxl_linear,
-                                         &pixel_encoding_linear);
+  temp_jxl_linear.ToExternal(&pixel_encoding_linear);
 
   EXPECT_EQ(JXL_DEC_SUCCESS,
             JxlDecoderSetPreferredColorProfile(dec, &pixel_encoding_linear));
@@ -1679,7 +1678,7 @@ TEST(DecodeTest, PixelTestWithICCProfileLossy) {
 
 std::string ColorDescription(JxlColorEncoding c) {
   jxl::ColorEncoding color_encoding;
-  EXPECT_TRUE(ConvertExternalToInternalColorEncoding(c, &color_encoding));
+  EXPECT_TRUE(color_encoding.FromExternal(c));
   return Description(color_encoding);
 }
 
@@ -1742,7 +1741,7 @@ TEST_P(DecodeAllEncodingsTest, PreserveOriginalProfileTest) {
   int events = JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING | JXL_DEC_FULL_IMAGE;
   const auto& cdesc = GetParam();
   jxl::ColorEncoding c_in = jxl::test::ColorEncodingFromDescriptor(cdesc);
-  if (c_in.rendering_intent != jxl::RenderingIntent::kRelative) return;
+  if (c_in.GetRenderingIntent() != jxl::RenderingIntent::kRelative) return;
   std::string color_space_in = Description(c_in);
   float intensity_in = c_in.tf.IsPQ() ? 10000 : 255;
   printf("Testing input color space %s\n", color_space_in.c_str());
@@ -1782,8 +1781,8 @@ void SetPreferredColorProfileTest(
   size_t xsize = 123, ysize = 77;
   int events = JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING | JXL_DEC_FULL_IMAGE;
   jxl::ColorEncoding c_in = jxl::test::ColorEncodingFromDescriptor(from);
-  if (c_in.rendering_intent != jxl::RenderingIntent::kRelative) return;
-  if (c_in.white_point != jxl::WhitePoint::kD65) return;
+  if (c_in.GetRenderingIntent() != jxl::RenderingIntent::kRelative) return;
+  if (c_in.GetWhitePointType() != jxl::WhitePoint::kD65) return;
   uint32_t num_channels = c_in.Channels();
   std::vector<uint8_t> pixels =
       jxl::test::GetSomeTestImage(xsize, ysize, num_channels, 0);
@@ -1804,13 +1803,13 @@ void SetPreferredColorProfileTest(
     jxl::ColorEncoding c_out = jxl::test::ColorEncodingFromDescriptor(c1);
     float intensity_out = intensity_in;
     if (c_out.GetColorSpace() != jxl::ColorSpace::kXYB) {
-      if (c_out.rendering_intent != jxl::RenderingIntent::kRelative) {
+      if (c_out.GetRenderingIntent() != jxl::RenderingIntent::kRelative) {
         continue;
       }
-      if ((c_in.primaries == jxl::Primaries::k2100 &&
-           c_out.primaries != jxl::Primaries::k2100) ||
-          (c_in.primaries == jxl::Primaries::kP3 &&
-           c_out.primaries == jxl::Primaries::kSRGB)) {
+      if ((c_in.GetPrimariesType() == jxl::Primaries::k2100 &&
+           c_out.GetPrimariesType() != jxl::Primaries::k2100) ||
+          (c_in.GetPrimariesType() == jxl::Primaries::kP3 &&
+           c_out.GetPrimariesType() == jxl::Primaries::kSRGB)) {
         // Converting to a narrower gamut does not work without gammut mapping.
         continue;
       }
@@ -1841,7 +1840,7 @@ void SetPreferredColorProfileTest(
     JxlColorEncoding encoding_out;
     EXPECT_TRUE(jxl::ParseDescription(color_space_out, &encoding_out));
     if (c_out.GetColorSpace() == jxl::ColorSpace::kXYB &&
-        (c_in.primaries != jxl::Primaries::kSRGB || c_in.tf.IsPQ())) {
+        (c_in.GetPrimariesType() != jxl::Primaries::kSRGB || c_in.tf.IsPQ())) {
       EXPECT_EQ(JXL_DEC_ERROR,
                 JxlDecoderSetPreferredColorProfile(dec, &encoding_out));
       JxlDecoderDestroy(dec);
@@ -1863,7 +1862,7 @@ void SetPreferredColorProfileTest(
     EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec));
     double dist = ButteraugliDistance(xsize, ysize, pixels, c_in, intensity_in,
                                       out, c_out, intensity_out);
-    if (c_in.white_point == c_out.white_point) {
+    if (c_in.GetWhitePointType() == c_out.GetWhitePointType()) {
       EXPECT_LT(dist, 1.29);
     } else {
       EXPECT_LT(dist, 4.0);

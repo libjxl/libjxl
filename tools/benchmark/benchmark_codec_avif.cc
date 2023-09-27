@@ -76,13 +76,13 @@ bool ParseChromaSubsampling(const char* arg, avifPixelFormat* subsampling) {
 }
 
 void SetUpAvifColor(const ColorEncoding& color, avifImage* const image) {
-  bool need_icc = (color.white_point != WhitePoint::kD65);
+  bool need_icc = (color.GetWhitePointType() != WhitePoint::kD65);
 
   image->matrixCoefficients = AVIF_MATRIX_COEFFICIENTS_BT709;
   if (!color.HasPrimaries()) {
     need_icc = true;
   } else {
-    switch (color.primaries) {
+    switch (color.GetPrimariesType()) {
       case Primaries::kSRGB:
         image->colorPrimaries = AVIF_COLOR_PRIMARIES_BT709;
         break;
@@ -128,13 +128,13 @@ Status ReadAvifColor(const avifImage* const image, ColorEncoding* const color) {
     return color->SetICC(std::move(icc), JxlGetDefaultCms());
   }
 
-  color->white_point = WhitePoint::kD65;
+  JXL_RETURN_IF_ERROR(color->SetWhitePointType(WhitePoint::kD65));
   switch (image->colorPrimaries) {
     case AVIF_COLOR_PRIMARIES_BT709:
-      color->primaries = Primaries::kSRGB;
+      JXL_RETURN_IF_ERROR(color->SetPrimariesType(Primaries::kSRGB));
       break;
     case AVIF_COLOR_PRIMARIES_BT2020:
-      color->primaries = Primaries::k2100;
+      JXL_RETURN_IF_ERROR(color->SetPrimariesType(Primaries::k2100));
       break;
     default:
       return JXL_FAILURE("unsupported avif primaries");

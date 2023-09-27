@@ -221,8 +221,7 @@ TestImage::TestImage() {
 
 TestImage& TestImage::DecodeFromBytes(const PaddedBytes& bytes) {
   ColorEncoding c_enc;
-  JXL_CHECK(
-      ConvertExternalToInternalColorEncoding(ppf_.color_encoding, &c_enc));
+  JXL_CHECK(c_enc.FromExternal(ppf_.color_encoding));
   extras::ColorHints color_hints;
   color_hints.Add("color_space", Description(c_enc));
   JXL_CHECK(
@@ -311,8 +310,7 @@ TestImage& TestImage::SetEndianness(JxlEndianness endianness) {
 TestImage& TestImage::SetColorEncoding(const std::string& description) {
   JXL_CHECK(ParseDescription(description, &ppf_.color_encoding));
   ColorEncoding c_enc;
-  JXL_CHECK(
-      ConvertExternalToInternalColorEncoding(ppf_.color_encoding, &c_enc));
+  JXL_CHECK(c_enc.FromExternal(ppf_.color_encoding));
   JXL_CHECK(c_enc.CreateICC());
   IccBytes icc = c_enc.ICC();
   ppf_.icc.assign(icc.begin(), icc.end());

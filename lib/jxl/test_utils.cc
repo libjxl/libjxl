@@ -119,11 +119,13 @@ ColorEncoding ColorEncodingFromDescriptor(const ColorEncodingDescriptor& desc) {
   ColorEncoding c;
   c.SetColorSpace(desc.color_space);
   if (desc.color_space != ColorSpace::kXYB) {
-    c.white_point = desc.white_point;
-    c.primaries = desc.primaries;
+    JXL_CHECK(c.SetWhitePointType(desc.white_point));
+    if (desc.color_space != ColorSpace::kGray) {
+      JXL_CHECK(c.SetPrimariesType(desc.primaries));
+    }
     c.tf.SetTransferFunction(desc.tf);
   }
-  c.rendering_intent = desc.rendering_intent;
+  JXL_CHECK(c.SetRenderingIntent(desc.rendering_intent));
   JXL_CHECK(c.CreateICC());
   return c;
 }
@@ -136,7 +138,8 @@ void CheckSameEncodings(const std::vector<ColorEncoding>& a,
   JXL_CHECK(a.size() == b.size());
   for (size_t i = 0; i < a.size(); ++i) {
     if ((a[i].ICC() == b[i].ICC()) ||
-        ((a[i].primaries == b[i].primaries) && a[i].tf.IsSame(b[i].tf))) {
+        ((a[i].GetPrimariesType() == b[i].GetPrimariesType()) &&
+         a[i].tf.IsSame(b[i].tf))) {
       continue;
     }
     failures << "CheckSameEncodings " << check_name << ": " << i
@@ -238,13 +241,13 @@ std::vector<ColorEncodingDescriptor> AllEncodings() {
 
     for (WhitePoint wp : Values<WhitePoint>()) {
       if (wp == WhitePoint::kCustom) continue;
-      if (c.ImplicitWhitePoint() && c.white_point != wp) continue;
-      c.white_point = wp;
+      if (c.ImplicitWhitePoint() && c.GetWhitePointType() != wp) continue;
+      JXL_CHECK(c.SetWhitePointType(wp));
 
       for (Primaries primaries : Values<Primaries>()) {
         if (primaries == Primaries::kCustom) continue;
         if (!c.HasPrimaries()) continue;
-        c.primaries = primaries;
+        JXL_CHECK(c.SetPrimariesType(primaries));
 
         for (TransferFunction tf : Values<TransferFunction>()) {
           if (tf == TransferFunction::kUnknown) continue;

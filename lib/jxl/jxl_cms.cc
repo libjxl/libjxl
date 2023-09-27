@@ -919,14 +919,14 @@ bool ApplyCICP(const uint8_t color_primaries,
   c->SetColorSpace(ColorSpace::kRGB);
   c->tf.SetTransferFunction(tf);
   if (primaries == Primaries::kP3) {
-    c->white_point = WhitePoint::kDCI;
-    c->primaries = Primaries::kP3;
+    if (!c->SetWhitePointType(WhitePoint::kDCI)) return false;
+    if (!c->SetPrimariesType(Primaries::kP3)) return false;
   } else if (color_primaries == 12) {
-    c->white_point = WhitePoint::kD65;
-    c->primaries = Primaries::kP3;
+    if (!c->SetWhitePointType(WhitePoint::kD65)) return false;
+    if (!c->SetPrimariesType(Primaries::kP3)) return false;
   } else {
-    c->white_point = WhitePoint::kD65;
-    c->primaries = primaries;
+    if (!c->SetWhitePointType(WhitePoint::kD65)) return false;
+    if (!c->SetPrimariesType(primaries)) return false;
   }
   return true;
 }
@@ -963,14 +963,15 @@ JXL_BOOL JxlCmsSetFieldsFromICC(void* user_data, const uint8_t* icc_data,
     return JXL_FAILURE("Invalid rendering intent %u\n", rendering_intent32);
   }
   // ICC and RenderingIntent have the same values (0..3).
-  c_enc.rendering_intent = static_cast<RenderingIntent>(rendering_intent32);
+  JXL_RETURN_IF_ERROR(c_enc.SetRenderingIntent(
+      static_cast<RenderingIntent>(rendering_intent32)));
 
   if (profile.has_CICP &&
       ApplyCICP(profile.CICP.color_primaries,
                 profile.CICP.transfer_characteristics,
                 profile.CICP.matrix_coefficients,
                 profile.CICP.video_full_range_flag, &c_enc)) {
-    ConvertInternalToExternalColorEncoding(c_enc, c);
+    c_enc.ToExternal(c);
     return true;
   }
 
@@ -1010,14 +1011,14 @@ JXL_BOOL JxlCmsSetFieldsFromICC(void* user_data, const uint8_t* icc_data,
           kCICPSize &&
       ApplyCICP(cicp_buffer[8], cicp_buffer[9], cicp_buffer[10],
                 cicp_buffer[11], &c_enc)) {
-    ConvertInternalToExternalColorEncoding(c_enc, c);
+    c_enc.ToExternal(c);
     return true;
   }
 
   c_enc.SetColorSpace(ColorSpaceFromProfile(profile));
   if (cmsGetColorSpace(profile.get()) == cmsSigCmykData) {
     *cmyk = JXL_TRUE;
-    ConvertInternalToExternalColorEncoding(c_enc, c);
+    c_enc.ToExternal(c);
     return true;
   }
 
@@ -1033,7 +1034,7 @@ JXL_BOOL JxlCmsSetFieldsFromICC(void* user_data, const uint8_t* icc_data,
 
 #endif  // JPEGXL_ENABLE_SKCMS
 
-  ConvertInternalToExternalColorEncoding(c_enc, c);
+  c_enc.ToExternal(c);
   return true;
 }
 

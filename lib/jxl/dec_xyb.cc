@@ -203,7 +203,7 @@ bool CanOutputToColorEncoding(const ColorEncoding& c_desired) {
       !c_desired.tf.IsHLG() && !c_desired.tf.IsDCI() && !c_desired.tf.Is709()) {
     return false;
   }
-  if (c_desired.IsGray() && c_desired.white_point != WhitePoint::kD65) {
+  if (c_desired.IsGray() && c_desired.GetWhitePointType() != WhitePoint::kD65) {
     // TODO(veluca): figure out what should happen here.
     return false;
   }
@@ -237,7 +237,7 @@ Status OutputEncodingInfo::MaybeSetColorEncoding(
     const ColorEncoding& c_desired) {
   if (c_desired.GetColorSpace() == ColorSpace::kXYB &&
       ((color_encoding.GetColorSpace() == ColorSpace::kRGB &&
-        color_encoding.primaries != Primaries::kSRGB) ||
+        color_encoding.GetPrimariesType() != Primaries::kSRGB) ||
        color_encoding.tf.IsPQ())) {
     return false;
   }
@@ -258,8 +258,8 @@ Status OutputEncodingInfo::SetColorEncoding(const ColorEncoding& c_desired) {
   memcpy(inverse_matrix, orig_inverse_matrix, sizeof(inverse_matrix));
   constexpr float kSRGBLuminances[3] = {0.2126, 0.7152, 0.0722};
   memcpy(luminances, kSRGBLuminances, sizeof(luminances));
-  if ((c_desired.primaries != Primaries::kSRGB ||
-       c_desired.white_point != WhitePoint::kD65) &&
+  if ((c_desired.GetPrimariesType() != Primaries::kSRGB ||
+       c_desired.GetWhitePointType() != WhitePoint::kD65) &&
       !c_desired.IsGray()) {
     float srgb_to_xyzd50[9];
     const auto& srgb = ColorEncoding::SRGB(/*is_gray=*/false);

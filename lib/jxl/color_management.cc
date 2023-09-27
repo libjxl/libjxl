@@ -186,11 +186,11 @@ bool CanToneMap(const ColorEncoding& encoding) {
   return encoding.GetColorSpace() == ColorSpace::kRGB &&
          encoding.HasPrimaries() &&
          (encoding.tf.IsPQ() || encoding.tf.IsHLG()) &&
-         ((encoding.primaries == Primaries::kP3 &&
-           (encoding.white_point == WhitePoint::kD65 ||
-            encoding.white_point == WhitePoint::kDCI)) ||
-          (encoding.primaries != Primaries::kCustom &&
-           encoding.white_point == WhitePoint::kD65));
+         ((encoding.GetPrimariesType() == Primaries::kP3 &&
+           (encoding.GetWhitePointType() == WhitePoint::kD65 ||
+            encoding.GetWhitePointType() == WhitePoint::kDCI)) ||
+          (encoding.GetPrimariesType() != Primaries::kCustom &&
+           encoding.GetWhitePointType() == WhitePoint::kD65));
 }
 
 void ICCComputeMD5(const IccBytes& data, uint8_t sum[16])
@@ -373,7 +373,7 @@ Status CreateICCHeader(const ColorEncoding& c, IccBytes* JXL_RESTRICT header) {
   WriteICCUint32(0, 52, header);  // device model
   WriteICCUint32(0, 56, header);  // device attributes
   WriteICCUint32(0, 60, header);  // device attributes
-  WriteICCUint32(static_cast<uint32_t>(c.rendering_intent), 64, header);
+  WriteICCUint32(static_cast<uint32_t>(c.GetRenderingIntent()), 64, header);
 
   // Mandatory D50 white point of profile connection space
   WriteICCUint32(0x0000f6d6, 68, header);
@@ -445,17 +445,17 @@ void MaybeCreateICCCICPTag(const ColorEncoding& c, IccBytes* JXL_RESTRICT tags,
     return;
   }
   uint8_t primaries = 0;
-  if (c.primaries == Primaries::kP3) {
-    if (c.white_point == WhitePoint::kD65) {
+  if (c.GetPrimariesType() == Primaries::kP3) {
+    if (c.GetWhitePointType() == WhitePoint::kD65) {
       primaries = 12;
-    } else if (c.white_point == WhitePoint::kDCI) {
+    } else if (c.GetWhitePointType() == WhitePoint::kDCI) {
       primaries = 11;
     } else {
       return;
     }
-  } else if (c.primaries != Primaries::kCustom &&
-             c.white_point == WhitePoint::kD65) {
-    primaries = static_cast<uint8_t>(c.primaries);
+  } else if (c.GetPrimariesType() != Primaries::kCustom &&
+             c.GetWhitePointType() == WhitePoint::kD65) {
+    primaries = static_cast<uint8_t>(c.GetPrimariesType());
   } else {
     return;
   }
@@ -707,7 +707,7 @@ Status MaybeCreateProfile(const ColorEncoding& c, IccBytes* JXL_RESTRICT icc) {
   }
 
   if (c.GetColorSpace() == ColorSpace::kXYB &&
-      c.rendering_intent != RenderingIntent::kPerceptual) {
+      c.GetRenderingIntent() != RenderingIntent::kPerceptual) {
     return JXL_FAILURE(
         "Only perceptual rendering intent implemented for XYB "
         "ICC profile.");
