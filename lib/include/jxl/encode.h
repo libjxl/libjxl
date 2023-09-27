@@ -848,9 +848,9 @@ struct JxlChunkedFrameInputSource {
                                            size_t ysize, size_t* row_offset);
 
   /**
-   * Get the pixel format that color channel data will be provided in.
+   * Get the pixel format that extra channel data will be provided in.
    * When called, `pixel_format` points to a suggested pixel format; if
-   * color channel data can be given in this pixel format, processing might
+   * extra channel data can be given in this pixel format, processing might
    * be more efficient.
    *
    * This function will be called exactly once per index, before any call to
@@ -899,6 +899,8 @@ struct JxlChunkedFrameInputSource {
    * `get_extra_channel_data_at`.
    *
    * @param opaque user supplied parameters to the callback
+   * @param buf pointer returned by `get_color_channel_data_at` or
+   * `get_extra_channel_data_at`
    */
   void (*release_buffer)(void* opaque, const void* buf);
 };

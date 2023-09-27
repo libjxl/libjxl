@@ -1608,15 +1608,14 @@ class EncoderStreamingTest : public testing::TestWithParam<StreamingTestParam> {
       EXPECT_EQ(JXL_ENC_SUCCESS,
                 JxlEncoderSetExtraChannelInfo(enc, i, &channel_info));
     }
-    if (add_image_frames) {
+    size_t frame_count = static_cast<int>(add_image_frames) *
+                         (1 + static_cast<int>(p.multiple_frames()));
+    for (size_t i = 0; i < frame_count; i++) {
       EXPECT_EQ(JXL_ENC_SUCCESS,
                 JxlEncoderAddImageFrame(frame_settings, &frame.format,
                                         frame.pixels(), frame.pixels_size));
-      if (p.multiple_frames()) {
-        EXPECT_EQ(JXL_ENC_SUCCESS,
-                  JxlEncoderAddImageFrame(frame_settings, &frame.format,
-                                          frame.pixels(), frame.pixels_size));
-      }
+    }
+    if (add_image_frames) {
       JxlEncoderCloseInput(enc);
     }
   }
@@ -1656,6 +1655,18 @@ TEST_P(EncoderStreamingTest, OutputCallback) {
 }
 
 class JxlChunkedFrameInputSourceAdapter {
+ private:
+  static const void* GetDataAt(const jxl::extras::PackedPixelFile& ppf,
+                               size_t xpos, size_t ypos, size_t* row_offset) {
+    JxlDataType data_type = ppf.frames[0].color.format.data_type;
+    size_t num_channels = ppf.frames[0].color.format.num_channels;
+    size_t bytes_per_pixel =
+        num_channels * jxl::extras::PackedImage::BitsPerChannel(data_type) / 8;
+    *row_offset = ppf.frames[0].color.stride;
+    return static_cast<uint8_t*>(ppf.frames[0].color.pixels()) +
+           bytes_per_pixel * xpos + ypos * ppf.frames[0].color.stride;
+  }
+
  public:
   // Constructor to wrap the image data or any other state
   explicit JxlChunkedFrameInputSourceAdapter(
@@ -1676,14 +1687,7 @@ class JxlChunkedFrameInputSourceAdapter {
                                            size_t ysize, size_t* row_offset) {
     JxlChunkedFrameInputSourceAdapter* self =
         static_cast<JxlChunkedFrameInputSourceAdapter*>(opaque);
-    auto& ppf = self->colorchannel_;
-    size_t num_channels = ppf.frames[0].color.format.num_channels;
-    JxlDataType data_type = ppf.frames[0].color.format.data_type;
-    size_t bytes_per_pixel =
-        num_channels * jxl::extras::PackedImage::BitsPerChannel(data_type) / 8;
-    *row_offset = ppf.frames[0].color.stride;
-    return static_cast<uint8_t*>(ppf.frames[0].color.pixels()) +
-           bytes_per_pixel * xpos + ypos * ppf.frames[0].color.stride;
+    return GetDataAt(self->colorchannel_, xpos, ypos, row_offset);
   }
 
   static void GetExtraChannelPixelFormat(void* opaque, size_t ec_index,
@@ -1703,13 +1707,7 @@ class JxlChunkedFrameInputSourceAdapter {
     // used
     JxlChunkedFrameInputSourceAdapter* self =
         static_cast<JxlChunkedFrameInputSourceAdapter*>(opaque);
-    auto& ppf = self->extra_channel_;
-    JxlDataType data_type = ppf.frames[0].color.format.data_type;
-    size_t bytes_per_pixel =
-        jxl::extras::PackedImage::BitsPerChannel(data_type) / 8;
-    *row_offset = ppf.frames[0].color.stride;
-    return static_cast<uint8_t*>(ppf.frames[0].color.pixels()) +
-           bytes_per_pixel * xpos + ypos * ppf.frames[0].color.stride;
+    return GetDataAt(self->extra_channel_, xpos, ypos, row_offset);
   }
 
   static void ReleaseCurrentData(void* opaque, const void* buffer) {
@@ -1818,16 +1816,8 @@ TEST_P(EncoderStreamingTest, ChunkedAndOutputCallback) {
     SetupEncoder(enc.get(), p, basic_info, number_extra_channels, frame, false);
     JxlEncoderFrameSettings* frame_settings =
         JxlEncoderFrameSettingsCreate(enc.get(), NULL);
-    EXPECT_EQ(JXL_ENC_SUCCESS,
-              JxlEncoderAddImageFrame(frame_settings, &frame.format,
-                                      frame.pixels(), frame.pixels_size));
-    for (size_t i = 0; i < number_extra_channels; i++) {
-      EXPECT_EQ(JXL_ENC_SUCCESS,
-                JxlEncoderSetExtraChannelBuffer(
-                    frame_settings, &ec_frame.format, ec_frame.pixels(),
-                    ec_frame.pixels_size, i));
-    }
-    if (p.multiple_frames()) {
+    size_t frame_count = static_cast<int>(p.multiple_frames()) + 1;
+    for (size_t i = 0; i < frame_count; i++) {
       EXPECT_EQ(JXL_ENC_SUCCESS,
                 JxlEncoderAddImageFrame(frame_settings, &frame.format,
                                         frame.pixels(), frame.pixels_size));
@@ -1856,16 +1846,15 @@ TEST_P(EncoderStreamingTest, ChunkedAndOutputCallback) {
 
     JxlChunkedFrameInputSourceAdapter chunked_frame_adapter(
         std::move(image.ppf()), std::move(ec_image.ppf()));
-    EXPECT_EQ(JXL_ENC_SUCCESS,
-              JxlEncoderAddChunkedFrame(
-                  frame_settings, p.multiple_frames() ? JXL_FALSE : JXL_TRUE,
-                  chunked_frame_adapter.GetInputSource()));
-
-    if (p.multiple_frames()) {
-      EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderAddChunkedFrame(
-                                     frame_settings, JXL_TRUE,
-                                     chunked_frame_adapter.GetInputSource()));
+    size_t frame_count = static_cast<int>(p.multiple_frames()) + 1;
+    for (size_t i = 0; i < frame_count; i++) {
+      EXPECT_EQ(JXL_ENC_SUCCESS,
+                JxlEncoderAddChunkedFrame(
+                    // should only set `JXL_TRUE` in the lass pass of the loop
+                    frame_settings, i + 1 == frame_count ? JXL_TRUE : JXL_FALSE,
+                    chunked_frame_adapter.GetInputSource()));
     }
+
     streaming_adapter.CheckFinalWatermarkPosition();
     EXPECT_EQ(std::move(streaming_adapter).output(), compressed);
   }
