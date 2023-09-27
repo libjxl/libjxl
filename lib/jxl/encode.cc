@@ -2337,7 +2337,8 @@ JxlEncoderStatus JxlEncoderAddChunkedFrame(
                          "bad dimensions");
   }
   // TODO(veluca): implement this without immediately buffering the whole frame.
-  JxlPixelFormat color_pixel_format;
+  // In the next line,`color_pixel_format` gets overwritten
+  JxlPixelFormat color_pixel_format = {4, JXL_TYPE_UINT8, JXL_NATIVE_ENDIAN, 0};
   chunked_frame_input.get_color_channels_pixel_format(
       chunked_frame_input.opaque, &color_pixel_format);
   size_t bytes_per_pixel = color_pixel_format.num_channels *
@@ -2375,7 +2376,8 @@ JxlEncoderStatus JxlEncoderAddChunkedFrame(
       }
     }
 
-    JxlPixelFormat pixel_format;
+    // In the next line,`pixel_format` gets overwritten
+    JxlPixelFormat pixel_format = {4, JXL_TYPE_UINT8, JXL_NATIVE_ENDIAN, 0};
     chunked_frame_input.get_extra_channel_pixel_format(
         chunked_frame_input.opaque, ec, &pixel_format);
     size_t bytes_per_pixel =
