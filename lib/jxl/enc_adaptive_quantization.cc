@@ -770,6 +770,7 @@ ImageBundle RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
   options.use_slow_render_pipeline = false;
   options.coalescing = false;
   options.render_spotcolors = false;
+  options.render_noise = false;
 
   // Same as dec_state->shared->frame_header.nonserialized_metadata->m
   const ImageMetadata& metadata = *decoded.metadata();
