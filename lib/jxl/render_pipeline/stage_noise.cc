@@ -17,7 +17,18 @@ namespace jxl {
 namespace HWY_NAMESPACE {
 
 // These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::Add;
+using hwy::HWY_NAMESPACE::And;
+using hwy::HWY_NAMESPACE::Floor;
+using hwy::HWY_NAMESPACE::Ge;
+using hwy::HWY_NAMESPACE::IfThenElse;
 using hwy::HWY_NAMESPACE::Max;
+using hwy::HWY_NAMESPACE::Min;
+using hwy::HWY_NAMESPACE::Mul;
+using hwy::HWY_NAMESPACE::MulAdd;
+using hwy::HWY_NAMESPACE::Or;
+using hwy::HWY_NAMESPACE::Sub;
+using hwy::HWY_NAMESPACE::TableLookupBytes;
 using hwy::HWY_NAMESPACE::Vec;
 using hwy::HWY_NAMESPACE::ZeroIfNegative;
 
