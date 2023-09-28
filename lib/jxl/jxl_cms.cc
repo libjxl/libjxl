@@ -1001,7 +1001,8 @@ JXL_BOOL JxlCmsSetFieldsFromICC(void* user_data, const uint8_t* icc_data,
     return JXL_FAILURE("Invalid rendering intent %u\n", rendering_intent32);
   }
   // ICC and RenderingIntent have the same values (0..3).
-  c_enc.rendering_intent = static_cast<RenderingIntent>(rendering_intent32);
+  JXL_RETURN_IF_ERROR(c_enc.SetRenderingIntent(
+      static_cast<RenderingIntent>(rendering_intent32)));
 
   static constexpr size_t kCICPSize = 12;
   static constexpr auto kCICPSignature =
@@ -1232,7 +1233,7 @@ void* JxlCmsInit(void* init_data, size_t num_threads, size_t xsize,
   // Type includes color space (XYZ vs RGB), so can be different.
   const uint32_t type_src = Type32(c_src, channels_src == 4);
   const uint32_t type_dst = Type32(c_dst, false);
-  const uint32_t intent = static_cast<uint32_t>(c_dst.rendering_intent);
+  const uint32_t intent = static_cast<uint32_t>(c_dst.GetRenderingIntent());
   // Use cmsFLAGS_NOCACHE to disable the 1-pixel cache and make calling
   // cmsDoTransform() thread-safe.
   const uint32_t flags = cmsFLAGS_NOCACHE | cmsFLAGS_BLACKPOINTCOMPENSATION |
