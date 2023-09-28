@@ -2225,7 +2225,7 @@ JxlDecoderStatus JxlDecoderGetColorAsEncodedProfile(
     return JXL_DEC_ERROR;  // Indicate no encoded profile available.
 
   if (color_encoding) {
-    ConvertInternalToExternalColorEncoding(*jxl_color_encoding, color_encoding);
+    jxl_color_encoding->ToExternal(color_encoding);
   }
 
   return JXL_DEC_SUCCESS;
@@ -2662,8 +2662,7 @@ JxlDecoderStatus JxlDecoderSetPreferredColorProfile(
     return JXL_API_ERROR("Unknown output colorspace");
   }
   jxl::ColorEncoding c_out;
-  JXL_API_RETURN_IF_ERROR(
-      ConvertExternalToInternalColorEncoding(*color_encoding, &c_out));
+  JXL_API_RETURN_IF_ERROR(c_out.FromExternal(*color_encoding));
   JXL_API_RETURN_IF_ERROR(!c_out.ICC().empty());
   auto& output_encoding = dec->passes_state->output_encoding_info;
   if (!c_out.SameColorEncoding(output_encoding.color_encoding)) {

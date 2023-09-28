@@ -133,10 +133,7 @@ class ImageBundle {
   bool IsGray() const { return c_current_.IsGray(); }
 
   bool IsSRGB() const { return c_current_.IsSRGB(); }
-  bool IsLinearSRGB() const {
-    return c_current_.white_point == WhitePoint::kD65 &&
-           c_current_.primaries == Primaries::kSRGB && c_current_.tf.IsLinear();
-  }
+  bool IsLinearSRGB() const { return c_current_.IsLinearSRGB(); }
 
   // Set the c_current profile without doing any transformation, e.g. if the
   // transformation was already applied.

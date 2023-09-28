@@ -79,8 +79,8 @@ int main(int argc, const char** argv) {
 
   jxl::ColorEncoding hlg;
   hlg.SetColorSpace(jxl::ColorSpace::kRGB);
-  hlg.primaries = jxl::Primaries::k2100;
-  hlg.white_point = jxl::WhitePoint::kD65;
+  JXL_CHECK(hlg.SetPrimariesType(jxl::Primaries::k2100));
+  JXL_CHECK(hlg.SetWhitePointType(jxl::WhitePoint::kD65));
   hlg.tf.SetTransferFunction(jxl::TransferFunction::kHLG);
   JXL_CHECK(hlg.CreateICC());
   JXL_CHECK(jpegxl::tools::TransformCodecInOutTo(image, hlg, &pool));

@@ -135,8 +135,7 @@ class CustomCodec : public ImageCodec {
       JxlColorEncoding colorspace;
       JXL_RETURN_IF_ERROR(
           jxl::ParseDescription(custom_args->colorspace, &colorspace));
-      JXL_RETURN_IF_ERROR(
-          jxl::ConvertExternalToInternalColorEncoding(colorspace, &c_enc));
+      JXL_RETURN_IF_ERROR(c_enc.FromExternal(colorspace));
     }
     std::vector<uint8_t> encoded;
     JXL_RETURN_IF_ERROR(Encode(*io, c_enc, bits, in_filename, &encoded, pool));

@@ -246,8 +246,7 @@ Status BenchmarkArgs::ValidateArgs() {
                   output_description.c_str());
       return false;  // already warned
     }
-    JXL_RETURN_IF_ERROR(jxl::ConvertExternalToInternalColorEncoding(
-        output_encoding_external, &output_encoding));
+    JXL_RETURN_IF_ERROR(output_encoding.FromExternal(output_encoding_external));
     JXL_RETURN_IF_ERROR(output_encoding.CreateICC());
   }
 
