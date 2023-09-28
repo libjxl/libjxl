@@ -6,6 +6,7 @@
 #include "lib/jxl/dec_cache.h"
 
 #include "lib/jxl/blending.h"
+#include "lib/jxl/common.h"  // JXL_HIGH_PRECISION
 #include "lib/jxl/render_pipeline/stage_blending.h"
 #include "lib/jxl/render_pipeline/stage_chroma_upsampling.h"
 #include "lib/jxl/render_pipeline/stage_epf.h"

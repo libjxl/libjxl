@@ -10,8 +10,6 @@
 #include <QImage>
 #include <QString>
 
-#include "lib/jxl/common.h"
-
 namespace jpegxl {
 namespace tools {
 

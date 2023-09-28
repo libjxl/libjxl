@@ -14,6 +14,7 @@
 #include <cstring>
 
 #include "lib/jxl/base/byte_order.h"
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/printf_macros.h"
@@ -612,6 +613,24 @@ JxlEncoderStatus VerifyInputBitDepth(JxlBitDepth bit_depth,
   return JxlErrorOrStatus::Success();
 }
 
+static inline bool EncodeVarInt(uint64_t value, size_t output_size,
+                                size_t* output_pos, uint8_t* output) {
+  // While more than 7 bits of data are left,
+  // store 7 bits and set the next byte flag
+  while (value > 127) {
+    // TODO(eustas): should it be `>=` ?
+    if (*output_pos > output_size) return false;
+    // |128: Set the next byte flag
+    output[(*output_pos)++] = ((uint8_t)(value & 127)) | 128;
+    // Remove the seven bits we just wrote
+    value >>= 7;
+  }
+  // TODO(eustas): should it be `>=` ?
+  if (*output_pos > output_size) return false;
+  output[(*output_pos)++] = ((uint8_t)value) & 127;
+  return true;
+}
+
 bool EncodeFrameIndexBox(const jxl::JxlEncoderFrameIndexBox& frame_index_box,
                          jxl::BitWriter& writer) {
   bool ok = true;
@@ -633,7 +652,7 @@ bool EncodeFrameIndexBox(const jxl::JxlEncoderFrameIndexBox& frame_index_box,
   std::vector<uint8_t> buffer_vec(buffer_size);
   uint8_t* buffer = buffer_vec.data();
   size_t output_pos = 0;
-  ok &= jxl::EncodeVarInt(NF, buffer_vec.size(), &output_pos, buffer);
+  ok &= EncodeVarInt(NF, buffer_vec.size(), &output_pos, buffer);
   StoreBE32(frame_index_box.TNUM, &buffer[output_pos]);
   output_pos += 4;
   StoreBE32(frame_index_box.TDEN, &buffer[output_pos]);
@@ -661,9 +680,9 @@ bool EncodeFrameIndexBox(const jxl::JxlEncoderFrameIndexBox& frame_index_box,
       }
       int32_t Ti = T_prev;
       int32_t Fi = i - prev_ix;
-      ok &= jxl::EncodeVarInt(OFFi, buffer_vec.size(), &output_pos, buffer);
-      ok &= jxl::EncodeVarInt(Ti, buffer_vec.size(), &output_pos, buffer);
-      ok &= jxl::EncodeVarInt(Fi, buffer_vec.size(), &output_pos, buffer);
+      ok &= EncodeVarInt(OFFi, buffer_vec.size(), &output_pos, buffer);
+      ok &= EncodeVarInt(Ti, buffer_vec.size(), &output_pos, buffer);
+      ok &= EncodeVarInt(Fi, buffer_vec.size(), &output_pos, buffer);
       prev_prev_ix = prev_ix;
       prev_ix = i;
       T_prev = T;
@@ -679,9 +698,9 @@ bool EncodeFrameIndexBox(const jxl::JxlEncoderFrameIndexBox& frame_index_box,
     }
     int32_t Ti = T_prev;
     int32_t Fi = i - prev_ix;
-    ok &= jxl::EncodeVarInt(OFFi, buffer_vec.size(), &output_pos, buffer);
-    ok &= jxl::EncodeVarInt(Ti, buffer_vec.size(), &output_pos, buffer);
-    ok &= jxl::EncodeVarInt(Fi, buffer_vec.size(), &output_pos, buffer);
+    ok &= EncodeVarInt(OFFi, buffer_vec.size(), &output_pos, buffer);
+    ok &= EncodeVarInt(Ti, buffer_vec.size(), &output_pos, buffer);
+    ok &= EncodeVarInt(Fi, buffer_vec.size(), &output_pos, buffer);
   }
   // Enough buffer has been allocated, this function should never fail in
   // writing.

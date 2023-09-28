@@ -12,8 +12,8 @@
 #include <hwy/highway.h>
 #include <hwy/tests/hwy_gtest.h>
 
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/common.h"
 #include "lib/jxl/rational_polynomial-inl.h"
 #include "lib/jxl/testing.h"
 

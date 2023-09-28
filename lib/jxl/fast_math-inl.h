@@ -14,7 +14,7 @@
 
 #include <hwy/highway.h>
 
-#include "lib/jxl/common.h"
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/rational_polynomial-inl.h"
 HWY_BEFORE_NAMESPACE();
 namespace jxl {

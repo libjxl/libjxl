@@ -19,14 +19,15 @@
 #include <hwy/highway.h>
 
 #include "lib/jxl/ac_strategy.h"
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/butteraugli/butteraugli.h"
+#include "lib/jxl/cms/opsin_params.h"
 #include "lib/jxl/coeff_order_fwd.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/color_management.h"
-#include "lib/jxl/common.h"
 #include "lib/jxl/convolve.h"
 #include "lib/jxl/dec_cache.h"
 #include "lib/jxl/dec_group.h"
@@ -40,11 +41,11 @@
 #include "lib/jxl/enc_transforms-inl.h"
 #include "lib/jxl/epf.h"
 #include "lib/jxl/fast_math-inl.h"
+#include "lib/jxl/frame_dimensions.h"
 #include "lib/jxl/gauss_blur.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
-#include "lib/jxl/opsin_params.h"
 #include "lib/jxl/quant_weights.h"
 
 // Set JXL_DEBUG_ADAPTIVE_QUANTIZATION to 1 to enable debugging.
@@ -166,9 +167,9 @@ template <class D, class V>
 V GammaModulation(const D d, const size_t x, const size_t y,
                   const ImageF& xyb_x, const ImageF& xyb_y, const V out_val) {
   const float kBias = 0.16f;
-  JXL_DASSERT(kBias > kOpsinAbsorbanceBias[0]);
-  JXL_DASSERT(kBias > kOpsinAbsorbanceBias[1]);
-  JXL_DASSERT(kBias > kOpsinAbsorbanceBias[2]);
+  JXL_DASSERT(kBias > jxl::cms::kOpsinAbsorbanceBias[0]);
+  JXL_DASSERT(kBias > jxl::cms::kOpsinAbsorbanceBias[1]);
+  JXL_DASSERT(kBias > jxl::cms::kOpsinAbsorbanceBias[2]);
   auto overall_ratio = Zero(d);
   auto bias = Set(d, kBias);
   auto half = Set(d, 0.5f);

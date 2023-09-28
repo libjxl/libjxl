@@ -18,9 +18,9 @@
 
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/fields.h"
+#include "lib/jxl/frame_dimensions.h"
 #include "lib/jxl/headers.h"
 #include "lib/jxl/jpeg/jpeg_data.h"
-#include "lib/jxl/opsin_params.h"
 
 namespace jxl {
 

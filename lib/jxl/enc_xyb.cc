@@ -17,6 +17,7 @@
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/cms/opsin_params.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/color_management.h"
 #include "lib/jxl/enc_bit_writer.h"
@@ -25,8 +26,7 @@
 #include "lib/jxl/fields.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
-#include "lib/jxl/opsin_params.h"
-#include "lib/jxl/transfer_functions-inl.h"
+#include "lib/jxl/transfer_functions-inl.h"  // TF_SRGB
 
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
@@ -45,7 +45,7 @@ JXL_INLINE void OpsinAbsorbance(const V r, const V g, const V b,
                                 const float* JXL_RESTRICT premul_absorb,
                                 V* JXL_RESTRICT mixed0, V* JXL_RESTRICT mixed1,
                                 V* JXL_RESTRICT mixed2) {
-  const float* bias = &kOpsinAbsorbanceBias[0];
+  const float* bias = &jxl::cms::kOpsinAbsorbanceBias[0];
   const HWY_FULL(float) d;
   const size_t N = Lanes(d);
   const auto m0 = Load(d, premul_absorb + 0 * N);
@@ -213,11 +213,12 @@ void ComputePremulAbsorb(float intensity_target, float* premul_absorb) {
   const size_t N = Lanes(d);
   const float mul = intensity_target / 255.0f;
   for (size_t i = 0; i < 9; ++i) {
-    const auto absorb = Set(d, kOpsinAbsorbanceMatrix[i] * mul);
+    const auto absorb = Set(d, jxl::cms::kOpsinAbsorbanceMatrix[i] * mul);
     Store(absorb, d, premul_absorb + i * N);
   }
   for (size_t i = 0; i < 3; ++i) {
-    const auto neg_bias_cbrt = Set(d, -cbrtf(kOpsinAbsorbanceBias[i]));
+    const auto neg_bias_cbrt =
+        Set(d, -cbrtf(jxl::cms::kOpsinAbsorbanceBias[i]));
     Store(neg_bias_cbrt, d, premul_absorb + (9 + i) * N);
   }
 }
@@ -465,9 +466,12 @@ void ComputePremulAbsorb(float intensity_target, float* premul_absorb) {
 void ScaleXYBRow(float* JXL_RESTRICT row0, float* JXL_RESTRICT row1,
                  float* JXL_RESTRICT row2, size_t xsize) {
   for (size_t x = 0; x < xsize; x++) {
-    row2[x] = (row2[x] - row1[x] + kScaledXYBOffset[2]) * kScaledXYBScale[2];
-    row0[x] = (row0[x] + kScaledXYBOffset[0]) * kScaledXYBScale[0];
-    row1[x] = (row1[x] + kScaledXYBOffset[1]) * kScaledXYBScale[1];
+    row2[x] = (row2[x] - row1[x] + jxl::cms::kScaledXYBOffset[2]) *
+              jxl::cms::kScaledXYBScale[2];
+    row0[x] = (row0[x] + jxl::cms::kScaledXYBOffset[0]) *
+              jxl::cms::kScaledXYBScale[0];
+    row1[x] = (row1[x] + jxl::cms::kScaledXYBOffset[1]) *
+              jxl::cms::kScaledXYBScale[1];
   }
 }
 

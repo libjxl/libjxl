@@ -15,7 +15,6 @@
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/color_encoding_internal.h"
-#include "lib/jxl/common.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/enc_cache.h"

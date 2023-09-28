@@ -5,17 +5,17 @@
 
 #include "lib/jxl/opsin_params.h"
 
-#include <stdlib.h>
+#define INVERSE_OPSIN_FROM_SPEC 1
 
-#include "lib/jxl/matrix_ops.h"
+#if not(INVERSE_OPSIN_FROM_SPEC)
+#include "lib/jxl/base/matrix_ops.h"
+#endif
 
 namespace jxl {
 
-#define INVERSE_OPSIN_FROM_SPEC 1
-
 const float* GetOpsinAbsorbanceInverseMatrix() {
 #if INVERSE_OPSIN_FROM_SPEC
-  return DefaultInverseOpsinAbsorbanceMatrix();
+  return jxl::cms::DefaultInverseOpsinAbsorbanceMatrix();
 #else   // INVERSE_OPSIN_FROM_SPEC
   // Compute the inverse opsin matrix from the forward matrix. Less precise
   // than taking the values from the specification, but must be used if the

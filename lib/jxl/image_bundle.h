@@ -18,7 +18,7 @@
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
-#include "lib/jxl/common.h"
+#include "lib/jxl/common.h"  // JPEGXL_ENABLE_TRANSCODE_JPEG
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/dec_xyb.h"
 #include "lib/jxl/field_encodings.h"
@@ -27,7 +27,6 @@
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_metadata.h"
 #include "lib/jxl/jpeg/jpeg_data.h"
-#include "lib/jxl/opsin_params.h"
 #include "lib/jxl/quantizer.h"
 
 namespace jxl {
