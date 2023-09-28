@@ -22,7 +22,7 @@
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/common.h"
+#include "lib/jxl/common.h"  // JXL_HIGH_PRECISION
 #include "lib/jxl/dec_external_image.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
@@ -33,6 +33,7 @@
 #include "lib/jxl/enc_progressive_split.h"
 #include "lib/jxl/encode_internal.h"
 #include "lib/jxl/fields.h"
+#include "lib/jxl/frame_dimensions.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/headers.h"
 #include "lib/jxl/icc_codec.h"

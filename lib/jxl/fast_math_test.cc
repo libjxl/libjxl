@@ -12,7 +12,7 @@
 #include "lib/jxl/enc_xyb.h"
 #include "lib/jxl/jxl_cms.h"
 #include "lib/jxl/testing.h"
-#include "lib/jxl/transfer_functions-inl.h"
+#include "lib/jxl/transfer_functions-inl.h"  // everything
 
 // Test utils
 #include <hwy/highway.h>

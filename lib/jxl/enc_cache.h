@@ -15,7 +15,6 @@
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/coeff_order.h"
 #include "lib/jxl/coeff_order_fwd.h"
-#include "lib/jxl/common.h"
 #include "lib/jxl/dct_util.h"
 #include "lib/jxl/enc_ans.h"
 #include "lib/jxl/enc_heuristics.h"

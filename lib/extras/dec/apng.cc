@@ -46,10 +46,10 @@
 
 #include "lib/extras/size_constraints.h"
 #include "lib/jxl/base/byte_order.h"
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/scope_guard.h"
-#include "lib/jxl/common.h"
 #include "lib/jxl/sanitizers.h"
 #if JPEGXL_ENABLE_APNG
 #include "png.h" /* original (unpatched) libpng is ok */

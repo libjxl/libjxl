@@ -19,11 +19,11 @@
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/common.h"
 #include "lib/jxl/convolve.h"
 #include "lib/jxl/enc_linalg.h"
 #include "lib/jxl/enc_optimize.h"

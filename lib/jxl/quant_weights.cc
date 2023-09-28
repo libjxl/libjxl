@@ -14,7 +14,6 @@
 
 #include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/common.h"
 #include "lib/jxl/dct_scales.h"
 #include "lib/jxl/dec_modular.h"
 #include "lib/jxl/fields.h"

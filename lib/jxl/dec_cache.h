@@ -13,8 +13,8 @@
 #include <hwy/base.h>  // HWY_ALIGN_MAX
 
 #include "lib/jxl/ac_strategy.h"
+#include "lib/jxl/base/common.h"  // kMaxNumPasses
 #include "lib/jxl/coeff_order.h"
-#include "lib/jxl/common.h"
 #include "lib/jxl/convolve.h"
 #include "lib/jxl/dec_group_border.h"
 #include "lib/jxl/dec_noise.h"
