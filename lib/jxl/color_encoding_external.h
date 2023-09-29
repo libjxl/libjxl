@@ -82,7 +82,8 @@ enum class RenderingIntent : uint32_t {
   // NB: don't forget to update EnumBits!
 };
 
-// Chromaticity (Y is omitted because it is 1 for primaries/white points)
+// Chromaticity (Y is omitted because it is 1 for white points and implicit for
+// primaries)
 struct CIExy {
   double x = 0.0;
   double y = 0.0;
