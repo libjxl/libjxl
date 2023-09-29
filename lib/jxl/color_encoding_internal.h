@@ -22,7 +22,7 @@
 
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/color_encoding_external.h"
+#include "lib/jxl/cms/color_encoding_cms.h"
 #include "lib/jxl/field_encodings.h"
 
 namespace jxl {
