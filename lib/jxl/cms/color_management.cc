@@ -3,7 +3,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include "lib/jxl/color_management.h"
+#include "lib/jxl/cms/color_management.h"
 
 #include <algorithm>
 #include <cmath>
@@ -13,7 +13,7 @@
 #include <vector>
 
 #undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "lib/jxl/color_management.cc"
+#define HWY_TARGET_INCLUDE "lib/jxl/cms/color_management.cc"
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 

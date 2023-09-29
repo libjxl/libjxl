@@ -124,6 +124,9 @@ set(JPEGXL_INTERNAL_DEC_SOURCES
   jxl/blending.h
   jxl/chroma_from_luma.cc
   jxl/chroma_from_luma.h
+  jxl/cms/color_encoding_cms.h
+  jxl/cms/color_management.cc
+  jxl/cms/color_management.h
   jxl/cms/opsin_params.h
   jxl/cms/tone_mapping-inl.h
   jxl/cms/transfer_functions-inl.h
@@ -131,11 +134,8 @@ set(JPEGXL_INTERNAL_DEC_SOURCES
   jxl/coeff_order.cc
   jxl/coeff_order.h
   jxl/coeff_order_fwd.h
-  jxl/color_encoding_external.h
   jxl/color_encoding_internal.cc
   jxl/color_encoding_internal.h
-  jxl/color_management.cc
-  jxl/color_management.h
   jxl/common.h
   jxl/compressed_dc.cc
   jxl/compressed_dc.h

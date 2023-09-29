@@ -12,7 +12,8 @@
 
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/matrix_ops.h"
-#include "lib/jxl/color_management.h"
+#include "lib/jxl/cms/color_encoding_cms.h"
+#include "lib/jxl/cms/color_management.h"  // MaybeCreateProfile
 #include "lib/jxl/fields.h"
 #include "lib/jxl/pack_signed.h"
 
