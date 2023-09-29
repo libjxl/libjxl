@@ -1454,6 +1454,14 @@ TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionMetadata)) {
   EXPECT_NEAR(RoundtripJpeg(orig, &pool), 1400u, 30);
 }
 
+TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionRestarts)) {
+  ThreadPoolForTests pool(8);
+  const PaddedBytes orig =
+      jxl::test::ReadTestData("jxl/jpeg_reconstruction/bicycles_restarts.jpg");
+  // JPEG size is 87478 bytes
+  EXPECT_NEAR(RoundtripJpeg(orig, &pool), 76125u, 30);
+}
+
 TEST(JxlTest,
      JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionOrientationICC)) {
   ThreadPoolForTests pool(8);
