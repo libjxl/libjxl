@@ -22,8 +22,8 @@
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/cms/opsin_params.h"
-#include "lib/jxl/dec_tone_mapping-inl.h"
-#include "lib/jxl/transfer_functions-inl.h"  // TF_HLG TF_PQ
+#include "lib/jxl/cms/tone_mapping-inl.h"
+#include "lib/jxl/cms/transfer_functions-inl.h"
 
 #ifndef JXL_ENABLE_3D_ICC_TONEMAPPING
 #define JXL_ENABLE_3D_ICC_TONEMAPPING 1

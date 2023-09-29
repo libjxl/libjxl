@@ -10,7 +10,7 @@
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 
-#include "lib/jxl/dec_tone_mapping-inl.h"
+#include "lib/jxl/cms/tone_mapping-inl.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/jxl_cms.h"
 
