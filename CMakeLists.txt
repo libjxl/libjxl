@@ -369,6 +369,10 @@ else ()
 
     # Global warning settings.
     -Wall
+
+    # Hardening options
+    -D_FORTIFY_SOURCE=2
+    -fstack-protector-strong
   )
 
   if (JPEGXL_WARNINGS_AS_ERRORS)
