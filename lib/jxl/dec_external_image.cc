@@ -21,12 +21,11 @@
 #include "lib/jxl/alpha.h"
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/cache_aligned.h"
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/color_management.h"
-#include "lib/jxl/common.h"
 #include "lib/jxl/sanitizers.h"
-#include "lib/jxl/transfer_functions-inl.h"
 
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
@@ -34,6 +33,7 @@ namespace HWY_NAMESPACE {
 
 // These templates are not found via ADL.
 using hwy::HWY_NAMESPACE::Clamp;
+using hwy::HWY_NAMESPACE::Mul;
 using hwy::HWY_NAMESPACE::NearestInt;
 
 // TODO(jon): check if this can be replaced by a FloatToU16 function

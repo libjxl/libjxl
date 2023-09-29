@@ -12,7 +12,7 @@
 
 #include "lib/jxl/dec_tone_mapping-inl.h"
 #include "lib/jxl/sanitizers.h"
-#include "lib/jxl/transfer_functions-inl.h"
+#include "lib/jxl/transfer_functions-inl.h"  //everything but FastLinearToSRGB
 
 HWY_BEFORE_NAMESPACE();
 namespace jxl {

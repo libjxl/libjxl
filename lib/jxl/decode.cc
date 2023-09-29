@@ -14,9 +14,13 @@
 #include <vector>
 
 #include "lib/jxl/base/byte_order.h"
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
+
+// JPEGXL_ENABLE_BOXES, JPEGXL_ENABLE_TRANSCODE_JPEG
 #include "lib/jxl/common.h"
+
 #if JPEGXL_ENABLE_BOXES || JPEGXL_ENABLE_TRANSCODE_JPEG
 #include "lib/jxl/box_content_decoder.h"
 #endif
@@ -27,6 +31,7 @@
 #include "lib/jxl/decode_to_jpeg.h"
 #endif
 #include "lib/jxl/fields.h"
+#include "lib/jxl/frame_dimensions.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/headers.h"
 #include "lib/jxl/icc_codec.h"

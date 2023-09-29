@@ -5,17 +5,12 @@
 
 #include "lib/jxl/color_management.h"
 
-#include <math.h>
-#include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
-
 #include <algorithm>
-#include <array>
-#include <atomic>
-#include <memory>
+#include <cmath>
+#include <cstddef>
+#include <cstring>
 #include <string>
-#include <utility>
+#include <vector>
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/color_management.cc"
@@ -23,14 +18,12 @@
 #include <hwy/highway.h>
 
 #include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/matrix_ops.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/cms/opsin_params.h"
 #include "lib/jxl/dec_tone_mapping-inl.h"
-#include "lib/jxl/field_encodings.h"
-#include "lib/jxl/matrix_ops.h"
-#include "lib/jxl/opsin_params.h"
-#include "lib/jxl/transfer_functions-inl.h"
+#include "lib/jxl/transfer_functions-inl.h"  // TF_HLG TF_PQ
 
 #ifndef JXL_ENABLE_3D_ICC_TONEMAPPING
 #define JXL_ENABLE_3D_ICC_TONEMAPPING 1
@@ -538,21 +531,24 @@ Status CreateICCLutAtoBTagForXYB(IccBytes* JXL_RESTRICT tags) {
   WriteICCUint8(0, tags->size(), tags);
   WriteICCUint16(0, tags->size(), tags);
   const float kOffsets[3] = {
-      kScaledXYBOffset[0] + kScaledXYBOffset[1],
-      kScaledXYBOffset[1] - kScaledXYBOffset[0] + 1.0f / kScaledXYBScale[0],
-      kScaledXYBOffset[1] + kScaledXYBOffset[2]};
-  const float kScaling[3] = {
-      1.0f / (1.0f / kScaledXYBScale[0] + 1.0f / kScaledXYBScale[1]),
-      1.0f / (1.0f / kScaledXYBScale[0] + 1.0f / kScaledXYBScale[1]),
-      1.0f / (1.0f / kScaledXYBScale[1] + 1.0f / kScaledXYBScale[2])};
+      jxl::cms::kScaledXYBOffset[0] + jxl::cms::kScaledXYBOffset[1],
+      jxl::cms::kScaledXYBOffset[1] - jxl::cms::kScaledXYBOffset[0] +
+          1.0f / jxl::cms::kScaledXYBScale[0],
+      jxl::cms::kScaledXYBOffset[1] + jxl::cms::kScaledXYBOffset[2]};
+  const float kScaling[3] = {1.0f / (1.0f / jxl::cms::kScaledXYBScale[0] +
+                                     1.0f / jxl::cms::kScaledXYBScale[1]),
+                             1.0f / (1.0f / jxl::cms::kScaledXYBScale[0] +
+                                     1.0f / jxl::cms::kScaledXYBScale[1]),
+                             1.0f / (1.0f / jxl::cms::kScaledXYBScale[1] +
+                                     1.0f / jxl::cms::kScaledXYBScale[2])};
   // 2*2*2*3 entries of 2 bytes each = 48 bytes
   for (size_t ix = 0; ix < 2; ++ix) {
     for (size_t iy = 0; iy < 2; ++iy) {
       for (size_t ib = 0; ib < 2; ++ib) {
         float in_f[3] = {ix * 1.0f, iy * 1.0f, ib * 1.0f};
         for (size_t c = 0; c < 3; ++c) {
-          in_f[c] /= kScaledXYBScale[c];
-          in_f[c] -= kScaledXYBOffset[c];
+          in_f[c] /= jxl::cms::kScaledXYBScale[c];
+          in_f[c] -= jxl::cms::kScaledXYBOffset[c];
         }
         float out_f[3];
         out_f[0] = in_f[1] + in_f[0];
@@ -575,7 +571,7 @@ Status CreateICCLutAtoBTagForXYB(IccBytes* JXL_RESTRICT tags) {
   // 3 curves with 5 parameters = 3 * (12 + 5 * 4) = 96 bytes
   for (size_t i = 0; i < 3; ++i) {
     const float b =
-        -kOffsets[i] - std::cbrt(jxl::kNegOpsinAbsorbanceBiasRGB[i]);
+        -kOffsets[i] - std::cbrt(jxl::cms::kNegOpsinAbsorbanceBiasRGB[i]);
     std::vector<float> params = {
         3,
         1.0f / kScaling[i],
@@ -596,7 +592,7 @@ Status CreateICCLutAtoBTagForXYB(IccBytes* JXL_RESTRICT tags) {
   for (size_t i = 0; i < 3; ++i) {
     float intercept = 0;
     for (size_t j = 0; j < 3; ++j) {
-      intercept += matrix[i * 3 + j] * jxl::kNegOpsinAbsorbanceBiasRGB[j];
+      intercept += matrix[i * 3 + j] * jxl::cms::kNegOpsinAbsorbanceBiasRGB[j];
     }
     JXL_RETURN_IF_ERROR(WriteICCS15Fixed16(intercept, tags->size(), tags));
   }

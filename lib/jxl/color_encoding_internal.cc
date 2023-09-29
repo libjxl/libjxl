@@ -10,10 +10,11 @@
 #include <array>
 #include <cmath>
 
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/matrix_ops.h"
 #include "lib/jxl/color_management.h"
-#include "lib/jxl/common.h"
 #include "lib/jxl/fields.h"
-#include "lib/jxl/matrix_ops.h"
+#include "lib/jxl/pack_signed.h"
 
 namespace jxl {
 namespace {

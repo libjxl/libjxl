@@ -12,7 +12,7 @@
 
 #include <hwy/highway.h>
 
-#include "lib/jxl/transfer_functions-inl.h"
+#include "lib/jxl/transfer_functions-inl.h"  // TF_PQ
 
 HWY_BEFORE_NAMESPACE();
 namespace jxl {

@@ -13,11 +13,14 @@
 #include <vector>
 
 #include "lib/extras/codec.h"
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/common.h"  // JXL_HIGH_PRECISION, JPEGXL_ENABLE_TRANSCODE_JPEG
 #include "lib/jxl/dec_frame.h"
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_file.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/fake_parallel_runner_testonly.h"
+#include "lib/jxl/frame_dimensions.h"
 #include "lib/jxl/icc_codec.h"
 #include "lib/jxl/image_test_utils.h"
 #include "lib/jxl/jpeg/enc_jpeg_data.h"

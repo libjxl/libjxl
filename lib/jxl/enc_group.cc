@@ -16,7 +16,7 @@
 #include "lib/jxl/ac_strategy.h"
 #include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/common.h"
+#include "lib/jxl/common.h"  // kMaxNumPasses
 #include "lib/jxl/dct_util.h"
 #include "lib/jxl/dec_transforms-inl.h"
 #include "lib/jxl/enc_aux_out.h"

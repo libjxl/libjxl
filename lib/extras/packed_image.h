@@ -24,7 +24,8 @@
 #include <vector>
 
 #include "lib/jxl/base/byte_order.h"
-#include "lib/jxl/common.h"
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/status.h"
 
 namespace jxl {
 namespace extras {

@@ -8,15 +8,9 @@
 
 // ICC profiles and color space conversions.
 
-#include <stddef.h>
-#include <stdint.h>
-
-#include <vector>
-
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
-#include "lib/jxl/common.h"
-#include "lib/jxl/image.h"
 
 namespace jxl {
 

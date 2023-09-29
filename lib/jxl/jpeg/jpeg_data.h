@@ -16,6 +16,7 @@
 
 #include "lib/jxl/common.h"  // JPEGXL_ENABLE_TRANSCODE_JPEG
 #include "lib/jxl/fields.h"
+#include "lib/jxl/frame_dimensions.h"
 
 namespace jxl {
 namespace jpeg {

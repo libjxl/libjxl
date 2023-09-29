@@ -13,12 +13,12 @@
 #include <hwy/highway.h>
 
 #include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/matrix_ops.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_group_border.h"
 #include "lib/jxl/dec_xyb-inl.h"
 #include "lib/jxl/fields.h"
 #include "lib/jxl/image.h"
-#include "lib/jxl/matrix_ops.h"
 #include "lib/jxl/opsin_params.h"
 #include "lib/jxl/quantizer.h"
 #include "lib/jxl/sanitizers.h"
@@ -185,8 +185,8 @@ void FastXYBTosRGB8(const float* input[4], uint8_t* output, bool is_rgba,
 void OpsinParams::Init(float intensity_target) {
   InitSIMDInverseMatrix(GetOpsinAbsorbanceInverseMatrix(), inverse_opsin_matrix,
                         intensity_target);
-  memcpy(opsin_biases, kNegOpsinAbsorbanceBiasRGB,
-         sizeof(kNegOpsinAbsorbanceBiasRGB));
+  memcpy(opsin_biases, jxl::cms::kNegOpsinAbsorbanceBiasRGB,
+         sizeof(jxl::cms::kNegOpsinAbsorbanceBiasRGB));
   memcpy(quant_biases, kDefaultQuantBias, sizeof(kDefaultQuantBias));
   for (size_t c = 0; c < 4; c++) {
     opsin_biases_cbrt[c] = cbrtf(opsin_biases[c]);
