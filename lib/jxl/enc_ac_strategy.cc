@@ -21,6 +21,7 @@
 #include "lib/jxl/ans_params.h"
 #include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/fast_math-inl.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/coeff_order_fwd.h"
 #include "lib/jxl/convolve.h"
@@ -30,7 +31,6 @@
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/enc_transforms-inl.h"
 #include "lib/jxl/entropy_coder.h"
-#include "lib/jxl/fast_math-inl.h"
 #include "lib/jxl/simd_util.h"
 
 // Some of the floating point constants in this file and in other
