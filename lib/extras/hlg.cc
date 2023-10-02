@@ -7,7 +7,7 @@
 
 #include <cmath>
 
-#include "lib/jxl/jxl_cms.h"
+#include "lib/jxl/cms/jxl_cms.h"
 
 namespace jxl {
 

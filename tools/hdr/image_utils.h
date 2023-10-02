@@ -9,9 +9,9 @@
 #include <jxl/cms_interface.h>
 
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/image_bundle.h"
-#include "lib/jxl/jxl_cms.h"
 
 namespace jpegxl {
 namespace tools {

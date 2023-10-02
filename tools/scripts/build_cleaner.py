@@ -133,8 +133,8 @@ def SplitLibFiles(repo_files):
     'jxl/decode_to_jpeg.cc', 'jxl/decode_to_jpeg.h'))
   dec_box_sources, dec_sources = Filter(dec_sources, HasPrefixFn(
     'jxl/box_content_decoder.cc', 'jxl/box_content_decoder.h'))
-  cms_sources, dec_sources = Filter(dec_sources, HasPrefixFn(
-    'jxl/jxl_cms.cc', 'jxl/jxl_cms.h', 'jxl/jxl_skcms.h'))
+  cms_sources, dec_sources = Filter(dec_sources, HasSuffixFn(
+    'jxl_cms.cc', 'jxl_cms.h', 'jxl_skcms.h'))
 
   # TODO(lode): further prune dec_srcs: only those files that the decoder
   # absolutely needs, and or not only for encoding, should be listed here.

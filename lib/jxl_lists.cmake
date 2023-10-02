@@ -413,9 +413,9 @@ set(JPEGXL_INTERNAL_ENC_SOURCES
   jxl/modular/transform/enc_squeeze.h
   jxl/modular/transform/enc_transform.cc
   jxl/modular/transform/enc_transform.h
-  jxl/jxl_cms.cc
-  jxl/jxl_cms.h
-  jxl/jxl_skcms.h
+  jxl/cms/jxl_cms.cc
+  jxl/cms/jxl_cms.h
+  jxl/cms/jxl_skcms.h
 )
 
 set(JPEGXL_INTERNAL_EXTRAS_FOR_TOOLS_SOURCES

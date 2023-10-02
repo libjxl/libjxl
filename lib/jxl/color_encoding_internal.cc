@@ -428,7 +428,7 @@ Status ColorEncoding::SetPrimaries(const PrimariesCIExy& xy) {
 }
 
 Status ColorEncoding::CreateICC() {
-  InternalRemoveICC();
+  storage_.icc.clear();
   return MaybeCreateProfile(*this, &storage_.icc);
 }
 
