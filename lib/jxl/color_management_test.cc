@@ -15,9 +15,9 @@
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/random.h"
+#include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/enc_xyb.h"
 #include "lib/jxl/image_test_utils.h"
-#include "lib/jxl/jxl_cms.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"
 

@@ -22,6 +22,7 @@
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/common.h"  // JXL_HIGH_PRECISION
 #include "lib/jxl/dec_external_image.h"
 #include "lib/jxl/enc_aux_out.h"
@@ -39,7 +40,6 @@
 #include "lib/jxl/icc_codec.h"
 #include "lib/jxl/image_metadata.h"
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
-#include "lib/jxl/jxl_cms.h"
 #include "lib/jxl/test_image.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"

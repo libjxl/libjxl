@@ -23,6 +23,7 @@
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/padded_bytes.h"
+#include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/common.h"  // JXL_HIGH_PRECISION
@@ -39,7 +40,6 @@
 #include "lib/jxl/jpeg/dec_jpeg_data_writer.h"
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
 #include "lib/jxl/jpeg/jpeg_data.h"
-#include "lib/jxl/jxl_cms.h"
 #include "lib/jxl/modular/options.h"
 #include "lib/jxl/test_image.h"
 #include "lib/jxl/test_utils.h"

@@ -413,9 +413,9 @@ libjxl_enc_sources = [
     "jxl/modular/transform/enc_squeeze.h",
     "jxl/modular/transform/enc_transform.cc",
     "jxl/modular/transform/enc_transform.h",
-    "jxl/jxl_cms.cc",
-    "jxl/jxl_cms.h",
-    "jxl/jxl_skcms.h",
+    "jxl/cms/jxl_cms.cc",
+    "jxl/cms/jxl_cms.h",
+    "jxl/cms/jxl_skcms.h",
 ]
 
 libjxl_extras_for_tools_sources = [

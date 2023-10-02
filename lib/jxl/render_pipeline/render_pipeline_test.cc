@@ -14,6 +14,7 @@
 
 #include "lib/extras/codec.h"
 #include "lib/jxl/base/common.h"
+#include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/common.h"  // JXL_HIGH_PRECISION, JPEGXL_ENABLE_TRANSCODE_JPEG
 #include "lib/jxl/dec_frame.h"
 #include "lib/jxl/enc_cache.h"
@@ -24,7 +25,6 @@
 #include "lib/jxl/icc_codec.h"
 #include "lib/jxl/image_test_utils.h"
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
-#include "lib/jxl/jxl_cms.h"
 #include "lib/jxl/render_pipeline/test_render_pipeline_stages.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"

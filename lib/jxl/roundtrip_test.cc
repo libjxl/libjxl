@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "lib/extras/codec.h"
+#include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/dec_external_image.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/enc_comparator.h"
@@ -24,7 +25,6 @@
 #include "lib/jxl/encode_internal.h"
 #include "lib/jxl/icc_codec.h"
 #include "lib/jxl/image_test_utils.h"
-#include "lib/jxl/jxl_cms.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"
 
