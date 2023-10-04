@@ -160,7 +160,10 @@ int32_t FindBestMultiplier(const float* values_m, const float* values_s,
   }
   // CFL seems to be tricky for larger transforms for HF components
   // close to zero. This heuristic brings the solutions closer to zero
-  // and reduces red-green oscillations.
+  // and reduces red-green oscillations. A better approach would
+  // look into variance of the multiplier within seperate (e.g. 8x8)
+  // areas and only apply this heuristic where there is a high variance.
+  // This would give about 1 % more compression density.
   float towards_zero = 2.6;
   if (x >= towards_zero) {
     x -= towards_zero;
