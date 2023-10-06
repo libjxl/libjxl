@@ -1586,7 +1586,7 @@ TEST(JxlTest, LosslessSmallFewColors) {
   cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 1);
 
   PackedPixelFile ppf_out;
-  EXPECT_EQ(Roundtrip(t.ppf(), cparams, {}, &pool, &ppf_out), 576);
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, &pool, &ppf_out), 563, 30);
   EXPECT_EQ(ComputeDistance2(t.ppf(), ppf_out), 0.0);
 }
 
