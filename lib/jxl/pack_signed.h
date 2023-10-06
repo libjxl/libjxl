@@ -6,7 +6,7 @@
 #ifndef LIB_JXL_PACK_H_
 #define LIB_JXL_PACK_H_
 
-// Pack/UnpackSiged utilities.
+// Pack/UnpackSigned utilities.
 
 #include <cinttypes>
 
