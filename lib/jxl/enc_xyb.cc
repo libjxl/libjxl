@@ -499,21 +499,5 @@ Status RgbToYcbcr(const ImageF& r_plane, const ImageF& g_plane,
                                           cb_plane, cr_plane, pool);
 }
 
-// DEPRECATED
-Image3F OpsinDynamicsImage(const Image3B& srgb8, const JxlCmsInterface& cms) {
-  ImageMetadata metadata;
-  metadata.SetUintSamples(8);
-  metadata.color_encoding = ColorEncoding::SRGB();
-  ImageBundle ib(&metadata);
-  ib.SetFromImage(ConvertToFloat(srgb8), metadata.color_encoding);
-  JXL_CHECK(ib.TransformTo(ColorEncoding::LinearSRGB(ib.IsGray()), cms));
-  ThreadPool* null_pool = nullptr;
-  Image3F xyb(srgb8.xsize(), srgb8.ysize());
-
-  ImageBundle linear_storage(&metadata);
-  (void)ToXYB(ib, null_pool, &xyb, cms, &linear_storage);
-  return xyb;
-}
-
 }  // namespace jxl
 #endif  // HWY_ONCE
