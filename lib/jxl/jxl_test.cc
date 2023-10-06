@@ -1453,6 +1453,14 @@ TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionMetadata)) {
   EXPECT_NEAR(RoundtripJpeg(orig, &pool), 1400u, 30);
 }
 
+TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionRestarts)) {
+  ThreadPoolForTests pool(8);
+  const PaddedBytes orig =
+      jxl::test::ReadTestData("jxl/jpeg_reconstruction/bicycles_restarts.jpg");
+  // JPEG size is 87478 bytes
+  EXPECT_NEAR(RoundtripJpeg(orig, &pool), 76125u, 30);
+}
+
 TEST(JxlTest,
      JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionOrientationICC)) {
   ThreadPoolForTests pool(8);
@@ -1564,6 +1572,22 @@ TEST(JxlTest, LosslessPNMRoundtrip) {
                 memcmp(orig.data(), encoded.bitstreams[0].data(), orig.size()));
     }
   }
+}
+
+TEST(JxlTest, LosslessSmallFewColors) {
+  ThreadPoolForTests pool(8);
+  const PaddedBytes orig =
+      jxl::test::ReadTestData("jxl/blending/cropped_traffic_light_frame-0.png");
+  TestImage t;
+  t.DecodeFromBytes(orig).ClearMetadata();
+
+  JXLCompressParams cparams;
+  cparams.distance = 0;
+  cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 1);
+
+  PackedPixelFile ppf_out;
+  EXPECT_EQ(Roundtrip(t.ppf(), cparams, {}, &pool, &ppf_out), 576);
+  EXPECT_EQ(ComputeDistance2(t.ppf(), ppf_out), 0.0);
 }
 
 }  // namespace
