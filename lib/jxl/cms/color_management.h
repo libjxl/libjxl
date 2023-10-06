@@ -10,6 +10,8 @@
 
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
+
+// TODO(eustas): migrate to lib/jxl/cms/color_encoding_cms.h
 #include "lib/jxl/color_encoding_internal.h"
 
 namespace jxl {

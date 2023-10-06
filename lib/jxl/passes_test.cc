@@ -14,6 +14,7 @@
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/padded_bytes.h"
+#include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
@@ -22,7 +23,6 @@
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
-#include "lib/jxl/jxl_cms.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"
 
@@ -50,7 +50,7 @@ TEST(PassesTest, RoundtripSmallPasses) {
   EXPECT_THAT(ButteraugliDistance(io.frames, io2.frames, ButteraugliParams(),
                                   *JxlGetDefaultCms(),
                                   /*distmap=*/nullptr),
-              IsSlightlyBelow(1.1));
+              IsSlightlyBelow(0.8222));
 }
 
 TEST(PassesTest, RoundtripUnalignedPasses) {
@@ -97,7 +97,7 @@ TEST(PassesTest, RoundtripMultiGroupPasses) {
                 IsSlightlyBelow(target_distance + threshold));
   };
 
-  auto run1 = std::async(std::launch::async, test, 1.0f, 0.5f);
+  auto run1 = std::async(std::launch::async, test, 1.0f, 0.15f);
   auto run2 = std::async(std::launch::async, test, 2.0f, 0.0f);
 }
 

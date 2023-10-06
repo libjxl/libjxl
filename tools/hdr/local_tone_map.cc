@@ -8,10 +8,10 @@
 
 #include "lib/extras/codec.h"
 #include "lib/extras/tone_mapping.h"
+#include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/convolve.h"
 #include "lib/jxl/enc_gamma_correct.h"
 #include "lib/jxl/image_bundle.h"
-#include "lib/jxl/jxl_cms.h"
 #include "tools/args.h"
 #include "tools/cmdline.h"
 #include "tools/thread_pool_internal.h"

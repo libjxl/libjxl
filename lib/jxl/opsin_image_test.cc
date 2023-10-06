@@ -5,11 +5,10 @@
 
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/matrix_ops.h"
-#include "lib/jxl/color_management.h"
+#include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/dec_xyb.h"
 #include "lib/jxl/enc_xyb.h"
 #include "lib/jxl/image.h"
-#include "lib/jxl/jxl_cms.h"
 #include "lib/jxl/opsin_params.h"
 #include "lib/jxl/testing.h"
 

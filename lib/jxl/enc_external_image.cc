@@ -20,7 +20,6 @@
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/float.h"
 #include "lib/jxl/base/printf_macros.h"
-#include "lib/jxl/color_management.h"
 
 namespace jxl {
 namespace {

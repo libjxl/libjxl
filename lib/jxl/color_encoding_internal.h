@@ -22,7 +22,7 @@
 
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/color_encoding_external.h"
+#include "lib/jxl/cms/color_encoding_cms.h"
 #include "lib/jxl/field_encodings.h"
 
 namespace jxl {
@@ -196,13 +196,9 @@ struct ColorEncoding : public Fields {
   Status CreateICC();
 
   // Returns non-empty and valid ICC profile, unless:
-  // - between calling InternalRemoveICC() and CreateICC() in tests;
   // - WantICC() == true and SetICC() was not yet called;
   // - after a failed call to SetSRGB(), SetICC(), or CreateICC().
   const IccBytes& ICC() const { return storage_.icc; }
-
-  // Internal only, do not call except from tests.
-  void InternalRemoveICC() { storage_.icc.clear(); }
 
   // Returns true if `icc` is assigned and decoded successfully. If so,
   // subsequent WantICC() will return true until DecideIfWantICC() changes it.
@@ -218,7 +214,7 @@ struct ColorEncoding : public Fields {
     }
 
     if (!SetFieldsFromICC(*cms)) {
-      InternalRemoveICC();
+      storage_.icc.clear();
       return false;
     }
 
@@ -295,7 +291,7 @@ struct ColorEncoding : public Fields {
 
   Status SetSRGB(const ColorSpace cs,
                  const RenderingIntent ri = RenderingIntent::kRelative) {
-    InternalRemoveICC();
+    storage_.icc.clear();
     JXL_ASSERT(cs == ColorSpace::kGray || cs == ColorSpace::kRGB);
     storage_.color_space = cs;
     storage_.white_point = WhitePoint::kD65;

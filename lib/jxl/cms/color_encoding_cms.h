@@ -3,17 +3,13 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#ifndef LIB_JXL_COLOR_ENCODING_EXTERNAL_H_
-#define LIB_JXL_COLOR_ENCODING_EXTERNAL_H_
+#ifndef LIB_JXL_CMS_COLOR_ENCODING_CMS_H_
+#define LIB_JXL_CMS_COLOR_ENCODING_CMS_H_
 
 #include <jxl/color_encoding.h>
-#include <stdint.h>
 
-#include <cmath>
+#include <cstdint>
 #include <vector>
-
-#include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/base/status.h"
 
 namespace jxl {
 namespace cms {
@@ -82,7 +78,8 @@ enum class RenderingIntent : uint32_t {
   // NB: don't forget to update EnumBits!
 };
 
-// Chromaticity (Y is omitted because it is 1 for primaries/white points)
+// Chromaticity (Y is omitted because it is 1 for white points and implicit for
+// primaries)
 struct CIExy {
   double x = 0.0;
   double y = 0.0;
@@ -122,10 +119,6 @@ struct ColorEncoding {
   Primaries primaries;  // Only valid if HasPrimaries()
   RenderingIntent rendering_intent;
 
-  // Returns true if all fields have been initialized (possibly to kUnknown).
-  // Returns false if the ICC profile is invalid or decoding it fails.
-  Status SetFieldsFromICC(const JxlCmsInterface& cms);
-
   // If true, the codestream contains an ICC profile and we do not serialize
   // fields. Otherwise, fields are serialized and we create an ICC profile.
   bool want_icc;
@@ -148,14 +141,7 @@ struct ColorEncoding {
   Customxy blue;   // Only used if primaries == kCustom
 };
 
-enum class ExtraTF {
-  kNone,
-  kPQ,
-  kHLG,
-  kSRGB,
-};
-
 }  // namespace cms
 }  // namespace jxl
 
-#endif  // LIB_JXL_COLOR_ENCODING_EXTERNAL_H_
+#endif  // LIB_JXL_CMS_COLOR_ENCODING_CMS_H_

@@ -24,7 +24,6 @@
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/printf_macros.h"
-#include "lib/jxl/color_management.h"
 #include "lib/jxl/sanitizers.h"
 
 HWY_BEFORE_NAMESPACE();

@@ -30,7 +30,6 @@
 #include "lib/jxl/coeff_order.h"
 #include "lib/jxl/coeff_order_fwd.h"
 #include "lib/jxl/color_encoding_internal.h"
-#include "lib/jxl/color_management.h"
 #include "lib/jxl/common.h"  // kMaxNumPasses
 #include "lib/jxl/compressed_dc.h"
 #include "lib/jxl/dct_util.h"

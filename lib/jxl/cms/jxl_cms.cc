@@ -3,47 +3,37 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include "lib/jxl/jxl_cms.h"
-
-#include "lib/jxl/image.h"
+#include "lib/jxl/cms/jxl_cms.h"
 
 #ifndef JPEGXL_ENABLE_SKCMS
 #define JPEGXL_ENABLE_SKCMS 0
 #endif
 
 #include <jxl/cms_interface.h>
-#include <math.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
 
 #include <algorithm>
 #include <array>
-#include <atomic>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <memory>
-#include <string>
-#include <utility>
-#include <vector>
 
 #undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "lib/jxl/jxl_cms.cc"
+#define HWY_TARGET_INCLUDE "lib/jxl/cms/jxl_cms.cc"
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 
 #include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/matrix_ops.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/cms/color_management.h"  // MaybeCreateProfile CIEXYZFromWhiteCIExy ExtraTF
+#include "lib/jxl/cms/transfer_functions-inl.h"
 #include "lib/jxl/color_encoding_internal.h"
-#include "lib/jxl/color_management.h"
-#include "lib/jxl/field_encodings.h"
-#include "lib/jxl/image.h"
-#include "lib/jxl/transfer_functions-inl.h"  // TF_HLG TF_PQ
 #if JPEGXL_ENABLE_SKCMS
-#include "lib/jxl/jxl_skcms.h"
+#include "lib/jxl/cms/jxl_skcms.h"
 #else  // JPEGXL_ENABLE_SKCMS
 #include "lcms2.h"
 #include "lcms2_plugin.h"
@@ -58,6 +48,7 @@
 
 namespace jxl {
 namespace {
+
 struct JxlCms {
 #if JPEGXL_ENABLE_SKCMS
   IccBytes icc_src, icc_dst;
@@ -74,8 +65,12 @@ struct JxlCms {
 
   size_t channels_src;
   size_t channels_dst;
-  ImageF buf_src;
-  ImageF buf_dst;
+
+  std::vector<float> src_storage;
+  std::vector<float*> buf_src;
+  std::vector<float> dst_storage;
+  std::vector<float*> buf_dst;
+
   float intensity_target;
   bool skip_lcms = false;
   ExtraTF preprocess = ExtraTF::kNone;
@@ -87,7 +82,7 @@ Status ApplyHlgOotf(JxlCms* t, float* JXL_RESTRICT buf, size_t xsize,
 }  // namespace
 }  // namespace jxl
 
-#endif  // LIB_JXL_JXL_CMS_CC_
+#endif  // LIB_JXL_JXL_CMS_CC
 
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
@@ -212,7 +207,7 @@ Status DoColorSpaceTransform(void* cms_data, const size_t thread,
 
   const float* xform_src = buf_src;  // Read-only.
   if (t->preprocess != ExtraTF::kNone) {
-    float* mutable_xform_src = t->buf_src.Row(thread);  // Writable buffer.
+    float* mutable_xform_src = t->buf_src[thread];  // Writable buffer.
     JXL_RETURN_IF_ERROR(BeforeTransform(t, buf_src, mutable_xform_src,
                                         xsize * t->channels_src));
     xform_src = mutable_xform_src;
@@ -221,8 +216,8 @@ Status DoColorSpaceTransform(void* cms_data, const size_t thread,
 #if JPEGXL_ENABLE_SKCMS
   if (t->channels_src == 1 && !t->skip_lcms) {
     // Expand from 1 to 3 channels, starting from the end in case
-    // xform_src == t->buf_src.Row(thread).
-    float* mutable_xform_src = t->buf_src.Row(thread);
+    // xform_src == t->buf_src[thread].
+    float* mutable_xform_src = t->buf_src[thread];
     for (size_t i = 0; i < xsize; ++i) {
       const size_t x = xsize - i - 1;
       mutable_xform_src[x * 3] = mutable_xform_src[x * 3 + 1] =
@@ -233,7 +228,7 @@ Status DoColorSpaceTransform(void* cms_data, const size_t thread,
 #else
   if (t->channels_src == 4 && !t->skip_lcms) {
     // LCMS does CMYK in a weird way: 0 = white, 100 = max ink
-    float* mutable_xform_src = t->buf_src.Row(thread);
+    float* mutable_xform_src = t->buf_src[thread];
     for (size_t x = 0; x < xsize * 4; ++x) {
       mutable_xform_src[x] = 100.f - 100.f * mutable_xform_src[x];
     }
@@ -275,7 +270,7 @@ Status DoColorSpaceTransform(void* cms_data, const size_t thread,
 #if JPEGXL_ENABLE_SKCMS
   if (t->channels_dst == 1 && !t->skip_lcms) {
     // Contract back from 3 to 1 channel, this time forward.
-    float* grayscale_buf_dst = t->buf_dst.Row(thread);
+    float* grayscale_buf_dst = t->buf_dst[thread];
     for (size_t x = 0; x < xsize; ++x) {
       grayscale_buf_dst[x] = buf_dst[x * 3];
     }
@@ -901,6 +896,23 @@ Status ApplyHlgOotf(JxlCms* t, float* JXL_RESTRICT buf, size_t xsize,
   return true;
 }
 
+bool IsKnownTransferFunction(jxl::cms::TransferFunction tf) {
+  using TF = jxl::cms::TransferFunction;
+  // All but kUnknown
+  return tf == TF::k709 || tf == TF::kLinear || tf == TF::kSRGB ||
+         tf == TF::kPQ || tf == TF::kDCI || tf == TF::kHLG;
+}
+
+constexpr uint8_t kColorPrimariesP3_D65 = 12;
+
+bool IsKnownColorPrimaries(uint8_t color_primaries) {
+  using P = jxl::cms::Primaries;
+  // All but kCustom
+  if (color_primaries == kColorPrimariesP3_D65) return true;
+  const auto p = static_cast<Primaries>(color_primaries);
+  return p == P::kSRGB || p == P::k2100 || p == P::kP3;
+}
+
 bool ApplyCICP(const uint8_t color_primaries,
                const uint8_t transfer_characteristics,
                const uint8_t matrix_coefficients, const uint8_t full_range,
@@ -910,17 +922,14 @@ bool ApplyCICP(const uint8_t color_primaries,
 
   const auto primaries = static_cast<Primaries>(color_primaries);
   const auto tf = static_cast<TransferFunction>(transfer_characteristics);
-  if (tf == TransferFunction::kUnknown || !EnumValid(tf)) return false;
-  if (primaries == Primaries::kCustom ||
-      !(color_primaries == 12 || EnumValid(primaries))) {
-    return false;
-  }
+  if (!IsKnownTransferFunction(tf)) return false;
+  if (!IsKnownColorPrimaries(color_primaries)) return false;
   c->SetColorSpace(ColorSpace::kRGB);
   c->tf.SetTransferFunction(tf);
   if (primaries == Primaries::kP3) {
     if (!c->SetWhitePointType(WhitePoint::kDCI)) return false;
     if (!c->SetPrimariesType(Primaries::kP3)) return false;
-  } else if (color_primaries == 12) {
+  } else if (color_primaries == kColorPrimariesP3_D65) {
     if (!c->SetWhitePointType(WhitePoint::kD65)) return false;
     if (!c->SetPrimariesType(Primaries::kP3)) return false;
   } else {
@@ -1000,7 +1009,8 @@ JXL_BOOL JxlCmsSetFieldsFromICC(void* user_data, const uint8_t* icc_data,
     return JXL_FAILURE("Invalid rendering intent %u\n", rendering_intent32);
   }
   // ICC and RenderingIntent have the same values (0..3).
-  c_enc.rendering_intent = static_cast<RenderingIntent>(rendering_intent32);
+  JXL_RETURN_IF_ERROR(c_enc.SetRenderingIntent(
+      static_cast<RenderingIntent>(rendering_intent32)));
 
   static constexpr size_t kCICPSize = 12;
   static constexpr auto kCICPSignature =
@@ -1048,6 +1058,21 @@ void JxlCmsDestroy(void* cms_data) {
   TransformDeleter()(t->lcms_transform);
 #endif
   delete t;
+}
+
+void AllocateBuffer(size_t length, size_t num_threads,
+                    std::vector<float>* storage, std::vector<float*>* view) {
+  constexpr size_t kAlign = 128 / sizeof(float);
+  size_t stride = RoundUpTo(length, kAlign);
+  storage->resize(stride * num_threads + kAlign);
+  intptr_t addr = reinterpret_cast<intptr_t>(storage->data());
+  size_t offset =
+      (RoundUpTo(addr, kAlign * sizeof(float)) - addr) / sizeof(float);
+  view->clear();
+  view->reserve(num_threads);
+  for (size_t i = 0; i < num_threads; ++i) {
+    view->emplace_back(storage->data() + offset + i * stride);
+  }
 }
 
 void* JxlCmsInit(void* init_data, size_t num_threads, size_t xsize,
@@ -1231,7 +1256,7 @@ void* JxlCmsInit(void* init_data, size_t num_threads, size_t xsize,
   // Type includes color space (XYZ vs RGB), so can be different.
   const uint32_t type_src = Type32(c_src, channels_src == 4);
   const uint32_t type_dst = Type32(c_dst, false);
-  const uint32_t intent = static_cast<uint32_t>(c_dst.rendering_intent);
+  const uint32_t intent = static_cast<uint32_t>(c_dst.GetRenderingIntent());
   // Use cmsFLAGS_NOCACHE to disable the 1-pixel cache and make calling
   // cmsDoTransform() thread-safe.
   const uint32_t flags = cmsFLAGS_NOCACHE | cmsFLAGS_BLACKPOINTCOMPENSATION |
@@ -1255,27 +1280,30 @@ void* JxlCmsInit(void* init_data, size_t num_threads, size_t xsize,
   // outputs (or vice versa), we use floating point input/output.
   t->channels_src = channels_src;
   t->channels_dst = channels_dst;
+  size_t actual_channels_src = channels_src;
+  size_t actual_channels_dst = channels_dst;
 #if JPEGXL_ENABLE_SKCMS
   // SkiaCMS doesn't support grayscale float buffers, so we create space for RGB
   // float buffers anyway.
-  t->buf_src = ImageF(xsize * (channels_src == 4 ? 4 : 3), num_threads);
-  t->buf_dst = ImageF(xsize * 3, num_threads);
-#else
-  t->buf_src = ImageF(xsize * channels_src, num_threads);
-  t->buf_dst = ImageF(xsize * channels_dst, num_threads);
+  actual_channels_src = (channels_src == 4 ? 4 : 3);
+  actual_channels_dst = 3;
 #endif
+  AllocateBuffer(xsize * actual_channels_src, num_threads, &t->src_storage,
+                 &t->buf_src);
+  AllocateBuffer(xsize * actual_channels_dst, num_threads, &t->dst_storage,
+                 &t->buf_dst);
   t->intensity_target = intensity_target;
   return t.release();
 }
 
 float* JxlCmsGetSrcBuf(void* cms_data, size_t thread) {
   JxlCms* t = reinterpret_cast<JxlCms*>(cms_data);
-  return t->buf_src.Row(thread);
+  return t->buf_src[thread];
 }
 
 float* JxlCmsGetDstBuf(void* cms_data, size_t thread) {
   JxlCms* t = reinterpret_cast<JxlCms*>(cms_data);
-  return t->buf_dst.Row(thread);
+  return t->buf_dst[thread];
 }
 
 }  // namespace

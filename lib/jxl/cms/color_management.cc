@@ -3,7 +3,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include "lib/jxl/color_management.h"
+#include "lib/jxl/cms/color_management.h"
 
 #include <algorithm>
 #include <cmath>
@@ -13,7 +13,7 @@
 #include <vector>
 
 #undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "lib/jxl/color_management.cc"
+#define HWY_TARGET_INCLUDE "lib/jxl/cms/color_management.cc"
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 
@@ -22,8 +22,8 @@
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/cms/opsin_params.h"
-#include "lib/jxl/dec_tone_mapping-inl.h"
-#include "lib/jxl/transfer_functions-inl.h"  // TF_HLG TF_PQ
+#include "lib/jxl/cms/tone_mapping-inl.h"
+#include "lib/jxl/cms/transfer_functions-inl.h"
 
 #ifndef JXL_ENABLE_3D_ICC_TONEMAPPING
 #define JXL_ENABLE_3D_ICC_TONEMAPPING 1

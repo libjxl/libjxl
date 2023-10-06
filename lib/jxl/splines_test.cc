@@ -7,11 +7,11 @@
 
 #include "lib/extras/codec.h"
 #include "lib/jxl/base/printf_macros.h"
+#include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/enc_splines.h"
 #include "lib/jxl/image_test_utils.h"
-#include "lib/jxl/jxl_cms.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"
 

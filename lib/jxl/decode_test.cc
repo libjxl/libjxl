@@ -22,6 +22,7 @@
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/common.h"  // JXL_HIGH_PRECISION
 #include "lib/jxl/dec_external_image.h"
 #include "lib/jxl/enc_aux_out.h"
@@ -39,7 +40,6 @@
 #include "lib/jxl/icc_codec.h"
 #include "lib/jxl/image_metadata.h"
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
-#include "lib/jxl/jxl_cms.h"
 #include "lib/jxl/test_image.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"
@@ -1668,11 +1668,7 @@ TEST(DecodeTest, PixelTestWithICCProfileLossy) {
   EXPECT_THAT(
       ButteraugliDistance(io0.frames, io1.frames, ba, *JxlGetDefaultCms(),
                           /*distmap=*/nullptr, nullptr),
-#if JXL_HIGH_PRECISION
-      IsSlightlyBelow(0.9f));
-#else
-      IsSlightlyBelow(0.98f));
-#endif
+      IsSlightlyBelow(0.55f));
 
   JxlDecoderDestroy(dec);
 }
@@ -1930,11 +1926,7 @@ TEST(DecodeTest, PixelTestOpaqueSrgbLossy) {
     EXPECT_THAT(
         ButteraugliDistance(io0.frames, io1.frames, ba, *JxlGetDefaultCms(),
                             /*distmap=*/nullptr, nullptr),
-#if JXL_HIGH_PRECISION
-        IsSlightlyBelow(0.93f));
-#else
-        IsSlightlyBelow(0.94f));
-#endif
+        IsSlightlyBelow(0.65f));
 
     JxlDecoderDestroy(dec);
   }
@@ -1985,7 +1977,7 @@ TEST(DecodeTest, PixelTestOpaqueSrgbLossyNoise) {
     EXPECT_THAT(
         ButteraugliDistance(io0.frames, io1.frames, ba, *JxlGetDefaultCms(),
                             /*distmap=*/nullptr, nullptr),
-        IsSlightlyBelow(2.04444f));
+        IsSlightlyBelow(1.2222f));
 
     JxlDecoderDestroy(dec);
   }
