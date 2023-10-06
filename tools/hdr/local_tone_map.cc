@@ -23,6 +23,58 @@ constexpr WeightsSeparable5 kPyramidFilter = {
     {HWY_REP4(.375f), HWY_REP4(.25f), HWY_REP4(.0625f)},
     {HWY_REP4(.375f), HWY_REP4(.25f), HWY_REP4(.0625f)}};
 
+template <typename Tin, typename Tout>
+void Subtract(const Image3<Tin>& image1, const Image3<Tin>& image2,
+              Image3<Tout>* out) {
+  const size_t xsize = image1.xsize();
+  const size_t ysize = image1.ysize();
+  JXL_CHECK(xsize == image2.xsize());
+  JXL_CHECK(ysize == image2.ysize());
+
+  for (size_t c = 0; c < 3; ++c) {
+    for (size_t y = 0; y < ysize; ++y) {
+      const Tin* const JXL_RESTRICT row1 = image1.ConstPlaneRow(c, y);
+      const Tin* const JXL_RESTRICT row2 = image2.ConstPlaneRow(c, y);
+      Tout* const JXL_RESTRICT row_out = out->PlaneRow(c, y);
+      for (size_t x = 0; x < xsize; ++x) {
+        row_out[x] = row1[x] - row2[x];
+      }
+    }
+  }
+}
+
+// Adds `what` of the size of `rect` to `to` in the position of `rect`.
+template <typename Tin, typename Tout>
+void AddTo(const Rect& rect, const Image3<Tin>& what, Image3<Tout>* to) {
+  const size_t xsize = what.xsize();
+  const size_t ysize = what.ysize();
+  JXL_ASSERT(xsize == rect.xsize());
+  JXL_ASSERT(ysize == rect.ysize());
+  for (size_t c = 0; c < 3; ++c) {
+    for (size_t y = 0; y < ysize; ++y) {
+      const Tin* JXL_RESTRICT row_what = what.ConstPlaneRow(c, y);
+      Tout* JXL_RESTRICT row_to = rect.PlaneRow(to, c, y);
+      for (size_t x = 0; x < xsize; ++x) {
+        row_to[x] += row_what[x];
+      }
+    }
+  }
+}
+
+template <typename T>
+Plane<T> Product(const Plane<T>& a, const Plane<T>& b) {
+  Plane<T> c(a.xsize(), a.ysize());
+  for (size_t y = 0; y < a.ysize(); ++y) {
+    const T* const JXL_RESTRICT row_a = a.Row(y);
+    const T* const JXL_RESTRICT row_b = b.Row(y);
+    T* const JXL_RESTRICT row_c = c.Row(y);
+    for (size_t x = 0; x < a.xsize(); ++x) {
+      row_c[x] = row_a[x] * row_b[x];
+    }
+  }
+  return c;
+}
+
 // Expects sRGB input.
 // Will call consumer(x, y, contrast) for each pixel.
 template <typename Consumer>
