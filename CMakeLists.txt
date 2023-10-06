@@ -173,8 +173,10 @@ set(JPEGXL_TEST_TOOLS false CACHE BOOL
     "Run scripts that test the encoding / decoding tools.")
 set(JPEGXL_ENABLE_AVX512 false CACHE BOOL
     "Build with AVX512 support (faster on CPUs that support it, but larger binary size).")
+set(JPEGXL_ENABLE_AVX512_SPR false CACHE BOOL
+    "Build with AVX-512FP16 support (faster on CPUs that support it, but larger binary size).")
 set(JPEGXL_ENABLE_AVX512_ZEN4 false CACHE BOOL
-    "Build with Zen4-optimized AVX512 support (faster on CPUs that support it, but larger binary size).")
+"Build with Zen4-optimized AVX512 support (faster on CPUs that support it, but larger binary size).")
 
 # Force system dependencies.
 set(JPEGXL_FORCE_SYSTEM_BROTLI false CACHE BOOL
@@ -216,6 +218,10 @@ if (NOT JPEGXL_ENABLE_AVX512)
   message(STATUS "Disabled AVX512 (set JPEGXL_ENABLE_AVX512 to enable it)")
   set(HWY_DISABLED_TARGETS "${HWY_DISABLED_TARGETS}|HWY_AVX3")
   add_definitions(-DFJXL_ENABLE_AVX512=0)
+endif()
+if (NOT JPEGXL_ENABLE_AVX512_SPR)
+  message(STATUS "Disabled AVX512_SPR (set JPEGXL_ENABLE_AVX512_SPR to enable it)")
+  set(HWY_DISABLED_TARGETS "${HWY_DISABLED_TARGETS}|HWY_AVX3_SPR")
 endif()
 if (NOT JPEGXL_ENABLE_AVX512_ZEN4)
   message(STATUS "Disabled AVX512_ZEN4 (set JPEGXL_ENABLE_AVX512_ZEN4 to enable it)")
