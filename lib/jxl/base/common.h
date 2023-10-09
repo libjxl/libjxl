@@ -8,8 +8,8 @@
 
 // Shared constants and helper functions.
 
-#include <cinttypes>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <memory>
 #include <string>

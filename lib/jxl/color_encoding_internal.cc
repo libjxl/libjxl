@@ -252,8 +252,8 @@ Status CustomTransferFunction::SetGamma(double gamma) {
   return true;
 }
 
-std::array<ColorEncoding, 2> ColorEncoding::CreateC2(
-    const Primaries pr, const TransferFunction tf) {
+std::array<ColorEncoding, 2> ColorEncoding::CreateC2(Primaries pr,
+                                                     TransferFunction tf) {
   std::array<ColorEncoding, 2> c2;
 
   ColorEncoding* c_rgb = c2.data() + 0;

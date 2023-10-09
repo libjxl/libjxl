@@ -5,6 +5,8 @@
 
 #include "lib/jxl/opsin_params.h"
 
+#include "lib/jxl/cms/opsin_params.h"
+
 #define INVERSE_OPSIN_FROM_SPEC 1
 
 #if not(INVERSE_OPSIN_FROM_SPEC)

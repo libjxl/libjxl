@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "lib/extras/codec.h"
+#include "lib/jxl/base/span.h"
 #include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/dec_external_image.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"

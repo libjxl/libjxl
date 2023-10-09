@@ -18,6 +18,7 @@
 #include <cmath>  // std::abs
 #include <ostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "lib/jxl/base/compiler_specific.h"
@@ -371,8 +372,8 @@ struct ColorEncoding : public Fields {
   // Returns false if the ICC profile is invalid or decoding it fails.
   Status SetFieldsFromICC(const JxlCmsInterface& cms);
 
-  static std::array<ColorEncoding, 2> CreateC2(const Primaries pr,
-                                               const TransferFunction tf);
+  static std::array<ColorEncoding, 2> CreateC2(Primaries pr,
+                                               TransferFunction tf);
 
   ::jxl::cms::ColorEncoding storage_;
   // Only used if white_point == kCustom.

@@ -5,6 +5,7 @@
 
 #include "lib/jxl/icc_codec.h"
 
+#include <cstdint>
 #include <string>
 
 #include "lib/jxl/base/span.h"
