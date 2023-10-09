@@ -9,7 +9,6 @@
 // Constants that define the XYB color space.
 
 #include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/cms/opsin_params.h"
 
 namespace jxl {
 

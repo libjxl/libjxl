@@ -8,7 +8,8 @@
 
 // Pack/UnpackSigned utilities.
 
-#include <cinttypes>
+#include <cstddef>
+#include <cstdint>
 
 #include "lib/jxl/base/compiler_specific.h"
 

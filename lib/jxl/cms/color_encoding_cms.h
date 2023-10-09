@@ -6,8 +6,6 @@
 #ifndef LIB_JXL_CMS_COLOR_ENCODING_CMS_H_
 #define LIB_JXL_CMS_COLOR_ENCODING_CMS_H_
 
-#include <jxl/color_encoding.h>
-
 #include <cstdint>
 #include <vector>
 
