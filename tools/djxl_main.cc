@@ -276,12 +276,12 @@ bool WriteOptionalOutput(const std::string& filename,
   return jpegxl::tools::WriteFile(filename, bytes);
 }
 
-std::string Filename(const std::string& base, const std::string& extension,
+std::string Filename(const std::string& filename, const std::string& extension,
                      int layer_index, int frame_index, int num_layers,
                      int num_frames) {
-  if (base == "-") return "-";
+  if (filename == "-") return "-";
   auto digits = [](int n) { return 1 + static_cast<int>(std::log10(n)); };
-  std::string out = base;
+  std::string out = filename;
   if (num_frames > 1) {
     std::vector<char> buf(2 + digits(num_frames));
     snprintf(buf.data(), buf.size(), "-%0*d", digits(num_frames), frame_index);
@@ -295,7 +295,7 @@ std::string Filename(const std::string& base, const std::string& extension,
   }
   if (extension == ".ppm" && layer_index > 0) {
     out.append(".pgm");
-  } else {
+  } else if ((num_frames > 1) || (num_layers > 1 && layer_index > 0)) {
     out.append(extension);
   }
   return out;
@@ -455,13 +455,13 @@ int main(int argc, const char* argv[]) {
   }
 
   std::string filename_out;
-  std::string base;
+  std::string filename;
   std::string extension;
   jxl::extras::Codec codec = jxl::extras::Codec::kUnknown;
   if (args.file_out && !args.disable_output) {
     filename_out = std::string(args.file_out);
     codec = jxl::extras::CodecFromPath(
-        filename_out, /* bits_per_sample */ nullptr, &base, &extension);
+        filename_out, /* bits_per_sample */ nullptr, &filename, &extension);
   }
   if (codec == jxl::extras::Codec::kEXR) {
     std::string force_colorspace = "RGB_D65_SRG_Rel_Lin";
@@ -514,9 +514,7 @@ int main(int argc, const char* argv[]) {
     }
     if (!bytes.empty()) {
       if (!args.quiet) cmdline.VerbosePrintf(0, "Reconstructed to JPEG.\n");
-      if (!filename_out.empty() &&
-          !jpegxl::tools::WriteFile(base == "-" ? "-" : filename_out.c_str(),
-                                    bytes)) {
+      if (!filename_out.empty() && !jpegxl::tools::WriteFile(filename, bytes)) {
         return EXIT_FAILURE;
       }
     }
@@ -583,7 +581,7 @@ int main(int argc, const char* argv[]) {
         const std::vector<uint8_t>& bitstream =
             (i == 0 ? encoded_image.bitstreams[j]
                     : encoded_image.extra_channel_bitstreams[i - 1][j]);
-        std::string fn = Filename(base, extension, i, j, nlayers, nframes);
+        std::string fn = Filename(filename, extension, i, j, nlayers, nframes);
         if (!jpegxl::tools::WriteFile(fn.c_str(), bitstream)) {
           return EXIT_FAILURE;
         }
