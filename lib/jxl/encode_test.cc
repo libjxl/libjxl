@@ -318,14 +318,118 @@ TEST(EncodeTest, frame_settingsTest) {
     EXPECT_NE(nullptr, enc.get());
     JxlEncoderFrameSettings* frame_settings =
         JxlEncoderFrameSettingsCreate(enc.get(), NULL);
-    // Lower than currently supported values
+    const size_t nb_options = 23;
+    const JxlEncoderFrameSettingId options[nb_options] = {
+        JXL_ENC_FRAME_SETTING_EFFORT,
+        JXL_ENC_FRAME_SETTING_BROTLI_EFFORT,
+        JXL_ENC_FRAME_SETTING_DECODING_SPEED,
+        JXL_ENC_FRAME_SETTING_RESAMPLING,
+        JXL_ENC_FRAME_SETTING_EXTRA_CHANNEL_RESAMPLING,
+        JXL_ENC_FRAME_SETTING_ALREADY_DOWNSAMPLED,
+        JXL_ENC_FRAME_SETTING_EPF,
+        JXL_ENC_FRAME_SETTING_GROUP_ORDER_CENTER_X,
+        JXL_ENC_FRAME_SETTING_GROUP_ORDER_CENTER_Y,
+        JXL_ENC_FRAME_SETTING_PROGRESSIVE_DC,
+        JXL_ENC_FRAME_SETTING_PALETTE_COLORS,
+        JXL_ENC_FRAME_SETTING_COLOR_TRANSFORM,
+        JXL_ENC_FRAME_SETTING_MODULAR_COLOR_SPACE,
+        JXL_ENC_FRAME_SETTING_MODULAR_GROUP_SIZE,
+        JXL_ENC_FRAME_SETTING_MODULAR_PREDICTOR,
+        JXL_ENC_FRAME_SETTING_MODULAR_NB_PREV_CHANNELS,
+        JXL_ENC_FRAME_SETTING_JPEG_RECON_CFL,
+        JXL_ENC_FRAME_INDEX_BOX,
+        JXL_ENC_FRAME_SETTING_JPEG_COMPRESS_BOXES,
+        JXL_ENC_FRAME_SETTING_BUFFERING,
+        JXL_ENC_FRAME_SETTING_JPEG_KEEP_EXIF,
+        JXL_ENC_FRAME_SETTING_JPEG_KEEP_XMP,
+        JXL_ENC_FRAME_SETTING_JPEG_KEEP_JUMBF};
+    const int too_low[nb_options] = {0,  -2, -2, 3,  -2, -2, -2, -2,
+                                     -2, -2, -2, -2, -2, -2, -2, -2,
+                                     -2, -1, -2, -1, -2, -2, -2};
+    const int too_high[nb_options] = {11, 12, 5,     16, 6,  2, 4,  -3,
+                                      -3, 3,  70914, 3,  42, 4, 16, 12,
+                                      2,  2,  2,     4,  2,  2, 2};
+    const int in_range[nb_options] = {5,  5, 3,  1,  1,  1,  3,  -1,
+                                      0,  1, -1, -1, 3,  2,  15, -1,
+                                      -1, 1, 0,  0,  -1, -1, -1};
+    for (size_t i = 0; i < nb_options; i++) {
+      // Lower than currently supported values
+      EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderFrameSettingsSetOption(
+                                   frame_settings, options[i], too_low[i]));
+      // Higher than currently supported values
+      EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderFrameSettingsSetOption(
+                                   frame_settings, options[i], too_high[i]));
+      // Using SetFloatOption on integer options
+      EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderFrameSettingsSetFloatOption(
+                                   frame_settings, options[i], 1.0f));
+      // Within range of the currently supported values
+      EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderFrameSettingsSetOption(
+                                     frame_settings, options[i], in_range[i]));
+    }
+
+    // Non-existing option
     EXPECT_EQ(JXL_ENC_ERROR,
               JxlEncoderFrameSettingsSetOption(
-                  frame_settings, JXL_ENC_FRAME_SETTING_EFFORT, 0));
-    // Higher than currently supported values
+                  frame_settings, JXL_ENC_FRAME_SETTING_FILL_ENUM, 0));
+    EXPECT_EQ(JXL_ENC_ERROR,
+              JxlEncoderFrameSettingsSetFloatOption(
+                  frame_settings, JXL_ENC_FRAME_SETTING_FILL_ENUM, 0.f));
+
+    // Float options
+    EXPECT_EQ(JXL_ENC_ERROR,
+              JxlEncoderFrameSettingsSetFloatOption(
+                  frame_settings, JXL_ENC_FRAME_SETTING_PHOTON_NOISE, -1.0f));
+    EXPECT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderFrameSettingsSetFloatOption(
+                  frame_settings, JXL_ENC_FRAME_SETTING_PHOTON_NOISE, 100.0f));
+    EXPECT_EQ(
+        JXL_ENC_ERROR,
+        JxlEncoderFrameSettingsSetFloatOption(
+            frame_settings,
+            JXL_ENC_FRAME_SETTING_MODULAR_MA_TREE_LEARNING_PERCENT, 101.0f));
+    EXPECT_EQ(
+        JXL_ENC_ERROR,
+        JxlEncoderFrameSettingsSetFloatOption(
+            frame_settings,
+            JXL_ENC_FRAME_SETTING_MODULAR_MA_TREE_LEARNING_PERCENT, -2.0f));
+    EXPECT_EQ(
+        JXL_ENC_SUCCESS,
+        JxlEncoderFrameSettingsSetFloatOption(
+            frame_settings,
+            JXL_ENC_FRAME_SETTING_MODULAR_MA_TREE_LEARNING_PERCENT, -1.0f));
+    EXPECT_EQ(JXL_ENC_ERROR,
+              JxlEncoderFrameSettingsSetFloatOption(
+                  frame_settings,
+                  JXL_ENC_FRAME_SETTING_CHANNEL_COLORS_GLOBAL_PERCENT, 101.0f));
+    EXPECT_EQ(JXL_ENC_ERROR,
+              JxlEncoderFrameSettingsSetFloatOption(
+                  frame_settings,
+                  JXL_ENC_FRAME_SETTING_CHANNEL_COLORS_GLOBAL_PERCENT, -2.0f));
+    EXPECT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderFrameSettingsSetFloatOption(
+                  frame_settings,
+                  JXL_ENC_FRAME_SETTING_CHANNEL_COLORS_GLOBAL_PERCENT, -1.0f));
+    EXPECT_EQ(JXL_ENC_ERROR,
+              JxlEncoderFrameSettingsSetFloatOption(
+                  frame_settings,
+                  JXL_ENC_FRAME_SETTING_CHANNEL_COLORS_GROUP_PERCENT, 101.0f));
+    EXPECT_EQ(JXL_ENC_ERROR,
+              JxlEncoderFrameSettingsSetFloatOption(
+                  frame_settings,
+                  JXL_ENC_FRAME_SETTING_CHANNEL_COLORS_GROUP_PERCENT, -2.0f));
+    EXPECT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderFrameSettingsSetFloatOption(
+                  frame_settings,
+                  JXL_ENC_FRAME_SETTING_CHANNEL_COLORS_GROUP_PERCENT, -1.0f));
     EXPECT_EQ(JXL_ENC_ERROR,
               JxlEncoderFrameSettingsSetOption(
-                  frame_settings, JXL_ENC_FRAME_SETTING_EFFORT, 11));
+                  frame_settings,
+                  JXL_ENC_FRAME_SETTING_CHANNEL_COLORS_GROUP_PERCENT, 50.0f));
+    EXPECT_EQ(JXL_ENC_ERROR,
+              JxlEncoderFrameSettingsSetOption(
+                  frame_settings, JXL_ENC_FRAME_SETTING_PHOTON_NOISE, 50.0f));
+
+    VerifyFrameEncoding(63, 129, enc.get(), frame_settings, 2500, false);
   }
 
   {
@@ -1311,55 +1415,55 @@ TEST_P(EncodeBoxTest, JXL_BOXES_TEST(BoxTest)) {
               JxlDecoderSetDecompressBoxes(dec.get(), JXL_TRUE));
   }
 
-    EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSubscribeEvents(
-                                   dec.get(), JXL_DEC_FRAME | JXL_DEC_BOX));
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSubscribeEvents(dec.get(), JXL_DEC_FRAME | JXL_DEC_BOX));
 
-    JxlDecoderSetInput(dec.get(), compressed.data(), compressed.size());
-    JxlDecoderCloseInput(dec.get());
+  JxlDecoderSetInput(dec.get(), compressed.data(), compressed.size());
+  JxlDecoderCloseInput(dec.get());
 
-    std::vector<uint8_t> dec_exif_box(exif_size);
-    std::vector<uint8_t> dec_xml_box(xml_size);
+  std::vector<uint8_t> dec_exif_box(exif_size);
+  std::vector<uint8_t> dec_xml_box(xml_size);
 
-    for (bool post_frame = false;;) {
-      JxlDecoderStatus status = JxlDecoderProcessInput(dec.get());
-      if (status == JXL_DEC_ERROR) {
-        FAIL();
-      } else if (status == JXL_DEC_SUCCESS) {
-        EXPECT_EQ(0, JxlDecoderReleaseBoxBuffer(dec.get()));
-        break;
-      } else if (status == JXL_DEC_FRAME) {
-        post_frame = true;
-      } else if (status == JXL_DEC_BOX) {
-        // Since we gave the exif/xml box output buffer of the exact known
-        // correct size, 0 bytes should be released. Same when no buffer was
-        // set.
-        EXPECT_EQ(0, JxlDecoderReleaseBoxBuffer(dec.get()));
-        JxlBoxType type;
-        EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxType(dec.get(), type, true));
-        if (!memcmp(type, "Exif", 4)) {
-          // This box should have been encoded before the image frame
-          EXPECT_EQ(false, post_frame);
-          JxlDecoderSetBoxBuffer(dec.get(), dec_exif_box.data(),
-                                 dec_exif_box.size());
-        } else if (!memcmp(type, "XML ", 4)) {
-          // This box should have been encoded after the image frame
-          EXPECT_EQ(true, post_frame);
-          JxlDecoderSetBoxBuffer(dec.get(), dec_xml_box.data(),
-                                 dec_xml_box.size());
-        }
-      } else {
-        FAIL();  // unexpected status
+  for (bool post_frame = false;;) {
+    JxlDecoderStatus status = JxlDecoderProcessInput(dec.get());
+    if (status == JXL_DEC_ERROR) {
+      FAIL();
+    } else if (status == JXL_DEC_SUCCESS) {
+      EXPECT_EQ(0, JxlDecoderReleaseBoxBuffer(dec.get()));
+      break;
+    } else if (status == JXL_DEC_FRAME) {
+      post_frame = true;
+    } else if (status == JXL_DEC_BOX) {
+      // Since we gave the exif/xml box output buffer of the exact known
+      // correct size, 0 bytes should be released. Same when no buffer was
+      // set.
+      EXPECT_EQ(0, JxlDecoderReleaseBoxBuffer(dec.get()));
+      JxlBoxType type;
+      EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxType(dec.get(), type, true));
+      if (!memcmp(type, "Exif", 4)) {
+        // This box should have been encoded before the image frame
+        EXPECT_EQ(false, post_frame);
+        JxlDecoderSetBoxBuffer(dec.get(), dec_exif_box.data(),
+                               dec_exif_box.size());
+      } else if (!memcmp(type, "XML ", 4)) {
+        // This box should have been encoded after the image frame
+        EXPECT_EQ(true, post_frame);
+        JxlDecoderSetBoxBuffer(dec.get(), dec_xml_box.data(),
+                               dec_xml_box.size());
       }
+    } else {
+      FAIL();  // unexpected status
     }
+  }
 
-    EXPECT_EQ(0, memcmp(exif_data, dec_exif_box.data(), exif_size));
-    EXPECT_EQ(0, memcmp(xml_data, dec_xml_box.data(), xml_size));
+  EXPECT_EQ(0, memcmp(exif_data, dec_exif_box.data(), exif_size));
+  EXPECT_EQ(0, memcmp(xml_data, dec_xml_box.data(), xml_size));
 }
 
 std::string nameBoxTest(
     const ::testing::TestParamInfo<std::tuple<bool, size_t>>& info) {
-    return (std::get<0>(info.param) ? "C" : "Unc") + std::string("ompressed") +
-           "_BoxSize_" + std::to_string((std::get<1>(info.param)));
+  return (std::get<0>(info.param) ? "C" : "Unc") + std::string("ompressed") +
+         "_BoxSize_" + std::to_string((std::get<1>(info.param)));
 }
 
 JXL_GTEST_INSTANTIATE_TEST_SUITE_P(
