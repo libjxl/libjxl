@@ -157,15 +157,16 @@ struct DecompressArgs {
                            "suffix -ecN in their names. If not set, the "
                            "(first) alpha channel will only be written when "
                            "the output format supports alpha channels and all "
-                           "other extra channels won't be decoded. Ignored "
-                           "when outputting to stdout.",
+                           "other extra channels won't be decoded. Files are "
+                           "concatenated when outputting to stdout.",
                            &output_extra_channels, &SetBooleanTrue, 2);
 
     cmdline->AddOptionFlag(
         '\0', "output_frames",
         "If set, all frames will be written either as part of the main output "
         "file if that supports animation, or as separate output files with "
-        "suffix -N in their names. Ignored when outputting to stdout.",
+        "suffix -N in their names. Files are concatenated when outputting to "
+        "stdout.",
         &output_frames, &SetBooleanTrue, 2);
 
     cmdline->AddOptionFlag('\0', "use_sjpeg",
