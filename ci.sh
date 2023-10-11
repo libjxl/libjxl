@@ -227,7 +227,6 @@ merge_request_commits() {
     # changes on the Pull Request if needed. This fetches 10 more commits which
     # should be enough given that PR normally should have 1 commit.
     git -C "${MYDIR}" fetch -q origin "${GITHUB_SHA}" --depth 10
-    git -C "${MYDIR}" fetch -q origin "${GITHUB_SHA}" --depth 10
     # First, try getting the second parent of FETCH_HEAD
     MR_HEAD_SHA="$(git rev-parse "FETCH_HEAD^2" 2>/dev/null)"
     # If that fails, just use the GITHUB_SHA
