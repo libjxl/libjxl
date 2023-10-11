@@ -227,8 +227,11 @@ merge_request_commits() {
     # changes on the Pull Request if needed. This fetches 10 more commits which
     # should be enough given that PR normally should have 1 commit.
     git -C "${MYDIR}" fetch -q origin "${GITHUB_SHA}" --depth 10
-    MR_HEAD_SHA="$(git rev-parse "FETCH_HEAD^2" 2>/dev/null ||
-                   echo "${GITHUB_SHA}")"
+    git -C "${MYDIR}" fetch -q origin "${GITHUB_SHA}" --depth 10
+    # First, try getting the second parent of FETCH_HEAD
+    MR_HEAD_SHA="$(git rev-parse "FETCH_HEAD^2" 2>/dev/null)"
+    # If that fails, just use the GITHUB_SHA
+    [[ -z "${MR_HEAD_SHA}" ]] && MR_HEAD_SHA="${GITHUB_SHA}"
   else
     # CI_BUILD_REF is the reference currently being build in the CI workflow.
     MR_HEAD_SHA=$(git -C "${MYDIR}" rev-parse -q "${CI_BUILD_REF:-HEAD}")
