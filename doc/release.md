@@ -282,7 +282,7 @@ instructions:
 ### How to build downstream projects
 
 ```bash
-docker run -it debian:bullseye /bin/bash
+docker run -it debian:bookworm /bin/bash
 
 apt update
 apt install -y clang cmake git libbrotli-dev nasm pkg-config ninja-build
