@@ -366,6 +366,14 @@ TEST(EncodeTest, frame_settingsTest) {
       EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderFrameSettingsSetOption(
                                      frame_settings, options[i], in_range[i]));
     }
+    // Effort 10 should only work when expert options are allowed
+    EXPECT_EQ(JXL_ENC_ERROR,
+              JxlEncoderFrameSettingsSetOption(
+                  frame_settings, JXL_ENC_FRAME_SETTING_EFFORT, 10));
+    JxlEncoderAllowExpertOptions(enc.get());
+    EXPECT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderFrameSettingsSetOption(
+                  frame_settings, JXL_ENC_FRAME_SETTING_EFFORT, 10));
 
     // Non-existing option
     EXPECT_EQ(JXL_ENC_ERROR,
