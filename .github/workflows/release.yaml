@@ -124,6 +124,7 @@ jobs:
         - debian:buster
         - debian:bullseye
         - debian:bookworm
+        - debian:trixie
         - debian:sid
 
     container:

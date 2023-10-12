@@ -19,7 +19,7 @@ jobs:
     name: Cross-compiling ${{ matrix.build_target }} ${{ matrix.variant }}
     runs-on: [ubuntu-22.04]
     container:
-      image: debian:bullseye
+      image: debian:bookworm
     strategy:
       fail-fast: false
       matrix:

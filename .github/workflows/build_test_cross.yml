@@ -27,7 +27,7 @@ jobs:
     name: Cross-compiling ${{ matrix.identifier }}
     runs-on: [ubuntu-22.04]
     container:
-      image: debian:bullseye
+      image: debian:bookworm
     strategy:
       fail-fast: false
       matrix:
@@ -78,34 +78,32 @@ jobs:
       with:
         egress-policy: audit
 
-    - name: Setup apt
+    - name: Warmup apt
       shell: bash
       run: |
         set -x
         rm -f /var/lib/man-db/auto-update
         apt-get update -y
-        apt-get install -y ca-certificates debian-ports-archive-keyring
+        apt-get install -y ca-certificates debian-ports-archive-keyring git python3
 
+    - name: Checkout the source
+      uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608 # v4.1.0
+      with:
+        submodules: true
+        fetch-depth: 1
+
+    - name: Setup apt
+      shell: bash
+      run: |
+        set -x
         dpkg --add-architecture "${{ matrix.arch }}"
 
-        # Update the sources.list with the split of supported architectures.
-        bkplist="/etc/apt/sources.list.bkp"
-        mv /etc/apt/sources.list "${bkplist}"
-
-        newlist="/etc/apt/sources.list"
-        rm -f "${newlist}"
-
         main_list="amd64,${{ matrix.arch }}"
-        port_list=""
         if [[ "${{ matrix.arch }}" == "i386" ]]; then
           main_list="amd64,i386"
-        else
-          port_list="${{ matrix.arch }}"
         fi
 
-        grep -v -E '^#' "${bkplist}" |
-          sed -E "s;^deb (http[^ ]+) (.*)\$;deb [arch=${main_list}] \\1 \\2\ndeb-src [arch=${main_list}] \\1 \\2;" \
-          | tee -a "${newlist}"
+        python3 ./tools/scripts/transform_sources_list.py "${main_list}"
 
     - name: Install build deps
       shell: bash
@@ -116,7 +114,6 @@ jobs:
           # Build dependencies
           cmake
           doxygen
-          git
           graphviz
           ninja-build
           pkg-config
@@ -126,11 +123,11 @@ jobs:
           xvfb
 
           # Toolchain for cross-compiling.
-          clang-11
+          clang-14
           g++-aarch64-linux-gnu
           libc6-dev-${{ matrix.arch }}-cross
-          libstdc++-10-dev-${{ matrix.arch }}-cross
-          libstdc++-10-dev:${{ matrix.arch }}
+          libstdc++-12-dev-${{ matrix.arch }}-cross
+          libstdc++-12-dev:${{ matrix.arch }}
 
           # Dependencies
           libbrotli-dev:${{ matrix.arch }}
@@ -163,14 +160,8 @@ jobs:
           )
         fi
         DEBIAN_FRONTEND=noninteractive apt install -y "${pkgs[@]}"
-        echo "CC=${{ matrix.c_compiler || 'clang-11' }}" >> $GITHUB_ENV
-        echo "CXX=${{ matrix.cxx_compiler || 'clang++-11' }}" >> $GITHUB_ENV
-
-    - name: Checkout the source
-      uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608 # v4.1.0
-      with:
-        submodules: true
-        fetch-depth: 1
+        echo "CC=${{ matrix.c_compiler || 'clang-14' }}" >> $GITHUB_ENV
+        echo "CXX=${{ matrix.cxx_compiler || 'clang++-14' }}" >> $GITHUB_ENV
 
     - name: Build
       run: |
@@ -190,11 +181,12 @@ jobs:
           --max-stack ${{ matrix.max_stack || '0' }} \
           cjxl djxl libjxl.so libjxl_dec.so
 
-    - name: Cleanup
+    - name: Prepare artefacts
       if: env.WILL_RUN_TESTS == 'true'
       run: |
         find ./build -regextype egrep -type f -regex '.*\.(a|h|jar|log|o)'
         find ./build -type f -executable > executable.lst
+        cp /etc/apt/sources.list.d/debian.sources ./
 
     - name: Test ranging
       if: ${{ !matrix.disable_tests }}
@@ -209,6 +201,7 @@ jobs:
         path: |
           build/
           ci.sh
+          debian.sources
           executable.lst
           testdata/
         retention-days: 1
@@ -218,7 +211,7 @@ jobs:
     needs: compile
     runs-on: [ubuntu-22.04]
     container:
-      image: debian:bullseye
+      image: debian:bookworm
     strategy:
       fail-fast: false
       matrix:
@@ -231,7 +224,7 @@ jobs:
 
           #- arch: arm64
           #- identifier: arm64-sve
-          #  last_shard: 4
+          #  last_shard: 8
 
           - arch: arm64
             identifier: arm64-lowprecision
@@ -244,7 +237,7 @@ jobs:
           - arch: i386
             identifier: i386
             test_in_pr: true
-            last_shard: 1
+            last_shard: 4
 
     env:
       BUILD_DIR: build
@@ -259,6 +252,11 @@ jobs:
       with:
         egress-policy: audit
 
+    - uses: actions/download-artifact@9bc31d5ccc31df68ecc42ccf4149144866c47d8a # v3.0.2
+      if: (matrix.shard_number < env.LAST_SHARD) && (env.WILL_RUN_TESTS == 'true')
+      with:
+        name: cross_binary-${{ matrix.identifier }}
+
     - name: Setup apt
       if: (matrix.shard_number < env.LAST_SHARD) && (env.WILL_RUN_TESTS == 'true')
       shell: bash
@@ -270,24 +268,7 @@ jobs:
 
         dpkg --add-architecture "${{ matrix.arch }}"
 
-        # Update the sources.list with the split of supported architectures.
-        bkplist="/etc/apt/sources.list.bkp"
-        mv /etc/apt/sources.list "${bkplist}"
-
-        newlist="/etc/apt/sources.list"
-        rm -f "${newlist}"
-
-        main_list="amd64,${{ matrix.arch }}"
-        port_list=""
-        if [[ "${{ matrix.arch }}" == "i386" ]]; then
-          main_list="amd64,i386"
-        else
-          port_list="${{ matrix.arch }}"
-        fi
-
-        grep -v -E '^#' "${bkplist}" |
-          sed -E "s;^deb (http[^ ]+) (.*)\$;deb [arch=${main_list}] \\1 \\2\ndeb-src [arch=${main_list}] \\1 \\2;" \
-          | tee -a "${newlist}"
+        cp ./debian.sources /etc/apt/sources.list.d/
 
     - name: Install build deps
       if: (matrix.shard_number < env.LAST_SHARD) && (env.WILL_RUN_TESTS == 'true')
@@ -312,11 +293,6 @@ jobs:
           libopenexr-dev:${{ matrix.arch }}
         )
         DEBIAN_FRONTEND=noninteractive apt install -y "${pkgs[@]}"
-
-    - uses: actions/download-artifact@9bc31d5ccc31df68ecc42ccf4149144866c47d8a # v3.0.2
-      if: (matrix.shard_number < env.LAST_SHARD) && (env.WILL_RUN_TESTS == 'true')
-      with:
-        name: cross_binary-${{ matrix.identifier }}
 
     - name: Prepare
       if: (env.UPLOAD_TEST_COST == 'true') && (matrix.shard_number == 0) && (env.WILL_RUN_TESTS == 'true')
