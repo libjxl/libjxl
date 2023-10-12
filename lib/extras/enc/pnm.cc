@@ -185,7 +185,8 @@ class PAMEncoder : public PNMEncoder {
         return JXL_FAILURE("Extra channel and color format mismatch.");
       }
     }
-    if (ppf.info.bits_per_sample != ppf.info.alpha_bits) {
+    if (ppf.info.alpha_bits &&
+        (ppf.info.bits_per_sample != ppf.info.alpha_bits)) {
       return JXL_FAILURE("Alpha bit depth does not match image bit depth");
     }
     for (const auto& it : ec_info) {
