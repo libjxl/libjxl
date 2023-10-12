@@ -44,7 +44,8 @@ struct DCTCodingState {
   HuffmanCodeTable* cur_ac_huff_;
   // The sequence of currently buffered refinement bits for a successive
   // approximation scan (one where Ah > 0).
-  std::vector<int> refinement_bits_;
+  std::vector<uint16_t> refinement_bits_;
+  size_t refinement_bits_count_ = 0;
 };
 
 struct EncodeScanState {
