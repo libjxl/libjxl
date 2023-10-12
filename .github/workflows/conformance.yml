@@ -7,6 +7,7 @@
 
 name: Conformance
 on:
+  merge_group:
   push:
     branches:
       - main

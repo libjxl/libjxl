@@ -7,6 +7,7 @@
 
 name: Build/Test
 on:
+  merge_group:
   push:
     branches:
       - main
@@ -109,8 +110,8 @@ jobs:
       TEST_STACK_LIMIT: ${{ matrix.env_test_stack_size }}
       WILL_TEST: ${{  github.event_name == 'push' || (github.event_name == 'pull_request' && matrix.name != 'coverage' && (matrix.test_in_pr || contains(github.event.pull_request.labels.*.name, 'CI:full'))) }}
       WILL_BUILD: ${{ github.event_name == 'push' || (github.event_name == 'pull_request' && matrix.name != 'coverage') }}
-      WILL_BENCH: ${{ matrix.name == 'release' || (github.event_name == 'push' && matrix.mode == 'release') }}
-      WILL_DOC: ${{ matrix.name == 'release' }}
+      WILL_BENCH: ${{  github.event_name != 'merge_group' && (matrix.name == 'release' || (github.event_name == 'push' && matrix.mode == 'release')) }}
+      WILL_DOC: ${{ github.event_name != 'merge_group' && matrix.name == 'release' }}
       WILL_COV: ${{ github.event_name == 'push' && matrix.name == 'coverage' }}
       JPEGXL_OPT_DBG: true
       FASTER_MSAN_BUILD: 1

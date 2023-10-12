@@ -9,6 +9,7 @@
 
 name: CIFuzz
 on:
+  merge_group:
   pull_request:
     types: [opened, reopened, synchronize]
     paths:
@@ -22,7 +23,7 @@ on:
 permissions:
   contents: read
 
-concurrency: 
+concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 

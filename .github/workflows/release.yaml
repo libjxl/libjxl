@@ -13,6 +13,7 @@
 
 name: Release build / deploy
 on:
+  merge_group:
   push:
     branches:
       - main
@@ -29,7 +30,7 @@ on:
 permissions:
   contents: read
 
-concurrency: 
+concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
