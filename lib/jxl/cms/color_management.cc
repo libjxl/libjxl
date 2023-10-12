@@ -530,38 +530,15 @@ Status CreateICCLutAtoBTagForXYB(IccBytes* JXL_RESTRICT tags) {
   // 3 bytes of padding
   WriteICCUint8(0, tags->size(), tags);
   WriteICCUint16(0, tags->size(), tags);
-  const float kOffsets[3] = {
-      jxl::cms::kScaledXYBOffset[0] + jxl::cms::kScaledXYBOffset[1],
-      jxl::cms::kScaledXYBOffset[1] - jxl::cms::kScaledXYBOffset[0] +
-          1.0f / jxl::cms::kScaledXYBScale[0],
-      jxl::cms::kScaledXYBOffset[1] + jxl::cms::kScaledXYBOffset[2]};
-  const float kScaling[3] = {1.0f / (1.0f / jxl::cms::kScaledXYBScale[0] +
-                                     1.0f / jxl::cms::kScaledXYBScale[1]),
-                             1.0f / (1.0f / jxl::cms::kScaledXYBScale[0] +
-                                     1.0f / jxl::cms::kScaledXYBScale[1]),
-                             1.0f / (1.0f / jxl::cms::kScaledXYBScale[1] +
-                                     1.0f / jxl::cms::kScaledXYBScale[2])};
   // 2*2*2*3 entries of 2 bytes each = 48 bytes
+  const jxl::cms::ColorCube3D& cube = jxl::cms::UnscaledA2BCube();
   for (size_t ix = 0; ix < 2; ++ix) {
     for (size_t iy = 0; iy < 2; ++iy) {
       for (size_t ib = 0; ib < 2; ++ib) {
-        float in_f[3] = {ix * 1.0f, iy * 1.0f, ib * 1.0f};
-        for (size_t c = 0; c < 3; ++c) {
-          in_f[c] /= jxl::cms::kScaledXYBScale[c];
-          in_f[c] -= jxl::cms::kScaledXYBOffset[c];
-        }
-        float out_f[3];
-        out_f[0] = in_f[1] + in_f[0];
-        out_f[1] = in_f[1] - in_f[0];
-        out_f[2] = in_f[2] + in_f[1];
+        const jxl::cms::ColorCube0D& out_f = cube[ix][iy][ib];
         for (int i = 0; i < 3; ++i) {
-          out_f[i] += kOffsets[i];
-          out_f[i] *= kScaling[i];
-        }
-        for (int i = 0; i < 3; ++i) {
-          JXL_RETURN_IF_ERROR(out_f[i] >= 0.f && out_f[i] <= 1.f);
-          uint16_t val = static_cast<uint16_t>(
-              0.5f + 65535 * std::max(0.f, std::min(1.f, out_f[i])));
+          int32_t val = static_cast<int32_t>(0.5f + 65535 * out_f[i]);
+          JXL_DASSERT(val >= 0 && val <= 65535);
           WriteICCUint16(val, tags->size(), tags);
         }
       }
@@ -570,14 +547,14 @@ Status CreateICCLutAtoBTagForXYB(IccBytes* JXL_RESTRICT tags) {
   // offset = 148
   // 3 curves with 5 parameters = 3 * (12 + 5 * 4) = 96 bytes
   for (size_t i = 0; i < 3; ++i) {
-    const float b =
-        -kOffsets[i] - std::cbrt(jxl::cms::kNegOpsinAbsorbanceBiasRGB[i]);
+    const float b = -jxl::cms::kXYBOffset[i] -
+                    std::cbrt(jxl::cms::kNegOpsinAbsorbanceBiasRGB[i]);
     std::vector<float> params = {
         3,
-        1.0f / kScaling[i],
+        1.0f / jxl::cms::kXYBScale[i],
         b,
-        0,                                // unused
-        std::max(0.f, -b * kScaling[i]),  // make skcms happy
+        0,                                           // unused
+        std::max(0.f, -b * jxl::cms::kXYBScale[i]),  // make skcms happy
     };
     JXL_RETURN_IF_ERROR(CreateICCCurvParaTag(params, 3, tags));
   }
