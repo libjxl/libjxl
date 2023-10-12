@@ -17,6 +17,7 @@
 #include "lib/jxl/base/random.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/cms/jxl_cms.h"
+#include "lib/jxl/cms/opsin_params.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/enc_xyb.h"
 #include "lib/jxl/image_test_utils.h"
@@ -431,6 +432,29 @@ TEST_F(ColorManagementTest, XYBProfile) {
     printf("    %f\n", max_err[c]);
     EXPECT_LT(max_err[c], kMaxError[c]);
   }
+}
+
+TEST_F(ColorManagementTest, GoldenXYBCube) {
+  std::vector<int32_t> actual;
+  const jxl::cms::ColorCube3D& cube = jxl::cms::UnscaledA2BCube();
+  for (size_t ix = 0; ix < 2; ++ix) {
+    for (size_t iy = 0; iy < 2; ++iy) {
+      for (size_t ib = 0; ib < 2; ++ib) {
+        const jxl::cms::ColorCube0D& out_f = cube[ix][iy][ib];
+        for (int i = 0; i < 3; ++i) {
+          int32_t val = static_cast<int32_t>(0.5f + 65535 * out_f[i]);
+          ASSERT_TRUE(val >= 0 && val <= 65535);
+          actual.push_back(val);
+        }
+      }
+    }
+  }
+
+  std::vector<int32_t> expected = {0,     3206,  0,     0,     3206,  28873,
+                                   62329, 65535, 36662, 62329, 65535, 65535,
+                                   3206,  0,     0,     3206,  0,     28873,
+                                   65535, 62329, 36662, 65535, 62329, 65535};
+  EXPECT_EQ(actual, expected);
 }
 
 }  // namespace
