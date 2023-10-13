@@ -2187,12 +2187,8 @@ static bool CanDoFastLossless(const JxlEncoderFrameSettings* frame_settings,
 JxlEncoderStatus JxlEncoderAddImageFrame(
     const JxlEncoderFrameSettings* frame_settings,
     const JxlPixelFormat* pixel_format, const void* buffer, size_t size) {
-  if (!frame_settings->enc->basic_info_set ||
-      (!frame_settings->enc->color_encoding_set &&
-       !frame_settings->enc->metadata.m.xyb_encoded)) {
-    // Basic Info must be set, and color encoding must be set directly,
-    // or set to XYB via JxlBasicInfo.uses_original_profile = JXL_FALSE
-    // Otherwise, this is an API misuse.
+  if (!frame_settings->enc->basic_info_set) {
+    // Basic Info must be set. Otherwise, this is an API misuse.
     return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
                          "Basic info or color encoding not set yet");
   }
