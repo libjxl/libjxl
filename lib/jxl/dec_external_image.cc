@@ -5,6 +5,7 @@
 
 #include "lib/jxl/dec_external_image.h"
 
+#include <jxl/types.h>
 #include <string.h>
 
 #include <algorithm>
@@ -236,21 +237,23 @@ void JXL_INLINE Store8(uint32_t value, uint8_t* dest) { *dest = value & 0xff; }
 
 }  // namespace
 
-Status ConvertChannelsToExternal(const ImageF* channels[], size_t num_channels,
-                                 size_t bits_per_sample, bool float_out,
-                                 JxlEndianness endianness, size_t stride,
-                                 jxl::ThreadPool* pool, void* out_image,
-                                 size_t out_size,
+Status ConvertChannelsToExternal(const ImageF* in_channels[],
+                                 size_t num_channels, size_t bits_per_sample,
+                                 bool float_out, JxlEndianness endianness,
+                                 size_t stride, jxl::ThreadPool* pool,
+                                 void* out_image, size_t out_size,
                                  const PixelCallback& out_callback,
                                  jxl::Orientation undo_orientation) {
   JXL_DASSERT(num_channels != 0 && num_channels <= kConvertMaxChannels);
-  JXL_DASSERT(channels[0] != nullptr);
+  JXL_DASSERT(in_channels[0] != nullptr);
   JXL_CHECK(float_out ? bits_per_sample == 16 || bits_per_sample == 32
                       : bits_per_sample > 0 && bits_per_sample <= 16);
   if (!!out_image == out_callback.IsPresent()) {
     return JXL_FAILURE(
         "Must provide either an out_image or an out_callback, but not both.");
   }
+  std::vector<const ImageF*> channels;
+  channels.assign(in_channels, in_channels + num_channels);
 
   const size_t bytes_per_channel = DivCeil(bits_per_sample, jxl::kBitsPerByte);
   const size_t bytes_per_pixel = num_channels * bytes_per_channel;
