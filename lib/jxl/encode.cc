@@ -632,7 +632,7 @@ static inline bool EncodeVarInt(uint64_t value, size_t output_size,
 }
 
 bool EncodeFrameIndexBox(const jxl::JxlEncoderFrameIndexBox& frame_index_box,
-                         jxl::BitWriter& writer) {
+                         std::vector<uint8_t>& buffer_vec) {
   bool ok = true;
   int NF = 0;
   for (size_t i = 0; i < frame_index_box.entries.size(); ++i) {
@@ -649,7 +649,7 @@ bool EncodeFrameIndexBox(const jxl::JxlEncoderFrameIndexBox& frame_index_box,
   static const int kFrameIndexBoxElementLength = 3 * kVarintMaxLength;
   const int buffer_size =
       kFrameIndexBoxHeaderLength + NF * kFrameIndexBoxElementLength;
-  std::vector<uint8_t> buffer_vec(buffer_size);
+  buffer_vec.resize(buffer_size);
   uint8_t* buffer = buffer_vec.data();
   size_t output_pos = 0;
   ok &= EncodeVarInt(NF, buffer_vec.size(), &output_pos, buffer);
@@ -705,6 +705,7 @@ bool EncodeFrameIndexBox(const jxl::JxlEncoderFrameIndexBox& frame_index_box,
   // Enough buffer has been allocated, this function should never fail in
   // writing.
   JXL_ASSERT(ok);
+  buffer_vec.resize(output_pos);
   return ok;
 }
 
@@ -1012,11 +1013,11 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
       last_used_cparams = input_frame->option_values.cparams;
     }
     if (last_frame && frame_index_box.StoreFrameIndexBox()) {
-      jxl::BitWriter writer;
-      EncodeFrameIndexBox(frame_index_box, writer);
-      writer.ZeroPadToByte();
+      std::vector<uint8_t> index_box_content;
+      EncodeFrameIndexBox(frame_index_box, index_box_content);
       JXL_RETURN_IF_ERROR(
-          AppendBoxWithContents(jxl::MakeBoxType("jxli"), writer.GetSpan()));
+          AppendBoxWithContents(jxl::MakeBoxType("jxli"),
+                                jxl::Span<const uint8_t>(index_box_content)));
     }
   } else {
     // Not a frame, so is a box instead
