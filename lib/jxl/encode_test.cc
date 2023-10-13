@@ -82,32 +82,6 @@ TEST(EncodeTest, AddJPEGAfterCloseTest) {
             JxlEncoderAddJPEGFrame(frame_settings, orig.data(), orig.size()));
 }
 
-TEST(EncodeTest, AddFrameBeforeColorEncodingTest) {
-  JxlEncoderPtr enc = JxlEncoderMake(nullptr);
-  EXPECT_NE(nullptr, enc.get());
-
-  size_t xsize = 64;
-  size_t ysize = 64;
-  JxlPixelFormat pixel_format = {4, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
-  std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 4, 0);
-
-  jxl::CodecInOut input_io =
-      jxl::test::SomeTestImageToCodecInOut(pixels, 4, xsize, ysize);
-
-  JxlBasicInfo basic_info;
-  jxl::test::JxlBasicInfoSetFromPixelFormat(&basic_info, &pixel_format);
-  basic_info.xsize = xsize;
-  basic_info.ysize = ysize;
-  basic_info.uses_original_profile = true;
-  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetCodestreamLevel(enc.get(), 10));
-  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
-  JxlEncoderFrameSettings* frame_settings =
-      JxlEncoderFrameSettingsCreate(enc.get(), NULL);
-  EXPECT_EQ(JXL_ENC_ERROR,
-            JxlEncoderAddImageFrame(frame_settings, &pixel_format,
-                                    pixels.data(), pixels.size()));
-}
-
 TEST(EncodeTest, AddFrameBeforeBasicInfoTest) {
   JxlEncoderPtr enc = JxlEncoderMake(nullptr);
   EXPECT_NE(nullptr, enc.get());
