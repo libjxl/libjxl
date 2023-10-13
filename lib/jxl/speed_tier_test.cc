@@ -72,11 +72,11 @@ JXL_GTEST_INSTANTIATE_TEST_SUITE_P(
                     SpeedTierTestParams{SpeedTier::kSquirrel,
                                         /*shrink8=*/false},
                     SpeedTierTestParams{SpeedTier::kKitten,
-                                        /*shrink8=*/true},
-                    SpeedTierTestParams{SpeedTier::kKitten,
                                         /*shrink8=*/false},
                     // Only downscaled image for Tortoise mode.
                     SpeedTierTestParams{SpeedTier::kTortoise,
+                                        /*shrink8=*/true},
+                    SpeedTierTestParams{SpeedTier::kGlacier,
                                         /*shrink8=*/true}));
 
 TEST_P(SpeedTierTest, Roundtrip) {
@@ -88,7 +88,10 @@ TEST_P(SpeedTierTest, Roundtrip) {
 
   const SpeedTierTestParams& params = GetParam();
 
-  if (params.shrink8) {
+  if (params.speed_tier == SpeedTier::kGlacier) {
+    // just a few pixels will already take enough time at this setting
+    io.ShrinkTo(8, 8);
+  } else if (params.shrink8) {
     io.ShrinkTo(io.xsize() / 8, io.ysize() / 8);
   }
 
@@ -96,14 +99,19 @@ TEST_P(SpeedTierTest, Roundtrip) {
   cparams.speed_tier = params.speed_tier;
   cparams.SetCms(*JxlGetDefaultCms());
 
-  CodecInOut io2;
+  CodecInOut io2, io3;
   JXL_EXPECT_OK(test::Roundtrip(&io, cparams, {}, &io2, _));
-
-  // Can be 2.2 in non-hare mode.
   EXPECT_LE(ButteraugliDistance(io.frames, io2.frames, ButteraugliParams(),
                                 *JxlGetDefaultCms(),
                                 /*distmap=*/nullptr, /*pool=*/nullptr),
-            2.8);
+            1.6);
+
+  if (params.shrink8) {
+    cparams.SetLossless();
+    JXL_EXPECT_OK(test::Roundtrip(&io, cparams, {}, &io3, _));
+
+    JXL_EXPECT_OK(SamePixels(*io.Main().color(), *io3.Main().color(), _));
+  }
 }
 }  // namespace
 }  // namespace jxl
