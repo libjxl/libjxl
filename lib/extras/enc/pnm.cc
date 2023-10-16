@@ -72,7 +72,7 @@ class BasePNMEncoder : public Encoder {
 class PNMEncoder : public BasePNMEncoder {
  public:
   static const std::vector<JxlPixelFormat> kAcceptedFormats;
-  
+
   std::vector<JxlPixelFormat> AcceptedFormats() const override {
     return kAcceptedFormats;
   }
