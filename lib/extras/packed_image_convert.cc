@@ -113,8 +113,8 @@ Status ConvertPackedPixelFileToCodecInOut(const PackedPixelFile& ppf,
   // Convert the color encoding.
   if (!ppf.icc.empty()) {
     IccBytes icc = ppf.icc;
-    const JxlCmsInterface& cms = *JxlGetDefaultCms();
-    if (!io->metadata.m.color_encoding.SetICC(std::move(icc), &cms)) {
+    if (!io->metadata.m.color_encoding.SetICC(std::move(icc),
+                                              JxlGetDefaultCms())) {
       fprintf(stderr, "Warning: error setting ICC profile, assuming SRGB\n");
       io->metadata.m.color_encoding = ColorEncoding::SRGB(is_gray);
     } else {

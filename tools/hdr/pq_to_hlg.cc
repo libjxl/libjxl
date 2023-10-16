@@ -77,7 +77,7 @@ int main(int argc, const char** argv) {
   hlg.SetColorSpace(jxl::ColorSpace::kRGB);
   JXL_CHECK(hlg.SetPrimariesType(original_primaries));
   JXL_CHECK(hlg.SetWhitePointType(jxl::WhitePoint::kD65));
-  hlg.tf.SetTransferFunction(jxl::TransferFunction::kHLG);
+  hlg.Tf().SetTransferFunction(jxl::TransferFunction::kHLG);
   JXL_CHECK(hlg.CreateICC());
   JXL_CHECK(jpegxl::tools::TransformCodecInOutTo(image, hlg, &pool));
   image.metadata.m.color_encoding = hlg;

@@ -81,16 +81,14 @@ int main(int argc, const char** argv) {
   JXL_CHECK(jxl::GamutMap(&image, preserve_saturation, &pool));
 
   jxl::ColorEncoding c_out = image.metadata.m.color_encoding;
-  if (pq) {
-    c_out.tf.SetTransferFunction(jxl::TransferFunction::kPQ);
-  } else {
-    c_out.tf.SetTransferFunction(jxl::TransferFunction::kSRGB);
-  }
+  jxl::cms::TransferFunction tf =
+      pq ? jxl::TransferFunction::kPQ : jxl::TransferFunction::kSRGB;
 
   if (jxl::extras::CodecFromPath(output_filename) == jxl::extras::Codec::kEXR) {
-    c_out.tf.SetTransferFunction(jxl::TransferFunction::kLinear);
+    tf = jxl::TransferFunction::kLinear;
     image.metadata.m.SetFloat16Samples();
   }
+  c_out.Tf().SetTransferFunction(tf);
 
   JXL_CHECK(c_out.CreateICC());
   JXL_CHECK(jpegxl::tools::TransformCodecInOutTo(image, c_out, &pool));
