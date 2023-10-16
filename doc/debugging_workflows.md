@@ -1,6 +1,6 @@
 ### Reasoning 
 
-Given the differenes in compilers / environment it is not always clear why some
+Given the differences in compilers / environment it is not always clear why some
 build / test fails in workflows. In this document we gather practices that
 would help debugging workflows.
 
