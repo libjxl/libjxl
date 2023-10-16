@@ -28,7 +28,7 @@ namespace {
 
 constexpr size_t kMaxHeaderSize = 200;
 
-class PNMEncoder : public Encoder {
+class BasePNMEncoder : public Encoder {
  public:
   Status Encode(const PackedPixelFile& ppf, EncodedImage* encoded_image,
                 ThreadPool* pool = nullptr) const override {
@@ -69,7 +69,7 @@ class PNMEncoder : public Encoder {
                                     std::vector<uint8_t>* bytes) const = 0;
 };
 
-class PPMEncoder : public PNMEncoder {
+class PPMEncoder : public BasePNMEncoder {
  public:
   std::vector<JxlPixelFormat> AcceptedFormats() const override {
     return {JxlPixelFormat{3, JXL_TYPE_UINT8, JXL_BIG_ENDIAN, 0},
@@ -110,7 +110,31 @@ class PGMEncoder : public PPMEncoder {
   }
 };
 
-class PFMEncoder : public PNMEncoder {
+class PNMEncoder : public Encoder {
+ public:
+  std::vector<JxlPixelFormat> AcceptedFormats() const override {
+    std::vector<JxlPixelFormat> formats = ppm_encoder_.AcceptedFormats();
+    std::vector<JxlPixelFormat> pgm_formats = pgm_encoder_.AcceptedFormats();
+    formats.insert(formats.end(), pgm_formats.begin(), pgm_formats.end());
+    return formats;
+  }
+  Status Encode(const PackedPixelFile& ppf, EncodedImage* encoded_image,
+                ThreadPool* pool = nullptr) const override {
+    if (ppf.info.num_color_channels == 1) {
+      return pgm_encoder_.Encode(ppf, encoded_image, pool);
+    } else if (ppf.info.num_color_channels == 3) {
+      return ppm_encoder_.Encode(ppf, encoded_image, pool);
+    } else {
+      JXL_FAILURE("PNM encoder cannot handle this number of channels.");
+    }
+  }
+
+ private:
+  PGMEncoder pgm_encoder_;
+  PPMEncoder ppm_encoder_;
+};
+
+class PFMEncoder : public BasePNMEncoder {
  public:
   std::vector<JxlPixelFormat> AcceptedFormats() const override {
     std::vector<JxlPixelFormat> formats;
@@ -157,7 +181,7 @@ class PFMEncoder : public PNMEncoder {
   }
 };
 
-class PAMEncoder : public PNMEncoder {
+class PAMEncoder : public BasePNMEncoder {
  public:
   std::vector<JxlPixelFormat> AcceptedFormats() const override {
     std::vector<JxlPixelFormat> formats;
@@ -282,6 +306,10 @@ class PAMEncoder : public PNMEncoder {
 
 std::unique_ptr<Encoder> GetPPMEncoder() {
   return jxl::make_unique<PPMEncoder>();
+}
+
+std::unique_ptr<Encoder> GetPNMEncoder() {
+  return jxl::make_unique<PNMEncoder>();
 }
 
 std::unique_ptr<Encoder> GetPFMEncoder() {
