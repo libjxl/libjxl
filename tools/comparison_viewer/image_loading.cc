@@ -78,7 +78,7 @@ QImage loadImage(const QString& filename, const QByteArray& targetIccProfile,
 
   ColorEncoding targetColorSpace;
   bool use_fallback_profile = true;
-  if (!targetIccProfile.empty()) {
+  if (!targetIccProfile.isEmpty()) {
     IccBytes icc;
     icc.assign(reinterpret_cast<const uint8_t*>(targetIccProfile.data()),
                reinterpret_cast<const uint8_t*>(targetIccProfile.data() +
