@@ -627,7 +627,7 @@ TEST(JxlTest, RoundtripGrayscale) {
   EXPECT_EQ(8u, io.metadata.m.bit_depth.bits_per_sample);
   EXPECT_FALSE(io.metadata.m.bit_depth.floating_point_sample);
   EXPECT_EQ(0u, io.metadata.m.bit_depth.exponent_bits_per_sample);
-  EXPECT_TRUE(io.metadata.m.color_encoding.tf.IsSRGB());
+  EXPECT_TRUE(io.metadata.m.color_encoding.Tf().IsSRGB());
 
   PassesEncoderState enc_state;
   AuxOut* aux_out = nullptr;
@@ -710,7 +710,7 @@ TEST(JxlTest, RoundtripAlpha) {
   EXPECT_EQ(8u, io.metadata.m.bit_depth.bits_per_sample);
   EXPECT_FALSE(io.metadata.m.bit_depth.floating_point_sample);
   EXPECT_EQ(0u, io.metadata.m.bit_depth.exponent_bits_per_sample);
-  EXPECT_TRUE(io.metadata.m.color_encoding.tf.IsSRGB());
+  EXPECT_TRUE(io.metadata.m.color_encoding.Tf().IsSRGB());
   PassesEncoderState enc_state;
   AuxOut* aux_out = nullptr;
   PaddedBytes compressed;

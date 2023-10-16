@@ -97,7 +97,7 @@ void SetUpAvifColor(const ColorEncoding& color, avifImage* const image) {
     }
   }
 
-  switch (color.tf.GetTransferFunction()) {
+  switch (color.Tf().GetTransferFunction()) {
     case TransferFunction::kSRGB:
       image->transferCharacteristics = AVIF_TRANSFER_CHARACTERISTICS_SRGB;
       break;
@@ -139,24 +139,25 @@ Status ReadAvifColor(const avifImage* const image, ColorEncoding* const color) {
     default:
       return JXL_FAILURE("unsupported avif primaries");
   }
+  jxl::cms::CustomTransferFunction& tf = color->Tf();
   switch (image->transferCharacteristics) {
     case AVIF_TRANSFER_CHARACTERISTICS_BT470M:
-      JXL_RETURN_IF_ERROR(color->tf.SetGamma(2.2));
+      JXL_RETURN_IF_ERROR(tf.SetGamma(2.2));
       break;
     case AVIF_TRANSFER_CHARACTERISTICS_BT470BG:
-      JXL_RETURN_IF_ERROR(color->tf.SetGamma(2.8));
+      JXL_RETURN_IF_ERROR(tf.SetGamma(2.8));
       break;
     case AVIF_TRANSFER_CHARACTERISTICS_LINEAR:
-      color->tf.SetTransferFunction(TransferFunction::kLinear);
+      tf.SetTransferFunction(TransferFunction::kLinear);
       break;
     case AVIF_TRANSFER_CHARACTERISTICS_SRGB:
-      color->tf.SetTransferFunction(TransferFunction::kSRGB);
+      tf.SetTransferFunction(TransferFunction::kSRGB);
       break;
     case AVIF_TRANSFER_CHARACTERISTICS_SMPTE2084:
-      color->tf.SetTransferFunction(TransferFunction::kPQ);
+      tf.SetTransferFunction(TransferFunction::kPQ);
       break;
     case AVIF_TRANSFER_CHARACTERISTICS_HLG:
-      color->tf.SetTransferFunction(TransferFunction::kHLG);
+      tf.SetTransferFunction(TransferFunction::kHLG);
       break;
     default:
       return JXL_FAILURE("unsupported avif TRC");
