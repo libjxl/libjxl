@@ -57,7 +57,7 @@ struct DecompressArgs {
       output_help.append("EXR, ");
     }
     output_help.append(
-        "PPM, PFM, or PAM.\n"
+        "PGM (for greyscale input), PPM (for color input), PNM, PFM, or PAM.\n"
         "    To extract metadata, use output format EXIF, XMP, or JUMBF.\n"
         "    The format is selected based on extension ('filename.png') or "
         "prefix ('png:filename').\n"

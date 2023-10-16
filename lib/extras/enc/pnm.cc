@@ -28,7 +28,7 @@ namespace {
 
 constexpr size_t kMaxHeaderSize = 200;
 
-class PNMEncoder : public Encoder {
+class BasePNMEncoder : public Encoder {
  public:
   Status Encode(const PackedPixelFile& ppf, EncodedImage* encoded_image,
                 ThreadPool* pool = nullptr) const override {
@@ -69,12 +69,14 @@ class PNMEncoder : public Encoder {
                                     std::vector<uint8_t>* bytes) const = 0;
 };
 
-class PPMEncoder : public PNMEncoder {
+class PNMEncoder : public BasePNMEncoder {
  public:
+  static const std::vector<JxlPixelFormat> kAcceptedFormats;
+
   std::vector<JxlPixelFormat> AcceptedFormats() const override {
-    return {JxlPixelFormat{3, JXL_TYPE_UINT8, JXL_BIG_ENDIAN, 0},
-            JxlPixelFormat{3, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0}};
+    return kAcceptedFormats;
   }
+
   Status EncodeFrame(const PackedPixelFile& ppf, const PackedFrame& frame,
                      std::vector<uint8_t>* bytes) const override {
     return EncodeImage(frame.color, ppf.info.bits_per_sample, bytes);
@@ -102,15 +104,40 @@ class PPMEncoder : public PNMEncoder {
   }
 };
 
-class PGMEncoder : public PPMEncoder {
+class PGMEncoder : public PNMEncoder {
  public:
+  static const std::vector<JxlPixelFormat> kAcceptedFormats;
+
   std::vector<JxlPixelFormat> AcceptedFormats() const override {
-    return {JxlPixelFormat{1, JXL_TYPE_UINT8, JXL_BIG_ENDIAN, 0},
-            JxlPixelFormat{1, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0}};
+    return kAcceptedFormats;
   }
 };
 
-class PFMEncoder : public PNMEncoder {
+const std::vector<JxlPixelFormat> PGMEncoder::kAcceptedFormats = {
+    JxlPixelFormat{1, JXL_TYPE_UINT8, JXL_BIG_ENDIAN, 0},
+    JxlPixelFormat{1, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0}};
+
+class PPMEncoder : public PNMEncoder {
+ public:
+  static const std::vector<JxlPixelFormat> kAcceptedFormats;
+
+  std::vector<JxlPixelFormat> AcceptedFormats() const override {
+    return kAcceptedFormats;
+  }
+};
+
+const std::vector<JxlPixelFormat> PPMEncoder::kAcceptedFormats = {
+    JxlPixelFormat{3, JXL_TYPE_UINT8, JXL_BIG_ENDIAN, 0},
+    JxlPixelFormat{3, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0}};
+
+const std::vector<JxlPixelFormat> PNMEncoder::kAcceptedFormats = [] {
+  std::vector<JxlPixelFormat> combined = PPMEncoder::kAcceptedFormats;
+  combined.insert(combined.end(), PGMEncoder::kAcceptedFormats.begin(),
+                  PGMEncoder::kAcceptedFormats.end());
+  return combined;
+}();
+
+class PFMEncoder : public BasePNMEncoder {
  public:
   std::vector<JxlPixelFormat> AcceptedFormats() const override {
     std::vector<JxlPixelFormat> formats;
@@ -157,7 +184,7 @@ class PFMEncoder : public PNMEncoder {
   }
 };
 
-class PAMEncoder : public PNMEncoder {
+class PAMEncoder : public BasePNMEncoder {
  public:
   std::vector<JxlPixelFormat> AcceptedFormats() const override {
     std::vector<JxlPixelFormat> formats;
@@ -282,6 +309,10 @@ class PAMEncoder : public PNMEncoder {
 
 std::unique_ptr<Encoder> GetPPMEncoder() {
   return jxl::make_unique<PPMEncoder>();
+}
+
+std::unique_ptr<Encoder> GetPNMEncoder() {
+  return jxl::make_unique<PNMEncoder>();
 }
 
 std::unique_ptr<Encoder> GetPFMEncoder() {
