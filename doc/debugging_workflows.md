@@ -16,7 +16,7 @@ add the following snippet in workflow .yml:
    uses: mxschmitt/action-tmate@a283f9441d2d96eb62436dc46d7014f5d357ac22 # v3.17
 ```
 
-When pluging is executed it dumps to log a command to "ssh" to that instance.
+When the plugin is executed it dumps to log a command to "ssh" to that instance.
 
 NB: since session is wrapped in tmux, scrolling might be very inconvenient.
 
