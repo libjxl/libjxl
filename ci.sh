@@ -744,6 +744,15 @@ cmd_msan_install() {
   local msan_prefix="${HOME}/.msan/${CLANG_VERSION}"
   rm -rf "${msan_prefix}"
 
+  local TARGET_OPTS=""
+  if [[ -n "${BUILD_TARGET}" ]]; then
+    TARGET_OPTS=" \
+      -DCMAKE_C_COMPILER_TARGET=\"${BUILD_TARGET}\" \
+      -DCMAKE_CXX_COMPILER_TARGET=\"${BUILD_TARGET}\" \
+      -DCMAKE_SYSTEM_PROCESSOR=\"${BUILD_TARGET%%-*}\" \
+    "
+  fi
+
   declare -A CMAKE_EXTRAS
   CMAKE_EXTRAS[libcxx]="\
     -DLIBCXX_CXX_ABI=libstdc++ \
@@ -765,6 +774,7 @@ cmd_msan_install() {
       -DCMAKE_EXE_LINKER_FLAGS="${CMAKE_EXE_LINKER_FLAGS}" \
       -DCMAKE_SHARED_LINKER_FLAGS="${CMAKE_SHARED_LINKER_FLAGS}" \
       -DCMAKE_INSTALL_PREFIX="${msan_prefix}" \
+      ${TARGET_OPTS} \
       ${CMAKE_EXTRAS[${project}]}
     cmake --build "${proj_build}"
     ninja -C "${proj_build}" install

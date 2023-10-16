@@ -98,12 +98,7 @@ jobs:
         set -x
         dpkg --add-architecture "${{ matrix.arch }}"
 
-        main_list="amd64,${{ matrix.arch }}"
-        if [[ "${{ matrix.arch }}" == "i386" ]]; then
-          main_list="amd64,i386"
-        fi
-
-        python3 ./tools/scripts/transform_sources_list.py "${main_list}"
+        python3 ./tools/scripts/transform_sources_list.py "amd64,${{ matrix.arch }}"
 
     - name: Install build deps
       shell: bash
