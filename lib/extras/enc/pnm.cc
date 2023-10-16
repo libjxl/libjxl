@@ -125,7 +125,7 @@ class PNMEncoder : public Encoder {
     } else if (ppf.info.num_color_channels == 3) {
       return ppm_encoder_.Encode(ppf, encoded_image, pool);
     } else {
-      JXL_FAILURE("PNM encoder cannot handle this number of channels.");
+      return JXL_FAILURE("PNM encoder cannot handle this number of channels.");
     }
   }
 
