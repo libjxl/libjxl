@@ -85,11 +85,9 @@ int main(int argc, const char** argv) {
   image.metadata.m.SetIntensityTarget(target_nits);
 
   jxl::ColorEncoding c_out = image.metadata.m.color_encoding;
-  if (pq) {
-    c_out.tf.SetTransferFunction(jxl::TransferFunction::kPQ);
-  } else {
-    c_out.tf.SetTransferFunction(jxl::TransferFunction::kSRGB);
-  }
+  jxl::cms::TransferFunction tf =
+      pq ? jxl::TransferFunction::kPQ : jxl::TransferFunction::kSRGB;
+  c_out.Tf().SetTransferFunction(tf);
   JXL_CHECK(c_out.CreateICC());
   JXL_CHECK(jpegxl::tools::TransformCodecInOutTo(image, c_out, &pool));
   image.metadata.m.color_encoding = c_out;
