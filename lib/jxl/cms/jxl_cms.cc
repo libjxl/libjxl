@@ -49,7 +49,7 @@
 namespace jxl {
 namespace {
 
-using jxl::cms::ColorEncoding;
+using ::jxl::cms::ColorEncoding;
 
 struct JxlCms {
 #if JPEGXL_ENABLE_SKCMS
@@ -548,12 +548,12 @@ void DetectTransferFunction(const skcms_ICCProfile& profile,
 
 uint32_t Type32(const ColorEncoding& c, bool cmyk) {
   if (cmyk) return TYPE_CMYK_FLT;
-  if (c.IsGray()) return TYPE_GRAY_FLT;
+  if (c.color_space == ColorSpace::kGray) return TYPE_GRAY_FLT;
   return TYPE_RGB_FLT;
 }
 
 uint32_t Type64(const ColorEncoding& c) {
-  if (c.IsGray()) return TYPE_GRAY_DBL;
+  if (c.color_space == ColorSpace::kGray) return TYPE_GRAY_DBL;
   return TYPE_RGB_DBL;
 }
 
@@ -602,12 +602,12 @@ Status ProfileEquivalentToICC(const cmsContext context, const Profile& profile1,
   const double init = 1E-3;
   const double step = 0.2;
 
-  if (c.IsGray()) {
+  if (c.color_space == ColorSpace::kGray) {
     // Finer sampling and replicate each component.
     for (in[0] = init; in[0] < 1.0; in[0] += step / 8) {
       cmsDoTransform(xform1.get(), in, out1, 1);
       cmsDoTransform(xform2.get(), in, out2, 1);
-      if (!ApproxEq(out1[0], out2[0], 2E-4)) {
+      if (!cms::ApproxEq(out1[0], out2[0], 2E-4)) {
         return false;
       }
     }
@@ -618,7 +618,7 @@ Status ProfileEquivalentToICC(const cmsContext context, const Profile& profile1,
           cmsDoTransform(xform1.get(), in, out1, 1);
           cmsDoTransform(xform2.get(), in, out2, 1);
           for (size_t i = 0; i < 3; ++i) {
-            if (!ApproxEq(out1[i], out2[i], 2E-4)) {
+            if (!cms::ApproxEq(out1[i], out2[i], 2E-4)) {
               return false;
             }
           }
@@ -1010,7 +1010,7 @@ JXL_BOOL JxlCmsSetFieldsFromICC(void* user_data, const uint8_t* icc_data,
     return JXL_FAILURE("Invalid rendering intent %u\n", rendering_intent32);
   }
   // ICC and RenderingIntent have the same values (0..3).
-  c_enc.rendering_intent = static_cast<RenderingIntent>(rendering_intent32));
+  c_enc.rendering_intent = static_cast<RenderingIntent>(rendering_intent32);
 
   static constexpr size_t kCICPSize = 12;
   static constexpr auto kCICPSignature =
@@ -1118,11 +1118,11 @@ void* JxlCmsInit(void* init_data, size_t num_threads, size_t xsize,
 #else   // JPEGXL_ENABLE_SKCMS
   const cmsContext context = GetContext();
   Profile profile_src, profile_dst;
-  if (!DecodeProfile(context, Span<const uint8_t>(c_src.ICC()), &profile_src)) {
+  if (!DecodeProfile(context, Span<const uint8_t>(c_src.icc), &profile_src)) {
     JXL_NOTIFY_ERROR("JxlCmsInit: lcms failed to parse input ICC");
     return nullptr;
   }
-  if (!DecodeProfile(context, Span<const uint8_t>(c_dst.ICC()), &profile_dst)) {
+  if (!DecodeProfile(context, Span<const uint8_t>(c_dst.icc), &profile_dst)) {
     JXL_NOTIFY_ERROR("JxlCmsInit: lcms failed to parse output ICC");
     return nullptr;
   }
@@ -1265,7 +1265,7 @@ void* JxlCmsInit(void* init_data, size_t num_threads, size_t xsize,
   // Type includes color space (XYZ vs RGB), so can be different.
   const uint32_t type_src = Type32(c_src, channels_src == 4);
   const uint32_t type_dst = Type32(c_dst, false);
-  const uint32_t intent = static_cast<uint32_t>(c_dst.GetRenderingIntent());
+  const uint32_t intent = static_cast<uint32_t>(c_dst.rendering_intent);
   // Use cmsFLAGS_NOCACHE to disable the 1-pixel cache and make calling
   // cmsDoTransform() thread-safe.
   const uint32_t flags = cmsFLAGS_NOCACHE | cmsFLAGS_BLACKPOINTCOMPENSATION |
