@@ -8,14 +8,17 @@
 
 #include <jxl/cms_interface.h>
 #include <jxl/color_encoding.h>
+#include <jxl/types.h>
 
 #include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "lib/jxl/base/common.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/cms/color_management.h"
 
 namespace jxl {
