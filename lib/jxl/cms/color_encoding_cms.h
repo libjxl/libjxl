@@ -127,10 +127,10 @@ struct Customxy {
   }
 
   Status SetValue(const CIExy& xy) {
-    if (std::abs(xy.x) >= kRoughLimit) return JXL_FAILURE("X is out of bounds");
+    bool ok = (std::abs(xy.x) < kRoughLimit) && (std::abs(xy.y) < kRoughLimit);
+    if (!ok) return JXL_FAILURE("X or Y is out of bounds");
     x = static_cast<int32_t>(roundf(xy.x * kMul));
     if (x < kMin || x > kMax) return JXL_FAILURE("X is out of bounds");
-    if (std::abs(xy.y) >= kRoughLimit) return JXL_FAILURE("Y is out of bounds");
     y = static_cast<int32_t>(roundf(xy.y * kMul));
     if (y < kMin || y > kMax) return JXL_FAILURE("Y is out of bounds");
     return true;
