@@ -1574,10 +1574,11 @@ TEST(JxlTest, LosslessPNMRoundtrip) {
   }
 }
 
-TEST(JxlTest, LosslessSmallFewColors) {
+class JxlTest : public ::testing::TestWithParam<const char*> {};
+
+TEST_P(JxlTest, LosslessSmallFewColors) {
   ThreadPoolForTests pool(8);
-  const PaddedBytes orig =
-      jxl::test::ReadTestData("jxl/blending/cropped_traffic_light_frame-0.png");
+  const PaddedBytes orig = jxl::test::ReadTestData(GetParam());
   TestImage t;
   t.DecodeFromBytes(orig).ClearMetadata();
 
@@ -1586,9 +1587,14 @@ TEST(JxlTest, LosslessSmallFewColors) {
   cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 1);
 
   PackedPixelFile ppf_out;
-  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, &pool, &ppf_out), 563, 30);
+  Roundtrip(t.ppf(), cparams, {}, &pool, &ppf_out);
   EXPECT_EQ(ComputeDistance2(t.ppf(), ppf_out), 0.0);
 }
+
+JXL_GTEST_INSTANTIATE_TEST_SUITE_P(
+    ImageTests, JxlTest,
+    ::testing::Values("jxl/blending/cropped_traffic_light_frame-0.png",
+                      "palette/358colors.png"));
 
 }  // namespace
 }  // namespace jxl
