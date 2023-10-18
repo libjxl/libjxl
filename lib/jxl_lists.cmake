@@ -34,6 +34,18 @@ set(JPEGXL_INTERNAL_BASE_SOURCES
   jxl/base/status.h
 )
 
+set(JPEGXL_INTERNAL_CMS_SOURCES
+  jxl/cms/color_encoding_cms.h
+  jxl/cms/color_management.cc
+  jxl/cms/color_management.h
+  jxl/cms/jxl_cms.cc
+  jxl/cms/jxl_cms.h
+  jxl/cms/jxl_skcms.h
+  jxl/cms/opsin_params.h
+  jxl/cms/tone_mapping-inl.h
+  jxl/cms/transfer_functions-inl.h
+)
+
 set(JPEGXL_INTERNAL_CODEC_APNG_SOURCES
   extras/dec/apng.cc
   extras/dec/apng.h
@@ -124,12 +136,6 @@ set(JPEGXL_INTERNAL_DEC_SOURCES
   jxl/blending.h
   jxl/chroma_from_luma.cc
   jxl/chroma_from_luma.h
-  jxl/cms/color_encoding_cms.h
-  jxl/cms/color_management.cc
-  jxl/cms/color_management.h
-  jxl/cms/opsin_params.h
-  jxl/cms/tone_mapping-inl.h
-  jxl/cms/transfer_functions-inl.h
   jxl/codec_in_out.h
   jxl/coeff_order.cc
   jxl/coeff_order.h
@@ -413,9 +419,6 @@ set(JPEGXL_INTERNAL_ENC_SOURCES
   jxl/modular/transform/enc_squeeze.h
   jxl/modular/transform/enc_transform.cc
   jxl/modular/transform/enc_transform.h
-  jxl/cms/jxl_cms.cc
-  jxl/cms/jxl_cms.h
-  jxl/cms/jxl_skcms.h
 )
 
 set(JPEGXL_INTERNAL_EXTRAS_FOR_TOOLS_SOURCES

@@ -101,14 +101,14 @@ JxlColorEncoding CreateTestColorEncoding(bool is_gray) {
   // point CIE xy coordinates.
   ColorEncoding c_internal;
   JXL_CHECK(c_internal.FromExternal(c));
-  c_internal.ToExternal(&c);
+  c = c_internal.ToExternal();
   return c;
 }
 
 std::vector<uint8_t> GenerateICC(JxlColorEncoding color_encoding) {
   ColorEncoding c;
   JXL_CHECK(c.FromExternal(color_encoding));
-  JXL_CHECK(c.CreateICC());
+  JXL_CHECK(!c.ICC().empty());
   return c.ICC();
 }
 

@@ -2660,12 +2660,12 @@ JxlEncoderStatus JxlEncoderSetFrameBitDepth(
 
 void JxlColorEncodingSetToSRGB(JxlColorEncoding* color_encoding,
                                JXL_BOOL is_gray) {
-  jxl::ColorEncoding::SRGB(is_gray).ToExternal(color_encoding);
+  *color_encoding = jxl::ColorEncoding::SRGB(is_gray).ToExternal();
 }
 
 void JxlColorEncodingSetToLinearSRGB(JxlColorEncoding* color_encoding,
                                      JXL_BOOL is_gray) {
-  jxl::ColorEncoding::LinearSRGB(is_gray).ToExternal(color_encoding);
+  *color_encoding = jxl::ColorEncoding::LinearSRGB(is_gray).ToExternal();
 }
 
 void JxlEncoderAllowExpertOptions(JxlEncoder* enc) {

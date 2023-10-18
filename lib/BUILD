@@ -7,6 +7,7 @@
 load(
     "jxl_lists.bzl",
     "libjxl_base_sources",
+    "libjxl_cms_sources",
     "libjxl_codec_apng_sources",
     "libjxl_codec_exr_sources",
     "libjxl_codec_gif_sources",
@@ -96,6 +97,15 @@ genrule(
     compatible_with = DEFAULT_COMPATIBILITY,
 )
 
+JXL_CMS_EXPORT_H = INCLUDES_DIR + "/jxl/jxl_cms_export.h"
+
+genrule(
+    name = "create_jxl_cms_export",
+    outs = [JXL_CMS_EXPORT_H],
+    cmd = "echo '" + EXPORT_TEMPLATE.replace("@", "JXL_CMS") + "' > $@",
+    compatible_with = DEFAULT_COMPATIBILITY,
+)
+
 JXL_THREADS_EXPORT_H = INCLUDES_DIR + "/jxl/jxl_threads_export.h"
 
 genrule(
@@ -155,7 +165,10 @@ copy_file(
 
 cc_library(
     name = "includes",
-    hdrs = libjxl_public_headers + [JXL_EXPORT_H],
+    hdrs = libjxl_public_headers + [
+        JXL_EXPORT_H,
+        JXL_CMS_EXPORT_H,
+    ],
     compatible_with = DEFAULT_COMPATIBILITY,
     strip_include_prefix = INCLUDES_DIR,
     deps = [":jxl_version"],
@@ -184,7 +197,7 @@ cc_library(
 
 cc_library(
     name = "jpegxl",
-    srcs = libjxl_dec_sources + libjxl_dec_box_sources + libjxl_dec_jpeg_sources + libjxl_enc_sources,
+    srcs = libjxl_dec_sources + libjxl_dec_box_sources + libjxl_dec_jpeg_sources + libjxl_enc_sources + libjxl_cms_sources,
     compatible_with = DEFAULT_COMPATIBILITY,
     defines = ["JPEGXL_ENABLE_SKCMS=1"],
     deps = [
@@ -197,7 +210,7 @@ cc_library(
     name = "jpegxl_private",
     hdrs = [
         path
-        for path in libjxl_dec_sources + libjxl_dec_box_sources + libjxl_dec_jpeg_sources + libjxl_enc_sources
+        for path in libjxl_dec_sources + libjxl_dec_box_sources + libjxl_dec_jpeg_sources + libjxl_enc_sources + libjxl_cms_sources
         if path.endswith(".h") and not path.endswith("-inl.h")
     ],
     compatible_with = DEFAULT_COMPATIBILITY,

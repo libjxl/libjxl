@@ -29,7 +29,7 @@
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/cms/color_management.h"  // MaybeCreateProfile CIEXYZFromWhiteCIExy ExtraTF
+#include "lib/jxl/cms/color_management.h"
 #include "lib/jxl/cms/transfer_functions-inl.h"
 #include "lib/jxl/color_encoding_internal.h"
 #if JPEGXL_ENABLE_SKCMS
@@ -459,7 +459,8 @@ Status IdentifyPrimaries(const skcms_ICCProfile& profile,
          {-0.0085287, 0.0400428, 0.9684867}}};
     static constexpr float kWpD50XYZ[3] = {0.96420288, 1.0, 0.82490540};
     float wp_unadapted_XYZ[3];
-    JXL_RETURN_IF_ERROR(CIEXYZFromWhiteCIExy(wp_unadapted, wp_unadapted_XYZ));
+    JXL_RETURN_IF_ERROR(
+        CIEXYZFromWhiteCIExy(wp_unadapted.x, wp_unadapted.y, wp_unadapted_XYZ));
     float wp_D50_LMS[3], wp_unadapted_LMS[3];
     MatrixProduct(kLMSFromXYZ, kWpD50XYZ, wp_D50_LMS);
     MatrixProduct(kLMSFromXYZ, wp_unadapted_XYZ, wp_unadapted_LMS);
@@ -518,7 +519,7 @@ void DetectTransferFunction(const skcms_ICCProfile& profile,
     if (c->tf.SetGamma(gamma[0])) {
       skcms_ICCProfile profile_test;
       IccBytes bytes;
-      if (MaybeCreateProfile(*c, &bytes) &&
+      if (MaybeCreateProfile(c->ToExternal(), &bytes) &&
           DecodeProfile(bytes.data(), bytes.size(), &profile_test) &&
           skcms_ApproximatelyEqualProfiles(&profile, &profile_test)) {
         return;
@@ -534,7 +535,7 @@ void DetectTransferFunction(const skcms_ICCProfile& profile,
 
     skcms_ICCProfile profile_test;
     IccBytes bytes;
-    if (MaybeCreateProfile(*c, &bytes) &&
+    if (MaybeCreateProfile(c->ToExternal(), &bytes) &&
         DecodeProfile(bytes.data(), bytes.size(), &profile_test) &&
         skcms_ApproximatelyEqualProfiles(&profile, &profile_test)) {
       return;
@@ -758,7 +759,7 @@ void DetectTransferFunction(const cmsContext context, const Profile& profile,
 
   if (gamma != 0 && c->tf.SetGamma(gamma)) {
     IccBytes icc_test;
-    if (MaybeCreateProfile(*c, &icc_test) &&
+    if (MaybeCreateProfile(c->ToExternal(), &icc_test) &&
         ProfileEquivalentToICC(context, profile, icc_test, *c)) {
       return;
     }
@@ -771,7 +772,7 @@ void DetectTransferFunction(const cmsContext context, const Profile& profile,
     c->tf.SetTransferFunction(tf);
 
     IccBytes icc_test;
-    if (MaybeCreateProfile(*c, &icc_test) &&
+    if (MaybeCreateProfile(c->ToExternal(), &icc_test) &&
         ProfileEquivalentToICC(context, profile, icc_test, *c)) {
       return;
     }
@@ -825,8 +826,8 @@ Status GetPrimariesLuminances(const ColorEncoding& encoding,
   // that primary.
 
   float white_XYZ[3];
-  JXL_RETURN_IF_ERROR(
-      CIEXYZFromWhiteCIExy(encoding.GetWhitePoint(), white_XYZ));
+  CIExy wp = encoding.GetWhitePoint();
+  JXL_RETURN_IF_ERROR(CIEXYZFromWhiteCIExy(wp.x, wp.y, white_XYZ));
 
   const PrimariesCIExy primaries = encoding.GetPrimaries();
   double chromaticities[3][3] = {
@@ -980,7 +981,7 @@ JXL_BOOL JxlCmsSetFieldsFromICC(void* user_data, const uint8_t* icc_data,
                 profile.CICP.transfer_characteristics,
                 profile.CICP.matrix_coefficients,
                 profile.CICP.video_full_range_flag, &c_enc)) {
-    c_enc.ToExternal(c);
+    *c = c_enc.ToExternal();
     return true;
   }
 
@@ -1020,14 +1021,14 @@ JXL_BOOL JxlCmsSetFieldsFromICC(void* user_data, const uint8_t* icc_data,
           kCICPSize &&
       ApplyCICP(cicp_buffer[8], cicp_buffer[9], cicp_buffer[10],
                 cicp_buffer[11], &c_enc)) {
-    c_enc.ToExternal(c);
+    *c = c_enc.ToExternal();
     return true;
   }
 
   c_enc.color_space = ColorSpaceFromProfile(profile);
   if (cmsGetColorSpace(profile.get()) == cmsSigCmykData) {
     *cmyk = JXL_TRUE;
-    c_enc.ToExternal(c);
+    *c = c_enc.ToExternal();
     return true;
   }
 
@@ -1043,7 +1044,7 @@ JXL_BOOL JxlCmsSetFieldsFromICC(void* user_data, const uint8_t* icc_data,
 
 #endif  // JPEGXL_ENABLE_SKCMS
 
-  c_enc.ToExternal(c);
+  *c = c_enc.ToExternal();
   return true;
 }
 
@@ -1164,7 +1165,7 @@ void* JxlCmsInit(void* init_data, size_t num_threads, size_t xsize,
     Profile new_src;
 #endif  // JPEGXL_ENABLE_SKCMS
         // Only enable ExtraTF if profile creation succeeded.
-    if (MaybeCreateProfile(c_linear_src, &icc_src) &&
+    if (MaybeCreateProfile(c_linear_src.ToExternal(), &icc_src) &&
 #if JPEGXL_ENABLE_SKCMS
         DecodeProfile(icc_src.data(), icc_src.size(), &new_src)) {
 #else   // JPEGXL_ENABLE_SKCMS
@@ -1205,7 +1206,7 @@ void* JxlCmsInit(void* init_data, size_t num_threads, size_t xsize,
     Profile new_dst;
 #endif  // JPEGXL_ENABLE_SKCMS
     // Only enable ExtraTF if profile creation succeeded.
-    if (MaybeCreateProfile(c_linear_dst, &icc_dst) &&
+    if (MaybeCreateProfile(c_linear_dst.ToExternal(), &icc_dst) &&
 #if JPEGXL_ENABLE_SKCMS
         DecodeProfile(icc_dst.data(), icc_dst.size(), &new_dst)) {
 #else   // JPEGXL_ENABLE_SKCMS
@@ -1246,7 +1247,7 @@ void* JxlCmsInit(void* init_data, size_t num_threads, size_t xsize,
   if (!skcms_MakeUsableAsDestination(&t->profile_dst)) {
     JXL_NOTIFY_ERROR(
         "Failed to make %s usable as a color transform destination",
-        Description(c_dst).c_str());
+        ColorEncodingDescription(c_dst.ToExternal()).c_str());
     return nullptr;
   }
 #endif  // JPEGXL_ENABLE_SKCMS
@@ -1317,7 +1318,9 @@ float* JxlCmsGetDstBuf(void* cms_data, size_t thread) {
 
 }  // namespace
 
-extern "C" const JxlCmsInterface* JxlGetDefaultCms() {
+extern "C" {
+
+const JxlCmsInterface* JxlGetDefaultCms() {
   static constexpr JxlCmsInterface kInterface = {
       /*set_fields_data=*/nullptr,
       /*set_fields_from_icc=*/&JxlCmsSetFieldsFromICC,
@@ -1329,6 +1332,57 @@ extern "C" const JxlCmsInterface* JxlGetDefaultCms() {
       /*destroy=*/&JxlCmsDestroy};
   return &kInterface;
 }
+
+JXL_BOOL JxlCmsCIEXYZFromWhiteCIExy(double wx, double wy, float XYZ[3]) {
+  return TO_JXL_BOOL(CIEXYZFromWhiteCIExy(wx, wy, XYZ));
+}
+
+JXL_BOOL JxlCmsPrimariesToXYZ(float rx, float ry, float gx, float gy, float bx,
+                              float by, float wx, float wy, float matrix[9]) {
+  return TO_JXL_BOOL(PrimariesToXYZ(rx, ry, gx, gy, bx, by, wx, wy, matrix));
+}
+
+// Adapts whitepoint x, y to D50
+JXL_BOOL JxlCmsAdaptToXYZD50(float wx, float wy, float matrix[9]) {
+  return TO_JXL_BOOL(AdaptToXYZD50(wx, wy, matrix));
+}
+
+JXL_BOOL JxlCmsPrimariesToXYZD50(float rx, float ry, float gx, float gy,
+                                 float bx, float by, float wx, float wy,
+                                 float matrix[9]) {
+  return TO_JXL_BOOL(PrimariesToXYZD50(rx, ry, gx, gy, bx, by, wx, wy, matrix));
+}
+
+// Returns a representation of the ColorEncoding fields (not icc).
+// Example description: "RGB_D65_SRG_Rel_Lin"
+size_t JxlCmsColorEncodingDescription(const JxlColorEncoding& c,
+                                      char out[320]) {
+  out[0] = 0;
+  std::string d = ColorEncodingDescription(c);
+  size_t len = d.size();
+  if (len >= 320) {  // Impossible
+    return 0;
+  }
+  memcpy(out, d.c_str(), len + 1);
+  return len;
+}
+
+JXL_BOOL JxlCmsCreateProfile(const JxlColorEncoding& c, uint8_t** out,
+                             size_t* out_size) {
+  std::vector<uint8_t> icc;
+  *out = nullptr;
+  *out_size = 0;
+  if (!MaybeCreateProfile(c, &icc)) {
+    return JXL_FALSE;
+  }
+  *out = reinterpret_cast<uint8_t*>(malloc(icc.size()));
+  if (!*out) return JXL_FALSE;
+  memcpy(*out, icc.data(), icc.size());
+  *out_size = icc.size();
+  return JXL_TRUE;
+}
+
+}  // extern "C"
 
 }  // namespace jxl
 #endif  // HWY_ONCE

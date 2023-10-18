@@ -133,6 +133,8 @@ function(strip_static OUTPUT_VAR LIB_LIST)
   set(${OUTPUT_VAR} ${out_list} PARENT_SCOPE)
 endfunction()
 
+# The jxl_cms library definition.
+include(jxl_cms.cmake)
 # The jxl library definition.
 include(jxl.cmake)
 

@@ -244,7 +244,7 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
 
   // Convert the color encoding
   ppf->icc.assign(c_desired.ICC().begin(), c_desired.ICC().end());
-  c_desired.ToExternal(&ppf->color_encoding);
+  ppf->color_encoding = c_desired.ToExternal();
 
   // Convert the extra blobs
   ppf->metadata.exif = io.blobs.exif;
