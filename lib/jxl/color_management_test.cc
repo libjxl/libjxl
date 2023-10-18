@@ -11,11 +11,13 @@
 #include <string>
 #include <utility>
 
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/random.h"
 #include "lib/jxl/base/span.h"
+#include "lib/jxl/cms/color_encoding_cms.h"
 #include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/cms/opsin_params.h"
 #include "lib/jxl/color_encoding_internal.h"
