@@ -33,6 +33,7 @@ add_library(jxl_extras_internal-obj OBJECT
 )
 list(APPEND JXL_EXTRAS_OBJECT_LIBRARIES jxl_extras_internal-obj)
 list(APPEND JXL_EXTRAS_OBJECTS $<TARGET_OBJECTS:jxl_extras_internal-obj>)
+list(APPEND JXL_EXTRAS_OBJECTS ${JXL_CMS_OBJECTS})
 
 set(JXL_EXTRAS_CODEC_INTERNAL_LIBRARIES)
 
@@ -145,7 +146,6 @@ add_library(jxl_extras-static STATIC EXCLUDE_FROM_ALL ${JXL_EXTRAS_OBJECTS})
 target_link_libraries(jxl_extras-static PUBLIC
   ${JXL_EXTRAS_CODEC_INTERNAL_LIBRARIES}
   jxl-static
-  jxl_cms-static
   jxl_threads-static
 )
 if(JPEGXL_ENABLE_JPEGLI)

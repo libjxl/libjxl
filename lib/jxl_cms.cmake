@@ -57,14 +57,6 @@ else ()
   target_link_libraries(jxl_cms-obj INTERFACE lcms2)
 endif ()
 
-add_library(jxl_cms-static STATIC ${JXL_CMS_OBJECTS})
-if (NOT WIN32 OR MINGW)
-  set_target_properties(jxl_cms-static PROPERTIES OUTPUT_NAME "jxl_cms")
-endif()
-
-install(TARGETS jxl_cms-static DESTINATION ${CMAKE_INSTALL_LIBDIR})
-
-if (BUILD_SHARED_LIBS AND NOT MINGW)
 add_library(jxl_cms SHARED ${JXL_CMS_OBJECTS})
 target_link_libraries(jxl_cms PRIVATE hwy)
 
@@ -78,12 +70,6 @@ install(TARGETS jxl_cms
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
-
-else()  # BUILD_SHARED_LIBS
-
-add_library(jxl_cms ALIAS jxl_cms-static)
-
-endif()  # BUILD_SHARED_LIBS
 
 set(JPEGXL_CMS_LIBRARY_REQUIRES "")
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/jxl/libjxl_cms.pc.in"

@@ -354,7 +354,6 @@ foreach(FUZZER IN LISTS FUZZER_BINARIES)
   if(FUZZER STREQUAL djxl_fuzzer)
     target_link_libraries("${BINARY}"
       jxl_dec-static
-      jxl_cms-static
       jxl_threads-static
     )
   elseif(FUZZER STREQUAL jpegli_dec_fuzzer)
@@ -427,7 +426,7 @@ if (JNI_FOUND AND Java_FOUND)
   # decoder_jni_onload.cc might be necessary for Android; not used yet.
   add_library(jxl_jni SHARED jni/org/jpeg/jpegxl/wrapper/decoder_jni.cc)
   target_include_directories(jxl_jni PRIVATE "${JNI_INCLUDE_DIRS}" "${PROJECT_SOURCE_DIR}")
-  target_link_libraries(jxl_jni PUBLIC jxl_dec-static jxl_cms-static jxl_threads-static)
+  target_link_libraries(jxl_jni PUBLIC jxl_dec-static jxl_extras-static jxl_threads-static)
   if(NOT DEFINED JPEGXL_INSTALL_JNIDIR)
     set(JPEGXL_INSTALL_JNIDIR ${CMAKE_INSTALL_LIBDIR})
   endif()

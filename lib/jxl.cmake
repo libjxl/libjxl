@@ -145,6 +145,7 @@ set_target_properties(jxl_enc-obj PROPERTIES
 add_library(jxl_dec-static STATIC
   $<TARGET_OBJECTS:jxl_base-obj>
   $<TARGET_OBJECTS:jxl_dec-obj>
+  ${JXL_CMS_OBJECTS}
 )
 target_link_libraries(jxl_dec-static
   PUBLIC ${JPEGXL_COVERAGE_FLAGS} ${JPEGXL_DEC_INTERNAL_LIBS} jxl_includes)
@@ -154,16 +155,14 @@ set(JPEGXL_INTERNAL_OBJECTS
   $<TARGET_OBJECTS:jxl_base-obj>
   $<TARGET_OBJECTS:jxl_enc-obj>
   $<TARGET_OBJECTS:jxl_dec-obj>
+  ${JXL_CMS_OBJECTS}
 )
 
 # Private static library. This exposes all the internal functions and is used
 # for tests.
 # TODO(lode): once the source files are correctly split so that it is possible
 # to do, remove $<TARGET_OBJECTS:jxl_dec-obj> here and depend on jxl_dec-static
-add_library(jxl-static STATIC
-  ${JPEGXL_INTERNAL_OBJECTS}
-  ${JXL_CMS_OBJECTS}
-)
+add_library(jxl-static STATIC ${JPEGXL_INTERNAL_OBJECTS})
 target_link_libraries(jxl-static PUBLIC
   ${JPEGXL_COVERAGE_FLAGS}
   ${JPEGXL_INTERNAL_LIBS}
@@ -284,8 +283,7 @@ add_library(jxl_dec ALIAS jxl_dec-static)
 endif()  # BUILD_SHARED_LIBS
 
 # Add a pkg-config file for libjxl.
-set(JPEGXL_LIBRARY_REQUIRES
-    "libhwy libbrotlienc libbrotlidec libjxl_cms")
+set(JPEGXL_LIBRARY_REQUIRES "libhwy libbrotlienc libbrotlidec")
 
 # Allow adding prefix if CMAKE_INSTALL_INCLUDEDIR not absolute.
 if(IS_ABSOLUTE "${CMAKE_INSTALL_INCLUDEDIR}")
@@ -300,6 +298,12 @@ else()
     set(PKGCONFIG_TARGET_LIBS "\${exec_prefix}/${CMAKE_INSTALL_LIBDIR}")
 endif()
 
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/jxl/libjxl.pc.in"
+               "libjxl-static.pc" @ONLY)
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/libjxl-static.pc"
+  DESTINATION "${CMAKE_INSTALL_LIBDIR}/pkgconfig")
+
+set (JPEGXL_LIBRARY_REQUIRES "${JPEGXL_LIBRARY_REQUIRES} libjxl_cms")
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/jxl/libjxl.pc.in"
                "libjxl.pc" @ONLY)
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/libjxl.pc"
