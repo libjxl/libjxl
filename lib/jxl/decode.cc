@@ -2231,7 +2231,7 @@ JxlDecoderStatus JxlDecoderGetColorAsEncodedProfile(
     return JXL_DEC_ERROR;  // Indicate no encoded profile available.
 
   if (color_encoding) {
-    jxl_color_encoding->ToExternal(color_encoding);
+    *color_encoding = jxl_color_encoding->ToExternal();
   }
 
   return JXL_DEC_SUCCESS;

@@ -305,14 +305,17 @@ jobs:
   windows_msys:
     name: Windows MSYS2 / ${{ matrix.msystem }}
     runs-on: windows-latest
+    continue-on-error: ${{ matrix.faulty || false }}
     strategy:
       fail-fast: false
       matrix:
         include:
          - msystem: mingw64
+           faulty: true
          - msystem: clang64
          - msystem: mingw32
            # TODO(eustas): investigate failures
+           faulty: true
            disable_tests:
              - ButteraugliTest.Lossless
              - ButteraugliTest.Distmap

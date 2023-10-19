@@ -266,19 +266,22 @@ Status OutputEncodingInfo::SetColorEncoding(const ColorEncoding& c_desired) {
     const auto& srgb = ColorEncoding::SRGB(/*is_gray=*/false);
     PrimariesCIExy p = srgb.GetPrimaries();
     CIExy w = srgb.GetWhitePoint();
-    JXL_CHECK(PrimariesToXYZD50(p.r.x, p.r.y, p.g.x, p.g.y, p.b.x, p.b.y, w.x,
-                                w.y, srgb_to_xyzd50));
+    JXL_CHECK(JxlCmsPrimariesToXYZD50(p.r.x, p.r.y, p.g.x, p.g.y, p.b.x, p.b.y,
+                                      w.x, w.y, srgb_to_xyzd50));
     float original_to_xyz[3][3];
     p = c_desired.GetPrimaries();
     w = c_desired.GetWhitePoint();
-    JXL_RETURN_IF_ERROR(PrimariesToXYZ(p.r.x, p.r.y, p.g.x, p.g.y, p.b.x, p.b.y,
-                                       w.x, w.y, &original_to_xyz[0][0]));
+    if (!JxlCmsPrimariesToXYZ(p.r.x, p.r.y, p.g.x, p.g.y, p.b.x, p.b.y, w.x,
+                              w.y, &original_to_xyz[0][0])) {
+      return JXL_FAILURE("PrimariesToXYZ failed");
+    }
     memcpy(luminances, original_to_xyz[1], sizeof luminances);
     if (xyb_encoded) {
       float adapt_to_d50[9];
-      JXL_RETURN_IF_ERROR(AdaptToXYZD50(c_desired.GetWhitePoint().x,
-                                        c_desired.GetWhitePoint().y,
-                                        adapt_to_d50));
+      if (!JxlCmsAdaptToXYZD50(c_desired.GetWhitePoint().x,
+                               c_desired.GetWhitePoint().y, adapt_to_d50)) {
+        return JXL_FAILURE("AdaptToXYZD50 failed");
+      }
       float xyzd50_to_original[9];
       Mul3x3Matrix(adapt_to_d50, &original_to_xyz[0][0], xyzd50_to_original);
       JXL_RETURN_IF_ERROR(Inv3x3Matrix(xyzd50_to_original));

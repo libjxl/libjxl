@@ -246,7 +246,7 @@ Status BenchmarkArgs::ValidateArgs() {
       return false;  // already warned
     }
     JXL_RETURN_IF_ERROR(output_encoding.FromExternal(output_encoding_external));
-    JXL_RETURN_IF_ERROR(output_encoding.CreateICC());
+    JXL_RETURN_IF_ERROR(!output_encoding.ICC().empty());
   }
 
   JXL_RETURN_IF_ERROR(ValidateArgsJxlCodec(this));

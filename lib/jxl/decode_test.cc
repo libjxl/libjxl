@@ -1105,8 +1105,7 @@ TEST(DecodeTest, IccProfileTestXybEncoded) {
   // Test after setting the preferred color profile to non-linear sRGB:
   // for XYB images with ICC profile, this setting is expected to take effect.
   jxl::ColorEncoding temp_jxl_srgb = jxl::ColorEncoding::SRGB(false);
-  JxlColorEncoding pixel_encoding_srgb;
-  temp_jxl_srgb.ToExternal(&pixel_encoding_srgb);
+  JxlColorEncoding pixel_encoding_srgb = temp_jxl_srgb.ToExternal();
   EXPECT_EQ(JXL_DEC_SUCCESS,
             JxlDecoderSetPreferredColorProfile(dec, &pixel_encoding_srgb));
   EXPECT_EQ(JXL_DEC_SUCCESS,
@@ -1139,8 +1138,7 @@ TEST(DecodeTest, IccProfileTestXybEncoded) {
   // updated.
 
   jxl::ColorEncoding temp_jxl_linear = jxl::ColorEncoding::LinearSRGB(false);
-  JxlColorEncoding pixel_encoding_linear;
-  temp_jxl_linear.ToExternal(&pixel_encoding_linear);
+  JxlColorEncoding pixel_encoding_linear = temp_jxl_linear.ToExternal();
 
   EXPECT_EQ(JXL_DEC_SUCCESS,
             JxlDecoderSetPreferredColorProfile(dec, &pixel_encoding_linear));

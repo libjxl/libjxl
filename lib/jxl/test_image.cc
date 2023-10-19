@@ -311,8 +311,8 @@ TestImage& TestImage::SetColorEncoding(const std::string& description) {
   JXL_CHECK(ParseDescription(description, &ppf_.color_encoding));
   ColorEncoding c_enc;
   JXL_CHECK(c_enc.FromExternal(ppf_.color_encoding));
-  JXL_CHECK(c_enc.CreateICC());
   IccBytes icc = c_enc.ICC();
+  JXL_CHECK(!icc.empty());
   ppf_.icc.assign(icc.begin(), icc.end());
   return *this;
 }
