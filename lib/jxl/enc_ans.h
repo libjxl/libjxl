@@ -9,22 +9,14 @@
 // Library to encode the ANS population counts to the bit-stream and encode
 // symbols based on the respective distributions.
 
-#include <stddef.h>
-#include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
-
-#include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <vector>
 
-#include "lib/jxl/ans_common.h"
 #include "lib/jxl/ans_params.h"
-#include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_ans.h"
 #include "lib/jxl/enc_ans_params.h"
 #include "lib/jxl/enc_bit_writer.h"
-#include "lib/jxl/huffman_table.h"
 
 namespace jxl {
 

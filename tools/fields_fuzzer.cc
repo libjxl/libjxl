@@ -5,6 +5,7 @@
 
 #include <stdint.h>
 
+#include "lib/jxl/dec_ans.h"
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/headers.h"

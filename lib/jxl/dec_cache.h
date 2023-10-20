@@ -16,6 +16,7 @@
 #include "lib/jxl/base/common.h"  // kMaxNumPasses
 #include "lib/jxl/coeff_order.h"
 #include "lib/jxl/convolve.h"
+#include "lib/jxl/dec_ans.h"
 #include "lib/jxl/dec_group_border.h"
 #include "lib/jxl/dec_noise.h"
 #include "lib/jxl/image.h"
