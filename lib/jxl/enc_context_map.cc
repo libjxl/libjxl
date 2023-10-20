@@ -71,7 +71,7 @@ void EncodeContextMap(const std::vector<uint8_t>& context_map,
   std::vector<uint8_t> transformed_symbols = MoveToFrontTransform(context_map);
   std::vector<std::vector<Token>> tokens(1), mtf_tokens(1);
   EntropyEncodingData codes;
-  std::vector<uint8_t> dummy_context_map;
+  std::vector<uint8_t> sink_context_map;
   for (size_t i = 0; i < context_map.size(); i++) {
     tokens[0].emplace_back(0, context_map[i]);
   }
@@ -81,9 +81,9 @@ void EncodeContextMap(const std::vector<uint8_t>& context_map,
   HistogramParams params;
   params.uint_method = HistogramParams::HybridUintMethod::kContextMap;
   size_t ans_cost = BuildAndEncodeHistograms(
-      params, 1, tokens, &codes, &dummy_context_map, nullptr, 0, nullptr);
+      params, 1, tokens, &codes, &sink_context_map, nullptr, 0, nullptr);
   size_t mtf_cost = BuildAndEncodeHistograms(
-      params, 1, mtf_tokens, &codes, &dummy_context_map, nullptr, 0, nullptr);
+      params, 1, mtf_tokens, &codes, &sink_context_map, nullptr, 0, nullptr);
   bool use_mtf = mtf_cost < ans_cost;
   // Rebuild token list.
   tokens[0].clear();
@@ -102,9 +102,9 @@ void EncodeContextMap(const std::vector<uint8_t>& context_map,
   } else {
     writer->Write(1, 0);
     writer->Write(1, use_mtf);  // Use/don't use MTF.
-    BuildAndEncodeHistograms(params, 1, tokens, &codes, &dummy_context_map,
+    BuildAndEncodeHistograms(params, 1, tokens, &codes, &sink_context_map,
                              writer, layer, aux_out);
-    WriteTokens(tokens[0], codes, dummy_context_map, writer);
+    WriteTokens(tokens[0], codes, sink_context_map, writer);
   }
 }
 
