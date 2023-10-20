@@ -93,7 +93,8 @@ FlatTree FilterTree(const Tree &global_tree,
           cur_child = global_tree[cur_child].rchild;
         }
       }
-      // We ended up in a leaf, add a dummy decision and two copies of the leaf.
+      // We ended up in a leaf, add a placeholder decision and two copies of the
+      // leaf.
       if (global_tree[cur_child].property == -1) {
         flat.properties[i] = 0;
         flat.splitvals[i] = 0;

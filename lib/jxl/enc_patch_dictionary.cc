@@ -760,9 +760,9 @@ void RoundtripPatchFrame(Image3F* reference_frame,
   ib.SetFromImage(std::move(*reference_frame),
                   state->shared.metadata->m.color_encoding);
   if (!ib.metadata()->extra_channel_info.empty()) {
-    // Add dummy extra channels to the patch image: patch encoding does not yet
-    // support extra channels, but the codec expects that the amount of extra
-    // channels in frames matches that in the metadata of the codestream.
+    // Add placeholder extra channels to the patch image: patch encoding does
+    // not yet support extra channels, but the codec expects that the amount of
+    // extra channels in frames matches that in the metadata of the codestream.
     std::vector<ImageF> extra_channels;
     extra_channels.reserve(ib.metadata()->extra_channel_info.size());
     for (size_t i = 0; i < ib.metadata()->extra_channel_info.size(); i++) {

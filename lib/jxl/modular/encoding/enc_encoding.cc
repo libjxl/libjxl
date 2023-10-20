@@ -461,11 +461,12 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
       std::vector<uint32_t> channel_pixel_count;
       CollectPixelSamples(image, options, 0, group_pixel_count,
                           channel_pixel_count, pixel_samples, diff_samples);
-      std::vector<ModularMultiplierInfo> dummy_multiplier_info;
+      std::vector<ModularMultiplierInfo> placeholder_multiplier_info;
       StaticPropRange range;
       tree_samples_storage.PreQuantizeProperties(
-          range, dummy_multiplier_info, group_pixel_count, channel_pixel_count,
-          pixel_samples, diff_samples, options.max_property_values);
+          range, placeholder_multiplier_info, group_pixel_count,
+          channel_pixel_count, pixel_samples, diff_samples,
+          options.max_property_values);
     }
     for (size_t i = 0; i < nb_channels; i++) {
       if (!image.channel[i].w || !image.channel[i].h) {

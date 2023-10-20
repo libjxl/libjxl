@@ -339,7 +339,7 @@ PaddedBytes CreateTestJXLCodestream(Span<const uint8_t> pixels, size_t xsize,
       }
       uint32_t jxlp_index = 0;
       if (add_container == kCSBF_Multi_First_Empty) {
-        // Dummy (empty) codestream part
+        // Empty placeholder codestream part
         AppendU32BE(12, &c);
         c.push_back('j');
         c.push_back('x');
@@ -358,7 +358,7 @@ PaddedBytes CreateTestJXLCodestream(Span<const uint8_t> pixels, size_t xsize,
       // A few non-codestream boxes in between
       AppendTestBox(unk1_box_type, unk1_box_contents, unk1_box_size, false, &c);
       AppendTestBox(unk2_box_type, unk2_box_contents, unk2_box_size, false, &c);
-      // Dummy (empty) codestream part
+      // Empty placeholder codestream part
       AppendU32BE(12, &c);
       c.push_back('j');
       c.push_back('x');
@@ -389,7 +389,7 @@ PaddedBytes CreateTestJXLCodestream(Span<const uint8_t> pixels, size_t xsize,
       }
       c.append(compressed2.data(), compressed2.data() + compressed2.size());
       if (add_container == kCSBF_Multi_Last_Empty_Other) {
-        // Dummy (empty) codestream part
+        // Empty placeholder codestream part
         AppendU32BE(12, &c);
         c.push_back('j');
         c.push_back('x');
