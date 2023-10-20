@@ -193,7 +193,7 @@ trap 'retcode=$?; { set +x; } 2>/dev/null; on_exit ${retcode}' INT TERM EXIT
 # running from a merge request pipeline).
 MR_HEAD_SHA=""
 # The common ancestor between the current commit and the tracked branch, such
-# as master. This includes a list
+# as main. This includes a list
 MR_ANCESTOR_SHA=""
 
 # Populate MR_HEAD_SHA and MR_ANCESTOR_SHA.
