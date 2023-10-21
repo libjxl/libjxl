@@ -15,6 +15,8 @@
 #include "lib/jxl/chroma_from_luma.h"
 #include "lib/jxl/common.h"  // JXL_HIGH_PRECISION
 #include "lib/jxl/dct_scales.h"
+#include "lib/jxl/dec_ans.h"
+#include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/pack_signed.h"
 
 #undef HWY_TARGET_INCLUDE
