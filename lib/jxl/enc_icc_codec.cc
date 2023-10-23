@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "lib/jxl/base/byte_order.h"
+#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/enc_ans.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/fields.h"
@@ -105,7 +106,8 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
   EncodeVarInt(size, result);
 
   // Header
-  PaddedBytes header = ICCInitialHeaderPrediction();
+  PaddedBytes header;
+  header.append(ICCInitialHeaderPrediction());
   EncodeUint32(0, size, &header);
   for (size_t i = 0; i < kICCHeaderSize && i < size; i++) {
     ICCPredictHeader(icc, size, header.data(), i);

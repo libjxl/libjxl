@@ -13,7 +13,6 @@
 #include <QString>
 
 #include "lib/jxl/base/common.h"
-#include "lib/jxl/base/padded_bytes.h"
 #include "tools/comparison_viewer/ui_codec_comparison_window.h"
 
 namespace jpegxl {

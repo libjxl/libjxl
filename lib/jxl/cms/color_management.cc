@@ -1056,8 +1056,8 @@ Status MaybeCreateProfile(const JxlColorEncoding& c,
   WriteICCUint32(header.size() + tagtable.size() + tags.size(), 0, &header);
 
   *icc = header;
-  Span<const uint8_t>(tagtable).AppendTo(icc);
-  Span<const uint8_t>(tags).AppendTo(icc);
+  Bytes(tagtable).AppendTo(icc);
+  Bytes(tags).AppendTo(icc);
 
   // The MD5 checksum must be computed on the profile with profile flags,
   // rendering intent, and region of the checksum itself, set to 0.

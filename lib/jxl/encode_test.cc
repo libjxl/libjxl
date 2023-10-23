@@ -11,6 +11,7 @@
 #include <jxl/encode_cxx.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <ostream>
@@ -73,7 +74,7 @@ TEST(EncodeTest, AddJPEGAfterCloseTest) {
   JxlEncoderCloseInput(enc.get());
 
   const std::string jpeg_path = "jxl/flower/flower.png.im_q85_420.jpg";
-  const jxl::PaddedBytes orig = jxl::test::ReadTestData(jpeg_path);
+  const std::vector<uint8_t> orig = jxl::test::ReadTestData(jpeg_path);
 
   JxlEncoderFrameSettings* frame_settings =
       JxlEncoderFrameSettingsCreate(enc.get(), NULL);
@@ -200,8 +201,7 @@ void VerifyFrameEncoding(size_t xsize, size_t ysize, JxlEncoder* enc,
   EXPECT_EQ(JXL_ENC_SUCCESS, process_result);
   jxl::CodecInOut decoded_io;
   EXPECT_TRUE(jxl::test::DecodeFile(
-      {}, jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
-      &decoded_io));
+      {}, jxl::Bytes(compressed.data(), compressed.size()), &decoded_io));
 
   EXPECT_LE(
       ComputeDistance2(input_io.Main(), decoded_io.Main(), *JxlGetDefaultCms()),
@@ -653,7 +653,7 @@ struct Box {
   char extended_type[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
   // Box data.
-  jxl::Span<const uint8_t> data = jxl::Span<const uint8_t>(nullptr, 0);
+  jxl::Span<const uint8_t> data = jxl::Bytes(nullptr, 0);
 
   // If the size is not given, the datasize extends to the end of the file.
   // If this field is false, the size field is not encoded when the box is
@@ -697,16 +697,14 @@ struct Box {
         return true;
       }
       data_size_given = true;
-      data = jxl::Span<const uint8_t>(in->data() + header_size,
-                                      box_size - header_size);
+      data = jxl::Bytes(in->data() + header_size, box_size - header_size);
     } else {
       data_size_given = false;
-      data = jxl::Span<const uint8_t>(in->data() + header_size,
-                                      in->size() - header_size);
+      data = jxl::Bytes(in->data() + header_size, in->size() - header_size);
     }
 
-    *in = jxl::Span<const uint8_t>(in->data() + header_size + data.size(),
-                                   in->size() - header_size - data.size());
+    *in = jxl::Bytes(in->data() + header_size + data.size(),
+                     in->size() - header_size - data.size());
     return true;
   }
 };
@@ -804,7 +802,7 @@ TEST(EncodeTest, SingleFrameBoundedJXLCTest) {
 
   Container container = {};
   jxl::Span<const uint8_t> encoded_span =
-      jxl::Span<const uint8_t>(compressed.data(), compressed.size());
+      jxl::Bytes(compressed.data(), compressed.size());
   EXPECT_TRUE(container.Decode(&encoded_span));
   EXPECT_EQ(0u, encoded_span.size());
   bool found_jxlc = false;
@@ -877,7 +875,7 @@ TEST(EncodeTest, CodestreamLevelTest) {
 
   Container container = {};
   jxl::Span<const uint8_t> encoded_span =
-      jxl::Span<const uint8_t>(compressed.data(), compressed.size());
+      jxl::Bytes(compressed.data(), compressed.size());
   EXPECT_TRUE(container.Decode(&encoded_span));
   EXPECT_EQ(0u, encoded_span.size());
   EXPECT_EQ(0, memcmp("jxll", container.boxes[0].type, 4));
@@ -914,7 +912,7 @@ TEST(EncodeTest, CodestreamLevelVerificationTest) {
 
 TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGReconstructionTest)) {
   const std::string jpeg_path = "jxl/flower/flower.png.im_q85_420.jpg";
-  const jxl::PaddedBytes orig = jxl::test::ReadTestData(jpeg_path);
+  const std::vector<uint8_t> orig = jxl::test::ReadTestData(jpeg_path);
 
   JxlEncoderPtr enc = JxlEncoderMake(nullptr);
   JxlEncoderFrameSettings* frame_settings =
@@ -954,7 +952,7 @@ TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGReconstructionTest)) {
 
 TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(ProgressiveJPEGReconstructionTest)) {
   const std::string jpeg_path = "jxl/flower/flower.png.im_q85_420.jpg";
-  const jxl::PaddedBytes orig = jxl::test::ReadTestData(jpeg_path);
+  const std::vector<uint8_t> orig = jxl::test::ReadTestData(jpeg_path);
 
   JxlEncoderPtr enc = JxlEncoderMake(nullptr);
   JxlEncoderFrameSettings* frame_settings =
@@ -1463,9 +1461,9 @@ TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGFrameTest)) {
       // cannot set color encoding if basic info is not set
       if (skip_basic_info && !skip_color_encoding) continue;
       const std::string jpeg_path = "jxl/flower/flower_cropped.jpg";
-      const jxl::PaddedBytes orig = jxl::test::ReadTestData(jpeg_path);
+      const std::vector<uint8_t> orig = jxl::test::ReadTestData(jpeg_path);
       jxl::CodecInOut orig_io;
-      ASSERT_TRUE(SetFromBytes(jxl::Span<const uint8_t>(orig), &orig_io,
+      ASSERT_TRUE(SetFromBytes(jxl::Bytes(orig), &orig_io,
                                /*pool=*/nullptr));
 
       JxlEncoderPtr enc = JxlEncoderMake(nullptr);
@@ -1511,8 +1509,7 @@ TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGFrameTest)) {
 
       jxl::CodecInOut decoded_io;
       EXPECT_TRUE(jxl::test::DecodeFile(
-          {}, jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
-          &decoded_io));
+          {}, jxl::Bytes(compressed.data(), compressed.size()), &decoded_io));
 
       EXPECT_LE(ComputeDistance2(orig_io.Main(), decoded_io.Main(),
                                  *JxlGetDefaultCms()),

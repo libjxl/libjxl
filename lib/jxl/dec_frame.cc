@@ -82,7 +82,7 @@ Status DecodeFrame(PassesDecoderState* dec_state, ThreadPool* JXL_RESTRICT pool,
   FrameDecoder frame_decoder(dec_state, metadata, pool,
                              use_slow_rendering_pipeline);
 
-  BitReader reader(Span<const uint8_t>(next_in, avail_in));
+  BitReader reader(Bytes(next_in, avail_in));
   JXL_RETURN_IF_ERROR(frame_decoder.InitFrame(&reader, decoded,
                                               /*is_preview=*/false));
   JXL_RETURN_IF_ERROR(frame_decoder.InitFrameOutput());
@@ -102,8 +102,7 @@ Status DecodeFrame(PassesDecoderState* dec_state, ThreadPool* JXL_RESTRICT pool,
     size_t index = 0;
     for (auto toc_entry : frame_decoder.Toc()) {
       JXL_RETURN_IF_ERROR(pos + toc_entry.size <= avail_in);
-      auto br = make_unique<BitReader>(
-          Span<const uint8_t>(next_in + pos, toc_entry.size));
+      auto br = make_unique<BitReader>(Bytes(next_in + pos, toc_entry.size));
       section_info.emplace_back(
           FrameDecoder::SectionInfo{br.get(), toc_entry.id, index++});
       section_closers.emplace_back(

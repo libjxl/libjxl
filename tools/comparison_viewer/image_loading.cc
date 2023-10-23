@@ -7,6 +7,8 @@
 
 #include <QRgb>
 #include <QThread>
+#include <cstdint>
+#include <vector>
 
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/color_hints.h"
@@ -25,7 +27,6 @@ using jxl::ColorEncoding;
 using jxl::IccBytes;
 using jxl::Image3F;
 using jxl::ImageBundle;
-using jxl::PaddedBytes;
 using jxl::Rect;
 using jxl::Span;
 using jxl::Status;
@@ -36,7 +37,7 @@ namespace {
 
 Status loadFromFile(const QString& filename, const ColorHints& color_hints,
                     CodecInOut* const decoded, ThreadPool* const pool) {
-  PaddedBytes compressed;
+  std::vector<uint8_t> compressed;
   JXL_RETURN_IF_ERROR(
       jpegxl::tools::ReadFile(filename.toStdString(), &compressed));
   const Span<const uint8_t> compressed_span(compressed);

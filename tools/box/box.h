@@ -8,18 +8,18 @@
 #ifndef TOOLS_BOX_BOX_H_
 #define TOOLS_BOX_BOX_H_
 
-#include <stddef.h>
-#include <stdint.h>
-
-#include <string>
+#include <cstddef>
+#include <cstdint>
 #include <utility>
 #include <vector>
 
-#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/status.h"
 
 namespace jpegxl {
 namespace tools {
+
+// If result != size, then write is (partially) failed.
+typedef size_t (*BoxSink)(void* sink_obj, const uint8_t* buf, size_t size);
 
 // A top-level box in the box format.
 struct Box {
@@ -52,7 +52,7 @@ jxl::Status ParseBoxHeader(const uint8_t** next_in, size_t* available_in,
                            Box* box);
 
 // TODO(lode): streaming C API
-jxl::Status AppendBoxHeader(const Box& box, jxl::PaddedBytes* out);
+jxl::Status AppendBoxHeader(const Box& box, void* out_obj, BoxSink out_fn);
 
 // NOTE: after DecodeJpegXlContainerOneShot, the exif etc. pointers point to
 // regions within the input data passed to that function.
@@ -93,7 +93,7 @@ struct JpegXlContainer {
   size_t jpeg_reconstruction_size = 0;
 
   // The main JPEG XL codestream, of which there must be 1 in the container.
-  jxl::PaddedBytes codestream;
+  std::vector<uint8_t> codestream;
 };
 
 // Returns whether `data` starts with a container header; definitely returns
@@ -106,8 +106,9 @@ jxl::Status DecodeJpegXlContainerOneShot(const uint8_t* data, size_t size,
                                          JpegXlContainer* container);
 
 // TODO(lode): streaming C API
+// TODO(eustas): seems to be used only in box_test
 jxl::Status EncodeJpegXlContainerOneShot(const JpegXlContainer& container,
-                                         jxl::PaddedBytes* out);
+                                         void* out_obj, BoxSink out_fn);
 
 }  // namespace tools
 }  // namespace jpegxl

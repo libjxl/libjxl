@@ -7,6 +7,7 @@
 
 #include <brotli/encode.h>
 
+#include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/enc_fields.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/jpeg/enc_jpeg_data_reader.h"

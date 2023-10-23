@@ -235,7 +235,7 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
                                           /*bits_per_sample=*/8, &jpeg_bytes,
                                           /*pool=*/nullptr));
     JXL_RETURN_IF_ERROR(jxl::jpeg::DecodeImageJPG(
-        jxl::Span<const uint8_t>(jpeg_bytes.data(), jpeg_bytes.size()), &io));
+        jxl::Bytes(jpeg_bytes.data(), jpeg_bytes.size()), &io));
     jxl::PaddedBytes jpeg_data;
     JXL_RETURN_IF_ERROR(
         EncodeJPEGData(*io.Main().jpeg_data, &jpeg_data, params));

@@ -11,17 +11,16 @@
 
 #include <utility>
 
-#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/testing.h"
 
 TEST(BoxTest, BoxTest) {
   size_t test_size = 256;
-  jxl::PaddedBytes exif(test_size);
-  jxl::PaddedBytes xml0(test_size);
-  jxl::PaddedBytes xml1(test_size);
-  jxl::PaddedBytes jumb(test_size);
-  jxl::PaddedBytes codestream(test_size);
+  std::vector<uint8_t> exif(test_size);
+  std::vector<uint8_t> xml0(test_size);
+  std::vector<uint8_t> xml1(test_size);
+  std::vector<uint8_t> jumb(test_size);
+  std::vector<uint8_t> codestream(test_size);
   // Generate arbitrary data for the codestreams: the test is not testing
   // the contents of them but whether they are preserved in the container.
   uint8_t v = 0;
@@ -43,9 +42,15 @@ TEST(BoxTest, BoxTest) {
   container.jumb_size = jumb.size();
   container.codestream = std::move(codestream);
 
-  jxl::PaddedBytes file;
-  EXPECT_EQ(true,
-            jpegxl::tools::EncodeJpegXlContainerOneShot(container, &file));
+  std::vector<uint8_t> file;
+  jpegxl::tools::BoxSink file_sink = [](void* to, const uint8_t* from,
+                                        size_t size) -> size_t {
+    auto out = reinterpret_cast<std::vector<uint8_t>*>(to);
+    out->insert(out->end(), from, from + size);
+    return size;
+  };
+  EXPECT_EQ(true, jpegxl::tools::EncodeJpegXlContainerOneShot(container, &file,
+                                                              file_sink));
 
   jpegxl::tools::JpegXlContainer container2;
   EXPECT_EQ(true, jpegxl::tools::DecodeJpegXlContainerOneShot(

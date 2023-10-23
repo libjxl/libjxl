@@ -37,8 +37,7 @@ int Convert(int argc, char** argv) {
   jxl::extras::ColorHints color_hints;
   jpegxl::tools::ThreadPoolInternal pool(4);
   color_hints.Add("color_space", desc);
-  if (!jxl::SetFromBytes(jxl::Span<const uint8_t>(encoded_in), color_hints, &io,
-                         &pool)) {
+  if (!jxl::SetFromBytes(jxl::Bytes(encoded_in), color_hints, &io, &pool)) {
     fprintf(stderr, "Failed to decode %s\n", pathname_in.c_str());
     return 1;
   }

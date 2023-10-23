@@ -219,13 +219,12 @@ TestImage::TestImage() {
   SetColorEncoding("RGB_D65_SRG_Rel_SRG");
 }
 
-TestImage& TestImage::DecodeFromBytes(const PaddedBytes& bytes) {
+TestImage& TestImage::DecodeFromBytes(const std::vector<uint8_t>& bytes) {
   ColorEncoding c_enc;
   JXL_CHECK(c_enc.FromExternal(ppf_.color_encoding));
   extras::ColorHints color_hints;
   color_hints.Add("color_space", Description(c_enc));
-  JXL_CHECK(
-      extras::DecodeBytes(Span<const uint8_t>(bytes), color_hints, &ppf_));
+  JXL_CHECK(extras::DecodeBytes(Bytes(bytes), color_hints, &ppf_));
   return *this;
 }
 

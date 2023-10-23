@@ -73,8 +73,7 @@ int main(int argc, const char** argv) {
   color_hints.Add("color_space", "RGB_D65_202_Rel_HLG");
   std::vector<uint8_t> encoded;
   JXL_CHECK(jpegxl::tools::ReadFile(input_filename, &encoded));
-  JXL_CHECK(jxl::SetFromBytes(jxl::Span<const uint8_t>(encoded), color_hints,
-                              &image, &pool));
+  JXL_CHECK(jxl::SetFromBytes(jxl::Bytes(encoded), color_hints, &image, &pool));
   // Ensures that conversions to linear by JxlCms will not apply the OOTF as we
   // apply it ourselves to control the subsequent gamut mapping.
   image.metadata.m.SetIntensityTarget(301);

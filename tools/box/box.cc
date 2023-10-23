@@ -5,7 +5,7 @@
 
 #include "tools/box/box.h"
 
-#include <string.h>
+#include <string.h>  // memcpy, memcmp
 
 #include "lib/jxl/base/byte_order.h"
 
@@ -82,7 +82,7 @@ jxl::Status ParseBoxHeader(const uint8_t** next_in, size_t* available_in,
   return true;
 }
 
-jxl::Status AppendBoxHeader(const Box& box, jxl::PaddedBytes* out) {
+jxl::Status AppendBoxHeader(const Box& box, void* out_obj, BoxSink out_fn) {
   bool use_extended = !memcmp("uuid", box.type, 4);
 
   uint64_t box_size = 0;
@@ -94,21 +94,27 @@ jxl::Status AppendBoxHeader(const Box& box, jxl::PaddedBytes* out) {
     }
   }
 
-  out->resize(out->size() + 4);
-  StoreBE32(large_size ? 1 : box_size, &out->back() - 4 + 1);
+  uint8_t buffer[4 + 4 + 8 + 16];
+  size_t buffer_size = 0;
 
-  out->resize(out->size() + 4);
-  memcpy(&out->back() - 4 + 1, box.type, 4);
+  StoreBE32(large_size ? 1 : box_size, buffer + buffer_size);
+  buffer_size += 4;
+
+  memcpy(buffer + buffer_size, box.type, 4);
+  buffer_size += 4;
 
   if (large_size) {
-    out->resize(out->size() + 8);
-    StoreBE64(box_size, &out->back() - 8 + 1);
+    StoreBE64(box_size, buffer + buffer_size);
+    buffer_size += 8;
   }
 
   if (use_extended) {
-    out->resize(out->size() + 16);
-    memcpy(&out->back() - 16 + 1, box.extended_type, 16);
+    memcpy(buffer + buffer_size, box.extended_type, 16);
+    buffer_size += 16;
   }
+
+  size_t written = out_fn(out_obj, buffer, buffer_size);
+  if (written != buffer_size) return JXL_FAILURE("Write failed");
 
   return true;
 }
@@ -175,11 +181,13 @@ jxl::Status DecodeJpegXlContainerOneShot(const uint8_t* data, size_t size,
         return JXL_FAILURE("frame index must come before codestream");
       }
     } else if (!memcmp("jxlc", box.type, 4)) {
-      container->codestream.append(in, in + data_size);
+      container->codestream.insert(container->codestream.end(), in,
+                                   in + data_size);
     } else if (!memcmp("jxlp", box.type, 4)) {
       if (data_size < 4) return JXL_FAILURE("Invalid jxlp");
       // TODO(jon): don't just ignore the counter
-      container->codestream.append(in + 4, in + data_size);
+      container->codestream.insert(container->codestream.end(), in + 4,
+                                   in + data_size);
     } else if (!memcmp("Exif", box.type, 4)) {
       if (data_size < 4) return JXL_FAILURE("Invalid Exif");
       uint32_t tiff_header_offset = LoadBE32(in);
@@ -214,65 +222,75 @@ jxl::Status DecodeJpegXlContainerOneShot(const uint8_t* data, size_t size,
 }
 
 static jxl::Status AppendBoxAndData(const char type[4], const uint8_t* data,
-                                    size_t data_size, jxl::PaddedBytes* out,
-                                    bool exif = false) {
+                                    size_t data_size, void* out_obj,
+                                    BoxSink out_fn, bool exif = false) {
   Box box;
   memcpy(box.type, type, 4);
   box.data_size = data_size + (exif ? 4 : 0);
   box.data_size_given = true;
-  JXL_RETURN_IF_ERROR(AppendBoxHeader(box, out));
+  JXL_RETURN_IF_ERROR(AppendBoxHeader(box, out_obj, out_fn));
   // for Exif: always use tiff header offset 0
-  if (exif)
-    for (int i = 0; i < 4; i++) out->push_back(0);
-  out->append(data, data + data_size);
+  if (exif) {
+    uint8_t buffer[4] = {0};
+    size_t buffer_size = 4;
+    size_t written = out_fn(out_obj, buffer, buffer_size);
+    if (written != buffer_size) return JXL_FAILURE("Write failed");
+  }
+  size_t written = out_fn(out_obj, data, data_size);
+  if (written != data_size) return JXL_FAILURE("Write failed");
   return true;
 }
 
 jxl::Status EncodeJpegXlContainerOneShot(const JpegXlContainer& container,
-                                         jxl::PaddedBytes* out) {
+                                         void* out_obj, BoxSink out_fn) {
   const unsigned char header[] = {0,   0,   0,    0xc, 'J', 'X', 'L', ' ',
                                   0xd, 0xa, 0x87, 0xa, 0,   0,   0,   0x14,
                                   'f', 't', 'y',  'p', 'j', 'x', 'l', ' ',
                                   0,   0,   0,    0,   'j', 'x', 'l', ' '};
   size_t header_size = sizeof(header);
-  out->append(header, header + header_size);
+  size_t written = out_fn(out_obj, header, header_size);
+  if (written != header_size) return JXL_FAILURE("Write failed");
 
   if (container.exif) {
     JXL_RETURN_IF_ERROR(AppendBoxAndData("Exif", container.exif,
-                                         container.exif_size, out, true));
+                                         container.exif_size, out_obj, out_fn,
+                                         /* exif */ true));
   }
 
   if (container.exfc) {
-    JXL_RETURN_IF_ERROR(
-        AppendBoxAndData("Exfc", container.exfc, container.exfc_size, out));
+    JXL_RETURN_IF_ERROR(AppendBoxAndData("Exfc", container.exfc,
+                                         container.exfc_size, out_obj, out_fn));
   }
 
   for (size_t i = 0; i < container.xml.size(); i++) {
     JXL_RETURN_IF_ERROR(AppendBoxAndData("xml ", container.xml[i].first,
-                                         container.xml[i].second, out));
+                                         container.xml[i].second, out_obj,
+                                         out_fn));
   }
 
   for (size_t i = 0; i < container.xmlc.size(); i++) {
     JXL_RETURN_IF_ERROR(AppendBoxAndData("xmlc", container.xmlc[i].first,
-                                         container.xmlc[i].second, out));
+                                         container.xmlc[i].second, out_obj,
+                                         out_fn));
   }
 
   if (container.jpeg_reconstruction) {
     JXL_RETURN_IF_ERROR(AppendBoxAndData("jbrd", container.jpeg_reconstruction,
                                          container.jpeg_reconstruction_size,
-                                         out));
+                                         out_obj, out_fn));
   }
 
   if (!container.codestream.empty()) {
     JXL_RETURN_IF_ERROR(AppendBoxAndData("jxlc", container.codestream.data(),
-                                         container.codestream.size(), out));
+                                         container.codestream.size(), out_obj,
+                                         out_fn));
   } else {
     return JXL_FAILURE("must have primary image frame");
   }
 
   if (container.jumb) {
-    JXL_RETURN_IF_ERROR(
-        AppendBoxAndData("jumb", container.jumb, container.jumb_size, out));
+    JXL_RETURN_IF_ERROR(AppendBoxAndData("jumb", container.jumb,
+                                         container.jumb_size, out_obj, out_fn));
   }
 
   return true;

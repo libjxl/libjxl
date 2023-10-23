@@ -27,6 +27,7 @@
 namespace jpegxl {
 namespace tools {
 
+using ::jxl::Bytes;
 using ::jxl::CodecInOut;
 using ::jxl::IccBytes;
 using ::jxl::ImageBundle;
@@ -346,8 +347,7 @@ class AvifCodec : public ImageCodec {
               JXL_NATIVE_ENDIAN, 0};
           ImageBundle ib(&io->metadata.m);
           JXL_RETURN_IF_ERROR(ConvertFromExternal(
-              Span<const uint8_t>(rgb_image.pixels,
-                                  rgb_image.height * rgb_image.rowBytes),
+              Bytes(rgb_image.pixels, rgb_image.height * rgb_image.rowBytes),
               rgb_image.width, rgb_image.height, color, rgb_image.depth, format,
               pool, &ib));
           io->frames.push_back(std::move(ib));

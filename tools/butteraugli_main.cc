@@ -13,7 +13,6 @@
 #include "lib/extras/dec/color_hints.h"
 #include "lib/extras/metrics.h"
 #include "lib/jxl/base/data_parallel.h"
-#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
@@ -69,8 +68,7 @@ Status RunButteraugli(const char* pathname1, const char* pathname2,
       fprintf(stderr, "Failed to read image from %s\n", pathname[i]);
       return false;
     }
-    if (!jxl::SetFromBytes(jxl::Span<const uint8_t>(encoded), color_hints,
-                           &io[i], &pool)) {
+    if (!jxl::SetFromBytes(jxl::Bytes(encoded), color_hints, &io[i], &pool)) {
       fprintf(stderr, "Failed to decode image from %s\n", pathname[i]);
       return false;
     }

@@ -72,8 +72,7 @@ int main(int argc, const char** argv) {
   color_hints.Add("color_space", "RGB_D65_202_Rel_PeQ");
   std::vector<uint8_t> encoded;
   JXL_CHECK(jpegxl::tools::ReadFile(input_filename, &encoded));
-  JXL_CHECK(jxl::SetFromBytes(jxl::Span<const uint8_t>(encoded), color_hints,
-                              &image, &pool));
+  JXL_CHECK(jxl::SetFromBytes(jxl::Bytes(encoded), color_hints, &image, &pool));
   if (max_nits > 0) {
     image.metadata.m.SetIntensityTarget(max_nits);
   }

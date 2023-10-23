@@ -64,7 +64,7 @@ class Span {
 
   // NCT == non-const-T; compiler will complain if NCT is not compatible with T.
   template <typename NCT>
-  void AppendTo(std::vector<NCT>* dst) {
+  void AppendTo(std::vector<NCT>* dst) const {
     dst->insert(dst->end(), begin(), end());
   }
 
@@ -72,6 +72,8 @@ class Span {
   T* ptr_;
   size_t len_;
 };
+
+typedef Span<const uint8_t> Bytes;
 
 }  // namespace jxl
 
