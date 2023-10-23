@@ -12,9 +12,9 @@
 
 #include <jxl/codestream_header.h>
 #include <jxl/thread_parallel_runner_cxx.h>
-#include <stddef.h>
-#include <stdint.h>
 
+#include <cstddef>
+#include <cstdint>
 #include <ostream>
 #include <vector>
 
@@ -23,7 +23,6 @@
 #include "lib/extras/enc/jxl.h"
 #include "lib/extras/packed_image.h"
 #include "lib/jxl/base/data_parallel.h"
-#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/codec_in_out.h"
@@ -45,7 +44,7 @@ struct AuxOut;
 namespace test {
 
 std::string GetTestDataPath(const std::string& filename);
-PaddedBytes ReadTestData(const std::string& filename);
+std::vector<uint8_t> ReadTestData(const std::string& filename);
 
 void JxlBasicInfoSetFromPixelFormat(JxlBasicInfo* basic_info,
                                     const JxlPixelFormat* pixel_format);
@@ -171,12 +170,19 @@ class ThreadPoolForTests {
   std::unique_ptr<ThreadPool> pool_;
 };
 
+// `icc` may be empty afterwards - if so, call CreateProfile. Does not append,
+// clears any original data that was in icc.
+// If `output_limit` is not 0, then returns error if resulting profile would be
+// longer than `output_limit`
+Status ReadICC(BitReader* JXL_RESTRICT reader,
+               std::vector<uint8_t>* JXL_RESTRICT icc, size_t output_limit = 0);
+
 }  // namespace test
 
-bool operator==(const jxl::PaddedBytes& a, const jxl::PaddedBytes& b);
+bool operator==(const jxl::Bytes& a, const jxl::Bytes& b);
 
-// Allow using EXPECT_EQ on jxl::PaddedBytes
-bool operator!=(const jxl::PaddedBytes& a, const jxl::PaddedBytes& b);
+// Allow using EXPECT_EQ on jxl::Bytes
+bool operator!=(const jxl::Bytes& a, const jxl::Bytes& b);
 
 }  // namespace jxl
 

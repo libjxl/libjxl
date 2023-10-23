@@ -15,6 +15,7 @@
 
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/common.h"
+#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 
@@ -625,15 +626,15 @@ struct JxlDecoderStruct {
       if (avail_codestream == 0) {
         return RequestMoreInput();
       }
-      *span = jxl::Span<const uint8_t>(next_in, avail_codestream);
+      *span = jxl::Bytes(next_in, avail_codestream);
       return JXL_DEC_SUCCESS;
     } else {
       codestream_copy.insert(codestream_copy.end(),
                              next_in + codestream_unconsumed,
                              next_in + avail_codestream);
       codestream_unconsumed = avail_codestream;
-      *span = jxl::Span<const uint8_t>(codestream_copy.data() + codestream_pos,
-                                       codestream_copy.size() - codestream_pos);
+      *span = jxl::Bytes(codestream_copy.data() + codestream_pos,
+                         codestream_copy.size() - codestream_pos);
       return JXL_DEC_SUCCESS;
     }
   }
@@ -1075,7 +1076,7 @@ JxlDecoderStatus JxlDecoderReadAllHeaders(JxlDecoder* dec) {
       return JXL_DEC_ERROR;
     }
     IccBytes icc;
-    Span<const uint8_t>(decoded_icc).AppendTo(&icc);
+    Bytes(decoded_icc).AppendTo(&icc);
     dec->metadata.m.color_encoding.SetICCRaw(std::move(icc));
   }
 
@@ -1117,8 +1118,7 @@ JxlDecoderStatus JxlDecoderProcessSections(JxlDecoder* dec) {
     if (OutOfBounds(pos, size, span.size())) {
       break;
     }
-    auto br =
-        new jxl::BitReader(jxl::Span<const uint8_t>(span.data() + pos, size));
+    auto br = new jxl::BitReader(jxl::Bytes(span.data() + pos, size));
     section_info.emplace_back(jxl::FrameDecoder::SectionInfo{br, id, i});
     section_status.emplace_back();
     pos += size;

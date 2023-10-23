@@ -158,8 +158,8 @@ Status BufferToImageF(const JxlPixelFormat& pixel_format, size_t xsize,
                       ThreadPool* pool, ImageF* channel) {
   size_t bitdepth = JxlDataTypeBytes(pixel_format.data_type) * kBitsPerByte;
   return ConvertFromExternal(
-      jxl::Span<const uint8_t>(static_cast<const uint8_t*>(buffer), size),
-      xsize, ysize, bitdepth, pixel_format, 0, pool, channel);
+      jxl::Bytes(static_cast<const uint8_t*>(buffer), size), xsize, ysize,
+      bitdepth, pixel_format, 0, pool, channel);
 }
 
 Status BufferToImageBundle(const JxlPixelFormat& pixel_format, uint32_t xsize,
@@ -169,8 +169,8 @@ Status BufferToImageBundle(const JxlPixelFormat& pixel_format, uint32_t xsize,
                            jxl::ImageBundle* ib) {
   size_t bitdepth = JxlDataTypeBytes(pixel_format.data_type) * kBitsPerByte;
   JXL_RETURN_IF_ERROR(ConvertFromExternal(
-      jxl::Span<const uint8_t>(static_cast<const uint8_t*>(buffer), size),
-      xsize, ysize, c_current, bitdepth, pixel_format, pool, ib));
+      jxl::Bytes(static_cast<const uint8_t*>(buffer), size), xsize, ysize,
+      c_current, bitdepth, pixel_format, pool, ib));
   ib->VerifyMetadata();
 
   return true;

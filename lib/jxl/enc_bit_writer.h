@@ -45,7 +45,7 @@ struct BitWriter {
   Span<const uint8_t> GetSpan() const {
     // Callers must ensure byte alignment to avoid uninitialized bits.
     JXL_ASSERT(bits_written_ % kBitsPerByte == 0);
-    return Span<const uint8_t>(storage_.data(), bits_written_ / kBitsPerByte);
+    return Bytes(storage_.data(), bits_written_ / kBitsPerByte);
   }
 
   // Example usage: bytes = std::move(writer).TakeBytes(); Useful for the

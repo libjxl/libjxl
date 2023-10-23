@@ -178,7 +178,7 @@ class CustomCodec : public ImageCodec {
     std::vector<uint8_t> encoded;
     JXL_RETURN_IF_ERROR(ReadFile(out_filename, &encoded));
     JXL_RETURN_IF_ERROR(
-        jxl::SetFromBytes(jxl::Span<const uint8_t>(encoded), hints, io, pool));
+        jxl::SetFromBytes(jxl::Bytes(encoded), hints, io, pool));
     io->metadata.m.SetIntensityTarget(saved_intensity_target_);
     return true;
   }

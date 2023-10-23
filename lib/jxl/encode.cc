@@ -1015,9 +1015,8 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
     if (last_frame && frame_index_box.StoreFrameIndexBox()) {
       std::vector<uint8_t> index_box_content;
       EncodeFrameIndexBox(frame_index_box, index_box_content);
-      JXL_RETURN_IF_ERROR(
-          AppendBoxWithContents(jxl::MakeBoxType("jxli"),
-                                jxl::Span<const uint8_t>(index_box_content)));
+      JXL_RETURN_IF_ERROR(AppendBoxWithContents(jxl::MakeBoxType("jxli"),
+                                                jxl::Bytes(index_box_content)));
     }
   } else {
     // Not a frame, so is a box instead
@@ -2005,7 +2004,7 @@ JxlEncoderStatus JxlEncoderAddJPEGFrame(
   }
 
   jxl::CodecInOut io;
-  if (!jxl::jpeg::DecodeImageJPG(jxl::Span<const uint8_t>(buffer, size), &io)) {
+  if (!jxl::jpeg::DecodeImageJPG(jxl::Bytes(buffer, size), &io)) {
     return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_BAD_INPUT,
                          "Error during decode of input JPEG");
   }
@@ -2331,10 +2330,10 @@ JxlEncoderStatus JxlEncoderAddImageFrame(
       GetBitDepth(frame_settings->values.image_bit_depth,
                   frame_settings->enc->metadata.m, *pixel_format);
   const uint8_t* uint8_buffer = reinterpret_cast<const uint8_t*>(buffer);
-  if (!jxl::ConvertFromExternal(
-          jxl::Span<const uint8_t>(uint8_buffer, size), xsize, ysize, c_current,
-          bits_per_sample, *pixel_format,
-          frame_settings->enc->thread_pool.get(), &(queued_frame->frame))) {
+  if (!jxl::ConvertFromExternal(jxl::Bytes(uint8_buffer, size), xsize, ysize,
+                                c_current, bits_per_sample, *pixel_format,
+                                frame_settings->enc->thread_pool.get(),
+                                &(queued_frame->frame))) {
     return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
                          "Invalid input buffer");
   }
@@ -2521,8 +2520,8 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelBuffer(
       frame_settings->enc->metadata.m.extra_channel_info[index], ec_format);
   const uint8_t* uint8_buffer = reinterpret_cast<const uint8_t*>(buffer);
   auto queued_frame = frame_settings->enc->input_queue.back().frame.get();
-  if (!jxl::ConvertFromExternal(jxl::Span<const uint8_t>(uint8_buffer, size),
-                                xsize, ysize, bits_per_sample, ec_format, 0,
+  if (!jxl::ConvertFromExternal(jxl::Bytes(uint8_buffer, size), xsize, ysize,
+                                bits_per_sample, ec_format, 0,
                                 frame_settings->enc->thread_pool.get(),
                                 &queued_frame->frame.extra_channels()[index])) {
     return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,

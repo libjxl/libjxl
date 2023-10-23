@@ -39,13 +39,6 @@ struct ICCReader {
   PaddedBytes decompressed_;
 };
 
-// `icc` may be empty afterwards - if so, call CreateProfile. Does not append,
-// clears any original data that was in icc.
-// If `output_limit` is not 0, then returns error if resulting profile would be
-// longer than `output_limit`
-Status ReadICC(BitReader* JXL_RESTRICT reader, PaddedBytes* JXL_RESTRICT icc,
-               size_t output_limit = 0);
-
 // Exposed only for testing
 Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result);
 

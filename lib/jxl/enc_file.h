@@ -9,7 +9,6 @@
 // Facade for JXL encoding.
 
 #include "lib/jxl/base/data_parallel.h"
-#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_params.h"
@@ -18,6 +17,7 @@ namespace jxl {
 
 struct AuxOut;
 class CodecInOut;
+class PaddedBytes;
 
 // Compresses pixels from `io` (given in any ColorEncoding).
 // `io->metadata.m.original` must be set.

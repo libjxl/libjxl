@@ -4,13 +4,13 @@
 // license that can be found in the LICENSE file.
 
 #include <jxl/decode.h>
-#include <math.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
 #include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <memory>
 #include <mutex>
 #include <numeric>
@@ -27,7 +27,6 @@
 #include "lib/jxl/base/cache_aligned.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
-#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/random.h"
 #include "lib/jxl/base/span.h"
@@ -56,12 +55,12 @@ namespace tools {
 namespace {
 
 using ::jxl::ButteraugliParams;
+using ::jxl::Bytes;
 using ::jxl::CodecInOut;
 using ::jxl::ColorEncoding;
 using ::jxl::Image3F;
 using ::jxl::ImageBundle;
 using ::jxl::ImageF;
-using ::jxl::PaddedBytes;
 using ::jxl::Rng;
 using ::jxl::Status;
 using ::jxl::ThreadPool;
@@ -80,8 +79,8 @@ Status ReadPNG(const std::string& filename, Image3F* image) {
   CodecInOut io;
   std::vector<uint8_t> encoded;
   JXL_CHECK(ReadFile(filename, &encoded));
-  JXL_CHECK(jxl::SetFromBytes(jxl::Span<const uint8_t>(encoded),
-                              jxl::extras::ColorHints(), &io));
+  JXL_CHECK(
+      jxl::SetFromBytes(jxl::Bytes(encoded), jxl::extras::ColorHints(), &io));
   *image = Image3F(io.xsize(), io.ysize());
   CopyImageTo(*io.Main().color(), image);
   return true;
@@ -173,8 +172,8 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
   if (valid) {
     speed_stats = jpegxl::tools::SpeedStats();
     for (size_t i = 0; i < Args()->decode_reps; ++i) {
-      if (!codec->Decompress(filename, Span<const uint8_t>(*compressed),
-                             inner_pool, &io2, &speed_stats)) {
+      if (!codec->Decompress(filename, Bytes(*compressed), inner_pool, &io2,
+                             &speed_stats)) {
         if (!Args()->silent_errors) {
           fprintf(stderr,
                   "%s failed to decompress encoded image. Original source:"
@@ -404,7 +403,7 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
 
 // Makes a base64 data URI for embedded image in HTML
 std::string Base64Image(const std::string& filename) {
-  PaddedBytes bytes;
+  std::vector<uint8_t> bytes;
   if (!ReadFile(filename, &bytes)) {
     return "";
   }
@@ -1020,11 +1019,11 @@ class Benchmark {
       Status ok = true;
 
       if (!Args()->decode_only) {
-        PaddedBytes encoded;
+        std::vector<uint8_t> encoded;
         ok = ReadFile(fnames[i], &encoded);
         if (ok) {
-          ok = jxl::SetFromBytes(Span<const uint8_t>(encoded),
-                                 Args()->color_hints, &loaded_images[i]);
+          ok = jxl::SetFromBytes(Bytes(encoded), Args()->color_hints,
+                                 &loaded_images[i]);
         }
         if (ok && Args()->intensity_target != 0) {
           loaded_images[i].metadata.m.SetIntensityTarget(

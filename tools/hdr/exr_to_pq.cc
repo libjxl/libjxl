@@ -79,7 +79,7 @@ int main(int argc, const char** argv) {
   jxl::extras::PackedPixelFile ppf;
   std::vector<uint8_t> input_bytes;
   JXL_CHECK(jpegxl::tools::ReadFile(input_filename, &input_bytes));
-  JXL_CHECK(jxl::extras::DecodeBytes(jxl::Span<const uint8_t>(input_bytes),
+  JXL_CHECK(jxl::extras::DecodeBytes(jxl::Bytes(input_bytes),
                                      jxl::extras::ColorHints(), &ppf));
 
   jxl::CodecInOut image;

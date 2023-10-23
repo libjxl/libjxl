@@ -8,6 +8,7 @@
 #include <stddef.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -265,8 +266,7 @@ void TestRoundTrip(const TestImageParams& params, ThreadPool* pool) {
     color_hints.Add("color_space",
                     params.is_gray ? "Gra_D65_Rel_SRG" : "RGB_D65_SRG_Rel_SRG");
   }
-  ASSERT_TRUE(DecodeBytes(Span<const uint8_t>(encoded.bitstreams[0]),
-                          color_hints, &ppf_out));
+  ASSERT_TRUE(DecodeBytes(Bytes(encoded.bitstreams[0]), color_hints, &ppf_out));
   if (params.codec == Codec::kPNG && ppf_out.icc.empty()) {
     // Decoding a PNG may drop the ICC profile if there's a valid cICP chunk.
     // Rendering intent is not preserved in this case.
@@ -348,14 +348,14 @@ TEST(CodecTest, LosslessPNMRoundtrip) {
       std::string filename = "jxl/flower/flower_small." +
                              std::string(kChannels[channels]) + ".depth" +
                              std::to_string(bit_depth) + extension;
-      const PaddedBytes orig = jxl::test::ReadTestData(filename);
+      const std::vector<uint8_t> orig = jxl::test::ReadTestData(filename);
 
       PackedPixelFile ppf;
       ColorHints color_hints;
       color_hints.Add("color_space",
                       channels < 3 ? "Gra_D65_Rel_SRG" : "RGB_D65_SRG_Rel_SRG");
-      ASSERT_TRUE(DecodeBytes(Span<const uint8_t>(orig.data(), orig.size()),
-                              color_hints, &ppf));
+      ASSERT_TRUE(
+          DecodeBytes(Bytes(orig.data(), orig.size()), color_hints, &ppf));
 
       EncodedImage encoded;
       auto encoder = Encoder::FromExtension(extension);
@@ -415,11 +415,10 @@ TEST(CodecTest, EncodeToPNG) {
     return;
   }
 
-  const PaddedBytes original_png = jxl::test::ReadTestData(
+  const std::vector<uint8_t> original_png = jxl::test::ReadTestData(
       "external/wesaturate/500px/tmshre_riaphotographs_srgb8.png");
   PackedPixelFile ppf;
-  ASSERT_TRUE(extras::DecodeBytes(Span<const uint8_t>(original_png),
-                                  ColorHints(), &ppf));
+  ASSERT_TRUE(extras::DecodeBytes(Bytes(original_png), ColorHints(), &ppf));
 
   const JxlPixelFormat& format = ppf.frames.front().color.format;
   ASSERT_THAT(
@@ -433,9 +432,8 @@ TEST(CodecTest, EncodeToPNG) {
   ASSERT_THAT(encoded_png.bitstreams, SizeIs(1));
 
   PackedPixelFile decoded_ppf;
-  ASSERT_TRUE(
-      extras::DecodeBytes(Span<const uint8_t>(encoded_png.bitstreams.front()),
-                          ColorHints(), &decoded_ppf));
+  ASSERT_TRUE(extras::DecodeBytes(Bytes(encoded_png.bitstreams.front()),
+                                  ColorHints(), &decoded_ppf));
 
   ASSERT_EQ(decoded_ppf.info.bits_per_sample, ppf.info.bits_per_sample);
   ASSERT_EQ(decoded_ppf.frames.size(), 1);

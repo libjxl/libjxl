@@ -13,12 +13,14 @@
 #include "lib/extras/metrics.h"
 #include "lib/extras/packed_image_convert.h"
 #include "lib/jxl/base/float.h"
+#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_file.h"
+#include "lib/jxl/icc_codec.h"
 
 #if !defined(TEST_DATA_PATH)
 #include "tools/cpp/runfiles/runfiles.h"
@@ -40,7 +42,7 @@ std::string GetTestDataPath(const std::string& filename) {
 }
 #endif
 
-PaddedBytes ReadTestData(const std::string& filename) {
+std::vector<uint8_t> ReadTestData(const std::string& filename) {
   std::string full_path = GetTestDataPath(filename);
   fprintf(stderr, "ReadTestData %s\n", full_path.c_str());
   std::ifstream file(full_path, std::ios::binary);
@@ -51,9 +53,7 @@ PaddedBytes ReadTestData(const std::string& filename) {
   std::vector<uint8_t> data(raw, raw + str.size());
   printf("Test data %s is %d bytes long.\n", filename.c_str(),
          static_cast<int>(data.size()));
-  PaddedBytes result;
-  result.append(data);
-  return result;
+  return data;
 }
 
 void DefaultAcceptedFormats(extras::JXLDecompressParams& dparams) {
@@ -189,7 +189,7 @@ bool Roundtrip(const CodecInOut* io, const CompressParams& cparams,
   CheckSameEncodings(metadata_encodings_1, original_metadata_encodings,
                      "original vs after encoding", failures);
 
-  JXL_CHECK(DecodeFile(dparams, Span<const uint8_t>(compressed), io2, pool));
+  JXL_CHECK(DecodeFile(dparams, Bytes(compressed), io2, pool));
   JXL_CHECK(io2->frames.size() == io->frames.size());
 
   for (const ImageBundle& ib2 : io2->frames) {
@@ -274,7 +274,7 @@ jxl::CodecInOut SomeTestImageToCodecInOut(const std::vector<uint8_t>& buf,
   JxlPixelFormat format = {static_cast<uint32_t>(num_channels), JXL_TYPE_UINT16,
                            JXL_BIG_ENDIAN, 0};
   JXL_CHECK(ConvertFromExternal(
-      jxl::Span<const uint8_t>(buf.data(), buf.size()), xsize, ysize,
+      jxl::Bytes(buf.data(), buf.size()), xsize, ysize,
       jxl::ColorEncoding::SRGB(/*is_gray=*/num_channels < 3),
       /*bits_per_sample=*/16, format,
       /*pool=*/nullptr,
@@ -649,17 +649,26 @@ bool SamePixels(const extras::PackedPixelFile& a,
   return true;
 }
 
+Status ReadICC(BitReader* JXL_RESTRICT reader,
+               std::vector<uint8_t>* JXL_RESTRICT icc, size_t output_limit) {
+  icc->clear();
+  ICCReader icc_reader;
+  PaddedBytes icc_buffer;
+  JXL_RETURN_IF_ERROR(icc_reader.Init(reader, output_limit));
+  JXL_RETURN_IF_ERROR(icc_reader.Process(reader, &icc_buffer));
+  Bytes(icc_buffer).AppendTo(icc);
+  return true;
+}
+
 }  // namespace test
 
-bool operator==(const jxl::PaddedBytes& a, const jxl::PaddedBytes& b) {
+bool operator==(const jxl::Bytes& a, const jxl::Bytes& b) {
   if (a.size() != b.size()) return false;
   if (memcmp(a.data(), b.data(), a.size()) != 0) return false;
   return true;
 }
 
-// Allow using EXPECT_EQ on jxl::PaddedBytes
-bool operator!=(const jxl::PaddedBytes& a, const jxl::PaddedBytes& b) {
-  return !(a == b);
-}
+// Allow using EXPECT_EQ on jxl::Bytes
+bool operator!=(const jxl::Bytes& a, const jxl::Bytes& b) { return !(a == b); }
 
 }  // namespace jxl

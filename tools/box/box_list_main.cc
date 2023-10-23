@@ -7,12 +7,11 @@
 // JPEG 2000, MP4, ...).
 // This exists as a test for manual verification, rather than an actual tool.
 
-#include <stddef.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <string.h>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>  // memcmp
 
-#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "tools/box/box.h"
 #include "tools/file_io.h"
@@ -26,7 +25,7 @@ int RunMain(int argc, const char* argv[]) {
     return 1;
   }
 
-  jxl::PaddedBytes compressed;
+  std::vector<uint8_t> compressed;
   if (!ReadFile(argv[1], &compressed)) return 1;
   fprintf(stderr, "Read %" PRIuS " compressed bytes\n", compressed.size());
 

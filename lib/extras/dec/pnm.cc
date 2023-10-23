@@ -320,8 +320,7 @@ class Parser {
 };
 
 Span<const uint8_t> MakeSpan(const char* str) {
-  return Span<const uint8_t>(reinterpret_cast<const uint8_t*>(str),
-                             strlen(str));
+  return Bytes(reinterpret_cast<const uint8_t*>(str), strlen(str));
 }
 
 }  // namespace

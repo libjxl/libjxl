@@ -988,9 +988,9 @@ int main(int argc, char** argv) {
   ProcessFlags(codec, ppf, jpeg_bytes, &cmdline, &args, &params);
   if (!args.lossless_jpeg) {
     const double t0 = jxl::Now();
-    jxl::Status status = jxl::extras::DecodeBytes(
-        jxl::Span<const uint8_t>(image_data), args.color_hints_proxy.target,
-        &ppf, nullptr, &codec);
+    jxl::Status status = jxl::extras::DecodeBytes(jxl::Bytes(image_data),
+                                                  args.color_hints_proxy.target,
+                                                  &ppf, nullptr, &codec);
 
     if (!status) {
       std::cerr << "Getting pixel data failed." << std::endl;

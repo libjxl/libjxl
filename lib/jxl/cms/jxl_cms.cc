@@ -576,8 +576,7 @@ Status ProfileEquivalentToICC(const cmsContext context, const Profile& profile1,
   const uint32_t type_src = Type64(c);
 
   Profile profile2;
-  JXL_RETURN_IF_ERROR(
-      DecodeProfile(context, Span<const uint8_t>(icc), &profile2));
+  JXL_RETURN_IF_ERROR(DecodeProfile(context, Bytes(icc), &profile2));
 
   Profile profile_xyz;
   JXL_RETURN_IF_ERROR(CreateProfileXYZ(context, &profile_xyz));
@@ -1002,8 +1001,8 @@ JXL_BOOL JxlCmsSetFieldsFromICC(void* user_data, const uint8_t* icc_data,
   const cmsContext context = GetContext();
 
   Profile profile;
-  JXL_RETURN_IF_ERROR(DecodeProfile(
-      context, Span<const uint8_t>(icc_data, icc_size), &profile));
+  JXL_RETURN_IF_ERROR(
+      DecodeProfile(context, Bytes(icc_data, icc_size), &profile));
 
   const cmsUInt32Number rendering_intent32 =
       cmsGetHeaderRenderingIntent(profile.get());
@@ -1119,11 +1118,11 @@ void* JxlCmsInit(void* init_data, size_t num_threads, size_t xsize,
 #else   // JPEGXL_ENABLE_SKCMS
   const cmsContext context = GetContext();
   Profile profile_src, profile_dst;
-  if (!DecodeProfile(context, Span<const uint8_t>(c_src.icc), &profile_src)) {
+  if (!DecodeProfile(context, Bytes(c_src.icc), &profile_src)) {
     JXL_NOTIFY_ERROR("JxlCmsInit: lcms failed to parse input ICC");
     return nullptr;
   }
-  if (!DecodeProfile(context, Span<const uint8_t>(c_dst.icc), &profile_dst)) {
+  if (!DecodeProfile(context, Bytes(c_dst.icc), &profile_dst)) {
     JXL_NOTIFY_ERROR("JxlCmsInit: lcms failed to parse output ICC");
     return nullptr;
   }
@@ -1169,7 +1168,7 @@ void* JxlCmsInit(void* init_data, size_t num_threads, size_t xsize,
 #if JPEGXL_ENABLE_SKCMS
         DecodeProfile(icc_src.data(), icc_src.size(), &new_src)) {
 #else   // JPEGXL_ENABLE_SKCMS
-        DecodeProfile(context, Span<const uint8_t>(icc_src), &new_src)) {
+        DecodeProfile(context, Bytes(icc_src), &new_src)) {
 #endif  // JPEGXL_ENABLE_SKCMS
 #if JXL_CMS_VERBOSE
       printf("Special HLG/PQ/sRGB -> linear\n");
@@ -1210,7 +1209,7 @@ void* JxlCmsInit(void* init_data, size_t num_threads, size_t xsize,
 #if JPEGXL_ENABLE_SKCMS
         DecodeProfile(icc_dst.data(), icc_dst.size(), &new_dst)) {
 #else   // JPEGXL_ENABLE_SKCMS
-        DecodeProfile(context, Span<const uint8_t>(icc_dst), &new_dst)) {
+        DecodeProfile(context, Bytes(icc_dst), &new_dst)) {
 #endif  // JPEGXL_ENABLE_SKCMS
 #if JXL_CMS_VERBOSE
       printf("Special linear -> HLG/PQ/sRGB\n");

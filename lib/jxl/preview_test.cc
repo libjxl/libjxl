@@ -11,7 +11,6 @@
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/override.h"
-#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
@@ -26,13 +25,14 @@
 
 namespace jxl {
 namespace {
+using test::ReadTestData;
 using test::Roundtrip;
 
 TEST(PreviewTest, RoundtripGivenPreview) {
-  const PaddedBytes orig = jxl::test::ReadTestData(
-      "external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  const std::vector<uint8_t> orig =
+      ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CodecInOut io;
-  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io));
+  ASSERT_TRUE(SetFromBytes(Bytes(orig), &io));
   io.ShrinkTo(io.xsize() / 8, io.ysize() / 8);
   // Same as main image
   io.preview_frame = io.Main().Copy();
