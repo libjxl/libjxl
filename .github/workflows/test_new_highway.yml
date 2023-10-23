@@ -49,7 +49,7 @@ jobs:
           git commit -m "Update highway submodule" || echo "No changes to commit"
 
       - name: Push changes
-        uses: ad-m/github-push-action@40bf560936a8022e68a3c00e7d2abefaf01305a6 # v0.6.0
+        uses: ad-m/github-push-action@d91a481090679876dfc4178fef17f286781251df # v0.8.0
         with:
           github_token: ${{ secrets.TOKEN }}
           branch: 'refs/heads/test_highway'
