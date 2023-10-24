@@ -13,13 +13,11 @@
 
 #include "lib/extras/codec.h"
 #include "lib/jxl/base/common.h"
-#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/common.h"  // JXL_HIGH_PRECISION, JPEGXL_ENABLE_TRANSCODE_JPEG
 #include "lib/jxl/dec_frame.h"
 #include "lib/jxl/enc_cache.h"
-#include "lib/jxl/enc_file.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/fake_parallel_runner_testonly.h"
 #include "lib/jxl/frame_dimensions.h"
@@ -217,12 +215,13 @@ TEST_P(RenderPipelineTestParam, PipelineTest) {
     io.frames[0].SetExtraChannels(std::move(ec));
   }
 
-  PaddedBytes compressed;
+  std::vector<uint8_t> compressed;
 
   PassesEncoderState enc_state;
   enc_state.shared.image_features.splines = config.splines;
-  ASSERT_TRUE(EncodeFile(config.cparams, &io, &enc_state, &compressed,
-                         *JxlGetDefaultCms(), /*aux_out=*/nullptr, &pool));
+  ASSERT_TRUE(test::EncodeFile(config.cparams, &io, &enc_state, &compressed,
+                               *JxlGetDefaultCms(), /*aux_out=*/nullptr,
+                               &pool));
 
   CodecInOut io_default;
   ASSERT_TRUE(DecodeFile(Bytes(compressed),

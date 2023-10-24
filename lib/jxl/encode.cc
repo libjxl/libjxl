@@ -27,7 +27,6 @@
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_fast_lossless.h"
 #include "lib/jxl/enc_fields.h"
-#include "lib/jxl/enc_file.h"
 #include "lib/jxl/enc_icc_codec.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/encode_internal.h"
@@ -2072,15 +2071,14 @@ JxlEncoderStatus JxlEncoderAddJPEGFrame(
                            "bitstream reconstruction");
     }
     jxl::jpeg::JPEGData data_in = *io.Main().jpeg_data;
-    jxl::PaddedBytes jpeg_data;
+    std::vector<uint8_t> jpeg_data;
     if (!jxl::jpeg::EncodeJPEGData(data_in, &jpeg_data,
                                    frame_settings->values.cparams)) {
       return JXL_API_ERROR(
           frame_settings->enc, JXL_ENC_ERR_JBRD,
           "JPEG bitstream reconstruction data cannot be encoded");
     }
-    frame_settings->enc->jpeg_metadata = std::vector<uint8_t>(
-        jpeg_data.data(), jpeg_data.data() + jpeg_data.size());
+    frame_settings->enc->jpeg_metadata = jpeg_data;
   }
 
   auto queued_frame = jxl::MemoryManagerMakeUnique<jxl::JxlEncoderQueuedFrame>(

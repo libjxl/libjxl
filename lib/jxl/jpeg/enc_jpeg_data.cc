@@ -232,21 +232,14 @@ void SetColorEncodingFromJpegData(const jpeg::JPEGData& jpg,
   }
 }
 
-Status EncodeJPEGData(JPEGData& jpeg_data, PaddedBytes* bytes,
+Status EncodeJPEGData(JPEGData& jpeg_data, std::vector<uint8_t>* bytes,
                       const CompressParams& cparams) {
+  bytes->clear();
   jpeg_data.app_marker_type.resize(jpeg_data.app_data.size(),
                                    AppMarkerType::kUnknown);
   JXL_RETURN_IF_ERROR(DetectIccProfile(jpeg_data));
   JXL_RETURN_IF_ERROR(DetectBlobs(jpeg_data));
-  BitWriter writer;
-  JXL_RETURN_IF_ERROR(Bundle::Write(jpeg_data, &writer, 0, nullptr));
-  writer.ZeroPadToByte();
-  *bytes = std::move(writer).TakeBytes();
-  BrotliEncoderState* brotli_enc =
-      BrotliEncoderCreateInstance(nullptr, nullptr, nullptr);
-  int effort = cparams.brotli_effort;
-  if (effort < 0) effort = 11 - static_cast<int>(cparams.speed_tier);
-  BrotliEncoderSetParameter(brotli_enc, BROTLI_PARAM_QUALITY, effort);
+
   size_t total_data = 0;
   for (size_t i = 0; i < jpeg_data.app_data.size(); i++) {
     if (jpeg_data.app_marker_type[i] != AppMarkerType::kUnknown) {
@@ -261,10 +254,25 @@ Status EncodeJPEGData(JPEGData& jpeg_data, PaddedBytes* bytes,
     total_data += jpeg_data.inter_marker_data[i].size();
   }
   total_data += jpeg_data.tail_data.size();
-  size_t initial_size = bytes->size();
   size_t brotli_capacity = BrotliEncoderMaxCompressedSize(total_data);
+
+  BitWriter writer;
+  JXL_RETURN_IF_ERROR(Bundle::Write(jpeg_data, &writer, 0, nullptr));
+  writer.ZeroPadToByte();
+  {
+    PaddedBytes serialized_jpeg_data = std::move(writer).TakeBytes();
+    bytes->reserve(serialized_jpeg_data.size() + brotli_capacity);
+    Bytes(serialized_jpeg_data).AppendTo(bytes);
+  }
+
+  BrotliEncoderState* brotli_enc =
+      BrotliEncoderCreateInstance(nullptr, nullptr, nullptr);
+  int effort = cparams.brotli_effort;
+  if (effort < 0) effort = 11 - static_cast<int>(cparams.speed_tier);
+  BrotliEncoderSetParameter(brotli_enc, BROTLI_PARAM_QUALITY, effort);
+  size_t initial_size = bytes->size();
   BrotliEncoderSetParameter(brotli_enc, BROTLI_PARAM_SIZE_HINT, total_data);
-  bytes->resize(bytes->size() + brotli_capacity);
+  bytes->resize(initial_size + brotli_capacity);
   size_t enc_size = 0;
   auto br_append = [&](const std::vector<uint8_t>& data, bool last) {
     size_t available_in = data.size();
