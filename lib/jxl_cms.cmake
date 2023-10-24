@@ -86,6 +86,20 @@ add_library(jxl_cms ALIAS jxl_cms-static)
 endif()  # BUILD_SHARED_LIBS
 
 set(JPEGXL_CMS_LIBRARY_REQUIRES "")
+
+# Allow adding prefix if CMAKE_INSTALL_INCLUDEDIR not absolute.
+if(IS_ABSOLUTE "${CMAKE_INSTALL_INCLUDEDIR}")
+    set(PKGCONFIG_TARGET_INCLUDES "${CMAKE_INSTALL_INCLUDEDIR}")
+else()
+    set(PKGCONFIG_TARGET_INCLUDES "\${prefix}/${CMAKE_INSTALL_INCLUDEDIR}")
+endif()
+# Allow adding prefix if CMAKE_INSTALL_LIBDIR not absolute.
+if(IS_ABSOLUTE "${CMAKE_INSTALL_LIBDIR}")
+    set(PKGCONFIG_TARGET_LIBS "${CMAKE_INSTALL_LIBDIR}")
+else()
+    set(PKGCONFIG_TARGET_LIBS "\${exec_prefix}/${CMAKE_INSTALL_LIBDIR}")
+endif()
+
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/jxl/libjxl_cms.pc.in"
                "libjxl_cms.pc" @ONLY)
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/libjxl_cms.pc"
