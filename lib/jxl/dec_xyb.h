@@ -42,6 +42,7 @@ struct OutputEncodingInfo {
   // Fields depending on output color encoding
   //
   ColorEncoding color_encoding;
+  ColorEncoding linear_color_encoding;
   bool color_encoding_is_original;
   // Contains an opsin matrix that converts to the primaries of the output
   // encoding.
@@ -55,6 +56,7 @@ struct OutputEncodingInfo {
   float luminances[3];
   // Used for the HLG inverse OOTF and PQ tone mapping.
   float desired_intensity_target;
+  const JxlCmsInterface* color_management_system = nullptr;
 
   Status SetFromMetadata(const CodecMetadata& metadata);
   Status MaybeSetColorEncoding(const ColorEncoding& c_desired);
