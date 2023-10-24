@@ -6,6 +6,9 @@
 #ifndef LIB_JXL_JPEG_ENC_JPEG_DATA_H_
 #define LIB_JXL_JPEG_ENC_JPEG_DATA_H_
 
+#include <cstdint>
+#include <vector>
+
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/jpeg/jpeg_data.h"
@@ -13,10 +16,9 @@
 namespace jxl {
 
 class CodecInOut;
-class PaddedBytes;
 
 namespace jpeg {
-Status EncodeJPEGData(JPEGData& jpeg_data, PaddedBytes* bytes,
+Status EncodeJPEGData(JPEGData& jpeg_data, std::vector<uint8_t>* bytes,
                       const CompressParams& cparams);
 
 void SetColorEncodingFromJpegData(const jpeg::JPEGData& jpg,

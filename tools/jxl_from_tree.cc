@@ -15,7 +15,6 @@
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_fields.h"
-#include "lib/jxl/enc_file.h"
 #include "lib/jxl/enc_frame.h"
 #include "lib/jxl/enc_heuristics.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
@@ -23,6 +22,7 @@
 #include "lib/jxl/modular/encoding/enc_ma.h"
 #include "lib/jxl/modular/encoding/encoding.h"
 #include "lib/jxl/splines.h"
+#include "lib/jxl/test_utils.h"  // TODO(eustas): cut this dependency
 #include "tools/file_io.h"
 
 namespace jpegxl {

@@ -349,8 +349,6 @@ libjxl_enc_sources = [
     "jxl/enc_fast_lossless.h",
     "jxl/enc_fields.cc",
     "jxl/enc_fields.h",
-    "jxl/enc_file.cc",
-    "jxl/enc_file.h",
     "jxl/enc_frame.cc",
     "jxl/enc_frame.h",
     "jxl/enc_gaborish.cc",

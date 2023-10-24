@@ -10,6 +10,7 @@
 
 // Macros and functions useful for tests.
 
+#include <jxl/cms_interface.h>
 #include <jxl/codestream_header.h>
 #include <jxl/thread_parallel_runner_cxx.h>
 
@@ -40,6 +41,10 @@
 namespace jxl {
 
 struct AuxOut;
+class CodecInOut;
+class PaddedBytes;
+struct PassesEncoderState;
+class ThreadPool;
 
 namespace test {
 
@@ -176,6 +181,13 @@ class ThreadPoolForTests {
 // longer than `output_limit`
 Status ReadICC(BitReader* JXL_RESTRICT reader,
                std::vector<uint8_t>* JXL_RESTRICT icc, size_t output_limit = 0);
+
+// Compresses pixels from `io` (given in any ColorEncoding).
+// `io->metadata.m.original` must be set.
+Status EncodeFile(const CompressParams& params, const CodecInOut* io,
+                  PassesEncoderState* passes_enc_state,
+                  std::vector<uint8_t>* compressed, const JxlCmsInterface& cms,
+                  AuxOut* aux_out = nullptr, ThreadPool* pool = nullptr);
 
 }  // namespace test
 

@@ -13,13 +13,11 @@
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/override.h"
-#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/enc_cache.h"
-#include "lib/jxl/enc_file.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
@@ -166,7 +164,7 @@ TEST(PassesTest, AllDownsampleFeasible) {
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Bytes(orig), &io, &pool));
 
-  PaddedBytes compressed;
+  std::vector<uint8_t> compressed;
   AuxOut aux;
 
   CompressParams cparams;
@@ -174,8 +172,8 @@ TEST(PassesTest, AllDownsampleFeasible) {
   cparams.progressive_mode = true;
   cparams.butteraugli_distance = 1.0;
   PassesEncoderState enc_state;
-  ASSERT_TRUE(EncodeFile(cparams, &io, &enc_state, &compressed,
-                         *JxlGetDefaultCms(), &aux, &pool));
+  ASSERT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed,
+                               *JxlGetDefaultCms(), &aux, &pool));
 
   EXPECT_LE(compressed.size(), 240000u);
   float target_butteraugli[9] = {};
@@ -214,7 +212,7 @@ TEST(PassesTest, AllDownsampleFeasibleQProgressive) {
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Bytes(orig), &io, &pool));
 
-  PaddedBytes compressed;
+  std::vector<uint8_t> compressed;
   AuxOut aux;
 
   CompressParams cparams;
@@ -222,8 +220,8 @@ TEST(PassesTest, AllDownsampleFeasibleQProgressive) {
   cparams.qprogressive_mode = true;
   cparams.butteraugli_distance = 1.0;
   PassesEncoderState enc_state;
-  ASSERT_TRUE(EncodeFile(cparams, &io, &enc_state, &compressed,
-                         *JxlGetDefaultCms(), &aux, &pool));
+  ASSERT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed,
+                               *JxlGetDefaultCms(), &aux, &pool));
 
   EXPECT_LE(compressed.size(), 220000u);
 
@@ -270,7 +268,7 @@ TEST(PassesTest, ProgressiveDownsample2DegradesCorrectlyGrayscale) {
   io.metadata = io_orig.metadata;
   io.SetFromImage(std::move(large), io_orig.Main().c_current());
 
-  PaddedBytes compressed;
+  std::vector<uint8_t> compressed;
   AuxOut aux;
 
   CompressParams cparams;
@@ -280,8 +278,8 @@ TEST(PassesTest, ProgressiveDownsample2DegradesCorrectlyGrayscale) {
   cparams.qprogressive_mode = true;
   cparams.butteraugli_distance = 1.0;
   PassesEncoderState enc_state;
-  ASSERT_TRUE(EncodeFile(cparams, &io, &enc_state, &compressed,
-                         *JxlGetDefaultCms(), &aux, &pool));
+  ASSERT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed,
+                               *JxlGetDefaultCms(), &aux, &pool));
 
   EXPECT_LE(compressed.size(), 10000u);
 
@@ -316,7 +314,7 @@ TEST(PassesTest, ProgressiveDownsample2DegradesCorrectly) {
   CodecInOut io;
   io.SetFromImage(std::move(large), io_orig.Main().c_current());
 
-  PaddedBytes compressed;
+  std::vector<uint8_t> compressed;
   AuxOut aux;
 
   CompressParams cparams;
@@ -326,8 +324,8 @@ TEST(PassesTest, ProgressiveDownsample2DegradesCorrectly) {
   cparams.qprogressive_mode = true;
   cparams.butteraugli_distance = 1.0;
   PassesEncoderState enc_state;
-  ASSERT_TRUE(EncodeFile(cparams, &io, &enc_state, &compressed,
-                         *JxlGetDefaultCms(), &aux, &pool));
+  ASSERT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed,
+                               *JxlGetDefaultCms(), &aux, &pool));
 
   EXPECT_LE(compressed.size(), 220000u);
 
@@ -355,7 +353,7 @@ TEST(PassesTest, NonProgressiveDCImage) {
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Bytes(orig), &io, &pool));
 
-  PaddedBytes compressed;
+  std::vector<uint8_t> compressed;
   AuxOut aux;
 
   CompressParams cparams;
@@ -363,8 +361,8 @@ TEST(PassesTest, NonProgressiveDCImage) {
   cparams.progressive_mode = false;
   cparams.butteraugli_distance = 2.0;
   PassesEncoderState enc_state;
-  ASSERT_TRUE(EncodeFile(cparams, &io, &enc_state, &compressed,
-                         *JxlGetDefaultCms(), &aux, &pool));
+  ASSERT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed,
+                               *JxlGetDefaultCms(), &aux, &pool));
 
   // Even in non-progressive mode, it should be possible to return a DC-only
   // image.
