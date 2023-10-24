@@ -250,6 +250,8 @@ Status OutputEncodingInfo::MaybeSetColorEncoding(
 
 Status OutputEncodingInfo::SetColorEncoding(const ColorEncoding& c_desired) {
   color_encoding = c_desired;
+  linear_color_encoding = color_encoding;
+  linear_color_encoding.Tf().SetTransferFunction(TransferFunction::kLinear);
   color_encoding_is_original = orig_color_encoding.SameColorEncoding(c_desired);
 
   // Compute the opsin inverse matrix and luminances based on primaries and
