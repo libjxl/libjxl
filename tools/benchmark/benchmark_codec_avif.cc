@@ -255,8 +255,8 @@ class AvifCodec : public ImageCodec {
       encoder->speed = speed_;
       encoder->maxThreads = max_threads;
       for (const auto& opts : codec_specific_options_) {
-        avifEncoderSetCodecSpecificOption(encoder.get(), opts.first.c_str(),
-                                          opts.second.c_str());
+        JXL_RETURN_IF_AVIF_ERROR(avifEncoderSetCodecSpecificOption(
+            encoder.get(), opts.first.c_str(), opts.second.c_str()));
       }
       avifAddImageFlags add_image_flags = AVIF_ADD_IMAGE_FLAG_SINGLE;
       if (io->metadata.m.have_animation) {
