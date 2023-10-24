@@ -37,10 +37,6 @@ function(_set_jxl_threads _target)
   if (NOT WIN32 OR MINGW)
     set_target_properties(${_target} PROPERTIES OUTPUT_NAME "jxl_threads")
   endif()
-  install(TARGETS ${_target}
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
 endfunction()
 
 ### Static library.
@@ -56,45 +52,36 @@ target_compile_definitions(jxl_threads-static
 
 ### Public shared library.
 if (BUILD_SHARED_LIBS)
-add_library(jxl_threads SHARED ${JPEGXL_INTERNAL_THREADS_SOURCES})
-_set_jxl_threads(jxl_threads)
-
-set_target_properties(jxl_threads PROPERTIES
-  VERSION ${JPEGXL_LIBRARY_VERSION}
-  SOVERSION ${JPEGXL_LIBRARY_SOVERSION}
-  LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
-  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
+  add_library(jxl_threads SHARED ${JPEGXL_INTERNAL_THREADS_SOURCES})
+  add_dependencies(jxl_threads jxl_threads_export)
+  _set_jxl_threads(jxl_threads)
 
   set_target_properties(jxl_threads PROPERTIES
-      LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/jxl/jxl.version)
-  if(APPLE)
-  set_property(TARGET ${target} APPEND_STRING PROPERTY
-      LINK_FLAGS "-Wl,-exported_symbols_list,${CMAKE_CURRENT_SOURCE_DIR}/jxl/jxl_osx.syms")
-  elseif(WIN32)
-    # Nothing needed here, we use __declspec(dllexport) (jxl_threads_export.h)
-  else()
-  set_property(TARGET jxl_threads APPEND_STRING PROPERTY
-      LINK_FLAGS " -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/jxl/jxl.version")
-  endif()  # APPLE
+    VERSION ${JPEGXL_LIBRARY_VERSION}
+    SOVERSION ${JPEGXL_LIBRARY_SOVERSION}
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 
-# Compile the shared library such that the JXL_THREADS_EXPORT symbols are
-# exported. Users of the library will not set this flag and therefore import
-# those symbols.
-target_compile_definitions(jxl_threads
-  PRIVATE -DJXL_THREADS_INTERNAL_LIBRARY_BUILD)
+    set_target_properties(jxl_threads PROPERTIES
+        LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/jxl/jxl.version)
+    if(APPLE)
+    set_property(TARGET ${target} APPEND_STRING PROPERTY
+        LINK_FLAGS "-Wl,-exported_symbols_list,${CMAKE_CURRENT_SOURCE_DIR}/jxl/jxl_osx.syms")
+    elseif(WIN32)
+      # Nothing needed here, we use __declspec(dllexport) (jxl_threads_export.h)
+    else()
+    set_property(TARGET jxl_threads APPEND_STRING PROPERTY
+        LINK_FLAGS " -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/jxl/jxl.version")
+    endif()  # APPLE
 
-# Generate the jxl/jxl_threads_export.h header, we only need to generate it once
-# but we can use it from both libraries.
-generate_export_header(jxl_threads
-  BASE_NAME JXL_THREADS
-  EXPORT_FILE_NAME include/jxl/jxl_threads_export.h)
+  # Compile the shared library such that the JXL_THREADS_EXPORT symbols are
+  # exported. Users of the library will not set this flag and therefore import
+  # those symbols.
+  target_compile_definitions(jxl_threads
+    PRIVATE -DJXL_THREADS_INTERNAL_LIBRARY_BUILD)
 else()
-add_library(jxl_threads ALIAS jxl_threads-static)
-# When not building the shared library generate the jxl_threads_export.h header
-# only based on the static target.
-generate_export_header(jxl_threads-static
-  BASE_NAME JXL_THREADS
-  EXPORT_FILE_NAME include/jxl/jxl_threads_export.h)
+  add_dependencies(jxl_threads-static jxl_threads_export)
+  add_library(jxl_threads ALIAS jxl_threads-static)
 endif()  # BUILD_SHARED_LIBS
 
 
@@ -112,9 +99,3 @@ if(IS_ABSOLUTE "${CMAKE_INSTALL_LIBDIR}")
 else()
     set(PKGCONFIG_TARGET_LIBS "\${exec_prefix}/${CMAKE_INSTALL_LIBDIR}")
 endif()
-
-set(JPEGXL_THREADS_LIBRARY_REQUIRES "")
-configure_file("${CMAKE_CURRENT_SOURCE_DIR}/threads/libjxl_threads.pc.in"
-               "libjxl_threads.pc" @ONLY)
-install(FILES "${CMAKE_CURRENT_BINARY_DIR}/libjxl_threads.pc"
-  DESTINATION "${CMAKE_INSTALL_LIBDIR}/pkgconfig")

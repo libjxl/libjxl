@@ -12,25 +12,6 @@ set(JPEGLI_INTERNAL_LIBS
   ${ATOMICS_LIBRARIES}
 )
 
-# JPEGLIB setup
-set(BITS_IN_JSAMPLE 8)
-set(MEM_SRCDST_SUPPORTED 1)
-
-if(JPEGLI_LIBJPEG_LIBRARY_SOVERSION STREQUAL "62")
-  set(JPEG_LIB_VERSION 62)
-elseif(JPEGLI_LIBJPEG_LIBRARY_SOVERSION STREQUAL "7")
-  set(JPEG_LIB_VERSION 70)
-elseif(JPEGLI_LIBJPEG_LIBRARY_SOVERSION STREQUAL "8")
-  set(JPEG_LIB_VERSION 80)
-endif()
-
-configure_file(
-  ../third_party/libjpeg-turbo/jconfig.h.in include/jpegli/jconfig.h)
-configure_file(
-  ../third_party/libjpeg-turbo/jpeglib.h include/jpegli/jpeglib.h COPYONLY)
-configure_file(
-  ../third_party/libjpeg-turbo/jmorecfg.h include/jpegli/jmorecfg.h COPYONLY)
-
 add_library(jpegli-static STATIC EXCLUDE_FROM_ALL "${JPEGXL_INTERNAL_JPEGLI_SOURCES}")
 target_compile_options(jpegli-static PRIVATE "${JPEGXL_INTERNAL_FLAGS}")
 target_compile_options(jpegli-static PUBLIC ${JPEGXL_COVERAGE_FLAGS})
@@ -138,16 +119,6 @@ set_target_properties(jpeg PROPERTIES
   LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/jpegli/jpeg.version.${JPEGLI_LIBJPEG_LIBRARY_SOVERSION})
 set_property(TARGET jpeg APPEND_STRING PROPERTY
   LINK_FLAGS " -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/jpegli/jpeg.version.${JPEGLI_LIBJPEG_LIBRARY_SOVERSION}")
-
-if (JPEGXL_INSTALL_JPEGLI_LIBJPEG)
-  install(TARGETS jpeg
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
-  install(
-    DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/include/jpegli/"
-    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
-endif()
 
 # This hides the default visibility symbols from static libraries bundled into
 # the shared library. In particular this prevents exposing symbols from hwy

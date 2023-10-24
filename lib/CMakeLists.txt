@@ -9,6 +9,8 @@ set(JPEGXL_PATCH_VERSION 0)
 set(JPEGXL_LIBRARY_VERSION
     "${JPEGXL_MAJOR_VERSION}.${JPEGXL_MINOR_VERSION}.${JPEGXL_PATCH_VERSION}")
 
+include(jxl_generate.cmake)
+
 # This is the library API/ABI compatibility version. Changing this value makes
 # the shared library incompatible with previous version. A program linked
 # against this shared library SOVERSION will not run with an older SOVERSION.
@@ -147,18 +149,13 @@ if (JPEGXL_ENABLE_JPEGLI)
   include(jpegli.cmake)
 endif()
 
-# Install all the library headers from the source and the generated ones. There
-# is no distinction on which libraries use which header since it is expected
-# that all developer libraries are available together at build time.
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/jxl
-  DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
-install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include/jxl
-  DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
-
 if(BUILD_TESTING)
   cmake_policy(SET CMP0057 NEW)  # https://gitlab.kitware.com/cmake/cmake/issues/18198
   include(GoogleTest)
 endif()
+
+# Prepare / declare distributables
+include(jxl_install.cmake)
 
 # Tests for the jxl library.
 include(jxl_tests.cmake)

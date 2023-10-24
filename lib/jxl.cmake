@@ -7,11 +7,11 @@ include(compatibility.cmake)
 include(jxl_lists.cmake)
 
 if (JPEGXL_ENABLE_TOOLS OR JPEGXL_ENABLE_DEVTOOLS OR JPEGXL_ENABLE_BOXES)
-list(APPEND JPEGXL_INTERNAL_DEC_SOURCES ${JPEGXL_INTERNAL_DEC_BOX_SOURCES})
+  list(APPEND JPEGXL_INTERNAL_DEC_SOURCES ${JPEGXL_INTERNAL_DEC_BOX_SOURCES})
 endif()
 
 if (JPEGXL_ENABLE_TRANSCODE_JPEG OR JPEGXL_ENABLE_TOOLS OR JPEGXL_ENABLE_DEVTOOLS)
-list(APPEND JPEGXL_INTERNAL_DEC_SOURCES ${JPEGXL_INTERNAL_DEC_JPEG_SOURCES})
+  list(APPEND JPEGXL_INTERNAL_DEC_SOURCES ${JPEGXL_INTERNAL_DEC_JPEG_SOURCES})
 endif()
 
 set_source_files_properties(jxl/enc_fast_lossless.cc PROPERTIES COMPILE_FLAGS -O3)
@@ -23,7 +23,7 @@ set(JPEGXL_DEC_INTERNAL_LIBS
 )
 
 if (JPEGXL_ENABLE_TRANSCODE_JPEG OR JPEGXL_ENABLE_BOXES)
-list(APPEND JPEGXL_DEC_INTERNAL_LIBS brotlidec brotlicommon)
+  list(APPEND JPEGXL_DEC_INTERNAL_LIBS brotlidec brotlicommon)
 endif()
 
 set(JPEGXL_INTERNAL_LIBS
@@ -53,24 +53,6 @@ set(OBJ_COMPILE_DEFINITIONS
   JXL_INTERNAL_LIBRARY_BUILD
 )
 
-# Generate version.h
-configure_file("jxl/version.h.in" "include/jxl/version.h")
-
-# Headers for exporting/importing public headers
-include(GenerateExportHeader)
-
-# CMake does not allow generate_export_header for INTERFACE library, so we
-# add this stub library just for file generation.
-add_library(jxl_export OBJECT ${JPEGXL_INTERNAL_PUBLIC_HEADERS})
-set_target_properties(jxl_export PROPERTIES
-  CXX_VISIBILITY_PRESET hidden
-  VISIBILITY_INLINES_HIDDEN 1
-  DEFINE_SYMBOL JXL_INTERNAL_LIBRARY_BUILD
-  LINKER_LANGUAGE CXX
-)
-generate_export_header(jxl_export
-  BASE_NAME JXL
-  EXPORT_FILE_NAME include/jxl/jxl_export.h)
 # Place all public headers in a single directory.
 foreach(path ${JPEGXL_INTERNAL_PUBLIC_HEADERS})
   configure_file(
@@ -209,98 +191,76 @@ if (NOT WIN32 OR MINGW)
   set_target_properties(jxl-static PROPERTIES OUTPUT_NAME "jxl")
   set_target_properties(jxl_dec-static PROPERTIES OUTPUT_NAME "jxl_dec")
 endif()
-install(TARGETS jxl-static DESTINATION ${CMAKE_INSTALL_LIBDIR})
-install(TARGETS jxl_dec-static DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
 if (BUILD_SHARED_LIBS)
-
-# Public shared library.
-add_library(jxl SHARED ${JPEGXL_INTERNAL_OBJECTS})
-strip_static(JPEGXL_INTERNAL_SHARED_LIBS JPEGXL_INTERNAL_LIBS)
-target_link_libraries(jxl PUBLIC ${JPEGXL_COVERAGE_FLAGS} jxl_includes)
-target_link_libraries(jxl PUBLIC jxl_cms)
-target_link_libraries(jxl PRIVATE ${JPEGXL_INTERNAL_SHARED_LIBS})
-# Shared library include path contains only the "include/" paths.
-set_target_properties(jxl PROPERTIES
-  VERSION ${JPEGXL_LIBRARY_VERSION}
-  SOVERSION ${JPEGXL_LIBRARY_SOVERSION}
-  LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
-  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
-
-# Public shared decoder library.
-add_library(jxl_dec SHARED $<TARGET_OBJECTS:jxl_base-obj> $<TARGET_OBJECTS:jxl_dec-obj>)
-strip_static(JPEGXL_DEC_INTERNAL_SHARED_LIBS JPEGXL_DEC_INTERNAL_LIBS)
-target_link_libraries(jxl_dec PUBLIC ${JPEGXL_COVERAGE_FLAGS} jxl_includes)
-target_link_libraries(jxl_dec PUBLIC jxl_cms)
-target_link_libraries(jxl_dec PRIVATE ${JPEGXL_DEC_INTERNAL_SHARED_LIBS})
-# Shared library include path contains only the "include/" paths.
-set_target_properties(jxl_dec PROPERTIES
-  VERSION ${JPEGXL_LIBRARY_VERSION}
-  SOVERSION ${JPEGXL_LIBRARY_SOVERSION}
-  LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
-  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
-
-# Check whether the linker support excluding libs
-set(LINKER_EXCLUDE_LIBS_FLAG "-Wl,--exclude-libs=ALL")
-include(CheckCSourceCompiles)
-list(APPEND CMAKE_EXE_LINKER_FLAGS ${LINKER_EXCLUDE_LIBS_FLAG})
-check_c_source_compiles("int main(){return 0;}" LINKER_SUPPORT_EXCLUDE_LIBS)
-list(REMOVE_ITEM CMAKE_EXE_LINKER_FLAGS ${LINKER_EXCLUDE_LIBS_FLAG})
-
-# Add a jxl.version file as a version script to tag symbols with the
-# appropriate version number. This script is also used to limit what's exposed
-# in the shared library from the static dependencies bundled here.
-foreach(target IN ITEMS jxl jxl_dec)
-  set_target_properties(${target} PROPERTIES
-      LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/jxl/jxl.version)
-  if(APPLE)
-  set_property(TARGET ${target} APPEND_STRING PROPERTY
-      LINK_FLAGS "-Wl,-exported_symbols_list,${CMAKE_CURRENT_SOURCE_DIR}/jxl/jxl_osx.syms")
-  elseif(WIN32)
-    # Nothing needed here, we use __declspec(dllexport) (jxl_export.h)
-  else()
-  set_property(TARGET ${target} APPEND_STRING PROPERTY
-      LINK_FLAGS " -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/jxl/jxl.version")
-  endif()  # APPLE
-  # This hides the default visibility symbols from static libraries bundled into
-  # the shared library. In particular this prevents exposing symbols from hwy
-  # and skcms in the shared library.
-  if(LINKER_SUPPORT_EXCLUDE_LIBS)
-    set_property(TARGET ${target} APPEND_STRING PROPERTY
+  # Public shared library.
+  add_library(jxl SHARED ${JPEGXL_INTERNAL_OBJECTS})
+  strip_static(JPEGXL_INTERNAL_SHARED_LIBS JPEGXL_INTERNAL_LIBS)
+  target_link_libraries(jxl PUBLIC ${JPEGXL_COVERAGE_FLAGS} jxl_includes)
+  target_link_libraries(jxl PUBLIC jxl_cms)
+  target_link_libraries(jxl PRIVATE ${JPEGXL_INTERNAL_SHARED_LIBS})
+  # Shared library include path contains only the "include/" paths.
+  set_target_properties(jxl PROPERTIES
+    VERSION ${JPEGXL_LIBRARY_VERSION}
+    SOVERSION ${JPEGXL_LIBRARY_SOVERSION}
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
+  # Public shared decoder library.
+  add_library(jxl_dec SHARED $<TARGET_OBJECTS:jxl_base-obj> $<TARGET_OBJECTS:jxl_dec-obj>)
+  strip_static(JPEGXL_DEC_INTERNAL_SHARED_LIBS JPEGXL_DEC_INTERNAL_LIBS)
+  target_link_libraries(jxl_dec PUBLIC ${JPEGXL_COVERAGE_FLAGS} jxl_includes)
+  target_link_libraries(jxl_dec PUBLIC jxl_cms)
+  target_link_libraries(jxl_dec PRIVATE ${JPEGXL_DEC_INTERNAL_SHARED_LIBS})
+  # Shared library include path contains only the "include/" paths.
+  set_target_properties(jxl_dec PROPERTIES
+    VERSION ${JPEGXL_LIBRARY_VERSION}
+    SOVERSION ${JPEGXL_LIBRARY_SOVERSION}
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
+  # Check whether the linker support excluding libs
+  set(LINKER_EXCLUDE_LIBS_FLAG "-Wl,--exclude-libs=ALL")
+  include(CheckCSourceCompiles)
+  list(APPEND CMAKE_EXE_LINKER_FLAGS ${LINKER_EXCLUDE_LIBS_FLAG})
+  check_c_source_compiles("int main(){return 0;}" LINKER_SUPPORT_EXCLUDE_LIBS)
+  list(REMOVE_ITEM CMAKE_EXE_LINKER_FLAGS ${LINKER_EXCLUDE_LIBS_FLAG})
+  # Add a jxl.version file as a version script to tag symbols with the
+  # appropriate version number. This script is also used to limit what's exposed
+  # in the shared library from the static dependencies bundled here.
+  foreach(target IN ITEMS jxl jxl_dec)
+    set_target_properties(${target} PROPERTIES
+        LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/jxl/jxl.version)
+    if(APPLE)
+      set_property(TARGET ${target} APPEND_STRING PROPERTY
+        LINK_FLAGS "-Wl,-exported_symbols_list,${CMAKE_CURRENT_SOURCE_DIR}/jxl/jxl_osx.syms")
+    elseif(WIN32)
+      # Nothing needed here, we use __declspec(dllexport) (jxl_export.h)
+    else()
+      set_property(TARGET ${target} APPEND_STRING PROPERTY
+        LINK_FLAGS " -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/jxl/jxl.version")
+    endif()  # APPLE
+    # This hides the default visibility symbols from static libraries bundled into
+    # the shared library. In particular this prevents exposing symbols from hwy
+    # and skcms in the shared library.
+    if(LINKER_SUPPORT_EXCLUDE_LIBS)
+      set_property(TARGET ${target} APPEND_STRING PROPERTY
         LINK_FLAGS " ${LINKER_EXCLUDE_LIBS_FLAG}")
-  endif()
-endforeach()
-
-# Only install libjxl shared library. The libjxl_dec is not installed since it
-# contains symbols also in libjxl which would conflict if programs try to use
-# both.
-install(TARGETS jxl
-  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
-else()
-add_library(jxl ALIAS jxl-static)
-add_library(jxl_dec ALIAS jxl_dec-static)
+    endif()
+  endforeach()
+else()  # BUILD_SHARED_LIBS
+  add_library(jxl ALIAS jxl-static)
+  add_library(jxl_dec ALIAS jxl_dec-static)
 endif()  # BUILD_SHARED_LIBS
-
-# Add a pkg-config file for libjxl.
-set(JPEGXL_LIBRARY_REQUIRES
-    "libhwy libbrotlienc libbrotlidec libjxl_cms")
 
 # Allow adding prefix if CMAKE_INSTALL_INCLUDEDIR not absolute.
 if(IS_ABSOLUTE "${CMAKE_INSTALL_INCLUDEDIR}")
-    set(PKGCONFIG_TARGET_INCLUDES "${CMAKE_INSTALL_INCLUDEDIR}")
+  set(PKGCONFIG_TARGET_INCLUDES "${CMAKE_INSTALL_INCLUDEDIR}")
 else()
-    set(PKGCONFIG_TARGET_INCLUDES "\${prefix}/${CMAKE_INSTALL_INCLUDEDIR}")
-endif()
-# Allow adding prefix if CMAKE_INSTALL_LIBDIR not absolute.
-if(IS_ABSOLUTE "${CMAKE_INSTALL_LIBDIR}")
-    set(PKGCONFIG_TARGET_LIBS "${CMAKE_INSTALL_LIBDIR}")
-else()
-    set(PKGCONFIG_TARGET_LIBS "\${exec_prefix}/${CMAKE_INSTALL_LIBDIR}")
+  set(PKGCONFIG_TARGET_INCLUDES "\${prefix}/${CMAKE_INSTALL_INCLUDEDIR}")
 endif()
 
-configure_file("${CMAKE_CURRENT_SOURCE_DIR}/jxl/libjxl.pc.in"
-               "libjxl.pc" @ONLY)
-install(FILES "${CMAKE_CURRENT_BINARY_DIR}/libjxl.pc"
-  DESTINATION "${CMAKE_INSTALL_LIBDIR}/pkgconfig")
+# Allow adding prefix if CMAKE_INSTALL_LIBDIR not absolute.
+if(IS_ABSOLUTE "${CMAKE_INSTALL_LIBDIR}")
+  set(PKGCONFIG_TARGET_LIBS "${CMAKE_INSTALL_LIBDIR}")
+else()
+  set(PKGCONFIG_TARGET_LIBS "\${exec_prefix}/${CMAKE_INSTALL_LIBDIR}")
+endif()

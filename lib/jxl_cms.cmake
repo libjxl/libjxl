@@ -6,25 +6,7 @@
 include(compatibility.cmake)
 include(jxl_lists.cmake)
 
-# Headers for exporting/importing public headers
-include(GenerateExportHeader)
-
-# CMake does not allow generate_export_header for INTERFACE library, so we
-# add this stub library just for file generation.
-add_library(jxl_cms_export OBJECT "jxl/cms/jxl_cms.h")
-set_target_properties(jxl_cms_export PROPERTIES
-  CXX_VISIBILITY_PRESET hidden
-  VISIBILITY_INLINES_HIDDEN 1
-  DEFINE_SYMBOL JXL_INTERNAL_LIBRARY_BUILD
-  LINKER_LANGUAGE CXX
-)
-generate_export_header(jxl_cms_export
-  BASE_NAME JXL_CMS
-  EXPORT_FILE_NAME include/jxl/jxl_cms_export.h)
-
-add_library(jxl_cms-obj OBJECT
-  ${JPEGXL_INTERNAL_CMS_SOURCES}
-)
+add_library(jxl_cms-obj OBJECT ${JPEGXL_INTERNAL_CMS_SOURCES})
 target_compile_options(jxl_cms-obj PRIVATE "${JPEGXL_INTERNAL_FLAGS}")
 set_target_properties(jxl_cms-obj PROPERTIES POSITION_INDEPENDENT_CODE ON)
 jxl_link_libraries(jxl_cms-obj jxl_includes)
@@ -62,31 +44,14 @@ if (NOT WIN32 OR MINGW)
   set_target_properties(jxl_cms-static PROPERTIES OUTPUT_NAME "jxl_cms")
 endif()
 
-install(TARGETS jxl_cms-static DESTINATION ${CMAKE_INSTALL_LIBDIR})
-
-if (BUILD_SHARED_LIBS AND NOT MINGW)
-add_library(jxl_cms SHARED ${JXL_CMS_OBJECTS})
-target_link_libraries(jxl_cms PRIVATE hwy)
-
-set_target_properties(jxl_cms PROPERTIES
-  VERSION ${JPEGXL_LIBRARY_VERSION}
-  SOVERSION ${JPEGXL_LIBRARY_SOVERSION}
-  LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
-  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
-
-install(TARGETS jxl_cms
-  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
-
+if (BUILD_SHARED_LIBS)
+  add_library(jxl_cms SHARED ${JXL_CMS_OBJECTS})
+  target_link_libraries(jxl_cms PRIVATE hwy)
+  set_target_properties(jxl_cms PROPERTIES
+    VERSION ${JPEGXL_LIBRARY_VERSION}
+    SOVERSION ${JPEGXL_LIBRARY_SOVERSION}
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 else()  # BUILD_SHARED_LIBS
-
-add_library(jxl_cms ALIAS jxl_cms-static)
-
+  add_library(jxl_cms ALIAS jxl_cms-static)
 endif()  # BUILD_SHARED_LIBS
-
-set(JPEGXL_CMS_LIBRARY_REQUIRES "")
-configure_file("${CMAKE_CURRENT_SOURCE_DIR}/jxl/libjxl_cms.pc.in"
-               "libjxl_cms.pc" @ONLY)
-install(FILES "${CMAKE_CURRENT_BINARY_DIR}/libjxl_cms.pc"
-  DESTINATION "${CMAKE_INSTALL_LIBDIR}/pkgconfig")
