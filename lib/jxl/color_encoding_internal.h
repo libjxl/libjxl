@@ -14,6 +14,7 @@
 #include <stdint.h>
 
 #include <array>
+#include <cstdlib>  // free
 #include <ostream>
 #include <string>
 #include <utility>

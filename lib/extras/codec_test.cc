@@ -18,6 +18,7 @@
 #include "lib/extras/dec/pnm.h"
 #include "lib/extras/enc/encode.h"
 #include "lib/jxl/base/random.h"
+#include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"
