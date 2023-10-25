@@ -5,6 +5,8 @@
 
 #include "lib/extras/dec/pgx.h"
 
+#include <cstring>
+
 #include "lib/extras/packed_image_convert.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/testing.h"

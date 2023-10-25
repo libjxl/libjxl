@@ -3,7 +3,10 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include "lib/jxl/base/span.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_ans.h"
+#include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/entropy_coder.h"
 
 namespace jpegxl {

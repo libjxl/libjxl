@@ -13,6 +13,7 @@
 
 #include "lib/extras/codec.h"
 #include "lib/jxl/base/common.h"
+#include "lib/jxl/base/span.h"
 #include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/common.h"  // JXL_HIGH_PRECISION, JPEGXL_ENABLE_TRANSCODE_JPEG
