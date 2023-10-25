@@ -165,15 +165,13 @@ TEST(PassesTest, AllDownsampleFeasible) {
   ASSERT_TRUE(SetFromBytes(Bytes(orig), &io, &pool));
 
   std::vector<uint8_t> compressed;
-  AuxOut aux;
 
   CompressParams cparams;
   cparams.speed_tier = SpeedTier::kSquirrel;
   cparams.progressive_mode = true;
   cparams.butteraugli_distance = 1.0;
   PassesEncoderState enc_state;
-  ASSERT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed,
-                               *JxlGetDefaultCms(), &aux, &pool));
+  ASSERT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed, &pool));
 
   EXPECT_LE(compressed.size(), 240000u);
   float target_butteraugli[9] = {};
@@ -213,15 +211,13 @@ TEST(PassesTest, AllDownsampleFeasibleQProgressive) {
   ASSERT_TRUE(SetFromBytes(Bytes(orig), &io, &pool));
 
   std::vector<uint8_t> compressed;
-  AuxOut aux;
 
   CompressParams cparams;
   cparams.speed_tier = SpeedTier::kSquirrel;
   cparams.qprogressive_mode = true;
   cparams.butteraugli_distance = 1.0;
   PassesEncoderState enc_state;
-  ASSERT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed,
-                               *JxlGetDefaultCms(), &aux, &pool));
+  ASSERT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed, &pool));
 
   EXPECT_LE(compressed.size(), 220000u);
 
@@ -269,7 +265,6 @@ TEST(PassesTest, ProgressiveDownsample2DegradesCorrectlyGrayscale) {
   io.SetFromImage(std::move(large), io_orig.Main().c_current());
 
   std::vector<uint8_t> compressed;
-  AuxOut aux;
 
   CompressParams cparams;
   cparams.speed_tier = SpeedTier::kSquirrel;
@@ -278,8 +273,7 @@ TEST(PassesTest, ProgressiveDownsample2DegradesCorrectlyGrayscale) {
   cparams.qprogressive_mode = true;
   cparams.butteraugli_distance = 1.0;
   PassesEncoderState enc_state;
-  ASSERT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed,
-                               *JxlGetDefaultCms(), &aux, &pool));
+  ASSERT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed, &pool));
 
   EXPECT_LE(compressed.size(), 10000u);
 
@@ -315,7 +309,6 @@ TEST(PassesTest, ProgressiveDownsample2DegradesCorrectly) {
   io.SetFromImage(std::move(large), io_orig.Main().c_current());
 
   std::vector<uint8_t> compressed;
-  AuxOut aux;
 
   CompressParams cparams;
   cparams.speed_tier = SpeedTier::kSquirrel;
@@ -324,8 +317,7 @@ TEST(PassesTest, ProgressiveDownsample2DegradesCorrectly) {
   cparams.qprogressive_mode = true;
   cparams.butteraugli_distance = 1.0;
   PassesEncoderState enc_state;
-  ASSERT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed,
-                               *JxlGetDefaultCms(), &aux, &pool));
+  ASSERT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed, &pool));
 
   EXPECT_LE(compressed.size(), 220000u);
 
@@ -354,15 +346,13 @@ TEST(PassesTest, NonProgressiveDCImage) {
   ASSERT_TRUE(SetFromBytes(Bytes(orig), &io, &pool));
 
   std::vector<uint8_t> compressed;
-  AuxOut aux;
 
   CompressParams cparams;
   cparams.speed_tier = SpeedTier::kSquirrel;
   cparams.progressive_mode = false;
   cparams.butteraugli_distance = 2.0;
   PassesEncoderState enc_state;
-  ASSERT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed,
-                               *JxlGetDefaultCms(), &aux, &pool));
+  ASSERT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed, &pool));
 
   // Even in non-progressive mode, it should be possible to return a DC-only
   // image.

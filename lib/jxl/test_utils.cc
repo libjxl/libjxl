@@ -167,7 +167,7 @@ void CheckSameEncodings(const std::vector<ColorEncoding>& a,
 bool Roundtrip(const CodecInOut* io, const CompressParams& cparams,
                extras::JXLDecompressParams dparams,
                CodecInOut* JXL_RESTRICT io2, std::stringstream& failures,
-               size_t* compressed_size, ThreadPool* pool, AuxOut* aux_out) {
+               size_t* compressed_size, ThreadPool* pool) {
   DefaultAcceptedFormats(dparams);
   if (compressed_size) {
     *compressed_size = static_cast<size_t>(-1);
@@ -194,8 +194,7 @@ bool Roundtrip(const CodecInOut* io, const CompressParams& cparams,
 
   std::unique_ptr<PassesEncoderState> enc_state =
       jxl::make_unique<PassesEncoderState>();
-  JXL_CHECK(test::EncodeFile(cparams, io, enc_state.get(), &compressed,
-                             *JxlGetDefaultCms(), aux_out, pool));
+  JXL_CHECK(test::EncodeFile(cparams, io, enc_state.get(), &compressed, pool));
 
   for (const ImageBundle& ib1 : io->frames) {
     metadata_encodings_1.push_back(ib1.metadata()->color_encoding);
@@ -732,9 +731,9 @@ Status EncodePreview(const CompressParams& cparams, const ImageBundle& ib,
 
 Status EncodeFile(const CompressParams& params, const CodecInOut* io,
                   PassesEncoderState* passes_enc_state,
-                  std::vector<uint8_t>* compressed, const JxlCmsInterface& cms,
-                  AuxOut* aux_out, ThreadPool* pool) {
+                  std::vector<uint8_t>* compressed, ThreadPool* pool) {
   compressed->clear();
+  const JxlCmsInterface& cms = *JxlGetDefaultCms();
   io->CheckMetadata();
   BitWriter writer;
 
@@ -748,12 +747,13 @@ Status EncodeFile(const CompressParams& params, const CodecInOut* io,
 
   std::unique_ptr<CodecMetadata> metadata = jxl::make_unique<CodecMetadata>();
   JXL_RETURN_IF_ERROR(PrepareCodecMetadataFromIO(cparams, io, metadata.get()));
-  JXL_RETURN_IF_ERROR(WriteCodestreamHeaders(metadata.get(), &writer, aux_out));
+  JXL_RETURN_IF_ERROR(
+      WriteCodestreamHeaders(metadata.get(), &writer, /*aux_out*/ nullptr));
 
   // Only send ICC (at least several hundred bytes) if fields aren't enough.
   if (metadata->m.color_encoding.WantICC()) {
     JXL_RETURN_IF_ERROR(WriteICC(metadata->m.color_encoding.ICC(), &writer,
-                                 kLayerHeader, aux_out));
+                                 kLayerHeader, /* aux_out */ nullptr));
   }
 
   if (metadata->m.have_preview) {
@@ -764,7 +764,7 @@ Status EncodeFile(const CompressParams& params, const CodecInOut* io,
   // Each frame should start on byte boundaries.
   BitWriter::Allotment allotment(&writer, 8);
   writer.ZeroPadToByte();
-  allotment.ReclaimAndCharge(&writer, kLayerHeader, aux_out);
+  allotment.ReclaimAndCharge(&writer, kLayerHeader, /* aux_out */ nullptr);
 
   for (size_t i = 0; i < io->frames.size(); i++) {
     FrameInfo info;
@@ -774,7 +774,7 @@ Status EncodeFile(const CompressParams& params, const CodecInOut* io,
     }
     JXL_RETURN_IF_ERROR(EncodeFrame(cparams, info, metadata.get(),
                                     io->frames[i], passes_enc_state, cms, pool,
-                                    &writer, aux_out));
+                                    &writer, /* aux_out */ nullptr));
   }
 
   // Clean up passes_enc_state in case it gets reused.

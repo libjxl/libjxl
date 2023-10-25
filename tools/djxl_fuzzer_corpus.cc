@@ -29,7 +29,6 @@
 #include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/enc_ans.h"
-#include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_params.h"
@@ -257,13 +256,11 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
   if (spec.params.preview) params.preview = jxl::Override::kOn;
   if (spec.params.noise) params.noise = jxl::Override::kOn;
 
-  jxl::AuxOut aux_out;
   jxl::PassesEncoderState passes_encoder_state;
   // EncodeFile replaces output; pass a temporary storage for it.
   std::vector<uint8_t> compressed_image;
   bool ok = jxl::test::EncodeFile(params, &io, &passes_encoder_state,
-                                  &compressed_image, *JxlGetDefaultCms(),
-                                  &aux_out, nullptr);
+                                  &compressed_image);
   if (!ok) return false;
   compressed.append(compressed_image);
 

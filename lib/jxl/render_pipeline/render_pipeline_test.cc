@@ -219,9 +219,8 @@ TEST_P(RenderPipelineTestParam, PipelineTest) {
 
   PassesEncoderState enc_state;
   enc_state.shared.image_features.splines = config.splines;
-  ASSERT_TRUE(test::EncodeFile(config.cparams, &io, &enc_state, &compressed,
-                               *JxlGetDefaultCms(), /*aux_out=*/nullptr,
-                               &pool));
+  ASSERT_TRUE(
+      test::EncodeFile(config.cparams, &io, &enc_state, &compressed, &pool));
 
   CodecInOut io_default;
   ASSERT_TRUE(DecodeFile(Bytes(compressed),

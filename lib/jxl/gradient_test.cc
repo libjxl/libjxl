@@ -158,10 +158,8 @@ void TestGradient(ThreadPool* pool, uint32_t color0, uint32_t color1,
   CodecInOut io2;
 
   std::vector<uint8_t> compressed;
-  AuxOut* aux_out = nullptr;
   PassesEncoderState enc_state;
-  EXPECT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed,
-                               *JxlGetDefaultCms(), aux_out, pool));
+  EXPECT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed, pool));
   EXPECT_TRUE(test::DecodeFile({}, Bytes(compressed), &io2, pool));
   EXPECT_TRUE(io2.Main().TransformTo(io2.metadata.m.color_encoding,
                                      *JxlGetDefaultCms(), pool));
