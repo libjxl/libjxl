@@ -11,6 +11,7 @@
 #include "lib/jxl/enc_ans_params.h"
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/image.h"
+#include "lib/jxl/splines.h"
 
 namespace jxl {
 
