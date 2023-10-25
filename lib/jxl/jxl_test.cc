@@ -630,15 +630,13 @@ TEST(JxlTest, RoundtripGrayscale) {
   EXPECT_TRUE(io.metadata.m.color_encoding.Tf().IsSRGB());
 
   PassesEncoderState enc_state;
-  AuxOut* aux_out = nullptr;
 
   {
     CompressParams cparams;
     cparams.butteraugli_distance = 1.0;
 
     std::vector<uint8_t> compressed;
-    EXPECT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed,
-                                 *JxlGetDefaultCms(), aux_out));
+    EXPECT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed));
     CodecInOut io2;
     EXPECT_TRUE(test::DecodeFile({}, Bytes(compressed), &io2));
     EXPECT_TRUE(io2.Main().IsGray());
@@ -657,8 +655,7 @@ TEST(JxlTest, RoundtripGrayscale) {
     cparams.butteraugli_distance = 8.0;
 
     std::vector<uint8_t> compressed;
-    EXPECT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed,
-                                 *JxlGetDefaultCms(), aux_out));
+    EXPECT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed));
     CodecInOut io2;
     EXPECT_TRUE(test::DecodeFile({}, Bytes(compressed), &io2));
     EXPECT_TRUE(io2.Main().IsGray());
@@ -675,8 +672,7 @@ TEST(JxlTest, RoundtripGrayscale) {
     cparams.butteraugli_distance = 1.0;
 
     std::vector<uint8_t> compressed;
-    EXPECT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed,
-                                 *JxlGetDefaultCms(), aux_out));
+    EXPECT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed));
 
     CodecInOut io2;
     JXLDecompressParams dparams;
@@ -711,10 +707,8 @@ TEST(JxlTest, RoundtripAlpha) {
   EXPECT_EQ(0u, io.metadata.m.bit_depth.exponent_bits_per_sample);
   EXPECT_TRUE(io.metadata.m.color_encoding.Tf().IsSRGB());
   PassesEncoderState enc_state;
-  AuxOut* aux_out = nullptr;
   std::vector<uint8_t> compressed;
-  EXPECT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed,
-                               *JxlGetDefaultCms(), aux_out));
+  EXPECT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed));
 
   EXPECT_LE(compressed.size(), 10077u);
 
@@ -812,10 +806,8 @@ TEST(JxlTest, RoundtripAlphaPremultiplied) {
   EXPECT_FALSE(io_nopremul.Main().AlphaIsPremultiplied());
 
   PassesEncoderState enc_state;
-  AuxOut* aux_out = nullptr;
   std::vector<uint8_t> compressed;
-  EXPECT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed,
-                               *JxlGetDefaultCms(), aux_out));
+  EXPECT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed));
   EXPECT_LE(compressed.size(), 10000u);
 
   for (bool use_image_callback : {false, true}) {

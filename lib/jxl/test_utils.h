@@ -10,7 +10,6 @@
 
 // Macros and functions useful for tests.
 
-#include <jxl/cms_interface.h>
 #include <jxl/codestream_header.h>
 #include <jxl/thread_parallel_runner_cxx.h>
 
@@ -71,8 +70,7 @@ Status DecodeFile(extras::JXLDecompressParams dparams,
 bool Roundtrip(const CodecInOut* io, const CompressParams& cparams,
                extras::JXLDecompressParams dparams,
                CodecInOut* JXL_RESTRICT io2, std::stringstream& failures,
-               size_t* compressed_size = nullptr, ThreadPool* pool = nullptr,
-               AuxOut* aux_out = nullptr);
+               size_t* compressed_size = nullptr, ThreadPool* pool = nullptr);
 
 // Returns compressed size [bytes].
 size_t Roundtrip(const extras::PackedPixelFile& ppf_in,
@@ -186,8 +184,7 @@ Status ReadICC(BitReader* JXL_RESTRICT reader,
 // `io->metadata.m.original` must be set.
 Status EncodeFile(const CompressParams& params, const CodecInOut* io,
                   PassesEncoderState* passes_enc_state,
-                  std::vector<uint8_t>* compressed, const JxlCmsInterface& cms,
-                  AuxOut* aux_out = nullptr, ThreadPool* pool = nullptr);
+                  std::vector<uint8_t>* compressed, ThreadPool* pool = nullptr);
 
 }  // namespace test
 
