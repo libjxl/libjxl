@@ -231,7 +231,9 @@ class WebPCodec : public ImageCodec {
                           std::vector<uint8_t>* compressed) {
     compressed->clear();
     WebPConfig config;
-    WebPConfigInit(&config);
+    if (!WebPConfigInit(&config)) {
+      return JXL_FAILURE("WebPConfigInit failed");
+    }
     JXL_ASSERT(!lossless_ || !near_lossless_);  // can't have both
     config.lossless = lossless_;
     config.quality = quality;
@@ -246,7 +248,9 @@ class WebPCodec : public ImageCodec {
     JXL_CHECK(WebPValidateConfig(&config));
 
     WebPPicture pic;
-    WebPPictureInit(&pic);
+    if (!WebPPictureInit(&pic)) {
+      return JXL_FAILURE("WebPPictureInit failed");
+    }
     pic.width = static_cast<int>(xsize);
     pic.height = static_cast<int>(ysize);
     pic.writer = &WebPStringWrite;
@@ -254,9 +258,13 @@ class WebPCodec : public ImageCodec {
     pic.custom_ptr = compressed;
 
     if (num_chans == 3) {
-      WebPPictureImportRGB(&pic, srgb.data(), 3 * xsize);
+      if (!WebPPictureImportRGB(&pic, srgb.data(), 3 * xsize)) {
+        return JXL_FAILURE("WebPPictureImportRGB failed");
+      }
     } else {
-      WebPPictureImportRGBA(&pic, srgb.data(), 4 * xsize);
+      if (!WebPPictureImportRGBA(&pic, srgb.data(), 4 * xsize)) {
+        return JXL_FAILURE("WebPPictureImportRGBA failed");
+      }
     }
 
     // WebP encoding may fail, for example, if the image is more than 16384
