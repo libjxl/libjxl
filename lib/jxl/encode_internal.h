@@ -20,12 +20,12 @@
 #include <vector>
 
 #include "lib/jxl/base/data_parallel.h"
-#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_fast_lossless.h"
 #include "lib/jxl/enc_frame.h"
 #include "lib/jxl/memory_manager_internal.h"
+#include "lib/jxl/padded_bytes.h"
 
 namespace jxl {
 

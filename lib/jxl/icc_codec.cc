@@ -12,10 +12,10 @@
 #include <vector>
 
 #include "lib/jxl/base/byte_order.h"
-#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/dec_ans.h"
 #include "lib/jxl/fields.h"
 #include "lib/jxl/icc_codec_common.h"
+#include "lib/jxl/padded_bytes.h"
 
 namespace jxl {
 namespace {

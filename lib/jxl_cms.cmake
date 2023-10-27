@@ -27,7 +27,7 @@ add_library(jxl_cms-obj OBJECT
 )
 target_compile_options(jxl_cms-obj PRIVATE "${JPEGXL_INTERNAL_FLAGS}")
 set_target_properties(jxl_cms-obj PROPERTIES POSITION_INDEPENDENT_CODE ON)
-jxl_link_libraries(jxl_cms-obj jxl_includes)
+jxl_link_libraries(jxl_cms-obj jxl_base)
 target_include_directories(jxl_cms-obj PRIVATE
   ${JXL_HWY_INCLUDE_DIRS}
 )

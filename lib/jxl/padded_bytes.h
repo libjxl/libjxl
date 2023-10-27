@@ -16,9 +16,9 @@
 #include <initializer_list>
 #include <utility>  // swap
 
-#include "lib/jxl/base/cache_aligned.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/cache_aligned.h"
 
 namespace jxl {
 
