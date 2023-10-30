@@ -124,6 +124,13 @@ else ()
   endif()  # WIN32
 endif()  #!MSVC
 
+if (JPEGXL_ENABLE_SKCMS)
+  list(APPEND JPEGXL_INTERNAL_FLAGS -DJPEGXL_ENABLE_SKCMS=1)
+  if (JPEGXL_BUNDLE_SKCMS)
+    list(APPEND JPEGXL_INTERNAL_FLAGS -DJPEGXL_BUNDLE_SKCMS=1)
+  endif ()
+endif ()
+
 # strips the -static suffix from all the elements in LIST
 function(strip_static OUTPUT_VAR LIB_LIST)
   foreach(lib IN LISTS ${LIB_LIST})
