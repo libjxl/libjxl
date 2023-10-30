@@ -15,9 +15,9 @@
 
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/common.h"
-#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/padded_bytes.h"
 
 // JPEGXL_ENABLE_BOXES, JPEGXL_ENABLE_TRANSCODE_JPEG
 #include "lib/jxl/common.h"

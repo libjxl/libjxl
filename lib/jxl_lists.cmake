@@ -10,8 +10,6 @@ set(JPEGXL_INTERNAL_BASE_SOURCES
   jxl/base/arch_macros.h
   jxl/base/bits.h
   jxl/base/byte_order.h
-  jxl/base/cache_aligned.cc
-  jxl/base/cache_aligned.h
   jxl/base/common.h
   jxl/base/compiler_specific.h
   jxl/base/data_parallel.h
@@ -21,7 +19,6 @@ set(JPEGXL_INTERNAL_BASE_SOURCES
   jxl/base/matrix_ops.h
   jxl/base/os_macros.h
   jxl/base/override.h
-  jxl/base/padded_bytes.h
   jxl/base/printf_macros.h
   jxl/base/random.h
   jxl/base/rational_polynomial-inl.h
@@ -131,6 +128,8 @@ set(JPEGXL_INTERNAL_DEC_SOURCES
   jxl/ans_params.h
   jxl/blending.cc
   jxl/blending.h
+  jxl/cache_aligned.cc
+  jxl/cache_aligned.h
   jxl/chroma_from_luma.cc
   jxl/chroma_from_luma.h
   jxl/codec_in_out.h
@@ -248,6 +247,7 @@ set(JPEGXL_INTERNAL_DEC_SOURCES
   jxl/opsin_params.cc
   jxl/opsin_params.h
   jxl/pack_signed.h
+  jxl/padded_bytes.h
   jxl/passes_state.cc
   jxl/passes_state.h
   jxl/patch_dictionary_internal.h
