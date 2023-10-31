@@ -24,7 +24,7 @@ concurrency:
 
 jobs:
   ubuntu_build:
-    name: Ubuntu Build ${{ matrix.name }}
+    name: ${{ startsWith(matrix.os, 'macos-') && 'MacOS' || 'Ubuntu' }} Build ${{ matrix.name }}
     runs-on: ${{ matrix.os || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
@@ -44,7 +44,7 @@ jobs:
             env_stack_size: 1
             max_stack: 2400
             # Conformance tooling test requires numpy.
-            apt_pkgs: graphviz python3-numpy
+            apt_pkgs: doxygen graphviz python3-numpy
           - name: lowprecision
             mode: release
             test_in_pr: true
@@ -102,6 +102,12 @@ jobs:
             apt_pkgs: clang-7
             cc: clang-7
             cxx: clang++-7
+          - name: release:osx
+            os: macos-latest
+            mode: release
+            skip_install: true
+            cmake_args: >-
+              -DCMAKE_FIND_FRAMEWORK=NEVER
 
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
@@ -122,7 +128,8 @@ jobs:
       with:
         egress-policy: audit
 
-    - name: Install build deps
+    - name: Install build deps Ubuntu
+      if: startsWith(matrix.os, 'macos-') == false
       run: |
         sudo rm -f /var/lib/man-db/auto-update
         sudo apt update
@@ -130,7 +137,6 @@ jobs:
           ccache \
           clang \
           cmake \
-          doxygen \
           graphviz \
           imagemagick \
           libbenchmark-dev \
@@ -152,11 +158,31 @@ jobs:
         #
         echo "CC=${{ matrix.cc || 'clang' }}" >> $GITHUB_ENV
         echo "CXX=${{ matrix.cxx || 'clang++' }}" >> $GITHUB_ENV
+    - name: Install build deps MacOS
+      if: startsWith(matrix.os, 'macos-')
+      run: |
+        # Should be already installed:
+        #  brew install brotli giflib jpeg-turbo libpng zlib
+        # Not required, since we skip building documentation
+        #  brew install doxygen
+        brew install binutils ccache coreutils googletest ninja sdl2
+
     - name: Checkout the source
       uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       with:
         submodules: true
         fetch-depth: 2
+
+    - name: Setup the Homebrew prefixes
+      if: startsWith(matrix.os, 'macos-')
+      run: |
+          CMAKE_PREFIX_PATH=`brew --prefix brotli`:`brew --prefix giflib`:`brew --prefix zlib`:`brew --prefix jpeg-turbo`:`brew --prefix libpng`:`brew --prefix sdl2`:`brew --prefix zlib`
+          echo "CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}" >> $GITHUB_ENV
+
+    - name: Suppress doxygen target
+      if: matrix.name != 'release'
+      run: |
+        echo "TARGETS=all" >> $GITHUB_ENV
 
     - name: Setup the LLVM source path
       if: matrix.name == 'msan'
@@ -237,9 +263,11 @@ jobs:
     - name: Build stats ${{ matrix.name }}
       if: env.WILL_BUILD == 'true' && matrix.mode == 'release'
       run: |
+        SHARED_LIB_EXT="${{ startsWith(matrix.os, 'macos-') && 'dylib' || 'so' }}"
+        SELECT_BINUTILS="${{ startsWith(matrix.os, 'macos-') && '--binutils `brew --prefix binutils`/bin/' || '' }}"
         tools/scripts/build_stats.py --save build/stats.json \
-          --max-stack ${{ matrix.max_stack || '0' }} \
-          cjxl djxl libjxl.so libjxl_dec.so
+          --max-stack ${{ matrix.max_stack || '0' }} ${SELECT_BINUTILS} \
+          cjxl djxl libjxl.${SHARED_LIB_EXT} libjxl_dec.${SHARED_LIB_EXT}
 
     # Check that we can build the example project against the installed libs.
     - name: Install and build examples
