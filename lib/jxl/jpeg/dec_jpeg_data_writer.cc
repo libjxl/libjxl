@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h> /* for memset, memcpy */
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
@@ -202,6 +203,7 @@ static JXL_INLINE void WriteSymbolBits(int symbol, HuffmanCodeTable* table,
 // bit writer.
 static JXL_INLINE void Flush(DCTCodingState* s, JpegBitWriter* bw) {
   if (s->eob_run_ > 0) {
+    Reserve(bw, 16);
     int nbits = FloorLog2Nonzero<uint32_t>(s->eob_run_);
     int symbol = nbits << 4u;
     WriteSymbol(symbol, s->cur_ac_huff_, bw);
@@ -210,10 +212,17 @@ static JXL_INLINE void Flush(DCTCodingState* s, JpegBitWriter* bw) {
     }
     s->eob_run_ = 0;
   }
+  const size_t kStride = 124;  // (515 - 16) / 2 / 2
   size_t num_words = s->refinement_bits_count_ >> 4;
-  for (size_t i = 0; i < num_words; ++i) {
-    WriteBits(bw, 16, s->refinement_bits_[i]);
+  size_t i = 0;
+  while (i < num_words) {
+    size_t limit = std::min(i + kStride, num_words);
+    Reserve(bw, 512);
+    for (; i < limit; ++i) {
+      WriteBits(bw, 16, s->refinement_bits_[i]);
+    }
   }
+  Reserve(bw, 16);
   size_t tail = s->refinement_bits_count_ & 0xF;
   if (tail) {
     WriteBits(bw, tail, s->refinement_bits_.back());
@@ -836,8 +845,6 @@ SerializationStatus JXL_NOINLINE DoEncodeScan(const JPEGData& jpg,
         }
         int n_blocks_y = is_interleaved ? c.v_samp_factor : 1;
         int n_blocks_x = is_interleaved ? c.h_samp_factor : 1;
-        // compressed size per block cannot be more than 512 bytes per component
-        Reserve(bw, 512 * n_blocks_y * n_blocks_x);
         for (int iy = 0; iy < n_blocks_y; ++iy) {
           for (int ix = 0; ix < n_blocks_x; ++ix) {
             int block_y = ss.mcu_y * n_blocks_y + iy;
@@ -856,6 +863,8 @@ SerializationStatus JXL_NOINLINE DoEncodeScan(const JPEGData& jpg,
             }
             const coeff_t* coeffs = &c.coeffs[block_idx << 6];
             bool ok;
+            // compressed size per block cannot be more than 512 bytes
+            Reserve(bw, 512);
             if (kMode == 0) {
               ok = EncodeDCTBlockSequential(coeffs, dc_huff, ac_huff,
                                             num_zero_runs,
