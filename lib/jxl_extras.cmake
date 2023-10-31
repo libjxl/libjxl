@@ -145,7 +145,6 @@ add_library(jxl_extras-static STATIC EXCLUDE_FROM_ALL ${JXL_EXTRAS_OBJECTS})
 target_link_libraries(jxl_extras-static PUBLIC
   ${JXL_EXTRAS_CODEC_INTERNAL_LIBRARIES}
   jxl-static
-  jxl_cms-static
   jxl_threads-static
 )
 if(JPEGXL_ENABLE_JPEGLI)

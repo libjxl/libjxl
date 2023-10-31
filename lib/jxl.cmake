@@ -136,9 +136,14 @@ set_target_properties(jxl_enc-obj PROPERTIES
 # for tests.
 add_library(jxl_dec-static STATIC
   $<TARGET_OBJECTS:jxl_dec-obj>
+  ${JXL_CMS_OBJECTS}
 )
-target_link_libraries(jxl_dec-static
-  PUBLIC ${JPEGXL_COVERAGE_FLAGS} ${JPEGXL_DEC_INTERNAL_LIBS} jxl_base)
+target_link_libraries(jxl_dec-static PUBLIC
+  ${JPEGXL_COVERAGE_FLAGS}
+  ${JPEGXL_DEC_INTERNAL_LIBS}
+  ${JXL_CMS_LIBS}
+  jxl_base
+)
 
 # The list of objects in the static and shared libraries.
 set(JPEGXL_INTERNAL_OBJECTS
@@ -157,6 +162,7 @@ add_library(jxl-static STATIC
 target_link_libraries(jxl-static PUBLIC
   ${JPEGXL_COVERAGE_FLAGS}
   ${JPEGXL_INTERNAL_LIBS}
+  ${JXL_CMS_LIBS}
   jxl_base
 )
 target_include_directories(jxl-static PUBLIC

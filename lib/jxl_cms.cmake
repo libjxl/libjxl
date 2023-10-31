@@ -38,51 +38,42 @@ target_include_directories(jxl_cms-obj PUBLIC
   "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>")
 
 set(JXL_CMS_OBJECTS $<TARGET_OBJECTS:jxl_cms-obj>)
+set(JXL_CMS_LIBS "")
+set(JXL_CMS_PK_LIBS "")
 
 if (JPEGXL_ENABLE_SKCMS)
   target_include_directories(jxl_cms-obj PRIVATE
     $<TARGET_PROPERTY:skcms-obj,INCLUDE_DIRECTORIES>
   )
   list(APPEND JXL_CMS_OBJECTS $<TARGET_OBJECTS:skcms-obj>)
-  target_compile_definitions(jxl_cms-obj PRIVATE JPEGXL_ENABLE_SKCMS=1)
-  if (JPEGXL_BUNDLE_SKCMS)
-    target_compile_definitions(jxl_cms-obj PRIVATE JPEGXL_BUNDLE_SKCMS=1)
-  else ()
-    target_link_libraries(jxl_cms-obj INTERFACE skcms)
-  endif ()
+  if (NOT JPEGXL_BUNDLE_SKCMS)
+    message(ERROR "Non-bundles skcms is not currently supported")
+    set(JXL_CMS_LIBS "skcms")
+    set(JXL_CMS_PK_LIBS "-lskcms")
+    endif ()
 else ()
   target_include_directories(jxl_cms-obj PRIVATE
-    $<TARGET_PROPERTY:lcms2,INCLUDE_DIRECTORIES>
+    $<TARGET_PROPERTY:lcms2-obj,INCLUDE_DIRECTORIES>
   )
-  target_link_libraries(jxl_cms-obj INTERFACE lcms2)
+  list(APPEND JXL_CMS_OBJECTS $<TARGET_OBJECTS:lcms2-obj>)
 endif ()
+target_link_libraries(jxl_cms-obj PUBLIC ${JXL_CMS_LIBS})
 
-add_library(jxl_cms-static STATIC ${JXL_CMS_OBJECTS})
-if (NOT WIN32 OR MINGW)
-  set_target_properties(jxl_cms-static PROPERTIES OUTPUT_NAME "jxl_cms")
-endif()
+if (BUILD_SHARED_LIBS)
+  add_library(jxl_cms SHARED ${JXL_CMS_OBJECTS})
+  target_link_libraries(jxl_cms INTERFACE ${JXL_CMS_LIBS})
+  target_link_libraries(jxl_cms PRIVATE hwy)
 
-install(TARGETS jxl_cms-static DESTINATION ${CMAKE_INSTALL_LIBDIR})
+  set_target_properties(jxl_cms PROPERTIES
+    VERSION ${JPEGXL_LIBRARY_VERSION}
+    SOVERSION ${JPEGXL_LIBRARY_SOVERSION}
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 
-if (BUILD_SHARED_LIBS AND NOT MINGW)
-add_library(jxl_cms SHARED ${JXL_CMS_OBJECTS})
-target_link_libraries(jxl_cms PRIVATE hwy)
-
-set_target_properties(jxl_cms PROPERTIES
-  VERSION ${JPEGXL_LIBRARY_VERSION}
-  SOVERSION ${JPEGXL_LIBRARY_SOVERSION}
-  LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
-  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
-
-install(TARGETS jxl_cms
-  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
-
-else()  # BUILD_SHARED_LIBS
-
-add_library(jxl_cms ALIAS jxl_cms-static)
-
+  install(TARGETS jxl_cms
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
 endif()  # BUILD_SHARED_LIBS
 
 set(JPEGXL_CMS_LIBRARY_REQUIRES "")

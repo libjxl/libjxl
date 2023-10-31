@@ -77,6 +77,12 @@ jobs:
               -DJPEGXL_ENABLE_TRANSCODE_JPEG=OFF
               -DJPEGXL_ENABLE_PLUGINS=OFF
               -DJPEGXL_ENABLE_VIEWERS=OFF
+          # Build with jxl_cms based on lcms2 library.
+          - name: release-lcms2
+            mode: release
+            cmake_args: >-
+              -DJPEGXL_ENABLE_SKCMS=OFF
+            apt_pkgs: liblcms2-2
           # Build optimized for binary size, all features not needed for
           # reconstructing pixels is disabled.
           - name: release:minimal
