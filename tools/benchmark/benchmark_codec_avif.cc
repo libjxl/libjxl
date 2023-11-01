@@ -258,7 +258,7 @@ class AvifCodec : public ImageCodec {
 #if AVIF_VERSION_MAJOR >= 1
         JXL_RETURN_IF_AVIF_ERROR(
             avifEncoderSetCodecSpecificOption(encoder.get(), opts.first.c_str(),
-                                              opts.second.c_str()););
+                                              opts.second.c_str()));
 #else
         (void)avifEncoderSetCodecSpecificOption(
             encoder.get(), opts.first.c_str(), opts.second.c_str());
