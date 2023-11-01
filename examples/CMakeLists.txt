@@ -31,6 +31,8 @@ target_link_libraries(encode_oneshot PkgConfig::Jxl PkgConfig::JxlCms PkgConfig:
 # depends on the platform, and building static binaries in general has problems.
 # If you don't need static binaries you can remove this section.
 add_library(StaticJxl INTERFACE IMPORTED GLOBAL)
+list(REMOVE_ITEM Jxl_STATIC_LDFLAGS "-ljxl_cms")
+
 set_target_properties(StaticJxl PROPERTIES
     INTERFACE_INCLUDE_DIRECTORIES "${Jxl_STATIC_INCLUDE_DIR}"
     INTERFACE_COMPILE_OPTIONS "${Jxl_STATIC_CFLAGS_OTHER}"
@@ -48,9 +50,7 @@ set_target_properties(StaticJxlThreads PROPERTIES
 )
 
 add_executable(decode_oneshot_static decode_oneshot.cc)
-target_link_libraries(decode_oneshot_static
-  -static StaticJxl StaticJxlThreads)
+target_link_libraries(decode_oneshot_static -static StaticJxl StaticJxlThreads)
 
 add_executable(encode_oneshot_static encode_oneshot.cc)
-target_link_libraries(encode_oneshot_static
-  -static StaticJxl StaticJxlThreads)
+target_link_libraries(encode_oneshot_static -static StaticJxl StaticJxlThreads)

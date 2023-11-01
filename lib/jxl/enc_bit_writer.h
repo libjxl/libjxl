@@ -16,9 +16,9 @@
 
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/padded_bytes.h"
 
 namespace jxl {
 

@@ -19,7 +19,6 @@
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/float.h"
-#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/cms/jxl_cms.h"
@@ -37,6 +36,7 @@
 #include "lib/jxl/icc_codec.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
+#include "lib/jxl/padded_bytes.h"
 
 #if !defined(TEST_DATA_PATH)
 #include "tools/cpp/runfiles/runfiles.h"

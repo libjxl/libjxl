@@ -9,6 +9,7 @@
 // ICC profiles and color space conversions.
 
 #include <jxl/cms_interface.h>
+#include <jxl/color_encoding.h>
 #include <jxl/jxl_cms_export.h>
 #include <jxl/types.h>
 

@@ -9,8 +9,8 @@
 // Span (array view) is a non-owning container that provides cheap "cut"
 // operations and could be used as "ArrayLike" data source for PaddedBytes.
 
-#include <stddef.h>
-
+#include <cstddef>
+#include <cstdint>
 #include <vector>
 
 #include "lib/jxl/base/status.h"
