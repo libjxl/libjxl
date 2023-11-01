@@ -75,3 +75,7 @@ else()
 endif()
 
 set_property(TARGET lcms2-obj PROPERTY POSITION_INDEPENDENT_CODE ON)
+
+add_library(lcms2 STATIC EXCLUDE_FROM_ALL $<TARGET_OBJECTS:lcms2-obj>)
+target_include_directories(lcms2
+    PUBLIC $<TARGET_PROPERTY:lcms2-obj,INCLUDE_DIRECTORIES>)

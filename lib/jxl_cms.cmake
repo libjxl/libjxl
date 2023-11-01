@@ -45,18 +45,25 @@ if (JPEGXL_ENABLE_SKCMS)
   target_include_directories(jxl_cms-obj PRIVATE
     $<TARGET_PROPERTY:skcms-obj,INCLUDE_DIRECTORIES>
   )
-  list(APPEND JXL_CMS_OBJECTS $<TARGET_OBJECTS:skcms-obj>)
-  if (NOT JPEGXL_BUNDLE_SKCMS)
+  if (JPEGXL_BUNDLE_SKCMS)
+    list(APPEND JXL_CMS_OBJECTS $<TARGET_OBJECTS:skcms-obj>)
+  else()
     message(ERROR "Non-bundles skcms is not currently supported")
     set(JXL_CMS_LIBS "skcms")
     set(JXL_CMS_PK_LIBS "-lskcms")
-    endif ()
-else ()
+  endif()
+else()
   target_include_directories(jxl_cms-obj PRIVATE
     $<TARGET_PROPERTY:lcms2-obj,INCLUDE_DIRECTORIES>
   )
-  list(APPEND JXL_CMS_OBJECTS $<TARGET_OBJECTS:lcms2-obj>)
-endif ()
+  if (NOT JPEGXL_FORCE_SYSTEM_LCMS2)
+    list(APPEND JXL_CMS_OBJECTS $<TARGET_OBJECTS:lcms2-obj>)
+  else()
+    set(JXL_CMS_LIBS "lcms2")
+    set(JXL_CMS_PK_LIBS "-llcms2")
+  endif()
+endif()
+
 target_link_libraries(jxl_cms-obj PUBLIC ${JXL_CMS_LIBS})
 
 if (BUILD_SHARED_LIBS)
