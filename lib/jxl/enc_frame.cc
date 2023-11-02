@@ -1230,7 +1230,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
   metadata_linear->color_encoding = c_linear;
   ImageBundle linear_storage(metadata_linear.get());
 
-  std::vector<AuxOut> aux_outs;
+  std::vector<std::unique_ptr<AuxOut>> aux_outs;
   // LossyFrameEncoder stores a reference to a std::function<Status(size_t)>
   // so we need to keep the std::function<Status(size_t)> being referenced
   // alive while lossy_frame_encoder is used. We could make resize_aux_outs a
@@ -1238,12 +1238,16 @@ Status EncodeFrame(const CompressParams& cparams_orig,
   // simpler.
   const std::function<Status(size_t)> resize_aux_outs =
       [&aux_outs, aux_out](const size_t num_threads) -> Status {
-    if (aux_out != nullptr) {
-      size_t old_size = aux_outs.size();
-      for (size_t i = num_threads; i < old_size; i++) {
-        aux_out->Assimilate(aux_outs[i]);
-      }
+    if (aux_out == nullptr) {
       aux_outs.resize(num_threads);
+    } else {
+      while (aux_outs.size() > num_threads) {
+        aux_out->Assimilate(*aux_outs.back());
+        aux_outs.pop_back();
+      }
+      while (num_threads > aux_outs.size()) {
+        aux_outs.emplace_back(jxl::make_unique<AuxOut>());
+      }
     }
     return true;
   };
@@ -1399,7 +1403,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
 
   const auto process_dc_group = [&](const uint32_t group_index,
                                     const size_t thread) {
-    AuxOut* my_aux_out = aux_out ? &aux_outs[thread] : nullptr;
+    AuxOut* my_aux_out = aux_outs[thread].get();
     BitWriter* output = get_output(group_index + 1);
     if (frame_header->encoding == FrameEncoding::kVarDCT &&
         !(frame_header->flags & FrameHeader::kUseDcFrame)) {
@@ -1440,7 +1444,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
   std::atomic<int> num_errors{0};
   const auto process_group = [&](const uint32_t group_index,
                                  const size_t thread) {
-    AuxOut* my_aux_out = aux_out ? &aux_outs[thread] : nullptr;
+    AuxOut* my_aux_out = aux_outs[thread].get();
 
     for (size_t i = 0; i < num_passes; i++) {
       if (frame_header->encoding == FrameEncoding::kVarDCT) {
