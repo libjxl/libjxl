@@ -87,6 +87,13 @@ def LoadSymbols(filename):
         int(symlist[3], 16) if col_count > 3 else None,
         symlist[1],
         symlist[0]))
+  if IS_OSX:
+    ret = sorted(ret, key=lambda sym: sym.address)
+    for i in range(len(ret) - 1):
+      size = ret[i + 1].address - ret[i].address
+      if size > (1 << 30):
+        continue
+      ret[i] = ret[i]._replace(size=size)
   return ret
 
 def LoadTargetCommand(target, build_dir):
@@ -173,7 +180,7 @@ def LoadStackSizes(filename, binutils=''):
   output = subprocess.check_output(
       [binutils + objdump, '-a', filename]).decode('utf-8')
   elf_format = re.search('file format (.*)$', output, re.MULTILINE).group(1)
-  if elf_format.startswith('elf64-little') or elf_format.endswith('-x86-64'):
+  if elf_format.startswith('elf64-little') or elf_format.endswith('-x86-64') or elf_format.endswith('-arm64'):
     pointer_fmt = '<Q'
   elif elf_format.startswith('elf32-little') or elf_format == 'elf32-i386':
     pointer_fmt = '<I'
