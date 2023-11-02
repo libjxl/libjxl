@@ -53,12 +53,15 @@ if (JPEGXL_ENABLE_SKCMS)
     set(JXL_CMS_PK_LIBS "-lskcms")
   endif()
 else()
-  target_include_directories(jxl_cms-obj PRIVATE
-    $<TARGET_PROPERTY:lcms2-obj,INCLUDE_DIRECTORIES>
-  )
   if (NOT JPEGXL_FORCE_SYSTEM_LCMS2)
+    target_include_directories(jxl_cms-obj PRIVATE
+      $<TARGET_PROPERTY:lcms2-obj,INCLUDE_DIRECTORIES>
+    )
     list(APPEND JXL_CMS_OBJECTS $<TARGET_OBJECTS:lcms2-obj>)
   else()
+    target_include_directories(jxl_cms-obj PRIVATE
+      $<TARGET_PROPERTY:lcms2,INCLUDE_DIRECTORIES>
+    )
     set(JXL_CMS_LIBS "lcms2")
     set(JXL_CMS_PK_LIBS "-llcms2")
   endif()

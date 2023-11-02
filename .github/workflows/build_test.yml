@@ -82,7 +82,14 @@ jobs:
             mode: release
             cmake_args: >-
               -DJPEGXL_ENABLE_SKCMS=OFF
-            apt_pkgs: liblcms2-2
+          - name: release-system-lcms2
+            mode: release
+            cmake_args: >-
+              -DJPEGXL_ENABLE_SKCMS=OFF
+              -DJPEGXL_FORCE_SYSTEM_LCMS2=ON
+            apt_pkgs: liblcms2-dev
+            # static build is impossible
+            skip_install: true
           # Build optimized for binary size, all features not needed for
           # reconstructing pixels is disabled.
           - name: release:minimal
