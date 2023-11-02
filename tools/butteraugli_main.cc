@@ -106,7 +106,7 @@ Status RunButteraugli(const char* pathname1, const char* pathname2,
                          distmap_filename));
   }
   if (!raw_distmap_filename.empty()) {
-    FILE* out = fopen(raw_distmap_filename.c_str(), "w");
+    FILE* out = fopen(raw_distmap_filename.c_str(), "wb");
     JXL_CHECK(out != nullptr);
     fprintf(out, "Pf\n%" PRIuS " %" PRIuS "\n-1.0\n", distmap.xsize(),
             distmap.ysize());
