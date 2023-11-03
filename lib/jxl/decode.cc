@@ -2720,6 +2720,7 @@ JxlDecoderStatus JxlDecoderSetOutputColorProfile(
   output_encoding.color_encoding_is_original = output_encoding.orig_color_encoding.SameColorEncoding(output_encoding.color_encoding);
   output_encoding.linear_color_encoding = output_encoding.color_encoding;
   output_encoding.linear_color_encoding.Tf().SetTransferFunction(jxl::TransferFunction::kLinear);
+  (void) output_encoding.linear_color_encoding.CreateICC();
   return JXL_DEC_SUCCESS;
 }
 
