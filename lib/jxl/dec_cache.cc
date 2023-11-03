@@ -225,16 +225,16 @@ Status PassesDecoderState::PreparePipeline(ImageBundle* decoded,
     }
 
     if (linear) {
-      auto from_linear_stage = GetFromLinearStage(output_encoding_info);
-      if (from_linear_stage) {
-        builder.AddStage(std::move(from_linear_stage));
-      } else {
+      if (output_encoding_info.color_encoding_is_original) {
+        builder.AddStage(GetFromLinearStage(output_encoding_info));
+      }
+      else {
         auto cms_stage = GetCmsStage(output_encoding_info);
         if (cms_stage) {
           builder.AddStage(std::move(cms_stage));
         }
       }
-      linear = false;
+        linear = false;
     }
 
     if (main_output.callback.IsPresent() || main_output.buffer) {
