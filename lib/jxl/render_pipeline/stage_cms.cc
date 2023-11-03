@@ -42,22 +42,25 @@ class CmsStage : public RenderPipelineStage {
     const bool not_mixing_color_and_grey =
         (channels_src == channels_dst ||
          (channels_src == 4 && channels_dst == 3));
-
-    return (output_encoding_info_.color_management_system != nullptr) &&
+    bool ret =  (output_encoding_info_.color_management_system != nullptr) &&
            !output_encoding_info_.color_encoding_is_original &&
            not_mixing_color_and_grey;
+    fprintf(stderr, "return in IsNeeded: %d\n", ret);
+    return ret;
   }
 
   void ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
                   size_t xextra, size_t xsize, size_t xpos, size_t ypos,
                   size_t thread_id) const final {
     JXL_ASSERT(xsize == xsize_);
-
     // TODO(firsching): handle grey case seperately
     //  interleave
     float* JXL_RESTRICT row0 = GetInputRow(input_rows, 0, 0);
     float* JXL_RESTRICT row1 = GetInputRow(input_rows, 1, 0);
     float* JXL_RESTRICT row2 = GetInputRow(input_rows, 2, 0);
+    if (thread_id == 0) {
+      fprintf(stderr, "row in: %f %f %f\n", row0[0], row1[0], row2[0]);
+    }
     float* mutable_buf_src = color_space_transform->BufSrc(thread_id);
     for (size_t x = 0; x < xsize; x++) {
       mutable_buf_src[3 * x + 0] = row0[x];
@@ -75,6 +78,9 @@ class CmsStage : public RenderPipelineStage {
       row0[x] = buf_dst[3 * x + 0];
       row1[x] = buf_dst[3 * x + 1];
       row2[x] = buf_dst[3 * x + 2];
+    }
+    if (thread_id == 0) {
+      fprintf(stderr, "row out: %f %f %f\n", row0[0], row1[0], row2[0]);
     }
   }
   RenderPipelineChannelMode GetChannelMode(size_t c) const final {
