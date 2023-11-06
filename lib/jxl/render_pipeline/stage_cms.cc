@@ -30,10 +30,7 @@ class CmsStage : public RenderPipelineStage {
   explicit CmsStage(OutputEncodingInfo output_encoding_info)
       : RenderPipelineStage(RenderPipelineStage::Settings()),
         output_encoding_info_(std::move(output_encoding_info)) {
-    bool orig_grey = output_encoding_info_.orig_color_encoding.IsGray();
-    c_src_ = output_encoding_info_.xyb_encoded
-                 ? ColorEncoding::LinearSRGB(orig_grey)
-                 : output_encoding_info_.orig_color_encoding;
+    c_src_ = output_encoding_info_.linear_color_encoding;
   }
 
   bool IsNeeded() const {
@@ -42,11 +39,9 @@ class CmsStage : public RenderPipelineStage {
     const bool not_mixing_color_and_grey =
         (channels_src == channels_dst ||
          (channels_src == 4 && channels_dst == 3));
-    bool ret =  (output_encoding_info_.color_management_system != nullptr) &&
-           !output_encoding_info_.color_encoding_is_original &&
+    return (output_encoding_info_.color_management_system != nullptr) &&
+           !c_src_.SameColorEncoding(output_encoding_info_.color_encoding) &&
            not_mixing_color_and_grey;
-    fprintf(stderr, "return in IsNeeded: %d\n", ret);
-    return ret;
   }
 
   void ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
@@ -58,10 +53,8 @@ class CmsStage : public RenderPipelineStage {
     float* JXL_RESTRICT row0 = GetInputRow(input_rows, 0, 0);
     float* JXL_RESTRICT row1 = GetInputRow(input_rows, 1, 0);
     float* JXL_RESTRICT row2 = GetInputRow(input_rows, 2, 0);
-    if (thread_id == 0) {
-      fprintf(stderr, "row in: %f %f %f\n", row0[0], row1[0], row2[0]);
-    }
     float* mutable_buf_src = color_space_transform->BufSrc(thread_id);
+
     for (size_t x = 0; x < xsize; x++) {
       mutable_buf_src[3 * x + 0] = row0[x];
       mutable_buf_src[3 * x + 1] = row1[x];
@@ -70,7 +63,7 @@ class CmsStage : public RenderPipelineStage {
     const float* buf_src = mutable_buf_src;
     float* JXL_RESTRICT buf_dst = color_space_transform->BufDst(thread_id);
     if (!color_space_transform->Run(thread_id, buf_src, buf_dst)) {
-      // somehow mark failing here?
+      // TODO(firsching): somehow mark failing here?
       return;
     }
     // de-interleave
@@ -78,9 +71,6 @@ class CmsStage : public RenderPipelineStage {
       row0[x] = buf_dst[3 * x + 0];
       row1[x] = buf_dst[3 * x + 1];
       row2[x] = buf_dst[3 * x + 2];
-    }
-    if (thread_id == 0) {
-      fprintf(stderr, "row out: %f %f %f\n", row0[0], row1[0], row2[0]);
     }
   }
   RenderPipelineChannelMode GetChannelMode(size_t c) const final {

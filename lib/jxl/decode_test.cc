@@ -1794,8 +1794,6 @@ void SetPreferredColorProfileTest(
         {jxl::ColorSpace::kXYB, jxl::WhitePoint::kD65, jxl::Primaries::kCustom,
          jxl::TransferFunction::kUnknown, jxl::RenderingIntent::kPerceptual});
   }
-  std::vector<jxl::test::ColorEncodingDescriptor> some_encodings;
-  some_encodings.push_back(all_encodings[29]);
   for (const auto& c1 : all_encodings) {
     jxl::ColorEncoding c_out = jxl::test::ColorEncodingFromDescriptor(c1);
     float intensity_out = intensity_in;
@@ -1883,18 +1881,9 @@ void SetPreferredColorProfileTest(
                                       out, c_out, intensity_out);
 
     if (c_in.GetWhitePointType() == c_out.GetWhitePointType()) {
-      if (dist >= 1.29) {
-        printf(
-            "failed 1.29 , input color space %s with output color space %s\n",
-            color_space_in.c_str(), color_space_out.c_str());
-        EXPECT_LT(dist, 1.29);
-      }
+      EXPECT_LT(dist, 1.29);
     } else {
-      if (dist >= 4.0) {
-        printf("failed 4.0 , input color space %s with output color space %s\n",
-               color_space_in.c_str(), color_space_out.c_str());
-        EXPECT_LT(dist, 4.0);
-      }
+      EXPECT_LT(dist, 4.0);
     }
     EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderProcessInput(dec));
     JxlDecoderDestroy(dec);
