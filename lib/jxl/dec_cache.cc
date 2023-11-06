@@ -247,7 +247,7 @@ Status PassesDecoderState::PreparePipeline(ImageBundle* decoded,
           builder.AddStage(std::move(cms_stage));
         }
       }
-        linear = false;
+      linear = false;
     }
 
     if (main_output.callback.IsPresent() || main_output.buffer) {
