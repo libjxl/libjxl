@@ -6,7 +6,6 @@
 #include "lib/jxl/dec_xyb.h"
 
 #include <string.h>
-#include "lib/jxl/color_encoding_internal.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/dec_xyb.cc"
@@ -17,6 +16,7 @@
 #include "lib/jxl/base/matrix_ops.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/cms/opsin_params.h"
+#include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/dec_group_border.h"
 #include "lib/jxl/dec_xyb-inl.h"
 #include "lib/jxl/fields.h"
