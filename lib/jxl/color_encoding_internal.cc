@@ -81,7 +81,7 @@ void ColorEncoding::DecideIfWantICC(const JxlCmsInterface& cms) {
 
   uint8_t* new_icc_ptr;
   size_t new_icc_size;
-  if (!JxlCmsCreateProfile(c, &new_icc_ptr, &new_icc_size)) return;
+  if (!JxlCmsCreateProfile(&c, &new_icc_ptr, &new_icc_size)) return;
   IccBytes new_icc(new_icc_ptr, new_icc_ptr + new_icc_size);
   free(new_icc_ptr);
 

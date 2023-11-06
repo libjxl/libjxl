@@ -132,7 +132,8 @@ struct ColorEncoding : public Fields {
     storage_.icc.clear();
     uint8_t* new_icc_ptr;
     size_t new_icc_size;
-    if (!JxlCmsCreateProfile(ToExternal(), &new_icc_ptr, &new_icc_size)) {
+    const JxlColorEncoding external = ToExternal();
+    if (!JxlCmsCreateProfile(&external, &new_icc_ptr, &new_icc_size)) {
       return JXL_FAILURE("Failed to create ICC profile");
     }
     storage_.icc.assign(new_icc_ptr, new_icc_ptr + new_icc_size);
@@ -293,7 +294,8 @@ struct ColorEncoding : public Fields {
 
 static inline std::string Description(const ColorEncoding& c) {
   char data[320];
-  JxlCmsColorEncodingDescription(c.View().ToExternal(), data);
+  const JxlColorEncoding external = c.View().ToExternal();
+  JxlCmsColorEncodingDescription(&external, data);
   return data;
 }
 static inline std::ostream& operator<<(std::ostream& os,

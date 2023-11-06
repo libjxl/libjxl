@@ -1354,10 +1354,10 @@ JXL_BOOL JxlCmsPrimariesToXYZD50(float rx, float ry, float gx, float gy,
 
 // Returns a representation of the ColorEncoding fields (not icc).
 // Example description: "RGB_D65_SRG_Rel_Lin"
-size_t JxlCmsColorEncodingDescription(const JxlColorEncoding& c,
+size_t JxlCmsColorEncodingDescription(const JxlColorEncoding* c,
                                       char out[320]) {
   out[0] = 0;
-  std::string d = ColorEncodingDescription(c);
+  std::string d = ColorEncodingDescription(*c);
   size_t len = d.size();
   if (len >= 320) {  // Impossible
     return 0;
@@ -1366,12 +1366,12 @@ size_t JxlCmsColorEncodingDescription(const JxlColorEncoding& c,
   return len;
 }
 
-JXL_BOOL JxlCmsCreateProfile(const JxlColorEncoding& c, uint8_t** out,
+JXL_BOOL JxlCmsCreateProfile(const JxlColorEncoding* c, uint8_t** out,
                              size_t* out_size) {
   std::vector<uint8_t> icc;
   *out = nullptr;
   *out_size = 0;
-  if (!MaybeCreateProfile(c, &icc)) {
+  if (!MaybeCreateProfile(*c, &icc)) {
     return JXL_FALSE;
   }
   *out = reinterpret_cast<uint8_t*>(malloc(icc.size()));
