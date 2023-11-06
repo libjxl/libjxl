@@ -154,32 +154,24 @@ std::unique_ptr<FromLinearStage<Op>> MakeFromLinearStage(Op&& op) {
 std::unique_ptr<RenderPipelineStage> GetFromLinearStage(
     const OutputEncodingInfo& output_encoding_info) {
   const auto& tf = output_encoding_info.color_encoding.Tf();
-  fprintf(stderr, "out: %s\n", Description(output_encoding_info.color_encoding).c_str());
   if (tf.IsLinear()) {
-    fprintf(stderr, "lin\n");
     return MakeFromLinearStage(MakePerChannelOp(OpLinear()));
   } else if (tf.IsSRGB()) {
-    fprintf(stderr, "srg\n");
     return MakeFromLinearStage(MakePerChannelOp(OpRgb()));
   } else if (tf.IsPQ()) {
-    fprintf(stderr, "pq\n");
     return MakeFromLinearStage(
         MakePerChannelOp(OpPq(output_encoding_info.orig_intensity_target)));
   } else if (tf.IsHLG()) {
-    fprintf(stderr, "hlg\n");
     return MakeFromLinearStage(
         OpHlg(output_encoding_info.luminances,
               output_encoding_info.desired_intensity_target));
   } else if (tf.Is709()) {
-    fprintf(stderr, "bt709\n");
     return MakeFromLinearStage(MakePerChannelOp(Op709()));
   } else if (tf.have_gamma || tf.IsDCI()) {
-    fprintf(stderr, "gamma or dci\n");
     return MakeFromLinearStage(
         MakePerChannelOp(OpGamma{output_encoding_info.inverse_gamma}));
   } else {
     // This is a programming error.
-    fprintf(stderr, "no!!!!!1\n");
     JXL_UNREACHABLE("Invalid target encoding");
   }
 }

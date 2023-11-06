@@ -256,8 +256,6 @@ Status OutputEncodingInfo::SetColorEncoding(const ColorEncoding& c_desired) {
   JXL_RETURN_IF_ERROR(linear_color_encoding.CreateICC());
   color_encoding_is_original = orig_color_encoding.SameColorEncoding(c_desired);
 
-  fprintf(stderr, "orig: %s, desired: %s, is_original: %s\n", Description(orig_color_encoding).c_str(), Description(c_desired).c_str(), color_encoding_is_original ? "true" : "false");
-
   // Compute the opsin inverse matrix and luminances based on primaries and
   // white point.
   float inverse_matrix[9];

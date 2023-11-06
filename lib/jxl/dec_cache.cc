@@ -225,10 +225,10 @@ Status PassesDecoderState::PreparePipeline(ImageBundle* decoded,
     }
 
     if (linear) {
-      if (output_encoding_info.color_encoding_is_original) {
+      if (output_encoding_info.color_encoding_is_original ||
+          output_encoding_info.color_management_system == nullptr) {
         builder.AddStage(GetFromLinearStage(output_encoding_info));
-      }
-      else {
+      } else {
         auto cms_stage = GetCmsStage(output_encoding_info);
         if (cms_stage) {
           builder.AddStage(std::move(cms_stage));
