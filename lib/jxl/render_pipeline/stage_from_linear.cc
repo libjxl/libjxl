@@ -4,8 +4,6 @@
 // license that can be found in the LICENSE file.
 
 #include "lib/jxl/render_pipeline/stage_from_linear.h"
-#include <cstdio>
-#include "lib/jxl/color_encoding_internal.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/render_pipeline/stage_from_linear.cc"
