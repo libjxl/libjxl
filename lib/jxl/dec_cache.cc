@@ -229,6 +229,9 @@ Status PassesDecoderState::PreparePipeline(ImageBundle* decoded,
           output_encoding_info.color_management_system == nullptr) {
         builder.AddStage(GetFromLinearStage(output_encoding_info));
       } else {
+        if (!output_encoding_info.linear_color_encoding.CreateICC()){
+            return JXL_FAILURE("Failed to create ICC");
+        }
         auto cms_stage = GetCmsStage(output_encoding_info);
         if (cms_stage) {
           builder.AddStage(std::move(cms_stage));
