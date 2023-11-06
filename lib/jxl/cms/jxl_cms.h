@@ -12,16 +12,15 @@
 #include <jxl/color_encoding.h>
 #include <jxl/jxl_cms_export.h>
 #include <jxl/types.h>
-
-#include <cstddef>
-#include <cstdint>
+#include <stddef.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 JXL_CMS_EXPORT const JxlCmsInterface* JxlGetDefaultCms();
-JXL_CMS_EXPORT JXL_BOOL JxlCmsCreateProfile(const JxlColorEncoding& c,
+JXL_CMS_EXPORT JXL_BOOL JxlCmsCreateProfile(const JxlColorEncoding* c,
                                             uint8_t** out, size_t* out_size);
 JXL_CMS_EXPORT JXL_BOOL JxlCmsCIEXYZFromWhiteCIExy(double wx, double wy,
                                                    float XYZ[3]);
@@ -35,7 +34,7 @@ JXL_CMS_EXPORT JXL_BOOL JxlCmsPrimariesToXYZD50(float rx, float ry, float gx,
                                                 float gy, float bx, float by,
                                                 float wx, float wy,
                                                 float matrix[9]);
-JXL_CMS_EXPORT size_t JxlCmsColorEncodingDescription(const JxlColorEncoding& c,
+JXL_CMS_EXPORT size_t JxlCmsColorEncodingDescription(const JxlColorEncoding* c,
                                                      char out[320]);
 
 #ifdef __cplusplus
