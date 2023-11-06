@@ -10,6 +10,7 @@
 #include <jxl/types.h>
 
 #include "jxl/color_encoding.h"
+#include "lib/jxl/cms/jxl_cms.h"
 
 #define GDK_PIXBUF_ENABLE_BACKEND
 #include <gdk-pixbuf/gdk-pixbuf.h>
