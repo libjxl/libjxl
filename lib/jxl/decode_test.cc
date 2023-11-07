@@ -1922,8 +1922,8 @@ class DecodeAllEncodingsVariantsTest
 JXL_GTEST_INSTANTIATE_TEST_SUITE_P(
     DecodeAllEncodingsVariantsTestInstantiation, DecodeAllEncodingsVariantsTest,
     ::testing::Combine(::testing::ValuesIn(jxl::test::AllEncodings()),
-                       ::testing::Values(false, true),
-                       ::testing::Values(false, true)),
+                       ::testing::Bool(),
+                       ::testing::Bool()),
     DecodeAllEncodingsVariantsTestName);
 TEST_P(DecodeAllEncodingsVariantsTest, SetPreferredColorProfileTest) {
   const auto& from = std::get<0>(GetParam());
