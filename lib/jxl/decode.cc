@@ -2343,6 +2343,9 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetCms(JxlDecoder* dec,
   if (cms == nullptr) {
     return JXL_API_ERROR("A cms is required");
   }
+  if (!dec->passes_state) {
+    dec->passes_state.reset(new jxl::PassesDecoderState());
+  }
   dec->passes_state->output_encoding_info.color_management_system = cms;
   return JXL_DEC_SUCCESS;
 }
