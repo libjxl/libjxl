@@ -37,7 +37,8 @@ cc_library(
     name = "skcms",
     srcs = [
         "skcms.cc",
-        "skcms_internal.h",
+        "src/skcms_internals.h",
+        "src/skcms_Transform.h",
         "src/Transform_inl.h",
     ],
     hdrs = ["skcms.h"],

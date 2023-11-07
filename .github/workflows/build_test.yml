@@ -129,7 +129,7 @@ jobs:
       TEST_STACK_LIMIT: ${{ matrix.env_test_stack_size }}
       WILL_TEST: ${{  github.event_name == 'push' || (github.event_name == 'pull_request' && matrix.name != 'coverage' && (matrix.test_in_pr || contains(github.event.pull_request.labels.*.name, 'CI:full'))) }}
       WILL_BUILD: ${{ github.event_name == 'push' || (github.event_name == 'pull_request' && matrix.name != 'coverage') }}
-      WILL_BENCH: ${{  github.event_name != 'merge_group' && (matrix.name == 'release' || (github.event_name == 'push' && matrix.mode == 'release')) }}
+      WILL_BENCH: ${{ github.event_name != 'merge_group' && matrix.name != 'coverage' && ((matrix.name == 'release' || (github.event_name == 'push' && matrix.mode == 'release') || contains(github.event.pull_request.labels.*.name, 'CI:full'))) }}
       WILL_DOC: ${{ github.event_name != 'merge_group' && matrix.name == 'release' }}
       WILL_COV: ${{ github.event_name == 'push' && matrix.name == 'coverage' }}
       JPEGXL_OPT_DBG: true
@@ -178,7 +178,7 @@ jobs:
         #  brew install brotli giflib jpeg-turbo libpng zlib
         # Not required, since we skip building documentation
         #  brew install doxygen
-        brew install binutils ccache coreutils googletest ninja sdl2
+        brew install binutils ccache coreutils google-benchmark googletest ninja sdl2
 
     - name: Checkout the source
       uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
@@ -189,7 +189,7 @@ jobs:
     - name: Setup the Homebrew prefixes
       if: startsWith(matrix.os, 'macos-')
       run: |
-          CMAKE_PREFIX_PATH=`brew --prefix brotli`:`brew --prefix giflib`:`brew --prefix zlib`:`brew --prefix jpeg-turbo`:`brew --prefix libpng`:`brew --prefix sdl2`:`brew --prefix zlib`
+          CMAKE_PREFIX_PATH=`brew --prefix brotli`:`brew --prefix giflib`:`brew --prefix google-benchmark`:`brew --prefix jpeg-turbo`:`brew --prefix libpng`:`brew --prefix sdl2`:`brew --prefix zlib`
           echo "CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}" >> $GITHUB_ENV
 
     - name: Suppress doxygen target
