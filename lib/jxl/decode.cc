@@ -2340,8 +2340,8 @@ JxlDecoderStatus JxlDecoderFlushImage(JxlDecoder* dec) {
 
 JXL_EXPORT JxlDecoderStatus JxlDecoderSetCms(JxlDecoder* dec,
                                              const JxlCmsInterface* cms) {
-  if (cms->init_data == nullptr) {
-    return JXL_DEC_ERROR;
+  if (cms == nullptr) {
+    return JXL_API_ERROR("A cms is required");
   }
   dec->passes_state->output_encoding_info.color_management_system = cms;
   return JXL_DEC_SUCCESS;
