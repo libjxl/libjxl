@@ -2662,7 +2662,8 @@ JxlDecoderStatus JxlDecoderGetFrameName(const JxlDecoder* dec, char* name,
 
 JxlDecoderStatus JxlDecoderSetPreferredColorProfile(
     JxlDecoder* dec, const JxlColorEncoding* color_encoding) {
-  return JxlDecoderSetOutputColorProfile(dec, color_encoding, nullptr, 0);
+  return JxlDecoderSetOutputColorProfile(dec, color_encoding,
+                                         /*icc_data=*/nullptr, /*icc_size=*/0);
 }
 
 JxlDecoderStatus JxlDecoderSetOutputColorProfile(
