@@ -44,11 +44,11 @@ class Rec2408ToneMapper {
                             (MulAdd(Set(df_, red_Y_), *red,
                                     MulAdd(Set(df_, green_Y_), *green,
                                            Mul(Set(df_, blue_Y_), *blue)))));
-    const V pq_mastering_min = Set(df_, pq_mastering_min_);
-    const V inv_pq_mastering_range = Set(df_, inv_pq_mastering_range_);
+    const V pq_original_min = Set(df_, pq_original_min_);
+    const V inv_pq_original_range = Set(df_, inv_pq_original_range_);
     const V normalized_pq = Min(
         Set(df_, 1.f),
-        Mul(Sub(InvEOTF(luminance), pq_mastering_min), inv_pq_mastering_range));
+        Mul(Sub(InvEOTF(luminance), pq_original_min), inv_pq_original_range));
     const V ks = Set(df_, ks_);
     const V e2 =
         IfThenElse(Lt(normalized_pq, ks), normalized_pq, P(normalized_pq));
@@ -57,8 +57,8 @@ class Rec2408ToneMapper {
     const V one_minus_e2_4 = Mul(one_minus_e2_2, one_minus_e2_2);
     const V b = Set(df_, min_lum_);
     const V e3 = MulAdd(b, one_minus_e2_4, e2);
-    const V pq_mastering_range = Set(df_, pq_mastering_range_);
-    const V e4 = MulAdd(e3, pq_mastering_range, pq_mastering_min);
+    const V pq_original_range = Set(df_, pq_original_range_);
+    const V e4 = MulAdd(e3, pq_original_range, pq_original_min);
     const V new_luminance =
         Min(Set(df_, target_range_.second),
             ZeroIfNegative(tf_pq_.DisplayFromEncoded(df_, e4)));
@@ -109,16 +109,16 @@ class Rec2408ToneMapper {
 
   const TF_PQ tf_pq_ = TF_PQ(/*display_intensity_target=*/1.0);
 
-  const float pq_mastering_min_ = InvEOTF(source_range_.first);
-  const float pq_mastering_max_ = InvEOTF(source_range_.second);
-  const float pq_mastering_range_ = pq_mastering_max_ - pq_mastering_min_;
-  const float inv_pq_mastering_range_ = 1.0f / pq_mastering_range_;
+  const float pq_original_min_ = InvEOTF(source_range_.first);
+  const float pq_original_max_ = InvEOTF(source_range_.second);
+  const float pq_original_range_ = pq_original_max_ - pq_original_min_;
+  const float inv_pq_original_range_ = 1.0f / pq_original_range_;
   // TODO(eustas): divide instead of inverse-multiply?
-  const float min_lum_ = (InvEOTF(target_range_.first) - pq_mastering_min_) *
-                         inv_pq_mastering_range_;
+  const float min_lum_ = (InvEOTF(target_range_.first) - pq_original_min_) *
+                         inv_pq_original_range_;
   // TODO(eustas): divide instead of inverse-multiply?
-  const float max_lum_ = (InvEOTF(target_range_.second) - pq_mastering_min_) *
-                         inv_pq_mastering_range_;
+  const float max_lum_ = (InvEOTF(target_range_.second) - pq_original_min_) *
+                         inv_pq_original_range_;
   const float ks_ = 1.5f * max_lum_ - 0.5f;
 
   const float inv_one_minus_ks_ = 1.0f / std::max(1e-6f, 1.0f - ks_);
