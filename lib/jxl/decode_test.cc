@@ -1856,6 +1856,7 @@ void SetPreferredColorProfileTest(
                     dec, nullptr, rewritten_icc.data(), rewritten_icc.size()));
       if (!use_cms) {
         // continue if we don't have a cms here
+        JxlDecoderDestroy(dec);
         continue;
       }
     } else {
