@@ -35,6 +35,7 @@ jobs:
         include:
           - name: release
             mode: release
+            run_bench: true
             test_in_pr: true
             cmake_args: >-
               -DJPEGXL_TEST_TOOLS=ON
@@ -47,6 +48,7 @@ jobs:
             apt_pkgs: doxygen graphviz python3-numpy
           - name: lowprecision
             mode: release
+            run_bench: true
             test_in_pr: true
             cmake_args: -DCMAKE_CXX_FLAGS=-DJXL_HIGH_PRECISION=0
           - name: debug
@@ -68,6 +70,7 @@ jobs:
             skip_install: true
           - name: coverage
             env_test_stack_size: 2048
+            skip_install: true
           # Build with support for decoding to JPEG bytes disabled. Produces a
           # smaller build if only decoding to pixels is needed.
           - name: release-nojpeg
@@ -129,7 +132,7 @@ jobs:
       TEST_STACK_LIMIT: ${{ matrix.env_test_stack_size }}
       WILL_TEST: ${{  github.event_name == 'push' || (github.event_name == 'pull_request' && matrix.name != 'coverage' && (matrix.test_in_pr || contains(github.event.pull_request.labels.*.name, 'CI:full'))) }}
       WILL_BUILD: ${{ github.event_name == 'push' || (github.event_name == 'pull_request' && matrix.name != 'coverage') }}
-      WILL_BENCH: ${{ github.event_name != 'merge_group' && matrix.name != 'coverage' && ((matrix.name == 'release' || (github.event_name == 'push' && matrix.mode == 'release') || contains(github.event.pull_request.labels.*.name, 'CI:full'))) }}
+      WILL_BENCH: ${{ github.event_name != 'merge_group' && matrix.run_bench }}
       WILL_DOC: ${{ github.event_name != 'merge_group' && matrix.name == 'release' }}
       WILL_COV: ${{ github.event_name == 'push' && matrix.name == 'coverage' }}
       JPEGXL_OPT_DBG: true
