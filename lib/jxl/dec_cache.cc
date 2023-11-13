@@ -209,7 +209,7 @@ Status PassesDecoderState::PreparePipeline(ImageBundle* decoded,
       if (!linear) {
         auto to_linear_stage = GetToLinearStage(output_encoding_info);
         if (!to_linear_stage) {
-          if (!output_encoding_info.color_management_system) {
+          if (!output_encoding_info.cms_set) {
             return JXL_FAILURE("Cannot tonemap this colorspace without a CMS");
           }
           auto cms_stage = GetCmsStage(output_encoding_info);
@@ -229,10 +229,10 @@ Status PassesDecoderState::PreparePipeline(ImageBundle* decoded,
         output_encoding_info.orig_color_encoding.Channels());
       const size_t channels_dst = output_encoding_info.color_encoding.Channels();
       bool mixing_color_and_grey = (channels_dst != channels_src);
-      fprintf(stderr, "channels_src: %zu, channels_dst: %zu mixing_color_and_grey = %p\n",
-      channels_src, channels_dst, output_encoding_info.color_management_system);
-      if (((output_encoding_info.color_encoding_is_original) ||
-          output_encoding_info.color_management_system == nullptr)|| mixing_color_and_grey) {
+      fprintf(stderr, "channels_src: %zu, channels_dst: %zu cms_set = %d\n",
+      channels_src, channels_dst, output_encoding_info.cms_set);
+      if ((output_encoding_info.color_encoding_is_original) ||
+          (!output_encoding_info.cms_set) || mixing_color_and_grey) {
         builder.AddStage(GetFromLinearStage(output_encoding_info));
       } else {
         if (!output_encoding_info.linear_color_encoding.CreateICC()) {

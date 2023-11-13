@@ -878,7 +878,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetOutputColorProfile(
  * JxlCmsInterface for more details.
  */
 JXL_EXPORT JxlDecoderStatus JxlDecoderSetCms(JxlDecoder* dec,
-                                             const JxlCmsInterface* cms);
+                                             JxlCmsInterface cms);
 // TODO(firsching): add a function JxlDecoderSetDefaultCms() for setting a
 // default in case libjxl is build with a CMS.
 

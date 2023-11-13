@@ -1843,7 +1843,7 @@ void SetPreferredColorProfileTest(
       continue;
     }
     if (use_cms) {
-      JxlDecoderSetCms(dec, JxlGetDefaultCms());
+      JxlDecoderSetCms(dec, *JxlGetDefaultCms());
     }
     if (icc_dst) {
       jxl::ColorEncoding internal_encoding_out;

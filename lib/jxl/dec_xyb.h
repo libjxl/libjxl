@@ -56,7 +56,8 @@ struct OutputEncodingInfo {
   float luminances[3];
   // Used for the HLG inverse OOTF and PQ tone mapping.
   float desired_intensity_target;
-  const JxlCmsInterface* color_management_system = nullptr;
+  bool cms_set = false;
+  JxlCmsInterface color_management_system;
 
   Status SetFromMetadata(const CodecMetadata& metadata);
   Status MaybeSetColorEncoding(const ColorEncoding& c_desired);

@@ -39,10 +39,7 @@ class CmsStage : public RenderPipelineStage {
     const bool not_mixing_color_and_grey =
         (channels_src == channels_dst ||
          (channels_src == 4 && channels_dst == 3));
-    fprintf(stderr, "channels_src: %zu, channels_dst: %zu not_mixing_color_and_grey = %d\n",
-      channels_src, channels_dst, not_mixing_color_and_grey);
-
-    return (output_encoding_info_.color_management_system != nullptr) &&
+    return (!output_encoding_info_.cms_set) &&
            !c_src_.SameColorEncoding(output_encoding_info_.color_encoding) &&
            not_mixing_color_and_grey;
   }
@@ -103,7 +100,7 @@ class CmsStage : public RenderPipelineStage {
 
   Status PrepareForThreads(size_t num_threads) override {
     color_space_transform = jxl::make_unique<jxl::ColorSpaceTransform>(
-        *output_encoding_info_.color_management_system);
+        output_encoding_info_.color_management_system);
     JXL_RETURN_IF_ERROR(color_space_transform->Init(
         c_src_, output_encoding_info_.color_encoding,
         output_encoding_info_.desired_intensity_target, xsize_, num_threads));
