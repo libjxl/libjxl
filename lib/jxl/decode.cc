@@ -2684,7 +2684,6 @@ JxlDecoderStatus JxlDecoderSetOutputColorProfile(
   if (dec->post_headers) {
     return JXL_API_ERROR("too late to set the color encoding");
   }
-  // TODO(firsching): handle the non-icc case
   if ((dec->passes_state->output_encoding_info.color_management_system ==
        nullptr) &&
       (icc_data != nullptr)) {
