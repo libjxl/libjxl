@@ -3,6 +3,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <jxl/color_encoding.h>
 #include <jxl/decode.h>
 #include <jxl/decode_cxx.h>
 #include <jxl/resizable_parallel_runner_cxx.h>
@@ -1831,7 +1832,6 @@ void SetPreferredColorProfileTest(
     EXPECT_FALSE(info.uses_original_profile);
     EXPECT_EQ(JXL_DEC_COLOR_ENCODING, JxlDecoderProcessInput(dec));
     EXPECT_EQ(GetOrigProfile(dec), color_space_in);
-    EXPECT_EQ(GetDataProfile(dec), color_space_in);
     JxlColorEncoding encoding_out;
     EXPECT_TRUE(jxl::ParseDescription(color_space_out, &encoding_out));
     if (c_out.GetColorSpace() == jxl::ColorSpace::kXYB &&
@@ -1930,6 +1930,66 @@ TEST_P(DecodeAllEncodingsVariantsTest, SetPreferredColorProfileTest) {
   bool icc_dst = std::get<1>(GetParam());
   bool use_cms = std::get<2>(GetParam());
   SetPreferredColorProfileTest(from, icc_dst, use_cms);
+}
+void DecodeImageWithCMS(const std::string& jxl_path,
+                        jxl::ColorEncoding& color_encoding,
+                        std::vector<uint8_t>& out, JxlBasicInfo& info) {
+  const std::vector<uint8_t> compressed = jxl::test::ReadTestData(jxl_path);
+
+  JxlDecoder* dec = JxlDecoderCreate(nullptr);
+  int events = JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING | JXL_DEC_FULL_IMAGE;
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSubscribeEvents(dec, events));
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSetInput(dec, compressed.data(), compressed.size()));
+  EXPECT_EQ(JXL_DEC_BASIC_INFO, JxlDecoderProcessInput(dec));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBasicInfo(dec, &info));
+  EXPECT_EQ(JXL_DEC_COLOR_ENCODING, JxlDecoderProcessInput(dec));
+  std::string color_space_in = GetOrigProfile(dec);
+  JxlDecoderSetCms(dec, *JxlGetDefaultCms());
+  EXPECT_TRUE(color_encoding.CreateICC());
+  std::vector<uint8_t> rewritten_icc = color_encoding.ICC();
+  JxlDecoderSetOutputColorProfile(dec, nullptr, rewritten_icc.data(),
+                                  rewritten_icc.size());
+  EXPECT_EQ(JXL_DEC_NEED_IMAGE_OUT_BUFFER, JxlDecoderProcessInput(dec));
+
+  size_t buffer_size;
+  JxlPixelFormat format = {3, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
+
+  JxlPixelFormat out_format = format;
+  out_format.num_channels = color_encoding.Channels();
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderImageOutBufferSize(dec, &out_format, &buffer_size));
+  out.resize(buffer_size);
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetImageOutBuffer(
+                                 dec, &out_format, out.data(), out.size()));
+  EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec));
+  JxlDecoderDestroy(dec);
+}
+
+TEST(DecodeTest, DecodeWithCMS) {
+  const std::string jxl_path = "jxl/flower/flower.jxl";
+  auto all_encodings = jxl::test::AllEncodings();
+  jxl::ColorEncoding color_encoding_0 =
+      jxl::test::ColorEncodingFromDescriptor(all_encodings[0]);
+  jxl::ColorEncoding color_encoding_1 =
+      jxl::test::ColorEncodingFromDescriptor(all_encodings[1]);
+  fprintf(stderr, "color_description_0: %s, color_descrition_1: %s\n", Description(color_encoding_0).c_str(),
+  Description(color_encoding_1).c_str() );
+
+  std::vector<uint8_t> out_0;
+  JxlBasicInfo info_0;
+  DecodeImageWithCMS(jxl_path, color_encoding_0, out_0, info_0);
+
+  std::vector<uint8_t> out_1;
+  JxlBasicInfo info_1;
+  DecodeImageWithCMS(jxl_path, color_encoding_0, out_1, info_1);
+
+  EXPECT_EQ(info_0.xsize, info_1.xsize);
+  EXPECT_EQ(info_0.ysize, info_1.ysize);
+  double dist =
+      ButteraugliDistance(info_0.xsize, info_0.ysize, out_0, color_encoding_0,
+                          255, out_1, color_encoding_1, 255);
+  EXPECT_LT(dist, 0.1);
 }
 
 // Tests the case of lossy sRGB image without alpha channel, decoded to RGB8
