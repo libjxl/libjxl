@@ -233,6 +233,8 @@ Status PassesDecoderState::PreparePipeline(ImageBundle* decoded,
       channels_src, channels_dst, output_encoding_info.cms_set);
       if ((output_encoding_info.color_encoding_is_original) ||
           (!output_encoding_info.cms_set) || mixing_color_and_grey) {
+        // in those cases we only need a linear stage in other cases we attempt
+        // to obtain an cms stage
         builder.AddStage(GetFromLinearStage(output_encoding_info));
       } else {
         if (!output_encoding_info.linear_color_encoding.CreateICC()) {
