@@ -1973,8 +1973,9 @@ TEST(DecodeTest, DecodeWithCMS) {
       jxl::test::ColorEncodingFromDescriptor(all_encodings[0]);
   jxl::ColorEncoding color_encoding_1 =
       jxl::test::ColorEncodingFromDescriptor(all_encodings[1]);
-  fprintf(stderr, "color_description_0: %s, color_descrition_1: %s\n", Description(color_encoding_0).c_str(),
-  Description(color_encoding_1).c_str() );
+  fprintf(stderr, "color_description_0: %s, color_descrition_1: %s\n",
+          Description(color_encoding_0).c_str(),
+          Description(color_encoding_1).c_str());
 
   std::vector<uint8_t> out_0;
   JxlBasicInfo info_0;
