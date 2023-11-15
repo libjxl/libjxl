@@ -235,7 +235,12 @@ Status PassesDecoderState::PreparePipeline(ImageBundle* decoded,
       if ((output_encoding_info.color_encoding_is_original) ||
           (!output_encoding_info.cms_set) || mixing_color_and_grey) {
         // in those cases we only need a linear stage in other cases we attempt
-        // to obtain an cms stage
+        // to obtain an cms stage: the cases are
+        // - output_encoding_info.color_encoding_is_original: no cms stage
+        // needed because it would be a no-op
+        // - !output_encoding_info.cms_set: can't use the cms, so no point in
+        // trying to add a cms stage
+        // - mixing_color_and_grey: cms stage can't handle that
         builder.AddStage(GetFromLinearStage(output_encoding_info));
       } else {
         if (!output_encoding_info.linear_color_encoding.CreateICC()) {
