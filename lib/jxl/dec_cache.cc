@@ -225,12 +225,13 @@ Status PassesDecoderState::PreparePipeline(ImageBundle* decoded,
     }
 
     if (linear) {
-      const size_t channels_src = (output_encoding_info.orig_color_encoding.IsCMYK() ? 4 :
-        output_encoding_info.orig_color_encoding.Channels());
-      const size_t channels_dst = output_encoding_info.color_encoding.Channels();
+      const size_t channels_src =
+          (output_encoding_info.orig_color_encoding.IsCMYK()
+               ? 4
+               : output_encoding_info.orig_color_encoding.Channels());
+      const size_t channels_dst =
+          output_encoding_info.color_encoding.Channels();
       bool mixing_color_and_grey = (channels_dst != channels_src);
-      fprintf(stderr, "channels_src: %zu, channels_dst: %zu cms_set = %d\n",
-      channels_src, channels_dst, output_encoding_info.cms_set);
       if ((output_encoding_info.color_encoding_is_original) ||
           (!output_encoding_info.cms_set) || mixing_color_and_grey) {
         // in those cases we only need a linear stage in other cases we attempt

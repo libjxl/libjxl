@@ -2006,7 +2006,10 @@ TEST_P(DecodeAllEncodingsWithCMSTest, DecodeWithCMS) {
   EXPECT_EQ(info_with_cms.xsize, info_without_cms.xsize);
   EXPECT_EQ(info_with_cms.ysize, info_without_cms.ysize);
   EXPECT_EQ(out_with_cms.size(), out_without_cms.size());
-  EXPECT_EQ(out_with_cms, out_without_cms);
+  double dist = ButteraugliDistance(xsize, ysize, out_with_cms, color_encoding,
+                                    255, out_without_cms, color_encoding, 255);
+
+  EXPECT_LT(dist, .1);
 }
 
 // Tests the case of lossy sRGB image without alpha channel, decoded to RGB8

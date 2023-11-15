@@ -39,7 +39,7 @@ class CmsStage : public RenderPipelineStage {
     const bool not_mixing_color_and_grey =
         (channels_src == channels_dst ||
          (channels_src == 4 && channels_dst == 3));
-    return (!output_encoding_info_.cms_set) &&
+    return (output_encoding_info_.cms_set) &&
            !c_src_.SameColorEncoding(output_encoding_info_.color_encoding) &&
            not_mixing_color_and_grey;
   }
