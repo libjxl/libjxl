@@ -41,7 +41,10 @@ struct OutputEncodingInfo {
   //
   // Fields depending on output color encoding
   //
+  // The requested color encoding.
   ColorEncoding color_encoding;
+  // This is expected as the output of the conversion from XYB.
+  // It is equal to `color_encoding`, but with a linear tone response curve.
   ColorEncoding linear_color_encoding;
   bool color_encoding_is_original;
   // Contains an opsin matrix that converts to the primaries of the output
