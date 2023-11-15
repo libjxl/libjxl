@@ -233,6 +233,8 @@ Status PassesDecoderState::PreparePipeline(ImageBundle* decoded,
         // - !output_encoding_info.cms_set: can't use the cms, so no point in
         // trying to add a cms stage
         // - mixing_color_and_grey: cms stage can't handle that
+        // TODO(firsching): remove "mixing_color_and_grey" condition after
+        // adding support for greyscale to cms stage.
         builder.AddStage(GetFromLinearStage(output_encoding_info));
       } else {
         if (!output_encoding_info.linear_color_encoding.CreateICC()) {
