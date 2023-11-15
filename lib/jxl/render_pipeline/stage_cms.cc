@@ -39,6 +39,9 @@ class CmsStage : public RenderPipelineStage {
     const bool not_mixing_color_and_grey =
         (channels_src == channels_dst ||
          (channels_src == 4 && channels_dst == 3));
+    fprintf(stderr, "channels_src: %zu, channels_dst: %zu not_mixing_color_and_grey = %d\n",
+      channels_src, channels_dst, not_mixing_color_and_grey);
+
     return (output_encoding_info_.color_management_system != nullptr) &&
            !c_src_.SameColorEncoding(output_encoding_info_.color_encoding) &&
            not_mixing_color_and_grey;

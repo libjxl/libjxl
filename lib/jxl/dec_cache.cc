@@ -225,8 +225,14 @@ Status PassesDecoderState::PreparePipeline(ImageBundle* decoded,
     }
 
     if (linear) {
-      if (output_encoding_info.color_encoding_is_original ||
-          output_encoding_info.color_management_system == nullptr) {
+      const size_t channels_src = (output_encoding_info.orig_color_encoding.IsCMYK() ? 4 :
+        output_encoding_info.orig_color_encoding.Channels());
+      const size_t channels_dst = output_encoding_info.color_encoding.Channels();
+      bool mixing_color_and_grey = (channels_dst != channels_src);
+      fprintf(stderr, "channels_src: %zu, channels_dst: %zu mixing_color_and_grey = %p\n",
+      channels_src, channels_dst, output_encoding_info.color_management_system);
+      if (((output_encoding_info.color_encoding_is_original) ||
+          output_encoding_info.color_management_system == nullptr)|| mixing_color_and_grey) {
         builder.AddStage(GetFromLinearStage(output_encoding_info));
       } else {
         if (!output_encoding_info.linear_color_encoding.CreateICC()){
