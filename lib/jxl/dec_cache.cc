@@ -196,14 +196,6 @@ Status PassesDecoderState::PreparePipeline(ImageBundle* decoded,
       }
     }
 
-    ColorEncoding linear_color_encoding;
-    if (frame_header.color_transform == ColorTransform::kXYB) {
-      linear_color_encoding = output_encoding_info.linear_color_encoding;
-    } else {
-      linear_color_encoding = ColorEncoding::LinearSRGB(
-          output_encoding_info.orig_color_encoding.IsGray());
-    }
-
     auto tone_mapping_stage = GetToneMappingStage(output_encoding_info);
     if (tone_mapping_stage) {
       if (!linear) {
