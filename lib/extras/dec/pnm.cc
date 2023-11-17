@@ -19,17 +19,6 @@ namespace jxl {
 namespace extras {
 namespace {
 
-struct HeaderPNM {
-  size_t xsize;
-  size_t ysize;
-  bool is_gray;    // PGM
-  bool has_alpha;  // PAM
-  size_t bits_per_sample;
-  bool floating_point;
-  bool big_endian;
-  std::vector<JxlExtraChannelType> ec_types;  // PAM
-};
-
 class Parser {
  public:
   explicit Parser(const Span<const uint8_t> bytes)
@@ -323,7 +312,77 @@ Span<const uint8_t> MakeSpan(const char* str) {
   return Bytes(reinterpret_cast<const uint8_t*>(str), strlen(str));
 }
 
+void ReadLinePNM(void* opaque, size_t xpos, size_t ypos, size_t xsize,
+                 uint8_t* buffer, size_t len) {
+  ChunkedPNMDecoder* dec = reinterpret_cast<ChunkedPNMDecoder*>(opaque);
+  const size_t bytes_per_channel =
+      DivCeil(dec->header.bits_per_sample, jxl::kBitsPerByte);
+  const size_t pixel_offset = ypos * dec->header.xsize + xpos;
+  const size_t num_channels = dec->header.is_gray ? 1 : 3;
+  const size_t offset = pixel_offset * num_channels * bytes_per_channel;
+  const size_t num_bytes = xsize * num_channels * bytes_per_channel;
+  if (fseek(dec->f, dec->data_start + offset, SEEK_SET) != 0) {
+    return;
+  }
+  JXL_ASSERT(num_bytes == len);
+  if (num_bytes != fread(buffer, 1, num_bytes, dec->f)) {
+    JXL_WARNING("Failed to read from PNM file\n");
+  }
+}
+
 }  // namespace
+
+Status DecodeImagePNM(ChunkedPNMDecoder* dec, const ColorHints& color_hints,
+                      PackedPixelFile* ppf) {
+  std::vector<uint8_t> buffer(10 * 1024);
+  const size_t bytes_read = fread(buffer.data(), 1, buffer.size(), dec->f);
+  if (ferror(dec->f) || bytes_read > buffer.size()) {
+    return false;
+  }
+  Span<const uint8_t> span(buffer);
+  Parser parser(span);
+  HeaderPNM& header = dec->header;
+  const uint8_t* pos = nullptr;
+  if (!parser.ParseHeader(&header, &pos)) {
+    return false;
+  }
+  dec->data_start = pos - &buffer[0];
+
+  if (header.bits_per_sample == 0 || header.bits_per_sample > 16) {
+    return JXL_FAILURE("Invalid bits_per_sample");
+  }
+  if (header.has_alpha || !header.ec_types.empty() || header.floating_point) {
+    return JXL_FAILURE("Only PGM and PPM inputs are supported");
+  }
+
+  // PPM specifies that in the raster, the sample values are "nonlinear"
+  // (BP.709, with gamma number of 2.2). Deviate from the specification and
+  // assume `sRGB` in our implementation.
+  JXL_RETURN_IF_ERROR(ApplyColorHints(color_hints, /*color_already_set=*/false,
+                                      header.is_gray, ppf));
+
+  ppf->info.xsize = header.xsize;
+  ppf->info.ysize = header.ysize;
+  ppf->info.bits_per_sample = header.bits_per_sample;
+  ppf->info.exponent_bits_per_sample = 0;
+  ppf->info.orientation = JXL_ORIENT_IDENTITY;
+  ppf->info.alpha_bits = 0;
+  ppf->info.alpha_exponent_bits = 0;
+  ppf->info.num_color_channels = (header.is_gray ? 1 : 3);
+  ppf->info.num_extra_channels = 0;
+
+  const JxlDataType data_type =
+      header.bits_per_sample > 8 ? JXL_TYPE_UINT16 : JXL_TYPE_UINT8;
+  const JxlPixelFormat format{
+      /*num_channels=*/ppf->info.num_color_channels,
+      /*data_type=*/data_type,
+      /*endianness=*/header.big_endian ? JXL_BIG_ENDIAN : JXL_LITTLE_ENDIAN,
+      /*align=*/0,
+  };
+  ppf->chunked_frames.emplace_back(header.xsize, header.ysize, format, dec,
+                                   ReadLinePNM);
+  return true;
+}
 
 Status DecodeImagePNM(const Span<const uint8_t> bytes,
                       const ColorHints& color_hints, PackedPixelFile* ppf,
@@ -339,9 +398,9 @@ Status DecodeImagePNM(const Span<const uint8_t> bytes,
     return JXL_FAILURE("PNM: bits_per_sample invalid");
   }
 
-  // PPM specify that in the raster, the sample values are "nonlinear" (BP.709,
-  // with gamma number of 2.2). Deviate from the specification and assume
-  // `sRGB` in our implementation.
+  // PPM specifies that in the raster, the sample values are "nonlinear"
+  // (BP.709, with gamma number of 2.2). Deviate from the specification and
+  // assume `sRGB` in our implementation.
   JXL_RETURN_IF_ERROR(ApplyColorHints(color_hints, /*color_already_set=*/false,
                                       header.is_gray, ppf));
 
