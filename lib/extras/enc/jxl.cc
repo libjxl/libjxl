@@ -85,6 +85,29 @@ bool SetupFrame(JxlEncoder* enc, JxlEncoderFrameSettings* settings,
   return true;
 }
 
+bool ReadCompressedOutput(JxlEncoder* enc, std::vector<uint8_t>* compressed) {
+  compressed->clear();
+  compressed->resize(4096);
+  uint8_t* next_out = compressed->data();
+  size_t avail_out = compressed->size() - (next_out - compressed->data());
+  JxlEncoderStatus result = JXL_ENC_NEED_MORE_OUTPUT;
+  while (result == JXL_ENC_NEED_MORE_OUTPUT) {
+    result = JxlEncoderProcessOutput(enc, &next_out, &avail_out);
+    if (result == JXL_ENC_NEED_MORE_OUTPUT) {
+      size_t offset = next_out - compressed->data();
+      compressed->resize(compressed->size() * 2);
+      next_out = compressed->data() + offset;
+      avail_out = compressed->size() - offset;
+    }
+  }
+  compressed->resize(next_out - compressed->data());
+  if (result != JXL_ENC_SUCCESS) {
+    fprintf(stderr, "JxlEncoderProcessOutput failed.\n");
+    return false;
+  }
+  return true;
+}
+
 bool EncodeImageJXL(const JXLCompressParams& params, const PackedPixelFile& ppf,
                     const std::vector<uint8_t>* jpeg_bytes,
                     std::vector<uint8_t>* compressed) {
@@ -99,6 +122,13 @@ bool EncodeImageJXL(const JXLCompressParams& params, const PackedPixelFile& ppf,
       JXL_ENC_SUCCESS != JxlEncoderSetParallelRunner(enc, params.runner,
                                                      params.runner_opaque)) {
     fprintf(stderr, "JxlEncoderSetParallelRunner failed\n");
+    return false;
+  }
+
+  if (params.HasOutputProcessor() &&
+      JXL_ENC_SUCCESS !=
+          JxlEncoderSetOutputProcessor(enc, params.output_processor)) {
+    fprintf(stderr, "JxlEncoderSetOutputProcessorfailed\n");
     return false;
   }
 
@@ -314,24 +344,12 @@ bool EncodeImageJXL(const JXLCompressParams& params, const PackedPixelFile& ppf,
     }
   }
   JxlEncoderCloseInput(enc);
-  // Reading compressed output
-  compressed->clear();
-  compressed->resize(4096);
-  uint8_t* next_out = compressed->data();
-  size_t avail_out = compressed->size() - (next_out - compressed->data());
-  JxlEncoderStatus result = JXL_ENC_NEED_MORE_OUTPUT;
-  while (result == JXL_ENC_NEED_MORE_OUTPUT) {
-    result = JxlEncoderProcessOutput(enc, &next_out, &avail_out);
-    if (result == JXL_ENC_NEED_MORE_OUTPUT) {
-      size_t offset = next_out - compressed->data();
-      compressed->resize(compressed->size() * 2);
-      next_out = compressed->data() + offset;
-      avail_out = compressed->size() - offset;
+  if (params.HasOutputProcessor()) {
+    if (JXL_ENC_SUCCESS != JxlEncoderFlushInput(enc)) {
+      fprintf(stderr, "JxlEncoderAddChunkedFrame() failed.\n");
+      return false;
     }
-  }
-  compressed->resize(next_out - compressed->data());
-  if (result != JXL_ENC_SUCCESS) {
-    fprintf(stderr, "JxlEncoderProcessOutput failed.\n");
+  } else if (!ReadCompressedOutput(enc, compressed)) {
     return false;
   }
   return true;
