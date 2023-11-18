@@ -115,6 +115,10 @@ main() {
 
   roundtrip_test "jxl/flower/flower_small.rgb.png" "-e 1" 0.02
   roundtrip_test "jxl/flower/flower_small.rgb.png" "-e 1 -d 0.0" 0.0
+  roundtrip_test "jxl/flower/flower_small.rgb.depth8.ppm" \
+		 "-e 1 --streaming_input" 0.02
+  roundtrip_test "jxl/flower/flower_small.rgb.depth8.ppm" \
+		 "-e 1 -d 0.0 --streaming_input" 0.0
   roundtrip_test "jxl/flower/flower_cropped.jpg" "-e 1" 0.0
 
   roundtrip_lossless_pnm_test "jxl/flower/flower_small.rgb.depth1.ppm"

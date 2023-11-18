@@ -32,6 +32,7 @@
 #include "lib/extras/dec/apng.h"
 #include "lib/extras/dec/color_hints.h"
 #include "lib/extras/dec/decode.h"
+#include "lib/extras/dec/pnm.h"
 #include "lib/extras/enc/jxl.h"
 #include "lib/extras/time.h"
 #include "lib/jxl/base/override.h"
@@ -349,6 +350,10 @@ struct CompressArgs {
                             "How many times to compress. (For benchmarking).",
                             &num_reps, &ParseUnsigned, 3);
 
+    cmdline->AddOptionFlag('\0', "streaming_input",
+                           "Enable streaming processing of the input file "
+                           "(works only for PPM and PGM input files).",
+                           &streaming_input, &SetBooleanTrue, 3);
     cmdline->AddOptionFlag('\0', "disable_output",
                            "No output file will be written (for benchmarking)",
                            &disable_output, &SetBooleanTrue, 3);
@@ -459,6 +464,7 @@ struct CompressArgs {
   const char* file_in = nullptr;
   const char* file_out = nullptr;
   jxl::Override print_profile = jxl::Override::kDefault;
+  bool streaming_input = false;
 
   // Decoding source image flags
   ColorHintsProxy color_hints_proxy;
@@ -892,7 +898,7 @@ void ProcessFlags(const jxl::extras::Codec codec,
                     JXL_ENC_FRAME_SETTING_JPEG_COMPRESS_BOXES, params);
   }
   // Set per-frame options.
-  for (size_t num_frame = 0; num_frame < ppf.frames.size(); ++num_frame) {
+  for (size_t num_frame = 0; num_frame < ppf.num_frames(); ++num_frame) {
     if (num_frame < args->frame_indexing.size() &&
         args->frame_indexing[num_frame] == '1') {
       int64_t value = 1;
@@ -974,45 +980,65 @@ int main(int argc, char** argv) {
   // Depending on flags-settings, we want to either load a JPEG and
   // faithfully convert it to JPEG XL, or load (JPEG or non-JPEG)
   // pixel data.
-  std::vector<uint8_t> image_data;
-  jxl::extras::PackedPixelFile ppf;
-  jxl::extras::Codec codec = jxl::extras::Codec::kUnknown;
-  std::vector<uint8_t>* jpeg_bytes = nullptr;
-  double decode_mps = 0;
-  size_t pixels = 0;
-  if (!jpegxl::tools::ReadFile(args.file_in, &image_data)) {
+  jpegxl::tools::FileWrapper f(args.file_in, "rb");
+  if (!f) {
     std::cerr << "Reading image data failed." << std::endl;
     exit(EXIT_FAILURE);
   }
-  if (!jpegxl::tools::IsJPG(image_data)) args.lossless_jpeg = 0;
   jxl::extras::JXLCompressParams params;
-  ProcessFlags(codec, ppf, jpeg_bytes, &cmdline, &args, &params);
-  if (!args.lossless_jpeg) {
-    const double t0 = jxl::Now();
-    jxl::Status status = jxl::extras::DecodeBytes(jxl::Bytes(image_data),
-                                                  args.color_hints_proxy.target,
-                                                  &ppf, nullptr, &codec);
-
-    if (!status) {
-      std::cerr << "Getting pixel data failed." << std::endl;
+  jxl::extras::PackedPixelFile ppf;
+  jxl::extras::Codec codec = jxl::extras::Codec::kUnknown;
+  std::vector<uint8_t> image_data;
+  std::vector<uint8_t>* jpeg_bytes = nullptr;
+  jxl::extras::ChunkedPNMDecoder pnm_dec;
+  size_t pixels = 0;
+  if (args.streaming_input) {
+    pnm_dec.f = f;
+    if (!DecodeImagePNM(&pnm_dec, args.color_hints_proxy.target, &ppf)) {
+      std::cerr << "PNM decoding failed." << std::endl;
       exit(EXIT_FAILURE);
     }
-    if (ppf.frames.empty()) {
-      std::cerr << "No frames on input file." << std::endl;
-      exit(EXIT_FAILURE);
-    }
-
-    const double t1 = jxl::Now();
+    codec = jxl::extras::Codec::kPNM;
+    args.lossless_jpeg = 0;
     pixels = ppf.info.xsize * ppf.info.ysize;
-    decode_mps = pixels * ppf.info.num_color_channels * 1E-6 / (t1 - t0);
-  }
-  if (args.lossless_jpeg && jpegxl::tools::IsJPG(image_data)) {
-    if (!cmdline.GetOption(args.opt_lossless_jpeg_id)->matched()) {
-      std::cerr << "Note: Implicit-default for JPEG is lossless-transcoding. "
-                << "To silence this message, set --lossless_jpeg=(1|0)."
-                << std::endl;
+  } else {
+    double decode_mps = 0;
+    if (!jpegxl::tools::ReadFile(f, &image_data)) {
+      std::cerr << "Reading image data failed." << std::endl;
+      exit(EXIT_FAILURE);
     }
-    jpeg_bytes = &image_data;
+    if (!jpegxl::tools::IsJPG(image_data)) args.lossless_jpeg = 0;
+    ProcessFlags(codec, ppf, jpeg_bytes, &cmdline, &args, &params);
+    if (!args.lossless_jpeg) {
+      const double t0 = jxl::Now();
+      jxl::Status status = jxl::extras::DecodeBytes(
+          jxl::Bytes(image_data), args.color_hints_proxy.target, &ppf, nullptr,
+          &codec);
+
+      if (!status) {
+        std::cerr << "Getting pixel data failed." << std::endl;
+        exit(EXIT_FAILURE);
+      }
+      if (ppf.frames.empty()) {
+        std::cerr << "No frames on input file." << std::endl;
+        exit(EXIT_FAILURE);
+      }
+      pixels = ppf.info.xsize * ppf.info.ysize;
+      const double t1 = jxl::Now();
+      decode_mps = pixels * ppf.info.num_color_channels * 1E-6 / (t1 - t0);
+    }
+    if (!args.quiet) {
+      PrintMode(ppf, decode_mps, image_data.size(), args, cmdline);
+    }
+
+    if (args.lossless_jpeg && jpegxl::tools::IsJPG(image_data)) {
+      if (!cmdline.GetOption(args.opt_lossless_jpeg_id)->matched()) {
+        std::cerr << "Note: Implicit-default for JPEG is lossless-transcoding. "
+                  << "To silence this message, set --lossless_jpeg=(1|0)."
+                  << std::endl;
+      }
+      jpeg_bytes = &image_data;
+    }
   }
 
   ProcessFlags(codec, ppf, jpeg_bytes, &cmdline, &args, &params);
@@ -1035,10 +1061,6 @@ int main(int argc, char** argv) {
       ppf.metadata.iptc.clear();
       args.jpeg_store_metadata = 0;
     }
-  }
-
-  if (!args.quiet) {
-    PrintMode(ppf, decode_mps, image_data.size(), args, cmdline);
   }
 
   size_t num_worker_threads = JxlThreadParallelRunnerDefaultNumWorkerThreads();
@@ -1086,8 +1108,8 @@ int main(int argc, char** argv) {
     if (!args.lossless_jpeg) {
       const double bpp =
           static_cast<double>(compressed.size() * jxl::kBitsPerByte) / pixels;
-      cmdline.VerbosePrintf(0, "(%.3f bpp%s).\n", bpp / ppf.frames.size(),
-                            ppf.frames.size() == 1 ? "" : "/frame");
+      cmdline.VerbosePrintf(0, "(%.3f bpp%s).\n", bpp / ppf.num_frames(),
+                            ppf.num_frames() == 1 ? "" : "/frame");
       JXL_CHECK(stats.Print(num_worker_threads));
     } else {
       cmdline.VerbosePrintf(0, "\n");
