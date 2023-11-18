@@ -354,6 +354,9 @@ struct CompressArgs {
                            "Enable streaming processing of the input file "
                            "(works only for PPM and PGM input files).",
                            &streaming_input, &SetBooleanTrue, 3);
+    cmdline->AddOptionFlag('\0', "streaming_output",
+                           "Enable incremental writing of the output file.",
+                           &streaming_output, &SetBooleanTrue, 3);
     cmdline->AddOptionFlag('\0', "disable_output",
                            "No output file will be written (for benchmarking)",
                            &disable_output, &SetBooleanTrue, 3);
@@ -465,6 +468,7 @@ struct CompressArgs {
   const char* file_out = nullptr;
   jxl::Override print_profile = jxl::Override::kDefault;
   bool streaming_input = false;
+  bool streaming_output = false;
 
   // Decoding source image flags
   ColorHintsProxy color_hints_proxy;
@@ -934,6 +938,56 @@ void ProcessFlags(const jxl::extras::Codec codec,
       });
 }
 
+struct JxlOutputProcessor {
+  bool SetOutputPath(const std::string& path) {
+    outfile.reset(new FileWrapper(path, "wb"));
+    if (!*outfile) {
+      fprintf(stderr,
+              "Could not open %s for writing\n"
+              "Error: %s",
+              path.c_str(), strerror(errno));
+      return false;
+    }
+    return true;
+  }
+
+  JxlEncoderOutputProcessor GetOutputProcessor() {
+    return JxlEncoderOutputProcessor{this, GetBuffer, ReleaseBuffer, Seek,
+                                     SetFinalizedPosition};
+  }
+
+  static void* GetBuffer(void* opaque, size_t* size) {
+    JxlOutputProcessor* self = reinterpret_cast<JxlOutputProcessor*>(opaque);
+    self->output.resize(*size);
+    return self->output.data();
+  }
+
+  static void ReleaseBuffer(void* opaque, size_t written_bytes) {
+    JxlOutputProcessor* self = reinterpret_cast<JxlOutputProcessor*>(opaque);
+    if (*self->outfile && fwrite(self->output.data(), 1, written_bytes,
+                                 *self->outfile) != written_bytes) {
+      JXL_WARNING("Failed to write %" PRIuS " bytes to output", written_bytes);
+    }
+    self->output.clear();
+  }
+
+  static void Seek(void* opaque, uint64_t position) {
+    JxlOutputProcessor* self = reinterpret_cast<JxlOutputProcessor*>(opaque);
+    if (*self->outfile && fseek(*self->outfile, position, SEEK_SET) != 0) {
+      JXL_WARNING("Failed to seek output.");
+    }
+  }
+
+  static void SetFinalizedPosition(void* opaque, uint64_t finalized_position) {
+    JxlOutputProcessor* self = reinterpret_cast<JxlOutputProcessor*>(opaque);
+    self->finalized_position = finalized_position;
+  }
+
+  std::vector<uint8_t> output;
+  size_t finalized_position = 0;
+  std::unique_ptr<FileWrapper> outfile;
+};
+
 }  // namespace tools
 }  // namespace jpegxl
 
@@ -1074,10 +1128,19 @@ int main(int argc, char** argv) {
   params.runner_opaque = runner.get();
 
   jpegxl::tools::SpeedStats stats;
+  jpegxl::tools::JxlOutputProcessor output_processor;
+  if (args.streaming_output) {
+    if (args.file_out && !args.disable_output &&
+        !output_processor.SetOutputPath(args.file_out)) {
+      return EXIT_FAILURE;
+    }
+    params.output_processor = output_processor.GetOutputProcessor();
+  }
   std::vector<uint8_t> compressed;
   for (size_t num_rep = 0; num_rep < args.num_reps; ++num_rep) {
     const double t0 = jxl::Now();
-    if (!EncodeImageJXL(params, ppf, jpeg_bytes, &compressed)) {
+    if (!EncodeImageJXL(params, ppf, jpeg_bytes,
+                        args.streaming_output ? nullptr : &compressed)) {
       fprintf(stderr, "EncodeImageJXL() failed.\n");
       return EXIT_FAILURE;
     }
@@ -1085,20 +1148,23 @@ int main(int argc, char** argv) {
     stats.NotifyElapsed(t1 - t0);
     stats.SetImageSize(ppf.info.xsize, ppf.info.ysize);
   }
+  size_t compressed_size = args.streaming_output
+                               ? output_processor.finalized_position
+                               : compressed.size();
 
-  if (args.file_out && !args.disable_output) {
+  if (!args.streaming_output && args.file_out && !args.disable_output) {
     if (!jpegxl::tools::WriteFile(args.file_out, compressed)) {
       std::cerr << "Could not write jxl file." << std::endl;
       return EXIT_FAILURE;
     }
   }
   if (!args.quiet) {
-    if (compressed.size() < 100000) {
+    if (compressed_size < 100000) {
       cmdline.VerbosePrintf(0, "Compressed to %" PRIuS " bytes ",
-                            compressed.size());
+                            compressed_size);
     } else {
       cmdline.VerbosePrintf(0, "Compressed to %.1f kB ",
-                            compressed.size() * 0.001);
+                            compressed_size * 0.001);
     }
     // For lossless jpeg-reconstruction, we don't print some stats, since we
     // don't have easy access to the image dimensions.
@@ -1107,7 +1173,7 @@ int main(int argc, char** argv) {
     }
     if (!args.lossless_jpeg) {
       const double bpp =
-          static_cast<double>(compressed.size() * jxl::kBitsPerByte) / pixels;
+          static_cast<double>(compressed_size * jxl::kBitsPerByte) / pixels;
       cmdline.VerbosePrintf(0, "(%.3f bpp%s).\n", bpp / ppf.num_frames(),
                             ppf.num_frames() == 1 ? "" : "/frame");
       JXL_CHECK(stats.Print(num_worker_threads));
