@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <cmath>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -190,6 +191,85 @@ class PackedFrame {
   std::vector<PackedImage> extra_channels;
 };
 
+class ChunkedPackedFrame {
+ public:
+  typedef void (*ReadLine)(void* opaque, size_t xpos, size_t ypos, size_t xsize,
+                           uint8_t* buffer, size_t len);
+  ChunkedPackedFrame(size_t xsize, size_t ysize, const JxlPixelFormat& format,
+                     void* opaque, ReadLine read_line)
+      : xsize(xsize),
+        ysize(ysize),
+        format(format),
+        opaque_(opaque),
+        read_line_(read_line) {}
+
+  JxlChunkedFrameInputSource GetInputSource() {
+    return JxlChunkedFrameInputSource{this,
+                                      GetColorChannelsPixelFormat,
+                                      GetColorChannelDataAt,
+                                      GetExtraChannelPixelFormat,
+                                      GetExtraChannelDataAt,
+                                      ReleaseCurrentData};
+  }
+
+  // The Frame metadata.
+  JxlFrameHeader frame_info = {};
+  std::string name;
+
+  size_t xsize;
+  size_t ysize;
+  JxlPixelFormat format;
+
+ private:
+  static void GetColorChannelsPixelFormat(void* opaque,
+                                          JxlPixelFormat* pixel_format) {
+    ChunkedPackedFrame* self = reinterpret_cast<ChunkedPackedFrame*>(opaque);
+    *pixel_format = self->format;
+  }
+
+  static const void* GetColorChannelDataAt(void* opaque, size_t xpos,
+                                           size_t ypos, size_t xsize,
+                                           size_t ysize, size_t* row_offset) {
+    ChunkedPackedFrame* self = reinterpret_cast<ChunkedPackedFrame*>(opaque);
+    size_t bytes_per_channel =
+        PackedImage::BitsPerChannel(self->format.data_type) / jxl::kBitsPerByte;
+    size_t bytes_per_pixel = bytes_per_channel * self->format.num_channels;
+    *row_offset = xsize * bytes_per_pixel;
+    uint8_t* buffer = reinterpret_cast<uint8_t*>(malloc(ysize * (*row_offset)));
+    for (size_t y = 0; y < ysize; ++y) {
+      self->read_line_(self->opaque_, xpos, ypos + y, xsize,
+                       &buffer[y * (*row_offset)], *row_offset);
+    }
+    self->buffers_.insert(buffer);
+    return buffer;
+  }
+
+  static void GetExtraChannelPixelFormat(void* opaque, size_t ec_index,
+                                         JxlPixelFormat* pixel_format) {
+    JXL_ABORT("Not implemented");
+  }
+
+  static const void* GetExtraChannelDataAt(void* opaque, size_t ec_index,
+                                           size_t xpos, size_t ypos,
+                                           size_t xsize, size_t ysize,
+                                           size_t* row_offset) {
+    JXL_ABORT("Not implemented");
+  }
+
+  static void ReleaseCurrentData(void* opaque, const void* buffer) {
+    ChunkedPackedFrame* self = reinterpret_cast<ChunkedPackedFrame*>(opaque);
+    auto iter = self->buffers_.find(const_cast<void*>(buffer));
+    if (iter != self->buffers_.end()) {
+      free(*iter);
+      self->buffers_.erase(iter);
+    }
+  }
+
+  void* opaque_;
+  ReadLine read_line_;
+  std::set<void*> buffers_;
+};
+
 // Optional metadata associated with a file
 class PackedMetadata {
  public:
@@ -222,9 +302,14 @@ class PackedPixelFile {
 
   std::unique_ptr<PackedFrame> preview_frame;
   std::vector<PackedFrame> frames;
+  mutable std::vector<ChunkedPackedFrame> chunked_frames;
 
   PackedMetadata metadata;
   PackedPixelFile() { JxlEncoderInitBasicInfo(&info); };
+
+  size_t num_frames() const {
+    return chunked_frames.empty() ? frames.size() : chunked_frames.size();
+  }
 };
 
 }  // namespace extras

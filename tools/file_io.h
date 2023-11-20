@@ -75,10 +75,7 @@ class FileWrapper {
 }  // namespace
 
 template <typename ContainerType>
-static inline bool ReadFile(const std::string& filename,
-                            ContainerType* JXL_RESTRICT bytes) {
-  FileWrapper f(filename, "rb");
-
+static inline bool ReadFile(FileWrapper& f, ContainerType* JXL_RESTRICT bytes) {
   if (!f) return false;
 
   // Get size of file in bytes
@@ -120,6 +117,13 @@ static inline bool ReadFile(const std::string& filename,
   }
 
   return true;
+}
+
+template <typename ContainerType>
+static inline bool ReadFile(const std::string& filename,
+                            ContainerType* JXL_RESTRICT bytes) {
+  FileWrapper f(filename, "rb");
+  return ReadFile(f, bytes);
 }
 
 template <typename ContainerType>

@@ -797,7 +797,7 @@ Status PrimariesToXYZ(float rx, float ry, float gx, float gy, float bx,
 
 // Adapts whitepoint x, y to D50
 Status AdaptToXYZD50(float wx, float wy, float matrix[9]) {
-  bool ok = (wx >= 0) || (wx <= 1) || (wy > 0) || (wy <= 1);
+  bool ok = (wx >= 0) && (wx <= 1) && (wy > 0) && (wy <= 1);
   if (!ok) {
     // Out of range values can cause division through zero
     // further down with the bradford adaptation too.

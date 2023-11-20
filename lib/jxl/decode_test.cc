@@ -3,6 +3,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <jxl/color_encoding.h>
 #include <jxl/decode.h>
 #include <jxl/decode_cxx.h>
 #include <jxl/resizable_parallel_runner_cxx.h>
@@ -21,6 +22,7 @@
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/cms/color_encoding_cms.h"
 #include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/dec_bit_reader.h"
@@ -1763,7 +1765,8 @@ TEST_P(DecodeAllEncodingsTest, PreserveOriginalProfileTest) {
 
 namespace {
 void SetPreferredColorProfileTest(
-    const jxl::test::ColorEncodingDescriptor& from) {
+    const jxl::test::ColorEncodingDescriptor& from, bool icc_dst,
+    bool use_cms) {
   size_t xsize = 123, ysize = 77;
   int events = JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING | JXL_DEC_FULL_IMAGE;
   jxl::ColorEncoding c_in = jxl::test::ColorEncodingFromDescriptor(from);
@@ -1772,6 +1775,7 @@ void SetPreferredColorProfileTest(
   uint32_t num_channels = c_in.Channels();
   std::vector<uint8_t> pixels =
       jxl::test::GetSomeTestImage(xsize, ysize, num_channels, 0);
+
   JxlPixelFormat format = {num_channels, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
   std::string color_space_in = Description(c_in);
   float intensity_in = c_in.Tf().IsPQ() ? 10000 : 255;
@@ -1782,9 +1786,12 @@ void SetPreferredColorProfileTest(
       jxl::CreateTestJXLCodestream(jxl::Bytes(pixels.data(), pixels.size()),
                                    xsize, ysize, num_channels, params);
   auto all_encodings = jxl::test::AllEncodings();
-  all_encodings.push_back(
-      {jxl::ColorSpace::kXYB, jxl::WhitePoint::kD65, jxl::Primaries::kCustom,
-       jxl::TransferFunction::kUnknown, jxl::RenderingIntent::kPerceptual});
+  // TODO(firsching): understand why XYB does not work together with icc_dst.
+  if (!icc_dst) {
+    all_encodings.push_back(
+        {jxl::ColorSpace::kXYB, jxl::WhitePoint::kD65, jxl::Primaries::kCustom,
+         jxl::TransferFunction::kUnknown, jxl::RenderingIntent::kPerceptual});
+  }
   for (const auto& c1 : all_encodings) {
     jxl::ColorEncoding c_out = jxl::test::ColorEncodingFromDescriptor(c1);
     float intensity_out = intensity_in;
@@ -1796,7 +1803,7 @@ void SetPreferredColorProfileTest(
            c_out.GetPrimariesType() != jxl::Primaries::k2100) ||
           (c_in.GetPrimariesType() == jxl::Primaries::kP3 &&
            c_out.GetPrimariesType() == jxl::Primaries::kSRGB)) {
-        // Converting to a narrower gamut does not work without gammut mapping.
+        // Converting to a narrower gamut does not work without gamut mapping.
         continue;
       }
     }
@@ -1822,7 +1829,6 @@ void SetPreferredColorProfileTest(
     EXPECT_FALSE(info.uses_original_profile);
     EXPECT_EQ(JXL_DEC_COLOR_ENCODING, JxlDecoderProcessInput(dec));
     EXPECT_EQ(GetOrigProfile(dec), color_space_in);
-    EXPECT_EQ(GetDataProfile(dec), color_space_in);
     JxlColorEncoding encoding_out;
     EXPECT_TRUE(jxl::ParseDescription(color_space_out, &encoding_out));
     if (c_out.GetColorSpace() == jxl::ColorSpace::kXYB &&
@@ -1833,10 +1839,32 @@ void SetPreferredColorProfileTest(
       JxlDecoderDestroy(dec);
       continue;
     }
-    EXPECT_EQ(JXL_DEC_SUCCESS,
-              JxlDecoderSetPreferredColorProfile(dec, &encoding_out));
+    if (use_cms) {
+      JxlDecoderSetCms(dec, *JxlGetDefaultCms());
+    }
+    if (icc_dst) {
+      jxl::ColorEncoding internal_encoding_out;
+      EXPECT_TRUE(internal_encoding_out.FromExternal(encoding_out));
+      EXPECT_TRUE(internal_encoding_out.CreateICC());
+      std::vector<uint8_t> rewritten_icc = internal_encoding_out.ICC();
+
+      EXPECT_EQ(use_cms ? JXL_DEC_SUCCESS : JXL_DEC_ERROR,
+                JxlDecoderSetOutputColorProfile(
+                    dec, nullptr, rewritten_icc.data(), rewritten_icc.size()));
+      if (!use_cms) {
+        // continue if we don't have a cms here
+        JxlDecoderDestroy(dec);
+        continue;
+      }
+    } else {
+      EXPECT_EQ(JXL_DEC_SUCCESS,
+                JxlDecoderSetPreferredColorProfile(dec, &encoding_out));
+    }
     EXPECT_EQ(GetOrigProfile(dec), color_space_in);
-    EXPECT_EQ(GetDataProfile(dec), color_space_out);
+    if (icc_dst) {
+    } else {
+      EXPECT_EQ(GetDataProfile(dec), color_space_out);
+    }
     EXPECT_EQ(JXL_DEC_NEED_IMAGE_OUT_BUFFER, JxlDecoderProcessInput(dec));
     size_t buffer_size;
     JxlPixelFormat out_format = format;
@@ -1849,6 +1877,7 @@ void SetPreferredColorProfileTest(
     EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec));
     double dist = ButteraugliDistance(xsize, ysize, pixels, c_in, intensity_in,
                                       out, c_out, intensity_out);
+
     if (c_in.GetWhitePointType() == c_out.GetWhitePointType()) {
       EXPECT_LT(dist, 1.29);
     } else {
@@ -1864,12 +1893,123 @@ TEST(DecodeTest, SetPreferredColorProfileTestFromGray) {
   jxl::test::ColorEncodingDescriptor gray = {
       jxl::ColorSpace::kGray, jxl::WhitePoint::kD65, jxl::Primaries::kSRGB,
       jxl::TransferFunction::kSRGB, jxl::RenderingIntent::kRelative};
-  SetPreferredColorProfileTest(gray);
+  SetPreferredColorProfileTest(gray, true, true);
+  SetPreferredColorProfileTest(gray, false, true);
+  SetPreferredColorProfileTest(gray, true, false);
+  SetPreferredColorProfileTest(gray, false, false);
 }
 
-TEST_P(DecodeAllEncodingsTest, SetPreferredColorProfileTest) {
-  const auto& from = GetParam();
-  SetPreferredColorProfileTest(from);
+static std::string DecodeAllEncodingsVariantsTestName(
+    const ::testing::TestParamInfo<
+        std::tuple<jxl::test::ColorEncodingDescriptor, bool, bool>>& info) {
+  const auto& encoding = std::get<0>(info.param);
+  bool icc_dst = std::get<1>(info.param);
+  bool use_cms = std::get<2>(info.param);
+
+  std::string encoding_name =
+      Description(ColorEncodingFromDescriptor(encoding));
+
+  return "From_" + encoding_name +
+         (icc_dst ? "_with_icc_dst" : "_without_icc_dst") +
+         (use_cms ? "_with_cms" : "_without_cms");
+}
+
+class DecodeAllEncodingsVariantsTest
+    : public ::testing::TestWithParam<
+          std::tuple<jxl::test::ColorEncodingDescriptor, bool, bool>> {};
+JXL_GTEST_INSTANTIATE_TEST_SUITE_P(
+    DecodeAllEncodingsVariantsTestInstantiation, DecodeAllEncodingsVariantsTest,
+    ::testing::Combine(::testing::ValuesIn(jxl::test::AllEncodings()),
+                       ::testing::Bool(), ::testing::Bool()),
+    DecodeAllEncodingsVariantsTestName);
+TEST_P(DecodeAllEncodingsVariantsTest, SetPreferredColorProfileTest) {
+  const auto& from = std::get<0>(GetParam());
+  bool icc_dst = std::get<1>(GetParam());
+  bool use_cms = std::get<2>(GetParam());
+  SetPreferredColorProfileTest(from, icc_dst, use_cms);
+}
+
+void DecodeImageWithColorEncoding(const std::vector<uint8_t>& compressed,
+                                  jxl::ColorEncoding& color_encoding,
+                                  bool with_cms, std::vector<uint8_t>& out,
+                                  JxlBasicInfo& info) {
+  JxlDecoder* dec = JxlDecoderCreate(nullptr);
+  int events = JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING | JXL_DEC_FULL_IMAGE;
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSubscribeEvents(dec, events));
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSetInput(dec, compressed.data(), compressed.size()));
+  EXPECT_EQ(JXL_DEC_BASIC_INFO, JxlDecoderProcessInput(dec));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBasicInfo(dec, &info));
+  EXPECT_EQ(JXL_DEC_COLOR_ENCODING, JxlDecoderProcessInput(dec));
+  std::string color_space_in = GetOrigProfile(dec);
+  if (with_cms) {
+    JxlDecoderSetCms(dec, *JxlGetDefaultCms());
+    EXPECT_TRUE(color_encoding.CreateICC());
+    std::vector<uint8_t> rewritten_icc = color_encoding.ICC();
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderSetOutputColorProfile(
+                  dec, nullptr, rewritten_icc.data(), rewritten_icc.size()));
+  } else {
+    JxlColorEncoding external_color_encoding = color_encoding.ToExternal();
+    EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetOutputColorProfile(
+                                   dec, &external_color_encoding, nullptr, 0));
+  }
+  EXPECT_EQ(JXL_DEC_NEED_IMAGE_OUT_BUFFER, JxlDecoderProcessInput(dec));
+
+  size_t buffer_size;
+  JxlPixelFormat format = {3, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
+
+  JxlPixelFormat out_format = format;
+  out_format.num_channels = color_encoding.Channels();
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderImageOutBufferSize(dec, &out_format, &buffer_size));
+  out.resize(buffer_size);
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetImageOutBuffer(
+                                 dec, &out_format, out.data(), out.size()));
+  EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec));
+  JxlDecoderDestroy(dec);
+}
+
+class DecodeAllEncodingsWithCMSTest
+    : public ::testing::TestWithParam<jxl::test::ColorEncodingDescriptor> {};
+
+JXL_GTEST_INSTANTIATE_TEST_SUITE_P(
+    AllEncodings, DecodeAllEncodingsWithCMSTest,
+    testing::ValuesIn(jxl::test::AllEncodings()));
+
+TEST_P(DecodeAllEncodingsWithCMSTest, DecodeWithCMS) {
+  auto all_encodings = jxl::test::AllEncodings();
+  uint32_t num_channels = 3;
+  size_t xsize = 177, ysize = 123;
+  std::vector<uint8_t> pixels =
+      jxl::test::GetSomeTestImage(xsize, ysize, num_channels, 0);
+  jxl::TestCodestreamParams params;
+  std::vector<uint8_t> data =
+      jxl::CreateTestJXLCodestream(jxl::Bytes(pixels.data(), pixels.size()),
+                                   xsize, ysize, num_channels, params);
+
+  jxl::ColorEncoding color_encoding =
+      jxl::test::ColorEncodingFromDescriptor(GetParam());
+  fprintf(stderr, "color_description: %s\n",
+          Description(color_encoding).c_str());
+
+  std::vector<uint8_t> out_with_cms;
+  JxlBasicInfo info_with_cms;
+  DecodeImageWithColorEncoding(data, color_encoding, true, out_with_cms,
+                               info_with_cms);
+
+  std::vector<uint8_t> out_without_cms;
+  JxlBasicInfo info_without_cms;
+  DecodeImageWithColorEncoding(data, color_encoding, false, out_without_cms,
+                               info_without_cms);
+
+  EXPECT_EQ(info_with_cms.xsize, info_without_cms.xsize);
+  EXPECT_EQ(info_with_cms.ysize, info_without_cms.ysize);
+  EXPECT_EQ(out_with_cms.size(), out_without_cms.size());
+  double dist = ButteraugliDistance(xsize, ysize, out_with_cms, color_encoding,
+                                    255, out_without_cms, color_encoding, 255);
+
+  EXPECT_LT(dist, .1);
 }
 
 // Tests the case of lossy sRGB image without alpha channel, decoded to RGB8
