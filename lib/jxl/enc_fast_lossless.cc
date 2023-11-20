@@ -170,299 +170,6 @@ struct BitWriter {
   uint64_t buffer = 0;
 };
 
-}  // namespace
-
-extern "C" {
-
-struct JxlFastLosslessFrameState {
-  size_t width;
-  size_t height;
-  size_t nb_chans;
-  size_t bitdepth;
-  BitWriter header;
-  std::vector<std::array<BitWriter, 4>> group_data;
-  size_t current_bit_writer = 0;
-  size_t bit_writer_byte_pos = 0;
-  size_t bits_in_buffer = 0;
-  uint64_t bit_buffer = 0;
-};
-
-size_t JxlFastLosslessOutputSize(const JxlFastLosslessFrameState* frame) {
-  size_t total_size_groups = 0;
-  for (size_t i = 0; i < frame->group_data.size(); i++) {
-    size_t sz = 0;
-    for (size_t j = 0; j < frame->nb_chans; j++) {
-      const auto& writer = frame->group_data[i][j];
-      sz += writer.bytes_written * 8 + writer.bits_in_buffer;
-    }
-    sz = (sz + 7) / 8;
-    total_size_groups += sz;
-  }
-  return frame->header.bytes_written + total_size_groups;
-}
-
-size_t JxlFastLosslessMaxRequiredOutput(
-    const JxlFastLosslessFrameState* frame) {
-  return JxlFastLosslessOutputSize(frame) + 32;
-}
-
-void JxlFastLosslessPrepareHeader(JxlFastLosslessFrameState* frame,
-                                  int add_image_header, int is_last) {
-  BitWriter* output = &frame->header;
-  output->Allocate(1000 + frame->group_data.size() * 32);
-
-  std::vector<size_t> group_sizes(frame->group_data.size());
-  for (size_t i = 0; i < frame->group_data.size(); i++) {
-    size_t sz = 0;
-    for (size_t j = 0; j < frame->nb_chans; j++) {
-      const auto& writer = frame->group_data[i][j];
-      sz += writer.bytes_written * 8 + writer.bits_in_buffer;
-    }
-    sz = (sz + 7) / 8;
-    group_sizes[i] = sz;
-  }
-
-  bool have_alpha = (frame->nb_chans == 2 || frame->nb_chans == 4);
-
-#if FJXL_STANDALONE
-  if (add_image_header) {
-    // Signature
-    output->Write(16, 0x0AFF);
-
-    // Size header, hand-crafted.
-    // Not small
-    output->Write(1, 0);
-
-    auto wsz = [output](size_t size) {
-      if (size - 1 < (1 << 9)) {
-        output->Write(2, 0b00);
-        output->Write(9, size - 1);
-      } else if (size - 1 < (1 << 13)) {
-        output->Write(2, 0b01);
-        output->Write(13, size - 1);
-      } else if (size - 1 < (1 << 18)) {
-        output->Write(2, 0b10);
-        output->Write(18, size - 1);
-      } else {
-        output->Write(2, 0b11);
-        output->Write(30, size - 1);
-      }
-    };
-
-    wsz(frame->height);
-
-    // No special ratio.
-    output->Write(3, 0);
-
-    wsz(frame->width);
-
-    // Hand-crafted ImageMetadata.
-    output->Write(1, 0);  // all_default
-    output->Write(1, 0);  // extra_fields
-    output->Write(1, 0);  // bit_depth.floating_point_sample
-    if (frame->bitdepth == 8) {
-      output->Write(2, 0b00);  // bit_depth.bits_per_sample = 8
-    } else if (frame->bitdepth == 10) {
-      output->Write(2, 0b01);  // bit_depth.bits_per_sample = 10
-    } else if (frame->bitdepth == 12) {
-      output->Write(2, 0b10);  // bit_depth.bits_per_sample = 12
-    } else {
-      output->Write(2, 0b11);  // 1 + u(6)
-      output->Write(6, frame->bitdepth - 1);
-    }
-    if (frame->bitdepth <= 14) {
-      output->Write(1, 1);  // 16-bit-buffer sufficient
-    } else {
-      output->Write(1, 0);  // 16-bit-buffer NOT sufficient
-    }
-    if (have_alpha) {
-      output->Write(2, 0b01);  // One extra channel
-      output->Write(1, 1);     // ... all_default (ie. 8-bit alpha)
-    } else {
-      output->Write(2, 0b00);  // No extra channel
-    }
-    output->Write(1, 0);  // Not XYB
-    if (frame->nb_chans > 2) {
-      output->Write(1, 1);  // color_encoding.all_default (sRGB)
-    } else {
-      output->Write(1, 0);     // color_encoding.all_default false
-      output->Write(1, 0);     // color_encoding.want_icc false
-      output->Write(2, 1);     // grayscale
-      output->Write(2, 1);     // D65
-      output->Write(1, 0);     // no gamma transfer function
-      output->Write(2, 0b10);  // tf: 2 + u(4)
-      output->Write(4, 11);    // tf of sRGB
-      output->Write(2, 1);     // relative rendering intent
-    }
-    output->Write(2, 0b00);  // No extensions.
-
-    output->Write(1, 1);  // all_default transform data
-
-    // No ICC, no preview. Frame should start at byte boundery.
-    output->ZeroPadToByte();
-  }
-#else
-  assert(!add_image_header);
-#endif
-
-  // Handcrafted frame header.
-  output->Write(1, 0);     // all_default
-  output->Write(2, 0b00);  // regular frame
-  output->Write(1, 1);     // modular
-  output->Write(2, 0b00);  // default flags
-  output->Write(1, 0);     // not YCbCr
-  output->Write(2, 0b00);  // no upsampling
-  if (have_alpha) {
-    output->Write(2, 0b00);  // no alpha upsampling
-  }
-  output->Write(2, 0b01);  // default group size
-  output->Write(2, 0b00);  // exactly one pass
-  output->Write(1, 0);     // no custom size or origin
-  output->Write(2, 0b00);  // kReplace blending mode
-  if (have_alpha) {
-    output->Write(2, 0b00);  // kReplace blending mode for alpha channel
-  }
-  output->Write(1, is_last);  // is_last
-  output->Write(2, 0b00);     // a frame has no name
-  output->Write(1, 0);        // loop filter is not all_default
-  output->Write(1, 0);        // no gaborish
-  output->Write(2, 0);        // 0 EPF iters
-  output->Write(2, 0b00);     // No LF extensions
-  output->Write(2, 0b00);     // No FH extensions
-
-  output->Write(1, 0);      // No TOC permutation
-  output->ZeroPadToByte();  // TOC is byte-aligned.
-  for (size_t i = 0; i < frame->group_data.size(); i++) {
-    size_t sz = group_sizes[i];
-    if (sz < (1 << 10)) {
-      output->Write(2, 0b00);
-      output->Write(10, sz);
-    } else if (sz - 1024 < (1 << 14)) {
-      output->Write(2, 0b01);
-      output->Write(14, sz - 1024);
-    } else if (sz - 17408 < (1 << 22)) {
-      output->Write(2, 0b10);
-      output->Write(22, sz - 17408);
-    } else {
-      output->Write(2, 0b11);
-      output->Write(30, sz - 4211712);
-    }
-  }
-  output->ZeroPadToByte();  // Groups are byte-aligned.
-}
-
-#if FJXL_ENABLE_AVX512
-__attribute__((target("avx512vbmi2"))) static size_t AppendBytesWithBitOffset(
-    const uint8_t* data, size_t n, size_t bit_buffer_nbits,
-    unsigned char* output, uint64_t& bit_buffer) {
-  if (n < 128) {
-    return 0;
-  }
-
-  size_t i = 0;
-  __m512i shift = _mm512_set1_epi64(64 - bit_buffer_nbits);
-  __m512i carry = _mm512_set1_epi64(bit_buffer << (64 - bit_buffer_nbits));
-
-  for (; i + 64 <= n; i += 64) {
-    __m512i current = _mm512_loadu_si512(data + i);
-    __m512i previous_u64 = _mm512_alignr_epi64(current, carry, 7);
-    carry = current;
-    __m512i out = _mm512_shrdv_epi64(previous_u64, current, shift);
-    _mm512_storeu_si512(output + i, out);
-  }
-
-  bit_buffer = data[i - 1] >> (8 - bit_buffer_nbits);
-
-  return i;
-}
-#endif
-
-size_t JxlFastLosslessWriteOutput(JxlFastLosslessFrameState* frame,
-                                  unsigned char* output, size_t output_size) {
-  assert(output_size >= 32);
-  unsigned char* initial_output = output;
-  size_t (*append_bytes_with_bit_offset)(const uint8_t*, size_t, size_t,
-                                         unsigned char*, uint64_t&) = nullptr;
-
-#if FJXL_ENABLE_AVX512
-  if (__builtin_cpu_supports("avx512vbmi2")) {
-    append_bytes_with_bit_offset = AppendBytesWithBitOffset;
-  }
-#endif
-
-  while (true) {
-    size_t& cur = frame->current_bit_writer;
-    size_t& bw_pos = frame->bit_writer_byte_pos;
-    if (cur >= 1 + frame->group_data.size() * frame->nb_chans) {
-      return output - initial_output;
-    }
-    if (output_size <= 8) {
-      return output - initial_output;
-    }
-    size_t nbc = frame->nb_chans;
-    const BitWriter& writer =
-        cur == 0 ? frame->header
-                 : frame->group_data[(cur - 1) / nbc][(cur - 1) % nbc];
-    size_t full_byte_count =
-        std::min(output_size - 8, writer.bytes_written - bw_pos);
-    if (frame->bits_in_buffer == 0) {
-      memcpy(output, writer.data.get() + bw_pos, full_byte_count);
-    } else {
-      size_t i = 0;
-      if (append_bytes_with_bit_offset) {
-        i += append_bytes_with_bit_offset(
-            writer.data.get() + bw_pos, full_byte_count, frame->bits_in_buffer,
-            output, frame->bit_buffer);
-      }
-#if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
-      // Copy 8 bytes at a time until we reach the border.
-      for (; i + 8 < full_byte_count; i += 8) {
-        uint64_t chunk;
-        memcpy(&chunk, writer.data.get() + bw_pos + i, 8);
-        uint64_t out = frame->bit_buffer | (chunk << frame->bits_in_buffer);
-        memcpy(output + i, &out, 8);
-        frame->bit_buffer = chunk >> (64 - frame->bits_in_buffer);
-      }
-#endif
-      for (; i < full_byte_count; i++) {
-        AddBits(8, writer.data.get()[bw_pos + i], output + i,
-                frame->bits_in_buffer, frame->bit_buffer);
-      }
-    }
-    output += full_byte_count;
-    output_size -= full_byte_count;
-    bw_pos += full_byte_count;
-    if (bw_pos == writer.bytes_written) {
-      auto write = [&](size_t num, uint64_t bits) {
-        size_t n = AddBits(num, bits, output, frame->bits_in_buffer,
-                           frame->bit_buffer);
-        output += n;
-        output_size -= n;
-      };
-      if (writer.bits_in_buffer) {
-        write(writer.bits_in_buffer, writer.buffer);
-      }
-      bw_pos = 0;
-      cur++;
-      if ((cur - 1) % nbc == 0 && frame->bits_in_buffer != 0) {
-        write(8 - frame->bits_in_buffer, 0);
-      }
-    }
-  }
-}
-
-void JxlFastLosslessFreeFrameState(JxlFastLosslessFrameState* frame) {
-  delete frame;
-}
-
-}  // extern "C"
-
-#endif
-
-#ifdef FJXL_SELF_INCLUDE
-
-namespace {
-
 constexpr size_t kNumRawSymbols = 19;
 constexpr size_t kNumLZ77 = 33;
 constexpr size_t kLZ77CacheSize = 32;
@@ -766,6 +473,300 @@ struct PrefixCode {
     }
   }
 };
+
+}  // namespace
+
+extern "C" {
+
+struct JxlFastLosslessFrameState {
+  size_t width;
+  size_t height;
+  size_t nb_chans;
+  size_t bitdepth;
+  alignas(64) PrefixCode hcode[4];
+  BitWriter header;
+  std::vector<std::array<BitWriter, 4>> group_data;
+  size_t current_bit_writer = 0;
+  size_t bit_writer_byte_pos = 0;
+  size_t bits_in_buffer = 0;
+  uint64_t bit_buffer = 0;
+};
+
+size_t JxlFastLosslessOutputSize(const JxlFastLosslessFrameState* frame) {
+  size_t total_size_groups = 0;
+  for (size_t i = 0; i < frame->group_data.size(); i++) {
+    size_t sz = 0;
+    for (size_t j = 0; j < frame->nb_chans; j++) {
+      const auto& writer = frame->group_data[i][j];
+      sz += writer.bytes_written * 8 + writer.bits_in_buffer;
+    }
+    sz = (sz + 7) / 8;
+    total_size_groups += sz;
+  }
+  return frame->header.bytes_written + total_size_groups;
+}
+
+size_t JxlFastLosslessMaxRequiredOutput(
+    const JxlFastLosslessFrameState* frame) {
+  return JxlFastLosslessOutputSize(frame) + 32;
+}
+
+void JxlFastLosslessPrepareHeader(JxlFastLosslessFrameState* frame,
+                                  int add_image_header, int is_last) {
+  BitWriter* output = &frame->header;
+  output->Allocate(1000 + frame->group_data.size() * 32);
+
+  std::vector<size_t> group_sizes(frame->group_data.size());
+  for (size_t i = 0; i < frame->group_data.size(); i++) {
+    size_t sz = 0;
+    for (size_t j = 0; j < frame->nb_chans; j++) {
+      const auto& writer = frame->group_data[i][j];
+      sz += writer.bytes_written * 8 + writer.bits_in_buffer;
+    }
+    sz = (sz + 7) / 8;
+    group_sizes[i] = sz;
+  }
+
+  bool have_alpha = (frame->nb_chans == 2 || frame->nb_chans == 4);
+
+#if FJXL_STANDALONE
+  if (add_image_header) {
+    // Signature
+    output->Write(16, 0x0AFF);
+
+    // Size header, hand-crafted.
+    // Not small
+    output->Write(1, 0);
+
+    auto wsz = [output](size_t size) {
+      if (size - 1 < (1 << 9)) {
+        output->Write(2, 0b00);
+        output->Write(9, size - 1);
+      } else if (size - 1 < (1 << 13)) {
+        output->Write(2, 0b01);
+        output->Write(13, size - 1);
+      } else if (size - 1 < (1 << 18)) {
+        output->Write(2, 0b10);
+        output->Write(18, size - 1);
+      } else {
+        output->Write(2, 0b11);
+        output->Write(30, size - 1);
+      }
+    };
+
+    wsz(frame->height);
+
+    // No special ratio.
+    output->Write(3, 0);
+
+    wsz(frame->width);
+
+    // Hand-crafted ImageMetadata.
+    output->Write(1, 0);  // all_default
+    output->Write(1, 0);  // extra_fields
+    output->Write(1, 0);  // bit_depth.floating_point_sample
+    if (frame->bitdepth == 8) {
+      output->Write(2, 0b00);  // bit_depth.bits_per_sample = 8
+    } else if (frame->bitdepth == 10) {
+      output->Write(2, 0b01);  // bit_depth.bits_per_sample = 10
+    } else if (frame->bitdepth == 12) {
+      output->Write(2, 0b10);  // bit_depth.bits_per_sample = 12
+    } else {
+      output->Write(2, 0b11);  // 1 + u(6)
+      output->Write(6, frame->bitdepth - 1);
+    }
+    if (frame->bitdepth <= 14) {
+      output->Write(1, 1);  // 16-bit-buffer sufficient
+    } else {
+      output->Write(1, 0);  // 16-bit-buffer NOT sufficient
+    }
+    if (have_alpha) {
+      output->Write(2, 0b01);  // One extra channel
+      output->Write(1, 1);     // ... all_default (ie. 8-bit alpha)
+    } else {
+      output->Write(2, 0b00);  // No extra channel
+    }
+    output->Write(1, 0);  // Not XYB
+    if (frame->nb_chans > 2) {
+      output->Write(1, 1);  // color_encoding.all_default (sRGB)
+    } else {
+      output->Write(1, 0);     // color_encoding.all_default false
+      output->Write(1, 0);     // color_encoding.want_icc false
+      output->Write(2, 1);     // grayscale
+      output->Write(2, 1);     // D65
+      output->Write(1, 0);     // no gamma transfer function
+      output->Write(2, 0b10);  // tf: 2 + u(4)
+      output->Write(4, 11);    // tf of sRGB
+      output->Write(2, 1);     // relative rendering intent
+    }
+    output->Write(2, 0b00);  // No extensions.
+
+    output->Write(1, 1);  // all_default transform data
+
+    // No ICC, no preview. Frame should start at byte boundery.
+    output->ZeroPadToByte();
+  }
+#else
+  assert(!add_image_header);
+#endif
+
+  // Handcrafted frame header.
+  output->Write(1, 0);     // all_default
+  output->Write(2, 0b00);  // regular frame
+  output->Write(1, 1);     // modular
+  output->Write(2, 0b00);  // default flags
+  output->Write(1, 0);     // not YCbCr
+  output->Write(2, 0b00);  // no upsampling
+  if (have_alpha) {
+    output->Write(2, 0b00);  // no alpha upsampling
+  }
+  output->Write(2, 0b01);  // default group size
+  output->Write(2, 0b00);  // exactly one pass
+  output->Write(1, 0);     // no custom size or origin
+  output->Write(2, 0b00);  // kReplace blending mode
+  if (have_alpha) {
+    output->Write(2, 0b00);  // kReplace blending mode for alpha channel
+  }
+  output->Write(1, is_last);  // is_last
+  output->Write(2, 0b00);     // a frame has no name
+  output->Write(1, 0);        // loop filter is not all_default
+  output->Write(1, 0);        // no gaborish
+  output->Write(2, 0);        // 0 EPF iters
+  output->Write(2, 0b00);     // No LF extensions
+  output->Write(2, 0b00);     // No FH extensions
+
+  output->Write(1, 0);      // No TOC permutation
+  output->ZeroPadToByte();  // TOC is byte-aligned.
+  for (size_t i = 0; i < frame->group_data.size(); i++) {
+    size_t sz = group_sizes[i];
+    if (sz < (1 << 10)) {
+      output->Write(2, 0b00);
+      output->Write(10, sz);
+    } else if (sz - 1024 < (1 << 14)) {
+      output->Write(2, 0b01);
+      output->Write(14, sz - 1024);
+    } else if (sz - 17408 < (1 << 22)) {
+      output->Write(2, 0b10);
+      output->Write(22, sz - 17408);
+    } else {
+      output->Write(2, 0b11);
+      output->Write(30, sz - 4211712);
+    }
+  }
+  output->ZeroPadToByte();  // Groups are byte-aligned.
+}
+
+#if FJXL_ENABLE_AVX512
+__attribute__((target("avx512vbmi2"))) static size_t AppendBytesWithBitOffset(
+    const uint8_t* data, size_t n, size_t bit_buffer_nbits,
+    unsigned char* output, uint64_t& bit_buffer) {
+  if (n < 128) {
+    return 0;
+  }
+
+  size_t i = 0;
+  __m512i shift = _mm512_set1_epi64(64 - bit_buffer_nbits);
+  __m512i carry = _mm512_set1_epi64(bit_buffer << (64 - bit_buffer_nbits));
+
+  for (; i + 64 <= n; i += 64) {
+    __m512i current = _mm512_loadu_si512(data + i);
+    __m512i previous_u64 = _mm512_alignr_epi64(current, carry, 7);
+    carry = current;
+    __m512i out = _mm512_shrdv_epi64(previous_u64, current, shift);
+    _mm512_storeu_si512(output + i, out);
+  }
+
+  bit_buffer = data[i - 1] >> (8 - bit_buffer_nbits);
+
+  return i;
+}
+#endif
+
+size_t JxlFastLosslessWriteOutput(JxlFastLosslessFrameState* frame,
+                                  unsigned char* output, size_t output_size) {
+  assert(output_size >= 32);
+  unsigned char* initial_output = output;
+  size_t (*append_bytes_with_bit_offset)(const uint8_t*, size_t, size_t,
+                                         unsigned char*, uint64_t&) = nullptr;
+
+#if FJXL_ENABLE_AVX512
+  if (__builtin_cpu_supports("avx512vbmi2")) {
+    append_bytes_with_bit_offset = AppendBytesWithBitOffset;
+  }
+#endif
+
+  while (true) {
+    size_t& cur = frame->current_bit_writer;
+    size_t& bw_pos = frame->bit_writer_byte_pos;
+    if (cur >= 1 + frame->group_data.size() * frame->nb_chans) {
+      return output - initial_output;
+    }
+    if (output_size <= 8) {
+      return output - initial_output;
+    }
+    size_t nbc = frame->nb_chans;
+    const BitWriter& writer =
+        cur == 0 ? frame->header
+                 : frame->group_data[(cur - 1) / nbc][(cur - 1) % nbc];
+    size_t full_byte_count =
+        std::min(output_size - 8, writer.bytes_written - bw_pos);
+    if (frame->bits_in_buffer == 0) {
+      memcpy(output, writer.data.get() + bw_pos, full_byte_count);
+    } else {
+      size_t i = 0;
+      if (append_bytes_with_bit_offset) {
+        i += append_bytes_with_bit_offset(
+            writer.data.get() + bw_pos, full_byte_count, frame->bits_in_buffer,
+            output, frame->bit_buffer);
+      }
+#if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+      // Copy 8 bytes at a time until we reach the border.
+      for (; i + 8 < full_byte_count; i += 8) {
+        uint64_t chunk;
+        memcpy(&chunk, writer.data.get() + bw_pos + i, 8);
+        uint64_t out = frame->bit_buffer | (chunk << frame->bits_in_buffer);
+        memcpy(output + i, &out, 8);
+        frame->bit_buffer = chunk >> (64 - frame->bits_in_buffer);
+      }
+#endif
+      for (; i < full_byte_count; i++) {
+        AddBits(8, writer.data.get()[bw_pos + i], output + i,
+                frame->bits_in_buffer, frame->bit_buffer);
+      }
+    }
+    output += full_byte_count;
+    output_size -= full_byte_count;
+    bw_pos += full_byte_count;
+    if (bw_pos == writer.bytes_written) {
+      auto write = [&](size_t num, uint64_t bits) {
+        size_t n = AddBits(num, bits, output, frame->bits_in_buffer,
+                           frame->bit_buffer);
+        output += n;
+        output_size -= n;
+      };
+      if (writer.bits_in_buffer) {
+        write(writer.bits_in_buffer, writer.buffer);
+      }
+      bw_pos = 0;
+      cur++;
+      if ((cur - 1) % nbc == 0 && frame->bits_in_buffer != 0) {
+        write(8 - frame->bits_in_buffer, 0);
+      }
+    }
+  }
+}
+
+void JxlFastLosslessFreeFrameState(JxlFastLosslessFrameState* frame) {
+  delete frame;
+}
+
+}  // extern "C"
+
+#endif
+
+#ifdef FJXL_SELF_INCLUDE
+
+namespace {
 
 template <typename T>
 struct VecPair {
@@ -3657,16 +3658,15 @@ JxlFastLosslessFrameState* LLEnc(const unsigned char* rgba, size_t width,
     }
   }
 
-  alignas(64) PrefixCode hcode[4];
+  JxlFastLosslessFrameState* frame_state = new JxlFastLosslessFrameState();
+
   for (size_t i = 0; i < 4; i++) {
-    hcode[i] = PrefixCode(bitdepth, raw_counts[i], lz77_counts[i]);
+    frame_state->hcode[i] = PrefixCode(bitdepth, raw_counts[i], lz77_counts[i]);
   }
 
   size_t num_groups = onegroup ? 1
                                : (2 + num_dc_groups_x * num_dc_groups_y +
                                   num_groups_x * num_groups_y);
-
-  JxlFastLosslessFrameState* frame_state = new JxlFastLosslessFrameState();
 
   frame_state->width = width;
   frame_state->height = height;
@@ -3675,11 +3675,12 @@ JxlFastLosslessFrameState* LLEnc(const unsigned char* rgba, size_t width,
 
   frame_state->group_data = std::vector<std::array<BitWriter, 4>>(num_groups);
   if (collided) {
-    PrepareDCGlobal(onegroup, width, height, nb_chans, hcode,
+    PrepareDCGlobal(onegroup, width, height, nb_chans, frame_state->hcode,
                     &frame_state->group_data[0][0]);
   } else {
-    PrepareDCGlobalPalette(onegroup, width, height, nb_chans, hcode, palette,
-                           pcolors, &frame_state->group_data[0][0]);
+    PrepareDCGlobalPalette(onegroup, width, height, nb_chans,
+                           frame_state->hcode, palette, pcolors,
+                           &frame_state->group_data[0][0]);
   }
 
   auto run_one = [&](size_t g) {
@@ -3694,11 +3695,11 @@ JxlFastLosslessFrameState* LLEnc(const unsigned char* rgba, size_t width,
     auto& gd = frame_state->group_data[group_id];
     if (collided) {
       WriteACSection(rgba, x0, y0, xs, ys, stride, onegroup, bitdepth, nb_chans,
-                     big_endian, hcode, gd);
+                     big_endian, frame_state->hcode, gd);
 
     } else {
-      WriteACSectionPalette(rgba, x0, y0, xs, ys, stride, onegroup, hcode,
-                            lookup.data(), nb_chans, gd[0]);
+      WriteACSectionPalette(rgba, x0, y0, xs, ys, stride, onegroup,
+                            frame_state->hcode, lookup.data(), nb_chans, gd[0]);
     }
   };
 
