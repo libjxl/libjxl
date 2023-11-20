@@ -190,14 +190,13 @@ struct PrefixCode {
   uint8_t raw_nbits[kNumRawSymbols] = {};
   uint8_t raw_bits[kNumRawSymbols] = {};
 
-  alignas(64) uint8_t raw_nbits_simd[16] = {};
-  alignas(64) uint8_t raw_bits_simd[16] = {};
-
   uint8_t lz77_nbits[kNumLZ77] = {};
   uint16_t lz77_bits[kNumLZ77] = {};
 
   uint64_t lz77_cache_bits[kLZ77CacheSize] = {};
   uint8_t lz77_cache_nbits[kLZ77CacheSize] = {};
+
+  size_t numraw;
 
   static uint16_t BitReverse(size_t nbits, uint16_t bits) {
     constexpr uint16_t kNibbleLookup[16] = {
@@ -361,7 +360,7 @@ struct PrefixCode {
     // table (containing just the raw symbols, up to length 7).
     uint64_t level1_counts[kNumRawSymbols + 1];
     memcpy(level1_counts, raw_counts, kNumRawSymbols * sizeof(uint64_t));
-    size_t numraw = kNumRawSymbols;
+    numraw = kNumRawSymbols;
     while (numraw > 0 && level1_counts[numraw - 1] == 0) numraw--;
 
     level1_counts[numraw] = 0;
@@ -393,8 +392,6 @@ struct PrefixCode {
 
     ComputeCanonicalCode(raw_nbits, raw_bits, numraw, lz77_nbits, lz77_bits,
                          kNumLZ77);
-    BitDepth::PrepareForSimd(raw_nbits, raw_bits, numraw, raw_nbits_simd,
-                             raw_bits_simd);
 
     // Prepare lz77 cache
     for (size_t count = 0; count < kLZ77CacheSize; count++) {
@@ -483,7 +480,7 @@ struct JxlFastLosslessFrameState {
   size_t height;
   size_t nb_chans;
   size_t bitdepth;
-  alignas(64) PrefixCode hcode[4];
+  PrefixCode hcode[4];
   BitWriter header;
   std::vector<std::array<BitWriter, 4>> group_data;
   size_t current_bit_writer = 0;
@@ -2107,19 +2104,22 @@ FJXL_INLINE void TokenizeSIMD(const uint32_t* residuals, uint16_t* token_out,
 }
 
 FJXL_INLINE void HuffmanSIMDUpTo13(const uint16_t* tokens,
-                                   const PrefixCode& code, uint16_t* nbits_out,
-                                   uint16_t* bits_out) {
+                                   const uint8_t* raw_nbits_simd,
+                                   const uint8_t* raw_bits_simd,
+                                   uint16_t* nbits_out, uint16_t* bits_out) {
   SIMDVec16 tok = SIMDVec16::Load(tokens).PrepareForU8Lookup();
-  tok.U8Lookup(code.raw_nbits_simd).Store(nbits_out);
-  tok.U8Lookup(code.raw_bits_simd).Store(bits_out);
+  tok.U8Lookup(raw_nbits_simd).Store(nbits_out);
+  tok.U8Lookup(raw_bits_simd).Store(bits_out);
 }
 
-FJXL_INLINE void HuffmanSIMD14(const uint16_t* tokens, const PrefixCode& code,
+FJXL_INLINE void HuffmanSIMD14(const uint16_t* tokens,
+                               const uint8_t* raw_nbits_simd,
+                               const uint8_t* raw_bits_simd,
                                uint16_t* nbits_out, uint16_t* bits_out) {
   SIMDVec16 token_cap = SIMDVec16::Val(15);
   SIMDVec16 tok = SIMDVec16::Load(tokens);
   SIMDVec16 tok_index = tok.Min(token_cap).PrepareForU8Lookup();
-  SIMDVec16 huff_bits_pre = tok_index.U8Lookup(code.raw_bits_simd);
+  SIMDVec16 huff_bits_pre = tok_index.U8Lookup(raw_bits_simd);
   // Set the highest bit when token == 16; the Huffman code is constructed in
   // such a way that the code for token 15 is the same as the code for 16,
   // except for the highest bit.
@@ -2127,12 +2127,13 @@ FJXL_INLINE void HuffmanSIMD14(const uint16_t* tokens, const PrefixCode& code,
   SIMDVec16 huff_bits = needs_high_bit.IfThenElse(
       huff_bits_pre.Or(SIMDVec16::Val(128)), huff_bits_pre);
   huff_bits.Store(bits_out);
-  tok_index.U8Lookup(code.raw_nbits_simd).Store(nbits_out);
+  tok_index.U8Lookup(raw_nbits_simd).Store(nbits_out);
 }
 
 FJXL_INLINE void HuffmanSIMDAbove14(const uint16_t* tokens,
-                                    const PrefixCode& code, uint16_t* nbits_out,
-                                    uint16_t* bits_out) {
+                                    const uint8_t* raw_nbits_simd,
+                                    const uint8_t* raw_bits_simd,
+                                    uint16_t* nbits_out, uint16_t* bits_out) {
   SIMDVec16 tok = SIMDVec16::Load(tokens);
   // We assume `tok` fits in a *signed* 16-bit integer.
   Mask16 above = tok.Gt(SIMDVec16::Val(12));
@@ -2141,13 +2142,13 @@ FJXL_INLINE void HuffmanSIMDAbove14(const uint16_t* tokens,
   // 17, 18 -> 15
   SIMDVec16 remap_tok = above.IfThenElse(tok.HAdd(SIMDVec16::Val(13)), tok);
   SIMDVec16 tok_index = remap_tok.PrepareForU8Lookup();
-  SIMDVec16 huff_bits_pre = tok_index.U8Lookup(code.raw_bits_simd);
+  SIMDVec16 huff_bits_pre = tok_index.U8Lookup(raw_bits_simd);
   // Set the highest bit when token == 14, 16, 18.
   Mask16 needs_high_bit = above.And(tok.Eq(tok.And(SIMDVec16::Val(0xFFFE))));
   SIMDVec16 huff_bits = needs_high_bit.IfThenElse(
       huff_bits_pre.Or(SIMDVec16::Val(128)), huff_bits_pre);
   huff_bits.Store(bits_out);
-  tok_index.U8Lookup(code.raw_nbits_simd).Store(nbits_out);
+  tok_index.U8Lookup(raw_nbits_simd).Store(nbits_out);
 }
 
 FJXL_INLINE void StoreSIMDUpTo8(const uint16_t* nbits_tok,
@@ -2477,9 +2478,10 @@ struct UpTo8Bits {
     memcpy(bits_simd, bits, 16);
   }
 
-  static void EncodeChunk(upixel_t* residuals, size_t n, size_t skip,
-                          const PrefixCode& code, BitWriter& output) {
 #ifdef FJXL_GENERIC_SIMD
+  static void EncodeChunkSimd(upixel_t* residuals, size_t n, size_t skip,
+                              const uint8_t* raw_nbits_simd,
+                              const uint8_t* raw_bits_simd, BitWriter& output) {
     Bits32 bits32[kChunkSize / SIMDVec16::kLanes];
     alignas(64) uint16_t bits[SIMDVec16::kLanes];
     alignas(64) uint16_t nbits[SIMDVec16::kLanes];
@@ -2488,15 +2490,14 @@ struct UpTo8Bits {
     alignas(64) uint16_t token[SIMDVec16::kLanes];
     for (size_t i = 0; i < kChunkSize; i += SIMDVec16::kLanes) {
       TokenizeSIMD(residuals + i, token, nbits, bits);
-      HuffmanSIMDUpTo13(token, code, nbits_huff, bits_huff);
+      HuffmanSIMDUpTo13(token, raw_nbits_simd, raw_bits_simd, nbits_huff,
+                        bits_huff);
       StoreSIMDUpTo8(nbits, bits, nbits_huff, bits_huff, std::max(n, i) - i,
                      std::max(skip, i) - i, bits32 + i / SIMDVec16::kLanes);
     }
     StoreToWriter<kChunkSize / SIMDVec16::kLanes>(bits32, output);
-    return;
-#endif
-    GenericEncodeChunk(residuals, n, skip, code, output);
   }
+#endif
 
   size_t NumSymbols(bool doing_ycocg_or_large_palette) const {
     // values gain 1 bit for YCoCg, 1 bit for prediction.
@@ -2539,9 +2540,10 @@ struct From9To13Bits {
     memcpy(bits_simd, bits, 16);
   }
 
-  static void EncodeChunk(upixel_t* residuals, size_t n, size_t skip,
-                          const PrefixCode& code, BitWriter& output) {
 #ifdef FJXL_GENERIC_SIMD
+  static void EncodeChunkSimd(upixel_t* residuals, size_t n, size_t skip,
+                              const uint8_t* raw_nbits_simd,
+                              const uint8_t* raw_bits_simd, BitWriter& output) {
     Bits32 bits32[2 * kChunkSize / SIMDVec16::kLanes];
     alignas(64) uint16_t bits[SIMDVec16::kLanes];
     alignas(64) uint16_t nbits[SIMDVec16::kLanes];
@@ -2550,16 +2552,15 @@ struct From9To13Bits {
     alignas(64) uint16_t token[SIMDVec16::kLanes];
     for (size_t i = 0; i < kChunkSize; i += SIMDVec16::kLanes) {
       TokenizeSIMD(residuals + i, token, nbits, bits);
-      HuffmanSIMDUpTo13(token, code, nbits_huff, bits_huff);
+      HuffmanSIMDUpTo13(token, raw_nbits_simd, raw_bits_simd, nbits_huff,
+                        bits_huff);
       StoreSIMDUpTo14(nbits, bits, nbits_huff, bits_huff, std::max(n, i) - i,
                       std::max(skip, i) - i,
                       bits32 + 2 * i / SIMDVec16::kLanes);
     }
     StoreToWriter<2 * kChunkSize / SIMDVec16::kLanes>(bits32, output);
-    return;
-#endif
-    GenericEncodeChunk(residuals, n, skip, code, output);
   }
+#endif
 
   size_t NumSymbols(bool doing_ycocg_or_large_palette) const {
     // values gain 1 bit for YCoCg, 1 bit for prediction.
@@ -2606,9 +2607,10 @@ struct Exactly14Bits {
     memcpy(bits_simd, bits, 16);
   }
 
-  static void EncodeChunk(upixel_t* residuals, size_t n, size_t skip,
-                          const PrefixCode& code, BitWriter& output) {
 #ifdef FJXL_GENERIC_SIMD
+  static void EncodeChunkSimd(upixel_t* residuals, size_t n, size_t skip,
+                              const uint8_t* raw_nbits_simd,
+                              const uint8_t* raw_bits_simd, BitWriter& output) {
     Bits32 bits32[2 * kChunkSize / SIMDVec16::kLanes];
     alignas(64) uint16_t bits[SIMDVec16::kLanes];
     alignas(64) uint16_t nbits[SIMDVec16::kLanes];
@@ -2617,16 +2619,15 @@ struct Exactly14Bits {
     alignas(64) uint16_t token[SIMDVec16::kLanes];
     for (size_t i = 0; i < kChunkSize; i += SIMDVec16::kLanes) {
       TokenizeSIMD(residuals + i, token, nbits, bits);
-      HuffmanSIMD14(token, code, nbits_huff, bits_huff);
+      HuffmanSIMD14(token, raw_nbits_simd, raw_bits_simd, nbits_huff,
+                    bits_huff);
       StoreSIMDUpTo14(nbits, bits, nbits_huff, bits_huff, std::max(n, i) - i,
                       std::max(skip, i) - i,
                       bits32 + 2 * i / SIMDVec16::kLanes);
     }
     StoreToWriter<2 * kChunkSize / SIMDVec16::kLanes>(bits32, output);
-    return;
-#endif
-    GenericEncodeChunk(residuals, n, skip, code, output);
   }
+#endif
 
   size_t NumSymbols(bool) const { return 17; }
 };
@@ -2671,9 +2672,10 @@ struct MoreThan14Bits {
     bits_simd[15] = bits[17];
   }
 
-  static void EncodeChunk(upixel_t* residuals, size_t n, size_t skip,
-                          const PrefixCode& code, BitWriter& output) {
 #ifdef FJXL_GENERIC_SIMD
+  static void EncodeChunkSimd(upixel_t* residuals, size_t n, size_t skip,
+                              const uint8_t* raw_nbits_simd,
+                              const uint8_t* raw_bits_simd, BitWriter& output) {
     Bits32 bits32[2 * kChunkSize / SIMDVec16::kLanes];
     alignas(64) uint32_t bits[SIMDVec16::kLanes];
     alignas(64) uint32_t nbits[SIMDVec16::kLanes];
@@ -2682,16 +2684,16 @@ struct MoreThan14Bits {
     alignas(64) uint16_t token[SIMDVec16::kLanes];
     for (size_t i = 0; i < kChunkSize; i += SIMDVec16::kLanes) {
       TokenizeSIMD(residuals + i, token, nbits, bits);
-      HuffmanSIMDAbove14(token, code, nbits_huff, bits_huff);
+      HuffmanSIMDAbove14(token, raw_nbits_simd, raw_bits_simd, nbits_huff,
+                         bits_huff);
       StoreSIMDAbove14(nbits, bits, nbits_huff, bits_huff, std::max(n, i) - i,
                        std::max(skip, i) - i,
                        bits32 + 2 * i / SIMDVec16::kLanes);
     }
     StoreToWriter<2 * kChunkSize / SIMDVec16::kLanes>(bits32, output);
-    return;
-#endif
-    GenericEncodeChunk(residuals, n, skip, code, output);
   }
+#endif
+
   size_t NumSymbols(bool) const { return 19; }
 };
 constexpr uint8_t MoreThan14Bits::kMinRawLength[];
@@ -2793,6 +2795,11 @@ void PrepareDCGlobal(bool is_single_group, size_t width, size_t height,
 
 template <typename BitDepth>
 struct ChunkEncoder {
+  void PrepareForSimd() {
+    BitDepth::PrepareForSimd(code->raw_nbits, code->raw_bits, code->numraw,
+                             raw_nbits_simd, raw_bits_simd);
+  }
+
   FJXL_INLINE static void EncodeRle(size_t count, const PrefixCode& code,
                                     BitWriter& output) {
     if (count == 0) return;
@@ -2812,13 +2819,20 @@ struct ChunkEncoder {
   FJXL_INLINE void Chunk(size_t run, typename BitDepth::upixel_t* residuals,
                          size_t skip, size_t n) {
     EncodeRle(run, *code, *output);
-    BitDepth::EncodeChunk(residuals, n, skip, *code, *output);
+#ifdef FJXL_GENERIC_SIMD
+    BitDepth::EncodeChunkSimd(residuals, n, skip, raw_nbits_simd, raw_bits_simd,
+                              *output);
+#else
+    GenericEncodeChunk(residuals, n, skip, *code, *output);
+#endif
   }
 
   inline void Finalize(size_t run) { EncodeRle(run, *code, *output); }
 
   const PrefixCode* code;
   BitWriter* output;
+  alignas(64) uint8_t raw_nbits_simd[16] = {};
+  alignas(64) uint8_t raw_bits_simd[16] = {};
 };
 
 template <typename BitDepth>
@@ -3286,6 +3300,7 @@ void WriteACSection(const unsigned char* rgba, size_t x0, size_t y0, size_t xs,
     row_encoders[c].t = &encoders[c];
     encoders[c].output = &output[c];
     encoders[c].code = &code[c];
+    encoders[c].PrepareForSimd();
   }
   ProcessImageArea<ChannelRowProcessor<ChunkEncoder<BitDepth>, BitDepth>>(
       rgba, x0, y0, xs, 0, ys, row_stride, bitdepth, nb_chans, big_endian,
@@ -3376,6 +3391,7 @@ void WriteACSectionPalette(const unsigned char* rgba, size_t x0, size_t y0,
   row_encoder.t = &encoder;
   encoder.output = &output;
   encoder.code = &code[is_single_group ? 1 : 0];
+  encoder.PrepareForSimd();
   ProcessImageAreaPalette<
       ChannelRowProcessor<ChunkEncoder<UpTo8Bits>, UpTo8Bits>>(
       rgba, x0, y0, xs, 0, ys, row_stride, lookup, nb_chans, &row_encoder);
@@ -3454,6 +3470,7 @@ void PrepareDCGlobalPalette(bool is_single_group, size_t width, size_t height,
   row_encoder.t = &encoder;
   encoder.output = output;
   encoder.code = &code[0];
+  encoder.PrepareForSimd();
   int16_t p[4][32 + 1024] = {};
   uint8_t prgba[4];
   size_t i = 0;
