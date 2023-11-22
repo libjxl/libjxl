@@ -13,6 +13,7 @@
 
 // TODO(janwas): workaround for incorrect Win64 codegen (cause unknown)
 #include <hwy/highway.h>
+#include <mutex>
 
 #include "lib/extras/dec/color_hints.h"
 #include "lib/extras/packed_image.h"
@@ -52,7 +53,7 @@ struct ChunkedPNMDecoder {
 };
 
 Status DecodeImagePNM(ChunkedPNMDecoder* dec, const ColorHints& color_hints,
-                      PackedPixelFile* ppf);
+                      PackedPixelFile* ppf, std::mutex* mutex);
 
 }  // namespace extras
 }  // namespace jxl

@@ -5,6 +5,7 @@
 
 #ifndef LIB_JXL_ENC_FAST_LOSSLESS_H_
 #define LIB_JXL_ENC_FAST_LOSSLESS_H_
+#include <jxl/encode.h>
 #include <stdlib.h>
 
 // FJXL_STANDALONE=1 for a stand-alone jxl encoder
@@ -46,9 +47,15 @@ struct JxlFastLosslessFrameState;
 // Returned JxlFastLosslessFrameState must be freed by calling
 // JxlFastLosslessFreeFrameState.
 JxlFastLosslessFrameState* JxlFastLosslessPrepareFrame(
-    const unsigned char* rgba, size_t width, size_t row_stride, size_t height,
-    size_t nb_chans, size_t bitdepth, int big_endian, int effort,
-    void* runner_opaque, FJxlParallelRunner runner);
+    JxlChunkedFrameInputSource input, size_t width, size_t height,
+    size_t nb_chans, size_t bitdepth, int big_endian, int effort);
+
+class JxlEncoderOutputProcessorWrapper;
+
+void JxlFastLosslessProcessFrame(
+    JxlFastLosslessFrameState* frame_state, bool is_last, void* runner_opaque,
+    FJxlParallelRunner runner,
+    JxlEncoderOutputProcessorWrapper* output_processor);
 
 // Prepare the (image/frame) header. You may encode animations by concatenating
 // the output of multiple frames, of which the first one has add_image_header =
@@ -81,5 +88,9 @@ void JxlFastLosslessFreeFrameState(JxlFastLosslessFrameState* frame);
 #ifdef __cplusplus
 }  // extern "C"
 #endif
+
+void JxlFastLosslessOutputFrame(
+    JxlFastLosslessFrameState* frame_state,
+    JxlEncoderOutputProcessorWrapper* output_process);
 
 #endif  // LIB_JXL_ENC_FAST_LOSSLESS_H_

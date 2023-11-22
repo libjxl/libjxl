@@ -140,6 +140,97 @@ constexpr std::array<unsigned char, 32> kContainerHeader = {
 constexpr std::array<unsigned char, 8> kLevelBoxHeader = {0,   0,   0,   0x9,
                                                           'j', 'x', 'l', 'l'};
 
+// Common adapter for an existing frame input source or a whole-image input
+// buffer.
+class JxlEncoderChunkedFrameAdapter {
+ public:
+  void SetInputSource(JxlChunkedFrameInputSource input_source) {
+    input_source_ = input_source;
+  }
+
+  bool SetFromBuffer(const uint8_t* buffer, size_t size, JxlPixelFormat format,
+                     size_t xsize, size_t ysize) {
+    buffer_ = buffer;
+    format_ = format;
+    xsize_ = xsize;
+    ysize_ = ysize;
+    if (format.data_type == JXL_TYPE_UINT8) {
+      bytes_per_pixel_ = format_.num_channels;
+    } else if (format.data_type == JXL_TYPE_UINT16 ||
+               format.data_type == JXL_TYPE_FLOAT16) {
+      bytes_per_pixel_ = 2 * format.num_channels;
+    } else if (format.data_type == JXL_TYPE_FLOAT) {
+      bytes_per_pixel_ = 4 * format.num_channels;
+    } else {
+      return false;
+    }
+    const size_t last_row_size = xsize_ * bytes_per_pixel_;
+    const size_t align = format_.align;
+    stride_ = (align > 1 ? jxl::DivCeil(last_row_size, align) * align
+                         : last_row_size);
+    const size_t min_buffer_size = stride_ * (ysize_ - 1) + last_row_size;
+    return min_buffer_size <= size;
+  }
+
+  JxlChunkedFrameInputSource GetInputSource() {
+    if (buffer_) {
+      return JxlChunkedFrameInputSource{this,
+                                        GetColorChannelsPixelFormat,
+                                        GetColorChannelDataAt,
+                                        GetExtraChannelPixelFormat,
+                                        GetExtraChannelDataAt,
+                                        ReleaseCurrentData};
+    }
+    return input_source_;
+  }
+
+  bool HasBuffer() const { return buffer_; }
+
+ private:
+  static void GetColorChannelsPixelFormat(void* opaque,
+                                          JxlPixelFormat* pixel_format) {
+    JxlEncoderChunkedFrameAdapter* self =
+        static_cast<JxlEncoderChunkedFrameAdapter*>(opaque);
+    *pixel_format = self->format_;
+  }
+
+  static const void* GetColorChannelDataAt(void* opaque, size_t xpos,
+                                           size_t ypos, size_t xsize,
+                                           size_t ysize, size_t* row_offset) {
+    JxlEncoderChunkedFrameAdapter* self =
+        static_cast<JxlEncoderChunkedFrameAdapter*>(opaque);
+    JXL_ASSERT(ypos + ysize <= self->ysize_);
+    JXL_ASSERT(xpos + xsize <= self->xsize_);
+    *row_offset = self->stride_;
+    return self->buffer_ + ypos * self->stride_ + xpos * self->bytes_per_pixel_;
+  }
+
+  static void GetExtraChannelPixelFormat(void* opaque, size_t ec_index,
+                                         JxlPixelFormat* pixel_format) {
+    JXL_ABORT("Not implemented.");
+  }
+
+  static const void* GetExtraChannelDataAt(void* opaque, size_t ec_index,
+                                           size_t xpos, size_t ypos,
+                                           size_t xsize, size_t ysize,
+                                           size_t* row_offset) {
+    JXL_ABORT("Not implemented");
+  }
+
+  static void ReleaseCurrentData(void* opaque, const void* buffer) {
+    // No dynamic memory is allocated in GetColorChannelDataAt or
+    // GetExtraChannelDataAt. Therefore, no cleanup is required here.
+  }
+
+  JxlChunkedFrameInputSource input_source_;
+  const uint8_t* buffer_ = nullptr;
+  JxlPixelFormat format_;
+  size_t xsize_;
+  size_t ysize_;
+  size_t bytes_per_pixel_;
+  size_t stride_;
+};
+
 struct JxlEncoderQueuedFrame {
   JxlEncoderFrameSettingsValues option_values;
   ImageBundle frame;
