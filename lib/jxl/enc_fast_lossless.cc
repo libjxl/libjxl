@@ -17,8 +17,9 @@
 #include <memory>
 #include <vector>
 
-#include "lib/jxl/base/status.h"
+#if !FJXL_STANDALONE
 #include "lib/jxl/encode_internal.h"
+#endif
 
 // Enable NEON and AVX2/AVX512 if not asked to do otherwise and the compilers
 // support it.
@@ -220,8 +221,8 @@ void ComputeAcGroupDataOffset(size_t dc_global_size, size_t num_dc_groups,
     dc_global_bucket = TOCBucket(min_dc_global_size + max_padding);
     min_dc_global_size = kGroupSizeOffset[dc_global_bucket];
   }
-  JXL_ASSERT(TOCBucket(min_dc_global_size) == dc_global_bucket);
-  JXL_ASSERT(TOCBucket(min_dc_global_size + max_padding) == dc_global_bucket);
+  assert(TOCBucket(min_dc_global_size) == dc_global_bucket);
+  assert(TOCBucket(min_dc_global_size + max_padding) == dc_global_bucket);
   size_t max_toc_bits =
       kTOCBits[dc_global_bucket] + 12 * (1 + num_dc_groups) + ac_toc_max_bits;
   size_t max_toc_size = (max_toc_bits + 7) / 8;
@@ -3798,6 +3799,7 @@ void LLProcess(JxlFastLosslessFrameState* frame_state, bool is_last,
                BitDepth bitdepth, void* runner_opaque,
                FJxlParallelRunner runner,
                JxlEncoderOutputProcessorWrapper* output_processor) {
+#if !FJXL_STANDALONE
   if (frame_state->process_done) {
     JxlFastLosslessPrepareHeader(frame_state, /*add_image_header=*/0, is_last);
     if (output_processor) {
@@ -3805,6 +3807,7 @@ void LLProcess(JxlFastLosslessFrameState* frame_state, bool is_last,
     }
     return;
   }
+#endif
   // The maximum number of groups that we process concurrently here.
   // TODO(szabadka) Use the number of threads or some outside parameter for the
   // maximum memory usage instead.
@@ -3814,10 +3817,12 @@ void LLProcess(JxlFastLosslessFrameState* frame_state, bool is_last,
   size_t total_groups = frame_state->num_groups_x * frame_state->num_groups_y;
   size_t max_groups = streaming ? kMaxLocalGroups : total_groups;
   size_t start_pos = 0;
+#if !FJXL_STANDALONE
   if (streaming) {
     start_pos = output_processor->CurrentPosition();
     output_processor->Seek(start_pos + frame_state->ac_group_data_offset);
   }
+#endif
   for (size_t offset = 0; offset < total_groups; offset += max_groups) {
     size_t num_groups = std::min(max_groups, total_groups - offset);
     JxlFastLosslessFrameState local_frame_state;
@@ -3863,12 +3868,15 @@ void LLProcess(JxlFastLosslessFrameState* frame_state, bool is_last,
           (*reinterpret_cast<decltype(&run_one)>(r))(i);
         },
         num_groups);
+#if !FJXL_STANDALONE
     if (streaming) {
       local_frame_state.nb_chans = frame_state->nb_chans;
       local_frame_state.current_bit_writer = 1;
       JxlFastLosslessOutputFrame(&local_frame_state, output_processor);
     }
+#endif
   }
+#if !FJXL_STANDALONE
   if (streaming) {
     size_t end_pos = output_processor->CurrentPosition();
     output_processor->Seek(start_pos);
@@ -3882,8 +3890,8 @@ void LLProcess(JxlFastLosslessFrameState* frame_state, bool is_last,
     }
     frame_state->group_sizes[0] += padding;
     JxlFastLosslessPrepareHeader(frame_state, /*add_image_header=*/0, is_last);
-    JXL_ASSERT(frame_state->ac_group_data_offset ==
-               JxlFastLosslessOutputSize(frame_state));
+    assert(frame_state->ac_group_data_offset ==
+           JxlFastLosslessOutputSize(frame_state));
     JxlFastLosslessOutputFrame(frame_state, output_processor);
     output_processor->Seek(end_pos);
   } else if (output_processor) {
@@ -3894,6 +3902,7 @@ void LLProcess(JxlFastLosslessFrameState* frame_state, bool is_last,
     }
   }
   frame_state->process_done = true;
+#endif
 }
 
 JxlFastLosslessFrameState* JxlFastLosslessPrepareImpl(
@@ -4028,11 +4037,7 @@ class FJxlFrameInput {
   JxlChunkedFrameInputSource GetInputSource() {
     return JxlChunkedFrameInputSource{
         this,
-        [](void*, JxlPixelFormat*) {},
         GetDataAt,
-        [](void*, size_t, JxlPixelFormat*) {},
-        [](void*, size_t, size_t, size_t, size_t, size_t,
-           size_t*) -> const void* { return nullptr; },
         [](void*, const void*) {}};
   }
 
@@ -4135,6 +4140,7 @@ void JxlFastLosslessProcessFrame(
 
 }  // extern "C"
 
+#if !FJXL_STANDALONE
 void JxlFastLosslessOutputFrame(
     JxlFastLosslessFrameState* frame_state,
     JxlEncoderOutputProcessorWrapper* output_processor) {
@@ -4151,5 +4157,6 @@ void JxlFastLosslessOutputFrame(
     written += n;
   };
 }
+#endif
 
 #endif  // FJXL_SELF_INCLUDE
