@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <cmath>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <string>
 #include <vector>
@@ -201,7 +202,8 @@ class ChunkedPackedFrame {
         ysize(ysize),
         format(format),
         opaque_(opaque),
-        read_line_(read_line) {}
+        read_line_(read_line),
+        mtx_(new std::mutex()) {}
 
   JxlChunkedFrameInputSource GetInputSource() {
     return JxlChunkedFrameInputSource{this,
@@ -231,6 +233,7 @@ class ChunkedPackedFrame {
                                            size_t ypos, size_t xsize,
                                            size_t ysize, size_t* row_offset) {
     ChunkedPackedFrame* self = reinterpret_cast<ChunkedPackedFrame*>(opaque);
+    const std::lock_guard<std::mutex> lock(*self->mtx_);
     size_t bytes_per_channel =
         PackedImage::BitsPerChannel(self->format.data_type) / jxl::kBitsPerByte;
     size_t bytes_per_pixel = bytes_per_channel * self->format.num_channels;
@@ -258,6 +261,7 @@ class ChunkedPackedFrame {
 
   static void ReleaseCurrentData(void* opaque, const void* buffer) {
     ChunkedPackedFrame* self = reinterpret_cast<ChunkedPackedFrame*>(opaque);
+    const std::lock_guard<std::mutex> lock(*self->mtx_);
     auto iter = self->buffers_.find(const_cast<void*>(buffer));
     if (iter != self->buffers_.end()) {
       free(*iter);
@@ -268,6 +272,7 @@ class ChunkedPackedFrame {
   void* opaque_;
   ReadLine read_line_;
   std::set<void*> buffers_;
+  std::unique_ptr<std::mutex> mtx_;
 };
 
 // Optional metadata associated with a file

@@ -958,6 +958,7 @@ struct JxlOutputProcessor {
 
   static void* GetBuffer(void* opaque, size_t* size) {
     JxlOutputProcessor* self = reinterpret_cast<JxlOutputProcessor*>(opaque);
+    *size = std::min<size_t>(*size, 1u << 16);
     self->output.resize(*size);
     return self->output.data();
   }

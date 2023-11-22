@@ -13,6 +13,7 @@
 
 // TODO(janwas): workaround for incorrect Win64 codegen (cause unknown)
 #include <hwy/highway.h>
+#include <mutex>
 
 #include "lib/extras/dec/color_hints.h"
 #include "lib/extras/packed_image.h"
