@@ -1046,12 +1046,10 @@ int main(int argc, char** argv) {
   std::vector<uint8_t> image_data;
   std::vector<uint8_t>* jpeg_bytes = nullptr;
   jxl::extras::ChunkedPNMDecoder pnm_dec;
-  std::mutex read_mutex;
   size_t pixels = 0;
   if (args.streaming_input) {
     pnm_dec.f = f;
-    if (!DecodeImagePNM(&pnm_dec, args.color_hints_proxy.target, &ppf,
-                        &read_mutex)) {
+    if (!DecodeImagePNM(&pnm_dec, args.color_hints_proxy.target, &ppf)) {
       std::cerr << "PNM decoding failed." << std::endl;
       exit(EXIT_FAILURE);
     }

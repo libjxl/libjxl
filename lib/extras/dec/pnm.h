@@ -53,7 +53,7 @@ struct ChunkedPNMDecoder {
 };
 
 Status DecodeImagePNM(ChunkedPNMDecoder* dec, const ColorHints& color_hints,
-                      PackedPixelFile* ppf, std::mutex* mutex);
+                      PackedPixelFile* ppf);
 
 }  // namespace extras
 }  // namespace jxl

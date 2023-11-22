@@ -197,13 +197,13 @@ class ChunkedPackedFrame {
   typedef void (*ReadLine)(void* opaque, size_t xpos, size_t ypos, size_t xsize,
                            uint8_t* buffer, size_t len);
   ChunkedPackedFrame(size_t xsize, size_t ysize, const JxlPixelFormat& format,
-                     void* opaque, ReadLine read_line, std::mutex* mtx)
+                     void* opaque, ReadLine read_line)
       : xsize(xsize),
         ysize(ysize),
         format(format),
         opaque_(opaque),
         read_line_(read_line),
-        mtx_(mtx) {}
+        mtx_(new std::mutex()) {}
 
   JxlChunkedFrameInputSource GetInputSource() {
     return JxlChunkedFrameInputSource{this,
@@ -272,7 +272,7 @@ class ChunkedPackedFrame {
   void* opaque_;
   ReadLine read_line_;
   std::set<void*> buffers_;
-  std::mutex* mtx_;
+  std::unique_ptr<std::mutex> mtx_;
 };
 
 // Optional metadata associated with a file

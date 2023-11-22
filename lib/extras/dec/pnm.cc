@@ -334,7 +334,7 @@ void ReadLinePNM(void* opaque, size_t xpos, size_t ypos, size_t xsize,
 }  // namespace
 
 Status DecodeImagePNM(ChunkedPNMDecoder* dec, const ColorHints& color_hints,
-                      PackedPixelFile* ppf, std::mutex* mtx) {
+                      PackedPixelFile* ppf) {
   std::vector<uint8_t> buffer(10 * 1024);
   const size_t bytes_read = fread(buffer.data(), 1, buffer.size(), dec->f);
   if (ferror(dec->f) || bytes_read > buffer.size()) {
@@ -381,7 +381,7 @@ Status DecodeImagePNM(ChunkedPNMDecoder* dec, const ColorHints& color_hints,
       /*align=*/0,
   };
   ppf->chunked_frames.emplace_back(header.xsize, header.ysize, format, dec,
-                                   ReadLinePNM, mtx);
+                                   ReadLinePNM);
   return true;
 }
 
