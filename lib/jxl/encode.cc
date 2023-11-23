@@ -1002,15 +1002,20 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
       output_processor.Seek(frame_start_pos);
       std::vector<uint8_t> box_header(box_header_size);
       if (last_frame && jxlp_counter == 0) {
-        const size_t n = jxl::WriteBoxHeader(
-            jxl::MakeBoxType("jxlc"), frame_codestream_size,
-
-            /*unbounded=*/false, use_large_box, &box_header[0]);
+#if JXL_ENABLE_ASSERT
+        const size_t n =
+#endif
+            jxl::WriteBoxHeader(jxl::MakeBoxType("jxlc"), frame_codestream_size,
+                                /*unbounded=*/false, use_large_box,
+                                &box_header[0]);
         JXL_ASSERT(n == box_header_size);
       } else {
-        const size_t n = jxl::WriteBoxHeader(
-            jxl::MakeBoxType("jxlp"), frame_codestream_size + 4,
-            /*unbounded=*/false, use_large_box, &box_header[0]);
+#if JXL_ENABLE_ASSERT
+        const size_t n =
+#endif
+            jxl::WriteBoxHeader(
+                jxl::MakeBoxType("jxlp"), frame_codestream_size + 4,
+                /*unbounded=*/false, use_large_box, &box_header[0]);
         JXL_ASSERT(n == box_header_size - 4);
         WriteJxlpBoxCounter(jxlp_counter++, last_frame,
                             &box_header[box_header_size - 4]);
