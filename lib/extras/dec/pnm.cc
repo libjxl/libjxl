@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include <cmath>
+#include <mutex>
 
 #include "lib/extras/size_constraints.h"
 #include "lib/jxl/base/bits.h"

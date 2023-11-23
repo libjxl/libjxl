@@ -1595,14 +1595,14 @@ static JxlDecoderStatus ParseBoxHeader(const uint8_t* in, size_t size,
   // Box size, including this header itself.
   *box_size = LoadBE32(in + pos);
   pos += 4;
+  memcpy(type, in + pos, 4);
+  pos += 4;
   if (*box_size == 1) {
     *header_size = 16;
-    if (OutOfBounds(pos, 12, size)) return JXL_DEC_NEED_MORE_INPUT;
+    if (OutOfBounds(pos, 8, size)) return JXL_DEC_NEED_MORE_INPUT;
     *box_size = LoadBE64(in + pos);
     pos += 8;
   }
-  memcpy(type, in + pos, 4);
-  pos += 4;
   *header_size = pos - box_start;
   if (*box_size > 0 && *box_size < *header_size) {
     return JXL_INPUT_ERROR("invalid box size");

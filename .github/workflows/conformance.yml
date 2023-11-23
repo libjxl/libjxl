@@ -19,6 +19,7 @@ permissions:
   contents: read
 
 env:
+  CONFORMANCE_REPO_HASH: ee6008ef151489a5330cd886b422af8f6ed58881
   LIBJXL_VERSION:  0.10.0
   LIBJXL_ABI_VERSION:  0.10
 
@@ -40,8 +41,7 @@ jobs:
       uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       with:
         repository: libjxl/conformance
-        # TODO(eustas): move ref to a global variable / file?
-        ref: b2be0d8dcba40cc4a53fb4a15b78f59636192892
+        ref: ${{ env.CONFORMANCE_REPO_HASH }}
         path: conformance
     - name: Cache
       uses: actions/cache@704facf57e6136b1bc63b828d79edcd491f0ee84 # v3.3.2
@@ -187,7 +187,7 @@ jobs:
       uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       with:
         repository: libjxl/conformance
-        ref: b2be0d8dcba40cc4a53fb4a15b78f59636192892
+        ref: ${{ env.CONFORMANCE_REPO_HASH }}
         path: conformance
     - name: Cache
       uses: actions/cache@704facf57e6136b1bc63b828d79edcd491f0ee84 # v3.3.2
