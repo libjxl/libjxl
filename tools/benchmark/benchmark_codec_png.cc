@@ -80,4 +80,3 @@ ImageCodec* CreateNewPNGCodec(const BenchmarkArgs& args) {
 
 }  // namespace tools
 }  // namespace jpegxl
-

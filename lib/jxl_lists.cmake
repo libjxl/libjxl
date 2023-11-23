@@ -10,6 +10,7 @@ set(JPEGXL_INTERNAL_BASE_SOURCES
   jxl/base/arch_macros.h
   jxl/base/bits.h
   jxl/base/byte_order.h
+  jxl/base/c_callback_support.h
   jxl/base/common.h
   jxl/base/compiler_specific.h
   jxl/base/data_parallel.h

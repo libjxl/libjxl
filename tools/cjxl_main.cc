@@ -40,6 +40,7 @@
 #include "lib/extras/dec/pnm.h"
 #include "lib/extras/enc/jxl.h"
 #include "lib/extras/time.h"
+#include "lib/jxl/base/c_callback_support.h"
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/printf_macros.h"
@@ -958,36 +959,35 @@ struct JxlOutputProcessor {
   }
 
   JxlEncoderOutputProcessor GetOutputProcessor() {
-    return JxlEncoderOutputProcessor{this, GetBuffer, ReleaseBuffer, Seek,
-                                     SetFinalizedPosition};
+    return JxlEncoderOutputProcessor{
+        this, METHOD_TO_C_CALLBACK(&JxlOutputProcessor::GetBuffer),
+        METHOD_TO_C_CALLBACK(&JxlOutputProcessor::ReleaseBuffer),
+        METHOD_TO_C_CALLBACK(&JxlOutputProcessor::Seek),
+        METHOD_TO_C_CALLBACK(&JxlOutputProcessor::SetFinalizedPosition)};
   }
 
-  static void* GetBuffer(void* opaque, size_t* size) {
-    JxlOutputProcessor* self = reinterpret_cast<JxlOutputProcessor*>(opaque);
+  void* GetBuffer(size_t* size) {
     *size = std::min<size_t>(*size, 1u << 16);
-    self->output.resize(*size);
-    return self->output.data();
+    output.resize(*size);
+    return output.data();
   }
 
-  static void ReleaseBuffer(void* opaque, size_t written_bytes) {
-    JxlOutputProcessor* self = reinterpret_cast<JxlOutputProcessor*>(opaque);
-    if (*self->outfile && fwrite(self->output.data(), 1, written_bytes,
-                                 *self->outfile) != written_bytes) {
+  void ReleaseBuffer(size_t written_bytes) {
+    if (*outfile &&
+        fwrite(output.data(), 1, written_bytes, *outfile) != written_bytes) {
       JXL_WARNING("Failed to write %" PRIuS " bytes to output", written_bytes);
     }
-    self->output.clear();
+    output.clear();
   }
 
-  static void Seek(void* opaque, uint64_t position) {
-    JxlOutputProcessor* self = reinterpret_cast<JxlOutputProcessor*>(opaque);
-    if (*self->outfile && fseek(*self->outfile, position, SEEK_SET) != 0) {
+  void Seek(uint64_t position) {
+    if (*outfile && fseek(*outfile, position, SEEK_SET) != 0) {
       JXL_WARNING("Failed to seek output.");
     }
   }
 
-  static void SetFinalizedPosition(void* opaque, uint64_t finalized_position) {
-    JxlOutputProcessor* self = reinterpret_cast<JxlOutputProcessor*>(opaque);
-    self->finalized_position = finalized_position;
+  void SetFinalizedPosition(uint64_t finalized_position) {
+    this->finalized_position = finalized_position;
   }
 
   std::vector<uint8_t> output;
