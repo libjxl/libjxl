@@ -5024,8 +5024,7 @@ bool BoxTypeEquals(const std::string& type_string, JxlBoxType type) {
 }
 }  // namespace
 
-// TODO(szabadka) Fix the underlying test file.
-TEST(DecodeTest, DISABLED_ExtentedBoxSizeTest) {
+TEST(DecodeTest, ExtentedBoxSizeTest) {
   const std::string jxl_path = "jxl/boxes/square-extended-size-container.jxl";
   const std::vector<uint8_t> orig = jxl::test::ReadTestData(jxl_path);
   JxlDecoder* dec = JxlDecoderCreate(nullptr);
