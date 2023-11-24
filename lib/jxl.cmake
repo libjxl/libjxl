@@ -142,6 +142,7 @@ target_link_libraries(jxl_dec-static PUBLIC
   ${JPEGXL_COVERAGE_FLAGS}
   ${JPEGXL_DEC_INTERNAL_LIBS}
   ${JXL_CMS_LIBS}
+  jxl_cms-obj
   jxl_base
 )
 
@@ -163,6 +164,7 @@ target_link_libraries(jxl-static PUBLIC
   ${JPEGXL_COVERAGE_FLAGS}
   ${JPEGXL_INTERNAL_LIBS}
   ${JXL_CMS_LIBS}
+  jxl_cms-obj
   jxl_base
 )
 target_include_directories(jxl-static PUBLIC

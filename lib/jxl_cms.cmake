@@ -37,7 +37,7 @@ add_dependencies(jxl_cms-obj jxl_cms_export)
 target_include_directories(jxl_cms-obj PUBLIC
   "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>")
 
-set(JXL_CMS_OBJECTS $<TARGET_OBJECTS:jxl_cms-obj>)
+set(JXL_CMS_OBJECTS)
 set(JXL_CMS_LIBS "")
 set(JXL_CMS_PK_LIBS "")
 
@@ -70,7 +70,7 @@ endif()
 target_link_libraries(jxl_cms-obj PUBLIC ${JXL_CMS_LIBS})
 
 if (BUILD_SHARED_LIBS)
-  add_library(jxl_cms SHARED ${JXL_CMS_OBJECTS})
+  add_library(jxl_cms SHARED $<TARGET_OBJECTS:jxl_cms-obj>)
   target_link_libraries(jxl_cms INTERFACE ${JXL_CMS_LIBS})
   target_link_libraries(jxl_cms PRIVATE hwy)
 
