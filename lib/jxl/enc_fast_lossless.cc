@@ -184,7 +184,7 @@ size_t SectionSize(const std::array<BitWriter, 4>& group_data) {
   return sz;
 }
 
-constexpr size_t kFrameHeaderSize = 4;
+constexpr size_t kMaxFrameHeaderSize = 5;
 
 constexpr size_t kGroupSizeOffset[4] = {
     static_cast<size_t>(0),
@@ -208,13 +208,18 @@ size_t TOCSize(const std::vector<size_t>& group_sizes) {
   return (toc_bits + 7) / 8;
 }
 
+size_t FrameHeaderSize(bool have_alpha, bool is_last) {
+  size_t nbits = 28 + (have_alpha ? 4 : 0) + (is_last ? 0 : 2);
+  return (nbits + 7) / 8;
+}
+
 void ComputeAcGroupDataOffset(size_t dc_global_size, size_t num_dc_groups,
                               size_t num_ac_groups, size_t& min_dc_global_size,
                               size_t& ac_group_offset) {
   // Max AC group size is 768 kB, so max AC group TOC bits is 24.
   size_t ac_toc_max_bits = num_ac_groups * 24;
   size_t ac_toc_min_bits = num_ac_groups * 12;
-  size_t max_padding = (ac_toc_max_bits - ac_toc_min_bits + 7) / 8;
+  size_t max_padding = 1 + (ac_toc_max_bits - ac_toc_min_bits + 7) / 8;
   min_dc_global_size = dc_global_size;
   size_t dc_global_bucket = TOCBucket(min_dc_global_size);
   while (TOCBucket(min_dc_global_size + max_padding) > dc_global_bucket) {
@@ -226,16 +231,18 @@ void ComputeAcGroupDataOffset(size_t dc_global_size, size_t num_dc_groups,
   size_t max_toc_bits =
       kTOCBits[dc_global_bucket] + 12 * (1 + num_dc_groups) + ac_toc_max_bits;
   size_t max_toc_size = (max_toc_bits + 7) / 8;
-  ac_group_offset = kFrameHeaderSize + max_toc_size + min_dc_global_size;
+  ac_group_offset = kMaxFrameHeaderSize + max_toc_size + min_dc_global_size;
 }
 
 size_t ComputeDcGlobalPadding(const std::vector<size_t>& group_sizes,
                               size_t ac_group_data_offset,
-                              size_t min_dc_global_size) {
+                              size_t min_dc_global_size, bool have_alpha,
+                              bool is_last) {
   std::vector<size_t> new_group_sizes = group_sizes;
   new_group_sizes[0] = min_dc_global_size;
   size_t toc_size = TOCSize(new_group_sizes);
-  size_t actual_offset = kFrameHeaderSize + toc_size + group_sizes[0];
+  size_t actual_offset =
+      FrameHeaderSize(have_alpha, is_last) + toc_size + group_sizes[0];
   return ac_group_data_offset - actual_offset;
 }
 
@@ -696,6 +703,9 @@ void JxlFastLosslessPrepareHeader(JxlFastLosslessFrameState* frame,
     output->Write(2, 0b00);  // kReplace blending mode for alpha channel
   }
   output->Write(1, is_last);  // is_last
+  if (!is_last) {
+    output->Write(2, 0b00);  // can not be saved as reference
+  }
   output->Write(2, 0b00);     // a frame has no name
   output->Write(1, 0);        // loop filter is not all_default
   output->Write(1, 0);        // no gaborish
@@ -705,7 +715,7 @@ void JxlFastLosslessPrepareHeader(JxlFastLosslessFrameState* frame,
 
   output->Write(1, 0);      // No TOC permutation
   output->ZeroPadToByte();  // TOC is byte-aligned.
-  assert(add_image_header || output->bytes_written == kFrameHeaderSize);
+  assert(add_image_header || output->bytes_written <= kMaxFrameHeaderSize);
   for (size_t i = 0; i < frame->group_sizes.size(); i++) {
     size_t sz = frame->group_sizes[i];
     size_t bucket = TOCBucket(sz);
@@ -714,6 +724,34 @@ void JxlFastLosslessPrepareHeader(JxlFastLosslessFrameState* frame,
   }
   output->ZeroPadToByte();  // Groups are byte-aligned.
 }
+
+#if !FJXL_STANDALONE
+void JxlFastLosslessOutputAlignedSection(
+    const BitWriter& bw, JxlEncoderOutputProcessorWrapper* output_processor) {
+  assert(bw.bits_in_buffer == 0);
+  const uint8_t* data = bw.data.get();
+  size_t remaining_len = bw.bytes_written;
+  while (remaining_len > 0) {
+    auto retval = output_processor->GetBuffer(1, remaining_len);
+    assert(retval.status());
+    auto buffer = std::move(retval).value();
+    size_t n = std::min(buffer.size(), remaining_len);
+    if (n == 0) break;
+    memcpy(buffer.data(), data, n);
+    buffer.advance(n);
+    data += n;
+    remaining_len -= n;
+  };
+}
+
+void JxlFastLosslessOutputHeaders(
+    JxlFastLosslessFrameState* frame_state,
+    JxlEncoderOutputProcessorWrapper* output_processor) {
+  JxlFastLosslessOutputAlignedSection(frame_state->header, output_processor);
+  JxlFastLosslessOutputAlignedSection(frame_state->group_data[0][0],
+                                      output_processor);
+}
+#endif
 
 #if FJXL_ENABLE_AVX512
 __attribute__((target("avx512vbmi2"))) static size_t AppendBytesWithBitOffset(
@@ -760,7 +798,7 @@ size_t JxlFastLosslessWriteOutput(JxlFastLosslessFrameState* frame,
     if (cur >= 1 + frame->group_data.size() * frame->nb_chans) {
       return output - initial_output;
     }
-    if (output_size <= 8) {
+    if (output_size <= 9) {
       return output - initial_output;
     }
     size_t nbc = frame->nb_chans;
@@ -768,7 +806,7 @@ size_t JxlFastLosslessWriteOutput(JxlFastLosslessFrameState* frame,
         cur == 0 ? frame->header
                  : frame->group_data[(cur - 1) / nbc][(cur - 1) % nbc];
     size_t full_byte_count =
-        std::min(output_size - 8, writer.bytes_written - bw_pos);
+        std::min(output_size - 9, writer.bytes_written - bw_pos);
     if (frame->bits_in_buffer == 0) {
       memcpy(output, writer.data.get() + bw_pos, full_byte_count);
     } else {
@@ -3881,9 +3919,10 @@ void LLProcess(JxlFastLosslessFrameState* frame_state, bool is_last,
     size_t end_pos = output_processor->CurrentPosition();
     output_processor->Seek(start_pos);
     frame_state->group_data.resize(1);
-    size_t padding = ComputeDcGlobalPadding(frame_state->group_sizes,
-                                            frame_state->ac_group_data_offset,
-                                            frame_state->min_dc_global_size);
+    bool have_alpha = frame_state->nb_chans == 2 || frame_state->nb_chans == 4;
+    size_t padding = ComputeDcGlobalPadding(
+        frame_state->group_sizes, frame_state->ac_group_data_offset,
+        frame_state->min_dc_global_size, have_alpha, is_last);
 
     for (size_t i = 0; i < padding; ++i) {
       frame_state->group_data[0][0].Write(8, 0);
@@ -3892,7 +3931,7 @@ void LLProcess(JxlFastLosslessFrameState* frame_state, bool is_last,
     JxlFastLosslessPrepareHeader(frame_state, /*add_image_header=*/0, is_last);
     assert(frame_state->ac_group_data_offset ==
            JxlFastLosslessOutputSize(frame_state));
-    JxlFastLosslessOutputFrame(frame_state, output_processor);
+    JxlFastLosslessOutputHeaders(frame_state, output_processor);
     output_processor->Seek(end_pos);
   } else if (output_processor) {
     assert(onegroup);
