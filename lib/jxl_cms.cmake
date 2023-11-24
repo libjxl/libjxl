@@ -15,7 +15,7 @@ add_library(jxl_cms_export OBJECT "jxl/cms/jxl_cms.h")
 set_target_properties(jxl_cms_export PROPERTIES
   CXX_VISIBILITY_PRESET hidden
   VISIBILITY_INLINES_HIDDEN 1
-  DEFINE_SYMBOL JXL_INTERNAL_LIBRARY_BUILD
+  DEFINE_SYMBOL JXL_CMS_INTERNAL_LIBRARY_BUILD
   LINKER_LANGUAGE CXX
 )
 generate_export_header(jxl_cms_export
@@ -73,6 +73,13 @@ if (BUILD_SHARED_LIBS)
   add_library(jxl_cms SHARED ${JXL_CMS_OBJECTS})
   target_link_libraries(jxl_cms INTERFACE ${JXL_CMS_LIBS})
   target_link_libraries(jxl_cms PRIVATE hwy)
+
+  set_target_properties(jxl_cms PROPERTIES
+    CXX_VISIBILITY_PRESET hidden
+    VISIBILITY_INLINES_HIDDEN 1
+    DEFINE_SYMBOL JXL_CMS_INTERNAL_LIBRARY_BUILD
+    LINKER_LANGUAGE CXX
+  )
 
   set_target_properties(jxl_cms PROPERTIES
     VERSION ${JPEGXL_LIBRARY_VERSION}
