@@ -2204,7 +2204,7 @@ static bool CanDoFastLossless(const JxlEncoderFrameSettings* frame_settings,
 namespace {
 JxlEncoderStatus JxlEncoderAddImageFrameInternal(
     const JxlEncoderFrameSettings* frame_settings, size_t xsize, size_t ysize,
-    jxl::JxlEncoderChunkedFrameAdapter frame_data) {
+    bool streaming, jxl::JxlEncoderChunkedFrameAdapter frame_data) {
   JxlChunkedFrameInputSource input = frame_data.GetInputSource();
   JxlPixelFormat pixel_format = {4, JXL_TYPE_UINT8, JXL_NATIVE_ENDIAN, 0};
   input.get_color_channels_pixel_format(input.opaque, &pixel_format);
@@ -2249,7 +2249,7 @@ JxlEncoderStatus JxlEncoderAddImageFrameInternal(
         input, xsize, ysize, pixel_format.num_channels,
         frame_settings->enc->metadata.m.bit_depth.bits_per_sample, big_endian,
         /*effort=*/2);
-    if (frame_data.HasBuffer()) {
+    if (!streaming) {
       JxlFastLosslessProcessFrame(frame_state, /*is_last=*/false,
                                   frame_settings->enc->thread_pool.get(),
                                   runner, nullptr);
@@ -2382,7 +2382,7 @@ JxlEncoderStatus JxlEncoderAddImageFrame(
                          "provided image buffer too small");
   }
   return JxlEncoderAddImageFrameInternal(frame_settings, xsize, ysize,
-                                         frame_data);
+                                         /*streaming=*/false, frame_data);
 }
 
 JxlEncoderStatus JxlEncoderAddChunkedFrame(
@@ -2393,10 +2393,11 @@ JxlEncoderStatus JxlEncoderAddChunkedFrame(
     return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_GENERIC,
                          "bad dimensions");
   }
+  bool streaming = frame_settings->enc->output_processor.OutputProcessorSet();
   jxl::JxlEncoderChunkedFrameAdapter frame_data;
   frame_data.SetInputSource(chunked_frame_input);
-  auto status =
-      JxlEncoderAddImageFrameInternal(frame_settings, xsize, ysize, frame_data);
+  auto status = JxlEncoderAddImageFrameInternal(frame_settings, xsize, ysize,
+                                                streaming, frame_data);
   if (status != JXL_ENC_SUCCESS) return status;
 
   // In the next line,`color_pixel_format` gets overwritten
@@ -2446,7 +2447,7 @@ JxlEncoderStatus JxlEncoderAddChunkedFrame(
   if (is_last_frame) {
     JxlEncoderCloseInput(frame_settings->enc);
   }
-  if (frame_settings->enc->output_processor.OutputProcessorSet()) {
+  if (streaming) {
     return JxlEncoderFlushInput(frame_settings->enc);
   }
   return JxlErrorOrStatus::Success();

@@ -199,7 +199,12 @@ cc_library(
     name = "jpegxl",
     srcs = libjxl_dec_sources + libjxl_dec_box_sources + libjxl_dec_jpeg_sources + libjxl_enc_sources + libjxl_cms_sources,
     compatible_with = DEFAULT_COMPATIBILITY,
-    defines = ["JPEGXL_ENABLE_SKCMS=1"],
+    defines = [
+        "JPEGXL_ENABLE_SKCMS=1",
+        "JPEGXL_MAJOR_VERSION=" + str(libjxl_major_version),
+        "JPEGXL_MINOR_VERSION=" + str(libjxl_minor_version),
+        "JPEGXL_PATCH_VERSION=" + str(libjxl_patch_version),
+    ],
     deps = [
         ":base",
         ":includes",
