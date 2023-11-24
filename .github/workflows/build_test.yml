@@ -354,13 +354,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-           # TODO(eustas): investigate failures
          - msystem: mingw64
-           faulty: true
          - msystem: clang64
          - msystem: mingw32
-           # TODO(eustas): investigate failures
-           faulty: true
            disable_tests:
              - ButteraugliTest.Lossless
              - ButteraugliTest.Distmap

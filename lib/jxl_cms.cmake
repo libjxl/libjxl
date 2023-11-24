@@ -15,7 +15,7 @@ add_library(jxl_cms_export OBJECT "jxl/cms/jxl_cms.h")
 set_target_properties(jxl_cms_export PROPERTIES
   CXX_VISIBILITY_PRESET hidden
   VISIBILITY_INLINES_HIDDEN 1
-  DEFINE_SYMBOL JXL_INTERNAL_LIBRARY_BUILD
+  DEFINE_SYMBOL JXL_CMS_INTERNAL_LIBRARY_BUILD
   LINKER_LANGUAGE CXX
 )
 generate_export_header(jxl_cms_export
