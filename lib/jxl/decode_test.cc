@@ -3860,9 +3860,9 @@ void AnalyzeCodestream(const std::vector<uint8_t>& data,
         add_offset(jxl::DivCeil(br.TotalBitsConsumed(), jxl::kBitsPerByte));
     jxl::FrameDimensions frame_dim = frame_header.ToFrameDimensions();
     uint64_t groups_total_size;
-    const size_t toc_entries = jxl::NumTocEntries(
-        frame_dim.num_groups, frame_dim.num_dc_groups,
-        frame_header.passes.num_passes, /*has_ac_global=*/true);
+    const size_t toc_entries =
+        jxl::NumTocEntries(frame_dim.num_groups, frame_dim.num_dc_groups,
+                           frame_header.passes.num_passes);
     std::vector<uint64_t> section_offsets;
     std::vector<uint32_t> section_sizes;
     ASSERT_TRUE(ReadGroupOffsets(toc_entries, &br, &section_offsets,

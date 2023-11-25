@@ -159,9 +159,8 @@ Status FrameDecoder::InitFrame(BitReader* JXL_RESTRICT br, ImageBundle* decoded,
   }
 
   // Read TOC.
-  const bool has_ac_global = true;
-  const size_t toc_entries = NumTocEntries(num_groups, frame_dim_.num_dc_groups,
-                                           num_passes, has_ac_global);
+  const size_t toc_entries =
+      NumTocEntries(num_groups, frame_dim_.num_dc_groups, num_passes);
   std::vector<uint32_t> sizes;
   std::vector<coeff_order_t> permutation;
   JXL_RETURN_IF_ERROR(ReadToc(toc_entries, br, &sizes, &permutation));
