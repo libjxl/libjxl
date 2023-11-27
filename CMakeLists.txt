@@ -23,6 +23,10 @@ endif()
 
 project(LIBJXL LANGUAGES C CXX)
 
+if(EMSCRIPTEN)
+  message(FATAL_ERROR no emscripten for now)
+endif()
+
 include(CheckCXXSourceCompiles)
 check_cxx_source_compiles(
    "int main() {
