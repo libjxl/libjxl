@@ -1426,6 +1426,38 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelDistance(
     JxlEncoderFrameSettings* frame_settings, size_t index, float distance);
 
 /**
+ * Map Image Quality to Distance for JPEG XL Encoding
+ *
+ * This function assists in setting the desired image quality for JPEG XL
+ * encoding by converting a 'quality' value into a 'distance' parameter, which
+ * is used in @ref JxlEncoderSetFrameDistance and
+ * @ref JxlEncoderSetExtraChannelDistance. The 'distance' influences the level
+ * of compression, with lower values indicating higher quality:
+ * - 0.0 implies lossless compression.
+ * - 1.0 represents a visually lossy compression, which is also the default
+ * setting.
+ *
+ * The 'quality' parameter, ranging up to 100, is inversely related to
+ * 'distance':
+ * - A 'quality' of 100.0 maps to a 'distance' of 0.0 (lossless).
+ * - A 'quality' of 90.0 corresponds to a 'distance' of 1.0.
+ *
+ * Recommended Range:
+ * - 'distance': 0.5 to 3.0.
+ * - Corresponding 'quality': 95.556 (approx) to 67.778 (approx).
+ *
+ * Allowed Range:
+ * - 'distance': 0.0 to 15.0.
+ * - Corresponding 'duality': 100.0 to 10.337 (approx).
+ *
+ * Note: The 'quality' value is roughly analogous to those used in other image
+ * compression tools, but it is not directly comparable. The perception of
+ * 'quality' and the resultant file sizes can vary significantly across
+ * different codecs at the same 'quality' setting.
+ */
+JXL_EXPORT float JxlEncoderDistanceFromQuality(float quality);
+
+/**
  * Create a new set of encoder options, with all values initially copied from
  * the @p source options, or set to default if @p source is NULL.
  *
