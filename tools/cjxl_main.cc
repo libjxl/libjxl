@@ -17,12 +17,17 @@
 #include <jxl/thread_parallel_runner.h>
 #include <jxl/thread_parallel_runner_cxx.h>
 #include <jxl/types.h>
-#include <stdint.h>
 
+#include <algorithm>
+#include <cerrno>
 #include <cmath>
+#include <cstdint>
+#include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <functional>
 #include <iostream>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -35,6 +40,7 @@
 #include "lib/extras/dec/pnm.h"
 #include "lib/extras/enc/jxl.h"
 #include "lib/extras/time.h"
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/span.h"
