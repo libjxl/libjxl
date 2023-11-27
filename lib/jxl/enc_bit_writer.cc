@@ -43,7 +43,7 @@ void BitWriter::Allotment::FinishedHistogram(BitWriter* JXL_RESTRICT writer) {
 void BitWriter::Allotment::ReclaimAndCharge(BitWriter* JXL_RESTRICT writer,
                                             size_t layer,
                                             AuxOut* JXL_RESTRICT aux_out) {
-  size_t used_bits, unused_bits;
+  size_t used_bits = 0, unused_bits = 0;
   PrivateReclaim(writer, &used_bits, &unused_bits);
 
 #if 0
