@@ -29,7 +29,6 @@ endif()
 
 list(APPEND JPEGXL_INTERNAL_TESTS
   # TODO(deymo): Move this to tools/
-  ../tools/box/box_test.cc
   ../tools/djxl_fuzzer_test.cc
 )
 
