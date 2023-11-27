@@ -1349,10 +1349,8 @@ Status EncodeFrame(const CompressParams& cparams_orig,
 
   // DC global info + DC groups + AC global info + AC groups *
   // num_passes.
-  const bool has_ac_global = true;
-  std::vector<BitWriter> group_codes(NumTocEntries(frame_dim.num_groups,
-                                                   frame_dim.num_dc_groups,
-                                                   num_passes, has_ac_global));
+  std::vector<BitWriter> group_codes(
+      NumTocEntries(frame_dim.num_groups, frame_dim.num_dc_groups, num_passes));
   const size_t global_ac_index = frame_dim.num_dc_groups + 1;
   const bool is_small_image = frame_dim.num_groups == 1 && num_passes == 1;
   const auto get_output = [&](const size_t index) {
@@ -1360,7 +1358,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
   };
   auto ac_group_code = [&](size_t pass, size_t group) {
     return get_output(AcGroupIndex(pass, group, frame_dim.num_groups,
-                                   frame_dim.num_dc_groups, has_ac_global));
+                                   frame_dim.num_dc_groups));
   };
 
   if (frame_header->flags & FrameHeader::kPatches) {
