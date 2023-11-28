@@ -348,7 +348,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-           # TODO(eustas): investigate failures
          - msystem: mingw64
          - msystem: clang64
          - msystem: mingw32
@@ -403,14 +402,12 @@ jobs:
             -G Ninja
       - name: CMake build
         run: cmake --build build
-        continue-on-error: ${{ matrix.faulty }}
       - name: Test
         if: |
           github.event_name == 'push' ||
           (github.event_name == 'pull_request' &&
            contains(github.event.pull_request.labels.*.name, 'CI:full'))
         run: ctest --test-dir build --parallel 2 --output-on-failure -E "${{ join(matrix.disable_tests, '|') }}"
-        continue-on-error: ${{ matrix.faulty }}
 
   wasm32_build:
     name: WASM wasm32/${{ matrix.variant }}
