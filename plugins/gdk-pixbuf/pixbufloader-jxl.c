@@ -678,18 +678,12 @@ static gboolean jxl_image_saver(FILE *f, GdkPixbuf *pixbuf, gchar **keys,
     return FALSE;
   }
 
-  // TODO(firsching): use API function for this once it is added in #2976.
   if (quality > 99) {
     output_info.uses_original_profile = JXL_TRUE;
     distance = 0;
   } else {
     output_info.uses_original_profile = JXL_FALSE;
-    if (quality >= 30) {
-      distance = 0.1 + (100 - quality) * 0.09;
-    } else {
-      distance =
-          53.0 / 3000.0 * quality * quality - 23.0 / 20.0 * quality + 25.0;
-    }
+    distance = JxlEncoderDistanceFromQuality((float)quality);
   }
 
   status = JxlEncoderSetBasicInfo(encoder, &output_info);
