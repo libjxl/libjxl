@@ -411,7 +411,6 @@ add_subdirectory(comparison_viewer)
 add_subdirectory(flicker_test)
 endif()
 
-add_subdirectory(box)
 add_subdirectory(conformance)
 add_subdirectory(wasm_demo)
 
