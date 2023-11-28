@@ -97,8 +97,7 @@ jxl::CodecInOut ConvertTestImage(const std::vector<uint8_t>& buf,
   } else {
     color_encoding = jxl::ColorEncoding::SRGB(is_gray);
   }
-  EXPECT_TRUE(ConvertFromExternal(jxl::Bytes(buf.data(), buf.size()), xsize,
-                                  ysize, color_encoding,
+  EXPECT_TRUE(ConvertFromExternal(jxl::Bytes(buf), xsize, ysize, color_encoding,
                                   /*bits_per_sample=*/bitdepth, pixel_format,
                                   /*pool=*/nullptr, &io.Main()));
   return io;
@@ -231,8 +230,8 @@ void VerifyRoundtripCompression(
   if (alpha_in_extra_channels_vector && !has_interleaved_alpha) {
     jxl::ImageF alpha_channel(xsize, ysize);
     EXPECT_TRUE(jxl::ConvertFromExternal(
-        jxl::Bytes(extra_channel_bytes.data(), extra_channel_bytes.size()),
-        xsize, ysize, basic_info.bits_per_sample, extra_channel_pixel_format, 0,
+        extra_channel_bytes.data(), extra_channel_bytes.size(), xsize, ysize,
+        basic_info.bits_per_sample, extra_channel_pixel_format, 0,
         /*pool=*/nullptr, &alpha_channel));
 
     original_io.metadata.m.SetAlphaBits(basic_info.bits_per_sample);
@@ -298,10 +297,6 @@ void VerifyRoundtripCompression(
             JxlEncoderAddImageFrame(frame_settings, &input_pixel_format,
                                     (void*)original_bytes.data(),
                                     original_bytes.size()));
-  EXPECT_EQ(frame_settings->enc->input_queue.back()
-                .frame->frame.extra_channels()
-                .size(),
-            has_interleaved_alpha + extra_channels.size());
   EXPECT_EQ(frame_settings->enc->input_queue.empty(), false);
   for (size_t index = 0; index < channel_infos.size(); index++) {
     EXPECT_EQ(JXL_ENC_SUCCESS,
@@ -311,10 +306,6 @@ void VerifyRoundtripCompression(
                   index + has_interleaved_alpha));
   }
   JxlEncoderCloseInput(enc);
-  EXPECT_EQ(frame_settings->enc->input_queue.back()
-                .frame->frame.extra_channels()
-                .size(),
-            has_interleaved_alpha + extra_channels.size());
   std::vector<uint8_t> compressed;
   EncodeWithEncoder(enc, &compressed);
   JxlEncoderDestroy(enc);

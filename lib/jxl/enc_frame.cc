@@ -32,6 +32,7 @@
 #include "lib/jxl/common.h"  // kMaxNumPasses
 #include "lib/jxl/compressed_dc.h"
 #include "lib/jxl/dct_util.h"
+#include "lib/jxl/dec_external_image.h"
 #include "lib/jxl/enc_adaptive_quantization.h"
 #include "lib/jxl/enc_ans.h"
 #include "lib/jxl/enc_aux_out.h"
@@ -41,6 +42,7 @@
 #include "lib/jxl/enc_coeff_order.h"
 #include "lib/jxl/enc_context_map.h"
 #include "lib/jxl/enc_entropy_coder.h"
+#include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_fields.h"
 #include "lib/jxl/enc_gaborish.h"
 #include "lib/jxl/enc_group.h"
@@ -59,6 +61,7 @@
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
+#include "lib/jxl/jpeg/enc_jpeg_data.h"
 #include "lib/jxl/loop_filter.h"
 #include "lib/jxl/modular/options.h"
 #include "lib/jxl/quant_weights.h"
@@ -84,6 +87,20 @@ PassDefinition progressive_passes_dc_quant_ac_full_ac[] = {
     {/*num_coefficients=*/8, /*shift=*/0,
      /*suitable_for_downsampling_of_at_least=*/0},
 };
+
+template <typename T>
+uint32_t GetBitDepth(JxlBitDepth bit_depth, const T& metadata,
+                     JxlPixelFormat format) {
+  if (bit_depth.type == JXL_BIT_DEPTH_FROM_PIXEL_FORMAT) {
+    return BitsPerChannel(format.data_type);
+  } else if (bit_depth.type == JXL_BIT_DEPTH_FROM_CODESTREAM) {
+    return metadata.bit_depth.bits_per_sample;
+  } else if (bit_depth.type == JXL_BIT_DEPTH_CUSTOM) {
+    return bit_depth.bits_per_sample;
+  } else {
+    return 0;
+  }
+}
 
 uint64_t FrameFlagsFromParams(const CompressParams& cparams) {
   uint64_t flags = 0;
@@ -1066,7 +1083,8 @@ Status ParamsPostInit(CompressParams* p) {
 
 Status EncodeFrame(const CompressParams& cparams_orig,
                    const FrameInfo& frame_info, const CodecMetadata* metadata,
-                   const ImageBundle& ib, PassesEncoderState* passes_enc_state,
+                   JxlEncoderChunkedFrameAdapter& frame_data,
+                   PassesEncoderState* passes_enc_state,
                    const JxlCmsInterface& cms, ThreadPool* pool,
                    BitWriter* writer, AuxOut* aux_out) {
   CompressParams cparams = cparams_orig;
@@ -1123,8 +1141,8 @@ Status EncodeFrame(const CompressParams& cparams_orig,
         [&](size_t task, size_t) {
           BitWriter w;
           PassesEncoderState state;
-          if (!EncodeFrame(all_params[task], frame_info, metadata, ib, &state,
-                           cms, nullptr, &w, aux_out)) {
+          if (!EncodeFrame(all_params[task], frame_info, metadata, frame_data,
+                           &state, cms, nullptr, &w, aux_out)) {
             num_errors.fetch_add(1, std::memory_order_relaxed);
             return;
           }
@@ -1140,6 +1158,83 @@ Status EncodeFrame(const CompressParams& cparams_orig,
       }
     }
     cparams = all_params[best_idx];
+  }
+
+  ImageBundle ib(&metadata->m);
+  ib.origin = frame_info.origin;
+  ib.use_for_next_frame = frame_info.save_as_reference;
+  ib.blend = frame_info.blend;
+  ib.blendmode = frame_info.blendmode;
+  ib.duration = frame_info.duration;
+  ib.timecode = frame_info.timecode;
+  ib.name = frame_info.name;
+  bool have_alpha = false;
+  JxlChunkedFrameInputSource input = frame_data.GetInputSource();
+  const size_t xsize = frame_data.xsize;
+  const size_t ysize = frame_data.ysize;
+  {
+    std::vector<jxl::ImageF> extra_channels(metadata->m.num_extra_channels);
+    for (auto& extra_channel : extra_channels) {
+      extra_channel = jxl::ImageF(xsize, ysize);
+    }
+    ib.SetExtraChannels(std::move(extra_channels));
+  }
+  if (frame_data.IsJPEG()) {
+    ib.OverrideProfile(metadata->m.color_encoding);
+    ib.jpeg_data = make_unique<jpeg::JPEGData>(frame_data.TakeJPEGData());
+    JXL_RETURN_IF_ERROR(SetChromaSubsamplingFromJpegData(
+        *ib.jpeg_data, &ib.chroma_subsampling));
+    JXL_RETURN_IF_ERROR(
+        SetColorTransformFromJpegData(*ib.jpeg_data, &ib.color_transform));
+  } else {
+    JxlPixelFormat pixel_format = {4, JXL_TYPE_UINT8, JXL_NATIVE_ENDIAN, 0};
+    input.get_color_channels_pixel_format(input.opaque, &pixel_format);
+    have_alpha =
+        pixel_format.num_channels == 2 || pixel_format.num_channels == 4;
+    size_t bits_per_sample =
+        GetBitDepth(frame_info.image_bit_depth, metadata->m, pixel_format);
+    size_t row_offset;
+    auto buffer = GetColorBuffer(input, 0, 0, xsize, ysize, &row_offset);
+    if (!buffer) {
+      return JXL_FAILURE("no buffer for color channels given");
+    }
+    ColorEncoding c_enc = metadata->m.color_encoding;
+    size_t color_channels =
+        frame_info.ib_needs_color_transform ? c_enc.Channels() : 3;
+    if (!jxl::ConvertFromExternalNoSizeCheck(
+            reinterpret_cast<const uint8_t*>(buffer.get()), xsize, ysize,
+            row_offset, c_enc, color_channels, bits_per_sample, pixel_format,
+            pool, &ib)) {
+      return JXL_FAILURE("Invalid input buffer");
+    }
+  }
+
+  for (size_t ec = 0; ec < metadata->m.num_extra_channels; ec++) {
+    if (have_alpha &&
+        metadata->m.extra_channel_info[ec].type == ExtraChannel::kAlpha) {
+      // Skip this alpha channel, but still request additional alpha channels
+      // if they exist.
+      have_alpha = false;
+      continue;
+    }
+    JxlPixelFormat ec_format = {1, JXL_TYPE_UINT8, JXL_NATIVE_ENDIAN, 0};
+    input.get_extra_channel_pixel_format(input.opaque, ec, &ec_format);
+    ec_format.num_channels = 1;
+    size_t row_offset;
+    auto buffer =
+        GetExtraChannelBuffer(input, ec, 0, 0, xsize, ysize, &row_offset);
+    if (!buffer) {
+      return JXL_FAILURE("no buffer for extra channel given");
+    }
+    size_t bits_per_sample =
+        GetBitDepth(frame_info.image_bit_depth,
+                    metadata->m.extra_channel_info[ec], ec_format);
+    if (!ConvertFromExternalNoSizeCheck(
+            reinterpret_cast<const uint8_t*>(buffer.get()), xsize, ysize,
+            row_offset, bits_per_sample, ec_format, 0, pool,
+            &ib.extra_channels()[ec])) {
+      return JXL_FAILURE("Failed to set buffer for extra channel");
+    }
   }
 
   ib.VerifyMetadata();
@@ -1291,7 +1386,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
               // YCbCr)
               // If encoding a special DC or reference frame, don't do anything:
               // input is already in XYB.
-      CopyImageTo(ib.color(), &opsin);
+      CopyImageTo(*ib.color(), &opsin);
     }
     bool lossless = cparams.IsLossless();
     if (ib.HasAlpha() && !ib.AlphaIsPremultiplied() &&
@@ -1299,10 +1394,10 @@ Status EncodeFrame(const CompressParams& cparams_orig,
         !ApplyOverride(cparams.keep_invisible, lossless) &&
         cparams.ec_resampling == cparams.resampling) {
       // simplify invisible pixels
-      SimplifyInvisible(&opsin, ib.alpha(), lossless);
+      SimplifyInvisible(&opsin, *ib.alpha(), lossless);
       if (want_linear) {
         SimplifyInvisible(const_cast<Image3F*>(&ib_or_linear->color()),
-                          ib.alpha(), lossless);
+                          *ib.alpha(), lossless);
       }
     }
     if (frame_header->encoding == FrameEncoding::kVarDCT) {
@@ -1555,6 +1650,51 @@ Status EncodeFrame(const CompressParams& cparams_orig,
   writer->AppendByteAligned(group_codes);
 
   return true;
+}
+
+Status EncodeFrame(const CompressParams& cparams_orig,
+                   const FrameInfo& frame_info, const CodecMetadata* metadata,
+                   const ImageBundle& ib, PassesEncoderState* passes_enc_state,
+                   const JxlCmsInterface& cms, ThreadPool* pool,
+                   BitWriter* writer, AuxOut* aux_out) {
+  JxlEncoderChunkedFrameAdapter frame_data(ib.xsize(), ib.ysize(),
+                                           ib.extra_channels().size());
+  std::vector<uint8_t> color;
+  if (ib.IsJPEG()) {
+    frame_data.SetJPEGData(*ib.jpeg_data);
+  } else {
+    uint32_t num_channels =
+        ib.IsGray() && frame_info.ib_needs_color_transform ? 1 : 3;
+    size_t stride = ib.xsize() * num_channels * 4;
+    color.resize(ib.ysize() * stride);
+    JXL_RETURN_IF_ERROR(ConvertToExternal(
+        ib, /*bites_per_sample=*/32, /*float_out=*/true, num_channels,
+        JXL_NATIVE_ENDIAN, stride, pool, color.data(), color.size(),
+        /*out_callback=*/{}, Orientation::kIdentity));
+    JxlPixelFormat format{num_channels, JXL_TYPE_FLOAT, JXL_NATIVE_ENDIAN, 0};
+    frame_data.SetFromBuffer(0, color.data(), color.size(), format);
+  }
+  for (size_t ec = 0; ec < ib.extra_channels().size(); ++ec) {
+    JxlPixelFormat ec_format{1, JXL_TYPE_FLOAT, JXL_NATIVE_ENDIAN, 0};
+    size_t ec_stride = ib.xsize() * 4;
+    std::vector<uint8_t> ec_data(ib.ysize() * ec_stride);
+    const ImageF* channel = &ib.extra_channels()[ec];
+    JXL_RETURN_IF_ERROR(ConvertChannelsToExternal(
+        &channel, 1,
+        /*bites_per_sample=*/32,
+        /*float_out=*/true, JXL_NATIVE_ENDIAN, ec_stride, pool, ec_data.data(),
+        ec_data.size(), /*out_callback=*/{}, Orientation::kIdentity));
+    frame_data.SetFromBuffer(1 + ec, ec_data.data(), ec_data.size(), ec_format);
+  }
+  FrameInfo fi = frame_info;
+  fi.origin = ib.origin;
+  fi.blend = ib.blend;
+  fi.blendmode = ib.blendmode;
+  fi.duration = ib.duration;
+  fi.timecode = ib.timecode;
+  fi.name = ib.name;
+  return EncodeFrame(cparams_orig, fi, metadata, frame_data, passes_enc_state,
+                     cms, pool, writer, aux_out);
 }
 
 }  // namespace jxl

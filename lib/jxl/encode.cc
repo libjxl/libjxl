@@ -23,9 +23,11 @@
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_bit_writer.h"
+#include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_fast_lossless.h"
 #include "lib/jxl/enc_fields.h"
+#include "lib/jxl/enc_frame.h"
 #include "lib/jxl/enc_icc_codec.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/encode_internal.h"
@@ -571,35 +573,6 @@ int VerifyLevelSettings(const JxlEncoder* enc, std::string* debug_string) {
   return 5;
 }
 
-size_t BitsPerChannel(JxlDataType data_type) {
-  switch (data_type) {
-    case JXL_TYPE_UINT8:
-      return 8;
-    case JXL_TYPE_UINT16:
-      return 16;
-    case JXL_TYPE_FLOAT:
-      return 32;
-    case JXL_TYPE_FLOAT16:
-      return 16;
-    default:
-      return 0;  // signals unhandled JxlDataType
-  }
-}
-
-template <typename T>
-uint32_t GetBitDepth(JxlBitDepth bit_depth, const T& metadata,
-                     JxlPixelFormat format) {
-  if (bit_depth.type == JXL_BIT_DEPTH_FROM_PIXEL_FORMAT) {
-    return BitsPerChannel(format.data_type);
-  } else if (bit_depth.type == JXL_BIT_DEPTH_FROM_CODESTREAM) {
-    return metadata.bit_depth.bits_per_sample;
-  } else if (bit_depth.type == JXL_BIT_DEPTH_CUSTOM) {
-    return bit_depth.bits_per_sample;
-  } else {
-    return 0;
-  }
-}
-
 JxlEncoderStatus CheckValidBitdepth(uint32_t bits_per_sample,
                                     uint32_t exponent_bits_per_sample) {
   if (!exponent_bits_per_sample) {
@@ -909,19 +882,6 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
       frame_index_box.AddFrame(codestream_bytes_written_end_of_frame, duration,
                                input_frame->option_values.frame_index_box);
 
-      // EncodeFrame creates jxl::FrameHeader object internally based on the
-      // FrameInfo, imagebundle, cparams and metadata. Copy the information to
-      // these.
-      jxl::ImageBundle& ib = input_frame->frame;
-      ib.duration = duration;
-      ib.timecode = timecode;
-      ib.name = input_frame->option_values.frame_name;
-      ib.blendmode = static_cast<jxl::BlendMode>(
-          input_frame->option_values.header.layer_info.blend_info.blendmode);
-      ib.blend =
-          input_frame->option_values.header.layer_info.blend_info.blendmode !=
-          JXL_BLEND_REPLACE;
-
       size_t save_as_reference =
           input_frame->option_values.header.layer_info.save_as_reference;
       if (save_as_reference >= 3) {
@@ -930,7 +890,6 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
             "Cannot use save_as_reference values >=3 (found: %d)",
             (int)save_as_reference);
       }
-      ib.use_for_next_frame = !!save_as_reference;
 
       jxl::FrameInfo frame_info;
       frame_info.is_last = last_frame;
@@ -958,14 +917,23 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
         to.alpha_channel = from.alpha;
         to.clamp = (from.clamp != 0);
       }
+      frame_info.origin.x0 =
+          input_frame->option_values.header.layer_info.crop_x0;
+      frame_info.origin.y0 =
+          input_frame->option_values.header.layer_info.crop_y0;
+      frame_info.blendmode = static_cast<jxl::BlendMode>(
+          input_frame->option_values.header.layer_info.blend_info.blendmode);
+      frame_info.blend =
+          input_frame->option_values.header.layer_info.blend_info.blendmode !=
+          JXL_BLEND_REPLACE;
+      frame_info.image_bit_depth = input_frame->option_values.image_bit_depth;
+      frame_info.duration = duration;
+      frame_info.timecode = timecode;
+      frame_info.name = input_frame->option_values.frame_name;
 
-      if (input_frame->option_values.header.layer_info.have_crop) {
-        ib.origin.x0 = input_frame->option_values.header.layer_info.crop_x0;
-        ib.origin.y0 = input_frame->option_values.header.layer_info.crop_y0;
-      }
       jxl::BitWriter writer;
       if (!jxl::EncodeFrame(input_frame->option_values.cparams, frame_info,
-                            &metadata, input_frame->frame, &enc_state, cms,
+                            &metadata, input_frame->frame_data, &enc_state, cms,
                             thread_pool.get(), &writer,
                             input_frame->option_values.aux_out)) {
         return JXL_API_ERROR(this, JXL_ENC_ERR_GENERIC,
@@ -2035,6 +2003,7 @@ JxlEncoderStatus JxlEncoderAddJPEGFrame(
   if (!frame_settings->enc->color_encoding_set) {
     SetColorEncodingFromJpegData(
         *io.Main().jpeg_data, &frame_settings->enc->metadata.m.color_encoding);
+    frame_settings->enc->color_encoding_set = true;
   }
 
   if (!frame_settings->enc->basic_info_set) {
@@ -2048,6 +2017,17 @@ JxlEncoderStatus JxlEncoderAddJPEGFrame(
       return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_GENERIC,
                            "Error setting basic info");
     }
+  }
+
+  size_t xsize, ysize;
+  if (GetCurrentDimensions(frame_settings, xsize, ysize) != JXL_ENC_SUCCESS) {
+    return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_GENERIC,
+                         "bad dimensions");
+  }
+  if (xsize != static_cast<size_t>(io.Main().jpeg_data->width) ||
+      ysize != static_cast<size_t>(io.Main().jpeg_data->height)) {
+    return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_GENERIC,
+                         "JPEG dimensions don't match frame dimensions");
   }
 
   if (frame_settings->enc->metadata.m.xyb_encoded) {
@@ -2105,41 +2085,23 @@ JxlEncoderStatus JxlEncoderAddJPEGFrame(
     frame_settings->enc->jpeg_metadata = jpeg_data;
   }
 
+  jxl::JxlEncoderChunkedFrameAdapter frame_data(
+      xsize, ysize, frame_settings->enc->metadata.m.num_extra_channels);
+  frame_data.SetJPEGData(*io.Main().jpeg_data);
+
   auto queued_frame = jxl::MemoryManagerMakeUnique<jxl::JxlEncoderQueuedFrame>(
       &frame_settings->enc->memory_manager,
       // JxlEncoderQueuedFrame is a struct with no constructors, so we use the
       // default move constructor there.
       jxl::JxlEncoderQueuedFrame{
-          frame_settings->values,
-          jxl::ImageBundle(&frame_settings->enc->metadata.m),
-          {}});
+          frame_settings->values, std::move(frame_data), {}});
   if (!queued_frame) {
     // TODO(jon): when can this happen? is this an API usage error?
     return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_GENERIC,
                          "No frame queued?");
   }
-  queued_frame->frame.SetFromImage(std::move(*io.Main().color()),
-                                   io.Main().c_current());
-  size_t xsize, ysize;
-  if (GetCurrentDimensions(frame_settings, xsize, ysize) != JXL_ENC_SUCCESS) {
-    return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_GENERIC,
-                         "bad dimensions");
-  }
-  if (xsize != static_cast<size_t>(io.Main().jpeg_data->width) ||
-      ysize != static_cast<size_t>(io.Main().jpeg_data->height)) {
-    return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_GENERIC,
-                         "JPEG dimensions don't match frame dimensions");
-  }
-  std::vector<jxl::ImageF> extra_channels(
+  queued_frame->ec_initialized.resize(
       frame_settings->enc->metadata.m.num_extra_channels);
-  for (auto& extra_channel : extra_channels) {
-    extra_channel = jxl::ImageF(xsize, ysize);
-    queued_frame->ec_initialized.push_back(0);
-  }
-  queued_frame->frame.SetExtraChannels(std::move(extra_channels));
-  queued_frame->frame.jpeg_data = std::move(io.Main().jpeg_data);
-  queued_frame->frame.color_transform = io.Main().color_transform;
-  queued_frame->frame.chroma_subsampling = io.Main().chroma_subsampling;
 
   QueueFrame(frame_settings, queued_frame);
   return JxlErrorOrStatus::Success();
@@ -2212,20 +2174,25 @@ namespace {
 JxlEncoderStatus JxlEncoderAddImageFrameInternal(
     const JxlEncoderFrameSettings* frame_settings, size_t xsize, size_t ysize,
     bool streaming, jxl::JxlEncoderChunkedFrameAdapter frame_data) {
-  JxlChunkedFrameInputSource input = frame_data.GetInputSource();
   JxlPixelFormat pixel_format = {4, JXL_TYPE_UINT8, JXL_NATIVE_ENDIAN, 0};
-  input.get_color_channels_pixel_format(input.opaque, &pixel_format);
+  {
+    JxlChunkedFrameInputSource input = frame_data.GetInputSource();
+    input.get_color_channels_pixel_format(input.opaque, &pixel_format);
+  }
+  uint32_t num_channels = pixel_format.num_channels;
+  size_t has_interleaved_alpha =
+      static_cast<size_t>(num_channels == 2 || num_channels == 4);
+
   if (!frame_settings->enc->basic_info_set) {
     // Basic Info must be set. Otherwise, this is an API misuse.
     return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
                          "Basic info or color encoding not set yet");
   }
-
   if (frame_settings->enc->frames_closed) {
     return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
                          "Frame input already closed");
   }
-  if (pixel_format.num_channels < 3) {
+  if (num_channels < 3) {
     if (frame_settings->enc->basic_info.num_color_channels != 1) {
       return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
                            "Grayscale pixel format input for an RGB image");
@@ -2235,6 +2202,23 @@ JxlEncoderStatus JxlEncoderAddImageFrameInternal(
       return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
                            "RGB pixel format input for a grayscale image");
     }
+  }
+  if (frame_settings->values.lossless &&
+      frame_settings->enc->metadata.m.xyb_encoded) {
+    return JXL_API_ERROR(
+        frame_settings->enc, JXL_ENC_ERR_API_USAGE,
+        "Set uses_original_profile=true for lossless encoding");
+  }
+  if (JXL_ENC_SUCCESS !=
+      VerifyInputBitDepth(frame_settings->values.image_bit_depth,
+                          pixel_format)) {
+    return JXL_API_ERROR_NOSET("Invalid input bit depth");
+  }
+  if (has_interleaved_alpha >
+      frame_settings->enc->metadata.m.num_extra_channels) {
+    return JXL_API_ERROR(
+        frame_settings->enc, JXL_ENC_ERR_API_USAGE,
+        "number of extra channels mismatch (need 1 extra channel for alpha)");
   }
 
   bool has_alpha = frame_settings->enc->metadata.m.HasAlpha();
@@ -2253,7 +2237,7 @@ JxlEncoderStatus JxlEncoderAddImageFrameInternal(
           [&](size_t i, size_t) { fun(opaque, i); }, "Encode fast lossless"));
     };
     auto frame_state = JxlFastLosslessPrepareFrame(
-        input, xsize, ysize, pixel_format.num_channels,
+        frame_data.GetInputSource(), xsize, ysize, num_channels,
         frame_settings->enc->metadata.m.bit_depth.bits_per_sample, big_endian,
         /*effort=*/2);
     if (!streaming) {
@@ -2265,31 +2249,33 @@ JxlEncoderStatus JxlEncoderAddImageFrameInternal(
     return JxlErrorOrStatus::Success();
   }
 
-  size_t row_offset;
-  const void* buffer = input.get_color_channel_data_at(
-      input.opaque, 0, 0, xsize, ysize, &row_offset);
-  if (!buffer) {
-    return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_GENERIC,
-                         "no buffer for color channels given");
+  if (!streaming) {
+    // The input callbacks are only guaranteed to be available during frame
+    // encoding when both the input and the output is streaming. In all other
+    // cases we need to create an internal copy of the frame data.
+    if (!frame_data.CopyBuffers()) {
+      return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
+                           "Invalid chunked frame input source");
+    }
   }
-  size_t bytes_per_pixel =
-      pixel_format.num_channels * BitsPerChannel(pixel_format.data_type) / 8;
-  std::vector<uint8_t> color_data(bytes_per_pixel * xsize * ysize);
-  for (size_t y = 0; y < ysize; y++) {
-    memcpy(color_data.data() + y * xsize * bytes_per_pixel,
-           static_cast<const uint8_t*>(buffer) + y * row_offset,
-           bytes_per_pixel * xsize);
+
+  if (!frame_settings->enc->color_encoding_set) {
+    jxl::ColorEncoding c_current;
+    if ((pixel_format.data_type == JXL_TYPE_FLOAT) ||
+        (pixel_format.data_type == JXL_TYPE_FLOAT16)) {
+      c_current = jxl::ColorEncoding::LinearSRGB(num_channels < 3);
+    } else {
+      c_current = jxl::ColorEncoding::SRGB(num_channels < 3);
+    }
+    frame_settings->enc->metadata.m.color_encoding = c_current;
   }
-  input.release_buffer(input.opaque, buffer);
 
   auto queued_frame = jxl::MemoryManagerMakeUnique<jxl::JxlEncoderQueuedFrame>(
       &frame_settings->enc->memory_manager,
       // JxlEncoderQueuedFrame is a struct with no constructors, so we use the
       // default move constructor there.
       jxl::JxlEncoderQueuedFrame{
-          frame_settings->values,
-          jxl::ImageBundle(&frame_settings->enc->metadata.m),
-          {}});
+          frame_settings->values, std::move(frame_data), {}});
 
   if (!queued_frame) {
     // TODO(jon): when can this happen? is this an API usage error?
@@ -2297,32 +2283,6 @@ JxlEncoderStatus JxlEncoderAddImageFrameInternal(
                          "No frame queued?");
   }
 
-  jxl::ColorEncoding c_current;
-  if (!frame_settings->enc->color_encoding_set) {
-    if ((pixel_format.data_type == JXL_TYPE_FLOAT) ||
-        (pixel_format.data_type == JXL_TYPE_FLOAT16)) {
-      c_current = jxl::ColorEncoding::LinearSRGB(pixel_format.num_channels < 3);
-    } else {
-      c_current = jxl::ColorEncoding::SRGB(pixel_format.num_channels < 3);
-    }
-  } else {
-    c_current = frame_settings->enc->metadata.m.color_encoding;
-  }
-  uint32_t num_channels = pixel_format.num_channels;
-  size_t has_interleaved_alpha =
-      static_cast<size_t>(num_channels == 2 || num_channels == 4);
-  if (has_interleaved_alpha >
-      frame_settings->enc->metadata.m.num_extra_channels) {
-    return JXL_API_ERROR(
-        frame_settings->enc, JXL_ENC_ERR_API_USAGE,
-        "number of extra channels mismatch (need 1 extra channel for alpha)");
-  }
-  std::vector<jxl::ImageF> extra_channels(
-      frame_settings->enc->metadata.m.num_extra_channels);
-  for (auto& extra_channel : extra_channels) {
-    extra_channel = jxl::ImageF(xsize, ysize);
-  }
-  queued_frame->frame.SetExtraChannels(std::move(extra_channels));
   for (auto& ec_info : frame_settings->enc->metadata.m.extra_channel_info) {
     if (has_interleaved_alpha && ec_info.type == jxl::ExtraChannel::kAlpha) {
       queued_frame->ec_initialized.push_back(1);
@@ -2330,41 +2290,6 @@ JxlEncoderStatus JxlEncoderAddImageFrameInternal(
     } else {
       queued_frame->ec_initialized.push_back(0);
     }
-  }
-  queued_frame->frame.origin.x0 =
-      frame_settings->values.header.layer_info.crop_x0;
-  queued_frame->frame.origin.y0 =
-      frame_settings->values.header.layer_info.crop_y0;
-  queued_frame->frame.use_for_next_frame =
-      (frame_settings->values.header.layer_info.save_as_reference != 0u);
-  queued_frame->frame.blendmode =
-      frame_settings->values.header.layer_info.blend_info.blendmode ==
-              JXL_BLEND_REPLACE
-          ? jxl::BlendMode::kReplace
-          : jxl::BlendMode::kBlend;
-  queued_frame->frame.blend =
-      frame_settings->values.header.layer_info.blend_info.source > 0;
-
-  if (JXL_ENC_SUCCESS !=
-      VerifyInputBitDepth(frame_settings->values.image_bit_depth,
-                          pixel_format)) {
-    return JXL_API_ERROR_NOSET("Invalid input bit depth");
-  }
-  size_t bits_per_sample =
-      GetBitDepth(frame_settings->values.image_bit_depth,
-                  frame_settings->enc->metadata.m, pixel_format);
-  if (!jxl::ConvertFromExternal(jxl::Bytes(color_data), xsize, ysize, c_current,
-                                bits_per_sample, pixel_format,
-                                frame_settings->enc->thread_pool.get(),
-                                &(queued_frame->frame))) {
-    return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
-                         "Invalid input buffer");
-  }
-  if (frame_settings->values.lossless &&
-      frame_settings->enc->metadata.m.xyb_encoded) {
-    return JXL_API_ERROR(
-        frame_settings->enc, JXL_ENC_ERR_API_USAGE,
-        "Set uses_original_profile=true for lossless encoding");
   }
   queued_frame->option_values.cparams.level =
       frame_settings->enc->codestream_level;
@@ -2382,14 +2307,16 @@ JxlEncoderStatus JxlEncoderAddImageFrame(
     return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_GENERIC,
                          "bad dimensions");
   }
-  jxl::JxlEncoderChunkedFrameAdapter frame_data;
-  if (!frame_data.SetFromBuffer(reinterpret_cast<const uint8_t*>(buffer), size,
-                                *pixel_format, xsize, ysize)) {
+  jxl::JxlEncoderChunkedFrameAdapter frame_data(
+      xsize, ysize, frame_settings->enc->metadata.m.num_extra_channels);
+  if (!frame_data.SetFromBuffer(0, reinterpret_cast<const uint8_t*>(buffer),
+                                size, *pixel_format)) {
     return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
                          "provided image buffer too small");
   }
   return JxlEncoderAddImageFrameInternal(frame_settings, xsize, ysize,
-                                         /*streaming=*/false, frame_data);
+                                         /*streaming=*/false,
+                                         std::move(frame_data));
 }
 
 JxlEncoderStatus JxlEncoderAddChunkedFrame(
@@ -2401,54 +2328,16 @@ JxlEncoderStatus JxlEncoderAddChunkedFrame(
                          "bad dimensions");
   }
   bool streaming = frame_settings->enc->output_processor.OutputProcessorSet();
-  jxl::JxlEncoderChunkedFrameAdapter frame_data;
+  jxl::JxlEncoderChunkedFrameAdapter frame_data(
+      xsize, ysize, frame_settings->enc->metadata.m.num_extra_channels);
   frame_data.SetInputSource(chunked_frame_input);
   auto status = JxlEncoderAddImageFrameInternal(frame_settings, xsize, ysize,
                                                 streaming, frame_data);
   if (status != JXL_ENC_SUCCESS) return status;
 
-  // In the next line,`color_pixel_format` gets overwritten
-  JxlPixelFormat color_pixel_format = {4, JXL_TYPE_UINT8, JXL_NATIVE_ENDIAN, 0};
-  chunked_frame_input.get_color_channels_pixel_format(
-      chunked_frame_input.opaque, &color_pixel_format);
-  bool already_have_alpha = color_pixel_format.num_channels == 2 ||
-                            color_pixel_format.num_channels == 4;
-  for (size_t ec = 0; ec < frame_settings->enc->metadata.m.num_extra_channels;
-       ec++) {
-    if (frame_settings->enc->metadata.m.extra_channel_info[ec].type ==
-        jxl::ExtraChannel::kAlpha) {
-      if (already_have_alpha) {
-        // Skip this alpha channel, but still request additional alpha channels
-        // if they exist.
-        already_have_alpha = false;
-        continue;
-      }
-    }
-
-    // In the next line,`pixel_format` gets overwritten
-    JxlPixelFormat pixel_format = {4, JXL_TYPE_UINT8, JXL_NATIVE_ENDIAN, 0};
-    chunked_frame_input.get_extra_channel_pixel_format(
-        chunked_frame_input.opaque, ec, &pixel_format);
-    size_t bytes_per_pixel =
-        pixel_format.num_channels * BitsPerChannel(pixel_format.data_type) / 8;
-    std::vector<uint8_t> data(bytes_per_pixel * xsize * ysize);
-    auto stride = xsize * bytes_per_pixel;
-    size_t row_offset;
-    const void* buffer = chunked_frame_input.get_extra_channel_data_at(
-        chunked_frame_input.opaque, ec, 0, 0, xsize, ysize, &row_offset);
-    if (!buffer) {
-      return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_GENERIC,
-                           "no buffer for extra channel given");
-    }
-    for (size_t y = 0; y < ysize; y++) {
-      memcpy(data.data() + y * stride,
-             static_cast<const uint8_t*>(buffer) + y * row_offset,
-             bytes_per_pixel * xsize);
-    }
-    chunked_frame_input.release_buffer(chunked_frame_input.opaque, buffer);
-    auto status = JxlEncoderSetExtraChannelBuffer(frame_settings, &pixel_format,
-                                                  data.data(), data.size(), ec);
-    if (status != JXL_ENC_SUCCESS) return status;
+  auto& queued_frame = frame_settings->enc->input_queue.back();
+  if (queued_frame.frame) {
+    for (auto& val : queued_frame.frame->ec_initialized) val = 1;
   }
 
   if (is_last_frame) {
@@ -2531,28 +2420,18 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelBuffer(
     return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
                          "Frame input already closed");
   }
-  size_t xsize, ysize;
-  if (GetCurrentDimensions(frame_settings, xsize, ysize) != JXL_ENC_SUCCESS) {
-    return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_GENERIC,
-                         "bad dimensions");
-  }
   JxlPixelFormat ec_format = *pixel_format;
   ec_format.num_channels = 1;
   if (JXL_ENC_SUCCESS !=
       VerifyInputBitDepth(frame_settings->values.image_bit_depth, ec_format)) {
     return JXL_API_ERROR_NOSET("Invalid input bit depth");
   }
-  size_t bits_per_sample = GetBitDepth(
-      frame_settings->values.image_bit_depth,
-      frame_settings->enc->metadata.m.extra_channel_info[index], ec_format);
   const uint8_t* uint8_buffer = reinterpret_cast<const uint8_t*>(buffer);
   auto queued_frame = frame_settings->enc->input_queue.back().frame.get();
-  if (!jxl::ConvertFromExternal(jxl::Bytes(uint8_buffer, size), xsize, ysize,
-                                bits_per_sample, ec_format, 0,
-                                frame_settings->enc->thread_pool.get(),
-                                &queued_frame->frame.extra_channels()[index])) {
+  if (!queued_frame->frame_data.SetFromBuffer(1 + index, uint8_buffer, size,
+                                              ec_format)) {
     return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
-                         "Failed to set buffer for extra channel");
+                         "provided image buffer too small");
   }
   queued_frame->ec_initialized[index] = 1;
 

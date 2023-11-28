@@ -25,7 +25,9 @@
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_fast_lossless.h"
-#include "lib/jxl/enc_frame.h"
+#include "lib/jxl/enc_params.h"
+#include "lib/jxl/image_bundle.h"
+#include "lib/jxl/jpeg/jpeg_data.h"
 #include "lib/jxl/memory_manager_internal.h"
 #include "lib/jxl/padded_bytes.h"
 
@@ -142,80 +144,152 @@ constexpr std::array<unsigned char, 32> kContainerHeader = {
 constexpr std::array<unsigned char, 8> kLevelBoxHeader = {0,   0,   0,   0x9,
                                                           'j', 'x', 'l', 'l'};
 
+static JXL_INLINE size_t BitsPerChannel(JxlDataType data_type) {
+  switch (data_type) {
+    case JXL_TYPE_UINT8:
+      return 8;
+    case JXL_TYPE_UINT16:
+      return 16;
+    case JXL_TYPE_FLOAT:
+      return 32;
+    case JXL_TYPE_FLOAT16:
+      return 16;
+    default:
+      return 0;  // signals unhandled JxlDataType
+  }
+}
+
+static JXL_INLINE size_t BytesPerPixel(JxlPixelFormat format) {
+  return format.num_channels * BitsPerChannel(format.data_type) / 8;
+}
+
+using ScopedInputBuffer =
+    std::unique_ptr<const void, std::function<void(const void*)>>;
+
+static JXL_INLINE ScopedInputBuffer
+GetColorBuffer(JxlChunkedFrameInputSource& input, size_t xpos, size_t ypos,
+               size_t xsize, size_t ysize, size_t* row_offset) {
+  return ScopedInputBuffer(
+      input.get_color_channel_data_at(input.opaque, xpos, ypos, xsize, ysize,
+                                      row_offset),
+      [&input](const void* p) { input.release_buffer(input.opaque, p); });
+}
+
+static JXL_INLINE ScopedInputBuffer GetExtraChannelBuffer(
+    JxlChunkedFrameInputSource& input, size_t ec_index, size_t xpos,
+    size_t ypos, size_t xsize, size_t ysize, size_t* row_offset) {
+  return ScopedInputBuffer(
+      input.get_extra_channel_data_at(input.opaque, ec_index, xpos, ypos, xsize,
+                                      ysize, row_offset),
+      [&input](const void* p) { input.release_buffer(input.opaque, p); });
+}
+
 // Common adapter for an existing frame input source or a whole-image input
-// buffer.
+// buffer or a parsed JPEG file.
 class JxlEncoderChunkedFrameAdapter {
  public:
+  JxlEncoderChunkedFrameAdapter(size_t xs, size_t ys, size_t num_extra_channels)
+      : xsize(xs), ysize(ys), channels_(1 + num_extra_channels) {}
+
   void SetInputSource(JxlChunkedFrameInputSource input_source) {
     input_source_ = input_source;
+    has_input_source_ = true;
   }
 
-  bool SetFromBuffer(const uint8_t* buffer, size_t size, JxlPixelFormat format,
-                     size_t xsize, size_t ysize) {
-    buffer_ = buffer;
-    format_ = format;
-    xsize_ = xsize;
-    ysize_ = ysize;
-    if (format.data_type == JXL_TYPE_UINT8) {
-      bytes_per_pixel_ = format_.num_channels;
-    } else if (format.data_type == JXL_TYPE_UINT16 ||
-               format.data_type == JXL_TYPE_FLOAT16) {
-      bytes_per_pixel_ = 2 * format.num_channels;
-    } else if (format.data_type == JXL_TYPE_FLOAT) {
-      bytes_per_pixel_ = 4 * format.num_channels;
-    } else {
+  bool SetFromBuffer(size_t channel, const uint8_t* buffer, size_t size,
+                     JxlPixelFormat format) {
+    if (channel >= channels_.size()) return false;
+    if (!channels_[channel].SetFromBuffer(buffer, size, format, xsize, ysize)) {
       return false;
     }
-    const size_t last_row_size = xsize_ * bytes_per_pixel_;
-    const size_t align = format_.align;
-    stride_ = (align > 1 ? jxl::DivCeil(last_row_size, align) * align
-                         : last_row_size);
-    const size_t min_buffer_size = stride_ * (ysize_ - 1) + last_row_size;
-    return min_buffer_size <= size;
+    if (channel > 0) channels_[channel].CopyBuffer();
+    return true;
+  }
+
+  // TODO(szabadka) Move instead of copy.
+  void SetJPEGData(const jpeg::JPEGData jpeg_data) {
+    jpeg_data_ = jpeg_data;
+    has_jpeg_data_ = true;
+  }
+  bool IsJPEG() const { return has_jpeg_data_; }
+
+  jpeg::JPEGData&& TakeJPEGData() {
+    JXL_ASSERT(has_jpeg_data_);
+    return std::move(jpeg_data_);
   }
 
   JxlChunkedFrameInputSource GetInputSource() {
-    if (buffer_) {
-      return JxlChunkedFrameInputSource{
-          this,
-          METHOD_TO_C_CALLBACK(
-              &JxlEncoderChunkedFrameAdapter::GetColorChannelsPixelFormat),
-          METHOD_TO_C_CALLBACK(
-              &JxlEncoderChunkedFrameAdapter::GetColorChannelDataAt),
-          METHOD_TO_C_CALLBACK(
-              &JxlEncoderChunkedFrameAdapter::GetExtraChannelPixelFormat),
-          METHOD_TO_C_CALLBACK(
-              &JxlEncoderChunkedFrameAdapter::GetExtraChannelDataAt),
-          METHOD_TO_C_CALLBACK(
-              &JxlEncoderChunkedFrameAdapter::ReleaseCurrentData)};
+    if (has_input_source_) {
+      return input_source_;
     }
-    return input_source_;
+    return JxlChunkedFrameInputSource{
+        this,
+        METHOD_TO_C_CALLBACK(
+            &JxlEncoderChunkedFrameAdapter::GetColorChannelsPixelFormat),
+        METHOD_TO_C_CALLBACK(
+            &JxlEncoderChunkedFrameAdapter::GetColorChannelDataAt),
+        METHOD_TO_C_CALLBACK(
+            &JxlEncoderChunkedFrameAdapter::GetExtraChannelPixelFormat),
+        METHOD_TO_C_CALLBACK(
+            &JxlEncoderChunkedFrameAdapter::GetExtraChannelDataAt),
+        METHOD_TO_C_CALLBACK(
+            &JxlEncoderChunkedFrameAdapter::ReleaseCurrentData)};
   }
 
-  bool HasBuffer() const { return buffer_; }
+  bool CopyBuffers() {
+    if (has_input_source_) {
+      JxlPixelFormat format{4, JXL_TYPE_UINT8, JXL_NATIVE_ENDIAN, 0};
+      input_source_.get_color_channels_pixel_format(input_source_.opaque,
+                                                    &format);
+      size_t row_offset;
+      {
+        auto buffer =
+            GetColorBuffer(input_source_, 0, 0, xsize, ysize, &row_offset);
+        if (!buffer) return false;
+        channels_[0].CopyFromBuffer(buffer.get(), format, xsize, ysize,
+                                    row_offset);
+      }
+      for (size_t ec = 0; ec + 1 < channels_.size(); ++ec) {
+        input_source_.get_extra_channel_pixel_format(input_source_.opaque, ec,
+                                                     &format);
+        auto buffer = GetExtraChannelBuffer(input_source_, ec, 0, 0, xsize,
+                                            ysize, &row_offset);
+        if (!buffer) continue;
+        channels_[1 + ec].CopyFromBuffer(buffer.get(), format, xsize, ysize,
+                                         row_offset);
+      }
+      has_input_source_ = false;
+    } else {
+      channels_[0].CopyBuffer();
+    }
+    return true;
+  }
+
+  const size_t xsize;
+  const size_t ysize;
 
  private:
   void GetColorChannelsPixelFormat(JxlPixelFormat* pixel_format) {
-    *pixel_format = format_;
+    *pixel_format = channels_[0].format_;
   }
 
   const void* GetColorChannelDataAt(size_t xpos, size_t ypos, size_t xsize,
                                     size_t ysize, size_t* row_offset) {
-    JXL_ASSERT(ypos + ysize <= ysize_);
-    JXL_ASSERT(xpos + xsize <= xsize_);
-    *row_offset = stride_;
-    return buffer_ + ypos * stride_ + xpos * bytes_per_pixel_;
+    return channels_[0].GetDataAt(xpos, ypos, xsize, ysize, row_offset);
   }
 
   void GetExtraChannelPixelFormat(size_t ec_index,
                                   JxlPixelFormat* pixel_format) {
-    JXL_ABORT("Not implemented.");
+    JXL_ASSERT(1 + ec_index < channels_.size());
+    *pixel_format = channels_[1 + ec_index].format_;
   }
 
   const void* GetExtraChannelDataAt(size_t ec_index, size_t xpos, size_t ypos,
                                     size_t xsize, size_t ysize,
                                     size_t* row_offset) {
-    JXL_ABORT("Not implemented");
+    JXL_ASSERT(1 + ec_index < channels_.size());
+    return channels_[1 + ec_index].GetDataAt(xpos, ypos, xsize, ysize,
+                                             row_offset);
   }
 
   void ReleaseCurrentData(const void* buffer) {
@@ -223,18 +297,77 @@ class JxlEncoderChunkedFrameAdapter {
     // GetExtraChannelDataAt. Therefore, no cleanup is required here.
   }
 
-  JxlChunkedFrameInputSource input_source_;
-  const uint8_t* buffer_ = nullptr;
-  JxlPixelFormat format_;
-  size_t xsize_;
-  size_t ysize_;
-  size_t bytes_per_pixel_;
-  size_t stride_;
+  JxlChunkedFrameInputSource input_source_ = {};
+  bool has_input_source_ = false;
+  jpeg::JPEGData jpeg_data_;
+  bool has_jpeg_data_ = false;
+  struct Channel {
+    const uint8_t* buffer_ = nullptr;
+    size_t buffer_size_;
+    JxlPixelFormat format_;
+    size_t xsize_;
+    size_t ysize_;
+    size_t bytes_per_pixel_;
+    size_t stride_;
+    std::vector<uint8_t> copy_;
+
+    void SetFormatAndDimensions(JxlPixelFormat format, size_t xsize,
+                                size_t ysize) {
+      format_ = format;
+      xsize_ = xsize;
+      ysize_ = ysize;
+      bytes_per_pixel_ = BytesPerPixel(format_);
+      const size_t last_row_size = xsize_ * bytes_per_pixel_;
+      const size_t align = format_.align;
+      stride_ = (align > 1 ? jxl::DivCeil(last_row_size, align) * align
+                           : last_row_size);
+    }
+
+    bool SetFromBuffer(const uint8_t* buffer, size_t size,
+                       JxlPixelFormat format, size_t xsize, size_t ysize) {
+      SetFormatAndDimensions(format, xsize, ysize);
+      buffer_ = buffer;
+      buffer_size_ = size;
+      const size_t min_buffer_size =
+          stride_ * (ysize_ - 1) + xsize_ * bytes_per_pixel_;
+      return min_buffer_size <= size;
+    }
+
+    void CopyFromBuffer(const void* buffer, JxlPixelFormat format, size_t xsize,
+                        size_t ysize, size_t row_offset) {
+      SetFormatAndDimensions(format, xsize, ysize);
+      buffer_ = nullptr;
+      copy_.resize(ysize * stride_);
+      for (size_t y = 0; y < ysize; ++y) {
+        memcpy(copy_.data() + y * stride_,
+               reinterpret_cast<const uint8_t*>(buffer) + y * row_offset,
+               stride_);
+      }
+    }
+
+    void CopyBuffer() {
+      if (buffer_) {
+        copy_ = std::vector<uint8_t>(buffer_, buffer_ + buffer_size_);
+        buffer_ = nullptr;
+      }
+    }
+
+    const void* GetDataAt(size_t xpos, size_t ypos, size_t xsize, size_t ysize,
+                          size_t* row_offset) const {
+      const uint8_t* buffer = copy_.empty() ? buffer_ : copy_.data();
+      JXL_ASSERT(ypos + ysize <= ysize_);
+      JXL_ASSERT(xpos + xsize <= xsize_);
+      JXL_ASSERT(buffer);
+      *row_offset = stride_;
+      return buffer + ypos * stride_ + xpos * bytes_per_pixel_;
+    }
+  };
+  std::vector<Channel> channels_;
 };
 
 struct JxlEncoderQueuedFrame {
   JxlEncoderFrameSettingsValues option_values;
-  ImageBundle frame;
+  JxlEncoderChunkedFrameAdapter frame_data;
   std::vector<uint8_t> ec_initialized;
 };
 

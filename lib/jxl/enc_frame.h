@@ -11,6 +11,7 @@
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_params.h"
+#include "lib/jxl/encode_internal.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/image_bundle.h"
 
@@ -53,6 +54,20 @@ struct FrameInfo {
   // type alpha.
   int alpha_channel = -1;
 
+  FrameOrigin origin{0, 0};
+
+  bool blend = false;
+  BlendMode blendmode = BlendMode::kBlend;
+
+  JxlBitDepth image_bit_depth = {};
+
+  // Animation-related information, corresponding to the timecode and duration
+  // fields of the jxl::AnimationFrame of the jxl::FrameHeader.
+  uint32_t duration = 0;
+  uint32_t timecode = 0;
+
+  std::string name;
+
   // If non-empty, uses this blending info for the extra channels, otherwise
   // automatically chooses it. The encoder API will fill this vector with the
   // extra channel info and allows more options. The non-API cjxl leaves it
@@ -67,6 +82,13 @@ Status ParamsPostInit(CompressParams* p);
 // be processed in parallel by `pool`. metadata is the ImageMetadata encoded in
 // the codestream, and must be used for the FrameHeaders, do not use
 // ib.metadata.
+Status EncodeFrame(const CompressParams& cparams_orig,
+                   const FrameInfo& frame_info, const CodecMetadata* metadata,
+                   JxlEncoderChunkedFrameAdapter& frame_data,
+                   PassesEncoderState* passes_enc_state,
+                   const JxlCmsInterface& cms, ThreadPool* pool,
+                   BitWriter* writer, AuxOut* aux_out);
+
 Status EncodeFrame(const CompressParams& cparams_orig,
                    const FrameInfo& frame_info, const CodecMetadata* metadata,
                    const ImageBundle& ib, PassesEncoderState* passes_enc_state,

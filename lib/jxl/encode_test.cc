@@ -14,7 +14,9 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <mutex>
 #include <ostream>
+#include <set>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -1625,6 +1627,7 @@ class JxlChunkedFrameInputSourceAdapter {
       jxl::extras::PackedImage extra_channel)
       : colorchannel_(std::move(color_channel)),
         extra_channel_(std::move(extra_channel)) {}
+  ~JxlChunkedFrameInputSourceAdapter() { EXPECT_TRUE(active_buffers_.empty()); }
 
   void GetColorChannelsPixelFormat(JxlPixelFormat* pixel_format) {
     *pixel_format = colorchannel_.format;
@@ -1632,7 +1635,10 @@ class JxlChunkedFrameInputSourceAdapter {
 
   const void* GetColorChannelDataAt(size_t xpos, size_t ypos, size_t xsize,
                                     size_t ysize, size_t* row_offset) {
-    return GetDataAt(colorchannel_, xpos, ypos, row_offset);
+    const void* p = GetDataAt(colorchannel_, xpos, ypos, row_offset);
+    std::lock_guard<std::mutex> lock(mtx_);
+    active_buffers_.insert(p);
+    return p;
   }
 
   void GetExtraChannelPixelFormat(size_t ec_index,
@@ -1647,12 +1653,17 @@ class JxlChunkedFrameInputSourceAdapter {
                                     size_t* row_offset) {
     // In this test, we we the same color channel data, so `ec_index` is never
     // used
-    return GetDataAt(extra_channel_, xpos, ypos, row_offset);
+    const void* p = GetDataAt(extra_channel_, xpos, ypos, row_offset);
+    std::lock_guard<std::mutex> lock(mtx_);
+    active_buffers_.insert(p);
+    return p;
   }
-
   void ReleaseCurrentData(const void* buffer) {
-    // No dynamic memory is allocated in GetColorChannelDataAt or
-    // GetExtraChannelDataAt. Therefore, no cleanup is required here.
+    std::lock_guard<std::mutex> lock(mtx_);
+    auto iter = active_buffers_.find(buffer);
+    if (iter != active_buffers_.end()) {
+      active_buffers_.erase(iter);
+    }
   }
 
   JxlChunkedFrameInputSource GetInputSource() {
@@ -1673,6 +1684,8 @@ class JxlChunkedFrameInputSourceAdapter {
  private:
   const jxl::extras::PackedImage colorchannel_;
   const jxl::extras::PackedImage extra_channel_;
+  std::mutex mtx_;
+  std::set<const void*> active_buffers_;
 };
 
 struct StreamingTestParam {
@@ -1744,6 +1757,9 @@ class EncoderStreamingTest : public testing::TestWithParam<StreamingTestParam> {
         .SetDataType(JXL_TYPE_UINT8)
         .SetChannels(num_channels)
         .SetAllBitDepths(bits_per_sample);
+    if (p.onegroup()) {
+      image.SetRowAlignment(128);
+    }
     image.AddFrame().RandomFill();
   }
   static void SetUpBasicInfo(JxlBasicInfo& basic_info, size_t xsize,
