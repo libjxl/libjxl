@@ -327,22 +327,6 @@ static gboolean stop_load(gpointer context, GError **error) {
   return TRUE;
 }
 
-static void draw_pixels(void *context, size_t x, size_t y, size_t num_pixels,
-                        const void *pixels) {
-  GdkPixbufJxlAnimation *decoder_state = context;
-
-  GdkPixbuf *output =
-      g_array_index(decoder_state->frames, GdkPixbufJxlAnimationFrame,
-                    decoder_state->frames->len - 1)
-          .data;
-
-  guchar *dst = gdk_pixbuf_get_pixels(output) +
-                decoder_state->pixel_format.num_channels * x +
-                gdk_pixbuf_get_rowstride(output) * y;
-
-  memcpy(dst, pixels, num_pixels * decoder_state->pixel_format.num_channels);
-}
-
 static gboolean load_increment(gpointer context, const guchar *buf, guint size,
                                GError **error) {
   GdkPixbufJxlAnimation *decoder_state = context;
@@ -502,12 +486,19 @@ static gboolean load_increment(gpointer context, const guchar *buf, guint size,
       }
 
       case JXL_DEC_NEED_IMAGE_OUT_BUFFER: {
-        if (JXL_DEC_SUCCESS !=
-            JxlDecoderSetImageOutCallback(decoder_state->decoder,
-                                          &decoder_state->pixel_format,
-                                          draw_pixels, decoder_state)) {
+        GdkPixbuf *output =
+            g_array_index(decoder_state->frames, GdkPixbufJxlAnimationFrame,
+                          decoder_state->frames->len - 1)
+                .data;
+        decoder_state->pixel_format.align = gdk_pixbuf_get_rowstride(output);
+        guchar *dst = gdk_pixbuf_get_pixels(output);
+        size_t num_pixels = decoder_state->xsize * decoder_state->ysize;
+        size_t size = num_pixels * decoder_state->pixel_format.num_channels;
+        if (JXL_DEC_SUCCESS != JxlDecoderSetImageOutBuffer(
+                                   decoder_state->decoder,
+                                   &decoder_state->pixel_format, dst, size)) {
           g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED,
-                      "JxlDecoderSetImageOutCallback failed");
+                      "JxlDecoderSetImageOutBuffer failed");
           return FALSE;
         }
         break;
@@ -687,6 +678,7 @@ static gboolean jxl_image_saver(FILE *f, GdkPixbuf *pixbuf, gchar **keys,
     return FALSE;
   }
 
+  // TODO(firsching): use API function for this once it is added in #2976.
   if (quality > 99) {
     output_info.uses_original_profile = JXL_TRUE;
     distance = 0;
