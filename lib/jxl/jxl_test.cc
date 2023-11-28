@@ -44,7 +44,6 @@
 #include "lib/jxl/test_image.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"
-#include "tools/box/box.h"
 
 namespace jxl {
 
