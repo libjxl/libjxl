@@ -1497,6 +1497,13 @@ JxlEncoderStatus JxlEncoderSetExtraChannelDistance(
   return JxlErrorOrStatus::Success();
 }
 
+float JxlEncoderDistanceFromQuality(float quality) {
+  return quality >= 100.0 ? 0.0
+         : quality >= 30
+             ? 0.1 + (100 - quality) * 0.09
+             : 53.0 / 3000.0 * quality * quality - 23.0 / 20.0 * quality + 25.0;
+}
+
 JxlEncoderStatus JxlEncoderFrameSettingsSetOption(
     JxlEncoderFrameSettings* frame_settings, JxlEncoderFrameSettingId option,
     int64_t value) {
