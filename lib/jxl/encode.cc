@@ -180,6 +180,21 @@ bool JxlEncoderOutputProcessorWrapper::SetAvailOut(uint8_t** next_out,
   return true;
 }
 
+void JxlEncoderOutputProcessorWrapper::CopyOutput(std::vector<uint8_t>& output,
+                                                  uint8_t* next_out,
+                                                  size_t& avail_out) {
+  while (HasOutputToWrite()) {
+    SetAvailOut(&next_out, &avail_out);
+    if (avail_out == 0) {
+      size_t offset = next_out - output.data();
+      output.resize(output.size() * 2);
+      next_out = output.data() + offset;
+      avail_out = output.size() - offset;
+    }
+  }
+  output.resize(output.size() - avail_out);
+}
+
 void JxlEncoderOutputProcessorWrapper::ReleaseBuffer(size_t bytes_used) {
   JXL_ASSERT(has_buffer_);
   has_buffer_ = false;
@@ -383,21 +398,6 @@ jxl::Status JxlEncoderStruct::AppendBox(const jxl::BoxType& type,
   }
   output_processor.Seek(box_contents_end);
   output_processor.SetFinalizedPosition();
-  return jxl::OkStatus();
-}
-
-template <typename T>
-jxl::Status AppendData(JxlEncoderOutputProcessorWrapper& output_processor,
-                       const T& data) {
-  size_t size = std::end(data) - std::begin(data);
-  size_t written = 0;
-  while (written < size) {
-    JXL_ASSIGN_OR_RETURN(auto buffer,
-                         output_processor.GetBuffer(1, size - written));
-    size_t n = std::min(size - written, buffer.size());
-    buffer.append(data.data() + written, n);
-    written += n;
-  }
   return jxl::OkStatus();
 }
 
@@ -693,7 +693,7 @@ bool EncodeFrameIndexBox(const jxl::JxlEncoderFrameIndexBox& frame_index_box,
 }  // namespace
 
 jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
-  jxl::PaddedBytes bytes;
+  jxl::PaddedBytes header_bytes;
 
   jxl::JxlEncoderQueuedInput& input = input_queue[0];
 
@@ -748,12 +748,11 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
     writer.ZeroPadToByte();
     allotment.ReclaimAndCharge(&writer, jxl::kLayerHeader, aux_out);
 
+    header_bytes = std::move(writer).TakeBytes();
+
     // Not actually the end of frame, but the end of metadata/ICC, but helps
     // the next frame to start here for indexing purposes.
-    codestream_bytes_written_end_of_frame +=
-        jxl::DivCeil(writer.BitsWritten(), 8);
-
-    bytes = std::move(writer).TakeBytes();
+    codestream_bytes_written_end_of_frame += header_bytes.size();
 
     if (MustUseContainer()) {
       // Add "JXL " and ftyp box.
@@ -784,15 +783,15 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
 
       if (partial_header) {
         JXL_RETURN_IF_ERROR(AppendBox(
-            jxl::MakeBoxType("jxlp"), /*unbounded=*/false, bytes.size() + 4,
-            [&]() {
-              JXL_ASSIGN_OR_RETURN(
-                  auto buffer, output_processor.GetBuffer(bytes.size() + 4));
+            jxl::MakeBoxType("jxlp"), /*unbounded=*/false,
+            header_bytes.size() + 4, [&]() {
+              JXL_ASSIGN_OR_RETURN(auto buffer, output_processor.GetBuffer(
+                                                    header_bytes.size() + 4));
               WriteJxlpBoxCounter(jxlp_counter++, /*last=*/false, buffer);
-              buffer.append(bytes);
+              buffer.append(header_bytes);
               return jxl::OkStatus();
             }));
-        bytes.clear();
+        header_bytes.clear();
       }
 
       if (store_jpeg_metadata && !jpeg_metadata.empty()) {
@@ -873,8 +872,7 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
     }
     const size_t frame_codestream_start = output_processor.CurrentPosition();
 
-    JXL_RETURN_IF_ERROR(AppendData(output_processor, bytes));
-    bytes.clear();
+    JXL_RETURN_IF_ERROR(AppendData(output_processor, header_bytes));
 
     if (input_frame) {
       jxl::PassesEncoderState enc_state;
@@ -931,24 +929,13 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
       frame_info.timecode = timecode;
       frame_info.name = input_frame->option_values.frame_name;
 
-      jxl::BitWriter writer;
       if (!jxl::EncodeFrame(input_frame->option_values.cparams, frame_info,
                             &metadata, input_frame->frame_data, &enc_state, cms,
-                            thread_pool.get(), &writer,
+                            thread_pool.get(), &output_processor,
                             input_frame->option_values.aux_out)) {
         return JXL_API_ERROR(this, JXL_ENC_ERR_GENERIC,
                              "Failed to encode frame");
       }
-      codestream_bytes_written_beginning_of_frame =
-          codestream_bytes_written_end_of_frame;
-      codestream_bytes_written_end_of_frame +=
-          jxl::DivCeil(writer.BitsWritten(), 8);
-
-      // Possibly bytes already contains the codestream header: in case this is
-      // the first frame, and the codestream header was not encoded as jxlp
-      // above.
-      JXL_RETURN_IF_ERROR(
-          AppendData(output_processor, std::move(writer).TakeBytes()));
     } else {
       JXL_CHECK(fast_lossless_frame);
       auto runner = +[](void* void_pool, void* opaque, void fun(void*, size_t),
@@ -965,6 +952,9 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
     const size_t frame_codestream_end = output_processor.CurrentPosition();
     const size_t frame_codestream_size =
         frame_codestream_end - frame_codestream_start;
+
+    codestream_bytes_written_end_of_frame +=
+        frame_codestream_size - header_bytes.size();
 
     if (MustUseContainer()) {
       output_processor.Seek(frame_start_pos);
@@ -1876,7 +1866,6 @@ void JxlEncoderReset(JxlEncoder* enc) {
   enc->num_queued_frames = 0;
   enc->num_queued_boxes = 0;
   enc->encoder_options.clear();
-  enc->codestream_bytes_written_beginning_of_frame = 0;
   enc->codestream_bytes_written_end_of_frame = 0;
   enc->wrote_bytes = false;
   enc->jxlp_counter = 0;

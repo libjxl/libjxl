@@ -87,7 +87,8 @@ Status EncodeFrame(const CompressParams& cparams_orig,
                    JxlEncoderChunkedFrameAdapter& frame_data,
                    PassesEncoderState* passes_enc_state,
                    const JxlCmsInterface& cms, ThreadPool* pool,
-                   BitWriter* writer, AuxOut* aux_out);
+                   JxlEncoderOutputProcessorWrapper* output_processor,
+                   AuxOut* aux_out);
 
 Status EncodeFrame(const CompressParams& cparams_orig,
                    const FrameInfo& frame_info, const CodecMetadata* metadata,

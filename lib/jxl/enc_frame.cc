@@ -1086,7 +1086,8 @@ Status EncodeFrame(const CompressParams& cparams_orig,
                    JxlEncoderChunkedFrameAdapter& frame_data,
                    PassesEncoderState* passes_enc_state,
                    const JxlCmsInterface& cms, ThreadPool* pool,
-                   BitWriter* writer, AuxOut* aux_out) {
+                   JxlEncoderOutputProcessorWrapper* output_processor,
+                   AuxOut* aux_out) {
   CompressParams cparams = cparams_orig;
   if (cparams.speed_tier == SpeedTier::kGlacier && !cparams.IsLossless()) {
     cparams.speed_tier = SpeedTier::kTortoise;
@@ -1139,14 +1140,18 @@ Status EncodeFrame(const CompressParams& cparams_orig,
     JXL_RETURN_IF_ERROR(RunOnPool(
         pool, 0, all_params.size(), ThreadPool::NoInit,
         [&](size_t task, size_t) {
-          BitWriter w;
+          std::vector<uint8_t> output(64);
+          uint8_t* next_out = output.data();
+          size_t avail_out = output.size();
+          JxlEncoderOutputProcessorWrapper local_output;
+          local_output.SetAvailOut(&next_out, &avail_out);
           PassesEncoderState state;
           if (!EncodeFrame(all_params[task], frame_info, metadata, frame_data,
-                           &state, cms, nullptr, &w, aux_out)) {
+                           &state, cms, nullptr, &local_output, aux_out)) {
             num_errors.fetch_add(1, std::memory_order_relaxed);
             return;
           }
-          size[task] = w.BitsWritten();
+          size[task] = local_output.CurrentPosition();
         },
         "Compress kGlacier"));
     JXL_RETURN_IF_ERROR(num_errors.load(std::memory_order_relaxed) == 0);
@@ -1430,14 +1435,15 @@ Status EncodeFrame(const CompressParams& cparams_orig,
       lossy_frame_encoder.State(), cms, pool, aux_out,
       /* do_color=*/frame_header->encoding == FrameEncoding::kModular));
 
-  writer->AppendByteAligned(lossy_frame_encoder.State()->special_frames);
+  BitWriter writer;
+  writer.AppendByteAligned(lossy_frame_encoder.State()->special_frames);
   frame_header->UpdateFlag(
       lossy_frame_encoder.State()->shared.image_features.patches.HasAny(),
       FrameHeader::kPatches);
   frame_header->UpdateFlag(
       lossy_frame_encoder.State()->shared.image_features.splines.HasAny(),
       FrameHeader::kSplines);
-  JXL_RETURN_IF_ERROR(WriteFrameHeader(*frame_header, writer, aux_out));
+  JXL_RETURN_IF_ERROR(WriteFrameHeader(*frame_header, &writer, aux_out));
 
   const size_t num_passes =
       passes_enc_state->progressive_splitter.GetNumPasses();
@@ -1646,8 +1652,10 @@ Status EncodeFrame(const CompressParams& cparams_orig,
   }
 
   JXL_RETURN_IF_ERROR(
-      WriteGroupOffsets(group_codes, permutation_ptr, writer, aux_out));
-  writer->AppendByteAligned(group_codes);
+      WriteGroupOffsets(group_codes, permutation_ptr, &writer, aux_out));
+  writer.AppendByteAligned(group_codes);
+  PaddedBytes frame_bytes = std::move(writer).TakeBytes();
+  JXL_RETURN_IF_ERROR(AppendData(*output_processor, frame_bytes));
 
   return true;
 }
@@ -1693,8 +1701,18 @@ Status EncodeFrame(const CompressParams& cparams_orig,
   fi.duration = ib.duration;
   fi.timecode = ib.timecode;
   fi.name = ib.name;
-  return EncodeFrame(cparams_orig, fi, metadata, frame_data, passes_enc_state,
-                     cms, pool, writer, aux_out);
+  std::vector<uint8_t> output(64);
+  uint8_t* next_out = output.data();
+  size_t avail_out = output.size();
+  JxlEncoderOutputProcessorWrapper output_processor;
+  output_processor.SetAvailOut(&next_out, &avail_out);
+  JXL_RETURN_IF_ERROR(EncodeFrame(cparams_orig, fi, metadata, frame_data,
+                                  passes_enc_state, cms, pool,
+                                  &output_processor, aux_out));
+  output_processor.SetFinalizedPosition();
+  output_processor.CopyOutput(output, next_out, avail_out);
+  writer->AppendByteAligned(Bytes(output));
+  return true;
 }
 
 }  // namespace jxl
