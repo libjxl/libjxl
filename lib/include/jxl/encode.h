@@ -1394,7 +1394,7 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetFrameLossless(
 
 /**
  * Sets the distance level for lossy compression: target max butteraugli
- * distance, lower = higher quality. Range: 0 .. 15.
+ * distance, lower = higher quality. Range: 0 .. 25.
  * 0.0 = mathematically lossless (however, use JxlEncoderSetFrameLossless
  * instead to use true lossless, as setting distance to 0 alone is not the only
  * requirement). 1.0 = visually lossless. Recommended range: 0.5 .. 3.0. Default
@@ -1426,34 +1426,40 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelDistance(
     JxlEncoderFrameSettings* frame_settings, size_t index, float distance);
 
 /**
- * Map Image Quality to Distance for JPEG XL Encoding
+ * Maps JPEG-style quality factor to distance.
  *
- * This function assists in setting the desired image quality for JPEG XL
- * encoding by converting a 'quality' value into a 'distance' parameter, which
- * is used in @ref JxlEncoderSetFrameDistance and
- * @ref JxlEncoderSetExtraChannelDistance. The 'distance' influences the level
- * of compression, with lower values indicating higher quality:
- * - 0.0 implies lossless compression.
+ * This function takes in input a JPEG-style quality factor `quality` and
+ * produces as output a `distance` value suitable to be used with @ref
+ * JxlEncoderSetFrameDistance and
+ * @ref JxlEncoderSetExtraChannelDistance.
+ *
+ * The `distance` value influences the level of compression, with lower values
+ * indicating higher quality:
+ * - 0.0 implies lossless compression (however, note that calling @ref
+ * JxlEncoderSetFrameLossless is required).
  * - 1.0 represents a visually lossy compression, which is also the default
  * setting.
  *
- * The 'quality' parameter, ranging up to 100, is inversely related to
+ * The `quality` parameter, ranging up to 100, is inversely related to
  * 'distance':
- * - A 'quality' of 100.0 maps to a 'distance' of 0.0 (lossless).
- * - A 'quality' of 90.0 corresponds to a 'distance' of 1.0.
+ * - A `quality` of 100.0 maps to a `distance` of 0.0 (lossless).
+ * - A `quality` of 90.0 corresponds to a `distance` of 1.0.
  *
  * Recommended Range:
- * - 'distance': 0.5 to 3.0.
- * - Corresponding 'quality': 95.556 (approx) to 67.778 (approx).
+ * - `distance`: 0.5 to 3.0.
+ * - corresponding `quality`: approximately 96 to 68.
  *
  * Allowed Range:
- * - 'distance': 0.0 to 15.0.
- * - Corresponding 'duality': 100.0 to 10.337 (approx).
+ * - `distance`: 0.0 to 25.0.
+ * - corresponding `quality`: 100.0 to 0.0.
  *
- * Note: The 'quality' value is roughly analogous to those used in other image
- * compression tools, but it is not directly comparable. The perception of
- * 'quality' and the resultant file sizes can vary significantly across
- * different codecs at the same 'quality' setting.
+ * Note: the `quality` parameter has no consistent psychovisual meaning
+ * across different codecs and libraries. Using the mapping defined by @ref
+ * JxlEncoderDistanceFromQuality will result in a visual quality roughly
+ * equivalent to what would be obtained with `libjpeg-turbo` with the same
+ * `quality` parameter, but that is by no means guaranteed; do not assume that
+ * the same quality value will result in similar file sizes and image quality
+ * across different codecs.
  */
 JXL_EXPORT float JxlEncoderDistanceFromQuality(float quality);
 
