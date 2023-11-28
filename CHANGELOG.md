@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
    of extra channels (like alpha) separately.
  - encoder API: new api functions for streaming encoding:
   - `JxlEncoderSetOutputProcessor`
-  - `JxlEncoderFlushInput` 
+  - `JxlEncoderFlushInput`
   - `JxlEncoderOutputProcessor` struct
   - `JxlEncoderSetOutputCallback`
   - `JxlChunkedFrameInputSource` struct
@@ -27,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
  - cjxl can now be used to explicitly add/update/strip Exif/XMP/JUMBF metadata using
    the decoder-hints syntax, e.g. `cjxl input.ppm -x exif=input.exif output.jxl`
  - djxl can now be used to extract Exif/XMP/JUMBF metadata
+ - encoder API: new function `JxlEncoderDistanceFromQuality` for convenience to
+   calculate a `distance` given a `quality`
 
 ### Removed
  - API: the Butteraugli API (`jxl/butteraugli.h`) was removed.

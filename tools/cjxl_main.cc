@@ -658,12 +658,7 @@ void SetDistanceFromFlags(CommandLineParser* cmdline, CompressArgs* args,
       std::cerr << "Must not set both --distance and --quality." << std::endl;
       exit(EXIT_FAILURE);
     }
-    double distance = args->quality >= 100 ? 0.0
-                      : args->quality >= 30
-                          ? 0.1 + (100 - args->quality) * 0.09
-                          : 53.0 / 3000.0 * args->quality * args->quality -
-                                23.0 / 20.0 * args->quality + 25.0;
-    args->distance = distance;
+    args->distance = JxlEncoderDistanceFromQuality(args->quality);
     distance_set = true;
   }
 
