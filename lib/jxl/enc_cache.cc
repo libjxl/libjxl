@@ -129,9 +129,6 @@ Status InitializePassesEncoder(const Image3F& opsin, const JxlCmsInterface& cms,
       }
       ib.SetExtraChannels(std::move(extra_channels));
     }
-    std::unique_ptr<PassesEncoderState> state =
-        jxl::make_unique<PassesEncoderState>();
-
     auto special_frame = std::unique_ptr<BitWriter>(new BitWriter());
     FrameInfo dc_frame_info;
     dc_frame_info.frame_type = FrameType::kDCFrame;
@@ -139,8 +136,8 @@ Status InitializePassesEncoder(const Image3F& opsin, const JxlCmsInterface& cms,
     dc_frame_info.ib_needs_color_transform = false;
     dc_frame_info.save_before_color_transform = true;  // Implicitly true
     AuxOut dc_aux_out;
-    JXL_CHECK(EncodeFrame(cparams, dc_frame_info, shared.metadata, ib,
-                          state.get(), cms, pool, special_frame.get(),
+    JXL_CHECK(EncodeFrame(cparams, dc_frame_info, shared.metadata, ib, cms,
+                          pool, special_frame.get(),
                           aux_out ? &dc_aux_out : nullptr));
     if (aux_out) {
       for (const auto& l : dc_aux_out.layers) {

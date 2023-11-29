@@ -183,7 +183,6 @@ Status ReadICC(BitReader* JXL_RESTRICT reader,
 // Compresses pixels from `io` (given in any ColorEncoding).
 // `io->metadata.m.original` must be set.
 Status EncodeFile(const CompressParams& params, const CodecInOut* io,
-                  PassesEncoderState* passes_enc_state,
                   std::vector<uint8_t>* compressed, ThreadPool* pool = nullptr);
 
 }  // namespace test

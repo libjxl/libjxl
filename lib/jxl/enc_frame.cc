@@ -1084,7 +1084,6 @@ Status ParamsPostInit(CompressParams* p) {
 Status EncodeFrame(const CompressParams& cparams_orig,
                    const FrameInfo& frame_info, const CodecMetadata* metadata,
                    JxlEncoderChunkedFrameAdapter& frame_data,
-                   PassesEncoderState* passes_enc_state,
                    const JxlCmsInterface& cms, ThreadPool* pool,
                    JxlEncoderOutputProcessorWrapper* output_processor,
                    AuxOut* aux_out) {
@@ -1145,9 +1144,8 @@ Status EncodeFrame(const CompressParams& cparams_orig,
           size_t avail_out = output.size();
           JxlEncoderOutputProcessorWrapper local_output;
           local_output.SetAvailOut(&next_out, &avail_out);
-          PassesEncoderState state;
           if (!EncodeFrame(all_params[task], frame_info, metadata, frame_data,
-                           &state, cms, nullptr, &local_output, aux_out)) {
+                           cms, nullptr, &local_output, aux_out)) {
             num_errors.fetch_add(1, std::memory_order_relaxed);
             return;
           }
@@ -1244,9 +1242,13 @@ Status EncodeFrame(const CompressParams& cparams_orig,
 
   ib.VerifyMetadata();
 
+  auto passes_enc_state = jxl::make_unique<PassesEncoderState>();
   passes_enc_state->special_frames.clear();
 
-  if (cparams.qprogressive_mode) {
+  if (cparams.custom_progressive_mode) {
+    passes_enc_state->progressive_splitter.SetProgressiveMode(
+        *cparams.custom_progressive_mode);
+  } else if (cparams.qprogressive_mode) {
     passes_enc_state->progressive_splitter.SetProgressiveMode(
         ProgressiveMode{progressive_passes_dc_quant_ac_full_ac});
   } else if (cparams.progressive_mode) {
@@ -1352,8 +1354,8 @@ Status EncodeFrame(const CompressParams& cparams_orig,
     return true;
   };
 
-  LossyFrameEncoder lossy_frame_encoder(cparams, *frame_header,
-                                        passes_enc_state, cms, pool, aux_out);
+  LossyFrameEncoder lossy_frame_encoder(
+      cparams, *frame_header, passes_enc_state.get(), cms, pool, aux_out);
   std::unique_ptr<ModularFrameEncoder> modular_frame_encoder =
       jxl::make_unique<ModularFrameEncoder>(*frame_header, cparams);
 
@@ -1662,9 +1664,8 @@ Status EncodeFrame(const CompressParams& cparams_orig,
 
 Status EncodeFrame(const CompressParams& cparams_orig,
                    const FrameInfo& frame_info, const CodecMetadata* metadata,
-                   const ImageBundle& ib, PassesEncoderState* passes_enc_state,
-                   const JxlCmsInterface& cms, ThreadPool* pool,
-                   BitWriter* writer, AuxOut* aux_out) {
+                   const ImageBundle& ib, const JxlCmsInterface& cms,
+                   ThreadPool* pool, BitWriter* writer, AuxOut* aux_out) {
   JxlEncoderChunkedFrameAdapter frame_data(ib.xsize(), ib.ysize(),
                                            ib.extra_channels().size());
   std::vector<uint8_t> color;
@@ -1706,9 +1707,8 @@ Status EncodeFrame(const CompressParams& cparams_orig,
   size_t avail_out = output.size();
   JxlEncoderOutputProcessorWrapper output_processor;
   output_processor.SetAvailOut(&next_out, &avail_out);
-  JXL_RETURN_IF_ERROR(EncodeFrame(cparams_orig, fi, metadata, frame_data,
-                                  passes_enc_state, cms, pool,
-                                  &output_processor, aux_out));
+  JXL_RETURN_IF_ERROR(EncodeFrame(cparams_orig, fi, metadata, frame_data, cms,
+                                  pool, &output_processor, aux_out));
   output_processor.SetFinalizedPosition();
   output_processor.CopyOutput(output, next_out, avail_out);
   writer->AppendByteAligned(Bytes(output));

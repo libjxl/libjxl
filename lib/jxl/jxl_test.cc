@@ -629,14 +629,12 @@ TEST(JxlTest, RoundtripGrayscale) {
   EXPECT_EQ(0u, io.metadata.m.bit_depth.exponent_bits_per_sample);
   EXPECT_TRUE(io.metadata.m.color_encoding.Tf().IsSRGB());
 
-  PassesEncoderState enc_state;
-
   {
     CompressParams cparams;
     cparams.butteraugli_distance = 1.0;
 
     std::vector<uint8_t> compressed;
-    EXPECT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed));
+    EXPECT_TRUE(test::EncodeFile(cparams, &io, &compressed));
     CodecInOut io2;
     EXPECT_TRUE(test::DecodeFile({}, Bytes(compressed), &io2));
     EXPECT_TRUE(io2.Main().IsGray());
@@ -655,7 +653,7 @@ TEST(JxlTest, RoundtripGrayscale) {
     cparams.butteraugli_distance = 8.0;
 
     std::vector<uint8_t> compressed;
-    EXPECT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed));
+    EXPECT_TRUE(test::EncodeFile(cparams, &io, &compressed));
     CodecInOut io2;
     EXPECT_TRUE(test::DecodeFile({}, Bytes(compressed), &io2));
     EXPECT_TRUE(io2.Main().IsGray());
@@ -672,7 +670,7 @@ TEST(JxlTest, RoundtripGrayscale) {
     cparams.butteraugli_distance = 1.0;
 
     std::vector<uint8_t> compressed;
-    EXPECT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed));
+    EXPECT_TRUE(test::EncodeFile(cparams, &io, &compressed));
 
     CodecInOut io2;
     JXLDecompressParams dparams;
@@ -706,9 +704,8 @@ TEST(JxlTest, RoundtripAlpha) {
   EXPECT_FALSE(io.metadata.m.bit_depth.floating_point_sample);
   EXPECT_EQ(0u, io.metadata.m.bit_depth.exponent_bits_per_sample);
   EXPECT_TRUE(io.metadata.m.color_encoding.Tf().IsSRGB());
-  PassesEncoderState enc_state;
   std::vector<uint8_t> compressed;
-  EXPECT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed));
+  EXPECT_TRUE(test::EncodeFile(cparams, &io, &compressed));
 
   EXPECT_LE(compressed.size(), 10077u);
 
@@ -805,9 +802,8 @@ TEST(JxlTest, RoundtripAlphaPremultiplied) {
 
   EXPECT_FALSE(io_nopremul.Main().AlphaIsPremultiplied());
 
-  PassesEncoderState enc_state;
   std::vector<uint8_t> compressed;
-  EXPECT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed));
+  EXPECT_TRUE(test::EncodeFile(cparams, &io, &compressed));
   EXPECT_LE(compressed.size(), 10000u);
 
   for (bool use_image_callback : {false, true}) {
