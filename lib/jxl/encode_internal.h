@@ -451,6 +451,9 @@ class JxlEncoderOutputProcessorWrapper {
     return output_position_ < finalized_position_;
   }
 
+  void CopyOutput(std::vector<uint8_t>& output, uint8_t* next_out,
+                  size_t& avail_out);
+
  private:
   void ReleaseBuffer(size_t bytes_used);
 
@@ -550,6 +553,21 @@ class JxlOutputProcessorBuffer {
   JxlEncoderOutputProcessorWrapper* wrapper_;
 };
 
+template <typename T>
+jxl::Status AppendData(JxlEncoderOutputProcessorWrapper& output_processor,
+                       const T& data) {
+  size_t size = std::end(data) - std::begin(data);
+  size_t written = 0;
+  while (written < size) {
+    JXL_ASSIGN_OR_RETURN(auto buffer,
+                         output_processor.GetBuffer(1, size - written));
+    size_t n = std::min(size - written, buffer.size());
+    buffer.append(data.data() + written, n);
+    written += n;
+  }
+  return jxl::OkStatus();
+}
+
 // Internal use only struct, can only be initialized correctly by
 // JxlEncoderCreate.
 struct JxlEncoderStruct {
@@ -573,7 +591,6 @@ struct JxlEncoderStruct {
   // so we need to keep track of the total of flushed or queue
   // codestream bytes. These bytes may be in a single jxlc box
   // or across multiple jxlp boxes.
-  size_t codestream_bytes_written_beginning_of_frame;
   size_t codestream_bytes_written_end_of_frame;
   jxl::JxlEncoderFrameIndexBox frame_index_box;
 
