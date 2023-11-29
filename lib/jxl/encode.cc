@@ -875,8 +875,6 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
     JXL_RETURN_IF_ERROR(AppendData(output_processor, header_bytes));
 
     if (input_frame) {
-      jxl::PassesEncoderState enc_state;
-
       frame_index_box.AddFrame(codestream_bytes_written_end_of_frame, duration,
                                input_frame->option_values.frame_index_box);
 
@@ -930,7 +928,7 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
       frame_info.name = input_frame->option_values.frame_name;
 
       if (!jxl::EncodeFrame(input_frame->option_values.cparams, frame_info,
-                            &metadata, input_frame->frame_data, &enc_state, cms,
+                            &metadata, input_frame->frame_data, cms,
                             thread_pool.get(), &output_processor,
                             input_frame->option_values.aux_out)) {
         return JXL_API_ERROR(this, JXL_ENC_ERR_GENERIC,

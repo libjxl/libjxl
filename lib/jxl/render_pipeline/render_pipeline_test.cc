@@ -218,10 +218,8 @@ TEST_P(RenderPipelineTestParam, PipelineTest) {
 
   std::vector<uint8_t> compressed;
 
-  PassesEncoderState enc_state;
-  enc_state.shared.image_features.splines = config.splines;
-  ASSERT_TRUE(
-      test::EncodeFile(config.cparams, &io, &enc_state, &compressed, &pool));
+  config.cparams.custom_splines = config.splines;
+  ASSERT_TRUE(test::EncodeFile(config.cparams, &io, &compressed, &pool));
 
   CodecInOut io_default;
   ASSERT_TRUE(DecodeFile(Bytes(compressed),

@@ -256,11 +256,9 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
   if (spec.params.preview) params.preview = jxl::Override::kOn;
   if (spec.params.noise) params.noise = jxl::Override::kOn;
 
-  jxl::PassesEncoderState passes_encoder_state;
   // EncodeFile replaces output; pass a temporary storage for it.
   std::vector<uint8_t> compressed_image;
-  bool ok = jxl::test::EncodeFile(params, &io, &passes_encoder_state,
-                                  &compressed_image);
+  bool ok = jxl::test::EncodeFile(params, &io, &compressed_image);
   if (!ok) return false;
   compressed.append(compressed_image);
 

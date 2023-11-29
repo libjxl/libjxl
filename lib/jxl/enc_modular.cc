@@ -976,8 +976,8 @@ Status ModularFrameEncoder::PrepareEncoding(const FrameHeader& frame_header,
   stream_headers_.resize(num_streams);
   tokens_.resize(num_streams);
 
-  if (heuristics->CustomFixedTreeLossless(frame_dim_, &tree_)) {
-    // Using a fixed tree.
+  if (!cparams_.custom_fixed_tree.empty()) {
+    tree_ = cparams_.custom_fixed_tree;
   } else if (cparams_.speed_tier < SpeedTier::kFalcon ||
              !cparams_.modular_mode) {
     // Avoid creating a tree with leaves that don't correspond to any pixels.

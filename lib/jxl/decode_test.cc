@@ -222,7 +222,6 @@ struct TestCodestreamParams {
   float intensity_target = 0.0;
   std::string color_space;
   std::vector<uint8_t>* jpeg_codestream = nullptr;
-  const ProgressiveMode* progressive_mode = nullptr;
 };
 
 // Input pixels always given as 16-bit RGBA, 8 bytes per pixel.
@@ -303,11 +302,7 @@ std::vector<uint8_t> CreateTestJXLCodestream(
   }
   io.metadata.m.orientation = params.orientation;
   std::vector<uint8_t> compressed;
-  PassesEncoderState enc_state;
-  if (params.progressive_mode) {
-    enc_state.progressive_splitter.SetProgressiveMode(*params.progressive_mode);
-  }
-  EXPECT_TRUE(test::EncodeFile(params.cparams, &io, &enc_state, &compressed));
+  EXPECT_TRUE(test::EncodeFile(params.cparams, &io, &compressed));
   CodeStreamBoxFormat add_container = params.box_format;
   if (add_container != kCSBF_None) {
     // Header with signature box and ftyp box.
@@ -2602,8 +2597,7 @@ TEST(DecodeTest, AnimationTest) {
   cparams.SetLossless();  // Lossless to verify pixels exactly after roundtrip.
   cparams.speed_tier = jxl::SpeedTier::kThunder;
   std::vector<uint8_t> compressed;
-  jxl::PassesEncoderState enc_state;
-  EXPECT_TRUE(jxl::test::EncodeFile(cparams, &io, &enc_state, &compressed));
+  EXPECT_TRUE(jxl::test::EncodeFile(cparams, &io, &compressed));
 
   // Decode and test the animation frames
 
@@ -2703,8 +2697,7 @@ TEST(DecodeTest, AnimationTestStreaming) {
   cparams.SetLossless();  // Lossless to verify pixels exactly after roundtrip.
   cparams.speed_tier = jxl::SpeedTier::kThunder;
   std::vector<uint8_t> compressed;
-  jxl::PassesEncoderState enc_state;
-  EXPECT_TRUE(jxl::test::EncodeFile(cparams, &io, &enc_state, &compressed));
+  EXPECT_TRUE(jxl::test::EncodeFile(cparams, &io, &compressed));
 
   // Decode and test the animation frames
 
@@ -2917,11 +2910,10 @@ TEST(DecodeTest, SkipCurrentFrameTest) {
   jxl::CompressParams cparams;
   cparams.speed_tier = jxl::SpeedTier::kThunder;
   std::vector<uint8_t> compressed;
-  jxl::PassesEncoderState enc_state;
   jxl::PassDefinition passes[] = {{2, 0, 4}, {4, 0, 4}, {8, 2, 2}, {8, 0, 1}};
   jxl::ProgressiveMode progressive_mode{passes};
-  enc_state.progressive_splitter.SetProgressiveMode(progressive_mode);
-  EXPECT_TRUE(jxl::test::EncodeFile(cparams, &io, &enc_state, &compressed));
+  cparams.custom_progressive_mode = &progressive_mode;
+  EXPECT_TRUE(jxl::test::EncodeFile(cparams, &io, &compressed));
 
   JxlDecoder* dec = JxlDecoderCreate(NULL);
   const uint8_t* next_in = compressed.data();
@@ -3030,8 +3022,7 @@ TEST(DecodeTest, SkipFrameTest) {
   cparams.SetLossless();  // Lossless to verify pixels exactly after roundtrip.
   cparams.speed_tier = jxl::SpeedTier::kThunder;
   std::vector<uint8_t> compressed;
-  jxl::PassesEncoderState enc_state;
-  EXPECT_TRUE(jxl::test::EncodeFile(cparams, &io, &enc_state, &compressed));
+  EXPECT_TRUE(jxl::test::EncodeFile(cparams, &io, &compressed));
 
   // Decode and test the animation frames
 
@@ -3187,8 +3178,7 @@ TEST(DecodeTest, SkipFrameWithBlendingTest) {
   cparams.SetLossless();  // Lossless to verify pixels exactly after roundtrip.
   cparams.speed_tier = jxl::SpeedTier::kThunder;
   std::vector<uint8_t> compressed;
-  jxl::PassesEncoderState enc_state;
-  EXPECT_TRUE(jxl::test::EncodeFile(cparams, &io, &enc_state, &compressed));
+  EXPECT_TRUE(jxl::test::EncodeFile(cparams, &io, &compressed));
 
   // Independently decode all frames without any skipping, to create the
   // expected blended frames, for the actual tests below to compare with.
@@ -3418,8 +3408,7 @@ TEST(DecodeTest, SkipFrameWithAlphaBlendingTest) {
   cparams.SetLossless();  // Lossless to verify pixels exactly after roundtrip.
   cparams.speed_tier = jxl::SpeedTier::kThunder;
   std::vector<uint8_t> compressed;
-  jxl::PassesEncoderState enc_state;
-  EXPECT_TRUE(jxl::test::EncodeFile(cparams, &io, &enc_state, &compressed));
+  EXPECT_TRUE(jxl::test::EncodeFile(cparams, &io, &compressed));
   // try both with and without coalescing
   for (auto coalescing : {JXL_TRUE, JXL_FALSE}) {
     // Independently decode all frames without any skipping, to create the
@@ -3666,8 +3655,7 @@ TEST(DecodeTest, OrientedCroppedFrameTest) {
     cparams.speed_tier = jxl::SpeedTier::kThunder;
     cparams.resampling = resampling;
     std::vector<uint8_t> compressed;
-    jxl::PassesEncoderState enc_state;
-    EXPECT_TRUE(jxl::test::EncodeFile(cparams, &io, &enc_state, &compressed));
+    EXPECT_TRUE(jxl::test::EncodeFile(cparams, &io, &compressed));
 
     // 0 is merged frame as decoded with coalescing enabled (default)
     // 1-3 are non-coalesced frames as decoded with coalescing disabled
@@ -4751,7 +4739,7 @@ TEST_P(DecodeProgressiveTest, ProgressiveEventTest) {
         {2, 0, 4}, {4, 0, 4}, {8, 2, 2}, {8, 1, 2}, {8, 0, 1}};
     const int kNumPasses = 5;
     jxl::ProgressiveMode progressive_mode{passes};
-    params.progressive_mode = &progressive_mode;
+    params.cparams.custom_progressive_mode = &progressive_mode;
     std::vector<uint8_t> data =
         jxl::CreateTestJXLCodestream(jxl::Bytes(pixels.data(), pixels.size()),
                                      xsize, ysize, num_channels, params);
@@ -4934,11 +4922,10 @@ TEST(DecodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGReconstructionTest)) {
   jxl::BitWriter writer;
   ASSERT_TRUE(WriteCodestreamHeaders(&orig_io.metadata, &writer, nullptr));
   writer.ZeroPadToByte();
-  jxl::PassesEncoderState enc_state;
   jxl::CompressParams cparams;
   cparams.color_transform = jxl::ColorTransform::kNone;
   ASSERT_TRUE(jxl::EncodeFrame(cparams, jxl::FrameInfo{}, &orig_io.metadata,
-                               orig_io.Main(), &enc_state, *JxlGetDefaultCms(),
+                               orig_io.Main(), *JxlGetDefaultCms(),
                                /*pool=*/nullptr, &writer,
                                /*aux_out=*/nullptr));
 
@@ -5502,10 +5489,7 @@ TEST(DecodeTest, SpotColorTest) {
   cparams.butteraugli_distance = 0.f;
 
   std::vector<uint8_t> compressed;
-  std::unique_ptr<jxl::PassesEncoderState> enc_state =
-      jxl::make_unique<jxl::PassesEncoderState>();
-  EXPECT_TRUE(
-      jxl::test::EncodeFile(cparams, &io, enc_state.get(), &compressed));
+  EXPECT_TRUE(jxl::test::EncodeFile(cparams, &io, &compressed));
 
   for (size_t render_spot = 0; render_spot < 2; render_spot++) {
     JxlPixelFormat format = {3, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0};

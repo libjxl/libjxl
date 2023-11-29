@@ -774,11 +774,10 @@ void RoundtripPatchFrame(Image3F* reference_frame,
     }
     ib.SetExtraChannels(std::move(extra_channels));
   }
-  PassesEncoderState roundtrip_state;
   auto special_frame = std::unique_ptr<BitWriter>(new BitWriter());
   AuxOut patch_aux_out;
   JXL_CHECK(EncodeFrame(cparams, patch_frame_info, state->shared.metadata, ib,
-                        &roundtrip_state, cms, pool, special_frame.get(),
+                        cms, pool, special_frame.get(),
                         aux_out ? &patch_aux_out : nullptr));
   if (aux_out) {
     for (const auto& l : patch_aux_out.layers) {

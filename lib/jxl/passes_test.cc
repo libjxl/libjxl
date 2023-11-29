@@ -171,8 +171,7 @@ TEST(PassesTest, AllDownsampleFeasible) {
   cparams.speed_tier = SpeedTier::kSquirrel;
   cparams.progressive_mode = true;
   cparams.butteraugli_distance = 1.0;
-  PassesEncoderState enc_state;
-  ASSERT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed, &pool));
+  ASSERT_TRUE(test::EncodeFile(cparams, &io, &compressed, &pool));
 
   EXPECT_LE(compressed.size(), 240000u);
   float target_butteraugli[9] = {};
@@ -217,8 +216,7 @@ TEST(PassesTest, AllDownsampleFeasibleQProgressive) {
   cparams.speed_tier = SpeedTier::kSquirrel;
   cparams.qprogressive_mode = true;
   cparams.butteraugli_distance = 1.0;
-  PassesEncoderState enc_state;
-  ASSERT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed, &pool));
+  ASSERT_TRUE(test::EncodeFile(cparams, &io, &compressed, &pool));
 
   EXPECT_LE(compressed.size(), 220000u);
 
@@ -273,8 +271,7 @@ TEST(PassesTest, ProgressiveDownsample2DegradesCorrectlyGrayscale) {
   cparams.responsive = true;
   cparams.qprogressive_mode = true;
   cparams.butteraugli_distance = 1.0;
-  PassesEncoderState enc_state;
-  ASSERT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed, &pool));
+  ASSERT_TRUE(test::EncodeFile(cparams, &io, &compressed, &pool));
 
   EXPECT_LE(compressed.size(), 10000u);
 
@@ -317,8 +314,7 @@ TEST(PassesTest, ProgressiveDownsample2DegradesCorrectly) {
   cparams.responsive = true;
   cparams.qprogressive_mode = true;
   cparams.butteraugli_distance = 1.0;
-  PassesEncoderState enc_state;
-  ASSERT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed, &pool));
+  ASSERT_TRUE(test::EncodeFile(cparams, &io, &compressed, &pool));
 
   EXPECT_LE(compressed.size(), 220000u);
 
@@ -352,8 +348,7 @@ TEST(PassesTest, NonProgressiveDCImage) {
   cparams.speed_tier = SpeedTier::kSquirrel;
   cparams.progressive_mode = false;
   cparams.butteraugli_distance = 2.0;
-  PassesEncoderState enc_state;
-  ASSERT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed, &pool));
+  ASSERT_TRUE(test::EncodeFile(cparams, &io, &compressed, &pool));
 
   // Even in non-progressive mode, it should be possible to return a DC-only
   // image.

@@ -768,8 +768,9 @@ Status DefaultEncoderHeuristics::LossyFrameHeuristics(
 
   // Find and subtract splines.
   if (cparams.speed_tier <= SpeedTier::kSquirrel) {
-    // If we do already have them, they were passed upstream to EncodeFile.
-    if (!shared.image_features.splines.HasAny()) {
+    if (cparams.custom_splines.HasAny()) {
+      shared.image_features.splines = cparams.custom_splines;
+    } else {
       shared.image_features.splines = FindSplines(*opsin);
     }
     JXL_RETURN_IF_ERROR(shared.image_features.splines.InitializeDrawCache(
