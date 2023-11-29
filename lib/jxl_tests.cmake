@@ -29,7 +29,6 @@ endif()
 
 list(APPEND JPEGXL_INTERNAL_TESTS
   # TODO(deymo): Move this to tools/
-  ../tools/box/box_test.cc
   ../tools/djxl_fuzzer_test.cc
 )
 
@@ -68,7 +67,6 @@ foreach (TESTFILE IN LISTS JPEGXL_INTERNAL_TESTS)
     ${JPEGXL_COVERAGE_FLAGS}
   )
   target_link_libraries(${TESTNAME}
-    box
     gmock
     GTest::GTest
     GTest::Main

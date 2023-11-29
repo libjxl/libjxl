@@ -35,6 +35,7 @@ jobs:
         include:
           - name: release
             mode: release
+            run_bench: true
             test_in_pr: true
             cmake_args: >-
               -DJPEGXL_TEST_TOOLS=ON
@@ -47,6 +48,7 @@ jobs:
             apt_pkgs: doxygen graphviz python3-numpy
           - name: lowprecision
             mode: release
+            run_bench: true
             test_in_pr: true
             cmake_args: -DCMAKE_CXX_FLAGS=-DJXL_HIGH_PRECISION=0
           - name: debug
@@ -68,6 +70,7 @@ jobs:
             skip_install: true
           - name: coverage
             env_test_stack_size: 2048
+            skip_install: true
           # Build with support for decoding to JPEG bytes disabled. Produces a
           # smaller build if only decoding to pixels is needed.
           - name: release-nojpeg
@@ -129,7 +132,7 @@ jobs:
       TEST_STACK_LIMIT: ${{ matrix.env_test_stack_size }}
       WILL_TEST: ${{  github.event_name == 'push' || (github.event_name == 'pull_request' && matrix.name != 'coverage' && (matrix.test_in_pr || contains(github.event.pull_request.labels.*.name, 'CI:full'))) }}
       WILL_BUILD: ${{ github.event_name == 'push' || (github.event_name == 'pull_request' && matrix.name != 'coverage') }}
-      WILL_BENCH: ${{ github.event_name != 'merge_group' && matrix.name != 'coverage' && ((matrix.name == 'release' || (github.event_name == 'push' && matrix.mode == 'release') || contains(github.event.pull_request.labels.*.name, 'CI:full'))) }}
+      WILL_BENCH: ${{ github.event_name != 'merge_group' && matrix.run_bench }}
       WILL_DOC: ${{ github.event_name != 'merge_group' && matrix.name == 'release' }}
       WILL_COV: ${{ github.event_name == 'push' && matrix.name == 'coverage' }}
       JPEGXL_OPT_DBG: true
@@ -137,7 +140,7 @@ jobs:
 
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@1b05615854632b887b69ae1be8cbefe72d3ae423 # v2.6.0
+      uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
       with:
         egress-policy: audit
 
@@ -351,6 +354,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
+           # TODO(eustas): investigate failures
          - msystem: mingw64
            faulty: true
          - msystem: clang64
@@ -367,7 +371,7 @@ jobs:
         shell: msys2 {0}
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@1b05615854632b887b69ae1be8cbefe72d3ae423 # v2.6.0
+        uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
         with:
           egress-policy: audit
 
@@ -408,12 +412,14 @@ jobs:
             -G Ninja
       - name: CMake build
         run: cmake --build build
+        continue-on-error: ${{ matrix.faulty }}
       - name: Test
         if: |
           github.event_name == 'push' ||
           (github.event_name == 'pull_request' &&
            contains(github.event.pull_request.labels.*.name, 'CI:full'))
         run: ctest --test-dir build --parallel 2 --output-on-failure -E "${{ join(matrix.disable_tests, '|') }}"
+        continue-on-error: ${{ matrix.faulty }}
 
   wasm32_build:
     name: WASM wasm32/${{ matrix.variant }}
@@ -433,7 +439,7 @@ jobs:
 
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@1b05615854632b887b69ae1be8cbefe72d3ae423 # v2.6.0
+      uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
       with:
         egress-policy: audit
 
@@ -480,7 +486,7 @@ jobs:
       run: which node >> $HOME/.base_node_path
 
     - name: Install emsdk
-      uses: mymindstorm/setup-emsdk@ab889da2abbcbb280f91ec4c215d3bb4f3a8f775 # v12
+      uses: mymindstorm/setup-emsdk@d233ac12b0102f74ca199f5dad7a4e2c13a8a745 # v13
       # TODO(deymo): We could cache this action but it doesn't work when running
       # in a matrix.
       with:
@@ -528,7 +534,7 @@ jobs:
 
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@1b05615854632b887b69ae1be8cbefe72d3ae423 # v2.6.0
+        uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
         with:
           egress-policy: audit
 

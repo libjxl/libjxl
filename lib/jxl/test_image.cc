@@ -92,9 +92,10 @@ void FillPackedImage(size_t bits_per_sample, uint16_t seed,
 
   // Create pixel content to test, actual content does not matter as long as it
   // can be compared after roundtrip.
-  uint8_t* out = reinterpret_cast<uint8_t*>(image->pixels());
   const float imul16 = 1.0f / 65536.0f;
   for (size_t y = 0; y < ysize; y++) {
+    uint8_t* out =
+        reinterpret_cast<uint8_t*>(image->pixels()) + y * image->stride;
     for (size_t x = 0; x < xsize; x++) {
       float r = r0 * (ysize - y - 1) / ysize + r1 * y / ysize;
       float g = g0 * (ysize - y - 1) / ysize + g1 * y / ysize;
@@ -303,6 +304,11 @@ TestImage& TestImage::SetDataType(JxlDataType data_type) {
 
 TestImage& TestImage::SetEndianness(JxlEndianness endianness) {
   format_.endianness = endianness;
+  return *this;
+}
+
+TestImage& TestImage::SetRowAlignment(size_t align) {
+  format_.align = align;
   return *this;
 }
 

@@ -19,8 +19,9 @@ permissions:
   contents: read
 
 env:
-  LIBJXL_VERSION: 0.9.0
-  LIBJXL_ABI_VERSION: 0.9
+  CONFORMANCE_REPO_HASH: ee6008ef151489a5330cd886b422af8f6ed58881
+  LIBJXL_VERSION: "0.10.0"
+  LIBJXL_ABI_VERSION: "0.10"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
@@ -32,7 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@1b05615854632b887b69ae1be8cbefe72d3ae423 # v2.6.0
+      uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
       with:
         egress-policy: audit
 
@@ -40,8 +41,7 @@ jobs:
       uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       with:
         repository: libjxl/conformance
-        # TODO(eustas): move ref to a global variable / file?
-        ref: b2be0d8dcba40cc4a53fb4a15b78f59636192892
+        ref: ${{ env.CONFORMANCE_REPO_HASH }}
         path: conformance
     - name: Cache
       uses: actions/cache@704facf57e6136b1bc63b828d79edcd491f0ee84 # v3.3.2
@@ -78,7 +78,7 @@ jobs:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@1b05615854632b887b69ae1be8cbefe72d3ae423 # v2.6.0
+      uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
       with:
         egress-policy: audit
 
@@ -176,7 +176,7 @@ jobs:
         target: [AVX3, AVX2, SSE4, SSSE3, EMU128, SCALAR, SCALAR_ASAN]
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@1b05615854632b887b69ae1be8cbefe72d3ae423 # v2.6.0
+      uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
       with:
         egress-policy: audit
 
@@ -187,7 +187,7 @@ jobs:
       uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       with:
         repository: libjxl/conformance
-        ref: b2be0d8dcba40cc4a53fb4a15b78f59636192892
+        ref: ${{ env.CONFORMANCE_REPO_HASH }}
         path: conformance
     - name: Cache
       uses: actions/cache@704facf57e6136b1bc63b828d79edcd491f0ee84 # v3.3.2

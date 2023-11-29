@@ -10,6 +10,7 @@ libjxl_base_sources = [
     "jxl/base/arch_macros.h",
     "jxl/base/bits.h",
     "jxl/base/byte_order.h",
+    "jxl/base/c_callback_support.h",
     "jxl/base/common.h",
     "jxl/base/compiler_specific.h",
     "jxl/base/data_parallel.h",
@@ -267,6 +268,8 @@ libjxl_dec_sources = [
     "jxl/render_pipeline/stage_blending.h",
     "jxl/render_pipeline/stage_chroma_upsampling.cc",
     "jxl/render_pipeline/stage_chroma_upsampling.h",
+    "jxl/render_pipeline/stage_cms.cc",
+    "jxl/render_pipeline/stage_cms.h",
     "jxl/render_pipeline/stage_epf.cc",
     "jxl/render_pipeline/stage_epf.h",
     "jxl/render_pipeline/stage_from_linear.cc",
@@ -546,7 +549,7 @@ libjxl_jpegli_wrapper_sources = [
 
 libjxl_major_version = 0
 
-libjxl_minor_version = 9
+libjxl_minor_version = 10
 
 libjxl_patch_version = 0
 

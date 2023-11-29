@@ -13,6 +13,7 @@
 
 // TODO(janwas): workaround for incorrect Win64 codegen (cause unknown)
 #include <hwy/highway.h>
+#include <mutex>
 
 #include "lib/extras/dec/color_hints.h"
 #include "lib/extras/packed_image.h"
@@ -33,6 +34,26 @@ Status DecodeImagePNM(Span<const uint8_t> bytes, const ColorHints& color_hints,
                       const SizeConstraints* constraints = nullptr);
 
 void TestCodecPNM();
+
+struct HeaderPNM {
+  size_t xsize;
+  size_t ysize;
+  bool is_gray;    // PGM
+  bool has_alpha;  // PAM
+  size_t bits_per_sample;
+  bool floating_point;
+  bool big_endian;
+  std::vector<JxlExtraChannelType> ec_types;  // PAM
+};
+
+struct ChunkedPNMDecoder {
+  FILE* f;
+  HeaderPNM header = {};
+  size_t data_start;
+};
+
+Status DecodeImagePNM(ChunkedPNMDecoder* dec, const ColorHints& color_hints,
+                      PackedPixelFile* ppf);
 
 }  // namespace extras
 }  // namespace jxl

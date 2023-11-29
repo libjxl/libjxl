@@ -48,6 +48,8 @@ class TestImage {
 
   TestImage& SetEndianness(JxlEndianness endianness);
 
+  TestImage& SetRowAlignment(size_t align);
+
   TestImage& SetColorEncoding(const std::string& description);
 
   TestImage& CoalesceGIFAnimationWithAlpha();
