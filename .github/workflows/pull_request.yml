@@ -22,6 +22,8 @@ jobs:
   # Checks that the AUTHORS files is updated with new contributors.
   authors:
     runs-on: [ubuntu-latest]
+    # Only run the authors check when merging to `main` branch, or in merge_group
+    if: github.base_ref == 'main' || github.event_name == 'merge_group'
     steps:
     - name: Harden Runner
       uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
