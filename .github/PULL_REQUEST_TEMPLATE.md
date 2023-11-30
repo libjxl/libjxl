@@ -7,7 +7,7 @@
 ### Pull Request Checklist
 
 - [ ] **CLA Signed**: Have you signed the [Contributor License Agreement](https://code.google.com/legal/individual-cla-v1.0.html) (individual or corporate, as appropriate)? Only contributions from signed contributors can be accepted.
-- [ ] **Authors**: If this is your first contribution, have you added your name to the [AUTHORS](AUTHORS) file?
+- [ ] **Authors**: If this is your first contribution, have you considered adding your name to the [AUTHORS](AUTHORS) file?
 - [ ] **Code Style**: Have you ensured your code adheres to the project's coding style guidelines? You can use `./ci.sh lint` for automatic code formatting.
 
 
