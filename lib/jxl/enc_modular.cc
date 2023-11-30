@@ -961,14 +961,11 @@ Status ModularFrameEncoder::ComputeEncodingData(
 
   JXL_RETURN_IF_ERROR(ValidateChannelDimensions(gi, stream_options_[0]));
 
-  return PrepareEncoding(frame_header, pool, enc_state->heuristics.get(),
-                         aux_out);
+  return PrepareEncoding(frame_header, pool, aux_out);
 }
 
 Status ModularFrameEncoder::PrepareEncoding(const FrameHeader& frame_header,
-                                            ThreadPool* pool,
-                                            EncoderHeuristics* heuristics,
-                                            AuxOut* aux_out) {
+                                            ThreadPool* pool, AuxOut* aux_out) {
   if (!tree_.empty()) return true;
 
   // Compute tree.

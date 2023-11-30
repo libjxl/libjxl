@@ -30,7 +30,6 @@ namespace jxl {
 
 struct AuxOut;
 
-namespace {
 void FindBestBlockEntropyModel(PassesEncoderState& enc_state) {
   if (enc_state.cparams.decoding_speed_tier >= 1) {
     static constexpr uint8_t kSimpleCtxMap[] = {
@@ -167,8 +166,6 @@ void FindBestBlockEntropyModel(PassesEncoderState& enc_state) {
       *std::max_element(ctx_map.begin(), ctx_map.end()) + 1;
 }
 
-}  // namespace
-
 void FindBestDequantMatrices(const CompressParams& cparams,
                              const Image3F& opsin,
                              ModularFrameEncoder* modular_frame_encoder,
@@ -193,8 +190,8 @@ void FindBestDequantMatrices(const CompressParams& cparams,
   }
 }
 
-bool DefaultEncoderHeuristics::HandlesColorConversion(
-    const CompressParams& cparams, const ImageBundle& ib) {
+bool HeuristicsHandlesColorConversion(const CompressParams& cparams,
+                                      const ImageBundle& ib) {
   return cparams.noise != Override::kOn && cparams.patches != Override::kOn &&
          cparams.speed_tier >= SpeedTier::kWombat && cparams.resampling == 1 &&
          cparams.color_transform == ColorTransform::kXYB &&
@@ -703,10 +700,11 @@ void DownsampleImage2_Iterative(Image3F* opsin) {
 }
 }  // namespace
 
-Status DefaultEncoderHeuristics::LossyFrameHeuristics(
-    PassesEncoderState* enc_state, ModularFrameEncoder* modular_frame_encoder,
-    const ImageBundle* original_pixels, Image3F* opsin,
-    const JxlCmsInterface& cms, ThreadPool* pool, AuxOut* aux_out) {
+Status LossyFrameHeuristics(PassesEncoderState* enc_state,
+                            ModularFrameEncoder* modular_frame_encoder,
+                            const ImageBundle* original_pixels, Image3F* opsin,
+                            const JxlCmsInterface& cms, ThreadPool* pool,
+                            AuxOut* aux_out) {
   CompressParams& cparams = enc_state->cparams;
   PassesSharedState& shared = enc_state->shared;
 
@@ -817,7 +815,7 @@ Status DefaultEncoderHeuristics::LossyFrameHeuristics(
   CfLHeuristics cfl_heuristics;
 
   if (!opsin->xsize()) {
-    JXL_ASSERT(HandlesColorConversion(cparams, *original_pixels));
+    JXL_ASSERT(HeuristicsHandlesColorConversion(cparams, *original_pixels));
     *opsin = Image3F(RoundUpToBlockDim(original_pixels->xsize()),
                      RoundUpToBlockDim(original_pixels->ysize()));
     opsin->ShrinkTo(original_pixels->xsize(), original_pixels->ysize());

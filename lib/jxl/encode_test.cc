@@ -1788,6 +1788,9 @@ class EncoderStreamingTest : public testing::TestWithParam<StreamingTestParam> {
     JxlColorEncodingSetToSRGB(&color_encoding, /*is_gray=*/false);
     EXPECT_EQ(JXL_ENC_SUCCESS,
               JxlEncoderSetColorEncoding(enc, &color_encoding));
+    EXPECT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderFrameSettingsSetOption(
+                  frame_settings, JXL_ENC_FRAME_SETTING_EFFORT, 6));
     if (p.use_container()) {
       EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetCodestreamLevel(enc, 10));
     }

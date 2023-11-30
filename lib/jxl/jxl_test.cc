@@ -1579,5 +1579,65 @@ JXL_GTEST_INSTANTIATE_TEST_SUITE_P(
     ::testing::Values("jxl/blending/cropped_traffic_light_frame-0.png",
                       "palette/358colors.png"));
 
+struct StreamingTestParam {
+  size_t xsize;
+  size_t ysize;
+  bool is_grey;
+  int effort;
+
+  size_t num_channels() const { return is_grey ? 1 : 3; }
+
+  float max_psnr() const {
+    if (xsize > 256) {
+      return is_grey ? 90 : 50;
+    }
+    return is_grey ? 60 : 38;
+  }
+
+  static std::vector<StreamingTestParam> All() {
+    std::vector<StreamingTestParam> params;
+    for (int e : {1, 3, 6}) {
+      for (bool g : {false, true}) {
+        params.push_back(StreamingTestParam{37, 49, g, e});
+        params.push_back(StreamingTestParam{357, 517, g, e});
+        params.push_back(StreamingTestParam{2247, 2357, g, e});
+      }
+    }
+    return params;
+  }
+};
+
+std::ostream& operator<<(std::ostream& out, StreamingTestParam p) {
+  out << (p.is_grey ? "Grey" : "RGB");
+  out << p.xsize << "x" << p.ysize;
+  out << "e" << p.effort;
+  return out;
+}
+
+class JxlStreamingTest : public ::testing::TestWithParam<StreamingTestParam> {};
+
+TEST_P(JxlStreamingTest, Roundtrip) {
+  const StreamingTestParam& p = GetParam();
+
+  jxl::test::TestImage image;
+  image.SetDimensions(p.xsize, p.ysize)
+      .SetDataType(JXL_TYPE_UINT8)
+      .SetChannels(p.num_channels())
+      .SetAllBitDepths(8);
+  image.AddFrame().RandomFill();
+  JXLCompressParams cparams;
+  cparams.distance = 0.1;
+  cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, p.effort);
+
+  ThreadPoolForTests pool(8);
+  PackedPixelFile ppf_out;
+  Roundtrip(image.ppf(), cparams, {}, &pool, &ppf_out);
+  EXPECT_GT(jxl::test::ComputePSNR(image.ppf(), ppf_out), p.max_psnr());
+}
+
+JXL_GTEST_INSTANTIATE_TEST_SUITE_P(
+    JxlStreamingTest, JxlStreamingTest,
+    testing::ValuesIn(StreamingTestParam::All()));
+
 }  // namespace
 }  // namespace jxl

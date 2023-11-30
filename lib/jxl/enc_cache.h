@@ -17,7 +17,6 @@
 #include "lib/jxl/coeff_order_fwd.h"
 #include "lib/jxl/dct_util.h"
 #include "lib/jxl/enc_ans.h"
-#include "lib/jxl/enc_heuristics.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/enc_progressive_split.h"
 #include "lib/jxl/frame_header.h"
@@ -65,10 +64,6 @@ struct PassesEncoderState {
   // Multiplier to be applied to the quant matrices of the x channel.
   float x_qm_multiplier = 1.0f;
   float b_qm_multiplier = 1.0f;
-
-  // Heuristics to be used by the encoder.
-  std::unique_ptr<EncoderHeuristics> heuristics =
-      make_unique<DefaultEncoderHeuristics>();
 };
 
 // Initialize per-frame information.
