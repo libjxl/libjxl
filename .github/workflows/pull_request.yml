@@ -31,6 +31,8 @@ jobs:
     - name: Checkout the source
       uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
     - name: Check AUTHORS file
+      # This is an optional check
+      continue-on-error: True
       run:
         ./ci.sh authors
 
