@@ -963,7 +963,9 @@ struct JxlOutputProcessor {
 
   void* GetBuffer(size_t* size) {
     *size = std::min<size_t>(*size, 1u << 16);
-    output.resize(*size);
+    if (output.size() < *size) {
+      output.resize(*size);
+    }
     return output.data();
   }
 
@@ -1140,6 +1142,10 @@ int main(int argc, char** argv) {
   }
   std::vector<uint8_t> compressed;
   for (size_t num_rep = 0; num_rep < args.num_reps; ++num_rep) {
+    if (args.streaming_output) {
+      output_processor.Seek(0);
+      output_processor.SetFinalizedPosition(0);
+    }
     const double t0 = jxl::Now();
     if (!EncodeImageJXL(params, ppf, jpeg_bytes,
                         args.streaming_output ? nullptr : &compressed)) {
