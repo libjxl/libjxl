@@ -10,6 +10,13 @@
 
 namespace jxl {
 
+Status ApplyColorTransform(const ColorEncoding& c_current,
+                           float intensity_target, const Image3F& color,
+                           const ImageF* black, const Rect& rect,
+                           const ColorEncoding& c_desired,
+                           const JxlCmsInterface& cms, ThreadPool* pool,
+                           Image3F* out);
+
 // Does color transformation from in.c_current() to c_desired if the color
 // encodings are different, or nothing if they are already the same.
 // If color transformation is done, stores the transformed values into store and

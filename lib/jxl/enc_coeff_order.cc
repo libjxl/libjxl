@@ -29,6 +29,7 @@ struct AuxOut;
 std::pair<uint32_t, uint32_t> ComputeUsedOrders(
     const SpeedTier speed, const AcStrategyImage& ac_strategy,
     const Rect& rect) {
+  // No coefficient reordering in Falcon or faster.
   // Only uses DCT8 = 0, so bitfield = 1.
   if (speed >= SpeedTier::kFalcon) return {1, 1};
 

@@ -64,7 +64,6 @@ class ModularFrameEncoder {
 
  private:
   Status PrepareEncoding(const FrameHeader& frame_header, ThreadPool* pool,
-                         EncoderHeuristics* heuristics,
                          AuxOut* aux_out = nullptr);
   Status PrepareStreamParams(const Rect& rect, const CompressParams& cparams,
                              int minShift, int maxShift,

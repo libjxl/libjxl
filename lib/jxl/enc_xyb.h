@@ -17,14 +17,15 @@
 
 namespace jxl {
 
-// Converts any color space to XYB. If `linear` is not null, returns `linear`
-// after filling it with a linear sRGB copy of `in`. Otherwise, returns `&in`.
-//
-// NOTE this return value can avoid an extra color conversion if `in` would
-// later be passed to JxlButteraugliComparator.
-const ImageBundle* ToXYB(const ImageBundle& in, ThreadPool* pool,
-                         Image3F* JXL_RESTRICT xyb, const JxlCmsInterface& cms,
-                         ImageBundle* JXL_RESTRICT linear = nullptr);
+// Converts any color space to XYB. If `linear` is not null, fills it with a
+// linear sRGB copy of `in`.
+void ToXYB(const Image3F& color, const ColorEncoding& c_current,
+           float intensity_target, const ImageF* black, ThreadPool* pool,
+           Image3F* JXL_RESTRICT xyb, const JxlCmsInterface& cms,
+           Image3F* const JXL_RESTRICT linear);
+
+void ToXYB(const ImageBundle& in, ThreadPool* pool, Image3F* JXL_RESTRICT xyb,
+           const JxlCmsInterface& cms, Image3F* JXL_RESTRICT linear = nullptr);
 
 void Image3FToXYB(const Image3F& in, const ColorEncoding& color_encoding,
                   float intensity_target, ThreadPool* pool,
