@@ -115,8 +115,7 @@ information on using pull requests.
 
   * Sign the CLA (only needed once per user, see above).
 
-  * AUTHORS: If this is your first contribution, you can add your name
-  to the [AUTHORS](AUTHORS) file.
+  * AUTHORS: You can add your name to the [AUTHORS](AUTHORS) file.
 
   * Style guide. Check `./ci.sh lint`.
 
