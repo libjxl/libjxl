@@ -58,6 +58,7 @@ For all browsers and to track browsers progress see [Can I Use](https://caniuse.
 
 ## Image viewers
 
+- [Aspect](https://aspect.bildhuus.com)
 - [ImageGlass](https://imageglass.org/)
 - [IrfanView](https://www.irfanview.com/); supported since 4.59 - requires a [plugin](https://www.irfanview.com/plugins.htm) to be downloaded and enabled.
 - [jpegview](https://github.com/sylikc/jpegview/releases)
