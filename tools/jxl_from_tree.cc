@@ -16,7 +16,6 @@
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_fields.h"
 #include "lib/jxl/enc_frame.h"
-#include "lib/jxl/enc_heuristics.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
 #include "lib/jxl/modular/encoding/enc_debug_tree.h"
 #include "lib/jxl/modular/encoding/enc_ma.h"
@@ -36,7 +35,6 @@ using ::jxl::ColorCorrelationMap;
 using ::jxl::ColorEncoding;
 using ::jxl::ColorTransform;
 using ::jxl::CompressParams;
-using ::jxl::DefaultEncoderHeuristics;
 using ::jxl::FrameDimensions;
 using ::jxl::FrameInfo;
 using ::jxl::Image3F;

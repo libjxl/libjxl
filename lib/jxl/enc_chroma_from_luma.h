@@ -24,8 +24,9 @@ namespace jxl {
 struct AuxOut;
 class Quantizer;
 
-void ColorCorrelationMapEncodeDC(ColorCorrelationMap* map, BitWriter* writer,
-                                 size_t layer, AuxOut* aux_out);
+void ColorCorrelationMapEncodeDC(const ColorCorrelationMap& map,
+                                 BitWriter* writer, size_t layer,
+                                 AuxOut* aux_out);
 
 struct CfLHeuristics {
   void Init(const Image3F& opsin);

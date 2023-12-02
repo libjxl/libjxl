@@ -575,6 +575,15 @@ float ComputeDistance2(const extras::PackedPixelFile& a,
   return ComputeDistance2(io0.Main(), io1.Main(), *JxlGetDefaultCms());
 }
 
+float ComputePSNR(const extras::PackedPixelFile& a,
+                  const extras::PackedPixelFile& b) {
+  CodecInOut io0;
+  JXL_CHECK(ConvertPackedPixelFileToCodecInOut(a, nullptr, &io0));
+  CodecInOut io1;
+  JXL_CHECK(ConvertPackedPixelFileToCodecInOut(b, nullptr, &io1));
+  return ComputePSNR(io0.Main(), io1.Main(), *JxlGetDefaultCms());
+}
+
 bool SameAlpha(const extras::PackedPixelFile& a,
                const extras::PackedPixelFile& b) {
   JXL_CHECK(a.info.xsize == b.info.xsize);

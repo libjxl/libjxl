@@ -826,7 +826,7 @@ ImageBundle RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
 
 constexpr int kMaxButteraugliIters = 4;
 
-void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
+void FindBestQuantization(const Image3F& linear, const Image3F& opsin,
                           PassesEncoderState* enc_state,
                           const JxlCmsInterface& cms, ThreadPool* pool,
                           AuxOut* aux_out) {
@@ -842,39 +842,12 @@ void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
   ImageI& raw_quant_field = enc_state->shared.raw_quant_field;
   ImageF& quant_field = enc_state->initial_quant_field;
 
-  // TODO(veluca): this should really be rather handled on the
-  // ButteraugliComparator side.
-  struct TemporaryShrink {
-    TemporaryShrink(ImageBundle& bundle, size_t xsize, size_t ysize)
-        : bundle(bundle),
-          orig_xsize(bundle.xsize()),
-          orig_ysize(bundle.ysize()) {
-      bundle.ShrinkTo(xsize, ysize);
-    }
-    TemporaryShrink(const TemporaryShrink&) = delete;
-    TemporaryShrink(TemporaryShrink&&) = delete;
-
-    ~TemporaryShrink() { bundle.ShrinkTo(orig_xsize, orig_ysize); }
-
-    ImageBundle& bundle;
-    size_t orig_xsize;
-    size_t orig_ysize;
-  } t(const_cast<ImageBundle&>(linear),
-      enc_state->shared.frame_header.frame_size.xsize,
-      enc_state->shared.frame_header.frame_size.ysize);
-
   const float butteraugli_target = cparams.butteraugli_distance;
   const float original_butteraugli = cparams.original_butteraugli_distance;
   ButteraugliParams params;
-  params.intensity_target = linear.metadata()->IntensityTarget();
-  // Hack the default intensity target value to be 80.0, the intensity
-  // target of sRGB images and a more reasonable viewing default than
-  // JPEG XL file format's default.
-  if (fabs(params.intensity_target - 255.0f) < 1e-3) {
-    params.intensity_target = 80.0f;
-  }
+  params.intensity_target = 80.f;
   JxlButteraugliComparator comparator(params, cms);
-  JXL_CHECK(comparator.SetReferenceImage(linear));
+  JXL_CHECK(comparator.SetLinearReferenceImage(linear));
   bool lower_is_better =
       (comparator.GoodQualityScore() < comparator.BadQualityScore());
   const float initial_quant_dc = InitialQuantDC(butteraugli_target);
@@ -1167,14 +1140,14 @@ ImageF InitialQuantField(const float butteraugli_target, const Image3F& opsin,
       mask1x1);
 }
 
-void FindBestQuantizer(const ImageBundle* linear, const Image3F& opsin,
+void FindBestQuantizer(const Image3F* linear, const Image3F& opsin,
                        PassesEncoderState* enc_state,
                        const JxlCmsInterface& cms, ThreadPool* pool,
                        AuxOut* aux_out, double rescale) {
   const CompressParams& cparams = enc_state->cparams;
   if (cparams.max_error_mode) {
     FindBestQuantizationMaxError(opsin, enc_state, cms, pool, aux_out);
-  } else if (cparams.speed_tier <= SpeedTier::kKitten) {
+  } else if (linear && cparams.speed_tier <= SpeedTier::kKitten) {
     // Normal encoding to a butteraugli score.
     FindBestQuantization(*linear, opsin, enc_state, cms, pool, aux_out);
   }

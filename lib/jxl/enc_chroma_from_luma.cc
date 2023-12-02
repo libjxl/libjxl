@@ -390,13 +390,14 @@ void CfLHeuristics::ComputeDC(bool fast, ColorCorrelationMap* cmap) {
   cmap->SetYToXDC(ytox_dc);
 }
 
-void ColorCorrelationMapEncodeDC(ColorCorrelationMap* map, BitWriter* writer,
-                                 size_t layer, AuxOut* aux_out) {
-  float color_factor = map->GetColorFactor();
-  float base_correlation_x = map->GetBaseCorrelationX();
-  float base_correlation_b = map->GetBaseCorrelationB();
-  int32_t ytox_dc = map->GetYToXDC();
-  int32_t ytob_dc = map->GetYToBDC();
+void ColorCorrelationMapEncodeDC(const ColorCorrelationMap& map,
+                                 BitWriter* writer, size_t layer,
+                                 AuxOut* aux_out) {
+  float color_factor = map.GetColorFactor();
+  float base_correlation_x = map.GetBaseCorrelationX();
+  float base_correlation_b = map.GetBaseCorrelationB();
+  int32_t ytox_dc = map.GetYToXDC();
+  int32_t ytob_dc = map.GetYToBDC();
 
   BitWriter::Allotment allotment(writer, 1 + 2 * kBitsPerByte + 12 + 32);
   if (ytox_dc == 0 && ytob_dc == 0 && color_factor == kDefaultColorFactor &&

@@ -197,10 +197,4 @@ Status InitializePassesEncoder(const Image3F& opsin, const JxlCmsInterface& cms,
   return true;
 }
 
-void EncCache::InitOnce() {
-  if (num_nzeroes.xsize() == 0) {
-    num_nzeroes = Image3I(kGroupDimInBlocks, kGroupDimInBlocks);
-  }
-}
-
 }  // namespace jxl

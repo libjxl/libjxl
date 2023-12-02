@@ -342,13 +342,15 @@ typedef enum {
   /** Control what kind of buffering is used, when using chunked image frames.
    * 0 = buffers everything, basically the same as non-streamed code path
    (mainly for testing)
-   * 1 = can buffer internal data (the tokens)
-   * 2 = can buffer the output
-   * 3 = minimize buffer usage: streamed input and chunked output, writing TOC
-   last (will not work with progressive)
-
-   When the image dimensions is smaller than 2048 x 2048 all the options are the
-   same. Using 1, 2 or 3 can result increasingly in less compression density.
+   * 1 = buffers everything for images that are smaller than 2048 x 2048, and
+   *     uses streaming input and output for larger images
+   * 2 = uses streaming input and output for all images that are larger than
+   *     one group, i.e. 256 x 256 pixels by default
+   * 3 = currently same as 2
+   *
+   * When using streaming input and output the encoder minimizes memory usage at
+   * the cost of compression density. Also note that images produced with
+   * streaming mode might can not be decoded progressively.
    */
   JXL_ENC_FRAME_SETTING_BUFFERING = 34,
 

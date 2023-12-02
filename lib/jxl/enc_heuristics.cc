@@ -30,7 +30,6 @@ namespace jxl {
 
 struct AuxOut;
 
-namespace {
 void FindBestBlockEntropyModel(PassesEncoderState& enc_state) {
   if (enc_state.cparams.decoding_speed_tier >= 1) {
     static constexpr uint8_t kSimpleCtxMap[] = {
@@ -167,8 +166,6 @@ void FindBestBlockEntropyModel(PassesEncoderState& enc_state) {
       *std::max_element(ctx_map.begin(), ctx_map.end()) + 1;
 }
 
-}  // namespace
-
 void FindBestDequantMatrices(const CompressParams& cparams,
                              const Image3F& opsin,
                              ModularFrameEncoder* modular_frame_encoder,
@@ -191,14 +188,6 @@ void FindBestDequantMatrices(const CompressParams& cparams,
                            1.0f / cparams.max_error[2]};
     DequantMatricesSetCustomDC(dequant_matrices, dc_weights);
   }
-}
-
-bool DefaultEncoderHeuristics::HandlesColorConversion(
-    const CompressParams& cparams, const ImageBundle& ib) {
-  return cparams.noise != Override::kOn && cparams.patches != Override::kOn &&
-         cparams.speed_tier >= SpeedTier::kWombat && cparams.resampling == 1 &&
-         cparams.color_transform == ColorTransform::kXYB &&
-         !cparams.modular_mode && !ib.HasAlpha();
 }
 
 namespace {
@@ -371,6 +360,8 @@ void DownsampleImage2_Sharper(const ImageF& input, ImageF* output) {
   }
 }
 
+}  // namespace
+
 void DownsampleImage2_Sharper(Image3F* opsin) {
   // Allocate extra space to avoid a reallocation when padding.
   Image3F downsampled(DivCeil(opsin->xsize(), 2) + kBlockDim,
@@ -383,6 +374,8 @@ void DownsampleImage2_Sharper(Image3F* opsin) {
   }
   *opsin = std::move(downsampled);
 }
+
+namespace {
 
 // The default upsampling kernels used by Upsampler in the decoder.
 static const constexpr int64_t kSize = 5;
@@ -678,6 +671,8 @@ void DownsampleImage2_Iterative(const ImageF& orig, ImageF* output) {
   }
 }
 
+}  // namespace
+
 void DownsampleImage2_Iterative(Image3F* opsin) {
   // Allocate extra space to avoid a reallocation when padding.
   Image3F downsampled(DivCeil(opsin->xsize(), 2) + kBlockDim,
@@ -701,70 +696,14 @@ void DownsampleImage2_Iterative(Image3F* opsin) {
   }
   *opsin = std::move(downsampled);
 }
-}  // namespace
 
-Status DefaultEncoderHeuristics::LossyFrameHeuristics(
-    PassesEncoderState* enc_state, ModularFrameEncoder* modular_frame_encoder,
-    const ImageBundle* original_pixels, Image3F* opsin,
-    const JxlCmsInterface& cms, ThreadPool* pool, AuxOut* aux_out) {
+Status LossyFrameHeuristics(PassesEncoderState* enc_state,
+                            ModularFrameEncoder* modular_frame_encoder,
+                            const Image3F* original_pixels, Image3F* opsin,
+                            const JxlCmsInterface& cms, ThreadPool* pool,
+                            AuxOut* aux_out) {
   CompressParams& cparams = enc_state->cparams;
   PassesSharedState& shared = enc_state->shared;
-
-  // Compute parameters for noise synthesis.
-  if (shared.frame_header.flags & FrameHeader::kNoise) {
-    if (cparams.photon_noise_iso == 0) {
-      // Don't start at zero amplitude since adding noise is expensive -- it
-      // significantly slows down decoding, and this is unlikely to
-      // completely go away even with advanced optimizations. After the
-      // kNoiseModelingRampUpDistanceRange we have reached the full level,
-      // i.e. noise is no longer represented by the compressed image, so we
-      // can add full noise by the noise modeling itself.
-      static const float kNoiseModelingRampUpDistanceRange = 0.6;
-      static const float kNoiseLevelAtStartOfRampUp = 0.25;
-      static const float kNoiseRampupStart = 1.0;
-      // TODO(user) test and properly select quality_coef with smooth
-      // filter
-      float quality_coef = 1.0f;
-      const float rampup = (cparams.butteraugli_distance - kNoiseRampupStart) /
-                           kNoiseModelingRampUpDistanceRange;
-      if (rampup < 1.0f) {
-        quality_coef = kNoiseLevelAtStartOfRampUp +
-                       (1.0f - kNoiseLevelAtStartOfRampUp) * rampup;
-      }
-      if (rampup < 0.0f) {
-        quality_coef = kNoiseRampupStart;
-      }
-      if (!GetNoiseParameter(*opsin, &shared.image_features.noise_params,
-                             quality_coef)) {
-        shared.frame_header.flags &= ~FrameHeader::kNoise;
-      }
-    }
-  }
-  if (enc_state->shared.frame_header.upsampling != 1 &&
-      !cparams.already_downsampled) {
-    // In VarDCT mode, LossyFrameHeuristics takes care of running downsampling
-    // after noise, if necessary.
-    if (cparams.resampling == 2) {
-      // TODO(lode): use the regular DownsampleImage, or adapt to the custom
-      // coefficients, if there is are custom upscaling coefficients in
-      // CustomTransformData
-      if (cparams.speed_tier <= SpeedTier::kSquirrel) {
-        // TODO(lode): DownsampleImage2_Iterative is currently too slow to
-        // be used for squirrel, make it faster, and / or enable it only for
-        // kitten.
-        DownsampleImage2_Iterative(opsin);
-      } else {
-        DownsampleImage2_Sharper(opsin);
-      }
-    } else {
-      DownsampleImage(opsin, cparams.resampling);
-    }
-    PadImageToBlockMultipleInPlace(opsin);
-  }
-
-  if (cparams.butteraugli_distance < 0) {
-    return JXL_FAILURE("Expected non-negative distance");
-  }
 
   // Find and subtract splines.
   if (cparams.speed_tier <= SpeedTier::kSquirrel) {
@@ -815,15 +754,6 @@ Status DefaultEncoderHeuristics::LossyFrameHeuristics(
   ArControlFieldHeuristics ar_heuristics;
   AcStrategyHeuristics acs_heuristics;
   CfLHeuristics cfl_heuristics;
-
-  if (!opsin->xsize()) {
-    JXL_ASSERT(HandlesColorConversion(cparams, *original_pixels));
-    *opsin = Image3F(RoundUpToBlockDim(original_pixels->xsize()),
-                     RoundUpToBlockDim(original_pixels->ysize()));
-    opsin->ShrinkTo(original_pixels->xsize(), original_pixels->ysize());
-    ToXYB(*original_pixels, pool, opsin, cms, /*linear=*/nullptr);
-    PadImageToBlockMultipleInPlace(opsin);
-  }
 
   // Compute an initial estimate of the quantization field.
   // Call InitialQuantField only in Hare mode or slower. Otherwise, rely

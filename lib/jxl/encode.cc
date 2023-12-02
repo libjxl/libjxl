@@ -1724,6 +1724,7 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetOption(
         return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_NOT_SUPPORTED,
                              "Buffering has to be in [0..3]");
       }
+      frame_settings->values.cparams.buffering = value;
       break;
     case JXL_ENC_FRAME_SETTING_JPEG_KEEP_EXIF:
       frame_settings->values.cparams.jpeg_keep_exif = value;

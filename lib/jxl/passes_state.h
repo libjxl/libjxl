@@ -85,12 +85,7 @@ struct PassesSharedState {
   bool IsGrayscale() const { return metadata->m.color_encoding.IsGray(); }
 
   Rect GroupRect(size_t group_index) const {
-    const size_t gx = group_index % frame_dim.xsize_groups;
-    const size_t gy = group_index / frame_dim.xsize_groups;
-    const Rect rect(gx * frame_dim.group_dim, gy * frame_dim.group_dim,
-                    frame_dim.group_dim, frame_dim.group_dim, frame_dim.xsize,
-                    frame_dim.ysize);
-    return rect;
+    return frame_dim.GroupRect(group_index);
   }
 
   Rect PaddedGroupRect(size_t group_index) const {

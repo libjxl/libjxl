@@ -148,6 +148,9 @@ float Butteraugli3Norm(const extras::PackedPixelFile& a,
 float ComputeDistance2(const extras::PackedPixelFile& a,
                        const extras::PackedPixelFile& b);
 
+float ComputePSNR(const extras::PackedPixelFile& a,
+                  const extras::PackedPixelFile& b);
+
 bool SameAlpha(const extras::PackedPixelFile& a,
                const extras::PackedPixelFile& b);
 

@@ -14,9 +14,9 @@ struct AuxOut;
 struct BitWriter;
 
 Status DequantMatricesEncode(
-    const DequantMatrices* matrices, BitWriter* writer, size_t layer,
+    const DequantMatrices& matrices, BitWriter* writer, size_t layer,
     AuxOut* aux_out, ModularFrameEncoder* modular_frame_encoder = nullptr);
-Status DequantMatricesEncodeDC(const DequantMatrices* matrices,
+Status DequantMatricesEncodeDC(const DequantMatrices& matrices,
                                BitWriter* writer, size_t layer,
                                AuxOut* aux_out);
 // For consistency with QuantEncoding, higher values correspond to more

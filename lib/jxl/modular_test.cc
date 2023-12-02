@@ -468,7 +468,7 @@ TEST(ModularTest, PredictorIntegerOverflow) {
     bw->ZeroPadToByte();
     allotment.ReclaimAndCharge(bw, 0, nullptr);
   }
-  EXPECT_TRUE(WriteGroupOffsets(group_codes, nullptr, &writer, nullptr));
+  EXPECT_TRUE(WriteGroupOffsets(group_codes, {}, &writer, nullptr));
   writer.AppendByteAligned(group_codes);
 
   PaddedBytes compressed = std::move(writer).TakeBytes();
@@ -516,7 +516,7 @@ TEST(ModularTest, UnsqueezeIntegerOverflow) {
     bw->ZeroPadToByte();
     allotment.ReclaimAndCharge(bw, 0, nullptr);
   }
-  EXPECT_TRUE(WriteGroupOffsets(group_codes, nullptr, &writer, nullptr));
+  EXPECT_TRUE(WriteGroupOffsets(group_codes, {}, &writer, nullptr));
   writer.AppendByteAligned(group_codes);
 
   PaddedBytes compressed = std::move(writer).TakeBytes();

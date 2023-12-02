@@ -196,6 +196,9 @@ struct CompressParams {
   // -1: don't care
   int level = -1;
 
+  // See JXL_ENC_FRAME_SETTING_BUFFERING option value.
+  int buffering = 0;
+
   std::vector<float> manual_noise;
   std::vector<float> manual_xyb_factors;
 
