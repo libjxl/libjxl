@@ -552,7 +552,7 @@ int main(int argc, const char* argv[]) {
     }
     // When --disable_output was parsed, `filename_out` is empty and we don't
     // need to write files.
-    if (!filename_out.empty()) {
+    if (encoder) {
       if (args.alpha_blend) {
         float background[3];
         if (!ParseBackgroundColor(args.background_spec, background)) {
@@ -561,21 +561,17 @@ int main(int argc, const char* argv[]) {
         }
         AlphaBlend(&ppf, background);
       }
-      if (encoder) {
-        std::ostringstream os;
-        os << args.jpeg_quality;
-        encoder->SetOption("q", os.str());
-      }
-      if (encoder && args.use_sjpeg) {
+      std::ostringstream os;
+      os << args.jpeg_quality;
+      encoder->SetOption("q", os.str());
+      if (args.use_sjpeg) {
         encoder->SetOption("jpeg_encoder", "sjpeg");
       }
       jxl::extras::EncodedImage encoded_image;
-      if (encoder) {
-        if (!args.quiet) cmdline.VerbosePrintf(2, "Encoding decoded image\n");
-        if (!encoder->Encode(ppf, &encoded_image)) {
-          fprintf(stderr, "Encode failed\n");
-          return EXIT_FAILURE;
-        }
+      if (!args.quiet) cmdline.VerbosePrintf(2, "Encoding decoded image\n");
+      if (!encoder->Encode(ppf, &encoded_image)) {
+        fprintf(stderr, "Encode failed\n");
+        return EXIT_FAILURE;
       }
       size_t nlayers = args.output_extra_channels
                            ? 1 + encoded_image.extra_channel_bitstreams.size()
