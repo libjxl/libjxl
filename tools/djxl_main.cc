@@ -550,57 +550,59 @@ int main(int argc, const char* argv[]) {
     if (args.print_read_bytes) {
       fprintf(stderr, "Decoded bytes: %" PRIuS "\n", decoded_bytes);
     }
-    if (args.alpha_blend) {
-      float background[3];
-      if (!ParseBackgroundColor(args.background_spec, background)) {
-        fprintf(stderr, "Invalid background color %s\n",
-                args.background_spec.c_str());
-      }
-      AlphaBlend(&ppf, background);
-    }
+    // When --disable_output was parsed, `filename_out` is empty and we don't
+    // need to write files.
     if (encoder) {
+      if (args.alpha_blend) {
+        float background[3];
+        if (!ParseBackgroundColor(args.background_spec, background)) {
+          fprintf(stderr, "Invalid background color %s\n",
+                  args.background_spec.c_str());
+        }
+        AlphaBlend(&ppf, background);
+      }
       std::ostringstream os;
       os << args.jpeg_quality;
       encoder->SetOption("q", os.str());
-    }
-    if (encoder && args.use_sjpeg) {
-      encoder->SetOption("jpeg_encoder", "sjpeg");
-    }
-    jxl::extras::EncodedImage encoded_image;
-    if (encoder) {
+      if (args.use_sjpeg) {
+        encoder->SetOption("jpeg_encoder", "sjpeg");
+      }
+      jxl::extras::EncodedImage encoded_image;
       if (!args.quiet) cmdline.VerbosePrintf(2, "Encoding decoded image\n");
       if (!encoder->Encode(ppf, &encoded_image)) {
         fprintf(stderr, "Encode failed\n");
         return EXIT_FAILURE;
       }
-    }
-    size_t nlayers = args.output_extra_channels
-                         ? 1 + encoded_image.extra_channel_bitstreams.size()
-                         : 1;
-    size_t nframes = args.output_frames ? encoded_image.bitstreams.size() : 1;
-    for (size_t i = 0; i < nlayers; ++i) {
-      for (size_t j = 0; j < nframes; ++j) {
-        const std::vector<uint8_t>& bitstream =
-            (i == 0 ? encoded_image.bitstreams[j]
-                    : encoded_image.extra_channel_bitstreams[i - 1][j]);
-        std::string fn = Filename(filename, extension, i, j, nlayers, nframes);
-        if (!jpegxl::tools::WriteFile(fn.c_str(), bitstream)) {
-          return EXIT_FAILURE;
+      size_t nlayers = args.output_extra_channels
+                           ? 1 + encoded_image.extra_channel_bitstreams.size()
+                           : 1;
+      size_t nframes = args.output_frames ? encoded_image.bitstreams.size() : 1;
+      for (size_t i = 0; i < nlayers; ++i) {
+        for (size_t j = 0; j < nframes; ++j) {
+          const std::vector<uint8_t>& bitstream =
+              (i == 0 ? encoded_image.bitstreams[j]
+                      : encoded_image.extra_channel_bitstreams[i - 1][j]);
+          std::string fn =
+              Filename(filename, extension, i, j, nlayers, nframes);
+          if (!jpegxl::tools::WriteFile(fn.c_str(), bitstream)) {
+            return EXIT_FAILURE;
+          }
+          if (!args.quiet)
+            cmdline.VerbosePrintf(1, "Wrote output to %s\n", fn.c_str());
         }
-        if (!args.quiet)
-          cmdline.VerbosePrintf(1, "Wrote output to %s\n", fn.c_str());
       }
-    }
-    if (!WriteOptionalOutput(args.preview_out,
-                             encoded_image.preview_bitstream) ||
-        !WriteOptionalOutput(args.icc_out, ppf.icc) ||
-        !WriteOptionalOutput(args.orig_icc_out, ppf.orig_icc) ||
-        !WriteOptionalOutput(args.metadata_out, encoded_image.metadata)) {
-      return EXIT_FAILURE;
+      if (!WriteOptionalOutput(args.preview_out,
+                               encoded_image.preview_bitstream) ||
+          !WriteOptionalOutput(args.icc_out, ppf.icc) ||
+          !WriteOptionalOutput(args.orig_icc_out, ppf.orig_icc) ||
+          !WriteOptionalOutput(args.metadata_out, encoded_image.metadata)) {
+        return EXIT_FAILURE;
+      }
     }
   }
   if (!args.quiet) {
     stats.Print(num_worker_threads);
   }
+
   return EXIT_SUCCESS;
 }
