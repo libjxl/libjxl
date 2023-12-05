@@ -855,10 +855,15 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
 
     const bool last_frame = frames_closed && !num_queued_frames;
 
-    // TODO(szabadka): Make this conditional on some upper bound of the
-    // compressed image size that can be calculated at this point.
-    size_t box_header_size = jxl::kLargeBoxHeaderSize;
-    bool use_large_box = true;
+    size_t upper_bound_on_compressed_size =
+        // TODO(firsching): find better upper bound/use named constant
+        metadata.xsize() * metadata.ysize() *
+        (metadata.m.color_encoding.Channels() + metadata.m.num_extra_channels) *
+        1000;
+    bool use_large_box =
+        upper_bound_on_compressed_size >= jxl::kLargeBoxContentSizeThreshold;
+    size_t box_header_size =
+        use_large_box ? jxl::kLargeBoxHeaderSize : jxl::kSmallBoxHeaderSize;
 
     const size_t frame_start_pos = output_processor.CurrentPosition();
     if (MustUseContainer()) {
