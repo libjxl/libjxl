@@ -979,7 +979,8 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
         // happen.
         return JXL_API_ERROR(
             this, JXL_ENC_ERR_GENERIC,
-            "Box size was estimated to be small, but turned out to be large.");
+            "Box size was estimated to be small, but turned out to be large. "
+            "Please file this error in size estimation as a bug.");
       }
       if (last_frame && jxlp_counter == 0) {
 #if JXL_ENABLE_ASSERT
