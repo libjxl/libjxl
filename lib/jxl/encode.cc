@@ -855,10 +855,26 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
 
     const bool last_frame = frames_closed && !num_queued_frames;
 
-    // TODO(szabadka): Make this conditional on some upper bound of the
-    // compressed image size that can be calculated at this point.
-    size_t box_header_size = jxl::kLargeBoxHeaderSize;
-    bool use_large_box = true;
+    uint32_t max_bits_per_sample = metadata.m.bit_depth.bits_per_sample;
+    for (const auto& info : metadata.m.extra_channel_info) {
+      max_bits_per_sample =
+          std::max(max_bits_per_sample, info.bit_depth.bits_per_sample);
+    }
+    // Heuristic upper bound on how many bits a single pixel in a single channel
+    // can use.
+    uint32_t bits_per_channels_estimate =
+        std::max(24u, max_bits_per_sample + 3);
+    size_t upper_bound_on_compressed_size_bits =
+        metadata.xsize() * metadata.ysize() *
+        (metadata.m.color_encoding.Channels() + metadata.m.num_extra_channels) *
+        bits_per_channels_estimate;
+    // Add a 1MB = 0x100000 for an heuristic upper bound on small sizes.
+    size_t upper_bound_on_compressed_size_bytes =
+        0x100000 + (upper_bound_on_compressed_size_bits >> 3);
+    bool use_large_box = upper_bound_on_compressed_size_bytes >=
+                         jxl::kLargeBoxContentSizeThreshold;
+    size_t box_header_size =
+        use_large_box ? jxl::kLargeBoxHeaderSize : jxl::kSmallBoxHeaderSize;
 
     const size_t frame_start_pos = output_processor.CurrentPosition();
     if (MustUseContainer()) {
@@ -957,6 +973,15 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
     if (MustUseContainer()) {
       output_processor.Seek(frame_start_pos);
       std::vector<uint8_t> box_header(box_header_size);
+      if (!use_large_box &&
+          frame_codestream_size >= jxl::kLargeBoxContentSizeThreshold) {
+        // Assuming our upper bound estimate is correct, this should never
+        // happen.
+        return JXL_API_ERROR(
+            this, JXL_ENC_ERR_GENERIC,
+            "Box size was estimated to be small, but turned out to be large. "
+            "Please file this error in size estimation as a bug.");
+      }
       if (last_frame && jxlp_counter == 0) {
 #if JXL_ENABLE_ASSERT
         const size_t n =
