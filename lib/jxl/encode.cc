@@ -860,6 +860,8 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
       max_bits_per_sample =
           std::max(max_bits_per_sample, info.bit_depth.bits_per_sample);
     }
+    // Heuristic upper bound on how many bits a single pixel in a single channel
+    // can use.
     uint32_t bits_per_channels_estimate =
         std::max(24u, max_bits_per_sample + 3);
     size_t upper_bound_on_compressed_size_bits =
