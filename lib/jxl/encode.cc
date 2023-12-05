@@ -855,13 +855,22 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
 
     const bool last_frame = frames_closed && !num_queued_frames;
 
-    size_t upper_bound_on_compressed_size =
-        // TODO(firsching): find better upper bound/use named constant
+    uint32_t max_bits_per_sample = metadata.m.bit_depth.bits_per_sample;
+    for (const auto& info : metadata.m.extra_channel_info) {
+      max_bits_per_sample =
+          std::max(max_bits_per_sample, info.bit_depth.bits_per_sample);
+    }
+    uint32_t bits_per_channels_estimate =
+        std::max(24u, max_bits_per_sample + 3);
+    size_t upper_bound_on_compressed_size_bits =
         metadata.xsize() * metadata.ysize() *
         (metadata.m.color_encoding.Channels() + metadata.m.num_extra_channels) *
-        1000;
-    bool use_large_box =
-        upper_bound_on_compressed_size >= jxl::kLargeBoxContentSizeThreshold;
+        bits_per_channels_estimate;
+    // Add a 1MB = 0x100000 for an heuristic upper bound on small sizes.
+    size_t upper_bound_on_compressed_size_bytes =
+        0x100000 + (upper_bound_on_compressed_size_bits >> 3);
+    bool use_large_box = upper_bound_on_compressed_size_bytes >=
+                         jxl::kLargeBoxContentSizeThreshold;
     size_t box_header_size =
         use_large_box ? jxl::kLargeBoxHeaderSize : jxl::kSmallBoxHeaderSize;
 
