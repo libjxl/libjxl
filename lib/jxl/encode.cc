@@ -973,7 +973,8 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
       std::vector<uint8_t> box_header(box_header_size);
       if (!use_large_box &&
           frame_codestream_size >= jxl::kLargeBoxContentSizeThreshold) {
-        // Assuming our upper bound estimate is correct, this should never happen.
+        // Assuming our upper bound estimate is correct, this should never
+        // happen.
         return JXL_API_ERROR(
             this, JXL_ENC_ERR_GENERIC,
             "Box size was estimated to be small, but turned out to be large.");
