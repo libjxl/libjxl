@@ -190,7 +190,7 @@ typedef enum {
   JXL_DEC_BOX_NEED_MORE_OUTPUT = 7,
 
   /** Informative event by @ref JxlDecoderProcessInput
-   * @ref JxlDecoderProcessInput: Basic information such as image dimensions and
+   * "JxlDecoderProcessInput": Basic information such as image dimensions and
    * extra channels. This event occurs max once per image.
    * In this case, @ref JxlDecoderReleaseInput will return all bytes from the
    * end of the basic info as unprocessed (including the last byte of basic info
@@ -224,18 +224,18 @@ typedef enum {
    * a JPEG XL image can have internal frames that are not intended to be
    * displayed (e.g. used for compositing a final frame), but this only returns
    * displayed frames, unless @ref JxlDecoderSetCoalescing was set to @ref
-   * JXL_FALSE: in that case, the individual layers are returned, without
-   * blending. Note that even when coalescing is disabled, only frames of type
-   * kRegularFrame are returned; frames of type kReferenceOnly and kLfFrame are
-   * always for internal purposes only and cannot be accessed. A displayed frame
-   * either has an animation duration or is the only or last frame in the image.
-   * This event occurs max once per displayed frame, always later than @ref
-   * JXL_DEC_COLOR_ENCODING, and always earlier than any pixel data. While
-   * JPEG XL supports encoding a single frame as the composition of multiple
-   * internal sub-frames also called frames, this event is not indicated for the
-   * internal frames.
-   * In this case, @ref JxlDecoderReleaseInput will return all bytes from the
-   * end of the frame header (including ToC) as unprocessed.
+   * JXL_FALSE "JXL_FALSE": in that case, the individual layers are returned,
+   * without blending. Note that even when coalescing is disabled, only frames
+   * of type kRegularFrame are returned; frames of type kReferenceOnly and
+   * kLfFrame are always for internal purposes only and cannot be accessed. A
+   * displayed frame either has an animation duration or is the only or last
+   * frame in the image. This event occurs max once per displayed frame, always
+   * later than @ref JXL_DEC_COLOR_ENCODING, and always earlier than any pixel
+   * data. While JPEG XL supports encoding a single frame as the composition of
+   * multiple internal sub-frames also called frames, this event is not
+   * indicated for the internal frames. In this case, @ref
+   * JxlDecoderReleaseInput will return all bytes from the end of the frame
+   * header (including ToC) as unprocessed.
    */
   JXL_DEC_FRAME = 0x400,
 
@@ -463,10 +463,10 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSubscribeEvents(JxlDecoder* dec,
  *    will apply the transformation from the orientation setting, hence
  *    rendering the image according to its specified intent. When
  *    producing a @ref JxlBasicInfo, the decoder will always set the
- *    orientation field to @ref JXL_ORIENT_IDENTITY (matching the returned
+ *    orientation field to JXL_ORIENT_IDENTITY (matching the returned
  *    pixel data) and also align xsize and ysize so that they correspond
  *    to the width and the height of the returned pixel data.
- *  - If skip_reorientation is @ref JXL_TRUE: the decoder will skip
+ *  - If skip_reorientation is @ref JXL_TRUE "JXL_TRUE": the decoder will skip
  *    applying the transformation from the orientation setting, returning
  *    the image in the as-in-bitstream pixeldata orientation.
  *    This may be faster to decode since the decoder doesn't have to apply the

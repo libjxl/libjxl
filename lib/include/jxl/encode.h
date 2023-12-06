@@ -326,7 +326,7 @@ typedef enum {
    */
   JXL_ENC_FRAME_INDEX_BOX = 31,
 
-  /** Sets brotli encode effort for use in @ref JPEG recompression and
+  /** Sets brotli encode effort for use in JPEG recompression and
    * compressed metadata boxes (brob). Can be -1 (default) or 0 (fastest) to 11
    * (slowest). Default is based on the general encode effort in case of JPEG
    * recompression, and 4 for brob boxes.
@@ -652,7 +652,8 @@ JxlEncoderAddJPEGFrame(const JxlEncoderFrameSettings* frame_settings,
  * obviously not recommended to use a pixel_format with lower precision than
  * what is specified in the @ref JxlBasicInfo.
  *
- * We support interleaved channels as described by the @ref JxlPixelFormat:
+ * We support interleaved channels as described by the @ref JxlPixelFormat
+ * "JxlPixelFormat":
  * - single-channel data, e.g. grayscale
  * - single-channel + alpha
  * - trichromatic, e.g. RGB
@@ -1104,7 +1105,7 @@ JXL_EXPORT void JxlEncoderCloseFrames(JxlEncoder* enc);
  * JxlEncoderProcessOutput calls should be done to create the final output.
  *
  * The requirements of both @ref JxlEncoderCloseFrames and @ref
- * @ref JxlEncoderCloseBoxes apply to this function. Either this function or the
+ * JxlEncoderCloseBoxes apply to this function. Either this function or the
  * other two must be called after the final frame and/or box, and the next
  * @ref JxlEncoderProcessOutput call, or the codestream won't be encoded
  * correctly.
@@ -1124,8 +1125,7 @@ JXL_EXPORT void JxlEncoderCloseInput(JxlEncoder* enc);
  * @param color color encoding. Object owned by the caller and its contents are
  * copied internally.
  * @return @ref JXL_ENC_SUCCESS if the operation was successful, @ref
- * JXL_ENC_ERROR or
- * @ref JXL_ENC_NOT_SUPPORTED otherwise
+ * JXL_ENC_ERROR otherwise
  */
 JXL_EXPORT JxlEncoderStatus
 JxlEncoderSetColorEncoding(JxlEncoder* enc, const JxlColorEncoding* color);
@@ -1141,8 +1141,7 @@ JxlEncoderSetColorEncoding(JxlEncoder* enc, const JxlColorEncoding* color);
  * @param icc_profile bytes of the original ICC profile
  * @param size size of the icc_profile buffer in bytes
  * @return @ref JXL_ENC_SUCCESS if the operation was successful, @ref
- * JXL_ENC_ERROR or
- * @ref JXL_ENC_NOT_SUPPORTED otherwise
+ * JXL_ENC_ERROR otherwise
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderSetICCProfile(JxlEncoder* enc,
                                                     const uint8_t* icc_profile,
@@ -1193,7 +1192,7 @@ JXL_EXPORT void JxlEncoderInitBlendInfo(JxlBlendInfo* blend_info);
  * @param info global image metadata. Object owned by the caller and its
  * contents are copied internally.
  * @return @ref JXL_ENC_SUCCESS if the operation was successful,
- * @ref JXL_ENC_ERROR or @ref JXL_ENC_NOT_SUPPORTED otherwise
+ * @ref JXL_ENC_ERROR otherwise
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
                                                    const JxlBasicInfo* info);
@@ -1212,7 +1211,7 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
  * 0: nearest neighbor (good for pixel art)
  * 1: 'pixel dots' (same as NN for 2x, diamond-shaped 'pixel dots' for 4x/8x)
  * @return @ref JXL_ENC_SUCCESS if the operation was successful,
- * @ref JXL_ENC_ERROR or @ref JXL_ENC_NOT_SUPPORTED otherwise
+ * @ref JXL_ENC_ERROR otherwise
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderSetUpsamplingMode(JxlEncoder* enc,
                                                         int64_t factor,
@@ -1350,7 +1349,7 @@ JxlEncoderStoreJPEGMetadata(JxlEncoder* enc, JXL_BOOL store_jpeg_metadata);
  * 268435456 pixels total with a maximum width or height of 262144 pixels,
  * maximum 16-bit color channel depth, maximum 120 frames per second for
  * animation, maximum ICC color profile size of 4 MiB, it allows all color
- * models and extra channel types except CMYK and the @ref JXL_CHANNEL_BLACK
+ * models and extra channel types except CMYK and the JXL_CHANNEL_BLACK
  * extra channel, and a maximum of 4 extra channels in addition to the 3 color
  * channels. It also sets boundaries to certain internally used coding tools.
  *
@@ -1408,7 +1407,7 @@ JXL_EXPORT int JxlEncoderGetRequiredCodestreamLevel(const JxlEncoder* enc);
  *
  * When disabled, those options are not overridden, but since those options
  * could still have been manually set to a combination that operates losslessly,
- * using this function with lossless set to @ref JXL_DEC_FALSE does not
+ * using this function with lossless set to @ref JXL_FALSE does not
  * guarantee lossy encoding, though the default set of options is lossy.
  *
  * @param frame_settings set of options and metadata for this frame. Also

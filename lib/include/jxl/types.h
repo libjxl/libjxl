@@ -91,8 +91,7 @@ typedef struct {
   JxlDataType data_type;
 
   /** Whether multi-byte data types are represented in big endian or little
-   * endian format. This applies to ::JXL_TYPE_UINT16, ::JXL_TYPE_UINT32
-   * and ::JXL_TYPE_FLOAT.
+   * endian format. This applies to ::JXL_TYPE_UINT16 and ::JXL_TYPE_FLOAT.
    */
   JxlEndianness endianness;
 

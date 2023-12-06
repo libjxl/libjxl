@@ -165,8 +165,8 @@ typedef struct {
    * transfer function if outputting to unsigned integers) but will not convert
    * it to to the original color profile. The decoder also does not convert to
    * the target display color profile. To convert the pixel data produced by
-   * the decoder to the original color profile, one of the @ref
-   * JxlDecoderGetColor "JxlDecoderGetColor" * functions needs to be called with
+   * the decoder to the original color profile, one of the JxlDecoderGetColor*
+   * functions needs to be called with
    * @ref JXL_COLOR_PROFILE_TARGET_DATA to get the color profile of the decoder
    * output, and then an external CMS can be used for conversion. Note that for
    * lossy compression, this should be set to false for most use cases, and if
