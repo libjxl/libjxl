@@ -196,7 +196,7 @@ typedef struct {
    * channel, such as in the case of RGBA color, check alpha_bits != 0.
    * If and only if this is 1, the @ref JxlColorSpace in the @ref
    * JxlColorEncoding is
-   * @ref JXL_COLOR_SPACE_GRAY.
+   * ::JXL_COLOR_SPACE_GRAY.
    */
   uint32_t num_color_channels;
 

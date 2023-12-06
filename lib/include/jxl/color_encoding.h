@@ -129,7 +129,7 @@ typedef struct {
   /** Built-in RGB primaries. If this value is @ref JXL_PRIMARIES_CUSTOM, must
    * use the numerical primaries values below. This field and the custom values
    * below are unused and must be ignored if the color space is
-   * @ref JXL_COLOR_SPACE_GRAY or @ref JXL_COLOR_SPACE_XYB.
+   * ::JXL_COLOR_SPACE_GRAY or @ref JXL_COLOR_SPACE_XYB.
    */
   JxlPrimaries primaries;
 
