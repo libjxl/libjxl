@@ -81,7 +81,7 @@ jobs:
       run: |
         ./ci.sh release \
           -DJPEGXL_DEP_LICENSE_DIR=/usr/share/doc \
-          -DJPEGXL_STATIC=ON \
+          -DBUILD_SHARED_LIBS=OFF \
           -DBUILD_TESTING=OFF \
           -DJPEGXL_ENABLE_JPEGLI_LIBJPEG=OFF \
           -DJPEGXL_ENABLE_VIEWERS=OFF \
@@ -121,7 +121,6 @@ jobs:
         os:
         - ubuntu:22.04
         - ubuntu:20.04
-        - debian:buster
         - debian:bullseye
         - debian:bookworm
         - debian:trixie
@@ -313,7 +312,7 @@ jobs:
         set -x
         mkdir build
         cmake -Bbuild -H. ${{ matrix.arch }} \
-          -DJPEGXL_STATIC=ON \
+          -DBUILD_SHARED_LIBS=OFF \
           -DBUILD_TESTING=OFF \
           -DCMAKE_BUILD_TYPE=Release \
           -DCMAKE_INSTALL_PREFIX=`pwd`/prefix \

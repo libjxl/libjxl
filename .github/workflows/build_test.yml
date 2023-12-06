@@ -293,16 +293,10 @@ jobs:
         sudo cmake --build build -- install
         cmake -Bbuild-example -Hexamples -G Ninja
         cmake --build build-example
-        if ldd build-example/decode_oneshot_static | grep libjxl; then
-          echo "decode_oneshot_static is not using the static lib" >&2
-          exit 1
-        fi
         # Test that the built binaries run.
         echo -e -n "PF\n1 1\n-1.0\n\0\0\x80\x3f\0\0\x80\x3f\0\0\x80\x3f" > test.pfm
         build-example/encode_oneshot test.pfm test.jxl
-        build-example/encode_oneshot_static test.pfm test-static.jxl
         build-example/decode_oneshot test.jxl dec.pfm dec.icc
-        build-example/decode_oneshot_static test.jxl dec-static.pfm dec-static.icc
 
     # Run the tests on push and when requested in pull_request.
     - name: Test ${{ matrix.mode }}
@@ -354,13 +348,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-           # TODO(eustas): investigate failures
          - msystem: mingw64
-           faulty: true
          - msystem: clang64
          - msystem: mingw32
-           # TODO(eustas): investigate failures
-           faulty: true
            disable_tests:
              - ButteraugliTest.Lossless
              - ButteraugliTest.Distmap
@@ -412,14 +402,12 @@ jobs:
             -G Ninja
       - name: CMake build
         run: cmake --build build
-        continue-on-error: ${{ matrix.faulty }}
       - name: Test
         if: |
           github.event_name == 'push' ||
           (github.event_name == 'pull_request' &&
            contains(github.event.pull_request.labels.*.name, 'CI:full'))
         run: ctest --test-dir build --parallel 2 --output-on-failure -E "${{ join(matrix.disable_tests, '|') }}"
-        continue-on-error: ${{ matrix.faulty }}
 
   wasm32_build:
     name: WASM wasm32/${{ matrix.variant }}
@@ -427,7 +415,7 @@ jobs:
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
       BUILD_TARGET: wasm32
-      EM_VERSION: 3.1.1
+      EM_VERSION: 3.1.50
       NODE_VERSION: 18
 
     strategy:

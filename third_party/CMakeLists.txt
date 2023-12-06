@@ -118,7 +118,7 @@ if (JPEGXL_ENABLE_VIEWERS OR NOT JPEGXL_ENABLE_SKCMS OR JPEGXL_ENABLE_PLUGINS)
 endif()
 
 # libpng
-if (JPEGXL_BUNDLE_LIBPNG AND JPEGXL_EMSCRIPTEN)
+if (JPEGXL_BUNDLE_LIBPNG AND EMSCRIPTEN)
   if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/libpng/CMakeLists.txt")
   message(FATAL_ERROR "Please run ${PROJECT_SOURCE_DIR}/deps.sh to fetch the "
           "build dependencies.")
