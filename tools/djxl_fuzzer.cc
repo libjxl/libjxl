@@ -304,6 +304,7 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
         }
       }
     } else if (status == JXL_DEC_PREVIEW_IMAGE) {
+      // TODO(eustas): test JXL_DEC_NEED_PREVIEW_OUT_BUFFER
       if (seen_preview) abort();
       if (!want_preview) abort();
       if (!seen_color_encoding) abort();
