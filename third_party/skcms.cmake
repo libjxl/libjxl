@@ -12,35 +12,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-add_library(skcms-obj OBJECT EXCLUDE_FROM_ALL skcms/skcms.cc)
-target_include_directories(skcms-obj PUBLIC "${CMAKE_CURRENT_LIST_DIR}/skcms/")
+add_library(skcms STATIC EXCLUDE_FROM_ALL skcms/skcms.cc)
+target_include_directories(skcms PUBLIC "${CMAKE_CURRENT_LIST_DIR}/skcms/")
 
 include(CheckCXXCompilerFlag)
 check_cxx_compiler_flag("-Wno-psabi" CXX_WPSABI_SUPPORTED)
 if(CXX_WPSABI_SUPPORTED)
-  target_compile_options(skcms-obj PRIVATE -Wno-psabi)
+  target_compile_options(skcms PRIVATE -Wno-psabi)
 endif()
 
 if(JPEGXL_BUNDLE_SKCMS)
-  target_compile_options(skcms-obj PRIVATE -DJPEGXL_BUNDLE_SKCMS=1)
+  target_compile_options(skcms PRIVATE -DJPEGXL_BUNDLE_SKCMS=1)
   if(MSVC)
-    target_compile_options(skcms-obj
+    target_compile_options(skcms
       PRIVATE /FI${CMAKE_CURRENT_SOURCE_DIR}/../lib/jxl/cms/jxl_skcms.h)
   else()
-    target_compile_options(skcms-obj
+    target_compile_options(skcms
       PRIVATE -include ${CMAKE_CURRENT_SOURCE_DIR}/../lib/jxl/cms/jxl_skcms.h)
   endif()
 endif()
 
-set_target_properties(skcms-obj PROPERTIES
+set_target_properties(skcms PROPERTIES
   POSITION_INDEPENDENT_CODE ON
   CXX_VISIBILITY_PRESET hidden
   VISIBILITY_INLINES_HIDDEN 1
 )
-
-if(NOT JPEGXL_BUNDLE_SKCMS)
-  add_library(skcms STATIC EXCLUDE_FROM_ALL $<TARGET_OBJECTS:skcms-obj>)
-  target_include_directories(skcms
-    PUBLIC $<TARGET_PROPERTY:skcms-obj,INCLUDE_DIRECTORIES>)
-endif()
-

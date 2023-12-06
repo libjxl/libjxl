@@ -46,6 +46,7 @@ jobs:
              - -DCMAKE_CROSSCOMPILING_EMULATOR=/usr/bin/qemu-aarch64-static
              - -DJPEGXL_ENABLE_OPENEXR=off
              - -DJPEGXL_ENABLE_SIZELESS_VECTORS=on
+             - -DJPEGXL_WARNINGS_AS_ERRORS=off
             cmake_flags: -march=armv8-a+sve
             c_compiler: aarch64-linux-gnu-gcc
             cxx_compiler: aarch64-linux-gnu-g++

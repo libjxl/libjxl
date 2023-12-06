@@ -131,10 +131,10 @@ if (JPEGXL_ENABLE_SKCMS)
   endif ()
 endif ()
 
-# strips the -static suffix from all the elements in LIST
-function(strip_static OUTPUT_VAR LIB_LIST)
+# strips the -internal suffix from all the elements in LIST
+function(strip_internal OUTPUT_VAR LIB_LIST)
   foreach(lib IN LISTS ${LIB_LIST})
-    string(REGEX REPLACE "-static$" "" lib "${lib}")
+    string(REGEX REPLACE "-internal$" "" lib "${lib}")
     list(APPEND out_list "${lib}")
   endforeach()
   set(${OUTPUT_VAR} ${out_list} PARENT_SCOPE)
@@ -175,7 +175,6 @@ install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include/jxl
   DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
 
 if(BUILD_TESTING)
-  cmake_policy(SET CMP0057 NEW)  # https://gitlab.kitware.com/cmake/cmake/issues/18198
   include(GoogleTest)
 endif()
 

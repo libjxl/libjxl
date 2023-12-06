@@ -3,41 +3,21 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
-# Ubuntu bionic ships with cmake 3.10.
-cmake_minimum_required(VERSION 3.10)
+# Ubuntu focal ships with cmake 3.16.
+cmake_minimum_required(VERSION 3.16...3.27)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
-
-# Honor VISIBILITY_INLINES_HIDDEN on all types of targets.
-if(POLICY CMP0063)
-  cmake_policy(SET CMP0063 NEW)
-endif()
-# Pass CMAKE_EXE_LINKER_FLAGS to CC and CXX compilers when testing if they work.
-if(POLICY CMP0065)
-  cmake_policy(SET CMP0065 NEW)
-endif()
-
-# Set PIE flags for POSITION_INDEPENDENT_CODE targets, added in 3.14.
-if(POLICY CMP0083)
-  cmake_policy(SET CMP0083 NEW)
-endif()
 
 project(LIBJXL LANGUAGES C CXX)
 
-include(CheckCXXSourceCompiles)
-check_cxx_source_compiles(
-   "int main() {
-      #if !defined(__EMSCRIPTEN__)
-      static_assert(false, \"__EMSCRIPTEN__ is not defined\");
-      #endif
-      return 0;
-    }"
-  JPEGXL_EMSCRIPTEN
-)
+# TODO(sboukortt): remove once oss-fuzz passes -DBUILD_SHARED_LIBS=OFF
+if(JPEGXL_ENABLE_FUZZERS)
+  message(INFO "Fuzzer build detected, building static libs")
+  set(BUILD_SHARED_LIBS OFF)
+endif()
 
 message(STATUS "CMAKE_SYSTEM_PROCESSOR is ${CMAKE_SYSTEM_PROCESSOR}")
 include(CheckCXXCompilerFlag)
 check_cxx_compiler_flag("-fsanitize=fuzzer-no-link" CXX_FUZZERS_SUPPORTED)
-check_cxx_compiler_flag("-Xclang -mconstructor-aliases" CXX_CONSTRUCTOR_ALIASES_SUPPORTED)
 check_cxx_compiler_flag("-fmacro-prefix-map=OLD=NEW" CXX_MACRO_PREFIX_MAP)
 check_cxx_compiler_flag("-fno-rtti" CXX_NO_RTTI_SUPPORTED)
 
@@ -97,7 +77,7 @@ check_cxx_source_compiles(
 
 set(WARNINGS_AS_ERRORS_DEFAULT false)
 
-if((SANITIZER STREQUAL "msan") OR JPEGXL_EMSCRIPTEN)
+if((SANITIZER STREQUAL "msan") OR EMSCRIPTEN)
   set(BUNDLE_LIBPNG_DEFAULT YES)
 else()
   set(BUNDLE_LIBPNG_DEFAULT NO)
@@ -161,8 +141,6 @@ set(JPEGXL_ENABLE_BOXES true CACHE BOOL
     "Builds in support for decoding boxes in JXL files,\
  disabling it makes the decoder reject JXL_DEC_BOX events,\
  (default enabled)")
-set(JPEGXL_STATIC false CACHE BOOL
-    "Build tools as static binaries.")
 set(JPEGXL_WARNINGS_AS_ERRORS ${WARNINGS_AS_ERRORS_DEFAULT} CACHE BOOL
     "Treat warnings as errors during compilation.")
 set(JPEGXL_DEP_LICENSE_DIR "" CACHE STRING
@@ -194,24 +172,11 @@ if (NOT CMAKE_C_COMPILER_ID STREQUAL CMAKE_CXX_COMPILER_ID)
   message(FATAL_ERROR "Different C/C++ compilers set: "
           "${CMAKE_C_COMPILER_ID} vs ${CMAKE_CXX_COMPILER_ID}")
 endif()
-if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  # Android NDK's toolchain.cmake fakes the clang version in
-  # CMAKE_CXX_COMPILER_VERSION with an incorrect number, so ignore this.
-  if (NOT CMAKE_ANDROID_NDK_TOOLCHAIN_VERSION MATCHES "clang"
-      AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5)
-    message(FATAL_ERROR
-      "Minimum Clang version required is Clang 5, please update.")
-  endif()
-elseif (CMAKE_CXX_COMPILER_ID MATCHES "GNU")
-  if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 7)
-    message(FATAL_ERROR
-      "Minimum GCC version required is 7, please update.")
-  endif()
-endif()
 
 message(STATUS
     "Compiled IDs C:${CMAKE_C_COMPILER_ID}, C++:${CMAKE_CXX_COMPILER_ID}")
 
+set(JXL_HWY_INCLUDE_DIRS "$<BUILD_INTERFACE:$<TARGET_PROPERTY:$<IF:$<TARGET_EXISTS:hwy::hwy>,hwy::hwy,hwy>,INTERFACE_INCLUDE_DIRECTORIES>>")
 # Always disable SSSE3 since it is rare to have SSSE3 but not SSE4
 set(HWY_DISABLED_TARGETS "HWY_SSSE3")
 if (NOT JPEGXL_ENABLE_AVX512)
@@ -234,18 +199,6 @@ endif()
 # used by clang-tidy.
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-if(JPEGXL_STATIC)
-  set(BUILD_SHARED_LIBS 0)
-  # Clang developers say that in case to use "static" we have to build stdlib
-  # ourselves; for real use case we don't care about stdlib, as it is "granted",
-  # so just linking all other libraries is fine.
-  if (NOT MSVC AND NOT APPLE)
-    set(CMAKE_FIND_LIBRARY_SUFFIXES .a)
-    set(CMAKE_EXE_LINKER_FLAGS
-        "${CMAKE_EXE_LINKER_FLAGS} -static -static-libgcc -static-libstdc++")
-  endif()
-endif()  # JPEGXL_STATIC
-
 # Threads
 set(THREADS_PREFER_PTHREAD_FLAG YES)
 find_package(Threads REQUIRED)
@@ -259,41 +212,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED YES)
 # Atomics
 find_package(Atomics REQUIRED)
 
-if(JPEGXL_STATIC)
-  if (MINGW)
-    # In MINGW libstdc++ uses pthreads directly. When building statically a
-    # program (regardless of whether the source code uses pthread or not) the
-    # toolchain will add stdc++ and pthread to the linking step but stdc++ will
-    # be linked statically while pthread will be linked dynamically.
-    # To avoid this and have pthread statically linked with need to pass it in
-    # the command line with "-Wl,-Bstatic -lpthread -Wl,-Bdynamic" but the
-    # linker will discard it if not used by anything else up to that point in
-    # the linker command line. If the program or any dependency don't use
-    # pthread directly -lpthread is discarded and libstdc++ (added by the
-    # toolchain later) will then use the dynamic version. For this we also need
-    # to pass -lstdc++ explicitly before -lpthread. For pure C programs -lstdc++
-    # will be discarded anyway.
-    # This adds these flags as dependencies for *all* targets. Adding this to
-    # CMAKE_EXE_LINKER_FLAGS instead would cause them to be included before any
-    # object files and therefore discarded. This should be set in the
-    # INTERFACE_LINK_LIBRARIES of Threads::Threads but some third_part targets
-    # don't depend on it.
-    link_libraries(-Wl,-Bstatic -lstdc++ -lpthread -Wl,-Bdynamic)
-  elseif(CMAKE_USE_PTHREADS_INIT)
-    # "whole-archive" is not supported on OSX.
-    if (NOT APPLE)
-      # Set pthreads as a whole-archive, otherwise weak symbols in the static
-      # libraries will discard pthreads symbols leading to segmentation fault at
-      # runtime.
-      message(STATUS "Using -lpthread as --whole-archive")
-      set_target_properties(Threads::Threads PROPERTIES
-        INTERFACE_LINK_LIBRARIES
-            "-Wl,--whole-archive;-lpthread;-Wl,--no-whole-archive")
-    endif()
-  endif()
-endif()  # JPEGXL_STATIC
-
-if (JPEGXL_EMSCRIPTEN)
+if (EMSCRIPTEN)
   set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pthread")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pthread")
@@ -331,23 +250,19 @@ else ()
     add_definitions(-DHWY_DISABLED_TARGETS=\(${HWY_DISABLED_TARGETS}\))
   endif()
 
-  # In CMake before 3.12 it is problematic to pass repeated flags like -Xclang.
-  # For this reason we place them in CMAKE_CXX_FLAGS instead.
-  # See https://gitlab.kitware.com/cmake/cmake/issues/15826
-
   # Machine flags.
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -funwind-tables")
+  add_compile_options(-funwind-tables)
   if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Xclang -mrelax-all")
+    add_compile_options("SHELL:-Xclang -mrelax-all")
   endif()
   if (CXX_CONSTRUCTOR_ALIASES_SUPPORTED)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Xclang -mconstructor-aliases")
+    add_compile_options("SHELL:-Xclang -mconstructor-aliases")
   endif()
 
   if(WIN32)
     # Not supported by clang-cl, but frame pointers are default on Windows
   else()
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer")
+    add_compile_options(-fno-omit-frame-pointer)
   endif()
 
   # CPU flags - remove once we have NEON dynamic dispatch
@@ -356,17 +271,8 @@ else ()
   if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm")
     if(JPEGXL_FORCE_NEON)
       # GCC requires these flags, otherwise __ARM_NEON is undefined.
-      set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} \
-        -mfpu=neon-vfpv4 -mfloat-abi=hard")
+      add_compile_options(-mfpu=neon-vfpv4 -mfloat-abi=hard)
     endif()
-  endif()
-
-  # Force build with optimizations in release mode.
-  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O2")
-  # Also optimize debug build; this is "unofficial", so it goes through ENV
-  if(DEFINED ENV{JPEGXL_OPT_DBG})
-    # Not the same thing as release_with_debug
-    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O2")
   endif()
 
   add_compile_options(
