@@ -145,10 +145,10 @@ jobs:
         cp tools/conformance/conformance.py build/tools/conformance
         cp tools/conformance/lcms2.py build/tools/conformance
         cp build/tools/djxl build/tools/conformance
-        cp build/libjxl.so.${{ env.LIBJXL_VERSION }} build/tools/conformance
-        cp build/libjxl_cms.so.${{ env.LIBJXL_VERSION }} build/tools/conformance
-        cp build/libjxl_threads.so.${{ env.LIBJXL_VERSION }} build/tools/conformance
-        cp build/libjxl_extras_codec.so.${{ env.LIBJXL_VERSION }} build/tools/conformance
+        cp build/lib/libjxl.so.${{ env.LIBJXL_VERSION }} build/tools/conformance
+        cp build/lib/libjxl_cms.so.${{ env.LIBJXL_VERSION }} build/tools/conformance
+        cp build/lib/libjxl_threads.so.${{ env.LIBJXL_VERSION }} build/tools/conformance
+        cp build/lib/libjxl_extras_codec.so.${{ env.LIBJXL_VERSION }} build/tools/conformance
       env:
         SKIP_TEST: 1
     - uses: actions/upload-artifact@a8a3f3ad30e3422c9c7b888a15615d19a852ae32 # v3.1.3

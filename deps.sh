@@ -5,7 +5,7 @@
 # license that can be found in the LICENSE file.
 
 # This file downloads the dependencies needed to build JPEG XL into third_party.
-# These dependencies are normally pulled by gtest.
+# These dependencies are normally pulled by git.
 
 set -eu
 
