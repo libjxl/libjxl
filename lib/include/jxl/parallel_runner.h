@@ -61,8 +61,9 @@ typedef int JxlParallelRetCode;
  * Parallel run initialization callback. See @ref JxlParallelRunner for details.
  *
  * This function MUST be called by the JxlParallelRunner only once, on the
- * same thread that called @ref JxlParallelRunner, before any parallel execution.
- * The purpose of this call is to provide the maximum number of threads that the
+ * same thread that called @ref JxlParallelRunner, before any parallel
+ * execution. The purpose of this call is to provide the maximum number of
+ * threads that the
  * @ref JxlParallelRunner will use, which can be used by JPEG XL to allocate
  * per-thread storage if needed.
  *
@@ -78,7 +79,8 @@ typedef JxlParallelRetCode (*JxlParallelRunInit)(void* jpegxl_opaque,
                                                  size_t num_threads);
 
 /**
- * Parallel run data processing callback. See @ref JxlParallelRunner for details.
+ * Parallel run data processing callback. See @ref JxlParallelRunner for
+ * details.
  *
  * This function MUST be called once for every number in the range [start_range,
  * end_range) (including start_range but not including end_range) passing this
@@ -103,9 +105,10 @@ typedef void (*JxlParallelRunFunction)(void* jpegxl_opaque, uint32_t value,
  * number in the range [start_range, end_range) (including start_range but not
  * including end_range) possibly from different multiple threads in parallel.
  *
- * The @ref JxlParallelRunner function does not need to be re-entrant. This means
- * that the same @ref JxlParallelRunner function with the same runner_opaque
- * provided parameter will not be called from the library from either @p init or
+ * The @ref JxlParallelRunner function does not need to be re-entrant. This
+ * means that the same @ref JxlParallelRunner function with the same
+ * runner_opaque provided parameter will not be called from the library from
+ * either @p init or
  * @p func in the same decoder or encoder instance. However, a single decoding
  * or encoding instance may call the provided @ref JxlParallelRunner multiple
  * times for different parts of the decoding or encoding process.

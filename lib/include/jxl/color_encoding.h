@@ -24,9 +24,9 @@ extern "C" {
 typedef enum {
   /** Tristimulus RGB */
   JXL_COLOR_SPACE_RGB,
-  /** Luminance based, the primaries in @ref JxlColorEncoding must be ignored. This
-   * value implies that num_color_channels in @ref JxlBasicInfo is 1, any other value
-   * implies num_color_channels is 3. */
+  /** Luminance based, the primaries in @ref JxlColorEncoding must be ignored.
+   * This value implies that num_color_channels in @ref JxlBasicInfo is 1, any
+   * other value implies num_color_channels is 3. */
   JXL_COLOR_SPACE_GRAY,
   /** XYB (opsin) color space */
   JXL_COLOR_SPACE_XYB,
@@ -37,16 +37,16 @@ typedef enum {
 /** Built-in whitepoints for color encoding. When decoding, the numerical xy
  * whitepoint value can be read from the @ref JxlColorEncoding white_point field
  * regardless of the enum value. When encoding, enum values except
- * @ref JXL_WHITE_POINT_CUSTOM override the numerical fields. Some enum values match
- * a subset of CICP (Rec. ITU-T H.273 | ISO/IEC 23091-2:2019(E)), however the
- * white point and RGB primaries are separate enums here.
+ * @ref JXL_WHITE_POINT_CUSTOM override the numerical fields. Some enum values
+ * match a subset of CICP (Rec. ITU-T H.273 | ISO/IEC 23091-2:2019(E)), however
+ * the white point and RGB primaries are separate enums here.
  */
 typedef enum {
   /** CIE Standard Illuminant D65: 0.3127, 0.3290 */
   JXL_WHITE_POINT_D65 = 1,
-  /** White point must be read from the @ref JxlColorEncoding white_point field, or
-   * as ICC profile. This enum value is not an exact match of the corresponding
-   * CICP value. */
+  /** White point must be read from the @ref JxlColorEncoding white_point field,
+   * or as ICC profile. This enum value is not an exact match of the
+   * corresponding CICP value. */
   JXL_WHITE_POINT_CUSTOM = 2,
   /** CIE Standard Illuminant E (equal-energy): 1/3, 1/3 */
   JXL_WHITE_POINT_E = 10,
@@ -57,8 +57,8 @@ typedef enum {
 /** Built-in primaries for color encoding. When decoding, the primaries can be
  * read from the @ref JxlColorEncoding primaries_red_xy, primaries_green_xy and
  * primaries_blue_xy fields regardless of the enum value. When encoding, the
- * enum values except @ref JXL_PRIMARIES_CUSTOM override the numerical fields. Some
- * enum values match a subset of CICP (Rec. ITU-T H.273 | ISO/IEC
+ * enum values except @ref JXL_PRIMARIES_CUSTOM override the numerical fields.
+ * Some enum values match a subset of CICP (Rec. ITU-T H.273 | ISO/IEC
  * 23091-2:2019(E)), however the white point and RGB primaries are separate
  * enums here.
  */
@@ -145,7 +145,8 @@ typedef struct {
   /** Transfer function if have_gamma is 0 */
   JxlTransferFunction transfer_function;
 
-  /** Gamma value used when transfer_function is @ref JXL_TRANSFER_FUNCTION_GAMMA
+  /** Gamma value used when transfer_function is @ref
+   * JXL_TRANSFER_FUNCTION_GAMMA
    */
   double gamma;
 

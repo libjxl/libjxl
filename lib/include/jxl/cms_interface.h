@@ -67,9 +67,10 @@ typedef struct {
 /** Allocates and returns the data needed for @p num_threads parallel transforms
  * from the @p input colorspace to @p output, with up to @p pixels_per_thread
  * pixels to transform per call to @ref JxlCmsInterface::run. @p init_data comes
- * directly from the @ref JxlCmsInterface instance. Since @c run only receives the
- * data returned by @c init, a reference to @p init_data should be kept there
- * if access to it is desired in @c run. Likewise for @ref JxlCmsInterface::destroy.
+ * directly from the @ref JxlCmsInterface instance. Since @c run only receives
+ * the data returned by @c init, a reference to @p init_data should be kept
+ * there if access to it is desired in @c run. Likewise for @ref
+ * JxlCmsInterface::destroy.
  *
  * The ICC data in @p input and @p output is guaranteed to outlive the @c init /
  * @c run / @c destroy cycle.
@@ -80,8 +81,8 @@ typedef struct {
  * @param pixels_per_thread the maximum number of pixels that each call to
  *        @ref JxlCmsInterface::run will have to transform.
  * @param input_profile the input colorspace for the transform.
- * @param output_profile the colorspace to which @ref JxlCmsInterface::run should
- *        convert the input data.
+ * @param output_profile the colorspace to which @ref JxlCmsInterface::run
+ * should convert the input data.
  * @param intensity_target for colorspaces where luminance is relative
  *        (essentially: not PQ), indicates the luminance at which (1, 1, 1) will
  *        be displayed. This is useful for conversions between PQ and a relative
