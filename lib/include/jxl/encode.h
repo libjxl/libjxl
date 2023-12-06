@@ -145,7 +145,7 @@ typedef enum {
    */
   JXL_ENC_FRAME_SETTING_RESAMPLING = 2,
 
-  /** Similar to @ref JXL_ENC_FRAME_SETTING_RESAMPLING, but for extra channels.
+  /** Similar to ::JXL_ENC_FRAME_SETTING_RESAMPLING, but for extra channels.
    * Integer option, use -1 for the default behavior (depends on encoder
    * implementation), 1 for no downsampling (1x1), 2 for 2x2 downsampling, 4 for
    * 4x4 downsampling, 8 for 8x8 downsampling.
@@ -158,7 +158,7 @@ typedef enum {
    * downsampled resolution, not the full image resolution. The downsampled
    * resolution is given by ceil(xsize / resampling), ceil(ysize / resampling)
    * with xsize and ysize the dimensions given in the basic info, and resampling
-   * the factor set with @ref JXL_ENC_FRAME_SETTING_RESAMPLING.
+   * the factor set with ::JXL_ENC_FRAME_SETTING_RESAMPLING.
    * Use 0 to disable, 1 to enable. Default value is 0.
    */
   JXL_ENC_FRAME_SETTING_ALREADY_DOWNSAMPLED = 4,
@@ -171,7 +171,7 @@ typedef enum {
   JXL_ENC_FRAME_SETTING_PHOTON_NOISE = 5,
 
   /** Enables adaptive noise generation. This setting is not recommended for
-   * use, please use @ref JXL_ENC_FRAME_SETTING_PHOTON_NOISE instead. Use -1 for
+   * use, please use ::JXL_ENC_FRAME_SETTING_PHOTON_NOISE instead. Use -1 for
    * the default (encoder chooses), 0 to disable, 1 to enable.
    */
   JXL_ENC_FRAME_SETTING_NOISE = 6,
@@ -320,9 +320,9 @@ typedef enum {
    * 1 = index this frame within the Frame Index Box.
    * If any frames are indexed, the first frame needs to
    * be indexed, too. If the first frame is not indexed, and
-   * a later frame is attempted to be indexed, @ref JXL_ENC_ERROR will occur.
+   * a later frame is attempted to be indexed, ::JXL_ENC_ERROR will occur.
    * If non-keyframes, i.e., frames with cropping, blending or patches are
-   * attempted to be indexed, @ref JXL_ENC_ERROR will occur.
+   * attempted to be indexed, ::JXL_ENC_ERROR will occur.
    */
   JXL_ENC_FRAME_INDEX_BOX = 31,
 
@@ -444,7 +444,7 @@ JXL_EXPORT void JxlEncoderSetCms(JxlEncoder* enc, JxlCmsInterface cms);
  *        be NULL to use the default, single-threaded, runner. A multithreaded
  *        runner should be set to reach fast performance.
  * @param parallel_runner_opaque opaque pointer for parallel_runner.
- * @return @ref JXL_ENC_SUCCESS if the runner was set, @ref JXL_ENC_ERROR
+ * @return ::JXL_ENC_SUCCESS if the runner was set, ::JXL_ENC_ERROR
  * otherwise (the previous runner remains set).
  */
 JXL_EXPORT JxlEncoderStatus
@@ -452,10 +452,10 @@ JxlEncoderSetParallelRunner(JxlEncoder* enc, JxlParallelRunner parallel_runner,
                             void* parallel_runner_opaque);
 
 /**
- * Get the (last) error code in case @ref JXL_ENC_ERROR was returned.
+ * Get the (last) error code in case ::JXL_ENC_ERROR was returned.
  *
  * @param enc encoder object.
- * @return the @ref JxlEncoderError that caused the (last) @ref JXL_ENC_ERROR to
+ * @return the @ref JxlEncoderError that caused the (last) ::JXL_ENC_ERROR to
  * be returned.
  */
 JXL_EXPORT JxlEncoderError JxlEncoderGetError(JxlEncoder* enc);
@@ -469,11 +469,11 @@ JXL_EXPORT JxlEncoderError JxlEncoderGetError(JxlEncoder* enc);
  * bytes.
  *
  * The returned status indicates whether the encoder needs more output bytes.
- * When the return value is not @ref JXL_ENC_ERROR or @ref JXL_ENC_SUCCESS, the
+ * When the return value is not ::JXL_ENC_ERROR or ::JXL_ENC_SUCCESS, the
  * encoding requires more @ref JxlEncoderProcessOutput calls to continue.
  *
  * The caller must guarantee that *avail_out >= 32 when calling
- * @ref JxlEncoderProcessOutput; otherwise, @ref JXL_ENC_NEED_MORE_OUTPUT will
+ * @ref JxlEncoderProcessOutput; otherwise, ::JXL_ENC_NEED_MORE_OUTPUT will
  * be returned. It is guaranteed that, if *avail_out >= 32, at least one byte of
  * output will be written.
  *
@@ -486,9 +486,9 @@ JXL_EXPORT JxlEncoderError JxlEncoderGetError(JxlEncoder* enc);
  * @param enc encoder object.
  * @param next_out pointer to next bytes to write to.
  * @param avail_out amount of bytes available starting from *next_out.
- * @return @ref JXL_ENC_SUCCESS when encoding finished and all events handled.
- * @return @ref JXL_ENC_ERROR when encoding failed, e.g. invalid input.
- * @return @ref JXL_ENC_NEED_MORE_OUTPUT more output buffer is necessary.
+ * @return ::JXL_ENC_SUCCESS when encoding finished and all events handled.
+ * @return ::JXL_ENC_ERROR when encoding failed, e.g. invalid input.
+ * @return ::JXL_ENC_NEED_MORE_OUTPUT more output buffer is necessary.
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderProcessOutput(JxlEncoder* enc,
                                                     uint8_t** next_out,
@@ -526,7 +526,7 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderProcessOutput(JxlEncoder* enc,
  * includes reference to the encoder object.
  * @param frame_header frame header data to set. Object owned by the caller and
  * does not need to be kept in memory, its information is copied internally.
- * @return @ref JXL_ENC_SUCCESS on success, @ref JXL_ENC_ERROR on error
+ * @return ::JXL_ENC_SUCCESS on success, ::JXL_ENC_ERROR on error
  */
 JXL_EXPORT JxlEncoderStatus
 JxlEncoderSetFrameHeader(JxlEncoderFrameSettings* frame_settings,
@@ -541,7 +541,7 @@ JxlEncoderSetFrameHeader(JxlEncoderFrameSettings* frame_settings,
  * includes reference to the encoder object.
  * @param index index of the extra channel to use.
  * @param blend_info blend info to set for the extra channel
- * @return @ref JXL_ENC_SUCCESS on success, @ref JXL_ENC_ERROR on error
+ * @return ::JXL_ENC_SUCCESS on success, ::JXL_ENC_ERROR on error
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelBlendInfo(
     JxlEncoderFrameSettings* frame_settings, size_t index,
@@ -565,7 +565,7 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelBlendInfo(
  * includes reference to the encoder object.
  * @param frame_name name of the next frame to be encoded, as a UTF-8 encoded C
  * string (zero terminated). Owned by the caller, and copied internally.
- * @return @ref JXL_ENC_SUCCESS on success, @ref JXL_ENC_ERROR on error
+ * @return ::JXL_ENC_SUCCESS on success, ::JXL_ENC_ERROR on error
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderSetFrameName(
     JxlEncoderFrameSettings* frame_settings, const char* frame_name);
@@ -576,14 +576,14 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetFrameName(
  * For float pixel formats, only the default @ref
  JXL_BIT_DEPTH_FROM_PIXEL_FORMAT
  * setting is allowed, while for unsigned pixel formats,
- * @ref JXL_BIT_DEPTH_FROM_CODESTREAM setting is also allowed. See the comment
+ * ::JXL_BIT_DEPTH_FROM_CODESTREAM setting is also allowed. See the comment
  on
  * @ref JxlEncoderAddImageFrame for the effects of the bit depth setting.
 
  * @param frame_settings set of options and metadata for this frame. Also
  * includes reference to the encoder object.
  * @param bit_depth the bit depth setting of the pixel input
- * @return @ref JXL_ENC_SUCCESS on success, @ref JXL_ENC_ERROR on error
+ * @return ::JXL_ENC_SUCCESS on success, ::JXL_ENC_ERROR on error
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderSetFrameBitDepth(
     JxlEncoderFrameSettings* frame_settings, const JxlBitDepth* bit_depth);
@@ -616,7 +616,7 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetFrameBitDepth(
  * @param buffer bytes to read JPEG from. Owned by the caller and its contents
  * are copied internally.
  * @param size size of buffer in bytes.
- * @return @ref JXL_ENC_SUCCESS on success, @ref JXL_ENC_ERROR on error
+ * @return ::JXL_ENC_SUCCESS on success, ::JXL_ENC_ERROR on error
  */
 JXL_EXPORT JxlEncoderStatus
 JxlEncoderAddJPEGFrame(const JxlEncoderFrameSettings* frame_settings,
@@ -627,10 +627,10 @@ JxlEncoderAddJPEGFrame(const JxlEncoderFrameSettings* frame_settings,
  * @ref JxlEncoderSetBasicInfo before @ref JxlEncoderAddImageFrame.
  *
  * Currently only some data types for pixel formats are supported:
- * - @ref JXL_TYPE_UINT8, with range 0..255
- * - @ref JXL_TYPE_UINT16, with range 0..65535
- * - @ref JXL_TYPE_FLOAT16, with nominal range 0..1
- * - @ref JXL_TYPE_FLOAT, with nominal range 0..1
+ * - ::JXL_TYPE_UINT8, with range 0..255
+ * - ::JXL_TYPE_UINT16, with range 0..65535
+ * - ::JXL_TYPE_FLOAT16, with nominal range 0..1
+ * - ::JXL_TYPE_FLOAT, with nominal range 0..1
  *
  * Note: the sample data type in pixel_format is allowed to be different from
  * what is described in the @ref JxlBasicInfo. The type in pixel_format,
@@ -641,13 +641,13 @@ JxlEncoderAddJPEGFrame(const JxlEncoderFrameSettings* frame_settings,
  * codestream. For example, to encode a 12-bit image, you would set
  * bits_per_sample to 12, while the input frame buffer can be in the following
  * formats:
- *  - if pixel format is in @ref JXL_TYPE_UINT16 with default bit depth setting
- *    (i.e. @ref JXL_BIT_DEPTH_FROM_PIXEL_FORMAT), input sample values are
+ *  - if pixel format is in ::JXL_TYPE_UINT16 with default bit depth setting
+ *    (i.e. ::JXL_BIT_DEPTH_FROM_PIXEL_FORMAT), input sample values are
  * rescaled to 16-bit, i.e. multiplied by 65535/4095;
- *  - if pixel format is in @ref JXL_TYPE_UINT16 with @ref
+ *  - if pixel format is in ::JXL_TYPE_UINT16 with @ref
  * JXL_BIT_DEPTH_FROM_CODESTREAM bit depth setting, input sample values are
  * provided unscaled;
- *  - if pixel format is in @ref JXL_TYPE_FLOAT, input sample values are
+ *  - if pixel format is in ::JXL_TYPE_FLOAT, input sample values are
  * rescaled to 0..1, i.e.  multiplied by 1.f/4095.f. While it is allowed, it is
  * obviously not recommended to use a pixel_format with lower precision than
  * what is specified in the @ref JxlBasicInfo.
@@ -667,8 +667,8 @@ JxlEncoderAddJPEGFrame(const JxlEncoderFrameSettings* frame_settings,
  * The pixels are assumed to be encoded in the original profile that is set with
  * @ref JxlEncoderSetColorEncoding or @ref JxlEncoderSetICCProfile. If none of
  * these functions were used, the pixels are assumed to be nonlinear sRGB for
- * integer data types (@ref JXL_TYPE_UINT8, @ref JXL_TYPE_UINT16), and linear
- * sRGB for floating point data types (@ref JXL_TYPE_FLOAT16, @ref
+ * integer data types (::JXL_TYPE_UINT8, ::JXL_TYPE_UINT16), and linear
+ * sRGB for floating point data types (::JXL_TYPE_FLOAT16, @ref
  * JXL_TYPE_FLOAT).
  *
  * Sample values in floating-point pixel formats are allowed to be outside the
@@ -688,7 +688,7 @@ JxlEncoderAddJPEGFrame(const JxlEncoderFrameSettings* frame_settings,
  * and its contents are copied internally.
  * @param size size of buffer in bytes. This size should match what is implied
  * by the frame dimensions and the pixel format.
- * @return @ref JXL_ENC_SUCCESS on success, @ref JXL_ENC_ERROR on error
+ * @return ::JXL_ENC_SUCCESS on success, ::JXL_ENC_ERROR on error
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderAddImageFrame(
     const JxlEncoderFrameSettings* frame_settings,
@@ -797,7 +797,7 @@ struct JxlEncoderOutputProcessor {
  * @param enc encoder object.
  * @param output_processor the struct containing the callbacks for managing
  * output.
- * @return @ref JXL_ENC_SUCCESS on success, @ref JXL_ENC_ERROR on error.
+ * @return ::JXL_ENC_SUCCESS on success, ::JXL_ENC_ERROR on error.
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderSetOutputProcessor(
     JxlEncoder* enc, struct JxlEncoderOutputProcessor output_processor);
@@ -813,7 +813,7 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetOutputProcessor(
  * This should not be used when using @ref JxlEncoderProcessOutput.
  *
  * @param enc encoder object.
- * @return @ref JXL_ENC_SUCCESS on success, @ref JXL_ENC_ERROR on error.
+ * @return ::JXL_ENC_SUCCESS on success, ::JXL_ENC_ERROR on error.
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderFlushInput(JxlEncoder* enc);
 
@@ -973,7 +973,7 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderAddChunkedFrame(
  * @param size size of buffer in bytes. This size should match what is implied
  * by the frame dimensions and the pixel format.
  * @param index index of the extra channel to use.
- * @return @ref JXL_ENC_SUCCESS on success, @ref JXL_ENC_ERROR on error
+ * @return ::JXL_ENC_SUCCESS on success, ::JXL_ENC_ERROR on error
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelBuffer(
     const JxlEncoderFrameSettings* frame_settings,
@@ -1044,7 +1044,7 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelBuffer(
  * @param size size of the box contents.
  * @param compress_box Whether to compress this box as a "brob" box. Requires
  * Brotli support.
- * @return @ref JXL_ENC_SUCCESS on success, @ref JXL_ENC_ERROR on error, such as
+ * @return ::JXL_ENC_SUCCESS on success, ::JXL_ENC_ERROR on error, such as
  * when using this function without @ref JxlEncoderUseContainer, or adding a box
  * type that would result in an invalid file format.
  */
@@ -1124,7 +1124,7 @@ JXL_EXPORT void JxlEncoderCloseInput(JxlEncoder* enc);
  * @param enc encoder object.
  * @param color color encoding. Object owned by the caller and its contents are
  * copied internally.
- * @return @ref JXL_ENC_SUCCESS if the operation was successful, @ref
+ * @return ::JXL_ENC_SUCCESS if the operation was successful, @ref
  * JXL_ENC_ERROR otherwise
  */
 JXL_EXPORT JxlEncoderStatus
@@ -1140,7 +1140,7 @@ JxlEncoderSetColorEncoding(JxlEncoder* enc, const JxlColorEncoding* color);
  * @param enc encoder object.
  * @param icc_profile bytes of the original ICC profile
  * @param size size of the icc_profile buffer in bytes
- * @return @ref JXL_ENC_SUCCESS if the operation was successful, @ref
+ * @return ::JXL_ENC_SUCCESS if the operation was successful, @ref
  * JXL_ENC_ERROR otherwise
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderSetICCProfile(JxlEncoder* enc,
@@ -1191,16 +1191,16 @@ JXL_EXPORT void JxlEncoderInitBlendInfo(JxlBlendInfo* blend_info);
  * @param enc encoder object.
  * @param info global image metadata. Object owned by the caller and its
  * contents are copied internally.
- * @return @ref JXL_ENC_SUCCESS if the operation was successful,
- * @ref JXL_ENC_ERROR otherwise
+ * @return ::JXL_ENC_SUCCESS if the operation was successful,
+ * ::JXL_ENC_ERROR otherwise
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
                                                    const JxlBasicInfo* info);
 
 /**
  * Sets the upsampling method the decoder will use in case there are frames
- * with @ref JXL_ENC_FRAME_SETTING_RESAMPLING set. This is useful in combination
- * with the @ref JXL_ENC_FRAME_SETTING_ALREADY_DOWNSAMPLED option, to control
+ * with ::JXL_ENC_FRAME_SETTING_RESAMPLING set. This is useful in combination
+ * with the ::JXL_ENC_FRAME_SETTING_ALREADY_DOWNSAMPLED option, to control
  * the type of upsampling that will be used.
  *
  * @param enc encoder object.
@@ -1210,8 +1210,8 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
  * -1: default (good for photographic images, no signaling overhead)
  * 0: nearest neighbor (good for pixel art)
  * 1: 'pixel dots' (same as NN for 2x, diamond-shaped 'pixel dots' for 4x/8x)
- * @return @ref JXL_ENC_SUCCESS if the operation was successful,
- * @ref JXL_ENC_ERROR otherwise
+ * @return ::JXL_ENC_SUCCESS if the operation was successful,
+ * ::JXL_ENC_ERROR otherwise
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderSetUpsamplingMode(JxlEncoder* enc,
                                                         int64_t factor,
@@ -1238,7 +1238,7 @@ JXL_EXPORT void JxlEncoderInitExtraChannelInfo(JxlExtraChannelType type,
  * @param index index of the extra channel to set.
  * @param info global extra channel metadata. Object owned by the caller and its
  * contents are copied internally.
- * @return @ref JXL_ENC_SUCCESS on success, @ref JXL_ENC_ERROR on error
+ * @return ::JXL_ENC_SUCCESS on success, ::JXL_ENC_ERROR on error
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelInfo(
     JxlEncoder* enc, size_t index, const JxlExtraChannelInfo* info);
@@ -1271,7 +1271,7 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelName(JxlEncoder* enc,
  * includes reference to the encoder object.
  * @param option ID of the option to set.
  * @param value Integer value to set for this option.
- * @return @ref JXL_ENC_SUCCESS if the operation was successful, @ref
+ * @return ::JXL_ENC_SUCCESS if the operation was successful, @ref
  * JXL_ENC_ERROR in case of an error, such as invalid or unknown option id, or
  * invalid integer value for the given option. If an error is returned, the
  * state of the
@@ -1290,7 +1290,7 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderFrameSettingsSetOption(
  * includes reference to the encoder object.
  * @param option ID of the option to set.
  * @param value Float value to set for this option.
- * @return @ref JXL_ENC_SUCCESS if the operation was successful, @ref
+ * @return ::JXL_ENC_SUCCESS if the operation was successful, @ref
  * JXL_ENC_ERROR in case of an error, such as invalid or unknown option id, or
  * invalid integer value for the given option. If an error is returned, the
  * state of the
@@ -1333,7 +1333,7 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderUseContainer(JxlEncoder* enc,
  *
  * @param enc encoder object.
  * @param store_jpeg_metadata true if the encoder should store JPEG metadata.
- * @return @ref JXL_ENC_SUCCESS if the operation was successful, @ref
+ * @return ::JXL_ENC_SUCCESS if the operation was successful, @ref
  * JXL_ENC_ERROR otherwise.
  */
 JXL_EXPORT JxlEncoderStatus
@@ -1370,7 +1370,7 @@ JxlEncoderStoreJPEGMetadata(JxlEncoder* enc, JXL_BOOL store_jpeg_metadata);
  *
  * @param enc encoder object.
  * @param level the level value to set, must be -1, 5, or 10.
- * @return @ref JXL_ENC_SUCCESS if the operation was successful, @ref
+ * @return ::JXL_ENC_SUCCESS if the operation was successful, @ref
  * JXL_ENC_ERROR otherwise.
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderSetCodestreamLevel(JxlEncoder* enc,
@@ -1407,13 +1407,13 @@ JXL_EXPORT int JxlEncoderGetRequiredCodestreamLevel(const JxlEncoder* enc);
  *
  * When disabled, those options are not overridden, but since those options
  * could still have been manually set to a combination that operates losslessly,
- * using this function with lossless set to @ref JXL_FALSE does not
+ * using this function with lossless set to ::JXL_FALSE does not
  * guarantee lossy encoding, though the default set of options is lossy.
  *
  * @param frame_settings set of options and metadata for this frame. Also
  * includes reference to the encoder object.
  * @param lossless whether to override options for lossless mode
- * @return @ref JXL_ENC_SUCCESS if the operation was successful, @ref
+ * @return ::JXL_ENC_SUCCESS if the operation was successful, @ref
  * JXL_ENC_ERROR otherwise.
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderSetFrameLossless(
@@ -1430,7 +1430,7 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetFrameLossless(
  * @param frame_settings set of options and metadata for this frame. Also
  * includes reference to the encoder object.
  * @param distance the distance value to set.
- * @return @ref JXL_ENC_SUCCESS if the operation was successful, @ref
+ * @return ::JXL_ENC_SUCCESS if the operation was successful, @ref
  * JXL_ENC_ERROR otherwise.
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderSetFrameDistance(
@@ -1447,7 +1447,7 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetFrameDistance(
  * includes reference to the encoder object.
  * @param index index of the extra channel to set a distance value for.
  * @param distance the distance value to set.
- * @return @ref JXL_ENC_SUCCESS if the operation was successful, @ref
+ * @return ::JXL_ENC_SUCCESS if the operation was successful, @ref
  * JXL_ENC_ERROR otherwise.
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelDistance(

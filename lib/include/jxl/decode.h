@@ -66,12 +66,12 @@ typedef enum {
  * @p size doesn't need to be a full image, only the beginning of the file.
  *
  * @return a flag indicating if a JPEG XL signature was found and what type.
- *  - @ref JXL_SIG_NOT_ENOUGH_BYTES if not enough bytes were passed to
+ *  - ::JXL_SIG_NOT_ENOUGH_BYTES if not enough bytes were passed to
  *    determine if a valid signature is there.
- *  - @ref JXL_SIG_INVALID if no valid signature found for JPEG XL decoding.
- *  - @ref JXL_SIG_CODESTREAM if a valid JPEG XL codestream signature was
+ *  - ::JXL_SIG_INVALID if no valid signature found for JPEG XL decoding.
+ *  - ::JXL_SIG_CODESTREAM if a valid JPEG XL codestream signature was
  *    found.
- *  - @ref JXL_SIG_CONTAINER if a valid JPEG XL container signature was found.
+ *  - ::JXL_SIG_CONTAINER if a valid JPEG XL container signature was found.
  */
 JXL_EXPORT JxlSignature JxlSignatureCheck(const uint8_t* buf, size_t len);
 
@@ -115,7 +115,7 @@ JXL_EXPORT void JxlDecoderDestroy(JxlDecoder* dec);
 
 /**
  * Return value for @ref JxlDecoderProcessInput.
- * The values from @ref JXL_DEC_BASIC_INFO onwards are optional informative
+ * The values from ::JXL_DEC_BASIC_INFO onwards are optional informative
  * events that can be subscribed to, they are never returned if they
  * have not been registered with @ref JxlDecoderSubscribeEvents.
  */
@@ -123,12 +123,12 @@ typedef enum {
   /** Function call finished successfully, or decoding is finished and there is
    * nothing more to be done.
    *
-   * Note that @ref JxlDecoderProcessInput will return @ref JXL_DEC_SUCCESS if
+   * Note that @ref JxlDecoderProcessInput will return ::JXL_DEC_SUCCESS if
    * all events that were registered with @ref JxlDecoderSubscribeEvents were
    * processed, even before the end of the JPEG XL codestream.
    *
    * In this case, the return value @ref JxlDecoderReleaseInput will be the same
-   * as it was at the last signaled event. E.g. if @ref JXL_DEC_FULL_IMAGE was
+   * as it was at the last signaled event. E.g. if ::JXL_DEC_FULL_IMAGE was
    * subscribed to, then all bytes from the end of the JPEG XL codestream
    * (including possible boxes needed for jpeg reconstruction) will be returned
    * as unprocessed.
@@ -158,7 +158,7 @@ typedef enum {
 
   /** The decoder is able to decode a preview image and requests setting a
    * preview output buffer using @ref JxlDecoderSetPreviewOutBuffer. This occurs
-   * if @ref JXL_DEC_PREVIEW_IMAGE is requested and it is possible to decode a
+   * if ::JXL_DEC_PREVIEW_IMAGE is requested and it is possible to decode a
    * preview image from the codestream and the preview out buffer was not yet
    * set. There is maximum one preview image in a codestream.
    * In this case, @ref JxlDecoderReleaseInput will return all bytes from the
@@ -179,13 +179,13 @@ typedef enum {
   /** The JPEG reconstruction buffer is too small for reconstructed JPEG
    * codestream to fit. @ref JxlDecoderSetJPEGBuffer must be called again to
    * make room for remaining bytes. This event may occur multiple times
-   * after @ref JXL_DEC_JPEG_RECONSTRUCTION.
+   * after ::JXL_DEC_JPEG_RECONSTRUCTION.
    */
   JXL_DEC_JPEG_NEED_MORE_OUTPUT = 6,
 
   /** The box contents output buffer is too small. @ref JxlDecoderSetBoxBuffer
    * must be called again to make room for remaining bytes. This event may occur
-   * multiple times after @ref JXL_DEC_BOX.
+   * multiple times after ::JXL_DEC_BOX.
    */
   JXL_DEC_BOX_NEED_MORE_OUTPUT = 7,
 
@@ -201,7 +201,7 @@ typedef enum {
   /** Informative event by @ref JxlDecoderProcessInput
    * "JxlDecoderProcessInput": Color encoding or ICC profile from the
    * codestream header. This event occurs max once per image and always later
-   * than @ref JXL_DEC_BASIC_INFO and earlier than any pixel data.
+   * than ::JXL_DEC_BASIC_INFO and earlier than any pixel data.
    * In this case, @ref JxlDecoderReleaseInput will return all bytes from the
    * end of the image header (which is the start of the first frame) as
    * unprocessed.
@@ -212,7 +212,7 @@ typedef enum {
    * "JxlDecoderProcessInput": Preview image, a small frame, decoded. This
    * event can only happen if the image has a preview frame encoded. This event
    * occurs max once for the codestream and always later than @ref
-   * JXL_DEC_COLOR_ENCODING and before @ref JXL_DEC_FRAME.
+   * JXL_DEC_COLOR_ENCODING and before ::JXL_DEC_FRAME.
    * In this case, @ref JxlDecoderReleaseInput will return all bytes from the
    * end of the preview frame as unprocessed.
    */
@@ -230,7 +230,7 @@ typedef enum {
    * kLfFrame are always for internal purposes only and cannot be accessed. A
    * displayed frame either has an animation duration or is the only or last
    * frame in the image. This event occurs max once per displayed frame, always
-   * later than @ref JXL_DEC_COLOR_ENCODING, and always earlier than any pixel
+   * later than ::JXL_DEC_COLOR_ENCODING, and always earlier than any pixel
    * data. While JPEG XL supports encoding a single frame as the composition of
    * multiple internal sub-frames also called frames, this event is not
    * indicated for the internal frames. In this case, @ref
@@ -246,7 +246,7 @@ typedef enum {
    * not this return status only indicates we're past this point in the
    * codestream. This event occurs max once per frame.
    * In this case, @ref JxlDecoderReleaseInput will return all bytes from the
-   * end of the frame (or if @ref JXL_DEC_JPEG_RECONSTRUCTION is subscribed to,
+   * end of the frame (or if ::JXL_DEC_JPEG_RECONSTRUCTION is subscribed to,
    * from the end of the last box that is needed for jpeg reconstruction) as
    * unprocessed.
    */
@@ -259,7 +259,7 @@ typedef enum {
    * is set a byte stream identical to the JPEG codestream used to encode the
    * image will be written to the JPEG reconstruction buffer instead of pixels
    * to the image out buffer. This event occurs max once per image and always
-   * before @ref JXL_DEC_FULL_IMAGE.
+   * before ::JXL_DEC_FULL_IMAGE.
    * In this case, @ref JxlDecoderReleaseInput will return all bytes from the
    * end of the 'jbrd' box as unprocessed.
    */
@@ -290,8 +290,8 @@ typedef enum {
    *
    * The buffer set with @ref JxlDecoderSetBoxBuffer must be set again for each
    * next box to be obtained, or can be left unset to skip outputting this box.
-   * The output buffer contains the full box data when the next @ref JXL_DEC_BOX
-   * event or @ref JXL_DEC_SUCCESS occurs. @ref JXL_DEC_BOX occurs for all
+   * The output buffer contains the full box data when the next ::JXL_DEC_BOX
+   * event or ::JXL_DEC_SUCCESS occurs. ::JXL_DEC_BOX occurs for all
    * boxes, including non-metadata boxes such as the signature box or codestream
    * boxes. To check whether the box is a metadata type for respectively EXIF,
    * XMP or JUMBF, use @ref JxlDecoderGetBoxType and check for types "Exif",
@@ -354,8 +354,8 @@ typedef enum {
  * more efficiently with @ref JxlDecoderSkipFrames. Settings such as parallel
  * runner or subscribed events are kept. After rewind, @ref
  * JxlDecoderSubscribeEvents can be used again, and it is feasible to leave out
- * events that were already handled before, such as @ref JXL_DEC_BASIC_INFO
- * and @ref JXL_DEC_COLOR_ENCODING, since they will provide the same information
+ * events that were already handled before, such as ::JXL_DEC_BASIC_INFO
+ * and ::JXL_DEC_COLOR_ENCODING, since they will provide the same information
  * as before.
  * The difference to @ref JxlDecoderReset is that some state is kept, namely
  * settings set by a call to
@@ -376,14 +376,14 @@ JXL_EXPORT void JxlDecoderRewind(JxlDecoder* dec);
  * the input, but will not output the frame events. It can be more efficient
  * when skipping frames, and even more so when using this after @ref
  * JxlDecoderRewind. If the decoder is already processing a frame (could
- * have emitted @ref JXL_DEC_FRAME but not yet @ref JXL_DEC_FULL_IMAGE), it
+ * have emitted ::JXL_DEC_FRAME but not yet ::JXL_DEC_FULL_IMAGE), it
  * starts skipping from the next frame. If the amount is larger than the amount
  * of frames remaining in the image, all remaining frames are skipped. Calling
  * this function multiple times adds the amount to skip to the already existing
  * amount.
  *
  * A frame here is defined as a frame that without skipping emits events such
- * as @ref JXL_DEC_FRAME and @ref JXL_DEC_FULL_IMAGE, frames that are internal
+ * as ::JXL_DEC_FRAME and ::JXL_DEC_FULL_IMAGE, frames that are internal
  * to the file format but are not rendered as part of an animation, or are not
  * the final still frame of a still image, are not counted.
  *
@@ -394,14 +394,14 @@ JXL_EXPORT void JxlDecoderSkipFrames(JxlDecoder* dec, size_t amount);
 
 /**
  * Skips processing the current frame. Can be called after frame processing
- * already started, signaled by a @ref JXL_DEC_NEED_IMAGE_OUT_BUFFER event,
- * but before the corresponding @ref JXL_DEC_FULL_IMAGE event. The next signaled
- * event will be another @ref JXL_DEC_FRAME, or @ref JXL_DEC_SUCCESS if there
+ * already started, signaled by a ::JXL_DEC_NEED_IMAGE_OUT_BUFFER event,
+ * but before the corresponding ::JXL_DEC_FULL_IMAGE event. The next signaled
+ * event will be another ::JXL_DEC_FRAME, or ::JXL_DEC_SUCCESS if there
  * are no more frames. If pixel data is required from the already processed part
  * of the frame, @ref JxlDecoderFlushImage must be called before this.
  *
  * @param dec decoder object
- * @return @ref JXL_DEC_SUCCESS if there is a frame to skip, and @ref
+ * @return ::JXL_DEC_SUCCESS if there is a frame to skip, and @ref
  *     JXL_DEC_ERROR if the function was not called during frame processing.
  */
 JXL_EXPORT JxlDecoderStatus JxlDecoderSkipCurrentFrame(JxlDecoder* dec);
@@ -415,7 +415,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSkipCurrentFrame(JxlDecoder* dec);
  *     be NULL to use the default, single-threaded, runner. A multithreaded
  *     runner should be set to reach fast performance.
  * @param parallel_runner_opaque opaque pointer for parallel_runner.
- * @return @ref JXL_DEC_SUCCESS if the runner was set, @ref JXL_DEC_ERROR
+ * @return ::JXL_DEC_SUCCESS if the runner was set, ::JXL_DEC_ERROR
  *     otherwise (the previous runner remains set).
  */
 JXL_EXPORT JxlDecoderStatus
@@ -439,7 +439,7 @@ JxlDecoderSetParallelRunner(JxlDecoder* dec, JxlParallelRunner parallel_runner,
  */
 JXL_EXPORT size_t JxlDecoderSizeHintBasicInfo(const JxlDecoder* dec);
 
-/** Select for which informative events, i.e. @ref JXL_DEC_BASIC_INFO, etc., the
+/** Select for which informative events, i.e. ::JXL_DEC_BASIC_INFO, etc., the
  * decoder should return with a status. It is not required to subscribe to any
  * events, data can still be requested from the decoder as soon as it available.
  * By default, the decoder is subscribed to no events (events_wanted == 0), and
@@ -449,7 +449,7 @@ JXL_EXPORT size_t JxlDecoderSizeHintBasicInfo(const JxlDecoder* dec);
  *
  * @param dec decoder object
  * @param events_wanted bitfield of desired events.
- * @return @ref JXL_DEC_SUCCESS if no error, @ref JXL_DEC_ERROR otherwise.
+ * @return ::JXL_DEC_SUCCESS if no error, ::JXL_DEC_ERROR otherwise.
  */
 JXL_EXPORT JxlDecoderStatus JxlDecoderSubscribeEvents(JxlDecoder* dec,
                                                       int events_wanted);
@@ -459,14 +459,14 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSubscribeEvents(JxlDecoder* dec,
  * indicating that the decoder must perform a rotation and/or
  * mirroring to the encoded image data.
  *
- *  - If skip_reorientation is @ref JXL_FALSE (the default): the decoder
+ *  - If skip_reorientation is ::JXL_FALSE (the default): the decoder
  *    will apply the transformation from the orientation setting, hence
  *    rendering the image according to its specified intent. When
  *    producing a @ref JxlBasicInfo, the decoder will always set the
  *    orientation field to JXL_ORIENT_IDENTITY (matching the returned
  *    pixel data) and also align xsize and ysize so that they correspond
  *    to the width and the height of the returned pixel data.
- *  - If skip_reorientation is @ref JXL_TRUE "JXL_TRUE": the decoder will skip
+ *  - If skip_reorientation is ::JXL_TRUE "JXL_TRUE": the decoder will skip
  *    applying the transformation from the orientation setting, returning
  *    the image in the as-in-bitstream pixeldata orientation.
  *    This may be faster to decode since the decoder doesn't have to apply the
@@ -483,14 +483,14 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSubscribeEvents(JxlDecoder* dec,
  *
  * @param dec decoder object
  * @param skip_reorientation JXL_TRUE to enable, JXL_FALSE to disable.
- * @return @ref JXL_DEC_SUCCESS if no error, @ref JXL_DEC_ERROR otherwise.
+ * @return ::JXL_DEC_SUCCESS if no error, ::JXL_DEC_ERROR otherwise.
  */
 JXL_EXPORT JxlDecoderStatus
 JxlDecoderSetKeepOrientation(JxlDecoder* dec, JXL_BOOL skip_reorientation);
 
 /**
  * Enables or disables preserving of associated alpha channels. If
- * unpremul_alpha is set to @ref JXL_FALSE then for associated alpha channel,
+ * unpremul_alpha is set to ::JXL_FALSE then for associated alpha channel,
  * the pixel data is returned with premultiplied colors. If it is set to @ref
  * JXL_TRUE, The colors will be unpremultiplied based on the alpha channel. This
  * function has no effect if the image does not have an associated alpha
@@ -502,20 +502,20 @@ JxlDecoderSetKeepOrientation(JxlDecoder* dec, JXL_BOOL skip_reorientation);
  *
  * @param dec decoder object
  * @param unpremul_alpha JXL_TRUE to enable, JXL_FALSE to disable.
- * @return @ref JXL_DEC_SUCCESS if no error, @ref JXL_DEC_ERROR otherwise.
+ * @return ::JXL_DEC_SUCCESS if no error, ::JXL_DEC_ERROR otherwise.
  */
 JXL_EXPORT JxlDecoderStatus
 JxlDecoderSetUnpremultiplyAlpha(JxlDecoder* dec, JXL_BOOL unpremul_alpha);
 
 /** Enables or disables rendering spot colors. By default, spot colors
  * are rendered, which is OK for viewing the decoded image. If render_spotcolors
- * is @ref JXL_FALSE, then spot colors are not rendered, and have to be
+ * is ::JXL_FALSE, then spot colors are not rendered, and have to be
  * retrieved separately using @ref JxlDecoderSetExtraChannelBuffer. This is
  * useful for e.g. printing applications.
  *
  * @param dec decoder object
  * @param render_spotcolors JXL_TRUE to enable (default), JXL_FALSE to disable.
- * @return @ref JXL_DEC_SUCCESS if no error, @ref JXL_DEC_ERROR otherwise.
+ * @return ::JXL_DEC_SUCCESS if no error, ::JXL_DEC_ERROR otherwise.
  */
 JXL_EXPORT JxlDecoderStatus
 JxlDecoderSetRenderSpotcolors(JxlDecoder* dec, JXL_BOOL render_spotcolors);
@@ -531,7 +531,7 @@ JxlDecoderSetRenderSpotcolors(JxlDecoder* dec, JXL_BOOL render_spotcolors);
  * @param dec decoder object
  * @param coalescing JXL_TRUE to enable coalescing (default), JXL_FALSE to
  *     disable it.
- * @return @ref JXL_DEC_SUCCESS if no error, @ref JXL_DEC_ERROR otherwise.
+ * @return ::JXL_DEC_SUCCESS if no error, ::JXL_DEC_ERROR otherwise.
  */
 JXL_EXPORT JxlDecoderStatus JxlDecoderSetCoalescing(JxlDecoder* dec,
                                                     JXL_BOOL coalescing);
@@ -548,32 +548,32 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetCoalescing(JxlDecoder* dec,
  *
  * The returned status indicates whether the decoder needs more input bytes, or
  * more output buffer for a certain type of output data. No matter what the
- * returned status is (other than @ref JXL_DEC_ERROR), new information, such
+ * returned status is (other than ::JXL_DEC_ERROR), new information, such
  * as @ref JxlDecoderGetBasicInfo, may have become available after this call.
- * When the return value is not @ref JXL_DEC_ERROR or @ref JXL_DEC_SUCCESS, the
+ * When the return value is not ::JXL_DEC_ERROR or ::JXL_DEC_SUCCESS, the
  * decoding requires more @ref JxlDecoderProcessInput calls to continue.
  *
  * @param dec decoder object
- * @return @ref JXL_DEC_SUCCESS when decoding finished and all events handled.
+ * @return ::JXL_DEC_SUCCESS when decoding finished and all events handled.
  *     If you still have more unprocessed input data anyway, then you can still
  *     continue by using @ref JxlDecoderSetInput and calling @ref
  *     JxlDecoderProcessInput again, similar to handling @ref
- *     JXL_DEC_NEED_MORE_INPUT. @ref JXL_DEC_SUCCESS can occur instead of @ref
+ *     JXL_DEC_NEED_MORE_INPUT. ::JXL_DEC_SUCCESS can occur instead of @ref
  *     JXL_DEC_NEED_MORE_INPUT when, for example, the input data ended right at
  *     the boundary of a box of the container format, all essential codestream
  *     boxes were already decoded, but extra metadata boxes are still present in
  *     the next data. @ref JxlDecoderProcessInput cannot return success if all
  *     codestream boxes have not been seen yet.
- * @return @ref JXL_DEC_ERROR when decoding failed, e.g. invalid codestream.
+ * @return ::JXL_DEC_ERROR when decoding failed, e.g. invalid codestream.
  *     TODO(lode): document the input data mechanism
- * @return @ref JXL_DEC_NEED_MORE_INPUT when more input data is necessary.
- * @return @ref JXL_DEC_BASIC_INFO when basic info such as image dimensions is
+ * @return ::JXL_DEC_NEED_MORE_INPUT when more input data is necessary.
+ * @return ::JXL_DEC_BASIC_INFO when basic info such as image dimensions is
  *     available and this informative event is subscribed to.
- * @return @ref JXL_DEC_COLOR_ENCODING when color profile information is
+ * @return ::JXL_DEC_COLOR_ENCODING when color profile information is
  *     available and this informative event is subscribed to.
- * @return @ref JXL_DEC_PREVIEW_IMAGE when preview pixel information is
+ * @return ::JXL_DEC_PREVIEW_IMAGE when preview pixel information is
  *     available and output in the preview buffer.
- * @return @ref JXL_DEC_FULL_IMAGE when all pixel information at highest detail
+ * @return ::JXL_DEC_FULL_IMAGE when all pixel information at highest detail
  *     is available and has been output in the pixel buffer.
  */
 JXL_EXPORT JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec);
@@ -589,8 +589,8 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec);
  * @param dec decoder object
  * @param data pointer to next bytes to read from
  * @param size amount of bytes available starting from data
- * @return @ref JXL_DEC_ERROR if input was already set without releasing or @ref
- *     JxlDecoderCloseInput was already called, @ref JXL_DEC_SUCCESS otherwise.
+ * @return ::JXL_DEC_ERROR if input was already set without releasing or @ref
+ *     JxlDecoderCloseInput was already called, ::JXL_DEC_SUCCESS otherwise.
  */
 JXL_EXPORT JxlDecoderStatus JxlDecoderSetInput(JxlDecoder* dec,
                                                const uint8_t* data,
@@ -622,9 +622,9 @@ JXL_EXPORT size_t JxlDecoderReleaseInput(JxlDecoder* dec);
  * will be called. This function allows the decoder to determine correctly if it
  * should return success, need more input or error in certain cases. For
  * backwards compatibility with a previous version of the API, using this
- * function is optional when not using the @ref JXL_DEC_BOX event (the decoder
+ * function is optional when not using the ::JXL_DEC_BOX event (the decoder
  * is able to determine the end of the image frames without marking the end),
- * but using this function is required when using @ref JXL_DEC_BOX for getting
+ * but using this function is required when using ::JXL_DEC_BOX for getting
  * metadata box contents. This function does not replace @ref
  * JxlDecoderReleaseInput, that function should still be called if its return
  * value is needed.
@@ -644,8 +644,8 @@ JXL_EXPORT void JxlDecoderCloseInput(JxlDecoder* dec);
  * @param dec decoder object
  * @param info struct to copy the information into, or NULL to only check
  *     whether the information is available through the return value.
- * @return @ref JXL_DEC_SUCCESS if the value is available, @ref
- *     JXL_DEC_NEED_MORE_INPUT if not yet available, @ref JXL_DEC_ERROR
+ * @return ::JXL_DEC_SUCCESS if the value is available, @ref
+ *     JXL_DEC_NEED_MORE_INPUT if not yet available, ::JXL_DEC_ERROR
  *     in case of other error conditions.
  */
 JXL_EXPORT JxlDecoderStatus JxlDecoderGetBasicInfo(const JxlDecoder* dec,
@@ -659,8 +659,8 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetBasicInfo(const JxlDecoder* dec,
  * @param index index of the extra channel to query.
  * @param info struct to copy the information into, or NULL to only check
  *     whether the information is available through the return value.
- * @return @ref JXL_DEC_SUCCESS if the value is available, @ref
- *     JXL_DEC_NEED_MORE_INPUT if not yet available, @ref JXL_DEC_ERROR
+ * @return ::JXL_DEC_SUCCESS if the value is available, @ref
+ *     JXL_DEC_NEED_MORE_INPUT if not yet available, ::JXL_DEC_ERROR
  *     in case of other error conditions.
  */
 JXL_EXPORT JxlDecoderStatus JxlDecoderGetExtraChannelInfo(
@@ -676,8 +676,8 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetExtraChannelInfo(
  * @param index index of the extra channel to query.
  * @param name buffer to copy the name into
  * @param size size of the name buffer in bytes
- * @return @ref JXL_DEC_SUCCESS if the value is available, @ref
- *     JXL_DEC_NEED_MORE_INPUT if not yet available, @ref JXL_DEC_ERROR
+ * @return ::JXL_DEC_SUCCESS if the value is available, @ref
+ *     JXL_DEC_NEED_MORE_INPUT if not yet available, ::JXL_DEC_ERROR
  *     in case of other error conditions.
  */
 JXL_EXPORT JxlDecoderStatus JxlDecoderGetExtraChannelName(const JxlDecoder* dec,
@@ -742,8 +742,8 @@ typedef enum {
  *     or the color profile of the decoded pixels.
  * @param color_encoding struct to copy the information into, or NULL to only
  *     check whether the information is available through the return value.
- * @return @ref JXL_DEC_SUCCESS if the data is available and returned, @ref
- *     JXL_DEC_NEED_MORE_INPUT if not yet available, @ref JXL_DEC_ERROR in
+ * @return ::JXL_DEC_SUCCESS if the data is available and returned, @ref
+ *     JXL_DEC_NEED_MORE_INPUT if not yet available, ::JXL_DEC_ERROR in
  *     case the encoded structured color profile does not exist in the
  *     codestream.
  */
@@ -767,10 +767,10 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetColorAsEncodedProfile(
  *     or the color profile of the decoded pixels.
  * @param size variable to output the size into, or NULL to only check the
  *     return status.
- * @return @ref JXL_DEC_SUCCESS if the ICC profile is available, @ref
+ * @return ::JXL_DEC_SUCCESS if the ICC profile is available, @ref
  *     JXL_DEC_NEED_MORE_INPUT if the decoder has not yet received enough
  *     input data to determine whether an ICC profile is available or what its
- *     size is, @ref JXL_DEC_ERROR in case the ICC profile is not available and
+ *     size is, ::JXL_DEC_ERROR in case the ICC profile is not available and
  *     cannot be generated.
  */
 JXL_EXPORT JxlDecoderStatus JxlDecoderGetICCProfileSize(
@@ -786,8 +786,8 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetICCProfileSize(
  *     or the color profile of the decoded pixels.
  * @param icc_profile buffer to copy the ICC profile into
  * @param size size of the icc_profile buffer in bytes
- * @return @ref JXL_DEC_SUCCESS if the profile was successfully returned is
- *     available, @ref JXL_DEC_NEED_MORE_INPUT if not yet available, @ref
+ * @return ::JXL_DEC_SUCCESS if the profile was successfully returned is
+ *     available, ::JXL_DEC_NEED_MORE_INPUT if not yet available, @ref
  *     JXL_DEC_ERROR if the profile doesn't exist or the output size is not
  *     large enough.
  */
@@ -802,7 +802,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetColorAsICCProfile(
  *
  * @param dec decoder object
  * @param color_encoding the default color encoding to set
- * @return @ref JXL_DEC_SUCCESS if the preference was set successfully, @ref
+ * @return ::JXL_DEC_SUCCESS if the preference was set successfully, @ref
  *     JXL_DEC_ERROR otherwise.
  */
 JXL_EXPORT JxlDecoderStatus JxlDecoderSetPreferredColorProfile(
@@ -815,7 +815,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetPreferredColorProfile(
  * change from version to version.
  * @param dec decoder object
  * @param desired_intensity_target the intended target peak luminance
- * @return @ref JXL_DEC_SUCCESS if the preference was set successfully, @ref
+ * @return ::JXL_DEC_SUCCESS if the preference was set successfully, @ref
  * JXL_DEC_ERROR otherwise.
  */
 JXL_EXPORT JxlDecoderStatus JxlDecoderSetDesiredIntensityTarget(
@@ -849,9 +849,9 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetDesiredIntensityTarget(
  * If called with an ICC profile (after a call to @ref JxlDecoderSetCms), the
  * ICC profile has to be a valid RGB or grayscale color profile.
  *
- * Can only be set after the @ref JXL_DEC_COLOR_ENCODING event occurred and
+ * Can only be set after the ::JXL_DEC_COLOR_ENCODING event occurred and
  * before any other event occurred, and should be used before getting
- * @ref JXL_COLOR_PROFILE_TARGET_DATA.
+ * ::JXL_COLOR_PROFILE_TARGET_DATA.
  *
  * This function must not be called before @ref JxlDecoderSetCms.
  *
@@ -859,7 +859,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetDesiredIntensityTarget(
  * @param color_encoding the output color encoding
  * @param icc_data bytes of the icc profile
  * @param icc_size size of the icc profile in bytes
- * @return @ref JXL_DEC_SUCCESS if the color profile was set successfully, @ref
+ * @return ::JXL_DEC_SUCCESS if the color profile was set successfully, @ref
  *     JXL_DEC_ERROR otherwise.
  */
 JXL_EXPORT JxlDecoderStatus JxlDecoderSetOutputColorProfile(
@@ -892,7 +892,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetCms(JxlDecoder* dec,
  * @param dec decoder object
  * @param format format of pixels
  * @param size output value, buffer size in bytes
- * @return @ref JXL_DEC_SUCCESS on success, @ref JXL_DEC_ERROR on error, such as
+ * @return ::JXL_DEC_SUCCESS on success, ::JXL_DEC_ERROR on error, such as
  *     information not available yet.
  */
 JXL_EXPORT JxlDecoderStatus JxlDecoderPreviewOutBufferSize(
@@ -910,7 +910,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderPreviewOutBufferSize(
  *     copied internally.
  * @param buffer buffer type to output the pixel data to
  * @param size size of buffer in bytes
- * @return @ref JXL_DEC_SUCCESS on success, @ref JXL_DEC_ERROR on error, such as
+ * @return ::JXL_DEC_SUCCESS on success, ::JXL_DEC_ERROR on error, such as
  *     size too small.
  */
 JXL_EXPORT JxlDecoderStatus JxlDecoderSetPreviewOutBuffer(
@@ -918,14 +918,14 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetPreviewOutBuffer(
 
 /**
  * Outputs the information from the frame, such as duration when have_animation.
- * This function can be called when @ref JXL_DEC_FRAME occurred for the current
+ * This function can be called when ::JXL_DEC_FRAME occurred for the current
  * frame, even when have_animation in the JxlBasicInfo is JXL_FALSE.
  *
  * @param dec decoder object
  * @param header struct to copy the information into, or NULL to only check
  *     whether the information is available through the return value.
- * @return @ref JXL_DEC_SUCCESS if the value is available, @ref
- *     JXL_DEC_NEED_MORE_INPUT if not yet available, @ref JXL_DEC_ERROR in
+ * @return ::JXL_DEC_SUCCESS if the value is available, @ref
+ *     JXL_DEC_NEED_MORE_INPUT if not yet available, ::JXL_DEC_ERROR in
  *     case of other error conditions.
  */
 JXL_EXPORT JxlDecoderStatus JxlDecoderGetFrameHeader(const JxlDecoder* dec,
@@ -939,8 +939,8 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetFrameHeader(const JxlDecoder* dec,
  * @param name buffer to copy the name into
  * @param size size of the name buffer in bytes, including zero termination
  *    character, so this must be at least @ref JxlFrameHeader.name_length + 1.
- * @return @ref JXL_DEC_SUCCESS if the value is available, @ref
- *     JXL_DEC_NEED_MORE_INPUT if not yet available, @ref JXL_DEC_ERROR in
+ * @return ::JXL_DEC_SUCCESS if the value is available, @ref
+ *     JXL_DEC_NEED_MORE_INPUT if not yet available, ::JXL_DEC_ERROR in
  *     case of other error conditions.
  */
 JXL_EXPORT JxlDecoderStatus JxlDecoderGetFrameName(const JxlDecoder* dec,
@@ -948,7 +948,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetFrameName(const JxlDecoder* dec,
 
 /**
  * Outputs the blend information for the current frame for a specific extra
- * channel. This function can be called when @ref JXL_DEC_FRAME occurred for the
+ * channel. This function can be called when ::JXL_DEC_FRAME occurred for the
  * current frame, even when have_animation in the @ref JxlBasicInfo is @ref
  * JXL_FALSE. This information is only useful if coalescing is disabled;
  * otherwise the decoder will have performed blending already.
@@ -956,7 +956,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetFrameName(const JxlDecoder* dec,
  * @param dec decoder object
  * @param index the index of the extra channel
  * @param blend_info struct to copy the information into
- * @return @ref JXL_DEC_SUCCESS on success, @ref JXL_DEC_ERROR on error
+ * @return ::JXL_DEC_SUCCESS on success, ::JXL_DEC_ERROR on error
  */
 JXL_EXPORT JxlDecoderStatus JxlDecoderGetExtraChannelBlendInfo(
     const JxlDecoder* dec, size_t index, JxlBlendInfo* blend_info);
@@ -966,14 +966,14 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetExtraChannelBlendInfo(
  * given format. This is the buffer for @ref JxlDecoderSetImageOutBuffer.
  * Requires that the basic image information is available in the decoder in the
  * case of coalescing enabled (default). In case coalescing is disabled, this
- * can only be called after the @ref JXL_DEC_FRAME event occurs. In that case,
+ * can only be called after the ::JXL_DEC_FRAME event occurs. In that case,
  * it will return the size required to store the possibly cropped frame (which
  * can be larger or smaller than the image dimensions).
  *
  * @param dec decoder object
  * @param format format of the pixels.
  * @param size output value, buffer size in bytes
- * @return @ref JXL_DEC_SUCCESS on success, @ref JXL_DEC_ERROR on error, such as
+ * @return ::JXL_DEC_SUCCESS on success, ::JXL_DEC_ERROR on error, such as
  *     information not available yet.
  */
 JXL_EXPORT JxlDecoderStatus JxlDecoderImageOutBufferSize(
@@ -981,7 +981,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderImageOutBufferSize(
 
 /**
  * Sets the buffer to write the full resolution image to. This can be set when
- * the @ref JXL_DEC_FRAME event occurs, must be set when the @ref
+ * the ::JXL_DEC_FRAME event occurs, must be set when the @ref
  * JXL_DEC_NEED_IMAGE_OUT_BUFFER event occurs, and applies only for the
  * current frame. The size of the buffer must be at least as large as given
  * by @ref JxlDecoderImageOutBufferSize. The buffer follows the format described
@@ -992,7 +992,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderImageOutBufferSize(
  *     are copied internally.
  * @param buffer buffer type to output the pixel data to
  * @param size size of buffer in bytes
- * @return @ref JXL_DEC_SUCCESS on success, @ref JXL_DEC_ERROR on error, such as
+ * @return ::JXL_DEC_SUCCESS on success, ::JXL_DEC_ERROR on error, such as
  *     size too small.
  */
 JXL_EXPORT JxlDecoderStatus JxlDecoderSetImageOutBuffer(
@@ -1063,8 +1063,8 @@ typedef void (*JxlImageOutDestroyCallback)(void* run_opaque);
 
 /**
  * Sets pixel output callback. This is an alternative to @ref
- * JxlDecoderSetImageOutBuffer. This can be set when the @ref JXL_DEC_FRAME
- * event occurs, must be set when the @ref JXL_DEC_NEED_IMAGE_OUT_BUFFER event
+ * JxlDecoderSetImageOutBuffer. This can be set when the ::JXL_DEC_FRAME
+ * event occurs, must be set when the ::JXL_DEC_NEED_IMAGE_OUT_BUFFER event
  * occurs, and applies only for the current frame. Only one of @ref
  * JxlDecoderSetImageOutBuffer or @ref JxlDecoderSetImageOutCallback may be used
  * for the same frame, not both at the same time.
@@ -1100,7 +1100,7 @@ typedef void (*JxlImageOutDestroyCallback)(void* run_opaque);
  *     data.
  * @param opaque optional user data, which will be passed on to the callback,
  *     may be NULL.
- * @return @ref JXL_DEC_SUCCESS on success, @ref JXL_DEC_ERROR on error, such
+ * @return ::JXL_DEC_SUCCESS on success, ::JXL_DEC_ERROR on error, such
  *     as @ref JxlDecoderSetImageOutBuffer already set.
  */
 JXL_EXPORT JxlDecoderStatus
@@ -1123,7 +1123,7 @@ JxlDecoderSetImageOutCallback(JxlDecoder* dec, const JxlPixelFormat* format,
  * @param init_opaque optional user data passed to @c init_callback, may be NULL
  *     (unlike the return value from @c init_callback which may only be NULL if
  *     initialization failed).
- * @return @ref JXL_DEC_SUCCESS on success, @ref JXL_DEC_ERROR on error, such
+ * @return ::JXL_DEC_SUCCESS on success, ::JXL_DEC_ERROR on error, such
  *     as @ref JxlDecoderSetImageOutBuffer having already been called.
  */
 JXL_EXPORT JxlDecoderStatus JxlDecoderSetMultithreadedImageOutCallback(
@@ -1143,7 +1143,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetMultithreadedImageOutCallback(
  * @param index which extra channel to get, matching the index used in @ref
  *     JxlDecoderGetExtraChannelInfo. Must be smaller than num_extra_channels in
  *     the associated @ref JxlBasicInfo.
- * @return @ref JXL_DEC_SUCCESS on success, @ref JXL_DEC_ERROR on error, such as
+ * @return ::JXL_DEC_SUCCESS on success, ::JXL_DEC_ERROR on error, such as
  *     information not available yet or invalid index.
  */
 JXL_EXPORT JxlDecoderStatus JxlDecoderExtraChannelBufferSize(
@@ -1152,7 +1152,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderExtraChannelBufferSize(
 
 /**
  * Sets the buffer to write an extra channel to. This can be set when
- * the @ref JXL_DEC_FRAME or @ref JXL_DEC_NEED_IMAGE_OUT_BUFFER event occurs,
+ * the ::JXL_DEC_FRAME or ::JXL_DEC_NEED_IMAGE_OUT_BUFFER event occurs,
  * and applies only for the current frame. The size of the buffer must be at
  * least as large as given by @ref JxlDecoderExtraChannelBufferSize. The buffer
  * follows the format described by @ref JxlPixelFormat, but where num_channels
@@ -1177,7 +1177,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderExtraChannelBufferSize(
  * @param index which extra channel to get, matching the index used in @ref
  *     JxlDecoderGetExtraChannelInfo. Must be smaller than num_extra_channels in
  *     the associated @ref JxlBasicInfo.
- * @return @ref JXL_DEC_SUCCESS on success, @ref JXL_DEC_ERROR on error, such as
+ * @return ::JXL_DEC_SUCCESS on success, ::JXL_DEC_ERROR on error, such as
  *     size too small or invalid index.
  */
 JXL_EXPORT JxlDecoderStatus
@@ -1198,8 +1198,8 @@ JxlDecoderSetExtraChannelBuffer(JxlDecoder* dec, const JxlPixelFormat* format,
  * @param dec decoder object
  * @param data pointer to next bytes to write to
  * @param size amount of bytes available starting from data
- * @return @ref JXL_DEC_ERROR if output buffer was already set and @ref
- *     JxlDecoderReleaseJPEGBuffer was not called on it, @ref JXL_DEC_SUCCESS
+ * @return ::JXL_DEC_ERROR if output buffer was already set and @ref
+ *     JxlDecoderReleaseJPEGBuffer was not called on it, ::JXL_DEC_SUCCESS
  *     otherwise
  */
 JXL_EXPORT JxlDecoderStatus JxlDecoderSetJPEGBuffer(JxlDecoder* dec,
@@ -1234,15 +1234,15 @@ JXL_EXPORT size_t JxlDecoderReleaseJPEGBuffer(JxlDecoder* dec);
  * JxlDecoderReleaseBoxBuffer, bytes that the decoder has already output
  * should not be included, only the remaining bytes output must be set.
  *
- * The @ref JxlDecoderReleaseBoxBuffer must be used at the next @ref JXL_DEC_BOX
- * event or final @ref JXL_DEC_SUCCESS event to compute the size of the output
+ * The @ref JxlDecoderReleaseBoxBuffer must be used at the next ::JXL_DEC_BOX
+ * event or final ::JXL_DEC_SUCCESS event to compute the size of the output
  * box bytes.
  *
  * @param dec decoder object
  * @param data pointer to next bytes to write to
  * @param size amount of bytes available starting from data
- * @return @ref JXL_DEC_ERROR if output buffer was already set and @ref
- *     JxlDecoderReleaseBoxBuffer was not called on it, @ref JXL_DEC_SUCCESS
+ * @return ::JXL_DEC_ERROR if output buffer was already set and @ref
+ *     JxlDecoderReleaseBoxBuffer was not called on it, ::JXL_DEC_SUCCESS
  *     otherwise
  */
 JXL_EXPORT JxlDecoderStatus JxlDecoderSetBoxBuffer(JxlDecoder* dec,
@@ -1275,22 +1275,22 @@ JXL_EXPORT size_t JxlDecoderReleaseBoxBuffer(JxlDecoder* dec);
  * finished.
  *
  * The default mode is raw. This setting can only be changed before decoding, or
- * directly after a @ref JXL_DEC_BOX event, and is remembered until the decoder
+ * directly after a ::JXL_DEC_BOX event, and is remembered until the decoder
  * is reset or destroyed.
  *
  * Enabling decompressed mode requires Brotli support from the library.
  *
  * @param dec decoder object
- * @param decompress @ref JXL_TRUE to transparently decompress, @ref JXL_FALSE
+ * @param decompress ::JXL_TRUE to transparently decompress, ::JXL_FALSE
  * to get boxes in raw mode.
- * @return @ref JXL_DEC_ERROR if decompressed mode is set and Brotli is not
- *     available, @ref JXL_DEC_SUCCESS otherwise.
+ * @return ::JXL_DEC_ERROR if decompressed mode is set and Brotli is not
+ *     available, ::JXL_DEC_SUCCESS otherwise.
  */
 JXL_EXPORT JxlDecoderStatus JxlDecoderSetDecompressBoxes(JxlDecoder* dec,
                                                          JXL_BOOL decompress);
 
 /**
- * Outputs the type of the current box, after a @ref JXL_DEC_BOX event occurred,
+ * Outputs the type of the current box, after a ::JXL_DEC_BOX event occurred,
  * as 4 characters without null termination character. In case of a compressed
  * "brob" box, this will return "brob" if the decompressed argument is
  * JXL_FALSE, or the underlying box type if the decompressed argument is
@@ -1351,7 +1351,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetDecompressBoxes(JxlDecoder* dec,
  * @param type buffer to copy the type into
  * @param decompressed which box type to get: JXL_FALSE to get the raw box type,
  *     which can be "brob", JXL_TRUE, get the underlying box type.
- * @return @ref JXL_DEC_SUCCESS if the value is available, @ref JXL_DEC_ERROR if
+ * @return ::JXL_DEC_SUCCESS if the value is available, ::JXL_DEC_ERROR if
  *     not, for example the JXL file does not use the container format.
  */
 JXL_EXPORT JxlDecoderStatus JxlDecoderGetBoxType(JxlDecoder* dec,
@@ -1364,7 +1364,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetBoxType(JxlDecoder* dec,
  *
  * @param dec decoder object
  * @param size raw size of the box in bytes
- * @return @ref JXL_DEC_ERROR if no box size is available, @ref JXL_DEC_SUCCESS
+ * @return ::JXL_DEC_ERROR if no box size is available, ::JXL_DEC_SUCCESS
  *     otherwise.
  */
 JXL_EXPORT JxlDecoderStatus JxlDecoderGetBoxSizeRaw(const JxlDecoder* dec,
@@ -1394,7 +1394,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetBoxSizeContents(const JxlDecoder* dec,
  * @param dec decoder object
  * @param detail at which level of detail to trigger @ref
  *     JXL_DEC_FRAME_PROGRESSION
- * @return @ref JXL_DEC_SUCCESS on success, @ref JXL_DEC_ERROR on error, such as
+ * @return ::JXL_DEC_SUCCESS on success, ::JXL_DEC_ERROR on error, such as
  *     an invalid value for the progressive detail.
  */
 JXL_EXPORT JxlDecoderStatus
@@ -1402,7 +1402,7 @@ JxlDecoderSetProgressiveDetail(JxlDecoder* dec, JxlProgressiveDetail detail);
 
 /**
  * Returns the intended downsampling ratio for the progressive frame produced
- * by @ref JxlDecoderFlushImage after the latest @ref JXL_DEC_FRAME_PROGRESSION
+ * by @ref JxlDecoderFlushImage after the latest ::JXL_DEC_FRAME_PROGRESSION
  * event.
  *
  * @param dec decoder object
@@ -1416,12 +1416,12 @@ JXL_EXPORT size_t JxlDecoderGetIntendedDownsamplingRatio(JxlDecoder* dec);
  * JxlDecoderSetImageOutBuffer will contain partial image data.
  *
  * Can be called when @ref JxlDecoderProcessInput returns @ref
- * JXL_DEC_NEED_MORE_INPUT, after the @ref JXL_DEC_FRAME event already occurred
- * and before the @ref JXL_DEC_FULL_IMAGE event occurred for a frame.
+ * JXL_DEC_NEED_MORE_INPUT, after the ::JXL_DEC_FRAME event already occurred
+ * and before the ::JXL_DEC_FULL_IMAGE event occurred for a frame.
  *
  * @param dec decoder object
- * @return @ref JXL_DEC_SUCCESS if image data was flushed to the output buffer,
- *     or @ref JXL_DEC_ERROR when no flush was done, e.g. if not enough image
+ * @return ::JXL_DEC_SUCCESS if image data was flushed to the output buffer,
+ *     or ::JXL_DEC_ERROR when no flush was done, e.g. if not enough image
  *     data was available yet even for flush, or no output buffer was set yet.
  *     This error is not fatal, it only indicates no flushed image is available
  *     right now. Regular decoding can still be performed.
@@ -1433,11 +1433,11 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderFlushImage(JxlDecoder* dec);
  *
  * Can be called after @ref JxlDecoderSetImageOutBuffer or @ref
  * JxlDecoderSetImageOutCallback. For float pixel data types, only the default
- * @ref JXL_BIT_DEPTH_FROM_PIXEL_FORMAT setting is supported.
+ * ::JXL_BIT_DEPTH_FROM_PIXEL_FORMAT setting is supported.
  *
  * @param dec decoder object
  * @param bit_depth the bit depth setting of the pixel output
- * @return @ref JXL_DEC_SUCCESS on success, @ref JXL_DEC_ERROR on error, such as
+ * @return ::JXL_DEC_SUCCESS on success, ::JXL_DEC_ERROR on error, such as
  *     incompatible custom bit depth and pixel data type.
  */
 JXL_EXPORT JxlDecoderStatus

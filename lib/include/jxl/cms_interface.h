@@ -136,7 +136,7 @@ typedef float* (*jpegxl_cms_get_buffer_func)(void* user_data, size_t thread);
  * @param output_buffer the buffer receiving the transformed pixel data.
  * @param num_pixels the number of pixels to transform from @p input to
  * @p output.
- * @return @ref JXL_TRUE on success, @ref JXL_FALSE on failure.
+ * @return ::JXL_TRUE on success, ::JXL_FALSE on failure.
  */
 typedef JXL_BOOL (*jpegxl_cms_run_func)(void* user_data, size_t thread,
                                         const float* input_buffer,

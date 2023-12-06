@@ -167,7 +167,7 @@ typedef struct {
    * the target display color profile. To convert the pixel data produced by
    * the decoder to the original color profile, one of the JxlDecoderGetColor*
    * functions needs to be called with
-   * @ref JXL_COLOR_PROFILE_TARGET_DATA to get the color profile of the decoder
+   * ::JXL_COLOR_PROFILE_TARGET_DATA to get the color profile of the decoder
    * output, and then an external CMS can be used for conversion. Note that for
    * lossy compression, this should be set to false for most use cases, and if
    * needed, the image should be converted to the original color profile after
@@ -399,9 +399,9 @@ typedef struct {
    * interpreted from most-significant to least-significant as hour, minute,
    * second, and frame. If timecode is nonzero, it is strictly larger than that
    * of a previous frame with nonzero duration. These values are only available
-   * if have_timecodes in @ref JxlAnimationHeader is @ref JXL_TRUE.
+   * if have_timecodes in @ref JxlAnimationHeader is ::JXL_TRUE.
    * This value is only used if have_timecodes in @ref JxlAnimationHeader is
-   * @ref JXL_TRUE.
+   * ::JXL_TRUE.
    */
   uint32_t timecode;
 

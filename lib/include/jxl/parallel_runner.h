@@ -46,7 +46,7 @@ extern "C" {
 
 /** Return code used in the JxlParallel* functions as return value. A value
  * of 0 means success and any other value means error. The special value
- * @ref JXL_PARALLEL_RET_RUNNER_ERROR can be used by the runner to indicate any
+ * ::JXL_PARALLEL_RET_RUNNER_ERROR can be used by the runner to indicate any
  * other error.
  */
 typedef int JxlParallelRetCode;
