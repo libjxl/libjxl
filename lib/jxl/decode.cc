@@ -209,7 +209,6 @@ enum class JpegReconStage : uint32_t {
   kNone,             // Not outputting
   kSettingMetadata,  // Ready to output, must set metadata to the jpeg_data
   kOutputting,       // Currently outputting the JPEG bytes
-  kFinished,         // JPEG reconstruction fully handled
 };
 
 /*
@@ -1704,7 +1703,7 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
       JxlDecoderStatus status =
           dec->jpeg_decoder.WriteOutput(*dec->ib->jpeg_data);
       if (status != JXL_DEC_SUCCESS) return status;
-      dec->recon_output_jpeg = JpegReconStage::kFinished;
+      dec->recon_output_jpeg = JpegReconStage::kNone;
       dec->ib.reset();
       if (dec->events_wanted & JXL_DEC_FULL_IMAGE) {
         // Return the full image event here now, this may be delayed if this
