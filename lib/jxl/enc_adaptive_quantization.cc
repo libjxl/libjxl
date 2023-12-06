@@ -432,13 +432,8 @@ struct AdaptiveQuantizationImpl {
     size_t y_start = rect.y0() * 8;
     size_t y_end = y_start + rect.ysize() * 8;
 
-    size_t x0 = rect.x0() * 8;
-    size_t x1 = x0 + rect.xsize() * 8;
-    if (x0 != 0) x0 -= 4;
-    if (x1 != xyb.xsize()) x1 += 4;
-    if (y_start != 0) y_start -= 4;
-    if (y_end != xyb.ysize()) y_end += 4;
-    pre_erosion[thread].ShrinkTo((x1 - x0) / 4, (y_end - y_start) / 4);
+    size_t x_start = rect.x0() * 8;
+    size_t x_end = x_start + rect.xsize() * 8;
 
     // Computes image (padded to multiple of 8x8) of local pixel differences.
     // Subsample both directions by 4.
@@ -465,10 +460,17 @@ struct AdaptiveQuantizationImpl {
         static const float kOffset = 0.01;
         mask1x1_out[x] = kMul / (diff + kOffset);
       };
-      for (size_t x = x0; x < x1; ++x) {
+      for (size_t x = x_start; x < x_end; ++x) {
         scalar_pixel1x1(x);
       }
     }
+
+    if (x_start != 0) x_start -= 4;
+    if (x_end != xyb.xsize()) x_end += 4;
+    if (y_start != 0) y_start -= 4;
+    if (y_end != xyb.ysize()) y_end += 4;
+    pre_erosion[thread].ShrinkTo((x_end - x_start) / 4, (y_end - y_start) / 4);
+
     static const float limit = 0.2f;
     for (size_t y = y_start; y < y_end; ++y) {
       size_t y2 = y + 1 < ysize ? y + 1 : y;
@@ -493,22 +495,22 @@ struct AdaptiveQuantizationImpl {
         }
         diff = MaskingSqrt(diff);
         if ((y % 4) != 0) {
-          row_out[x - x0] += diff;
+          row_out[x - x_start] += diff;
         } else {
-          row_out[x - x0] = diff;
+          row_out[x - x_start] = diff;
         }
       };
 
-      size_t x = x0;
+      size_t x = x_start;
       // First pixel of the row.
-      if (x0 == 0) {
-        scalar_pixel(x0);
+      if (x_start == 0) {
+        scalar_pixel(x_start);
         ++x;
       }
       // SIMD
       const auto match_gamma_offset_v = Set(df, match_gamma_offset);
       const auto quarter = Set(df, 0.25f);
-      for (; x + 1 + Lanes(df) < x1; x += Lanes(df)) {
+      for (; x + 1 + Lanes(df) < x_end; x += Lanes(df)) {
         const auto in = LoadU(df, row_in + x);
         const auto in_r = LoadU(df, row_in + x + 1);
         const auto in_l = LoadU(df, row_in + x - 1);
@@ -523,24 +525,24 @@ struct AdaptiveQuantizationImpl {
         diff = Min(diff, Set(df, limit));
         diff = MaskingSqrt(df, diff);
         if ((y & 3) != 0) {
-          diff = Add(diff, LoadU(df, row_out + x - x0));
+          diff = Add(diff, LoadU(df, row_out + x - x_start));
         }
-        StoreU(diff, df, row_out + x - x0);
+        StoreU(diff, df, row_out + x - x_start);
       }
       // Scalar
-      for (; x < x1; ++x) {
+      for (; x < x_end; ++x) {
         scalar_pixel(x);
       }
       if (y % 4 == 3) {
         float* row_dout = pre_erosion[thread].Row((y - y_start) / 4);
-        for (size_t x = 0; x < (x1 - x0) / 4; x++) {
+        for (size_t x = 0; x < (x_end - x_start) / 4; x++) {
           row_dout[x] = (row_out[x * 4] + row_out[x * 4 + 1] +
                          row_out[x * 4 + 2] + row_out[x * 4 + 3]) *
                         0.25f;
         }
       }
     }
-    Rect from_rect(x0 % 8 == 0 ? 0 : 1, y_start % 8 == 0 ? 0 : 1,
+    Rect from_rect(x_start % 8 == 0 ? 0 : 1, y_start % 8 == 0 ? 0 : 1,
                    rect.xsize() * 2, rect.ysize() * 2);
     FuzzyErosion(butteraugli_target, from_rect, pre_erosion[thread], rect,
                  &aq_map);
