@@ -6,6 +6,12 @@
 #ifndef LIB_JXL_ENC_IMAGE_BUNDLE_H_
 #define LIB_JXL_ENC_IMAGE_BUNDLE_H_
 
+#include <jxl/cms_interface.h>
+
+#include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/color_encoding_internal.h"
+#include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 
 namespace jxl {

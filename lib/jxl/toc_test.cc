@@ -5,9 +5,12 @@
 
 #include "lib/jxl/toc.h"
 
+#include <vector>
+
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/random.h"
 #include "lib/jxl/base/span.h"
+#include "lib/jxl/coeff_order_fwd.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_toc.h"
 #include "lib/jxl/testing.h"
