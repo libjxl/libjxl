@@ -5,11 +5,12 @@
 
 #include "lib/extras/dec/jxl.h"
 
-#include <stdint.h>
+#include <jxl/encode.h>
 
 #include <array>
 #include <cstdint>
 #include <future>
+#include <ostream>
 #include <string>
 #include <tuple>
 #include <utility>

@@ -6,6 +6,8 @@
 #ifndef LIB_JXL_ENC_QUANT_WEIGHTS_H_
 #define LIB_JXL_ENC_QUANT_WEIGHTS_H_
 
+#include <cstddef>
+
 #include "lib/jxl/quant_weights.h"
 
 namespace jxl {

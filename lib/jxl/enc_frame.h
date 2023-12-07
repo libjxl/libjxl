@@ -6,6 +6,10 @@
 #ifndef LIB_JXL_ENC_FRAME_H_
 #define LIB_JXL_ENC_FRAME_H_
 
+#include <jxl/types.h>
+
+#include <string>
+
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/enc_bit_writer.h"

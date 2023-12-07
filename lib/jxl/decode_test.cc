@@ -31,7 +31,6 @@
 #include "lib/jxl/dec_external_image.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
-#include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_fields.h"
 #include "lib/jxl/enc_frame.h"
