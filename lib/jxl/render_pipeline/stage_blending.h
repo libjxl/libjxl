@@ -16,7 +16,7 @@ namespace jxl {
 
 // Applies blending if applicable.
 std::unique_ptr<RenderPipelineStage> GetBlendingStage(
-    const PassesDecoderState* dec_state,
+    const FrameHeader& frame_header, const PassesDecoderState* dec_state,
     const ColorEncoding& frame_color_encoding);
 
 }  // namespace jxl

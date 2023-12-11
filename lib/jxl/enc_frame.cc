@@ -724,11 +724,10 @@ void FindIndexOfSumMaximum(const V* array, const size_t len, R* idx, V* sum) {
 }
 
 Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
-                                  ThreadPool* pool,
+                                  FrameHeader& frame_header, ThreadPool* pool,
                                   ModularFrameEncoder* modular_frame_encoder,
                                   PassesEncoderState* enc_state) {
   PassesSharedState& shared = enc_state->shared;
-  FrameHeader& frame_header = shared.frame_header;
   const FrameDimensions& frame_dim = shared.frame_dim;
 
   const size_t xsize = frame_dim.xsize_padded;
@@ -1025,8 +1024,9 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
   frame_header.UpdateFlag(false, FrameHeader::kUseDcFrame);
   auto compute_dc_coeffs = [&](const uint32_t group_index,
                                size_t /* thread */) {
-    modular_frame_encoder->AddVarDCTDC(dc, group_index, /*nl_dc=*/false,
-                                       enc_state, /*jpeg_transcode=*/true);
+    modular_frame_encoder->AddVarDCTDC(frame_header, dc, group_index,
+                                       /*nl_dc=*/false, enc_state,
+                                       /*jpeg_transcode=*/true);
     modular_frame_encoder->AddACMetadata(group_index, /*jpeg_transcode=*/true,
                                          enc_state);
   };
@@ -1039,7 +1039,8 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
   return true;
 }
 
-Status ComputeVarDCTEncodingData(const Image3F* linear,
+Status ComputeVarDCTEncodingData(const FrameHeader& frame_header,
+                                 const Image3F* linear,
                                  Image3F* JXL_RESTRICT opsin,
                                  const JxlCmsInterface& cms, ThreadPool* pool,
                                  ModularFrameEncoder* modular_frame_encoder,
@@ -1047,11 +1048,13 @@ Status ComputeVarDCTEncodingData(const Image3F* linear,
                                  AuxOut* aux_out) {
   JXL_ASSERT((opsin->xsize() % kBlockDim) == 0 &&
              (opsin->ysize() % kBlockDim) == 0);
-  JXL_RETURN_IF_ERROR(LossyFrameHeuristics(enc_state, modular_frame_encoder,
-                                           linear, opsin, cms, pool, aux_out));
+  JXL_RETURN_IF_ERROR(LossyFrameHeuristics(frame_header, enc_state,
+                                           modular_frame_encoder, linear, opsin,
+                                           cms, pool, aux_out));
 
-  JXL_RETURN_IF_ERROR(InitializePassesEncoder(*opsin, cms, pool, enc_state,
-                                              modular_frame_encoder, aux_out));
+  JXL_RETURN_IF_ERROR(InitializePassesEncoder(frame_header, *opsin, cms, pool,
+                                              enc_state, modular_frame_encoder,
+                                              aux_out));
 
   return true;
 }
@@ -1085,7 +1088,8 @@ struct EncCache {
   Image3I num_nzeroes;
 };
 
-Status TokenizeAllCoefficients(ThreadPool* pool,
+Status TokenizeAllCoefficients(const FrameHeader& frame_header,
+                               ThreadPool* pool,
                                PassesEncoderState* enc_state) {
   PassesSharedState& shared = enc_state->shared;
   std::vector<EncCache> group_caches;
@@ -1108,7 +1112,7 @@ Status TokenizeAllCoefficients(ThreadPool* pool,
       group_caches[thread].InitOnce();
       TokenizeCoefficients(
           &shared.coeff_orders[idx_pass * shared.coeff_order_size], rect,
-          ac_rows, shared.ac_strategy, shared.frame_header.chroma_subsampling,
+          ac_rows, shared.ac_strategy, frame_header.chroma_subsampling,
           &group_caches[thread].num_nzeroes,
           &enc_state->passes[idx_pass].ac_tokens[group_index], shared.quant_dc,
           shared.raw_quant_field, shared.block_ctx_map);
@@ -1173,12 +1177,12 @@ Status EncodeGlobalACInfo(PassesEncoderState* enc_state, BitWriter* writer,
   return true;
 }
 
-Status EncodeGroups(PassesEncoderState* enc_state,
+Status EncodeGroups(const FrameHeader& frame_header,
+                    PassesEncoderState* enc_state,
                     ModularFrameEncoder* enc_modular, ThreadPool* pool,
                     std::vector<BitWriter>* group_codes, AuxOut* aux_out) {
   const PassesSharedState& shared = enc_state->shared;
   const FrameDimensions& frame_dim = shared.frame_dim;
-  const FrameHeader& frame_header = shared.frame_header;
   const size_t num_groups = frame_dim.num_groups;
   const size_t num_passes = enc_state->progressive_splitter.GetNumPasses();
   const size_t global_ac_index = frame_dim.num_dc_groups + 1;
@@ -1313,10 +1317,11 @@ Status EncodeGroups(PassesEncoderState* enc_state,
 
 Status ComputeEncodingData(
     const CompressParams& cparams, const FrameInfo& frame_info,
-    const CodecMetadata* metadata, JxlEncoderChunkedFrameAdapter& frame_data,
-    size_t x0, size_t y0, size_t xsize, size_t ysize,
-    const JxlCmsInterface& cms, ThreadPool* pool, PassesEncoderState& enc_state,
-    std::vector<BitWriter>* group_codes, AuxOut* aux_out) {
+    const CodecMetadata* metadata, FrameHeader& frame_header,
+    JxlEncoderChunkedFrameAdapter& frame_data, size_t x0, size_t y0,
+    size_t xsize, size_t ysize, const JxlCmsInterface& cms, ThreadPool* pool,
+    PassesEncoderState& enc_state, std::vector<BitWriter>* group_codes,
+    AuxOut* aux_out) {
   JXL_ASSERT(x0 + xsize <= frame_data.xsize);
   JXL_ASSERT(y0 + ysize <= frame_data.ysize);
   const size_t num_extra_channels = metadata->m.num_extra_channels;
@@ -1352,15 +1357,11 @@ Status ComputeEncodingData(
   enc_state.cparams = cparams;
   SetProgressiveMode(cparams, &enc_state.progressive_splitter);
 
-  {
-    FrameHeader frame_header(metadata);
-    JXL_RETURN_IF_ERROR(
-        MakeFrameHeader(xsize, ysize, cparams, enc_state.progressive_splitter,
-                        frame_info, jpeg_data.get(), &frame_header));
-    JXL_RETURN_IF_ERROR(InitializePassesSharedState(frame_header, &shared,
-                                                    /*encoder=*/true));
-  }
-  FrameHeader& frame_header = shared.frame_header;
+  JXL_RETURN_IF_ERROR(
+      MakeFrameHeader(xsize, ysize, cparams, enc_state.progressive_splitter,
+                      frame_info, jpeg_data.get(), &frame_header));
+  JXL_RETURN_IF_ERROR(
+      InitializePassesSharedState(frame_header, &shared, /*encoder=*/true));
   const FrameDimensions& frame_dim = shared.frame_dim;
   ModularFrameEncoder modular_frame_encoder(frame_header, cparams);
 
@@ -1422,15 +1423,16 @@ Status ComputeEncodingData(
     }
     if (jpeg_data) {
       JXL_RETURN_IF_ERROR(ComputeJPEGTranscodingData(
-          *jpeg_data, pool, &modular_frame_encoder, &enc_state));
+          *jpeg_data, frame_header, pool, &modular_frame_encoder, &enc_state));
     } else {
-      JXL_RETURN_IF_ERROR(ComputeVarDCTEncodingData(linear, &opsin, cms, pool,
-                                                    &modular_frame_encoder,
-                                                    &enc_state, aux_out));
+      JXL_RETURN_IF_ERROR(ComputeVarDCTEncodingData(
+          frame_header, linear, &opsin, cms, pool, &modular_frame_encoder,
+          &enc_state, aux_out));
     }
     ComputeAllCoeffOrders(enc_state, frame_dim);
     shared.num_histograms = 1;
-    JXL_RETURN_IF_ERROR(TokenizeAllCoefficients(pool, &enc_state));
+    JXL_RETURN_IF_ERROR(
+        TokenizeAllCoefficients(frame_header, pool, &enc_state));
   }
 
   JXL_RETURN_IF_ERROR(modular_frame_encoder.ComputeEncodingData(
@@ -1443,8 +1445,9 @@ Status ComputeEncodingData(
   frame_header.UpdateFlag(shared.image_features.splines.HasAny(),
                           FrameHeader::kSplines);
 
-  JXL_RETURN_IF_ERROR(EncodeGroups(&enc_state, &modular_frame_encoder, pool,
-                                   group_codes, aux_out));
+  JXL_RETURN_IF_ERROR(EncodeGroups(frame_header, &enc_state,
+                                   &modular_frame_encoder, pool, group_codes,
+                                   aux_out));
   return true;
 }
 
@@ -1579,15 +1582,16 @@ Status EncodeFrameStreaming(const CompressParams& cparams,
   // TODO(szabadka): Call ComputeEncodingData for one DC group at a time and
   // write the output at a precomputed position.
   PassesEncoderState enc_state;
+  FrameHeader frame_header(metadata);
   std::vector<BitWriter> group_codes;
-  JXL_RETURN_IF_ERROR(ComputeEncodingData(
-      cparams, frame_info, metadata, frame_data, 0, 0, frame_data.xsize,
-      frame_data.ysize, cms, pool, enc_state, &group_codes, aux_out));
+  JXL_RETURN_IF_ERROR(
+      ComputeEncodingData(cparams, frame_info, metadata, frame_header,
+                          frame_data, 0, 0, frame_data.xsize, frame_data.ysize,
+                          cms, pool, enc_state, &group_codes, aux_out));
 
   BitWriter writer;
   writer.AppendByteAligned(enc_state.special_frames);
-  JXL_RETURN_IF_ERROR(
-      WriteFrameHeader(enc_state.shared.frame_header, &writer, aux_out));
+  JXL_RETURN_IF_ERROR(WriteFrameHeader(frame_header, &writer, aux_out));
 
   const size_t num_passes = enc_state.progressive_splitter.GetNumPasses();
   std::vector<coeff_order_t> permutation;
@@ -1613,14 +1617,15 @@ Status EncodeFrameOneShot(const CompressParams& cparams,
                           AuxOut* aux_out) {
   PassesEncoderState enc_state;
   std::vector<BitWriter> group_codes;
-  JXL_RETURN_IF_ERROR(ComputeEncodingData(
-      cparams, frame_info, metadata, frame_data, 0, 0, frame_data.xsize,
-      frame_data.ysize, cms, pool, enc_state, &group_codes, aux_out));
+  FrameHeader frame_header(metadata);
+  JXL_RETURN_IF_ERROR(
+      ComputeEncodingData(cparams, frame_info, metadata, frame_header,
+                          frame_data, 0, 0, frame_data.xsize, frame_data.ysize,
+                          cms, pool, enc_state, &group_codes, aux_out));
 
   BitWriter writer;
   writer.AppendByteAligned(enc_state.special_frames);
-  JXL_RETURN_IF_ERROR(
-      WriteFrameHeader(enc_state.shared.frame_header, &writer, aux_out));
+  JXL_RETURN_IF_ERROR(WriteFrameHeader(frame_header, &writer, aux_out));
 
   const size_t num_passes = enc_state.progressive_splitter.GetNumPasses();
   std::vector<coeff_order_t> permutation;

@@ -68,7 +68,8 @@ struct PassesEncoderState {
 
 // Initialize per-frame information.
 class ModularFrameEncoder;
-Status InitializePassesEncoder(const Image3F& opsin, const JxlCmsInterface& cms,
+Status InitializePassesEncoder(const FrameHeader& frame_header,
+                               const Image3F& opsin, const JxlCmsInterface& cms,
                                ThreadPool* pool,
                                PassesEncoderState* passes_enc_state,
                                ModularFrameEncoder* modular_frame_encoder,

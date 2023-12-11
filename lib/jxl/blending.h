@@ -11,7 +11,7 @@
 
 namespace jxl {
 
-bool NeedsBlending(PassesDecoderState* dec_state);
+bool NeedsBlending(const FrameHeader& frame_header);
 
 void PerformBlending(const float* const* bg, const float* const* fg,
                      float* const* out, size_t x0, size_t xsize,

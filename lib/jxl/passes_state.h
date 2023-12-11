@@ -33,11 +33,8 @@ struct ImageFeatures {
 // State common to both encoder and decoder.
 // NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
 struct PassesSharedState {
-  PassesSharedState() : frame_header(nullptr) {}
-
   // Headers and metadata.
   const CodecMetadata* metadata;
-  FrameHeader frame_header;
 
   FrameDimensions frame_dim;
 

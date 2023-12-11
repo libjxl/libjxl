@@ -697,7 +697,8 @@ void DownsampleImage2_Iterative(Image3F* opsin) {
   *opsin = std::move(downsampled);
 }
 
-Status LossyFrameHeuristics(PassesEncoderState* enc_state,
+Status LossyFrameHeuristics(const FrameHeader& frame_header,
+                            PassesEncoderState* enc_state,
                             ModularFrameEncoder* modular_frame_encoder,
                             const Image3F* original_pixels, Image3F* opsin,
                             const JxlCmsInterface& cms, ThreadPool* pool,
@@ -770,7 +771,7 @@ Status LossyFrameHeuristics(PassesEncoderState* enc_state,
   } else {
     // Call this here, as it relies on pre-gaborish values.
     float butteraugli_distance_for_iqf = cparams.butteraugli_distance;
-    if (!shared.frame_header.loop_filter.gab) {
+    if (!frame_header.loop_filter.gab) {
       butteraugli_distance_for_iqf *= 0.73f;
     }
     enc_state->initial_quant_field = InitialQuantField(
@@ -783,7 +784,7 @@ Status LossyFrameHeuristics(PassesEncoderState* enc_state,
   // TODO(veluca): do something about animations.
 
   // Apply inverse-gaborish.
-  if (shared.frame_header.loop_filter.gab) {
+  if (frame_header.loop_filter.gab) {
     // Unsure why better to do some more gaborish on X and B than Y.
     float weight[3] = {
         1.0036278514398933f,
@@ -827,7 +828,7 @@ Status LossyFrameHeuristics(PassesEncoderState* enc_state,
 
     // Choose amount of post-processing smoothing.
     // TODO(veluca): should this go *after* AdjustQuantField?
-    ar_heuristics.RunRect(r, *opsin, enc_state, thread);
+    ar_heuristics.RunRect(frame_header, r, *opsin, enc_state, thread);
 
     // Always set the initial quant field, so we can compute the CfL map with
     // more accuracy. The initial quant field might change in slower modes, but
@@ -867,7 +868,8 @@ Status LossyFrameHeuristics(PassesEncoderState* enc_state,
   }
 
   // Refine quantization levels.
-  FindBestQuantizer(original_pixels, *opsin, enc_state, cms, pool, aux_out);
+  FindBestQuantizer(frame_header, original_pixels, *opsin, enc_state, cms, pool,
+                    aux_out);
 
   // Choose a context model that depends on the amount of quantization for AC.
   if (cparams.speed_tier < SpeedTier::kFalcon) {
