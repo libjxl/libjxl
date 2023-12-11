@@ -487,6 +487,25 @@ Status IdentifyPrimaries(const skcms_ICCProfile& profile,
   return c->SetPrimaries(primaries);
 }
 
+bool IsApproximatelyEqual(const skcms_ICCProfile& profile,
+                          const ColorEncoding& JXL_RESTRICT c) {
+  IccBytes bytes;
+  if (!MaybeCreateProfile(c.ToExternal(), &bytes)) {
+    return false;
+  }
+
+  skcms_ICCProfile profile_test;
+  if (!DecodeProfile(bytes.data(), bytes.size(), &profile_test)) {
+    return false;
+  }
+
+  if (!skcms_ApproximatelyEqualProfiles(&profile_test, &profile)) {
+    return false;
+  }
+
+  return true;
+}
+
 void DetectTransferFunction(const skcms_ICCProfile& profile,
                             ColorEncoding* JXL_RESTRICT c) {
   JXL_CHECK(c->color_space != ColorSpace::kXYB);
@@ -517,29 +536,15 @@ void DetectTransferFunction(const skcms_ICCProfile& profile,
   if (gamma[0] != 0 && std::abs(gamma[0] - gamma[1]) < 1e-4f &&
       std::abs(gamma[1] - gamma[2]) < 1e-4f) {
     if (c->tf.SetGamma(gamma[0])) {
-      skcms_ICCProfile profile_test;
-      IccBytes bytes;
-      if (MaybeCreateProfile(c->ToExternal(), &bytes) &&
-          DecodeProfile(bytes.data(), bytes.size(), &profile_test) &&
-          skcms_ApproximatelyEqualProfiles(&profile, &profile_test)) {
-        return;
-      }
+      if (IsApproximatelyEqual(profile, *c)) return;
     }
   }
 
   for (TransferFunction tf : Values<TransferFunction>()) {
     // Can only create profile from known transfer function.
     if (tf == TransferFunction::kUnknown) continue;
-
     c->tf.SetTransferFunction(tf);
-
-    skcms_ICCProfile profile_test;
-    IccBytes bytes;
-    if (MaybeCreateProfile(c->ToExternal(), &bytes) &&
-        DecodeProfile(bytes.data(), bytes.size(), &profile_test) &&
-        skcms_ApproximatelyEqualProfiles(&profile, &profile_test)) {
-      return;
-    }
+    if (IsApproximatelyEqual(profile, *c)) return;
   }
 
   c->tf.SetTransferFunction(TransferFunction::kUnknown);
