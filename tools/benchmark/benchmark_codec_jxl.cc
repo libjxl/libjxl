@@ -230,6 +230,12 @@ class JxlCodec : public ImageCodec {
         return JXL_FAILURE("Invalid epf value");
       }
       cparams_.AddOption(JXL_ENC_FRAME_SETTING_EPF, val);
+    } else if (param.substr(0, 3) == "buf") {
+      val = strtol(param.substr(3).c_str(), nullptr, 10);
+      if (val > 3) {
+        return JXL_FAILURE("Invalid buffering value");
+      }
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_BUFFERING, val);
     } else if (param.substr(0, 16) == "faster_decoding=") {
       val = strtol(param.substr(16).c_str(), nullptr, 10);
       cparams_.AddOption(JXL_ENC_FRAME_SETTING_DECODING_SPEED, val);
