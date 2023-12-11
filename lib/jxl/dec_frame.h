@@ -31,7 +31,8 @@ namespace jxl {
 // Used in the encoder to model decoder behaviour, and in tests.
 Status DecodeFrame(PassesDecoderState* dec_state, ThreadPool* JXL_RESTRICT pool,
                    const uint8_t* next_in, size_t avail_in,
-                   ImageBundle* decoded, const CodecMetadata& metadata,
+                   FrameHeader* frame_header, ImageBundle* decoded,
+                   const CodecMetadata& metadata,
                    bool use_slow_rendering_pipeline = false);
 
 // TODO(veluca): implement "forced drawing".

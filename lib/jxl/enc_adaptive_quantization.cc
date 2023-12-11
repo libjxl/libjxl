@@ -753,7 +753,8 @@ static const float kDcQuant = 1.095924047623553f;
 static const float kAcQuant = 0.7381485255235064f;
 
 // Computes the decoded image for a given set of compression parameters.
-ImageBundle RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
+ImageBundle RoundtripImage(const FrameHeader& frame_header,
+                           const Image3F& opsin, PassesEncoderState* enc_state,
                            const JxlCmsInterface& cms, ThreadPool* pool) {
   std::unique_ptr<PassesDecoderState> dec_state =
       jxl::make_unique<PassesDecoderState>();
@@ -767,17 +768,15 @@ ImageBundle RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
   const size_t num_groups = xsize_groups * ysize_groups;
 
   size_t num_special_frames = enc_state->special_frames.size();
-
-  std::unique_ptr<ModularFrameEncoder> modular_frame_encoder =
-      jxl::make_unique<ModularFrameEncoder>(enc_state->shared.frame_header,
-                                            enc_state->cparams);
-  JXL_CHECK(InitializePassesEncoder(opsin, cms, pool, enc_state,
-                                    modular_frame_encoder.get(), nullptr));
-  JXL_CHECK(dec_state->Init());
-  JXL_CHECK(dec_state->InitForAC(pool));
+  size_t num_passes = enc_state->progressive_splitter.GetNumPasses();
+  ModularFrameEncoder modular_frame_encoder(frame_header, enc_state->cparams);
+  JXL_CHECK(InitializePassesEncoder(frame_header, opsin, cms, pool, enc_state,
+                                    &modular_frame_encoder, nullptr));
+  JXL_CHECK(dec_state->Init(frame_header));
+  JXL_CHECK(dec_state->InitForAC(num_passes, pool));
 
   ImageBundle decoded(&enc_state->shared.metadata->m);
-  decoded.origin = enc_state->shared.frame_header.frame_origin;
+  decoded.origin = frame_header.frame_origin;
   decoded.SetFromImage(Image3F(opsin.xsize(), opsin.ysize()),
                        dec_state->output_encoding_info.color_encoding);
 
@@ -787,10 +786,10 @@ ImageBundle RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
   options.render_spotcolors = false;
   options.render_noise = false;
 
-  // Same as dec_state->shared->frame_header.nonserialized_metadata->m
+  // Same as frame_header.nonserialized_metadata->m
   const ImageMetadata& metadata = *decoded.metadata();
 
-  JXL_CHECK(dec_state->PreparePipeline(&decoded, options));
+  JXL_CHECK(dec_state->PreparePipeline(frame_header, &decoded, options));
 
   hwy::AlignedUniquePtr<GroupDecCache[]> group_dec_caches;
   const auto allocate_storage = [&](const size_t num_threads) -> Status {
@@ -802,14 +801,15 @@ ImageBundle RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
   };
   const auto process_group = [&](const uint32_t group_index,
                                  const size_t thread) {
-    if (dec_state->shared->frame_header.loop_filter.epf_iters > 0) {
-      ComputeSigma(dec_state->shared->BlockGroupRect(group_index),
+    if (frame_header.loop_filter.epf_iters > 0) {
+      ComputeSigma(frame_header.loop_filter,
+                   dec_state->shared->frame_dim.BlockGroupRect(group_index),
                    dec_state.get());
     }
     RenderPipelineInput input =
         dec_state->render_pipeline->GetInputBuffers(group_index, thread);
     JXL_CHECK(DecodeGroupForRoundtrip(
-        enc_state->coeffs, group_index, dec_state.get(),
+        frame_header, enc_state->coeffs, group_index, dec_state.get(),
         &group_dec_caches[thread], thread, input, &decoded, nullptr));
     for (size_t c = 0; c < metadata.num_extra_channels; c++) {
       std::pair<ImageF*, Rect> ri = input.GetBuffer(3 + c);
@@ -828,7 +828,8 @@ ImageBundle RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
 
 constexpr int kMaxButteraugliIters = 4;
 
-void FindBestQuantization(const Image3F& linear, const Image3F& opsin,
+void FindBestQuantization(const FrameHeader& frame_header,
+                          const Image3F& linear, const Image3F& opsin,
                           PassesEncoderState* enc_state,
                           const JxlCmsInterface& cms, ThreadPool* pool,
                           AuxOut* aux_out) {
@@ -886,7 +887,8 @@ void FindBestQuantization(const Image3F& linear, const Image3F& opsin,
       }
     }
     quantizer.SetQuantField(initial_quant_dc, quant_field, &raw_quant_field);
-    ImageBundle dec_linear = RoundtripImage(opsin, enc_state, cms, pool);
+    ImageBundle dec_linear =
+        RoundtripImage(frame_header, opsin, enc_state, cms, pool);
     float score;
     ImageF diffmap;
     JXL_CHECK(comparator.CompareWith(dec_linear, &diffmap, &score));
@@ -995,7 +997,8 @@ void FindBestQuantization(const Image3F& linear, const Image3F& opsin,
   quantizer.SetQuantField(initial_quant_dc, quant_field, &raw_quant_field);
 }
 
-void FindBestQuantizationMaxError(const Image3F& opsin,
+void FindBestQuantizationMaxError(const FrameHeader& frame_header,
+                                  const Image3F& opsin,
                                   PassesEncoderState* enc_state,
                                   const JxlCmsInterface& cms, ThreadPool* pool,
                                   AuxOut* aux_out) {
@@ -1020,7 +1023,8 @@ void FindBestQuantizationMaxError(const Image3F& opsin,
     if (JXL_DEBUG_ADAPTIVE_QUANTIZATION && aux_out) {
       DumpXybImage(cparams, ("ops" + ToString(i)).c_str(), opsin);
     }
-    ImageBundle decoded = RoundtripImage(opsin, enc_state, cms, pool);
+    ImageBundle decoded =
+        RoundtripImage(frame_header, opsin, enc_state, cms, pool);
     if (JXL_DEBUG_ADAPTIVE_QUANTIZATION && aux_out) {
       DumpXybImage(cparams, ("dec" + ToString(i)).c_str(), *decoded.color());
     }
@@ -1142,16 +1146,18 @@ ImageF InitialQuantField(const float butteraugli_target, const Image3F& opsin,
       mask1x1);
 }
 
-void FindBestQuantizer(const Image3F* linear, const Image3F& opsin,
-                       PassesEncoderState* enc_state,
+void FindBestQuantizer(const FrameHeader& frame_header, const Image3F* linear,
+                       const Image3F& opsin, PassesEncoderState* enc_state,
                        const JxlCmsInterface& cms, ThreadPool* pool,
                        AuxOut* aux_out, double rescale) {
   const CompressParams& cparams = enc_state->cparams;
   if (cparams.max_error_mode) {
-    FindBestQuantizationMaxError(opsin, enc_state, cms, pool, aux_out);
+    FindBestQuantizationMaxError(frame_header, opsin, enc_state, cms, pool,
+                                 aux_out);
   } else if (linear && cparams.speed_tier <= SpeedTier::kKitten) {
     // Normal encoding to a butteraugli score.
-    FindBestQuantization(*linear, opsin, enc_state, cms, pool, aux_out);
+    FindBestQuantization(frame_header, *linear, opsin, enc_state, cms, pool,
+                         aux_out);
   }
 }
 

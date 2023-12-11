@@ -26,7 +26,8 @@ constexpr float kMinSigma = -3.90524291751269967465540850526868f;
 // Fills the `state->filter_weights.sigma` image with the precomputed sigma
 // values in the area inside `block_rect`. Accesses the AC strategy, quant field
 // and epf_sharpness fields in the corresponding positions.
-void ComputeSigma(const Rect& block_rect, PassesDecoderState* state);
+void ComputeSigma(const LoopFilter& lf, const Rect& block_rect,
+                  PassesDecoderState* state);
 
 }  // namespace jxl
 

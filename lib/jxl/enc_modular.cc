@@ -583,10 +583,8 @@ Status ModularFrameEncoder::ComputeEncodingData(
       } else {
         int bits = metadata.bit_depth.bits_per_sample;
         int exp_bits = metadata.bit_depth.exponent_bits_per_sample;
-        gi.channel[c_out].hshift =
-            enc_state->shared.frame_header.chroma_subsampling.HShift(c);
-        gi.channel[c_out].vshift =
-            enc_state->shared.frame_header.chroma_subsampling.VShift(c);
+        gi.channel[c_out].hshift = frame_header.chroma_subsampling.HShift(c);
+        gi.channel[c_out].vshift = frame_header.chroma_subsampling.VShift(c);
         size_t xsize_shifted = DivCeil(xsize, 1 << gi.channel[c_out].hshift);
         size_t ysize_shifted = DivCeil(ysize, 1 << gi.channel[c_out].vshift);
         gi.channel[c_out].shrink(xsize_shifted, ysize_shifted);
@@ -1498,7 +1496,8 @@ int QuantizeGradient(const int32_t* qrow, size_t onerow, size_t c, size_t x,
   return residual + pred.guess;
 }
 
-void ModularFrameEncoder::AddVarDCTDC(const Image3F& dc, size_t group_index,
+void ModularFrameEncoder::AddVarDCTDC(const FrameHeader& frame_header,
+                                      const Image3F& dc, size_t group_index,
                                       bool nl_dc, PassesEncoderState* enc_state,
                                       bool jpeg_transcode) {
   const Rect r = enc_state->shared.DCGroupRect(group_index);
@@ -1528,7 +1527,7 @@ void ModularFrameEncoder::AddVarDCTDC(const Image3F& dc, size_t group_index,
   stream_images_[stream_id] = Image(r.xsize(), r.ysize(), 8, 3);
   if (nl_dc && stream_options_[stream_id].tree_kind ==
                    ModularOptions::TreeKind::kGradientFixedDC) {
-    JXL_ASSERT(enc_state->shared.frame_header.chroma_subsampling.Is444());
+    JXL_ASSERT(frame_header.chroma_subsampling.Is444());
     for (size_t c : {1, 0, 2}) {
       float inv_factor = enc_state->shared.quantizer.GetInvDcStep(c) * mul;
       float y_factor = enc_state->shared.quantizer.GetDcStep(1) / mul;
@@ -1557,7 +1556,7 @@ void ModularFrameEncoder::AddVarDCTDC(const Image3F& dc, size_t group_index,
       }
     }
   } else if (nl_dc) {
-    JXL_ASSERT(enc_state->shared.frame_header.chroma_subsampling.Is444());
+    JXL_ASSERT(frame_header.chroma_subsampling.Is444());
     for (size_t c : {1, 0, 2}) {
       float inv_factor = enc_state->shared.quantizer.GetInvDcStep(c) * mul;
       float y_factor = enc_state->shared.quantizer.GetDcStep(1) / mul;
@@ -1589,7 +1588,7 @@ void ModularFrameEncoder::AddVarDCTDC(const Image3F& dc, size_t group_index,
         }
       }
     }
-  } else if (enc_state->shared.frame_header.chroma_subsampling.Is444()) {
+  } else if (frame_header.chroma_subsampling.Is444()) {
     for (size_t c : {1, 0, 2}) {
       float inv_factor = enc_state->shared.quantizer.GetInvDcStep(c) * mul;
       float y_factor = enc_state->shared.quantizer.GetDcStep(1) / mul;
@@ -1615,13 +1614,10 @@ void ModularFrameEncoder::AddVarDCTDC(const Image3F& dc, size_t group_index,
     }
   } else {
     for (size_t c : {1, 0, 2}) {
-      Rect rect(
-          r.x0() >> enc_state->shared.frame_header.chroma_subsampling.HShift(c),
-          r.y0() >> enc_state->shared.frame_header.chroma_subsampling.VShift(c),
-          r.xsize() >>
-              enc_state->shared.frame_header.chroma_subsampling.HShift(c),
-          r.ysize() >>
-              enc_state->shared.frame_header.chroma_subsampling.VShift(c));
+      Rect rect(r.x0() >> frame_header.chroma_subsampling.HShift(c),
+                r.y0() >> frame_header.chroma_subsampling.VShift(c),
+                r.xsize() >> frame_header.chroma_subsampling.HShift(c),
+                r.ysize() >> frame_header.chroma_subsampling.VShift(c));
       float inv_factor = enc_state->shared.quantizer.GetInvDcStep(c) * mul;
       size_t ys = rect.ysize();
       size_t xs = rect.xsize();
@@ -1642,8 +1638,7 @@ void ModularFrameEncoder::AddVarDCTDC(const Image3F& dc, size_t group_index,
   DequantDC(r, &enc_state->shared.dc_storage, &enc_state->shared.quant_dc,
             stream_images_[stream_id], enc_state->shared.quantizer.MulDC(),
             1.0 / mul, enc_state->shared.cmap.DCFactors(),
-            enc_state->shared.frame_header.chroma_subsampling,
-            enc_state->shared.block_ctx_map);
+            frame_header.chroma_subsampling, enc_state->shared.block_ctx_map);
 }
 
 void ModularFrameEncoder::AddACMetadata(size_t group_index, bool jpeg_transcode,

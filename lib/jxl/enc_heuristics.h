@@ -32,7 +32,8 @@ class ModularFrameEncoder;
 // `opsin` image by applying Gaborish, and doing other modifications if
 // necessary. `pool` is used for running the computations on multiple threads.
 // `aux_out` collects statistics and can be used to print debug images.
-Status LossyFrameHeuristics(PassesEncoderState* enc_state,
+Status LossyFrameHeuristics(const FrameHeader& frame_header,
+                            PassesEncoderState* enc_state,
                             ModularFrameEncoder* modular_frame_encoder,
                             const Image3F* original_pixels, Image3F* opsin,
                             const JxlCmsInterface& cms, ThreadPool* pool,
