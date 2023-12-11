@@ -574,7 +574,7 @@ void PrintMode(jxl::extras::PackedPixelFile& ppf, const double decode_mps,
   if (args.lossless_jpeg) {
     cmdline.VerbosePrintf(1, "Read JPEG image with %" PRIuS " bytes.\n",
                           num_bytes);
-  } else {
+  } else if (num_bytes > 0) {
     cmdline.VerbosePrintf(
         1, "Read %" PRIuS "x%" PRIuS " image, %" PRIuS " bytes, %.1f MP/s\n",
         static_cast<size_t>(ppf.info.xsize),
@@ -1046,6 +1046,8 @@ int main(int argc, char** argv) {
   std::vector<uint8_t> image_data;
   std::vector<uint8_t>* jpeg_bytes = nullptr;
   jxl::extras::ChunkedPNMDecoder pnm_dec;
+  size_t input_bytes = 0;
+  double decode_mps = 0;
   size_t pixels = 0;
   if (args.streaming_input) {
     pnm_dec.f = f;
@@ -1057,11 +1059,11 @@ int main(int argc, char** argv) {
     args.lossless_jpeg = 0;
     pixels = ppf.info.xsize * ppf.info.ysize;
   } else {
-    double decode_mps = 0;
     if (!jpegxl::tools::ReadFile(f, &image_data)) {
       std::cerr << "Reading image data failed." << std::endl;
       exit(EXIT_FAILURE);
     }
+    input_bytes = image_data.size();
     if (!jpegxl::tools::IsJPG(image_data)) args.lossless_jpeg = 0;
     ProcessFlags(codec, ppf, jpeg_bytes, &cmdline, &args, &params);
     if (!args.lossless_jpeg) {
@@ -1082,9 +1084,6 @@ int main(int argc, char** argv) {
       const double t1 = jxl::Now();
       decode_mps = pixels * ppf.info.num_color_channels * 1E-6 / (t1 - t0);
     }
-    if (!args.quiet) {
-      PrintMode(ppf, decode_mps, image_data.size(), args, cmdline);
-    }
 
     if (args.lossless_jpeg && jpegxl::tools::IsJPG(image_data)) {
       if (!cmdline.GetOption(args.opt_lossless_jpeg_id)->matched()) {
@@ -1097,6 +1096,10 @@ int main(int argc, char** argv) {
   }
 
   ProcessFlags(codec, ppf, jpeg_bytes, &cmdline, &args, &params);
+
+  if (!args.quiet) {
+    PrintMode(ppf, decode_mps, input_bytes, args, cmdline);
+  }
 
   if (!ppf.metadata.exif.empty()) {
     jxl::InterpretExif(ppf.metadata.exif, &ppf.info.orientation);
@@ -1127,6 +1130,11 @@ int main(int argc, char** argv) {
       /*memory_manager=*/nullptr, num_worker_threads);
   params.runner = JxlThreadParallelRunner;
   params.runner_opaque = runner.get();
+
+  if (args.streaming_input && args.streaming_output) {
+    params.options.emplace_back(jxl::extras::JXLOption(
+        JXL_ENC_FRAME_SETTING_BUFFERING, static_cast<int64_t>(3), 0));
+  }
 
   jpegxl::tools::SpeedStats stats;
   jpegxl::tools::JxlOutputProcessor output_processor;
