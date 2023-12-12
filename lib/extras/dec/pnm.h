@@ -16,6 +16,7 @@
 #include <mutex>
 
 #include "lib/extras/dec/color_hints.h"
+#include "lib/extras/mmap.h"
 #include "lib/extras/packed_image.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/span.h"
@@ -46,14 +47,20 @@ struct HeaderPNM {
   std::vector<JxlExtraChannelType> ec_types;  // PAM
 };
 
-struct ChunkedPNMDecoder {
-  FILE* f;
-  HeaderPNM header = {};
-  size_t data_start;
-};
+class ChunkedPNMDecoder {
+ public:
+  static StatusOr<ChunkedPNMDecoder> Init(const char* file_path);
+  // Initializes `ppf` with a pointer to this `ChunkedPNMDecoder`.
+  jxl::Status InitializePPF(const ColorHints& color_hints,
+                            PackedPixelFile* ppf);
 
-Status DecodeImagePNM(ChunkedPNMDecoder* dec, const ColorHints& color_hints,
-                      PackedPixelFile* ppf);
+ private:
+  HeaderPNM header_ = {};
+  size_t data_start_ = 0;
+  MemoryMappedFile pnm_;
+
+  friend struct PNMChunkedInputFrame;
+};
 
 }  // namespace extras
 }  // namespace jxl
