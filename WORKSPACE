@@ -1,6 +1,8 @@
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository", "new_git_repository")
 
+workspace(name = "libjxl")
+
 http_archive(
     name = "bazel_skylib",
     sha256 = "74d544d96f4a5bb630d465ca8bbcfe231e3594e5aae57e1edbf17a6eb3ca2506",
@@ -26,7 +28,7 @@ local_repository(
 
 new_local_repository(
     name = "googletest",
-    build_file = "third_party/googletest/BUILD.bazel",
+    build_file = "@libjxl//:third_party/googletest/BUILD.bazel",
     path = "third_party/googletest",
 )
 
