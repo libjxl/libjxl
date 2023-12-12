@@ -41,8 +41,6 @@ Status InitializePassesEncoder(const FrameHeader& frame_header,
                                AuxOut* aux_out) {
   PassesSharedState& JXL_RESTRICT shared = enc_state->shared;
 
-  enc_state->histogram_idx.resize(shared.frame_dim.num_groups);
-
   enc_state->x_qm_multiplier = std::pow(1.25f, frame_header.x_qm_scale - 2.0f);
   enc_state->b_qm_multiplier = std::pow(1.25f, frame_header.b_qm_scale - 2.0f);
 
@@ -59,10 +57,12 @@ Status InitializePassesEncoder(const FrameHeader& frame_header,
     enc_state->coeffs.pop_back();
   }
 
-  float scale =
-      shared.quantizer.ScaleGlobalScale(enc_state->cparams.quant_ac_rescale);
-  DequantMatricesScaleDC(&shared.matrices, scale);
-  shared.quantizer.RecomputeFromGlobalScale();
+  if (enc_state->update_global_state) {
+    float scale =
+        shared.quantizer.ScaleGlobalScale(enc_state->cparams.quant_ac_rescale);
+    DequantMatricesScaleDC(&shared.matrices, scale);
+    shared.quantizer.RecomputeFromGlobalScale();
+  }
 
   Image3F dc(shared.frame_dim.xsize_blocks, shared.frame_dim.ysize_blocks);
   JXL_RETURN_IF_ERROR(RunOnPool(
@@ -174,8 +174,14 @@ Status InitializePassesEncoder(const FrameHeader& frame_header,
     JXL_CHECK(encoded_size == 0);
   } else {
     auto compute_dc_coeffs = [&](int group_index, int /* thread */) {
+      const Rect r = enc_state->shared.frame_dim.DCGroupRect(group_index);
+      int modular_group_index = group_index;
+      if (enc_state->streaming_mode) {
+        JXL_ASSERT(group_index == 0);
+        modular_group_index = enc_state->dc_group_index;
+      }
       modular_frame_encoder->AddVarDCTDC(
-          frame_header, dc, group_index,
+          frame_header, dc, r, modular_group_index,
           enc_state->cparams.speed_tier < SpeedTier::kFalcon, enc_state,
           /*jpeg_transcode=*/false);
     };
@@ -188,8 +194,14 @@ Status InitializePassesEncoder(const FrameHeader& frame_header,
     }
   }
   auto compute_ac_meta = [&](int group_index, int /* thread */) {
-    modular_frame_encoder->AddACMetadata(group_index, /*jpeg_transcode=*/false,
-                                         enc_state);
+    const Rect r = enc_state->shared.frame_dim.DCGroupRect(group_index);
+    int modular_group_index = group_index;
+    if (enc_state->streaming_mode) {
+      JXL_ASSERT(group_index == 0);
+      modular_group_index = enc_state->dc_group_index;
+    }
+    modular_frame_encoder->AddACMetadata(r, modular_group_index,
+                                         /*jpeg_transcode=*/false, enc_state);
   };
   JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, shared.frame_dim.num_dc_groups,
                                 ThreadPool::NoInit, compute_ac_meta,

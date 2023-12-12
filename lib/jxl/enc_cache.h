@@ -34,6 +34,10 @@ struct AuxOut;
 struct PassesEncoderState {
   PassesSharedState shared;
 
+  bool streaming_mode = false;
+  bool update_global_state = true;
+  size_t dc_group_index = 0;
+
   ImageF initial_quant_field;    // Invalid in Falcon mode.
   ImageF initial_quant_masking;  // Invalid in Falcon mode.
   ImageF initial_quant_masking1x1;  // Invalid in Falcon mode.
@@ -58,6 +62,8 @@ struct PassesEncoderState {
   std::vector<PassData> passes;
   std::vector<uint8_t> histogram_idx;
 
+  // Block sizes seen so far.
+  uint32_t used_acs = 0;
   // Coefficient orders that are non-default.
   std::vector<uint32_t> used_orders;
 

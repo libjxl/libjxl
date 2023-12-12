@@ -32,22 +32,26 @@ class ModularFrameEncoder {
                              PassesEncoderState* JXL_RESTRICT enc_state,
                              const JxlCmsInterface& cms, ThreadPool* pool,
                              AuxOut* aux_out, bool do_color);
+  Status ComputeTree(ThreadPool* pool);
+  Status ComputeTokens(ThreadPool* pool);
   // Encodes global info (tree + histograms) in the `writer`.
-  Status EncodeGlobalInfo(BitWriter* writer, AuxOut* aux_out);
+  Status EncodeGlobalInfo(bool streaming_mode, BitWriter* writer,
+                          AuxOut* aux_out);
   // Encodes a specific modular image (identified by `stream`) in the `writer`,
   // assigning bits to the provided `layer`.
   Status EncodeStream(BitWriter* writer, AuxOut* aux_out, size_t layer,
                       const ModularStreamId& stream);
+  void ClearStreamData(const ModularStreamId& stream);
   // Creates a modular image for a given DC group of VarDCT mode. `dc` is the
   // input DC image, not quantized; the group is specified by `group_index`, and
   // `nl_dc` decides whether to apply a near-lossless processing to the DC or
   // not.
   void AddVarDCTDC(const FrameHeader& frame_header, const Image3F& dc,
-                   size_t group_index, bool nl_dc,
+                   const Rect& r, size_t group_index, bool nl_dc,
                    PassesEncoderState* enc_state, bool jpeg_transcode);
   // Creates a modular image for the AC metadata of the given group
   // (`group_index`).
-  void AddACMetadata(size_t group_index, bool jpeg_transcode,
+  void AddACMetadata(const Rect& r, size_t group_index, bool jpeg_transcode,
                      PassesEncoderState* enc_state);
   // Encodes a RAW quantization table in `writer`. If `modular_frame_encoder` is
   // null, the quantization table in `encoding` is used, with dimensions `size_x
@@ -64,13 +68,12 @@ class ModularFrameEncoder {
   std::vector<uint8_t> extra_dc_precision;
 
  private:
-  Status PrepareEncoding(const FrameHeader& frame_header, ThreadPool* pool,
-                         AuxOut* aux_out = nullptr);
   Status PrepareStreamParams(const Rect& rect, const CompressParams& cparams,
                              int minShift, int maxShift,
                              const ModularStreamId& stream, bool do_color);
   std::vector<Image> stream_images_;
   std::vector<ModularOptions> stream_options_;
+  std::vector<uint32_t> quants_;
 
   Tree tree_;
   std::vector<std::vector<Token>> tree_tokens_;
@@ -81,7 +84,6 @@ class ModularFrameEncoder {
   FrameDimensions frame_dim_;
   CompressParams cparams_;
   std::vector<size_t> tree_splits_;
-  std::vector<ModularMultiplierInfo> multiplier_info_;
   std::vector<std::vector<uint32_t>> gi_channel_;
   std::vector<size_t> image_widths_;
   Predictor delta_pred_ = Predictor::Average4;
