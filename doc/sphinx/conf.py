@@ -70,7 +70,7 @@ extensions = [
     'breathe',
     # sphinx readthedocs theme.
     'sphinx_rtd_theme',
-    # Do we use it?
+    # For diagrams, e.g. JxlCmsInterface
     'sphinx.ext.graphviz',
 ]
 

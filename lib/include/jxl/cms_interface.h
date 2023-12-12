@@ -165,54 +165,54 @@ typedef void (*jpegxl_cms_destroy_func)(void*);
  *     intensity_target = 255\l\
  *   )\l"]
  *   subgraph cluster_0 {
- *   color = lightgrey
- *   label = "thread 1"
- *   labeljust = "c"
- *   run_1_1 [label = "run(\l\
- *     user_data,\l\
- *     thread = 1,\l\
- *     input = in[0],\l\
- *     output = out[0],\l\
- *     num_pixels = 20\l\
- *   )\l"]
- *   run_1_2 [label = "run(\l\
- *     user_data,\l\
- *     thread = 1,\l\
- *     input = in[3],\l\
- *     output = out[3],\l\
- *     num_pixels = 20\l\
- *   )\l"]
+ *     color = lightgrey
+ *     label = "thread 1"
+ *     labeljust = "c"
+ *     run_1_1 [label = "run(\l\
+ *       user_data,\l\
+ *       thread = 1,\l\
+ *       input = in[0],\l\
+ *       output = out[0],\l\
+ *       num_pixels = 20\l\
+ *     )\l"]
+ *     run_1_2 [label = "run(\l\
+ *       user_data,\l\
+ *       thread = 1,\l\
+ *       input = in[3],\l\
+ *       output = out[3],\l\
+ *       num_pixels = 20\l\
+ *     )\l"]
  *   }
  *   subgraph cluster_1 {
- *   color = lightgrey
- *   label = "thread 2"
- *   labeljust = "l"
- *   run_2_1 [label = "run(\l\
- *     user_data,\l\
- *     thread = 2,\l\
- *     input = in[1],\l\
- *     output = out[1],\l\
- *     num_pixels = 20\l\
- *   )\l"]
- *   run_2_2 [label = "run(\l\
- *     user_data,\l\
- *     thread = 2,\l\
- *     input = in[4],\l\
- *     output = out[4],\l\
- *     num_pixels = 13\l\
- *   )\l"]
+ *     color = lightgrey
+ *     label = "thread 2"
+ *     labeljust = "l"
+ *     run_2_1 [label = "run(\l\
+ *       user_data,\l\
+ *       thread = 2,\l\
+ *       input = in[1],\l\
+ *       output = out[1],\l\
+ *       num_pixels = 20\l\
+ *     )\l"]
+ *     run_2_2 [label = "run(\l\
+ *       user_data,\l\
+ *       thread = 2,\l\
+ *       input = in[4],\l\
+ *       output = out[4],\l\
+ *       num_pixels = 13\l\
+ *     )\l"]
  *   }
- *   subgraph cluster_3 {
- *   color = lightgrey
- *   label = "thread 3"
- *   labeljust = "c"
- *   run_3_1 [label = "run(\l\
- *     user_data,\l\
- *     thread = 3,\l\
- *     input = in[2],\l\
- *     output = out[2],\l\
- *     num_pixels = 20\l\
- *   )\l"]
+ *   subgraph cluster_2 {
+ *     color = lightgrey
+ *     label = "thread 3"
+ *     labeljust = "c"
+ *     run_3_1 [label = "run(\l\
+ *       user_data,\l\
+ *       thread = 3,\l\
+ *       input = in[2],\l\
+ *       output = out[2],\l\
+ *       num_pixels = 20\l\
+ *     )\l"]
  *   }
  *   init -> {run_1_1; run_2_1; run_3_1; rank = same}
  *   run_1_1 -> run_1_2

@@ -315,6 +315,15 @@ jobs:
       run: |
         cmake --build build -- rtd-html
 
+    - name: Upload Read-The-Docs outputs
+      uses: actions/upload-artifact@a8a3f3ad30e3422c9c7b888a15615d19a852ae32 # v3.1.3
+      if: env.WILL_DOC == 'true'
+      with:
+        name: read-the-docs
+        path: |
+          build/rtd/
+        retention-days: 1
+
     - name: Coverage report
       if: env.WILL_COV == 'true'
       run: |
