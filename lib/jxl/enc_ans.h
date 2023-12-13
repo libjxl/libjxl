@@ -97,6 +97,8 @@ struct Token {
 // histogram (header bits plus data bits).
 float ANSPopulationCost(const ANSHistBin* data, size_t alphabet_size);
 
+// Writes the context map to the bitstream and concatenates the individual
+// histogram bistreams in codes.encoded_histograms. Used in streaming mode.
 void EncodeHistograms(const std::vector<uint8_t>& context_map,
                       const EntropyEncodingData& codes, BitWriter* writer,
                       size_t layer, AuxOut* aux_out);

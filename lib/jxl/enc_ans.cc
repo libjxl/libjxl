@@ -1640,8 +1640,10 @@ size_t BuildAndEncodeHistograms(const HistogramParams& params,
     codes->use_prefix_code = use_prefix_code;
   }
 
-  if (params.add_fix_histograms) {
+  if (params.add_fixed_histograms) {
     // TODO(szabadka) Add more fixed histograms.
+    // TODO(szabadka) Reduce alphabet size by choosing a non-default
+    // uint_config.
     const size_t alphabet_size = ANS_MAX_ALPHABET_SIZE;
     const size_t log_alpha_size = 8;
     JXL_ASSERT(alphabet_size == 1u << log_alpha_size);

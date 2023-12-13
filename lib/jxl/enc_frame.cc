@@ -258,6 +258,7 @@ Status LoopFilterFromParams(const CompressParams& cparams, bool streaming_mode,
   LoopFilter* loop_filter = &frame_header->loop_filter;
 
   // Gaborish defaults to enabled in Hare or slower.
+  // TODO(szabadka) Re-enable Gaborish for streaming mode.
   loop_filter->gab =
       ApplyOverride(cparams.gaborish,
                     !streaming_mode && cparams.speed_tier <= SpeedTier::kHare &&
@@ -1128,6 +1129,9 @@ Status EncodeGlobalDCInfo(const PassesSharedState& shared, BitWriter* writer,
   return true;
 }
 
+// In streaming mode, this function only performs the histogram clustering and
+// saves the histogram bitstreams in enc_state, the actual AC global bitstream
+// is written in OutputAcGlobal() function after all the groups are processed.
 Status EncodeGlobalACInfo(PassesEncoderState* enc_state, BitWriter* writer,
                           ModularFrameEncoder* enc_modular, AuxOut* aux_out) {
   PassesSharedState& shared = enc_state->shared;
@@ -1169,9 +1173,11 @@ Status EncodeGlobalACInfo(PassesEncoderState* enc_state, BitWriter* writer,
           enc_state->passes[i].codes.encoding_info.size();
       if (enc_state->update_global_state) {
         prev_num_histograms += kNumFixedHistograms;
-        hist_params.add_fix_histograms = true;
+        hist_params.add_fixed_histograms = true;
       }
       size_t remaining_histograms = kClustersLimit - prev_num_histograms;
+      // Heuristic to assign budget of new histograms to DC groups.
+      // TODO(szabadka) Tune this together with the DC group ordering.
       size_t max_histograms = remaining_histograms < 20
                                   ? std::min<size_t>(remaining_histograms, 4)
                                   : remaining_histograms / 4;

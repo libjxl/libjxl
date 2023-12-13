@@ -149,6 +149,8 @@ void FastClusterHistograms(const std::vector<Histogram>& in,
     size_t best = 0;
     float best_dist = std::numeric_limits<float>::max();
     for (size_t j = 0; j < out->size(); j++) {
+      // TODO(szabadka) Choose a different distance metric for previous
+      // histograms (i.e. the cost of the new histogram with the old one).
       if (j < prev_histograms && HasNewSymbol(in[i], (*out)[j])) continue;
       float dist = HistogramDistance(in[i], (*out)[j]);
       if (dist < best_dist) {
