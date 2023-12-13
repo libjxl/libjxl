@@ -33,7 +33,7 @@
 #include "lib/jxl/cms/transfer_functions-inl.h"
 #include "lib/jxl/color_encoding_internal.h"
 #if JPEGXL_ENABLE_SKCMS
-#include "lib/jxl/cms/jxl_skcms.h"
+#include "skcms.h"
 #else  // JPEGXL_ENABLE_SKCMS
 #include "lcms2.h"
 #include "lcms2_plugin.h"
