@@ -732,7 +732,7 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
   Quantizer& quantizer = enc_state->shared.quantizer;
   // We don't know the quant field yet, but for computing the global scale
   // assuming that it will be the same as for Falcon mode is good enough.
-  if (enc_state->update_global_state) {
+  if (enc_state->initialize_global_state) {
     quantizer.ComputeGlobalScaleAndQuant(
         quant_dc, kAcQuant / cparams.butteraugli_distance, 0);
   }
@@ -782,7 +782,7 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
         butteraugli_distance_for_iqf, *opsin, shared.frame_dim, pool, 1.0f,
         &enc_state->initial_quant_masking,
         &enc_state->initial_quant_masking1x1);
-    if (enc_state->update_global_state) {
+    if (enc_state->initialize_global_state) {
       quantizer.SetQuantField(quant_dc, enc_state->initial_quant_field,
                               nullptr);
     }
@@ -801,7 +801,7 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
     GaborishInverse(opsin, weight, pool);
   }
 
-  if (enc_state->update_global_state) {
+  if (enc_state->initialize_global_state) {
     FindBestDequantMatrices(cparams, *opsin, modular_frame_encoder,
                             &enc_state->shared.matrices);
   }
@@ -872,7 +872,7 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
 
   acs_heuristics.Finalize(aux_out);
   if (cparams.speed_tier <= SpeedTier::kHare &&
-      enc_state->update_global_state) {
+      enc_state->initialize_global_state) {
     cfl_heuristics.ComputeDC(/*fast=*/cparams.speed_tier >= SpeedTier::kWombat,
                              &enc_state->shared.cmap);
   }
@@ -885,7 +885,7 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
 
   // Choose a context model that depends on the amount of quantization for AC.
   if (cparams.speed_tier < SpeedTier::kFalcon &&
-      enc_state->update_global_state) {
+      enc_state->initialize_global_state) {
     FindBestBlockEntropyModel(*enc_state);
   }
   return true;

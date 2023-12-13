@@ -35,7 +35,7 @@ struct PassesEncoderState {
   PassesSharedState shared;
 
   bool streaming_mode = false;
-  bool update_global_state = true;
+  bool initialize_global_state = true;
   size_t dc_group_index = 0;
 
   ImageF initial_quant_field;    // Invalid in Falcon mode.

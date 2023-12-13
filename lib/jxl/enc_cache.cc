@@ -57,7 +57,7 @@ Status InitializePassesEncoder(const FrameHeader& frame_header,
     enc_state->coeffs.pop_back();
   }
 
-  if (enc_state->update_global_state) {
+  if (enc_state->initialize_global_state) {
     float scale =
         shared.quantizer.ScaleGlobalScale(enc_state->cparams.quant_ac_rescale);
     DequantMatricesScaleDC(&shared.matrices, scale);

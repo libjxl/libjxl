@@ -1474,7 +1474,7 @@ void ApplyLZ77_Optimal(const HistogramParams& params, size_t num_contexts,
 void ApplyLZ77(const HistogramParams& params, size_t num_contexts,
                const std::vector<std::vector<Token>>& tokens, LZ77Params& lz77,
                std::vector<std::vector<Token>>& tokens_lz77) {
-  if (params.update_global_state) {
+  if (params.initialize_global_state) {
     lz77.enabled = false;
   }
   if (params.force_huffman) {
@@ -1621,7 +1621,7 @@ size_t BuildAndEncodeHistograms(const HistogramParams& params,
     }
   }
 
-  if (params.update_global_state) {
+  if (params.initialize_global_state) {
     bool use_prefix_code =
         params.force_huffman || total_tokens < 100 ||
         params.clustering == HistogramParams::ClusteringType::kFastest ||

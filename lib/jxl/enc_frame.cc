@@ -1171,7 +1171,7 @@ Status EncodeGlobalACInfo(PassesEncoderState* enc_state, BitWriter* writer,
     if (enc_state->streaming_mode) {
       size_t prev_num_histograms =
           enc_state->passes[i].codes.encoding_info.size();
-      if (enc_state->update_global_state) {
+      if (enc_state->initialize_global_state) {
         prev_num_histograms += kNumFixedHistograms;
         hist_params.add_fixed_histograms = true;
       }
@@ -1186,7 +1186,7 @@ Status EncodeGlobalACInfo(PassesEncoderState* enc_state, BitWriter* writer,
       num_histogram_groups = 1;
     }
     hist_params.streaming_mode = enc_state->streaming_mode;
-    hist_params.update_global_state = enc_state->update_global_state;
+    hist_params.initialize_global_state = enc_state->initialize_global_state;
     BuildAndEncodeHistograms(
         hist_params,
         num_histogram_groups * shared.block_ctx_map.NumACContexts(),
@@ -1219,7 +1219,7 @@ Status EncodeGroups(const FrameHeader& frame_header,
                                    frame_dim.num_dc_groups));
   };
 
-  if (enc_state->update_global_state) {
+  if (enc_state->initialize_global_state) {
     if (frame_header.flags & FrameHeader::kPatches) {
       PatchDictionaryEncoder::Encode(shared.image_features.patches,
                                      get_output(0), kLayerDictionary, aux_out);
@@ -1448,7 +1448,7 @@ Status ComputeEncodingData(
     PadImageToBlockMultipleInPlace(&opsin);
   }
 
-  if (enc_state.update_global_state && !jpeg_data) {
+  if (enc_state.initialize_global_state && !jpeg_data) {
     ComputeChromacityAdjustments(cparams, opsin, &mutable_frame_header);
   }
 
@@ -1492,7 +1492,7 @@ Status ComputeEncodingData(
       frame_header, metadata->m, &opsin, extra_channels, &enc_state, cms, pool,
       aux_out,
       /* do_color=*/frame_header.encoding == FrameEncoding::kModular));
-  if (enc_state.update_global_state) {
+  if (enc_state.initialize_global_state) {
     JXL_RETURN_IF_ERROR(enc_modular.ComputeTree(pool));
   }
   JXL_RETURN_IF_ERROR(enc_modular.ComputeTokens(pool));
@@ -1880,7 +1880,7 @@ Status EncodeFrameStreaming(const CompressParams& cparams,
                 ", %" PRIuS ")",
                 dc_ix, dc_y, dc_x, x0, y0, xsize, ysize);
     enc_state.streaming_mode = true;
-    enc_state.update_global_state = (i == 0);
+    enc_state.initialize_global_state = (i == 0);
     enc_state.dc_group_index = dc_ix;
     enc_state.histogram_idx =
         std::vector<uint8_t>(group_xsize * group_ysize, i);
