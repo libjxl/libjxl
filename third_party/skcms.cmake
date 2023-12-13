@@ -21,17 +21,6 @@ if(CXX_WPSABI_SUPPORTED)
   target_compile_options(skcms PRIVATE -Wno-psabi)
 endif()
 
-if(JPEGXL_BUNDLE_SKCMS)
-  target_compile_options(skcms PRIVATE -DJPEGXL_BUNDLE_SKCMS=1)
-  if(MSVC)
-    target_compile_options(skcms
-      PRIVATE /FI${CMAKE_CURRENT_SOURCE_DIR}/../lib/jxl/cms/jxl_skcms.h)
-  else()
-    target_compile_options(skcms
-      PRIVATE -include ${CMAKE_CURRENT_SOURCE_DIR}/../lib/jxl/cms/jxl_skcms.h)
-  endif()
-endif()
-
 set_target_properties(skcms PROPERTIES
   POSITION_INDEPENDENT_CODE ON
   CXX_VISIBILITY_PRESET hidden
