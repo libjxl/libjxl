@@ -424,7 +424,7 @@ Status WriteICC(const IccBytes& icc, BitWriter* JXL_RESTRICT writer,
   params.force_huffman = true;
   BuildAndEncodeHistograms(params, kNumICCContexts, tokens, &code, &context_map,
                            writer, layer, aux_out);
-  WriteTokens(tokens[0], code, context_map, writer, layer, aux_out);
+  WriteTokens(tokens[0], code, context_map, 0, writer, layer, aux_out);
   return true;
 }
 

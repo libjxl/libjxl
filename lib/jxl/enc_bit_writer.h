@@ -66,6 +66,8 @@ struct BitWriter {
   void AppendByteAligned(const std::vector<std::unique_ptr<BitWriter>>& others);
   void AppendByteAligned(const std::vector<BitWriter>& others);
 
+  void AppendUnaligned(const BitWriter& other);
+
   class Allotment {
    public:
     // Expands a BitWriter's storage. Must happen before calling Write or

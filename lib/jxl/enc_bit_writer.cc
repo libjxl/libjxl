@@ -105,6 +105,20 @@ void BitWriter::AppendByteAligned(const BitWriter& other) {
   AppendByteAligned(other.GetSpan());
 }
 
+void BitWriter::AppendUnaligned(const BitWriter& other) {
+  Allotment allotment(this, other.BitsWritten());
+  size_t full_bytes = other.BitsWritten() / kBitsPerByte;
+  size_t remaining_bits = other.BitsWritten() % kBitsPerByte;
+  for (size_t i = 0; i < full_bytes; ++i) {
+    Write(8, other.storage_[i]);
+  }
+  if (remaining_bits > 0) {
+    Write(remaining_bits,
+          other.storage_[full_bytes] & ((1u << remaining_bits) - 1));
+  }
+  allotment.ReclaimAndCharge(this, 0, nullptr);
+}
+
 void BitWriter::AppendByteAligned(const std::vector<BitWriter>& others) {
   // Total size to add so we can preallocate
   size_t other_bytes = 0;

@@ -44,13 +44,6 @@ void FindBestBlockEntropyModel(PassesEncoderState& enc_state);
 void DownsampleImage2_Iterative(Image3F* output);
 void DownsampleImage2_Sharper(Image3F* opsin);
 
-// Exposed here since it may be used by other EncoderHeuristics
-// implementations outside this project.
-void FindBestDequantMatrices(const CompressParams& cparams,
-                             const Image3F& opsin,
-                             ModularFrameEncoder* modular_frame_encoder,
-                             DequantMatrices* dequant_matrices);
-
 }  // namespace jxl
 
 #endif  // LIB_JXL_ENC_HEURISTICS_H_

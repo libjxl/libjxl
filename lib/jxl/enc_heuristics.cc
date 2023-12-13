@@ -166,6 +166,8 @@ void FindBestBlockEntropyModel(PassesEncoderState& enc_state) {
       *std::max_element(ctx_map.begin(), ctx_map.end()) + 1;
 }
 
+namespace {
+
 void FindBestDequantMatrices(const CompressParams& cparams,
                              const Image3F& opsin,
                              ModularFrameEncoder* modular_frame_encoder,
@@ -189,8 +191,6 @@ void FindBestDequantMatrices(const CompressParams& cparams,
     DequantMatricesSetCustomDC(dequant_matrices, dc_weights);
   }
 }
-
-namespace {
 
 void StoreMin2(const float v, float& min1, float& min2) {
   if (v < min2) {
@@ -707,7 +707,8 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
   PassesSharedState& shared = enc_state->shared;
 
   // Find and subtract splines.
-  if (cparams.speed_tier <= SpeedTier::kSquirrel) {
+  if (!enc_state->streaming_mode &&
+      cparams.speed_tier <= SpeedTier::kSquirrel) {
     if (cparams.custom_splines.HasAny()) {
       shared.image_features.splines = cparams.custom_splines;
     } else {
@@ -719,7 +720,8 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
   }
 
   // Find and subtract patches/dots.
-  if (ApplyOverride(cparams.patches,
+  if (!enc_state->streaming_mode &&
+      ApplyOverride(cparams.patches,
                     cparams.speed_tier <= SpeedTier::kSquirrel)) {
     FindBestPatchDictionary(*opsin, enc_state, cms, pool, aux_out);
     PatchDictionaryEncoder::SubtractFrom(shared.image_features.patches, opsin);
@@ -730,8 +732,10 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
   Quantizer& quantizer = enc_state->shared.quantizer;
   // We don't know the quant field yet, but for computing the global scale
   // assuming that it will be the same as for Falcon mode is good enough.
-  quantizer.ComputeGlobalScaleAndQuant(
-      quant_dc, kAcQuant / cparams.butteraugli_distance, 0);
+  if (enc_state->initialize_global_state) {
+    quantizer.ComputeGlobalScaleAndQuant(
+        quant_dc, kAcQuant / cparams.butteraugli_distance, 0);
+  }
 
   // TODO(veluca): we can now run all the code from here to FindBestQuantizer
   // (excluded) one rect at a time. Do that.
@@ -778,7 +782,10 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
         butteraugli_distance_for_iqf, *opsin, shared.frame_dim, pool, 1.0f,
         &enc_state->initial_quant_masking,
         &enc_state->initial_quant_masking1x1);
-    quantizer.SetQuantField(quant_dc, enc_state->initial_quant_field, nullptr);
+    if (enc_state->initialize_global_state) {
+      quantizer.SetQuantField(quant_dc, enc_state->initial_quant_field,
+                              nullptr);
+    }
   }
 
   // TODO(veluca): do something about animations.
@@ -794,8 +801,10 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
     GaborishInverse(opsin, weight, pool);
   }
 
-  FindBestDequantMatrices(cparams, *opsin, modular_frame_encoder,
-                          &enc_state->shared.matrices);
+  if (enc_state->initialize_global_state) {
+    FindBestDequantMatrices(cparams, *opsin, modular_frame_encoder,
+                            &enc_state->shared.matrices);
+  }
 
   cfl_heuristics.Init(*opsin);
   acs_heuristics.Init(*opsin, enc_state);
@@ -862,17 +871,21 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
       process_tile, "Enc Heuristics"));
 
   acs_heuristics.Finalize(aux_out);
-  if (cparams.speed_tier <= SpeedTier::kHare) {
+  if (cparams.speed_tier <= SpeedTier::kHare &&
+      enc_state->initialize_global_state) {
     cfl_heuristics.ComputeDC(/*fast=*/cparams.speed_tier >= SpeedTier::kWombat,
                              &enc_state->shared.cmap);
   }
 
   // Refine quantization levels.
-  FindBestQuantizer(frame_header, original_pixels, *opsin, enc_state, cms, pool,
-                    aux_out);
+  if (!enc_state->streaming_mode) {
+    FindBestQuantizer(frame_header, original_pixels, *opsin, enc_state, cms,
+                      pool, aux_out);
+  }
 
   // Choose a context model that depends on the amount of quantization for AC.
-  if (cparams.speed_tier < SpeedTier::kFalcon) {
+  if (cparams.speed_tier < SpeedTier::kFalcon &&
+      enc_state->initialize_global_state) {
     FindBestBlockEntropyModel(*enc_state);
   }
   return true;

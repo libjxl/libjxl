@@ -111,7 +111,7 @@ void PatchDictionaryEncoder::Encode(const PatchDictionary& pdic,
   BuildAndEncodeHistograms(HistogramParams(), kNumPatchDictionaryContexts,
                            tokens, &codes, &context_map, writer, layer,
                            aux_out);
-  WriteTokens(tokens[0], codes, context_map, writer, layer, aux_out);
+  WriteTokens(tokens[0], codes, context_map, 0, writer, layer, aux_out);
 }
 
 // static
