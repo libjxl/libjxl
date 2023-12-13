@@ -6,6 +6,7 @@
 #include "lib/jxl/cms/color_management.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstring>
@@ -13,6 +14,7 @@
 #include <vector>
 
 #include "lib/jxl/cms/jxl_cms.h"
+#include "lib/jxl/cms/jxl_cms_dec.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/cms/color_management.cc"
@@ -109,46 +111,6 @@ Status ToneMapPixel(const JxlColorEncoding& c, const float in[3],
   return true;
 }
 
-std::vector<uint16_t> CreateTableCurve(uint32_t N, const ExtraTF tf,
-                                       bool tone_map) {
-  // The generated PQ curve will make room for highlights up to this luminance.
-  // TODO(sboukortt): make this variable?
-  static constexpr float kPQIntensityTarget = 10000;
-
-  JXL_ASSERT(N <= 4096);  // ICC MFT2 only allows 4K entries
-  JXL_ASSERT(tf == ExtraTF::kPQ || tf == ExtraTF::kHLG);
-
-  static constexpr float kLuminances[] = {1.f / 3, 1.f / 3, 1.f / 3};
-  using D = HWY_CAPPED(float, 1);
-  Rec2408ToneMapper<D> tone_mapper({0, kPQIntensityTarget},
-                                   {0, kDefaultIntensityTarget}, kLuminances);
-  // No point using float - LCMS converts to 16-bit for A2B/MFT.
-  std::vector<uint16_t> table(N);
-  TF_PQ tf_pq(/*display_intensity_target=*/10000.0);
-  for (uint32_t i = 0; i < N; ++i) {
-    const float x = static_cast<float>(i) / (N - 1);  // 1.0 at index N - 1.
-    const double dx = static_cast<double>(x);
-    // LCMS requires EOTF (e.g. 2.4 exponent).
-    double y = (tf == ExtraTF::kHLG) ? TF_HLG().DisplayFromEncoded(dx)
-                                     : tf_pq.DisplayFromEncoded(dx);
-    if (tone_map && tf == ExtraTF::kPQ &&
-        kPQIntensityTarget > kDefaultIntensityTarget) {
-      D df;
-      auto r = Set(df, y * 10000 / kPQIntensityTarget), g = r, b = r;
-      tone_mapper.ToneMap(&r, &g, &b);
-      float fy;
-      StoreU(r, df, &fy);
-      y = fy;
-    }
-    JXL_ASSERT(y >= 0.0);
-    // Clamp to table range - necessary for HLG.
-    if (y > 1.0) y = 1.0;
-    // 1.0 corresponds to table value 0xFFFF.
-    table[i] = static_cast<uint16_t>(roundf(y * 65535.0));
-  }
-  return table;
-}
-
 // NOLINTNEXTLINE(google-readability-namespace-comments)
 }  // namespace HWY_NAMESPACE
 }  // namespace jxl
@@ -159,7 +121,6 @@ namespace jxl {
 
 // Local functions.
 HWY_EXPORT(ToneMapPixel);
-HWY_EXPORT(CreateTableCurve);
 
 Status CIEXYZFromWhiteCIExy(double wx, double wy, float XYZ[3]) {
   // Target Y = 1.
@@ -474,7 +435,7 @@ void MaybeCreateICCCICPTag(const JxlColorEncoding& c,
   AddToICCTagTable("cicp", *offset, *size, tagtable, offsets);
 }
 
-void CreateICCCurvCurvTag(const std::vector<uint16_t>& curve,
+void CreateICCCurvCurvTag(const std::array<uint16_t, 64>& curve,
                           std::vector<uint8_t>* tags) {
   size_t pos = tags->size();
   tags->resize(tags->size() + 12 + curve.size() * 2, 0);
@@ -1004,14 +965,10 @@ Status MaybeCreateProfile(const JxlColorEncoding& c,
     } else if (c.color_space != JXL_COLOR_SPACE_XYB) {
       switch (tf) {
         case JXL_TRANSFER_FUNCTION_HLG:
-          CreateICCCurvCurvTag(HWY_DYNAMIC_DISPATCH(CreateTableCurve)(
-                                   64, ExtraTF::kHLG, CanToneMap(c)),
-                               &tags);
+          CreateICCCurvCurvTag(kHlgCurve, &tags);
           break;
         case JXL_TRANSFER_FUNCTION_PQ:
-          CreateICCCurvCurvTag(HWY_DYNAMIC_DISPATCH(CreateTableCurve)(
-                                   64, ExtraTF::kPQ, CanToneMap(c)),
-                               &tags);
+          CreateICCCurvCurvTag(CanToneMap(c) ? kPqTmCurve : kPqCurve, &tags);
           break;
         case JXL_TRANSFER_FUNCTION_SRGB:
           JXL_RETURN_IF_ERROR(CreateICCCurvParaTag(
