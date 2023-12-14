@@ -22,6 +22,8 @@
               gmock
               doxygen
               graphviz
+              python3
+              libclang.python
             ];
             shellHook = ''
               export CC=clang
