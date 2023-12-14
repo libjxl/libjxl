@@ -121,7 +121,7 @@ Status BeforeTransform(JxlCms* t, const float* buf_src, float* xform_src,
     case ExtraTF::kHLG:
       for (size_t i = 0; i < buf_size; ++i) {
         xform_src[i] = static_cast<float>(
-            TF_HLG().DisplayFromEncoded(static_cast<double>(buf_src[i])));
+            TF_HLG_Base::DisplayFromEncoded(static_cast<double>(buf_src[i])));
       }
       if (t->apply_hlg_ootf) {
         JXL_RETURN_IF_ERROR(
@@ -178,7 +178,7 @@ Status AfterTransform(JxlCms* t, float* JXL_RESTRICT buf_dst, size_t buf_size) {
       }
       for (size_t i = 0; i < buf_size; ++i) {
         buf_dst[i] = static_cast<float>(
-            TF_HLG().EncodedFromDisplay(static_cast<double>(buf_dst[i])));
+            TF_HLG_Base::EncodedFromDisplay(static_cast<double>(buf_dst[i])));
       }
 #if JXL_CMS_VERBOSE >= 2
       printf("after HLG enc %.4f %.4f %.4f\n", buf_dst[3 * kX],
