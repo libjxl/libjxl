@@ -11,6 +11,7 @@
 #include <cmath>
 #include <mutex>
 
+#include "jxl/encode.h"
 #include "lib/extras/size_constraints.h"
 #include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/compiler_specific.h"
@@ -313,41 +314,66 @@ Span<const uint8_t> MakeSpan(const char* str) {
   return Bytes(reinterpret_cast<const uint8_t*>(str), strlen(str));
 }
 
-void ReadLinePNM(void* opaque, size_t xpos, size_t ypos, size_t xsize,
-                 uint8_t* buffer, size_t len) {
-  ChunkedPNMDecoder* dec = reinterpret_cast<ChunkedPNMDecoder*>(opaque);
-  const size_t bytes_per_channel =
-      DivCeil(dec->header.bits_per_sample, jxl::kBitsPerByte);
-  const size_t pixel_offset = ypos * dec->header.xsize + xpos;
-  const size_t num_channels = dec->header.is_gray ? 1 : 3;
-  const size_t offset = pixel_offset * num_channels * bytes_per_channel;
-  const size_t num_bytes = xsize * num_channels * bytes_per_channel;
-  if (fseek(dec->f, dec->data_start + offset, SEEK_SET) != 0) {
-    return;
-  }
-  JXL_ASSERT(num_bytes == len);
-  if (num_bytes != fread(buffer, 1, num_bytes, dec->f)) {
-    JXL_WARNING("Failed to read from PNM file\n");
-  }
-}
-
 }  // namespace
 
-Status DecodeImagePNM(ChunkedPNMDecoder* dec, const ColorHints& color_hints,
-                      PackedPixelFile* ppf) {
-  std::vector<uint8_t> buffer(10 * 1024);
-  const size_t bytes_read = fread(buffer.data(), 1, buffer.size(), dec->f);
-  if (ferror(dec->f) || bytes_read > buffer.size()) {
-    return false;
+struct PNMChunkedInputFrame {
+  JxlChunkedFrameInputSource operator()() {
+    return JxlChunkedFrameInputSource{
+        this,
+        METHOD_TO_C_CALLBACK(
+            &PNMChunkedInputFrame::GetColorChannelsPixelFormat),
+        METHOD_TO_C_CALLBACK(&PNMChunkedInputFrame::GetColorChannelDataAt),
+        METHOD_TO_C_CALLBACK(&PNMChunkedInputFrame::GetExtraChannelPixelFormat),
+        METHOD_TO_C_CALLBACK(&PNMChunkedInputFrame::GetExtraChannelDataAt),
+        METHOD_TO_C_CALLBACK(&PNMChunkedInputFrame::ReleaseCurrentData)};
   }
-  Span<const uint8_t> span(buffer);
+
+  void GetColorChannelsPixelFormat(JxlPixelFormat* pixel_format) {
+    *pixel_format = format;
+  }
+
+  const void* GetColorChannelDataAt(size_t xpos, size_t ypos, size_t xsize,
+                                    size_t ysize, size_t* row_offset) {
+    const size_t bytes_per_channel =
+        DivCeil(dec->header_.bits_per_sample, jxl::kBitsPerByte);
+    const size_t num_channels = dec->header_.is_gray ? 1 : 3;
+    const size_t bytes_per_pixel = num_channels * bytes_per_channel;
+    *row_offset = dec->header_.xsize * bytes_per_pixel;
+    const size_t offset = ypos * *row_offset + xpos * bytes_per_pixel;
+    return dec->pnm_.data() + offset + dec->data_start_;
+  }
+
+  void GetExtraChannelPixelFormat(size_t ec_index,
+                                  JxlPixelFormat* pixel_format) {
+    JXL_ABORT("Not implemented");
+  }
+
+  const void* GetExtraChannelDataAt(size_t ec_index, size_t xpos, size_t ypos,
+                                    size_t xsize, size_t ysize,
+                                    size_t* row_offset) {
+    JXL_ABORT("Not implemented");
+  }
+
+  void ReleaseCurrentData(const void* buffer) {}
+
+  JxlPixelFormat format;
+  const ChunkedPNMDecoder* dec;
+};
+
+StatusOr<ChunkedPNMDecoder> ChunkedPNMDecoder::Init(const char* path) {
+  ChunkedPNMDecoder dec;
+  JXL_ASSIGN_OR_RETURN(dec.pnm_, MemoryMappedFile::Init(path));
+  size_t size = dec.pnm_.size();
+  if (size < 2) return JXL_FAILURE("Invalid ppm");
+  size_t hdr_buf = std::min<size_t>(size, 10 * 1024);
+  Span<const uint8_t> span(dec.pnm_.data(), hdr_buf);
   Parser parser(span);
-  HeaderPNM& header = dec->header;
+  HeaderPNM& header = dec.header_;
   const uint8_t* pos = nullptr;
   if (!parser.ParseHeader(&header, &pos)) {
-    return false;
+    return StatusCode::kGenericError;
   }
-  dec->data_start = pos - &buffer[0];
+  dec.data_start_ = pos - span.data();
 
   if (header.bits_per_sample == 0 || header.bits_per_sample > 16) {
     return JXL_FAILURE("Invalid bits_per_sample");
@@ -356,32 +382,48 @@ Status DecodeImagePNM(ChunkedPNMDecoder* dec, const ColorHints& color_hints,
     return JXL_FAILURE("Only PGM and PPM inputs are supported");
   }
 
+  const size_t bytes_per_channel =
+      DivCeil(dec.header_.bits_per_sample, jxl::kBitsPerByte);
+  const size_t num_channels = dec.header_.is_gray ? 1 : 3;
+  const size_t bytes_per_pixel = num_channels * bytes_per_channel;
+  size_t row_size = dec.header_.xsize * bytes_per_pixel;
+  if (header.ysize * row_size + dec.data_start_ < size) {
+    return JXL_FAILURE("Invalid ppm");
+  }
+  return std::move(dec);
+}
+
+jxl::Status ChunkedPNMDecoder::InitializePPF(const ColorHints& color_hints,
+                                             PackedPixelFile* ppf) {
   // PPM specifies that in the raster, the sample values are "nonlinear"
   // (BP.709, with gamma number of 2.2). Deviate from the specification and
   // assume `sRGB` in our implementation.
   JXL_RETURN_IF_ERROR(ApplyColorHints(color_hints, /*color_already_set=*/false,
-                                      header.is_gray, ppf));
+                                      header_.is_gray, ppf));
 
-  ppf->info.xsize = header.xsize;
-  ppf->info.ysize = header.ysize;
-  ppf->info.bits_per_sample = header.bits_per_sample;
+  ppf->info.xsize = header_.xsize;
+  ppf->info.ysize = header_.ysize;
+  ppf->info.bits_per_sample = header_.bits_per_sample;
   ppf->info.exponent_bits_per_sample = 0;
   ppf->info.orientation = JXL_ORIENT_IDENTITY;
   ppf->info.alpha_bits = 0;
   ppf->info.alpha_exponent_bits = 0;
-  ppf->info.num_color_channels = (header.is_gray ? 1 : 3);
+  ppf->info.num_color_channels = (header_.is_gray ? 1 : 3);
   ppf->info.num_extra_channels = 0;
 
   const JxlDataType data_type =
-      header.bits_per_sample > 8 ? JXL_TYPE_UINT16 : JXL_TYPE_UINT8;
+      header_.bits_per_sample > 8 ? JXL_TYPE_UINT16 : JXL_TYPE_UINT8;
   const JxlPixelFormat format{
       /*num_channels=*/ppf->info.num_color_channels,
       /*data_type=*/data_type,
-      /*endianness=*/header.big_endian ? JXL_BIG_ENDIAN : JXL_LITTLE_ENDIAN,
+      /*endianness=*/header_.big_endian ? JXL_BIG_ENDIAN : JXL_LITTLE_ENDIAN,
       /*align=*/0,
   };
-  ppf->chunked_frames.emplace_back(header.xsize, header.ysize, format, dec,
-                                   ReadLinePNM);
+
+  PNMChunkedInputFrame frame;
+  frame.format = format;
+  frame.dec = this;
+  ppf->chunked_frames.emplace_back(header_.xsize, header_.ysize, frame);
   return true;
 }
 

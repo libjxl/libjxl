@@ -444,6 +444,8 @@ set(JPEGXL_INTERNAL_EXTRAS_SOURCES
   extras/enc/encode.h
   extras/exif.cc
   extras/exif.h
+  extras/mmap.cc
+  extras/mmap.h
   extras/packed_image.h
   extras/size_constraints.h
   extras/time.cc

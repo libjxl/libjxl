@@ -1034,34 +1034,37 @@ int main(int argc, char** argv) {
             "Encoding will be performed, but the result will be discarded.\n");
   }
 
-  // Loading the input.
-  // Depending on flags-settings, we want to either load a JPEG and
-  // faithfully convert it to JPEG XL, or load (JPEG or non-JPEG)
-  // pixel data.
-  jpegxl::tools::FileWrapper f(args.file_in, "rb");
-  if (!f) {
-    std::cerr << "Reading image data failed." << std::endl;
-    exit(EXIT_FAILURE);
-  }
   jxl::extras::JXLCompressParams params;
   jxl::extras::PackedPixelFile ppf;
   jxl::extras::Codec codec = jxl::extras::Codec::kUnknown;
   std::vector<uint8_t> image_data;
   std::vector<uint8_t>* jpeg_bytes = nullptr;
-  jxl::extras::ChunkedPNMDecoder pnm_dec;
   size_t input_bytes = 0;
   double decode_mps = 0;
   size_t pixels = 0;
+  jxl::extras::ChunkedPNMDecoder pnm_dec;
   if (args.streaming_input) {
-    pnm_dec.f = f;
-    if (!DecodeImagePNM(&pnm_dec, args.color_hints_proxy.target, &ppf)) {
+    auto dec = jxl::extras::ChunkedPNMDecoder::Init(args.file_in);
+    if (!dec.ok()) {
       std::cerr << "PNM decoding failed." << std::endl;
       exit(EXIT_FAILURE);
     }
+    pnm_dec = std::move(dec).value();
+    JXL_RETURN_IF_ERROR(
+        pnm_dec.InitializePPF(args.color_hints_proxy.target, &ppf));
     codec = jxl::extras::Codec::kPNM;
     args.lossless_jpeg = 0;
     pixels = ppf.info.xsize * ppf.info.ysize;
   } else {
+    // Loading the input.
+    // Depending on flags-settings, we want to either load a JPEG and
+    // faithfully convert it to JPEG XL, or load (JPEG or non-JPEG)
+    // pixel data.
+    jpegxl::tools::FileWrapper f(args.file_in, "rb");
+    if (!f) {
+      std::cerr << "Reading image data failed." << std::endl;
+      exit(EXIT_FAILURE);
+    }
     if (!jpegxl::tools::ReadFile(f, &image_data)) {
       std::cerr << "Reading image data failed." << std::endl;
       exit(EXIT_FAILURE);
