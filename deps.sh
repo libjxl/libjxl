@@ -16,7 +16,6 @@ MYDIR=$(dirname $(realpath "$0"))
 THIRD_PARTY_BROTLI="36533a866ed1ca4b75cf049f4521e4ec5fe24727"
 THIRD_PARTY_HIGHWAY="ba0900a4957b929390ab73827235557959234fea"
 THIRD_PARTY_SKCMS="42030a771244ba67f86b1c1c76a6493f873c5f91"
-THIRD_PARTY_SJPEG="e5ab13008bb214deb66d5f3e17ca2f8dbff150bf"
 THIRD_PARTY_ZLIB="cacf7f1d4e3d44d871b605da3b647f07d718623f"
 THIRD_PARTY_LIBPNG="f135775ad4e5d4408d2e12ffcc71bb36e6b48551" # v1.6.40
 THIRD_PARTY_LIBJPEG_TURBO="8ecba3647edb6dd940463fedf38ca33a8e2a73d1" # 2.1.5.1
@@ -81,7 +80,6 @@ EOF
   # Sources downloaded from a tarball.
   download_github third_party/brotli google/brotli
   download_github third_party/highway google/highway
-  download_github third_party/sjpeg webmproject/sjpeg
   download_github third_party/skcms \
     "https://skia.googlesource.com/skcms/+archive/"
   download_github third_party/zlib madler/zlib

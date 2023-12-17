@@ -162,14 +162,3 @@ else()
                    ${PROJECT_BINARY_DIR}/LICENSE.libpng COPYONLY)
   endif()  # JPEGXL_DEP_LICENSE_DIR
 endif()
-
-# sjpeg
-if (JPEGXL_ENABLE_SJPEG)
-  if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/sjpeg/CMakeLists.txt")
-    message(FATAL_ERROR "Please run ${PROJECT_SOURCE_DIR}/deps.sh to fetch the "
-            "build dependencies.")
-  endif()
-  include(sjpeg.cmake)
-  configure_file("${CMAKE_CURRENT_SOURCE_DIR}/sjpeg/COPYING"
-                 ${PROJECT_BINARY_DIR}/LICENSE.sjpeg COPYONLY)
-endif ()

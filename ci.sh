@@ -329,8 +329,6 @@ cmake_configure() {
       )
     else
       args+=(
-        # sjpeg confuses WASM SIMD with SSE.
-        -DSJPEG_ENABLE_SIMD=OFF
         # Building shared libs is not very useful for WASM.
         -DBUILD_SHARED_LIBS=OFF
       )

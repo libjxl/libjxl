@@ -10,10 +10,6 @@ Copyright (C)2009-2023 D. R. Commander. All Rights Reserved.
 Copyright (C)2015 Viktor Szathmáry. All Rights Reserved.
 License: BSD-3-clause
 
-Files: third_party/sjpeg/*
-Copyright: 2017 Google, Inc
-License: Apache-2.0
-
 Files: third_party/skcms/*
 Copyright: 2018 Google Inc.
 License: BSD-3-clause

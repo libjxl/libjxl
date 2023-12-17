@@ -97,7 +97,7 @@ class JPEGCodec : public ImageCodec {
     if (ImageCodec::ParseParam(param)) {
       return true;
     }
-    if (param == "sjpeg" || param.find("cjpeg") != std::string::npos) {
+    if (param.find("cjpeg") != std::string::npos) {
       jpeg_encoder_ = param;
       return true;
     }
@@ -267,7 +267,6 @@ class JPEGCodec : public ImageCodec {
       std::ostringstream os;
       os << static_cast<int>(std::round(q_target_));
       encoder->SetOption("q", os.str());
-      encoder->SetOption("jpeg_encoder", jpeg_encoder_);
       if (!chroma_subsampling_.empty()) {
         encoder->SetOption("chroma_subsampling", chroma_subsampling_);
       }

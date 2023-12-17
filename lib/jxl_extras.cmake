@@ -57,14 +57,6 @@ if(JPEG_FOUND)
   endif()  # JPEGXL_DEP_LICENSE_DIR
 endif()
 
-if (JPEGXL_ENABLE_SJPEG)
-  target_compile_definitions(jxl_extras_core-obj PRIVATE
-    -DJPEGXL_ENABLE_SJPEG=1)
-  target_include_directories(jxl_extras_core-obj PRIVATE
-    ../third_party/sjpeg/src)
-  list(APPEND JXL_EXTRAS_CODEC_INTERNAL_LIBRARIES sjpeg)
-endif()
-
 if(JPEGXL_ENABLE_JPEGLI)
   add_library(jxl_extras_jpegli-obj OBJECT
     "${JPEGXL_INTERNAL_CODEC_JPEGLI_SOURCES}"

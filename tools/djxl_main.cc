@@ -169,10 +169,6 @@ struct DecompressArgs {
         "stdout.",
         &output_frames, &SetBooleanTrue, 2);
 
-    cmdline->AddOptionFlag('\0', "use_sjpeg",
-                           "Use sjpeg instead of libjpeg for JPEG output.",
-                           &use_sjpeg, &SetBooleanTrue, 2);
-
     cmdline->AddOptionFlag('\0', "norender_spotcolors",
                            "Disables rendering of spot colors.",
                            &render_spotcolors, &SetBooleanFalse, 2);
@@ -248,7 +244,6 @@ struct DecompressArgs {
   bool allow_partial_files = false;
   bool pixels_to_jpeg = false;
   size_t jpeg_quality = 95;
-  bool use_sjpeg = false;
   bool render_spotcolors = true;
   bool output_extra_channels = false;
   bool output_frames = false;
@@ -564,9 +559,6 @@ int main(int argc, const char* argv[]) {
       std::ostringstream os;
       os << args.jpeg_quality;
       encoder->SetOption("q", os.str());
-      if (args.use_sjpeg) {
-        encoder->SetOption("jpeg_encoder", "sjpeg");
-      }
       jxl::extras::EncodedImage encoded_image;
       if (!args.quiet) cmdline.VerbosePrintf(2, "Encoding decoded image\n");
       if (!encoder->Encode(ppf, &encoded_image)) {
