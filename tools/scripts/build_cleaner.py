@@ -211,7 +211,6 @@ def FormatCMakeVar(name, var):
 def GetJpegLibVersion(src_dir):
   with open(os.path.join(src_dir, 'CMakeLists.txt'), 'r') as f:
     cmake_text = f.read()
-    print(cmake_text)
     m = re.search(r'set\(JPEGLI_LIBJPEG_LIBRARY_SOVERSION "([0-9]+)"',
                   cmake_text)
     version = m.group(1)
