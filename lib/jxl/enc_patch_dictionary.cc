@@ -336,6 +336,7 @@ std::vector<PatchInfo> FindTextLikePatches(
       queue.push_back({{x, y}, {x, y}});
     }
   }
+  const auto& frame_dim = state->shared.frame_dim;
   while (queue.size() != queue_front) {
     std::pair<uint32_t, uint32_t> cur = queue[queue_front].first;
     std::pair<uint32_t, uint32_t> src = queue[queue_front].second;
@@ -353,8 +354,8 @@ std::vector<PatchInfo> FindTextLikePatches(
         int next_first = cur.first + dx;
         int next_second = cur.second + dy;
         if (next_first < 0 || next_second < 0 ||
-            static_cast<uint32_t>(next_first) >= opsin.xsize() ||
-            static_cast<uint32_t>(next_second) >= opsin.ysize()) {
+            static_cast<uint32_t>(next_first) >= frame_dim.xsize ||
+            static_cast<uint32_t>(next_second) >= frame_dim.ysize) {
           continue;
         }
         if (static_cast<uint32_t>(
