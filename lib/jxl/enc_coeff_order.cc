@@ -161,7 +161,7 @@ void ComputeCoeffOrder(SpeedTier speed, const ACImage& acs,
     // Do nothing for transforms that don't appear.
     if ((1 << ord) & ~current_used_acs) continue;
 
-    // Do nothing if we already commited to this custom order previously.
+    // Do nothing if we already committed to this custom order previously.
     if ((1 << ord) & prev_used_acs) continue;
     if ((1 << ord) & all_used_orders) continue;
 
