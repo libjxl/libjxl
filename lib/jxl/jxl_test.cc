@@ -1237,8 +1237,8 @@ TEST(JxlTest, RoundtripAnimationPatches) {
   EXPECT_THAT(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out),
               IsSlightlyBelow(19222));
   EXPECT_EQ(ppf_out.frames.size(), t.ppf().frames.size());
-  // >10 with broken patches
-  EXPECT_THAT(ButteraugliDistance(t.ppf(), ppf_out), IsSlightlyBelow(0.8999));
+  // >10 with broken patches; not all patches are detected on borders.
+  EXPECT_THAT(ButteraugliDistance(t.ppf(), ppf_out), IsSlightlyBelow(1.9));
 }
 
 size_t RoundtripJpeg(const std::vector<uint8_t>& jpeg_in, ThreadPool* pool) {
