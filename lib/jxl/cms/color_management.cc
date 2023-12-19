@@ -12,28 +12,21 @@
 #include <string>
 #include <vector>
 
-#include "lib/jxl/cms/jxl_cms.h"
-
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "lib/jxl/cms/color_management.cc"
-#include <hwy/foreach_target.h>
-#include <hwy/highway.h>
-
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/matrix_ops.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/cms/opsin_params.h"
 #include "lib/jxl/cms/tone_mapping-inl.h"
 #include "lib/jxl/cms/transfer_functions-inl.h"
+#include "lib/jxl/cms/transfer_functions.h"
 
 #ifndef JXL_ENABLE_3D_ICC_TONEMAPPING
 #define JXL_ENABLE_3D_ICC_TONEMAPPING 1
 #endif
 
-HWY_BEFORE_NAMESPACE();
 namespace jxl {
-namespace HWY_NAMESPACE {
 
 Status ToneMapPixel(const JxlColorEncoding& c, const float in[3],
                     uint8_t pcslab_out[3]) {
@@ -45,32 +38,27 @@ Status ToneMapPixel(const JxlColorEncoding& c, const float in[3],
   const float luminances[3] = {primaries_XYZ[3], primaries_XYZ[4],
                                primaries_XYZ[5]};
   float linear[3];
-  HWY_CAPPED(float, 1) d;
   JxlTransferFunction tf = c.transfer_function;
   if (tf == JXL_TRANSFER_FUNCTION_PQ) {
-    TF_PQ tf_pq(/*display_intensity_target=*/10000.0);
     for (size_t i = 0; i < 3; ++i) {
-      linear[i] = tf_pq.DisplayFromEncoded(in[i]);
+      linear[i] = TF_PQ_Base::DisplayFromEncoded(
+          /*display_intensity_target=*/10000.0, in[i]);
     }
   } else {
     for (size_t i = 0; i < 3; ++i) {
-      linear[i] = TF_HLG().DisplayFromEncoded(in[i]);
+      linear[i] = TF_HLG_Base::DisplayFromEncoded(in[i]);
     }
   }
-  auto r = LoadU(d, &linear[0]), g = LoadU(d, &linear[1]),
-       b = LoadU(d, &linear[2]);
   if (tf == JXL_TRANSFER_FUNCTION_PQ) {
-    Rec2408ToneMapper<decltype(d)> tone_mapper({0, 10000}, {0, 250},
-                                               luminances);
-    tone_mapper.ToneMap(&r, &g, &b);
+    Rec2408ToneMapperBase tone_mapper({0, 10000}, {0, 250}, luminances);
+    tone_mapper.ToneMap(&linear[0], &linear[1], &linear[2]);
   } else {
-    HlgOOTF ootf(/*source_luminance=*/300, /*target_luminance=*/80, luminances);
-    ootf.Apply(&r, &g, &b);
+    HlgOOTF_Base ootf(/*source_luminance=*/300, /*target_luminance=*/80,
+                      luminances);
+    ootf.Apply(&linear[0], &linear[1], &linear[2]);
   }
-  GamutMap(&r, &g, &b, luminances, /*preserve_saturation=*/0.3f);
-  StoreU(r, d, &linear[0]);
-  StoreU(g, d, &linear[1]);
-  StoreU(b, d, &linear[2]);
+  GamutMapScalar(&linear[0], &linear[1], &linear[2], luminances,
+                 /*preserve_saturation=*/0.3f);
 
   float chad[9];
   JXL_RETURN_IF_ERROR(
@@ -119,26 +107,22 @@ std::vector<uint16_t> CreateTableCurve(uint32_t N, const ExtraTF tf,
   JXL_ASSERT(tf == ExtraTF::kPQ || tf == ExtraTF::kHLG);
 
   static constexpr float kLuminances[] = {1.f / 3, 1.f / 3, 1.f / 3};
-  using D = HWY_CAPPED(float, 1);
-  Rec2408ToneMapper<D> tone_mapper({0, kPQIntensityTarget},
-                                   {0, kDefaultIntensityTarget}, kLuminances);
+  Rec2408ToneMapperBase tone_mapper({0, kPQIntensityTarget},
+                                    {0, kDefaultIntensityTarget}, kLuminances);
   // No point using float - LCMS converts to 16-bit for A2B/MFT.
   std::vector<uint16_t> table(N);
-  TF_PQ tf_pq(/*display_intensity_target=*/10000.0);
   for (uint32_t i = 0; i < N; ++i) {
     const float x = static_cast<float>(i) / (N - 1);  // 1.0 at index N - 1.
     const double dx = static_cast<double>(x);
     // LCMS requires EOTF (e.g. 2.4 exponent).
-    double y = (tf == ExtraTF::kHLG) ? TF_HLG().DisplayFromEncoded(dx)
-                                     : tf_pq.DisplayFromEncoded(dx);
+    double y = (tf == ExtraTF::kHLG)
+                   ? TF_HLG_Base::DisplayFromEncoded(dx)
+                   : TF_PQ_Base::DisplayFromEncoded(kPQIntensityTarget, dx);
     if (tone_map && tf == ExtraTF::kPQ &&
         kPQIntensityTarget > kDefaultIntensityTarget) {
-      D df;
-      auto r = Set(df, y * 10000 / kPQIntensityTarget), g = r, b = r;
+      float r = y * 10000 / kPQIntensityTarget, g = r, b = r;
       tone_mapper.ToneMap(&r, &g, &b);
-      float fy;
-      StoreU(r, df, &fy);
-      y = fy;
+      y = r;
     }
     JXL_ASSERT(y >= 0.0);
     // Clamp to table range - necessary for HLG.
@@ -148,18 +132,6 @@ std::vector<uint16_t> CreateTableCurve(uint32_t N, const ExtraTF tf,
   }
   return table;
 }
-
-// NOLINTNEXTLINE(google-readability-namespace-comments)
-}  // namespace HWY_NAMESPACE
-}  // namespace jxl
-HWY_AFTER_NAMESPACE();
-
-#if HWY_ONCE
-namespace jxl {
-
-// Local functions.
-HWY_EXPORT(ToneMapPixel);
-HWY_EXPORT(CreateTableCurve);
 
 Status CIEXYZFromWhiteCIExy(double wx, double wy, float XYZ[3]) {
   // Target Y = 1.
@@ -619,8 +591,7 @@ Status CreateICCLutAtoBTagForHDR(JxlColorEncoding c,
                       iy * (1.0f / (k3DLutDim - 1)),
                       ib * (1.0f / (k3DLutDim - 1))};
         uint8_t pcslab_out[3];
-        JXL_RETURN_IF_ERROR(
-            HWY_DYNAMIC_DISPATCH(ToneMapPixel)(c, f, pcslab_out));
+        JXL_RETURN_IF_ERROR(ToneMapPixel(c, f, pcslab_out));
         for (uint8_t val : pcslab_out) {
           WriteICCUint8(val, tags->size(), tags);
         }
@@ -1004,14 +975,12 @@ Status MaybeCreateProfile(const JxlColorEncoding& c,
     } else if (c.color_space != JXL_COLOR_SPACE_XYB) {
       switch (tf) {
         case JXL_TRANSFER_FUNCTION_HLG:
-          CreateICCCurvCurvTag(HWY_DYNAMIC_DISPATCH(CreateTableCurve)(
-                                   64, ExtraTF::kHLG, CanToneMap(c)),
-                               &tags);
+          CreateICCCurvCurvTag(
+              CreateTableCurve(64, ExtraTF::kHLG, CanToneMap(c)), &tags);
           break;
         case JXL_TRANSFER_FUNCTION_PQ:
-          CreateICCCurvCurvTag(HWY_DYNAMIC_DISPATCH(CreateTableCurve)(
-                                   64, ExtraTF::kPQ, CanToneMap(c)),
-                               &tags);
+          CreateICCCurvCurvTag(
+              CreateTableCurve(64, ExtraTF::kPQ, CanToneMap(c)), &tags);
           break;
         case JXL_TRANSFER_FUNCTION_SRGB:
           JXL_RETURN_IF_ERROR(CreateICCCurvParaTag(
@@ -1077,4 +1046,3 @@ Status MaybeCreateProfile(const JxlColorEncoding& c,
 }
 
 }  // namespace jxl
-#endif  // HWY_ONCE

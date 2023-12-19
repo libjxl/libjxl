@@ -37,7 +37,9 @@ libjxl_cms_sources = [
     "jxl/cms/jxl_cms.h",
     "jxl/cms/opsin_params.h",
     "jxl/cms/tone_mapping-inl.h",
+    "jxl/cms/tone_mapping.h",
     "jxl/cms/transfer_functions-inl.h",
+    "jxl/cms/transfer_functions.h",
 ]
 
 libjxl_codec_apng_sources = [
@@ -595,6 +597,8 @@ libjxl_tests = [
     "jxl/blending_test.cc",
     "jxl/butteraugli/butteraugli_test.cc",
     "jxl/byte_order_test.cc",
+    "jxl/cms/tone_mapping_test.cc",
+    "jxl/cms/transfer_functions_test.cc",
     "jxl/coeff_order_test.cc",
     "jxl/color_encoding_internal_test.cc",
     "jxl/color_management_test.cc",
