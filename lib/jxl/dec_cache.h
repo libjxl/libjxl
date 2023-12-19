@@ -10,15 +10,19 @@
 #include <stdint.h>
 
 #include <atomic>
+#include <cmath>
 #include <hwy/base.h>  // HWY_ALIGN_MAX
 
 #include "lib/jxl/ac_strategy.h"
 #include "lib/jxl/base/common.h"  // kMaxNumPasses
+#include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/coeff_order.h"
 #include "lib/jxl/convolve.h"
 #include "lib/jxl/dec_ans.h"
 #include "lib/jxl/dec_group_border.h"
 #include "lib/jxl/dec_noise.h"
+#include "lib/jxl/frame_header.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/passes_state.h"
 #include "lib/jxl/quant_weights.h"

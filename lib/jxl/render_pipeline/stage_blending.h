@@ -6,11 +6,12 @@
 #ifndef LIB_JXL_RENDER_PIPELINE_STAGE_BLENDING_H_
 #define LIB_JXL_RENDER_PIPELINE_STAGE_BLENDING_H_
 
-#include <utility>
+#include <memory>
 
+#include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/dec_cache.h"
+#include "lib/jxl/frame_header.h"
 #include "lib/jxl/render_pipeline/render_pipeline_stage.h"
-#include "lib/jxl/splines.h"
 
 namespace jxl {
 

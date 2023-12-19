@@ -18,6 +18,7 @@
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_params.h"
+#include "lib/jxl/frame_dimensions.h"
 
 namespace jxl {
 
