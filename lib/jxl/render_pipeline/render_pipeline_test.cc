@@ -22,6 +22,7 @@
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/fake_parallel_runner_testonly.h"
 #include "lib/jxl/frame_dimensions.h"
+#include "lib/jxl/frame_header.h"
 #include "lib/jxl/icc_codec.h"
 #include "lib/jxl/image_test_utils.h"
 #include "lib/jxl/jpeg/enc_jpeg_data.h"

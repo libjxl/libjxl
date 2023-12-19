@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "lib/jxl/enc_params.h"
+#include "lib/jxl/frame_header.h"
 #include "lib/jxl/image.h"
 
 namespace jxl {

@@ -17,7 +17,6 @@
 #include "lib/jxl/dec_ans.h"
 #include "lib/jxl/enc_ans_params.h"
 #include "lib/jxl/enc_bit_writer.h"
-#include "lib/jxl/enc_cluster.h"
 
 namespace jxl {
 

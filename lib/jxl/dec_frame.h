@@ -22,6 +22,7 @@
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/headers.h"
 #include "lib/jxl/image_bundle.h"
+#include "lib/jxl/image_metadata.h"
 
 namespace jxl {
 

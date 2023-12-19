@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file.
 #include "tools/benchmark/benchmark_codec_jxl.h"
 
+#include <jxl/encode.h>
 #include <jxl/stats.h>
 #include <jxl/thread_parallel_runner_cxx.h>
 

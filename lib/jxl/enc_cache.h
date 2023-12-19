@@ -6,6 +6,7 @@
 #ifndef LIB_JXL_ENC_CACHE_H_
 #define LIB_JXL_ENC_CACHE_H_
 
+#include <jxl/cms_interface.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -13,6 +14,7 @@
 
 #include "lib/jxl/ac_strategy.h"
 #include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/coeff_order.h"
 #include "lib/jxl/coeff_order_fwd.h"
 #include "lib/jxl/dct_util.h"

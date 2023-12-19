@@ -6,6 +6,8 @@
 #ifndef LIB_JXL_ENC_MODULAR_H_
 #define LIB_JXL_ENC_MODULAR_H_
 
+#include <cstdint>
+
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_modular.h"
 #include "lib/jxl/enc_bit_writer.h"

@@ -5,9 +5,12 @@
 
 #ifndef LIB_JXL_BLENDING_H_
 #define LIB_JXL_BLENDING_H_
-#include "lib/jxl/dec_cache.h"
+
+#include <vector>
+
 #include "lib/jxl/dec_patch_dictionary.h"
-#include "lib/jxl/image_bundle.h"
+#include "lib/jxl/frame_header.h"
+#include "lib/jxl/image_metadata.h"
 
 namespace jxl {
 
