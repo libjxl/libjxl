@@ -24,6 +24,7 @@
               graphviz
               python3
               libclang.python
+              libpng
             ];
             shellHook = ''
               export CC=clang
