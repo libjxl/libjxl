@@ -25,6 +25,7 @@
               python3
               libclang.python
               libpng
+              giflib
             ];
             shellHook = ''
               export CC=clang
