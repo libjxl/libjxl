@@ -37,7 +37,9 @@ set(JPEGXL_INTERNAL_CMS_SOURCES
   jxl/cms/jxl_skcms.h
   jxl/cms/opsin_params.h
   jxl/cms/tone_mapping-inl.h
+  jxl/cms/tone_mapping.h
   jxl/cms/transfer_functions-inl.h
+  jxl/cms/transfer_functions.h
 )
 
 set(JPEGXL_INTERNAL_CODEC_APNG_SOURCES
@@ -585,6 +587,8 @@ set(JPEGXL_INTERNAL_TESTS
   jxl/blending_test.cc
   jxl/butteraugli/butteraugli_test.cc
   jxl/byte_order_test.cc
+  jxl/cms/tone_mapping_test.cc
+  jxl/cms/transfer_functions_test.cc
   jxl/coeff_order_test.cc
   jxl/color_encoding_internal_test.cc
   jxl/color_management_test.cc
