@@ -460,7 +460,7 @@ Status DecodeACVarBlock(size_t ctx_offset, size_t log2_covered_blocks,
 
   size_t nzeros =
       decoder->ReadHybridUintInlined<uses_lz77>(nzero_ctx, br, context_map);
-  if (nzeros + covered_blocks > size) {
+  if (nzeros > size - covered_blocks) {
     return JXL_FAILURE("Invalid AC: nzeros %" PRIuS " too large for %" PRIuS
                        " 8x8 blocks",
                        nzeros, covered_blocks);
