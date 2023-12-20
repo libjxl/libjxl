@@ -409,7 +409,7 @@ cc_library(
 )
 """,
     remote = "https://github.com/AcademySoftwareFoundation/imath",
-    tag = "v3.1.5",
+    tag = "v3.1.6",
 )
 
 new_git_repository(
@@ -767,5 +767,5 @@ cc_library(
 )
 """,
     remote = "https://github.com/AcademySoftwareFoundation/openexr",
-    tag = "v3.1.5",
+    tag = "v3.1.6",
 )
