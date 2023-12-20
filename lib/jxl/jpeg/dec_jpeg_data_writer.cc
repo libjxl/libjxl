@@ -718,23 +718,6 @@ bool EncodeRefinementBits(const coeff_t* coeffs, HuffmanCodeTable* ac_huff,
   return true;
 }
 
-size_t NumHistograms(const JPEGData& jpg) {
-  size_t num = 0;
-  for (const auto& si : jpg.scan_info) {
-    num += si.num_components;
-  }
-  return num;
-}
-
-size_t HistogramIndex(const JPEGData& jpg, size_t scan_index,
-                      size_t component_index) {
-  size_t idx = 0;
-  for (size_t i = 0; i < scan_index; ++i) {
-    idx += jpg.scan_info[i].num_components;
-  }
-  return idx + component_index;
-}
-
 template <int kMode>
 SerializationStatus JXL_NOINLINE DoEncodeScan(const JPEGData& jpg,
                                               SerializationState* state) {
