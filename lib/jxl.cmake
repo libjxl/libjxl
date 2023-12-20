@@ -140,7 +140,6 @@ add_library(jxl_dec-internal STATIC
 target_link_libraries(jxl_dec-internal PUBLIC
   ${JPEGXL_COVERAGE_FLAGS}
   ${JPEGXL_DEC_INTERNAL_LIBS}
-  jxl_cms
   jxl_base
 )
 
@@ -205,7 +204,6 @@ set_target_properties(jxl PROPERTIES
 add_library(jxl_dec $<TARGET_OBJECTS:jxl_dec-obj>)
 strip_internal(JPEGXL_DEC_INTERNAL_SHARED_LIBS JPEGXL_DEC_INTERNAL_LIBS)
 target_link_libraries(jxl_dec PUBLIC ${JPEGXL_COVERAGE_FLAGS} jxl_base)
-target_link_libraries(jxl_dec PUBLIC jxl_cms)
 target_link_libraries(jxl_dec PRIVATE ${JPEGXL_DEC_INTERNAL_SHARED_LIBS})
 set_target_properties(jxl_dec PROPERTIES
   VERSION ${JPEGXL_LIBRARY_VERSION}

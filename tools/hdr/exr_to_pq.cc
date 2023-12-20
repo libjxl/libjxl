@@ -9,6 +9,7 @@
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/decode.h"
 #include "lib/extras/packed_image_convert.h"
+#include "lib/jxl/cms/jxl_cms_internal.h"
 #include "lib/jxl/image_bundle.h"
 #include "tools/cmdline.h"
 #include "tools/file_io.h"
@@ -96,8 +97,8 @@ int main(int argc, const char** argv) {
   float primaries_xyz[9];
   const jxl::PrimariesCIExy p = image.Main().c_current().GetPrimaries();
   const jxl::CIExy wp = image.Main().c_current().GetWhitePoint();
-  JXL_CHECK(JxlCmsPrimariesToXYZ(p.r.x, p.r.y, p.g.x, p.g.y, p.b.x, p.b.y, wp.x,
-                                 wp.y, primaries_xyz));
+  JXL_CHECK(jxl::PrimariesToXYZ(p.r.x, p.r.y, p.g.x, p.g.y, p.b.x, p.b.y, wp.x,
+                                wp.y, primaries_xyz));
 
   float max_value = 0.f;
   float max_relative_luminance = 0.f;
