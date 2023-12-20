@@ -29,7 +29,7 @@
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/cms/color_management.h"
+#include "lib/jxl/cms/jxl_cms_internal.h"
 #include "lib/jxl/cms/transfer_functions-inl.h"
 #include "lib/jxl/color_encoding_internal.h"
 #if JPEGXL_ENABLE_SKCMS
@@ -1335,55 +1335,6 @@ const JxlCmsInterface* JxlGetDefaultCms() {
       /*run=*/&DoColorSpaceTransform,
       /*destroy=*/&JxlCmsDestroy};
   return &kInterface;
-}
-
-JXL_BOOL JxlCmsCIEXYZFromWhiteCIExy(double wx, double wy, float XYZ[3]) {
-  return TO_JXL_BOOL(CIEXYZFromWhiteCIExy(wx, wy, XYZ));
-}
-
-JXL_BOOL JxlCmsPrimariesToXYZ(float rx, float ry, float gx, float gy, float bx,
-                              float by, float wx, float wy, float matrix[9]) {
-  return TO_JXL_BOOL(PrimariesToXYZ(rx, ry, gx, gy, bx, by, wx, wy, matrix));
-}
-
-// Adapts whitepoint x, y to D50
-JXL_BOOL JxlCmsAdaptToXYZD50(float wx, float wy, float matrix[9]) {
-  return TO_JXL_BOOL(AdaptToXYZD50(wx, wy, matrix));
-}
-
-JXL_BOOL JxlCmsPrimariesToXYZD50(float rx, float ry, float gx, float gy,
-                                 float bx, float by, float wx, float wy,
-                                 float matrix[9]) {
-  return TO_JXL_BOOL(PrimariesToXYZD50(rx, ry, gx, gy, bx, by, wx, wy, matrix));
-}
-
-// Returns a representation of the ColorEncoding fields (not icc).
-// Example description: "RGB_D65_SRG_Rel_Lin"
-size_t JxlCmsColorEncodingDescription(const JxlColorEncoding* c,
-                                      char out[320]) {
-  out[0] = 0;
-  std::string d = ColorEncodingDescription(*c);
-  size_t len = d.size();
-  if (len >= 320) {  // Impossible
-    return 0;
-  }
-  memcpy(out, d.c_str(), len + 1);
-  return len;
-}
-
-JXL_BOOL JxlCmsCreateProfile(const JxlColorEncoding* c, uint8_t** out,
-                             size_t* out_size) {
-  std::vector<uint8_t> icc;
-  *out = nullptr;
-  *out_size = 0;
-  if (!MaybeCreateProfile(*c, &icc)) {
-    return JXL_FALSE;
-  }
-  *out = reinterpret_cast<uint8_t*>(malloc(icc.size()));
-  if (!*out) return JXL_FALSE;
-  memcpy(*out, icc.data(), icc.size());
-  *out_size = icc.size();
-  return JXL_TRUE;
 }
 
 }  // extern "C"

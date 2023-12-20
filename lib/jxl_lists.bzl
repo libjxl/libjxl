@@ -31,10 +31,9 @@ libjxl_base_sources = [
 
 libjxl_cms_sources = [
     "jxl/cms/color_encoding_cms.h",
-    "jxl/cms/color_management.cc",
-    "jxl/cms/color_management.h",
     "jxl/cms/jxl_cms.cc",
     "jxl/cms/jxl_cms.h",
+    "jxl/cms/jxl_cms_internal.h",
     "jxl/cms/opsin_params.h",
     "jxl/cms/tone_mapping-inl.h",
     "jxl/cms/tone_mapping.h",
