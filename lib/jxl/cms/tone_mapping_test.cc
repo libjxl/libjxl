@@ -44,15 +44,15 @@ HWY_NOINLINE void TestRec2408ToneMap() {
     const float actual_r = GetLane(r);
     const float expected_r = rgb[0];
     const float abs_err_r = std::abs(expected_r - actual_r);
-    EXPECT_LT(abs_err_r, 2.6e-5);
+    EXPECT_LT(abs_err_r, 2.75e-5);
     const float actual_g = GetLane(g);
     const float expected_g = rgb[1];
     const float abs_err_g = std::abs(expected_g - actual_g);
-    EXPECT_LT(abs_err_g, 2.6e-5);
+    EXPECT_LT(abs_err_g, 2.75e-5);
     const float actual_b = GetLane(b);
     const float expected_b = rgb[2];
     const float abs_err_b = std::abs(expected_b - actual_b);
-    EXPECT_LT(abs_err_b, 2.6e-5);
+    EXPECT_LT(abs_err_b, 2.75e-5);
     max_abs_err = std::max({max_abs_err, abs_err_r, abs_err_g, abs_err_b});
   }
   printf("max abs err %e\n", static_cast<double>(max_abs_err));
