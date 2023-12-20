@@ -26,7 +26,7 @@ class Rec2408ToneMapperBase {
         blue_Y_(primaries_luminances[2]) {}
 
   // TODO(eustas): test me
-  void JXL_INLINE ToneMap(float* red, float* green, float* blue) const {
+  void ToneMap(float* red, float* green, float* blue) const {
     const float luminance =
         source_range_.second *
         (red_Y_ * *red + green_Y_ * *green + blue_Y_ * *blue);
@@ -53,14 +53,12 @@ class Rec2408ToneMapperBase {
   }
 
  protected:
-  float JXL_INLINE InvEOTF(const float luminance) const {
+  float InvEOTF(const float luminance) const {
     return TF_PQ_Base::EncodedFromDisplay(/*display_intensity_target=*/1.0,
                                           luminance);
   }
-  float JXL_INLINE T(const float a) const {
-    return (a - ks_) * inv_one_minus_ks_;
-  }
-  float JXL_INLINE P(const float b) const {
+  float T(const float a) const { return (a - ks_) * inv_one_minus_ks_; }
+  float P(const float b) const {
     const float t_b = T(b);
     const float t_b_2 = t_b * t_b;
     const float t_b_3 = t_b_2 * t_b;
@@ -102,7 +100,7 @@ class HlgOOTF_Base {
                      primaries_luminances) {}
 
   // TODO(eustas): test me
-  void JXL_INLINE Apply(float* red, float* green, float* blue) const {
+  void Apply(float* red, float* green, float* blue) const {
     if (!apply_ootf_) return;
     const float luminance = red_Y_ * *red + green_Y_ * *green + blue_Y_ * *blue;
     const float ratio = std::min<float>(powf(luminance, exponent_), 1e9);
@@ -124,9 +122,9 @@ class HlgOOTF_Base {
   const float blue_Y_;
 };
 
-static JXL_INLINE void GamutMapScalar(float* red, float* green, float* blue,
-                                      const float primaries_luminances[3],
-                                      float preserve_saturation = 0.1f) {
+static void GamutMapScalar(float* red, float* green, float* blue,
+                           const float primaries_luminances[3],
+                           float preserve_saturation = 0.1f) {
   const float luminance = primaries_luminances[0] * *red +
                           primaries_luminances[1] * *green +
                           primaries_luminances[2] * *blue;
