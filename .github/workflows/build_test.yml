@@ -500,9 +500,19 @@ jobs:
         fi
         ./ci.sh release \
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
-          -DCMAKE_C_COMPILER_LAUNCHER=ccache
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+          -DJPEGXL_ENABLE_BENCHMARK=OFF \
+          -DJPEGXL_ENABLE_DEVTOOLS=OFF \
+          -DJPEGXL_ENABLE_DOXYGEN=OFF \
+          -DJPEGXL_ENABLE_EXAMPLES=OFF \
+          -DJPEGXL_ENABLE_JNI=OFF \
+          -DJPEGXL_ENABLE_MANPAGES=OFF \
+          -DJPEGXL_ENABLE_PLUGINS=OFF \
+          -DJPEGXL_ENABLE_TOOLS=OFF \
+          -DJPEGXL_ENABLE_VIEWERS=OFF
       env:
         SKIP_TEST: 1
+        TARGETS: all
     - name: ccache stats
       run: ccache --show-stats
 
