@@ -32,7 +32,6 @@ set(JPEGXL_INTERNAL_BASE_SOURCES
 set(JPEGXL_INTERNAL_CMS_SOURCES
   jxl/cms/color_encoding_cms.h
   jxl/cms/jxl_cms.cc
-  jxl/cms/jxl_cms.h
   jxl/cms/jxl_cms_internal.h
   jxl/cms/opsin_params.h
   jxl/cms/tone_mapping-inl.h
@@ -548,6 +547,7 @@ set(JPEGXL_INTERNAL_JPEGLI_WRAPPER_SOURCES
 )
 
 set(JPEGXL_INTERNAL_PUBLIC_HEADERS
+  include/jxl/cms.h
   include/jxl/cms_interface.h
   include/jxl/codestream_header.h
   include/jxl/color_encoding.h

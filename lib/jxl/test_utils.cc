@@ -5,6 +5,7 @@
 
 #include "lib/jxl/test_utils.h"
 
+#include <jxl/cms.h>
 #include <jxl/cms_interface.h>
 
 #include <cstddef>
@@ -21,7 +22,6 @@
 #include "lib/jxl/base/float.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_bit_writer.h"
