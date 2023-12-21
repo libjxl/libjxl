@@ -15,6 +15,8 @@
 #include <unistd.h>
 #endif
 
+#include <jxl/cms.h>
+
 #include <algorithm>
 #include <functional>
 #include <iostream>
@@ -26,7 +28,6 @@
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/span.h"
-#include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/enc_ans.h"
 #include "lib/jxl/enc_cache.h"

@@ -3,6 +3,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <jxl/cms.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -11,7 +12,6 @@
 #include <istream>
 #include <unordered_map>
 
-#include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_fields.h"

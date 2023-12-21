@@ -3,7 +3,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include "lib/jxl/cms/jxl_cms.h"
+#include <jxl/cms.h>
 
 #ifndef JPEGXL_ENABLE_SKCMS
 #define JPEGXL_ENABLE_SKCMS 0

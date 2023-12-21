@@ -3,6 +3,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <jxl/cms.h>
 #include <jxl/codestream_header.h>
 #include <jxl/decode.h>
 #include <jxl/decode_cxx.h>
@@ -18,7 +19,6 @@
 
 #include "lib/extras/codec.h"
 #include "lib/jxl/base/span.h"
-#include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/dec_external_image.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
