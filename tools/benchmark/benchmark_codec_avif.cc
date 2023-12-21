@@ -5,10 +5,10 @@
 #include "tools/benchmark/benchmark_codec_avif.h"
 
 #include <avif/avif.h>
+#include <jxl/cms.h>
 
 #include "lib/extras/time.h"
 #include "lib/jxl/base/span.h"
-#include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/dec_external_image.h"
 #include "lib/jxl/enc_external_image.h"

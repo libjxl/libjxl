@@ -8,7 +8,8 @@
 #include "lib/extras/codec.h"
 // TODO(eustas): we should, but we can't?
 // #include "lib/jxl/base/span.h"
-#include "lib/jxl/cms/jxl_cms.h"
+#include <jxl/cms.h>
+
 #include "lib/jxl/image_bundle.h"
 #include "tools/file_io.h"
 #include "tools/ssimulacra.h"

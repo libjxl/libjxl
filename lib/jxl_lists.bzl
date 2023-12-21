@@ -31,7 +31,6 @@ libjxl_base_sources = [
 libjxl_cms_sources = [
     "jxl/cms/color_encoding_cms.h",
     "jxl/cms/jxl_cms.cc",
-    "jxl/cms/jxl_cms.h",
     "jxl/cms/jxl_cms_internal.h",
     "jxl/cms/opsin_params.h",
     "jxl/cms/tone_mapping-inl.h",
@@ -553,6 +552,7 @@ libjxl_minor_version = 9
 libjxl_patch_version = 0
 
 libjxl_public_headers = [
+    "include/jxl/cms.h",
     "include/jxl/cms_interface.h",
     "include/jxl/codestream_header.h",
     "include/jxl/color_encoding.h",
