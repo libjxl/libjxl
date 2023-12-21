@@ -5,7 +5,7 @@
 
 # Extra build variables.
 
-libjxl_root_package = "__main__"
+libjxl_root_package = "libjxl"
 
 libjxl_deps_brotli = ["@brotli//:brotlidec", "@brotli//:brotlienc"]
 libjxl_deps_gif = ["@gif//:gif"]
