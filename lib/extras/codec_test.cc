@@ -14,6 +14,7 @@
 #include <utility>
 #include <vector>
 
+#include "lib/extras/common.h"
 #include "lib/extras/dec/decode.h"
 #include "lib/extras/dec/pnm.h"
 #include "lib/extras/enc/encode.h"
