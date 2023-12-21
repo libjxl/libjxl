@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file.
 #include "tools/benchmark/benchmark_codec_webp.h"
 
+#include <jxl/cms.h>
 #include <stdint.h>
 #include <string.h>
 #include <webp/decode.h>
@@ -17,7 +18,6 @@
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/dec_external_image.h"
 #include "lib/jxl/enc_external_image.h"

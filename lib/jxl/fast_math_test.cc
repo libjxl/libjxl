@@ -5,10 +5,11 @@
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/fast_math_test.cc"
+#include <jxl/cms.h>
+
 #include <hwy/foreach_target.h>
 
 #include "lib/jxl/base/random.h"
-#include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/cms/transfer_functions-inl.h"
 #include "lib/jxl/dec_xyb-inl.h"
 #include "lib/jxl/enc_xyb.h"

@@ -3,12 +3,12 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <jxl/cms.h>
 #include <stdio.h>
 #include <stdlib.h>
 
 #include "lib/extras/codec.h"
 #include "lib/extras/tone_mapping.h"
-#include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/convolve.h"
 #include "lib/jxl/enc_gamma_correct.h"
 #include "lib/jxl/image_bundle.h"
