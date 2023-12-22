@@ -10,8 +10,8 @@
 #include <jxl/decode_cxx.h>
 #include <jxl/types.h>
 
+#include "lib/extras/common.h"
 #include "lib/extras/dec/color_description.h"
-#include "lib/extras/enc/encode.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/exif.h"
 

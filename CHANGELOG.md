@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `JXL_ENC_FRAME_SETTING_JPEG_KEEP_JUMBF`
  - encoder API: new function `JxlEncoderSetUpsamplingMode` to change the upsampling
    method, e.g. to use nearest-neighbor upsampling for pixel art
+ - decoder API: implemented `JxlDecoderSetOutputColorProfile` and
+   `JxlDecoderSetCms` to enable decoding to desired colorspace.
  - cjxl can now be used to explicitly add/update/strip Exif/XMP/JUMBF metadata using
    the decoder-hints syntax, e.g. `cjxl input.ppm -x exif=input.exif output.jxl`
  - djxl can now be used to extract Exif/XMP/JUMBF metadata
@@ -42,8 +44,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
    `JxlDecoderGetICCProfileSize`, and `JxlDecoderGetColorAsICCProfile`
    changed: a deprecated unused argument was removed.
 
-### Changed
+### Changed / clarified
  - changed the name of the cjxl flag `photon_noise` to `photon_noise_iso`
+ - fixed how large boxes are decoded (#2958)
+ - fixed encoding files with unreadable patches (#3042, #3046)
 
 ## [0.8.0] - 2023-01-18
 
