@@ -257,6 +257,12 @@ install(TARGETS jxl
 set(JPEGXL_LIBRARY_REQUIRES
     "libhwy libbrotlienc libbrotlidec libjxl_cms")
 
+if (BUILD_SHARED_LIBS)
+  set(JPEGXL_REQUIRES_TYPE "Requires.private")
+else()
+  set(JPEGXL_REQUIRES_TYPE "Requires")
+endif()
+
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/jxl/libjxl.pc.in"
                "libjxl.pc" @ONLY)
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/libjxl.pc"

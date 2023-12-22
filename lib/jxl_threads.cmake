@@ -76,6 +76,12 @@ else()
     set(PKGCONFIG_TARGET_LIBS "\${exec_prefix}/${CMAKE_INSTALL_LIBDIR}")
 endif()
 
+if (BUILD_SHARED_LIBS)
+  set(JPEGXL_REQUIRES_TYPE "Requires.private")
+else()
+  set(JPEGXL_REQUIRES_TYPE "Requires")
+endif()
+
 set(JPEGXL_THREADS_LIBRARY_REQUIRES "")
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/threads/libjxl_threads.pc.in"
                "libjxl_threads.pc" @ONLY)
