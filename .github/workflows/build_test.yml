@@ -294,6 +294,7 @@ jobs:
         cmake -Bbuild-example -Hexamples -G Ninja
         cmake --build build-example
         # Test that the built binaries run.
+        ldd build-example/encode_oneshot
         echo -e -n "PF\n1 1\n-1.0\n\0\0\x80\x3f\0\0\x80\x3f\0\0\x80\x3f" > test.pfm
         build-example/encode_oneshot test.pfm test.jxl
         build-example/decode_oneshot test.jxl dec.pfm dec.icc
