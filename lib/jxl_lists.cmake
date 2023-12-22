@@ -434,6 +434,8 @@ set(JPEGXL_INTERNAL_EXTRAS_FOR_TOOLS_SOURCES
 set(JPEGXL_INTERNAL_EXTRAS_SOURCES
   extras/alpha_blend.cc
   extras/alpha_blend.h
+  extras/common.cc
+  extras/common.h
   extras/dec/color_description.cc
   extras/dec/color_description.h
   extras/dec/color_hints.cc
