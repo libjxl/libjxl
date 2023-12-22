@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include "lib/include/jxl/cms.h"
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/span.h"
@@ -2345,6 +2346,10 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetCms(JxlDecoder* dec,
   dec->passes_state->output_encoding_info.color_management_system = cms;
   dec->passes_state->output_encoding_info.cms_set = true;
   return JXL_DEC_SUCCESS;
+}
+
+JXL_EXPORT JxlDecoderStatus JxlDecoderSetDefaultCms(JxlDecoder* dec) {
+  return JxlDecoderSetCms(dec, *JxlGetDefaultCms());
 }
 
 JXL_EXPORT JxlDecoderStatus JxlDecoderPreviewOutBufferSize(
