@@ -26,6 +26,8 @@
               libclang.python
               libpng
               giflib
+              lcms2
+              brotli
             ];
             shellHook = ''
               export CC=clang
