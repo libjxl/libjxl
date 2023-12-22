@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Added
+
+### Removed
+
+### Changed / clarified
+
+## [0.9.0] - 2023-12-22
+
+### Added
  - encoder API: add `JxlEncoderSetExtraChannelDistance` to adjust the quality
    of extra channels (like alpha) separately.
  - encoder API: new api functions for streaming encoding:
