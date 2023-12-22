@@ -433,6 +433,8 @@ libjxl_extras_for_tools_sources = [
 libjxl_extras_sources = [
     "extras/alpha_blend.cc",
     "extras/alpha_blend.h",
+    "extras/common.cc",
+    "extras/common.h",
     "extras/dec/color_description.cc",
     "extras/dec/color_description.h",
     "extras/dec/color_hints.cc",
