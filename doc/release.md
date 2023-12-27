@@ -289,26 +289,33 @@ apt install -y clang cmake git libbrotli-dev nasm pkg-config ninja-build
 export CC=clang
 export CXX=clang++
 
-git clone --recurse-submodules --depth 1 -b v0.7.x \
+mkdir -p /src
+cd /src
+
+git clone --recurse-submodules --depth 1 -b v0.9.x \
   https://github.com/libjxl/libjxl.git
 git clone --recurse-submodules --depth 1 \
   https://github.com/ImageMagick/ImageMagick.git
 git clone --recurse-submodules --depth 1 \
   https://github.com/FFmpeg/FFmpeg.git
 
-cd ~/libjxl
-git checkout v0.7.x
+cd /src/libjxl
 cmake -B build -G Ninja .
-cmake --build build
-cmake --install build
+cmake --build build -j`nproc`
+cmake --install build --prefix="/"
 
-cd ~/ImageMagick
+cd /src/ImageMagick
 ./configure --with-jxl=yes
 # check for "JPEG XL --with-jxl=yes yes"
-make -j 80
+make -j `nproc`
+./utilities/magick -version
 
-cd ~/FFmpeg
-./configure --enable-libjxl
+cd /src/FFmpeg
+./configure --disable-all --disable-debug --enable-avcodec --enable-avfilter \
+  --enable-avformat --enable-libjxl --enable-encoder=libjxl \
+  --enable-decoder=libjxl --enable-ffmpeg
 # check for libjxl decoder/encoder support
-make -j 80
+make -j `nproc`
+ldd ./ffmpeg
+./ffmpeg -version
 ```
