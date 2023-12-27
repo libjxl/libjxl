@@ -81,7 +81,7 @@ jobs:
       run: |
         ./ci.sh release \
           -DJPEGXL_DEP_LICENSE_DIR=/usr/share/doc \
-          -DBUILD_SHARED_LIBS=OFF \
+          -DJPEGXL_STATIC=ON \
           -DBUILD_TESTING=OFF \
           -DJPEGXL_ENABLE_JPEGLI_LIBJPEG=OFF \
           -DJPEGXL_ENABLE_VIEWERS=OFF \
@@ -312,7 +312,7 @@ jobs:
         set -x
         mkdir build
         cmake -Bbuild -H. ${{ matrix.arch }} \
-          -DBUILD_SHARED_LIBS=OFF \
+          -DJPEGXL_STATIC=ON \
           -DBUILD_TESTING=OFF \
           -DCMAKE_BUILD_TYPE=Release \
           -DCMAKE_INSTALL_PREFIX=`pwd`/prefix \
