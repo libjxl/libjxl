@@ -58,6 +58,12 @@ install(TARGETS jxl_cms
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
+if (BUILD_SHARED_LIBS)
+  set(JPEGXL_REQUIRES_TYPE "Requires.private")
+else()
+  set(JPEGXL_REQUIRES_TYPE "Requires")
+endif()
+
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/jxl/libjxl_cms.pc.in"
                "libjxl_cms.pc" @ONLY)
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/libjxl_cms.pc"

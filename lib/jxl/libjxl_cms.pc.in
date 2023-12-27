@@ -6,8 +6,8 @@ includedir=@PKGCONFIG_TARGET_INCLUDES@
 Name: libjxl_cms
 Description: CMS support library for libjxl
 Version: @JPEGXL_LIBRARY_VERSION@
-Requires.private: @JPEGXL_CMS_LIBRARY_REQUIRES@
-Libs: -L${libdir} -ljxl_cms @JXL_CMS_PK_LIBS@
+@JPEGXL_REQUIRES_TYPE@: @JPEGXL_CMS_LIBRARY_REQUIRES@
+Libs: @JXL_CMS_PK_LIBS@ -L${libdir} -ljxl_cms
 Libs.private: -lm
 Cflags: -I${includedir}
 Cflags.private: -DJXL_CMS_STATIC_DEFINE

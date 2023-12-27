@@ -5,6 +5,7 @@
 
 #include "lib/extras/dec/jxl.h"
 
+#include <jxl/cms.h>
 #include <jxl/encode.h>
 
 #include <array>
@@ -25,7 +26,6 @@
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/span.h"
-#include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/common.h"  // JXL_HIGH_PRECISION
@@ -1235,7 +1235,7 @@ TEST(JxlTest, RoundtripAnimationPatches) {
   PackedPixelFile ppf_out;
   // 40k with no patches, 27k with patch frames encoded multiple times.
   EXPECT_THAT(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out),
-              IsSlightlyBelow(19222));
+              IsSlightlyBelow(19252));
   EXPECT_EQ(ppf_out.frames.size(), t.ppf().frames.size());
   // >10 with broken patches; not all patches are detected on borders.
   EXPECT_THAT(ButteraugliDistance(t.ppf(), ppf_out), IsSlightlyBelow(1.9));

@@ -5,13 +5,14 @@
 
 #include "lib/jxl/splines.h"
 
+#include <jxl/cms.h>
+
 #include <cstdint>
 #include <vector>
 
 #include "lib/extras/codec.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/span.h"
-#include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/enc_splines.h"

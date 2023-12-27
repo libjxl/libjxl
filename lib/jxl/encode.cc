@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file.
 
 #include <brotli/encode.h>
+#include <jxl/cms.h>
 #include <jxl/codestream_header.h>
 #include <jxl/encode.h>
 #include <jxl/types.h>
@@ -19,7 +20,6 @@
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_bit_writer.h"

@@ -32,18 +32,14 @@ namespace jxl {
 class TF_HLG_Base {
  public:
   // EOTF. e = encoded.
-  static JXL_INLINE double DisplayFromEncoded(const double e) {
-    return OOTF(InvOETF(e));
-  }
+  static double DisplayFromEncoded(const double e) { return OOTF(InvOETF(e)); }
 
   // Inverse EOTF. d = display.
-  static JXL_INLINE double EncodedFromDisplay(const double d) {
-    return OETF(InvOOTF(d));
-  }
+  static double EncodedFromDisplay(const double d) { return OETF(InvOOTF(d)); }
 
  private:
   // OETF (defines the HLG approach). s = scene, returns encoded.
-  static JXL_INLINE double OETF(double s) {
+  static double OETF(double s) {
     if (s == 0.0) return 0.0;
     const double original_sign = s;
     s = std::abs(s);
@@ -56,7 +52,7 @@ class TF_HLG_Base {
   }
 
   // e = encoded, returns scene.
-  static JXL_INLINE double InvOETF(double e) {
+  static double InvOETF(double e) {
     if (e == 0.0) return 0.0;
     const double original_sign = e;
     e = std::abs(e);
@@ -69,7 +65,7 @@ class TF_HLG_Base {
   }
 
   // s = scene, returns display.
-  static JXL_INLINE double OOTF(const double s) {
+  static double OOTF(const double s) {
     // The actual (red channel) OOTF is RD = alpha * YS^(gamma-1) * RS, where
     // YS = 0.2627 * RS + 0.6780 * GS + 0.0593 * BS. Let alpha = 1 so we return
     // "display" (normalized [0, 1]) instead of nits. Our transfer function
@@ -79,7 +75,7 @@ class TF_HLG_Base {
   }
 
   // d = display, returns scene.
-  static JXL_INLINE double InvOOTF(const double d) {
+  static double InvOOTF(const double d) {
     return d;  // see OOTF().
   }
 
@@ -94,8 +90,7 @@ class TF_HLG_Base {
 // Perceptual Quantization
 class TF_PQ_Base {
  public:
-  static JXL_INLINE double DisplayFromEncoded(float display_intensity_target,
-                                              double e) {
+  static double DisplayFromEncoded(float display_intensity_target, double e) {
     if (e == 0.0) return 0.0;
     const double original_sign = e;
     e = std::abs(e);
@@ -110,8 +105,7 @@ class TF_PQ_Base {
   }
 
   // Inverse EOTF. d = display.
-  static JXL_INLINE double EncodedFromDisplay(float display_intensity_target,
-                                              double d) {
+  static double EncodedFromDisplay(float display_intensity_target, double d) {
     if (d == 0.0) return 0.0;
     const double original_sign = d;
     d = std::abs(d);

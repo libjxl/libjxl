@@ -3,6 +3,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <jxl/cms.h>
 #include <jxl/cms_interface.h>
 #include <jxl/codestream_header.h>
 #include <jxl/decode.h>
@@ -28,7 +29,6 @@
 #include "lib/extras/metrics.h"
 #include "lib/extras/packed_image.h"
 #include "lib/jxl/base/c_callback_support.h"
-#include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/common.h"  // JXL_HIGH_PRECISION
 #include "lib/jxl/encode_internal.h"
 #include "lib/jxl/jpeg/dec_jpeg_data.h"

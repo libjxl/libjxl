@@ -155,7 +155,7 @@ include(jxl_cms.cmake)
 include(jxl.cmake)
 
 # Other libraries outside the core jxl library.
-if(JPEGXL_ENABLE_TOOLS)
+if(JPEGXL_ENABLE_TOOLS OR BUILD_TESTING)
   include(jxl_extras.cmake)
 endif()
 include(jxl_threads.cmake)

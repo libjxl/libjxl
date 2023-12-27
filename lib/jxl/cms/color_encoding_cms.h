@@ -6,6 +6,7 @@
 #ifndef LIB_JXL_CMS_COLOR_ENCODING_CMS_H_
 #define LIB_JXL_CMS_COLOR_ENCODING_CMS_H_
 
+#include <jxl/cms.h>
 #include <jxl/cms_interface.h>
 #include <jxl/color_encoding.h>
 #include <jxl/types.h>
@@ -19,8 +20,7 @@
 
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/cms/color_management.h"
-#include "lib/jxl/cms/jxl_cms.h"
+#include "lib/jxl/cms/jxl_cms_internal.h"
 
 namespace jxl {
 namespace cms {

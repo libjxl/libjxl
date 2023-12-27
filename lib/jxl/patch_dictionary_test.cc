@@ -3,11 +3,12 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <jxl/cms.h>
+
 #include <cstdint>
 #include <vector>
 
 #include "lib/extras/codec.h"
-#include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/image_test_utils.h"

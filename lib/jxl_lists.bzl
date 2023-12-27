@@ -31,10 +31,8 @@ libjxl_base_sources = [
 
 libjxl_cms_sources = [
     "jxl/cms/color_encoding_cms.h",
-    "jxl/cms/color_management.cc",
-    "jxl/cms/color_management.h",
     "jxl/cms/jxl_cms.cc",
-    "jxl/cms/jxl_cms.h",
+    "jxl/cms/jxl_cms_internal.h",
     "jxl/cms/opsin_params.h",
     "jxl/cms/tone_mapping-inl.h",
     "jxl/cms/tone_mapping.h",
@@ -436,6 +434,8 @@ libjxl_extras_for_tools_sources = [
 libjxl_extras_sources = [
     "extras/alpha_blend.cc",
     "extras/alpha_blend.h",
+    "extras/common.cc",
+    "extras/common.h",
     "extras/dec/color_description.cc",
     "extras/dec/color_description.h",
     "extras/dec/color_hints.cc",
@@ -557,6 +557,7 @@ libjxl_minor_version = 10
 libjxl_patch_version = 0
 
 libjxl_public_headers = [
+    "include/jxl/cms.h",
     "include/jxl/cms_interface.h",
     "include/jxl/codestream_header.h",
     "include/jxl/color_encoding.h",
