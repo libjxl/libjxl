@@ -5,7 +5,7 @@
 
 # Workflow for building and running tests.
 
-name: Build/Test
+name: Build/Test MD
 on:
   pull_request:
     types: [opened, reopened, labeled, synchronize]
@@ -20,7 +20,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  ubuntu-build:
+  build_test:
     name: Ubuntu Build ${{ matrix.name }}
     # Include all names of required jobs here
     strategy:
