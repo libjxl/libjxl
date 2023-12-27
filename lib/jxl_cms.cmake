@@ -23,7 +23,6 @@ generate_export_header(jxl_cms
 target_include_directories(jxl_cms PUBLIC
   "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>")
 
-set(JXL_CMS_PK_LIBS "")
 set(JPEGXL_CMS_LIBRARY_REQUIRES "")
 
 if (JPEGXL_ENABLE_SKCMS)
