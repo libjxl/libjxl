@@ -12,7 +12,10 @@ add_library(jxl_cms
   ${JPEGXL_INTERNAL_CMS_SOURCES}
 )
 target_compile_options(jxl_cms PRIVATE "${JPEGXL_INTERNAL_FLAGS}")
-set_target_properties(jxl_cms PROPERTIES POSITION_INDEPENDENT_CODE ON)
+set_target_properties(jxl_cms PROPERTIES
+        POSITION_INDEPENDENT_CODE ON
+        CXX_VISIBILITY_PRESET hidden
+        VISIBILITY_INLINES_HIDDEN 1)
 target_link_libraries(jxl_cms PUBLIC jxl_base)
 target_include_directories(jxl_cms PRIVATE
   ${JXL_HWY_INCLUDE_DIRS}
@@ -26,7 +29,7 @@ target_include_directories(jxl_cms PUBLIC
 set(JXL_CMS_PK_LIBS "")
 
 if (JPEGXL_ENABLE_SKCMS)
-  target_link_libraries(jxl_cms PRIVATE skcms)
+  target_link_skcms(jxl_cms)
 else()
   target_link_libraries(jxl_cms PRIVATE lcms2)
   if (JPEGXL_FORCE_SYSTEM_LCMS2)

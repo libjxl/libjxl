@@ -1324,7 +1324,7 @@ float* JxlCmsGetDstBuf(void* cms_data, size_t thread) {
 
 extern "C" {
 
-const JxlCmsInterface* JxlGetDefaultCms() {
+JXL_CMS_EXPORT const JxlCmsInterface* JxlGetDefaultCms() {
   static constexpr JxlCmsInterface kInterface = {
       /*set_fields_data=*/nullptr,
       /*set_fields_from_icc=*/&JxlCmsSetFieldsFromICC,
