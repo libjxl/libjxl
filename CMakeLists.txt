@@ -83,6 +83,13 @@ else()
   set(BUNDLE_LIBPNG_DEFAULT NO)
 endif()
 
+
+if(EXISTS "${PROJECT_SOURCE_DIR}/third_party/libjpeg-turbo/jconfig.h.in")
+  set(ENABLE_JPEGLI_DEFAULT YES)
+else()
+  set(ENABLE_JPEGLI_DEFAULT NO)
+endif()
+
 # Standard cmake naming for building shared libraries.
 get_property(SHARED_LIBS_SUPPORTED GLOBAL PROPERTY TARGET_SUPPORTS_SHARED_LIBS)
 option(BUILD_SHARED_LIBS "Build shared libraries instead of static ones" ${SHARED_LIBS_SUPPORTED})
@@ -93,7 +100,7 @@ set(JPEGXL_ENABLE_DEVTOOLS false CACHE BOOL
     "Build JPEGXL developer tools.")
 set(JPEGXL_ENABLE_TOOLS true CACHE BOOL
     "Build JPEGXL user tools: cjxl and djxl.")
-set(JPEGXL_ENABLE_JPEGLI true CACHE BOOL
+set(JPEGXL_ENABLE_JPEGLI ${ENABLE_JPEGLI_DEFAULT} CACHE BOOL
     "Build jpegli library.")
 set(JPEGXL_ENABLE_JPEGLI_LIBJPEG true CACHE BOOL
     "Build libjpeg.so shared library based on jpegli.")
