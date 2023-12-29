@@ -75,8 +75,6 @@ check_cxx_source_compiles(
   JXL_HWY_DISABLED_TARGETS_FORCED
 )
 
-set(WARNINGS_AS_ERRORS_DEFAULT false)
-
 if((SANITIZER STREQUAL "msan") OR EMSCRIPTEN)
   set(BUNDLE_LIBPNG_DEFAULT YES)
 else()
@@ -148,7 +146,7 @@ set(JPEGXL_ENABLE_BOXES true CACHE BOOL
  (default enabled)")
 set(JPEGXL_STATIC false CACHE BOOL
     "Build tools as static binaries.")
-set(JPEGXL_WARNINGS_AS_ERRORS ${WARNINGS_AS_ERRORS_DEFAULT} CACHE BOOL
+set(JPEGXL_WARNINGS_AS_ERRORS false CACHE BOOL
     "Treat warnings as errors during compilation.")
 set(JPEGXL_DEP_LICENSE_DIR "" CACHE STRING
     "Directory where to search for system dependencies \"copyright\" files.")
