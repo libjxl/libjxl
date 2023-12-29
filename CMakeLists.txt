@@ -75,12 +75,17 @@ check_cxx_source_compiles(
   JXL_HWY_DISABLED_TARGETS_FORCED
 )
 
-set(WARNINGS_AS_ERRORS_DEFAULT false)
-
 if((SANITIZER STREQUAL "msan") OR EMSCRIPTEN)
   set(BUNDLE_LIBPNG_DEFAULT YES)
 else()
   set(BUNDLE_LIBPNG_DEFAULT NO)
+endif()
+
+
+if(EXISTS "${PROJECT_SOURCE_DIR}/third_party/libjpeg-turbo/jconfig.h.in")
+  set(ENABLE_JPEGLI_DEFAULT YES)
+else()
+  set(ENABLE_JPEGLI_DEFAULT NO)
 endif()
 
 # Standard cmake naming for building shared libraries.
@@ -93,7 +98,7 @@ set(JPEGXL_ENABLE_DEVTOOLS false CACHE BOOL
     "Build JPEGXL developer tools.")
 set(JPEGXL_ENABLE_TOOLS true CACHE BOOL
     "Build JPEGXL user tools: cjxl and djxl.")
-set(JPEGXL_ENABLE_JPEGLI true CACHE BOOL
+set(JPEGXL_ENABLE_JPEGLI ${ENABLE_JPEGLI_DEFAULT} CACHE BOOL
     "Build jpegli library.")
 set(JPEGXL_ENABLE_JPEGLI_LIBJPEG true CACHE BOOL
     "Build libjpeg.so shared library based on jpegli.")
@@ -141,7 +146,7 @@ set(JPEGXL_ENABLE_BOXES true CACHE BOOL
  (default enabled)")
 set(JPEGXL_STATIC false CACHE BOOL
     "Build tools as static binaries.")
-set(JPEGXL_WARNINGS_AS_ERRORS ${WARNINGS_AS_ERRORS_DEFAULT} CACHE BOOL
+set(JPEGXL_WARNINGS_AS_ERRORS false CACHE BOOL
     "Treat warnings as errors during compilation.")
 set(JPEGXL_DEP_LICENSE_DIR "" CACHE STRING
     "Directory where to search for system dependencies \"copyright\" files.")
