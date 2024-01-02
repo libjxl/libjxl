@@ -75,8 +75,9 @@ struct DecompressArgs {
     cmdline->AddOptionValue(
         '\0', "output_format", "OUTPUT_FORMAT_DESC",
         "Set the output format. This overrides the output format detected from "
-        "a potential file extension in the OUTPUT filename. Must be one of "
-        "png, apng, jpg, jpeg, npy, pgx, pam, ppm, pgm, ppm, pfm, gif, exr,"
+        "a potential file extension in the OUTPUT filename.\n"
+        "Must be one of png, apng, jpg, jpeg, npy, pgx, pam, pgm, ppm, pnm, "
+        "pfm, exr, "
         "exif, xmp, xml, jumb, jumbf when converted to lower case.",
         &output_format, &ParseString, 1);
 
@@ -466,14 +467,13 @@ int main(int argc, const char* argv[]) {
   }
 
   std::string filename_out;
-  std::string filename;
   std::string extension;
   if (!args.output_format.empty()) extension = "." + args.output_format;
   jxl::extras::Codec codec = jxl::extras::Codec::kUnknown;
   if (args.file_out && !args.disable_output) {
     filename_out = std::string(args.file_out);
     codec = jxl::extras::CodecFromPath(
-        filename_out, /* bits_per_sample */ nullptr, &filename, &extension);
+        filename_out, /* bits_per_sample */ nullptr, &extension);
   }
   if (codec == jxl::extras::Codec::kEXR) {
     std::string force_colorspace = "RGB_D65_SRG_Rel_Lin";
@@ -526,7 +526,8 @@ int main(int argc, const char* argv[]) {
     }
     if (!bytes.empty()) {
       if (!args.quiet) cmdline.VerbosePrintf(0, "Reconstructed to JPEG.\n");
-      if (!filename_out.empty() && !jpegxl::tools::WriteFile(filename, bytes)) {
+      if (!filename_out.empty() &&
+          !jpegxl::tools::WriteFile(filename_out, bytes)) {
         return EXIT_FAILURE;
       }
     }
@@ -599,7 +600,7 @@ int main(int argc, const char* argv[]) {
               (i == 0 ? encoded_image.bitstreams[j]
                       : encoded_image.extra_channel_bitstreams[i - 1][j]);
           std::string fn =
-              Filename(filename, extension, i, j, nlayers, nframes);
+              Filename(filename_out, extension, i, j, nlayers, nframes);
           if (!jpegxl::tools::WriteFile(fn.c_str(), bitstream)) {
             return EXIT_FAILURE;
           }
