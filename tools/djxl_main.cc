@@ -77,8 +77,7 @@ struct DecompressArgs {
         "Set the output format. This overrides the output format detected from "
         "a potential file extension in the OUTPUT filename.\n"
         "Must be one of png, apng, jpg, jpeg, npy, pgx, pam, pgm, ppm, pnm, "
-        "pfm, exr, "
-        "exif, xmp, xml, jumb, jumbf when converted to lower case.",
+        "pfm, exr, exif, xmp, xml, jumb, jumbf when converted to lower case.",
         &output_format, &ParseString, 1);
 
     cmdline->AddOptionFlag('V', "version", "Print version number and exit.",
