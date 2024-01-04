@@ -15,6 +15,7 @@ MYDIR=$(dirname $(realpath "$0"))
 # update a git submodule.
 TESTDATA="6c943639760d38c91609f4a72e46c2bc19984a0a"
 THIRD_PARTY_BROTLI="36533a866ed1ca4b75cf049f4521e4ec5fe24727"
+THIRD_PARTY_COMPACT_ICC_PROFILES="bdd84663061bc4ae95ca70decff54f581e27f702"
 THIRD_PARTY_HIGHWAY="ba0900a4957b929390ab73827235557959234fea"
 THIRD_PARTY_SKCMS="42030a771244ba67f86b1c1c76a6493f873c5f91"
 THIRD_PARTY_SJPEG="e5ab13008bb214deb66d5f3e17ca2f8dbff150bf"
@@ -82,6 +83,7 @@ EOF
   # Sources downloaded from a tarball.
   download_github testdata libjxl/testdata
   download_github third_party/brotli google/brotli
+  download_github third_party/Compact-ICC-Profiles saucecontrol/Compact-ICC-Profiles
   download_github third_party/highway google/highway
   download_github third_party/sjpeg webmproject/sjpeg
   download_github third_party/skcms \

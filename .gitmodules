@@ -28,3 +28,6 @@
 [submodule "third_party/libjpeg-turbo"]
 	path = third_party/libjpeg-turbo
 	url = https://github.com/libjpeg-turbo/libjpeg-turbo.git
+[submodule "third_party/Compact-ICC-Profiles"]
+	path = third_party/Compact-ICC-Profiles
+	url = https://github.com/saucecontrol/Compact-ICC-Profiles.git
