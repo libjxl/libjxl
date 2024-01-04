@@ -200,6 +200,7 @@ jobs:
           debian.sources
           executable.lst
           testdata/
+          third_party/Compact-ICC-Profiles
         retention-days: 1
 
   test:
