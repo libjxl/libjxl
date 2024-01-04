@@ -13,6 +13,7 @@ MYDIR=$(dirname $(realpath "$0"))
 
 # Git revisions we use for the given submodules. Update these whenever you
 # update a git submodule.
+TESTDATA="6c943639760d38c91609f4a72e46c2bc19984a0a"
 THIRD_PARTY_BROTLI="36533a866ed1ca4b75cf049f4521e4ec5fe24727"
 THIRD_PARTY_HIGHWAY="ba0900a4957b929390ab73827235557959234fea"
 THIRD_PARTY_SKCMS="42030a771244ba67f86b1c1c76a6493f873c5f91"
@@ -79,6 +80,7 @@ EOF
   fi
 
   # Sources downloaded from a tarball.
+  download_github testdata libjxl/testdata
   download_github third_party/brotli google/brotli
   download_github third_party/highway google/highway
   download_github third_party/sjpeg webmproject/sjpeg
