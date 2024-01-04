@@ -521,7 +521,6 @@ struct ColorEncoding {
                                                 new_icc.data(), new_icc.size(),
                                                 &external, &new_cmyk));
     cmyk = new_cmyk;
-    if (cmyk) return true;
     JXL_RETURN_IF_ERROR(FromExternal(external));
     icc = std::move(new_icc);
     return true;
