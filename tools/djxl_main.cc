@@ -59,9 +59,9 @@ struct DecompressArgs {
     output_help.append(
         "PGM (for greyscale input), PPM (for color input), PNM, PFM, or PAM.\n"
         "    To extract metadata, use output format EXIF, XMP, or JUMBF.\n"
-        "    The format is selected based on extension ('filename.png') or "
-        "prefix ('png:filename').\n"
-        "    Use '-' for output to stdout (e.g. 'ppm:-')");
+        "    The format is selected based on extension ('filename.png') or can "
+        "be overwritten by using --output_format.\n"
+        "    Use '-' for output to stdout (e.g. '- --output_format ppm')");
     cmdline->AddPositionalOption(
         "INPUT", /* required = */ true,
         "The compressed input file (JXL). Use '-' for input from stdin.",
@@ -71,6 +71,14 @@ struct DecompressArgs {
                                  &file_out);
 
     cmdline->AddHelpText("\nBasic options:", 0);
+
+    cmdline->AddOptionValue(
+        '\0', "output_format", "OUTPUT_FORMAT_DESC",
+        "Set the output format. This overrides the output format detected from "
+        "a potential file extension in the OUTPUT filename.\n"
+        "Must be one of png, apng, jpg, jpeg, npy, pgx, pam, pgm, ppm, pnm, "
+        "pfm, exr, exif, xmp, xml, jumb, jumbf when converted to lower case.",
+        &output_format, &ParseString, 1);
 
     cmdline->AddOptionFlag('V', "version", "Print version number and exit.",
                            &version, &SetBooleanTrue, 0);
@@ -236,6 +244,7 @@ struct DecompressArgs {
 
   const char* file_in = nullptr;
   const char* file_out = nullptr;
+  std::string output_format;
   bool version = false;
   bool verbose = false;
   size_t num_reps = 1;
@@ -457,13 +466,13 @@ int main(int argc, const char* argv[]) {
   }
 
   std::string filename_out;
-  std::string filename;
   std::string extension;
+  if (!args.output_format.empty()) extension = "." + args.output_format;
   jxl::extras::Codec codec = jxl::extras::Codec::kUnknown;
   if (args.file_out && !args.disable_output) {
     filename_out = std::string(args.file_out);
     codec = jxl::extras::CodecFromPath(
-        filename_out, /* bits_per_sample */ nullptr, &filename, &extension);
+        filename_out, /* bits_per_sample */ nullptr, &extension);
   }
   if (codec == jxl::extras::Codec::kEXR) {
     std::string force_colorspace = "RGB_D65_SRG_Rel_Lin";
@@ -516,7 +525,8 @@ int main(int argc, const char* argv[]) {
     }
     if (!bytes.empty()) {
       if (!args.quiet) cmdline.VerbosePrintf(0, "Reconstructed to JPEG.\n");
-      if (!filename_out.empty() && !jpegxl::tools::WriteFile(filename, bytes)) {
+      if (!filename_out.empty() &&
+          !jpegxl::tools::WriteFile(filename_out, bytes)) {
         return EXIT_FAILURE;
       }
     }
@@ -527,8 +537,14 @@ int main(int argc, const char* argv[]) {
     if (!filename_out.empty()) {
       encoder = jxl::extras::Encoder::FromExtension(extension);
       if (encoder == nullptr) {
-        fprintf(stderr, "can't decode to the file extension '%s'\n",
-                extension.c_str());
+        if (extension.empty()) {
+          fprintf(stderr,
+                  "couldn't detect output format, consider using "
+                  "--output_format.\n");
+        } else {
+          fprintf(stderr, "can't decode to the file extension '%s'.\n",
+                  extension.c_str());
+        }
         return EXIT_FAILURE;
       }
       accepted_formats = encoder->AcceptedFormats();
@@ -583,7 +599,7 @@ int main(int argc, const char* argv[]) {
               (i == 0 ? encoded_image.bitstreams[j]
                       : encoded_image.extra_channel_bitstreams[i - 1][j]);
           std::string fn =
-              Filename(filename, extension, i, j, nlayers, nframes);
+              Filename(filename_out, extension, i, j, nlayers, nframes);
           if (!jpegxl::tools::WriteFile(fn.c_str(), bitstream)) {
             return EXIT_FAILURE;
           }
