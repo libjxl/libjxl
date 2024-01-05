@@ -328,6 +328,14 @@ class RectT {
     return CeilShiftRight(shift, shift);
   }
 
+  RectT<T> Extend(T border, RectT<T> parent) {
+    T new_x0 = x0() > parent.x0() + border ? x0() - border : parent.x0();
+    T new_y0 = y0() > parent.y0() + border ? y0() - border : parent.y0();
+    T new_x1 = x1() + border > parent.x1() ? parent.x1() : x1() + border;
+    T new_y1 = y1() + border > parent.y1() ? parent.y1() : y1() + border;
+    return RectT<T>(new_x0, new_y0, new_x1 - new_x0, new_y1 - new_y0);
+  }
+
   template <typename U>
   RectT<U> As() const {
     return RectT<U>(U(x0_), U(y0_), U(xsize_), U(ysize_));
