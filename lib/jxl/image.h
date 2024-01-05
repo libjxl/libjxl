@@ -8,7 +8,11 @@
 
 // SIMD/multicore-friendly planar image representation with row accessors.
 
+#if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
+    defined(THREAD_SANITIZER)
 #include <inttypes.h>
+#endif
+
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
