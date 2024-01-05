@@ -2047,7 +2047,7 @@ TEST(EncoderTest, CMYK) {
   EXPECT_EQ(JXL_ENC_SUCCESS,
             JxlEncoderSetExtraChannelInfo(enc, 0, &channel_info));
   const std::vector<uint8_t> icc = jxl::test::ReadTestData(
-      "../testdata/external/Compact-ICC-Profiles/profiles/"
+      "external/Compact-ICC-Profiles/profiles/"
       "CGATS001Compat-v2-micro.icc");
   EXPECT_EQ(JXL_ENC_SUCCESS,
             JxlEncoderSetICCProfile(enc, icc.data(), icc.size()));
