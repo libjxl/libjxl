@@ -18,7 +18,6 @@ filegroup(
         "testdata/**/*.png",
         "testdata/**/*.jpg",
         "testdata/position_encoding/*.txt",
-        "third_party/Compact-ICC-Profiles/profiles/*.icc",
     ]),
 )
 
