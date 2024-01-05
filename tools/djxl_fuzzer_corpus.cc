@@ -15,8 +15,6 @@
 #include <unistd.h>
 #endif
 
-#include <jxl/cms.h>
-
 #include <algorithm>
 #include <functional>
 #include <iostream>
