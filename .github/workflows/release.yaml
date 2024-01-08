@@ -253,6 +253,14 @@ jobs:
             arch: '-A Win32'
           - triplet: x64-windows-static
             arch: '-A x64'
+          - triplet: x86-windows
+            arch: '-A Win32'
+            static: 'OFF'
+            tools: 'OFF'
+          - triplet: x64-windows
+            arch: '-A x64'
+            static: 'OFF'
+            tools: 'OFF'
 
     env:
       VCPKG_VERSION: '2023.12.12'
@@ -312,7 +320,8 @@ jobs:
         set -x
         mkdir build
         cmake -Bbuild -H. ${{ matrix.arch }} \
-          -DJPEGXL_STATIC=ON \
+          -DJPEGXL_STATIC=${{ matrix.static || 'ON'}} \
+          -DJPEGXL_ENABLE_TOOLS=${{ matrix.tools || 'ON'}} \
           -DBUILD_TESTING=OFF \
           -DCMAKE_BUILD_TYPE=Release \
           -DCMAKE_INSTALL_PREFIX=`pwd`/prefix \
@@ -322,7 +331,7 @@ jobs:
           -DJPEGXL_ENABLE_PLUGINS=OFF \
           -DJPEGXL_ENABLE_TCMALLOC=OFF \
           -DJPEGXL_ENABLE_VIEWERS=OFF \
-          -DJPEGXL_ENABLE_DEVTOOLS=ON \
+          -DJPEGXL_ENABLE_DEVTOOLS=${{ matrix.tools || 'ON'}} \
           -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} \
         #
     - name: Build
@@ -350,12 +359,13 @@ jobs:
         name: jxl-${{matrix.triplet}}
         path: |
           prefix/bin/*
+          prefix/lib/*
 
     - name: Package release zip
       if: github.event_name == 'release'
       shell: 'powershell'
       run: |
-        Compress-Archive -Path prefix\bin\* `
+        Compress-Archive -Path prefix\bin\*, prefix\lib\* `
           -DestinationPath jxl-${{matrix.triplet}}.zip
 
     - name: Upload binaries to release
