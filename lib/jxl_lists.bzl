@@ -551,7 +551,7 @@ libjxl_major_version = 0
 
 libjxl_minor_version = 9
 
-libjxl_patch_version = 0
+libjxl_patch_version = 1
 
 libjxl_public_headers = [
     "include/jxl/cms.h",
