@@ -286,8 +286,6 @@ git push gitlab v0.7.1
 ```
 where `gitlab` is the remote `git@gitlab.com:wg1/jpeg-xl.git`. 
 
-
-
 ### How to build downstream projects
 
 ```bash
