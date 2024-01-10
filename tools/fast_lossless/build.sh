@@ -24,4 +24,5 @@ fi
   -I. -g lodepng.o \
   -I"$DIR"/../../ \
   "$DIR"/../../lib/jxl/enc_fast_lossless.cc "$DIR"/fast_lossless_main.cc \
+  -lpthread \
   -o fast_lossless

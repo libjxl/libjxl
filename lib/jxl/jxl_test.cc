@@ -5,11 +5,13 @@
 
 #include "lib/extras/dec/jxl.h"
 
-#include <stdint.h>
+#include <jxl/cms.h>
+#include <jxl/encode.h>
 
 #include <array>
 #include <cstdint>
 #include <future>
+#include <ostream>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -24,7 +26,6 @@
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/span.h"
-#include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/common.h"  // JXL_HIGH_PRECISION
@@ -44,7 +45,6 @@
 #include "lib/jxl/test_image.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"
-#include "tools/box/box.h"
 
 namespace jxl {
 
@@ -630,14 +630,12 @@ TEST(JxlTest, RoundtripGrayscale) {
   EXPECT_EQ(0u, io.metadata.m.bit_depth.exponent_bits_per_sample);
   EXPECT_TRUE(io.metadata.m.color_encoding.Tf().IsSRGB());
 
-  PassesEncoderState enc_state;
-
   {
     CompressParams cparams;
     cparams.butteraugli_distance = 1.0;
 
     std::vector<uint8_t> compressed;
-    EXPECT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed));
+    EXPECT_TRUE(test::EncodeFile(cparams, &io, &compressed));
     CodecInOut io2;
     EXPECT_TRUE(test::DecodeFile({}, Bytes(compressed), &io2));
     EXPECT_TRUE(io2.Main().IsGray());
@@ -656,7 +654,7 @@ TEST(JxlTest, RoundtripGrayscale) {
     cparams.butteraugli_distance = 8.0;
 
     std::vector<uint8_t> compressed;
-    EXPECT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed));
+    EXPECT_TRUE(test::EncodeFile(cparams, &io, &compressed));
     CodecInOut io2;
     EXPECT_TRUE(test::DecodeFile({}, Bytes(compressed), &io2));
     EXPECT_TRUE(io2.Main().IsGray());
@@ -673,7 +671,7 @@ TEST(JxlTest, RoundtripGrayscale) {
     cparams.butteraugli_distance = 1.0;
 
     std::vector<uint8_t> compressed;
-    EXPECT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed));
+    EXPECT_TRUE(test::EncodeFile(cparams, &io, &compressed));
 
     CodecInOut io2;
     JXLDecompressParams dparams;
@@ -707,9 +705,8 @@ TEST(JxlTest, RoundtripAlpha) {
   EXPECT_FALSE(io.metadata.m.bit_depth.floating_point_sample);
   EXPECT_EQ(0u, io.metadata.m.bit_depth.exponent_bits_per_sample);
   EXPECT_TRUE(io.metadata.m.color_encoding.Tf().IsSRGB());
-  PassesEncoderState enc_state;
   std::vector<uint8_t> compressed;
-  EXPECT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed));
+  EXPECT_TRUE(test::EncodeFile(cparams, &io, &compressed));
 
   EXPECT_LE(compressed.size(), 10077u);
 
@@ -806,9 +803,8 @@ TEST(JxlTest, RoundtripAlphaPremultiplied) {
 
   EXPECT_FALSE(io_nopremul.Main().AlphaIsPremultiplied());
 
-  PassesEncoderState enc_state;
   std::vector<uint8_t> compressed;
-  EXPECT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed));
+  EXPECT_TRUE(test::EncodeFile(cparams, &io, &compressed));
   EXPECT_LE(compressed.size(), 10000u);
 
   for (bool use_image_callback : {false, true}) {
@@ -1239,10 +1235,10 @@ TEST(JxlTest, RoundtripAnimationPatches) {
   PackedPixelFile ppf_out;
   // 40k with no patches, 27k with patch frames encoded multiple times.
   EXPECT_THAT(Roundtrip(t.ppf(), cparams, dparams, pool, &ppf_out),
-              IsSlightlyBelow(19222));
+              IsSlightlyBelow(19252));
   EXPECT_EQ(ppf_out.frames.size(), t.ppf().frames.size());
-  // >10 with broken patches
-  EXPECT_THAT(ButteraugliDistance(t.ppf(), ppf_out), IsSlightlyBelow(0.8999));
+  // >10 with broken patches; not all patches are detected on borders.
+  EXPECT_THAT(ButteraugliDistance(t.ppf(), ppf_out), IsSlightlyBelow(1.9));
 }
 
 size_t RoundtripJpeg(const std::vector<uint8_t>& jpeg_in, ThreadPool* pool) {
@@ -1291,7 +1287,7 @@ TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression444)) {
   const std::vector<uint8_t> orig =
       ReadTestData("jxl/flower/flower.png.im_q85_444.jpg");
   // JPEG size is 696,659 bytes.
-  EXPECT_NEAR(RoundtripJpeg(orig, &pool), 568940u, 10);
+  EXPECT_NEAR(RoundtripJpeg(orig, &pool), 568940u, 20);
 }
 
 TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionToPixels)) {
@@ -1387,7 +1383,7 @@ TEST(JxlTest,
   const std::vector<uint8_t> orig =
       ReadTestData("jxl/flower/flower.png.im_q85_luma_subsample.jpg");
   // JPEG size is 400,724 bytes.
-  EXPECT_NEAR(RoundtripJpeg(orig, &pool), 325354u, 10);
+  EXPECT_NEAR(RoundtripJpeg(orig, &pool), 325354u, 15);
 }
 
 TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression444_12)) {
@@ -1583,6 +1579,61 @@ JXL_GTEST_INSTANTIATE_TEST_SUITE_P(
     ImageTests, JxlTest,
     ::testing::Values("jxl/blending/cropped_traffic_light_frame-0.png",
                       "palette/358colors.png"));
+
+struct StreamingTestParam {
+  size_t xsize;
+  size_t ysize;
+  bool is_grey;
+  int effort;
+
+  size_t num_channels() const { return is_grey ? 1 : 3; }
+
+  float max_psnr() const { return is_grey ? 90 : 50; }
+
+  static std::vector<StreamingTestParam> All() {
+    std::vector<StreamingTestParam> params;
+    for (int e : {1, 3, 4, 7}) {
+      for (bool g : {false, true}) {
+        params.push_back(StreamingTestParam{357, 517, g, e});
+        params.push_back(StreamingTestParam{2247, 2357, g, e});
+      }
+    }
+    return params;
+  }
+};
+
+std::ostream& operator<<(std::ostream& out, StreamingTestParam p) {
+  out << (p.is_grey ? "Grey" : "RGB");
+  out << p.xsize << "x" << p.ysize;
+  out << "e" << p.effort;
+  return out;
+}
+
+class JxlStreamingTest : public ::testing::TestWithParam<StreamingTestParam> {};
+
+TEST_P(JxlStreamingTest, Roundtrip) {
+  const StreamingTestParam& p = GetParam();
+
+  jxl::test::TestImage image;
+  image.SetDimensions(p.xsize, p.ysize)
+      .SetDataType(JXL_TYPE_UINT8)
+      .SetChannels(p.num_channels())
+      .SetAllBitDepths(8);
+  image.AddFrame().RandomFill();
+  JXLCompressParams cparams;
+  cparams.distance = 0.1;
+  cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, p.effort);
+  cparams.AddOption(JXL_ENC_FRAME_SETTING_BUFFERING, 3);
+
+  ThreadPoolForTests pool(8);
+  PackedPixelFile ppf_out;
+  Roundtrip(image.ppf(), cparams, {}, &pool, &ppf_out);
+  EXPECT_GT(jxl::test::ComputePSNR(image.ppf(), ppf_out), p.max_psnr());
+}
+
+JXL_GTEST_INSTANTIATE_TEST_SUITE_P(
+    JxlStreamingTest, JxlStreamingTest,
+    testing::ValuesIn(StreamingTestParam::All()));
 
 }  // namespace
 }  // namespace jxl

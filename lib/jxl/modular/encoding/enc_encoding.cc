@@ -513,7 +513,7 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
     BuildAndEncodeHistograms(HistogramParams(), kNumTreeContexts, tree_tokens,
                              &code, &context_map, writer, kLayerModularTree,
                              aux_out);
-    WriteTokens(tree_tokens[0], code, context_map, writer, kLayerModularTree,
+    WriteTokens(tree_tokens[0], code, context_map, 0, writer, kLayerModularTree,
                 aux_out);
   }
 
@@ -562,7 +562,8 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
     BuildAndEncodeHistograms(histo_params, (tree->size() + 1) / 2,
                              tokens_storage, &code, &context_map, writer, layer,
                              aux_out);
-    WriteTokens(tokens_storage[0], code, context_map, writer, layer, aux_out);
+    WriteTokens(tokens_storage[0], code, context_map, 0, writer, layer,
+                aux_out);
   } else {
     *width = image_width;
   }

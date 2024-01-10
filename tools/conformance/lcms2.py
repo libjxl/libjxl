@@ -8,8 +8,12 @@ import ctypes
 from numpy.ctypeslib import ndpointer
 import numpy
 import os
+import platform
 
-lcms2_lib_path = os.getenv("LCMS2_LIB_PATH", "liblcms2.so.2")
+IS_OSX = (platform.system() == "Darwin")
+
+default_libcms2_lib_path = ["liblcms2.so.2", "liblcms2.2.dylib"][IS_OSX]
+lcms2_lib_path = os.getenv("LCMS2_LIB_PATH", default_libcms2_lib_path)
 lcms2_lib = ctypes.cdll.LoadLibrary(lcms2_lib_path)
 
 native_open_profile = lcms2_lib.cmsOpenProfileFromMem

@@ -3,6 +3,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <jxl/cms.h>
 #include <jxl/cms_interface.h>
 #include <stdint.h>
 
@@ -18,7 +19,6 @@
 #include "lib/jxl/base/random.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/cms/color_encoding_cms.h"
-#include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/cms/opsin_params.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/enc_xyb.h"

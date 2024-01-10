@@ -5,7 +5,9 @@
 
 #include "lib/jxl/test_utils.h"
 
+#include <jxl/cms.h>
 #include <jxl/cms_interface.h>
+#include <jxl/types.h>
 
 #include <cstddef>
 #include <fstream>
@@ -19,10 +21,8 @@
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/float.h"
-#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_bit_writer.h"
@@ -37,6 +37,7 @@
 #include "lib/jxl/icc_codec.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
+#include "lib/jxl/padded_bytes.h"
 
 #if !defined(TEST_DATA_PATH)
 #include "tools/cpp/runfiles/runfiles.h"
@@ -192,9 +193,7 @@ bool Roundtrip(const CodecInOut* io, const CompressParams& cparams,
     original_current_encodings.push_back(ib.c_current());
   }
 
-  std::unique_ptr<PassesEncoderState> enc_state =
-      jxl::make_unique<PassesEncoderState>();
-  JXL_CHECK(test::EncodeFile(cparams, io, enc_state.get(), &compressed, pool));
+  JXL_CHECK(test::EncodeFile(cparams, io, &compressed, pool));
 
   for (const ImageBundle& ib1 : io->frames) {
     metadata_encodings_1.push_back(ib1.metadata()->color_encoding);
@@ -489,6 +488,10 @@ size_t ComparePixels(const uint8_t* a, const uint8_t* b, size_t xsize,
     // TODO(lode): Set the required precision back to 11 bits when possible.
     precision = 0.5 * threshold_multiplier / ((1ull << (bits - 1)) - 1ull);
   }
+  if (format_b.data_type == JXL_TYPE_UINT8) {
+    // Increase the threshold by the maximum difference introduced by dithering.
+    precision += 63.0 / 128.0;
+  }
   size_t numdiff = 0;
   for (size_t y = 0; y < ysize; y++) {
     for (size_t x = 0; x < xsize; x++) {
@@ -575,6 +578,15 @@ float ComputeDistance2(const extras::PackedPixelFile& a,
   CodecInOut io1;
   JXL_CHECK(ConvertPackedPixelFileToCodecInOut(b, nullptr, &io1));
   return ComputeDistance2(io0.Main(), io1.Main(), *JxlGetDefaultCms());
+}
+
+float ComputePSNR(const extras::PackedPixelFile& a,
+                  const extras::PackedPixelFile& b) {
+  CodecInOut io0;
+  JXL_CHECK(ConvertPackedPixelFileToCodecInOut(a, nullptr, &io0));
+  CodecInOut io1;
+  JXL_CHECK(ConvertPackedPixelFileToCodecInOut(b, nullptr, &io1));
+  return ComputePSNR(io0.Main(), io1.Main(), *JxlGetDefaultCms());
 }
 
 bool SameAlpha(const extras::PackedPixelFile& a,
@@ -707,15 +719,13 @@ Status EncodePreview(const CompressParams& cparams, const ImageBundle& ib,
   // TODO(janwas): also support generating preview by downsampling
   if (ib.HasColor()) {
     AuxOut aux_out;
-    PassesEncoderState passes_enc_state;
     // TODO(lode): check if we want all extra channels and matching xyb_encoded
     // for the preview, such that using the main ImageMetadata object for
     // encoding this frame is warrented.
     FrameInfo frame_info;
     frame_info.is_preview = true;
-    JXL_RETURN_IF_ERROR(EncodeFrame(cparams, frame_info, metadata, ib,
-                                    &passes_enc_state, cms, pool,
-                                    &preview_writer, &aux_out));
+    JXL_RETURN_IF_ERROR(EncodeFrame(cparams, frame_info, metadata, ib, cms,
+                                    pool, &preview_writer, &aux_out));
     preview_writer.ZeroPadToByte();
   }
 
@@ -730,7 +740,6 @@ Status EncodePreview(const CompressParams& cparams, const ImageBundle& ib,
 }  // namespace
 
 Status EncodeFile(const CompressParams& params, const CodecInOut* io,
-                  PassesEncoderState* passes_enc_state,
                   std::vector<uint8_t>* compressed, ThreadPool* pool) {
   compressed->clear();
   const JxlCmsInterface& cms = *JxlGetDefaultCms();
@@ -773,14 +782,8 @@ Status EncodeFile(const CompressParams& params, const CodecInOut* io,
       info.save_as_reference = 1;
     }
     JXL_RETURN_IF_ERROR(EncodeFrame(cparams, info, metadata.get(),
-                                    io->frames[i], passes_enc_state, cms, pool,
-                                    &writer, /* aux_out */ nullptr));
-  }
-
-  // Clean up passes_enc_state in case it gets reused.
-  for (size_t i = 0; i < 4; i++) {
-    passes_enc_state->shared.dc_frames[i] = Image3F();
-    passes_enc_state->shared.reference_frames[i].frame = ImageBundle();
+                                    io->frames[i], cms, pool, &writer,
+                                    /* aux_out */ nullptr));
   }
 
   PaddedBytes output = std::move(writer).TakeBytes();

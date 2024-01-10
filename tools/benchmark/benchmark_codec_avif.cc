@@ -5,10 +5,10 @@
 #include "tools/benchmark/benchmark_codec_avif.h"
 
 #include <avif/avif.h>
+#include <jxl/cms.h>
 
 #include "lib/extras/time.h"
 #include "lib/jxl/base/span.h"
-#include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/dec_external_image.h"
 #include "lib/jxl/enc_external_image.h"
@@ -255,8 +255,13 @@ class AvifCodec : public ImageCodec {
       encoder->speed = speed_;
       encoder->maxThreads = max_threads;
       for (const auto& opts : codec_specific_options_) {
+#if AVIF_VERSION_MAJOR >= 1
         JXL_RETURN_IF_AVIF_ERROR(avifEncoderSetCodecSpecificOption(
             encoder.get(), opts.first.c_str(), opts.second.c_str()));
+#else
+        (void)avifEncoderSetCodecSpecificOption(
+            encoder.get(), opts.first.c_str(), opts.second.c_str());
+#endif
       }
       avifAddImageFlags add_image_flags = AVIF_ADD_IMAGE_FLAG_SINGLE;
       if (io->metadata.m.have_animation) {

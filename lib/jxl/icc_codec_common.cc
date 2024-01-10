@@ -12,8 +12,8 @@
 #include <vector>
 
 #include "lib/jxl/base/byte_order.h"
-#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/fields.h"
+#include "lib/jxl/padded_bytes.h"
 
 namespace jxl {
 namespace {
@@ -81,8 +81,8 @@ void AppendKeyword(const Tag& keyword, PaddedBytes* data) {
 }
 
 // Checks if a + b > size, taking possible integer overflow into account.
-Status CheckOutOfBounds(size_t a, size_t b, size_t size) {
-  size_t pos = a + b;
+Status CheckOutOfBounds(uint64_t a, uint64_t b, uint64_t size) {
+  uint64_t pos = a + b;
   if (pos > size) return JXL_FAILURE("Out of bounds");
   if (pos < a) return JXL_FAILURE("Out of bounds");  // overflow happened
   return true;

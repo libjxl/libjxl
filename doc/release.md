@@ -277,7 +277,14 @@ instructions:
 
  * Finally click "Publish release" and go celebrate with the team. 🎉
 
- * Make sure to manually push the commit of the release also to https://gitlab.com/wg1/jpeg-xl.
+ * The branch v0.7.x will be pushed to gitlab automatically, but make sure to
+   manually push the *tag* of the release also to
+   https://gitlab.com/wg1/jpeg-xl, by doing
+
+```bash
+git push gitlab v0.7.1
+```
+where `gitlab` is the remote `git@gitlab.com:wg1/jpeg-xl.git`. 
 
 ### How to build downstream projects
 
@@ -289,26 +296,33 @@ apt install -y clang cmake git libbrotli-dev nasm pkg-config ninja-build
 export CC=clang
 export CXX=clang++
 
-git clone --recurse-submodules --depth 1 -b v0.7.x \
+mkdir -p /src
+cd /src
+
+git clone --recurse-submodules --depth 1 -b v0.9.x \
   https://github.com/libjxl/libjxl.git
 git clone --recurse-submodules --depth 1 \
   https://github.com/ImageMagick/ImageMagick.git
 git clone --recurse-submodules --depth 1 \
   https://github.com/FFmpeg/FFmpeg.git
 
-cd ~/libjxl
-git checkout v0.7.x
+cd /src/libjxl
 cmake -B build -G Ninja .
-cmake --build build
-cmake --install build
+cmake --build build -j`nproc`
+cmake --install build --prefix="/usr"
 
-cd ~/ImageMagick
+cd /src/ImageMagick
 ./configure --with-jxl=yes
 # check for "JPEG XL --with-jxl=yes yes"
-make -j 80
+make -j `nproc`
+./utilities/magick -version
 
-cd ~/FFmpeg
-./configure --enable-libjxl
+cd /src/FFmpeg
+./configure --disable-all --disable-debug --enable-avcodec --enable-avfilter \
+  --enable-avformat --enable-libjxl --enable-encoder=libjxl \
+  --enable-decoder=libjxl --enable-ffmpeg
 # check for libjxl decoder/encoder support
-make -j 80
+make -j `nproc`
+ldd ./ffmpeg
+./ffmpeg -version
 ```

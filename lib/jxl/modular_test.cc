@@ -3,6 +3,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <jxl/cms.h>
+
 #include <array>
 #include <cstdint>
 #include <string>
@@ -15,9 +17,7 @@
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/override.h"
-#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/span.h"
-#include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/enc_aux_out.h"
@@ -33,6 +33,7 @@
 #include "lib/jxl/modular/encoding/enc_encoding.h"
 #include "lib/jxl/modular/encoding/encoding.h"
 #include "lib/jxl/modular/encoding/ma_common.h"
+#include "lib/jxl/padded_bytes.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"
 
@@ -468,7 +469,7 @@ TEST(ModularTest, PredictorIntegerOverflow) {
     bw->ZeroPadToByte();
     allotment.ReclaimAndCharge(bw, 0, nullptr);
   }
-  EXPECT_TRUE(WriteGroupOffsets(group_codes, nullptr, &writer, nullptr));
+  EXPECT_TRUE(WriteGroupOffsets(group_codes, {}, &writer, nullptr));
   writer.AppendByteAligned(group_codes);
 
   PaddedBytes compressed = std::move(writer).TakeBytes();
@@ -516,7 +517,7 @@ TEST(ModularTest, UnsqueezeIntegerOverflow) {
     bw->ZeroPadToByte();
     allotment.ReclaimAndCharge(bw, 0, nullptr);
   }
-  EXPECT_TRUE(WriteGroupOffsets(group_codes, nullptr, &writer, nullptr));
+  EXPECT_TRUE(WriteGroupOffsets(group_codes, {}, &writer, nullptr));
   writer.AppendByteAligned(group_codes);
 
   PaddedBytes compressed = std::move(writer).TakeBytes();

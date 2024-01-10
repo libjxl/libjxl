@@ -50,7 +50,7 @@ else()
         icc_detect/icc_detect_x11.cc
         icc_detect/icc_detect.h
       )
-      target_link_libraries(icc_detect PUBLIC jxl-static Qt6::Widgets XCB::XCB)
+      target_link_libraries(icc_detect PUBLIC jxl-internal Qt6::Widgets XCB::XCB)
     endif ()
   endif()
 endif()
@@ -67,12 +67,11 @@ add_library(jxl_tool STATIC EXCLUDE_FROM_ALL
   codec_config.cc
   speed_stats.cc
   tool_version.cc
+  ${JXL_CMS_OBJECTS}
 )
 target_compile_options(jxl_tool PUBLIC "${JPEGXL_INTERNAL_FLAGS}")
 target_include_directories(jxl_tool PUBLIC "${PROJECT_SOURCE_DIR}")
 target_link_libraries(jxl_tool PUBLIC hwy)
-jxl_link_libraries(jxl_tool jxl_base-obj)
-jxl_link_libraries(jxl_tool jxl_cms-obj)
 
 # The JPEGXL_VERSION is set from the builders.
 if(NOT DEFINED JPEGXL_VERSION OR JPEGXL_VERSION STREQUAL "")
@@ -201,8 +200,8 @@ if(JPEGXL_ENABLE_DEVTOOLS)
   list(APPEND FUZZER_CORPUS_BINARIES djxl_fuzzer_corpus)
   add_executable(djxl_fuzzer_corpus djxl_fuzzer_corpus.cc)
   target_link_libraries(djxl_fuzzer_corpus
-    jxl_extras-static
-    jxl_testlib-static
+    jxl_extras-internal
+    jxl_testlib-internal
     jxl_tool
   )
   if(JPEGXL_ENABLE_JPEGLI)
@@ -211,7 +210,7 @@ if(JPEGXL_ENABLE_DEVTOOLS)
     target_link_libraries(jpegli_dec_fuzzer_corpus
       jpegli-static
       jxl_tool
-      jxl_threads-static
+      jxl_threads
     )
   endif()
 endif()  # JPEGXL_ENABLE_DEVTOOLS
@@ -253,6 +252,7 @@ if(JPEGXL_ENABLE_BENCHMARK AND JPEGXL_ENABLE_TOOLS)
       "${CMAKE_CURRENT_LIST_DIR}/benchmark/benchmark_codec_png.cc"
       "${CMAKE_CURRENT_LIST_DIR}/benchmark/benchmark_codec_png.h"
     )
+    target_compile_definitions(benchmark_xl PRIVATE -DBENCHMARK_PNG)
   endif()
 
   find_package(PkgConfig)
@@ -297,7 +297,8 @@ endif()  # JPEGXL_ENABLE_BENCHMARK
 # All tool binaries depend on "jxl" library and the tool helpers.
 foreach(BINARY IN LISTS INTERNAL_TOOL_BINARIES)
   target_link_libraries("${BINARY}"
-    jxl_extras-static
+    jxl_extras-internal
+    jxl_threads
     jxl_tool
   )
 endforeach()
@@ -305,7 +306,7 @@ endforeach()
 list(APPEND TOOL_BINARIES ${INTERNAL_TOOL_BINARIES} ${FUZZER_CORPUS_BINARIES})
 
 foreach(BINARY IN LISTS TOOL_BINARIES)
-  if(JPEGXL_EMSCRIPTEN)
+  if(EMSCRIPTEN)
     set(JXL_WASM_TOOLS_LINK_FLAGS "\
       -s USE_LIBPNG=1 \
       -s ALLOW_MEMORY_GROWTH=1 \
@@ -353,16 +354,15 @@ foreach(FUZZER IN LISTS FUZZER_BINARIES)
   target_include_directories("${BINARY}" PRIVATE "${CMAKE_SOURCE_DIR}")
   if(FUZZER STREQUAL djxl_fuzzer)
     target_link_libraries("${BINARY}"
-      jxl_dec-static
-      jxl_cms-static
-      jxl_threads-static
+      jxl_dec-internal
+      jxl_threads
     )
   elseif(FUZZER STREQUAL jpegli_dec_fuzzer)
     target_link_libraries("${BINARY}" jpegli-static)
   else()
     target_link_libraries("${BINARY}"
-      jxl_extras_nocodec-static
-      jxl_testlib-static
+      jxl_extras_nocodec-internal
+      jxl_testlib-internal
       jxl_tool
     )
   endif()
@@ -413,7 +413,6 @@ add_subdirectory(comparison_viewer)
 add_subdirectory(flicker_test)
 endif()
 
-add_subdirectory(box)
 add_subdirectory(conformance)
 add_subdirectory(wasm_demo)
 
@@ -427,7 +426,7 @@ if (JNI_FOUND AND Java_FOUND)
   # decoder_jni_onload.cc might be necessary for Android; not used yet.
   add_library(jxl_jni SHARED jni/org/jpeg/jpegxl/wrapper/decoder_jni.cc)
   target_include_directories(jxl_jni PRIVATE "${JNI_INCLUDE_DIRS}" "${PROJECT_SOURCE_DIR}")
-  target_link_libraries(jxl_jni PUBLIC jxl_dec-static jxl_cms-static jxl_threads-static)
+  target_link_libraries(jxl_jni PUBLIC jxl_dec-internal jxl_threads)
   if(NOT DEFINED JPEGXL_INSTALL_JNIDIR)
     set(JPEGXL_INSTALL_JNIDIR ${CMAKE_INSTALL_LIBDIR})
   endif()

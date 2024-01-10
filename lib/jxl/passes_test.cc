@@ -3,6 +3,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <jxl/cms.h>
 #include <stddef.h>
 
 #include <future>
@@ -14,7 +15,6 @@
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/span.h"
-#include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
@@ -171,8 +171,7 @@ TEST(PassesTest, AllDownsampleFeasible) {
   cparams.speed_tier = SpeedTier::kSquirrel;
   cparams.progressive_mode = true;
   cparams.butteraugli_distance = 1.0;
-  PassesEncoderState enc_state;
-  ASSERT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed, &pool));
+  ASSERT_TRUE(test::EncodeFile(cparams, &io, &compressed, &pool));
 
   EXPECT_LE(compressed.size(), 240000u);
   float target_butteraugli[9] = {};
@@ -217,8 +216,7 @@ TEST(PassesTest, AllDownsampleFeasibleQProgressive) {
   cparams.speed_tier = SpeedTier::kSquirrel;
   cparams.qprogressive_mode = true;
   cparams.butteraugli_distance = 1.0;
-  PassesEncoderState enc_state;
-  ASSERT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed, &pool));
+  ASSERT_TRUE(test::EncodeFile(cparams, &io, &compressed, &pool));
 
   EXPECT_LE(compressed.size(), 220000u);
 
@@ -273,8 +271,7 @@ TEST(PassesTest, ProgressiveDownsample2DegradesCorrectlyGrayscale) {
   cparams.responsive = true;
   cparams.qprogressive_mode = true;
   cparams.butteraugli_distance = 1.0;
-  PassesEncoderState enc_state;
-  ASSERT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed, &pool));
+  ASSERT_TRUE(test::EncodeFile(cparams, &io, &compressed, &pool));
 
   EXPECT_LE(compressed.size(), 10000u);
 
@@ -317,8 +314,7 @@ TEST(PassesTest, ProgressiveDownsample2DegradesCorrectly) {
   cparams.responsive = true;
   cparams.qprogressive_mode = true;
   cparams.butteraugli_distance = 1.0;
-  PassesEncoderState enc_state;
-  ASSERT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed, &pool));
+  ASSERT_TRUE(test::EncodeFile(cparams, &io, &compressed, &pool));
 
   EXPECT_LE(compressed.size(), 220000u);
 
@@ -352,8 +348,7 @@ TEST(PassesTest, NonProgressiveDCImage) {
   cparams.speed_tier = SpeedTier::kSquirrel;
   cparams.progressive_mode = false;
   cparams.butteraugli_distance = 2.0;
-  PassesEncoderState enc_state;
-  ASSERT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed, &pool));
+  ASSERT_TRUE(test::EncodeFile(cparams, &io, &compressed, &pool));
 
   // Even in non-progressive mode, it should be possible to return a DC-only
   // image.

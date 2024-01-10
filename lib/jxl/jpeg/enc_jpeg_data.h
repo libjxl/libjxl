@@ -9,8 +9,10 @@
 #include <cstdint>
 #include <vector>
 
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/enc_params.h"
+#include "lib/jxl/frame_header.h"
 #include "lib/jxl/jpeg/jpeg_data.h"
 
 namespace jxl {
@@ -23,6 +25,10 @@ Status EncodeJPEGData(JPEGData& jpeg_data, std::vector<uint8_t>* bytes,
 
 void SetColorEncodingFromJpegData(const jpeg::JPEGData& jpg,
                                   ColorEncoding* color_encoding);
+Status SetChromaSubsamplingFromJpegData(const JPEGData& jpg,
+                                        YCbCrChromaSubsampling* cs);
+Status SetColorTransformFromJpegData(const JPEGData& jpg,
+                                     ColorTransform* color_transform);
 
 /**
  * Decodes bytes containing JPEG codestream into a CodecInOut as coefficients

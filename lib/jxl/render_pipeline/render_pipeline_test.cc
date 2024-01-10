@@ -5,6 +5,8 @@
 
 #include "lib/jxl/render_pipeline/render_pipeline.h"
 
+#include <jxl/cms.h>
+
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
@@ -14,7 +16,6 @@
 #include "lib/extras/codec.h"
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/span.h"
-#include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/common.h"  // JXL_HIGH_PRECISION, JPEGXL_ENABLE_TRANSCODE_JPEG
 #include "lib/jxl/dec_frame.h"
@@ -22,6 +23,7 @@
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/fake_parallel_runner_testonly.h"
 #include "lib/jxl/frame_dimensions.h"
+#include "lib/jxl/frame_header.h"
 #include "lib/jxl/icc_codec.h"
 #include "lib/jxl/image_test_utils.h"
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
@@ -55,21 +57,21 @@ Status DecodeFile(const Span<const uint8_t> file, bool use_slow_pipeline,
         dec_state.output_encoding_info.SetFromMetadata(io->metadata));
     JXL_RETURN_IF_ERROR(reader.JumpToByteBoundary());
     io->frames.clear();
+    FrameHeader frame_header(&io->metadata);
     do {
       io->frames.emplace_back(&io->metadata.m);
       // Skip frames that are not displayed.
       do {
         size_t frame_start = reader.TotalBitsConsumed() / kBitsPerByte;
         size_t size_left = file.size() - frame_start;
-        JXL_RETURN_IF_ERROR(
-            DecodeFrame(&dec_state, pool, file.data() + frame_start, size_left,
-                        &io->frames.back(), io->metadata, use_slow_pipeline));
+        JXL_RETURN_IF_ERROR(DecodeFrame(&dec_state, pool,
+                                        file.data() + frame_start, size_left,
+                                        &frame_header, &io->frames.back(),
+                                        io->metadata, use_slow_pipeline));
         reader.SkipBits(io->frames.back().decoded_bytes() * kBitsPerByte);
-      } while (dec_state.shared->frame_header.frame_type !=
-                   FrameType::kRegularFrame &&
-               dec_state.shared->frame_header.frame_type !=
-                   FrameType::kSkipProgressive);
-    } while (!dec_state.shared->frame_header.is_last);
+      } while (frame_header.frame_type != FrameType::kRegularFrame &&
+               frame_header.frame_type != FrameType::kSkipProgressive);
+    } while (!frame_header.is_last);
 
     if (io->frames.empty()) return JXL_FAILURE("Not enough data.");
 
@@ -218,10 +220,8 @@ TEST_P(RenderPipelineTestParam, PipelineTest) {
 
   std::vector<uint8_t> compressed;
 
-  PassesEncoderState enc_state;
-  enc_state.shared.image_features.splines = config.splines;
-  ASSERT_TRUE(
-      test::EncodeFile(config.cparams, &io, &enc_state, &compressed, &pool));
+  config.cparams.custom_splines = config.splines;
+  ASSERT_TRUE(test::EncodeFile(config.cparams, &io, &compressed, &pool));
 
   CodecInOut io_default;
   ASSERT_TRUE(DecodeFile(Bytes(compressed),

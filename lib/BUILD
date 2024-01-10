@@ -48,7 +48,6 @@ load(
     "libjxl_deps_hwy_nanobenchmark",
     "libjxl_deps_hwy_test_util",
     "libjxl_deps_jpeg",
-    "libjxl_deps_jxl_box",
     "libjxl_deps_png",
     "libjxl_deps_runfiles",
     "libjxl_deps_skcms",
@@ -199,7 +198,12 @@ cc_library(
     name = "jpegxl",
     srcs = libjxl_dec_sources + libjxl_dec_box_sources + libjxl_dec_jpeg_sources + libjxl_enc_sources + libjxl_cms_sources,
     compatible_with = DEFAULT_COMPATIBILITY,
-    defines = ["JPEGXL_ENABLE_SKCMS=1"],
+    defines = [
+        "JPEGXL_ENABLE_SKCMS=1",
+        "JPEGXL_MAJOR_VERSION=" + str(libjxl_major_version),
+        "JPEGXL_MINOR_VERSION=" + str(libjxl_minor_version),
+        "JPEGXL_PATCH_VERSION=" + str(libjxl_patch_version),
+    ],
     deps = [
         ":base",
         ":includes",
@@ -305,7 +309,7 @@ TESTS = [path.partition(".")[0] for path in libjxl_tests + libjxl_jpegli_tests]
             ":jpegxl_private",
             ":jpegxl_threads",
             ":test_utils",
-        ] + libjxl_deps_gtest + libjxl_deps_hwy_test_util + libjxl_deps_hwy_nanobenchmark + libjxl_deps_jxl_box,
+        ] + libjxl_deps_gtest + libjxl_deps_hwy_test_util + libjxl_deps_hwy_nanobenchmark,
     )
     for test in TESTS
 ]

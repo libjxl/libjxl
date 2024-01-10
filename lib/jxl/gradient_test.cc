@@ -3,6 +3,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <jxl/cms.h>
 #include <math.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -15,7 +16,6 @@
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/override.h"
-#include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/enc_cache.h"
@@ -158,8 +158,7 @@ void TestGradient(ThreadPool* pool, uint32_t color0, uint32_t color1,
   CodecInOut io2;
 
   std::vector<uint8_t> compressed;
-  PassesEncoderState enc_state;
-  EXPECT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed, pool));
+  EXPECT_TRUE(test::EncodeFile(cparams, &io, &compressed, pool));
   EXPECT_TRUE(test::DecodeFile({}, Bytes(compressed), &io2, pool));
   EXPECT_TRUE(io2.Main().TransformTo(io2.metadata.m.color_encoding,
                                      *JxlGetDefaultCms(), pool));

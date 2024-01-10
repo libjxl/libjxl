@@ -16,9 +16,9 @@
 
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/padded_bytes.h"
 
 namespace jxl {
 
@@ -58,15 +58,15 @@ struct BitWriter {
     return std::move(storage_);
   }
 
- private:
   // Must be byte-aligned before calling.
   void AppendByteAligned(const Span<const uint8_t>& span);
 
- public:
   // NOTE: no allotment needed, the other BitWriters have already been charged.
   void AppendByteAligned(const BitWriter& other);
   void AppendByteAligned(const std::vector<std::unique_ptr<BitWriter>>& others);
   void AppendByteAligned(const std::vector<BitWriter>& others);
+
+  void AppendUnaligned(const BitWriter& other);
 
   class Allotment {
    public:

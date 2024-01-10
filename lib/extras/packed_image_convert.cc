@@ -5,13 +5,13 @@
 
 #include "lib/extras/packed_image_convert.h"
 
+#include <jxl/cms.h>
 #include <jxl/color_encoding.h>
 #include <jxl/types.h>
 
 #include <cstdint>
 
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/dec_external_image.h"
 #include "lib/jxl/enc_external_image.h"
