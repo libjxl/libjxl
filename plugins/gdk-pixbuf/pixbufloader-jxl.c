@@ -305,7 +305,7 @@ static gpointer begin_load(GdkPixbufModuleSizeFunc size_func,
   if ((status = JxlDecoderSetCms(decoder_state->decoder, JxlGetDefaultCms())) !=
       JXL_DEC_SUCCESS) {
     g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED,
-                "JxlDecoderSetParallelRunner failed: %x", status);
+                "JxlDecoderSetCms failed: %x", status);
     goto cleanup;
   }
   if ((status = JxlDecoderSubscribeEvents(
