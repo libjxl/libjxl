@@ -136,7 +136,7 @@ let processChunk = (img, chunkLen) => {
     img.canvas.width = w;
     img.canvas.height = h;
     img.canvas.style = 'width:100%';
-    // TODO: postpone until really flushed
+    // TODO(eustas): postpone until really flushed
     document.body.appendChild(img.canvas);
     let ctxOptions = {colorSpace: img.colorSpace, pixelFormat: 'float16'};
     let pixelOptions = {colorSpace: img.colorSpace, storageFormat: 'uint16'};

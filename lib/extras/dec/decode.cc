@@ -22,37 +22,30 @@ namespace {
 // Any valid encoding is larger (ensures codecs can read the first few bytes)
 constexpr size_t kMinBytes = 9;
 
-void BasenameAndExtension(std::string path, std::string* basename,
-                          std::string* extension) {
-  // Pattern: file.jxl
+std::string GetExtension(const std::string& path) {
+  // Pattern: "name.png"
   size_t pos = path.find_last_of('.');
-  if (pos < path.size()) {
-    *basename = path.substr(0, pos);
-    *extension = path.substr(pos);
-    return;
+  if (pos != std::string::npos) {
+    return path.substr(pos);
   }
-  // Pattern: jxl:-
-  pos = path.find_first_of(':');
-  if (pos < path.size()) {
-    *basename = path.substr(pos + 1);
-    *extension = "." + path.substr(0, pos);
-    return;
-  }
+
   // Extension not found
-  *basename = path;
-  *extension = "";
+  return "";
 }
 
 }  // namespace
 
 Codec CodecFromPath(std::string path, size_t* JXL_RESTRICT bits_per_sample,
-                    std::string* basename, std::string* extension) {
+                    std::string* extension) {
   std::string base;
-  std::string ext;
-  BasenameAndExtension(path, &base, &ext);
-  if (basename) *basename = base;
-  if (extension) *extension = ext;
-
+  std::string ext = GetExtension(path);
+  if (extension) {
+    if (extension->empty()) {
+      *extension = ext;
+    } else {
+      ext = *extension;
+    }
+  }
   std::transform(ext.begin(), ext.end(), ext.begin(), [](char c) {
     return std::tolower(c, std::locale::classic());
   });

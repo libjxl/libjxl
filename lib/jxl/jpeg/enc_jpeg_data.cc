@@ -7,6 +7,7 @@
 
 #include <brotli/encode.h>
 
+#include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/enc_fields.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/jpeg/enc_jpeg_data_reader.h"
@@ -101,7 +102,7 @@ Status DetectBlobs(jpeg::JPEGData& jpeg_data) {
 }
 
 Status ParseChunkedMarker(const jpeg::JPEGData& src, uint8_t marker_type,
-                          const ByteSpan& tag, PaddedBytes* output,
+                          const ByteSpan& tag, IccBytes* output,
                           bool allow_permutations = false) {
   output->clear();
 
@@ -164,7 +165,7 @@ Status ParseChunkedMarker(const jpeg::JPEGData& src, uint8_t marker_type,
     if (!presence[index]) {
       return JXL_FAILURE("Missing chunk.");
     }
-    output->append(chunks[index]);
+    chunks[index].AppendTo(output);
   }
 
   return true;
@@ -215,9 +216,9 @@ static inline bool IsJPG(const Span<const uint8_t> bytes) {
 
 }  // namespace
 
-Status SetColorEncodingFromJpegData(const jpeg::JPEGData& jpg,
-                                    ColorEncoding* color_encoding) {
-  PaddedBytes icc_profile;
+void SetColorEncodingFromJpegData(const jpeg::JPEGData& jpg,
+                                  ColorEncoding* color_encoding) {
+  IccBytes icc_profile;
   if (!ParseChunkedMarker(jpg, kApp2, ByteSpan(kIccProfileTag), &icc_profile)) {
     JXL_WARNING("ReJPEG: corrupted ICC profile\n");
     icc_profile.clear();
@@ -226,27 +227,87 @@ Status SetColorEncodingFromJpegData(const jpeg::JPEGData& jpg,
   if (icc_profile.empty()) {
     bool is_gray = (jpg.components.size() == 1);
     *color_encoding = ColorEncoding::SRGB(is_gray);
-    return true;
+  } else {
+    color_encoding->SetICCRaw(std::move(icc_profile));
   }
-
-  return color_encoding->SetICC(std::move(icc_profile), /*cms=*/nullptr);
 }
 
-Status EncodeJPEGData(JPEGData& jpeg_data, PaddedBytes* bytes,
+Status SetChromaSubsamplingFromJpegData(const JPEGData& jpg,
+                                        YCbCrChromaSubsampling* cs) {
+  size_t nbcomp = jpg.components.size();
+  if (nbcomp != 1 && nbcomp != 3) {
+    return JXL_FAILURE("Cannot recompress JPEGs with neither 1 nor 3 channels");
+  }
+  if (nbcomp == 3) {
+    uint8_t hsample[3], vsample[3];
+    for (size_t i = 0; i < nbcomp; i++) {
+      hsample[i] = jpg.components[i].h_samp_factor;
+      vsample[i] = jpg.components[i].v_samp_factor;
+    }
+    JXL_RETURN_IF_ERROR(cs->Set(hsample, vsample));
+  } else if (nbcomp == 1) {
+    uint8_t hsample[3], vsample[3];
+    for (size_t i = 0; i < 3; i++) {
+      hsample[i] = jpg.components[0].h_samp_factor;
+      vsample[i] = jpg.components[0].v_samp_factor;
+    }
+    JXL_RETURN_IF_ERROR(cs->Set(hsample, vsample));
+  }
+  return true;
+}
+
+Status SetColorTransformFromJpegData(const JPEGData& jpg,
+                                     ColorTransform* color_transform) {
+  size_t nbcomp = jpg.components.size();
+  if (nbcomp != 1 && nbcomp != 3) {
+    return JXL_FAILURE("Cannot recompress JPEGs with neither 1 nor 3 channels");
+  }
+  bool is_rgb = false;
+  {
+    const auto& markers = jpg.marker_order;
+    // If there is a JFIF marker, this is YCbCr. Otherwise...
+    if (std::find(markers.begin(), markers.end(), 0xE0) == markers.end()) {
+      // Try to find an 'Adobe' marker.
+      size_t app_markers = 0;
+      size_t i = 0;
+      for (; i < markers.size(); i++) {
+        // This is an APP marker.
+        if ((markers[i] & 0xF0) == 0xE0) {
+          JXL_CHECK(app_markers < jpg.app_data.size());
+          // APP14 marker
+          if (markers[i] == 0xEE) {
+            const auto& data = jpg.app_data[app_markers];
+            if (data.size() == 15 && data[3] == 'A' && data[4] == 'd' &&
+                data[5] == 'o' && data[6] == 'b' && data[7] == 'e') {
+              // 'Adobe' marker.
+              is_rgb = data[14] == 0;
+              break;
+            }
+          }
+          app_markers++;
+        }
+      }
+
+      if (i == markers.size()) {
+        // No 'Adobe' marker, guess from component IDs.
+        is_rgb = nbcomp == 3 && jpg.components[0].id == 'R' &&
+                 jpg.components[1].id == 'G' && jpg.components[2].id == 'B';
+      }
+    }
+  }
+  *color_transform =
+      (!is_rgb || nbcomp == 1) ? ColorTransform::kYCbCr : ColorTransform::kNone;
+  return true;
+}
+
+Status EncodeJPEGData(JPEGData& jpeg_data, std::vector<uint8_t>* bytes,
                       const CompressParams& cparams) {
+  bytes->clear();
   jpeg_data.app_marker_type.resize(jpeg_data.app_data.size(),
                                    AppMarkerType::kUnknown);
   JXL_RETURN_IF_ERROR(DetectIccProfile(jpeg_data));
   JXL_RETURN_IF_ERROR(DetectBlobs(jpeg_data));
-  BitWriter writer;
-  JXL_RETURN_IF_ERROR(Bundle::Write(jpeg_data, &writer, 0, nullptr));
-  writer.ZeroPadToByte();
-  *bytes = std::move(writer).TakeBytes();
-  BrotliEncoderState* brotli_enc =
-      BrotliEncoderCreateInstance(nullptr, nullptr, nullptr);
-  int effort = cparams.brotli_effort;
-  if (effort < 0) effort = 11 - static_cast<int>(cparams.speed_tier);
-  BrotliEncoderSetParameter(brotli_enc, BROTLI_PARAM_QUALITY, effort);
+
   size_t total_data = 0;
   for (size_t i = 0; i < jpeg_data.app_data.size(); i++) {
     if (jpeg_data.app_marker_type[i] != AppMarkerType::kUnknown) {
@@ -261,10 +322,25 @@ Status EncodeJPEGData(JPEGData& jpeg_data, PaddedBytes* bytes,
     total_data += jpeg_data.inter_marker_data[i].size();
   }
   total_data += jpeg_data.tail_data.size();
-  size_t initial_size = bytes->size();
   size_t brotli_capacity = BrotliEncoderMaxCompressedSize(total_data);
+
+  BitWriter writer;
+  JXL_RETURN_IF_ERROR(Bundle::Write(jpeg_data, &writer, 0, nullptr));
+  writer.ZeroPadToByte();
+  {
+    PaddedBytes serialized_jpeg_data = std::move(writer).TakeBytes();
+    bytes->reserve(serialized_jpeg_data.size() + brotli_capacity);
+    Bytes(serialized_jpeg_data).AppendTo(bytes);
+  }
+
+  BrotliEncoderState* brotli_enc =
+      BrotliEncoderCreateInstance(nullptr, nullptr, nullptr);
+  int effort = cparams.brotli_effort;
+  if (effort < 0) effort = 11 - static_cast<int>(cparams.speed_tier);
+  BrotliEncoderSetParameter(brotli_enc, BROTLI_PARAM_QUALITY, effort);
+  size_t initial_size = bytes->size();
   BrotliEncoderSetParameter(brotli_enc, BROTLI_PARAM_SIZE_HINT, total_data);
-  bytes->resize(bytes->size() + brotli_capacity);
+  bytes->resize(initial_size + brotli_capacity);
   size_t enc_size = 0;
   auto br_append = [&](const std::vector<uint8_t>& data, bool last) {
     size_t available_in = data.size();
@@ -309,67 +385,12 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, CodecInOut* io) {
                       jpeg_data)) {
     return JXL_FAILURE("Error reading JPEG");
   }
-  JXL_RETURN_IF_ERROR(
-      SetColorEncodingFromJpegData(*jpeg_data, &io->metadata.m.color_encoding));
+  SetColorEncodingFromJpegData(*jpeg_data, &io->metadata.m.color_encoding);
   JXL_RETURN_IF_ERROR(SetBlobsFromJpegData(*jpeg_data, &io->blobs));
-  size_t nbcomp = jpeg_data->components.size();
-  if (nbcomp != 1 && nbcomp != 3) {
-    return JXL_FAILURE("Cannot recompress JPEGs with neither 1 nor 3 channels");
-  }
-  YCbCrChromaSubsampling cs;
-  if (nbcomp == 3) {
-    uint8_t hsample[3], vsample[3];
-    for (size_t i = 0; i < nbcomp; i++) {
-      hsample[i] = jpeg_data->components[i].h_samp_factor;
-      vsample[i] = jpeg_data->components[i].v_samp_factor;
-    }
-    JXL_RETURN_IF_ERROR(cs.Set(hsample, vsample));
-  } else if (nbcomp == 1) {
-    uint8_t hsample[3], vsample[3];
-    for (size_t i = 0; i < 3; i++) {
-      hsample[i] = jpeg_data->components[0].h_samp_factor;
-      vsample[i] = jpeg_data->components[0].v_samp_factor;
-    }
-    JXL_RETURN_IF_ERROR(cs.Set(hsample, vsample));
-  }
-  bool is_rgb = false;
-  {
-    const auto& markers = jpeg_data->marker_order;
-    // If there is a JFIF marker, this is YCbCr. Otherwise...
-    if (std::find(markers.begin(), markers.end(), 0xE0) == markers.end()) {
-      // Try to find an 'Adobe' marker.
-      size_t app_markers = 0;
-      size_t i = 0;
-      for (; i < markers.size(); i++) {
-        // This is an APP marker.
-        if ((markers[i] & 0xF0) == 0xE0) {
-          JXL_CHECK(app_markers < jpeg_data->app_data.size());
-          // APP14 marker
-          if (markers[i] == 0xEE) {
-            const auto& data = jpeg_data->app_data[app_markers];
-            if (data.size() == 15 && data[3] == 'A' && data[4] == 'd' &&
-                data[5] == 'o' && data[6] == 'b' && data[7] == 'e') {
-              // 'Adobe' marker.
-              is_rgb = data[14] == 0;
-              break;
-            }
-          }
-          app_markers++;
-        }
-      }
-
-      if (i == markers.size()) {
-        // No 'Adobe' marker, guess from component IDs.
-        is_rgb = nbcomp == 3 && jpeg_data->components[0].id == 'R' &&
-                 jpeg_data->components[1].id == 'G' &&
-                 jpeg_data->components[2].id == 'B';
-      }
-    }
-  }
-
-  io->Main().chroma_subsampling = cs;
-  io->Main().color_transform =
-      (!is_rgb || nbcomp == 1) ? ColorTransform::kYCbCr : ColorTransform::kNone;
+  JXL_RETURN_IF_ERROR(SetChromaSubsamplingFromJpegData(
+      *jpeg_data, &io->Main().chroma_subsampling));
+  JXL_RETURN_IF_ERROR(
+      SetColorTransformFromJpegData(*jpeg_data, &io->Main().color_transform));
 
   io->metadata.m.SetIntensityTarget(kDefaultIntensityTarget);
   io->metadata.m.SetUintSamples(BITS_IN_JSAMPLE);

@@ -5,13 +5,13 @@
 
 #include "lib/extras/enc/jpegli.h"
 
+#include <jxl/cms.h>
 #include <jxl/codestream_header.h>
 #include <setjmp.h>
 #include <stdint.h>
 
 #include "lib/extras/enc/encode.h"
 #include "lib/jpegli/encode.h"
-#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_xyb.h"
 
 namespace jxl {
@@ -48,15 +48,14 @@ Status VerifyInput(const PackedPixelFile& ppf) {
   return true;
 }
 
-Status GetColorEncoding(const PackedPixelFile& ppf, const JxlCmsInterface* cms,
+Status GetColorEncoding(const PackedPixelFile& ppf,
                         ColorEncoding* color_encoding) {
   if (!ppf.icc.empty()) {
-    PaddedBytes icc;
-    icc.assign(ppf.icc.data(), ppf.icc.data() + ppf.icc.size());
-    JXL_RETURN_IF_ERROR(color_encoding->SetICC(std::move(icc), cms));
+    IccBytes icc = ppf.icc;
+    JXL_RETURN_IF_ERROR(
+        color_encoding->SetICC(std::move(icc), JxlGetDefaultCms()));
   } else {
-    JXL_RETURN_IF_ERROR(ConvertExternalToInternalColorEncoding(
-        ppf.color_encoding, color_encoding));
+    JXL_RETURN_IF_ERROR(color_encoding->FromExternal(ppf.color_encoding));
   }
   if (color_encoding->ICC().empty()) {
     return JXL_FAILURE("Invalid color encoding.");
@@ -326,12 +325,10 @@ Status EncodeJpeg(const PackedPixelFile& ppf, const JpegSettings& jpeg_settings,
   }
   JXL_RETURN_IF_ERROR(VerifyInput(ppf));
 
-  const JxlCmsInterface& cms = GetJxlCms();
-
   ColorEncoding color_encoding;
-  JXL_RETURN_IF_ERROR(GetColorEncoding(ppf, &cms, &color_encoding));
+  JXL_RETURN_IF_ERROR(GetColorEncoding(ppf, &color_encoding));
 
-  ColorSpaceTransform c_transform(cms);
+  ColorSpaceTransform c_transform(*JxlGetDefaultCms());
   ColorEncoding xyb_encoding;
   if (jpeg_settings.xyb) {
     if (ppf.info.num_color_channels != 3) {
@@ -344,7 +341,7 @@ Status EncodeJpeg(const PackedPixelFile& ppf, const JpegSettings& jpeg_settings,
     JXL_RETURN_IF_ERROR(
         c_transform.Init(color_encoding, c_desired, 255.0f, ppf.info.xsize, 1));
     xyb_encoding.SetColorSpace(jxl::ColorSpace::kXYB);
-    xyb_encoding.rendering_intent = jxl::RenderingIntent::kPerceptual;
+    xyb_encoding.SetRenderingIntent(jxl::RenderingIntent::kPerceptual);
     JXL_RETURN_IF_ERROR(xyb_encoding.CreateICC());
   }
   const ColorEncoding& output_encoding =

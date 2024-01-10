@@ -7,8 +7,8 @@
 
 #include <stdint.h>
 
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/coeff_order.h"
-#include "lib/jxl/common.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_coeff_order.h"
 #include "lib/jxl/field_encodings.h"
@@ -17,14 +17,14 @@
 
 namespace jxl {
 Status WriteGroupOffsets(const std::vector<BitWriter>& group_codes,
-                         const std::vector<coeff_order_t>* permutation,
+                         const std::vector<coeff_order_t>& permutation,
                          BitWriter* JXL_RESTRICT writer, AuxOut* aux_out) {
   BitWriter::Allotment allotment(writer, MaxBits(group_codes.size()));
-  if (permutation && !group_codes.empty()) {
+  if (!permutation.empty() && !group_codes.empty()) {
     // Don't write a permutation at all for an empty group_codes.
     writer->Write(1, 1);  // permutation
-    JXL_DASSERT(permutation->size() == group_codes.size());
-    EncodePermutation(permutation->data(), /*skip=*/0, permutation->size(),
+    JXL_DASSERT(permutation.size() == group_codes.size());
+    EncodePermutation(permutation.data(), /*skip=*/0, permutation.size(),
                       writer, /* layer= */ 0, aux_out);
 
   } else {

@@ -28,15 +28,13 @@
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/enc_ans.h"
-#include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_cache.h"
-#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_external_image.h"
-#include "lib/jxl/enc_file.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/encode_internal.h"
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
+#include "lib/jxl/test_utils.h"  // TODO(eustas): cut this dependency
 #include "tools/file_io.h"
 #include "tools/thread_pool_internal.h"
 
@@ -235,8 +233,8 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
                                           /*bits_per_sample=*/8, &jpeg_bytes,
                                           /*pool=*/nullptr));
     JXL_RETURN_IF_ERROR(jxl::jpeg::DecodeImageJPG(
-        jxl::Span<const uint8_t>(jpeg_bytes.data(), jpeg_bytes.size()), &io));
-    jxl::PaddedBytes jpeg_data;
+        jxl::Bytes(jpeg_bytes.data(), jpeg_bytes.size()), &io));
+    std::vector<uint8_t> jpeg_data;
     JXL_RETURN_IF_ERROR(
         EncodeJPEGData(*io.Main().jpeg_data, &jpeg_data, params));
     std::vector<uint8_t> header;
@@ -244,8 +242,7 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
                   jxl::kContainerHeader.end());
     jxl::AppendBoxHeader(jxl::MakeBoxType("jbrd"), jpeg_data.size(), false,
                          &header);
-    header.insert(header.end(), jpeg_data.data(),
-                  jpeg_data.data() + jpeg_data.size());
+    jxl::Bytes(jpeg_data).AppendTo(&header);
     jxl::AppendBoxHeader(jxl::MakeBoxType("jxlc"), 0, true, &header);
     compressed.append(header);
   }
@@ -258,13 +255,9 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
   if (spec.params.preview) params.preview = jxl::Override::kOn;
   if (spec.params.noise) params.noise = jxl::Override::kOn;
 
-  jxl::AuxOut aux_out;
-  jxl::PassesEncoderState passes_encoder_state;
   // EncodeFile replaces output; pass a temporary storage for it.
-  jxl::PaddedBytes compressed_image;
-  bool ok =
-      jxl::EncodeFile(params, &io, &passes_encoder_state, &compressed_image,
-                      jxl::GetJxlCms(), &aux_out, nullptr);
+  std::vector<uint8_t> compressed_image;
+  bool ok = jxl::test::EncodeFile(params, &io, &compressed_image);
   if (!ok) return false;
   compressed.append(compressed_image);
 

@@ -3,13 +3,13 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <jxl/cms.h>
 #include <stdio.h>
 #include <stdlib.h>
 
 #include "lib/extras/codec.h"
 #include "lib/extras/tone_mapping.h"
 #include "lib/jxl/convolve.h"
-#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_gamma_correct.h"
 #include "lib/jxl/image_bundle.h"
 #include "tools/args.h"
@@ -22,6 +22,58 @@ namespace {
 constexpr WeightsSeparable5 kPyramidFilter = {
     {HWY_REP4(.375f), HWY_REP4(.25f), HWY_REP4(.0625f)},
     {HWY_REP4(.375f), HWY_REP4(.25f), HWY_REP4(.0625f)}};
+
+template <typename Tin, typename Tout>
+void Subtract(const Image3<Tin>& image1, const Image3<Tin>& image2,
+              Image3<Tout>* out) {
+  const size_t xsize = image1.xsize();
+  const size_t ysize = image1.ysize();
+  JXL_CHECK(xsize == image2.xsize());
+  JXL_CHECK(ysize == image2.ysize());
+
+  for (size_t c = 0; c < 3; ++c) {
+    for (size_t y = 0; y < ysize; ++y) {
+      const Tin* const JXL_RESTRICT row1 = image1.ConstPlaneRow(c, y);
+      const Tin* const JXL_RESTRICT row2 = image2.ConstPlaneRow(c, y);
+      Tout* const JXL_RESTRICT row_out = out->PlaneRow(c, y);
+      for (size_t x = 0; x < xsize; ++x) {
+        row_out[x] = row1[x] - row2[x];
+      }
+    }
+  }
+}
+
+// Adds `what` of the size of `rect` to `to` in the position of `rect`.
+template <typename Tin, typename Tout>
+void AddTo(const Rect& rect, const Image3<Tin>& what, Image3<Tout>* to) {
+  const size_t xsize = what.xsize();
+  const size_t ysize = what.ysize();
+  JXL_ASSERT(xsize == rect.xsize());
+  JXL_ASSERT(ysize == rect.ysize());
+  for (size_t c = 0; c < 3; ++c) {
+    for (size_t y = 0; y < ysize; ++y) {
+      const Tin* JXL_RESTRICT row_what = what.ConstPlaneRow(c, y);
+      Tout* JXL_RESTRICT row_to = rect.PlaneRow(to, c, y);
+      for (size_t x = 0; x < xsize; ++x) {
+        row_to[x] += row_what[x];
+      }
+    }
+  }
+}
+
+template <typename T>
+Plane<T> Product(const Plane<T>& a, const Plane<T>& b) {
+  Plane<T> c(a.xsize(), a.ysize());
+  for (size_t y = 0; y < a.ysize(); ++y) {
+    const T* const JXL_RESTRICT row_a = a.Row(y);
+    const T* const JXL_RESTRICT row_b = b.Row(y);
+    T* const JXL_RESTRICT row_c = c.Row(y);
+    for (size_t x = 0; x < a.xsize(); ++x) {
+      row_c[x] = row_a[x] * row_b[x];
+    }
+  }
+  return c;
+}
 
 // Expects sRGB input.
 // Will call consumer(x, y, contrast) for each pixel.
@@ -437,8 +489,7 @@ int main(int argc, const char** argv) {
   color_hints.Add("color_space", "RGB_D65_202_Rel_PeQ");
   std::vector<uint8_t> encoded;
   JXL_CHECK(jpegxl::tools::ReadFile(input_filename, &encoded));
-  JXL_CHECK(jxl::SetFromBytes(jxl::Span<const uint8_t>(encoded), color_hints,
-                              &image, &pool));
+  JXL_CHECK(jxl::SetFromBytes(jxl::Bytes(encoded), color_hints, &image, &pool));
 
   if (max_nits > 0) {
     image.metadata.m.SetIntensityTarget(max_nits);
@@ -454,7 +505,7 @@ int main(int argc, const char** argv) {
     CopyImageTo(*image.Main().color(), &color);
     sRGB_image.SetFromImage(std::move(color), image.Main().c_current());
     JXL_CHECK(sRGB_image.Main().TransformTo(jxl::ColorEncoding::SRGB(),
-                                            jxl::GetJxlCms(), &pool));
+                                            *JxlGetDefaultCms(), &pool));
     input_images.push_back(std::move(*sRGB_image.Main().color()));
   }
 
@@ -470,7 +521,7 @@ int main(int argc, const char** argv) {
     JXL_CHECK(jxl::ToneMapTo({0, target}, &tone_mapped_image, &pool));
     JXL_CHECK(jxl::GamutMap(&tone_mapped_image, preserve_saturation, &pool));
     JXL_CHECK(tone_mapped_image.Main().TransformTo(jxl::ColorEncoding::SRGB(),
-                                                   jxl::GetJxlCms(), &pool));
+                                                   *JxlGetDefaultCms(), &pool));
     input_images.push_back(std::move(*tone_mapped_image.Main().color()));
   }
 

@@ -20,7 +20,8 @@
 #include <hwy/highway.h>
 
 #include "lib/jxl/ac_context.h"
-#include "lib/jxl/fast_math-inl.h"
+#include "lib/jxl/base/fast_math-inl.h"
+#include "lib/jxl/enc_ans.h"
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
@@ -81,11 +82,40 @@ float HistogramDistance(const Histogram& a, const Histogram& b) {
   return total_distance - a.entropy_ - b.entropy_;
 }
 
+constexpr const float kInfinity = std::numeric_limits<float>::infinity();
+
+float HistogramKLDivergence(const Histogram& actual, const Histogram& coding) {
+  if (actual.total_count_ == 0) return 0;
+  if (coding.total_count_ == 0) return kInfinity;
+
+  const HWY_CAPPED(float, Histogram::kRounding) df;
+  const HWY_CAPPED(int32_t, Histogram::kRounding) di;
+
+  const auto coding_inv = Set(df, 1.0f / coding.total_count_);
+  auto cost_lanes = Zero(df);
+
+  for (size_t i = 0; i < actual.data_.size(); i += Lanes(di)) {
+    const auto counts = LoadU(di, &actual.data_[i]);
+    const auto coding_counts =
+        coding.data_.size() > i ? LoadU(di, &coding.data_[i]) : Zero(di);
+    const auto coding_probs = Mul(ConvertTo(df, coding_counts), coding_inv);
+    const auto neg_coding_cost = BitCast(
+        df,
+        IfThenZeroElse(Eq(counts, Zero(di)),
+                       IfThenElse(Eq(coding_counts, Zero(di)),
+                                  BitCast(di, Set(df, -kInfinity)),
+                                  BitCast(di, FastLog2f(df, coding_probs)))));
+    cost_lanes = NegMulAdd(ConvertTo(df, counts), neg_coding_cost, cost_lanes);
+  }
+  const float total_cost = GetLane(SumOfLanes(df, cost_lanes));
+  return total_cost - actual.entropy_;
+}
+
 // First step of a k-means clustering with a fancy distance metric.
 void FastClusterHistograms(const std::vector<Histogram>& in,
                            size_t max_histograms, std::vector<Histogram>* out,
                            std::vector<uint32_t>* histogram_symbols) {
-  out->clear();
+  const size_t prev_histograms = out->size();
   out->reserve(max_histograms);
   histogram_symbols->clear();
   histogram_symbols->resize(in.size(), max_histograms);
@@ -101,6 +131,22 @@ void FastClusterHistograms(const std::vector<Histogram>& in,
     HistogramEntropy(in[i]);
     if (in[i].total_count_ > in[largest_idx].total_count_) {
       largest_idx = i;
+    }
+  }
+
+  if (prev_histograms > 0) {
+    for (size_t j = 0; j < prev_histograms; ++j) {
+      HistogramEntropy((*out)[j]);
+    }
+    for (size_t i = 0; i < in.size(); i++) {
+      if (dists[i] == 0.0f) continue;
+      for (size_t j = 0; j < prev_histograms; ++j) {
+        dists[i] = std::min(HistogramKLDivergence(in[i], (*out)[j]), dists[i]);
+      }
+    }
+    auto max_dist = std::max_element(dists.begin(), dists.end());
+    if (*max_dist > 0.0f) {
+      largest_idx = max_dist - dists.begin();
     }
   }
 
@@ -121,16 +167,20 @@ void FastClusterHistograms(const std::vector<Histogram>& in,
   for (size_t i = 0; i < in.size(); i++) {
     if ((*histogram_symbols)[i] != max_histograms) continue;
     size_t best = 0;
-    float best_dist = HistogramDistance(in[i], (*out)[best]);
-    for (size_t j = 1; j < out->size(); j++) {
-      float dist = HistogramDistance(in[i], (*out)[j]);
+    float best_dist = std::numeric_limits<float>::max();
+    for (size_t j = 0; j < out->size(); j++) {
+      float dist = j < prev_histograms ? HistogramKLDivergence(in[i], (*out)[j])
+                                       : HistogramDistance(in[i], (*out)[j]);
       if (dist < best_dist) {
         best = j;
         best_dist = dist;
       }
     }
-    (*out)[best].AddHistogram(in[i]);
-    HistogramEntropy((*out)[best]);
+    JXL_ASSERT(best_dist < std::numeric_limits<float>::max());
+    if (best >= prev_histograms) {
+      (*out)[best].AddHistogram(in[i]);
+      HistogramEntropy((*out)[best]);
+    }
     (*histogram_symbols)[i] = best;
   }
 }
@@ -145,6 +195,10 @@ namespace jxl {
 HWY_EXPORT(FastClusterHistograms);  // Local function
 HWY_EXPORT(HistogramEntropy);       // Local function
 
+float Histogram::PopulationCost() const {
+  return ANSPopulationCost(data_.data(), data_.size());
+}
+
 float Histogram::ShannonEntropy() const {
   HWY_DYNAMIC_DISPATCH(HistogramEntropy)(*this);
   return entropy_;
@@ -156,11 +210,14 @@ namespace {
 
 // Reorder histograms in *out so that the new symbols in *symbols come in
 // increasing order.
-void HistogramReindex(std::vector<Histogram>* out,
+void HistogramReindex(std::vector<Histogram>* out, size_t prev_histograms,
                       std::vector<uint32_t>* symbols) {
   std::vector<Histogram> tmp(*out);
   std::map<int, int> new_index;
-  int next_index = 0;
+  for (size_t i = 0; i < prev_histograms; ++i) {
+    new_index[i] = i;
+  }
+  int next_index = prev_histograms;
   for (uint32_t symbol : *symbols) {
     if (new_index.find(symbol) == new_index.end()) {
       new_index[symbol] = next_index;
@@ -183,6 +240,7 @@ void ClusterHistograms(const HistogramParams params,
                        const std::vector<Histogram>& in, size_t max_histograms,
                        std::vector<Histogram>* out,
                        std::vector<uint32_t>* histogram_symbols) {
+  size_t prev_histograms = out->size();
   max_histograms = std::min(max_histograms, params.max_histograms);
   max_histograms = std::min(max_histograms, in.size());
   if (params.clustering == HistogramParams::ClusteringType::kFastest) {
@@ -190,9 +248,10 @@ void ClusterHistograms(const HistogramParams params,
   }
 
   HWY_DYNAMIC_DISPATCH(FastClusterHistograms)
-  (in, max_histograms, out, histogram_symbols);
+  (in, prev_histograms + max_histograms, out, histogram_symbols);
 
-  if (params.clustering == HistogramParams::ClusteringType::kBest) {
+  if (prev_histograms == 0 &&
+      params.clustering == HistogramParams::ClusteringType::kBest) {
     for (size_t i = 0; i < out->size(); i++) {
       (*out)[i].entropy_ =
           ANSPopulationCost((*out)[i].data_.data(), (*out)[i].data_.size());
@@ -286,7 +345,7 @@ void ClusterHistograms(const HistogramParams params,
   }
 
   // Convert the context map to a canonical form.
-  HistogramReindex(out, histogram_symbols);
+  HistogramReindex(out, prev_histograms, histogram_symbols);
 }
 
 }  // namespace jxl

@@ -14,11 +14,11 @@
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/coeff_order.h"
 #include "lib/jxl/coeff_order_fwd.h"
-#include "lib/jxl/common.h"
 #include "lib/jxl/dct_util.h"
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_params.h"
+#include "lib/jxl/frame_dimensions.h"
 
 namespace jxl {
 
@@ -34,8 +34,10 @@ std::pair<uint32_t, uint32_t> ComputeUsedOrders(
 // permutation will be cheaper to encode.
 void ComputeCoeffOrder(SpeedTier speed, const ACImage& acs,
                        const AcStrategyImage& ac_strategy,
-                       const FrameDimensions& frame_dim, uint32_t& used_orders,
-                       uint16_t used_acs, coeff_order_t* JXL_RESTRICT order);
+                       const FrameDimensions& frame_dim,
+                       uint32_t& all_used_orders, uint32_t prev_used_acs,
+                       uint32_t current_used_acs, uint32_t current_used_orders,
+                       coeff_order_t* JXL_RESTRICT order);
 
 void EncodeCoeffOrders(uint16_t used_orders,
                        const coeff_order_t* JXL_RESTRICT order,

@@ -7,6 +7,7 @@
 
 name: Conformance
 on:
+  merge_group:
   push:
     branches:
       - main
@@ -18,8 +19,9 @@ permissions:
   contents: read
 
 env:
-  LIBJXL_VERSION: 0.9.0
-  LIBJXL_ABI_VERSION: 0.9
+  CONFORMANCE_REPO_HASH: ee6008ef151489a5330cd886b422af8f6ed58881
+  LIBJXL_VERSION: "0.10.0"
+  LIBJXL_ABI_VERSION: "0.10"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
@@ -30,15 +32,19 @@ jobs:
     name: Warmup caches
     runs-on: ubuntu-latest
     steps:
+    - name: Harden Runner
+      uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
+      with:
+        egress-policy: audit
+
     - name: Checkout the conformance source
-      uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+      uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       with:
         repository: libjxl/conformance
-        # TODO(eustas): move ref to a global variable / file?
-        ref: b2be0d8dcba40cc4a53fb4a15b78f59636192892
+        ref: ${{ env.CONFORMANCE_REPO_HASH }}
         path: conformance
     - name: Cache
-      uses: actions/cache@88522ab9f39a2ea568f7027eddc7d8d8bc9d59c8 # v3.3.1
+      uses: actions/cache@704facf57e6136b1bc63b828d79edcd491f0ee84 # v3.3.2
       with:
         path: ${{ github.workspace }}/conformance/.objects
         key: conformance-refs
@@ -71,6 +77,11 @@ jobs:
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
     steps:
+    - name: Harden Runner
+      uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
+      with:
+        egress-policy: audit
+
     - name: Install build deps
       run: |
         sudo rm -f /var/lib/man-db/auto-update
@@ -100,7 +111,7 @@ jobs:
         echo "CC=clang" >> $GITHUB_ENV
         echo "CXX=clang++" >> $GITHUB_ENV
     - name: Checkout the jxl source
-      uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+      uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       with:
         submodules: true
         fetch-depth: 2
@@ -110,7 +121,7 @@ jobs:
         echo "parent=$(git rev-parse ${{ github.sha }}^)" >> $GITHUB_OUTPUT
       shell: bash
     - name: ccache
-      uses: actions/cache@88522ab9f39a2ea568f7027eddc7d8d8bc9d59c8 # v3.3.1
+      uses: actions/cache@704facf57e6136b1bc63b828d79edcd491f0ee84 # v3.3.2
       with:
         path: ${{ env.CCACHE_DIR }}
         # When the cache hits the key it is not updated, so if this is a rebuild
@@ -134,12 +145,13 @@ jobs:
         cp tools/conformance/conformance.py build/tools/conformance
         cp tools/conformance/lcms2.py build/tools/conformance
         cp build/tools/djxl build/tools/conformance
-        cp build/libjxl.so.${{ env.LIBJXL_VERSION }} build/tools/conformance
-        cp build/libjxl_threads.so.${{ env.LIBJXL_VERSION }} build/tools/conformance
-        cp build/libjxl_extras_codec.so.${{ env.LIBJXL_VERSION }} build/tools/conformance
+        cp build/lib/libjxl.so.${{ env.LIBJXL_VERSION }} build/tools/conformance
+        cp build/lib/libjxl_cms.so.${{ env.LIBJXL_VERSION }} build/tools/conformance
+        cp build/lib/libjxl_threads.so.${{ env.LIBJXL_VERSION }} build/tools/conformance
+        cp build/lib/libjxl_extras_codec.so.${{ env.LIBJXL_VERSION }} build/tools/conformance
       env:
         SKIP_TEST: 1
-    - uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
+    - uses: actions/upload-artifact@c7d193f32edcb7bfad88892161225aeda64e9392 # v4.0.0
       with:
         name: conformance_binary-${{ matrix.name }}
         path: |
@@ -147,6 +159,7 @@ jobs:
           build/tools/conformance/lcms2.py
           build/tools/conformance/djxl
           build/tools/conformance/libjxl.so.${{ env.LIBJXL_VERSION }}
+          build/tools/conformance/libjxl_cms.so.${{ env.LIBJXL_VERSION }}
           build/tools/conformance/libjxl_threads.so.${{ env.LIBJXL_VERSION }}
           build/tools/conformance/libjxl_extras_codec.so.${{ env.LIBJXL_VERSION }}
     - name: ccache stats
@@ -162,30 +175,36 @@ jobs:
         name: [main_level5, main_level10]
         target: [AVX3, AVX2, SSE4, SSSE3, EMU128, SCALAR, SCALAR_ASAN]
     steps:
+    - name: Harden Runner
+      uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
+      with:
+        egress-policy: audit
+
     - name: Install deps
       run: |
         pip install numpy
     - name: Checkout the conformance source
-      uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+      uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       with:
         repository: libjxl/conformance
-        ref: b2be0d8dcba40cc4a53fb4a15b78f59636192892
+        ref: ${{ env.CONFORMANCE_REPO_HASH }}
         path: conformance
     - name: Cache
-      uses: actions/cache@88522ab9f39a2ea568f7027eddc7d8d8bc9d59c8 # v3.3.1
+      uses: actions/cache@704facf57e6136b1bc63b828d79edcd491f0ee84 # v3.3.2
       with:
         path: ${{ github.workspace }}/conformance/.objects
         key: conformance-refs
     - name: Download and link conformance files
       run: |
         ${{ github.workspace }}/conformance/scripts/download_and_symlink.sh
-    - uses: actions/download-artifact@9bc31d5ccc31df68ecc42ccf4149144866c47d8a # v3.0.2
+    - uses: actions/download-artifact@f44cd7b40bfd40b6aa1cc1b9b5b7bf03d3c67110 # v4.1.0
       with:
         name: conformance_binary-${{ matrix.target }}
     - name: Run conformance tests
       run: |
         chmod +x djxl
         ln -s libjxl.so.${{ env.LIBJXL_VERSION }} libjxl.so.${{ env.LIBJXL_ABI_VERSION }}
+        ln -s libjxl_cms.so.${{ env.LIBJXL_VERSION }} libjxl_cms.so.${{ env.LIBJXL_ABI_VERSION }}
         ln -s libjxl_threads.so.${{ env.LIBJXL_VERSION }} libjxl_threads.so.${{ env.LIBJXL_ABI_VERSION }}
         ln -s libjxl_extras_codec.so.${{ env.LIBJXL_VERSION }} libjxl_extras_codec.so.${{ env.LIBJXL_ABI_VERSION }}
         export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:`pwd`

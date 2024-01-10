@@ -5,6 +5,7 @@
 
 #include <stdint.h>
 
+#include "lib/jxl/dec_ans.h"
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/headers.h"
@@ -19,11 +20,11 @@ namespace jpegxl {
 namespace tools {
 
 using ::jxl::BitReader;
+using ::jxl::Bytes;
 using ::jxl::CodecMetadata;
 using ::jxl::CustomTransformData;
 using ::jxl::ImageMetadata;
 using ::jxl::SizeHeader;
-using ::jxl::Span;
 
 int TestOneInput(const uint8_t* data, size_t size) {
   // Global parameters used by some headers.
@@ -31,7 +32,7 @@ int TestOneInput(const uint8_t* data, size_t size) {
 
   // First byte controls which header to parse.
   if (size == 0) return 0;
-  BitReader reader(Span<const uint8_t>(data + 1, size - 1));
+  BitReader reader(Bytes(data + 1, size - 1));
 #define FUZZER_CASE_HEADER(number, classname, ...) \
   case number: {                                   \
     ::jxl::classname header{__VA_ARGS__};          \

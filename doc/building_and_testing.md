@@ -87,9 +87,9 @@ Linter checks will verify that the format of your patch conforms to the project
 style. For this, we run clang-format only on the lines that were changed by
 your commits.
 
-If your local git branch is tracking `origin/master` and you landed a few
+If your local git branch is tracking `origin/main` and you landed a few
 commits in your branch, running this lint command will check all the changes
-made from the common ancestor with `origin/master` to the latest changes,
+made from the common ancestor with `origin/main` to the latest changes,
 including uncommitted changes. The output of the program will show the patch
 that should be applied to fix your commits. You can apply these changes with the
 following command from the base directory of the git checkout:

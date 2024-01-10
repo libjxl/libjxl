@@ -24,7 +24,6 @@
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/coeff_order.h"
 #include "lib/jxl/coeff_order_fwd.h"
-#include "lib/jxl/common.h"
 #include "lib/jxl/dec_ans.h"
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/dec_context_map.h"
@@ -32,6 +31,7 @@
 #include "lib/jxl/epf.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_ops.h"
+#include "lib/jxl/pack_signed.h"
 
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
@@ -164,10 +164,9 @@ void TokenizeCoefficients(const coeff_order_t* JXL_RESTRICT orders,
                           const BlockCtxMap& block_ctx_map) {
   const size_t xsize_blocks = rect.xsize();
   const size_t ysize_blocks = rect.ysize();
-
+  output->clear();
   // TODO(user): update the estimate: usually less coefficients are used.
-  output->reserve(output->size() +
-                  3 * xsize_blocks * ysize_blocks * kDCTBlockSize);
+  output->reserve(3 * xsize_blocks * ysize_blocks * kDCTBlockSize);
 
   size_t offset[3] = {};
   const size_t nzeros_stride = tmp_num_nzeroes->PixelsPerRow();

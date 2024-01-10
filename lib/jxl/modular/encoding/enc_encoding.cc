@@ -14,9 +14,9 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/common.h"
 #include "lib/jxl/dec_ans.h"
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/enc_ans.h"
@@ -33,6 +33,7 @@
 #include "lib/jxl/modular/encoding/ma_common.h"
 #include "lib/jxl/modular/options.h"
 #include "lib/jxl/modular/transform/transform.h"
+#include "lib/jxl/pack_signed.h"
 #include "lib/jxl/toc.h"
 
 namespace jxl {
@@ -460,11 +461,12 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
       std::vector<uint32_t> channel_pixel_count;
       CollectPixelSamples(image, options, 0, group_pixel_count,
                           channel_pixel_count, pixel_samples, diff_samples);
-      std::vector<ModularMultiplierInfo> dummy_multiplier_info;
+      std::vector<ModularMultiplierInfo> placeholder_multiplier_info;
       StaticPropRange range;
       tree_samples_storage.PreQuantizeProperties(
-          range, dummy_multiplier_info, group_pixel_count, channel_pixel_count,
-          pixel_samples, diff_samples, options.max_property_values);
+          range, placeholder_multiplier_info, group_pixel_count,
+          channel_pixel_count, pixel_samples, diff_samples,
+          options.max_property_values);
     }
     for (size_t i = 0; i < nb_channels; i++) {
       if (!image.channel[i].w || !image.channel[i].h) {
@@ -511,7 +513,7 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
     BuildAndEncodeHistograms(HistogramParams(), kNumTreeContexts, tree_tokens,
                              &code, &context_map, writer, kLayerModularTree,
                              aux_out);
-    WriteTokens(tree_tokens[0], code, context_map, writer, kLayerModularTree,
+    WriteTokens(tree_tokens[0], code, context_map, 0, writer, kLayerModularTree,
                 aux_out);
   }
 
@@ -560,7 +562,8 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
     BuildAndEncodeHistograms(histo_params, (tree->size() + 1) / 2,
                              tokens_storage, &code, &context_map, writer, layer,
                              aux_out);
-    WriteTokens(tokens_storage[0], code, context_map, writer, layer, aux_out);
+    WriteTokens(tokens_storage[0], code, context_map, 0, writer, layer,
+                aux_out);
   } else {
     *width = image_width;
   }

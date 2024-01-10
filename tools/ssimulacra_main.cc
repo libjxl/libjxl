@@ -6,8 +6,10 @@
 #include <stdio.h>
 
 #include "lib/extras/codec.h"
-#include "lib/jxl/color_management.h"
-#include "lib/jxl/enc_color_management.h"
+// TODO(eustas): we should, but we can't?
+// #include "lib/jxl/base/span.h"
+#include <jxl/cms.h>
+
 #include "lib/jxl/image_bundle.h"
 #include "tools/file_io.h"
 #include "tools/ssimulacra.h"
@@ -39,15 +41,15 @@ int Run(int argc, char** argv) {
   for (size_t i = 0; i < 2; ++i) {
     std::vector<uint8_t> encoded;
     JXL_CHECK(jpegxl::tools::ReadFile(argv[input_arg + i], &encoded));
-    JXL_CHECK(jxl::SetFromBytes(jxl::Span<const uint8_t>(encoded),
-                                jxl::extras::ColorHints(), &io[i]));
+    JXL_CHECK(jxl::SetFromBytes(jxl::Bytes(encoded), jxl::extras::ColorHints(),
+                                &io[i]));
   }
   jxl::ImageBundle& ib1 = io[0].Main();
   jxl::ImageBundle& ib2 = io[1].Main();
   JXL_CHECK(ib1.TransformTo(jxl::ColorEncoding::LinearSRGB(ib1.IsGray()),
-                            jxl::GetJxlCms(), nullptr));
+                            *JxlGetDefaultCms(), nullptr));
   JXL_CHECK(ib2.TransformTo(jxl::ColorEncoding::LinearSRGB(ib2.IsGray()),
-                            jxl::GetJxlCms(), nullptr));
+                            *JxlGetDefaultCms(), nullptr));
   jxl::Image3F& img1 = *ib1.color();
   jxl::Image3F& img2 = *ib2.color();
   if (img1.xsize() != img2.xsize() || img1.ysize() != img2.ysize()) {

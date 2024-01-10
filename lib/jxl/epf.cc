@@ -21,7 +21,6 @@
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/common.h"
 #include "lib/jxl/convolve.h"
 #include "lib/jxl/dec_cache.h"
 #include "lib/jxl/image.h"
@@ -47,8 +46,8 @@ JXL_INLINE void RightMirror(float* p, size_t n) {
   }
 }
 
-void ComputeSigma(const Rect& block_rect, PassesDecoderState* state) {
-  const LoopFilter& lf = state->shared->frame_header.loop_filter;
+void ComputeSigma(const LoopFilter& lf, const Rect& block_rect,
+                  PassesDecoderState* state) {
   JXL_CHECK(lf.epf_iters > 0);
   const AcStrategyImage& ac_strategy = state->shared->ac_strategy;
   const float quant_scale = state->shared->quantizer.Scale();

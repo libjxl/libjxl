@@ -35,9 +35,9 @@ int TestOneInput(const uint8_t* data, size_t size) {
   // the ICC parsing.
   if (read) {
     // Reading parses the compressed format.
-    BitReader br(Span<const uint8_t>(data, size));
-    PaddedBytes result;
-    (void)jxl::ReadICC(&br, &result);
+    BitReader br(Bytes(data, size));
+    std::vector<uint8_t> result;
+    (void)jxl::test::ReadICC(&br, &result);
     (void)br.Close();
   } else {
     // Writing parses the original ICC profile.

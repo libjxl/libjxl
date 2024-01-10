@@ -10,10 +10,9 @@
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 
-#include "lib/jxl/dec_tone_mapping-inl.h"
+#include "lib/jxl/cms/tone_mapping-inl.h"
 #include "lib/jxl/dec_xyb-inl.h"
 #include "lib/jxl/sanitizers.h"
-#include "lib/jxl/transfer_functions-inl.h"
 
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
@@ -29,9 +28,10 @@ class ToneMappingStage : public RenderPipelineStage {
       // No tone mapping requested.
       return;
     }
-    if (output_encoding_info_.orig_color_encoding.tf.IsPQ() &&
-        output_encoding_info_.desired_intensity_target <
-            output_encoding_info_.orig_intensity_target) {
+    const auto& orig_tf = output_encoding_info_.orig_color_encoding.Tf();
+    const auto& dest_tf = output_encoding_info_.color_encoding.Tf();
+    if (orig_tf.IsPQ() && output_encoding_info_.desired_intensity_target <
+                              output_encoding_info_.orig_intensity_target) {
       tone_mapper_ = jxl::make_unique<ToneMapper>(
           /*source_range=*/std::pair<float, float>(
               0, output_encoding_info_.orig_intensity_target),
@@ -39,16 +39,14 @@ class ToneMappingStage : public RenderPipelineStage {
           std::pair<float, float>(
               0, output_encoding_info_.desired_intensity_target),
           output_encoding_info_.luminances);
-    } else if (output_encoding_info_.orig_color_encoding.tf.IsHLG() &&
-               !output_encoding_info_.color_encoding.tf.IsHLG()) {
+    } else if (orig_tf.IsHLG() && !dest_tf.IsHLG()) {
       hlg_ootf_ = jxl::make_unique<HlgOOTF>(
           /*source_luminance=*/output_encoding_info_.orig_intensity_target,
           /*target_luminance=*/output_encoding_info_.desired_intensity_target,
           output_encoding_info_.luminances);
     }
 
-    if (output_encoding_info_.color_encoding.tf.IsPQ() &&
-        (tone_mapper_ || hlg_ootf_)) {
+    if (dest_tf.IsPQ() && (tone_mapper_ || hlg_ootf_)) {
       to_intensity_target_ =
           10000.f / output_encoding_info_.orig_intensity_target;
       from_desired_intensity_target_ =

@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file.
 #include "tools/benchmark/benchmark_codec_webp.h"
 
+#include <jxl/cms.h>
 #include <stdint.h>
 #include <string.h>
 #include <webp/decode.h>
@@ -15,11 +16,10 @@
 #include "lib/extras/time.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
-#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/span.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/dec_external_image.h"
-#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_image_bundle.h"
 #include "lib/jxl/image.h"
@@ -104,8 +104,8 @@ class WebPCodec : public ImageCodec {
     ImageBundle store(&metadata);
     const ImageBundle* transformed;
     const ColorEncoding& c_desired = ColorEncoding::SRGB(false);
-    JXL_RETURN_IF_ERROR(jxl::TransformIfNeeded(ib, c_desired, jxl::GetJxlCms(),
-                                               pool, &store, &transformed));
+    JXL_RETURN_IF_ERROR(jxl::TransformIfNeeded(
+        ib, c_desired, *JxlGetDefaultCms(), pool, &store, &transformed));
     size_t xsize = ib.oriented_xsize();
     size_t ysize = ib.oriented_ysize();
     size_t stride = xsize * num_chans;
@@ -231,7 +231,9 @@ class WebPCodec : public ImageCodec {
                           std::vector<uint8_t>* compressed) {
     compressed->clear();
     WebPConfig config;
-    WebPConfigInit(&config);
+    if (!WebPConfigInit(&config)) {
+      return JXL_FAILURE("WebPConfigInit failed");
+    }
     JXL_ASSERT(!lossless_ || !near_lossless_);  // can't have both
     config.lossless = lossless_;
     config.quality = quality;
@@ -246,7 +248,9 @@ class WebPCodec : public ImageCodec {
     JXL_CHECK(WebPValidateConfig(&config));
 
     WebPPicture pic;
-    WebPPictureInit(&pic);
+    if (!WebPPictureInit(&pic)) {
+      return JXL_FAILURE("WebPPictureInit failed");
+    }
     pic.width = static_cast<int>(xsize);
     pic.height = static_cast<int>(ysize);
     pic.writer = &WebPStringWrite;
@@ -254,9 +258,13 @@ class WebPCodec : public ImageCodec {
     pic.custom_ptr = compressed;
 
     if (num_chans == 3) {
-      WebPPictureImportRGB(&pic, srgb.data(), 3 * xsize);
+      if (!WebPPictureImportRGB(&pic, srgb.data(), 3 * xsize)) {
+        return JXL_FAILURE("WebPPictureImportRGB failed");
+      }
     } else {
-      WebPPictureImportRGBA(&pic, srgb.data(), 4 * xsize);
+      if (!WebPPictureImportRGBA(&pic, srgb.data(), 4 * xsize)) {
+        return JXL_FAILURE("WebPPictureImportRGBA failed");
+      }
     }
 
     // WebP encoding may fail, for example, if the image is more than 16384

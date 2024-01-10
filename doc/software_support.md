@@ -31,6 +31,7 @@ For all browsers and to track browsers progress see [Can I Use](https://caniuse.
 - [FFmpeg](https://github.com/FFmpeg/FFmpeg/search?q=jpeg-xl&type=commits)
 - [GDAL](https://gdal.org/drivers/raster/jpegxl.html): supported since 3.4.0 as a TIFF codec, and 3.6.0 as standalone format
 - [GraphicsMagick](http://www.graphicsmagick.org/NEWS.html#march-26-2022): supported since 1.3.38
+- [SAIL](https://sail.software): supported since 0.9.0
 
 ## OS-level support / UI frameworks / file browser plugins
 
@@ -57,18 +58,25 @@ For all browsers and to track browsers progress see [Can I Use](https://caniuse.
 
 ## Image viewers
 
-- [XnView](https://www.xnview.com/en/)
+- [Aspect](https://aspect.bildhuus.com)
 - [ImageGlass](https://imageglass.org/)
 - [IrfanView](https://www.irfanview.com/); supported since 4.59 - requires a [plugin](https://www.irfanview.com/plugins.htm) to be downloaded and enabled.
+- [jpegview](https://github.com/sylikc/jpegview/releases)
+- [Swayimg](https://github.com/artemsen/swayimg)
 - [Tachiyomi](https://github.com/tachiyomiorg/tachiyomi/releases/tag/v0.12.1)
+- [XnView](https://www.xnview.com/en/)
 - Any viewer based on Qt, KDE, GDK-pixbuf, EFL, ImageMagick, libvips or imlib2 (see above)
   - Qt viewers: gwenview, digiKam, KolourPaint, KPhotoAlbum, LXImage-Qt, qimgv, qView, nomacs, VookiImageViewer, PhotoQt
   - GTK viewers: Eye of Gnome (eog), gThumb, Geeqie
   - EFL viewers: entice, ephoto
-- [Swayimg](https://github.com/artemsen/swayimg)
+ 
+## Duplicate image finders
+
+- [AntiDupl.NET](https://github.com/ermig1979/AntiDupl/releases)
 
 ## Online tools
 
+- [Gumlet](https://www.gumlet.com/blog/jpeg-xl/)
 - [Squoosh](https://squoosh.app/)
 - [Cloudinary](https://cloudinary.com/blog/cloudinary_supports_jpeg_xl)
 - [MConverter](https://mconverter.eu/)

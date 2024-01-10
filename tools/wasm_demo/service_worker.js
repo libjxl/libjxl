@@ -89,7 +89,7 @@
 
   // Decode JXL image response and serve it as a PNG image.
   const wrapImageResponse = async (clientId, originalResponse) => {
-    // TODO: cache?
+    // TODO(eustas): cache?
     const client = await clients.get(clientId);
     // Client is gone? Not our problem then.
     if (!client) {

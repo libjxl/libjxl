@@ -30,9 +30,10 @@ namespace jxl {
 
 struct AuxOut;
 
-namespace {
-void FindBestBlockEntropyModel(PassesEncoderState& enc_state) {
-  if (enc_state.cparams.decoding_speed_tier >= 1) {
+void FindBestBlockEntropyModel(const CompressParams& cparams, const ImageI& rqf,
+                               const AcStrategyImage& ac_strategy,
+                               BlockCtxMap* block_ctx_map) {
+  if (cparams.decoding_speed_tier >= 1) {
     static constexpr uint8_t kSimpleCtxMap[] = {
         // Cluster all blocks together
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  //
@@ -43,20 +44,18 @@ void FindBestBlockEntropyModel(PassesEncoderState& enc_state) {
         3 * kNumOrders == sizeof(kSimpleCtxMap) / sizeof *kSimpleCtxMap,
         "Update simple context map");
 
-    auto bcm = enc_state.shared.block_ctx_map;
+    auto bcm = *block_ctx_map;
     bcm.ctx_map.assign(std::begin(kSimpleCtxMap), std::end(kSimpleCtxMap));
     bcm.num_ctxs = 2;
     bcm.num_dc_ctxs = 1;
     return;
   }
-  if (enc_state.cparams.speed_tier >= SpeedTier::kFalcon) {
+  if (cparams.speed_tier >= SpeedTier::kFalcon) {
     return;
   }
-  const ImageI& rqf = enc_state.shared.raw_quant_field;
   // No need to change context modeling for small images.
   size_t tot = rqf.xsize() * rqf.ysize();
-  size_t size_for_ctx_model =
-      (1 << 10) * enc_state.cparams.butteraugli_distance;
+  size_t size_for_ctx_model = (1 << 10) * cparams.butteraugli_distance;
   if (tot < size_for_ctx_model) return;
 
   struct OccCounters {
@@ -80,14 +79,13 @@ void FindBestBlockEntropyModel(PassesEncoderState& enc_state) {
     size_t ord_counts[kNumOrders] = {};
   };
   // The OccCounters struct is too big to allocate on the stack.
-  std::unique_ptr<OccCounters> counters(
-      new OccCounters(rqf, enc_state.shared.ac_strategy));
+  std::unique_ptr<OccCounters> counters(new OccCounters(rqf, ac_strategy));
 
   // Splitting the context model according to the quantization field seems to
   // mostly benefit only large images.
-  size_t size_for_qf_split = (1 << 13) * enc_state.cparams.butteraugli_distance;
+  size_t size_for_qf_split = (1 << 13) * cparams.butteraugli_distance;
   size_t num_qf_segments = tot < size_for_qf_split ? 1 : 2;
-  std::vector<uint32_t>& qft = enc_state.shared.block_ctx_map.qf_thresholds;
+  std::vector<uint32_t>& qft = block_ctx_map->qf_thresholds;
   qft.clear();
   // Divide the quant field in up to num_qf_segments segments.
   size_t cumsum = 0;
@@ -154,7 +152,7 @@ void FindBestBlockEntropyModel(PassesEncoderState& enc_state) {
     remap[i] = remap_remap[remap[i]];
   }
   // Write the block context map.
-  auto& ctx_map = enc_state.shared.block_ctx_map.ctx_map;
+  auto& ctx_map = block_ctx_map->ctx_map;
   ctx_map = remap;
   ctx_map.resize(remap.size() * 3);
   // for chroma, only use up to nb_clusters_chroma separate block contexts
@@ -163,14 +161,13 @@ void FindBestBlockEntropyModel(PassesEncoderState& enc_state) {
     ctx_map[i] = num + Clamp1((int)remap[i % remap.size()], 0,
                               (int)nb_clusters_chroma - 1);
   }
-  enc_state.shared.block_ctx_map.num_ctxs =
+  block_ctx_map->num_ctxs =
       *std::max_element(ctx_map.begin(), ctx_map.end()) + 1;
 }
 
-}  // namespace
+namespace {
 
 void FindBestDequantMatrices(const CompressParams& cparams,
-                             const Image3F& opsin,
                              ModularFrameEncoder* modular_frame_encoder,
                              DequantMatrices* dequant_matrices) {
   // TODO(veluca): quant matrices for no-gaborish.
@@ -192,16 +189,6 @@ void FindBestDequantMatrices(const CompressParams& cparams,
     DequantMatricesSetCustomDC(dequant_matrices, dc_weights);
   }
 }
-
-bool DefaultEncoderHeuristics::HandlesColorConversion(
-    const CompressParams& cparams, const ImageBundle& ib) {
-  return cparams.noise != Override::kOn && cparams.patches != Override::kOn &&
-         cparams.speed_tier >= SpeedTier::kWombat && cparams.resampling == 1 &&
-         cparams.color_transform == ColorTransform::kXYB &&
-         !cparams.modular_mode && !ib.HasAlpha();
-}
-
-namespace {
 
 void StoreMin2(const float v, float& min1, float& min2) {
   if (v < min2) {
@@ -371,6 +358,8 @@ void DownsampleImage2_Sharper(const ImageF& input, ImageF* output) {
   }
 }
 
+}  // namespace
+
 void DownsampleImage2_Sharper(Image3F* opsin) {
   // Allocate extra space to avoid a reallocation when padding.
   Image3F downsampled(DivCeil(opsin->xsize(), 2) + kBlockDim,
@@ -383,6 +372,8 @@ void DownsampleImage2_Sharper(Image3F* opsin) {
   }
   *opsin = std::move(downsampled);
 }
+
+namespace {
 
 // The default upsampling kernels used by Upsampler in the decoder.
 static const constexpr int64_t kSize = 5;
@@ -678,6 +669,8 @@ void DownsampleImage2_Iterative(const ImageF& orig, ImageF* output) {
   }
 }
 
+}  // namespace
+
 void DownsampleImage2_Iterative(Image3F* opsin) {
   // Allocate extra space to avoid a reallocation when padding.
   Image3F downsampled(DivCeil(opsin->xsize(), 2) + kBlockDim,
@@ -686,7 +679,7 @@ void DownsampleImage2_Iterative(Image3F* opsin) {
                        downsampled.ysize() - kBlockDim);
 
   Image3F rgb(opsin->xsize(), opsin->ysize());
-  OpsinParams opsin_params;  // TODO: use the ones that are actually used
+  OpsinParams opsin_params;  // TODO(user): use the ones that are actually used
   opsin_params.Init(kDefaultIntensityTarget);
   OpsinToLinear(*opsin, Rect(rgb), nullptr, &rgb, opsin_params);
 
@@ -701,96 +694,55 @@ void DownsampleImage2_Iterative(Image3F* opsin) {
   }
   *opsin = std::move(downsampled);
 }
-}  // namespace
 
-Status DefaultEncoderHeuristics::LossyFrameHeuristics(
-    PassesEncoderState* enc_state, ModularFrameEncoder* modular_frame_encoder,
-    const ImageBundle* original_pixels, Image3F* opsin,
-    const JxlCmsInterface& cms, ThreadPool* pool, AuxOut* aux_out) {
-  CompressParams& cparams = enc_state->cparams;
+Status LossyFrameHeuristics(const FrameHeader& frame_header,
+                            PassesEncoderState* enc_state,
+                            ModularFrameEncoder* modular_frame_encoder,
+                            const Image3F* original_pixels, Image3F* opsin,
+                            const Rect& rect, const JxlCmsInterface& cms,
+                            ThreadPool* pool, AuxOut* aux_out) {
+  const CompressParams& cparams = enc_state->cparams;
+  const bool streaming_mode = enc_state->streaming_mode;
+  const bool initialize_global_state = enc_state->initialize_global_state;
   PassesSharedState& shared = enc_state->shared;
-
-  // Compute parameters for noise synthesis.
-  if (shared.frame_header.flags & FrameHeader::kNoise) {
-    if (cparams.photon_noise_iso == 0) {
-      // Don't start at zero amplitude since adding noise is expensive -- it
-      // significantly slows down decoding, and this is unlikely to
-      // completely go away even with advanced optimizations. After the
-      // kNoiseModelingRampUpDistanceRange we have reached the full level,
-      // i.e. noise is no longer represented by the compressed image, so we
-      // can add full noise by the noise modeling itself.
-      static const float kNoiseModelingRampUpDistanceRange = 0.6;
-      static const float kNoiseLevelAtStartOfRampUp = 0.25;
-      static const float kNoiseRampupStart = 1.0;
-      // TODO(user) test and properly select quality_coef with smooth
-      // filter
-      float quality_coef = 1.0f;
-      const float rampup = (cparams.butteraugli_distance - kNoiseRampupStart) /
-                           kNoiseModelingRampUpDistanceRange;
-      if (rampup < 1.0f) {
-        quality_coef = kNoiseLevelAtStartOfRampUp +
-                       (1.0f - kNoiseLevelAtStartOfRampUp) * rampup;
-      }
-      if (rampup < 0.0f) {
-        quality_coef = kNoiseRampupStart;
-      }
-      if (!GetNoiseParameter(*opsin, &shared.image_features.noise_params,
-                             quality_coef)) {
-        shared.frame_header.flags &= ~FrameHeader::kNoise;
-      }
-    }
-  }
-  if (enc_state->shared.frame_header.upsampling != 1 &&
-      !cparams.already_downsampled) {
-    // In VarDCT mode, LossyFrameHeuristics takes care of running downsampling
-    // after noise, if necessary.
-    if (cparams.resampling == 2) {
-      // TODO(lode): use the regular DownsampleImage, or adapt to the custom
-      // coefficients, if there is are custom upscaling coefficients in
-      // CustomTransformData
-      if (cparams.speed_tier <= SpeedTier::kSquirrel) {
-        // TODO(lode): DownsampleImage2_Iterative is currently too slow to
-        // be used for squirrel, make it faster, and / or enable it only for
-        // kitten.
-        DownsampleImage2_Iterative(opsin);
-      } else {
-        DownsampleImage2_Sharper(opsin);
-      }
-    } else {
-      DownsampleImage(opsin, cparams.resampling);
-    }
-    PadImageToBlockMultipleInPlace(opsin);
-  }
-
-  if (cparams.butteraugli_distance < 0) {
-    return JXL_FAILURE("Expected non-negative distance");
-  }
+  const FrameDimensions& frame_dim = shared.frame_dim;
+  ImageFeatures& image_features = shared.image_features;
+  DequantMatrices& matrices = shared.matrices;
+  Quantizer& quantizer = shared.quantizer;
+  ImageI& raw_quant_field = shared.raw_quant_field;
+  ColorCorrelationMap& cmap = shared.cmap;
+  AcStrategyImage& ac_strategy = shared.ac_strategy;
+  ImageB& epf_sharpness = shared.epf_sharpness;
+  BlockCtxMap& block_ctx_map = shared.block_ctx_map;
 
   // Find and subtract splines.
-  if (cparams.speed_tier <= SpeedTier::kSquirrel) {
-    // If we do already have them, they were passed upstream to EncodeFile.
-    if (!shared.image_features.splines.HasAny()) {
-      shared.image_features.splines = FindSplines(*opsin);
+  if (!streaming_mode && cparams.speed_tier <= SpeedTier::kSquirrel) {
+    if (cparams.custom_splines.HasAny()) {
+      image_features.splines = cparams.custom_splines;
+    } else {
+      image_features.splines = FindSplines(*opsin);
     }
-    JXL_RETURN_IF_ERROR(shared.image_features.splines.InitializeDrawCache(
-        opsin->xsize(), opsin->ysize(), shared.cmap));
-    shared.image_features.splines.SubtractFrom(opsin);
+    JXL_RETURN_IF_ERROR(image_features.splines.InitializeDrawCache(
+        opsin->xsize(), opsin->ysize(), cmap));
+    image_features.splines.SubtractFrom(opsin);
   }
 
   // Find and subtract patches/dots.
-  if (ApplyOverride(cparams.patches,
+  if (!streaming_mode &&
+      ApplyOverride(cparams.patches,
                     cparams.speed_tier <= SpeedTier::kSquirrel)) {
     FindBestPatchDictionary(*opsin, enc_state, cms, pool, aux_out);
-    PatchDictionaryEncoder::SubtractFrom(shared.image_features.patches, opsin);
+    PatchDictionaryEncoder::SubtractFrom(image_features.patches, opsin);
   }
 
   static const float kAcQuant = 0.79f;
   const float quant_dc = InitialQuantDC(cparams.butteraugli_distance);
-  Quantizer& quantizer = enc_state->shared.quantizer;
   // We don't know the quant field yet, but for computing the global scale
   // assuming that it will be the same as for Falcon mode is good enough.
-  quantizer.ComputeGlobalScaleAndQuant(
-      quant_dc, kAcQuant / cparams.butteraugli_distance, 0);
+  if (initialize_global_state) {
+    quantizer.ComputeGlobalScaleAndQuant(
+        quant_dc, kAcQuant / cparams.butteraugli_distance, 0);
+  }
 
   // TODO(veluca): we can now run all the code from here to FindBestQuantizer
   // (excluded) one rect at a time. Do that.
@@ -812,115 +764,109 @@ Status DefaultEncoderHeuristics::LossyFrameHeuristics(
   // output: Gaborished XYB, CfL, ACS, raw quant field, EPF control field.
 
   ArControlFieldHeuristics ar_heuristics;
-  AcStrategyHeuristics acs_heuristics;
+  AcStrategyHeuristics acs_heuristics(cparams);
   CfLHeuristics cfl_heuristics;
-
-  if (!opsin->xsize()) {
-    JXL_ASSERT(HandlesColorConversion(cparams, *original_pixels));
-    *opsin = Image3F(RoundUpToBlockDim(original_pixels->xsize()),
-                     RoundUpToBlockDim(original_pixels->ysize()));
-    opsin->ShrinkTo(original_pixels->xsize(), original_pixels->ysize());
-    ToXYB(*original_pixels, pool, opsin, cms, /*linear=*/nullptr);
-    PadImageToBlockMultipleInPlace(opsin);
-  }
+  ImageF initial_quant_field;
+  ImageF initial_quant_masking;
+  ImageF initial_quant_masking1x1;
 
   // Compute an initial estimate of the quantization field.
   // Call InitialQuantField only in Hare mode or slower. Otherwise, rely
   // on simple heuristics in FindBestAcStrategy, or set a constant for Falcon
   // mode.
   if (cparams.speed_tier > SpeedTier::kHare) {
-    enc_state->initial_quant_field =
-        ImageF(shared.frame_dim.xsize_blocks, shared.frame_dim.ysize_blocks);
-    enc_state->initial_quant_masking =
-        ImageF(shared.frame_dim.xsize_blocks, shared.frame_dim.ysize_blocks);
+    initial_quant_field =
+        ImageF(frame_dim.xsize_blocks, frame_dim.ysize_blocks);
+    initial_quant_masking =
+        ImageF(frame_dim.xsize_blocks, frame_dim.ysize_blocks);
     float q = kAcQuant / cparams.butteraugli_distance;
-    FillImage(q, &enc_state->initial_quant_field);
-    FillImage(1.0f / (q + 0.001f), &enc_state->initial_quant_masking);
+    FillImage(q, &initial_quant_field);
+    FillImage(1.0f / (q + 0.001f), &initial_quant_masking);
   } else {
     // Call this here, as it relies on pre-gaborish values.
     float butteraugli_distance_for_iqf = cparams.butteraugli_distance;
-    if (!shared.frame_header.loop_filter.gab) {
+    if (!frame_header.loop_filter.gab) {
       butteraugli_distance_for_iqf *= 0.73f;
     }
-    enc_state->initial_quant_field = InitialQuantField(
-        butteraugli_distance_for_iqf, *opsin, shared.frame_dim, pool, 1.0f,
-        &enc_state->initial_quant_masking);
-    quantizer.SetQuantField(quant_dc, enc_state->initial_quant_field, nullptr);
+    initial_quant_field = InitialQuantField(
+        butteraugli_distance_for_iqf, *opsin, rect, pool, 1.0f,
+        &initial_quant_masking, &initial_quant_masking1x1);
+    if (initialize_global_state) {
+      quantizer.SetQuantField(quant_dc, initial_quant_field, nullptr);
+    }
   }
 
   // TODO(veluca): do something about animations.
 
   // Apply inverse-gaborish.
-  if (shared.frame_header.loop_filter.gab) {
+  if (frame_header.loop_filter.gab) {
     // Unsure why better to do some more gaborish on X and B than Y.
     float weight[3] = {
         1.0036278514398933f,
         0.99406123118127299f,
         0.99719338015886894f,
     };
-    GaborishInverse(opsin, weight, pool);
+    GaborishInverse(opsin, rect, weight, pool);
   }
 
-  FindBestDequantMatrices(cparams, *opsin, modular_frame_encoder,
-                          &enc_state->shared.matrices);
+  if (initialize_global_state) {
+    FindBestDequantMatrices(cparams, modular_frame_encoder, &matrices);
+  }
 
-  cfl_heuristics.Init(*opsin);
-  acs_heuristics.Init(*opsin, enc_state);
+  cfl_heuristics.Init(rect);
+  acs_heuristics.Init(*opsin, rect, initial_quant_field, initial_quant_masking,
+                      initial_quant_masking1x1, &matrices);
 
   auto process_tile = [&](const uint32_t tid, const size_t thread) {
-    size_t n_enc_tiles =
-        DivCeil(enc_state->shared.frame_dim.xsize_blocks, kEncTileDimInBlocks);
+    size_t n_enc_tiles = DivCeil(frame_dim.xsize_blocks, kEncTileDimInBlocks);
     size_t tx = tid % n_enc_tiles;
     size_t ty = tid / n_enc_tiles;
     size_t by0 = ty * kEncTileDimInBlocks;
-    size_t by1 = std::min((ty + 1) * kEncTileDimInBlocks,
-                          enc_state->shared.frame_dim.ysize_blocks);
+    size_t by1 =
+        std::min((ty + 1) * kEncTileDimInBlocks, frame_dim.ysize_blocks);
     size_t bx0 = tx * kEncTileDimInBlocks;
-    size_t bx1 = std::min((tx + 1) * kEncTileDimInBlocks,
-                          enc_state->shared.frame_dim.xsize_blocks);
+    size_t bx1 =
+        std::min((tx + 1) * kEncTileDimInBlocks, frame_dim.xsize_blocks);
     Rect r(bx0, by0, bx1 - bx0, by1 - by0);
 
     // For speeds up to Wombat, we only compute the color correlation map
     // once we know the transform type and the quantization map.
     if (cparams.speed_tier <= SpeedTier::kSquirrel) {
-      cfl_heuristics.ComputeTile(r, *opsin, enc_state->shared.matrices,
+      cfl_heuristics.ComputeTile(r, *opsin, rect, matrices,
                                  /*ac_strategy=*/nullptr,
                                  /*raw_quant_field=*/nullptr,
                                  /*quantizer=*/nullptr, /*fast=*/false, thread,
-                                 &enc_state->shared.cmap);
+                                 &cmap);
     }
 
     // Choose block sizes.
-    acs_heuristics.ProcessRect(r);
+    acs_heuristics.ProcessRect(r, cmap, &ac_strategy);
 
     // Choose amount of post-processing smoothing.
     // TODO(veluca): should this go *after* AdjustQuantField?
-    ar_heuristics.RunRect(r, *opsin, enc_state, thread);
+    ar_heuristics.RunRect(cparams, frame_header, r, *opsin, rect,
+                          initial_quant_field, ac_strategy, &epf_sharpness,
+                          thread);
 
     // Always set the initial quant field, so we can compute the CfL map with
     // more accuracy. The initial quant field might change in slower modes, but
     // adjusting the quant field with butteraugli when all the other encoding
     // parameters are fixed is likely a more reliable choice anyway.
-    AdjustQuantField(enc_state->shared.ac_strategy, r,
-                     cparams.butteraugli_distance,
-                     &enc_state->initial_quant_field);
-    quantizer.SetQuantFieldRect(enc_state->initial_quant_field, r,
-                                &enc_state->shared.raw_quant_field);
+    AdjustQuantField(ac_strategy, r, cparams.butteraugli_distance,
+                     &initial_quant_field);
+    quantizer.SetQuantFieldRect(initial_quant_field, r, &raw_quant_field);
 
     // Compute a non-default CfL map if we are at Hare speed, or slower.
     if (cparams.speed_tier <= SpeedTier::kHare) {
       cfl_heuristics.ComputeTile(
-          r, *opsin, enc_state->shared.matrices, &enc_state->shared.ac_strategy,
-          &enc_state->shared.raw_quant_field, &enc_state->shared.quantizer,
-          /*fast=*/cparams.speed_tier >= SpeedTier::kWombat, thread,
-          &enc_state->shared.cmap);
+          r, *opsin, rect, matrices, &ac_strategy, &raw_quant_field, &quantizer,
+          /*fast=*/cparams.speed_tier >= SpeedTier::kWombat, thread, &cmap);
     }
   };
   JXL_RETURN_IF_ERROR(RunOnPool(
       pool, 0,
-      DivCeil(enc_state->shared.frame_dim.xsize_blocks, kEncTileDimInBlocks) *
-          DivCeil(enc_state->shared.frame_dim.ysize_blocks,
-                  kEncTileDimInBlocks),
+      DivCeil(frame_dim.xsize_blocks, kEncTileDimInBlocks) *
+          DivCeil(frame_dim.ysize_blocks, kEncTileDimInBlocks),
       [&](const size_t num_threads) {
         ar_heuristics.PrepareForThreads(num_threads);
         cfl_heuristics.PrepareForThreads(num_threads);
@@ -928,18 +874,22 @@ Status DefaultEncoderHeuristics::LossyFrameHeuristics(
       },
       process_tile, "Enc Heuristics"));
 
-  acs_heuristics.Finalize(aux_out);
-  if (cparams.speed_tier <= SpeedTier::kHare) {
+  acs_heuristics.Finalize(frame_dim, ac_strategy, aux_out);
+  if (cparams.speed_tier <= SpeedTier::kHare && initialize_global_state) {
     cfl_heuristics.ComputeDC(/*fast=*/cparams.speed_tier >= SpeedTier::kWombat,
-                             &enc_state->shared.cmap);
+                             &cmap);
   }
 
   // Refine quantization levels.
-  FindBestQuantizer(original_pixels, *opsin, enc_state, cms, pool, aux_out);
+  if (!streaming_mode) {
+    FindBestQuantizer(frame_header, original_pixels, *opsin,
+                      initial_quant_field, enc_state, cms, pool, aux_out);
+  }
 
   // Choose a context model that depends on the amount of quantization for AC.
-  if (cparams.speed_tier < SpeedTier::kFalcon) {
-    FindBestBlockEntropyModel(*enc_state);
+  if (cparams.speed_tier < SpeedTier::kFalcon && initialize_global_state) {
+    FindBestBlockEntropyModel(cparams, raw_quant_field, ac_strategy,
+                              &block_ctx_map);
   }
   return true;
 }

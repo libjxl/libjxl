@@ -8,7 +8,6 @@
 
 // Helpers for parsing command line arguments. No include guard needed.
 
-#include <inttypes.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>

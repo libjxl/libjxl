@@ -5,6 +5,7 @@
 
 #include "lib/extras/packed_image_convert.h"
 
+#include <jxl/cms.h>
 #include <jxl/color_encoding.h>
 #include <jxl/types.h>
 
@@ -12,9 +13,7 @@
 
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
-#include "lib/jxl/color_management.h"
 #include "lib/jxl/dec_external_image.h"
-#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_image_bundle.h"
 #include "lib/jxl/luminance.h"
@@ -83,7 +82,7 @@ Status ConvertPackedPixelFileToCodecInOut(const PackedPixelFile& ppf,
                ppf.info.exponent_bits_per_sample);
   }
 
-  const bool is_gray = ppf.info.num_color_channels == 1;
+  const bool is_gray = (ppf.info.num_color_channels == 1);
   JXL_ASSERT(ppf.info.num_color_channels == 1 ||
              ppf.info.num_color_channels == 3);
 
@@ -113,21 +112,24 @@ Status ConvertPackedPixelFileToCodecInOut(const PackedPixelFile& ppf,
 
   // Convert the color encoding.
   if (!ppf.icc.empty()) {
-    PaddedBytes icc;
-    icc.append(ppf.icc);
-    const JxlCmsInterface& cms = GetJxlCms();
-    if (!io->metadata.m.color_encoding.SetICC(std::move(icc), &cms)) {
+    IccBytes icc = ppf.icc;
+    if (!io->metadata.m.color_encoding.SetICC(std::move(icc),
+                                              JxlGetDefaultCms())) {
       fprintf(stderr, "Warning: error setting ICC profile, assuming SRGB\n");
       io->metadata.m.color_encoding = ColorEncoding::SRGB(is_gray);
     } else {
+      if (io->metadata.m.color_encoding.IsCMYK()) {
+        // We expect gray or tri-color.
+        return JXL_FAILURE("Embedded ICC is CMYK");
+      }
       if (io->metadata.m.color_encoding.IsGray() != is_gray) {
         // E.g. JPG image has 3 channels, but gray ICC.
         return JXL_FAILURE("Embedded ICC does not match image color type");
       }
     }
   } else {
-    JXL_RETURN_IF_ERROR(ConvertExternalToInternalColorEncoding(
-        ppf.color_encoding, &io->metadata.m.color_encoding));
+    JXL_RETURN_IF_ERROR(
+        io->metadata.m.color_encoding.FromExternal(ppf.color_encoding));
     if (io->metadata.m.color_encoding.ICC().empty()) {
       return JXL_FAILURE("Failed to serialize ICC");
     }
@@ -242,7 +244,7 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
 
   // Convert the color encoding
   ppf->icc.assign(c_desired.ICC().begin(), c_desired.ICC().end());
-  ConvertInternalToExternalColorEncoding(c_desired, &ppf->color_encoding);
+  ppf->color_encoding = c_desired.ToExternal();
 
   // Convert the extra blobs
   ppf->metadata.exif = io.blobs.exif;
@@ -279,7 +281,7 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
     const ImageBundle* transformed;
     // TODO(firsching): handle the transform here.
     JXL_RETURN_IF_ERROR(TransformIfNeeded(*to_color_transform, c_desired,
-                                          GetJxlCms(), pool, &store,
+                                          *JxlGetDefaultCms(), pool, &store,
                                           &transformed));
 
     JXL_RETURN_IF_ERROR(ConvertToExternal(

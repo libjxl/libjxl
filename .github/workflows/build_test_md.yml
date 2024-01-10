@@ -5,7 +5,7 @@
 
 # Workflow for building and running tests.
 
-name: Build/Test
+name: Build/Test MD
 on:
   pull_request:
     types: [opened, reopened, labeled, synchronize]
@@ -15,8 +15,12 @@ on:
 permissions:
   contents: read
 
+concurrency: 
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  ubuntu-build:
+  build_test:
     name: Ubuntu Build ${{ matrix.name }}
     # Include all names of required jobs here
     strategy:
@@ -27,9 +31,15 @@ jobs:
           - name: scalar
           - name: asan
           - name: release-nojpeg
+          - name: release-lcms2
           - name: release:gcc8
     runs-on: ubuntu-latest
     steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
+        with:
+          egress-policy: audit
+
       - run: 'echo "markdown only changes: no build required"'
 
   windows_msys:
@@ -42,4 +52,9 @@ jobs:
            - msystem: clang32
     runs-on: ubuntu-latest
     steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
+        with:
+          egress-policy: audit
+
       - run: 'echo "markdown only changes: no build required"'

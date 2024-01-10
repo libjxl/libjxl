@@ -8,7 +8,6 @@
 
 #include "lib/extras/codec.h"
 #include "lib/extras/tone_mapping.h"
-#include "lib/jxl/enc_color_management.h"
 #include "tools/args.h"
 #include "tools/cmdline.h"
 #include "tools/file_io.h"
@@ -73,8 +72,7 @@ int main(int argc, const char** argv) {
   color_hints.Add("color_space", "RGB_D65_202_Rel_PeQ");
   std::vector<uint8_t> encoded;
   JXL_CHECK(jpegxl::tools::ReadFile(input_filename, &encoded));
-  JXL_CHECK(jxl::SetFromBytes(jxl::Span<const uint8_t>(encoded), color_hints,
-                              &image, &pool));
+  JXL_CHECK(jxl::SetFromBytes(jxl::Bytes(encoded), color_hints, &image, &pool));
   if (max_nits > 0) {
     image.metadata.m.SetIntensityTarget(max_nits);
   }
@@ -82,16 +80,14 @@ int main(int argc, const char** argv) {
   JXL_CHECK(jxl::GamutMap(&image, preserve_saturation, &pool));
 
   jxl::ColorEncoding c_out = image.metadata.m.color_encoding;
-  if (pq) {
-    c_out.tf.SetTransferFunction(jxl::TransferFunction::kPQ);
-  } else {
-    c_out.tf.SetTransferFunction(jxl::TransferFunction::kSRGB);
-  }
+  jxl::cms::TransferFunction tf =
+      pq ? jxl::TransferFunction::kPQ : jxl::TransferFunction::kSRGB;
 
   if (jxl::extras::CodecFromPath(output_filename) == jxl::extras::Codec::kEXR) {
-    c_out.tf.SetTransferFunction(jxl::TransferFunction::kLinear);
+    tf = jxl::TransferFunction::kLinear;
     image.metadata.m.SetFloat16Samples();
   }
+  c_out.Tf().SetTransferFunction(tf);
 
   JXL_CHECK(c_out.CreateICC());
   JXL_CHECK(jpegxl::tools::TransformCodecInOutTo(image, c_out, &pool));

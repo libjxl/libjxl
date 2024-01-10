@@ -3,6 +3,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <jxl/cms.h>
 #include <stdio.h>
 
 #include <utility>
@@ -12,8 +13,6 @@
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
-#include "lib/jxl/color_management.h"
-#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_xyb.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
@@ -50,7 +49,7 @@ void PrintXybRange() {
   const ImageBundle& ib = io.Main();
   ThreadPool* null_pool = nullptr;
   Image3F opsin(ib.xsize(), ib.ysize());
-  (void)jxl::ToXYB(ib, null_pool, &opsin, jxl::GetJxlCms());
+  (void)jxl::ToXYB(ib, null_pool, &opsin, *JxlGetDefaultCms());
   for (size_t c = 0; c < 3; ++c) {
     float minval = 1e10f;
     float maxval = -1e10f;
