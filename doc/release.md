@@ -302,7 +302,7 @@ git clone --recurse-submodules --depth 1 \
 cd /src/libjxl
 cmake -B build -G Ninja .
 cmake --build build -j`nproc`
-cmake --install build --prefix="/"
+cmake --install build --prefix="/usr"
 
 cd /src/ImageMagick
 ./configure --with-jxl=yes
