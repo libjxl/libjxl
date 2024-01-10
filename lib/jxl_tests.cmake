@@ -30,6 +30,7 @@ endif()
 list(APPEND JPEGXL_INTERNAL_TESTS
   # TODO(deymo): Move this to tools/
   ../tools/djxl_fuzzer_test.cc
+  ../tools/gauss_blur_test.cc
 )
 
 find_package(GTest)
@@ -73,6 +74,10 @@ foreach (TESTFILE IN LISTS JPEGXL_INTERNAL_TESTS)
     jxl_extras-internal
     jxl_testlib-internal
   )
+  if(TESTFILE STREQUAL ../tools/gauss_blur_test.cc)
+    target_link_libraries(${TESTNAME} jxl_gauss_blur)
+  endif()
+
   # Output test targets in the test directory.
   set_target_properties(${TESTNAME} PROPERTIES PREFIX "tests/")
   if (WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")

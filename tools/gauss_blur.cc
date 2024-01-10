@@ -3,7 +3,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include "lib/jxl/gauss_blur.h"
+#include "tools/gauss_blur.h"
 
 #include <string.h>
 
@@ -11,7 +11,7 @@
 #include <cmath>
 
 #undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "lib/jxl/gauss_blur.cc"
+#define HWY_TARGET_INCLUDE "tools/gauss_blur.cc"
 #include <hwy/cache_control.h>
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
@@ -19,7 +19,6 @@
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/matrix_ops.h"
-#include "lib/jxl/image_ops.h"
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {

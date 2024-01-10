@@ -31,8 +31,8 @@ Design:
 
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/enc_xyb.h"
-#include "lib/jxl/gauss_blur.h"
 #include "lib/jxl/image_ops.h"
+#include "tools/gauss_blur.h"
 
 namespace {
 
