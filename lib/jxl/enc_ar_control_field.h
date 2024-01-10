@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "lib/jxl/enc_params.h"
+#include "lib/jxl/frame_header.h"
 #include "lib/jxl/image.h"
 
 namespace jxl {
@@ -35,13 +36,13 @@ struct ArControlFieldHeuristics {
     temp_images.resize(num_threads);
   }
 
-  void RunRect(const Rect& block_rect, const Image3F& opsin,
-               PassesEncoderState* enc_state, size_t thread);
+  void RunRect(const CompressParams& cparams, const FrameHeader& frame_header,
+               const Rect& block_rect, const Image3F& opsin,
+               const Rect& opsin_rect, const ImageF& quant_field,
+               const AcStrategyImage& ac_strategy, ImageB* epf_sharpness,
+               size_t thread);
 
   std::vector<TempImages> temp_images;
-  ImageB* epf_sharpness;
-  ImageF* quant;
-  bool all_default;
 };
 
 }  // namespace jxl

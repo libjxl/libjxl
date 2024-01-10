@@ -1,5 +1,5 @@
-API reference
-=============
+libjxl API reference
+====================
 
 ``libjxl`` exposes a C API for encoding and decoding JPEG XL files with some
 C++ header-only helpers for C++ users.
@@ -11,5 +11,7 @@ C++ header-only helpers for C++ users.
    api_decoder
    api_encoder
    api_common
-   api_butteraugli
+   api_metadata
+   api_color
    api_threads
+   api_cpp

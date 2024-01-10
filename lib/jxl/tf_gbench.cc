@@ -11,7 +11,7 @@
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 
-#include "lib/jxl/transfer_functions-inl.h"
+#include "lib/jxl/cms/transfer_functions-inl.h"
 
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
@@ -43,7 +43,7 @@ namespace {
   state.SetItemsProcessed(kNum* state.iterations() * Lanes(d) * 3); \
   benchmark::DoNotOptimize(sum1 + sum2 + sum3);
 
-#define RUN_BENCHMARK_SCALAR(F)                              \
+#define RUN_BENCHMARK_SCALAR(F, I)                           \
   constexpr size_t kNum = 1 << 12;                           \
   /* Three parallel runs, as this will run on R, G and B. */ \
   float sum1 = 0, sum2 = 0, sum3 = 0;                        \
@@ -53,9 +53,9 @@ namespace {
     float v2 = 1.1e-5;                                       \
     float v3 = 1.2e-5;                                       \
     for (size_t i = 0; i < kNum; i++) {                      \
-      sum1 += F(v1);                                         \
-      sum2 += F(v2);                                         \
-      sum3 += F(v3);                                         \
+      sum1 += F(I, v1);                                      \
+      sum2 += F(I, v2);                                      \
+      sum3 += F(I, v3);                                      \
       v1 += x;                                               \
       v2 += x;                                               \
       v3 += x;                                               \
@@ -74,19 +74,21 @@ HWY_NOINLINE void BM_TFSRGB(benchmark::State& state) {
 }
 
 HWY_NOINLINE void BM_PQDFE(benchmark::State& state) {
-  RUN_BENCHMARK(TF_PQ().DisplayFromEncoded);
+  TF_PQ tf_pq(10000.0);
+  RUN_BENCHMARK(tf_pq.DisplayFromEncoded);
 }
 
 HWY_NOINLINE void BM_PQEFD(benchmark::State& state) {
-  RUN_BENCHMARK(TF_PQ().EncodedFromDisplay);
+  TF_PQ tf_pq(10000.0);
+  RUN_BENCHMARK(tf_pq.EncodedFromDisplay);
 }
 
 HWY_NOINLINE void BM_PQSlowDFE(benchmark::State& state) {
-  RUN_BENCHMARK_SCALAR(TF_PQ().DisplayFromEncoded);
+  RUN_BENCHMARK_SCALAR(TF_PQ_Base::DisplayFromEncoded, 10000.0);
 }
 
 HWY_NOINLINE void BM_PQSlowEFD(benchmark::State& state) {
-  RUN_BENCHMARK_SCALAR(TF_PQ().EncodedFromDisplay);
+  RUN_BENCHMARK_SCALAR(TF_PQ_Base::EncodedFromDisplay, 10000.0);
 }
 }  // namespace
 // NOLINTNEXTLINE(google-readability-namespace-comments)
@@ -105,7 +107,7 @@ HWY_EXPORT(BM_PQEFD);
 HWY_EXPORT(BM_PQSlowDFE);
 HWY_EXPORT(BM_PQSlowEFD);
 
-float SRGB_pow(float x) {
+float SRGB_pow(float _, float x) {
   return x < 0.0031308f ? 12.92f * x : 1.055f * powf(x, 1.0f / 2.4f) - 0.055f;
 }
 
@@ -128,7 +130,7 @@ void BM_PQSlowEFD(benchmark::State& state) {
   HWY_DYNAMIC_DISPATCH(BM_PQSlowEFD)(state);
 }
 
-void BM_SRGB_pow(benchmark::State& state) { RUN_BENCHMARK_SCALAR(SRGB_pow); }
+void BM_SRGB_pow(benchmark::State& state) { RUN_BENCHMARK_SCALAR(SRGB_pow, 0); }
 
 BENCHMARK(BM_FastSRGB);
 BENCHMARK(BM_TFSRGB);

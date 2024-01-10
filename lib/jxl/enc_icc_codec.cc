@@ -12,11 +12,11 @@
 #include <vector>
 
 #include "lib/jxl/base/byte_order.h"
-#include "lib/jxl/common.h"
 #include "lib/jxl/enc_ans.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/fields.h"
 #include "lib/jxl/icc_codec_common.h"
+#include "lib/jxl/padded_bytes.h"
 
 namespace jxl {
 namespace {
@@ -69,6 +69,30 @@ Status PredictAndShuffle(size_t stride, size_t width, int order, size_t num,
   if (width > 1) Unshuffle(result->data() + start, num, width);
   return true;
 }
+
+static inline void EncodeVarInt(uint64_t value, PaddedBytes* data) {
+  size_t pos = data->size();
+  data->resize(data->size() + 9);
+  size_t output_size = data->size();
+  uint8_t* output = data->data();
+
+  // While more than 7 bits of data are left,
+  // store 7 bits and set the next byte flag
+  while (value > 127) {
+    // TODO(eustas): should it be `<` ?
+    JXL_CHECK(pos <= output_size);
+    // |128: Set the next byte flag
+    output[pos++] = ((uint8_t)(value & 127)) | 128;
+    // Remove the seven bits we just wrote
+    value >>= 7;
+  }
+  // TODO(eustas): should it be `<` ?
+  JXL_CHECK(pos <= output_size);
+  output[pos++] = ((uint8_t)value) & 127;
+
+  data->resize(pos);
+}
+
 }  // namespace
 
 // Outputs a transformed form of the given icc profile. The result itself is
@@ -82,7 +106,8 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
   EncodeVarInt(size, result);
 
   // Header
-  PaddedBytes header = ICCInitialHeaderPrediction();
+  PaddedBytes header;
+  header.append(ICCInitialHeaderPrediction());
   EncodeUint32(0, size, &header);
   for (size_t i = 0; i < kICCHeaderSize && i < size; i++) {
     ICCPredictHeader(icc, size, header.data(), i);
@@ -376,7 +401,7 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
   return true;
 }
 
-Status WriteICC(const PaddedBytes& icc, BitWriter* JXL_RESTRICT writer,
+Status WriteICC(const IccBytes& icc, BitWriter* JXL_RESTRICT writer,
                 size_t layer, AuxOut* JXL_RESTRICT aux_out) {
   if (icc.empty()) return JXL_FAILURE("ICC must be non-empty");
   PaddedBytes enc;
@@ -399,7 +424,7 @@ Status WriteICC(const PaddedBytes& icc, BitWriter* JXL_RESTRICT writer,
   params.force_huffman = true;
   BuildAndEncodeHistograms(params, kNumICCContexts, tokens, &code, &context_map,
                            writer, layer, aux_out);
-  WriteTokens(tokens[0], code, context_map, writer, layer, aux_out);
+  WriteTokens(tokens[0], code, context_map, 0, writer, layer, aux_out);
   return true;
 }
 

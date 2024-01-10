@@ -17,11 +17,17 @@ permissions:
 
 jobs:
   update:
+    if: github.repository_owner == 'libjxl'
     runs-on: ubuntu-latest
 
     steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
+        with:
+          egress-policy: audit
+
       - name: 'Cloning libjxl'
-        uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
         with:
           submodules: recursive
           persist-credentials: false # otherwise, the wrong auhtentication is used in the push
@@ -41,9 +47,9 @@ jobs:
           git config user.name "GitHub Actions - update submodules"
           git add --all
           git commit -m "Update highway submodule" || echo "No changes to commit"
-      
+
       - name: Push changes
-        uses: ad-m/github-push-action@40bf560936a8022e68a3c00e7d2abefaf01305a6 # v0.6.0
+        uses: ad-m/github-push-action@d91a481090679876dfc4178fef17f286781251df # v0.8.0
         with:
           github_token: ${{ secrets.TOKEN }}
           branch: 'refs/heads/test_highway'

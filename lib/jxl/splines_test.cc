@@ -5,11 +5,16 @@
 
 #include "lib/jxl/splines.h"
 
+#include <jxl/cms.h>
+
+#include <cstdint>
+#include <vector>
+
 #include "lib/extras/codec.h"
 #include "lib/jxl/base/printf_macros.h"
+#include "lib/jxl/base/span.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
-#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_splines.h"
 #include "lib/jxl/image_test_utils.h"
 #include "lib/jxl/test_utils.h"
@@ -28,6 +33,7 @@ std::ostream& operator<<(std::ostream& os, const Spline& spline) {
 
 namespace {
 
+using test::ReadTestData;
 using ::testing::AllOf;
 using ::testing::Field;
 using ::testing::FloatNear;
@@ -277,8 +283,8 @@ TEST(SplinesTest, DuplicatePoints) {
 
 TEST(SplinesTest, Drawing) {
   CodecInOut io_expected;
-  const PaddedBytes orig = jxl::test::ReadTestData("jxl/splines.pfm");
-  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io_expected,
+  const std::vector<uint8_t> orig = ReadTestData("jxl/splines.pfm");
+  ASSERT_TRUE(SetFromBytes(Bytes(orig), &io_expected,
                            /*pool=*/nullptr));
 
   std::vector<Spline::Point> control_points{{9, 54},  {118, 159}, {97, 3},
@@ -315,7 +321,7 @@ TEST(SplinesTest, Drawing) {
   CopyImageTo(image, &image2);
   io_actual.SetFromImage(std::move(image2), ColorEncoding::SRGB());
   ASSERT_TRUE(io_actual.frames[0].TransformTo(io_expected.Main().c_current(),
-                                              GetJxlCms()));
+                                              *JxlGetDefaultCms()));
 
   JXL_ASSERT_OK(VerifyRelativeError(
       *io_expected.Main().color(), *io_actual.Main().color(), 1e-2f, 1e-1f, _));
@@ -323,18 +329,17 @@ TEST(SplinesTest, Drawing) {
 
 TEST(SplinesTest, ClearedEveryFrame) {
   CodecInOut io_expected;
-  const PaddedBytes bytes_expected =
-      jxl::test::ReadTestData("jxl/spline_on_first_frame.png");
-  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(bytes_expected), &io_expected,
+  const std::vector<uint8_t> bytes_expected =
+      ReadTestData("jxl/spline_on_first_frame.png");
+  ASSERT_TRUE(SetFromBytes(Bytes(bytes_expected), &io_expected,
                            /*pool=*/nullptr));
   CodecInOut io_actual;
-  const PaddedBytes bytes_actual =
-      jxl::test::ReadTestData("jxl/spline_on_first_frame.jxl");
-  ASSERT_TRUE(
-      test::DecodeFile({}, Span<const uint8_t>(bytes_actual), &io_actual));
+  const std::vector<uint8_t> bytes_actual =
+      ReadTestData("jxl/spline_on_first_frame.jxl");
+  ASSERT_TRUE(test::DecodeFile({}, Bytes(bytes_actual), &io_actual));
 
-  ASSERT_TRUE(
-      io_actual.frames[0].TransformTo(ColorEncoding::SRGB(), GetJxlCms()));
+  ASSERT_TRUE(io_actual.frames[0].TransformTo(ColorEncoding::SRGB(),
+                                              *JxlGetDefaultCms()));
   for (size_t c = 0; c < 3; ++c) {
     for (size_t y = 0; y < io_actual.ysize(); ++y) {
       float* const JXL_RESTRICT row = io_actual.Main().color()->PlaneRow(c, y);

@@ -14,7 +14,9 @@
 #include <QElapsedTimer>
 #include <QFile>
 
+#define CMS_NO_REGISTER_KEYWORD 1
 #include "lcms2.h"
+#undef CMS_NO_REGISTER_KEYWORD
 
 namespace jpegxl {
 namespace tools {

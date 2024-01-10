@@ -16,7 +16,6 @@
 #include "lib/extras/enc/pnm.h"
 #include "lib/extras/packed_image.h"
 #include "lib/extras/packed_image_convert.h"
-#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/image_bundle.h"
 
@@ -103,7 +102,8 @@ Status Encode(const CodecInOut& io, const extras::Codec codec,
         return JXL_FAILURE("JPEG XL was built without OpenEXR support");
       }
     case extras::Codec::kJXL:
-      return JXL_FAILURE("TODO: encode using Codec::kJXL");
+      // TODO(user): implement
+      return JXL_FAILURE("Codec::kJXL is not supported yet");
 
     case extras::Codec::kUnknown:
       return JXL_FAILURE("Cannot encode using Codec::kUnknown");
@@ -133,8 +133,8 @@ Status Encode(const CodecInOut& io, const ColorEncoding& c_desired,
               size_t bits_per_sample, const std::string& pathname,
               std::vector<uint8_t>* bytes, ThreadPool* pool) {
   std::string extension;
-  const extras::Codec codec = extras::CodecFromPath(
-      pathname, &bits_per_sample, /* basename */ nullptr, &extension);
+  const extras::Codec codec =
+      extras::CodecFromPath(pathname, &bits_per_sample, &extension);
 
   // Warn about incorrect usage of PGM/PGX/PPM - only the latter supports
   // color, but CodecFromPath lumps them all together.

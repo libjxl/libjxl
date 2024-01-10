@@ -23,8 +23,7 @@ int TestOneInput(const uint8_t* data, size_t size) {
   constraints.dec_max_pixels = 1u << 22;
   jpegxl::tools::ThreadPoolInternal pool(0);
 
-  (void)jxl::SetFromBytes(jxl::Span<const uint8_t>(data, size), &io, &pool,
-                          &constraints);
+  (void)jxl::SetFromBytes(jxl::Bytes(data, size), &io, &pool, &constraints);
 
   return 0;
 }

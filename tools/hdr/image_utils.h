@@ -6,6 +6,7 @@
 #ifndef TOOLS_HDR_IMAGE_UTILS_H_
 #define TOOLS_HDR_IMAGE_UTILS_H_
 
+#include <jxl/cms.h>
 #include <jxl/cms_interface.h>
 
 #include "lib/jxl/base/status.h"
@@ -18,7 +19,7 @@ namespace tools {
 static inline jxl::Status TransformCodecInOutTo(
     jxl::CodecInOut& io, const jxl::ColorEncoding& c_desired,
     jxl::ThreadPool* pool) {
-  const JxlCmsInterface& cms = jxl::GetJxlCms();
+  const JxlCmsInterface& cms = *JxlGetDefaultCms();
   if (io.metadata.m.have_preview) {
     JXL_RETURN_IF_ERROR(io.preview_frame.TransformTo(c_desired, cms, pool));
   }

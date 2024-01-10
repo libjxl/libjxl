@@ -73,6 +73,8 @@ def CheckAuthor(args):
     print("User %s <%s> not found, please add yourself to the AUTHORS file" % (
               args.name, args.email),
           file=sys.stderr)
+    print("Hint: to override author in PR run:\n"
+          "  git commit --amend --author=\"Your Name <ldap@corp.com>\" --no-edit")
 
   sorted_alphabetically = IndividualsInAlphabeticOrder(authors_path)
   if not sorted_alphabetically:

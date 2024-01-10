@@ -396,7 +396,7 @@ void AFVIDCT4x4(const float* JXL_RESTRICT coeffs, float* JXL_RESTRICT pixels) {
 template <size_t afv_kind>
 void AFVTransformToPixels(const float* JXL_RESTRICT coefficients,
                           float* JXL_RESTRICT pixels, size_t pixels_stride) {
-  HWY_ALIGN float scratch_space[4 * 8];
+  HWY_ALIGN float scratch_space[4 * 8 * 4];
   size_t afv_x = afv_kind & 1;
   size_t afv_y = afv_kind / 2;
   float dcs[3] = {};
@@ -693,7 +693,7 @@ HWY_MAYBE_UNUSED void LowestFrequenciesFromDC(const AcStrategy::Type strategy,
                                               float* JXL_RESTRICT scratch) {
   using Type = AcStrategy::Type;
   HWY_ALIGN float warm_block[4 * 4];
-  HWY_ALIGN float warm_scratch_space[4 * 4];
+  HWY_ALIGN float warm_scratch_space[4 * 4 * 4];
   switch (strategy) {
     case Type::DCT16X8: {
       ReinterpretingDCT</*DCT_ROWS=*/2 * kBlockDim, /*DCT_COLS=*/kBlockDim,

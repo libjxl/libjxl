@@ -8,15 +8,16 @@
 
 // Compressed representation of ICC profiles.
 
-#include <stddef.h>
-#include <stdint.h>
-
 #include <array>
+#include <cstddef>
+#include <cstdint>
 
-#include "lib/jxl/base/padded_bytes.h"
+#include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 
 namespace jxl {
+
+class PaddedBytes;
 
 static constexpr size_t kICCHeaderSize = 128;
 
@@ -91,10 +92,10 @@ void EncodeKeyword(const Tag& keyword, uint8_t* data, size_t size, size_t pos);
 void AppendKeyword(const Tag& keyword, PaddedBytes* data);
 
 // Checks if a + b > size, taking possible integer overflow into account.
-Status CheckOutOfBounds(size_t a, size_t b, size_t size);
+Status CheckOutOfBounds(uint64_t a, uint64_t b, uint64_t size);
 Status CheckIs32Bit(uint64_t v);
 
-PaddedBytes ICCInitialHeaderPrediction();
+const Span<const uint8_t> ICCInitialHeaderPrediction();
 void ICCPredictHeader(const uint8_t* icc, size_t size, uint8_t* header,
                       size_t pos);
 uint8_t LinearPredictICCValue(const uint8_t* data, size_t start, size_t i,

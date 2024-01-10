@@ -207,7 +207,7 @@ int CJpegliMain(int argc, const char* argv[]) {
   }
 
   jxl::extras::PackedPixelFile ppf;
-  if (!jxl::extras::DecodeBytes(jxl::Span<const uint8_t>(input_bytes),
+  if (!jxl::extras::DecodeBytes(jxl::Bytes(input_bytes),
                                 args.color_hints_proxy.target, &ppf)) {
     fprintf(stderr, "Failed to decode input image %s\n", args.file_in);
     return EXIT_FAILURE;

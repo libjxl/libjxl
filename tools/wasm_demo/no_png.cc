@@ -42,7 +42,7 @@ uint32_t CalculateCrc32(const uint8_t* start, const uint8_t* end) {
 
 void AdlerCopy(const uint8_t* src, uint8_t* dst, size_t length, uint32_t* s1,
                uint32_t* s2) {
-  // TODO: SIMD-ify and use multithreading.
+  // TODO(eustas): SIMD-ify and use multithreading.
 
   // Precondition: s1, s2 normalized; length <= 65535
   uint32_t a = *s1;

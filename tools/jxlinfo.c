@@ -380,9 +380,10 @@ int PrintBasicInfo(FILE* file, int verbose) {
 
 static void print_usage(const char* name) {
   fprintf(stderr,
-          "Usage: %s [-v] INPUT\n"
-          "  INPUT      input JPEG XL image filename(s)\n"
-          "  -v         more verbose output\n",
+          "Usage: %s [-v] [-h] INPUT\n"
+          "  INPUT                  input JPEG XL image filename(s)\n"
+          "  -v (or --verbose)      more verbose output\n"
+          "  -h (or --help or -?)   this help)\n",
           name);
 }
 
@@ -402,41 +403,45 @@ static int print_basic_info_filename(const char* jxl_filename, int verbose) {
   return 0;
 }
 
+int is_flag(const char* arg, const char* const* opts) {
+  for (int i = 0; opts[i] != NULL; i++) {
+    if (!strcmp(opts[i], arg)) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
 int main(int argc, char* argv[]) {
   int verbose = 0, status = 0;
   const char* const name = argv[0];
-
-  for (int i = 1; i < argc; i++) {
-    const char* const* help_opts =
-        (const char* const[]){"--help", "-h", "-?", NULL};
-    while (*help_opts) {
-      if (!strcmp(*help_opts++, argv[i])) {
-        print_usage(name);
-        return 0;
-      }
-    }
-  }
-
+  const char* const* help_opts =
+      (const char* const[]){"--help", "-h", "-?", NULL};
   const char* const* verbose_opts =
       (const char* const[]){"--verbose", "-v", NULL};
-  /* argc >= 2 gate prevents segfault on argc = 1 */
-  while (argc >= 2 && *verbose_opts) {
-    if (!strcmp(*verbose_opts++, argv[1])) {
-      verbose = 1;
-      argc--;
-      argv++;
-      break;
-    }
-  }
-
   if (argc < 2) {
     print_usage(name);
     return 2;
   }
 
-  while (argc-- >= 2) {
-    status |= print_basic_info_filename(*++argv, verbose);
+  // First pass: Check for flags
+  for (int i = 1; i < argc; i++) {
+    if (!verbose && is_flag(argv[i], verbose_opts)) {
+      verbose = 1;
+    }
+    if (is_flag(argv[i], help_opts)) {
+      print_usage(name);
+      return 0;
+    }
   }
 
+  // Second pass: print info
+  while (argc-- >= 2) {
+    if (is_flag(*(argv + 1), verbose_opts) || is_flag(*(argv + 1), help_opts)) {
+      ++argv;
+    } else {
+      status |= print_basic_info_filename(*++argv, verbose);
+    }
+  }
   return status;
 }

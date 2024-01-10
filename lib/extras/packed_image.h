@@ -18,11 +18,18 @@
 #include <string.h>
 
 #include <algorithm>
+#include <cmath>
+#include <functional>
 #include <memory>
+#include <mutex>
+#include <set>
 #include <string>
 #include <vector>
 
-#include "lib/jxl/common.h"
+#include "lib/jxl/base/byte_order.h"
+#include "lib/jxl/base/c_callback_support.h"
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/status.h"
 
 namespace jxl {
 namespace extras {
@@ -43,6 +50,16 @@ class PackedImage {
   // The interleaved pixels as defined in the storage format.
   void* pixels() const { return pixels_.get(); }
 
+  uint8_t* pixels(size_t y, size_t x, size_t c) const {
+    return (reinterpret_cast<uint8_t*>(pixels_.get()) + y * stride +
+            x * pixel_stride_ + c * bytes_per_channel_);
+  }
+
+  const uint8_t* const_pixels(size_t y, size_t x, size_t c) const {
+    return (reinterpret_cast<const uint8_t*>(pixels_.get()) + y * stride +
+            x * pixel_stride_ + c * bytes_per_channel_);
+  }
+
   // The image size in pixels.
   size_t xsize;
   size_t ysize;
@@ -54,10 +71,7 @@ class PackedImage {
   JxlPixelFormat format;
   size_t pixels_size;
 
-  size_t pixel_stride() const {
-    return (BitsPerChannel(format.data_type) * format.num_channels /
-            jxl::kBitsPerByte);
-  }
+  size_t pixel_stride() const { return pixel_stride_; }
 
   static size_t BitsPerChannel(JxlDataType data_type) {
     switch (data_type) {
@@ -74,6 +88,52 @@ class PackedImage {
     }
   }
 
+  float GetPixelValue(size_t y, size_t x, size_t c) const {
+    const uint8_t* data = const_pixels(y, x, c);
+    switch (format.data_type) {
+      case JXL_TYPE_UINT8:
+        return data[0] * (1.0f / 255);
+      case JXL_TYPE_UINT16: {
+        uint16_t val;
+        memcpy(&val, data, 2);
+        return (swap_endianness_ ? JXL_BSWAP16(val) : val) * (1.0f / 65535);
+      }
+      case JXL_TYPE_FLOAT: {
+        float val;
+        memcpy(&val, data, 4);
+        return swap_endianness_ ? BSwapFloat(val) : val;
+      }
+      default:
+        JXL_ABORT("Unhandled JxlDataType");
+    }
+  }
+
+  void SetPixelValue(size_t y, size_t x, size_t c, float val) {
+    uint8_t* data = pixels(y, x, c);
+    switch (format.data_type) {
+      case JXL_TYPE_UINT8:
+        data[0] = Clamp1(std::round(val * 255), 0.0f, 255.0f);
+        break;
+      case JXL_TYPE_UINT16: {
+        uint16_t val16 = Clamp1(std::round(val * 65535), 0.0f, 65535.0f);
+        if (swap_endianness_) {
+          val16 = JXL_BSWAP16(val16);
+        }
+        memcpy(data, &val16, 2);
+        break;
+      }
+      case JXL_TYPE_FLOAT: {
+        if (swap_endianness_) {
+          val = BSwapFloat(val);
+        }
+        memcpy(data, &val, 4);
+        break;
+      }
+      default:
+        JXL_ABORT("Unhandled JxlDataType");
+    }
+  }
+
  private:
   PackedImage(size_t xsize, size_t ysize, const JxlPixelFormat& format,
               size_t stride)
@@ -82,7 +142,11 @@ class PackedImage {
         stride(stride),
         format(format),
         pixels_size(ysize * stride),
-        pixels_(malloc(std::max<size_t>(1, pixels_size)), free) {}
+        pixels_(malloc(std::max<size_t>(1, pixels_size)), free) {
+    bytes_per_channel_ = BitsPerChannel(format.data_type) / jxl::kBitsPerByte;
+    pixel_stride_ = format.num_channels * bytes_per_channel_;
+    swap_endianness_ = SwapEndianness(format.endianness);
+  }
 
   static size_t CalcStride(const JxlPixelFormat& format, size_t xsize) {
     size_t stride = xsize * (BitsPerChannel(format.data_type) *
@@ -93,6 +157,9 @@ class PackedImage {
     return stride;
   }
 
+  size_t bytes_per_channel_;
+  size_t pixel_stride_;
+  bool swap_endianness_;
   std::unique_ptr<void, decltype(free)*> pixels_;
 };
 
@@ -127,6 +194,32 @@ class PackedFrame {
   std::vector<PackedImage> extra_channels;
 };
 
+class ChunkedPackedFrame {
+ public:
+  ChunkedPackedFrame(
+      size_t xsize, size_t ysize,
+      std::function<JxlChunkedFrameInputSource()> get_input_source)
+      : xsize(xsize),
+        ysize(ysize),
+        get_input_source_(std::move(get_input_source)) {
+    const auto input_source = get_input_source_();
+    input_source.get_color_channels_pixel_format(input_source.opaque, &format);
+  }
+
+  JxlChunkedFrameInputSource GetInputSource() { return get_input_source_(); }
+
+  // The Frame metadata.
+  JxlFrameHeader frame_info = {};
+  std::string name;
+
+  size_t xsize;
+  size_t ysize;
+  JxlPixelFormat format;
+
+ private:
+  std::function<JxlChunkedFrameInputSource()> get_input_source_;
+};
+
 // Optional metadata associated with a file
 class PackedMetadata {
  public:
@@ -159,9 +252,14 @@ class PackedPixelFile {
 
   std::unique_ptr<PackedFrame> preview_frame;
   std::vector<PackedFrame> frames;
+  mutable std::vector<ChunkedPackedFrame> chunked_frames;
 
   PackedMetadata metadata;
   PackedPixelFile() { JxlEncoderInitBasicInfo(&info); };
+
+  size_t num_frames() const {
+    return chunked_frames.empty() ? frames.size() : chunked_frames.size();
+  }
 };
 
 }  // namespace extras
