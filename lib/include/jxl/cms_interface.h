@@ -227,7 +227,7 @@ typedef void (*jpegxl_cms_destroy_func)(void*);
 typedef struct {
   /** CMS-specific data that will be passed to @ref set_fields_from_icc. */
   void* set_fields_data;
-  /** Populates a 2ref JxlColorEncoding from an ICC profile. */
+  /** Populates a @ref JxlColorEncoding from an ICC profile. */
   jpegxl_cms_set_fields_from_icc_func set_fields_from_icc;
 
   /** CMS-specific data that will be passed to @ref init. */
