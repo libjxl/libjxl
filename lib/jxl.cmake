@@ -87,6 +87,16 @@ target_include_directories(jxl_base INTERFACE
   ${PROJECT_SOURCE_DIR}
   ${JXL_HWY_INCLUDE_DIRS}
 )
+
+# On android, link with log to use android-related log functions.
+if(CMAKE_SYSTEM_NAME STREQUAL "Android")
+  find_library(log-lib log)
+  if(log-lib)
+    target_link_libraries(jxl_base INTERFACE ${log-lib})
+    target_compile_definitions(jxl_base INTERFACE USE_ANDROID_LOGGER)
+  endif()
+endif()
+
 add_dependencies(jxl_base jxl_export)
 
 # Decoder-only object library
