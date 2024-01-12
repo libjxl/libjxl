@@ -378,6 +378,14 @@ typedef enum {
    */
   JXL_ENC_FRAME_SETTING_JPEG_KEEP_JUMBF = 37,
 
+  /** If this mode is disabled, the encoder will not make any image quality
+   * decisions that are computed based on the full image, but stored only once
+   * (e.g. the X quant multiplier in the frame header). Used mainly for testing
+   * equivalence of streaming and non-streaming code.
+   * 0 = disabled, 1 = enabled (default)
+   */
+  JXL_ENC_FRAME_SETTING_USE_FULL_IMAGE_HEURISTICS = 38,
+
   /** Enum value not to be used as an option. This value is added to force the
    * C compiler to have the enum to take a known size.
    */

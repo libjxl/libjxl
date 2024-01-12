@@ -231,6 +231,12 @@ class JxlCodec : public ImageCodec {
         return JXL_FAILURE("Invalid epf value");
       }
       cparams_.AddOption(JXL_ENC_FRAME_SETTING_EPF, val);
+    } else if (param.substr(0, 2) == "fi") {
+      val = strtol(param.substr(2).c_str(), nullptr, 10);
+      if (val != 0 && val != 1) {
+        return JXL_FAILURE("Invalid option value");
+      }
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_USE_FULL_IMAGE_HEURISTICS, val);
     } else if (param.substr(0, 3) == "buf") {
       val = strtol(param.substr(3).c_str(), nullptr, 10);
       if (val > 3) {

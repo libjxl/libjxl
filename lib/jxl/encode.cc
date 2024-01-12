@@ -1760,6 +1760,13 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetOption(
     case JXL_ENC_FRAME_SETTING_JPEG_KEEP_JUMBF:
       frame_settings->values.cparams.jpeg_keep_jumbf = value;
       break;
+    case JXL_ENC_FRAME_SETTING_USE_FULL_IMAGE_HEURISTICS:
+      if (value < 0 || value > 1) {
+        return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_NOT_SUPPORTED,
+                             "Option value has to be 0 or 1");
+      }
+      frame_settings->values.cparams.use_full_image_heuristics = value;
+      break;
 
     default:
       return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_NOT_SUPPORTED,
@@ -1855,6 +1862,7 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetFloatOption(
     case JXL_ENC_FRAME_SETTING_JPEG_KEEP_EXIF:
     case JXL_ENC_FRAME_SETTING_JPEG_KEEP_XMP:
     case JXL_ENC_FRAME_SETTING_JPEG_KEEP_JUMBF:
+    case JXL_ENC_FRAME_SETTING_USE_FULL_IMAGE_HEURISTICS:
       return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_NOT_SUPPORTED,
                            "Int option, try setting it with "
                            "JxlEncoderFrameSettingsSetOption");
