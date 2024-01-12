@@ -791,7 +791,9 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
     initial_quant_field = InitialQuantField(
         butteraugli_distance_for_iqf, *opsin, rect, pool, 1.0f,
         &initial_quant_masking, &initial_quant_masking1x1);
-    if (initialize_global_state) {
+    // TODO(szabadka) Support changing the quantization of the quant field per
+    // group by applying different multipliers in modular mode.
+    if (cparams.use_full_image_heuristics && initialize_global_state) {
       quantizer.SetQuantField(quant_dc, initial_quant_field, nullptr);
     }
   }
@@ -875,7 +877,8 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
       process_tile, "Enc Heuristics"));
 
   acs_heuristics.Finalize(frame_dim, ac_strategy, aux_out);
-  if (cparams.speed_tier <= SpeedTier::kHare && initialize_global_state) {
+  if (cparams.speed_tier <= SpeedTier::kHare &&
+      cparams.use_full_image_heuristics && initialize_global_state) {
     cfl_heuristics.ComputeDC(/*fast=*/cparams.speed_tier >= SpeedTier::kWombat,
                              &cmap);
   }
