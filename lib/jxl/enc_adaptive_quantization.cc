@@ -41,7 +41,6 @@
 #include "lib/jxl/enc_transforms-inl.h"
 #include "lib/jxl/epf.h"
 #include "lib/jxl/frame_dimensions.h"
-#include "lib/jxl/gauss_blur.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"

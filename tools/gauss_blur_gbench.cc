@@ -7,8 +7,8 @@
 
 #include "benchmark/benchmark.h"
 #include "lib/jxl/convolve.h"
-#include "lib/jxl/gauss_blur.h"
 #include "lib/jxl/image_ops.h"
+#include "tools/gauss_blur.h"
 
 namespace jxl {
 namespace {
