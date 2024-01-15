@@ -90,37 +90,9 @@ void BM_GaussBlurFir(benchmark::State& state) {
   state.SetItemsProcessed(xsize * ysize * state.iterations());
 }
 
-void BM_GaussBlurSep7(benchmark::State& state) {
-  // See GaussBlur1d for SIMD changes.
-
-  const size_t xsize = state.range();
-  const size_t ysize = xsize;
-  ImageF in(xsize, ysize);
-  const float expected = xsize + ysize;
-  FillImage(expected, &in);
-
-  ImageF temp(xsize, ysize);
-  ImageF out(xsize, ysize);
-  ThreadPool* null_pool = nullptr;
-  // Gaussian with sigma 1
-  const WeightsSeparable7 weights = {{HWY_REP4(0.383103f), HWY_REP4(0.241843f),
-                                      HWY_REP4(0.060626f), HWY_REP4(0.00598f)},
-                                     {HWY_REP4(0.383103f), HWY_REP4(0.241843f),
-                                      HWY_REP4(0.060626f), HWY_REP4(0.00598f)}};
-  for (auto _ : state) {
-    Separable7(in, Rect(in), weights, null_pool, &out);
-    // Prevent optimizing out
-    JXL_ASSERT(std::abs(out.ConstRow(ysize / 2)[xsize / 2] - expected) /
-                   expected <
-               9E-5);
-  }
-  state.SetItemsProcessed(xsize * ysize * state.iterations());
-}
-
 BENCHMARK(BM_GaussBlur1d)->Range(1 << 8, 1 << 14);
 BENCHMARK(BM_GaussBlur2d)->Range(1 << 7, 1 << 10);
 BENCHMARK(BM_GaussBlurFir)->Range(1 << 7, 1 << 10);
-BENCHMARK(BM_GaussBlurSep7)->Range(1 << 7, 1 << 10);
 
 }  // namespace
 }  // namespace jxl
