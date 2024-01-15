@@ -11,7 +11,8 @@
 #include "tools/comparison_viewer/settings.h"
 #include "tools/comparison_viewer/ui_split_image_view.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 
 class SplitImageView : public QWidget {
   Q_OBJECT
@@ -35,6 +36,7 @@ class SplitImageView : public QWidget {
   SettingsDialog settings_;
 };
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
 
 #endif  // TOOLS_COMPARISON_VIEWER_SPLIT_IMAGE_VIEW_H_

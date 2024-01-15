@@ -3,9 +3,9 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
-find_package(Qt5 QUIET COMPONENTS Widgets)
-if (NOT Qt5_FOUND)
-  message(WARNING "Qt5 was not found. The directory viewer will not be built.")
+find_package(Qt6 QUIET COMPONENTS Widgets)
+if (NOT Qt6_FOUND)
+  message(WARNING "Qt6 was not found. The directory viewer will not be built.")
   return()
 endif ()
 
@@ -31,7 +31,7 @@ target_include_directories(viewer PRIVATE
   "${PROJECT_SOURCE_DIR}"
 )
 target_link_libraries(viewer
-  Qt5::Widgets
+  Qt6::Widgets
   icc_detect
   jxl
   jxl_threads

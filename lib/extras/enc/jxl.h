@@ -6,14 +6,14 @@
 #ifndef LIB_EXTRAS_ENC_JXL_H_
 #define LIB_EXTRAS_ENC_JXL_H_
 
+#include <jxl/encode.h>
+#include <jxl/parallel_runner.h>
+#include <jxl/thread_parallel_runner.h>
+#include <jxl/types.h>
 #include <stdint.h>
 
 #include <vector>
 
-#include "jxl/encode.h"
-#include "jxl/parallel_runner.h"
-#include "jxl/thread_parallel_runner.h"
-#include "jxl/types.h"
 #include "lib/extras/packed_image.h"
 
 namespace jxl {
@@ -38,15 +38,21 @@ struct JXLCompressParams {
   std::vector<JXLOption> options;
   // Target butteraugli distance, 0.0 means lossless.
   float distance = 1.0f;
+  float alpha_distance = 1.0f;
   // If set to true, forces container mode.
   bool use_container = false;
   // Whether to enable/disable byte-exact jpeg reconstruction for jpeg inputs.
   bool jpeg_store_metadata = true;
+  bool jpeg_strip_exif = false;
+  bool jpeg_strip_xmp = false;
+  bool jpeg_strip_jumbf = false;
   // Whether to create brob boxes.
   bool compress_boxes = true;
   // Upper bound on the intensity level present in the image in nits (zero means
   // that the library chooses a default).
   float intensity_target = 0;
+  int already_downsampled = 1;
+  int upsampling_mode = -1;
   // Overrides for bitdepth, codestream level and alpha premultiply.
   size_t override_bitdepth = 0;
   int32_t codestream_level = -1;
@@ -56,7 +62,10 @@ struct JXLCompressParams {
   // If runner_opaque is set, the decoder uses this parallel runner.
   JxlParallelRunner runner = JxlThreadParallelRunner;
   void* runner_opaque = nullptr;
-
+  JxlEncoderOutputProcessor output_processor = {};
+  JxlDebugImageCallback debug_image = nullptr;
+  void* debug_image_opaque = nullptr;
+  JxlEncoderStats* stats = nullptr;
   bool allow_expert_options = false;
 
   void AddOption(JxlEncoderFrameSettingId id, int64_t val) {
@@ -64,6 +73,11 @@ struct JXLCompressParams {
   }
   void AddFloatOption(JxlEncoderFrameSettingId id, float val) {
     options.emplace_back(JXLOption(id, val, 0));
+  }
+  bool HasOutputProcessor() const {
+    return (output_processor.get_buffer != nullptr &&
+            output_processor.release_buffer != nullptr &&
+            output_processor.set_finalized_position != nullptr);
   }
 };
 

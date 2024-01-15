@@ -5,13 +5,12 @@
 
 #include "lib/extras/enc/npy.h"
 
-#include <stdio.h>
+#include <jxl/types.h>
 
 #include <sstream>
 #include <string>
 #include <vector>
 
-#include "jxl/types.h"
 #include "lib/extras/packed_image.h"
 
 namespace jxl {

@@ -8,7 +8,6 @@
 #include <algorithm>
 #include <vector>
 
-#include "lib/jxl/color_management.h"
 #include "lib/jxl/enc_image_bundle.h"
 
 namespace jxl {
@@ -30,6 +29,14 @@ Status JxlButteraugliComparator::SetReferenceImage(const ImageBundle& ref) {
       new ButteraugliComparator(ref_linear_srgb->color(), params_));
   xsize_ = ref.xsize();
   ysize_ = ref.ysize();
+  return true;
+}
+
+Status JxlButteraugliComparator::SetLinearReferenceImage(
+    const Image3F& linear) {
+  comparator_.reset(new ButteraugliComparator(linear, params_));
+  xsize_ = linear.xsize();
+  ysize_ = linear.ysize();
   return true;
 }
 
@@ -75,9 +82,10 @@ float JxlButteraugliComparator::BadQualityScore() const {
 float ButteraugliDistance(const ImageBundle& rgb0, const ImageBundle& rgb1,
                           const ButteraugliParams& params,
                           const JxlCmsInterface& cms, ImageF* distmap,
-                          ThreadPool* pool) {
+                          ThreadPool* pool, bool ignore_alpha) {
   JxlButteraugliComparator comparator(params, cms);
-  return ComputeScore(rgb0, rgb1, &comparator, cms, distmap, pool);
+  return ComputeScore(rgb0, rgb1, &comparator, cms, distmap, pool,
+                      ignore_alpha);
 }
 
 float ButteraugliDistance(const std::vector<ImageBundle>& frames0,

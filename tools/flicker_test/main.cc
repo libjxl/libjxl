@@ -11,12 +11,13 @@
 int main(int argc, char** argv) {
   QApplication application(argc, argv);
 
-  jxl::FlickerTestWizard wizard;
+  jpegxl::tools::FlickerTestWizard wizard;
   if (wizard.exec()) {
-    jxl::FlickerTestWindow test_window(wizard.parameters());
+    jpegxl::tools::FlickerTestWindow test_window(wizard.parameters());
     if (test_window.proceedWithTest()) {
       test_window.showMaximized();
       return application.exec();
     }
   }
+  return 0;
 }

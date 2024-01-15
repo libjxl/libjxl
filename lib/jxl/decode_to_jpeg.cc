@@ -5,6 +5,8 @@
 
 #include "lib/jxl/decode_to_jpeg.h"
 
+#include "lib/jxl/common.h"  // JPEGXL_ENABLE_TRANSCODE_JPEG
+
 namespace jxl {
 
 #if JPEGXL_ENABLE_TRANSCODE_JPEG
@@ -12,21 +14,21 @@ namespace jxl {
 JxlDecoderStatus JxlToJpegDecoder::Process(const uint8_t** next_in,
                                            size_t* avail_in) {
   if (!inside_box_) {
-    JXL_ABORT(
+    JXL_UNREACHABLE(
         "processing of JPEG reconstruction data outside JPEG reconstruction "
         "box");
   }
   Span<const uint8_t> to_decode;
   if (box_until_eof_) {
     // Until EOF means consume all data.
-    to_decode = Span<const uint8_t>(*next_in, *avail_in);
+    to_decode = Bytes(*next_in, *avail_in);
     *next_in += *avail_in;
     *avail_in = 0;
   } else {
     // Defined size means consume min(available, needed).
     size_t avail_recon_in =
         std::min<size_t>(*avail_in, box_size_ - buffer_.size());
-    to_decode = Span<const uint8_t>(*next_in, avail_recon_in);
+    to_decode = Bytes(*next_in, avail_recon_in);
     *next_in += avail_recon_in;
     *avail_in -= avail_recon_in;
   }
@@ -35,10 +37,10 @@ JxlDecoderStatus JxlToJpegDecoder::Process(const uint8_t** next_in,
     // Append incoming data to buffer if we already had data in the buffer.
     buffer_.insert(buffer_.end(), to_decode.data(),
                    to_decode.data() + to_decode.size());
-    to_decode = Span<const uint8_t>(buffer_.data(), buffer_.size());
+    to_decode = Bytes(buffer_.data(), buffer_.size());
   }
   if (!box_until_eof_ && to_decode.size() > box_size_) {
-    JXL_ABORT("JPEG reconstruction data to decode larger than expected");
+    JXL_UNREACHABLE("JPEG reconstruction data to decode larger than expected");
   }
   if (box_until_eof_ || to_decode.size() == box_size_) {
     // If undefined size, or the right size, try to decode.

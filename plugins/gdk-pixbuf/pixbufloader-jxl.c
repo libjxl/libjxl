@@ -3,11 +3,11 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include "jxl/codestream_header.h"
-#include "jxl/decode.h"
-#include "jxl/resizable_parallel_runner.h"
-#include "jxl/types.h"
-#include "skcms.h"
+#include <jxl/codestream_header.h>
+#include <jxl/decode.h>
+#include <jxl/encode.h>
+#include <jxl/resizable_parallel_runner.h>
+#include <jxl/types.h>
 
 #define GDK_PIXBUF_ENABLE_BACKEND
 #include <gdk-pixbuf/gdk-pixbuf.h>
@@ -58,9 +58,7 @@ struct _GdkPixbufJxlAnimation {
   uint64_t tick_duration_us;
   uint64_t repetition_count;  // 0 = loop forever
 
-  // ICC profile, to which `icc` might refer to.
-  gpointer icc_buff;
-  skcms_ICCProfile icc;
+  gchar *icc_base64;
 };
 
 #define GDK_TYPE_PIXBUF_JXL_ANIMATION (gdk_pixbuf_jxl_animation_get_type())
@@ -144,7 +142,7 @@ static void gdk_pixbuf_jxl_animation_finalize(GObject *obj) {
   }
   JxlResizableParallelRunnerDestroy(decoder_state->parallel_runner);
   JxlDecoderDestroy(decoder_state->decoder);
-  g_free(decoder_state->icc_buff);
+  g_free(decoder_state->icc_base64);
 }
 
 static void gdk_pixbuf_jxl_animation_class_init(
@@ -222,7 +220,7 @@ static gboolean gdk_pixbuf_jxl_animation_iter_advance(
     if (total_duration_ms == 0) total_duration_ms = 1;
     uint64_t loop_offset = current_time_ms % total_duration_ms;
     jxl_iter->current_frame = 0;
-    while (true) {
+    while (TRUE) {
       uint64_t duration =
           g_array_index(jxl_iter->animation->frames, GdkPixbufJxlAnimationFrame,
                         jxl_iter->current_frame)
@@ -329,30 +327,6 @@ static gboolean stop_load(gpointer context, GError **error) {
   return TRUE;
 }
 
-static void draw_pixels(void *context, size_t x, size_t y, size_t num_pixels,
-                        const void *pixels) {
-  GdkPixbufJxlAnimation *decoder_state = context;
-  gboolean has_alpha = decoder_state->pixel_format.num_channels == 4;
-
-  GdkPixbuf *output =
-      g_array_index(decoder_state->frames, GdkPixbufJxlAnimationFrame,
-                    decoder_state->frames->len - 1)
-          .data;
-
-  guchar *dst = gdk_pixbuf_get_pixels(output) +
-                decoder_state->pixel_format.num_channels * x +
-                gdk_pixbuf_get_rowstride(output) * y;
-
-  skcms_Transform(
-      pixels,
-      has_alpha ? skcms_PixelFormat_RGBA_ffff : skcms_PixelFormat_RGB_fff,
-      decoder_state->alpha_premultiplied ? skcms_AlphaFormat_PremulAsEncoded
-                                         : skcms_AlphaFormat_Unpremul,
-      &decoder_state->icc, dst,
-      has_alpha ? skcms_PixelFormat_RGBA_8888 : skcms_PixelFormat_RGB_888,
-      skcms_AlphaFormat_Unpremul, skcms_sRGB_profile(), num_pixels);
-}
-
 static gboolean load_increment(gpointer context, const guchar *buf, guint size,
                                GError **error) {
   GdkPixbufJxlAnimation *decoder_state = context;
@@ -422,35 +396,47 @@ static gboolean load_increment(gpointer context, const guchar *buf, guint size,
 
       case JXL_DEC_COLOR_ENCODING: {
         // Get the ICC color profile of the pixel data
+        gpointer icc_buff;
         size_t icc_size;
+        JxlColorEncoding color_encoding;
+        if (JXL_DEC_SUCCESS == JxlDecoderGetColorAsEncodedProfile(
+                                   decoder_state->decoder,
+                                   JXL_COLOR_PROFILE_TARGET_ORIGINAL,
+                                   &color_encoding)) {
+          // we don't check the return status here because it's not a problem if
+          // this fails
+          JxlDecoderSetPreferredColorProfile(decoder_state->decoder,
+                                             &color_encoding);
+        }
         if (JXL_DEC_SUCCESS != JxlDecoderGetICCProfileSize(
                                    decoder_state->decoder,
-                                   &decoder_state->pixel_format,
                                    JXL_COLOR_PROFILE_TARGET_DATA, &icc_size)) {
           g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED,
                       "JxlDecoderGetICCProfileSize failed");
           return FALSE;
         }
-        if (!(decoder_state->icc_buff = g_malloc(icc_size))) {
+        if (!(icc_buff = g_malloc(icc_size))) {
           g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED,
                       "Allocating ICC profile failed");
           return FALSE;
         }
         if (JXL_DEC_SUCCESS !=
             JxlDecoderGetColorAsICCProfile(decoder_state->decoder,
-                                           &decoder_state->pixel_format,
                                            JXL_COLOR_PROFILE_TARGET_DATA,
-                                           decoder_state->icc_buff, icc_size)) {
+                                           icc_buff, icc_size)) {
           g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED,
                       "JxlDecoderGetColorAsICCProfile failed");
+          g_free(icc_buff);
           return FALSE;
         }
-        if (!skcms_Parse(decoder_state->icc_buff, icc_size,
-                         &decoder_state->icc)) {
+        decoder_state->icc_base64 = g_base64_encode(icc_buff, icc_size);
+        g_free(icc_buff);
+        if (!decoder_state->icc_base64) {
           g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED,
-                      "Invalid ICC profile from JXL image decoder");
+                      "Allocating ICC profile base64 string failed");
           return FALSE;
         }
+
         break;
       }
 
@@ -479,8 +465,11 @@ static gboolean load_increment(gpointer context, const guchar *buf, guint size,
                         "Failed to allocate output pixel buffer");
             return FALSE;
           }
+          gdk_pixbuf_set_option(frame.data, "icc-profile",
+                                decoder_state->icc_base64);
           decoder_state->pixel_format.align =
               gdk_pixbuf_get_rowstride(frame.data);
+          decoder_state->pixel_format.data_type = JXL_TYPE_UINT8;
           g_array_append_val(decoder_state->frames, frame);
         }
         if (decoder_state->pixbuf_prepared_callback &&
@@ -497,12 +486,19 @@ static gboolean load_increment(gpointer context, const guchar *buf, guint size,
       }
 
       case JXL_DEC_NEED_IMAGE_OUT_BUFFER: {
-        if (JXL_DEC_SUCCESS !=
-            JxlDecoderSetImageOutCallback(decoder_state->decoder,
-                                          &decoder_state->pixel_format,
-                                          draw_pixels, decoder_state)) {
+        GdkPixbuf *output =
+            g_array_index(decoder_state->frames, GdkPixbufJxlAnimationFrame,
+                          decoder_state->frames->len - 1)
+                .data;
+        decoder_state->pixel_format.align = gdk_pixbuf_get_rowstride(output);
+        guchar *dst = gdk_pixbuf_get_pixels(output);
+        size_t num_pixels = decoder_state->xsize * decoder_state->ysize;
+        size_t size = num_pixels * decoder_state->pixel_format.num_channels;
+        if (JXL_DEC_SUCCESS != JxlDecoderSetImageOutBuffer(
+                                   decoder_state->decoder,
+                                   &decoder_state->pixel_format, dst, size)) {
           g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED,
-                      "JxlDecoderSetImageOutCallback failed");
+                      "JxlDecoderSetImageOutBuffer failed");
           return FALSE;
         }
         break;
@@ -540,11 +536,230 @@ static gboolean load_increment(gpointer context, const guchar *buf, guint size,
   return TRUE;
 }
 
+static gboolean jxl_is_save_option_supported(const gchar *option_key) {
+  if (g_strcmp0(option_key, "quality") == 0) {
+    return TRUE;
+  }
+
+  return FALSE;
+}
+
+static gboolean jxl_image_saver(FILE *f, GdkPixbuf *pixbuf, gchar **keys,
+                                gchar **values, GError **error) {
+  long quality = 90; /* default; must be between 0 and 100 */
+  double distance;
+  gboolean save_alpha;
+  JxlEncoder *encoder;
+  void *parallel_runner;
+  JxlEncoderFrameSettings *frame_settings;
+  JxlBasicInfo output_info;
+  JxlPixelFormat pixel_format;
+  JxlColorEncoding color_profile;
+  JxlEncoderStatus status;
+
+  GByteArray *compressed;
+  size_t offset = 0;
+  uint8_t *next_out;
+  size_t avail_out;
+
+  if (f == NULL || pixbuf == NULL) {
+    return FALSE;
+  }
+
+  if (keys && *keys) {
+    gchar **kiter = keys;
+    gchar **viter = values;
+
+    while (*kiter) {
+      if (strcmp(*kiter, "quality") == 0) {
+        char *endptr = NULL;
+        quality = strtol(*viter, &endptr, 10);
+
+        if (endptr == *viter) {
+          g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_BAD_OPTION,
+                      "JXL quality must be a value between 0 and 100; value "
+                      "\"%s\" could not be parsed.",
+                      *viter);
+
+          return FALSE;
+        }
+
+        if (quality < 0 || quality > 100) {
+          g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_BAD_OPTION,
+                      "JXL quality must be a value between 0 and 100; value "
+                      "\"%ld\" is not allowed.",
+                      quality);
+
+          return FALSE;
+        }
+      } else {
+        g_warning("Unrecognized parameter (%s) passed to JXL saver.", *kiter);
+      }
+
+      ++kiter;
+      ++viter;
+    }
+  }
+
+  if (gdk_pixbuf_get_bits_per_sample(pixbuf) != 8) {
+    g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_UNKNOWN_TYPE,
+                "Sorry, only 8bit images are supported by this JXL saver");
+    return FALSE;
+  }
+
+  JxlEncoderInitBasicInfo(&output_info);
+  output_info.have_container = JXL_FALSE;
+  output_info.xsize = gdk_pixbuf_get_width(pixbuf);
+  output_info.ysize = gdk_pixbuf_get_height(pixbuf);
+  output_info.bits_per_sample = 8;
+  output_info.orientation = JXL_ORIENT_IDENTITY;
+  output_info.num_color_channels = 3;
+
+  if (output_info.xsize == 0 || output_info.ysize == 0) {
+    g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_CORRUPT_IMAGE,
+                "Empty image, nothing to save");
+    return FALSE;
+  }
+
+  save_alpha = gdk_pixbuf_get_has_alpha(pixbuf);
+
+  pixel_format.data_type = JXL_TYPE_UINT8;
+  pixel_format.endianness = JXL_NATIVE_ENDIAN;
+  pixel_format.align = gdk_pixbuf_get_rowstride(pixbuf);
+
+  if (save_alpha) {
+    if (gdk_pixbuf_get_n_channels(pixbuf) != 4) {
+      g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_UNKNOWN_TYPE,
+                  "Unsupported number of channels");
+      return FALSE;
+    }
+
+    output_info.num_extra_channels = 1;
+    output_info.alpha_bits = 8;
+    pixel_format.num_channels = 4;
+  } else {
+    if (gdk_pixbuf_get_n_channels(pixbuf) != 3) {
+      g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_UNKNOWN_TYPE,
+                  "Unsupported number of channels");
+      return FALSE;
+    }
+
+    output_info.num_extra_channels = 0;
+    output_info.alpha_bits = 0;
+    pixel_format.num_channels = 3;
+  }
+
+  encoder = JxlEncoderCreate(NULL);
+  if (!encoder) {
+    g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED,
+                "Creation of the JXL encoder failed");
+    return FALSE;
+  }
+
+  parallel_runner = JxlResizableParallelRunnerCreate(NULL);
+  if (!parallel_runner) {
+    JxlEncoderDestroy(encoder);
+    g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED,
+                "Creation of the JXL decoder failed");
+    return FALSE;
+  }
+
+  JxlResizableParallelRunnerSetThreads(
+      parallel_runner, JxlResizableParallelRunnerSuggestThreads(
+                           output_info.xsize, output_info.ysize));
+
+  status = JxlEncoderSetParallelRunner(encoder, JxlResizableParallelRunner,
+                                       parallel_runner);
+  if (status != JXL_ENC_SUCCESS) {
+    JxlResizableParallelRunnerDestroy(parallel_runner);
+    JxlEncoderDestroy(encoder);
+    g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED,
+                "JxlDecoderSetParallelRunner failed: %x", status);
+    return FALSE;
+  }
+
+  if (quality > 99) {
+    output_info.uses_original_profile = JXL_TRUE;
+    distance = 0;
+  } else {
+    output_info.uses_original_profile = JXL_FALSE;
+    distance = JxlEncoderDistanceFromQuality((float)quality);
+  }
+
+  status = JxlEncoderSetBasicInfo(encoder, &output_info);
+  if (status != JXL_ENC_SUCCESS) {
+    JxlResizableParallelRunnerDestroy(parallel_runner);
+    JxlEncoderDestroy(encoder);
+    g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED,
+                "JxlEncoderSetBasicInfo failed: %x", status);
+    return FALSE;
+  }
+
+  JxlColorEncodingSetToSRGB(&color_profile, JXL_FALSE);
+  status = JxlEncoderSetColorEncoding(encoder, &color_profile);
+  if (status != JXL_ENC_SUCCESS) {
+    JxlResizableParallelRunnerDestroy(parallel_runner);
+    JxlEncoderDestroy(encoder);
+    g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED,
+                "JxlEncoderSetColorEncoding failed: %x", status);
+    return FALSE;
+  }
+
+  frame_settings = JxlEncoderFrameSettingsCreate(encoder, NULL);
+  JxlEncoderSetFrameDistance(frame_settings, distance);
+  JxlEncoderSetFrameLossless(frame_settings, output_info.uses_original_profile);
+
+  status = JxlEncoderAddImageFrame(frame_settings, &pixel_format,
+                                   gdk_pixbuf_read_pixels(pixbuf),
+                                   gdk_pixbuf_get_byte_length(pixbuf));
+  if (status != JXL_ENC_SUCCESS) {
+    JxlResizableParallelRunnerDestroy(parallel_runner);
+    JxlEncoderDestroy(encoder);
+    g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED,
+                "JxlEncoderAddImageFrame failed: %x", status);
+    return FALSE;
+  }
+
+  JxlEncoderCloseInput(encoder);
+
+  compressed = g_byte_array_sized_new(4096);
+  g_byte_array_set_size(compressed, 4096);
+  do {
+    next_out = compressed->data + offset;
+    avail_out = compressed->len - offset;
+    status = JxlEncoderProcessOutput(encoder, &next_out, &avail_out);
+
+    if (status == JXL_ENC_NEED_MORE_OUTPUT) {
+      offset = next_out - compressed->data;
+      g_byte_array_set_size(compressed, compressed->len * 2);
+    } else if (status == JXL_ENC_ERROR) {
+      JxlResizableParallelRunnerDestroy(parallel_runner);
+      JxlEncoderDestroy(encoder);
+      g_set_error(error, G_FILE_ERROR, 0, "JxlEncoderProcessOutput failed: %x",
+                  status);
+      return FALSE;
+    }
+  } while (status != JXL_ENC_SUCCESS);
+
+  JxlResizableParallelRunnerDestroy(parallel_runner);
+  JxlEncoderDestroy(encoder);
+
+  g_byte_array_set_size(compressed, next_out - compressed->data);
+  if (compressed->len > 0) {
+    fwrite(compressed->data, 1, compressed->len, f);
+    g_byte_array_free(compressed, TRUE);
+    return TRUE;
+  }
+
+  return FALSE;
+}
+
 void fill_vtable(GdkPixbufModule *module) {
   module->begin_load = begin_load;
   module->stop_load = stop_load;
   module->load_increment = load_increment;
-  // TODO(veluca): implement saving.
+  module->is_save_option_supported = jxl_is_save_option_supported;
+  module->save = jxl_image_saver;
 }
 
 void fill_info(GdkPixbufFormat *info) {
@@ -563,7 +778,6 @@ void fill_info(GdkPixbufFormat *info) {
   info->description = "JPEG XL image";
   info->mime_types = mime_types;
   info->extensions = extensions;
-  // TODO(veluca): add writing support.
-  info->flags = GDK_PIXBUF_FORMAT_THREADSAFE;
+  info->flags = GDK_PIXBUF_FORMAT_WRITABLE | GDK_PIXBUF_FORMAT_THREADSAFE;
   info->license = "BSD-3";
 }

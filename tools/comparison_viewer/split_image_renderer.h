@@ -15,7 +15,8 @@
 #include <QWheelEvent>
 #include <QWidget>
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 
 struct SplitImageRenderingSettings {
   int fadingMSecs;
@@ -85,6 +86,7 @@ class SplitImageRenderer : public QWidget {
   double scale_ = 1.;
 };
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
 
 #endif  // TOOLS_COMPARISON_VIEWER_SPLIT_IMAGE_RENDERER_H_

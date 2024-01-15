@@ -12,30 +12,11 @@
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_ans.h"
 #include "lib/jxl/entropy_coder.h"
+#include "lib/jxl/inverse_mtf-inl.h"
 
 namespace jxl {
 
 namespace {
-
-void MoveToFront(uint8_t* v, uint8_t index) {
-  uint8_t value = v[index];
-  uint8_t i = index;
-  for (; i; --i) v[i] = v[i - 1];
-  v[0] = value;
-}
-
-void InverseMoveToFrontTransform(uint8_t* v, int v_len) {
-  uint8_t mtf[256];
-  int i;
-  for (i = 0; i < 256; ++i) {
-    mtf[i] = static_cast<uint8_t>(i);
-  }
-  for (i = 0; i < v_len; ++i) {
-    uint8_t index = v[i];
-    v[i] = mtf[index];
-    if (index) MoveToFront(mtf, index);
-  }
-}
 
 Status VerifyContextMap(const std::vector<uint8_t>& context_map,
                         const size_t num_htrees) {
@@ -73,23 +54,26 @@ Status DecodeContextMap(std::vector<uint8_t>* context_map, size_t* num_htrees,
   } else {
     bool use_mtf = input->ReadFixedBits<1>();
     ANSCode code;
-    std::vector<uint8_t> dummy_ctx_map;
+    std::vector<uint8_t> sink_ctx_map;
     // Usage of LZ77 is disallowed if decoding only two symbols. This doesn't
     // make sense in non-malicious bitstreams, and could cause a stack overflow
     // in malicious bitstreams by making every context map require its own
     // context map.
     JXL_RETURN_IF_ERROR(
-        DecodeHistograms(input, 1, &code, &dummy_ctx_map,
+        DecodeHistograms(input, 1, &code, &sink_ctx_map,
                          /*disallow_lz77=*/context_map->size() <= 2));
     ANSSymbolReader reader(&code, input);
     size_t i = 0;
+    uint32_t maxsym = 0;
     while (i < context_map->size()) {
-      uint32_t sym = reader.ReadHybridUint(0, input, dummy_ctx_map);
-      if (sym >= kMaxClusters) {
-        return JXL_FAILURE("Invalid cluster ID");
-      }
+      uint32_t sym = reader.ReadHybridUintInlined</*uses_lz77=*/true>(
+          0, input, sink_ctx_map);
+      maxsym = sym > maxsym ? sym : maxsym;
       (*context_map)[i] = sym;
       i++;
+    }
+    if (maxsym >= kMaxClusters) {
+      return JXL_FAILURE("Invalid cluster ID");
     }
     if (!reader.CheckANSFinalState()) {
       return JXL_FAILURE("Invalid context map");

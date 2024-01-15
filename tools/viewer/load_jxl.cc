@@ -5,18 +5,21 @@
 
 #include "tools/viewer/load_jxl.h"
 
+#include <jxl/decode.h>
+#include <jxl/decode_cxx.h>
+#include <jxl/thread_parallel_runner_cxx.h>
+#include <jxl/types.h>
 #include <stdint.h>
 
 #include <QElapsedTimer>
 #include <QFile>
 
-#include "jxl/decode.h"
-#include "jxl/decode_cxx.h"
-#include "jxl/thread_parallel_runner_cxx.h"
-#include "jxl/types.h"
+#define CMS_NO_REGISTER_KEYWORD 1
 #include "lcms2.h"
+#undef CMS_NO_REGISTER_KEYWORD
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 
 namespace {
 
@@ -97,12 +100,11 @@ QImage loadJxlImage(const QString& filename, const QByteArray& targetIccProfile,
   size_t icc_size;
   EXPECT_EQ(JXL_DEC_SUCCESS,
             JxlDecoderGetICCProfileSize(
-                dec.get(), &format, JXL_COLOR_PROFILE_TARGET_DATA, &icc_size));
+                dec.get(), JXL_COLOR_PROFILE_TARGET_DATA, &icc_size));
   std::vector<uint8_t> icc_profile(icc_size);
-  EXPECT_EQ(JXL_DEC_SUCCESS,
-            JxlDecoderGetColorAsICCProfile(
-                dec.get(), &format, JXL_COLOR_PROFILE_TARGET_DATA,
-                icc_profile.data(), icc_profile.size()));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetColorAsICCProfile(
+                                 dec.get(), JXL_COLOR_PROFILE_TARGET_DATA,
+                                 icc_profile.data(), icc_profile.size()));
 
   std::vector<float> float_pixels(pixel_count * 4);
   EXPECT_EQ(JXL_DEC_NEED_IMAGE_OUT_BUFFER, JxlDecoderProcessInput(dec.get()));
@@ -135,40 +137,19 @@ QImage loadJxlImage(const QString& filename, const QByteArray& targetIccProfile,
   if (elapsed_ns != nullptr) *elapsed_ns = timer.nsecsElapsed();
 
   QImage result(info.xsize, info.ysize,
-#if QT_VERSION >= QT_VERSION_CHECK(5, 12, 0)
                 info.alpha_premultiplied ? QImage::Format_RGBA64_Premultiplied
-                                         : QImage::Format_RGBA64
-#else
-                info.alpha_premultiplied ? QImage::Format_ARGB32_Premultiplied
-                                         : QImage::Format_ARGB32
-#endif
-  );
+                                         : QImage::Format_RGBA64);
 
   for (int y = 0; y < result.height(); ++y) {
-#if QT_VERSION >= QT_VERSION_CHECK(5, 12, 0)
     QRgba64* const row = reinterpret_cast<QRgba64*>(result.scanLine(y));
-#else
-    QRgb* const row = reinterpret_cast<QRgb*>(result.scanLine(y));
-#endif
     const uint16_t* const data = uint16_pixels.data() + result.width() * y * 4;
     for (int x = 0; x < result.width(); ++x) {
-#if QT_VERSION >= QT_VERSION_CHECK(5, 6, 0)
       row[x] = qRgba64(data[4 * x + 0], data[4 * x + 1], data[4 * x + 2],
-                       data[4 * x + 3])
-#if QT_VERSION < QT_VERSION_CHECK(5, 12, 0)
-                   .toArgb32()
-#endif
-          ;
-#else
-      // Qt version older than 5.6 doesn't have a qRgba64.
-      row[x] = qRgba(data[4 * x + 0] * (255.f / 65535) + .5f,
-                     data[4 * x + 1] * (255.f / 65535) + .5f,
-                     data[4 * x + 2] * (255.f / 65535) + .5f,
-                     data[4 * x + 3] * (255.f / 65535) + .5f);
-#endif
+                       data[4 * x + 3]);
     }
   }
   return result;
 }
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl

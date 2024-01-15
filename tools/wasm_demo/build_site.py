@@ -10,20 +10,40 @@ import sys
 
 from pathlib import Path
 
-EMBED_BIN = ['jxl_decoder.js', 'jxl_decoder.worker.js']
+BROTLIFY = False
+ZOPFLIFY = False
+LEAN = True
+NETLIFY = False
+
+REMOVE_SHEBANG = ['jxl_decoder.js']
+EMBED_BIN = [
+  'jxl_decoder.js',
+  'jxl_decoder.worker.js'
+]
 EMBED_SRC = ['client_worker.js']
 TEMPLATES = ['service_worker.js']
-COPY_BIN = ['jxl_decoder.wasm'] + EMBED_BIN
-COPY_SRC = ['one_line_demo.html', 'one_line_demo_with_console.html', 'manual_decode_demo.html', 'netlify.toml', 'netlify'] + EMBED_SRC
+COPY_BIN = ['jxl_decoder.wasm'] + [] if LEAN else EMBED_BIN
+COPY_SRC = [
+  'one_line_demo.html',
+  'one_line_demo_with_console.html',
+  'manual_decode_demo.html',
+] + [] if not NETLIFY else [
+  'netlify.toml',
+  'netlify'
+] + [] if LEAN else EMBED_SRC
 
 COMPRESS = COPY_BIN + COPY_SRC + TEMPLATES
 COMPRESSIBLE_EXT = ['.html', '.js', '.wasm']
 
-BROTLIFY = True
-ZOPFLIFY = False
-
 def escape_js(js):
   return js.replace('\\', '\\\\').replace('\'', '\\\'')
+
+def remove_shebang(txt):
+  lines = txt.splitlines(True) # Keep line-breaks
+  if len(lines) > 0:
+    if lines[0].startswith('#!'):
+      lines = lines[1:]
+  return ''.join(lines)
 
 def compress(path):
   name = path.name
@@ -31,7 +51,7 @@ def compress(path):
   if not compressible:
     print(f'Not compressing {name}')
     return
-  print(f'Compressing {name}')
+  print(f'Processing {name}')
   orig_size = path.stat().st_size
   if BROTLIFY:
     cmd_brotli = ['brotli', '-Zfk', path.absolute()]
@@ -43,6 +63,24 @@ def compress(path):
     subprocess.run(cmd_zopfli, check=True, stdout=sys.stdout, stderr=sys.stderr)
     gz_size = path.parent.joinpath(name + '.gz').stat().st_size
     print(f'  Zopfli: {orig_size} -> {gz_size}')
+
+def check_util(name):
+  cmd = [name, '-h']
+  try:
+    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+  except:
+    print(f"NOTE: {name} not installed")
+    return False
+  return True
+
+def check_utils():
+  global BROTLIFY
+  BROTLIFY = BROTLIFY and check_util('brotli')
+  global ZOPFLIFY
+  ZOPFLIFY = ZOPFLIFY and check_util('zopfli')
+  if not check_util('uglifyjs'):
+    print("FAIL: uglifyjs is required to build a site")
+    sys.exit()
 
 def uglify(text, name):
   cmd = ['uglifyjs', '-m', '-c']
@@ -59,6 +97,14 @@ if __name__ == "__main__":
   source_path = Path(sys.argv[1]) # CMake build dir
   binary_path = Path(sys.argv[2]) # Site template dir
   output_path = Path(sys.argv[3]) # Site output
+
+  check_utils()
+
+  for name in REMOVE_SHEBANG:
+    path = binary_path.joinpath(name)
+    text = path.read_text().strip()
+    path.write_text(remove_shebang(text))
+    remove_shebang
 
   substitutes = {}
 
@@ -91,7 +137,7 @@ if __name__ == "__main__":
     else:
       shutil.copy(path, output_path.absolute())
 
-  # TODO: uglify
+  # TODO(eustas): uglify
   for name in COPY_BIN:
     shutil.copy(binary_path.joinpath(name), output_path.absolute())
 

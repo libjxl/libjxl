@@ -8,6 +8,8 @@
 
 // XYB -> linear sRGB.
 
+#include <jxl/cms_interface.h>
+
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
@@ -15,7 +17,6 @@
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_metadata.h"
-#include "lib/jxl/opsin_params.h"
 
 namespace jxl {
 
@@ -42,7 +43,11 @@ struct OutputEncodingInfo {
   //
   // Fields depending on output color encoding
   //
+  // The requested color encoding.
   ColorEncoding color_encoding;
+  // This is expected as the output of the conversion from XYB.
+  // It is equal to `color_encoding`, but with a linear tone response curve.
+  ColorEncoding linear_color_encoding;
   bool color_encoding_is_original;
   // Contains an opsin matrix that converts to the primaries of the output
   // encoding.
@@ -56,6 +61,8 @@ struct OutputEncodingInfo {
   float luminances[3];
   // Used for the HLG inverse OOTF and PQ tone mapping.
   float desired_intensity_target;
+  bool cms_set = false;
+  JxlCmsInterface color_management_system;
 
   Status SetFromMetadata(const CodecMetadata& metadata);
   Status MaybeSetColorEncoding(const ColorEncoding& c_desired);

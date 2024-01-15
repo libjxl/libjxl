@@ -8,8 +8,8 @@
   </style>
 </head>
 <body>
-<div id="log" style="padding:2px; border: solid 1px #000; background-color: #CCC; margin:2px; height: 8em; font-family: monospace; overflow-y: auto; font-size: 8px;"></div>
-<script type="text/javascript">
+<div id="log" style="padding:2px; border: solid 1px #000; background-color: #ccc; margin:2px; height: 8em; font-family: monospace; overflow-y: auto; font-size: 8px;"></div>
+<script>
 // WASM module.
 let jxlModule = null;
 // Flag; if true, then HDR color space / 16 bit output is supported.
@@ -136,7 +136,7 @@ let processChunk = (img, chunkLen) => {
     img.canvas.width = w;
     img.canvas.height = h;
     img.canvas.style = 'width:100%';
-    // TODO: postpone until really flushed
+    // TODO(eustas): postpone until really flushed
     document.body.appendChild(img.canvas);
     let ctxOptions = {colorSpace: img.colorSpace, pixelFormat: 'float16'};
     let pixelOptions = {colorSpace: img.colorSpace, storageFormat: 'uint16'};
@@ -335,6 +335,6 @@ let onJxlModuleReady = () => {
 document.addEventListener('DOMContentLoaded', onDomContentLoaded);
 </script>
 
-<script type="text/javascript" src="jxl_decoder.js"></script>
+<script src="jxl_decoder.js"></script>
 </body>
 </html>

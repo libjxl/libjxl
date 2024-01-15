@@ -10,8 +10,8 @@
 
 #include <cmath>
 
-#include "lib/jxl/gauss_blur.h"
 #include "lib/jxl/image_ops.h"
+#include "tools/gauss_blur.h"
 
 namespace ssimulacra {
 namespace {

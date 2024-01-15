@@ -11,8 +11,6 @@
 #include <vector>
 
 #include "lib/jxl/ans_params.h"
-#include "lib/jxl/base/padded_bytes.h"
-#include "lib/jxl/base/profiler.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/coeff_order_fwd.h"
 #include "lib/jxl/dec_ans.h"
@@ -48,7 +46,7 @@ Status ReadPermutation(size_t skip, size_t size, coeff_order_t* order,
     lehmer[i] =
         reader->ReadHybridUint(CoeffOrderContext(last), br, context_map);
     last = lehmer[i];
-    if (lehmer[i] + i >= size) {
+    if (lehmer[i] >= size - i) {
       return JXL_FAILURE("Invalid lehmer code");
     }
   }
@@ -80,7 +78,6 @@ Status DecodeCoeffOrder(AcStrategy acs, coeff_order_t* order, BitReader* br,
                         ANSSymbolReader* reader,
                         std::vector<coeff_order_t>& natural_order,
                         const std::vector<uint8_t>& context_map) {
-  PROFILER_FUNC;
   const size_t llf = acs.covered_blocks_x() * acs.covered_blocks_y();
   const size_t size = kDCTBlockSize * llf;
 

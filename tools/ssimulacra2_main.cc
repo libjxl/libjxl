@@ -6,8 +6,9 @@
 #include <stdio.h>
 
 #include "lib/extras/codec.h"
-#include "lib/jxl/color_management.h"
-#include "lib/jxl/enc_color_management.h"
+// TODO(eustas): we should, but we can't?
+// #include "lib/jxl/base/span.h"
+#include "tools/file_io.h"
 #include "tools/ssimulacra2.h"
 
 int PrintUsage(char** argv) {
@@ -41,16 +42,28 @@ int PrintUsage(char** argv) {
 int main(int argc, char** argv) {
   if (argc != 3) return PrintUsage(argv);
 
-  jxl::CodecInOut io1;
-  jxl::CodecInOut io2;
-  JXL_CHECK(SetFromFile(argv[1], jxl::extras::ColorHints(), &io1));
-
-  if (io1.xsize() < 8 || io1.ysize() < 8) {
-    fprintf(stderr, "Minimum image size is 8x8 pixels\n");
-    return 1;
+  jxl::CodecInOut io[2];
+  const char* purpose[] = {"original", "distorted"};
+  for (size_t i = 0; i < 2; ++i) {
+    std::vector<uint8_t> encoded;
+    if (!jpegxl::tools::ReadFile(argv[1 + i], &encoded)) {
+      fprintf(stderr, "Could not load %s image: %s\n", purpose[i], argv[1 + i]);
+      return 1;
+    }
+    if (!jxl::SetFromBytes(jxl::Bytes(encoded), jxl::extras::ColorHints(),
+                           &io[i])) {
+      fprintf(stderr, "Could not decode %s image: %s\n", purpose[i],
+              argv[1 + i]);
+      return 1;
+    }
+    if (io[i].xsize() < 8 || io[i].ysize() < 8) {
+      fprintf(stderr, "Minimum image size is 8x8 pixels\n");
+      return 1;
+    }
   }
+  jxl::CodecInOut& io1 = io[0];
+  jxl::CodecInOut& io2 = io[1];
 
-  JXL_CHECK(SetFromFile(argv[2], jxl::extras::ColorHints(), &io2));
   if (io1.xsize() != io2.xsize() || io1.ysize() != io2.ysize()) {
     fprintf(stderr, "Image size mismatch\n");
     return 1;

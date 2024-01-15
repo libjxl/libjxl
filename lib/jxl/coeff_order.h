@@ -13,11 +13,12 @@
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/coeff_order_fwd.h"
-#include "lib/jxl/common.h"
 #include "lib/jxl/dct_util.h"
-#include "lib/jxl/dec_bit_reader.h"
+#include "lib/jxl/frame_dimensions.h"
 
 namespace jxl {
+
+class BitReader;
 
 // Those offsets get multiplied by kDCTBlockSize.
 static constexpr size_t kCoeffOrderOffset[] = {

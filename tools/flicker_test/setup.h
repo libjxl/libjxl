@@ -11,7 +11,8 @@
 #include "tools/flicker_test/parameters.h"
 #include "tools/flicker_test/ui_setup.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 
 class FlickerTestWizard : public QWizard {
   Q_OBJECT
@@ -39,6 +40,7 @@ class FlickerTestWizard : public QWizard {
   QSettings settings_;
 };
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
 
 #endif  // TOOLS_FLICKER_TEST_SETUP_H_

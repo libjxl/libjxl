@@ -11,12 +11,15 @@ on:
     branches:
       - ci-*-debug
 
+permissions:
+  contents: read
+
 jobs:
   cross_compile_ubuntu:
-    name: Cross-compiling ${{ matrix.build_target }} ${{ matrix.variant }} 
+    name: Cross-compiling ${{ matrix.build_target }} ${{ matrix.variant }}
     runs-on: [ubuntu-22.04]
     container:
-      image: debian:bullseye
+      image: debian:bookworm
     strategy:
       fail-fast: false
       matrix:
@@ -28,6 +31,11 @@ jobs:
       BUILD_DIR: build
 
     steps:
+    - name: Harden Runner
+      uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
+      with:
+        egress-policy: audit
+
     - name: Setup apt
       shell: bash
       run: |
@@ -96,10 +104,6 @@ jobs:
           # GTK plugins
           libgdk-pixbuf2.0-dev:${{ matrix.arch }}
           libgtk2.0-dev:${{ matrix.arch }}
-
-          # QT
-          libqt5x11extras5-dev:${{ matrix.arch }}
-          qtbase5-dev:${{ matrix.arch }}
         )
         if [[ "${{ matrix.build_target }}" != "x86_64-linux-gnu" ]]; then
           pkgs+=(
@@ -120,21 +124,21 @@ jobs:
         echo "CC=${{ matrix.c_compiler || 'clang-11' }}" >> $GITHUB_ENV
         echo "CXX=${{ matrix.cxx_compiler || 'clang++-11' }}" >> $GITHUB_ENV
     - name: Checkout the source
-      uses: actions/checkout@v2
+      uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       with:
         submodules: true
         fetch-depth: 1
-    - name: Build
+    - name: Configure
       run: |
         CMAKE_FLAGS="${{ matrix.cmake_flags }}" ./ci.sh release \
           -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
           -DJPEGXL_ENABLE_JNI=OFF \
           ${{ join(matrix.cmake_args, ' ') }}
       env:
-        SKIP_TEST: 1
+        SKIP_BUILD: 1
         BUILD_TARGET: ${{ matrix.build_target }}
     - name: Setup tmate session
-      uses: mxschmitt/action-tmate@v3
+      uses: mxschmitt/action-tmate@a283f9441d2d96eb62436dc46d7014f5d357ac22 # v3.17
 
 
 

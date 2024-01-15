@@ -36,27 +36,29 @@
  *
  */
 
-#include <stdio.h>
+#include <jxl/codestream_header.h>
+#include <jxl/encode.h>
 #include <string.h>
 
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "jxl/codestream_header.h"
-#include "jxl/encode.h"
+#include "lib/extras/size_constraints.h"
 #include "lib/jxl/base/byte_order.h"
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/scope_guard.h"
-#include "lib/jxl/common.h"
 #include "lib/jxl/sanitizers.h"
-#include "lib/jxl/size_constraints.h"
+#if JPEGXL_ENABLE_APNG
 #include "png.h" /* original (unpatched) libpng is ok */
+#endif
 
 namespace jxl {
 namespace extras {
 
+#if JPEGXL_ENABLE_APNG
 namespace {
 
 constexpr unsigned char kExifSignature[6] = {0x45, 0x78, 0x69,
@@ -280,9 +282,9 @@ class BlobsReaderPNG {
       }
       metadata->exif = std::move(bytes);
     } else if (type == "iptc") {
-      // TODO (jon): Deal with IPTC in some way
+      // TODO(jon): Deal with IPTC in some way
     } else if (type == "8bim") {
-      // TODO (jon): Deal with 8bim in some way
+      // TODO(jon): Deal with 8bim in some way
     } else if (type == "xmp") {
       if (!metadata->xmp.empty()) {
         JXL_WARNING("overwriting XMP (%" PRIuS " bytes) with base16 (%" PRIuS
@@ -491,6 +493,12 @@ int processing_start(png_structp& png_ptr, png_infop& info_ptr, void* frame_ptr,
                      std::vector<std::vector<uint8_t>>& chunksInfo) {
   unsigned char header[8] = {137, 80, 78, 71, 13, 10, 26, 10};
 
+  // Cleanup prior decoder, if any.
+  png_destroy_read_struct(&png_ptr, &info_ptr, 0);
+  // Just in case. Not all versions on libpng wipe-out the pointers.
+  png_ptr = nullptr;
+  info_ptr = nullptr;
+
   png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
   info_ptr = png_create_info_struct(png_ptr);
   if (!png_ptr || !info_ptr) return 1;
@@ -552,11 +560,20 @@ int processing_finish(png_structp png_ptr, png_infop info_ptr,
 }
 
 }  // namespace
+#endif
+
+bool CanDecodeAPNG() {
+#if JPEGXL_ENABLE_APNG
+  return true;
+#else
+  return false;
+#endif
+}
 
 Status DecodeImageAPNG(const Span<const uint8_t> bytes,
-                       const ColorHints& color_hints,
-                       const SizeConstraints& constraints,
-                       PackedPixelFile* ppf) {
+                       const ColorHints& color_hints, PackedPixelFile* ppf,
+                       const SizeConstraints* constraints) {
+#if JPEGXL_ENABLE_APNG
   Reader r;
   unsigned int id, j, w, h, w0, h0, x0, y0;
   unsigned int delay_num, delay_den, dop, bop, rowbytes, imagesize;
@@ -568,6 +585,7 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
   std::vector<std::vector<uint8_t>> chunksInfo;
   bool isAnimated = false;
   bool hasInfo = false;
+  bool seenFctl = false;
   APNGFrame frameRaw = {};
   uint32_t num_channels;
   JxlPixelFormat format;
@@ -635,6 +653,7 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
       while (!r.Eof()) {
         id = read_chunk(&r, &chunk);
         if (!id) break;
+        seenFctl |= (id == kId_fcTL);
 
         if (id == kId_acTL && !hasInfo && !isAnimated) {
           isAnimated = true;
@@ -695,11 +714,16 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
           }
         } else if (id == kId_IDAT) {
           // First IDAT chunk means we now have all header info
+          if (seenFctl) {
+            // `fcTL` chunk must appear after all `IDAT` chunks
+            return JXL_FAILURE("IDAT chunk after fcTL chunk");
+          }
           hasInfo = true;
           JXL_CHECK(w == png_get_image_width(png_ptr, info_ptr));
           JXL_CHECK(h == png_get_image_height(png_ptr, info_ptr));
           int colortype = png_get_color_type(png_ptr, info_ptr);
-          ppf->info.bits_per_sample = png_get_bit_depth(png_ptr, info_ptr);
+          int png_bit_depth = png_get_bit_depth(png_ptr, info_ptr);
+          ppf->info.bits_per_sample = png_bit_depth;
           png_color_8p sigbits = NULL;
           png_get_sBIT(png_ptr, info_ptr, &sigbits);
           if (colortype & 1) {
@@ -710,8 +734,18 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
             ppf->info.num_color_channels = 3;
             ppf->color_encoding.color_space = JXL_COLOR_SPACE_RGB;
             if (sigbits && sigbits->red == sigbits->green &&
-                sigbits->green == sigbits->blue)
+                sigbits->green == sigbits->blue) {
               ppf->info.bits_per_sample = sigbits->red;
+            } else if (sigbits) {
+              int maxbps = std::max(sigbits->red,
+                                    std::max(sigbits->green, sigbits->blue));
+              JXL_WARNING(
+                  "sBIT chunk: bit depths for R, G, and B are not the same (%i "
+                  "%i %i), while in JPEG XL they have to be the same. Setting "
+                  "RGB bit depth to %i.",
+                  sigbits->red, sigbits->green, sigbits->blue, maxbps);
+              ppf->info.bits_per_sample = maxbps;
+            }
           } else {
             ppf->info.num_color_channels = 1;
             ppf->color_encoding.color_space = JXL_COLOR_SPACE_GRAY;
@@ -720,12 +754,12 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
           if (colortype & 4 ||
               png_get_valid(png_ptr, info_ptr, PNG_INFO_tRNS)) {
             ppf->info.alpha_bits = ppf->info.bits_per_sample;
-            if (sigbits) {
-              if (sigbits->alpha &&
-                  sigbits->alpha != ppf->info.bits_per_sample) {
-                return JXL_FAILURE("Unsupported alpha bit-depth");
-              }
-              ppf->info.alpha_bits = sigbits->alpha;
+            if (sigbits && sigbits->alpha != ppf->info.bits_per_sample) {
+              JXL_WARNING(
+                  "sBIT chunk: bit depths for RGBA are inconsistent "
+                  "(%i %i %i %i). Setting A bitdepth to %i.",
+                  sigbits->red, sigbits->green, sigbits->blue, sigbits->alpha,
+                  ppf->info.bits_per_sample);
             }
           } else {
             ppf->info.alpha_bits = 0;
@@ -735,7 +769,7 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
                                                  : JXL_COLOR_SPACE_RGB);
           ppf->info.xsize = w;
           ppf->info.ysize = h;
-          JXL_RETURN_IF_ERROR(VerifyDimensions(&constraints, w, h));
+          JXL_RETURN_IF_ERROR(VerifyDimensions(constraints, w, h));
           num_channels =
               ppf->info.num_color_channels + (ppf->info.alpha_bits ? 1 : 0);
           format = {
@@ -745,6 +779,9 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
               /*endianness=*/JXL_BIG_ENDIAN,
               /*align=*/0,
           };
+          if (png_bit_depth > 8 && format.data_type == JXL_TYPE_UINT8) {
+            png_set_strip_16(png_ptr);
+          }
           bytes_per_pixel =
               num_channels * (format.data_type == JXL_TYPE_UINT16 ? 2 : 1);
           rowbytes = w * bytes_per_pixel;
@@ -758,6 +795,9 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
             break;
           }
         } else if (id == kId_fdAT && isAnimated) {
+          if (!hasInfo) {
+            return JXL_FAILURE("fDAT chunk before iDAT");
+          }
           png_save_uint_32(chunk.data() + 4, chunk.size() - 16);
           memcpy(chunk.data() + 8, "IDAT", 4);
           if (processing_data(png_ptr, info_ptr, chunk.data() + 4,
@@ -903,7 +943,7 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
         should_blend = false;
         ppf->frames.emplace_back(std::move(new_data));
       } else {
-        // If all else fails, insert a dummy blank frame with kReplace.
+        // If all else fails, insert a placeholder blank frame with kReplace.
         PackedImage blank(pxs, pys, frame.data.format);
         memset(blank.pixels(), 0, blank.pixels_size);
         ppf->frames.emplace_back(std::move(blank));
@@ -947,6 +987,9 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
   ppf->frames.back().frame_info.is_last = true;
 
   return true;
+#else
+  return false;
+#endif
 }
 
 }  // namespace extras

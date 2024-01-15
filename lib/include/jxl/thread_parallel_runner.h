@@ -30,14 +30,12 @@
 #ifndef JXL_THREAD_PARALLEL_RUNNER_H_
 #define JXL_THREAD_PARALLEL_RUNNER_H_
 
+#include <jxl/jxl_threads_export.h>
+#include <jxl/memory_manager.h>
+#include <jxl/parallel_runner.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <stdlib.h>
-
-#include "jxl/jxl_threads_export.h"
-#include "jxl/memory_manager.h"
-#include "jxl/parallel_runner.h"
 
 #if defined(__cplusplus) || defined(c_plusplus)
 extern "C" {
@@ -62,7 +60,7 @@ JXL_THREADS_EXPORT void JxlThreadParallelRunnerDestroy(void* runner_opaque);
 /** Returns a default num_worker_threads value for
  * JxlThreadParallelRunnerCreate.
  */
-JXL_THREADS_EXPORT size_t JxlThreadParallelRunnerDefaultNumWorkerThreads();
+JXL_THREADS_EXPORT size_t JxlThreadParallelRunnerDefaultNumWorkerThreads(void);
 
 #if defined(__cplusplus) || defined(c_plusplus)
 }

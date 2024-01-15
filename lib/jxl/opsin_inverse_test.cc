@@ -3,17 +3,17 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include "gtest/gtest.h"
+#include <jxl/cms.h>
+
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
-#include "lib/jxl/color_management.h"
 #include "lib/jxl/dec_xyb.h"
-#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_xyb.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_test_utils.h"
+#include "lib/jxl/testing.h"
 
 namespace jxl {
 namespace {
@@ -25,16 +25,18 @@ TEST(OpsinInverseTest, LinearInverseInverts) {
   CodecInOut io;
   io.metadata.m.SetFloat32Samples();
   io.metadata.m.color_encoding = ColorEncoding::LinearSRGB();
-  io.SetFromImage(CopyImage(linear), io.metadata.m.color_encoding);
+  Image3F linear2(128, 128);
+  CopyImageTo(linear, &linear2);
+  io.SetFromImage(std::move(linear2), io.metadata.m.color_encoding);
   ThreadPool* null_pool = nullptr;
   Image3F opsin(io.xsize(), io.ysize());
-  (void)ToXYB(io.Main(), null_pool, &opsin, GetJxlCms());
+  (void)ToXYB(io.Main(), null_pool, &opsin, *JxlGetDefaultCms());
 
   OpsinParams opsin_params;
   opsin_params.Init(/*intensity_target=*/255.0f);
   OpsinToLinearInplace(&opsin, /*pool=*/nullptr, opsin_params);
 
-  VerifyRelativeError(linear, opsin, 3E-3, 2E-4);
+  JXL_ASSERT_OK(VerifyRelativeError(linear, opsin, 3E-3, 2E-4, _));
 }
 
 TEST(OpsinInverseTest, YcbCrInverts) {
@@ -50,7 +52,7 @@ TEST(OpsinInverseTest, YcbCrInverts) {
   Image3F rgb2(rgb.xsize(), rgb.ysize());
   YcbcrToRgb(ycbcr, &rgb2, Rect(rgb));
 
-  VerifyRelativeError(rgb, rgb2, 4E-5, 4E-7);
+  JXL_ASSERT_OK(VerifyRelativeError(rgb, rgb2, 4E-5, 4E-7, _));
 }
 
 }  // namespace

@@ -5,6 +5,8 @@
 
 #include "lib/jxl/render_pipeline/stage_epf.h"
 
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/common.h"  // JXL_HIGH_PRECISION
 #include "lib/jxl/epf.h"
 #include "lib/jxl/sanitizers.h"
 
@@ -516,7 +518,7 @@ std::unique_ptr<RenderPipelineStage> GetEPFStage(const LoopFilter& lf,
     case 2:
       return HWY_DYNAMIC_DISPATCH(GetEPFStage2)(lf, sigma);
     default:
-      JXL_ABORT("Invalid EPF stage");
+      JXL_UNREACHABLE("Invalid EPF stage");
   }
 }
 

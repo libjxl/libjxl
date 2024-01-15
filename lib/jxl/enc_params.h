@@ -8,6 +8,7 @@
 
 // Parameters and flags that govern JXL compression.
 
+#include <jxl/encode.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -15,9 +16,12 @@
 
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/butteraugli/butteraugli.h"
+#include "lib/jxl/enc_progressive_split.h"
 #include "lib/jxl/frame_header.h"
+#include "lib/jxl/modular/encoding/dec_ma.h"
 #include "lib/jxl/modular/options.h"
 #include "lib/jxl/modular/transform/transform.h"
+#include "lib/jxl/splines.h"
 
 namespace jxl {
 
@@ -54,14 +58,10 @@ enum class SpeedTier {
 // NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
 struct CompressParams {
   float butteraugli_distance = 1.0f;
-  size_t target_size = 0;
-  float target_bitrate = 0.0f;
 
-  // 0.0 means search for the adaptive quantization map that matches the
-  // butteraugli distance, positive values mean quantize everywhere with that
-  // value.
-  float uniform_quant = 0.0f;
-  float quant_border_bias = 0.0f;
+  // explicit distances for extra channels (defaults to butteraugli_distance
+  // when not set; value of -1 can be used to represent 'default')
+  std::vector<float> ec_distance;
 
   // Try to achieve a maximum pixel-by-pixel error on each channel.
   bool max_error_mode = false;
@@ -73,21 +73,16 @@ struct CompressParams {
   // 0 = default.
   // 1 = slightly worse quality.
   // 4 = fastest speed, lowest quality
-  // TODO(veluca): hook this up to the C API.
   size_t decoding_speed_tier = 0;
 
-  int max_butteraugli_iters = 4;
-
-  int max_butteraugli_iters_guetzli_mode = 100;
-
   ColorTransform color_transform = ColorTransform::kXYB;
-  YCbCrChromaSubsampling chroma_subsampling;
 
   // If true, the "modular mode options" members below are used.
   bool modular_mode = false;
 
-  // Change group size in modular mode (0=128, 1=256, 2=512, 3=1024).
-  size_t modular_group_size_shift = 1;
+  // Change group size in modular mode (0=128, 1=256, 2=512, 3=1024, -1=encoder
+  // chooses).
+  int modular_group_size_shift = -1;
 
   Override preview = Override::kDefault;
   Override noise = Override::kDefault;
@@ -115,14 +110,12 @@ struct CompressParams {
   // Default: on for lossless, off for lossy
   Override keep_invisible = Override::kDefault;
 
-  // Currently unused as of 2020-01.
-  bool clear_metadata = false;
-
-  // Prints extra information during/after encoding.
-  bool verbose = false;
-  bool log_search_state = false;
-
-  ButteraugliParams ba_params;
+  JxlCmsInterface cms;
+  bool cms_set = false;
+  void SetCms(const JxlCmsInterface& cms) {
+    this->cms = cms;
+    cms_set = true;
+  }
 
   // Force usage of CfL when doing JPEG recompression. This can have unexpected
   // effects on the decoded pixels, while still being JPEG-compliant and
@@ -131,6 +124,11 @@ struct CompressParams {
 
   // Use brotli compression for any boxes derived from a JPEG frame.
   bool jpeg_compress_boxes = true;
+
+  // Preserve this metadata when doing JPEG recompression.
+  bool jpeg_keep_exif = true;
+  bool jpeg_keep_xmp = true;
+  bool jpeg_keep_jumbf = true;
 
   // Set the noise to what it would approximately be if shooting at the nominal
   // exposure for a given ISO setting on a 35mm camera.
@@ -150,17 +148,32 @@ struct CompressParams {
   bool lossy_palette = false;
 
   // Returns whether these params are lossless as defined by SetLossless();
-  bool IsLossless() const {
-    // YCbCr is also considered lossless here since it's intended for
-    // source material that is already YCbCr (we don't do the fwd transform)
-    return modular_mode && butteraugli_distance == 0.0f &&
-           color_transform != jxl::ColorTransform::kXYB;
+  bool IsLossless() const { return modular_mode && ModularPartIsLossless(); }
+
+  bool ModularPartIsLossless() const {
+    if (modular_mode) {
+      // YCbCr is also considered lossless here since it's intended for
+      // source material that is already YCbCr (we don't do the fwd transform)
+      if (butteraugli_distance != 0 ||
+          color_transform == jxl::ColorTransform::kXYB)
+        return false;
+    }
+    for (float f : ec_distance) {
+      if (f > 0) return false;
+      if (f < 0 && butteraugli_distance != 0) return false;
+    }
+    // if no explicit ec_distance given, and using vardct, then the modular part
+    // is empty or not lossless
+    if (!modular_mode && ec_distance.empty()) return false;
+    // all modular channels are encoded at distance 0
+    return true;
   }
 
   // Sets the parameters required to make the codec lossless.
   void SetLossless() {
     modular_mode = true;
     butteraugli_distance = 0.0f;
+    for (float &f : ec_distance) f = 0.0f;
     color_transform = jxl::ColorTransform::kNone;
   }
 
@@ -183,8 +196,25 @@ struct CompressParams {
   // -1: don't care
   int level = -1;
 
+  // See JXL_ENC_FRAME_SETTING_BUFFERING option value.
+  int buffering = 0;
+  // See JXL_ENC_FRAME_SETTING_USE_FULL_IMAGE_HEURISTICS option value.
+  bool use_full_image_heuristics = true;
+
   std::vector<float> manual_noise;
   std::vector<float> manual_xyb_factors;
+
+  // If not empty, this tree will be used for dc global section.
+  // Used in jxl_from_tree tool.
+  Tree custom_fixed_tree;
+  // If not empty, these custom splines will be used instead of the computed
+  // ones. Used in jxl_from_tee tool.
+  Splines custom_splines;
+  // If not null, overrides progressive mode settings. Used in decode_test.
+  const ProgressiveMode* custom_progressive_mode = nullptr;
+
+  JxlDebugImageCallback debug_image = nullptr;
+  void* debug_image_opaque;
 };
 
 static constexpr float kMinButteraugliForDynamicAR = 0.5f;

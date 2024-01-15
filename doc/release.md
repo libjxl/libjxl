@@ -29,7 +29,7 @@ number. Released tags don't each one have their own release branch, all releases
 from the same MAJOR.MINOR version will share the same branch. The first commit
 after the branch-off points between the main branch and the release branch
 should be tagged with the suffix `-snapshot` and the name of the next
-MAJOR.MINOR version, in order to get meaningful ouput for `git describe`.
+MAJOR.MINOR version, in order to get meaningful output for `git describe`.
 
 The main purpose of the release branch is to stabilize the code before a
 release. This involves including fixes to existing bugs but **not** including
@@ -128,7 +128,8 @@ To help update it, run this helper command (in a Debian-based system):
 This will update the version in the following files:
 
  * `lib/CMakeLists.txt`
- * `lib/lib.gni`, automatically updated with `tools/build_cleaner.py --update`.
+ * `lib/lib.gni`, automatically updated with
+   `tools/scripts/build_cleaner.py --update`.
  * `debian/changelog` to create the Debian package release with the new version.
    Debian changelog shouldn't repeat the library changelog, instead it should
    include changes to the packaging scripts.
@@ -180,6 +181,15 @@ running `git cherry-pick` and `git commit --amend` multiple times for all the
 commits you need to cherry-pick, ideally in the same order they were merged on
 the `main` branch. At the end you will have a local branch with multiple commits
 on top of the release branch.
+
+To update the version number, for example from v0.8.0 to v0.8.1 run this helper
+command (in a Debian-based system):
+
+```bash
+./ci.sh bump_version 0.8.1
+```
+
+as described above and commit the changes.
 
 Finally, upload your changes to *your fork* like normal, except that when
 creating a pull request select the desired release branch as a target:
@@ -267,36 +277,52 @@ instructions:
 
  * Finally click "Publish release" and go celebrate with the team. 🎉
 
+ * The branch v0.7.x will be pushed to gitlab automatically, but make sure to
+   manually push the *tag* of the release also to
+   https://gitlab.com/wg1/jpeg-xl, by doing
+
+```bash
+git push gitlab v0.7.1
+```
+where `gitlab` is the remote `git@gitlab.com:wg1/jpeg-xl.git`. 
+
 ### How to build downstream projects
 
 ```bash
-docker run -it debian:bullseye /bin/bash
+docker run -it debian:bookworm /bin/bash
 
 apt update
 apt install -y clang cmake git libbrotli-dev nasm pkg-config ninja-build
 export CC=clang
 export CXX=clang++
 
-git clone --recurse-submodules --depth 1 -b v0.7.x \
+mkdir -p /src
+cd /src
+
+git clone --recurse-submodules --depth 1 -b v0.9.x \
   https://github.com/libjxl/libjxl.git
 git clone --recurse-submodules --depth 1 \
   https://github.com/ImageMagick/ImageMagick.git
 git clone --recurse-submodules --depth 1 \
   https://github.com/FFmpeg/FFmpeg.git
 
-cd ~/libjxl
-git checkout v0.7.x
+cd /src/libjxl
 cmake -B build -G Ninja .
-cmake --build build
-cmake --install build
+cmake --build build -j`nproc`
+cmake --install build --prefix="/usr"
 
-cd ~/ImageMagick
+cd /src/ImageMagick
 ./configure --with-jxl=yes
 # check for "JPEG XL --with-jxl=yes yes"
-make -j 80
+make -j `nproc`
+./utilities/magick -version
 
-cd ~/FFmpeg
-./configure --enable-libjxl
+cd /src/FFmpeg
+./configure --disable-all --disable-debug --enable-avcodec --enable-avfilter \
+  --enable-avformat --enable-libjxl --enable-encoder=libjxl \
+  --enable-decoder=libjxl --enable-ffmpeg
 # check for libjxl decoder/encoder support
-make -j 80
+make -j `nproc`
+ldd ./ffmpeg
+./ffmpeg -version
 ```

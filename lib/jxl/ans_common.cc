@@ -24,10 +24,10 @@ std::vector<int32_t> CreateFlatHistogram(int length, int total_count) {
   return result;
 }
 
-// First, all trailing non-occuring symbols are removed from the distribution;
-// if this leaves the distribution empty, a dummy symbol with max weight is
-// added. This ensures that the resulting distribution sums to total table size.
-// Then, `entry_size` is chosen to be the largest power of two so that
+// First, all trailing non-occurring symbols are removed from the distribution;
+// if this leaves the distribution empty, a placeholder symbol with max weight
+// is  added. This ensures that the resulting distribution sums to total table
+// size. Then, `entry_size` is chosen to be the largest power of two so that
 // `table_size` = ANS_TAB_SIZE/`entry_size` is at least as big as the
 // distribution size.
 // Note that each entry will only ever contain two different symbols, and

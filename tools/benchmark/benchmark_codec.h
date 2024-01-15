@@ -13,10 +13,8 @@
 #include <vector>
 
 #include "lib/jxl/base/data_parallel.h"
-#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/butteraugli/butteraugli.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/image.h"
@@ -25,8 +23,13 @@
 #include "tools/benchmark/benchmark_stats.h"
 #include "tools/cmdline.h"
 #include "tools/speed_stats.h"
+#include "tools/thread_pool_internal.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
+
+using ::jxl::CodecInOut;
+using ::jxl::Span;
 
 // Thread-compatible.
 class ImageCodec {
@@ -46,25 +49,22 @@ class ImageCodec {
 
   virtual Status ParseParam(const std::string& param);
 
-  // Returns true iff the codec instance (including parameters) will operate
-  // only with quantized DCT (JPEG) coefficients in input.
-  virtual bool IsJpegTranscoder() const { return false; }
-
   virtual Status Compress(const std::string& filename, const CodecInOut* io,
-                          ThreadPoolInternal* pool,
-                          std::vector<uint8_t>* compressed,
+                          ThreadPool* pool, std::vector<uint8_t>* compressed,
                           jpegxl::tools::SpeedStats* speed_stats) = 0;
 
   virtual Status Decompress(const std::string& filename,
                             const Span<const uint8_t> compressed,
-                            ThreadPoolInternal* pool, CodecInOut* io,
+                            ThreadPool* pool, CodecInOut* io,
                             jpegxl::tools::SpeedStats* speed_stats) = 0;
 
   virtual void GetMoreStats(BenchmarkStats* stats) {}
 
+  virtual bool IgnoreAlpha() const { return false; }
+
   virtual Status CanRecompressJpeg() const { return false; }
   virtual Status RecompressJpeg(const std::string& filename,
-                                const std::string& data,
+                                const std::vector<uint8_t>& data,
                                 std::vector<uint8_t>* compressed,
                                 jpegxl::tools::SpeedStats* speed_stats) {
     return false;
@@ -89,6 +89,7 @@ using ImageCodecPtr = std::unique_ptr<ImageCodec>;
 // then ParseParameters of the codec gets called with the part behind the colon.
 ImageCodecPtr CreateImageCodec(const std::string& description);
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
 
 #endif  // TOOLS_BENCHMARK_BENCHMARK_CODEC_H_

@@ -11,8 +11,8 @@
 </head>
 
 <body>
-  <div id="log" style="padding:2px; border: solid 1px #000; background-color: #CCC; margin:2px; height: 8em; font-family: monospace; overflow-y: auto; font-size: 8px;"></div>
-  <script type="text/javascript">
+  <div id="log" style="padding:2px; border: solid 1px #000; background-color: #ccc; margin:2px; height: 8em; font-family: monospace; overflow-y: auto; font-size: 8px;"></div>
+  <script>
     let addMessage = (text, color) => {
       let log = document.getElementById('log');
       let message = document.createElement('p');
@@ -23,8 +23,12 @@
     }
   </script>
 
-  <img src="image00.jpg?tmp=1" style="width:100%" />
-  <img src="image01.png?tmp=2" style="width:100%" />
+<!-- Use those with capable server
+  <img src="image00.jpg" style="width:100%" />
+  <img src="image01.png" style="width:100%" />
+-->
+  <img src="image00.jxl" style="width:100%" />
+  <img src="image01.jxl" style="width:100%" />
 </body>
 
 </html>

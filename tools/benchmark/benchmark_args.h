@@ -23,7 +23,12 @@
 #include "tools/args.h"
 #include "tools/cmdline.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
+
+using ::jxl::ColorEncoding;
+using ::jxl::Override;
+using ::jxl::Status;
 
 std::vector<std::string> SplitString(const std::string& s, char c);
 
@@ -108,7 +113,7 @@ struct BenchmarkArgs {
   bool silent_errors;
   bool save_compressed;
   bool save_decompressed;
-  std::string output_extension;    // see CodecFromExtension
+  std::string output_extension;    // see CodecFromPath
   std::string output_description;  // see ParseDescription
   ColorEncoding output_encoding;   // determined by output_description
 
@@ -147,7 +152,6 @@ struct BenchmarkArgs {
   int num_samples;
   int sample_dimensions;
 
-  bool profiler;
   double error_pnorm;
   bool show_progress;
 
@@ -171,6 +175,7 @@ struct BenchmarkArgs {
 // Returns singleton
 BenchmarkArgs* Args();
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
 
 #endif  // TOOLS_BENCHMARK_BENCHMARK_ARGS_H_

@@ -5,10 +5,9 @@
 
 #include "lib/extras/enc/pgx.h"
 
-#include <stdio.h>
+#include <jxl/codestream_header.h>
 #include <string.h>
 
-#include "jxl/codestream_header.h"
 #include "lib/extras/packed_image.h"
 #include "lib/jxl/base/byte_order.h"
 

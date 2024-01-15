@@ -15,7 +15,8 @@
 #include "tools/icc_detect/icc_detect.h"
 #include "tools/viewer/load_jxl.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 
 namespace {
 
@@ -50,7 +51,7 @@ void ViewerWindow::loadFilesAndDirectories(QStringList entries) {
   filenames_.clear();
   QSet<QString> visited;
   for (const QString& entry : entries) {
-    recursivelyAddSubEntries(entry, &visited, &filenames_);
+    recursivelyAddSubEntries(QFileInfo(entry), &visited, &filenames_);
   }
 
   const bool several = filenames_.size() > 1;
@@ -127,4 +128,5 @@ void ViewerWindow::refreshImage() {
   }
 }
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl

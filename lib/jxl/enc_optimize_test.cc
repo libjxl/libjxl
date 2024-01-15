@@ -5,9 +5,7 @@
 
 #include "lib/jxl/enc_optimize.h"
 
-#include <stdio.h>
-
-#include "gtest/gtest.h"
+#include "lib/jxl/testing.h"
 
 namespace jxl {
 namespace optimize {

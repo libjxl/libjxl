@@ -12,12 +12,14 @@
 #include "tools/benchmark/benchmark_args.h"
 #include "tools/benchmark/benchmark_codec.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 ImageCodec* CreateNewJxlCodec(const BenchmarkArgs& args);
 
 // Registers the jxl-specific command line options.
 Status AddCommandLineOptionsJxlCodec(BenchmarkArgs* args);
 Status ValidateArgsJxlCodec(BenchmarkArgs* args);
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
 
 #endif  // TOOLS_BENCHMARK_BENCHMARK_CODEC_JXL_H_

@@ -5,10 +5,10 @@
 
 #include "lib/jxl/fields.h"
 
-#include <stddef.h>
-
 #include <algorithm>
+#include <cinttypes>
 #include <cmath>
+#include <cstddef>
 #include <hwy/base.h>
 
 #include "lib/jxl/base/bits.h"
@@ -225,7 +225,7 @@ class ReadVisitor : public VisitorBase {
     if (pos_after_ext_size_ == 0) return true;
 
     // Not enough bytes as set by BeginExtensions or earlier. Do not return
-    // this as an JXL_FAILURE or false (which can also propagate to error
+    // this as a JXL_FAILURE or false (which can also propagate to error
     // through e.g. JXL_RETURN_IF_ERROR), since this may be used while
     // silently checking whether there are enough bytes. If this case must be
     // treated as an error, reader_>Close() will do this, just like is already
@@ -266,6 +266,8 @@ class ReadVisitor : public VisitorBase {
   uint64_t extension_bits_[Bundle::kMaxExtensions] = {0};
   uint64_t total_extension_bits_ = 0;
   size_t pos_after_ext_size_ = 0;  // 0 iff extensions == 0.
+
+  friend Status jxl::CheckHasEnoughBits(Visitor*, size_t);
 };
 
 class MaxBitsVisitor : public VisitorBase {
@@ -411,19 +413,19 @@ class CanEncodeVisitor : public VisitorBase {
 void Bundle::Init(Fields* fields) {
   InitVisitor visitor;
   if (!visitor.Visit(fields)) {
-    JXL_ABORT("Init should never fail");
+    JXL_UNREACHABLE("Init should never fail");
   }
 }
 void Bundle::SetDefault(Fields* fields) {
   SetDefaultVisitor visitor;
   if (!visitor.Visit(fields)) {
-    JXL_ABORT("SetDefault should never fail");
+    JXL_UNREACHABLE("SetDefault should never fail");
   }
 }
 bool Bundle::AllDefault(const Fields& fields) {
   AllDefaultVisitor visitor;
   if (!visitor.VisitConst(fields)) {
-    JXL_ABORT("AllDefault should never fail");
+    JXL_UNREACHABLE("AllDefault should never fail");
   }
   return visitor.AllDefault();
 }
@@ -637,6 +639,18 @@ Status F16Coder::CanEncode(float value, size_t* JXL_RESTRICT encoded_bits) {
     return JXL_FAILURE("Should not attempt to store NaN and infinity");
   }
   return std::abs(value) <= 65504.0f;
+}
+
+Status CheckHasEnoughBits(Visitor* visitor, size_t bits) {
+  if (!visitor->IsReading()) return false;
+  ReadVisitor* rv = static_cast<ReadVisitor*>(visitor);
+  size_t have_bits = rv->reader_->TotalBytes() * kBitsPerByte;
+  size_t want_bits = bits + rv->reader_->TotalBitsConsumed();
+  if (have_bits < want_bits) {
+    return JXL_STATUS(StatusCode::kNotEnoughBytes,
+                      "Not enough bytes for header");
+  }
+  return true;
 }
 
 }  // namespace jxl

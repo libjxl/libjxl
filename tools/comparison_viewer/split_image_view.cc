@@ -11,7 +11,8 @@
 
 #include "tools/comparison_viewer/split_image_renderer.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 
 SplitImageView::SplitImageView(QWidget* const parent) : QWidget(parent) {
   ui_.setupUi(this);
@@ -68,4 +69,5 @@ void SplitImageView::on_settingsButton_clicked() {
   }
 }
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl

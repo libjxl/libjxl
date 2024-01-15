@@ -6,28 +6,32 @@
 #ifndef LIB_JPEGLI_ERROR_H_
 #define LIB_JPEGLI_ERROR_H_
 
-/* clang-format off */
-#include <stdint.h>
-#include <stdio.h>
-#include <jpeglib.h>
 #include <stdarg.h>
-/* clang-format on */
+#include <stdint.h>
+
+#include "lib/jpegli/common.h"
 
 namespace jpegli {
 
-static bool FormatString(char* buffer, const char* format, ...) {
-  va_list args;
-  va_start(args, format);
-  vsnprintf(buffer, JMSG_LENGTH_MAX, format, args);
-  va_end(args);
-  return false;
-}
+bool FormatString(char* buffer, const char* format, ...);
 
 }  // namespace jpegli
 
-#define JPEGLI_ERROR(format, ...)                                       \
-  jpegli::FormatString(cinfo->err->msg_parm.s, ("%s:%d: " format "\n"), \
-                       __FILE__, __LINE__, ##__VA_ARGS__),              \
+#define JPEGLI_ERROR(format, ...)                                            \
+  jpegli::FormatString(cinfo->err->msg_parm.s, ("%s:%d: " format), __FILE__, \
+                       __LINE__, ##__VA_ARGS__),                             \
       (*cinfo->err->error_exit)(reinterpret_cast<j_common_ptr>(cinfo))
+
+#define JPEGLI_WARN(format, ...)                                             \
+  jpegli::FormatString(cinfo->err->msg_parm.s, ("%s:%d: " format), __FILE__, \
+                       __LINE__, ##__VA_ARGS__),                             \
+      (*cinfo->err->emit_message)(reinterpret_cast<j_common_ptr>(cinfo), -1)
+
+#define JPEGLI_TRACE(level, format, ...)                                     \
+  if (cinfo->err->trace_level >= (level))                                    \
+  jpegli::FormatString(cinfo->err->msg_parm.s, ("%s:%d: " format), __FILE__, \
+                       __LINE__, ##__VA_ARGS__),                             \
+      (*cinfo->err->emit_message)(reinterpret_cast<j_common_ptr>(cinfo),     \
+                                  (level))
 
 #endif  // LIB_JPEGLI_ERROR_H_

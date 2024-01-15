@@ -7,6 +7,7 @@
 #define TOOLS_CODEC_CONFIG_H_
 
 #include <stdint.h>
+
 #include <string>
 
 namespace jpegxl {

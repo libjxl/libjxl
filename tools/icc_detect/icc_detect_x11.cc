@@ -3,17 +3,23 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// clang-format off
 #include "tools/icc_detect/icc_detect.h"
+// clang-format on
 
 #include <stdint.h>
 #include <stdlib.h>
 #include <xcb/xcb.h>
 
-#include <QX11Info>
-#include <algorithm>
 #include <memory>
 
-namespace jxl {
+// clang-format off
+#include <QApplication>
+#include <X11/Xlib.h>
+// clang-format on
+
+namespace jpegxl {
+namespace tools {
 
 namespace {
 
@@ -30,11 +36,17 @@ using XcbUniquePtr = std::unique_ptr<T, FreeDeleter>;
 
 QByteArray GetMonitorIccProfile(const QWidget* const widget) {
   Q_UNUSED(widget)
-  xcb_connection_t* const connection = QX11Info::connection();
+  auto* const qX11App =
+      qGuiApp->nativeInterface<QNativeInterface::QX11Application>();
+  if (qX11App == nullptr) {
+    return QByteArray();
+  }
+  xcb_connection_t* const connection = qX11App->connection();
   if (connection == nullptr) {
     return QByteArray();
   }
-  const int screen_number = QX11Info::appScreen();
+
+  const int screenNumber = DefaultScreen(qX11App->display());
 
   const xcb_intern_atom_cookie_t atomRequest =
       xcb_intern_atom(connection, /*only_if_exists=*/1,
@@ -51,7 +63,7 @@ QByteArray GetMonitorIccProfile(const QWidget* const widget) {
   for (xcb_screen_iterator_t it =
            xcb_setup_roots_iterator(xcb_get_setup(connection));
        it.rem; xcb_screen_next(&it)) {
-    if (i == screen_number) {
+    if (i == screenNumber) {
       screen = it.data;
       break;
     }
@@ -74,4 +86,5 @@ QByteArray GetMonitorIccProfile(const QWidget* const widget) {
       xcb_get_property_value_length(profile.get()));
 }
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl

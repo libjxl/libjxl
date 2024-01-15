@@ -6,31 +6,30 @@
 #ifndef TOOLS_BENCHMARK_BENCHMARK_STATS_H_
 #define TOOLS_BENCHMARK_BENCHMARK_STATS_H_
 
+#include <jxl/stats.h>
 #include <stddef.h>
 #include <stdint.h>
 
+#include <memory>
 #include <string>
 #include <vector>
 
-#include "lib/jxl/enc_aux_out.h"
-
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 
 std::string StringPrintf(const char* format, ...);
 
 struct JxlStats {
-  JxlStats() {
-    num_inputs = 0;
-    aux_out = AuxOut();
-  }
+  JxlStats()
+      : num_inputs(0), stats(JxlEncoderStatsCreate(), JxlEncoderStatsDestroy) {}
   void Assimilate(const JxlStats& victim) {
     num_inputs += victim.num_inputs;
-    aux_out.Assimilate(victim.aux_out);
+    JxlEncoderStatsMerge(stats.get(), victim.stats.get());
   }
-  void Print() const { aux_out.Print(num_inputs); }
+  void Print() const;
 
   size_t num_inputs;
-  AuxOut aux_out;
+  std::unique_ptr<JxlEncoderStats, decltype(JxlEncoderStatsDestroy)*> stats;
 };
 
 // The value of an entry in the table. Depending on the ColumnType, the string,
@@ -61,8 +60,7 @@ struct BenchmarkStats {
   float max_distance = -1.0;  // Max butteraugli score
   // sum of 8th powers of butteraugli distmap pixels.
   double distance_p_norm = 0.0;
-  // sum of 2nd powers of differences between R, G, B.
-  double distance_2 = 0.0;
+  double psnr = 0.0;
   double ssimulacra2 = 0.0;
   std::vector<float> distances;
   size_t total_errors = 0;
@@ -77,6 +75,7 @@ std::string PrintAggregate(
     size_t num_extra_metrics,
     const std::vector<std::vector<ColumnValue>>& aggregate);
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
 
 #endif  // TOOLS_BENCHMARK_BENCHMARK_STATS_H_

@@ -294,7 +294,7 @@ void LowMemoryRenderPipeline::Init() {
   }
   for (size_t i = first_image_dim_stage_; i < stages_.size(); i++) {
     if (stages_[i]->SwitchToImageDimensions()) {
-      JXL_ABORT("Cannot switch to image dimensions multiple times");
+      JXL_UNREACHABLE("Cannot switch to image dimensions multiple times");
     }
     std::vector<std::pair<size_t, size_t>> input_sizes(shifts.size());
     for (size_t c = 0; c < shifts.size(); c++) {
@@ -360,7 +360,6 @@ void LowMemoryRenderPipeline::Init() {
 void LowMemoryRenderPipeline::PrepareForThreadsInternal(size_t num,
                                                         bool use_group_ids) {
   const auto& shifts = channel_shifts_[0];
-
   use_group_ids_ = use_group_ids;
   size_t num_buffers = use_group_ids_ ? frame_dimensions_.num_groups : num;
   for (size_t t = group_data_.size(); t < num_buffers; t++) {

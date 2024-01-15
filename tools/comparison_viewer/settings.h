@@ -12,7 +12,8 @@
 #include "tools/comparison_viewer/split_image_renderer.h"
 #include "tools/comparison_viewer/ui_settings.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 
 class SettingsDialog : public QDialog {
   Q_OBJECT
@@ -35,6 +36,7 @@ class SettingsDialog : public QDialog {
   SplitImageRenderingSettings renderingSettings_;
 };
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
 
 #endif  // TOOLS_COMPARISON_VIEWER_SETTINGS_H_

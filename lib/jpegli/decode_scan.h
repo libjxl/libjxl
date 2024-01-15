@@ -6,11 +6,9 @@
 #ifndef LIB_JPEGLI_DECODE_SCAN_H_
 #define LIB_JPEGLI_DECODE_SCAN_H_
 
-/* clang-format off */
 #include <stdint.h>
-#include <stdio.h>
-#include <jpeglib.h>
-/* clang-format on */
+
+#include "lib/jpegli/common.h"
 
 namespace jpegli {
 
@@ -23,7 +21,10 @@ namespace jpegli {
 //   * JPEG_SUSPENDED, if the input buffer ends before the end of an iMCU row;
 //   * JPEG_ROW_COMPLETED, if the next iMCU row (but not the scan) is reached;
 //   * JPEG_SCAN_COMPLETED, if the end of the scan is reached.
-int ProcessScan(j_decompress_ptr cinfo);
+int ProcessScan(j_decompress_ptr cinfo, const uint8_t* const data,
+                const size_t len, size_t* pos, size_t* bit_pos);
+
+void PrepareForiMCURow(j_decompress_ptr cinfo);
 
 }  // namespace jpegli
 

@@ -11,38 +11,43 @@
 // also require a change to the range-check here. The advantage is
 // that this minimizes the size of libjxl.
 
-#include <stdint.h>
+#include <jxl/codestream_header.h>
+#include <jxl/encode.h>
+#include <jxl/encode_cxx.h>
+#include <jxl/thread_parallel_runner.h>
+#include <jxl/thread_parallel_runner_cxx.h>
+#include <jxl/types.h>
 
+#include <algorithm>
+#include <cerrno>
 #include <cmath>
+#include <cstdint>
+#include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <functional>
 #include <iostream>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <thread>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
-#include "jxl/codestream_header.h"
-#include "jxl/encode.h"
-#include "jxl/encode_cxx.h"
-#include "jxl/thread_parallel_runner.h"
-#include "jxl/thread_parallel_runner_cxx.h"
-#include "jxl/types.h"
 #include "lib/extras/dec/apng.h"
 #include "lib/extras/dec/color_hints.h"
-#include "lib/extras/dec/exr.h"
-#include "lib/extras/dec/gif.h"
-#include "lib/extras/dec/jpg.h"
-#include "lib/extras/dec/pgx.h"
+#include "lib/extras/dec/decode.h"
 #include "lib/extras/dec/pnm.h"
 #include "lib/extras/enc/jxl.h"
 #include "lib/extras/time.h"
+#include "lib/jxl/base/c_callback_support.h"
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/exif.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/printf_macros.h"
+#include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/exif.h"
-#include "lib/jxl/size_constraints.h"
 #include "tools/args.h"
 #include "tools/cmdline.h"
 #include "tools/codec_config.h"
@@ -76,148 +81,116 @@ enum CjxlRetCode : int {
 struct CompressArgs {
   // CompressArgs() = default;
   void AddCommandLineOptions(CommandLineParser* cmdline) {
+    std::string input_help("the input can be ");
+    if (jxl::extras::CanDecode(jxl::extras::Codec::kPNG)) {
+      input_help.append("PNG, APNG, ");
+    }
+    if (jxl::extras::CanDecode(jxl::extras::Codec::kGIF)) {
+      input_help.append("GIF, ");
+    }
+    if (jxl::extras::CanDecode(jxl::extras::Codec::kJPG)) {
+      input_help.append("JPEG, ");
+    } else {
+      input_help.append("JPEG (lossless recompression only), ");
+    }
+    if (jxl::extras::CanDecode(jxl::extras::Codec::kEXR)) {
+      input_help.append("EXR, ");
+    }
+    input_help.append("PPM, PFM, PAM, PGX, or JXL");
     // Positional arguments.
-    cmdline->AddPositionalOption("INPUT", /* required = */ true,
-                                 "the input can be "
-#if JPEGXL_ENABLE_APNG
-                                 "PNG, APNG, "
-#endif
-#if JPEGXL_ENABLE_GIF
-                                 "GIF, "
-#endif
-#if JPEGXL_ENABLE_JPEG
-                                 "JPEG, "
-#else
-                                 "JPEG (lossless recompression only), "
-#endif
-#if JPEGXL_ENABLE_EXR
-                                 "EXR, "
-#endif
-                                 "PPM, PFM, or PGX",
+    cmdline->AddPositionalOption("INPUT", /* required = */ true, input_help,
                                  &file_in);
     cmdline->AddPositionalOption("OUTPUT", /* required = */ true,
                                  "the compressed JXL output file", &file_out);
 
     // Flags.
-    // TODO(lode): also add options to add exif/xmp/other metadata in the
-    // container.
-    cmdline->AddOptionValue('\0', "container", "0|1",
-                            "0 = Do not encode using container format (strip "
-                            "Exif/XMP/JPEG bitstream reconstruction data)."
-                            "1 = Force using container format \n"
-                            "(default: use only if needed).\n",
-                            &container, &ParseOverride, 1);
 
-    cmdline->AddOptionValue(
-        '\0', "jpeg_store_metadata", "0|1",
-        ("If --lossless_jpeg=1, store JPEG reconstruction "
-         "metadata in the JPEG XL container "
-         "(for lossless reconstruction of the JPEG codestream)."
-         "(default: 1)"),
-        &jpeg_store_metadata, &ParseUnsigned, 2);
+    cmdline->AddHelpText("\nBasic options:", 0);
 
     // Target distance/size/bpp
     opt_distance_id = cmdline->AddOptionValue(
-        'd', "distance", "maxError",
-        "Max. butteraugli distance, lower = higher quality.\n"
+        'd', "distance", "DISTANCE",
+        "Target visual distance in JND units, lower = higher quality.\n"
         "    0.0 = mathematically lossless. Default for already-lossy input "
         "(JPEG/GIF).\n"
         "    1.0 = visually lossless. Default for other input.\n"
-        "    Recommended range: 0.5 .. 3.0. Allowed range: 0.0 ... 25.0.\n"
-        "    Mutually exclusive with --quality.",
+        "    Recommended range: 0.5 .. 3.0. Allowed range: 0.0 ... 25.0. "
+        "Mutually exclusive with --quality.",
         &distance, &ParseFloat);
 
     // High-level options
     opt_quality_id = cmdline->AddOptionValue(
         'q', "quality", "QUALITY",
-        "Quality setting (is remapped to --distance)."
-        "    100 = mathematically lossless. Default for already-lossy input "
-        "(JPEG/GIF).\n"
-        "    Other input gets encoded as per --distance default,\n"
-        "    which corresponds to quality 90.\n"
+        "Quality setting, higher value = higher quality. This is internally "
+        "mapped to --distance.\n"
+        "    100 = mathematically lossless. 90 = visually lossless.\n"
         "    Quality values roughly match libjpeg quality.\n"
-        "    Recommended range: 68 .. 96. Allowed range: 0 .. 100.\n"
-        "    Mutually exclusive with --distance.",
+        "    Recommended range: 68 .. 96. Allowed range: 0 .. 100. Mutually "
+        "exclusive with --distance.",
         &quality, &ParseFloat);
 
     cmdline->AddOptionValue(
         'e', "effort", "EFFORT",
         "Encoder effort setting. Range: 1 .. 9.\n"
-        "     Default: 7. Higher number is more effort (slower).",
-        &effort, &ParseUnsigned, -1);
+        "    Default: 7. Higher numbers allow more computation "
+        "at the expense of time.\n"
+        "    For lossless, generally it will produce smaller files.\n"
+        "    For lossy, higher effort should more accurately reach "
+        "the target quality.",
+        &effort, &ParseUnsigned);
+
+    cmdline->AddOptionFlag('V', "version",
+                           "Print encoder library version number and exit.",
+                           &version, &SetBooleanTrue);
+    cmdline->AddOptionFlag('\0', "quiet", "Be more silent", &quiet,
+                           &SetBooleanTrue);
+    cmdline->AddOptionFlag('v', "verbose",
+                           "Verbose output; can be repeated and also applies "
+                           "to help (!).",
+                           &verbose, &SetBooleanTrue);
+
+    cmdline->AddHelpText("\nAdvanced options:", 1);
+
+    opt_alpha_distance_id = cmdline->AddOptionValue(
+        'a', "alpha_distance", "A_DISTANCE",
+        "Target visual distance for the alpha channel, lower = higher "
+        "quality.\n"
+        "    0.0 = mathematically lossless. 1.0 = visually lossless.\n"
+        "    Default is to use the same value as for the color image.\n"
+        "    Recommended range: 0.5 .. 3.0. Allowed range: 0.0 ... 25.0.",
+        &alpha_distance, &ParseFloat, 1);
+
+    cmdline->AddOptionFlag('p', "progressive",
+                           "Enable (more) progressive/responsive decoding.",
+                           &progressive, &SetBooleanTrue, 1);
 
     cmdline->AddOptionValue(
-        '\0', "compress_boxes", "0|1",
-        "Disable/enable Brotli compression for metadata boxes "
-        "(not provided = default, 0 = disable, 1 = enable).",
-        &compress_boxes, &ParseOverride, 1);
+        '\0', "group_order", "0|1",
+        "Order in which 256x256 groups are stored "
+        "in the codestream for progressive rendering.\n"
+        "    0 = scanline order, 1 = center-first order. Default: 0.",
+        &group_order, &ParseOverride, 1);
+
+    cmdline->AddOptionValue(
+        '\0', "container", "0|1",
+        "0 = Avoid the container format unless it is needed (default)\n"
+        "    1 = Force using the container format even if it is not needed.",
+        &container, &ParseOverride, 1);
+
+    cmdline->AddOptionValue('\0', "compress_boxes", "0|1",
+                            "Disable/enable Brotli compression for metadata "
+                            "boxes. Default is 1 (enabled).",
+                            &compress_boxes, &ParseOverride, 1);
 
     cmdline->AddOptionValue(
         '\0', "brotli_effort", "B_EFFORT",
         "Brotli effort setting. Range: 0 .. 11.\n"
         "    Default: 9. Higher number is more effort (slower).",
-        &brotli_effort, &ParseUnsigned, -1);
-
-    cmdline->AddOptionValue(
-        '\0', "faster_decoding", "0|1|2|3|4",
-        "Favour higher decoding speed. 0 = default, higher "
-        "values give higher speed at the expense of quality",
-        &faster_decoding, &ParseUnsigned, 2);
-
-    cmdline->AddOptionFlag('p', "progressive",
-                           "Enable progressive/responsive decoding.",
-                           &progressive, &SetBooleanTrue);
-
-    cmdline->AddOptionValue('\0', "premultiply", "-1|0|1",
-                            "Force premultiplied (associated) alpha.",
-                            &premultiply, &ParseSigned, 1);
-
-    cmdline->AddOptionValue(
-        '\0', "keep_invisible", "0|1",
-        "force disable/enable preserving color of invisible "
-        "pixels (default: 1 if lossless, 0 if lossy).",
-        &keep_invisible, &ParseOverride, 1);
-
-    cmdline->AddOptionValue(
-        '\0', "group_order", "0|1",
-        "Order in which 256x256 groups are stored "
-        "in the codestream for progressive rendering. "
-        "Value not provided means 'encoder default', 0 means 'scanline order', "
-        "1 means 'center-first order'.",
-        &group_order, &ParseOverride, 1);
-
-    cmdline->AddOptionValue(
-        '\0', "center_x", "0..XSIZE",
-        "Determines the horizontal position of center for the center-first "
-        "group order. The value -1 means 'use the middle of the image', "
-        "other values [0..xsize) set this to a particular coordinate.",
-        &center_x, &ParseInt64, 1);
-
-    cmdline->AddOptionValue(
-        '\0', "center_y", "0..YSIZE",
-        "Determines the vertical position of center for the center-first "
-        "group order. The value -1 means 'use the middle of the image', "
-        "other values [0..ysize) set this to a particular coordinate.",
-        &center_y, &ParseInt64, 1);
-
-    // Flags.
-    cmdline->AddOptionFlag('\0', "progressive_ac",
-                           "Use the progressive mode for AC.", &progressive_ac,
-                           &SetBooleanTrue, 1);
-
-    cmdline->AddOptionFlag(
-        '\0', "qprogressive_ac",
-        "Use the progressive mode for AC with shift quantization.",
-        &qprogressive_ac, &SetBooleanTrue, 1);
-
-    cmdline->AddOptionValue(
-        '\0', "progressive_dc", "num_dc_frames",
-        "Progressive-DC setting. Valid values are: -1, 0, 1, 2.",
-        &progressive_dc, &ParseInt64, 1);
+        &brotli_effort, &ParseUnsigned, 1);
 
     cmdline->AddOptionValue(
         'm', "modular", "0|1",
-        "Use modular mode (not provided = encoder chooses, 0 = enforce VarDCT, "
+        "Use modular mode (default = encoder chooses, 0 = enforce VarDCT, "
         "1 = enforce modular mode).",
         &modular, &ParseOverride, 1);
 
@@ -225,14 +198,9 @@ struct CompressArgs {
     opt_lossless_jpeg_id = cmdline->AddOptionValue(
         'j', "lossless_jpeg", "0|1",
         "If the input is JPEG, losslessly transcode JPEG, "
-        "rather than using reencode pixels.",
+        "rather than using reencode pixels. Default is 1 (losslessly "
+        "transcode)",
         &lossless_jpeg, &ParseUnsigned, 1);
-
-    cmdline->AddOptionValue(
-        '\0', "jpeg_reconstruction_cfl", "0|1",
-        "Enable/disable chroma-from-luma (CFL) for lossless "
-        "JPEG reconstruction.",
-        &jpeg_reconstruction_cfl, &ParseOverride, 2);
 
     cmdline->AddOptionValue(
         '\0', "num_threads", "N",
@@ -240,189 +208,262 @@ struct CompressArgs {
         "0 == do not use multithreading).",
         &num_threads, &ParseSigned, 1);
 
-    cmdline->AddOptionValue('\0', "num_reps", "N",
-                            "How many times to compress. (For benchmarking).",
-                            &num_reps, &ParseUnsigned, 1);
-
-    cmdline->AddOptionFlag('\0', "disable_output",
-                           "No output file will be written (for benchmarking)",
-                           &disable_output, &SetBooleanTrue, 1);
-
     cmdline->AddOptionValue(
-        '\0', "photon_noise_iso", "3200",
-        "Adds noise to the image emulating photographic film noise. "
-        "The higher the given number, the grainier the image will be. "
-        "As an example, a value of 100 gives low noise whereas a value "
-        "of 3200 gives a lot of noise. The default value is 0.",
+        '\0', "photon_noise_iso", "ISO_FILM_SPEED",
+        "Adds noise to the image emulating photographic film or sensor noise.\n"
+        "    Higher number = grainier image, e.g. 100 gives a low amount of "
+        "noise,\n"
+        "    3200 gives a lot of noise. Default is 0.",
         &photon_noise_iso, &ParsePhotonNoiseParameter, 1);
 
     cmdline->AddOptionValue(
-        '\0', "dots", "0|1",
-        "Force disable/enable dots generation. "
-        "(not provided = default, 0 = disable, 1 = enable).",
-        &dots, &ParseOverride, 1);
-
-    cmdline->AddOptionValue(
-        '\0', "patches", "0|1",
-        "Force disable/enable patches generation. "
-        "(not provided = default, 0 = disable, 1 = enable).",
-        &patches, &ParseOverride, 1);
-
-    cmdline->AddOptionValue(
-        '\0', "resampling", "-1|1|2|4|8",
-        "Resampling for extra channels. Default of -1 applies resampling only "
-        "for low quality. Value 1 does no downsampling (1x1), 2 does 2x2 "
-        "downsampling, 4 is for 4x4 downsampling, and 8 for 8x8 downsampling.",
-        &resampling, &ParseInt64, 0);
-
-    cmdline->AddOptionValue(
-        '\0', "ec_resampling", "-1|1|2|4|8",
-        "Resampling for extra channels. Default of -1 applies resampling only "
-        "for low quality. Value 1 does no downsampling (1x1), 2 does 2x2 "
-        "downsampling, 4 is for 4x4 downsampling, and 8 for 8x8 downsampling.",
-        &ec_resampling, &ParseInt64, 2);
-
-    cmdline->AddOptionFlag('\0', "already_downsampled",
-                           "Do not downsample the given input before encoding, "
-                           "but still signal that the decoder should upsample.",
-                           &already_downsampled, &SetBooleanTrue, 2);
-
-    cmdline->AddOptionValue(
-        '\0', "epf", "-1|0|1|2|3",
-        "Edge preserving filter level, -1 to 3. "
-        "Value -1 means: default (encoder chooses), 0 to 3 set a strength.",
-        &epf, &ParseInt64, 1);
-
-    cmdline->AddOptionValue(
-        '\0', "gaborish", "0|1",
-        "Force disable/enable the gaborish filter. "
-        "(not provided = default, 0 = disable, 1 = enable).",
-        &gaborish, &ParseOverride, 1);
-
-    cmdline->AddOptionValue(
         '\0', "intensity_target", "N",
-        "Upper bound on the intensity level present in the image in nits. "
-        "Leaving this set to its default of 0 lets libjxl choose a sensible "
-        "default "
+        "Upper bound on the intensity level present in the image, in nits.\n"
+        "    Default is 0, which means 'choose a sensible default "
         "value based on the color encoding.",
         &intensity_target, &ParseIntensityTarget, 1);
 
     cmdline->AddOptionValue(
         'x', "dec-hints", "key=value",
-        "color_space indicates the ColorEncoding, see Description();\n"
-        "icc_pathname refers to a binary file containing an ICC profile.",
-        &color_hints, &ParseAndAppendKeyValue, 1);
+        "This is useful for 'raw' formats like PPM that cannot store "
+        "colorspace information\n"
+        "    and metadata, or to strip or modify metadata in formats that do.\n"
+        "    The key 'color_space' indicates an enumerated ColorEncoding, for "
+        "example:\n"
+        "      -x color_space=RGB_D65_SRG_Per_SRG is sRGB with perceptual "
+        "rendering intent\n"
+        "      -x color_space=RGB_D65_202_Rel_PeQ is Rec.2100 PQ with relative "
+        "rendering intent\n"
+        "    The key 'icc_pathname' refers to a binary file containing an ICC "
+        "profile.\n"
+        "    The keys 'exif', 'xmp', and 'jumbf' refer to a binary file "
+        "containing metadata;\n"
+        "    existing metadata of the same type will be overwritten.\n"
+        "    Specific metadata can be stripped using e.g. -x strip=exif",
+        &color_hints_proxy, &ParseAndAppendKeyValue<ColorHintsProxy>, 1);
+
+    cmdline->AddHelpText("\nExpert options:", 2);
 
     cmdline->AddOptionValue(
-        '\0', "override_bitdepth", "0=use from image, 1-32=override",
-        "If nonzero, store the given bit depth in the JPEG XL file metadata"
-        " (1-32), instead of using the bit depth from the original input"
-        " image.",
-        &override_bitdepth, &ParseUnsigned, 2);
-
-    // modular mode options
-    cmdline->AddOptionValue(
-        'I', "iterations", "F",
-        "[modular encoding] Fraction of pixels used to learn MA trees as "
-        "a percentage. -1 = default, 0 = no MA and fast decode, 50 = "
-        "default value, 100 = all."
-        "Higher values use more encoder memory.",
-        &modular_ma_tree_learning_percent, &ParseFloat, 2);
-
-    cmdline->AddOptionValue(
-        'C', "modular_colorspace", "K",
-        ("[modular encoding] color transform: -1=default, 0=RGB (none), "
-         "1-41=RCT (6=YCoCg, default: try several, depending on speed)"),
-        &modular_colorspace, &ParseInt64, 1);
-
-    opt_modular_group_size_id = cmdline->AddOptionValue(
-        'g', "modular_group_size", "K",
-        "[modular encoding] group size: -1 == default. 0 => 128, "
-        "1 => 256, 2 => 512, 3 => 1024",
-        &modular_group_size, &ParseInt64, 1);
-
-    cmdline->AddOptionValue(
-        'P', "modular_predictor", "K",
-        "[modular encoding] predictor(s) to use: 0=zero, "
-        "1=left, 2=top, 3=avg0, 4=select, 5=gradient, 6=weighted, "
-        "7=topright, 8=topleft, 9=leftleft, 10=avg1, 11=avg2, 12=avg3, "
-        "13=toptop predictive average "
-        "14=mix 5 and 6, 15=mix everything. If unset, uses default 14, "
-        "at slowest speed default 15.",
-        &modular_predictor, &ParseInt64, 1);
-
-    cmdline->AddOptionValue(
-        'E', "modular_nb_prev_channels", "K",
-        "[modular encoding] number of extra MA tree properties to use",
-        &modular_nb_prev_channels, &ParseInt64, 2);
-
-    cmdline->AddOptionValue(
-        '\0', "modular_palette_colors", "K",
-        "[modular encoding] Use color palette if number of colors is smaller "
-        "than or equal to this, or -1 to use the encoder default.",
-        &modular_palette_colors, &ParseInt64, 1);
-
-    cmdline->AddOptionFlag(
-        '\0', "modular_lossy_palette",
-        "[modular encoding] quantize to a palette that has fewer entries than "
-        "would be necessary for perfect preservation; for the time being, it "
-        "is "
-        "recommended to set --palette=0 with this option to use the default "
-        "palette only",
-        &modular_lossy_palette, &SetBooleanTrue, 1);
-
-    cmdline->AddOptionValue(
-        'X', "pre-compact", "PERCENT",
-        "[modular encoding] Use Global channel palette if the number of "
-        "colors is smaller than this percentage of range. "
-        "Use 0-100 to set an explicit percentage, -1 to use the encoder "
-        "default.",
-        &modular_channel_colors_global_percent, &ParseFloat, 2);
-
-    cmdline->AddOptionValue(
-        'Y', "post-compact", "PERCENT",
-        "[modular encoding] Use Local (per-group) channel palette if the "
-        "number "
-        "of colors is smaller than this percentage of range. Use 0-100 to set "
-        "an explicit percentage, -1 to use the encoder default.",
-        &modular_channel_colors_group_percent, &ParseFloat, 2);
+        '\0', "jpeg_store_metadata", "0|1",
+        ("If --lossless_jpeg=1, store JPEG reconstruction "
+         "metadata in the JPEG XL container.\n"
+         "    This allows reconstruction of the JPEG codestream. Default: 1."),
+        &jpeg_store_metadata, &ParseUnsigned, 2);
 
     cmdline->AddOptionValue('\0', "codestream_level", "K",
                             "The codestream level. Either `-1`, `5` or `10`.",
                             &codestream_level, &ParseInt64, 2);
 
-    opt_responsive_id = cmdline->AddOptionValue(
-        'R', "responsive", "K",
-        "[modular encoding] do Squeeze transform, 0=false, "
-        "1=true (default: true if lossy, false if lossless)",
-        &responsive, &ParseInt64, 1);
+    cmdline->AddOptionValue('\0', "faster_decoding", "0|1|2|3|4",
+                            "0 = default, higher values improve decode speed "
+                            "at the expense of quality or density.",
+                            &faster_decoding, &ParseUnsigned, 2);
 
-    cmdline->AddOptionFlag('V', "version",
-                           "Print encoder library version number and exit.",
-                           &version, &SetBooleanTrue, 1);
+    cmdline->AddOptionValue('\0', "premultiply", "-1|0|1",
+                            "Force premultiplied (associated) alpha.",
+                            &premultiply, &ParseSigned, 2);
 
-    cmdline->AddOptionFlag('\0', "quiet", "Be more silent", &quiet,
-                           &SetBooleanTrue, 1);
+    cmdline->AddOptionValue('\0', "keep_invisible", "0|1",
+                            "disable/enable preserving color of invisible "
+                            "pixels (default: 1 if lossless, 0 if lossy).",
+                            &keep_invisible, &ParseOverride, 2);
 
     cmdline->AddOptionValue(
-        '\0', "frame_indexing", "string",
+        '\0', "center_x", "-1..XSIZE",
+        "Determines the horizontal position of center for the center-first "
+        "group order.\n"
+        "    Default -1 means 'middle of the image', "
+        "values [0..xsize) set this to a particular coordinate.",
+        &center_x, &ParseInt64, 2);
+
+    cmdline->AddOptionValue(
+        '\0', "center_y", "-1..YSIZE",
+        "Determines the vertical position of center for the center-first "
+        "group order.\n"
+        "    Default -1 means 'middle of the image', "
+        "values [0..ysize) set this to a particular coordinate.",
+        &center_y, &ParseInt64, 2);
+
+    // Flags.
+    cmdline->AddOptionFlag('\0', "progressive_ac",
+                           "Use the progressive mode for AC.", &progressive_ac,
+                           &SetBooleanTrue, 2);
+
+    cmdline->AddOptionFlag(
+        '\0', "qprogressive_ac",
+        "Use the progressive mode for AC with shift quantization.",
+        &qprogressive_ac, &SetBooleanTrue, 2);
+
+    cmdline->AddOptionValue(
+        '\0', "progressive_dc", "num_dc_frames",
+        "Progressive-DC setting. Valid values are: -1, 0, 1, 2.",
+        &progressive_dc, &ParseInt64, 2);
+
+    cmdline->AddOptionValue('\0', "resampling", "-1|1|2|4|8",
+                            "Resampling for color channels. Default of -1 "
+                            "applies resampling only for very low quality.\n"
+                            "    1 = downsampling (1x1), 2 = 2x2 downsampling, "
+                            "4 = 4x4 downsampling, 8 = 8x8 downsampling.",
+                            &resampling, &ParseInt64, 2);
+
+    cmdline->AddOptionValue('\0', "ec_resampling", "-1|1|2|4|8",
+                            "Resampling for extra channels. Same as "
+                            "--resampling but for extra channels like alpha.",
+                            &ec_resampling, &ParseInt64, 2);
+
+    cmdline->AddOptionFlag('\0', "already_downsampled",
+                           "Do not downsample before encoding, "
+                           "but still signal that the decoder should upsample.",
+                           &already_downsampled, &SetBooleanTrue, 2);
+
+    cmdline->AddOptionValue(
+        '\0', "upsampling_mode", "-1|0|1",
+        "Upsampling mode the decoder should use. Mostly useful in combination "
+        "with --already_downsampled. Value -1 means default (non-separable "
+        "upsampling), 0 means nearest neighbor (useful for pixel art)",
+        &upsampling_mode, &ParseInt64, 2);
+
+    cmdline->AddOptionValue(
+        '\0', "epf", "-1|0|1|2|3",
+        "Edge preserving filter level, 0-3. "
+        "Default -1 means encoder chooses, 0-3 set a strength.",
+        &epf, &ParseInt64, 2);
+
+    cmdline->AddOptionValue('\0', "gaborish", "0|1",
+                            "Force disable/enable the gaborish filter. Default "
+                            "is 'encoder chooses'",
+                            &gaborish, &ParseOverride, 2);
+
+    cmdline->AddOptionValue('\0', "override_bitdepth", "BITDEPTH",
+                            "Default is zero (use the input image bit depth); "
+                            "if nonzero, override the bit depth",
+                            &override_bitdepth, &ParseUnsigned, 2);
+
+    cmdline->AddHelpText("\nOptions for experimentation / benchmarking:", 3);
+
+    cmdline->AddOptionValue('\0', "noise", "0|1",
+                            "Force disable/enable adaptive noise generation "
+                            "(experimental). Default "
+                            "is 'encoder chooses'",
+                            &noise, &ParseOverride, 3);
+
+    cmdline->AddOptionValue(
+        '\0', "jpeg_reconstruction_cfl", "0|1",
+        "Enable/disable chroma-from-luma (CFL) for lossless "
+        "JPEG reconstruction.",
+        &jpeg_reconstruction_cfl, &ParseOverride, 3);
+
+    cmdline->AddOptionValue('\0', "num_reps", "N",
+                            "How many times to compress. (For benchmarking).",
+                            &num_reps, &ParseUnsigned, 3);
+
+    cmdline->AddOptionFlag('\0', "streaming_input",
+                           "Enable streaming processing of the input file "
+                           "(works only for PPM and PGM input files).",
+                           &streaming_input, &SetBooleanTrue, 3);
+    cmdline->AddOptionFlag('\0', "streaming_output",
+                           "Enable incremental writing of the output file.",
+                           &streaming_output, &SetBooleanTrue, 3);
+    cmdline->AddOptionFlag('\0', "disable_output",
+                           "No output file will be written (for benchmarking)",
+                           &disable_output, &SetBooleanTrue, 3);
+
+    cmdline->AddOptionValue(
+        '\0', "dots", "0|1",
+        "Force disable/enable dots generation. "
+        "(not provided = default, 0 = disable, 1 = enable).",
+        &dots, &ParseOverride, 3);
+
+    cmdline->AddOptionValue(
+        '\0', "patches", "0|1",
+        "Force disable/enable patches generation. "
+        "(not provided = default, 0 = disable, 1 = enable).",
+        &patches, &ParseOverride, 3);
+
+    cmdline->AddOptionValue(
+        '\0', "frame_indexing", "INDICES",
         // TODO(tfish): Add a more convenient vanilla alternative.
-        "If non-empty, a string matching '^(0*|1[01]*)'. If this string has a "
-        "'1' in i-th position, then the i-th frame will be indexed in "
-        "the frame index box.",
-        &frame_indexing, &ParseString, 1);
+        "INDICES is of the form '^(0*|1[01]*)'. The i-th position indicates "
+        "whether the\n"
+        "    i-th frame will be indexed in the frame index box.",
+        &frame_indexing, &ParseString, 3);
+
+    cmdline->AddOptionFlag('\0', "allow_expert_options",
+                           "Allow specifying advanced options; this allows "
+                           "setting effort to 10, for\n"
+                           "    somewhat better lossless compression at the "
+                           "cost of a massive speed hit.",
+                           &allow_expert_options, &SetBooleanTrue, 3);
+
+    cmdline->AddHelpText("\nModular mode options:", 4);
+
+    // modular mode options
+    cmdline->AddOptionValue(
+        'I', "iterations", "PERCENT",
+        "Percentage of pixels used to learn MA trees. Higher values use\n"
+        "    more encoder memory and can result in better compression. Default "
+        "of -1 means\n"
+        "    the encoder chooses. Zero means no MA trees are used.",
+        &modular_ma_tree_learning_percent, &ParseFloat, 4);
+
+    cmdline->AddOptionValue(
+        'C', "modular_colorspace", "K",
+        ("Color transform: -1 = default (try several per group, depending\n"
+         "    on effort), 0 = RGB (none), 1-41 = fixed RCT (6 = YCoCg)."),
+        &modular_colorspace, &ParseInt64, 4);
+
+    opt_modular_group_size_id = cmdline->AddOptionValue(
+        'g', "modular_group_size", "K",
+        "Group size: -1 = default (let the encoder choose),\n"
+        "    0 = 128x128, 1 = 256x256, 2 = 512x512, 3 = 1024x1024.",
+        &modular_group_size, &ParseInt64, 4);
+
+    cmdline->AddOptionValue(
+        'P', "modular_predictor", "K",
+        "Predictor(s) to use: 0=zero, 1=left, 2=top, 3=avg0, 4=select,\n"
+        "    5=gradient, 6=weighted, 7=topright, 8=topleft, 9=leftleft, "
+        "10=avg1, 11=avg2, 12=avg3,\n"
+        "    13=toptop predictive average, 14=mix 5 and 6, 15=mix everything.\n"
+        "    Default is 14 at effort < 9 and 15 at effort 9.",
+        &modular_predictor, &ParseInt64, 4);
+
+    cmdline->AddOptionValue(
+        'E', "modular_nb_prev_channels", "K",
+        "Number of extra (previous-channel) MA tree properties to use.",
+        &modular_nb_prev_channels, &ParseInt64, 4);
+
+    cmdline->AddOptionValue(
+        '\0', "modular_palette_colors", "K",
+        "Use palette if number of colors is smaller than or equal to this.",
+        &modular_palette_colors, &ParseInt64, 4);
 
     cmdline->AddOptionFlag(
-        '\0', "allow_expert_options",
-        "Allow specifying advanced options; at the moment, this allows setting "
-        "effort to 10, for somewhat better lossless compression at the cost of "
-        "a massive speed hit.",
-        &allow_expert_options, &SetBooleanTrue, 2);
+        '\0', "modular_lossy_palette",
+        "Use delta palette in a lossy way; it is recommended to also\n"
+        "    set --modular_palette_colors=0 with this "
+        "option to use the default palette only.",
+        &modular_lossy_palette, &SetBooleanTrue, 4);
 
-    cmdline->AddOptionFlag(
-        'v', "verbose",
-        "Verbose output; can be repeated, also applies to help (!).", &verbose,
-        &SetBooleanTrue);
+    cmdline->AddOptionValue('X', "pre-compact", "PERCENT",
+                            "Use global channel palette if the number of "
+                            "sample values is smaller\n"
+                            "    than this percentage of the nominal range. ",
+                            &modular_channel_colors_global_percent, &ParseFloat,
+                            4);
+
+    cmdline->AddOptionValue(
+        'Y', "post-compact", "PERCENT",
+        "Use local (per-group) channel palette if the "
+        "number of sample values is\n"
+        "    smaller than this percentage of the nominal range.",
+        &modular_channel_colors_group_percent, &ParseFloat, 4);
+
+    opt_responsive_id =
+        cmdline->AddOptionValue('R', "responsive", "K",
+                                "Do the Squeeze transform, 0=false, "
+                                "1=true (default: 1 if lossy, 0 if lossless)",
+                                &responsive, &ParseInt64, 4);
   }
 
   // Common flags.
@@ -434,9 +475,11 @@ struct CompressArgs {
   const char* file_in = nullptr;
   const char* file_out = nullptr;
   jxl::Override print_profile = jxl::Override::kDefault;
+  bool streaming_input = false;
+  bool streaming_output = false;
 
   // Decoding source image flags
-  jxl::extras::ColorHints color_hints;
+  ColorHintsProxy color_hints_proxy;
 
   // JXL flags
   size_t override_bitdepth = 0;
@@ -461,6 +504,7 @@ struct CompressArgs {
   bool modular_lossy_palette = false;
   int32_t premultiply = -1;
   bool already_downsampled = false;
+  int64_t upsampling_mode = -1;
   jxl::Override jpeg_reconstruction_cfl = jxl::Override::kDefault;
   jxl::Override modular = jxl::Override::kDefault;
   jxl::Override keep_invisible = jxl::Override::kDefault;
@@ -469,6 +513,7 @@ struct CompressArgs {
   jxl::Override gaborish = jxl::Override::kDefault;
   jxl::Override group_order = jxl::Override::kDefault;
   jxl::Override compress_boxes = jxl::Override::kDefault;
+  jxl::Override noise = jxl::Override::kDefault;
 
   size_t faster_decoding = 0;
   int64_t resampling = -1;
@@ -488,19 +533,18 @@ struct CompressArgs {
   int64_t codestream_level = -1;
   int64_t responsive = -1;
   float distance = 1.0;
+  float alpha_distance = 1.0;
   size_t effort = 7;
   size_t brotli_effort = 9;
   std::string frame_indexing;
 
   bool allow_expert_options = false;
 
-  // Will get passed on to AuxOut.
-  // jxl::InspectorImage3F inspector_image3f;
-
   // References (ids) of specific options to check if they were matched.
   CommandLineParser::OptionId opt_lossless_jpeg_id = -1;
   CommandLineParser::OptionId opt_responsive_id = -1;
   CommandLineParser::OptionId opt_distance_id = -1;
+  CommandLineParser::OptionId opt_alpha_distance_id = -1;
   CommandLineParser::OptionId opt_quality_id = -1;
   CommandLineParser::OptionId opt_modular_group_size_id = -1;
 };
@@ -525,93 +569,42 @@ std::string DistanceFromArgs(const CompressArgs& args) {
 }
 
 void PrintMode(jxl::extras::PackedPixelFile& ppf, const double decode_mps,
-               size_t num_bytes, const CompressArgs& args) {
+               size_t num_bytes, const CompressArgs& args,
+               jpegxl::tools::CommandLineParser& cmdline) {
   const char* mode = ModeFromArgs(args);
   const std::string distance = DistanceFromArgs(args);
   if (args.lossless_jpeg) {
-    fprintf(stderr, "Read JPEG image with %" PRIuS " bytes.\n", num_bytes);
-  } else {
-    fprintf(stderr,
-            "Read %" PRIuS "x%" PRIuS " image, %" PRIuS " bytes, %.1f MP/s\n",
-            static_cast<size_t>(ppf.info.xsize),
-            static_cast<size_t>(ppf.info.ysize), num_bytes, decode_mps);
+    cmdline.VerbosePrintf(1, "Read JPEG image with %" PRIuS " bytes.\n",
+                          num_bytes);
+  } else if (num_bytes > 0) {
+    cmdline.VerbosePrintf(
+        1, "Read %" PRIuS "x%" PRIuS " image, %" PRIuS " bytes, %.1f MP/s\n",
+        static_cast<size_t>(ppf.info.xsize),
+        static_cast<size_t>(ppf.info.ysize), num_bytes, decode_mps);
   }
-  fprintf(stderr, "Encoding [%s%s, %s, effort: %" PRIuS,
-          (args.container == jxl::Override::kOn ? "Container | " : ""), mode,
-          distance.c_str(), args.effort);
+  cmdline.VerbosePrintf(
+      0, "Encoding [%s%s, %s, effort: %" PRIuS,
+      (args.container == jxl::Override::kOn ? "Container | " : ""), mode,
+      distance.c_str(), args.effort);
   if (args.container == jxl::Override::kOn) {
     if (args.lossless_jpeg && args.jpeg_store_metadata)
-      fprintf(stderr, " | JPEG reconstruction data");
+      cmdline.VerbosePrintf(0, " | JPEG reconstruction data");
     if (!ppf.metadata.exif.empty())
-      fprintf(stderr, " | %" PRIuS "-byte Exif", ppf.metadata.exif.size());
+      cmdline.VerbosePrintf(0, " | %" PRIuS "-byte Exif",
+                            ppf.metadata.exif.size());
     if (!ppf.metadata.xmp.empty())
-      fprintf(stderr, " | %" PRIuS "-byte XMP", ppf.metadata.xmp.size());
+      cmdline.VerbosePrintf(0, " | %" PRIuS "-byte XMP",
+                            ppf.metadata.xmp.size());
     if (!ppf.metadata.jumbf.empty())
-      fprintf(stderr, " | %" PRIuS "-byte JUMBF", ppf.metadata.jumbf.size());
+      cmdline.VerbosePrintf(0, " | %" PRIuS "-byte JUMBF",
+                            ppf.metadata.jumbf.size());
   }
-  fprintf(stderr, "], \n");
+  cmdline.VerbosePrintf(0, "]\n");
 }
 
 bool IsJPG(const std::vector<uint8_t>& image_data) {
   return (image_data.size() >= 2 && image_data[0] == 0xFF &&
           image_data[1] == 0xD8);
-}
-
-// TODO(tfish): Replace with non-C-API library function.
-// Implementation is in extras/.
-jxl::Status GetPixeldata(const std::vector<uint8_t>& image_data,
-                         const jxl::extras::ColorHints& color_hints,
-                         jxl::extras::PackedPixelFile& ppf,
-                         jxl::extras::Codec& codec) {
-  // Any valid encoding is larger (ensures codecs can read the first few bytes).
-  constexpr size_t kMinBytes = 9;
-
-  if (image_data.size() < kMinBytes) return JXL_FAILURE("Input too small.");
-  jxl::Span<const uint8_t> encoded(image_data);
-
-  ppf.info.orientation = JXL_ORIENT_IDENTITY;
-  jxl::SizeConstraints size_constraints;
-
-  const auto choose_codec = [&]() {
-#if JPEGXL_ENABLE_APNG
-    if (jxl::extras::DecodeImageAPNG(encoded, color_hints, size_constraints,
-                                     &ppf)) {
-      return jxl::extras::Codec::kPNG;
-    }
-#endif
-    if (jxl::extras::DecodeImagePGX(encoded, color_hints, size_constraints,
-                                    &ppf)) {
-      return jxl::extras::Codec::kPGX;
-    } else if (jxl::extras::DecodeImagePNM(encoded, color_hints,
-                                           size_constraints, &ppf)) {
-      return jxl::extras::Codec::kPNM;
-    }
-#if JPEGXL_ENABLE_GIF
-    if (jxl::extras::DecodeImageGIF(encoded, color_hints, size_constraints,
-                                    &ppf)) {
-      return jxl::extras::Codec::kGIF;
-    }
-#endif
-#if JPEGXL_ENABLE_JPEG
-    if (jxl::extras::DecodeImageJPG(encoded, color_hints, size_constraints,
-                                    &ppf)) {
-      return jxl::extras::Codec::kJPG;
-    }
-#endif
-#if JPEGXL_ENABLE_EXR
-    if (jxl::extras::DecodeImageEXR(encoded, color_hints, size_constraints,
-                                    &ppf)) {
-      return jxl::extras::Codec::kEXR;
-    }
-#endif
-    // TODO(tfish): Bring back PSD.
-    return jxl::extras::Codec::kUnknown;
-  };
-  codec = choose_codec();
-  if (codec == jxl::extras::Codec::kUnknown) {
-    return JXL_FAILURE("Codecs failed to decode input.");
-  }
-  return true;
 }
 
 using flag_check_fn = std::function<std::string(int64_t)>;
@@ -647,12 +640,18 @@ void SetDistanceFromFlags(CommandLineParser* cmdline, CompressArgs* args,
                           jxl::extras::JXLCompressParams* params,
                           const jxl::extras::Codec& codec) {
   bool distance_set = cmdline->GetOption(args->opt_distance_id)->matched();
+  bool alpha_distance_set =
+      cmdline->GetOption(args->opt_alpha_distance_id)->matched();
   bool quality_set = cmdline->GetOption(args->opt_quality_id)->matched();
-  if (((distance_set && (args->distance != 0.0)) ||
-       (quality_set && (args->quality != 100))) &&
-      args->lossless_jpeg && args->lossless_jpeg) {
-    std::cerr << "Must not set quality below 100 nor non-zero distance in "
-                 "combination with --lossless_jpeg=1."
+  if ((distance_set && (args->distance != 0.0)) && args->lossless_jpeg) {
+    std::cerr << "Must not set non-zero distance in combination with "
+                 "--lossless_jpeg=1, which is set by default."
+              << std::endl;
+    exit(EXIT_FAILURE);
+  }
+  if ((quality_set && (args->quality != 100)) && args->lossless_jpeg) {
+    std::cerr << "Must not set quality below 100 in combination with "
+                 "--lossless_jpeg=1, which is set by default"
               << std::endl;
     exit(EXIT_FAILURE);
   }
@@ -661,14 +660,10 @@ void SetDistanceFromFlags(CommandLineParser* cmdline, CompressArgs* args,
       std::cerr << "Must not set both --distance and --quality." << std::endl;
       exit(EXIT_FAILURE);
     }
-    double distance = args->quality >= 100 ? 0.0
-                      : args->quality >= 30
-                          ? 0.1 + (100 - args->quality) * 0.09
-                          : 53.0 / 3000.0 * args->quality * args->quality -
-                                23.0 / 20.0 * args->quality + 25.0;
-    args->distance = distance;
+    args->distance = JxlEncoderDistanceFromQuality(args->quality);
     distance_set = true;
   }
+
   if (!distance_set) {
     bool lossy_input = (codec == jxl::extras::Codec::kJPG ||
                         codec == jxl::extras::Codec::kGIF);
@@ -677,6 +672,8 @@ void SetDistanceFromFlags(CommandLineParser* cmdline, CompressArgs* args,
     args->lossless_jpeg = 0;
   }
   params->distance = args->distance;
+  params->alpha_distance =
+      alpha_distance_set ? args->alpha_distance : params->distance;
 }
 
 void ProcessFlags(const jxl::extras::Codec codec,
@@ -692,6 +689,7 @@ void ProcessFlags(const jxl::extras::Codec codec,
   ProcessBoolFlag(args->patches, JXL_ENC_FRAME_SETTING_PATCHES, params);
   ProcessBoolFlag(args->gaborish, JXL_ENC_FRAME_SETTING_GABORISH, params);
   ProcessBoolFlag(args->group_order, JXL_ENC_FRAME_SETTING_GROUP_ORDER, params);
+  ProcessBoolFlag(args->noise, JXL_ENC_FRAME_SETTING_NOISE, params);
 
   params->allow_expert_options = args->allow_expert_options;
 
@@ -759,6 +757,7 @@ void ProcessFlags(const jxl::extras::Codec codec,
   ProcessFlag("already_downsampled",
               static_cast<int64_t>(args->already_downsampled),
               JXL_ENC_FRAME_SETTING_ALREADY_DOWNSAMPLED, params);
+  if (args->already_downsampled) params->already_downsampled = args->resampling;
 
   SetDistanceFromFlags(cmdline, args, params, codec);
 
@@ -812,9 +811,6 @@ void ProcessFlags(const jxl::extras::Codec codec,
   }
 
   // Modular mode related.
-  // TODO(firsching): consider doing more validation after image size is
-  // known, i.e. set to 512 if 256 would be silly using
-  // opt_modular_group_size_id.
   ProcessFlag("modular_group_size", args->modular_group_size,
               JXL_ENC_FRAME_SETTING_MODULAR_GROUP_SIZE, params,
               [](int64_t x) -> std::string {
@@ -897,7 +893,7 @@ void ProcessFlags(const jxl::extras::Codec codec,
 
   if (args->num_threads < -1) {
     std::cerr
-        << "Invalid flag value for --num_threads: must be -1, 0 or postive."
+        << "Invalid flag value for --num_threads: must be -1, 0 or positive."
         << std::endl;
     exit(EXIT_FAILURE);
   }
@@ -909,7 +905,7 @@ void ProcessFlags(const jxl::extras::Codec codec,
                     JXL_ENC_FRAME_SETTING_JPEG_COMPRESS_BOXES, params);
   }
   // Set per-frame options.
-  for (size_t num_frame = 0; num_frame < ppf.frames.size(); ++num_frame) {
+  for (size_t num_frame = 0; num_frame < ppf.num_frames(); ++num_frame) {
     if (num_frame < args->frame_indexing.size() &&
         args->frame_indexing[num_frame] == '1') {
       int64_t value = 1;
@@ -925,10 +921,77 @@ void ProcessFlags(const jxl::extras::Codec codec,
   params->codestream_level = args->codestream_level;
   params->premultiply = args->premultiply;
   params->compress_boxes = args->compress_boxes != jxl::Override::kOff;
-  if (codec == jxl::extras::Codec::kPNM) {
+  params->upsampling_mode = args->upsampling_mode;
+  if (codec == jxl::extras::Codec::kPNM &&
+      ppf.info.exponent_bits_per_sample == 0) {
     params->input_bitdepth.type = JXL_BIT_DEPTH_FROM_CODESTREAM;
   }
+
+  // If a metadata field is set to an empty value, it is stripped.
+  // Make sure we also strip it when the input image is read with AddJPEGFrame
+  (void)args->color_hints_proxy.target.Foreach(
+      [&params](const std::string& key,
+                const std::string& value) -> jxl::Status {
+        if (value == "") {
+          if (key == "exif") params->jpeg_strip_exif = true;
+          if (key == "xmp") params->jpeg_strip_xmp = true;
+          if (key == "jumbf") params->jpeg_strip_jumbf = true;
+        }
+        return true;
+      });
 }
+
+struct JxlOutputProcessor {
+  bool SetOutputPath(const std::string& path) {
+    outfile.reset(new FileWrapper(path, "wb"));
+    if (!*outfile) {
+      fprintf(stderr,
+              "Could not open %s for writing\n"
+              "Error: %s",
+              path.c_str(), strerror(errno));
+      return false;
+    }
+    return true;
+  }
+
+  JxlEncoderOutputProcessor GetOutputProcessor() {
+    return JxlEncoderOutputProcessor{
+        this, METHOD_TO_C_CALLBACK(&JxlOutputProcessor::GetBuffer),
+        METHOD_TO_C_CALLBACK(&JxlOutputProcessor::ReleaseBuffer),
+        METHOD_TO_C_CALLBACK(&JxlOutputProcessor::Seek),
+        METHOD_TO_C_CALLBACK(&JxlOutputProcessor::SetFinalizedPosition)};
+  }
+
+  void* GetBuffer(size_t* size) {
+    *size = std::min<size_t>(*size, 1u << 16);
+    if (output.size() < *size) {
+      output.resize(*size);
+    }
+    return output.data();
+  }
+
+  void ReleaseBuffer(size_t written_bytes) {
+    if (*outfile &&
+        fwrite(output.data(), 1, written_bytes, *outfile) != written_bytes) {
+      JXL_WARNING("Failed to write %" PRIuS " bytes to output", written_bytes);
+    }
+    output.clear();
+  }
+
+  void Seek(uint64_t position) {
+    if (*outfile && fseek(*outfile, position, SEEK_SET) != 0) {
+      JXL_WARNING("Failed to seek output.");
+    }
+  }
+
+  void SetFinalizedPosition(uint64_t finalized_position) {
+    this->finalized_position = finalized_position;
+  }
+
+  std::vector<uint8_t> output;
+  size_t finalized_position = 0;
+  std::unique_ptr<FileWrapper> outfile;
+};
 
 }  // namespace tools
 }  // namespace jpegxl
@@ -972,63 +1035,97 @@ int main(int argc, char** argv) {
             "Encoding will be performed, but the result will be discarded.\n");
   }
 
-  // Loading the input.
-  // Depending on flags-settings, we want to either load a JPEG and
-  // faithfully convert it to JPEG XL, or load (JPEG or non-JPEG)
-  // pixel data.
-  std::vector<uint8_t> image_data;
+  jxl::extras::JXLCompressParams params;
   jxl::extras::PackedPixelFile ppf;
   jxl::extras::Codec codec = jxl::extras::Codec::kUnknown;
+  std::vector<uint8_t> image_data;
   std::vector<uint8_t>* jpeg_bytes = nullptr;
+  size_t input_bytes = 0;
   double decode_mps = 0;
   size_t pixels = 0;
-  if (!jpegxl::tools::ReadFile(args.file_in, &image_data)) {
-    std::cerr << "Reading image data failed." << std::endl;
-    exit(EXIT_FAILURE);
-  }
-  if (!jpegxl::tools::IsJPG(image_data)) args.lossless_jpeg = 0;
-  jxl::extras::JXLCompressParams params;
-  ProcessFlags(codec, ppf, jpeg_bytes, &cmdline, &args, &params);
-  if (!args.lossless_jpeg) {
-    const double t0 = jxl::Now();
-    jxl::Status status =
-        jpegxl::tools::GetPixeldata(image_data, args.color_hints, ppf, codec);
-    if (!status) {
-      std::cerr << "Getting pixel data failed." << std::endl;
+  jxl::extras::ChunkedPNMDecoder pnm_dec;
+  if (args.streaming_input) {
+    auto dec = jxl::extras::ChunkedPNMDecoder::Init(args.file_in);
+    if (!dec.ok()) {
+      std::cerr << "PNM decoding failed." << std::endl;
       exit(EXIT_FAILURE);
     }
-    if (ppf.frames.empty()) {
-      std::cerr << "No frames on input file." << std::endl;
-      exit(EXIT_FAILURE);
-    }
-
-    const double t1 = jxl::Now();
+    pnm_dec = std::move(dec).value();
+    JXL_RETURN_IF_ERROR(
+        pnm_dec.InitializePPF(args.color_hints_proxy.target, &ppf));
+    codec = jxl::extras::Codec::kPNM;
+    args.lossless_jpeg = 0;
     pixels = ppf.info.xsize * ppf.info.ysize;
-    decode_mps = pixels * ppf.info.num_color_channels * 1E-6 / (t1 - t0);
-  }
-  if (args.lossless_jpeg && jpegxl::tools::IsJPG(image_data)) {
-    if (!cmdline.GetOption(args.opt_lossless_jpeg_id)->matched()) {
-      std::cerr << "Note: Implicit-default for JPEG is lossless-transcoding. "
-                << "To silence this message, set --lossless_jpeg=(1|0)."
-                << std::endl;
+  } else {
+    // Loading the input.
+    // Depending on flags-settings, we want to either load a JPEG and
+    // faithfully convert it to JPEG XL, or load (JPEG or non-JPEG)
+    // pixel data.
+    jpegxl::tools::FileWrapper f(args.file_in, "rb");
+    if (!f) {
+      std::cerr << "Reading image data failed." << std::endl;
+      exit(EXIT_FAILURE);
     }
-    jpeg_bytes = &image_data;
+    if (!jpegxl::tools::ReadFile(f, &image_data)) {
+      std::cerr << "Reading image data failed." << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    input_bytes = image_data.size();
+    if (!jpegxl::tools::IsJPG(image_data)) args.lossless_jpeg = 0;
+    ProcessFlags(codec, ppf, jpeg_bytes, &cmdline, &args, &params);
+    if (!args.lossless_jpeg) {
+      const double t0 = jxl::Now();
+      jxl::Status status = jxl::extras::DecodeBytes(
+          jxl::Bytes(image_data), args.color_hints_proxy.target, &ppf, nullptr,
+          &codec);
+
+      if (!status) {
+        std::cerr << "Getting pixel data failed." << std::endl;
+        exit(EXIT_FAILURE);
+      }
+      if (ppf.frames.empty()) {
+        std::cerr << "No frames on input file." << std::endl;
+        exit(EXIT_FAILURE);
+      }
+      pixels = ppf.info.xsize * ppf.info.ysize;
+      const double t1 = jxl::Now();
+      decode_mps = pixels * ppf.info.num_color_channels * 1E-6 / (t1 - t0);
+    }
+
+    if (args.lossless_jpeg && jpegxl::tools::IsJPG(image_data)) {
+      if (!cmdline.GetOption(args.opt_lossless_jpeg_id)->matched()) {
+        std::cerr << "Note: Implicit-default for JPEG is lossless-transcoding. "
+                  << "To silence this message, set --lossless_jpeg=(1|0)."
+                  << std::endl;
+      }
+      jpeg_bytes = &image_data;
+    }
   }
 
   ProcessFlags(codec, ppf, jpeg_bytes, &cmdline, &args, &params);
 
-  if (!ppf.metadata.exif.empty() || !ppf.metadata.xmp.empty() ||
-      !ppf.metadata.jumbf.empty() || !ppf.metadata.iptc.empty() ||
-      (args.lossless_jpeg && args.jpeg_store_metadata)) {
-    args.container = jxl::Override::kOn;
+  if (!args.quiet) {
+    PrintMode(ppf, decode_mps, input_bytes, args, cmdline);
   }
 
   if (!ppf.metadata.exif.empty()) {
     jxl::InterpretExif(ppf.metadata.exif, &ppf.info.orientation);
   }
 
-  if (!args.quiet) {
-    PrintMode(ppf, decode_mps, image_data.size(), args);
+  if (!ppf.metadata.exif.empty() || !ppf.metadata.xmp.empty() ||
+      !ppf.metadata.jumbf.empty() || !ppf.metadata.iptc.empty() ||
+      (args.lossless_jpeg && args.jpeg_store_metadata)) {
+    if (args.container == jxl::Override::kDefault) {
+      args.container = jxl::Override::kOn;
+    } else if (args.container == jxl::Override::kOff) {
+      cmdline.VerbosePrintf(
+          1, "Stripping all metadata due to explicit container=0\n");
+      ppf.metadata.exif.clear();
+      ppf.metadata.xmp.clear();
+      ppf.metadata.jumbf.clear();
+      ppf.metadata.iptc.clear();
+      args.jpeg_store_metadata = 0;
+    }
   }
 
   size_t num_worker_threads = JxlThreadParallelRunnerDefaultNumWorkerThreads();
@@ -1041,11 +1138,29 @@ int main(int argc, char** argv) {
   params.runner = JxlThreadParallelRunner;
   params.runner_opaque = runner.get();
 
+  if (args.streaming_input && args.streaming_output) {
+    params.options.emplace_back(jxl::extras::JXLOption(
+        JXL_ENC_FRAME_SETTING_BUFFERING, static_cast<int64_t>(3), 0));
+  }
+
   jpegxl::tools::SpeedStats stats;
+  jpegxl::tools::JxlOutputProcessor output_processor;
+  if (args.streaming_output) {
+    if (args.file_out && !args.disable_output &&
+        !output_processor.SetOutputPath(args.file_out)) {
+      return EXIT_FAILURE;
+    }
+    params.output_processor = output_processor.GetOutputProcessor();
+  }
   std::vector<uint8_t> compressed;
   for (size_t num_rep = 0; num_rep < args.num_reps; ++num_rep) {
+    if (args.streaming_output) {
+      output_processor.Seek(0);
+      output_processor.SetFinalizedPosition(0);
+    }
     const double t0 = jxl::Now();
-    if (!EncodeImageJXL(params, ppf, jpeg_bytes, &compressed)) {
+    if (!EncodeImageJXL(params, ppf, jpeg_bytes,
+                        args.streaming_output ? nullptr : &compressed)) {
       fprintf(stderr, "EncodeImageJXL() failed.\n");
       return EXIT_FAILURE;
     }
@@ -1053,28 +1168,37 @@ int main(int argc, char** argv) {
     stats.NotifyElapsed(t1 - t0);
     stats.SetImageSize(ppf.info.xsize, ppf.info.ysize);
   }
+  size_t compressed_size = args.streaming_output
+                               ? output_processor.finalized_position
+                               : compressed.size();
 
-  if (args.file_out && !args.disable_output) {
+  if (!args.streaming_output && args.file_out && !args.disable_output) {
     if (!jpegxl::tools::WriteFile(args.file_out, compressed)) {
       std::cerr << "Could not write jxl file." << std::endl;
       return EXIT_FAILURE;
     }
   }
   if (!args.quiet) {
-    fprintf(stderr, "Compressed to %" PRIuS " bytes ", compressed.size());
+    if (compressed_size < 100000) {
+      cmdline.VerbosePrintf(0, "Compressed to %" PRIuS " bytes ",
+                            compressed_size);
+    } else {
+      cmdline.VerbosePrintf(0, "Compressed to %.1f kB ",
+                            compressed_size * 0.001);
+    }
     // For lossless jpeg-reconstruction, we don't print some stats, since we
     // don't have easy access to the image dimensions.
     if (args.container == jxl::Override::kOn) {
-      fprintf(stderr, "including container ");
+      cmdline.VerbosePrintf(0, "including container ");
     }
     if (!args.lossless_jpeg) {
       const double bpp =
-          static_cast<double>(compressed.size() * jxl::kBitsPerByte) / pixels;
-      fprintf(stderr, "(%.3f bpp%s).\n", bpp / ppf.frames.size(),
-              ppf.frames.size() == 1 ? "" : "/frame");
+          static_cast<double>(compressed_size * jxl::kBitsPerByte) / pixels;
+      cmdline.VerbosePrintf(0, "(%.3f bpp%s).\n", bpp / ppf.num_frames(),
+                            ppf.num_frames() == 1 ? "" : "/frame");
       JXL_CHECK(stats.Print(num_worker_threads));
     } else {
-      fprintf(stderr, "\n");
+      cmdline.VerbosePrintf(0, "\n");
     }
   }
   return EXIT_SUCCESS;

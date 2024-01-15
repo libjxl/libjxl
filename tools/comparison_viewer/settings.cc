@@ -5,7 +5,8 @@
 
 #include "tools/comparison_viewer/settings.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 
 SettingsDialog::SettingsDialog(QWidget* const parent)
     : QDialog(parent), settings_("JPEG XL project", "Comparison tool") {
@@ -48,4 +49,5 @@ void SettingsDialog::settingsToUi() {
   ui_.grayTime->setValue(renderingSettings_.grayMSecs);
 }
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl

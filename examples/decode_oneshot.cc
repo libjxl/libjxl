@@ -7,18 +7,21 @@
 // available at once). The example outputs the pixels and color information to a
 // floating point image and an ICC profile on disk.
 
+#ifndef __STDC_FORMAT_MACROS
+#define __STDC_FORMAT_MACROS
+#endif
+
 #include <inttypes.h>
+#include <jxl/decode.h>
+#include <jxl/decode_cxx.h>
+#include <jxl/resizable_parallel_runner.h>
+#include <jxl/resizable_parallel_runner_cxx.h>
 #include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
 #include <vector>
-
-#include "jxl/decode.h"
-#include "jxl/decode_cxx.h"
-#include "jxl/resizable_parallel_runner.h"
-#include "jxl/resizable_parallel_runner_cxx.h"
 
 /** Decodes JPEG XL image to floating point pixels and ICC Profile. Pixel are
  * stored as floating point, as interleaved RGBA (4 floating point values per
@@ -77,15 +80,14 @@ bool DecodeJpegXlOneShot(const uint8_t* jxl, size_t size,
       // Get the ICC color profile of the pixel data
       size_t icc_size;
       if (JXL_DEC_SUCCESS !=
-          JxlDecoderGetICCProfileSize(
-              dec.get(), &format, JXL_COLOR_PROFILE_TARGET_DATA, &icc_size)) {
+          JxlDecoderGetICCProfileSize(dec.get(), JXL_COLOR_PROFILE_TARGET_DATA,
+                                      &icc_size)) {
         fprintf(stderr, "JxlDecoderGetICCProfileSize failed\n");
         return false;
       }
       icc_profile->resize(icc_size);
       if (JXL_DEC_SUCCESS != JxlDecoderGetColorAsICCProfile(
-                                 dec.get(), &format,
-                                 JXL_COLOR_PROFILE_TARGET_DATA,
+                                 dec.get(), JXL_COLOR_PROFILE_TARGET_DATA,
                                  icc_profile->data(), icc_profile->size())) {
         fprintf(stderr, "JxlDecoderGetColorAsICCProfile failed\n");
         return false;

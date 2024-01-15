@@ -10,9 +10,10 @@
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 
-#include "lib/jxl/dec_tone_mapping-inl.h"
+#include "lib/jxl/cms/tone_mapping-inl.h"
+#include "lib/jxl/cms/transfer_functions-inl.h"
+#include "lib/jxl/common.h"  // JXL_HIGH_PRECISION
 #include "lib/jxl/sanitizers.h"
-#include "lib/jxl/transfer_functions-inl.h"
 
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
@@ -58,10 +59,12 @@ struct OpRgb {
 };
 
 struct OpPq {
+  explicit OpPq(const float intensity_target) : tf_pq_(intensity_target) {}
   template <typename D, typename T>
   T Transform(D d, const T& linear) const {
-    return TF_PQ().EncodedFromDisplay(d, linear);
+    return tf_pq_.EncodedFromDisplay(d, linear);
   }
+  TF_PQ tf_pq_;
 };
 
 struct OpHlg {
@@ -105,7 +108,6 @@ class FromLinearStage : public RenderPipelineStage {
   void ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
                   size_t xextra, size_t xsize, size_t xpos, size_t ypos,
                   size_t thread_id) const final {
-    PROFILER_ZONE("FromLinear");
     const HWY_FULL(float) d;
     const size_t xsize_v = RoundUpTo(xsize, Lanes(d));
     float* JXL_RESTRICT row0 = GetInputRow(input_rows, 0, 0);
@@ -149,25 +151,26 @@ std::unique_ptr<FromLinearStage<Op>> MakeFromLinearStage(Op&& op) {
 
 std::unique_ptr<RenderPipelineStage> GetFromLinearStage(
     const OutputEncodingInfo& output_encoding_info) {
-  if (output_encoding_info.color_encoding.tf.IsLinear()) {
+  const auto& tf = output_encoding_info.color_encoding.Tf();
+  if (tf.IsLinear()) {
     return MakeFromLinearStage(MakePerChannelOp(OpLinear()));
-  } else if (output_encoding_info.color_encoding.tf.IsSRGB()) {
+  } else if (tf.IsSRGB()) {
     return MakeFromLinearStage(MakePerChannelOp(OpRgb()));
-  } else if (output_encoding_info.color_encoding.tf.IsPQ()) {
-    return MakeFromLinearStage(MakePerChannelOp(OpPq()));
-  } else if (output_encoding_info.color_encoding.tf.IsHLG()) {
+  } else if (tf.IsPQ()) {
+    return MakeFromLinearStage(
+        MakePerChannelOp(OpPq(output_encoding_info.orig_intensity_target)));
+  } else if (tf.IsHLG()) {
     return MakeFromLinearStage(
         OpHlg(output_encoding_info.luminances,
               output_encoding_info.desired_intensity_target));
-  } else if (output_encoding_info.color_encoding.tf.Is709()) {
+  } else if (tf.Is709()) {
     return MakeFromLinearStage(MakePerChannelOp(Op709()));
-  } else if (output_encoding_info.color_encoding.tf.IsGamma() ||
-             output_encoding_info.color_encoding.tf.IsDCI()) {
+  } else if (tf.have_gamma || tf.IsDCI()) {
     return MakeFromLinearStage(
         MakePerChannelOp(OpGamma{output_encoding_info.inverse_gamma}));
   } else {
     // This is a programming error.
-    JXL_ABORT("Invalid target encoding");
+    JXL_UNREACHABLE("Invalid target encoding");
   }
 }
 

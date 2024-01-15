@@ -8,7 +8,6 @@
 #include <sstream>
 
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/common.h"
 #include "lib/jxl/modular/transform/transform.h"
 
 namespace jxl {
@@ -60,6 +59,7 @@ Image Image::clone() {
   return c;
 }
 
+#if JXL_DEBUG_V_LEVEL >= 1
 std::string Image::DebugString() const {
   std::ostringstream os;
   os << w << "x" << h << ", depth: " << bitdepth;
@@ -73,5 +73,6 @@ std::string Image::DebugString() const {
   }
   return os.str();
 }
+#endif
 
 }  // namespace jxl

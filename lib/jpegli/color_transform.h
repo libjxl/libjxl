@@ -6,25 +6,14 @@
 #ifndef LIB_JPEGLI_COLOR_TRANSFORM_H_
 #define LIB_JPEGLI_COLOR_TRANSFORM_H_
 
-#include <stddef.h>
-
+#include "lib/jpegli/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 
 namespace jpegli {
 
-void CMYKToYCCK(float* JXL_RESTRICT row0, float* JXL_RESTRICT row1,
-                float* JXL_RESTRICT row2, float* JXL_RESTRICT row3,
-                size_t xsize);
+void ChooseColorTransform(j_compress_ptr cinfo);
 
-void YCCKToCMYK(float* JXL_RESTRICT row0, float* JXL_RESTRICT row1,
-                float* JXL_RESTRICT row2, float* JXL_RESTRICT row3,
-                size_t xsize);
-
-void YCbCrToRGB(float* JXL_RESTRICT row0, float* JXL_RESTRICT row1,
-                float* JXL_RESTRICT row2, size_t xsize);
-
-void RGBToYCbCr(float* JXL_RESTRICT row0, float* JXL_RESTRICT row1,
-                float* JXL_RESTRICT row2, size_t xsize);
+void ChooseColorTransform(j_decompress_ptr cinfo);
 
 }  // namespace jpegli
 

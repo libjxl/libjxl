@@ -10,7 +10,8 @@
 #include <memory>
 #include <type_traits>
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 
 namespace {
 
@@ -61,4 +62,5 @@ QByteArray GetMonitorIccProfile(const QWidget* const widget) {
   return profile;
 }
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl

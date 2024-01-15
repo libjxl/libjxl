@@ -25,3 +25,6 @@
 [submodule "third_party/testdata"]
 	path = testdata
 	url = https://github.com/libjxl/testdata
+[submodule "third_party/libjpeg-turbo"]
+	path = third_party/libjpeg-turbo
+	url = https://github.com/libjpeg-turbo/libjpeg-turbo.git

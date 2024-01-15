@@ -6,28 +6,22 @@
 #ifndef LIB_JPEGLI_ENTROPY_CODING_H_
 #define LIB_JPEGLI_ENTROPY_CODING_H_
 
-/* clang-format off */
-#include <stdio.h>
-#include <jpeglib.h>
-/* clang-format on */
-
-#include <vector>
-
-#include "lib/jpegli/encode_internal.h"
+#include "lib/jpegli/common.h"
 
 namespace jpegli {
 
-void AddStandardHuffmanTables(j_compress_ptr cinfo, bool is_dc);
+size_t MaxNumTokensPerMCURow(j_compress_ptr cinfo);
 
-void CopyHuffmanCodes(j_compress_ptr cinfo,
-                      std::vector<JPEGHuffmanCode>* huffman_codes);
+size_t EstimateNumTokens(j_compress_ptr cinfo, size_t mcu_y, size_t ysize_mcus,
+                         size_t num_tokens, size_t max_per_row);
 
-size_t RestartIntervalForScan(j_compress_ptr cinfo, size_t scan_index);
+void TokenizeJpeg(j_compress_ptr cinfo);
 
-void OptimizeHuffmanCodes(
-    j_compress_ptr cinfo,
-    const std::vector<std::vector<jpegli::coeff_t> >& coeffs,
-    std::vector<JPEGHuffmanCode>* huffman_codes);
+void CopyHuffmanTables(j_compress_ptr cinfo);
+
+void OptimizeHuffmanCodes(j_compress_ptr cinfo);
+
+void InitEntropyCoder(j_compress_ptr cinfo);
 
 }  // namespace jpegli
 

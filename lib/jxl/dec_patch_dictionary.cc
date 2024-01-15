@@ -22,8 +22,7 @@
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/blending.h"
 #include "lib/jxl/chroma_from_luma.h"
-#include "lib/jxl/color_management.h"
-#include "lib/jxl/common.h"
+#include "lib/jxl/common.h"  // kMaxNumReferenceFrames
 #include "lib/jxl/dec_ans.h"
 #include "lib/jxl/dec_frame.h"
 #include "lib/jxl/entropy_coder.h"
@@ -31,6 +30,7 @@
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
+#include "lib/jxl/pack_signed.h"
 #include "lib/jxl/patch_dictionary_internal.h"
 
 namespace jxl {
@@ -86,7 +86,11 @@ Status PatchDictionary::Decode(BitReader* br, size_t xsize, size_t ysize,
     if (ref_pos.y0 + ref_pos.ysize > ib.ysize()) {
       return JXL_FAILURE("Invalid position specified in reference frame");
     }
-    size_t id_count = read_num(kPatchCountContext) + 1;
+    size_t id_count = read_num(kPatchCountContext);
+    if (id_count > max_patches) {
+      return JXL_FAILURE("Too many patches in dictionary");
+    }
+    id_count++;
     total_patches += id_count;
     if (total_patches > max_patches) {
       return JXL_FAILURE("Too many patches in dictionary");
@@ -107,10 +111,20 @@ Status PatchDictionary::Decode(BitReader* br, size_t xsize, size_t ysize,
         pos.x = read_num(kPatchPositionContext);
         pos.y = read_num(kPatchPositionContext);
       } else {
-        pos.x =
-            positions_.back().x + UnpackSigned(read_num(kPatchOffsetContext));
-        pos.y =
-            positions_.back().y + UnpackSigned(read_num(kPatchOffsetContext));
+        ssize_t deltax = UnpackSigned(read_num(kPatchOffsetContext));
+        if (deltax < 0 && static_cast<size_t>(-deltax) > positions_.back().x) {
+          return JXL_FAILURE("Invalid patch: negative x coordinate (%" PRIuS
+                             " base x %" PRIdS " delta x)",
+                             positions_.back().x, deltax);
+        }
+        pos.x = positions_.back().x + deltax;
+        ssize_t deltay = UnpackSigned(read_num(kPatchOffsetContext));
+        if (deltay < 0 && static_cast<size_t>(-deltay) > positions_.back().y) {
+          return JXL_FAILURE("Invalid patch: negative y coordinate (%" PRIuS
+                             " base y %" PRIdS " delta y)",
+                             positions_.back().y, deltay);
+        }
+        pos.y = positions_.back().y + deltay;
       }
       if (pos.x + ref_pos.xsize > xsize) {
         return JXL_FAILURE("Invalid patch x: at %" PRIuS " + %" PRIuS

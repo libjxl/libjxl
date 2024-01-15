@@ -6,17 +6,11 @@
 #ifndef LIB_JPEGLI_ADAPTIVE_QUANTIZATION_H_
 #define LIB_JPEGLI_ADAPTIVE_QUANTIZATION_H_
 
-/* clang-format off */
-#include <stdio.h>
-#include <jpeglib.h>
-#include <stddef.h>
-/* clang-format on */
+#include "lib/jpegli/common.h"
 
 namespace jpegli {
 
 void ComputeAdaptiveQuantField(j_compress_ptr cinfo);
-
-float InitialQuantDC(float butteraugli_target);
 
 }  // namespace jpegli
 

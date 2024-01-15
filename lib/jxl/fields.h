@@ -8,21 +8,16 @@
 
 // Forward/backward-compatible 'bundles' with auto-serialized 'fields'.
 
-#include <inttypes.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
-#include <cinttypes>
 #include <cmath>  // abs
 #include <cstdarg>
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
 
 #include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/common.h"
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/field_encodings.h"
 
@@ -35,16 +30,15 @@ struct BitWriter;
 
 // Reads/writes a given (fixed) number of bits <= 32.
 namespace BitsCoder {
-size_t MaxEncodedBits(const size_t bits);
+size_t MaxEncodedBits(size_t bits);
 
-Status CanEncode(const size_t bits, const uint32_t value,
+Status CanEncode(size_t bits, uint32_t value,
                  size_t* JXL_RESTRICT encoded_bits);
 
-uint32_t Read(const size_t bits, BitReader* JXL_RESTRICT reader);
+uint32_t Read(size_t bits, BitReader* JXL_RESTRICT reader);
 
 // Returns false if the value is too large to encode.
-Status Write(const size_t bits, const uint32_t value,
-             BitWriter* JXL_RESTRICT writer);
+Status Write(size_t bits, uint32_t value, BitWriter* JXL_RESTRICT writer);
 }  // namespace BitsCoder
 
 // Encodes u32 using a lookup table and/or extra bits, governed by a per-field
@@ -372,6 +366,8 @@ class VisitorBase : public Visitor {
   ExtensionStates extension_states_;
 };
 }  // namespace fields_internal
+
+Status CheckHasEnoughBits(Visitor* visitor, size_t bits);
 
 }  // namespace jxl
 

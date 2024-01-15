@@ -8,7 +8,6 @@
 
 #include <vector>
 
-#include "gtest/gtest.h"
 #include "lib/jxl/ans_params.h"
 #include "lib/jxl/base/random.h"
 #include "lib/jxl/base/span.h"
@@ -17,6 +16,7 @@
 #include "lib/jxl/enc_ans.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_bit_writer.h"
+#include "lib/jxl/testing.h"
 
 namespace jxl {
 namespace {
@@ -39,7 +39,7 @@ void RoundtripTestcase(int n_histograms, int alphabet_size,
 
   BuildAndEncodeHistograms(HistogramParams(), n_histograms, input_values_vec,
                            &codes, &context_map, &writer, 0, nullptr);
-  WriteTokens(input_values_vec[0], codes, context_map, &writer, 0, nullptr);
+  WriteTokens(input_values_vec[0], codes, context_map, 0, &writer, 0, nullptr);
 
   // Magic bytes + padding
   BitWriter::Allotment allotment_magic2(&writer, 24);
@@ -211,7 +211,8 @@ void TestCheckpointing(bool ans, bool lz77) {
     auto input_values_copy = input_values;
     BuildAndEncodeHistograms(params, 1, input_values_copy, &codes, &context_map,
                              &writer, 0, nullptr);
-    WriteTokens(input_values_copy[0], codes, context_map, &writer, 0, nullptr);
+    WriteTokens(input_values_copy[0], codes, context_map, 0, &writer, 0,
+                nullptr);
     writer.ZeroPadToByte();
   }
 

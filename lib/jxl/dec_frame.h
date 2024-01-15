@@ -6,23 +6,23 @@
 #ifndef LIB_JXL_DEC_FRAME_H_
 #define LIB_JXL_DEC_FRAME_H_
 
+#include <jxl/decode.h>
+#include <jxl/types.h>
 #include <stdint.h>
 
-#include "jxl/decode.h"
-#include "jxl/types.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/blending.h"
-#include "lib/jxl/codec_in_out.h"
-#include "lib/jxl/common.h"
+#include "lib/jxl/common.h"  // JXL_HIGH_PRECISION
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/dec_cache.h"
 #include "lib/jxl/dec_modular.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/headers.h"
 #include "lib/jxl/image_bundle.h"
+#include "lib/jxl/image_metadata.h"
 
 namespace jxl {
 
@@ -32,7 +32,8 @@ namespace jxl {
 // Used in the encoder to model decoder behaviour, and in tests.
 Status DecodeFrame(PassesDecoderState* dec_state, ThreadPool* JXL_RESTRICT pool,
                    const uint8_t* next_in, size_t avail_in,
-                   ImageBundle* decoded, const CodecMetadata& metadata,
+                   FrameHeader* frame_header, ImageBundle* decoded,
+                   const CodecMetadata& metadata,
                    bool use_slow_rendering_pipeline = false);
 
 // TODO(veluca): implement "forced drawing".
@@ -50,14 +51,20 @@ class FrameDecoder {
   void SetCoalescing(bool c) { coalescing_ = c; }
 
   // Read FrameHeader and table of contents from the given BitReader.
-  // Also checks frame dimensions for their limits, and sets the output
-  // image buffer.
   Status InitFrame(BitReader* JXL_RESTRICT br, ImageBundle* decoded,
-                   bool is_preview, bool output_needed);
+                   bool is_preview);
+
+  // Checks frame dimensions for their limits, and sets the output
+  // image buffer.
+  Status InitFrameOutput();
 
   struct SectionInfo {
     BitReader* JXL_RESTRICT br;
+    // Logical index of the section, regardless of any permutation that may be
+    // applied in the table of contents or of the physical position in the file.
     size_t id;
+    // Index of the section in the order of the bytes inside the frame.
+    size_t index;
   };
 
   struct TocEntry {
@@ -139,7 +146,7 @@ class FrameDecoder {
         // but the implementation may not yet correctly support this for Flush.
         // Therefore, can't correctly pause for a progressive step if there is
         // an extra channel (including alpha channel)
-        // TOOD(firsching): Check if this is still the case.
+        // TODO(firsching): Check if this is still the case.
         decoded_->metadata()->extra_channel_info.empty() &&
         // DC is not guaranteed to be available in modular mode and may be a
         // black image. If squeeze is used, it may be available depending on the

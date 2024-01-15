@@ -5,6 +5,9 @@
 
 #include "plugins/gimp/file-jxl-save.h"
 
+#include <jxl/encode.h>
+#include <jxl/encode_cxx.h>
+
 #include <cmath>
 #include <utility>
 
@@ -355,8 +358,6 @@ bool JpegXlSaveGui::SaveDialog() {
   gtk_widget_show(separator);
 
   // Advanced Settings Frame
-  std::vector<GtkWidget*> advanced_opts;
-
   frame_advanced = gtk_frame_new("Advanced Settings");
   gimp_help_set_help_data(frame_advanced,
                           "Some advanced settings may produce malformed files.",
@@ -538,12 +539,7 @@ bool JpegXlSaveOpts::UpdateQuality() {
 }
 
 bool JpegXlSaveOpts::UpdateDistance() {
-  float dist;
-  if (quality >= 30) {
-    dist = 0.1 + (100 - quality) * 0.09;
-  } else {
-    dist = 53.0 / 3000.0 * quality * quality - 23.0 / 20.0 * quality + 25.0;
-  }
+  float dist = JxlEncoderDistanceFromQuality(quality);
 
   if (dist > 25) {
     distance = 25;
@@ -726,6 +722,15 @@ bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
     return false;
   }
 
+  // this sets some basic_info properties
+  jxl_save_opts.SetModel(jxl_save_opts.is_linear);
+
+  if (JXL_ENC_SUCCESS !=
+      JxlEncoderSetBasicInfo(enc.get(), &jxl_save_opts.basic_info)) {
+    g_printerr(SAVE_PROC " Error: JxlEncoderSetBasicInfo failed\n");
+    return false;
+  }
+
   // try to use ICC profile
   if (!icc.empty() && !jxl_save_opts.is_gray) {
     if (JXL_ENC_SUCCESS ==
@@ -784,15 +789,6 @@ bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
     JxlEncoderSetFrameDistance(frame_settings, jxl_save_opts.distance);
   }
 
-  // this sets some basic_info properties
-  jxl_save_opts.SetModel(jxl_save_opts.is_linear);
-
-  if (JXL_ENC_SUCCESS !=
-      JxlEncoderSetBasicInfo(enc.get(), &jxl_save_opts.basic_info)) {
-    g_printerr(SAVE_PROC " Error: JxlEncoderSetBasicInfo failed\n");
-    return false;
-  }
-
   // convert precision and colorspace
   if (jxl_save_opts.is_linear &&
       jxl_save_opts.basic_info.bits_per_sample < 32) {
@@ -831,11 +827,7 @@ bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
     g_clear_object(&buffer);
 
     // use babl to fix gamma mismatch issues
-    if (jxl_save_opts.icc_attached) {
-      jxl_save_opts.SetModel(jxl_save_opts.is_linear);
-    } else {
-      jxl_save_opts.SetModel(!jxl_save_opts.is_linear);
-    }
+    jxl_save_opts.SetModel(jxl_save_opts.is_linear);
     jxl_save_opts.pixel_format.data_type = JXL_TYPE_FLOAT;
     jxl_save_opts.SetBablType("float");
     const Babl* destination_format =

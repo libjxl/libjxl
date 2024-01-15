@@ -5,6 +5,10 @@
 
 #include "tools/speed_stats.h"
 
+#ifndef __STDC_FORMAT_MACROS
+#define __STDC_FORMAT_MACROS
+#endif
+
 #include <inttypes.h>
 #include <math.h>
 #include <stddef.h>
@@ -54,21 +58,19 @@ bool SpeedStats::GetSummary(SpeedStats::Summary* s) {
     s->central_tendency = pow(product, 1.0 / (elapsed_.size() - 1));
     s->variability = 0.0;
     s->type = " geomean:";
-    return true;
+    if (isnormal(s->central_tendency)) return true;
   }
 
   // Else: median
   std::sort(elapsed_.begin(), elapsed_.end());
   s->central_tendency = elapsed_.data()[elapsed_.size() / 2];
-  std::vector<double> deviations(elapsed_.size());
+  double stdev = 0;
   for (size_t i = 0; i < elapsed_.size(); i++) {
-    deviations[i] = fabs(elapsed_[i] - s->central_tendency);
+    double diff = elapsed_[i] - s->central_tendency;
+    stdev += diff * diff;
   }
-  std::nth_element(deviations.begin(),
-                   deviations.begin() + deviations.size() / 2,
-                   deviations.end());
-  s->variability = deviations[deviations.size() / 2];
-  s->type = "median: ";
+  s->variability = sqrt(stdev);
+  s->type = " median:";
   return true;
 }
 
@@ -84,8 +86,14 @@ std::string SummaryStat(double value, const char* unit,
   const double value_min = value / s.max;
   const double value_max = value / s.min;
 
-  snprintf(stat_str, sizeof(stat_str), ",%s %.2f %s/s [%.2f, %.2f]", s.type,
-           value_tendency, unit, value_min, value_max);
+  char variability[20] = {'\0'};
+  if (s.variability != 0.0) {
+    const double stdev = value / s.variability;
+    snprintf(variability, sizeof(variability), " (stdev %.3f)", stdev);
+  }
+
+  snprintf(stat_str, sizeof(stat_str), ",%s %.3f %s/s [%.2f, %.2f]%s", s.type,
+           value_tendency, unit, value_min, value_max, variability);
   return stat_str;
 }
 
@@ -99,16 +107,11 @@ bool SpeedStats::Print(size_t worker_threads) {
   std::string mps_stats = SummaryStat(xsize_ * ysize_ * 1e-6, "MP", s);
   std::string mbs_stats = SummaryStat(file_size_ * 1e-6, "MB", s);
 
-  char variability[20] = {'\0'};
-  if (s.variability != 0.0) {
-    snprintf(variability, sizeof(variability), " (var %.2f)", s.variability);
-  }
-
   fprintf(stderr,
-          "%" PRIu64 " x %" PRIu64 "%s%s%s, %" PRIu64 " reps, %" PRIu64
+          "%" PRIu64 " x %" PRIu64 "%s%s, %" PRIu64 " reps, %" PRIu64
           " threads.\n",
           static_cast<uint64_t>(xsize_), static_cast<uint64_t>(ysize_),
-          mps_stats.c_str(), mbs_stats.c_str(), variability,
+          mps_stats.c_str(), mbs_stats.c_str(),
           static_cast<uint64_t>(elapsed_.size()),
           static_cast<uint64_t>(worker_threads));
   return true;

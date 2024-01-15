@@ -3,6 +3,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <jxl/cms.h>
 #include <stdio.h>
 
 #include <utility>
@@ -12,14 +13,19 @@
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
-#include "lib/jxl/color_management.h"
-#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_xyb.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 namespace {
+
+using ::jxl::CodecInOut;
+using ::jxl::ColorEncoding;
+using ::jxl::Image3F;
+using ::jxl::ImageBundle;
+using ::jxl::ThreadPool;
 
 void PrintXybRange() {
   Image3F linear(1u << 16, 257);
@@ -43,7 +49,7 @@ void PrintXybRange() {
   const ImageBundle& ib = io.Main();
   ThreadPool* null_pool = nullptr;
   Image3F opsin(ib.xsize(), ib.ysize());
-  (void)ToXYB(ib, null_pool, &opsin, GetJxlCms());
+  (void)jxl::ToXYB(ib, null_pool, &opsin, *JxlGetDefaultCms());
   for (size_t c = 0; c < 3; ++c) {
     float minval = 1e10f;
     float maxval = -1e10f;
@@ -75,6 +81,7 @@ void PrintXybRange() {
 }
 
 }  // namespace
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
 
-int main() { jxl::PrintXybRange(); }
+int main() { jpegxl::tools::PrintXybRange(); }

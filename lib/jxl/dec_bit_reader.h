@@ -18,11 +18,10 @@
 #endif
 
 #include "lib/jxl/base/byte_order.h"
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/base/profiler.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/common.h"
 
 namespace jxl {
 
@@ -228,7 +227,7 @@ class BitReader {
     JXL_ASSERT(TotalBitsConsumed() % kBitsPerByte == 0);
     const size_t offset = TotalBitsConsumed() / kBitsPerByte;  // no remainder
     JXL_ASSERT(offset <= TotalBytes());
-    return Span<const uint8_t>(first_byte_ + offset, TotalBytes() - offset);
+    return Bytes(first_byte_ + offset, TotalBytes() - offset);
   }
 
   // Returns whether all the bits read so far have been within the input bounds.
@@ -264,7 +263,6 @@ class BitReader {
  private:
   // Separate function avoids inlining this relatively cold code into callers.
   JXL_NOINLINE void BoundsCheckedRefill() {
-    PROFILER_FUNC;
     const uint8_t* end = end_minus_8_ + 8;
 
     // Read whole bytes until we have [56, 64) bits (same as LoadLE64)

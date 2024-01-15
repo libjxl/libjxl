@@ -8,20 +8,17 @@
 
 // Helpers for parsing command line arguments. No include guard needed.
 
-#include <inttypes.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
 #include <string>
-#include <vector>
+#include <utility>
 
 #include "lib/extras/dec/color_hints.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/codec_in_out.h"  // DecoderHints
-#include "lib/jxl/enc_gaborish.h"
-#include "lib/jxl/modular/options.h"
+#include "tools/file_io.h"
 
 namespace jpegxl {
 namespace tools {
@@ -54,8 +51,8 @@ static inline bool ParseFloatPair(const char* arg,
   return true;
 }
 
-static inline bool ParseAndAppendKeyValue(const char* arg,
-                                          jxl::extras::ColorHints* out) {
+template <typename Callback>
+static inline bool ParseAndAppendKeyValue(const char* arg, Callback* cb) {
   const char* eq = strchr(arg, '=');
   if (!eq) {
     fprintf(stderr, "Expected argument as 'key=value' but received '%s'\n",
@@ -63,26 +60,7 @@ static inline bool ParseAndAppendKeyValue(const char* arg,
     return false;
   }
   std::string key(arg, eq);
-  out->Add(key, std::string(eq + 1));
-  return true;
-}
-
-static inline bool ParsePredictor(const char* arg, jxl::Predictor* out) {
-  char* end;
-  uint64_t p = static_cast<uint64_t>(strtoull(arg, &end, 0));
-  if (end[0] != '\0') {
-    fprintf(stderr, "Invalid predictor: %s.\n", arg);
-    return JXL_FAILURE("Args");
-  }
-  if (p >= jxl::kNumModularEncoderPredictors) {
-    fprintf(stderr,
-            "Invalid predictor value %" PRIu64 ", must be less than %" PRIu64
-            ".\n",
-            p, static_cast<uint64_t>(jxl::kNumModularEncoderPredictors));
-    return JXL_FAILURE("Args");
-  }
-  *out = static_cast<jxl::Predictor>(p);
-  return true;
+  return (*cb)(key, std::string(eq + 1));
 }
 
 static inline bool ParseCString(const char* arg, const char** out) {
@@ -94,6 +72,28 @@ static inline bool IncrementUnsigned(size_t* out) {
   (*out)++;
   return true;
 }
+
+struct ColorHintsProxy {
+  jxl::extras::ColorHints target;
+  bool operator()(const std::string& key, const std::string& value) {
+    if (key == "icc_pathname") {
+      std::vector<uint8_t> icc;
+      JXL_RETURN_IF_ERROR(ReadFile(value, &icc));
+      const char* data = reinterpret_cast<const char*>(icc.data());
+      target.Add("icc", std::string(data, data + icc.size()));
+    } else if (key == "exif" || key == "xmp" || key == "jumbf") {
+      std::vector<uint8_t> metadata;
+      JXL_RETURN_IF_ERROR(ReadFile(value, &metadata));
+      const char* data = reinterpret_cast<const char*>(metadata.data());
+      target.Add(key, std::string(data, data + metadata.size()));
+    } else if (key == "strip") {
+      target.Add(value, "");
+    } else {
+      target.Add(key, value);
+    }
+    return true;
+  }
+};
 
 }  // namespace tools
 }  // namespace jpegxl

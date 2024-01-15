@@ -13,10 +13,9 @@
 #ifndef JXL_TYPES_H_
 #define JXL_TYPES_H_
 
+#include <jxl/jxl_export.h>
 #include <stddef.h>
 #include <stdint.h>
-
-#include "jxl/jxl_export.h"
 
 #if defined(__cplusplus) || defined(c_plusplus)
 extern "C" {
@@ -33,6 +32,8 @@ extern "C" {
 #define JXL_TRUE 1
 /** Portable @c false replacement. */
 #define JXL_FALSE 0
+/** Converts of bool-like value to either JXL_TRUE or JXL_FALSE. */
+#define TO_JXL_BOOL(C) (!!(C) ? JXL_TRUE : JXL_FALSE)
 
 /** Data type for the sample values per channel per pixel.
  */
@@ -54,14 +55,6 @@ typedef enum {
   /** Use 16-bit IEEE 754 half-precision floating point values */
   JXL_TYPE_FLOAT16 = 5,
 } JxlDataType;
-
-/* DEPRECATED: bit-packed 1-bit data type. Use JXL_TYPE_UINT8 instead.
- */
-JXL_DEPRECATED static const int JXL_TYPE_BOOLEAN = 1;
-
-/* DEPRECATED: uint32_t data type. Use JXL_TYPE_FLOAT instead.
- */
-JXL_DEPRECATED static const int JXL_TYPE_UINT32 = 4;
 
 /** Ordering of multi-byte data.
  */
@@ -110,7 +103,8 @@ typedef struct {
   size_t align;
 } JxlPixelFormat;
 
-/** Settings for the interpretation of the input and output buffers.
+/** Settings for the interpretation of UINT input and output buffers.
+ *  (buffers using a FLOAT data type are not affected by this)
  */
 typedef enum {
   /** This is the default setting, where the encoder expects the input pixels
@@ -118,7 +112,7 @@ typedef enum {
    * input range is 0 .. 65535 and the value 65535 is mapped to 1.0 when
    * converting to float), and the decoder uses the full range to output
    * pixels. If the bit depth in the basic info is different from this, the
-   * encoder expects the values to be rescaled accordingly (e.g multiplied by
+   * encoder expects the values to be rescaled accordingly (e.g. multiplied by
    * 65535/4095 for a 12-bit image using UINT16 input data type). */
   JXL_BIT_DEPTH_FROM_PIXEL_FORMAT = 0,
 
@@ -150,33 +144,6 @@ typedef struct {
 /** Data type holding the 4-character type name of an ISOBMFF box.
  */
 typedef char JxlBoxType[4];
-
-/** Types of progressive detail.
- * Setting a progressive detail with value N implies all progressive details
- * with smaller or equal value. Currently only the following level of
- * progressive detail is implemented:
- *  - kDC (which implies kFrames)
- *  - kLastPasses (which implies kDC and kFrames)
- *  - kPasses (which implies kLastPasses, kDC and kFrames)
- */
-typedef enum {
-  // after completed kRegularFrames
-  kFrames = 0,
-  // after completed DC (1:8)
-  kDC = 1,
-  // after completed AC passes that are the last pass for their resolution
-  // target.
-  kLastPasses = 2,
-  // after completed AC passes that are not the last pass for their resolution
-  // target.
-  kPasses = 3,
-  // during DC frame when lower resolution are completed (1:32, 1:16)
-  kDCProgressive = 4,
-  // after completed groups
-  kDCGroups = 5,
-  // after completed groups
-  kGroups = 6,
-} JxlProgressiveDetail;
 
 #if defined(__cplusplus) || defined(c_plusplus)
 }

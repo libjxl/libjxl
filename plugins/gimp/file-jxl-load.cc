@@ -5,6 +5,9 @@
 
 #include "plugins/gimp/file-jxl-load.h"
 
+#include <jxl/decode.h>
+#include <jxl/decode_cxx.h>
+
 #define _PROFILE_ORIGIN_ JXL_COLOR_PROFILE_TARGET_ORIGINAL
 #define _PROFILE_TARGET_ JXL_COLOR_PROFILE_TARGET_DATA
 #define LOAD_PROC "file-jxl-load"
@@ -96,8 +99,8 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
     g_printerr(LOAD_PROC " Error: JxlDecoderSetParallelRunner failed\n");
     return false;
   }
-  // TODO: make this work with coalescing set to false, while handling frames
-  // with duration 0 and references to earlier frames correctly.
+  // TODO(user): make this work with coalescing set to false, while handling
+  // frames with duration 0 and references to earlier frames correctly.
   if (JXL_DEC_SUCCESS != JxlDecoderSetCoalescing(dec.get(), JXL_TRUE)) {
     g_printerr(LOAD_PROC " Error: JxlDecoderSetCoalescing failed\n");
     return false;
@@ -138,12 +141,11 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
       size_t icc_size = 0;
       JxlColorEncoding color_encoding;
       if (JXL_DEC_SUCCESS !=
-          JxlDecoderGetColorAsEncodedProfile(
-              dec.get(), &format, _PROFILE_ORIGIN_, &color_encoding)) {
+          JxlDecoderGetColorAsEncodedProfile(dec.get(), _PROFILE_ORIGIN_,
+                                             &color_encoding)) {
         // Attempt to load ICC profile when no internal color encoding
-        if (JXL_DEC_SUCCESS != JxlDecoderGetICCProfileSize(dec.get(), &format,
-                                                           _PROFILE_ORIGIN_,
-                                                           &icc_size)) {
+        if (JXL_DEC_SUCCESS != JxlDecoderGetICCProfileSize(
+                                   dec.get(), _PROFILE_ORIGIN_, &icc_size)) {
           g_printerr(LOAD_PROC
                      " Warning: JxlDecoderGetICCProfileSize failed\n");
         }
@@ -151,7 +153,7 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
         if (icc_size > 0) {
           icc_profile.resize(icc_size);
           if (JXL_DEC_SUCCESS != JxlDecoderGetColorAsICCProfile(
-                                     dec.get(), &format, _PROFILE_ORIGIN_,
+                                     dec.get(), _PROFILE_ORIGIN_,
                                      icc_profile.data(), icc_profile.size())) {
             g_printerr(LOAD_PROC
                        " Warning: JxlDecoderGetColorAsICCProfile failed\n");
@@ -174,8 +176,8 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
 
       // Internal color profile detection...
       if (JXL_DEC_SUCCESS ==
-          JxlDecoderGetColorAsEncodedProfile(
-              dec.get(), &format, _PROFILE_TARGET_, &color_encoding)) {
+          JxlDecoderGetColorAsEncodedProfile(dec.get(), _PROFILE_TARGET_,
+                                             &color_encoding)) {
         g_printerr(LOAD_PROC " Info: Internal color encoding detected.\n");
 
         // figure out linearity of internal profile

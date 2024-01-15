@@ -9,11 +9,7 @@
 #include <utility>
 
 #include "lib/jxl/base/byte_order.h"
-#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/printf_macros.h"
-#include "lib/jxl/base/profiler.h"
-#include "lib/jxl/codec_in_out.h"
-#include "lib/jxl/color_management.h"
 #include "lib/jxl/fields.h"
 
 namespace jxl {
@@ -40,8 +36,9 @@ void ImageBundle::VerifyMetadata() const {
   JXL_CHECK(metadata_->color_encoding.IsGray() == IsGray());
 
   if (metadata_->HasAlpha() && alpha().xsize() == 0) {
-    JXL_ABORT("MD alpha_bits %u IB alpha %" PRIuS " x %" PRIuS "\n",
-              metadata_->GetAlphaBits(), alpha().xsize(), alpha().ysize());
+    JXL_UNREACHABLE("MD alpha_bits %u IB alpha %" PRIuS " x %" PRIuS "\n",
+                    metadata_->GetAlphaBits(), alpha().xsize(),
+                    alpha().ysize());
   }
   const uint32_t alpha_bits = metadata_->GetAlphaBits();
   JXL_CHECK(alpha_bits <= 32);

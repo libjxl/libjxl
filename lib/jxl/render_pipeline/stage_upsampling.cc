@@ -47,7 +47,6 @@ class UpsamplingStage : public RenderPipelineStage {
   void ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
                   size_t xextra, size_t xsize, size_t xpos, size_t ypos,
                   size_t thread_id) const final {
-    PROFILER_ZONE("Upsampling");
     static HWY_FULL(float) df;
     size_t shift = settings_.shift_x;
     size_t N = 1 << shift;
@@ -100,7 +99,7 @@ class UpsamplingStage : public RenderPipelineStage {
                     [x % 8 < 4 ? x % 4 : 3 - x % 4][y % 8 < 4 ? iy : 4 - iy]
                     [x % 8 < 4 ? ix : 4 - ix];
     }
-    JXL_ABORT("Invalid upsample");
+    JXL_UNREACHABLE("Invalid upsample");
   }
 
   template <ssize_t N>

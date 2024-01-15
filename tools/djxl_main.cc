@@ -3,7 +3,13 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <jxl/decode.h>
+#include <jxl/thread_parallel_runner.h>
+#include <jxl/thread_parallel_runner_cxx.h>
+#include <jxl/types.h>
+
 #include <climits>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -14,13 +20,14 @@
 #include <string>
 #include <vector>
 
-#include "jxl/decode.h"
-#include "jxl/thread_parallel_runner.h"
-#include "jxl/thread_parallel_runner_cxx.h"
-#include "jxl/types.h"
+#include "lib/extras/alpha_blend.h"
+#include "lib/extras/codec.h"
 #include "lib/extras/dec/decode.h"
 #include "lib/extras/dec/jxl.h"
+#include "lib/extras/enc/apng.h"
 #include "lib/extras/enc/encode.h"
+#include "lib/extras/enc/exr.h"
+#include "lib/extras/enc/jpg.h"
 #include "lib/extras/enc/pnm.h"
 #include "lib/extras/packed_image.h"
 #include "lib/extras/time.h"
@@ -37,122 +44,186 @@ struct DecompressArgs {
   DecompressArgs() = default;
 
   void AddCommandLineOptions(CommandLineParser* cmdline) {
-    cmdline->AddPositionalOption("INPUT", /* required = */ true,
-                                 "The compressed input file.", &file_in);
+    std::string output_help("The output format can be ");
+    if (jxl::extras::GetAPNGEncoder()) {
+      output_help.append("PNG, APNG, ");
+    }
+    if (jxl::extras::GetJPEGEncoder()) {
+      output_help.append("JPEG, ");
+    } else {
+      output_help.append("JPEG (lossless reconstruction only), ");
+    }
+    if (jxl::extras::GetEXREncoder()) {
+      output_help.append("EXR, ");
+    }
+    output_help.append(
+        "PGM (for greyscale input), PPM (for color input), PNM, PFM, or PAM.\n"
+        "    To extract metadata, use output format EXIF, XMP, or JUMBF.\n"
+        "    The format is selected based on extension ('filename.png') or can "
+        "be overwritten by using --output_format.\n"
+        "    Use '-' for output to stdout (e.g. '- --output_format ppm')");
+    cmdline->AddPositionalOption(
+        "INPUT", /* required = */ true,
+        "The compressed input file (JXL). Use '-' for input from stdin.",
+        &file_in);
 
-    cmdline->AddPositionalOption("OUTPUT", /* required = */ true,
-                                 "The output can be (A)PNG with ICC, JPG, or "
-                                 "PPM/PFM.",
+    cmdline->AddPositionalOption("OUTPUT", /* required = */ true, output_help,
                                  &file_out);
 
+    cmdline->AddHelpText("\nBasic options:", 0);
+
+    cmdline->AddOptionValue(
+        '\0', "output_format", "OUTPUT_FORMAT_DESC",
+        "Set the output format. This overrides the output format detected from "
+        "a potential file extension in the OUTPUT filename.\n"
+        "Must be one of png, apng, jpg, jpeg, npy, pgx, pam, pgm, ppm, pnm, "
+        "pfm, exr, exif, xmp, xml, jumb, jumbf when converted to lower case.",
+        &output_format, &ParseString, 1);
+
     cmdline->AddOptionFlag('V', "version", "Print version number and exit.",
-                           &version, &SetBooleanTrue);
+                           &version, &SetBooleanTrue, 0);
+    cmdline->AddOptionFlag('\0', "quiet", "Silence output (except for errors).",
+                           &quiet, &SetBooleanTrue, 0);
+    cmdline->AddOptionFlag('v', "verbose",
+                           "Verbose output; can be repeated and also applies "
+                           "to help (!).",
+                           &verbose, &SetBooleanTrue);
 
-    cmdline->AddOptionValue('\0', "num_reps", "N",
-                            "Sets the number of times to decompress the image. "
-                            "Used for benchmarking, the default is 1.",
-                            &num_reps, &ParseUnsigned);
-
-    cmdline->AddOptionFlag('\0', "disable_output",
-                           "No output file will be written (for benchmarking)",
-                           &disable_output, &SetBooleanTrue, 1);
+    cmdline->AddHelpText("\nAdvanced options:", 1);
 
     cmdline->AddOptionValue('\0', "num_threads", "N",
                             "Number of worker threads (-1 == use machine "
                             "default, 0 == do not use multithreading).",
-                            &num_threads, &ParseSigned);
+                            &num_threads, &ParseSigned, 1);
 
     opt_bits_per_sample_id = cmdline->AddOptionValue(
         '\0', "bits_per_sample", "N",
-        "Sets the output bit depth. The 0 value (default for PNM output) "
-        "means the original (input) bit depth. The -1 value (default for "
-        "other codecs) means the full bit depth of the output pixel "
-        "format.",
-        &bits_per_sample, &ParseSigned);
+        "Sets the output bit depth. The value 0 (default for PNM) "
+        "means the original (input) bit depth.\n"
+        "    The value -1 (default for other codecs) means it depends on the "
+        "output format capabilities\n"
+        "    and the input bit depth (e.g. decoding a 12-bit image to PNG will "
+        "produce a 16-bit PNG).",
+        &bits_per_sample, &ParseSigned, 1);
 
     cmdline->AddOptionValue('\0', "display_nits", "N",
                             "If set to a non-zero value, tone maps the image "
                             "the given peak display luminance.",
-                            &display_nits, &ParseDouble);
+                            &display_nits, &ParseDouble, 1);
 
-    cmdline->AddOptionValue('\0', "color_space", "COLORSPACE_DESC",
-                            "Sets the output color space of the image. This "
-                            "flag has no effect if the image is not XYB "
-                            "encoded.",
-                            &color_space, &ParseString);
+    cmdline->AddOptionValue(
+        '\0', "color_space", "COLORSPACE_DESC",
+        "Sets the desired output color space of the image. For example:\n"
+        "      --color_space=RGB_D65_SRG_Per_SRG is sRGB with perceptual "
+        "rendering intent\n"
+        "      --color_space=RGB_D65_202_Rel_PeQ is Rec.2100 PQ with relative "
+        "rendering intent",
+        &color_space, &ParseString, 1);
 
-    cmdline->AddOptionValue('s', "downsampling", "N",
-                            "If set and the input JXL stream is progressive "
-                            "and contains hints for target downsampling "
-                            "ratios, the decoder will skip any progressive "
-                            "passes that are not needed to produce a partially "
-                            "decoded image intended for this downsampling "
-                            "ratio.",
-                            &downsampling, &ParseUint32);
+    cmdline->AddOptionValue('s', "downsampling", "1|2|4|8",
+                            "If the input JXL stream is contains hints for "
+                            "target downsampling ratios,\n"
+                            "    only decode what is needed to produce an "
+                            "image intended for this downsampling ratio.",
+                            &downsampling, &ParseUint32, 1);
 
     cmdline->AddOptionFlag('\0', "allow_partial_files",
                            "Allow decoding of truncated files.",
-                           &allow_partial_files, &SetBooleanTrue);
+                           &allow_partial_files, &SetBooleanTrue, 1);
 
-#if JPEGXL_ENABLE_JPEG
+    if (jxl::extras::GetJPEGEncoder()) {
+      cmdline->AddOptionFlag(
+          'j', "pixels_to_jpeg",
+          "By default, if the input JXL is a recompressed JPEG file, "
+          "djxl reconstructs that JPEG file.\n"
+          "    This flag causes the decoder to instead decode to pixels and "
+          "encode a new (lossy) JPEG.",
+          &pixels_to_jpeg, &SetBooleanTrue, 1);
+
+      opt_jpeg_quality_id = cmdline->AddOptionValue(
+          'q', "jpeg_quality", "N",
+          "Sets the JPEG output quality, default is 95. "
+          "Setting this option implies --pixels_to_jpeg.",
+          &jpeg_quality, &ParseUnsigned, 1);
+    }
+
+    cmdline->AddHelpText("\nOptions for experimentation / benchmarking:", 2);
+
+    cmdline->AddOptionValue('\0', "num_reps", "N",
+                            "Sets the number of times to decompress the image. "
+                            "Useful for benchmarking. Default is 1.",
+                            &num_reps, &ParseUnsigned, 2);
+
+    cmdline->AddOptionFlag('\0', "disable_output",
+                           "No output file will be written (for benchmarking)",
+                           &disable_output, &SetBooleanTrue, 2);
+
+    cmdline->AddOptionFlag('\0', "output_extra_channels",
+                           "If set, all extra channels will be written either "
+                           "as part of the main output file (e.g. alpha "
+                           "channel in png) or as separate output files with "
+                           "suffix -ecN in their names. If not set, the "
+                           "(first) alpha channel will only be written when "
+                           "the output format supports alpha channels and all "
+                           "other extra channels won't be decoded. Files are "
+                           "concatenated when outputting to stdout.",
+                           &output_extra_channels, &SetBooleanTrue, 2);
+
     cmdline->AddOptionFlag(
-        'j', "pixels_to_jpeg",
-        "By default, if the input JPEG XL contains a recompressed JPEG file, "
-        "djxl reconstructs the exact original JPEG file. This flag causes the "
-        "decoder to instead decode the image to pixels and encode a new "
-        "(lossy) JPEG. The output file if provided must be a .jpg or .jpeg "
-        "file.",
-        &pixels_to_jpeg, &SetBooleanTrue);
+        '\0', "output_frames",
+        "If set, all frames will be written either as part of the main output "
+        "file if that supports animation, or as separate output files with "
+        "suffix -N in their names. Files are concatenated when outputting to "
+        "stdout.",
+        &output_frames, &SetBooleanTrue, 2);
 
-    opt_jpeg_quality_id = cmdline->AddOptionValue(
-        'q', "jpeg_quality", "N",
-        "Sets the JPEG output quality, default is 95. Setting an output "
-        "quality implies --pixels_to_jpeg.",
-        &jpeg_quality, &ParseUnsigned);
-#endif
-
-#if JPEGXL_ENABLE_SJPEG
     cmdline->AddOptionFlag('\0', "use_sjpeg",
                            "Use sjpeg instead of libjpeg for JPEG output.",
-                           &use_sjpeg, &SetBooleanTrue);
-#endif
+                           &use_sjpeg, &SetBooleanTrue, 2);
 
     cmdline->AddOptionFlag('\0', "norender_spotcolors",
-                           "Disables rendering spot colors.",
-                           &render_spotcolors, &SetBooleanFalse);
+                           "Disables rendering of spot colors.",
+                           &render_spotcolors, &SetBooleanFalse, 2);
 
     cmdline->AddOptionValue('\0', "preview_out", "FILENAME",
                             "If specified, writes the preview image to this "
                             "file.",
-                            &preview_out, &ParseString);
+                            &preview_out, &ParseString, 2);
 
     cmdline->AddOptionValue(
         '\0', "icc_out", "FILENAME",
         "If specified, writes the ICC profile of the decoded image to "
         "this file.",
-        &icc_out, &ParseString);
+        &icc_out, &ParseString, 2);
 
     cmdline->AddOptionValue(
         '\0', "orig_icc_out", "FILENAME",
         "If specified, writes the ICC profile of the original image to "
-        "this file. This can be different from the ICC profile of the "
-        "decoded image if --color_space was specified, or if the image "
-        "was XYB encoded and the color conversion to the original "
-        "profile was not supported by the decoder.",
-        &orig_icc_out, &ParseString);
+        "this file\n"
+        "    This can be different from the ICC profile of the "
+        "decoded image if --color_space was specified.",
+        &orig_icc_out, &ParseString, 2);
 
-    cmdline->AddOptionValue(
-        '\0', "metadata_out", "FILENAME",
-        "If specified, writes decoded metadata info to this file in "
-        "JSON format. Used by the conformance test script",
-        &metadata_out, &ParseString);
+    cmdline->AddOptionValue('\0', "metadata_out", "FILENAME",
+                            "If specified, writes metadata info to a JSON "
+                            "file. Used by the conformance test script",
+                            &metadata_out, &ParseString, 2);
+
+    cmdline->AddOptionValue('\0', "background", "#NNNNNN",
+                            "Specifies the background color for the "
+                            "--alpha_blend option. Recognized values are "
+                            "'black', 'white' (default), or '#NNNNNN'",
+                            &background_spec, &ParseString, 2);
+
+    cmdline->AddOptionFlag('\0', "alpha_blend",
+                           "Blends alpha channel with the color image using "
+                           "background color specified by --background "
+                           "(default is white).",
+                           &alpha_blend, &SetBooleanTrue, 2);
 
     cmdline->AddOptionFlag('\0', "print_read_bytes",
                            "Print total number of decoded bytes.",
-                           &print_read_bytes, &SetBooleanTrue);
-
-    cmdline->AddOptionFlag('\0', "quiet", "Silence output (except for errors).",
-                           &quiet, &SetBooleanTrue);
+                           &print_read_bytes, &SetBooleanTrue, 2);
   }
 
   // Validate the passed arguments, checking whether all passed options are
@@ -165,7 +236,7 @@ struct DecompressArgs {
     if (num_threads < -1) {
       fprintf(
           stderr,
-          "Invalid flag value for --num_threads: must be -1, 0 or postive.\n");
+          "Invalid flag value for --num_threads: must be -1, 0 or positive.\n");
       return false;
     }
     return true;
@@ -173,7 +244,9 @@ struct DecompressArgs {
 
   const char* file_in = nullptr;
   const char* file_out = nullptr;
+  std::string output_format;
   bool version = false;
+  bool verbose = false;
   size_t num_reps = 1;
   bool disable_output = false;
   int32_t num_threads = -1;
@@ -186,10 +259,14 @@ struct DecompressArgs {
   size_t jpeg_quality = 95;
   bool use_sjpeg = false;
   bool render_spotcolors = true;
+  bool output_extra_channels = false;
+  bool output_frames = false;
   std::string preview_out;
   std::string icc_out;
   std::string orig_icc_out;
   std::string metadata_out;
+  std::string background_spec = "white";
+  bool alpha_blend = false;
   bool print_read_bytes = false;
   bool quiet = false;
   // References (ids) of specific options to check if they were matched.
@@ -207,20 +284,21 @@ bool WriteOptionalOutput(const std::string& filename,
   if (filename.empty() || bytes.empty()) {
     return true;
   }
-  return jpegxl::tools::WriteFile(filename.data(), bytes);
+  return jpegxl::tools::WriteFile(filename, bytes);
 }
 
-std::string Filename(const std::string& base, const std::string& extension,
+std::string Filename(const std::string& filename, const std::string& extension,
                      int layer_index, int frame_index, int num_layers,
                      int num_frames) {
+  if (filename == "-") return "-";
   auto digits = [](int n) { return 1 + static_cast<int>(std::log10(n)); };
-  std::string out = base;
+  std::string out = filename;
   if (num_frames > 1) {
     std::vector<char> buf(2 + digits(num_frames));
     snprintf(buf.data(), buf.size(), "-%0*d", digits(num_frames), frame_index);
     out.append(buf.data());
   }
-  if (num_layers > 1) {
+  if (num_layers > 1 && layer_index > 0) {
     std::vector<char> buf(4 + digits(num_layers));
     snprintf(buf.data(), buf.size(), "-ec%0*d", digits(num_layers),
              layer_index);
@@ -228,10 +306,47 @@ std::string Filename(const std::string& base, const std::string& extension,
   }
   if (extension == ".ppm" && layer_index > 0) {
     out.append(".pgm");
-  } else {
+  } else if ((num_frames > 1) || (num_layers > 1 && layer_index > 0)) {
     out.append(extension);
   }
   return out;
+}
+
+void AddFormatsWithAlphaChannel(std::vector<JxlPixelFormat>* formats) {
+  auto add_format = [&](JxlPixelFormat format) {
+    for (auto f : *formats) {
+      if (memcmp(&f, &format, sizeof(format)) == 0) return;
+    }
+    formats->push_back(format);
+  };
+  size_t num_formats = formats->size();
+  for (size_t i = 0; i < num_formats; ++i) {
+    JxlPixelFormat format = (*formats)[i];
+    if (format.num_channels == 1 || format.num_channels == 3) {
+      ++format.num_channels;
+      add_format(format);
+    }
+  }
+}
+
+bool ParseBackgroundColor(const std::string& background_desc,
+                          float background[3]) {
+  if (background_desc == "black") {
+    background[0] = background[1] = background[2] = 0.0f;
+    return true;
+  }
+  if (background_desc == "white") {
+    background[0] = background[1] = background[2] = 1.0f;
+    return true;
+  }
+  if (background_desc.size() != 7 || background_desc[0] != '#') {
+    return false;
+  }
+  uint32_t color = std::stoi(background_desc.substr(1), nullptr, 16);
+  background[0] = ((color >> 16) & 0xff) * (1.0f / 255);
+  background[1] = ((color >> 8) & 0xff) * (1.0f / 255);
+  background[2] = (color & 0xff) * (1.0f / 255);
+  return true;
 }
 
 bool DecompressJxlReconstructJPEG(const jpegxl::tools::DecompressArgs& args,
@@ -273,6 +388,7 @@ bool DecompressJxlToPackedPixelFile(
   dparams.runner = JxlThreadParallelRunner;
   dparams.runner_opaque = runner;
   dparams.allow_partial_input = args.allow_partial_files;
+  dparams.need_icc = !args.icc_out.empty();
   if (args.bits_per_sample == 0) {
     dparams.output_bitdepth.type = JXL_BIT_DEPTH_FROM_CODESTREAM;
   } else if (args.bits_per_sample > 0) {
@@ -315,7 +431,7 @@ int main(int argc, const char* argv[]) {
     fprintf(stderr, "JPEG XL decoder %s\n", version.c_str());
   }
 
-  if (cmdline.HelpFlagPassed()) {
+  if (cmdline.HelpFlagPassed() || !args.file_in) {
     cmdline.PrintHelp();
     return EXIT_SUCCESS;
   }
@@ -333,7 +449,8 @@ int main(int argc, const char* argv[]) {
     return EXIT_FAILURE;
   }
   if (!args.quiet) {
-    fprintf(stderr, "Read %" PRIuS " compressed bytes.\n", compressed.size());
+    cmdline.VerbosePrintf(1, "Read %" PRIuS " compressed bytes.\n",
+                          compressed.size());
   }
 
   if (!args.file_out && !args.disable_output) {
@@ -349,19 +466,14 @@ int main(int argc, const char* argv[]) {
   }
 
   std::string filename_out;
-  std::string base;
   std::string extension;
+  if (!args.output_format.empty()) extension = "." + args.output_format;
+  jxl::extras::Codec codec = jxl::extras::Codec::kUnknown;
   if (args.file_out && !args.disable_output) {
     filename_out = std::string(args.file_out);
-    size_t pos = filename_out.find_last_of('.');
-    if (pos < filename_out.size()) {
-      base = filename_out.substr(0, pos);
-      extension = filename_out.substr(pos);
-    } else {
-      base = filename_out;
-    }
+    codec = jxl::extras::CodecFromPath(
+        filename_out, /* bits_per_sample */ nullptr, &extension);
   }
-  const jxl::extras::Codec codec = jxl::extras::CodecFromExtension(extension);
   if (codec == jxl::extras::Codec::kEXR) {
     std::string force_colorspace = "RGB_D65_SRG_Rel_Lin";
     if (!args.color_space.empty() && args.color_space != force_colorspace) {
@@ -370,7 +482,8 @@ int main(int argc, const char* argv[]) {
     args.color_space = force_colorspace;
   }
   if (codec == jxl::extras::Codec::kPNM && extension != ".pfm" &&
-      !cmdline.GetOption(args.opt_jpeg_quality_id)->matched()) {
+      (args.opt_jpeg_quality_id < 0 ||
+       !cmdline.GetOption(args.opt_jpeg_quality_id)->matched())) {
     args.bits_per_sample = 0;
   }
 
@@ -386,12 +499,11 @@ int main(int argc, const char* argv[]) {
       /*memory_manager=*/nullptr, num_worker_threads);
 
   bool decode_to_pixels = (codec != jxl::extras::Codec::kJPG);
-#if JPEGXL_ENABLE_JPEG
-  if (args.pixels_to_jpeg ||
-      cmdline.GetOption(args.opt_jpeg_quality_id)->matched()) {
+  if (args.opt_jpeg_quality_id >= 0 &&
+      (args.pixels_to_jpeg ||
+       cmdline.GetOption(args.opt_jpeg_quality_id)->matched())) {
     decode_to_pixels = true;
   }
-#endif
 
   size_t num_reps = args.num_reps;
   if (!decode_to_pixels) {
@@ -412,9 +524,9 @@ int main(int argc, const char* argv[]) {
       }
     }
     if (!bytes.empty()) {
-      if (!args.quiet) fprintf(stderr, "Reconstructed to JPEG.\n");
+      if (!args.quiet) cmdline.VerbosePrintf(0, "Reconstructed to JPEG.\n");
       if (!filename_out.empty() &&
-          !jpegxl::tools::WriteFile(filename_out.c_str(), bytes)) {
+          !jpegxl::tools::WriteFile(filename_out, bytes)) {
         return EXIT_FAILURE;
       }
     }
@@ -425,11 +537,20 @@ int main(int argc, const char* argv[]) {
     if (!filename_out.empty()) {
       encoder = jxl::extras::Encoder::FromExtension(extension);
       if (encoder == nullptr) {
-        fprintf(stderr, "can't decode to the file extension '%s'\n",
-                extension.c_str());
+        if (extension.empty()) {
+          fprintf(stderr,
+                  "couldn't detect output format, consider using "
+                  "--output_format.\n");
+        } else {
+          fprintf(stderr, "can't decode to the file extension '%s'.\n",
+                  extension.c_str());
+        }
         return EXIT_FAILURE;
       }
       accepted_formats = encoder->AcceptedFormats();
+      if (args.alpha_blend) {
+        AddFormatsWithAlphaChannel(&accepted_formats);
+      }
     }
     jxl::extras::PackedPixelFile ppf;
     size_t decoded_bytes = 0;
@@ -441,52 +562,63 @@ int main(int argc, const char* argv[]) {
         return EXIT_FAILURE;
       }
     }
-    if (!args.quiet) fprintf(stderr, "Decoded to pixels.\n");
+    if (!args.quiet) cmdline.VerbosePrintf(0, "Decoded to pixels.\n");
     if (args.print_read_bytes) {
       fprintf(stderr, "Decoded bytes: %" PRIuS "\n", decoded_bytes);
     }
-#if JPEGXL_ENABLE_JPEG
+    // When --disable_output was parsed, `filename_out` is empty and we don't
+    // need to write files.
     if (encoder) {
+      if (args.alpha_blend) {
+        float background[3];
+        if (!ParseBackgroundColor(args.background_spec, background)) {
+          fprintf(stderr, "Invalid background color %s\n",
+                  args.background_spec.c_str());
+        }
+        AlphaBlend(&ppf, background);
+      }
       std::ostringstream os;
       os << args.jpeg_quality;
       encoder->SetOption("q", os.str());
-    }
-#endif
-#if JPEGXL_ENABLE_SJPEG
-    if (encoder && args.use_sjpeg) {
-      encoder->SetOption("jpeg_encoder", "sjpeg");
-    }
-#endif
-    jxl::extras::EncodedImage encoded_image;
-    if (encoder) {
+      if (args.use_sjpeg) {
+        encoder->SetOption("jpeg_encoder", "sjpeg");
+      }
+      jxl::extras::EncodedImage encoded_image;
+      if (!args.quiet) cmdline.VerbosePrintf(2, "Encoding decoded image\n");
       if (!encoder->Encode(ppf, &encoded_image)) {
         fprintf(stderr, "Encode failed\n");
         return EXIT_FAILURE;
       }
-    }
-    size_t nlayers = 1 + encoded_image.extra_channel_bitstreams.size();
-    size_t nframes = encoded_image.bitstreams.size();
-    for (size_t i = 0; i < nlayers; ++i) {
-      for (size_t j = 0; j < nframes; ++j) {
-        const std::vector<uint8_t>& bitstream =
-            (i == 0 ? encoded_image.bitstreams[j]
-                    : encoded_image.extra_channel_bitstreams[i - 1][j]);
-        std::string fn = Filename(base, extension, i, j, nlayers, nframes);
-        if (!jpegxl::tools::WriteFile(fn.c_str(), bitstream)) {
-          return EXIT_FAILURE;
+      size_t nlayers = args.output_extra_channels
+                           ? 1 + encoded_image.extra_channel_bitstreams.size()
+                           : 1;
+      size_t nframes = args.output_frames ? encoded_image.bitstreams.size() : 1;
+      for (size_t i = 0; i < nlayers; ++i) {
+        for (size_t j = 0; j < nframes; ++j) {
+          const std::vector<uint8_t>& bitstream =
+              (i == 0 ? encoded_image.bitstreams[j]
+                      : encoded_image.extra_channel_bitstreams[i - 1][j]);
+          std::string fn =
+              Filename(filename_out, extension, i, j, nlayers, nframes);
+          if (!jpegxl::tools::WriteFile(fn.c_str(), bitstream)) {
+            return EXIT_FAILURE;
+          }
+          if (!args.quiet)
+            cmdline.VerbosePrintf(1, "Wrote output to %s\n", fn.c_str());
         }
       }
-    }
-    if (!WriteOptionalOutput(args.preview_out,
-                             encoded_image.preview_bitstream) ||
-        !WriteOptionalOutput(args.icc_out, ppf.icc) ||
-        !WriteOptionalOutput(args.orig_icc_out, ppf.orig_icc) ||
-        !WriteOptionalOutput(args.metadata_out, encoded_image.metadata)) {
-      return EXIT_FAILURE;
+      if (!WriteOptionalOutput(args.preview_out,
+                               encoded_image.preview_bitstream) ||
+          !WriteOptionalOutput(args.icc_out, ppf.icc) ||
+          !WriteOptionalOutput(args.orig_icc_out, ppf.orig_icc) ||
+          !WriteOptionalOutput(args.metadata_out, encoded_image.metadata)) {
+        return EXIT_FAILURE;
+      }
     }
   }
   if (!args.quiet) {
     stats.Print(num_worker_threads);
   }
+
   return EXIT_SUCCESS;
 }

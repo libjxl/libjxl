@@ -17,7 +17,55 @@
 #include "lib/jxl/base/status.h"
 #include "tools/benchmark/benchmark_args.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
+
+#define ADD_NAME(val, name) \
+  case JXL_ENC_STAT_##val:  \
+    return name
+const char* JxlStatsName(JxlEncoderStatsKey key) {
+  switch (key) {
+    ADD_NAME(HEADER_BITS, "Header bits");
+    ADD_NAME(TOC_BITS, "TOC bits");
+    ADD_NAME(DICTIONARY_BITS, "Patch dictionary bits");
+    ADD_NAME(SPLINES_BITS, "Splines bits");
+    ADD_NAME(NOISE_BITS, "Noise bits");
+    ADD_NAME(QUANT_BITS, "Quantizer bits");
+    ADD_NAME(MODULAR_TREE_BITS, "Modular tree bits");
+    ADD_NAME(MODULAR_GLOBAL_BITS, "Modular global bits");
+    ADD_NAME(DC_BITS, "DC bits");
+    ADD_NAME(MODULAR_DC_GROUP_BITS, "Modular DC group bits");
+    ADD_NAME(CONTROL_FIELDS_BITS, "Control field bits");
+    ADD_NAME(COEF_ORDER_BITS, "Coeff order bits");
+    ADD_NAME(AC_HISTOGRAM_BITS, "AC histogram bits");
+    ADD_NAME(AC_BITS, "AC token bits");
+    ADD_NAME(MODULAR_AC_GROUP_BITS, "Modular AC group bits");
+    ADD_NAME(NUM_SMALL_BLOCKS, "Number of small blocks");
+    ADD_NAME(NUM_DCT4X8_BLOCKS, "Number of 4x8 blocks");
+    ADD_NAME(NUM_AFV_BLOCKS, "Number of AFV blocks");
+    ADD_NAME(NUM_DCT8_BLOCKS, "Number of 8x8 blocks");
+    ADD_NAME(NUM_DCT8X32_BLOCKS, "Number of 8x32 blocks");
+    ADD_NAME(NUM_DCT16_BLOCKS, "Number of 16x16 blocks");
+    ADD_NAME(NUM_DCT16X32_BLOCKS, "Number of 16x32 blocks");
+    ADD_NAME(NUM_DCT32_BLOCKS, "Number of 32x32 blocks");
+    ADD_NAME(NUM_DCT32X64_BLOCKS, "Number of 32x64 blocks");
+    ADD_NAME(NUM_DCT64_BLOCKS, "Number of 64x64 blocks");
+    ADD_NAME(NUM_BUTTERAUGLI_ITERS, "Butteraugli iters");
+    default:
+      return "";
+  };
+  return "";
+}
+#undef ADD_NAME
+
+void JxlStats::Print() const {
+  for (int i = 0; i < JXL_ENC_NUM_STATS; ++i) {
+    JxlEncoderStatsKey key = static_cast<JxlEncoderStatsKey>(i);
+    size_t value = JxlEncoderStatsGet(stats.get(), key);
+    if (value) printf("%-25s  %10" PRIuS "\n", JxlStatsName(key), value);
+  }
+}
+
 namespace {
 
 // Computes longest codec name from Args()->codec, for table alignment.
@@ -61,7 +109,7 @@ struct ColumnDescriptor {
   bool more;  // Whether to print only if more_columns is enabled
 };
 
-static const ColumnDescriptor ExtraMetricDescriptor() {
+static ColumnDescriptor ExtraMetricDescriptor() {
   ColumnDescriptor d{{"DO NOT USE"}, 12, 4, TYPE_POSITIVE_FLOAT, false};
   return d;
 }
@@ -82,21 +130,10 @@ std::vector<ColumnDescriptor> GetColumnDescriptors(size_t num_extra_metrics) {
       {{"D MP/s"},          8,  3, TYPE_POSITIVE_FLOAT, false},
       {{"Max norm"},       13,  8, TYPE_POSITIVE_FLOAT, false},
       {{"SSIMULACRA2"},    13,  8, TYPE_POSITIVE_FLOAT, false},
+      {{"PSNR"},            7,  2, TYPE_POSITIVE_FLOAT, false},
       {{"pnorm"},          13,  8, TYPE_POSITIVE_FLOAT, false},
-      {{"PSNR"},            7,  2, TYPE_POSITIVE_FLOAT, true},
-      {{"QABPP"},           8,  3, TYPE_POSITIVE_FLOAT, true},
-      {{"SmallB"},          8,  4, TYPE_POSITIVE_FLOAT, true},
-      {{"DCT4x8"},          8,  4, TYPE_POSITIVE_FLOAT, true},
-      {{"AFV"},             8,  4, TYPE_POSITIVE_FLOAT, true},
-      {{"DCT8x8"},          8,  4, TYPE_POSITIVE_FLOAT, true},
-      {{"8x16"},            8,  4, TYPE_POSITIVE_FLOAT, true},
-      {{"8x32"},            8,  4, TYPE_POSITIVE_FLOAT, true},
-      {{"16"},              8,  4, TYPE_POSITIVE_FLOAT, true},
-      {{"16x32"},           8,  4, TYPE_POSITIVE_FLOAT, true},
-      {{"32"},              8,  4, TYPE_POSITIVE_FLOAT, true},
-      {{"32x64"},           8,  4, TYPE_POSITIVE_FLOAT, true},
-      {{"64"},              8,  4, TYPE_POSITIVE_FLOAT, true},
       {{"BPP*pnorm"},      16, 12, TYPE_POSITIVE_FLOAT, false},
+      {{"QABPP"},           8,  3, TYPE_POSITIVE_FLOAT, false},
       {{"Bugs"},            7,  5, TYPE_COUNT, false},
   };
   // clang-format on
@@ -149,10 +186,10 @@ void BenchmarkStats::Assimilate(const BenchmarkStats& victim) {
   total_adj_compressed_size += victim.total_adj_compressed_size;
   total_time_encode += victim.total_time_encode;
   total_time_decode += victim.total_time_decode;
-  max_distance = std::max(max_distance, victim.max_distance);
+  max_distance += pow(victim.max_distance, 2.0) * victim.total_input_pixels;
   distance_p_norm += victim.distance_p_norm;
   ssimulacra2 += victim.ssimulacra2;
-  distance_2 += victim.distance_2;
+  psnr += victim.psnr;
   distances.insert(distances.end(), victim.distances.begin(),
                    victim.distances.end());
   total_errors += victim.total_errors;
@@ -168,13 +205,6 @@ void BenchmarkStats::Assimilate(const BenchmarkStats& victim) {
 void BenchmarkStats::PrintMoreStats() const {
   if (Args()->print_more_stats) {
     jxl_stats.Print();
-    size_t total_bits = jxl_stats.aux_out.TotalBits();
-    size_t compressed_bits = total_compressed_size * kBitsPerByte;
-    if (total_bits != compressed_bits) {
-      printf("Total layer bits: %" PRIuS " vs total compressed bits: %" PRIuS
-             "  (%.2f%% accounted for)\n",
-             total_bits, compressed_bits, total_bits * 100.0 / compressed_bits);
-    }
   }
   if (Args()->print_distance_percentiles) {
     std::vector<float> sorted = distances;
@@ -197,14 +227,12 @@ std::vector<ColumnValue> BenchmarkStats::ComputeColumns(
       ComputeSpeed(total_input_pixels, total_time_encode);
   const double decompression_speed =
       ComputeSpeed(total_input_pixels, total_time_decode);
-  // Already weighted, no need to divide by #channels.
-  const double rmse = std::sqrt(distance_2 / total_input_pixels);
-  const double psnr = total_compressed_size == 0 ? 0.0
-                      : (distance_2 == 0)        ? 99.99
-                                                 : (20 * std::log10(1 / rmse));
-  const double p_norm = distance_p_norm / total_input_pixels;
+  const double psnr_avg = psnr / total_input_pixels;
+  const double p_norm_avg = distance_p_norm / total_input_pixels;
   const double ssimulacra2_avg = ssimulacra2 / total_input_pixels;
-  const double bpp_p_norm = p_norm * comp_bpp;
+  const double bpp_p_norm = p_norm_avg * comp_bpp;
+
+  const double max_distance_avg = sqrt(max_distance / total_input_pixels);
 
   std::vector<ColumnValue> values(
       GetColumnDescriptors(extra_metrics.size()).size());
@@ -215,41 +243,15 @@ std::vector<ColumnValue> BenchmarkStats::ComputeColumns(
   values[3].f = comp_bpp;
   values[4].f = compression_speed;
   values[5].f = decompression_speed;
-  values[6].f = static_cast<double>(max_distance);
+  values[6].f = static_cast<double>(max_distance_avg);
   values[7].f = ssimulacra2_avg;
-  values[8].f = p_norm;
-  values[9].f = psnr;
-  values[10].f = adj_comp_bpp;
-  // The DCT2, DCT4, AFV and DCT4X8 are applied to an 8x8 block by having 4x4
-  // DCT2X2s, 2x2 DCT4x4s/AFVs, or 2x1 DCT4X8s, filling the whole 8x8 blocks.
-  // Thus we need to multiply the block count by 8.0 * 8.0 pixels for these
-  // transforms.
-  values[11].f = 100.f * jxl_stats.aux_out.num_small_blocks * 8.0 * 8.0 /
-                 total_input_pixels;
-  values[12].f = 100.f * jxl_stats.aux_out.num_dct4x8_blocks * 8.0 * 8.0 /
-                 total_input_pixels;
-  values[13].f =
-      100.f * jxl_stats.aux_out.num_afv_blocks * 8.0 * 8.0 / total_input_pixels;
-  values[14].f = 100.f * jxl_stats.aux_out.num_dct8_blocks * 8.0 * 8.0 /
-                 total_input_pixels;
-  values[15].f = 100.f * jxl_stats.aux_out.num_dct8x16_blocks * 8.0 * 16.0 /
-                 total_input_pixels;
-  values[16].f = 100.f * jxl_stats.aux_out.num_dct8x32_blocks * 8.0 * 32.0 /
-                 total_input_pixels;
-  values[17].f = 100.f * jxl_stats.aux_out.num_dct16_blocks * 16.0 * 16.0 /
-                 total_input_pixels;
-  values[18].f = 100.f * jxl_stats.aux_out.num_dct16x32_blocks * 16.0 * 32.0 /
-                 total_input_pixels;
-  values[19].f = 100.f * jxl_stats.aux_out.num_dct32_blocks * 32.0 * 32.0 /
-                 total_input_pixels;
-  values[20].f = 100.f * jxl_stats.aux_out.num_dct32x64_blocks * 32.0 * 64.0 /
-                 total_input_pixels;
-  values[21].f = 100.f * jxl_stats.aux_out.num_dct64_blocks * 64.0 * 64.0 /
-                 total_input_pixels;
-  values[22].f = bpp_p_norm;
-  values[23].i = total_errors;
+  values[8].f = psnr_avg;
+  values[9].f = p_norm_avg;
+  values[10].f = bpp_p_norm;
+  values[11].f = adj_comp_bpp;
+  values[12].i = total_errors;
   for (size_t i = 0; i < extra_metrics.size(); i++) {
-    values[24 + i].f = extra_metrics[i] / total_input_files;
+    values[13 + i].f = extra_metrics[i] / total_input_files;
   }
   return values;
 }
@@ -377,4 +379,5 @@ std::string PrintAggregate(
   return PrintFormattedEntries(num_extra_metrics, result);
 }
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl

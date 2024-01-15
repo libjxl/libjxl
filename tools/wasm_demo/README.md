@@ -83,7 +83,37 @@ To complete the site few more files are to be added to output directory:
  - `favicon.ico` is an optional site icon
  - `index.html` is an optional site "home" page
 
-It is not guaranteed, but somewhat fresh demo would be hosted on
+In the source code (`service_worker.js`) there are two compile-time constants
+that modify the behaviour of Service Worker:
+
+ - `FORCE_COP` flag allows rewriting responses to add COOP / COEP headers;
+   this is useful when it is difficult / impossible to setup response headers
+   otherwise (e.g. GitHub Pages)
+ - `FORCE_DECODING` flag activate JXL decoding when image response type has
+   `Content-Encoding` header set to `application/octet-stream`; this happens
+   when server does not know the JXL MIME-type
+
+One dependency that `build_site.py` requires is [uglifyjs](https://github.com/mishoo/UglifyJS), which can be installed with
+```
+npm install uglify-js -g
+```
+If you followed the [wasm build instructions](../../docs/building_wasm.md),
+assuming you are in the root level of the cloned libjxl repo a typical call to
+build the site would be
+```bash
+python3 ./tools/wasm_demo/build_site.py ./tools/wasm_demo/ ./build-wasm32/tools/wasm_demo/ /path/to/demo-site
+```
+Then you need to put your image files in the correct same place and are should be good to go.
+
+
+To summarize, using the wasm decoder together with a service workder amounts to adding
+```html
+<script src="service_worker.js"></script>
+```
+to your html and then putting the `service_worker.js` and `jxl_decoder.wasm` binary in directory where they can be read.
+
+
+It is not guaranteed, but somewhat fresh demo is hosted on
 `https://jxl-demo.netlify.app/`, e.g.:
 
  - [one line demo](https://jxl-demo.netlify.app/one_line_demo_with_console.html)
@@ -92,3 +122,5 @@ It is not guaranteed, but somewhat fresh demo would be hosted on
    URL contains query parameters that control rendering and benchmarking options;
    please note, that HDR canvas is often not enabled by default, it could be
    enabled in some browsers via `about://flags/#enable-experimental-web-platform-features`
+ - [`service_worker.js`](https://jxl-demo.netlify.app/service_worker.js)
+ - [`jxl_decoder.wasm`](https://jxl-demo.netlify.app/jxl_decoder.wasm)

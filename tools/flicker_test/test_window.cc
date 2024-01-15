@@ -13,7 +13,8 @@
 
 #include "tools/icc_detect/icc_detect.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 
 FlickerTestWindow::FlickerTestWindow(FlickerTestParameters parameters,
                                      QWidget* const parent)
@@ -181,4 +182,5 @@ retry:
       parameters_.grayFadingTimeMSecs, parameters_.grayTimeMSecs);
 }
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl

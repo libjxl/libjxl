@@ -10,9 +10,10 @@
 #include <QImage>
 #include <QString>
 
-#include "lib/jxl/common.h"
+#include "lib/jxl/base/common.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 
 // `extension` should not include the dot.
 bool canLoadImageWithExtension(QString extension);
@@ -21,9 +22,10 @@ bool canLoadImageWithExtension(QString extension);
 // specified. Thread-hostile.
 QImage loadImage(const QString& filename,
                  const QByteArray& targetIccProfile = QByteArray(),
-                 float intensityTarget = kDefaultIntensityTarget,
+                 float intensityTarget = jxl::kDefaultIntensityTarget,
                  const QString& sourceColorSpaceHint = QString());
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
 
 #endif  // TOOLS_COMPARISON_VIEWER_IMAGE_LOADING_H_

@@ -17,7 +17,7 @@
      <property name="widgetResizable">
       <bool>true</bool>
      </property>
-     <widget class="jxl::SplitImageRenderer" name="splitImageRenderer"/>
+     <widget class="jpegxl::tools::SplitImageRenderer" name="splitImageRenderer"/>
     </widget>
    </item>
    <item>
@@ -130,7 +130,7 @@
  </widget>
  <customwidgets>
   <customwidget>
-   <class>jxl::SplitImageRenderer</class>
+   <class>jpegxl::tools::SplitImageRenderer</class>
    <extends>QWidget</extends>
    <header>split_image_renderer.h</header>
    <container>1</container>

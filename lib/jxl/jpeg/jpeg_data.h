@@ -16,6 +16,7 @@
 
 #include "lib/jxl/common.h"  // JPEGXL_ENABLE_TRANSCODE_JPEG
 #include "lib/jxl/fields.h"
+#include "lib/jxl/frame_dimensions.h"
 
 namespace jxl {
 namespace jpeg {
@@ -173,7 +174,7 @@ struct JPEGData : public Fields {
   Status VisitFields(Visitor* visitor) override;
 #else
   Status VisitFields(Visitor* /* visitor */) override {
-    JXL_ABORT("JPEG transcoding support not enabled");
+    JXL_UNREACHABLE("JPEG transcoding support not enabled");
   }
 #endif  // JPEGXL_ENABLE_TRANSCODE_JPEG
 
@@ -202,11 +203,12 @@ struct JPEGData : public Fields {
 
 #if JPEGXL_ENABLE_TRANSCODE_JPEG
 // Set ICC profile in jpeg_data.
-Status SetJPEGDataFromICC(const PaddedBytes& icc, jpeg::JPEGData* jpeg_data);
+Status SetJPEGDataFromICC(const std::vector<uint8_t>& icc,
+                          jpeg::JPEGData* jpeg_data);
 #else
-static JXL_INLINE Status SetJPEGDataFromICC(const PaddedBytes& /* icc */,
-                                            jpeg::JPEGData* /* jpeg_data */) {
-  JXL_ABORT("JPEG transcoding support not enabled");
+static JXL_INLINE Status SetJPEGDataFromICC(
+    const std::vector<uint8_t>& /* icc */, jpeg::JPEGData* /* jpeg_data */) {
+  JXL_UNREACHABLE("JPEG transcoding support not enabled");
 }
 #endif  // JPEGXL_ENABLE_TRANSCODE_JPEG
 
