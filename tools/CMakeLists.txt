@@ -310,9 +310,13 @@ foreach(BINARY IN LISTS TOOL_BINARIES)
     set(JXL_WASM_TOOLS_LINK_FLAGS "\
       -s USE_LIBPNG=1 \
       -s ALLOW_MEMORY_GROWTH=1 \
-      -s USE_PTHREADS=1 \
-      -s PTHREAD_POOL_SIZE=16 \
     ")
+    if (JPEGXL_ENABLE_WASM_TRHEADS)
+      set(JXL_WASM_TOOLS_LINK_FLAGS "${JXL_WASM_TOOLS_LINK_FLAGS} \
+        -s USE_PTHREADS=1 \
+        -s PTHREAD_POOL_SIZE=16 \
+      ")
+    endif()
     set_target_properties(${BINARY} PROPERTIES LINK_FLAGS "${JXL_WASM_TOOLS_LINK_FLAGS}")
   endif()
 endforeach()
