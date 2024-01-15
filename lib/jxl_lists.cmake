@@ -145,7 +145,6 @@ set(JPEGXL_INTERNAL_DEC_SOURCES
   jxl/convolve-inl.h
   jxl/convolve.h
   jxl/convolve_separable5.cc
-  jxl/convolve_separable7.cc
   jxl/convolve_slow.cc
   jxl/convolve_symmetric3.cc
   jxl/convolve_symmetric5.cc
