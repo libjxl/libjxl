@@ -12,23 +12,23 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <algorithm>
 #include <string>
 
-#include "lib/jxl/aux_out_fwd.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/override.h"
-#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/coeff_order_fwd.h"
-#include "lib/jxl/common.h"
+#include "lib/jxl/common.h"  // kMaxNumPasses
 #include "lib/jxl/dec_bit_reader.h"
-#include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/fields.h"
+#include "lib/jxl/frame_dimensions.h"
 #include "lib/jxl/image_metadata.h"
 #include "lib/jxl/loop_filter.h"
 
 namespace jxl {
 
+// TODO(eustas): move to proper place?
 // Also used by extra channel names.
 static inline Status VisitNameString(Visitor* JXL_RESTRICT visitor,
                                      std::string* name) {
@@ -92,8 +92,8 @@ struct YCbCrChromaSubsampling : public Fields {
   uint8_t MaxHShift() const { return maxhs_; }
   uint8_t MaxVShift() const { return maxvs_; }
 
-  uint8_t RawHShift(size_t c) { return kHShift[channel_mode_[c]]; }
-  uint8_t RawVShift(size_t c) { return kVShift[channel_mode_[c]]; }
+  uint8_t RawHShift(size_t c) const { return kHShift[channel_mode_[c]]; }
+  uint8_t RawVShift(size_t c) const { return kVShift[channel_mode_[c]]; }
 
   // Uses JPEG channel order (Y, Cb, Cr).
   Status Set(const uint8_t* hsample, const uint8_t* vsample) {
@@ -116,37 +116,36 @@ struct YCbCrChromaSubsampling : public Fields {
   }
 
   bool Is444() const {
-    for (size_t c : {0, 2}) {
-      if (channel_mode_[c] != channel_mode_[1]) {
-        return false;
-      }
-    }
-    return true;
+    return HShift(0) == 0 && VShift(0) == 0 &&  // Cb
+           HShift(2) == 0 && VShift(2) == 0 &&  // Cr
+           HShift(1) == 0 && VShift(1) == 0;    // Y
   }
 
   bool Is420() const {
-    return channel_mode_[0] == 1 && channel_mode_[1] == 0 &&
-           channel_mode_[2] == 1;
+    return HShift(0) == 1 && VShift(0) == 1 &&  // Cb
+           HShift(2) == 1 && VShift(2) == 1 &&  // Cr
+           HShift(1) == 0 && VShift(1) == 0;    // Y
   }
 
   bool Is422() const {
-    for (size_t c : {0, 2}) {
-      if (kHShift[channel_mode_[c]] == kHShift[channel_mode_[1]] + 1 &&
-          kVShift[channel_mode_[c]] == kVShift[channel_mode_[1]]) {
-        return false;
-      }
-    }
-    return true;
+    return HShift(0) == 1 && VShift(0) == 0 &&  // Cb
+           HShift(2) == 1 && VShift(2) == 0 &&  // Cr
+           HShift(1) == 0 && VShift(1) == 0;    // Y
   }
 
   bool Is440() const {
-    for (size_t c : {0, 2}) {
-      if (kHShift[channel_mode_[c]] == kHShift[channel_mode_[1]] &&
-          kVShift[channel_mode_[c]] == kVShift[channel_mode_[1]] + 1) {
-        return false;
-      }
-    }
-    return true;
+    return HShift(0) == 0 && VShift(0) == 1 &&  // Cb
+           HShift(2) == 0 && VShift(2) == 1 &&  // Cr
+           HShift(1) == 0 && VShift(1) == 0;    // Y
+  }
+
+  std::string DebugString() const {
+    if (Is444()) return "444";
+    if (Is420()) return "420";
+    if (Is422()) return "422";
+    if (Is440()) return "440";
+    return "cs" + std::to_string(channel_mode_[0]) +
+           std::to_string(channel_mode_[1]) + std::to_string(channel_mode_[2]);
   }
 
  private:
@@ -158,8 +157,8 @@ struct YCbCrChromaSubsampling : public Fields {
       maxvs_ = std::max(maxvs_, kVShift[channel_mode_[i]]);
     }
   }
-  static constexpr uint8_t kHShift[4] = {0, 1, 1, 0};
-  static constexpr uint8_t kVShift[4] = {0, 1, 0, 1};
+  static const uint8_t kHShift[4];
+  static const uint8_t kVShift[4];
   uint32_t channel_mode_[3];
   uint8_t maxhs_;
   uint8_t maxvs_;
@@ -220,6 +219,8 @@ struct BlendingInfo : public Fields {
   // Frame ID to copy from (0-3). Only encoded if blend_mode is not kReplace.
   uint32_t source;
 
+  std::string DebugString() const;
+
   size_t nonserialized_num_extra_channels = 0;
   bool nonserialized_is_partial_frame = false;
 };
@@ -262,10 +263,10 @@ struct Passes : public Fields {
 
   void GetDownsamplingBracket(size_t pass, int& minShift, int& maxShift) const {
     maxShift = 2;
-    minShift = 0;
+    minShift = 3;
     for (size_t i = 0;; i++) {
       for (uint32_t j = 0; j < num_downsample; ++j) {
-        if (i <= last_pass[j]) {
+        if (i == last_pass[j]) {
           if (downsample[j] == 8) minShift = 3;
           if (downsample[j] == 4) minShift = 2;
           if (downsample[j] == 2) minShift = 1;
@@ -275,9 +276,21 @@ struct Passes : public Fields {
       if (i == num_passes - 1) minShift = 0;
       if (i == pass) return;
       maxShift = minShift - 1;
-      minShift = 0;
     }
   }
+
+  uint32_t GetDownsamplingTargetForCompletedPasses(uint32_t num_p) const {
+    if (num_p >= num_passes) return 1;
+    uint32_t retval = 8;
+    for (uint32_t i = 0; i < num_downsample; ++i) {
+      if (num_p > last_pass[i]) {
+        retval = std::min(retval, downsample[i]);
+      }
+    }
+    return retval;
+  }
+
+  std::string DebugString() const;
 
   uint32_t num_passes;      // <= kMaxNumPasses
   uint32_t num_downsample;  // <= num_passes
@@ -473,14 +486,13 @@ struct FrameHeader : public Fields {
            frame_type == FrameType::kSkipProgressive;
   }
 
+  std::string DebugString() const;
+
   uint64_t extensions;
 };
 
 Status ReadFrameHeader(BitReader* JXL_RESTRICT reader,
                        FrameHeader* JXL_RESTRICT frame);
-
-Status WriteFrameHeader(const FrameHeader& frame,
-                        BitWriter* JXL_RESTRICT writer, AuxOut* aux_out);
 
 // Shared by enc/dec. 5F and 13 are by far the most common for d1/2/4/8, 0
 // ensures low overhead for small images.

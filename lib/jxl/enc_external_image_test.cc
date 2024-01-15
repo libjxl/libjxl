@@ -8,13 +8,12 @@
 #include <array>
 #include <new>
 
-#include "gtest/gtest.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
-#include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/image_test_utils.h"
+#include "lib/jxl/testing.h"
 
 namespace jxl {
 namespace {
@@ -25,23 +24,20 @@ TEST(ExternalImageTest, InvalidSize) {
   im.SetAlphaBits(8);
   ImageBundle ib(&im);
 
+  JxlPixelFormat format = {4, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
   const uint8_t buf[10 * 100 * 8] = {};
+  EXPECT_FALSE(ConvertFromExternal(Bytes(buf, 10), /*xsize=*/10, /*ysize=*/100,
+                                   /*c_current=*/ColorEncoding::SRGB(),
+                                   /*bits_per_sample=*/16, format, nullptr,
+                                   &ib));
   EXPECT_FALSE(ConvertFromExternal(
-      Span<const uint8_t>(buf, 10), /*xsize=*/10, /*ysize=*/100,
-      /*c_current=*/ColorEncoding::SRGB(), /*channels=*/4,
-      /*alpha_is_premultiplied=*/false, /*bits_per_sample=*/16, JXL_BIG_ENDIAN,
-      /*flipped_y=*/false, nullptr, &ib, /*float_in=*/false, /*align=*/0));
-  EXPECT_FALSE(ConvertFromExternal(
-      Span<const uint8_t>(buf, sizeof(buf) - 1), /*xsize=*/10, /*ysize=*/100,
-      /*c_current=*/ColorEncoding::SRGB(), /*channels=*/4,
-      /*alpha_is_premultiplied=*/false, /*bits_per_sample=*/16, JXL_BIG_ENDIAN,
-      /*flipped_y=*/false, nullptr, &ib, /*float_in=*/false, /*align=*/0));
-  EXPECT_TRUE(ConvertFromExternal(
-      Span<const uint8_t>(buf, sizeof(buf)), /*xsize=*/10,
-      /*ysize=*/100, /*c_current=*/ColorEncoding::SRGB(),
-      /*channels=*/4, /*alpha_is_premultiplied=*/false,
-      /*bits_per_sample=*/16, JXL_BIG_ENDIAN,
-      /*flipped_y=*/false, nullptr, &ib, /*float_in=*/false, /*align=*/0));
+      Bytes(buf, sizeof(buf) - 1), /*xsize=*/10, /*ysize=*/100,
+      /*c_current=*/ColorEncoding::SRGB(),
+      /*bits_per_sample=*/16, format, nullptr, &ib));
+  EXPECT_TRUE(
+      ConvertFromExternal(Bytes(buf, sizeof(buf)), /*xsize=*/10,
+                          /*ysize=*/100, /*c_current=*/ColorEncoding::SRGB(),
+                          /*bits_per_sample=*/16, format, nullptr, &ib));
 }
 #endif
 
@@ -54,15 +50,28 @@ TEST(ExternalImageTest, AlphaMissing) {
   const size_t ysize = 20;
   const uint8_t buf[xsize * ysize * 4] = {};
 
+  JxlPixelFormat format = {4, JXL_TYPE_UINT8, JXL_BIG_ENDIAN, 0};
   // has_alpha is true but the ImageBundle has no alpha. Alpha channel should
   // be ignored.
-  EXPECT_TRUE(ConvertFromExternal(
-      Span<const uint8_t>(buf, sizeof(buf)), xsize, ysize,
-      /*c_current=*/ColorEncoding::SRGB(),
-      /*channels=*/4, /*alpha_is_premultiplied=*/false,
-      /*bits_per_sample=*/8, JXL_BIG_ENDIAN,
-      /*flipped_y=*/false, nullptr, &ib, /*float_in=*/false, /*align=*/0));
+  EXPECT_TRUE(ConvertFromExternal(Bytes(buf, sizeof(buf)), xsize, ysize,
+                                  /*c_current=*/ColorEncoding::SRGB(),
+                                  /*bits_per_sample=*/8, format, nullptr, &ib));
   EXPECT_FALSE(ib.HasAlpha());
+}
+
+TEST(ExternalImageTest, AlphaPremultiplied) {
+  ImageMetadata im;
+  im.SetAlphaBits(8, true);
+
+  ImageBundle ib(&im);
+  const size_t xsize = 10;
+  const size_t ysize = 20;
+  const size_t size = xsize * ysize * 8;
+  const uint8_t buf[size] = {};
+
+  JxlPixelFormat format = {4, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
+  EXPECT_TRUE(BufferToImageBundle(format, xsize, ysize, buf, size, nullptr,
+                                  ColorEncoding::SRGB(), &ib));
 }
 
 }  // namespace

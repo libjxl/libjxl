@@ -5,25 +5,31 @@
 
 #include "lib/jxl/toc.h"
 
-#include "gtest/gtest.h"
-#include "lib/jxl/aux_out_fwd.h"
+#include <vector>
+
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/random.h"
 #include "lib/jxl/base/span.h"
-#include "lib/jxl/common.h"
+#include "lib/jxl/coeff_order_fwd.h"
+#include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_toc.h"
+#include "lib/jxl/testing.h"
 
 namespace jxl {
 namespace {
 
 void Roundtrip(size_t num_entries, bool permute, Rng* rng) {
   // Generate a random permutation.
-  std::vector<coeff_order_t> permutation(num_entries);
+  std::vector<coeff_order_t> permutation;
   std::vector<coeff_order_t> inv_permutation(num_entries);
   for (size_t i = 0; i < num_entries; i++) {
-    permutation[i] = i;
     inv_permutation[i] = i;
   }
   if (permute) {
+    permutation.resize(num_entries);
+    for (size_t i = 0; i < num_entries; i++) {
+      permutation[i] = i;
+    }
     rng->Shuffle(permutation.data(), permutation.size());
     for (size_t i = 0; i < num_entries; i++) {
       inv_permutation[permutation[i]] = i;
@@ -45,13 +51,12 @@ void Roundtrip(size_t num_entries, bool permute, Rng* rng) {
     }
     writer.ZeroPadToByte();
     AuxOut aux_out;
-    ReclaimAndCharge(&writer, &allotment, 0, &aux_out);
+    allotment.ReclaimAndCharge(&writer, 0, &aux_out);
   }
 
   BitWriter writer;
   AuxOut aux_out;
-  ASSERT_TRUE(WriteGroupOffsets(group_codes, permute ? &permutation : nullptr,
-                                &writer, &aux_out));
+  ASSERT_TRUE(WriteGroupOffsets(group_codes, permutation, &writer, &aux_out));
 
   BitReader reader(writer.GetSpan());
   std::vector<uint64_t> group_offsets;
@@ -81,7 +86,7 @@ void Roundtrip(size_t num_entries, bool permute, Rng* rng) {
 
 TEST(TocTest, Test) {
   Rng rng(0);
-  for (size_t num_entries = 0; num_entries < 10; ++num_entries) {
+  for (size_t num_entries = 1; num_entries < 10; ++num_entries) {
     for (bool permute : std::vector<bool>{false, true}) {
       Roundtrip(num_entries, permute, &rng);
     }

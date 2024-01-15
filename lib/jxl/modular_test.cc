@@ -3,67 +3,62 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include <stdint.h>
-#include <stdio.h>
+#include <jxl/cms.h>
 
 #include <array>
+#include <cstdint>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "gtest/gtest.h"
 #include "lib/extras/codec.h"
-#include "lib/jxl/aux_out.h"
+#include "lib/extras/dec/jxl.h"
+#include "lib/extras/metrics.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/override.h"
-#include "lib/jxl/base/padded_bytes.h"
-#include "lib/jxl/base/thread_pool_internal.h"
+#include "lib/jxl/base/span.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
-#include "lib/jxl/color_management.h"
-#include "lib/jxl/dec_file.h"
-#include "lib/jxl/dec_params.h"
+#include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
-#include "lib/jxl/enc_butteraugli_pnorm.h"
 #include "lib/jxl/enc_cache.h"
-#include "lib/jxl/enc_color_management.h"
-#include "lib/jxl/enc_file.h"
+#include "lib/jxl/enc_fields.h"
 #include "lib/jxl/enc_params.h"
+#include "lib/jxl/enc_toc.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/image_test_utils.h"
 #include "lib/jxl/modular/encoding/enc_encoding.h"
 #include "lib/jxl/modular/encoding/encoding.h"
+#include "lib/jxl/modular/encoding/ma_common.h"
+#include "lib/jxl/padded_bytes.h"
 #include "lib/jxl/test_utils.h"
-#include "lib/jxl/testdata.h"
+#include "lib/jxl/testing.h"
 
 namespace jxl {
 namespace {
+
+using test::ReadTestData;
 using test::Roundtrip;
 
 void TestLosslessGroups(size_t group_size_shift) {
-  ThreadPool* pool = nullptr;
-  const PaddedBytes orig =
-      ReadTestData("imagecompression.info/flower_foveon.png");
+  const std::vector<uint8_t> orig = ReadTestData("jxl/flower/flower.png");
   CompressParams cparams;
   cparams.SetLossless();
   cparams.modular_group_size_shift = group_size_shift;
-  DecompressParams dparams;
 
   CodecInOut io_out;
-  size_t compressed_size;
 
   CodecInOut io;
-  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
+  ASSERT_TRUE(SetFromBytes(Bytes(orig), &io));
   io.ShrinkTo(io.xsize() / 4, io.ysize() / 4);
 
-  compressed_size = Roundtrip(&io, cparams, dparams, pool, &io_out);
+  size_t compressed_size;
+  JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io_out, _, &compressed_size));
   EXPECT_LE(compressed_size, 280000u);
-  EXPECT_LE(ButteraugliDistance(io, io_out, cparams.ba_params, GetJxlCms(),
-                                /*distmap=*/nullptr, pool),
-            0.0);
+  JXL_EXPECT_OK(SamePixels(*io.Main().color(), *io_out.Main().color(), _));
 }
 
 TEST(ModularTest, RoundtripLosslessGroups128) { TestLosslessGroups(0); }
@@ -77,9 +72,8 @@ TEST(ModularTest, JXL_TSAN_SLOW_TEST(RoundtripLosslessGroups1024)) {
 }
 
 TEST(ModularTest, RoundtripLosslessCustomWP_PermuteRCT) {
-  ThreadPool* pool = nullptr;
-  const PaddedBytes orig =
-      ReadTestData("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  const std::vector<uint8_t> orig =
+      ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CompressParams cparams;
   cparams.SetLossless();
   // 9 = permute to GBR, to test the special case of permutation-only
@@ -87,120 +81,111 @@ TEST(ModularTest, RoundtripLosslessCustomWP_PermuteRCT) {
   // slowest speed so different WP modes are tried
   cparams.speed_tier = SpeedTier::kTortoise;
   cparams.options.predictor = {Predictor::Weighted};
-  DecompressParams dparams;
 
   CodecInOut io_out;
-  size_t compressed_size;
 
   CodecInOut io;
-  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
+  ASSERT_TRUE(SetFromBytes(Bytes(orig), &io));
   io.ShrinkTo(100, 100);
 
-  compressed_size = Roundtrip(&io, cparams, dparams, pool, &io_out);
-  EXPECT_LE(compressed_size, 10150u);
-  EXPECT_LE(ButteraugliDistance(io, io_out, cparams.ba_params, GetJxlCms(),
-                                /*distmap=*/nullptr, pool),
-            0.0);
+  size_t compressed_size;
+  JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io_out, _, &compressed_size));
+  EXPECT_LE(compressed_size, 10169u);
+  JXL_EXPECT_OK(SamePixels(*io.Main().color(), *io_out.Main().color(), _));
 }
 
 TEST(ModularTest, RoundtripLossyDeltaPalette) {
-  ThreadPool* pool = nullptr;
-  const PaddedBytes orig =
-      ReadTestData("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  const std::vector<uint8_t> orig =
+      ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CompressParams cparams;
   cparams.modular_mode = true;
   cparams.color_transform = jxl::ColorTransform::kNone;
   cparams.lossy_palette = true;
   cparams.palette_colors = 0;
 
-  DecompressParams dparams;
-
   CodecInOut io_out;
-  size_t compressed_size;
 
   CodecInOut io;
-  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
+  ASSERT_TRUE(SetFromBytes(Bytes(orig), &io));
   io.ShrinkTo(300, 100);
 
-  compressed_size = Roundtrip(&io, cparams, dparams, pool, &io_out);
+  size_t compressed_size;
+  JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io_out, _, &compressed_size));
   EXPECT_LE(compressed_size, 6800u);
-  cparams.ba_params.intensity_target = 80.0f;
-  EXPECT_THAT(ButteraugliDistance(io, io_out, cparams.ba_params, GetJxlCms(),
-                                  /*distmap=*/nullptr, pool),
+  EXPECT_THAT(ButteraugliDistance(io.frames, io_out.frames, ButteraugliParams(),
+                                  *JxlGetDefaultCms(),
+                                  /*distmap=*/nullptr),
               IsSlightlyBelow(1.5));
 }
 TEST(ModularTest, RoundtripLossyDeltaPaletteWP) {
-  ThreadPool* pool = nullptr;
-  const PaddedBytes orig =
-      ReadTestData("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  const std::vector<uint8_t> orig =
+      ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CompressParams cparams;
   cparams.SetLossless();
   cparams.lossy_palette = true;
   cparams.palette_colors = 0;
   cparams.options.predictor = jxl::Predictor::Weighted;
 
-  DecompressParams dparams;
-
   CodecInOut io_out;
-  size_t compressed_size;
 
   CodecInOut io;
-  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
+  ASSERT_TRUE(SetFromBytes(Bytes(orig), &io));
   io.ShrinkTo(300, 100);
 
-  compressed_size = Roundtrip(&io, cparams, dparams, pool, &io_out);
+  size_t compressed_size;
+  JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io_out, _, &compressed_size));
   EXPECT_LE(compressed_size, 7000u);
-  cparams.ba_params.intensity_target = 80.0f;
-  EXPECT_THAT(ButteraugliDistance(io, io_out, cparams.ba_params, GetJxlCms(),
-                                  /*distmap=*/nullptr, pool),
-              IsSlightlyBelow(10.0));
+  EXPECT_THAT(ButteraugliDistance(io.frames, io_out.frames, ButteraugliParams(),
+                                  *JxlGetDefaultCms(),
+                                  /*distmap=*/nullptr),
+              IsSlightlyBelow(10.1));
 }
 
 TEST(ModularTest, RoundtripLossy) {
-  ThreadPool* pool = nullptr;
-  const PaddedBytes orig =
-      ReadTestData("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  const std::vector<uint8_t> orig =
+      ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CompressParams cparams;
   cparams.modular_mode = true;
   cparams.butteraugli_distance = 2.f;
-  DecompressParams dparams;
+  cparams.SetCms(*JxlGetDefaultCms());
 
   CodecInOut io_out;
-  size_t compressed_size;
 
   CodecInOut io;
-  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
+  ASSERT_TRUE(SetFromBytes(Bytes(orig), &io));
 
-  compressed_size = Roundtrip(&io, cparams, dparams, pool, &io_out);
+  size_t compressed_size;
+  JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io_out, _, &compressed_size));
   EXPECT_LE(compressed_size, 30000u);
-  cparams.ba_params.intensity_target = 80.0f;
-  EXPECT_THAT(ButteraugliDistance(io, io_out, cparams.ba_params, GetJxlCms(),
-                                  /*distmap=*/nullptr, pool),
+  EXPECT_THAT(ButteraugliDistance(io.frames, io_out.frames, ButteraugliParams(),
+                                  *JxlGetDefaultCms(),
+                                  /*distmap=*/nullptr),
               IsSlightlyBelow(2.3));
 }
 
 TEST(ModularTest, RoundtripLossy16) {
-  ThreadPool* pool = nullptr;
-  const PaddedBytes orig =
-      ReadTestData("raw.pixls/DJI-FC6310-16bit_709_v4_krita.png");
+  const std::vector<uint8_t> orig =
+      ReadTestData("external/raw.pixls/DJI-FC6310-16bit_709_v4_krita.png");
   CompressParams cparams;
   cparams.modular_mode = true;
   cparams.butteraugli_distance = 2.f;
-  DecompressParams dparams;
 
   CodecInOut io_out;
-  size_t compressed_size;
 
   CodecInOut io;
-  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
-  JXL_CHECK(io.TransformTo(ColorEncoding::SRGB(), GetJxlCms(), pool));
+  ASSERT_TRUE(SetFromBytes(Bytes(orig), &io));
+  JXL_CHECK(!io.metadata.m.have_preview);
+  JXL_CHECK(io.frames.size() == 1);
+  JXL_CHECK(
+      io.frames[0].TransformTo(ColorEncoding::SRGB(), *JxlGetDefaultCms()));
   io.metadata.m.color_encoding = ColorEncoding::SRGB();
 
-  compressed_size = Roundtrip(&io, cparams, dparams, pool, &io_out);
+  size_t compressed_size;
+  JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io_out, _, &compressed_size));
   EXPECT_LE(compressed_size, 300u);
-  cparams.ba_params.intensity_target = 80.0f;
-  EXPECT_THAT(ButteraugliDistance(io, io_out, cparams.ba_params, GetJxlCms(),
-                                  /*distmap=*/nullptr, pool),
+  EXPECT_THAT(ButteraugliDistance(io.frames, io_out.frames, ButteraugliParams(),
+                                  *JxlGetDefaultCms(),
+                                  /*distmap=*/nullptr),
               IsSlightlyBelow(1.6));
 }
 
@@ -247,11 +232,10 @@ TEST(ModularTest, RoundtripExtraProperties) {
 }
 
 TEST(ModularTest, RoundtripLosslessCustomSqueeze) {
-  ThreadPool* pool = nullptr;
-  const PaddedBytes orig =
-      ReadTestData("wesaturate/500px/tmshre_riaphotographs_srgb8.png");
+  const std::vector<uint8_t> orig =
+      ReadTestData("external/wesaturate/500px/tmshre_riaphotographs_srgb8.png");
   CodecInOut io;
-  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
+  ASSERT_TRUE(SetFromBytes(Bytes(orig), &io));
 
   CompressParams cparams;
   cparams.modular_mode = true;
@@ -271,12 +255,12 @@ TEST(ModularTest, RoundtripLosslessCustomSqueeze) {
   p.in_place = true;
   p.horizontal = false;
   cparams.squeezes.push_back(p);
-  DecompressParams dparams;
 
   CodecInOut io2;
-  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 265000u);
-  EXPECT_EQ(0.0, ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
-                                     /*distmap=*/nullptr, pool));
+  size_t compressed_size;
+  JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _, &compressed_size));
+  EXPECT_LE(compressed_size, 265000u);
+  JXL_EXPECT_OK(SamePixels(*io.Main().color(), *io2.Main().color(), _));
 }
 
 struct RoundtripLosslessConfig {
@@ -315,10 +299,10 @@ TEST_P(ModularTestParam, RoundtripLossless) {
 
   ThreadPool* pool = nullptr;
   Rng generator(123);
-  const PaddedBytes orig =
-      ReadTestData("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  const std::vector<uint8_t> orig =
+      ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CodecInOut io1;
-  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io1, pool));
+  ASSERT_TRUE(SetFromBytes(Bytes(orig), &io1, pool));
 
   // vary the dimensions a bit, in case of bugs related to
   // even vs odd width or height.
@@ -357,11 +341,11 @@ TEST_P(ModularTestParam, RoundtripLossless) {
   cparams.options.predictor = {Predictor::Zero};
   cparams.speed_tier = SpeedTier::kThunder;
   cparams.responsive = responsive;
-  DecompressParams dparams;
   CodecInOut io2;
-  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2),
-            bitdepth * xsize * ysize / 3);
-  EXPECT_LE(0, ComputeDistance2(io.Main(), io2.Main(), GetJxlCms()));
+  size_t compressed_size;
+  JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _, &compressed_size));
+  EXPECT_LE(compressed_size, bitdepth * xsize * ysize / 3);
+  EXPECT_LE(0, ComputeDistance2(io.Main(), io2.Main(), *JxlGetDefaultCms()));
   size_t different = 0;
   for (size_t c = 0; c < 3; c++) {
     for (size_t y = 0; y < ysize; y++) {
@@ -379,7 +363,6 @@ TEST_P(ModularTestParam, RoundtripLossless) {
 }
 
 TEST(ModularTest, RoundtripLosslessCustomFloat) {
-  ThreadPool* pool = nullptr;
   CodecInOut io;
   size_t xsize = 100, ysize = 300;
   io.SetSize(xsize, ysize);
@@ -388,7 +371,7 @@ TEST(ModularTest, RoundtripLosslessCustomFloat) {
   io.metadata.m.bit_depth.floating_point_sample = true;
   io.metadata.m.modular_16_bit_buffer_sufficient = false;
   ColorEncoding color_encoding;
-  color_encoding.tf.SetTransferFunction(TransferFunction::kLinear);
+  color_encoding.Tf().SetTransferFunction(TransferFunction::kLinear);
   color_encoding.SetColorSpace(ColorSpace::kRGB);
   Image3F testimage(xsize, ysize);
   float factor = 1.f / (1 << 14);
@@ -411,12 +394,145 @@ TEST(ModularTest, RoundtripLosslessCustomFloat) {
   cparams.options.predictor = {Predictor::Zero};
   cparams.speed_tier = SpeedTier::kThunder;
   cparams.decoding_speed_tier = 2;
-  DecompressParams dparams;
 
   CodecInOut io2;
-  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 23000u);
-  EXPECT_EQ(0.0, ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
-                                     /*distmap=*/nullptr, pool));
+  size_t compressed_size;
+  JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _, &compressed_size));
+  EXPECT_LE(compressed_size, 23000u);
+  JXL_EXPECT_OK(SamePixels(*io.Main().color(), *io2.Main().color(), _));
+}
+
+void WriteHeaders(BitWriter* writer, size_t xsize, size_t ysize) {
+  BitWriter::Allotment allotment(writer, 16);
+  writer->Write(8, 0xFF);
+  writer->Write(8, kCodestreamMarker);
+  allotment.ReclaimAndCharge(writer, 0, nullptr);
+  CodecMetadata metadata;
+  EXPECT_TRUE(metadata.size.Set(xsize, ysize));
+  EXPECT_TRUE(WriteSizeHeader(metadata.size, writer, 0, nullptr));
+  metadata.m.color_encoding = ColorEncoding::LinearSRGB(/*is_gray=*/true);
+  metadata.m.xyb_encoded = false;
+  metadata.m.SetUintSamples(31);
+  EXPECT_TRUE(WriteImageMetadata(metadata.m, writer, 0, nullptr));
+  metadata.transform_data.nonserialized_xyb_encoded = metadata.m.xyb_encoded;
+  EXPECT_TRUE(Bundle::Write(metadata.transform_data, writer, 0, nullptr));
+  writer->ZeroPadToByte();
+  FrameHeader frame_header(&metadata);
+  frame_header.encoding = FrameEncoding::kModular;
+  frame_header.loop_filter.gab = false;
+  frame_header.loop_filter.epf_iters = 0;
+  EXPECT_TRUE(WriteFrameHeader(frame_header, writer, nullptr));
+}
+
+// Tree with single node, zero predictor, offset is 1 and multiplier is 1,
+// entropy code is prefix tree with alphabet size 256 and all bits lengths 8.
+void WriteHistograms(BitWriter* writer) {
+  writer->Write(1, 1);  // default DC quant
+  writer->Write(1, 1);  // has_tree
+  // tree histograms
+  writer->Write(1, 0);         // LZ77 disabled
+  writer->Write(3, 1);         // simple context map
+  writer->Write(1, 1);         // prefix code
+  writer->Write(7, 0x63);      // UnintConfig(3, 2, 1)
+  writer->Write(12, 0xfef);    // alphabet_size = 256
+  writer->Write(32, 0x10003);  // all bit lengths 8
+  // tree tokens
+  writer->Write(8, 0);   // tree leaf
+  writer->Write(8, 0);   // zero predictor
+  writer->Write(8, 64);  // offset = UnpackSigned(ReverseBits(64)) = 1
+  writer->Write(16, 0);  // multiplier = 1
+  // histograms
+  writer->Write(1, 0);         // LZ77 disabled
+  writer->Write(1, 1);         // prefix code
+  writer->Write(7, 0x63);      // UnintConfig(3, 2, 1)
+  writer->Write(12, 0xfef);    // alphabet_size = 256
+  writer->Write(32, 0x10003);  // all bit lengths 8
+}
+
+TEST(ModularTest, PredictorIntegerOverflow) {
+  const size_t xsize = 1;
+  const size_t ysize = 1;
+  BitWriter writer;
+  WriteHeaders(&writer, xsize, ysize);
+  std::vector<BitWriter> group_codes(1);
+  {
+    BitWriter* bw = &group_codes[0];
+    BitWriter::Allotment allotment(bw, 1 << 20);
+    WriteHistograms(bw);
+    GroupHeader header;
+    header.use_global_tree = true;
+    EXPECT_TRUE(Bundle::Write(header, bw, 0, nullptr));
+    // After UnpackSigned this becomes (1 << 31) - 1, the largest pixel_type,
+    // and after adding the offset we get -(1 << 31).
+    bw->Write(8, 119);
+    bw->Write(28, 0xfffffff);
+    bw->ZeroPadToByte();
+    allotment.ReclaimAndCharge(bw, 0, nullptr);
+  }
+  EXPECT_TRUE(WriteGroupOffsets(group_codes, {}, &writer, nullptr));
+  writer.AppendByteAligned(group_codes);
+
+  PaddedBytes compressed = std::move(writer).TakeBytes();
+  extras::PackedPixelFile ppf;
+  extras::JXLDecompressParams params;
+  params.accepted_formats.push_back({1, JXL_TYPE_FLOAT, JXL_NATIVE_ENDIAN, 0});
+  EXPECT_TRUE(DecodeImageJXL(compressed.data(), compressed.size(), params,
+                             nullptr, &ppf));
+  ASSERT_EQ(1, ppf.frames.size());
+  const auto& img = ppf.frames[0].color;
+  const auto pixels = reinterpret_cast<const float*>(img.pixels());
+  EXPECT_EQ(-1.0f, pixels[0]);
+}
+
+TEST(ModularTest, UnsqueezeIntegerOverflow) {
+  // Image width is 9 so we can test both the SIMD and non-vector code paths.
+  const size_t xsize = 9;
+  const size_t ysize = 2;
+  BitWriter writer;
+  WriteHeaders(&writer, xsize, ysize);
+  std::vector<BitWriter> group_codes(1);
+  {
+    BitWriter* bw = &group_codes[0];
+    BitWriter::Allotment allotment(bw, 1 << 20);
+    WriteHistograms(bw);
+    GroupHeader header;
+    header.use_global_tree = true;
+    header.transforms.emplace_back();
+    header.transforms[0].id = TransformId::kSqueeze;
+    SqueezeParams params;
+    params.horizontal = false;
+    params.in_place = true;
+    params.begin_c = 0;
+    params.num_c = 1;
+    header.transforms[0].squeezes.emplace_back(params);
+    EXPECT_TRUE(Bundle::Write(header, bw, 0, nullptr));
+    for (size_t i = 0; i < xsize * ysize; ++i) {
+      // After UnpackSigned and adding offset, this becomes (1 << 31) - 1, both
+      // in the image and in the residual channels, and unsqueeze makes them
+      // ~(3 << 30) and (1 << 30) (in pixel_type_w) and the first wraps around
+      // to about -(1 << 30).
+      bw->Write(8, 119);
+      bw->Write(28, 0xffffffe);
+    }
+    bw->ZeroPadToByte();
+    allotment.ReclaimAndCharge(bw, 0, nullptr);
+  }
+  EXPECT_TRUE(WriteGroupOffsets(group_codes, {}, &writer, nullptr));
+  writer.AppendByteAligned(group_codes);
+
+  PaddedBytes compressed = std::move(writer).TakeBytes();
+  extras::PackedPixelFile ppf;
+  extras::JXLDecompressParams params;
+  params.accepted_formats.push_back({1, JXL_TYPE_FLOAT, JXL_NATIVE_ENDIAN, 0});
+  EXPECT_TRUE(DecodeImageJXL(compressed.data(), compressed.size(), params,
+                             nullptr, &ppf));
+  ASSERT_EQ(1, ppf.frames.size());
+  const auto& img = ppf.frames[0].color;
+  const auto pixels = reinterpret_cast<const float*>(img.pixels());
+  for (size_t x = 0; x < xsize; ++x) {
+    EXPECT_NEAR(-0.5f, pixels[x], 1e-10);
+    EXPECT_NEAR(0.5f, pixels[xsize + x], 1e-10);
+  }
 }
 
 }  // namespace

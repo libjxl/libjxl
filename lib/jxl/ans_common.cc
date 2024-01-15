@@ -12,11 +12,11 @@
 
 namespace jxl {
 
-std::vector<int> CreateFlatHistogram(int length, int total_count) {
+std::vector<int32_t> CreateFlatHistogram(int length, int total_count) {
   JXL_ASSERT(length > 0);
   JXL_ASSERT(length <= total_count);
   const int count = total_count / length;
-  std::vector<int> result(length, count);
+  std::vector<int32_t> result(length, count);
   const int rem_counts = total_count % length;
   for (int i = 0; i < rem_counts; ++i) {
     ++result[i];
@@ -24,10 +24,10 @@ std::vector<int> CreateFlatHistogram(int length, int total_count) {
   return result;
 }
 
-// First, all trailing non-occuring symbols are removed from the distribution;
-// if this leaves the distribution empty, a dummy symbol with max weight is
-// added. This ensures that the resulting distribution sums to total table size.
-// Then, `entry_size` is chosen to be the largest power of two so that
+// First, all trailing non-occurring symbols are removed from the distribution;
+// if this leaves the distribution empty, a placeholder symbol with max weight
+// is  added. This ensures that the resulting distribution sums to total table
+// size. Then, `entry_size` is chosen to be the largest power of two so that
 // `table_size` = ANS_TAB_SIZE/`entry_size` is at least as big as the
 // distribution size.
 // Note that each entry will only ever contain two different symbols, and
@@ -48,7 +48,7 @@ std::vector<int> CreateFlatHistogram(int length, int total_count) {
 // underfull nor overfull, and represents exactly two symbols. The overfull
 // entry might be either overfull or underfull, and is pushed into the
 // corresponding stack.
-void InitAliasTable(std::vector<int> distribution, uint32_t range,
+void InitAliasTable(std::vector<int32_t> distribution, uint32_t range,
                     size_t log_alpha_size, AliasTable::Entry* JXL_RESTRICT a) {
   while (!distribution.empty() && distribution.back() == 0) {
     distribution.pop_back();

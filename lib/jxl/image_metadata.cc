@@ -10,11 +10,10 @@
 
 #include "lib/jxl/alpha.h"
 #include "lib/jxl/base/byte_order.h"
-#include "lib/jxl/base/padded_bytes.h"
-#include "lib/jxl/base/profiler.h"
-#include "lib/jxl/codec_in_out.h"
-#include "lib/jxl/color_management.h"
+#include "lib/jxl/cms/opsin_params.h"
 #include "lib/jxl/fields.h"
+#include "lib/jxl/frame_header.h"
+#include "lib/jxl/quantizer.h"
 
 namespace jxl {
 BitDepth::BitDepth() { Bundle::Init(this); }
@@ -58,6 +57,16 @@ Status BitDepth::VisitFields(Visitor* JXL_RESTRICT visitor) {
   }
   return true;
 }
+
+#if JXL_DEBUG_V_LEVEL >= 1
+std::string BitDepth::DebugString() const {
+  std::ostringstream os;
+  os << (floating_point_sample ? "F" : "U");
+  os << bits_per_sample;
+  if (floating_point_sample) os << "." << exponent_bits_per_sample;
+  return os.str();
+}
+#endif
 
 CustomTransformData::CustomTransformData() { Bundle::Init(this); }
 Status CustomTransformData::VisitFields(Visitor* JXL_RESTRICT visitor) {
@@ -244,6 +253,24 @@ Status ExtraChannelInfo::VisitFields(Visitor* JXL_RESTRICT visitor) {
   return true;
 }
 
+#if JXL_DEBUG_V_LEVEL >= 1
+std::string ExtraChannelInfo::DebugString() const {
+  std::ostringstream os;
+  os << (type == ExtraChannel::kAlpha           ? "Alpha"
+         : type == ExtraChannel::kDepth         ? "Depth"
+         : type == ExtraChannel::kSpotColor     ? "Spot"
+         : type == ExtraChannel::kSelectionMask ? "Mask"
+         : type == ExtraChannel::kBlack         ? "Black"
+         : type == ExtraChannel::kCFA           ? "CFA"
+         : type == ExtraChannel::kThermal       ? "Thermal"
+                                                : "Unknown");
+  if (type == ExtraChannel::kAlpha && alpha_associated) os << "(premul)";
+  os << " " << bit_depth.DebugString();
+  os << " shift: " << dim_shift;
+  return os.str();
+}
+#endif
+
 ImageMetadata::ImageMetadata() { Bundle::Init(this); }
 Status ImageMetadata::VisitFields(Visitor* JXL_RESTRICT visitor) {
   if (visitor->AllDefault(*this, &all_default)) {
@@ -328,12 +355,13 @@ Status OpsinInverseMatrix::VisitFields(Visitor* JXL_RESTRICT visitor) {
     return true;
   }
   for (int i = 0; i < 9; ++i) {
-    JXL_QUIET_RETURN_IF_ERROR(visitor->F16(
-        DefaultInverseOpsinAbsorbanceMatrix()[i], &inverse_matrix[i]));
+    JXL_QUIET_RETURN_IF_ERROR(
+        visitor->F16(jxl::cms::DefaultInverseOpsinAbsorbanceMatrix()[i],
+                     &inverse_matrix[i]));
   }
   for (int i = 0; i < 3; ++i) {
-    JXL_QUIET_RETURN_IF_ERROR(
-        visitor->F16(kNegOpsinAbsorbanceBiasRGB[i], &opsin_biases[i]));
+    JXL_QUIET_RETURN_IF_ERROR(visitor->F16(
+        jxl::cms::kNegOpsinAbsorbanceBiasRGB[i], &opsin_biases[i]));
   }
   for (int i = 0; i < 4; ++i) {
     JXL_QUIET_RETURN_IF_ERROR(
@@ -377,12 +405,6 @@ Status ReadImageMetadata(BitReader* JXL_RESTRICT reader,
   return Bundle::Read(reader, metadata);
 }
 
-Status WriteImageMetadata(const ImageMetadata& metadata,
-                          BitWriter* JXL_RESTRICT writer, size_t layer,
-                          AuxOut* aux_out) {
-  return Bundle::Write(metadata, writer, layer, aux_out);
-}
-
 void ImageMetadata::SetAlphaBits(uint32_t bits, bool alpha_is_premultiplied) {
   std::vector<ExtraChannelInfo>& eciv = extra_channel_info;
   ExtraChannelInfo* alpha = Find(ExtraChannel::kAlpha);
@@ -418,4 +440,38 @@ void ImageMetadata::SetAlphaBits(uint32_t bits, bool alpha_is_premultiplied) {
   num_extra_channels = extra_channel_info.size();
   if (bits > 12) modular_16_bit_buffer_sufficient = false;
 }
+
+#if JXL_DEBUG_V_LEVEL >= 1
+std::string ImageMetadata::DebugString() const {
+  std::ostringstream os;
+  os << bit_depth.DebugString();
+  if (modular_16_bit_buffer_sufficient) {
+    os << " (modular 16)";
+  }
+  os << (xyb_encoded ? " xyb encoded" : " orig profile");
+  os << " " << Description(color_encoding);
+  if (num_extra_channels > 0) {
+    os << " extra channels:";
+    for (size_t i = 0; i < num_extra_channels; ++i) {
+      os << " (" << extra_channel_info[i].DebugString() << ")";
+      if (i + 1 < num_extra_channels) os << ",";
+    }
+  }
+  if (have_preview) {
+    os << " preview: " << preview_size.xsize() << "x" << preview_size.ysize();
+  }
+  if (orientation != 1) {
+    os << " orientation: " << orientation;
+  }
+  return os.str();
+}
+
+std::string CodecMetadata::DebugString() const {
+  std::ostringstream os;
+  os << size.xsize() << "x" << size.ysize();
+  os << " " << m.DebugString();
+  return os.str();
+}
+#endif
+
 }  // namespace jxl

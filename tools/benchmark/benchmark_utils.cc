@@ -21,13 +21,13 @@
 
 #include <fstream>
 
-#include "lib/jxl/base/file_io.h"
-#include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/image_bundle.h"
+#include "tools/file_io.h"
 
 extern char** environ;
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 TemporaryFile::TemporaryFile(std::string basename, std::string extension) {
   const auto extension_size = 1 + extension.size();
   temp_filename_ = std::move(basename) + "_XXXXXX." + std::move(extension);
@@ -50,8 +50,18 @@ Status TemporaryFile::GetFileName(std::string* const output) const {
   return true;
 }
 
+std::string GetBaseName(std::string filename) {
+  std::string result = std::move(filename);
+  result = basename(&result[0]);
+  const size_t dot = result.rfind('.');
+  if (dot != std::string::npos) {
+    result.resize(dot);
+  }
+  return result;
+}
+
 Status RunCommand(const std::string& command,
-                  const std::vector<std::string>& arguments) {
+                  const std::vector<std::string>& arguments, bool quiet) {
   std::vector<char*> args;
   args.reserve(arguments.size() + 2);
   args.push_back(const_cast<char*>(command.c_str()));
@@ -60,18 +70,27 @@ Status RunCommand(const std::string& command,
   }
   args.push_back(nullptr);
   pid_t pid;
-  JXL_RETURN_IF_ERROR(posix_spawnp(&pid, command.c_str(), nullptr, nullptr,
-                                   args.data(), environ) == 0);
+  posix_spawn_file_actions_t file_actions;
+  posix_spawn_file_actions_init(&file_actions);
+  if (quiet) {
+    posix_spawn_file_actions_addclose(&file_actions, STDOUT_FILENO);
+    posix_spawn_file_actions_addclose(&file_actions, STDERR_FILENO);
+  }
+  JXL_RETURN_IF_ERROR(posix_spawnp(&pid, command.c_str(), &file_actions,
+                                   nullptr, args.data(), environ) == 0);
   int wstatus;
   waitpid(pid, &wstatus, 0);
+  posix_spawn_file_actions_destroy(&file_actions);
   return WIFEXITED(wstatus) && WEXITSTATUS(wstatus) == EXIT_SUCCESS;
 }
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
 
 #else
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 
 TemporaryFile::TemporaryFile(std::string basename, std::string extension) {}
 TemporaryFile::~TemporaryFile() {}
@@ -80,11 +99,14 @@ Status TemporaryFile::GetFileName(std::string* const output) const {
   return JXL_FAILURE("Not supported on this build");
 }
 
+std::string GetBaseName(std::string filename) { return filename; }
+
 Status RunCommand(const std::string& command,
-                  const std::vector<std::string>& arguments) {
+                  const std::vector<std::string>& arguments, bool quiet) {
   return JXL_FAILURE("Not supported on this build");
 }
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
 
 #endif  // _MSC_VER

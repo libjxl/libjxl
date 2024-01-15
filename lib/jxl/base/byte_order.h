@@ -6,6 +6,7 @@
 #ifndef LIB_JXL_BASE_BYTE_ORDER_H_
 #define LIB_JXL_BASE_BYTE_ORDER_H_
 
+#include <jxl/types.h>
 #include <stdint.h>
 #include <string.h>  // memcpy
 
@@ -36,10 +37,17 @@ static inline bool IsLittleEndian() {
 }
 #endif
 
+static inline bool SwapEndianness(JxlEndianness endianness) {
+  return ((endianness == JXL_BIG_ENDIAN && IsLittleEndian()) ||
+          (endianness == JXL_LITTLE_ENDIAN && !IsLittleEndian()));
+}
+
 #if JXL_COMPILER_MSVC
+#define JXL_BSWAP16(x) _byteswap_ushort(x)
 #define JXL_BSWAP32(x) _byteswap_ulong(x)
 #define JXL_BSWAP64(x) _byteswap_uint64(x)
 #else
+#define JXL_BSWAP16(x) __builtin_bswap16(x)
 #define JXL_BSWAP32(x) __builtin_bswap32(x)
 #define JXL_BSWAP64(x) __builtin_bswap64(x)
 #endif
@@ -127,6 +135,22 @@ static JXL_INLINE uint64_t LoadLE64(const uint8_t* p) {
 #endif
 }
 
+// Loads a Big-Endian float
+static JXL_INLINE float LoadBEFloat(const uint8_t* p) {
+  uint32_t u = LoadBE32(p);
+  float result;
+  memcpy(&result, &u, 4);
+  return result;
+}
+
+// Loads a Little-Endian float
+static JXL_INLINE float LoadLEFloat(const uint8_t* p) {
+  uint32_t u = LoadLE32(p);
+  float result;
+  memcpy(&result, &u, 4);
+  return result;
+}
+
 static JXL_INLINE void StoreBE16(const uint32_t native, uint8_t* p) {
   p[0] = (native >> 8) & 0xFF;
   p[1] = native & 0xFF;
@@ -195,6 +219,15 @@ static JXL_INLINE void StoreLE64(const uint64_t native, uint8_t* p) {
   p[1] = (native >> 8) & 0xFF;
   p[0] = native & 0xFF;
 #endif
+}
+
+static JXL_INLINE float BSwapFloat(float x) {
+  uint32_t u;
+  memcpy(&u, &x, 4);
+  uint32_t uswap = JXL_BSWAP32(u);
+  float xswap;
+  memcpy(&xswap, &uswap, 4);
+  return xswap;
 }
 
 // Big/Little Endian order.

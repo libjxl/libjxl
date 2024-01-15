@@ -19,31 +19,30 @@
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/printf_macros.h"
-#include "lib/jxl/base/profiler.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/codec_in_out.h"
-#include "lib/jxl/common.h"
 #include "lib/jxl/convolve.h"
+#include "lib/jxl/enc_linalg.h"
+#include "lib/jxl/enc_optimize.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_ops.h"
-#include "lib/jxl/linalg.h"
-#include "lib/jxl/optimize.h"
 
 // Set JXL_DEBUG_DOT_DETECT to 1 to enable debugging.
 #ifndef JXL_DEBUG_DOT_DETECT
 #define JXL_DEBUG_DOT_DETECT 0
 #endif
 
-#if JXL_DEBUG_DOT_DETECT
-#include "lib/jxl/aux_out.h"
-#endif
-
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
+
+// These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::Add;
+using hwy::HWY_NAMESPACE::Mul;
+using hwy::HWY_NAMESPACE::Sub;
 
 ImageF SumOfSquareDifferences(const Image3F& forig, const Image3F& smooth,
                               ThreadPool* pool) {
@@ -66,16 +65,14 @@ ImageF SumOfSquareDifferences(const Image3F& forig, const Image3F& smooth,
         float* JXL_RESTRICT sos_row = sum_of_squares.Row(y);
 
         for (size_t x = 0; x < forig.xsize(); x += Lanes(d)) {
-          auto v0 = Load(d, orig_row0 + x) - Load(d, smooth_row0 + x);
-          auto v1 = Load(d, orig_row1 + x) - Load(d, smooth_row1 + x);
-          auto v2 = Load(d, orig_row2 + x) - Load(d, smooth_row2 + x);
-          v0 *= v0;
-          v1 *= v1;
-          v2 *= v2;
-          v0 *= color_coef0;  // FMA doesn't help here.
-          v1 *= color_coef1;
-          v2 *= color_coef2;
-          const auto sos = v0 + v1 + v2;  // weighted sum of square diffs
+          auto v0 = Sub(Load(d, orig_row0 + x), Load(d, smooth_row0 + x));
+          auto v1 = Sub(Load(d, orig_row1 + x), Load(d, smooth_row1 + x));
+          auto v2 = Sub(Load(d, orig_row2 + x), Load(d, smooth_row2 + x));
+          v0 = Mul(Mul(v0, v0), color_coef0);
+          v1 = Mul(Mul(v1, v1), color_coef1);
+          v2 = Mul(Mul(v2, v2), color_coef2);
+          const auto sos =
+              Add(v0, Add(v1, v2));  // weighted sum of square diffs
           Store(sos, d, sos_row + x);
         }
       },
@@ -147,27 +144,20 @@ const WeightsSeparable5& WeightsSeparable5Gaussian3() {
 
 ImageF ComputeEnergyImage(const Image3F& orig, Image3F* smooth,
                           ThreadPool* pool) {
-  PROFILER_FUNC;
-
   // Prepare guidance images for dot selection.
   Image3F forig(orig.xsize(), orig.ysize());
-  Image3F tmp(orig.xsize(), orig.ysize());
   *smooth = Image3F(orig.xsize(), orig.ysize());
+  Rect rect(orig);
 
   const auto& weights1 = WeightsSeparable5Gaussian0_65();
   const auto& weights3 = WeightsSeparable5Gaussian3();
 
-  Separable5_3(orig, Rect(orig), weights1, pool, &forig);
-
-  Separable5_3(orig, Rect(orig), weights3, pool, &tmp);
-  Separable5_3(tmp, Rect(tmp), weights3, pool, smooth);
-
-#if JXL_DEBUG_DOT_DETECT
-  AuxOut aux;
-  aux.debug_prefix = "/tmp/sebastian/";
-  aux.DumpImage("filtered", forig);
-  aux.DumpImage("sm", *smooth);
-#endif
+  for (size_t c = 0; c < 3; ++c) {
+    // Use forig as temporary storage to reduce memory and keep it warmer.
+    Separable5(orig.Plane(c), rect, weights3, pool, &forig.Plane(c));
+    Separable5(forig.Plane(c), rect, weights3, pool, &smooth->Plane(c));
+    Separable5(orig.Plane(c), rect, weights1, pool, &forig.Plane(c));
+  }
 
   return HWY_DYNAMIC_DISPATCH(SumOfSquareDifferences)(forig, *smooth, pool);
 }
@@ -188,7 +178,6 @@ const size_t kMaxCCSize = 1000;
 // of the component
 bool ExtractComponent(ImageF* img, std::vector<Pixel>* pixels,
                       const Pixel& seed, double threshold) {
-  PROFILER_FUNC;
   static const std::vector<Pixel> neighbors{{1, -1}, {1, 0},   {1, 1},  {0, -1},
                                             {0, 1},  {-1, -1}, {-1, 1}, {1, 0}};
   std::vector<Pixel> q{seed};
@@ -233,7 +222,6 @@ struct ConnectedComponent {
   Pixel mode;
 
   void CompStats(const ImageF& energy, int extra) {
-    PROFILER_FUNC;
     maxEnergy = 0.0;
     meanEnergy = 0.0;
     varEnergy = 0.0;
@@ -277,7 +265,6 @@ struct ConnectedComponent {
 };
 
 Rect BoundingRectangle(const std::vector<Pixel>& pixels) {
-  PROFILER_FUNC;
   JXL_ASSERT(!pixels.empty());
   int low_x, high_x, low_y, high_y;
   low_x = high_x = pixels[0].x;
@@ -294,9 +281,9 @@ Rect BoundingRectangle(const std::vector<Pixel>& pixels) {
 std::vector<ConnectedComponent> FindCC(const ImageF& energy, double t_low,
                                        double t_high, uint32_t maxWindow,
                                        double minScore) {
-  PROFILER_FUNC;
   const int kExtraRect = 4;
-  ImageF img = CopyImage(energy);
+  ImageF img(energy.xsize(), energy.ysize());
+  CopyImageTo(energy, &img);
   std::vector<ConnectedComponent> ans;
   for (size_t y = 0; y < img.ysize(); y++) {
     float* JXL_RESTRICT row = img.Row(y);
@@ -333,11 +320,10 @@ std::vector<ConnectedComponent> FindCC(const ImageF& energy, double t_low,
   return ans;
 }
 
-// TODO (sggonzalez): Adapt this function for the different color spaces or
+// TODO(sggonzalez): Adapt this function for the different color spaces or
 // remove it if the color space with the best performance does not need it
 void ComputeDotLosses(GaussianEllipse* ellipse, const ConnectedComponent& cc,
                       const Image3F& img, const Image3F& background) {
-  PROFILER_FUNC;
   const int rectBounds = 2;
   const double kIntensityR = 0.0;   // 0.015;
   const double kSigmaR = 0.0;       // 0.01;
@@ -402,7 +388,6 @@ void ComputeDotLosses(GaussianEllipse* ellipse, const ConnectedComponent& cc,
 GaussianEllipse FitGaussianFast(const ConnectedComponent& cc,
                                 const ImageF& energy, const Image3F& img,
                                 const Image3F& background) {
-  PROFILER_FUNC;
   constexpr bool leastSqIntensity = true;
   constexpr double kEpsilon = 1e-6;
   GaussianEllipse ans;
@@ -540,16 +525,9 @@ GaussianEllipse FitGaussian(const ConnectedComponent& cc, const ImageF& energy,
 std::vector<PatchInfo> DetectGaussianEllipses(
     const Image3F& opsin, const GaussianDetectParams& params,
     const EllipseQuantParams& qParams, ThreadPool* pool) {
-  PROFILER_FUNC;
   std::vector<PatchInfo> dots;
   Image3F smooth(opsin.xsize(), opsin.ysize());
   ImageF energy = ComputeEnergyImage(opsin, &smooth, pool);
-#if JXL_DEBUG_DOT_DETECT
-  AuxOut aux;
-  aux.debug_prefix = "/tmp/sebastian/";
-  aux.DumpXybImage("smooth", smooth);
-  aux.DumpPlaneNormalized("energy", energy);
-#endif  // JXL_DEBUG_DOT_DETECT
   std::vector<ConnectedComponent> components = FindCC(
       energy, params.t_low, params.t_high, params.maxWinSize, params.minScore);
   size_t numCC =
@@ -602,19 +580,6 @@ std::vector<PatchInfo> DetectGaussianEllipses(
       }
     }
   }
-#if JXL_DEBUG_DOT_DETECT
-  JXL_DEBUG(JXL_DEBUG_DOT_DETECT, "Candidates: %" PRIuS ", Dots: %" PRIuS "\n",
-            components.size(), dots.size());
-  ApplyGaussianEllipses(&smooth, dots, 1.0);
-  aux.DumpXybImage("draw", smooth);
-  ApplyGaussianEllipses(&smooth, dots, -1.0);
-
-  auto qdots = QuantizeGaussianEllipses(dots, qParams);
-  auto deq = DequantizeGaussianEllipses(qdots, qParams);
-  ApplyGaussianEllipses(&smooth, deq, 1.0);
-  aux.DumpXybImage("qdraw", smooth);
-  ApplyGaussianEllipses(&smooth, deq, -1.0);
-#endif  // JXL_DEBUG_DOT_DETECT
   return dots;
 }
 

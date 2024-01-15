@@ -6,8 +6,12 @@
 #include <stdio.h>
 
 #include "lib/extras/codec.h"
-#include "lib/jxl/color_management.h"
-#include "lib/jxl/enc_color_management.h"
+// TODO(eustas): we should, but we can't?
+// #include "lib/jxl/base/span.h"
+#include <jxl/cms.h>
+
+#include "lib/jxl/image_bundle.h"
+#include "tools/file_io.h"
 #include "tools/ssimulacra.h"
 
 namespace ssimulacra {
@@ -33,26 +37,31 @@ int Run(int argc, char** argv) {
   }
   if (argc < input_arg + 2) return PrintUsage(argv);
 
-  jxl::CodecInOut io1;
-  jxl::CodecInOut io2;
-  JXL_CHECK(SetFromFile(argv[input_arg], jxl::extras::ColorHints(), &io1));
-  JXL_CHECK(SetFromFile(argv[input_arg + 1], jxl::extras::ColorHints(), &io2));
-  JXL_CHECK(io1.TransformTo(jxl::ColorEncoding::LinearSRGB(io1.Main().IsGray()),
-                            jxl::GetJxlCms()));
-  JXL_CHECK(io2.TransformTo(jxl::ColorEncoding::LinearSRGB(io2.Main().IsGray()),
-                            jxl::GetJxlCms()));
-
-  if (io1.xsize() != io2.xsize() || io1.ysize() != io2.ysize()) {
+  jxl::CodecInOut io[2];
+  for (size_t i = 0; i < 2; ++i) {
+    std::vector<uint8_t> encoded;
+    JXL_CHECK(jpegxl::tools::ReadFile(argv[input_arg + i], &encoded));
+    JXL_CHECK(jxl::SetFromBytes(jxl::Bytes(encoded), jxl::extras::ColorHints(),
+                                &io[i]));
+  }
+  jxl::ImageBundle& ib1 = io[0].Main();
+  jxl::ImageBundle& ib2 = io[1].Main();
+  JXL_CHECK(ib1.TransformTo(jxl::ColorEncoding::LinearSRGB(ib1.IsGray()),
+                            *JxlGetDefaultCms(), nullptr));
+  JXL_CHECK(ib2.TransformTo(jxl::ColorEncoding::LinearSRGB(ib2.IsGray()),
+                            *JxlGetDefaultCms(), nullptr));
+  jxl::Image3F& img1 = *ib1.color();
+  jxl::Image3F& img2 = *ib2.color();
+  if (img1.xsize() != img2.xsize() || img1.ysize() != img2.ysize()) {
     fprintf(stderr, "Image size mismatch\n");
     return 1;
   }
-  if (io1.xsize() < 8 || io1.ysize() < 8) {
+  if (img1.xsize() < 8 || img1.ysize() < 8) {
     fprintf(stderr, "Minimum image size is 8x8 pixels\n");
     return 1;
   }
 
-  Ssimulacra ssimulacra =
-      ComputeDiff(*io1.Main().color(), *io2.Main().color(), simple);
+  Ssimulacra ssimulacra = ComputeDiff(img1, img2, simple);
 
   if (verbose) {
     ssimulacra.PrintDetails();

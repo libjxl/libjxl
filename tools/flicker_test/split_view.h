@@ -14,7 +14,8 @@
 #include <QWidget>
 #include <random>
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 
 class SplitView : public QWidget {
   Q_OBJECT
@@ -67,7 +68,7 @@ class SplitView : public QWidget {
   Side originalSide_;
   bool clicking_ = false;
   Side clickedSide_;
-  QRect leftRect_, rightRect_;
+  QRectF leftRect_, rightRect_;
   State state_ = State::kDisplaying;
   bool gray_ = false;
   QTimer blankingTimer_;
@@ -79,6 +80,7 @@ class SplitView : public QWidget {
   QElapsedTimer viewingStartTime_;
 };
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
 
 #endif  // TOOLS_FLICKER_TEST_SPLIT_VIEW_H_

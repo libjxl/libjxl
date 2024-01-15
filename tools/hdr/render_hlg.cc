@@ -9,13 +9,13 @@
 #include "lib/extras/codec.h"
 #include "lib/extras/hlg.h"
 #include "lib/extras/tone_mapping.h"
-#include "lib/jxl/base/thread_pool_internal.h"
-#include "lib/jxl/enc_color_management.h"
 #include "tools/args.h"
 #include "tools/cmdline.h"
+#include "tools/hdr/image_utils.h"
+#include "tools/thread_pool_internal.h"
 
 int main(int argc, const char** argv) {
-  jxl::ThreadPoolInternal pool;
+  jpegxl::tools::ThreadPoolInternal pool;
 
   jpegxl::tools::CommandLineParser parser;
   float target_nits = 0;
@@ -71,7 +71,9 @@ int main(int argc, const char** argv) {
   jxl::CodecInOut image;
   jxl::extras::ColorHints color_hints;
   color_hints.Add("color_space", "RGB_D65_202_Rel_HLG");
-  JXL_CHECK(jxl::SetFromFile(input_filename, color_hints, &image, &pool));
+  std::vector<uint8_t> encoded;
+  JXL_CHECK(jpegxl::tools::ReadFile(input_filename, &encoded));
+  JXL_CHECK(jxl::SetFromBytes(jxl::Bytes(encoded), color_hints, &image, &pool));
   // Ensures that conversions to linear by JxlCms will not apply the OOTF as we
   // apply it ourselves to control the subsequent gamut mapping.
   image.metadata.m.SetIntensityTarget(301);
@@ -82,13 +84,12 @@ int main(int argc, const char** argv) {
   image.metadata.m.SetIntensityTarget(target_nits);
 
   jxl::ColorEncoding c_out = image.metadata.m.color_encoding;
-  if (pq) {
-    c_out.tf.SetTransferFunction(jxl::TransferFunction::kPQ);
-  } else {
-    c_out.tf.SetTransferFunction(jxl::TransferFunction::k709);
-  }
+  jxl::cms::TransferFunction tf =
+      pq ? jxl::TransferFunction::kPQ : jxl::TransferFunction::kSRGB;
+  c_out.Tf().SetTransferFunction(tf);
   JXL_CHECK(c_out.CreateICC());
-  JXL_CHECK(image.TransformTo(c_out, jxl::GetJxlCms(), &pool));
+  JXL_CHECK(jpegxl::tools::TransformCodecInOutTo(image, c_out, &pool));
   image.metadata.m.color_encoding = c_out;
-  JXL_CHECK(jxl::EncodeToFile(image, output_filename, &pool));
+  JXL_CHECK(jxl::Encode(image, output_filename, &encoded, &pool));
+  JXL_CHECK(jpegxl::tools::WriteFile(output_filename, encoded));
 }

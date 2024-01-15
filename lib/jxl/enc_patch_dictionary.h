@@ -15,20 +15,19 @@
 #include <tuple>
 #include <vector>
 
-#include "lib/jxl/aux_out_fwd.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/chroma_from_luma.h"
-#include "lib/jxl/common.h"
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/dec_patch_dictionary.h"
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/image.h"
-#include "lib/jxl/opsin_params.h"
 
 namespace jxl {
+
+struct AuxOut;
 
 constexpr size_t kMaxPatchSize = 32;
 
@@ -81,14 +80,13 @@ class PatchDictionaryEncoder {
                      size_t layer, AuxOut* aux_out);
 
   static void SetPositions(PatchDictionary* pdic,
-                           std::vector<PatchPosition> positions) {
-    if (pdic->positions_.empty()) {
-      pdic->positions_ = std::move(positions);
-    } else {
-      pdic->positions_.insert(pdic->positions_.end(), positions.begin(),
-                              positions.end());
-    }
-    pdic->ComputePatchCache();
+                           std::vector<PatchPosition> positions,
+                           std::vector<PatchReferencePosition> ref_positions,
+                           std::vector<PatchBlending> blendings) {
+    pdic->positions_ = std::move(positions);
+    pdic->ref_positions_ = std::move(ref_positions);
+    pdic->blendings_ = std::move(blendings);
+    pdic->ComputePatchTree();
   }
 
   static void SubtractFrom(const PatchDictionary& pdic, Image3F* opsin);
@@ -102,7 +100,7 @@ void FindBestPatchDictionary(const Image3F& opsin,
 void RoundtripPatchFrame(Image3F* reference_frame,
                          PassesEncoderState* JXL_RESTRICT state, int idx,
                          CompressParams& cparams, const JxlCmsInterface& cms,
-                         ThreadPool* pool, bool subtract);
+                         ThreadPool* pool, AuxOut* aux_out, bool subtract);
 
 }  // namespace jxl
 

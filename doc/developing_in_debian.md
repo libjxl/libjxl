@@ -3,7 +3,6 @@
 These instructions assume an up-to-date Debian/Ubuntu system.
 For other platforms, please instead use the following:
 
-* [Developing in Docker](developing_in_docker.md).
 * [Cross Compiling for Windows with Crossroad](developing_with_crossroad.md).
 
 ## Minimum build dependencies
@@ -12,7 +11,7 @@ Apart from the dependencies in `third_party`, some of the tools use external
 dependencies that need to be installed on your system first:
 
 ```bash
-sudo apt install cmake clang doxygen g++ extra-cmake-modules libgflags-dev \
+sudo apt install cmake clang doxygen g++ extra-cmake-modules \
   libgif-dev libjpeg-dev ninja-build libgoogle-perftools-dev
 ```
 
@@ -34,8 +33,8 @@ Optionally, to compile some of the extra tool support and tests you can install
 the following packages:
 
 ```bash
-sudo apt install qtbase5-dev libqt5x11extras5-dev libwebp-dev libgimp2.0-dev \
-  libopenexr-dev libgtest-dev libgmock-dev libbenchmark-dev libbenchmark-tools
+sudo apt install qt6-base-dev libwebp-dev libgimp2.0-dev libopenexr-dev \
+  libgtest-dev libgmock-dev libbenchmark-dev libbenchmark-tools
 ```
 
 For the lint/coverage commands, you will also need additional packages:

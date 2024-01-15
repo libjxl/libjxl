@@ -10,20 +10,30 @@
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 
-#include "lib/jxl/fast_math-inl.h"
 #include "lib/jxl/sanitizers.h"
-#include "lib/jxl/transfer_functions-inl.h"
 
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
 
 // These templates are not found via ADL.
-using hwy::HWY_NAMESPACE::ShiftRight;
+using hwy::HWY_NAMESPACE::Add;
+using hwy::HWY_NAMESPACE::And;
+using hwy::HWY_NAMESPACE::Floor;
+using hwy::HWY_NAMESPACE::Ge;
+using hwy::HWY_NAMESPACE::IfThenElse;
+using hwy::HWY_NAMESPACE::Max;
+using hwy::HWY_NAMESPACE::Min;
+using hwy::HWY_NAMESPACE::Mul;
+using hwy::HWY_NAMESPACE::MulAdd;
+using hwy::HWY_NAMESPACE::Or;
+using hwy::HWY_NAMESPACE::Sub;
+using hwy::HWY_NAMESPACE::TableLookupBytes;
 using hwy::HWY_NAMESPACE::Vec;
+using hwy::HWY_NAMESPACE::ZeroIfNegative;
 
 using D = HWY_CAPPED(float, kBlockDim);
-using DI = hwy::HWY_NAMESPACE::Rebind<int, D>;
+using DI = hwy::HWY_NAMESPACE::Rebind<int32_t, D>;
 using DI8 = hwy::HWY_NAMESPACE::Repartition<uint8_t, D>;
 
 // [0, max_value]
@@ -64,12 +74,13 @@ class StrengthEvalLut {
 
   V operator()(const V vx) const {
     constexpr size_t kScale = NoiseParams::kNumNoisePoints - 2;
-    auto scaled_vx = Max(Zero(D()), vx * Set(D(), kScale));
+    auto scaled_vx = Max(Zero(D()), Mul(vx, Set(D(), kScale)));
     auto floor_x = Floor(scaled_vx);
-    auto frac_x = scaled_vx - floor_x;
-    floor_x = IfThenElse(scaled_vx >= Set(D(), kScale), Set(D(), kScale - 1),
+    auto frac_x = Sub(scaled_vx, floor_x);
+    floor_x = IfThenElse(Ge(scaled_vx, Set(D(), kScale + 1)), Set(D(), kScale),
                          floor_x);
-    frac_x = IfThenElse(scaled_vx >= Set(D(), kScale), Set(D(), 1), frac_x);
+    frac_x =
+        IfThenElse(Ge(scaled_vx, Set(D(), kScale + 1)), Set(D(), 1), frac_x);
     auto floor_x_int = ConvertTo(DI(), floor_x);
 #if HWY_TARGET == HWY_SCALAR
     auto low = Set(D(), noise_params_.lut[floor_x_int.raw]);
@@ -77,10 +88,10 @@ class StrengthEvalLut {
 #else
     // Set each lane's bytes to {0, 0, 2x+1, 2x}.
     auto floorx_indices_low =
-        floor_x_int * Set(DI(), 0x0202) + Set(DI(), 0x0100);
+        Add(Mul(floor_x_int, Set(DI(), 0x0202)), Set(DI(), 0x0100));
     // Set each lane's bytes to {2x+1, 2x, 0, 0}.
     auto floorx_indices_hi =
-        floor_x_int * Set(DI(), 0x02020000) + Set(DI(), 0x01000000);
+        Add(Mul(floor_x_int, Set(DI(), 0x02020000)), Set(DI(), 0x01000000));
     // load LUT
     auto low16 = BitCast(DI(), LoadDup128(DI8(), low16_lut));
     auto lowm = Set(DI(), 0xFFFF);
@@ -88,16 +99,16 @@ class StrengthEvalLut {
     auto him = Set(DI(), 0xFFFF0000);
     // low = noise_params.lut[floor_x]
     auto low =
-        BitCast(D(), (TableLookupBytes(low16, floorx_indices_low) & lowm) |
-                         (TableLookupBytes(hi16, floorx_indices_hi) & him));
+        BitCast(D(), Or(And(TableLookupBytes(low16, floorx_indices_low), lowm),
+                        And(TableLookupBytes(hi16, floorx_indices_hi), him)));
     // hi = noise_params.lut[floor_x+1]
-    floorx_indices_low += Set(DI(), 0x0202);
-    floorx_indices_hi += Set(DI(), 0x02020000);
+    floorx_indices_low = Add(floorx_indices_low, Set(DI(), 0x0202));
+    floorx_indices_hi = Add(floorx_indices_hi, Set(DI(), 0x02020000));
     auto hi =
-        BitCast(D(), (TableLookupBytes(low16, floorx_indices_low) & lowm) |
-                         (TableLookupBytes(hi16, floorx_indices_hi) & him));
+        BitCast(D(), Or(And(TableLookupBytes(low16, floorx_indices_low), lowm),
+                        And(TableLookupBytes(hi16, floorx_indices_hi), him)));
 #endif
-    return MulAdd(hi - low, frac_x, low);
+    return MulAdd(Sub(hi, low), frac_x, low);
   }
 
  private:
@@ -119,22 +130,25 @@ void AddNoiseToRGB(const D d, const Vec<D> rnd_noise_r,
   const auto kRGCorr = Set(d, 0.9921875f);   // 127/128
   const auto kRGNCorr = Set(d, 0.0078125f);  // 1/128
 
-  const auto red_noise = kRGNCorr * rnd_noise_r * noise_strength_r +
-                         kRGCorr * rnd_noise_cor * noise_strength_r;
-  const auto green_noise = kRGNCorr * rnd_noise_g * noise_strength_g +
-                           kRGCorr * rnd_noise_cor * noise_strength_g;
+  const auto red_noise =
+      Mul(noise_strength_r,
+          MulAdd(kRGNCorr, rnd_noise_r, Mul(kRGCorr, rnd_noise_cor)));
+  const auto green_noise =
+      Mul(noise_strength_g,
+          MulAdd(kRGNCorr, rnd_noise_g, Mul(kRGCorr, rnd_noise_cor)));
 
-  auto vx = Load(d, out_x);
-  auto vy = Load(d, out_y);
-  auto vb = Load(d, out_b);
+  auto vx = LoadU(d, out_x);
+  auto vy = LoadU(d, out_y);
+  auto vb = LoadU(d, out_b);
 
-  vx += red_noise - green_noise + Set(d, ytox) * (red_noise + green_noise);
-  vy += red_noise + green_noise;
-  vb += Set(d, ytob) * (red_noise + green_noise);
+  const auto rg_noise = Add(red_noise, green_noise);
+  vx = Add(MulAdd(Set(d, ytox), rg_noise, Sub(red_noise, green_noise)), vx);
+  vy = Add(vy, rg_noise);
+  vb = MulAdd(Set(d, ytob), rg_noise, vb);
 
-  Store(vx, d, out_x);
-  Store(vy, d, out_y);
-  Store(vb, d, out_b);
+  StoreU(vx, d, out_x);
+  StoreU(vy, d, out_y);
+  StoreU(vb, d, out_b);
 }
 
 class AddNoiseStage : public RenderPipelineStage {
@@ -150,8 +164,6 @@ class AddNoiseStage : public RenderPipelineStage {
   void ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
                   size_t xextra, size_t xsize, size_t xpos, size_t ypos,
                   size_t thread_id) const final {
-    PROFILER_ZONE("Noise apply");
-
     if (!noise_params_.HasAny()) return;
     const StrengthEvalLut noise_model(noise_params_);
     D d;
@@ -181,16 +193,17 @@ class AddNoiseStage : public RenderPipelineStage {
     msan::UnpoisonMemory(row_x + xsize, (xsize_v - xsize) * sizeof(float));
     msan::UnpoisonMemory(row_y + xsize, (xsize_v - xsize) * sizeof(float));
     for (size_t x = 0; x < xsize_v; x += Lanes(d)) {
-      const auto vx = Load(d, row_x + x);
-      const auto vy = Load(d, row_y + x);
-      const auto in_g = vy - vx;
-      const auto in_r = vy + vx;
-      const auto noise_strength_g = NoiseStrength(noise_model, in_g * half);
-      const auto noise_strength_r = NoiseStrength(noise_model, in_r * half);
-      const auto addit_rnd_noise_red = Load(d, row_rnd_r + x) * norm_const;
-      const auto addit_rnd_noise_green = Load(d, row_rnd_g + x) * norm_const;
+      const auto vx = LoadU(d, row_x + x);
+      const auto vy = LoadU(d, row_y + x);
+      const auto in_g = Sub(vy, vx);
+      const auto in_r = Add(vy, vx);
+      const auto noise_strength_g = NoiseStrength(noise_model, Mul(in_g, half));
+      const auto noise_strength_r = NoiseStrength(noise_model, Mul(in_r, half));
+      const auto addit_rnd_noise_red = Mul(LoadU(d, row_rnd_r + x), norm_const);
+      const auto addit_rnd_noise_green =
+          Mul(LoadU(d, row_rnd_g + x), norm_const);
       const auto addit_rnd_noise_correlated =
-          Load(d, row_rnd_c + x) * norm_const;
+          Mul(LoadU(d, row_rnd_c + x), norm_const);
       AddNoiseToRGB(D(), addit_rnd_noise_red, addit_rnd_noise_green,
                     addit_rnd_noise_correlated, noise_strength_g,
                     noise_strength_r, ytox, ytob, row_x + x, row_y + x,
@@ -231,8 +244,6 @@ class ConvolveNoiseStage : public RenderPipelineStage {
   void ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
                   size_t xextra, size_t xsize, size_t xpos, size_t ypos,
                   size_t thread_id) const final {
-    PROFILER_ZONE("Noise convolve");
-
     const HWY_FULL(float) d;
     for (size_t c = first_c_; c < first_c_ + 3; c++) {
       float* JXL_RESTRICT rows[5];
@@ -242,21 +253,22 @@ class ConvolveNoiseStage : public RenderPipelineStage {
       float* JXL_RESTRICT row_out = GetOutputRow(output_rows, c, 0);
       for (ssize_t x = -RoundUpTo(xextra, Lanes(d));
            x < (ssize_t)(xsize + xextra); x += Lanes(d)) {
-        const auto p00 = Load(d, rows[2] + x);
+        const auto p00 = LoadU(d, rows[2] + x);
         auto others = Zero(d);
+        // TODO(eustas): sum loaded values to reduce the calculation chain
         for (ssize_t i = -2; i <= 2; i++) {
-          others += LoadU(d, rows[0] + x + i);
-          others += LoadU(d, rows[1] + x + i);
-          others += LoadU(d, rows[3] + x + i);
-          others += LoadU(d, rows[4] + x + i);
+          others = Add(others, LoadU(d, rows[0] + x + i));
+          others = Add(others, LoadU(d, rows[1] + x + i));
+          others = Add(others, LoadU(d, rows[3] + x + i));
+          others = Add(others, LoadU(d, rows[4] + x + i));
         }
-        others += LoadU(d, rows[2] + x - 2);
-        others += LoadU(d, rows[2] + x - 1);
-        others += LoadU(d, rows[2] + x + 1);
-        others += LoadU(d, rows[2] + x + 2);
+        others = Add(others, LoadU(d, rows[2] + x - 2));
+        others = Add(others, LoadU(d, rows[2] + x - 1));
+        others = Add(others, LoadU(d, rows[2] + x + 1));
+        others = Add(others, LoadU(d, rows[2] + x + 2));
         // 4 * (1 - box kernel)
-        auto pixels = MulAdd(others, Set(d, 0.16), p00 * Set(d, -3.84));
-        Store(pixels, d, row_out + x);
+        auto pixels = MulAdd(others, Set(d, 0.16), Mul(p00, Set(d, -3.84)));
+        StoreU(pixels, d, row_out + x);
       }
     }
   }

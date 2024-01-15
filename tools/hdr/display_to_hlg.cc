@@ -9,13 +9,15 @@
 #include "lib/extras/codec.h"
 #include "lib/extras/hlg.h"
 #include "lib/extras/tone_mapping.h"
-#include "lib/jxl/base/thread_pool_internal.h"
-#include "lib/jxl/enc_color_management.h"
+#include "lib/jxl/base/span.h"
 #include "tools/args.h"
 #include "tools/cmdline.h"
+#include "tools/file_io.h"
+#include "tools/hdr/image_utils.h"
+#include "tools/thread_pool_internal.h"
 
 int main(int argc, const char** argv) {
-  jxl::ThreadPoolInternal pool;
+  jpegxl::tools::ThreadPoolInternal pool;
 
   jpegxl::tools::CommandLineParser parser;
   float max_nits = 0;
@@ -64,9 +66,11 @@ int main(int argc, const char** argv) {
     return EXIT_FAILURE;
   }
 
+  std::vector<uint8_t> encoded;
+  JXL_CHECK(jpegxl::tools::ReadFile(input_filename, &encoded));
   jxl::CodecInOut image;
-  JXL_CHECK(jxl::SetFromFile(input_filename, jxl::extras::ColorHints(), &image,
-                             &pool));
+  JXL_CHECK(jxl::SetFromBytes(jxl::Bytes(encoded), jxl::extras::ColorHints(),
+                              &image, &pool));
   image.metadata.m.SetIntensityTarget(max_nits);
   JXL_CHECK(jxl::HlgInverseOOTF(
       &image.Main(), jxl::GetHlgGamma(max_nits, surround_nits), &pool));
@@ -75,11 +79,12 @@ int main(int argc, const char** argv) {
 
   jxl::ColorEncoding hlg;
   hlg.SetColorSpace(jxl::ColorSpace::kRGB);
-  hlg.primaries = jxl::Primaries::k2100;
-  hlg.white_point = jxl::WhitePoint::kD65;
-  hlg.tf.SetTransferFunction(jxl::TransferFunction::kHLG);
+  JXL_CHECK(hlg.SetPrimariesType(jxl::Primaries::k2100));
+  JXL_CHECK(hlg.SetWhitePointType(jxl::WhitePoint::kD65));
+  hlg.Tf().SetTransferFunction(jxl::TransferFunction::kHLG);
   JXL_CHECK(hlg.CreateICC());
-  JXL_CHECK(image.TransformTo(hlg, jxl::GetJxlCms(), &pool));
+  JXL_CHECK(jpegxl::tools::TransformCodecInOutTo(image, hlg, &pool));
   image.metadata.m.color_encoding = hlg;
-  JXL_CHECK(jxl::EncodeToFile(image, output_filename, &pool));
+  JXL_CHECK(jxl::Encode(image, output_filename, &encoded, &pool));
+  JXL_CHECK(jpegxl::tools::WriteFile(output_filename, encoded));
 }

@@ -8,15 +8,9 @@
 #include <limits>
 #include <utility>
 
-#include "lib/jxl/alpha.h"
 #include "lib/jxl/base/byte_order.h"
-#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/printf_macros.h"
-#include "lib/jxl/base/profiler.h"
-#include "lib/jxl/codec_in_out.h"
-#include "lib/jxl/color_management.h"
 #include "lib/jxl/fields.h"
-#include "lib/jxl/luminance.h"
 
 namespace jxl {
 
@@ -42,8 +36,9 @@ void ImageBundle::VerifyMetadata() const {
   JXL_CHECK(metadata_->color_encoding.IsGray() == IsGray());
 
   if (metadata_->HasAlpha() && alpha().xsize() == 0) {
-    JXL_ABORT("MD alpha_bits %u IB alpha %" PRIuS " x %" PRIuS "\n",
-              metadata_->GetAlphaBits(), alpha().xsize(), alpha().ysize());
+    JXL_UNREACHABLE("MD alpha_bits %u IB alpha %" PRIuS " x %" PRIuS "\n",
+                    metadata_->GetAlphaBits(), alpha().xsize(),
+                    alpha().ysize());
   }
   const uint32_t alpha_bits = metadata_->GetAlphaBits();
   JXL_CHECK(alpha_bits <= 32);
@@ -100,12 +95,11 @@ ImageF* ImageBundle::alpha() {
   return &extra_channels_[ec];
 }
 
-void ImageBundle::SetAlpha(ImageF&& alpha, bool alpha_is_premultiplied) {
+void ImageBundle::SetAlpha(ImageF&& alpha) {
   const ExtraChannelInfo* eci = metadata_->Find(ExtraChannel::kAlpha);
   // Must call SetAlphaBits first, otherwise we don't know which channel index
   JXL_CHECK(eci != nullptr);
   JXL_CHECK(alpha.xsize() != 0 && alpha.ysize() != 0);
-  JXL_CHECK(eci->alpha_associated == alpha_is_premultiplied);
   if (extra_channels_.size() < metadata_->extra_channel_info.size()) {
     // TODO(jon): get rid of this case
     extra_channels_.insert(
@@ -117,32 +111,6 @@ void ImageBundle::SetAlpha(ImageF&& alpha, bool alpha_is_premultiplied) {
   }
   // num_extra_channels is automatically set in visitor
   VerifySizes();
-}
-void ImageBundle::PremultiplyAlpha() {
-  if (!HasAlpha()) return;
-  if (!HasColor()) return;
-  const ExtraChannelInfo* eci = metadata_->Find(ExtraChannel::kAlpha);
-  if (eci->alpha_associated) return;  // already premultiplied
-  JXL_CHECK(color_.ysize() == alpha()->ysize());
-  JXL_CHECK(color_.xsize() == alpha()->xsize());
-  for (size_t y = 0; y < color_.ysize(); y++) {
-    ::jxl::PremultiplyAlpha(color_.PlaneRow(0, y), color_.PlaneRow(1, y),
-                            color_.PlaneRow(2, y), alpha()->Row(y),
-                            color_.xsize());
-  }
-}
-void ImageBundle::UnpremultiplyAlpha() {
-  if (!HasAlpha()) return;
-  if (!HasColor()) return;
-  const ExtraChannelInfo* eci = metadata_->Find(ExtraChannel::kAlpha);
-  if (!eci->alpha_associated) return;  // already unpremultiplied
-  JXL_CHECK(color_.ysize() == alpha()->ysize());
-  JXL_CHECK(color_.xsize() == alpha()->xsize());
-  for (size_t y = 0; y < color_.ysize(); y++) {
-    ::jxl::UnpremultiplyAlpha(color_.PlaneRow(0, y), color_.PlaneRow(1, y),
-                              color_.PlaneRow(2, y), alpha()->Row(y),
-                              color_.xsize());
-  }
 }
 
 void ImageBundle::SetExtraChannels(std::vector<ImageF>&& extra_channels) {

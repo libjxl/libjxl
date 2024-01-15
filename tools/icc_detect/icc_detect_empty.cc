@@ -5,10 +5,12 @@
 
 #include "tools/icc_detect/icc_detect.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 
 QByteArray GetMonitorIccProfile(const QWidget* const /*widget*/) {
   return QByteArray();
 }
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl

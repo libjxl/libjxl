@@ -1,111 +1,65 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
-set(TEST_FILES
-  extras/codec_test.cc
-  extras/dec/color_description_test.cc
-  extras/dec/pgx_test.cc
-  jxl/ac_strategy_test.cc
-  jxl/alpha_test.cc
-  jxl/ans_common_test.cc
-  jxl/ans_test.cc
-  jxl/bit_reader_test.cc
-  jxl/bits_test.cc
-  jxl/blending_test.cc
-  jxl/butteraugli_test.cc
-  jxl/byte_order_test.cc
-  jxl/coeff_order_test.cc
-  jxl/color_encoding_internal_test.cc
-  jxl/color_management_test.cc
-  jxl/convolve_test.cc
-  jxl/data_parallel_test.cc
-  jxl/dct_test.cc
-  jxl/decode_test.cc
-  jxl/enc_external_image_test.cc
-  jxl/enc_photon_noise_test.cc
-  jxl/encode_test.cc
-  jxl/entropy_coder_test.cc
-  jxl/fast_dct_test.cc
-  jxl/fast_math_test.cc
-  jxl/fields_test.cc
-  jxl/gaborish_test.cc
-  jxl/gamma_correct_test.cc
-  jxl/gauss_blur_test.cc
-  jxl/gradient_test.cc
-  jxl/iaca_test.cc
-  jxl/icc_codec_test.cc
-  jxl/image_bundle_test.cc
-  jxl/image_ops_test.cc
-  jxl/jxl_test.cc
-  jxl/lehmer_code_test.cc
-  jxl/linalg_test.cc
-  jxl/modular_test.cc
-  jxl/opsin_image_test.cc
-  jxl/opsin_inverse_test.cc
-  jxl/optimize_test.cc
-  jxl/padded_bytes_test.cc
-  jxl/passes_test.cc
-  jxl/patch_dictionary_test.cc
-  jxl/preview_test.cc
-  jxl/quant_weights_test.cc
-  jxl/quantizer_test.cc
-  jxl/rational_polynomial_test.cc
-  jxl/render_pipeline/render_pipeline_test.cc
-  jxl/roundtrip_test.cc
-  jxl/simd_util_test.cc
-  jxl/speed_tier_test.cc
-  jxl/splines_test.cc
-  jxl/toc_test.cc
-  jxl/xorshift128plus_test.cc
-  threads/thread_parallel_runner_test.cc
-  ### Files before this line are handled by build_cleaner.py
-  # TODO(deymo): Move this to tools/
-  ../tools/box/box_test.cc
-)
+include(jxl_lists.cmake)
 
-# Test-only library code.
-set(TESTLIB_FILES
-  jxl/codec_y4m_testonly.cc
-  jxl/codec_y4m_testonly.h
-  jxl/dct_for_test.h
-  jxl/dec_transforms_testonly.cc
-  jxl/dec_transforms_testonly.h
-  jxl/fake_parallel_runner_testonly.h
-  jxl/image_test_utils.h
-  jxl/test_utils.h
-  jxl/testdata.h
+if(BUILD_TESTING OR JPEGXL_ENABLE_TOOLS)
+# Library with test-only code shared between all tests / fuzzers.
+add_library(jxl_testlib-internal STATIC ${JPEGXL_INTERNAL_TESTLIB_FILES})
+target_compile_options(jxl_testlib-internal PRIVATE
+  ${JPEGXL_INTERNAL_FLAGS}
+  ${JPEGXL_COVERAGE_FLAGS}
+)
+target_compile_definitions(jxl_testlib-internal PUBLIC
+  -DTEST_DATA_PATH="${JPEGXL_TEST_DATA_PATH}")
+target_include_directories(jxl_testlib-internal PUBLIC
+  "${PROJECT_SOURCE_DIR}"
+)
+target_link_libraries(jxl_testlib-internal
+  hwy
+  jxl_extras_nocodec-internal
+  jxl-internal
+  jxl_threads
+)
+endif()
+
+if(NOT BUILD_TESTING)
+  return()
+endif()
+
+list(APPEND JPEGXL_INTERNAL_TESTS
+  # TODO(deymo): Move this to tools/
+  ../tools/djxl_fuzzer_test.cc
+  ../tools/gauss_blur_test.cc
 )
 
 find_package(GTest)
 
-# Library with test-only code shared between all tests.
-add_library(jxl_testlib-static STATIC ${TESTLIB_FILES})
-  target_compile_options(jxl_testlib-static PRIVATE
-    ${JPEGXL_INTERNAL_FLAGS}
-    ${JPEGXL_COVERAGE_FLAGS}
-  )
-target_compile_definitions(jxl_testlib-static PUBLIC
-  -DTEST_DATA_PATH="${PROJECT_SOURCE_DIR}/third_party/testdata")
-target_include_directories(jxl_testlib-static PUBLIC
-  "${PROJECT_SOURCE_DIR}"
-)
-target_link_libraries(jxl_testlib-static hwy jxl-static)
-
 # Individual test binaries:
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tests)
-foreach (TESTFILE IN LISTS TEST_FILES)
+foreach (TESTFILE IN LISTS JPEGXL_INTERNAL_TESTS)
   # The TESTNAME is the name without the extension or directory.
   get_filename_component(TESTNAME ${TESTFILE} NAME_WE)
-  add_executable(${TESTNAME} ${TESTFILE})
-  if(JPEGXL_EMSCRIPTEN)
+  if(TESTFILE STREQUAL ../tools/djxl_fuzzer_test.cc)
+    add_executable(${TESTNAME} ${TESTFILE} ../tools/djxl_fuzzer.cc)
+  else()
+    add_executable(${TESTNAME} ${TESTFILE})
+  endif()
+  if(EMSCRIPTEN)
     # The emscripten linking step takes too much memory and crashes during the
     # wasm-opt step when using -O2 optimization level
     set_target_properties(${TESTNAME} PROPERTIES LINK_FLAGS "\
       -O1 \
       -s USE_LIBPNG=1 \
-      -s TOTAL_MEMORY=1536MB \
+      -s ALLOW_MEMORY_GROWTH=1 \
       -s SINGLE_FILE=1 \
+      -s PROXY_TO_PTHREAD \
+      -s EXIT_RUNTIME=1 \
+      -s USE_PTHREADS=1 \
+      -s NODERAWFS=1 \
     ")
+  else()
+    set_target_properties(${TESTNAME} PROPERTIES LINK_FLAGS "${JPEGXL_COVERAGE_LINK_FLAGS}")
   endif()
   target_compile_options(${TESTNAME} PRIVATE
     ${JPEGXL_INTERNAL_FLAGS}
@@ -114,23 +68,21 @@ foreach (TESTFILE IN LISTS TEST_FILES)
     ${JPEGXL_COVERAGE_FLAGS}
   )
   target_link_libraries(${TESTNAME}
-    box
-    jxl-static
-    jxl_threads-static
-    jxl_extras-static
-    jxl_testlib-static
     gmock
     GTest::GTest
     GTest::Main
+    jxl_extras-internal
+    jxl_testlib-internal
   )
+  if(TESTFILE STREQUAL ../tools/gauss_blur_test.cc)
+    target_link_libraries(${TESTNAME} jxl_gauss_blur)
+  endif()
+
   # Output test targets in the test directory.
   set_target_properties(${TESTNAME} PROPERTIES PREFIX "tests/")
-  if (WIN32 AND ${CMAKE_CXX_COMPILER_ID} STREQUAL "Clang")
+  if (WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     set_target_properties(${TESTNAME} PROPERTIES COMPILE_FLAGS "-Wno-error")
   endif ()
-  if(${CMAKE_VERSION} VERSION_LESS "3.10.3")
-    gtest_discover_tests(${TESTNAME} TIMEOUT 240)
-  else ()
-    gtest_discover_tests(${TESTNAME} DISCOVERY_TIMEOUT 240)
-  endif ()
+  # 240 seconds because some build types (e.g. coverage) can be quite slow.
+  gtest_discover_tests(${TESTNAME} DISCOVERY_TIMEOUT 240)
 endforeach ()

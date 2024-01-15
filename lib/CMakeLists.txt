@@ -4,7 +4,7 @@
 # license that can be found in the LICENSE file.
 
 set(JPEGXL_MAJOR_VERSION 0)
-set(JPEGXL_MINOR_VERSION 7)
+set(JPEGXL_MINOR_VERSION 10)
 set(JPEGXL_PATCH_VERSION 0)
 set(JPEGXL_LIBRARY_VERSION
     "${JPEGXL_MAJOR_VERSION}.${JPEGXL_MINOR_VERSION}.${JPEGXL_PATCH_VERSION}")
@@ -15,129 +15,153 @@ set(JPEGXL_LIBRARY_VERSION
 # It is important to update this value when making incompatible API/ABI changes
 # so that programs that depend on libjxl can update their dependencies. Semantic
 # versioning allows 0.y.z to have incompatible changes in minor versions.
-set(JPEGXL_SO_MINOR_VERSION 7)
+set(JPEGXL_SO_MINOR_VERSION 10)
 if (JPEGXL_MAJOR_VERSION EQUAL 0)
-set(JPEGXL_LIBRARY_SOVERSION
-    "${JPEGXL_MAJOR_VERSION}.${JPEGXL_SO_MINOR_VERSION}")
+  set(JPEGXL_LIBRARY_SOVERSION
+      "${JPEGXL_MAJOR_VERSION}.${JPEGXL_SO_MINOR_VERSION}")
 else()
-set(JPEGXL_LIBRARY_SOVERSION "${JPEGXL_MAJOR_VERSION}")
+  set(JPEGXL_LIBRARY_SOVERSION "${JPEGXL_MAJOR_VERSION}")
 endif()
 
 
 # List of warning and feature flags for our library and tests.
 if (MSVC)
-set(JPEGXL_INTERNAL_FLAGS
-  # TODO(janwas): add flags
-)
+  set(JPEGXL_INTERNAL_FLAGS
+    # TODO(janwas): add flags
+  )
 else ()
-set(JPEGXL_INTERNAL_FLAGS
-  # F_FLAGS
-  -fmerge-all-constants
-  -fno-builtin-fwrite
-  -fno-builtin-fread
+  set(JPEGXL_INTERNAL_FLAGS
+    # F_FLAGS
+    -fmerge-all-constants
+    -fno-builtin-fwrite
+    -fno-builtin-fread
 
-  # WARN_FLAGS
-  -Wall
-  -Wextra
-  -Wc++11-compat
-  -Warray-bounds
-  -Wformat-security
-  -Wimplicit-fallthrough
-  -Wno-register  # Needed by public headers in lcms
-  -Wno-unused-function
-  -Wno-unused-parameter
-  -Wnon-virtual-dtor
-  -Woverloaded-virtual
-  -Wvla
-)
-
-# Warning flags supported by clang.
-if (${CMAKE_CXX_COMPILER_ID} MATCHES "Clang")
-  list(APPEND JPEGXL_INTERNAL_FLAGS
-    -Wdeprecated-increment-bool
-    # TODO(deymo): Add -Wextra-semi once we update third_party/highway.
-    # -Wextra-semi
-    -Wfloat-overflow-conversion
-    -Wfloat-zero-conversion
-    -Wfor-loop-analysis
-    -Wgnu-redeclared-enum
-    -Winfinite-recursion
-    -Wliteral-conversion
-    -Wno-c++98-compat
-    -Wno-unused-command-line-argument
-    -Wprivate-header
-    -Wself-assign
-    -Wstring-conversion
-    -Wtautological-overlap-compare
-    -Wthread-safety-analysis
-    -Wundefined-func-template
-    -Wunreachable-code
-    -Wunused-comparison
-  )
-  if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 5.0)
-    list(APPEND HWY_FLAGS -Wc++2a-extensions)
-  endif()
-endif()  # Clang
-
-if (WIN32)
-  list(APPEND JPEGXL_INTERNAL_FLAGS
-    -Wno-cast-align
-    -Wno-double-promotion
-    -Wno-float-equal
-    -Wno-format-nonliteral
-    -Wno-shadow
-    -Wno-sign-conversion
-    -Wno-zero-as-null-pointer-constant
+    # WARN_FLAGS
+    -Wall
+    -Wextra
+    -Wc++11-compat
+    -Warray-bounds
+    -Wformat-security
+    -Wimplicit-fallthrough
+    -Wno-register  # Needed by public headers in lcms
+    -Wno-unused-function
+    -Wno-unused-parameter
+    -Wnon-virtual-dtor
+    -Woverloaded-virtual
+    -Wvla
   )
 
-  if (${CMAKE_CXX_COMPILER_ID} MATCHES "Clang")
+  # Warning flags supported by clang.
+  if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     list(APPEND JPEGXL_INTERNAL_FLAGS
-      -Wno-used-but-marked-unused
-      -Wno-unused-template
-      -Wno-unused-member-function
-      -Wno-shadow-field-in-constructor
-      -Wno-language-extension-token
-      -Wno-global-constructors
-      -Wno-c++98-compat-pedantic
+      -Wdeprecated-increment-bool
+      # TODO(deymo): Add -Wextra-semi once we update third_party/highway.
+      # -Wextra-semi
+      -Wfloat-overflow-conversion
+      -Wfloat-zero-conversion
+      -Wfor-loop-analysis
+      -Wgnu-redeclared-enum
+      -Winfinite-recursion
+      -Wliteral-conversion
+      -Wno-c++98-compat
+      -Wno-unused-command-line-argument
+      -Wprivate-header
+      -Wself-assign
+      -Wstring-conversion
+      -Wtautological-overlap-compare
+      -Wthread-safety-analysis
+      -Wundefined-func-template
+      -Wunreachable-code
+      -Wunused-comparison
     )
+    if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 5.0)
+      list(APPEND HWY_FLAGS -Wc++2a-extensions)
+    endif()
   endif()  # Clang
-else()  # WIN32
-  list(APPEND JPEGXL_INTERNAL_FLAGS
-    -fsized-deallocation
-    -fno-exceptions
 
-    # Language flags
-    -fmath-errno
-  )
-
-  if (${CMAKE_CXX_COMPILER_ID} MATCHES "Clang")
+  if (WIN32)
     list(APPEND JPEGXL_INTERNAL_FLAGS
-      -fnew-alignment=8
-      -fno-cxx-exceptions
-      -fno-slp-vectorize
-      -fno-vectorize
-
-      -disable-free
-      -disable-llvm-verifier
+      -Wno-cast-align
+      -Wno-double-promotion
+      -Wno-float-equal
+      -Wno-format-nonliteral
+      -Wno-shadow
+      -Wno-sign-conversion
+      -Wno-zero-as-null-pointer-constant
     )
-  endif()  # Clang
-endif()  # WIN32
 
-# Internal flags for coverage builds:
-if(JPEGXL_ENABLE_COVERAGE)
-set(JPEGXL_COVERAGE_FLAGS
-    -g -O0 -fprofile-arcs -ftest-coverage -DJXL_DISABLE_SLOW_TESTS
-    -DJXL_ENABLE_ASSERT=0 -DJXL_ENABLE_CHECK=0
-)
-endif()  # JPEGXL_ENABLE_COVERAGE
+    if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+      list(APPEND JPEGXL_INTERNAL_FLAGS
+        -Wno-used-but-marked-unused
+        -Wno-unused-template
+        -Wno-unused-member-function
+        -Wno-shadow-field-in-constructor
+        -Wno-language-extension-token
+        -Wno-global-constructors
+        -Wno-c++98-compat-pedantic
+      )
+    endif()  # Clang
+  else()  # WIN32
+    list(APPEND JPEGXL_INTERNAL_FLAGS
+      -fsized-deallocation
+      -fno-exceptions
+
+      # Language flags
+      -fmath-errno
+    )
+
+    if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+      list(APPEND JPEGXL_INTERNAL_FLAGS
+        -fnew-alignment=8
+        -fno-cxx-exceptions
+        -fno-slp-vectorize
+        -fno-vectorize
+
+        -disable-free
+        -disable-llvm-verifier
+      )
+    endif()  # Clang
+  endif()  # WIN32
 endif()  #!MSVC
 
+if (JPEGXL_ENABLE_SKCMS)
+  list(APPEND JPEGXL_INTERNAL_FLAGS -DJPEGXL_ENABLE_SKCMS=1)
+endif ()
+
+# strips the -internal suffix from all the elements in LIST
+function(strip_internal OUTPUT_VAR LIB_LIST)
+  foreach(lib IN LISTS ${LIB_LIST})
+    string(REGEX REPLACE "-internal$" "" lib "${lib}")
+    list(APPEND out_list "${lib}")
+  endforeach()
+  set(${OUTPUT_VAR} ${out_list} PARENT_SCOPE)
+endfunction()
+
+# set variables for jxl_cms.cmake and jxl.cmake
+if(IS_ABSOLUTE "${CMAKE_INSTALL_INCLUDEDIR}")
+    set(PKGCONFIG_TARGET_INCLUDES "${CMAKE_INSTALL_INCLUDEDIR}")
+else()
+    set(PKGCONFIG_TARGET_INCLUDES "\${prefix}/${CMAKE_INSTALL_INCLUDEDIR}")
+endif()
+if(IS_ABSOLUTE "${CMAKE_INSTALL_LIBDIR}")
+    set(PKGCONFIG_TARGET_LIBS "${CMAKE_INSTALL_LIBDIR}")
+else()
+    set(PKGCONFIG_TARGET_LIBS "\${exec_prefix}/${CMAKE_INSTALL_LIBDIR}")
+endif()
+
+# The jxl_cms library definition.
+include(jxl_cms.cmake)
 # The jxl library definition.
 include(jxl.cmake)
 
 # Other libraries outside the core jxl library.
-include(jxl_extras.cmake)
+if(JPEGXL_ENABLE_TOOLS OR BUILD_TESTING)
+  include(jxl_extras.cmake)
+endif()
 include(jxl_threads.cmake)
+if (JPEGXL_ENABLE_JPEGLI)
+  include(jpegli.cmake)
+endif()
 
 # Install all the library headers from the source and the generated ones. There
 # is no distinction on which libraries use which header since it is expected
@@ -147,18 +171,14 @@ install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/jxl
 install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include/jxl
   DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
 
-# Profiler for libjxl
-include(jxl_profiler.cmake)
-
 if(BUILD_TESTING)
-# Unittests
-cmake_policy(SET CMP0057 NEW)  # https://gitlab.kitware.com/cmake/cmake/issues/18198
-include(GoogleTest)
+  include(GoogleTest)
+endif()
 
 # Tests for the jxl library.
 include(jxl_tests.cmake)
 
-# Google benchmark for the jxl library
-include(jxl_benchmark.cmake)
-
-endif()  # BUILD_TESTING
+if(BUILD_TESTING)
+  # Google benchmark for the jxl library
+  include(jxl_benchmark.cmake)
+endif()

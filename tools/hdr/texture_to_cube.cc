@@ -7,12 +7,13 @@
 #include <stdlib.h>
 
 #include "lib/extras/codec.h"
-#include "lib/jxl/base/thread_pool_internal.h"
+#include "lib/jxl/image_bundle.h"
 #include "tools/args.h"
 #include "tools/cmdline.h"
+#include "tools/thread_pool_internal.h"
 
 int main(int argc, const char** argv) {
-  jxl::ThreadPoolInternal pool;
+  jpegxl::tools::ThreadPoolInternal pool;
 
   jpegxl::tools::CommandLineParser parser;
   const char* input_filename = nullptr;
@@ -42,8 +43,10 @@ int main(int argc, const char** argv) {
   }
 
   jxl::CodecInOut image;
-  JXL_CHECK(jxl::SetFromFile(input_filename, jxl::extras::ColorHints(), &image,
-                             &pool));
+  std::vector<uint8_t> encoded;
+  JXL_CHECK(jpegxl::tools::ReadFile(input_filename, &encoded));
+  JXL_CHECK(jxl::SetFromBytes(jxl::Bytes(encoded), jxl::extras::ColorHints(),
+                              &image, &pool));
 
   JXL_CHECK(image.xsize() == image.ysize() * image.ysize());
   const unsigned N = image.ysize();

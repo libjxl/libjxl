@@ -99,6 +99,22 @@ This is the mathematical inverse of `tools/render_hlg`. Furthermore,
 `tools/pq_to_hlg` is equivalent to `tools/tone_map -t 1000` followed by
 `tools/display_to_hlg -m 1000`.
 
+## OpenEXR to PQ
+
+`tools/exr_to_pq` converts an OpenEXR image into a Rec. 2020 + PQ image, which
+can be saved as a PNG or PPM file. Luminance information is taken from the
+`whiteLuminance` tag if the input has it, and otherwise defaults to treating
+(1, 1, 1) as 100 cd/m². It is also possible to override this using the
+`--luminance` (`-l`) flag, in two different ways:
+
+```shell
+# Specifies that the brightest pixel in the image happens to be 1500 cd/m².
+$ tools/exr_to_pq --luminance='max=1500' input.exr output.png
+
+# Specifies that (1, 1, 1) in the input file is 203 cd/m².
+$ tools/exr_to_pq --luminance='white=203' input.exr output.png
+```
+
 # LUT generation
 
 There are additionally two tools that can be used to generate look-up tables

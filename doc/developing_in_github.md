@@ -231,7 +231,7 @@ git push origin mybranch
 
 This will push your local branch "mybranch" to a remote in your fork called
 "mybranch". The name can be anything, but keep in mind that it is public. A link
-to the URL to create a merge request will be displayed.
+to the URL to create a pull request will be displayed.
 
 ```
 Enumerating objects: 627, done.
@@ -309,7 +309,7 @@ In that case, you can use the force flag:
 git submodule update --init --recursive --force
 ```
 
-### Iterating changes in your merge request
+### Iterating changes in your pull request
 
 To address reviewer changes you need to amend the local changes in your branch
 first. Make the changes you need in your commit locally by running `git commit
@@ -325,7 +325,7 @@ ones), you need to force the operation to replace the old version.
 git push origin mybranch --force
 ```
 
-The merge request should now be updated with the new changes.
+The pull request should now be updated with the new changes.
 
 ### Merging your changes
 
@@ -342,7 +342,7 @@ verify that all the tests pass again after including the latest changes.
 ### Trying locally a pending Pull Request
 
 If you want to review in your computer a pending pull request proposed by
-another user you can fetch the merge request commit with the following command,
+another user you can fetch the pull request commit with the following command,
 replacing `NNNN` with the pull request number:
 
 ```bash

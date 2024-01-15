@@ -7,6 +7,7 @@
 
 #include <string.h>
 
+#include "lib/extras/size_constraints.h"
 #include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/compiler_specific.h"
 
@@ -117,6 +118,8 @@ class Parser {
     // 0xa, or 0xd 0xa.
     JXL_RETURN_IF_ERROR(SkipLineBreak());
 
+    // TODO(jon): could do up to 24-bit by converting the values to
+    // JXL_TYPE_FLOAT.
     if (header->bits_per_sample > 16) {
       return JXL_FAILURE("PGX: >16 bits not yet supported");
     }
@@ -127,9 +130,7 @@ class Parser {
     }
 
     size_t numpixels = header->xsize * header->ysize;
-    size_t bytes_per_pixel = header->bits_per_sample <= 8    ? 1
-                             : header->bits_per_sample <= 16 ? 2
-                                                             : 4;
+    size_t bytes_per_pixel = header->bits_per_sample <= 8 ? 1 : 2;
     if (pos_ + numpixels * bytes_per_pixel > end_) {
       return JXL_FAILURE("PGX: data too small");
     }
@@ -145,15 +146,14 @@ class Parser {
 }  // namespace
 
 Status DecodeImagePGX(const Span<const uint8_t> bytes,
-                      const ColorHints& color_hints,
-                      const SizeConstraints& constraints,
-                      PackedPixelFile* ppf) {
+                      const ColorHints& color_hints, PackedPixelFile* ppf,
+                      const SizeConstraints* constraints) {
   Parser parser(bytes);
   HeaderPGX header = {};
   const uint8_t* pos;
   if (!parser.ParseHeader(&header, &pos)) return false;
   JXL_RETURN_IF_ERROR(
-      VerifyDimensions(&constraints, header.xsize, header.ysize));
+      VerifyDimensions(constraints, header.xsize, header.ysize));
   if (header.bits_per_sample == 0 || header.bits_per_sample > 32) {
     return JXL_FAILURE("PGX: bits_per_sample invalid");
   }
@@ -174,9 +174,7 @@ Status DecodeImagePGX(const Span<const uint8_t> bytes,
   ppf->info.orientation = JXL_ORIENT_IDENTITY;
 
   JxlDataType data_type;
-  if (header.bits_per_sample > 16) {
-    data_type = JXL_TYPE_UINT32;
-  } else if (header.bits_per_sample > 8) {
+  if (header.bits_per_sample > 8) {
     data_type = JXL_TYPE_UINT16;
   } else {
     data_type = JXL_TYPE_UINT8;

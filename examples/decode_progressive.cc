@@ -6,18 +6,21 @@
 // This C++ example decodes a JPEG XL image progressively (input bytes are
 // passed in chunks). The example outputs the intermediate steps to PAM files.
 
+#ifndef __STDC_FORMAT_MACROS
+#define __STDC_FORMAT_MACROS
+#endif
+
 #include <inttypes.h>
+#include <jxl/decode.h>
+#include <jxl/decode_cxx.h>
+#include <jxl/resizable_parallel_runner.h>
+#include <jxl/resizable_parallel_runner_cxx.h>
 #include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
 #include <vector>
-
-#include "jxl/decode.h"
-#include "jxl/decode_cxx.h"
-#include "jxl/resizable_parallel_runner.h"
-#include "jxl/resizable_parallel_runner_cxx.h"
 
 bool WritePAM(const char* filename, const uint8_t* buffer, size_t w, size_t h) {
   FILE* fp = fopen(filename, "wb");
@@ -30,7 +33,11 @@ bool WritePAM(const char* filename, const uint8_t* buffer, size_t w, size_t h) {
           "\nDEPTH 4\nMAXVAL 255\nTUPLTYPE "
           "RGB_ALPHA\nENDHDR\n",
           static_cast<uint64_t>(w), static_cast<uint64_t>(h));
-  fwrite(buffer, 1, w * h * 4, fp);
+  size_t num_bytes = w * h * 4;
+  if (fwrite(buffer, 1, num_bytes, fp) != num_bytes) {
+    fclose(fp);
+    return false;
+  };
   if (fclose(fp) != 0) {
     return false;
   }
@@ -121,16 +128,14 @@ bool DecodeJpegXlProgressive(const uint8_t* jxl, size_t size,
       // Get the ICC color profile of the pixel data
       size_t icc_size;
       if (JXL_DEC_SUCCESS !=
-          JxlDecoderGetICCProfileSize(dec.get(), &format,
-                                      JXL_COLOR_PROFILE_TARGET_ORIGINAL,
-                                      &icc_size)) {
+          JxlDecoderGetICCProfileSize(
+              dec.get(), JXL_COLOR_PROFILE_TARGET_ORIGINAL, &icc_size)) {
         fprintf(stderr, "JxlDecoderGetICCProfileSize failed\n");
         return false;
       }
       icc_profile.resize(icc_size);
       if (JXL_DEC_SUCCESS != JxlDecoderGetColorAsICCProfile(
-                                 dec.get(), &format,
-                                 JXL_COLOR_PROFILE_TARGET_ORIGINAL,
+                                 dec.get(), JXL_COLOR_PROFILE_TARGET_ORIGINAL,
                                  icc_profile.data(), icc_profile.size())) {
         fprintf(stderr, "JxlDecoderGetColorAsICCProfile failed\n");
         return false;
@@ -149,11 +154,9 @@ bool DecodeJpegXlProgressive(const uint8_t* jxl, size_t size,
         return false;
       }
       pixels.resize(xsize * ysize * 4);
-      void* pixels_buffer = (void*)pixels.data();
-      size_t pixels_buffer_size = pixels.size() * sizeof(float);
       if (JXL_DEC_SUCCESS != JxlDecoderSetImageOutBuffer(dec.get(), &format,
-                                                         pixels_buffer,
-                                                         pixels_buffer_size)) {
+                                                         pixels.data(),
+                                                         pixels.size())) {
         fprintf(stderr, "JxlDecoderSetImageOutBuffer failed\n");
         return false;
       }

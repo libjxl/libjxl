@@ -37,14 +37,14 @@ def convolution(pixels, kernel):
   `kernel`.
 
   Args:
-    pixels: A [heigth, width]- or [height, width, num_channels]-array
+    pixels: A [height, width]- or [height, width, num_channels]-array
     representing an image.
 
     kernel: A [upscaling_factor, upscaling_factor, kernel_size,
      kernel_size]-array used for the convolution.
 
   Returns:
-    A [upscaling_factor*heigth, upscaling_factor*width]- or
+    A [upscaling_factor*height, upscaling_factor*width]- or
     [upscaling_factor*height, upscaling_factor*width, num_channels]-array representing the
     convoluted upscaled image.
   """

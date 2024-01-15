@@ -12,11 +12,14 @@
 #include "sanitizer/common_interface_defs.h"  // __sanitizer_print_stack_trace
 #endif                                        // defined(*_SANITIZER)
 
-#include "jxl/thread_parallel_runner.h"
-#include "lib/jxl/base/profiler.h"
+#include <jxl/thread_parallel_runner.h>
 
 namespace {
 
+// Important: JXL_ASSERT does not guarantee running the `condition` code,
+// use only for debug mode checks.
+
+#if JXL_ENABLE_ASSERT
 // Exits the program after printing a stack trace when possible.
 bool Abort() {
 #if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
@@ -34,9 +37,6 @@ bool Abort() {
   __builtin_trap();
 #endif
 }
-
-// Does not guarantee running the code, use only for debug mode checks.
-#if JXL_ENABLE_ASSERT
 #define JXL_ASSERT(condition) \
   do {                        \
     if (!(condition)) {       \
@@ -173,16 +173,8 @@ void ThreadParallelRunner::ThreadFunc(ThreadParallelRunner* self,
 }
 
 ThreadParallelRunner::ThreadParallelRunner(const int num_worker_threads)
-#if defined(__EMSCRIPTEN__)
-    : num_worker_threads_(0), num_threads_(1) {
-  // TODO(eustas): find out if pthreads would work for us.
-  (void)num_worker_threads;
-#else
     : num_worker_threads_(num_worker_threads),
       num_threads_(std::max(num_worker_threads, 1)) {
-#endif
-  PROFILER_ZONE("ThreadParallelRunner ctor");
-
   threads_.reserve(num_worker_threads_);
 
   // Suppress "unused-private-field" warning.
@@ -199,11 +191,6 @@ ThreadParallelRunner::ThreadParallelRunner(const int num_worker_threads)
   if (num_worker_threads_ != 0) {
     WorkersReadyBarrier();
   }
-
-  // Warm up profiler on worker threads so its expensive initialization
-  // doesn't count towards other timer measurements.
-  RunOnEachThread(
-      [](const int task, const int thread) { PROFILER_ZONE("@InitWorkers"); });
 }
 
 ThreadParallelRunner::~ThreadParallelRunner() {

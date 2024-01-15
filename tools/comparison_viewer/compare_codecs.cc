@@ -66,7 +66,7 @@ int main(int argc, char** argv) {
 
   for (const QString& folder : folders) {
     auto* const window =
-        new jxl::CodecComparisonWindow(folder, intensityTarget);
+        new jpegxl::tools::CodecComparisonWindow(folder, intensityTarget);
     window->setAttribute(Qt::WA_DeleteOnClose);
     window->show();
   }

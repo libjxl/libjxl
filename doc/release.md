@@ -21,12 +21,15 @@ been merged to `main`, resulting in some errors being detected hours after the
 code is merged or even days after in the case of fuzzer-detected bugs.
 
 Release tags are cut from *release branches*. Each MAJOR.MINOR version has its
-own release branch, for example releases `0.5`, `0.5.1`, `0.5.2`, ... would have
-tags `v0.5`, `v0.5.1`, `v0.5.2`, ... on commits from the `v0.5.x` branch.
-`v0.5.x` is a branch name, not a tag name, and doesn't represent a released
+own release branch, for example releases `0.7.0`, `0.7.1`, `0.7.2`, ... would
+have tags `v0.7.0`, `v0.7.1`, `v0.7.2`, ... on commits from the `v0.7.x` branch.
+`v0.7.x` is a branch name, not a tag name, and doesn't represent a released
 version since semantic versioning requires that the PATCH is a non-negative
 number. Released tags don't each one have their own release branch, all releases
-from the same MAJOR.MINOR version will share the same branch.
+from the same MAJOR.MINOR version will share the same branch. The first commit
+after the branch-off points between the main branch and the release branch
+should be tagged with the suffix `-snapshot` and the name of the next
+MAJOR.MINOR version, in order to get meaningful output for `git describe`.
 
 The main purpose of the release branch is to stabilize the code before a
 release. This involves including fixes to existing bugs but **not** including
@@ -36,7 +39,7 @@ branch into the release branch without including the new *features* from `main`.
 For this reason it is important to make small commits in `main` and separate bug
 fixes from new features.
 
-After the initial minor release (`M.N`, for example `0.5.0` or just `0.5`) the
+After the initial minor release (`MAJOR.MINOR.PATCH`, for example `0.5.0`) the
 release branch is used to continue to cherry-pick fixes to be included in a
 patch release, for example a version `0.5.1` release. Patch fixes are only meant
 to fix security bugs or other critical bugs that can't wait until the next major
@@ -114,24 +117,26 @@ branch is created the code in `main` will only be included in the next major
 or minor release. Right after a release branch update the version targeting the
 next release. Artifacts from `main` should include the new (unreleased) version,
 so it is important to update it. For example, after the `v0.5.x` branch is
-created from main, you should update the version on `main` to `0.6`.
+created from main, you should update the version on `main` to `0.6.0`.
 
 To help update it, run this helper command (in a Debian-based system):
 
 ```bash
-./ci.sh bump_version 0.6
+./ci.sh bump_version 0.6.0
 ```
 
 This will update the version in the following files:
 
  * `lib/CMakeLists.txt`
- * `lib/lib.gni`, automatically updated with `tools/build_cleaner.py --update`.
+ * `lib/lib.gni`, automatically updated with
+   `tools/scripts/build_cleaner.py --update`.
  * `debian/changelog` to create the Debian package release with the new version.
    Debian changelog shouldn't repeat the library changelog, instead it should
    include changes to the packaging scripts.
- 
-If there were incompatible API/ABI changes, make sure to also adapt the 
-corresponding section in 
+ * `.github/workflows/conformance.yml`
+
+If there were incompatible API/ABI changes, make sure to also adapt the
+corresponding section in
 [CMakeLists.txt](https://github.com/libjxl/libjxl/blob/main/lib/CMakeLists.txt#L12).
 
 ## Cherry-pick fixes to a release
@@ -176,6 +181,15 @@ running `git cherry-pick` and `git commit --amend` multiple times for all the
 commits you need to cherry-pick, ideally in the same order they were merged on
 the `main` branch. At the end you will have a local branch with multiple commits
 on top of the release branch.
+
+To update the version number, for example from v0.8.0 to v0.8.1 run this helper
+command (in a Debian-based system):
+
+```bash
+./ci.sh bump_version 0.8.1
+```
+
+as described above and commit the changes.
 
 Finally, upload your changes to *your fork* like normal, except that when
 creating a pull request select the desired release branch as a target:
@@ -248,12 +262,10 @@ To publish a release open the [New Release
 page](https://github.com/libjxl/libjxl/releases/new) and follow these
 instructions:
 
- * Set the "Tag version" as "v" plus the semantic version number. Omit the ".0"
-   when the PATCH version is 0, for example use "v0.5" or "v0.5.1" but not
-   "v0.5.0".
+ * Set the "Tag version" as "v" plus the semantic version number.
 
- * Select the "Target" as your release branch. For a "v0.5" release tag you
-   would use the "v0.5.x" branch.
+ * Select the "Target" as your release branch. For example for a "v0.7.1"
+   release tag you should use the "v0.7.x" branch.
 
  * Use the version number as the release title.
 
@@ -264,3 +276,53 @@ instructions:
    to see the results.
 
  * Finally click "Publish release" and go celebrate with the team. 🎉
+
+ * The branch v0.7.x will be pushed to gitlab automatically, but make sure to
+   manually push the *tag* of the release also to
+   https://gitlab.com/wg1/jpeg-xl, by doing
+
+```bash
+git push gitlab v0.7.1
+```
+where `gitlab` is the remote `git@gitlab.com:wg1/jpeg-xl.git`. 
+
+### How to build downstream projects
+
+```bash
+docker run -it debian:bookworm /bin/bash
+
+apt update
+apt install -y clang cmake git libbrotli-dev nasm pkg-config ninja-build
+export CC=clang
+export CXX=clang++
+
+mkdir -p /src
+cd /src
+
+git clone --recurse-submodules --depth 1 -b v0.9.x \
+  https://github.com/libjxl/libjxl.git
+git clone --recurse-submodules --depth 1 \
+  https://github.com/ImageMagick/ImageMagick.git
+git clone --recurse-submodules --depth 1 \
+  https://github.com/FFmpeg/FFmpeg.git
+
+cd /src/libjxl
+cmake -B build -G Ninja .
+cmake --build build -j`nproc`
+cmake --install build --prefix="/usr"
+
+cd /src/ImageMagick
+./configure --with-jxl=yes
+# check for "JPEG XL --with-jxl=yes yes"
+make -j `nproc`
+./utilities/magick -version
+
+cd /src/FFmpeg
+./configure --disable-all --disable-debug --enable-avcodec --enable-avfilter \
+  --enable-avformat --enable-libjxl --enable-encoder=libjxl \
+  --enable-decoder=libjxl --enable-ffmpeg
+# check for libjxl decoder/encoder support
+make -j `nproc`
+ldd ./ffmpeg
+./ffmpeg -version
+```

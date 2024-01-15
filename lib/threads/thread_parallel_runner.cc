@@ -3,8 +3,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include "jxl/thread_parallel_runner.h"
-
+#include <jxl/thread_parallel_runner.h>
 #include <string.h>
 
 #include "lib/threads/thread_parallel_runner_internal.h"
@@ -88,9 +87,10 @@ void JxlThreadParallelRunnerDestroy(void* runner_opaque) {
   jpegxl::ThreadParallelRunner* runner =
       reinterpret_cast<jpegxl::ThreadParallelRunner*>(runner_opaque);
   if (runner) {
+    JxlMemoryManager local_memory_manager = runner->memory_manager;
     // Call destructor directly since custom free function is used.
     runner->~ThreadParallelRunner();
-    ThreadMemoryManagerFree(&runner->memory_manager, runner);
+    ThreadMemoryManagerFree(&local_memory_manager, runner);
   }
 }
 

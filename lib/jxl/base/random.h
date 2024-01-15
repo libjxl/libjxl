@@ -14,13 +14,15 @@
 #include <string.h>
 
 #include <algorithm>
+#include <cmath>
 
 #include "lib/jxl/base/status.h"
 
 namespace jxl {
 struct Rng {
   explicit Rng(size_t seed)
-      : s{0x94D049BB133111EBull, 0xBF58476D1CE4E5B9ull + seed} {}
+      : s{static_cast<uint64_t>(0x94D049BB133111EBull),
+          static_cast<uint64_t>(0xBF58476D1CE4E5B9ull) + seed} {}
 
   // Xorshift128+ adapted from xorshift128+-inl.h
   uint64_t operator()() {
@@ -68,15 +70,18 @@ struct Rng {
   bool Bernoulli(float p) { return UniformF(0, 1) < p; }
 
   // State for geometric distributions.
-  struct GeometricDistribution {
-    explicit GeometricDistribution(float p);
+  // The stored value is inv_log_1mp
+  using GeometricDistribution = float;
+  static GeometricDistribution MakeGeometric(float p) {
+    return 1.0 / std::log(1 - p);
+  }
 
-   private:
-    float inv_log_1mp;
-    friend struct Rng;
-  };
-
-  uint32_t Geometric(const GeometricDistribution& dist);
+  uint32_t Geometric(const GeometricDistribution& dist) {
+    float f = UniformF(0, 1);
+    float inv_log_1mp = dist;
+    float log = std::log(1 - f) * inv_log_1mp;
+    return static_cast<uint32_t>(log);
+  }
 
   template <typename T>
   void Shuffle(T* t, size_t n) {

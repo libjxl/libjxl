@@ -5,8 +5,9 @@
 
 # Workflow for building and running tests.
 
-name: Build/Test
+name: Build/Test *nix
 on:
+  merge_group:
   push:
     branches:
       - main
@@ -14,29 +15,40 @@ on:
   pull_request:
     types: [opened, reopened, labeled, synchronize]
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  ubuntu_build:
-    name: Ubuntu Build ${{ matrix.name }}
+  build_test:
+    name: ${{ startsWith(matrix.os, 'macos-') && 'MacOS' || 'Ubuntu' }} Build ${{ matrix.name }}
     runs-on: ${{ matrix.os || 'ubuntu-latest' }}
     strategy:
+      fail-fast: false
       matrix:
         # We have one job per "name" in the matrix. Attributes are set on the
         # specific job names.
         name: [release, debug, asan, msan, scalar]
         include:
           - name: release
+            mode: release
+            run_bench: true
             test_in_pr: true
+            cmake_args: >-
+              -DJPEGXL_TEST_TOOLS=ON
+              -DJPEGLI_LIBJPEG_LIBRARY_VERSION="8.2.2"
+              -DJPEGLI_LIBJPEG_LIBRARY_SOVERSION="8"
             # Track static stack size on build and check it doesn't exceed 3 kB.
             env_stack_size: 1
-            max_stack: 3000
+            max_stack: 2400
             # Conformance tooling test requires numpy.
-            apt_pkgs: graphviz python3-numpy
+            apt_pkgs: doxygen graphviz python3-numpy
           - name: lowprecision
             mode: release
+            run_bench: true
             test_in_pr: true
             cmake_args: -DCMAKE_CXX_FLAGS=-DJXL_HIGH_PRECISION=0
           - name: debug
@@ -46,9 +58,10 @@ jobs:
           # Build scalar-only hwy instructions.
           - name: scalar
             mode: release
-            cxxflags: -DHWY_DISABLED_TARGETS=~HWY_SCALAR
+            cxxflags: -DHWY_COMPILE_ONLY_SCALAR -DFJXL_ENABLE_AVX2=0 -DFJXL_ENABLE_AVX512=0
           # Disabling optional features to speed up msan build a little bit.
           - name: msan
+            os: ubuntu-20.04
             skip_install: true
             cmake_args: >-
               -DJPEGXL_ENABLE_DEVTOOLS=OFF -DJPEGXL_ENABLE_PLUGINS=OFF
@@ -56,11 +69,8 @@ jobs:
           - name: asan
             skip_install: true
           - name: coverage
-            apt_pkgs: gcovr
-            # Coverage builds require a bit more RAM.
             env_test_stack_size: 2048
-            # Exclude roundtrip tests from the unittest coverage.
-            ctest_args: -E '^JxlTest'
+            skip_install: true
           # Build with support for decoding to JPEG bytes disabled. Produces a
           # smaller build if only decoding to pixels is needed.
           - name: release-nojpeg
@@ -70,48 +80,90 @@ jobs:
               -DJPEGXL_ENABLE_TRANSCODE_JPEG=OFF
               -DJPEGXL_ENABLE_PLUGINS=OFF
               -DJPEGXL_ENABLE_VIEWERS=OFF
+          # Build with jxl_cms based on lcms2 library.
+          - name: release-lcms2
+            mode: release
+            cmake_args: >-
+              -DJPEGXL_ENABLE_SKCMS=OFF
+          - name: release-system-lcms2
+            mode: release
+            cmake_args: >-
+              -DJPEGXL_ENABLE_SKCMS=OFF
+              -DJPEGXL_FORCE_SYSTEM_LCMS2=ON
+            apt_pkgs: liblcms2-dev
+            # static build is impossible
+            skip_install: true
+          # Build optimized for binary size, all features not needed for
+          # reconstructing pixels is disabled.
+          - name: release:minimal
+            mode: release
+            cxxflags: -DJXL_DEBUG_ON_ABORT=0
+            cmake_args: >-
+              -DJPEGXL_ENABLE_TRANSCODE_JPEG=OFF
+              -DJPEGXL_ENABLE_BOXES=OFF
+              -DJPEGXL_ENABLE_PLUGINS=OFF
+              -DJPEGXL_ENABLE_VIEWERS=OFF
           # Builds with gcc in release mode
           - name: release:gcc8
+            os: ubuntu-20.04
             mode: release
             apt_pkgs: gcc-8 g++-8
             cmake_args: >-
               -DCMAKE_C_COMPILER=gcc-8 -DCMAKE_CXX_COMPILER=g++-8
-          # Builds with clang-5 in release mode
-          - name: release:clang-5
-            os: ubuntu-18.04
+          # Builds with clang-7 in release mode
+          - name: release:clang-7
+            os: ubuntu-20.04
             mode: release
-            # TODO(eustas): investigate, why static brotli library is not found.
             skip_install: true
-            apt_pkgs: clang-5.0
+            apt_pkgs: clang-7
+            cc: clang-7
+            cxx: clang++-7
+          - name: release:osx
+            os: macos-latest
+            mode: release
+            skip_install: true
             cmake_args: >-
-              -DCMAKE_C_COMPILER=clang-5.0 -DCMAKE_CXX_COMPILER=clang++-5.0
-              -DJPEGXL_ENABLE_PLUGINS=OFF
+              -DCMAKE_FIND_FRAMEWORK=NEVER
 
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
       # Whether we track the stack size.
       STACK_SIZE: ${{ matrix.env_stack_size }}
       TEST_STACK_LIMIT: ${{ matrix.env_test_stack_size }}
-      WILL_RUN_TESTS: ${{ github.event_name == 'push' || (github.event_name == 'pull_request' && (matrix.test_in_pr || contains(github.event.pull_request.labels.*.names, 'CI:full'))) }}
+      WILL_TEST: ${{  github.event_name == 'push' || (github.event_name == 'pull_request' && matrix.name != 'coverage' && (matrix.test_in_pr || contains(github.event.pull_request.labels.*.name, 'CI:full'))) }}
+      WILL_BUILD: ${{ github.event_name == 'push' || (github.event_name == 'pull_request' && matrix.name != 'coverage') }}
+      WILL_BENCH: ${{ github.event_name != 'merge_group' && matrix.run_bench }}
+      WILL_DOC: ${{ github.event_name != 'merge_group' && matrix.name == 'release' }}
+      WILL_COV: ${{ github.event_name == 'push' && matrix.name == 'coverage' }}
+      JPEGXL_OPT_DBG: true
+      FASTER_MSAN_BUILD: 1
 
     steps:
-    - name: Install build deps
+    - name: Harden Runner
+      uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
+      with:
+        egress-policy: audit
+
+    - name: Install build deps Ubuntu
+      if: startsWith(matrix.os, 'macos-') == false
       run: |
+        sudo rm -f /var/lib/man-db/auto-update
         sudo apt update
         sudo apt install -y \
           ccache \
-          clang-7 \
+          clang \
           cmake \
-          doxygen \
+          graphviz \
+          imagemagick \
           libbenchmark-dev \
           libbenchmark-tools \
           libbrotli-dev \
           libgdk-pixbuf2.0-dev \
-          libgflags-dev \
           libgif-dev \
           libgtest-dev \
           libgtk2.0-dev  \
           libjpeg-dev \
+          libjpeg-turbo-progs \
           libopenexr-dev \
           libpng-dev \
           libwebp-dev \
@@ -120,40 +172,92 @@ jobs:
           xvfb \
           ${{ matrix.apt_pkgs }} \
         #
-        echo "CC=clang-7" >> $GITHUB_ENV
-        echo "CXX=clang++-7" >> $GITHUB_ENV
+        echo "CC=${{ matrix.cc || 'clang' }}" >> $GITHUB_ENV
+        echo "CXX=${{ matrix.cxx || 'clang++' }}" >> $GITHUB_ENV
+    - name: Install build deps MacOS
+      if: startsWith(matrix.os, 'macos-')
+      run: |
+        # Should be already installed:
+        #  brew install brotli giflib jpeg-turbo libpng zlib
+        # Not required, since we skip building documentation
+        #  brew install doxygen
+        brew install binutils ccache coreutils google-benchmark googletest ninja sdl2
+
     - name: Checkout the source
-      uses: actions/checkout@v2
+      uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       with:
         submodules: true
         fetch-depth: 2
+
+    - name: Setup the Homebrew prefixes
+      if: startsWith(matrix.os, 'macos-')
+      run: |
+          CMAKE_PREFIX_PATH=`brew --prefix brotli`:`brew --prefix giflib`:`brew --prefix google-benchmark`:`brew --prefix jpeg-turbo`:`brew --prefix libpng`:`brew --prefix sdl2`:`brew --prefix zlib`
+          echo "CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}" >> $GITHUB_ENV
+
+    - name: Suppress doxygen target
+      if: matrix.name != 'release'
+      run: |
+        echo "TARGETS=all" >> $GITHUB_ENV
+
+    - name: Setup the LLVM source path
+      if: matrix.name == 'msan'
+      run: |
+        LLVM_ROOT=${GITHUB_WORKSPACE}/llvm_root
+        mkdir -p ${LLVM_ROOT}
+        echo "LLVM_ROOT=${LLVM_ROOT}" >> $GITHUB_ENV
+
+    - name: Cache LLVM sources
+      if: matrix.name == 'msan'
+      uses: actions/cache@704facf57e6136b1bc63b828d79edcd491f0ee84 # v3.3.2
+      with:
+        path: ${{ env.LLVM_ROOT }}
+        key: llvm
+
+    - name: Checkout the LLVM source
+      if: matrix.name == 'msan'
+      uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      with:
+        submodules: false
+        repository: llvm/llvm-project
+        ref: llvmorg-7.0.1
+        path: llvm_root
+
     - name: Sphinx dependencies
       # Dependencies for sphinx HTML documentation
-      if: matrix.name == 'release'
+      if: env.WILL_DOC == 'true'
       run: |
         pip3 install -r doc/sphinx/requirements.txt
+
+    - name: Install gcovr
+      if: env.WILL_COV == 'true'
+      run: pip install gcovr
+
     - name: Git environment
       id: git-env
       run: |
-        echo "::set-output name=parent::$(git rev-parse ${{ github.sha }}^)"
+        echo "parent=$(git rev-parse ${{ github.sha }}^)" >> $GITHUB_OUTPUT
       shell: bash
+
     - name: ccache
-      uses: actions/cache@v2
+      uses: actions/cache@704facf57e6136b1bc63b828d79edcd491f0ee84 # v3.3.2
       with:
         path: ${{ env.CCACHE_DIR }}
         # When the cache hits the key it is not updated, so if this is a rebuild
         # of the same Pull Request it will reuse the cache if still around. For
         # either Pull Requests or new pushes to main, this will use the parent
         # hash as the starting point from the restore-keys entry.
-        key: ${{ runner.os }}-${{ github.sha }}-${{ matrix.name }}
+        key: build-${{ runner.os }}-${{ github.sha }}-${{ matrix.name }}
         restore-keys: |
-          ${{ runner.os }}-${{ steps.git-env.outputs.parent }}-${{ matrix.name }}
+          build-${{ runner.os }}-${{ steps.git-env.outputs.parent }}-${{ matrix.name }}
+
     - name: Build
+      if: env.WILL_BUILD == 'true'
       run: |
         mkdir -p ${CCACHE_DIR}
         echo "max_size = 200M" > ${CCACHE_DIR}/ccache.conf
         mode="${{ matrix.mode }}"
-        build_tests=$([ "$WILL_RUN_TESTS" == "true" ] && echo "ON" || echo "OFF")
+        build_tests=$([ "$WILL_TEST" == "true" ] && echo "ON" || echo "OFF")
         [[ -n "${mode}" ]] || mode="${{ matrix.name }}"
         ./ci.sh ${mode} -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
@@ -163,381 +267,75 @@ jobs:
       env:
         SKIP_TEST: 1
         CMAKE_CXX_FLAGS: ${{ matrix.cxxflags }}
+
+    - name: Build stats
+      if: env.WILL_BUILD == 'true'
+      run: |
+        awk '!/^#/ {total[$4]+=($2-$1);cntr[$4]+=1} END {for (key in total) print total[key]/cntr[key] " " key}' build/.ninja_log | sort -n | tail -n 25
+
     - name: ccache stats
       run: ccache --show-stats
+
     - name: Build stats ${{ matrix.name }}
-      if: matrix.mode == 'release' || matrix.name == 'release'
+      if: env.WILL_BUILD == 'true' && matrix.mode == 'release'
       run: |
-        tools/build_stats.py --save build/stats.json \
-          --max-stack ${{ matrix.max_stack || '0' }} \
-          cjxl djxl libjxl.so libjxl_dec.so
+        SHARED_LIB_EXT="${{ startsWith(matrix.os, 'macos-') && 'dylib' || 'so' }}"
+        SELECT_BINUTILS="${{ startsWith(matrix.os, 'macos-') && '--binutils `brew --prefix binutils`/bin/' || '' }}"
+        tools/scripts/build_stats.py --save build/stats.json \
+          --max-stack ${{ matrix.max_stack || '0' }} ${SELECT_BINUTILS} \
+          cjxl djxl libjxl.${SHARED_LIB_EXT} libjxl_dec.${SHARED_LIB_EXT}
+
     # Check that we can build the example project against the installed libs.
     - name: Install and build examples
-      if: |
-        (matrix.mode == 'release' || matrix.name == 'release') &&
-        !matrix.skip_install
+      if: env.WILL_BUILD == 'true' && matrix.mode == 'release' && !matrix.skip_install
       run: |
         set -x
         sudo cmake --build build -- install
         cmake -Bbuild-example -Hexamples -G Ninja
         cmake --build build-example
-        if ldd build-example/decode_oneshot_static | grep libjxl; then
-          echo "decode_oneshot_static is not using the static lib" >&2
-          exit 1
-        fi
         # Test that the built binaries run.
-        echo -e -n "PF\n1 1\n-1.0\nrrrrggggbbbb" > test.pfm
+        echo -e -n "PF\n1 1\n-1.0\n\0\0\x80\x3f\0\0\x80\x3f\0\0\x80\x3f" > test.pfm
         build-example/encode_oneshot test.pfm test.jxl
-        build-example/encode_oneshot_static test.pfm test-static.jxl
         build-example/decode_oneshot test.jxl dec.pfm dec.icc
-        build-example/decode_oneshot_static test.jxl dec-static.pfm dec-static.icc
+
     # Run the tests on push and when requested in pull_request.
     - name: Test ${{ matrix.mode }}
-      if: env.WILL_RUN_TESTS == 'true'
+      if: env.WILL_TEST == 'true'
       run: |
         ./ci.sh test ${{ matrix.ctest_args }}
+
     # Print the running time summary for the slowest tests.
     - name: Test runtime stats
+      if: env.WILL_TEST == 'true'
       run: |
         sort build/Testing/Temporary/CTestCostData.txt -k 3 -n | tail -n 20 || true
+
     - name: Build HTML documentation (sphinx/readthetdocs)
-      if: matrix.name == 'release'
+      if: env.WILL_DOC == 'true'
       run: |
         cmake --build build -- rtd-html
+
     - name: Coverage report
-      if: github.event_name == 'push' && matrix.name == 'coverage'
+      if: env.WILL_COV == 'true'
       run: |
         ./ci.sh coverage_report
+
     - name: Coverage upload to Codecov
-      if: github.event_name == 'push' && matrix.name == 'coverage'
-      uses: codecov/codecov-action@v2
+      if: env.WILL_COV == 'true'
+      uses: codecov/codecov-action@eaaf4bedf32dbdc6b720b63067d99c4d77d6047d # v3.1.4
       with:
         flags: unittests
         files: build/coverage.xml
+
     - name: Fast benchmark ${{ matrix.mode }}
-      if: |
-        github.event_name == 'push' ||
-        (github.event_name == 'pull_request' && (
-         matrix.test_in_pr ||
-         contains(github.event.pull_request.labels.*.names, 'CI:full')))
+      if: env.WILL_BENCH == 'true'
       run: |
         STORE_IMAGES=0 ./ci.sh fast_benchmark
+
     # Run gbench once, just to make sure it runs, not for actual benchmarking.
     # This doesn't work on msan because we use gbench library from the system
     # which is not instrumented by msan.
     - name: gbench check
-      if: |
-        matrix.name == 'release' || (
-          github.event_name == 'push' && matrix.name != 'msan')
+      if: env.WILL_BENCH == 'true'
       run: |
         ./ci.sh gbench --benchmark_min_time=0
-
-
-  cross_compile_ubuntu:
-    name: Cross-compiling ${{ matrix.build_target }} ${{ matrix.lowprecision }}
-    runs-on: [ubuntu-18.04]
-    strategy:
-      matrix:
-        include:
-          - arch: arm64
-            lowprecision:
-            build_target: aarch64-linux-gnu
-            cmake_args: -DCMAKE_CROSSCOMPILING_EMULATOR=/usr/bin/qemu-aarch64-static
-
-          - arch: arm64
-            lowprecision: lowprecision
-            build_target: aarch64-linux-gnu
-            cmake_args: -DCMAKE_CROSSCOMPILING_EMULATOR=/usr/bin/qemu-aarch64-static -DCMAKE_CXX_FLAGS=-DJXL_HIGH_PRECISION=0
-
-          - arch: armhf
-            lowprecision:
-            build_target: arm-linux-gnueabihf
-            cmake_args: -DCMAKE_CROSSCOMPILING_EMULATOR=/usr/bin/qemu-arm-static
-
-          - arch: i386
-            lowprecision:
-            test_in_pr: true
-            build_target: i686-linux-gnu
-
-    env:
-      BUILD_DIR: build
-      WILL_RUN_TESTS: ${{ github.event_name == 'push' || (github.event_name == 'pull_request' && (matrix.test_in_pr || contains(github.event.pull_request.labels.*.names, 'CI:full'))) }}
-
-    steps:
-    - name: Setup apt
-      shell: bash
-      run: |
-        set -x
-        sudo apt-get update -y
-        sudo apt-get install -y curl gnupg ca-certificates
-        sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 1E9377A2BA9EF27F
-
-        if [[ "${{ matrix.arch }}" != "amd64" ]]; then
-          sudo dpkg --add-architecture "${{ matrix.arch }}"
-
-          # Update the sources.list with the split of supported architectures.
-          bkplist="/etc/apt/sources.list.bkp"
-          sudo mv /etc/apt/sources.list "${bkplist}"
-
-          newlist="/etc/apt/sources.list"
-          sudo rm -f "${newlist}"
-
-          main_list="amd64"
-          port_list=""
-          if [[ "${{ matrix.arch }}" == "i386" ]]; then
-            main_list="amd64,i386"
-          else
-            port_list="${{ matrix.arch }}"
-          fi
-
-          if [[ -n "${port_list}" ]]; then
-            port_url="http://ports.ubuntu.com/ubuntu-ports/"
-            grep -v -E '^#' "${bkplist}" |
-              sed -E "s;^deb (http[^ ]+) (.*)\$;deb [arch=${{ matrix.arch }}] ${port_url} \\2;" \
-              | sudo tee -a "${newlist}"
-          fi
-          grep -v -E '^#' "${bkplist}" |
-            sed -E "s;^deb (http[^ ]+) (.*)\$;deb [arch=${main_list}] \\1 \\2\ndeb-src [arch=${main_list}] \\1 \\2;" \
-            | sudo tee -a "${newlist}"
-        fi
-
-    - name: Install build deps
-      shell: bash
-      run: |
-        set -x
-        sudo apt update
-        pkgs=(
-          # Build dependencies
-          cmake
-          doxygen
-          ninja-build
-          pkg-config
-          qemu-user-static
-          xvfb
-
-          # Toolchain for cross-compiling.
-          clang-7
-          # libclang-common-7-dev:${{ matrix.arch }}
-          libc6-dev-${{ matrix.arch }}-cross
-          libstdc++-8-dev-${{ matrix.arch }}-cross
-          libstdc++-8-dev:${{ matrix.arch }}
-
-          # Dependencies
-          libbrotli-dev:${{ matrix.arch }}
-          libgif-dev:${{ matrix.arch }}
-          libjpeg-dev:${{ matrix.arch }}
-          libpng-dev:${{ matrix.arch }}
-          libwebp-dev:${{ matrix.arch }}
-
-          # For OpenEXR:
-          libilmbase-dev:${{ matrix.arch }}
-          libopenexr-dev:${{ matrix.arch }}
-
-          # GTK plugins
-          libgdk-pixbuf2.0-dev:${{ matrix.arch }}
-          libgtk2.0-dev:${{ matrix.arch }}
-
-          # QT
-          libqt5x11extras5-dev:${{ matrix.arch }}
-          qtbase5-dev:${{ matrix.arch }}
-        )
-        if [[ "${{ matrix.build_target }}" != "x86_64-linux-gnu" ]]; then
-          pkgs+=(
-            binutils-${{ matrix.build_target }}
-            gcc-${{ matrix.build_target }}
-          )
-        fi
-        if [[ "${{ matrix.arch }}" != "i386" ]]; then
-          pkgs+=(
-            # TCMalloc
-            libgoogle-perftools-dev:${{ matrix.arch }}
-            libgoogle-perftools4:${{ matrix.arch }}
-            libtcmalloc-minimal4:${{ matrix.arch }}
-            libunwind-dev:${{ matrix.arch }}
-          )
-        fi
-        DEBIAN_FRONTEND=noninteractive sudo apt install -y "${pkgs[@]}"
-        echo "CC=clang-7" >> $GITHUB_ENV
-        echo "CXX=clang++-7" >> $GITHUB_ENV
-    - name: Checkout the source
-      uses: actions/checkout@v2
-      with:
-        submodules: true
-        fetch-depth: 1
-    - name: Build
-      run: |
-        ./ci.sh release \
-          -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
-          -DJPEGXL_BUNDLE_GFLAGS=ON \
-          -DJPEGXL_ENABLE_JNI=OFF \
-          ${{ matrix.cmake_args }}
-      env:
-        SKIP_TEST: 1
-        BUILD_TARGET: ${{ matrix.build_target }}
-    - name: Build stats ${{ matrix.build_target }}
-      run: |
-        tools/build_stats.py --save build/stats.json \
-          --binutils ${{ matrix.build_target }}- \
-          --max-stack ${{ matrix.max_stack || '0' }} \
-          cjxl djxl libjxl.so libjxl_dec.so
-    # Run the tests on push and when requested in pull_request.
-    - name: Test
-      if: env.WILL_RUN_TESTS == 'true'
-      run: |
-        ./ci.sh test
-      env:
-        BUILD_TARGET: ${{ matrix.build_target }}
-
-  windows_msys:
-    name: Windows MSYS2 / ${{ matrix.arch }}
-    runs-on: windows-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: x86_64
-            msystem: mingw64
-          - arch: i686
-            msystem: mingw32
-    defaults:
-      run:
-        shell: msys2 {0}
-    steps:
-      - name: Checkout the source
-        uses: actions/checkout@v2
-        with:
-          submodules: true
-          fetch-depth: 1
-      - uses: msys2/setup-msys2@v2
-        with:
-          msystem: ${{ matrix.msystem }}
-          update: true
-          path-type: inherit
-          install: >-
-            base-devel
-            git
-            mingw-w64-${{ matrix.arch }}-brotli
-            mingw-w64-${{ matrix.arch }}-cmake
-            mingw-w64-${{ matrix.arch }}-gcc
-            mingw-w64-${{ matrix.arch }}-gflags
-            mingw-w64-${{ matrix.arch }}-giflib
-            mingw-w64-${{ matrix.arch }}-gtest
-            mingw-w64-${{ matrix.arch }}-libavif
-            mingw-w64-${{ matrix.arch }}-libjpeg-turbo
-            mingw-w64-${{ matrix.arch }}-libpng
-            mingw-w64-${{ matrix.arch }}-libwebp
-            mingw-w64-${{ matrix.arch }}-ninja
-
-      - name: CMake configure
-        # AVX2 tests fail with segfault when built in MSYS2.
-        run: |
-          cmake \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_CXX_FLAGS="-DHWY_DISABLED_TARGETS=\"HWY_AVX2|HWY_AVX3\"" \
-            -DJPEGXL_ENABLE_JNI=OFF \
-            -DJPEGXL_ENABLE_MANPAGES=OFF \
-            -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
-            -DJPEGXL_FORCE_SYSTEM_GTEST=ON \
-            -B build \
-            -G Ninja
-      - name: CMake build
-        run: cmake --build build
-      - name: Test
-        if: |
-          github.event_name == 'push' ||
-          (github.event_name == 'pull_request' &&
-           contains(github.event.pull_request.labels.*.names, 'CI:full'))
-        # LibraryCLinkageTest doesn't work in here because it needs the DLL
-        # which is not installed.
-        run: ctest --test-dir build --parallel 2 --output-on-failure -E LibraryCLinkageTest
-
-  wasm32_build:
-    name: WASM wasm32/${{ matrix.variant }}
-    runs-on: ubuntu-latest
-    env:
-      CCACHE_DIR: ${{ github.workspace }}/.ccache
-      EM_VERSION: 3.1.4
-      V8_VERSION: 9.8.177
-      V8: ${{ github.workspace }}/.jsvu/v8
-      BUILD_TARGET: wasm32
-
-    strategy:
-      matrix:
-        include:
-          - variant: scalar
-          - variant: simd
-
-    steps:
-    - uses: actions/checkout@v2
-      with:
-        submodules: true
-        fetch-depth: 1
-    - name: Install build deps
-      shell: bash
-      run: |
-        set -x
-        sudo apt update
-        pkgs=(
-          # Build dependencies
-          ccache
-          cmake
-          doxygen
-          ninja-build
-          pkg-config
-        )
-        DEBIAN_FRONTEND=noninteractive sudo apt install -y "${pkgs[@]}"
-
-    - name: Git environment
-      id: git-env
-      run: |
-        echo "::set-output name=parent::$(git rev-parse ${{ github.sha }}^)"
-      shell: bash
-    - name: ccache
-      uses: actions/cache@v2
-      with:
-        path: ${{ env.CCACHE_DIR }}
-        key: ${{ runner.os }}-${{ github.sha }}-${{ matrix.variant }}
-        restore-keys: |
-          ${{ runner.os }}-${{ steps.git-env.outputs.parent }}-${{ matrix.variant }}
-
-    - name: Install emsdk
-      uses: mymindstorm/setup-emsdk@v11
-      # TODO(deymo): We could cache this action but it doesn't work when running
-      # in a matrix.
-      with:
-        version: ${{env.EM_VERSION}}
-        no-cache: true
-    - name: Install v8
-      run: |
-        npm install jsvu -g
-        HOME="${{ github.workspace }}" jsvu --os=linux64 "v8@${V8_VERSION}"
-        rm -f "${{ github.workspace }}/.jsvu/v8"
-        ln -s "${{ github.workspace }}/.jsvu/v8-${V8_VERSION}" \
-          "${{ github.workspace }}/.jsvu/v8"
-    # TODO(deymo): Build and install other dependencies like libpng, libjpeg,
-    # etc.
-    - name: Build
-      run: |
-        mkdir -p ${CCACHE_DIR}
-        echo "max_size = 200M" > ${CCACHE_DIR}/ccache.conf
-        if [[ "${{ matrix.variant }}" == "simd" ]]; then
-          export ENABLE_WASM_SIMD=1
-        fi
-        emconfigure ./ci.sh release \
-          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
-          -DCMAKE_C_COMPILER_LAUNCHER=ccache \
-          -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON \
-          -DBUILD_SHARED_LIBS=OFF \
-          -DJPEGXL_ENABLE_JNI=OFF
-      env:
-        SKIP_TEST: 1
-    - name: ccache stats
-      run: ccache --show-stats
-
-    - name: Test
-      if: |
-        github.event_name == 'push' ||
-        (github.event_name == 'pull_request' &&
-         contains(github.event.pull_request.labels.*.names, 'CI:full'))
-      run: |
-        emconfigure ./ci.sh test

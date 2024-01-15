@@ -7,6 +7,7 @@
 
 name: Conformance
 on:
+  merge_group:
   push:
     branches:
       - main
@@ -14,29 +15,87 @@ on:
   pull_request:
     types: [opened, reopened, labeled, synchronize]
 
-concurrency: 
+permissions:
+  contents: read
+
+env:
+  CONFORMANCE_REPO_HASH: ee6008ef151489a5330cd886b422af8f6ed58881
+  LIBJXL_VERSION: "0.10.0"
+  LIBJXL_ABI_VERSION: "0.10"
+
+concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  build:
+  warmup: # If necessary, fetch files just once, before tests are run.
+    name: Warmup caches
     runs-on: ubuntu-latest
+    steps:
+    - name: Harden Runner
+      uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
+      with:
+        egress-policy: audit
+
+    - name: Checkout the conformance source
+      uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      with:
+        repository: libjxl/conformance
+        ref: ${{ env.CONFORMANCE_REPO_HASH }}
+        path: conformance
+    - name: Cache
+      uses: actions/cache@704facf57e6136b1bc63b828d79edcd491f0ee84 # v3.3.2
+      with:
+        path: ${{ github.workspace }}/conformance/.objects
+        key: conformance-refs
+    - name: Download and link conformance files
+      run: |
+        ${{ github.workspace }}/conformance/scripts/download_and_symlink.sh
+
+  build:
+    name: Conformance Build ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: AVX3
+            cflags: -DHWY_DISABLED_TARGETS=HWY_AVX3-1
+          - name: AVX2
+            cflags: -DHWY_DISABLED_TARGETS=HWY_AVX2-1
+          - name: SSE4
+            cflags: -DHWY_DISABLED_TARGETS=HWY_SSE4-1
+          - name: SSSE3
+            cflags: -DHWY_DISABLED_TARGETS=HWY_SSSE3-1
+          - name: EMU128
+            cflags: -DHWY_COMPILE_ONLY_EMU128=1
+          - name: SCALAR
+            cflags: -DHWY_COMPILE_ONLY_SCALAR=1
+          - name: SCALAR_ASAN
+            cflags: -DHWY_COMPILE_ONLY_SCALAR=1
+            build_type: asan
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
     steps:
+    - name: Harden Runner
+      uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
+      with:
+        egress-policy: audit
+
     - name: Install build deps
       run: |
+        sudo rm -f /var/lib/man-db/auto-update
         sudo apt update
         sudo apt install -y \
           ccache \
-          clang-7 \
+          clang \
           cmake \
           doxygen \
+          graphviz \
           libbenchmark-dev \
           libbenchmark-tools \
           libbrotli-dev \
           libgdk-pixbuf2.0-dev \
-          libgflags-dev \
           libgif-dev \
           libgtest-dev \
           libgtk2.0-dev  \
@@ -49,78 +108,106 @@ jobs:
           xvfb \
           ${{ matrix.apt_pkgs }} \
         #
-        echo "CC=clang-7" >> $GITHUB_ENV
-        echo "CXX=clang++-7" >> $GITHUB_ENV
+        echo "CC=clang" >> $GITHUB_ENV
+        echo "CXX=clang++" >> $GITHUB_ENV
     - name: Checkout the jxl source
-      uses: actions/checkout@v2
+      uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       with:
         submodules: true
         fetch-depth: 2
     - name: Git environment
       id: git-env
       run: |
-        echo "::set-output name=parent::$(git rev-parse ${{ github.sha }}^)"
+        echo "parent=$(git rev-parse ${{ github.sha }}^)" >> $GITHUB_OUTPUT
       shell: bash
     - name: ccache
-      uses: actions/cache@v2
+      uses: actions/cache@704facf57e6136b1bc63b828d79edcd491f0ee84 # v3.3.2
       with:
         path: ${{ env.CCACHE_DIR }}
         # When the cache hits the key it is not updated, so if this is a rebuild
         # of the same Pull Request it will reuse the cache if still around. For
         # either Pull Requests or new pushes to main, this will use the parent
         # hash as the starting point from the restore-keys entry.
-        key: ${{ runner.os }}-${{ github.sha }}-${{ matrix.name }}
+        key: conformance-${{ runner.os }}-${{ github.sha }}-${{ matrix.name }}
         restore-keys: |
-          ${{ runner.os }}-${{ steps.git-env.outputs.parent }}-${{ matrix.name }}
+          conformance-${{ runner.os }}-${{ steps.git-env.outputs.parent }}-${{ matrix.name }}
     - name: Build
       run: |
         mkdir -p ${CCACHE_DIR}
         echo "max_size = 200M" > ${CCACHE_DIR}/ccache.conf
-        ./ci.sh release -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
+        CMAKE_FLAGS="${{ matrix.cflags }}" \
+        TARGETS="tools/djxl" \
+        ./ci.sh ${{ matrix.build_type || 'release' }} -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
           -DCMAKE_C_COMPILER_LAUNCHER=ccache \
           -DBUILD_TESTING=OFF
-        # Copy library to flatten the artifacts directory structure
-        cp build/libjxl_dec.so.0.7.0 build/tools/conformance
+        # Flatten the artifacts directory structure
+        cp tools/conformance/conformance.py build/tools/conformance
+        cp tools/conformance/lcms2.py build/tools/conformance
+        cp build/tools/djxl build/tools/conformance
+        cp build/lib/libjxl.so.${{ env.LIBJXL_VERSION }} build/tools/conformance
+        cp build/lib/libjxl_cms.so.${{ env.LIBJXL_VERSION }} build/tools/conformance
+        cp build/lib/libjxl_threads.so.${{ env.LIBJXL_VERSION }} build/tools/conformance
+        cp build/lib/libjxl_extras_codec.so.${{ env.LIBJXL_VERSION }} build/tools/conformance
       env:
         SKIP_TEST: 1
-    - uses: actions/upload-artifact@v2
+    - uses: actions/upload-artifact@c7d193f32edcb7bfad88892161225aeda64e9392 # v4.0.0
       with:
-        name: conformance_binary
+        name: conformance_binary-${{ matrix.name }}
         path: |
-          build/tools/conformance/djxl_conformance
-          build/tools/conformance/libjxl_dec.so.0.7.0
+          build/tools/conformance/conformance.py
+          build/tools/conformance/lcms2.py
+          build/tools/conformance/djxl
+          build/tools/conformance/libjxl.so.${{ env.LIBJXL_VERSION }}
+          build/tools/conformance/libjxl_cms.so.${{ env.LIBJXL_VERSION }}
+          build/tools/conformance/libjxl_threads.so.${{ env.LIBJXL_VERSION }}
+          build/tools/conformance/libjxl_extras_codec.so.${{ env.LIBJXL_VERSION }}
     - name: ccache stats
       run: ccache --show-stats
 
   run:
-    needs: build
+    name: Conformance Test ${{ matrix.name }} on ${{ matrix.target }}
+    needs: [warmup, build]
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        # 'main_level10' currently fails
-        name: [main_level5]
+        name: [main_level5, main_level10]
+        target: [AVX3, AVX2, SSE4, SSSE3, EMU128, SCALAR, SCALAR_ASAN]
     steps:
+    - name: Harden Runner
+      uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
+      with:
+        egress-policy: audit
+
     - name: Install deps
       run: |
         pip install numpy
     - name: Checkout the conformance source
-      uses: actions/checkout@v2
+      uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       with:
         repository: libjxl/conformance
-        ref: ce5a804a3ff834097b93c39d2f93e5445f6bf340
+        ref: ${{ env.CONFORMANCE_REPO_HASH }}
         path: conformance
+    - name: Cache
+      uses: actions/cache@704facf57e6136b1bc63b828d79edcd491f0ee84 # v3.3.2
+      with:
+        path: ${{ github.workspace }}/conformance/.objects
+        key: conformance-refs
     - name: Download and link conformance files
       run: |
         ${{ github.workspace }}/conformance/scripts/download_and_symlink.sh
-    - uses: actions/download-artifact@v2
+    - uses: actions/download-artifact@f44cd7b40bfd40b6aa1cc1b9b5b7bf03d3c67110 # v4.1.0
       with:
-        name: conformance_binary
+        name: conformance_binary-${{ matrix.target }}
     - name: Run conformance tests
       run: |
-        chmod +x djxl_conformance
-        ln -s libjxl_dec.so.0.7.0 libjxl_dec.so.0.7
+        chmod +x djxl
+        ln -s libjxl.so.${{ env.LIBJXL_VERSION }} libjxl.so.${{ env.LIBJXL_ABI_VERSION }}
+        ln -s libjxl_cms.so.${{ env.LIBJXL_VERSION }} libjxl_cms.so.${{ env.LIBJXL_ABI_VERSION }}
+        ln -s libjxl_threads.so.${{ env.LIBJXL_VERSION }} libjxl_threads.so.${{ env.LIBJXL_ABI_VERSION }}
+        ln -s libjxl_extras_codec.so.${{ env.LIBJXL_VERSION }} libjxl_extras_codec.so.${{ env.LIBJXL_ABI_VERSION }}
         export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:`pwd`
-        python conformance/scripts/conformance.py \
-          --decoder=`pwd`/djxl_conformance \
+        python conformance.py \
+          --decoder=`pwd`/djxl \
           --corpus=`pwd`/conformance/testcases/${{ matrix.name }}.txt

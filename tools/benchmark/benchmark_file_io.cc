@@ -38,7 +38,8 @@
 #define GLOB_TILDE 0
 #endif
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 
 const char kPathSeparator = '/';
 
@@ -229,4 +230,5 @@ Status MatchFiles(const std::string& pattern, std::vector<std::string>* list) {
 #endif  // HAS_GLOB
 }
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl

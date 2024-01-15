@@ -3,11 +3,11 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <jxl/decode.h>
 #include <stdint.h>
 
-#include "jxl/decode.h"
-
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 
 int TestOneInput(const uint8_t* data, size_t size) {
   JxlDecoderStatus status;
@@ -40,19 +40,19 @@ int TestOneInput(const uint8_t* data, size_t size) {
     return 0;
   }
 
-  JxlPixelFormat format = {4, JXL_TYPE_FLOAT, JXL_LITTLE_ENDIAN, 0};
-  JxlDecoderGetColorAsEncodedProfile(
-      dec, &format, JXL_COLOR_PROFILE_TARGET_ORIGINAL, nullptr);
+  JxlDecoderGetColorAsEncodedProfile(dec, JXL_COLOR_PROFILE_TARGET_ORIGINAL,
+                                     nullptr);
   size_t dec_profile_size;
-  JxlDecoderGetICCProfileSize(dec, &format, JXL_COLOR_PROFILE_TARGET_ORIGINAL,
+  JxlDecoderGetICCProfileSize(dec, JXL_COLOR_PROFILE_TARGET_ORIGINAL,
                               &dec_profile_size);
 
   JxlDecoderDestroy(dec);
   return 0;
 }
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
-  return jxl::TestOneInput(data, size);
+  return jpegxl::tools::TestOneInput(data, size);
 }

@@ -3,13 +3,13 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <jxl/thread_parallel_runner.h>
+#include <jxl/thread_parallel_runner_cxx.h>
+
 #include <fstream>
 #include <iostream>
 #include <iterator>
 #include <vector>
-
-#include "jxl/thread_parallel_runner.h"
-#include "jxl/thread_parallel_runner_cxx.h"
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size);
 

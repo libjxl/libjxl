@@ -9,7 +9,6 @@
 
 #include <math.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -22,7 +21,6 @@
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/common.h"
 #include "lib/jxl/convolve.h"
 #include "lib/jxl/dec_cache.h"
 #include "lib/jxl/image.h"
@@ -48,8 +46,8 @@ JXL_INLINE void RightMirror(float* p, size_t n) {
   }
 }
 
-void ComputeSigma(const Rect& block_rect, PassesDecoderState* state) {
-  const LoopFilter& lf = state->shared->frame_header.loop_filter;
+void ComputeSigma(const LoopFilter& lf, const Rect& block_rect,
+                  PassesDecoderState* state) {
   JXL_CHECK(lf.epf_iters > 0);
   const AcStrategyImage& ac_strategy = state->shared->ac_strategy;
   const float quant_scale = state->shared->quantizer.Scale();
@@ -62,7 +60,7 @@ void ComputeSigma(const Rect& block_rect, PassesDecoderState* state) {
     const uint8_t* JXL_RESTRICT sharpness_row =
         block_rect.ConstRow(state->shared->epf_sharpness, by);
     AcStrategyRow acs_row = ac_strategy.ConstRow(block_rect, by);
-    const int* const JXL_RESTRICT row_quant =
+    const int32_t* const JXL_RESTRICT row_quant =
         block_rect.ConstRow(state->shared->raw_quant_field, by);
 
     for (size_t bx = 0; bx < block_rect.xsize(); bx++) {

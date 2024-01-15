@@ -15,24 +15,22 @@
 
 #include "lib/extras/time.h"
 #include "lib/jxl/base/data_parallel.h"
-#include "lib/jxl/base/padded_bytes.h"
-#include "lib/jxl/base/profiler.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
-#include "lib/jxl/color_management.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
 #include "tools/benchmark/benchmark_args.h"
 #include "tools/benchmark/benchmark_codec_custom.h"
-#ifdef JPEGXL_ENABLE_JPEG
 #include "tools/benchmark/benchmark_codec_jpeg.h"
-#endif  // JPEG_ENABLE_JPEG
 #include "tools/benchmark/benchmark_codec_jxl.h"
-#include "tools/benchmark/benchmark_codec_png.h"
 #include "tools/benchmark/benchmark_stats.h"
+
+#ifdef BENCHMARK_PNG
+#include "tools/benchmark/benchmark_codec_png.h"
+#endif  // BENCHMARK_PNG
 
 #ifdef BENCHMARK_WEBP
 #include "tools/benchmark/benchmark_codec_webp.h"
@@ -42,7 +40,10 @@
 #include "tools/benchmark/benchmark_codec_avif.h"
 #endif  // BENCHMARK_AVIF
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
+
+using ::jxl::Image3F;
 
 void ImageCodec::ParseParameters(const std::string& parameters) {
   params_ = parameters;
@@ -75,27 +76,8 @@ Status ImageCodec::ParseParam(const std::string& param) {
       return false;
     }
     butteraugli_target_ = butteraugli_target;
-
-    // full hf asymmetry at high distance
-    static const double kHighDistance = 2.5;
-
-    // no hf asymmetry at low distance
-    static const double kLowDistance = 0.6;
-
-    if (butteraugli_target_ >= kHighDistance) {
-      ba_params_.hf_asymmetry = args_.ba_params.hf_asymmetry;
-    } else if (butteraugli_target_ >= kLowDistance) {
-      float w =
-          (butteraugli_target_ - kLowDistance) / (kHighDistance - kLowDistance);
-      ba_params_.hf_asymmetry =
-          args_.ba_params.hf_asymmetry * w + 1.0f * (1.0f - w);
-    } else {
-      ba_params_.hf_asymmetry = 1.0f;
-    }
     return true;
   } else if (param[0] == 'r') {
-    butteraugli_target_ = -1.0;
-    ba_params_.hf_asymmetry = args_.ba_params.hf_asymmetry;
     bitrate_target_ = strtof(param.substr(1).c_str(), nullptr);
     return true;
   }
@@ -109,10 +91,9 @@ class NoneCodec : public ImageCodec {
   Status ParseParam(const std::string& param) override { return true; }
 
   Status Compress(const std::string& filename, const CodecInOut* io,
-                  ThreadPoolInternal* pool, PaddedBytes* compressed,
+                  ThreadPool* pool, std::vector<uint8_t>* compressed,
                   jpegxl::tools::SpeedStats* speed_stats) override {
-    PROFILER_ZONE("NoneCompress");
-    const double start = Now();
+    const double start = jxl::Now();
     // Encode image size so we "decompress" something of the same size, as
     // required by butteraugli.
     const uint32_t xsize = io->xsize();
@@ -120,17 +101,16 @@ class NoneCodec : public ImageCodec {
     compressed->resize(8);
     memcpy(compressed->data(), &xsize, 4);
     memcpy(compressed->data() + 4, &ysize, 4);
-    const double end = Now();
+    const double end = jxl::Now();
     speed_stats->NotifyElapsed(end - start);
     return true;
   }
 
   Status Decompress(const std::string& filename,
-                    const Span<const uint8_t> compressed,
-                    ThreadPoolInternal* pool, CodecInOut* io,
+                    const Span<const uint8_t> compressed, ThreadPool* pool,
+                    CodecInOut* io,
                     jpegxl::tools::SpeedStats* speed_stats) override {
-    PROFILER_ZONE("NoneDecompress");
-    const double start = Now();
+    const double start = jxl::Now();
     JXL_ASSERT(compressed.size() == 8);
     uint32_t xsize, ysize;
     memcpy(&xsize, compressed.data(), 4);
@@ -140,7 +120,7 @@ class NoneCodec : public ImageCodec {
     io->metadata.m.SetFloat32Samples();
     io->metadata.m.color_encoding = ColorEncoding::SRGB();
     io->SetFromImage(std::move(image), io->metadata.m.color_encoding);
-    const double end = Now();
+    const double end = jxl::Now();
     speed_stats->NotifyElapsed(end - start);
     return true;
   }
@@ -163,14 +143,12 @@ ImageCodecPtr CreateImageCodec(const std::string& description) {
   } else if (name == "custom") {
     result.reset(CreateNewCustomCodec(*Args()));
 #endif
-#ifdef JPEGXL_ENABLE_JPEG
   } else if (name == "jpeg") {
     result.reset(CreateNewJPEGCodec(*Args()));
-#endif  // BENCHMARK_JPEG
-#if JPEGXL_ENABLE_APNG
+#ifdef BENCHMARK_PNG
   } else if (name == "png") {
     result.reset(CreateNewPNGCodec(*Args()));
-#endif
+#endif  // BENCHMARK_PNG
   } else if (name == "none") {
     result.reset(new NoneCodec(*Args()));
 #ifdef BENCHMARK_WEBP
@@ -181,7 +159,8 @@ ImageCodecPtr CreateImageCodec(const std::string& description) {
   } else if (name == "avif") {
     result.reset(CreateNewAvifCodec(*Args()));
 #endif  // BENCHMARK_AVIF
-  } else {
+  }
+  if (!result.get()) {
     JXL_ABORT("Unknown image codec: %s", name.c_str());
   }
   result->set_description(description);
@@ -189,4 +168,5 @@ ImageCodecPtr CreateImageCodec(const std::string& description) {
   return result;
 }
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl

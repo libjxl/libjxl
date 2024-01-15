@@ -9,16 +9,18 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "lib/jxl/aux_out_fwd.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/enc_bit_writer.h"
-#include "lib/jxl/enc_cache.h"
+#include "lib/jxl/image.h"
 
 namespace jxl {
 
+struct AuxOut;
+struct PassesEncoderState;
+
 // Fills DC
 void ComputeCoefficients(size_t group_idx, PassesEncoderState* enc_state,
-                         const Image3F& opsin, Image3F* dc);
+                         const Image3F& opsin, const Rect& rect, Image3F* dc);
 
 Status EncodeGroupTokenizedCoefficients(size_t group_idx, size_t pass_idx,
                                         size_t histogram_idx,

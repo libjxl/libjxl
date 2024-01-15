@@ -13,6 +13,7 @@
 
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/coeff_order_fwd.h"
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/field_encodings.h"
 
@@ -27,18 +28,20 @@ size_t MaxBits(const size_t num_sizes);
 
 // TODO(veluca): move these to FrameDimensions.
 static JXL_INLINE size_t AcGroupIndex(size_t pass, size_t group,
-                                      size_t num_groups, size_t num_dc_groups,
-                                      bool has_ac_global) {
-  return 1 + num_dc_groups + static_cast<size_t>(has_ac_global) +
-         pass * num_groups + group;
+                                      size_t num_groups, size_t num_dc_groups) {
+  return 2 + num_dc_groups + pass * num_groups + group;
 }
 
 static JXL_INLINE size_t NumTocEntries(size_t num_groups, size_t num_dc_groups,
-                                       size_t num_passes, bool has_ac_global) {
+                                       size_t num_passes) {
   if (num_groups == 1 && num_passes == 1) return 1;
-  return AcGroupIndex(0, 0, num_groups, num_dc_groups, has_ac_global) +
+  return AcGroupIndex(0, 0, num_groups, num_dc_groups) +
          num_groups * num_passes;
 }
+
+Status ReadToc(size_t toc_entries, BitReader* JXL_RESTRICT reader,
+               std::vector<uint32_t>* JXL_RESTRICT sizes,
+               std::vector<coeff_order_t>* JXL_RESTRICT permutation);
 
 Status ReadGroupOffsets(size_t toc_entries, BitReader* JXL_RESTRICT reader,
                         std::vector<uint64_t>* JXL_RESTRICT offsets,

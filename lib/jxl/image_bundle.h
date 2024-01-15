@@ -8,28 +8,25 @@
 
 // The main image or frame consists of a bundle of associated images.
 
+#include <jxl/cms_interface.h>
 #include <stddef.h>
 #include <stdint.h>
 
 #include <vector>
 
-#include "jxl/cms_interface.h"
-#include "lib/jxl/aux_out_fwd.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
-#include "lib/jxl/common.h"
+#include "lib/jxl/common.h"  // JPEGXL_ENABLE_TRANSCODE_JPEG
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/dec_xyb.h"
-#include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/field_encodings.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/headers.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_metadata.h"
 #include "lib/jxl/jpeg/jpeg_data.h"
-#include "lib/jxl/opsin_params.h"
 #include "lib/jxl/quantizer.h"
 
 namespace jxl {
@@ -48,11 +45,14 @@ class ImageBundle {
 
   ImageBundle Copy() const {
     ImageBundle copy(metadata_);
-    copy.color_ = CopyImage(color_);
+    copy.color_ = Image3F(color_.xsize(), color_.ysize());
+    CopyImageTo(color_, &copy.color_);
     copy.c_current_ = c_current_;
     copy.extra_channels_.reserve(extra_channels_.size());
     for (const ImageF& plane : extra_channels_) {
-      copy.extra_channels_.emplace_back(CopyImage(plane));
+      ImageF ec(plane.xsize(), plane.ysize());
+      CopyImageTo(plane, &ec);
+      copy.extra_channels_.emplace_back(std::move(ec));
     }
 
     copy.jpeg_data =
@@ -132,10 +132,7 @@ class ImageBundle {
   bool IsGray() const { return c_current_.IsGray(); }
 
   bool IsSRGB() const { return c_current_.IsSRGB(); }
-  bool IsLinearSRGB() const {
-    return c_current_.white_point == WhitePoint::kD65 &&
-           c_current_.primaries == Primaries::kSRGB && c_current_.tf.IsLinear();
-  }
+  bool IsLinearSRGB() const { return c_current_.IsLinearSRGB(); }
 
   // Set the c_current profile without doing any transformation, e.g. if the
   // transformation was already applied.
@@ -162,7 +159,7 @@ class ImageBundle {
 
   // -- ALPHA
 
-  void SetAlpha(ImageF&& alpha, bool alpha_is_premultiplied);
+  void SetAlpha(ImageF&& alpha);
   bool HasAlpha() const {
     return metadata_->Find(ExtraChannel::kAlpha) != nullptr;
   }
@@ -170,10 +167,6 @@ class ImageBundle {
     const ExtraChannelInfo* eci = metadata_->Find(ExtraChannel::kAlpha);
     return (eci == nullptr) ? false : eci->alpha_associated;
   }
-  // Premultiply alpha (if it isn't already premultiplied)
-  void PremultiplyAlpha();
-  // Unpremultiply alpha (if it isn't already non-premultiplied)
-  void UnpremultiplyAlpha();
   const ImageF& alpha() const;
   ImageF* alpha();
 

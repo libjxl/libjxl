@@ -5,10 +5,6 @@
 
 #include "tools/comparison_viewer/split_image_renderer.h"
 
-#include <algorithm>
-#include <cmath>
-#include <utility>
-
 #include <QEvent>
 #include <QGuiApplication>
 #include <QPainter>
@@ -16,8 +12,12 @@
 #include <QPen>
 #include <QPoint>
 #include <QRect>
+#include <algorithm>
+#include <cmath>
+#include <utility>
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 
 SplitImageRenderer::SplitImageRenderer(QWidget* const parent)
     : QWidget(parent) {
@@ -32,16 +32,19 @@ SplitImageRenderer::SplitImageRenderer(QWidget* const parent)
 
 void SplitImageRenderer::setLeftImage(QImage image) {
   leftImage_ = QPixmap::fromImage(std::move(image));
+  leftImage_.setDevicePixelRatio(devicePixelRatio());
   updateMinimumSize();
   update();
 }
 void SplitImageRenderer::setRightImage(QImage image) {
   rightImage_ = QPixmap::fromImage(std::move(image));
+  rightImage_.setDevicePixelRatio(devicePixelRatio());
   updateMinimumSize();
   update();
 }
 void SplitImageRenderer::setMiddleImage(QImage image) {
   middleImage_ = QPixmap::fromImage(std::move(image));
+  middleImage_.setDevicePixelRatio(devicePixelRatio());
   updateMinimumSize();
   update();
 }
@@ -181,7 +184,8 @@ void SplitImageRenderer::paintEvent(QPaintEvent* const event) {
       painter.transform().inverted().map(QPointF(middleX_, 0.)).x();
   QRectF middleRect = middleImage_.rect();
   middleRect.setWidth(middleWidth);
-  middleRect.moveCenter(QPointF(transformedMiddleX, middleRect.center().y()));
+  middleRect.moveCenter(QPointF(transformedMiddleX * devicePixelRatio(),
+                                middleRect.center().y()));
   middleRect.setLeft(std::round(middleRect.left()));
   middleRect.setRight(std::round(middleRect.right()));
 
@@ -191,24 +195,30 @@ void SplitImageRenderer::paintEvent(QPaintEvent* const event) {
   QRectF rightRect = rightImage_.rect();
   rightRect.setLeft(middleRect.right());
 
-  painter.drawPixmap(leftRect, leftImage_, leftRect);
-  painter.drawPixmap(rightRect, rightImage_, rightRect);
-  painter.drawPixmap(middleRect, middleImage_, middleRect);
+  painter.drawPixmap(QPointF(), leftImage_, leftRect);
+  painter.drawPixmap(middleRect.topLeft() / devicePixelRatio(), middleImage_,
+                     middleRect);
+  painter.drawPixmap(rightRect.topLeft() / devicePixelRatio(), rightImage_,
+                     rightRect);
 
   QPen middlePen;
   middlePen.setStyle(Qt::DotLine);
   painter.setPen(middlePen);
-  painter.drawLine(leftRect.topRight(), leftRect.bottomRight());
-  painter.drawLine(rightRect.topLeft(), rightRect.bottomLeft());
+  painter.drawLine(leftRect.topRight() / devicePixelRatio(),
+                   leftRect.bottomRight() / devicePixelRatio());
+  painter.drawLine(rightRect.topLeft() / devicePixelRatio(),
+                   rightRect.bottomLeft() / devicePixelRatio());
 }
 
 void SplitImageRenderer::updateMinimumSize() {
-  const int imagesWidth = std::max(
-      std::max(leftImage_.width(), rightImage_.width()), middleImage_.width());
-  const int imagesHeight =
-      std::max(std::max(leftImage_.height(), rightImage_.height()),
-               middleImage_.height());
-  setMinimumSize(scale_ * QSize(imagesWidth, imagesHeight));
+  const QSizeF leftSize = leftImage_.deviceIndependentSize();
+  const QSizeF rightSize = rightImage_.deviceIndependentSize();
+  const QSizeF middleSize = middleImage_.deviceIndependentSize();
+  const qreal imagesWidth = std::max(
+      std::max(leftSize.width(), rightSize.width()), middleSize.width());
+  const qreal imagesHeight = std::max(
+      std::max(leftSize.height(), rightSize.height()), middleSize.height());
+  setMinimumSize((scale_ * QSizeF(imagesWidth, imagesHeight)).toSize());
 }
 
 void SplitImageRenderer::setRenderingMode(const RenderingMode newMode) {
@@ -236,4 +246,5 @@ void SplitImageRenderer::setRenderingMode(const RenderingMode newMode) {
   emit renderingModeChanged(mode_);
 }
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl

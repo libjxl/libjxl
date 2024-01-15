@@ -7,18 +7,20 @@
 
 #include "lib/extras/dec/color_description.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 
 int TestOneInput(const uint8_t* data, size_t size) {
   std::string description(reinterpret_cast<const char*>(data), size);
   JxlColorEncoding c;
-  (void)ParseDescription(description, &c);
+  (void)jxl::ParseDescription(description, &c);
 
   return 0;
 }
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
-  return jxl::TestOneInput(data, size);
+  return jpegxl::tools::TestOneInput(data, size);
 }

@@ -31,7 +31,8 @@
 #include "tools/comparison_viewer/split_image_view.h"
 #include "tools/icc_detect/icc_detect.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 
 static constexpr char kPngSuffix[] = "png";
 
@@ -313,4 +314,5 @@ void CodecComparisonWindow::browseDirectory(const QDir& directory, int depth) {
   }
 }
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl

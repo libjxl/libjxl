@@ -8,15 +8,15 @@
 
 #include <vector>
 
-#include "gtest/gtest.h"
 #include "lib/jxl/ans_params.h"
-#include "lib/jxl/aux_out_fwd.h"
 #include "lib/jxl/base/random.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/dec_ans.h"
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/enc_ans.h"
+#include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_bit_writer.h"
+#include "lib/jxl/testing.h"
 
 namespace jxl {
 namespace {
@@ -30,7 +30,7 @@ void RoundtripTestcase(int n_histograms, int alphabet_size,
   // Space for magic bytes.
   BitWriter::Allotment allotment_magic1(&writer, 16);
   writer.Write(16, kMagic1);
-  ReclaimAndCharge(&writer, &allotment_magic1, 0, nullptr);
+  allotment_magic1.ReclaimAndCharge(&writer, 0, nullptr);
 
   std::vector<uint8_t> context_map;
   EntropyEncodingData codes;
@@ -39,13 +39,13 @@ void RoundtripTestcase(int n_histograms, int alphabet_size,
 
   BuildAndEncodeHistograms(HistogramParams(), n_histograms, input_values_vec,
                            &codes, &context_map, &writer, 0, nullptr);
-  WriteTokens(input_values_vec[0], codes, context_map, &writer, 0, nullptr);
+  WriteTokens(input_values_vec[0], codes, context_map, 0, &writer, 0, nullptr);
 
   // Magic bytes + padding
   BitWriter::Allotment allotment_magic2(&writer, 24);
   writer.Write(16, kMagic2);
   writer.ZeroPadToByte();
-  ReclaimAndCharge(&writer, &allotment_magic2, 0, nullptr);
+  allotment_magic2.ReclaimAndCharge(&writer, 0, nullptr);
 
   // We do not truncate the output. Reading past the end reads out zeroes
   // anyway.
@@ -112,7 +112,7 @@ void RoundtripRandomUnbalancedStream(int alphabet_size) {
   constexpr int kPrecision = 1 << 10;
   Rng rng(0);
   for (size_t i = 0; i < kReps; i++) {
-    std::vector<int> distributions[kNumHistograms];
+    std::vector<int> distributions[kNumHistograms] = {};
     for (int j = 0; j < kNumHistograms; j++) {
       distributions[j].resize(kPrecision);
       int symbol = 0;
@@ -171,7 +171,7 @@ TEST(ANSTest, UintConfigRoundtrip) {
     BitWriter writer;
     BitWriter::Allotment allotment(&writer, 10 * uint_config.size());
     EncodeUintConfigs(uint_config, &writer, log_alpha_size);
-    ReclaimAndCharge(&writer, &allotment, 0, nullptr);
+    allotment.ReclaimAndCharge(&writer, 0, nullptr);
     writer.ZeroPadToByte();
     BitReader br(writer.GetSpan());
     EXPECT_TRUE(DecodeUintConfigs(log_alpha_size, &uint_config_dec, &br));
@@ -211,7 +211,8 @@ void TestCheckpointing(bool ans, bool lz77) {
     auto input_values_copy = input_values;
     BuildAndEncodeHistograms(params, 1, input_values_copy, &codes, &context_map,
                              &writer, 0, nullptr);
-    WriteTokens(input_values_copy[0], codes, context_map, &writer, 0, nullptr);
+    WriteTokens(input_values_copy[0], codes, context_map, 0, &writer, 0,
+                nullptr);
     writer.ZeroPadToByte();
   }
 

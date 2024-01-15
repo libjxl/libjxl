@@ -14,20 +14,16 @@
 
 #include <vector>
 
-#include "lib/jxl/aux_out.h"
-#include "lib/jxl/aux_out_fwd.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/common.h"
-#include "lib/jxl/dec_ans.h"
+#include "lib/jxl/cms/opsin_params.h"
 #include "lib/jxl/dec_bit_reader.h"
-#include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/entropy_coder.h"
 #include "lib/jxl/field_encodings.h"
 #include "lib/jxl/fields.h"
+#include "lib/jxl/frame_dimensions.h"
 #include "lib/jxl/image.h"
-#include "lib/jxl/opsin_params.h"
 #include "lib/jxl/quant_weights.h"
 
 namespace jxl {
@@ -141,7 +137,7 @@ struct ColorCorrelationMap {
   uint32_t color_factor_ = kDefaultColorFactor;
   float color_scale_ = 1.0f / color_factor_;
   float base_correlation_x_ = 0.0f;
-  float base_correlation_b_ = kYToBRatio;
+  float base_correlation_b_ = jxl::cms::kYToBRatio;
   int32_t ytox_dc_ = 0;
   int32_t ytob_dc_ = 0;
 };

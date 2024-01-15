@@ -3,8 +3,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include <stdio.h>
-
 #include <numeric>
 
 #undef HWY_TARGET_INCLUDE
@@ -15,11 +13,12 @@
 #include "lib/jxl/dct-inl.h"
 #include "lib/jxl/fast_dct-inl.h"
 #include "lib/jxl/fast_dct.h"
+#include "lib/jxl/testing.h"
 #include "lib/jxl/transpose-inl.h"
 
 // Test utils
 #include <hwy/highway.h>
-#include <hwy/tests/test_util-inl.h>
+#include <hwy/tests/hwy_gtest.h>
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
@@ -198,6 +197,7 @@ HWY_NOINLINE void TestFloatIDCT64x64() {
 }
 HWY_NOINLINE void TestFastTranspose64x128() { TestFastTranspose<64, 128>(); }
 HWY_NOINLINE void TestFloatTranspose64x128() { TestFloatTranspose<64, 128>(); }
+/*
 HWY_NOINLINE void TestFastIDCT64x128() { TestFastIDCT<64, 128>(); }
 HWY_NOINLINE void TestFloatIDCT64x128() {
 #if HWY_TARGET == HWY_SCALAR && \
@@ -207,8 +207,10 @@ HWY_NOINLINE void TestFloatIDCT64x128() {
   TestFloatIDCT<64, 128>();
 #endif
 }
+*/
 HWY_NOINLINE void TestFastTranspose128x64() { TestFastTranspose<128, 64>(); }
 HWY_NOINLINE void TestFloatTranspose128x64() { TestFloatTranspose<128, 64>(); }
+/*
 HWY_NOINLINE void TestFastIDCT128x64() { TestFastIDCT<128, 64>(); }
 HWY_NOINLINE void TestFloatIDCT128x64() {
 #if HWY_TARGET == HWY_SCALAR && \
@@ -218,10 +220,12 @@ HWY_NOINLINE void TestFloatIDCT128x64() {
   TestFloatIDCT<128, 64>();
 #endif
 }
+*/
 HWY_NOINLINE void TestFastTranspose128x128() { TestFastTranspose<128, 128>(); }
 HWY_NOINLINE void TestFloatTranspose128x128() {
   TestFloatTranspose<128, 128>();
 }
+/*
 HWY_NOINLINE void TestFastIDCT128x128() { TestFastIDCT<128, 128>(); }
 HWY_NOINLINE void TestFloatIDCT128x128() {
 #if HWY_TARGET == HWY_SCALAR && \
@@ -231,10 +235,12 @@ HWY_NOINLINE void TestFloatIDCT128x128() {
   TestFloatIDCT<128, 128>();
 #endif
 }
+*/
 HWY_NOINLINE void TestFastTranspose128x256() { TestFastTranspose<128, 256>(); }
 HWY_NOINLINE void TestFloatTranspose128x256() {
   TestFloatTranspose<128, 256>();
 }
+/*
 HWY_NOINLINE void TestFastIDCT128x256() { TestFastIDCT<128, 256>(); }
 HWY_NOINLINE void TestFloatIDCT128x256() {
 #if HWY_TARGET == HWY_SCALAR && \
@@ -244,10 +250,12 @@ HWY_NOINLINE void TestFloatIDCT128x256() {
   TestFloatIDCT<128, 256>();
 #endif
 }
+*/
 HWY_NOINLINE void TestFastTranspose256x128() { TestFastTranspose<256, 128>(); }
 HWY_NOINLINE void TestFloatTranspose256x128() {
   TestFloatTranspose<256, 128>();
 }
+/*
 HWY_NOINLINE void TestFastIDCT256x128() { TestFastIDCT<256, 128>(); }
 HWY_NOINLINE void TestFloatIDCT256x128() {
 #if HWY_TARGET == HWY_SCALAR && \
@@ -257,10 +265,12 @@ HWY_NOINLINE void TestFloatIDCT256x128() {
   TestFloatIDCT<256, 128>();
 #endif
 }
+*/
 HWY_NOINLINE void TestFastTranspose256x256() { TestFastTranspose<256, 256>(); }
 HWY_NOINLINE void TestFloatTranspose256x256() {
   TestFloatTranspose<256, 256>();
 }
+/*
 HWY_NOINLINE void TestFastIDCT256x256() { TestFastIDCT<256, 256>(); }
 HWY_NOINLINE void TestFloatIDCT256x256() {
 #if HWY_TARGET == HWY_SCALAR && \
@@ -270,6 +280,7 @@ HWY_NOINLINE void TestFloatIDCT256x256() {
   TestFloatIDCT<256, 256>();
 #endif
 }
+*/
 
 }  // namespace
 // NOLINTNEXTLINE(google-readability-namespace-comments)

@@ -5,16 +5,20 @@
 
 #include "lib/jxl/splines.h"
 
-#include "gmock/gmock.h"
-#include "gtest/gtest.h"
+#include <jxl/cms.h>
+
+#include <cstdint>
+#include <vector>
+
 #include "lib/extras/codec.h"
 #include "lib/jxl/base/printf_macros.h"
-#include "lib/jxl/dec_file.h"
+#include "lib/jxl/base/span.h"
+#include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
-#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_splines.h"
 #include "lib/jxl/image_test_utils.h"
-#include "lib/jxl/testdata.h"
+#include "lib/jxl/test_utils.h"
+#include "lib/jxl/testing.h"
 
 namespace jxl {
 
@@ -29,6 +33,7 @@ std::ostream& operator<<(std::ostream& os, const Spline& spline) {
 
 namespace {
 
+using test::ReadTestData;
 using ::testing::AllOf;
 using ::testing::Field;
 using ::testing::FloatNear;
@@ -47,11 +52,12 @@ std::vector<Spline> DequantizeSplines(const Splines& splines) {
   JXL_CHECK(quantized_splines.size() == starting_points.size());
 
   std::vector<Spline> dequantized;
+  uint64_t total = 0;
   for (size_t i = 0; i < quantized_splines.size(); ++i) {
     dequantized.emplace_back();
-    JXL_CHECK(quantized_splines[i].Dequantize(starting_points[i],
-                                              kQuantizationAdjustment, kYToX,
-                                              kYToB, dequantized.back()));
+    JXL_CHECK(quantized_splines[i].Dequantize(
+        starting_points[i], kQuantizationAdjustment, kYToX, kYToB, 2u << 30u,
+        &total, dequantized.back()));
   }
   return dequantized;
 }
@@ -277,8 +283,8 @@ TEST(SplinesTest, DuplicatePoints) {
 
 TEST(SplinesTest, Drawing) {
   CodecInOut io_expected;
-  const PaddedBytes orig = ReadTestData("jxl/splines.pfm");
-  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io_expected,
+  const std::vector<uint8_t> orig = ReadTestData("jxl/splines.pfm");
+  ASSERT_TRUE(SetFromBytes(Bytes(orig), &io_expected,
                            /*pool=*/nullptr));
 
   std::vector<Spline::Point> control_points{{9, 54},  {118, 159}, {97, 3},
@@ -311,27 +317,29 @@ TEST(SplinesTest, Drawing) {
   splines.AddTo(&image, Rect(image), Rect(image));
 
   CodecInOut io_actual;
-  io_actual.SetFromImage(CopyImage(image), ColorEncoding::SRGB());
-  ASSERT_TRUE(
-      io_actual.TransformTo(io_expected.Main().c_current(), GetJxlCms()));
+  Image3F image2(320, 320);
+  CopyImageTo(image, &image2);
+  io_actual.SetFromImage(std::move(image2), ColorEncoding::SRGB());
+  ASSERT_TRUE(io_actual.frames[0].TransformTo(io_expected.Main().c_current(),
+                                              *JxlGetDefaultCms()));
 
-  VerifyRelativeError(*io_expected.Main().color(), *io_actual.Main().color(),
-                      1e-2f, 1e-1f);
+  JXL_ASSERT_OK(VerifyRelativeError(
+      *io_expected.Main().color(), *io_actual.Main().color(), 1e-2f, 1e-1f, _));
 }
 
 TEST(SplinesTest, ClearedEveryFrame) {
   CodecInOut io_expected;
-  const PaddedBytes bytes_expected =
+  const std::vector<uint8_t> bytes_expected =
       ReadTestData("jxl/spline_on_first_frame.png");
-  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(bytes_expected), &io_expected,
+  ASSERT_TRUE(SetFromBytes(Bytes(bytes_expected), &io_expected,
                            /*pool=*/nullptr));
   CodecInOut io_actual;
-  const PaddedBytes bytes_actual =
+  const std::vector<uint8_t> bytes_actual =
       ReadTestData("jxl/spline_on_first_frame.jxl");
-  ASSERT_TRUE(DecodeFile(DecompressParams(), bytes_actual, &io_actual,
-                         /*pool=*/nullptr));
+  ASSERT_TRUE(test::DecodeFile({}, Bytes(bytes_actual), &io_actual));
 
-  ASSERT_TRUE(io_actual.TransformTo(ColorEncoding::SRGB(), GetJxlCms()));
+  ASSERT_TRUE(io_actual.frames[0].TransformTo(ColorEncoding::SRGB(),
+                                              *JxlGetDefaultCms()));
   for (size_t c = 0; c < 3; ++c) {
     for (size_t y = 0; y < io_actual.ysize(); ++y) {
       float* const JXL_RESTRICT row = io_actual.Main().color()->PlaneRow(c, y);
@@ -340,8 +348,8 @@ TEST(SplinesTest, ClearedEveryFrame) {
       }
     }
   }
-  VerifyRelativeError(*io_expected.Main().color(), *io_actual.Main().color(),
-                      1e-2f, 1e-1f);
+  JXL_ASSERT_OK(VerifyRelativeError(
+      *io_expected.Main().color(), *io_actual.Main().color(), 1e-2f, 1e-1f, _));
 }
 
 }  // namespace jxl

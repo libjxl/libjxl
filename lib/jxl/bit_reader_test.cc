@@ -9,16 +9,15 @@
 #include <array>
 #include <vector>
 
-#include "gtest/gtest.h"
-#include "lib/jxl/aux_out.h"
-#include "lib/jxl/aux_out_fwd.h"
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/random.h"
 #include "lib/jxl/base/span.h"
-#include "lib/jxl/base/thread_pool_internal.h"
-#include "lib/jxl/common.h"
 #include "lib/jxl/dec_bit_reader.h"
+#include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_bit_writer.h"
+#include "lib/jxl/test_utils.h"
+#include "lib/jxl/testing.h"
 
 namespace jxl {
 namespace {
@@ -28,7 +27,7 @@ TEST(BitReaderTest, ExtendsWithZeroes) {
     std::vector<uint8_t> data(size, 0xff);
 
     for (size_t n_bytes = 0; n_bytes < size; n_bytes++) {
-      BitReader br(Span<const uint8_t>(data.data(), n_bytes));
+      BitReader br(Bytes(data.data(), n_bytes));
       // Read all the bits
       for (size_t i = 0; i < n_bytes * kBitsPerByte; i++) {
         ASSERT_EQ(br.ReadBits(1), 1u) << "n_bytes=" << n_bytes << " i=" << i;
@@ -52,7 +51,7 @@ struct Symbol {
 
 // Reading from output gives the same values.
 TEST(BitReaderTest, TestRoundTrip) {
-  ThreadPoolInternal pool(8);
+  test::ThreadPoolForTests pool(8);
   EXPECT_TRUE(RunOnPool(
       &pool, 0, 1000, ThreadPool::NoInit,
       [](const uint32_t task, size_t /* thread */) {
@@ -74,7 +73,7 @@ TEST(BitReaderTest, TestRoundTrip) {
         }
 
         writer.ZeroPadToByte();
-        ReclaimAndCharge(&writer, &allotment, 0, nullptr);
+        allotment.ReclaimAndCharge(&writer, 0, nullptr);
         BitReader reader(writer.GetSpan());
         for (const Symbol& s : symbols) {
           EXPECT_EQ(s.value, reader.ReadBits(s.num_bits));
@@ -86,7 +85,7 @@ TEST(BitReaderTest, TestRoundTrip) {
 
 // SkipBits is the same as reading that many bits.
 TEST(BitReaderTest, TestSkip) {
-  ThreadPoolInternal pool(8);
+  test::ThreadPoolForTests pool(8);
   EXPECT_TRUE(RunOnPool(
       &pool, 0, 96, ThreadPool::NoInit,
       [](const uint32_t task, size_t /* thread */) {
@@ -110,7 +109,7 @@ TEST(BitReaderTest, TestSkip) {
           EXPECT_EQ(task + skip + 3, writer.BitsWritten());
           writer.ZeroPadToByte();
           AuxOut aux_out;
-          ReclaimAndCharge(&writer, &allotment, 0, &aux_out);
+          allotment.ReclaimAndCharge(&writer, 0, &aux_out);
           EXPECT_LT(aux_out.layers[0].total_bits, kSize * 8);
 
           BitReader reader1(writer.GetSpan());
@@ -159,7 +158,7 @@ TEST(BitReaderTest, TestOrder) {
     }
 
     writer.ZeroPadToByte();
-    ReclaimAndCharge(&writer, &allotment, 0, nullptr);
+    allotment.ReclaimAndCharge(&writer, 0, nullptr);
     BitReader reader(writer.GetSpan());
     EXPECT_EQ(0x1Fu, reader.ReadFixedBits<8>());
     EXPECT_EQ(0xFCu, reader.ReadFixedBits<8>());
@@ -174,7 +173,7 @@ TEST(BitReaderTest, TestOrder) {
     writer.Write(8, 0x3F);
 
     writer.ZeroPadToByte();
-    ReclaimAndCharge(&writer, &allotment, 0, nullptr);
+    allotment.ReclaimAndCharge(&writer, 0, nullptr);
     BitReader reader(writer.GetSpan());
     EXPECT_EQ(0xF8u, reader.ReadFixedBits<8>());
     EXPECT_EQ(0x3Fu, reader.ReadFixedBits<8>());
@@ -188,7 +187,7 @@ TEST(BitReaderTest, TestOrder) {
     writer.Write(16, 0xF83F);
 
     writer.ZeroPadToByte();
-    ReclaimAndCharge(&writer, &allotment, 0, nullptr);
+    allotment.ReclaimAndCharge(&writer, 0, nullptr);
     BitReader reader(writer.GetSpan());
     EXPECT_EQ(0x3Fu, reader.ReadFixedBits<8>());
     EXPECT_EQ(0xF8u, reader.ReadFixedBits<8>());
@@ -205,7 +204,7 @@ TEST(BitReaderTest, TestOrder) {
     writer.Write(4, 8);
 
     writer.ZeroPadToByte();
-    ReclaimAndCharge(&writer, &allotment, 0, nullptr);
+    allotment.ReclaimAndCharge(&writer, 0, nullptr);
     BitReader reader(writer.GetSpan());
     EXPECT_EQ(0xBDu, reader.ReadFixedBits<8>());
     EXPECT_EQ(0x8Du, reader.ReadFixedBits<8>());
@@ -215,7 +214,7 @@ TEST(BitReaderTest, TestOrder) {
 
 TEST(BitReaderTest, TotalCountersTest) {
   uint8_t buf[8] = {1, 2, 3, 4};
-  BitReader reader(Span<const uint8_t>(buf, sizeof(buf)));
+  BitReader reader(Bytes(buf, sizeof(buf)));
 
   EXPECT_EQ(sizeof(buf), reader.TotalBytes());
   EXPECT_EQ(0u, reader.TotalBitsConsumed());
@@ -241,7 +240,7 @@ TEST(BitReaderTest, MoveTest) {
   uint8_t buf[8] = {1, 2, 3, 4};
   BitReader reader2;
   {
-    BitReader reader1(Span<const uint8_t>(buf, sizeof(buf)));
+    BitReader reader1(Bytes(buf, sizeof(buf)));
 
     EXPECT_EQ(0u, reader1.TotalBitsConsumed());
     reader1.ReadFixedBits<16>();

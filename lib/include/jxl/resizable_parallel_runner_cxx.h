@@ -3,7 +3,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-/// @addtogroup libjxl_threads
+/// @addtogroup libjxl_cpp
 /// @{
 ///
 /// @file resizable_parallel_runner_cxx.h
@@ -16,9 +16,9 @@
 #ifndef JXL_RESIZABLE_PARALLEL_RUNNER_CXX_H_
 #define JXL_RESIZABLE_PARALLEL_RUNNER_CXX_H_
 
-#include <memory>
+#include <jxl/resizable_parallel_runner.h>
 
-#include "jxl/resizable_parallel_runner.h"
+#include <memory>
 
 #if !(defined(__cplusplus) || defined(c_plusplus))
 #error \

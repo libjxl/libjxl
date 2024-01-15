@@ -8,23 +8,16 @@
 
 // Compressed representation of ICC profiles.
 
-#include <stddef.h>
-#include <stdint.h>
+#include <cstddef>
+#include <cstdint>
 
-#include "lib/jxl/aux_out.h"
-#include "lib/jxl/aux_out_fwd.h"
 #include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_ans.h"
 #include "lib/jxl/dec_bit_reader.h"
-#include "lib/jxl/enc_bit_writer.h"
+#include "lib/jxl/padded_bytes.h"
 
 namespace jxl {
-
-// Should still be called if `icc.empty()` - if so, writes only 1 bit.
-Status WriteICC(const PaddedBytes& icc, BitWriter* JXL_RESTRICT writer,
-                size_t layer, AuxOut* JXL_RESTRICT aux_out);
 
 struct ICCReader {
   Status Init(BitReader* reader, size_t output_limit);
@@ -45,13 +38,6 @@ struct ICCReader {
   ANSSymbolReader ans_reader_;
   PaddedBytes decompressed_;
 };
-
-// `icc` may be empty afterwards - if so, call CreateProfile. Does not append,
-// clears any original data that was in icc.
-// If `output_limit` is not 0, then returns error if resulting profile would be
-// longer than `output_limit`
-Status ReadICC(BitReader* JXL_RESTRICT reader, PaddedBytes* JXL_RESTRICT icc,
-               size_t output_limit = 0);
 
 // Exposed only for testing
 Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result);

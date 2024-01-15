@@ -4,7 +4,7 @@
  * license that can be found in the LICENSE file.
  */
 
-/** @addtogroup libjxl_common
+/** @addtogroup libjxl_color
  * @{
  * @file color_encoding.h
  * @brief Color Encoding definitions used by JPEG XL.
@@ -15,8 +15,6 @@
 #define JXL_COLOR_ENCODING_H_
 
 #include <stdint.h>
-
-#include "jxl/types.h"
 
 #if defined(__cplusplus) || defined(c_plusplus)
 extern "C" {
@@ -90,7 +88,7 @@ typedef enum {
   JXL_TRANSFER_FUNCTION_LINEAR = 8,
   /** As specified in IEC 61966-2-1 sRGB */
   JXL_TRANSFER_FUNCTION_SRGB = 13,
-  /** As specified in SMPTE ST 428-1 */
+  /** As specified in SMPTE ST 2084 */
   JXL_TRANSFER_FUNCTION_PQ = 16,
   /** As specified in SMPTE ST 428-1 */
   JXL_TRANSFER_FUNCTION_DCI = 17,

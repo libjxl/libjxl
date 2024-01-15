@@ -16,7 +16,8 @@
 #include "tools/flicker_test/parameters.h"
 #include "tools/flicker_test/ui_test_window.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 
 class FlickerTestWindow : public QMainWindow {
   Q_OBJECT
@@ -45,6 +46,7 @@ class FlickerTestWindow : public QMainWindow {
   QStringList remainingImages_;
 };
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
 
 #endif  // TOOLS_FLICKER_TEST_TEST_WINDOW_H_

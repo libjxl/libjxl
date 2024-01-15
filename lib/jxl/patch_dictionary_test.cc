@@ -3,53 +3,59 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include "gtest/gtest.h"
+#include <jxl/cms.h>
+
+#include <cstdint>
+#include <vector>
+
 #include "lib/extras/codec.h"
-#include "lib/jxl/dec_params.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/image_test_utils.h"
 #include "lib/jxl/test_utils.h"
-#include "lib/jxl/testdata.h"
+#include "lib/jxl/testing.h"
 
 namespace jxl {
 namespace {
 
-using ::jxl::test::Roundtrip;
+using test::ReadTestData;
+using test::Roundtrip;
 
 TEST(PatchDictionaryTest, GrayscaleModular) {
-  ThreadPool* pool = nullptr;
-  const PaddedBytes orig = ReadTestData("jxl/grayscale_patches.png");
+  const std::vector<uint8_t> orig = ReadTestData("jxl/grayscale_patches.png");
   CodecInOut io;
-  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
+  ASSERT_TRUE(SetFromBytes(Bytes(orig), &io));
 
   CompressParams cparams;
   cparams.SetLossless();
   cparams.patches = jxl::Override::kOn;
-  DecompressParams dparams;
 
   CodecInOut io2;
   // Without patches: ~25k
-  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 8000u);
-  VerifyRelativeError(*io.Main().color(), *io2.Main().color(), 1e-7f, 0);
+  size_t compressed_size;
+  JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _, &compressed_size));
+  EXPECT_LE(compressed_size, 8000u);
+  JXL_ASSERT_OK(VerifyRelativeError(*io.Main().color(), *io2.Main().color(),
+                                    1e-7f, 0, _));
 }
 
 TEST(PatchDictionaryTest, GrayscaleVarDCT) {
-  ThreadPool* pool = nullptr;
-  const PaddedBytes orig = ReadTestData("jxl/grayscale_patches.png");
+  const std::vector<uint8_t> orig = ReadTestData("jxl/grayscale_patches.png");
   CodecInOut io;
-  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
+  ASSERT_TRUE(SetFromBytes(Bytes(orig), &io));
 
   CompressParams cparams;
   cparams.patches = jxl::Override::kOn;
-  DecompressParams dparams;
 
   CodecInOut io2;
   // Without patches: ~47k
-  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 14000u);
+  size_t compressed_size;
+  JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _, &compressed_size));
+  EXPECT_LE(compressed_size, 14000u);
   // Without patches: ~1.2
-  EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params, GetJxlCms(),
-                                /*distmap=*/nullptr, pool),
+  EXPECT_LE(ButteraugliDistance(io.frames, io2.frames, ButteraugliParams(),
+                                *JxlGetDefaultCms(),
+                                /*distmap=*/nullptr),
             1.1);
 }
 

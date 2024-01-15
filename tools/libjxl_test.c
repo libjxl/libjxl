@@ -7,9 +7,9 @@
 // This links against the shared libjpegxl library which doesn't expose any of
 // the internals of the jxl namespace.
 
-#include "jxl/decode.h"
+#include <jxl/decode.h>
 
-int main() {
+int main(void) {
   if (!JxlDecoderVersion()) return 1;
   JxlDecoder* dec = JxlDecoderCreate(NULL);
   if (!dec) return 1;

@@ -1,0 +1,12 @@
+diff --git a/BUILD b/BUILD
+index 438b671..d2777b2 100644
+--- a/BUILD
++++ b/BUILD
+@@ -153,6 +153,7 @@ cc_library(
+         "hwy/detect_compiler_arch.h",  # private
+         "hwy/print.h",
+     ],
++    includes = ["."],
+     compatible_with = [],
+     copts = COPTS,
+     defines = DEFINES,

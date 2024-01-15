@@ -7,9 +7,9 @@
 
 #include <stdlib.h>
 
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/printf_macros.h"
-#include "lib/jxl/common.h"
 #include "lib/jxl/modular/modular_image.h"
 #include "lib/jxl/modular/transform/transform.h"
 #undef HWY_TARGET_INCLUDE
@@ -23,8 +23,23 @@ HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
 
+// These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::Abs;
+using hwy::HWY_NAMESPACE::Add;
+using hwy::HWY_NAMESPACE::And;
+using hwy::HWY_NAMESPACE::Gt;
+using hwy::HWY_NAMESPACE::IfThenElse;
+using hwy::HWY_NAMESPACE::IfThenZeroElse;
+using hwy::HWY_NAMESPACE::Lt;
+using hwy::HWY_NAMESPACE::MulEven;
+using hwy::HWY_NAMESPACE::Ne;
+using hwy::HWY_NAMESPACE::Neg;
+using hwy::HWY_NAMESPACE::OddEven;
+using hwy::HWY_NAMESPACE::RebindToUnsigned;
 using hwy::HWY_NAMESPACE::ShiftLeft;
 using hwy::HWY_NAMESPACE::ShiftRight;
+using hwy::HWY_NAMESPACE::Sub;
+using hwy::HWY_NAMESPACE::Xor;
 
 #if HWY_TARGET != HWY_SCALAR
 
@@ -35,6 +50,7 @@ JXL_INLINE void FastUnsqueeze(const pixel_type *JXL_RESTRICT p_residual,
                               pixel_type *JXL_RESTRICT p_out,
                               pixel_type *p_nout) {
   const HWY_CAPPED(pixel_type, 8) d;
+  const RebindToUnsigned<decltype(d)> du;
   const size_t N = Lanes(d);
   auto onethird = Set(d, 0x55555556);
   for (size_t x = 0; x < 8; x += N) {
@@ -42,12 +58,12 @@ JXL_INLINE void FastUnsqueeze(const pixel_type *JXL_RESTRICT p_residual,
     auto next_avg = Load(d, p_navg + x);
     auto top = Load(d, p_pout + x);
     // Equivalent to SmoothTendency(top,avg,next_avg), but without branches
-    auto Ba = top - avg;
-    auto an = avg - next_avg;
-    auto nonmono = Ba ^ an;
+    auto Ba = Sub(top, avg);
+    auto an = Sub(avg, next_avg);
+    auto nonmono = Xor(Ba, an);
     auto absBa = Abs(Ba);
     auto absan = Abs(an);
-    auto absBn = Abs(top - next_avg);
+    auto absBn = Abs(Sub(top, next_avg));
     // Compute a3 = absBa / 3
     auto a3e = BitCast(d, ShiftRight<32>(MulEven(absBa, onethird)));
     auto a3oi = MulEven(Reverse(d, absBa), onethird);
@@ -55,27 +71,27 @@ JXL_INLINE void FastUnsqueeze(const pixel_type *JXL_RESTRICT p_residual,
         d, Reverse(hwy::HWY_NAMESPACE::Repartition<pixel_type_w, decltype(d)>(),
                    a3oi));
     auto a3 = OddEven(a3o, a3e);
-    a3 += absBn + Set(d, 2);
+    a3 = Add(a3, Add(absBn, Set(d, 2)));
     auto absdiff = ShiftRight<2>(a3);
-    auto skipdiff = Ba != Zero(d);
-    skipdiff = And(skipdiff, an != Zero(d));
-    skipdiff = And(skipdiff, nonmono < Zero(d));
-    auto absBa2 = ShiftLeft<1>(absBa) + (absdiff & Set(d, 1));
-    absdiff =
-        IfThenElse(absdiff > absBa2, ShiftLeft<1>(absBa) + Set(d, 1), absdiff);
+    auto skipdiff = Ne(Ba, Zero(d));
+    skipdiff = And(skipdiff, Ne(an, Zero(d)));
+    skipdiff = And(skipdiff, Lt(nonmono, Zero(d)));
+    auto absBa2 = Add(ShiftLeft<1>(absBa), And(absdiff, Set(d, 1)));
+    absdiff = IfThenElse(Gt(absdiff, absBa2),
+                         Add(ShiftLeft<1>(absBa), Set(d, 1)), absdiff);
     auto absan2 = ShiftLeft<1>(absan);
-    absdiff =
-        IfThenElse(absdiff + (absdiff & Set(d, 1)) > absan2, absan2, absdiff);
-    auto diff1 = IfThenElse(top < next_avg, Neg(absdiff), absdiff);
+    absdiff = IfThenElse(Gt(Add(absdiff, And(absdiff, Set(d, 1))), absan2),
+                         absan2, absdiff);
+    auto diff1 = IfThenElse(Lt(top, next_avg), Neg(absdiff), absdiff);
     auto tendency = IfThenZeroElse(skipdiff, diff1);
 
     auto diff_minus_tendency = Load(d, p_residual + x);
-    auto diff = diff_minus_tendency + tendency;
-    auto out = ShiftRight<1>(
-        ShiftLeft<1>(avg) + diff +
-        IfThenElse(diff < Zero(d), (diff & Set(d, 1)), Neg(diff & Set(d, 1))));
+    auto diff = Add(diff_minus_tendency, tendency);
+    auto out =
+        Add(avg, ShiftRight<1>(
+                     Add(diff, BitCast(d, ShiftRight<31>(BitCast(du, diff))))));
     Store(out, d, p_out + x);
-    Store(out - diff, d, p_nout + x);
+    Store(Sub(out, diff), d, p_nout + x);
   }
 }
 
@@ -113,16 +129,15 @@ Status InvHSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
     const pixel_type *JXL_RESTRICT p_avg = chin.Row(y);
     pixel_type *JXL_RESTRICT p_out = chout.Row(y);
     for (size_t x = x0; x < chin_residual.w; x++) {
-      pixel_type diff_minus_tendency = p_residual[x];
-      pixel_type avg = p_avg[x];
-      pixel_type next_avg = (x + 1 < chin.w ? p_avg[x + 1] : avg);
-      pixel_type left = (x ? p_out[(x << 1) - 1] : avg);
-      pixel_type tendency = SmoothTendency(left, avg, next_avg);
-      pixel_type diff = diff_minus_tendency + tendency;
-      pixel_type A =
-          ((avg * 2) + diff + (diff > 0 ? -(diff & 1) : (diff & 1))) >> 1;
+      pixel_type_w diff_minus_tendency = p_residual[x];
+      pixel_type_w avg = p_avg[x];
+      pixel_type_w next_avg = (x + 1 < chin.w ? p_avg[x + 1] : avg);
+      pixel_type_w left = (x ? p_out[(x << 1) - 1] : avg);
+      pixel_type_w tendency = SmoothTendency(left, avg, next_avg);
+      pixel_type_w diff = diff_minus_tendency + tendency;
+      pixel_type_w A = avg + (diff / 2);
       p_out[(x << 1)] = A;
-      pixel_type B = A - diff;
+      pixel_type_w B = A - diff;
       p_out[(x << 1) + 1] = B;
     }
     if (chout.w & 1) p_out[chout.w - 1] = p_avg[chin.w - 1];
@@ -243,15 +258,13 @@ Status InvVSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
       }
 #endif
       for (; x < w; x++) {
-        pixel_type avg = p_avg[x];
-        pixel_type next_avg = p_navg[x];
-        pixel_type top = p_pout[x];
-        pixel_type tendency = SmoothTendency(top, avg, next_avg);
-        pixel_type diff_minus_tendency = p_residual[x];
-        pixel_type diff = diff_minus_tendency + tendency;
-        pixel_type out =
-            ((avg * 2) + diff + (diff < 0 ? (diff & 1) : -(diff & 1))) >> 1;
-
+        pixel_type_w avg = p_avg[x];
+        pixel_type_w next_avg = p_navg[x];
+        pixel_type_w top = p_pout[x];
+        pixel_type_w tendency = SmoothTendency(top, avg, next_avg);
+        pixel_type_w diff_minus_tendency = p_residual[x];
+        pixel_type_w diff = diff_minus_tendency + tendency;
+        pixel_type_w out = avg + (diff / 2);
         p_out[x] = out;
         // If the chin_residual.h == chin.h, the output has an even number
         // of rows so the next line is fine. Otherwise, this loop won't
@@ -436,22 +449,25 @@ Status MetaSqueeze(Image &image, std::vector<SqueezeParams> *parameters) {
       }
       size_t w = image.channel[c].w;
       size_t h = image.channel[c].h;
+      if (w == 0 || h == 0) return JXL_FAILURE("Squeezing empty channel");
       if (horizontal) {
         image.channel[c].w = (w + 1) / 2;
-        image.channel[c].hshift++;
+        if (image.channel[c].hshift >= 0) image.channel[c].hshift++;
         w = w - (w + 1) / 2;
       } else {
         image.channel[c].h = (h + 1) / 2;
-        image.channel[c].vshift++;
+        if (image.channel[c].vshift >= 0) image.channel[c].vshift++;
         h = h - (h + 1) / 2;
       }
       image.channel[c].shrink();
-      Channel dummy(w, h);
-      dummy.hshift = image.channel[c].hshift;
-      dummy.vshift = image.channel[c].vshift;
+      Channel placeholder(w, h);
+      placeholder.hshift = image.channel[c].hshift;
+      placeholder.vshift = image.channel[c].vshift;
 
       image.channel.insert(image.channel.begin() + offset + (c - beginc),
-                           std::move(dummy));
+                           std::move(placeholder));
+      JXL_DEBUG_V(8, "MetaSqueeze applied, current image: %s",
+                  image.DebugString().c_str());
     }
   }
   return true;

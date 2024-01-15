@@ -6,18 +6,11 @@
 #ifndef LIB_JXL_ENC_AC_STRATEGY_H_
 #define LIB_JXL_ENC_AC_STRATEGY_H_
 
-#include <stdint.h>
+#include <cstddef>
 
-#include "lib/jxl/ac_strategy.h"
-#include "lib/jxl/aux_out.h"
-#include "lib/jxl/aux_out_fwd.h"
-#include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/chroma_from_luma.h"
-#include "lib/jxl/common.h"
-#include "lib/jxl/dec_ans.h"
 #include "lib/jxl/enc_cache.h"
-#include "lib/jxl/enc_params.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/quant_weights.h"
 
@@ -26,24 +19,22 @@
 
 namespace jxl {
 
+struct AuxOut;
+
 // AC strategy selection: utility struct.
 
 struct ACSConfig {
   const DequantMatrices* JXL_RESTRICT dequant;
-  float info_loss_multiplier;
-  float info_loss_multiplier2;
-  float* JXL_RESTRICT quant_field_row;
+  const float* JXL_RESTRICT quant_field_row;
   size_t quant_field_stride;
-  float* JXL_RESTRICT masking_field_row;
+  const float* JXL_RESTRICT masking_field_row;
   size_t masking_field_stride;
+  const float* JXL_RESTRICT masking1x1_field_row;
+  size_t masking1x1_field_stride;
   const float* JXL_RESTRICT src_rows[3];
   size_t src_stride;
-  // Cost for 1 (-1), 2 (-2) explicitly, cost for others computed with cost1 +
-  // cost2 + sqrt(q) * cost_delta.
-  float cost1;
-  float cost2;
+  float info_loss_multiplier;
   float cost_delta;
-  float base_entropy;
   float zeros_mul;
   const float& Pixel(size_t c, size_t x, size_t y) const {
     return src_rows[c][y * src_stride + x];
@@ -52,27 +43,28 @@ struct ACSConfig {
     JXL_DASSERT(masking_field_row[by * masking_field_stride + bx] > 0);
     return masking_field_row[by * masking_field_stride + bx];
   }
+  const float* MaskingPtr1x1(size_t bx, size_t by) const {
+    JXL_DASSERT(masking1x1_field_row[by * masking1x1_field_stride + bx] > 0);
+    return &masking1x1_field_row[by * masking1x1_field_stride + bx];
+  }
   float Quant(size_t bx, size_t by) const {
     JXL_DASSERT(quant_field_row[by * quant_field_stride + bx] > 0);
     return quant_field_row[by * quant_field_stride + bx];
   }
-  void SetQuant(size_t bx, size_t by, float value) const {
-    JXL_DASSERT(value > 0);
-    quant_field_row[by * quant_field_stride + bx] = value;
-  }
 };
 
 struct AcStrategyHeuristics {
-  void Init(const Image3F& src, PassesEncoderState* enc_state);
-  void ProcessRect(const Rect& rect);
-  void Finalize(AuxOut* aux_out);
+  AcStrategyHeuristics(const CompressParams& cparams) : cparams(cparams) {}
+  void Init(const Image3F& src, const Rect& rect_in, const ImageF& quant_field,
+            const ImageF& mask, const ImageF& mask1x1,
+            DequantMatrices* matrices);
+  void ProcessRect(const Rect& rect, const ColorCorrelationMap& cmap,
+                   AcStrategyImage* ac_strategy);
+  void Finalize(const FrameDimensions& frame_dim,
+                const AcStrategyImage& ac_strategy, AuxOut* aux_out);
+  const CompressParams& cparams;
   ACSConfig config;
-  PassesEncoderState* enc_state;
 };
-
-// Debug.
-void DumpAcStrategy(const AcStrategyImage& ac_strategy, size_t xsize,
-                    size_t ysize, const char* tag, AuxOut* aux_out);
 
 }  // namespace jxl
 

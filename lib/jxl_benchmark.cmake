@@ -3,20 +3,7 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
-# All files ending in "_gbench.cc" are considered Google benchmark files and
-# should be listed here.
-set(JPEGXL_INTERNAL_SOURCES_GBENCH
-  extras/tone_mapping_gbench.cc
-  jxl/dec_external_image_gbench.cc
-  jxl/enc_external_image_gbench.cc
-  jxl/gauss_blur_gbench.cc
-  jxl/splines_gbench.cc
-  jxl/tf_gbench.cc
-)
-
-# benchmark.h doesn't work in our MINGW set up since it ends up including the
-# wrong stdlib header. We don't run gbench on MINGW targets anyway.
-if(NOT MINGW)
+include(jxl_lists.cmake)
 
 # This is the Google benchmark project (https://github.com/google/benchmark).
 find_package(benchmark QUIET)
@@ -29,17 +16,20 @@ if(benchmark_FOUND)
       INTERFACE_LINK_LIBRARIES "Threads::Threads;-lrt")
   endif()
 
+  list(APPEND JPEGXL_INTERNAL_TESTS
+    # TODO(eustas): Move this to tools/
+    ../tools/gauss_blur_gbench.cc
+  )
+
   # Compiles all the benchmark files into a single binary. Individual benchmarks
   # can be run with --benchmark_filter.
-  add_executable(jxl_gbench "${JPEGXL_INTERNAL_SOURCES_GBENCH}" gbench_main.cc)
+  add_executable(jxl_gbench "${JPEGXL_INTERNAL_GBENCH_SOURCES}" gbench_main.cc)
 
   target_compile_definitions(jxl_gbench PRIVATE
-    -DTEST_DATA_PATH="${PROJECT_SOURCE_DIR}/third_party/testdata")
+    -DTEST_DATA_PATH="${JPEGXL_TEST_DATA_PATH}")
   target_link_libraries(jxl_gbench
-    jxl_extras-static
-    jxl-static
+    jxl_extras-internal
+    jxl-internal
     benchmark::benchmark
   )
 endif() # benchmark_FOUND
-
-endif() # MINGW

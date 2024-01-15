@@ -21,11 +21,9 @@
 #include "lib/jxl/ac_strategy.h"
 #include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/base/profiler.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/coeff_order.h"
 #include "lib/jxl/coeff_order_fwd.h"
-#include "lib/jxl/common.h"
 #include "lib/jxl/dec_ans.h"
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/dec_context_map.h"
@@ -33,10 +31,17 @@
 #include "lib/jxl/epf.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_ops.h"
+#include "lib/jxl/pack_signed.h"
 
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
+
+// These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::Add;
+using hwy::HWY_NAMESPACE::AndNot;
+using hwy::HWY_NAMESPACE::Eq;
+using hwy::HWY_NAMESPACE::GetLane;
 
 // Returns number of non-zero coefficients (but skip LLF).
 // We cannot rely on block[] being all-zero bits, so first truncate to integer.
@@ -71,7 +76,7 @@ int32_t NumNonZeroExceptLLF(const size_t cx, const size_t cy,
         const auto coef =
             AndNot(llf_mask, Load(di, &block[y * cx * kBlockDim + x]));
 
-        neg_sum_zero += VecFromMask(di, coef == zero);
+        neg_sum_zero = Add(neg_sum_zero, VecFromMask(di, Eq(coef, zero)));
       }
     }
   }
@@ -80,7 +85,7 @@ int32_t NumNonZeroExceptLLF(const size_t cx, const size_t cy,
   for (size_t y = cy; y < cy * kBlockDim; y++) {
     for (size_t x = 0; x < cx * kBlockDim; x += Lanes(di)) {
       const auto coef = Load(di, &block[y * cx * kBlockDim + x]);
-      neg_sum_zero += VecFromMask(di, coef == zero);
+      neg_sum_zero = Add(neg_sum_zero, VecFromMask(di, Eq(coef, zero)));
     }
   }
 
@@ -121,7 +126,7 @@ int32_t NumNonZero8x8ExceptDC(const int32_t* JXL_RESTRICT block,
       // DC counts as zero so we don't include it in nzeros.
       const auto coef = AndNot(dc_mask, Load(di, &block[y * kBlockDim + x]));
 
-      neg_sum_zero += VecFromMask(di, coef == zero);
+      neg_sum_zero = Add(neg_sum_zero, VecFromMask(di, Eq(coef, zero)));
     }
   }
 
@@ -129,7 +134,7 @@ int32_t NumNonZero8x8ExceptDC(const int32_t* JXL_RESTRICT block,
   for (size_t y = 1; y < kBlockDim; y++) {
     for (size_t x = 0; x < kBlockDim; x += Lanes(di)) {
       const auto coef = Load(di, &block[y * kBlockDim + x]);
-      neg_sum_zero += VecFromMask(di, coef == zero);
+      neg_sum_zero = Add(neg_sum_zero, VecFromMask(di, Eq(coef, zero)));
     }
   }
 
@@ -159,10 +164,9 @@ void TokenizeCoefficients(const coeff_order_t* JXL_RESTRICT orders,
                           const BlockCtxMap& block_ctx_map) {
   const size_t xsize_blocks = rect.xsize();
   const size_t ysize_blocks = rect.ysize();
-
+  output->clear();
   // TODO(user): update the estimate: usually less coefficients are used.
-  output->reserve(output->size() +
-                  3 * xsize_blocks * ysize_blocks * kDCTBlockSize);
+  output->reserve(3 * xsize_blocks * ysize_blocks * kDCTBlockSize);
 
   size_t offset[3] = {};
   const size_t nzeros_stride = tmp_num_nzeroes->PixelsPerRow();

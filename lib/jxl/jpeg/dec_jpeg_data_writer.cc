@@ -8,12 +8,18 @@
 #include <stdlib.h>
 #include <string.h> /* for memset, memcpy */
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <deque>
 #include <string>
 #include <vector>
 
 #include "lib/jxl/base/bits.h"
-#include "lib/jxl/common.h"
+#include "lib/jxl/base/byte_order.h"
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/frame_dimensions.h"
+#include "lib/jxl/image_bundle.h"
 #include "lib/jxl/jpeg/dec_jpeg_serialization_state.h"
 #include "lib/jxl/jpeg/jpeg_data.h"
 
@@ -33,9 +39,6 @@ const int kJpegPrecision = 8;
 
 // JpegBitWriter: buffer size
 const size_t kJpegBitWriterChunkSize = 16384;
-
-// DCTCodingState: maximum number of correction bits to buffer
-const int kJPEGMaxCorrectionBits = 1u << 16;
 
 // Returns non-zero if and only if x has a zero byte, i.e. one of
 // x & 0xff, x & 0xff00, ..., x & 0xff00000000000000 is zero.
@@ -75,18 +78,19 @@ static JXL_INLINE void Reserve(JpegBitWriter* bw, size_t n_bytes) {
  * space in the output buffer. Emits up to 2 bytes to buffer.
  */
 static JXL_INLINE void EmitByte(JpegBitWriter* bw, int byte) {
-  bw->data[bw->pos++] = byte;
-  if (byte == 0xFF) bw->data[bw->pos++] = 0;
+  bw->data[bw->pos] = byte;
+  bw->data[bw->pos + 1] = 0;
+  bw->pos += (byte != 0xFF ? 1 : 2);
 }
 
-static JXL_INLINE void DischargeBitBuffer(JpegBitWriter* bw) {
-  // At this point we are ready to emit the most significant 6 bytes of
-  // put_buffer_ to the output.
+static JXL_INLINE void DischargeBitBuffer(JpegBitWriter* bw, int nbits,
+                                          uint64_t bits) {
+  // At this point we are ready to emit the put_buffer to the output.
   // The JPEG format requires that after every 0xff byte in the entropy
   // coded section, there is a zero byte, therefore we first check if any of
-  // the 6 most significant bytes of put_buffer_ is 0xFF.
-  Reserve(bw, 12);
-  if (HasZeroByte(~bw->put_buffer | 0xFFFF)) {
+  // the 8 bytes of put_buffer is 0xFF.
+  bw->put_buffer |= (bits >> -bw->put_bits);
+  if (JXL_UNLIKELY(HasZeroByte(~bw->put_buffer))) {
     // We have a 0xFF byte somewhere, examine each byte and append a zero
     // byte if necessary.
     EmitByte(bw, (bw->put_buffer >> 56) & 0xFF);
@@ -95,32 +99,31 @@ static JXL_INLINE void DischargeBitBuffer(JpegBitWriter* bw) {
     EmitByte(bw, (bw->put_buffer >> 32) & 0xFF);
     EmitByte(bw, (bw->put_buffer >> 24) & 0xFF);
     EmitByte(bw, (bw->put_buffer >> 16) & 0xFF);
+    EmitByte(bw, (bw->put_buffer >> 8) & 0xFF);
+    EmitByte(bw, (bw->put_buffer) & 0xFF);
   } else {
-    // We don't have any 0xFF bytes, output all 6 bytes without checking.
-    bw->data[bw->pos] = (bw->put_buffer >> 56) & 0xFF;
-    bw->data[bw->pos + 1] = (bw->put_buffer >> 48) & 0xFF;
-    bw->data[bw->pos + 2] = (bw->put_buffer >> 40) & 0xFF;
-    bw->data[bw->pos + 3] = (bw->put_buffer >> 32) & 0xFF;
-    bw->data[bw->pos + 4] = (bw->put_buffer >> 24) & 0xFF;
-    bw->data[bw->pos + 5] = (bw->put_buffer >> 16) & 0xFF;
-    bw->pos += 6;
+    // We don't have any 0xFF bytes, output all 8 bytes without checking.
+    StoreBE64(bw->put_buffer, bw->data + bw->pos);
+    bw->pos += 8;
   }
-  bw->put_buffer <<= 48;
-  bw->put_bits += 48;
+
+  bw->put_bits += 64;
+  bw->put_buffer = bits << bw->put_bits;
 }
 
 static JXL_INLINE void WriteBits(JpegBitWriter* bw, int nbits, uint64_t bits) {
-  // This is an optimization; if everything goes well,
-  // then |nbits| is positive; if non-existing Huffman symbol is going to be
-  // encoded, its length should be zero; later encoder could check the
-  // "health" of JpegBitWriter.
-  if (nbits == 0) {
-    bw->healthy = false;
-    return;
-  }
+  JXL_DASSERT(nbits > 0);
   bw->put_bits -= nbits;
-  bw->put_buffer |= (bits << bw->put_bits);
-  if (bw->put_bits <= 16) DischargeBitBuffer(bw);
+  if (JXL_UNLIKELY(bw->put_bits < 0)) {
+    if (JXL_UNLIKELY(nbits > 64)) {
+      bw->put_bits += nbits;
+      bw->healthy = false;
+    } else {
+      DischargeBitBuffer(bw, nbits, bits);
+    }
+  } else {
+    bw->put_buffer |= (bits << bw->put_bits);
+  }
 }
 
 void EmitMarker(JpegBitWriter* bw, int marker) {
@@ -181,44 +184,91 @@ void DCTCodingStateInit(DCTCodingState* s) {
   s->eob_run_ = 0;
   s->cur_ac_huff_ = nullptr;
   s->refinement_bits_.clear();
-  s->refinement_bits_.reserve(kJPEGMaxCorrectionBits);
+  s->refinement_bits_.reserve(64);
+}
+
+static JXL_INLINE void WriteSymbol(int symbol, HuffmanCodeTable* table,
+                                   JpegBitWriter* bw) {
+  WriteBits(bw, table->depth[symbol], table->code[symbol]);
+}
+
+static JXL_INLINE void WriteSymbolBits(int symbol, HuffmanCodeTable* table,
+                                       JpegBitWriter* bw, int nbits,
+                                       uint64_t bits) {
+  WriteBits(bw, nbits + table->depth[symbol],
+            bits | (table->code[symbol] << nbits));
 }
 
 // Emit all buffered data to the bit stream using the given Huffman code and
 // bit writer.
 static JXL_INLINE void Flush(DCTCodingState* s, JpegBitWriter* bw) {
   if (s->eob_run_ > 0) {
+    Reserve(bw, 16);
     int nbits = FloorLog2Nonzero<uint32_t>(s->eob_run_);
     int symbol = nbits << 4u;
-    WriteBits(bw, s->cur_ac_huff_->depth[symbol],
-              s->cur_ac_huff_->code[symbol]);
+    WriteSymbol(symbol, s->cur_ac_huff_, bw);
     if (nbits > 0) {
       WriteBits(bw, nbits, s->eob_run_ & ((1 << nbits) - 1));
     }
     s->eob_run_ = 0;
   }
-  for (size_t i = 0; i < s->refinement_bits_.size(); ++i) {
-    WriteBits(bw, 1, s->refinement_bits_[i]);
+  const size_t kStride = 124;  // (515 - 16) / 2 / 2
+  size_t num_words = s->refinement_bits_count_ >> 4;
+  size_t i = 0;
+  while (i < num_words) {
+    size_t limit = std::min(i + kStride, num_words);
+    Reserve(bw, 512);
+    for (; i < limit; ++i) {
+      WriteBits(bw, 16, s->refinement_bits_[i]);
+    }
+  }
+  Reserve(bw, 16);
+  size_t tail = s->refinement_bits_count_ & 0xF;
+  if (tail) {
+    WriteBits(bw, tail, s->refinement_bits_.back());
   }
   s->refinement_bits_.clear();
+  s->refinement_bits_count_ = 0;
 }
 
 // Buffer some more data at the end-of-band (the last non-zero or newly
 // non-zero coefficient within the [Ss, Se] spectral band).
 static JXL_INLINE void BufferEndOfBand(DCTCodingState* s,
-                                       const HuffmanCodeTable* ac_huff,
-                                       const std::vector<int>* new_bits,
+                                       HuffmanCodeTable* ac_huff,
+                                       const int* new_bits_array,
+                                       size_t new_bits_count,
                                        JpegBitWriter* bw) {
   if (s->eob_run_ == 0) {
     s->cur_ac_huff_ = ac_huff;
   }
   ++s->eob_run_;
-  if (new_bits) {
-    s->refinement_bits_.insert(s->refinement_bits_.end(), new_bits->begin(),
-                               new_bits->end());
+  if (new_bits_count) {
+    uint64_t new_bits = 0;
+    for (size_t i = 0; i < new_bits_count; ++i) {
+      new_bits = (new_bits << 1) | new_bits_array[i];
+    }
+    size_t tail = s->refinement_bits_count_ & 0xF;
+    if (tail) {  // First stuff the tail item
+      size_t stuff_bits_count = std::min(16 - tail, new_bits_count);
+      uint16_t stuff_bits = new_bits >> (new_bits_count - stuff_bits_count);
+      stuff_bits &= ((1u << stuff_bits_count) - 1);
+      s->refinement_bits_.back() =
+          (s->refinement_bits_.back() << stuff_bits_count) | stuff_bits;
+      new_bits_count -= stuff_bits_count;
+      s->refinement_bits_count_ += stuff_bits_count;
+    }
+    while (new_bits_count >= 16) {
+      s->refinement_bits_.push_back(new_bits >> (new_bits_count - 16));
+      new_bits_count -= 16;
+      s->refinement_bits_count_ += 16;
+    }
+    if (new_bits_count) {
+      s->refinement_bits_.push_back(new_bits & ((1u << new_bits_count) - 1));
+      s->refinement_bits_count_ += new_bits_count;
+    }
   }
-  if (s->eob_run_ == 0x7FFF ||
-      s->refinement_bits_.size() > kJPEGMaxCorrectionBits - kDCTBlockSize + 1) {
+
+  if (s->eob_run_ == 0x7FFF) {
     Flush(s, bw);
   }
 }
@@ -362,10 +412,11 @@ bool EncodeDHT(const JPEGData& jpg, SerializationState* state) {
       huff_table = &state->dc_huff_table[index];
     }
     // TODO(eustas): cache
-    // TODO(eustas): set up non-existing symbols
+    huff_table->InitDepths(127);
     if (!BuildHuffmanCodeTable(huff, huff_table)) {
       return false;
     }
+    huff_table->initialized = true;
     size_t total_count = 0;
     size_t max_length = 0;
     for (size_t i = 0; i < huff.counts.size(); ++i) {
@@ -464,65 +515,74 @@ bool EncodeInterMarkerData(const JPEGData& jpg, SerializationState* state) {
   return true;
 }
 
-bool EncodeDCTBlockSequential(const coeff_t* coeffs,
-                              const HuffmanCodeTable& dc_huff,
-                              const HuffmanCodeTable& ac_huff,
-                              int num_zero_runs, coeff_t* last_dc_coeff,
-                              JpegBitWriter* bw) {
+bool EncodeDCTBlockSequential(const coeff_t* coeffs, HuffmanCodeTable* dc_huff,
+                              HuffmanCodeTable* ac_huff, int num_zero_runs,
+                              coeff_t* last_dc_coeff, JpegBitWriter* bw) {
   coeff_t temp2;
   coeff_t temp;
+  coeff_t litmus = 0;
   temp2 = coeffs[0];
   temp = temp2 - *last_dc_coeff;
   *last_dc_coeff = temp2;
-  temp2 = temp;
-  if (temp < 0) {
-    temp = -temp;
-    if (temp < 0) return false;
-    temp2--;
-  }
-  int dc_nbits = (temp == 0) ? 0 : (FloorLog2Nonzero<uint32_t>(temp) + 1);
-  WriteBits(bw, dc_huff.depth[dc_nbits], dc_huff.code[dc_nbits]);
+  temp2 = temp >> (8 * sizeof(coeff_t) - 1);
+  temp += temp2;
+  temp2 ^= temp;
+
+  int dc_nbits = (temp2 == 0) ? 0 : (FloorLog2Nonzero<uint32_t>(temp2) + 1);
+  WriteSymbol(dc_nbits, dc_huff, bw);
+#if false
+  // If the input is corrupt, this could be triggered. Checking is
+  // costly though, so it makes more sense to avoid this branch.
+  // (producing a corrupt JPEG when the input is corrupt, instead
+  // of catching it and returning error)
   if (dc_nbits >= 12) return false;
-  if (dc_nbits > 0) {
-    WriteBits(bw, dc_nbits, temp2 & ((1u << dc_nbits) - 1));
+#endif
+  if (dc_nbits) {
+    WriteBits(bw, dc_nbits, temp & ((1u << dc_nbits) - 1));
   }
-  int r = 0;
-  for (int k = 1; k < 64; ++k) {
-    if ((temp = coeffs[kJPEGNaturalOrder[k]]) == 0) {
+  int16_t r = 0;
+
+  for (size_t i = 1; i < 64; i++) {
+    if ((temp = coeffs[kJPEGNaturalOrder[i]]) == 0) {
       r++;
-      continue;
-    }
-    if (temp < 0) {
-      temp = -temp;
-      if (temp < 0) return false;
-      temp2 = ~temp;
     } else {
-      temp2 = temp;
+      temp2 = temp >> (8 * sizeof(coeff_t) - 1);
+      temp += temp2;
+      temp2 ^= temp;
+      if (JXL_UNLIKELY(r > 15)) {
+        WriteSymbol(0xf0, ac_huff, bw);
+        r -= 16;
+        if (r > 15) {
+          WriteSymbol(0xf0, ac_huff, bw);
+          r -= 16;
+        }
+        if (r > 15) {
+          WriteSymbol(0xf0, ac_huff, bw);
+          r -= 16;
+        }
+      }
+      litmus |= temp2;
+      int ac_nbits =
+          FloorLog2Nonzero<uint32_t>(static_cast<uint16_t>(temp2)) + 1;
+      int symbol = (r << 4u) + ac_nbits;
+      WriteSymbolBits(symbol, ac_huff, bw, ac_nbits,
+                      temp & ((1 << ac_nbits) - 1));
+      r = 0;
     }
-    while (r > 15) {
-      WriteBits(bw, ac_huff.depth[0xf0], ac_huff.code[0xf0]);
-      r -= 16;
-    }
-    int ac_nbits = FloorLog2Nonzero<uint32_t>(temp) + 1;
-    if (ac_nbits >= 16) return false;
-    int symbol = (r << 4u) + ac_nbits;
-    WriteBits(bw, ac_huff.depth[symbol], ac_huff.code[symbol]);
-    WriteBits(bw, ac_nbits, temp2 & ((1 << ac_nbits) - 1));
-    r = 0;
   }
+
   for (int i = 0; i < num_zero_runs; ++i) {
-    WriteBits(bw, ac_huff.depth[0xf0], ac_huff.code[0xf0]);
+    WriteSymbol(0xf0, ac_huff, bw);
     r -= 16;
   }
   if (r > 0) {
-    WriteBits(bw, ac_huff.depth[0], ac_huff.code[0]);
+    WriteSymbol(0, ac_huff, bw);
   }
-  return true;
+  return (litmus >= 0);
 }
 
-bool EncodeDCTBlockProgressive(const coeff_t* coeffs,
-                               const HuffmanCodeTable& dc_huff,
-                               const HuffmanCodeTable& ac_huff, int Ss, int Se,
+bool EncodeDCTBlockProgressive(const coeff_t* coeffs, HuffmanCodeTable* dc_huff,
+                               HuffmanCodeTable* ac_huff, int Ss, int Se,
                                int Al, int num_zero_runs,
                                DCTCodingState* coding_state,
                                coeff_t* last_dc_coeff, JpegBitWriter* bw) {
@@ -540,8 +600,8 @@ bool EncodeDCTBlockProgressive(const coeff_t* coeffs,
       temp2--;
     }
     int nbits = (temp == 0) ? 0 : (FloorLog2Nonzero<uint32_t>(temp) + 1);
-    WriteBits(bw, dc_huff.depth[nbits], dc_huff.code[nbits]);
-    if (nbits > 0) {
+    WriteSymbol(nbits, dc_huff, bw);
+    if (nbits) {
       WriteBits(bw, nbits, temp2 & ((1 << nbits) - 1));
     }
     ++Ss;
@@ -570,24 +630,24 @@ bool EncodeDCTBlockProgressive(const coeff_t* coeffs,
     }
     Flush(coding_state, bw);
     while (r > 15) {
-      WriteBits(bw, ac_huff.depth[0xf0], ac_huff.code[0xf0]);
+      WriteSymbol(0xf0, ac_huff, bw);
       r -= 16;
     }
     int nbits = FloorLog2Nonzero<uint32_t>(temp) + 1;
     int symbol = (r << 4u) + nbits;
-    WriteBits(bw, ac_huff.depth[symbol], ac_huff.code[symbol]);
+    WriteSymbol(symbol, ac_huff, bw);
     WriteBits(bw, nbits, temp2 & ((1 << nbits) - 1));
     r = 0;
   }
   if (num_zero_runs > 0) {
     Flush(coding_state, bw);
     for (int i = 0; i < num_zero_runs; ++i) {
-      WriteBits(bw, ac_huff.depth[0xf0], ac_huff.code[0xf0]);
+      WriteSymbol(0xf0, ac_huff, bw);
       r -= 16;
     }
   }
   if (r > 0) {
-    BufferEndOfBand(coding_state, &ac_huff, nullptr, bw);
+    BufferEndOfBand(coding_state, ac_huff, nullptr, 0, bw);
     if (!eob_run_allowed) {
       Flush(coding_state, bw);
     }
@@ -595,9 +655,8 @@ bool EncodeDCTBlockProgressive(const coeff_t* coeffs,
   return true;
 }
 
-bool EncodeRefinementBits(const coeff_t* coeffs,
-                          const HuffmanCodeTable& ac_huff, int Ss, int Se,
-                          int Al, DCTCodingState* coding_state,
+bool EncodeRefinementBits(const coeff_t* coeffs, HuffmanCodeTable* ac_huff,
+                          int Ss, int Se, int Al, DCTCodingState* coding_state,
                           JpegBitWriter* bw) {
   bool eob_run_allowed = Ss > 0;
   if (Ss == 0) {
@@ -618,8 +677,8 @@ bool EncodeRefinementBits(const coeff_t* coeffs,
     }
   }
   int r = 0;
-  std::vector<int> refinement_bits;
-  refinement_bits.reserve(kDCTBlockSize);
+  int refinement_bits[kDCTBlockSize];
+  size_t refinement_bits_count = 0;
   for (int k = Ss; k <= Se; k++) {
     if (abs_values[k] == 0) {
       r++;
@@ -627,30 +686,31 @@ bool EncodeRefinementBits(const coeff_t* coeffs,
     }
     while (r > 15 && k <= eob) {
       Flush(coding_state, bw);
-      WriteBits(bw, ac_huff.depth[0xf0], ac_huff.code[0xf0]);
+      WriteSymbol(0xf0, ac_huff, bw);
       r -= 16;
-      for (int bit : refinement_bits) {
-        WriteBits(bw, 1, bit);
+      for (size_t i = 0; i < refinement_bits_count; ++i) {
+        WriteBits(bw, 1, refinement_bits[i]);
       }
-      refinement_bits.clear();
+      refinement_bits_count = 0;
     }
     if (abs_values[k] > 1) {
-      refinement_bits.push_back(abs_values[k] & 1u);
+      refinement_bits[refinement_bits_count++] = abs_values[k] & 1u;
       continue;
     }
     Flush(coding_state, bw);
     int symbol = (r << 4u) + 1;
     int new_non_zero_bit = (coeffs[kJPEGNaturalOrder[k]] < 0) ? 0 : 1;
-    WriteBits(bw, ac_huff.depth[symbol], ac_huff.code[symbol]);
+    WriteSymbol(symbol, ac_huff, bw);
     WriteBits(bw, 1, new_non_zero_bit);
-    for (int bit : refinement_bits) {
-      WriteBits(bw, 1, bit);
+    for (size_t i = 0; i < refinement_bits_count; ++i) {
+      WriteBits(bw, 1, refinement_bits[i]);
     }
-    refinement_bits.clear();
+    refinement_bits_count = 0;
     r = 0;
   }
-  if (r > 0 || !refinement_bits.empty()) {
-    BufferEndOfBand(coding_state, &ac_huff, &refinement_bits, bw);
+  if (r > 0 || refinement_bits_count) {
+    BufferEndOfBand(coding_state, ac_huff, refinement_bits,
+                    refinement_bits_count, bw);
     if (!eob_run_allowed) {
       Flush(coding_state, bw);
     }
@@ -716,7 +776,8 @@ SerializationStatus JXL_NOINLINE DoEncodeScan(const JPEGData& jpg,
 
   // DC-only is defined by [0..0] spectral range.
   const bool want_ac = ((Ss != 0) || (Se != 0));
-  // TODO: support streaming decoding again.
+  const bool want_dc = (Ss == 0);
+  // TODO(user): support streaming decoding again.
   const bool complete_ac = true;
   const bool has_ac = true;
   if (want_ac && !has_ac) return SerializationStatus::NEEDS_MORE_INPUT;
@@ -750,12 +811,21 @@ SerializationStatus JXL_NOINLINE DoEncodeScan(const JPEGData& jpg,
         ss.restarts_to_go = restart_interval;
         memset(ss.last_dc_coeff, 0, sizeof(ss.last_dc_coeff));
       }
+
       // Encode one MCU
       for (size_t i = 0; i < scan_info.num_components; ++i) {
         const JPEGComponentScanInfo& si = scan_info.components[i];
         const JPEGComponent& c = jpg.components[si.comp_idx];
-        const HuffmanCodeTable& dc_huff = state->dc_huff_table[si.dc_tbl_idx];
-        const HuffmanCodeTable& ac_huff = state->ac_huff_table[si.ac_tbl_idx];
+        size_t dc_tbl_idx = si.dc_tbl_idx;
+        size_t ac_tbl_idx = si.ac_tbl_idx;
+        HuffmanCodeTable* dc_huff = &state->dc_huff_table[dc_tbl_idx];
+        HuffmanCodeTable* ac_huff = &state->ac_huff_table[ac_tbl_idx];
+        if (want_dc && !dc_huff->initialized) {
+          return SerializationStatus::ERROR;
+        }
+        if (want_ac && !ac_huff->initialized) {
+          return SerializationStatus::ERROR;
+        }
         int n_blocks_y = is_interleaved ? c.v_samp_factor : 1;
         int n_blocks_x = is_interleaved ? c.h_samp_factor : 1;
         for (int iy = 0; iy < n_blocks_y; ++iy) {
@@ -776,6 +846,8 @@ SerializationStatus JXL_NOINLINE DoEncodeScan(const JPEGData& jpg,
             }
             const coeff_t* coeffs = &c.coeffs[block_idx << 6];
             bool ok;
+            // compressed size per block cannot be more than 512 bytes
+            Reserve(bw, 512);
             if (kMode == 0) {
               ok = EncodeDCTBlockSequential(coeffs, dc_huff, ac_huff,
                                             num_zero_runs,
@@ -899,26 +971,21 @@ SerializationStatus SerializeSection(uint8_t marker, SerializationState* state,
   }
 }
 
-}  // namespace
-
 // TODO(veluca): add streaming support again.
-Status WriteJpeg(const JPEGData& jpg, const JPEGOutput& out) {
-  SerializationState ss;
-
-  size_t written = 0;
+Status WriteJpegInternal(const JPEGData& jpg, const JPEGOutput& out,
+                         SerializationState* ss) {
   const auto maybe_push_output = [&]() -> Status {
-    if (ss.stage != SerializationState::ERROR) {
-      while (!ss.output_queue.empty()) {
-        auto& chunk = ss.output_queue.front();
+    if (ss->stage != SerializationState::STAGE_ERROR) {
+      while (!ss->output_queue.empty()) {
+        auto& chunk = ss->output_queue.front();
         size_t num_written = out(chunk.next, chunk.len);
         if (num_written == 0 && chunk.len > 0) {
           return StatusMessage(Status(StatusCode::kNotEnoughBytes),
                                "Failed to write output");
         }
         chunk.len -= num_written;
-        written += num_written;
         if (chunk.len == 0) {
-          ss.output_queue.pop_front();
+          ss->output_queue.pop_front();
         }
       }
     }
@@ -926,39 +993,38 @@ Status WriteJpeg(const JPEGData& jpg, const JPEGOutput& out) {
   };
 
   while (true) {
-    switch (ss.stage) {
-      case SerializationState::INIT: {
+    switch (ss->stage) {
+      case SerializationState::STAGE_INIT: {
         // Valid Brunsli requires, at least, 0xD9 marker.
         // This might happen on corrupted stream, or on unconditioned JPEGData.
         // TODO(eustas): check D9 in the only one and is the last one.
         if (jpg.marker_order.empty()) {
-          ss.stage = SerializationState::ERROR;
+          ss->stage = SerializationState::STAGE_ERROR;
           break;
         }
-
-        ss.dc_huff_table.resize(kMaxHuffmanTables);
-        ss.ac_huff_table.resize(kMaxHuffmanTables);
+        ss->dc_huff_table.resize(kMaxHuffmanTables);
+        ss->ac_huff_table.resize(kMaxHuffmanTables);
         if (jpg.has_zero_padding_bit) {
-          ss.pad_bits = jpg.padding_bits.data();
-          ss.pad_bits_end = ss.pad_bits + jpg.padding_bits.size();
+          ss->pad_bits = jpg.padding_bits.data();
+          ss->pad_bits_end = ss->pad_bits + jpg.padding_bits.size();
         }
 
-        EncodeSOI(&ss);
+        EncodeSOI(ss);
         JXL_QUIET_RETURN_IF_ERROR(maybe_push_output());
-        ss.stage = SerializationState::SERIALIZE_SECTION;
+        ss->stage = SerializationState::STAGE_SERIALIZE_SECTION;
         break;
       }
 
-      case SerializationState::SERIALIZE_SECTION: {
-        if (ss.section_index >= jpg.marker_order.size()) {
-          ss.stage = SerializationState::DONE;
+      case SerializationState::STAGE_SERIALIZE_SECTION: {
+        if (ss->section_index >= jpg.marker_order.size()) {
+          ss->stage = SerializationState::STAGE_DONE;
           break;
         }
-        uint8_t marker = jpg.marker_order[ss.section_index];
-        SerializationStatus status = SerializeSection(marker, &ss, jpg);
+        uint8_t marker = jpg.marker_order[ss->section_index];
+        SerializationStatus status = SerializeSection(marker, ss, jpg);
         if (status == SerializationStatus::ERROR) {
           JXL_WARNING("Failed to encode marker 0x%.2x", marker);
-          ss.stage = SerializationState::ERROR;
+          ss->stage = SerializationState::STAGE_ERROR;
           break;
         }
         JXL_QUIET_RETURN_IF_ERROR(maybe_push_output());
@@ -966,29 +1032,31 @@ Status WriteJpeg(const JPEGData& jpg, const JPEGOutput& out) {
           return JXL_FAILURE("Incomplete serialization data");
         } else if (status != SerializationStatus::DONE) {
           JXL_DASSERT(false);
-          ss.stage = SerializationState::ERROR;
+          ss->stage = SerializationState::STAGE_ERROR;
           break;
         }
-        ++ss.section_index;
+        ++ss->section_index;
         break;
       }
 
-      case SerializationState::DONE:
-        JXL_ASSERT(ss.output_queue.empty());
+      case SerializationState::STAGE_DONE:
+        JXL_ASSERT(ss->output_queue.empty());
+        if (ss->pad_bits != nullptr && ss->pad_bits != ss->pad_bits_end) {
+          return JXL_FAILURE("Invalid number of padding bits.");
+        }
         return true;
 
-      case SerializationState::ERROR:
+      case SerializationState::STAGE_ERROR:
         return JXL_FAILURE("JPEG serialization error");
     }
   }
 }
 
-Status EncodeImageJPGCoefficients(const CodecInOut* io, PaddedBytes* bytes) {
-  auto write = [&bytes](const uint8_t* buf, size_t len) {
-    bytes->append(buf, buf + len);
-    return len;
-  };
-  return WriteJpeg(*io->Main().jpeg_data, write);
+}  // namespace
+
+Status WriteJpeg(const JPEGData& jpg, const JPEGOutput& out) {
+  auto ss = jxl::make_unique<SerializationState>();
+  return WriteJpegInternal(jpg, out, ss.get());
 }
 
 }  // namespace jpeg

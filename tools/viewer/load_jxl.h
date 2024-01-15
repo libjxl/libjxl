@@ -10,11 +10,13 @@
 #include <QImage>
 #include <QString>
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 
 QImage loadJxlImage(const QString& filename, const QByteArray& targetIccProfile,
                     qint64* elapsed, bool* usedRequestedProfile = nullptr);
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
 
 #endif  // TOOLS_VIEWER_LOAD_JXL_H_

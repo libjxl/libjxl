@@ -37,10 +37,13 @@
 #include "tools/benchmark/benchmark_args.h"
 #include "tools/benchmark/benchmark_codec.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 
 ImageCodec* CreateNewCustomCodec(const BenchmarkArgs& args);
+Status AddCommandLineOptionsCustomCodec(BenchmarkArgs* args);
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
 
 #endif  // TOOLS_BENCHMARK_BENCHMARK_CODEC_CUSTOM_H_

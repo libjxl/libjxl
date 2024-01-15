@@ -150,7 +150,7 @@ multiple image lines.
 
 **DCT size selection**: `ac_strategy.cc`
 
-**[Gaborish]**: `gaborish.h`.
+**[Gaborish]**: `enc_gaborish.h`.
 
 **[Edge preserving filter]**: `epf.h`
 

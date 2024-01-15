@@ -12,18 +12,26 @@ Please add missing software to this list.
 
 ## Browsers
 
-- Chromium: behind a flag since version 91, [tracking bug](https://bugs.chromium.org/p/chromium/issues/detail?id=1178058)
+- Chromium: behind a flag from version 91 to 109, [tracking bug](https://bugs.chromium.org/p/chromium/issues/detail?id=1178058)
 - Firefox: behind a flag since version 90, [tracking bug](https://bugzilla.mozilla.org/show_bug.cgi?id=1539075)
-- Safari: not supported, [tracking bug](https://bugs.webkit.org/show_bug.cgi?id=208235)
+- Safari: supported since version 17 [release notes](https://developer.apple.com/documentation/safari-release-notes/safari-17-release-notes), [tracking bug](https://bugs.webkit.org/show_bug.cgi?id=208235)
 - Edge: behind a flag since version 91, start with `.\msedge.exe --enable-features=JXL`
 - Opera: behind a flag since version 77.
-- For all browsers and to track browsers progress see [Can I Use](https://caniuse.com/jpegxl).
+- Basilisk: supported since version v2023.01.07, [release notes](https://www.basilisk-browser.org/releasenotes.shtml)
+- Pale Moon: supported since version 31.4.0, [release notes](https://www.palemoon.org/releasenotes-archived.shtml#v31.4.0)
+- Waterfox: [enabled by default](https://github.com/WaterfoxCo/Waterfox/pull/2936)
+
+For all browsers and to track browsers progress see [Can I Use](https://caniuse.com/jpegxl).
 
 ## Image libraries
 
 - [ImageMagick](https://imagemagick.org/): supported since 7.0.10-54
 - [libvips](https://libvips.github.io/libvips/): supported since 8.11
 - [Imlib2](https://github.com/alistair7/imlib2-jxl)
+- [FFmpeg](https://github.com/FFmpeg/FFmpeg/search?q=jpeg-xl&type=commits)
+- [GDAL](https://gdal.org/drivers/raster/jpegxl.html): supported since 3.4.0 as a TIFF codec, and 3.6.0 as standalone format
+- [GraphicsMagick](http://www.graphicsmagick.org/NEWS.html#march-26-2022): supported since 1.3.38
+- [SAIL](https://sail.software): supported since 0.9.0
 
 ## OS-level support / UI frameworks / file browser plugins
 
@@ -35,23 +43,40 @@ Please add missing software to this list.
 - [Windows thumbnail handler](https://github.com/saschanaz/jxl-winthumb)
 - [OpenMandriva Lx (since 4.3 RC)](https://www.openmandriva.org/en/news/article/openmandriva-lx-4-3-rc-available-for-testing)
 - [KaOS (since 2021.06)](https://news.itsfoss.com/kaos-2021-06-release/)
+- [EFL (since 1.27, no external plugin needed)](https://www.enlightenment.org)
 
 ## Image editors
 
+- [Adobe Camera Raw (since version 15)](https://helpx.adobe.com/camera-raw/using/hdr-output.html)
+- [Affinity (since V2)](https://affinity.serif.com/en-gb/whats-new/)
+- [darktable (since 4.2)](https://github.com/darktable-org/darktable/releases/tag/release-4.2.0)
 - [GIMP (since 2.99.8)](https://www.gimp.org/news/2021/10/20/gimp-2-99-8-released/); plugin for older versions available in libjxl repo
+- [Graphic Converter (since 11.5)](https://www.lemkesoft.de/en/products/graphicconverter/)
+- [Krita](https://invent.kde.org/graphics/krita/-/commit/13e5d2e5b9f0eac5c8064b7767f0b62264a0797b)
+- [Paint.NET](https://www.getpaint.net/index.html); supported since 4.3.12 - requires a [plugin](https://github.com/0xC0000054/pdn-jpegxl) to be downloaded and installed.
 - Photoshop: no plugin available yet, no official support yet
 
 ## Image viewers
 
-- [XnView](https://www.xnview.com/en/)
+- [Aspect](https://aspect.bildhuus.com)
 - [ImageGlass](https://imageglass.org/)
 - [IrfanView](https://www.irfanview.com/); supported since 4.59 - requires a [plugin](https://www.irfanview.com/plugins.htm) to be downloaded and enabled.
-- Any viewer based on Qt, KDE, GDK-pixbuf, ImageMagick, libvips or imlib2 (see above)
+- [jpegview](https://github.com/sylikc/jpegview/releases)
+- [Swayimg](https://github.com/artemsen/swayimg)
+- [Tachiyomi](https://github.com/tachiyomiorg/tachiyomi/releases/tag/v0.12.1)
+- [XnView](https://www.xnview.com/en/)
+- Any viewer based on Qt, KDE, GDK-pixbuf, EFL, ImageMagick, libvips or imlib2 (see above)
   - Qt viewers: gwenview, digiKam, KolourPaint, KPhotoAlbum, LXImage-Qt, qimgv, qView, nomacs, VookiImageViewer, PhotoQt
   - GTK viewers: Eye of Gnome (eog), gThumb, Geeqie
+  - EFL viewers: entice, ephoto
+ 
+## Duplicate image finders
+
+- [AntiDupl.NET](https://github.com/ermig1979/AntiDupl/releases)
 
 ## Online tools
 
+- [Gumlet](https://www.gumlet.com/blog/jpeg-xl/)
 - [Squoosh](https://squoosh.app/)
 - [Cloudinary](https://cloudinary.com/blog/cloudinary_supports_jpeg_xl)
 - [MConverter](https://mconverter.eu/)

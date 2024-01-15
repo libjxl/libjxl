@@ -11,8 +11,6 @@
 #include <algorithm>
 
 #include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/base/profiler.h"
-#include "lib/jxl/color_management.h"
 #include "lib/jxl/enc_gamma_correct.h"
 #include "lib/jxl/enc_image_bundle.h"
 
@@ -48,18 +46,6 @@ void AlphaBlend(const Image3F& in, const size_t c, float background_linear,
   }
 }
 
-const Image3F* AlphaBlend(const ImageBundle& ib, const Image3F& linear,
-                          float background_linear, Image3F* copy) {
-  // No alpha => all opaque.
-  if (!ib.HasAlpha()) return &linear;
-
-  *copy = Image3F(linear.xsize(), linear.ysize());
-  for (size_t c = 0; c < 3; ++c) {
-    AlphaBlend(linear, c, background_linear, ib.alpha(), copy);
-  }
-  return copy;
-}
-
 void AlphaBlend(float background_linear, ImageBundle* io_linear_srgb) {
   // No alpha => all opaque.
   if (!io_linear_srgb->HasAlpha()) return;
@@ -82,8 +68,7 @@ float ComputeScoreImpl(const ImageBundle& rgb0, const ImageBundle& rgb1,
 
 float ComputeScore(const ImageBundle& rgb0, const ImageBundle& rgb1,
                    Comparator* comparator, const JxlCmsInterface& cms,
-                   ImageF* diffmap, ThreadPool* pool) {
-  PROFILER_FUNC;
+                   ImageF* diffmap, ThreadPool* pool, bool ignore_alpha) {
   // Convert to linear sRGB (unless already in that space)
   ImageMetadata metadata0 = *rgb0.metadata();
   ImageBundle store0(&metadata0);
@@ -97,7 +82,7 @@ float ComputeScore(const ImageBundle& rgb0, const ImageBundle& rgb1,
                               cms, pool, &store1, &linear_srgb1));
 
   // No alpha: skip blending, only need a single call to Butteraugli.
-  if (!rgb0.HasAlpha() && !rgb1.HasAlpha()) {
+  if (ignore_alpha || (!rgb0.HasAlpha() && !rgb1.HasAlpha())) {
     return ComputeScoreImpl(*linear_srgb0, *linear_srgb1, comparator, diffmap);
   }
 

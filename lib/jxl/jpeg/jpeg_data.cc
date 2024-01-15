@@ -7,6 +7,7 @@
 
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/common.h"  // kMaxNumPasses, JPEGXL_ENABLE_TRANSCODE_JPEG
 
 namespace jxl {
 namespace jpeg {
@@ -288,8 +289,6 @@ Status JPEGData::VisitFields(Visitor* visitor) {
     JXL_RETURN_IF_ERROR(visitor->Bits(16, 0, &restart_interval));
   }
 
-  uint64_t padding_spot_limit = scan_info.size();
-
   for (auto& scan : scan_info) {
     uint32_t num_reset_points = scan.reset_points.size();
     JXL_RETURN_IF_ERROR(visitor->U32(Val(0), BitsOffset(2, 1), BitsOffset(4, 4),
@@ -304,16 +303,9 @@ Status JPEGData::VisitFields(Visitor* visitor) {
                                        BitsOffset(5, 9), BitsOffset(28, 41), 0,
                                        &block_idx));
       block_idx += last_block_idx + 1;
-      if (static_cast<int>(block_idx) < last_block_idx + 1) {
-        return JXL_FAILURE("Invalid block ID: %u, last block was %d", block_idx,
-                           last_block_idx);
-      }
-      // TODO(eustas): better upper boundary could be given at this point; also
-      //               it could be applied during reset_points reading.
-      if (block_idx > (1u << 30)) {
-        // At most 8K x 8K x num_channels blocks are expected. That is,
-        // typically, 1.5 * 2^27. 2^30 should be sufficient for any sane
-        // image.
+      if (block_idx >= (3u << 26)) {
+        // At most 8K x 8K x num_channels blocks are possible in a JPEG.
+        // So valid block indices are below 3 * 2^26.
         return JXL_FAILURE("Invalid block ID: %u", block_idx);
       }
       last_block_idx = block_idx;
@@ -337,24 +329,10 @@ Status JPEGData::VisitFields(Visitor* visitor) {
                                        BitsOffset(5, 9), BitsOffset(28, 41), 0,
                                        &block_idx));
       block_idx += last_block_idx + 1;
-      if (static_cast<int>(block_idx) < last_block_idx + 1) {
-        return JXL_FAILURE("Invalid block ID: %u, last block was %d", block_idx,
-                           last_block_idx);
-      }
-      if (block_idx > (1u << 30)) {
-        // At most 8K x 8K x num_channels blocks are expected. That is,
-        // typically, 1.5 * 2^27. 2^30 should be sufficient for any sane
-        // image.
+      if (block_idx > (3u << 26)) {
         return JXL_FAILURE("Invalid block ID: %u", block_idx);
       }
       last_block_idx = block_idx;
-    }
-
-    if (restart_interval > 0) {
-      int MCUs_per_row = 0;
-      int MCU_rows = 0;
-      CalculateMcuSize(scan, &MCUs_per_row, &MCU_rows);
-      padding_spot_limit += DivCeil(MCU_rows * MCUs_per_row, restart_interval);
     }
   }
   std::vector<uint32_t> inter_marker_data_sizes;
@@ -365,6 +343,10 @@ Status JPEGData::VisitFields(Visitor* visitor) {
     if (visitor->IsReading()) inter_marker_data_sizes.emplace_back(len);
   }
   uint32_t tail_data_len = tail_data.size();
+  if (!visitor->IsReading() && tail_data_len > 4260096) {
+    return JXL_FAILURE("Tail data too large (max size = 4260096, size = %u)",
+                       tail_data_len);
+  }
   JXL_RETURN_IF_ERROR(visitor->U32(Val(0), BitsOffset(8, 1),
                                    BitsOffset(16, 257), BitsOffset(22, 65793),
                                    0, &tail_data_len));
@@ -373,18 +355,60 @@ Status JPEGData::VisitFields(Visitor* visitor) {
   if (has_zero_padding_bit) {
     uint32_t nbit = padding_bits.size();
     JXL_RETURN_IF_ERROR(visitor->Bits(24, 0, &nbit));
-    if (nbit > 7 * padding_spot_limit) {
-      return JXL_FAILURE("Number of padding bits does not correspond to image");
-    }
-    // TODO(eustas): check that that much bits of input are available.
     if (visitor->IsReading()) {
-      padding_bits.resize(nbit);
+      JXL_RETURN_IF_ERROR(CheckHasEnoughBits(visitor, nbit));
+      padding_bits.reserve(std::min<uint32_t>(1024u, nbit));
+      for (uint32_t i = 0; i < nbit; i++) {
+        bool bbit = false;
+        JXL_RETURN_IF_ERROR(visitor->Bool(false, &bbit));
+        padding_bits.push_back(bbit);
+      }
+    } else {
+      for (uint8_t& bit : padding_bits) {
+        bool bbit = bit;
+        JXL_RETURN_IF_ERROR(visitor->Bool(false, &bbit));
+        bit = bbit;
+      }
     }
-    // TODO(eustas): read in (8-64?) bit groups to reduce overhead.
-    for (uint8_t& bit : padding_bits) {
-      bool bbit = bit;
-      JXL_RETURN_IF_ERROR(visitor->Bool(false, &bbit));
-      bit = bbit;
+  }
+
+  {
+    size_t dht_index = 0;
+    size_t scan_index = 0;
+    bool is_progressive = false;
+    bool ac_ok[kMaxHuffmanTables] = {false};
+    bool dc_ok[kMaxHuffmanTables] = {false};
+    for (uint8_t marker : marker_order) {
+      if (marker == 0xC2) {
+        is_progressive = true;
+      } else if (marker == 0xC4) {
+        for (; dht_index < huffman_code.size();) {
+          const JPEGHuffmanCode& huff = huffman_code[dht_index++];
+          size_t index = huff.slot_id;
+          if (index & 0x10) {
+            index -= 0x10;
+            ac_ok[index] = true;
+          } else {
+            dc_ok[index] = true;
+          }
+          if (huff.is_last) break;
+        }
+      } else if (marker == 0xDA) {
+        const JPEGScanInfo& si = scan_info[scan_index++];
+        for (size_t i = 0; i < si.num_components; ++i) {
+          const JPEGComponentScanInfo& csi = si.components[i];
+          size_t dc_tbl_idx = csi.dc_tbl_idx;
+          size_t ac_tbl_idx = csi.ac_tbl_idx;
+          bool want_dc = !is_progressive || (si.Ss == 0);
+          if (want_dc && !dc_ok[dc_tbl_idx]) {
+            return JXL_FAILURE("DC Huffman table used before defined");
+          }
+          bool want_ac = !is_progressive || (si.Ss != 0) || (si.Se != 0);
+          if (want_ac && !ac_ok[ac_tbl_idx]) {
+            return JXL_FAILURE("AC Huffman table used before defined");
+          }
+        }
+      }
     }
   }
 
@@ -426,7 +450,8 @@ void JPEGData::CalculateMcuSize(const JPEGScanInfo& scan, int* MCUs_per_row,
 
 #if JPEGXL_ENABLE_TRANSCODE_JPEG
 
-Status SetJPEGDataFromICC(const PaddedBytes& icc, jpeg::JPEGData* jpeg_data) {
+Status SetJPEGDataFromICC(const std::vector<uint8_t>& icc,
+                          jpeg::JPEGData* jpeg_data) {
   size_t icc_pos = 0;
   for (size_t i = 0; i < jpeg_data->app_data.size(); i++) {
     if (jpeg_data->app_marker_type[i] != jpeg::AppMarkerType::kICC) {

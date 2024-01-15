@@ -14,13 +14,15 @@
 #include <utility>
 #include <vector>
 
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/common.h"
+#include "lib/jxl/padded_bytes.h"
 
 namespace jxl {
+
+struct AuxOut;
 
 struct BitWriter {
   // Upper bound on `n_bits` in each call to Write. We shift a 64-bit word by
@@ -38,16 +40,12 @@ struct BitWriter {
   BitWriter(BitWriter&&) = default;
   BitWriter& operator=(BitWriter&&) = default;
 
-  explicit BitWriter(PaddedBytes&& donor)
-      : bits_written_(donor.size() * kBitsPerByte),
-        storage_(std::move(donor)) {}
-
   size_t BitsWritten() const { return bits_written_; }
 
   Span<const uint8_t> GetSpan() const {
     // Callers must ensure byte alignment to avoid uninitialized bits.
     JXL_ASSERT(bits_written_ % kBitsPerByte == 0);
-    return Span<const uint8_t>(storage_.data(), bits_written_ / kBitsPerByte);
+    return Bytes(storage_.data(), bits_written_ / kBitsPerByte);
   }
 
   // Example usage: bytes = std::move(writer).TakeBytes(); Useful for the
@@ -62,10 +60,13 @@ struct BitWriter {
 
   // Must be byte-aligned before calling.
   void AppendByteAligned(const Span<const uint8_t>& span);
+
   // NOTE: no allotment needed, the other BitWriters have already been charged.
   void AppendByteAligned(const BitWriter& other);
   void AppendByteAligned(const std::vector<std::unique_ptr<BitWriter>>& others);
   void AppendByteAligned(const std::vector<BitWriter>& others);
+
+  void AppendUnaligned(const BitWriter& other);
 
   class Allotment {
    public:
@@ -85,13 +86,14 @@ struct BitWriter {
       return histogram_bits_;
     }
 
-    // Do not call directly - use ::ReclaimAndCharge instead, which ensures
-    // the bits are charged to a layer.
+    void ReclaimAndCharge(BitWriter* JXL_RESTRICT writer, size_t layer,
+                          AuxOut* JXL_RESTRICT aux_out);
+
+   private:
     void PrivateReclaim(BitWriter* JXL_RESTRICT writer,
                         size_t* JXL_RESTRICT used_bits,
                         size_t* JXL_RESTRICT unused_bits);
 
-   private:
     size_t prev_bits_written_;
     const size_t max_bits_;
     size_t histogram_bits_ = 0;

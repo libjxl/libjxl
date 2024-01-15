@@ -1,0 +1,314 @@
+# Copyright (c) the JPEG XL Project Authors. All rights reserved.
+#
+# Use of this source code is governed by a BSD-style
+# license that can be found in the LICENSE file.
+
+# Workflow for building and running tests.
+
+name: Build/Test Cross
+on:
+  merge_group:
+  push:
+    branches:
+      - main
+      - v*.*.x
+  pull_request:
+    types: [opened, reopened, labeled, synchronize]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  compile:
+    name: Cross-compiling ${{ matrix.identifier }}
+    runs-on: [ubuntu-22.04]
+    container:
+      image: debian:bookworm
+    strategy:
+      fail-fast: false
+      matrix:
+        identifier: [arm64, arm64-sve, arm64-lowprecision, armhf, i386]
+        include:
+          - arch: arm64
+            identifier: arm64
+            build_target: aarch64-linux-gnu
+            cmake_args:
+             - -DCMAKE_CROSSCOMPILING_EMULATOR=/usr/bin/qemu-aarch64-static
+
+          - arch: arm64
+            identifier: arm64-sve
+            build_target: aarch64-linux-gnu
+            cmake_args:
+             - -DCMAKE_CROSSCOMPILING_EMULATOR=/usr/bin/qemu-aarch64-static
+             - -DJPEGXL_ENABLE_OPENEXR=off
+             - -DJPEGXL_ENABLE_SIZELESS_VECTORS=on
+             - -DJPEGXL_WARNINGS_AS_ERRORS=off
+            cmake_flags: -march=armv8-a+sve
+            c_compiler: aarch64-linux-gnu-gcc
+            cxx_compiler: aarch64-linux-gnu-g++
+            disable_tests: true
+
+          - arch: arm64
+            identifier: arm64-lowprecision
+            build_target: aarch64-linux-gnu
+            cmake_args:
+             - -DCMAKE_CROSSCOMPILING_EMULATOR=/usr/bin/qemu-aarch64-static
+             - -DCMAKE_CXX_FLAGS=-DJXL_HIGH_PRECISION=0
+
+          - arch: armhf
+            identifier: armhf
+            build_target: arm-linux-gnueabihf
+            cmake_args: [-DCMAKE_CROSSCOMPILING_EMULATOR=/usr/bin/qemu-arm-static]
+
+          - arch: i386
+            identifier: i386
+            test_in_pr: true
+            build_target: i686-linux-gnu
+
+    env:
+      BUILD_DIR: build
+      WILL_RUN_TESTS: ${{ (github.event_name == 'push' || (github.event_name == 'pull_request' && (matrix.test_in_pr || contains(github.event.pull_request.labels.*.name, 'CI:full')))) }}
+
+    steps:
+    - name: Harden Runner
+      uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
+      with:
+        egress-policy: audit
+
+    - name: Warmup apt
+      shell: bash
+      run: |
+        set -x
+        rm -f /var/lib/man-db/auto-update
+        apt-get update -y
+        apt-get install -y ca-certificates debian-ports-archive-keyring git python3
+
+    - name: Checkout the source
+      uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      with:
+        submodules: true
+        fetch-depth: 1
+
+    - name: Setup apt
+      shell: bash
+      run: |
+        set -x
+        dpkg --add-architecture "${{ matrix.arch }}"
+
+        python3 ./tools/scripts/transform_sources_list.py "amd64,${{ matrix.arch }}"
+
+    - name: Install build deps
+      shell: bash
+      run: |
+        set -x
+        apt update
+        pkgs=(
+          # Build dependencies
+          cmake
+          doxygen
+          graphviz
+          ninja-build
+          pkg-config
+          qemu-user-static
+          unzip
+          xdg-utils
+          xvfb
+
+          # Toolchain for cross-compiling.
+          clang-14
+          g++-aarch64-linux-gnu
+          libc6-dev-${{ matrix.arch }}-cross
+          libstdc++-12-dev-${{ matrix.arch }}-cross
+          libstdc++-12-dev:${{ matrix.arch }}
+
+          # Dependencies
+          libbrotli-dev:${{ matrix.arch }}
+          libgif-dev:${{ matrix.arch }}
+          libjpeg-dev:${{ matrix.arch }}
+          libpng-dev:${{ matrix.arch }}
+          libwebp-dev:${{ matrix.arch }}
+
+          # For OpenEXR:
+          libilmbase-dev:${{ matrix.arch }}
+          libopenexr-dev:${{ matrix.arch }}
+
+          # GTK plugins
+          libgdk-pixbuf2.0-dev:${{ matrix.arch }}
+          libgtk2.0-dev:${{ matrix.arch }}
+        )
+        if [[ "${{ matrix.build_target }}" != "x86_64-linux-gnu" ]]; then
+          pkgs+=(
+            binutils-${{ matrix.build_target }}
+            gcc-${{ matrix.build_target }}
+          )
+        fi
+        if [[ "${{ matrix.arch }}" != "i386" ]]; then
+          pkgs+=(
+            # TCMalloc
+            libgoogle-perftools-dev:${{ matrix.arch }}
+            libgoogle-perftools4:${{ matrix.arch }}
+            libtcmalloc-minimal4:${{ matrix.arch }}
+            libunwind-dev:${{ matrix.arch }}
+          )
+        fi
+        DEBIAN_FRONTEND=noninteractive apt install -y "${pkgs[@]}"
+        echo "CC=${{ matrix.c_compiler || 'clang-14' }}" >> $GITHUB_ENV
+        echo "CXX=${{ matrix.cxx_compiler || 'clang++-14' }}" >> $GITHUB_ENV
+
+    - name: Build
+      run: |
+        CMAKE_FLAGS="${{ matrix.cmake_flags }}" ./ci.sh release \
+          -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
+          -DJPEGXL_ENABLE_JNI=OFF \
+          ${{ join(matrix.cmake_args, ' ') }}
+      env:
+        SKIP_TEST: 1
+        BUILD_TARGET: ${{ matrix.build_target }}
+        TARGETS: ${{ env.WILL_RUN_TESTS == 'true' && 'all_tests cjxl djxl libjxl.so libjxl_dec.so' || 'all' }}
+
+    - name: Build stats
+      run: |
+        tools/scripts/build_stats.py --save build/stats.json \
+          --binutils ${{ matrix.build_target }}- \
+          --max-stack ${{ matrix.max_stack || '0' }} \
+          cjxl djxl libjxl.so libjxl_dec.so
+
+    - name: Prepare artefacts
+      if: env.WILL_RUN_TESTS == 'true'
+      run: |
+        find ./build -regextype egrep -type f -regex '.*\.(a|h|jar|log|o)'
+        find ./build -type f -executable > executable.lst
+        cp /etc/apt/sources.list.d/debian.sources ./
+
+    - name: Test ranging
+      if: ${{ !matrix.disable_tests }}
+      run: |
+          mkdir -p ./build/Testing/Temporary
+          unzip ./tools/scripts/test_cost-${{ matrix.identifier }}.zip -d ./build/Testing/Temporary
+
+    - uses: actions/upload-artifact@c7d193f32edcb7bfad88892161225aeda64e9392 # v4.0.0
+      if: env.WILL_RUN_TESTS == 'true'
+      with:
+        name: cross_binary-${{ matrix.identifier }}
+        path: |
+          build/
+          ci.sh
+          debian.sources
+          executable.lst
+          testdata/
+        retention-days: 1
+
+  test:
+    name: Testing ${{ matrix.identifier }} shard ${{ matrix.shard_number }}
+    needs: compile
+    runs-on: [ubuntu-22.04]
+    container:
+      image: debian:bookworm
+    strategy:
+      fail-fast: false
+      matrix:
+        shard_number: [0, 1, 2, 3, 4, 5, 6, 7]
+        identifier: [arm64, arm64-lowprecision, armhf, i386]
+        include:
+          - arch: arm64
+          - identifier: arm64
+            last_shard: 8
+
+          #- arch: arm64
+          #- identifier: arm64-sve
+          #  last_shard: 8
+
+          - arch: arm64
+            identifier: arm64-lowprecision
+            last_shard: 8
+
+          - arch: armhf
+            identifier: armhf
+            last_shard: 8
+
+          - arch: i386
+            identifier: i386
+            test_in_pr: true
+            last_shard: 4
+
+    env:
+      BUILD_DIR: build
+      UPLOAD_TEST_COST: false
+      LAST_SHARD: ${{ false && 1 || matrix.last_shard}}
+      # Run the tests on push and when requested in pull_request.
+      WILL_RUN_TESTS: ${{ (github.event_name == 'push' || (github.event_name == 'pull_request' && (matrix.test_in_pr || contains(github.event.pull_request.labels.*.name, 'CI:full')))) }}
+
+    steps:
+    - name: Harden Runner
+      uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
+      with:
+        egress-policy: audit
+
+    - uses: actions/download-artifact@f44cd7b40bfd40b6aa1cc1b9b5b7bf03d3c67110 # v4.1.0
+      if: (matrix.shard_number < env.LAST_SHARD) && (env.WILL_RUN_TESTS == 'true')
+      with:
+        name: cross_binary-${{ matrix.identifier }}
+
+    - name: Setup apt
+      if: (matrix.shard_number < env.LAST_SHARD) && (env.WILL_RUN_TESTS == 'true')
+      shell: bash
+      run: |
+        set -x
+        rm -f /var/lib/man-db/auto-update
+        apt-get update -y
+        apt-get install -y ca-certificates debian-ports-archive-keyring
+
+        dpkg --add-architecture "${{ matrix.arch }}"
+
+        cp ./debian.sources /etc/apt/sources.list.d/
+
+    - name: Install build deps
+      if: (matrix.shard_number < env.LAST_SHARD) && (env.WILL_RUN_TESTS == 'true')
+      shell: bash
+      run: |
+        set -x
+        apt update
+        pkgs=(
+          # Build dependencies
+          cmake
+          qemu-user-static
+
+          # Dependencies
+          libbrotli-dev:${{ matrix.arch }}
+          libgif-dev:${{ matrix.arch }}
+          libjpeg-dev:${{ matrix.arch }}
+          libpng-dev:${{ matrix.arch }}
+          libwebp-dev:${{ matrix.arch }}
+
+          # For OpenEXR:
+          libilmbase-dev:${{ matrix.arch }}
+          libopenexr-dev:${{ matrix.arch }}
+        )
+        DEBIAN_FRONTEND=noninteractive apt install -y "${pkgs[@]}"
+
+    - name: Prepare
+      if: (env.UPLOAD_TEST_COST == 'true') && (matrix.shard_number == 0) && (env.WILL_RUN_TESTS == 'true')
+      run: |
+        rm build/Testing/Temporary/CTestCostData.txt
+
+    - name: Test
+      if: (matrix.shard_number < env.LAST_SHARD) && (env.WILL_RUN_TESTS == 'true')
+      run: |
+        chmod +x ./ci.sh
+        chmod +x `cat executable.lst`
+        ./ci.sh test \
+          -I ${{ matrix.shard_number }},,${{ env.LAST_SHARD }} \
+          -E '(bash_test|conformance_tooling_test|test_jxl_jni_wrapper)'
+
+    - uses: actions/upload-artifact@c7d193f32edcb7bfad88892161225aeda64e9392 # v4.0.0
+      name: Upload test cost
+      if: (env.UPLOAD_TEST_COST == 'true') && (matrix.shard_number == 0) && (env.WILL_RUN_TESTS == 'true')
+      with:
+        name: test_cost-${{ matrix.identifier }}
+        path: |
+          build/Testing/Temporary/CTestCostData.txt
+        retention-days: 1

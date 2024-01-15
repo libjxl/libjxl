@@ -152,14 +152,14 @@
      </layout>
     </item>
     <item>
-     <widget class="jxl::SplitImageView" name="splitImageView" native="true"/>
+     <widget class="jpegxl::tools::SplitImageView" name="splitImageView" native="true"/>
     </item>
    </layout>
   </widget>
  </widget>
  <customwidgets>
   <customwidget>
-   <class>jxl::SplitImageView</class>
+   <class>jpegxl::tools::SplitImageView</class>
    <extends>QWidget</extends>
    <header>split_image_view.h</header>
    <container>1</container>

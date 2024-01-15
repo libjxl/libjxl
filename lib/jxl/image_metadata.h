@@ -9,19 +9,21 @@
 #ifndef LIB_JXL_IMAGE_METADATA_H_
 #define LIB_JXL_IMAGE_METADATA_H_
 
+#include <jxl/codestream_header.h>
 #include <stddef.h>
 #include <stdint.h>
 
+#include <string>
 #include <vector>
 
-#include "jxl/codestream_header.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/fields.h"
 #include "lib/jxl/headers.h"
 #include "lib/jxl/jpeg/jpeg_data.h"
-#include "lib/jxl/opsin_params.h"
 
 namespace jxl {
+
+struct AuxOut;
 
 // EXIF orientation of the image. This field overrides any field present in
 // actual EXIF metadata. The value tells which transformation the decoder must
@@ -79,6 +81,8 @@ struct BitDepth : public Fields {
 
   Status VisitFields(Visitor* JXL_RESTRICT visitor) override;
 
+  std::string DebugString() const;
+
   // Whether the original (uncompressed) samples are floating point or
   // unsigned integer.
   bool floating_point_sample;
@@ -106,6 +110,8 @@ struct ExtraChannelInfo : public Fields {
   JXL_FIELDS_NAME(ExtraChannelInfo)
 
   Status VisitFields(Visitor* JXL_RESTRICT visitor) override;
+
+  std::string DebugString() const;
 
   mutable bool all_default;
 
@@ -163,7 +169,7 @@ struct ToneMapping : public Fields {
   float linear_below;
 };
 
-// Contains weights to customize some trasnforms - in particular, XYB and
+// Contains weights to customize some transforms - in particular, XYB and
 // upsampling.
 struct CustomTransformData : public Fields {
   CustomTransformData();
@@ -195,7 +201,7 @@ struct ImageMetadata : public Fields {
 
   // Returns bit depth of the JPEG XL compressed alpha channel, or 0 if no alpha
   // channel present. In the theoretical case that there are multiple alpha
-  // channels, returns the bit depht of the first.
+  // channels, returns the bit depth of the first.
   uint32_t GetAlphaBits() const {
     const ExtraChannelInfo* alpha = Find(ExtraChannel::kAlpha);
     if (alpha == nullptr) return 0;
@@ -276,6 +282,8 @@ struct ImageMetadata : public Fields {
 
   bool ExtraFieldsDefault() const;
 
+  std::string DebugString() const;
+
   mutable bool all_default;
 
   BitDepth bit_depth;
@@ -317,7 +325,7 @@ struct ImageMetadata : public Fields {
   // must still use kNone (or kYCbCr, which would mean applying the YCbCr
   // transform to the 3-channel XYB data), since with !xyb_encoded, the 3
   // channels are stored as-is, no matter what meaning the color profile assigns
-  // to them. To use ColorEncoding::kXYB, xyb_encoded must be true.
+  // to them. To use ColorSpace::kXYB, xyb_encoded must be true.
   //
   // This value is defined in image metadata because this is the global
   // codestream header. This value does not affect the image itself, so is not
@@ -407,6 +415,8 @@ struct CodecMetadata {
       return m.preview_size.ysize();
     }
   }
+
+  std::string DebugString() const;
 };
 
 }  // namespace jxl

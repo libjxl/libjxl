@@ -9,11 +9,13 @@
 #include <QByteArray>
 #include <QWidget>
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 
 // Should be cached if possible.
 QByteArray GetMonitorIccProfile(const QWidget* widget);
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
 
 #endif  // TOOLS_ICC_DETECT_ICC_DETECT_H_

@@ -8,15 +8,14 @@
 
 #include <stddef.h>
 
-#include "lib/jxl/aux_out_fwd.h"
+#include <string>
+
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/dec_cache.h"
-#include "lib/jxl/dec_params.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/image.h"
-#include "lib/jxl/image_bundle.h"
 #include "lib/jxl/modular/encoding/encoding.h"
 #include "lib/jxl/modular/modular_image.h"
 
@@ -82,6 +81,7 @@ struct ModularStreamId {
   static size_t Num(const FrameDimensions& frame_dim, size_t passes) {
     return ModularAC(0, passes).ID(frame_dim);
   }
+  std::string DebugString() const;
 };
 
 class ModularFrameDecoder {
@@ -89,17 +89,18 @@ class ModularFrameDecoder {
   void Init(const FrameDimensions& frame_dim) { this->frame_dim = frame_dim; }
   Status DecodeGlobalInfo(BitReader* reader, const FrameHeader& frame_header,
                           bool allow_truncated_group);
-  Status DecodeGroup(const Rect& rect, BitReader* reader, int minShift,
-                     int maxShift, const ModularStreamId& stream, bool zerofill,
+  Status DecodeGroup(const FrameHeader& frame_header, const Rect& rect,
+                     BitReader* reader, int minShift, int maxShift,
+                     const ModularStreamId& stream, bool zerofill,
                      PassesDecoderState* dec_state,
                      RenderPipelineInput* render_pipeline_input,
-                     ImageBundle* output, bool allow_truncated);
+                     bool allow_truncated, bool* should_run_pipeline = nullptr);
   // Decodes a VarDCT DC group (`group_id`) from the given `reader`.
-  Status DecodeVarDCTDC(size_t group_id, BitReader* reader,
-                        PassesDecoderState* dec_state);
+  Status DecodeVarDCTDC(const FrameHeader& frame_header, size_t group_id,
+                        BitReader* reader, PassesDecoderState* dec_state);
   // Decodes a VarDCT AC Metadata group (`group_id`) from the given `reader`.
-  Status DecodeAcMetadata(size_t group_id, BitReader* reader,
-                          PassesDecoderState* dec_state);
+  Status DecodeAcMetadata(const FrameHeader& frame_header, size_t group_id,
+                          BitReader* reader, PassesDecoderState* dec_state);
   // Decodes a RAW quant table from `br` into the given `encoding`, of size
   // `required_size_x x required_size_y`. If `modular_frame_decoder` is passed,
   // its global tree is used, otherwise no global tree is used.
@@ -110,14 +111,16 @@ class ModularFrameDecoder {
   // if inplace is true, this can only be called once
   // if it is false, it can be called multiple times (e.g. for progressive
   // steps)
-  Status FinalizeDecoding(PassesDecoderState* dec_state, jxl::ThreadPool* pool,
-                          ImageBundle* output, bool inplace);
+  Status FinalizeDecoding(const FrameHeader& frame_header,
+                          PassesDecoderState* dec_state, jxl::ThreadPool* pool,
+                          bool inplace);
   bool have_dc() const { return have_something; }
   void MaybeDropFullImage();
   bool UsesFullImage() const { return use_full_image; }
 
  private:
-  Status ModularImageToDecodedRect(Image& gi, PassesDecoderState* dec_state,
+  Status ModularImageToDecodedRect(const FrameHeader& frame_header, Image& gi,
+                                   PassesDecoderState* dec_state,
                                    jxl::ThreadPool* pool,
                                    RenderPipelineInput& render_pipeline_input,
                                    Rect modular_rect);

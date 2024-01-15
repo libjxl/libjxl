@@ -8,6 +8,8 @@
 
 // XYB -> linear sRGB.
 
+#include <jxl/cms_interface.h>
+
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
@@ -15,7 +17,6 @@
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_metadata.h"
-#include "lib/jxl/opsin_params.h"
 
 namespace jxl {
 
@@ -29,23 +30,45 @@ struct OpsinParams {
 };
 
 struct OutputEncodingInfo {
+  //
+  // Fields depending only on image metadata
+  //
+  ColorEncoding orig_color_encoding;
+  // Used for the HLG OOTF and PQ tone mapping.
+  float orig_intensity_target;
+  // Opsin inverse matrix taken from the metadata.
+  float orig_inverse_matrix[9];
+  bool default_transform;
+  bool xyb_encoded;
+  //
+  // Fields depending on output color encoding
+  //
+  // The requested color encoding.
   ColorEncoding color_encoding;
-  // Used for Gamma and DCI transfer functions.
-  float inverse_gamma;
+  // This is expected as the output of the conversion from XYB.
+  // It is equal to `color_encoding`, but with a linear tone response curve.
+  ColorEncoding linear_color_encoding;
+  bool color_encoding_is_original;
   // Contains an opsin matrix that converts to the primaries of the output
   // encoding.
   OpsinParams opsin_params;
-  // default_enc is used for xyb encoded image with ICC profile, in other
-  // cases it has no effect. Use linear sRGB or grayscale if ICC profile is
-  // not matched (not parsed or no matching ColorEncoding exists)
-  Status Set(const CodecMetadata& metadata, const ColorEncoding& default_enc);
-  bool all_default_opsin = true;
-  bool color_encoding_is_original = false;
-  // Luminances of color_encoding's primaries, used for the HLG inverse OOTF.
+  bool all_default_opsin;
+  // Used for Gamma and DCI transfer functions.
+  float inverse_gamma;
+  // Luminances of color_encoding's primaries, used for the HLG inverse OOTF and
+  // for PQ tone mapping.
   // Default to sRGB's.
-  float luminances[3] = {0.2126, 0.7152, 0.0722};
-  // Also used for the HLG inverse OOTF.
-  float intensity_target;
+  float luminances[3];
+  // Used for the HLG inverse OOTF and PQ tone mapping.
+  float desired_intensity_target;
+  bool cms_set = false;
+  JxlCmsInterface color_management_system;
+
+  Status SetFromMetadata(const CodecMetadata& metadata);
+  Status MaybeSetColorEncoding(const ColorEncoding& c_desired);
+
+ private:
+  Status SetColorEncoding(const ColorEncoding& c_desired);
 };
 
 // Converts `inout` (not padded) from opsin to linear sRGB in-place. Called from

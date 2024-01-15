@@ -9,6 +9,9 @@
 // Macros for compiler version + nonstandard keywords, e.g. __builtin_expect.
 
 #include <stdint.h>
+#include <sys/types.h>
+
+#include "lib/jxl/base/sanitizer_definitions.h"
 
 // #if is shorter and safer than #ifdef. *_VERSION are zero if not detected,
 // otherwise 100 * major + minor version. Note that other packages check for
@@ -60,11 +63,11 @@
 #endif
 
 #if JXL_COMPILER_MSVC
-#define JXL_UNREACHABLE __assume(false)
+#define JXL_UNREACHABLE_BUILTIN __assume(false)
 #elif JXL_COMPILER_CLANG || JXL_COMPILER_GCC >= 405
-#define JXL_UNREACHABLE __builtin_unreachable()
+#define JXL_UNREACHABLE_BUILTIN __builtin_unreachable()
 #else
-#define JXL_UNREACHABLE
+#define JXL_UNREACHABLE_BUILTIN
 #endif
 
 #if JXL_COMPILER_MSVC
@@ -73,6 +76,16 @@
 // Encountered "attribute list cannot appear here" when using the C++17
 // [[maybe_unused]], so only use the old style attribute for now.
 #define JXL_MAYBE_UNUSED __attribute__((unused))
+#endif
+
+// MSAN execution won't hurt if some code it not inlined, but this can greatly
+// improve compilation time. Unfortunately this macro can not be used just
+// everywhere - inside header files it leads to "multiple definition" error;
+// though it would be better not to have JXL_INLINE in header overall.
+#if JXL_MEMORY_SANITIZER || JXL_ADDRESS_SANITIZER || JXL_THREAD_SANITIZER
+#define JXL_MAYBE_INLINE JXL_MAYBE_UNUSED
+#else
+#define JXL_MAYBE_INLINE JXL_INLINE
 #endif
 
 #if JXL_COMPILER_MSVC

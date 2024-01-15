@@ -13,35 +13,51 @@
 #include <fstream>
 
 #include "lib/extras/codec.h"
+#include "lib/extras/dec/color_description.h"
 #include "lib/extras/enc/apng.h"
 #include "lib/extras/time.h"
-#include "lib/jxl/base/file_io.h"
-#include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/image_bundle.h"
 #include "tools/benchmark/benchmark_utils.h"
+#include "tools/file_io.h"
+#include "tools/thread_pool_internal.h"
 
-namespace jxl {
-namespace {
+namespace jpegxl {
+namespace tools {
 
-std::string GetBaseName(std::string filename) {
-  std::string result = std::move(filename);
-  result = basename(&result[0]);
-  const size_t dot = result.rfind('.');
-  if (dot != std::string::npos) {
-    result.resize(dot);
-  }
-  return result;
+struct CustomCodecArgs {
+  std::string extension;
+  std::string colorspace;
+  bool quiet;
+};
+
+static CustomCodecArgs* const custom_args = new CustomCodecArgs;
+
+Status AddCommandLineOptionsCustomCodec(BenchmarkArgs* args) {
+  args->AddString(
+      &custom_args->extension, "custom_codec_extension",
+      "Converts input and output of codec to this file type (default: png).",
+      "png");
+  args->AddString(
+      &custom_args->colorspace, "custom_codec_colorspace",
+      "If not empty, converts input and output of codec to this colorspace.",
+      "");
+  args->AddFlag(&custom_args->quiet, "custom_codec_quiet",
+                "Whether stdin and stdout of custom codec should be shown.",
+                false);
+  return true;
 }
+
+namespace {
 
 // This uses `output_filename` to determine the name of the corresponding
 // `.time` file.
 template <typename F>
 Status ReportCodecRunningTime(F&& function, std::string output_filename,
                               jpegxl::tools::SpeedStats* const speed_stats) {
-  const double start = Now();
+  const double start = jxl::Now();
   JXL_RETURN_IF_ERROR(function());
-  const double end = Now();
+  const double end = jxl::Now();
   const std::string time_filename =
       GetBaseName(std::move(output_filename)) + ".time";
   std::ifstream time_stream(time_filename);
@@ -64,21 +80,36 @@ class CustomCodec : public ImageCodec {
   explicit CustomCodec(const BenchmarkArgs& args) : ImageCodec(args) {}
 
   Status ParseParam(const std::string& param) override {
+    if (param_index_ == 0) {
+      description_ = "";
+    }
     switch (param_index_) {
       case 0:
         extension_ = param;
+        description_ += param;
         break;
-
       case 1:
         compress_command_ = param;
+        description_ += std::string(":");
+        if (param.find_last_of('/') < param.size()) {
+          description_ += param.substr(param.find_last_of('/') + 1);
+        } else {
+          description_ += param;
+        }
         break;
-
       case 2:
         decompress_command_ = param;
         break;
-
       default:
         compress_args_.push_back(param);
+        description_ += std::string(":");
+        if (param.size() > 2 && param[0] == '-' && param[1] == '-') {
+          description_ += param.substr(2);
+        } else if (param.size() > 2 && param[0] == '-') {
+          description_ += param.substr(1);
+        } else {
+          description_ += param;
+        }
         break;
     }
     ++param_index_;
@@ -86,51 +117,68 @@ class CustomCodec : public ImageCodec {
   }
 
   Status Compress(const std::string& filename, const CodecInOut* io,
-                  ThreadPoolInternal* pool, PaddedBytes* compressed,
+                  ThreadPool* pool, std::vector<uint8_t>* compressed,
                   jpegxl::tools::SpeedStats* speed_stats) override {
     JXL_RETURN_IF_ERROR(param_index_ > 2);
 
     const std::string basename = GetBaseName(filename);
-    TemporaryFile png_file(basename, "png"), encoded_file(basename, extension_);
-    std::string png_filename, encoded_filename;
-    JXL_RETURN_IF_ERROR(png_file.GetFileName(&png_filename));
+    TemporaryFile in_file(basename, custom_args->extension);
+    TemporaryFile encoded_file(basename, extension_);
+    std::string in_filename, encoded_filename;
+    JXL_RETURN_IF_ERROR(in_file.GetFileName(&in_filename));
     JXL_RETURN_IF_ERROR(encoded_file.GetFileName(&encoded_filename));
     saved_intensity_target_ = io->metadata.m.IntensityTarget();
 
     const size_t bits = io->metadata.m.bit_depth.bits_per_sample;
-    PaddedBytes png;
-    JXL_RETURN_IF_ERROR(
-        extras::EncodeImageAPNG(io, io->Main().c_current(), bits, pool, &png));
-    JXL_RETURN_IF_ERROR(WriteFile(png, png_filename));
+    ColorEncoding c_enc = io->Main().c_current();
+    if (!custom_args->colorspace.empty()) {
+      JxlColorEncoding colorspace;
+      JXL_RETURN_IF_ERROR(
+          jxl::ParseDescription(custom_args->colorspace, &colorspace));
+      JXL_RETURN_IF_ERROR(c_enc.FromExternal(colorspace));
+    }
+    std::vector<uint8_t> encoded;
+    JXL_RETURN_IF_ERROR(Encode(*io, c_enc, bits, in_filename, &encoded, pool));
+    JXL_RETURN_IF_ERROR(WriteFile(in_filename, encoded));
     std::vector<std::string> arguments = compress_args_;
-    arguments.push_back(png_filename);
+    arguments.push_back(in_filename);
     arguments.push_back(encoded_filename);
     JXL_RETURN_IF_ERROR(ReportCodecRunningTime(
-        [&, this] { return RunCommand(compress_command_, arguments); },
+        [&, this] {
+          return RunCommand(compress_command_, arguments, custom_args->quiet);
+        },
         encoded_filename, speed_stats));
     return ReadFile(encoded_filename, compressed);
   }
 
   Status Decompress(const std::string& filename,
-                    const Span<const uint8_t> compressed,
-                    ThreadPoolInternal* pool, CodecInOut* io,
+                    const Span<const uint8_t> compressed, ThreadPool* pool,
+                    CodecInOut* io,
                     jpegxl::tools::SpeedStats* speed_stats) override {
     const std::string basename = GetBaseName(filename);
-    TemporaryFile encoded_file(basename, extension_), png_file(basename, "png");
-    std::string encoded_filename, png_filename;
+    TemporaryFile encoded_file(basename, extension_);
+    TemporaryFile out_file(basename, custom_args->extension);
+    std::string encoded_filename, out_filename;
     JXL_RETURN_IF_ERROR(encoded_file.GetFileName(&encoded_filename));
-    JXL_RETURN_IF_ERROR(png_file.GetFileName(&png_filename));
+    JXL_RETURN_IF_ERROR(out_file.GetFileName(&out_filename));
 
-    JXL_RETURN_IF_ERROR(WriteFile(compressed, encoded_filename));
+    JXL_RETURN_IF_ERROR(WriteFile(encoded_filename, compressed));
     JXL_RETURN_IF_ERROR(ReportCodecRunningTime(
         [&, this] {
           return RunCommand(
               decompress_command_,
-              std::vector<std::string>{encoded_filename, png_filename});
+              std::vector<std::string>{encoded_filename, out_filename},
+              custom_args->quiet);
         },
-        png_filename, speed_stats));
+        out_filename, speed_stats));
+    jxl::extras::ColorHints hints;
+    if (!custom_args->colorspace.empty()) {
+      hints.Add("color_space", custom_args->colorspace);
+    }
+    std::vector<uint8_t> encoded;
+    JXL_RETURN_IF_ERROR(ReadFile(out_filename, &encoded));
     JXL_RETURN_IF_ERROR(
-        SetFromFile(png_filename, extras::ColorHints(), io, pool));
+        jxl::SetFromBytes(jxl::Bytes(encoded), hints, io, pool));
     io->metadata.m.SetIntensityTarget(saved_intensity_target_);
     return true;
   }
@@ -150,14 +198,18 @@ ImageCodec* CreateNewCustomCodec(const BenchmarkArgs& args) {
   return new CustomCodec(args);
 }
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
 
 #else
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 
 ImageCodec* CreateNewCustomCodec(const BenchmarkArgs& args) { return nullptr; }
+Status AddCommandLineOptionsCustomCodec(BenchmarkArgs* args) { return true; }
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
 
 #endif  // _MSC_VER

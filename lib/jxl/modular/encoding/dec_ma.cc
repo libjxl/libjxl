@@ -9,6 +9,7 @@
 #include "lib/jxl/dec_ans.h"
 #include "lib/jxl/modular/encoding/ma_common.h"
 #include "lib/jxl/modular/modular_image.h"
+#include "lib/jxl/pack_signed.h"
 
 namespace jxl {
 
@@ -65,7 +66,7 @@ Status DecodeTree(BitReader *br, ANSSymbolReader *reader,
       }
       uint32_t mul_bits =
           reader->ReadHybridUint(kMultiplierBitsContext, br, context_map);
-      if (mul_bits + 1 >= 1u << (31u - mul_log)) {
+      if (mul_bits >= (1u << (31u - mul_log)) - 1u) {
         return JXL_FAILURE("Invalid multiplier");
       }
       uint32_t multiplier = (mul_bits + 1U) << mul_log;

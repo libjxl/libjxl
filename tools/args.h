@@ -8,20 +8,17 @@
 
 // Helpers for parsing command line arguments. No include guard needed.
 
-#include <inttypes.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
 #include <string>
-#include <vector>
+#include <utility>
 
 #include "lib/extras/dec/color_hints.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/codec_in_out.h"  // DecoderHints
-#include "lib/jxl/gaborish.h"
-#include "lib/jxl/modular/options.h"
+#include "tools/file_io.h"
 
 namespace jpegxl {
 namespace tools {
@@ -40,43 +37,6 @@ static inline bool ParseOverride(const char* arg, jxl::Override* out) {
   return JXL_FAILURE("Args");
 }
 
-static inline bool ParseUnsigned(const char* arg, size_t* out) {
-  char* end;
-  *out = static_cast<size_t>(strtoull(arg, &end, 0));
-  if (end[0] != '\0') {
-    fprintf(stderr, "Unable to interpret as unsigned integer: %s.\n", arg);
-    return JXL_FAILURE("Args");
-  }
-  return true;
-}
-
-static inline bool ParseUint32(const char* arg, uint32_t* out) {
-  size_t value = 0;
-  bool ret = ParseUnsigned(arg, &value);
-  if (ret) *out = value;
-  return ret;
-}
-
-static inline bool ParseSigned(const char* arg, int* out) {
-  char* end;
-  *out = static_cast<int>(strtol(arg, &end, 0));
-  if (end[0] != '\0') {
-    fprintf(stderr, "Unable to interpret as signed integer: %s.\n", arg);
-    return JXL_FAILURE("Args");
-  }
-  return true;
-}
-
-static inline bool ParseFloat(const char* arg, float* out) {
-  char* end;
-  *out = static_cast<float>(strtod(arg, &end));
-  if (end[0] != '\0') {
-    fprintf(stderr, "Unable to interpret as float: %s.\n", arg);
-    return JXL_FAILURE("Args");
-  }
-  return true;
-}
-
 static inline bool ParseFloatPair(const char* arg,
                                   std::pair<float, float>* out) {
   int parsed = sscanf(arg, "%f,%f", &out->first, &out->second);
@@ -91,18 +51,8 @@ static inline bool ParseFloatPair(const char* arg,
   return true;
 }
 
-static inline bool ParseDouble(const char* arg, double* out) {
-  char* end;
-  *out = static_cast<double>(strtod(arg, &end));
-  if (end[0] != '\0') {
-    fprintf(stderr, "Unable to interpret as double: %s.\n", arg);
-    return JXL_FAILURE("Args");
-  }
-  return true;
-}
-
-static inline bool ParseAndAppendKeyValue(const char* arg,
-                                          jxl::extras::ColorHints* out) {
+template <typename Callback>
+static inline bool ParseAndAppendKeyValue(const char* arg, Callback* cb) {
   const char* eq = strchr(arg, '=');
   if (!eq) {
     fprintf(stderr, "Expected argument as 'key=value' but received '%s'\n",
@@ -110,31 +60,7 @@ static inline bool ParseAndAppendKeyValue(const char* arg,
     return false;
   }
   std::string key(arg, eq);
-  out->Add(key, std::string(eq + 1));
-  return true;
-}
-
-static inline bool ParsePredictor(const char* arg, jxl::Predictor* out) {
-  char* end;
-  uint64_t p = static_cast<uint64_t>(strtoull(arg, &end, 0));
-  if (end[0] != '\0') {
-    fprintf(stderr, "Invalid predictor: %s.\n", arg);
-    return JXL_FAILURE("Args");
-  }
-  if (p >= jxl::kNumModularEncoderPredictors) {
-    fprintf(stderr,
-            "Invalid predictor value %" PRIu64 ", must be less than %" PRIu64
-            ".\n",
-            p, static_cast<uint64_t>(jxl::kNumModularEncoderPredictors));
-    return JXL_FAILURE("Args");
-  }
-  *out = static_cast<jxl::Predictor>(p);
-  return true;
-}
-
-static inline bool ParseString(const char* arg, std::string* out) {
-  out->assign(arg);
-  return true;
+  return (*cb)(key, std::string(eq + 1));
 }
 
 static inline bool ParseCString(const char* arg, const char** out) {
@@ -142,20 +68,32 @@ static inline bool ParseCString(const char* arg, const char** out) {
   return true;
 }
 
-static inline bool SetBooleanTrue(bool* out) {
-  *out = true;
-  return true;
-}
-
-static inline bool SetBooleanFalse(bool* out) {
-  *out = false;
-  return true;
-}
-
 static inline bool IncrementUnsigned(size_t* out) {
   (*out)++;
   return true;
 }
+
+struct ColorHintsProxy {
+  jxl::extras::ColorHints target;
+  bool operator()(const std::string& key, const std::string& value) {
+    if (key == "icc_pathname") {
+      std::vector<uint8_t> icc;
+      JXL_RETURN_IF_ERROR(ReadFile(value, &icc));
+      const char* data = reinterpret_cast<const char*>(icc.data());
+      target.Add("icc", std::string(data, data + icc.size()));
+    } else if (key == "exif" || key == "xmp" || key == "jumbf") {
+      std::vector<uint8_t> metadata;
+      JXL_RETURN_IF_ERROR(ReadFile(value, &metadata));
+      const char* data = reinterpret_cast<const char*>(metadata.data());
+      target.Add(key, std::string(data, data + metadata.size()));
+    } else if (key == "strip") {
+      target.Add(value, "");
+    } else {
+      target.Add(key, value);
+    }
+    return true;
+  }
+};
 
 }  // namespace tools
 }  // namespace jpegxl

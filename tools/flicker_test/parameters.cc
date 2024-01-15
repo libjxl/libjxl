@@ -5,7 +5,8 @@
 
 #include "tools/flicker_test/parameters.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 
 namespace {
 
@@ -84,4 +85,5 @@ void FlickerTestParameters::saveTo(QSettings* const settings) const {
   settings->endGroup();
 }
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl

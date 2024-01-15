@@ -6,18 +6,23 @@
 #ifndef LIB_JXL_DEC_CACHE_H_
 #define LIB_JXL_DEC_CACHE_H_
 
+#include <jxl/decode.h>
 #include <stdint.h>
 
+#include <atomic>
+#include <cmath>
 #include <hwy/base.h>  // HWY_ALIGN_MAX
 
-#include "jxl/decode.h"
 #include "lib/jxl/ac_strategy.h"
-#include "lib/jxl/base/profiler.h"
+#include "lib/jxl/base/common.h"  // kMaxNumPasses
+#include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/coeff_order.h"
-#include "lib/jxl/common.h"
 #include "lib/jxl/convolve.h"
+#include "lib/jxl/dec_ans.h"
 #include "lib/jxl/dec_group_border.h"
 #include "lib/jxl/dec_noise.h"
+#include "lib/jxl/frame_header.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/passes_state.h"
 #include "lib/jxl/quant_weights.h"
@@ -55,6 +60,20 @@ struct PixelCallback {
   void* init_opaque = nullptr;
 };
 
+struct ImageOutput {
+  // Pixel format of the output pixels, used for buffer and callback output.
+  JxlPixelFormat format;
+  // Output bit depth for unsigned data types, used for float to int conversion.
+  size_t bits_per_sample;
+  // Callback for line-by-line output.
+  PixelCallback callback;
+  // Pixel buffer for image output.
+  void* buffer;
+  size_t buffer_size;
+  // Length of a row of image_buffer in bytes (based on oriented width).
+  size_t stride;
+};
+
 // Per-frame decoder state. All the images here should be accessed through a
 // group rect (either with block units or pixel units).
 struct PassesDecoderState {
@@ -76,27 +95,22 @@ struct PassesDecoderState {
   // Sigma values for EPF.
   ImageF sigma;
 
-  // RGB8 output buffer. If not nullptr, image data will be written to this
-  // buffer instead of being written to the output ImageBundle. The image data
-  // is assumed to have the stride given by `rgb_stride`, hence row `i` starts
-  // at position `i * rgb_stride`.
-  uint8_t* rgb_output;
-  size_t rgb_stride = 0;
+  // Image dimensions before applying undo_orientation.
+  size_t width;
+  size_t height;
+  ImageOutput main_output;
+  std::vector<ImageOutput> extra_output;
 
   // Whether to use int16 float-XYB-to-uint8-srgb conversion.
   bool fast_xyb_srgb8_conversion;
 
-  // If true, rgb_output or callback output is RGBA using 4 instead of 3 bytes
-  // per pixel.
-  bool rgb_output_is_rgba;
+  // If true, the RGBA output will be unpremultiplied before writing to the
+  // output.
+  bool unpremul_alpha;
 
-  // Callback for line-by-line output.
-  PixelCallback pixel_callback;
-
-  // Buffer of upsampling * kApplyImageFeaturesTileDim ones.
-  std::vector<float> opaque_alpha;
-  // One row per thread
-  std::vector<std::vector<float>> pixel_callback_rows;
+  // The render pipeline will apply this orientation to bring the image to the
+  // intended display orientation.
+  Orientation undo_orientation;
 
   // Used for seeding noise.
   size_t visible_frame_index = 0;
@@ -118,27 +132,32 @@ struct PassesDecoderState {
     bool use_slow_render_pipeline;
     bool coalescing;
     bool render_spotcolors;
+    bool render_noise;
   };
 
-  Status PreparePipeline(ImageBundle* decoded, PipelineOptions options);
+  Status PreparePipeline(const FrameHeader& frame_header, ImageBundle* decoded,
+                         PipelineOptions options);
 
   // Information for colour conversions.
   OutputEncodingInfo output_encoding_info;
 
   // Initializes decoder-specific structures using information from *shared.
-  Status Init() {
-    x_dm_multiplier =
-        std::pow(1 / (1.25f), shared->frame_header.x_qm_scale - 2.0f);
-    b_dm_multiplier =
-        std::pow(1 / (1.25f), shared->frame_header.b_qm_scale - 2.0f);
+  Status Init(const FrameHeader& frame_header) {
+    x_dm_multiplier = std::pow(1 / (1.25f), frame_header.x_qm_scale - 2.0f);
+    b_dm_multiplier = std::pow(1 / (1.25f), frame_header.b_qm_scale - 2.0f);
 
-    rgb_output = nullptr;
-    rgb_output_is_rgba = false;
+    main_output.callback = PixelCallback();
+    main_output.buffer = nullptr;
+    extra_output.clear();
+
     fast_xyb_srgb8_conversion = false;
+    unpremul_alpha = false;
+    undo_orientation = Orientation::kIdentity;
+
     used_acs = 0;
 
     upsampler8x = GetUpsamplingStage(shared->metadata->transform_data, 0, 3);
-    if (shared->frame_header.loop_filter.epf_iters > 0) {
+    if (frame_header.loop_filter.epf_iters > 0) {
       sigma = ImageF(shared->frame_dim.xsize_blocks + 2 * kSigmaPadding,
                      shared->frame_dim.ysize_blocks + 2 * kSigmaPadding);
     }
@@ -146,7 +165,7 @@ struct PassesDecoderState {
   }
 
   // Initialize the decoder state after all of DC is decoded.
-  Status InitForAC(ThreadPool* pool) {
+  Status InitForAC(size_t num_passes, ThreadPool* pool) {
     shared_storage.coeff_order_size = 0;
     for (uint8_t o = 0; o < AcStrategy::kNumValidStrategies; ++o) {
       if (((1 << o) & used_acs) == 0) continue;
@@ -155,26 +174,18 @@ struct PassesDecoderState {
           std::max(kCoeffOrderOffset[3 * (ord + 1)] * kDCTBlockSize,
                    shared_storage.coeff_order_size);
     }
-    size_t sz = shared_storage.frame_header.passes.num_passes *
-                shared_storage.coeff_order_size;
+    size_t sz = num_passes * shared_storage.coeff_order_size;
     if (sz > shared_storage.coeff_orders.size()) {
       shared_storage.coeff_orders.resize(sz);
     }
     return true;
   }
-
-  // Fills the `state->filter_weights.sigma` image with the precomputed sigma
-  // values in the area inside `block_rect`. Accesses the AC strategy, quant
-  // field and epf_sharpness fields in the corresponding positions.
-  void ComputeSigma(const Rect& block_rect, PassesDecoderState* state);
 };
 
 // Temp images required for decoding a single group. Reduces memory allocations
 // for large images because we only initialize min(#threads, #groups) instances.
 struct GroupDecCache {
   void InitOnce(size_t num_passes, size_t used_acs) {
-    PROFILER_FUNC;
-
     for (size_t i = 0; i < num_passes; i++) {
       if (num_nzeroes[i].xsize() == 0) {
         // Allocate enough for a whole group - partial groups on the
@@ -198,7 +209,7 @@ struct GroupDecCache {
       max_block_area_ = max_block_area;
       // We need 3x float blocks for dequantized coefficients and 1x for scratch
       // space for transforms.
-      float_memory_ = hwy::AllocateAligned<float>(max_block_area_ * 4);
+      float_memory_ = hwy::AllocateAligned<float>(max_block_area_ * 7);
       // We need 3x int32 or int16 blocks for quantized coefficients.
       int32_memory_ = hwy::AllocateAligned<int32_t>(max_block_area_ * 3);
       int16_memory_ = hwy::AllocateAligned<int16_t>(max_block_area_ * 3);

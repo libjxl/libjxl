@@ -4,7 +4,7 @@
  * license that can be found in the LICENSE file.
  */
 
-/** @addtogroup libjxl_common
+/** @addtogroup libjxl_metadata
  * @{
  * @file codestream_header.h
  * @brief Definitions of structs and enums for the metadata from the JPEG XL
@@ -15,11 +15,9 @@
 #ifndef JXL_CODESTREAM_HEADER_H_
 #define JXL_CODESTREAM_HEADER_H_
 
+#include <jxl/types.h>
 #include <stddef.h>
 #include <stdint.h>
-
-#include "jxl/color_encoding.h"
-#include "jxl/types.h"
 
 #if defined(__cplusplus) || defined(c_plusplus)
 extern "C" {
@@ -71,15 +69,6 @@ typedef struct {
   /** Preview height in pixels */
   uint32_t ysize;
 } JxlPreviewHeader;
-
-/** The intrinsic size header */
-typedef struct {
-  /** Intrinsic width in pixels */
-  uint32_t xsize;
-
-  /** Intrinsic height in pixels */
-  uint32_t ysize;
-} JxlIntrinsicSizeHeader;
 
 /** The codestream animation header, optionally present in the beginning of
  * the codestream, and if it is it applies to all animation frames, unlike
@@ -175,10 +164,14 @@ typedef struct {
    * (linear if outputting to floating point, nonlinear with standard sRGB
    * transfer function if outputting to unsigned integers) but will not convert
    * it to to the original color profile. The decoder also does not convert to
-   * the target display color profile, but instead will always indicate which
-   * color profile the returned pixel data is encoded in when using @see
-   * JXL_COLOR_PROFILE_TARGET_DATA so that a CMS can be used to convert the
-   * data.
+   * the target display color profile. To convert the pixel data produced by
+   * the decoder to the original color profile, one of the JxlDecoderGetColor*
+   * functions needs to be called with @ref JXL_COLOR_PROFILE_TARGET_DATA to get
+   * the color profile of the decoder output, and then an external CMS can be
+   * used for conversion.
+   * Note that for lossy compression, this should be set to false for most use
+   * cases, and if needed, the image should be converted to the original color
+   * profile after decoding, as described above.
    */
   JXL_BOOL uses_original_profile;
 
@@ -251,7 +244,7 @@ typedef struct {
    */
   uint32_t intrinsic_xsize;
 
-  /** Intrinsic heigth of the image.
+  /** Intrinsic height of the image.
    * The intrinsic size can be different from the actual size in pixels
    * (as given by xsize and ysize) and it denotes the recommended dimensions
    * for displaying the image, i.e. applications are advised to resample the
@@ -386,6 +379,8 @@ typedef struct {
   /** After blending, save the frame as reference frame with this ID (0-3).
    * Special case: if the frame duration is nonzero, ID 0 means "will not be
    * referenced in the future". This value is not used for the last frame.
+   * When encoding, ID 3 is reserved to frames that are generated internally by
+   * the encoder, and should not be used by applications.
    */
   uint32_t save_as_reference;
 } JxlLayerInfo;

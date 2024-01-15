@@ -19,46 +19,43 @@
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 
+#include "lib/jxl/base/fast_math-inl.h"
 #include "lib/jxl/base/random.h"
 #include "lib/jxl/enc_ans.h"
-#include "lib/jxl/fast_math-inl.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
 #include "lib/jxl/modular/options.h"
+#include "lib/jxl/pack_signed.h"
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
+
+// These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::Eq;
+using hwy::HWY_NAMESPACE::IfThenElse;
+using hwy::HWY_NAMESPACE::Lt;
+using hwy::HWY_NAMESPACE::Max;
 
 const HWY_FULL(float) df;
 const HWY_FULL(int32_t) di;
 size_t Padded(size_t x) { return RoundUpTo(x, Lanes(df)); }
 
-float EstimateBits(const int32_t *counts, int32_t *rounded_counts,
-                   size_t num_symbols) {
-  // Try to approximate the effect of rounding up nonzero probabilities.
+// Compute entropy of the histogram, taking into account the minimum probability
+// for symbols with non-zero counts.
+float EstimateBits(const int32_t *counts, size_t num_symbols) {
   int32_t total = std::accumulate(counts, counts + num_symbols, 0);
-  const auto min = Set(di, (total + ANS_TAB_SIZE - 1) >> ANS_LOG_TAB_SIZE);
-  const auto zero_i = Zero(di);
-  for (size_t i = 0; i < num_symbols; i += Lanes(df)) {
-    auto counts_v = LoadU(di, &counts[i]);
-    counts_v = IfThenElse(counts_v == zero_i, zero_i,
-                          IfThenElse(counts_v < min, min, counts_v));
-    StoreU(counts_v, di, &rounded_counts[i]);
-  }
-  // Compute entropy of the "rounded" probabilities.
   const auto zero = Zero(df);
-  const size_t total_scalar =
-      std::accumulate(rounded_counts, rounded_counts + num_symbols, 0);
-  const auto inv_total = Set(df, 1.0f / total_scalar);
+  const auto minprob = Set(df, 1.0f / ANS_TAB_SIZE);
+  const auto inv_total = Set(df, 1.0f / total);
   auto bits_lanes = Zero(df);
-  auto total_v = Set(di, total_scalar);
+  auto total_v = Set(di, total);
   for (size_t i = 0; i < num_symbols; i += Lanes(df)) {
-    const auto counts_v = ConvertTo(df, LoadU(di, &counts[i]));
-    const auto round_counts_v = LoadU(di, &rounded_counts[i]);
-    const auto probs = ConvertTo(df, round_counts_v) * inv_total;
-    const auto nbps = IfThenElse(round_counts_v == total_v, BitCast(di, zero),
-                                 BitCast(di, FastLog2f(df, probs)));
-    bits_lanes -=
-        IfThenElse(counts_v == zero, zero, counts_v * BitCast(df, nbps));
+    const auto counts_iv = LoadU(di, &counts[i]);
+    const auto counts_fv = ConvertTo(df, counts_iv);
+    const auto probs = Mul(counts_fv, inv_total);
+    const auto mprobs = Max(probs, minprob);
+    const auto nbps = IfThenElse(Eq(counts_iv, total_v), BitCast(di, zero),
+                                 BitCast(di, FastLog2f(df, mprobs)));
+    bits_lanes = Sub(bits_lanes, Mul(counts_fv, BitCast(df, nbps)));
   }
   return GetLane(SumOfLanes(df, bits_lanes));
 }
@@ -220,7 +217,6 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
       }
     }
     max_symbols = Padded(max_symbols);
-    std::vector<int32_t> rounded_counts(max_symbols);
     std::vector<int32_t> counts(max_symbols * num_predictors);
     std::vector<uint32_t> tot_extra_bits(num_predictors);
     for (size_t pred = 0; pred < num_predictors; pred++) {
@@ -235,9 +231,9 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
     float base_bits;
     {
       size_t pred = tree_samples.PredictorIndex((*tree)[pos].predictor);
-      base_bits = EstimateBits(counts.data() + pred * max_symbols,
-                               rounded_counts.data(), max_symbols) +
-                  tot_extra_bits[pred];
+      base_bits =
+          EstimateBits(counts.data() + pred * max_symbols, max_symbols) +
+          tot_extra_bits[pred];
     }
 
     SplitInfo *best = &best_split_nonstatic;
@@ -348,11 +344,9 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
               counts_below[sym] += count_increase[i * max_symbols + sym];
               count_increase[i * max_symbols + sym] = 0;
             }
-            float rcost = EstimateBits(counts_above.data(),
-                                       rounded_counts.data(), max_symbols) +
+            float rcost = EstimateBits(counts_above.data(), max_symbols) +
                           tot_extra_bits[pred] - extra_bits_below;
-            float lcost = EstimateBits(counts_below.data(),
-                                       rounded_counts.data(), max_symbols) +
+            float lcost = EstimateBits(counts_below.data(), max_symbols) +
                           extra_bits_below;
             JXL_DASSERT(extra_bits_below <= tot_extra_bits[pred]);
             float penalty = 0;
@@ -504,7 +498,7 @@ void ComputeBestTree(TreeSamples &tree_samples, float threshold,
    tree);
 }
 
-constexpr int TreeSamples::kPropertyRange;
+constexpr int32_t TreeSamples::kPropertyRange;
 constexpr uint32_t TreeSamples::kDedupEntryUnused;
 
 Status TreeSamples::SetPredictor(Predictor predictor,
@@ -722,27 +716,27 @@ void TreeSamples::ThreeShuffle(size_t a, size_t b, size_t c) {
 }
 
 namespace {
-std::vector<int> QuantizeHistogram(const std::vector<uint32_t> &histogram,
-                                   size_t num_chunks) {
+std::vector<int32_t> QuantizeHistogram(const std::vector<uint32_t> &histogram,
+                                       size_t num_chunks) {
   if (histogram.empty()) return {};
   // TODO(veluca): selecting distinct quantiles is likely not the best
   // way to go about this.
-  std::vector<int> thresholds;
-  size_t sum = std::accumulate(histogram.begin(), histogram.end(), 0LU);
-  size_t cumsum = 0;
-  size_t threshold = 0;
+  std::vector<int32_t> thresholds;
+  uint64_t sum = std::accumulate(histogram.begin(), histogram.end(), 0LU);
+  uint64_t cumsum = 0;
+  uint64_t threshold = 1;
   for (size_t i = 0; i + 1 < histogram.size(); i++) {
     cumsum += histogram[i];
-    if (cumsum > (threshold + 1) * sum / num_chunks) {
+    if (cumsum >= threshold * sum / num_chunks) {
       thresholds.push_back(i);
-      while (cumsum >= (threshold + 1) * sum / num_chunks) threshold++;
+      while (cumsum > threshold * sum / num_chunks) threshold++;
     }
   }
   return thresholds;
 }
 
-std::vector<int> QuantizeSamples(const std::vector<int32_t> &samples,
-                                 size_t num_chunks) {
+std::vector<int32_t> QuantizeSamples(const std::vector<int32_t> &samples,
+                                     size_t num_chunks) {
   if (samples.empty()) return {};
   int min = *std::min_element(samples.begin(), samples.end());
   constexpr int kRange = 512;
@@ -752,7 +746,7 @@ std::vector<int> QuantizeSamples(const std::vector<int32_t> &samples,
     uint32_t sample_offset = std::min(std::max(s, -kRange), kRange) - min;
     counts[sample_offset]++;
   }
-  std::vector<int> thresholds = QuantizeHistogram(counts, num_chunks);
+  std::vector<int32_t> thresholds = QuantizeHistogram(counts, num_chunks);
   for (auto &v : thresholds) v += min;
   return thresholds;
 }
@@ -810,15 +804,15 @@ void TreeSamples::PreQuantizeProperties(
     return QuantizeHistogram(group_pixel_count, max_property_values);
   };
   auto quantize_coordinate = [&]() {
-    std::vector<int> quantized;
+    std::vector<int32_t> quantized;
     quantized.reserve(max_property_values - 1);
     for (size_t i = 0; i + 1 < max_property_values; i++) {
       quantized.push_back((i + 1) * 256 / max_property_values - 1);
     }
     return quantized;
   };
-  std::vector<int> abs_pixel_thr;
-  std::vector<int> pixel_thr;
+  std::vector<int32_t> abs_pixel_thr;
+  std::vector<int32_t> pixel_thr;
   auto quantize_pixel_property = [&]() {
     if (pixel_thr.empty()) {
       pixel_thr = QuantizeSamples(pixel_samples, max_property_values);
@@ -833,8 +827,8 @@ void TreeSamples::PreQuantizeProperties(
     }
     return abs_pixel_thr;
   };
-  std::vector<int> abs_diff_thr;
-  std::vector<int> diff_thr;
+  std::vector<int32_t> abs_diff_thr;
+  std::vector<int32_t> diff_thr;
   auto quantize_diff_property = [&]() {
     if (diff_thr.empty()) {
       diff_thr = QuantizeSamples(diff_samples, max_property_values);
@@ -851,16 +845,16 @@ void TreeSamples::PreQuantizeProperties(
   };
   auto quantize_wp = [&]() {
     if (max_property_values < 32) {
-      return std::vector<int>{-127, -63, -31, -15, -7, -3, -1, 0,
-                              1,    3,   7,   15,  31, 63, 127};
+      return std::vector<int32_t>{-127, -63, -31, -15, -7, -3, -1, 0,
+                                  1,    3,   7,   15,  31, 63, 127};
     }
     if (max_property_values < 64) {
-      return std::vector<int>{-255, -191, -127, -95, -63, -47, -31, -23,
-                              -15,  -11,  -7,   -5,  -3,  -1,  0,   1,
-                              3,    5,    7,    11,  15,  23,  31,  47,
-                              63,   95,   127,  191, 255};
+      return std::vector<int32_t>{-255, -191, -127, -95, -63, -47, -31, -23,
+                                  -15,  -11,  -7,   -5,  -3,  -1,  0,   1,
+                                  3,    5,    7,    11,  15,  23,  31,  47,
+                                  63,   95,   127,  191, 255};
     }
-    return std::vector<int>{
+    return std::vector<int32_t>{
         -255, -223, -191, -159, -127, -111, -95, -79, -63, -55, -47,
         -39,  -31,  -27,  -23,  -19,  -15,  -13, -11, -9,  -7,  -6,
         -5,   -4,   -3,   -2,   -1,   0,    1,   2,   3,   4,   5,
@@ -928,7 +922,7 @@ void CollectPixelSamples(const Image &image, const ModularOptions &options,
   Rng rng(group_id);
   // Sample 10% of the final number of samples for property quantization.
   float fraction = std::min(options.nb_repeats * 0.1, 0.99);
-  Rng::GeometricDistribution dist(fraction);
+  Rng::GeometricDistribution dist = Rng::MakeGeometric(fraction);
   size_t total_pixels = 0;
   std::vector<size_t> channel_ids;
   for (size_t i = 0; i < image.channel.size(); i++) {
@@ -972,7 +966,7 @@ void CollectPixelSamples(const Image &image, const ModularOptions &options,
     const pixel_type *row = image.channel[channel_ids[i]].Row(y);
     pixel_samples.push_back(row[x]);
     size_t xp = x == 0 ? 1 : x - 1;
-    diff_samples.push_back(row[x] - row[xp]);
+    diff_samples.push_back((int64_t)row[x] - row[xp]);
   }
 }
 

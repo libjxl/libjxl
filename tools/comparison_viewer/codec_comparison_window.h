@@ -12,18 +12,19 @@
 #include <QSet>
 #include <QString>
 
-#include "lib/jxl/base/padded_bytes.h"
-#include "lib/jxl/common.h"
+#include "lib/jxl/base/common.h"
 #include "tools/comparison_viewer/ui_codec_comparison_window.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 
 class CodecComparisonWindow : public QMainWindow {
   Q_OBJECT
 
  public:
   explicit CodecComparisonWindow(
-      const QString& directory, float intensityTarget = kDefaultIntensityTarget,
+      const QString& directory,
+      float intensityTarget = jxl::kDefaultIntensityTarget,
       QWidget* parent = nullptr);
   ~CodecComparisonWindow() override = default;
 
@@ -72,6 +73,7 @@ class CodecComparisonWindow : public QMainWindow {
   const QByteArray monitorIccProfile_;
 };
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl
 
 #endif  // TOOLS_COMPARISON_VIEWER_CODEC_COMPARISON_WINDOW_H_

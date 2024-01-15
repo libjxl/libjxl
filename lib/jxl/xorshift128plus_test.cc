@@ -4,7 +4,6 @@
 // license that can be found in the LICENSE file.
 
 #include <stdint.h>
-#include <stdio.h>
 
 #include <algorithm>
 #include <vector>
@@ -13,10 +12,11 @@
 #define HWY_TARGET_INCLUDE "lib/jxl/xorshift128plus_test.cc"
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
-#include <hwy/tests/test_util-inl.h>
+#include <hwy/tests/hwy_gtest.h>
 
 #include "lib/jxl/base/data_parallel.h"
-#include "lib/jxl/base/thread_pool_internal.h"
+#include "lib/jxl/test_utils.h"
+#include "lib/jxl/testing.h"
 #include "lib/jxl/xorshift128plus-inl.h"
 
 HWY_BEFORE_NAMESPACE();
@@ -24,7 +24,9 @@ namespace jxl {
 namespace HWY_NAMESPACE {
 
 // These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::Or;
 using hwy::HWY_NAMESPACE::ShiftRight;
+using hwy::HWY_NAMESPACE::Sub;
 
 // Define to nonzero in order to print the (new) golden outputs.
 #define PRINT_RESULTS 0
@@ -284,7 +286,7 @@ void TestSeedChanges() {
 }
 
 void TestFloat() {
-  ThreadPoolInternal pool(8);
+  test::ThreadPoolForTests pool(8);
 
 #ifdef JXL_DISABLE_SLOW_TESTS
   const uint32_t kMaxSeed = 256;
@@ -310,8 +312,8 @@ void TestFloat() {
                 Load(du, reinterpret_cast<const uint32_t*>(batch) + i);
             // 1.0 + 23 random mantissa bits = [1, 2)
             const auto rand12 =
-                BitCast(df, ShiftRight<9>(bits) | Set(du, 0x3F800000));
-            const auto rand01 = rand12 - Set(df, 1.0f);
+                BitCast(df, Or(ShiftRight<9>(bits), Set(du, 0x3F800000)));
+            const auto rand01 = Sub(rand12, Set(df, 1.0f));
             Store(rand01, df, lanes);
             for (float lane : lanes) {
               sum += lane;
@@ -330,7 +332,7 @@ void TestFloat() {
 
 // Not more than one 64-bit zero
 void TestNotZero() {
-  ThreadPoolInternal pool(8);
+  test::ThreadPoolForTests pool(8);
 
 #ifdef JXL_DISABLE_SLOW_TESTS
   const uint32_t kMaxSeed = 500;

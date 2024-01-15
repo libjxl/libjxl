@@ -4,6 +4,10 @@
 // license that can be found in the LICENSE file.
 #include "tools/benchmark/benchmark_codec_jxl.h"
 
+#include <jxl/encode.h>
+#include <jxl/stats.h>
+#include <jxl/thread_parallel_runner_cxx.h>
+
 #include <cstdint>
 #include <cstdlib>
 #include <functional>
@@ -12,44 +16,34 @@
 #include <utility>
 #include <vector>
 
-#include "jxl/decode_cxx.h"
-#include "jxl/thread_parallel_runner_cxx.h"
 #include "lib/extras/codec.h"
+#include "lib/extras/dec/jxl.h"
+#include "lib/extras/enc/apng.h"
+#include "lib/extras/enc/encode.h"
+#include "lib/extras/enc/jpg.h"
+#include "lib/extras/enc/jxl.h"
+#include "lib/extras/packed_image_convert.h"
 #include "lib/extras/time.h"
-#include "lib/jxl/aux_out.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/override.h"
-#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/codec_in_out.h"
-#include "lib/jxl/dec_file.h"
-#include "lib/jxl/dec_params.h"
-#include "lib/jxl/enc_cache.h"
-#include "lib/jxl/enc_color_management.h"
-#include "lib/jxl/enc_external_image.h"
-#include "lib/jxl/enc_file.h"
-#include "lib/jxl/enc_params.h"
-#include "lib/jxl/image_bundle.h"
-#include "lib/jxl/image_metadata.h"
-#include "lib/jxl/modular/encoding/encoding.h"
 #include "tools/benchmark/benchmark_file_io.h"
 #include "tools/benchmark/benchmark_stats.h"
 #include "tools/cmdline.h"
 
-namespace jxl {
+namespace jpegxl {
+namespace tools {
 
-// Output function for EncodeBrunsli.
-size_t OutputToBytes(void* data, const uint8_t* buf, size_t count) {
-  PaddedBytes* output = reinterpret_cast<PaddedBytes*>(data);
-  output->append(buf, buf + count);
-  return count;
-}
+using ::jxl::Image3F;
+using ::jxl::extras::EncodedImage;
+using ::jxl::extras::Encoder;
+using ::jxl::extras::JXLCompressParams;
+using ::jxl::extras::JXLDecompressParams;
+using ::jxl::extras::PackedFrame;
+using ::jxl::extras::PackedPixelFile;
 
 struct JxlArgs {
-  double xmul;
-  double quant_bias;
-
-  bool use_ac_strategy;
   bool qprogressive;  // progressive with shift-quantization.
   bool progressive;
   int progressive_dc;
@@ -64,13 +58,6 @@ struct JxlArgs {
 static JxlArgs* const jxlargs = new JxlArgs;
 
 Status AddCommandLineOptionsJxlCodec(BenchmarkArgs* args) {
-  args->AddDouble(&jxlargs->xmul, "xmul",
-                  "Multiplier for the difference in X channel in Butteraugli.",
-                  1.0);
-  args->AddDouble(&jxlargs->quant_bias, "quant_bias",
-                  "Bias border pixels during quantization by this ratio.", 0.0);
-  args->AddFlag(&jxlargs->use_ac_strategy, "use_ac_strategy",
-                "If true, AC strategy will be used.", false);
   args->AddFlag(&jxlargs->qprogressive, "qprogressive",
                 "Enable quantized progressive mode for AC.", false);
   args->AddFlag(&jxlargs->progressive, "progressive",
@@ -95,35 +82,76 @@ Status AddCommandLineOptionsJxlCodec(BenchmarkArgs* args) {
 
 Status ValidateArgsJxlCodec(BenchmarkArgs* args) { return true; }
 
+inline bool ParseEffort(const std::string& s, int* out) {
+  if (s == "lightning") {
+    *out = 1;
+    return true;
+  } else if (s == "thunder") {
+    *out = 2;
+    return true;
+  } else if (s == "falcon") {
+    *out = 3;
+    return true;
+  } else if (s == "cheetah") {
+    *out = 4;
+    return true;
+  } else if (s == "hare") {
+    *out = 5;
+    return true;
+  } else if (s == "fast" || s == "wombat") {
+    *out = 6;
+    return true;
+  } else if (s == "squirrel") {
+    *out = 7;
+    return true;
+  } else if (s == "kitten") {
+    *out = 8;
+    return true;
+  } else if (s == "guetzli" || s == "tortoise") {
+    *out = 9;
+    return true;
+  } else if (s == "glacier") {
+    *out = 10;
+    return true;
+  }
+  size_t st = static_cast<size_t>(strtoull(s.c_str(), nullptr, 0));
+  if (st <= 10 && st >= 1) {
+    *out = st;
+    return true;
+  }
+  return false;
+}
+
 class JxlCodec : public ImageCodec {
  public:
-  explicit JxlCodec(const BenchmarkArgs& args) : ImageCodec(args) {}
+  explicit JxlCodec(const BenchmarkArgs& args)
+      : ImageCodec(args), stats_(nullptr, JxlEncoderStatsDestroy) {}
 
   Status ParseParam(const std::string& param) override {
     const std::string kMaxPassesPrefix = "max_passes=";
     const std::string kDownsamplingPrefix = "downsampling=";
     const std::string kResamplingPrefix = "resampling=";
     const std::string kEcResamplingPrefix = "ec_resampling=";
-
+    int val;
+    float fval;
     if (param.substr(0, kResamplingPrefix.size()) == kResamplingPrefix) {
       std::istringstream parser(param.substr(kResamplingPrefix.size()));
-      parser >> cparams_.resampling;
+      int resampling;
+      parser >> resampling;
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_RESAMPLING, resampling);
     } else if (param.substr(0, kEcResamplingPrefix.size()) ==
                kEcResamplingPrefix) {
       std::istringstream parser(param.substr(kEcResamplingPrefix.size()));
-      parser >> cparams_.ec_resampling;
+      int ec_resampling;
+      parser >> ec_resampling;
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_EXTRA_CHANNEL_RESAMPLING,
+                         ec_resampling);
     } else if (ImageCodec::ParseParam(param)) {
       // Nothing to do.
     } else if (param == "uint8") {
       uint8_ = true;
-    } else if (param[0] == 'u') {
-      char* end;
-      cparams_.uniform_quant = strtof(param.c_str() + 1, &end);
-      if (end == param.c_str() + 1 || *end != '\0') {
-        return JXL_FAILURE("failed to parse uniform quant parameter %s",
-                           param.c_str());
-      }
-      ba_params_.hf_asymmetry = args_.ba_params.hf_asymmetry;
+    } else if (param[0] == 'D') {
+      cparams_.alpha_distance = strtof(param.substr(1).c_str(), nullptr);
     } else if (param.substr(0, kMaxPassesPrefix.size()) == kMaxPassesPrefix) {
       std::istringstream parser(param.substr(kMaxPassesPrefix.size()));
       parser >> dparams_.max_passes;
@@ -131,275 +159,212 @@ class JxlCodec : public ImageCodec {
                kDownsamplingPrefix) {
       std::istringstream parser(param.substr(kDownsamplingPrefix.size()));
       parser >> dparams_.max_downsampling;
-    } else if (ParseSpeedTier(param, &cparams_.speed_tier)) {
-      // Nothing to do.
+    } else if (ParseEffort(param, &val)) {
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, val);
     } else if (param[0] == 'X') {
-      cparams_.channel_colors_pre_transform_percent =
-          strtol(param.substr(1).c_str(), nullptr, 10);
+      fval = strtof(param.substr(1).c_str(), nullptr);
+      cparams_.AddFloatOption(
+          JXL_ENC_FRAME_SETTING_CHANNEL_COLORS_GLOBAL_PERCENT, fval);
     } else if (param[0] == 'Y') {
-      cparams_.channel_colors_percent =
-          strtol(param.substr(1).c_str(), nullptr, 10);
+      fval = strtof(param.substr(1).c_str(), nullptr);
+      cparams_.AddFloatOption(
+          JXL_ENC_FRAME_SETTING_CHANNEL_COLORS_GROUP_PERCENT, fval);
     } else if (param[0] == 'p') {
-      cparams_.palette_colors = strtol(param.substr(1).c_str(), nullptr, 10);
+      val = strtol(param.substr(1).c_str(), nullptr, 10);
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_PALETTE_COLORS, val);
     } else if (param == "lp") {
-      cparams_.lossy_palette = true;
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_LOSSY_PALETTE, 1);
     } else if (param[0] == 'C') {
-      cparams_.colorspace = strtol(param.substr(1).c_str(), nullptr, 10);
+      val = strtol(param.substr(1).c_str(), nullptr, 10);
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_COLOR_SPACE, val);
     } else if (param[0] == 'c') {
-      cparams_.color_transform =
-          (jxl::ColorTransform)strtol(param.substr(1).c_str(), nullptr, 10);
+      val = strtol(param.substr(1).c_str(), nullptr, 10);
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_COLOR_TRANSFORM, val);
       has_ctransform_ = true;
     } else if (param[0] == 'I') {
-      cparams_.options.nb_repeats = strtof(param.substr(1).c_str(), nullptr);
+      fval = strtof(param.substr(1).c_str(), nullptr);
+      cparams_.AddFloatOption(
+          JXL_ENC_FRAME_SETTING_MODULAR_MA_TREE_LEARNING_PERCENT, fval * 100.0);
     } else if (param[0] == 'E') {
-      cparams_.options.max_properties =
-          strtof(param.substr(1).c_str(), nullptr);
+      val = strtol(param.substr(1).c_str(), nullptr, 10);
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_NB_PREV_CHANNELS, val);
     } else if (param[0] == 'P') {
-      cparams_.options.predictor =
-          static_cast<Predictor>(strtof(param.substr(1).c_str(), nullptr));
+      val = strtol(param.substr(1).c_str(), nullptr, 10);
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_PREDICTOR, val);
     } else if (param == "slow") {
-      cparams_.options.nb_repeats = 2;
+      cparams_.AddFloatOption(
+          JXL_ENC_FRAME_SETTING_MODULAR_MA_TREE_LEARNING_PERCENT, 50.0);
     } else if (param == "R") {
-      cparams_.responsive = 1;
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_RESPONSIVE, 1);
     } else if (param[0] == 'R') {
-      cparams_.responsive = strtol(param.substr(1).c_str(), nullptr, 10);
+      val = strtol(param.substr(1).c_str(), nullptr, 10);
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_RESPONSIVE, val);
     } else if (param == "m") {
-      cparams_.modular_mode = true;
-      cparams_.color_transform = jxl::ColorTransform::kNone;
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_MODULAR, 1);
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_COLOR_TRANSFORM, 1);  // kNone
+      modular_mode_ = true;
     } else if (param.substr(0, 3) == "gab") {
-      long gab = strtol(param.substr(3).c_str(), nullptr, 10);
-      if (gab != 0 && gab != 1) {
+      val = strtol(param.substr(3).c_str(), nullptr, 10);
+      if (val != 0 && val != 1) {
         return JXL_FAILURE("Invalid gab value");
       }
-      cparams_.gaborish = static_cast<Override>(gab);
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_GABORISH, val);
     } else if (param[0] == 'g') {
-      long gsize = strtol(param.substr(1).c_str(), nullptr, 10);
-      if (gsize < 0 || gsize > 3) {
+      val = strtol(param.substr(1).c_str(), nullptr, 10);
+      if (val < 0 || val > 3) {
         return JXL_FAILURE("Invalid group size shift value");
       }
-      cparams_.modular_group_size_shift = gsize;
-    } else if (param == "new_heuristics") {
-      cparams_.use_new_heuristics = true;
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_GROUP_SIZE, val);
     } else if (param == "plt") {
-      cparams_.options.max_properties = 0;
-      cparams_.options.nb_repeats = 0;
-      cparams_.options.predictor = Predictor::Zero;
-      cparams_.responsive = 0;
-      cparams_.colorspace = 0;
-      cparams_.channel_colors_pre_transform_percent = 0;
-      cparams_.channel_colors_percent = 0;
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_NB_PREV_CHANNELS, 0);
+      cparams_.AddFloatOption(
+          JXL_ENC_FRAME_SETTING_MODULAR_MA_TREE_LEARNING_PERCENT, 0.0f);
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_PREDICTOR, 0);
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_RESPONSIVE, 0);
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_COLOR_SPACE, 0);
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_CHANNEL_COLORS_GLOBAL_PERCENT,
+                         0);
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_CHANNEL_COLORS_GROUP_PERCENT, 0);
     } else if (param.substr(0, 3) == "epf") {
-      cparams_.epf = strtol(param.substr(3).c_str(), nullptr, 10);
-      if (cparams_.epf > 3) {
+      val = strtol(param.substr(3).c_str(), nullptr, 10);
+      if (val > 3) {
         return JXL_FAILURE("Invalid epf value");
       }
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_EPF, val);
+    } else if (param.substr(0, 2) == "fi") {
+      val = strtol(param.substr(2).c_str(), nullptr, 10);
+      if (val != 0 && val != 1) {
+        return JXL_FAILURE("Invalid option value");
+      }
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_USE_FULL_IMAGE_HEURISTICS, val);
+    } else if (param.substr(0, 3) == "buf") {
+      val = strtol(param.substr(3).c_str(), nullptr, 10);
+      if (val > 3) {
+        return JXL_FAILURE("Invalid buffering value");
+      }
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_BUFFERING, val);
     } else if (param.substr(0, 16) == "faster_decoding=") {
-      cparams_.decoding_speed_tier =
-          strtol(param.substr(16).c_str(), nullptr, 10);
+      val = strtol(param.substr(16).c_str(), nullptr, 10);
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_DECODING_SPEED, val);
     } else {
       return JXL_FAILURE("Unrecognized param");
     }
     return true;
   }
 
-  bool IsColorAware() const override {
-    // Can't deal with negative values from color space conversion.
-    if (cparams_.modular_mode) return false;
-    // Otherwise, input may be in any color space.
-    return true;
-  }
-
-  bool IsJpegTranscoder() const override {
-    // TODO(veluca): figure out when to turn this on.
-    return false;
-  }
-
   Status Compress(const std::string& filename, const CodecInOut* io,
-                  ThreadPoolInternal* pool, PaddedBytes* compressed,
+                  ThreadPool* pool, std::vector<uint8_t>* compressed,
                   jpegxl::tools::SpeedStats* speed_stats) override {
-    if (!jxlargs->debug_image_dir.empty()) {
-      cinfo_.dump_image = [](const CodecInOut& io, const std::string& path) {
-        return EncodeToFile(io, path);
-      };
-      cinfo_.debug_prefix =
-          JoinPath(jxlargs->debug_image_dir, FileBaseName(filename)) +
-          ".jxl:" + params_ + ".dbg/";
-      JXL_RETURN_IF_ERROR(MakeDir(cinfo_.debug_prefix));
+    PackedPixelFile ppf;
+    JxlPixelFormat format{0, JXL_TYPE_FLOAT, JXL_NATIVE_ENDIAN, 0};
+    JXL_RETURN_IF_ERROR(ConvertCodecInOutToPackedPixelFile(
+        *io, format, io->Main().c_current(), pool, &ppf));
+    cparams_.runner = pool->runner();
+    cparams_.runner_opaque = pool->runner_opaque();
+    cparams_.distance = butteraugli_target_;
+    cparams_.AddOption(JXL_ENC_FRAME_SETTING_NOISE, (int)jxlargs->noise);
+    cparams_.AddOption(JXL_ENC_FRAME_SETTING_DOTS, (int)jxlargs->dots);
+    cparams_.AddOption(JXL_ENC_FRAME_SETTING_PATCHES, (int)jxlargs->patches);
+    cparams_.AddOption(JXL_ENC_FRAME_SETTING_PROGRESSIVE_AC,
+                       jxlargs->progressive);
+    cparams_.AddOption(JXL_ENC_FRAME_SETTING_QPROGRESSIVE_AC,
+                       jxlargs->qprogressive);
+    cparams_.AddOption(JXL_ENC_FRAME_SETTING_PROGRESSIVE_DC,
+                       jxlargs->progressive_dc);
+    if (butteraugli_target_ > 0.f && modular_mode_ && !has_ctransform_) {
+      // Reset color transform to default XYB for lossy modular.
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_COLOR_TRANSFORM, -1);
     }
-    cparams_.butteraugli_distance = butteraugli_target_;
-    cparams_.target_bitrate = bitrate_target_;
-
-    cparams_.dots = jxlargs->dots;
-    cparams_.patches = jxlargs->patches;
-
-    cparams_.progressive_mode = jxlargs->progressive;
-    cparams_.qprogressive_mode = jxlargs->qprogressive;
-    cparams_.progressive_dc = jxlargs->progressive_dc;
-
-    cparams_.noise = jxlargs->noise;
-
-    cparams_.quant_border_bias = static_cast<float>(jxlargs->quant_bias);
-    cparams_.ba_params.hf_asymmetry = ba_params_.hf_asymmetry;
-    cparams_.ba_params.xmul = static_cast<float>(jxlargs->xmul);
-
-    if (cparams_.butteraugli_distance > 0.f &&
-        cparams_.color_transform == ColorTransform::kNone &&
-        cparams_.modular_mode && !has_ctransform_) {
-      cparams_.color_transform = ColorTransform::kXYB;
+    std::string debug_prefix;
+    SetDebugImageCallback(filename, &debug_prefix, &cparams_);
+    if (args_.print_more_stats) {
+      stats_.reset(JxlEncoderStatsCreate());
+      cparams_.stats = stats_.get();
     }
-
-    const double start = Now();
-    PassesEncoderState passes_encoder_state;
-    if (cparams_.use_new_heuristics) {
-      passes_encoder_state.heuristics =
-          jxl::make_unique<jxl::FastEncoderHeuristics>();
-    }
-    JXL_RETURN_IF_ERROR(EncodeFile(cparams_, io, &passes_encoder_state,
-                                   compressed, GetJxlCms(), &cinfo_, pool));
-    const double end = Now();
+    const double start = jxl::Now();
+    JXL_RETURN_IF_ERROR(jxl::extras::EncodeImageJXL(
+        cparams_, ppf, /*jpeg_bytes=*/nullptr, compressed));
+    const double end = jxl::Now();
     speed_stats->NotifyElapsed(end - start);
     return true;
   }
 
   Status Decompress(const std::string& filename,
-                    const Span<const uint8_t> compressed,
-                    ThreadPoolInternal* pool, CodecInOut* io,
+                    const Span<const uint8_t> compressed, ThreadPool* pool,
+                    CodecInOut* io,
                     jpegxl::tools::SpeedStats* speed_stats) override {
-    io->frames.clear();
-    if (dparams_.max_passes != DecompressParams().max_passes ||
-        dparams_.max_downsampling != DecompressParams().max_downsampling) {
-      // Must use the C++ API to honor non-default dparams.
-      if (uint8_) {
-        return JXL_FAILURE(
-            "trying to use decompress params that are not all available in "
-            "either decoding API");
-      }
-      const double start = Now();
-      JXL_RETURN_IF_ERROR(DecodeFile(dparams_, compressed, io, pool));
-      const double end = Now();
-      speed_stats->NotifyElapsed(end - start);
-      return true;
-    }
-
-    double elapsed_convert_image = 0;
-    const double start = Now();
-    {
-      std::vector<uint8_t> pixel_data;
-      PaddedBytes icc_profile;
-      auto runner = JxlThreadParallelRunnerMake(nullptr, pool->NumThreads());
-      auto dec = JxlDecoderMake(nullptr);
-      // By default, the decoder will undo exif orientation, giving an image
-      // with identity exif rotation as result. However, the benchmark does
-      // not undo exif orientation of the originals, and compares against the
-      // originals, so we must set the option to keep the original orientation
-      // instead.
-      JxlDecoderSetKeepOrientation(dec.get(), JXL_TRUE);
-      JXL_RETURN_IF_ERROR(
-          JXL_DEC_SUCCESS ==
-          JxlDecoderSubscribeEvents(dec.get(), JXL_DEC_BASIC_INFO |
-                                                   JXL_DEC_COLOR_ENCODING |
-                                                   JXL_DEC_FULL_IMAGE));
-      JxlBasicInfo info{};
-      JxlPixelFormat format = {/*num_channels=*/3,
-                               /*data_type=*/JXL_TYPE_FLOAT,
-                               /*endianness=*/JXL_NATIVE_ENDIAN,
-                               /*align=*/0};
-      if (uint8_) {
-        format.data_type = JXL_TYPE_UINT8;
-      }
-      JxlDecoderSetInput(dec.get(), compressed.data(), compressed.size());
-      JxlDecoderStatus status;
-      while ((status = JxlDecoderProcessInput(dec.get())) != JXL_DEC_SUCCESS) {
-        switch (status) {
-          case JXL_DEC_ERROR:
-            return JXL_FAILURE("decoder error");
-          case JXL_DEC_NEED_MORE_INPUT:
-            return JXL_FAILURE("decoder requests more input");
-          case JXL_DEC_BASIC_INFO:
-            JXL_RETURN_IF_ERROR(JXL_DEC_SUCCESS ==
-                                JxlDecoderGetBasicInfo(dec.get(), &info));
-            format.num_channels = info.num_color_channels;
-            if (info.alpha_bits != 0) {
-              ++format.num_channels;
-              io->metadata.m.extra_channel_info.resize(1);
-              io->metadata.m.extra_channel_info[0].type =
-                  jxl::ExtraChannel::kAlpha;
-            }
-            break;
-          case JXL_DEC_COLOR_ENCODING: {
-            size_t icc_size;
-            JXL_RETURN_IF_ERROR(JXL_DEC_SUCCESS ==
-                                JxlDecoderGetICCProfileSize(
-                                    dec.get(), &format,
-                                    JXL_COLOR_PROFILE_TARGET_DATA, &icc_size));
-            icc_profile.resize(icc_size);
-            JXL_RETURN_IF_ERROR(JXL_DEC_SUCCESS ==
-                                JxlDecoderGetColorAsICCProfile(
-                                    dec.get(), &format,
-                                    JXL_COLOR_PROFILE_TARGET_DATA,
-                                    icc_profile.data(), icc_profile.size()));
-            break;
-          }
-          case JXL_DEC_NEED_IMAGE_OUT_BUFFER: {
-            size_t buffer_size;
-            JXL_RETURN_IF_ERROR(
-                JXL_DEC_SUCCESS ==
-                JxlDecoderImageOutBufferSize(dec.get(), &format, &buffer_size));
-            JXL_RETURN_IF_ERROR(buffer_size ==
-                                info.xsize * info.ysize * format.num_channels *
-                                    (uint8_ ? sizeof(uint8_t) : sizeof(float)));
-            pixel_data.resize(buffer_size);
-            JXL_RETURN_IF_ERROR(JXL_DEC_SUCCESS ==
-                                JxlDecoderSetImageOutBuffer(dec.get(), &format,
-                                                            pixel_data.data(),
-                                                            buffer_size));
-            break;
-          }
-          case JXL_DEC_FULL_IMAGE: {
-            const double start_convert_image = Now();
-            {
-              ColorEncoding color_encoding;
-              JXL_RETURN_IF_ERROR(
-                  color_encoding.SetICC(PaddedBytes(icc_profile)));
-              ImageBundle frame(&io->metadata.m);
-              JXL_RETURN_IF_ERROR(BufferToImageBundle(
-                  format, info.xsize, info.ysize, pixel_data.data(),
-                  pixel_data.size(), pool, color_encoding, &frame));
-              io->frames.push_back(std::move(frame));
-              io->dec_pixels += info.xsize * info.ysize;
-            }
-            const double end_convert_image = Now();
-            elapsed_convert_image += end_convert_image - start_convert_image;
-            break;
-          }
-          default:
-            return JXL_FAILURE("unrecognized status %d",
-                               static_cast<int>(status));
-        }
-      }
-    }
-    const double end = Now();
-    speed_stats->NotifyElapsed(end - start - elapsed_convert_image);
+    dparams_.runner = pool->runner();
+    dparams_.runner_opaque = pool->runner_opaque();
+    JxlDataType data_type = uint8_ ? JXL_TYPE_UINT8 : JXL_TYPE_FLOAT;
+    dparams_.accepted_formats = {{3, data_type, JXL_NATIVE_ENDIAN, 0},
+                                 {4, data_type, JXL_NATIVE_ENDIAN, 0}};
+    // By default, the decoder will undo exif orientation, giving an image
+    // with identity exif rotation as result. However, the benchmark does
+    // not undo exif orientation of the originals, and compares against the
+    // originals, so we must set the option to keep the original orientation
+    // instead.
+    dparams_.keep_orientation = true;
+    PackedPixelFile ppf;
+    size_t decoded_bytes;
+    const double start = jxl::Now();
+    JXL_RETURN_IF_ERROR(jxl::extras::DecodeImageJXL(
+        compressed.data(), compressed.size(), dparams_, &decoded_bytes, &ppf));
+    const double end = jxl::Now();
+    speed_stats->NotifyElapsed(end - start);
+    JXL_RETURN_IF_ERROR(ConvertPackedPixelFileToCodecInOut(ppf, pool, io));
     return true;
   }
 
   void GetMoreStats(BenchmarkStats* stats) override {
-    JxlStats jxl_stats;
-    jxl_stats.num_inputs = 1;
-    jxl_stats.aux_out = cinfo_;
-    stats->jxl_stats.Assimilate(jxl_stats);
+    stats->jxl_stats.num_inputs += 1;
+    JxlEncoderStatsMerge(stats->jxl_stats.stats.get(), stats_.get());
   }
 
  protected:
-  AuxOut cinfo_;
-  CompressParams cparams_;
+  JXLCompressParams cparams_;
   bool has_ctransform_ = false;
-  DecompressParams dparams_;
+  bool modular_mode_ = false;
+  JXLDecompressParams dparams_;
   bool uint8_ = false;
+  std::unique_ptr<JxlEncoderStats, decltype(JxlEncoderStatsDestroy)*> stats_;
+
+ private:
+  void SetDebugImageCallback(const std::string& filename,
+                             std::string* debug_prefix,
+                             JXLCompressParams* cparams) {
+    if (jxlargs->debug_image_dir.empty()) return;
+    *debug_prefix = JoinPath(jxlargs->debug_image_dir, FileBaseName(filename)) +
+                    ".jxl:" + params_ + ".dbg/";
+    JXL_CHECK(MakeDir(*debug_prefix));
+    cparams->debug_image_opaque = debug_prefix;
+    cparams->debug_image = [](void* opaque, const char* label, size_t xsize,
+                              size_t ysize, const JxlColorEncoding* color,
+                              const uint16_t* pixels) {
+      auto encoder = jxl::extras::GetAPNGEncoder();
+      JXL_CHECK(encoder);
+      PackedPixelFile debug_ppf;
+      JxlPixelFormat format{3, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
+      PackedFrame frame(xsize, ysize, format);
+      memcpy(frame.color.pixels(), pixels, 6 * xsize * ysize);
+      debug_ppf.frames.emplace_back(std::move(frame));
+      debug_ppf.info.xsize = xsize;
+      debug_ppf.info.ysize = ysize;
+      debug_ppf.info.num_color_channels = 3;
+      debug_ppf.info.bits_per_sample = 16;
+      debug_ppf.color_encoding = *color;
+      EncodedImage encoded;
+      JXL_CHECK(encoder->Encode(debug_ppf, &encoded));
+      JXL_CHECK(!encoded.bitstreams.empty());
+      std::string* debug_prefix = reinterpret_cast<std::string*>(opaque);
+      std::string fn = *debug_prefix + std::string(label) + ".png";
+      WriteFile(fn, encoded.bitstreams[0]);
+    };
+  }
 };
 
 ImageCodec* CreateNewJxlCodec(const BenchmarkArgs& args) {
   return new JxlCodec(args);
 }
 
-}  // namespace jxl
+}  // namespace tools
+}  // namespace jpegxl

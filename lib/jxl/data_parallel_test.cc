@@ -5,9 +5,8 @@
 
 #include "lib/jxl/base/data_parallel.h"
 
-#include "gtest/gtest.h"
-#include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/test_utils.h"
+#include "lib/jxl/testing.h"
 
 namespace jxl {
 namespace {
@@ -47,11 +46,10 @@ class DataParallelTest : public ::testing::Test {
 
 // JxlParallelRunInit interface.
 typedef int (*JxlParallelRunInit)();
-int TestInit(void* jpegxl_opaque, size_t num_threads) { return 0; }
 
 }  // namespace
 
-TEST_F(DataParallelTest, RunnerCalledParamenters) {
+TEST_F(DataParallelTest, RunnerCalledParameters) {
   EXPECT_TRUE(pool_.Run(
       1234, 5678, [](size_t /* num_threads */) { return true; },
       [](uint32_t /* task */, size_t /* thread */) { return; }));

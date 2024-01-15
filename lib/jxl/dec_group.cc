@@ -21,13 +21,12 @@
 
 #include "lib/jxl/ac_context.h"
 #include "lib/jxl/ac_strategy.h"
-#include "lib/jxl/aux_out.h"
 #include "lib/jxl/base/bits.h"
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/printf_macros.h"
-#include "lib/jxl/base/profiler.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/coeff_order.h"
-#include "lib/jxl/common.h"
+#include "lib/jxl/common.h"  // kMaxNumPasses
 #include "lib/jxl/convolve.h"
 #include "lib/jxl/dct_scales.h"
 #include "lib/jxl/dec_cache.h"
@@ -35,7 +34,6 @@
 #include "lib/jxl/dec_xyb.h"
 #include "lib/jxl/entropy_coder.h"
 #include "lib/jxl/epf.h"
-#include "lib/jxl/opsin_params.h"
 #include "lib/jxl/quant_weights.h"
 #include "lib/jxl/quantizer-inl.h"
 #include "lib/jxl/quantizer.h"
@@ -43,6 +41,8 @@
 #ifndef LIB_JXL_DEC_GROUP_CC
 #define LIB_JXL_DEC_GROUP_CC
 namespace jxl {
+
+struct AuxOut;
 
 // Interface for reading groups for DecodeGroupImpl.
 class GetBlock {
@@ -97,10 +97,11 @@ void DequantLane(Vec<D> scaled_dequant_x, Vec<D> scaled_dequant_y,
                  size_t k, Vec<D> x_cc_mul, Vec<D> b_cc_mul,
                  const float* JXL_RESTRICT biases, ACPtr qblock[3],
                  float* JXL_RESTRICT block) {
-  const auto x_mul = Load(d, dequant_matrices + k) * scaled_dequant_x;
-  const auto y_mul = Load(d, dequant_matrices + size + k) * scaled_dequant_y;
+  const auto x_mul = Mul(Load(d, dequant_matrices + k), scaled_dequant_x);
+  const auto y_mul =
+      Mul(Load(d, dequant_matrices + size + k), scaled_dequant_y);
   const auto b_mul =
-      Load(d, dequant_matrices + 2 * size + k) * scaled_dequant_b;
+      Mul(Load(d, dequant_matrices + 2 * size + k), scaled_dequant_b);
 
   Vec<DI> quantized_x_int;
   Vec<DI> quantized_y_int;
@@ -117,11 +118,11 @@ void DequantLane(Vec<D> scaled_dequant_x, Vec<D> scaled_dequant_y,
   }
 
   const auto dequant_x_cc =
-      AdjustQuantBias(di, 0, quantized_x_int, biases) * x_mul;
+      Mul(AdjustQuantBias(di, 0, quantized_x_int, biases), x_mul);
   const auto dequant_y =
-      AdjustQuantBias(di, 1, quantized_y_int, biases) * y_mul;
+      Mul(AdjustQuantBias(di, 1, quantized_y_int, biases), y_mul);
   const auto dequant_b_cc =
-      AdjustQuantBias(di, 2, quantized_b_int, biases) * b_mul;
+      Mul(AdjustQuantBias(di, 2, quantized_b_int, biases), b_mul);
 
   const auto dequant_x = MulAdd(x_cc_mul, dequant_y, dequant_x_cc);
   const auto dequant_b = MulAdd(b_cc_mul, dequant_y, dequant_b_cc);
@@ -138,9 +139,8 @@ void DequantBlock(const AcStrategy& acs, float inv_global_scale, int quant,
                   const size_t* sbx,
                   const float* JXL_RESTRICT* JXL_RESTRICT dc_row,
                   size_t dc_stride, const float* JXL_RESTRICT biases,
-                  ACPtr qblock[3], float* JXL_RESTRICT block) {
-  PROFILER_FUNC;
-
+                  ACPtr qblock[3], float* JXL_RESTRICT block,
+                  float* JXL_RESTRICT scratch) {
   const auto scaled_dequant_s = inv_global_scale / quant;
 
   const auto scaled_dequant_x = Set(d, scaled_dequant_s * x_dm_multiplier);
@@ -156,19 +156,20 @@ void DequantBlock(const AcStrategy& acs, float inv_global_scale, int quant,
   }
   for (size_t c = 0; c < 3; c++) {
     LowestFrequenciesFromDC(acs.Strategy(), dc_row[c] + sbx[c], dc_stride,
-                            block + c * size);
+                            block + c * size, scratch);
   }
 }
 
-Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
+Status DecodeGroupImpl(const FrameHeader& frame_header,
+                       GetBlock* JXL_RESTRICT get_block,
                        GroupDecCache* JXL_RESTRICT group_dec_cache,
                        PassesDecoderState* JXL_RESTRICT dec_state,
                        size_t thread, size_t group_idx,
                        RenderPipelineInput& render_pipeline_input,
                        ImageBundle* decoded, DrawMode draw) {
   // TODO(veluca): investigate cache usage in this function.
-  PROFILER_FUNC;
-  const Rect block_rect = dec_state->shared->BlockGroupRect(group_idx);
+  const Rect block_rect =
+      dec_state->shared->frame_dim.BlockGroupRect(group_idx);
   const AcStrategyImage& ac_strategy = dec_state->shared->ac_strategy;
 
   const size_t xsize_blocks = block_rect.xsize();
@@ -178,8 +179,7 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
 
   const float inv_global_scale = dec_state->shared->quantizer.InvGlobalScale();
 
-  const YCbCrChromaSubsampling& cs =
-      dec_state->shared->frame_header.chroma_subsampling;
+  const YCbCrChromaSubsampling& cs = frame_header.chroma_subsampling;
 
   size_t idct_stride[3];
   for (size_t c = 0; c < 3; c++) {
@@ -207,8 +207,7 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
       return JXL_FAILURE("The CfL map is not JPEG-compatible");
     }
     jpeg_is_gray = (decoded->jpeg_data->components.size() == 1);
-    jpeg_c_map = JpegOrder(dec_state->shared->frame_header.color_transform,
-                           jpeg_is_gray);
+    jpeg_c_map = JpegOrder(frame_header.color_transform, jpeg_is_gray);
     const std::vector<QuantEncoding>& qe =
         dec_state->shared->matrices.encodings();
     if (qe.empty() || qe[0].mode != QuantEncoding::Mode::kQuantModeRAW ||
@@ -217,8 +216,7 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
           "Quantization table is not a JPEG quantization table.");
     }
     for (size_t c = 0; c < 3; c++) {
-      if (dec_state->shared->frame_header.color_transform ==
-          ColorTransform::kNone) {
+      if (frame_header.color_transform == ColorTransform::kNone) {
         dcoff[c] = 1024 / (*qe[0].qraw.qtable)[64 * c];
       }
       for (size_t i = 0; i < 64; i++) {
@@ -241,8 +239,10 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
     r[i] =
         Rect(block_rect.x0() >> hshift[i], block_rect.y0() >> vshift[i],
              block_rect.xsize() >> hshift[i], block_rect.ysize() >> vshift[i]);
-    JXL_ASSERT(r[i].IsInside({0, 0, dec_state->shared->dc->Plane(i).xsize(),
-                              dec_state->shared->dc->Plane(i).ysize()}));
+    if (!r[i].IsInside({0, 0, dec_state->shared->dc->Plane(i).xsize(),
+                        dec_state->shared->dc->Plane(i).ysize()})) {
+      return JXL_FAILURE("Frame dimensions are too big for the image.");
+    }
   }
 
   for (size_t by = 0; by < ysize_blocks; ++by) {
@@ -301,7 +301,6 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
           bx += llf_x;
           continue;
         }
-        PROFILER_ZONE("DecodeGroupImpl inner");
         const size_t log2_covered_blocks = acs.log2_covered_blocks();
 
         const size_t covered_blocks = 1 << log2_covered_blocks;
@@ -383,11 +382,11 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
                 auto in = Load(di, transposed_dct + i);
                 auto in_y = Load(di, transposed_dct_y + i);
                 auto qt = Load(di, scaled_qtable + c * size + i);
-                auto coeff_scale =
-                    ShiftRight<kCFLFixedPointPrecision>(qt * scale + round);
+                auto coeff_scale = ShiftRight<kCFLFixedPointPrecision>(
+                    Add(Mul(qt, scale), round));
                 auto cfl_factor = ShiftRight<kCFLFixedPointPrecision>(
-                    in_y * coeff_scale + round);
-                StoreU(DemoteTo(di16, in + cfl_factor), di16, jpeg_pos + i);
+                    Add(Mul(in_y, coeff_scale), round));
+                StoreU(DemoteTo(di16, Add(in, cfl_factor)), di16, jpeg_pos + i);
               }
             }
             jpeg_pos[0] =
@@ -403,7 +402,7 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
               acs.covered_blocks_y() * acs.covered_blocks_x(), sbx, dc_rows,
               dc_stride,
               dec_state->output_encoding_info.opsin_params.quant_biases, qblock,
-              block);
+              block, group_dec_cache->scratch_space);
 
           for (size_t c : {1, 0, 2}) {
             if ((sbx[c] << hshift[c] != bx) || (sby[c] << vshift[c] != by)) {
@@ -419,9 +418,6 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
       }
     }
   }
-  if (draw == kDontDraw) {
-    return true;
-  }
   return true;
 }
 
@@ -435,7 +431,7 @@ namespace jxl {
 namespace {
 // Decode quantized AC coefficients of DCT blocks.
 // LLF components in the output block will not be modified.
-template <ACType ac_type>
+template <ACType ac_type, bool uses_lz77>
 Status DecodeACVarBlock(size_t ctx_offset, size_t log2_covered_blocks,
                         int32_t* JXL_RESTRICT row_nzeros,
                         const int32_t* JXL_RESTRICT row_nzeros_top,
@@ -448,7 +444,6 @@ Status DecodeACVarBlock(size_t ctx_offset, size_t log2_covered_blocks,
                         const uint8_t* qdc_row, const int32_t* qf_row,
                         const BlockCtxMap& block_ctx_map, ACPtr block,
                         size_t shift = 0) {
-  PROFILER_FUNC;
   // Equal to number of LLF coefficients.
   const size_t covered_blocks = 1 << log2_covered_blocks;
   const size_t size = covered_blocks * kDCTBlockSize;
@@ -463,9 +458,12 @@ Status DecodeACVarBlock(size_t ctx_offset, size_t log2_covered_blocks,
   const int32_t nzero_ctx =
       block_ctx_map.NonZeroContext(predicted_nzeros, block_ctx) + ctx_offset;
 
-  size_t nzeros = decoder->ReadHybridUint(nzero_ctx, br, context_map);
-  if (nzeros + covered_blocks > size) {
-    return JXL_FAILURE("Invalid AC: nzeros too large");
+  size_t nzeros =
+      decoder->ReadHybridUintInlined<uses_lz77>(nzero_ctx, br, context_map);
+  if (nzeros > size - covered_blocks) {
+    return JXL_FAILURE("Invalid AC: nzeros %" PRIuS " too large for %" PRIuS
+                       " 8x8 blocks",
+                       nzeros, covered_blocks);
   }
   for (size_t y = 0; y < acs.covered_blocks_y(); y++) {
     for (size_t x = 0; x < acs.covered_blocks_x(); x++) {
@@ -477,36 +475,34 @@ Status DecodeACVarBlock(size_t ctx_offset, size_t log2_covered_blocks,
   const size_t histo_offset =
       ctx_offset + block_ctx_map.ZeroDensityContextsOffset(block_ctx);
 
-  // Skip LLF
-  {
-    PROFILER_ZONE("AcDecSkipLLF, reader");
-    size_t prev = (nzeros > size / 16 ? 0 : 1);
-    for (size_t k = covered_blocks; k < size && nzeros != 0; ++k) {
-      const size_t ctx =
-          histo_offset + ZeroDensityContext(nzeros, k, covered_blocks,
-                                            log2_covered_blocks, prev);
-      const size_t u_coeff = decoder->ReadHybridUint(ctx, br, context_map);
-      // Hand-rolled version of UnpackSigned, shifting before the conversion to
-      // signed integer to avoid undefined behavior of shifting negative
-      // numbers.
-      const size_t magnitude = u_coeff >> 1;
-      const size_t neg_sign = (~u_coeff) & 1;
-      const intptr_t coeff =
-          static_cast<intptr_t>((magnitude ^ (neg_sign - 1)) << shift);
-      if (ac_type == ACType::k16) {
-        block.ptr16[order[k]] += coeff;
-      } else {
-        block.ptr32[order[k]] += coeff;
-      }
-      prev = static_cast<size_t>(u_coeff != 0);
-      nzeros -= prev;
+  size_t prev = (nzeros > size / 16 ? 0 : 1);
+  for (size_t k = covered_blocks; k < size && nzeros != 0; ++k) {
+    const size_t ctx =
+        histo_offset + ZeroDensityContext(nzeros, k, covered_blocks,
+                                          log2_covered_blocks, prev);
+    const size_t u_coeff =
+        decoder->ReadHybridUintInlined<uses_lz77>(ctx, br, context_map);
+    // Hand-rolled version of UnpackSigned, shifting before the conversion to
+    // signed integer to avoid undefined behavior of shifting negative numbers.
+    const size_t magnitude = u_coeff >> 1;
+    const size_t neg_sign = (~u_coeff) & 1;
+    const intptr_t coeff =
+        static_cast<intptr_t>((magnitude ^ (neg_sign - 1)) << shift);
+    if (ac_type == ACType::k16) {
+      block.ptr16[order[k]] += coeff;
+    } else {
+      block.ptr32[order[k]] += coeff;
     }
-    if (JXL_UNLIKELY(nzeros != 0)) {
-      return JXL_FAILURE("Invalid AC: nzeros not 0. Block (%" PRIuS ", %" PRIuS
-                         "), channel %" PRIuS,
-                         bx, by, c);
-    }
+    prev = static_cast<size_t>(u_coeff != 0);
+    nzeros -= prev;
   }
+  if (JXL_UNLIKELY(nzeros != 0)) {
+    return JXL_FAILURE("Invalid AC: nzeros at end of block is %" PRIuS
+                       ", should be 0. Block (%" PRIuS ", %" PRIuS
+                       "), channel %" PRIuS,
+                       nzeros, bx, by, c);
+  }
+
   return true;
 }
 
@@ -534,9 +530,7 @@ struct GetBlockFromBitstream : public GetBlock {
   Status LoadBlock(size_t bx, size_t by, const AcStrategy& acs, size_t size,
                    size_t log2_covered_blocks, ACPtr block[3],
                    ACType ac_type) override {
-    auto decode_ac_varblock = ac_type == ACType::k16
-                                  ? DecodeACVarBlock<ACType::k16>
-                                  : DecodeACVarBlock<ACType::k32>;
+    ;
     for (size_t c : {1, 0, 2}) {
       size_t sbx = bx >> hshift[c];
       size_t sby = by >> vshift[c];
@@ -545,6 +539,12 @@ struct GetBlockFromBitstream : public GetBlock {
       }
 
       for (size_t pass = 0; JXL_UNLIKELY(pass < num_passes); pass++) {
+        auto decode_ac_varblock =
+            decoders[pass].UsesLZ77()
+                ? (ac_type == ACType::k16 ? DecodeACVarBlock<ACType::k16, 1>
+                                          : DecodeACVarBlock<ACType::k32, 1>)
+                : (ac_type == ACType::k16 ? DecodeACVarBlock<ACType::k16, 0>
+                                          : DecodeACVarBlock<ACType::k32, 0>);
         JXL_RETURN_IF_ERROR(decode_ac_varblock(
             ctx_offset[pass], log2_covered_blocks, row_nzeros[pass][c],
             row_nzeros_top[pass][c], nzeros_stride, c, sbx, sby, bx, acs,
@@ -556,13 +556,14 @@ struct GetBlockFromBitstream : public GetBlock {
     return true;
   }
 
-  Status Init(BitReader* JXL_RESTRICT* JXL_RESTRICT readers, size_t num_passes,
+  Status Init(const FrameHeader& frame_header,
+              BitReader* JXL_RESTRICT* JXL_RESTRICT readers, size_t num_passes,
               size_t group_idx, size_t histo_selector_bits, const Rect& rect,
               GroupDecCache* JXL_RESTRICT group_dec_cache,
               PassesDecoderState* dec_state, size_t first_pass) {
     for (size_t i = 0; i < 3; i++) {
-      hshift[i] = dec_state->shared->frame_header.chroma_subsampling.HShift(i);
-      vshift[i] = dec_state->shared->frame_header.chroma_subsampling.VShift(i);
+      hshift[i] = frame_header.chroma_subsampling.HShift(i);
+      vshift[i] = frame_header.chroma_subsampling.VShift(i);
     }
     this->coeff_order_size = dec_state->shared->coeff_order_size;
     this->coeff_orders =
@@ -570,8 +571,7 @@ struct GetBlockFromBitstream : public GetBlock {
     this->context_map = dec_state->context_map.data() + first_pass;
     this->readers = readers;
     this->num_passes = num_passes;
-    this->shift_for_pass =
-        dec_state->shared->frame_header.passes.shift + first_pass;
+    this->shift_for_pass = frame_header.passes.shift + first_pass;
     this->group_dec_cache = group_dec_cache;
     this->rect = rect;
     block_ctx_map = &dec_state->shared->block_ctx_map;
@@ -665,20 +665,18 @@ HWY_EXPORT(DecodeGroupImpl);
 
 }  // namespace
 
-Status DecodeGroup(BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
+Status DecodeGroup(const FrameHeader& frame_header,
+                   BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
                    size_t num_passes, size_t group_idx,
                    PassesDecoderState* JXL_RESTRICT dec_state,
                    GroupDecCache* JXL_RESTRICT group_dec_cache, size_t thread,
                    RenderPipelineInput& render_pipeline_input,
                    ImageBundle* JXL_RESTRICT decoded, size_t first_pass,
                    bool force_draw, bool dc_only, bool* should_run_pipeline) {
-  PROFILER_FUNC;
-
-  DrawMode draw = (num_passes + first_pass ==
-                   dec_state->shared->frame_header.passes.num_passes) ||
-                          force_draw
-                      ? kDraw
-                      : kDontDraw;
+  DrawMode draw =
+      (num_passes + first_pass == frame_header.passes.num_passes) || force_draw
+          ? kDraw
+          : kDontDraw;
 
   if (should_run_pipeline) {
     *should_run_pipeline = draw != kDontDraw;
@@ -686,13 +684,13 @@ Status DecodeGroup(BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
 
   if (draw == kDraw && num_passes == 0 && first_pass == 0) {
     group_dec_cache->InitDCBufferOnce();
-    const YCbCrChromaSubsampling& cs =
-        dec_state->shared->frame_header.chroma_subsampling;
+    const YCbCrChromaSubsampling& cs = frame_header.chroma_subsampling;
     for (size_t c : {0, 1, 2}) {
       size_t hs = cs.HShift(c);
       size_t vs = cs.VShift(c);
       // We reuse filter_input_storage here as it is not currently in use.
-      const Rect src_rect_precs = dec_state->shared->BlockGroupRect(group_idx);
+      const Rect src_rect_precs =
+          dec_state->shared->frame_dim.BlockGroupRect(group_idx);
       const Rect src_rect =
           Rect(src_rect_precs.x0() >> hs, src_rect_precs.y0() >> vs,
                src_rect_precs.xsize() >> hs, src_rect_precs.ysize() >> vs);
@@ -754,25 +752,26 @@ Status DecodeGroup(BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
     histo_selector_bits = CeilLog2Nonzero(dec_state->shared->num_histograms);
   }
 
-  GetBlockFromBitstream get_block;
-  JXL_RETURN_IF_ERROR(
-      get_block.Init(readers, num_passes, group_idx, histo_selector_bits,
-                     dec_state->shared->BlockGroupRect(group_idx),
-                     group_dec_cache, dec_state, first_pass));
+  auto get_block = jxl::make_unique<GetBlockFromBitstream>();
+  JXL_RETURN_IF_ERROR(get_block->Init(
+      frame_header, readers, num_passes, group_idx, histo_selector_bits,
+      dec_state->shared->frame_dim.BlockGroupRect(group_idx), group_dec_cache,
+      dec_state, first_pass));
 
   JXL_RETURN_IF_ERROR(HWY_DYNAMIC_DISPATCH(DecodeGroupImpl)(
-      &get_block, group_dec_cache, dec_state, thread, group_idx,
-      render_pipeline_input, decoded, draw));
+      frame_header, get_block.get(), group_dec_cache, dec_state, thread,
+      group_idx, render_pipeline_input, decoded, draw));
 
   for (size_t pass = 0; pass < num_passes; pass++) {
-    if (!get_block.decoders[pass].CheckANSFinalState()) {
+    if (!get_block->decoders[pass].CheckANSFinalState()) {
       return JXL_FAILURE("ANS checksum failure.");
     }
   }
   return true;
 }
 
-Status DecodeGroupForRoundtrip(const std::vector<std::unique_ptr<ACImage>>& ac,
+Status DecodeGroupForRoundtrip(const FrameHeader& frame_header,
+                               const std::vector<std::unique_ptr<ACImage>>& ac,
                                size_t group_idx,
                                PassesDecoderState* JXL_RESTRICT dec_state,
                                GroupDecCache* JXL_RESTRICT group_dec_cache,
@@ -780,16 +779,13 @@ Status DecodeGroupForRoundtrip(const std::vector<std::unique_ptr<ACImage>>& ac,
                                RenderPipelineInput& render_pipeline_input,
                                ImageBundle* JXL_RESTRICT decoded,
                                AuxOut* aux_out) {
-  PROFILER_FUNC;
-
-  GetBlockFromEncoder get_block(ac, group_idx,
-                                dec_state->shared->frame_header.passes.shift);
+  GetBlockFromEncoder get_block(ac, group_idx, frame_header.passes.shift);
   group_dec_cache->InitOnce(
       /*num_passes=*/0,
       /*used_acs=*/(1u << AcStrategy::kNumValidStrategies) - 1);
 
   return HWY_DYNAMIC_DISPATCH(DecodeGroupImpl)(
-      &get_block, group_dec_cache, dec_state, thread, group_idx,
+      frame_header, &get_block, group_dec_cache, dec_state, thread, group_idx,
       render_pipeline_input, decoded, kDraw);
 }
 

@@ -7,27 +7,29 @@
 #include <stdint.h>
 
 #include "lib/extras/codec.h"
+#include "lib/extras/size_constraints.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/span.h"
-#include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/codec_in_out.h"
+#include "tools/thread_pool_internal.h"
 
-namespace jxl {
+namespace {
 
 int TestOneInput(const uint8_t* data, size_t size) {
-  CodecInOut io;
-  io.constraints.dec_max_xsize = 1u << 16;
-  io.constraints.dec_max_ysize = 1u << 16;
-  io.constraints.dec_max_pixels = 1u << 22;
-  ThreadPoolInternal pool(0);
+  jxl::CodecInOut io;
+  jxl::SizeConstraints constraints;
+  constraints.dec_max_xsize = 1u << 16;
+  constraints.dec_max_ysize = 1u << 16;
+  constraints.dec_max_pixels = 1u << 22;
+  jpegxl::tools::ThreadPoolInternal pool(0);
 
-  (void)SetFromBytes(Span<const uint8_t>(data, size), &io, &pool);
+  (void)jxl::SetFromBytes(jxl::Bytes(data, size), &io, &pool, &constraints);
 
   return 0;
 }
 
-}  // namespace jxl
+}  // namespace
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
-  return jxl::TestOneInput(data, size);
+  return TestOneInput(data, size);
 }

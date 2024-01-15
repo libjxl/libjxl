@@ -3,23 +3,21 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <jxl/decode.h>
+#include <jxl/decode_cxx.h>
+#include <jxl/thread_parallel_runner.h>
+#include <jxl/thread_parallel_runner_cxx.h>
 #include <limits.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include <algorithm>
+#include <hwy/targets.h>
 #include <map>
 #include <mutex>
 #include <random>
 #include <vector>
-
-#include "hwy/targets.h"
-#include "jxl/decode.h"
-#include "jxl/decode_cxx.h"
-#include "jxl/thread_parallel_runner.h"
-#include "jxl/thread_parallel_runner_cxx.h"
 
 namespace {
 
@@ -81,10 +79,10 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
   auto dec = JxlDecoderMake(nullptr);
   if (JXL_DEC_SUCCESS !=
       JxlDecoderSubscribeEvents(
-          dec.get(), JXL_DEC_BASIC_INFO | JXL_DEC_EXTENSIONS |
-                         JXL_DEC_COLOR_ENCODING | JXL_DEC_PREVIEW_IMAGE |
-                         JXL_DEC_FRAME | JXL_DEC_FULL_IMAGE |
-                         JXL_DEC_JPEG_RECONSTRUCTION | JXL_DEC_BOX)) {
+          dec.get(), JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING |
+                         JXL_DEC_PREVIEW_IMAGE | JXL_DEC_FRAME |
+                         JXL_DEC_FULL_IMAGE | JXL_DEC_JPEG_RECONSTRUCTION |
+                         JXL_DEC_BOX)) {
     return false;
   }
   if (JXL_DEC_SUCCESS != JxlDecoderSetParallelRunner(dec.get(),
@@ -111,7 +109,6 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
   }
 
   bool seen_basic_info = false;
-  bool seen_extensions = false;
   bool seen_color_encoding = false;
   bool seen_preview = false;
   bool seen_need_image_out = false;
@@ -213,6 +210,7 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
         return false;
       }
     } else if (status == JXL_DEC_JPEG_NEED_MORE_OUTPUT) {
+      if (want_preview) abort();  // expected preview before frame
       if (spec.jpeg_to_pixels) abort();
       if (!seen_jpeg_reconstruction) abort();
       seen_jpeg_need_more_output = true;
@@ -274,12 +272,6 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
         }
         Consume(ec_name.cbegin(), ec_name.cend());
       }
-    } else if (status == JXL_DEC_EXTENSIONS) {
-      if (!seen_basic_info) abort();     // expected basic info first
-      if (seen_color_encoding) abort();  // should happen after this
-      if (seen_extensions) abort();      // already seen extensions
-      seen_extensions = true;
-      // TODO(eustas): get extensions?
     } else if (status == JXL_DEC_COLOR_ENCODING) {
       if (!seen_basic_info) abort();     // expected basic info first
       if (seen_color_encoding) abort();  // already seen color encoding
@@ -288,14 +280,13 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
       // Get the ICC color profile of the pixel data
       size_t icc_size;
       if (JXL_DEC_SUCCESS !=
-          JxlDecoderGetICCProfileSize(
-              dec.get(), &format, JXL_COLOR_PROFILE_TARGET_DATA, &icc_size)) {
+          JxlDecoderGetICCProfileSize(dec.get(), JXL_COLOR_PROFILE_TARGET_DATA,
+                                      &icc_size)) {
         return false;
       }
       icc_profile->resize(icc_size);
       if (JXL_DEC_SUCCESS != JxlDecoderGetColorAsICCProfile(
-                                 dec.get(), &format,
-                                 JXL_COLOR_PROFILE_TARGET_DATA,
+                                 dec.get(), JXL_COLOR_PROFILE_TARGET_DATA,
                                  icc_profile->data(), icc_profile->size())) {
         return false;
       }
@@ -313,6 +304,7 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
         }
       }
     } else if (status == JXL_DEC_PREVIEW_IMAGE) {
+      // TODO(eustas): test JXL_DEC_NEED_PREVIEW_OUT_BUFFER
       if (seen_preview) abort();
       if (!want_preview) abort();
       if (!seen_color_encoding) abort();
@@ -404,7 +396,10 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
         }
       }
     } else if (status == JXL_DEC_JPEG_RECONSTRUCTION) {
-      if (want_preview) abort();  // expected preview before frame
+      // Do not check preview precedence here, since this event only declares
+      // that JPEG is going to be decoded; though, when first byte of JPEG
+      // arrives (JXL_DEC_JPEG_NEED_MORE_OUTPUT) it is certain that preview
+      // should have been produced already.
       if (seen_jpeg_reconstruction) abort();
       seen_jpeg_reconstruction = true;
       if (!spec.jpeg_to_pixels) {

@@ -33,26 +33,38 @@
 #include <new>
 #include <vector>
 
-#if PROFILER_ENABLED
-#include <chrono>
-#endif  // PROFILER_ENABLED
-
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/butteraugli/butteraugli.cc"
 #include <hwy/foreach_target.h>
 
+#include "lib/jxl/base/fast_math-inl.h"
 #include "lib/jxl/base/printf_macros.h"
-#include "lib/jxl/base/profiler.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/convolve.h"
-#include "lib/jxl/fast_math-inl.h"
-#include "lib/jxl/gauss_blur.h"
 #include "lib/jxl/image_ops.h"
 
 #ifndef JXL_BUTTERAUGLI_ONCE
 #define JXL_BUTTERAUGLI_ONCE
 
 namespace jxl {
+
+static const double wMfMalta = 37.0819870399;
+static const double norm1Mf = 130262059.556;
+static const double wMfMaltaX = 8246.75321353;
+static const double norm1MfX = 1009002.70582;
+static const double wHfMalta = 18.7237414387;
+static const double norm1Hf = 4498534.45232;
+static const double wHfMaltaX = 6923.99476109;
+static const double norm1HfX = 8051.15833247;
+static const double wUhfMalta = 1.10039032555;
+static const double norm1Uhf = 71.7800275169;
+static const double wUhfMaltaX = 173.5;
+static const double norm1UhfX = 5.0;
+static const double wmul[9] = {
+    400.0,         1.50815703118,  0,
+    2150.0,        10.6195433239,  16.2176043152,
+    29.2353797994, 0.844626970982, 0.703646627719,
+};
 
 std::vector<float> ComputeKernel(float sigma) {
   const float m = 2.25;  // Accuracy increases when m is increased.
@@ -89,7 +101,6 @@ void ConvolveBorderColumn(const ImageF& in, const std::vector<float>& kernel,
 void ConvolutionWithTranspose(const ImageF& in,
                               const std::vector<float>& kernel,
                               ImageF* BUTTERAUGLI_RESTRICT out) {
-  PROFILER_FUNC;
   JXL_CHECK(out->xsize() == in.ysize());
   JXL_CHECK(out->ysize() == in.xsize());
   const size_t len = kernel.size();
@@ -109,7 +120,6 @@ void ConvolutionWithTranspose(const ImageF& in,
   // middle
   switch (len) {
     case 7: {
-      PROFILER_ZONE("conv7");
       const float sk0 = scaled_kernel[0];
       const float sk1 = scaled_kernel[1];
       const float sk2 = scaled_kernel[2];
@@ -127,7 +137,6 @@ void ConvolutionWithTranspose(const ImageF& in,
       }
     } break;
     case 13: {
-      PROFILER_ZONE("conv15");
       for (size_t y = 0; y < in.ysize(); ++y) {
         const float* BUTTERAUGLI_RESTRICT row_in = in.Row(y) + border1 - offset;
         for (size_t x = border1; x < border2; ++x, ++row_in) {
@@ -145,7 +154,6 @@ void ConvolutionWithTranspose(const ImageF& in,
       break;
     }
     case 15: {
-      PROFILER_ZONE("conv15");
       for (size_t y = 0; y < in.ysize(); ++y) {
         const float* BUTTERAUGLI_RESTRICT row_in = in.Row(y) + border1 - offset;
         for (size_t x = border1; x < border2; ++x, ++row_in) {
@@ -164,7 +172,6 @@ void ConvolutionWithTranspose(const ImageF& in,
       break;
     }
     case 33: {
-      PROFILER_ZONE("conv33");
       for (size_t y = 0; y < in.ysize(); ++y) {
         const float* BUTTERAUGLI_RESTRICT row_in = in.Row(y) + border1 - offset;
         for (size_t x = border1; x < border2; ++x, ++row_in) {
@@ -192,23 +199,7 @@ void ConvolutionWithTranspose(const ImageF& in,
       break;
     }
     default:
-      printf("Warning: Unexpected kernel size! %" PRIuS "\n", len);
-      for (size_t y = 0; y < in.ysize(); ++y) {
-        const float* BUTTERAUGLI_RESTRICT row_in = in.Row(y);
-        for (size_t x = border1; x < border2; ++x) {
-          const int d = x - offset;
-          float* BUTTERAUGLI_RESTRICT row_out = out->Row(x);
-          float sum = 0.0f;
-          size_t j;
-          for (j = 0; j <= len / 2; ++j) {
-            sum += row_in[d + j] * scaled_kernel[j];
-          }
-          for (; j < len; ++j) {
-            sum += row_in[d + j] * scaled_kernel[len - 1 - j];
-          }
-          row_out[y] = sum;
-        }
-      }
+      JXL_UNREACHABLE("Kernel size %" PRIuS " not implemented", len);
   }
   // left border
   for (size_t x = 0; x < border1; ++x) {
@@ -272,7 +263,20 @@ namespace jxl {
 namespace HWY_NAMESPACE {
 
 // These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::Abs;
+using hwy::HWY_NAMESPACE::Div;
+using hwy::HWY_NAMESPACE::Gt;
+using hwy::HWY_NAMESPACE::IfThenElse;
+using hwy::HWY_NAMESPACE::IfThenElseZero;
+using hwy::HWY_NAMESPACE::Lt;
+using hwy::HWY_NAMESPACE::Max;
+using hwy::HWY_NAMESPACE::Mul;
+using hwy::HWY_NAMESPACE::MulAdd;
+using hwy::HWY_NAMESPACE::MulSub;
+using hwy::HWY_NAMESPACE::Neg;
+using hwy::HWY_NAMESPACE::Sub;
 using hwy::HWY_NAMESPACE::Vec;
+using hwy::HWY_NAMESPACE::ZeroIfNegative;
 
 template <class D, class V>
 HWY_INLINE V MaximumClamp(D d, V v, double kMaxVal) {
@@ -280,24 +284,26 @@ HWY_INLINE V MaximumClamp(D d, V v, double kMaxVal) {
   const V mul = Set(d, kMul);
   const V maxval = Set(d, kMaxVal);
   // If greater than maxval or less than -maxval, replace with if_*.
-  const V if_pos = MulAdd(v - maxval, mul, maxval);
-  const V if_neg = MulSub(v + maxval, mul, maxval);
-  const V pos_or_v = IfThenElse(v >= maxval, if_pos, v);
-  return IfThenElse(v < Neg(maxval), if_neg, pos_or_v);
+  const V if_pos = MulAdd(Sub(v, maxval), mul, maxval);
+  const V if_neg = MulSub(Add(v, maxval), mul, maxval);
+  const V pos_or_v = IfThenElse(Ge(v, maxval), if_pos, v);
+  return IfThenElse(Lt(v, Neg(maxval)), if_neg, pos_or_v);
 }
 
 // Make area around zero less important (remove it).
 template <class D, class V>
 HWY_INLINE V RemoveRangeAroundZero(const D d, const double kw, const V x) {
   const auto w = Set(d, kw);
-  return IfThenElse(x > w, x - w, IfThenElseZero(x < Neg(w), x + w));
+  return IfThenElse(Gt(x, w), Sub(x, w),
+                    IfThenElseZero(Lt(x, Neg(w)), Add(x, w)));
 }
 
 // Make area around zero more important (2x it until the limit).
 template <class D, class V>
 HWY_INLINE V AmplifyRangeAroundZero(const D d, const double kw, const V x) {
   const auto w = Set(d, kw);
-  return IfThenElse(x > w, x + w, IfThenElse(x < Neg(w), x - w, x + x));
+  return IfThenElse(Gt(x, w), Add(x, w),
+                    IfThenElse(Lt(x, Neg(w)), Sub(x, w), Add(x, x)));
 }
 
 // XybLowFreqToVals converts from low-frequency XYB space to the 'vals' space.
@@ -307,187 +313,31 @@ template <class D, class V>
 HWY_INLINE void XybLowFreqToVals(const D d, const V& x, const V& y,
                                  const V& b_arg, V* HWY_RESTRICT valx,
                                  V* HWY_RESTRICT valy, V* HWY_RESTRICT valb) {
-  static const double xmuli = 32.2217497012;
-  static const double ymuli = 13.7697791434;
-  static const double bmuli = 47.504615728;
-  static const double y_to_b_muli = -0.362267051518;
-  const V xmul = Set(d, xmuli);
-  const V ymul = Set(d, ymuli);
-  const V bmul = Set(d, bmuli);
-  const V y_to_b_mul = Set(d, y_to_b_muli);
+  static const double xmul_scalar = 33.832837186260;
+  static const double ymul_scalar = 14.458268100570;
+  static const double bmul_scalar = 49.87984651440;
+  static const double y_to_b_mul_scalar = -0.362267051518;
+  const V xmul = Set(d, xmul_scalar);
+  const V ymul = Set(d, ymul_scalar);
+  const V bmul = Set(d, bmul_scalar);
+  const V y_to_b_mul = Set(d, y_to_b_mul_scalar);
   const V b = MulAdd(y_to_b_mul, y, b_arg);
-  *valb = b * bmul;
-  *valx = x * xmul;
-  *valy = y * ymul;
+  *valb = Mul(b, bmul);
+  *valx = Mul(x, xmul);
+  *valy = Mul(y, ymul);
 }
 
-void SuppressXByY(const ImageF& in_x, const ImageF& in_y, const double yw,
-                  ImageF* HWY_RESTRICT out) {
-  JXL_DASSERT(SameSize(in_x, in_y) && SameSize(in_x, *out));
-  const size_t xsize = in_x.xsize();
-  const size_t ysize = in_x.ysize();
-
-  const HWY_FULL(float) d;
-  static const double s = 0.653020556257;
-  const auto sv = Set(d, s);
-  const auto one_minus_s = Set(d, 1.0 - s);
-  const auto ywv = Set(d, yw);
-
-  for (size_t y = 0; y < ysize; ++y) {
-    const float* HWY_RESTRICT row_x = in_x.ConstRow(y);
-    const float* HWY_RESTRICT row_y = in_y.ConstRow(y);
-    float* HWY_RESTRICT row_out = out->Row(y);
-
-    for (size_t x = 0; x < xsize; x += Lanes(d)) {
-      const auto vx = Load(d, row_x + x);
-      const auto vy = Load(d, row_y + x);
-      const auto scaler = MulAdd(ywv / MulAdd(vy, vy, ywv), one_minus_s, sv);
-      Store(scaler * vx, d, row_out + x);
-    }
-  }
-}
-
-static void SeparateFrequencies(size_t xsize, size_t ysize,
-                                const ButteraugliParams& params,
-                                BlurTemp* blur_temp, const Image3F& xyb,
-                                PsychoImage& ps) {
-  PROFILER_FUNC;
-  const HWY_FULL(float) d;
-
-  // Extract lf ...
-  static const double kSigmaLf = 7.15593339443;
-  static const double kSigmaHf = 3.22489901262;
-  static const double kSigmaUhf = 1.56416327805;
-  ps.mf = Image3F(xsize, ysize);
-  ps.hf[0] = ImageF(xsize, ysize);
-  ps.hf[1] = ImageF(xsize, ysize);
-  ps.lf = Image3F(xyb.xsize(), xyb.ysize());
-  ps.mf = Image3F(xyb.xsize(), xyb.ysize());
-  for (int i = 0; i < 3; ++i) {
-    Blur(xyb.Plane(i), kSigmaLf, params, blur_temp, &ps.lf.Plane(i));
-
-    // ... and keep everything else in mf.
-    for (size_t y = 0; y < ysize; ++y) {
-      const float* BUTTERAUGLI_RESTRICT row_xyb = xyb.PlaneRow(i, y);
-      const float* BUTTERAUGLI_RESTRICT row_lf = ps.lf.ConstPlaneRow(i, y);
-      float* BUTTERAUGLI_RESTRICT row_mf = ps.mf.PlaneRow(i, y);
-      for (size_t x = 0; x < xsize; x += Lanes(d)) {
-        const auto mf = Load(d, row_xyb + x) - Load(d, row_lf + x);
-        Store(mf, d, row_mf + x);
-      }
-    }
-    if (i == 2) {
-      Blur(ps.mf.Plane(i), kSigmaHf, params, blur_temp, &ps.mf.Plane(i));
-      break;
-    }
-    // Divide mf into mf and hf.
-    for (size_t y = 0; y < ysize; ++y) {
-      float* BUTTERAUGLI_RESTRICT row_mf = ps.mf.PlaneRow(i, y);
-      float* BUTTERAUGLI_RESTRICT row_hf = ps.hf[i].Row(y);
-      for (size_t x = 0; x < xsize; x += Lanes(d)) {
-        Store(Load(d, row_mf + x), d, row_hf + x);
-      }
-    }
-    Blur(ps.mf.Plane(i), kSigmaHf, params, blur_temp, &ps.mf.Plane(i));
-    static const double kRemoveMfRange = 0.29;
-    static const double kAddMfRange = 0.1;
-    if (i == 0) {
-      for (size_t y = 0; y < ysize; ++y) {
-        float* BUTTERAUGLI_RESTRICT row_mf = ps.mf.PlaneRow(0, y);
-        float* BUTTERAUGLI_RESTRICT row_hf = ps.hf[0].Row(y);
-        for (size_t x = 0; x < xsize; x += Lanes(d)) {
-          auto mf = Load(d, row_mf + x);
-          auto hf = Load(d, row_hf + x) - mf;
-          mf = RemoveRangeAroundZero(d, kRemoveMfRange, mf);
-          Store(mf, d, row_mf + x);
-          Store(hf, d, row_hf + x);
-        }
-      }
-    } else {
-      for (size_t y = 0; y < ysize; ++y) {
-        float* BUTTERAUGLI_RESTRICT row_mf = ps.mf.PlaneRow(1, y);
-        float* BUTTERAUGLI_RESTRICT row_hf = ps.hf[1].Row(y);
-        for (size_t x = 0; x < xsize; x += Lanes(d)) {
-          auto mf = Load(d, row_mf + x);
-          auto hf = Load(d, row_hf + x) - mf;
-
-          mf = AmplifyRangeAroundZero(d, kAddMfRange, mf);
-          Store(mf, d, row_mf + x);
-          Store(hf, d, row_hf + x);
-        }
-      }
-    }
-  }
-
-  // Temporarily used as output of SuppressXByY
-  ps.uhf[0] = ImageF(xsize, ysize);
-  ps.uhf[1] = ImageF(xsize, ysize);
-
-  // Suppress red-green by intensity change in the high freq channels.
-  static const double suppress = 46.0;
-  SuppressXByY(ps.hf[0], ps.hf[1], suppress, &ps.uhf[0]);
-  // hf is the SuppressXByY output, uhf will be written below.
-  ps.hf[0].Swap(ps.uhf[0]);
-
-  for (int i = 0; i < 2; ++i) {
-    // Divide hf into hf and uhf.
-    for (size_t y = 0; y < ysize; ++y) {
-      float* BUTTERAUGLI_RESTRICT row_uhf = ps.uhf[i].Row(y);
-      float* BUTTERAUGLI_RESTRICT row_hf = ps.hf[i].Row(y);
-      for (size_t x = 0; x < xsize; ++x) {
-        row_uhf[x] = row_hf[x];
-      }
-    }
-    Blur(ps.hf[i], kSigmaUhf, params, blur_temp, &ps.hf[i]);
-    static const double kRemoveHfRange = 1.5;
-    static const double kAddHfRange = 0.132;
-    static const double kRemoveUhfRange = 0.04;
-    static const double kMaxclampHf = 28.4691806922;
-    static const double kMaxclampUhf = 5.19175294647;
-    static double kMulYHf = 2.155;
-    static double kMulYUhf = 2.69313763794;
-    if (i == 0) {
-      for (size_t y = 0; y < ysize; ++y) {
-        float* BUTTERAUGLI_RESTRICT row_uhf = ps.uhf[0].Row(y);
-        float* BUTTERAUGLI_RESTRICT row_hf = ps.hf[0].Row(y);
-        for (size_t x = 0; x < xsize; x += Lanes(d)) {
-          auto hf = Load(d, row_hf + x);
-          auto uhf = Load(d, row_uhf + x) - hf;
-          hf = RemoveRangeAroundZero(d, kRemoveHfRange, hf);
-          uhf = RemoveRangeAroundZero(d, kRemoveUhfRange, uhf);
-          Store(hf, d, row_hf + x);
-          Store(uhf, d, row_uhf + x);
-        }
-      }
-    } else {
-      for (size_t y = 0; y < ysize; ++y) {
-        float* BUTTERAUGLI_RESTRICT row_uhf = ps.uhf[1].Row(y);
-        float* BUTTERAUGLI_RESTRICT row_hf = ps.hf[1].Row(y);
-        for (size_t x = 0; x < xsize; x += Lanes(d)) {
-          auto hf = Load(d, row_hf + x);
-          hf = MaximumClamp(d, hf, kMaxclampHf);
-
-          auto uhf = Load(d, row_uhf + x) - hf;
-          uhf = MaximumClamp(d, uhf, kMaxclampUhf);
-          uhf *= Set(d, kMulYUhf);
-          Store(uhf, d, row_uhf + x);
-
-          hf *= Set(d, kMulYHf);
-          hf = AmplifyRangeAroundZero(d, kAddHfRange, hf);
-          Store(hf, d, row_hf + x);
-        }
-      }
-    }
-  }
+void XybLowFreqToVals(Image3F* xyb_lf) {
   // Modify range around zero code only concerns the high frequency
   // planes and only the X and Y channels.
   // Convert low freq xyb to vals space so that we can do a simple squared sum
   // diff on the low frequencies later.
-  for (size_t y = 0; y < ysize; ++y) {
-    float* BUTTERAUGLI_RESTRICT row_x = ps.lf.PlaneRow(0, y);
-    float* BUTTERAUGLI_RESTRICT row_y = ps.lf.PlaneRow(1, y);
-    float* BUTTERAUGLI_RESTRICT row_b = ps.lf.PlaneRow(2, y);
-    for (size_t x = 0; x < xsize; x += Lanes(d)) {
+  const HWY_FULL(float) d;
+  for (size_t y = 0; y < xyb_lf->ysize(); ++y) {
+    float* BUTTERAUGLI_RESTRICT row_x = xyb_lf->PlaneRow(0, y);
+    float* BUTTERAUGLI_RESTRICT row_y = xyb_lf->PlaneRow(1, y);
+    float* BUTTERAUGLI_RESTRICT row_b = xyb_lf->PlaneRow(2, y);
+    for (size_t x = 0; x < xyb_lf->xsize(); x += Lanes(d)) {
       auto valx = Undefined(d);
       auto valy = Undefined(d);
       auto valb = Undefined(d);
@@ -500,6 +350,205 @@ static void SeparateFrequencies(size_t xsize, size_t ysize,
   }
 }
 
+void SuppressXByY(const ImageF& in_y, ImageF* HWY_RESTRICT inout_x) {
+  JXL_DASSERT(SameSize(*inout_x, in_y));
+  const size_t xsize = in_y.xsize();
+  const size_t ysize = in_y.ysize();
+  const HWY_FULL(float) d;
+  static const double suppress = 46.0;
+  static const double s = 0.653020556257;
+  const auto sv = Set(d, s);
+  const auto one_minus_s = Set(d, 1.0 - s);
+  const auto ywv = Set(d, suppress);
+
+  for (size_t y = 0; y < ysize; ++y) {
+    const float* HWY_RESTRICT row_y = in_y.ConstRow(y);
+    float* HWY_RESTRICT row_x = inout_x->Row(y);
+    for (size_t x = 0; x < xsize; x += Lanes(d)) {
+      const auto vx = Load(d, row_x + x);
+      const auto vy = Load(d, row_y + x);
+      const auto scaler =
+          MulAdd(Div(ywv, MulAdd(vy, vy, ywv)), one_minus_s, sv);
+      Store(Mul(scaler, vx), d, row_x + x);
+    }
+  }
+}
+
+void Subtract(const ImageF& a, const ImageF& b, ImageF* c) {
+  const HWY_FULL(float) d;
+  for (size_t y = 0; y < a.ysize(); ++y) {
+    const float* row_a = a.ConstRow(y);
+    const float* row_b = b.ConstRow(y);
+    float* row_c = c->Row(y);
+    for (size_t x = 0; x < a.xsize(); x += Lanes(d)) {
+      Store(Sub(Load(d, row_a + x), Load(d, row_b + x)), d, row_c + x);
+    }
+  }
+}
+
+void SeparateLFAndMF(const ButteraugliParams& params, const Image3F& xyb,
+                     Image3F* lf, Image3F* mf, BlurTemp* blur_temp) {
+  static const double kSigmaLf = 7.15593339443;
+  for (int i = 0; i < 3; ++i) {
+    // Extract lf ...
+    Blur(xyb.Plane(i), kSigmaLf, params, blur_temp, &lf->Plane(i));
+    // ... and keep everything else in mf.
+    Subtract(xyb.Plane(i), lf->Plane(i), &mf->Plane(i));
+  }
+  XybLowFreqToVals(lf);
+}
+
+void SeparateMFAndHF(const ButteraugliParams& params, Image3F* mf, ImageF* hf,
+                     BlurTemp* blur_temp) {
+  const HWY_FULL(float) d;
+  static const double kSigmaHf = 3.22489901262;
+  const size_t xsize = mf->xsize();
+  const size_t ysize = mf->ysize();
+  hf[0] = ImageF(xsize, ysize);
+  hf[1] = ImageF(xsize, ysize);
+  for (int i = 0; i < 3; ++i) {
+    if (i == 2) {
+      Blur(mf->Plane(i), kSigmaHf, params, blur_temp, &mf->Plane(i));
+      break;
+    }
+    for (size_t y = 0; y < ysize; ++y) {
+      float* BUTTERAUGLI_RESTRICT row_mf = mf->PlaneRow(i, y);
+      float* BUTTERAUGLI_RESTRICT row_hf = hf[i].Row(y);
+      for (size_t x = 0; x < xsize; x += Lanes(d)) {
+        Store(Load(d, row_mf + x), d, row_hf + x);
+      }
+    }
+    Blur(mf->Plane(i), kSigmaHf, params, blur_temp, &mf->Plane(i));
+    static const double kRemoveMfRange = 0.29;
+    static const double kAddMfRange = 0.1;
+    if (i == 0) {
+      for (size_t y = 0; y < ysize; ++y) {
+        float* BUTTERAUGLI_RESTRICT row_mf = mf->PlaneRow(0, y);
+        float* BUTTERAUGLI_RESTRICT row_hf = hf[0].Row(y);
+        for (size_t x = 0; x < xsize; x += Lanes(d)) {
+          auto mf = Load(d, row_mf + x);
+          auto hf = Sub(Load(d, row_hf + x), mf);
+          mf = RemoveRangeAroundZero(d, kRemoveMfRange, mf);
+          Store(mf, d, row_mf + x);
+          Store(hf, d, row_hf + x);
+        }
+      }
+    } else {
+      for (size_t y = 0; y < ysize; ++y) {
+        float* BUTTERAUGLI_RESTRICT row_mf = mf->PlaneRow(1, y);
+        float* BUTTERAUGLI_RESTRICT row_hf = hf[1].Row(y);
+        for (size_t x = 0; x < xsize; x += Lanes(d)) {
+          auto mf = Load(d, row_mf + x);
+          auto hf = Sub(Load(d, row_hf + x), mf);
+
+          mf = AmplifyRangeAroundZero(d, kAddMfRange, mf);
+          Store(mf, d, row_mf + x);
+          Store(hf, d, row_hf + x);
+        }
+      }
+    }
+  }
+  // Suppress red-green by intensity change in the high freq channels.
+  SuppressXByY(hf[1], &hf[0]);
+}
+
+void SeparateHFAndUHF(const ButteraugliParams& params, ImageF* hf, ImageF* uhf,
+                      BlurTemp* blur_temp) {
+  const HWY_FULL(float) d;
+  const size_t xsize = hf[0].xsize();
+  const size_t ysize = hf[0].ysize();
+  static const double kSigmaUhf = 1.56416327805;
+  uhf[0] = ImageF(xsize, ysize);
+  uhf[1] = ImageF(xsize, ysize);
+  for (int i = 0; i < 2; ++i) {
+    // Divide hf into hf and uhf.
+    for (size_t y = 0; y < ysize; ++y) {
+      float* BUTTERAUGLI_RESTRICT row_uhf = uhf[i].Row(y);
+      float* BUTTERAUGLI_RESTRICT row_hf = hf[i].Row(y);
+      for (size_t x = 0; x < xsize; ++x) {
+        row_uhf[x] = row_hf[x];
+      }
+    }
+    Blur(hf[i], kSigmaUhf, params, blur_temp, &hf[i]);
+    static const double kRemoveHfRange = 1.5;
+    static const double kAddHfRange = 0.132;
+    static const double kRemoveUhfRange = 0.04;
+    static const double kMaxclampHf = 28.4691806922;
+    static const double kMaxclampUhf = 5.19175294647;
+    static double kMulYHf = 2.155;
+    static double kMulYUhf = 2.69313763794;
+    if (i == 0) {
+      for (size_t y = 0; y < ysize; ++y) {
+        float* BUTTERAUGLI_RESTRICT row_uhf = uhf[0].Row(y);
+        float* BUTTERAUGLI_RESTRICT row_hf = hf[0].Row(y);
+        for (size_t x = 0; x < xsize; x += Lanes(d)) {
+          auto hf = Load(d, row_hf + x);
+          auto uhf = Sub(Load(d, row_uhf + x), hf);
+          hf = RemoveRangeAroundZero(d, kRemoveHfRange, hf);
+          uhf = RemoveRangeAroundZero(d, kRemoveUhfRange, uhf);
+          Store(hf, d, row_hf + x);
+          Store(uhf, d, row_uhf + x);
+        }
+      }
+    } else {
+      for (size_t y = 0; y < ysize; ++y) {
+        float* BUTTERAUGLI_RESTRICT row_uhf = uhf[1].Row(y);
+        float* BUTTERAUGLI_RESTRICT row_hf = hf[1].Row(y);
+        for (size_t x = 0; x < xsize; x += Lanes(d)) {
+          auto hf = Load(d, row_hf + x);
+          hf = MaximumClamp(d, hf, kMaxclampHf);
+
+          auto uhf = Sub(Load(d, row_uhf + x), hf);
+          uhf = MaximumClamp(d, uhf, kMaxclampUhf);
+          uhf = Mul(uhf, Set(d, kMulYUhf));
+          Store(uhf, d, row_uhf + x);
+
+          hf = Mul(hf, Set(d, kMulYHf));
+          hf = AmplifyRangeAroundZero(d, kAddHfRange, hf);
+          Store(hf, d, row_hf + x);
+        }
+      }
+    }
+  }
+}
+
+void DeallocateHFAndUHF(ImageF* hf, ImageF* uhf) {
+  for (int i = 0; i < 2; ++i) {
+    hf[i] = ImageF();
+    uhf[i] = ImageF();
+  }
+}
+
+static void SeparateFrequencies(size_t xsize, size_t ysize,
+                                const ButteraugliParams& params,
+                                BlurTemp* blur_temp, const Image3F& xyb,
+                                PsychoImage& ps) {
+  ps.lf = Image3F(xyb.xsize(), xyb.ysize());
+  ps.mf = Image3F(xyb.xsize(), xyb.ysize());
+  SeparateLFAndMF(params, xyb, &ps.lf, &ps.mf, blur_temp);
+  SeparateMFAndHF(params, &ps.mf, &ps.hf[0], blur_temp);
+  SeparateHFAndUHF(params, &ps.hf[0], &ps.uhf[0], blur_temp);
+}
+
+namespace {
+template <typename V>
+BUTTERAUGLI_INLINE V Sum(V a, V b, V c, V d) {
+  return Add(Add(a, b), Add(c, d));
+}
+template <typename V>
+BUTTERAUGLI_INLINE V Sum(V a, V b, V c, V d, V e) {
+  return Sum(a, b, c, Add(d, e));
+}
+template <typename V>
+BUTTERAUGLI_INLINE V Sum(V a, V b, V c, V d, V e, V f, V g) {
+  return Sum(a, b, c, Sum(d, e, f, g));
+}
+template <typename V>
+BUTTERAUGLI_INLINE V Sum(V a, V b, V c, V d, V e, V f, V g, V h, V i) {
+  return Add(Add(Sum(a, b, c, d), Sum(e, f, g, h)), i);
+}
+}  // namespace
+
 template <class D>
 Vec<D> MaltaUnit(MaltaTagLF /*tag*/, const D df,
                  const float* BUTTERAUGLI_RESTRICT d, const intptr_t xs) {
@@ -508,52 +557,52 @@ Vec<D> MaltaUnit(MaltaTagLF /*tag*/, const D df,
   const auto center = LoadU(df, d);
 
   // x grows, y constant
-  const auto sum_yconst = LoadU(df, d - 4) + LoadU(df, d - 2) + center +
-                          LoadU(df, d + 2) + LoadU(df, d + 4);
+  const auto sum_yconst = Sum(LoadU(df, d - 4), LoadU(df, d - 2), center,
+                              LoadU(df, d + 2), LoadU(df, d + 4));
   // Will return this, sum of all line kernels
-  auto retval = sum_yconst * sum_yconst;
+  auto retval = Mul(sum_yconst, sum_yconst);
   {
     // y grows, x constant
-    auto sum = LoadU(df, d - xs3 - xs) + LoadU(df, d - xs - xs) + center +
-               LoadU(df, d + xs + xs) + LoadU(df, d + xs3 + xs);
+    auto sum = Sum(LoadU(df, d - xs3 - xs), LoadU(df, d - xs - xs), center,
+                   LoadU(df, d + xs + xs), LoadU(df, d + xs3 + xs));
     retval = MulAdd(sum, sum, retval);
   }
   {
     // both grow
-    auto sum = LoadU(df, d - xs3 - 3) + LoadU(df, d - xs - xs - 2) + center +
-               LoadU(df, d + xs + xs + 2) + LoadU(df, d + xs3 + 3);
+    auto sum = Sum(LoadU(df, d - xs3 - 3), LoadU(df, d - xs - xs - 2), center,
+                   LoadU(df, d + xs + xs + 2), LoadU(df, d + xs3 + 3));
     retval = MulAdd(sum, sum, retval);
   }
   {
     // y grows, x shrinks
-    auto sum = LoadU(df, d - xs3 + 3) + LoadU(df, d - xs - xs + 2) + center +
-               LoadU(df, d + xs + xs - 2) + LoadU(df, d + xs3 - 3);
+    auto sum = Sum(LoadU(df, d - xs3 + 3), LoadU(df, d - xs - xs + 2), center,
+                   LoadU(df, d + xs + xs - 2), LoadU(df, d + xs3 - 3));
     retval = MulAdd(sum, sum, retval);
   }
   {
     // y grows -4 to 4, x shrinks 1 -> -1
-    auto sum = LoadU(df, d - xs3 - xs + 1) + LoadU(df, d - xs - xs + 1) +
-               center + LoadU(df, d + xs + xs - 1) +
-               LoadU(df, d + xs3 + xs - 1);
+    auto sum =
+        Sum(LoadU(df, d - xs3 - xs + 1), LoadU(df, d - xs - xs + 1), center,
+            LoadU(df, d + xs + xs - 1), LoadU(df, d + xs3 + xs - 1));
     retval = MulAdd(sum, sum, retval);
   }
   {
     //  y grows -4 to 4, x grows -1 -> 1
-    auto sum = LoadU(df, d - xs3 - xs - 1) + LoadU(df, d - xs - xs - 1) +
-               center + LoadU(df, d + xs + xs + 1) +
-               LoadU(df, d + xs3 + xs + 1);
+    auto sum =
+        Sum(LoadU(df, d - xs3 - xs - 1), LoadU(df, d - xs - xs - 1), center,
+            LoadU(df, d + xs + xs + 1), LoadU(df, d + xs3 + xs + 1));
     retval = MulAdd(sum, sum, retval);
   }
   {
     // x grows -4 to 4, y grows -1 to 1
-    auto sum = LoadU(df, d - 4 - xs) + LoadU(df, d - 2 - xs) + center +
-               LoadU(df, d + 2 + xs) + LoadU(df, d + 4 + xs);
+    auto sum = Sum(LoadU(df, d - 4 - xs), LoadU(df, d - 2 - xs), center,
+                   LoadU(df, d + 2 + xs), LoadU(df, d + 4 + xs));
     retval = MulAdd(sum, sum, retval);
   }
   {
     // x grows -4 to 4, y shrinks 1 to -1
-    auto sum = LoadU(df, d - 4 + xs) + LoadU(df, d - 2 + xs) + center +
-               LoadU(df, d + 2 - xs) + LoadU(df, d + 4 - xs);
+    auto sum = Sum(LoadU(df, d - 4 + xs), LoadU(df, d - 2 + xs), center,
+                   LoadU(df, d + 2 - xs), LoadU(df, d + 4 - xs));
     retval = MulAdd(sum, sum, retval);
   }
   {
@@ -566,8 +615,8 @@ Vec<D> MaltaUnit(MaltaTagLF /*tag*/, const D df,
        6_____*___
        7______*__
        8_________ */
-    auto sum = LoadU(df, d - xs3 - 2) + LoadU(df, d - xs - xs - 1) + center +
-               LoadU(df, d + xs + xs + 1) + LoadU(df, d + xs3 + 2);
+    auto sum = Sum(LoadU(df, d - xs3 - 2), LoadU(df, d - xs - xs - 1), center,
+                   LoadU(df, d + xs + xs + 1), LoadU(df, d + xs3 + 2));
     retval = MulAdd(sum, sum, retval);
   }
   {
@@ -580,8 +629,8 @@ Vec<D> MaltaUnit(MaltaTagLF /*tag*/, const D df,
        6___*_____
        7__*______
        8_________ */
-    auto sum = LoadU(df, d - xs3 + 2) + LoadU(df, d - xs - xs + 1) + center +
-               LoadU(df, d + xs + xs - 1) + LoadU(df, d + xs3 - 2);
+    auto sum = Sum(LoadU(df, d - xs3 + 2), LoadU(df, d - xs - xs + 1), center,
+                   LoadU(df, d + xs + xs - 1), LoadU(df, d + xs3 - 2));
     retval = MulAdd(sum, sum, retval);
   }
   {
@@ -594,8 +643,8 @@ Vec<D> MaltaUnit(MaltaTagLF /*tag*/, const D df,
        6_______*_
        7_________
        8_________ */
-    auto sum = LoadU(df, d - xs - xs - 3) + LoadU(df, d - xs - 2) + center +
-               LoadU(df, d + xs + 2) + LoadU(df, d + xs + xs + 3);
+    auto sum = Sum(LoadU(df, d - xs - xs - 3), LoadU(df, d - xs - 2), center,
+                   LoadU(df, d + xs + 2), LoadU(df, d + xs + xs + 3));
     retval = MulAdd(sum, sum, retval);
   }
   {
@@ -608,8 +657,8 @@ Vec<D> MaltaUnit(MaltaTagLF /*tag*/, const D df,
        6_*_______
        7_________
        8_________ */
-    auto sum = LoadU(df, d - xs - xs + 3) + LoadU(df, d - xs + 2) + center +
-               LoadU(df, d + xs - 2) + LoadU(df, d + xs + xs - 3);
+    auto sum = Sum(LoadU(df, d - xs - xs + 3), LoadU(df, d - xs + 2), center,
+                   LoadU(df, d + xs - 2), LoadU(df, d + xs + xs - 3));
     retval = MulAdd(sum, sum, retval);
   }
   {
@@ -623,8 +672,8 @@ Vec<D> MaltaUnit(MaltaTagLF /*tag*/, const D df,
        7_________
        8_________ */
 
-    auto sum = LoadU(df, d + xs + xs - 4) + LoadU(df, d + xs - 2) + center +
-               LoadU(df, d - xs + 2) + LoadU(df, d - xs - xs + 4);
+    auto sum = Sum(LoadU(df, d + xs + xs - 4), LoadU(df, d + xs - 2), center,
+                   LoadU(df, d - xs + 2), LoadU(df, d - xs - xs + 4));
     retval = MulAdd(sum, sum, retval);
   }
   {
@@ -637,8 +686,8 @@ Vec<D> MaltaUnit(MaltaTagLF /*tag*/, const D df,
        6________*
        7_________
        8_________ */
-    auto sum = LoadU(df, d - xs - xs - 4) + LoadU(df, d - xs - 2) + center +
-               LoadU(df, d + xs + 2) + LoadU(df, d + xs + xs + 4);
+    auto sum = Sum(LoadU(df, d - xs - xs - 4), LoadU(df, d - xs - 2), center,
+                   LoadU(df, d + xs + 2), LoadU(df, d + xs + xs + 4));
     retval = MulAdd(sum, sum, retval);
   }
   {
@@ -651,9 +700,9 @@ Vec<D> MaltaUnit(MaltaTagLF /*tag*/, const D df,
        6_____*___
        7_________
        8______*__ */
-    auto sum = LoadU(df, d - xs3 - xs - 2) + LoadU(df, d - xs - xs - 1) +
-               center + LoadU(df, d + xs + xs + 1) +
-               LoadU(df, d + xs3 + xs + 2);
+    auto sum =
+        Sum(LoadU(df, d - xs3 - xs - 2), LoadU(df, d - xs - xs - 1), center,
+            LoadU(df, d + xs + xs + 1), LoadU(df, d + xs3 + xs + 2));
     retval = MulAdd(sum, sum, retval);
   }
   {
@@ -666,9 +715,9 @@ Vec<D> MaltaUnit(MaltaTagLF /*tag*/, const D df,
        6___*_____
        7_________
        8__*______ */
-    auto sum = LoadU(df, d - xs3 - xs + 2) + LoadU(df, d - xs - xs + 1) +
-               center + LoadU(df, d + xs + xs - 1) +
-               LoadU(df, d + xs3 + xs - 2);
+    auto sum =
+        Sum(LoadU(df, d - xs3 - xs + 2), LoadU(df, d - xs - xs + 1), center,
+            LoadU(df, d + xs + xs - 1), LoadU(df, d + xs3 + xs - 2));
     retval = MulAdd(sum, sum, retval);
   }
   return retval;
@@ -682,65 +731,65 @@ Vec<D> MaltaUnit(MaltaTag /*tag*/, const D df,
   const auto center = LoadU(df, d);
 
   // x grows, y constant
-  const auto sum_yconst = LoadU(df, d - 4) + LoadU(df, d - 3) +
-                          LoadU(df, d - 2) + LoadU(df, d - 1) + center +
-                          LoadU(df, d + 1) + LoadU(df, d + 2) +
-                          LoadU(df, d + 3) + LoadU(df, d + 4);
+  const auto sum_yconst =
+      Sum(LoadU(df, d - 4), LoadU(df, d - 3), LoadU(df, d - 2),
+          LoadU(df, d - 1), center, LoadU(df, d + 1), LoadU(df, d + 2),
+          LoadU(df, d + 3), LoadU(df, d + 4));
   // Will return this, sum of all line kernels
-  auto retval = sum_yconst * sum_yconst;
+  auto retval = Mul(sum_yconst, sum_yconst);
 
   {
     // y grows, x constant
-    auto sum = LoadU(df, d - xs3 - xs) + LoadU(df, d - xs3) +
-               LoadU(df, d - xs - xs) + LoadU(df, d - xs) + center +
-               LoadU(df, d + xs) + LoadU(df, d + xs + xs) + LoadU(df, d + xs3) +
-               LoadU(df, d + xs3 + xs);
+    auto sum = Sum(LoadU(df, d - xs3 - xs), LoadU(df, d - xs3),
+                   LoadU(df, d - xs - xs), LoadU(df, d - xs), center,
+                   LoadU(df, d + xs), LoadU(df, d + xs + xs),
+                   LoadU(df, d + xs3), LoadU(df, d + xs3 + xs));
     retval = MulAdd(sum, sum, retval);
   }
   {
     // both grow
-    auto sum = LoadU(df, d - xs3 - 3) + LoadU(df, d - xs - xs - 2) +
-               LoadU(df, d - xs - 1) + center + LoadU(df, d + xs + 1) +
-               LoadU(df, d + xs + xs + 2) + LoadU(df, d + xs3 + 3);
+    auto sum = Sum(LoadU(df, d - xs3 - 3), LoadU(df, d - xs - xs - 2),
+                   LoadU(df, d - xs - 1), center, LoadU(df, d + xs + 1),
+                   LoadU(df, d + xs + xs + 2), LoadU(df, d + xs3 + 3));
     retval = MulAdd(sum, sum, retval);
   }
   {
     // y grows, x shrinks
-    auto sum = LoadU(df, d - xs3 + 3) + LoadU(df, d - xs - xs + 2) +
-               LoadU(df, d - xs + 1) + center + LoadU(df, d + xs - 1) +
-               LoadU(df, d + xs + xs - 2) + LoadU(df, d + xs3 - 3);
+    auto sum = Sum(LoadU(df, d - xs3 + 3), LoadU(df, d - xs - xs + 2),
+                   LoadU(df, d - xs + 1), center, LoadU(df, d + xs - 1),
+                   LoadU(df, d + xs + xs - 2), LoadU(df, d + xs3 - 3));
     retval = MulAdd(sum, sum, retval);
   }
   {
     // y grows -4 to 4, x shrinks 1 -> -1
-    auto sum = LoadU(df, d - xs3 - xs + 1) + LoadU(df, d - xs3 + 1) +
-               LoadU(df, d - xs - xs + 1) + LoadU(df, d - xs) + center +
-               LoadU(df, d + xs) + LoadU(df, d + xs + xs - 1) +
-               LoadU(df, d + xs3 - 1) + LoadU(df, d + xs3 + xs - 1);
+    auto sum = Sum(LoadU(df, d - xs3 - xs + 1), LoadU(df, d - xs3 + 1),
+                   LoadU(df, d - xs - xs + 1), LoadU(df, d - xs), center,
+                   LoadU(df, d + xs), LoadU(df, d + xs + xs - 1),
+                   LoadU(df, d + xs3 - 1), LoadU(df, d + xs3 + xs - 1));
     retval = MulAdd(sum, sum, retval);
   }
   {
     //  y grows -4 to 4, x grows -1 -> 1
-    auto sum = LoadU(df, d - xs3 - xs - 1) + LoadU(df, d - xs3 - 1) +
-               LoadU(df, d - xs - xs - 1) + LoadU(df, d - xs) + center +
-               LoadU(df, d + xs) + LoadU(df, d + xs + xs + 1) +
-               LoadU(df, d + xs3 + 1) + LoadU(df, d + xs3 + xs + 1);
+    auto sum = Sum(LoadU(df, d - xs3 - xs - 1), LoadU(df, d - xs3 - 1),
+                   LoadU(df, d - xs - xs - 1), LoadU(df, d - xs), center,
+                   LoadU(df, d + xs), LoadU(df, d + xs + xs + 1),
+                   LoadU(df, d + xs3 + 1), LoadU(df, d + xs3 + xs + 1));
     retval = MulAdd(sum, sum, retval);
   }
   {
     // x grows -4 to 4, y grows -1 to 1
-    auto sum = LoadU(df, d - 4 - xs) + LoadU(df, d - 3 - xs) +
-               LoadU(df, d - 2 - xs) + LoadU(df, d - 1) + center +
-               LoadU(df, d + 1) + LoadU(df, d + 2 + xs) +
-               LoadU(df, d + 3 + xs) + LoadU(df, d + 4 + xs);
+    auto sum =
+        Sum(LoadU(df, d - 4 - xs), LoadU(df, d - 3 - xs), LoadU(df, d - 2 - xs),
+            LoadU(df, d - 1), center, LoadU(df, d + 1), LoadU(df, d + 2 + xs),
+            LoadU(df, d + 3 + xs), LoadU(df, d + 4 + xs));
     retval = MulAdd(sum, sum, retval);
   }
   {
     // x grows -4 to 4, y shrinks 1 to -1
-    auto sum = LoadU(df, d - 4 + xs) + LoadU(df, d - 3 + xs) +
-               LoadU(df, d - 2 + xs) + LoadU(df, d - 1) + center +
-               LoadU(df, d + 1) + LoadU(df, d + 2 - xs) +
-               LoadU(df, d + 3 - xs) + LoadU(df, d + 4 - xs);
+    auto sum =
+        Sum(LoadU(df, d - 4 + xs), LoadU(df, d - 3 + xs), LoadU(df, d - 2 + xs),
+            LoadU(df, d - 1), center, LoadU(df, d + 1), LoadU(df, d + 2 - xs),
+            LoadU(df, d + 3 - xs), LoadU(df, d + 4 - xs));
     retval = MulAdd(sum, sum, retval);
   }
   {
@@ -753,9 +802,9 @@ Vec<D> MaltaUnit(MaltaTag /*tag*/, const D df,
        6_____*___
        7______*__
        8_________ */
-    auto sum = LoadU(df, d - xs3 - 2) + LoadU(df, d - xs - xs - 1) +
-               LoadU(df, d - xs - 1) + center + LoadU(df, d + xs + 1) +
-               LoadU(df, d + xs + xs + 1) + LoadU(df, d + xs3 + 2);
+    auto sum = Sum(LoadU(df, d - xs3 - 2), LoadU(df, d - xs - xs - 1),
+                   LoadU(df, d - xs - 1), center, LoadU(df, d + xs + 1),
+                   LoadU(df, d + xs + xs + 1), LoadU(df, d + xs3 + 2));
     retval = MulAdd(sum, sum, retval);
   }
   {
@@ -768,9 +817,9 @@ Vec<D> MaltaUnit(MaltaTag /*tag*/, const D df,
        6___*_____
        7__*______
        8_________ */
-    auto sum = LoadU(df, d - xs3 + 2) + LoadU(df, d - xs - xs + 1) +
-               LoadU(df, d - xs + 1) + center + LoadU(df, d + xs - 1) +
-               LoadU(df, d + xs + xs - 1) + LoadU(df, d + xs3 - 2);
+    auto sum = Sum(LoadU(df, d - xs3 + 2), LoadU(df, d - xs - xs + 1),
+                   LoadU(df, d - xs + 1), center, LoadU(df, d + xs - 1),
+                   LoadU(df, d + xs + xs - 1), LoadU(df, d + xs3 - 2));
     retval = MulAdd(sum, sum, retval);
   }
   {
@@ -783,9 +832,9 @@ Vec<D> MaltaUnit(MaltaTag /*tag*/, const D df,
        6_______*_
        7_________
        8_________ */
-    auto sum = LoadU(df, d - xs - xs - 3) + LoadU(df, d - xs - 2) +
-               LoadU(df, d - xs - 1) + center + LoadU(df, d + xs + 1) +
-               LoadU(df, d + xs + 2) + LoadU(df, d + xs + xs + 3);
+    auto sum = Sum(LoadU(df, d - xs - xs - 3), LoadU(df, d - xs - 2),
+                   LoadU(df, d - xs - 1), center, LoadU(df, d + xs + 1),
+                   LoadU(df, d + xs + 2), LoadU(df, d + xs + xs + 3));
     retval = MulAdd(sum, sum, retval);
   }
   {
@@ -798,9 +847,9 @@ Vec<D> MaltaUnit(MaltaTag /*tag*/, const D df,
        6_*_______
        7_________
        8_________ */
-    auto sum = LoadU(df, d - xs - xs + 3) + LoadU(df, d - xs + 2) +
-               LoadU(df, d - xs + 1) + center + LoadU(df, d + xs - 1) +
-               LoadU(df, d + xs - 2) + LoadU(df, d + xs + xs - 3);
+    auto sum = Sum(LoadU(df, d - xs - xs + 3), LoadU(df, d - xs + 2),
+                   LoadU(df, d - xs + 1), center, LoadU(df, d + xs - 1),
+                   LoadU(df, d + xs - 2), LoadU(df, d + xs + xs - 3));
     retval = MulAdd(sum, sum, retval);
   }
   {
@@ -814,10 +863,10 @@ Vec<D> MaltaUnit(MaltaTag /*tag*/, const D df,
        7_________
        8_________ */
 
-    auto sum = LoadU(df, d + xs - 4) + LoadU(df, d + xs - 3) +
-               LoadU(df, d + xs - 2) + LoadU(df, d - 1) + center +
-               LoadU(df, d + 1) + LoadU(df, d - xs + 2) +
-               LoadU(df, d - xs + 3) + LoadU(df, d - xs + 4);
+    auto sum =
+        Sum(LoadU(df, d + xs - 4), LoadU(df, d + xs - 3), LoadU(df, d + xs - 2),
+            LoadU(df, d - 1), center, LoadU(df, d + 1), LoadU(df, d - xs + 2),
+            LoadU(df, d - xs + 3), LoadU(df, d - xs + 4));
     retval = MulAdd(sum, sum, retval);
   }
   {
@@ -830,10 +879,10 @@ Vec<D> MaltaUnit(MaltaTag /*tag*/, const D df,
        6_________
        7_________
        8_________ */
-    auto sum = LoadU(df, d - xs - 4) + LoadU(df, d - xs - 3) +
-               LoadU(df, d - xs - 2) + LoadU(df, d - 1) + center +
-               LoadU(df, d + 1) + LoadU(df, d + xs + 2) +
-               LoadU(df, d + xs + 3) + LoadU(df, d + xs + 4);
+    auto sum =
+        Sum(LoadU(df, d - xs - 4), LoadU(df, d - xs - 3), LoadU(df, d - xs - 2),
+            LoadU(df, d - 1), center, LoadU(df, d + 1), LoadU(df, d + xs + 2),
+            LoadU(df, d + xs + 3), LoadU(df, d + xs + 4));
     retval = MulAdd(sum, sum, retval);
   }
   {
@@ -846,10 +895,10 @@ Vec<D> MaltaUnit(MaltaTag /*tag*/, const D df,
        6_____*___
        7_____*___
        8_____*___ */
-    auto sum = LoadU(df, d - xs3 - xs - 1) + LoadU(df, d - xs3 - 1) +
-               LoadU(df, d - xs - xs - 1) + LoadU(df, d - xs) + center +
-               LoadU(df, d + xs) + LoadU(df, d + xs + xs + 1) +
-               LoadU(df, d + xs3 + 1) + LoadU(df, d + xs3 + xs + 1);
+    auto sum = Sum(LoadU(df, d - xs3 - xs - 1), LoadU(df, d - xs3 - 1),
+                   LoadU(df, d - xs - xs - 1), LoadU(df, d - xs), center,
+                   LoadU(df, d + xs), LoadU(df, d + xs + xs + 1),
+                   LoadU(df, d + xs3 + 1), LoadU(df, d + xs3 + xs + 1));
     retval = MulAdd(sum, sum, retval);
   }
   {
@@ -862,10 +911,10 @@ Vec<D> MaltaUnit(MaltaTag /*tag*/, const D df,
        6___*_____
        7___*_____
        8___*_____ */
-    auto sum = LoadU(df, d - xs3 - xs + 1) + LoadU(df, d - xs3 + 1) +
-               LoadU(df, d - xs - xs + 1) + LoadU(df, d - xs) + center +
-               LoadU(df, d + xs) + LoadU(df, d + xs + xs - 1) +
-               LoadU(df, d + xs3 - 1) + LoadU(df, d + xs3 + xs - 1);
+    auto sum = Sum(LoadU(df, d - xs3 - xs + 1), LoadU(df, d - xs3 + 1),
+                   LoadU(df, d - xs - xs + 1), LoadU(df, d - xs), center,
+                   LoadU(df, d + xs), LoadU(df, d + xs + xs - 1),
+                   LoadU(df, d + xs3 - 1), LoadU(df, d + xs3 + xs - 1));
     retval = MulAdd(sum, sum, retval);
   }
   return retval;
@@ -884,7 +933,6 @@ static BUTTERAUGLI_INLINE float PaddedMaltaUnit(const ImageF& diffs,
     return GetLane(MaltaUnit(Tag(), df, d, diffs.PixelsPerRow()));
   }
 
-  PROFILER_ZONE("Padded Malta");
   float borderimage[12 * 9];  // round up to 4
   for (int dy = 0; dy < 9; ++dy) {
     int y = y0 + dy - 4;
@@ -914,7 +962,7 @@ static void MaltaDiffMapT(const Tag tag, const ImageF& lum0, const ImageF& lum1,
                           const double w_0gt1, const double w_0lt1,
                           const double norm1, const double len,
                           const double mulli, ImageF* HWY_RESTRICT diffs,
-                          Image3F* HWY_RESTRICT block_diff_ac, size_t c) {
+                          ImageF* HWY_RESTRICT block_diff_ac) {
   JXL_DASSERT(SameSize(lum0, lum1) && SameSize(lum0, *diffs));
   const size_t xsize_ = lum0.xsize();
   const size_t ysize_ = lum0.ysize();
@@ -969,7 +1017,7 @@ static void MaltaDiffMapT(const Tag tag, const ImageF& lum0, const ImageF& lum1,
   size_t y0 = 0;
   // Top
   for (; y0 < 4; ++y0) {
-    float* BUTTERAUGLI_RESTRICT row_diff = block_diff_ac->PlaneRow(c, y0);
+    float* BUTTERAUGLI_RESTRICT row_diff = block_diff_ac->Row(y0);
     for (size_t x0 = 0; x0 < xsize_; ++x0) {
       row_diff[x0] += PaddedMaltaUnit<Tag>(*diffs, x0, y0);
     }
@@ -982,14 +1030,14 @@ static void MaltaDiffMapT(const Tag tag, const ImageF& lum0, const ImageF& lum1,
   // Middle
   for (; y0 < ysize_ - 4; ++y0) {
     const float* BUTTERAUGLI_RESTRICT row_in = diffs->ConstRow(y0);
-    float* BUTTERAUGLI_RESTRICT row_diff = block_diff_ac->PlaneRow(c, y0);
+    float* BUTTERAUGLI_RESTRICT row_diff = block_diff_ac->Row(y0);
     size_t x0 = 0;
     for (; x0 < aligned_x; ++x0) {
       row_diff[x0] += PaddedMaltaUnit<Tag>(*diffs, x0, y0);
     }
     for (; x0 + Lanes(df) + 4 <= xsize_; x0 += Lanes(df)) {
       auto diff = Load(df, row_diff + x0);
-      diff += MaltaUnit(Tag(), df, row_in + x0, stride);
+      diff = Add(diff, MaltaUnit(Tag(), df, row_in + x0, stride));
       Store(diff, df, row_diff + x0);
     }
 
@@ -1000,7 +1048,7 @@ static void MaltaDiffMapT(const Tag tag, const ImageF& lum0, const ImageF& lum1,
 
   // Bottom
   for (; y0 < ysize_; ++y0) {
-    float* BUTTERAUGLI_RESTRICT row_diff = block_diff_ac->PlaneRow(c, y0);
+    float* BUTTERAUGLI_RESTRICT row_diff = block_diff_ac->Row(y0);
     for (size_t x0 = 0; x0 < xsize_; ++x0) {
       row_diff[x0] += PaddedMaltaUnit<Tag>(*diffs, x0, y0);
     }
@@ -1009,23 +1057,52 @@ static void MaltaDiffMapT(const Tag tag, const ImageF& lum0, const ImageF& lum1,
 
 // Need non-template wrapper functions for HWY_EXPORT.
 void MaltaDiffMap(const ImageF& lum0, const ImageF& lum1, const double w_0gt1,
-                  const double w_0lt1, const double norm1, const double len,
-                  const double mulli, ImageF* HWY_RESTRICT diffs,
-                  Image3F* HWY_RESTRICT block_diff_ac, size_t c) {
+                  const double w_0lt1, const double norm1,
+                  ImageF* HWY_RESTRICT diffs,
+                  ImageF* HWY_RESTRICT block_diff_ac) {
+  const double len = 3.75;
+  static const double mulli = 0.39905817637;
   MaltaDiffMapT(MaltaTag(), lum0, lum1, w_0gt1, w_0lt1, norm1, len, mulli,
-                diffs, block_diff_ac, c);
+                diffs, block_diff_ac);
 }
 
 void MaltaDiffMapLF(const ImageF& lum0, const ImageF& lum1, const double w_0gt1,
-                    const double w_0lt1, const double norm1, const double len,
-                    const double mulli, ImageF* HWY_RESTRICT diffs,
-                    Image3F* HWY_RESTRICT block_diff_ac, size_t c) {
+                    const double w_0lt1, const double norm1,
+                    ImageF* HWY_RESTRICT diffs,
+                    ImageF* HWY_RESTRICT block_diff_ac) {
+  const double len = 3.75;
+  static const double mulli = 0.611612573796;
   MaltaDiffMapT(MaltaTagLF(), lum0, lum1, w_0gt1, w_0lt1, norm1, len, mulli,
-                diffs, block_diff_ac, c);
+                diffs, block_diff_ac);
+}
+
+void CombineChannelsForMasking(const ImageF* hf, const ImageF* uhf,
+                               ImageF* out) {
+  // Only X and Y components are involved in masking. B's influence
+  // is considered less important in the high frequency area, and we
+  // don't model masking from lower frequency signals.
+  static const float muls[3] = {
+      2.5f,
+      0.4f,
+      0.4f,
+  };
+  // Silly and unoptimized approach here. TODO(jyrki): rework this.
+  for (size_t y = 0; y < hf[0].ysize(); ++y) {
+    const float* BUTTERAUGLI_RESTRICT row_y_hf = hf[1].Row(y);
+    const float* BUTTERAUGLI_RESTRICT row_y_uhf = uhf[1].Row(y);
+    const float* BUTTERAUGLI_RESTRICT row_x_hf = hf[0].Row(y);
+    const float* BUTTERAUGLI_RESTRICT row_x_uhf = uhf[0].Row(y);
+    float* BUTTERAUGLI_RESTRICT row = out->Row(y);
+    for (size_t x = 0; x < hf[0].xsize(); ++x) {
+      float xdiff = (row_x_uhf[x] + row_x_hf[x]) * muls[0];
+      float ydiff = row_y_uhf[x] * muls[1] + row_y_hf[x] * muls[2];
+      row[x] = xdiff * xdiff + ydiff * ydiff;
+      row[x] = sqrt(row[x]);
+    }
+  }
 }
 
 void DiffPrecompute(const ImageF& xyb, float mul, float bias_arg, ImageF* out) {
-  PROFILER_FUNC;
   const size_t xsize = xyb.xsize();
   const size_t ysize = xyb.ysize();
   const float bias = mul * bias_arg;
@@ -1043,7 +1120,7 @@ void DiffPrecompute(const ImageF& xyb, float mul, float bias_arg, ImageF* out) {
 // std::log(80.0) / std::log(255.0);
 constexpr float kIntensityTargetNormalizationHack = 0.79079917404f;
 static const float kInternalGoodQualityThreshold =
-    17.8f * kIntensityTargetNormalizationHack;
+    17.83f * kIntensityTargetNormalizationHack;
 static const float kGlobalScale = 1.0 / kInternalGoodQualityThreshold;
 
 void StoreMin3(const float v, float& min0, float& min1, float& min2) {
@@ -1115,10 +1192,6 @@ void Mask(const ImageF& mask0, const ImageF& mask1,
           const ButteraugliParams& params, BlurTemp* blur_temp,
           ImageF* BUTTERAUGLI_RESTRICT mask,
           ImageF* BUTTERAUGLI_RESTRICT diff_ac) {
-  // Only X and Y components are involved in masking. B's influence
-  // is considered less important in the high frequency area, and we
-  // don't model masking from lower frequency signals.
-  PROFILER_FUNC;
   const size_t xsize = mask0.xsize();
   const size_t ysize = mask0.ysize();
   *mask = ImageF(xsize, ysize);
@@ -1134,7 +1207,6 @@ void Mask(const ImageF& mask0, const ImageF& mask1,
   Blur(diff0, kRadius, params, blur_temp, &blurred0);
   FuzzyErosion(blurred0, &diff0);
   Blur(diff1, kRadius, params, blur_temp, &blurred1);
-  FuzzyErosion(blurred1, &diff1);
   for (size_t y = 0; y < ysize; ++y) {
     for (size_t x = 0; x < xsize; ++x) {
       mask->Row(y)[x] = diff0.Row(y)[x];
@@ -1150,39 +1222,13 @@ void Mask(const ImageF& mask0, const ImageF& mask1,
 // `diff_ac` may be null.
 void MaskPsychoImage(const PsychoImage& pi0, const PsychoImage& pi1,
                      const size_t xsize, const size_t ysize,
-                     const ButteraugliParams& params, Image3F* temp,
-                     BlurTemp* blur_temp, ImageF* BUTTERAUGLI_RESTRICT mask,
+                     const ButteraugliParams& params, BlurTemp* blur_temp,
+                     ImageF* BUTTERAUGLI_RESTRICT mask,
                      ImageF* BUTTERAUGLI_RESTRICT diff_ac) {
   ImageF mask0(xsize, ysize);
   ImageF mask1(xsize, ysize);
-  static const float muls[3] = {
-      2.5f,
-      0.4f,
-      0.4f,
-  };
-  // Silly and unoptimized approach here. TODO(jyrki): rework this.
-  for (size_t y = 0; y < ysize; ++y) {
-    const float* BUTTERAUGLI_RESTRICT row_y_hf0 = pi0.hf[1].Row(y);
-    const float* BUTTERAUGLI_RESTRICT row_y_hf1 = pi1.hf[1].Row(y);
-    const float* BUTTERAUGLI_RESTRICT row_y_uhf0 = pi0.uhf[1].Row(y);
-    const float* BUTTERAUGLI_RESTRICT row_y_uhf1 = pi1.uhf[1].Row(y);
-    const float* BUTTERAUGLI_RESTRICT row_x_hf0 = pi0.hf[0].Row(y);
-    const float* BUTTERAUGLI_RESTRICT row_x_hf1 = pi1.hf[0].Row(y);
-    const float* BUTTERAUGLI_RESTRICT row_x_uhf0 = pi0.uhf[0].Row(y);
-    const float* BUTTERAUGLI_RESTRICT row_x_uhf1 = pi1.uhf[0].Row(y);
-    float* BUTTERAUGLI_RESTRICT row0 = mask0.Row(y);
-    float* BUTTERAUGLI_RESTRICT row1 = mask1.Row(y);
-    for (size_t x = 0; x < xsize; ++x) {
-      float xdiff0 = (row_x_uhf0[x] + row_x_hf0[x]) * muls[0];
-      float xdiff1 = (row_x_uhf1[x] + row_x_hf1[x]) * muls[0];
-      float ydiff0 = row_y_uhf0[x] * muls[1] + row_y_hf0[x] * muls[2];
-      float ydiff1 = row_y_uhf1[x] * muls[1] + row_y_hf1[x] * muls[2];
-      row0[x] = xdiff0 * xdiff0 + ydiff0 * ydiff0;
-      row0[x] = sqrt(row0[x]);
-      row1[x] = xdiff1 * xdiff1 + ydiff1 * ydiff1;
-      row1[x] = sqrt(row1[x]);
-    }
-  }
+  CombineChannelsForMasking(&pi0.hf[0], &pi0.uhf[0], &mask0);
+  CombineChannelsForMasking(&pi1.hf[0], &pi1.uhf[0], &mask1);
   Mask(mask0, mask1, params, blur_temp, mask, diff_ac);
 }
 
@@ -1212,7 +1258,6 @@ inline float MaskColor(const float color[3], const float mask) {
 void CombineChannelsToDiffmap(const ImageF& mask, const Image3F& block_diff_dc,
                               const Image3F& block_diff_ac, float xmul,
                               ImageF* result) {
-  PROFILER_FUNC;
   JXL_CHECK(SameSize(mask, *result));
   size_t xsize = mask.xsize();
   size_t ysize = mask.ysize();
@@ -1238,7 +1283,7 @@ void CombineChannelsToDiffmap(const ImageF& mask, const Image3F& block_diff_dc,
 
 // Adds weighted L2 difference between i0 and i1 to diffmap.
 static void L2Diff(const ImageF& i0, const ImageF& i1, const float w,
-                   Image3F* BUTTERAUGLI_RESTRICT diffmap, size_t c) {
+                   ImageF* BUTTERAUGLI_RESTRICT diffmap) {
   if (w == 0) return;
 
   const HWY_FULL(float) d;
@@ -1247,11 +1292,11 @@ static void L2Diff(const ImageF& i0, const ImageF& i1, const float w,
   for (size_t y = 0; y < i0.ysize(); ++y) {
     const float* BUTTERAUGLI_RESTRICT row0 = i0.ConstRow(y);
     const float* BUTTERAUGLI_RESTRICT row1 = i1.ConstRow(y);
-    float* BUTTERAUGLI_RESTRICT row_diff = diffmap->PlaneRow(c, y);
+    float* BUTTERAUGLI_RESTRICT row_diff = diffmap->Row(y);
 
     for (size_t x = 0; x < i0.xsize(); x += Lanes(d)) {
-      const auto diff = Load(d, row0 + x) - Load(d, row1 + x);
-      const auto diff2 = diff * diff;
+      const auto diff = Sub(Load(d, row0 + x), Load(d, row1 + x));
+      const auto diff2 = Mul(diff, diff);
       const auto prev = Load(d, row_diff + x);
       Store(MulAdd(diff2, weight, prev), d, row_diff + x);
     }
@@ -1260,7 +1305,7 @@ static void L2Diff(const ImageF& i0, const ImageF& i1, const float w,
 
 // Initializes diffmap to the weighted L2 difference between i0 and i1.
 static void SetL2Diff(const ImageF& i0, const ImageF& i1, const float w,
-                      Image3F* BUTTERAUGLI_RESTRICT diffmap, size_t c) {
+                      ImageF* BUTTERAUGLI_RESTRICT diffmap) {
   if (w == 0) return;
 
   const HWY_FULL(float) d;
@@ -1269,12 +1314,12 @@ static void SetL2Diff(const ImageF& i0, const ImageF& i1, const float w,
   for (size_t y = 0; y < i0.ysize(); ++y) {
     const float* BUTTERAUGLI_RESTRICT row0 = i0.ConstRow(y);
     const float* BUTTERAUGLI_RESTRICT row1 = i1.ConstRow(y);
-    float* BUTTERAUGLI_RESTRICT row_diff = diffmap->PlaneRow(c, y);
+    float* BUTTERAUGLI_RESTRICT row_diff = diffmap->Row(y);
 
     for (size_t x = 0; x < i0.xsize(); x += Lanes(d)) {
-      const auto diff = Load(d, row0 + x) - Load(d, row1 + x);
-      const auto diff2 = diff * diff;
-      Store(diff2 * weight, d, row_diff + x);
+      const auto diff = Sub(Load(d, row0 + x), Load(d, row1 + x));
+      const auto diff2 = Mul(diff, diff);
+      Store(Mul(diff2, weight), d, row_diff + x);
     }
   }
 }
@@ -1283,7 +1328,7 @@ static void SetL2Diff(const ImageF& i0, const ImageF& i1, const float w,
 // i1 is the deformed copy.
 static void L2DiffAsymmetric(const ImageF& i0, const ImageF& i1, float w_0gt1,
                              float w_0lt1,
-                             Image3F* BUTTERAUGLI_RESTRICT diffmap, size_t c) {
+                             ImageF* BUTTERAUGLI_RESTRICT diffmap) {
   if (w_0gt1 == 0 && w_0lt1 == 0) {
     return;
   }
@@ -1295,29 +1340,29 @@ static void L2DiffAsymmetric(const ImageF& i0, const ImageF& i1, float w_0gt1,
   for (size_t y = 0; y < i0.ysize(); ++y) {
     const float* BUTTERAUGLI_RESTRICT row0 = i0.Row(y);
     const float* BUTTERAUGLI_RESTRICT row1 = i1.Row(y);
-    float* BUTTERAUGLI_RESTRICT row_diff = diffmap->PlaneRow(c, y);
+    float* BUTTERAUGLI_RESTRICT row_diff = diffmap->Row(y);
 
     for (size_t x = 0; x < i0.xsize(); x += Lanes(d)) {
       const auto val0 = Load(d, row0 + x);
       const auto val1 = Load(d, row1 + x);
 
       // Primary symmetric quadratic objective.
-      const auto diff = val0 - val1;
-      auto total = MulAdd(diff * diff, vw_0gt1, Load(d, row_diff + x));
+      const auto diff = Sub(val0, val1);
+      auto total = MulAdd(Mul(diff, diff), vw_0gt1, Load(d, row_diff + x));
 
       // Secondary half-open quadratic objectives.
       const auto fabs0 = Abs(val0);
-      const auto too_small = Set(d, 0.4) * fabs0;
+      const auto too_small = Mul(Set(d, 0.4), fabs0);
       const auto too_big = fabs0;
 
-      const auto if_neg =
-          IfThenElse(val1 > Neg(too_small), val1 + too_small,
-                     IfThenElseZero(val1 < Neg(too_big), Neg(val1) - too_big));
+      const auto if_neg = IfThenElse(
+          Gt(val1, Neg(too_small)), Add(val1, too_small),
+          IfThenElseZero(Lt(val1, Neg(too_big)), Sub(Neg(val1), too_big)));
       const auto if_pos =
-          IfThenElse(val1 < too_small, too_small - val1,
-                     IfThenElseZero(val1 > too_big, val1 - too_big));
-      const auto v = IfThenElse(val0 < Zero(d), if_neg, if_pos);
-      total += vw_0lt1 * v * v;
+          IfThenElse(Lt(val1, too_small), Sub(too_small, val1),
+                     IfThenElseZero(Gt(val1, too_big), Sub(val1, too_big)));
+      const auto v = IfThenElse(Lt(val0, Zero(d)), if_neg, if_pos);
+      total = MulAdd(vw_0lt1, Mul(v, v), total);
       Store(total, d, row_diff + x);
     }
   }
@@ -1334,7 +1379,7 @@ V Gamma(const DF df, V v) {
   // clamping here.
   v = ZeroIfNegative(v);
 
-  const auto biased = v + Set(df, 9.9710635769299145);
+  const auto biased = Add(v, Set(df, 9.9710635769299145));
   const auto log = FastLog2f(df, biased);
   // We could fold this into a custom Log2 polynomial, but there would be
   // relatively little gain.
@@ -1373,9 +1418,9 @@ BUTTERAUGLI_INLINE void OpsinAbsorbance(const DF df, const V& in0, const V& in1,
   const V mix10 = Set(df, mixi10);
   const V mix11 = Set(df, mixi11);
 
-  *out0 = mix0 * in0 + mix1 * in1 + mix2 * in2 + mix3;
-  *out1 = mix4 * in0 + mix5 * in1 + mix6 * in2 + mix7;
-  *out2 = mix8 * in0 + mix9 * in1 + mix10 * in2 + mix11;
+  *out0 = MulAdd(mix0, in0, MulAdd(mix1, in1, MulAdd(mix2, in2, mix3)));
+  *out1 = MulAdd(mix4, in0, MulAdd(mix5, in1, MulAdd(mix6, in2, mix7)));
+  *out2 = MulAdd(mix8, in0, MulAdd(mix9, in1, MulAdd(mix10, in2, mix11)));
 
   if (Clamp) {
     *out0 = Max(*out0, mix3);
@@ -1385,10 +1430,8 @@ BUTTERAUGLI_INLINE void OpsinAbsorbance(const DF df, const V& in0, const V& in1,
 }
 
 // `blurred` is a temporary image used inside this function and not returned.
-Image3F OpsinDynamicsImage(const Image3F& rgb, const ButteraugliParams& params,
-                           Image3F* blurred, BlurTemp* blur_temp) {
-  PROFILER_FUNC;
-  Image3F xyb(rgb.xsize(), rgb.ysize());
+void OpsinDynamicsImage(const Image3F& rgb, const ButteraugliParams& params,
+                        Image3F* blurred, BlurTemp* blur_temp, Image3F* xyb) {
   const double kSigma = 1.2;
   Blur(rgb.Plane(0), kSigma, params, blur_temp, &blurred->Plane(0));
   Blur(rgb.Plane(1), kSigma, params, blur_temp, &blurred->Plane(1));
@@ -1396,18 +1439,15 @@ Image3F OpsinDynamicsImage(const Image3F& rgb, const ButteraugliParams& params,
   const HWY_FULL(float) df;
   const auto intensity_target_multiplier = Set(df, params.intensity_target);
   for (size_t y = 0; y < rgb.ysize(); ++y) {
-    const float* BUTTERAUGLI_RESTRICT row_r = rgb.ConstPlaneRow(0, y);
-    const float* BUTTERAUGLI_RESTRICT row_g = rgb.ConstPlaneRow(1, y);
-    const float* BUTTERAUGLI_RESTRICT row_b = rgb.ConstPlaneRow(2, y);
-    const float* BUTTERAUGLI_RESTRICT row_blurred_r =
-        blurred->ConstPlaneRow(0, y);
-    const float* BUTTERAUGLI_RESTRICT row_blurred_g =
-        blurred->ConstPlaneRow(1, y);
-    const float* BUTTERAUGLI_RESTRICT row_blurred_b =
-        blurred->ConstPlaneRow(2, y);
-    float* BUTTERAUGLI_RESTRICT row_out_x = xyb.PlaneRow(0, y);
-    float* BUTTERAUGLI_RESTRICT row_out_y = xyb.PlaneRow(1, y);
-    float* BUTTERAUGLI_RESTRICT row_out_b = xyb.PlaneRow(2, y);
+    const float* row_r = rgb.ConstPlaneRow(0, y);
+    const float* row_g = rgb.ConstPlaneRow(1, y);
+    const float* row_b = rgb.ConstPlaneRow(2, y);
+    const float* row_blurred_r = blurred->ConstPlaneRow(0, y);
+    const float* row_blurred_g = blurred->ConstPlaneRow(1, y);
+    const float* row_blurred_b = blurred->ConstPlaneRow(2, y);
+    float* row_out_x = xyb->PlaneRow(0, y);
+    float* row_out_y = xyb->PlaneRow(1, y);
+    float* row_out_b = xyb->PlaneRow(2, y);
     const auto min = Set(df, 1e-4f);
     for (size_t x = 0; x < rgb.xsize(); x += Lanes(df)) {
       auto sensitivity0 = Undefined(df);
@@ -1419,16 +1459,16 @@ Image3F OpsinDynamicsImage(const Image3F& rgb, const ButteraugliParams& params,
         auto pre_mixed1 = Undefined(df);
         auto pre_mixed2 = Undefined(df);
         OpsinAbsorbance<true>(
-            df, Load(df, row_blurred_r + x) * intensity_target_multiplier,
-            Load(df, row_blurred_g + x) * intensity_target_multiplier,
-            Load(df, row_blurred_b + x) * intensity_target_multiplier,
+            df, Mul(Load(df, row_blurred_r + x), intensity_target_multiplier),
+            Mul(Load(df, row_blurred_g + x), intensity_target_multiplier),
+            Mul(Load(df, row_blurred_b + x), intensity_target_multiplier),
             &pre_mixed0, &pre_mixed1, &pre_mixed2);
         pre_mixed0 = Max(pre_mixed0, min);
         pre_mixed1 = Max(pre_mixed1, min);
         pre_mixed2 = Max(pre_mixed2, min);
-        sensitivity0 = Gamma(df, pre_mixed0) / pre_mixed0;
-        sensitivity1 = Gamma(df, pre_mixed1) / pre_mixed1;
-        sensitivity2 = Gamma(df, pre_mixed2) / pre_mixed2;
+        sensitivity0 = Div(Gamma(df, pre_mixed0), pre_mixed0);
+        sensitivity1 = Div(Gamma(df, pre_mixed1), pre_mixed1);
+        sensitivity2 = Div(Gamma(df, pre_mixed2), pre_mixed2);
         sensitivity0 = Max(sensitivity0, min);
         sensitivity1 = Max(sensitivity1, min);
         sensitivity2 = Max(sensitivity2, min);
@@ -1436,14 +1476,14 @@ Image3F OpsinDynamicsImage(const Image3F& rgb, const ButteraugliParams& params,
       auto cur_mixed0 = Undefined(df);
       auto cur_mixed1 = Undefined(df);
       auto cur_mixed2 = Undefined(df);
-      OpsinAbsorbance<false>(df,
-                             Load(df, row_r + x) * intensity_target_multiplier,
-                             Load(df, row_g + x) * intensity_target_multiplier,
-                             Load(df, row_b + x) * intensity_target_multiplier,
-                             &cur_mixed0, &cur_mixed1, &cur_mixed2);
-      cur_mixed0 *= sensitivity0;
-      cur_mixed1 *= sensitivity1;
-      cur_mixed2 *= sensitivity2;
+      OpsinAbsorbance<false>(
+          df, Mul(Load(df, row_r + x), intensity_target_multiplier),
+          Mul(Load(df, row_g + x), intensity_target_multiplier),
+          Mul(Load(df, row_b + x), intensity_target_multiplier), &cur_mixed0,
+          &cur_mixed1, &cur_mixed2);
+      cur_mixed0 = Mul(cur_mixed0, sensitivity0);
+      cur_mixed1 = Mul(cur_mixed1, sensitivity1);
+      cur_mixed2 = Mul(cur_mixed2, sensitivity2);
       // This is a kludge. The negative values should be zeroed away before
       // blurring. Ideally there would be no negative values in the first place.
       const auto min01 = Set(df, 1.7557483643287353f);
@@ -1452,12 +1492,113 @@ Image3F OpsinDynamicsImage(const Image3F& rgb, const ButteraugliParams& params,
       cur_mixed1 = Max(cur_mixed1, min01);
       cur_mixed2 = Max(cur_mixed2, min2);
 
-      Store(cur_mixed0 - cur_mixed1, df, row_out_x + x);
-      Store(cur_mixed0 + cur_mixed1, df, row_out_y + x);
+      Store(Sub(cur_mixed0, cur_mixed1), df, row_out_x + x);
+      Store(Add(cur_mixed0, cur_mixed1), df, row_out_y + x);
       Store(cur_mixed2, df, row_out_b + x);
     }
   }
-  return xyb;
+}
+
+void ButteraugliDiffmapInPlace(Image3F& image0, Image3F& image1,
+                               const ButteraugliParams& params,
+                               ImageF& diffmap) {
+  // image0 and image1 are in linear sRGB color space
+  const size_t xsize = image0.xsize();
+  const size_t ysize = image0.ysize();
+  BlurTemp blur_temp;
+  {
+    // Convert image0 and image1 to XYB in-place
+    Image3F temp(xsize, ysize);
+    OpsinDynamicsImage(image0, params, &temp, &blur_temp, &image0);
+    OpsinDynamicsImage(image1, params, &temp, &blur_temp, &image1);
+  }
+  // image0 and image1 are in XYB color space
+  ImageF block_diff_dc(xsize, ysize);
+  ZeroFillImage(&block_diff_dc);
+  {
+    // separate out LF components from image0 and image1 and compute the dc
+    // diff image from them
+    Image3F lf0 = Image3F(xsize, ysize);
+    Image3F lf1 = Image3F(xsize, ysize);
+    SeparateLFAndMF(params, image0, &lf0, &image0, &blur_temp);
+    SeparateLFAndMF(params, image1, &lf1, &image1, &blur_temp);
+    for (size_t c = 0; c < 3; ++c) {
+      L2Diff(lf0.Plane(c), lf1.Plane(c), wmul[6 + c], &block_diff_dc);
+    }
+  }
+  // image0 and image1 are MF residuals (before blurring) in XYB color space
+  ImageF hf0[2];
+  ImageF hf1[2];
+  SeparateMFAndHF(params, &image0, &hf0[0], &blur_temp);
+  SeparateMFAndHF(params, &image1, &hf1[0], &blur_temp);
+  // image0 and image1 are MF-images in XYB color space
+
+  ImageF block_diff_ac(xsize, ysize);
+  ZeroFillImage(&block_diff_ac);
+  // start accumulating ac diff image from MF images
+  {
+    ImageF diffs(xsize, ysize);
+    MaltaDiffMapLF(image0.Plane(1), image1.Plane(1), wMfMalta, wMfMalta,
+                   norm1Mf, &diffs, &block_diff_ac);
+    MaltaDiffMapLF(image0.Plane(0), image1.Plane(0), wMfMaltaX, wMfMaltaX,
+                   norm1MfX, &diffs, &block_diff_ac);
+  }
+  for (size_t c = 0; c < 3; ++c) {
+    L2Diff(image0.Plane(c), image1.Plane(c), wmul[3 + c], &block_diff_ac);
+  }
+  // we will not need the MF-images and more, so we deallocate them to reduce
+  // peak memory usage
+  image0 = Image3F();
+  image1 = Image3F();
+
+  ImageF uhf0[2];
+  ImageF uhf1[2];
+  SeparateHFAndUHF(params, &hf0[0], &uhf0[0], &blur_temp);
+  SeparateHFAndUHF(params, &hf1[0], &uhf1[0], &blur_temp);
+
+  // continue accumulating ac diff image from HF and UHF images
+  const float hf_asymmetry = params.hf_asymmetry;
+  {
+    ImageF diffs(xsize, ysize);
+    MaltaDiffMap(uhf0[1], uhf1[1], wUhfMalta * hf_asymmetry,
+                 wUhfMalta / hf_asymmetry, norm1Uhf, &diffs, &block_diff_ac);
+    MaltaDiffMap(uhf0[0], uhf1[0], wUhfMaltaX * hf_asymmetry,
+                 wUhfMaltaX / hf_asymmetry, norm1UhfX, &diffs, &block_diff_ac);
+    MaltaDiffMapLF(hf0[1], hf1[1], wHfMalta * std::sqrt(hf_asymmetry),
+                   wHfMalta / std::sqrt(hf_asymmetry), norm1Hf, &diffs,
+                   &block_diff_ac);
+    MaltaDiffMapLF(hf0[0], hf1[0], wHfMaltaX * std::sqrt(hf_asymmetry),
+                   wHfMaltaX / std::sqrt(hf_asymmetry), norm1HfX, &diffs,
+                   &block_diff_ac);
+  }
+  for (size_t c = 0; c < 2; ++c) {
+    L2DiffAsymmetric(hf0[c], hf1[c], wmul[c] * hf_asymmetry,
+                     wmul[c] / hf_asymmetry, &block_diff_ac);
+  }
+
+  // compute mask image from HF and UHF X and Y images
+  ImageF mask(xsize, ysize);
+  {
+    ImageF mask0(xsize, ysize);
+    ImageF mask1(xsize, ysize);
+    CombineChannelsForMasking(&hf0[0], &uhf0[0], &mask0);
+    CombineChannelsForMasking(&hf1[0], &uhf1[0], &mask1);
+    DeallocateHFAndUHF(&hf1[0], &uhf1[0]);
+    DeallocateHFAndUHF(&hf0[0], &uhf0[0]);
+    Mask(mask0, mask1, params, &blur_temp, &mask, &block_diff_ac);
+  }
+
+  // compute final diffmap from mask image and ac and dc diff images
+  diffmap = ImageF(xsize, ysize);
+  for (size_t y = 0; y < ysize; ++y) {
+    const float* row_dc = block_diff_dc.Row(y);
+    const float* row_ac = block_diff_ac.Row(y);
+    float* row_out = diffmap.Row(y);
+    for (size_t x = 0; x < xsize; ++x) {
+      const float val = mask.Row(y)[x];
+      row_out[x] = sqrt(row_dc[x] * MaskDcY(val) + row_ac[x] * MaskY(val));
+    }
+  }
 }
 
 // NOLINTNEXTLINE(google-readability-namespace-comments)
@@ -1477,6 +1618,7 @@ HWY_EXPORT(CombineChannelsToDiffmap);  // Local function.
 HWY_EXPORT(MaltaDiffMap);              // Local function.
 HWY_EXPORT(MaltaDiffMapLF);            // Local function.
 HWY_EXPORT(OpsinDynamicsImage);        // Local function.
+HWY_EXPORT(ButteraugliDiffmapInPlace);  // Local function.
 
 #if BUTTERAUGLI_ENABLE_CHECKS
 
@@ -1495,7 +1637,6 @@ static inline bool IsNan(const double x) {
 }
 
 static inline void CheckImage(const ImageF& image, const char* name) {
-  PROFILER_FUNC;
   for (size_t y = 0; y < image.ysize(); ++y) {
     const float* BUTTERAUGLI_RESTRICT row = image.Row(y);
     for (size_t x = 0; x < image.xsize(); ++x) {
@@ -1593,8 +1734,9 @@ ButteraugliComparator::ButteraugliComparator(const Image3F& rgb0,
     return;
   }
 
-  Image3F xyb0 = HWY_DYNAMIC_DISPATCH(OpsinDynamicsImage)(rgb0, params, Temp(),
-                                                          &blur_temp_);
+  Image3F xyb0(xsize_, ysize_);
+  HWY_DYNAMIC_DISPATCH(OpsinDynamicsImage)
+  (rgb0, params, Temp(), &blur_temp_, &xyb0);
   ReleaseTemp();
   HWY_DYNAMIC_DISPATCH(SeparateFrequencies)
   (xsize_, ysize_, params_, &blur_temp_, xyb0, pi0_);
@@ -1607,26 +1749,26 @@ ButteraugliComparator::ButteraugliComparator(const Image3F& rgb0,
 
 void ButteraugliComparator::Mask(ImageF* BUTTERAUGLI_RESTRICT mask) const {
   HWY_DYNAMIC_DISPATCH(MaskPsychoImage)
-  (pi0_, pi0_, xsize_, ysize_, params_, Temp(), &blur_temp_, mask, nullptr);
-  ReleaseTemp();
+  (pi0_, pi0_, xsize_, ysize_, params_, &blur_temp_, mask, nullptr);
 }
 
 void ButteraugliComparator::Diffmap(const Image3F& rgb1, ImageF& result) const {
-  PROFILER_FUNC;
   if (xsize_ < 8 || ysize_ < 8) {
     ZeroFillImage(&result);
     return;
   }
-  const Image3F xyb1 = HWY_DYNAMIC_DISPATCH(OpsinDynamicsImage)(
-      rgb1, params_, Temp(), &blur_temp_);
+  Image3F xyb1(xsize_, ysize_);
+  HWY_DYNAMIC_DISPATCH(OpsinDynamicsImage)
+  (rgb1, params_, Temp(), &blur_temp_, &xyb1);
   ReleaseTemp();
   DiffmapOpsinDynamicsImage(xyb1, result);
   if (sub_) {
     if (sub_->xsize_ < 8 || sub_->ysize_ < 8) {
       return;
     }
-    const Image3F sub_xyb = HWY_DYNAMIC_DISPATCH(OpsinDynamicsImage)(
-        SubSample2x(rgb1), params_, sub_->Temp(), &sub_->blur_temp_);
+    Image3F sub_xyb(sub_->xsize_, sub_->ysize_);
+    HWY_DYNAMIC_DISPATCH(OpsinDynamicsImage)
+    (SubSample2x(rgb1), params_, sub_->Temp(), &sub_->blur_temp_, &sub_xyb);
     sub_->ReleaseTemp();
     ImageF subresult;
     sub_->DiffmapOpsinDynamicsImage(sub_xyb, subresult);
@@ -1636,7 +1778,6 @@ void ButteraugliComparator::Diffmap(const Image3F& rgb1, ImageF& result) const {
 
 void ButteraugliComparator::DiffmapOpsinDynamicsImage(const Image3F& xyb1,
                                                       ImageF& result) const {
-  PROFILER_FUNC;
   if (xsize_ < 8 || ysize_ < 8) {
     ZeroFillImage(&result);
     return;
@@ -1654,29 +1795,22 @@ void MaltaDiffMap(const ImageF& lum0, const ImageF& lum1, const double w_0gt1,
                   const double w_0lt1, const double norm1,
                   ImageF* HWY_RESTRICT diffs,
                   Image3F* HWY_RESTRICT block_diff_ac, size_t c) {
-  PROFILER_FUNC;
-  const double len = 3.75;
-  static const double mulli = 0.39905817637;
   HWY_DYNAMIC_DISPATCH(MaltaDiffMap)
-  (lum0, lum1, w_0gt1, w_0lt1, norm1, len, mulli, diffs, block_diff_ac, c);
+  (lum0, lum1, w_0gt1, w_0lt1, norm1, diffs, &block_diff_ac->Plane(c));
 }
 
 void MaltaDiffMapLF(const ImageF& lum0, const ImageF& lum1, const double w_0gt1,
                     const double w_0lt1, const double norm1,
                     ImageF* HWY_RESTRICT diffs,
                     Image3F* HWY_RESTRICT block_diff_ac, size_t c) {
-  PROFILER_FUNC;
-  const double len = 3.75;
-  static const double mulli = 0.611612573796;
   HWY_DYNAMIC_DISPATCH(MaltaDiffMapLF)
-  (lum0, lum1, w_0gt1, w_0lt1, norm1, len, mulli, diffs, block_diff_ac, c);
+  (lum0, lum1, w_0gt1, w_0lt1, norm1, diffs, &block_diff_ac->Plane(c));
 }
 
 }  // namespace
 
 void ButteraugliComparator::DiffmapPsychoImage(const PsychoImage& pi1,
                                                ImageF& diffmap) const {
-  PROFILER_FUNC;
   if (xsize_ < 8 || ysize_ < 8) {
     ZeroFillImage(&diffmap);
     return;
@@ -1688,62 +1822,39 @@ void ButteraugliComparator::DiffmapPsychoImage(const PsychoImage& pi1,
   ImageF diffs(xsize_, ysize_);
   Image3F block_diff_ac(xsize_, ysize_);
   ZeroFillImage(&block_diff_ac);
-  static const double wUhfMalta = 1.10039032555;
-  static const double norm1Uhf = 71.7800275169;
   MaltaDiffMap(pi0_.uhf[1], pi1.uhf[1], wUhfMalta * hf_asymmetry_,
                wUhfMalta / hf_asymmetry_, norm1Uhf, &diffs, &block_diff_ac, 1);
-
-  static const double wUhfMaltaX = 173.5;
-  static const double norm1UhfX = 5.0;
   MaltaDiffMap(pi0_.uhf[0], pi1.uhf[0], wUhfMaltaX * hf_asymmetry_,
                wUhfMaltaX / hf_asymmetry_, norm1UhfX, &diffs, &block_diff_ac,
                0);
-
-  static const double wHfMalta = 18.7237414387;
-  static const double norm1Hf = 4498534.45232;
   MaltaDiffMapLF(pi0_.hf[1], pi1.hf[1], wHfMalta * std::sqrt(hf_asymmetry_),
                  wHfMalta / std::sqrt(hf_asymmetry_), norm1Hf, &diffs,
                  &block_diff_ac, 1);
-
-  static const double wHfMaltaX = 6923.99476109;
-  static const double norm1HfX = 8051.15833247;
   MaltaDiffMapLF(pi0_.hf[0], pi1.hf[0], wHfMaltaX * std::sqrt(hf_asymmetry_),
                  wHfMaltaX / std::sqrt(hf_asymmetry_), norm1HfX, &diffs,
                  &block_diff_ac, 0);
-
-  static const double wMfMalta = 37.0819870399;
-  static const double norm1Mf = 130262059.556;
   MaltaDiffMapLF(pi0_.mf.Plane(1), pi1.mf.Plane(1), wMfMalta, wMfMalta, norm1Mf,
                  &diffs, &block_diff_ac, 1);
-
-  static const double wMfMaltaX = 8246.75321353;
-  static const double norm1MfX = 1009002.70582;
   MaltaDiffMapLF(pi0_.mf.Plane(0), pi1.mf.Plane(0), wMfMaltaX, wMfMaltaX,
                  norm1MfX, &diffs, &block_diff_ac, 0);
 
-  static const double wmul[9] = {
-      400.0,         1.50815703118,  0,
-      2150.0,        10.6195433239,  16.2176043152,
-      29.2353797994, 0.844626970982, 0.703646627719,
-  };
   Image3F block_diff_dc(xsize_, ysize_);
   for (size_t c = 0; c < 3; ++c) {
     if (c < 2) {  // No blue channel error accumulated at HF.
       HWY_DYNAMIC_DISPATCH(L2DiffAsymmetric)
       (pi0_.hf[c], pi1.hf[c], wmul[c] * hf_asymmetry_, wmul[c] / hf_asymmetry_,
-       &block_diff_ac, c);
+       &block_diff_ac.Plane(c));
     }
     HWY_DYNAMIC_DISPATCH(L2Diff)
-    (pi0_.mf.Plane(c), pi1.mf.Plane(c), wmul[3 + c], &block_diff_ac, c);
+    (pi0_.mf.Plane(c), pi1.mf.Plane(c), wmul[3 + c], &block_diff_ac.Plane(c));
     HWY_DYNAMIC_DISPATCH(SetL2Diff)
-    (pi0_.lf.Plane(c), pi1.lf.Plane(c), wmul[6 + c], &block_diff_dc, c);
+    (pi0_.lf.Plane(c), pi1.lf.Plane(c), wmul[6 + c], &block_diff_dc.Plane(c));
   }
 
   ImageF mask;
   HWY_DYNAMIC_DISPATCH(MaskPsychoImage)
-  (pi0_, pi1, xsize_, ysize_, params_, Temp(), &blur_temp_, &mask,
+  (pi0_, pi1, xsize_, ysize_, params_, &blur_temp_, &mask,
    &block_diff_ac.Plane(1));
-  ReleaseTemp();
 
   HWY_DYNAMIC_DISPATCH(CombineChannelsToDiffmap)
   (mask, block_diff_dc, block_diff_ac, xmul_, &diffmap);
@@ -1751,7 +1862,6 @@ void ButteraugliComparator::DiffmapPsychoImage(const PsychoImage& pi1,
 
 double ButteraugliScoreFromDiffmap(const ImageF& diffmap,
                                    const ButteraugliParams* params) {
-  PROFILER_FUNC;
   float retval = 0.0f;
   for (size_t y = 0; y < diffmap.ysize(); ++y) {
     const float* BUTTERAUGLI_RESTRICT row = diffmap.ConstRow(y);
@@ -1770,9 +1880,44 @@ bool ButteraugliDiffmap(const Image3F& rgb0, const Image3F& rgb1,
   return ButteraugliDiffmap(rgb0, rgb1, params, diffmap);
 }
 
+template <size_t kMax>
+bool ButteraugliDiffmapSmall(const Image3F& rgb0, const Image3F& rgb1,
+                             const ButteraugliParams& params, ImageF& diffmap) {
+  const size_t xsize = rgb0.xsize();
+  const size_t ysize = rgb0.ysize();
+  // Butteraugli values for small (where xsize or ysize is smaller
+  // than 8 pixels) images are non-sensical, but most likely it is
+  // less disruptive to try to compute something than just give up.
+  // Temporarily extend the borders of the image to fit 8 x 8 size.
+  size_t xborder = xsize < kMax ? (kMax - xsize) / 2 : 0;
+  size_t yborder = ysize < kMax ? (kMax - ysize) / 2 : 0;
+  size_t xscaled = std::max<size_t>(kMax, xsize);
+  size_t yscaled = std::max<size_t>(kMax, ysize);
+  Image3F scaled0(xscaled, yscaled);
+  Image3F scaled1(xscaled, yscaled);
+  for (int i = 0; i < 3; ++i) {
+    for (size_t y = 0; y < yscaled; ++y) {
+      for (size_t x = 0; x < xscaled; ++x) {
+        size_t x2 = std::min<size_t>(xsize - 1, x > xborder ? x - xborder : 0);
+        size_t y2 = std::min<size_t>(ysize - 1, y > yborder ? y - yborder : 0);
+        scaled0.PlaneRow(i, y)[x] = rgb0.PlaneRow(i, y2)[x2];
+        scaled1.PlaneRow(i, y)[x] = rgb1.PlaneRow(i, y2)[x2];
+      }
+    }
+  }
+  ImageF diffmap_scaled;
+  const bool ok = ButteraugliDiffmap(scaled0, scaled1, params, diffmap_scaled);
+  diffmap = ImageF(xsize, ysize);
+  for (size_t y = 0; y < ysize; ++y) {
+    for (size_t x = 0; x < xsize; ++x) {
+      diffmap.Row(y)[x] = diffmap_scaled.Row(y + yborder)[x + xborder];
+    }
+  }
+  return ok;
+}
+
 bool ButteraugliDiffmap(const Image3F& rgb0, const Image3F& rgb1,
                         const ButteraugliParams& params, ImageF& diffmap) {
-  PROFILER_FUNC;
   const size_t xsize = rgb0.xsize();
   const size_t ysize = rgb0.ysize();
   if (xsize < 1 || ysize < 1) {
@@ -1783,38 +1928,7 @@ bool ButteraugliDiffmap(const Image3F& rgb0, const Image3F& rgb1,
   }
   static const int kMax = 8;
   if (xsize < kMax || ysize < kMax) {
-    // Butteraugli values for small (where xsize or ysize is smaller
-    // than 8 pixels) images are non-sensical, but most likely it is
-    // less disruptive to try to compute something than just give up.
-    // Temporarily extend the borders of the image to fit 8 x 8 size.
-    size_t xborder = xsize < kMax ? (kMax - xsize) / 2 : 0;
-    size_t yborder = ysize < kMax ? (kMax - ysize) / 2 : 0;
-    size_t xscaled = std::max<size_t>(kMax, xsize);
-    size_t yscaled = std::max<size_t>(kMax, ysize);
-    Image3F scaled0(xscaled, yscaled);
-    Image3F scaled1(xscaled, yscaled);
-    for (int i = 0; i < 3; ++i) {
-      for (size_t y = 0; y < yscaled; ++y) {
-        for (size_t x = 0; x < xscaled; ++x) {
-          size_t x2 =
-              std::min<size_t>(xsize - 1, x > xborder ? x - xborder : 0);
-          size_t y2 =
-              std::min<size_t>(ysize - 1, y > yborder ? y - yborder : 0);
-          scaled0.PlaneRow(i, y)[x] = rgb0.PlaneRow(i, y2)[x2];
-          scaled1.PlaneRow(i, y)[x] = rgb1.PlaneRow(i, y2)[x2];
-        }
-      }
-    }
-    ImageF diffmap_scaled;
-    const bool ok =
-        ButteraugliDiffmap(scaled0, scaled1, params, diffmap_scaled);
-    diffmap = ImageF(xsize, ysize);
-    for (size_t y = 0; y < ysize; ++y) {
-      for (size_t x = 0; x < xsize; ++x) {
-        diffmap.Row(y)[x] = diffmap_scaled.Row(y + yborder)[x + xborder];
-      }
-    }
-    return ok;
+    return ButteraugliDiffmapSmall<kMax>(rgb0, rgb1, params, diffmap);
   }
   ButteraugliComparator butteraugli(rgb0, params);
   butteraugli.Diffmap(rgb1, diffmap);
@@ -1833,18 +1947,41 @@ bool ButteraugliInterface(const Image3F& rgb0, const Image3F& rgb1,
 bool ButteraugliInterface(const Image3F& rgb0, const Image3F& rgb1,
                           const ButteraugliParams& params, ImageF& diffmap,
                           double& diffvalue) {
-#if PROFILER_ENABLED
-  auto trace_start = std::chrono::steady_clock::now();
-#endif
   if (!ButteraugliDiffmap(rgb0, rgb1, params, diffmap)) {
     return false;
   }
-#if PROFILER_ENABLED
-  auto trace_end = std::chrono::steady_clock::now();
-  std::chrono::duration<double> elapsed = trace_end - trace_start;
-  const size_t mp = rgb0.xsize() * rgb0.ysize();
-  printf("diff MP/s %f\n", mp / elapsed.count() * 1E-6);
-#endif
+  diffvalue = ButteraugliScoreFromDiffmap(diffmap, &params);
+  return true;
+}
+
+bool ButteraugliInterfaceInPlace(Image3F&& rgb0, Image3F&& rgb1,
+                                 const ButteraugliParams& params,
+                                 ImageF& diffmap, double& diffvalue) {
+  const size_t xsize = rgb0.xsize();
+  const size_t ysize = rgb0.ysize();
+  if (xsize < 1 || ysize < 1) {
+    return JXL_FAILURE("Zero-sized image");
+  }
+  if (!SameSize(rgb0, rgb1)) {
+    return JXL_FAILURE("Size mismatch");
+  }
+  static const int kMax = 8;
+  if (xsize < kMax || ysize < kMax) {
+    bool ok = ButteraugliDiffmapSmall<kMax>(rgb0, rgb1, params, diffmap);
+    diffvalue = ButteraugliScoreFromDiffmap(diffmap, &params);
+    return ok;
+  }
+  ImageF subdiffmap;
+  if (xsize >= 15 && ysize >= 15) {
+    Image3F rgb0_sub = SubSample2x(rgb0);
+    Image3F rgb1_sub = SubSample2x(rgb1);
+    HWY_DYNAMIC_DISPATCH(ButteraugliDiffmapInPlace)
+    (rgb0_sub, rgb1_sub, params, subdiffmap);
+  }
+  HWY_DYNAMIC_DISPATCH(ButteraugliDiffmapInPlace)(rgb0, rgb1, params, diffmap);
+  if (xsize >= 15 && ysize >= 15) {
+    AddSupersampled2x(subdiffmap, 0.5, diffmap);
+  }
   diffvalue = ButteraugliScoreFromDiffmap(diffmap, &params);
   return true;
 }
