@@ -29,8 +29,8 @@ jobs:
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
       BUILD_TARGET: wasm32
-      EM_VERSION: 3.1.50
-      NODE_VERSION: 18
+      EM_VERSION: 3.1.51
+      NODE_VERSION: 21
 
     strategy:
       matrix:
