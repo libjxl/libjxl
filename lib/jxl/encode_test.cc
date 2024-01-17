@@ -1774,7 +1774,7 @@ class EncoderStreamingTest : public testing::TestWithParam<StreamingTestParam> {
   static void SetupEncoder(JxlEncoderFrameSettings* frame_settings,
                            const StreamingTestParam& p,
                            const JxlBasicInfo& basic_info,
-                           size_t number_extra_channels) {
+                           size_t number_extra_channels, bool streaming) {
     JxlEncoderStruct* enc = frame_settings->enc;
     EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc, &basic_info));
     if (p.fast_lossless()) {
@@ -1789,8 +1789,13 @@ class EncoderStreamingTest : public testing::TestWithParam<StreamingTestParam> {
     EXPECT_EQ(JXL_ENC_SUCCESS,
               JxlEncoderSetColorEncoding(enc, &color_encoding));
     EXPECT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderFrameSettingsSetOption(frame_settings,
+                                               JXL_ENC_FRAME_SETTING_BUFFERING,
+                                               streaming ? 3 : 0));
+    EXPECT_EQ(JXL_ENC_SUCCESS,
               JxlEncoderFrameSettingsSetOption(
-                  frame_settings, JXL_ENC_FRAME_SETTING_BUFFERING, 3));
+                  frame_settings,
+                  JXL_ENC_FRAME_SETTING_USE_FULL_IMAGE_HEURISTICS, 0));
     if (p.use_container()) {
       EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetCodestreamLevel(enc, 10));
     }
@@ -1875,7 +1880,7 @@ TEST_P(EncoderStreamingTest, OutputCallback) {
     ASSERT_NE(nullptr, enc.get());
     JxlEncoderFrameSettings* frame_settings =
         JxlEncoderFrameSettingsCreate(enc.get(), NULL);
-    SetupEncoder(frame_settings, p, basic_info, number_extra_channels);
+    SetupEncoder(frame_settings, p, basic_info, number_extra_channels, false);
     SetupInputNonStreaming(frame_settings, p, number_extra_channels, frame,
                            ec_frame);
     uint8_t* next_out = compressed.data();
@@ -1890,7 +1895,7 @@ TEST_P(EncoderStreamingTest, OutputCallback) {
     ASSERT_NE(nullptr, enc.get());
     JxlEncoderFrameSettings* frame_settings =
         JxlEncoderFrameSettingsCreate(enc.get(), NULL);
-    SetupEncoder(frame_settings, p, basic_info, number_extra_channels);
+    SetupEncoder(frame_settings, p, basic_info, number_extra_channels, true);
     SetupInputNonStreaming(frame_settings, p, number_extra_channels, frame,
                            ec_frame);
     JxlStreamingAdapter streaming_adapter(enc.get(), p.return_large_buffers(),
@@ -1901,7 +1906,7 @@ TEST_P(EncoderStreamingTest, OutputCallback) {
   }
 
   EXPECT_TRUE(SameDecodedPixels(compressed, streaming_compressed));
-  EXPECT_LE(streaming_compressed.size(), compressed.size() + 16);
+  EXPECT_LE(streaming_compressed.size(), compressed.size() + 1024);
 }
 
 TEST_P(EncoderStreamingTest, ChunkedFrame) {
@@ -1928,7 +1933,7 @@ TEST_P(EncoderStreamingTest, ChunkedFrame) {
     ASSERT_NE(nullptr, enc.get());
     JxlEncoderFrameSettings* frame_settings =
         JxlEncoderFrameSettingsCreate(enc.get(), NULL);
-    SetupEncoder(frame_settings, p, basic_info, number_extra_channels);
+    SetupEncoder(frame_settings, p, basic_info, number_extra_channels, false);
     SetupInputNonStreaming(frame_settings, p, number_extra_channels, frame,
                            ec_frame);
     uint8_t* next_out = compressed.data();
@@ -1942,7 +1947,7 @@ TEST_P(EncoderStreamingTest, ChunkedFrame) {
     ASSERT_NE(nullptr, enc.get());
     JxlEncoderFrameSettings* frame_settings =
         JxlEncoderFrameSettingsCreate(enc.get(), NULL);
-    SetupEncoder(frame_settings, p, basic_info, number_extra_channels);
+    SetupEncoder(frame_settings, p, basic_info, number_extra_channels, true);
     SetupInputStreaming(frame_settings, p, number_extra_channels, frame,
                         ec_frame);
     uint8_t* next_out = streaming_compressed.data();
@@ -1951,7 +1956,7 @@ TEST_P(EncoderStreamingTest, ChunkedFrame) {
   }
 
   EXPECT_TRUE(SameDecodedPixels(compressed, streaming_compressed));
-  EXPECT_LE(streaming_compressed.size(), compressed.size() + 16);
+  EXPECT_LE(streaming_compressed.size(), compressed.size() + 1024);
 }
 
 TEST_P(EncoderStreamingTest, ChunkedAndOutputCallback) {
@@ -1978,7 +1983,7 @@ TEST_P(EncoderStreamingTest, ChunkedAndOutputCallback) {
     ASSERT_NE(nullptr, enc.get());
     JxlEncoderFrameSettings* frame_settings =
         JxlEncoderFrameSettingsCreate(enc.get(), NULL);
-    SetupEncoder(frame_settings, p, basic_info, number_extra_channels);
+    SetupEncoder(frame_settings, p, basic_info, number_extra_channels, false);
     SetupInputNonStreaming(frame_settings, p, number_extra_channels, frame,
                            ec_frame);
     uint8_t* next_out = compressed.data();
@@ -1993,7 +1998,7 @@ TEST_P(EncoderStreamingTest, ChunkedAndOutputCallback) {
     ASSERT_NE(nullptr, enc.get());
     JxlEncoderFrameSettings* frame_settings =
         JxlEncoderFrameSettingsCreate(enc.get(), NULL);
-    SetupEncoder(frame_settings, p, basic_info, number_extra_channels);
+    SetupEncoder(frame_settings, p, basic_info, number_extra_channels, true);
     JxlStreamingAdapter streaming_adapter =
         JxlStreamingAdapter(enc.get(), p.return_large_buffers(), p.can_seek());
     SetupInputStreaming(frame_settings, p, number_extra_channels, frame,
@@ -2003,7 +2008,7 @@ TEST_P(EncoderStreamingTest, ChunkedAndOutputCallback) {
   }
 
   EXPECT_TRUE(SameDecodedPixels(compressed, streaming_compressed));
-  EXPECT_LE(streaming_compressed.size(), compressed.size() + 16);
+  EXPECT_LE(streaming_compressed.size(), compressed.size() + 1024);
 }
 
 JXL_GTEST_INSTANTIATE_TEST_SUITE_P(

@@ -1635,5 +1635,26 @@ JXL_GTEST_INSTANTIATE_TEST_SUITE_P(
     JxlStreamingTest, JxlStreamingTest,
     testing::ValuesIn(StreamingTestParam::All()));
 
+TEST(JxlTest, StreamingSamePixels) {
+  const std::vector<uint8_t> orig = ReadTestData("jxl/flower/flower.png");
+
+  jxl::test::TestImage image;
+  image.DecodeFromBytes(orig);
+  JXLCompressParams cparams;
+  cparams.distance = 1.0;
+  cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 6);
+  cparams.AddOption(JXL_ENC_FRAME_SETTING_USE_FULL_IMAGE_HEURISTICS, 0);
+
+  ThreadPoolForTests pool(8);
+  PackedPixelFile ppf_out;
+  Roundtrip(image.ppf(), cparams, {}, &pool, &ppf_out);
+
+  cparams.AddOption(JXL_ENC_FRAME_SETTING_BUFFERING, 3);
+  PackedPixelFile ppf_out_streaming;
+  Roundtrip(image.ppf(), cparams, {}, &pool, &ppf_out_streaming);
+
+  EXPECT_TRUE(jxl::test::SamePixels(ppf_out, ppf_out_streaming));
+}
+
 }  // namespace
 }  // namespace jxl
