@@ -68,7 +68,7 @@ create_report() {
      --codec="${codec}" \
      --save_compressed \
      --write_html_report \
-     "${use_decompressed}" \
+     ${use_decompressed} \
      --originals_url="${originals}" \
      $@
    gsutil -m rsync "${output_dir}" "${GSROOT}/${bucket}"
