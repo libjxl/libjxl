@@ -1509,16 +1509,15 @@ Status ComputeEncodingData(
         TokenizeAllCoefficients(frame_header, pool, &enc_state));
   }
 
-  JXL_RETURN_IF_ERROR(enc_modular.ComputeEncodingData(
-      frame_header, metadata->m, &opsin, extra_channels, &enc_state, cms, pool,
-      aux_out,
-      /* do_color=*/frame_header.encoding == FrameEncoding::kModular));
-  if (enc_state.initialize_global_state) {
-    JXL_RETURN_IF_ERROR(enc_modular.ComputeTree(pool));
-  }
-  JXL_RETURN_IF_ERROR(enc_modular.ComputeTokens(pool));
-
   if (!enc_state.streaming_mode) {
+    if (cparams.modular_mode || !extra_channels.empty()) {
+      JXL_RETURN_IF_ERROR(enc_modular.ComputeEncodingData(
+          frame_header, metadata->m, &opsin, extra_channels, &enc_state, cms,
+          pool, aux_out, /*do_color=*/cparams.modular_mode));
+    }
+    JXL_RETURN_IF_ERROR(enc_modular.ComputeTree(pool));
+    JXL_RETURN_IF_ERROR(enc_modular.ComputeTokens(pool));
+
     mutable_frame_header.UpdateFlag(shared.image_features.patches.HasAny(),
                                     FrameHeader::kPatches);
     mutable_frame_header.UpdateFlag(shared.image_features.splines.HasAny(),

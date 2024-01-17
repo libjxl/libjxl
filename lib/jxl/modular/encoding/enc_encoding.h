@@ -21,6 +21,8 @@ namespace jxl {
 struct AuxOut;
 struct GroupHeader;
 
+Tree PredefinedTree(ModularOptions::TreeKind tree_kind, size_t total_pixels);
+
 Tree LearnTree(TreeSamples &&tree_samples, size_t total_pixels,
                const ModularOptions &options,
                const std::vector<ModularMultiplierInfo> &multiplier_info = {},
