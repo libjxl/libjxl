@@ -46,6 +46,12 @@
 #define JXL_TSAN_SLOW_TEST(X) X
 #endif  // THREAD_SANITIZER
 
+#if defined(__x86_64__)
+#define JXL_X86_64_TEST(X) X
+#else
+#define JXL_X86_64_TEST(X) DISABLED_##X
+#endif  // defined(__x86_64__)
+
 // googletest before 1.10 didn't define INSTANTIATE_TEST_SUITE_P() but instead
 // used INSTANTIATE_TEST_CASE_P which is now deprecated.
 #ifdef INSTANTIATE_TEST_SUITE_P
