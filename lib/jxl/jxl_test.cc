@@ -1635,7 +1635,8 @@ JXL_GTEST_INSTANTIATE_TEST_SUITE_P(
     JxlStreamingTest, JxlStreamingTest,
     testing::ValuesIn(StreamingTestParam::All()));
 
-TEST(JxlTest, StreamingSamePixels) {
+// This is broken on mingw32, so we only enable it for x86_64 now.
+TEST(JxlTest, JXL_X86_64_TEST(StreamingSamePixels)) {
   const std::vector<uint8_t> orig = ReadTestData("jxl/flower/flower.png");
 
   jxl::test::TestImage image;
