@@ -13,11 +13,6 @@
 namespace jxl {
 namespace {
 
-JXL_MAYBE_UNUSED ImageF Convolve(const ImageF& in,
-                                 const std::vector<float>& kernel) {
-  return ConvolveAndSample(in, kernel, 1);
-}
-
 void BM_GaussBlur1d(benchmark::State& state) {
   // Uncomment to disable SIMD and force and scalar implementation
   // hwy::DisableTargets(~HWY_SCALAR);
@@ -34,7 +29,7 @@ void BM_GaussBlur1d(benchmark::State& state) {
   ImageF out(length, 1);
   const auto rg = CreateRecursiveGaussian(sigma);
   for (auto _ : state) {
-    FastGaussian1D(rg, in.Row(0), length, out.Row(0));
+    FastGaussian1D(rg, length, in.Row(0), out.Row(0));
     // Prevent optimizing out
     JXL_ASSERT(std::abs(out.ConstRow(0)[length / 2] - expected) / expected <
                9E-5);
@@ -66,33 +61,8 @@ void BM_GaussBlur2d(benchmark::State& state) {
   state.SetItemsProcessed(xsize * ysize * state.iterations());
 }
 
-void BM_GaussBlurFir(benchmark::State& state) {
-  // See GaussBlur1d for SIMD changes.
-
-  const size_t xsize = state.range();
-  const size_t ysize = xsize;
-  const double sigma = 7.0;  // (from Butteraugli application)
-  ImageF in(xsize, ysize);
-  const float expected = xsize + ysize;
-  FillImage(expected, &in);
-
-  ImageF temp(xsize, ysize);
-  ImageF out(xsize, ysize);
-  const std::vector<float> kernel =
-      GaussianKernel(static_cast<int>(4 * sigma), static_cast<float>(sigma));
-  for (auto _ : state) {
-    // Prevent optimizing out
-    JXL_ASSERT(std::abs(Convolve(in, kernel).ConstRow(ysize / 2)[xsize / 2] -
-                        expected) /
-                   expected <
-               9E-5);
-  }
-  state.SetItemsProcessed(xsize * ysize * state.iterations());
-}
-
 BENCHMARK(BM_GaussBlur1d)->Range(1 << 8, 1 << 14);
 BENCHMARK(BM_GaussBlur2d)->Range(1 << 7, 1 << 10);
-BENCHMARK(BM_GaussBlurFir)->Range(1 << 7, 1 << 10);
 
 }  // namespace
 }  // namespace jxl

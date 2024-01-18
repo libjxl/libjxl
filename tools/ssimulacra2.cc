@@ -86,8 +86,10 @@ class Blur {
       : rg_(jxl::CreateRecursiveGaussian(1.5)), temp_(xsize, ysize) {}
 
   void operator()(const ImageF& in, ImageF* JXL_RESTRICT out) {
-    jxl::ThreadPool* null_pool = nullptr;
-    FastGaussian(rg_, in, null_pool, &temp_, out);
+    FastGaussian(
+        rg_, in.xsize(), in.ysize(), [&](size_t y) { return in.ConstRow(y); },
+        [&](size_t y) { return temp_.Row(y); },
+        [&](size_t y) { return out->Row(y); });
   }
 
   Image3F operator()(const Image3F& in) {
