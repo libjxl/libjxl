@@ -630,8 +630,7 @@ void ComputeChromacityAdjustments(const CompressParams& cparams,
   // look at the individual pixels and make a guess how difficult
   // the image would be based on the worst case pixel.
   PixelStatsForChromacityAdjustment pixel_stats;
-  if (cparams.speed_tier <= SpeedTier::kWombat &&
-      cparams.use_full_image_heuristics) {
+  if (cparams.speed_tier <= SpeedTier::kSquirrel) {
     pixel_stats.Calc(&opsin, rect);
   }
   // For X take the most severe adjustment.
