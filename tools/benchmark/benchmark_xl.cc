@@ -186,6 +186,13 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
       // correctly, but for jxl it currently sets it from the pixel format (i.e.
       // 32-bit float).
       io2.metadata.m.bit_depth = io.metadata.m.bit_depth;
+      const jxl::ExtraChannelInfo* alpha =
+          io.metadata.m.Find(jxl::ExtraChannel::kAlpha);
+      jxl::ExtraChannelInfo* alpha2 =
+          io2.metadata.m.Find(jxl::ExtraChannel::kAlpha);
+      if (alpha != nullptr && alpha2 != nullptr) {
+        alpha2->bit_depth = alpha->bit_depth;
+      }
     }
     for (const auto& frame : io2.frames) {
       s->total_input_pixels += frame.color().xsize() * frame.color().ysize();
