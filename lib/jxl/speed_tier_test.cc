@@ -5,18 +5,18 @@
 
 #include <jxl/cms.h>
 
+#include <cstddef>
 #include <cstdint>
+#include <ios>
+#include <ostream>
 #include <string>
 #include <vector>
 
 #include "lib/extras/codec.h"
-#include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
-#include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_params.h"
-#include "lib/jxl/image.h"
 #include "lib/jxl/image_test_utils.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"

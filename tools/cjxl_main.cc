@@ -13,7 +13,6 @@
 
 #include <jxl/codestream_header.h>
 #include <jxl/encode.h>
-#include <jxl/encode_cxx.h>
 #include <jxl/thread_parallel_runner.h>
 #include <jxl/thread_parallel_runner_cxx.h>
 #include <jxl/types.h>
@@ -28,18 +27,16 @@
 #include <functional>
 #include <iostream>
 #include <memory>
-#include <sstream>
 #include <string>
-#include <thread>
 #include <type_traits>
 #include <utility>
 #include <vector>
 
-#include "lib/extras/dec/apng.h"
 #include "lib/extras/dec/color_hints.h"
 #include "lib/extras/dec/decode.h"
 #include "lib/extras/dec/pnm.h"
 #include "lib/extras/enc/jxl.h"
+#include "lib/extras/packed_image.h"
 #include "lib/extras/time.h"
 #include "lib/jxl/base/c_callback_support.h"
 #include "lib/jxl/base/common.h"

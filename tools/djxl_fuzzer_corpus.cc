@@ -3,19 +3,29 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <jxl/types.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/stat.h>
-#include <sys/types.h>
+
+#include <cstring>
+#include <string>
+#include <thread>
+#include <utility>
+
+#include "lib/extras/dec/decode.h"
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/color_encoding_internal.h"
+#include "lib/jxl/frame_header.h"
+#include "lib/jxl/image_bundle.h"
+#include "lib/jxl/modular/options.h"
 #if defined(_WIN32) || defined(_WIN64)
 #include "third_party/dirent.h"
 #else
-#include <dirent.h>
-#include <unistd.h>
 #endif
 
-#include <algorithm>
 #include <functional>
 #include <iostream>
 #include <mutex>
@@ -28,12 +38,10 @@
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/enc_ans.h"
-#include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/encode_internal.h"
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
-#include "lib/jxl/modular/encoding/context_predict.h"
 #include "lib/jxl/test_utils.h"  // TODO(eustas): cut this dependency
 #include "tools/file_io.h"
 #include "tools/thread_pool_internal.h"

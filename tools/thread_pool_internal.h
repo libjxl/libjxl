@@ -6,10 +6,12 @@
 #ifndef TOOLS_THREAD_POOL_INTERNAL_H_
 #define TOOLS_THREAD_POOL_INTERNAL_H_
 
+#include <jxl/thread_parallel_runner.h>
 #include <jxl/thread_parallel_runner_cxx.h>
 #include <stddef.h>
 
 #include <cmath>
+#include <memory>
 #include <thread>  // NOLINT
 
 #include "lib/jxl/base/data_parallel.h"

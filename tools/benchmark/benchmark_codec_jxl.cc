@@ -4,33 +4,36 @@
 // license that can be found in the LICENSE file.
 #include "tools/benchmark/benchmark_codec_jxl.h"
 
+#include <jxl/color_encoding.h>
 #include <jxl/encode.h>
 #include <jxl/stats.h>
-#include <jxl/thread_parallel_runner_cxx.h>
+#include <jxl/types.h>
 
 #include <cstdint>
 #include <cstdlib>
-#include <functional>
+#include <cstring>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "lib/extras/codec.h"
 #include "lib/extras/dec/jxl.h"
 #include "lib/extras/enc/apng.h"
 #include "lib/extras/enc/encode.h"
-#include "lib/extras/enc/jpg.h"
 #include "lib/extras/enc/jxl.h"
+#include "lib/extras/packed_image.h"
 #include "lib/extras/packed_image_convert.h"
 #include "lib/extras/time.h"
-#include "lib/jxl/base/data_parallel.h"
-#include "lib/jxl/base/override.h"
-#include "lib/jxl/base/span.h"
-#include "lib/jxl/codec_in_out.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/image.h"
+#include "tools/benchmark/benchmark_args.h"
+#include "tools/benchmark/benchmark_codec.h"
 #include "tools/benchmark/benchmark_file_io.h"
 #include "tools/benchmark/benchmark_stats.h"
-#include "tools/cmdline.h"
+#include "tools/file_io.h"
+#include "tools/speed_stats.h"
+#include "tools/thread_pool_internal.h"
 
 namespace jpegxl {
 namespace tools {

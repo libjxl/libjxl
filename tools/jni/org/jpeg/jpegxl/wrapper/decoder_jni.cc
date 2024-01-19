@@ -6,9 +6,12 @@
 #include "tools/jni/org/jpeg/jpegxl/wrapper/decoder_jni.h"
 
 #include <jni.h>
+#include <jxl/codestream_header.h>
 #include <jxl/decode.h>
 #include <jxl/thread_parallel_runner.h>
+#include <jxl/types.h>
 
+#include <cstdint>
 #include <cstdlib>
 
 namespace {

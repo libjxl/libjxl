@@ -12,6 +12,7 @@
 #include <string.h>
 
 #include "lib/jxl/base/byte_order.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
 
 namespace jxl {
