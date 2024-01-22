@@ -125,6 +125,8 @@ main() {
 		 "-e 1 -d 0.0 --streaming_input --streaming_output" 0.0
   roundtrip_test "jxl/flower/flower_cropped.jpg" "-e 1" 0.0
 
+  roundtrip_test "jxl/flower/flower.png" "-e 6" 0.02
+
   roundtrip_lossless_pnm_test "jxl/flower/flower_small.rgb.depth1.ppm"
   roundtrip_lossless_pnm_test "jxl/flower/flower_small.g.depth1.pgm"
   for i in `seq 2 16`; do
