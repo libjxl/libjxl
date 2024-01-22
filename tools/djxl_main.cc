@@ -552,6 +552,15 @@ int main(int argc, const char* argv[]) {
         AddFormatsWithAlphaChannel(&accepted_formats);
       }
     }
+    if (filename_out.empty()) {
+      // Decoding to pixels only, fill in float pixel formats
+      for (const uint32_t num_channels : {1, 2, 3, 4}) {
+        for (JxlEndianness endianness : {JXL_BIG_ENDIAN, JXL_LITTLE_ENDIAN}) {
+          accepted_formats.push_back(JxlPixelFormat{
+              num_channels, JXL_TYPE_FLOAT, endianness, /*align=*/0});
+        }
+      }
+    }
     jxl::extras::PackedPixelFile ppf;
     size_t decoded_bytes = 0;
     for (size_t i = 0; i < num_reps; ++i) {
