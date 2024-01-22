@@ -255,13 +255,9 @@ class JxlCodec : public ImageCodec {
     return true;
   }
 
-  Status Compress(const std::string& filename, const CodecInOut* io,
+  Status Compress(const std::string& filename, const PackedPixelFile& ppf,
                   ThreadPool* pool, std::vector<uint8_t>* compressed,
                   jpegxl::tools::SpeedStats* speed_stats) override {
-    PackedPixelFile ppf;
-    JxlPixelFormat format{0, JXL_TYPE_FLOAT, JXL_NATIVE_ENDIAN, 0};
-    JXL_RETURN_IF_ERROR(ConvertCodecInOutToPackedPixelFile(
-        *io, format, io->Main().c_current(), pool, &ppf));
     cparams_.runner = pool->runner();
     cparams_.runner_opaque = pool->runner_opaque();
     cparams_.distance = butteraugli_target_;
@@ -294,27 +290,25 @@ class JxlCodec : public ImageCodec {
 
   Status Decompress(const std::string& filename,
                     const Span<const uint8_t> compressed, ThreadPool* pool,
-                    CodecInOut* io,
+                    PackedPixelFile* ppf,
                     jpegxl::tools::SpeedStats* speed_stats) override {
     dparams_.runner = pool->runner();
     dparams_.runner_opaque = pool->runner_opaque();
-    JxlDataType data_type = uint8_ ? JXL_TYPE_UINT8 : JXL_TYPE_FLOAT;
-    dparams_.accepted_formats = {{3, data_type, JXL_NATIVE_ENDIAN, 0},
-                                 {4, data_type, JXL_NATIVE_ENDIAN, 0}};
+    JxlDataType data_type = uint8_ ? JXL_TYPE_UINT8 : JXL_TYPE_UINT16;
+    dparams_.accepted_formats = {{3, data_type, JXL_LITTLE_ENDIAN, 0},
+                                 {4, data_type, JXL_LITTLE_ENDIAN, 0}};
     // By default, the decoder will undo exif orientation, giving an image
     // with identity exif rotation as result. However, the benchmark does
     // not undo exif orientation of the originals, and compares against the
     // originals, so we must set the option to keep the original orientation
     // instead.
     dparams_.keep_orientation = true;
-    PackedPixelFile ppf;
     size_t decoded_bytes;
     const double start = jxl::Now();
     JXL_RETURN_IF_ERROR(jxl::extras::DecodeImageJXL(
-        compressed.data(), compressed.size(), dparams_, &decoded_bytes, &ppf));
+        compressed.data(), compressed.size(), dparams_, &decoded_bytes, ppf));
     const double end = jxl::Now();
     speed_stats->NotifyElapsed(end - start);
-    JXL_RETURN_IF_ERROR(ConvertPackedPixelFileToCodecInOut(ppf, pool, io));
     return true;
   }
 

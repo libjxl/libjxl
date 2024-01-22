@@ -235,9 +235,18 @@ class AvifCodec : public ImageCodec {
     return ImageCodec::ParseParam(param);
   }
 
+  Status Compress(const std::string& filename, const PackedPixelFile& ppf,
+                  ThreadPool* pool, std::vector<uint8_t>* compressed,
+                  jpegxl::tools::SpeedStats* speed_stats) override {
+    CodecInOut io;
+    JXL_RETURN_IF_ERROR(
+        jxl::extras::ConvertPackedPixelFileToCodecInOut(ppf, pool, &io));
+    return Compress(filename, &io, pool, compressed, speed_stats);
+  }
+
   Status Compress(const std::string& filename, const CodecInOut* io,
                   ThreadPool* pool, std::vector<uint8_t>* compressed,
-                  SpeedStats* speed_stats) override {
+                  SpeedStats* speed_stats) {
     double elapsed_convert_image = 0;
     size_t max_threads = GetNumThreads(pool);
     const double start = jxl::Now();
@@ -312,7 +321,19 @@ class AvifCodec : public ImageCodec {
 
   Status Decompress(const std::string& filename,
                     const Span<const uint8_t> compressed, ThreadPool* pool,
-                    CodecInOut* io, SpeedStats* speed_stats) override {
+                    PackedPixelFile* ppf,
+                    jpegxl::tools::SpeedStats* speed_stats) override {
+    CodecInOut io;
+    JXL_RETURN_IF_ERROR(
+        Decompress(filename, compressed, pool, &io, speed_stats));
+    JxlPixelFormat format{0, JXL_TYPE_UINT8, JXL_NATIVE_ENDIAN, 0};
+    return jxl::extras::ConvertCodecInOutToPackedPixelFile(
+        io, format, io.Main().c_current(), pool, ppf);
+  };
+
+  Status Decompress(const std::string& filename,
+                    const Span<const uint8_t> compressed, ThreadPool* pool,
+                    CodecInOut* io, SpeedStats* speed_stats) {
     io->frames.clear();
     size_t max_threads = GetNumThreads(pool);
     double elapsed_convert_image = 0;

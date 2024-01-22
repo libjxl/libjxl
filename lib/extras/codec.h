@@ -57,6 +57,12 @@ Status Encode(const CodecInOut& io, const ColorEncoding& c_desired,
 Status Encode(const CodecInOut& io, const std::string& pathname,
               std::vector<uint8_t>* bytes, ThreadPool* pool = nullptr);
 
+Status Encode(const extras::PackedPixelFile& ppf, const extras::Codec codec,
+              std::vector<uint8_t>* bytes, ThreadPool* pool);
+
+Status Encode(const extras::PackedPixelFile& ppf, const std::string& pathname,
+              std::vector<uint8_t>* bytes, ThreadPool* pool = nullptr);
+
 }  // namespace jxl
 
 #endif  // LIB_EXTRAS_CODEC_H_

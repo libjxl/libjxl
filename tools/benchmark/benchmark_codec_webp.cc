@@ -92,9 +92,18 @@ class WebPCodec : public ImageCodec {
     return false;
   }
 
-  Status Compress(const std::string& filename, const CodecInOut* io,
+  Status Compress(const std::string& filename, const PackedPixelFile& ppf,
                   ThreadPool* pool, std::vector<uint8_t>* compressed,
                   jpegxl::tools::SpeedStats* speed_stats) override {
+    CodecInOut io;
+    JXL_RETURN_IF_ERROR(
+        jxl::extras::ConvertPackedPixelFileToCodecInOut(ppf, pool, &io));
+    return Compress(filename, &io, pool, compressed, speed_stats);
+  }
+
+  Status Compress(const std::string& filename, const CodecInOut* io,
+                  ThreadPool* pool, std::vector<uint8_t>* compressed,
+                  jpegxl::tools::SpeedStats* speed_stats) {
     const double start = jxl::Now();
     const ImageBundle& ib = io->Main();
 
@@ -168,8 +177,19 @@ class WebPCodec : public ImageCodec {
 
   Status Decompress(const std::string& filename,
                     const Span<const uint8_t> compressed, ThreadPool* pool,
-                    CodecInOut* io,
+                    PackedPixelFile* ppf,
                     jpegxl::tools::SpeedStats* speed_stats) override {
+    CodecInOut io;
+    JXL_RETURN_IF_ERROR(
+        Decompress(filename, compressed, pool, &io, speed_stats));
+    JxlPixelFormat format{0, JXL_TYPE_UINT8, JXL_NATIVE_ENDIAN, 0};
+    return jxl::extras::ConvertCodecInOutToPackedPixelFile(
+        io, format, io.Main().c_current(), pool, ppf);
+  };
+
+  Status Decompress(const std::string& filename,
+                    const Span<const uint8_t> compressed, ThreadPool* pool,
+                    CodecInOut* io, jpegxl::tools::SpeedStats* speed_stats) {
     WebPDecoderConfig config;
 #ifdef MEMORY_SANITIZER
     // config is initialized by libwebp, which we are not instrumenting with
@@ -209,6 +229,7 @@ class WebPCodec : public ImageCodec {
       return JXL_FAILURE("Color profile is-gray mismatch");
     }
     io->metadata.m.SetAlphaBits(8);
+    io->SetSize(buf->width, buf->height);
     const Status ok = FromSRGB(buf->width, buf->height, is_gray, has_alpha,
                                /*is_16bit=*/false, JXL_LITTLE_ENDIAN,
                                data_begin, data_end, pool, &io->Main());

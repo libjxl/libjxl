@@ -40,14 +40,12 @@ class PNGCodec : public ImageCodec {
 
   Status ParseParam(const std::string& param) override { return true; }
 
-  Status Compress(const std::string& filename, const CodecInOut* io,
+  Status Compress(const std::string& filename, const PackedPixelFile& ppf,
                   ThreadPool* pool, std::vector<uint8_t>* compressed,
                   jpegxl::tools::SpeedStats* speed_stats) override {
-    const size_t bits = io->metadata.m.bit_depth.bits_per_sample;
     const double start = jxl::Now();
-    JXL_RETURN_IF_ERROR(jxl::Encode(*io, jxl::extras::Codec::kPNG,
-                                    io->Main().c_current(), bits, compressed,
-                                    pool));
+    JXL_RETURN_IF_ERROR(
+        jxl::Encode(ppf, jxl::extras::Codec::kPNG, compressed, pool));
     const double end = jxl::Now();
     speed_stats->NotifyElapsed(end - start);
     return true;
@@ -55,16 +53,13 @@ class PNGCodec : public ImageCodec {
 
   Status Decompress(const std::string& /*filename*/,
                     const Span<const uint8_t> compressed, ThreadPool* pool,
-                    CodecInOut* io,
+                    PackedPixelFile* ppf,
                     jpegxl::tools::SpeedStats* speed_stats) override {
-    jxl::extras::PackedPixelFile ppf;
     const double start = jxl::Now();
     JXL_RETURN_IF_ERROR(jxl::extras::DecodeImageAPNG(
-        compressed, jxl::extras::ColorHints(), &ppf));
+        compressed, jxl::extras::ColorHints(), ppf));
     const double end = jxl::Now();
     speed_stats->NotifyElapsed(end - start);
-    JXL_RETURN_IF_ERROR(
-        jxl::extras::ConvertPackedPixelFileToCodecInOut(ppf, pool, io));
     return true;
   }
 };
