@@ -1671,7 +1671,6 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetOption(
       // alternatively, in the cjxl binary like now)
       frame_settings->values.cparams.lossy_palette = (value == 1);
       break;
-      return JXL_ENC_SUCCESS;
     case JXL_ENC_FRAME_SETTING_COLOR_TRANSFORM:
       if (value < -1 || value > 2) {
         return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
