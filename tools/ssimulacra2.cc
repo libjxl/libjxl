@@ -29,6 +29,7 @@ Design:
 
 #include <algorithm>
 #include <cmath>
+#include <hwy/aligned_allocator.h>
 
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/printf_macros.h"

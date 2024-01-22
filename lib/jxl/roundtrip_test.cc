@@ -12,7 +12,6 @@
 #include <jxl/encode_cxx.h>
 #include <jxl/types.h>
 
-#include <cmath>  // std::abs
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>

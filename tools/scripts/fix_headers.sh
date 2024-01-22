@@ -12,7 +12,7 @@
 SRC=$1
 HERE=`pwd`
 CLANG_TIDY_CONFIG="{\
-  Checks: '-*,misc-include-cleaner',\
+  Checks: '-*,misc-include-cleaner,readability-avoid-const-params-in-decls,misc-unused-using-decls,readability-container-size-empty',\
   CheckOptions: {\
     'misc-include-cleaner.IgnoreHeaders': 'gtest/.*;gmock/.*;testing.h'\
   }\
@@ -22,7 +22,6 @@ CLANG_TIDY_CONFIG="{\
   -config="${CLANG_TIDY_CONFIG}" \
   -p build \
   -format-style=file \
-  -quiet \
   -fix-errors \
   --extra-arg=-I${HERE}/lib/include \
   $SRC
