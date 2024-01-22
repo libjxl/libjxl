@@ -17,7 +17,7 @@ target_include_directories(jxl_testlib-internal PUBLIC
 )
 target_link_libraries(jxl_testlib-internal
   hwy
-  jxl_extras_nocodec-internal
+  jxl_extras-internal
   jxl-internal
   jxl_threads
 )

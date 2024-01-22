@@ -650,7 +650,6 @@ Status ModularFrameEncoder::ComputeEncodingData(
   if (cparams_.responsive && !gi.channel.empty() &&
       max_bitdepth + 2 < level_max_bitdepth) {
     Transform t(TransformId::kSqueeze);
-    t.squeezes = cparams_.squeezes;
     do_transform(gi, t, weighted::Header(), pool);
     max_bitdepth += 2;
   }
