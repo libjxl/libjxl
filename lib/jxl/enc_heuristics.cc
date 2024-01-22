@@ -900,11 +900,6 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
       process_tile, "Enc Heuristics"));
 
   acs_heuristics.Finalize(frame_dim, ac_strategy, aux_out);
-  if (cparams.speed_tier <= SpeedTier::kHare &&
-      cparams.use_full_image_heuristics && initialize_global_state) {
-    cfl_heuristics.ComputeDC(/*fast=*/cparams.speed_tier >= SpeedTier::kWombat,
-                             &cmap);
-  }
 
   // Refine quantization levels.
   if (!streaming_mode) {
