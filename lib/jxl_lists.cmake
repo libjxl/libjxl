@@ -5,7 +5,6 @@
 
 # This file is generated, do not modify by manually.
 # Run `tools/scripts/build_cleaner.py --update` to regenerate it.
-
 set(JPEGXL_INTERNAL_BASE_SOURCES
   jxl/base/arch_macros.h
   jxl/base/bits.h
