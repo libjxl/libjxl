@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "lib/extras/codec.h"
+#include "lib/extras/dec/jxl.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/span.h"

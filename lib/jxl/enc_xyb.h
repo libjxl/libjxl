@@ -26,7 +26,7 @@ namespace jxl {
 void ToXYB(const Image3F& color, const ColorEncoding& c_current,
            float intensity_target, const ImageF* black, ThreadPool* pool,
            Image3F* JXL_RESTRICT xyb, const JxlCmsInterface& cms,
-           Image3F* const JXL_RESTRICT linear);
+           Image3F* JXL_RESTRICT linear);
 
 void ToXYB(const ImageBundle& in, ThreadPool* pool, Image3F* JXL_RESTRICT xyb,
            const JxlCmsInterface& cms, Image3F* JXL_RESTRICT linear = nullptr);

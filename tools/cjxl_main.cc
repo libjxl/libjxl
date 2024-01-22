@@ -19,7 +19,6 @@
 
 #include <algorithm>
 #include <cerrno>
-#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -929,7 +928,7 @@ void ProcessFlags(const jxl::extras::Codec codec,
   (void)args->color_hints_proxy.target.Foreach(
       [&params](const std::string& key,
                 const std::string& value) -> jxl::Status {
-        if (value == "") {
+        if (value.empty()) {
           if (key == "exif") params->jpeg_strip_exif = true;
           if (key == "xmp") params->jpeg_strip_xmp = true;
           if (key == "jumbf") params->jpeg_strip_jumbf = true;

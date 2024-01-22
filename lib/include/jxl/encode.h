@@ -1201,8 +1201,8 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
  * JXL_ENC_ERROR or JXL_ENC_NOT_SUPPORTED otherwise
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderSetUpsamplingMode(JxlEncoder* enc,
-                                                        const int64_t factor,
-                                                        const int64_t mode);
+                                                        int64_t factor,
+                                                        int64_t mode);
 
 /**
  * Initializes a JxlExtraChannelInfo struct to default values.

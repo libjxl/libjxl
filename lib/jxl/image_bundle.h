@@ -17,10 +17,11 @@
 #include <utility>
 #include <vector>
 
-#include "lib/jxl/base/common.h"  // JPEGXL_ENABLE_TRANSCODE_JPEG
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
+#include "lib/jxl/common.h"  // JPEGXL_ENABLE_TRANSCODE_JPEG
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_metadata.h"
