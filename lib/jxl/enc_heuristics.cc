@@ -758,14 +758,7 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
     PatchDictionaryEncoder::SubtractFrom(image_features.patches, opsin);
   }
 
-  static const float kAcQuant = 0.79f;
   const float quant_dc = InitialQuantDC(cparams.butteraugli_distance);
-  // We don't know the quant field yet, but for computing the global scale
-  // assuming that it will be the same as for Falcon mode is good enough.
-  if (initialize_global_state) {
-    quantizer.ComputeGlobalScaleAndQuant(
-        quant_dc, kAcQuant / cparams.butteraugli_distance, 0);
-  }
 
   // TODO(veluca): we can now run all the code from here to FindBestQuantizer
   // (excluded) one rect at a time. Do that.
@@ -802,9 +795,10 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
         ImageF(frame_dim.xsize_blocks, frame_dim.ysize_blocks);
     initial_quant_masking =
         ImageF(frame_dim.xsize_blocks, frame_dim.ysize_blocks);
-    float q = kAcQuant / cparams.butteraugli_distance;
+    float q = 0.79 / cparams.butteraugli_distance;
     FillImage(q, &initial_quant_field);
     FillImage(1.0f / (q + 0.001f), &initial_quant_masking);
+    quantizer.ComputeGlobalScaleAndQuant(quant_dc, q, 0);
   } else {
     // Call this here, as it relies on pre-gaborish values.
     float butteraugli_distance_for_iqf = cparams.butteraugli_distance;
@@ -814,11 +808,8 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
     initial_quant_field = InitialQuantField(
         butteraugli_distance_for_iqf, *opsin, rect, pool, 1.0f,
         &initial_quant_masking, &initial_quant_masking1x1);
-    // TODO(szabadka) Support changing the quantization of the quant field per
-    // group by applying different multipliers in modular mode.
-    if (cparams.use_full_image_heuristics && initialize_global_state) {
-      quantizer.SetQuantField(quant_dc, initial_quant_field, nullptr);
-    }
+    float q = 0.39 / cparams.butteraugli_distance;
+    quantizer.ComputeGlobalScaleAndQuant(quant_dc, q, 0);
   }
 
   // TODO(veluca): do something about animations.
