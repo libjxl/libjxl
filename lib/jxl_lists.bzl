@@ -3,8 +3,10 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
-# This file is generated, do not modify by manually.
-# Run `tools/scripts/build_cleaner.py --update` to regenerate it.
+"""
+This file is generated, do not modify by manually.
+Run `tools/scripts/build_cleaner.py --update` to regenerate it.
+"""
 
 libjxl_base_sources = [
     "jxl/base/arch_macros.h",

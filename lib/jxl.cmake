@@ -43,9 +43,6 @@ else()
 endif ()
 
 set(OBJ_COMPILE_DEFINITIONS
-  JPEGXL_MAJOR_VERSION=${JPEGXL_MAJOR_VERSION}
-  JPEGXL_MINOR_VERSION=${JPEGXL_MINOR_VERSION}
-  JPEGXL_PATCH_VERSION=${JPEGXL_PATCH_VERSION}
   # Used to determine if we are building the library when defined or just
   # including the library when not defined. This is public so libjxl shared
   # library gets this define too.
