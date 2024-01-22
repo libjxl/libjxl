@@ -950,9 +950,11 @@ TEST(JxlTest, JXL_SLOW_TEST(RoundtripLossless8)) {
   t.DecodeFromBytes(orig).ClearMetadata();
 
   JXLCompressParams cparams = CompressParamsForLossless();
+  JXLDecompressParams dparams;
+  dparams.accepted_formats.push_back(t.ppf().frames[0].color.format);
 
   PackedPixelFile ppf_out;
-  EXPECT_EQ(Roundtrip(t.ppf(), cparams, {}, &pool, &ppf_out), 223058);
+  EXPECT_EQ(Roundtrip(t.ppf(), cparams, dparams, &pool, &ppf_out), 223058);
   EXPECT_EQ(ComputeDistance2(t.ppf(), ppf_out), 0.0);
 }
 
@@ -966,9 +968,11 @@ TEST(JxlTest, JXL_SLOW_TEST(RoundtripLossless8ThunderGradient)) {
   JXLCompressParams cparams = CompressParamsForLossless();
   cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 2);             // kThunder
   cparams.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_PREDICTOR, 5);  // Gradient
+  JXLDecompressParams dparams;
+  dparams.accepted_formats.push_back(t.ppf().frames[0].color.format);
 
   PackedPixelFile ppf_out;
-  EXPECT_EQ(Roundtrip(t.ppf(), cparams, {}, &pool, &ppf_out), 261684);
+  EXPECT_EQ(Roundtrip(t.ppf(), cparams, dparams, &pool, &ppf_out), 261684);
   EXPECT_EQ(ComputeDistance2(t.ppf(), ppf_out), 0.0);
 }
 
@@ -981,10 +985,12 @@ TEST(JxlTest, JXL_SLOW_TEST(RoundtripLossless8LightningGradient)) {
 
   JXLCompressParams cparams = CompressParamsForLossless();
   cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 1);  // kLightning
+  JXLDecompressParams dparams;
+  dparams.accepted_formats.push_back(t.ppf().frames[0].color.format);
 
   PackedPixelFile ppf_out;
   // Lax comparison because different SIMD will cause different compression.
-  EXPECT_THAT(Roundtrip(t.ppf(), cparams, {}, &pool, &ppf_out),
+  EXPECT_THAT(Roundtrip(t.ppf(), cparams, dparams, &pool, &ppf_out),
               IsSlightlyBelow(286848u));
   EXPECT_EQ(ComputeDistance2(t.ppf(), ppf_out), 0.0);
 }
@@ -998,9 +1004,11 @@ TEST(JxlTest, JXL_SLOW_TEST(RoundtripLossless8Falcon)) {
 
   JXLCompressParams cparams = CompressParamsForLossless();
   cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 3);  // kFalcon
+  JXLDecompressParams dparams;
+  dparams.accepted_formats.push_back(t.ppf().frames[0].color.format);
 
   PackedPixelFile ppf_out;
-  EXPECT_EQ(Roundtrip(t.ppf(), cparams, {}, &pool, &ppf_out), 230766);
+  EXPECT_EQ(Roundtrip(t.ppf(), cparams, dparams, &pool, &ppf_out), 230766);
   EXPECT_EQ(ComputeDistance2(t.ppf(), ppf_out), 0.0);
 }
 
@@ -1567,9 +1575,11 @@ TEST_P(JxlTest, LosslessSmallFewColors) {
   JXLCompressParams cparams;
   cparams.distance = 0;
   cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 1);
+  JXLDecompressParams dparams;
+  dparams.accepted_formats.push_back(t.ppf().frames[0].color.format);
 
   PackedPixelFile ppf_out;
-  Roundtrip(t.ppf(), cparams, {}, &pool, &ppf_out);
+  Roundtrip(t.ppf(), cparams, dparams, &pool, &ppf_out);
   EXPECT_EQ(ComputeDistance2(t.ppf(), ppf_out), 0.0);
 }
 

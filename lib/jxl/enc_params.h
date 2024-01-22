@@ -137,8 +137,6 @@ struct CompressParams {
   // modular mode options below
   ModularOptions options;
   int responsive = -1;
-  // empty for default squeeze
-  std::vector<SqueezeParams> squeezes;
   int colorspace = -1;
   // Use Global channel palette if #colors < this percentage of range
   float channel_colors_pre_transform_percent = 95.f;

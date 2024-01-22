@@ -73,13 +73,13 @@ roundtrip_test() {
       # Test decoding to 16 bit png.
       "${decoder}" "${jxlfn}" "${outfn}" --bits_per_sample 16
       local dist="$("${comparator}" "${infn}" "${outfn}")"
-      python3 -c "import sys; sys.exit(not ${dist} <= ${maxdist} + 0.0005)"
+      python3 -c "import sys; sys.exit(not ${dist} <= ${maxdist})"
 
       # Test decoding to pfm.
       local outfn="$(mktemp -p "$tmpdir").pfm"
       "${decoder}" "${jxlfn}" "${outfn}"
       local dist="$("${comparator}" "${infn}" "${outfn}")"
-      python3 -c "import sys; sys.exit(not ${dist} <= ${maxdist})"
+      python3 -c "import sys; sys.exit(not ${dist} <= ${maxdist} + 0.0005)"
 
       # Test decoding to ppm.
       local outfn="$(mktemp -p "$tmpdir").ppm"
