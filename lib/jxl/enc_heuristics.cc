@@ -5,13 +5,31 @@
 
 #include "lib/jxl/enc_heuristics.h"
 
+#include <jxl/cms_interface.h>
 #include <stddef.h>
 #include <stdint.h>
 
 #include <algorithm>
+#include <cstdlib>
+#include <limits>
+#include <memory>
 #include <numeric>
 #include <string>
+#include <utility>
+#include <vector>
 
+#include "lib/jxl/ac_context.h"
+#include "lib/jxl/ac_strategy.h"
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/override.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/butteraugli/butteraugli.h"
+#include "lib/jxl/chroma_from_luma.h"
+#include "lib/jxl/coeff_order.h"
+#include "lib/jxl/coeff_order_fwd.h"
+#include "lib/jxl/dec_xyb.h"
 #include "lib/jxl/enc_ac_strategy.h"
 #include "lib/jxl/enc_adaptive_quantization.h"
 #include "lib/jxl/enc_ar_control_field.h"
@@ -20,11 +38,16 @@
 #include "lib/jxl/enc_gaborish.h"
 #include "lib/jxl/enc_modular.h"
 #include "lib/jxl/enc_noise.h"
+#include "lib/jxl/enc_params.h"
 #include "lib/jxl/enc_patch_dictionary.h"
-#include "lib/jxl/enc_photon_noise.h"
 #include "lib/jxl/enc_quant_weights.h"
 #include "lib/jxl/enc_splines.h"
-#include "lib/jxl/enc_xyb.h"
+#include "lib/jxl/frame_dimensions.h"
+#include "lib/jxl/frame_header.h"
+#include "lib/jxl/image.h"
+#include "lib/jxl/image_ops.h"
+#include "lib/jxl/passes_state.h"
+#include "lib/jxl/quant_weights.h"
 
 namespace jxl {
 

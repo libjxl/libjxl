@@ -15,14 +15,14 @@
 
 #include <jxl/cms_interface.h>
 #include <jxl/codestream_header.h>
+#include <jxl/color_encoding.h>
 #include <jxl/jxl_export.h>
 #include <jxl/memory_manager.h>
 #include <jxl/parallel_runner.h>
 #include <jxl/stats.h>
-#include <jxl/version.h>
+#include <jxl/types.h>
+#include <stddef.h>
 #include <stdint.h>
-
-#include "jxl/types.h"
 
 #if defined(__cplusplus) || defined(c_plusplus)
 extern "C" {

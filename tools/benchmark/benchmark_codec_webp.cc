@@ -5,6 +5,7 @@
 #include "tools/benchmark/benchmark_codec_webp.h"
 
 #include <jxl/cms.h>
+#include <jxl/types.h>
 #include <stdint.h>
 #include <string.h>
 #include <webp/decode.h>
@@ -14,17 +15,19 @@
 #include <vector>
 
 #include "lib/extras/time.h"
-#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/dec_external_image.h"
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_image_bundle.h"
-#include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
+#include "lib/jxl/image_metadata.h"
 #include "lib/jxl/sanitizers.h"
+#include "tools/benchmark/benchmark_args.h"
+#include "tools/benchmark/benchmark_codec.h"
+#include "tools/speed_stats.h"
 #include "tools/thread_pool_internal.h"
 
 namespace jpegxl {

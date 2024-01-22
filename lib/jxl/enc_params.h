@@ -8,15 +8,15 @@
 
 // Parameters and flags that govern JXL compression.
 
+#include <jxl/cms_interface.h>
 #include <jxl/encode.h>
 #include <stddef.h>
-#include <stdint.h>
 
-#include <string>
+#include <vector>
 
 #include "lib/jxl/base/override.h"
-#include "lib/jxl/butteraugli/butteraugli.h"
 #include "lib/jxl/enc_progressive_split.h"
+#include "lib/jxl/frame_dimensions.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/modular/encoding/dec_ma.h"
 #include "lib/jxl/modular/options.h"
@@ -173,7 +173,7 @@ struct CompressParams {
   void SetLossless() {
     modular_mode = true;
     butteraugli_distance = 0.0f;
-    for (float &f : ec_distance) f = 0.0f;
+    for (float& f : ec_distance) f = 0.0f;
     color_transform = jxl::ColorTransform::kNone;
   }
 

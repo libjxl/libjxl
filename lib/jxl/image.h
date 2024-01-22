@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <sstream>
+#include <string>
 #include <utility>  // std::move
 
 #include "lib/jxl/base/compiler_specific.h"

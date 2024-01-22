@@ -15,6 +15,7 @@
 #include "lib/jxl/modular/encoding/context_predict.h"
 #include "lib/jxl/modular/encoding/encoding.h"
 #include "lib/jxl/modular/transform/transform.h"
+#include "lib/jxl/quantizer.h"
 
 namespace jpegxl {
 namespace tools {

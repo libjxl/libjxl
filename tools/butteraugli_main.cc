@@ -7,13 +7,14 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include <cstdlib>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/color_hints.h"
 #include "lib/extras/metrics.h"
-#include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
@@ -22,8 +23,6 @@
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/image.h"
-#include "lib/jxl/image_bundle.h"
-#include "lib/jxl/image_ops.h"
 #include "tools/file_io.h"
 #include "tools/thread_pool_internal.h"
 
