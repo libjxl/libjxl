@@ -52,6 +52,9 @@ set(OBJ_COMPILE_DEFINITIONS
 # Generate version.h
 configure_file("jxl/version.h.in" "include/jxl/version.h")
 
+list(APPEND JPEGXL_INTERNAL_PUBLIC_HEADERS
+  ${CMAKE_CURRENT_BINARY_DIR}/include/jxl/version.h)
+
 # Headers for exporting/importing public headers
 include(GenerateExportHeader)
 

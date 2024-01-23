@@ -21,6 +21,7 @@
 #include <jxl/parallel_runner.h>
 #include <jxl/stats.h>
 #include <jxl/types.h>
+#include <jxl/version.h>  // TODO(eustas): remove before v1.0
 #include <stddef.h>
 #include <stdint.h>
 
