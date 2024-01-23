@@ -119,15 +119,6 @@ class CustomCodec : public ImageCodec {
   Status Compress(const std::string& filename, const PackedPixelFile& ppf,
                   ThreadPool* pool, std::vector<uint8_t>* compressed,
                   jpegxl::tools::SpeedStats* speed_stats) override {
-    CodecInOut io;
-    JXL_RETURN_IF_ERROR(
-        jxl::extras::ConvertPackedPixelFileToCodecInOut(ppf, pool, &io));
-    return Compress(filename, &io, pool, compressed, speed_stats);
-  }
-
-  Status Compress(const std::string& filename, const CodecInOut* io,
-                  ThreadPool* pool, std::vector<uint8_t>* compressed,
-                  jpegxl::tools::SpeedStats* speed_stats) {
     JXL_RETURN_IF_ERROR(param_index_ > 2);
 
     const std::string basename = GetBaseName(filename);
@@ -136,18 +127,9 @@ class CustomCodec : public ImageCodec {
     std::string in_filename, encoded_filename;
     JXL_RETURN_IF_ERROR(in_file.GetFileName(&in_filename));
     JXL_RETURN_IF_ERROR(encoded_file.GetFileName(&encoded_filename));
-    saved_intensity_target_ = io->metadata.m.IntensityTarget();
-
-    const size_t bits = io->metadata.m.bit_depth.bits_per_sample;
-    ColorEncoding c_enc = io->Main().c_current();
-    if (!custom_args->colorspace.empty()) {
-      JxlColorEncoding colorspace;
-      JXL_RETURN_IF_ERROR(
-          jxl::ParseDescription(custom_args->colorspace, &colorspace));
-      JXL_RETURN_IF_ERROR(c_enc.FromExternal(colorspace));
-    }
+    // TODO(szabadka) Support custom_args->colorspace again.
     std::vector<uint8_t> encoded;
-    JXL_RETURN_IF_ERROR(Encode(*io, c_enc, bits, in_filename, &encoded, pool));
+    JXL_RETURN_IF_ERROR(Encode(ppf, in_filename, &encoded, pool));
     JXL_RETURN_IF_ERROR(WriteFile(in_filename, encoded));
     std::vector<std::string> arguments = compress_args_;
     arguments.push_back(in_filename);

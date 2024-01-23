@@ -33,6 +33,8 @@
 #include <vector>
 
 #include "lib/extras/codec.h"
+#include "lib/extras/enc/encode.h"
+#include "lib/extras/enc/jpg.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/span.h"
@@ -199,6 +201,11 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
   std::uniform_int_distribution<> dis(1, 6);
   PixelGenerator gen = [&]() -> uint8_t { return dis(mt); };
 
+  jxl::extras::PackedPixelFile ppf;
+  ppf.info.xsize = spec.width;
+  ppf.info.ysize = spec.height;
+  ppf.info.num_color_channels = spec.num_channels ? 1 : 3;
+  ppf.info.bits_per_sample = spec.bit_depth;
   for (uint32_t frame = 0; frame < spec.num_frames; frame++) {
     jxl::ImageBundle ib(&io.metadata.m);
     const bool has_alpha = spec.alpha_bit_depth != 0;
@@ -226,6 +233,11 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
         span, spec.width, spec.height, io.metadata.m.color_encoding,
         io.metadata.m.bit_depth.bits_per_sample, format, nullptr, &ib));
     io.frames.push_back(std::move(ib));
+    jxl::extras::PackedFrame packed_frame(spec.width, spec.height, format);
+    JXL_ASSERT(packed_frame.color.pixels_size == img_data.size());
+    memcpy(packed_frame.color.pixels(0, 0, 0), img_data.data(),
+           img_data.size());
+    ppf.frames.emplace_back(std::move(packed_frame));
   }
 
   jxl::CompressParams params;
@@ -236,10 +248,11 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
     // metadata and encode it in the beginning of the compressed bytes.
     std::vector<uint8_t> jpeg_bytes;
     io.jpeg_quality = 70;
-    JXL_QUIET_RETURN_IF_ERROR(jxl::Encode(io, jxl::extras::Codec::kJPG,
-                                          io.metadata.m.color_encoding,
-                                          /*bits_per_sample=*/8, &jpeg_bytes,
-                                          /*pool=*/nullptr));
+    auto encoder = jxl::extras::GetJPEGEncoder();
+    encoder->SetOption("quality", "70");
+    jxl::extras::EncodedImage encoded;
+    JXL_RETURN_IF_ERROR(encoder->Encode(ppf, &encoded));
+    jpeg_bytes = encoded.bitstreams[0];
     JXL_RETURN_IF_ERROR(jxl::jpeg::DecodeImageJPG(
         jxl::Bytes(jpeg_bytes.data(), jpeg_bytes.size()), &io));
     std::vector<uint8_t> jpeg_data;

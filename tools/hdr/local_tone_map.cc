@@ -8,6 +8,7 @@
 #include <stdlib.h>
 
 #include "lib/extras/codec.h"
+#include "lib/extras/packed_image_convert.h"
 #include "lib/extras/tone_mapping.h"
 #include "lib/jxl/convolve.h"
 #include "lib/jxl/enc_gamma_correct.h"
@@ -533,9 +534,10 @@ int main(int argc, const char** argv) {
       std::move(input_images), num_levels, contrast_weight, saturation_weight,
       midtoneness_weight, midtoneness_sigma, &pool);
 
-  jxl::CodecInOut output;
-  output.SetFromImage(std::move(fused), jxl::ColorEncoding::SRGB());
-
-  JXL_CHECK(jxl::Encode(output, output_filename, &encoded, &pool));
+  JxlPixelFormat format = {3, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0};
+  jxl::extras::PackedPixelFile ppf =
+      jxl::extras::ConvertImage3FToPackedPixelFile(
+          fused, jxl::ColorEncoding::SRGB(), format, &pool);
+  JXL_CHECK(jxl::Encode(ppf, output_filename, &encoded, &pool));
   JXL_CHECK(jpegxl::tools::WriteFile(output_filename, encoded));
 }
