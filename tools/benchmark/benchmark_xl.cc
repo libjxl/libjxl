@@ -5,6 +5,7 @@
 
 #include <jxl/cms.h>
 #include <jxl/decode.h>
+#include <jxl/types.h>
 
 #include <algorithm>
 #include <cmath>
@@ -15,7 +16,6 @@
 #include <memory>
 #include <mutex>
 #include <numeric>
-#include <sstream>
 #include <string>
 #include <thread>
 #include <utility>
@@ -23,12 +23,11 @@
 
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/color_hints.h"
+#include "lib/extras/dec/decode.h"
 #include "lib/extras/enc/apng.h"
 #include "lib/extras/metrics.h"
 #include "lib/extras/packed_image.h"
 #include "lib/extras/packed_image_convert.h"
-#include "lib/extras/time.h"
-#include "lib/jxl/alpha.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/printf_macros.h"
@@ -42,7 +41,6 @@
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
-#include "lib/jxl/image_metadata.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
 #include "tools/benchmark/benchmark_args.h"

@@ -14,7 +14,7 @@
 #include <thread>
 #include <utility>
 
-#include "lib/extras/dec/decode.h"
+#include "lib/extras/packed_image.h"
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
@@ -32,7 +32,6 @@
 #include <random>
 #include <vector>
 
-#include "lib/extras/codec.h"
 #include "lib/extras/enc/encode.h"
 #include "lib/extras/enc/jpg.h"
 #include "lib/jxl/base/data_parallel.h"

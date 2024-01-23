@@ -9,17 +9,18 @@
 #include <stdint.h>
 
 #include <string>
+#include <vector>
 
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/apng.h"
+#include "lib/extras/dec/decode.h"
 #include "lib/extras/enc/apng.h"
-#include "lib/extras/packed_image.h"
-#include "lib/extras/packed_image_convert.h"
 #include "lib/extras/time.h"
 #include "lib/jxl/base/span.h"
-#include "lib/jxl/codec_in_out.h"
-#include "lib/jxl/image_bundle.h"
-#include "lib/jxl/image_metadata.h"
+#include "lib/jxl/base/status.h"
+#include "tools/benchmark/benchmark_args.h"
+#include "tools/benchmark/benchmark_codec.h"
+#include "tools/speed_stats.h"
 #include "tools/thread_pool_internal.h"
 
 namespace jpegxl {

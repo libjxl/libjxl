@@ -5,6 +5,22 @@
 
 #include "tools/benchmark/benchmark_codec_custom.h"
 
+#include <jxl/types.h>
+#include <stdio.h>
+
+#include <cstdint>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "lib/extras/dec/color_hints.h"
+#include "lib/extras/packed_image_convert.h"
+#include "lib/jxl/base/span.h"
+#include "lib/jxl/base/status.h"
+#include "tools/benchmark/benchmark_args.h"
+#include "tools/benchmark/benchmark_codec.h"
+#include "tools/speed_stats.h"
+
 // Not supported on Windows due to Linux-specific functions.
 #ifndef _WIN32
 
@@ -13,10 +29,7 @@
 #include <fstream>
 
 #include "lib/extras/codec.h"
-#include "lib/extras/dec/color_description.h"
-#include "lib/extras/enc/apng.h"
 #include "lib/extras/time.h"
-#include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/image_bundle.h"
 #include "tools/benchmark/benchmark_utils.h"
 #include "tools/file_io.h"
