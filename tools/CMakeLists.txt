@@ -212,8 +212,8 @@ if(JPEGXL_ENABLE_DEVTOOLS)
   list(APPEND FUZZER_CORPUS_BINARIES djxl_fuzzer_corpus)
   add_executable(djxl_fuzzer_corpus djxl_fuzzer_corpus.cc)
   target_link_libraries(djxl_fuzzer_corpus
-    jxl_extras-internal
     jxl_testlib-internal
+    jxl_extras-internal
     jxl_tool
   )
   if(JPEGXL_ENABLE_JPEGLI)
@@ -378,8 +378,8 @@ foreach(FUZZER IN LISTS FUZZER_BINARIES)
     target_link_libraries("${BINARY}" jpegli-static)
   else()
     target_link_libraries("${BINARY}"
-      jxl_extras_nocodec-internal
       jxl_testlib-internal
+      jxl_extras_nocodec-internal
       jxl_tool
     )
   endif()
