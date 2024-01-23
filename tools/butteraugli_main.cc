@@ -15,6 +15,7 @@
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/color_hints.h"
 #include "lib/extras/metrics.h"
+#include "lib/extras/packed_image_convert.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
@@ -36,15 +37,14 @@ using jxl::Image3F;
 using jxl::ImageF;
 using jxl::Status;
 
-Status WriteImage(Image3F&& image, const std::string& filename) {
+Status WriteImage(const Image3F& image, const std::string& filename) {
   ThreadPoolInternal pool(4);
-  CodecInOut io;
-  io.metadata.m.SetUintSamples(8);
-  io.metadata.m.color_encoding = ColorEncoding::SRGB();
-  io.SetFromImage(std::move(image), io.metadata.m.color_encoding);
-
+  JxlPixelFormat format = {3, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0};
+  jxl::extras::PackedPixelFile ppf =
+      jxl::extras::ConvertImage3FToPackedPixelFile(
+          image, jxl::ColorEncoding::SRGB(), format, &pool);
   std::vector<uint8_t> encoded;
-  return jxl::Encode(io, filename, &encoded, &pool) &&
+  return jxl::Encode(ppf, filename, &encoded, &pool) &&
          jpegxl::tools::WriteFile(filename, encoded);
 }
 

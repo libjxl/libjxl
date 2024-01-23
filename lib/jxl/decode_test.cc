@@ -33,6 +33,7 @@
 
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/color_description.h"
+#include "lib/extras/enc/jpg.h"
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
@@ -293,9 +294,20 @@ std::vector<uint8_t> CreateTestJXLCodestream(
   if (params.jpeg_codestream != nullptr) {
     if (jxl::extras::CanDecode(jxl::extras::Codec::kJPG)) {
       std::vector<uint8_t> jpeg_bytes;
-      io.jpeg_quality = 70;
-      EXPECT_TRUE(Encode(io, extras::Codec::kJPG, io.metadata.m.color_encoding,
-                         /*bits_per_sample=*/8, &jpeg_bytes));
+      extras::PackedPixelFile ppf;
+      extras::PackedFrame frame(xsize, ysize, format);
+      JXL_ASSERT(frame.color.pixels_size == pixels.size());
+      memcpy(frame.color.pixels(0, 0, 0), pixels.data(), pixels.size());
+      ppf.frames.emplace_back(std::move(frame));
+      ppf.info.xsize = xsize;
+      ppf.info.ysize = ysize;
+      ppf.info.num_color_channels = grayscale ? 1 : 3;
+      ppf.info.bits_per_sample = 16;
+      auto encoder = extras::GetJPEGEncoder();
+      encoder->SetOption("quality", "70");
+      extras::EncodedImage encoded;
+      EXPECT_TRUE(encoder->Encode(ppf, &encoded));
+      jpeg_bytes = encoded.bitstreams[0];
       Bytes(jpeg_bytes).AppendTo(params.jpeg_codestream);
       EXPECT_TRUE(jxl::jpeg::DecodeImageJPG(
           jxl::Bytes(jpeg_bytes.data(), jpeg_bytes.size()), &io));

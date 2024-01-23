@@ -7,6 +7,7 @@
 #include <stdlib.h>
 
 #include "lib/extras/codec.h"
+#include "lib/extras/packed_image_convert.h"
 #include "lib/jxl/image_metadata.h"
 #include "tools/args.h"
 #include "tools/cmdline.h"
@@ -53,11 +54,11 @@ int main(int argc, const char** argv) {
       },
       "GenerateTemplate"));
 
-  jxl::CodecInOut output;
-  output.metadata.m.bit_depth.bits_per_sample = 16;
-  output.SetFromImage(std::move(image), jxl::ColorEncoding::SRGB());
+  JxlPixelFormat format = {3, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
+  jxl::extras::PackedPixelFile ppf =
+      jxl::extras::ConvertImage3FToPackedPixelFile(
+          image, jxl::ColorEncoding::SRGB(), format, &pool);
   std::vector<uint8_t> encoded;
-  JXL_CHECK(jxl::Encode(output, jxl::ColorEncoding::SRGB(), 16, output_filename,
-                        &encoded, &pool));
+  JXL_CHECK(jxl::Encode(ppf, output_filename, &encoded, &pool));
   JXL_CHECK(jpegxl::tools::WriteFile(output_filename, encoded));
 }
