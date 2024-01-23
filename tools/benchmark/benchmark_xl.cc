@@ -25,6 +25,10 @@
 #include "lib/extras/dec/color_hints.h"
 #include "lib/extras/enc/apng.h"
 #include "lib/extras/metrics.h"
+#include "lib/extras/packed_image.h"
+#include "lib/extras/packed_image_convert.h"
+#include "lib/extras/time.h"
+#include "lib/jxl/alpha.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/printf_macros.h"
@@ -66,15 +70,15 @@ using ::jxl::ImageF;
 using ::jxl::Rng;
 using ::jxl::Status;
 using ::jxl::ThreadPool;
+using ::jxl::extras::PackedPixelFile;
 
-Status WriteImage(Image3F&& image, ThreadPool* pool,
+Status WriteImage(const Image3F& image, ThreadPool* pool,
                   const std::string& filename) {
-  CodecInOut io;
-  io.metadata.m.SetUintSamples(8);
-  io.metadata.m.color_encoding = ColorEncoding::SRGB();
-  io.SetFromImage(std::move(image), io.metadata.m.color_encoding);
+  JxlPixelFormat format = {3, JXL_TYPE_UINT8, JXL_BIG_ENDIAN, 0};
+  PackedPixelFile ppf = jxl::extras::ConvertImage3FToPackedPixelFile(
+      image, ColorEncoding::SRGB(), format, pool);
   std::vector<uint8_t> encoded;
-  return Encode(io, filename, &encoded, pool) && WriteFile(filename, encoded);
+  return Encode(ppf, filename, &encoded, pool) && WriteFile(filename, encoded);
 }
 
 Status ReadPNG(const std::string& filename, Image3F* image) {
@@ -85,6 +89,18 @@ Status ReadPNG(const std::string& filename, Image3F* image) {
       jxl::SetFromBytes(jxl::Bytes(encoded), jxl::extras::ColorHints(), &io));
   *image = Image3F(io.xsize(), io.ysize());
   CopyImageTo(*io.Main().color(), image);
+  return true;
+}
+
+Status CreateNonSRGBICCProfile(PackedPixelFile* ppf) {
+  ColorEncoding color_encoding;
+  JXL_RETURN_IF_ERROR(color_encoding.FromExternal(ppf->color_encoding));
+  if (color_encoding.ICC().empty()) {
+    return JXL_FAILURE("Invalid color encoding.");
+  }
+  if (!color_encoding.IsSRGB()) {
+    ppf->icc.assign(color_encoding.ICC().begin(), color_encoding.ICC().end());
+  }
   return true;
 }
 
@@ -102,22 +118,22 @@ std::string CodecToExtension(std::string codec_name, char sep) {
   return result;
 }
 
-void DoCompress(const std::string& filename, const CodecInOut& io,
+void DoCompress(const std::string& filename, const PackedPixelFile& ppf,
                 const std::vector<std::string>& extra_metrics_commands,
                 ImageCodec* codec, ThreadPool* inner_pool,
                 std::vector<uint8_t>* compressed, BenchmarkStats* s) {
   ++s->total_input_files;
 
-  if (io.frames.size() != 1) {
-    // Multiple frames not supported (io.xsize() will checkfail)
+  if (ppf.frames.size() != 1) {
+    // Multiple frames not supported.
     s->total_errors++;
     if (!Args()->silent_errors) {
       JXL_WARNING("multiframe input image not supported %s", filename.c_str());
     }
     return;
   }
-  const size_t xsize = io.xsize();
-  const size_t ysize = io.ysize();
+  const size_t xsize = ppf.info.xsize;
+  const size_t ysize = ppf.info.ysize;
   const size_t input_pixels = xsize * ysize;
 
   jpegxl::tools::SpeedStats speed_stats;
@@ -125,7 +141,7 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
 
   bool valid = true;  // false if roundtrip, encoding or decoding errors occur.
 
-  if (!Args()->decode_only && (io.xsize() == 0 || io.ysize() == 0)) {
+  if (!Args()->decode_only && (xsize == 0 || ysize == 0)) {
     // This means the benchmark couldn't load the image, e.g. due to invalid
     // ICC profile. Warning message about that was already printed. Continue
     // this function to indicate it as error in the stats.
@@ -141,7 +157,7 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
         JXL_CHECK(
             codec->RecompressJpeg(filename, data_in, compressed, &speed_stats));
       } else {
-        Status status = codec->Compress(filename, &io, inner_pool, compressed,
+        Status status = codec->Compress(filename, ppf, inner_pool, compressed,
                                         &speed_stats);
         if (!status) {
           valid = false;
@@ -169,12 +185,11 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
   }
 
   // Decompress
-  CodecInOut io2;
-  io2.metadata.m = io.metadata.m;
+  PackedPixelFile ppf2;
   if (valid) {
     speed_stats = jpegxl::tools::SpeedStats();
     for (size_t i = 0; i < Args()->decode_reps; ++i) {
-      if (!codec->Decompress(filename, Bytes(*compressed), inner_pool, &io2,
+      if (!codec->Decompress(filename, Bytes(*compressed), inner_pool, &ppf2,
                              &speed_stats)) {
         if (!Args()->silent_errors) {
           fprintf(stderr,
@@ -184,20 +199,9 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
         }
         valid = false;
       }
-      // TODO(veluca): this is a hack. codec->Decompress should set the bitdepth
-      // correctly, but for jxl it currently sets it from the pixel format (i.e.
-      // 32-bit float).
-      io2.metadata.m.bit_depth = io.metadata.m.bit_depth;
-      const jxl::ExtraChannelInfo* alpha =
-          io.metadata.m.Find(jxl::ExtraChannel::kAlpha);
-      jxl::ExtraChannelInfo* alpha2 =
-          io2.metadata.m.Find(jxl::ExtraChannel::kAlpha);
-      if (alpha != nullptr && alpha2 != nullptr) {
-        alpha2->bit_depth = alpha->bit_depth;
-      }
     }
-    for (const auto& frame : io2.frames) {
-      s->total_input_pixels += frame.color().xsize() * frame.color().ysize();
+    for (const auto& frame : ppf2.frames) {
+      s->total_input_pixels += frame.color.xsize * frame.color.ysize;
     }
     JXL_CHECK(speed_stats.GetSummary(&summary));
     s->total_time_decode += summary.central_tendency;
@@ -210,100 +214,63 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
     s->total_errors++;
   }
 
-  if (io.frames.size() != io2.frames.size()) {
+  if (ppf.frames.size() != ppf2.frames.size()) {
     if (!Args()->silent_errors) {
       // Animated gifs not supported yet?
       fprintf(stderr,
               "Frame sizes not equal, is this an animated gif? %s %s %" PRIuS
               " %" PRIuS "\n",
-              codec_name.c_str(), name.c_str(), io.frames.size(),
-              io2.frames.size());
+              codec_name.c_str(), name.c_str(), ppf.frames.size(),
+              ppf2.frames.size());
     }
     valid = false;
   }
 
   bool skip_butteraugli = Args()->skip_butteraugli || Args()->decode_only;
   ImageF distmap;
-  float max_distance = 1.0f;
+  float distance = 1.0f;
 
   if (valid && !skip_butteraugli) {
-    JXL_ASSERT(io.frames.size() == io2.frames.size());
-    for (size_t i = 0; i < io.frames.size(); i++) {
-      const ImageBundle& ib1 = io.frames[i];
-      ImageBundle& ib2 = io2.frames[i];
-
-      // Verify output
-      float distance;
-      if (SameSize(ib1, ib2)) {
-        ButteraugliParams params;
-        if (ib1.metadata()->IntensityTarget() !=
-            ib2.metadata()->IntensityTarget()) {
-          fprintf(stderr,
-                  "WARNING: input and output images have different intensity "
-                  "targets");
-        }
-        params.intensity_target = ib1.metadata()->IntensityTarget();
-        // Hack the default intensity target value to be 80.0, the intensity
-        // target of sRGB images and a more reasonable viewing default than
-        // JPEG XL file format's default.
-        if (fabs(params.intensity_target - 255.0f) < 1e-3) {
-          params.intensity_target = 80.0;
-        }
-        distance =
-            ButteraugliDistance(ib1, ib2, params, *JxlGetDefaultCms(), &distmap,
-                                inner_pool, codec->IgnoreAlpha());
-      } else {
-        // TODO(veluca): re-upsample and compute proper distance.
-        distance = 1e+4f;
-        distmap = ImageF(1, 1);
-        distmap.Row(0)[0] = distance;
-      }
-      // Update stats
-      s->psnr +=
-          compressed->empty()
-              ? 0
-              : jxl::ComputePSNR(ib1, ib2, *JxlGetDefaultCms()) * input_pixels;
-      s->distance_p_norm +=
-          ComputeDistanceP(distmap, ButteraugliParams(), Args()->error_pnorm) *
-          input_pixels;
-      s->ssimulacra2 += ComputeSSIMULACRA2(ib1, ib2).Score() * input_pixels;
-      s->max_distance = std::max(s->max_distance, distance);
-      s->distances.push_back(distance);
-      max_distance = std::max(max_distance, distance);
+    CodecInOut ppf_io;
+    JXL_CHECK(ConvertPackedPixelFileToCodecInOut(ppf, inner_pool, &ppf_io));
+    CodecInOut ppf2_io;
+    JXL_CHECK(ConvertPackedPixelFileToCodecInOut(ppf2, inner_pool, &ppf2_io));
+    const ImageBundle& ib1 = ppf_io.Main();
+    const ImageBundle& ib2 = ppf2_io.Main();
+    if (jxl::SameSize(ppf, ppf2)) {
+      ButteraugliParams params;
+      // Hack the default intensity target value to be 80.0, the intensity
+      // target of sRGB images and a more reasonable viewing default than
+      // JPEG XL file format's default.
+      // TODO(szabadka) Support different intensity targets as well.
+      params.intensity_target = 80.0;
+      distance =
+          ButteraugliDistance(ib1, ib2, params, *JxlGetDefaultCms(), &distmap,
+                              inner_pool, codec->IgnoreAlpha());
+    } else {
+      // TODO(veluca): re-upsample and compute proper distance.
+      distance = 1e+4f;
+      distmap = ImageF(1, 1);
+      distmap.Row(0)[0] = distance;
     }
+    // Update stats
+    s->psnr +=
+        compressed->empty()
+            ? 0
+            : jxl::ComputePSNR(ib1, ib2, *JxlGetDefaultCms()) * input_pixels;
+    s->distance_p_norm +=
+        ComputeDistanceP(distmap, ButteraugliParams(), Args()->error_pnorm) *
+        input_pixels;
+    s->ssimulacra2 += ComputeSSIMULACRA2(ib1, ib2).Score() * input_pixels;
+    s->max_distance = std::max(s->max_distance, distance);
+    s->distances.push_back(distance);
   }
 
   s->total_compressed_size += compressed->size();
-  s->total_adj_compressed_size += compressed->size() * max_distance;
+  s->total_adj_compressed_size += compressed->size() * std::max(1.0f, distance);
   codec->GetMoreStats(s);
 
-  if (io2.frames.size() == 1 &&
-      (Args()->save_compressed || Args()->save_decompressed)) {
-    JXL_ASSERT(io2.frames.size() == 1);
-    ImageBundle& ib2 = io2.Main();
-
-    // By default the benchmark will save the image after roundtrip with the
-    // same color encoding as the image before roundtrip. Not all codecs
-    // necessarily preserve the amount of channels (1 for gray, 3 for RGB)
-    // though, since not all image formats necessarily allow a way to remember
-    // what amount of channels you happened to give the benchmark codec
-    // input (say, an RGB-only format) and that is fine since in the end what
-    // matters is that the pixels look the same on a 3-channel RGB monitor
-    // while using grayscale encoding is an internal compression optimization.
-    // If that is the case, output with the current color model instead,
-    // because CodecInOut does not automatically convert between 1 or 3
-    // channels, and giving a ColorEncoding  with a different amount of
-    // channels is not allowed.
-    const ColorEncoding* c_desired =
-        (ib2.metadata()->color_encoding.Channels() ==
-         ib2.c_current().Channels())
-            ? &ib2.metadata()->color_encoding
-            : &ib2.c_current();
-    // Allow overriding via --output_encoding.
-    if (!Args()->output_description.empty()) {
-      c_desired = &Args()->output_encoding;
-    }
-
+  if (Args()->save_compressed || Args()->save_decompressed) {
     std::string dir = FileDirName(filename);
     std::string outdir =
         Args()->output_dir.empty() ? dir + "/out" : Args()->output_dir;
@@ -321,18 +288,9 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
       JXL_CHECK(WriteFile(compressed_fn, *compressed));
     }
     if (Args()->save_decompressed && valid) {
-      // For verifying HDR: scale output.
-      if (Args()->mul_output != 0.0) {
-        fprintf(stderr, "WARNING: scaling outputs by %f\n", Args()->mul_output);
-        JXL_CHECK(ib2.TransformTo(ColorEncoding::LinearSRGB(ib2.IsGray()),
-                                  *JxlGetDefaultCms(), inner_pool));
-        ScaleImage(static_cast<float>(Args()->mul_output), ib2.color());
-      }
-
+      // TODO(szabadka): Handle Args()->mul_output
       std::vector<uint8_t> encoded;
-      JXL_CHECK(Encode(io2, *c_desired,
-                       ib2.metadata()->bit_depth.bits_per_sample,
-                       decompressed_fn, &encoded));
+      JXL_CHECK(jxl::Encode(ppf2, decompressed_fn, &encoded));
       JXL_CHECK(WriteFile(decompressed_fn, encoded));
       if (!skip_butteraugli) {
         float good = Args()->heatmap_good > 0.0f
@@ -349,9 +307,6 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
     }
   }
   if (!extra_metrics_commands.empty()) {
-    CodecInOut in_copy;
-    in_copy.SetFromImage(std::move(*io.Main().Copy().color()),
-                         io.Main().c_current());
     TemporaryFile tmp_in("original", "pfm");
     TemporaryFile tmp_out("decoded", "pfm");
     TemporaryFile tmp_res("result", "txt");
@@ -360,28 +315,13 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
     JXL_CHECK(tmp_out.GetFileName(&tmp_out_fn));
     JXL_CHECK(tmp_res.GetFileName(&tmp_res_fn));
 
-    // Convert everything to non-linear SRGB - this is what most metrics expect.
-    const ColorEncoding& c_desired = ColorEncoding::SRGB(io.Main().IsGray());
     std::vector<uint8_t> encoded;
-    JXL_CHECK(Encode(io, c_desired, io.metadata.m.bit_depth.bits_per_sample,
-                     tmp_in_fn, &encoded));
+    JXL_CHECK(jxl::Encode(ppf, tmp_in_fn, &encoded));
     JXL_CHECK(WriteFile(tmp_in_fn, encoded));
-    JXL_CHECK(Encode(io2, c_desired, io.metadata.m.bit_depth.bits_per_sample,
-                     tmp_out_fn, &encoded));
+    JXL_CHECK(jxl::Encode(ppf2, tmp_out_fn, &encoded));
     JXL_CHECK(WriteFile(tmp_out_fn, encoded));
-    if (io.metadata.m.IntensityTarget() != io2.metadata.m.IntensityTarget()) {
-      fprintf(stderr,
-              "WARNING: original and decoded have different intensity targets "
-              "(%f vs. %f).\n",
-              io.metadata.m.IntensityTarget(),
-              io2.metadata.m.IntensityTarget());
-    }
-    std::string intensity_target;
-    {
-      std::ostringstream intensity_target_oss;
-      intensity_target_oss << io.metadata.m.IntensityTarget();
-      intensity_target = intensity_target_oss.str();
-    }
+    // TODO(szabadka) Handle custom intensity target.
+    std::string intensity_target = "255";
     for (size_t i = 0; i < extra_metrics_commands.size(); i++) {
       float res = nanf("");
       bool error = false;
@@ -439,14 +379,14 @@ struct Task {
   ImageCodecPtr codec;
   size_t idx_image;
   size_t idx_method;
-  const CodecInOut* image;
+  const PackedPixelFile* image;
   BenchmarkStats stats;
 };
 
 void WriteHtmlReport(const std::string& codec_desc,
                      const std::vector<std::string>& fnames,
                      const std::vector<const Task*>& tasks,
-                     const std::vector<const CodecInOut*>& images,
+                     const std::vector<const PackedPixelFile*>& images,
                      bool add_heatmap, bool self_contained) {
   std::string toggle_js =
       "<script type=\"text/javascript\">\n"
@@ -576,9 +516,9 @@ void WriteHtmlReport(const std::string& codec_desc,
       url_heatmap = Base64Image(fname_heatmap);
     }
     std::string number = StringPrintf("%" PRIuS, i);
-    const CodecInOut& image = *images[i];
-    size_t xsize = image.frames.size() == 1 ? image.xsize() : 0;
-    size_t ysize = image.frames.size() == 1 ? image.ysize() : 0;
+    const PackedPixelFile& image = *images[i];
+    size_t xsize = image.frames.size() == 1 ? image.info.xsize : 0;
+    size_t ysize = image.frames.size() == 1 ? image.info.ysize : 0;
     std::string html_width = StringPrintf("%" PRIuS "px", xsize);
     std::string html_height = StringPrintf("%" PRIuS "px", ysize);
     double bpp = tasks[i]->stats.total_compressed_size * 8.0 /
@@ -742,7 +682,7 @@ struct StatPrinter {
   void PrintStats(const std::string& method, size_t idx_method) {
     // Assimilate all tasks with the same idx_method.
     BenchmarkStats method_stats;
-    std::vector<const CodecInOut*> images;
+    std::vector<const PackedPixelFile*> images;
     std::vector<const Task*> tasks;
     for (const Task& t : *tasks_) {
       if (t.idx_method == idx_method) {
@@ -832,7 +772,7 @@ class Benchmark {
       std::vector<std::unique_ptr<ThreadPoolInternal>> inner_pools;
       InitThreads(tasks.size(), &pool, &inner_pools);
 
-      const std::vector<CodecInOut> loaded_images = LoadImages(fnames, &*pool);
+      std::vector<PackedPixelFile> loaded_images = LoadImages(fnames, &*pool);
 
       if (RunTasks(methods, extra_metrics_names, extra_metrics_commands, fnames,
                    loaded_images, &*pool, inner_pools, &tasks) != 0) {
@@ -994,7 +934,7 @@ class Benchmark {
           StringPrintf("%s/%s.crop_%dx%d+%d+%d.png", sample_tmp_dir.c_str(),
                        FileBaseName(fnames[idx]).c_str(), size, size, x0, y0);
       ThreadPool* null_pool = nullptr;
-      JXL_CHECK(WriteImage(std::move(sample), null_pool, fn_output));
+      JXL_CHECK(WriteImage(sample, null_pool, fn_output));
       fnames_out.push_back(fn_output);
     }
     fprintf(stderr, "Created %d sample tiles\n", num_samples);
@@ -1019,9 +959,9 @@ class Benchmark {
   }
 
   // (Load only once, not for every codec)
-  static std::vector<CodecInOut> LoadImages(const StringVec& fnames,
-                                            ThreadPool* pool) {
-    std::vector<CodecInOut> loaded_images;
+  static std::vector<PackedPixelFile> LoadImages(const StringVec& fnames,
+                                                 ThreadPool* pool) {
+    std::vector<PackedPixelFile> loaded_images;
     loaded_images.resize(fnames.size());
     const auto process_image = [&](const uint32_t task, size_t /*thread*/) {
       const size_t i = static_cast<size_t>(task);
@@ -1031,12 +971,16 @@ class Benchmark {
         std::vector<uint8_t> encoded;
         ok = ReadFile(fnames[i], &encoded);
         if (ok) {
-          ok = jxl::SetFromBytes(Bytes(encoded), Args()->color_hints,
-                                 &loaded_images[i]);
+          ok = jxl::extras::DecodeBytes(Bytes(encoded), Args()->color_hints,
+                                        &loaded_images[i]);
+        }
+        if (ok && loaded_images[i].icc.empty()) {
+          // Add ICC profile if the image is not in sRGB, because not all codecs
+          // can handle the color_encoding enum.
+          ok = CreateNonSRGBICCProfile(&loaded_images[i]);
         }
         if (ok && Args()->intensity_target != 0) {
-          loaded_images[i].metadata.m.SetIntensityTarget(
-              Args()->intensity_target);
+          // TODO(szabadka) Respect Args()->intensity_target
         }
       }
       if (!ok) {
@@ -1047,11 +991,7 @@ class Benchmark {
       }
 
       if (!Args()->decode_only && Args()->override_bitdepth != 0) {
-        if (Args()->override_bitdepth == 32) {
-          loaded_images[i].metadata.m.SetFloat32Samples();
-        } else {
-          loaded_images[i].metadata.m.SetUintSamples(Args()->override_bitdepth);
-        }
+        // TODO(szabadla) Respect Args()->override_bitdepth
       }
     };
     JXL_CHECK(jxl::RunOnPool(pool, 0, static_cast<uint32_t>(fnames.size()),
@@ -1081,7 +1021,7 @@ class Benchmark {
   static size_t RunTasks(
       const StringVec& methods, const StringVec& extra_metrics_names,
       const StringVec& extra_metrics_commands, const StringVec& fnames,
-      const std::vector<CodecInOut>& loaded_images, ThreadPool* pool,
+      const std::vector<PackedPixelFile>& loaded_images, ThreadPool* pool,
       const std::vector<std::unique_ptr<ThreadPoolInternal>>& inner_pools,
       std::vector<Task>* tasks) {
     StatPrinter printer(methods, extra_metrics_names, fnames, *tasks);
@@ -1106,7 +1046,7 @@ class Benchmark {
         },
         [&](const uint32_t i, const size_t thread) {
           Task& t = (*tasks)[i];
-          const CodecInOut& image = loaded_images[t.idx_image];
+          const PackedPixelFile& image = loaded_images[t.idx_image];
           t.image = &image;
           std::vector<uint8_t> compressed;
           DoCompress(fnames[t.idx_image], image, extra_metrics_commands,

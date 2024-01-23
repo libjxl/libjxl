@@ -40,6 +40,75 @@ Status SetFromBytes(const Span<const uint8_t> bytes,
   return JXL_FAILURE("Codecs failed to decode");
 }
 
+Status Encode(const extras::PackedPixelFile& ppf, const extras::Codec codec,
+              std::vector<uint8_t>* bytes, ThreadPool* pool) {
+  bytes->clear();
+  std::unique_ptr<extras::Encoder> encoder;
+  switch (codec) {
+    case extras::Codec::kPNG:
+      encoder = extras::GetAPNGEncoder();
+      if (encoder) {
+        break;
+      } else {
+        return JXL_FAILURE("JPEG XL was built without (A)PNG support");
+      }
+    case extras::Codec::kJPG:
+      encoder = extras::GetJPEGEncoder();
+      if (encoder) {
+        break;
+      } else {
+        return JXL_FAILURE("JPEG XL was built without JPEG support");
+      }
+    case extras::Codec::kPNM:
+      if (ppf.info.alpha_bits > 0) {
+        encoder = extras::GetPAMEncoder();
+      } else if (ppf.info.num_color_channels == 1) {
+        encoder = extras::GetPGMEncoder();
+      } else if (ppf.info.bits_per_sample <= 16) {
+        encoder = extras::GetPPMEncoder();
+      } else {
+        encoder = extras::GetPFMEncoder();
+      }
+      break;
+    case extras::Codec::kPGX:
+      encoder = extras::GetPGXEncoder();
+      break;
+    case extras::Codec::kGIF:
+      return JXL_FAILURE("Encoding to GIF is not implemented");
+    case extras::Codec::kEXR:
+      encoder = extras::GetEXREncoder();
+      if (encoder) {
+        break;
+      } else {
+        return JXL_FAILURE("JPEG XL was built without OpenEXR support");
+      }
+    case extras::Codec::kJXL:
+      // TODO(user): implement
+      return JXL_FAILURE("Codec::kJXL is not supported yet");
+
+    case extras::Codec::kUnknown:
+      return JXL_FAILURE("Cannot encode using Codec::kUnknown");
+  }
+
+  if (!encoder) {
+    return JXL_FAILURE("Invalid codec.");
+  }
+  extras::EncodedImage encoded_image;
+  JXL_RETURN_IF_ERROR(encoder->Encode(ppf, &encoded_image, pool));
+  JXL_ASSERT(encoded_image.bitstreams.size() == 1);
+  *bytes = encoded_image.bitstreams[0];
+
+  return true;
+}
+
+Status Encode(const extras::PackedPixelFile& ppf, const std::string& pathname,
+              std::vector<uint8_t>* bytes, ThreadPool* pool) {
+  std::string extension;
+  const extras::Codec codec =
+      extras::CodecFromPath(pathname, nullptr, &extension);
+  return Encode(ppf, codec, bytes, pool);
+}
+
 Status Encode(const CodecInOut& io, const extras::Codec codec,
               const ColorEncoding& c_desired, size_t bits_per_sample,
               std::vector<uint8_t>* bytes, ThreadPool* pool) {
