@@ -8,7 +8,6 @@
 #include <jxl/thread_parallel_runner_cxx.h>
 #include <jxl/types.h>
 
-#include <climits>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>

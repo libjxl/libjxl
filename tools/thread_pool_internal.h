@@ -8,9 +8,8 @@
 
 #include <jxl/thread_parallel_runner.h>
 #include <jxl/thread_parallel_runner_cxx.h>
-#include <stddef.h>
 
-#include <cmath>
+#include <cstddef>
 #include <memory>
 #include <thread>  // NOLINT
 

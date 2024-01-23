@@ -23,7 +23,6 @@
 #include "lib/extras/enc/encode.h"
 #include "lib/extras/enc/jxl.h"
 #include "lib/extras/packed_image.h"
-#include "lib/extras/packed_image_convert.h"
 #include "lib/extras/time.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/image.h"
@@ -40,7 +39,6 @@ namespace tools {
 
 using ::jxl::Image3F;
 using ::jxl::extras::EncodedImage;
-using ::jxl::extras::Encoder;
 using ::jxl::extras::JXLCompressParams;
 using ::jxl::extras::JXLDecompressParams;
 using ::jxl::extras::PackedFrame;

@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file.
 
 #include <jxl/cms.h>
+#include <jxl/encode.h>
 #include <jxl/types.h>
 
 #include <cstddef>
@@ -15,6 +16,7 @@
 
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/jxl.h"
+#include "lib/extras/enc/jxl.h"
 #include "lib/extras/metrics.h"
 #include "lib/extras/packed_image.h"
 #include "lib/jxl/base/compiler_specific.h"
