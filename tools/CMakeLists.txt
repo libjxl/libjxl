@@ -344,6 +344,7 @@ if(JPEGXL_ENABLE_TOOLS)
     color_encoding_fuzzer
     decode_basic_info_fuzzer
     cjxl_fuzzer
+    streaming_fuzzer
     icc_codec_fuzzer
     fields_fuzzer
     rans_fuzzer
