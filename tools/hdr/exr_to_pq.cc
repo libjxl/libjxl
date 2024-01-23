@@ -153,6 +153,6 @@ int main(int argc, const char** argv) {
   JXL_CHECK(jpegxl::tools::TransformCodecInOutTo(image, pq, &pool));
   image.metadata.m.color_encoding = pq;
   std::vector<uint8_t> encoded;
-  JXL_CHECK(jxl::Encode(image, output_filename, &encoded, &pool));
+  JXL_CHECK(jpegxl::tools::Encode(image, output_filename, &encoded, &pool));
   JXL_CHECK(jpegxl::tools::WriteFile(output_filename, encoded));
 }
