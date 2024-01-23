@@ -3,7 +3,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include <jxl/cms.h>
+#include <jxl/encode.h>
+#include <jxl/types.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -12,6 +13,8 @@
 #include <string>
 #include <vector>
 
+#include "lib/extras/dec/jxl.h"
+#include "lib/extras/enc/jxl.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/test_image.h"
 #include "lib/jxl/test_utils.h"

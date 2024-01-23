@@ -3,11 +3,17 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <jxl/types.h>
+
 #include <cstdint>
+#include <sstream>
+#include <utility>
 #include <vector>
 
-#include "lib/extras/codec.h"
-#include "lib/jxl/test_image.h"
+#include "lib/extras/dec/decode.h"
+#include "lib/extras/dec/jxl.h"
+#include "lib/extras/packed_image.h"
+#include "lib/jxl/base/span.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"
 

@@ -20,7 +20,6 @@
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/modular/encoding/dec_ma.h"
 #include "lib/jxl/modular/options.h"
-#include "lib/jxl/modular/transform/transform.h"
 #include "lib/jxl/splines.h"
 
 namespace jxl {
