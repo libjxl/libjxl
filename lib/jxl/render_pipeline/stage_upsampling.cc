@@ -113,19 +113,22 @@ class UpsamplingStage : public RenderPipelineStage {
     (void)ups2, (void)ups3, (void)ups4, (void)ups5, (void)ups6, (void)ups7;
     // Once we have C++17 available, change this back to `V* ups[N]` and
     // initialize using `if constexpr` below.
-    V* ups[8];
+    V* ups[8] = {};
     JXL_ASSERT(N <= 8);
-    // if (N >= 2)
-    ups[0] = &ups0;
-    ups[1] = &ups1;
-    // if (N >= 4)
-    ups[2] = &ups2;
-    ups[3] = &ups3;
-    // if (N == 8)
-    ups[4] = &ups4;
-    ups[5] = &ups5;
-    ups[6] = &ups6;
-    ups[7] = &ups7;
+    if (N >= 2) {
+      ups[0] = &ups0;
+      ups[1] = &ups1;
+    }
+    if (N >= 4) {
+      ups[2] = &ups2;
+      ups[3] = &ups3;
+    }
+    if (N == 8) {
+      ups[4] = &ups4;
+      ups[5] = &ups5;
+      ups[6] = &ups6;
+      ups[7] = &ups7;
+    }
 
     for (size_t oy = 0; oy < N; oy++) {
       float* dst_row = GetOutputRow(output_rows, c_, oy);
