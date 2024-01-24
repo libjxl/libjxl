@@ -114,7 +114,7 @@ class UpsamplingStage : public RenderPipelineStage {
     // Once we have C++17 available, change this back to `V* ups[N]` and
     // initialize using `if constexpr` below.
     V* ups[8] = {};
-    JXL_ASSERT(N <= 8);
+    static_assert(N == 2 || N == 4 || N == 8, "N must be 2, 4, or 8");
     if (N >= 2) {
       ups[0] = &ups0;
       ups[1] = &ups1;
