@@ -1642,10 +1642,12 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetOption(
       frame_settings->values.cparams.responsive = value;
       break;
     case JXL_ENC_FRAME_SETTING_PROGRESSIVE_AC:
-      frame_settings->values.cparams.progressive_mode = value;
+      frame_settings->values.cparams.progressive_mode =
+          static_cast<jxl::Override>(value);
       break;
     case JXL_ENC_FRAME_SETTING_QPROGRESSIVE_AC:
-      frame_settings->values.cparams.qprogressive_mode = value;
+      frame_settings->values.cparams.qprogressive_mode =
+          static_cast<jxl::Override>(value);
       break;
     case JXL_ENC_FRAME_SETTING_PROGRESSIVE_DC:
       if (value < -1 || value > 2) {

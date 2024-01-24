@@ -522,7 +522,7 @@ TEST(EncodeTest, frame_settingsTest) {
     VerifyFrameEncoding(63, 129, enc.get(), frame_settings, 2830,
                         /*lossy_use_original_profile=*/false);
     EXPECT_EQ(false, enc->last_used_cparams.responsive);
-    EXPECT_EQ(true, enc->last_used_cparams.progressive_mode);
+    EXPECT_EQ(jxl::Override::kOn, enc->last_used_cparams.progressive_mode);
     EXPECT_EQ(2, enc->last_used_cparams.progressive_dc);
   }
 
@@ -985,7 +985,7 @@ TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(ProgressiveJPEGReconstructionTest)) {
   JxlEncoderFrameSettings* frame_settings =
       JxlEncoderFrameSettingsCreate(enc.get(), NULL);
 
-  frame_settings->values.cparams.progressive_mode = true;
+  frame_settings->values.cparams.progressive_mode = jxl::Override::kOn;
 
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderStoreJPEGMetadata(enc.get(), JXL_TRUE));
   EXPECT_EQ(JXL_ENC_SUCCESS,
