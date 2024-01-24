@@ -640,8 +640,9 @@ void ComputeChromacityAdjustments(const CompressParams& cparams,
   frame_header->b_qm_scale = 2 + pixel_stats.HowMuchIsBChannelPixelized();
 }
 
-void ComputeNoiseParams(const CompressParams& cparams, bool color_is_jpeg,
-                        const Image3F& opsin, const FrameDimensions& frame_dim,
+void ComputeNoiseParams(const CompressParams& cparams, bool streaming_mode,
+                        bool color_is_jpeg, const Image3F& opsin,
+                        const FrameDimensions& frame_dim,
                         FrameHeader* frame_header, NoiseParams* noise_params) {
   if (cparams.photon_noise_iso > 0) {
     *noise_params = SimulatePhotonNoise(frame_dim.xsize, frame_dim.ysize,
@@ -651,7 +652,8 @@ void ComputeNoiseParams(const CompressParams& cparams, bool color_is_jpeg,
       noise_params->lut[i] = cparams.manual_noise[i];
     }
   } else if (frame_header->encoding == FrameEncoding::kVarDCT &&
-             frame_header->flags & FrameHeader::kNoise && !color_is_jpeg) {
+             frame_header->flags & FrameHeader::kNoise && !color_is_jpeg &&
+             !streaming_mode) {
     // Don't start at zero amplitude since adding noise is expensive -- it
     // significantly slows down decoding, and this is unlikely to
     // completely go away even with advanced optimizations. After the
@@ -1468,11 +1470,9 @@ Status ComputeEncodingData(
                                  &mutable_frame_header);
   }
 
-  if (!enc_state.streaming_mode) {
-    ComputeNoiseParams(cparams, !!jpeg_data, opsin, frame_dim,
-                       &mutable_frame_header,
-                       &shared.image_features.noise_params);
-  }
+  ComputeNoiseParams(cparams, enc_state.streaming_mode, !!jpeg_data, opsin,
+                     frame_dim, &mutable_frame_header,
+                     &shared.image_features.noise_params);
 
   DownsampleColorChannels(cparams, frame_header, !!jpeg_data, &opsin);
 
