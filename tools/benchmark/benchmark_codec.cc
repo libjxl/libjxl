@@ -5,6 +5,7 @@
 
 #include "tools/benchmark/benchmark_codec.h"
 
+#include <jxl/types.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,11 +14,9 @@
 #include <utility>
 #include <vector>
 
+#include "lib/extras/packed_image_convert.h"
 #include "lib/extras/time.h"
-#include "lib/jxl/base/data_parallel.h"
-#include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
@@ -27,6 +26,8 @@
 #include "tools/benchmark/benchmark_codec_jpeg.h"
 #include "tools/benchmark/benchmark_codec_jxl.h"
 #include "tools/benchmark/benchmark_stats.h"
+#include "tools/speed_stats.h"
+#include "tools/thread_pool_internal.h"
 
 #ifdef BENCHMARK_PNG
 #include "tools/benchmark/benchmark_codec_png.h"

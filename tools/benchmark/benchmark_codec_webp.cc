@@ -14,6 +14,7 @@
 #include <string>
 #include <vector>
 
+#include "lib/extras/packed_image_convert.h"
 #include "lib/extras/time.h"
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/data_parallel.h"

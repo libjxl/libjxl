@@ -31,9 +31,10 @@
 #include <utility>
 #include <vector>
 
-#include "lib/extras/codec.h"
 #include "lib/extras/dec/color_description.h"
+#include "lib/extras/enc/encode.h"
 #include "lib/extras/enc/jpg.h"
+#include "lib/extras/packed_image.h"
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"

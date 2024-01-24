@@ -4,17 +4,18 @@
 // license that can be found in the LICENSE file.
 
 #include <jxl/cms.h>
+#include <jxl/types.h>
 #include <stdint.h>
 #include <stdio.h>
 
 #include <cstdlib>
 #include <string>
-#include <utility>
 #include <vector>
 
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/color_hints.h"
 #include "lib/extras/metrics.h"
+#include "lib/extras/packed_image.h"
 #include "lib/extras/packed_image_convert.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/span.h"

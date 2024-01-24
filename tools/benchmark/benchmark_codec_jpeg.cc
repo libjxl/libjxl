@@ -7,11 +7,23 @@
 #include <stddef.h>
 #include <stdio.h>
 // After stddef/stdio
+#include <jxl/types.h>
 #include <stdint.h>
 #include <string.h>
 
-#include <numeric>  // partial_sum
+#include <cmath>
+#include <cstdlib>
+#include <memory>
+#include <sstream>
 #include <string>
+#include <vector>
+
+#include "lib/extras/codec.h"
+#include "lib/extras/enc/encode.h"
+#include "lib/jxl/base/status.h"
+#include "tools/benchmark/benchmark_args.h"
+#include "tools/benchmark/benchmark_codec.h"
+#include "tools/speed_stats.h"
 
 #if JPEGXL_ENABLE_JPEGLI
 #include "lib/extras/dec/jpegli.h"
@@ -22,13 +34,9 @@
 #endif
 #include "lib/extras/enc/jpg.h"
 #include "lib/extras/packed_image.h"
-#include "lib/extras/packed_image_convert.h"
 #include "lib/extras/time.h"
 #include "lib/jxl/base/span.h"
-#include "lib/jxl/codec_in_out.h"
-#include "lib/jxl/image_bundle.h"
 #include "tools/benchmark/benchmark_utils.h"
-#include "tools/cmdline.h"
 #include "tools/file_io.h"
 #include "tools/thread_pool_internal.h"
 
