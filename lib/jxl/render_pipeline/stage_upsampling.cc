@@ -5,6 +5,8 @@
 
 #include "lib/jxl/render_pipeline/stage_upsampling.h"
 
+#include "lib/jxl/base/status.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/render_pipeline/stage_upsampling.cc"
 #include <hwy/foreach_target.h>
@@ -102,35 +104,6 @@ class UpsamplingStage : public RenderPipelineStage {
     JXL_UNREACHABLE("Invalid upsample");
   }
 
-  // Overloaded function definitions
-  // Instead of using those, use `if constexpr` below as soon as we use C++17
-  template <typename V>
-  void InitializeUps(V** ups, V& ups0, V& ups1) const {
-    ups[0] = &ups0;
-    ups[1] = &ups1;
-  }
-
-  template <typename V>
-  void InitializeUps(V** ups, V& ups0, V& ups1, V& ups2, V& ups3) const {
-    ups[0] = &ups0;
-    ups[1] = &ups1;
-    ups[2] = &ups2;
-    ups[3] = &ups3;
-  }
-
-  template <typename V>
-  void InitializeUps(V** ups, V& ups0, V& ups1, V& ups2, V& ups3, V& ups4,
-                     V& ups5, V& ups6, V& ups7) const {
-    ups[0] = &ups0;
-    ups[1] = &ups1;
-    ups[2] = &ups2;
-    ups[3] = &ups3;
-    ups[4] = &ups4;
-    ups[5] = &ups5;
-    ups[6] = &ups6;
-    ups[7] = &ups7;
-  }
-
   template <ssize_t N>
   void ProcessRowImpl(const RowInfo& input_rows, const RowInfo& output_rows,
                       ssize_t x0, ssize_t x1) const {
@@ -138,16 +111,21 @@ class UpsamplingStage : public RenderPipelineStage {
     using V = hwy::HWY_NAMESPACE::Vec<HWY_FULL(float)>;
     V ups0, ups1, ups2, ups3, ups4, ups5, ups6, ups7;
     (void)ups2, (void)ups3, (void)ups4, (void)ups5, (void)ups6, (void)ups7;
-    V* ups[N];
-
-    // Call the appropriate overloaded function based on N
-    if (N == 2) {
-      InitializeUps(ups, ups0, ups1);
-    } else if (N == 4) {
-      InitializeUps(ups, ups0, ups1, ups2, ups3);
-    } else if (N == 8) {
-      InitializeUps(ups, ups0, ups1, ups2, ups3, ups4, ups5, ups6, ups7);
-    }
+    // Once we have C++17 available, change this back to `V* ups[N]` and
+    // initialize using `if constexpr` below.
+    V* ups[8];
+    JXL_ASSERT(N <= 8);
+    // if (N >= 2)
+    ups[0] = &ups0;
+    ups[1] = &ups1;
+    // if (N >= 4)
+    ups[2] = &ups2;
+    ups[3] = &ups3;
+    // if (N == 8)
+    ups[4] = &ups4;
+    ups[5] = &ups5;
+    ups[6] = &ups6;
+    ups[7] = &ups7;
 
     for (size_t oy = 0; oy < N; oy++) {
       float* dst_row = GetOutputRow(output_rows, c_, oy);
