@@ -218,7 +218,7 @@ PackedPixelFile ConvertImage3FToPackedPixelFile(const Image3F& image,
   bool float_samples = ppf.info.exponent_bits_per_sample > 0;
   JXL_CHECK(ConvertChannelsToExternal(
       channels, 3, ppf.info.bits_per_sample, float_samples, format.endianness,
-      3 * image.xsize(), pool, frame.color.pixels(0, 0, 0),
+      frame.color.stride, pool, frame.color.pixels(0, 0, 0),
       frame.color.pixels_size, PixelCallback(), Orientation::kIdentity));
   ppf.frames.emplace_back(std::move(frame));
   return ppf;
