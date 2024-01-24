@@ -91,10 +91,10 @@ struct CompressParams {
   int epf = -1;
 
   // Progressive mode.
-  bool progressive_mode = false;
+  Override progressive_mode = Override::kDefault;
 
   // Quantized-progressive mode.
-  bool qprogressive_mode = false;
+  Override qprogressive_mode = Override::kDefault;
 
   // Put center groups first in the bitstream.
   bool centerfirst = false;

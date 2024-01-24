@@ -221,12 +221,14 @@ void SetProgressiveMode(const CompressParams& cparams,
       {/*num_coefficients=*/8, /*shift=*/0,
        /*suitable_for_downsampling_of_at_least=*/0},
   };
+  bool progressive_mode = ApplyOverride(cparams.progressive_mode, false);
+  bool qprogressive_mode = ApplyOverride(cparams.qprogressive_mode, false);
   if (cparams.custom_progressive_mode) {
     progressive_splitter->SetProgressiveMode(*cparams.custom_progressive_mode);
-  } else if (cparams.qprogressive_mode) {
+  } else if (qprogressive_mode) {
     progressive_splitter->SetProgressiveMode(
         ProgressiveMode{progressive_passes_dc_quant_ac_full_ac});
-  } else if (cparams.progressive_mode) {
+  } else if (progressive_mode) {
     progressive_splitter->SetProgressiveMode(
         ProgressiveMode{progressive_passes_dc_vlf_lf_full_ac});
   }
