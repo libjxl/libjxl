@@ -1593,6 +1593,7 @@ struct StreamingTestParam {
   size_t ysize;
   bool is_grey;
   int effort;
+  bool progressive;
 
   size_t num_channels() const { return is_grey ? 1 : 3; }
 
@@ -1602,10 +1603,11 @@ struct StreamingTestParam {
     std::vector<StreamingTestParam> params;
     for (int e : {1, 3, 4, 7}) {
       for (bool g : {false, true}) {
-        params.push_back(StreamingTestParam{357, 517, g, e});
-        params.push_back(StreamingTestParam{2247, 2357, g, e});
+        params.push_back(StreamingTestParam{357, 517, g, e, false});
+        params.push_back(StreamingTestParam{2247, 2357, g, e, false});
       }
     }
+    params.push_back(StreamingTestParam{2247, 2357, false, 1, true});
     return params;
   }
 };
@@ -1614,6 +1616,9 @@ std::ostream& operator<<(std::ostream& out, StreamingTestParam p) {
   out << (p.is_grey ? "Grey" : "RGB");
   out << p.xsize << "x" << p.ysize;
   out << "e" << p.effort;
+  if (p.progressive) {
+    out << "Progressive";
+  }
   return out;
 }
 
@@ -1632,6 +1637,9 @@ TEST_P(JxlStreamingTest, Roundtrip) {
   cparams.distance = 0.1;
   cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, p.effort);
   cparams.AddOption(JXL_ENC_FRAME_SETTING_BUFFERING, 3);
+  if (p.progressive) {
+    cparams.AddOption(JXL_ENC_FRAME_SETTING_PROGRESSIVE_AC, 1);
+  }
 
   ThreadPoolForTests pool(8);
   PackedPixelFile ppf_out;

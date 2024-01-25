@@ -1684,10 +1684,10 @@ void ComputePermutationForStreaming(size_t xsize, size_t ysize,
       size_t ac_x0 = dc_x * kBlockDim;
       size_t ac_y1 = std::min<size_t>(group_ysize, ac_y0 + kBlockDim);
       size_t ac_x1 = std::min<size_t>(group_xsize, ac_x0 + kBlockDim);
-      for (size_t ac_y = ac_y0; ac_y < ac_y1; ++ac_y) {
-        for (size_t ac_x = ac_x0; ac_x < ac_x1; ++ac_x) {
-          size_t group_ix = ac_y * group_xsize + ac_x;
-          for (size_t pass = 0; pass < num_passes; ++pass) {
+      for (size_t pass = 0; pass < num_passes; ++pass) {
+        for (size_t ac_y = ac_y0; ac_y < ac_y1; ++ac_y) {
+          for (size_t ac_x = ac_x0; ac_x < ac_x1; ++ac_x) {
+            size_t group_ix = ac_y * group_xsize + ac_x;
             size_t old_ix =
                 AcGroupIndex(pass, group_ix, num_groups, num_dc_groups);
             permutation[old_ix] = new_ix++;
