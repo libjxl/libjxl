@@ -60,7 +60,7 @@ include(GenerateExportHeader)
 
 # CMake does not allow generate_export_header for INTERFACE library, so we
 # add this stub library just for file generation.
-add_library(jxl_export OBJECT ${JPEGXL_INTERNAL_PUBLIC_HEADERS})
+add_library(jxl_export INTERFACE ${JPEGXL_INTERNAL_PUBLIC_HEADERS})
 set_target_properties(jxl_export PROPERTIES
   CXX_VISIBILITY_PRESET hidden
   VISIBILITY_INLINES_HIDDEN 1
