@@ -110,8 +110,12 @@ inline JXL_NOINLINE bool Debug(const char* format, ...) {
 // JXL_DEBUG version that prints the debug message if the global verbose level
 // defined at compile time by JXL_DEBUG_V_LEVEL is greater or equal than the
 // passed level.
+#if JXL_DEBUG_V_LEVEL > 0
 #define JXL_DEBUG_V(level, format, ...) \
   JXL_DEBUG(level <= JXL_DEBUG_V_LEVEL, format, ##__VA_ARGS__)
+#else
+#define JXL_DEBUG_V(level, format, ...)
+#endif
 
 // Warnings (via JXL_WARNING) are enabled by default in debug builds (opt and
 // debug).
