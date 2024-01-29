@@ -1378,6 +1378,22 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetBoxSizeRaw(const JxlDecoder* dec,
                                                     uint64_t* size);
 
 /**
+ * Returns the size of the contents of a box, after the @ref
+ * JXL_DEC_BOX event. This does not include any of the headers of the box. For
+ * compressed "brob" boxes, this is the size of the compressed content. Even
+ * when @ref JxlDecoderSetDecompressBoxes is enabled, the return value of
+ * function does not change, and the decompressed size is not known before it
+ * has already been decompressed and output.
+ *
+ * @param dec decoder object
+ * @param size size of the payload of the box in bytes
+ * @return @ref JXL_DEC_ERROR if no box size is available, @ref JXL_DEC_SUCCESS
+ *     otherwise.
+ */
+JXL_EXPORT JxlDecoderStatus JxlDecoderGetBoxContentsSize(const JxlDecoder* dec,
+                                                         uint64_t* size);
+
+/**
  * Configures at which progressive steps in frame decoding these @ref
  * JXL_DEC_FRAME_PROGRESSION event occurs. The default value for the level
  * of detail if this function is never called is `kDC`.

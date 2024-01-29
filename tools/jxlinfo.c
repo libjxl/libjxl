@@ -332,11 +332,15 @@ int PrintBasicInfo(FILE* file, int verbose) {
     } else if (status == JXL_DEC_BOX) {
       JxlBoxType type;
       uint64_t size;
+      uint64_t contents_size;
       JxlDecoderGetBoxType(dec, type, JXL_FALSE);
       JxlDecoderGetBoxSizeRaw(dec, &size);
+      JxlDecoderGetBoxContentsSize(dec, &contents_size);
       if (verbose) {
-        printf("box: type: \"%c%c%c%c\" size: %" PRIu64 "\n", type[0], type[1],
-               type[2], type[3], (uint64_t)size);
+        printf("box: type: \"%c%c%c%c\" size: %" PRIu64
+               ", contents size: %" PRIu64 "\n",
+               type[0], type[1], type[2], type[3], (uint64_t)size,
+               contents_size);
       }
       if (!strncmp(type, "JXL ", 4)) {
         printf("JPEG XL file format container (ISO/IEC 18181-2)\n");

@@ -2797,6 +2797,17 @@ JxlDecoderStatus JxlDecoderGetBoxSizeRaw(const JxlDecoder* dec,
   return JXL_DEC_SUCCESS;
 }
 
+JxlDecoderStatus JxlDecoderGetBoxContentsSize(const JxlDecoder* dec,
+                                              uint64_t* size) {
+  if (!dec->box_event) {
+    return JXL_API_ERROR("can only get box info after JXL_DEC_BOX event");
+  }
+  if (size) {
+    *size = dec->box_contents_size;
+  }
+  return JXL_DEC_SUCCESS;
+}
+
 JxlDecoderStatus JxlDecoderSetProgressiveDetail(JxlDecoder* dec,
                                                 JxlProgressiveDetail detail) {
   if (detail != kDC && detail != kLastPasses && detail != kPasses) {
