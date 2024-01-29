@@ -8,7 +8,6 @@
 #include <jxl/thread_parallel_runner_cxx.h>
 #include <jxl/types.h>
 
-#include <climits>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -16,19 +15,18 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <vector>
 
 #include "lib/extras/alpha_blend.h"
-#include "lib/extras/codec.h"
 #include "lib/extras/dec/decode.h"
 #include "lib/extras/dec/jxl.h"
 #include "lib/extras/enc/apng.h"
 #include "lib/extras/enc/encode.h"
 #include "lib/extras/enc/exr.h"
 #include "lib/extras/enc/jpg.h"
-#include "lib/extras/enc/pnm.h"
 #include "lib/extras/packed_image.h"
 #include "lib/extras/time.h"
 #include "lib/jxl/base/printf_macros.h"
@@ -550,6 +548,15 @@ int main(int argc, const char* argv[]) {
       accepted_formats = encoder->AcceptedFormats();
       if (args.alpha_blend) {
         AddFormatsWithAlphaChannel(&accepted_formats);
+      }
+    }
+    if (filename_out.empty()) {
+      // Decoding to pixels only, fill in float pixel formats
+      for (const uint32_t num_channels : {1, 2, 3, 4}) {
+        for (JxlEndianness endianness : {JXL_BIG_ENDIAN, JXL_LITTLE_ENDIAN}) {
+          accepted_formats.push_back(JxlPixelFormat{
+              num_channels, JXL_TYPE_FLOAT, endianness, /*align=*/0});
+        }
       }
     }
     jxl::extras::PackedPixelFile ppf;

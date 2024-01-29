@@ -3,23 +3,22 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include "lib/jxl/gauss_blur.h"
-
-#include <string.h>
+#include "tools/gauss_blur.h"
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 
 #undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "lib/jxl/gauss_blur.cc"
-#include <hwy/cache_control.h>
+#define HWY_TARGET_INCLUDE "tools/gauss_blur.cc"
+#include <hwy/aligned_allocator.h>
+#include <hwy/cache_control.h>  // Prefetch
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 
-#include "lib/jxl/base/common.h"
-#include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/base/matrix_ops.h"
-#include "lib/jxl/image_ops.h"
+#include "lib/jxl/base/common.h"             // RoundUpTo
+#include "lib/jxl/base/compiler_specific.h"  // JXL_RESTRICT
+#include "lib/jxl/base/matrix_ops.h"         // Inv3x3Matrix
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
@@ -37,7 +36,7 @@ using hwy::HWY_NAMESPACE::ShiftLeftLanes;
 using hwy::HWY_NAMESPACE::Vec;
 
 void FastGaussian1D(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
-                    const float* JXL_RESTRICT in, intptr_t width,
+                    const intptr_t xsize, const float* JXL_RESTRICT in,
                     float* JXL_RESTRICT out) {
   // Although the current output depends on the previous output, we can unroll
   // up to 4x by precomputing up to fourth powers of the constants. Beyond that,
@@ -63,16 +62,16 @@ void FastGaussian1D(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
   V prev2_3 = Zero(d);
   V prev2_5 = Zero(d);
 
-  const intptr_t N = rg->radius;
+  const intptr_t N = static_cast<intptr_t>(rg->radius);
 
   intptr_t n = -N + 1;
   // Left side with bounds checks and only write output after n >= 0.
   const intptr_t first_aligned = RoundUpTo(N + 1, Lanes(d));
-  for (; n < std::min(first_aligned, width); ++n) {
+  for (; n < std::min(first_aligned, xsize); ++n) {
     const intptr_t left = n - N - 1;
     const intptr_t right = n + N - 1;
     const float left_val = left >= 0 ? in[left] : 0.0f;
-    const float right_val = right < width ? in[right] : 0.0f;
+    const float right_val = (right < xsize) ? in[right] : 0.0f;
     const V sum = Set(d, left_val + right_val);
 
     // (Only processing a single lane here, no need to broadcast)
@@ -111,7 +110,7 @@ void FastGaussian1D(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
 #endif
 
   // Unrolled, no bounds checking needed.
-  for (; n < width - N + 1 - (JXL_GAUSS_MAX_LANES - 1); n += Lanes(d)) {
+  for (; n < xsize - N + 1 - (JXL_GAUSS_MAX_LANES - 1); n += Lanes(d)) {
     const V sum = Add(LoadU(d, in + n - N - 1), LoadU(d, in + n + N - 1));
 
     // To get a vector of output(s), we multiply broadcasted vectors (of each
@@ -170,11 +169,11 @@ void FastGaussian1D(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
   }
 
   // Remainder handling with bounds checks
-  for (; n < width; ++n) {
+  for (; n < xsize; ++n) {
     const intptr_t left = n - N - 1;
     const intptr_t right = n + N - 1;
     const float left_val = left >= 0 ? in[left] : 0.0f;
-    const float right_val = right < width ? in[right] : 0.0f;
+    const float right_val = (right < xsize) ? in[right] : 0.0f;
     const V sum = Set(d, left_val + right_val);
 
     // (Only processing a single lane here, no need to broadcast)
@@ -296,7 +295,8 @@ void VerticalBlock(const V& d1_1, const V& d1_3, const V& d1_5, const V& n2_1,
 // Reads/writes one block (kVectors full vectors) in each row.
 template <size_t kVectors>
 void VerticalStrip(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
-                   const ImageF& in, const size_t x, ImageF* JXL_RESTRICT out) {
+                   const size_t x, const size_t ysize, const GetConstRow in,
+                   const GetRow out) {
   // We're iterating vertically, so use multiple full-length vectors (each lane
   // is one column of row n).
   using D = HWY_FULL(float);
@@ -322,7 +322,6 @@ void VerticalStrip(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
 #endif
 
   const size_t N = rg->radius;
-  const size_t ysize = in.ysize();
 
   size_t ctr = 0;
   HWY_ALIGN float ring_buffer[3 * kLanes * kMod] = {0};
@@ -333,20 +332,18 @@ void VerticalStrip(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
   for (; n < 0; ++n) {
     // bottom is always non-negative since n is initialized in -N + 1.
     const size_t bottom = n + N - 1;
-    VerticalBlock<kVectors>(
-        d1_1, d1_3, d1_5, n2_1, n2_3, n2_5,
-        SingleInput(bottom < ysize ? in.ConstRow(bottom) + x : zero), ctr,
-        ring_buffer, OutputNone(), nullptr);
+    VerticalBlock<kVectors>(d1_1, d1_3, d1_5, n2_1, n2_3, n2_5,
+                            SingleInput(bottom < ysize ? in(bottom) + x : zero),
+                            ctr, ring_buffer, OutputNone(), nullptr);
   }
   JXL_DASSERT(n >= 0);
 
   // Start producing output; top is still out of bounds.
   for (; static_cast<size_t>(n) < std::min(N + 1, ysize); ++n) {
     const size_t bottom = n + N - 1;
-    VerticalBlock<kVectors>(
-        d1_1, d1_3, d1_5, n2_1, n2_3, n2_5,
-        SingleInput(bottom < ysize ? in.ConstRow(bottom) + x : zero), ctr,
-        ring_buffer, OutputStore(), out->Row(n) + x);
+    VerticalBlock<kVectors>(d1_1, d1_3, d1_5, n2_1, n2_3, n2_5,
+                            SingleInput(bottom < ysize ? in(bottom) + x : zero),
+                            ctr, ring_buffer, OutputStore(), out(n) + x);
   }
 
   // Interior outputs with prefetching and without bounds checks.
@@ -354,12 +351,11 @@ void VerticalStrip(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
   for (; n < static_cast<ssize_t>(ysize - N + 1 - kPrefetchRows); ++n) {
     const size_t top = n - N - 1;
     const size_t bottom = n + N - 1;
-    VerticalBlock<kVectors>(
-        d1_1, d1_3, d1_5, n2_1, n2_3, n2_5,
-        TwoInputs(in.ConstRow(top) + x, in.ConstRow(bottom) + x), ctr,
-        ring_buffer, OutputStore(), out->Row(n) + x);
-    hwy::Prefetch(in.ConstRow(top + kPrefetchRows) + x);
-    hwy::Prefetch(in.ConstRow(bottom + kPrefetchRows) + x);
+    VerticalBlock<kVectors>(d1_1, d1_3, d1_5, n2_1, n2_3, n2_5,
+                            TwoInputs(in(top) + x, in(bottom) + x), ctr,
+                            ring_buffer, OutputStore(), out(n) + x);
+    hwy::Prefetch(in(top + kPrefetchRows) + x);
+    hwy::Prefetch(in(bottom + kPrefetchRows) + x);
   }
 
   // Bottom border without prefetching and with bounds checks.
@@ -368,19 +364,17 @@ void VerticalStrip(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
     const size_t bottom = n + N - 1;
     VerticalBlock<kVectors>(
         d1_1, d1_3, d1_5, n2_1, n2_3, n2_5,
-        TwoInputs(in.ConstRow(top) + x,
-                  bottom < ysize ? in.ConstRow(bottom) + x : zero),
-        ctr, ring_buffer, OutputStore(), out->Row(n) + x);
+        TwoInputs(in(top) + x, bottom < ysize ? in(bottom) + x : zero), ctr,
+        ring_buffer, OutputStore(), out(n) + x);
   }
 }
 
 // Apply 1D vertical scan to multiple columns (one per vector lane).
 // Not yet parallelized.
 void FastGaussianVertical(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
-                          const ImageF& in, ThreadPool* /*pool*/,
-                          ImageF* JXL_RESTRICT out) {
-  JXL_CHECK(SameSize(in, *out));
-
+                          const size_t xsize, const size_t ysize,
+                          const GetConstRow in, const GetRow out,
+                          ThreadPool* /* pool */) {
   const HWY_FULL(float) df;
   constexpr size_t kCacheLineLanes = 64 / sizeof(float);
   constexpr size_t kVN = MaxLanes(df);
@@ -388,61 +382,14 @@ void FastGaussianVertical(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
       (kVN < kCacheLineLanes) ? (kCacheLineLanes / kVN) : 4;
   constexpr size_t kFastPace = kCacheLineVectors * kVN;
 
+  // TODO(eustas): why pool is unused?
   size_t x = 0;
-  for (; x + kFastPace <= in.xsize(); x += kFastPace) {
-    VerticalStrip<kCacheLineVectors>(rg, in, x, out);
+  for (; x + kFastPace <= xsize; x += kFastPace) {
+    VerticalStrip<kCacheLineVectors>(rg, x, ysize, in, out);
   }
-  for (; x < in.xsize(); x += kVN) {
-    VerticalStrip<1>(rg, in, x, out);
+  for (; x < xsize; x += kVN) {
+    VerticalStrip<1>(rg, x, ysize, in, out);
   }
-}
-
-// TODO(veluca): consider replacing with FastGaussian.
-ImageF ConvolveXSampleAndTranspose(const ImageF& in,
-                                   const std::vector<float>& kernel,
-                                   const size_t res) {
-  JXL_ASSERT(kernel.size() % 2 == 1);
-  JXL_ASSERT(in.xsize() % res == 0);
-  const size_t offset = res / 2;
-  const size_t out_xsize = in.xsize() / res;
-  ImageF out(in.ysize(), out_xsize);
-  const int r = kernel.size() / 2;
-  HWY_FULL(float) df;
-  std::vector<float> row_tmp(in.xsize() + 2 * r + Lanes(df));
-  float* const JXL_RESTRICT rowp = &row_tmp[r];
-  std::vector<float> padded_k = kernel;
-  padded_k.resize(padded_k.size() + Lanes(df));
-  const float* const kernelp = &padded_k[r];
-  for (size_t y = 0; y < in.ysize(); ++y) {
-    ExtrapolateBorders(in.Row(y), rowp, in.xsize(), r);
-    size_t x = offset, ox = 0;
-    for (; x < static_cast<uint32_t>(r) && x < in.xsize(); x += res, ++ox) {
-      float sum = 0.0f;
-      for (int i = -r; i <= r; ++i) {
-        sum += rowp[std::max<int>(
-                   0, std::min<int>(static_cast<int>(x) + i, in.xsize()))] *
-               kernelp[i];
-      }
-      out.Row(ox)[y] = sum;
-    }
-    for (; x + r < in.xsize(); x += res, ++ox) {
-      auto sum = Zero(df);
-      for (int i = -r; i <= r; i += Lanes(df)) {
-        sum = MulAdd(LoadU(df, rowp + x + i), LoadU(df, kernelp + i), sum);
-      }
-      out.Row(ox)[y] = GetLane(SumOfLanes(df, sum));
-    }
-    for (; x < in.xsize(); x += res, ++ox) {
-      float sum = 0.0f;
-      for (int i = -r; i <= r; ++i) {
-        sum += rowp[std::max<int>(
-                   0, std::min<int>(static_cast<int>(x) + i, in.xsize()))] *
-               kernelp[i];
-      }
-      out.Row(ox)[y] = sum;
-    }
-  }
-  return out;
 }
 
 // NOLINTNEXTLINE(google-readability-namespace-comments)
@@ -454,47 +401,14 @@ HWY_AFTER_NAMESPACE();
 namespace jxl {
 
 HWY_EXPORT(FastGaussian1D);
-HWY_EXPORT(ConvolveXSampleAndTranspose);
 void FastGaussian1D(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
-                    const float* JXL_RESTRICT in, intptr_t width,
+                    const size_t xsize, const float* JXL_RESTRICT in,
                     float* JXL_RESTRICT out) {
-  return HWY_DYNAMIC_DISPATCH(FastGaussian1D)(rg, in, width, out);
+  return HWY_DYNAMIC_DISPATCH(FastGaussian1D)(rg, static_cast<intptr_t>(xsize),
+                                              in, out);
 }
 
 HWY_EXPORT(FastGaussianVertical);  // Local function.
-
-void ExtrapolateBorders(const float* const JXL_RESTRICT row_in,
-                        float* const JXL_RESTRICT row_out, const int xsize,
-                        const int radius) {
-  const int lastcol = xsize - 1;
-  for (int x = 1; x <= radius; ++x) {
-    row_out[-x] = row_in[std::min(x, xsize - 1)];
-  }
-  memcpy(row_out, row_in, xsize * sizeof(row_out[0]));
-  for (int x = 1; x <= radius; ++x) {
-    row_out[lastcol + x] = row_in[std::max(0, lastcol - x)];
-  }
-}
-
-ImageF ConvolveXSampleAndTranspose(const ImageF& in,
-                                   const std::vector<float>& kernel,
-                                   const size_t res) {
-  return HWY_DYNAMIC_DISPATCH(ConvolveXSampleAndTranspose)(in, kernel, res);
-}
-
-Image3F ConvolveXSampleAndTranspose(const Image3F& in,
-                                    const std::vector<float>& kernel,
-                                    const size_t res) {
-  return Image3F(ConvolveXSampleAndTranspose(in.Plane(0), kernel, res),
-                 ConvolveXSampleAndTranspose(in.Plane(1), kernel, res),
-                 ConvolveXSampleAndTranspose(in.Plane(2), kernel, res));
-}
-
-ImageF ConvolveAndSample(const ImageF& in, const std::vector<float>& kernel,
-                         const size_t res) {
-  ImageF tmp = ConvolveXSampleAndTranspose(in, kernel, res);
-  return ConvolveXSampleAndTranspose(tmp, kernel, res);
-}
 
 // Implements "Recursive Implementation of the Gaussian Filter Using Truncated
 // Cosine Functions" by Charalampidis [2016].
@@ -594,29 +508,27 @@ namespace {
 
 // Apply 1D horizontal scan to each row.
 void FastGaussianHorizontal(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
-                            const ImageF& in, ThreadPool* pool,
-                            ImageF* JXL_RESTRICT out) {
-  JXL_CHECK(SameSize(in, *out));
+                            const size_t xsize, const size_t ysize,
+                            const GetConstRow in, const GetRow out,
+                            ThreadPool* pool) {
+  const auto process_line = [&](const uint32_t task, size_t /*thread*/) {
+    const size_t y = task;
+    FastGaussian1D(rg, static_cast<intptr_t>(xsize), in(y), out(y));
+  };
 
-  const intptr_t xsize = in.xsize();
-  JXL_CHECK(RunOnPool(
-      pool, 0, in.ysize(), ThreadPool::NoInit,
-      [&](const uint32_t task, size_t /*thread*/) {
-        const size_t y = task;
-        const float* row_in = in.ConstRow(y);
-        float* JXL_RESTRICT row_out = out->Row(y);
-        FastGaussian1D(rg, row_in, xsize, row_out);
-      },
-      "FastGaussianHorizontal"));
+  JXL_CHECK(RunOnPool(pool, 0, ysize, ThreadPool::NoInit, process_line,
+                      "FastGaussianHorizontal"));
 }
 
 }  // namespace
 
 void FastGaussian(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
-                  const ImageF& in, ThreadPool* pool, ImageF* JXL_RESTRICT temp,
-                  ImageF* JXL_RESTRICT out) {
-  FastGaussianHorizontal(rg, in, pool, temp);
-  HWY_DYNAMIC_DISPATCH(FastGaussianVertical)(rg, *temp, pool, out);
+                  const size_t xsize, const size_t ysize, const GetConstRow in,
+                  const GetRow temp, const GetRow out, ThreadPool* pool) {
+  FastGaussianHorizontal(rg, xsize, ysize, in, temp, pool);
+  GetConstRow temp_in = [&](size_t y) { return temp(y); };
+  HWY_DYNAMIC_DISPATCH(FastGaussianVertical)
+  (rg, xsize, ysize, temp_in, out, pool);
 }
 
 }  // namespace jxl

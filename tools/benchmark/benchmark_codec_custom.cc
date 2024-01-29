@@ -5,6 +5,22 @@
 
 #include "tools/benchmark/benchmark_codec_custom.h"
 
+#include <jxl/types.h>
+#include <stdio.h>
+
+#include <cstdint>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "lib/extras/dec/color_hints.h"
+#include "lib/extras/packed_image_convert.h"
+#include "lib/jxl/base/span.h"
+#include "lib/jxl/base/status.h"
+#include "tools/benchmark/benchmark_args.h"
+#include "tools/benchmark/benchmark_codec.h"
+#include "tools/speed_stats.h"
+
 // Not supported on Windows due to Linux-specific functions.
 #ifndef _WIN32
 
@@ -13,10 +29,7 @@
 #include <fstream>
 
 #include "lib/extras/codec.h"
-#include "lib/extras/dec/color_description.h"
-#include "lib/extras/enc/apng.h"
 #include "lib/extras/time.h"
-#include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/image_bundle.h"
 #include "tools/benchmark/benchmark_utils.h"
 #include "tools/file_io.h"
@@ -116,7 +129,7 @@ class CustomCodec : public ImageCodec {
     return true;
   }
 
-  Status Compress(const std::string& filename, const CodecInOut* io,
+  Status Compress(const std::string& filename, const PackedPixelFile& ppf,
                   ThreadPool* pool, std::vector<uint8_t>* compressed,
                   jpegxl::tools::SpeedStats* speed_stats) override {
     JXL_RETURN_IF_ERROR(param_index_ > 2);
@@ -127,18 +140,9 @@ class CustomCodec : public ImageCodec {
     std::string in_filename, encoded_filename;
     JXL_RETURN_IF_ERROR(in_file.GetFileName(&in_filename));
     JXL_RETURN_IF_ERROR(encoded_file.GetFileName(&encoded_filename));
-    saved_intensity_target_ = io->metadata.m.IntensityTarget();
-
-    const size_t bits = io->metadata.m.bit_depth.bits_per_sample;
-    ColorEncoding c_enc = io->Main().c_current();
-    if (!custom_args->colorspace.empty()) {
-      JxlColorEncoding colorspace;
-      JXL_RETURN_IF_ERROR(
-          jxl::ParseDescription(custom_args->colorspace, &colorspace));
-      JXL_RETURN_IF_ERROR(c_enc.FromExternal(colorspace));
-    }
+    // TODO(szabadka) Support custom_args->colorspace again.
     std::vector<uint8_t> encoded;
-    JXL_RETURN_IF_ERROR(Encode(*io, c_enc, bits, in_filename, &encoded, pool));
+    JXL_RETURN_IF_ERROR(Encode(ppf, in_filename, &encoded, pool));
     JXL_RETURN_IF_ERROR(WriteFile(in_filename, encoded));
     std::vector<std::string> arguments = compress_args_;
     arguments.push_back(in_filename);
@@ -153,8 +157,19 @@ class CustomCodec : public ImageCodec {
 
   Status Decompress(const std::string& filename,
                     const Span<const uint8_t> compressed, ThreadPool* pool,
-                    CodecInOut* io,
+                    PackedPixelFile* ppf,
                     jpegxl::tools::SpeedStats* speed_stats) override {
+    CodecInOut io;
+    JXL_RETURN_IF_ERROR(
+        Decompress(filename, compressed, pool, &io, speed_stats));
+    JxlPixelFormat format{0, JXL_TYPE_UINT16, JXL_NATIVE_ENDIAN, 0};
+    return jxl::extras::ConvertCodecInOutToPackedPixelFile(
+        io, format, io.Main().c_current(), pool, ppf);
+  };
+
+  Status Decompress(const std::string& filename,
+                    const Span<const uint8_t> compressed, ThreadPool* pool,
+                    CodecInOut* io, jpegxl::tools::SpeedStats* speed_stats) {
     const std::string basename = GetBaseName(filename);
     TemporaryFile encoded_file(basename, extension_);
     TemporaryFile out_file(basename, custom_args->extension);

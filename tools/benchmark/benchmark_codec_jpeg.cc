@@ -7,11 +7,23 @@
 #include <stddef.h>
 #include <stdio.h>
 // After stddef/stdio
+#include <jxl/types.h>
 #include <stdint.h>
 #include <string.h>
 
-#include <numeric>  // partial_sum
+#include <cmath>
+#include <cstdlib>
+#include <memory>
+#include <sstream>
 #include <string>
+#include <vector>
+
+#include "lib/extras/codec.h"
+#include "lib/extras/enc/encode.h"
+#include "lib/jxl/base/status.h"
+#include "tools/benchmark/benchmark_args.h"
+#include "tools/benchmark/benchmark_codec.h"
+#include "tools/speed_stats.h"
 
 #if JPEGXL_ENABLE_JPEGLI
 #include "lib/extras/dec/jpegli.h"
@@ -22,13 +34,9 @@
 #endif
 #include "lib/extras/enc/jpg.h"
 #include "lib/extras/packed_image.h"
-#include "lib/extras/packed_image_convert.h"
 #include "lib/extras/time.h"
 #include "lib/jxl/base/span.h"
-#include "lib/jxl/codec_in_out.h"
-#include "lib/jxl/image_bundle.h"
 #include "tools/benchmark/benchmark_utils.h"
-#include "tools/cmdline.h"
 #include "tools/file_io.h"
 #include "tools/thread_pool_internal.h"
 
@@ -163,7 +171,7 @@ class JPEGCodec : public ImageCodec {
 
   bool IgnoreAlpha() const override { return true; }
 
-  Status Compress(const std::string& filename, const CodecInOut* io,
+  Status Compress(const std::string& filename, const PackedPixelFile& ppf,
                   ThreadPool* pool, std::vector<uint8_t>* compressed,
                   jpegxl::tools::SpeedStats* speed_stats) override {
     if (jpeg_encoder_.find("cjpeg") != std::string::npos) {
@@ -177,11 +185,8 @@ class JPEGCodec : public ImageCodec {
       std::string in_filename, encoded_filename;
       JXL_RETURN_IF_ERROR(in_file.GetFileName(&in_filename));
       JXL_RETURN_IF_ERROR(encoded_file.GetFileName(&encoded_filename));
-      const size_t bits = io->metadata.m.bit_depth.bits_per_sample;
-      ColorEncoding c_enc = io->Main().c_current();
       std::vector<uint8_t> encoded;
-      JXL_RETURN_IF_ERROR(
-          Encode(*io, c_enc, bits, in_filename, &encoded, pool));
+      JXL_RETURN_IF_ERROR(Encode(ppf, in_filename, &encoded, pool));
       JXL_RETURN_IF_ERROR(WriteFile(in_filename, encoded));
       std::string compress_command = jpeg_encoder_;
       std::vector<std::string> arguments;
@@ -209,14 +214,6 @@ class JPEGCodec : public ImageCodec {
 #endif
     }
 
-    jxl::extras::PackedPixelFile ppf;
-    size_t bits_per_sample = io->metadata.m.bit_depth.bits_per_sample;
-    JxlPixelFormat format = {
-        0,  // num_channels is ignored by the converter
-        bits_per_sample <= 8 ? JXL_TYPE_UINT8 : JXL_TYPE_UINT16, JXL_BIG_ENDIAN,
-        0};
-    JXL_RETURN_IF_ERROR(ConvertCodecInOutToPackedPixelFile(
-        *io, format, io->metadata.m.color_encoding, pool, &ppf));
     double elapsed = 0.0;
     if (jpeg_encoder_ == "jpegli") {
 #if JPEGXL_ENABLE_JPEGLI
@@ -312,9 +309,8 @@ class JPEGCodec : public ImageCodec {
 
   Status Decompress(const std::string& filename,
                     const Span<const uint8_t> compressed, ThreadPool* pool,
-                    CodecInOut* io,
+                    jxl::extras::PackedPixelFile* ppf,
                     jpegxl::tools::SpeedStats* speed_stats) override {
-    jxl::extras::PackedPixelFile ppf;
     if (jpeg_decoder_ == "jpegli") {
 #if JPEGXL_ENABLE_JPEGLI
       std::vector<uint8_t> jpeg_bytes(compressed.data(),
@@ -325,7 +321,7 @@ class JPEGCodec : public ImageCodec {
           bitdepth_ > 8 ? JXL_TYPE_UINT16 : JXL_TYPE_UINT8;
       dparams.num_colors = num_colors_;
       JXL_RETURN_IF_ERROR(
-          jxl::extras::DecodeJpeg(jpeg_bytes, dparams, pool, &ppf));
+          jxl::extras::DecodeJpeg(jpeg_bytes, dparams, pool, ppf));
       const double end = jxl::Now();
       speed_stats->NotifyElapsed(end - start);
 #endif
@@ -335,12 +331,10 @@ class JPEGCodec : public ImageCodec {
       dparams.num_colors = num_colors_;
       JXL_RETURN_IF_ERROR(
           jxl::extras::DecodeImageJPG(compressed, jxl::extras::ColorHints(),
-                                      &ppf, /*constraints=*/nullptr, &dparams));
+                                      ppf, /*constraints=*/nullptr, &dparams));
       const double end = jxl::Now();
       speed_stats->NotifyElapsed(end - start);
     }
-    JXL_RETURN_IF_ERROR(
-        jxl::extras::ConvertPackedPixelFileToCodecInOut(ppf, pool, io));
     return true;
   }
 

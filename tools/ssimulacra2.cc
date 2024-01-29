@@ -27,12 +27,18 @@ Design:
 #include <jxl/cms.h>
 #include <stdio.h>
 
+#include <algorithm>
 #include <cmath>
+#include <hwy/aligned_allocator.h>
 
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/printf_macros.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/enc_xyb.h"
-#include "lib/jxl/gauss_blur.h"
-#include "lib/jxl/image_ops.h"
+#include "lib/jxl/image.h"
+#include "lib/jxl/image_bundle.h"
+#include "tools/gauss_blur.h"
 
 namespace {
 
@@ -86,8 +92,10 @@ class Blur {
       : rg_(jxl::CreateRecursiveGaussian(1.5)), temp_(xsize, ysize) {}
 
   void operator()(const ImageF& in, ImageF* JXL_RESTRICT out) {
-    jxl::ThreadPool* null_pool = nullptr;
-    FastGaussian(rg_, in, null_pool, &temp_, out);
+    FastGaussian(
+        rg_, in.xsize(), in.ysize(), [&](size_t y) { return in.ConstRow(y); },
+        [&](size_t y) { return temp_.Row(y); },
+        [&](size_t y) { return out->Row(y); });
   }
 
   Image3F operator()(const Image3F& in) {
@@ -108,7 +116,7 @@ class Blur {
   ImageF temp_;
 };
 
-double tothe4th(double x) {
+double quartic(double x) {
   x *= x;
   x *= x;
   return x;
@@ -152,7 +160,7 @@ void SSIMMap(const Image3F& m1, const Image3F& m2, const Image3F& s11,
         double d = 1.0 - (num_m * num_s / denom_s);
         d = std::max(d, 0.0);
         sum1[0] += d;
-        sum1[1] += tothe4th(d);
+        sum1[1] += quartic(d);
       }
     }
     plane_averages[c * 2] = onePerPixels * sum1[0];
@@ -179,13 +187,13 @@ void EdgeDiffMap(const Image3F& img1, const Image3F& mu1, const Image3F& img2,
         //         (indicating ringing, color banding, blockiness, etc)
         double artifact = std::max(d1, 0.0);
         sum1[0] += artifact;
-        sum1[1] += tothe4th(artifact);
+        sum1[1] += quartic(artifact);
 
         // d1 < 0: original has an edge where distorted is smooth
         //         (indicating smoothing, blurring, smearing, etc)
         double detail_lost = std::max(-d1, 0.0);
         sum1[2] += detail_lost;
-        sum1[3] += tothe4th(detail_lost);
+        sum1[3] += quartic(detail_lost);
       }
     }
     plane_averages[c * 4] = onePerPixels * sum1[0];

@@ -277,7 +277,14 @@ instructions:
 
  * Finally click "Publish release" and go celebrate with the team. 🎉
 
- * Make sure to manually push the commit of the release also to https://gitlab.com/wg1/jpeg-xl.
+ * The branch v0.7.x will be pushed to gitlab automatically, but make sure to
+   manually push the *tag* of the release also to
+   https://gitlab.com/wg1/jpeg-xl, by doing
+
+```bash
+git push gitlab v0.7.1
+```
+where `gitlab` is the remote `git@gitlab.com:wg1/jpeg-xl.git`. 
 
 ### How to build downstream projects
 
@@ -302,7 +309,7 @@ git clone --recurse-submodules --depth 1 \
 cd /src/libjxl
 cmake -B build -G Ninja .
 cmake --build build -j`nproc`
-cmake --install build --prefix="/"
+cmake --install build --prefix="/usr"
 
 cd /src/ImageMagick
 ./configure --with-jxl=yes

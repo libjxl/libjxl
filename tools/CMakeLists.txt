@@ -121,6 +121,14 @@ else()
     COMPILE_DEFINITIONS JPEGXL_VERSION=\"${JPEGXL_VERSION}\")
 endif()
 
+add_library(jxl_gauss_blur STATIC #EXCLUDE_FROM_ALL
+  gauss_blur.cc
+)
+target_compile_options(jxl_gauss_blur PUBLIC "${JPEGXL_INTERNAL_FLAGS}")
+target_include_directories(jxl_gauss_blur PUBLIC "${PROJECT_SOURCE_DIR}")
+target_link_libraries(jxl_gauss_blur PUBLIC jxl)
+target_link_libraries(jxl_gauss_blur PUBLIC hwy)
+
 if(JPEGXL_ENABLE_TOOLS)
   # Main compressor.
   add_executable(cjxl cjxl_main.cc)
@@ -183,7 +191,11 @@ if(JPEGXL_ENABLE_DEVTOOLS)
   )
 
   add_executable(ssimulacra_main ssimulacra_main.cc ssimulacra.cc)
+  target_link_libraries(ssimulacra_main jxl_gauss_blur)
+
   add_executable(ssimulacra2 ssimulacra2_main.cc ssimulacra2.cc)
+  target_link_libraries(ssimulacra2 jxl_gauss_blur)
+
   add_executable(butteraugli_main butteraugli_main.cc)
   add_executable(decode_and_encode decode_and_encode.cc)
   add_executable(display_to_hlg hdr/display_to_hlg.cc)
@@ -200,8 +212,8 @@ if(JPEGXL_ENABLE_DEVTOOLS)
   list(APPEND FUZZER_CORPUS_BINARIES djxl_fuzzer_corpus)
   add_executable(djxl_fuzzer_corpus djxl_fuzzer_corpus.cc)
   target_link_libraries(djxl_fuzzer_corpus
-    jxl_extras-internal
     jxl_testlib-internal
+    jxl_extras-internal
     jxl_tool
   )
   if(JPEGXL_ENABLE_JPEGLI)
@@ -239,6 +251,7 @@ if(JPEGXL_ENABLE_BENCHMARK AND JPEGXL_ENABLE_TOOLS)
     ../third_party/dirent.cc
   )
   target_link_libraries(benchmark_xl Threads::Threads)
+  target_link_libraries(benchmark_xl jxl_gauss_blur) # for ssimulacra
   if(MINGW)
   # MINGW doesn't support glob.h.
   target_compile_definitions(benchmark_xl PRIVATE "-DHAS_GLOB=0")
@@ -310,9 +323,13 @@ foreach(BINARY IN LISTS TOOL_BINARIES)
     set(JXL_WASM_TOOLS_LINK_FLAGS "\
       -s USE_LIBPNG=1 \
       -s ALLOW_MEMORY_GROWTH=1 \
-      -s USE_PTHREADS=1 \
-      -s PTHREAD_POOL_SIZE=16 \
     ")
+    if (JPEGXL_ENABLE_WASM_TRHEADS)
+      set(JXL_WASM_TOOLS_LINK_FLAGS "${JXL_WASM_TOOLS_LINK_FLAGS} \
+        -s USE_PTHREADS=1 \
+        -s PTHREAD_POOL_SIZE=16 \
+      ")
+    endif()
     set_target_properties(${BINARY} PROPERTIES LINK_FLAGS "${JXL_WASM_TOOLS_LINK_FLAGS}")
   endif()
 endforeach()
@@ -327,6 +344,7 @@ if(JPEGXL_ENABLE_TOOLS)
     color_encoding_fuzzer
     decode_basic_info_fuzzer
     cjxl_fuzzer
+    streaming_fuzzer
     icc_codec_fuzzer
     fields_fuzzer
     rans_fuzzer
@@ -361,8 +379,8 @@ foreach(FUZZER IN LISTS FUZZER_BINARIES)
     target_link_libraries("${BINARY}" jpegli-static)
   else()
     target_link_libraries("${BINARY}"
-      jxl_extras_nocodec-internal
       jxl_testlib-internal
+      jxl_extras_nocodec-internal
       jxl_tool
     )
   endif()

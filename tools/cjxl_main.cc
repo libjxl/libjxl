@@ -13,14 +13,12 @@
 
 #include <jxl/codestream_header.h>
 #include <jxl/encode.h>
-#include <jxl/encode_cxx.h>
 #include <jxl/thread_parallel_runner.h>
 #include <jxl/thread_parallel_runner_cxx.h>
 #include <jxl/types.h>
 
 #include <algorithm>
 #include <cerrno>
-#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -28,18 +26,15 @@
 #include <functional>
 #include <iostream>
 #include <memory>
-#include <sstream>
 #include <string>
-#include <thread>
-#include <type_traits>
 #include <utility>
 #include <vector>
 
-#include "lib/extras/dec/apng.h"
 #include "lib/extras/dec/color_hints.h"
 #include "lib/extras/dec/decode.h"
 #include "lib/extras/dec/pnm.h"
 #include "lib/extras/enc/jxl.h"
+#include "lib/extras/packed_image.h"
 #include "lib/extras/time.h"
 #include "lib/jxl/base/c_callback_support.h"
 #include "lib/jxl/base/common.h"
@@ -932,7 +927,7 @@ void ProcessFlags(const jxl::extras::Codec codec,
   (void)args->color_hints_proxy.target.Foreach(
       [&params](const std::string& key,
                 const std::string& value) -> jxl::Status {
-        if (value == "") {
+        if (value.empty()) {
           if (key == "exif") params->jpeg_strip_exif = true;
           if (key == "xmp") params->jpeg_strip_xmp = true;
           if (key == "jumbf") params->jpeg_strip_jumbf = true;
@@ -1138,7 +1133,7 @@ int main(int argc, char** argv) {
   params.runner = JxlThreadParallelRunner;
   params.runner_opaque = runner.get();
 
-  if (args.streaming_input && args.streaming_output) {
+  if (args.effort <= 6 || (args.streaming_input && args.streaming_output)) {
     params.options.emplace_back(jxl::extras::JXLOption(
         JXL_ENC_FRAME_SETTING_BUFFERING, static_cast<int64_t>(3), 0));
   }

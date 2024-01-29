@@ -12,6 +12,8 @@
 #include <string>
 #include <vector>
 
+#include "lib/extras/packed_image.h"
+#include "lib/extras/packed_image_convert.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
@@ -30,6 +32,7 @@ namespace tools {
 
 using ::jxl::CodecInOut;
 using ::jxl::Span;
+using ::jxl::extras::PackedPixelFile;
 
 // Thread-compatible.
 class ImageCodec {
@@ -49,13 +52,14 @@ class ImageCodec {
 
   virtual Status ParseParam(const std::string& param);
 
-  virtual Status Compress(const std::string& filename, const CodecInOut* io,
-                          ThreadPool* pool, std::vector<uint8_t>* compressed,
+  virtual Status Compress(const std::string& filename,
+                          const PackedPixelFile& ppf, ThreadPool* pool,
+                          std::vector<uint8_t>* compressed,
                           jpegxl::tools::SpeedStats* speed_stats) = 0;
 
   virtual Status Decompress(const std::string& filename,
                             const Span<const uint8_t> compressed,
-                            ThreadPool* pool, CodecInOut* io,
+                            ThreadPool* pool, PackedPixelFile* ppf,
                             jpegxl::tools::SpeedStats* speed_stats) = 0;
 
   virtual void GetMoreStats(BenchmarkStats* stats) {}
