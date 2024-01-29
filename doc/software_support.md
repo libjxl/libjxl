@@ -33,6 +33,12 @@ For all browsers and to track browsers progress see [Can I Use](https://caniuse.
 - [GraphicsMagick](http://www.graphicsmagick.org/NEWS.html#march-26-2022): supported since 1.3.38
 - [SAIL](https://sail.software): supported since 0.9.0
 
+## Metadata manipulation libraries
+
+- [ExifTool by Phil Harvey](https://exiftool.org/): supported since 12.25
+- [Exiv2](https://exiv2.org): supported since 0.27.4
+- [Ashampoo Kim](https://github.com/ashampoo/kim): supported since 0.10
+
 ## OS-level support / UI frameworks / file browser plugins
 
 - Qt / KDE: [plugin available](https://github.com/novomesk/qt-jpegxl-image-plugin)
@@ -81,3 +87,4 @@ For all browsers and to track browsers progress see [Can I Use](https://caniuse.
 - [Cloudinary](https://cloudinary.com/blog/cloudinary_supports_jpeg_xl)
 - [MConverter](https://mconverter.eu/)
 - [jpegxl.io](https://jpegxl.io/)
+- [EXIF Viewer](https://stefan-oltmann.de/exif-viewer)
