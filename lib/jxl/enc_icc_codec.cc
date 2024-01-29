@@ -94,6 +94,8 @@ static inline void EncodeVarInt(uint64_t value, PaddedBytes* data) {
   data->resize(pos);
 }
 
+constexpr size_t kSizeLimit = std::numeric_limits<uint32_t>::max() >> 2;
+
 }  // namespace
 
 // Outputs a transformed form of the given icc profile. The result itself is
@@ -105,7 +107,6 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
   PaddedBytes data;
 
   static_assert(sizeof(size_t) >= 4, "size_t is too short");
-  constexpr size_t kSizeLimit = std::numeric_limits<uint32_t>::max() >> 2;
   // Fuzzer expects that PredictICC can accept any input,
   // but 1GB should be enough for any purpose.
   if (size > kSizeLimit) {
