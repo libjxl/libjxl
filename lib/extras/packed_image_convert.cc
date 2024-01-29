@@ -113,7 +113,7 @@ Status ConvertPackedPixelFileToCodecInOut(const PackedPixelFile& ppf,
   io->metadata.m.animation.num_loops = ppf.info.animation.num_loops;
 
   // Convert the color encoding.
-  if (!ppf.icc.empty()) {
+  if (ppf.primary_color_representation == PackedPixelFile::kIccIsPrimary) {
     IccBytes icc = ppf.icc;
     if (!io->metadata.m.color_encoding.SetICC(std::move(icc),
                                               JxlGetDefaultCms())) {
@@ -274,6 +274,9 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
 
   // Convert the color encoding
   ppf->icc.assign(c_desired.ICC().begin(), c_desired.ICC().end());
+  ppf->primary_color_representation =
+      c_desired.WantICC() ? PackedPixelFile::kIccIsPrimary
+                          : PackedPixelFile::kColorEncodingIsPrimary;
   ppf->color_encoding = c_desired.ToExternal();
 
   // Convert the extra blobs

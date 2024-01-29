@@ -258,7 +258,7 @@ bool EncodeImageJXL(const JXLCompressParams& params, const PackedPixelFile& ppf,
       fprintf(stderr, "JxlEncoderSetFrameLossless() failed.\n");
       return false;
     }
-    if (!ppf.icc.empty()) {
+    if (ppf.primary_color_representation == PackedPixelFile::kIccIsPrimary) {
       if (JXL_ENC_SUCCESS !=
           JxlEncoderSetICCProfile(enc, ppf.icc.data(), ppf.icc.size())) {
         fprintf(stderr, "JxlEncoderSetICCProfile() failed.\n");
