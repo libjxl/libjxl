@@ -404,14 +404,6 @@ class Image3 {
     }
   }
 
-  Image3(PlaneT&& plane0, PlaneT&& plane1, PlaneT&& plane2) {
-    JXL_CHECK(SameSize(plane0, plane1));
-    JXL_CHECK(SameSize(plane0, plane2));
-    planes_[0] = std::move(plane0);
-    planes_[1] = std::move(plane1);
-    planes_[2] = std::move(plane2);
-  }
-
   // Copy construction/assignment is forbidden to avoid inadvertent copies,
   // which can be very expensive. Use CopyImageTo instead.
   Image3(const Image3& other) = delete;
