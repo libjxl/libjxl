@@ -105,9 +105,9 @@ int PrintBasicInfo(FILE* file, int verbose) {
         }
         if (extra.type == JXL_CHANNEL_BLACK) cmyk = 1;
       }
-      if (info.num_color_channels == 1)
+      if (info.num_color_channels == 1) {
         printf("Grayscale");
-      else {
+      } else {
         if (cmyk) {
           printf("CMY");
         } else {
@@ -160,11 +160,12 @@ int PrintBasicInfo(FILE* file, int verbose) {
             printf("  name: %s\n", name);
             free(name);
           }
-          if (extra.type == JXL_CHANNEL_ALPHA)
+          if (extra.type == JXL_CHANNEL_ALPHA) {
             printf("  alpha_premultiplied: %d (%s)\n",
                    extra.alpha_premultiplied,
                    extra.alpha_premultiplied ? "Premultiplied"
                                              : "Non-premultiplied");
+          }
           if (extra.type == JXL_CHANNEL_SPOT_COLOR) {
             printf("  spot_color: (%f, %f, %f) with opacity %f\n",
                    extra.spot_color[0], extra.spot_color[1],
@@ -336,7 +337,7 @@ int PrintBasicInfo(FILE* file, int verbose) {
       JxlDecoderGetBoxSizeRaw(dec, &size);
       if (verbose) {
         printf("box: type: \"%c%c%c%c\" size: %" PRIu64 "\n", type[0], type[1],
-               type[2], type[3], (uint64_t)size);
+               type[2], type[3], size);
       }
       if (!strncmp(type, "JXL ", 4)) {
         printf("JPEG XL file format container (ISO/IEC 18181-2)\n");
@@ -351,16 +352,16 @@ int PrintBasicInfo(FILE* file, int verbose) {
       } else if (!strncmp(type, "jumb", 4) || !strncmp(type, "Exif", 4) ||
                  !strncmp(type, "xml ", 4)) {
         printf("Uncompressed %c%c%c%c metadata: %" PRIu64 " bytes\n", type[0],
-               type[1], type[2], type[3], (uint64_t)size);
+               type[1], type[2], type[3], size);
 
       } else if (!strncmp(type, "brob", 4)) {
         JxlDecoderGetBoxType(dec, type, JXL_TRUE);
         printf("Brotli-compressed %c%c%c%c metadata: %" PRIu64
                " compressed bytes\n",
-               type[0], type[1], type[2], type[3], (uint64_t)size);
+               type[0], type[1], type[2], type[3], size);
       } else {
         printf("unknown box: type: \"%c%c%c%c\" size: %" PRIu64 "\n", type[0],
-               type[1], type[2], type[3], (uint64_t)size);
+               type[1], type[2], type[3], size);
       }
     } else {
       fprintf(stderr, "Unexpected decoder status\n");
@@ -413,7 +414,8 @@ int is_flag(const char* arg, const char* const* opts) {
 }
 
 int main(int argc, char* argv[]) {
-  int verbose = 0, status = 0;
+  int verbose = 0;
+  int status = 0;
   const char* const name = argv[0];
   const char* const* help_opts =
       (const char* const[]){"--help", "-h", "-?", NULL};
