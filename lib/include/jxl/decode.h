@@ -1359,15 +1359,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetBoxType(JxlDecoder* dec,
 
 /**
  * Returns the size of a box as it appears in the container file, after the @ref
- * JXL_DEC_BOX event. This is the size of the contents, including the 4 bytes
- * indicating the box size, and the 4 bytes indicating the type and optionally
- * the 8 bytes indicating a the size (for extended boxes). Here "size of
- * contents" refers to the size of the data that will be written in the output
- * buffer set with @ref JxlDecoderSetBoxBuffer. This is true also for compressed
- * boxes of type "brob" in the default raw compressed mode. When @ref
- * JxlDecoderSetDecompressBoxes is enabled, the return value of this function
- * does not change, and the decompressed size is not known before it has already
- * been decompressed and output.
+ * JXL_DEC_BOX event. This includes all the box headers.
  *
  * @param dec decoder object
  * @param size raw size of the box in bytes
