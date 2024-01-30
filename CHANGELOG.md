@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Added
- - decoder API: added `JxlDecoderGetBoxContentsSize` for getting the size of the
+ - decoder API: added `JxlDecoderGetBoxSizeContents` for getting the size of the
    content of a box without the headers.
 ### Removed
 

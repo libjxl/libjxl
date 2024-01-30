@@ -336,7 +336,7 @@ int PrintBasicInfo(FILE* file, int verbose) {
       uint64_t contents_size;
       JxlDecoderGetBoxType(dec, type, JXL_FALSE);
       JxlDecoderGetBoxSizeRaw(dec, &size);
-      JxlDecoderGetBoxContentsSize(dec, &contents_size);
+      JxlDecoderGetBoxSizeContents(dec, &contents_size);
       if (verbose) {
         printf("box: type: \"%c%c%c%c\" size: %" PRIu64
                ", contents size: %" PRIu64 "\n",

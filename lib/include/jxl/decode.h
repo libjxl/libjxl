@@ -1382,7 +1382,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetBoxSizeRaw(const JxlDecoder* dec,
  * @return @ref JXL_DEC_ERROR if no box size is available, @ref JXL_DEC_SUCCESS
  *     otherwise.
  */
-JXL_EXPORT JxlDecoderStatus JxlDecoderGetBoxContentsSize(const JxlDecoder* dec,
+JXL_EXPORT JxlDecoderStatus JxlDecoderGetBoxSizeContents(const JxlDecoder* dec,
                                                          uint64_t* size);
 
 /**

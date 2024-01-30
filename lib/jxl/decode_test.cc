@@ -5061,21 +5061,21 @@ TEST(DecodeTest, ExtentedBoxSizeTest) {
   EXPECT_TRUE(BoxTypeEquals("JXL ", type));
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxSizeRaw(dec, &box_size));
   EXPECT_EQ(12, box_size);
-  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxContentsSize(dec, &contents_size));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxSizeContents(dec, &contents_size));
   EXPECT_EQ(contents_size + 8, box_size);
   EXPECT_EQ(JXL_DEC_BOX, JxlDecoderProcessInput(dec));
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxType(dec, type, JXL_FALSE));
   EXPECT_TRUE(BoxTypeEquals("ftyp", type));
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxSizeRaw(dec, &box_size));
-  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxContentsSize(dec, &contents_size));
-  EXPECT_EQ(contents_size + 8, box_size);
   EXPECT_EQ(20, box_size);
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxSizeContents(dec, &contents_size));
+  EXPECT_EQ(contents_size + 8, box_size);
   EXPECT_EQ(JXL_DEC_BOX, JxlDecoderProcessInput(dec));
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxType(dec, type, JXL_FALSE));
   EXPECT_TRUE(BoxTypeEquals("jxlc", type));
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxSizeRaw(dec, &box_size));
   EXPECT_EQ(72, box_size);
-  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxContentsSize(dec, &contents_size));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxSizeContents(dec, &contents_size));
   // This is an extended box, hence the difference between `box_size` and
   // `contents_size` is 16.
   EXPECT_EQ(contents_size + 8 + 8, box_size);
@@ -5124,7 +5124,7 @@ TEST(DecodeTest, JXL_BOXES_TEST(BoxTest)) {
     if (expected_box_sizes[i]) {
       EXPECT_EQ(expected_box_sizes[i], box_size);
       EXPECT_EQ(JXL_DEC_SUCCESS,
-                JxlDecoderGetBoxContentsSize(dec, &contents_size));
+                JxlDecoderGetBoxSizeContents(dec, &contents_size));
       EXPECT_EQ(contents_size + 8, box_size);
     }
 
