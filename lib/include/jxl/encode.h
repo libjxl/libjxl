@@ -603,6 +603,10 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetFrameBitDepth(
  * JxlEncoderCloseFrames must be called before the next
  * @ref JxlEncoderProcessOutput call.
  *
+ * Note, this can only be used to add JPEG frames for lossless compression. To
+ * encode with lossy compression, the JPEG must be decoded manually and a pixel
+ * buffer added using JxlEncoderAddImageFrame.
+ *
  * @param frame_settings set of options and metadata for this frame. Also
  * includes reference to the encoder object.
  * @param buffer bytes to read JPEG from. Owned by the caller and its contents
