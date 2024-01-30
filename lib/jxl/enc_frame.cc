@@ -1446,7 +1446,7 @@ Status ComputeEncodingData(
     bool lossless = cparams.IsLossless();
     if (alpha && !alpha_eci->alpha_associated &&
         frame_header.frame_type == FrameType::kRegularFrame &&
-        !ApplyOverride(cparams.keep_invisible, lossless) &&
+        !ApplyOverride(cparams.keep_invisible, true) &&
         cparams.ec_resampling == cparams.resampling) {
       // simplify invisible pixels
       SimplifyInvisible(&color, *alpha, lossless);

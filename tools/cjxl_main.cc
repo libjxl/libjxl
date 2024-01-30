@@ -151,7 +151,7 @@ struct CompressArgs {
         "Target visual distance for the alpha channel, lower = higher "
         "quality.\n"
         "    0.0 = mathematically lossless. 1.0 = visually lossless.\n"
-        "    Default is to use the same value as for the color image.\n"
+        "    Default is 0.\n"
         "    Recommended range: 0.5 .. 3.0. Allowed range: 0.0 ... 25.0.",
         &alpha_distance, &ParseFloat, 1);
 
@@ -667,8 +667,7 @@ void SetDistanceFromFlags(CommandLineParser* cmdline, CompressArgs* args,
     args->lossless_jpeg = 0;
   }
   params->distance = args->distance;
-  params->alpha_distance =
-      alpha_distance_set ? args->alpha_distance : params->distance;
+  params->alpha_distance = alpha_distance_set ? args->alpha_distance : 0;
 }
 
 void ProcessFlags(const jxl::extras::Codec codec,
