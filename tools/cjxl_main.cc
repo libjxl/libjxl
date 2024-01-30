@@ -1098,20 +1098,22 @@ int main(int argc, char** argv) {
       }
       jpeg_bytes = &image_data;
       if (args.allow_jpeg_reconstruction) {
-        (void)args.color_hints_proxy.target.Foreach(
-            [](const std::string& key,
-               const std::string& value) -> jxl::Status {
-              if (value.empty()) {
-                std::cerr
-                    << "Cannot strip " << key
-                    << " metadata, try setting --allow_jpeg_reconstruction=0. "
-                       "Note that with that setting byte exact reconstruction "
-                       "of the JPEG file won't be possible."
-                    << std::endl;
-                exit(EXIT_FAILURE);
-              }
-              return true;
-            });
+        (void)args.color_hints_proxy.target.Foreach([](const std::string& key,
+                                                       const std::string& value)
+                                                        -> jxl::Status {
+          if (value.empty()) {
+            if (key != "jumbf") {
+              std::cerr
+                  << "Cannot strip " << key
+                  << " metadata, try setting --allow_jpeg_reconstruction=0. "
+                     "Note that with that setting byte exact reconstruction "
+                     "of the JPEG file won't be possible."
+                  << std::endl;
+              exit(EXIT_FAILURE);
+            }
+          }
+          return true;
+        });
       }
     }
   }
