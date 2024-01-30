@@ -5054,22 +5054,31 @@ TEST(DecodeTest, ExtentedBoxSizeTest) {
 
   JxlBoxType type;
   uint64_t box_size;
+  uint64_t contents_size;
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec, orig.data(), orig.size()));
   EXPECT_EQ(JXL_DEC_BOX, JxlDecoderProcessInput(dec));
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxType(dec, type, JXL_FALSE));
   EXPECT_TRUE(BoxTypeEquals("JXL ", type));
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxSizeRaw(dec, &box_size));
   EXPECT_EQ(12, box_size);
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxSizeContents(dec, &contents_size));
+  EXPECT_EQ(contents_size + 8, box_size);
   EXPECT_EQ(JXL_DEC_BOX, JxlDecoderProcessInput(dec));
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxType(dec, type, JXL_FALSE));
   EXPECT_TRUE(BoxTypeEquals("ftyp", type));
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxSizeRaw(dec, &box_size));
   EXPECT_EQ(20, box_size);
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxSizeContents(dec, &contents_size));
+  EXPECT_EQ(contents_size + 8, box_size);
   EXPECT_EQ(JXL_DEC_BOX, JxlDecoderProcessInput(dec));
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxType(dec, type, JXL_FALSE));
   EXPECT_TRUE(BoxTypeEquals("jxlc", type));
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxSizeRaw(dec, &box_size));
   EXPECT_EQ(72, box_size);
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxSizeContents(dec, &contents_size));
+  // This is an extended box, hence the difference between `box_size` and
+  // `contents_size` is 16.
+  EXPECT_EQ(contents_size + 8 + 8, box_size);
 
   JxlDecoderDestroy(dec);
 }
@@ -5096,6 +5105,7 @@ TEST(DecodeTest, JXL_BOXES_TEST(BoxTest)) {
 
   JxlBoxType type;
   uint64_t box_size;
+  uint64_t contents_size;
   std::vector<uint8_t> contents(50);
   size_t expected_release_size = 0;
 
@@ -5113,6 +5123,9 @@ TEST(DecodeTest, JXL_BOXES_TEST(BoxTest)) {
     EXPECT_TRUE(BoxTypeEquals(expected_box_types[i], type));
     if (expected_box_sizes[i]) {
       EXPECT_EQ(expected_box_sizes[i], box_size);
+      EXPECT_EQ(JXL_DEC_SUCCESS,
+                JxlDecoderGetBoxSizeContents(dec, &contents_size));
+      EXPECT_EQ(contents_size + 8, box_size);
     }
 
     if (expected_release_size > 0) {
