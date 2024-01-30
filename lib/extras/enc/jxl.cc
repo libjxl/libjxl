@@ -168,11 +168,13 @@ bool EncodeImageJXL(const JXLCompressParams& params, const PackedPixelFile& ppf,
       return false;
     }
     if (params.jpeg_store_metadata && params.jpeg_strip_exif) {
-      fprintf(stderr, "Cannot store metadata and strip exif at the same time.\n");
+      fprintf(stderr,
+              "Cannot store metadata and strip exif at the same time.\n");
       return false;
     }
     if (params.jpeg_store_metadata && params.jpeg_strip_xmp) {
-      fprintf(stderr, "Cannot store metadata and strip xmp at the same time.\n");
+      fprintf(stderr,
+              "Cannot store metadata and strip xmp at the same time.\n");
       return false;
     }
     if (!params.jpeg_store_metadata && params.jpeg_strip_exif) {

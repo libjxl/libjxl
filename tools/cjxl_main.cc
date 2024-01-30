@@ -234,17 +234,20 @@ struct CompressArgs {
         "    The keys 'exif', 'xmp', and 'jumbf' refer to a binary file "
         "containing metadata;\n"
         "    existing metadata of the same type will be overwritten.\n"
-        "    Specific metadata can be stripped using e.g. -x strip=exif",
+        "    Specific metadata can be stripped using e.g. -x strip=exif."
+        "    Stripping metadata when losslessly recompression JPEGs only works "
+        "    without reconstruction, hence `--allow_jpeg_reconstruction=0` "
+        "    must be passed in this case.",
         &color_hints_proxy, &ParseAndAppendKeyValue<ColorHintsProxy>, 1);
 
     cmdline->AddHelpText("\nExpert options:", 2);
 
     cmdline->AddOptionValue(
-        '\0', "jpeg_store_metadata", "0|1",
+        '\0', "allow_jpeg_reconstruction", "0|1",
         ("If --lossless_jpeg=1, store JPEG reconstruction "
          "metadata in the JPEG XL container.\n"
          "    This allows reconstruction of the JPEG codestream. Default: 1."),
-        &jpeg_store_metadata, &ParseUnsigned, 2);
+        &allow_jpeg_reconstruction, &ParseUnsigned, 2);
 
     cmdline->AddOptionValue('\0', "codestream_level", "K",
                             "The codestream level. Either `-1`, `5` or `10`.",
@@ -487,7 +490,7 @@ struct CompressArgs {
   // Reset to false if input image is not a JPEG.
   size_t lossless_jpeg = 1;
 
-  size_t jpeg_store_metadata = 1;
+  size_t allow_jpeg_reconstruction = 1;
 
   float quality = -1001.f;  // Default to lossless if input is already lossy,
                             // or to VarDCT otherwise.
@@ -582,7 +585,7 @@ void PrintMode(jxl::extras::PackedPixelFile& ppf, const double decode_mps,
       (args.container == jxl::Override::kOn ? "Container | " : ""), mode,
       distance.c_str(), args.effort);
   if (args.container == jxl::Override::kOn) {
-    if (args.lossless_jpeg && args.jpeg_store_metadata)
+    if (args.lossless_jpeg && args.allow_jpeg_reconstruction)
       cmdline.VerbosePrintf(0, " | JPEG reconstruction data");
     if (!ppf.metadata.exif.empty())
       cmdline.VerbosePrintf(0, " | %" PRIuS "-byte Exif",
@@ -910,7 +913,7 @@ void ProcessFlags(const jxl::extras::Codec codec,
   }
   // Copy over the rest of the non-option params.
   params->use_container = args->container == jxl::Override::kOn;
-  params->jpeg_store_metadata = args->jpeg_store_metadata;
+  params->jpeg_store_metadata = args->allow_jpeg_reconstruction;
   params->intensity_target = args->intensity_target;
   params->override_bitdepth = args->override_bitdepth;
   params->codestream_level = args->codestream_level;
@@ -1094,6 +1097,22 @@ int main(int argc, char** argv) {
                   << std::endl;
       }
       jpeg_bytes = &image_data;
+      if (args.allow_jpeg_reconstruction) {
+        (void)args.color_hints_proxy.target.Foreach(
+            [](const std::string& key,
+               const std::string& value) -> jxl::Status {
+              if (value.empty()) {
+                std::cerr
+                    << "Cannot strip " << key
+                    << " metadata, try setting --allow_jpeg_reconstruction=0. "
+                       "Note that with that setting byte exact reconstruction "
+                       "of the JPEG file won't be possible."
+                    << std::endl;
+                exit(EXIT_FAILURE);
+              }
+              return true;
+            });
+      }
     }
   }
 
@@ -1109,7 +1128,7 @@ int main(int argc, char** argv) {
 
   if (!ppf.metadata.exif.empty() || !ppf.metadata.xmp.empty() ||
       !ppf.metadata.jumbf.empty() || !ppf.metadata.iptc.empty() ||
-      (args.lossless_jpeg && args.jpeg_store_metadata)) {
+      (args.lossless_jpeg && args.allow_jpeg_reconstruction)) {
     if (args.container == jxl::Override::kDefault) {
       args.container = jxl::Override::kOn;
     } else if (args.container == jxl::Override::kOff) {
@@ -1119,7 +1138,7 @@ int main(int argc, char** argv) {
       ppf.metadata.xmp.clear();
       ppf.metadata.jumbf.clear();
       ppf.metadata.iptc.clear();
-      args.jpeg_store_metadata = 0;
+      args.allow_jpeg_reconstruction = 0;
     }
   }
 
