@@ -200,7 +200,6 @@ if(JPEGXL_ENABLE_TCMALLOC)
   target_link_libraries(jxl-internal PUBLIC PkgConfig::TCMallocMinimal)
 endif()  # JPEGXL_ENABLE_TCMALLOC
 
-
 # Public library.
 add_library(jxl ${JPEGXL_INTERNAL_OBJECTS})
 strip_internal(JPEGXL_INTERNAL_SHARED_LIBS JPEGXL_INTERNAL_LIBS)
