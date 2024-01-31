@@ -70,6 +70,11 @@ namespace jxl {
 namespace HWY_NAMESPACE {
 
 // These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::AllFalse;
+using hwy::HWY_NAMESPACE::Gt;
+using hwy::HWY_NAMESPACE::Le;
+using hwy::HWY_NAMESPACE::MaskFromVec;
+using hwy::HWY_NAMESPACE::Or;
 using hwy::HWY_NAMESPACE::Rebind;
 using hwy::HWY_NAMESPACE::ShiftRight;
 
@@ -77,9 +82,11 @@ using D = HWY_FULL(float);
 using DU = HWY_FULL(uint32_t);
 using DI = HWY_FULL(int32_t);
 using DI16 = Rebind<int16_t, DI>;
+using DI16_FULL = HWY_CAPPED(int16_t, kDCTBlockSize);
 constexpr D d;
 constexpr DI di;
 constexpr DI16 di16;
+constexpr DI16_FULL di16_full;
 
 // TODO(veluca): consider SIMDfying.
 void Transpose8x8InPlace(int32_t* JXL_RESTRICT block) {
@@ -179,6 +186,9 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
 
   const YCbCrChromaSubsampling& cs =
       dec_state->shared->frame_header.chroma_subsampling;
+
+  const auto kJpegDctMin = Set(di16_full, -4095);
+  const auto kJpegDctMax = Set(di16_full, 4095);
 
   size_t idct_stride[3];
   for (size_t c = 0; c < 3; c++) {
@@ -392,6 +402,16 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
             }
             jpeg_pos[0] =
                 Clamp1<float>(dc_rows[c][sbx[c]] - dcoff[c], -2047, 2047);
+            auto overflow = MaskFromVec(Set(di16_full, 0));
+            auto underflow = MaskFromVec(Set(di16_full, 0));
+            for (int i = 0; i < 64; i += Lanes(di16_full)) {
+              auto in = LoadU(di16_full, jpeg_pos + i);
+              overflow = Or(overflow, Gt(in, kJpegDctMax));
+              underflow = Or(underflow, Lt(in, kJpegDctMin));
+            }
+            if (!AllFalse(di16_full, Or(overflow, underflow))) {
+              return JXL_FAILURE("JPEG DCT coefficients out of range");
+            }
           }
         } else {
           HWY_ALIGN float* const block = group_dec_cache->dec_group_block;
