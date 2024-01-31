@@ -7,19 +7,12 @@
 
 #include <locale>
 
-#if JPEGXL_ENABLE_APNG
 #include "lib/extras/enc/apng.h"
-#endif
-#if JPEGXL_ENABLE_EXR
 #include "lib/extras/enc/exr.h"
-#endif
-#if JPEGXL_ENABLE_JPEG
 #include "lib/extras/enc/jpg.h"
-#endif
 #include "lib/extras/enc/npy.h"
 #include "lib/extras/enc/pgx.h"
 #include "lib/extras/enc/pnm.h"
-#include "lib/jxl/base/printf_macros.h"
 
 namespace jxl {
 namespace extras {
@@ -96,70 +89,47 @@ Status Encoder::VerifyPackedImage(const PackedImage& image,
   return true;
 }
 
-Status SelectFormat(const std::vector<JxlPixelFormat>& accepted_formats,
-                    const JxlBasicInfo& basic_info, JxlPixelFormat* format) {
-  const size_t original_bit_depth = basic_info.bits_per_sample;
-  size_t current_bit_depth = 0;
-  size_t num_alpha_channels = (basic_info.alpha_bits != 0 ? 1 : 0);
-  size_t num_channels = basic_info.num_color_channels + num_alpha_channels;
-  for (;;) {
-    for (const JxlPixelFormat& candidate : accepted_formats) {
-      if (candidate.num_channels != num_channels) continue;
-      const size_t candidate_bit_depth =
-          PackedImage::BitsPerChannel(candidate.data_type);
-      if (
-          // Candidate bit depth is less than what we have and still enough
-          (original_bit_depth <= candidate_bit_depth &&
-           candidate_bit_depth < current_bit_depth) ||
-          // Or larger than the too-small bit depth we currently have
-          (current_bit_depth < candidate_bit_depth &&
-           current_bit_depth < original_bit_depth)) {
-        *format = candidate;
-        current_bit_depth = candidate_bit_depth;
-      }
-    }
-    if (current_bit_depth == 0) {
-      if (num_channels > basic_info.num_color_channels) {
-        // Try dropping the alpha channel.
-        --num_channels;
-        continue;
-      }
-      return JXL_FAILURE("no appropriate format found");
-    }
-    break;
+template <int metadata>
+class MetadataEncoder : public Encoder {
+ public:
+  std::vector<JxlPixelFormat> AcceptedFormats() const override {
+    std::vector<JxlPixelFormat> formats;
+    // empty, i.e. no need for actual pixel data
+    return formats;
   }
-  if (current_bit_depth < original_bit_depth) {
-    JXL_WARNING("encoding %" PRIuS "-bit original to %" PRIuS " bits",
-                original_bit_depth, current_bit_depth);
+
+  Status Encode(const PackedPixelFile& ppf, EncodedImage* encoded,
+                ThreadPool* pool) const override {
+    JXL_RETURN_IF_ERROR(VerifyBasicInfo(ppf.info));
+    encoded->icc.clear();
+    encoded->bitstreams.resize(1);
+    if (metadata == 0) encoded->bitstreams.front() = ppf.metadata.exif;
+    if (metadata == 1) encoded->bitstreams.front() = ppf.metadata.xmp;
+    if (metadata == 2) encoded->bitstreams.front() = ppf.metadata.jumbf;
+    return true;
   }
-  return true;
-}
+};
 
 std::unique_ptr<Encoder> Encoder::FromExtension(std::string extension) {
   std::transform(
       extension.begin(), extension.end(), extension.begin(),
       [](char c) { return std::tolower(c, std::locale::classic()); });
-#if JPEGXL_ENABLE_APNG
   if (extension == ".png" || extension == ".apng") return GetAPNGEncoder();
-#endif
-
-#if JPEGXL_ENABLE_JPEG
   if (extension == ".jpg") return GetJPEGEncoder();
   if (extension == ".jpeg") return GetJPEGEncoder();
-#endif
-
   if (extension == ".npy") return GetNumPyEncoder();
-
   if (extension == ".pgx") return GetPGXEncoder();
-
   if (extension == ".pam") return GetPAMEncoder();
   if (extension == ".pgm") return GetPGMEncoder();
   if (extension == ".ppm") return GetPPMEncoder();
+  if (extension == ".pnm") return GetPNMEncoder();
   if (extension == ".pfm") return GetPFMEncoder();
-
-#if JPEGXL_ENABLE_EXR
   if (extension == ".exr") return GetEXREncoder();
-#endif
+  if (extension == ".exif") return jxl::make_unique<MetadataEncoder<0>>();
+  if (extension == ".xmp") return jxl::make_unique<MetadataEncoder<1>>();
+  if (extension == ".xml") return jxl::make_unique<MetadataEncoder<1>>();
+  if (extension == ".jumbf") return jxl::make_unique<MetadataEncoder<2>>();
+  if (extension == ".jumb") return jxl::make_unique<MetadataEncoder<2>>();
 
   return nullptr;
 }

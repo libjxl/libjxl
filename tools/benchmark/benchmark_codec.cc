@@ -5,6 +5,7 @@
 
 #include "tools/benchmark/benchmark_codec.h"
 
+#include <jxl/types.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,25 +14,24 @@
 #include <utility>
 #include <vector>
 
+#include "lib/extras/packed_image_convert.h"
 #include "lib/extras/time.h"
-#include "lib/jxl/base/data_parallel.h"
-#include "lib/jxl/base/padded_bytes.h"
-#include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
-#include "lib/jxl/color_management.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
 #include "tools/benchmark/benchmark_args.h"
 #include "tools/benchmark/benchmark_codec_custom.h"
-#ifdef JPEGXL_ENABLE_JPEG
 #include "tools/benchmark/benchmark_codec_jpeg.h"
-#endif  // JPEG_ENABLE_JPEG
 #include "tools/benchmark/benchmark_codec_jxl.h"
-#include "tools/benchmark/benchmark_codec_png.h"
 #include "tools/benchmark/benchmark_stats.h"
+#include "tools/speed_stats.h"
+#include "tools/thread_pool_internal.h"
+
+#ifdef BENCHMARK_PNG
+#include "tools/benchmark/benchmark_codec_png.h"
+#endif  // BENCHMARK_PNG
 
 #ifdef BENCHMARK_WEBP
 #include "tools/benchmark/benchmark_codec_webp.h"
@@ -91,14 +91,14 @@ class NoneCodec : public ImageCodec {
   explicit NoneCodec(const BenchmarkArgs& args) : ImageCodec(args) {}
   Status ParseParam(const std::string& param) override { return true; }
 
-  Status Compress(const std::string& filename, const CodecInOut* io,
+  Status Compress(const std::string& filename, const PackedPixelFile& ppf,
                   ThreadPool* pool, std::vector<uint8_t>* compressed,
                   jpegxl::tools::SpeedStats* speed_stats) override {
     const double start = jxl::Now();
     // Encode image size so we "decompress" something of the same size, as
     // required by butteraugli.
-    const uint32_t xsize = io->xsize();
-    const uint32_t ysize = io->ysize();
+    const uint32_t xsize = ppf.xsize();
+    const uint32_t ysize = ppf.ysize();
     compressed->resize(8);
     memcpy(compressed->data(), &xsize, 4);
     memcpy(compressed->data() + 4, &ysize, 4);
@@ -109,8 +109,19 @@ class NoneCodec : public ImageCodec {
 
   Status Decompress(const std::string& filename,
                     const Span<const uint8_t> compressed, ThreadPool* pool,
-                    CodecInOut* io,
+                    PackedPixelFile* ppf,
                     jpegxl::tools::SpeedStats* speed_stats) override {
+    CodecInOut io;
+    JXL_RETURN_IF_ERROR(
+        Decompress(filename, compressed, pool, &io, speed_stats));
+    JxlPixelFormat format{0, JXL_TYPE_UINT16, JXL_NATIVE_ENDIAN, 0};
+    return jxl::extras::ConvertCodecInOutToPackedPixelFile(
+        io, format, io.Main().c_current(), pool, ppf);
+  };
+
+  Status Decompress(const std::string& filename,
+                    const Span<const uint8_t> compressed, ThreadPool* pool,
+                    CodecInOut* io, jpegxl::tools::SpeedStats* speed_stats) {
     const double start = jxl::Now();
     JXL_ASSERT(compressed.size() == 8);
     uint32_t xsize, ysize;
@@ -144,14 +155,12 @@ ImageCodecPtr CreateImageCodec(const std::string& description) {
   } else if (name == "custom") {
     result.reset(CreateNewCustomCodec(*Args()));
 #endif
-#ifdef JPEGXL_ENABLE_JPEG
   } else if (name == "jpeg") {
     result.reset(CreateNewJPEGCodec(*Args()));
-#endif  // BENCHMARK_JPEG
-#if JPEGXL_ENABLE_APNG
+#ifdef BENCHMARK_PNG
   } else if (name == "png") {
     result.reset(CreateNewPNGCodec(*Args()));
-#endif
+#endif  // BENCHMARK_PNG
   } else if (name == "none") {
     result.reset(new NoneCodec(*Args()));
 #ifdef BENCHMARK_WEBP
@@ -162,7 +171,8 @@ ImageCodecPtr CreateImageCodec(const std::string& description) {
   } else if (name == "avif") {
     result.reset(CreateNewAvifCodec(*Args()));
 #endif  // BENCHMARK_AVIF
-  } else {
+  }
+  if (!result.get()) {
     JXL_ABORT("Unknown image codec: %s", name.c_str());
   }
   result->set_description(description);

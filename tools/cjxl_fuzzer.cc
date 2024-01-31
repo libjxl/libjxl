@@ -9,7 +9,6 @@
 #include <jxl/thread_parallel_runner_cxx.h>
 #include <limits.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 

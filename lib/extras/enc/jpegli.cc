@@ -5,14 +5,35 @@
 
 #include "lib/extras/enc/jpegli.h"
 
+#include <jxl/cms.h>
 #include <jxl/codestream_header.h>
+#include <jxl/types.h>
 #include <setjmp.h>
 #include <stdint.h>
 
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
+#include <cstdlib>
+#include <cstring>
+#include <hwy/aligned_allocator.h>
+#include <limits>
+#include <string>
+#include <utility>
+#include <vector>
+
 #include "lib/extras/enc/encode.h"
+#include "lib/extras/packed_image.h"
+#include "lib/jpegli/common.h"
 #include "lib/jpegli/encode.h"
-#include "lib/jxl/enc_color_management.h"
+#include "lib/jpegli/types.h"
+#include "lib/jxl/base/byte_order.h"
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/enc_xyb.h"
+#include "lib/jxl/image.h"
 
 namespace jxl {
 namespace extras {
@@ -29,9 +50,6 @@ void MyErrorExit(j_common_ptr cinfo) {
 Status VerifyInput(const PackedPixelFile& ppf) {
   const JxlBasicInfo& info = ppf.info;
   JXL_RETURN_IF_ERROR(Encoder::VerifyBasicInfo(info));
-  if (info.alpha_bits > 0) {
-    return JXL_FAILURE("Alpha is not supported for JPEG output.");
-  }
   if (ppf.frames.size() != 1) {
     return JXL_FAILURE("JPEG input must have exactly one frame.");
   }
@@ -54,12 +72,11 @@ Status VerifyInput(const PackedPixelFile& ppf) {
 Status GetColorEncoding(const PackedPixelFile& ppf,
                         ColorEncoding* color_encoding) {
   if (!ppf.icc.empty()) {
-    PaddedBytes icc;
-    icc.assign(ppf.icc.data(), ppf.icc.data() + ppf.icc.size());
-    JXL_RETURN_IF_ERROR(color_encoding->SetICC(std::move(icc)));
+    IccBytes icc = ppf.icc;
+    JXL_RETURN_IF_ERROR(
+        color_encoding->SetICC(std::move(icc), JxlGetDefaultCms()));
   } else {
-    JXL_RETURN_IF_ERROR(ConvertExternalToInternalColorEncoding(
-        ppf.color_encoding, color_encoding));
+    JXL_RETURN_IF_ERROR(color_encoding->FromExternal(ppf.color_encoding));
   }
   if (color_encoding->ICC().empty()) {
     return JXL_FAILURE("Invalid color encoding.");
@@ -332,7 +349,7 @@ Status EncodeJpeg(const PackedPixelFile& ppf, const JpegSettings& jpeg_settings,
   ColorEncoding color_encoding;
   JXL_RETURN_IF_ERROR(GetColorEncoding(ppf, &color_encoding));
 
-  ColorSpaceTransform c_transform(GetJxlCms());
+  ColorSpaceTransform c_transform(*JxlGetDefaultCms());
   ColorEncoding xyb_encoding;
   if (jpeg_settings.xyb) {
     if (ppf.info.num_color_channels != 3) {
@@ -345,7 +362,7 @@ Status EncodeJpeg(const PackedPixelFile& ppf, const JpegSettings& jpeg_settings,
     JXL_RETURN_IF_ERROR(
         c_transform.Init(color_encoding, c_desired, 255.0f, ppf.info.xsize, 1));
     xyb_encoding.SetColorSpace(jxl::ColorSpace::kXYB);
-    xyb_encoding.rendering_intent = jxl::RenderingIntent::kPerceptual;
+    xyb_encoding.SetRenderingIntent(jxl::RenderingIntent::kPerceptual);
     JXL_RETURN_IF_ERROR(xyb_encoding.CreateICC());
   }
   const ColorEncoding& output_encoding =
@@ -491,10 +508,25 @@ Status EncodeJpeg(const PackedPixelFile& ppf, const JpegSettings& jpeg_settings,
       }
     } else {
       row_bytes.resize(image.stride);
-      for (size_t y = 0; y < info.ysize; ++y) {
-        memcpy(&row_bytes[0], pixels + y * image.stride, image.stride);
-        JSAMPROW row[] = {row_bytes.data()};
-        jpegli_write_scanlines(&cinfo, row, 1);
+      if (cinfo.num_components == (int)image.format.num_channels) {
+        for (size_t y = 0; y < info.ysize; ++y) {
+          memcpy(&row_bytes[0], pixels + y * image.stride, image.stride);
+          JSAMPROW row[] = {row_bytes.data()};
+          jpegli_write_scanlines(&cinfo, row, 1);
+        }
+      } else {
+        for (size_t y = 0; y < info.ysize; ++y) {
+          int bytes_per_channel =
+              PackedImage::BitsPerChannel(image.format.data_type) / 8;
+          int bytes_per_pixel = cinfo.num_components * bytes_per_channel;
+          for (size_t x = 0; x < info.xsize; ++x) {
+            memcpy(&row_bytes[x * bytes_per_pixel],
+                   &pixels[y * image.stride + x * image.pixel_stride()],
+                   bytes_per_pixel);
+          }
+          JSAMPROW row[] = {row_bytes.data()};
+          jpegli_write_scanlines(&cinfo, row, 1);
+        }
       }
     }
     jpegli_finish_compress(&cinfo);

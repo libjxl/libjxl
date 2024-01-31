@@ -41,6 +41,10 @@ struct JXLDecompressParams {
   // Whether truncated input should be treated as an error.
   bool allow_partial_input = false;
 
+  // Set to true if an ICC profile has to be synthesized for Enum color
+  // encodings
+  bool need_icc = false;
+
   // How many passes to decode at most. By default, decode everything.
   uint32_t max_passes = std::numeric_limits<uint32_t>::max();
 
@@ -55,7 +59,7 @@ struct JXLDecompressParams {
   bool unpremultiply_alpha = false;
 
   // Controls the effective bit depth of the output pixels.
-  JxlBitDepth output_bitdepth = {JXL_BIT_DEPTH_FROM_CODESTREAM, 0, 0};
+  JxlBitDepth output_bitdepth = {JXL_BIT_DEPTH_FROM_PIXEL_FORMAT, 0, 0};
 };
 
 bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,

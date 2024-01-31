@@ -12,23 +12,21 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <memory>
+#include <string>
+#include <utility>
 #include <vector>
 
-#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
-#include "lib/jxl/common.h"
-#include "lib/jxl/dec_bit_reader.h"
-#include "lib/jxl/dec_xyb.h"
-#include "lib/jxl/field_encodings.h"
+#include "lib/jxl/common.h"  // JPEGXL_ENABLE_TRANSCODE_JPEG
 #include "lib/jxl/frame_header.h"
-#include "lib/jxl/headers.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_metadata.h"
+#include "lib/jxl/image_ops.h"
 #include "lib/jxl/jpeg/jpeg_data.h"
-#include "lib/jxl/opsin_params.h"
-#include "lib/jxl/quantizer.h"
 
 namespace jxl {
 
@@ -133,10 +131,7 @@ class ImageBundle {
   bool IsGray() const { return c_current_.IsGray(); }
 
   bool IsSRGB() const { return c_current_.IsSRGB(); }
-  bool IsLinearSRGB() const {
-    return c_current_.white_point == WhitePoint::kD65 &&
-           c_current_.primaries == Primaries::kSRGB && c_current_.tf.IsLinear();
-  }
+  bool IsLinearSRGB() const { return c_current_.IsLinearSRGB(); }
 
   // Set the c_current profile without doing any transformation, e.g. if the
   // transformation was already applied.

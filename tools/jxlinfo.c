@@ -105,9 +105,9 @@ int PrintBasicInfo(FILE* file, int verbose) {
         }
         if (extra.type == JXL_CHANNEL_BLACK) cmyk = 1;
       }
-      if (info.num_color_channels == 1)
+      if (info.num_color_channels == 1) {
         printf("Grayscale");
-      else {
+      } else {
         if (cmyk) {
           printf("CMY");
         } else {
@@ -160,11 +160,12 @@ int PrintBasicInfo(FILE* file, int verbose) {
             printf("  name: %s\n", name);
             free(name);
           }
-          if (extra.type == JXL_CHANNEL_ALPHA)
+          if (extra.type == JXL_CHANNEL_ALPHA) {
             printf("  alpha_premultiplied: %d (%s)\n",
                    extra.alpha_premultiplied,
                    extra.alpha_premultiplied ? "Premultiplied"
                                              : "Non-premultiplied");
+          }
           if (extra.type == JXL_CHANNEL_SPOT_COLOR) {
             printf("  spot_color: (%f, %f, %f) with opacity %f\n",
                    extra.spot_color[0], extra.spot_color[1],
@@ -332,11 +333,14 @@ int PrintBasicInfo(FILE* file, int verbose) {
     } else if (status == JXL_DEC_BOX) {
       JxlBoxType type;
       uint64_t size;
+      uint64_t contents_size;
       JxlDecoderGetBoxType(dec, type, JXL_FALSE);
       JxlDecoderGetBoxSizeRaw(dec, &size);
+      JxlDecoderGetBoxSizeContents(dec, &contents_size);
       if (verbose) {
-        printf("box: type: \"%c%c%c%c\" size: %" PRIu64 "\n", type[0], type[1],
-               type[2], type[3], (uint64_t)size);
+        printf("box: type: \"%c%c%c%c\" size: %" PRIu64
+               ", contents size: %" PRIu64 "\n",
+               type[0], type[1], type[2], type[3], size, contents_size);
       }
       if (!strncmp(type, "JXL ", 4)) {
         printf("JPEG XL file format container (ISO/IEC 18181-2)\n");
@@ -351,16 +355,16 @@ int PrintBasicInfo(FILE* file, int verbose) {
       } else if (!strncmp(type, "jumb", 4) || !strncmp(type, "Exif", 4) ||
                  !strncmp(type, "xml ", 4)) {
         printf("Uncompressed %c%c%c%c metadata: %" PRIu64 " bytes\n", type[0],
-               type[1], type[2], type[3], (uint64_t)size);
+               type[1], type[2], type[3], size);
 
       } else if (!strncmp(type, "brob", 4)) {
         JxlDecoderGetBoxType(dec, type, JXL_TRUE);
         printf("Brotli-compressed %c%c%c%c metadata: %" PRIu64
                " compressed bytes\n",
-               type[0], type[1], type[2], type[3], (uint64_t)size);
+               type[0], type[1], type[2], type[3], size);
       } else {
         printf("unknown box: type: \"%c%c%c%c\" size: %" PRIu64 "\n", type[0],
-               type[1], type[2], type[3], (uint64_t)size);
+               type[1], type[2], type[3], size);
       }
     } else {
       fprintf(stderr, "Unexpected decoder status\n");
@@ -380,9 +384,10 @@ int PrintBasicInfo(FILE* file, int verbose) {
 
 static void print_usage(const char* name) {
   fprintf(stderr,
-          "Usage: %s [-v] INPUT\n"
-          "  INPUT      input JPEG XL image filename(s)\n"
-          "  -v         more verbose output\n",
+          "Usage: %s [-v] [-h] INPUT\n"
+          "  INPUT                  input JPEG XL image filename(s)\n"
+          "  -v (or --verbose)      more verbose output\n"
+          "  -h (or --help or -?)   this help)\n",
           name);
 }
 
@@ -402,41 +407,46 @@ static int print_basic_info_filename(const char* jxl_filename, int verbose) {
   return 0;
 }
 
-int main(int argc, char* argv[]) {
-  int verbose = 0, status = 0;
-  const char* const name = argv[0];
-
-  for (int i = 1; i < argc; i++) {
-    const char* const* help_opts =
-        (const char* const[]){"--help", "-h", "-?", NULL};
-    while (*help_opts) {
-      if (!strcmp(*help_opts++, argv[i])) {
-        print_usage(name);
-        return 0;
-      }
+int is_flag(const char* arg, const char* const* opts) {
+  for (int i = 0; opts[i] != NULL; i++) {
+    if (!strcmp(opts[i], arg)) {
+      return 1;
     }
   }
+  return 0;
+}
 
+int main(int argc, char* argv[]) {
+  int verbose = 0;
+  int status = 0;
+  const char* const name = argv[0];
+  const char* const* help_opts =
+      (const char* const[]){"--help", "-h", "-?", NULL};
   const char* const* verbose_opts =
       (const char* const[]){"--verbose", "-v", NULL};
-  /* argc >= 2 gate prevents segfault on argc = 1 */
-  while (argc >= 2 && *verbose_opts) {
-    if (!strcmp(*verbose_opts++, argv[1])) {
-      verbose = 1;
-      argc--;
-      argv++;
-      break;
-    }
-  }
-
   if (argc < 2) {
     print_usage(name);
     return 2;
   }
 
-  while (argc-- >= 2) {
-    status |= print_basic_info_filename(*++argv, verbose);
+  // First pass: Check for flags
+  for (int i = 1; i < argc; i++) {
+    if (!verbose && is_flag(argv[i], verbose_opts)) {
+      verbose = 1;
+    }
+    if (is_flag(argv[i], help_opts)) {
+      print_usage(name);
+      return 0;
+    }
   }
 
+  // Second pass: print info
+  while (argc-- >= 2) {
+    if (is_flag(*(argv + 1), verbose_opts) || is_flag(*(argv + 1), help_opts)) {
+      ++argv;
+    } else {
+      status |= print_basic_info_filename(*++argv, verbose);
+    }
+  }
   return status;
 }

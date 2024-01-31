@@ -358,8 +358,6 @@ bool JpegXlSaveGui::SaveDialog() {
   gtk_widget_show(separator);
 
   // Advanced Settings Frame
-  std::vector<GtkWidget*> advanced_opts;
-
   frame_advanced = gtk_frame_new("Advanced Settings");
   gimp_help_set_help_data(frame_advanced,
                           "Some advanced settings may produce malformed files.",
@@ -541,12 +539,7 @@ bool JpegXlSaveOpts::UpdateQuality() {
 }
 
 bool JpegXlSaveOpts::UpdateDistance() {
-  float dist;
-  if (quality >= 30) {
-    dist = 0.1 + (100 - quality) * 0.09;
-  } else {
-    dist = 53.0 / 3000.0 * quality * quality - 23.0 / 20.0 * quality + 25.0;
-  }
+  float dist = JxlEncoderDistanceFromQuality(quality);
 
   if (dist > 25) {
     distance = 25;

@@ -6,7 +6,7 @@
 #ifndef LIB_JPEGLI_ENTROPY_CODING_H_
 #define LIB_JPEGLI_ENTROPY_CODING_H_
 
-#include <jpeglib.h>
+#include "lib/jpegli/common.h"
 
 namespace jpegli {
 

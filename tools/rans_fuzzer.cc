@@ -3,7 +3,10 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include "lib/jxl/base/span.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_ans.h"
+#include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/entropy_coder.h"
 
 namespace jpegxl {
@@ -13,7 +16,7 @@ using ::jxl::ANSCode;
 using ::jxl::ANSSymbolReader;
 using ::jxl::BitReader;
 using ::jxl::BitReaderScopedCloser;
-using ::jxl::Span;
+using ::jxl::Bytes;
 using ::jxl::Status;
 
 int TestOneInput(const uint8_t* data, size_t size) {
@@ -25,7 +28,7 @@ int TestOneInput(const uint8_t* data, size_t size) {
   std::vector<uint8_t> context_map;
   Status ret = true;
   {
-    BitReader br(Span<const uint8_t>(data, size));
+    BitReader br(Bytes(data, size));
     BitReaderScopedCloser br_closer(&br, &ret);
     ANSCode code;
     JXL_RETURN_IF_ERROR(

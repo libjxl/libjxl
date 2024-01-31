@@ -50,7 +50,7 @@ else()
         icc_detect/icc_detect_x11.cc
         icc_detect/icc_detect.h
       )
-      target_link_libraries(icc_detect PUBLIC jxl-static Qt6::Widgets XCB::XCB)
+      target_link_libraries(icc_detect PUBLIC jxl-internal Qt6::Widgets XCB::XCB)
     endif ()
   endif()
 endif()
@@ -67,11 +67,11 @@ add_library(jxl_tool STATIC EXCLUDE_FROM_ALL
   codec_config.cc
   speed_stats.cc
   tool_version.cc
+  ${JXL_CMS_OBJECTS}
 )
 target_compile_options(jxl_tool PUBLIC "${JPEGXL_INTERNAL_FLAGS}")
 target_include_directories(jxl_tool PUBLIC "${PROJECT_SOURCE_DIR}")
 target_link_libraries(jxl_tool PUBLIC hwy)
-jxl_link_libraries(jxl_tool jxl_base-obj)
 
 # The JPEGXL_VERSION is set from the builders.
 if(NOT DEFINED JPEGXL_VERSION OR JPEGXL_VERSION STREQUAL "")
@@ -121,6 +121,14 @@ else()
     COMPILE_DEFINITIONS JPEGXL_VERSION=\"${JPEGXL_VERSION}\")
 endif()
 
+add_library(jxl_gauss_blur STATIC #EXCLUDE_FROM_ALL
+  gauss_blur.cc
+)
+target_compile_options(jxl_gauss_blur PUBLIC "${JPEGXL_INTERNAL_FLAGS}")
+target_include_directories(jxl_gauss_blur PUBLIC "${PROJECT_SOURCE_DIR}")
+target_link_libraries(jxl_gauss_blur PUBLIC jxl)
+target_link_libraries(jxl_gauss_blur PUBLIC hwy)
+
 if(JPEGXL_ENABLE_TOOLS)
   # Main compressor.
   add_executable(cjxl cjxl_main.cc)
@@ -142,8 +150,7 @@ if(JPEGXL_ENABLE_TOOLS)
   )
   list(APPEND TOOL_BINARIES djxl)
 
-  find_package(JPEG)
-  if(JPEG_FOUND AND JPEGXL_ENABLE_JPEGLI)
+  if(JPEGXL_ENABLE_JPEGLI)
     # Depends on parts of jxl_extras that are only built if libjpeg is found and
     # jpegli is enabled.
     add_executable(cjpegli cjpegli.cc)
@@ -184,7 +191,11 @@ if(JPEGXL_ENABLE_DEVTOOLS)
   )
 
   add_executable(ssimulacra_main ssimulacra_main.cc ssimulacra.cc)
+  target_link_libraries(ssimulacra_main jxl_gauss_blur)
+
   add_executable(ssimulacra2 ssimulacra2_main.cc ssimulacra2.cc)
+  target_link_libraries(ssimulacra2 jxl_gauss_blur)
+
   add_executable(butteraugli_main butteraugli_main.cc)
   add_executable(decode_and_encode decode_and_encode.cc)
   add_executable(display_to_hlg hdr/display_to_hlg.cc)
@@ -201,17 +212,17 @@ if(JPEGXL_ENABLE_DEVTOOLS)
   list(APPEND FUZZER_CORPUS_BINARIES djxl_fuzzer_corpus)
   add_executable(djxl_fuzzer_corpus djxl_fuzzer_corpus.cc)
   target_link_libraries(djxl_fuzzer_corpus
-    jxl_extras-static
-    jxl_testlib-static
+    jxl_testlib-internal
+    jxl_extras-internal
     jxl_tool
   )
-  if(JPEG_FOUND AND JPEGXL_ENABLE_JPEGLI)
+  if(JPEGXL_ENABLE_JPEGLI)
     list(APPEND FUZZER_CORPUS_BINARIES jpegli_dec_fuzzer_corpus)
     add_executable(jpegli_dec_fuzzer_corpus jpegli_dec_fuzzer_corpus.cc)
     target_link_libraries(jpegli_dec_fuzzer_corpus
       jpegli-static
       jxl_tool
-      jxl_threads-static
+      jxl_threads
     )
   endif()
 endif()  # JPEGXL_ENABLE_DEVTOOLS
@@ -232,24 +243,19 @@ if(JPEGXL_ENABLE_BENCHMARK AND JPEGXL_ENABLE_TOOLS)
     benchmark/benchmark_utils.h
     benchmark/benchmark_codec_custom.cc
     benchmark/benchmark_codec_custom.h
+    benchmark/benchmark_codec_jpeg.cc
+    benchmark/benchmark_codec_jpeg.h
     benchmark/benchmark_codec_jxl.cc
     benchmark/benchmark_codec_jxl.h
     ssimulacra2.cc
     ../third_party/dirent.cc
   )
   target_link_libraries(benchmark_xl Threads::Threads)
+  target_link_libraries(benchmark_xl jxl_gauss_blur) # for ssimulacra
   if(MINGW)
   # MINGW doesn't support glob.h.
   target_compile_definitions(benchmark_xl PRIVATE "-DHAS_GLOB=0")
   endif() # MINGW
-
-  find_package(JPEG)
-  if(JPEG_FOUND)
-    target_sources(benchmark_xl PRIVATE
-      "${CMAKE_CURRENT_LIST_DIR}/benchmark/benchmark_codec_jpeg.cc"
-      "${CMAKE_CURRENT_LIST_DIR}/benchmark/benchmark_codec_jpeg.h"
-    )
-  endif ()
 
   if(NOT JPEGXL_BUNDLE_LIBPNG)
     find_package(PNG)
@@ -259,6 +265,7 @@ if(JPEGXL_ENABLE_BENCHMARK AND JPEGXL_ENABLE_TOOLS)
       "${CMAKE_CURRENT_LIST_DIR}/benchmark/benchmark_codec_png.cc"
       "${CMAKE_CURRENT_LIST_DIR}/benchmark/benchmark_codec_png.h"
     )
+    target_compile_definitions(benchmark_xl PRIVATE -DBENCHMARK_PNG)
   endif()
 
   find_package(PkgConfig)
@@ -303,7 +310,8 @@ endif()  # JPEGXL_ENABLE_BENCHMARK
 # All tool binaries depend on "jxl" library and the tool helpers.
 foreach(BINARY IN LISTS INTERNAL_TOOL_BINARIES)
   target_link_libraries("${BINARY}"
-    jxl_extras-static
+    jxl_extras-internal
+    jxl_threads
     jxl_tool
   )
 endforeach()
@@ -311,13 +319,17 @@ endforeach()
 list(APPEND TOOL_BINARIES ${INTERNAL_TOOL_BINARIES} ${FUZZER_CORPUS_BINARIES})
 
 foreach(BINARY IN LISTS TOOL_BINARIES)
-  if(JPEGXL_EMSCRIPTEN)
+  if(EMSCRIPTEN)
     set(JXL_WASM_TOOLS_LINK_FLAGS "\
       -s USE_LIBPNG=1 \
       -s ALLOW_MEMORY_GROWTH=1 \
-      -s USE_PTHREADS=1 \
-      -s PTHREAD_POOL_SIZE=16 \
     ")
+    if (JPEGXL_ENABLE_WASM_TRHEADS)
+      set(JXL_WASM_TOOLS_LINK_FLAGS "${JXL_WASM_TOOLS_LINK_FLAGS} \
+        -s USE_PTHREADS=1 \
+        -s PTHREAD_POOL_SIZE=16 \
+      ")
+    endif()
     set_target_properties(${BINARY} PROPERTIES LINK_FLAGS "${JXL_WASM_TOOLS_LINK_FLAGS}")
   endif()
 endforeach()
@@ -332,13 +344,14 @@ if(JPEGXL_ENABLE_TOOLS)
     color_encoding_fuzzer
     decode_basic_info_fuzzer
     cjxl_fuzzer
+    streaming_fuzzer
     icc_codec_fuzzer
     fields_fuzzer
     rans_fuzzer
     set_from_bytes_fuzzer
     transforms_fuzzer
   )
-if(JPEG_FOUND AND JPEGXL_ENABLE_JPEGLI)
+if(JPEGXL_ENABLE_JPEGLI)
   list(APPEND FUZZER_BINARIES jpegli_dec_fuzzer)
 endif()
 endif()
@@ -359,15 +372,15 @@ foreach(FUZZER IN LISTS FUZZER_BINARIES)
   target_include_directories("${BINARY}" PRIVATE "${CMAKE_SOURCE_DIR}")
   if(FUZZER STREQUAL djxl_fuzzer)
     target_link_libraries("${BINARY}"
-      jxl_dec-static
-      jxl_threads-static
+      jxl_dec-internal
+      jxl_threads
     )
   elseif(FUZZER STREQUAL jpegli_dec_fuzzer)
     target_link_libraries("${BINARY}" jpegli-static)
   else()
     target_link_libraries("${BINARY}"
-      jxl_extras_nocodec-static
-      jxl_testlib-static
+      jxl_testlib-internal
+      jxl_extras_nocodec-internal
       jxl_tool
     )
   endif()
@@ -418,7 +431,6 @@ add_subdirectory(comparison_viewer)
 add_subdirectory(flicker_test)
 endif()
 
-add_subdirectory(box)
 add_subdirectory(conformance)
 add_subdirectory(wasm_demo)
 
@@ -432,7 +444,7 @@ if (JNI_FOUND AND Java_FOUND)
   # decoder_jni_onload.cc might be necessary for Android; not used yet.
   add_library(jxl_jni SHARED jni/org/jpeg/jpegxl/wrapper/decoder_jni.cc)
   target_include_directories(jxl_jni PRIVATE "${JNI_INCLUDE_DIRS}" "${PROJECT_SOURCE_DIR}")
-  target_link_libraries(jxl_jni PUBLIC jxl_dec-static jxl_threads-static)
+  target_link_libraries(jxl_jni PUBLIC jxl_dec-internal jxl_threads)
   if(NOT DEFINED JPEGXL_INSTALL_JNIDIR)
     set(JPEGXL_INSTALL_JNIDIR ${CMAKE_INSTALL_LIBDIR})
   endif()
@@ -479,7 +491,8 @@ if(JPEGXL_TEST_TOOLS)
 find_program (BASH_PROGRAM bash)
 if (BASH_PROGRAM)
   set(TEST_SCRIPTS)
-  if (JPEGXL_ENABLE_TRANSCODE_JPEG)
+  find_package(JPEG)
+  if (JPEG_FOUND AND JPEGXL_ENABLE_TRANSCODE_JPEG)
     list(APPEND TEST_SCRIPTS roundtrip_test)
   endif()
   if (JPEG_FOUND AND JPEGXL_ENABLE_JPEGLI)

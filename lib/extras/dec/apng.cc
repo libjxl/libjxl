@@ -38,7 +38,6 @@
 
 #include <jxl/codestream_header.h>
 #include <jxl/encode.h>
-#include <stdio.h>
 #include <string.h>
 
 #include <string>
@@ -47,16 +46,19 @@
 
 #include "lib/extras/size_constraints.h"
 #include "lib/jxl/base/byte_order.h"
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/scope_guard.h"
-#include "lib/jxl/common.h"
 #include "lib/jxl/sanitizers.h"
+#if JPEGXL_ENABLE_APNG
 #include "png.h" /* original (unpatched) libpng is ok */
+#endif
 
 namespace jxl {
 namespace extras {
 
+#if JPEGXL_ENABLE_APNG
 namespace {
 
 constexpr unsigned char kExifSignature[6] = {0x45, 0x78, 0x69,
@@ -280,9 +282,9 @@ class BlobsReaderPNG {
       }
       metadata->exif = std::move(bytes);
     } else if (type == "iptc") {
-      // TODO (jon): Deal with IPTC in some way
+      // TODO(jon): Deal with IPTC in some way
     } else if (type == "8bim") {
-      // TODO (jon): Deal with 8bim in some way
+      // TODO(jon): Deal with 8bim in some way
     } else if (type == "xmp") {
       if (!metadata->xmp.empty()) {
         JXL_WARNING("overwriting XMP (%" PRIuS " bytes) with base16 (%" PRIuS
@@ -558,10 +560,20 @@ int processing_finish(png_structp png_ptr, png_infop info_ptr,
 }
 
 }  // namespace
+#endif
+
+bool CanDecodeAPNG() {
+#if JPEGXL_ENABLE_APNG
+  return true;
+#else
+  return false;
+#endif
+}
 
 Status DecodeImageAPNG(const Span<const uint8_t> bytes,
                        const ColorHints& color_hints, PackedPixelFile* ppf,
                        const SizeConstraints* constraints) {
+#if JPEGXL_ENABLE_APNG
   Reader r;
   unsigned int id, j, w, h, w0, h0, x0, y0;
   unsigned int delay_num, delay_den, dop, bop, rowbytes, imagesize;
@@ -573,6 +585,7 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
   std::vector<std::vector<uint8_t>> chunksInfo;
   bool isAnimated = false;
   bool hasInfo = false;
+  bool seenFctl = false;
   APNGFrame frameRaw = {};
   uint32_t num_channels;
   JxlPixelFormat format;
@@ -640,6 +653,7 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
       while (!r.Eof()) {
         id = read_chunk(&r, &chunk);
         if (!id) break;
+        seenFctl |= (id == kId_fcTL);
 
         if (id == kId_acTL && !hasInfo && !isAnimated) {
           isAnimated = true;
@@ -700,6 +714,10 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
           }
         } else if (id == kId_IDAT) {
           // First IDAT chunk means we now have all header info
+          if (seenFctl) {
+            // `fcTL` chunk must appear after all `IDAT` chunks
+            return JXL_FAILURE("IDAT chunk after fcTL chunk");
+          }
           hasInfo = true;
           JXL_CHECK(w == png_get_image_width(png_ptr, info_ptr));
           JXL_CHECK(h == png_get_image_height(png_ptr, info_ptr));
@@ -716,8 +734,18 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
             ppf->info.num_color_channels = 3;
             ppf->color_encoding.color_space = JXL_COLOR_SPACE_RGB;
             if (sigbits && sigbits->red == sigbits->green &&
-                sigbits->green == sigbits->blue)
+                sigbits->green == sigbits->blue) {
               ppf->info.bits_per_sample = sigbits->red;
+            } else if (sigbits) {
+              int maxbps = std::max(sigbits->red,
+                                    std::max(sigbits->green, sigbits->blue));
+              JXL_WARNING(
+                  "sBIT chunk: bit depths for R, G, and B are not the same (%i "
+                  "%i %i), while in JPEG XL they have to be the same. Setting "
+                  "RGB bit depth to %i.",
+                  sigbits->red, sigbits->green, sigbits->blue, maxbps);
+              ppf->info.bits_per_sample = maxbps;
+            }
           } else {
             ppf->info.num_color_channels = 1;
             ppf->color_encoding.color_space = JXL_COLOR_SPACE_GRAY;
@@ -726,12 +754,12 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
           if (colortype & 4 ||
               png_get_valid(png_ptr, info_ptr, PNG_INFO_tRNS)) {
             ppf->info.alpha_bits = ppf->info.bits_per_sample;
-            if (sigbits) {
-              if (sigbits->alpha &&
-                  sigbits->alpha != ppf->info.bits_per_sample) {
-                return JXL_FAILURE("Unsupported alpha bit-depth");
-              }
-              ppf->info.alpha_bits = sigbits->alpha;
+            if (sigbits && sigbits->alpha != ppf->info.bits_per_sample) {
+              JXL_WARNING(
+                  "sBIT chunk: bit depths for RGBA are inconsistent "
+                  "(%i %i %i %i). Setting A bitdepth to %i.",
+                  sigbits->red, sigbits->green, sigbits->blue, sigbits->alpha,
+                  ppf->info.bits_per_sample);
             }
           } else {
             ppf->info.alpha_bits = 0;
@@ -767,6 +795,9 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
             break;
           }
         } else if (id == kId_fdAT && isAnimated) {
+          if (!hasInfo) {
+            return JXL_FAILURE("fDAT chunk before iDAT");
+          }
           png_save_uint_32(chunk.data() + 4, chunk.size() - 16);
           memcpy(chunk.data() + 8, "IDAT", 4);
           if (processing_data(png_ptr, info_ptr, chunk.data() + 4,
@@ -912,7 +943,7 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
         should_blend = false;
         ppf->frames.emplace_back(std::move(new_data));
       } else {
-        // If all else fails, insert a dummy blank frame with kReplace.
+        // If all else fails, insert a placeholder blank frame with kReplace.
         PackedImage blank(pxs, pys, frame.data.format);
         memset(blank.pixels(), 0, blank.pixels_size);
         ppf->frames.emplace_back(std::move(blank));
@@ -956,6 +987,9 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
   ppf->frames.back().frame_info.is_last = true;
 
   return true;
+#else
+  return false;
+#endif
 }
 
 }  // namespace extras

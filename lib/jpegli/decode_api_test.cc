@@ -3,9 +3,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include <stdio.h>
-
 #include <cmath>
+#include <cstdint>
 #include <vector>
 
 #include "lib/jpegli/decode.h"

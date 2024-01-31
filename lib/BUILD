@@ -7,6 +7,7 @@
 load(
     "jxl_lists.bzl",
     "libjxl_base_sources",
+    "libjxl_cms_sources",
     "libjxl_codec_apng_sources",
     "libjxl_codec_exr_sources",
     "libjxl_codec_gif_sources",
@@ -47,7 +48,6 @@ load(
     "libjxl_deps_hwy_nanobenchmark",
     "libjxl_deps_hwy_test_util",
     "libjxl_deps_jpeg",
-    "libjxl_deps_jxl_box",
     "libjxl_deps_png",
     "libjxl_deps_runfiles",
     "libjxl_deps_skcms",
@@ -96,6 +96,15 @@ genrule(
     compatible_with = DEFAULT_COMPATIBILITY,
 )
 
+JXL_CMS_EXPORT_H = INCLUDES_DIR + "/jxl/jxl_cms_export.h"
+
+genrule(
+    name = "create_jxl_cms_export",
+    outs = [JXL_CMS_EXPORT_H],
+    cmd = "echo '" + EXPORT_TEMPLATE.replace("@", "JXL_CMS") + "' > $@",
+    compatible_with = DEFAULT_COMPATIBILITY,
+)
+
 JXL_THREADS_EXPORT_H = INCLUDES_DIR + "/jxl/jxl_threads_export.h"
 
 genrule(
@@ -132,33 +141,33 @@ JPEGLI_JMORECFG_H = INCLUDES_DIR + "/jpegli/jmorecfg.h"
 
 JPEGLI_JPEGLIB_H = INCLUDES_DIR + "/jpegli/jpeglib.h"
 
-expand_template(
+copy_file(
     name = "expand_jconfig",
+    src = "@libjpeg_turbo//:jconfig.h",
     out = JPEGLI_JCONFIG_H,
     compatible_with = DEFAULT_COMPATIBILITY,
-    substitutions = {
-        "@JPEG_LIB_VERSION@": str(libjxl_jpegli_lib_version),
-    },
-    template = "//:third_party/libjpeg-interface/jconfig.h.in",
 )
 
 copy_file(
     name = "copy_jmorecfg",
-    src = "//:third_party/libjpeg-interface/jmorecfg.h",
+    src = "@libjpeg_turbo//:jmorecfg.h",
     out = JPEGLI_JMORECFG_H,
     compatible_with = DEFAULT_COMPATIBILITY,
 )
 
 copy_file(
     name = "copy_jpeglib",
-    src = "//:third_party/libjpeg-interface/jpeglib.h",
+    src = "@libjpeg_turbo//:jpeglib.h",
     out = JPEGLI_JPEGLIB_H,
     compatible_with = DEFAULT_COMPATIBILITY,
 )
 
 cc_library(
     name = "includes",
-    hdrs = libjxl_public_headers + [JXL_EXPORT_H],
+    hdrs = libjxl_public_headers + [
+        JXL_EXPORT_H,
+        JXL_CMS_EXPORT_H,
+    ],
     compatible_with = DEFAULT_COMPATIBILITY,
     strip_include_prefix = INCLUDES_DIR,
     deps = [":jxl_version"],
@@ -187,9 +196,11 @@ cc_library(
 
 cc_library(
     name = "jpegxl",
-    srcs = libjxl_dec_sources + libjxl_dec_box_sources + libjxl_dec_jpeg_sources + libjxl_enc_sources,
+    srcs = libjxl_dec_sources + libjxl_dec_box_sources + libjxl_dec_jpeg_sources + libjxl_enc_sources + libjxl_cms_sources,
     compatible_with = DEFAULT_COMPATIBILITY,
-    defines = ["JPEGXL_ENABLE_SKCMS=1"],
+    defines = [
+        "JPEGXL_ENABLE_SKCMS=1",
+    ],
     deps = [
         ":base",
         ":includes",
@@ -200,7 +211,7 @@ cc_library(
     name = "jpegxl_private",
     hdrs = [
         path
-        for path in libjxl_dec_sources + libjxl_dec_box_sources + libjxl_dec_jpeg_sources + libjxl_enc_sources
+        for path in libjxl_dec_sources + libjxl_dec_box_sources + libjxl_dec_jpeg_sources + libjxl_enc_sources + libjxl_cms_sources
         if path.endswith(".h") and not path.endswith("-inl.h")
     ],
     compatible_with = DEFAULT_COMPATIBILITY,
@@ -295,7 +306,7 @@ TESTS = [path.partition(".")[0] for path in libjxl_tests + libjxl_jpegli_tests]
             ":jpegxl_private",
             ":jpegxl_threads",
             ":test_utils",
-        ] + libjxl_deps_gtest + libjxl_deps_hwy_test_util + libjxl_deps_hwy_nanobenchmark + libjxl_deps_jxl_box,
+        ] + libjxl_deps_gtest + libjxl_deps_hwy_test_util + libjxl_deps_hwy_nanobenchmark,
     )
     for test in TESTS
 ]

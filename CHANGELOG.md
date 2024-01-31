@@ -8,8 +8,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Added
+ - decoder API: added `JxlDecoderGetBoxSizeContents` for getting the size of the
+   content of a box without the headers.
+### Removed
+
+### Changed / clarified
+
+## [0.9.0] - 2023-12-22
+
+### Added
  - encoder API: add `JxlEncoderSetExtraChannelDistance` to adjust the quality
    of extra channels (like alpha) separately.
+ - encoder API: new api functions for streaming encoding:
+  - `JxlEncoderSetOutputProcessor`
+  - `JxlEncoderFlushInput`
+  - `JxlEncoderOutputProcessor` struct
+  - `JxlEncoderSetOutputCallback`
+  - `JxlChunkedFrameInputSource` struct
+  - `JxlEncoderAddChunkedFrame`
+ - encoder API: new options for more fine-grained control over metadata
+   preservation when using `JxlEncoderAddJPEGFrame`:
+  - `JXL_ENC_FRAME_SETTING_JPEG_KEEP_EXIF`
+  - `JXL_ENC_FRAME_SETTING_JPEG_KEEP_XMP`
+  - `JXL_ENC_FRAME_SETTING_JPEG_KEEP_JUMBF`
+ - encoder API: new function `JxlEncoderSetUpsamplingMode` to change the upsampling
+   method, e.g. to use nearest-neighbor upsampling for pixel art
+ - decoder API: implemented `JxlDecoderSetOutputColorProfile` and
+   `JxlDecoderSetCms` to enable decoding to desired colorspace.
+ - cjxl can now be used to explicitly add/update/strip Exif/XMP/JUMBF metadata using
+   the decoder-hints syntax, e.g. `cjxl input.ppm -x exif=input.exif output.jxl`
+ - djxl can now be used to extract Exif/XMP/JUMBF metadata
+ - encoder API: new function `JxlEncoderDistanceFromQuality` for convenience to
+   calculate a `distance` given a `quality`
 
 ### Removed
  - API: the Butteraugli API (`jxl/butteraugli.h`) was removed.
@@ -23,8 +53,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
    `JxlDecoderGetICCProfileSize`, and `JxlDecoderGetColorAsICCProfile`
    changed: a deprecated unused argument was removed.
 
-### Changed 
+### Changed / clarified
  - changed the name of the cjxl flag `photon_noise` to `photon_noise_iso`
+ - fixed how large boxes are decoded (#2958)
+ - fixed encoding files with unreadable patches (#3042, #3046)
 
 ## [0.8.0] - 2023-01-18
 
@@ -50,6 +82,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed / clarified
  - encoder API: `JxlEncoderProcessOutput` requires at least 32 bytes of output
    space to proceed and guarantees that at least one byte will be written
+
 ## [0.7] - 2022-07-21
 
 ### Added

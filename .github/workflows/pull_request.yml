@@ -7,26 +7,43 @@
 
 name: PR
 on:
+  merge_group:
   pull_request:
     types: [opened, reopened, synchronize]
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   # Checks that the AUTHORS files is updated with new contributors.
   authors:
     runs-on: [ubuntu-latest]
     steps:
+    - name: Harden Runner
+      uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
+      with:
+        egress-policy: audit
+
     - name: Checkout the source
-      uses: actions/checkout@v2
+      uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
     - name: Check AUTHORS file
+      # This is an optional check
+      continue-on-error: True
       run:
         ./ci.sh authors
 
   format:
     runs-on: [ubuntu-latest]
     steps:
+    - name: Harden Runner
+      uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
+      with:
+        egress-policy: audit
+
     - name: Install build deps
       run: |
         sudo rm -f /var/lib/man-db/auto-update
@@ -37,7 +54,7 @@ jobs:
           clang-format-15 \
         #
     - name: Checkout the source
-      uses: actions/checkout@v2
+      uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
     - name: Install buildifier
       run: |
         eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"

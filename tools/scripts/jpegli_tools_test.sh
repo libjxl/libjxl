@@ -67,7 +67,7 @@ cjpegli_djpegli_test() {
   verify_max_bpp "${infn}" "${jpgfn}" "${maxbpp}"
 }
 
-# Test the --taget_size command line argument of cjpegli.
+# Test the --target_size command line argument of cjpegli.
 cjpegli_test_target_size() {
   local infn="${JPEGXL_TEST_DATA_PATH}/$1"
   local encargs="$2"

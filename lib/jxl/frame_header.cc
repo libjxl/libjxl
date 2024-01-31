@@ -9,7 +9,9 @@
 
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/common.h"  // kMaxNumPasses
 #include "lib/jxl/fields.h"
+#include "lib/jxl/pack_signed.h"
 
 namespace jxl {
 
@@ -366,8 +368,7 @@ Status FrameHeader::VisitFields(Visitor* JXL_RESTRICT visitor) {
       JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&animation_frame));
     }
     JXL_QUIET_RETURN_IF_ERROR(visitor->Bool(true, &is_last));
-  }
-  if (frame_type != FrameType::kRegularFrame) {
+  } else {
     is_last = false;
   }
 

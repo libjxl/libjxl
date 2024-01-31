@@ -1,12 +1,12 @@
-if (NOT JPEGXL_ENABLE_TOOLS OR NOT JPEGXL_EMSCRIPTEN)
+if (NOT JPEGXL_ENABLE_TOOLS OR NOT EMSCRIPTEN)
   return()
 endif()
 
 # WASM API facade.
 add_executable(jxl_decoder jxl_decoder.cc jxl_decompressor.cc no_png.cc)
 add_executable(jxl_decoder_for_test jxl_decoder.cc jxl_decompressor.cc no_png.cc)
-target_link_libraries(jxl_decoder jxl_extras-static)
-target_link_libraries(jxl_decoder_for_test jxl_extras-static)
+target_link_libraries(jxl_decoder jxl_extras-internal jxl_threads)
+target_link_libraries(jxl_decoder_for_test jxl_extras-internal jxl_threads)
 
 set(JXL_C_SYMBOLS
   _free
@@ -36,9 +36,14 @@ set(JXL_WASM_BASE_LINK_FLAGS "\
   -s ALLOW_MEMORY_GROWTH=1 \
   -s DISABLE_EXCEPTION_CATCHING=1 \
   -s MODULARIZE=1 \
-  -s USE_PTHREADS=1 \
-  -s PTHREAD_POOL_SIZE=4 \
 ")
+
+if (JPEGXL_ENABLE_WASM_TRHEADS)
+  set(JXL_WASM_BASE_LINK_FLAGS "${JXL_WASM_BASE_LINK_FLAGS} \
+    -s USE_PTHREADS=1 \
+    -s PTHREAD_POOL_SIZE=4 \
+  ")
+endif()
 
 # libpng is used only by "decompressor"
 set(JXL_DECODER_LINK_FLAGS "${JXL_WASM_BASE_LINK_FLAGS} \

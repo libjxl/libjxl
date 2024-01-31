@@ -13,6 +13,7 @@
 
 name: Release build / deploy
 on:
+  merge_group:
   push:
     branches:
       - main
@@ -24,15 +25,25 @@ on:
       - 'AUTHORS'
   release:
     types: [ published ]
+  workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   ubuntu_static_x86_64:
     name: Release linux x86_64 static
     runs-on: [ubuntu-latest]
     steps:
+    - name: Harden Runner
+      uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
+      with:
+        egress-policy: audit
+
     - name: Install build deps
       run: |
         sudo rm -f /var/lib/man-db/auto-update
@@ -59,7 +70,7 @@ jobs:
         echo "CXX=clang++" >> $GITHUB_ENV
 
     - name: Checkout the source
-      uses: actions/checkout@v2
+      uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       with:
         submodules: true
         fetch-depth: 1
@@ -87,14 +98,14 @@ jobs:
           ${{ runner.workspace }}/jxl-linux-x86_64-static-${{ github.event.release.tag_name }}.tar.gz
 
     - name: Upload artifacts
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
       with:
         name: jxl-linux-x86_64-static
         path: ${{ runner.workspace }}/release_file.tar.gz
 
     - name: Upload binaries to release
       if: github.event_name == 'release'
-      uses: AButler/upload-release-assets@v2.0
+      uses: AButler/upload-release-assets@c94805dc72e4b20745f543da0f62eaee7722df7a # v2.0.2
       with:
         files: ${{ runner.workspace }}/jxl-linux-x86_64-static-${{ github.event.release.tag_name }}.tar.gz
         repo-token: ${{ secrets.GITHUB_TOKEN }}
@@ -110,23 +121,27 @@ jobs:
         os:
         - ubuntu:22.04
         - ubuntu:20.04
-        - ubuntu:18.04
-        - debian:buster
         - debian:bullseye
         - debian:bookworm
+        - debian:trixie
         - debian:sid
 
     container:
       image: ${{ matrix.os }}
 
     steps:
+    - name: Harden Runner
+      uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
+      with:
+        egress-policy: audit
+
     - name: Set env
       shell: 'bash'
       id: 'env'
       run: |
         artifact_name="jxl-debs-amd64-${matrix_os/:/-}"
         echo ${artifact_name}
-        echo "::set-output name=artifact_name::${artifact_name}"
+        echo "artifact_name=${artifact_name}" >> $GITHUB_OUTPUT
       env:
         matrix_os: ${{ matrix.os }}
 
@@ -139,47 +154,13 @@ jobs:
           devscripts \
         #
 
-    - name: Install git (only 18.04)
-      if: matrix.os == 'ubuntu:18.04'
-        # Ubuntu 18.04 ships with git 2.17 but we need 2.18 or newer for
-        # actions/checkout@v2 to work
-      shell: 'bash'
-      run: |
-        apt install -y \
-          libcurl4-openssl-dev \
-          libexpat1-dev \
-          libssl-dev \
-          wget \
-          zlib1g-dev \
-        #
-        git_version="2.32.0"
-        wget -nv \
-          "https://github.com/git/git/archive/refs/tags/v${git_version}.tar.gz"
-        tar -zxf "v${git_version}.tar.gz"
-        cd "git-${git_version}"
-        make prefix=/usr -j4 install
-
-    - name: Install gcc-8 (only 18.04)
-      if: matrix.os == 'ubuntu:18.04'
-        # Compiler bug workaround: install and use gcc-8
-      shell: 'bash'
-      run: |
-        apt install -y \
-          gcc-8 \
-          g++-8 \
-        #
-        update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-8 100
-        update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-8 100
-        update-alternatives --set g++ /usr/bin/g++-8
-        update-alternatives --set gcc /usr/bin/gcc-8
-
     - name: Set git safe dir
       run: |
         export GIT_CEILING_DIRECTORIES=/__w # only work before git v2.35.2
         git config --global --add safe.directory /__w/libjxl/libjxl
 
     - name: Checkout the source
-      uses: actions/checkout@v2
+      uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       with:
         submodules: true
         fetch-depth: 1
@@ -211,20 +192,6 @@ jobs:
           dch -M --distribution unstable --release ''
         fi
 
-    - name: Install gtest (only 18.04)
-      if: matrix.os == 'ubuntu:18.04'
-        # In Ubuntu 18.04 no package installed the libgtest.a. libgtest-dev
-        # installs the source files only.
-      run: |
-        apt install -y libgtest-dev cmake
-        for prj in googletest googlemock; do
-          (cd /usr/src/googletest/${prj}/ &&
-           cmake CMakeLists.txt -DCMAKE_INSTALL_PREFIX=/usr &&
-           make all install)
-        done
-        # Remove libgmock-dev dependency in Ubuntu 18.04. It doesn't exist there.
-        sed '/libgmock-dev,/d' -i debian/control
-
     - name: Install gmock-dev (debian:sid)
       # gtest-dev cmake depends on gmock-dev, but it is not installed by the
       # package.
@@ -232,11 +199,10 @@ jobs:
       run: |
         apt install -y libgmock-dev
 
-    - name: Remove libjxl-gimp-plugin package (only 18.04)
-      if: matrix.os == 'ubuntu:18.04'
+    - name: Configure hwy
+      if: ${{ github.event_name == 'schedule' || github.event_name == 'release' || contains(github.event.pull_request.labels.*.name, 'CI:full') }}
       run: |
-        # Gimp 2.8 is not supported.
-        sed -i '/Package: libjxl-gimp-plugin/,/^$/d' debian/control
+        echo "HWY_PKG_OPTIONS=" >> $GITHUB_ENV
 
     - name: Build hwy
       run: |
@@ -254,7 +220,7 @@ jobs:
         ./ci.sh debian_stats
 
     - name: Upload artifacts
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
       with:
         name: ${{ steps.env.outputs.artifact_name }}
         path: |
@@ -270,7 +236,7 @@ jobs:
 
     - name: Upload binaries to release
       if: github.event_name == 'release'
-      uses: AButler/upload-release-assets@v2.0
+      uses: AButler/upload-release-assets@c94805dc72e4b20745f543da0f62eaee7722df7a # v2.0.2
       with:
         files: ${{ steps.env.outputs.artifact_name }}-${{ github.event.release.tag_name }}.tar.gz
         repo-token: ${{ secrets.GITHUB_TOKEN }}
@@ -287,20 +253,33 @@ jobs:
             arch: '-A Win32'
           - triplet: x64-windows-static
             arch: '-A x64'
+          - triplet: x86-windows
+            arch: '-A Win32'
+            static: 'OFF'
+            tools: 'OFF'
+          - triplet: x64-windows
+            arch: '-A x64'
+            static: 'OFF'
+            tools: 'OFF'
 
     env:
-      VCPKG_VERSION: '2022.06.16.1'
+      VCPKG_VERSION: '2023.12.12'
       VCPKG_ROOT: vcpkg
       VCPKG_DISABLE_METRICS: 1
 
     steps:
+    - name: Harden Runner
+      uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
+      with:
+        egress-policy: audit
+
     - name: Checkout the source
-      uses: actions/checkout@v2
+      uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       with:
         submodules: true
         fetch-depth: 2
 
-    - uses: actions/cache@v2
+    - uses: actions/cache@13aacd865c20de90d75de3b17ebe84f7a17d57d2 # v4.0.0
       id: cache-vcpkg
       with:
         path: vcpkg
@@ -341,7 +320,8 @@ jobs:
         set -x
         mkdir build
         cmake -Bbuild -H. ${{ matrix.arch }} \
-          -DJPEGXL_STATIC=ON \
+          -DJPEGXL_STATIC=${{ matrix.static || 'ON'}} \
+          -DJPEGXL_ENABLE_TOOLS=${{ matrix.tools || 'ON'}} \
           -DBUILD_TESTING=OFF \
           -DCMAKE_BUILD_TYPE=Release \
           -DCMAKE_INSTALL_PREFIX=`pwd`/prefix \
@@ -351,7 +331,7 @@ jobs:
           -DJPEGXL_ENABLE_PLUGINS=OFF \
           -DJPEGXL_ENABLE_TCMALLOC=OFF \
           -DJPEGXL_ENABLE_VIEWERS=OFF \
-          -DJPEGXL_ENABLE_DEVTOOLS=ON \
+          -DJPEGXL_ENABLE_DEVTOOLS=${{ matrix.tools || 'ON'}} \
           -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} \
         #
     - name: Build
@@ -374,22 +354,23 @@ jobs:
         cp third_party/brotli/LICENSE prefix/bin/LICENSE.brotli
         cp LICENSE prefix/bin/LICENSE.libjxl
     - name: Upload artifacts
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
       with:
         name: jxl-${{matrix.triplet}}
         path: |
           prefix/bin/*
+          prefix/lib/*
 
     - name: Package release zip
       if: github.event_name == 'release'
       shell: 'powershell'
       run: |
-        Compress-Archive -Path prefix\bin\* `
+        Compress-Archive -Path prefix\bin\*, prefix\lib\* `
           -DestinationPath jxl-${{matrix.triplet}}.zip
 
     - name: Upload binaries to release
       if: github.event_name == 'release'
-      uses: AButler/upload-release-assets@v2.0
+      uses: AButler/upload-release-assets@c94805dc72e4b20745f543da0f62eaee7722df7a # v2.0.2
       with:
         files: jxl-${{matrix.triplet}}.zip
         repo-token: ${{ secrets.GITHUB_TOKEN }}

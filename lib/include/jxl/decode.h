@@ -20,7 +20,7 @@
 #include <jxl/memory_manager.h>
 #include <jxl/parallel_runner.h>
 #include <jxl/types.h>
-#include <jxl/version.h>
+#include <jxl/version.h>  // TODO(eustas): remove before v1.0
 #include <stddef.h>
 #include <stdint.h>
 
@@ -319,6 +319,33 @@ typedef enum {
    */
   JXL_DEC_FRAME_PROGRESSION = 0x8000,
 } JxlDecoderStatus;
+
+/** Types of progressive detail.
+ * Setting a progressive detail with value N implies all progressive details
+ * with smaller or equal value. Currently only the following level of
+ * progressive detail is implemented:
+ *  - kDC (which implies kFrames)
+ *  - kLastPasses (which implies kDC and kFrames)
+ *  - kPasses (which implies kLastPasses, kDC and kFrames)
+ */
+typedef enum {
+  // after completed kRegularFrames
+  kFrames = 0,
+  // after completed DC (1:8)
+  kDC = 1,
+  // after completed AC passes that are the last pass for their resolution
+  // target.
+  kLastPasses = 2,
+  // after completed AC passes that are not the last pass for their resolution
+  // target.
+  kPasses = 3,
+  // during DC frame when lower resolution are completed (1:32, 1:16)
+  kDCProgressive = 4,
+  // after completed groups
+  kDCGroups = 5,
+  // after completed groups
+  kGroups = 6,
+} JxlProgressiveDetail;
 
 /** Rewinds decoder to the beginning. The same input must be given again from
  * the beginning of the file and the decoder will emit events from the beginning
@@ -850,7 +877,8 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetOutputColorProfile(
  * @param cms structure representing a CMS implementation. See @ref
  * JxlCmsInterface for more details.
  */
-JXL_EXPORT void JxlDecoderSetCms(JxlDecoder* dec, JxlCmsInterface cms);
+JXL_EXPORT JxlDecoderStatus JxlDecoderSetCms(JxlDecoder* dec,
+                                             JxlCmsInterface cms);
 // TODO(firsching): add a function JxlDecoderSetDefaultCms() for setting a
 // default in case libjxl is build with a CMS.
 
@@ -1331,15 +1359,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetBoxType(JxlDecoder* dec,
 
 /**
  * Returns the size of a box as it appears in the container file, after the @ref
- * JXL_DEC_BOX event. For a non-compressed box, this is the size of the
- * contents, excluding the 4 bytes indicating the box type. For a compressed
- * "brob" box, this is the size of the compressed box contents plus the
- * additional 4 byte indicating the underlying box type, but excluding the 4
- * bytes indicating "brob". This function gives the size of the data that will
- * be written in the output buffer when getting boxes in the default raw
- * compressed mode. When @ref JxlDecoderSetDecompressBoxes is enabled, the
- * return value of function does not change, and the decompressed size is not
- * known before it has already been decompressed and output.
+ * JXL_DEC_BOX event. This includes all the box headers.
  *
  * @param dec decoder object
  * @param size raw size of the box in bytes
@@ -1348,6 +1368,22 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetBoxType(JxlDecoder* dec,
  */
 JXL_EXPORT JxlDecoderStatus JxlDecoderGetBoxSizeRaw(const JxlDecoder* dec,
                                                     uint64_t* size);
+
+/**
+ * Returns the size of the contents of a box, after the @ref
+ * JXL_DEC_BOX event. This does not include any of the headers of the box. For
+ * compressed "brob" boxes, this is the size of the compressed content. Even
+ * when @ref JxlDecoderSetDecompressBoxes is enabled, the return value of
+ * function does not change, and the decompressed size is not known before it
+ * has already been decompressed and output.
+ *
+ * @param dec decoder object
+ * @param size size of the payload of the box in bytes
+ * @return @ref JXL_DEC_ERROR if no box size is available, @ref JXL_DEC_SUCCESS
+ *     otherwise.
+ */
+JXL_EXPORT JxlDecoderStatus JxlDecoderGetBoxSizeContents(const JxlDecoder* dec,
+                                                         uint64_t* size);
 
 /**
  * Configures at which progressive steps in frame decoding these @ref

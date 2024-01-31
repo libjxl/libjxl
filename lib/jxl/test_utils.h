@@ -12,34 +12,48 @@
 
 #include <jxl/codestream_header.h>
 #include <jxl/thread_parallel_runner_cxx.h>
-#include <stddef.h>
-#include <stdint.h>
 
+#include <cstddef>
+#include <cstdint>
 #include <ostream>
 #include <vector>
 
+#include "lib/extras/dec/decode.h"
 #include "lib/extras/dec/jxl.h"
 #include "lib/extras/enc/jxl.h"
 #include "lib/extras/packed_image.h"
 #include "lib/jxl/base/data_parallel.h"
-#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/enc_params.h"
 
+#define TEST_LIBJPEG_SUPPORT()                                              \
+  do {                                                                      \
+    if (!jxl::extras::CanDecode(jxl::extras::Codec::kJPG)) {                \
+      fprintf(stderr, "Skipping test because of missing libjpeg codec.\n"); \
+      return;                                                               \
+    }                                                                       \
+  } while (0)
+
 namespace jxl {
 
 struct AuxOut;
+class CodecInOut;
+class PaddedBytes;
+struct PassesEncoderState;
+class ThreadPool;
 
 namespace test {
 
 std::string GetTestDataPath(const std::string& filename);
-PaddedBytes ReadTestData(const std::string& filename);
+std::vector<uint8_t> ReadTestData(const std::string& filename);
 
 void JxlBasicInfoSetFromPixelFormat(JxlBasicInfo* basic_info,
                                     const JxlPixelFormat* pixel_format);
+
+void DefaultAcceptedFormats(extras::JXLDecompressParams& dparams);
 
 template <typename Params>
 void SetThreadParallelRunner(Params params, ThreadPool* pool) {
@@ -56,8 +70,7 @@ Status DecodeFile(extras::JXLDecompressParams dparams,
 bool Roundtrip(const CodecInOut* io, const CompressParams& cparams,
                extras::JXLDecompressParams dparams,
                CodecInOut* JXL_RESTRICT io2, std::stringstream& failures,
-               size_t* compressed_size = nullptr, ThreadPool* pool = nullptr,
-               AuxOut* aux_out = nullptr);
+               size_t* compressed_size = nullptr, ThreadPool* pool = nullptr);
 
 // Returns compressed size [bytes].
 size_t Roundtrip(const extras::PackedPixelFile& ppf_in,
@@ -95,9 +108,6 @@ jxl::CodecInOut SomeTestImageToCodecInOut(const std::vector<uint8_t>& buf,
                                           size_t ysize);
 
 bool Near(double expected, double value, double max_dist);
-
-// Based on highway scalar implementation, for testing
-float LoadFloat16(uint16_t bits16);
 
 float LoadLEFloat16(const uint8_t* p);
 
@@ -138,6 +148,9 @@ float Butteraugli3Norm(const extras::PackedPixelFile& a,
 float ComputeDistance2(const extras::PackedPixelFile& a,
                        const extras::PackedPixelFile& b);
 
+float ComputePSNR(const extras::PackedPixelFile& a,
+                  const extras::PackedPixelFile& b);
+
 bool SameAlpha(const extras::PackedPixelFile& a,
                const extras::PackedPixelFile& b);
 
@@ -163,12 +176,24 @@ class ThreadPoolForTests {
   std::unique_ptr<ThreadPool> pool_;
 };
 
+// `icc` may be empty afterwards - if so, call CreateProfile. Does not append,
+// clears any original data that was in icc.
+// If `output_limit` is not 0, then returns error if resulting profile would be
+// longer than `output_limit`
+Status ReadICC(BitReader* JXL_RESTRICT reader,
+               std::vector<uint8_t>* JXL_RESTRICT icc, size_t output_limit = 0);
+
+// Compresses pixels from `io` (given in any ColorEncoding).
+// `io->metadata.m.original` must be set.
+Status EncodeFile(const CompressParams& params, const CodecInOut* io,
+                  std::vector<uint8_t>* compressed, ThreadPool* pool = nullptr);
+
 }  // namespace test
 
-bool operator==(const jxl::PaddedBytes& a, const jxl::PaddedBytes& b);
+bool operator==(const jxl::Bytes& a, const jxl::Bytes& b);
 
-// Allow using EXPECT_EQ on jxl::PaddedBytes
-bool operator!=(const jxl::PaddedBytes& a, const jxl::PaddedBytes& b);
+// Allow using EXPECT_EQ on jxl::Bytes
+bool operator!=(const jxl::Bytes& a, const jxl::Bytes& b);
 
 }  // namespace jxl
 

@@ -20,6 +20,7 @@ import collections
 import itertools
 import json
 import os
+import platform
 import re
 import struct
 import subprocess
@@ -29,6 +30,7 @@ import tempfile
 # Ignore functions with stack size smaller than this value.
 MIN_STACK_SIZE = 32
 
+IS_OSX = (platform.system() == 'Darwin')
 
 Symbol = collections.namedtuple('Symbol', ['address', 'size', 'typ', 'name'])
 
@@ -55,7 +57,10 @@ RAM_SIZE = 'dbs'
 
 # u - symbols imported from some other library
 # a - absolute address symbols
-IGNORE_SYMBOLS = 'ua'
+# c - common symbol
+# i - indirect symbol
+# - - debugger symbol table entries
+IGNORE_SYMBOLS = 'uaci-'
 
 SIMD_NAMESPACES = [
     'N_SCALAR', 'N_WASM', 'N_NEON', 'N_PPC8', 'N_SSE4', 'N_AVX2', 'N_AVX3']
@@ -65,17 +70,30 @@ def LoadSymbols(filename):
   ret = []
   nmout = subprocess.check_output(['nm', '--format=posix', filename])
   for line in nmout.decode('utf-8').splitlines():
-    if line.rstrip().endswith(':'):
+    line = line.rstrip()
+    if len(line) == 0:
+      # OSX nm produces extra crlf at the end
+      continue
+    if line.endswith(':'):
       # Ignore object names.
       continue
+    line = re.sub(' +', ' ', line)
     # symbol_name, symbol_type, (optional) address, (optional) size
     symlist = line.rstrip().split(' ')
-    assert 2 <= len(symlist) <= 4
+    col_count = len(symlist)
+    assert 2 <= col_count <= 4
     ret.append(Symbol(
-        int(symlist[2], 16) if len(symlist) > 2 else None,
-        int(symlist[3], 16) if len(symlist) > 3 else None,
+        int(symlist[2], 16) if col_count > 2 else None,
+        int(symlist[3], 16) if col_count > 3 else None,
         symlist[1],
         symlist[0]))
+  if IS_OSX:
+    ret = sorted(ret, key=lambda sym: sym.address)
+    for i in range(len(ret) - 1):
+      size = ret[i + 1].address - ret[i].address
+      if size > (1 << 30):
+        continue
+      ret[i] = ret[i]._replace(size=size)
   return ret
 
 def LoadTargetCommand(target, build_dir):
@@ -145,8 +163,9 @@ def LoadStackSizes(filename, binutils=''):
   section, which can be done by compiling with -fstack-size-section in clang.
   """
   with tempfile.NamedTemporaryFile() as stack_sizes_sec:
+    objcopy = ['objcopy', 'gobjcopy'][IS_OSX]
     subprocess.check_call(
-        [binutils + 'objcopy', '-O', 'binary', '--only-section=.stack_sizes',
+        [binutils + objcopy, '-O', 'binary', '--only-section=.stack_sizes',
          '--set-section-flags', '.stack_sizes=alloc', filename,
          stack_sizes_sec.name])
     stack_sizes = stack_sizes_sec.read()
@@ -157,10 +176,11 @@ def LoadStackSizes(filename, binutils=''):
   #  dynamic stack allocations are not included.
 
   # Get the pointer format based on the ELF file.
+  objdump = ['objdump', 'gobjdump'][IS_OSX]
   output = subprocess.check_output(
-      [binutils + 'objdump', '-a', filename]).decode('utf-8')
+      [binutils + objdump, '-a', filename]).decode('utf-8')
   elf_format = re.search('file format (.*)$', output, re.MULTILINE).group(1)
-  if elf_format.startswith('elf64-little') or elf_format == 'elf64-x86-64':
+  if elf_format.startswith('elf64-little') or elf_format.endswith('-x86-64') or elf_format.endswith('-arm64'):
     pointer_fmt = '<Q'
   elif elf_format.startswith('elf32-little') or elf_format == 'elf32-i386':
     pointer_fmt = '<I'
@@ -234,7 +254,7 @@ def PrintStats(stats):
   print('%-32s %17s %17s' % ('Object name', 'Binary size', 'Static RAM size'))
   for name, bin_size, ram_size in table:
     print('%-32s %8d (%5.1f%%) %8d (%5.1f%%)' % (
-        name, bin_size, 100. * bin_size / mx_bin_size,
+        name, bin_size, (100. * bin_size / mx_bin_size) if mx_bin_size else 0,
         ram_size, (100. * ram_size / mx_ram_size) if mx_ram_size else 0))
   print()
 

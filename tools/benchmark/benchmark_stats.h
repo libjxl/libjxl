@@ -6,34 +6,30 @@
 #ifndef TOOLS_BENCHMARK_BENCHMARK_STATS_H_
 #define TOOLS_BENCHMARK_BENCHMARK_STATS_H_
 
+#include <jxl/stats.h>
 #include <stddef.h>
 #include <stdint.h>
 
+#include <memory>
 #include <string>
 #include <vector>
-
-#include "lib/jxl/enc_aux_out.h"
 
 namespace jpegxl {
 namespace tools {
 
-using ::jxl::AuxOut;
-
 std::string StringPrintf(const char* format, ...);
 
 struct JxlStats {
-  JxlStats() {
-    num_inputs = 0;
-    aux_out = AuxOut();
-  }
+  JxlStats()
+      : num_inputs(0), stats(JxlEncoderStatsCreate(), JxlEncoderStatsDestroy) {}
   void Assimilate(const JxlStats& victim) {
     num_inputs += victim.num_inputs;
-    aux_out.Assimilate(victim.aux_out);
+    JxlEncoderStatsMerge(stats.get(), victim.stats.get());
   }
-  void Print() const { aux_out.Print(num_inputs); }
+  void Print() const;
 
   size_t num_inputs;
-  AuxOut aux_out;
+  std::unique_ptr<JxlEncoderStats, decltype(JxlEncoderStatsDestroy)*> stats;
 };
 
 // The value of an entry in the table. Depending on the ColumnType, the string,

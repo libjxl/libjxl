@@ -15,13 +15,13 @@ namespace tools {
 
 using ::jxl::BitReader;
 using ::jxl::BitReaderScopedCloser;
+using ::jxl::Bytes;
 using ::jxl::Channel;
 using ::jxl::GroupHeader;
 using ::jxl::Image;
 using ::jxl::ModularOptions;
 using ::jxl::pixel_type;
 using ::jxl::Rng;
-using ::jxl::Span;
 using ::jxl::Status;
 using ::jxl::Transform;
 using ::jxl::weighted::Header;
@@ -46,7 +46,7 @@ void AssertEq(T a, T b) {
 
 int TestOneInput(const uint8_t* data, size_t size) {
   static Status nevermind = true;
-  BitReader reader(Span<const uint8_t>(data, size));
+  BitReader reader(Bytes(data, size));
   BitReaderScopedCloser reader_closer(&reader, &nevermind);
 
   Rng rng(reader.ReadFixedBits<56>());

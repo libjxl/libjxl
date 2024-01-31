@@ -3,25 +3,23 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <jxl/cms.h>
 #include <math.h>
 #include <stddef.h>
 #include <stdint.h>
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <utility>
+#include <vector>
 
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
-#include "lib/jxl/base/override.h"
-#include "lib/jxl/base/padded_bytes.h"
+#include "lib/jxl/base/span.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
-#include "lib/jxl/color_management.h"
-#include "lib/jxl/common.h"
-#include "lib/jxl/enc_cache.h"
-#include "lib/jxl/enc_color_management.h"
-#include "lib/jxl/enc_file.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
@@ -80,61 +78,58 @@ Image3F GenerateTestGradient(uint32_t color0, uint32_t color1, double angle,
 // delta and right delta (top/bottom for vertical direction).
 // The radius over which the derivative is computed is only 1 pixel and it only
 // checks two angles (hor and ver), but this approximation works well enough.
-static ImageF Gradient2(const ImageF& image) {
+static Image3F Gradient2(const Image3F& image) {
   size_t xsize = image.xsize();
   size_t ysize = image.ysize();
-  ImageF image2(image.xsize(), image.ysize());
-  for (size_t y = 1; y + 1 < ysize; y++) {
-    const auto* JXL_RESTRICT row0 = image.Row(y - 1);
-    const auto* JXL_RESTRICT row1 = image.Row(y);
-    const auto* JXL_RESTRICT row2 = image.Row(y + 1);
-    auto* row_out = image2.Row(y);
-    for (size_t x = 1; x + 1 < xsize; x++) {
-      float ddx = (row1[x] - row1[x - 1]) - (row1[x + 1] - row1[x]);
-      float ddy = (row1[x] - row0[x]) - (row2[x] - row1[x]);
-      row_out[x] = std::max(fabsf(ddx), fabsf(ddy));
+  Image3F image2(xsize, ysize);
+  for (size_t c = 0; c < 3; ++c) {
+    for (size_t y = 1; y + 1 < ysize; y++) {
+      const auto* JXL_RESTRICT row0 = image.ConstPlaneRow(c, y - 1);
+      const auto* JXL_RESTRICT row1 = image.ConstPlaneRow(c, y);
+      const auto* JXL_RESTRICT row2 = image.ConstPlaneRow(c, y + 1);
+      auto* row_out = image2.PlaneRow(c, y);
+      for (size_t x = 1; x + 1 < xsize; x++) {
+        float ddx = (row1[x] - row1[x - 1]) - (row1[x + 1] - row1[x]);
+        float ddy = (row1[x] - row0[x]) - (row2[x] - row1[x]);
+        row_out[x] = std::max(fabsf(ddx), fabsf(ddy));
+      }
     }
-  }
-  // Copy to the borders
-  if (ysize > 2) {
-    auto* JXL_RESTRICT row0 = image2.Row(0);
-    const auto* JXL_RESTRICT row1 = image2.Row(1);
-    const auto* JXL_RESTRICT row2 = image2.Row(ysize - 2);
-    auto* JXL_RESTRICT row3 = image2.Row(ysize - 1);
-    for (size_t x = 1; x + 1 < xsize; x++) {
-      row0[x] = row1[x];
-      row3[x] = row2[x];
+    // Copy to the borders
+    if (ysize > 2) {
+      auto* JXL_RESTRICT row0 = image2.PlaneRow(c, 0);
+      const auto* JXL_RESTRICT row1 = image2.PlaneRow(c, 1);
+      const auto* JXL_RESTRICT row2 = image2.PlaneRow(c, ysize - 2);
+      auto* JXL_RESTRICT row3 = image2.PlaneRow(c, ysize - 1);
+      for (size_t x = 1; x + 1 < xsize; x++) {
+        row0[x] = row1[x];
+        row3[x] = row2[x];
+      }
+    } else {
+      const auto* row0_in = image.ConstPlaneRow(c, 0);
+      const auto* row1_in = image.ConstPlaneRow(c, ysize - 1);
+      auto* row0_out = image2.PlaneRow(c, 0);
+      auto* row1_out = image2.PlaneRow(c, ysize - 1);
+      for (size_t x = 1; x + 1 < xsize; x++) {
+        // Image too narrow, take first derivative instead
+        row0_out[x] = row1_out[x] = fabsf(row0_in[x] - row1_in[x]);
+      }
     }
-  } else {
-    const auto* row0_in = image.Row(0);
-    const auto* row1_in = image.Row(ysize - 1);
-    auto* row0_out = image2.Row(0);
-    auto* row1_out = image2.Row(ysize - 1);
-    for (size_t x = 1; x + 1 < xsize; x++) {
-      // Image too narrow, take first derivative instead
-      row0_out[x] = row1_out[x] = fabsf(row0_in[x] - row1_in[x]);
-    }
-  }
-  if (xsize > 2) {
-    for (size_t y = 0; y < ysize; y++) {
-      auto* row = image2.Row(y);
-      row[0] = row[1];
-      row[xsize - 1] = row[xsize - 2];
-    }
-  } else {
-    for (size_t y = 0; y < ysize; y++) {
-      const auto* JXL_RESTRICT row_in = image.Row(y);
-      auto* row_out = image2.Row(y);
-      // Image too narrow, take first derivative instead
-      row_out[0] = row_out[xsize - 1] = fabsf(row_in[0] - row_in[xsize - 1]);
+    if (xsize > 2) {
+      for (size_t y = 0; y < ysize; y++) {
+        auto* row = image2.PlaneRow(c, y);
+        row[0] = row[1];
+        row[xsize - 1] = row[xsize - 2];
+      }
+    } else {
+      for (size_t y = 0; y < ysize; y++) {
+        const auto* JXL_RESTRICT row_in = image.ConstPlaneRow(c, y);
+        auto* row_out = image2.PlaneRow(c, y);
+        // Image too narrow, take first derivative instead
+        row_out[0] = row_out[xsize - 1] = fabsf(row_in[0] - row_in[xsize - 1]);
+      }
     }
   }
   return image2;
-}
-
-static Image3F Gradient2(const Image3F& image) {
-  return Image3F(Gradient2(image.Plane(0)), Gradient2(image.Plane(1)),
-                 Gradient2(image.Plane(2)));
 }
 
 /*
@@ -160,15 +155,11 @@ void TestGradient(ThreadPool* pool, uint32_t color0, uint32_t color1,
 
   CodecInOut io2;
 
-  PaddedBytes compressed;
-  AuxOut* aux_out = nullptr;
-  PassesEncoderState enc_state;
-  EXPECT_TRUE(EncodeFile(cparams, &io, &enc_state, &compressed, GetJxlCms(),
-                         aux_out, pool));
-  EXPECT_TRUE(
-      test::DecodeFile({}, Span<const uint8_t>(compressed), &io2, pool));
-  EXPECT_TRUE(
-      io2.Main().TransformTo(io2.metadata.m.color_encoding, GetJxlCms(), pool));
+  std::vector<uint8_t> compressed;
+  EXPECT_TRUE(test::EncodeFile(cparams, &io, &compressed, pool));
+  EXPECT_TRUE(test::DecodeFile({}, Bytes(compressed), &io2, pool));
+  EXPECT_TRUE(io2.Main().TransformTo(io2.metadata.m.color_encoding,
+                                     *JxlGetDefaultCms(), pool));
 
   if (use_gradient) {
     // Test that the gradient map worked. For that, we take a second derivative

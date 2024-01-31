@@ -45,8 +45,8 @@ int main(int argc, const char** argv) {
   jxl::CodecInOut image;
   std::vector<uint8_t> encoded;
   JXL_CHECK(jpegxl::tools::ReadFile(input_filename, &encoded));
-  JXL_CHECK(jxl::SetFromBytes(jxl::Span<const uint8_t>(encoded),
-                              jxl::extras::ColorHints(), &image, &pool));
+  JXL_CHECK(jxl::SetFromBytes(jxl::Bytes(encoded), jxl::extras::ColorHints(),
+                              &image, &pool));
 
   JXL_CHECK(image.xsize() == image.ysize() * image.ysize());
   const unsigned N = image.ysize();

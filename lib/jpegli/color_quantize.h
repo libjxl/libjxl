@@ -6,7 +6,7 @@
 #ifndef LIB_JPEGLI_COLOR_QUANTIZE_H_
 #define LIB_JPEGLI_COLOR_QUANTIZE_H_
 
-#include <jpeglib.h>
+#include "lib/jpegli/common.h"
 
 namespace jpegli {
 

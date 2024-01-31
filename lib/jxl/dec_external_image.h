@@ -8,18 +8,37 @@
 
 // Interleaved image for color transforms and Codec.
 
-#include <jxl/decode.h>
 #include <jxl/types.h>
 #include <stddef.h>
-#include <stdint.h>
 
+#include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/dec_cache.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
+#include "lib/jxl/image_metadata.h"
 
 namespace jxl {
+
+// Maximum number of channels for the ConvertChannelsToExternal function.
+const size_t kConvertMaxChannels = 4;
+
+// Converts a list of channels to an interleaved image, applying transformations
+// when needed.
+// The input channels are given as a (non-const!) array of channel pointers and
+// interleaved in that order.
+//
+// Note: if a pointer in channels[] is nullptr, a 1.0 value will be used
+// instead. This is useful for handling when a user requests an alpha channel
+// from an image that doesn't have one. The first channel in the list may not
+// be nullptr, since it is used to determine the image size.
+Status ConvertChannelsToExternal(const ImageF* in_channels[],
+                                 size_t num_channels, size_t bits_per_sample,
+                                 bool float_out, JxlEndianness endianness,
+                                 size_t stride, jxl::ThreadPool* pool,
+                                 void* out_image, size_t out_size,
+                                 const PixelCallback& out_callback,
+                                 jxl::Orientation undo_orientation);
 
 // Converts ib to interleaved void* pixel buffer with the given format.
 // bits_per_sample: must be 16 or 32 if float_out is true, and at most 16

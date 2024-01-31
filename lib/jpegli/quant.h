@@ -6,7 +6,7 @@
 #ifndef LIB_JPEGLI_QUANT_H_
 #define LIB_JPEGLI_QUANT_H_
 
-#include <jpeglib.h>
+#include "lib/jpegli/common.h"
 
 namespace jpegli {
 

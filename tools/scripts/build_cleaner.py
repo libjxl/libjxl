@@ -18,16 +18,17 @@ import subprocess
 import sys
 import tempfile
 
+COPYRIGHT = [
+  "Copyright (c) the JPEG XL Project Authors. All rights reserved.",
+  "",
+  "Use of this source code is governed by a BSD-style",
+  "license that can be found in the LICENSE file."
+]
 
-HEAD = """# Copyright (c) the JPEG XL Project Authors. All rights reserved.
-#
-# Use of this source code is governed by a BSD-style
-# license that can be found in the LICENSE file.
-
-# This file is generated, do not modify by manually.
-# Run `tools/scripts/build_cleaner.py --update` to regenerate it.
-"""
-
+DOC = [
+  "This file is generated, do not modify by manually.",
+  "Run `tools/scripts/build_cleaner.py --update` to regenerate it."
+]
 
 def RepoFiles(src_dir):
   """Return the list of files from the source git repository"""
@@ -133,22 +134,28 @@ def SplitLibFiles(repo_files):
     'jxl/decode_to_jpeg.cc', 'jxl/decode_to_jpeg.h'))
   dec_box_sources, dec_sources = Filter(dec_sources, HasPrefixFn(
     'jxl/box_content_decoder.cc', 'jxl/box_content_decoder.h'))
+  cms_sources, dec_sources = Filter(dec_sources, HasPrefixFn('jxl/cms/'))
 
   # TODO(lode): further prune dec_srcs: only those files that the decoder
   # absolutely needs, and or not only for encoding, should be listed here.
 
-  return codecs | {'base_sources': base_sources, 
-    'dec_box_sources': dec_box_sources, 'dec_jpeg_sources': dec_jpeg_sources,
-    'dec_sources': dec_sources, 'enc_sources': enc_sources,
+  return codecs | {'base_sources': base_sources,
+    'cms_sources': cms_sources,
+    'dec_box_sources': dec_box_sources,
+    'dec_jpeg_sources': dec_jpeg_sources,
+    'dec_sources': dec_sources,
+    'enc_sources': enc_sources,
     'extras_for_tools_sources': extras_for_tools_sources,
-    'extras_sources': extras_sources, 'gbench_sources': gbench_sources,
+    'extras_sources': extras_sources,
+    'gbench_sources': gbench_sources,
     'jpegli_sources': jpegli_sources,
     'jpegli_testlib_files': jpegli_testlib_files,
     'jpegli_libjpeg_helper_files': jpegli_libjpeg_helper_files,
     'jpegli_tests': jpegli_tests,
     'jpegli_wrapper_sources' : jpegli_wrapper_sources,
     'public_headers': public_headers,
-    'testlib_files': testlib_files, 'tests': tests,
+    'testlib_files': testlib_files,
+    'tests': tests,
     'threads_public_headers': threads_public_headers,
     'threads_sources': threads_sources,
   }
@@ -190,7 +197,7 @@ def FormatGniVar(name, var):
   if type(var) is list:
     contents = FormatList(var, '    "', '",')
     return f'{name} = [\n{contents}]\n'
-  else:  # TODO: do we need scalar strings?
+  else:  # TODO(eustas): do we need scalar strings?
     return f'{name} = {var}\n'
 
 
@@ -198,14 +205,13 @@ def FormatCMakeVar(name, var):
   if type(var) is list:
     contents = FormatList(var, '  ', '')
     return f'set({name}\n{contents})\n'
-  else:  # TODO: do we need scalar strings?
+  else:  # TODO(eustas): do we need scalar strings?
     return f'set({name} {var})\n'
 
 
 def GetJpegLibVersion(src_dir):
   with open(os.path.join(src_dir, 'CMakeLists.txt'), 'r') as f:
     cmake_text = f.read()
-    print(cmake_text)
     m = re.search(r'set\(JPEGLI_LIBJPEG_LIBRARY_SOVERSION "([0-9]+)"',
                   cmake_text)
     version = m.group(1)
@@ -213,6 +219,10 @@ def GetJpegLibVersion(src_dir):
       version += "0"
     return version
 
+def ToHashComment(lines):
+  return [("# " + line).rstrip() for line in lines]
+def ToDocstringComment(lines):
+  return ["\"\"\""] + lines + ["\"\"\""]
 
 def BuildCleaner(args):
   repo_files = RepoFiles(args.src_dir)
@@ -232,20 +242,26 @@ def BuildCleaner(args):
 
   lists = SplitLibFiles(repo_files)
 
-  cmake_chunks = [HEAD]
+  cmake_chunks = ToHashComment(COPYRIGHT) + [""] + ToHashComment(DOC)
   cmake_parts = lists
   for var in sorted(cmake_parts):
     cmake_chunks.append(FormatCMakeVar(
         'JPEGXL_INTERNAL_' + var.upper(), cmake_parts[var]))
 
-  gni_chunks = [HEAD]
-  gni_parts = version | lists
-  for var in sorted(gni_parts):
-    gni_chunks.append(FormatGniVar('libjxl_' + var, gni_parts[var]))
+  gni_bzl_parts = version | lists
+  gni_bzl_chunks = []
+  for var in sorted(gni_bzl_parts):
+    gni_bzl_chunks.append(FormatGniVar('libjxl_' + var, gni_bzl_parts[var]))
+
+  bzl_chunks = ToHashComment(COPYRIGHT) + [""] + \
+      ToDocstringComment(DOC) + [""] + gni_bzl_chunks
+  gni_chunks = ToHashComment(COPYRIGHT) + [""] + \
+      ToHashComment(DOC) + [""] + gni_bzl_chunks
 
   okay = [
+    MaybeUpdateFile(args, 'lib/jxl_lists.bzl', '\n'.join(bzl_chunks)),
     MaybeUpdateFile(args, 'lib/jxl_lists.cmake', '\n'.join(cmake_chunks)),
-    MaybeUpdateFile(args, 'lib/jxl_lists.bzl', '\n'.join(gni_chunks)),
+    MaybeUpdateFile(args, 'lib/lib.gni', '\n'.join(gni_chunks)),
   ]
   return all(okay)
 

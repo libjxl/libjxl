@@ -20,7 +20,7 @@ namespace tools {
 
 class CommandLineParser {
  public:
-  typedef size_t OptionId;
+  typedef int OptionId;
 
   // An abstract class for defining command line options.
   class CmdOptionInterface {
@@ -70,8 +70,8 @@ class CommandLineParser {
   // optional, but is only used for how it is displayed in the command line
   // help.
   OptionId AddPositionalOption(const char* name, bool required,
-                               const char* help_text, const char** storage,
-                               int verbosity_level = 0) {
+                               const std::string& help_text,
+                               const char** storage, int verbosity_level = 0) {
     options_.emplace_back(new CmdOptionPositional(name, help_text, storage,
                                                   verbosity_level, required));
     return options_.size() - 1;
@@ -159,7 +159,7 @@ class CommandLineParser {
   // A positional argument.
   class CmdOptionPositional : public CmdOptionInterface {
    public:
-    CmdOptionPositional(const char* name, const char* help_text,
+    CmdOptionPositional(const char* name, const std::string& help_text,
                         const char** storage, int verbosity_level,
                         bool required)
         : name_(name),
@@ -169,7 +169,7 @@ class CommandLineParser {
           required_(required) {}
 
     std::string help_flags() const override { return name_; }
-    const char* help_text() const override { return help_text_; }
+    const char* help_text() const override { return help_text_.c_str(); }
     int verbosity_level() const override { return verbosity_level_; }
     bool matched() const override { return matched_; }
 
@@ -196,7 +196,7 @@ class CommandLineParser {
 
    private:
     const char* name_;
-    const char* help_text_;
+    const std::string help_text_;
     const char** storage_;
     const int verbosity_level_;
     const bool required_;

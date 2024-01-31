@@ -19,11 +19,11 @@
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/common.h"
 #include "lib/jxl/convolve.h"
 #include "lib/jxl/enc_linalg.h"
 #include "lib/jxl/enc_optimize.h"
@@ -33,10 +33,6 @@
 // Set JXL_DEBUG_DOT_DETECT to 1 to enable debugging.
 #ifndef JXL_DEBUG_DOT_DETECT
 #define JXL_DEBUG_DOT_DETECT 0
-#endif
-
-#if JXL_DEBUG_DOT_DETECT
-#include "lib/jxl/enc_aux_out.h"
 #endif
 
 HWY_BEFORE_NAMESPACE();
@@ -162,13 +158,6 @@ ImageF ComputeEnergyImage(const Image3F& orig, Image3F* smooth,
     Separable5(forig.Plane(c), rect, weights3, pool, &smooth->Plane(c));
     Separable5(orig.Plane(c), rect, weights1, pool, &forig.Plane(c));
   }
-
-#if JXL_DEBUG_DOT_DETECT
-  AuxOut aux;
-  aux.debug_prefix = "/tmp/sebastian/";
-  aux.DumpImage("filtered", forig);
-  aux.DumpImage("sm", *smooth);
-#endif
 
   return HWY_DYNAMIC_DISPATCH(SumOfSquareDifferences)(forig, *smooth, pool);
 }
@@ -331,7 +320,7 @@ std::vector<ConnectedComponent> FindCC(const ImageF& energy, double t_low,
   return ans;
 }
 
-// TODO (sggonzalez): Adapt this function for the different color spaces or
+// TODO(sggonzalez): Adapt this function for the different color spaces or
 // remove it if the color space with the best performance does not need it
 void ComputeDotLosses(GaussianEllipse* ellipse, const ConnectedComponent& cc,
                       const Image3F& img, const Image3F& background) {
@@ -539,12 +528,6 @@ std::vector<PatchInfo> DetectGaussianEllipses(
   std::vector<PatchInfo> dots;
   Image3F smooth(opsin.xsize(), opsin.ysize());
   ImageF energy = ComputeEnergyImage(opsin, &smooth, pool);
-#if JXL_DEBUG_DOT_DETECT
-  AuxOut aux;
-  aux.debug_prefix = "/tmp/sebastian/";
-  aux.DumpXybImage("smooth", smooth);
-  aux.DumpPlaneNormalized("energy", energy);
-#endif  // JXL_DEBUG_DOT_DETECT
   std::vector<ConnectedComponent> components = FindCC(
       energy, params.t_low, params.t_high, params.maxWinSize, params.minScore);
   size_t numCC =
@@ -597,19 +580,6 @@ std::vector<PatchInfo> DetectGaussianEllipses(
       }
     }
   }
-#if JXL_DEBUG_DOT_DETECT
-  JXL_DEBUG(JXL_DEBUG_DOT_DETECT, "Candidates: %" PRIuS ", Dots: %" PRIuS "\n",
-            components.size(), dots.size());
-  ApplyGaussianEllipses(&smooth, dots, 1.0);
-  aux.DumpXybImage("draw", smooth);
-  ApplyGaussianEllipses(&smooth, dots, -1.0);
-
-  auto qdots = QuantizeGaussianEllipses(dots, qParams);
-  auto deq = DequantizeGaussianEllipses(qdots, qParams);
-  ApplyGaussianEllipses(&smooth, deq, 1.0);
-  aux.DumpXybImage("qdraw", smooth);
-  ApplyGaussianEllipses(&smooth, deq, -1.0);
-#endif  // JXL_DEBUG_DOT_DETECT
   return dots;
 }
 

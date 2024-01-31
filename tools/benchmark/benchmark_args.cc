@@ -16,13 +16,13 @@
 #include "lib/extras/dec/color_description.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
-#include "lib/jxl/color_management.h"
 #include "tools/benchmark/benchmark_codec_custom.h"  // for AddCommand..
-#include "tools/benchmark/benchmark_codec_jpeg.h"  // for AddCommand..
+#include "tools/benchmark/benchmark_codec_jpeg.h"    // for AddCommand..
 #include "tools/benchmark/benchmark_codec_jxl.h"
-#if JPEGXL_ENABLE_APNG
+
+#ifdef BENCHMARK_PNG
 #include "tools/benchmark/benchmark_codec_png.h"
-#endif
+#endif  // BENCHMARK_PNG
 
 #ifdef BENCHMARK_WEBP
 #include "tools/benchmark/benchmark_codec_webp.h"
@@ -213,12 +213,11 @@ Status BenchmarkArgs::AddCommandLineOptions() {
 
   if (!AddCommandLineOptionsCustomCodec(this)) return false;
   if (!AddCommandLineOptionsJxlCodec(this)) return false;
-#ifdef JPEGXL_ENABLE_JPEG
   if (!AddCommandLineOptionsJPEGCodec(this)) return false;
-#endif  // BENCHMARK_JPEG
-#if JPEGXL_ENABLE_APNG
+
+#ifdef BENCHMARK_PNG
   if (!AddCommandLineOptionsPNGCodec(this)) return false;
-#endif
+#endif  // BENCHMARK_PNG
 #ifdef BENCHMARK_WEBP
   if (!AddCommandLineOptionsWebPCodec(this)) return false;
 #endif  // BENCHMARK_WEBP
@@ -251,9 +250,8 @@ Status BenchmarkArgs::ValidateArgs() {
                   output_description.c_str());
       return false;  // already warned
     }
-    JXL_RETURN_IF_ERROR(jxl::ConvertExternalToInternalColorEncoding(
-        output_encoding_external, &output_encoding));
-    JXL_RETURN_IF_ERROR(output_encoding.CreateICC());
+    JXL_RETURN_IF_ERROR(output_encoding.FromExternal(output_encoding_external));
+    JXL_RETURN_IF_ERROR(!output_encoding.ICC().empty());
   }
 
   JXL_RETURN_IF_ERROR(ValidateArgsJxlCodec(this));

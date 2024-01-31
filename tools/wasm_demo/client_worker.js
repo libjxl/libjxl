@@ -36,16 +36,16 @@ const processJobs = () => {
       totalInputLength += input[i].length;
     }
 
-    // TODO: persist to reduce fragmentation?
+    // TODO(eustas): persist to reduce fragmentation?
     const buffer = decoder._malloc(totalInputLength);
-    // TODO: check OOM
+    // TODO(eustas): check OOM
     let offset = 0;
     for (let i = 0; i < input.length; ++i) {
       decoder.HEAP8.set(input[i], buffer + offset);
       offset += input[i].length;
     }
     let t0 = Date.now();
-    // TODO: check result
+    // TODO(eustas): check result
     const result = decoder._jxlDecompress(buffer, totalInputLength);
     let t1 = Date.now();
     const msg = 'Decoded ' + job.url + ' in ' + (t1 - t0) + 'ms';

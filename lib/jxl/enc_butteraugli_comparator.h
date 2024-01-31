@@ -10,6 +10,7 @@
 #include <stddef.h>
 
 #include <memory>
+#include <vector>
 
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
@@ -26,6 +27,7 @@ class JxlButteraugliComparator : public Comparator {
                                     const JxlCmsInterface& cms);
 
   Status SetReferenceImage(const ImageBundle& ref) override;
+  Status SetLinearReferenceImage(const Image3F& linear);
 
   Status CompareWith(const ImageBundle& actual, ImageF* diffmap,
                      float* score) override;
@@ -46,7 +48,8 @@ class JxlButteraugliComparator : public Comparator {
 float ButteraugliDistance(const ImageBundle& rgb0, const ImageBundle& rgb1,
                           const ButteraugliParams& params,
                           const JxlCmsInterface& cms, ImageF* distmap = nullptr,
-                          ThreadPool* pool = nullptr);
+                          ThreadPool* pool = nullptr,
+                          bool ignore_alpha = false);
 
 float ButteraugliDistance(const std::vector<ImageBundle>& frames0,
                           const std::vector<ImageBundle>& frames1,

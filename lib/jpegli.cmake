@@ -3,7 +3,6 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
-include(compatibility.cmake)
 include(jxl_lists.cmake)
 
 set(JPEGLI_INTERNAL_LIBS
@@ -11,6 +10,10 @@ set(JPEGLI_INTERNAL_LIBS
   Threads::Threads
   ${ATOMICS_LIBRARIES}
 )
+
+# JPEGLIB setup
+set(BITS_IN_JSAMPLE 8)
+set(MEM_SRCDST_SUPPORTED 1)
 
 if(JPEGLI_LIBJPEG_LIBRARY_SOVERSION STREQUAL "62")
   set(JPEG_LIB_VERSION 62)
@@ -21,12 +24,11 @@ elseif(JPEGLI_LIBJPEG_LIBRARY_SOVERSION STREQUAL "8")
 endif()
 
 configure_file(
-  ../third_party/libjpeg-interface/jconfig.h.in include/jpegli/jconfig.h)
+  ../third_party/libjpeg-turbo/jconfig.h.in include/jpegli/jconfig.h)
 configure_file(
-  ../third_party/libjpeg-interface/jpeglib.h include/jpegli/jpeglib.h COPY_ONLY)
+  ../third_party/libjpeg-turbo/jpeglib.h include/jpegli/jpeglib.h COPYONLY)
 configure_file(
-  ../third_party/libjpeg-interface/jmorecfg.h include/jpegli/jmorecfg.h
-  COPY_ONLY)
+  ../third_party/libjpeg-turbo/jmorecfg.h include/jpegli/jmorecfg.h COPYONLY)
 
 add_library(jpegli-static STATIC EXCLUDE_FROM_ALL "${JPEGXL_INTERNAL_JPEGLI_SOURCES}")
 target_compile_options(jpegli-static PRIVATE "${JPEGXL_INTERNAL_FLAGS}")
@@ -47,7 +49,8 @@ target_link_libraries(jpegli-static PUBLIC ${JPEGLI_INTERNAL_LIBS})
 # Tests for jpegli-static
 #
 
-if(BUILD_TESTING)
+find_package(JPEG)
+if(JPEG_FOUND AND BUILD_TESTING)
 # TODO(eustas): merge into jxl_tests.cmake?
 
 add_library(jpegli_libjpeg_util-obj OBJECT
@@ -96,7 +99,8 @@ foreach (TESTFILE IN LISTS JPEGXL_INTERNAL_JPEGLI_TESTS)
   if (WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     set_target_properties(${TESTNAME} PROPERTIES COMPILE_FLAGS "-Wno-error")
   endif ()
-  jxl_discover_tests(${TESTNAME})
+  # 240 seconds because some build types (e.g. coverage) can be quite slow.
+  gtest_discover_tests(${TESTNAME} DISCOVERY_TIMEOUT 240)
 endforeach ()
 endif()
 
@@ -104,7 +108,7 @@ endif()
 # Build libjpeg.so that links to libjpeg-static
 #
 
-if (JPEGXL_ENABLE_JPEGLI_LIBJPEG AND NOT APPLE AND NOT WIN32 AND NOT JPEGXL_EMSCRIPTEN)
+if (JPEGXL_ENABLE_JPEGLI_LIBJPEG AND NOT APPLE AND NOT WIN32 AND NOT EMSCRIPTEN)
 add_library(jpegli-libjpeg-obj OBJECT "${JPEGXL_INTERNAL_JPEGLI_WRAPPER_SOURCES}")
 target_compile_options(jpegli-libjpeg-obj PRIVATE ${JPEGXL_INTERNAL_FLAGS})
 target_compile_options(jpegli-libjpeg-obj PUBLIC ${JPEGXL_COVERAGE_FLAGS})
@@ -140,6 +144,9 @@ if (JPEGXL_INSTALL_JPEGLI_LIBJPEG)
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+  install(
+    DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/include/jpegli/"
+    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
 endif()
 
 # This hides the default visibility symbols from static libraries bundled into

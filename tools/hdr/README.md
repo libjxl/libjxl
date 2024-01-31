@@ -137,7 +137,7 @@ $ convert pq_to_400nit_rec2020.png -profile /usr/share/color/icc/colord/Rec709.i
 
 From there, the PNG image can be used as-is with ReShade’s “LUT” shader
 (provided that the correct LUT size is set), or it can be converted to a
-[Cube](https://wwwimages2.adobe.com/content/dam/acom/en/products/speedgrade/cc/pdfs/cube-lut-specification-1.0.pdf)
+[Cube](https://web.archive.org/web/20220215173646/https://wwwimages2.adobe.com/content/dam/acom/en/products/speedgrade/cc/pdfs/cube-lut-specification-1.0.pdf)
 file for use in other software such as FFmpeg’s [lut3d](https://ffmpeg.org/ffmpeg-filters.html#lut3d-1)
 filter:
 

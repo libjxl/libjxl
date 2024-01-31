@@ -3,13 +3,14 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <jxl/codestream_header.h>
 #include <jxl/decode.h>
 #include <jxl/decode_cxx.h>
 #include <jxl/thread_parallel_runner.h>
 #include <jxl/thread_parallel_runner_cxx.h>
+#include <jxl/types.h>
 #include <limits.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -211,6 +212,7 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
         return false;
       }
     } else if (status == JXL_DEC_JPEG_NEED_MORE_OUTPUT) {
+      if (want_preview) abort();  // expected preview before frame
       if (spec.jpeg_to_pixels) abort();
       if (!seen_jpeg_reconstruction) abort();
       seen_jpeg_need_more_output = true;
@@ -304,6 +306,7 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
         }
       }
     } else if (status == JXL_DEC_PREVIEW_IMAGE) {
+      // TODO(eustas): test JXL_DEC_NEED_PREVIEW_OUT_BUFFER
       if (seen_preview) abort();
       if (!want_preview) abort();
       if (!seen_color_encoding) abort();
@@ -395,7 +398,10 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
         }
       }
     } else if (status == JXL_DEC_JPEG_RECONSTRUCTION) {
-      if (want_preview) abort();  // expected preview before frame
+      // Do not check preview precedence here, since this event only declares
+      // that JPEG is going to be decoded; though, when first byte of JPEG
+      // arrives (JXL_DEC_JPEG_NEED_MORE_OUTPUT) it is certain that preview
+      // should have been produced already.
       if (seen_jpeg_reconstruction) abort();
       seen_jpeg_reconstruction = true;
       if (!spec.jpeg_to_pixels) {

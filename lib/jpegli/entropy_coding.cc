@@ -103,7 +103,10 @@ void TokenizeACProgressiveScan(j_compress_ptr cinfo, int scan_index,
     JBLOCKARRAY ba = (*cinfo->mem->access_virt_barray)(
         reinterpret_cast<j_common_ptr>(cinfo), m->coeff_buffers[comp_idx], by,
         1, false);
-    int max_tokens_per_row = comp->width_in_blocks * (Se - Ss + 1);
+    // Each coefficient can appear in at most one token, but we have to reserve
+    // one extra EOBrun token that was rolled over from the previous block-row
+    // and has to be flushed at the end.
+    int max_tokens_per_row = 1 + comp->width_in_blocks * (Se - Ss + 1);
     if (ta->num_tokens + max_tokens_per_row > m->num_tokens) {
       if (ta->tokens) {
         m->total_num_tokens += ta->num_tokens;
@@ -337,7 +340,7 @@ void TokenizeScan(j_compress_ptr cinfo, size_t scan_index, int ac_ctx_offset,
   const bool is_progressive = cinfo->progressive_mode;
   const int Ah = scan_info->Ah;
   const int Al = scan_info->Al;
-  HWY_ALIGN constexpr coeff_t kDummyBlock[DCTSIZE2] = {0};
+  HWY_ALIGN constexpr coeff_t kSinkBlock[DCTSIZE2] = {0};
 
   size_t restart_idx = 0;
   TokenArray* ta = &m->token_arrays[m->cur_token_array];
@@ -409,7 +412,7 @@ void TokenizeScan(j_compress_ptr cinfo, size_t scan_index, int ac_ctx_offset,
             const coeff_t* block;
             if (block_x >= comp->width_in_blocks ||
                 block_y >= comp->height_in_blocks) {
-              block = kDummyBlock;
+              block = kSinkBlock;
             } else {
               block = &ba[i][iy][block_x][0];
             }
@@ -638,7 +641,7 @@ void CopyHuffmanTable(j_compress_ptr cinfo, int index, bool is_dc,
   if (index < 0 || index >= NUM_HUFF_TBLS) {
     JPEGLI_ERROR("Invalid %s Huffman table index %d", type, index);
   }
-  // Check if we have alreay copied this Huffman table.
+  // Check if we have already copied this Huffman table.
   int slot_idx = index + (is_dc ? 0 : NUM_HUFF_TBLS);
   if (inv_slot_map[slot_idx] != -1) {
     return;

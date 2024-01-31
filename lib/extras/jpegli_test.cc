@@ -3,15 +3,24 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#if JPEGXL_ENABLE_JPEG && JPEGXL_ENABLE_JPEGLI
+#if JPEGXL_ENABLE_JPEGLI
 
 #include "lib/extras/dec/jpegli.h"
 
 #include <jxl/color_encoding.h>
+#include <jxl/types.h>
 #include <stdint.h>
 
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
 #include <memory>
+#include <ostream>
+#include <sstream>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "lib/extras/dec/color_hints.h"
 #include "lib/extras/dec/decode.h"
@@ -36,14 +45,14 @@ using test::ButteraugliDistance;
 using test::TestImage;
 
 Status ReadTestImage(const std::string& pathname, PackedPixelFile* ppf) {
-  const PaddedBytes encoded = jxl::test::ReadTestData(pathname);
+  const std::vector<uint8_t> encoded = jxl::test::ReadTestData(pathname);
   ColorHints color_hints;
   if (pathname.find(".ppm") != std::string::npos) {
     color_hints.Add("color_space", "RGB_D65_SRG_Rel_SRG");
   } else if (pathname.find(".pgm") != std::string::npos) {
     color_hints.Add("color_space", "Gra_D65_Rel_SRG");
   }
-  return DecodeBytes(Span<const uint8_t>(encoded), color_hints, ppf);
+  return DecodeBytes(Bytes(encoded), color_hints, ppf);
 }
 
 std::vector<uint8_t> GetAppData(const std::vector<uint8_t>& compressed) {
@@ -67,7 +76,7 @@ std::vector<uint8_t> GetAppData(const std::vector<uint8_t>& compressed) {
 Status DecodeWithLibjpeg(const std::vector<uint8_t>& compressed,
                          PackedPixelFile* ppf,
                          const JPGDecompressParams* dparams = nullptr) {
-  return DecodeImageJPG(Span<const uint8_t>(compressed), ColorHints(), ppf,
+  return DecodeImageJPG(Bytes(compressed), ColorHints(), ppf,
                         /*constraints=*/nullptr, dparams);
 }
 
@@ -84,7 +93,7 @@ Status EncodeWithLibjpeg(const PackedPixelFile& ppf, int quality,
 
 std::string Description(const JxlColorEncoding& color_encoding) {
   ColorEncoding c_enc;
-  JXL_CHECK(ConvertExternalToInternalColorEncoding(color_encoding, &c_enc));
+  JXL_CHECK(c_enc.FromExternal(color_encoding));
   return Description(c_enc);
 }
 
@@ -95,6 +104,7 @@ float BitsPerPixel(const PackedPixelFile& ppf,
 }
 
 TEST(JpegliTest, JpegliSRGBDecodeTest) {
+  TEST_LIBJPEG_SUPPORT();
   std::string testimage = "jxl/flower/flower_small.rgb.depth8.ppm";
   PackedPixelFile ppf0;
   ASSERT_TRUE(ReadTestImage(testimage, &ppf0));
@@ -113,6 +123,7 @@ TEST(JpegliTest, JpegliSRGBDecodeTest) {
 }
 
 TEST(JpegliTest, JpegliGrayscaleDecodeTest) {
+  TEST_LIBJPEG_SUPPORT();
   std::string testimage = "jxl/flower/flower_small.g.depth8.pgm";
   PackedPixelFile ppf0;
   ASSERT_TRUE(ReadTestImage(testimage, &ppf0));
@@ -131,6 +142,7 @@ TEST(JpegliTest, JpegliGrayscaleDecodeTest) {
 }
 
 TEST(JpegliTest, JpegliXYBEncodeTest) {
+  TEST_LIBJPEG_SUPPORT();
   std::string testimage = "jxl/flower/flower_small.rgb.depth8.ppm";
   PackedPixelFile ppf_in;
   ASSERT_TRUE(ReadTestImage(testimage, &ppf_in));
@@ -149,6 +161,7 @@ TEST(JpegliTest, JpegliXYBEncodeTest) {
 }
 
 TEST(JpegliTest, JpegliDecodeTestLargeSmoothArea) {
+  TEST_LIBJPEG_SUPPORT();
   TestImage t;
   const size_t xsize = 2070;
   const size_t ysize = 1063;
@@ -178,6 +191,7 @@ TEST(JpegliTest, JpegliDecodeTestLargeSmoothArea) {
 }
 
 TEST(JpegliTest, JpegliYUVEncodeTest) {
+  TEST_LIBJPEG_SUPPORT();
   std::string testimage = "jxl/flower/flower_small.rgb.depth8.ppm";
   PackedPixelFile ppf_in;
   ASSERT_TRUE(ReadTestImage(testimage, &ppf_in));
@@ -196,6 +210,7 @@ TEST(JpegliTest, JpegliYUVEncodeTest) {
 }
 
 TEST(JpegliTest, JpegliYUVChromaSubsamplingEncodeTest) {
+  TEST_LIBJPEG_SUPPORT();
   std::string testimage = "jxl/flower/flower_small.rgb.depth8.ppm";
   PackedPixelFile ppf_in;
   ASSERT_TRUE(ReadTestImage(testimage, &ppf_in));
@@ -217,6 +232,7 @@ TEST(JpegliTest, JpegliYUVChromaSubsamplingEncodeTest) {
 }
 
 TEST(JpegliTest, JpegliYUVEncodeTestNoAq) {
+  TEST_LIBJPEG_SUPPORT();
   std::string testimage = "jxl/flower/flower_small.rgb.depth8.ppm";
   PackedPixelFile ppf_in;
   ASSERT_TRUE(ReadTestImage(testimage, &ppf_in));
@@ -320,6 +336,7 @@ class JpegliColorQuantTestParam : public ::testing::TestWithParam<TestConfig> {
 };
 
 TEST_P(JpegliColorQuantTestParam, JpegliColorQuantizeTest) {
+  TEST_LIBJPEG_SUPPORT();
   TestConfig config = GetParam();
   std::string testimage = "jxl/flower/flower_small.rgb.depth8.ppm";
   PackedPixelFile ppf0;
@@ -402,4 +419,4 @@ JXL_GTEST_INSTANTIATE_TEST_SUITE_P(JpegliColorQuantTest,
 }  // namespace
 }  // namespace extras
 }  // namespace jxl
-#endif  // JPEGXL_ENABLE_JPEG
+#endif  // JPEGXL_ENABLE_JPEGLI

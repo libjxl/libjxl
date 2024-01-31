@@ -5,6 +5,7 @@
 
 #include "lib/extras/packed_image_convert.h"
 
+#include <jxl/cms.h>
 #include <jxl/color_encoding.h>
 #include <jxl/types.h>
 
@@ -12,9 +13,7 @@
 
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
-#include "lib/jxl/color_management.h"
 #include "lib/jxl/dec_external_image.h"
-#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_image_bundle.h"
 #include "lib/jxl/luminance.h"
@@ -83,7 +82,7 @@ Status ConvertPackedPixelFileToCodecInOut(const PackedPixelFile& ppf,
                ppf.info.exponent_bits_per_sample);
   }
 
-  const bool is_gray = ppf.info.num_color_channels == 1;
+  const bool is_gray = (ppf.info.num_color_channels == 1);
   JXL_ASSERT(ppf.info.num_color_channels == 1 ||
              ppf.info.num_color_channels == 3);
 
@@ -99,6 +98,8 @@ Status ConvertPackedPixelFileToCodecInOut(const PackedPixelFile& ppf,
 
   io->metadata.m.SetAlphaBits(ppf.info.alpha_bits,
                               ppf.info.alpha_premultiplied);
+  ExtraChannelInfo* alpha = io->metadata.m.Find(ExtraChannel::kAlpha);
+  if (alpha) alpha->bit_depth = io->metadata.m.bit_depth;
 
   io->metadata.m.xyb_encoded = !ppf.info.uses_original_profile;
   JXL_ASSERT(ppf.info.orientation > 0 && ppf.info.orientation <= 8);
@@ -113,20 +114,24 @@ Status ConvertPackedPixelFileToCodecInOut(const PackedPixelFile& ppf,
 
   // Convert the color encoding.
   if (!ppf.icc.empty()) {
-    PaddedBytes icc;
-    icc.append(ppf.icc);
-    if (!io->metadata.m.color_encoding.SetICC(std::move(icc))) {
+    IccBytes icc = ppf.icc;
+    if (!io->metadata.m.color_encoding.SetICC(std::move(icc),
+                                              JxlGetDefaultCms())) {
       fprintf(stderr, "Warning: error setting ICC profile, assuming SRGB\n");
       io->metadata.m.color_encoding = ColorEncoding::SRGB(is_gray);
     } else {
+      if (io->metadata.m.color_encoding.IsCMYK()) {
+        // We expect gray or tri-color.
+        return JXL_FAILURE("Embedded ICC is CMYK");
+      }
       if (io->metadata.m.color_encoding.IsGray() != is_gray) {
         // E.g. JPG image has 3 channels, but gray ICC.
         return JXL_FAILURE("Embedded ICC does not match image color type");
       }
     }
   } else {
-    JXL_RETURN_IF_ERROR(ConvertExternalToInternalColorEncoding(
-        ppf.color_encoding, &io->metadata.m.color_encoding));
+    JXL_RETURN_IF_ERROR(
+        io->metadata.m.color_encoding.FromExternal(ppf.color_encoding));
     if (io->metadata.m.color_encoding.ICC().empty()) {
       return JXL_FAILURE("Failed to serialize ICC");
     }
@@ -190,6 +195,35 @@ Status ConvertPackedPixelFileToCodecInOut(const PackedPixelFile& ppf,
   return true;
 }
 
+PackedPixelFile ConvertImage3FToPackedPixelFile(const Image3F& image,
+                                                const ColorEncoding& c_enc,
+                                                JxlPixelFormat format,
+                                                ThreadPool* pool) {
+  PackedPixelFile ppf;
+  ppf.info.xsize = image.xsize();
+  ppf.info.ysize = image.ysize();
+  ppf.info.num_color_channels = 3;
+  ppf.info.bits_per_sample = PackedImage::BitsPerChannel(format.data_type);
+  ppf.info.exponent_bits_per_sample = format.data_type == JXL_TYPE_FLOAT ? 8
+                                      : format.data_type == JXL_TYPE_FLOAT16
+                                          ? 5
+                                          : 0;
+  ppf.color_encoding = c_enc.ToExternal();
+  ppf.frames.clear();
+  PackedFrame frame(image.xsize(), image.ysize(), format);
+  const ImageF* channels[3];
+  for (int c = 0; c < 3; ++c) {
+    channels[c] = &image.Plane(c);
+  }
+  bool float_samples = ppf.info.exponent_bits_per_sample > 0;
+  JXL_CHECK(ConvertChannelsToExternal(
+      channels, 3, ppf.info.bits_per_sample, float_samples, format.endianness,
+      frame.color.stride, pool, frame.color.pixels(0, 0, 0),
+      frame.color.pixels_size, PixelCallback(), Orientation::kIdentity));
+  ppf.frames.emplace_back(std::move(frame));
+  return ppf;
+}
+
 // Allows converting from internal CodecInOut to external PackedPixelFile
 Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
                                           const JxlPixelFormat& pixel_format,
@@ -197,7 +231,6 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
                                           ThreadPool* pool,
                                           PackedPixelFile* ppf) {
   const bool has_alpha = io.metadata.m.HasAlpha();
-  bool alpha_premultiplied = false;
   JXL_ASSERT(!io.frames.empty());
 
   if (has_alpha) {
@@ -206,7 +239,10 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
     const auto* alpha_channel = io.metadata.m.Find(ExtraChannel::kAlpha);
     JXL_ASSERT(alpha_channel->bit_depth.exponent_bits_per_sample ==
                io.metadata.m.bit_depth.exponent_bits_per_sample);
-    alpha_premultiplied = alpha_channel->alpha_associated;
+    ppf->info.alpha_bits = alpha_channel->bit_depth.bits_per_sample;
+    ppf->info.alpha_exponent_bits =
+        alpha_channel->bit_depth.exponent_bits_per_sample;
+    ppf->info.alpha_premultiplied = alpha_channel->alpha_associated;
   }
 
   // Convert the image metadata
@@ -223,9 +259,6 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
   ppf->info.relative_to_max_display =
       io.metadata.m.tone_mapping.relative_to_max_display;
 
-  ppf->info.alpha_bits = io.metadata.m.GetAlphaBits();
-  ppf->info.alpha_premultiplied = alpha_premultiplied;
-
   ppf->info.uses_original_profile = !io.metadata.m.xyb_encoded;
   JXL_ASSERT(0 < io.metadata.m.orientation && io.metadata.m.orientation <= 8);
   ppf->info.orientation =
@@ -241,7 +274,7 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
 
   // Convert the color encoding
   ppf->icc.assign(c_desired.ICC().begin(), c_desired.ICC().end());
-  ConvertInternalToExternalColorEncoding(c_desired, &ppf->color_encoding);
+  ppf->color_encoding = c_desired.ToExternal();
 
   // Convert the extra blobs
   ppf->metadata.exif = io.blobs.exif;
@@ -278,7 +311,7 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
     const ImageBundle* transformed;
     // TODO(firsching): handle the transform here.
     JXL_RETURN_IF_ERROR(TransformIfNeeded(*to_color_transform, c_desired,
-                                          GetJxlCms(), pool, &store,
+                                          *JxlGetDefaultCms(), pool, &store,
                                           &transformed));
 
     JXL_RETURN_IF_ERROR(ConvertToExternal(

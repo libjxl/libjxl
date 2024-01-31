@@ -16,18 +16,16 @@
 
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/fast_math-inl.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/cms/opsin_params.h"
+#include "lib/jxl/cms/transfer_functions-inl.h"
 #include "lib/jxl/color_encoding_internal.h"
-#include "lib/jxl/color_management.h"
 #include "lib/jxl/enc_bit_writer.h"
-#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_image_bundle.h"
-#include "lib/jxl/fast_math-inl.h"
 #include "lib/jxl/fields.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
-#include "lib/jxl/opsin_params.h"
-#include "lib/jxl/transfer_functions-inl.h"
 
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
@@ -46,7 +44,7 @@ JXL_INLINE void OpsinAbsorbance(const V r, const V g, const V b,
                                 const float* JXL_RESTRICT premul_absorb,
                                 V* JXL_RESTRICT mixed0, V* JXL_RESTRICT mixed1,
                                 V* JXL_RESTRICT mixed2) {
-  const float* bias = &kOpsinAbsorbanceBias[0];
+  const float* bias = &jxl::cms::kOpsinAbsorbanceBias[0];
   const HWY_FULL(float) d;
   const size_t N = Lanes(d);
   const auto m0 = Load(d, premul_absorb + 0 * N);
@@ -115,95 +113,82 @@ V LinearFromSRGB(V encoded) {
   return TF_SRGB().DisplayFromEncoded(encoded);
 }
 
-Status LinearSRGBToXYB(const Image3F& linear,
-                       const float* JXL_RESTRICT premul_absorb,
-                       ThreadPool* pool, Image3F* JXL_RESTRICT xyb) {
-  const size_t xsize = linear.xsize();
+Status LinearSRGBToXYB(const float* JXL_RESTRICT premul_absorb,
+                       ThreadPool* pool, Image3F* JXL_RESTRICT image) {
+  const size_t xsize = image->xsize();
 
   const HWY_FULL(float) d;
   return RunOnPool(
-      pool, 0, static_cast<uint32_t>(linear.ysize()), ThreadPool::NoInit,
+      pool, 0, static_cast<uint32_t>(image->ysize()), ThreadPool::NoInit,
       [&](const uint32_t task, size_t /*thread*/) {
         const size_t y = static_cast<size_t>(task);
-        const float* JXL_RESTRICT row_in0 = linear.ConstPlaneRow(0, y);
-        const float* JXL_RESTRICT row_in1 = linear.ConstPlaneRow(1, y);
-        const float* JXL_RESTRICT row_in2 = linear.ConstPlaneRow(2, y);
-        float* JXL_RESTRICT row_xyb0 = xyb->PlaneRow(0, y);
-        float* JXL_RESTRICT row_xyb1 = xyb->PlaneRow(1, y);
-        float* JXL_RESTRICT row_xyb2 = xyb->PlaneRow(2, y);
+        float* JXL_RESTRICT row0 = image->PlaneRow(0, y);
+        float* JXL_RESTRICT row1 = image->PlaneRow(1, y);
+        float* JXL_RESTRICT row2 = image->PlaneRow(2, y);
 
         for (size_t x = 0; x < xsize; x += Lanes(d)) {
-          const auto in_r = Load(d, row_in0 + x);
-          const auto in_g = Load(d, row_in1 + x);
-          const auto in_b = Load(d, row_in2 + x);
-          LinearRGBToXYB(in_r, in_g, in_b, premul_absorb, row_xyb0 + x,
-                         row_xyb1 + x, row_xyb2 + x);
+          const auto in_r = Load(d, row0 + x);
+          const auto in_g = Load(d, row1 + x);
+          const auto in_b = Load(d, row2 + x);
+          LinearRGBToXYB(in_r, in_g, in_b, premul_absorb, row0 + x, row1 + x,
+                         row2 + x);
         }
       },
       "LinearToXYB");
 }
 
-Status SRGBToXYB(const Image3F& srgb, const float* JXL_RESTRICT premul_absorb,
-                 ThreadPool* pool, Image3F* JXL_RESTRICT xyb) {
-  const size_t xsize = srgb.xsize();
+Status SRGBToXYB(const float* JXL_RESTRICT premul_absorb, ThreadPool* pool,
+                 Image3F* JXL_RESTRICT image) {
+  const size_t xsize = image->xsize();
 
   const HWY_FULL(float) d;
   return RunOnPool(
-      pool, 0, static_cast<uint32_t>(srgb.ysize()), ThreadPool::NoInit,
+      pool, 0, static_cast<uint32_t>(image->ysize()), ThreadPool::NoInit,
       [&](const uint32_t task, size_t /*thread*/) {
         const size_t y = static_cast<size_t>(task);
-        const float* JXL_RESTRICT row_srgb0 = srgb.ConstPlaneRow(0, y);
-        const float* JXL_RESTRICT row_srgb1 = srgb.ConstPlaneRow(1, y);
-        const float* JXL_RESTRICT row_srgb2 = srgb.ConstPlaneRow(2, y);
-        float* JXL_RESTRICT row_xyb0 = xyb->PlaneRow(0, y);
-        float* JXL_RESTRICT row_xyb1 = xyb->PlaneRow(1, y);
-        float* JXL_RESTRICT row_xyb2 = xyb->PlaneRow(2, y);
+        float* JXL_RESTRICT row0 = image->PlaneRow(0, y);
+        float* JXL_RESTRICT row1 = image->PlaneRow(1, y);
+        float* JXL_RESTRICT row2 = image->PlaneRow(2, y);
 
         for (size_t x = 0; x < xsize; x += Lanes(d)) {
-          const auto in_r = LinearFromSRGB(Load(d, row_srgb0 + x));
-          const auto in_g = LinearFromSRGB(Load(d, row_srgb1 + x));
-          const auto in_b = LinearFromSRGB(Load(d, row_srgb2 + x));
-          LinearRGBToXYB(in_r, in_g, in_b, premul_absorb, row_xyb0 + x,
-                         row_xyb1 + x, row_xyb2 + x);
+          const auto in_r = LinearFromSRGB(Load(d, row0 + x));
+          const auto in_g = LinearFromSRGB(Load(d, row1 + x));
+          const auto in_b = LinearFromSRGB(Load(d, row2 + x));
+          LinearRGBToXYB(in_r, in_g, in_b, premul_absorb, row0 + x, row1 + x,
+                         row2 + x);
         }
       },
       "SRGBToXYB");
 }
 
-Status SRGBToXYBAndLinear(const Image3F& srgb,
-                          const float* JXL_RESTRICT premul_absorb,
-                          ThreadPool* pool, Image3F* JXL_RESTRICT xyb,
+Status SRGBToXYBAndLinear(const float* JXL_RESTRICT premul_absorb,
+                          ThreadPool* pool, Image3F* JXL_RESTRICT image,
                           Image3F* JXL_RESTRICT linear) {
-  const size_t xsize = srgb.xsize();
+  const size_t xsize = image->xsize();
 
   const HWY_FULL(float) d;
   return RunOnPool(
-      pool, 0, static_cast<uint32_t>(srgb.ysize()), ThreadPool::NoInit,
+      pool, 0, static_cast<uint32_t>(image->ysize()), ThreadPool::NoInit,
       [&](const uint32_t task, size_t /*thread*/) {
         const size_t y = static_cast<size_t>(task);
-        const float* JXL_RESTRICT row_srgb0 = srgb.ConstPlaneRow(0, y);
-        const float* JXL_RESTRICT row_srgb1 = srgb.ConstPlaneRow(1, y);
-        const float* JXL_RESTRICT row_srgb2 = srgb.ConstPlaneRow(2, y);
-
+        float* JXL_RESTRICT row_image0 = image->PlaneRow(0, y);
+        float* JXL_RESTRICT row_image1 = image->PlaneRow(1, y);
+        float* JXL_RESTRICT row_image2 = image->PlaneRow(2, y);
         float* JXL_RESTRICT row_linear0 = linear->PlaneRow(0, y);
         float* JXL_RESTRICT row_linear1 = linear->PlaneRow(1, y);
         float* JXL_RESTRICT row_linear2 = linear->PlaneRow(2, y);
 
-        float* JXL_RESTRICT row_xyb0 = xyb->PlaneRow(0, y);
-        float* JXL_RESTRICT row_xyb1 = xyb->PlaneRow(1, y);
-        float* JXL_RESTRICT row_xyb2 = xyb->PlaneRow(2, y);
-
         for (size_t x = 0; x < xsize; x += Lanes(d)) {
-          const auto in_r = LinearFromSRGB(Load(d, row_srgb0 + x));
-          const auto in_g = LinearFromSRGB(Load(d, row_srgb1 + x));
-          const auto in_b = LinearFromSRGB(Load(d, row_srgb2 + x));
+          const auto in_r = LinearFromSRGB(Load(d, row_image0 + x));
+          const auto in_g = LinearFromSRGB(Load(d, row_image1 + x));
+          const auto in_b = LinearFromSRGB(Load(d, row_image2 + x));
 
           Store(in_r, d, row_linear0 + x);
           Store(in_g, d, row_linear1 + x);
           Store(in_b, d, row_linear2 + x);
 
-          LinearRGBToXYB(in_r, in_g, in_b, premul_absorb, row_xyb0 + x,
-                         row_xyb1 + x, row_xyb2 + x);
+          LinearRGBToXYB(in_r, in_g, in_b, premul_absorb, row_image0 + x,
+                         row_image1 + x, row_image2 + x);
         }
       },
       "SRGBToXYBAndLinear");
@@ -214,11 +199,12 @@ void ComputePremulAbsorb(float intensity_target, float* premul_absorb) {
   const size_t N = Lanes(d);
   const float mul = intensity_target / 255.0f;
   for (size_t i = 0; i < 9; ++i) {
-    const auto absorb = Set(d, kOpsinAbsorbanceMatrix[i] * mul);
+    const auto absorb = Set(d, jxl::cms::kOpsinAbsorbanceMatrix[i] * mul);
     Store(absorb, d, premul_absorb + i * N);
   }
   for (size_t i = 0; i < 3; ++i) {
-    const auto neg_bias_cbrt = Set(d, -cbrtf(kOpsinAbsorbanceBias[i]));
+    const auto neg_bias_cbrt =
+        Set(d, -cbrtf(jxl::cms::kOpsinAbsorbanceBias[i]));
     Store(neg_bias_cbrt, d, premul_absorb + (9 + i) * N);
   }
 }
@@ -282,97 +268,54 @@ Image3F TransformToLinearRGB(const Image3F& in,
   return out;
 }
 
-void Image3FToXYB(const Image3F& in, const ColorEncoding& color_encoding,
-                  float intensity_target, ThreadPool* pool,
-                  Image3F* JXL_RESTRICT xyb, const JxlCmsInterface& cms) {
-  JXL_ASSERT(SameSize(in, *xyb));
+// This is different from Butteraugli's OpsinDynamicsImage() in the sense that
+// it does not contain a sensitivity multiplier based on the blurred image.
+void ToXYB(const ColorEncoding& c_current, float intensity_target,
+           const ImageF* black, ThreadPool* pool, Image3F* JXL_RESTRICT image,
+           const JxlCmsInterface& cms, Image3F* const JXL_RESTRICT linear) {
+  if (black) JXL_ASSERT(SameSize(*image, *black));
+  if (linear) JXL_ASSERT(SameSize(*image, *linear));
 
   const HWY_FULL(float) d;
   // Pre-broadcasted constants
   HWY_ALIGN float premul_absorb[MaxLanes(d) * 12];
   ComputePremulAbsorb(intensity_target, premul_absorb);
 
-  bool is_gray = color_encoding.IsGray();
-  const ColorEncoding& c_linear_srgb = ColorEncoding::LinearSRGB(is_gray);
-  if (c_linear_srgb.SameColorEncoding(color_encoding)) {
-    JXL_CHECK(LinearSRGBToXYB(in, premul_absorb, pool, xyb));
-  } else if (color_encoding.IsSRGB()) {
-    JXL_CHECK(SRGBToXYB(in, premul_absorb, pool, xyb));
-  } else {
-    Image3F linear =
-        TransformToLinearRGB(in, color_encoding, intensity_target, cms, pool);
-    JXL_CHECK(LinearSRGBToXYB(linear, premul_absorb, pool, xyb));
-  }
-}
-
-// This is different from Butteraugli's OpsinDynamicsImage() in the sense that
-// it does not contain a sensitivity multiplier based on the blurred image.
-const ImageBundle* ToXYB(const ImageBundle& in, ThreadPool* pool,
-                         Image3F* JXL_RESTRICT xyb, const JxlCmsInterface& cms,
-                         ImageBundle* const JXL_RESTRICT linear) {
-  const size_t xsize = in.xsize();
-  const size_t ysize = in.ysize();
-  JXL_ASSERT(SameSize(in, *xyb));
-
-  const HWY_FULL(float) d;
-  // Pre-broadcasted constants
-  HWY_ALIGN float premul_absorb[MaxLanes(d) * 12];
-  ComputePremulAbsorb(in.metadata()->IntensityTarget(), premul_absorb);
-
   const bool want_linear = linear != nullptr;
 
-  const ColorEncoding& c_linear_srgb = ColorEncoding::LinearSRGB(in.IsGray());
+  const ColorEncoding& c_linear_srgb =
+      ColorEncoding::LinearSRGB(c_current.IsGray());
   // Linear sRGB inputs are rare but can be useful for the fastest encoders, for
   // which undoing the sRGB transfer function would be a large part of the cost.
-  if (c_linear_srgb.SameColorEncoding(in.c_current())) {
-    JXL_CHECK(LinearSRGBToXYB(in.color(), premul_absorb, pool, xyb));
+  if (c_linear_srgb.SameColorEncoding(c_current)) {
     // This only happens if kitten or slower, moving ImageBundle might be
     // possible but the encoder is much slower than this copy.
     if (want_linear) {
-      *linear = in.Copy();
-      return linear;
+      CopyImageTo(*image, linear);
     }
-    return &in;
+    JXL_CHECK(LinearSRGBToXYB(premul_absorb, pool, image));
+    return;
   }
 
   // Common case: already sRGB, can avoid the color transform
-  if (in.IsSRGB()) {
+  if (c_current.IsSRGB()) {
     // Common case: can avoid allocating/copying
-    if (!want_linear) {
-      JXL_CHECK(SRGBToXYB(in.color(), premul_absorb, pool, xyb));
-      return &in;
+    if (want_linear) {
+      // Slow encoder also wants linear sRGB.
+      JXL_CHECK(SRGBToXYBAndLinear(premul_absorb, pool, image, linear));
+    } else {
+      JXL_CHECK(SRGBToXYB(premul_absorb, pool, image));
     }
-
-    // Slow encoder also wants linear sRGB.
-    linear->SetFromImage(Image3F(xsize, ysize), c_linear_srgb);
-    JXL_CHECK(SRGBToXYBAndLinear(in.color(), premul_absorb, pool, xyb,
-                                 linear->color()));
-    return linear;
+    return;
   }
 
-  // General case: not sRGB, need color transform.
-  ImageBundle linear_storage;  // Local storage only used if !want_linear.
-
-  ImageBundle* linear_storage_ptr;
+  JXL_CHECK(ApplyColorTransform(c_current, intensity_target, *image, black,
+                                Rect(*image), c_linear_srgb, cms, pool,
+                                want_linear ? linear : image));
   if (want_linear) {
-    // Caller asked for linear, use that storage directly.
-    linear_storage_ptr = linear;
-  } else {
-    // Caller didn't ask for linear, create our own local storage
-    // OK to reuse metadata, it will not be changed.
-    linear_storage = ImageBundle(const_cast<ImageMetadata*>(in.metadata()));
-    linear_storage_ptr = &linear_storage;
+    CopyImageTo(*linear, image);
   }
-
-  const ImageBundle* ptr;
-  JXL_CHECK(TransformIfNeeded(in, c_linear_srgb, cms, pool, linear_storage_ptr,
-                              &ptr));
-  // If no transform was necessary, should have taken the above codepath.
-  JXL_ASSERT(ptr == linear_storage_ptr);
-
-  JXL_CHECK(
-      LinearSRGBToXYB(*linear_storage_ptr->color(), premul_absorb, pool, xyb));
-  return want_linear ? linear : &in;
+  JXL_CHECK(LinearSRGBToXYB(premul_absorb, pool, image));
 }
 
 // Transform RGB to YCbCr.
@@ -444,10 +387,19 @@ HWY_AFTER_NAMESPACE();
 #if HWY_ONCE
 namespace jxl {
 HWY_EXPORT(ToXYB);
-const ImageBundle* ToXYB(const ImageBundle& in, ThreadPool* pool,
-                         Image3F* JXL_RESTRICT xyb, const JxlCmsInterface& cms,
-                         ImageBundle* JXL_RESTRICT linear_storage) {
-  return HWY_DYNAMIC_DISPATCH(ToXYB)(in, pool, xyb, cms, linear_storage);
+void ToXYB(const ColorEncoding& c_current, float intensity_target,
+           const ImageF* black, ThreadPool* pool, Image3F* JXL_RESTRICT image,
+           const JxlCmsInterface& cms, Image3F* const JXL_RESTRICT linear) {
+  HWY_DYNAMIC_DISPATCH(ToXYB)
+  (c_current, intensity_target, black, pool, image, cms, linear);
+}
+
+void ToXYB(const ImageBundle& in, ThreadPool* pool, Image3F* JXL_RESTRICT xyb,
+           const JxlCmsInterface& cms, Image3F* JXL_RESTRICT linear) {
+  *xyb = Image3F(in.xsize(), in.ysize());
+  CopyImageTo(in.color(), xyb);
+  ToXYB(in.c_current(), in.metadata()->IntensityTarget(),
+        in.HasBlack() ? &in.black() : nullptr, pool, xyb, cms, linear);
 }
 
 HWY_EXPORT(LinearRGBRowToXYB);
@@ -466,9 +418,12 @@ void ComputePremulAbsorb(float intensity_target, float* premul_absorb) {
 void ScaleXYBRow(float* JXL_RESTRICT row0, float* JXL_RESTRICT row1,
                  float* JXL_RESTRICT row2, size_t xsize) {
   for (size_t x = 0; x < xsize; x++) {
-    row2[x] = (row2[x] - row1[x] + kScaledXYBOffset[2]) * kScaledXYBScale[2];
-    row0[x] = (row0[x] + kScaledXYBOffset[0]) * kScaledXYBScale[0];
-    row1[x] = (row1[x] + kScaledXYBOffset[1]) * kScaledXYBScale[1];
+    row2[x] = (row2[x] - row1[x] + jxl::cms::kScaledXYBOffset[2]) *
+              jxl::cms::kScaledXYBScale[2];
+    row0[x] = (row0[x] + jxl::cms::kScaledXYBOffset[0]) *
+              jxl::cms::kScaledXYBScale[0];
+    row1[x] = (row1[x] + jxl::cms::kScaledXYBOffset[1]) *
+              jxl::cms::kScaledXYBScale[1];
   }
 }
 
@@ -481,36 +436,12 @@ void ScaleXYB(Image3F* opsin) {
   }
 }
 
-HWY_EXPORT(Image3FToXYB);
-void Image3FToXYB(const Image3F& in, const ColorEncoding& color_encoding,
-                  float intensity_target, ThreadPool* pool,
-                  Image3F* JXL_RESTRICT xyb, const JxlCmsInterface& cms) {
-  return HWY_DYNAMIC_DISPATCH(Image3FToXYB)(in, color_encoding,
-                                            intensity_target, pool, xyb, cms);
-}
-
 HWY_EXPORT(RgbToYcbcr);
 Status RgbToYcbcr(const ImageF& r_plane, const ImageF& g_plane,
                   const ImageF& b_plane, ImageF* y_plane, ImageF* cb_plane,
                   ImageF* cr_plane, ThreadPool* pool) {
   return HWY_DYNAMIC_DISPATCH(RgbToYcbcr)(r_plane, g_plane, b_plane, y_plane,
                                           cb_plane, cr_plane, pool);
-}
-
-// DEPRECATED
-Image3F OpsinDynamicsImage(const Image3B& srgb8, const JxlCmsInterface& cms) {
-  ImageMetadata metadata;
-  metadata.SetUintSamples(8);
-  metadata.color_encoding = ColorEncoding::SRGB();
-  ImageBundle ib(&metadata);
-  ib.SetFromImage(ConvertToFloat(srgb8), metadata.color_encoding);
-  JXL_CHECK(ib.TransformTo(ColorEncoding::LinearSRGB(ib.IsGray()), cms));
-  ThreadPool* null_pool = nullptr;
-  Image3F xyb(srgb8.xsize(), srgb8.ysize());
-
-  ImageBundle linear_storage(&metadata);
-  (void)ToXYB(ib, null_pool, &xyb, cms, &linear_storage);
-  return xyb;
 }
 
 }  // namespace jxl
