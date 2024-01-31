@@ -674,8 +674,8 @@ Status ModularFrameEncoder::ComputeEncodingData(
       bitdepth_correction = maxval / 255.f;
     }
     std::vector<float> quantizers;
-    float dist = cparams_.butteraugli_distance;
     for (size_t i = 0; i < 3; i++) {
+      float dist = cparams_.butteraugli_distance;
       quantizers.push_back(quantizer * dist * bitdepth_correction);
     }
     for (size_t i = 0; i < extra_channels.size(); i++) {
@@ -683,6 +683,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
           metadata.extra_channel_info[i].bit_depth.bits_per_sample;
       pixel_type ec_maxval = ec_bitdepth < 32 ? (1u << ec_bitdepth) - 1 : 0;
       bitdepth_correction = ec_maxval / 255.f;
+      float dist = 0;
       if (i < cparams_.ec_distance.size()) dist = cparams_.ec_distance[i];
       if (dist < 0) dist = cparams_.butteraugli_distance;
       quantizers.push_back(quantizer * dist * bitdepth_correction);

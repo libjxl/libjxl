@@ -106,7 +106,7 @@ struct CompressParams {
   int progressive_dc = -1;
 
   // If on: preserve color of invisible pixels (if off: don't care)
-  // Default: on for lossless, off for lossy
+  // Default: on
   Override keep_invisible = Override::kDefault;
 
   JxlCmsInterface cms;
@@ -159,9 +159,6 @@ struct CompressParams {
       if (f > 0) return false;
       if (f < 0 && butteraugli_distance != 0) return false;
     }
-    // if no explicit ec_distance given, and using vardct, then the modular part
-    // is empty or not lossless
-    if (!modular_mode && ec_distance.empty()) return false;
     // all modular channels are encoded at distance 0
     return true;
   }

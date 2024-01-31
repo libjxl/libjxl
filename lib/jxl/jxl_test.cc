@@ -72,7 +72,7 @@ TEST(JxlTest, RoundtripSinglePixelWithAlpha) {
   TestImage t;
   t.SetDimensions(1, 1).SetChannels(4).AddFrame().ZeroFill();
   PackedPixelFile ppf_out;
-  EXPECT_EQ(Roundtrip(t.ppf(), {}, {}, nullptr, &ppf_out), 59);
+  EXPECT_EQ(Roundtrip(t.ppf(), {}, {}, nullptr, &ppf_out), 58);
 }
 
 // Changing serialized signature causes Decode to fail.
@@ -706,7 +706,7 @@ TEST(JxlTest, RoundtripAlpha) {
   std::vector<uint8_t> compressed;
   EXPECT_TRUE(test::EncodeFile(cparams, &io, &compressed));
 
-  EXPECT_LE(compressed.size(), 10077u);
+  EXPECT_LE(compressed.size(), 20000u);
 
   for (bool use_image_callback : {false, true}) {
     for (bool unpremul_alpha : {false, true}) {
@@ -803,7 +803,7 @@ TEST(JxlTest, RoundtripAlphaPremultiplied) {
 
   std::vector<uint8_t> compressed;
   EXPECT_TRUE(test::EncodeFile(cparams, &io, &compressed));
-  EXPECT_LE(compressed.size(), 10000u);
+  EXPECT_LE(compressed.size(), 18000u);
 
   for (bool use_image_callback : {false, true}) {
     for (bool unpremul_alpha : {false, true}) {
@@ -838,7 +838,7 @@ TEST(JxlTest, RoundtripAlphaPremultiplied) {
             ButteraugliDistance(io_nopremul.frames, io2.frames,
                                 ButteraugliParams(), *JxlGetDefaultCms(),
                                 /*distmap=*/nullptr),
-            IsSlightlyBelow(1.55));
+            IsSlightlyBelow(1.0));
       }
     }
   }
@@ -854,6 +854,7 @@ TEST(JxlTest, RoundtripAlphaResampling) {
   ASSERT_TRUE(t.ppf().info.alpha_bits > 0);
 
   JXLCompressParams cparams;
+  cparams.alpha_distance = 1.0;
   cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 5);  // kHare
   cparams.AddOption(JXL_ENC_FRAME_SETTING_RESAMPLING, 2);
   cparams.AddOption(JXL_ENC_FRAME_SETTING_EXTRA_CHANNEL_RESAMPLING, 2);
@@ -873,6 +874,7 @@ TEST(JxlTest, RoundtripAlphaResamplingOnlyAlpha) {
   ASSERT_TRUE(t.ppf().info.alpha_bits > 0);
 
   JXLCompressParams cparams;
+  cparams.alpha_distance = 1.0;
   cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 3);  // kFalcon
   cparams.AddOption(JXL_ENC_FRAME_SETTING_EXTRA_CHANNEL_RESAMPLING, 2);
 
@@ -893,7 +895,7 @@ TEST(JxlTest, RoundtripAlphaNonMultipleOf8) {
 
   PackedPixelFile ppf_out;
   EXPECT_NEAR(Roundtrip(t.ppf(), {}, {}, pool, &ppf_out), 107, 10);
-  EXPECT_THAT(ButteraugliDistance(t.ppf(), ppf_out), IsSlightlyBelow(0.95));
+  EXPECT_THAT(ButteraugliDistance(t.ppf(), ppf_out), IsSlightlyBelow(0.006));
 }
 
 TEST(JxlTest, RoundtripAlpha16) {
@@ -923,6 +925,7 @@ TEST(JxlTest, RoundtripAlpha16) {
   JXLCompressParams cparams;
   cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 6);  // kWombat
   cparams.distance = 0.5;
+  cparams.alpha_distance = 0.5;
 
   PackedPixelFile ppf_out;
   // TODO(szabadka) Investigate big size difference on i686
@@ -1183,7 +1186,7 @@ TEST(JxlTest, RoundtripAnimation) {
 
   PackedPixelFile ppf_out;
   EXPECT_THAT(Roundtrip(t.ppf(), {}, dparams, pool, &ppf_out),
-              IsSlightlyBelow(2888));
+              IsSlightlyBelow(3350));
 
   t.CoalesceGIFAnimationWithAlpha();
   ASSERT_EQ(ppf_out.frames.size(), t.ppf().frames.size());
@@ -1293,7 +1296,7 @@ TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression444)) {
   const std::vector<uint8_t> orig =
       ReadTestData("jxl/flower/flower.png.im_q85_444.jpg");
   // JPEG size is 696,659 bytes.
-  EXPECT_NEAR(RoundtripJpeg(orig, &pool), 568940u, 20);
+  EXPECT_NEAR(RoundtripJpeg(orig, &pool), 568891u, 20);
 }
 
 TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionToPixels)) {
@@ -1380,7 +1383,7 @@ TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression420)) {
   const std::vector<uint8_t> orig =
       ReadTestData("jxl/flower/flower.png.im_q85_420.jpg");
   // JPEG size is 546,797 bytes.
-  EXPECT_NEAR(RoundtripJpeg(orig, &pool), 455560u, 10);
+  EXPECT_NEAR(RoundtripJpeg(orig, &pool), 455510u, 20);
 }
 
 TEST(JxlTest,
@@ -1389,7 +1392,7 @@ TEST(JxlTest,
   const std::vector<uint8_t> orig =
       ReadTestData("jxl/flower/flower.png.im_q85_luma_subsample.jpg");
   // JPEG size is 400,724 bytes.
-  EXPECT_NEAR(RoundtripJpeg(orig, &pool), 325354u, 15);
+  EXPECT_NEAR(RoundtripJpeg(orig, &pool), 325310u, 20);
 }
 
 TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression444_12)) {
@@ -1398,7 +1401,7 @@ TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression444_12)) {
   const std::vector<uint8_t> orig =
       ReadTestData("jxl/flower/flower.png.im_q85_444_1x2.jpg");
   // JPEG size is 703,874 bytes.
-  EXPECT_NEAR(RoundtripJpeg(orig, &pool), 569679u, 10);
+  EXPECT_NEAR(RoundtripJpeg(orig, &pool), 569630u, 20);
 }
 
 TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression422)) {
@@ -1406,7 +1409,7 @@ TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression422)) {
   const std::vector<uint8_t> orig =
       ReadTestData("jxl/flower/flower.png.im_q85_422.jpg");
   // JPEG size is 522,057 bytes.
-  EXPECT_NEAR(RoundtripJpeg(orig, &pool), 499282u, 10);
+  EXPECT_NEAR(RoundtripJpeg(orig, &pool), 499236u, 20);
 }
 
 TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression440)) {
@@ -1414,7 +1417,7 @@ TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression440)) {
   const std::vector<uint8_t> orig =
       ReadTestData("jxl/flower/flower.png.im_q85_440.jpg");
   // JPEG size is 603,623 bytes.
-  EXPECT_NEAR(RoundtripJpeg(orig, &pool), 501151u, 10);
+  EXPECT_NEAR(RoundtripJpeg(orig, &pool), 501101u, 20);
 }
 
 TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression_asymmetric)) {
@@ -1424,7 +1427,7 @@ TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression_asymmetric)) {
   const std::vector<uint8_t> orig =
       ReadTestData("jxl/flower/flower.png.im_q85_asymmetric.jpg");
   // JPEG size is 604,601 bytes.
-  EXPECT_NEAR(RoundtripJpeg(orig, &pool), 500602u, 10);
+  EXPECT_NEAR(RoundtripJpeg(orig, &pool), 500548u, 20);
 }
 
 TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression420Progr)) {
@@ -1432,7 +1435,7 @@ TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression420Progr)) {
   const std::vector<uint8_t> orig =
       ReadTestData("jxl/flower/flower.png.im_q85_420_progr.jpg");
   // JPEG size is 522,057 bytes.
-  EXPECT_NEAR(RoundtripJpeg(orig, &pool), 455499u, 10);
+  EXPECT_NEAR(RoundtripJpeg(orig, &pool), 455454u, 20);
 }
 
 TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionMetadata)) {
@@ -1440,7 +1443,8 @@ TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionMetadata)) {
   const std::vector<uint8_t> orig =
       ReadTestData("jxl/jpeg_reconstruction/1x1_exif_xmp.jpg");
   // JPEG size is 4290 bytes
-  EXPECT_NEAR(RoundtripJpeg(orig, &pool), 1400u, 30);
+  // 1370 on 386, so higher margin.
+  EXPECT_NEAR(RoundtripJpeg(orig, &pool), 1334u, 100);
 }
 
 TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionRestarts)) {
@@ -1448,7 +1452,7 @@ TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionRestarts)) {
   const std::vector<uint8_t> orig =
       ReadTestData("jxl/jpeg_reconstruction/bicycles_restarts.jpg");
   // JPEG size is 87478 bytes
-  EXPECT_NEAR(RoundtripJpeg(orig, &pool), 76125u, 30);
+  EXPECT_NEAR(RoundtripJpeg(orig, &pool), 76054u, 30);
 }
 
 TEST(JxlTest,

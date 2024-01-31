@@ -1436,7 +1436,7 @@ JxlEncoderFrameSettings* JxlEncoderFrameSettingsCreate(
   }
   opts->values.cparams.level = enc->codestream_level;
   opts->values.cparams.ec_distance.resize(enc->metadata.m.num_extra_channels,
-                                          -1);
+                                          0);
 
   JxlEncoderFrameSettings* ret = opts.get();
   enc->encoder_options.emplace_back(std::move(opts));
@@ -1489,7 +1489,7 @@ JxlEncoderStatus JxlEncoderSetExtraChannelDistance(
     // This can only happen if JxlEncoderFrameSettingsCreate() was called before
     // JxlEncoderSetBasicInfo().
     frame_settings->values.cparams.ec_distance.resize(
-        frame_settings->enc->metadata.m.num_extra_channels, -1);
+        frame_settings->enc->metadata.m.num_extra_channels, 0);
   }
 
   frame_settings->values.cparams.ec_distance[index] = distance;
