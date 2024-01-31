@@ -2347,27 +2347,38 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetCms(JxlDecoder* dec,
   return JXL_DEC_SUCCESS;
 }
 
-JXL_EXPORT JxlDecoderStatus JxlDecoderPreviewOutBufferSize(
-    const JxlDecoder* dec, const JxlPixelFormat* format, size_t* size) {
+static JxlDecoderStatus GetMinSize(const JxlDecoder* dec,
+                                   const JxlPixelFormat* format,
+                                   size_t num_channels, size_t* min_size,
+                                   bool preview) {
   size_t bits;
   JxlDecoderStatus status = PrepareSizeCheck(dec, format, &bits);
   if (status != JXL_DEC_SUCCESS) return status;
-  if (format->num_channels < 3 &&
-      !dec->image_metadata.color_encoding.IsGray()) {
-    return JXL_API_ERROR("Number of channels is too low for color output");
+  size_t xsize, ysize;
+  if (preview) {
+    xsize = dec->metadata.oriented_preview_xsize(dec->keep_orientation);
+    ysize = dec->metadata.oriented_preview_ysize(dec->keep_orientation);
+  } else {
+    GetCurrentDimensions(dec, xsize, ysize);
   }
-
-  size_t xsize = dec->metadata.oriented_preview_xsize(dec->keep_orientation);
-  size_t ysize = dec->metadata.oriented_preview_ysize(dec->keep_orientation);
-
+  if (num_channels == 0) num_channels = format->num_channels;
   size_t row_size =
-      jxl::DivCeil(xsize * format->num_channels * bits, jxl::kBitsPerByte);
+      jxl::DivCeil(xsize * num_channels * bits, jxl::kBitsPerByte);
   size_t last_row_size = row_size;
   if (format->align > 1) {
     row_size = jxl::DivCeil(row_size, format->align) * format->align;
   }
-  *size = row_size * (ysize - 1) + last_row_size;
+  *min_size = row_size * (ysize - 1) + last_row_size;
   return JXL_DEC_SUCCESS;
+}
+
+JXL_EXPORT JxlDecoderStatus JxlDecoderPreviewOutBufferSize(
+    const JxlDecoder* dec, const JxlPixelFormat* format, size_t* size) {
+  if (format->num_channels < 3 &&
+      !dec->image_metadata.color_encoding.IsGray()) {
+    return JXL_API_ERROR("Number of channels is too low for color output");
+  }
+  return GetMinSize(dec, format, 0, size, true);
 }
 
 JXL_EXPORT JxlDecoderStatus JxlDecoderSetPreviewOutBuffer(
@@ -2400,23 +2411,12 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetPreviewOutBuffer(
 
 JXL_EXPORT JxlDecoderStatus JxlDecoderImageOutBufferSize(
     const JxlDecoder* dec, const JxlPixelFormat* format, size_t* size) {
-  size_t bits;
-  JxlDecoderStatus status = PrepareSizeCheck(dec, format, &bits);
-  if (status != JXL_DEC_SUCCESS) return status;
   if (format->num_channels < 3 &&
       !dec->image_metadata.color_encoding.IsGray()) {
     return JXL_API_ERROR("Number of channels is too low for color output");
   }
-  size_t xsize, ysize;
-  GetCurrentDimensions(dec, xsize, ysize);
-  size_t row_size =
-      jxl::DivCeil(xsize * format->num_channels * bits, jxl::kBitsPerByte);
-  if (format->align > 1) {
-    row_size = jxl::DivCeil(row_size, format->align) * format->align;
-  }
-  *size = row_size * ysize;
 
-  return JXL_DEC_SUCCESS;
+  return GetMinSize(dec, format, 0, size, false);
 }
 
 JxlDecoderStatus JxlDecoderSetImageOutBuffer(JxlDecoder* dec,
@@ -2462,22 +2462,7 @@ JxlDecoderStatus JxlDecoderExtraChannelBufferSize(const JxlDecoder* dec,
     return JXL_API_ERROR("Invalid extra channel index");
   }
 
-  size_t num_channels = 1;  // Do not use format's num_channels
-
-  size_t bits;
-  JxlDecoderStatus status = PrepareSizeCheck(dec, format, &bits);
-  if (status != JXL_DEC_SUCCESS) return status;
-
-  size_t xsize, ysize;
-  GetCurrentDimensions(dec, xsize, ysize);
-  size_t row_size =
-      jxl::DivCeil(xsize * num_channels * bits, jxl::kBitsPerByte);
-  if (format->align > 1) {
-    row_size = jxl::DivCeil(row_size, format->align) * format->align;
-  }
-  *size = row_size * ysize;
-
-  return JXL_DEC_SUCCESS;
+  return GetMinSize(dec, format, 1, size, false);
 }
 
 JxlDecoderStatus JxlDecoderSetExtraChannelBuffer(JxlDecoder* dec,
