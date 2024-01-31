@@ -2548,7 +2548,11 @@ TEST(DecodeTest, AlignTest) {
   size_t align = 17;
   JxlPixelFormat format = {3, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, align};
   // On purpose not using jxl::RoundUpTo to test it independently.
-  size_t expected_line_bytes = (1 * 3 * xsize + align - 1) / align * align;
+  size_t expected_line_size_last = 1 * 3 * xsize;
+  size_t expected_line_size =
+      ((expected_line_size_last + align - 1) / align) * align;
+  size_t expected_pixels_size =
+      expected_line_size * (ysize - 1) + expected_line_size_last;
 
   for (int use_callback = 0; use_callback <= 1; ++use_callback) {
     std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
@@ -2556,7 +2560,7 @@ TEST(DecodeTest, AlignTest) {
         /*set_buffer_early=*/false,
         /*use_resizable_runner=*/false, /*require_boxes=*/false,
         /*expect_success=*/true);
-    EXPECT_EQ(expected_line_bytes * ysize, pixels2.size());
+    EXPECT_EQ(expected_pixels_size, pixels2.size());
     EXPECT_EQ(0u, jxl::test::ComparePixels(pixels.data(), pixels2.data(), xsize,
                                            ysize, format_orig, format));
   }

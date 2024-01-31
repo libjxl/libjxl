@@ -491,9 +491,8 @@ static gboolean load_increment(gpointer context, const guchar *buf, guint size,
                           decoder_state->frames->len - 1)
                 .data;
         decoder_state->pixel_format.align = gdk_pixbuf_get_rowstride(output);
-        guchar *dst = gdk_pixbuf_get_pixels(output);
-        size_t num_pixels = decoder_state->xsize * decoder_state->ysize;
-        size_t size = num_pixels * decoder_state->pixel_format.num_channels;
+        guint size;
+        guchar *dst = gdk_pixbuf_get_pixels_with_length(output, &size);
         if (JXL_DEC_SUCCESS != JxlDecoderSetImageOutBuffer(
                                    decoder_state->decoder,
                                    &decoder_state->pixel_format, dst, size)) {
