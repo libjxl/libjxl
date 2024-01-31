@@ -18,25 +18,22 @@ namespace jxl {
 
 namespace {
 template <typename From>
-Plane<float> ConvertToFloat(const Plane<From>& from) {
+Image3F ConvertToFloat(const Image3<From>& from) {
   float factor = 1.0f / std::numeric_limits<From>::max();
   if (std::is_same<From, double>::value || std::is_same<From, float>::value) {
     factor = 1.0f;
   }
-  Plane<float> to(from.xsize(), from.ysize());
-  for (size_t y = 0; y < from.ysize(); ++y) {
-    const From* const JXL_RESTRICT row_from = from.Row(y);
-    float* const JXL_RESTRICT row_to = to.Row(y);
-    for (size_t x = 0; x < from.xsize(); ++x) {
-      row_to[x] = row_from[x] * factor;
+  Image3F to(from.xsize(), from.ysize());
+  for (size_t c = 0; c < 3; ++c) {
+    for (size_t y = 0; y < from.ysize(); ++y) {
+      const From* const JXL_RESTRICT row_from = from.ConstPlaneRow(c, y);
+      float* const JXL_RESTRICT row_to = to.PlaneRow(c, y);
+      for (size_t x = 0; x < from.xsize(); ++x) {
+        row_to[x] = row_from[x] * factor;
+      }
     }
   }
   return to;
-}
-template <typename From>
-Image3F ConvertToFloat(const Image3<From>& from) {
-  return Image3F(ConvertToFloat(from.Plane(0)), ConvertToFloat(from.Plane(1)),
-                 ConvertToFloat(from.Plane(2)));
 }
 
 template <typename T>

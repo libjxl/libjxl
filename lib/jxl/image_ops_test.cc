@@ -110,10 +110,6 @@ void TestFillT() {
     for (uint32_t ysize : {0, 1, 15, 16, 31, 32}) {
       Image3<T> image(xsize, ysize);
       TestFillImpl(&image, "size ctor");
-
-      Image3<T> planar(Plane<T>(xsize, ysize), Plane<T>(xsize, ysize),
-                       Plane<T>(xsize, ysize));
-      TestFillImpl(&planar, "planar");
     }
   }
 }
