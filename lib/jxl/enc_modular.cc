@@ -489,7 +489,8 @@ Status ModularFrameEncoder::ComputeEncodingData(
             pool, 0, ysize_shifted, ThreadPool::NoInit,
             [&](const int task, const int thread) {
               const size_t y = task;
-              const float* const JXL_RESTRICT row_in = color->PlaneRow(c, y);
+              const float* const JXL_RESTRICT row_in =
+                  color->PlaneRow(c, y + group_rect.y0()) + group_rect.x0();
               pixel_type* const JXL_RESTRICT row_out = gi.channel[c_out].Row(y);
               if (!float_to_int(row_in, row_out, xsize_shifted, bits, exp_bits,
                                 fp, factor)) {
