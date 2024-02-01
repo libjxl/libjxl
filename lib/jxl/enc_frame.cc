@@ -1647,11 +1647,12 @@ bool CanDoStreamingEncoding(const CompressParams& cparams,
   if (cparams.max_error_mode) {
     return false;
   }
-  if (cparams.modular_mode) {
+  if (cparams.modular_group_size_shift != 1 &&
+      cparams.modular_group_size_shift != -1) {
     return false;
   }
   if (!cparams.ModularPartIsLossless() || cparams.responsive > 0) {
-    if (metadata.m.num_extra_channels > 0) {
+    if (metadata.m.num_extra_channels > 0 || cparams.modular_mode) {
       return false;
     }
   }
@@ -1943,9 +1944,13 @@ Status EncodeFrameStreaming(const CompressParams& cparams,
     JXL_RETURN_IF_ERROR(
         OutputGroups(std::move(group_codes), &group_sizes, output_processor));
   }
-  JXL_RETURN_IF_ERROR(OutputAcGlobal(enc_state,
-                                     frame_header.ToFrameDimensions(),
-                                     &group_sizes, output_processor, aux_out));
+  if (frame_header.encoding == FrameEncoding::kVarDCT) {
+    JXL_RETURN_IF_ERROR(
+        OutputAcGlobal(enc_state, frame_header.ToFrameDimensions(),
+                       &group_sizes, output_processor, aux_out));
+  } else {
+    group_sizes.push_back(0);
+  }
   JXL_ASSERT(group_sizes.size() == permutation.size());
   size_t end_pos = output_processor->CurrentPosition();
   output_processor->Seek(start_pos);
