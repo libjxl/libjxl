@@ -8,42 +8,18 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#include <utility>
+#include <cstring>
 
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/printf_macros.h"
+#include "lib/jxl/base/random.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/cache_aligned.h"
 #include "lib/jxl/image.h"
-#include "lib/jxl/image_test_utils.h"
 #include "lib/jxl/testing.h"
 
 namespace jxl {
 namespace {
-
-template <typename T>
-void TestPacked(const size_t xsize, const size_t ysize) {
-  Plane<T> image1(xsize, ysize);
-  RandomFillImage(&image1);
-  const std::vector<T>& packed = PackedFromImage(image1);
-  const Plane<T>& image2 = ImageFromPacked(packed, xsize, ysize);
-  JXL_EXPECT_OK(SamePixels(image1, image2, _));
-}
-
-TEST(ImageTest, TestPacked) {
-  TestPacked<uint8_t>(1, 1);
-  TestPacked<uint8_t>(7, 1);
-  TestPacked<uint8_t>(1, 7);
-
-  TestPacked<int16_t>(1, 1);
-  TestPacked<int16_t>(7, 1);
-  TestPacked<int16_t>(1, 7);
-
-  TestPacked<uint16_t>(1, 1);
-  TestPacked<uint16_t>(7, 1);
-  TestPacked<uint16_t>(1, 7);
-
-  TestPacked<float>(1, 1);
-  TestPacked<float>(7, 1);
-  TestPacked<float>(1, 7);
-}
 
 // Ensure entire payload is readable/writable for various size/offset combos.
 TEST(ImageTest, TestAllocator) {

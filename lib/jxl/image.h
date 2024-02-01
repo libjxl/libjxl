@@ -99,21 +99,6 @@ struct PlaneBase {
     return JXL_ASSUME_ALIGNED(row, 64);
   }
 
-  enum class Padding {
-    // Allow Load(d, row + x) for x = 0; x < xsize(); x += Lanes(d). Default.
-    kRoundUp,
-    // Allow LoadU(d, row + x) for x = xsize() - 1. This requires an extra
-    // vector to be initialized. If done by default, this would suppress
-    // legitimate msan warnings. We therefore require users to explicitly call
-    // InitializePadding before using unaligned loads (e.g. convolution).
-    kUnaligned
-  };
-
-  // Initializes the minimum bytes required to suppress msan warnings from
-  // legitimate (according to Padding mode) vector loads/stores on the right
-  // border, where some lanes are uninitialized and assumed to be unused.
-  void InitializePadding(size_t sizeof_t, Padding padding);
-
   // (Members are non-const to enable assignment during move-assignment.)
   uint32_t xsize_;  // In valid pixels, not including any padding.
   uint32_t ysize_;
@@ -121,6 +106,12 @@ struct PlaneBase {
   uint32_t orig_ysize_;
   size_t bytes_per_row_;  // Includes padding.
   CacheAlignedUniquePtr bytes_;
+
+ private:
+  // Initializes the minimum bytes required to suppress MSAN warnings from
+  // legitimate vector loads/stores on the right border, where some lanes are
+  // uninitialized and assumed to be unused.
+  void InitializePadding(size_t sizeof_t);
 };
 
 // Single channel, aligned rows separated by padding. T must be POD.
@@ -154,10 +145,6 @@ class Plane : public PlaneBase {
   Plane(const size_t xsize, const size_t ysize)
       : PlaneBase(xsize, ysize, sizeof(T)) {}
 
-  void InitializePaddingForUnalignedAccesses() {
-    InitializePadding(sizeof(T), Padding::kUnaligned);
-  }
-
   JXL_INLINE T* Row(const size_t y) { return static_cast<T*>(VoidRow(y)); }
 
   // Returns pointer to const (see above).
@@ -185,12 +172,6 @@ using ImageU = Plane<uint16_t>;
 using ImageI = Plane<int32_t>;
 using ImageF = Plane<float>;
 using ImageD = Plane<double>;
-
-// Also works for Image3 and mixed argument types.
-template <class Image1, class Image2>
-bool SameSize(const Image1& image1, const Image2& image2) {
-  return image1.xsize() == image2.xsize() && image1.ysize() == image2.ysize();
-}
 
 template <typename T>
 class Image3;
