@@ -28,6 +28,7 @@
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/enc_patch_dictionary.h"
 #include "lib/jxl/enc_quant_weights.h"
+#include "lib/jxl/frame_dimensions.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
 #include "lib/jxl/modular/encoding/enc_debug_tree.h"
@@ -373,12 +374,16 @@ bool do_transform(Image& image, const Transform& tr,
 Status ModularFrameEncoder::ComputeEncodingData(
     const FrameHeader& frame_header, const ImageMetadata& metadata,
     Image3F* JXL_RESTRICT color, const std::vector<ImageF>& extra_channels,
-    PassesEncoderState* JXL_RESTRICT enc_state, const JxlCmsInterface& cms,
-    ThreadPool* pool, AuxOut* aux_out, bool do_color) {
+    const Rect& group_rect, const FrameDimensions& patch_dim,
+    const Rect& frame_area_rect, PassesEncoderState* JXL_RESTRICT enc_state,
+    const JxlCmsInterface& cms, ThreadPool* pool, AuxOut* aux_out,
+    bool do_color) {
   JXL_DEBUG_V(6, "Computing modular encoding data for frame %s",
               frame_header.DebugString().c_str());
 
-  if (do_color && frame_header.loop_filter.gab) {
+  bool groupwise = enc_state->streaming_mode;
+
+  if (do_color && frame_header.loop_filter.gab && !groupwise) {
     float w = 0.9908511000000001f;
     float weights[3] = {w, w, w};
     GaborishInverse(color, Rect(*color), weights, pool);
@@ -386,7 +391,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
 
   if (do_color && metadata.bit_depth.bits_per_sample <= 16 &&
       cparams_.speed_tier < SpeedTier::kCheetah &&
-      cparams_.decoding_speed_tier < 2) {
+      cparams_.decoding_speed_tier < 2 && !groupwise) {
     FindBestPatchDictionary(*color, enc_state, cms, nullptr, aux_out,
                             cparams_.color_transform == ColorTransform::kXYB);
     PatchDictionaryEncoder::SubtractFrom(
@@ -394,8 +399,8 @@ Status ModularFrameEncoder::ComputeEncodingData(
   }
 
   // Convert ImageBundle to modular Image object
-  const size_t xsize = frame_dim_.xsize;
-  const size_t ysize = frame_dim_.ysize;
+  const size_t xsize = patch_dim.xsize;
+  const size_t ysize = patch_dim.ysize;
 
   int nb_chans = 3;
   if (metadata.color_encoding.IsGray() &&
@@ -505,8 +510,8 @@ Status ModularFrameEncoder::ComputeEncodingData(
   for (size_t ec = 0; ec < extra_channels.size(); ec++, c++) {
     const ExtraChannelInfo& eci = metadata.extra_channel_info[ec];
     size_t ecups = frame_header.extra_channel_upsampling[ec];
-    gi.channel[c].shrink(DivCeil(frame_dim_.xsize_upsampled, ecups),
-                         DivCeil(frame_dim_.ysize_upsampled, ecups));
+    gi.channel[c].shrink(DivCeil(patch_dim.xsize_upsampled, ecups),
+                         DivCeil(patch_dim.ysize_upsampled, ecups));
     gi.channel[c].hshift = gi.channel[c].vshift =
         CeilLog2Nonzero(ecups) - CeilLog2Nonzero(frame_header.upsampling);
 
@@ -520,7 +525,8 @@ Status ModularFrameEncoder::ComputeEncodingData(
         pool, 0, gi.channel[c].plane.ysize(), ThreadPool::NoInit,
         [&](const int task, const int thread) {
           const size_t y = task;
-          const float* const JXL_RESTRICT row_in = extra_channels[ec].Row(y);
+          const float* const JXL_RESTRICT row_in =
+              extra_channels[ec].Row(y + group_rect.y0()) + group_rect.x0();
           pixel_type* const JXL_RESTRICT row_out = gi.channel[c].Row(y);
           if (!float_to_int(row_in, row_out, gi.channel[c].plane.xsize(), bits,
                             exp_bits, fp, factor)) {
@@ -553,7 +559,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
   }
 
   // Global palette
-  if (cparams_.palette_colors != 0 || cparams_.lossy_palette) {
+  if ((cparams_.palette_colors != 0 || cparams_.lossy_palette) && !groupwise) {
     // all-channel palette (e.g. RGBA)
     if (gi.channel.size() - gi.nb_meta_channels > 1) {
       Transform maybe_palette(TransformId::kPalette);
@@ -591,7 +597,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
   }
 
   // Global channel palette
-  if (cparams_.channel_colors_pre_transform_percent > 0 &&
+  if (!groupwise && cparams_.channel_colors_pre_transform_percent > 0 &&
       !cparams_.lossy_palette &&
       (cparams_.speed_tier <= SpeedTier::kThunder ||
        (do_color && metadata.bit_depth.bits_per_sample > 8))) {
@@ -647,7 +653,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
   }
 
   // don't do squeeze if we don't have some spare bits
-  if (cparams_.responsive && !gi.channel.empty() &&
+  if (!groupwise && cparams_.responsive && !gi.channel.empty() &&
       max_bitdepth + 2 < level_max_bitdepth) {
     Transform t(TransformId::kSqueeze);
     do_transform(gi, t, weighted::Header(), pool);
@@ -723,57 +729,57 @@ Status ModularFrameEncoder::ComputeEncodingData(
   }
 
   // Fill other groups.
-  struct GroupParams {
-    Rect rect;
-    int minShift;
-    int maxShift;
-    ModularStreamId id;
-  };
-  std::vector<GroupParams> stream_params;
-
   stream_options_[0] = cparams_.options;
 
   // DC
-  for (size_t group_id = 0; group_id < frame_dim_.num_dc_groups; group_id++) {
-    const size_t gx = group_id % frame_dim_.xsize_dc_groups;
-    const size_t gy = group_id / frame_dim_.xsize_dc_groups;
-    const Rect rect(gx * frame_dim_.dc_group_dim, gy * frame_dim_.dc_group_dim,
-                    frame_dim_.dc_group_dim, frame_dim_.dc_group_dim);
+  for (size_t group_id = 0; group_id < patch_dim.num_dc_groups; group_id++) {
+    const size_t rgx = group_id % patch_dim.xsize_dc_groups;
+    const size_t rgy = group_id / patch_dim.xsize_dc_groups;
+    const Rect rect(rgx * patch_dim.dc_group_dim, rgy * patch_dim.dc_group_dim,
+                    patch_dim.dc_group_dim, patch_dim.dc_group_dim);
+    size_t gx = rgx + frame_area_rect.x0() / 2048;
+    size_t gy = rgy + frame_area_rect.y0() / 2048;
+    size_t real_group_id = gy * frame_dim_.xsize_dc_groups + gx;
     // minShift==3 because (frame_dim.dc_group_dim >> 3) == frame_dim.group_dim
     // maxShift==1000 is infinity
-    stream_params.push_back(
-        GroupParams{rect, 3, 1000, ModularStreamId::ModularDC(group_id)});
+    stream_params_.push_back(
+        GroupParams{rect, 3, 1000, ModularStreamId::ModularDC(real_group_id)});
   }
   // AC global -> nothing.
   // AC
-  for (size_t group_id = 0; group_id < frame_dim_.num_groups; group_id++) {
-    const size_t gx = group_id % frame_dim_.xsize_groups;
-    const size_t gy = group_id / frame_dim_.xsize_groups;
-    const Rect mrect(gx * frame_dim_.group_dim, gy * frame_dim_.group_dim,
-                     frame_dim_.group_dim, frame_dim_.group_dim);
+  for (size_t group_id = 0; group_id < patch_dim.num_groups; group_id++) {
+    const size_t rgx = group_id % patch_dim.xsize_groups;
+    const size_t rgy = group_id / patch_dim.xsize_groups;
+    const Rect mrect(rgx * patch_dim.group_dim, rgy * patch_dim.group_dim,
+                     patch_dim.group_dim, patch_dim.group_dim);
+    size_t gx = rgx + frame_area_rect.x0() / (frame_dim_.group_dim);
+    size_t gy = rgy + frame_area_rect.y0() / (frame_dim_.group_dim);
+    size_t real_group_id = gy * frame_dim_.xsize_groups + gx;
     for (size_t i = 0; i < enc_state->progressive_splitter.GetNumPasses();
          i++) {
       int maxShift, minShift;
       frame_header.passes.GetDownsamplingBracket(i, minShift, maxShift);
-      stream_params.push_back(GroupParams{
-          mrect, minShift, maxShift, ModularStreamId::ModularAC(group_id, i)});
+      stream_params_.push_back(
+          GroupParams{mrect, minShift, maxShift,
+                      ModularStreamId::ModularAC(real_group_id, i)});
     }
   }
   // if there's only one group, everything ends up in GlobalModular
   // in that case, also try RCTs/WP params for the one group
-  if (stream_params.size() == 2) {
-    stream_params.push_back(GroupParams{Rect(0, 0, xsize, ysize), 0, 1000,
-                                        ModularStreamId::Global()});
+  if (stream_params_.size() == 2) {
+    stream_params_.push_back(GroupParams{Rect(0, 0, xsize, ysize), 0, 1000,
+                                         ModularStreamId::Global()});
   }
   gi_channel_.resize(stream_images_.size());
 
   JXL_RETURN_IF_ERROR(RunOnPool(
-      pool, 0, stream_params.size(), ThreadPool::NoInit,
+      pool, 0, stream_params_.size(), ThreadPool::NoInit,
       [&](const uint32_t i, size_t /* thread */) {
-        stream_options_[stream_params[i].id.ID(frame_dim_)] = cparams_.options;
+        size_t stream = stream_params_[i].id.ID(frame_dim_);
+        stream_options_[stream] = cparams_.options;
         JXL_CHECK(PrepareStreamParams(
-            stream_params[i].rect, cparams_, stream_params[i].minShift,
-            stream_params[i].maxShift, stream_params[i].id, do_color));
+            stream_params_[i].rect, cparams_, stream_params_[i].minShift,
+            stream_params_[i].maxShift, stream_params_[i].id, do_color));
       },
       "ChooseParams"));
   {
@@ -1102,6 +1108,24 @@ void ModularFrameEncoder::ClearStreamData(const ModularStreamId& stream) {
   size_t stream_id = stream.ID(frame_dim_);
   Image empty_image;
   std::swap(stream_images_[stream_id], empty_image);
+}
+
+void ModularFrameEncoder::ClearModularStreamData() {
+  for (const auto& group : stream_params_) {
+    ClearStreamData(group.id);
+  }
+  stream_params_.clear();
+}
+
+size_t ModularFrameEncoder::ComputeStreamingAbsoluteAcGroupId(
+    size_t dc_group_id, size_t ac_group_id,
+    const FrameDimensions& patch_dim) const {
+  size_t dc_group_x = dc_group_id % frame_dim_.xsize_dc_groups;
+  size_t dc_group_y = dc_group_id / frame_dim_.xsize_dc_groups;
+  size_t ac_group_x = ac_group_id % patch_dim.xsize_groups;
+  size_t ac_group_y = ac_group_id / patch_dim.xsize_groups;
+  return (dc_group_x * 8 + ac_group_x) +
+         (dc_group_y * 8 + ac_group_y) * frame_dim_.xsize_groups;
 }
 
 namespace {

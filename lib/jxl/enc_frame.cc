@@ -1313,7 +1313,15 @@ Status EncodeGroups(const FrameHeader& frame_header,
                                  const size_t thread) {
     AuxOut* my_aux_out = aux_outs[thread].get();
 
+    size_t ac_group_id =
+        enc_state->streaming_mode
+            ? enc_modular->ComputeStreamingAbsoluteAcGroupId(
+                  enc_state->dc_group_index, group_index, shared.frame_dim)
+            : group_index;
+
     for (size_t i = 0; i < num_passes; i++) {
+      JXL_DEBUG_V(2, "Encoding AC group %u [abs %" PRIuS "] pass %" PRIuS,
+                  group_index, ac_group_id, i);
       if (frame_header.encoding == FrameEncoding::kVarDCT) {
         if (!EncodeGroupTokenizedCoefficients(
                 group_index, i, enc_state->histogram_idx[group_index],
@@ -1325,7 +1333,7 @@ Status EncodeGroups(const FrameHeader& frame_header,
       // Write all modular encoded data (color?, alpha, depth, extra channels)
       if (!enc_modular->EncodeStream(
               ac_group_code(i, group_index), my_aux_out, kLayerModularAcGroup,
-              ModularStreamId::ModularAC(group_index, i))) {
+              ModularStreamId::ModularAC(ac_group_id, i))) {
         num_errors.fetch_add(1, std::memory_order_relaxed);
         return;
       }
@@ -1397,7 +1405,8 @@ Status ComputeEncodingData(
   // computing inverse Gaborish and adaptive quantization map.
   int max_border = enc_state.streaming_mode ? kBlockDim : 0;
   Rect frame_rect(0, 0, frame_data.xsize, frame_data.ysize);
-  Rect patch_rect = Rect(x0, y0, xsize, ysize).Extend(max_border, frame_rect);
+  Rect frame_area_rect = Rect(x0, y0, xsize, ysize);
+  Rect patch_rect = frame_area_rect.Extend(max_border, frame_rect);
   JXL_ASSERT(patch_rect.IsInside(frame_rect));
 
   // Allocating a large enough image avoids a copy when padding.
@@ -1505,15 +1514,16 @@ Status ComputeEncodingData(
         TokenizeAllCoefficients(frame_header, pool, &enc_state));
   }
 
+  if (cparams.modular_mode || !extra_channels.empty()) {
+    JXL_RETURN_IF_ERROR(enc_modular.ComputeEncodingData(
+        frame_header, metadata->m, &color, extra_channels, group_rect,
+        frame_dim, frame_area_rect, &enc_state, cms, pool, aux_out,
+        /*do_color=*/cparams.modular_mode));
+  }
+
   if (!enc_state.streaming_mode) {
-    if (cparams.modular_mode || !extra_channels.empty()) {
-      JXL_RETURN_IF_ERROR(enc_modular.ComputeEncodingData(
-          frame_header, metadata->m, &color, extra_channels, &enc_state, cms,
-          pool, aux_out, /*do_color=*/cparams.modular_mode));
-    }
     JXL_RETURN_IF_ERROR(enc_modular.ComputeTree(pool));
     JXL_RETURN_IF_ERROR(enc_modular.ComputeTokens(pool));
-
     mutable_frame_header.UpdateFlag(shared.image_features.patches.HasAny(),
                                     FrameHeader::kPatches);
     mutable_frame_header.UpdateFlag(shared.image_features.splines.HasAny(),
@@ -1526,6 +1536,7 @@ Status ComputeEncodingData(
     const size_t group_index = enc_state.dc_group_index;
     enc_modular.ClearStreamData(ModularStreamId::VarDCTDC(group_index));
     enc_modular.ClearStreamData(ModularStreamId::ACMetadata(group_index));
+    enc_modular.ClearModularStreamData();
   }
   return true;
 }
@@ -1614,6 +1625,13 @@ bool CanDoStreamingEncoding(const CompressParams& cparams,
                             const FrameInfo& frame_info,
                             const CodecMetadata& metadata,
                             const JxlEncoderChunkedFrameAdapter& frame_data) {
+  if (cparams.buffering == 0) {
+    return false;
+  }
+  // TODO(veluca): handle different values of `buffering`.
+  if (frame_data.xsize <= 2048 && frame_data.ysize <= 2048) {
+    return false;
+  }
   if (frame_data.IsJPEG()) {
     return false;
   }
@@ -1629,23 +1647,17 @@ bool CanDoStreamingEncoding(const CompressParams& cparams,
   if (cparams.max_error_mode) {
     return false;
   }
-  if (cparams.color_transform != ColorTransform::kXYB) {
-    return false;
-  }
   if (cparams.modular_mode) {
     return false;
   }
-  if (metadata.m.num_extra_channels > 0) {
-    return false;
+  if (!cparams.ModularPartIsLossless() || cparams.responsive > 0) {
+    if (metadata.m.num_extra_channels > 0) {
+      return false;
+    }
   }
-  if (cparams.buffering == 0) {
-    return false;
-  }
-  if (cparams.buffering == 1 && frame_data.xsize <= 2048 &&
-      frame_data.ysize <= 2048) {
-    return false;
-  }
-  if (frame_data.xsize <= 256 && frame_data.ysize <= 256) {
+  ColorTransform ok_color_transform =
+      cparams.modular_mode ? ColorTransform::kNone : ColorTransform::kXYB;
+  if (cparams.color_transform != ok_color_transform) {
     return false;
   }
   return true;
@@ -1870,7 +1882,7 @@ Status EncodeFrameStreaming(const CompressParams& cparams,
   ComputePermutationForStreaming(frame_data.xsize, frame_data.ysize, num_passes,
                                  permutation, dc_group_order);
   enc_state.shared.num_histograms = dc_group_order.size();
-  // This is only valid in VarDCT mode, otherwise there can be group shift.
+  // This is only valid with a group shift of 1.
   size_t group_size = 256;
   size_t dc_group_size = group_size * kBlockDim;
   size_t dc_group_xsize = DivCeil(frame_data.xsize, dc_group_size);

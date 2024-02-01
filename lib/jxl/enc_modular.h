@@ -27,13 +27,13 @@ class ModularFrameEncoder {
  public:
   ModularFrameEncoder(const FrameHeader& frame_header,
                       const CompressParams& cparams_orig);
-  Status ComputeEncodingData(const FrameHeader& frame_header,
-                             const ImageMetadata& metadata,
-                             Image3F* JXL_RESTRICT color,
-                             const std::vector<ImageF>& extra_channels,
-                             PassesEncoderState* JXL_RESTRICT enc_state,
-                             const JxlCmsInterface& cms, ThreadPool* pool,
-                             AuxOut* aux_out, bool do_color);
+  Status ComputeEncodingData(
+      const FrameHeader& frame_header, const ImageMetadata& metadata,
+      Image3F* JXL_RESTRICT color, const std::vector<ImageF>& extra_channels,
+      const Rect& group_rect, const FrameDimensions& patch_dim,
+      const Rect& frame_area_rect, PassesEncoderState* JXL_RESTRICT enc_state,
+      const JxlCmsInterface& cms, ThreadPool* pool, AuxOut* aux_out,
+      bool do_color);
   Status ComputeTree(ThreadPool* pool);
   Status ComputeTokens(ThreadPool* pool);
   // Encodes global info (tree + histograms) in the `writer`.
@@ -43,7 +43,13 @@ class ModularFrameEncoder {
   // assigning bits to the provided `layer`.
   Status EncodeStream(BitWriter* writer, AuxOut* aux_out, size_t layer,
                       const ModularStreamId& stream);
+
   void ClearStreamData(const ModularStreamId& stream);
+  void ClearModularStreamData();
+  size_t ComputeStreamingAbsoluteAcGroupId(
+      size_t dc_group_id, size_t ac_group_id,
+      const FrameDimensions& patch_dim) const;
+
   // Creates a modular image for a given DC group of VarDCT mode. `dc` is the
   // input DC image, not quantized; the group is specified by `group_index`, and
   // `nl_dc` decides whether to apply a near-lossless processing to the DC or
@@ -89,6 +95,14 @@ class ModularFrameEncoder {
   std::vector<std::vector<uint32_t>> gi_channel_;
   std::vector<size_t> image_widths_;
   Predictor delta_pred_ = Predictor::Average4;
+
+  struct GroupParams {
+    Rect rect;
+    int minShift;
+    int maxShift;
+    ModularStreamId id;
+  };
+  std::vector<GroupParams> stream_params_;
 };
 
 }  // namespace jxl

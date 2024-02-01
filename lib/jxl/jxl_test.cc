@@ -1677,5 +1677,27 @@ TEST(JxlTest, JXL_X86_64_TEST(StreamingSamePixels)) {
   EXPECT_TRUE(jxl::test::SamePixels(ppf_out, ppf_out_streaming));
 }
 
+// This is broken on mingw32, so we only enable it for x86_64 now.
+TEST(JxlTest, JXL_X86_64_TEST(StreamingSamePixelsAlpha)) {
+  const std::vector<uint8_t> orig = ReadTestData("jxl/flower/flower_alpha.png");
+
+  jxl::test::TestImage image;
+  image.DecodeFromBytes(orig);
+  JXLCompressParams cparams;
+  cparams.distance = 1.0;
+  cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 6);
+  cparams.AddOption(JXL_ENC_FRAME_SETTING_USE_FULL_IMAGE_HEURISTICS, 0);
+
+  ThreadPoolForTests pool(8);
+  PackedPixelFile ppf_out;
+  Roundtrip(image.ppf(), cparams, {}, &pool, &ppf_out);
+
+  cparams.AddOption(JXL_ENC_FRAME_SETTING_BUFFERING, 3);
+  PackedPixelFile ppf_out_streaming;
+  Roundtrip(image.ppf(), cparams, {}, &pool, &ppf_out_streaming);
+
+  EXPECT_TRUE(jxl::test::SamePixels(ppf_out, ppf_out_streaming));
+}
+
 }  // namespace
 }  // namespace jxl

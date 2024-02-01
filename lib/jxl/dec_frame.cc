@@ -501,6 +501,8 @@ Status FrameDecoder::ProcessACGroup(size_t ac_group_id,
     int minShift, maxShift;
     frame_header_.passes.GetDownsamplingBracket(i, minShift, maxShift);
     bool modular_pass_ready = true;
+    JXL_DEBUG_V(2, "Decoding modular in group %d pass %d", (int)ac_group_id,
+                (int)i);
     if (i < pass0 + num_passes) {
       JXL_RETURN_IF_ERROR(modular_frame_decoder_.DecodeGroup(
           frame_header_, mrect, br[i - pass0], minShift, maxShift,
