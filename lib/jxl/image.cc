@@ -7,37 +7,19 @@
 
 #include <algorithm>  // swap
 
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "lib/jxl/image.cc"
-#include <hwy/foreach_target.h>
-#include <hwy/highway.h>
-
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/frame_dimensions.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/sanitizers.h"
+#include "lib/jxl/simd_util.h"
 
-HWY_BEFORE_NAMESPACE();
-namespace jxl {
-
-namespace HWY_NAMESPACE {
-size_t GetVectorSize() { return HWY_LANES(uint8_t); }
-// NOLINTNEXTLINE(google-readability-namespace-comments)
-}  // namespace HWY_NAMESPACE
-
-}  // namespace jxl
-HWY_AFTER_NAMESPACE();
-
-#if HWY_ONCE
 namespace jxl {
 namespace {
-
-HWY_EXPORT(GetVectorSize);  // Local function.
 
 // Returns distance [bytes] between the start of two consecutive rows, a
 // multiple of vector/cache line size but NOT CacheAligned::kAlias - see below.
 size_t BytesPerRow(const size_t xsize, const size_t sizeof_t) {
-  const size_t vec_size = VectorSize();
+  const size_t vec_size = MaxVectorSize();
   size_t valid_bytes = xsize * sizeof_t;
 
   // Allow unaligned accesses starting at the last valid value - this may raise
@@ -66,11 +48,6 @@ size_t BytesPerRow(const size_t xsize, const size_t sizeof_t) {
 
 }  // namespace
 
-size_t VectorSize() {
-  static size_t bytes = HWY_DYNAMIC_DISPATCH(GetVectorSize)();
-  return bytes;
-}
-
 PlaneBase::PlaneBase(const size_t xsize, const size_t ysize,
                      const size_t sizeof_t)
     : xsize_(static_cast<uint32_t>(xsize)),
@@ -97,7 +74,7 @@ void PlaneBase::InitializePadding(const size_t sizeof_t, Padding padding) {
 #if defined(MEMORY_SANITIZER) || HWY_IDE
   if (xsize_ == 0 || ysize_ == 0) return;
 
-  const size_t vec_size = VectorSize();
+  const size_t vec_size = MaxVectorSize();
   if (vec_size == 0) return;  // Scalar mode: no padding needed
 
   const size_t valid_size = xsize_ * sizeof_t;
@@ -202,4 +179,3 @@ void DownsampleImage(Image3F* opsin, size_t factor) {
 }
 
 }  // namespace jxl
-#endif  // HWY_ONCE
