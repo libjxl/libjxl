@@ -24,23 +24,22 @@ namespace jxl {
 struct AuxOut;
 class Quantizer;
 
-void ColorCorrelationMapEncodeDC(ColorCorrelationMap* map, BitWriter* writer,
-                                 size_t layer, AuxOut* aux_out);
+void ColorCorrelationMapEncodeDC(const ColorCorrelationMap& map,
+                                 BitWriter* writer, size_t layer,
+                                 AuxOut* aux_out);
 
 struct CfLHeuristics {
-  void Init(const Image3F& opsin);
+  void Init(const Rect& rect);
 
   void PrepareForThreads(size_t num_threads) {
     mem = hwy::AllocateAligned<float>(num_threads * ItemsPerThread());
   }
 
-  void ComputeTile(const Rect& r, const Image3F& opsin,
+  void ComputeTile(const Rect& r, const Image3F& opsin, const Rect& opsin_rect,
                    const DequantMatrices& dequant,
                    const AcStrategyImage* ac_strategy,
                    const ImageI* raw_quant_field, const Quantizer* quantizer,
                    bool fast, size_t thread, ColorCorrelationMap* cmap);
-
-  void ComputeDC(bool fast, ColorCorrelationMap* cmap);
 
   ImageF dc_values;
   hwy::AlignedFreeUniquePtr<float[]> mem;

@@ -8,17 +8,19 @@
 
 // Parameters and flags that govern JXL compression.
 
+#include <jxl/cms_interface.h>
 #include <jxl/encode.h>
 #include <stddef.h>
-#include <stdint.h>
 
-#include <string>
+#include <vector>
 
 #include "lib/jxl/base/override.h"
-#include "lib/jxl/butteraugli/butteraugli.h"
+#include "lib/jxl/enc_progressive_split.h"
+#include "lib/jxl/frame_dimensions.h"
 #include "lib/jxl/frame_header.h"
+#include "lib/jxl/modular/encoding/dec_ma.h"
 #include "lib/jxl/modular/options.h"
-#include "lib/jxl/modular/transform/transform.h"
+#include "lib/jxl/splines.h"
 
 namespace jxl {
 
@@ -89,10 +91,10 @@ struct CompressParams {
   int epf = -1;
 
   // Progressive mode.
-  bool progressive_mode = false;
+  Override progressive_mode = Override::kDefault;
 
   // Quantized-progressive mode.
-  bool qprogressive_mode = false;
+  Override qprogressive_mode = Override::kDefault;
 
   // Put center groups first in the bitstream.
   bool centerfirst = false;
@@ -104,7 +106,7 @@ struct CompressParams {
   int progressive_dc = -1;
 
   // If on: preserve color of invisible pixels (if off: don't care)
-  // Default: on for lossless, off for lossy
+  // Default: on
   Override keep_invisible = Override::kDefault;
 
   JxlCmsInterface cms;
@@ -134,8 +136,6 @@ struct CompressParams {
   // modular mode options below
   ModularOptions options;
   int responsive = -1;
-  // empty for default squeeze
-  std::vector<SqueezeParams> squeezes;
   int colorspace = -1;
   // Use Global channel palette if #colors < this percentage of range
   float channel_colors_pre_transform_percent = 95.f;
@@ -159,9 +159,6 @@ struct CompressParams {
       if (f > 0) return false;
       if (f < 0 && butteraugli_distance != 0) return false;
     }
-    // if no explicit ec_distance given, and using vardct, then the modular part
-    // is empty or not lossless
-    if (!modular_mode && ec_distance.empty()) return false;
     // all modular channels are encoded at distance 0
     return true;
   }
@@ -170,7 +167,7 @@ struct CompressParams {
   void SetLossless() {
     modular_mode = true;
     butteraugli_distance = 0.0f;
-    for (float &f : ec_distance) f = 0.0f;
+    for (float& f : ec_distance) f = 0.0f;
     color_transform = jxl::ColorTransform::kNone;
   }
 
@@ -193,8 +190,22 @@ struct CompressParams {
   // -1: don't care
   int level = -1;
 
+  // See JXL_ENC_FRAME_SETTING_BUFFERING option value.
+  int buffering = 0;
+  // See JXL_ENC_FRAME_SETTING_USE_FULL_IMAGE_HEURISTICS option value.
+  bool use_full_image_heuristics = true;
+
   std::vector<float> manual_noise;
   std::vector<float> manual_xyb_factors;
+
+  // If not empty, this tree will be used for dc global section.
+  // Used in jxl_from_tree tool.
+  Tree custom_fixed_tree;
+  // If not empty, these custom splines will be used instead of the computed
+  // ones. Used in jxl_from_tee tool.
+  Splines custom_splines;
+  // If not null, overrides progressive mode settings. Used in decode_test.
+  const ProgressiveMode* custom_progressive_mode = nullptr;
 
   JxlDebugImageCallback debug_image = nullptr;
   void* debug_image_opaque;

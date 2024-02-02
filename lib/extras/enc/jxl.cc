@@ -8,7 +8,7 @@
 #include <jxl/encode.h>
 #include <jxl/encode_cxx.h>
 
-#include "lib/jxl/exif.h"
+#include "lib/jxl/base/exif.h"
 
 namespace jxl {
 namespace extras {
@@ -165,6 +165,16 @@ bool EncodeImageJXL(const JXLCompressParams& params, const PackedPixelFile& ppf,
     if (params.jpeg_store_metadata &&
         JXL_ENC_SUCCESS != JxlEncoderStoreJPEGMetadata(enc, JXL_TRUE)) {
       fprintf(stderr, "Storing JPEG metadata failed.\n");
+      return false;
+    }
+    if (params.jpeg_store_metadata && params.jpeg_strip_exif) {
+      fprintf(stderr,
+              "Cannot store metadata and strip exif at the same time.\n");
+      return false;
+    }
+    if (params.jpeg_store_metadata && params.jpeg_strip_xmp) {
+      fprintf(stderr,
+              "Cannot store metadata and strip xmp at the same time.\n");
       return false;
     }
     if (!params.jpeg_store_metadata && params.jpeg_strip_exif) {

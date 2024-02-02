@@ -4,9 +4,11 @@
 // license that can be found in the LICENSE file.
 
 #include <brotli/encode.h>
+#include <jxl/cms.h>
 #include <jxl/codestream_header.h>
 #include <jxl/encode.h>
 #include <jxl/types.h>
+#include <jxl/version.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -16,10 +18,10 @@
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/exif.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_bit_writer.h"
@@ -31,7 +33,6 @@
 #include "lib/jxl/enc_icc_codec.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/encode_internal.h"
-#include "lib/jxl/exif.h"
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
 #include "lib/jxl/luminance.h"
 #include "lib/jxl/memory_manager_internal.h"
@@ -853,10 +854,26 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
 
     const bool last_frame = frames_closed && !num_queued_frames;
 
-    // TODO(szabadka): Make this conditional on some upper bound of the
-    // compressed image size that can be calculated at this point.
-    size_t box_header_size = jxl::kLargeBoxHeaderSize;
-    bool use_large_box = true;
+    uint32_t max_bits_per_sample = metadata.m.bit_depth.bits_per_sample;
+    for (const auto& info : metadata.m.extra_channel_info) {
+      max_bits_per_sample =
+          std::max(max_bits_per_sample, info.bit_depth.bits_per_sample);
+    }
+    // Heuristic upper bound on how many bits a single pixel in a single channel
+    // can use.
+    uint32_t bits_per_channels_estimate =
+        std::max(24u, max_bits_per_sample + 3);
+    size_t upper_bound_on_compressed_size_bits =
+        metadata.xsize() * metadata.ysize() *
+        (metadata.m.color_encoding.Channels() + metadata.m.num_extra_channels) *
+        bits_per_channels_estimate;
+    // Add a 1MB = 0x100000 for an heuristic upper bound on small sizes.
+    size_t upper_bound_on_compressed_size_bytes =
+        0x100000 + (upper_bound_on_compressed_size_bits >> 3);
+    bool use_large_box = upper_bound_on_compressed_size_bytes >=
+                         jxl::kLargeBoxContentSizeThreshold;
+    size_t box_header_size =
+        use_large_box ? jxl::kLargeBoxHeaderSize : jxl::kSmallBoxHeaderSize;
 
     const size_t frame_start_pos = output_processor.CurrentPosition();
     if (MustUseContainer()) {
@@ -873,8 +890,6 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
     JXL_RETURN_IF_ERROR(AppendData(output_processor, header_bytes));
 
     if (input_frame) {
-      jxl::PassesEncoderState enc_state;
-
       frame_index_box.AddFrame(codestream_bytes_written_end_of_frame, duration,
                                input_frame->option_values.frame_index_box);
 
@@ -928,7 +943,7 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
       frame_info.name = input_frame->option_values.frame_name;
 
       if (!jxl::EncodeFrame(input_frame->option_values.cparams, frame_info,
-                            &metadata, input_frame->frame_data, &enc_state, cms,
+                            &metadata, input_frame->frame_data, cms,
                             thread_pool.get(), &output_processor,
                             input_frame->option_values.aux_out)) {
         return JXL_API_ERROR(this, JXL_ENC_ERR_GENERIC,
@@ -957,6 +972,15 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
     if (MustUseContainer()) {
       output_processor.Seek(frame_start_pos);
       std::vector<uint8_t> box_header(box_header_size);
+      if (!use_large_box &&
+          frame_codestream_size >= jxl::kLargeBoxContentSizeThreshold) {
+        // Assuming our upper bound estimate is correct, this should never
+        // happen.
+        return JXL_API_ERROR(
+            this, JXL_ENC_ERR_GENERIC,
+            "Box size was estimated to be small, but turned out to be large. "
+            "Please file this error in size estimation as a bug.");
+      }
       if (last_frame && jxlp_counter == 0) {
 #if JXL_ENABLE_ASSERT
         const size_t n =
@@ -1410,7 +1434,7 @@ JxlEncoderFrameSettings* JxlEncoderFrameSettingsCreate(
   }
   opts->values.cparams.level = enc->codestream_level;
   opts->values.cparams.ec_distance.resize(enc->metadata.m.num_extra_channels,
-                                          -1);
+                                          0);
 
   JxlEncoderFrameSettings* ret = opts.get();
   enc->encoder_options.emplace_back(std::move(opts));
@@ -1463,7 +1487,7 @@ JxlEncoderStatus JxlEncoderSetExtraChannelDistance(
     // This can only happen if JxlEncoderFrameSettingsCreate() was called before
     // JxlEncoderSetBasicInfo().
     frame_settings->values.cparams.ec_distance.resize(
-        frame_settings->enc->metadata.m.num_extra_channels, -1);
+        frame_settings->enc->metadata.m.num_extra_channels, 0);
   }
 
   frame_settings->values.cparams.ec_distance[index] = distance;
@@ -1616,10 +1640,12 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetOption(
       frame_settings->values.cparams.responsive = value;
       break;
     case JXL_ENC_FRAME_SETTING_PROGRESSIVE_AC:
-      frame_settings->values.cparams.progressive_mode = value;
+      frame_settings->values.cparams.progressive_mode =
+          static_cast<jxl::Override>(value);
       break;
     case JXL_ENC_FRAME_SETTING_QPROGRESSIVE_AC:
-      frame_settings->values.cparams.qprogressive_mode = value;
+      frame_settings->values.cparams.qprogressive_mode =
+          static_cast<jxl::Override>(value);
       break;
     case JXL_ENC_FRAME_SETTING_PROGRESSIVE_DC:
       if (value < -1 || value > 2) {
@@ -1646,7 +1672,6 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetOption(
       // alternatively, in the cjxl binary like now)
       frame_settings->values.cparams.lossy_palette = (value == 1);
       break;
-      return JXL_ENC_SUCCESS;
     case JXL_ENC_FRAME_SETTING_COLOR_TRANSFORM:
       if (value < -1 || value > 2) {
         return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
@@ -1724,6 +1749,7 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetOption(
         return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_NOT_SUPPORTED,
                              "Buffering has to be in [0..3]");
       }
+      frame_settings->values.cparams.buffering = value;
       break;
     case JXL_ENC_FRAME_SETTING_JPEG_KEEP_EXIF:
       frame_settings->values.cparams.jpeg_keep_exif = value;
@@ -1733,6 +1759,13 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetOption(
       break;
     case JXL_ENC_FRAME_SETTING_JPEG_KEEP_JUMBF:
       frame_settings->values.cparams.jpeg_keep_jumbf = value;
+      break;
+    case JXL_ENC_FRAME_SETTING_USE_FULL_IMAGE_HEURISTICS:
+      if (value < 0 || value > 1) {
+        return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_NOT_SUPPORTED,
+                             "Option value has to be 0 or 1");
+      }
+      frame_settings->values.cparams.use_full_image_heuristics = value;
       break;
 
     default:
@@ -1829,6 +1862,7 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetFloatOption(
     case JXL_ENC_FRAME_SETTING_JPEG_KEEP_EXIF:
     case JXL_ENC_FRAME_SETTING_JPEG_KEEP_XMP:
     case JXL_ENC_FRAME_SETTING_JPEG_KEEP_JUMBF:
+    case JXL_ENC_FRAME_SETTING_USE_FULL_IMAGE_HEURISTICS:
       return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_NOT_SUPPORTED,
                            "Int option, try setting it with "
                            "JxlEncoderFrameSettingsSetOption");
@@ -2226,7 +2260,7 @@ JxlEncoderStatus JxlEncoderAddImageFrameInternal(
     auto frame_state = JxlFastLosslessPrepareFrame(
         frame_data.GetInputSource(), xsize, ysize, num_channels,
         frame_settings->enc->metadata.m.bit_depth.bits_per_sample, big_endian,
-        /*effort=*/2);
+        /*effort=*/2, /*oneshot=*/!frame_data.StreamingInput());
     if (!streaming) {
       JxlFastLosslessProcessFrame(frame_state, /*is_last=*/false,
                                   frame_settings->enc->thread_pool.get(),

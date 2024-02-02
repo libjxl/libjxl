@@ -3,38 +3,46 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <jxl/types.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/stat.h>
-#include <sys/types.h>
+
+#include <cstring>
+#include <string>
+#include <thread>
+#include <utility>
+
+#include "lib/extras/packed_image.h"
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/color_encoding_internal.h"
+#include "lib/jxl/frame_header.h"
+#include "lib/jxl/image_bundle.h"
+#include "lib/jxl/modular/options.h"
 #if defined(_WIN32) || defined(_WIN64)
 #include "third_party/dirent.h"
 #else
-#include <dirent.h>
-#include <unistd.h>
 #endif
 
-#include <algorithm>
 #include <functional>
 #include <iostream>
 #include <mutex>
 #include <random>
 #include <vector>
 
-#include "lib/extras/codec.h"
+#include "lib/extras/enc/encode.h"
+#include "lib/extras/enc/jpg.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/span.h"
-#include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/enc_ans.h"
-#include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/encode_internal.h"
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
-#include "lib/jxl/modular/encoding/context_predict.h"
 #include "lib/jxl/test_utils.h"  // TODO(eustas): cut this dependency
 #include "tools/file_io.h"
 #include "tools/thread_pool_internal.h"
@@ -192,6 +200,11 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
   std::uniform_int_distribution<> dis(1, 6);
   PixelGenerator gen = [&]() -> uint8_t { return dis(mt); };
 
+  jxl::extras::PackedPixelFile ppf;
+  ppf.info.xsize = spec.width;
+  ppf.info.ysize = spec.height;
+  ppf.info.num_color_channels = spec.num_channels ? 1 : 3;
+  ppf.info.bits_per_sample = spec.bit_depth;
   for (uint32_t frame = 0; frame < spec.num_frames; frame++) {
     jxl::ImageBundle ib(&io.metadata.m);
     const bool has_alpha = spec.alpha_bit_depth != 0;
@@ -219,6 +232,11 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
         span, spec.width, spec.height, io.metadata.m.color_encoding,
         io.metadata.m.bit_depth.bits_per_sample, format, nullptr, &ib));
     io.frames.push_back(std::move(ib));
+    jxl::extras::PackedFrame packed_frame(spec.width, spec.height, format);
+    JXL_ASSERT(packed_frame.color.pixels_size == img_data.size());
+    memcpy(packed_frame.color.pixels(0, 0, 0), img_data.data(),
+           img_data.size());
+    ppf.frames.emplace_back(std::move(packed_frame));
   }
 
   jxl::CompressParams params;
@@ -229,10 +247,11 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
     // metadata and encode it in the beginning of the compressed bytes.
     std::vector<uint8_t> jpeg_bytes;
     io.jpeg_quality = 70;
-    JXL_QUIET_RETURN_IF_ERROR(jxl::Encode(io, jxl::extras::Codec::kJPG,
-                                          io.metadata.m.color_encoding,
-                                          /*bits_per_sample=*/8, &jpeg_bytes,
-                                          /*pool=*/nullptr));
+    auto encoder = jxl::extras::GetJPEGEncoder();
+    encoder->SetOption("quality", "70");
+    jxl::extras::EncodedImage encoded;
+    JXL_RETURN_IF_ERROR(encoder->Encode(ppf, &encoded));
+    jpeg_bytes = encoded.bitstreams[0];
     JXL_RETURN_IF_ERROR(jxl::jpeg::DecodeImageJPG(
         jxl::Bytes(jpeg_bytes.data(), jpeg_bytes.size()), &io));
     std::vector<uint8_t> jpeg_data;
@@ -256,11 +275,9 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
   if (spec.params.preview) params.preview = jxl::Override::kOn;
   if (spec.params.noise) params.noise = jxl::Override::kOn;
 
-  jxl::PassesEncoderState passes_encoder_state;
   // EncodeFile replaces output; pass a temporary storage for it.
   std::vector<uint8_t> compressed_image;
-  bool ok = jxl::test::EncodeFile(params, &io, &passes_encoder_state,
-                                  &compressed_image);
+  bool ok = jxl::test::EncodeFile(params, &io, &compressed_image);
   if (!ok) return false;
   compressed.append(compressed_image);
 

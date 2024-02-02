@@ -5,6 +5,8 @@
 
 #include "tools/comparison_viewer/image_loading.h"
 
+#include <jxl/cms.h>
+
 #include <QRgb>
 #include <QThread>
 #include <cstdint>
@@ -12,7 +14,6 @@
 
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/color_hints.h"
-#include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_metadata.h"
 #include "tools/file_io.h"

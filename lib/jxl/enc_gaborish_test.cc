@@ -7,7 +7,11 @@
 
 #include <hwy/base.h>
 
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/convolve.h"
+#include "lib/jxl/image.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/image_test_utils.h"
 #include "lib/jxl/testing.h"
@@ -47,7 +51,7 @@ void TestRoundTrip(const Image3F& in, float max_l1) {
       w,
       w,
   };
-  GaborishInverse(&fwd, weights, null_pool);
+  GaborishInverse(&fwd, Rect(fwd), weights, null_pool);
   JXL_ASSERT_OK(VerifyRelativeError(in, fwd, max_l1, 1E-4f, _));
 }
 

@@ -7,26 +7,33 @@
 #ifndef LIB_JXL_ENCODE_INTERNAL_H_
 #define LIB_JXL_ENCODE_INTERNAL_H_
 
+#include <jxl/cms_interface.h>
+#include <jxl/codestream_header.h>
 #include <jxl/encode.h>
 #include <jxl/memory_manager.h>
-#include <jxl/parallel_runner.h>
 #include <jxl/types.h>
-#include <sys/types.h>
 
+#include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
+#include <functional>
 #include <map>
 #include <memory>
+#include <string>
+#include <utility>
 #include <vector>
 
 #include "lib/jxl/base/c_callback_support.h"
 #include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_fast_lossless.h"
 #include "lib/jxl/enc_params.h"
-#include "lib/jxl/image_bundle.h"
+#include "lib/jxl/image_metadata.h"
 #include "lib/jxl/jpeg/jpeg_data.h"
 #include "lib/jxl/memory_manager_internal.h"
 #include "lib/jxl/padded_bytes.h"
@@ -264,6 +271,8 @@ class JxlEncoderChunkedFrameAdapter {
     }
     return true;
   }
+
+  bool StreamingInput() const { return has_input_source_; }
 
   const size_t xsize;
   const size_t ysize;

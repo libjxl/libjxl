@@ -14,7 +14,7 @@ Please add missing software to this list.
 
 - Chromium: behind a flag from version 91 to 109, [tracking bug](https://bugs.chromium.org/p/chromium/issues/detail?id=1178058)
 - Firefox: behind a flag since version 90, [tracking bug](https://bugzilla.mozilla.org/show_bug.cgi?id=1539075)
-- Safari: supported since version 17 beta [release notes](https://developer.apple.com/documentation/safari-release-notes/safari-17-release-notes), [tracking bug](https://bugs.webkit.org/show_bug.cgi?id=208235)
+- Safari: supported since version 17 [release notes](https://developer.apple.com/documentation/safari-release-notes/safari-17-release-notes), [tracking bug](https://bugs.webkit.org/show_bug.cgi?id=208235)
 - Edge: behind a flag since version 91, start with `.\msedge.exe --enable-features=JXL`
 - Opera: behind a flag since version 77.
 - Basilisk: supported since version v2023.01.07, [release notes](https://www.basilisk-browser.org/releasenotes.shtml)
@@ -32,6 +32,12 @@ For all browsers and to track browsers progress see [Can I Use](https://caniuse.
 - [GDAL](https://gdal.org/drivers/raster/jpegxl.html): supported since 3.4.0 as a TIFF codec, and 3.6.0 as standalone format
 - [GraphicsMagick](http://www.graphicsmagick.org/NEWS.html#march-26-2022): supported since 1.3.38
 - [SAIL](https://sail.software): supported since 0.9.0
+
+## Metadata manipulation libraries
+
+- [ExifTool by Phil Harvey](https://exiftool.org/): supported since 12.25
+- [Exiv2](https://exiv2.org): supported since 0.27.4
+- [Ashampoo Kim](https://github.com/ashampoo/kim): supported since 0.10
 
 ## OS-level support / UI frameworks / file browser plugins
 
@@ -58,6 +64,7 @@ For all browsers and to track browsers progress see [Can I Use](https://caniuse.
 
 ## Image viewers
 
+- [Aspect](https://aspect.bildhuus.com)
 - [ImageGlass](https://imageglass.org/)
 - [IrfanView](https://www.irfanview.com/); supported since 4.59 - requires a [plugin](https://www.irfanview.com/plugins.htm) to be downloaded and enabled.
 - [jpegview](https://github.com/sylikc/jpegview/releases)
@@ -80,3 +87,4 @@ For all browsers and to track browsers progress see [Can I Use](https://caniuse.
 - [Cloudinary](https://cloudinary.com/blog/cloudinary_supports_jpeg_xl)
 - [MConverter](https://mconverter.eu/)
 - [jpegxl.io](https://jpegxl.io/)
+- [EXIF Viewer](https://stefan-oltmann.de/exif-viewer)

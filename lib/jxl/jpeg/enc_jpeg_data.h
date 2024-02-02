@@ -12,6 +12,7 @@
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/enc_params.h"
+#include "lib/jxl/frame_header.h"
 #include "lib/jxl/jpeg/jpeg_data.h"
 
 namespace jxl {

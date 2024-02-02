@@ -1,0 +1,57 @@
+# Copyright (c) the JPEG XL Project Authors. All rights reserved.
+#
+# Use of this source code is governed by a BSD-style
+# license that can be found in the LICENSE file.
+
+# Workflow for building and running tests.
+
+name: Build/Test Bazel
+on:
+  merge_group:
+  push:
+    branches:
+      - main
+      - v*.*.x
+  pull_request:
+    types: [opened, reopened, labeled, synchronize]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build_test:
+    name: Bazel
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@63c24ba6bd7ba022e95695ff85de572c04a18142 # v2.7.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout the source
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          submodules: true
+          fetch-depth: 1
+
+      - name: Patch
+        run: |
+          cd third_party/highway
+          git fetch origin 31fbbd7ce1e4179a32d86688cd67316556f582bf
+          git checkout 31fbbd7ce1e4179a32d86688cd67316556f582bf
+          git apply ${{ github.workspace }}/.github/workflows/highway.patch
+      - name: Build
+        run: bazel build -c opt ...:all
+      - name: Test
+        if: |
+          github.event_name == 'push' ||
+          (github.event_name == 'pull_request' &&
+           contains(github.event.pull_request.labels.*.name, 'CI:full'))
+        run: bazel test -c opt --test_output=errors ...:all

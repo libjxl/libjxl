@@ -3,7 +3,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include "lib/jxl/cms/jxl_cms.h"
+#include <jxl/cms.h>
 
 #ifndef JPEGXL_ENABLE_SKCMS
 #define JPEGXL_ENABLE_SKCMS 0
@@ -29,11 +29,11 @@
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/cms/color_management.h"
+#include "lib/jxl/cms/jxl_cms_internal.h"
 #include "lib/jxl/cms/transfer_functions-inl.h"
 #include "lib/jxl/color_encoding_internal.h"
 #if JPEGXL_ENABLE_SKCMS
-#include "lib/jxl/cms/jxl_skcms.h"
+#include "skcms.h"
 #else  // JPEGXL_ENABLE_SKCMS
 #include "lcms2.h"
 #include "lcms2_plugin.h"
@@ -121,7 +121,7 @@ Status BeforeTransform(JxlCms* t, const float* buf_src, float* xform_src,
     case ExtraTF::kHLG:
       for (size_t i = 0; i < buf_size; ++i) {
         xform_src[i] = static_cast<float>(
-            TF_HLG().DisplayFromEncoded(static_cast<double>(buf_src[i])));
+            TF_HLG_Base::DisplayFromEncoded(static_cast<double>(buf_src[i])));
       }
       if (t->apply_hlg_ootf) {
         JXL_RETURN_IF_ERROR(
@@ -178,7 +178,7 @@ Status AfterTransform(JxlCms* t, float* JXL_RESTRICT buf_dst, size_t buf_size) {
       }
       for (size_t i = 0; i < buf_size; ++i) {
         buf_dst[i] = static_cast<float>(
-            TF_HLG().EncodedFromDisplay(static_cast<double>(buf_dst[i])));
+            TF_HLG_Base::EncodedFromDisplay(static_cast<double>(buf_dst[i])));
       }
 #if JXL_CMS_VERBOSE >= 2
       printf("after HLG enc %.4f %.4f %.4f\n", buf_dst[3 * kX],
@@ -487,6 +487,25 @@ Status IdentifyPrimaries(const skcms_ICCProfile& profile,
   return c->SetPrimaries(primaries);
 }
 
+bool IsApproximatelyEqual(const skcms_ICCProfile& profile,
+                          const ColorEncoding& JXL_RESTRICT c) {
+  IccBytes bytes;
+  if (!MaybeCreateProfile(c.ToExternal(), &bytes)) {
+    return false;
+  }
+
+  skcms_ICCProfile profile_test;
+  if (!DecodeProfile(bytes.data(), bytes.size(), &profile_test)) {
+    return false;
+  }
+
+  if (!skcms_ApproximatelyEqualProfiles(&profile_test, &profile)) {
+    return false;
+  }
+
+  return true;
+}
+
 void DetectTransferFunction(const skcms_ICCProfile& profile,
                             ColorEncoding* JXL_RESTRICT c) {
   JXL_CHECK(c->color_space != ColorSpace::kXYB);
@@ -517,29 +536,15 @@ void DetectTransferFunction(const skcms_ICCProfile& profile,
   if (gamma[0] != 0 && std::abs(gamma[0] - gamma[1]) < 1e-4f &&
       std::abs(gamma[1] - gamma[2]) < 1e-4f) {
     if (c->tf.SetGamma(gamma[0])) {
-      skcms_ICCProfile profile_test;
-      IccBytes bytes;
-      if (MaybeCreateProfile(c->ToExternal(), &bytes) &&
-          DecodeProfile(bytes.data(), bytes.size(), &profile_test) &&
-          skcms_ApproximatelyEqualProfiles(&profile, &profile_test)) {
-        return;
-      }
+      if (IsApproximatelyEqual(profile, *c)) return;
     }
   }
 
   for (TransferFunction tf : Values<TransferFunction>()) {
     // Can only create profile from known transfer function.
     if (tf == TransferFunction::kUnknown) continue;
-
     c->tf.SetTransferFunction(tf);
-
-    skcms_ICCProfile profile_test;
-    IccBytes bytes;
-    if (MaybeCreateProfile(c->ToExternal(), &bytes) &&
-        DecodeProfile(bytes.data(), bytes.size(), &profile_test) &&
-        skcms_ApproximatelyEqualProfiles(&profile, &profile_test)) {
-      return;
-    }
+    if (IsApproximatelyEqual(profile, *c)) return;
   }
 
   c->tf.SetTransferFunction(TransferFunction::kUnknown);
@@ -966,14 +971,31 @@ JXL_BOOL JxlCmsSetFieldsFromICC(void* user_data, const uint8_t* icc_data,
   JXL_RETURN_IF_ERROR(skcms_Parse(icc_data, icc_size, &profile));
 
   // skcms does not return the rendering intent, so get it from the file. It
-  // is encoded as big-endian 32-bit integer in bytes 60..63.
-  uint32_t rendering_intent32 = icc_data[67];
-  if (rendering_intent32 > 3 || icc_data[64] != 0 || icc_data[65] != 0 ||
-      icc_data[66] != 0) {
-    return JXL_FAILURE("Invalid rendering intent %u\n", rendering_intent32);
+  // should be encoded as big-endian 32-bit integer in bytes 60..63.
+  uint32_t big_endian_rendering_intent = icc_data[67] + (icc_data[66] << 8) +
+                                         (icc_data[65] << 16) +
+                                         (icc_data[64] << 24);
+  // Some files encode rendering intent as little endian, which is not spec
+  // compliant. However we accept those with a warning.
+  uint32_t litte_endian_rendering_intent = (icc_data[67] << 24) +
+                                           (icc_data[66] << 16) +
+                                           (icc_data[65] << 8) + icc_data[64];
+  uint32_t candidate_rendering_intent =
+      std::min(big_endian_rendering_intent, litte_endian_rendering_intent);
+  if (candidate_rendering_intent == litte_endian_rendering_intent) {
+    JXL_WARNING(
+        "Invalid rendering intent bytes: [0x%02X 0x%02X 0x%02X 0x%02X], "
+        "assuming %u was meant",
+        icc_data[64], icc_data[65], icc_data[66], icc_data[67],
+        candidate_rendering_intent);
+  }
+  if (candidate_rendering_intent > 3) {
+    return JXL_FAILURE("Invalid rendering intent %u\n",
+                       candidate_rendering_intent);
   }
   // ICC and RenderingIntent have the same values (0..3).
-  c_enc.rendering_intent = static_cast<RenderingIntent>(rendering_intent32);
+  c_enc.rendering_intent =
+      static_cast<RenderingIntent>(candidate_rendering_intent);
 
   if (profile.has_CICP &&
       ApplyCICP(profile.CICP.color_primaries,
@@ -1319,7 +1341,7 @@ float* JxlCmsGetDstBuf(void* cms_data, size_t thread) {
 
 extern "C" {
 
-const JxlCmsInterface* JxlGetDefaultCms() {
+JXL_CMS_EXPORT const JxlCmsInterface* JxlGetDefaultCms() {
   static constexpr JxlCmsInterface kInterface = {
       /*set_fields_data=*/nullptr,
       /*set_fields_from_icc=*/&JxlCmsSetFieldsFromICC,
@@ -1330,55 +1352,6 @@ const JxlCmsInterface* JxlGetDefaultCms() {
       /*run=*/&DoColorSpaceTransform,
       /*destroy=*/&JxlCmsDestroy};
   return &kInterface;
-}
-
-JXL_BOOL JxlCmsCIEXYZFromWhiteCIExy(double wx, double wy, float XYZ[3]) {
-  return TO_JXL_BOOL(CIEXYZFromWhiteCIExy(wx, wy, XYZ));
-}
-
-JXL_BOOL JxlCmsPrimariesToXYZ(float rx, float ry, float gx, float gy, float bx,
-                              float by, float wx, float wy, float matrix[9]) {
-  return TO_JXL_BOOL(PrimariesToXYZ(rx, ry, gx, gy, bx, by, wx, wy, matrix));
-}
-
-// Adapts whitepoint x, y to D50
-JXL_BOOL JxlCmsAdaptToXYZD50(float wx, float wy, float matrix[9]) {
-  return TO_JXL_BOOL(AdaptToXYZD50(wx, wy, matrix));
-}
-
-JXL_BOOL JxlCmsPrimariesToXYZD50(float rx, float ry, float gx, float gy,
-                                 float bx, float by, float wx, float wy,
-                                 float matrix[9]) {
-  return TO_JXL_BOOL(PrimariesToXYZD50(rx, ry, gx, gy, bx, by, wx, wy, matrix));
-}
-
-// Returns a representation of the ColorEncoding fields (not icc).
-// Example description: "RGB_D65_SRG_Rel_Lin"
-size_t JxlCmsColorEncodingDescription(const JxlColorEncoding* c,
-                                      char out[320]) {
-  out[0] = 0;
-  std::string d = ColorEncodingDescription(*c);
-  size_t len = d.size();
-  if (len >= 320) {  // Impossible
-    return 0;
-  }
-  memcpy(out, d.c_str(), len + 1);
-  return len;
-}
-
-JXL_BOOL JxlCmsCreateProfile(const JxlColorEncoding* c, uint8_t** out,
-                             size_t* out_size) {
-  std::vector<uint8_t> icc;
-  *out = nullptr;
-  *out_size = 0;
-  if (!MaybeCreateProfile(*c, &icc)) {
-    return JXL_FALSE;
-  }
-  *out = reinterpret_cast<uint8_t*>(malloc(icc.size()));
-  if (!*out) return JXL_FALSE;
-  memcpy(*out, icc.data(), icc.size());
-  *out_size = icc.size();
-  return JXL_TRUE;
 }
 
 }  // extern "C"

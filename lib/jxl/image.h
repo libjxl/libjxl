@@ -8,13 +8,18 @@
 
 // SIMD/multicore-friendly planar image representation with row accessors.
 
+#if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
+    defined(THREAD_SANITIZER)
 #include <inttypes.h>
+#endif
+
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
 
 #include <algorithm>
 #include <sstream>
+#include <string>
 #include <utility>  // std::move
 
 #include "lib/jxl/base/compiler_specific.h"
@@ -324,6 +329,14 @@ class RectT {
     return CeilShiftRight(shift, shift);
   }
 
+  RectT<T> Extend(T border, RectT<T> parent) const {
+    T new_x0 = x0() > parent.x0() + border ? x0() - border : parent.x0();
+    T new_y0 = y0() > parent.y0() + border ? y0() - border : parent.y0();
+    T new_x1 = x1() + border > parent.x1() ? parent.x1() : x1() + border;
+    T new_y1 = y1() + border > parent.y1() ? parent.y1() : y1() + border;
+    return RectT<T>(new_x0, new_y0, new_x1 - new_x0, new_y1 - new_y0);
+  }
+
   template <typename U>
   RectT<U> As() const {
     return RectT<U>(U(x0_), U(y0_), U(xsize_), U(ysize_));
@@ -389,14 +402,6 @@ class Image3 {
     for (size_t i = 0; i < kNumPlanes; i++) {
       planes_[i] = std::move(other.planes_[i]);
     }
-  }
-
-  Image3(PlaneT&& plane0, PlaneT&& plane1, PlaneT&& plane2) {
-    JXL_CHECK(SameSize(plane0, plane1));
-    JXL_CHECK(SameSize(plane0, plane2));
-    planes_[0] = std::move(plane0);
-    planes_[1] = std::move(plane1);
-    planes_[2] = std::move(plane2);
   }
 
   // Copy construction/assignment is forbidden to avoid inadvertent copies,

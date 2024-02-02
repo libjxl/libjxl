@@ -13,14 +13,10 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
-#include <string>
 #include <utility>
 #include <vector>
 
-#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/cms/color_management.h"
-#include "lib/jxl/cms/jxl_cms.h"
 
 namespace jxl {
 namespace cms {
@@ -521,7 +517,6 @@ struct ColorEncoding {
                                                 new_icc.data(), new_icc.size(),
                                                 &external, &new_cmyk));
     cmyk = new_cmyk;
-    if (cmyk) return true;
     JXL_RETURN_IF_ERROR(FromExternal(external));
     icc = std::move(new_icc);
     return true;

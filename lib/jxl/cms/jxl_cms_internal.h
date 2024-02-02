@@ -3,40 +3,133 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include "lib/jxl/cms/color_management.h"
+#ifndef LIB_JXL_CMS_JXL_CMS_INTERNAL_H_
+#define LIB_JXL_CMS_JXL_CMS_INTERNAL_H_
+
+// ICC profiles and color space conversions.
+
+#include <jxl/color_encoding.h>
 
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <string>
 #include <vector>
 
-#include "lib/jxl/cms/jxl_cms.h"
-
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "lib/jxl/cms/color_management.cc"
-#include <hwy/foreach_target.h>
-#include <hwy/highway.h>
-
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/matrix_ops.h"
-#include "lib/jxl/base/span.h"
+#include "lib/jxl/base/span.h"  // Bytes
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/cms/opsin_params.h"
-#include "lib/jxl/cms/tone_mapping-inl.h"
-#include "lib/jxl/cms/transfer_functions-inl.h"
+#include "lib/jxl/cms/tone_mapping.h"
+#include "lib/jxl/cms/transfer_functions.h"
 
 #ifndef JXL_ENABLE_3D_ICC_TONEMAPPING
 #define JXL_ENABLE_3D_ICC_TONEMAPPING 1
 #endif
 
-HWY_BEFORE_NAMESPACE();
 namespace jxl {
-namespace HWY_NAMESPACE {
 
-Status ToneMapPixel(const JxlColorEncoding& c, const float in[3],
-                    uint8_t pcslab_out[3]) {
+enum class ExtraTF {
+  kNone,
+  kPQ,
+  kHLG,
+  kSRGB,
+};
+
+static Status PrimariesToXYZ(float rx, float ry, float gx, float gy, float bx,
+                             float by, float wx, float wy, float matrix[9]) {
+  bool ok = (wx >= 0) && (wx <= 1) && (wy > 0) && (wy <= 1);
+  if (!ok) {
+    return JXL_FAILURE("Invalid white point");
+  }
+  // TODO(lode): also require rx, ry, gx, gy, bx, to be in range 0-1? ICC
+  // profiles in theory forbid negative XYZ values, but in practice the ACES P0
+  // color space uses a negative y for the blue primary.
+  float primaries[9] = {
+      rx, gx, bx, ry, gy, by, 1.0f - rx - ry, 1.0f - gx - gy, 1.0f - bx - by};
+  float primaries_inv[9];
+  memcpy(primaries_inv, primaries, sizeof(float) * 9);
+  JXL_RETURN_IF_ERROR(Inv3x3Matrix(primaries_inv));
+
+  float w[3] = {wx / wy, 1.0f, (1.0f - wx - wy) / wy};
+  // 1 / tiny float can still overflow
+  JXL_RETURN_IF_ERROR(std::isfinite(w[0]) && std::isfinite(w[2]));
+  float xyz[3];
+  Mul3x3Vector(primaries_inv, w, xyz);
+
+  float a[9] = {
+      xyz[0], 0, 0, 0, xyz[1], 0, 0, 0, xyz[2],
+  };
+
+  Mul3x3Matrix(primaries, a, matrix);
+  return true;
+}
+
+/* Chromatic adaptation matrices*/
+constexpr float kBradford[9] = {
+    0.8951f, 0.2664f, -0.1614f, -0.7502f, 1.7135f,
+    0.0367f, 0.0389f, -0.0685f, 1.0296f,
+};
+constexpr float kBradfordInv[9] = {
+    0.9869929f, -0.1470543f, 0.1599627f, 0.4323053f, 0.5183603f,
+    0.0492912f, -0.0085287f, 0.0400428f, 0.9684867f,
+};
+
+// Adapts whitepoint x, y to D50
+static Status AdaptToXYZD50(float wx, float wy, float matrix[9]) {
+  bool ok = (wx >= 0) && (wx <= 1) && (wy > 0) && (wy <= 1);
+  if (!ok) {
+    // Out of range values can cause division through zero
+    // further down with the bradford adaptation too.
+    return JXL_FAILURE("Invalid white point");
+  }
+  float w[3] = {wx / wy, 1.0f, (1.0f - wx - wy) / wy};
+  // 1 / tiny float can still overflow
+  JXL_RETURN_IF_ERROR(std::isfinite(w[0]) && std::isfinite(w[2]));
+  float w50[3] = {0.96422f, 1.0f, 0.82521f};
+
+  float lms[3];
+  float lms50[3];
+
+  Mul3x3Vector(kBradford, w, lms);
+  Mul3x3Vector(kBradford, w50, lms50);
+
+  if (lms[0] == 0 || lms[1] == 0 || lms[2] == 0) {
+    return JXL_FAILURE("Invalid white point");
+  }
+  float a[9] = {
+      //       /----> 0, 1, 2, 3,          /----> 4, 5, 6, 7,          /----> 8,
+      lms50[0] / lms[0], 0, 0, 0, lms50[1] / lms[1], 0, 0, 0, lms50[2] / lms[2],
+  };
+  if (!std::isfinite(a[0]) || !std::isfinite(a[4]) || !std::isfinite(a[8])) {
+    return JXL_FAILURE("Invalid white point");
+  }
+
+  float b[9];
+  Mul3x3Matrix(a, kBradford, b);
+  Mul3x3Matrix(kBradfordInv, b, matrix);
+
+  return true;
+}
+
+static Status PrimariesToXYZD50(float rx, float ry, float gx, float gy,
+                                float bx, float by, float wx, float wy,
+                                float matrix[9]) {
+  float toXYZ[9];
+  JXL_RETURN_IF_ERROR(PrimariesToXYZ(rx, ry, gx, gy, bx, by, wx, wy, toXYZ));
+  float d50[9];
+  JXL_RETURN_IF_ERROR(AdaptToXYZD50(wx, wy, d50));
+
+  Mul3x3Matrix(d50, toXYZ, matrix);
+  return true;
+}
+
+static Status ToneMapPixel(const JxlColorEncoding& c, const float in[3],
+                           uint8_t pcslab_out[3]) {
   float primaries_XYZ[9];
   JXL_RETURN_IF_ERROR(PrimariesToXYZ(
       c.primaries_red_xy[0], c.primaries_red_xy[1], c.primaries_green_xy[0],
@@ -45,32 +138,27 @@ Status ToneMapPixel(const JxlColorEncoding& c, const float in[3],
   const float luminances[3] = {primaries_XYZ[3], primaries_XYZ[4],
                                primaries_XYZ[5]};
   float linear[3];
-  HWY_CAPPED(float, 1) d;
   JxlTransferFunction tf = c.transfer_function;
   if (tf == JXL_TRANSFER_FUNCTION_PQ) {
-    TF_PQ tf_pq(/*display_intensity_target=*/10000.0);
     for (size_t i = 0; i < 3; ++i) {
-      linear[i] = tf_pq.DisplayFromEncoded(in[i]);
+      linear[i] = TF_PQ_Base::DisplayFromEncoded(
+          /*display_intensity_target=*/10000.0, in[i]);
     }
   } else {
     for (size_t i = 0; i < 3; ++i) {
-      linear[i] = TF_HLG().DisplayFromEncoded(in[i]);
+      linear[i] = TF_HLG_Base::DisplayFromEncoded(in[i]);
     }
   }
-  auto r = LoadU(d, &linear[0]), g = LoadU(d, &linear[1]),
-       b = LoadU(d, &linear[2]);
   if (tf == JXL_TRANSFER_FUNCTION_PQ) {
-    Rec2408ToneMapper<decltype(d)> tone_mapper({0, 10000}, {0, 250},
-                                               luminances);
-    tone_mapper.ToneMap(&r, &g, &b);
+    Rec2408ToneMapperBase tone_mapper({0, 10000}, {0, 250}, luminances);
+    tone_mapper.ToneMap(&linear[0], &linear[1], &linear[2]);
   } else {
-    HlgOOTF ootf(/*source_luminance=*/300, /*target_luminance=*/80, luminances);
-    ootf.Apply(&r, &g, &b);
+    HlgOOTF_Base ootf(/*source_luminance=*/300, /*target_luminance=*/80,
+                      luminances);
+    ootf.Apply(&linear[0], &linear[1], &linear[2]);
   }
-  GamutMap(&r, &g, &b, luminances, /*preserve_saturation=*/0.3f);
-  StoreU(r, d, &linear[0]);
-  StoreU(g, d, &linear[1]);
-  StoreU(b, d, &linear[2]);
+  GamutMapScalar(&linear[0], &linear[1], &linear[2], luminances,
+                 /*preserve_saturation=*/0.3f);
 
   float chad[9];
   JXL_RETURN_IF_ERROR(
@@ -109,8 +197,8 @@ Status ToneMapPixel(const JxlColorEncoding& c, const float in[3],
   return true;
 }
 
-std::vector<uint16_t> CreateTableCurve(uint32_t N, const ExtraTF tf,
-                                       bool tone_map) {
+static std::vector<uint16_t> CreateTableCurve(uint32_t N, const ExtraTF tf,
+                                              bool tone_map) {
   // The generated PQ curve will make room for highlights up to this luminance.
   // TODO(sboukortt): make this variable?
   static constexpr float kPQIntensityTarget = 10000;
@@ -119,26 +207,22 @@ std::vector<uint16_t> CreateTableCurve(uint32_t N, const ExtraTF tf,
   JXL_ASSERT(tf == ExtraTF::kPQ || tf == ExtraTF::kHLG);
 
   static constexpr float kLuminances[] = {1.f / 3, 1.f / 3, 1.f / 3};
-  using D = HWY_CAPPED(float, 1);
-  Rec2408ToneMapper<D> tone_mapper({0, kPQIntensityTarget},
-                                   {0, kDefaultIntensityTarget}, kLuminances);
+  Rec2408ToneMapperBase tone_mapper({0, kPQIntensityTarget},
+                                    {0, kDefaultIntensityTarget}, kLuminances);
   // No point using float - LCMS converts to 16-bit for A2B/MFT.
   std::vector<uint16_t> table(N);
-  TF_PQ tf_pq(/*display_intensity_target=*/10000.0);
   for (uint32_t i = 0; i < N; ++i) {
     const float x = static_cast<float>(i) / (N - 1);  // 1.0 at index N - 1.
     const double dx = static_cast<double>(x);
     // LCMS requires EOTF (e.g. 2.4 exponent).
-    double y = (tf == ExtraTF::kHLG) ? TF_HLG().DisplayFromEncoded(dx)
-                                     : tf_pq.DisplayFromEncoded(dx);
+    double y = (tf == ExtraTF::kHLG)
+                   ? TF_HLG_Base::DisplayFromEncoded(dx)
+                   : TF_PQ_Base::DisplayFromEncoded(kPQIntensityTarget, dx);
     if (tone_map && tf == ExtraTF::kPQ &&
         kPQIntensityTarget > kDefaultIntensityTarget) {
-      D df;
-      auto r = Set(df, y * 10000 / kPQIntensityTarget), g = r, b = r;
+      float r = y * 10000 / kPQIntensityTarget, g = r, b = r;
       tone_mapper.ToneMap(&r, &g, &b);
-      float fy;
-      StoreU(r, df, &fy);
-      y = fy;
+      y = r;
     }
     JXL_ASSERT(y >= 0.0);
     // Clamp to table range - necessary for HLG.
@@ -149,19 +233,7 @@ std::vector<uint16_t> CreateTableCurve(uint32_t N, const ExtraTF tf,
   return table;
 }
 
-// NOLINTNEXTLINE(google-readability-namespace-comments)
-}  // namespace HWY_NAMESPACE
-}  // namespace jxl
-HWY_AFTER_NAMESPACE();
-
-#if HWY_ONCE
-namespace jxl {
-
-// Local functions.
-HWY_EXPORT(ToneMapPixel);
-HWY_EXPORT(CreateTableCurve);
-
-Status CIEXYZFromWhiteCIExy(double wx, double wy, float XYZ[3]) {
+static Status CIEXYZFromWhiteCIExy(double wx, double wy, float XYZ[3]) {
   // Target Y = 1.
   if (std::abs(wy) < 1e-12) return JXL_FAILURE("Y value is too small");
   const float factor = 1 / wy;
@@ -171,11 +243,11 @@ Status CIEXYZFromWhiteCIExy(double wx, double wy, float XYZ[3]) {
   return true;
 }
 
-namespace {
+namespace detail {
 
 constexpr bool kEnable3DToneMapping = JXL_ENABLE_3D_ICC_TONEMAPPING;
 
-bool CanToneMap(const JxlColorEncoding& encoding) {
+static bool CanToneMap(const JxlColorEncoding& encoding) {
   // If the color space cannot be represented by a CICP tag in the ICC profile
   // then the rest of the profile must unambiguously identify it; we have less
   // freedom to do use it for tone mapping.
@@ -189,7 +261,7 @@ bool CanToneMap(const JxlColorEncoding& encoding) {
           (p != JXL_PRIMARIES_CUSTOM && wp == JXL_WHITE_POINT_D65));
 }
 
-void ICCComputeMD5(const std::vector<uint8_t>& data, uint8_t sum[16])
+static void ICCComputeMD5(const std::vector<uint8_t>& data, uint8_t sum[16])
     JXL_NO_SANITIZE("unsigned-integer-overflow") {
   std::vector<uint8_t> data64 = data;
   data64.push_back(128);
@@ -270,7 +342,7 @@ void ICCComputeMD5(const std::vector<uint8_t>& data, uint8_t sum[16])
   sum[15] = d0 >> 24u;
 }
 
-Status CreateICCChadMatrix(double wx, double wy, float result[9]) {
+static Status CreateICCChadMatrix(double wx, double wy, float result[9]) {
   float m[9];
   if (wy == 0) {  // WhitePoint can not be pitch-black.
     return JXL_FAILURE("Invalid WhitePoint");
@@ -281,15 +353,17 @@ Status CreateICCChadMatrix(double wx, double wy, float result[9]) {
 }
 
 // Creates RGB to XYZ matrix given RGB primaries and whitepoint in xy.
-Status CreateICCRGBMatrix(double rx, double ry, double gx, double gy, double bx,
-                          double by, double wx, double wy, float result[9]) {
+static Status CreateICCRGBMatrix(double rx, double ry, double gx, double gy,
+                                 double bx, double by, double wx, double wy,
+                                 float result[9]) {
   float m[9];
   JXL_RETURN_IF_ERROR(PrimariesToXYZD50(rx, ry, gx, gy, bx, by, wx, wy, m));
   memcpy(result, m, sizeof(float) * 9);
   return true;
 }
 
-void WriteICCUint32(uint32_t value, size_t pos, std::vector<uint8_t>* icc) {
+static void WriteICCUint32(uint32_t value, size_t pos,
+                           std::vector<uint8_t>* icc) {
   if (icc->size() < pos + 4) icc->resize(pos + 4);
   (*icc)[pos + 0] = (value >> 24u) & 255;
   (*icc)[pos + 1] = (value >> 16u) & 255;
@@ -297,24 +371,28 @@ void WriteICCUint32(uint32_t value, size_t pos, std::vector<uint8_t>* icc) {
   (*icc)[pos + 3] = value & 255;
 }
 
-void WriteICCUint16(uint16_t value, size_t pos, std::vector<uint8_t>* icc) {
+static void WriteICCUint16(uint16_t value, size_t pos,
+                           std::vector<uint8_t>* icc) {
   if (icc->size() < pos + 2) icc->resize(pos + 2);
   (*icc)[pos + 0] = (value >> 8u) & 255;
   (*icc)[pos + 1] = value & 255;
 }
 
-void WriteICCUint8(uint8_t value, size_t pos, std::vector<uint8_t>* icc) {
+static void WriteICCUint8(uint8_t value, size_t pos,
+                          std::vector<uint8_t>* icc) {
   if (icc->size() < pos + 1) icc->resize(pos + 1);
   (*icc)[pos] = value;
 }
 
 // Writes a 4-character tag
-void WriteICCTag(const char* value, size_t pos, std::vector<uint8_t>* icc) {
+static void WriteICCTag(const char* value, size_t pos,
+                        std::vector<uint8_t>* icc) {
   if (icc->size() < pos + 4) icc->resize(pos + 4);
   memcpy(icc->data() + pos, value, 4);
 }
 
-Status WriteICCS15Fixed16(float value, size_t pos, std::vector<uint8_t>* icc) {
+static Status WriteICCS15Fixed16(float value, size_t pos,
+                                 std::vector<uint8_t>* icc) {
   // "nextafterf" for 32768.0f towards zero are:
   // 32767.998046875, 32767.99609375, 32767.994140625
   // Even the first value works well,...
@@ -327,8 +405,8 @@ Status WriteICCS15Fixed16(float value, size_t pos, std::vector<uint8_t>* icc) {
   return true;
 }
 
-Status CreateICCHeader(const JxlColorEncoding& c,
-                       std::vector<uint8_t>* header) {
+static Status CreateICCHeader(const JxlColorEncoding& c,
+                              std::vector<uint8_t>* header) {
   // TODO(lode): choose color management engine name, e.g. "skia" if
   // integrated in skia.
   static const char* kCmm = "jxl ";
@@ -383,9 +461,9 @@ Status CreateICCHeader(const JxlColorEncoding& c,
   return true;
 }
 
-void AddToICCTagTable(const char* tag, size_t offset, size_t size,
-                      std::vector<uint8_t>* tagtable,
-                      std::vector<size_t>* offsets) {
+static void AddToICCTagTable(const char* tag, size_t offset, size_t size,
+                             std::vector<uint8_t>* tagtable,
+                             std::vector<size_t>* offsets) {
   WriteICCTag(tag, tagtable->size(), tagtable);
   // writing true offset deferred to later
   WriteICCUint32(0, tagtable->size(), tagtable);
@@ -393,7 +471,8 @@ void AddToICCTagTable(const char* tag, size_t offset, size_t size,
   WriteICCUint32(size, tagtable->size(), tagtable);
 }
 
-void FinalizeICCTag(std::vector<uint8_t>* tags, size_t* offset, size_t* size) {
+static void FinalizeICCTag(std::vector<uint8_t>* tags, size_t* offset,
+                           size_t* size) {
   while ((tags->size() & 3) != 0) {
     tags->push_back(0);
   }
@@ -403,7 +482,8 @@ void FinalizeICCTag(std::vector<uint8_t>* tags, size_t* offset, size_t* size) {
 
 // The input text must be ASCII, writing other characters to UTF-16 is not
 // implemented.
-void CreateICCMlucTag(const std::string& text, std::vector<uint8_t>* tags) {
+static void CreateICCMlucTag(const std::string& text,
+                             std::vector<uint8_t>* tags) {
   WriteICCTag("mluc", tags->size(), tags);
   WriteICCUint32(0, tags->size(), tags);
   WriteICCUint32(1, tags->size(), tags);
@@ -417,7 +497,7 @@ void CreateICCMlucTag(const std::string& text, std::vector<uint8_t>* tags) {
   }
 }
 
-Status CreateICCXYZTag(float xyz[3], std::vector<uint8_t>* tags) {
+static Status CreateICCXYZTag(float xyz[3], std::vector<uint8_t>* tags) {
   WriteICCTag("XYZ ", tags->size(), tags);
   WriteICCUint32(0, tags->size(), tags);
   for (size_t i = 0; i < 3; ++i) {
@@ -426,7 +506,7 @@ Status CreateICCXYZTag(float xyz[3], std::vector<uint8_t>* tags) {
   return true;
 }
 
-Status CreateICCChadTag(float chad[9], std::vector<uint8_t>* tags) {
+static Status CreateICCChadTag(float chad[9], std::vector<uint8_t>* tags) {
   WriteICCTag("sf32", tags->size(), tags);
   WriteICCUint32(0, tags->size(), tags);
   for (size_t i = 0; i < 9; i++) {
@@ -435,10 +515,10 @@ Status CreateICCChadTag(float chad[9], std::vector<uint8_t>* tags) {
   return true;
 }
 
-void MaybeCreateICCCICPTag(const JxlColorEncoding& c,
-                           std::vector<uint8_t>* tags, size_t* offset,
-                           size_t* size, std::vector<uint8_t>* tagtable,
-                           std::vector<size_t>* offsets) {
+static void MaybeCreateICCCICPTag(const JxlColorEncoding& c,
+                                  std::vector<uint8_t>* tags, size_t* offset,
+                                  size_t* size, std::vector<uint8_t>* tagtable,
+                                  std::vector<size_t>* offsets) {
   if (c.color_space != JXL_COLOR_SPACE_RGB) {
     return;
   }
@@ -474,8 +554,8 @@ void MaybeCreateICCCICPTag(const JxlColorEncoding& c,
   AddToICCTagTable("cicp", *offset, *size, tagtable, offsets);
 }
 
-void CreateICCCurvCurvTag(const std::vector<uint16_t>& curve,
-                          std::vector<uint8_t>* tags) {
+static void CreateICCCurvCurvTag(const std::vector<uint16_t>& curve,
+                                 std::vector<uint8_t>* tags) {
   size_t pos = tags->size();
   tags->resize(tags->size() + 12 + curve.size() * 2, 0);
   WriteICCTag("curv", pos, tags);
@@ -487,8 +567,8 @@ void CreateICCCurvCurvTag(const std::vector<uint16_t>& curve,
 }
 
 // Writes 12 + 4*params.size() bytes
-Status CreateICCCurvParaTag(std::vector<float> params, size_t curve_type,
-                            std::vector<uint8_t>* tags) {
+static Status CreateICCCurvParaTag(std::vector<float> params, size_t curve_type,
+                                   std::vector<uint8_t>* tags) {
   WriteICCTag("para", tags->size(), tags);
   WriteICCUint32(0, tags->size(), tags);
   WriteICCUint16(curve_type, tags->size(), tags);
@@ -499,7 +579,7 @@ Status CreateICCCurvParaTag(std::vector<float> params, size_t curve_type,
   return true;
 }
 
-Status CreateICCLutAtoBTagForXYB(std::vector<uint8_t>* tags) {
+static Status CreateICCLutAtoBTagForXYB(std::vector<uint8_t>* tags) {
   WriteICCTag("mAB ", tags->size(), tags);
   // 4 reserved bytes set to 0
   WriteICCUint32(0, tags->size(), tags);
@@ -582,8 +662,8 @@ Status CreateICCLutAtoBTagForXYB(std::vector<uint8_t>* tags) {
   return true;
 }
 
-Status CreateICCLutAtoBTagForHDR(JxlColorEncoding c,
-                                 std::vector<uint8_t>* tags) {
+static Status CreateICCLutAtoBTagForHDR(JxlColorEncoding c,
+                                        std::vector<uint8_t>* tags) {
   static constexpr size_t k3DLutDim = 9;
   WriteICCTag("mft1", tags->size(), tags);
   // 4 reserved bytes set to 0
@@ -619,8 +699,7 @@ Status CreateICCLutAtoBTagForHDR(JxlColorEncoding c,
                       iy * (1.0f / (k3DLutDim - 1)),
                       ib * (1.0f / (k3DLutDim - 1))};
         uint8_t pcslab_out[3];
-        JXL_RETURN_IF_ERROR(
-            HWY_DYNAMIC_DISPATCH(ToneMapPixel)(c, f, pcslab_out));
+        JXL_RETURN_IF_ERROR(ToneMapPixel(c, f, pcslab_out));
         for (uint8_t val : pcslab_out) {
           WriteICCUint8(val, tags->size(), tags);
         }
@@ -639,7 +718,7 @@ Status CreateICCLutAtoBTagForHDR(JxlColorEncoding c,
 }
 
 // Some software (Apple Safari, Preview) requires this.
-Status CreateICCNoOpBToATag(std::vector<uint8_t>* tags) {
+static Status CreateICCNoOpBToATag(std::vector<uint8_t>* tags) {
   WriteICCTag("mBA ", tags->size(), tags);
   // 4 reserved bytes set to 0
   WriteICCUint32(0, tags->size(), tags);
@@ -669,7 +748,7 @@ Status CreateICCNoOpBToATag(std::vector<uint8_t>* tags) {
 
 // These strings are baked into Description - do not change.
 
-std::string ToString(JxlColorSpace color_space) {
+static std::string ToString(JxlColorSpace color_space) {
   switch (color_space) {
     case JXL_COLOR_SPACE_RGB:
       return "RGB";
@@ -684,7 +763,7 @@ std::string ToString(JxlColorSpace color_space) {
   JXL_UNREACHABLE("Invalid ColorSpace %u", static_cast<uint32_t>(color_space));
 }
 
-std::string ToString(JxlWhitePoint white_point) {
+static std::string ToString(JxlWhitePoint white_point) {
   switch (white_point) {
     case JXL_WHITE_POINT_D65:
       return "D65";
@@ -699,7 +778,7 @@ std::string ToString(JxlWhitePoint white_point) {
   JXL_UNREACHABLE("Invalid WhitePoint %u", static_cast<uint32_t>(white_point));
 }
 
-std::string ToString(JxlPrimaries primaries) {
+static std::string ToString(JxlPrimaries primaries) {
   switch (primaries) {
     case JXL_PRIMARIES_SRGB:
       return "SRG";
@@ -714,7 +793,7 @@ std::string ToString(JxlPrimaries primaries) {
   JXL_UNREACHABLE("Invalid Primaries %u", static_cast<uint32_t>(primaries));
 }
 
-std::string ToString(JxlTransferFunction transfer_function) {
+static std::string ToString(JxlTransferFunction transfer_function) {
   switch (transfer_function) {
     case JXL_TRANSFER_FUNCTION_SRGB:
       return "SRG";
@@ -738,7 +817,7 @@ std::string ToString(JxlTransferFunction transfer_function) {
                   static_cast<uint32_t>(transfer_function));
 }
 
-std::string ToString(JxlRenderingIntent rendering_intent) {
+static std::string ToString(JxlRenderingIntent rendering_intent) {
   switch (rendering_intent) {
     case JXL_RENDERING_INTENT_PERCEPTUAL:
       return "Per";
@@ -754,98 +833,7 @@ std::string ToString(JxlRenderingIntent rendering_intent) {
                   static_cast<uint32_t>(rendering_intent));
 }
 
-/* Chromatic adaptation matrices*/
-constexpr float kBradford[9] = {
-    0.8951f, 0.2664f, -0.1614f, -0.7502f, 1.7135f,
-    0.0367f, 0.0389f, -0.0685f, 1.0296f,
-};
-constexpr float kBradfordInv[9] = {
-    0.9869929f, -0.1470543f, 0.1599627f, 0.4323053f, 0.5183603f,
-    0.0492912f, -0.0085287f, 0.0400428f, 0.9684867f,
-};
-
-}  // namespace
-
-Status PrimariesToXYZ(float rx, float ry, float gx, float gy, float bx,
-                      float by, float wx, float wy, float matrix[9]) {
-  bool ok = (wx >= 0) && (wx <= 1) && (wy > 0) && (wy <= 1);
-  if (!ok) {
-    return JXL_FAILURE("Invalid white point");
-  }
-  // TODO(lode): also require rx, ry, gx, gy, bx, to be in range 0-1? ICC
-  // profiles in theory forbid negative XYZ values, but in practice the ACES P0
-  // color space uses a negative y for the blue primary.
-  float primaries[9] = {
-      rx, gx, bx, ry, gy, by, 1.0f - rx - ry, 1.0f - gx - gy, 1.0f - bx - by};
-  float primaries_inv[9];
-  memcpy(primaries_inv, primaries, sizeof(float) * 9);
-  JXL_RETURN_IF_ERROR(Inv3x3Matrix(primaries_inv));
-
-  float w[3] = {wx / wy, 1.0f, (1.0f - wx - wy) / wy};
-  // 1 / tiny float can still overflow
-  JXL_RETURN_IF_ERROR(std::isfinite(w[0]) && std::isfinite(w[2]));
-  float xyz[3];
-  Mul3x3Vector(primaries_inv, w, xyz);
-
-  float a[9] = {
-      xyz[0], 0, 0, 0, xyz[1], 0, 0, 0, xyz[2],
-  };
-
-  Mul3x3Matrix(primaries, a, matrix);
-  return true;
-}
-
-// Adapts whitepoint x, y to D50
-Status AdaptToXYZD50(float wx, float wy, float matrix[9]) {
-  bool ok = (wx >= 0) && (wx <= 1) && (wy > 0) && (wy <= 1);
-  if (!ok) {
-    // Out of range values can cause division through zero
-    // further down with the bradford adaptation too.
-    return JXL_FAILURE("Invalid white point");
-  }
-  float w[3] = {wx / wy, 1.0f, (1.0f - wx - wy) / wy};
-  // 1 / tiny float can still overflow
-  JXL_RETURN_IF_ERROR(std::isfinite(w[0]) && std::isfinite(w[2]));
-  float w50[3] = {0.96422f, 1.0f, 0.82521f};
-
-  float lms[3];
-  float lms50[3];
-
-  Mul3x3Vector(kBradford, w, lms);
-  Mul3x3Vector(kBradford, w50, lms50);
-
-  if (lms[0] == 0 || lms[1] == 0 || lms[2] == 0) {
-    return JXL_FAILURE("Invalid white point");
-  }
-  float a[9] = {
-      //       /----> 0, 1, 2, 3,          /----> 4, 5, 6, 7,          /----> 8,
-      lms50[0] / lms[0], 0, 0, 0, lms50[1] / lms[1], 0, 0, 0, lms50[2] / lms[2],
-  };
-  if (!std::isfinite(a[0]) || !std::isfinite(a[4]) || !std::isfinite(a[8])) {
-    return JXL_FAILURE("Invalid white point");
-  }
-
-  float b[9];
-  Mul3x3Matrix(a, kBradford, b);
-  Mul3x3Matrix(kBradfordInv, b, matrix);
-
-  return true;
-}
-
-Status PrimariesToXYZD50(float rx, float ry, float gx, float gy, float bx,
-                         float by, float wx, float wy, float matrix[9]) {
-  float toXYZ[9];
-  JXL_RETURN_IF_ERROR(PrimariesToXYZ(rx, ry, gx, gy, bx, by, wx, wy, toXYZ));
-  float d50[9];
-  JXL_RETURN_IF_ERROR(AdaptToXYZD50(wx, wy, d50));
-
-  Mul3x3Matrix(d50, toXYZ, matrix);
-  return true;
-}
-
-// Returns a representation of the ColorEncoding fields (not icc).
-// Example description: "RGB_D65_SRG_Rel_Lin"
-std::string ColorEncodingDescription(const JxlColorEncoding& c) {
+static std::string ColorEncodingDescriptionImpl(const JxlColorEncoding& c) {
   std::string d = ToString(c.color_space);
 
   bool explicit_wp_tf = (c.color_space != JXL_COLOR_SPACE_XYB);
@@ -890,8 +878,8 @@ std::string ColorEncodingDescription(const JxlColorEncoding& c) {
   return d;
 }
 
-Status MaybeCreateProfile(const JxlColorEncoding& c,
-                          std::vector<uint8_t>* icc) {
+static Status MaybeCreateProfileImpl(const JxlColorEncoding& c,
+                                     std::vector<uint8_t>* icc) {
   std::vector<uint8_t> header, tagtable, tags;
   JxlTransferFunction tf = c.transfer_function;
   if (c.color_space == JXL_COLOR_SPACE_UNKNOWN ||
@@ -924,7 +912,7 @@ Status MaybeCreateProfile(const JxlColorEncoding& c,
 
   size_t tag_offset = 0, tag_size = 0;
 
-  CreateICCMlucTag(ColorEncodingDescription(c), &tags);
+  CreateICCMlucTag(ColorEncodingDescriptionImpl(c), &tags);
   FinalizeICCTag(&tags, &tag_offset, &tag_size);
   AddToICCTagTable("desc", tag_offset, tag_size, &tagtable, &offsets);
 
@@ -1004,14 +992,12 @@ Status MaybeCreateProfile(const JxlColorEncoding& c,
     } else if (c.color_space != JXL_COLOR_SPACE_XYB) {
       switch (tf) {
         case JXL_TRANSFER_FUNCTION_HLG:
-          CreateICCCurvCurvTag(HWY_DYNAMIC_DISPATCH(CreateTableCurve)(
-                                   64, ExtraTF::kHLG, CanToneMap(c)),
-                               &tags);
+          CreateICCCurvCurvTag(
+              CreateTableCurve(64, ExtraTF::kHLG, CanToneMap(c)), &tags);
           break;
         case JXL_TRANSFER_FUNCTION_PQ:
-          CreateICCCurvCurvTag(HWY_DYNAMIC_DISPATCH(CreateTableCurve)(
-                                   64, ExtraTF::kPQ, CanToneMap(c)),
-                               &tags);
+          CreateICCCurvCurvTag(
+              CreateTableCurve(64, ExtraTF::kPQ, CanToneMap(c)), &tags);
           break;
         case JXL_TRANSFER_FUNCTION_SRGB:
           JXL_RETURN_IF_ERROR(CreateICCCurvParaTag(
@@ -1069,12 +1055,29 @@ Status MaybeCreateProfile(const JxlColorEncoding& c,
     memset(icc_sum.data() + 64, 0, 4);
   }
   uint8_t checksum[16];
-  ICCComputeMD5(icc_sum, checksum);
+  detail::ICCComputeMD5(icc_sum, checksum);
 
   memcpy(icc->data() + 84, checksum, sizeof(checksum));
 
   return true;
 }
 
+}  // namespace detail
+
+// Returns a representation of the ColorEncoding fields (not icc).
+// Example description: "RGB_D65_SRG_Rel_Lin"
+static JXL_MAYBE_UNUSED std::string ColorEncodingDescription(
+    const JxlColorEncoding& c) {
+  return detail::ColorEncodingDescriptionImpl(c);
+}
+
+// NOTE: for XYB colorspace, the created profile can be used to transform a
+// *scaled* XYB image (created by ScaleXYB()) to another colorspace.
+static JXL_MAYBE_UNUSED Status MaybeCreateProfile(const JxlColorEncoding& c,
+                                                  std::vector<uint8_t>* icc) {
+  return detail::MaybeCreateProfileImpl(c, icc);
+}
+
 }  // namespace jxl
-#endif  // HWY_ONCE
+
+#endif  // LIB_JXL_CMS_JXL_CMS_INTERNAL_H_

@@ -22,7 +22,7 @@
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/cms/color_encoding_cms.h"
-#include "lib/jxl/cms/jxl_cms.h"
+#include "lib/jxl/cms/jxl_cms_internal.h"
 #include "lib/jxl/field_encodings.h"
 
 namespace jxl {
@@ -130,14 +130,11 @@ struct ColorEncoding : public Fields {
   // Must be called after modifying fields. Defined in color_management.cc.
   Status CreateICC() {
     storage_.icc.clear();
-    uint8_t* new_icc_ptr;
-    size_t new_icc_size;
     const JxlColorEncoding external = ToExternal();
-    if (!JxlCmsCreateProfile(&external, &new_icc_ptr, &new_icc_size)) {
+    if (!MaybeCreateProfile(external, &storage_.icc)) {
+      storage_.icc.clear();
       return JXL_FAILURE("Failed to create ICC profile");
     }
-    storage_.icc.assign(new_icc_ptr, new_icc_ptr + new_icc_size);
-    free(new_icc_ptr);
     return true;
   }
 
@@ -293,11 +290,10 @@ struct ColorEncoding : public Fields {
 };
 
 static inline std::string Description(const ColorEncoding& c) {
-  char data[320];
   const JxlColorEncoding external = c.View().ToExternal();
-  JxlCmsColorEncodingDescription(&external, data);
-  return data;
+  return ColorEncodingDescription(external);
 }
+
 static inline std::ostream& operator<<(std::ostream& os,
                                        const ColorEncoding& c) {
   return os << Description(c);

@@ -6,6 +6,14 @@
 #ifndef LIB_JXL_ENC_FRAME_H_
 #define LIB_JXL_ENC_FRAME_H_
 
+#include <jxl/cms_interface.h>
+#include <jxl/types.h>
+
+#include <cstddef>
+#include <cstdint>
+#include <string>
+#include <vector>
+
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/enc_bit_writer.h"
@@ -14,6 +22,7 @@
 #include "lib/jxl/encode_internal.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/image_bundle.h"
+#include "lib/jxl/image_metadata.h"
 
 namespace jxl {
 
@@ -85,16 +94,14 @@ Status ParamsPostInit(CompressParams* p);
 Status EncodeFrame(const CompressParams& cparams_orig,
                    const FrameInfo& frame_info, const CodecMetadata* metadata,
                    JxlEncoderChunkedFrameAdapter& frame_data,
-                   PassesEncoderState* passes_enc_state,
                    const JxlCmsInterface& cms, ThreadPool* pool,
                    JxlEncoderOutputProcessorWrapper* output_processor,
                    AuxOut* aux_out);
 
 Status EncodeFrame(const CompressParams& cparams_orig,
                    const FrameInfo& frame_info, const CodecMetadata* metadata,
-                   const ImageBundle& ib, PassesEncoderState* passes_enc_state,
-                   const JxlCmsInterface& cms, ThreadPool* pool,
-                   BitWriter* writer, AuxOut* aux_out);
+                   const ImageBundle& ib, const JxlCmsInterface& cms,
+                   ThreadPool* pool, BitWriter* writer, AuxOut* aux_out);
 
 }  // namespace jxl
 

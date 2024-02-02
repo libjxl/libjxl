@@ -3,27 +3,28 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <jxl/cms.h>
+#include <jxl/types.h>
 #include <stdint.h>
 #include <stdio.h>
 
+#include <cstdlib>
 #include <string>
 #include <vector>
 
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/color_hints.h"
 #include "lib/extras/metrics.h"
-#include "lib/jxl/base/data_parallel.h"
+#include "lib/extras/packed_image.h"
+#include "lib/extras/packed_image_convert.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/butteraugli/butteraugli.h"
-#include "lib/jxl/cms/jxl_cms.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/image.h"
-#include "lib/jxl/image_bundle.h"
-#include "lib/jxl/image_ops.h"
 #include "tools/file_io.h"
 #include "tools/thread_pool_internal.h"
 
@@ -37,15 +38,14 @@ using jxl::Image3F;
 using jxl::ImageF;
 using jxl::Status;
 
-Status WriteImage(Image3F&& image, const std::string& filename) {
+Status WriteImage(const Image3F& image, const std::string& filename) {
   ThreadPoolInternal pool(4);
-  CodecInOut io;
-  io.metadata.m.SetUintSamples(8);
-  io.metadata.m.color_encoding = ColorEncoding::SRGB();
-  io.SetFromImage(std::move(image), io.metadata.m.color_encoding);
-
+  JxlPixelFormat format = {3, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0};
+  jxl::extras::PackedPixelFile ppf =
+      jxl::extras::ConvertImage3FToPackedPixelFile(
+          image, jxl::ColorEncoding::SRGB(), format, &pool);
   std::vector<uint8_t> encoded;
-  return jxl::Encode(io, filename, &encoded, &pool) &&
+  return jxl::Encode(ppf, filename, &encoded, &pool) &&
          jpegxl::tools::WriteFile(filename, encoded);
 }
 

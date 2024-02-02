@@ -33,7 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
+      uses: step-security/harden-runner@63c24ba6bd7ba022e95695ff85de572c04a18142 # v2.7.0
       with:
         egress-policy: audit
 
@@ -44,7 +44,7 @@ jobs:
         ref: ${{ env.CONFORMANCE_REPO_HASH }}
         path: conformance
     - name: Cache
-      uses: actions/cache@704facf57e6136b1bc63b828d79edcd491f0ee84 # v3.3.2
+      uses: actions/cache@13aacd865c20de90d75de3b17ebe84f7a17d57d2 # v4.0.0
       with:
         path: ${{ github.workspace }}/conformance/.objects
         key: conformance-refs
@@ -78,7 +78,7 @@ jobs:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
+      uses: step-security/harden-runner@63c24ba6bd7ba022e95695ff85de572c04a18142 # v2.7.0
       with:
         egress-policy: audit
 
@@ -121,7 +121,7 @@ jobs:
         echo "parent=$(git rev-parse ${{ github.sha }}^)" >> $GITHUB_OUTPUT
       shell: bash
     - name: ccache
-      uses: actions/cache@704facf57e6136b1bc63b828d79edcd491f0ee84 # v3.3.2
+      uses: actions/cache@13aacd865c20de90d75de3b17ebe84f7a17d57d2 # v4.0.0
       with:
         path: ${{ env.CCACHE_DIR }}
         # When the cache hits the key it is not updated, so if this is a rebuild
@@ -145,13 +145,13 @@ jobs:
         cp tools/conformance/conformance.py build/tools/conformance
         cp tools/conformance/lcms2.py build/tools/conformance
         cp build/tools/djxl build/tools/conformance
-        cp build/libjxl.so.${{ env.LIBJXL_VERSION }} build/tools/conformance
-        cp build/libjxl_cms.so.${{ env.LIBJXL_VERSION }} build/tools/conformance
-        cp build/libjxl_threads.so.${{ env.LIBJXL_VERSION }} build/tools/conformance
-        cp build/libjxl_extras_codec.so.${{ env.LIBJXL_VERSION }} build/tools/conformance
+        cp build/lib/libjxl.so.${{ env.LIBJXL_VERSION }} build/tools/conformance
+        cp build/lib/libjxl_cms.so.${{ env.LIBJXL_VERSION }} build/tools/conformance
+        cp build/lib/libjxl_threads.so.${{ env.LIBJXL_VERSION }} build/tools/conformance
+        cp build/lib/libjxl_extras_codec.so.${{ env.LIBJXL_VERSION }} build/tools/conformance
       env:
         SKIP_TEST: 1
-    - uses: actions/upload-artifact@a8a3f3ad30e3422c9c7b888a15615d19a852ae32 # v3.1.3
+    - uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
       with:
         name: conformance_binary-${{ matrix.name }}
         path: |
@@ -176,7 +176,7 @@ jobs:
         target: [AVX3, AVX2, SSE4, SSSE3, EMU128, SCALAR, SCALAR_ASAN]
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
+      uses: step-security/harden-runner@63c24ba6bd7ba022e95695ff85de572c04a18142 # v2.7.0
       with:
         egress-policy: audit
 
@@ -190,14 +190,14 @@ jobs:
         ref: ${{ env.CONFORMANCE_REPO_HASH }}
         path: conformance
     - name: Cache
-      uses: actions/cache@704facf57e6136b1bc63b828d79edcd491f0ee84 # v3.3.2
+      uses: actions/cache@13aacd865c20de90d75de3b17ebe84f7a17d57d2 # v4.0.0
       with:
         path: ${{ github.workspace }}/conformance/.objects
         key: conformance-refs
     - name: Download and link conformance files
       run: |
         ${{ github.workspace }}/conformance/scripts/download_and_symlink.sh
-    - uses: actions/download-artifact@9bc31d5ccc31df68ecc42ccf4149144866c47d8a # v3.0.2
+    - uses: actions/download-artifact@6b208ae046db98c579e8a3aa621ab581ff575935 # v4.1.1
       with:
         name: conformance_binary-${{ matrix.target }}
     - name: Run conformance tests

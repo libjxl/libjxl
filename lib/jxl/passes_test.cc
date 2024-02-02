@@ -3,23 +3,23 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <jxl/cms.h>
 #include <stddef.h>
 
+#include <cstdint>
 #include <future>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "lib/extras/codec.h"
-#include "lib/jxl/base/compiler_specific.h"
+#include "lib/extras/dec/jxl.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/span.h"
-#include "lib/jxl/cms/jxl_cms.h"
-#include "lib/jxl/color_encoding_internal.h"
-#include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
-#include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_params.h"
+#include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/test_utils.h"
@@ -42,7 +42,7 @@ TEST(PassesTest, RoundtripSmallPasses) {
 
   CompressParams cparams;
   cparams.butteraugli_distance = 1.0;
-  cparams.progressive_mode = true;
+  cparams.progressive_mode = Override::kOn;
   cparams.SetCms(*JxlGetDefaultCms());
 
   CodecInOut io2;
@@ -62,7 +62,7 @@ TEST(PassesTest, RoundtripUnalignedPasses) {
 
   CompressParams cparams;
   cparams.butteraugli_distance = 2.0;
-  cparams.progressive_mode = true;
+  cparams.progressive_mode = Override::kOn;
   cparams.SetCms(*JxlGetDefaultCms());
 
   CodecInOut io2;
@@ -86,7 +86,7 @@ TEST(PassesTest, RoundtripMultiGroupPasses) {
     ThreadPoolForTests pool(4);
     CompressParams cparams;
     cparams.butteraugli_distance = target_distance;
-    cparams.progressive_mode = true;
+    cparams.progressive_mode = Override::kOn;
     cparams.SetCms(*JxlGetDefaultCms());
     CodecInOut io2;
     JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _,
@@ -109,7 +109,7 @@ TEST(PassesTest, RoundtripLargeFastPasses) {
 
   CompressParams cparams;
   cparams.speed_tier = SpeedTier::kSquirrel;
-  cparams.progressive_mode = true;
+  cparams.progressive_mode = Override::kOn;
   cparams.SetCms(*JxlGetDefaultCms());
 
   CodecInOut io2;
@@ -128,7 +128,7 @@ TEST(PassesTest, RoundtripProgressiveConsistent) {
 
   CompressParams cparams;
   cparams.speed_tier = SpeedTier::kSquirrel;
-  cparams.progressive_mode = true;
+  cparams.progressive_mode = Override::kOn;
   cparams.butteraugli_distance = 2.0;
   cparams.SetCms(*JxlGetDefaultCms());
 
@@ -169,10 +169,9 @@ TEST(PassesTest, AllDownsampleFeasible) {
 
   CompressParams cparams;
   cparams.speed_tier = SpeedTier::kSquirrel;
-  cparams.progressive_mode = true;
+  cparams.progressive_mode = Override::kOn;
   cparams.butteraugli_distance = 1.0;
-  PassesEncoderState enc_state;
-  ASSERT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed, &pool));
+  ASSERT_TRUE(test::EncodeFile(cparams, &io, &compressed, &pool));
 
   EXPECT_LE(compressed.size(), 240000u);
   float target_butteraugli[9] = {};
@@ -215,10 +214,9 @@ TEST(PassesTest, AllDownsampleFeasibleQProgressive) {
 
   CompressParams cparams;
   cparams.speed_tier = SpeedTier::kSquirrel;
-  cparams.qprogressive_mode = true;
+  cparams.qprogressive_mode = Override::kOn;
   cparams.butteraugli_distance = 1.0;
-  PassesEncoderState enc_state;
-  ASSERT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed, &pool));
+  ASSERT_TRUE(test::EncodeFile(cparams, &io, &compressed, &pool));
 
   EXPECT_LE(compressed.size(), 220000u);
 
@@ -271,10 +269,9 @@ TEST(PassesTest, ProgressiveDownsample2DegradesCorrectlyGrayscale) {
   cparams.speed_tier = SpeedTier::kSquirrel;
   cparams.progressive_dc = 1;
   cparams.responsive = true;
-  cparams.qprogressive_mode = true;
+  cparams.qprogressive_mode = Override::kOn;
   cparams.butteraugli_distance = 1.0;
-  PassesEncoderState enc_state;
-  ASSERT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed, &pool));
+  ASSERT_TRUE(test::EncodeFile(cparams, &io, &compressed, &pool));
 
   EXPECT_LE(compressed.size(), 10000u);
 
@@ -315,10 +312,9 @@ TEST(PassesTest, ProgressiveDownsample2DegradesCorrectly) {
   cparams.speed_tier = SpeedTier::kSquirrel;
   cparams.progressive_dc = 1;
   cparams.responsive = true;
-  cparams.qprogressive_mode = true;
+  cparams.qprogressive_mode = Override::kOn;
   cparams.butteraugli_distance = 1.0;
-  PassesEncoderState enc_state;
-  ASSERT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed, &pool));
+  ASSERT_TRUE(test::EncodeFile(cparams, &io, &compressed, &pool));
 
   EXPECT_LE(compressed.size(), 220000u);
 
@@ -350,10 +346,9 @@ TEST(PassesTest, NonProgressiveDCImage) {
 
   CompressParams cparams;
   cparams.speed_tier = SpeedTier::kSquirrel;
-  cparams.progressive_mode = false;
+  cparams.progressive_mode = Override::kOff;
   cparams.butteraugli_distance = 2.0;
-  PassesEncoderState enc_state;
-  ASSERT_TRUE(test::EncodeFile(cparams, &io, &enc_state, &compressed, &pool));
+  ASSERT_TRUE(test::EncodeFile(cparams, &io, &compressed, &pool));
 
   // Even in non-progressive mode, it should be possible to return a DC-only
   // image.
@@ -375,7 +370,7 @@ TEST(PassesTest, RoundtripSmallNoGaborishPasses) {
   CompressParams cparams;
   cparams.gaborish = Override::kOff;
   cparams.butteraugli_distance = 1.0;
-  cparams.progressive_mode = true;
+  cparams.progressive_mode = Override::kOn;
   cparams.SetCms(*JxlGetDefaultCms());
 
   CodecInOut io2;

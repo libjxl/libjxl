@@ -15,14 +15,15 @@
 
 #include <jxl/cms_interface.h>
 #include <jxl/codestream_header.h>
+#include <jxl/color_encoding.h>
 #include <jxl/jxl_export.h>
 #include <jxl/memory_manager.h>
 #include <jxl/parallel_runner.h>
 #include <jxl/stats.h>
-#include <jxl/version.h>
+#include <jxl/types.h>
+#include <jxl/version.h>  // TODO(eustas): remove before v1.0
+#include <stddef.h>
 #include <stdint.h>
-
-#include "jxl/types.h"
 
 #if defined(__cplusplus) || defined(c_plusplus)
 extern "C" {
@@ -342,13 +343,15 @@ typedef enum {
   /** Control what kind of buffering is used, when using chunked image frames.
    * 0 = buffers everything, basically the same as non-streamed code path
    (mainly for testing)
-   * 1 = can buffer internal data (the tokens)
-   * 2 = can buffer the output
-   * 3 = minimize buffer usage: streamed input and chunked output, writing TOC
-   last (will not work with progressive)
-
-   When the image dimensions is smaller than 2048 x 2048 all the options are the
-   same. Using 1, 2 or 3 can result increasingly in less compression density.
+   * 1 = buffers everything for images that are smaller than 2048 x 2048, and
+   *     uses streaming input and output for larger images
+   * 2 = uses streaming input and output for all images that are larger than
+   *     one group, i.e. 256 x 256 pixels by default
+   * 3 = currently same as 2
+   *
+   * When using streaming input and output the encoder minimizes memory usage at
+   * the cost of compression density. Also note that images produced with
+   * streaming mode might can not be decoded progressively.
    */
   JXL_ENC_FRAME_SETTING_BUFFERING = 34,
 
@@ -375,6 +378,14 @@ typedef enum {
    * (default).
    */
   JXL_ENC_FRAME_SETTING_JPEG_KEEP_JUMBF = 37,
+
+  /** If this mode is disabled, the encoder will not make any image quality
+   * decisions that are computed based on the full image, but stored only once
+   * (e.g. the X quant multiplier in the frame header). Used mainly for testing
+   * equivalence of streaming and non-streaming code.
+   * 0 = disabled, 1 = enabled (default)
+   */
+  JXL_ENC_FRAME_SETTING_USE_FULL_IMAGE_HEURISTICS = 38,
 
   /** Enum value not to be used as an option. This value is added to force the
    * C compiler to have the enum to take a known size.
@@ -591,6 +602,10 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetFrameBitDepth(
  * If this is the last frame, @ref JxlEncoderCloseInput or @ref
  * JxlEncoderCloseFrames must be called before the next
  * @ref JxlEncoderProcessOutput call.
+ *
+ * Note, this can only be used to add JPEG frames for lossless compression. To
+ * encode with lossy compression, the JPEG must be decoded manually and a pixel
+ * buffer added using JxlEncoderAddImageFrame.
  *
  * @param frame_settings set of options and metadata for this frame. Also
  * includes reference to the encoder object.
@@ -822,8 +837,8 @@ struct JxlChunkedFrameInputSource {
 
   /**
    * Callback to retrieve a rectangle of color channel data at a specific
-   * location. It is guaranteed that xpos and ypos are multiples of 128. xsize,
-   * ysize will be multiples of 128, unless the resulting rectangle would be out
+   * location. It is guaranteed that xpos and ypos are multiples of 8. xsize,
+   * ysize will be multiples of 8, unless the resulting rectangle would be out
    * of image bounds. Moreover, xsize and ysize will be at most 2048. The
    * returned data will be assumed to be in the format returned by the
    * (preceding) call to get_color_channels_pixel_format, except the `align`
@@ -866,7 +881,7 @@ struct JxlChunkedFrameInputSource {
   /**
    * Callback to retrieve a rectangle of extra channel `ec_index` data at a
    * specific location. It is guaranteed that xpos and ypos are multiples of
-   * 128. xsize, ysize will be multiples of 128, unless the resulting rectangle
+   * 8. xsize, ysize will be multiples of 8, unless the resulting rectangle
    * would be out of image bounds. Moreover, xsize and ysize will be at most
    * 2048. The returned data will be assumed to be in the format returned by the
    * (preceding) call to get_extra_channels_pixel_format_at with the
@@ -1191,8 +1206,8 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
  * JXL_ENC_ERROR or JXL_ENC_NOT_SUPPORTED otherwise
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderSetUpsamplingMode(JxlEncoder* enc,
-                                                        const int64_t factor,
-                                                        const int64_t mode);
+                                                        int64_t factor,
+                                                        int64_t mode);
 
 /**
  * Initializes a JxlExtraChannelInfo struct to default values.

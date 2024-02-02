@@ -46,7 +46,7 @@ Status ReadPermutation(size_t skip, size_t size, coeff_order_t* order,
     lehmer[i] =
         reader->ReadHybridUint(CoeffOrderContext(last), br, context_map);
     last = lehmer[i];
-    if (lehmer[i] + i >= size) {
+    if (lehmer[i] >= size - i) {
       return JXL_FAILURE("Invalid lehmer code");
     }
   }

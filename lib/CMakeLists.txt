@@ -126,15 +126,12 @@ endif()  #!MSVC
 
 if (JPEGXL_ENABLE_SKCMS)
   list(APPEND JPEGXL_INTERNAL_FLAGS -DJPEGXL_ENABLE_SKCMS=1)
-  if (JPEGXL_BUNDLE_SKCMS)
-    list(APPEND JPEGXL_INTERNAL_FLAGS -DJPEGXL_BUNDLE_SKCMS=1)
-  endif ()
 endif ()
 
-# strips the -static suffix from all the elements in LIST
-function(strip_static OUTPUT_VAR LIB_LIST)
+# strips the -internal suffix from all the elements in LIST
+function(strip_internal OUTPUT_VAR LIB_LIST)
   foreach(lib IN LISTS ${LIB_LIST})
-    string(REGEX REPLACE "-static$" "" lib "${lib}")
+    string(REGEX REPLACE "-internal$" "" lib "${lib}")
     list(APPEND out_list "${lib}")
   endforeach()
   set(${OUTPUT_VAR} ${out_list} PARENT_SCOPE)
@@ -158,7 +155,7 @@ include(jxl_cms.cmake)
 include(jxl.cmake)
 
 # Other libraries outside the core jxl library.
-if(JPEGXL_ENABLE_TOOLS)
+if(JPEGXL_ENABLE_TOOLS OR BUILD_TESTING)
   include(jxl_extras.cmake)
 endif()
 include(jxl_threads.cmake)
@@ -166,16 +163,14 @@ if (JPEGXL_ENABLE_JPEGLI)
   include(jpegli.cmake)
 endif()
 
-# Install all the library headers from the source and the generated ones. There
-# is no distinction on which libraries use which header since it is expected
-# that all developer libraries are available together at build time.
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/jxl
-  DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+# For simplicity all the library headers, both source and generated ones, are
+# gathered in the binary folder. There is no distinction on which libraries use
+# which header since it is expected that all developer libraries are available
+# together at build time.
 install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include/jxl
   DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
 
 if(BUILD_TESTING)
-  cmake_policy(SET CMP0057 NEW)  # https://gitlab.kitware.com/cmake/cmake/issues/18198
   include(GoogleTest)
 endif()
 

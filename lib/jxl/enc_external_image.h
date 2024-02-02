@@ -13,6 +13,7 @@
 #include <stdint.h>
 
 #include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/image.h"

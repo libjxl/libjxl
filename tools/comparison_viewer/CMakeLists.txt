@@ -29,9 +29,9 @@ target_include_directories(image_loading PRIVATE
 )
 target_link_libraries(image_loading PUBLIC
   Qt6::Widgets
-  jxl-static
-  jxl_threads-static
-  jxl_extras-static
+  jxl-internal
+  jxl_threads
+  jxl_extras-internal
   lcms2
 )
 
