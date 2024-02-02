@@ -1368,9 +1368,11 @@ Status ComputeEncodingData(
   PassesSharedState& shared = enc_state.shared;
   shared.metadata = metadata;
   if (enc_state.streaming_mode) {
-    shared.frame_dim.Set(xsize, ysize, /*group_size_shift=*/1,
-                         /*maxhshift=*/0, /*maxvshift=*/0,
-                         /*modular_mode=*/false, /*upsampling=*/1);
+    shared.frame_dim.Set(
+        xsize, ysize, frame_header.group_size_shift,
+        /*maxhshift=*/0, /*maxvshift=*/0,
+        mutable_frame_header.encoding == FrameEncoding::kModular,
+        /*upsampling=*/1);
   } else {
     shared.frame_dim = frame_header.ToFrameDimensions();
   }
@@ -1647,10 +1649,6 @@ bool CanDoStreamingEncoding(const CompressParams& cparams,
   if (cparams.max_error_mode) {
     return false;
   }
-  if (cparams.modular_group_size_shift != 1 &&
-      cparams.modular_group_size_shift != -1) {
-    return false;
-  }
   if (!cparams.ModularPartIsLossless() || cparams.responsive > 0) {
     if (metadata.m.num_extra_channels > 0 || cparams.modular_mode) {
       return false;
@@ -1665,11 +1663,10 @@ bool CanDoStreamingEncoding(const CompressParams& cparams,
 }
 
 void ComputePermutationForStreaming(size_t xsize, size_t ysize,
-                                    size_t num_passes,
+                                    size_t group_size, size_t num_passes,
                                     std::vector<coeff_order_t>& permutation,
                                     std::vector<size_t>& dc_group_order) {
   // This is only valid in VarDCT mode, otherwise there can be group shift.
-  const size_t group_size = 256;
   const size_t dc_group_size = group_size * kBlockDim;
   const size_t group_xsize = DivCeil(xsize, group_size);
   const size_t group_ysize = DivCeil(ysize, group_size);
@@ -1880,11 +1877,10 @@ Status EncodeFrameStreaming(const CompressParams& cparams,
   ModularFrameEncoder enc_modular(frame_header, cparams);
   std::vector<coeff_order_t> permutation;
   std::vector<size_t> dc_group_order;
-  ComputePermutationForStreaming(frame_data.xsize, frame_data.ysize, num_passes,
-                                 permutation, dc_group_order);
+  size_t group_size = frame_header.ToFrameDimensions().group_dim;
+  ComputePermutationForStreaming(frame_data.xsize, frame_data.ysize, group_size,
+                                 num_passes, permutation, dc_group_order);
   enc_state.shared.num_histograms = dc_group_order.size();
-  // This is only valid with a group shift of 1.
-  size_t group_size = 256;
   size_t dc_group_size = group_size * kBlockDim;
   size_t dc_group_xsize = DivCeil(frame_data.xsize, dc_group_size);
   size_t min_dc_global_size = 0;
