@@ -1655,15 +1655,65 @@ JXL_GTEST_INSTANTIATE_TEST_SUITE_P(
     JxlStreamingTest, JxlStreamingTest,
     testing::ValuesIn(StreamingTestParam::All()));
 
+struct StreamingEncodingTestParam {
+  std::string file;
+  int effort;
+  float distance;
+  int group_size;
+  float palette_percent;
+
+  static std::vector<StreamingEncodingTestParam> All() {
+    std::vector<StreamingEncodingTestParam> params;
+    for (const auto file :
+         {"jxl/flower/flower.png", "jxl/flower/flower_alpha.png"}) {
+      for (int effort : {1, 3, 5, 6}) {
+        if (effort != 1) {
+          params.push_back(
+              StreamingEncodingTestParam{file, effort, 1.0, 1, -1});
+          params.push_back(
+              StreamingEncodingTestParam{file, effort, 4.0, 1, -1});
+        }
+        for (auto group_size : {-1, 0}) {
+          for (float palette_percent : {-1, 50, 100}) {
+            params.push_back(StreamingEncodingTestParam{
+                file, effort, 0.0, group_size, palette_percent});
+          }
+        }
+      }
+    }
+    return params;
+  }
+};
+
+std::ostream& operator<<(std::ostream& out, StreamingEncodingTestParam p) {
+  out << p.file << "-";
+  out << "e" << p.effort;
+  if (p.distance == 0) {
+    out << "Lossless";
+    out << "G" << p.group_size << "P" << p.palette_percent;
+  } else {
+    out << "D" << p.distance;
+  }
+  return out;
+}
+
+class JxlStreamingEncodingTest
+    : public ::testing::TestWithParam<StreamingEncodingTestParam> {};
+
 // This is broken on mingw32, so we only enable it for x86_64 now.
-TEST(JxlTest, JXL_X86_64_TEST(StreamingSamePixels)) {
-  const std::vector<uint8_t> orig = ReadTestData("jxl/flower/flower.png");
+TEST_P(JxlStreamingEncodingTest, JXL_X86_64_TEST(StreamingSamePixels)) {
+  const auto param = GetParam();
 
+  const std::vector<uint8_t> orig = ReadTestData(param.file);
   jxl::test::TestImage image;
   image.DecodeFromBytes(orig);
+
   JXLCompressParams cparams;
-  cparams.distance = 1.0;
-  cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 6);
+  cparams.distance = param.distance;
+  cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, param.effort);
+  cparams.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_GROUP_SIZE, param.group_size);
+  cparams.AddFloatOption(JXL_ENC_FRAME_SETTING_CHANNEL_COLORS_GROUP_PERCENT,
+                         param.palette_percent);
   cparams.AddOption(JXL_ENC_FRAME_SETTING_USE_FULL_IMAGE_HEURISTICS, 0);
 
   ThreadPoolForTests pool(8);
@@ -1677,70 +1727,9 @@ TEST(JxlTest, JXL_X86_64_TEST(StreamingSamePixels)) {
   EXPECT_TRUE(jxl::test::SamePixels(ppf_out, ppf_out_streaming));
 }
 
-// This is broken on mingw32, so we only enable it for x86_64 now.
-TEST(JxlTest, JXL_X86_64_TEST(StreamingSamePixelsAlpha)) {
-  const std::vector<uint8_t> orig = ReadTestData("jxl/flower/flower_alpha.png");
-
-  jxl::test::TestImage image;
-  image.DecodeFromBytes(orig);
-  JXLCompressParams cparams;
-  cparams.distance = 1.0;
-  cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 6);
-  cparams.AddOption(JXL_ENC_FRAME_SETTING_USE_FULL_IMAGE_HEURISTICS, 0);
-
-  ThreadPoolForTests pool(8);
-  PackedPixelFile ppf_out;
-  Roundtrip(image.ppf(), cparams, {}, &pool, &ppf_out);
-
-  cparams.AddOption(JXL_ENC_FRAME_SETTING_BUFFERING, 3);
-  PackedPixelFile ppf_out_streaming;
-  Roundtrip(image.ppf(), cparams, {}, &pool, &ppf_out_streaming);
-
-  EXPECT_TRUE(jxl::test::SamePixels(ppf_out, ppf_out_streaming));
-}
-
-TEST(JxlTest, JXL_X86_64_TEST(StreamingSamePixelsLossless)) {
-  const std::vector<uint8_t> orig = ReadTestData("jxl/flower/flower_alpha.png");
-
-  jxl::test::TestImage image;
-  image.DecodeFromBytes(orig);
-  JXLCompressParams cparams;
-  cparams.distance = 0.0;
-  cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 6);
-  cparams.AddOption(JXL_ENC_FRAME_SETTING_USE_FULL_IMAGE_HEURISTICS, 0);
-
-  ThreadPoolForTests pool(8);
-  PackedPixelFile ppf_out;
-  Roundtrip(image.ppf(), cparams, {}, &pool, &ppf_out);
-
-  cparams.AddOption(JXL_ENC_FRAME_SETTING_BUFFERING, 3);
-  PackedPixelFile ppf_out_streaming;
-  Roundtrip(image.ppf(), cparams, {}, &pool, &ppf_out_streaming);
-
-  EXPECT_TRUE(jxl::test::SamePixels(ppf_out, ppf_out_streaming));
-}
-
-TEST(JxlTest, JXL_X86_64_TEST(StreamingSamePixelsLosslessDifferentGroupSize)) {
-  const std::vector<uint8_t> orig = ReadTestData("jxl/flower/flower_alpha.png");
-
-  jxl::test::TestImage image;
-  image.DecodeFromBytes(orig);
-  JXLCompressParams cparams;
-  cparams.distance = 0.0;
-  cparams.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_GROUP_SIZE, 0);
-  cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 6);
-  cparams.AddOption(JXL_ENC_FRAME_SETTING_USE_FULL_IMAGE_HEURISTICS, 0);
-
-  ThreadPoolForTests pool(8);
-  PackedPixelFile ppf_out;
-  Roundtrip(image.ppf(), cparams, {}, &pool, &ppf_out);
-
-  cparams.AddOption(JXL_ENC_FRAME_SETTING_BUFFERING, 3);
-  PackedPixelFile ppf_out_streaming;
-  Roundtrip(image.ppf(), cparams, {}, &pool, &ppf_out_streaming);
-
-  EXPECT_TRUE(jxl::test::SamePixels(ppf_out, ppf_out_streaming));
-}
+JXL_GTEST_INSTANTIATE_TEST_SUITE_P(
+    JxlStreamingTest, JxlStreamingEncodingTest,
+    testing::ValuesIn(StreamingEncodingTestParam::All()));
 
 }  // namespace
 }  // namespace jxl
