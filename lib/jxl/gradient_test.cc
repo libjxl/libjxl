@@ -9,7 +9,6 @@
 #include <stdint.h>
 
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <utility>
 #include <vector>
@@ -170,13 +169,15 @@ void TestGradient(ThreadPool* pool, uint32_t color0, uint32_t color1,
     // butteraugli_distance).
     Image3F gradient2 = Gradient2(*io2.Main().color());
 
-    std::array<float, 3> image_max;
-    Image3Max(gradient2, &image_max);
-
     // TODO(jyrki): These values used to work with 0.2, 0.2, 0.2.
-    EXPECT_LE(image_max[0], 3.15);
-    EXPECT_LE(image_max[1], 1.72);
-    EXPECT_LE(image_max[2], 5.05);
+    float image_min;
+    float image_max;
+    ImageMinMax(gradient2.Plane(0), &image_min, &image_max);
+    EXPECT_LE(image_max, 3.15);
+    ImageMinMax(gradient2.Plane(1), &image_min, &image_max);
+    EXPECT_LE(image_max, 1.72);
+    ImageMinMax(gradient2.Plane(2), &image_min, &image_max);
+    EXPECT_LE(image_max, 5.05);
   }
 }
 

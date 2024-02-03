@@ -267,6 +267,35 @@ TEST(GaussBlurTest, DISABLED_SlowTestDirac1D) {
   printf("Max abs err: %.8e\n", max_abs_err);
 }
 
+// Sets "thickness" pixels on each border to "value". This is faster than
+// initializing the entire image and overwriting valid/interior pixels.
+template <typename T>
+void SetBorder(const size_t thickness, const T value, Plane<T>* image) {
+  const size_t xsize = image->xsize();
+  const size_t ysize = image->ysize();
+  // Top: fill entire row
+  for (size_t y = 0; y < std::min(thickness, ysize); ++y) {
+    T* const JXL_RESTRICT row = image->Row(y);
+    std::fill(row, row + xsize, value);
+  }
+
+  // Bottom: fill entire row
+  for (size_t y = ysize - thickness; y < ysize; ++y) {
+    T* const JXL_RESTRICT row = image->Row(y);
+    std::fill(row, row + xsize, value);
+  }
+
+  // Left/right: fill the 'columns' on either side, but only if the image is
+  // big enough that they don't already belong to the top/bottom rows.
+  if (ysize >= 2 * thickness) {
+    for (size_t y = thickness; y < ysize - thickness; ++y) {
+      T* const JXL_RESTRICT row = image->Row(y);
+      std::fill(row, row + thickness, value);
+      std::fill(row + xsize - thickness, row + xsize, value);
+    }
+  }
+}
+
 void TestRandom(size_t xsize, size_t ysize, float min, float max, double sigma,
                 double max_l1, double max_rel) {
   printf("%4" PRIuS " x %4" PRIuS " %4.1f %4.1f sigma %.1f\n", xsize, ysize,
