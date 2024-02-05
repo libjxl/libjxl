@@ -7,7 +7,7 @@
 # Helper script to fix includes. Requires clang-tidy 18+.
 # Might need jxl_{threads_}_exports.h copied to includes/jxl
 # Also might require:
-#   `export CPLUS_INCLUDE_PATH=/usr/lib/llvm-16/lib/clang/16/include/
+#   `export CPLUS_INCLUDE_PATH=/usr/lib/llvm-16/lib/clang/16/include/`
 
 SRC=$1
 HERE=`pwd`
