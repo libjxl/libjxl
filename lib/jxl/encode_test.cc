@@ -33,6 +33,7 @@
 #include "lib/extras/packed_image.h"
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/c_callback_support.h"
+#include "lib/jxl/base/override.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/common.h"  // JXL_HIGH_PRECISION

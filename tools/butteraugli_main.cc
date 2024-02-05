@@ -33,7 +33,6 @@ namespace {
 using jpegxl::tools::ThreadPoolInternal;
 using jxl::ButteraugliParams;
 using jxl::CodecInOut;
-using jxl::ColorEncoding;
 using jxl::Image3F;
 using jxl::ImageF;
 using jxl::Status;

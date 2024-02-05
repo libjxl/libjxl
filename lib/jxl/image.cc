@@ -13,7 +13,7 @@
 #include "lib/jxl/cache_aligned.h"
 #include "lib/jxl/simd_util.h"
 
-#if defined(MEMORY_SANITIZER) || HWY_IDE
+#if defined(MEMORY_SANITIZER)
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/sanitizers.h"
 #endif
@@ -43,7 +43,7 @@ PlaneBase::PlaneBase(const size_t xsize, const size_t ysize,
 }
 
 void PlaneBase::InitializePadding(const size_t sizeof_t) {
-#if defined(MEMORY_SANITIZER) || HWY_IDE
+#if defined(MEMORY_SANITIZER)
   if (xsize_ == 0 || ysize_ == 0) return;
 
   const size_t vec_size = MaxVectorSize();
