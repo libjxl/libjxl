@@ -17,7 +17,7 @@ permissions:
 jobs:
   cross_compile_ubuntu:
     name: Cross-compiling ${{ matrix.build_target }} ${{ matrix.variant }}
-    runs-on: [ubuntu-22.04]
+    runs-on: [ubuntu-latest]
     container:
       image: debian:bookworm
     strategy:
