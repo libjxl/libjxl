@@ -72,7 +72,7 @@ Status VerifyInput(const PackedPixelFile& ppf) {
 
 Status GetColorEncoding(const PackedPixelFile& ppf,
                         ColorEncoding* color_encoding) {
-  if (!ppf.icc.empty()) {
+  if (ppf.primary_color_representation == PackedPixelFile::kIccIsPrimary) {
     IccBytes icc = ppf.icc;
     JXL_RETURN_IF_ERROR(
         color_encoding->SetICC(std::move(icc), JxlGetDefaultCms()));
