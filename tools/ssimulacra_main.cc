@@ -6,9 +6,11 @@
 #include <stdio.h>
 
 #include "lib/extras/codec.h"
-#include "lib/jxl/color_management.h"
+// TODO(eustas): we should, but we can't?
+// #include "lib/jxl/base/span.h"
+#include <jxl/cms.h>
+
 #include "lib/jxl/image_bundle.h"
-#include "lib/jxl/jxl_cms.h"
 #include "tools/file_io.h"
 #include "tools/ssimulacra.h"
 
@@ -39,8 +41,8 @@ int Run(int argc, char** argv) {
   for (size_t i = 0; i < 2; ++i) {
     std::vector<uint8_t> encoded;
     JXL_CHECK(jpegxl::tools::ReadFile(argv[input_arg + i], &encoded));
-    JXL_CHECK(jxl::SetFromBytes(jxl::Span<const uint8_t>(encoded),
-                                jxl::extras::ColorHints(), &io[i]));
+    JXL_CHECK(jxl::SetFromBytes(jxl::Bytes(encoded), jxl::extras::ColorHints(),
+                                &io[i]));
   }
   jxl::ImageBundle& ib1 = io[0].Main();
   jxl::ImageBundle& ib2 = io[1].Main();

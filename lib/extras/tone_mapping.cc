@@ -7,12 +7,13 @@
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/extras/tone_mapping.cc"
+#include <jxl/cms.h>
+
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 
-#include "lib/jxl/dec_tone_mapping-inl.h"
+#include "lib/jxl/cms/tone_mapping-inl.h"
 #include "lib/jxl/image_bundle.h"
-#include "lib/jxl/jxl_cms.h"
 
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
@@ -31,9 +32,9 @@ Status ToneMapFrame(const std::pair<float, float> display_nits,
 
   ColorEncoding linear_rec2020;
   linear_rec2020.SetColorSpace(ColorSpace::kRGB);
-  linear_rec2020.primaries = Primaries::k2100;
-  linear_rec2020.white_point = WhitePoint::kD65;
-  linear_rec2020.tf.SetTransferFunction(TransferFunction::kLinear);
+  JXL_RETURN_IF_ERROR(linear_rec2020.SetPrimariesType(Primaries::k2100));
+  JXL_RETURN_IF_ERROR(linear_rec2020.SetWhitePointType(WhitePoint::kD65));
+  linear_rec2020.Tf().SetTransferFunction(TransferFunction::kLinear);
   JXL_RETURN_IF_ERROR(linear_rec2020.CreateICC());
   JXL_RETURN_IF_ERROR(
       ib->TransformTo(linear_rec2020, *JxlGetDefaultCms(), pool));
@@ -69,9 +70,9 @@ Status GamutMapFrame(ImageBundle* const ib, float preserve_saturation,
 
   ColorEncoding linear_rec2020;
   linear_rec2020.SetColorSpace(ColorSpace::kRGB);
-  linear_rec2020.primaries = Primaries::k2100;
-  linear_rec2020.white_point = WhitePoint::kD65;
-  linear_rec2020.tf.SetTransferFunction(TransferFunction::kLinear);
+  JXL_RETURN_IF_ERROR(linear_rec2020.SetPrimariesType(Primaries::k2100));
+  JXL_RETURN_IF_ERROR(linear_rec2020.SetWhitePointType(WhitePoint::kD65));
+  linear_rec2020.Tf().SetTransferFunction(TransferFunction::kLinear);
   JXL_RETURN_IF_ERROR(linear_rec2020.CreateICC());
   JXL_RETURN_IF_ERROR(
       ib->TransformTo(linear_rec2020, *JxlGetDefaultCms(), pool));

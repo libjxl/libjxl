@@ -73,8 +73,7 @@ int main(int argc, const char** argv) {
   color_hints.Add("color_space", "RGB_D65_202_Rel_HLG");
   std::vector<uint8_t> encoded;
   JXL_CHECK(jpegxl::tools::ReadFile(input_filename, &encoded));
-  JXL_CHECK(jxl::SetFromBytes(jxl::Span<const uint8_t>(encoded), color_hints,
-                              &image, &pool));
+  JXL_CHECK(jxl::SetFromBytes(jxl::Bytes(encoded), color_hints, &image, &pool));
   // Ensures that conversions to linear by JxlCms will not apply the OOTF as we
   // apply it ourselves to control the subsequent gamut mapping.
   image.metadata.m.SetIntensityTarget(301);
@@ -85,14 +84,12 @@ int main(int argc, const char** argv) {
   image.metadata.m.SetIntensityTarget(target_nits);
 
   jxl::ColorEncoding c_out = image.metadata.m.color_encoding;
-  if (pq) {
-    c_out.tf.SetTransferFunction(jxl::TransferFunction::kPQ);
-  } else {
-    c_out.tf.SetTransferFunction(jxl::TransferFunction::kSRGB);
-  }
+  jxl::cms::TransferFunction tf =
+      pq ? jxl::TransferFunction::kPQ : jxl::TransferFunction::kSRGB;
+  c_out.Tf().SetTransferFunction(tf);
   JXL_CHECK(c_out.CreateICC());
   JXL_CHECK(jpegxl::tools::TransformCodecInOutTo(image, c_out, &pool));
   image.metadata.m.color_encoding = c_out;
-  JXL_CHECK(jxl::Encode(image, output_filename, &encoded, &pool));
+  JXL_CHECK(jpegxl::tools::Encode(image, output_filename, &encoded, &pool));
   JXL_CHECK(jpegxl::tools::WriteFile(output_filename, encoded));
 }

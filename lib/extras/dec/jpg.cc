@@ -242,7 +242,11 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes,
     if (nbcomp != 1 && nbcomp != 3) {
       return failure("unsupported number of components in JPEG");
     }
-    if (!ReadICCProfile(&cinfo, &ppf->icc)) {
+    if (ReadICCProfile(&cinfo, &ppf->icc)) {
+      ppf->primary_color_representation = PackedPixelFile::kIccIsPrimary;
+    } else {
+      ppf->primary_color_representation =
+          PackedPixelFile::kColorEncodingIsPrimary;
       ppf->icc.clear();
       // Default to SRGB
       // Actually, (cinfo.output_components == nbcomp) will be checked after

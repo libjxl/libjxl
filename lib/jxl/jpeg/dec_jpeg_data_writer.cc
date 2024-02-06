@@ -8,13 +8,17 @@
 #include <stdlib.h>
 #include <string.h> /* for memset, memcpy */
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <deque>
 #include <string>
 #include <vector>
 
 #include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/byte_order.h"
-#include "lib/jxl/common.h"
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/frame_dimensions.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/jpeg/dec_jpeg_serialization_state.h"
 #include "lib/jxl/jpeg/jpeg_data.h"
@@ -35,9 +39,6 @@ const int kJpegPrecision = 8;
 
 // JpegBitWriter: buffer size
 const size_t kJpegBitWriterChunkSize = 16384;
-
-// DCTCodingState: maximum number of correction bits to buffer
-const int kJPEGMaxCorrectionBits = 1u << 16;
 
 // Returns non-zero if and only if x has a zero byte, i.e. one of
 // x & 0xff, x & 0xff00, ..., x & 0xff00000000000000 is zero.
@@ -183,7 +184,7 @@ void DCTCodingStateInit(DCTCodingState* s) {
   s->eob_run_ = 0;
   s->cur_ac_huff_ = nullptr;
   s->refinement_bits_.clear();
-  s->refinement_bits_.reserve(kJPEGMaxCorrectionBits);
+  s->refinement_bits_.reserve(64);
 }
 
 static JXL_INLINE void WriteSymbol(int symbol, HuffmanCodeTable* table,
@@ -202,6 +203,7 @@ static JXL_INLINE void WriteSymbolBits(int symbol, HuffmanCodeTable* table,
 // bit writer.
 static JXL_INLINE void Flush(DCTCodingState* s, JpegBitWriter* bw) {
   if (s->eob_run_ > 0) {
+    Reserve(bw, 16);
     int nbits = FloorLog2Nonzero<uint32_t>(s->eob_run_);
     int symbol = nbits << 4u;
     WriteSymbol(symbol, s->cur_ac_huff_, bw);
@@ -210,28 +212,63 @@ static JXL_INLINE void Flush(DCTCodingState* s, JpegBitWriter* bw) {
     }
     s->eob_run_ = 0;
   }
-  for (size_t i = 0; i < s->refinement_bits_.size(); ++i) {
-    WriteBits(bw, 1, s->refinement_bits_[i]);
+  const size_t kStride = 124;  // (515 - 16) / 2 / 2
+  size_t num_words = s->refinement_bits_count_ >> 4;
+  size_t i = 0;
+  while (i < num_words) {
+    size_t limit = std::min(i + kStride, num_words);
+    Reserve(bw, 512);
+    for (; i < limit; ++i) {
+      WriteBits(bw, 16, s->refinement_bits_[i]);
+    }
+  }
+  Reserve(bw, 16);
+  size_t tail = s->refinement_bits_count_ & 0xF;
+  if (tail) {
+    WriteBits(bw, tail, s->refinement_bits_.back());
   }
   s->refinement_bits_.clear();
+  s->refinement_bits_count_ = 0;
 }
 
 // Buffer some more data at the end-of-band (the last non-zero or newly
 // non-zero coefficient within the [Ss, Se] spectral band).
 static JXL_INLINE void BufferEndOfBand(DCTCodingState* s,
                                        HuffmanCodeTable* ac_huff,
-                                       const std::vector<int>* new_bits,
+                                       const int* new_bits_array,
+                                       size_t new_bits_count,
                                        JpegBitWriter* bw) {
   if (s->eob_run_ == 0) {
     s->cur_ac_huff_ = ac_huff;
   }
   ++s->eob_run_;
-  if (new_bits) {
-    s->refinement_bits_.insert(s->refinement_bits_.end(), new_bits->begin(),
-                               new_bits->end());
+  if (new_bits_count) {
+    uint64_t new_bits = 0;
+    for (size_t i = 0; i < new_bits_count; ++i) {
+      new_bits = (new_bits << 1) | new_bits_array[i];
+    }
+    size_t tail = s->refinement_bits_count_ & 0xF;
+    if (tail) {  // First stuff the tail item
+      size_t stuff_bits_count = std::min(16 - tail, new_bits_count);
+      uint16_t stuff_bits = new_bits >> (new_bits_count - stuff_bits_count);
+      stuff_bits &= ((1u << stuff_bits_count) - 1);
+      s->refinement_bits_.back() =
+          (s->refinement_bits_.back() << stuff_bits_count) | stuff_bits;
+      new_bits_count -= stuff_bits_count;
+      s->refinement_bits_count_ += stuff_bits_count;
+    }
+    while (new_bits_count >= 16) {
+      s->refinement_bits_.push_back(new_bits >> (new_bits_count - 16));
+      new_bits_count -= 16;
+      s->refinement_bits_count_ += 16;
+    }
+    if (new_bits_count) {
+      s->refinement_bits_.push_back(new_bits & ((1u << new_bits_count) - 1));
+      s->refinement_bits_count_ += new_bits_count;
+    }
   }
-  if (s->eob_run_ == 0x7FFF ||
-      s->refinement_bits_.size() > kJPEGMaxCorrectionBits - kDCTBlockSize + 1) {
+
+  if (s->eob_run_ == 0x7FFF) {
     Flush(s, bw);
   }
 }
@@ -610,7 +647,7 @@ bool EncodeDCTBlockProgressive(const coeff_t* coeffs, HuffmanCodeTable* dc_huff,
     }
   }
   if (r > 0) {
-    BufferEndOfBand(coding_state, ac_huff, nullptr, bw);
+    BufferEndOfBand(coding_state, ac_huff, nullptr, 0, bw);
     if (!eob_run_allowed) {
       Flush(coding_state, bw);
     }
@@ -640,8 +677,8 @@ bool EncodeRefinementBits(const coeff_t* coeffs, HuffmanCodeTable* ac_huff,
     }
   }
   int r = 0;
-  std::vector<int> refinement_bits;
-  refinement_bits.reserve(kDCTBlockSize);
+  int refinement_bits[kDCTBlockSize];
+  size_t refinement_bits_count = 0;
   for (int k = Ss; k <= Se; k++) {
     if (abs_values[k] == 0) {
       r++;
@@ -651,13 +688,13 @@ bool EncodeRefinementBits(const coeff_t* coeffs, HuffmanCodeTable* ac_huff,
       Flush(coding_state, bw);
       WriteSymbol(0xf0, ac_huff, bw);
       r -= 16;
-      for (int bit : refinement_bits) {
-        WriteBits(bw, 1, bit);
+      for (size_t i = 0; i < refinement_bits_count; ++i) {
+        WriteBits(bw, 1, refinement_bits[i]);
       }
-      refinement_bits.clear();
+      refinement_bits_count = 0;
     }
     if (abs_values[k] > 1) {
-      refinement_bits.push_back(abs_values[k] & 1u);
+      refinement_bits[refinement_bits_count++] = abs_values[k] & 1u;
       continue;
     }
     Flush(coding_state, bw);
@@ -665,36 +702,20 @@ bool EncodeRefinementBits(const coeff_t* coeffs, HuffmanCodeTable* ac_huff,
     int new_non_zero_bit = (coeffs[kJPEGNaturalOrder[k]] < 0) ? 0 : 1;
     WriteSymbol(symbol, ac_huff, bw);
     WriteBits(bw, 1, new_non_zero_bit);
-    for (int bit : refinement_bits) {
-      WriteBits(bw, 1, bit);
+    for (size_t i = 0; i < refinement_bits_count; ++i) {
+      WriteBits(bw, 1, refinement_bits[i]);
     }
-    refinement_bits.clear();
+    refinement_bits_count = 0;
     r = 0;
   }
-  if (r > 0 || !refinement_bits.empty()) {
-    BufferEndOfBand(coding_state, ac_huff, &refinement_bits, bw);
+  if (r > 0 || refinement_bits_count) {
+    BufferEndOfBand(coding_state, ac_huff, refinement_bits,
+                    refinement_bits_count, bw);
     if (!eob_run_allowed) {
       Flush(coding_state, bw);
     }
   }
   return true;
-}
-
-size_t NumHistograms(const JPEGData& jpg) {
-  size_t num = 0;
-  for (const auto& si : jpg.scan_info) {
-    num += si.num_components;
-  }
-  return num;
-}
-
-size_t HistogramIndex(const JPEGData& jpg, size_t scan_index,
-                      size_t component_index) {
-  size_t idx = 0;
-  for (size_t i = 0; i < scan_index; ++i) {
-    idx += jpg.scan_info[i].num_components;
-  }
-  return idx + component_index;
 }
 
 template <int kMode>
@@ -756,7 +777,7 @@ SerializationStatus JXL_NOINLINE DoEncodeScan(const JPEGData& jpg,
   // DC-only is defined by [0..0] spectral range.
   const bool want_ac = ((Ss != 0) || (Se != 0));
   const bool want_dc = (Ss == 0);
-  // TODO: support streaming decoding again.
+  // TODO(user): support streaming decoding again.
   const bool complete_ac = true;
   const bool has_ac = true;
   if (want_ac && !has_ac) return SerializationStatus::NEEDS_MORE_INPUT;
@@ -807,8 +828,6 @@ SerializationStatus JXL_NOINLINE DoEncodeScan(const JPEGData& jpg,
         }
         int n_blocks_y = is_interleaved ? c.v_samp_factor : 1;
         int n_blocks_x = is_interleaved ? c.h_samp_factor : 1;
-        // compressed size per block cannot be more than 512 bytes per component
-        Reserve(bw, 512 * n_blocks_y * n_blocks_x);
         for (int iy = 0; iy < n_blocks_y; ++iy) {
           for (int ix = 0; ix < n_blocks_x; ++ix) {
             int block_y = ss.mcu_y * n_blocks_y + iy;
@@ -827,6 +846,8 @@ SerializationStatus JXL_NOINLINE DoEncodeScan(const JPEGData& jpg,
             }
             const coeff_t* coeffs = &c.coeffs[block_idx << 6];
             bool ok;
+            // compressed size per block cannot be more than 512 bytes
+            Reserve(bw, 512);
             if (kMode == 0) {
               ok = EncodeDCTBlockSequential(coeffs, dc_huff, ac_huff,
                                             num_zero_runs,

@@ -6,13 +6,18 @@
 // This example encodes a file containing a floating point image to another
 // file containing JPEG XL image with a single frame.
 
+#include <jxl/codestream_header.h>
+#include <jxl/color_encoding.h>
 #include <jxl/encode.h>
 #include <jxl/encode_cxx.h>
 #include <jxl/thread_parallel_runner.h>
 #include <jxl/thread_parallel_runner_cxx.h>
+#include <jxl/types.h>
 #include <limits.h>
 #include <string.h>
 
+#include <cstdint>
+#include <cstdio>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -59,6 +64,7 @@ bool ReadPFM(const char* filename, std::vector<float>* pixels, uint32_t* xsize,
 
   size_t readsize = fread(data.data(), 1, size, file);
   if ((long)readsize != size) {
+    fclose(file);
     return false;
   }
   if (fclose(file) != 0) {

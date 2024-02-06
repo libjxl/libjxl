@@ -16,10 +16,10 @@ permissions:
 
 jobs:
   cross_compile_ubuntu:
-    name: Cross-compiling ${{ matrix.build_target }} ${{ matrix.variant }} 
+    name: Cross-compiling ${{ matrix.build_target }} ${{ matrix.variant }}
     runs-on: [ubuntu-22.04]
     container:
-      image: debian:bullseye
+      image: debian:bookworm
     strategy:
       fail-fast: false
       matrix:
@@ -31,6 +31,11 @@ jobs:
       BUILD_DIR: build
 
     steps:
+    - name: Harden Runner
+      uses: step-security/harden-runner@63c24ba6bd7ba022e95695ff85de572c04a18142 # v2.7.0
+      with:
+        egress-policy: audit
+
     - name: Setup apt
       shell: bash
       run: |
@@ -119,7 +124,7 @@ jobs:
         echo "CC=${{ matrix.c_compiler || 'clang-11' }}" >> $GITHUB_ENV
         echo "CXX=${{ matrix.cxx_compiler || 'clang++-11' }}" >> $GITHUB_ENV
     - name: Checkout the source
-      uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac # v4.0.0
+      uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       with:
         submodules: true
         fetch-depth: 1

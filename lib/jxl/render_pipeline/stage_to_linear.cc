@@ -10,9 +10,9 @@
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 
-#include "lib/jxl/dec_tone_mapping-inl.h"
+#include "lib/jxl/cms/tone_mapping-inl.h"
+#include "lib/jxl/cms/transfer_functions-inl.h"
 #include "lib/jxl/sanitizers.h"
-#include "lib/jxl/transfer_functions-inl.h"
 
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
@@ -73,7 +73,7 @@ struct OpHlg {
       HWY_ALIGN float vals[MaxLanes(d)];
       Store(*val, d, vals);
       for (size_t i = 0; i < Lanes(d); ++i) {
-        vals[i] = TF_HLG().DisplayFromEncoded(vals[i]);
+        vals[i] = TF_HLG_Base::DisplayFromEncoded(vals[i]);
       }
       *val = Load(d, vals);
     }
@@ -162,20 +162,20 @@ std::unique_ptr<ToLinearStage<Op>> MakeToLinearStage(Op&& op) {
 
 std::unique_ptr<RenderPipelineStage> GetToLinearStage(
     const OutputEncodingInfo& output_encoding_info) {
-  if (output_encoding_info.color_encoding.tf.IsLinear()) {
+  const auto& tf = output_encoding_info.color_encoding.Tf();
+  if (tf.IsLinear()) {
     return MakeToLinearStage(MakePerChannelOp(OpLinear()));
-  } else if (output_encoding_info.color_encoding.tf.IsSRGB()) {
+  } else if (tf.IsSRGB()) {
     return MakeToLinearStage(MakePerChannelOp(OpRgb()));
-  } else if (output_encoding_info.color_encoding.tf.IsPQ()) {
+  } else if (tf.IsPQ()) {
     return MakeToLinearStage(
         MakePerChannelOp(OpPq(output_encoding_info.orig_intensity_target)));
-  } else if (output_encoding_info.color_encoding.tf.IsHLG()) {
+  } else if (tf.IsHLG()) {
     return MakeToLinearStage(OpHlg(output_encoding_info.luminances,
                                    output_encoding_info.orig_intensity_target));
-  } else if (output_encoding_info.color_encoding.tf.Is709()) {
+  } else if (tf.Is709()) {
     return MakeToLinearStage(MakePerChannelOp(Op709()));
-  } else if (output_encoding_info.color_encoding.tf.IsGamma() ||
-             output_encoding_info.color_encoding.tf.IsDCI()) {
+  } else if (tf.have_gamma || tf.IsDCI()) {
     return MakeToLinearStage(
         MakePerChannelOp(OpGamma{1.f / output_encoding_info.inverse_gamma}));
   } else {

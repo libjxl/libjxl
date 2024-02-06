@@ -10,6 +10,7 @@
 #include <stddef.h>
 
 #include <memory>
+#include <vector>
 
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
@@ -26,6 +27,7 @@ class JxlButteraugliComparator : public Comparator {
                                     const JxlCmsInterface& cms);
 
   Status SetReferenceImage(const ImageBundle& ref) override;
+  Status SetLinearReferenceImage(const Image3F& linear);
 
   Status CompareWith(const ImageBundle& actual, ImageF* diffmap,
                      float* score) override;

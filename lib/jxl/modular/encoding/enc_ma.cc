@@ -19,11 +19,12 @@
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 
+#include "lib/jxl/base/fast_math-inl.h"
 #include "lib/jxl/base/random.h"
 #include "lib/jxl/enc_ans.h"
-#include "lib/jxl/fast_math-inl.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
 #include "lib/jxl/modular/options.h"
+#include "lib/jxl/pack_signed.h"
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
@@ -921,7 +922,7 @@ void CollectPixelSamples(const Image &image, const ModularOptions &options,
   Rng rng(group_id);
   // Sample 10% of the final number of samples for property quantization.
   float fraction = std::min(options.nb_repeats * 0.1, 0.99);
-  Rng::GeometricDistribution dist(fraction);
+  Rng::GeometricDistribution dist = Rng::MakeGeometric(fraction);
   size_t total_pixels = 0;
   std::vector<size_t> channel_ids;
   for (size_t i = 0; i < image.channel.size(); i++) {

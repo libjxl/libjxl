@@ -4,39 +4,41 @@
 // license that can be found in the LICENSE file.
 #include "tools/benchmark/benchmark_codec_jxl.h"
 
+#include <jxl/color_encoding.h>
+#include <jxl/encode.h>
 #include <jxl/stats.h>
-#include <jxl/thread_parallel_runner_cxx.h>
+#include <jxl/types.h>
 
 #include <cstdint>
 #include <cstdlib>
-#include <functional>
+#include <cstring>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "lib/extras/codec.h"
 #include "lib/extras/dec/jxl.h"
 #include "lib/extras/enc/apng.h"
 #include "lib/extras/enc/encode.h"
-#include "lib/extras/enc/jpg.h"
 #include "lib/extras/enc/jxl.h"
-#include "lib/extras/packed_image_convert.h"
+#include "lib/extras/packed_image.h"
 #include "lib/extras/time.h"
-#include "lib/jxl/base/data_parallel.h"
-#include "lib/jxl/base/override.h"
-#include "lib/jxl/base/span.h"
-#include "lib/jxl/codec_in_out.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/image.h"
+#include "tools/benchmark/benchmark_args.h"
+#include "tools/benchmark/benchmark_codec.h"
 #include "tools/benchmark/benchmark_file_io.h"
 #include "tools/benchmark/benchmark_stats.h"
-#include "tools/cmdline.h"
+#include "tools/file_io.h"
+#include "tools/speed_stats.h"
+#include "tools/thread_pool_internal.h"
 
 namespace jpegxl {
 namespace tools {
 
 using ::jxl::Image3F;
 using ::jxl::extras::EncodedImage;
-using ::jxl::extras::Encoder;
 using ::jxl::extras::JXLCompressParams;
 using ::jxl::extras::JXLDecompressParams;
 using ::jxl::extras::PackedFrame;
@@ -230,6 +232,18 @@ class JxlCodec : public ImageCodec {
         return JXL_FAILURE("Invalid epf value");
       }
       cparams_.AddOption(JXL_ENC_FRAME_SETTING_EPF, val);
+    } else if (param.substr(0, 2) == "fi") {
+      val = strtol(param.substr(2).c_str(), nullptr, 10);
+      if (val != 0 && val != 1) {
+        return JXL_FAILURE("Invalid option value");
+      }
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_USE_FULL_IMAGE_HEURISTICS, val);
+    } else if (param.substr(0, 3) == "buf") {
+      val = strtol(param.substr(3).c_str(), nullptr, 10);
+      if (val > 3) {
+        return JXL_FAILURE("Invalid buffering value");
+      }
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_BUFFERING, val);
     } else if (param.substr(0, 16) == "faster_decoding=") {
       val = strtol(param.substr(16).c_str(), nullptr, 10);
       cparams_.AddOption(JXL_ENC_FRAME_SETTING_DECODING_SPEED, val);
@@ -239,13 +253,9 @@ class JxlCodec : public ImageCodec {
     return true;
   }
 
-  Status Compress(const std::string& filename, const CodecInOut* io,
+  Status Compress(const std::string& filename, const PackedPixelFile& ppf,
                   ThreadPool* pool, std::vector<uint8_t>* compressed,
                   jpegxl::tools::SpeedStats* speed_stats) override {
-    PackedPixelFile ppf;
-    JxlPixelFormat format{0, JXL_TYPE_FLOAT, JXL_NATIVE_ENDIAN, 0};
-    JXL_RETURN_IF_ERROR(ConvertCodecInOutToPackedPixelFile(
-        *io, format, io->Main().c_current(), pool, &ppf));
     cparams_.runner = pool->runner();
     cparams_.runner_opaque = pool->runner_opaque();
     cparams_.distance = butteraugli_target_;
@@ -278,27 +288,25 @@ class JxlCodec : public ImageCodec {
 
   Status Decompress(const std::string& filename,
                     const Span<const uint8_t> compressed, ThreadPool* pool,
-                    CodecInOut* io,
+                    PackedPixelFile* ppf,
                     jpegxl::tools::SpeedStats* speed_stats) override {
     dparams_.runner = pool->runner();
     dparams_.runner_opaque = pool->runner_opaque();
-    JxlDataType data_type = uint8_ ? JXL_TYPE_UINT8 : JXL_TYPE_FLOAT;
-    dparams_.accepted_formats = {{3, data_type, JXL_NATIVE_ENDIAN, 0},
-                                 {4, data_type, JXL_NATIVE_ENDIAN, 0}};
+    JxlDataType data_type = uint8_ ? JXL_TYPE_UINT8 : JXL_TYPE_UINT16;
+    dparams_.accepted_formats = {{3, data_type, JXL_LITTLE_ENDIAN, 0},
+                                 {4, data_type, JXL_LITTLE_ENDIAN, 0}};
     // By default, the decoder will undo exif orientation, giving an image
     // with identity exif rotation as result. However, the benchmark does
     // not undo exif orientation of the originals, and compares against the
     // originals, so we must set the option to keep the original orientation
     // instead.
     dparams_.keep_orientation = true;
-    PackedPixelFile ppf;
     size_t decoded_bytes;
     const double start = jxl::Now();
     JXL_RETURN_IF_ERROR(jxl::extras::DecodeImageJXL(
-        compressed.data(), compressed.size(), dparams_, &decoded_bytes, &ppf));
+        compressed.data(), compressed.size(), dparams_, &decoded_bytes, ppf));
     const double end = jxl::Now();
     speed_stats->NotifyElapsed(end - start);
-    JXL_RETURN_IF_ERROR(ConvertPackedPixelFileToCodecInOut(ppf, pool, io));
     return true;
   }
 

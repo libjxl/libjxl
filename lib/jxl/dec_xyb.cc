@@ -13,12 +13,15 @@
 #include <hwy/highway.h>
 
 #include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/matrix_ops.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/cms/jxl_cms_internal.h"
+#include "lib/jxl/cms/opsin_params.h"
+#include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/dec_group_border.h"
 #include "lib/jxl/dec_xyb-inl.h"
 #include "lib/jxl/fields.h"
 #include "lib/jxl/image.h"
-#include "lib/jxl/matrix_ops.h"
 #include "lib/jxl/opsin_params.h"
 #include "lib/jxl/quantizer.h"
 #include "lib/jxl/sanitizers.h"
@@ -185,8 +188,8 @@ void FastXYBTosRGB8(const float* input[4], uint8_t* output, bool is_rgba,
 void OpsinParams::Init(float intensity_target) {
   InitSIMDInverseMatrix(GetOpsinAbsorbanceInverseMatrix(), inverse_opsin_matrix,
                         intensity_target);
-  memcpy(opsin_biases, kNegOpsinAbsorbanceBiasRGB,
-         sizeof(kNegOpsinAbsorbanceBiasRGB));
+  memcpy(opsin_biases, jxl::cms::kNegOpsinAbsorbanceBiasRGB.data(),
+         sizeof(jxl::cms::kNegOpsinAbsorbanceBiasRGB));
   memcpy(quant_biases, kDefaultQuantBias, sizeof(kDefaultQuantBias));
   for (size_t c = 0; c < 4; c++) {
     opsin_biases_cbrt[c] = cbrtf(opsin_biases[c]);
@@ -198,12 +201,12 @@ bool CanOutputToColorEncoding(const ColorEncoding& c_desired) {
     return false;
   }
   // TODO(veluca): keep in sync with dec_reconstruct.cc
-  if (!c_desired.tf.IsPQ() && !c_desired.tf.IsSRGB() &&
-      !c_desired.tf.IsGamma() && !c_desired.tf.IsLinear() &&
-      !c_desired.tf.IsHLG() && !c_desired.tf.IsDCI() && !c_desired.tf.Is709()) {
+  const auto& tf = c_desired.Tf();
+  if (!tf.IsPQ() && !tf.IsSRGB() && !tf.have_gamma && !tf.IsLinear() &&
+      !tf.IsHLG() && !tf.IsDCI() && !tf.Is709()) {
     return false;
   }
-  if (c_desired.IsGray() && c_desired.white_point != WhitePoint::kD65) {
+  if (c_desired.IsGray() && c_desired.GetWhitePointType() != WhitePoint::kD65) {
     // TODO(veluca): figure out what should happen here.
     return false;
   }
@@ -237,8 +240,8 @@ Status OutputEncodingInfo::MaybeSetColorEncoding(
     const ColorEncoding& c_desired) {
   if (c_desired.GetColorSpace() == ColorSpace::kXYB &&
       ((color_encoding.GetColorSpace() == ColorSpace::kRGB &&
-        color_encoding.primaries != Primaries::kSRGB) ||
-       color_encoding.tf.IsPQ())) {
+        color_encoding.GetPrimariesType() != Primaries::kSRGB) ||
+       color_encoding.Tf().IsPQ())) {
     return false;
   }
   if (!xyb_encoded && !CanOutputToColorEncoding(c_desired)) {
@@ -249,6 +252,8 @@ Status OutputEncodingInfo::MaybeSetColorEncoding(
 
 Status OutputEncodingInfo::SetColorEncoding(const ColorEncoding& c_desired) {
   color_encoding = c_desired;
+  linear_color_encoding = color_encoding;
+  linear_color_encoding.Tf().SetTransferFunction(TransferFunction::kLinear);
   color_encoding_is_original = orig_color_encoding.SameColorEncoding(c_desired);
 
   // Compute the opsin inverse matrix and luminances based on primaries and
@@ -258,29 +263,29 @@ Status OutputEncodingInfo::SetColorEncoding(const ColorEncoding& c_desired) {
   memcpy(inverse_matrix, orig_inverse_matrix, sizeof(inverse_matrix));
   constexpr float kSRGBLuminances[3] = {0.2126, 0.7152, 0.0722};
   memcpy(luminances, kSRGBLuminances, sizeof(luminances));
-  if ((c_desired.primaries != Primaries::kSRGB ||
-       c_desired.white_point != WhitePoint::kD65) &&
+  if ((c_desired.GetPrimariesType() != Primaries::kSRGB ||
+       c_desired.GetWhitePointType() != WhitePoint::kD65) &&
       !c_desired.IsGray()) {
     float srgb_to_xyzd50[9];
     const auto& srgb = ColorEncoding::SRGB(/*is_gray=*/false);
-    JXL_CHECK(PrimariesToXYZD50(
-        srgb.GetPrimaries().r.x, srgb.GetPrimaries().r.y,
-        srgb.GetPrimaries().g.x, srgb.GetPrimaries().g.y,
-        srgb.GetPrimaries().b.x, srgb.GetPrimaries().b.y,
-        srgb.GetWhitePoint().x, srgb.GetWhitePoint().y, srgb_to_xyzd50));
+    PrimariesCIExy p = srgb.GetPrimaries();
+    CIExy w = srgb.GetWhitePoint();
+    JXL_CHECK(PrimariesToXYZD50(p.r.x, p.r.y, p.g.x, p.g.y, p.b.x, p.b.y, w.x,
+                                w.y, srgb_to_xyzd50));
     float original_to_xyz[3][3];
-    JXL_RETURN_IF_ERROR(PrimariesToXYZ(
-        c_desired.GetPrimaries().r.x, c_desired.GetPrimaries().r.y,
-        c_desired.GetPrimaries().g.x, c_desired.GetPrimaries().g.y,
-        c_desired.GetPrimaries().b.x, c_desired.GetPrimaries().b.y,
-        c_desired.GetWhitePoint().x, c_desired.GetWhitePoint().y,
-        &original_to_xyz[0][0]));
+    p = c_desired.GetPrimaries();
+    w = c_desired.GetWhitePoint();
+    if (!PrimariesToXYZ(p.r.x, p.r.y, p.g.x, p.g.y, p.b.x, p.b.y, w.x, w.y,
+                        &original_to_xyz[0][0])) {
+      return JXL_FAILURE("PrimariesToXYZ failed");
+    }
     memcpy(luminances, original_to_xyz[1], sizeof luminances);
     if (xyb_encoded) {
       float adapt_to_d50[9];
-      JXL_RETURN_IF_ERROR(AdaptToXYZD50(c_desired.GetWhitePoint().x,
-                                        c_desired.GetWhitePoint().y,
-                                        adapt_to_d50));
+      if (!AdaptToXYZD50(c_desired.GetWhitePoint().x,
+                         c_desired.GetWhitePoint().y, adapt_to_d50)) {
+        return JXL_FAILURE("AdaptToXYZD50 failed");
+      }
       float xyzd50_to_original[9];
       Mul3x3Matrix(adapt_to_d50, &original_to_xyz[0][0], xyzd50_to_original);
       JXL_RETURN_IF_ERROR(Inv3x3Matrix(xyzd50_to_original));
@@ -312,9 +317,10 @@ Status OutputEncodingInfo::SetColorEncoding(const ColorEncoding& c_desired) {
   }
 
   // Set the inverse gamma based on color space transfer function.
-  inverse_gamma = (c_desired.tf.IsGamma() ? c_desired.tf.GetGamma()
-                   : c_desired.tf.IsDCI() ? 1.0f / 2.6f
-                                          : 1.0);
+  const auto& tf = c_desired.Tf();
+  inverse_gamma = (tf.have_gamma ? tf.GetGamma()
+                   : tf.IsDCI()  ? 1.0f / 2.6f
+                                 : 1.0);
   return true;
 }
 

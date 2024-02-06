@@ -3,6 +3,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <jxl/cms.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -14,15 +15,13 @@
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_fields.h"
-#include "lib/jxl/enc_file.h"
 #include "lib/jxl/enc_frame.h"
-#include "lib/jxl/enc_heuristics.h"
-#include "lib/jxl/jxl_cms.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
 #include "lib/jxl/modular/encoding/enc_debug_tree.h"
 #include "lib/jxl/modular/encoding/enc_ma.h"
 #include "lib/jxl/modular/encoding/encoding.h"
 #include "lib/jxl/splines.h"
+#include "lib/jxl/test_utils.h"  // TODO(eustas): cut this dependency
 #include "tools/file_io.h"
 
 namespace jpegxl {
@@ -36,7 +35,6 @@ using ::jxl::ColorCorrelationMap;
 using ::jxl::ColorEncoding;
 using ::jxl::ColorTransform;
 using ::jxl::CompressParams;
-using ::jxl::DefaultEncoderHeuristics;
 using ::jxl::FrameDimensions;
 using ::jxl::FrameInfo;
 using ::jxl::Image3F;
@@ -56,8 +54,7 @@ struct SplineData {
   std::vector<Spline> splines;
 };
 
-Splines SplinesFromSplineData(const SplineData& spline_data,
-                              const ColorCorrelationMap& cmap) {
+Splines SplinesFromSplineData(const SplineData& spline_data) {
   std::vector<QuantizedSpline> quantized_splines;
   std::vector<Spline::Point> starting_points;
   quantized_splines.reserve(spline_data.splines.size());
@@ -65,7 +62,7 @@ Splines SplinesFromSplineData(const SplineData& spline_data,
   for (const Spline& spline : spline_data.splines) {
     JXL_CHECK(!spline.control_points.empty());
     quantized_splines.emplace_back(spline, spline_data.quantization_adjustment,
-                                   cmap.YtoXRatio(0), cmap.YtoBRatio(0));
+                                   0.0, 1.0);
     starting_points.push_back(spline.control_points.front());
   }
   return Splines(spline_data.quantization_adjustment,
@@ -415,20 +412,6 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
       ParseNode(tok, tree, spline_data, cparams, W, H, io, have_next, x0, y0));
   return true;
 }
-
-class Heuristics : public DefaultEncoderHeuristics {
- public:
-  bool CustomFixedTreeLossless(const FrameDimensions& frame_dim,
-                               Tree* tree) override {
-    *tree = tree_;
-    return true;
-  }
-
-  explicit Heuristics(Tree tree) : tree_(std::move(tree)) {}
-
- private:
-  Tree tree_;
-};
 }  // namespace
 
 int JxlFromTree(const char* in, const char* out, const char* tree_out) {
@@ -477,6 +460,8 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
   cparams.channel_colors_percent = 0;
   cparams.patches = jxl::Override::kOff;
   cparams.already_downsampled = true;
+  cparams.custom_fixed_tree = tree;
+  cparams.custom_splines = SplinesFromSplineData(spline_data);
   PaddedBytes compressed;
 
   io.CheckMetadata();
@@ -492,11 +477,6 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
   writer.ZeroPadToByte();
 
   while (true) {
-    PassesEncoderState enc_state;
-    enc_state.heuristics = jxl::make_unique<Heuristics>(tree);
-    enc_state.shared.image_features.splines =
-        SplinesFromSplineData(spline_data, enc_state.shared.cmap);
-
     FrameInfo info;
     info.is_last = !have_next;
     if (!info.is_last) info.save_as_reference = 1;
@@ -505,9 +485,9 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
     io.frames[0].origin.y0 = y0;
     info.clamp = false;
 
-    JXL_RETURN_IF_ERROR(jxl::EncodeFrame(
-        cparams, info, metadata.get(), io.frames[0], &enc_state,
-        *JxlGetDefaultCms(), nullptr, &writer, nullptr));
+    JXL_RETURN_IF_ERROR(jxl::EncodeFrame(cparams, info, metadata.get(),
+                                         io.frames[0], *JxlGetDefaultCms(),
+                                         nullptr, &writer, nullptr));
     if (!have_next) break;
     tree.clear();
     spline_data.splines.clear();

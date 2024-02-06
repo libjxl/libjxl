@@ -5,25 +5,32 @@
 
 #include <stdint.h>
 
+#include <cstddef>
+
+#include "lib/jxl/base/span.h"
+#include "lib/jxl/color_encoding_internal.h"
+#include "lib/jxl/dec_ans.h"
 #include "lib/jxl/dec_bit_reader.h"
+#include "lib/jxl/fields.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/headers.h"
-#include "lib/jxl/image_bundle.h"
+#include "lib/jxl/image_metadata.h"
 #include "lib/jxl/jpeg/jpeg_data.h"
 #include "lib/jxl/loop_filter.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
 #include "lib/jxl/modular/encoding/encoding.h"
 #include "lib/jxl/modular/transform/transform.h"
+#include "lib/jxl/quantizer.h"
 
 namespace jpegxl {
 namespace tools {
 
 using ::jxl::BitReader;
+using ::jxl::Bytes;
 using ::jxl::CodecMetadata;
 using ::jxl::CustomTransformData;
 using ::jxl::ImageMetadata;
 using ::jxl::SizeHeader;
-using ::jxl::Span;
 
 int TestOneInput(const uint8_t* data, size_t size) {
   // Global parameters used by some headers.
@@ -31,7 +38,7 @@ int TestOneInput(const uint8_t* data, size_t size) {
 
   // First byte controls which header to parse.
   if (size == 0) return 0;
-  BitReader reader(Span<const uint8_t>(data + 1, size - 1));
+  BitReader reader(Bytes(data + 1, size - 1));
 #define FUZZER_CASE_HEADER(number, classname, ...) \
   case number: {                                   \
     ::jxl::classname header{__VA_ARGS__};          \

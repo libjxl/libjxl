@@ -5,14 +5,17 @@
 
 #include "tools/comparison_viewer/image_loading.h"
 
+#include <jxl/cms.h>
+
 #include <QRgb>
 #include <QThread>
+#include <cstdint>
+#include <vector>
 
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/color_hints.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_metadata.h"
-#include "lib/jxl/jxl_cms.h"
 #include "tools/file_io.h"
 #include "tools/thread_pool_internal.h"
 #include "tools/viewer/load_jxl.h"
@@ -22,9 +25,9 @@ namespace tools {
 
 using jxl::CodecInOut;
 using jxl::ColorEncoding;
+using jxl::IccBytes;
 using jxl::Image3F;
 using jxl::ImageBundle;
-using jxl::PaddedBytes;
 using jxl::Rect;
 using jxl::Span;
 using jxl::Status;
@@ -35,7 +38,7 @@ namespace {
 
 Status loadFromFile(const QString& filename, const ColorHints& color_hints,
                     CodecInOut* const decoded, ThreadPool* const pool) {
-  PaddedBytes compressed;
+  std::vector<uint8_t> compressed;
   JXL_RETURN_IF_ERROR(
       jpegxl::tools::ReadFile(filename.toStdString(), &compressed));
   const Span<const uint8_t> compressed_span(compressed);
@@ -75,18 +78,22 @@ QImage loadImage(const QString& filename, const QByteArray& targetIccProfile,
   decoded.metadata.m.SetIntensityTarget(intensityTarget);
   const ImageBundle& ib = decoded.Main();
 
-  const JxlCmsInterface& cms = *JxlGetDefaultCms();
-
   ColorEncoding targetColorSpace;
-  PaddedBytes icc;
-  icc.assign(reinterpret_cast<const uint8_t*>(targetIccProfile.data()),
-             reinterpret_cast<const uint8_t*>(targetIccProfile.data() +
-                                              targetIccProfile.size()));
-  if (!targetColorSpace.SetICC(std::move(icc), &cms)) {
+  bool use_fallback_profile = true;
+  if (!targetIccProfile.isEmpty()) {
+    IccBytes icc;
+    icc.assign(reinterpret_cast<const uint8_t*>(targetIccProfile.data()),
+               reinterpret_cast<const uint8_t*>(targetIccProfile.data() +
+                                                targetIccProfile.size()));
+    use_fallback_profile =
+        !targetColorSpace.SetICC(std::move(icc), JxlGetDefaultCms());
+  }
+  if (use_fallback_profile) {
     targetColorSpace = ColorEncoding::SRGB(ib.IsGray());
   }
   Image3F converted;
-  if (!ib.CopyTo(Rect(ib), targetColorSpace, cms, &converted, &pool)) {
+  if (!ib.CopyTo(Rect(ib), targetColorSpace, *JxlGetDefaultCms(), &converted,
+                 &pool)) {
     return QImage();
   }
 

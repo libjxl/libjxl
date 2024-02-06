@@ -17,7 +17,6 @@
 #include "lib/extras/dec/decode.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
-#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/codec_in_out.h"
@@ -44,18 +43,10 @@ JXL_INLINE Status SetFromBytes(const Span<const uint8_t> bytes, CodecInOut* io,
                       orig_codec);
 }
 
-// Replaces "bytes" with an encoding of pixels transformed from c_current
-// color space to c_desired.
-Status Encode(const CodecInOut& io, extras::Codec codec,
-              const ColorEncoding& c_desired, size_t bits_per_sample,
-              std::vector<uint8_t>* bytes, ThreadPool* pool = nullptr);
+Status Encode(const extras::PackedPixelFile& ppf, const extras::Codec codec,
+              std::vector<uint8_t>* bytes, ThreadPool* pool);
 
-// Deduces codec, calls Encode and writes to file.
-Status Encode(const CodecInOut& io, const ColorEncoding& c_desired,
-              size_t bits_per_sample, const std::string& pathname,
-              std::vector<uint8_t>* bytes, ThreadPool* pool = nullptr);
-// Same, but defaults to metadata.original color_encoding and bits_per_sample.
-Status Encode(const CodecInOut& io, const std::string& pathname,
+Status Encode(const extras::PackedPixelFile& ppf, const std::string& pathname,
               std::vector<uint8_t>* bytes, ThreadPool* pool = nullptr);
 
 }  // namespace jxl

@@ -3,31 +3,44 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
-# This file is generated, do not modify by manually.
-# Run `tools/scripts/build_cleaner.py --update` to regenerate it.
+"""
+This file is generated, do not modify by manually.
+Run `tools/scripts/build_cleaner.py --update` to regenerate it.
+"""
 
 libjxl_base_sources = [
     "jxl/base/arch_macros.h",
     "jxl/base/bits.h",
     "jxl/base/byte_order.h",
-    "jxl/base/cache_aligned.cc",
-    "jxl/base/cache_aligned.h",
+    "jxl/base/c_callback_support.h",
+    "jxl/base/common.h",
     "jxl/base/compiler_specific.h",
-    "jxl/base/data_parallel.cc",
     "jxl/base/data_parallel.h",
+    "jxl/base/exif.h",
+    "jxl/base/fast_math-inl.h",
     "jxl/base/float.h",
     "jxl/base/iaca.h",
+    "jxl/base/matrix_ops.h",
     "jxl/base/os_macros.h",
     "jxl/base/override.h",
-    "jxl/base/padded_bytes.cc",
-    "jxl/base/padded_bytes.h",
     "jxl/base/printf_macros.h",
-    "jxl/base/random.cc",
     "jxl/base/random.h",
+    "jxl/base/rational_polynomial-inl.h",
     "jxl/base/sanitizer_definitions.h",
     "jxl/base/scope_guard.h",
     "jxl/base/span.h",
     "jxl/base/status.h",
+]
+
+libjxl_cms_sources = [
+    "jxl/cms/color_encoding_cms.h",
+    "jxl/cms/jxl_cms.cc",
+    "jxl/cms/jxl_cms_internal.h",
+    "jxl/cms/opsin_params.h",
+    "jxl/cms/tone_mapping-inl.h",
+    "jxl/cms/tone_mapping.h",
+    "jxl/cms/transfer_functions-inl.h",
+    "jxl/cms/transfer_functions.h",
 ]
 
 libjxl_codec_apng_sources = [
@@ -118,6 +131,8 @@ libjxl_dec_sources = [
     "jxl/ans_params.h",
     "jxl/blending.cc",
     "jxl/blending.h",
+    "jxl/cache_aligned.cc",
+    "jxl/cache_aligned.h",
     "jxl/chroma_from_luma.cc",
     "jxl/chroma_from_luma.h",
     "jxl/codec_in_out.h",
@@ -126,15 +141,12 @@ libjxl_dec_sources = [
     "jxl/coeff_order_fwd.h",
     "jxl/color_encoding_internal.cc",
     "jxl/color_encoding_internal.h",
-    "jxl/color_management.cc",
-    "jxl/color_management.h",
     "jxl/common.h",
     "jxl/compressed_dc.cc",
     "jxl/compressed_dc.h",
     "jxl/convolve-inl.h",
     "jxl/convolve.h",
     "jxl/convolve_separable5.cc",
-    "jxl/convolve_separable7.cc",
     "jxl/convolve_slow.cc",
     "jxl/convolve_symmetric3.cc",
     "jxl/convolve_symmetric5.cc",
@@ -166,7 +178,6 @@ libjxl_dec_sources = [
     "jxl/dec_noise.h",
     "jxl/dec_patch_dictionary.cc",
     "jxl/dec_patch_dictionary.h",
-    "jxl/dec_tone_mapping-inl.h",
     "jxl/dec_transforms-inl.h",
     "jxl/dec_xyb-inl.h",
     "jxl/dec_xyb.cc",
@@ -176,7 +187,6 @@ libjxl_dec_sources = [
     "jxl/entropy_coder.h",
     "jxl/epf.cc",
     "jxl/epf.h",
-    "jxl/exif.h",
     "jxl/fast_dct-inl.h",
     "jxl/fast_dct.cc",
     "jxl/fast_dct.h",
@@ -186,14 +196,12 @@ libjxl_dec_sources = [
     "jxl/fast_dct32-inl.h",
     "jxl/fast_dct64-inl.h",
     "jxl/fast_dct8-inl.h",
-    "jxl/fast_math-inl.h",
     "jxl/field_encodings.h",
     "jxl/fields.cc",
     "jxl/fields.h",
+    "jxl/frame_dimensions.h",
     "jxl/frame_header.cc",
     "jxl/frame_header.h",
-    "jxl/gauss_blur.cc",
-    "jxl/gauss_blur.h",
     "jxl/headers.cc",
     "jxl/headers.h",
     "jxl/huffman_table.cc",
@@ -208,6 +216,7 @@ libjxl_dec_sources = [
     "jxl/image_bundle.h",
     "jxl/image_metadata.cc",
     "jxl/image_metadata.h",
+    "jxl/image_ops.cc",
     "jxl/image_ops.h",
     "jxl/inverse_mtf-inl.h",
     "jxl/lehmer_code.h",
@@ -215,7 +224,6 @@ libjxl_dec_sources = [
     "jxl/loop_filter.h",
     "jxl/luminance.cc",
     "jxl/luminance.h",
-    "jxl/matrix_ops.h",
     "jxl/memory_manager_internal.cc",
     "jxl/memory_manager_internal.h",
     "jxl/modular/encoding/context_predict.h",
@@ -238,6 +246,8 @@ libjxl_dec_sources = [
     "jxl/noise.h",
     "jxl/opsin_params.cc",
     "jxl/opsin_params.h",
+    "jxl/pack_signed.h",
+    "jxl/padded_bytes.h",
     "jxl/passes_state.cc",
     "jxl/passes_state.h",
     "jxl/patch_dictionary_internal.h",
@@ -246,7 +256,6 @@ libjxl_dec_sources = [
     "jxl/quantizer-inl.h",
     "jxl/quantizer.cc",
     "jxl/quantizer.h",
-    "jxl/rational_polynomial-inl.h",
     "jxl/render_pipeline/low_memory_render_pipeline.cc",
     "jxl/render_pipeline/low_memory_render_pipeline.h",
     "jxl/render_pipeline/render_pipeline.cc",
@@ -258,6 +267,8 @@ libjxl_dec_sources = [
     "jxl/render_pipeline/stage_blending.h",
     "jxl/render_pipeline/stage_chroma_upsampling.cc",
     "jxl/render_pipeline/stage_chroma_upsampling.h",
+    "jxl/render_pipeline/stage_cms.cc",
+    "jxl/render_pipeline/stage_cms.h",
     "jxl/render_pipeline/stage_epf.cc",
     "jxl/render_pipeline/stage_epf.h",
     "jxl/render_pipeline/stage_from_linear.cc",
@@ -292,7 +303,6 @@ libjxl_dec_sources = [
     "jxl/splines.h",
     "jxl/toc.cc",
     "jxl/toc.h",
-    "jxl/transfer_functions-inl.h",
     "jxl/transpose-inl.h",
     "jxl/xorshift128plus-inl.h",
 ]
@@ -341,8 +351,6 @@ libjxl_enc_sources = [
     "jxl/enc_fast_lossless.h",
     "jxl/enc_fields.cc",
     "jxl/enc_fields.h",
-    "jxl/enc_file.cc",
-    "jxl/enc_file.h",
     "jxl/enc_frame.cc",
     "jxl/enc_frame.h",
     "jxl/enc_gaborish.cc",
@@ -408,9 +416,6 @@ libjxl_enc_sources = [
     "jxl/modular/transform/enc_squeeze.h",
     "jxl/modular/transform/enc_transform.cc",
     "jxl/modular/transform/enc_transform.h",
-    "jxl/jxl_cms.cc",
-    "jxl/jxl_cms.h",
-    "jxl/jxl_skcms.h",
 ]
 
 libjxl_extras_for_tools_sources = [
@@ -427,6 +432,10 @@ libjxl_extras_for_tools_sources = [
 ]
 
 libjxl_extras_sources = [
+    "extras/alpha_blend.cc",
+    "extras/alpha_blend.h",
+    "extras/common.cc",
+    "extras/common.h",
     "extras/dec/color_description.cc",
     "extras/dec/color_description.h",
     "extras/dec/color_hints.cc",
@@ -437,6 +446,8 @@ libjxl_extras_sources = [
     "extras/enc/encode.h",
     "extras/exif.cc",
     "extras/exif.h",
+    "extras/mmap.cc",
+    "extras/mmap.h",
     "extras/packed_image.h",
     "extras/size_constraints.h",
     "extras/time.cc",
@@ -447,7 +458,6 @@ libjxl_gbench_sources = [
     "extras/tone_mapping_gbench.cc",
     "jxl/dec_external_image_gbench.cc",
     "jxl/enc_external_image_gbench.cc",
-    "jxl/gauss_blur_gbench.cc",
     "jxl/splines_gbench.cc",
     "jxl/tf_gbench.cc",
 ]
@@ -541,11 +551,12 @@ libjxl_jpegli_wrapper_sources = [
 
 libjxl_major_version = 0
 
-libjxl_minor_version = 9
+libjxl_minor_version = 10
 
 libjxl_patch_version = 0
 
 libjxl_public_headers = [
+    "include/jxl/cms.h",
     "include/jxl/cms_interface.h",
     "include/jxl/codestream_header.h",
     "include/jxl/color_encoding.h",
@@ -584,7 +595,10 @@ libjxl_tests = [
     "jxl/bit_reader_test.cc",
     "jxl/bits_test.cc",
     "jxl/blending_test.cc",
+    "jxl/butteraugli/butteraugli_test.cc",
     "jxl/byte_order_test.cc",
+    "jxl/cms/tone_mapping_test.cc",
+    "jxl/cms/transfer_functions_test.cc",
     "jxl/coeff_order_test.cc",
     "jxl/color_encoding_internal_test.cc",
     "jxl/color_management_test.cc",
@@ -603,7 +617,6 @@ libjxl_tests = [
     "jxl/fast_math_test.cc",
     "jxl/fields_test.cc",
     "jxl/gamma_correct_test.cc",
-    "jxl/gauss_blur_test.cc",
     "jxl/gradient_test.cc",
     "jxl/iaca_test.cc",
     "jxl/icc_codec_test.cc",

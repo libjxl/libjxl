@@ -8,7 +8,6 @@
 #include <algorithm>
 #include <vector>
 
-#include "lib/jxl/color_management.h"
 #include "lib/jxl/enc_image_bundle.h"
 
 namespace jxl {
@@ -30,6 +29,14 @@ Status JxlButteraugliComparator::SetReferenceImage(const ImageBundle& ref) {
       new ButteraugliComparator(ref_linear_srgb->color(), params_));
   xsize_ = ref.xsize();
   ysize_ = ref.ysize();
+  return true;
+}
+
+Status JxlButteraugliComparator::SetLinearReferenceImage(
+    const Image3F& linear) {
+  comparator_.reset(new ButteraugliComparator(linear, params_));
+  xsize_ = linear.xsize();
+  ysize_ = linear.ysize();
   return true;
 }
 

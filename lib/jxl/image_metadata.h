@@ -16,11 +16,13 @@
 #include <string>
 #include <vector>
 
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
+#include "lib/jxl/dec_bit_reader.h"
+#include "lib/jxl/field_encodings.h"
 #include "lib/jxl/fields.h"
 #include "lib/jxl/headers.h"
-#include "lib/jxl/jpeg/jpeg_data.h"
-#include "lib/jxl/opsin_params.h"
 
 namespace jxl {
 
@@ -326,7 +328,7 @@ struct ImageMetadata : public Fields {
   // must still use kNone (or kYCbCr, which would mean applying the YCbCr
   // transform to the 3-channel XYB data), since with !xyb_encoded, the 3
   // channels are stored as-is, no matter what meaning the color profile assigns
-  // to them. To use ColorEncoding::kXYB, xyb_encoded must be true.
+  // to them. To use ColorSpace::kXYB, xyb_encoded must be true.
   //
   // This value is defined in image metadata because this is the global
   // codestream header. This value does not affect the image itself, so is not
