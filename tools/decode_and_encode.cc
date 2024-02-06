@@ -41,6 +41,16 @@ int Convert(int argc, char** argv) {
     return 1;
   }
 
+  jxl::ColorEncoding internal;
+  if (!internal.FromExternal(ppf.color_encoding) || internal.ICC().empty()) {
+    fprintf(stderr,
+            "Failed to generate ICC profile from colorspace description\n");
+    return 1;
+  }
+  // Roundtrip so that the chromaticities are populated even for enum values.
+  ppf.color_encoding = internal.ToExternal();
+  ppf.icc = internal.ICC();
+
   std::vector<uint8_t> encoded_out;
   if (!jxl::Encode(ppf, pathname_out, &encoded_out, &pool)) {
     fprintf(stderr, "Failed to encode %s\n", pathname_out.c_str());
