@@ -25,7 +25,7 @@ concurrency:
 jobs:
   compile:
     name: Cross-compiling ${{ matrix.identifier }}
-    runs-on: [ubuntu-22.04]
+    runs-on: [ubuntu-latest]
     container:
       image: debian:bookworm
     strategy:
@@ -205,7 +205,7 @@ jobs:
   test:
     name: Testing ${{ matrix.identifier }} shard ${{ matrix.shard_number }}
     needs: compile
-    runs-on: [ubuntu-22.04]
+    runs-on: [ubuntu-latest]
     container:
       image: debian:bookworm
     strategy:
