@@ -110,9 +110,11 @@ struct FuzzSpec {
     // constants chosen so to cover the entire 0.01 - 25 range.
     spec.distance = u8() % 2 ? 0.0 : 0.01 + 0.00038132 * u16();
 
-    if (spec.distance != 0) {
-      JXL_CHECK(spec.float_options[2].flag ==
-                JXL_ENC_FRAME_SETTING_MODULAR_MA_TREE_LEARNING_PERCENT);
+    JXL_CHECK(spec.float_options[2].flag ==
+              JXL_ENC_FRAME_SETTING_MODULAR_MA_TREE_LEARNING_PERCENT);
+    JXL_CHECK(spec.int_options[15].flag ==
+              JXL_ENC_FRAME_SETTING_COLOR_TRANSFORM);
+    if (spec.distance != 0 || spec.int_options[15].value == 0) {
       spec.float_options[2].possible_values[1] = 1;
     }
 
