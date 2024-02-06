@@ -151,8 +151,8 @@ typedef enum {
    * In most cases, @ref JxlDecoderReleaseInput will return no unprocessed bytes
    * at this event, the only exceptions are if the previously set input ended
    * within (a) the raw codestream signature, (b) the signature box, (c) a box
-   * header, or (d) the first 4 bytes of a brob, ftyp, or jxlp box. In any of
-   * these cases the number of unprocessed bytes is less than 20.
+   * header, or (d) the first 4 bytes of a `brob`, `ftyp`, or `jxlp` box. In any
+   * of these cases the number of unprocessed bytes is less than 20.
    */
   JXL_DEC_NEED_MORE_INPUT = 2,
 
@@ -261,7 +261,7 @@ typedef enum {
    * to the image out buffer. This event occurs max once per image and always
    * before ::JXL_DEC_FULL_IMAGE.
    * In this case, @ref JxlDecoderReleaseInput will return all bytes from the
-   * end of the 'jbrd' box as unprocessed.
+   * end of the `jbrd` box as unprocessed.
    */
   JXL_DEC_JPEG_RECONSTRUCTION = 0x2000,
 
@@ -617,17 +617,17 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetInput(JxlDecoder* dec,
  * whenever any input is already set and new input needs to be added with @ref
  * JxlDecoderSetInput, but is not required before @ref JxlDecoderDestroy or @ref
  * JxlDecoderReset. Calling @ref JxlDecoderReleaseInput when no input is set is
- * not an error and returns 0.
+ * not an error and returns `0`.
  *
  * @param dec decoder object
  * @return The amount of bytes the decoder has not yet processed that are still
- *     remaining in the data set by @ref JxlDecoderSetInput, or 0 if no input is
- *     set or @ref JxlDecoderReleaseInput was already called. For a next call
- *     to @ref JxlDecoderProcessInput, the buffer must start with these
- *     unprocessed bytes. From this value it is possible to infer the position
- *     of certain JPEG XL codestream elements (e.g. end of headers, frame
- *     start/end). See the documentation of individual values of @ref
- *     JxlDecoderStatus for more information.
+ *     remaining in the data set by @ref JxlDecoderSetInput, or `0` if no input
+ * is set or @ref JxlDecoderReleaseInput was already called. For a next call to
+ * @ref JxlDecoderProcessInput, the buffer must start with these unprocessed
+ * bytes. From this value it is possible to infer the position of certain JPEG
+ * XL codestream elements (e.g. end of headers, frame start/end). See the
+ * documentation of individual values of @ref JxlDecoderStatus for more
+ * information.
  */
 JXL_EXPORT size_t JxlDecoderReleaseInput(JxlDecoder* dec);
 
@@ -682,8 +682,8 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetExtraChannelInfo(
 
 /**
  * Outputs name for extra channel at the given index in UTF-8. The index must be
- * smaller than num_extra_channels in the associated @ref JxlBasicInfo. The
- * buffer for name must have at least name_length + 1 bytes allocated, gotten
+ * smaller than `num_extra_channels` in the associated @ref JxlBasicInfo. The
+ * buffer for name must have at least `name_length + 1` bytes allocated, gotten
  * from the associated @ref JxlExtraChannelInfo.
  *
  * @param dec decoder object
@@ -734,7 +734,7 @@ typedef enum {
  *    problematic, in that: while ICC profiles can encode a transfer function
  *    that happens to approximate those of PQ and HLG (HLG for only one given
  *    system gamma at a time, and necessitating a 3D LUT if gamma is to be
- *    different from 1), they cannot (before ICCv4.4) semantically signal that
+ *    different from `1`), they cannot (before ICCv4.4) semantically signal that
  *    this is the color space that they represent. Therefore, they will
  *    typically not actually be interpreted as representing an HDR color space.
  *    This is especially detrimental to PQ which will then be interpreted as if
@@ -838,7 +838,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetDesiredIntensityTarget(
 /**
  * Sets the desired output color profile of the decoded image either from a
  * color encoding or an ICC profile. Valid calls of this function have either @c
- * color_encoding or @c icc_data set to NULL and @c icc_size must be 0 if and
+ * color_encoding or @c icc_data set to NULL and @c icc_size must be `0` if and
  * only if @c icc_data is NULL.
  *
  * Depending on whether a color management system (CMS) has been set the
@@ -947,7 +947,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetFrameHeader(const JxlDecoder* dec,
 
 /**
  * Outputs name for the current frame. The buffer for name must have at least
- * name_length + 1 bytes allocated, gotten from the associated JxlFrameHeader.
+ * `name_length + 1` bytes allocated, gotten from the associated JxlFrameHeader.
  *
  * @param dec decoder object
  * @param name buffer to copy the name into
@@ -1085,7 +1085,7 @@ typedef void (*JxlImageOutDestroyCallback)(void* run_opaque);
  *
  * The callback will be called multiple times, to receive the image
  * data in small chunks. The callback receives a horizontal stripe of pixel
- * data, 1 pixel high, xsize pixels wide, called a scanline. The xsize here is
+ * data, `1` pixel high, xsize pixels wide, called a scanline. The xsize here is
  * not the same as the full image width, the scanline may be a partial section,
  * and xsize may differ between calls. The user can then process and/or copy the
  * partial scanline to an image buffer. The callback may be called
@@ -1152,7 +1152,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetMultithreadedImageOutCallback(
  *
  * @param dec decoder object
  * @param format format of the pixels. The num_channels value is ignored and is
- *     always treated to be 1.
+ *     always treated to be `1`.
  * @param size output value, buffer size in bytes
  * @param index which extra channel to get, matching the index used in @ref
  *     JxlDecoderGetExtraChannelInfo. Must be smaller than num_extra_channels in
@@ -1170,7 +1170,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderExtraChannelBufferSize(
  * and applies only for the current frame. The size of the buffer must be at
  * least as large as given by @ref JxlDecoderExtraChannelBufferSize. The buffer
  * follows the format described by @ref JxlPixelFormat, but where num_channels
- * is 1. The buffer is owned by the caller. The amount of extra channels is
+ * is `1`. The buffer is owned by the caller. The amount of extra channels is
  * given by the num_extra_channels field in the associated @ref JxlBasicInfo,
  * and the information of individual extra channels can be queried with @ref
  * JxlDecoderGetExtraChannelInfo. To get multiple extra channels, this function
@@ -1185,7 +1185,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderExtraChannelBufferSize(
  * @param dec decoder object
  * @param format format of the pixels. Object owned by user and its contents
  *     are copied internally. The num_channels value is ignored and is always
- *     treated to be 1.
+ *     treated to be `1`.
  * @param buffer buffer type to output the pixel data to
  * @param size size of buffer in bytes
  * @param index which extra channel to get, matching the index used in @ref
@@ -1228,11 +1228,11 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetJPEGBuffer(JxlDecoder* dec,
  * JxlDecoderDestroy or @ref JxlDecoderReset.
  *
  * Calling @ref JxlDecoderReleaseJPEGBuffer when no buffer is set is
- * not an error and returns 0.
+ * not an error and returns `0`.
  *
  * @param dec decoder object
  * @return the amount of bytes the decoder has not yet written to of the data
- *     set by @ref JxlDecoderSetJPEGBuffer, or 0 if no buffer is set or @ref
+ *     set by @ref JxlDecoderSetJPEGBuffer, or `0` if no buffer is set or @ref
  *     JxlDecoderReleaseJPEGBuffer was already called.
  */
 JXL_EXPORT size_t JxlDecoderReleaseJPEGBuffer(JxlDecoder* dec);
@@ -1271,11 +1271,11 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetBoxBuffer(JxlDecoder* dec,
  * JxlDecoderDestroy or @ref JxlDecoderReset.
  *
  * Calling @ref JxlDecoderReleaseBoxBuffer when no buffer is set is
- * not an error and returns 0.
+ * not an error and returns `0`.
  *
  * @param dec decoder object
  * @return the amount of bytes the decoder has not yet written to of the data
- *     set by @ref JxlDecoderSetBoxBuffer, or 0 if no buffer is set or @ref
+ *     set by @ref JxlDecoderSetBoxBuffer, or `0` if no buffer is set or @ref
  *     JxlDecoderReleaseBoxBuffer was already called.
  */
 JXL_EXPORT size_t JxlDecoderReleaseBoxBuffer(JxlDecoder* dec);
@@ -1305,7 +1305,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetDecompressBoxes(JxlDecoder* dec,
 
 /**
  * Outputs the type of the current box, after a ::JXL_DEC_BOX event occurred,
- * as 4 characters without null termination character. In case of a compressed
+ * as `4` characters without null termination character. In case of a compressed
  * "brob" box, this will return "brob" if the decompressed argument is
  * JXL_FALSE, or the underlying box type if the decompressed argument is
  * JXL_TRUE.
@@ -1321,14 +1321,14 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetDecompressBoxes(JxlDecoder* dec,
  *  - "xml ": a box with XML data, in particular XMP metadata.
  *  - "jumb": a JUMBF superbox (JPEG Universal Metadata Box Format, ISO/IEC
  *    19566-5).
- *  - "JXL ": mandatory signature box, must come first, 12 bytes long including
- *    the box header
- *  - "ftyp": a second mandatory signature box, must come second, 20 bytes long
- *    including the box header
- *  - "jxll": a JXL level box. This indicates if the codestream is level 5 or
- *    level 10 compatible. If not present, it is level 5. Level 10 allows more
- *    features such as very high image resolution and bit-depths above 16 bits
- *    per channel. Added automatically by the encoder when
+ *  - "JXL ": mandatory signature box, must come first, `12` bytes long
+ * including the box header
+ *  - "ftyp": a second mandatory signature box, must come second, `20` bytes
+ * long including the box header
+ *  - "jxll": a JXL level box. This indicates if the codestream is level `5` or
+ *    level `10` compatible. If not present, it is level `5`. Level `10` allows
+ * more features such as very high image resolution and bit-depths above `16`
+ * bits per channel. Added automatically by the encoder when
  *    @ref JxlEncoderSetCodestreamLevel is used
  *  - "jxlc": a box with the image codestream, in case the codestream is not
  *    split across multiple boxes. The codestream contains the JPEG XL image
@@ -1420,7 +1420,7 @@ JxlDecoderSetProgressiveDetail(JxlDecoder* dec, JxlProgressiveDetail detail);
  * event.
  *
  * @param dec decoder object
- * @return The intended downsampling ratio, can be 1, 2, 4 or 8.
+ * @return The intended downsampling ratio, can be `1`, `2`, `4` or `8`.
  */
 JXL_EXPORT size_t JxlDecoderGetIntendedDownsamplingRatio(JxlDecoder* dec);
 
