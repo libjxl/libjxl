@@ -1524,8 +1524,12 @@ Status ComputeEncodingData(
   }
 
   if (!enc_state.streaming_mode) {
-    JXL_RETURN_IF_ERROR(enc_modular.ComputeTree(pool));
-    JXL_RETURN_IF_ERROR(enc_modular.ComputeTokens(pool));
+    if (cparams.speed_tier < SpeedTier::kTortoise ||
+        !cparams.ModularPartIsLossless() || cparams.responsive) {
+      // Use local trees if doing lossless modular.
+      JXL_RETURN_IF_ERROR(enc_modular.ComputeTree(pool));
+      JXL_RETURN_IF_ERROR(enc_modular.ComputeTokens(pool));
+    }
     mutable_frame_header.UpdateFlag(shared.image_features.patches.HasAny(),
                                     FrameHeader::kPatches);
     mutable_frame_header.UpdateFlag(shared.image_features.splines.HasAny(),
@@ -2021,15 +2025,16 @@ Status EncodeFrame(const CompressParams& cparams_orig,
                    JxlEncoderOutputProcessorWrapper* output_processor,
                    AuxOut* aux_out) {
   CompressParams cparams = cparams_orig;
-  if (cparams.speed_tier == SpeedTier::kGlacier && !cparams.IsLossless()) {
-    cparams.speed_tier = SpeedTier::kTortoise;
+  if (cparams.speed_tier == SpeedTier::kTectonicPlate &&
+      !cparams.IsLossless()) {
+    cparams.speed_tier = SpeedTier::kGlacier;
   }
-  if (cparams.speed_tier == SpeedTier::kGlacier) {
+  if (cparams.speed_tier == SpeedTier::kTectonicPlate) {
     std::vector<CompressParams> all_params;
     std::vector<size_t> size;
 
     CompressParams cparams_attempt = cparams_orig;
-    cparams_attempt.speed_tier = SpeedTier::kTortoise;
+    cparams_attempt.speed_tier = SpeedTier::kGlacier;
     cparams_attempt.options.max_properties = 4;
 
     for (float x : {0.0f, 80.f}) {
@@ -2084,7 +2089,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
           }
           size[task] = local_output.CurrentPosition();
         },
-        "Compress kGlacier"));
+        "Compress kTectonicPlate"));
     JXL_RETURN_IF_ERROR(num_errors.load(std::memory_order_relaxed) == 0);
 
     size_t best_idx = 0;

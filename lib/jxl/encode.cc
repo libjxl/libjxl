@@ -1537,14 +1537,14 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetOption(
   switch (option) {
     case JXL_ENC_FRAME_SETTING_EFFORT:
       if (frame_settings->enc->allow_expert_options) {
+        if (value < 1 || value > 11) {
+          return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_NOT_SUPPORTED,
+                               "Encode effort has to be in [1..11]");
+        }
+      } else {
         if (value < 1 || value > 10) {
           return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_NOT_SUPPORTED,
                                "Encode effort has to be in [1..10]");
-        }
-      } else {
-        if (value < 1 || value > 9) {
-          return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_NOT_SUPPORTED,
-                               "Encode effort has to be in [1..9]");
         }
       }
       frame_settings->values.cparams.speed_tier =
