@@ -331,9 +331,8 @@ static gboolean load_increment(gpointer context, const guchar *buf, guint size,
                                GError **error) {
   GdkPixbufJxlAnimation *decoder_state = context;
   if (decoder_state->done == TRUE) {
-    g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED,
-                "JXL decoder load_increment called after end of file");
-    return FALSE;
+    g_warning_once("Trailing data found at end of JXL file");
+    return TRUE;
   }
 
   JxlDecoderStatus status;
