@@ -226,9 +226,9 @@ typedef enum {
    * displayed frames, unless @ref JxlDecoderSetCoalescing was set to @ref
    * JXL_FALSE "JXL_FALSE": in that case, the individual layers are returned,
    * without blending. Note that even when coalescing is disabled, only frames
-   * of type kRegularFrame are returned; frames of type kReferenceOnly and
-   * kLfFrame are always for internal purposes only and cannot be accessed. A
-   * displayed frame either has an animation duration or is the only or last
+   * of type @ref kRegularFrame are returned; frames of type @ref kReferenceOnly
+   * and kLfFrame are always for internal purposes only and cannot be accessed.
+   * A displayed frame either has an animation duration or is the only or last
    * frame in the image. This event occurs max once per displayed frame, always
    * later than ::JXL_DEC_COLOR_ENCODING, and always earlier than any pixel
    * data. While JPEG XL supports encoding a single frame as the composition of
@@ -324,9 +324,9 @@ typedef enum {
  * Setting a progressive detail with value N implies all progressive details
  * with smaller or equal value. Currently only the following level of
  * progressive detail is implemented:
- *  - kDC (which implies kFrames)
- *  - kLastPasses (which implies kDC and kFrames)
- *  - kPasses (which implies kLastPasses, kDC and kFrames)
+ *  - @ref kDC (which implies kFrames)
+ *  - @ref kLastPasses (which implies @ref kDC and @ref kFrames)
+ *  - @ref kPasses (which implies @ref kLastPasses, kDC and @ref kFrames)
  */
 typedef enum {
   // after completed kRegularFrames
