@@ -226,7 +226,7 @@ typedef enum {
    * displayed frames, unless @ref JxlDecoderSetCoalescing was set to @ref
    * JXL_FALSE "JXL_FALSE": in that case, the individual layers are returned,
    * without blending. Note that even when coalescing is disabled, only frames
-   * of type @ref kRegularFrame are returned; frames of type @ref kReferenceOnly
+   * of type kRegularFrame are returned; frames of type kReferenceOnly
    * and kLfFrame are always for internal purposes only and cannot be accessed.
    * A displayed frame either has an animation duration or is the only or last
    * frame in the image. This event occurs max once per displayed frame, always
@@ -329,21 +329,35 @@ typedef enum {
  *  - @ref kPasses (which implies @ref kLastPasses, kDC and @ref kFrames)
  */
 typedef enum {
-  // after completed kRegularFrames
+  /**
+   * after completed kRegularFrames
+   */
   kFrames = 0,
-  // after completed DC (1:8)
+  /**
+   * after completed DC (1:8)
+   */
   kDC = 1,
-  // after completed AC passes that are the last pass for their resolution
-  // target.
+  /**
+   * after completed AC passes that are the last pass for their resolution
+   * target.
+   */
   kLastPasses = 2,
-  // after completed AC passes that are not the last pass for their resolution
-  // target.
+  /**
+   * after completed AC passes that are not the last pass for their resolution
+   * target.
+   */
   kPasses = 3,
-  // during DC frame when lower resolution are completed (1:32, 1:16)
+  /**
+   * during DC frame when lower resolution are completed (1:32, 1:16)
+   */
   kDCProgressive = 4,
-  // after completed groups
+  /**
+   * after completed groups
+   */
   kDCGroups = 5,
-  // after completed groups
+  /**
+   * after completed groups
+   */
   kGroups = 6,
 } JxlProgressiveDetail;
 
