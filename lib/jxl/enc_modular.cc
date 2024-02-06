@@ -1345,6 +1345,7 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
       case SpeedTier::kKitten:
         nb_rcts_to_try = 9;
         break;
+      case SpeedTier::kTectonicPlate:
       case SpeedTier::kGlacier:
       case SpeedTier::kTortoise:
         nb_rcts_to_try = 19;

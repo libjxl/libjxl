@@ -389,7 +389,7 @@ struct CompressArgs {
 
     cmdline->AddOptionFlag('\0', "allow_expert_options",
                            "Allow specifying advanced options; this allows "
-                           "setting effort to 10, for\n"
+                           "setting effort to 11, for\n"
                            "    somewhat better lossless compression at the "
                            "cost of a massive speed hit.",
                            &allow_expert_options, &SetBooleanTrue, 3);
@@ -423,7 +423,7 @@ struct CompressArgs {
         "    5=gradient, 6=weighted, 7=topright, 8=topleft, 9=leftleft, "
         "10=avg1, 11=avg2, 12=avg3,\n"
         "    13=toptop predictive average, 14=mix 5 and 6, 15=mix everything.\n"
-        "    Default is 14 at effort < 9 and 15 at effort 9.",
+        "    Default is 14 at effort < 9 and 15 at effort 9-10.",
         &modular_predictor, &ParseInt64, 4);
 
     cmdline->AddOptionValue(
@@ -713,9 +713,9 @@ void ProcessFlags(const jxl::extras::Codec codec,
       "effort", static_cast<int64_t>(args->effort),
       JXL_ENC_FRAME_SETTING_EFFORT, params, [args](int64_t x) -> std::string {
         if (args->allow_expert_options) {
-          return (1 <= x && x <= 10) ? "" : "Valid range is {1, 2, ..., 10}.";
+          return (1 <= x && x <= 11) ? "" : "Valid range is {1, 2, ..., 11}.";
         } else {
-          return (1 <= x && x <= 9) ? "" : "Valid range is {1, 2, ..., 9}.";
+          return (1 <= x && x <= 10) ? "" : "Valid range is {1, 2, ..., 10}.";
         }
       });
   ProcessFlag("brotli_effort", static_cast<int64_t>(args->brotli_effort),
@@ -1153,7 +1153,8 @@ int main(int argc, char** argv) {
   params.runner = JxlThreadParallelRunner;
   params.runner_opaque = runner.get();
 
-  if (args.effort <= 6 || (args.streaming_input && args.streaming_output)) {
+  if ((args.effort < 7 || (args.effort == 7 && args.distance < 3)) ||
+      args.streaming_input) {
     params.options.emplace_back(jxl::extras::JXLOption(
         JXL_ENC_FRAME_SETTING_BUFFERING, static_cast<int64_t>(3), 0));
   }

@@ -25,8 +25,10 @@
 namespace jxl {
 
 enum class SpeedTier {
-  // Try multiple combinations of Tortoise flags for modular mode. Otherwise
-  // like kTortoise.
+  // Try multiple combinations of Glacier flags for modular mode. Otherwise
+  // like kGlacier.
+  kTectonicPlate = -1,
+  // Learn a global tree in Modular mode.
   kGlacier = 0,
   // Turns on FindBestQuantizationHQ loop. Equivalent to "guetzli" mode.
   kTortoise = 1,
