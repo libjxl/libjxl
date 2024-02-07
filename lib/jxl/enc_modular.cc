@@ -732,6 +732,13 @@ Status ModularFrameEncoder::ComputeEncodingData(
 
   // Fill other groups.
   stream_options_[0] = cparams_.options;
+  if (cparams_.speed_tier == SpeedTier::kFalcon) {
+    stream_options_[0].tree_kind = ModularOptions::TreeKind::kWPFixedDC;
+  } else if (cparams_.speed_tier == SpeedTier::kThunder) {
+    stream_options_[0].tree_kind = ModularOptions::TreeKind::kGradientFixedDC;
+  }
+  stream_options_[0].histogram_params =
+      HistogramParams::ForModular(cparams_, {});
 
   // DC
   for (size_t group_id = 0; group_id < patch_dim.num_dc_groups; group_id++) {
@@ -778,7 +785,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
       pool, 0, stream_params_.size(), ThreadPool::NoInit,
       [&](const uint32_t i, size_t /* thread */) {
         size_t stream = stream_params_[i].id.ID(frame_dim_);
-        stream_options_[stream] = cparams_.options;
+        stream_options_[stream] = stream_options_[0];
         JXL_CHECK(PrepareStreamParams(
             stream_params_[i].rect, cparams_, stream_params_[i].minShift,
             stream_params_[i].maxShift, stream_params_[i].id, do_color));
@@ -1028,46 +1035,8 @@ Status ModularFrameEncoder::EncodeGlobalInfo(bool streaming_mode,
   allotment.ReclaimAndCharge(writer, kLayerModularTree, aux_out);
 
   // Write tree
-  HistogramParams params;
-  if (cparams_.speed_tier > SpeedTier::kKitten) {
-    params.clustering = HistogramParams::ClusteringType::kFast;
-    params.ans_histogram_strategy =
-        cparams_.speed_tier > SpeedTier::kThunder
-            ? HistogramParams::ANSHistogramStrategy::kFast
-            : HistogramParams::ANSHistogramStrategy::kApproximate;
-    params.lz77_method =
-        cparams_.decoding_speed_tier >= 3 && cparams_.modular_mode
-            ? (cparams_.speed_tier >= SpeedTier::kFalcon
-                   ? HistogramParams::LZ77Method::kRLE
-                   : HistogramParams::LZ77Method::kLZ77)
-            : HistogramParams::LZ77Method::kNone;
-    // Near-lossless DC, as well as modular mode, require choosing hybrid uint
-    // more carefully.
-    if ((!extra_dc_precision.empty() && extra_dc_precision[0] != 0) ||
-        (cparams_.modular_mode && cparams_.speed_tier < SpeedTier::kCheetah)) {
-      params.uint_method = HistogramParams::HybridUintMethod::kFast;
-    } else {
-      params.uint_method = HistogramParams::HybridUintMethod::kNone;
-    }
-  } else if (cparams_.speed_tier <= SpeedTier::kTortoise) {
-    params.lz77_method = HistogramParams::LZ77Method::kOptimal;
-  } else {
-    params.lz77_method = HistogramParams::LZ77Method::kLZ77;
-  }
-  if (cparams_.decoding_speed_tier >= 1) {
-    params.max_histograms = 12;
-  }
-  if (cparams_.decoding_speed_tier >= 1 && cparams_.responsive) {
-    params.lz77_method = cparams_.speed_tier >= SpeedTier::kCheetah
-                             ? HistogramParams::LZ77Method::kRLE
-                         : cparams_.speed_tier >= SpeedTier::kKitten
-                             ? HistogramParams::LZ77Method::kLZ77
-                             : HistogramParams::LZ77Method::kOptimal;
-  }
-  if (cparams_.decoding_speed_tier >= 2 && cparams_.responsive) {
-    params.uint_method = HistogramParams::HybridUintMethod::k000;
-    params.force_huffman = true;
-  }
+  HistogramParams params =
+      HistogramParams::ForModular(cparams_, extra_dc_precision);
   {
     EntropyEncodingData tree_code;
     std::vector<uint8_t> tree_context_map;
