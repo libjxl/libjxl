@@ -279,6 +279,7 @@ ModularFrameEncoder::ModularFrameEncoder(const FrameHeader& frame_header,
             prop_order.begin(), prop_order.begin() + 10);
         cparams_.options.max_property_values = 96;
         break;
+      case SpeedTier::kGlacier:
       case SpeedTier::kTortoise:
         cparams_.options.splitting_heuristics_properties = prop_order;
         cparams_.options.max_property_values = 256;
