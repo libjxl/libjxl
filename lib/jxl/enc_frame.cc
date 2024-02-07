@@ -285,7 +285,8 @@ Status LoopFilterFromParams(const CompressParams& cparams, bool streaming_mode,
   if (frame_header->encoding == FrameEncoding::kModular &&
       !cparams.IsLossless()) {
     // TODO(veluca): this formula is nonsense.
-    loop_filter->epf_sigma_for_modular = cparams.butteraugli_distance;
+    loop_filter->epf_sigma_for_modular =
+        std::max(cparams.butteraugli_distance, 1.0f);
   }
   if (frame_header->encoding == FrameEncoding::kModular &&
       cparams.lossy_palette) {
