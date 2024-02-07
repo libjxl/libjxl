@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <limits>
 #include <numeric>
 #include <type_traits>
@@ -21,11 +22,13 @@
 #include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/fast_math-inl.h"
 #include "lib/jxl/dec_ans.h"
+#include "lib/jxl/enc_ans_params.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_cluster.h"
 #include "lib/jxl/enc_context_map.h"
 #include "lib/jxl/enc_fields.h"
 #include "lib/jxl/enc_huffman.h"
+#include "lib/jxl/enc_params.h"
 #include "lib/jxl/fields.h"
 
 namespace jxl {
@@ -1778,5 +1781,51 @@ void SetANSFuzzerFriendly(bool ans_fuzzer_friendly) {
 #if JXL_IS_DEBUG_BUILD  // Guard against accidental / malicious changes.
   ans_fuzzer_friendly_ = ans_fuzzer_friendly;
 #endif
+}
+
+HistogramParams HistogramParams::ForModular(
+    const CompressParams& cparams,
+    const std::vector<uint8_t>& extra_dc_precision) {
+  HistogramParams params;
+  if (cparams.speed_tier > SpeedTier::kKitten) {
+    params.clustering = HistogramParams::ClusteringType::kFast;
+    params.ans_histogram_strategy =
+        cparams.speed_tier > SpeedTier::kThunder
+            ? HistogramParams::ANSHistogramStrategy::kFast
+            : HistogramParams::ANSHistogramStrategy::kApproximate;
+    params.lz77_method =
+        cparams.decoding_speed_tier >= 3 && cparams.modular_mode
+            ? (cparams.speed_tier >= SpeedTier::kFalcon
+                   ? HistogramParams::LZ77Method::kRLE
+                   : HistogramParams::LZ77Method::kLZ77)
+            : HistogramParams::LZ77Method::kNone;
+    // Near-lossless DC, as well as modular mode, require choosing hybrid uint
+    // more carefully.
+    if ((!extra_dc_precision.empty() && extra_dc_precision[0] != 0) ||
+        (cparams.modular_mode && cparams.speed_tier < SpeedTier::kCheetah)) {
+      params.uint_method = HistogramParams::HybridUintMethod::kFast;
+    } else {
+      params.uint_method = HistogramParams::HybridUintMethod::kNone;
+    }
+  } else if (cparams.speed_tier <= SpeedTier::kTortoise) {
+    params.lz77_method = HistogramParams::LZ77Method::kOptimal;
+  } else {
+    params.lz77_method = HistogramParams::LZ77Method::kLZ77;
+  }
+  if (cparams.decoding_speed_tier >= 1) {
+    params.max_histograms = 12;
+  }
+  if (cparams.decoding_speed_tier >= 1 && cparams.responsive) {
+    params.lz77_method = cparams.speed_tier >= SpeedTier::kCheetah
+                             ? HistogramParams::LZ77Method::kRLE
+                         : cparams.speed_tier >= SpeedTier::kKitten
+                             ? HistogramParams::LZ77Method::kLZ77
+                             : HistogramParams::LZ77Method::kOptimal;
+  }
+  if (cparams.decoding_speed_tier >= 2 && cparams.responsive) {
+    params.uint_method = HistogramParams::HybridUintMethod::k000;
+    params.force_huffman = true;
+  }
+  return params;
 }
 }  // namespace jxl

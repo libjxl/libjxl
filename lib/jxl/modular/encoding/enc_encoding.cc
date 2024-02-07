@@ -557,7 +557,8 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
   size_t total_pixels_storage = 0;
   if (!total_pixels) total_pixels = &total_pixels_storage;
   // If there's no tree, compute one (or gather data to).
-  if (tree == nullptr) {
+  if (tree == nullptr &&
+      options.tree_kind == ModularOptions::TreeKind::kLearn) {
     bool gather_data = tree_samples != nullptr;
     if (tree_samples == nullptr) {
       JXL_RETURN_IF_ERROR(tree_samples_storage.SetPredictor(
@@ -622,9 +623,9 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
     } */
 
     // Write tree
-    BuildAndEncodeHistograms(HistogramParams(), kNumTreeContexts, tree_tokens,
-                             &code, &context_map, writer, kLayerModularTree,
-                             aux_out);
+    BuildAndEncodeHistograms(options.histogram_params, kNumTreeContexts,
+                             tree_tokens, &code, &context_map, writer,
+                             kLayerModularTree, aux_out);
     WriteTokens(tree_tokens[0], code, context_map, 0, writer, kLayerModularTree,
                 aux_out);
   }
@@ -669,7 +670,7 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
   if (!header->use_global_tree) {
     EntropyEncodingData code;
     std::vector<uint8_t> context_map;
-    HistogramParams histo_params;
+    HistogramParams histo_params = options.histogram_params;
     histo_params.image_widths.push_back(image_width);
     BuildAndEncodeHistograms(histo_params, (tree->size() + 1) / 2,
                              tokens_storage, &code, &context_map, writer, layer,
