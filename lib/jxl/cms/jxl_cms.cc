@@ -977,12 +977,12 @@ JXL_BOOL JxlCmsSetFieldsFromICC(void* user_data, const uint8_t* icc_data,
                                          (icc_data[64] << 24);
   // Some files encode rendering intent as little endian, which is not spec
   // compliant. However we accept those with a warning.
-  uint32_t litte_endian_rendering_intent = (icc_data[67] << 24) +
-                                           (icc_data[66] << 16) +
-                                           (icc_data[65] << 8) + icc_data[64];
+  uint32_t little_endian_rendering_intent = (icc_data[67] << 24) +
+                                            (icc_data[66] << 16) +
+                                            (icc_data[65] << 8) + icc_data[64];
   uint32_t candidate_rendering_intent =
-      std::min(big_endian_rendering_intent, litte_endian_rendering_intent);
-  if (candidate_rendering_intent == litte_endian_rendering_intent) {
+      std::min(big_endian_rendering_intent, little_endian_rendering_intent);
+  if (candidate_rendering_intent != big_endian_rendering_intent) {
     JXL_WARNING(
         "Invalid rendering intent bytes: [0x%02X 0x%02X 0x%02X 0x%02X], "
         "assuming %u was meant",
