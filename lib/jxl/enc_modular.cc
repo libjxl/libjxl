@@ -40,6 +40,7 @@
 #include "lib/jxl/modular/transform/enc_transform.h"
 #include "lib/jxl/pack_signed.h"
 #include "lib/jxl/toc.h"
+#include "modular/options.h"
 
 namespace jxl {
 
@@ -1550,7 +1551,9 @@ void ModularFrameEncoder::AddACMetadata(const Rect& r, size_t group_index,
                                         PassesEncoderState* enc_state) {
   size_t stream_id = ModularStreamId::ACMetadata(group_index).ID(frame_dim_);
   stream_options_[stream_id].max_chan_size = 0xFFFFFF;
-  stream_options_[stream_id].wp_tree_mode = ModularOptions::TreeMode::kNoWP;
+  if (stream_options_[stream_id].predictor != Predictor::Weighted) {
+    stream_options_[stream_id].wp_tree_mode = ModularOptions::TreeMode::kNoWP;
+  }
   if (jpeg_transcode) {
     stream_options_[stream_id].tree_kind =
         ModularOptions::TreeKind::kJpegTranscodeACMeta;
