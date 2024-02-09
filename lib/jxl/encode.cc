@@ -1747,9 +1747,9 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetOption(
       frame_settings->values.cparams.jpeg_compress_boxes = value;
       break;
     case JXL_ENC_FRAME_SETTING_BUFFERING:
-      if (value < 0 || value > 3) {
+      if (value < -1 || value > 3) {
         return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_NOT_SUPPORTED,
-                             "Buffering has to be in [0..3]");
+                             "Buffering has to be in [-1..3]");
       }
       frame_settings->values.cparams.buffering = value;
       break;

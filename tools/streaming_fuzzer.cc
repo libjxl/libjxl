@@ -163,11 +163,9 @@ std::vector<uint8_t> Encode(const FuzzSpec& spec, bool streaming) {
     }
   }
 
-  if (streaming) {
-    JXL_CHECK(JxlEncoderFrameSettingsSetOption(frame_settings,
-                                               JXL_ENC_FRAME_SETTING_BUFFERING,
-                                               3) == JXL_ENC_SUCCESS);
-  }
+  JXL_CHECK(JxlEncoderFrameSettingsSetOption(
+                frame_settings, JXL_ENC_FRAME_SETTING_BUFFERING,
+                streaming ? 3 : 0) == JXL_ENC_SUCCESS);
 
   JxlBasicInfo basic_info;
   JxlEncoderInitBasicInfo(&basic_info);

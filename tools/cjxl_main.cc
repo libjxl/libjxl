@@ -1153,8 +1153,7 @@ int main(int argc, char** argv) {
   params.runner = JxlThreadParallelRunner;
   params.runner_opaque = runner.get();
 
-  if ((args.effort < 7 || (args.effort == 7 && args.distance < 3)) ||
-      args.streaming_input) {
+  if (args.streaming_input) {
     params.options.emplace_back(jxl::extras::JXLOption(
         JXL_ENC_FRAME_SETTING_BUFFERING, static_cast<int64_t>(3), 0));
   }

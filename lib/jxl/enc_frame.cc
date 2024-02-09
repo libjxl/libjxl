@@ -1636,6 +1636,14 @@ bool CanDoStreamingEncoding(const CompressParams& cparams,
   if (cparams.buffering == 0) {
     return false;
   }
+  if (cparams.buffering == -1) {
+    if (cparams.speed_tier < SpeedTier::kSquirrel) return false;
+    if (cparams.speed_tier == SpeedTier::kSquirrel &&
+        cparams.butteraugli_distance >= 3.f) {
+      return false;
+    }
+  }
+
   // TODO(veluca): handle different values of `buffering`.
   if (frame_data.xsize <= 2048 && frame_data.ysize <= 2048) {
     return false;
