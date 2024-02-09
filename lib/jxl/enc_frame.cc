@@ -2031,6 +2031,11 @@ Status EncodeFrame(const CompressParams& cparams_orig,
       !cparams.IsLossless()) {
     cparams.speed_tier = SpeedTier::kGlacier;
   }
+  // Lightning mode is handled externally, so switch to Thunder mode to handle
+  // potentially weird cases.
+  if (cparams.speed_tier == SpeedTier::kLightning) {
+    cparams.speed_tier = SpeedTier::kThunder;
+  }
   if (cparams.speed_tier == SpeedTier::kTectonicPlate) {
     std::vector<CompressParams> all_params;
     std::vector<size_t> size;
