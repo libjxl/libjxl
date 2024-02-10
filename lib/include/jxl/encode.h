@@ -341,6 +341,7 @@ typedef enum {
   JXL_ENC_FRAME_SETTING_JPEG_COMPRESS_BOXES = 33,
 
   /** Control what kind of buffering is used, when using chunked image frames.
+   * -1 = default (let the encoder decide)
    * 0 = buffers everything, basically the same as non-streamed code path
    (mainly for testing)
    * 1 = buffers everything for images that are smaller than 2048 x 2048, and
@@ -351,7 +352,7 @@ typedef enum {
    *
    * When using streaming input and output the encoder minimizes memory usage at
    * the cost of compression density. Also note that images produced with
-   * streaming mode might can not be decoded progressively.
+   * streaming mode might not be progressively decodeable.
    */
   JXL_ENC_FRAME_SETTING_BUFFERING = 34,
 

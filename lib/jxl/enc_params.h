@@ -162,7 +162,7 @@ struct CompressParams {
   int level = -1;
 
   // See JXL_ENC_FRAME_SETTING_BUFFERING option value.
-  int buffering = 0;
+  int buffering = -1;
   // See JXL_ENC_FRAME_SETTING_USE_FULL_IMAGE_HEURISTICS option value.
   bool use_full_image_heuristics = true;
 

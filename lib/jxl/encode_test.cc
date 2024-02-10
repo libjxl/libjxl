@@ -347,7 +347,7 @@ TEST(EncodeTest, frame_settingsTest) {
         JXL_ENC_FRAME_SETTING_JPEG_KEEP_JUMBF};
     const int too_low[nb_options] = {0,  -2, -2, 3,  -2, -2, -2, -2,
                                      -2, -2, -2, -2, -2, -2, -2, -2,
-                                     -2, -1, -2, -1, -2, -2, -2};
+                                     -2, -1, -2, -2, -2, -2, -2};
     const int too_high[nb_options] = {11, 12, 5,     16, 6,  2, 4,  -3,
                                       -3, 3,  70914, 3,  42, 4, 16, 12,
                                       2,  2,  2,     4,  2,  2, 2};
