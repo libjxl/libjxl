@@ -197,7 +197,7 @@ jobs:
     - name: Download and link conformance files
       run: |
         ${{ github.workspace }}/conformance/scripts/download_and_symlink.sh
-    - uses: actions/download-artifact@6b208ae046db98c579e8a3aa621ab581ff575935 # v4.1.1
+    - uses: actions/download-artifact@eaceaf801fd36c7dee90939fad912460b18a1ffe # v4.1.2
       with:
         name: conformance_binary-${{ matrix.target }}
     - name: Run conformance tests
