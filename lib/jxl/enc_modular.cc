@@ -306,6 +306,18 @@ ModularFrameEncoder::ModularFrameEncoder(const FrameHeader& frame_header,
     }
   }
 
+  if ((cparams_.options.predictor == Predictor::Average0 ||
+       cparams_.options.predictor == Predictor::Average1 ||
+       cparams_.options.predictor == Predictor::Average2 ||
+       cparams_.options.predictor == Predictor::Average3 ||
+       cparams_.options.predictor == Predictor::Average4 ||
+       cparams_.options.predictor == Predictor::Weighted) &&
+      !cparams_.ModularPartIsLossless()) {
+    // Lossy + Average/Weighted predictors does not work, so switch to default
+    // predictors.
+    cparams_.options.predictor = static_cast<Predictor>(-1);
+  }
+
   if (cparams_.options.predictor == static_cast<Predictor>(-1)) {
     // no explicit predictor(s) given, set a good default
     if ((cparams_.speed_tier <= SpeedTier::kTortoise ||
