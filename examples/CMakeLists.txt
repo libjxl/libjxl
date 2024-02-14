@@ -15,7 +15,7 @@ pkg_check_modules(Jxl REQUIRED IMPORTED_TARGET libjxl libjxl_cms libjxl_threads)
 
 # Build the example encoder/decoder binaries using the default shared libraries
 # installed.
-add_executable(decode_oneshot decode_oneshot.cc)
+add_executable(decode_oneshot decode_oneshot.c)
 target_link_libraries(decode_oneshot PkgConfig::Jxl)
 
 add_executable(decode_progressive decode_progressive.cc)
