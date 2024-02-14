@@ -237,15 +237,15 @@ int main(int argc, char* argv[]) {
   const char* pfm_filename = argv[2];
   const char* icc_filename = argv[3];
 
-  struct ByteBuffer jxl = {};
+  struct ByteBuffer jxl = {.data = NULL, .size = 0};
   if (!LoadFile(jxl_filename, &jxl)) {
     fprintf(stderr, "couldn't load %s\n", jxl_filename);
     free(jxl.data);
     return 1;
   }
 
-  struct FloatBuffer pixels = {};
-  struct ByteBuffer icc_profile = {};
+  struct FloatBuffer pixels = {.data = NULL, .size = 0};
+  struct ByteBuffer icc_profile = {.data = NULL, .size = 0};
   size_t xsize = 0, ysize = 0;
   int ret = 1;
   if (!DecodeJpegXlOneShot(jxl.data, jxl.size, &pixels, &xsize, &ysize,
