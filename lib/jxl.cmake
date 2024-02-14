@@ -269,8 +269,10 @@ set(JPEGXL_LIBRARY_REQUIRES
 
 if (BUILD_SHARED_LIBS)
   set(JPEGXL_REQUIRES_TYPE "Requires.private")
+  set(JPEGXL_PRIVATE_LIBS "-lm")
 else()
   set(JPEGXL_REQUIRES_TYPE "Requires")
+  set(JPEGXL_PUBLIC_LIBS "-lm")
 endif()
 
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/jxl/libjxl.pc.in"
