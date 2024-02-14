@@ -46,6 +46,20 @@ jobs:
             max_stack: 2400
             # Conformance tooling test requires numpy.
             apt_pkgs: doxygen graphviz python3-numpy
+          - name: release-static
+            mode: release
+            run_bench: true
+            test_in_pr: true
+            cmake_args: >-
+              -DBUILD_SHARED_LIBS=OFF
+              -DJPEGXL_TEST_TOOLS=ON
+              -DJPEGLI_LIBJPEG_LIBRARY_VERSION="8.2.2"
+              -DJPEGLI_LIBJPEG_LIBRARY_SOVERSION="8"
+            # Track static stack size on build and check it doesn't exceed 3 kB.
+            env_stack_size: 1
+            max_stack: 2400
+            # Conformance tooling test requires numpy.
+            apt_pkgs: doxygen graphviz python3-numpy
           - name: lowprecision
             mode: release
             run_bench: true
