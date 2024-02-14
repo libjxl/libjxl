@@ -14,13 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed / clarified
 
-## [0.9.2] - 2023-02-07
+## [0.9.2] - 2024-02-07
 
 ### Fixed
  - bugs in the gdk-pixbuf plugin
  - some build issues
 
-## [0.9.1] - 2023-01-08
+## [0.9.1] - 2024-01-08
 
 ### Fixed
  - multiple build issues
