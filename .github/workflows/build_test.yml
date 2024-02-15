@@ -46,6 +46,21 @@ jobs:
             max_stack: 2400
             # Conformance tooling test requires numpy.
             apt_pkgs: doxygen graphviz python3-numpy
+          - name: release-static
+            mode: release
+            run_bench: true
+            test_in_pr: true
+            static: true
+            cmake_args: >-
+              -DBUILD_SHARED_LIBS=OFF
+              -DJPEGXL_TEST_TOOLS=ON
+              -DJPEGLI_LIBJPEG_LIBRARY_VERSION="8.2.2"
+              -DJPEGLI_LIBJPEG_LIBRARY_SOVERSION="8"
+            # Track static stack size on build and check it doesn't exceed 3 kB.
+            env_stack_size: 1
+            max_stack: 2400
+            # Conformance tooling test requires numpy.
+            apt_pkgs: doxygen graphviz python3-numpy
           - name: lowprecision
             mode: release
             run_bench: true
@@ -281,7 +296,7 @@ jobs:
     - name: Build stats ${{ matrix.name }}
       if: env.WILL_BUILD == 'true' && matrix.mode == 'release'
       run: |
-        SHARED_LIB_EXT="${{ startsWith(matrix.os, 'macos-') && 'dylib' || 'so' }}"
+        SHARED_LIB_EXT="${{ matrix.static && 'a' || startsWith(matrix.os, 'macos-') && 'dylib' || 'so' }}"
         SELECT_BINUTILS="${{ startsWith(matrix.os, 'macos-') && '--binutils `brew --prefix binutils`/bin/' || '' }}"
         tools/scripts/build_stats.py --save build/stats.json \
           --max-stack ${{ matrix.max_stack || '0' }} ${SELECT_BINUTILS} \
