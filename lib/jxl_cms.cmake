@@ -15,7 +15,6 @@ target_compile_options(jxl_cms PRIVATE "${JPEGXL_INTERNAL_FLAGS}")
 set_target_properties(jxl_cms PROPERTIES
         POSITION_INDEPENDENT_CODE ON
         CXX_VISIBILITY_PRESET hidden
-        IMPORTED_LINK_INTERFACE_LANGUAGES CXX
         VISIBILITY_INLINES_HIDDEN 1)
 target_link_libraries(jxl_cms PUBLIC jxl_base)
 target_include_directories(jxl_cms PRIVATE
