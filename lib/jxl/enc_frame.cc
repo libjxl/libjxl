@@ -1892,7 +1892,7 @@ Status EncodeFrameStreaming(const CompressParams& cparams,
                                       frame_info, jpeg_data.get(), true,
                                       &frame_header));
   const size_t num_passes = enc_state.progressive_splitter.GetNumPasses();
-  ModularFrameEncoder enc_modular(frame_header, cparams);
+  ModularFrameEncoder enc_modular(frame_header, cparams, true);
   std::vector<coeff_order_t> permutation;
   std::vector<size_t> dc_group_order;
   size_t group_size = frame_header.ToFrameDimensions().group_dim;
@@ -2006,7 +2006,7 @@ Status EncodeFrameOneShot(const CompressParams& cparams,
                                       frame_info, jpeg_data.get(), false,
                                       &frame_header));
   const size_t num_passes = enc_state.progressive_splitter.GetNumPasses();
-  ModularFrameEncoder enc_modular(frame_header, cparams);
+  ModularFrameEncoder enc_modular(frame_header, cparams, false);
   JXL_RETURN_IF_ERROR(ComputeEncodingData(
       cparams, frame_info, metadata, frame_data, jpeg_data.get(), 0, 0,
       frame_data.xsize, frame_data.ysize, cms, pool, frame_header, enc_modular,

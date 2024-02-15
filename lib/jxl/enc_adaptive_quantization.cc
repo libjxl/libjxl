@@ -775,7 +775,8 @@ ImageBundle RoundtripImage(const FrameHeader& frame_header,
 
   size_t num_special_frames = enc_state->special_frames.size();
   size_t num_passes = enc_state->progressive_splitter.GetNumPasses();
-  ModularFrameEncoder modular_frame_encoder(frame_header, enc_state->cparams);
+  ModularFrameEncoder modular_frame_encoder(frame_header, enc_state->cparams,
+                                            false);
   JXL_CHECK(InitializePassesEncoder(frame_header, opsin, Rect(opsin), cms, pool,
                                     enc_state, &modular_frame_encoder,
                                     nullptr));

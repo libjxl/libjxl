@@ -37,7 +37,7 @@ struct AuxOut;
 class ModularFrameEncoder {
  public:
   ModularFrameEncoder(const FrameHeader& frame_header,
-                      const CompressParams& cparams_orig);
+                      const CompressParams& cparams_orig, bool streaming_mode);
   Status ComputeEncodingData(
       const FrameHeader& frame_header, const ImageMetadata& metadata,
       Image3F* JXL_RESTRICT color, const std::vector<ImageF>& extra_channels,

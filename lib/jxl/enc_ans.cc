@@ -21,6 +21,7 @@
 #include "lib/jxl/ans_common.h"
 #include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/fast_math-inl.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_ans.h"
 #include "lib/jxl/enc_ans_params.h"
 #include "lib/jxl/enc_aux_out.h"
@@ -1785,8 +1786,9 @@ void SetANSFuzzerFriendly(bool ans_fuzzer_friendly) {
 
 HistogramParams HistogramParams::ForModular(
     const CompressParams& cparams,
-    const std::vector<uint8_t>& extra_dc_precision) {
+    const std::vector<uint8_t>& extra_dc_precision, bool streaming_mode) {
   HistogramParams params;
+  params.streaming_mode = streaming_mode;
   if (cparams.speed_tier > SpeedTier::kKitten) {
     params.clustering = HistogramParams::ClusteringType::kFast;
     params.ans_histogram_strategy =

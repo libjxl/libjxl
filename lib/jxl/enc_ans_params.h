@@ -72,7 +72,7 @@ struct HistogramParams {
 
   static HistogramParams ForModular(
       const CompressParams& cparams,
-      const std::vector<uint8_t>& extra_dc_precision);
+      const std::vector<uint8_t>& extra_dc_precision, bool streaming_mode);
 
   ClusteringType clustering = ClusteringType::kBest;
   HybridUintMethod uint_method = HybridUintMethod::kBest;
