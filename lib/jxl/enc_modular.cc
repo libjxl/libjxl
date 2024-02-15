@@ -195,7 +195,8 @@ Status float_to_int(const float* const row_in, pixel_type* const row_out,
 }  // namespace
 
 ModularFrameEncoder::ModularFrameEncoder(const FrameHeader& frame_header,
-                                         const CompressParams& cparams_orig)
+                                         const CompressParams& cparams_orig,
+                                         bool streaming_mode)
     : frame_dim_(frame_header.ToFrameDimensions()), cparams_(cparams_orig) {
   size_t num_streams =
       ModularStreamId::Num(frame_dim_, frame_header.passes.num_passes);
@@ -370,6 +371,15 @@ ModularFrameEncoder::ModularFrameEncoder(const FrameHeader& frame_header,
 
   // TODO(veluca): figure out how to use different predictor sets per channel.
   stream_options_.resize(num_streams, cparams_.options);
+
+  stream_options_[0] = cparams_.options;
+  if (cparams_.speed_tier == SpeedTier::kFalcon) {
+    stream_options_[0].tree_kind = ModularOptions::TreeKind::kWPFixedDC;
+  } else if (cparams_.speed_tier == SpeedTier::kThunder) {
+    stream_options_[0].tree_kind = ModularOptions::TreeKind::kGradientFixedDC;
+  }
+  stream_options_[0].histogram_params =
+      HistogramParams::ForModular(cparams_, {}, streaming_mode);
 }
 
 bool do_transform(Image& image, const Transform& tr,
@@ -745,15 +755,6 @@ Status ModularFrameEncoder::ComputeEncodingData(
   }
 
   // Fill other groups.
-  stream_options_[0] = cparams_.options;
-  if (cparams_.speed_tier == SpeedTier::kFalcon) {
-    stream_options_[0].tree_kind = ModularOptions::TreeKind::kWPFixedDC;
-  } else if (cparams_.speed_tier == SpeedTier::kThunder) {
-    stream_options_[0].tree_kind = ModularOptions::TreeKind::kGradientFixedDC;
-  }
-  stream_options_[0].histogram_params =
-      HistogramParams::ForModular(cparams_, {});
-
   // DC
   for (size_t group_id = 0; group_id < patch_dim.num_dc_groups; group_id++) {
     const size_t rgx = group_id % patch_dim.xsize_dc_groups;
@@ -1050,7 +1051,7 @@ Status ModularFrameEncoder::EncodeGlobalInfo(bool streaming_mode,
 
   // Write tree
   HistogramParams params =
-      HistogramParams::ForModular(cparams_, extra_dc_precision);
+      HistogramParams::ForModular(cparams_, extra_dc_precision, streaming_mode);
   {
     EntropyEncodingData tree_code;
     std::vector<uint8_t> tree_context_map;
@@ -1441,6 +1442,8 @@ void ModularFrameEncoder::AddVarDCTDC(const FrameHeader& frame_header,
     stream_options_[stream_id].tree_kind =
         ModularOptions::TreeKind::kGradientFixedDC;
   }
+  stream_options_[stream_id].histogram_params =
+      stream_options_[0].histogram_params;
 
   stream_images_[stream_id] = Image(r.xsize(), r.ysize(), 8, 3);
   if (nl_dc && stream_options_[stream_id].tree_kind ==
@@ -1582,6 +1585,8 @@ void ModularFrameEncoder::AddACMetadata(const Rect& r, size_t group_index,
       cparams_.force_cfl_jpeg_recompression) {
     stream_options_[stream_id].tree_kind = ModularOptions::TreeKind::kLearn;
   }
+  stream_options_[stream_id].histogram_params =
+      stream_options_[0].histogram_params;
   // YToX, YToB, ACS + QF, EPF
   Image& image = stream_images_[stream_id];
   image = Image(r.xsize(), r.ysize(), 8, 4);

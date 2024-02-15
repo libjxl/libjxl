@@ -50,7 +50,7 @@ void RoundtripMatrices(const std::vector<QuantEncoding>& encodings) {
   DequantMatrices mat;
   CodecMetadata metadata;
   FrameHeader frame_header(&metadata);
-  ModularFrameEncoder encoder(frame_header, CompressParams{});
+  ModularFrameEncoder encoder(frame_header, CompressParams{}, false);
   DequantMatricesSetCustom(&mat, encodings, &encoder);
   const std::vector<QuantEncoding>& encodings_dec = mat.encodings();
   for (size_t i = 0; i < encodings.size(); i++) {
@@ -172,7 +172,7 @@ TEST_P(QuantWeightsTargetTest, DCTUniform) {
   DequantMatrices dequant_matrices;
   CodecMetadata metadata;
   FrameHeader frame_header(&metadata);
-  ModularFrameEncoder encoder(frame_header, CompressParams{});
+  ModularFrameEncoder encoder(frame_header, CompressParams{}, false);
   DequantMatricesSetCustom(&dequant_matrices, encodings, &encoder);
   JXL_CHECK(dequant_matrices.EnsureComputed(~0u));
 
