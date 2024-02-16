@@ -587,15 +587,18 @@ void PrintMode(jxl::extras::PackedPixelFile& ppf, const double decode_mps,
   if (args.container == jxl::Override::kOn) {
     if (args.lossless_jpeg && args.allow_jpeg_reconstruction)
       cmdline.VerbosePrintf(0, " | JPEG reconstruction data");
-    if (!ppf.metadata.exif.empty())
+    if (!ppf.metadata.exif.empty()) {
       cmdline.VerbosePrintf(0, " | %" PRIuS "-byte Exif",
                             ppf.metadata.exif.size());
-    if (!ppf.metadata.xmp.empty())
+    }
+    if (!ppf.metadata.xmp.empty()) {
       cmdline.VerbosePrintf(0, " | %" PRIuS "-byte XMP",
                             ppf.metadata.xmp.size());
-    if (!ppf.metadata.jumbf.empty())
+    }
+    if (!ppf.metadata.jumbf.empty()) {
       cmdline.VerbosePrintf(0, " | %" PRIuS "-byte JUMBF",
                             ppf.metadata.jumbf.size());
+    }
   }
   cmdline.VerbosePrintf(0, "]\n");
 }

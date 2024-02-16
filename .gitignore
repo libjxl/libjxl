@@ -3,6 +3,9 @@
 /build*
 /bazel*
 
+# clangd
+.cache
+
 # The downloaded corpora files for benchmark.
 /third_party/corpora
 

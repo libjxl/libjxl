@@ -65,6 +65,7 @@ using ::jxl::ColorEncoding;
 using ::jxl::Image3F;
 using ::jxl::ImageBundle;
 using ::jxl::ImageF;
+using ::jxl::JxlButteraugliComparator;
 using ::jxl::Rng;
 using ::jxl::Status;
 using ::jxl::ThreadPool;
@@ -85,7 +86,7 @@ Status ReadPNG(const std::string& filename, Image3F* image) {
   JXL_CHECK(ReadFile(filename, &encoded));
   JXL_CHECK(
       jxl::SetFromBytes(jxl::Bytes(encoded), jxl::extras::ColorHints(), &io));
-  *image = Image3F(io.xsize(), io.ysize());
+  JXL_ASSIGN_OR_DIE(*image, Image3F::Create(io.xsize(), io.ysize()));
   CopyImageTo(*io.Main().color(), image);
   return true;
 }
@@ -102,7 +103,7 @@ Status CreateNonSRGBICCProfile(PackedPixelFile* ppf) {
   return true;
 }
 
-std::string CodecToExtension(std::string codec_name, char sep) {
+std::string CodecToExtension(const std::string& codec_name, char sep) {
   std::string result;
   // Add in the parameters of the codec_name in reverse order, so that the
   // name of the file format (e.g. jxl) is last.
@@ -242,13 +243,15 @@ void DoCompress(const std::string& filename, const PackedPixelFile& ppf,
       // JPEG XL file format's default.
       // TODO(szabadka) Support different intensity targets as well.
       params.intensity_target = 80.0;
-      distance =
-          ButteraugliDistance(ib1, ib2, params, *JxlGetDefaultCms(), &distmap,
-                              inner_pool, codec->IgnoreAlpha());
+
+      const JxlCmsInterface& cms = *JxlGetDefaultCms();
+      JxlButteraugliComparator comparator(params, cms);
+      JXL_CHECK(ComputeScore(ib1, ib2, &comparator, cms, &distance, &distmap,
+                             inner_pool, codec->IgnoreAlpha()));
     } else {
       // TODO(veluca): re-upsample and compute proper distance.
       distance = 1e+4f;
-      distmap = ImageF(1, 1);
+      JXL_ASSIGN_OR_DIE(distmap, ImageF::Create(1, 1));
       distmap.Row(0)[0] = distance;
     }
     // Update stats
@@ -259,7 +262,8 @@ void DoCompress(const std::string& filename, const PackedPixelFile& ppf,
     s->distance_p_norm +=
         ComputeDistanceP(distmap, ButteraugliParams(), Args()->error_pnorm) *
         input_pixels;
-    s->ssimulacra2 += ComputeSSIMULACRA2(ib1, ib2).Score() * input_pixels;
+    JXL_ASSIGN_OR_DIE(Msssim msssim, ComputeSSIMULACRA2(ib1, ib2));
+    s->ssimulacra2 += msssim.Score() * input_pixels;
     s->max_distance = std::max(s->max_distance, distance);
     s->distances.push_back(distance);
   }
@@ -298,8 +302,9 @@ void DoCompress(const std::string& filename, const PackedPixelFile& ppf,
                         ? Args()->heatmap_bad
                         : jxl::ButteraugliFuzzyInverse(0.5);
         if (Args()->save_heatmap) {
-          JXL_CHECK(WriteImage(CreateHeatMapImage(distmap, good, bad),
-                               inner_pool, heatmap_fn));
+          JXL_ASSIGN_OR_DIE(Image3F heatmap,
+                            CreateHeatMapImage(distmap, good, bad));
+          JXL_CHECK(WriteImage(heatmap, inner_pool, heatmap_fn));
         }
       }
     }
@@ -308,7 +313,9 @@ void DoCompress(const std::string& filename, const PackedPixelFile& ppf,
     TemporaryFile tmp_in("original", "pfm");
     TemporaryFile tmp_out("decoded", "pfm");
     TemporaryFile tmp_res("result", "txt");
-    std::string tmp_in_fn, tmp_out_fn, tmp_res_fn;
+    std::string tmp_in_fn;
+    std::string tmp_out_fn;
+    std::string tmp_res_fn;
     JXL_CHECK(tmp_in.GetFileName(&tmp_in_fn));
     JXL_CHECK(tmp_out.GetFileName(&tmp_out_fn));
     JXL_CHECK(tmp_res.GetFileName(&tmp_res_fn));
@@ -500,7 +507,7 @@ void WriteHtmlReport(const std::string& codec_desc,
     std::string heatmap_out =
         name + CodecToExtension(codec_name, '_') + ".heatmap.png";
 
-    std::string fname_orig = fnames[i];
+    const std::string& fname_orig = fnames[i];
     std::string fname_out = outdir + "/" + name_out;
     std::string fname_heatmap = outdir + "/" + heatmap_out;
     std::string url_orig = Args()->originals_url.empty()
@@ -620,7 +627,7 @@ struct StatPrinter {
     }
   }
 
-  void PrintDetails(const Task& t) {
+  void PrintDetails(const Task& t) const {
     double comp_bpp =
         t.stats.total_compressed_size * 8.0 / t.stats.total_input_pixels;
     double p_norm = t.stats.distance_p_norm / t.stats.total_input_pixels;
@@ -708,7 +715,7 @@ struct StatPrinter {
     fflush(stdout);
   }
 
-  void PrintStatsHeader() {
+  void PrintStatsHeader() const {
     if (Args()->markdown) {
       if (Args()->show_progress) {
         fprintf(stderr, "\n");
@@ -721,7 +728,7 @@ struct StatPrinter {
     fflush(stdout);
   }
 
-  void PrintStatsFooter() {
+  void PrintStatsFooter() const {
     printf(
         "%s",
         PrintAggregate(extra_metrics_names_->size(), stats_aggregate_).c_str());
@@ -920,7 +927,7 @@ class Benchmark {
       const Image3F& img = images[idx];
       int x0 = rng.UniformI(0, img.xsize() - size);
       int y0 = rng.UniformI(0, img.ysize() - size);
-      Image3F sample(size, size);
+      JXL_ASSIGN_OR_DIE(Image3F sample, Image3F::Create(size, size));
       for (size_t c = 0; c < 3; ++c) {
         for (size_t y = 0; y < size; ++y) {
           const float* JXL_RESTRICT row_in = img.PlaneRow(c, y0 + y);

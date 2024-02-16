@@ -7,6 +7,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "lib/jxl/base/status.h"
+#include "tools/file_io.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "tools/hdr/local_tone_map.cc"
 #include <hwy/foreach_target.h>
@@ -17,9 +20,7 @@
 #include "lib/extras/tone_mapping.h"
 #include "lib/jxl/base/fast_math-inl.h"
 #include "lib/jxl/convolve.h"
-#include "lib/jxl/enc_gamma_correct.h"
 #include "lib/jxl/image_bundle.h"
-#include "tools/args.h"
 #include "tools/cmdline.h"
 #include "tools/thread_pool_internal.h"
 
@@ -54,8 +55,9 @@ V ComputeLuminance(const float intensity_target, const V r, const V g,
 ImageF DownsampledLuminances(const Image3F& image,
                              const float intensity_target) {
   HWY_CAPPED(float, kDownsampling) d;
-  ImageF result(DivCeil(image.xsize(), kDownsampling),
-                DivCeil(image.ysize(), kDownsampling));
+  JXL_ASSIGN_OR_DIE(ImageF result,
+                    ImageF::Create(DivCeil(image.xsize(), kDownsampling),
+                                   DivCeil(image.ysize(), kDownsampling)));
   FillImage(kDefaultIntensityTarget, &result);
   for (size_t y = 0; y < image.ysize(); ++y) {
     const float* const JXL_RESTRICT rows[3] = {image.ConstPlaneRow(0, y),
@@ -86,7 +88,8 @@ ImageF DownsampledLuminances(const Image3F& image,
 }
 
 ImageF Upsample(const ImageF& image, ThreadPool* pool) {
-  ImageF upsampled_horizontally(2 * image.xsize(), image.ysize());
+  JXL_ASSIGN_OR_DIE(ImageF upsampled_horizontally,
+                    ImageF::Create(2 * image.xsize(), image.ysize()));
   const auto BoundX = [&image](ssize_t x) {
     return Clamp1<ssize_t>(x, 0, image.xsize() - 1);
   };
@@ -106,7 +109,8 @@ ImageF Upsample(const ImageF& image, ThreadPool* pool) {
       "UpsampleHorizontally"));
 
   HWY_FULL(float) df;
-  ImageF upsampled(2 * image.xsize(), 2 * image.ysize());
+  JXL_ASSIGN_OR_DIE(ImageF upsampled,
+                    ImageF::Create(2 * image.xsize(), 2 * image.ysize()));
   const auto BoundY = [&image](ssize_t y) {
     return Clamp1<ssize_t>(y, 0, image.ysize() - 1);
   };
@@ -238,7 +242,8 @@ void Blur(ImageF* image) {
   static constexpr WeightsSeparable5 kBlurFilter = {
       {HWY_REP4(.375f), HWY_REP4(.25f), HWY_REP4(.0625f)},
       {HWY_REP4(.375f), HWY_REP4(.25f), HWY_REP4(.0625f)}};
-  ImageF blurred_once(image->xsize(), image->ysize());
+  JXL_ASSIGN_OR_DIE(ImageF blurred_once,
+                    ImageF::Create(image->xsize(), image->ysize()));
   Separable5(*image, Rect(*image), kBlurFilter, nullptr, &blurred_once);
   Separable5(blurred_once, Rect(blurred_once), kBlurFilter, nullptr, image);
 }
@@ -258,8 +263,9 @@ void ProcessFrame(CodecInOut* image, float preserve_saturation,
   Image3F color = std::move(*image->Main().color());
   ImageF subsampled_image =
       HWY_DYNAMIC_DISPATCH(DownsampledLuminances)(color, intensity_target);
-  ImageF original_luminances(subsampled_image.xsize(),
-                             subsampled_image.ysize());
+  JXL_ASSIGN_OR_DIE(
+      ImageF original_luminances,
+      ImageF::Create(subsampled_image.xsize(), subsampled_image.ysize()));
   CopyImageTo(subsampled_image, &original_luminances);
 
   Blur(&subsampled_image);

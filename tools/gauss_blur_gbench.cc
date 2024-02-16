@@ -6,7 +6,7 @@
 #include <hwy/targets.h>
 
 #include "benchmark/benchmark.h"
-#include "lib/jxl/convolve.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/image_ops.h"
 #include "tools/gauss_blur.h"
 
@@ -21,12 +21,12 @@ void BM_GaussBlur1d(benchmark::State& state) {
 
   const size_t length = state.range();
   const double sigma = 7.0;  // (from Butteraugli application)
-  ImageF in(length, 1);
+  JXL_ASSIGN_OR_DIE(ImageF in, ImageF::Create(length, 1));
   const float expected = length;
   FillImage(expected, &in);
 
-  ImageF temp(length, 1);
-  ImageF out(length, 1);
+  JXL_ASSIGN_OR_DIE(ImageF temp, ImageF::Create(length, 1));
+  JXL_ASSIGN_OR_DIE(ImageF out, ImageF::Create(length, 1));
   const auto rg = CreateRecursiveGaussian(sigma);
   for (auto _ : state) {
     FastGaussian1D(rg, length, in.Row(0), out.Row(0));
@@ -43,12 +43,12 @@ void BM_GaussBlur2d(benchmark::State& state) {
   const size_t xsize = state.range();
   const size_t ysize = xsize;
   const double sigma = 7.0;  // (from Butteraugli application)
-  ImageF in(xsize, ysize);
+  JXL_ASSIGN_OR_DIE(ImageF in, ImageF::Create(xsize, ysize));
   const float expected = xsize + ysize;
   FillImage(expected, &in);
 
-  ImageF temp(xsize, ysize);
-  ImageF out(xsize, ysize);
+  JXL_ASSIGN_OR_DIE(ImageF temp, ImageF::Create(xsize, ysize));
+  JXL_ASSIGN_OR_DIE(ImageF out, ImageF::Create(xsize, ysize));
   ThreadPool* null_pool = nullptr;
   const auto rg = CreateRecursiveGaussian(sigma);
   for (auto _ : state) {

@@ -64,7 +64,8 @@ Status ConvertPackedFrameToImageBundle(const JxlBasicInfo& info,
   bundle->extra_channels().resize(io.metadata.m.extra_channel_info.size());
   for (size_t i = 0; i < frame.extra_channels.size(); i++) {
     const auto& ppf_ec = frame.extra_channels[i];
-    bundle->extra_channels()[i] = ImageF(ppf_ec.xsize, ppf_ec.ysize);
+    JXL_ASSIGN_OR_RETURN(bundle->extra_channels()[i],
+                         ImageF::Create(ppf_ec.xsize, ppf_ec.ysize));
     JXL_CHECK(BufferToImageF(ppf_ec.format, ppf_ec.xsize, ppf_ec.ysize,
                              ppf_ec.pixels(), ppf_ec.pixels_size, pool,
                              &bundle->extra_channels()[i]));
@@ -307,7 +308,7 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
     packed_frame.name = frame.name;
     packed_frame.frame_info.name_length = frame.name.size();
     // Color transform
-    ImageBundle ib = frame.Copy();
+    JXL_ASSIGN_OR_RETURN(ImageBundle ib, frame.Copy());
     const ImageBundle* to_color_transform = &ib;
     ImageMetadata metadata = io.metadata.m;
     ImageBundle store(&metadata);

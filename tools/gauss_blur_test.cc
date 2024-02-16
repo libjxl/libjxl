@@ -9,9 +9,7 @@
 #include <hwy/targets.h>
 #include <vector>
 
-#include "lib/extras/time.h"
 #include "lib/jxl/base/printf_macros.h"
-#include "lib/jxl/convolve.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/image_test_utils.h"
 #include "lib/jxl/testing.h"
@@ -34,7 +32,7 @@ void ExtrapolateBorders(const float* const JXL_RESTRICT row_in,
 ImageF ConvolveXAndTranspose(const ImageF& in,
                              const std::vector<float>& kernel) {
   JXL_ASSERT(kernel.size() % 2 == 1);
-  ImageF out(in.ysize(), in.xsize());
+  JXL_ASSIGN_OR_DIE(ImageF out, ImageF::Create(in.ysize(), in.xsize()));
   const int r = kernel.size() / 2;
   std::vector<float> row_tmp(in.xsize() + 2 * r);
   float* const JXL_RESTRICT rowp = &row_tmp[r];
@@ -152,7 +150,7 @@ TEST(GaussBlurTest, ImpulseResponse) {
 ImageF ConvolveAndTransposeF64(const ImageF& in,
                                const std::vector<double>& kernel) {
   JXL_ASSERT(kernel.size() % 2 == 1);
-  ImageF out(in.ysize(), in.xsize());
+  JXL_ASSIGN_OR_DIE(ImageF out, ImageF::Create(in.ysize(), in.xsize()));
   const int r = kernel.size() / 2;
   std::vector<float> row_tmp(in.xsize() + 2 * r);
   float* const JXL_RESTRICT rowp = &row_tmp[r];
@@ -195,13 +193,13 @@ std::vector<T> GaussianKernel(int radius, T sigma) {
 }
 
 void TestDirac2D(size_t xsize, size_t ysize, double sigma) {
-  ImageF in(xsize, ysize);
+  JXL_ASSIGN_OR_DIE(ImageF in, ImageF::Create(xsize, ysize));
   ZeroFillImage(&in);
   // We anyway ignore the border below, so might as well choose the middle.
   in.Row(ysize / 2)[xsize / 2] = 1.0f;
 
-  ImageF temp(xsize, ysize);
-  ImageF out(xsize, ysize);
+  JXL_ASSIGN_OR_DIE(ImageF temp, ImageF::Create(xsize, ysize));
+  JXL_ASSIGN_OR_DIE(ImageF out, ImageF::Create(xsize, ysize));
   const auto rg = CreateRecursiveGaussian(sigma);
   FastGaussian(
       rg, xsize, ysize, [&](size_t y) { return in.ConstRow(y); },
@@ -240,7 +238,7 @@ TEST(GaussBlurTest, DISABLED_SlowTestDirac1D) {
   const std::vector<double> kernel = GaussianKernel(radius, sigma);
 
   const size_t length = 16384;
-  ImageF inputs(length, 1);
+  JXL_ASSIGN_OR_DIE(ImageF inputs, ImageF::Create(length, 1));
   ZeroFillImage(&inputs);
 
   auto outputs = hwy::AllocateAligned<float>(length);
@@ -300,14 +298,14 @@ void TestRandom(size_t xsize, size_t ysize, float min, float max, double sigma,
                 double max_l1, double max_rel) {
   printf("%4" PRIuS " x %4" PRIuS " %4.1f %4.1f sigma %.1f\n", xsize, ysize,
          min, max, sigma);
-  ImageF in(xsize, ysize);
+  JXL_ASSIGN_OR_DIE(ImageF in, ImageF::Create(xsize, ysize));
   RandomFillImage(&in, min, max, 65537 + xsize * 129 + ysize);
   // FastGaussian/Convolve handle borders differently, so keep those pixels 0.
   const size_t border = 4 * sigma;
   SetBorder(border, 0.0f, &in);
 
-  ImageF temp(xsize, ysize);
-  ImageF out(xsize, ysize);
+  JXL_ASSIGN_OR_DIE(ImageF temp, ImageF::Create(xsize, ysize));
+  JXL_ASSIGN_OR_DIE(ImageF out, ImageF::Create(xsize, ysize));
   const auto rg = CreateRecursiveGaussian(sigma);
   FastGaussian(
       rg, in.xsize(), in.ysize(), [&](size_t y) { return in.ConstRow(y); },
@@ -348,7 +346,7 @@ TEST(GaussBlurTest, TestRandom) {
 TEST(GaussBlurTest, TestSign) {
   const size_t xsize = 500;
   const size_t ysize = 606;
-  ImageF in(xsize, ysize);
+  JXL_ASSIGN_OR_DIE(ImageF in, ImageF::Create(xsize, ysize));
 
   ZeroFillImage(&in);
   const float center[33 * 33] = {
@@ -545,8 +543,8 @@ TEST(GaussBlurTest, TestSign) {
 
   const double sigma = 7.155933;
 
-  ImageF temp(xsize, ysize);
-  ImageF out_rg(xsize, ysize);
+  JXL_ASSIGN_OR_DIE(ImageF temp, ImageF::Create(xsize, ysize));
+  JXL_ASSIGN_OR_DIE(ImageF out_rg, ImageF::Create(xsize, ysize));
   const auto rg = CreateRecursiveGaussian(sigma);
   FastGaussian(
       rg, in.xsize(), in.ysize(), [&](size_t y) { return in.ConstRow(y); },

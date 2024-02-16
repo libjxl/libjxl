@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+#include "jxl/cms_interface.h"
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/color_hints.h"
 #include "lib/extras/metrics.h"
@@ -35,6 +36,7 @@ using jxl::ButteraugliParams;
 using jxl::CodecInOut;
 using jxl::Image3F;
 using jxl::ImageF;
+using jxl::JxlButteraugliComparator;
 using jxl::Status;
 
 Status WriteImage(const Image3F& image, const std::string& filename) {
@@ -91,8 +93,12 @@ Status RunButteraugli(const char* pathname1, const char* pathname2,
   ba_params.hf_asymmetry = 1.0f;
   ba_params.xmul = 1.0f;
   ba_params.intensity_target = intensity_target;
-  const float distance = jxl::ButteraugliDistance(
-      io1.Main(), io2.Main(), ba_params, *JxlGetDefaultCms(), &distmap, &pool);
+  const JxlCmsInterface& cms = *JxlGetDefaultCms();
+  JxlButteraugliComparator comparator(ba_params, cms);
+  float distance;
+  JXL_CHECK(ComputeScore(io1.Main(), io2.Main(), &comparator, cms, &distance,
+                         &distmap, &pool,
+                         /* ignore_alpha */ false));
   printf("%.10f\n", distance);
 
   double pnorm = jxl::ComputeDistanceP(distmap, ba_params, p);
@@ -101,8 +107,9 @@ Status RunButteraugli(const char* pathname1, const char* pathname2,
   if (!distmap_filename.empty()) {
     float good = jxl::ButteraugliFuzzyInverse(1.5);
     float bad = jxl::ButteraugliFuzzyInverse(0.5);
-    JXL_CHECK(WriteImage(jxl::CreateHeatMapImage(distmap, good, bad),
-                         distmap_filename));
+    JXL_ASSIGN_OR_DIE(Image3F heatmap,
+                      jxl::CreateHeatMapImage(distmap, good, bad));
+    JXL_CHECK(WriteImage(heatmap, distmap_filename));
   }
   if (!raw_distmap_filename.empty()) {
     FILE* out = fopen(raw_distmap_filename.c_str(), "wb");

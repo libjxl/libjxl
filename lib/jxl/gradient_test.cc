@@ -44,7 +44,7 @@ double PointLineDist(double x0, double y0, double x1, double y1, double x,
 // angle in which the change direction happens.
 Image3F GenerateTestGradient(uint32_t color0, uint32_t color1, double angle,
                              size_t xsize, size_t ysize) {
-  Image3F image(xsize, ysize);
+  JXL_ASSIGN_OR_DIE(Image3F image, Image3F::Create(xsize, ysize));
 
   double x0 = xsize / 2;
   double y0 = ysize / 2;
@@ -77,10 +77,10 @@ Image3F GenerateTestGradient(uint32_t color0, uint32_t color1, double angle,
 // delta and right delta (top/bottom for vertical direction).
 // The radius over which the derivative is computed is only 1 pixel and it only
 // checks two angles (hor and ver), but this approximation works well enough.
-static Image3F Gradient2(const Image3F& image) {
+Image3F Gradient2(const Image3F& image) {
   size_t xsize = image.xsize();
   size_t ysize = image.ysize();
-  Image3F image2(xsize, ysize);
+  JXL_ASSIGN_OR_DIE(Image3F image2, Image3F::Create(xsize, ysize));
   for (size_t c = 0; c < 3; ++c) {
     for (size_t y = 1; y + 1 < ysize; y++) {
       const auto* JXL_RESTRICT row0 = image.ConstPlaneRow(c, y - 1);
@@ -181,7 +181,7 @@ void TestGradient(ThreadPool* pool, uint32_t color0, uint32_t color1,
   }
 }
 
-static constexpr bool fast_mode = true;
+constexpr bool fast_mode = true;
 
 TEST(GradientTest, SteepGradient) {
   test::ThreadPoolForTests pool(8);

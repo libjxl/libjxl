@@ -7,7 +7,6 @@
 
 #include <cstddef>
 #include <cstring>
-#include <utility>
 
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
@@ -39,8 +38,8 @@ void PadImageToBlockMultipleInPlace(Image3F* JXL_RESTRICT in,
   }
 }
 
-static void DownsampleImage(const ImageF& input, size_t factor,
-                            ImageF* output) {
+static void DoDownsampleImage(const ImageF& input, size_t factor,
+                              ImageF* output) {
   JXL_ASSERT(factor != 1);
   output->ShrinkTo(DivCeil(input.xsize(), factor),
                    DivCeil(input.ysize(), factor));
@@ -64,25 +63,29 @@ static void DownsampleImage(const ImageF& input, size_t factor,
   }
 }
 
-void DownsampleImage(ImageF* image, size_t factor) {
+StatusOr<ImageF> DownsampleImage(const ImageF& image, size_t factor) {
+  ImageF downsampled;
   // Allocate extra space to avoid a reallocation when padding.
-  ImageF downsampled(DivCeil(image->xsize(), factor) + kBlockDim,
-                     DivCeil(image->ysize(), factor) + kBlockDim);
-  DownsampleImage(*image, factor, &downsampled);
-  *image = std::move(downsampled);
+  JXL_ASSIGN_OR_RETURN(
+      downsampled, ImageF::Create(DivCeil(image.xsize(), factor) + kBlockDim,
+                                  DivCeil(image.ysize(), factor) + kBlockDim));
+  DoDownsampleImage(image, factor, &downsampled);
+  return downsampled;
 }
 
-void DownsampleImage(Image3F* opsin, size_t factor) {
+StatusOr<Image3F> DownsampleImage(const Image3F& opsin, size_t factor) {
   JXL_ASSERT(factor != 1);
   // Allocate extra space to avoid a reallocation when padding.
-  Image3F downsampled(DivCeil(opsin->xsize(), factor) + kBlockDim,
-                      DivCeil(opsin->ysize(), factor) + kBlockDim);
+  Image3F downsampled;
+  JXL_ASSIGN_OR_RETURN(
+      downsampled, Image3F::Create(DivCeil(opsin.xsize(), factor) + kBlockDim,
+                                   DivCeil(opsin.ysize(), factor) + kBlockDim));
   downsampled.ShrinkTo(downsampled.xsize() - kBlockDim,
                        downsampled.ysize() - kBlockDim);
   for (size_t c = 0; c < 3; c++) {
-    DownsampleImage(opsin->Plane(c), factor, &downsampled.Plane(c));
+    DoDownsampleImage(opsin.Plane(c), factor, &downsampled.Plane(c));
   }
-  *opsin = std::move(downsampled);
+  return downsampled;
 }
 
 }  // namespace jxl
