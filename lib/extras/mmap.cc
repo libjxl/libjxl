@@ -10,7 +10,8 @@
 
 #include "lib/jxl/base/common.h"
 
-#if __unix__
+#if defined(__unix__) || defined(__unix) || \
+    defined(__APPLE__) && defined(__MACH__)
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <unistd.h>
