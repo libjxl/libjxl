@@ -97,6 +97,8 @@ struct MemoryMappedFileImpl {
     return f;
   }
 
+  ~MemoryMappedFileImpl() { UnmapViewOfFile(ptr); }
+
   const uint8_t* data() const { return reinterpret_cast<const uint8_t*>(ptr); }
   size_t size() const { return fsize.QuadPart; }
 
