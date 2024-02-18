@@ -61,6 +61,8 @@ For all browsers and to track browsers progress see [Can I Use](https://caniuse.
 - [Krita](https://invent.kde.org/graphics/krita/-/commit/13e5d2e5b9f0eac5c8064b7767f0b62264a0797b)
 - [Paint.NET](https://www.getpaint.net/index.html); supported since 4.3.12 - requires a [plugin](https://github.com/0xC0000054/pdn-jpegxl) to be downloaded and installed.
 - Photoshop: no plugin available yet, no official support yet
+- [XL Converter](https://github.com/JacobDev1/xl-converter)
+- [Image Toolbox (supported since 2.6.0)](https://github.com/T8RIN/ImageToolbox)
 
 ## Image viewers
 
