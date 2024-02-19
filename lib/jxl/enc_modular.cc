@@ -678,6 +678,26 @@ Status ModularFrameEncoder::ComputeEncodingData(
     }
   }
 
+  if (cparams_.move_to_front_from_channel > 0) {
+    for (size_t tgt = 0;
+         tgt + cparams_.move_to_front_from_channel < gi.channel.size(); tgt++) {
+      size_t pos = cparams_.move_to_front_from_channel;
+      while (pos > 0) {
+        Transform move(TransformId::kRCT);
+        if (pos == 1) {
+          move.begin_c = tgt;
+          move.rct_type = 28;  // RGB -> GRB
+          pos -= 1;
+        } else {
+          move.begin_c = tgt + pos - 2;
+          move.rct_type = 14;  // RGB -> BRG
+          pos -= 2;
+        }
+        do_transform(gi, move, weighted::Header(), pool);
+      }
+    }
+  }
+
   // don't do squeeze if we don't have some spare bits
   if (!groupwise && cparams_.responsive && !gi.channel.empty() &&
       max_bitdepth + 2 < level_max_bitdepth) {

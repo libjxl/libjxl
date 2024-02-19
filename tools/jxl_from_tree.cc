@@ -10,12 +10,15 @@
 #include <fstream>
 #include <iostream>
 #include <istream>
+#include <string>
 #include <unordered_map>
 
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_fields.h"
 #include "lib/jxl/enc_frame.h"
+#include "lib/jxl/image.h"
+#include "lib/jxl/image_metadata.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
 #include "lib/jxl/modular/encoding/enc_debug_tree.h"
 #include "lib/jxl/modular/encoding/enc_ma.h"
@@ -73,7 +76,7 @@ template <typename F>
 bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
                CompressParams& cparams, size_t& W, size_t& H, CodecInOut& io,
                int& have_next, int& x0, int& y0) {
-  static const std::unordered_map<std::string, int> property_map = {
+  std::unordered_map<std::string, int> property_map = {
       {"c", 0},
       {"g", 1},
       {"y", 2},
@@ -98,7 +101,18 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
       {"PPrev", 21},
       {"PPrevAbsErr", 22},
       {"PPrevErr", 23},
+      {"Prev1Abs", 16},
+      {"Prev1", 17},
+      {"Prev1AbsErr", 18},
+      {"Prev1Err", 19},
   };
+  for (size_t i = 0; i < 19; i++) {
+    std::string name_prefix = "Prev" + std::to_string(i + 1);
+    property_map[name_prefix + "Abs"] = i * 4 + 16;
+    property_map[name_prefix] = i * 4 + 17;
+    property_map[name_prefix + "AbsErr"] = i * 4 + 18;
+    property_map[name_prefix + "Err"] = i * 4 + 19;
+  }
   static const std::unordered_map<std::string, Predictor> predictor_map = {
       {"Set", Predictor::Zero},
       {"W", Predictor::Left},
@@ -200,6 +214,14 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     cparams.color_transform = ColorTransform::kXYB;
   } else if (t == "CbYCr") {
     cparams.color_transform = ColorTransform::kYCbCr;
+  } else if (t == "HiddenChannel") {
+    t = tok();
+    size_t num = 0;
+    cparams.move_to_front_from_channel = -1 - std::stoul(t, &num);
+    if (num != t.size() || num > 16) {
+      fprintf(stderr, "Invalid HiddenChannel (max 16): %s\n", t.c_str());
+      return false;
+    }
   } else if (t == "RCT") {
     t = tok();
     size_t num = 0;
@@ -425,6 +447,7 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
   cparams.resampling = 1;
   cparams.ec_resampling = 1;
   cparams.modular_group_size_shift = 3;
+  cparams.colorspace = 0;
   CodecInOut io;
   int have_next = 0;
 
@@ -449,7 +472,7 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
   if (tree_out) {
     PrintTree(tree, tree_out);
   }
-  Image3F image(width, height);
+  Image3F image(width * cparams.resampling, height * cparams.resampling);
   io.SetFromImage(std::move(image), ColorEncoding::SRGB());
   io.SetSize((width + x0) * cparams.resampling,
              (height + y0) * cparams.resampling);
@@ -472,6 +495,19 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
   JXL_RETURN_IF_ERROR(metadata->size.Set(io.xsize(), io.ysize()));
 
   metadata->m.xyb_encoded = (cparams.color_transform == ColorTransform::kXYB);
+  metadata->m.modular_16_bit_buffer_sufficient = false;
+
+  if (cparams.move_to_front_from_channel < -1) {
+    size_t nch = -1 - cparams.move_to_front_from_channel;
+    cparams.move_to_front_from_channel = 3 + metadata->m.num_extra_channels;
+    metadata->m.num_extra_channels += nch;
+    for (size_t _ = 0; _ < nch; _++) {
+      metadata->m.extra_channel_info.push_back(jxl::ExtraChannelInfo());
+      auto& eci = metadata->m.extra_channel_info.back();
+      eci.type = jxl::ExtraChannel::kOptional;
+      io.frames[0].extra_channels().push_back(ImageF(io.xsize(), io.ysize()));
+    }
+  }
 
   JXL_RETURN_IF_ERROR(WriteCodestreamHeaders(metadata.get(), &writer, nullptr));
   writer.ZeroPadToByte();
@@ -497,6 +533,7 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
                    have_next, x0, y0)) {
       return 1;
     }
+    cparams.custom_fixed_tree = tree;
     Image3F image(width, height);
     io.SetFromImage(std::move(image), ColorEncoding::SRGB());
     io.frames[0].blend = true;
