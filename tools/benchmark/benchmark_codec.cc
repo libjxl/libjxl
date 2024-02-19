@@ -119,15 +119,17 @@ class NoneCodec : public ImageCodec {
         io, format, io.Main().c_current(), pool, ppf);
   };
 
-  Status Decompress(const std::string& filename,
-                    const Span<const uint8_t> compressed, ThreadPool* pool,
-                    CodecInOut* io, jpegxl::tools::SpeedStats* speed_stats) {
+  static Status Decompress(const std::string& filename,
+                           const Span<const uint8_t> compressed,
+                           ThreadPool* pool, CodecInOut* io,
+                           jpegxl::tools::SpeedStats* speed_stats) {
     const double start = jxl::Now();
     JXL_ASSERT(compressed.size() == 8);
-    uint32_t xsize, ysize;
+    uint32_t xsize;
+    uint32_t ysize;
     memcpy(&xsize, compressed.data(), 4);
     memcpy(&ysize, compressed.data() + 4, 4);
-    Image3F image(xsize, ysize);
+    JXL_ASSIGN_OR_RETURN(Image3F image, Image3F::Create(xsize, ysize));
     ZeroFillImage(&image);
     io->metadata.m.SetFloat32Samples();
     io->metadata.m.color_encoding = ColorEncoding::SRGB();
@@ -142,7 +144,7 @@ class NoneCodec : public ImageCodec {
 
 ImageCodecPtr CreateImageCodec(const std::string& description) {
   std::string name = description;
-  std::string parameters = "";
+  std::string parameters;
   size_t colon = description.find(':');
   if (colon < description.size()) {
     name = description.substr(0, colon);

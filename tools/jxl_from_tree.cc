@@ -19,10 +19,7 @@
 #include "lib/jxl/enc_frame.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_metadata.h"
-#include "lib/jxl/modular/encoding/context_predict.h"
 #include "lib/jxl/modular/encoding/enc_debug_tree.h"
-#include "lib/jxl/modular/encoding/enc_ma.h"
-#include "lib/jxl/modular/encoding/encoding.h"
 #include "lib/jxl/splines.h"
 #include "lib/jxl/test_utils.h"  // TODO(eustas): cut this dependency
 #include "tools/file_io.h"
@@ -139,7 +136,8 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
       return false;
     }
     p = property_map.at(t);
-    if ((t = tok()) != ">") {
+    t = tok();
+    if (t != ">") {
       fprintf(stderr, "Expected >, found %s\n", t.c_str());
       return false;
     }
@@ -240,7 +238,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     }
   } else if (t == "Alpha") {
     io.metadata.m.SetAlphaBits(io.metadata.m.bit_depth.bits_per_sample);
-    ImageF alpha(W, H);
+    JXL_ASSIGN_OR_RETURN(ImageF alpha, ImageF::Create(W, H));
     io.frames[0].SetAlpha(std::move(alpha));
   } else if (t == "Bitdepth") {
     t = tok();
@@ -440,8 +438,10 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
   Tree tree;
   SplineData spline_data;
   CompressParams cparams = {};
-  size_t width = 1024, height = 1024;
-  int x0 = 0, y0 = 0;
+  size_t width = 1024;
+  size_t height = 1024;
+  int x0 = 0;
+  int y0 = 0;
   cparams.SetLossless();
   cparams.responsive = false;
   cparams.resampling = 1;
@@ -454,7 +454,7 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
   std::istream* f = &std::cin;
   std::ifstream file;
 
-  if (strcmp(in, "-")) {
+  if (strcmp(in, "-") > 0) {
     file.open(in, std::ifstream::in);
     f = &file;
   }
@@ -472,7 +472,9 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
   if (tree_out) {
     PrintTree(tree, tree_out);
   }
-  Image3F image(width * cparams.resampling, height * cparams.resampling);
+  JXL_ASSIGN_OR_RETURN(
+      Image3F image,
+      Image3F::Create(width * cparams.resampling, height * cparams.resampling));
   io.SetFromImage(std::move(image), ColorEncoding::SRGB());
   io.SetSize((width + x0) * cparams.resampling,
              (height + y0) * cparams.resampling);
@@ -505,7 +507,8 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
       metadata->m.extra_channel_info.push_back(jxl::ExtraChannelInfo());
       auto& eci = metadata->m.extra_channel_info.back();
       eci.type = jxl::ExtraChannel::kOptional;
-      io.frames[0].extra_channels().push_back(ImageF(io.xsize(), io.ysize()));
+      JXL_ASSIGN_OR_DIE(ImageF ch, ImageF::Create(io.xsize(), io.ysize()));
+      io.frames[0].extra_channels().emplace_back(std::move(ch));
     }
   }
 
@@ -534,7 +537,7 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
       return 1;
     }
     cparams.custom_fixed_tree = tree;
-    Image3F image(width, height);
+    JXL_ASSIGN_OR_RETURN(Image3F image, Image3F::Create(width, height));
     io.SetFromImage(std::move(image), ColorEncoding::SRGB());
     io.frames[0].blend = true;
   }
@@ -553,7 +556,7 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
 
 int main(int argc, char** argv) {
   if ((argc != 3 && argc != 4) ||
-      (strcmp(argv[1], "-") && !strcmp(argv[1], argv[2]))) {
+      ((strcmp(argv[1], "-") > 0) && !strcmp(argv[1], argv[2]))) {
     fprintf(stderr, "Usage: %s tree_in.txt out.jxl [tree_drawing]\n", argv[0]);
     return 1;
   }

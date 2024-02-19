@@ -44,6 +44,11 @@ size_t MaxVectorSize() {
 }
 
 size_t BytesPerRow(const size_t xsize, const size_t sizeof_t) {
+  // Special case: we don't allow any ops -> don't need extra padding/
+  if (xsize == 0) {
+    return 0;
+  }
+
   const size_t vec_size = MaxVectorSize();
   size_t valid_bytes = xsize * sizeof_t;
 

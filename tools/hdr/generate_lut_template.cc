@@ -8,10 +8,11 @@
 
 #include "lib/extras/codec.h"
 #include "lib/extras/packed_image_convert.h"
-#include "lib/jxl/image_metadata.h"
-#include "tools/args.h"
 #include "tools/cmdline.h"
+#include "tools/file_io.h"
 #include "tools/thread_pool_internal.h"
+
+using jxl::Image3F;
 
 int main(int argc, const char** argv) {
   jpegxl::tools::ThreadPoolInternal pool;
@@ -39,7 +40,7 @@ int main(int argc, const char** argv) {
     return EXIT_FAILURE;
   }
 
-  jxl::Image3F image(N * N, N);
+  JXL_ASSIGN_OR_RETURN(Image3F image, Image3F::Create(N * N, N));
   JXL_CHECK(jxl::RunOnPool(
       &pool, 0, N, jxl::ThreadPool::NoInit,
       [&](const uint32_t y, size_t /* thread */) {

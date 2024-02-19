@@ -33,7 +33,6 @@
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/common.h"  // JXL_HIGH_PRECISION
-#include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/fake_parallel_runner_testonly.h"
 #include "lib/jxl/image.h"
@@ -548,7 +547,7 @@ TEST(JxlTest, RoundtripSmallPatches) {
 #if 0
 TEST(JxlTest, RoundtripImageBundleOriginalBits) {
   // Image does not matter, only io.metadata.m and io2.metadata.m are tested.
-  Image3F image(1, 1);
+  JXL_ASSIGN_OR_DIE(Image3F image, Image3F::Create(1, 1));
   ZeroFillImage(&image);
   CodecInOut io;
   io.metadata.m.color_encoding = ColorEncoding::LinearSRGB();
@@ -781,7 +780,8 @@ bool UnpremultiplyAlpha(CodecInOut& io) {
 TEST(JxlTest, RoundtripAlphaPremultiplied) {
   const std::vector<uint8_t> orig =
       ReadTestData("external/wesaturate/500px/tmshre_riaphotographs_alpha.png");
-  CodecInOut io, io_nopremul;
+  CodecInOut io;
+  CodecInOut io_nopremul;
   ASSERT_TRUE(SetFromBytes(Bytes(orig), &io));
   ASSERT_TRUE(SetFromBytes(Bytes(orig), &io_nopremul));
 
@@ -901,7 +901,8 @@ TEST(JxlTest, RoundtripAlphaNonMultipleOf8) {
 TEST(JxlTest, RoundtripAlpha16) {
   ThreadPoolForTests pool(4);
   // The image is wider than 512 pixels to ensure multiple groups are tested.
-  size_t xsize = 1200, ysize = 160;
+  size_t xsize = 1200;
+  size_t ysize = 160;
   TestImage t;
   t.SetDimensions(xsize, ysize).SetChannels(4).SetAllBitDepths(16);
   TestImage::Frame frame = t.AddFrame();
@@ -1038,7 +1039,8 @@ TEST(JxlTest, RoundtripLossless8Alpha) {
 
 TEST(JxlTest, RoundtripLossless16Alpha) {
   ThreadPool* pool = nullptr;
-  size_t xsize = 1200, ysize = 160;
+  size_t xsize = 1200;
+  size_t ysize = 160;
   TestImage t;
   t.SetDimensions(xsize, ysize).SetChannels(4).SetAllBitDepths(16);
   TestImage::Frame frame = t.AddFrame();
@@ -1073,7 +1075,8 @@ TEST(JxlTest, RoundtripLossless16Alpha) {
 
 TEST(JxlTest, RoundtripLossless16AlphaNotMisdetectedAs8Bit) {
   ThreadPool* pool = nullptr;
-  size_t xsize = 128, ysize = 128;
+  size_t xsize = 128;
+  size_t ysize = 128;
   TestImage t;
   t.SetDimensions(xsize, ysize).SetChannels(4).SetAllBitDepths(16);
   TestImage::Frame frame = t.AddFrame();
@@ -1664,7 +1667,7 @@ struct StreamingEncodingTestParam {
 
   static std::vector<StreamingEncodingTestParam> All() {
     std::vector<StreamingEncodingTestParam> params;
-    for (const auto file :
+    for (const auto* file :
          {"jxl/flower/flower.png", "jxl/flower/flower_alpha.png"}) {
       for (int effort : {1, 3, 5, 6}) {
         if (effort != 1) {

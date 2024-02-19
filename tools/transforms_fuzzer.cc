@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 #include "lib/jxl/base/random.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/modular/encoding/encoding.h"
 #include "lib/jxl/modular/transform/transform.h"
@@ -28,7 +29,7 @@ using ::jxl::weighted::Header;
 
 namespace {
 void FillChannel(Channel& ch, Rng& rng) {
-  auto p = &ch.plane;
+  auto* p = &ch.plane;
   const size_t w = ch.w;
   const size_t h = ch.h;
   for (size_t y = 0; y < h; ++y) {
@@ -88,13 +89,15 @@ int TestOneInput(const uint8_t* data, size_t size) {
     ec_upsampling.push_back(1 << log_ec_upsampling);
   }
 
-  Image image(w, h, bit_depth, nb_chans + nb_extra);
+  JXL_ASSIGN_OR_DIE(Image image,
+                    Image::Create(w, h, bit_depth, nb_chans + nb_extra));
 
   for (size_t c = 0; c < nb_chans; c++) {
     Channel& ch = image.channel[c];
     ch.hshift = hshift[c];
     ch.vshift = vshift[c];
-    ch.shrink(jxl::DivCeil(w, 1 << hshift[c]), jxl::DivCeil(h, 1 << vshift[c]));
+    JXL_CHECK(ch.shrink(jxl::DivCeil(w, 1 << hshift[c]),
+                        jxl::DivCeil(h, 1 << vshift[c])));
   }
 
   for (size_t ec = 0; ec < nb_extra; ec++) {
@@ -102,7 +105,8 @@ int TestOneInput(const uint8_t* data, size_t size) {
     size_t ch_up = ec_upsampling[ec];
     int up_level =
         jxl::CeilLog2Nonzero(ch_up) - jxl::CeilLog2Nonzero(upsampling);
-    ch.shrink(jxl::DivCeil(w_orig, ch_up), jxl::DivCeil(h_orig, ch_up));
+    JXL_CHECK(
+        ch.shrink(jxl::DivCeil(w_orig, ch_up), jxl::DivCeil(h_orig, ch_up)));
     ch.hshift = ch.vshift = up_level;
   }
 

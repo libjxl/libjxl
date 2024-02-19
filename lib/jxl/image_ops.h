@@ -111,13 +111,13 @@ void CopyImageToWithPadding(const Rect& from_rect, const T& from,
 
 // Returns linear combination of two grayscale images.
 template <typename T>
-Plane<T> LinComb(const T lambda1, const Plane<T>& image1, const T lambda2,
-                 const Plane<T>& image2) {
+StatusOr<Plane<T>> LinComb(const T lambda1, const Plane<T>& image1,
+                           const T lambda2, const Plane<T>& image2) {
   const size_t xsize = image1.xsize();
   const size_t ysize = image1.ysize();
   JXL_CHECK(xsize == image2.xsize());
   JXL_CHECK(ysize == image2.ysize());
-  Plane<T> out(xsize, ysize);
+  JXL_ASSIGN_OR_RETURN(Plane<T> out, Plane<T>::Create(xsize, ysize));
   for (size_t y = 0; y < ysize; ++y) {
     const T* const JXL_RESTRICT row1 = image1.Row(y);
     const T* const JXL_RESTRICT row2 = image2.Row(y);
@@ -291,8 +291,8 @@ void PadImageToBlockMultipleInPlace(Image3F* JXL_RESTRICT in,
                                     size_t block_dim = kBlockDim);
 
 // Downsamples an image by a given factor.
-void DownsampleImage(Image3F* opsin, size_t factor);
-void DownsampleImage(ImageF* image, size_t factor);
+StatusOr<Image3F> DownsampleImage(const Image3F& opsin, size_t factor);
+StatusOr<ImageF> DownsampleImage(const ImageF& image, size_t factor);
 
 }  // namespace jxl
 
