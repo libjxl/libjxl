@@ -1796,7 +1796,7 @@ namespace {
 void SetPreferredColorProfileTest(
     const jxl::test::ColorEncodingDescriptor& from, bool icc_dst,
     bool use_cms) {
-  size_t xsize = 123, ysize = 77;
+  size_t xsize = 123, ysize = 177;
   int events = JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING | JXL_DEC_FULL_IMAGE;
   jxl::ColorEncoding c_in = jxl::test::ColorEncodingFromDescriptor(from);
   if (c_in.GetRenderingIntent() != jxl::RenderingIntent::kRelative) return;
