@@ -739,10 +739,11 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
   BlockCtxMap& block_ctx_map = shared.block_ctx_map;
 
   // Find and subtract splines.
+  if (cparams.custom_splines.HasAny()) {
+    image_features.splines = cparams.custom_splines;
+  }
   if (!streaming_mode && cparams.speed_tier <= SpeedTier::kSquirrel) {
-    if (cparams.custom_splines.HasAny()) {
-      image_features.splines = cparams.custom_splines;
-    } else {
+    if (!cparams.custom_splines.HasAny()) {
       image_features.splines = FindSplines(*opsin);
     }
     JXL_RETURN_IF_ERROR(image_features.splines.InitializeDrawCache(
