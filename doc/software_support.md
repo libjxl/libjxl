@@ -32,7 +32,7 @@ For all browsers and to track browsers progress see [Can I Use](https://caniuse.
 - [GDAL](https://gdal.org/drivers/raster/jpegxl.html): supported since 3.4.0 as a TIFF codec, and 3.6.0 as standalone format
 - [GraphicsMagick](http://www.graphicsmagick.org/NEWS.html#march-26-2022): supported since 1.3.38
 - [SAIL](https://sail.software): supported since 0.9.0
-- [JPEG XL coder for Android 21+](https://github.com/awxkee/jxl-coder)
+- [JPEG XL Coder](https://github.com/awxkee/jxl-coder): Supports version from Android 5.0 (API Level 21)
 
 ## Metadata manipulation libraries
 
