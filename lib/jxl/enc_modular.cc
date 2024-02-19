@@ -423,6 +423,12 @@ Status ModularFrameEncoder::ComputeEncodingData(
         enc_state->shared.image_features.patches, color);
   }
 
+  if (cparams_.custom_splines.HasAny()) {
+    PassesSharedState& shared = enc_state->shared;
+    ImageFeatures& image_features = shared.image_features;
+    image_features.splines = cparams_.custom_splines;
+  }
+
   // Convert ImageBundle to modular Image object
   const size_t xsize = patch_dim.xsize;
   const size_t ysize = patch_dim.ysize;
