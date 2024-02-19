@@ -557,8 +557,7 @@ void ChooseUintConfigs(const HistogramParams& params,
                        std::vector<Histogram>* clustered_histograms,
                        EntropyEncodingData* codes, size_t* log_alpha_size) {
   codes->uint_config.resize(clustered_histograms->size());
-  if (params.streaming_mode ||
-      params.uint_method == HistogramParams::HybridUintMethod::kNone) {
+  if (params.uint_method == HistogramParams::HybridUintMethod::kNone) {
     return;
   }
   if (params.uint_method == HistogramParams::HybridUintMethod::k000) {
@@ -571,6 +570,12 @@ void ChooseUintConfigs(const HistogramParams& params,
     codes->uint_config.clear();
     codes->uint_config.resize(clustered_histograms->size(),
                               HybridUintConfig(2, 0, 1));
+    return;
+  }
+
+  // If the uint config is adaptive, just stick with the default in streaming
+  // mode.
+  if (params.streaming_mode) {
     return;
   }
 
@@ -1769,7 +1774,8 @@ void WriteTokens(const std::vector<Token>& tokens,
                  const EntropyEncodingData& codes,
                  const std::vector<uint8_t>& context_map, size_t context_offset,
                  BitWriter* writer, size_t layer, AuxOut* aux_out) {
-  BitWriter::Allotment allotment(writer, 32 * tokens.size() + 32 * 1024 * 4);
+  // Theoretically, we could have 15 prefix code bits + 31 extra bits.
+  BitWriter::Allotment allotment(writer, 46 * tokens.size() + 32 * 1024 * 4);
   size_t num_extra_bits =
       WriteTokens(tokens, codes, context_map, context_offset, writer);
   allotment.ReclaimAndCharge(writer, layer, aux_out);
