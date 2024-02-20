@@ -1193,12 +1193,13 @@ TEST(JxlTest, RoundtripAnimation) {
 
   t.CoalesceGIFAnimationWithAlpha();
   ASSERT_EQ(ppf_out.frames.size(), t.ppf().frames.size());
-  EXPECT_LE(ButteraugliDistance(t.ppf(), ppf_out),
+  static constexpr double kMaxButteraugli =
 #if JXL_HIGH_PRECISION
-            1.55);
+      1.55;
 #else
-            1.75);
+      1.75;
 #endif
+  EXPECT_LE(ButteraugliDistance(t.ppf(), ppf_out), kMaxButteraugli);
 }
 
 TEST(JxlTest, RoundtripLosslessAnimation) {
