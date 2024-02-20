@@ -231,13 +231,15 @@ void VerifyFrameEncoding(size_t xsize, size_t ysize, JxlEncoder* enc,
   EXPECT_TRUE(jxl::test::DecodeFile(
       {}, jxl::Bytes(compressed.data(), compressed.size()), &decoded_io));
 
+  static constexpr double kMaxButteraugli =
+#if JXL_HIGH_PRECISION
+      1.84;
+#else
+      8.7;
+#endif
   EXPECT_LE(
       ComputeDistance2(input_io.Main(), decoded_io.Main(), *JxlGetDefaultCms()),
-#if JXL_HIGH_PRECISION
-      1.84);
-#else
-      8.7);
-#endif
+      kMaxButteraugli);
 }
 
 void VerifyFrameEncoding(JxlEncoder* enc,
