@@ -5,7 +5,7 @@
 
 # Workflow for building and running tests.
 
-name: Update branch with updated submodule on libjxl
+name: Update branches with updated submodule on libjxl
 
 on:
   workflow_dispatch:
@@ -43,7 +43,7 @@ jobs:
         working-directory: ./third_party/highway
         run: |
           git fetch origin
-          git checkout ${{{ matrix.tag }}
+          git checkout ${{ matrix.tag }}
       - name: Update deps.sh
         run: |
           NEWHASH=`git submodule status third_party/highway | cut -d' ' -f1 | cut -c2-`
