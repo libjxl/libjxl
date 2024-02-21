@@ -494,8 +494,8 @@ uint8_t ProcessNextMarker(j_decompress_ptr cinfo, const uint8_t* const data,
     marker = data[*pos + 1];
     if (num_skipped > 0) {
       if (m->found_soi_) {
-        JPEGLI_WARN("Skipped %d bytes before marker 0x%02x", (int)num_skipped,
-                    marker);
+        JPEGLI_WARN("Skipped %d bytes before marker 0x%02x",
+                    static_cast<int>(num_skipped), marker);
       } else {
         JPEGLI_ERROR("Did not find SOI marker.");
       }

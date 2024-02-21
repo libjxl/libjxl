@@ -147,7 +147,8 @@ Status PatchDictionary::Decode(BitReader* br, size_t xsize, size_t ysize,
             return JXL_FAILURE(
                 "Invalid alpha channel for blending: %u out of %u\n",
                 info.alpha_channel,
-                (uint32_t)shared_->metadata->m.extra_channel_info.size());
+                static_cast<uint32_t>(
+                    shared_->metadata->m.extra_channel_info.size()));
           }
         } else {
           info.alpha_channel = 0;

@@ -240,7 +240,8 @@ Status JPEGData::VisitFields(Visitor* visitor) {
       JXL_RETURN_IF_ERROR(visitor->U32(Bits(2), BitsOffset(2, 4),
                                        BitsOffset(4, 8), BitsOffset(8, 1), 0,
                                        &hc.values[i]));
-      value_slots[hc.values[i] >> 6] |= (uint64_t)1 << (hc.values[i] & 0x3F);
+      value_slots[hc.values[i] >> 6] |= static_cast<uint64_t>(1)
+                                        << (hc.values[i] & 0x3F);
     }
     if (hc.values[num_symbols - 1] != kJpegHuffmanAlphabetSize) {
       return JXL_FAILURE("Missing EOI symbol");

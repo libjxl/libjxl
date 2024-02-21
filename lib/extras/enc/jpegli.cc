@@ -509,7 +509,7 @@ Status EncodeJpeg(const PackedPixelFile& ppf, const JpegSettings& jpeg_settings,
       }
     } else {
       row_bytes.resize(image.stride);
-      if (cinfo.num_components == (int)image.format.num_channels) {
+      if (cinfo.num_components == static_cast<int>(image.format.num_channels)) {
         for (size_t y = 0; y < info.ysize; ++y) {
           memcpy(&row_bytes[0], pixels + y * image.stride, image.stride);
           JSAMPROW row[] = {row_bytes.data()};
