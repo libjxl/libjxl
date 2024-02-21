@@ -1,4 +1,4 @@
-jpeg-xl (0.10.0) UNRELEASED; urgency=medium
+jpeg-xl (0.10.0) unstable; urgency=medium
 
   * Bump JPEG XL version to 0.10.0.
 
