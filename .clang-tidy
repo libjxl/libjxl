@@ -25,6 +25,7 @@ Checks: >-
   modernize-*,
   performance-*,
   readability-*,
+  -bugprone-easily-swappable-parameters,
   -modernize-deprecated-headers,
   -modernize-return-braced-init-list,
   -modernize-use-auto,
@@ -33,6 +34,9 @@ Checks: >-
   -modernize-use-using,
   -readability-else-after-return,
   -readability-function-cognitive-complexity,
+  -readability-identifier-length,
+  -readability-magic-numbers,
+  -readability-simplify-boolean-expr,
   -readability-static-accessed-through-instance,
   -readability-uppercase-literal-suffix,
 
