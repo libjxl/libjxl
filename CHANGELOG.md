@@ -10,9 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
  - decoder API: added `JxlDecoderGetBoxSizeContents` for getting the size of the
    content of a box without the headers.
-### Removed
+ - encoder API: implemented new api functions for streaming encoding.
 
 ### Changed / clarified
+ - decoder/encoder API: return failure when surface allocation fail
 
 ## [0.9.2] - 2024-02-07
 
