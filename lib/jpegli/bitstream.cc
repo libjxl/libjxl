@@ -302,7 +302,7 @@ void WriteBlock(const int32_t* JXL_RESTRICT symbols,
 
 namespace {
 
-static JXL_INLINE void EmitMarker(JpegBitWriter* bw, int marker) {
+JXL_INLINE void EmitMarker(JpegBitWriter* bw, int marker) {
   bw->data[bw->pos++] = 0xFF;
   bw->data[bw->pos++] = marker;
 }

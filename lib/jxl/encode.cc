@@ -595,8 +595,8 @@ JxlEncoderStatus VerifyInputBitDepth(JxlBitDepth bit_depth,
   return JxlErrorOrStatus::Success();
 }
 
-static inline bool EncodeVarInt(uint64_t value, size_t output_size,
-                                size_t* output_pos, uint8_t* output) {
+inline bool EncodeVarInt(uint64_t value, size_t output_size, size_t* output_pos,
+                         uint8_t* output) {
   // While more than 7 bits of data are left,
   // store 7 bits and set the next byte flag
   while (value > 127) {

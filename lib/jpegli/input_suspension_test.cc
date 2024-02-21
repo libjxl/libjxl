@@ -17,7 +17,7 @@
 namespace jpegli {
 namespace {
 
-static constexpr uint8_t kFakeEoiMarker[2] = {0xff, 0xd9};
+constexpr uint8_t kFakeEoiMarker[2] = {0xff, 0xd9};
 
 struct SourceManager {
   SourceManager(const uint8_t* data, size_t len, size_t max_chunk_size,

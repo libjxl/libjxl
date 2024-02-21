@@ -123,12 +123,12 @@ Status WriteAppData(j_compress_ptr cinfo,
   return true;
 }
 
-static constexpr int kICCMarker = 0xe2;
+constexpr int kICCMarker = 0xe2;
 constexpr unsigned char kICCSignature[12] = {
     0x49, 0x43, 0x43, 0x5F, 0x50, 0x52, 0x4F, 0x46, 0x49, 0x4C, 0x45, 0x00};
-static constexpr uint8_t kUnknownTf = 2;
-static constexpr unsigned char kCICPTagSignature[4] = {0x63, 0x69, 0x63, 0x70};
-static constexpr size_t kCICPTagSize = 12;
+constexpr uint8_t kUnknownTf = 2;
+constexpr unsigned char kCICPTagSignature[4] = {0x63, 0x69, 0x63, 0x70};
+constexpr size_t kCICPTagSize = 12;
 
 bool FindCICPTag(const uint8_t* icc_data, size_t len, bool is_first_chunk,
                  size_t* cicp_offset, size_t* cicp_length, uint8_t* cicp_tag,

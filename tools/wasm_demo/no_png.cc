@@ -6,13 +6,12 @@
 #include "tools/wasm_demo/no_png.h"
 
 #include <array>
-#include <memory>
-
-extern "C" {
+#include <cstdlib>
+#include <cstring>
 
 namespace {
 
-static std::array<uint32_t, 256> makeCrc32Lut() {
+std::array<uint32_t, 256> makeCrc32Lut() {
   std::array<uint32_t, 256> result;
   for (uint32_t i = 0; i < 256; ++i) {
     constexpr uint32_t poly = 0xEDB88320;
@@ -82,12 +81,14 @@ void WriteU32BE(uint8_t*& dst, uint32_t value) {
 
 }  // namespace
 
+extern "C" {
+
 uint8_t* WrapPixelsToPng(size_t width, size_t height, size_t bit_depth,
                          bool has_alpha, const uint8_t* input,
                          const std::vector<uint8_t>& icc,
                          const std::vector<uint8_t>& cicp,
                          uint32_t* output_size) {
-  size_t row_size = width * (bit_depth / 8) * (3 + has_alpha);
+  size_t row_size = width * (bit_depth / 8) * (3 + static_cast<int>(has_alpha));
   size_t data_size = height * (row_size + 1);
   size_t num_deflate_blocks =
       (data_size + kMaxDeflateBlock - 1) / kMaxDeflateBlock;
@@ -180,7 +181,7 @@ uint8_t* WrapPixelsToPng(size_t width, size_t height, size_t bit_depth,
       block_size = kMaxDeflateBlock;
     }
     bool is_last = ((i + 1) == num_deflate_blocks);
-    WriteU8(dst, is_last);  // btype = 00 (uncompressed)
+    WriteU8(dst, static_cast<uint8_t>(is_last));  // btype = 00 (uncompressed)
     offset += block_size;
 
     WriteU16(dst, block_size);

@@ -16,8 +16,8 @@ namespace jpegli {
 
 namespace {
 
-static constexpr int kNumColorCellBits[kMaxComponents] = {3, 4, 3, 3};
-static constexpr int kCompW[kMaxComponents] = {2, 3, 1, 1};
+constexpr int kNumColorCellBits[kMaxComponents] = {3, 4, 3, 3};
+constexpr int kCompW[kMaxComponents] = {2, 3, 1, 1};
 
 int Pow(int a, int b) {
   int r = 1;
@@ -102,8 +102,8 @@ namespace {
 
 // 2^13 priority levels for the PQ seems to be a good compromise between
 // accuracy, running time and stack space usage.
-static const int kMaxPriority = 1 << 13;
-static const int kMaxLevel = 3;
+const int kMaxPriority = 1 << 13;
+const int kMaxLevel = 3;
 
 // This function is used in the multi-resolution grid to be able to compute
 // the keys for the different resolutions by just shifting the first key.
@@ -216,9 +216,9 @@ struct WangHasher {
 // to a unique integer index assigned to the different colors in order of
 // appearance in the image.  Return the number of unique colors found.
 // The colors are pre-quantized to 3 * 6 bits precision.
-static int BuildRGBColorIndex(const uint8_t* const image, int const num_pixels,
-                              int* const count, uint8_t* const red,
-                              uint8_t* const green, uint8_t* const blue) {
+int BuildRGBColorIndex(const uint8_t* const image, int const num_pixels,
+                       int* const count, uint8_t* const red,
+                       uint8_t* const green, uint8_t* const blue) {
   // Impossible because rgb are in the low 24 bits, and the upper 8 bits is 0.
   const uint32_t impossible_pixel_value = 0x10000000;
   std::unordered_map<uint32_t, int, RGBPixelHasher> index_map(1 << 12);

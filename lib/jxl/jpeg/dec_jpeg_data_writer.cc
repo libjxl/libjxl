@@ -42,7 +42,7 @@ const size_t kJpegBitWriterChunkSize = 16384;
 
 // Returns non-zero if and only if x has a zero byte, i.e. one of
 // x & 0xff, x & 0xff00, ..., x & 0xff00000000000000 is zero.
-static JXL_INLINE uint64_t HasZeroByte(uint64_t x) {
+JXL_INLINE uint64_t HasZeroByte(uint64_t x) {
   return (x - 0x0101010101010101ULL) & ~x & 0x8080808080808080ULL;
 }
 
@@ -57,7 +57,7 @@ void JpegBitWriterInit(JpegBitWriter* bw,
   bw->data = bw->chunk.buffer->data();
 }
 
-static JXL_NOINLINE void SwapBuffer(JpegBitWriter* bw) {
+JXL_NOINLINE void SwapBuffer(JpegBitWriter* bw) {
   bw->chunk.len = bw->pos;
   bw->output->emplace_back(std::move(bw->chunk));
   bw->chunk = OutputChunk(kJpegBitWriterChunkSize);
@@ -65,7 +65,7 @@ static JXL_NOINLINE void SwapBuffer(JpegBitWriter* bw) {
   bw->pos = 0;
 }
 
-static JXL_INLINE void Reserve(JpegBitWriter* bw, size_t n_bytes) {
+JXL_INLINE void Reserve(JpegBitWriter* bw, size_t n_bytes) {
   if (JXL_UNLIKELY((bw->pos + n_bytes) > kJpegBitWriterChunkSize)) {
     SwapBuffer(bw);
   }
@@ -77,14 +77,14 @@ static JXL_INLINE void Reserve(JpegBitWriter* bw, size_t n_bytes) {
  * This method is "careless" - caller must make sure that there is enough
  * space in the output buffer. Emits up to 2 bytes to buffer.
  */
-static JXL_INLINE void EmitByte(JpegBitWriter* bw, int byte) {
+JXL_INLINE void EmitByte(JpegBitWriter* bw, int byte) {
   bw->data[bw->pos] = byte;
   bw->data[bw->pos + 1] = 0;
   bw->pos += (byte != 0xFF ? 1 : 2);
 }
 
-static JXL_INLINE void DischargeBitBuffer(JpegBitWriter* bw, int nbits,
-                                          uint64_t bits) {
+JXL_INLINE void DischargeBitBuffer(JpegBitWriter* bw, int nbits,
+                                   uint64_t bits) {
   // At this point we are ready to emit the put_buffer to the output.
   // The JPEG format requires that after every 0xff byte in the entropy
   // coded section, there is a zero byte, therefore we first check if any of
@@ -111,7 +111,7 @@ static JXL_INLINE void DischargeBitBuffer(JpegBitWriter* bw, int nbits,
   bw->put_buffer = bits << bw->put_bits;
 }
 
-static JXL_INLINE void WriteBits(JpegBitWriter* bw, int nbits, uint64_t bits) {
+JXL_INLINE void WriteBits(JpegBitWriter* bw, int nbits, uint64_t bits) {
   JXL_DASSERT(nbits > 0);
   bw->put_bits -= nbits;
   if (JXL_UNLIKELY(bw->put_bits < 0)) {
@@ -187,21 +187,20 @@ void DCTCodingStateInit(DCTCodingState* s) {
   s->refinement_bits_.reserve(64);
 }
 
-static JXL_INLINE void WriteSymbol(int symbol, HuffmanCodeTable* table,
-                                   JpegBitWriter* bw) {
+JXL_INLINE void WriteSymbol(int symbol, HuffmanCodeTable* table,
+                            JpegBitWriter* bw) {
   WriteBits(bw, table->depth[symbol], table->code[symbol]);
 }
 
-static JXL_INLINE void WriteSymbolBits(int symbol, HuffmanCodeTable* table,
-                                       JpegBitWriter* bw, int nbits,
-                                       uint64_t bits) {
+JXL_INLINE void WriteSymbolBits(int symbol, HuffmanCodeTable* table,
+                                JpegBitWriter* bw, int nbits, uint64_t bits) {
   WriteBits(bw, nbits + table->depth[symbol],
             bits | (table->code[symbol] << nbits));
 }
 
 // Emit all buffered data to the bit stream using the given Huffman code and
 // bit writer.
-static JXL_INLINE void Flush(DCTCodingState* s, JpegBitWriter* bw) {
+JXL_INLINE void Flush(DCTCodingState* s, JpegBitWriter* bw) {
   if (s->eob_run_ > 0) {
     Reserve(bw, 16);
     int nbits = FloorLog2Nonzero<uint32_t>(s->eob_run_);
@@ -233,11 +232,9 @@ static JXL_INLINE void Flush(DCTCodingState* s, JpegBitWriter* bw) {
 
 // Buffer some more data at the end-of-band (the last non-zero or newly
 // non-zero coefficient within the [Ss, Se] spectral band).
-static JXL_INLINE void BufferEndOfBand(DCTCodingState* s,
-                                       HuffmanCodeTable* ac_huff,
-                                       const int* new_bits_array,
-                                       size_t new_bits_count,
-                                       JpegBitWriter* bw) {
+JXL_INLINE void BufferEndOfBand(DCTCodingState* s, HuffmanCodeTable* ac_huff,
+                                const int* new_bits_array,
+                                size_t new_bits_count, JpegBitWriter* bw) {
   if (s->eob_run_ == 0) {
     s->cur_ac_huff_ = ac_huff;
   }
@@ -884,8 +881,8 @@ SerializationStatus JXL_NOINLINE DoEncodeScan(const JPEGData& jpg,
   return SerializationStatus::DONE;
 }
 
-static SerializationStatus JXL_INLINE EncodeScan(const JPEGData& jpg,
-                                                 SerializationState* state) {
+SerializationStatus JXL_INLINE EncodeScan(const JPEGData& jpg,
+                                          SerializationState* state) {
   const JPEGScanInfo& scan_info = jpg.scan_info[state->scan_index];
   const bool is_progressive = state->is_progressive;
   const int Al = is_progressive ? scan_info.Al : 0;

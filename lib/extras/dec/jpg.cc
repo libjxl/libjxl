@@ -34,7 +34,7 @@ constexpr unsigned char kExifSignature[6] = {0x45, 0x78, 0x69,
                                              0x66, 0x00, 0x00};
 constexpr int kExifMarker = JPEG_APP0 + 1;
 
-static inline bool IsJPG(const Span<const uint8_t> bytes) {
+inline bool IsJPG(const Span<const uint8_t> bytes) {
   if (bytes.size() < 2) return false;
   if (bytes[0] != 0xFF || bytes[1] != 0xD8) return false;
   return true;
