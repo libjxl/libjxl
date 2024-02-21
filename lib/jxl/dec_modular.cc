@@ -416,7 +416,7 @@ Status ModularFrameDecoder::DecodeVarDCTDC(const FrameHeader& frame_header,
           reader, image, /*header=*/nullptr, stream_id, &options,
           /*undo_transforms=*/true, &tree, &code, &context_map)) {
     return JXL_FAILURE("Failed to decode VarDCT DC group (DC group id %d)",
-                       (int)group_id);
+                       static_cast<int>(group_id));
   }
   DequantDC(r, &dec_state->shared_storage.dc_storage,
             &dec_state->shared_storage.quant_dc, image,

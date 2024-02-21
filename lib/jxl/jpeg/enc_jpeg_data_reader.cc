@@ -419,7 +419,7 @@ struct BitReaderState {
     if (bits_left_ <= 16) {
       while (bits_left_ <= 56) {
         val_ <<= 8;
-        val_ |= (uint64_t)GetNextByte();
+        val_ |= static_cast<uint64_t>(GetNextByte());
         bits_left_ += 8;
       }
     }

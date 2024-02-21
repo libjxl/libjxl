@@ -310,7 +310,7 @@ Status EncodeWithLibJpeg(const PackedImage& image, const JxlBasicInfo& info,
 
   std::vector<uint8_t> row_bytes(image.stride);
   const uint8_t* pixels = reinterpret_cast<const uint8_t*>(image.pixels());
-  if (cinfo.num_components == (int)image.format.num_channels &&
+  if (cinfo.num_components == static_cast<int>(image.format.num_channels) &&
       image.format.data_type == JXL_TYPE_UINT8) {
     for (size_t y = 0; y < info.ysize; ++y) {
       memcpy(&row_bytes[0], pixels + y * image.stride, image.stride);

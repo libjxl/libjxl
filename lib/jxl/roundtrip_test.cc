@@ -120,12 +120,12 @@ float ConvertTestPixel<float>(const float val) {
 
 template <>
 uint16_t ConvertTestPixel<uint16_t>(const float val) {
-  return (uint16_t)(val * UINT16_MAX);
+  return static_cast<uint16_t>(val * UINT16_MAX);
 }
 
 template <>
 uint8_t ConvertTestPixel<uint8_t>(const float val) {
-  return (uint8_t)(val * UINT8_MAX);
+  return static_cast<uint8_t>(val * UINT8_MAX);
 }
 
 // Returns a test image.

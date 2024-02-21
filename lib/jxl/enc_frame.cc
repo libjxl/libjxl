@@ -2102,8 +2102,9 @@ Status EncodeFrame(const CompressParams& cparams_orig,
         // modular headers.
         for (int K : {0, 1 << 10, 70000}) {
           cparams_attempt.palette_colors = K;
-          for (int tree_mode : {-1, (int)ModularOptions::TreeMode::kNoWP,
-                                (int)ModularOptions::TreeMode::kDefault}) {
+          for (int tree_mode :
+               {-1, static_cast<int>(ModularOptions::TreeMode::kNoWP),
+                static_cast<int>(ModularOptions::TreeMode::kDefault)}) {
             if (tree_mode == -1) {
               // LZ77 only
               cparams_attempt.options.nb_repeats = 0;

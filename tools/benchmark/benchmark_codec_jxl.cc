@@ -259,9 +259,12 @@ class JxlCodec : public ImageCodec {
     cparams_.runner = pool->runner();
     cparams_.runner_opaque = pool->runner_opaque();
     cparams_.distance = butteraugli_target_;
-    cparams_.AddOption(JXL_ENC_FRAME_SETTING_NOISE, (int)jxlargs->noise);
-    cparams_.AddOption(JXL_ENC_FRAME_SETTING_DOTS, (int)jxlargs->dots);
-    cparams_.AddOption(JXL_ENC_FRAME_SETTING_PATCHES, (int)jxlargs->patches);
+    cparams_.AddOption(JXL_ENC_FRAME_SETTING_NOISE,
+                       static_cast<int>(jxlargs->noise));
+    cparams_.AddOption(JXL_ENC_FRAME_SETTING_DOTS,
+                       static_cast<int>(jxlargs->dots));
+    cparams_.AddOption(JXL_ENC_FRAME_SETTING_PATCHES,
+                       static_cast<int>(jxlargs->patches));
     cparams_.AddOption(JXL_ENC_FRAME_SETTING_PROGRESSIVE_AC,
                        jxlargs->progressive);
     cparams_.AddOption(JXL_ENC_FRAME_SETTING_QPROGRESSIVE_AC,

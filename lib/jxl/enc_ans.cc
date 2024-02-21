@@ -1050,9 +1050,9 @@ struct HashChain {
     if (pos + 2 < size_) {
       // TODO(lode): take the MSB's of the uint32_t values into account as well,
       // given that the hash code itself is less than 32 bits.
-      result ^= (uint32_t)(data_[pos + 0] << 0u);
-      result ^= (uint32_t)(data_[pos + 1] << hash_shift_);
-      result ^= (uint32_t)(data_[pos + 2] << (hash_shift_ * 2));
+      result ^= static_cast<uint32_t>(data_[pos + 0] << 0u);
+      result ^= static_cast<uint32_t>(data_[pos + 1] << hash_shift_);
+      result ^= static_cast<uint32_t>(data_[pos + 2] << (hash_shift_ * 2));
     } else {
       // No need to compute hash of last 2 bytes, the length 2 is too short.
       return 0;
@@ -1080,7 +1080,7 @@ struct HashChain {
     uint32_t hashval = GetHash(pos);
     uint32_t wpos = pos & window_mask_;
 
-    val[wpos] = (int)hashval;
+    val[wpos] = static_cast<int>(hashval);
     if (head[hashval] != -1) chain[wpos] = head[hashval];
     head[hashval] = wpos;
 
@@ -1151,7 +1151,10 @@ struct HashChain {
       } else {
         if (hashpos == chain[hashpos]) break;
         hashpos = chain[hashpos];
-        if (val[hashpos] != (int)hashval) break;  // outdated hash value
+        if (val[hashpos] != static_cast<int>(hashval)) {
+          // outdated hash value
+          break;
+        }
       }
     }
   }

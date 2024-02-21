@@ -760,7 +760,7 @@ void OptimizeHuffmanCodes(j_compress_ptr cinfo) {
   m->context_map = Allocate<uint8_t>(cinfo, m->num_contexts, JPOOL_IMAGE);
   memset(m->context_map, 0, m->num_contexts);
   for (size_t i = 0; i < m->num_contexts; ++i) {
-    if (i < (size_t)cinfo->num_components) {
+    if (i < static_cast<size_t>(cinfo->num_components)) {
       m->context_map[i] = dc_clusters.histogram_indexes[i];
     } else if (i >= 4) {
       m->context_map[i] = num_dc_huff + ac_clusters.histogram_indexes[i - 4];

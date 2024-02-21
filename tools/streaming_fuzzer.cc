@@ -208,7 +208,8 @@ std::vector<uint8_t> Encode(const FuzzSpec& spec, bool streaming) {
   JXL_CHECK(JxlEncoderSetFrameHeader(frame_settings, &frame_header) ==
             JXL_ENC_SUCCESS);
   JxlPixelFormat pixelformat = {nchan, JXL_TYPE_UINT16, JXL_LITTLE_ENDIAN, 0};
-  std::vector<uint16_t> pixels(spec.xsize * (uint64_t)spec.ysize * nchan);
+  std::vector<uint16_t> pixels(spec.xsize * static_cast<uint64_t>(spec.ysize) *
+                               nchan);
   for (size_t y = 0; y < spec.ysize; y++) {
     for (size_t x = 0; x < spec.xsize; x++) {
       for (size_t c = 0; c < nchan; c++) {
