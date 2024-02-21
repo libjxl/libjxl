@@ -47,7 +47,7 @@ int ReadHuffmanCodeLengths(const uint8_t* code_length_code_lengths,
     br->Refill();
     p += br->PeekFixedBits<5>();
     br->Consume(p->bits);
-    code_len = (uint8_t)p->value;
+    code_len = static_cast<uint8_t>(p->value);
     if (code_len < kCodeLengthRepeatCode) {
       repeat = 0;
       code_lengths[symbol++] = code_len;
@@ -72,12 +72,13 @@ int ReadHuffmanCodeLengths(const uint8_t* code_length_code_lengths,
         repeat -= 2;
         repeat <<= extra_bits;
       }
-      repeat += (int)br->ReadBits(extra_bits) + 3;
+      repeat += static_cast<int>(br->ReadBits(extra_bits) + 3);
       repeat_delta = repeat - old_repeat;
       if (symbol + repeat_delta > num_symbols) {
         return 0;
       }
-      memset(&code_lengths[symbol], repeat_code_len, (size_t)repeat_delta);
+      memset(&code_lengths[symbol], repeat_code_len,
+             static_cast<size_t>(repeat_delta));
       symbol += repeat_delta;
       if (repeat_code_len != 0) {
         space -= repeat_delta << (15 - repeat_code_len);
@@ -87,7 +88,7 @@ int ReadHuffmanCodeLengths(const uint8_t* code_length_code_lengths,
   if (space != 0) {
     return 0;
   }
-  memset(&code_lengths[symbol], 0, (size_t)(num_symbols - symbol));
+  memset(&code_lengths[symbol], 0, static_cast<size_t>(num_symbols - symbol));
   return true;
 }
 
@@ -176,7 +177,7 @@ static JXL_INLINE bool ReadSimpleCode(size_t alphabet_size, BitReader* br,
   const uint32_t goal_size = 1u << kHuffmanTableBits;
   while (table_size != goal_size) {
     memcpy(&table[table_size], &table[0],
-           (size_t)table_size * sizeof(table[0]));
+           static_cast<size_t>(table_size) * sizeof(table[0]));
     table_size <<= 1;
   }
 
@@ -212,7 +213,7 @@ bool HuffmanDecodingData::ReadFromBitStream(size_t alphabet_size,
     br->Refill();
     p += br->PeekFixedBits<4>();
     br->Consume(p->bits);
-    v = (uint8_t)p->value;
+    v = static_cast<uint8_t>(p->value);
     code_length_code_lengths[code_len_idx] = v;
     if (v != 0) {
       space -= (32u >> v);

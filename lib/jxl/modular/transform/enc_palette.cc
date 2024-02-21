@@ -191,7 +191,7 @@ Status FwdPaletteIteration(Image &input, uint32_t begin_c, uint32_t end_c,
           const bool new_color = chpalette.insert(p[x]).second;
           if (new_color) {
             idx++;
-            if (idx > (int)nb_colors) return false;
+            if (idx > static_cast<int>(nb_colors)) return false;
           }
         }
       }
@@ -208,9 +208,12 @@ Status FwdPaletteIteration(Image &input, uint32_t begin_c, uint32_t end_c,
       for (size_t y = 0; y < h; y++) {
         pixel_type *p = input.channel[begin_c].Row(y);
         for (size_t x = 0; x < w; x++) {
-          for (idx = 0; p[x] != p_palette[idx] && idx < (int)nb_colors; idx++) {
+          for (idx = 0;
+               p[x] != p_palette[idx] && idx < static_cast<int>(nb_colors);
+               idx++) {
+            // no-op
           }
-          JXL_DASSERT(idx < (int)nb_colors);
+          JXL_DASSERT(idx < static_cast<int>(nb_colors));
           p[x] = idx;
         }
       }
@@ -228,7 +231,7 @@ Status FwdPaletteIteration(Image &input, uint32_t begin_c, uint32_t end_c,
         if (lookup[p[x] - minval] == 0) {
           lookup[p[x] - minval] = 1;
           idx++;
-          if (idx > (int)nb_colors) return false;
+          if (idx > static_cast<int>(nb_colors)) return false;
         }
       }
     }

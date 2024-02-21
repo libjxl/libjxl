@@ -154,7 +154,7 @@ void PatchDictionaryEncoder::SubtractFrom(const PatchDictionary& pdic,
             // Nothing to do.
           } else {
             JXL_UNREACHABLE("Blending mode %u not yet implemented",
-                            (uint32_t)mode);
+                            static_cast<uint32_t>(mode));
           }
         }
       }

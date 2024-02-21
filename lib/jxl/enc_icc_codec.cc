@@ -84,13 +84,13 @@ static inline void EncodeVarInt(uint64_t value, PaddedBytes* data) {
     // TODO(eustas): should it be `<` ?
     JXL_CHECK(pos <= output_size);
     // |128: Set the next byte flag
-    output[pos++] = ((uint8_t)(value & 127)) | 128;
+    output[pos++] = (static_cast<uint8_t>(value & 127)) | 128;
     // Remove the seven bits we just wrote
     value >>= 7;
   }
   // TODO(eustas): should it be `<` ?
   JXL_CHECK(pos <= output_size);
-  output[pos++] = ((uint8_t)value) & 127;
+  output[pos++] = static_cast<uint8_t>(value & 127);
 
   data->resize(pos);
 }

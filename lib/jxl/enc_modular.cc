@@ -605,8 +605,8 @@ Status ModularFrameEncoder::ComputeEncodingData(
       Transform maybe_palette(TransformId::kPalette);
       maybe_palette.begin_c = gi.nb_meta_channels;
       maybe_palette.num_c = gi.channel.size() - gi.nb_meta_channels;
-      maybe_palette.nb_colors =
-          std::min((int)(xsize * ysize / 2), std::abs(cparams_.palette_colors));
+      maybe_palette.nb_colors = std::min(static_cast<int>(xsize * ysize / 2),
+                                         std::abs(cparams_.palette_colors));
       maybe_palette.ordered_palette = cparams_.palette_colors >= 0;
       maybe_palette.lossy_palette =
           (cparams_.lossy_palette && maybe_palette.num_c == 3);
@@ -624,8 +624,8 @@ Status ModularFrameEncoder::ComputeEncodingData(
       Transform maybe_palette_3(TransformId::kPalette);
       maybe_palette_3.begin_c = gi.nb_meta_channels;
       maybe_palette_3.num_c = gi.channel.size() - gi.nb_meta_channels - 1;
-      maybe_palette_3.nb_colors =
-          std::min((int)(xsize * ysize / 3), std::abs(cparams_.palette_colors));
+      maybe_palette_3.nb_colors = std::min(static_cast<int>(xsize * ysize / 3),
+                                           std::abs(cparams_.palette_colors));
       maybe_palette_3.ordered_palette = cparams_.palette_colors >= 0;
       maybe_palette_3.lossy_palette = cparams_.lossy_palette;
       if (maybe_palette_3.lossy_palette) {
@@ -649,7 +649,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
       int32_t min;
       int32_t max;
       compute_minmax(gi.channel[gi.nb_meta_channels + i], &min, &max);
-      int64_t colors = (int64_t)max - min + 1;
+      int64_t colors = static_cast<int64_t>(max) - min + 1;
       JXL_DEBUG_V(10, "Channel %" PRIuS ": range=%i..%i", i, min, max);
       Transform maybe_palette_1(TransformId::kPalette);
       maybe_palette_1.begin_c = i + gi.nb_meta_channels;
@@ -659,8 +659,9 @@ Status ModularFrameEncoder::ComputeEncodingData(
       // (but only if the channel palette is less than 6% the size of the
       // image itself)
       maybe_palette_1.nb_colors = std::min(
-          (int)(xsize * ysize / 16),
-          (int)(cparams_.channel_colors_pre_transform_percent / 100. * colors));
+          static_cast<int>(xsize * ysize / 16),
+          static_cast<int>(cparams_.channel_colors_pre_transform_percent /
+                           100. * colors));
       if (do_transform(gi, maybe_palette_1, weighted::Header(), pool)) {
         // effective bit depth is lower, adjust quantization accordingly
         compute_minmax(gi.channel[gi.nb_meta_channels + i], &min, &max);
@@ -888,7 +889,7 @@ Status ModularFrameEncoder::ComputeTree(ThreadPool* pool) {
           StaticPropRange range;
           range[0] = {{i, i + 1}};
           range[1] = {{stream_id, stream_id + 1}};
-          multiplier_info.push_back({range, (uint32_t)q});
+          multiplier_info.push_back({range, static_cast<uint32_t>(q)});
         } else {
           // Previous channel in the same group had the same quantization
           // factor. Don't provide two different ranges, as that creates
@@ -1326,7 +1327,7 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
         int32_t min;
         int32_t max;
         compute_minmax(gi.channel[gi.nb_meta_channels + i], &min, &max);
-        int64_t colors = (int64_t)max - min + 1;
+        int64_t colors = static_cast<int64_t>(max) - min + 1;
         JXL_DEBUG_V(10, "Channel %" PRIuS ": range=%i..%i", i, min, max);
         Transform maybe_palette_1(TransformId::kPalette);
         maybe_palette_1.begin_c = i + gi.nb_meta_channels;
@@ -1335,9 +1336,9 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
         // actually occur, it is probably worth it to do a compaction
         // (but only if the channel palette is less than 80% the size of the
         // image itself)
-        maybe_palette_1.nb_colors =
-            std::min((int)(xsize * ysize * 0.8),
-                     (int)(cparams_.channel_colors_percent / 100. * colors));
+        maybe_palette_1.nb_colors = std::min(
+            static_cast<int>(xsize * ysize * 0.8),
+            static_cast<int>(cparams_.channel_colors_percent / 100. * colors));
         do_transform(gi, maybe_palette_1, weighted::Header());
       }
     }

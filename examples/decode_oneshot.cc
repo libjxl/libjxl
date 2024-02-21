@@ -147,8 +147,8 @@ bool WritePFM(const char* filename, const float* pixels, size_t xsize,
   uint8_t little_endian[4];
   memcpy(little_endian, &endian_test, 4);
 
-  fprintf(file, "PF\n%d %d\n%s\n", (int)xsize, (int)ysize,
-          little_endian[0] ? "-1.0" : "1.0");
+  fprintf(file, "PF\n%d %d\n%s\n", static_cast<int>(xsize),
+          static_cast<int>(ysize), little_endian[0] ? "-1.0" : "1.0");
   for (int y = ysize - 1; y >= 0; y--) {
     for (size_t x = 0; x < xsize; x++) {
       for (size_t c = 0; c < 3; c++) {

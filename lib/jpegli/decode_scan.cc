@@ -61,7 +61,7 @@ struct BitReaderState {
     if (bits_left_ <= 16) {
       while (bits_left_ <= 56) {
         val_ <<= 8;
-        val_ |= (uint64_t)GetNextByte();
+        val_ |= static_cast<uint64_t>(GetNextByte());
         bits_left_ += 8;
       }
     }
@@ -451,7 +451,8 @@ int ProcessScan(j_decompress_ptr cinfo, const uint8_t* const data,
         ++num_skipped;
       }
       if (num_skipped > 0) {
-        JPEGLI_WARN("Skipped %d bytes before restart marker", (int)num_skipped);
+        JPEGLI_WARN("Skipped %d bytes before restart marker",
+                    static_cast<int>(num_skipped));
       }
       if (*pos + 2 > len) {
         return kNeedMoreInput;

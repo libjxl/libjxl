@@ -1317,7 +1317,7 @@ struct Mask32 {
   SIMDVec32 IfThenElse(const SIMDVec32& if_true, const SIMDVec32& if_false);
   size_t CountPrefix() const {
     return CtzNonZero(~static_cast<uint64_t>(
-        (uint8_t)_mm256_movemask_ps(_mm256_castsi256_ps(mask))));
+        static_cast<uint8_t>(_mm256_movemask_ps(_mm256_castsi256_ps(mask)))));
   }
 };
 
@@ -1414,8 +1414,8 @@ struct Mask16 {
     return Mask16{_mm256_and_si256(mask, oth.mask)};
   }
   size_t CountPrefix() const {
-    return CtzNonZero(
-               ~static_cast<uint64_t>((uint32_t)_mm256_movemask_epi8(mask))) /
+    return CtzNonZero(~static_cast<uint64_t>(
+               static_cast<uint32_t>(_mm256_movemask_epi8(mask)))) /
            2;
   }
 };

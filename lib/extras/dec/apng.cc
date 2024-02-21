@@ -508,7 +508,7 @@ int processing_start(png_structp& png_ptr, png_infop& info_ptr, void* frame_ptr,
   }
 
   png_set_keep_unknown_chunks(png_ptr, 1, kIgnoredPngChunks,
-                              (int)sizeof(kIgnoredPngChunks) / 5);
+                              static_cast<int>(sizeof(kIgnoredPngChunks) / 5));
 
   png_set_crc_action(png_ptr, PNG_CRC_QUIET_USE, PNG_CRC_QUIET_USE);
   png_set_progressive_read_fn(png_ptr, frame_ptr, info_fn, row_fn, NULL);

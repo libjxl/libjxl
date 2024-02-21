@@ -603,13 +603,13 @@ static inline bool EncodeVarInt(uint64_t value, size_t output_size,
     // TODO(eustas): should it be `>=` ?
     if (*output_pos > output_size) return false;
     // |128: Set the next byte flag
-    output[(*output_pos)++] = ((uint8_t)(value & 127)) | 128;
+    output[(*output_pos)++] = (static_cast<uint8_t>(value & 127)) | 128;
     // Remove the seven bits we just wrote
     value >>= 7;
   }
   // TODO(eustas): should it be `>=` ?
   if (*output_pos > output_size) return false;
-  output[(*output_pos)++] = ((uint8_t)value) & 127;
+  output[(*output_pos)++] = static_cast<uint8_t>(value & 127);
   return true;
 }
 
@@ -901,7 +901,7 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
         return JXL_API_ERROR(
             this, JXL_ENC_ERR_API_USAGE,
             "Cannot use save_as_reference values >=3 (found: %d)",
-            (int)save_as_reference);
+            static_cast<int>(save_as_reference));
       }
 
       jxl::FrameInfo frame_info;

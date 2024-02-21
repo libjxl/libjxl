@@ -2702,7 +2702,7 @@ JxlDecoderStatus JxlDecoderSetOutputColorProfile(
         "setting output color profile from icc_data not yet implemented.");
   }
   JXL_API_RETURN_IF_ERROR(
-      (int)output_encoding.MaybeSetColorEncoding(std::move(c_dst)));
+      static_cast<int>(output_encoding.MaybeSetColorEncoding(c_dst)));
 
   return JXL_DEC_SUCCESS;
 }
