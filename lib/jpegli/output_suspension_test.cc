@@ -10,8 +10,8 @@
 namespace jpegli {
 namespace {
 
-static constexpr size_t kInitialBufferSize = 1024;
-static constexpr size_t kFinalBufferSize = 18;
+constexpr size_t kInitialBufferSize = 1024;
+constexpr size_t kFinalBufferSize = 18;
 
 struct DestinationManager {
   jpeg_destination_mgr pub;

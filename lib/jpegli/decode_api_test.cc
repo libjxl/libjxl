@@ -18,8 +18,8 @@
 namespace jpegli {
 namespace {
 
-static constexpr uint8_t kFakeEoiMarker[2] = {0xff, 0xd9};
-static constexpr size_t kNumSourceBuffers = 4;
+constexpr uint8_t kFakeEoiMarker[2] = {0xff, 0xd9};
+constexpr size_t kNumSourceBuffers = 4;
 
 // Custom source manager that refills the input buffer in chunks, simulating
 // a file reader with a fixed buffer size.

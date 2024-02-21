@@ -27,7 +27,7 @@ constexpr unsigned char kExifSignature[6] = {0x45, 0x78, 0x69,
 constexpr int kExifMarker = JPEG_APP0 + 1;
 constexpr int kICCMarker = JPEG_APP0 + 2;
 
-static inline bool IsJPG(const std::vector<uint8_t>& bytes) {
+inline bool IsJPG(const std::vector<uint8_t>& bytes) {
   if (bytes.size() < 2) return false;
   if (bytes[0] != 0xFF || bytes[1] != 0xD8) return false;
   return true;

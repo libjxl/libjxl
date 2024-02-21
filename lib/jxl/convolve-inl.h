@@ -118,7 +118,7 @@ class Neighbors {
 // Returns indices for SetTableIndices such that TableLookupLanes on the
 // rightmost unaligned vector (rightmost sample in its most-significant lane)
 // returns the mirrored values, with the mirror outside the last valid sample.
-static inline const int32_t* MirrorLanes(const size_t mod) {
+inline const int32_t* MirrorLanes(const size_t mod) {
   const HWY_CAPPED(float, 16) d;
   constexpr size_t kN = MaxLanes(d);
 

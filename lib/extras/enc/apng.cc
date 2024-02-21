@@ -86,7 +86,7 @@ class APNGEncoder : public Encoder {
                                      std::vector<uint8_t>* bytes) const;
 };
 
-static void PngWrite(png_structp png_ptr, png_bytep data, png_size_t length) {
+void PngWrite(png_structp png_ptr, png_bytep data, png_size_t length) {
   std::vector<uint8_t>* bytes =
       static_cast<std::vector<uint8_t>*>(png_get_io_ptr(png_ptr));
   bytes->insert(bytes->end(), data, data + length);
