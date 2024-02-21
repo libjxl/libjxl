@@ -37,8 +37,8 @@ struct FuzzSpec {
   int crop_output;
 };
 
-static constexpr uint8_t kFakeEoiMarker[2] = {0xff, 0xd9};
-static constexpr size_t kNumSourceBuffers = 4;
+constexpr uint8_t kFakeEoiMarker[2] = {0xff, 0xd9};
+constexpr size_t kNumSourceBuffers = 4;
 
 class SourceManager {
  public:

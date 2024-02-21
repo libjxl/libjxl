@@ -227,7 +227,7 @@ float InvAdjustedQuant(const int32_t adjustment) {
 }
 
 // X, Y, B, sigma.
-static constexpr float kChannelWeight[] = {0.0042f, 0.075f, 0.07f, .3333f};
+constexpr float kChannelWeight[] = {0.0042f, 0.075f, 0.07f, .3333f};
 
 Status DecodeAllStartingPoints(std::vector<Spline::Point>* const points,
                                BitReader* const br, ANSSymbolReader* reader,

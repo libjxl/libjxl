@@ -71,9 +71,7 @@ const png_byte kIgnoredPngChunks[] = {
 };
 
 // Returns floating-point value from the PNG encoding (times 10^5).
-static double F64FromU32(const uint32_t x) {
-  return static_cast<int32_t>(x) * 1E-5;
-}
+double F64FromU32(const uint32_t x) { return static_cast<int32_t>(x) * 1E-5; }
 
 Status DecodeSRGB(const unsigned char* payload, const size_t payload_size,
                   JxlColorEncoding* color_encoding) {

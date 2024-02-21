@@ -55,7 +55,7 @@ enum class JpegEncoder {
 // Popular jpeg scan scripts
 // The fields of the individual scans are:
 // comps_in_scan, component_index[], Ss, Se, Ah, Al
-static constexpr jpeg_scan_info kScanScript1[] = {
+constexpr jpeg_scan_info kScanScript1[] = {
     {1, {0}, 0, 0, 0, 0},   //
     {1, {1}, 0, 0, 0, 0},   //
     {1, {2}, 0, 0, 0, 0},   //
@@ -64,9 +64,9 @@ static constexpr jpeg_scan_info kScanScript1[] = {
     {1, {1}, 1, 63, 0, 0},  //
     {1, {2}, 1, 63, 0, 0},  //
 };
-static constexpr size_t kNumScans1 = ARRAY_SIZE(kScanScript1);
+constexpr size_t kNumScans1 = ARRAY_SIZE(kScanScript1);
 
-static constexpr jpeg_scan_info kScanScript2[] = {
+constexpr jpeg_scan_info kScanScript2[] = {
     {1, {0}, 0, 0, 0, 0},   //
     {1, {1}, 0, 0, 0, 0},   //
     {1, {2}, 0, 0, 0, 0},   //
@@ -76,9 +76,9 @@ static constexpr jpeg_scan_info kScanScript2[] = {
     {1, {1}, 1, 63, 0, 0},  //
     {1, {2}, 1, 63, 0, 0},  //
 };
-static constexpr size_t kNumScans2 = ARRAY_SIZE(kScanScript2);
+constexpr size_t kNumScans2 = ARRAY_SIZE(kScanScript2);
 
-static constexpr jpeg_scan_info kScanScript3[] = {
+constexpr jpeg_scan_info kScanScript3[] = {
     {1, {0}, 0, 0, 0, 0},   //
     {1, {1}, 0, 0, 0, 0},   //
     {1, {2}, 0, 0, 0, 0},   //
@@ -88,9 +88,9 @@ static constexpr jpeg_scan_info kScanScript3[] = {
     {1, {1}, 1, 63, 0, 0},  //
     {1, {2}, 1, 63, 0, 0},  //
 };
-static constexpr size_t kNumScans3 = ARRAY_SIZE(kScanScript3);
+constexpr size_t kNumScans3 = ARRAY_SIZE(kScanScript3);
 
-static constexpr jpeg_scan_info kScanScript4[] = {
+constexpr jpeg_scan_info kScanScript4[] = {
     {3, {0, 1, 2}, 0, 0, 0, 1},  //
     {1, {0}, 1, 5, 0, 2},        //
     {1, {2}, 1, 63, 0, 1},       //
@@ -102,9 +102,9 @@ static constexpr jpeg_scan_info kScanScript4[] = {
     {1, {1}, 1, 63, 1, 0},       //
     {1, {0}, 1, 63, 1, 0},       //
 };
-static constexpr size_t kNumScans4 = ARRAY_SIZE(kScanScript4);
+constexpr size_t kNumScans4 = ARRAY_SIZE(kScanScript4);
 
-static constexpr jpeg_scan_info kScanScript5[] = {
+constexpr jpeg_scan_info kScanScript5[] = {
     {3, {0, 1, 2}, 0, 0, 0, 1},  //
     {1, {0}, 1, 5, 0, 2},        //
     {1, {1}, 1, 5, 0, 2},        //
@@ -120,10 +120,10 @@ static constexpr jpeg_scan_info kScanScript5[] = {
     {1, {1}, 1, 63, 1, 0},       //
     {1, {2}, 1, 63, 1, 0},       //
 };
-static constexpr size_t kNumScans5 = ARRAY_SIZE(kScanScript5);
+constexpr size_t kNumScans5 = ARRAY_SIZE(kScanScript5);
 
 // default progressive mode of jpegli
-static constexpr jpeg_scan_info kScanScript6[] = {
+constexpr jpeg_scan_info kScanScript6[] = {
     {3, {0, 1, 2}, 0, 0, 0, 0},  //
     {1, {0}, 1, 2, 0, 0},        //
     {1, {1}, 1, 2, 0, 0},        //
@@ -138,7 +138,7 @@ static constexpr jpeg_scan_info kScanScript6[] = {
     {1, {1}, 3, 63, 1, 0},       //
     {1, {2}, 3, 63, 1, 0},       //
 };
-static constexpr size_t kNumScans6 = ARRAY_SIZE(kScanScript6);
+constexpr size_t kNumScans6 = ARRAY_SIZE(kScanScript6);
 
 // Adapt RGB scan info to grayscale jpegs.
 void FilterScanComponents(const jpeg_compress_struct* cinfo,

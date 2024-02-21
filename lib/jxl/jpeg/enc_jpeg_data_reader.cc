@@ -23,7 +23,7 @@ namespace jxl {
 namespace jpeg {
 
 namespace {
-static const int kBrunsliMaxSampling = 15;
+const int kBrunsliMaxSampling = 15;
 
 // Macros for commonly used error conditions.
 

@@ -72,7 +72,7 @@ Status PredictAndShuffle(size_t stride, size_t width, int order, size_t num,
   return true;
 }
 
-static inline void EncodeVarInt(uint64_t value, PaddedBytes* data) {
+inline void EncodeVarInt(uint64_t value, PaddedBytes* data) {
   size_t pos = data->size();
   data->resize(data->size() + 9);
   size_t output_size = data->size();

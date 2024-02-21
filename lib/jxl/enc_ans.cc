@@ -41,7 +41,7 @@ constexpr
 #endif
     bool ans_fuzzer_friendly_ = false;
 
-static const int kMaxNumSymbolsForSmallCode = 4;
+const int kMaxNumSymbolsForSmallCode = 4;
 
 void ANSBuildInfoTable(const ANSHistBin* counts, const AliasTable::Entry* table,
                        size_t alphabet_size, size_t log_alpha_size,
@@ -103,16 +103,16 @@ float EstimateDataBitsFlat(const ANSHistBin* histogram, size_t len) {
 
 // Static Huffman code for encoding logcounts. The last symbol is used as RLE
 // sequence.
-static const uint8_t kLogCountBitLengths[ANS_LOG_TAB_SIZE + 2] = {
+const uint8_t kLogCountBitLengths[ANS_LOG_TAB_SIZE + 2] = {
     5, 4, 4, 4, 4, 4, 3, 3, 3, 3, 3, 6, 7, 7,
 };
-static const uint8_t kLogCountSymbols[ANS_LOG_TAB_SIZE + 2] = {
+const uint8_t kLogCountSymbols[ANS_LOG_TAB_SIZE + 2] = {
     17, 11, 15, 3, 9, 7, 4, 2, 5, 6, 0, 33, 1, 65,
 };
 
 // Returns the difference between largest count that can be represented and is
 // smaller than "count" and smallest representable count larger than "count".
-static int SmallestIncrement(uint32_t count, uint32_t shift) {
+int SmallestIncrement(uint32_t count, uint32_t shift) {
   int bits = count == 0 ? -1 : FloorLog2Nonzero(count);
   int drop_bits = bits - GetPopulationCountPrecision(bits, shift);
   return drop_bits < 0 ? 1 : (1 << drop_bits);

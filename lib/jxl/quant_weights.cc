@@ -361,7 +361,7 @@ namespace {
 
 HWY_EXPORT(ComputeQuantTable);
 
-static constexpr const float kAlmostZero = 1e-8f;
+constexpr const float kAlmostZero = 1e-8f;
 
 Status DecodeDctParams(BitReader* br, DctQuantWeightParams* params) {
   params->num_distance_bands =
