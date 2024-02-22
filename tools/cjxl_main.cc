@@ -126,7 +126,7 @@ struct CompressArgs {
 
     cmdline->AddOptionValue(
         'e', "effort", "EFFORT",
-        "Encoder effort setting. Range: 1 .. 9.\n"
+        "Encoder effort setting. Range: 1 .. 10.\n"
         "    Default: 7. Higher numbers allow more computation "
         "at the expense of time.\n"
         "    For lossless, generally it will produce smaller files.\n"

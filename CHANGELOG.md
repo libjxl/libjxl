@@ -25,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed / clarified
  - decoder/encoder API: return failure when surface allocation fail
+ - encoder API / cjxl: updated modular effort levels to faster settings; the
+   effort range is now 1-10, with 11 available in advanced mode.
 
 ## [0.9.2] - 2024-02-07
 
