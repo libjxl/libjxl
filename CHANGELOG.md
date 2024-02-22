@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Added
+
+### Removed
+
+### Changed / clarified
+
+### Fixed
+
+
+##  [0.10.0] - 2024-02-21
+
+### Added
  - decoder API: added `JxlDecoderGetBoxSizeContents` for getting the size of the
    content of a box without the headers.
  - encoder API: implemented new api functions for streaming encoding.
