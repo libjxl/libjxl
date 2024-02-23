@@ -745,7 +745,7 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
   JXL_ASSIGN_OR_RETURN(shared.cmap,
                        ColorCorrelationMap::Create(xsize, ysize, false));
   shared.ac_strategy.FillDCT8();
-  FillImage(uint8_t(0), &shared.epf_sharpness);
+  FillImage(static_cast<uint8_t>(0), &shared.epf_sharpness);
 
   enc_state->coeffs.clear();
   while (enc_state->coeffs.size() < enc_state->passes.size()) {
@@ -950,7 +950,7 @@ Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
             idc = inputjpeg[base] + 1024 / qt[c * 64];
           }
           dc_counts[c][std::min(static_cast<uint32_t>(idc + 1024),
-                                uint32_t(2047))]++;
+                                static_cast<uint32_t>(2047))]++;
           total_dc[c]++;
           fdc[bx >> hshift] = idc * dcquantization_r[c];
           if (c == 1 || !enc_state->cparams.force_cfl_jpeg_recompression ||

@@ -134,7 +134,7 @@ Status AdaptiveDCSmoothing(const float* dc_factors, Image3F* dc,
   JXL_ASSIGN_OR_RETURN(Image3F smoothed, Image3F::Create(xsize, ysize));
   // Fill in borders that the loop below will not. First and last are unused.
   for (size_t c = 0; c < 3; c++) {
-    for (size_t y : {size_t(0), ysize - 1}) {
+    for (size_t y : {static_cast<size_t>(0), ysize - 1}) {
       memcpy(smoothed.PlaneRow(c, y), dc->PlaneRow(c, y),
              xsize * sizeof(float));
     }
@@ -160,7 +160,7 @@ Status AdaptiveDCSmoothing(const float* dc_factors, Image3F* dc,
         smoothed.PlaneRow(1, y),
         smoothed.PlaneRow(2, y),
     };
-    for (size_t x : {size_t(0), xsize - 1}) {
+    for (size_t x : {static_cast<size_t>(0), xsize - 1}) {
       for (size_t c = 0; c < 3; c++) {
         rows_out[c][x] = rows[c][x];
       }

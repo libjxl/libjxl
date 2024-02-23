@@ -389,7 +389,7 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
           return false;
         }
         pixels->resize(buffer_size);
-        void* pixels_buffer = (void*)pixels->data();
+        void* pixels_buffer = static_cast<void*>(pixels->data());
         size_t pixels_buffer_size = pixels->size();
         if (JXL_DEC_SUCCESS !=
             JxlDecoderSetImageOutBuffer(dec.get(), &format, pixels_buffer,

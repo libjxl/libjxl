@@ -164,7 +164,7 @@ TEST(EncodeAPITest, ReuseCinfoSameStdOutput) {
   size_t total_size = ftell(tmpf);
   rewind(tmpf);
   std::vector<uint8_t> compressed(total_size);
-  JXL_CHECK(total_size == fread(&compressed[0], 1, total_size, tmpf));
+  JXL_CHECK(total_size == fread(compressed.data(), 1, total_size, tmpf));
   fclose(tmpf);
   size_t pos = 0;
   for (size_t i = 0; i < all_configs.size(); ++i) {

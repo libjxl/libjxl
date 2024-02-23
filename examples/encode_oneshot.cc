@@ -194,7 +194,7 @@ bool EncodeJxlOneshot(const std::vector<float>& pixels, const uint32_t xsize,
 
   if (JXL_ENC_SUCCESS !=
       JxlEncoderAddImageFrame(frame_settings, &pixel_format,
-                              (void*)pixels.data(),
+                              static_cast<const void*>(pixels.data()),
                               sizeof(float) * pixels.size())) {
     fprintf(stderr, "JxlEncoderAddImageFrame failed\n");
     return false;

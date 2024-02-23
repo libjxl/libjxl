@@ -3151,9 +3151,9 @@ void StoreYCoCg(SIMDVec16 r, SIMDVec16 g, SIMDVec16 b, int16_t* y, int16_t* co,
   SIMDVec16 tmp = b.Add(co_v.SignedShiftRight<1>());
   SIMDVec16 cg_v = g.Sub(tmp);
   SIMDVec16 y_v = tmp.Add(cg_v.SignedShiftRight<1>());
-  y_v.Store((uint16_t*)y);
-  co_v.Store((uint16_t*)co);
-  cg_v.Store((uint16_t*)cg);
+  y_v.Store(reinterpret_cast<uint16_t*>(y));
+  co_v.Store(reinterpret_cast<uint16_t*>(co));
+  cg_v.Store(reinterpret_cast<uint16_t*>(cg));
 }
 
 void StoreYCoCg(SIMDVec16 r, SIMDVec16 g, SIMDVec16 b, int32_t* y, int32_t* co,
@@ -3169,12 +3169,12 @@ void StoreYCoCg(SIMDVec16 r, SIMDVec16 g, SIMDVec16 b, int32_t* y, int32_t* co,
   SIMDVec32 tmp_hi = b_up.hi.Add(co_hi_v.SignedShiftRight<1>());
   SIMDVec32 cg_hi_v = g_up.hi.Sub(tmp_hi);
   SIMDVec32 y_hi_v = tmp_hi.Add(cg_hi_v.SignedShiftRight<1>());
-  y_lo_v.Store((uint32_t*)y);
-  co_lo_v.Store((uint32_t*)co);
-  cg_lo_v.Store((uint32_t*)cg);
-  y_hi_v.Store((uint32_t*)y + SIMDVec32::kLanes);
-  co_hi_v.Store((uint32_t*)co + SIMDVec32::kLanes);
-  cg_hi_v.Store((uint32_t*)cg + SIMDVec32::kLanes);
+  y_lo_v.Store(reinterpret_cast<uint32_t*>(y));
+  co_lo_v.Store(reinterpret_cast<uint32_t*>(co));
+  cg_lo_v.Store(reinterpret_cast<uint32_t*>(cg));
+  y_hi_v.Store(reinterpret_cast<uint32_t*>(y) + SIMDVec32::kLanes);
+  co_hi_v.Store(reinterpret_cast<uint32_t*>(co) + SIMDVec32::kLanes);
+  cg_hi_v.Store(reinterpret_cast<uint32_t*>(cg) + SIMDVec32::kLanes);
 }
 #endif
 

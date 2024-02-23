@@ -179,7 +179,7 @@ class ANSSymbolReader {
     num_special_distances_ =
         distance_multiplier == 0 ? 0 : kNumSpecialDistances;
     for (size_t i = 0; i < num_special_distances_; i++) {
-      int dist = kSpecialDistances[i][0];
+      int dist = static_cast<int>(kSpecialDistances[i][0]);
       dist += static_cast<int>(distance_multiplier) * kSpecialDistances[i][1];
       if (dist < 1) dist = 1;
       special_distances_[i] = dist;

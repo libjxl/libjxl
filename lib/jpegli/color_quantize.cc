@@ -153,7 +153,7 @@ inline int ColorIntQuadDistanceRGB(uint8_t r1, uint8_t g1, uint8_t b1,
 }
 
 inline int ScaleQuadDistanceRGB(int d) {
-  return static_cast<int>(sqrt(d * 0.25) + 0.5);
+  return static_cast<int>(std::lround(sqrt(d * 0.25)));
 }
 
 // The function updates the minimal distances, the clustering and the
@@ -264,7 +264,7 @@ void ChooseColorMap2Pass(j_decompress_ptr cinfo) {
   std::unique_ptr<uint8_t[]> blue(new uint8_t[max_color_count]);
   std::vector<int> count(max_color_count, 0);
   // number of colors
-  int n = BuildRGBColorIndex(m->pixels_, num_pixels, &count[0], &red[0],
+  int n = BuildRGBColorIndex(m->pixels_, num_pixels, count.data(), &red[0],
                              &green[0], &blue[0]);
 
   std::vector<int> dist(n, std::numeric_limits<int>::max());
@@ -285,13 +285,13 @@ void ChooseColorMap2Pass(j_decompress_ptr cinfo) {
       winner = i;
     }
     if (!in_palette[i] && count[i] > count_threshold) {
-      AddToRGBPalette(&red[0], &green[0], &blue[0], &count[0], i, k++, n,
+      AddToRGBPalette(&red[0], &green[0], &blue[0], count.data(), i, k++, n,
                       &dist[0], &cluster[0], &center[0], &error);
       in_palette[i] = true;
     }
   }
   if (k == 0) {
-    AddToRGBPalette(&red[0], &green[0], &blue[0], &count[0], winner, k++, n,
+    AddToRGBPalette(&red[0], &green[0], &blue[0], count.data(), winner, k++, n,
                     &dist[0], &cluster[0], &center[0], &error);
     in_palette[winner] = true;
   }
@@ -365,7 +365,7 @@ void ChooseColorMap2Pass(j_decompress_ptr cinfo) {
     if (priority < top_priority) {
       bucket_array[priority].push_back(i);
     } else {
-      AddToRGBPalette(&red[0], &green[0], &blue[0], &count[0], i, k++, n,
+      AddToRGBPalette(&red[0], &green[0], &blue[0], count.data(), i, k++, n,
                       &dist[0], &cluster[0], &center[0], &error);
     }
     bucket_array[top_priority].pop_back();
@@ -404,7 +404,8 @@ void FindCandidatesForCell(j_decompress_ptr cinfo, int ncomp, int cell[],
     int dmax = 0;
     for (int c = 0; c < ncomp; ++c) {
       int palette_c = cinfo->colormap[c][i];
-      int dminc = 0, dmaxc;
+      int dminc = 0;
+      int dmaxc;
       if (palette_c < cell_min[c]) {
         dminc = cell_min[c] - palette_c;
         dmaxc = cell_max[c] - palette_c;

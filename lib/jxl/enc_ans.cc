@@ -207,11 +207,11 @@ Status NormalizeCounts(ANSHistBin* counts, int* omit_pos, const int length,
   for (size_t n = 0; n < targets.size(); ++n) {
     targets[n] = norm * counts[n];
   }
-  if (!RebalanceHistogram<false>(&targets[0], max_symbol, table_size, shift,
+  if (!RebalanceHistogram<false>(targets.data(), max_symbol, table_size, shift,
                                  omit_pos, counts)) {
     // Use an alternative rebalancing mechanism if the one above failed
     // to create a histogram that is positive wherever the original one was.
-    if (!RebalanceHistogram<true>(&targets[0], max_symbol, table_size, shift,
+    if (!RebalanceHistogram<true>(targets.data(), max_symbol, table_size, shift,
                                   omit_pos, counts)) {
       return JXL_FAILURE("Logic error: couldn't rebalance a histogram");
     }
@@ -1034,8 +1034,8 @@ struct HashChain {
       // Count down, so if due to small distance multiplier multiple distances
       // map to the same code, the smallest code will be used in the end.
       for (int i = kNumSpecialDistances - 1; i >= 0; --i) {
-        int xi = kSpecialDistances[i][0];
-        int yi = kSpecialDistances[i][1];
+        int xi = static_cast<int>(kSpecialDistances[i][0]);
+        int yi = static_cast<int>(kSpecialDistances[i][1]);
         int distance = yi * distance_multiplier + xi;
         // Ensure that we map distance 1 to the lowest symbols.
         if (distance < 1) distance = 1;
@@ -1666,10 +1666,10 @@ size_t BuildAndEncodeHistograms(const HistogramParams& params,
     codes->encoded_histograms.emplace_back();
     BitWriter* histo_writer = &codes->encoded_histograms.back();
     BitWriter::Allotment allotment(histo_writer, 256 + alphabet_size * 24);
-    BuildAndStoreANSEncodingData(params.ans_histogram_strategy, counts.data(),
-                                 alphabet_size, log_alpha_size,
-                                 codes->use_prefix_code,
-                                 &codes->encoding_info.back()[0], histo_writer);
+    BuildAndStoreANSEncodingData(
+        params.ans_histogram_strategy, counts.data(), alphabet_size,
+        log_alpha_size, codes->use_prefix_code,
+        codes->encoding_info.back().data(), histo_writer);
     allotment.ReclaimAndCharge(histo_writer, 0, nullptr);
   }
 

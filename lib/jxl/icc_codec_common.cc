@@ -105,7 +105,7 @@ const uint8_t kIccInitialHeaderPrediction[kICCHeaderSize] = {
     0,   0,   0,   0,   0,   0,   0,   0,   0, 0, 0, 0, 0,   0,   0,   0,
 };
 
-const Span<const uint8_t> ICCInitialHeaderPrediction() {
+Span<const uint8_t> ICCInitialHeaderPrediction() {
   return Bytes(kIccInitialHeaderPrediction);
 }
 

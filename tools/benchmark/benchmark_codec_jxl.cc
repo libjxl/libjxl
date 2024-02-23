@@ -351,7 +351,7 @@ class JxlCodec : public ImageCodec {
       debug_ppf.info.bits_per_sample = 16;
       debug_ppf.color_encoding = *color;
       EncodedImage encoded;
-      JXL_CHECK(encoder->Encode(debug_ppf, &encoded));
+      JXL_CHECK(encoder->Encode(debug_ppf, &encoded, nullptr));
       JXL_CHECK(!encoded.bitstreams.empty());
       std::string* debug_prefix = reinterpret_cast<std::string*>(opaque);
       std::string fn = *debug_prefix + std::string(label) + ".png";

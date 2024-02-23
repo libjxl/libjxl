@@ -286,10 +286,11 @@ void AdjustQuantBlockAC(const Quantizer& quantizer, size_t c,
   {
     // Reduce quant in highly active areas.
     int32_t div = (xsize * ysize);
-    int32_t activity = (hfNonZeros[0] + div / 2) / div;
+    int32_t activity = (static_cast<int32_t>(hfNonZeros[0]) + div / 2) / div;
     int32_t orig_qp_limit = std::max(4, *quant / 2);
     for (int i = 1; i < 4; ++i) {
-      activity = std::min<int32_t>(activity, (hfNonZeros[i] + div / 2) / div);
+      activity = std::min(
+          activity, (static_cast<int32_t>(hfNonZeros[i]) + div / 2) / div);
     }
     if (activity >= 15) {
       activity = 15;

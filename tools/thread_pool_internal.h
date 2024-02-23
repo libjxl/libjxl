@@ -35,6 +35,7 @@ class ThreadPoolInternal {
 
   ThreadPoolInternal(const ThreadPoolInternal&) = delete;
   ThreadPoolInternal& operator&(const ThreadPoolInternal&) = delete;
+  // TODO(eustas): avoid unary `&` overload?
   ThreadPool* operator&() { return pool_.get(); }
 
  private:

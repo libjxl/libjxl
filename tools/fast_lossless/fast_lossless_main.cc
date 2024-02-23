@@ -51,7 +51,7 @@ int main(int argc, char** argv) {
 
   auto parallel_runner = [](void* num_threads_ptr, void* opaque,
                             void fun(void*, size_t), size_t count) {
-    size_t num_threads = *(size_t*)num_threads_ptr;
+    size_t num_threads = *static_cast<size_t*>(num_threads_ptr);
     if (num_threads == 0) {
       num_threads = std::thread::hardware_concurrency();
     }
@@ -98,7 +98,8 @@ int main(int argc, char** argv) {
     float mps = pixels / us;
     fprintf(stderr, "%10.3f MP/s\n", mps);
     fprintf(stderr, "%10.3f bits/pixel\n",
-            encoded_size * 8.0 / float(width) / float(height));
+            encoded_size * 8.0 / static_cast<float>(width) /
+                static_cast<float>(height));
   }
 
   FILE* o = fopen(out, "wb");
