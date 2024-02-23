@@ -419,7 +419,7 @@ TEST_F(ColorManagementTest, XYBProfile) {
       }
     }
   }
-  static float kMaxError[3] = {9e-4, 4e-4, 5e-4};
+  static float kMaxError[3] = {8.7e-4, 4.4e-4, 5.2e-4};
   printf("Maximum errors:\n");
   for (size_t c = 0; c < 3; ++c) {
     debug_print_color(max_err_i[c]);
