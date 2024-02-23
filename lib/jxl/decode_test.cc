@@ -308,7 +308,7 @@ std::vector<uint8_t> CreateTestJXLCodestream(
       auto encoder = extras::GetJPEGEncoder();
       encoder->SetOption("quality", "70");
       extras::EncodedImage encoded;
-      EXPECT_TRUE(encoder->Encode(ppf, &encoded));
+      EXPECT_TRUE(encoder->Encode(ppf, &encoded, nullptr));
       jpeg_bytes = encoded.bitstreams[0];
       Bytes(jpeg_bytes).AppendTo(params.jpeg_codestream);
       EXPECT_TRUE(jxl::jpeg::DecodeImageJPG(
@@ -1456,8 +1456,8 @@ std::vector<PixelTestConfig> GeneratePixelTests() {
   // Test codestream formats.
   for (size_t box = 1; box < kCSBF_NUM_ENTRIES; ++box) {
     make_test(ch_info[0], 77, 33, jxl::kNoPreview,
-              /*add_intrinsic_size=*/false, (CodeStreamBoxFormat)box,
-              JXL_ORIENT_IDENTITY,
+              /*add_intrinsic_size=*/false,
+              static_cast<CodeStreamBoxFormat>(box), JXL_ORIENT_IDENTITY,
               /*keep_orientation=*/false, out_formats[0],
               /*use_callback=*/false,
               /*set_buffer_early=*/false, /*resizable_runner=*/false, 1);
@@ -1465,7 +1465,7 @@ std::vector<PixelTestConfig> GeneratePixelTests() {
   // Test previews.
   for (int preview_mode = 0; preview_mode < jxl::kNumPreviewModes;
        preview_mode++) {
-    make_test(ch_info[0], 77, 33, (jxl::PreviewMode)preview_mode,
+    make_test(ch_info[0], 77, 33, static_cast<jxl::PreviewMode>(preview_mode),
               /*add_intrinsic_size=*/false, CodeStreamBoxFormat::kCSBF_None,
               JXL_ORIENT_IDENTITY,
               /*keep_orientation=*/false, out_formats[0],
@@ -2346,7 +2346,7 @@ void TestPartialStream(bool reconstructible_jpeg) {
   std::vector<std::vector<uint8_t>> codestreams(kCSBF_NUM_ENTRIES);
   std::vector<std::vector<uint8_t>> jpeg_codestreams(kCSBF_NUM_ENTRIES);
   for (size_t i = 0; i < kCSBF_NUM_ENTRIES; ++i) {
-    params.box_format = (CodeStreamBoxFormat)i;
+    params.box_format = static_cast<CodeStreamBoxFormat>(i);
     if (reconstructible_jpeg) {
       params.jpeg_codestream = &jpeg_codestreams[i];
     }
@@ -2361,8 +2361,8 @@ void TestPartialStream(bool reconstructible_jpeg) {
 
   for (size_t index = 0; index < increments.size(); index++) {
     for (size_t i = 0; i < kCSBF_NUM_ENTRIES; ++i) {
-      if (reconstructible_jpeg &&
-          (CodeStreamBoxFormat)i == CodeStreamBoxFormat::kCSBF_None) {
+      if (reconstructible_jpeg && static_cast<CodeStreamBoxFormat>(i) ==
+                                      CodeStreamBoxFormat::kCSBF_None) {
         continue;
       }
       const std::vector<uint8_t>& data = codestreams[i];
@@ -3785,10 +3785,10 @@ TEST(DecodeTest, OrientedCroppedFrameTest) {
             for (int y = 0; y < static_cast<int>(oysize); y++) {
               if (y < y0 || y >= y0 + h) continue;
               // pointers do whole 16-bit RGBA pixels at a time
-              uint64_t* row_merged = static_cast<uint64_t*>(
-                  (void*)(frames[4].data() + y * oxsize * 8));
-              uint64_t* row_layer = static_cast<uint64_t*>(
-                  (void*)(frames[i].data() + (y - y0) * w * 8));
+              uint64_t* row_merged = reinterpret_cast<uint64_t*>(
+                  frames[4].data() + y * oxsize * 8);
+              uint64_t* row_layer = reinterpret_cast<uint64_t*>(
+                  frames[i].data() + (y - y0) * w * 8);
               for (int x = 0; x < static_cast<int>(oxsize); x++) {
                 if (x < x0 || x >= x0 + w) continue;
                 row_merged[x] = row_layer[x - x0];
@@ -4113,7 +4113,7 @@ TEST(DecodeTest, InputHandlingTestOneShot) {
     jxl::TestCodestreamParams params;
     params.cparams.progressive_dc = 1;
     params.preview_mode = jxl::kSmallPreview;
-    params.box_format = (CodeStreamBoxFormat)i;
+    params.box_format = static_cast<CodeStreamBoxFormat>(i);
     std::vector<uint8_t> data =
         jxl::CreateTestJXLCodestream(jxl::Bytes(pixels.data(), pixels.size()),
                                      xsize, ysize, num_channels, params);
@@ -4208,7 +4208,7 @@ TEST(DecodeTest, JXL_TRANSCODE_JPEG_TEST(InputHandlingTestJPEGOneshot)) {
     params.cparams.color_transform = jxl::ColorTransform::kNone;
     params.jpeg_codestream = &jpeg_codestream;
     params.preview_mode = jxl::kSmallPreview;
-    params.box_format = (CodeStreamBoxFormat)i;
+    params.box_format = static_cast<CodeStreamBoxFormat>(i);
     std::vector<uint8_t> data =
         jxl::CreateTestJXLCodestream(jxl::Bytes(pixels.data(), pixels.size()),
                                      xsize, ysize, channels, params);
@@ -4297,7 +4297,7 @@ TEST(DecodeTest, InputHandlingTestStreaming) {
     fflush(stdout);
     jxl::TestCodestreamParams params;
     params.cparams.progressive_dc = 1;
-    params.box_format = (CodeStreamBoxFormat)i;
+    params.box_format = static_cast<CodeStreamBoxFormat>(i);
     params.preview_mode = jxl::kSmallPreview;
     std::vector<uint8_t> data =
         jxl::CreateTestJXLCodestream(jxl::Bytes(pixels.data(), pixels.size()),

@@ -328,7 +328,8 @@ class RectT {
 
   template <typename U>
   RectT<U> As() const {
-    return RectT<U>(U(x0_), U(y0_), U(xsize_), U(ysize_));
+    return RectT<U>(static_cast<U>(x0_), static_cast<U>(y0_),
+                    static_cast<U>(xsize_), static_cast<U>(ysize_));
   }
 
  private:

@@ -540,7 +540,8 @@ bool EncodeDCTBlockSequential(const coeff_t* coeffs, HuffmanCodeTable* dc_huff,
   int16_t r = 0;
 
   for (size_t i = 1; i < 64; i++) {
-    if ((temp = coeffs[kJPEGNaturalOrder[i]]) == 0) {
+    temp = coeffs[kJPEGNaturalOrder[i]];
+    if (temp == 0) {
       r++;
     } else {
       temp2 = temp >> (8 * sizeof(coeff_t) - 1);
@@ -608,7 +609,8 @@ bool EncodeDCTBlockProgressive(const coeff_t* coeffs, HuffmanCodeTable* dc_huff,
   }
   int r = 0;
   for (int k = Ss; k <= Se; ++k) {
-    if ((temp = coeffs[kJPEGNaturalOrder[k]]) == 0) {
+    temp = coeffs[kJPEGNaturalOrder[k]];
+    if (temp == 0) {
       r++;
       continue;
     }

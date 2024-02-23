@@ -210,7 +210,7 @@ void CreateHuffmanTree(const uint32_t* data, const size_t length,
       tree.push_back(sentinel);
     }
     JXL_DASSERT(tree.size() == 2 * n + 1);
-    SetDepth(tree[2 * n - 1], &tree[0], depth, 0);
+    SetDepth(tree[2 * n - 1], tree.data(), depth, 0);
 
     // We need to pack the Huffman tree in tree_limit bits.
     // If this was not successful, add fake entities to the lowest values

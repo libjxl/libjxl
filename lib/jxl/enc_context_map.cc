@@ -124,9 +124,9 @@ void EncodeContextMap(const std::vector<uint8_t>& context_map,
 
 void EncodeBlockCtxMap(const BlockCtxMap& block_ctx_map, BitWriter* writer,
                        AuxOut* aux_out) {
-  auto& dct = block_ctx_map.dc_thresholds;
-  auto& qft = block_ctx_map.qf_thresholds;
-  auto& ctx_map = block_ctx_map.ctx_map;
+  const auto& dct = block_ctx_map.dc_thresholds;
+  const auto& qft = block_ctx_map.qf_thresholds;
+  const auto& ctx_map = block_ctx_map.ctx_map;
   BitWriter::Allotment allotment(
       writer,
       (dct[0].size() + dct[1].size() + dct[2].size() + qft.size()) * 34 + 1 +

@@ -222,7 +222,7 @@ bool HuffmanDecodingData::ReadFromBitStream(size_t alphabet_size,
   }
   bool ok = (num_codes == 1 || space == 0) &&
             ReadHuffmanCodeLengths(code_length_code_lengths, alphabet_size,
-                                   &code_lengths[0], br);
+                                   code_lengths.data(), br);
 
   if (!ok) return false;
   uint16_t counts[16] = {0};
@@ -231,7 +231,7 @@ bool HuffmanDecodingData::ReadFromBitStream(size_t alphabet_size,
   }
   table_.resize(alphabet_size + 376);
   uint32_t table_size =
-      BuildHuffmanTable(table_.data(), kHuffmanTableBits, &code_lengths[0],
+      BuildHuffmanTable(table_.data(), kHuffmanTableBits, code_lengths.data(),
                         alphabet_size, &counts[0]);
   table_.resize(table_size);
   return (table_size > 0);

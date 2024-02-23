@@ -39,6 +39,7 @@ struct ICCReader {
   PaddedBytes decompressed_;
 };
 
+// TODO(eustas): declare in test? is is the same as in enc_icc_codec.h?
 // Exposed only for testing
 Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result);
 

@@ -245,8 +245,8 @@ Status ExtraChannelInfo::VisitFields(Visitor* JXL_RESTRICT visitor) {
   }
 
   if (type == ExtraChannel::kUnknown ||
-      (int(ExtraChannel::kReserved0) <= int(type) &&
-       int(type) <= int(ExtraChannel::kReserved7))) {
+      (static_cast<int>(ExtraChannel::kReserved0) <= static_cast<int>(type) &&
+       static_cast<int>(type) <= static_cast<int>(ExtraChannel::kReserved7))) {
     return JXL_FAILURE("Unknown extra channel (bits %u, shift %u, name '%s')\n",
                        bit_depth.bits_per_sample, dim_shift, name.c_str());
   }

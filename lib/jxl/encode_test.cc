@@ -1828,7 +1828,7 @@ class EncoderStreamingTest : public testing::TestWithParam<StreamingTestParam> {
         // Copy pixel data here because it is only guaranteed to be available
         // during the call to JxlEncoderAddImageFrame().
         std::vector<uint8_t> pixels(frame.pixels_size);
-        memcpy(&pixels[0], frame.pixels(), pixels.size());
+        memcpy(pixels.data(), frame.pixels(), pixels.size());
         EXPECT_EQ(JXL_ENC_SUCCESS,
                   JxlEncoderAddImageFrame(frame_settings, &frame.format,
                                           pixels.data(), pixels.size()));
@@ -1837,7 +1837,7 @@ class EncoderStreamingTest : public testing::TestWithParam<StreamingTestParam> {
         // Copy pixel data here because it is only guaranteed to be available
         // during the call to JxlEncoderSetExtraChannelBuffer().
         std::vector<uint8_t> ec_pixels(ec_frame.pixels_size);
-        memcpy(&ec_pixels[0], ec_frame.pixels(), ec_pixels.size());
+        memcpy(ec_pixels.data(), ec_frame.pixels(), ec_pixels.size());
         EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetExtraChannelBuffer(
                                        frame_settings, &ec_frame.format,
                                        ec_pixels.data(), ec_pixels.size(), i));

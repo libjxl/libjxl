@@ -108,7 +108,7 @@ class PackedImage {
     }
   }
 
-  void SetPixelValue(size_t y, size_t x, size_t c, float val) {
+  void SetPixelValue(size_t y, size_t x, size_t c, float val) const {
     uint8_t* data = pixels(y, x, c);
     switch (format.data_type) {
       case JXL_TYPE_UINT8:

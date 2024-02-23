@@ -292,7 +292,7 @@ bool ProcessDHT(const uint8_t* data, const size_t len, JpegReadMode mode,
     }
     huff.is_last = (*pos == start_pos + marker_len);
     if (mode == JpegReadMode::kReadAll) {
-      BuildJpegHuffmanTable(&huff.counts[0], &huff.values[0], huff_lut);
+      BuildJpegHuffmanTable(huff.counts.data(), huff.values.data(), huff_lut);
     }
     jpg->huffman_code.push_back(huff);
   }

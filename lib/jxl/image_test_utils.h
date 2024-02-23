@@ -37,7 +37,8 @@ bool SamePixels(const Plane<T>& image1, const Plane<T>& image2,
     for (size_t x = rect.x0(); x < rect.xsize(); ++x) {
       if (row1[x] != row2[x]) {
         failures << "pixel mismatch" << x << ", " << y << ": "
-                 << double(row1[x]) << " != " << double(row2[x]) << "\n";
+                 << static_cast<double>(row1[x])
+                 << " != " << static_cast<double>(row2[x]) << "\n";
         if (++mismatches > 4) {
           return false;
         }
@@ -89,7 +90,8 @@ bool VerifyRelativeError(const Plane<T>& expected, const Plane<T>& actual,
           max_l1 = std::max(max_l1, l1);
         }
       } else {
-        const double relative = l1 / std::abs(double(row_expected[x]));
+        const double relative =
+            l1 / std::abs(static_cast<double>(row_expected[x]));
         if (l1 > threshold_l1 && relative > threshold_relative) {
           // Fails both tolerances => will exit below, update max_*.
           any_bad = true;
@@ -134,7 +136,8 @@ bool VerifyRelativeError(const Plane<T>& expected, const Plane<T>& actual,
 
         bool bad = l1 > threshold_l1;
         if (row_expected[x] > 1E-10) {
-          const double relative = l1 / std::abs(double(row_expected[x]));
+          const double relative =
+              l1 / std::abs(static_cast<double>(row_expected[x]));
           bad &= relative > threshold_relative;
         }
         if (bad) {
@@ -157,7 +160,8 @@ bool VerifyRelativeError(const Plane<T>& expected, const Plane<T>& actual,
 
       bool bad = l1 > threshold_l1;
       if (row_expected[x] > 1E-10) {
-        const double relative = l1 / std::abs(double(row_expected[x]));
+        const double relative =
+            l1 / std::abs(static_cast<double>(row_expected[x]));
         bad &= relative > threshold_relative;
       }
       if (bad) {
@@ -216,8 +220,8 @@ template <typename T>
 typename std::enable_if<std::is_integral<T>::value>::type RandomFillImage(
     Plane<T>* image) {
   Rng rng(129);
-  GenerateImage(rng, image, int64_t(0),
-                int64_t(std::numeric_limits<T>::max()) + 1);
+  GenerateImage(rng, image, static_cast<int64_t>(0),
+                static_cast<int64_t>(std::numeric_limits<T>::max()) + 1);
 }
 
 JXL_INLINE void RandomFillImage(Plane<float>* image) {
@@ -236,8 +240,8 @@ template <typename T>
 typename std::enable_if<std::is_integral<T>::value>::type RandomFillImage(
     Image3<T>* image) {
   Rng rng(129);
-  GenerateImage(rng, image, int64_t(0),
-                int64_t(std::numeric_limits<T>::max()) + 1);
+  GenerateImage(rng, image, static_cast<int64_t>(0),
+                static_cast<int64_t>(std::numeric_limits<T>::max()) + 1);
 }
 
 JXL_INLINE void RandomFillImage(Image3F* image) {

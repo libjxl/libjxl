@@ -1101,9 +1101,10 @@ void* JxlCmsInit(void* init_data, size_t num_threads, size_t xsize,
                  const JxlColorProfile* input, const JxlColorProfile* output,
                  float intensity_target) {
   JXL_ASSERT(init_data != nullptr);
-  auto cms = static_cast<const JxlCmsInterface*>(init_data);
+  const auto* cms = static_cast<const JxlCmsInterface*>(init_data);
   auto t = jxl::make_unique<JxlCms>();
-  IccBytes icc_src, icc_dst;
+  IccBytes icc_src;
+  IccBytes icc_dst;
   if (input->icc.size == 0) {
     JXL_NOTIFY_ERROR("JxlCmsInit: empty input ICC");
     return nullptr;

@@ -139,7 +139,8 @@ void TokenizeACProgressiveScan(j_compress_ptr cinfo, int scan_index,
       int num_nzeros = 0;
       int num_future_nzeros = 0;
       for (int k = Ss; k <= Se; ++k) {
-        if ((temp = block[k]) == 0) {
+        temp = block[k];
+        if (temp == 0) {
           r++;
           continue;
         }
@@ -557,7 +558,7 @@ float HistogramCost(const Histogram& histo) {
   }
   counts[kJpegHuffmanAlphabetSize] = 1;
   CreateHuffmanTree(counts.data(), counts.size(), kJpegHuffmanMaxBitLength,
-                    &depths[0]);
+                    depths.data());
   size_t header_bits = (1 + kJpegHuffmanMaxBitLength) * 8;
   size_t data_bits = 0;
   for (size_t i = 0; i < kJpegHuffmanAlphabetSize; ++i) {
@@ -668,7 +669,7 @@ void BuildJpegHuffmanTable(const Histogram& histo, JHUFF_TBL* table) {
   }
   counts[kJpegHuffmanAlphabetSize] = 1;
   CreateHuffmanTree(counts.data(), counts.size(), kJpegHuffmanMaxBitLength,
-                    &depths[0]);
+                    depths.data());
   memset(table, 0, sizeof(JHUFF_TBL));
   for (size_t i = 0; i < kJpegHuffmanAlphabetSize; ++i) {
     if (depths[i] > 0) {
@@ -726,7 +727,7 @@ void OptimizeHuffmanCodes(j_compress_ptr cinfo) {
   jpeg_comp_master* m = cinfo->master;
   // Build DC and AC histograms.
   std::vector<Histogram> histograms(m->num_contexts);
-  BuildHistograms(cinfo, &histograms[0]);
+  BuildHistograms(cinfo, histograms.data());
 
   // Cluster DC histograms.
   JpegClusteredHistograms dc_clusters;

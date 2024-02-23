@@ -42,7 +42,7 @@ struct DestinationManager {
   std::vector<uint8_t> buffer;
   SourceManager* dest;
 
-  DestinationManager(SourceManager* src)
+  explicit DestinationManager(SourceManager* src)
       : buffer(kOutputBufferSize), dest(src) {
     pub.next_output_byte = buffer.data();
     pub.free_in_buffer = buffer.size();
@@ -54,7 +54,7 @@ struct DestinationManager {
   static void init_destination(j_compress_ptr cinfo) {}
 
   static boolean empty_output_buffer(j_compress_ptr cinfo) {
-    auto us = reinterpret_cast<DestinationManager*>(cinfo->dest);
+    auto* us = reinterpret_cast<DestinationManager*>(cinfo->dest);
     jpeg_destination_mgr* src = &us->pub;
     jpeg_source_mgr* dst = &us->dest->pub;
     std::vector<uint8_t>& src_buf = us->buffer;
@@ -107,7 +107,7 @@ TEST_P(StreamingTestParam, TestStreaming) {
     cinfo.image_width = input.xsize;
     cinfo.image_height = input.ysize;
     cinfo.input_components = input.components;
-    cinfo.in_color_space = (J_COLOR_SPACE)input.color_space;
+    cinfo.in_color_space = static_cast<J_COLOR_SPACE>(input.color_space);
     jpegli_set_defaults(&cinfo);
     cinfo.comp_info[0].v_samp_factor = config.jparams.v_sampling[0];
     jpegli_set_progressive_level(&cinfo, 0);
@@ -122,13 +122,13 @@ TEST_P(StreamingTestParam, TestStreaming) {
     while (yin < cinfo.image_height) {
       // Feed one iMCU row at a time to the compressor.
       size_t lines_in = std::min(iMCU_height, cinfo.image_height - yin);
-      memcpy(&row_bytes[0], &input.pixels[yin * stride], lines_in * stride);
+      memcpy(row_bytes.data(), &input.pixels[yin * stride], lines_in * stride);
       std::vector<JSAMPROW> rows_in(lines_in);
       for (size_t i = 0; i < lines_in; ++i) {
         rows_in[i] = &row_bytes[i * stride];
       }
       EXPECT_EQ(lines_in,
-                jpegli_write_scanlines(&cinfo, &rows_in[0], lines_in));
+                jpegli_write_scanlines(&cinfo, rows_in.data(), lines_in));
       yin += lines_in;
       if (yin == cinfo.image_height) {
         jpegli_finish_compress(&cinfo);
@@ -180,7 +180,7 @@ TEST_P(StreamingTestParam, TestStreaming) {
             reinterpret_cast<JSAMPLE*>(&output.pixels[(yout + i) * stride]);
       }
       EXPECT_EQ(lines_out,
-                jpegli_read_scanlines(&dinfo, &rows_out[0], lines_out));
+                jpegli_read_scanlines(&dinfo, rows_out.data(), lines_out));
       VerifyOutputImage(input, output, yout, lines_out, 3.8f);
       yout += lines_out;
 

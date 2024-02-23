@@ -7,6 +7,7 @@
 
 #include <jxl/types.h>
 
+#include <memory>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -160,9 +161,9 @@ void GenerateMetadata(const PackedPixelFile& ppf, std::vector<uint8_t>* out) {
   }
 
   {
-    auto ectype = meta.AddEmpty<JSONArray>("extra_channel_type");
-    auto bps = meta.AddEmpty<JSONArray>("bits_per_sample");
-    auto ebps = meta.AddEmpty<JSONArray>("exp_bits_per_sample");
+    auto* ectype = meta.AddEmpty<JSONArray>("extra_channel_type");
+    auto* bps = meta.AddEmpty<JSONArray>("bits_per_sample");
+    auto* ebps = meta.AddEmpty<JSONArray>("exp_bits_per_sample");
     bps->Add(ppf.info.bits_per_sample);
     ebps->Add(ppf.info.exponent_bits_per_sample);
     for (size_t i = 0; i < ppf.extra_channels_info.size(); i++) {
@@ -282,7 +283,7 @@ bool WriteNPYArray(const PackedPixelFile& ppf, std::vector<uint8_t>* out) {
 class NumPyEncoder : public Encoder {
  public:
   Status Encode(const PackedPixelFile& ppf, EncodedImage* encoded_image,
-                ThreadPool* pool = nullptr) const override {
+                ThreadPool* pool) const override {
     JXL_RETURN_IF_ERROR(VerifyBasicInfo(ppf.info));
     GenerateMetadata(ppf, &encoded_image->metadata);
     encoded_image->bitstreams.emplace_back();

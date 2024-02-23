@@ -140,8 +140,9 @@ void ComputeSegments(const Spline::Point& center, const float intensity,
   segment.inv_sigma = 1.0f / sigma;
   segment.sigma_over_4_times_intensity = .25f * sigma * intensity;
   segment.maximum_distance = maximum_distance;
-  ssize_t y0 = center.y - maximum_distance + .5f;
-  ssize_t y1 = center.y + maximum_distance + 1.5f;  // one-past-the-end
+  ssize_t y0 = std::llround(center.y - maximum_distance);
+  ssize_t y1 =
+      std::llround(center.y + maximum_distance) + 1;  // one-past-the-end
   for (ssize_t y = std::max<ssize_t>(y0, 0); y < y1; y++) {
     segments_by_y.emplace_back(y, segments.size());
   }
@@ -646,8 +647,9 @@ Status Splines::InitializeDrawCache(const size_t image_xsize,
   }
   // TODO(firsching) Change this into a JXL_FAILURE for level 5 codestreams.
   if (total_estimated_area_reached >
-      std::min((8 * image_xsize * image_ysize + (uint64_t(1) << 25)),
-               (uint64_t(1) << 30))) {
+      std::min(
+          (8 * image_xsize * image_ysize + (static_cast<uint64_t>(1) << 25)),
+          (static_cast<uint64_t>(1) << 30))) {
     JXL_WARNING(
         "Large total_estimated_area_reached, expect slower decoding: %" PRIu64,
         total_estimated_area_reached);

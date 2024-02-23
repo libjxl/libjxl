@@ -50,7 +50,7 @@ inline std::array<uint8_t, 3> PredictorColor(Predictor p) {
       return {{255, 0, 255}};
     case Predictor::Weighted:
       return {{0, 255, 255}};
-      // TODO
+      // TODO(jon)
     default:
       return {{255, 255, 255}};
   };
