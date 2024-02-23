@@ -61,7 +61,7 @@ class SourceManager {
   static void init_source(j_decompress_ptr cinfo) {}
 
   static boolean fill_input_buffer(j_decompress_ptr cinfo) {
-    auto src = reinterpret_cast<SourceManager*>(cinfo->src);
+    auto* src = reinterpret_cast<SourceManager*>(cinfo->src);
     if (src->pos_ < src->len_) {
       size_t chunk_size = std::min(src->len_ - src->pos_, src->max_chunk_size_);
       size_t next_idx = ++src->chunk_idx_ % kNumSourceBuffers;
@@ -79,7 +79,7 @@ class SourceManager {
   }
 
   static void skip_input_data(j_decompress_ptr cinfo, long num_bytes) {
-    auto src = reinterpret_cast<SourceManager*>(cinfo->src);
+    auto* src = reinterpret_cast<SourceManager*>(cinfo->src);
     if (num_bytes <= 0) {
       return;
     }
@@ -166,9 +166,9 @@ void ReadOutputImage(const DecompressParams& dparams, j_decompress_ptr cinfo,
           rowdata[c][i] =
               y0 + i < ysize ? &output->raw_data[c][(y0 + i) * xsize] : nullptr;
         }
-        data[c] = &rowdata[c][0];
+        data[c] = rowdata[c].data();
       }
-      num_output_lines = jpegli_read_raw_data(cinfo, &data[0], max_lines);
+      num_output_lines = jpegli_read_raw_data(cinfo, data.data(), max_lines);
     } else {
       size_t max_output_lines = dparams.max_output_lines;
       if (max_output_lines == 0) max_output_lines = cinfo->output_height;
@@ -189,7 +189,7 @@ void ReadOutputImage(const DecompressParams& dparams, j_decompress_ptr cinfo,
           scanlines[i] = &output->pixels[yidx * stride];
         }
         num_output_lines =
-            jpegli_read_scanlines(cinfo, &scanlines[0], max_lines);
+            jpegli_read_scanlines(cinfo, scanlines.data(), max_lines);
         if (cinfo->quantize_colors) {
           for (size_t i = 0; i < num_output_lines; ++i) {
             UnmapColors(scanlines[i], cinfo->output_width,
@@ -222,7 +222,7 @@ struct TestConfig {
 std::vector<uint8_t> GetTestJpegData(TestConfig& config) {
   std::vector<uint8_t> compressed;
   if (!config.fn.empty()) {
-    compressed = ReadTestData(config.fn.c_str());
+    compressed = ReadTestData(config.fn);
   } else {
     GeneratePixels(&config.input);
     JXL_CHECK(EncodeWithJpegli(config.input, config.jparams, &compressed));
@@ -1245,7 +1245,8 @@ std::ostream& operator<<(std::ostream& os, const DecompressParams& dparams) {
   }
   os << IOMethodName(dparams.data_type, dparams.endianness);
   if (dparams.set_out_color_space) {
-    os << "OutColor" << ColorSpaceName((J_COLOR_SPACE)dparams.out_color_space);
+    os << "OutColor"
+       << ColorSpaceName(static_cast<J_COLOR_SPACE>(dparams.out_color_space));
   }
   if (dparams.crop_output) {
     os << "Crop";
@@ -1265,7 +1266,8 @@ std::ostream& operator<<(std::ostream& os, const DecompressParams& dparams) {
       if (i > 0) os << "_";
       const auto& sparam = dparams.scan_params[i];
       os << QuantMode(sparam.color_quant_mode);
-      os << DitherMode((J_DITHER_MODE)sparam.dither_mode) << "Dither";
+      os << DitherMode(static_cast<J_DITHER_MODE>(sparam.dither_mode))
+         << "Dither";
     }
   }
   if (dparams.skip_scans) {

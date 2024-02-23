@@ -128,7 +128,8 @@ Status PatchDictionary::Decode(BitReader* br, size_t xsize, size_t ysize,
       }
       for (size_t j = 0; j < num_ec + 1; j++) {
         uint32_t blend_mode = read_num(kPatchBlendModeContext);
-        if (blend_mode >= uint32_t(PatchBlendMode::kNumBlendModes)) {
+        if (blend_mode >=
+            static_cast<uint32_t>(PatchBlendMode::kNumBlendModes)) {
           return JXL_FAILURE("Invalid patch blend mode: %u", blend_mode);
         }
         PatchBlending info;
@@ -285,7 +286,7 @@ std::vector<size_t> PatchDictionary::GetPatchesForRow(size_t y) const {
   if (y < num_patches_.size() && num_patches_[y] > 0) {
     result.reserve(num_patches_[y]);
     for (ssize_t tree_idx = 0; tree_idx != -1;) {
-      JXL_DASSERT(tree_idx < (ssize_t)patch_tree_.size());
+      JXL_DASSERT(tree_idx < static_cast<ssize_t>(patch_tree_.size()));
       const auto& node = patch_tree_[tree_idx];
       if (y <= node.y_center) {
         for (size_t i = 0; i < node.num; ++i) {

@@ -109,8 +109,8 @@ IntersectionType BoxIntersects(StaticPropRange needle, StaticPropRange haystack,
 void SplitTreeSamples(TreeSamples &tree_samples, size_t begin, size_t pos,
                       size_t end, size_t prop) {
   auto cmp = [&](size_t a, size_t b) {
-    return int32_t(tree_samples.Property(prop, a)) -
-           int32_t(tree_samples.Property(prop, b));
+    return static_cast<int32_t>(tree_samples.Property(prop, a)) -
+           static_cast<int32_t>(tree_samples.Property(prop, b));
   };
   Rng rng(0);
   while (end > begin + 1) {

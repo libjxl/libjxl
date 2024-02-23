@@ -178,7 +178,7 @@ void SetScanDecompressParams(const DecompressParams& dparams,
     return;
   }
   if (dparams.quantize_colors) {
-    cinfo->dither_mode = (J_DITHER_MODE)sparams->dither_mode;
+    cinfo->dither_mode = static_cast<J_DITHER_MODE>(sparams->dither_mode);
     if (sparams->color_quant_mode == CQUANT_1PASS) {
       cinfo->two_pass_quantize = FALSE;
       cinfo->colormap = nullptr;
@@ -218,7 +218,8 @@ void SetDecompressParams(const DecompressParams& dparams,
     cinfo->raw_data_out = TRUE;
   }
   if (dparams.set_out_color_space) {
-    cinfo->out_color_space = (J_COLOR_SPACE)dparams.out_color_space;
+    cinfo->out_color_space =
+        static_cast<J_COLOR_SPACE>(dparams.out_color_space);
     if (dparams.out_color_space == JCS_UNKNOWN) {
       cinfo->jpeg_color_space = JCS_UNKNOWN;
     }

@@ -132,7 +132,7 @@ bool EncodeImageJXL(const JXLCompressParams& params, const PackedPixelFile& ppf,
     return false;
   }
 
-  auto settings = JxlEncoderFrameSettingsCreate(enc, nullptr);
+  auto* settings = JxlEncoderFrameSettingsCreate(enc, nullptr);
   size_t option_idx = 0;
   if (!SetFrameOptions(params.options, 0, &option_idx, settings)) {
     return false;

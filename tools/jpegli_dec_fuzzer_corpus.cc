@@ -178,7 +178,7 @@ bool EncodeWithJpegli(const ImageSpec& spec, const std::vector<uint8_t>& pixels,
     size_t stride = cinfo.image_width * cinfo.input_components;
     std::vector<uint8_t> row_bytes(stride);
     for (size_t y = 0; y < cinfo.image_height; ++y) {
-      memcpy(&row_bytes[0], &pixels[y * stride], stride);
+      memcpy(row_bytes.data(), &pixels[y * stride], stride);
       JSAMPROW row[] = {row_bytes.data()};
       jpegli_write_scanlines(&cinfo, row, 1);
     }

@@ -360,8 +360,8 @@ bool do_smoothing(j_decompress_ptr cinfo) {
   if (!cinfo->progressive_mode || cinfo->coef_bits == nullptr) {
     return false;
   }
-  auto coef_bits_latch = m->coef_bits_latch;
-  auto prev_coef_bits_latch = m->prev_coef_bits_latch;
+  auto* coef_bits_latch = m->coef_bits_latch;
+  auto* prev_coef_bits_latch = m->prev_coef_bits_latch;
 
   for (int ci = 0; ci < cinfo->num_components; ci++) {
     jpeg_component_info* compptr = &cinfo->comp_info[ci];
@@ -468,6 +468,7 @@ void PredictSmooth(j_decompress_ptr cinfo, JBLOCKARRAY blocks, int component,
       return swap_indices ? dc_values[j][i] : dc_values[i][j];
     };
     Al = coef_bits[coef_index];
+    JXL_ASSERT(coef_index >= 0 && coef_index < 10);
     switch (coef_index) {
       case 0:
         // set the DC
@@ -520,6 +521,7 @@ void PredictSmooth(j_decompress_ptr cinfo, JBLOCKARRAY blocks, int component,
         break;
       case 7:
       case 8:
+      default:
         // set Q12 and Q21
         num = (dc(1, 1) - 3 * dc(1, 2) + dc(1, 3) - dc(3, 1) + 3 * dc(3, 2) -
                dc(3, 3));

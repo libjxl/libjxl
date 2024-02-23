@@ -22,7 +22,7 @@ namespace extras {
 namespace {
 
 struct BoxProcessor {
-  BoxProcessor(JxlDecoder* dec) : dec_(dec) { Reset(); }
+  explicit BoxProcessor(JxlDecoder* dec) : dec_(dec) { Reset(); }
 
   void InitializeOutput(std::vector<uint8_t>* out) {
     box_data_ = out;
@@ -327,7 +327,8 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
         }
         std::string name(eci.name_length + 1, 0);
         if (JXL_DEC_SUCCESS !=
-            JxlDecoderGetExtraChannelName(dec, i, &name[0], name.size())) {
+            JxlDecoderGetExtraChannelName(
+                dec, i, const_cast<char*>(name.data()), name.size())) {
           fprintf(stderr, "JxlDecoderGetExtraChannelName failed\n");
           return false;
         }
@@ -394,7 +395,8 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
       }
       frame.name.resize(frame.frame_info.name_length + 1, 0);
       if (JXL_DEC_SUCCESS !=
-          JxlDecoderGetFrameName(dec, &frame.name[0], frame.name.size())) {
+          JxlDecoderGetFrameName(dec, const_cast<char*>(frame.name.data()),
+                                 frame.name.size())) {
         fprintf(stderr, "JxlDecoderGetFrameName failed\n");
         return false;
       }

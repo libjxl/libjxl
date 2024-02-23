@@ -86,7 +86,7 @@ TEST(JxlTest, RoundtripMarker) {
     compressed[i] ^= 0xFF;
     PackedPixelFile ppf_out;
     EXPECT_FALSE(extras::DecodeImageJXL(compressed.data(), compressed.size(),
-                                        {}, /*decodec_bytes=*/nullptr,
+                                        {}, /* decoded_bytes */ nullptr,
                                         &ppf_out));
   }
 }

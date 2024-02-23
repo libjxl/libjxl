@@ -250,7 +250,7 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
     auto encoder = jxl::extras::GetJPEGEncoder();
     encoder->SetOption("quality", "70");
     jxl::extras::EncodedImage encoded;
-    JXL_RETURN_IF_ERROR(encoder->Encode(ppf, &encoded));
+    JXL_RETURN_IF_ERROR(encoder->Encode(ppf, &encoded, nullptr));
     jpeg_bytes = encoded.bitstreams[0];
     JXL_RETURN_IF_ERROR(jxl::jpeg::DecodeImageJPG(
         jxl::Bytes(jpeg_bytes.data(), jpeg_bytes.size()), &io));

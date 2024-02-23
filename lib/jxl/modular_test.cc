@@ -7,6 +7,7 @@
 #include <jxl/encode.h>
 #include <jxl/types.h>
 
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <sstream>
@@ -316,7 +317,7 @@ TEST_P(ModularTestParam, RoundtripLossless) {
         float f = in[x] + generator.UniformF(0.0f, 1.f / 255.f);
         if (f > 1.f) f = 1.f;
         // quantize to the bitdepth we're testing
-        unsigned int u = f * factor + 0.5;
+        unsigned int u = static_cast<unsigned int>(std::lround(f * factor));
         out[x] = u * ifactor;
       }
     }

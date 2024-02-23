@@ -519,7 +519,7 @@ Status ModularFrameDecoder::DecodeAcMetadata(const FrameHeader& frame_header,
 Status ModularFrameDecoder::ModularImageToDecodedRect(
     const FrameHeader& frame_header, Image& gi, PassesDecoderState* dec_state,
     jxl::ThreadPool* pool, RenderPipelineInput& render_pipeline_input,
-    Rect modular_rect) {
+    Rect modular_rect) const {
   const auto* metadata = frame_header.nonserialized_metadata;
   JXL_CHECK(gi.transform.empty());
 

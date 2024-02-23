@@ -15,7 +15,6 @@
 
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/enc_bit_writer.h"
 
 namespace jxl {
@@ -27,6 +26,7 @@ class PaddedBytes;
 Status WriteICC(const std::vector<uint8_t>& icc, BitWriter* JXL_RESTRICT writer,
                 size_t layer, AuxOut* JXL_RESTRICT aux_out);
 
+// TODO(eustas): declare in test?
 // Exposed only for testing
 Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result);
 
