@@ -989,7 +989,7 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
 #endif
             jxl::WriteBoxHeader(jxl::MakeBoxType("jxlc"), frame_codestream_size,
                                 /*unbounded=*/false, use_large_box,
-                                &box_header[0]);
+                                box_header.data());
         JXL_ASSERT(n == box_header_size);
       } else {
 #if JXL_ENABLE_ASSERT
@@ -997,7 +997,7 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
 #endif
             jxl::WriteBoxHeader(
                 jxl::MakeBoxType("jxlp"), frame_codestream_size + 4,
-                /*unbounded=*/false, use_large_box, &box_header[0]);
+                /*unbounded=*/false, use_large_box, box_header.data());
         JXL_ASSERT(n == box_header_size - 4);
         WriteJxlpBoxCounter(jxlp_counter++, last_frame,
                             &box_header[box_header_size - 4]);
@@ -1061,15 +1061,17 @@ JxlEncoderStatus JxlEncoderSetColorEncoding(JxlEncoder* enc,
   }
   if (enc->metadata.m.color_encoding.GetColorSpace() ==
       jxl::ColorSpace::kGray) {
-    if (enc->basic_info.num_color_channels != 1)
+    if (enc->basic_info.num_color_channels != 1) {
       return JXL_API_ERROR(
           enc, JXL_ENC_ERR_API_USAGE,
           "Cannot use grayscale color encoding with num_color_channels != 1");
+    }
   } else {
-    if (enc->basic_info.num_color_channels != 3)
+    if (enc->basic_info.num_color_channels != 3) {
       return JXL_API_ERROR(
           enc, JXL_ENC_ERR_API_USAGE,
           "Cannot use RGB color encoding with num_color_channels != 3");
+    }
   }
   enc->color_encoding_set = true;
   if (!enc->intensity_target_set) {
@@ -1103,15 +1105,17 @@ JxlEncoderStatus JxlEncoderSetICCProfile(JxlEncoder* enc,
   }
   if (enc->metadata.m.color_encoding.GetColorSpace() ==
       jxl::ColorSpace::kGray) {
-    if (enc->basic_info.num_color_channels != 1)
+    if (enc->basic_info.num_color_channels != 1) {
       return JXL_API_ERROR(
           enc, JXL_ENC_ERR_BAD_INPUT,
           "Cannot use grayscale ICC profile with num_color_channels != 1");
+    }
   } else {
-    if (enc->basic_info.num_color_channels != 3)
+    if (enc->basic_info.num_color_channels != 3) {
       return JXL_API_ERROR(
           enc, JXL_ENC_ERR_BAD_INPUT,
           "Cannot use RGB ICC profile with num_color_channels != 3");
+    }
     // TODO(jon): also check that a kBlack extra channel is provided in the CMYK
     // case
   }
@@ -1326,14 +1330,16 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetUpsamplingMode(JxlEncoder* enc,
                                                         const int64_t mode) {
   // for convenience, allow calling this with factor 1 and just make it a no-op
   if (factor == 1) return JxlErrorOrStatus::Success();
-  if (factor != 2 && factor != 4 && factor != 8)
+  if (factor != 2 && factor != 4 && factor != 8) {
     return JXL_API_ERROR(enc, JXL_ENC_ERR_API_USAGE,
                          "Invalid upsampling factor");
+  }
   if (mode < -1)
     return JXL_API_ERROR(enc, JXL_ENC_ERR_API_USAGE, "Invalid upsampling mode");
-  if (mode > 1)
+  if (mode > 1) {
     return JXL_API_ERROR(enc, JXL_ENC_ERR_NOT_SUPPORTED,
                          "Unsupported upsampling mode");
+  }
 
   const size_t count = (factor == 2 ? 15 : (factor == 4 ? 55 : 210));
   auto& td = enc->metadata.transform_data;
@@ -2259,7 +2265,7 @@ JxlEncoderStatus JxlEncoderAddImageFrameInternal(
           pool, 0, count, jxl::ThreadPool::NoInit,
           [&](size_t i, size_t) { fun(opaque, i); }, "Encode fast lossless"));
     };
-    auto frame_state = JxlFastLosslessPrepareFrame(
+    auto* frame_state = JxlFastLosslessPrepareFrame(
         frame_data.GetInputSource(), xsize, ysize, num_channels,
         frame_settings->enc->metadata.m.bit_depth.bits_per_sample, big_endian,
         /*effort=*/2, /*oneshot=*/!frame_data.StreamingInput());
@@ -2450,7 +2456,7 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelBuffer(
     return JXL_API_ERROR_NOSET("Invalid input bit depth");
   }
   const uint8_t* uint8_buffer = reinterpret_cast<const uint8_t*>(buffer);
-  auto queued_frame = frame_settings->enc->input_queue.back().frame.get();
+  auto* queued_frame = frame_settings->enc->input_queue.back().frame.get();
   if (!queued_frame->frame_data.SetFromBuffer(1 + index, uint8_buffer, size,
                                               ec_format)) {
     return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
@@ -2611,9 +2617,7 @@ JXL_EXPORT JxlEncoderStats* JxlEncoderStatsCreate() {
   return new JxlEncoderStats();
 }
 
-JXL_EXPORT void JxlEncoderStatsDestroy(JxlEncoderStats* stats) {
-  if (stats) delete stats;
-}
+JXL_EXPORT void JxlEncoderStatsDestroy(JxlEncoderStats* stats) { delete stats; }
 
 JXL_EXPORT void JxlEncoderCollectStats(JxlEncoderFrameSettings* frame_settings,
                                        JxlEncoderStats* stats) {

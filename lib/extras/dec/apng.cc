@@ -445,7 +445,7 @@ struct Reader {
     next += to_copy;
     return (len == to_copy);
   }
-  bool Eof() { return next == last; }
+  bool Eof() const { return next == last; }
 };
 
 const unsigned long cMaxPNGSize = 1000000UL;
@@ -461,7 +461,8 @@ void info_fn(png_structp png_ptr, png_infop info_ptr) {
 
 void row_fn(png_structp png_ptr, png_bytep new_row, png_uint_32 row_num,
             int pass) {
-  APNGFrame* frame = (APNGFrame*)png_get_progressive_ptr(png_ptr);
+  APNGFrame* frame =
+      reinterpret_cast<APNGFrame*>(png_get_progressive_ptr(png_ptr));
   JXL_CHECK(frame);
   JXL_CHECK(row_num < frame->rows.size());
   JXL_CHECK(frame->rows[row_num] < frame->pixels.data() + frame->pixels.size());
@@ -646,8 +647,8 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
     ppf->color_encoding.transfer_function = JXL_TRANSFER_FUNCTION_SRGB;
     ppf->color_encoding.rendering_intent = JXL_RENDERING_INTENT_RELATIVE;
 
-    if (!processing_start(png_ptr, info_ptr, (void*)&frameRaw, hasInfo,
-                          chunkIHDR, chunksInfo)) {
+    if (!processing_start(png_ptr, info_ptr, static_cast<void*>(&frameRaw),
+                          hasInfo, chunkIHDR, chunksInfo)) {
       while (!r.Eof()) {
         id = read_chunk(&r, &chunk);
         if (!id) break;
@@ -705,7 +706,8 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
 
           if (hasInfo) {
             memcpy(chunkIHDR.data() + 8, chunk.data() + 12, 8);
-            if (processing_start(png_ptr, info_ptr, (void*)&frameRaw, hasInfo,
+            if (processing_start(png_ptr, info_ptr,
+                                 static_cast<void*>(&frameRaw), hasInfo,
                                  chunkIHDR, chunksInfo)) {
               break;
             }

@@ -356,13 +356,13 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
         const GString *blend_null_flag = g_string_new("");
         const GString *blend_replace_flag = g_string_new(" (replace)");
         const GString *blend_combine_flag = g_string_new(" (combine)");
-        GString *blend;
+        const GString *blend;
         if (blend_mode == JXL_BLEND_REPLACE) {
-          blend = (GString *)blend_replace_flag;
+          blend = blend_replace_flag;
         } else if (blend_mode == JXL_BLEND_BLEND) {
-          blend = (GString *)blend_combine_flag;
+          blend = blend_combine_flag;
         } else {
-          blend = (GString *)blend_null_flag;
+          blend = blend_null_flag;
         }
         char *temp_frame_name = nullptr;
         bool must_free_frame_name = false;
@@ -433,8 +433,10 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
             " Warning: JxlDecoderGetFrameHeader: Unhandled blend mode: %d\n",
             blend_mode);
       }
-      if ((frame_name_len = frame_header.name_length) > 0) {
-        frame_name = (char *)realloc(frame_name, frame_name_len);
+      frame_name_len = frame_header.name_length;
+      if (frame_name_len > 0) {
+        frame_name =
+            reinterpret_cast<char *>(realloc(frame_name, frame_name_len));
         if (JXL_DEC_SUCCESS !=
             JxlDecoderGetFrameName(dec.get(), frame_name, frame_name_len)) {
           g_printerr(LOAD_PROC "Error: JxlDecoderGetFrameName failed");

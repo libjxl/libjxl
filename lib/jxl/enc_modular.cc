@@ -139,7 +139,8 @@ Status float_to_int(const float* const row_in, pixel_type* const row_out,
   }
   if (bits == 32 && fp) {
     JXL_ASSERT(exp_bits == 8);
-    memcpy((void*)row_out, (const void*)row_in, 4 * xsize);
+    memcpy(static_cast<void*>(row_out), static_cast<const void*>(row_in),
+           4 * xsize);
     return true;
   }
 
@@ -186,7 +187,7 @@ Status float_to_int(const float* const row_in, pixel_type* const row_out,
     f = (signbit ? sign : 0);
     f |= (exp << mant_bits);
     f |= mantissa;
-    row_out[x] = (pixel_type)f;
+    row_out[x] = static_cast<pixel_type>(f);
   }
   return true;
 }

@@ -180,7 +180,7 @@ class ThreadPoolForTests {
   }
   ThreadPoolForTests(const ThreadPoolForTests&) = delete;
   ThreadPoolForTests& operator&(const ThreadPoolForTests&) = delete;
-  // TODO(eustas): avoid `&` overload?
+  // TODO(eustas): avoid unary `&` overload?
   ThreadPool* operator&() { return pool_.get(); }
 
  private:

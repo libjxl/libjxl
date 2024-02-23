@@ -1034,7 +1034,7 @@ static void MaltaDiffMapT(const Tag tag, const ImageF& lum0, const ImageF& lum1,
   }
 
   const HWY_FULL(float) df;
-  const size_t aligned_x = std::max(size_t(4), Lanes(df));
+  const size_t aligned_x = std::max(static_cast<size_t>(4), Lanes(df));
   const intptr_t stride = diffs->PixelsPerRow();
 
   // Middle

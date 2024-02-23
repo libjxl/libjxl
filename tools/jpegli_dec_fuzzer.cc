@@ -73,7 +73,7 @@ class SourceManager {
   static void init_source(j_decompress_ptr cinfo) {}
 
   static boolean fill_input_buffer(j_decompress_ptr cinfo) {
-    auto src = reinterpret_cast<SourceManager*>(cinfo->src);
+    auto* src = reinterpret_cast<SourceManager*>(cinfo->src);
     if (src->pos_ < src->len_) {
       size_t remaining = src->len_ - src->pos_;
       size_t chunk_size = std::min(remaining, src->max_chunk_size_);
@@ -98,7 +98,7 @@ class SourceManager {
   }
 
   static void skip_input_data(j_decompress_ptr cinfo, long num_bytes) {
-    auto src = reinterpret_cast<SourceManager*>(cinfo->src);
+    auto* src = reinterpret_cast<SourceManager*>(cinfo->src);
     if (num_bytes <= 0) {
       return;
     }

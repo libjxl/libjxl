@@ -1118,7 +1118,7 @@ JxlDecoderStatus JxlDecoderProcessSections(JxlDecoder* dec) {
     if (OutOfBounds(pos, size, span.size())) {
       break;
     }
-    auto br = new jxl::BitReader(jxl::Bytes(span.data() + pos, size));
+    auto* br = new jxl::BitReader(jxl::Bytes(span.data() + pos, size));
     section_info.emplace_back(jxl::FrameDecoder::SectionInfo{br, id, i});
     section_status.emplace_back();
     pos += size;

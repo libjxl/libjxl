@@ -32,7 +32,7 @@ int main(int argc, const char* argv[]) {
     auto runner = JxlThreadParallelRunnerMake(
         nullptr, JxlThreadParallelRunnerDefaultNumWorkerThreads());
     return JxlThreadParallelRunner(
-        runner.get(), argv,
+        static_cast<void*>(runner.get()), argv,
         /* init= */ +[](void*, size_t) -> JxlParallelRetCode { return 0; },
         /* func= */
         +[](void* opaque, uint32_t value, size_t) {

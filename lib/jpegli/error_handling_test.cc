@@ -241,7 +241,8 @@ TEST(EncoderErrorHandlingTest, InvalidQuantValue) {
     cinfo.image_height = 1;
     cinfo.input_components = 1;
     jpegli_set_defaults(&cinfo);
-    cinfo.quant_tbl_ptrs[0] = jpegli_alloc_quant_table((j_common_ptr)&cinfo);
+    cinfo.quant_tbl_ptrs[0] =
+        jpegli_alloc_quant_table(reinterpret_cast<j_common_ptr>(&cinfo));
     for (size_t k = 0; k < DCTSIZE2; ++k) {
       cinfo.quant_tbl_ptrs[0]->quantval[k] = 0;
     }

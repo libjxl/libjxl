@@ -608,6 +608,9 @@ void Compute1dIDCT(float* in, float* out, size_t N) {
       out[8] = even7 - odd7;
       break;
     }
+    default:
+      JXL_ABORT("Compute1dIDCT does not support N=%d", static_cast<int>(N));
+      break;
   }
 }
 

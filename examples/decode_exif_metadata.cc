@@ -11,6 +11,7 @@
 #include <jxl/decode_cxx.h>
 #include <limits.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 #include <vector>

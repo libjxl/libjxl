@@ -85,7 +85,7 @@ Status EncodeWithLibjpeg(const PackedPixelFile& ppf, int quality,
   std::unique_ptr<Encoder> encoder = GetJPEGEncoder();
   encoder->SetOption("q", std::to_string(quality));
   EncodedImage encoded;
-  JXL_RETURN_IF_ERROR(encoder->Encode(ppf, &encoded));
+  JXL_RETURN_IF_ERROR(encoder->Encode(ppf, &encoded, nullptr));
   JXL_RETURN_IF_ERROR(!encoded.bitstreams.empty());
   *compressed = std::move(encoded.bitstreams[0]);
   return true;

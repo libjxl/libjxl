@@ -253,7 +253,7 @@ class ConvolveNoiseStage : public RenderPipelineStage {
       }
       float* JXL_RESTRICT row_out = GetOutputRow(output_rows, c, 0);
       for (ssize_t x = -RoundUpTo(xextra, Lanes(d));
-           x < (ssize_t)(xsize + xextra); x += Lanes(d)) {
+           x < static_cast<ssize_t>(xsize + xextra); x += Lanes(d)) {
         const auto p00 = LoadU(d, rows[2] + x);
         auto others = Zero(d);
         // TODO(eustas): sum loaded values to reduce the calculation chain

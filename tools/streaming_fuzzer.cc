@@ -264,7 +264,7 @@ std::vector<float> Decode(const std::vector<uint8_t>& data) {
       JXL_CHECK(JxlDecoderImageOutBufferSize(dec.get(), &format,
                                              &buffer_size) == JXL_DEC_SUCCESS);
       pixels.resize(buffer_size / sizeof(float));
-      void* pixels_buffer = (void*)pixels.data();
+      void* pixels_buffer = static_cast<void*>(pixels.data());
       size_t pixels_buffer_size = pixels.size() * sizeof(float);
       JXL_CHECK(JxlDecoderSetImageOutBuffer(dec.get(), &format, pixels_buffer,
                                             pixels_buffer_size) ==

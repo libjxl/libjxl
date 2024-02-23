@@ -661,7 +661,7 @@ boolean jpegli_read_icc_profile(j_decompress_ptr cinfo, JOCTET** icc_data_ptr,
     return FALSE;
   }
   *icc_data_len = m->icc_profile_.size();
-  *icc_data_ptr = (JOCTET*)malloc(*icc_data_len);
+  *icc_data_ptr = static_cast<JOCTET*>(malloc(*icc_data_len));
   if (*icc_data_ptr == nullptr) {
     JPEGLI_ERROR("jpegli_read_icc_profile: Out of memory");
   }

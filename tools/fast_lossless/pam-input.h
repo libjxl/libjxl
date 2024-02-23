@@ -4,6 +4,8 @@
 // license that can be found in the LICENSE file.
 
 #include <limits.h>
+#include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -47,8 +49,10 @@ class Parser {
 
       case '7':
         return ParseHeaderPAM(header, pos);
+
+      default:
+        return false;
     }
-    return false;
   }
 
   // Exposed for testing
@@ -152,11 +156,12 @@ class Parser {
 
   bool MatchString(const char* keyword) {
     const uint8_t* ppos = pos_;
-    while (*keyword) {
+    const uint8_t* kw = reinterpret_cast<const uint8_t*>(keyword);
+    while (*kw) {
       if (ppos >= end_) return error_msg("PAM: unexpected end of input");
-      if (*keyword != *ppos) return false;
+      if (*kw != *ppos) return false;
       ppos++;
-      keyword++;
+      kw++;
     }
     pos_ = ppos;
     return_on_error(SkipWhitespace());
@@ -250,7 +255,7 @@ bool load_file(unsigned char** out, size_t* outsize, const char* filename) {
     fclose(file);
     return false;
   }
-  *out = (unsigned char*)malloc(*outsize);
+  *out = static_cast<unsigned char*>(malloc(*outsize));
   if (!(*out)) {
     fclose(file);
     return false;
@@ -286,7 +291,7 @@ bool DecodePAM(const char* filename, uint8_t** buffer, size_t* w, size_t* h,
   if (pnm_remaining_size < buffer_size) {
     return error_msg("PNM file too small");
   }
-  *buffer = (uint8_t*)malloc(buffer_size);
+  *buffer = static_cast<uint8_t*>(malloc(buffer_size));
   memcpy(*buffer, pos, buffer_size);
   return true;
 }
