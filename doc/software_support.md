@@ -15,7 +15,7 @@ Please add missing software to this list.
 - Chromium: behind a flag from version 91 to 109, [tracking bug](https://bugs.chromium.org/p/chromium/issues/detail?id=1178058)
 - Firefox: behind a flag since version 90, [tracking bug](https://bugzilla.mozilla.org/show_bug.cgi?id=1539075)
 - Safari: supported since version 17 [release notes](https://developer.apple.com/documentation/safari-release-notes/safari-17-release-notes), [tracking bug](https://bugs.webkit.org/show_bug.cgi?id=208235)
-- Edge: behind a flag since version 91, start with `.\msedge.exe --enable-features=JXL`
+- Edge: behind a flag from version 91 to 109.
 - Opera: behind a flag since version 77.
 - Basilisk: supported since version v2023.01.07, [release notes](https://www.basilisk-browser.org/releasenotes.shtml)
 - Pale Moon: supported since version 31.4.0, [release notes](https://www.palemoon.org/releasenotes-archived.shtml#v31.4.0)
