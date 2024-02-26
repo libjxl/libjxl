@@ -1963,8 +1963,7 @@ Status EncodeFrameStreaming(const CompressParams& cparams,
     enc_state.streaming_mode = true;
     enc_state.initialize_global_state = (i == 0);
     enc_state.dc_group_index = dc_ix;
-    enc_state.histogram_idx =
-        std::vector<uint8_t>(group_xsize * group_ysize, i);
+    enc_state.histogram_idx = std::vector<size_t>(group_xsize * group_ysize, i);
     std::vector<BitWriter> group_codes;
     JXL_RETURN_IF_ERROR(ComputeEncodingData(
         cparams, frame_info, metadata, frame_data, jpeg_data.get(), x0, y0,
