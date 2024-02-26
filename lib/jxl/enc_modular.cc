@@ -260,6 +260,11 @@ ModularFrameEncoder::ModularFrameEncoder(const FrameHeader& frame_header,
         prop_order.erase(prop_order.begin() + 1);
       }
     }
+    int max_properties = std::min<int>(
+        cparams_.options.max_properties,
+        static_cast<int>(
+            frame_header.nonserialized_metadata->m.num_extra_channels) +
+            (frame_header.encoding == FrameEncoding::kModular ? 2 : -1));
     switch (cparams_.speed_tier) {
       case SpeedTier::kHare:
         cparams_.options.splitting_heuristics_properties.assign(
@@ -294,13 +299,13 @@ ModularFrameEncoder::ModularFrameEncoder(const FrameHeader& frame_header,
     }
     if (cparams_.speed_tier > SpeedTier::kTortoise) {
       // Gradient in previous channels.
-      for (int i = 0; i < cparams_.options.max_properties; i++) {
+      for (int i = 0; i < max_properties; i++) {
         cparams_.options.splitting_heuristics_properties.push_back(
             kNumNonrefProperties + i * 4 + 3);
       }
     } else {
       // All the extra properties in Tortoise mode.
-      for (int i = 0; i < cparams_.options.max_properties * 4; i++) {
+      for (int i = 0; i < max_properties * 4; i++) {
         cparams_.options.splitting_heuristics_properties.push_back(
             kNumNonrefProperties + i);
       }
