@@ -882,7 +882,7 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
     }
 
     // Choose block sizes.
-    acs_heuristics.ProcessRect(r, cmap, &ac_strategy);
+    acs_heuristics.ProcessRect(r, cmap, &ac_strategy, thread);
 
     // Choose amount of post-processing smoothing.
     // TODO(veluca): should this go *after* AdjustQuantField?
@@ -913,6 +913,7 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
       DivCeil(frame_dim.xsize_blocks, kEncTileDimInBlocks) *
           DivCeil(frame_dim.ysize_blocks, kEncTileDimInBlocks),
       [&](const size_t num_threads) {
+        acs_heuristics.PrepareForThreads(num_threads);
         ar_heuristics.PrepareForThreads(num_threads);
         cfl_heuristics.PrepareForThreads(num_threads);
         return true;
