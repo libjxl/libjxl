@@ -326,7 +326,7 @@ ModularFrameEncoder::ModularFrameEncoder(const FrameHeader& frame_header,
 
   if (cparams_.options.predictor == static_cast<Predictor>(-1)) {
     // no explicit predictor(s) given, set a good default
-    if ((cparams_.speed_tier <= SpeedTier::kTortoise ||
+    if ((cparams_.speed_tier <= SpeedTier::kGlacier ||
          cparams_.modular_mode == false) &&
         cparams_.IsLossless() && cparams_.responsive == false) {
       // TODO(veluca): allow all predictors that don't break residual
