@@ -787,6 +787,7 @@ void FindBestFirstLevelDivisionForSquare(
 
 void ProcessRectACS(const CompressParams& cparams, const ACSConfig& config,
                     const Rect& rect, const ColorCorrelationMap& cmap,
+                    float* JXL_RESTRICT block, uint32_t* JXL_RESTRICT quantized,
                     AcStrategyImage* ac_strategy) {
   // Main philosophy here:
   // 1. First find best 8x8 transform for each area.
@@ -799,15 +800,7 @@ void ProcessRectACS(const CompressParams& cparams, const ACSConfig& config,
   // integral transforms cross these boundaries leads to
   // additional complications.
   const float butteraugli_target = cparams.butteraugli_distance;
-  const size_t dct_scratch_size =
-      3 * (MaxVectorSize() / sizeof(float)) * AcStrategy::kMaxBlockDim;
-  // TODO(veluca): reuse allocations
-  auto mem = hwy::AllocateAligned<float>(5 * AcStrategy::kMaxCoeffArea +
-                                         dct_scratch_size);
-  auto qmem = hwy::AllocateAligned<uint32_t>(AcStrategy::kMaxCoeffArea);
-  uint32_t* JXL_RESTRICT quantized = qmem.get();
-  float* JXL_RESTRICT block = mem.get();
-  float* JXL_RESTRICT scratch_space = mem.get() + 3 * AcStrategy::kMaxCoeffArea;
+  float* JXL_RESTRICT scratch_space = block + 3 * AcStrategy::kMaxCoeffArea;
   size_t bx = rect.x0();
   size_t by = rect.y0();
   JXL_ASSERT(rect.xsize() <= 8);
@@ -1085,16 +1078,27 @@ void AcStrategyHeuristics::Init(const Image3F& src, const Rect& rect_in,
   config.cost_delta *= pow(ratio, kPow3);
 }
 
+void AcStrategyHeuristics::PrepareForThreads(std::size_t num_threads) {
+  const size_t dct_scratch_size =
+      3 * (MaxVectorSize() / sizeof(float)) * AcStrategy::kMaxBlockDim;
+  mem_per_thread = 5 * AcStrategy::kMaxCoeffArea + dct_scratch_size;
+  mem = hwy::AllocateAligned<float>(num_threads * mem_per_thread);
+  qmem_per_thread = AcStrategy::kMaxCoeffArea;
+  qmem = hwy::AllocateAligned<uint32_t>(num_threads * qmem_per_thread);
+}
+
 void AcStrategyHeuristics::ProcessRect(const Rect& rect,
                                        const ColorCorrelationMap& cmap,
-                                       AcStrategyImage* ac_strategy) {
+                                       AcStrategyImage* ac_strategy,
+                                       size_t thread) {
   // In Falcon mode, use DCT8 everywhere and uniform quantization.
   if (cparams.speed_tier >= SpeedTier::kCheetah) {
     ac_strategy->FillDCT8(rect);
     return;
   }
   HWY_DYNAMIC_DISPATCH(ProcessRectACS)
-  (cparams, config, rect, cmap, ac_strategy);
+  (cparams, config, rect, cmap, mem.get() + thread * mem_per_thread,
+   qmem.get() + thread * qmem_per_thread, ac_strategy);
 }
 
 Status AcStrategyHeuristics::Finalize(const FrameDimensions& frame_dim,
