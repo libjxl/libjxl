@@ -175,7 +175,7 @@ void BuildHuffmanLookupTable(j_decompress_ptr cinfo, JHUFF_TBL* table,
   for (int i = 0; i < total_count; ++i) {
     int value = table->huffval[i];
     if (values_seen[value]) {
-      return JPEGLI_ERROR("Duplicate Huffman code value %d", value);
+      JPEGLI_ERROR("Duplicate Huffman code value %d", value);
     }
     values_seen[value] = 1;
     values[i] = value;
@@ -223,7 +223,7 @@ void PrepareForScan(j_decompress_ptr cinfo) {
       HuffmanTableEntry* huff_lut =
           &m->dc_huff_lut_[dc_tbl_idx * kJpegHuffmanLutSize];
       if (!table) {
-        return JPEGLI_ERROR("DC Huffman table %d not found", dc_tbl_idx);
+        JPEGLI_ERROR("DC Huffman table %d not found", dc_tbl_idx);
       }
       BuildHuffmanLookupTable(cinfo, table, huff_lut);
     }
@@ -233,7 +233,7 @@ void PrepareForScan(j_decompress_ptr cinfo) {
       HuffmanTableEntry* huff_lut =
           &m->ac_huff_lut_[ac_tbl_idx * kJpegHuffmanLutSize];
       if (!table) {
-        return JPEGLI_ERROR("AC Huffman table %d not found", ac_tbl_idx);
+        JPEGLI_ERROR("AC Huffman table %d not found", ac_tbl_idx);
       }
       BuildHuffmanLookupTable(cinfo, table, huff_lut);
     }
