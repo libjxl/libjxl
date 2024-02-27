@@ -348,7 +348,9 @@ bool MultiBlockTransformCrossesVerticalBoundary(
 float EstimateEntropy(const AcStrategy& acs, float entropy_mul, size_t x,
                       size_t y, const ACSConfig& config,
                       const float* JXL_RESTRICT cmap_factors, float* block,
-                      float* scratch_space, uint32_t* quantized) {
+                      float* full_scratch_space, uint32_t* quantized) {
+  float* mem = full_scratch_space;
+  float* scratch_space = full_scratch_space + AcStrategy::kMaxCoeffArea;
   const size_t size = (1 << acs.log2_covered_blocks()) * kDCTBlockSize;
 
   // Apply transform.
@@ -398,8 +400,6 @@ float EstimateEntropy(const AcStrategy& acs, float entropy_mul, size_t x,
   float entropy = 0.0f;
   const HWY_CAPPED(float, 8) df8;
 
-  auto mem_alloc = hwy::AllocateAligned<float>(AcStrategy::kMaxCoeffArea);
-  float* mem = mem_alloc.get();
   auto loss = Zero(df8);
   for (size_t c = 0; c < 3; c++) {
     const float* inv_matrix = config.dequant->InvMatrix(acs.RawStrategy(), c);
@@ -1081,7 +1081,7 @@ void AcStrategyHeuristics::Init(const Image3F& src, const Rect& rect_in,
 void AcStrategyHeuristics::PrepareForThreads(std::size_t num_threads) {
   const size_t dct_scratch_size =
       3 * (MaxVectorSize() / sizeof(float)) * AcStrategy::kMaxBlockDim;
-  mem_per_thread = 5 * AcStrategy::kMaxCoeffArea + dct_scratch_size;
+  mem_per_thread = 6 * AcStrategy::kMaxCoeffArea + dct_scratch_size;
   mem = hwy::AllocateAligned<float>(num_threads * mem_per_thread);
   qmem_per_thread = AcStrategy::kMaxCoeffArea;
   qmem = hwy::AllocateAligned<uint32_t>(num_threads * qmem_per_thread);
