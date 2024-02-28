@@ -233,7 +233,8 @@ int main(int argc, char* argv[]) {
 
   std::vector<float> pixels;
   std::vector<uint8_t> icc_profile;
-  size_t xsize = 0, ysize = 0;
+  size_t xsize = 0;
+  size_t ysize = 0;
   if (!DecodeJpegXlOneShot(jxl.data(), jxl.size(), &pixels, &xsize, &ysize,
                            &icc_profile)) {
     fprintf(stderr, "Error while decoding the jxl file\n");

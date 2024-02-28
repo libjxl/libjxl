@@ -38,12 +38,14 @@ int main(int argc, char** argv) {
   }
 
   unsigned char* png;
-  unsigned w, h;
-  size_t nb_chans = 4, bitdepth = 8;
-
+  unsigned w;
+  unsigned h;
   unsigned error = lodepng_decode32_file(&png, &w, &h, in);
 
-  size_t width = w, height = h;
+  size_t nb_chans = 4;
+  size_t bitdepth = 8;
+  size_t width = w;
+  size_t height = h;
   if (error && !DecodePAM(in, &png, &width, &height, &nb_chans, &bitdepth)) {
     fprintf(stderr, "lodepng error %u: %s\n", error, lodepng_error_text(error));
     return 1;

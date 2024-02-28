@@ -4,7 +4,11 @@
 // license that can be found in the LICENSE file.
 
 #include "lib/jxl/enc_icc_codec.h"
-#include "lib/jxl/icc_codec.h"
+
+namespace jxl {
+Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result);
+Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result);
+}  // namespace jxl
 
 namespace jpegxl {
 namespace tools {

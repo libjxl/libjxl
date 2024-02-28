@@ -1073,9 +1073,9 @@ void AcStrategyHeuristics::Init(const Image3F& src, const Rect& rect_in,
   static const float kPow1 = 0.33677806662454718;
   static const float kPow2 = 0.50990926717963703;
   static const float kPow3 = 0.36702940662370243;
-  config.info_loss_multiplier *= pow(ratio, kPow1);
-  config.zeros_mul *= pow(ratio, kPow2);
-  config.cost_delta *= pow(ratio, kPow3);
+  config.info_loss_multiplier *= std::pow(ratio, kPow1);
+  config.zeros_mul *= std::pow(ratio, kPow2);
+  config.cost_delta *= std::pow(ratio, kPow3);
 }
 
 void AcStrategyHeuristics::PrepareForThreads(std::size_t num_threads) {

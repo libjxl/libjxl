@@ -78,8 +78,8 @@ void VerifySameImage(const PackedImage& im0, size_t bits_per_sample0,
   };
   double factor0 = get_factor(im0.format, bits_per_sample0);
   double factor1 = get_factor(im1.format, bits_per_sample1);
-  auto* pixels0 = static_cast<const uint8_t*>(im0.pixels());
-  auto* pixels1 = static_cast<const uint8_t*>(im1.pixels());
+  const auto* pixels0 = static_cast<const uint8_t*>(im0.pixels());
+  const auto* pixels1 = static_cast<const uint8_t*>(im1.pixels());
   auto rgba0 =
       test::ConvertToRGBA32(pixels0, im0.xsize, im0.ysize, im0.format, factor0);
   auto rgba1 =

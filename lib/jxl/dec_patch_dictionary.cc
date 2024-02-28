@@ -161,9 +161,9 @@ Status PatchDictionary::Decode(BitReader* br, size_t xsize, size_t ysize,
         }
         blendings_.push_back(info);
       }
-      positions_.push_back(std::move(pos));
+      positions_.emplace_back(pos);
     }
-    ref_positions_.emplace_back(std::move(ref_pos));
+    ref_positions_.emplace_back(ref_pos);
   }
   positions_.shrink_to_fit();
 
@@ -255,11 +255,11 @@ void PatchDictionary::ComputePatchTree() {
     node.start = sorted_patches_y0_.size();
     for (ssize_t i = static_cast<ssize_t>(right_start) - 1;
          i >= static_cast<ssize_t>(left_end); --i) {
-      sorted_patches_y1_.push_back({intervals[i].y1, intervals[i].idx});
+      sorted_patches_y1_.emplace_back(intervals[i].y1, intervals[i].idx);
     }
     sort_by_y0(left_end, right_start);
     for (size_t i = left_end; i < right_start; ++i) {
-      sorted_patches_y0_.push_back({intervals[i].y0, intervals[i].idx});
+      sorted_patches_y0_.emplace_back(intervals[i].y0, intervals[i].idx);
     }
     // Create the left and right nodes (if not empty).
     node.left_child = node.right_child = -1;

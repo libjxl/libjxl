@@ -353,7 +353,9 @@ void ConvertPixel(const uint8_t* input_rgb, uint8_t* out,
       out8[1] = static_cast<uint8_t>(std::round((1.0f - g) * kMul));
       out8[2] = static_cast<uint8_t>(std::round((1.0f - b) * kMul));
     } else if (colorspace == JCS_YCCK) {
-      float Y, Cb, Cr;
+      float Y;
+      float Cb;
+      float Cr;
       RGBToYCbCr(r, g, b, &Y, &Cb, &Cr);
       out8[0] = static_cast<uint8_t>(std::round(Y * kMul));
       out8[1] = static_cast<uint8_t>(std::round(Cb * kMul));
@@ -689,15 +691,15 @@ bool EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
 
 int NumTestScanScripts() { return kNumTestScripts; }
 
-void DumpImage(const TestImage& image, const std::string fn) {
+void DumpImage(const TestImage& image, const std::string& fn) {
   JXL_CHECK(image.components == 1 || image.components == 3);
   size_t bytes_per_sample = jpegli_bytes_per_sample(image.data_type);
   uint32_t maxval = (1u << (8 * bytes_per_sample)) - 1;
   char type = image.components == 1 ? '5' : '6';
   std::ofstream out(fn.c_str(), std::ofstream::binary);
-  out << "P" << type << std::endl
-      << image.xsize << " " << image.ysize << std::endl
-      << maxval << std::endl;
+  out << "P" << type << "\n"
+      << image.xsize << " " << image.ysize << "\n"
+      << maxval << "\n";
   out.write(reinterpret_cast<const char*>(image.pixels.data()),
             image.pixels.size());
   out.close();

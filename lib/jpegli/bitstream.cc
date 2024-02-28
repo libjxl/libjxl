@@ -123,7 +123,6 @@ bool EncodeDQT(j_compress_ptr cinfo, bool write_all_tables) {
 
 void EncodeSOF(j_compress_ptr cinfo, bool is_baseline) {
   if (cinfo->data_precision != kJpegPrecision) {
-    is_baseline = false;
     JPEGLI_ERROR("Unsupported data precision %d", cinfo->data_precision);
   }
   const uint8_t marker = cinfo->progressive_mode ? 0xc2

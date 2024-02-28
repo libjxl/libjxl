@@ -236,7 +236,7 @@ void HistogramReindex(std::vector<Histogram>* out, size_t prev_histograms,
 // Clusters similar histograms in 'in' together, the selected histograms are
 // placed in 'out', and for each index in 'in', *histogram_symbols will
 // indicate which of the 'out' histograms is the best approximation.
-void ClusterHistograms(const HistogramParams params,
+void ClusterHistograms(const HistogramParams& params,
                        const std::vector<Histogram>& in, size_t max_histograms,
                        std::vector<Histogram>* out,
                        std::vector<uint32_t>* histogram_symbols) {

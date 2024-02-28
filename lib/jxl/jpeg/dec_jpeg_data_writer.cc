@@ -527,7 +527,7 @@ bool EncodeDCTBlockSequential(const coeff_t* coeffs, HuffmanCodeTable* dc_huff,
 
   int dc_nbits = (temp2 == 0) ? 0 : (FloorLog2Nonzero<uint32_t>(temp2) + 1);
   WriteSymbol(dc_nbits, dc_huff, bw);
-#if false
+#if JXL_FALSE
   // If the input is corrupt, this could be triggered. Checking is
   // costly though, so it makes more sense to avoid this branch.
   // (producing a corrupt JPEG when the input is corrupt, instead

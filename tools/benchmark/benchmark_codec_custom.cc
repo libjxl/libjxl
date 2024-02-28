@@ -137,7 +137,8 @@ class CustomCodec : public ImageCodec {
     const std::string basename = GetBaseName(filename);
     TemporaryFile in_file(basename, custom_args->extension);
     TemporaryFile encoded_file(basename, extension_);
-    std::string in_filename, encoded_filename;
+    std::string in_filename;
+    std::string encoded_filename;
     JXL_RETURN_IF_ERROR(in_file.GetFileName(&in_filename));
     JXL_RETURN_IF_ERROR(encoded_file.GetFileName(&encoded_filename));
     // TODO(szabadka) Support custom_args->colorspace again.
@@ -173,7 +174,8 @@ class CustomCodec : public ImageCodec {
     const std::string basename = GetBaseName(filename);
     TemporaryFile encoded_file(basename, extension_);
     TemporaryFile out_file(basename, custom_args->extension);
-    std::string encoded_filename, out_filename;
+    std::string encoded_filename;
+    std::string out_filename;
     JXL_RETURN_IF_ERROR(encoded_file.GetFileName(&encoded_filename));
     JXL_RETURN_IF_ERROR(out_file.GetFileName(&out_filename));
 
