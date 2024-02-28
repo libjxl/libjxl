@@ -292,7 +292,7 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
     }
   }
 
-  if (!jpegxl::tools::WriteFile(output_fn, compressed)) return 1;
+  if (!jpegxl::tools::WriteFile(output_fn, compressed)) return false;
   if (!quiet) {
     std::unique_lock<std::mutex> lock(stderr_mutex);
     std::cerr << "Stored " << output_fn << " size: " << compressed.size()
@@ -451,11 +451,11 @@ int main(int argc, const char** argv) {
       }
     }
 
-    specs.emplace_back(ImageSpec());
+    specs.emplace_back();
     specs.back().params.lossy_palette = true;
     specs.back().override_decoder_spec = 0;
 
-    specs.emplace_back(ImageSpec());
+    specs.emplace_back();
     specs.back().params.noise = true;
     specs.back().override_decoder_spec = 0;
 

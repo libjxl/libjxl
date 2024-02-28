@@ -80,7 +80,7 @@ TEST(EncodeTest, AddFrameAfterCloseInputTest) {
   jxl::test::JxlBasicInfoSetFromPixelFormat(&basic_info, &pixel_format);
   basic_info.xsize = xsize;
   basic_info.ysize = ysize;
-  basic_info.uses_original_profile = false;
+  basic_info.uses_original_profile = 0;
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetCodestreamLevel(enc.get(), 10));
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
   JxlColorEncoding color_encoding;
@@ -89,7 +89,7 @@ TEST(EncodeTest, AddFrameAfterCloseInputTest) {
   EXPECT_EQ(JXL_ENC_SUCCESS,
             JxlEncoderSetColorEncoding(enc.get(), &color_encoding));
   JxlEncoderFrameSettings* frame_settings =
-      JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+      JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
   EXPECT_EQ(JXL_ENC_ERROR,
             JxlEncoderAddImageFrame(frame_settings, &pixel_format,
                                     pixels.data(), pixels.size()));
@@ -105,7 +105,7 @@ TEST(EncodeTest, AddJPEGAfterCloseTest) {
   const std::vector<uint8_t> orig = jxl::test::ReadTestData(jpeg_path);
 
   JxlEncoderFrameSettings* frame_settings =
-      JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+      JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
 
   EXPECT_EQ(JXL_ENC_ERROR,
             JxlEncoderAddJPEGFrame(frame_settings, orig.data(), orig.size()));
@@ -129,7 +129,7 @@ TEST(EncodeTest, AddFrameBeforeBasicInfoTest) {
   EXPECT_EQ(JXL_ENC_ERROR,
             JxlEncoderSetColorEncoding(enc.get(), &color_encoding));
   JxlEncoderFrameSettings* frame_settings =
-      JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+      JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
   EXPECT_EQ(JXL_ENC_ERROR,
             JxlEncoderAddImageFrame(frame_settings, &pixel_format,
                                     pixels.data(), pixels.size()));
@@ -309,7 +309,7 @@ TEST(EncodeTest, frame_settingsTest) {
     JxlEncoderPtr enc = JxlEncoderMake(nullptr);
     EXPECT_NE(nullptr, enc.get());
     JxlEncoderFrameSettings* frame_settings =
-        JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+        JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
     EXPECT_EQ(JXL_ENC_SUCCESS,
               JxlEncoderFrameSettingsSetOption(
                   frame_settings, JXL_ENC_FRAME_SETTING_EFFORT, 5));
@@ -321,7 +321,7 @@ TEST(EncodeTest, frame_settingsTest) {
     JxlEncoderPtr enc = JxlEncoderMake(nullptr);
     EXPECT_NE(nullptr, enc.get());
     JxlEncoderFrameSettings* frame_settings =
-        JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+        JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
     const size_t nb_options = 23;
     const JxlEncoderFrameSettingId options[nb_options] = {
         JXL_ENC_FRAME_SETTING_EFFORT,
@@ -448,7 +448,7 @@ TEST(EncodeTest, frame_settingsTest) {
     JxlEncoderPtr enc = JxlEncoderMake(nullptr);
     EXPECT_NE(nullptr, enc.get());
     JxlEncoderFrameSettings* frame_settings =
-        JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+        JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
     EXPECT_EQ(JXL_ENC_SUCCESS,
               JxlEncoderSetFrameLossless(frame_settings, JXL_TRUE));
     VerifyFrameEncoding(63, 129, enc.get(), frame_settings, 3000, false);
@@ -459,7 +459,7 @@ TEST(EncodeTest, frame_settingsTest) {
     JxlEncoderPtr enc = JxlEncoderMake(nullptr);
     EXPECT_NE(nullptr, enc.get());
     JxlEncoderFrameSettings* frame_settings =
-        JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+        JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
     EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetFrameDistance(frame_settings, 0.5));
     VerifyFrameEncoding(63, 129, enc.get(), frame_settings, 3130, false);
     EXPECT_EQ(0.5, enc->last_used_cparams.butteraugli_distance);
@@ -468,7 +468,7 @@ TEST(EncodeTest, frame_settingsTest) {
   {
     JxlEncoderPtr enc = JxlEncoderMake(nullptr);
     JxlEncoderFrameSettings* frame_settings =
-        JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+        JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
     // Disallowed negative distance
     EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderSetFrameDistance(frame_settings, -1));
   }
@@ -477,7 +477,7 @@ TEST(EncodeTest, frame_settingsTest) {
     JxlEncoderPtr enc = JxlEncoderMake(nullptr);
     EXPECT_NE(nullptr, enc.get());
     JxlEncoderFrameSettings* frame_settings =
-        JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+        JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
     EXPECT_EQ(JXL_ENC_SUCCESS,
               JxlEncoderFrameSettingsSetOption(
                   frame_settings, JXL_ENC_FRAME_SETTING_DECODING_SPEED, 2));
@@ -489,7 +489,7 @@ TEST(EncodeTest, frame_settingsTest) {
     JxlEncoderPtr enc = JxlEncoderMake(nullptr);
     EXPECT_NE(nullptr, enc.get());
     JxlEncoderFrameSettings* frame_settings =
-        JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+        JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
     EXPECT_EQ(JXL_ENC_ERROR,
               JxlEncoderFrameSettingsSetOption(
                   frame_settings, JXL_ENC_FRAME_SETTING_GROUP_ORDER, 100));
@@ -509,7 +509,7 @@ TEST(EncodeTest, frame_settingsTest) {
     JxlEncoderPtr enc = JxlEncoderMake(nullptr);
     EXPECT_NE(nullptr, enc.get());
     JxlEncoderFrameSettings* frame_settings =
-        JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+        JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
     EXPECT_EQ(JXL_ENC_SUCCESS,
               JxlEncoderFrameSettingsSetOption(
                   frame_settings, JXL_ENC_FRAME_SETTING_RESPONSIVE, 0));
@@ -533,7 +533,7 @@ TEST(EncodeTest, frame_settingsTest) {
     JxlEncoderPtr enc = JxlEncoderMake(nullptr);
     EXPECT_NE(nullptr, enc.get());
     JxlEncoderFrameSettings* frame_settings =
-        JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+        JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
     EXPECT_EQ(
         JXL_ENC_SUCCESS,
         JxlEncoderFrameSettingsSetFloatOption(
@@ -546,7 +546,7 @@ TEST(EncodeTest, frame_settingsTest) {
     JxlEncoderPtr enc = JxlEncoderMake(nullptr);
     EXPECT_NE(nullptr, enc.get());
     JxlEncoderFrameSettings* frame_settings =
-        JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+        JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
     EXPECT_EQ(JXL_ENC_SUCCESS,
               JxlEncoderFrameSettingsSetFloatOption(
                   frame_settings,
@@ -574,7 +574,7 @@ TEST(EncodeTest, frame_settingsTest) {
     JxlEncoderPtr enc = JxlEncoderMake(nullptr);
     EXPECT_NE(nullptr, enc.get());
     JxlEncoderFrameSettings* frame_settings =
-        JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+        JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
     EXPECT_EQ(
         JXL_ENC_SUCCESS,
         JxlEncoderFrameSettingsSetOption(
@@ -606,7 +606,7 @@ TEST(EncodeTest, frame_settingsTest) {
     JxlEncoderPtr enc = JxlEncoderMake(nullptr);
     EXPECT_NE(nullptr, enc.get());
     JxlEncoderFrameSettings* frame_settings =
-        JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+        JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
     EXPECT_EQ(JXL_ENC_SUCCESS,
               JxlEncoderFrameSettingsSetOption(
                   frame_settings, JXL_ENC_FRAME_SETTING_JPEG_RECON_CFL, 0));
@@ -618,7 +618,7 @@ TEST(EncodeTest, frame_settingsTest) {
     JxlEncoderPtr enc = JxlEncoderMake(nullptr);
     EXPECT_NE(nullptr, enc.get());
     JxlEncoderFrameSettings* frame_settings =
-        JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+        JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
     EXPECT_EQ(JXL_ENC_SUCCESS,
               JxlEncoderFrameSettingsSetOption(
                   frame_settings, JXL_ENC_FRAME_SETTING_JPEG_RECON_CFL, 1));
@@ -632,14 +632,14 @@ TEST(EncodeTest, LossyEncoderUseOriginalProfileTest) {
     JxlEncoderPtr enc = JxlEncoderMake(nullptr);
     ASSERT_NE(nullptr, enc.get());
     JxlEncoderFrameSettings* frame_settings =
-        JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+        JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
     VerifyFrameEncoding(63, 129, enc.get(), frame_settings, 7897, true);
   }
   {
     JxlEncoderPtr enc = JxlEncoderMake(nullptr);
     ASSERT_NE(nullptr, enc.get());
     JxlEncoderFrameSettings* frame_settings =
-        JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+        JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
     EXPECT_EQ(JXL_ENC_SUCCESS,
               JxlEncoderFrameSettingsSetOption(
                   frame_settings, JXL_ENC_FRAME_SETTING_PROGRESSIVE_DC, 2));
@@ -649,7 +649,7 @@ TEST(EncodeTest, LossyEncoderUseOriginalProfileTest) {
     JxlEncoderPtr enc = JxlEncoderMake(nullptr);
     ASSERT_NE(nullptr, enc.get());
     JxlEncoderFrameSettings* frame_settings =
-        JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+        JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
     ASSERT_EQ(JXL_ENC_SUCCESS,
               JxlEncoderFrameSettingsSetOption(
                   frame_settings, JXL_ENC_FRAME_SETTING_EFFORT, 8));
@@ -790,7 +790,7 @@ TEST(EncodeTest, SingleFrameBoundedJXLCTest) {
   EXPECT_NE(nullptr, enc.get());
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderUseContainer(enc.get(), true));
   JxlEncoderFrameSettings* frame_settings =
-      JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+      JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
 
   size_t xsize = 71;
   size_t ysize = 23;
@@ -869,12 +869,12 @@ TEST(EncodeTest, CodestreamLevelTest) {
   jxl::test::JxlBasicInfoSetFromPixelFormat(&basic_info, &pixel_format);
   basic_info.xsize = xsize;
   basic_info.ysize = ysize;
-  basic_info.uses_original_profile = false;
+  basic_info.uses_original_profile = 0;
 
   JxlEncoderPtr enc = JxlEncoderMake(nullptr);
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetCodestreamLevel(enc.get(), 10));
   JxlEncoderFrameSettings* frame_settings =
-      JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+      JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
 
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
   JxlColorEncoding color_encoding;
@@ -946,7 +946,7 @@ TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGReconstructionTest)) {
 
   JxlEncoderPtr enc = JxlEncoderMake(nullptr);
   JxlEncoderFrameSettings* frame_settings =
-      JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+      JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
 
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderStoreJPEGMetadata(enc.get(), JXL_TRUE));
   EXPECT_EQ(JXL_ENC_SUCCESS,
@@ -986,7 +986,7 @@ TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(ProgressiveJPEGReconstructionTest)) {
 
   JxlEncoderPtr enc = JxlEncoderMake(nullptr);
   JxlEncoderFrameSettings* frame_settings =
-      JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+      JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
 
   frame_settings->values.cparams.progressive_mode = jxl::Override::kOn;
 
@@ -1046,7 +1046,7 @@ TEST(EncodeTest, BasicInfoTest) {
   EXPECT_NE(nullptr, enc.get());
 
   JxlEncoderFrameSettings* frame_settings =
-      JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+      JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
   size_t xsize = 1;
   size_t ysize = 1;
   JxlPixelFormat pixel_format = {4, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
@@ -1055,8 +1055,8 @@ TEST(EncodeTest, BasicInfoTest) {
   jxl::test::JxlBasicInfoSetFromPixelFormat(&basic_info, &pixel_format);
   basic_info.xsize = xsize;
   basic_info.ysize = ysize;
-  basic_info.uses_original_profile = false;
-  basic_info.have_animation = true;
+  basic_info.uses_original_profile = 0;
+  basic_info.have_animation = 1;
   basic_info.intensity_target = 123.4;
   basic_info.min_nits = 5.0;
   basic_info.linear_below = 12.7;
@@ -1158,7 +1158,7 @@ TEST(EncodeTest, AnimationHeaderTest) {
   EXPECT_NE(nullptr, enc.get());
 
   JxlEncoderFrameSettings* frame_settings =
-      JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+      JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
   size_t xsize = 1;
   size_t ysize = 1;
   JxlPixelFormat pixel_format = {4, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
@@ -1261,7 +1261,7 @@ TEST(EncodeTest, CroppedFrameTest) {
   EXPECT_NE(nullptr, enc.get());
 
   JxlEncoderFrameSettings* frame_settings =
-      JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+      JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
   size_t xsize = 300;
   size_t ysize = 300;
   JxlPixelFormat pixel_format = {4, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
@@ -1361,7 +1361,7 @@ TEST_P(EncodeBoxTest, JXL_BOXES_TEST(BoxTest)) {
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderUseBoxes(enc.get()));
 
   JxlEncoderFrameSettings* frame_settings =
-      JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+      JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
   size_t xsize = 50;
   size_t ysize = 17;
   JxlPixelFormat pixel_format = {4, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
@@ -1498,7 +1498,7 @@ TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGFrameTest)) {
 
       JxlEncoderPtr enc = JxlEncoderMake(nullptr);
       JxlEncoderFrameSettings* frame_settings =
-          JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+          JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
       JxlEncoderFrameSettingsSetOption(frame_settings,
                                        JXL_ENC_FRAME_SETTING_EFFORT, 1);
       if (!skip_basic_info) {
@@ -1888,7 +1888,7 @@ TEST_P(EncoderStreamingTest, OutputCallback) {
     JxlEncoderPtr enc = JxlEncoderMake(nullptr);
     ASSERT_NE(nullptr, enc.get());
     JxlEncoderFrameSettings* frame_settings =
-        JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+        JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
     SetupEncoder(frame_settings, p, basic_info, number_extra_channels, false);
     SetupInputNonStreaming(frame_settings, p, number_extra_channels, frame,
                            ec_frame);
@@ -1903,7 +1903,7 @@ TEST_P(EncoderStreamingTest, OutputCallback) {
     JxlEncoderPtr enc = JxlEncoderMake(nullptr);
     ASSERT_NE(nullptr, enc.get());
     JxlEncoderFrameSettings* frame_settings =
-        JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+        JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
     SetupEncoder(frame_settings, p, basic_info, number_extra_channels, true);
     SetupInputNonStreaming(frame_settings, p, number_extra_channels, frame,
                            ec_frame);
@@ -1941,7 +1941,7 @@ TEST_P(EncoderStreamingTest, ChunkedFrame) {
     JxlEncoderPtr enc = JxlEncoderMake(nullptr);
     ASSERT_NE(nullptr, enc.get());
     JxlEncoderFrameSettings* frame_settings =
-        JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+        JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
     SetupEncoder(frame_settings, p, basic_info, number_extra_channels, false);
     SetupInputNonStreaming(frame_settings, p, number_extra_channels, frame,
                            ec_frame);
@@ -1955,7 +1955,7 @@ TEST_P(EncoderStreamingTest, ChunkedFrame) {
     JxlEncoderPtr enc = JxlEncoderMake(nullptr);
     ASSERT_NE(nullptr, enc.get());
     JxlEncoderFrameSettings* frame_settings =
-        JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+        JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
     SetupEncoder(frame_settings, p, basic_info, number_extra_channels, true);
     SetupInputStreaming(frame_settings, p, number_extra_channels, frame,
                         ec_frame);
@@ -1991,7 +1991,7 @@ TEST_P(EncoderStreamingTest, ChunkedAndOutputCallback) {
     JxlEncoderPtr enc = JxlEncoderMake(nullptr);
     ASSERT_NE(nullptr, enc.get());
     JxlEncoderFrameSettings* frame_settings =
-        JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+        JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
     SetupEncoder(frame_settings, p, basic_info, number_extra_channels, false);
     SetupInputNonStreaming(frame_settings, p, number_extra_channels, frame,
                            ec_frame);
@@ -2006,7 +2006,7 @@ TEST_P(EncoderStreamingTest, ChunkedAndOutputCallback) {
     JxlEncoderPtr enc = JxlEncoderMake(nullptr);
     ASSERT_NE(nullptr, enc.get());
     JxlEncoderFrameSettings* frame_settings =
-        JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+        JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
     SetupEncoder(frame_settings, p, basic_info, number_extra_channels, true);
     JxlStreamingAdapter streaming_adapter =
         JxlStreamingAdapter(enc.get(), p.return_large_buffers(), p.can_seek());
@@ -2052,7 +2052,7 @@ TEST(EncoderTest, CMYK) {
   JxlEncoderStruct* enc = enc_ptr.get();
   ASSERT_NE(nullptr, enc);
   JxlEncoderFrameSettings* frame_settings =
-      JxlEncoderFrameSettingsCreate(enc, NULL);
+      JxlEncoderFrameSettingsCreate(enc, nullptr);
 
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc, &basic_info));
   JxlExtraChannelInfo channel_info;

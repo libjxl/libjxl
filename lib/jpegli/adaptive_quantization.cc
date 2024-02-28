@@ -5,6 +5,7 @@
 
 #include "lib/jpegli/adaptive_quantization.h"
 
+#include <jxl/types.h>
 #include <stddef.h>
 #include <stdlib.h>
 
@@ -65,7 +66,7 @@ struct FastDivision<float, V> {
   }
 
   V operator()(const V n, const V d) const {
-#if 1  // Faster on SKX
+#if JXL_TRUE  // Faster on SKX
     return Div(n, d);
 #else
     return n * ReciprocalNR(d);

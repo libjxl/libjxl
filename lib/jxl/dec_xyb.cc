@@ -160,20 +160,19 @@ namespace jxl {
 HWY_EXPORT(OpsinToLinearInplace);
 void OpsinToLinearInplace(Image3F* JXL_RESTRICT inout, ThreadPool* pool,
                           const OpsinParams& opsin_params) {
-  return HWY_DYNAMIC_DISPATCH(OpsinToLinearInplace)(inout, pool, opsin_params);
+  HWY_DYNAMIC_DISPATCH(OpsinToLinearInplace)(inout, pool, opsin_params);
 }
 
 HWY_EXPORT(OpsinToLinear);
 void OpsinToLinear(const Image3F& opsin, const Rect& rect, ThreadPool* pool,
                    Image3F* JXL_RESTRICT linear,
                    const OpsinParams& opsin_params) {
-  return HWY_DYNAMIC_DISPATCH(OpsinToLinear)(opsin, rect, pool, linear,
-                                             opsin_params);
+  HWY_DYNAMIC_DISPATCH(OpsinToLinear)(opsin, rect, pool, linear, opsin_params);
 }
 
 HWY_EXPORT(YcbcrToRgb);
 void YcbcrToRgb(const Image3F& ycbcr, Image3F* rgb, const Rect& rect) {
-  return HWY_DYNAMIC_DISPATCH(YcbcrToRgb)(ycbcr, rgb, rect);
+  HWY_DYNAMIC_DISPATCH(YcbcrToRgb)(ycbcr, rgb, rect);
 }
 
 HWY_EXPORT(HasFastXYBTosRGB8);
@@ -182,7 +181,7 @@ bool HasFastXYBTosRGB8() { return HWY_DYNAMIC_DISPATCH(HasFastXYBTosRGB8)(); }
 HWY_EXPORT(FastXYBTosRGB8);
 void FastXYBTosRGB8(const float* input[4], uint8_t* output, bool is_rgba,
                     size_t xsize) {
-  return HWY_DYNAMIC_DISPATCH(FastXYBTosRGB8)(input, output, is_rgba, xsize);
+  HWY_DYNAMIC_DISPATCH(FastXYBTosRGB8)(input, output, is_rgba, xsize);
 }
 
 void OpsinParams::Init(float intensity_target) {

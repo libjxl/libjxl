@@ -504,7 +504,7 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
     cparams.move_to_front_from_channel = 3 + metadata->m.num_extra_channels;
     metadata->m.num_extra_channels += nch;
     for (size_t _ = 0; _ < nch; _++) {
-      metadata->m.extra_channel_info.push_back(jxl::ExtraChannelInfo());
+      metadata->m.extra_channel_info.emplace_back();
       auto& eci = metadata->m.extra_channel_info.back();
       eci.type = jxl::ExtraChannel::kOptional;
       JXL_ASSIGN_OR_DIE(ImageF ch, ImageF::Create(io.xsize(), io.ysize()));

@@ -1860,7 +1860,7 @@ void RemoveUnusedHistograms(std::vector<uint8_t>& context_map,
   for (uint8_t histo_idx : inv_remap) {
     new_codes.encoding_info.emplace_back(
         std::move(codes.encoding_info[histo_idx]));
-    new_codes.uint_config.emplace_back(std::move(codes.uint_config[histo_idx]));
+    new_codes.uint_config.emplace_back(codes.uint_config[histo_idx]);
     new_codes.encoded_histograms.emplace_back(
         std::move(codes.encoded_histograms[histo_idx]));
   }

@@ -721,7 +721,7 @@ void JxlDecoderRewindDecodingState(JxlDecoder* dec) {
 
   dec->events_wanted = dec->orig_events_wanted;
   dec->basic_info_size_hint = InitialBasicInfoSizeHint();
-  dec->have_container = 0;
+  dec->have_container = false;
   dec->box_count = 0;
   dec->downsampling_target = 8;
   dec->image_out_buffer_set = false;
@@ -1376,7 +1376,7 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec) {
       } else {
         dec->frame_prog_detail = JxlProgressiveDetail::kFrames;
       }
-      dec->dc_frame_progression_done = 0;
+      dec->dc_frame_progression_done = false;
 
       dec->next_section = 0;
       dec->section_processed.clear();
@@ -1413,7 +1413,8 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec) {
       }
 
       if (dec->image_out_buffer_set) {
-        size_t xsize, ysize;
+        size_t xsize;
+        size_t ysize;
         GetCurrentDimensions(dec, xsize, ysize);
         size_t bits_per_sample = GetBitDepth(
             dec->image_out_bit_depth, dec->metadata.m, dec->image_out_format);
@@ -1765,7 +1766,8 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
         return JXL_DEC_SUCCESS;
       }
 
-      uint64_t box_size, header_size;
+      uint64_t box_size;
+      uint64_t header_size;
       JxlDecoderStatus status =
           ParseBoxHeader(dec->next_in, dec->avail_in, 0, dec->file_pos,
                          dec->box_type, &box_size, &header_size);
@@ -2042,7 +2044,7 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
     dec->got_signature = true;
 
     if (sig == JXL_SIG_CONTAINER) {
-      dec->have_container = 1;
+      dec->have_container = true;
     } else {
       dec->last_codestream_seen = true;
     }
@@ -2355,7 +2357,8 @@ static JxlDecoderStatus GetMinSize(const JxlDecoder* dec,
   size_t bits;
   JxlDecoderStatus status = PrepareSizeCheck(dec, format, &bits);
   if (status != JXL_DEC_SUCCESS) return status;
-  size_t xsize, ysize;
+  size_t xsize;
+  size_t ysize;
   if (preview) {
     xsize = dec->metadata.oriented_preview_xsize(dec->keep_orientation);
     ysize = dec->metadata.oriented_preview_ysize(dec->keep_orientation);
@@ -2563,7 +2566,8 @@ JxlDecoderStatus JxlDecoderGetFrameHeader(const JxlDecoder* dec,
   }
   header->name_length = dec->frame_header->name.size();
   header->is_last = dec->frame_header->is_last;
-  size_t xsize, ysize;
+  size_t xsize;
+  size_t ysize;
   GetCurrentDimensions(dec, xsize, ysize);
   header->layer_info.xsize = xsize;
   header->layer_info.ysize = ysize;

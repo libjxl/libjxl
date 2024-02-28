@@ -70,7 +70,8 @@ void EncodeContextMap(const std::vector<uint8_t>& context_map,
   }
 
   std::vector<uint8_t> transformed_symbols = MoveToFrontTransform(context_map);
-  std::vector<std::vector<Token>> tokens(1), mtf_tokens(1);
+  std::vector<std::vector<Token>> tokens(1);
+  std::vector<std::vector<Token>> mtf_tokens(1);
   for (size_t i = 0; i < context_map.size(); i++) {
     tokens[0].emplace_back(0, context_map[i]);
   }
@@ -79,7 +80,8 @@ void EncodeContextMap(const std::vector<uint8_t>& context_map,
   }
   HistogramParams params;
   params.uint_method = HistogramParams::HybridUintMethod::kContextMap;
-  size_t ans_cost, mtf_cost;
+  size_t ans_cost;
+  size_t mtf_cost;
   {
     EntropyEncodingData codes;
     std::vector<uint8_t> sink_context_map;

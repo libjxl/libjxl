@@ -297,8 +297,8 @@ void DequantDC(const Rect& r, Image3F* dc, ImageB* quant_dc, const Image& in,
                const float* dc_factors, float mul, const float* cfl_factors,
                const YCbCrChromaSubsampling& chroma_subsampling,
                const BlockCtxMap& bctx) {
-  return HWY_DYNAMIC_DISPATCH(DequantDC)(r, dc, quant_dc, in, dc_factors, mul,
-                                         cfl_factors, chroma_subsampling, bctx);
+  HWY_DYNAMIC_DISPATCH(DequantDC)
+  (r, dc, quant_dc, in, dc_factors, mul, cfl_factors, chroma_subsampling, bctx);
 }
 
 }  // namespace jxl

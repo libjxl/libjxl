@@ -513,8 +513,8 @@ namespace jxl {
 HWY_EXPORT(ComputeCoefficients);
 void ComputeCoefficients(size_t group_idx, PassesEncoderState* enc_state,
                          const Image3F& opsin, const Rect& rect, Image3F* dc) {
-  return HWY_DYNAMIC_DISPATCH(ComputeCoefficients)(group_idx, enc_state, opsin,
-                                                   rect, dc);
+  HWY_DYNAMIC_DISPATCH(ComputeCoefficients)
+  (group_idx, enc_state, opsin, rect, dc);
 }
 
 Status EncodeGroupTokenizedCoefficients(size_t group_idx, size_t pass_idx,

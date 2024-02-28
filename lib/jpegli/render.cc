@@ -8,7 +8,6 @@
 #include <string.h>
 
 #include <array>
-#include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -203,12 +202,13 @@ void WriteToOutput(j_decompress_ptr cinfo, float* JXL_RESTRICT rows[],
   if (cinfo->quantize_colors && m->quant_pass_ == 1) {
     float* error_row[kMaxComponents];
     float* next_error_row[kMaxComponents];
-    if (cinfo->dither_mode == JDITHER_ORDERED) {
+    J_DITHER_MODE dither_mode = cinfo->dither_mode;
+    if (dither_mode == JDITHER_ORDERED) {
       for (size_t c = 0; c < num_channels; ++c) {
         DitherRow(cinfo, &rows[c][xoffset], c, cinfo->output_scanline,
                   cinfo->output_width);
       }
-    } else if (cinfo->dither_mode == JDITHER_FS) {
+    } else if (dither_mode == JDITHER_FS) {
       for (size_t c = 0; c < num_channels; ++c) {
         if (cinfo->output_scanline % 2 == 0) {
           error_row[c] = m->error_row_[c];
@@ -221,12 +221,12 @@ void WriteToOutput(j_decompress_ptr cinfo, float* JXL_RESTRICT rows[],
       }
     }
     const float mul = 255.0f;
-    if (cinfo->dither_mode != JDITHER_FS) {
+    if (dither_mode != JDITHER_FS) {
       StoreUnsignedRow(rows, xoffset, len, num_channels, mul, scratch_space);
     }
     for (size_t i = 0; i < len; ++i) {
       uint8_t* pixel = &scratch_space[num_channels * i];
-      if (cinfo->dither_mode == JDITHER_FS) {
+      if (dither_mode == JDITHER_FS) {
         for (size_t c = 0; c < num_channels; ++c) {
           float val = rows[c][i] * mul + LimitError(error_row[c][i]);
           pixel[c] = std::round(std::min(255.0f, std::max(0.0f, val)));
@@ -234,7 +234,7 @@ void WriteToOutput(j_decompress_ptr cinfo, float* JXL_RESTRICT rows[],
       }
       int index = LookupColorIndex(cinfo, pixel);
       output[i] = index;
-      if (cinfo->dither_mode == JDITHER_FS) {
+      if (dither_mode == JDITHER_FS) {
         size_t prev_i = i > 0 ? i - 1 : 0;
         size_t next_i = i + 1 < len ? i + 1 : len - 1;
         for (size_t c = 0; c < num_channels; ++c) {
@@ -293,19 +293,18 @@ HWY_EXPORT(DecenterRow);
 void GatherBlockStats(const int16_t* JXL_RESTRICT coeffs,
                       const size_t coeffs_size, int32_t* JXL_RESTRICT nonzeros,
                       int32_t* JXL_RESTRICT sumabs) {
-  return HWY_DYNAMIC_DISPATCH(GatherBlockStats)(coeffs, coeffs_size, nonzeros,
-                                                sumabs);
+  HWY_DYNAMIC_DISPATCH(GatherBlockStats)(coeffs, coeffs_size, nonzeros, sumabs);
 }
 
 void WriteToOutput(j_decompress_ptr cinfo, float* JXL_RESTRICT rows[],
                    size_t xoffset, size_t len, size_t num_channels,
                    uint8_t* JXL_RESTRICT output) {
-  return HWY_DYNAMIC_DISPATCH(WriteToOutput)(cinfo, rows, xoffset, len,
-                                             num_channels, output);
+  HWY_DYNAMIC_DISPATCH(WriteToOutput)
+  (cinfo, rows, xoffset, len, num_channels, output);
 }
 
 void DecenterRow(float* row, size_t xsize) {
-  return HWY_DYNAMIC_DISPATCH(DecenterRow)(row, xsize);
+  HWY_DYNAMIC_DISPATCH(DecenterRow)(row, xsize);
 }
 
 bool ShouldApplyDequantBiases(j_decompress_ptr cinfo, int ci) {

@@ -57,7 +57,7 @@ void* ThreadMemoryManagerAlloc(const JxlMemoryManager* memory_manager,
 
 void ThreadMemoryManagerFree(const JxlMemoryManager* memory_manager,
                              void* address) {
-  return memory_manager->free(memory_manager->opaque, address);
+  memory_manager->free(memory_manager->opaque, address);
 }
 
 }  // namespace

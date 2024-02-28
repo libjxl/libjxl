@@ -472,7 +472,7 @@ int ProcessScan(j_decompress_ptr cinfo, const uint8_t* const data,
     }
 
     // Decode one MCU.
-    HWY_ALIGN_MAX coeff_t sink_block[DCTSIZE2];
+    HWY_ALIGN_MAX static coeff_t sink_block[DCTSIZE2] = {0};
     bool scan_ok = true;
     for (int i = 0; i < cinfo->comps_in_scan; ++i) {
       const jpeg_component_info* comp = cinfo->cur_comp_info[i];

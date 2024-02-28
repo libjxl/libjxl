@@ -243,7 +243,8 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
     // properties. We do this even if the current node is not a leaf, to
     // minimize the number of nodes in the resulting tree.
     for (size_t i = 0; i < mul_info.size(); i++) {
-      uint32_t axis, val;
+      uint32_t axis;
+      uint32_t val;
       IntersectionType t =
           BoxIntersects(static_prop_range, mul_info[i].range, axis, val);
       if (t == IntersectionType::kNone) continue;
@@ -696,7 +697,11 @@ void TreeSamples::Swap(size_t a, size_t b) {
 }
 
 void TreeSamples::ThreeShuffle(size_t a, size_t b, size_t c) {
-  if (b == c) return Swap(a, b);
+  if (b == c) {
+    Swap(a, b);
+    return;
+  }
+
   for (auto &r : residuals) {
     auto tmp = r[a];
     r[a] = r[c];

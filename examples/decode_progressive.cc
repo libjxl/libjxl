@@ -51,7 +51,8 @@ bool DecodeJpegXlProgressive(const uint8_t* jxl, size_t size,
                              const char* filename, size_t chunksize) {
   std::vector<uint8_t> pixels;
   std::vector<uint8_t> icc_profile;
-  size_t xsize = 0, ysize = 0;
+  size_t xsize = 0;
+  size_t ysize = 0;
 
   // Multi-threaded parallel runner.
   auto runner = JxlResizableParallelRunnerMake(nullptr);

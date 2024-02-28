@@ -2048,7 +2048,8 @@ JxlEncoderStatus JxlEncoderAddJPEGFrame(
     }
   }
 
-  size_t xsize, ysize;
+  size_t xsize;
+  size_t ysize;
   if (GetCurrentDimensions(frame_settings, xsize, ysize) != JXL_ENC_SUCCESS) {
     return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_GENERIC,
                          "bad dimensions");
@@ -2331,7 +2332,8 @@ JxlEncoderStatus JxlEncoderAddImageFrameInternal(
 JxlEncoderStatus JxlEncoderAddImageFrame(
     const JxlEncoderFrameSettings* frame_settings,
     const JxlPixelFormat* pixel_format, const void* buffer, size_t size) {
-  size_t xsize, ysize;
+  size_t xsize;
+  size_t ysize;
   if (GetCurrentDimensions(frame_settings, xsize, ysize) != JXL_ENC_SUCCESS) {
     return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_GENERIC,
                          "bad dimensions");
@@ -2351,7 +2353,8 @@ JxlEncoderStatus JxlEncoderAddImageFrame(
 JxlEncoderStatus JxlEncoderAddChunkedFrame(
     const JxlEncoderFrameSettings* frame_settings, JXL_BOOL is_last_frame,
     JxlChunkedFrameInputSource chunked_frame_input) {
-  size_t xsize, ysize;
+  size_t xsize;
+  size_t ysize;
   if (GetCurrentDimensions(frame_settings, xsize, ysize) != JXL_ENC_SUCCESS) {
     return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_GENERIC,
                          "bad dimensions");

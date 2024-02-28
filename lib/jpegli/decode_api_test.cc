@@ -341,8 +341,11 @@ void TestAPIBuffered(const CompressParams& jparams,
 }
 
 TEST(DecodeAPITest, ReuseCinfo) {
-  TestImage input, output, expected;
-  std::vector<TestImage> output_progression, expected_output_progression;
+  TestImage input;
+  TestImage output;
+  TestImage expected;
+  std::vector<TestImage> output_progression;
+  std::vector<TestImage> expected_output_progression;
   CompressParams jparams;
   DecompressParams dparams;
   std::vector<uint8_t> compressed;
