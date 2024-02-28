@@ -703,7 +703,7 @@ Status ModularGenericCompress(Image &image, const ModularOptions &opts,
   if (image.w == 0 || image.h == 0) return true;
   ModularOptions options = opts;  // Make a copy to modify it.
 
-  if (options.predictor == static_cast<Predictor>(-1)) {
+  if (options.predictor == kUndefinedPredictor) {
     options.predictor = Predictor::Gradient;
   }
 

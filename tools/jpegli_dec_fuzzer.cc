@@ -194,7 +194,8 @@ int TestOneInput(const uint8_t* data, size_t size) {
   spec.crop_output = getFlag(1);
 
   std::vector<uint8_t> pixels;
-  size_t xsize, ysize;
+  size_t xsize;
+  size_t ysize;
   size_t max_pixels = 1 << 21;
 
   const auto targets = hwy::SupportedAndGeneratedTargets();

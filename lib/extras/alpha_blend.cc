@@ -12,7 +12,7 @@ namespace extras {
 
 namespace {
 
-void AlphaBlend(PackedFrame* frame, float background[3]) {
+void AlphaBlend(PackedFrame* frame, const float background[3]) {
   if (!frame) return;
   const PackedImage& im = frame->color;
   JxlPixelFormat format = im.format;
@@ -48,7 +48,7 @@ void AlphaBlend(PackedFrame* frame, float background[3]) {
 
 }  // namespace
 
-void AlphaBlend(PackedPixelFile* ppf, float background[3]) {
+void AlphaBlend(PackedPixelFile* ppf, const float background[3]) {
   if (!ppf || ppf->info.alpha_bits == 0) {
     return;
   }

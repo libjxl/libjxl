@@ -724,7 +724,7 @@ Status FindBestPatchDictionary(const Image3F& opsin,
         blendings.push_back({PatchBlendMode::kNone, 0, false});
       }
     }
-    pref_positions.emplace_back(std::move(ref_pos));
+    pref_positions.emplace_back(ref_pos);
   }
 
   CompressParams cparams = state->cparams;

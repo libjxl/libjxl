@@ -465,24 +465,27 @@ struct CompressArgs {
   }
 
   // Common flags.
+  const char* file_in = nullptr;
+  const char* file_out = nullptr;
+
   bool version = false;
   jxl::Override container = jxl::Override::kDefault;
   bool quiet = false;
   bool disable_output = false;
 
-  const char* file_in = nullptr;
-  const char* file_out = nullptr;
   jxl::Override print_profile = jxl::Override::kDefault;
   bool streaming_input = false;
   bool streaming_output = false;
+
+  bool verbose = false;
 
   // Decoding source image flags
   ColorHintsProxy color_hints_proxy;
 
   // JXL flags
   size_t override_bitdepth = 0;
-  int32_t num_threads = -1;
   size_t num_reps = 1;
+  int32_t num_threads = -1;
   float intensity_target = 0;
 
   // Whether to perform lossless transcoding with kVarDCT or kJPEG encoding.
@@ -494,15 +497,14 @@ struct CompressArgs {
 
   float quality = -1001.f;  // Default to lossless if input is already lossy,
                             // or to VarDCT otherwise.
-  bool verbose = false;
   bool progressive = false;
   bool progressive_ac = false;
   bool qprogressive_ac = false;
-  int64_t progressive_dc = -1;
   bool modular_lossy_palette = false;
+  int64_t progressive_dc = -1;
+  int64_t upsampling_mode = -1;
   int32_t premultiply = -1;
   bool already_downsampled = false;
-  int64_t upsampling_mode = -1;
   jxl::Override jpeg_reconstruction_cfl = jxl::Override::kDefault;
   jxl::Override modular = jxl::Override::kDefault;
   jxl::Override keep_invisible = jxl::Override::kDefault;
@@ -512,6 +514,8 @@ struct CompressArgs {
   jxl::Override group_order = jxl::Override::kDefault;
   jxl::Override compress_boxes = jxl::Override::kDefault;
   jxl::Override noise = jxl::Override::kDefault;
+
+  bool allow_expert_options = false;
 
   size_t faster_decoding = 0;
   int64_t resampling = -1;
@@ -535,8 +539,6 @@ struct CompressArgs {
   size_t effort = 7;
   size_t brotli_effort = 9;
   std::string frame_indexing;
-
-  bool allow_expert_options = false;
 
   // References (ids) of specific options to check if they were matched.
   CommandLineParser::OptionId opt_lossless_jpeg_id = -1;
@@ -616,7 +618,7 @@ void ProcessFlag(
     const char* flag_name, T flag_value,
     JxlEncoderFrameSettingId encoder_option,
     jxl::extras::JXLCompressParams* params,
-    flag_check_fn flag_check = [](T x) { return std::string(); }) {
+    const flag_check_fn& flag_check = [](T x) { return std::string(); }) {
   std::string error = flag_check(flag_value);
   if (!error.empty()) {
     std::cerr << "Invalid flag value for --" << flag_name << ": " << error
@@ -632,8 +634,7 @@ void ProcessBoolFlag(jxl::Override flag_value,
                      jxl::extras::JXLCompressParams* params) {
   if (flag_value != jxl::Override::kDefault) {
     int64_t value = flag_value == jxl::Override::kOn ? 1 : 0;
-    params->options.emplace_back(
-        jxl::extras::JXLOption(encoder_option, value, 0));
+    params->options.emplace_back(encoder_option, value, 0);
   }
 }
 
@@ -909,8 +910,7 @@ void ProcessFlags(const jxl::extras::Codec codec,
     if (num_frame < args->frame_indexing.size() &&
         args->frame_indexing[num_frame] == '1') {
       int64_t value = 1;
-      params->options.emplace_back(
-          jxl::extras::JXLOption(JXL_ENC_FRAME_INDEX_BOX, value, num_frame));
+      params->options.emplace_back(JXL_ENC_FRAME_INDEX_BOX, value, num_frame);
     }
   }
   // Copy over the rest of the non-option params.
@@ -1157,8 +1157,8 @@ int main(int argc, char** argv) {
   params.runner_opaque = runner.get();
 
   if (args.streaming_input) {
-    params.options.emplace_back(jxl::extras::JXLOption(
-        JXL_ENC_FRAME_SETTING_BUFFERING, static_cast<int64_t>(3), 0));
+    params.options.emplace_back(JXL_ENC_FRAME_SETTING_BUFFERING,
+                                static_cast<int64_t>(3), 0);
   }
 
   jpegxl::tools::SpeedStats stats;

@@ -69,10 +69,10 @@ struct JXLCompressParams {
   bool allow_expert_options = false;
 
   void AddOption(JxlEncoderFrameSettingId id, int64_t val) {
-    options.emplace_back(JXLOption(id, val, 0));
+    options.emplace_back(id, val, 0);
   }
   void AddFloatOption(JxlEncoderFrameSettingId id, float val) {
-    options.emplace_back(JXLOption(id, val, 0));
+    options.emplace_back(id, val, 0);
   }
   bool HasOutputProcessor() const {
     return (output_processor.get_buffer != nullptr &&

@@ -540,10 +540,10 @@ void WriteHtmlReport(const std::string& codec_desc,
                 "  <img title=\"" +
                 compressed_title + "\" id=\"preview" + number + "\" src=";
     out_html += "\"" + url_out + "\"style=\"display:block;\"/>\n";
-    out_html += "  <img title=\"original\" id=\"orig" + number + "\" src=";
+    out_html += R"(  <img title="original" id="orig)" + number + "\" src=";
     out_html += "\"" + url_orig + "\"style=\"display:none;\"/>\n";
     if (add_heatmap) {
-      out_html = "  <img title=\"heatmap\" id=\"hm" + number + "\" src=";
+      out_html = R"(  <img title="heatmap" id="hm)" + number + "\" src=";
       out_html += "\"" + url_heatmap + "\"style=\"display:none;\"/>\n";
     }
     out_html += "</div>\n";

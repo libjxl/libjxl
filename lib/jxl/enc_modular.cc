@@ -144,6 +144,7 @@ Status float_to_int(const float* const row_in, pixel_type* const row_out,
     return true;
   }
 
+  JXL_ASSERT(bits > 0);
   int exp_bias = (1 << (exp_bits - 1)) - 1;
   int max_exp = (1 << exp_bits) - 1;
   uint32_t sign = (1u << (bits - 1));
@@ -321,10 +322,10 @@ ModularFrameEncoder::ModularFrameEncoder(const FrameHeader& frame_header,
       !cparams_.ModularPartIsLossless()) {
     // Lossy + Average/Weighted predictors does not work, so switch to default
     // predictors.
-    cparams_.options.predictor = static_cast<Predictor>(-1);
+    cparams_.options.predictor = kUndefinedPredictor;
   }
 
-  if (cparams_.options.predictor == static_cast<Predictor>(-1)) {
+  if (cparams_.options.predictor == kUndefinedPredictor) {
     // no explicit predictor(s) given, set a good default
     if ((cparams_.speed_tier <= SpeedTier::kGlacier ||
          cparams_.modular_mode == false) &&

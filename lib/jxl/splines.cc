@@ -367,7 +367,8 @@ QuantizedSpline::QuantizedSpline(const Spline& original,
   const Spline::Point& starting_point = original.control_points.front();
   int previous_x = static_cast<int>(std::roundf(starting_point.x));
   int previous_y = static_cast<int>(std::roundf(starting_point.y));
-  int previous_delta_x = 0, previous_delta_y = 0;
+  int previous_delta_x = 0;
+  int previous_delta_y = 0;
   for (auto it = original.control_points.begin() + 1;
        it != original.control_points.end(); ++it) {
     const int new_x = static_cast<int>(std::roundf(it->x));
@@ -427,9 +428,10 @@ Status QuantizedSpline::Dequantize(const Spline::Point& starting_point,
   JXL_RETURN_IF_ERROR(ValidateSplinePointPos(px, py));
   int current_x = static_cast<int>(px);
   int current_y = static_cast<int>(py);
-  result.control_points.push_back(Spline::Point{static_cast<float>(current_x),
-                                                static_cast<float>(current_y)});
-  int current_delta_x = 0, current_delta_y = 0;
+  result.control_points.emplace_back(static_cast<float>(current_x),
+                                     static_cast<float>(current_y));
+  int current_delta_x = 0;
+  int current_delta_y = 0;
   uint64_t manhattan_distance = 0;
   for (const auto& point : control_points_) {
     current_delta_x += point.first;
@@ -444,8 +446,8 @@ Status QuantizedSpline::Dequantize(const Spline::Point& starting_point,
     current_x += current_delta_x;
     current_y += current_delta_y;
     JXL_RETURN_IF_ERROR(ValidateSplinePointPos(current_x, current_y));
-    result.control_points.push_back(Spline::Point{
-        static_cast<float>(current_x), static_cast<float>(current_y)});
+    result.control_points.emplace_back(static_cast<float>(current_x),
+                                       static_cast<float>(current_y));
   }
 
   const auto inv_quant = InvAdjustedQuant(quantization_adjustment);
@@ -606,15 +608,15 @@ Status Splines::Decode(jxl::BitReader* br, const size_t num_pixels) {
 
 void Splines::AddTo(Image3F* const opsin, const Rect& opsin_rect,
                     const Rect& image_rect) const {
-  return Apply</*add=*/true>(opsin, opsin_rect, image_rect);
+  Apply</*add=*/true>(opsin, opsin_rect, image_rect);
 }
 void Splines::AddToRow(float* JXL_RESTRICT row_x, float* JXL_RESTRICT row_y,
                        float* JXL_RESTRICT row_b, const Rect& image_row) const {
-  return ApplyToRow</*add=*/true>(row_x, row_y, row_b, image_row);
+  ApplyToRow</*add=*/true>(row_x, row_y, row_b, image_row);
 }
 
 void Splines::SubtractFrom(Image3F* const opsin) const {
-  return Apply</*add=*/false>(opsin, Rect(*opsin), Rect(*opsin));
+  Apply</*add=*/false>(opsin, Rect(*opsin), Rect(*opsin));
 }
 
 Status Splines::InitializeDrawCache(const size_t image_xsize,

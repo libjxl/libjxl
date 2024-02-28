@@ -232,7 +232,8 @@ std::vector<ColumnValue> BenchmarkStats::ComputeColumns(
   const double ssimulacra2_avg = ssimulacra2 / total_input_pixels;
   const double bpp_p_norm = p_norm_avg * comp_bpp;
 
-  const double max_distance_avg = sqrt(max_distance / total_input_pixels);
+  const double max_distance_avg =
+      sqrt(max_distance / static_cast<double>(total_input_pixels));
 
   std::vector<ColumnValue> values(
       GetColumnDescriptors(extra_metrics.size()).size());

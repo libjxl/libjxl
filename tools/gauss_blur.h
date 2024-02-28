@@ -43,7 +43,7 @@ hwy::AlignedUniquePtr<RecursiveGaussian> CreateRecursiveGaussian(double sigma);
 
 // 1D Gaussian with zero-pad boundary handling and runtime independent of sigma.
 void FastGaussian1D(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
-                    const size_t xsize, const float* JXL_RESTRICT in,
+                    size_t xsize, const float* JXL_RESTRICT in,
                     float* JXL_RESTRICT out);
 
 typedef std::function<const float*(size_t /*y*/)> GetConstRow;
@@ -51,8 +51,8 @@ typedef std::function<float*(size_t /*y*/)> GetRow;
 
 // 2D Gaussian with zero-pad boundary handling and runtime independent of sigma.
 void FastGaussian(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
-                  const size_t xsize, const size_t ysize, const GetConstRow in,
-                  const GetRow temp, const GetRow out,
+                  size_t xsize, size_t ysize, const GetConstRow& in,
+                  const GetRow& temp, const GetRow& out,
                   ThreadPool* pool = nullptr);
 
 }  // namespace jxl

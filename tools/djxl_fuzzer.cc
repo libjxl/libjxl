@@ -548,7 +548,8 @@ int TestOneInput(const uint8_t* data, size_t size) {
   std::vector<uint8_t> pixels;
   std::vector<uint8_t> jpeg;
   std::vector<uint8_t> icc;
-  size_t xsize, ysize;
+  size_t xsize;
+  size_t ysize;
   size_t max_pixels = 1 << 21;
 
   const auto targets = hwy::SupportedAndGeneratedTargets();

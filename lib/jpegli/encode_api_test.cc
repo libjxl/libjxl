@@ -177,7 +177,8 @@ TEST(EncodeAPITest, ReuseCinfoSameStdOutput) {
 }
 
 TEST(EncodeAPITest, ReuseCinfoChangeParams) {
-  TestImage input, output;
+  TestImage input;
+  TestImage output;
   CompressParams jparams;
   DecompressParams dparams;
   uint8_t* buffer = nullptr;

@@ -26,10 +26,6 @@ class PaddedBytes;
 Status WriteICC(const std::vector<uint8_t>& icc, BitWriter* JXL_RESTRICT writer,
                 size_t layer, AuxOut* JXL_RESTRICT aux_out);
 
-// TODO(eustas): declare in test?
-// Exposed only for testing
-Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result);
-
 }  // namespace jxl
 
 #endif  // LIB_JXL_ENC_ICC_CODEC_H_

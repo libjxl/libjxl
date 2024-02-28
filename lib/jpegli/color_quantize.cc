@@ -11,6 +11,7 @@
 
 #include "lib/jpegli/decode_internal.h"
 #include "lib/jpegli/error.h"
+#include "lib/jxl/base/status.h"
 
 namespace jpegli {
 
@@ -286,13 +287,13 @@ void ChooseColorMap2Pass(j_decompress_ptr cinfo) {
     }
     if (!in_palette[i] && count[i] > count_threshold) {
       AddToRGBPalette(&red[0], &green[0], &blue[0], count.data(), i, k++, n,
-                      &dist[0], &cluster[0], &center[0], &error);
+                      dist.data(), cluster.data(), &center[0], &error);
       in_palette[i] = true;
     }
   }
   if (k == 0) {
     AddToRGBPalette(&red[0], &green[0], &blue[0], count.data(), winner, k++, n,
-                    &dist[0], &cluster[0], &center[0], &error);
+                    dist.data(), cluster.data(), &center[0], &error);
     in_palette[winner] = true;
   }
 
@@ -366,7 +367,7 @@ void ChooseColorMap2Pass(j_decompress_ptr cinfo) {
       bucket_array[priority].push_back(i);
     } else {
       AddToRGBPalette(&red[0], &green[0], &blue[0], count.data(), i, k++, n,
-                      &dist[0], &cluster[0], &center[0], &error);
+                      dist.data(), cluster.data(), &center[0], &error);
     }
     bucket_array[top_priority].pop_back();
     while (top_priority >= 0 && bucket_array[top_priority].empty()) {
@@ -387,7 +388,7 @@ void ChooseColorMap2Pass(j_decompress_ptr cinfo) {
 
 namespace {
 
-void FindCandidatesForCell(j_decompress_ptr cinfo, int ncomp, int cell[],
+void FindCandidatesForCell(j_decompress_ptr cinfo, int ncomp, const int cell[],
                            std::vector<uint8_t>* candidates) {
   int cell_min[kMaxComponents];
   int cell_max[kMaxComponents];
@@ -437,6 +438,8 @@ void FindCandidatesForCell(j_decompress_ptr cinfo, int ncomp, int cell[],
 void CreateInverseColorMap(j_decompress_ptr cinfo) {
   jpeg_decomp_master* m = cinfo->master;
   int ncomp = cinfo->out_color_components;
+  JXL_ASSERT(ncomp > 0);
+  JXL_ASSERT(ncomp <= kMaxComponents);
   int num_cells = 1;
   for (int c = 0; c < ncomp; ++c) {
     num_cells *= (1 << kNumColorCellBits[c]);
@@ -456,7 +459,7 @@ void CreateInverseColorMap(j_decompress_ptr cinfo) {
   m->regenerate_inverse_colormap_ = false;
 }
 
-int LookupColorIndex(j_decompress_ptr cinfo, JSAMPLE* pixel) {
+int LookupColorIndex(j_decompress_ptr cinfo, const JSAMPLE* pixel) {
   jpeg_decomp_master* m = cinfo->master;
   int num_channels = cinfo->out_color_components;
   int index = 0;
