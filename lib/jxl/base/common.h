@@ -108,10 +108,10 @@ JXL_INLINE T Clamp1(T val, T low, T hi) {
 template <typename T>
 std::string ToString(T n) {
   char data[32] = {};
-  if (static_cast<T>(0.1) != static_cast<T>(0)) {
+  if (std::is_floating_point<T>::value) {
     // float
     snprintf(data, sizeof(data), "%g", static_cast<double>(n));
-  } else if (static_cast<T>(-1) > static_cast<T>(0)) {
+  } else if (std::is_unsigned<T>::value) {
     // unsigned
     snprintf(data, sizeof(data), "%llu", static_cast<unsigned long long>(n));
   } else {

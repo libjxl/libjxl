@@ -544,7 +544,7 @@ TEST(JxlTest, RoundtripSmallPatches) {
 // buffers in arbitrary unsigned and floating point formats, and then roundtrip
 // test the lossless codepath to make sure the exact binary representations
 // are preserved.
-#if 0
+#if JXL_FALSE
 TEST(JxlTest, RoundtripImageBundleOriginalBits) {
   // Image does not matter, only io.metadata.m and io2.metadata.m are tested.
   JXL_ASSIGN_OR_DIE(Image3F image, Image3F::Create(1, 1));
@@ -1689,7 +1689,8 @@ struct StreamingEncodingTestParam {
   }
 };
 
-std::ostream& operator<<(std::ostream& out, StreamingEncodingTestParam p) {
+std::ostream& operator<<(std::ostream& out,
+                         const StreamingEncodingTestParam& p) {
   out << p.file << "-";
   out << "e" << p.effort;
   if (p.distance == 0) {

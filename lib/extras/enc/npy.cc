@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "lib/extras/packed_image.h"
+#include "lib/jxl/base/common.h"
 
 namespace jxl {
 namespace extras {
@@ -53,14 +54,17 @@ class JSONDict : public JSONField {
     static_assert(std::is_convertible<T*, JSONField*>::value,
                   "T must be a JSONField");
     T* ret = new T();
-    values_.emplace_back(
-        key, std::unique_ptr<JSONField>(static_cast<JSONField*>(ret)));
+    JSONField* field = static_cast<JSONField*>(ret);
+    auto handle = std::unique_ptr<JSONField>(field);
+    values_.emplace_back(key, std::move(handle));
     return ret;
   }
 
   template <typename T>
   void Add(const std::string& key, const T& value) {
-    values_.emplace_back(key, std::unique_ptr<JSONField>(new JSONValue(value)));
+    JSONField* field = static_cast<JSONField*>(new JSONValue(value));
+    auto handle = std::unique_ptr<JSONField>(field);
+    values_.emplace_back(key, std::move(handle));
   }
 
   void Write(std::ostream& o, uint32_t indent) const override {
@@ -72,11 +76,11 @@ class JSONDict : public JSONField {
         o << ",";
       }
       is_first = false;
-      o << std::endl << indent_str << "  \"" << key_value.first << "\": ";
+      o << "\n" << indent_str << "  \"" << key_value.first << "\": ";
       key_value.second->Write(o, indent + 2);
     }
     if (!values_.empty()) {
-      o << std::endl << indent_str;
+      o << "\n" << indent_str;
     }
     o << "}";
   }
@@ -113,11 +117,11 @@ class JSONArray : public JSONField {
         o << ",";
       }
       is_first = false;
-      o << std::endl << indent_str << "  ";
+      o << "\n" << indent_str << "  ";
       value->Write(o, indent + 2);
     }
     if (!values_.empty()) {
-      o << std::endl << indent_str;
+      o << "\n" << indent_str;
     }
     o << "]";
   }

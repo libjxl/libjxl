@@ -155,7 +155,7 @@ class BlobsWriterPNG {
     snprintf(header, sizeof(header), "\n%s\n%8" PRIuS, type.c_str(),
              bytes.size());
 
-    strings->push_back(std::string(key));
+    strings->emplace_back(key);
     strings->push_back(std::string(header) + base16);
     return true;
   }
@@ -323,14 +323,15 @@ Status APNGEncoder::EncodePackedPixelFileToAPNG(
     png_structp png_ptr;
     png_infop info_ptr;
 
-    png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+    png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr,
+                                      nullptr);
 
     if (!png_ptr) return JXL_FAILURE("Could not init png encoder");
 
     info_ptr = png_create_info_struct(png_ptr);
     if (!info_ptr) return JXL_FAILURE("Could not init png info struct");
 
-    png_set_write_fn(png_ptr, bytes, PngWrite, NULL);
+    png_set_write_fn(png_ptr, bytes, PngWrite, nullptr);
     png_set_flush(png_ptr, 0);
 
     int width = xsize;
@@ -430,7 +431,7 @@ Status APNGEncoder::EncodePackedPixelFileToAPNG(
 
     count++;
     if (count == ppf.frames.size() || !ppf.info.have_animation) {
-      png_write_end(png_ptr, NULL);
+      png_write_end(png_ptr, nullptr);
     }
 
     png_destroy_write_struct(&png_ptr, &info_ptr);

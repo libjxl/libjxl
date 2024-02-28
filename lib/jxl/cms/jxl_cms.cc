@@ -445,7 +445,8 @@ Status IdentifyPrimaries(const skcms_ICCProfile& profile,
                          const CIExy& wp_unadapted, ColorEncoding* c) {
   if (!c->HasPrimaries()) return true;
 
-  skcms_Matrix3x3 CHAD, inverse_CHAD;
+  skcms_Matrix3x3 CHAD;
+  skcms_Matrix3x3 inverse_CHAD;
   if (skcms_GetCHAD(&profile, &CHAD)) {
     JXL_RETURN_IF_ERROR(skcms_Matrix3x3_invert(&CHAD, &inverse_CHAD));
   } else {
@@ -461,7 +462,8 @@ Status IdentifyPrimaries(const skcms_ICCProfile& profile,
     float wp_unadapted_XYZ[3];
     JXL_RETURN_IF_ERROR(
         CIEXYZFromWhiteCIExy(wp_unadapted.x, wp_unadapted.y, wp_unadapted_XYZ));
-    float wp_D50_LMS[3], wp_unadapted_LMS[3];
+    float wp_D50_LMS[3];
+    float wp_unadapted_LMS[3];
     MatrixProduct(kLMSFromXYZ, kWpD50XYZ, wp_D50_LMS);
     MatrixProduct(kLMSFromXYZ, wp_unadapted_XYZ, wp_unadapted_LMS);
     inverse_CHAD = {{{wp_unadapted_LMS[0] / wp_D50_LMS[0], 0, 0},
@@ -1312,13 +1314,14 @@ void* JxlCmsInit(void* init_data, size_t num_threads, size_t xsize,
   // outputs (or vice versa), we use floating point input/output.
   t->channels_src = channels_src;
   t->channels_dst = channels_dst;
+#if !JPEGXL_ENABLE_SKCMS
   size_t actual_channels_src = channels_src;
   size_t actual_channels_dst = channels_dst;
-#if JPEGXL_ENABLE_SKCMS
+#else
   // SkiaCMS doesn't support grayscale float buffers, so we create space for RGB
   // float buffers anyway.
-  actual_channels_src = (channels_src == 4 ? 4 : 3);
-  actual_channels_dst = 3;
+  size_t actual_channels_src = (channels_src == 4 ? 4 : 3);
+  size_t actual_channels_dst = 3;
 #endif
   AllocateBuffer(xsize * actual_channels_src, num_threads, &t->src_storage,
                  &t->buf_src);

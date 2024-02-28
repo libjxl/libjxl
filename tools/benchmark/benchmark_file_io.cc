@@ -151,10 +151,10 @@ Status MatchFiles(const std::string& pattern, std::vector<std::string>* list) {
 #if HAS_GLOB
   glob_t g;
   memset(&g, 0, sizeof(g));
-  int error = glob(pattern.c_str(), GLOB_TILDE, NULL, &g);
+  int error = glob(pattern.c_str(), GLOB_TILDE, nullptr, &g);
   if (!error) {
     for (size_t i = 0; i < g.gl_pathc; ++i) {
-      list->push_back(g.gl_pathv[i]);
+      list->emplace_back(g.gl_pathv[i]);
     }
   }
   globfree(&g);

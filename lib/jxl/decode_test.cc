@@ -610,7 +610,7 @@ std::vector<uint8_t> DecodeWithAPI(Span<const uint8_t> compressed,
                                    bool use_callback, bool set_buffer_early,
                                    bool use_resizable_runner,
                                    bool require_boxes, bool expect_success) {
-  JxlDecoder* dec = JxlDecoderCreate(NULL);
+  JxlDecoder* dec = JxlDecoderCreate(nullptr);
   std::vector<uint8_t> pixels =
       DecodeWithAPI(dec, compressed, format, use_callback, set_buffer_early,
                     use_resizable_runner, require_boxes, expect_success);
@@ -1296,7 +1296,7 @@ class DecodeTestParam : public ::testing::TestWithParam<PixelTestConfig> {};
 
 TEST_P(DecodeTestParam, PixelTest) {
   PixelTestConfig config = GetParam();
-  JxlDecoder* dec = JxlDecoderCreate(NULL);
+  JxlDecoder* dec = JxlDecoderCreate(nullptr);
 
   if (config.keep_orientation) {
     EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetKeepOrientation(dec, JXL_TRUE));
@@ -1580,7 +1580,7 @@ JXL_GTEST_INSTANTIATE_TEST_SUITE_P(DecodeTest, DecodeTestParam,
                                    PixelTestDescription);
 
 TEST(DecodeTest, PixelTestWithICCProfileLossless) {
-  JxlDecoder* dec = JxlDecoderCreate(NULL);
+  JxlDecoder* dec = JxlDecoderCreate(nullptr);
 
   size_t xsize = 123;
   size_t ysize = 77;
@@ -1648,7 +1648,7 @@ TEST(DecodeTest, PixelTestWithICCProfileLossless) {
 }
 
 TEST(DecodeTest, PixelTestWithICCProfileLossy) {
-  JxlDecoder* dec = JxlDecoderCreate(NULL);
+  JxlDecoder* dec = JxlDecoderCreate(nullptr);
 
   size_t xsize = 123;
   size_t ysize = 77;
@@ -2056,7 +2056,7 @@ TEST_P(DecodeAllEncodingsWithCMSTest, DecodeWithCMS) {
 // and to RGBA8
 TEST(DecodeTest, PixelTestOpaqueSrgbLossy) {
   for (unsigned channels = 3; channels <= 4; channels++) {
-    JxlDecoder* dec = JxlDecoderCreate(NULL);
+    JxlDecoder* dec = JxlDecoderCreate(nullptr);
 
     size_t xsize = 123;
     size_t ysize = 77;
@@ -2106,7 +2106,7 @@ TEST(DecodeTest, PixelTestOpaqueSrgbLossy) {
 // Opaque image with noise enabled, decoded to RGB8 and RGBA8.
 TEST(DecodeTest, PixelTestOpaqueSrgbLossyNoise) {
   for (unsigned channels = 3; channels <= 4; channels++) {
-    JxlDecoder* dec = JxlDecoderCreate(NULL);
+    JxlDecoder* dec = JxlDecoderCreate(nullptr);
 
     size_t xsize = 512;
     size_t ysize = 300;
@@ -2162,7 +2162,7 @@ TEST(DecodeTest, ProcessEmptyInputWithBoxes) {
   uint32_t channels = 3;
   JxlPixelFormat format = {channels, JXL_TYPE_FLOAT, JXL_LITTLE_ENDIAN, 0};
   for (int i = 0; i < kCSBF_NUM_ENTRIES; ++i) {
-    JxlDecoder* dec = JxlDecoderCreate(NULL);
+    JxlDecoder* dec = JxlDecoderCreate(nullptr);
     jxl::TestCodestreamParams params;
     params.box_format = static_cast<CodeStreamBoxFormat>(i);
     printf("Testing empty input with box format %d\n",
@@ -2217,7 +2217,7 @@ TEST(DecodeTest, ExtraBytesAfterCompressedStream) {
     compressed.push_back(0);
     compressed.push_back(1);
     compressed.push_back(2);
-    JxlDecoder* dec = JxlDecoderCreate(NULL);
+    JxlDecoder* dec = JxlDecoderCreate(nullptr);
     uint32_t channels = 3;
     JxlPixelFormat format = {channels, JXL_TYPE_FLOAT, JXL_LITTLE_ENDIAN, 0};
     std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
@@ -2253,7 +2253,7 @@ TEST(DecodeTest, ExtraBytesAfterCompressedStreamRequireBoxes) {
     compressed.push_back(0);
     compressed.push_back(1);
     compressed.push_back(2);
-    JxlDecoder* dec = JxlDecoderCreate(NULL);
+    JxlDecoder* dec = JxlDecoderCreate(nullptr);
     uint32_t channels = 3;
     JxlPixelFormat format = {channels, JXL_TYPE_FLOAT, JXL_LITTLE_ENDIAN, 0};
     std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
@@ -2299,7 +2299,7 @@ TEST(DecodeTest, ConcatenatedCompressedStreams) {
       size_t remaining = concat.size();
       for (int part = 0; part < 2; ++part) {
         printf("  Decoding part %d\n", part + 1);
-        JxlDecoder* dec = JxlDecoderCreate(NULL);
+        JxlDecoder* dec = JxlDecoderCreate(nullptr);
         size_t pos = concat.size() - remaining;
         bool expect_success =
             (part == 0 || second_box_format == kCSBF_None ||
@@ -2488,7 +2488,7 @@ TEST(DecodeTest, DCNotGettableTest) {
       "\363\6\22\bp\0\200\237\34\231W2d\255$\1",
       68);
 
-  JxlDecoder* dec = JxlDecoderCreate(NULL);
+  JxlDecoder* dec = JxlDecoderCreate(nullptr);
 
   EXPECT_EQ(JXL_DEC_SUCCESS,
             JxlDecoderSubscribeEvents(dec, JXL_DEC_BASIC_INFO));
@@ -2521,7 +2521,7 @@ TEST(DecodeTest, PreviewTest) {
 
     JxlPixelFormat format = {3, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0};
 
-    JxlDecoder* dec = JxlDecoderCreate(NULL);
+    JxlDecoder* dec = JxlDecoderCreate(nullptr);
     const uint8_t* next_in = compressed.data();
     size_t avail_in = compressed.size();
 
@@ -2659,12 +2659,12 @@ TEST(DecodeTest, AnimationTest) {
 
   // Decode and test the animation frames
 
-  JxlDecoder* dec = JxlDecoderCreate(NULL);
+  JxlDecoder* dec = JxlDecoderCreate(nullptr);
   const uint8_t* next_in = compressed.data();
   size_t avail_in = compressed.size();
 
   void* runner = JxlThreadParallelRunnerCreate(
-      NULL, JxlThreadParallelRunnerDefaultNumWorkerThreads());
+      nullptr, JxlThreadParallelRunnerDefaultNumWorkerThreads());
   EXPECT_EQ(JXL_DEC_SUCCESS,
             JxlDecoderSetParallelRunner(dec, JxlThreadParallelRunner, runner));
 
@@ -2762,7 +2762,7 @@ TEST(DecodeTest, AnimationTestStreaming) {
 
   const size_t step_size = 16;
 
-  JxlDecoder* dec = JxlDecoderCreate(NULL);
+  JxlDecoder* dec = JxlDecoderCreate(nullptr);
   const uint8_t* next_in = compressed.data();
   size_t avail_in = 0;
   size_t frame_headers_seen = 0;
@@ -2770,7 +2770,7 @@ TEST(DecodeTest, AnimationTestStreaming) {
   bool seen_basic_info = false;
 
   void* runner = JxlThreadParallelRunnerCreate(
-      NULL, JxlThreadParallelRunnerDefaultNumWorkerThreads());
+      nullptr, JxlThreadParallelRunnerDefaultNumWorkerThreads());
   EXPECT_EQ(JXL_DEC_SUCCESS,
             JxlDecoderSetParallelRunner(dec, JxlThreadParallelRunner, runner));
 
@@ -2866,7 +2866,7 @@ TEST(DecodeTest, ExtraChannelTest) {
   size_t align = 17;
   JxlPixelFormat format = {3, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, align};
 
-  JxlDecoder* dec = JxlDecoderCreate(NULL);
+  JxlDecoder* dec = JxlDecoderCreate(nullptr);
 
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSubscribeEvents(
                                  dec, JXL_DEC_BASIC_INFO | JXL_DEC_FULL_IMAGE));
@@ -2976,7 +2976,7 @@ TEST(DecodeTest, SkipCurrentFrameTest) {
   cparams.custom_progressive_mode = &progressive_mode;
   EXPECT_TRUE(jxl::test::EncodeFile(cparams, &io, &compressed));
 
-  JxlDecoder* dec = JxlDecoderCreate(NULL);
+  JxlDecoder* dec = JxlDecoderCreate(nullptr);
   const uint8_t* next_in = compressed.data();
   size_t avail_in = compressed.size();
 
@@ -3088,12 +3088,12 @@ TEST(DecodeTest, SkipFrameTest) {
 
   // Decode and test the animation frames
 
-  JxlDecoder* dec = JxlDecoderCreate(NULL);
+  JxlDecoder* dec = JxlDecoderCreate(nullptr);
   const uint8_t* next_in = compressed.data();
   size_t avail_in = compressed.size();
 
   void* runner = JxlThreadParallelRunnerCreate(
-      NULL, JxlThreadParallelRunnerDefaultNumWorkerThreads());
+      nullptr, JxlThreadParallelRunnerDefaultNumWorkerThreads());
   EXPECT_EQ(JXL_DEC_SUCCESS,
             JxlDecoderSetParallelRunner(dec, JxlThreadParallelRunner, runner));
 
@@ -3246,12 +3246,12 @@ TEST(DecodeTest, SkipFrameWithBlendingTest) {
   // Independently decode all frames without any skipping, to create the
   // expected blended frames, for the actual tests below to compare with.
   {
-    JxlDecoder* dec = JxlDecoderCreate(NULL);
+    JxlDecoder* dec = JxlDecoderCreate(nullptr);
     const uint8_t* next_in = compressed.data();
     size_t avail_in = compressed.size();
 
     void* runner = JxlThreadParallelRunnerCreate(
-        NULL, JxlThreadParallelRunnerDefaultNumWorkerThreads());
+        nullptr, JxlThreadParallelRunnerDefaultNumWorkerThreads());
     EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetParallelRunner(
                                    dec, JxlThreadParallelRunner, runner));
     EXPECT_EQ(JXL_DEC_SUCCESS,
@@ -3273,12 +3273,12 @@ TEST(DecodeTest, SkipFrameWithBlendingTest) {
     JxlDecoderDestroy(dec);
   }
 
-  JxlDecoder* dec = JxlDecoderCreate(NULL);
+  JxlDecoder* dec = JxlDecoderCreate(nullptr);
   const uint8_t* next_in = compressed.data();
   size_t avail_in = compressed.size();
 
   void* runner = JxlThreadParallelRunnerCreate(
-      NULL, JxlThreadParallelRunnerDefaultNumWorkerThreads());
+      nullptr, JxlThreadParallelRunnerDefaultNumWorkerThreads());
   EXPECT_EQ(JXL_DEC_SUCCESS,
             JxlDecoderSetParallelRunner(dec, JxlThreadParallelRunner, runner));
 
@@ -3481,12 +3481,12 @@ TEST(DecodeTest, SkipFrameWithAlphaBlendingTest) {
     // Independently decode all frames without any skipping, to create the
     // expected blended frames, for the actual tests below to compare with.
     {
-      JxlDecoder* dec = JxlDecoderCreate(NULL);
+      JxlDecoder* dec = JxlDecoderCreate(nullptr);
       const uint8_t* next_in = compressed.data();
       size_t avail_in = compressed.size();
       EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetCoalescing(dec, coalescing));
       void* runner = JxlThreadParallelRunnerCreate(
-          NULL, JxlThreadParallelRunnerDefaultNumWorkerThreads());
+          nullptr, JxlThreadParallelRunnerDefaultNumWorkerThreads());
       EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetParallelRunner(
                                      dec, JxlThreadParallelRunner, runner));
       EXPECT_EQ(JXL_DEC_SUCCESS,
@@ -3516,13 +3516,13 @@ TEST(DecodeTest, SkipFrameWithAlphaBlendingTest) {
       JxlDecoderDestroy(dec);
     }
 
-    JxlDecoder* dec = JxlDecoderCreate(NULL);
+    JxlDecoder* dec = JxlDecoderCreate(nullptr);
     const uint8_t* next_in = compressed.data();
     size_t avail_in = compressed.size();
 
     EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetCoalescing(dec, coalescing));
     void* runner = JxlThreadParallelRunnerCreate(
-        NULL, JxlThreadParallelRunnerDefaultNumWorkerThreads());
+        nullptr, JxlThreadParallelRunnerDefaultNumWorkerThreads());
     EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetParallelRunner(
                                    dec, JxlThreadParallelRunner, runner));
 
@@ -3736,14 +3736,14 @@ TEST(DecodeTest, OrientedCroppedFrameTest) {
       // Independently decode all frames without any skipping, to create the
       // expected blended frames, for the actual tests below to compare with.
       {
-        JxlDecoder* dec = JxlDecoderCreate(NULL);
+        JxlDecoder* dec = JxlDecoderCreate(nullptr);
         const uint8_t* next_in = compressed.data();
         size_t avail_in = compressed.size();
         EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetCoalescing(dec, coalescing));
         EXPECT_EQ(JXL_DEC_SUCCESS,
                   JxlDecoderSetKeepOrientation(dec, keep_orientation));
         void* runner = JxlThreadParallelRunnerCreate(
-            NULL, JxlThreadParallelRunnerDefaultNumWorkerThreads());
+            nullptr, JxlThreadParallelRunnerDefaultNumWorkerThreads());
         EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetParallelRunner(
                                        dec, JxlThreadParallelRunner, runner));
         EXPECT_EQ(JXL_DEC_SUCCESS,
@@ -3867,14 +3867,14 @@ void AnalyzeCodestream(const std::vector<uint8_t>& data,
         if (codestream.empty()) {
           streampos->codestream_start = pos + 12;
         } else if (box_size > 12 || !codestream_end) {
-          breakpoints.push_back({codestream.size(), 12});
+          breakpoints.emplace_back(codestream.size(), 12);
         }
         codestream.insert(codestream.end(), in + pos + 12, in + pos + box_size);
       } else if (memcmp(in + pos + 4, "jbrd", 4) == 0) {
         EXPECT_TRUE(codestream.empty());
         streampos->jbrd_end = pos + box_size;
       } else if (!codestream.empty() && !codestream_end) {
-        breakpoints.push_back({codestream.size(), box_size});
+        breakpoints.emplace_back(codestream.size(), box_size);
       }
       pos += box_size;
     }
@@ -5590,7 +5590,7 @@ TEST(DecodeTest, SpotColorTest) {
   for (size_t render_spot = 0; render_spot < 2; render_spot++) {
     JxlPixelFormat format = {3, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0};
 
-    JxlDecoder* dec = JxlDecoderCreate(NULL);
+    JxlDecoder* dec = JxlDecoderCreate(nullptr);
 
     EXPECT_EQ(JXL_DEC_SUCCESS,
               JxlDecoderSubscribeEvents(

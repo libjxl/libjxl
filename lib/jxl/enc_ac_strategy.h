@@ -69,7 +69,7 @@ struct AcStrategyHeuristics {
   Status Finalize(const FrameDimensions& frame_dim,
                   const AcStrategyImage& ac_strategy, AuxOut* aux_out);
   const CompressParams& cparams;
-  ACSConfig config;
+  ACSConfig config = {};
   size_t mem_per_thread;
   hwy::AlignedFreeUniquePtr<float[]> mem;
   size_t qmem_per_thread;

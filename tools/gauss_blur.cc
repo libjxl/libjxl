@@ -295,8 +295,8 @@ void VerticalBlock(const V& d1_1, const V& d1_3, const V& d1_5, const V& n2_1,
 // Reads/writes one block (kVectors full vectors) in each row.
 template <size_t kVectors>
 void VerticalStrip(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
-                   const size_t x, const size_t ysize, const GetConstRow in,
-                   const GetRow out) {
+                   const size_t x, const size_t ysize, const GetConstRow& in,
+                   const GetRow& out) {
   // We're iterating vertically, so use multiple full-length vectors (each lane
   // is one column of row n).
   using D = HWY_FULL(float);
@@ -373,7 +373,7 @@ void VerticalStrip(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
 // Not yet parallelized.
 void FastGaussianVertical(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
                           const size_t xsize, const size_t ysize,
-                          const GetConstRow in, const GetRow out,
+                          const GetConstRow& in, const GetRow& out,
                           ThreadPool* /* pool */) {
   const HWY_FULL(float) df;
   constexpr size_t kCacheLineLanes = 64 / sizeof(float);
@@ -404,8 +404,8 @@ HWY_EXPORT(FastGaussian1D);
 void FastGaussian1D(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
                     const size_t xsize, const float* JXL_RESTRICT in,
                     float* JXL_RESTRICT out) {
-  return HWY_DYNAMIC_DISPATCH(FastGaussian1D)(rg, static_cast<intptr_t>(xsize),
-                                              in, out);
+  HWY_DYNAMIC_DISPATCH(FastGaussian1D)
+  (rg, static_cast<intptr_t>(xsize), in, out);
 }
 
 HWY_EXPORT(FastGaussianVertical);  // Local function.
@@ -509,7 +509,7 @@ namespace {
 // Apply 1D horizontal scan to each row.
 void FastGaussianHorizontal(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
                             const size_t xsize, const size_t ysize,
-                            const GetConstRow in, const GetRow out,
+                            const GetConstRow& in, const GetRow& out,
                             ThreadPool* pool) {
   const auto process_line = [&](const uint32_t task, size_t /*thread*/) {
     const size_t y = task;
@@ -523,8 +523,8 @@ void FastGaussianHorizontal(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
 }  // namespace
 
 void FastGaussian(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
-                  const size_t xsize, const size_t ysize, const GetConstRow in,
-                  const GetRow temp, const GetRow out, ThreadPool* pool) {
+                  const size_t xsize, const size_t ysize, const GetConstRow& in,
+                  const GetRow& temp, const GetRow& out, ThreadPool* pool) {
   FastGaussianHorizontal(rg, xsize, ysize, in, temp, pool);
   GetConstRow temp_in = [&](size_t y) { return temp(y); };
   HWY_DYNAMIC_DISPATCH(FastGaussianVertical)

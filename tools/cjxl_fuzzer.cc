@@ -132,7 +132,8 @@ bool EncodeJpegXl(const FuzzSpec& spec) {
 }
 
 template <typename T>
-T Select(const std::vector<T>& vec, std::function<uint32_t(size_t)> get_index) {
+T Select(const std::vector<T>& vec,
+         const std::function<uint32_t(size_t)>& get_index) {
   return vec[get_index(vec.size() - 1)];
 }
 

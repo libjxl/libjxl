@@ -33,7 +33,8 @@ void Shuffle(uint8_t* data, size_t size, size_t width) {
   size_t height = (size + width - 1) / width;  // amount of rows of output
   PaddedBytes result(size);
   // i = output index, j input index
-  size_t s = 0, j = 0;
+  size_t s = 0;
+  size_t j = 0;
   for (size_t i = 0; i < size; i++) {
     result[i] = data[j];
     j += height;

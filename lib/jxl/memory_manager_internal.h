@@ -52,7 +52,7 @@ static JXL_INLINE void* MemoryManagerAlloc(
 
 static JXL_INLINE void MemoryManagerFree(const JxlMemoryManager* memory_manager,
                                          void* address) {
-  return memory_manager->free(memory_manager->opaque, address);
+  memory_manager->free(memory_manager->opaque, address);
 }
 
 // Helper class to be used as a deleter in a unique_ptr<T> call.
