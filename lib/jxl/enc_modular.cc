@@ -997,11 +997,10 @@ Status ModularFrameEncoder::ComputeTree(ThreadPool* pool) {
           StaticPropRange range;
           range[0] = {{0, max_c}};
           range[1] = {{start, stop}};
-          auto local_multiplier_info = multiplier_info;
 
           tree_samples.PreQuantizeProperties(
-              range, local_multiplier_info, group_pixel_count,
-              channel_pixel_count, pixel_samples, diff_samples,
+              range, multiplier_info, group_pixel_count, channel_pixel_count,
+              pixel_samples, diff_samples,
               stream_options_[start].max_property_values);
           for (size_t i = start; i < stop; i++) {
             JXL_CHECK(ModularGenericCompress(
@@ -1012,7 +1011,7 @@ Status ModularFrameEncoder::ComputeTree(ThreadPool* pool) {
           // TODO(veluca): parallelize more.
           trees[chunk] =
               LearnTree(std::move(tree_samples), total_pixels,
-                        stream_options_[start], local_multiplier_info, range);
+                        stream_options_[start], multiplier_info, range);
         },
         "LearnTrees"));
     if (invalid_force_wp.test_and_set(std::memory_order_acq_rel)) {
