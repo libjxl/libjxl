@@ -333,8 +333,6 @@ size_t WriteBoxHeader(const jxl::BoxType& type, size_t size, bool unbounded,
   if (!unbounded) {
     if (box_size >= kLargeBoxContentSizeThreshold || force_large_box) {
       large_size = true;
-      // TODO(firsching): send a separate CL for this (+ test),
-      // quick fix in the old code: box_size += 8
       box_size = size + kLargeBoxHeaderSize;
     } else {
       box_size = size + kSmallBoxHeaderSize;
