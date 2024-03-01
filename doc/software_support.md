@@ -33,6 +33,7 @@ For all browsers and to track browsers progress see [Can I Use](https://caniuse.
 - [GraphicsMagick](http://www.graphicsmagick.org/NEWS.html#march-26-2022): supported since 1.3.38
 - [SAIL](https://sail.software): supported since 0.9.0
 - [JPEG XL Coder](https://github.com/awxkee/jxl-coder): Supports version from Android 5.0 (API Level 21)
+- [SDWebImageJPEGXLCoder](https://github.com/SDWebImage/SDWebImageJPEGXLCoder): supported since 0.1.0
 
 ## Metadata manipulation libraries
 
@@ -64,6 +65,7 @@ For all browsers and to track browsers progress see [Can I Use](https://caniuse.
 - Photoshop: no plugin available yet, no official support yet
 - [XL Converter](https://github.com/JacobDev1/xl-converter)
 - [Image Toolbox (supported since 2.6.0)](https://github.com/T8RIN/ImageToolbox)
+- [JPEG XL Toolbox by SUIKA LTD](https://apps.apple.com/app/jpeg-xl-toolbox/id6470681357)
 
 ## Image viewers
 
