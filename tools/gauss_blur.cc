@@ -450,13 +450,12 @@ hwy::AlignedUniquePtr<RecursiveGaussian> CreateRecursiveGaussian(double sigma) {
   const double zeta_15 = D_35 * recip_d13;
   const double zeta_35 = D_51 * recip_d13;
 
-  double A[9] = {p_1,     p_3,     p_5,  //
-                 r_1,     r_3,     r_5,  //  (56)
-                 zeta_15, zeta_35, 1};
+  Matrix3x3d A{
+      {{p_1, p_3, p_5}, {r_1, r_3, r_5} /* (56) */, {zeta_15, zeta_35, 1}}};
   JXL_CHECK(Inv3x3Matrix(A));
-  const double gamma[3] = {1, radius * radius - sigma * sigma,  // (55)
-                           zeta_15 * rho[0] + zeta_35 * rho[1] + rho[2]};
-  double beta[3];
+  const Vector3d gamma{1, radius * radius - sigma * sigma,  // (55)
+                       zeta_15 * rho[0] + zeta_35 * rho[1] + rho[2]};
+  Vector3d beta;
   Mul3x3Vector(A, gamma, beta);  // (53)
 
   // Sanity check: correctly solved for beta (IIR filter weights are normalized)
