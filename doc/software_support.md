@@ -65,6 +65,7 @@ For all browsers and to track browsers progress see [Can I Use](https://caniuse.
 - Photoshop: no plugin available yet, no official support yet
 - [XL Converter](https://github.com/JacobDev1/xl-converter)
 - [Image Toolbox (supported since 2.6.0)](https://github.com/T8RIN/ImageToolbox)
+- [JPEG XL Toolbox by SUIKA LTD](https://apps.apple.com/app/jpeg-xl-toolbox/id6470681357)
 
 ## Image viewers
 
