@@ -10,6 +10,7 @@
 #include "lib/extras/dec/decode.h"
 #include "lib/extras/packed_image_convert.h"
 #include "lib/extras/tone_mapping.h"
+#include "lib/jxl/base/matrix_ops.h"
 #include "lib/jxl/cms/jxl_cms_internal.h"
 #include "lib/jxl/image_bundle.h"
 #include "tools/cmdline.h"
@@ -95,7 +96,7 @@ int main(int argc, const char** argv) {
   JXL_CHECK(
       jpegxl::tools::TransformCodecInOutTo(image, linear_rec_2020, &pool));
 
-  float primaries_xyz[9];
+  jxl::Matrix3x3 primaries_xyz;
   const jxl::PrimariesCIExy p = image.Main().c_current().GetPrimaries();
   const jxl::CIExy wp = image.Main().c_current().GetWhitePoint();
   JXL_CHECK(jxl::PrimariesToXYZ(p.r.x, p.r.y, p.g.x, p.g.y, p.b.x, p.b.y, wp.x,
@@ -123,9 +124,9 @@ int main(int argc, const char** argv) {
       }
       max_value = std::max(
           max_value, std::max(rows[0][x], std::max(rows[1][x], rows[2][x])));
-      const float luminance = primaries_xyz[1] * rows[0][x] +
-                              primaries_xyz[4] * rows[1][x] +
-                              primaries_xyz[7] * rows[2][x];
+      const float luminance = primaries_xyz[0][1] * rows[0][x] +
+                              primaries_xyz[1][1] * rows[1][x] +
+                              primaries_xyz[2][1] * rows[2][x];
       if (luminance_info.kind == LuminanceInfo::Kind::kMaximum &&
           luminance > max_relative_luminance) {
         max_relative_luminance = luminance;

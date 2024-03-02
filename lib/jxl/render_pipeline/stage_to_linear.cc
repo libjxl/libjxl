@@ -63,7 +63,7 @@ struct OpPq {
 };
 
 struct OpHlg {
-  explicit OpHlg(const float luminances[3], const float intensity_target)
+  explicit OpHlg(const Vector3& luminances, const float intensity_target)
       : hlg_ootf_(HlgOOTF::FromSceneLight(
             /*display_luminance=*/intensity_target, luminances)) {}
 

@@ -198,9 +198,11 @@ void ComputePremulAbsorb(float intensity_target, float* premul_absorb) {
   const HWY_FULL(float) d;
   const size_t N = Lanes(d);
   const float mul = intensity_target / 255.0f;
-  for (size_t i = 0; i < 9; ++i) {
-    const auto absorb = Set(d, jxl::cms::kOpsinAbsorbanceMatrix[i] * mul);
-    Store(absorb, d, premul_absorb + i * N);
+  for (size_t j = 0; j < 3; ++j) {
+    for (size_t i = 0; i < 3; ++i) {
+      const auto absorb = Set(d, jxl::cms::kOpsinAbsorbanceMatrix[j][i] * mul);
+      Store(absorb, d, premul_absorb + (j * 3 + i) * N);
+    }
   }
   for (size_t i = 0; i < 3; ++i) {
     const auto neg_bias_cbrt =
