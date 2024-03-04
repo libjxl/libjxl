@@ -211,7 +211,7 @@ jobs:
 
     - name: Cache LLVM sources
       if: matrix.name == 'msan' && env.WILL_BUILD == 'true'
-      uses: actions/cache@13aacd865c20de90d75de3b17ebe84f7a17d57d2 # v4.0.0
+      uses: actions/cache@ab5e6d0c87105b4c9c2047343972218f562e4319 # v4.0.1
       with:
         path: ${{ env.LLVM_ROOT }}
         key: llvm
@@ -242,7 +242,7 @@ jobs:
       shell: bash
 
     - name: ccache
-      uses: actions/cache@13aacd865c20de90d75de3b17ebe84f7a17d57d2 # v4.0.0
+      uses: actions/cache@ab5e6d0c87105b4c9c2047343972218f562e4319 # v4.0.1
       with:
         path: ${{ env.CCACHE_DIR }}
         # When the cache hits the key it is not updated, so if this is a rebuild
