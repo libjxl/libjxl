@@ -1616,6 +1616,7 @@ struct StreamingTestParam {
       }
     }
     params.push_back(StreamingTestParam{2247, 2357, false, 1, true});
+    params.push_back(StreamingTestParam{2247, 2157, false, 5, false});
     return params;
   }
 };
