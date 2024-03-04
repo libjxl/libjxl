@@ -3576,8 +3576,7 @@ void PrepareDCGlobalPalette(bool is_single_group, size_t width, size_t height,
   int16_t p[4][32 + 1024] = {};
   uint8_t prgba[4];
   size_t i = 0;
-  size_t have_zero = 0;
-  if (palette[pcolors - 1] == 0) have_zero = 1;
+  size_t have_zero = 1;
   for (; i < pcolors; i++) {
     memcpy(prgba, &palette[i], 4);
     p[0][16 + i + have_zero] = prgba[0];
