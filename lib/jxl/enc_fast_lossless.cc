@@ -331,6 +331,8 @@ struct PrefixCode {
                                             uint8_t* min_limit,
                                             uint8_t* max_limit,
                                             uint8_t* nbits) {
+    assert(precision < 15);
+    assert(n <= kMaxNumSymbols);
     std::vector<T> dynp(((1U << precision) + 1) * (n + 1), infty);
     auto d = [&](size_t sym, size_t off) -> T& {
       return dynp[sym * ((1 << precision) + 1) + off];
@@ -428,10 +430,11 @@ struct PrefixCode {
   }
 
   // Invalid code, used to construct arrays.
-  PrefixCode() {}
+  PrefixCode() = default;
 
   template <typename BitDepth>
-  PrefixCode(BitDepth, uint64_t* raw_counts, uint64_t* lz77_counts) {
+  PrefixCode(BitDepth /* bitdepth */, uint64_t* raw_counts,
+             uint64_t* lz77_counts) {
     // "merge" together all the lz77 counts in a single symbol for the level 1
     // table (containing just the raw symbols, up to length 7).
     uint64_t level1_counts[kNumRawSymbols + 1];
@@ -1317,7 +1320,7 @@ struct Mask32 {
   SIMDVec32 IfThenElse(const SIMDVec32& if_true, const SIMDVec32& if_false);
   size_t CountPrefix() const {
     return CtzNonZero(~static_cast<uint64_t>(
-        (uint8_t)_mm256_movemask_ps(_mm256_castsi256_ps(mask))));
+        static_cast<uint8_t>(_mm256_movemask_ps(_mm256_castsi256_ps(mask)))));
   }
 };
 
@@ -1414,8 +1417,8 @@ struct Mask16 {
     return Mask16{_mm256_and_si256(mask, oth.mask)};
   }
   size_t CountPrefix() const {
-    return CtzNonZero(
-               ~static_cast<uint64_t>((uint32_t)_mm256_movemask_epi8(mask))) /
+    return CtzNonZero(~static_cast<uint64_t>(
+               static_cast<uint32_t>(_mm256_movemask_epi8(mask)))) /
            2;
   }
 };
@@ -3151,9 +3154,9 @@ void StoreYCoCg(SIMDVec16 r, SIMDVec16 g, SIMDVec16 b, int16_t* y, int16_t* co,
   SIMDVec16 tmp = b.Add(co_v.SignedShiftRight<1>());
   SIMDVec16 cg_v = g.Sub(tmp);
   SIMDVec16 y_v = tmp.Add(cg_v.SignedShiftRight<1>());
-  y_v.Store((uint16_t*)y);
-  co_v.Store((uint16_t*)co);
-  cg_v.Store((uint16_t*)cg);
+  y_v.Store(reinterpret_cast<uint16_t*>(y));
+  co_v.Store(reinterpret_cast<uint16_t*>(co));
+  cg_v.Store(reinterpret_cast<uint16_t*>(cg));
 }
 
 void StoreYCoCg(SIMDVec16 r, SIMDVec16 g, SIMDVec16 b, int32_t* y, int32_t* co,
@@ -3169,12 +3172,12 @@ void StoreYCoCg(SIMDVec16 r, SIMDVec16 g, SIMDVec16 b, int32_t* y, int32_t* co,
   SIMDVec32 tmp_hi = b_up.hi.Add(co_hi_v.SignedShiftRight<1>());
   SIMDVec32 cg_hi_v = g_up.hi.Sub(tmp_hi);
   SIMDVec32 y_hi_v = tmp_hi.Add(cg_hi_v.SignedShiftRight<1>());
-  y_lo_v.Store((uint32_t*)y);
-  co_lo_v.Store((uint32_t*)co);
-  cg_lo_v.Store((uint32_t*)cg);
-  y_hi_v.Store((uint32_t*)y + SIMDVec32::kLanes);
-  co_hi_v.Store((uint32_t*)co + SIMDVec32::kLanes);
-  cg_hi_v.Store((uint32_t*)cg + SIMDVec32::kLanes);
+  y_lo_v.Store(reinterpret_cast<uint32_t*>(y));
+  co_lo_v.Store(reinterpret_cast<uint32_t*>(co));
+  cg_lo_v.Store(reinterpret_cast<uint32_t*>(cg));
+  y_hi_v.Store(reinterpret_cast<uint32_t*>(y) + SIMDVec32::kLanes);
+  co_hi_v.Store(reinterpret_cast<uint32_t*>(co) + SIMDVec32::kLanes);
+  cg_hi_v.Store(reinterpret_cast<uint32_t*>(cg) + SIMDVec32::kLanes);
 }
 #endif
 
@@ -3735,10 +3738,13 @@ JxlFastLosslessFrameState* LLPrepare(JxlChunkedFrameInputSource input,
     const void* buffer =
         input.get_color_channel_data_at(input.opaque, x0, y0, xs, ys, &stride);
     auto rgba = reinterpret_cast<const unsigned char*>(buffer);
-    int y_begin = std::max<int>(0, ys - 2 * effort) / 2;
-    int y_count = std::min<int>(num_rows, y0 + ys - y_begin - 1);
+    int y_begin_group =
+        std::max<ssize_t>(
+            0, static_cast<ssize_t>(ys) - static_cast<ssize_t>(num_rows)) /
+        2;
+    int y_count = std::min<int>(num_rows, ys - y_begin_group);
     int x_max = xs / kChunkSize * kChunkSize;
-    CollectSamples(rgba, 0, y_begin, x_max, stride, y_count, raw_counts,
+    CollectSamples(rgba, 0, y_begin_group, x_max, stride, y_count, raw_counts,
                    lz77_counts, onegroup, !collided, bitdepth, nb_chans,
                    big_endian, lookup.data());
     input.release_buffer(input.opaque, buffer);
@@ -3867,8 +3873,8 @@ void LLProcess(JxlFastLosslessFrameState* frame_state, bool is_last,
   bool streaming = !onegroup && output_processor;
   size_t total_groups = frame_state->num_groups_x * frame_state->num_groups_y;
   size_t max_groups = streaming ? kMaxLocalGroups : total_groups;
-  size_t start_pos = 0;
 #if !FJXL_STANDALONE
+  size_t start_pos = 0;
   if (streaming) {
     start_pos = output_processor->CurrentPosition();
     output_processor->Seek(start_pos + frame_state->ac_group_data_offset);
@@ -4174,18 +4180,20 @@ void JxlFastLosslessProcessFrame(
       __builtin_cpu_supports("avx512vbmi") &&
       __builtin_cpu_supports("avx512bw") && __builtin_cpu_supports("avx512f") &&
       __builtin_cpu_supports("avx512vl")) {
-    return AVX512::JxlFastLosslessProcessFrameImpl(
-        frame_state, is_last, runner_opaque, runner, output_processor);
+    AVX512::JxlFastLosslessProcessFrameImpl(frame_state, is_last, runner_opaque,
+                                            runner, output_processor);
+    return;
   }
 #endif
 #if FJXL_ENABLE_AVX2
   if (__builtin_cpu_supports("avx2")) {
-    return AVX2::JxlFastLosslessProcessFrameImpl(
-        frame_state, is_last, runner_opaque, runner, output_processor);
+    AVX2::JxlFastLosslessProcessFrameImpl(frame_state, is_last, runner_opaque,
+                                          runner, output_processor);
+    return;
   }
 #endif
 
-  return default_implementation::JxlFastLosslessProcessFrameImpl(
+  default_implementation::JxlFastLosslessProcessFrameImpl(
       frame_state, is_last, runner_opaque, runner, output_processor);
 }
 

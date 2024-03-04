@@ -3,8 +3,14 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <jxl/memory_manager.h>
+#include <jxl/parallel_runner.h>
 #include <jxl/thread_parallel_runner.h>
 #include <string.h>
+
+#include <cstdint>
+#include <cstdlib>
+#include <thread>
 
 #include "lib/threads/thread_parallel_runner_internal.h"
 
@@ -51,7 +57,7 @@ void* ThreadMemoryManagerAlloc(const JxlMemoryManager* memory_manager,
 
 void ThreadMemoryManagerFree(const JxlMemoryManager* memory_manager,
                              void* address) {
-  return memory_manager->free(memory_manager->opaque, address);
+  memory_manager->free(memory_manager->opaque, address);
 }
 
 }  // namespace

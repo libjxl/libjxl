@@ -3,24 +3,33 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include "lib/extras/codec.h"
-
+#include <jxl/codestream_header.h>
+#include <jxl/color_encoding.h>
+#include <jxl/encode.h>
+#include <jxl/types.h>
 #include <stddef.h>
 
 #include <algorithm>
 #include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "lib/extras/common.h"
+#include "lib/extras/dec/color_hints.h"
 #include "lib/extras/dec/decode.h"
 #include "lib/extras/dec/pnm.h"
 #include "lib/extras/enc/encode.h"
+#include "lib/extras/packed_image.h"
+#include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/random.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"
 
@@ -69,8 +78,8 @@ void VerifySameImage(const PackedImage& im0, size_t bits_per_sample0,
   };
   double factor0 = get_factor(im0.format, bits_per_sample0);
   double factor1 = get_factor(im1.format, bits_per_sample1);
-  auto pixels0 = static_cast<const uint8_t*>(im0.pixels());
-  auto pixels1 = static_cast<const uint8_t*>(im1.pixels());
+  const auto* pixels0 = static_cast<const uint8_t*>(im0.pixels());
+  const auto* pixels1 = static_cast<const uint8_t*>(im1.pixels());
   auto rgba0 =
       test::ConvertToRGBA32(pixels0, im0.xsize, im0.ysize, im0.format, factor0);
   auto rgba1 =

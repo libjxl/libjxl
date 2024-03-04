@@ -9,6 +9,7 @@
 // Library to decode the ANS population counts from the bit-stream and build a
 // decoding table from them.
 
+#include <jxl/types.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -179,7 +180,7 @@ class ANSSymbolReader {
     num_special_distances_ =
         distance_multiplier == 0 ? 0 : kNumSpecialDistances;
     for (size_t i = 0; i < num_special_distances_; i++) {
-      int dist = kSpecialDistances[i][0];
+      int dist = static_cast<int>(kSpecialDistances[i][0]);
       dist += static_cast<int>(distance_multiplier) * kSpecialDistances[i][1];
       if (dist < 1) dist = 1;
       special_distances_[i] = dist;
@@ -196,7 +197,7 @@ class ANSSymbolReader {
         AliasTable::Lookup(table, res, log_entry_size_, entry_size_minus_1_);
     state_ = symbol.freq * (state_ >> ANS_LOG_TAB_SIZE) + symbol.offset;
 
-#if 1
+#if JXL_TRUE
     // Branchless version is about equally fast on SKX.
     const uint32_t new_state =
         (state_ << 16u) | static_cast<uint32_t>(br->PeekFixedBits<16>());

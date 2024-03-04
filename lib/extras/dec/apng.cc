@@ -71,9 +71,7 @@ const png_byte kIgnoredPngChunks[] = {
 };
 
 // Returns floating-point value from the PNG encoding (times 10^5).
-static double F64FromU32(const uint32_t x) {
-  return static_cast<int32_t>(x) * 1E-5;
-}
+double F64FromU32(const uint32_t x) { return static_cast<int32_t>(x) * 1E-5; }
 
 Status DecodeSRGB(const unsigned char* payload, const size_t payload_size,
                   JxlColorEncoding* color_encoding) {
@@ -402,7 +400,8 @@ class BlobsReaderPNG {
       }
 
       if (pos + 2 >= encoded_end) return false;  // Truncated base16 2;
-      uint32_t nibble0, nibble1;
+      uint32_t nibble0;
+      uint32_t nibble1;
       JXL_RETURN_IF_ERROR(DecodeNibble(pos[0], &nibble0));
       JXL_RETURN_IF_ERROR(DecodeNibble(pos[1], &nibble1));
       bytes->push_back(static_cast<uint8_t>((nibble0 << 4) + nibble1));
@@ -447,7 +446,7 @@ struct Reader {
     next += to_copy;
     return (len == to_copy);
   }
-  bool Eof() { return next == last; }
+  bool Eof() const { return next == last; }
 };
 
 const unsigned long cMaxPNGSize = 1000000UL;
@@ -463,7 +462,8 @@ void info_fn(png_structp png_ptr, png_infop info_ptr) {
 
 void row_fn(png_structp png_ptr, png_bytep new_row, png_uint_32 row_num,
             int pass) {
-  APNGFrame* frame = (APNGFrame*)png_get_progressive_ptr(png_ptr);
+  APNGFrame* frame =
+      reinterpret_cast<APNGFrame*>(png_get_progressive_ptr(png_ptr));
   JXL_CHECK(frame);
   JXL_CHECK(row_num < frame->rows.size());
   JXL_CHECK(frame->rows[row_num] < frame->pixels.data() + frame->pixels.size());
@@ -494,12 +494,13 @@ int processing_start(png_structp& png_ptr, png_infop& info_ptr, void* frame_ptr,
   unsigned char header[8] = {137, 80, 78, 71, 13, 10, 26, 10};
 
   // Cleanup prior decoder, if any.
-  png_destroy_read_struct(&png_ptr, &info_ptr, 0);
+  png_destroy_read_struct(&png_ptr, &info_ptr, nullptr);
   // Just in case. Not all versions on libpng wipe-out the pointers.
   png_ptr = nullptr;
   info_ptr = nullptr;
 
-  png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+  png_ptr =
+      png_create_read_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
   info_ptr = png_create_info_struct(png_ptr);
   if (!png_ptr || !info_ptr) return 1;
 
@@ -508,10 +509,10 @@ int processing_start(png_structp& png_ptr, png_infop& info_ptr, void* frame_ptr,
   }
 
   png_set_keep_unknown_chunks(png_ptr, 1, kIgnoredPngChunks,
-                              (int)sizeof(kIgnoredPngChunks) / 5);
+                              static_cast<int>(sizeof(kIgnoredPngChunks) / 5));
 
   png_set_crc_action(png_ptr, PNG_CRC_QUIET_USE, PNG_CRC_QUIET_USE);
-  png_set_progressive_read_fn(png_ptr, frame_ptr, info_fn, row_fn, NULL);
+  png_set_progressive_read_fn(png_ptr, frame_ptr, info_fn, row_fn, nullptr);
 
   png_process_data(png_ptr, info_ptr, header, 8);
   png_process_data(png_ptr, info_ptr, chunkIHDR.data(), chunkIHDR.size());
@@ -575,8 +576,6 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
                        const SizeConstraints* constraints) {
 #if JPEGXL_ENABLE_APNG
   Reader r;
-  unsigned int id, j, w, h, w0, h0, x0, y0;
-  unsigned int delay_num, delay_den, dop, bop, rowbytes, imagesize;
   unsigned char sig[8];
   png_structp png_ptr = nullptr;
   png_infop info_ptr = nullptr;
@@ -616,7 +615,7 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
   if (!r.Read(sig, 8) || memcmp(sig, png_signature, 8) != 0) {
     return false;
   }
-  id = read_chunk(&r, &chunkIHDR);
+  unsigned int id = read_chunk(&r, &chunkIHDR);
 
   ppf->info.exponent_bits_per_sample = 0;
   ppf->info.alpha_exponent_bits = 0;
@@ -625,18 +624,22 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
   ppf->frames.clear();
 
   bool have_color = false;
-  bool have_cicp = false, have_iccp = false, have_srgb = false;
+  bool have_cicp = false;
+  bool have_iccp = false;
+  bool have_srgb = false;
   bool errorstate = true;
   if (id == kId_IHDR && chunkIHDR.size() == 25) {
-    x0 = 0;
-    y0 = 0;
-    delay_num = 1;
-    delay_den = 10;
-    dop = 0;
-    bop = 0;
+    unsigned int x0 = 0;
+    unsigned int y0 = 0;
+    unsigned int delay_num = 1;
+    unsigned int delay_den = 10;
+    unsigned int dop = 0;
+    unsigned int bop = 0;
 
-    w0 = w = png_get_uint_32(chunkIHDR.data() + 8);
-    h0 = h = png_get_uint_32(chunkIHDR.data() + 12);
+    unsigned int w = png_get_uint_32(chunkIHDR.data() + 8);
+    unsigned int h = png_get_uint_32(chunkIHDR.data() + 12);
+    unsigned int w0 = w;
+    unsigned int h0 = h;
     if (w > cMaxPNGSize || h > cMaxPNGSize) {
       return false;
     }
@@ -648,8 +651,8 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
     ppf->color_encoding.transfer_function = JXL_TRANSFER_FUNCTION_SRGB;
     ppf->color_encoding.rendering_intent = JXL_RENDERING_INTENT_RELATIVE;
 
-    if (!processing_start(png_ptr, info_ptr, (void*)&frameRaw, hasInfo,
-                          chunkIHDR, chunksInfo)) {
+    if (!processing_start(png_ptr, info_ptr, static_cast<void*>(&frameRaw),
+                          hasInfo, chunkIHDR, chunksInfo)) {
       while (!r.Eof()) {
         id = read_chunk(&r, &chunk);
         if (!id) break;
@@ -707,7 +710,8 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
 
           if (hasInfo) {
             memcpy(chunkIHDR.data() + 8, chunk.data() + 12, 8);
-            if (processing_start(png_ptr, info_ptr, (void*)&frameRaw, hasInfo,
+            if (processing_start(png_ptr, info_ptr,
+                                 static_cast<void*>(&frameRaw), hasInfo,
                                  chunkIHDR, chunksInfo)) {
               break;
             }
@@ -724,7 +728,7 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
           int colortype = png_get_color_type(png_ptr, info_ptr);
           int png_bit_depth = png_get_bit_depth(png_ptr, info_ptr);
           ppf->info.bits_per_sample = png_bit_depth;
-          png_color_8p sigbits = NULL;
+          png_color_8p sigbits = nullptr;
           png_get_sBIT(png_ptr, info_ptr, &sigbits);
           if (colortype & 1) {
             // palette will actually be 8-bit regardless of the index bitdepth
@@ -784,12 +788,13 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
           }
           bytes_per_pixel =
               num_channels * (format.data_type == JXL_TYPE_UINT16 ? 2 : 1);
-          rowbytes = w * bytes_per_pixel;
-          imagesize = h * rowbytes;
+          unsigned int rowbytes = w * bytes_per_pixel;
+          unsigned int imagesize = h * rowbytes;
           frameRaw.pixels.resize(imagesize);
           frameRaw.rows.resize(h);
-          for (j = 0; j < h; j++)
+          for (unsigned int j = 0; j < h; j++) {
             frameRaw.rows[j] = frameRaw.pixels.data() + j * rowbytes;
+          }
 
           if (processing_data(png_ptr, info_ptr, chunk.data(), chunk.size())) {
             break;
@@ -813,6 +818,8 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
             have_cicp = true;
             have_color = true;
             ppf->icc.clear();
+            ppf->primary_color_representation =
+                PackedPixelFile::kColorEncodingIsPrimary;
           }
         } else if (!have_cicp && id == kId_iCCP) {
           if (processing_data(png_ptr, info_ptr, chunk.data(), chunk.size())) {
@@ -830,6 +837,7 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
                                  &profile, &proflen);
           if (ok && proflen) {
             ppf->icc.assign(profile, profile + proflen);
+            ppf->primary_color_representation = PackedPixelFile::kIccIsPrimary;
             have_color = true;
             have_iccp = true;
           } else {

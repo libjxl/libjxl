@@ -154,7 +154,7 @@ Status ReadHistogram(int precision_bits, std::vector<int32_t>* counts,
         (*counts)[i] = prev;
         numsame--;
       } else {
-        int code = logcounts[i];
+        unsigned int code = logcounts[i];
         // omit_pos may not be negative at this point (checked before).
         if (i == static_cast<size_t>(omit_pos)) {
           continue;
@@ -164,7 +164,7 @@ Status ReadHistogram(int precision_bits, std::vector<int32_t>* counts,
           (*counts)[i] = 1;
         } else {
           int bitcount = GetPopulationCountPrecision(code - 1, shift);
-          (*counts)[i] = (1 << (code - 1)) +
+          (*counts)[i] = (1u << (code - 1)) +
                          (input->ReadBits(bitcount) << (code - 1 - bitcount));
         }
       }
@@ -260,7 +260,8 @@ Status DecodeUintConfig(size_t log_alpha_size, HybridUintConfig* uint_config,
                         BitReader* br) {
   br->Refill();
   size_t split_exponent = br->ReadBits(CeilLog2Nonzero(log_alpha_size + 1));
-  size_t msb_in_token = 0, lsb_in_token = 0;
+  size_t msb_in_token = 0;
+  size_t lsb_in_token = 0;
   if (split_exponent != log_alpha_size) {
     // otherwise, msb/lsb don't matter.
     size_t nbits = CeilLog2Nonzero(split_exponent + 1);

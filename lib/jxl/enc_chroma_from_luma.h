@@ -29,7 +29,7 @@ void ColorCorrelationMapEncodeDC(const ColorCorrelationMap& map,
                                  AuxOut* aux_out);
 
 struct CfLHeuristics {
-  void Init(const Rect& rect);
+  Status Init(const Rect& rect);
 
   void PrepareForThreads(size_t num_threads) {
     mem = hwy::AllocateAligned<float>(num_threads * ItemsPerThread());
@@ -40,8 +40,6 @@ struct CfLHeuristics {
                    const AcStrategyImage* ac_strategy,
                    const ImageI* raw_quant_field, const Quantizer* quantizer,
                    bool fast, size_t thread, ColorCorrelationMap* cmap);
-
-  void ComputeDC(bool fast, ColorCorrelationMap* cmap);
 
   ImageF dc_values;
   hwy::AlignedFreeUniquePtr<float[]> mem;

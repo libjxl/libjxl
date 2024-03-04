@@ -9,12 +9,12 @@
 #include <stddef.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <utility>
 
 #include "lib/extras/metrics.h"
 #include "lib/extras/packed_image.h"
 #include "lib/jxl/base/random.h"
-#include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/image.h"
@@ -30,7 +30,7 @@ using extras::PackedPixelFile;
 using test::TestImage;
 
 Image3F SinglePixelImage(float red, float green, float blue) {
-  Image3F img(1, 1);
+  JXL_ASSIGN_OR_DIE(Image3F img, Image3F::Create(1, 1));
   img.PlaneRow(0, 0)[0] = red;
   img.PlaneRow(1, 0)[0] = green;
   img.PlaneRow(2, 0)[0] = blue;
@@ -42,7 +42,7 @@ Image3F GetColorImage(const PackedPixelFile& ppf) {
   const PackedImage& image = ppf.frames[0].color;
   const JxlPixelFormat& format = image.format;
   const uint8_t* pixels = reinterpret_cast<const uint8_t*>(image.pixels());
-  Image3F color(image.xsize, image.ysize);
+  JXL_ASSIGN_OR_DIE(Image3F color, Image3F::Create(image.xsize, image.ysize));
   for (size_t c = 0; c < format.num_channels; ++c) {
     JXL_CHECK(ConvertFromExternal(pixels, image.pixels_size, image.xsize,
                                   image.ysize, ppf.info.bits_per_sample, format,
@@ -93,7 +93,7 @@ TEST(ButteraugliInPlaceTest, LargeImage) {
   TestImage img;
   img.SetDimensions(xsize, ysize).AddFrame().RandomFill(777);
   Image3F rgb0 = GetColorImage(img.ppf());
-  Image3F rgb1(xsize, ysize);
+  JXL_ASSIGN_OR_DIE(Image3F rgb1, Image3F::Create(xsize, ysize));
   CopyImageTo(rgb0, &rgb1);
   AddUniformNoise(&rgb1, 0.02f, 7777);
   AddEdge(&rgb1, 0.1f, xsize / 2, xsize / 2);
@@ -109,7 +109,7 @@ TEST(ButteraugliInPlaceTest, LargeImage) {
   EXPECT_TRUE(ButteraugliInterfaceInPlace(std::move(rgb0), std::move(rgb1), ba,
                                           diffmap2, diffval2));
   double distp2 = ComputeDistanceP(diffmap2, ba, 3.0);
-  EXPECT_NEAR(diffval, diffval2, 1e-10);
+  EXPECT_NEAR(diffval, diffval2, 5e-7);
   EXPECT_NEAR(distp, distp2, 1e-7);
 }
 

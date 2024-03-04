@@ -23,6 +23,18 @@
 namespace jxl {
 namespace {
 
+// This should have been static assert; not compiling though with C++<17.
+TEST(QuantWeightsTest, Invariant) {
+  size_t sum = 0;
+  ASSERT_EQ(DequantMatrices::required_size_x.size(),
+            DequantMatrices::required_size_y.size());
+  for (size_t i = 0; i < DequantMatrices::required_size_x.size(); ++i) {
+    sum += DequantMatrices::required_size_x[i] *
+           DequantMatrices::required_size_y[i];
+  }
+  ASSERT_EQ(DequantMatrices::kSumRequiredXy, sum);
+}
+
 template <typename T>
 void CheckSimilar(T a, T b) {
   EXPECT_EQ(a, b);
@@ -50,8 +62,8 @@ void RoundtripMatrices(const std::vector<QuantEncoding>& encodings) {
   DequantMatrices mat;
   CodecMetadata metadata;
   FrameHeader frame_header(&metadata);
-  ModularFrameEncoder encoder(frame_header, CompressParams{});
-  DequantMatricesSetCustom(&mat, encodings, &encoder);
+  ModularFrameEncoder encoder(frame_header, CompressParams{}, false);
+  JXL_CHECK(DequantMatricesSetCustom(&mat, encodings, &encoder));
   const std::vector<QuantEncoding>& encodings_dec = mat.encodings();
   for (size_t i = 0; i < encodings.size(); i++) {
     const QuantEncoding& e = encodings[i];
@@ -172,8 +184,8 @@ TEST_P(QuantWeightsTargetTest, DCTUniform) {
   DequantMatrices dequant_matrices;
   CodecMetadata metadata;
   FrameHeader frame_header(&metadata);
-  ModularFrameEncoder encoder(frame_header, CompressParams{});
-  DequantMatricesSetCustom(&dequant_matrices, encodings, &encoder);
+  ModularFrameEncoder encoder(frame_header, CompressParams{}, false);
+  JXL_CHECK(DequantMatricesSetCustom(&dequant_matrices, encodings, &encoder));
   JXL_CHECK(dequant_matrices.EnsureComputed(~0u));
 
   const float dc_quant[3] = {1.0f / kUniformQuant, 1.0f / kUniformQuant,

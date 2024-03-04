@@ -5,6 +5,7 @@
 
 #include "lib/jxl/convolve.h"
 
+#include <jxl/types.h>
 #include <time.h>
 
 #undef HWY_TARGET_INCLUDE
@@ -68,11 +69,11 @@ void VerifySymmetric3(const size_t xsize, const size_t ysize, ThreadPool* pool,
                       Rng* rng) {
   const Rect rect(0, 0, xsize, ysize);
 
-  ImageF in(xsize, ysize);
+  JXL_ASSIGN_OR_DIE(ImageF in, ImageF::Create(xsize, ysize));
   GenerateImage(*rng, &in, 0.0f, 1.0f);
 
-  ImageF out_expected(xsize, ysize);
-  ImageF out_actual(xsize, ysize);
+  JXL_ASSIGN_OR_DIE(ImageF out_expected, ImageF::Create(xsize, ysize));
+  JXL_ASSIGN_OR_DIE(ImageF out_actual, ImageF::Create(xsize, ysize));
 
   const WeightsSymmetric3& weights = WeightsSymmetric3Lowpass();
   Symmetric3(in, rect, weights, pool, &out_expected);
@@ -86,7 +87,7 @@ std::vector<Rect> GenerateTestRectangles(size_t xsize, size_t ysize) {
   for (size_t tl : {0, 1, 13}) {
     for (size_t br : {0, 1, 13}) {
       if (xsize > tl + br && ysize > tl + br) {
-        out.push_back(Rect(tl, tl, xsize - tl - br, ysize - tl - br));
+        out.emplace_back(tl, tl, xsize - tl - br, ysize - tl - br);
       }
     }
   }
@@ -96,7 +97,7 @@ std::vector<Rect> GenerateTestRectangles(size_t xsize, size_t ysize) {
 // Ensures Symmetric and Separable give the same result.
 void VerifySymmetric5(const size_t xsize, const size_t ysize, ThreadPool* pool,
                       Rng* rng) {
-  ImageF in(xsize, ysize);
+  JXL_ASSIGN_OR_DIE(ImageF in, ImageF::Create(xsize, ysize));
   GenerateImage(*rng, &in, 0.0f, 1.0f);
 
   for (const Rect& in_rect : GenerateTestRectangles(xsize, ysize)) {
@@ -105,8 +106,8 @@ void VerifySymmetric5(const size_t xsize, const size_t ysize, ThreadPool* pool,
               in_rect.xsize(), in_rect.ysize(), in_rect.x0(), in_rect.y0());
     {
       Rect out_rect = in_rect;
-      ImageF out_expected(xsize, ysize);
-      ImageF out_actual(xsize, ysize);
+      JXL_ASSIGN_OR_DIE(ImageF out_expected, ImageF::Create(xsize, ysize));
+      JXL_ASSIGN_OR_DIE(ImageF out_actual, ImageF::Create(xsize, ysize));
       FillImage(-1.0f, &out_expected);
       FillImage(-1.0f, &out_actual);
 
@@ -120,8 +121,10 @@ void VerifySymmetric5(const size_t xsize, const size_t ysize, ThreadPool* pool,
     }
     {
       Rect out_rect(0, 0, in_rect.xsize(), in_rect.ysize());
-      ImageF out_expected(out_rect.xsize(), out_rect.ysize());
-      ImageF out_actual(out_rect.xsize(), out_rect.ysize());
+      JXL_ASSIGN_OR_DIE(ImageF out_expected,
+                        ImageF::Create(out_rect.xsize(), out_rect.ysize()));
+      JXL_ASSIGN_OR_DIE(ImageF out_actual,
+                        ImageF::Create(out_rect.xsize(), out_rect.ysize()));
 
       SlowSeparable5(in, in_rect, WeightsSeparable5Lowpass(), pool,
                      &out_expected, out_rect);
@@ -138,37 +141,15 @@ void VerifySeparable5(const size_t xsize, const size_t ysize, ThreadPool* pool,
                       Rng* rng) {
   const Rect rect(0, 0, xsize, ysize);
 
-  ImageF in(xsize, ysize);
+  JXL_ASSIGN_OR_DIE(ImageF in, ImageF::Create(xsize, ysize));
   GenerateImage(*rng, &in, 0.0f, 1.0f);
 
-  ImageF out_expected(xsize, ysize);
-  ImageF out_actual(xsize, ysize);
+  JXL_ASSIGN_OR_DIE(ImageF out_expected, ImageF::Create(xsize, ysize));
+  JXL_ASSIGN_OR_DIE(ImageF out_actual, ImageF::Create(xsize, ysize));
 
   const WeightsSeparable5& weights = WeightsSeparable5Lowpass();
   SlowSeparable5(in, rect, weights, pool, &out_expected, rect);
   Separable5(in, rect, weights, pool, &out_actual);
-
-  JXL_ASSERT_OK(VerifyRelativeError(out_expected, out_actual, 1E-5f, 1E-5f, _));
-}
-
-void VerifySeparable7(const size_t xsize, const size_t ysize, ThreadPool* pool,
-                      Rng* rng) {
-  const Rect rect(0, 0, xsize, ysize);
-
-  ImageF in(xsize, ysize);
-  GenerateImage(*rng, &in, 0.0f, 1.0f);
-
-  ImageF out_expected(xsize, ysize);
-  ImageF out_actual(xsize, ysize);
-
-  // Gaussian sigma 1.0
-  const WeightsSeparable7 weights = {{HWY_REP4(0.383103f), HWY_REP4(0.241843f),
-                                      HWY_REP4(0.060626f), HWY_REP4(0.00598f)},
-                                     {HWY_REP4(0.383103f), HWY_REP4(0.241843f),
-                                      HWY_REP4(0.060626f), HWY_REP4(0.00598f)}};
-
-  SlowSeparable7(in, rect, weights, pool, &out_expected, rect);
-  Separable7(in, rect, weights, pool, &out_actual);
 
   JXL_ASSERT_OK(VerifyRelativeError(out_expected, out_actual, 1E-5f, 1E-5f, _));
 }
@@ -204,10 +185,6 @@ void TestConvolve() {
                     JXL_DEBUG(JXL_DEBUG_CONVOLVE, "Sep5------------------");
                     VerifySeparable5(xsize, ysize, null_pool, &rng);
                     VerifySeparable5(xsize, ysize, &pool3, &rng);
-
-                    JXL_DEBUG(JXL_DEBUG_CONVOLVE, "Sep7------------------");
-                    VerifySeparable7(xsize, ysize, null_pool, &rng);
-                    VerifySeparable7(xsize, ysize, &pool3, &rng);
                   }
                 },
                 "TestConvolve"));
@@ -223,10 +200,10 @@ void BenchmarkConv(const char* caption, const Conv& conv,
   hwy::Result results[kNumInputs];
 
   const size_t kDim = 160;  // in+out fit in L2
-  ImageF in(kDim, kDim);
+  JXL_ASSIGN_OR_DIE(ImageF in, ImageF::Create(kDim, kDim));
   ZeroFillImage(&in);
   in.Row(kDim / 2)[kDim / 2] = unpredictable1;
-  ImageF out(kDim, kDim);
+  JXL_ASSIGN_OR_DIE(ImageF out, ImageF::Create(kDim, kDim));
 
   hwy::Params p;
   p.verbose = false;
@@ -265,7 +242,7 @@ struct ConvSeparable5 {
 };
 
 void BenchmarkAll() {
-#if 0  // disabled to avoid test timeouts, run manually on demand
+#if JXL_FALSE  // disabled to avoid test timeouts, run manually on demand
   const hwy::FuncInput unpredictable1 = time(nullptr) != 1234;
   BenchmarkConv("Symmetric3", ConvSymmetric3(), unpredictable1);
   BenchmarkConv("Separable5", ConvSeparable5(), unpredictable1);

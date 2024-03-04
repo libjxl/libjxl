@@ -9,6 +9,8 @@
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/decode.h"
 #include "lib/extras/packed_image_convert.h"
+#include "lib/extras/tone_mapping.h"
+#include "lib/jxl/base/matrix_ops.h"
 #include "lib/jxl/cms/jxl_cms_internal.h"
 #include "lib/jxl/image_bundle.h"
 #include "tools/cmdline.h"
@@ -94,7 +96,7 @@ int main(int argc, const char** argv) {
   JXL_CHECK(
       jpegxl::tools::TransformCodecInOutTo(image, linear_rec_2020, &pool));
 
-  float primaries_xyz[9];
+  jxl::Matrix3x3 primaries_xyz;
   const jxl::PrimariesCIExy p = image.Main().c_current().GetPrimaries();
   const jxl::CIExy wp = image.Main().c_current().GetWhitePoint();
   JXL_CHECK(jxl::PrimariesToXYZ(p.r.x, p.r.y, p.g.x, p.g.y, p.b.x, p.b.y, wp.x,
@@ -122,9 +124,9 @@ int main(int argc, const char** argv) {
       }
       max_value = std::max(
           max_value, std::max(rows[0][x], std::max(rows[1][x], rows[2][x])));
-      const float luminance = primaries_xyz[1] * rows[0][x] +
-                              primaries_xyz[4] * rows[1][x] +
-                              primaries_xyz[7] * rows[2][x];
+      const float luminance = primaries_xyz[0][1] * rows[0][x] +
+                              primaries_xyz[1][1] * rows[1][x] +
+                              primaries_xyz[2][1] * rows[2][x];
       if (luminance_info.kind == LuminanceInfo::Kind::kMaximum &&
           luminance > max_relative_luminance) {
         max_relative_luminance = luminance;
@@ -132,19 +134,31 @@ int main(int argc, const char** argv) {
       }
     }
   }
-  jxl::ScaleImage(1.f / max_value, image.Main().color());
+
+  bool needs_gamut_mapping = false;
+
   white_luminance *= max_value;
-  image.metadata.m.SetIntensityTarget(white_luminance);
   if (white_luminance > 10000) {
     fprintf(stderr,
             "WARNING: the image is too bright for PQ (would need (1, 1, 1) to "
             "be %g cd/m^2).\n",
             white_luminance);
+
+    max_value *= 10000 / white_luminance;
+    white_luminance = 10000;
+    needs_gamut_mapping = true;
   } else {
     fprintf(stderr,
             "The resulting image should be compressed with "
             "--intensity_target=%g.\n",
             white_luminance);
+  }
+  image.metadata.m.SetIntensityTarget(white_luminance);
+
+  jxl::ScaleImage(1.f / max_value, image.Main().color());
+
+  if (needs_gamut_mapping) {
+    JXL_CHECK(jxl::GamutMap(&image, 0.f, &pool));
   }
 
   jxl::ColorEncoding pq = image.Main().c_current();
@@ -153,6 +167,6 @@ int main(int argc, const char** argv) {
   JXL_CHECK(jpegxl::tools::TransformCodecInOutTo(image, pq, &pool));
   image.metadata.m.color_encoding = pq;
   std::vector<uint8_t> encoded;
-  JXL_CHECK(jxl::Encode(image, output_filename, &encoded, &pool));
+  JXL_CHECK(jpegxl::tools::Encode(image, output_filename, &encoded, &pool));
   JXL_CHECK(jpegxl::tools::WriteFile(output_filename, encoded));
 }

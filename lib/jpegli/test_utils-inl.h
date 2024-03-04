@@ -8,20 +8,20 @@
 // include paths for the jpeg headers.
 
 // Sequential non-interleaved.
-static constexpr jpeg_scan_info kScript1[] = {
+constexpr jpeg_scan_info kScript1[] = {
     {1, {0}, 0, 63, 0, 0},
     {1, {1}, 0, 63, 0, 0},
     {1, {2}, 0, 63, 0, 0},
 };
 // Sequential partially interleaved, chroma first.
-static constexpr jpeg_scan_info kScript2[] = {
+constexpr jpeg_scan_info kScript2[] = {
     {2, {1, 2}, 0, 63, 0, 0},
     {1, {0}, 0, 63, 0, 0},
 };
 
 // Rest of the scan scripts are progressive.
 
-static constexpr jpeg_scan_info kScript3[] = {
+constexpr jpeg_scan_info kScript3[] = {
     // Interleaved full DC.
     {3, {0, 1, 2}, 0, 0, 0, 0},
     // Full AC scans.
@@ -29,7 +29,7 @@ static constexpr jpeg_scan_info kScript3[] = {
     {1, {1}, 1, 63, 0, 0},
     {1, {2}, 1, 63, 0, 0},
 };
-static constexpr jpeg_scan_info kScript4[] = {
+constexpr jpeg_scan_info kScript4[] = {
     // Non-interleaved full DC.
     {1, {0}, 0, 0, 0, 0},
     {1, {1}, 0, 0, 0, 0},
@@ -39,7 +39,7 @@ static constexpr jpeg_scan_info kScript4[] = {
     {1, {1}, 1, 63, 0, 0},
     {1, {2}, 1, 63, 0, 0},
 };
-static constexpr jpeg_scan_info kScript5[] = {
+constexpr jpeg_scan_info kScript5[] = {
     // Partially interleaved full DC, chroma first.
     {2, {1, 2}, 0, 0, 0, 0},
     {1, {0}, 0, 0, 0, 0},
@@ -52,7 +52,7 @@ static constexpr jpeg_scan_info kScript5[] = {
     {1, {1}, 1, 63, 1, 0},
     {1, {2}, 1, 63, 1, 0},
 };
-static constexpr jpeg_scan_info kScript6[] = {
+constexpr jpeg_scan_info kScript6[] = {
     // Interleaved DC shifted by 2 bits.
     {3, {0, 1, 2}, 0, 0, 0, 2},
     // Interleaved DC refinement scans.
@@ -64,7 +64,7 @@ static constexpr jpeg_scan_info kScript6[] = {
     {1, {2}, 1, 63, 0, 0},
 };
 
-static constexpr jpeg_scan_info kScript7[] = {
+constexpr jpeg_scan_info kScript7[] = {
     // Non-interleaved DC shifted by 2 bits.
     {1, {0}, 0, 0, 0, 2},
     {1, {1}, 0, 0, 0, 2},
@@ -83,7 +83,7 @@ static constexpr jpeg_scan_info kScript7[] = {
     {1, {2}, 1, 63, 0, 0},
 };
 
-static constexpr jpeg_scan_info kScript8[] = {
+constexpr jpeg_scan_info kScript8[] = {
     // Partially interleaved DC shifted by 2 bits, chroma first
     {2, {1, 2}, 0, 0, 0, 2},
     {1, {0}, 0, 0, 0, 2},
@@ -99,7 +99,7 @@ static constexpr jpeg_scan_info kScript8[] = {
     {1, {2}, 1, 63, 0, 0},
 };
 
-static constexpr jpeg_scan_info kScript9[] = {
+constexpr jpeg_scan_info kScript9[] = {
     // Interleaved full DC.
     {3, {0, 1, 2}, 0, 0, 0, 0},
     // AC scans for component 0
@@ -123,7 +123,7 @@ static constexpr jpeg_scan_info kScript9[] = {
     {1, {2}, 17, 63, 1, 0},
 };
 
-static constexpr jpeg_scan_info kScript10[] = {
+constexpr jpeg_scan_info kScript10[] = {
     // Interleaved full DC.
     {3, {0, 1, 2}, 0, 0, 0, 0},
     // AC scans for spectral range 1..16
@@ -156,14 +156,14 @@ struct ScanScript {
   const jpeg_scan_info* scans;
 };
 
-static constexpr ScanScript kTestScript[] = {
+constexpr ScanScript kTestScript[] = {
     {ARRAY_SIZE(kScript1), kScript1}, {ARRAY_SIZE(kScript2), kScript2},
     {ARRAY_SIZE(kScript3), kScript3}, {ARRAY_SIZE(kScript4), kScript4},
     {ARRAY_SIZE(kScript5), kScript5}, {ARRAY_SIZE(kScript6), kScript6},
     {ARRAY_SIZE(kScript7), kScript7}, {ARRAY_SIZE(kScript8), kScript8},
     {ARRAY_SIZE(kScript9), kScript9}, {ARRAY_SIZE(kScript10), kScript10},
 };
-static constexpr int kNumTestScripts = ARRAY_SIZE(kTestScript);
+constexpr int kNumTestScripts = ARRAY_SIZE(kTestScript);
 
 void SetScanDecompressParams(const DecompressParams& dparams,
                              j_decompress_ptr cinfo, int scan_number) {
@@ -178,7 +178,7 @@ void SetScanDecompressParams(const DecompressParams& dparams,
     return;
   }
   if (dparams.quantize_colors) {
-    cinfo->dither_mode = (J_DITHER_MODE)sparams->dither_mode;
+    cinfo->dither_mode = static_cast<J_DITHER_MODE>(sparams->dither_mode);
     if (sparams->color_quant_mode == CQUANT_1PASS) {
       cinfo->two_pass_quantize = FALSE;
       cinfo->colormap = nullptr;
@@ -218,7 +218,8 @@ void SetDecompressParams(const DecompressParams& dparams,
     cinfo->raw_data_out = TRUE;
   }
   if (dparams.set_out_color_space) {
-    cinfo->out_color_space = (J_COLOR_SPACE)dparams.out_color_space;
+    cinfo->out_color_space =
+        static_cast<J_COLOR_SPACE>(dparams.out_color_space);
     if (dparams.out_color_space == JCS_UNKNOWN) {
       cinfo->jpeg_color_space = JCS_UNKNOWN;
     }

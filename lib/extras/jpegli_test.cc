@@ -8,11 +8,18 @@
 #include "lib/extras/dec/jpegli.h"
 
 #include <jxl/color_encoding.h>
+#include <jxl/types.h>
 #include <stdint.h>
 
+#include <cstddef>
 #include <cstdint>
+#include <cstdio>
+#include <cstring>
 #include <memory>
+#include <ostream>
+#include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "lib/extras/dec/color_hints.h"
@@ -78,7 +85,7 @@ Status EncodeWithLibjpeg(const PackedPixelFile& ppf, int quality,
   std::unique_ptr<Encoder> encoder = GetJPEGEncoder();
   encoder->SetOption("q", std::to_string(quality));
   EncodedImage encoded;
-  JXL_RETURN_IF_ERROR(encoder->Encode(ppf, &encoded));
+  JXL_RETURN_IF_ERROR(encoder->Encode(ppf, &encoded, nullptr));
   JXL_RETURN_IF_ERROR(!encoded.bitstreams.empty());
   *compressed = std::move(encoded.bitstreams[0]);
   return true;

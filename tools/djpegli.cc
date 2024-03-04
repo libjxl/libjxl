@@ -175,7 +175,7 @@ int DJpegliMain(int argc, const char* argv[]) {
     return EXIT_FAILURE;
   }
   jxl::extras::EncodedImage encoded_image;
-  if (!encoder->Encode(ppf, &encoded_image) ||
+  if (!encoder->Encode(ppf, &encoded_image, nullptr) ||
       encoded_image.bitstreams.empty()) {
     fprintf(stderr, "Encode failed\n");
     return EXIT_FAILURE;

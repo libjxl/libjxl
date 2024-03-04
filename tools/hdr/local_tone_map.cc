@@ -7,457 +7,307 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "lib/jxl/base/status.h"
+#include "tools/file_io.h"
+
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "tools/hdr/local_tone_map.cc"
+#include <hwy/foreach_target.h>
+#include <hwy/highway.h>
+
 #include "lib/extras/codec.h"
+#include "lib/extras/packed_image_convert.h"
 #include "lib/extras/tone_mapping.h"
+#include "lib/jxl/base/fast_math-inl.h"
 #include "lib/jxl/convolve.h"
-#include "lib/jxl/enc_gamma_correct.h"
 #include "lib/jxl/image_bundle.h"
-#include "tools/args.h"
 #include "tools/cmdline.h"
 #include "tools/thread_pool_internal.h"
+
+HWY_BEFORE_NAMESPACE();
+namespace jxl {
+namespace HWY_NAMESPACE {
+namespace {
+
+using ::hwy::HWY_NAMESPACE::Add;
+using ::hwy::HWY_NAMESPACE::Div;
+using ::hwy::HWY_NAMESPACE::Lt;
+using ::hwy::HWY_NAMESPACE::Max;
+using ::hwy::HWY_NAMESPACE::Min;
+using ::hwy::HWY_NAMESPACE::Mul;
+using ::hwy::HWY_NAMESPACE::MulAdd;
+using ::hwy::HWY_NAMESPACE::Sub;
+
+constexpr size_t kDownsampling = 128;
+
+// Color components must be in linear Rec. 2020.
+template <typename V>
+V ComputeLuminance(const float intensity_target, const V r, const V g,
+                   const V b) {
+  hwy::HWY_NAMESPACE::DFromV<V> df;
+  const auto luminance =
+      Mul(Set(df, intensity_target),
+          MulAdd(Set(df, 0.2627f), r,
+                 MulAdd(Set(df, 0.6780f), g, Mul(Set(df, 0.0593f), b))));
+  return Max(Set(df, 1e-12f), luminance);
+}
+
+ImageF DownsampledLuminances(const Image3F& image,
+                             const float intensity_target) {
+  HWY_CAPPED(float, kDownsampling) d;
+  JXL_ASSIGN_OR_DIE(ImageF result,
+                    ImageF::Create(DivCeil(image.xsize(), kDownsampling),
+                                   DivCeil(image.ysize(), kDownsampling)));
+  FillImage(kDefaultIntensityTarget, &result);
+  for (size_t y = 0; y < image.ysize(); ++y) {
+    const float* const JXL_RESTRICT rows[3] = {image.ConstPlaneRow(0, y),
+                                               image.ConstPlaneRow(1, y),
+                                               image.ConstPlaneRow(2, y)};
+    float* const JXL_RESTRICT result_row = result.Row(y / kDownsampling);
+
+    for (size_t x = 0; x < image.xsize(); x += kDownsampling) {
+      auto max = Set(d, result_row[x / kDownsampling]);
+      for (size_t kx = 0; kx < kDownsampling && x + kx < image.xsize();
+           kx += Lanes(d)) {
+        max =
+            Max(max, ComputeLuminance(
+                         intensity_target, Load(d, rows[0] + x + kx),
+                         Load(d, rows[1] + x + kx), Load(d, rows[2] + x + kx)));
+      }
+      result_row[x / kDownsampling] = GetLane(MaxOfLanes(d, max));
+    }
+  }
+  HWY_FULL(float) df;
+  for (size_t y = 0; y < result.ysize(); ++y) {
+    float* const JXL_RESTRICT row = result.Row(y);
+    for (size_t x = 0; x < result.xsize(); x += Lanes(df)) {
+      Store(FastLog2f(df, Load(df, row + x)), df, row + x);
+    }
+  }
+  return result;
+}
+
+ImageF Upsample(const ImageF& image, ThreadPool* pool) {
+  JXL_ASSIGN_OR_DIE(ImageF upsampled_horizontally,
+                    ImageF::Create(2 * image.xsize(), image.ysize()));
+  const auto BoundX = [&image](ssize_t x) {
+    return Clamp1<ssize_t>(x, 0, image.xsize() - 1);
+  };
+  JXL_CHECK(RunOnPool(
+      pool, 0, image.ysize(), &ThreadPool::NoInit,
+      [&](const int32_t y, const int32_t /*thread_id*/) {
+        const float* const JXL_RESTRICT in_row = image.ConstRow(y);
+        float* const JXL_RESTRICT out_row = upsampled_horizontally.Row(y);
+
+        for (ssize_t x = 0; x < static_cast<ssize_t>(image.xsize()); ++x) {
+          out_row[2 * x] = in_row[x];
+          out_row[2 * x + 1] =
+              0.5625f * (in_row[x] + in_row[BoundX(x + 1)]) -
+              0.0625f * (in_row[BoundX(x - 1)] + in_row[BoundX(x + 2)]);
+        }
+      },
+      "UpsampleHorizontally"));
+
+  HWY_FULL(float) df;
+  JXL_ASSIGN_OR_DIE(ImageF upsampled,
+                    ImageF::Create(2 * image.xsize(), 2 * image.ysize()));
+  const auto BoundY = [&image](ssize_t y) {
+    return Clamp1<ssize_t>(y, 0, image.ysize() - 1);
+  };
+  JXL_CHECK(RunOnPool(
+      pool, 0, image.ysize(), &ThreadPool::NoInit,
+      [&](const int32_t y, const int32_t /*thread_id*/) {
+        const float* const JXL_RESTRICT in_rows[4] = {
+            upsampled_horizontally.ConstRow(BoundY(y - 1)),
+            upsampled_horizontally.ConstRow(y),
+            upsampled_horizontally.ConstRow(BoundY(y + 1)),
+            upsampled_horizontally.ConstRow(BoundY(y + 2)),
+        };
+        float* const JXL_RESTRICT out_rows[2] = {
+            upsampled.Row(2 * y),
+            upsampled.Row(2 * y + 1),
+        };
+
+        for (ssize_t x = 0;
+             x < static_cast<ssize_t>(upsampled_horizontally.xsize());
+             x += Lanes(df)) {
+          Store(Load(df, in_rows[1] + x), df, out_rows[0] + x);
+          Store(MulAdd(Set(df, 0.5625f),
+                       Add(Load(df, in_rows[1] + x), Load(df, in_rows[2] + x)),
+                       Mul(Set(df, -0.0625f), Add(Load(df, in_rows[0] + x),
+                                                  Load(df, in_rows[3] + x)))),
+                df, out_rows[1] + x);
+        }
+      },
+      "UpsampleVertically"));
+  return upsampled;
+}
+
+float ComputeOffset(const ImageF& original_luminances,
+                    const ImageF& upsampled_blurred_luminances) {
+  HWY_CAPPED(float, kDownsampling) df;
+  float max_difference = 0.f;
+  for (size_t y = 0; y < original_luminances.ysize(); ++y) {
+    const float* const JXL_RESTRICT original_row =
+        original_luminances.ConstRow(y);
+    for (size_t x = 0; x < original_luminances.xsize(); ++x) {
+      auto block_min = Set(df, std::numeric_limits<float>::infinity());
+      for (size_t ky = 0; ky < kDownsampling; ++ky) {
+        const float* const JXL_RESTRICT blurred_row =
+            upsampled_blurred_luminances.ConstRow(kDownsampling * y + ky);
+        for (size_t kx = 0; kx < kDownsampling; kx += Lanes(df)) {
+          block_min =
+              Min(block_min, Load(df, blurred_row + kDownsampling * x + kx));
+        }
+      }
+
+      const float difference =
+          original_row[x] - GetLane(MinOfLanes(df, block_min));
+      if (difference > max_difference) max_difference = difference;
+    }
+  }
+  return max_difference;
+}
+
+Status ApplyLocalToneMapping(const ImageF& blurred_luminances,
+                             const float intensity_target,
+                             const float max_difference, Image3F* color,
+                             ThreadPool* pool) {
+  HWY_FULL(float) df;
+
+  const auto log_default_intensity_target =
+      Set(df, FastLog2f(kDefaultIntensityTarget));
+  const auto log_10000 = Set(df, FastLog2f(10000.f));
+  JXL_RETURN_IF_ERROR(RunOnPool(
+      pool, 0, color->ysize(), &ThreadPool::NoInit,
+      [&](const int32_t y, const int32_t /*thread_id*/) {
+        float* const JXL_RESTRICT rows[3] = {color->PlaneRow(0, y),
+                                             color->PlaneRow(1, y),
+                                             color->PlaneRow(2, y)};
+        const float* const JXL_RESTRICT blurred_lum_row =
+            blurred_luminances.ConstRow(y);
+
+        for (size_t x = 0; x < color->xsize(); x += Lanes(df)) {
+          const auto log_local_max =
+              Add(Load(df, blurred_lum_row + x), Set(df, max_difference));
+          const auto luminance =
+              ComputeLuminance(intensity_target, Load(df, rows[0] + x),
+                               Load(df, rows[1] + x), Load(df, rows[2] + x));
+          const auto log_luminance = FastLog2f(df, luminance);
+          const auto log_knee =
+              Mul(log_default_intensity_target,
+                  MulAdd(Set(df, -0.85f),
+                         Div(Sub(log_local_max, log_default_intensity_target),
+                             Sub(log_10000, log_default_intensity_target)),
+                         Set(df, 1.f)));
+          const auto second_segment_position =
+              Div(Sub(log_luminance, log_knee), Sub(log_local_max, log_knee));
+          const auto log_new_luminance = IfThenElse(
+              Lt(log_luminance, log_knee), log_luminance,
+              MulAdd(
+                  second_segment_position,
+                  MulAdd(Sub(log_default_intensity_target, log_knee),
+                         second_segment_position, Sub(log_knee, log_luminance)),
+                  log_luminance));
+          const auto new_luminance = FastPow2f(df, log_new_luminance);
+          const auto ratio =
+              Div(Mul(Set(df, intensity_target), new_luminance),
+                  Mul(luminance, Set(df, kDefaultIntensityTarget)));
+          for (int c = 0; c < 3; ++c) {
+            Store(Mul(ratio, Load(df, rows[c] + x)), df, rows[c] + x);
+          }
+        }
+      },
+      "ApplyLocalToneMapping"));
+
+  return true;
+}
+
+}  // namespace
+}  // namespace HWY_NAMESPACE
+}  // namespace jxl
+HWY_AFTER_NAMESPACE();
+
+#if HWY_ONCE
 
 namespace jxl {
 namespace {
 
-constexpr WeightsSeparable5 kPyramidFilter = {
-    {HWY_REP4(.375f), HWY_REP4(.25f), HWY_REP4(.0625f)},
-    {HWY_REP4(.375f), HWY_REP4(.25f), HWY_REP4(.0625f)}};
+HWY_EXPORT(DownsampledLuminances);
+HWY_EXPORT(Upsample);
+HWY_EXPORT(ComputeOffset);
+HWY_EXPORT(ApplyLocalToneMapping);
 
-template <typename Tin, typename Tout>
-void Subtract(const Image3<Tin>& image1, const Image3<Tin>& image2,
-              Image3<Tout>* out) {
-  const size_t xsize = image1.xsize();
-  const size_t ysize = image1.ysize();
-  JXL_CHECK(xsize == image2.xsize());
-  JXL_CHECK(ysize == image2.ysize());
-
-  for (size_t c = 0; c < 3; ++c) {
-    for (size_t y = 0; y < ysize; ++y) {
-      const Tin* const JXL_RESTRICT row1 = image1.ConstPlaneRow(c, y);
-      const Tin* const JXL_RESTRICT row2 = image2.ConstPlaneRow(c, y);
-      Tout* const JXL_RESTRICT row_out = out->PlaneRow(c, y);
-      for (size_t x = 0; x < xsize; ++x) {
-        row_out[x] = row1[x] - row2[x];
-      }
-    }
-  }
+void Blur(ImageF* image) {
+  static constexpr WeightsSeparable5 kBlurFilter = {
+      {HWY_REP4(.375f), HWY_REP4(.25f), HWY_REP4(.0625f)},
+      {HWY_REP4(.375f), HWY_REP4(.25f), HWY_REP4(.0625f)}};
+  JXL_ASSIGN_OR_DIE(ImageF blurred_once,
+                    ImageF::Create(image->xsize(), image->ysize()));
+  Separable5(*image, Rect(*image), kBlurFilter, nullptr, &blurred_once);
+  Separable5(blurred_once, Rect(blurred_once), kBlurFilter, nullptr, image);
 }
 
-// Adds `what` of the size of `rect` to `to` in the position of `rect`.
-template <typename Tin, typename Tout>
-void AddTo(const Rect& rect, const Image3<Tin>& what, Image3<Tout>* to) {
-  const size_t xsize = what.xsize();
-  const size_t ysize = what.ysize();
-  JXL_ASSERT(xsize == rect.xsize());
-  JXL_ASSERT(ysize == rect.ysize());
-  for (size_t c = 0; c < 3; ++c) {
-    for (size_t y = 0; y < ysize; ++y) {
-      const Tin* JXL_RESTRICT row_what = what.ConstPlaneRow(c, y);
-      Tout* JXL_RESTRICT row_to = rect.PlaneRow(to, c, y);
-      for (size_t x = 0; x < xsize; ++x) {
-        row_to[x] += row_what[x];
-      }
-    }
-  }
-}
+void ProcessFrame(CodecInOut* image, float preserve_saturation,
+                  ThreadPool* pool) {
+  ColorEncoding linear_rec2020;
+  JXL_CHECK(linear_rec2020.SetWhitePointType(WhitePoint::kD65));
+  JXL_CHECK(linear_rec2020.SetPrimariesType(Primaries::k2100));
+  linear_rec2020.Tf().SetTransferFunction(TransferFunction::kLinear);
+  JXL_CHECK(linear_rec2020.CreateICC());
+  JXL_CHECK(
+      image->Main().TransformTo(linear_rec2020, *JxlGetDefaultCms(), pool));
 
-template <typename T>
-Plane<T> Product(const Plane<T>& a, const Plane<T>& b) {
-  Plane<T> c(a.xsize(), a.ysize());
-  for (size_t y = 0; y < a.ysize(); ++y) {
-    const T* const JXL_RESTRICT row_a = a.Row(y);
-    const T* const JXL_RESTRICT row_b = b.Row(y);
-    T* const JXL_RESTRICT row_c = c.Row(y);
-    for (size_t x = 0; x < a.xsize(); ++x) {
-      row_c[x] = row_a[x] * row_b[x];
-    }
-  }
-  return c;
-}
+  const float intensity_target = image->metadata.m.IntensityTarget();
 
-// Expects sRGB input.
-// Will call consumer(x, y, contrast) for each pixel.
-template <typename Consumer>
-void Contrast(const jxl::Image3F& image, const Consumer& consumer,
-              ThreadPool* const pool) {
-  static constexpr WeightsSymmetric3 kLaplacianWeights = {
-      {HWY_REP4(-4)}, {HWY_REP4(1)}, {HWY_REP4(0)}};
-  ImageF grayscale(image.xsize(), image.ysize());
-  static constexpr float kLuminances[3] = {0.2126, 0.7152, 0.0722};
-  for (size_t y = 0; y < image.ysize(); ++y) {
-    const float* const JXL_RESTRICT input_rows[3] = {
-        image.PlaneRow(0, y), image.PlaneRow(1, y), image.PlaneRow(2, y)};
-    float* const JXL_RESTRICT row = grayscale.Row(y);
+  Image3F color = std::move(*image->Main().color());
+  ImageF subsampled_image =
+      HWY_DYNAMIC_DISPATCH(DownsampledLuminances)(color, intensity_target);
+  JXL_ASSIGN_OR_DIE(
+      ImageF original_luminances,
+      ImageF::Create(subsampled_image.xsize(), subsampled_image.ysize()));
+  CopyImageTo(subsampled_image, &original_luminances);
 
-    for (size_t x = 0; x < image.xsize(); ++x) {
-      row[x] = LinearToSrgb8Direct(
-          kLuminances[0] * Srgb8ToLinearDirect(input_rows[0][x]) +
-          kLuminances[1] * Srgb8ToLinearDirect(input_rows[1][x]) +
-          kLuminances[2] * Srgb8ToLinearDirect(input_rows[2][x]));
-    }
+  Blur(&subsampled_image);
+  const auto& Upsample = HWY_DYNAMIC_DISPATCH(Upsample);
+  ImageF blurred_luminances = std::move(subsampled_image);
+  for (int downsampling = HWY_NAMESPACE::kDownsampling; downsampling > 1;
+       downsampling >>= 1) {
+    blurred_luminances =
+        Upsample(blurred_luminances, downsampling > 4 ? nullptr : pool);
   }
 
-  ImageF laplacian(image.xsize(), image.ysize());
-  Symmetric3(grayscale, Rect(grayscale), kLaplacianWeights, pool, &laplacian);
-  for (size_t y = 0; y < image.ysize(); ++y) {
-    const float* const JXL_RESTRICT row = laplacian.ConstRow(y);
-    for (size_t x = 0; x < image.xsize(); ++x) {
-      consumer(x, y, std::abs(row[x]));
-    }
-  }
-}
+  const float max_difference = HWY_DYNAMIC_DISPATCH(ComputeOffset)(
+      original_luminances, blurred_luminances);
 
-template <typename Consumer>
-void Saturation(const jxl::Image3F& image, const Consumer& consumer) {
-  for (size_t y = 0; y < image.ysize(); ++y) {
-    const float* const JXL_RESTRICT rows[3] = {
-        image.PlaneRow(0, y), image.PlaneRow(1, y), image.PlaneRow(2, y)};
-    for (size_t x = 0; x < image.xsize(); ++x) {
-      // TODO(sboukortt): experiment with other methods of computing the
-      // saturation, e.g. C*/L* in LUV/LCh.
-      const float mean = (1.f / 3) * (rows[0][x] + rows[1][x] + rows[2][x]);
-      const float deviations[3] = {rows[0][x] - mean, rows[1][x] - mean,
-                                   rows[2][x] - mean};
-      consumer(x, y,
-               std::sqrt((1.f / 3) * (deviations[0] * deviations[0] +
-                                      deviations[1] * deviations[1] +
-                                      deviations[2] * deviations[2])));
-    }
-  }
-}
+  JXL_CHECK(HWY_DYNAMIC_DISPATCH(ApplyLocalToneMapping)(
+      blurred_luminances, intensity_target, max_difference, &color, pool));
 
-template <typename Consumer>
-void MidToneness(const jxl::Image3F& image, const float sigma,
-                 const Consumer& consumer) {
-  const float inv_sigma_squared = 1.f / (sigma * sigma);
-  const auto Gaussian = [inv_sigma_squared](const float x) {
-    return std::exp(-.5f * (x - .5f) * (x - .5f) * inv_sigma_squared);
-  };
-  for (size_t y = 0; y < image.ysize(); ++y) {
-    const float* const JXL_RESTRICT rows[3] = {
-        image.PlaneRow(0, y), image.PlaneRow(1, y), image.PlaneRow(2, y)};
-    for (size_t x = 0; x < image.xsize(); ++x) {
-      consumer(
-          x, y,
-          Gaussian(rows[0][x]) * Gaussian(rows[1][x]) * Gaussian(rows[2][x]));
-    }
-  }
-}
+  image->SetFromImage(std::move(color), linear_rec2020);
+  image->metadata.m.color_encoding = linear_rec2020;
+  image->metadata.m.SetIntensityTarget(kDefaultIntensityTarget);
 
-ImageF ComputeWeights(const jxl::Image3F& image, const float contrast_weight,
-                      const float saturation_weight,
-                      const float midtoneness_weight,
-                      const float midtoneness_sigma, ThreadPool* const pool) {
-  ImageF log_weights(image.xsize(), image.ysize());
-  ZeroFillImage(&log_weights);
+  JXL_CHECK(GamutMap(image, preserve_saturation, pool));
 
-  if (contrast_weight > 0) {
-    Contrast(
-        image,
-        [&log_weights, contrast_weight](const size_t x, const size_t y,
-                                        const float weight) {
-          log_weights.Row(y)[x] = contrast_weight * std::log(weight);
-        },
-        pool);
-  }
-
-  if (saturation_weight > 0) {
-    Saturation(image, [&log_weights, saturation_weight](
-                          const size_t x, const size_t y, const float weight) {
-      log_weights.Row(y)[x] += saturation_weight * std::log(weight);
-    });
-  }
-
-  if (midtoneness_weight > 0) {
-    MidToneness(image, midtoneness_sigma,
-                [&log_weights, midtoneness_weight](
-                    const size_t x, const size_t y, const float weight) {
-                  log_weights.Row(y)[x] +=
-                      midtoneness_weight * std::log(weight);
-                });
-  }
-
-  ImageF weights = std::move(log_weights);
-
-  for (size_t y = 0; y < weights.ysize(); ++y) {
-    float* const JXL_RESTRICT row = weights.Row(y);
-    for (size_t x = 0; x < weights.xsize(); ++x) {
-      row[x] = std::exp(row[x]);
-    }
-  }
-
-  return weights;
-}
-
-std::vector<ImageF> ComputeWeights(const std::vector<Image3F>& images,
-                                   const float contrast_weight,
-                                   const float saturation_weight,
-                                   const float midtoneness_weight,
-                                   const float midtoneness_sigma,
-                                   ThreadPool* const pool) {
-  std::vector<ImageF> weights;
-  weights.reserve(images.size());
-  for (const Image3F& image : images) {
-    if (image.xsize() != images.front().xsize() ||
-        image.ysize() != images.front().ysize()) {
-      return {};
-    }
-    weights.push_back(ComputeWeights(image, contrast_weight, saturation_weight,
-                                     midtoneness_weight, midtoneness_sigma,
-                                     pool));
-  }
-
-  std::vector<float*> rows(images.size());
-  for (size_t y = 0; y < images.front().ysize(); ++y) {
-    for (size_t i = 0; i < images.size(); ++i) {
-      rows[i] = weights[i].Row(y);
-    }
-    for (size_t x = 0; x < images.front().xsize(); ++x) {
-      float sum = 1e-9f;
-      for (size_t i = 0; i < images.size(); ++i) {
-        sum += rows[i][x];
-      }
-      const float ratio = 1.f / sum;
-      for (size_t i = 0; i < images.size(); ++i) {
-        rows[i][x] *= ratio;
-      }
-    }
-  }
-
-  return weights;
-}
-
-ImageF Downsample(const ImageF& image, ThreadPool* const pool) {
-  ImageF filtered(image.xsize(), image.ysize());
-  Separable5(image, Rect(image), kPyramidFilter, pool, &filtered);
-  ImageF result(DivCeil(image.xsize(), 2), DivCeil(image.ysize(), 2));
-  for (size_t y = 0; y < result.ysize(); ++y) {
-    const float* const JXL_RESTRICT filtered_row = filtered.ConstRow(2 * y);
-    float* const JXL_RESTRICT row = result.Row(y);
-    for (size_t x = 0; x < result.xsize(); ++x) {
-      row[x] = filtered_row[2 * x];
-    }
-  }
-  return result;
-}
-
-Image3F Downsample(const Image3F& image, ThreadPool* const pool) {
-  return Image3F(Downsample(image.Plane(0), pool),
-                 Downsample(image.Plane(1), pool),
-                 Downsample(image.Plane(2), pool));
-}
-
-Image3F PadImageMirror(const Image3F& in, const size_t xborder,
-                       const size_t yborder) {
-  size_t xsize = in.xsize();
-  size_t ysize = in.ysize();
-  Image3F out(xsize + 2 * xborder, ysize + 2 * yborder);
-  if (xborder > xsize || yborder > ysize) {
-    for (size_t c = 0; c < 3; c++) {
-      for (int32_t y = 0; y < static_cast<int32_t>(out.ysize()); y++) {
-        float* row_out = out.PlaneRow(c, y);
-        const float* row_in = in.PlaneRow(
-            c, Mirror(y - static_cast<int32_t>(yborder), in.ysize()));
-        for (int32_t x = 0; x < static_cast<int32_t>(out.xsize()); x++) {
-          int32_t xin = Mirror(x - static_cast<int32_t>(xborder), in.xsize());
-          row_out[x] = row_in[xin];
-        }
-      }
-    }
-    return out;
-  }
-  CopyImageTo(Rect(in), in, Rect(xborder, yborder, xsize, ysize), &out);
-  for (size_t c = 0; c < 3; c++) {
-    // Horizontal pad.
-    for (size_t y = 0; y < ysize; y++) {
-      for (size_t x = 0; x < xborder; x++) {
-        out.PlaneRow(c, y + yborder)[x] =
-            in.ConstPlaneRow(c, y)[xborder - x - 1];
-        out.PlaneRow(c, y + yborder)[x + xsize + xborder] =
-            in.ConstPlaneRow(c, y)[xsize - 1 - x];
-      }
-    }
-    // Vertical pad.
-    for (size_t y = 0; y < yborder; y++) {
-      memcpy(out.PlaneRow(c, y), out.ConstPlaneRow(c, 2 * yborder - 1 - y),
-             out.xsize() * sizeof(float));
-      memcpy(out.PlaneRow(c, y + ysize + yborder),
-             out.ConstPlaneRow(c, ysize + yborder - 1 - y),
-             out.xsize() * sizeof(float));
-    }
-  }
-  return out;
-}
-
-Image3F Upsample(const Image3F& image, const bool odd_width,
-                 const bool odd_height, ThreadPool* const pool) {
-  const Image3F padded = PadImageMirror(image, 1, 1);
-  Image3F upsampled(2 * padded.xsize(), 2 * padded.ysize());
-  ZeroFillImage(&upsampled);
-  for (int c = 0; c < 3; ++c) {
-    for (size_t y = 0; y < padded.ysize(); ++y) {
-      const float* const JXL_RESTRICT padded_row = padded.ConstPlaneRow(c, y);
-      float* const JXL_RESTRICT row = upsampled.PlaneRow(c, 2 * y);
-      for (size_t x = 0; x < padded.xsize(); ++x) {
-        row[2 * x] = 4 * padded_row[x];
-      }
-    }
-  }
-  Image3F filtered(upsampled.xsize(), upsampled.ysize());
-  for (int c = 0; c < 3; ++c) {
-    Separable5(upsampled.Plane(c), Rect(upsampled), kPyramidFilter, pool,
-               &filtered.Plane(c));
-  }
-  Image3F result(2 * image.xsize() - (odd_width ? 1 : 0),
-                 2 * image.ysize() - (odd_height ? 1 : 0));
-  CopyImageTo(Rect(2, 2, result.xsize(), result.ysize()), filtered,
-              Rect(result), &result);
-  return result;
-}
-
-std::vector<ImageF> GaussianPyramid(ImageF image, int num_levels,
-                                    ThreadPool* pool) {
-  std::vector<ImageF> pyramid(num_levels);
-  for (int i = 0; i < num_levels - 1; ++i) {
-    ImageF downsampled = Downsample(image, pool);
-    pyramid[i] = std::move(image);
-    image = std::move(downsampled);
-  }
-  pyramid[num_levels - 1] = std::move(image);
-  return pyramid;
-}
-
-std::vector<Image3F> LaplacianPyramid(Image3F image, int num_levels,
-                                      ThreadPool* pool) {
-  std::vector<Image3F> pyramid(num_levels);
-  for (int i = 0; i < num_levels - 1; ++i) {
-    Image3F downsampled = Downsample(image, pool);
-    const bool odd_width = image.xsize() % 2 != 0;
-    const bool odd_height = image.ysize() % 2 != 0;
-    Subtract(image, Upsample(downsampled, odd_width, odd_height, pool), &image);
-    pyramid[i] = std::move(image);
-    image = std::move(downsampled);
-  }
-  pyramid[num_levels - 1] = std::move(image);
-  return pyramid;
-}
-
-Image3F ReconstructFromLaplacianPyramid(std::vector<Image3F> pyramid,
-                                        ThreadPool* const pool) {
-  Image3F result = std::move(pyramid.back());
-  pyramid.pop_back();
-  for (auto it = pyramid.rbegin(); it != pyramid.rend(); ++it) {
-    const bool odd_width = it->xsize() % 2 != 0;
-    const bool odd_height = it->ysize() % 2 != 0;
-    result = Upsample(result, odd_width, odd_height, pool);
-    AddTo(Rect(result), *it, &result);
-  }
-  return result;
-}
-
-// Exposure fusion algorithm as described in:
-// https://mericam.github.io/exposure_fusion/
-//
-// That is, given n images of identical size: for each pixel coordinate, one
-// weight per input image is computed, indicating how much each input image will
-// contribute to the result. There are therefore n weight maps, the sum of which
-// is 1 at every pixel.
-//
-// Those weights are then applied at various scales rather than directly at full
-// resolution. To understand how, it helps to familiarize oneself with Laplacian
-// and Gaussian pyramids, as described in "The Laplacian Pyramid as a Compact
-// Image Code" by P. Burt and E. Adelson:
-// http://persci.mit.edu/pub_pdfs/pyramid83.pdf
-//
-// A Gaussian pyramid of k levels is a sequence of k images in which the first
-// image is the original image and each following level is a low-pass-filtered
-// version of the previous one. A Laplacian pyramid is obtained from a Gaussian
-// pyramid by:
-//
-//   laplacian_pyramid[i] = gaussian_pyramid[i] − gaussian_pyramid[i + 1].
-//   (The last item of the Laplacian pyramid is just the last one from the
-//    Gaussian pyramid without subtraction.)
-//
-// From there, the original image can be reconstructed by adding all the images
-// from the Laplacian pyramid together. (If desired, the Gaussian pyramid can be
-// reconstructed as well by storing the cumulative sums starting from the end.)
-//
-// Having established that, the application of the weight images is done by
-// constructing a Laplacian pyramid for each input image, as well as a Gaussian
-// pyramid for each weight image, and then constructing a Laplacian pyramid such
-// that:
-//
-//   pyramid[i] = sum(laplacian_pyramids[j][i] .* weight_gaussian_pyramids[j][i]
-//                      for j in 1..n)
-//
-// And then reconstructing an image from the pyramid thus obtained.
-Image3F ExposureFusion(std::vector<Image3F> images, int num_levels,
-                       const float contrast_weight,
-                       const float saturation_weight,
-                       const float midtoneness_weight,
-                       const float midtoneness_sigma, ThreadPool* const pool) {
-  std::vector<ImageF> weights =
-      ComputeWeights(images, contrast_weight, saturation_weight,
-                     midtoneness_weight, midtoneness_sigma, pool);
-
-  std::vector<Image3F> pyramid(num_levels);
-  for (size_t i = 0; i < images.size(); ++i) {
-    const std::vector<ImageF> weight_pyramid =
-        GaussianPyramid(std::move(weights[i]), num_levels, pool);
-    const std::vector<Image3F> image_pyramid =
-        LaplacianPyramid(std::move(images[i]), num_levels, pool);
-
-    for (int k = 0; k < num_levels; ++k) {
-      Image3F product(Product(weight_pyramid[k], image_pyramid[k].Plane(0)),
-                      Product(weight_pyramid[k], image_pyramid[k].Plane(1)),
-                      Product(weight_pyramid[k], image_pyramid[k].Plane(2)));
-      if (pyramid[k].xsize() == 0) {
-        pyramid[k] = std::move(product);
-      } else {
-        AddTo(Rect(product), product, &pyramid[k]);
-      }
-    }
-  }
-
-  return ReconstructFromLaplacianPyramid(std::move(pyramid), pool);
+  ColorEncoding rec2020_srgb = linear_rec2020;
+  rec2020_srgb.Tf().SetTransferFunction(TransferFunction::kSRGB);
+  JXL_CHECK(rec2020_srgb.CreateICC());
+  JXL_CHECK(image->Main().TransformTo(rec2020_srgb, *JxlGetDefaultCms(), pool));
+  image->metadata.m.color_encoding = rec2020_srgb;
 }
 
 }  // namespace
 }  // namespace jxl
 
 int main(int argc, const char** argv) {
-  jpegxl::tools::ThreadPoolInternal pool;
+  jpegxl::tools::ThreadPoolInternal pool(8);
 
   jpegxl::tools::CommandLineParser parser;
-  float max_nits = 0;
-  parser.AddOptionValue('m', "max_nits", "nits",
-                        "maximum luminance in the image", &max_nits,
-                        &jpegxl::tools::ParseFloat, 0);
-  float preserve_saturation = .1f;
+  float preserve_saturation = .4f;
   parser.AddOptionValue(
       's', "preserve_saturation", "0..1",
       "to what extent to try and preserve saturation over luminance",
       &preserve_saturation, &jpegxl::tools::ParseFloat, 0);
-  int64_t num_levels = -1;
-  parser.AddOptionValue('l', "num_levels", "1..",
-                        "number of levels in the pyramid", &num_levels,
-                        &jpegxl::tools::ParseInt64, 0);
-  float contrast_weight = 0.f;
-  parser.AddOptionValue('c', "contrast_weight", "0..",
-                        "importance of contrast when computing weights",
-                        &contrast_weight, &jpegxl::tools::ParseFloat, 0);
-  float saturation_weight = .2f;
-  parser.AddOptionValue('a', "saturation_weight", "0..",
-                        "importance of saturation when computing weights",
-                        &saturation_weight, &jpegxl::tools::ParseFloat, 0);
-  float midtoneness_weight = 1.f;
-  parser.AddOptionValue('t', "midtoneness_weight", "0..",
-                        "importance of \"midtoneness\" when computing weights",
-                        &midtoneness_weight, &jpegxl::tools::ParseFloat, 0);
-  float midtoneness_sigma = .2f;
-  parser.AddOptionValue('g', "midtoneness_sigma", "0..",
-                        "spread of the function that computes midtoneness",
-                        &midtoneness_sigma, &jpegxl::tools::ParseFloat, 0);
   const char* input_filename = nullptr;
   auto input_filename_option = parser.AddPositionalOption(
       "input", true, "input image", &input_filename, 0);
@@ -491,51 +341,15 @@ int main(int argc, const char** argv) {
   JXL_CHECK(jpegxl::tools::ReadFile(input_filename, &encoded));
   JXL_CHECK(jxl::SetFromBytes(jxl::Bytes(encoded), color_hints, &image, &pool));
 
-  if (max_nits > 0) {
-    image.metadata.m.SetIntensityTarget(max_nits);
-  } else {
-    max_nits = image.metadata.m.IntensityTarget();
-  }
+  jxl::ProcessFrame(&image, preserve_saturation, &pool);
 
-  std::vector<jxl::Image3F> input_images;
-
-  if (max_nits <= 4 * jxl::kDefaultIntensityTarget) {
-    jxl::CodecInOut sRGB_image;
-    jxl::Image3F color(image.xsize(), image.ysize());
-    CopyImageTo(*image.Main().color(), &color);
-    sRGB_image.SetFromImage(std::move(color), image.Main().c_current());
-    JXL_CHECK(sRGB_image.Main().TransformTo(jxl::ColorEncoding::SRGB(),
-                                            *JxlGetDefaultCms(), &pool));
-    input_images.push_back(std::move(*sRGB_image.Main().color()));
-  }
-
-  for (int i = 0; i < 4; ++i) {
-    const float target = std::ldexp(jxl::kDefaultIntensityTarget, 2 - i);
-    if (target >= max_nits) continue;
-    jxl::CodecInOut tone_mapped_image;
-    jxl::Image3F color(image.xsize(), image.ysize());
-    CopyImageTo(*image.Main().color(), &color);
-    tone_mapped_image.SetFromImage(std::move(color), image.Main().c_current());
-    tone_mapped_image.metadata.m.SetIntensityTarget(
-        image.metadata.m.IntensityTarget());
-    JXL_CHECK(jxl::ToneMapTo({0, target}, &tone_mapped_image, &pool));
-    JXL_CHECK(jxl::GamutMap(&tone_mapped_image, preserve_saturation, &pool));
-    JXL_CHECK(tone_mapped_image.Main().TransformTo(jxl::ColorEncoding::SRGB(),
-                                                   *JxlGetDefaultCms(), &pool));
-    input_images.push_back(std::move(*tone_mapped_image.Main().color()));
-  }
-
-  if (num_levels < 1) {
-    num_levels = jxl::FloorLog2Nonzero(std::min(image.xsize(), image.ysize()));
-  }
-
-  jxl::Image3F fused = jxl::ExposureFusion(
-      std::move(input_images), num_levels, contrast_weight, saturation_weight,
-      midtoneness_weight, midtoneness_sigma, &pool);
-
-  jxl::CodecInOut output;
-  output.SetFromImage(std::move(fused), jxl::ColorEncoding::SRGB());
-
-  JXL_CHECK(jxl::Encode(output, output_filename, &encoded, &pool));
+  JxlPixelFormat format = {3, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
+  jxl::extras::PackedPixelFile ppf =
+      jxl::extras::ConvertImage3FToPackedPixelFile(
+          *image.Main().color(), image.metadata.m.color_encoding, format,
+          &pool);
+  JXL_CHECK(jxl::Encode(ppf, output_filename, &encoded, &pool));
   JXL_CHECK(jpegxl::tools::WriteFile(output_filename, encoded));
 }
+
+#endif

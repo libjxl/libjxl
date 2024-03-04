@@ -12,10 +12,12 @@
 #endif
 
 #include <inttypes.h>
+#include <jxl/codestream_header.h>
 #include <jxl/decode.h>
 #include <jxl/decode_cxx.h>
 #include <jxl/resizable_parallel_runner.h>
 #include <jxl/resizable_parallel_runner_cxx.h>
+#include <jxl/types.h>
 #include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -106,7 +108,7 @@ bool DecodeJpegXlOneShot(const uint8_t* jxl, size_t size,
         return false;
       }
       pixels->resize(*xsize * *ysize * 4);
-      void* pixels_buffer = (void*)pixels->data();
+      void* pixels_buffer = static_cast<void*>(pixels->data());
       size_t pixels_buffer_size = pixels->size() * sizeof(float);
       if (JXL_DEC_SUCCESS != JxlDecoderSetImageOutBuffer(dec.get(), &format,
                                                          pixels_buffer,
@@ -145,8 +147,8 @@ bool WritePFM(const char* filename, const float* pixels, size_t xsize,
   uint8_t little_endian[4];
   memcpy(little_endian, &endian_test, 4);
 
-  fprintf(file, "PF\n%d %d\n%s\n", (int)xsize, (int)ysize,
-          little_endian[0] ? "-1.0" : "1.0");
+  fprintf(file, "PF\n%d %d\n%s\n", static_cast<int>(xsize),
+          static_cast<int>(ysize), little_endian[0] ? "-1.0" : "1.0");
   for (int y = ysize - 1; y >= 0; y--) {
     for (size_t x = 0; x < xsize; x++) {
       for (size_t c = 0; c < 3; c++) {
@@ -231,7 +233,8 @@ int main(int argc, char* argv[]) {
 
   std::vector<float> pixels;
   std::vector<uint8_t> icc_profile;
-  size_t xsize = 0, ysize = 0;
+  size_t xsize = 0;
+  size_t ysize = 0;
   if (!DecodeJpegXlOneShot(jxl.data(), jxl.size(), &pixels, &xsize, &ysize,
                            &icc_profile)) {
     fprintf(stderr, "Error while decoding the jxl file\n");

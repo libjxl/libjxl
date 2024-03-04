@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include <cmath>
+#include <cstdint>
 #include <mutex>
 
 #include "jxl/encode.h"
@@ -55,8 +56,10 @@ class Parser {
       case 'f':
         header->is_gray = true;
         return ParseHeaderPFM(header, pos);
+
+      default:
+        return false;
     }
-    return false;
   }
 
   // Exposed for testing
@@ -160,11 +163,12 @@ class Parser {
 
   Status MatchString(const char* keyword, bool skipws = true) {
     const uint8_t* ppos = pos_;
-    while (*keyword) {
+    const uint8_t* kw = reinterpret_cast<const uint8_t*>(keyword);
+    while (*kw) {
       if (ppos >= end_) return JXL_FAILURE("PAM: unexpected end of input");
-      if (*keyword != *ppos) return false;
+      if (*kw != *ppos) return false;
       ppos++;
-      keyword++;
+      kw++;
     }
     pos_ = ppos;
     if (skipws) {
@@ -390,7 +394,7 @@ StatusOr<ChunkedPNMDecoder> ChunkedPNMDecoder::Init(const char* path) {
   if (header.ysize * row_size + dec.data_start_ < size) {
     return JXL_FAILURE("Invalid ppm");
   }
-  return std::move(dec);
+  return dec;
 }
 
 jxl::Status ChunkedPNMDecoder::InitializePPF(const ColorHints& color_hints,

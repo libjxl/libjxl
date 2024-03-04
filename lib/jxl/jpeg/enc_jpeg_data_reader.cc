@@ -23,7 +23,7 @@ namespace jxl {
 namespace jpeg {
 
 namespace {
-static const int kBrunsliMaxSampling = 15;
+const int kBrunsliMaxSampling = 15;
 
 // Macros for commonly used error conditions.
 
@@ -292,7 +292,7 @@ bool ProcessDHT(const uint8_t* data, const size_t len, JpegReadMode mode,
     }
     huff.is_last = (*pos == start_pos + marker_len);
     if (mode == JpegReadMode::kReadAll) {
-      BuildJpegHuffmanTable(&huff.counts[0], &huff.values[0], huff_lut);
+      BuildJpegHuffmanTable(huff.counts.data(), huff.values.data(), huff_lut);
     }
     jpg->huffman_code.push_back(huff);
   }
@@ -419,7 +419,7 @@ struct BitReaderState {
     if (bits_left_ <= 16) {
       while (bits_left_ <= 56) {
         val_ <<= 8;
-        val_ |= (uint64_t)GetNextByte();
+        val_ |= static_cast<uint64_t>(GetNextByte());
         bits_left_ += 8;
       }
     }

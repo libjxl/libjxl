@@ -6,13 +6,18 @@
 // This example encodes a file containing a floating point image to another
 // file containing JPEG XL image with a single frame.
 
+#include <jxl/codestream_header.h>
+#include <jxl/color_encoding.h>
 #include <jxl/encode.h>
 #include <jxl/encode_cxx.h>
 #include <jxl/thread_parallel_runner.h>
 #include <jxl/thread_parallel_runner_cxx.h>
+#include <jxl/types.h>
 #include <limits.h>
 #include <string.h>
 
+#include <cstdint>
+#include <cstdio>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -58,7 +63,7 @@ bool ReadPFM(const char* filename, std::vector<float>* pixels, uint32_t* xsize,
   data.resize(size);
 
   size_t readsize = fread(data.data(), 1, size, file);
-  if ((long)readsize != size) {
+  if (static_cast<long>(readsize) != size) {
     fclose(file);
     return false;
   }
@@ -111,8 +116,9 @@ bool ReadPFM(const char* filename, std::vector<float>* pixels, uint32_t* xsize,
     fprintf(stderr,
             "%s doesn't seem to be a Portable FloatMap file (pixel data bytes "
             "are %d, but expected %d * %d * 3 * 4 + %d (%d).\n",
-            filename, (int)data.size(), (int)*ysize, (int)*xsize, (int)offset,
-            (int)(*ysize * *xsize * 3 * 4 + offset));
+            filename, static_cast<int>(data.size()), static_cast<int>(*ysize),
+            static_cast<int>(*xsize), static_cast<int>(offset),
+            static_cast<int>(*ysize * *xsize * 3 * 4 + offset));
     return false;
   }
 
@@ -127,7 +133,7 @@ bool ReadPFM(const char* filename, std::vector<float>* pixels, uint32_t* xsize,
   pixels->resize(*ysize * *xsize * 3);
 
   for (int y = *ysize - 1; y >= 0; y--) {
-    for (int x = 0; x < (int)*xsize; x++) {
+    for (int x = 0; x < static_cast<int>(*xsize); x++) {
       for (int c = 0; c < 3; c++) {
         memcpy(pixels->data() + (y * *xsize + x) * 3 + c, data.data() + offset,
                sizeof(float));
@@ -188,7 +194,7 @@ bool EncodeJxlOneshot(const std::vector<float>& pixels, const uint32_t xsize,
 
   if (JXL_ENC_SUCCESS !=
       JxlEncoderAddImageFrame(frame_settings, &pixel_format,
-                              (void*)pixels.data(),
+                              static_cast<const void*>(pixels.data()),
                               sizeof(float) * pixels.size())) {
     fprintf(stderr, "JxlEncoderAddImageFrame failed\n");
     return false;

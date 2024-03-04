@@ -4,16 +4,20 @@
 // license that can be found in the LICENSE file.
 
 #include <jxl/cms.h>
+#include <jxl/types.h>
 #include <stdint.h>
 #include <stdio.h>
 
+#include <cstdlib>
 #include <string>
 #include <vector>
 
+#include "jxl/cms_interface.h"
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/color_hints.h"
 #include "lib/extras/metrics.h"
-#include "lib/jxl/base/data_parallel.h"
+#include "lib/extras/packed_image.h"
+#include "lib/extras/packed_image_convert.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
@@ -22,8 +26,6 @@
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/image.h"
-#include "lib/jxl/image_bundle.h"
-#include "lib/jxl/image_ops.h"
 #include "tools/file_io.h"
 #include "tools/thread_pool_internal.h"
 
@@ -32,20 +34,19 @@ namespace {
 using jpegxl::tools::ThreadPoolInternal;
 using jxl::ButteraugliParams;
 using jxl::CodecInOut;
-using jxl::ColorEncoding;
 using jxl::Image3F;
 using jxl::ImageF;
+using jxl::JxlButteraugliComparator;
 using jxl::Status;
 
-Status WriteImage(Image3F&& image, const std::string& filename) {
+Status WriteImage(const Image3F& image, const std::string& filename) {
   ThreadPoolInternal pool(4);
-  CodecInOut io;
-  io.metadata.m.SetUintSamples(8);
-  io.metadata.m.color_encoding = ColorEncoding::SRGB();
-  io.SetFromImage(std::move(image), io.metadata.m.color_encoding);
-
+  JxlPixelFormat format = {3, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0};
+  jxl::extras::PackedPixelFile ppf =
+      jxl::extras::ConvertImage3FToPackedPixelFile(
+          image, jxl::ColorEncoding::SRGB(), format, &pool);
   std::vector<uint8_t> encoded;
-  return jxl::Encode(io, filename, &encoded, &pool) &&
+  return jxl::Encode(ppf, filename, &encoded, &pool) &&
          jpegxl::tools::WriteFile(filename, encoded);
 }
 
@@ -92,8 +93,12 @@ Status RunButteraugli(const char* pathname1, const char* pathname2,
   ba_params.hf_asymmetry = 1.0f;
   ba_params.xmul = 1.0f;
   ba_params.intensity_target = intensity_target;
-  const float distance = jxl::ButteraugliDistance(
-      io1.Main(), io2.Main(), ba_params, *JxlGetDefaultCms(), &distmap, &pool);
+  const JxlCmsInterface& cms = *JxlGetDefaultCms();
+  JxlButteraugliComparator comparator(ba_params, cms);
+  float distance;
+  JXL_CHECK(ComputeScore(io1.Main(), io2.Main(), &comparator, cms, &distance,
+                         &distmap, &pool,
+                         /* ignore_alpha */ false));
   printf("%.10f\n", distance);
 
   double pnorm = jxl::ComputeDistanceP(distmap, ba_params, p);
@@ -102,8 +107,9 @@ Status RunButteraugli(const char* pathname1, const char* pathname2,
   if (!distmap_filename.empty()) {
     float good = jxl::ButteraugliFuzzyInverse(1.5);
     float bad = jxl::ButteraugliFuzzyInverse(0.5);
-    JXL_CHECK(WriteImage(jxl::CreateHeatMapImage(distmap, good, bad),
-                         distmap_filename));
+    JXL_ASSIGN_OR_DIE(Image3F heatmap,
+                      jxl::CreateHeatMapImage(distmap, good, bad));
+    JXL_CHECK(WriteImage(heatmap, distmap_filename));
   }
   if (!raw_distmap_filename.empty()) {
     FILE* out = fopen(raw_distmap_filename.c_str(), "wb");

@@ -76,8 +76,8 @@ FlickerTestWindow::FlickerTestWindow(FlickerTestParameters parameters,
                               alteredFolderEntries.end());
 #endif
 
-  auto onlyOriginal = originalImages - alteredImages,
-       onlyAltered = alteredImages - originalImages;
+  auto onlyOriginal = originalImages - alteredImages;
+  auto onlyAltered = alteredImages - originalImages;
   if (!onlyOriginal.isEmpty() || !onlyAltered.isEmpty()) {
     QMessageBox messageBox;
     messageBox.setIcon(QMessageBox::Warning);
@@ -166,7 +166,8 @@ retry:
 
       case QMessageBox::Ignore:
         outputStream_ << image << ",,,\n";
-        return nextImage();
+        nextImage();
+        return;
 
       case QMessageBox::Abort:
         ui_.stackedView->setCurrentWidget(ui_.finalPage);

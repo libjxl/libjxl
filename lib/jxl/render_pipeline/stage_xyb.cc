@@ -28,9 +28,9 @@ class XYBStage : public RenderPipelineStage {
         output_is_xyb_(output_encoding_info.color_encoding.GetColorSpace() ==
                        ColorSpace::kXYB) {}
 
-  void ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
-                  size_t xextra, size_t xsize, size_t xpos, size_t ypos,
-                  size_t thread_id) const final {
+  Status ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
+                    size_t xextra, size_t xsize, size_t xpos, size_t ypos,
+                    size_t thread_id) const final {
     const HWY_FULL(float) d;
     JXL_ASSERT(xextra == 0);
     const size_t xsize_v = RoundUpTo(xsize, Lanes(d));
@@ -52,7 +52,8 @@ class XYBStage : public RenderPipelineStage {
       const auto offset_x = Set(d, jxl::cms::kScaledXYBOffset[0]);
       const auto offset_y = Set(d, jxl::cms::kScaledXYBOffset[1]);
       const auto offset_bmy = Set(d, jxl::cms::kScaledXYBOffset[2]);
-      for (ssize_t x = -xextra; x < (ssize_t)(xsize + xextra); x += Lanes(d)) {
+      for (ssize_t x = -xextra; x < static_cast<ssize_t>(xsize + xextra);
+           x += Lanes(d)) {
         const auto in_x = LoadU(d, row0 + x);
         const auto in_y = LoadU(d, row1 + x);
         const auto in_b = LoadU(d, row2 + x);
@@ -64,7 +65,8 @@ class XYBStage : public RenderPipelineStage {
         StoreU(out_b, d, row2 + x);
       }
     } else {
-      for (ssize_t x = -xextra; x < (ssize_t)(xsize + xextra); x += Lanes(d)) {
+      for (ssize_t x = -xextra; x < static_cast<ssize_t>(xsize + xextra);
+           x += Lanes(d)) {
         const auto in_opsin_x = LoadU(d, row0 + x);
         const auto in_opsin_y = LoadU(d, row1 + x);
         const auto in_opsin_b = LoadU(d, row2 + x);
@@ -81,6 +83,7 @@ class XYBStage : public RenderPipelineStage {
     msan::PoisonMemory(row0 + xsize, sizeof(float) * (xsize_v - xsize));
     msan::PoisonMemory(row1 + xsize, sizeof(float) * (xsize_v - xsize));
     msan::PoisonMemory(row2 + xsize, sizeof(float) * (xsize_v - xsize));
+    return true;
   }
 
   RenderPipelineChannelMode GetChannelMode(size_t c) const final {
@@ -130,10 +133,10 @@ class FastXYBStage : public RenderPipelineStage {
         has_alpha_(has_alpha),
         alpha_c_(alpha_c) {}
 
-  void ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
-                  size_t xextra, size_t xsize, size_t xpos, size_t ypos,
-                  size_t thread_id) const final {
-    if (ypos >= height_) return;
+  Status ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
+                    size_t xextra, size_t xsize, size_t xpos, size_t ypos,
+                    size_t thread_id) const final {
+    if (ypos >= height_) return true;
     JXL_ASSERT(xextra == 0);
     const float* xyba[4] = {
         GetInputRow(input_rows, 0, 0), GetInputRow(input_rows, 1, 0),
@@ -142,6 +145,7 @@ class FastXYBStage : public RenderPipelineStage {
     uint8_t* out_buf = rgb_ + stride_ * ypos + (rgba_ ? 4 : 3) * xpos;
     FastXYBTosRGB8(xyba, out_buf, rgba_,
                    xsize + xpos <= width_ ? xsize : width_ - xpos);
+    return true;
   }
 
   RenderPipelineChannelMode GetChannelMode(size_t c) const final {

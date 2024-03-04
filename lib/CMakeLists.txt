@@ -149,6 +149,16 @@ else()
     set(PKGCONFIG_TARGET_LIBS "\${exec_prefix}/${CMAKE_INSTALL_LIBDIR}")
 endif()
 
+include(CheckCXXSymbolExists)
+set(PKGCONFIG_CXX_LIB "")
+check_cxx_symbol_exists(__GLIBCXX__ iostream LIBSTDCXX)
+check_cxx_symbol_exists(_LIBCPP_VERSION iostream LIBCXX)
+if(LIBSTDCXX)
+  set(PKGCONFIG_CXX_LIB "-lstdc++")
+elseif(LIBCXX)
+  set(PKGCONFIG_CXX_LIB "-lc++")
+endif()
+
 # The jxl_cms library definition.
 include(jxl_cms.cmake)
 # The jxl library definition.
@@ -163,11 +173,10 @@ if (JPEGXL_ENABLE_JPEGLI)
   include(jpegli.cmake)
 endif()
 
-# Install all the library headers from the source and the generated ones. There
-# is no distinction on which libraries use which header since it is expected
-# that all developer libraries are available together at build time.
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/jxl
-  DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+# For simplicity all the library headers, both source and generated ones, are
+# gathered in the binary folder. There is no distinction on which libraries use
+# which header since it is expected that all developer libraries are available
+# together at build time.
 install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include/jxl
   DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
 

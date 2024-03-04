@@ -13,14 +13,12 @@
 
 #include <jxl/codestream_header.h>
 #include <jxl/encode.h>
-#include <jxl/encode_cxx.h>
 #include <jxl/thread_parallel_runner.h>
 #include <jxl/thread_parallel_runner_cxx.h>
 #include <jxl/types.h>
 
 #include <algorithm>
 #include <cerrno>
-#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -28,18 +26,15 @@
 #include <functional>
 #include <iostream>
 #include <memory>
-#include <sstream>
 #include <string>
-#include <thread>
-#include <type_traits>
 #include <utility>
 #include <vector>
 
-#include "lib/extras/dec/apng.h"
 #include "lib/extras/dec/color_hints.h"
 #include "lib/extras/dec/decode.h"
 #include "lib/extras/dec/pnm.h"
 #include "lib/extras/enc/jxl.h"
+#include "lib/extras/packed_image.h"
 #include "lib/extras/time.h"
 #include "lib/jxl/base/c_callback_support.h"
 #include "lib/jxl/base/common.h"
@@ -131,7 +126,7 @@ struct CompressArgs {
 
     cmdline->AddOptionValue(
         'e', "effort", "EFFORT",
-        "Encoder effort setting. Range: 1 .. 9.\n"
+        "Encoder effort setting. Range: 1 .. 10.\n"
         "    Default: 7. Higher numbers allow more computation "
         "at the expense of time.\n"
         "    For lossless, generally it will produce smaller files.\n"
@@ -156,7 +151,7 @@ struct CompressArgs {
         "Target visual distance for the alpha channel, lower = higher "
         "quality.\n"
         "    0.0 = mathematically lossless. 1.0 = visually lossless.\n"
-        "    Default is to use the same value as for the color image.\n"
+        "    Default is 0.\n"
         "    Recommended range: 0.5 .. 3.0. Allowed range: 0.0 ... 25.0.",
         &alpha_distance, &ParseFloat, 1);
 
@@ -239,17 +234,20 @@ struct CompressArgs {
         "    The keys 'exif', 'xmp', and 'jumbf' refer to a binary file "
         "containing metadata;\n"
         "    existing metadata of the same type will be overwritten.\n"
-        "    Specific metadata can be stripped using e.g. -x strip=exif",
+        "    Specific metadata can be stripped using e.g. -x strip=exif."
+        "    Stripping metadata when losslessly recompression JPEGs only works "
+        "    without reconstruction, hence `--allow_jpeg_reconstruction=0` "
+        "    must be passed in this case.",
         &color_hints_proxy, &ParseAndAppendKeyValue<ColorHintsProxy>, 1);
 
     cmdline->AddHelpText("\nExpert options:", 2);
 
     cmdline->AddOptionValue(
-        '\0', "jpeg_store_metadata", "0|1",
+        '\0', "allow_jpeg_reconstruction", "0|1",
         ("If --lossless_jpeg=1, store JPEG reconstruction "
          "metadata in the JPEG XL container.\n"
          "    This allows reconstruction of the JPEG codestream. Default: 1."),
-        &jpeg_store_metadata, &ParseUnsigned, 2);
+        &allow_jpeg_reconstruction, &ParseUnsigned, 2);
 
     cmdline->AddOptionValue('\0', "codestream_level", "K",
                             "The codestream level. Either `-1`, `5` or `10`.",
@@ -391,7 +389,7 @@ struct CompressArgs {
 
     cmdline->AddOptionFlag('\0', "allow_expert_options",
                            "Allow specifying advanced options; this allows "
-                           "setting effort to 10, for\n"
+                           "setting effort to 11, for\n"
                            "    somewhat better lossless compression at the "
                            "cost of a massive speed hit.",
                            &allow_expert_options, &SetBooleanTrue, 3);
@@ -425,7 +423,7 @@ struct CompressArgs {
         "    5=gradient, 6=weighted, 7=topright, 8=topleft, 9=leftleft, "
         "10=avg1, 11=avg2, 12=avg3,\n"
         "    13=toptop predictive average, 14=mix 5 and 6, 15=mix everything.\n"
-        "    Default is 14 at effort < 9 and 15 at effort 9.",
+        "    Default is 14 at effort < 9 and 15 at effort 9-10.",
         &modular_predictor, &ParseInt64, 4);
 
     cmdline->AddOptionValue(
@@ -467,24 +465,27 @@ struct CompressArgs {
   }
 
   // Common flags.
+  const char* file_in = nullptr;
+  const char* file_out = nullptr;
+
   bool version = false;
   jxl::Override container = jxl::Override::kDefault;
   bool quiet = false;
   bool disable_output = false;
 
-  const char* file_in = nullptr;
-  const char* file_out = nullptr;
   jxl::Override print_profile = jxl::Override::kDefault;
   bool streaming_input = false;
   bool streaming_output = false;
+
+  bool verbose = false;
 
   // Decoding source image flags
   ColorHintsProxy color_hints_proxy;
 
   // JXL flags
   size_t override_bitdepth = 0;
-  int32_t num_threads = -1;
   size_t num_reps = 1;
+  int32_t num_threads = -1;
   float intensity_target = 0;
 
   // Whether to perform lossless transcoding with kVarDCT or kJPEG encoding.
@@ -492,19 +493,18 @@ struct CompressArgs {
   // Reset to false if input image is not a JPEG.
   size_t lossless_jpeg = 1;
 
-  size_t jpeg_store_metadata = 1;
+  size_t allow_jpeg_reconstruction = 1;
 
   float quality = -1001.f;  // Default to lossless if input is already lossy,
                             // or to VarDCT otherwise.
-  bool verbose = false;
   bool progressive = false;
   bool progressive_ac = false;
   bool qprogressive_ac = false;
-  int64_t progressive_dc = -1;
   bool modular_lossy_palette = false;
+  int64_t progressive_dc = -1;
+  int64_t upsampling_mode = -1;
   int32_t premultiply = -1;
   bool already_downsampled = false;
-  int64_t upsampling_mode = -1;
   jxl::Override jpeg_reconstruction_cfl = jxl::Override::kDefault;
   jxl::Override modular = jxl::Override::kDefault;
   jxl::Override keep_invisible = jxl::Override::kDefault;
@@ -514,6 +514,8 @@ struct CompressArgs {
   jxl::Override group_order = jxl::Override::kDefault;
   jxl::Override compress_boxes = jxl::Override::kDefault;
   jxl::Override noise = jxl::Override::kDefault;
+
+  bool allow_expert_options = false;
 
   size_t faster_decoding = 0;
   int64_t resampling = -1;
@@ -537,8 +539,6 @@ struct CompressArgs {
   size_t effort = 7;
   size_t brotli_effort = 9;
   std::string frame_indexing;
-
-  bool allow_expert_options = false;
 
   // References (ids) of specific options to check if they were matched.
   CommandLineParser::OptionId opt_lossless_jpeg_id = -1;
@@ -587,17 +587,20 @@ void PrintMode(jxl::extras::PackedPixelFile& ppf, const double decode_mps,
       (args.container == jxl::Override::kOn ? "Container | " : ""), mode,
       distance.c_str(), args.effort);
   if (args.container == jxl::Override::kOn) {
-    if (args.lossless_jpeg && args.jpeg_store_metadata)
+    if (args.lossless_jpeg && args.allow_jpeg_reconstruction)
       cmdline.VerbosePrintf(0, " | JPEG reconstruction data");
-    if (!ppf.metadata.exif.empty())
+    if (!ppf.metadata.exif.empty()) {
       cmdline.VerbosePrintf(0, " | %" PRIuS "-byte Exif",
                             ppf.metadata.exif.size());
-    if (!ppf.metadata.xmp.empty())
+    }
+    if (!ppf.metadata.xmp.empty()) {
       cmdline.VerbosePrintf(0, " | %" PRIuS "-byte XMP",
                             ppf.metadata.xmp.size());
-    if (!ppf.metadata.jumbf.empty())
+    }
+    if (!ppf.metadata.jumbf.empty()) {
       cmdline.VerbosePrintf(0, " | %" PRIuS "-byte JUMBF",
                             ppf.metadata.jumbf.size());
+    }
   }
   cmdline.VerbosePrintf(0, "]\n");
 }
@@ -615,7 +618,7 @@ void ProcessFlag(
     const char* flag_name, T flag_value,
     JxlEncoderFrameSettingId encoder_option,
     jxl::extras::JXLCompressParams* params,
-    flag_check_fn flag_check = [](T x) { return std::string(); }) {
+    const flag_check_fn& flag_check = [](T x) { return std::string(); }) {
   std::string error = flag_check(flag_value);
   if (!error.empty()) {
     std::cerr << "Invalid flag value for --" << flag_name << ": " << error
@@ -631,8 +634,7 @@ void ProcessBoolFlag(jxl::Override flag_value,
                      jxl::extras::JXLCompressParams* params) {
   if (flag_value != jxl::Override::kDefault) {
     int64_t value = flag_value == jxl::Override::kOn ? 1 : 0;
-    params->options.emplace_back(
-        jxl::extras::JXLOption(encoder_option, value, 0));
+    params->options.emplace_back(encoder_option, value, 0);
   }
 }
 
@@ -672,8 +674,7 @@ void SetDistanceFromFlags(CommandLineParser* cmdline, CompressArgs* args,
     args->lossless_jpeg = 0;
   }
   params->distance = args->distance;
-  params->alpha_distance =
-      alpha_distance_set ? args->alpha_distance : params->distance;
+  params->alpha_distance = alpha_distance_set ? args->alpha_distance : 0;
 }
 
 void ProcessFlags(const jxl::extras::Codec codec,
@@ -716,9 +717,9 @@ void ProcessFlags(const jxl::extras::Codec codec,
       "effort", static_cast<int64_t>(args->effort),
       JXL_ENC_FRAME_SETTING_EFFORT, params, [args](int64_t x) -> std::string {
         if (args->allow_expert_options) {
-          return (1 <= x && x <= 10) ? "" : "Valid range is {1, 2, ..., 10}.";
+          return (1 <= x && x <= 11) ? "" : "Valid range is {1, 2, ..., 11}.";
         } else {
-          return (1 <= x && x <= 9) ? "" : "Valid range is {1, 2, ..., 9}.";
+          return (1 <= x && x <= 10) ? "" : "Valid range is {1, 2, ..., 10}.";
         }
       });
   ProcessFlag("brotli_effort", static_cast<int64_t>(args->brotli_effort),
@@ -909,13 +910,12 @@ void ProcessFlags(const jxl::extras::Codec codec,
     if (num_frame < args->frame_indexing.size() &&
         args->frame_indexing[num_frame] == '1') {
       int64_t value = 1;
-      params->options.emplace_back(
-          jxl::extras::JXLOption(JXL_ENC_FRAME_INDEX_BOX, value, num_frame));
+      params->options.emplace_back(JXL_ENC_FRAME_INDEX_BOX, value, num_frame);
     }
   }
   // Copy over the rest of the non-option params.
   params->use_container = args->container == jxl::Override::kOn;
-  params->jpeg_store_metadata = args->jpeg_store_metadata;
+  params->jpeg_store_metadata = args->allow_jpeg_reconstruction;
   params->intensity_target = args->intensity_target;
   params->override_bitdepth = args->override_bitdepth;
   params->codestream_level = args->codestream_level;
@@ -932,7 +932,7 @@ void ProcessFlags(const jxl::extras::Codec codec,
   (void)args->color_hints_proxy.target.Foreach(
       [&params](const std::string& key,
                 const std::string& value) -> jxl::Status {
-        if (value == "") {
+        if (value.empty()) {
           if (key == "exif") params->jpeg_strip_exif = true;
           if (key == "xmp") params->jpeg_strip_xmp = true;
           if (key == "jumbf") params->jpeg_strip_jumbf = true;
@@ -1099,6 +1099,24 @@ int main(int argc, char** argv) {
                   << std::endl;
       }
       jpeg_bytes = &image_data;
+      if (args.allow_jpeg_reconstruction) {
+        (void)args.color_hints_proxy.target.Foreach([](const std::string& key,
+                                                       const std::string& value)
+                                                        -> jxl::Status {
+          if (value.empty()) {
+            if (key != "jumbf") {
+              std::cerr
+                  << "Cannot strip " << key
+                  << " metadata, try setting --allow_jpeg_reconstruction=0. "
+                     "Note that with that setting byte exact reconstruction "
+                     "of the JPEG file won't be possible."
+                  << std::endl;
+              exit(EXIT_FAILURE);
+            }
+          }
+          return true;
+        });
+      }
     }
   }
 
@@ -1114,7 +1132,7 @@ int main(int argc, char** argv) {
 
   if (!ppf.metadata.exif.empty() || !ppf.metadata.xmp.empty() ||
       !ppf.metadata.jumbf.empty() || !ppf.metadata.iptc.empty() ||
-      (args.lossless_jpeg && args.jpeg_store_metadata)) {
+      (args.lossless_jpeg && args.allow_jpeg_reconstruction)) {
     if (args.container == jxl::Override::kDefault) {
       args.container = jxl::Override::kOn;
     } else if (args.container == jxl::Override::kOff) {
@@ -1124,7 +1142,7 @@ int main(int argc, char** argv) {
       ppf.metadata.xmp.clear();
       ppf.metadata.jumbf.clear();
       ppf.metadata.iptc.clear();
-      args.jpeg_store_metadata = 0;
+      args.allow_jpeg_reconstruction = 0;
     }
   }
 
@@ -1138,9 +1156,9 @@ int main(int argc, char** argv) {
   params.runner = JxlThreadParallelRunner;
   params.runner_opaque = runner.get();
 
-  if (args.streaming_input && args.streaming_output) {
-    params.options.emplace_back(jxl::extras::JXLOption(
-        JXL_ENC_FRAME_SETTING_BUFFERING, static_cast<int64_t>(3), 0));
+  if (args.streaming_input) {
+    params.options.emplace_back(JXL_ENC_FRAME_SETTING_BUFFERING,
+                                static_cast<int64_t>(3), 0);
   }
 
   jpegxl::tools::SpeedStats stats;

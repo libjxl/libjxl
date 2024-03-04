@@ -37,8 +37,8 @@ struct FuzzSpec {
   int crop_output;
 };
 
-static constexpr uint8_t kFakeEoiMarker[2] = {0xff, 0xd9};
-static constexpr size_t kNumSourceBuffers = 4;
+constexpr uint8_t kFakeEoiMarker[2] = {0xff, 0xd9};
+constexpr size_t kNumSourceBuffers = 4;
 
 class SourceManager {
  public:
@@ -73,7 +73,7 @@ class SourceManager {
   static void init_source(j_decompress_ptr cinfo) {}
 
   static boolean fill_input_buffer(j_decompress_ptr cinfo) {
-    auto src = reinterpret_cast<SourceManager*>(cinfo->src);
+    auto* src = reinterpret_cast<SourceManager*>(cinfo->src);
     if (src->pos_ < src->len_) {
       size_t remaining = src->len_ - src->pos_;
       size_t chunk_size = std::min(remaining, src->max_chunk_size_);
@@ -98,7 +98,7 @@ class SourceManager {
   }
 
   static void skip_input_data(j_decompress_ptr cinfo, long num_bytes) {
-    auto src = reinterpret_cast<SourceManager*>(cinfo->src);
+    auto* src = reinterpret_cast<SourceManager*>(cinfo->src);
     if (num_bytes <= 0) {
       return;
     }
@@ -194,7 +194,8 @@ int TestOneInput(const uint8_t* data, size_t size) {
   spec.crop_output = getFlag(1);
 
   std::vector<uint8_t> pixels;
-  size_t xsize, ysize;
+  size_t xsize;
+  size_t ysize;
   size_t max_pixels = 1 << 21;
 
   const auto targets = hwy::SupportedAndGeneratedTargets();

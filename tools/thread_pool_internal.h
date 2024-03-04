@@ -6,10 +6,11 @@
 #ifndef TOOLS_THREAD_POOL_INTERNAL_H_
 #define TOOLS_THREAD_POOL_INTERNAL_H_
 
+#include <jxl/thread_parallel_runner.h>
 #include <jxl/thread_parallel_runner_cxx.h>
-#include <stddef.h>
 
-#include <cmath>
+#include <cstddef>
+#include <memory>
 #include <thread>  // NOLINT
 
 #include "lib/jxl/base/data_parallel.h"
@@ -34,6 +35,7 @@ class ThreadPoolInternal {
 
   ThreadPoolInternal(const ThreadPoolInternal&) = delete;
   ThreadPoolInternal& operator&(const ThreadPoolInternal&) = delete;
+  // TODO(eustas): avoid unary `&` overload?
   ThreadPool* operator&() { return pool_.get(); }
 
  private:

@@ -11,14 +11,8 @@
 #include <vector>
 
 #include "lib/extras/codec.h"
-#include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/base/data_parallel.h"
-#include "lib/jxl/base/override.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/codec_in_out.h"
-#include "lib/jxl/color_encoding_internal.h"
-#include "lib/jxl/enc_butteraugli_comparator.h"
-#include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/headers.h"
 #include "lib/jxl/image_bundle.h"
@@ -27,6 +21,7 @@
 
 namespace jxl {
 namespace {
+using test::ButteraugliDistance;
 using test::ReadTestData;
 using test::Roundtrip;
 
@@ -37,7 +32,7 @@ TEST(PreviewTest, RoundtripGivenPreview) {
   ASSERT_TRUE(SetFromBytes(Bytes(orig), &io));
   io.ShrinkTo(io.xsize() / 8, io.ysize() / 8);
   // Same as main image
-  io.preview_frame = io.Main().Copy();
+  JXL_ASSIGN_OR_DIE(io.preview_frame, io.Main().Copy());
   const size_t preview_xsize = 15;
   const size_t preview_ysize = 27;
   io.preview_frame.ShrinkTo(preview_xsize, preview_ysize);

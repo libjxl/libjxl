@@ -35,9 +35,9 @@ std::string GetExtension(const std::string& path) {
 
 }  // namespace
 
-Codec CodecFromPath(std::string path, size_t* JXL_RESTRICT bits_per_sample,
+Codec CodecFromPath(const std::string& path,
+                    size_t* JXL_RESTRICT bits_per_sample,
                     std::string* extension) {
-  std::string base;
   std::string ext = GetExtension(path);
   if (extension) {
     if (extension->empty()) {

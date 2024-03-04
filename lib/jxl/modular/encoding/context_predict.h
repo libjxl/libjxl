@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "lib/jxl/fields.h"
+#include "lib/jxl/image_ops.h"
 #include "lib/jxl/modular/modular_image.h"
 #include "lib/jxl/modular/options.h"
 
@@ -78,7 +79,7 @@ struct State {
       294337,   289262,  284359,  279620,  275036,  270600,  266305,  262144};
 
   constexpr static pixel_type_w AddBits(pixel_type_w x) {
-    return uint64_t(x) << kPredExtraBits;
+    return static_cast<uint64_t>(x) << kPredExtraBits;
   }
 
   State(Header header, size_t xsize, size_t ysize) : header(header) {
@@ -538,8 +539,9 @@ JXL_INLINE PredictionResult Predict(
   }
   if (mode & kAllPredictions) {
     for (size_t i = 0; i < kNumModularPredictors; i++) {
-      predictions[i] = PredictOne((Predictor)i, left, top, toptop, topleft,
-                                  topright, leftleft, toprightright, wp_pred);
+      predictions[i] =
+          PredictOne(static_cast<Predictor>(i), left, top, toptop, topleft,
+                     topright, leftleft, toprightright, wp_pred);
     }
   }
   result.guess += PredictOne(predictor, left, top, toptop, topleft, topright,

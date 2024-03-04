@@ -5,7 +5,6 @@
 
 # This file is generated, do not modify by manually.
 # Run `tools/scripts/build_cleaner.py --update` to regenerate it.
-
 set(JPEGXL_INTERNAL_BASE_SOURCES
   jxl/base/arch_macros.h
   jxl/base/bits.h
@@ -145,7 +144,6 @@ set(JPEGXL_INTERNAL_DEC_SOURCES
   jxl/convolve-inl.h
   jxl/convolve.h
   jxl/convolve_separable5.cc
-  jxl/convolve_separable7.cc
   jxl/convolve_slow.cc
   jxl/convolve_symmetric3.cc
   jxl/convolve_symmetric5.cc
@@ -187,8 +185,6 @@ set(JPEGXL_INTERNAL_DEC_SOURCES
   jxl/epf.cc
   jxl/epf.h
   jxl/fast_dct-inl.h
-  jxl/fast_dct.cc
-  jxl/fast_dct.h
   jxl/fast_dct128-inl.h
   jxl/fast_dct16-inl.h
   jxl/fast_dct256-inl.h
@@ -215,6 +211,7 @@ set(JPEGXL_INTERNAL_DEC_SOURCES
   jxl/image_bundle.h
   jxl/image_metadata.cc
   jxl/image_metadata.h
+  jxl/image_ops.cc
   jxl/image_ops.h
   jxl/inverse_mtf-inl.h
   jxl/lehmer_code.h

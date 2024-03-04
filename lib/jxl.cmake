@@ -43,9 +43,6 @@ else()
 endif ()
 
 set(OBJ_COMPILE_DEFINITIONS
-  JPEGXL_MAJOR_VERSION=${JPEGXL_MAJOR_VERSION}
-  JPEGXL_MINOR_VERSION=${JPEGXL_MINOR_VERSION}
-  JPEGXL_PATCH_VERSION=${JPEGXL_PATCH_VERSION}
   # Used to determine if we are building the library when defined or just
   # including the library when not defined. This is public so libjxl shared
   # library gets this define too.
@@ -55,12 +52,15 @@ set(OBJ_COMPILE_DEFINITIONS
 # Generate version.h
 configure_file("jxl/version.h.in" "include/jxl/version.h")
 
+list(APPEND JPEGXL_INTERNAL_PUBLIC_HEADERS
+  ${CMAKE_CURRENT_BINARY_DIR}/include/jxl/version.h)
+
 # Headers for exporting/importing public headers
 include(GenerateExportHeader)
 
 # CMake does not allow generate_export_header for INTERFACE library, so we
 # add this stub library just for file generation.
-add_library(jxl_export OBJECT ${JPEGXL_INTERNAL_PUBLIC_HEADERS})
+add_library(jxl_export OBJECT ${JPEGXL_INTERNAL_PUBLIC_HEADERS} nothing.cc)
 set_target_properties(jxl_export PROPERTIES
   CXX_VISIBILITY_PRESET hidden
   VISIBILITY_INLINES_HIDDEN 1
@@ -269,8 +269,10 @@ set(JPEGXL_LIBRARY_REQUIRES
 
 if (BUILD_SHARED_LIBS)
   set(JPEGXL_REQUIRES_TYPE "Requires.private")
+  set(JPEGXL_PRIVATE_LIBS "-lm ${PKGCONFIG_CXX_LIB}")
 else()
   set(JPEGXL_REQUIRES_TYPE "Requires")
+  set(JPEGXL_PUBLIC_LIBS "-lm ${PKGCONFIG_CXX_LIB}")
 endif()
 
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/jxl/libjxl.pc.in"

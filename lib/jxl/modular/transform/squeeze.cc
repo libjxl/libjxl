@@ -113,7 +113,9 @@ Status InvHSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
   }
 
   // Note: chin.w >= chin_residual.w and at most 1 different.
-  Channel chout(chin.w + chin_residual.w, chin.h, chin.hshift - 1, chin.vshift);
+  JXL_ASSIGN_OR_RETURN(Channel chout,
+                       Channel::Create(chin.w + chin_residual.w, chin.h,
+                                       chin.hshift - 1, chin.vshift));
   JXL_DEBUG_V(4,
               "Undoing horizontal squeeze of channel %i using residuals in "
               "channel %i (going from width %" PRIuS " to %" PRIuS ")",
@@ -222,7 +224,9 @@ Status InvVSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
   }
 
   // Note: chin.h >= chin_residual.h and at most 1 different.
-  Channel chout(chin.w, chin.h + chin_residual.h, chin.hshift, chin.vshift - 1);
+  JXL_ASSIGN_OR_RETURN(Channel chout,
+                       Channel::Create(chin.w, chin.h + chin_residual.h,
+                                       chin.hshift, chin.vshift - 1));
   JXL_DEBUG_V(
       4,
       "Undoing vertical squeeze of channel %i using residuals in channel "
@@ -238,7 +242,8 @@ Status InvVSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
   static constexpr const int kColsPerThread = 64;
   const auto unsqueeze_slice = [&](const uint32_t task, size_t /* thread */) {
     const size_t x0 = task * kColsPerThread;
-    const size_t x1 = std::min((size_t)(task + 1) * kColsPerThread, chin.w);
+    const size_t x1 =
+        std::min(static_cast<size_t>(task + 1) * kColsPerThread, chin.w);
     const size_t w = x1 - x0;
     // We only iterate up to std::min(chin_residual.h, chin.h) which is
     // always chin_residual.h.
@@ -289,7 +294,7 @@ Status InvVSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
   return true;
 }
 
-Status InvSqueeze(Image &input, std::vector<SqueezeParams> parameters,
+Status InvSqueeze(Image &input, const std::vector<SqueezeParams> &parameters,
                   ThreadPool *pool) {
   for (int i = parameters.size() - 1; i >= 0; i--) {
     JXL_RETURN_IF_ERROR(
@@ -340,7 +345,7 @@ HWY_AFTER_NAMESPACE();
 namespace jxl {
 
 HWY_EXPORT(InvSqueeze);
-Status InvSqueeze(Image &input, std::vector<SqueezeParams> parameters,
+Status InvSqueeze(Image &input, const std::vector<SqueezeParams> &parameters,
                   ThreadPool *pool) {
   return HWY_DYNAMIC_DISPATCH(InvSqueeze)(input, parameters, pool);
 }
@@ -459,8 +464,8 @@ Status MetaSqueeze(Image &image, std::vector<SqueezeParams> *parameters) {
         if (image.channel[c].vshift >= 0) image.channel[c].vshift++;
         h = h - (h + 1) / 2;
       }
-      image.channel[c].shrink();
-      Channel placeholder(w, h);
+      JXL_RETURN_IF_ERROR(image.channel[c].shrink());
+      JXL_ASSIGN_OR_RETURN(Channel placeholder, Channel::Create(w, h));
       placeholder.hshift = image.channel[c].hshift;
       placeholder.vshift = image.channel[c].vshift;
 

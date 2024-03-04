@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <limits>
 #include <numeric>
 #include <type_traits>
@@ -20,12 +21,15 @@
 #include "lib/jxl/ans_common.h"
 #include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/fast_math-inl.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_ans.h"
+#include "lib/jxl/enc_ans_params.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_cluster.h"
 #include "lib/jxl/enc_context_map.h"
 #include "lib/jxl/enc_fields.h"
 #include "lib/jxl/enc_huffman.h"
+#include "lib/jxl/enc_params.h"
 #include "lib/jxl/fields.h"
 
 namespace jxl {
@@ -37,7 +41,7 @@ constexpr
 #endif
     bool ans_fuzzer_friendly_ = false;
 
-static const int kMaxNumSymbolsForSmallCode = 4;
+const int kMaxNumSymbolsForSmallCode = 4;
 
 void ANSBuildInfoTable(const ANSHistBin* counts, const AliasTable::Entry* table,
                        size_t alphabet_size, size_t log_alpha_size,
@@ -99,16 +103,16 @@ float EstimateDataBitsFlat(const ANSHistBin* histogram, size_t len) {
 
 // Static Huffman code for encoding logcounts. The last symbol is used as RLE
 // sequence.
-static const uint8_t kLogCountBitLengths[ANS_LOG_TAB_SIZE + 2] = {
+const uint8_t kLogCountBitLengths[ANS_LOG_TAB_SIZE + 2] = {
     5, 4, 4, 4, 4, 4, 3, 3, 3, 3, 3, 6, 7, 7,
 };
-static const uint8_t kLogCountSymbols[ANS_LOG_TAB_SIZE + 2] = {
+const uint8_t kLogCountSymbols[ANS_LOG_TAB_SIZE + 2] = {
     17, 11, 15, 3, 9, 7, 4, 2, 5, 6, 0, 33, 1, 65,
 };
 
 // Returns the difference between largest count that can be represented and is
 // smaller than "count" and smallest representable count larger than "count".
-static int SmallestIncrement(uint32_t count, uint32_t shift) {
+int SmallestIncrement(uint32_t count, uint32_t shift) {
   int bits = count == 0 ? -1 : FloorLog2Nonzero(count);
   int drop_bits = bits - GetPopulationCountPrecision(bits, shift);
   return drop_bits < 0 ? 1 : (1 << drop_bits);
@@ -203,11 +207,11 @@ Status NormalizeCounts(ANSHistBin* counts, int* omit_pos, const int length,
   for (size_t n = 0; n < targets.size(); ++n) {
     targets[n] = norm * counts[n];
   }
-  if (!RebalanceHistogram<false>(&targets[0], max_symbol, table_size, shift,
+  if (!RebalanceHistogram<false>(targets.data(), max_symbol, table_size, shift,
                                  omit_pos, counts)) {
     // Use an alternative rebalancing mechanism if the one above failed
     // to create a histogram that is positive wherever the original one was.
-    if (!RebalanceHistogram<true>(&targets[0], max_symbol, table_size, shift,
+    if (!RebalanceHistogram<true>(targets.data(), max_symbol, table_size, shift,
                                   omit_pos, counts)) {
       return JXL_FAILURE("Logic error: couldn't rebalance a histogram");
     }
@@ -553,8 +557,7 @@ void ChooseUintConfigs(const HistogramParams& params,
                        std::vector<Histogram>* clustered_histograms,
                        EntropyEncodingData* codes, size_t* log_alpha_size) {
   codes->uint_config.resize(clustered_histograms->size());
-  if (params.streaming_mode ||
-      params.uint_method == HistogramParams::HybridUintMethod::kNone) {
+  if (params.uint_method == HistogramParams::HybridUintMethod::kNone) {
     return;
   }
   if (params.uint_method == HistogramParams::HybridUintMethod::k000) {
@@ -567,6 +570,12 @@ void ChooseUintConfigs(const HistogramParams& params,
     codes->uint_config.clear();
     codes->uint_config.resize(clustered_histograms->size(),
                               HybridUintConfig(2, 0, 1));
+    return;
+  }
+
+  // If the uint config is adaptive, just stick with the default in streaming
+  // mode.
+  if (params.streaming_mode) {
     return;
   }
 
@@ -1025,8 +1034,8 @@ struct HashChain {
       // Count down, so if due to small distance multiplier multiple distances
       // map to the same code, the smallest code will be used in the end.
       for (int i = kNumSpecialDistances - 1; i >= 0; --i) {
-        int xi = kSpecialDistances[i][0];
-        int yi = kSpecialDistances[i][1];
+        int xi = static_cast<int>(kSpecialDistances[i][0]);
+        int yi = static_cast<int>(kSpecialDistances[i][1]);
         int distance = yi * distance_multiplier + xi;
         // Ensure that we map distance 1 to the lowest symbols.
         if (distance < 1) distance = 1;
@@ -1041,9 +1050,9 @@ struct HashChain {
     if (pos + 2 < size_) {
       // TODO(lode): take the MSB's of the uint32_t values into account as well,
       // given that the hash code itself is less than 32 bits.
-      result ^= (uint32_t)(data_[pos + 0] << 0u);
-      result ^= (uint32_t)(data_[pos + 1] << hash_shift_);
-      result ^= (uint32_t)(data_[pos + 2] << (hash_shift_ * 2));
+      result ^= static_cast<uint32_t>(data_[pos + 0] << 0u);
+      result ^= static_cast<uint32_t>(data_[pos + 1] << hash_shift_);
+      result ^= static_cast<uint32_t>(data_[pos + 2] << (hash_shift_ * 2));
     } else {
       // No need to compute hash of last 2 bytes, the length 2 is too short.
       return 0;
@@ -1071,7 +1080,7 @@ struct HashChain {
     uint32_t hashval = GetHash(pos);
     uint32_t wpos = pos & window_mask_;
 
-    val[wpos] = (int)hashval;
+    val[wpos] = static_cast<int>(hashval);
     if (head[hashval] != -1) chain[wpos] = head[hashval];
     head[hashval] = wpos;
 
@@ -1142,7 +1151,10 @@ struct HashChain {
       } else {
         if (hashpos == chain[hashpos]) break;
         hashpos = chain[hashpos];
-        if (val[hashpos] != (int)hashval) break;  // outdated hash value
+        if (val[hashpos] != static_cast<int>(hashval)) {
+          // outdated hash value
+          break;
+        }
       }
     }
   }
@@ -1654,10 +1666,10 @@ size_t BuildAndEncodeHistograms(const HistogramParams& params,
     codes->encoded_histograms.emplace_back();
     BitWriter* histo_writer = &codes->encoded_histograms.back();
     BitWriter::Allotment allotment(histo_writer, 256 + alphabet_size * 24);
-    BuildAndStoreANSEncodingData(params.ans_histogram_strategy, counts.data(),
-                                 alphabet_size, log_alpha_size,
-                                 codes->use_prefix_code,
-                                 &codes->encoding_info.back()[0], histo_writer);
+    BuildAndStoreANSEncodingData(
+        params.ans_histogram_strategy, counts.data(), alphabet_size,
+        log_alpha_size, codes->use_prefix_code,
+        codes->encoding_info.back().data(), histo_writer);
     allotment.ReclaimAndCharge(histo_writer, 0, nullptr);
   }
 
@@ -1765,7 +1777,8 @@ void WriteTokens(const std::vector<Token>& tokens,
                  const EntropyEncodingData& codes,
                  const std::vector<uint8_t>& context_map, size_t context_offset,
                  BitWriter* writer, size_t layer, AuxOut* aux_out) {
-  BitWriter::Allotment allotment(writer, 32 * tokens.size() + 32 * 1024 * 4);
+  // Theoretically, we could have 15 prefix code bits + 31 extra bits.
+  BitWriter::Allotment allotment(writer, 46 * tokens.size() + 32 * 1024 * 4);
   size_t num_extra_bits =
       WriteTokens(tokens, codes, context_map, context_offset, writer);
   allotment.ReclaimAndCharge(writer, layer, aux_out);
@@ -1778,5 +1791,52 @@ void SetANSFuzzerFriendly(bool ans_fuzzer_friendly) {
 #if JXL_IS_DEBUG_BUILD  // Guard against accidental / malicious changes.
   ans_fuzzer_friendly_ = ans_fuzzer_friendly;
 #endif
+}
+
+HistogramParams HistogramParams::ForModular(
+    const CompressParams& cparams,
+    const std::vector<uint8_t>& extra_dc_precision, bool streaming_mode) {
+  HistogramParams params;
+  params.streaming_mode = streaming_mode;
+  if (cparams.speed_tier > SpeedTier::kKitten) {
+    params.clustering = HistogramParams::ClusteringType::kFast;
+    params.ans_histogram_strategy =
+        cparams.speed_tier > SpeedTier::kThunder
+            ? HistogramParams::ANSHistogramStrategy::kFast
+            : HistogramParams::ANSHistogramStrategy::kApproximate;
+    params.lz77_method =
+        cparams.decoding_speed_tier >= 3 && cparams.modular_mode
+            ? (cparams.speed_tier >= SpeedTier::kFalcon
+                   ? HistogramParams::LZ77Method::kRLE
+                   : HistogramParams::LZ77Method::kLZ77)
+            : HistogramParams::LZ77Method::kNone;
+    // Near-lossless DC, as well as modular mode, require choosing hybrid uint
+    // more carefully.
+    if ((!extra_dc_precision.empty() && extra_dc_precision[0] != 0) ||
+        (cparams.modular_mode && cparams.speed_tier < SpeedTier::kCheetah)) {
+      params.uint_method = HistogramParams::HybridUintMethod::kFast;
+    } else {
+      params.uint_method = HistogramParams::HybridUintMethod::kNone;
+    }
+  } else if (cparams.speed_tier <= SpeedTier::kTortoise) {
+    params.lz77_method = HistogramParams::LZ77Method::kOptimal;
+  } else {
+    params.lz77_method = HistogramParams::LZ77Method::kLZ77;
+  }
+  if (cparams.decoding_speed_tier >= 1) {
+    params.max_histograms = 12;
+  }
+  if (cparams.decoding_speed_tier >= 1 && cparams.responsive) {
+    params.lz77_method = cparams.speed_tier >= SpeedTier::kCheetah
+                             ? HistogramParams::LZ77Method::kRLE
+                         : cparams.speed_tier >= SpeedTier::kKitten
+                             ? HistogramParams::LZ77Method::kLZ77
+                             : HistogramParams::LZ77Method::kOptimal;
+  }
+  if (cparams.decoding_speed_tier >= 2 && cparams.responsive) {
+    params.uint_method = HistogramParams::HybridUintMethod::k000;
+    params.force_huffman = true;
+  }
+  return params;
 }
 }  // namespace jxl

@@ -6,9 +6,12 @@
 #include "tools/jni/org/jpeg/jpegxl/wrapper/decoder_jni.h"
 
 #include <jni.h>
+#include <jxl/codestream_header.h>
 #include <jxl/decode.h>
 #include <jxl/thread_parallel_runner.h>
+#include <jxl/types.h>
 
+#include <cstdint>
 #include <cstdlib>
 
 namespace {
@@ -85,10 +88,10 @@ Status DoDecode(JNIEnv* env, jobject data_buffer, size_t* info_pixels_size,
     return FAILURE("Failed to access ICC buffer");
   }
 
-  JxlDecoder* dec = JxlDecoderCreate(NULL);
+  JxlDecoder* dec = JxlDecoderCreate(nullptr);
 
   constexpr size_t kNumThreads = 0;  // Do everything in this thread.
-  void* runner = JxlThreadParallelRunnerCreate(NULL, kNumThreads);
+  void* runner = JxlThreadParallelRunnerCreate(nullptr, kNumThreads);
 
   struct Defer {
     JxlDecoder* dec;

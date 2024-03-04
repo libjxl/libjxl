@@ -132,7 +132,7 @@ bool EncodeImageJXL(const JXLCompressParams& params, const PackedPixelFile& ppf,
     return false;
   }
 
-  auto settings = JxlEncoderFrameSettingsCreate(enc, nullptr);
+  auto* settings = JxlEncoderFrameSettingsCreate(enc, nullptr);
   size_t option_idx = 0;
   if (!SetFrameOptions(params.options, 0, &option_idx, settings)) {
     return false;
@@ -165,6 +165,16 @@ bool EncodeImageJXL(const JXLCompressParams& params, const PackedPixelFile& ppf,
     if (params.jpeg_store_metadata &&
         JXL_ENC_SUCCESS != JxlEncoderStoreJPEGMetadata(enc, JXL_TRUE)) {
       fprintf(stderr, "Storing JPEG metadata failed.\n");
+      return false;
+    }
+    if (params.jpeg_store_metadata && params.jpeg_strip_exif) {
+      fprintf(stderr,
+              "Cannot store metadata and strip exif at the same time.\n");
+      return false;
+    }
+    if (params.jpeg_store_metadata && params.jpeg_strip_xmp) {
+      fprintf(stderr,
+              "Cannot store metadata and strip xmp at the same time.\n");
       return false;
     }
     if (!params.jpeg_store_metadata && params.jpeg_strip_exif) {
@@ -248,7 +258,7 @@ bool EncodeImageJXL(const JXLCompressParams& params, const PackedPixelFile& ppf,
       fprintf(stderr, "JxlEncoderSetFrameLossless() failed.\n");
       return false;
     }
-    if (!ppf.icc.empty()) {
+    if (ppf.primary_color_representation == PackedPixelFile::kIccIsPrimary) {
       if (JXL_ENC_SUCCESS !=
           JxlEncoderSetICCProfile(enc, ppf.icc.data(), ppf.icc.size())) {
         fprintf(stderr, "JxlEncoderSetICCProfile() failed.\n");

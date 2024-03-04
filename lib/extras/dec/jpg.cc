@@ -34,7 +34,7 @@ constexpr unsigned char kExifSignature[6] = {0x45, 0x78, 0x69,
                                              0x66, 0x00, 0x00};
 constexpr int kExifMarker = JPEG_APP0 + 1;
 
-static inline bool IsJPG(const Span<const uint8_t> bytes) {
+inline bool IsJPG(const Span<const uint8_t> bytes) {
   if (bytes.size() < 2) return false;
   if (bytes[0] != 0xFF || bytes[1] != 0xD8) return false;
   return true;
@@ -242,7 +242,11 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes,
     if (nbcomp != 1 && nbcomp != 3) {
       return failure("unsupported number of components in JPEG");
     }
-    if (!ReadICCProfile(&cinfo, &ppf->icc)) {
+    if (ReadICCProfile(&cinfo, &ppf->icc)) {
+      ppf->primary_color_representation = PackedPixelFile::kIccIsPrimary;
+    } else {
+      ppf->primary_color_representation =
+          PackedPixelFile::kColorEncodingIsPrimary;
       ppf->icc.clear();
       // Default to SRGB
       // Actually, (cinfo.output_components == nbcomp) will be checked after
@@ -278,8 +282,8 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes,
     if (dparams && dparams->num_colors > 0) {
       cinfo.quantize_colors = TRUE;
       cinfo.desired_number_of_colors = dparams->num_colors;
-      cinfo.two_pass_quantize = dparams->two_pass_quant;
-      cinfo.dither_mode = (J_DITHER_MODE)dparams->dither_mode;
+      cinfo.two_pass_quantize = static_cast<boolean>(dparams->two_pass_quant);
+      cinfo.dither_mode = static_cast<J_DITHER_MODE>(dparams->dither_mode);
     }
 
     jpeg_start_decompress(&cinfo);

@@ -144,7 +144,7 @@ class AcStrategy {
                                        8, 4, 8, 16, 8, 16, 32, 16, 32};
     static_assert(sizeof(kLut) / sizeof(*kLut) == kNumValidStrategies,
                   "Update LUT");
-    return kLut[size_t(strategy_)];
+    return kLut[static_cast<size_t>(strategy_)];
   }
 
   JXL_INLINE size_t covered_blocks_y() const {
@@ -153,7 +153,7 @@ class AcStrategy {
                                        8, 8, 4, 16, 16, 8, 32, 32, 16};
     static_assert(sizeof(kLut) / sizeof(*kLut) == kNumValidStrategies,
                   "Update LUT");
-    return kLut[size_t(strategy_)];
+    return kLut[static_cast<size_t>(strategy_)];
   }
 
   JXL_INLINE size_t log2_covered_blocks() const {
@@ -162,7 +162,7 @@ class AcStrategy {
                                        6, 5, 5, 8, 7, 7, 10, 9, 9};
     static_assert(sizeof(kLut) / sizeof(*kLut) == kNumValidStrategies,
                   "Update LUT");
-    return kLut[size_t(strategy_)];
+    return kLut[static_cast<size_t>(strategy_)];
   }
 
  private:
@@ -191,7 +191,8 @@ class AcStrategyRow {
 class AcStrategyImage {
  public:
   AcStrategyImage() = default;
-  AcStrategyImage(size_t xsize, size_t ysize);
+  static StatusOr<AcStrategyImage> Create(size_t xsize, size_t ysize);
+
   AcStrategyImage(AcStrategyImage&&) = default;
   AcStrategyImage& operator=(AcStrategyImage&&) = default;
 

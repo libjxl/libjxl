@@ -6,10 +6,9 @@
 #include "lib/jxl/render_pipeline/low_memory_render_pipeline.h"
 
 #include <algorithm>
-#include <queue>
-#include <tuple>
 
 #include "lib/jxl/base/arch_macros.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/image_ops.h"
 
 namespace jxl {
@@ -174,7 +173,7 @@ size_t LowMemoryRenderPipeline::GroupInputYSize(size_t c) const {
          channel_shifts_[0][c].second;
 }
 
-void LowMemoryRenderPipeline::EnsureBordersStorage() {
+Status LowMemoryRenderPipeline::EnsureBordersStorage() {
   const auto& shifts = channel_shifts_[0];
   if (borders_horizontal_.size() < shifts.size()) {
     borders_horizontal_.resize(shifts.size());
@@ -194,16 +193,20 @@ void LowMemoryRenderPipeline::EnsureBordersStorage() {
                                        1 << shifts[c].second);
     Rect horizontal = Rect(0, 0, downsampled_xsize, bordery * num_yborders);
     if (!SameSize(horizontal, borders_horizontal_[c])) {
-      borders_horizontal_[c] = ImageF(horizontal.xsize(), horizontal.ysize());
+      JXL_ASSIGN_OR_RETURN(
+          borders_horizontal_[c],
+          ImageF::Create(horizontal.xsize(), horizontal.ysize()));
     }
     Rect vertical = Rect(0, 0, borderx * num_xborders, downsampled_ysize);
     if (!SameSize(vertical, borders_vertical_[c])) {
-      borders_vertical_[c] = ImageF(vertical.xsize(), vertical.ysize());
+      JXL_ASSIGN_OR_RETURN(borders_vertical_[c],
+                           ImageF::Create(vertical.xsize(), vertical.ysize()));
     }
   }
+  return true;
 }
 
-void LowMemoryRenderPipeline::Init() {
+Status LowMemoryRenderPipeline::Init() {
   group_border_ = {0, 0};
   base_color_shift_ = CeilLog2Nonzero(frame_dimensions_.xsize_upsampled_padded /
                                       frame_dimensions_.xsize_padded);
@@ -255,7 +258,7 @@ void LowMemoryRenderPipeline::Init() {
   group_data_x_border_ = RoundUpTo(max_border.first, kGroupXAlign);
   group_data_y_border_ = max_border.second;
 
-  EnsureBordersStorage();
+  JXL_RETURN_IF_ERROR(EnsureBordersStorage());
   group_border_assigner_.Init(frame_dimensions_);
 
   for (first_trailing_stage_ = stages_.size(); first_trailing_stage_ > 0;
@@ -282,7 +285,7 @@ void LowMemoryRenderPipeline::Init() {
                          DivCeil(frame_dimensions_.ysize_upsampled,
                                  1 << channel_shifts_[i][c].second));
     }
-    stages_[i]->SetInputSizes(input_sizes);
+    JXL_RETURN_IF_ERROR(stages_[i]->SetInputSizes(input_sizes));
     if (stages_[i]->SwitchToImageDimensions()) {
       // We don't allow kInOut after switching to image dimensions.
       JXL_ASSERT(i >= first_trailing_stage_);
@@ -300,7 +303,7 @@ void LowMemoryRenderPipeline::Init() {
     for (size_t c = 0; c < shifts.size(); c++) {
       input_sizes[c] = {full_image_xsize_, full_image_ysize_};
     }
-    stages_[i]->SetInputSizes(input_sizes);
+    JXL_RETURN_IF_ERROR(stages_[i]->SetInputSizes(input_sizes));
   }
 
   anyc_.resize(stages_.size());
@@ -355,10 +358,11 @@ void LowMemoryRenderPipeline::Init() {
       }
     }
   }
+  return true;
 }
 
-void LowMemoryRenderPipeline::PrepareForThreadsInternal(size_t num,
-                                                        bool use_group_ids) {
+Status LowMemoryRenderPipeline::PrepareForThreadsInternal(size_t num,
+                                                          bool use_group_ids) {
   const auto& shifts = channel_shifts_[0];
   use_group_ids_ = use_group_ids;
   size_t num_buffers = use_group_ids_ ? frame_dimensions_.num_groups : num;
@@ -366,8 +370,10 @@ void LowMemoryRenderPipeline::PrepareForThreadsInternal(size_t num,
     group_data_.emplace_back();
     group_data_[t].resize(shifts.size());
     for (size_t c = 0; c < shifts.size(); c++) {
-      group_data_[t][c] = ImageF(GroupInputXSize(c) + group_data_x_border_ * 2,
-                                 GroupInputYSize(c) + group_data_y_border_ * 2);
+      JXL_ASSIGN_OR_RETURN(
+          group_data_[t][c],
+          ImageF::Create(GroupInputXSize(c) + group_data_x_border_ * 2,
+                         GroupInputYSize(c) + group_data_y_border_ * 2));
     }
   }
   // TODO(veluca): avoid reallocating buffers if not needed.
@@ -390,7 +396,9 @@ void LowMemoryRenderPipeline::PrepareForThreadsInternal(size_t num,
               2 * next_y_border + (1 << stages_[i]->settings_.shift_y);
           stage_buffer_ysize = 1 << CeilLog2Nonzero(stage_buffer_ysize);
           next_y_border = stages_[i]->settings_.border_y;
-          stage_data_[t][c][i] = ImageF(stage_buffer_xsize, stage_buffer_ysize);
+          JXL_ASSIGN_OR_RETURN(
+              stage_data_[t][c][i],
+              ImageF::Create(stage_buffer_xsize, stage_buffer_ysize));
         }
       }
     }
@@ -412,9 +420,11 @@ void LowMemoryRenderPipeline::PrepareForThreadsInternal(size_t num,
         std::max(left_padding, std::max(middle_padding, right_padding));
     out_of_frame_data_.resize(num);
     for (size_t t = 0; t < num; t++) {
-      out_of_frame_data_[t] = ImageF(out_of_frame_xsize, shifts.size());
+      JXL_ASSIGN_OR_RETURN(out_of_frame_data_[t],
+                           ImageF::Create(out_of_frame_xsize, shifts.size()));
     }
   }
+  return true;
 }
 
 std::vector<std::pair<ImageF*, Rect>> LowMemoryRenderPipeline::PrepareBuffers(
@@ -520,7 +530,8 @@ class Rows {
               .Translate(-group_data_x_border, -group_data_y_border)
               .ShiftLeft(base_color_shift)
               .CeilShiftRight(group_data_shift[c])
-              .Translate(group_data_x_border - ssize_t(kRenderPipelineXOffset),
+              .Translate(group_data_x_border -
+                             static_cast<ssize_t>(kRenderPipelineXOffset),
                          group_data_y_border);
       rows_[0][c].base_ptr = channel_group_data_rect.Row(&input_data[c], 0);
       rows_[0][c].stride = input_data[c].PixelsPerRow();
@@ -533,7 +544,8 @@ class Rows {
   JXL_INLINE float* GetBuffer(int stage, int y, size_t c) const {
     JXL_DASSERT(stage >= -1);
     const RowInfo& info = rows_[stage + 1][c];
-    return info.base_ptr + ssize_t(info.stride) * (y & info.ymod_minus_1);
+    return info.base_ptr +
+           static_cast<ssize_t>(info.stride) * (y & info.ymod_minus_1);
   }
 
  private:
@@ -551,10 +563,10 @@ class Rows {
 
 }  // namespace
 
-void LowMemoryRenderPipeline::RenderRect(size_t thread_id,
-                                         std::vector<ImageF>& input_data,
-                                         Rect data_max_color_channel_rect,
-                                         Rect image_max_color_channel_rect) {
+Status LowMemoryRenderPipeline::RenderRect(size_t thread_id,
+                                           std::vector<ImageF>& input_data,
+                                           Rect data_max_color_channel_rect,
+                                           Rect image_max_color_channel_rect) {
   // For each stage, the rect corresponding to the image area currently being
   // processed, in the coordinates of that stage (i.e. with the scaling factor
   // that that stage has).
@@ -599,7 +611,7 @@ void LowMemoryRenderPipeline::RenderRect(size_t thread_id,
   // is no point in proceeding. Note: this uses the assumption that if there is
   // a stage with observable effects (i.e. a kInput stage), it only appears
   // after the stage that switches to image dimensions.
-  if (full_image_x1 <= full_image_x0) return;
+  if (full_image_x1 <= full_image_x0) return true;
 
   // Data structures to hold information about input/output rows and their
   // buffers.
@@ -643,7 +655,7 @@ void LowMemoryRenderPipeline::RenderRect(size_t thread_id,
       }
       // If we already have rows from a previous iteration, we can just shift
       // the rows by 1 and insert the new one.
-      if (input_rows[i][c].size() == 2 * size_t(bordery) + 1) {
+      if (input_rows[i][c].size() == 2 * static_cast<size_t>(bordery) + 1) {
         for (ssize_t iy = 0; iy < 2 * bordery; iy++) {
           input_rows[i][c][iy] = input_rows[i][c][iy + 1];
         }
@@ -674,7 +686,7 @@ void LowMemoryRenderPipeline::RenderRect(size_t thread_id,
                                          virtual_ypadding_for_output_.end());
 
   for (int vy = -num_extra_rows;
-       vy < int(image_area_rect.ysize()) + num_extra_rows; vy++) {
+       vy < static_cast<int>(image_area_rect.ysize()) + num_extra_rows; vy++) {
     for (size_t i = 0; i < first_trailing_stage_; i++) {
       int stage_vy = vy - num_extra_rows + virtual_ypadding_for_output_[i];
 
@@ -688,9 +700,10 @@ void LowMemoryRenderPipeline::RenderRect(size_t thread_id,
 
       int y = stage_vy >> channel_shifts_[i][anyc_[i]].second;
 
-      ssize_t image_y = ssize_t(group_rect[i].y0()) + y;
+      ssize_t image_y = static_cast<ssize_t>(group_rect[i].y0()) + y;
       // Do not produce rows in out-of-bounds areas.
-      if (image_y < 0 || image_y >= ssize_t(image_rect_[i].ysize())) {
+      if (image_y < 0 ||
+          image_y >= static_cast<ssize_t>(image_rect_[i].ysize())) {
         continue;
       }
 
@@ -698,9 +711,9 @@ void LowMemoryRenderPipeline::RenderRect(size_t thread_id,
       prepare_io_rows(y, i);
 
       // Produce output rows.
-      stages_[i]->ProcessRow(input_rows[i], output_rows,
-                             xpadding_for_output_[i], group_rect[i].xsize(),
-                             group_rect[i].x0(), image_y, thread_id);
+      JXL_RETURN_IF_ERROR(stages_[i]->ProcessRow(
+          input_rows[i], output_rows, xpadding_for_output_[i],
+          group_rect[i].xsize(), group_rect[i].x0(), image_y, thread_id));
     }
 
     // Process trailing stages, i.e. the final set of non-kInOut stages; they
@@ -719,7 +732,7 @@ void LowMemoryRenderPipeline::RenderRect(size_t thread_id,
     // Check that we are not outside of the bounds for the current rendering
     // rect. Not doing so might result in overwriting some rows that have been
     // written (or will be written) by other threads.
-    if (y < 0 || y >= ssize_t(image_area_rect.ysize())) {
+    if (y < 0 || y >= static_cast<ssize_t>(image_area_rect.ysize())) {
       continue;
     }
 
@@ -728,7 +741,8 @@ void LowMemoryRenderPipeline::RenderRect(size_t thread_id,
     // (and may be necessary for correctness, as some stages assume coordinates
     // are within bounds).
     ssize_t full_image_y = frame_y0 + image_area_rect.y0() + y;
-    if (full_image_y < 0 || full_image_y >= ssize_t(full_image_ysize)) {
+    if (full_image_y < 0 ||
+        full_image_y >= static_cast<ssize_t>(full_image_ysize)) {
       continue;
     }
 
@@ -739,15 +753,16 @@ void LowMemoryRenderPipeline::RenderRect(size_t thread_id,
           i < first_image_dim_stage_ ? full_image_x0 - frame_x0 : full_image_x0;
       size_t y =
           i < first_image_dim_stage_ ? full_image_y - frame_y0 : full_image_y;
-      stages_[i]->ProcessRow(input_rows[first_trailing_stage_], output_rows,
-                             /*xextra=*/0, full_image_x1 - full_image_x0, x0, y,
-                             thread_id);
+      JXL_RETURN_IF_ERROR(stages_[i]->ProcessRow(
+          input_rows[first_trailing_stage_], output_rows,
+          /*xextra=*/0, full_image_x1 - full_image_x0, x0, y, thread_id));
     }
   }
+  return true;
 }
 
-void LowMemoryRenderPipeline::RenderPadding(size_t thread_id, Rect rect) {
-  if (rect.xsize() == 0) return;
+Status LowMemoryRenderPipeline::RenderPadding(size_t thread_id, Rect rect) {
+  if (rect.xsize() == 0) return true;
   size_t numc = channel_shifts_[0].size();
   RenderPipelineStage::RowInfo input_rows(numc, std::vector<float*>(1));
   RenderPipelineStage::RowInfo output_rows;
@@ -760,15 +775,16 @@ void LowMemoryRenderPipeline::RenderPadding(size_t thread_id, Rect rect) {
     stages_[first_image_dim_stage_ - 1]->ProcessPaddingRow(
         input_rows, rect.xsize(), rect.x0(), rect.y0() + y);
     for (size_t i = first_image_dim_stage_; i < stages_.size(); i++) {
-      stages_[i]->ProcessRow(input_rows, output_rows,
-                             /*xextra=*/0, rect.xsize(), rect.x0(),
-                             rect.y0() + y, thread_id);
+      JXL_RETURN_IF_ERROR(stages_[i]->ProcessRow(
+          input_rows, output_rows,
+          /*xextra=*/0, rect.xsize(), rect.x0(), rect.y0() + y, thread_id));
     }
   }
+  return true;
 }
 
-void LowMemoryRenderPipeline::ProcessBuffers(size_t group_id,
-                                             size_t thread_id) {
+Status LowMemoryRenderPipeline::ProcessBuffers(size_t group_id,
+                                               size_t thread_id) {
   std::vector<ImageF>& input_data =
       group_data_[use_group_ids_ ? group_id : thread_id];
 
@@ -804,38 +820,43 @@ void LowMemoryRenderPipeline::ProcessBuffers(size_t group_id,
     if (group_id == 0 && (image_rect.xsize() == 0 || image_rect.ysize() == 0)) {
       // If this frame does not intersect with the full image, we have to
       // initialize the whole image area with RenderPadding.
-      RenderPadding(thread_id,
-                    Rect(0, 0, full_image_xsize_, full_image_ysize_));
+      JXL_RETURN_IF_ERROR(RenderPadding(
+          thread_id, Rect(0, 0, full_image_xsize_, full_image_ysize_)));
     }
 
     // Render padding for groups that intersect with the full image. The case
     // where no groups intersect was handled above.
     if (group_rect.xsize() > 0 && group_rect.ysize() > 0) {
       if (gx == 0 && gy == 0) {
-        RenderPadding(thread_id, Rect(0, 0, x0, y0));
+        JXL_RETURN_IF_ERROR(RenderPadding(thread_id, Rect(0, 0, x0, y0)));
       }
       if (gy == 0) {
-        RenderPadding(thread_id, Rect(x0, 0, x1 - x0, y0));
+        JXL_RETURN_IF_ERROR(RenderPadding(thread_id, Rect(x0, 0, x1 - x0, y0)));
       }
       if (gx == 0) {
-        RenderPadding(thread_id, Rect(0, y0, x0, y1 - y0));
+        JXL_RETURN_IF_ERROR(RenderPadding(thread_id, Rect(0, y0, x0, y1 - y0)));
       }
       if (gx == 0 && gy + 1 == frame_dimensions_.ysize_groups) {
-        RenderPadding(thread_id, Rect(0, y1, x0, full_image_ysize_ - y1));
+        JXL_RETURN_IF_ERROR(
+            RenderPadding(thread_id, Rect(0, y1, x0, full_image_ysize_ - y1)));
       }
       if (gy + 1 == frame_dimensions_.ysize_groups) {
-        RenderPadding(thread_id, Rect(x0, y1, x1 - x0, full_image_ysize_ - y1));
+        JXL_RETURN_IF_ERROR(RenderPadding(
+            thread_id, Rect(x0, y1, x1 - x0, full_image_ysize_ - y1)));
       }
       if (gy == 0 && gx + 1 == frame_dimensions_.xsize_groups) {
-        RenderPadding(thread_id, Rect(x1, 0, full_image_xsize_ - x1, y0));
+        JXL_RETURN_IF_ERROR(
+            RenderPadding(thread_id, Rect(x1, 0, full_image_xsize_ - x1, y0)));
       }
       if (gx + 1 == frame_dimensions_.xsize_groups) {
-        RenderPadding(thread_id, Rect(x1, y0, full_image_xsize_ - x1, y1 - y0));
+        JXL_RETURN_IF_ERROR(RenderPadding(
+            thread_id, Rect(x1, y0, full_image_xsize_ - x1, y1 - y0)));
       }
       if (gy + 1 == frame_dimensions_.ysize_groups &&
           gx + 1 == frame_dimensions_.xsize_groups) {
-        RenderPadding(thread_id, Rect(x1, y1, full_image_xsize_ - x1,
-                                      full_image_ysize_ - y1));
+        JXL_RETURN_IF_ERROR(RenderPadding(
+            thread_id,
+            Rect(x1, y1, full_image_xsize_ - x1, full_image_ysize_ - y1)));
       }
     }
   }
@@ -857,8 +878,10 @@ void LowMemoryRenderPipeline::ProcessBuffers(size_t group_id,
             gy * frame_dimensions_.group_dim,
         image_max_color_channel_rect.xsize(),
         image_max_color_channel_rect.ysize());
-    RenderRect(thread_id, input_data, data_max_color_channel_rect,
-               image_max_color_channel_rect);
+    JXL_RETURN_IF_ERROR(RenderRect(thread_id, input_data,
+                                   data_max_color_channel_rect,
+                                   image_max_color_channel_rect));
   }
+  return true;
 }
 }  // namespace jxl

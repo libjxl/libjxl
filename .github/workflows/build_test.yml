@@ -59,13 +59,15 @@ jobs:
           - name: scalar
             mode: release
             cxxflags: -DHWY_COMPILE_ONLY_SCALAR -DFJXL_ENABLE_AVX2=0 -DFJXL_ENABLE_AVX512=0
-          # Disabling optional features to speed up msan build a little bit.
+          # Disabling optional features to speed up MSAN build a little bit.
           - name: msan
-            os: ubuntu-20.04
             skip_install: true
             cmake_args: >-
               -DJPEGXL_ENABLE_DEVTOOLS=OFF -DJPEGXL_ENABLE_PLUGINS=OFF
               -DJPEGXL_ENABLE_VIEWERS=OFF
+            apt_pkgs: clang-15
+            cc: clang-15
+            cxx: clang++-15
           - name: asan
             skip_install: true
           - name: coverage
@@ -140,7 +142,7 @@ jobs:
 
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
+      uses: step-security/harden-runner@63c24ba6bd7ba022e95695ff85de572c04a18142 # v2.7.0
       with:
         egress-policy: audit
 
@@ -201,26 +203,26 @@ jobs:
         echo "TARGETS=all" >> $GITHUB_ENV
 
     - name: Setup the LLVM source path
-      if: matrix.name == 'msan'
+      if: matrix.name == 'msan' && env.WILL_BUILD == 'true'
       run: |
         LLVM_ROOT=${GITHUB_WORKSPACE}/llvm_root
         mkdir -p ${LLVM_ROOT}
         echo "LLVM_ROOT=${LLVM_ROOT}" >> $GITHUB_ENV
 
     - name: Cache LLVM sources
-      if: matrix.name == 'msan'
-      uses: actions/cache@704facf57e6136b1bc63b828d79edcd491f0ee84 # v3.3.2
+      if: matrix.name == 'msan' && env.WILL_BUILD == 'true'
+      uses: actions/cache@13aacd865c20de90d75de3b17ebe84f7a17d57d2 # v4.0.0
       with:
         path: ${{ env.LLVM_ROOT }}
         key: llvm
 
     - name: Checkout the LLVM source
-      if: matrix.name == 'msan'
+      if: matrix.name == 'msan' && env.WILL_BUILD == 'true'
       uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       with:
         submodules: false
         repository: llvm/llvm-project
-        ref: llvmorg-7.0.1
+        ref: llvmorg-14.0.0 # NB: 15.0.0 does not build ¯\_(ツ)_/¯
         path: llvm_root
 
     - name: Sphinx dependencies
@@ -240,7 +242,7 @@ jobs:
       shell: bash
 
     - name: ccache
-      uses: actions/cache@704facf57e6136b1bc63b828d79edcd491f0ee84 # v3.3.2
+      uses: actions/cache@13aacd865c20de90d75de3b17ebe84f7a17d57d2 # v4.0.0
       with:
         path: ${{ env.CCACHE_DIR }}
         # When the cache hits the key it is not updated, so if this is a rebuild
@@ -322,7 +324,7 @@ jobs:
 
     - name: Coverage upload to Codecov
       if: env.WILL_COV == 'true'
-      uses: codecov/codecov-action@eaaf4bedf32dbdc6b720b63067d99c4d77d6047d # v3.1.4
+      uses: codecov/codecov-action@0cfda1dd0a4ad9efc75517f399d859cd1ea4ced1 # v4.0.2
       with:
         flags: unittests
         files: build/coverage.xml
@@ -333,8 +335,8 @@ jobs:
         STORE_IMAGES=0 ./ci.sh fast_benchmark
 
     # Run gbench once, just to make sure it runs, not for actual benchmarking.
-    # This doesn't work on msan because we use gbench library from the system
-    # which is not instrumented by msan.
+    # This doesn't work on MSAN because we use gbench library from the system
+    # which is not instrumented by MSAN.
     - name: gbench check
       if: env.WILL_BENCH == 'true'
       run: |

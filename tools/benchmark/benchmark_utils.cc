@@ -31,7 +31,8 @@ namespace tools {
 TemporaryFile::TemporaryFile(std::string basename, std::string extension) {
   const auto extension_size = 1 + extension.size();
   temp_filename_ = std::move(basename) + "_XXXXXX." + std::move(extension);
-  const int fd = mkstemps(&temp_filename_[0], extension_size);
+  const int fd =
+      mkstemps(const_cast<char*>(temp_filename_.data()), extension_size);
   if (fd == -1) {
     ok_ = false;
     return;
@@ -52,7 +53,7 @@ Status TemporaryFile::GetFileName(std::string* const output) const {
 
 std::string GetBaseName(std::string filename) {
   std::string result = std::move(filename);
-  result = basename(&result[0]);
+  result = basename(const_cast<char*>(result.data()));
   const size_t dot = result.rfind('.');
   if (dot != std::string::npos) {
     result.resize(dot);

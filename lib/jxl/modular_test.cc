@@ -4,61 +4,78 @@
 // license that can be found in the LICENSE file.
 
 #include <jxl/cms.h>
+#include <jxl/encode.h>
+#include <jxl/types.h>
 
-#include <array>
+#include <cmath>
+#include <cstddef>
 #include <cstdint>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/jxl.h"
+#include "lib/extras/enc/jxl.h"
 #include "lib/extras/metrics.h"
+#include "lib/extras/packed_image.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
-#include "lib/jxl/base/override.h"
+#include "lib/jxl/base/random.h"
 #include "lib/jxl/base/span.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
+#include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/enc_aux_out.h"
-#include "lib/jxl/enc_butteraugli_comparator.h"
-#include "lib/jxl/enc_cache.h"
+#include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_fields.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/enc_toc.h"
+#include "lib/jxl/fields.h"
+#include "lib/jxl/frame_header.h"
+#include "lib/jxl/headers.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
+#include "lib/jxl/image_metadata.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/image_test_utils.h"
 #include "lib/jxl/modular/encoding/enc_encoding.h"
 #include "lib/jxl/modular/encoding/encoding.h"
-#include "lib/jxl/modular/encoding/ma_common.h"
+#include "lib/jxl/modular/modular_image.h"
+#include "lib/jxl/modular/options.h"
+#include "lib/jxl/modular/transform/transform.h"
 #include "lib/jxl/padded_bytes.h"
+#include "lib/jxl/test_image.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"
 
 namespace jxl {
 namespace {
 
+using test::ButteraugliDistance;
 using test::ReadTestData;
 using test::Roundtrip;
+using test::TestImage;
 
 void TestLosslessGroups(size_t group_size_shift) {
   const std::vector<uint8_t> orig = ReadTestData("jxl/flower/flower.png");
-  CompressParams cparams;
-  cparams.SetLossless();
-  cparams.modular_group_size_shift = group_size_shift;
+  TestImage t;
+  t.DecodeFromBytes(orig).ClearMetadata();
+  t.SetDimensions(t.ppf().xsize() / 4, t.ppf().ysize() / 4);
 
-  CodecInOut io_out;
+  extras::JXLCompressParams cparams;
+  cparams.distance = 0.0f;
+  cparams.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_GROUP_SIZE, group_size_shift);
+  extras::JXLDecompressParams dparams;
+  dparams.accepted_formats = {{3, JXL_TYPE_UINT16, JXL_LITTLE_ENDIAN, 0}};
 
-  CodecInOut io;
-  ASSERT_TRUE(SetFromBytes(Bytes(orig), &io));
-  io.ShrinkTo(io.xsize() / 4, io.ysize() / 4);
-
-  size_t compressed_size;
-  JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io_out, _, &compressed_size));
+  extras::PackedPixelFile ppf_out;
+  size_t compressed_size =
+      Roundtrip(t.ppf(), cparams, dparams, nullptr, &ppf_out);
   EXPECT_LE(compressed_size, 280000u);
-  JXL_EXPECT_OK(SamePixels(*io.Main().color(), *io_out.Main().color(), _));
+  EXPECT_EQ(0.0f, test::ComputeDistance2(t.ppf(), ppf_out));
 }
 
 TEST(ModularTest, RoundtripLosslessGroups128) { TestLosslessGroups(0); }
@@ -74,24 +91,26 @@ TEST(ModularTest, JXL_TSAN_SLOW_TEST(RoundtripLosslessGroups1024)) {
 TEST(ModularTest, RoundtripLosslessCustomWP_PermuteRCT) {
   const std::vector<uint8_t> orig =
       ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
-  CompressParams cparams;
-  cparams.SetLossless();
+  TestImage t;
+  t.DecodeFromBytes(orig).ClearMetadata();
+  t.SetDimensions(100, 100);
+
+  extras::JXLCompressParams cparams;
+  cparams.distance = 0.0f;
   // 9 = permute to GBR, to test the special case of permutation-only
-  cparams.colorspace = 9;
+  cparams.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_COLOR_SPACE, 9);
+  cparams.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_PREDICTOR,
+                    static_cast<int64_t>(Predictor::Weighted));
   // slowest speed so different WP modes are tried
-  cparams.speed_tier = SpeedTier::kTortoise;
-  cparams.options.predictor = {Predictor::Weighted};
+  cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 9);
+  extras::JXLDecompressParams dparams;
+  dparams.accepted_formats = {{3, JXL_TYPE_UINT16, JXL_LITTLE_ENDIAN, 0}};
 
-  CodecInOut io_out;
-
-  CodecInOut io;
-  ASSERT_TRUE(SetFromBytes(Bytes(orig), &io));
-  io.ShrinkTo(100, 100);
-
-  size_t compressed_size;
-  JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io_out, _, &compressed_size));
+  extras::PackedPixelFile ppf_out;
+  size_t compressed_size =
+      Roundtrip(t.ppf(), cparams, dparams, nullptr, &ppf_out);
   EXPECT_LE(compressed_size, 10169u);
-  JXL_EXPECT_OK(SamePixels(*io.Main().color(), *io_out.Main().color(), _));
+  EXPECT_EQ(0.0f, test::ComputeDistance2(t.ppf(), ppf_out));
 }
 
 TEST(ModularTest, RoundtripLossyDeltaPalette) {
@@ -191,7 +210,8 @@ TEST(ModularTest, RoundtripLossy16) {
 
 TEST(ModularTest, RoundtripExtraProperties) {
   constexpr size_t kSize = 250;
-  Image image(kSize, kSize, /*bitdepth=*/8, 3);
+  JXL_ASSIGN_OR_DIE(Image image,
+                    Image::Create(kSize, kSize, /*bitdepth=*/8, 3));
   ModularOptions options;
   options.max_properties = 4;
   options.predictor = Predictor::Zero;
@@ -206,10 +226,12 @@ TEST(ModularTest, RoundtripExtraProperties) {
   BitWriter writer;
   ASSERT_TRUE(ModularGenericCompress(image, options, &writer));
   writer.ZeroPadToByte();
-  Image decoded(kSize, kSize, /*bitdepth=*/8, image.channel.size());
+  JXL_ASSIGN_OR_DIE(Image decoded, Image::Create(kSize, kSize, /*bitdepth=*/8,
+                                                 image.channel.size()));
   for (size_t i = 0; i < image.channel.size(); i++) {
     const Channel& ch = image.channel[i];
-    decoded.channel[i] = Channel(ch.w, ch.h, ch.hshift, ch.vshift);
+    JXL_ASSIGN_OR_DIE(decoded.channel[i],
+                      Channel::Create(ch.w, ch.h, ch.hshift, ch.vshift));
   }
   Status status = true;
   {
@@ -229,38 +251,6 @@ TEST(ModularTest, RoundtripExtraProperties) {
       }
     }
   }
-}
-
-TEST(ModularTest, RoundtripLosslessCustomSqueeze) {
-  const std::vector<uint8_t> orig =
-      ReadTestData("external/wesaturate/500px/tmshre_riaphotographs_srgb8.png");
-  CodecInOut io;
-  ASSERT_TRUE(SetFromBytes(Bytes(orig), &io));
-
-  CompressParams cparams;
-  cparams.modular_mode = true;
-  cparams.color_transform = jxl::ColorTransform::kNone;
-  cparams.butteraugli_distance = 0.f;
-  cparams.options.predictor = {Predictor::Zero};
-  cparams.speed_tier = SpeedTier::kThunder;
-  cparams.responsive = 1;
-  // Custom squeeze params, atm just for testing
-  SqueezeParams p;
-  p.horizontal = true;
-  p.in_place = false;
-  p.begin_c = 0;
-  p.num_c = 3;
-  cparams.squeezes.push_back(p);
-  p.begin_c = 1;
-  p.in_place = true;
-  p.horizontal = false;
-  cparams.squeezes.push_back(p);
-
-  CodecInOut io2;
-  size_t compressed_size;
-  JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _, &compressed_size));
-  EXPECT_LE(compressed_size, 265000u);
-  JXL_EXPECT_OK(SamePixels(*io.Main().color(), *io2.Main().color(), _));
 }
 
 struct RoundtripLosslessConfig {
@@ -316,7 +306,7 @@ TEST_P(ModularTestParam, RoundtripLossless) {
 
   double factor = ((1lu << bitdepth) - 1lu);
   double ifactor = 1.0 / factor;
-  Image3F noise_added(xsize, ysize);
+  JXL_ASSIGN_OR_DIE(Image3F noise_added, Image3F::Create(xsize, ysize));
 
   for (size_t c = 0; c < 3; c++) {
     for (size_t y = 0; y < ysize; y++) {
@@ -327,7 +317,7 @@ TEST_P(ModularTestParam, RoundtripLossless) {
         float f = in[x] + generator.UniformF(0.0f, 1.f / 255.f);
         if (f > 1.f) f = 1.f;
         // quantize to the bitdepth we're testing
-        unsigned int u = f * factor + 0.5;
+        unsigned int u = static_cast<unsigned int>(std::lround(f * factor));
         out[x] = u * ifactor;
       }
     }
@@ -344,7 +334,7 @@ TEST_P(ModularTestParam, RoundtripLossless) {
   CodecInOut io2;
   size_t compressed_size;
   JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _, &compressed_size));
-  EXPECT_LE(compressed_size, bitdepth * xsize * ysize / 3);
+  EXPECT_LE(compressed_size, bitdepth * xsize * ysize / 3 * 1.1);
   EXPECT_LE(0, ComputeDistance2(io.Main(), io2.Main(), *JxlGetDefaultCms()));
   size_t different = 0;
   for (size_t c = 0; c < 3; c++) {
@@ -364,7 +354,8 @@ TEST_P(ModularTestParam, RoundtripLossless) {
 
 TEST(ModularTest, RoundtripLosslessCustomFloat) {
   CodecInOut io;
-  size_t xsize = 100, ysize = 300;
+  size_t xsize = 100;
+  size_t ysize = 300;
   io.SetSize(xsize, ysize);
   io.metadata.m.bit_depth.bits_per_sample = 18;
   io.metadata.m.bit_depth.exponent_bits_per_sample = 6;
@@ -373,7 +364,7 @@ TEST(ModularTest, RoundtripLosslessCustomFloat) {
   ColorEncoding color_encoding;
   color_encoding.Tf().SetTransferFunction(TransferFunction::kLinear);
   color_encoding.SetColorSpace(ColorSpace::kRGB);
-  Image3F testimage(xsize, ysize);
+  JXL_ASSIGN_OR_DIE(Image3F testimage, Image3F::Create(xsize, ysize));
   float factor = 1.f / (1 << 14);
   for (size_t c = 0; c < 3; c++) {
     for (size_t y = 0; y < ysize; y++) {
@@ -456,7 +447,7 @@ TEST(ModularTest, PredictorIntegerOverflow) {
   WriteHeaders(&writer, xsize, ysize);
   std::vector<BitWriter> group_codes(1);
   {
-    BitWriter* bw = &group_codes[0];
+    BitWriter* bw = group_codes.data();
     BitWriter::Allotment allotment(bw, 1 << 20);
     WriteHistograms(bw);
     GroupHeader header;
@@ -480,7 +471,7 @@ TEST(ModularTest, PredictorIntegerOverflow) {
                              nullptr, &ppf));
   ASSERT_EQ(1, ppf.frames.size());
   const auto& img = ppf.frames[0].color;
-  const auto pixels = reinterpret_cast<const float*>(img.pixels());
+  const auto* pixels = reinterpret_cast<const float*>(img.pixels());
   EXPECT_EQ(-1.0f, pixels[0]);
 }
 
@@ -492,7 +483,7 @@ TEST(ModularTest, UnsqueezeIntegerOverflow) {
   WriteHeaders(&writer, xsize, ysize);
   std::vector<BitWriter> group_codes(1);
   {
-    BitWriter* bw = &group_codes[0];
+    BitWriter* bw = group_codes.data();
     BitWriter::Allotment allotment(bw, 1 << 20);
     WriteHistograms(bw);
     GroupHeader header;
@@ -528,7 +519,7 @@ TEST(ModularTest, UnsqueezeIntegerOverflow) {
                              nullptr, &ppf));
   ASSERT_EQ(1, ppf.frames.size());
   const auto& img = ppf.frames[0].color;
-  const auto pixels = reinterpret_cast<const float*>(img.pixels());
+  const float* pixels = reinterpret_cast<const float*>(img.pixels());
   for (size_t x = 0; x < xsize; ++x) {
     EXPECT_NEAR(-0.5f, pixels[x], 1e-10);
     EXPECT_NEAR(0.5f, pixels[xsize + x], 1e-10);

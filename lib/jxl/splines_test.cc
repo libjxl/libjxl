@@ -7,15 +7,25 @@
 
 #include <jxl/cms.h>
 
+#include <cstddef>
 #include <cstdint>
+#include <cstdio>
+#include <ostream>
+#include <utility>
 #include <vector>
 
 #include "lib/extras/codec.h"
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/span.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/chroma_from_luma.h"
 #include "lib/jxl/enc_aux_out.h"
-#include "lib/jxl/enc_butteraugli_comparator.h"
+#include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_splines.h"
+#include "lib/jxl/image.h"
+#include "lib/jxl/image_ops.h"
 #include "lib/jxl/image_test_utils.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"
@@ -275,7 +285,7 @@ TEST(SplinesTest, DuplicatePoints) {
   Splines splines(kQuantizationAdjustment, std::move(quantized_splines),
                   std::move(starting_points));
 
-  Image3F image(320, 320);
+  JXL_ASSIGN_OR_DIE(Image3F image, Image3F::Create(320, 320));
   ZeroFillImage(&image);
   EXPECT_FALSE(
       splines.InitializeDrawCache(image.xsize(), image.ysize(), *cmap));
@@ -311,13 +321,13 @@ TEST(SplinesTest, Drawing) {
   Splines splines(kQuantizationAdjustment, std::move(quantized_splines),
                   std::move(starting_points));
 
-  Image3F image(320, 320);
+  JXL_ASSIGN_OR_DIE(Image3F image, Image3F::Create(320, 320));
   ZeroFillImage(&image);
   ASSERT_TRUE(splines.InitializeDrawCache(image.xsize(), image.ysize(), *cmap));
   splines.AddTo(&image, Rect(image), Rect(image));
 
   CodecInOut io_actual;
-  Image3F image2(320, 320);
+  JXL_ASSIGN_OR_DIE(Image3F image2, Image3F::Create(320, 320));
   CopyImageTo(image, &image2);
   io_actual.SetFromImage(std::move(image2), ColorEncoding::SRGB());
   ASSERT_TRUE(io_actual.frames[0].TransformTo(io_expected.Main().c_current(),
