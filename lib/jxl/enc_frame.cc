@@ -1233,10 +1233,13 @@ Status EncodeGroups(const FrameHeader& frame_header,
   const size_t num_groups = frame_dim.num_groups;
   const size_t num_passes = enc_state->progressive_splitter.GetNumPasses();
   const size_t global_ac_index = frame_dim.num_dc_groups + 1;
-  const bool is_small_image = frame_dim.num_groups == 1 && num_passes == 1;
-
-  group_codes->resize(
-      NumTocEntries(num_groups, frame_dim.num_dc_groups, num_passes));
+  const bool is_small_image =
+      !enc_state->streaming_mode && num_groups == 1 && num_passes == 1;
+  const size_t num_toc_entries =
+      is_small_image ? 1
+                     : AcGroupIndex(0, 0, num_groups, frame_dim.num_dc_groups) +
+                           num_groups * num_passes;
+  group_codes->resize(num_toc_entries);
 
   const auto get_output = [&](const size_t index) {
     return &(*group_codes)[is_small_image ? 0 : index];
