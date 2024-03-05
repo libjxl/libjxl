@@ -5,6 +5,7 @@
 
 #include "lib/jpegli/decode_marker.h"
 
+#include <jxl/types.h>
 #include <string.h>
 
 #include "lib/jpegli/common.h"
@@ -60,7 +61,7 @@ void ProcessSOF(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
     JPEGLI_ERROR("Duplicate SOF marker.");
   }
   m->found_sof_ = true;
-  cinfo->progressive_mode = (cinfo->unread_marker == 0xc2);
+  cinfo->progressive_mode = TO_JXL_BOOL(cinfo->unread_marker == 0xc2);
   cinfo->arith_code = 0;
   size_t pos = 2;
   JPEG_VERIFY_LEN(6);
@@ -222,7 +223,7 @@ void ProcessSOS(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
 
   if (cinfo->input_scan_number == 0) {
     m->is_multiscan_ = (cinfo->comps_in_scan < cinfo->num_components ||
-                        cinfo->progressive_mode);
+                        FROM_JXL_BOOL(cinfo->progressive_mode));
   }
   if (cinfo->Ah != 0 && cinfo->Al != cinfo->Ah - 1) {
     // section G.1.1.1.2 : Successive approximation control only improves
@@ -293,7 +294,7 @@ void ProcessDHT(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
     // component Huffman codes, 0x10 is added to the index.
     int slot_id = ReadUint8(data, &pos);
     int huffman_index = slot_id;
-    int is_ac_table = (slot_id & 0x10) != 0;
+    bool is_ac_table = ((slot_id & 0x10) != 0);
     JHUFF_TBL** table;
     if (is_ac_table) {
       huffman_index -= 0x10;

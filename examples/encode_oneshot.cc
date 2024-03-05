@@ -39,8 +39,9 @@ bool ReadPFM(const char* filename, std::vector<float>* pixels, uint32_t* xsize,
     return false;
   }
   uint32_t endian_test = 1;
-  uint8_t little_endian[4];
-  memcpy(little_endian, &endian_test, 4);
+  uint8_t little_endian_check[4];
+  memcpy(little_endian_check, &endian_test, 4);
+  bool little_endian = (little_endian_check[0] == 1);
 
   if (fseek(file, 0, SEEK_END) != 0) {
     fclose(file);
@@ -122,7 +123,7 @@ bool ReadPFM(const char* filename, std::vector<float>* pixels, uint32_t* xsize,
     return false;
   }
 
-  if (!!little_endian[0] != input_little_endian) {
+  if (little_endian != input_little_endian) {
     fprintf(stderr,
             "%s has a different endianness than we do, conversion is not "
             "supported.\n",
@@ -181,8 +182,8 @@ bool EncodeJxlOneshot(const std::vector<float>& pixels, const uint32_t xsize,
   }
 
   JxlColorEncoding color_encoding = {};
-  JxlColorEncodingSetToSRGB(&color_encoding,
-                            /*is_gray=*/pixel_format.num_channels < 3);
+  JXL_BOOL is_gray = TO_JXL_BOOL(pixel_format.num_channels < 3);
+  JxlColorEncodingSetToSRGB(&color_encoding, is_gray);
   if (JXL_ENC_SUCCESS !=
       JxlEncoderSetColorEncoding(enc.get(), &color_encoding)) {
     fprintf(stderr, "JxlEncoderSetColorEncoding failed\n");

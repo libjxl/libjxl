@@ -177,9 +177,8 @@ class PackedFrame {
     copy.frame_info = frame_info;
     copy.name = name;
     copy.color = color.Copy();
-    for (size_t i = 0; i < extra_channels.size(); ++i) {
-      PackedImage ec = extra_channels[i].Copy();
-      copy.extra_channels.emplace_back(std::move(ec));
+    for (const auto& ec : extra_channels) {
+      copy.extra_channels.emplace_back(ec.Copy());
     }
     return copy;
   }

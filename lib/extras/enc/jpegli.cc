@@ -437,7 +437,7 @@ Status EncodeJpeg(const PackedPixelFile& ppf, const JpegSettings& jpeg_settings,
       }
     }
     jpegli_enable_adaptive_quantization(
-        &cinfo, jpeg_settings.use_adaptive_quantization);
+        &cinfo, TO_JXL_BOOL(jpeg_settings.use_adaptive_quantization));
     if (jpeg_settings.psnr_target > 0.0) {
       jpegli_set_psnr(&cinfo, jpeg_settings.psnr_target,
                       jpeg_settings.search_tolerance,
@@ -449,11 +449,11 @@ Status EncodeJpeg(const PackedPixelFile& ppf, const JpegSettings& jpeg_settings,
       jpegli_set_distance(&cinfo, jpeg_settings.distance, TRUE);
     }
     jpegli_set_progressive_level(&cinfo, jpeg_settings.progressive_level);
-    cinfo.optimize_coding = jpeg_settings.optimize_coding;
+    cinfo.optimize_coding = TO_JXL_BOOL(jpeg_settings.optimize_coding);
     if (!jpeg_settings.app_data.empty()) {
       // Make sure jpegli_start_compress() does not write any APP markers.
-      cinfo.write_JFIF_header = false;
-      cinfo.write_Adobe_marker = false;
+      cinfo.write_JFIF_header = JXL_FALSE;
+      cinfo.write_Adobe_marker = JXL_FALSE;
     }
     const PackedImage& image = ppf.frames[0].color;
     if (jpeg_settings.xyb) {

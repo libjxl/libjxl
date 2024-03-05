@@ -181,7 +181,9 @@ class AcStrategyRow {
  public:
   explicit AcStrategyRow(const uint8_t* row) : row_(row) {}
   AcStrategy operator[](size_t x) const {
-    return AcStrategy(static_cast<AcStrategy::Type>(row_[x] >> 1), row_[x] & 1);
+    AcStrategy::Type strategy = static_cast<AcStrategy::Type>(row_[x] >> 1);
+    bool is_first = static_cast<bool>(row_[x] & 1);
+    return AcStrategy(strategy, is_first);
   }
 
  private:

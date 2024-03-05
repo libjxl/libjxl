@@ -37,7 +37,7 @@ void TestProfile(const IccBytes& icc) {
 
 void TestProfile(const std::string& icc) {
   IccBytes data;
-  Bytes(icc).AppendTo(&data);
+  Bytes(icc).AppendTo(data);
   TestProfile(data);
 }
 
@@ -139,7 +139,7 @@ TEST(IccCodecTest, Icc) {
 
   {
     IccBytes profile;
-    Bytes(kTestProfile, sizeof(kTestProfile)).AppendTo(&profile);
+    Bytes(kTestProfile, sizeof(kTestProfile)).AppendTo(profile);
     TestProfile(profile);
   }
 

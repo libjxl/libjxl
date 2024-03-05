@@ -241,7 +241,7 @@ TEST_F(ColorManagementTest, D2700Chromaticity) {
   std::vector<uint8_t> icc_data =
       jxl::test::ReadTestData("jxl/color_management/sRGB-D2700.icc");
   IccBytes icc;
-  Bytes(icc_data).AppendTo(&icc);
+  Bytes(icc_data).AppendTo(icc);
   ColorEncoding sRGB_D2700;
   ASSERT_TRUE(sRGB_D2700.SetICC(std::move(icc), JxlGetDefaultCms()));
 
@@ -258,7 +258,7 @@ TEST_F(ColorManagementTest, D2700ToSRGB) {
   std::vector<uint8_t> icc_data =
       jxl::test::ReadTestData("jxl/color_management/sRGB-D2700.icc");
   IccBytes icc;
-  Bytes(icc_data).AppendTo(&icc);
+  Bytes(icc_data).AppendTo(icc);
   ColorEncoding sRGB_D2700;
   ASSERT_TRUE(sRGB_D2700.SetICC(std::move(icc), JxlGetDefaultCms()));
 

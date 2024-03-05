@@ -285,9 +285,8 @@ Status DecodeUintConfigs(size_t log_alpha_size,
                          std::vector<HybridUintConfig>* uint_config,
                          BitReader* br) {
   // TODO(veluca): RLE?
-  for (size_t i = 0; i < uint_config->size(); i++) {
-    JXL_RETURN_IF_ERROR(
-        DecodeUintConfig(log_alpha_size, &(*uint_config)[i], br));
+  for (auto& cfg : *uint_config) {
+    JXL_RETURN_IF_ERROR(DecodeUintConfig(log_alpha_size, &cfg, br));
   }
   return true;
 }
@@ -346,7 +345,7 @@ Status DecodeHistograms(BitReader* br, size_t num_contexts, ANSCode* code,
       4, "Decoded context map of size %" PRIuS " and %" PRIuS " histograms",
       num_contexts, num_histograms);
   code->lz77.nonserialized_distance_context = context_map->back();
-  code->use_prefix_code = br->ReadFixedBits<1>();
+  code->use_prefix_code = static_cast<bool>(br->ReadFixedBits<1>());
   if (code->use_prefix_code) {
     code->log_alpha_size = PREFIX_MAX_BITS;
   } else {

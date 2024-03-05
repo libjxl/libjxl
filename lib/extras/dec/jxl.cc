@@ -180,18 +180,18 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
     return false;
   }
   if (jpeg_bytes == nullptr) {
-    if (JXL_DEC_SUCCESS !=
-        JxlDecoderSetRenderSpotcolors(dec, dparams.render_spotcolors)) {
+    if (JXL_DEC_SUCCESS != JxlDecoderSetRenderSpotcolors(
+                               dec, TO_JXL_BOOL(dparams.render_spotcolors))) {
       fprintf(stderr, "JxlDecoderSetRenderSpotColors failed\n");
       return false;
     }
-    if (JXL_DEC_SUCCESS !=
-        JxlDecoderSetKeepOrientation(dec, dparams.keep_orientation)) {
+    if (JXL_DEC_SUCCESS != JxlDecoderSetKeepOrientation(
+                               dec, TO_JXL_BOOL(dparams.keep_orientation))) {
       fprintf(stderr, "JxlDecoderSetKeepOrientation failed\n");
       return false;
     }
-    if (JXL_DEC_SUCCESS !=
-        JxlDecoderSetUnpremultiplyAlpha(dec, dparams.unpremultiply_alpha)) {
+    if (JXL_DEC_SUCCESS != JxlDecoderSetUnpremultiplyAlpha(
+                               dec, TO_JXL_BOOL(dparams.unpremultiply_alpha))) {
       fprintf(stderr, "JxlDecoderSetUnpremultiplyAlpha failed\n");
       return false;
     }
@@ -313,7 +313,7 @@ bool DecodeImageJXL(const uint8_t* bytes, size_t bytes_size,
       } else {
         if (dparams.unpremultiply_alpha) {
           // Mark in the basic info that alpha was unpremultiplied.
-          ppf->info.alpha_premultiplied = false;
+          ppf->info.alpha_premultiplied = JXL_FALSE;
         }
       }
       bool alpha_found = false;
