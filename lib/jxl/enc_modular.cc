@@ -192,6 +192,135 @@ Status float_to_int(const float* const row_in, pixel_type* const row_out,
   }
   return true;
 }
+
+float EstimateWPCost(const Image& img, size_t i) {
+  size_t extra_bits = 0;
+  float histo_cost = 0;
+  HybridUintConfig config;
+  int32_t cutoffs[] = {-500, -392, -255, -191, -127, -95, -63, -47, -31,
+                       -23,  -15,  -11,  -7,   -4,   -3,  -1,  0,   1,
+                       3,    5,    7,    11,   15,   23,  31,  47,  63,
+                       95,   127,  191,  255,  392,  500};
+  constexpr size_t nc = sizeof(cutoffs) / sizeof(*cutoffs) + 1;
+  Histogram histo[nc] = {};
+  weighted::Header wp_header;
+  PredictorMode(i, &wp_header);
+  for (const Channel& ch : img.channel) {
+    const intptr_t onerow = ch.plane.PixelsPerRow();
+    weighted::State wp_state(wp_header, ch.w, ch.h);
+    Properties properties(1);
+    for (size_t y = 0; y < ch.h; y++) {
+      const pixel_type* JXL_RESTRICT r = ch.Row(y);
+      for (size_t x = 0; x < ch.w; x++) {
+        size_t offset = 0;
+        pixel_type_w left = (x ? r[x - 1] : y ? *(r + x - onerow) : 0);
+        pixel_type_w top = (y ? *(r + x - onerow) : left);
+        pixel_type_w topleft = (x && y ? *(r + x - 1 - onerow) : left);
+        pixel_type_w topright =
+            (x + 1 < ch.w && y ? *(r + x + 1 - onerow) : top);
+        pixel_type_w toptop = (y > 1 ? *(r + x - onerow - onerow) : top);
+        pixel_type guess = wp_state.Predict</*compute_properties=*/true>(
+            x, y, ch.w, top, left, topright, topleft, toptop, &properties,
+            offset);
+        size_t ctx = 0;
+        for (int c : cutoffs) {
+          ctx += c >= properties[0];
+        }
+        pixel_type res = r[x] - guess;
+        uint32_t token;
+        uint32_t nbits;
+        uint32_t bits;
+        config.Encode(PackSigned(res), &token, &nbits, &bits);
+        histo[ctx].Add(token);
+        extra_bits += nbits;
+        wp_state.UpdateErrors(r[x], x, y, ch.w);
+      }
+    }
+    for (size_t h = 0; h < nc; h++) {
+      histo_cost += histo[h].ShannonEntropy();
+      histo[h].Clear();
+    }
+  }
+  return histo_cost + extra_bits;
+}
+
+float EstimateCost(const Image& img) {
+  // TODO(veluca): consider SIMDfication of this code.
+  size_t extra_bits = 0;
+  float histo_cost = 0;
+  HybridUintConfig config;
+  uint32_t cutoffs[] = {0,  1,  3,  5,   7,   11,  15,  23, 31,
+                        47, 63, 95, 127, 191, 255, 392, 500};
+  constexpr size_t nc = sizeof(cutoffs) / sizeof(*cutoffs) + 1;
+  Histogram histo[nc] = {};
+  for (const Channel& ch : img.channel) {
+    const intptr_t onerow = ch.plane.PixelsPerRow();
+    for (size_t y = 0; y < ch.h; y++) {
+      const pixel_type* JXL_RESTRICT r = ch.Row(y);
+      for (size_t x = 0; x < ch.w; x++) {
+        pixel_type_w left = (x ? r[x - 1] : y ? *(r + x - onerow) : 0);
+        pixel_type_w top = (y ? *(r + x - onerow) : left);
+        pixel_type_w topleft = (x && y ? *(r + x - 1 - onerow) : left);
+        size_t maxdiff = std::max(std::max(left, top), topleft) -
+                         std::min(std::min(left, top), topleft);
+        size_t ctx = 0;
+        for (uint32_t c : cutoffs) {
+          ctx += c > maxdiff;
+        }
+        pixel_type res = r[x] - ClampedGradient(top, left, topleft);
+        uint32_t token;
+        uint32_t nbits;
+        uint32_t bits;
+        config.Encode(PackSigned(res), &token, &nbits, &bits);
+        histo[ctx].Add(token);
+        extra_bits += nbits;
+      }
+    }
+    for (size_t h = 0; h < nc; h++) {
+      histo_cost += histo[h].ShannonEntropy();
+      histo[h].Clear();
+    }
+  }
+  return histo_cost + extra_bits;
+}
+
+bool do_transform(Image& image, const Transform& tr,
+                  const weighted::Header& wp_header,
+                  jxl::ThreadPool* pool = nullptr, bool force_jxlart = false) {
+  Transform t = tr;
+  bool did_it = true;
+  if (force_jxlart) {
+    if (!t.MetaApply(image)) return false;
+  } else {
+    did_it = TransformForward(t, image, wp_header, pool);
+  }
+  if (did_it) image.transform.push_back(t);
+  return did_it;
+}
+
+bool maybe_do_transform(Image& image, const Transform& tr,
+                        const CompressParams& cparams,
+                        const weighted::Header& wp_header,
+                        jxl::ThreadPool* pool = nullptr,
+                        bool force_jxlart = false) {
+  if (force_jxlart || cparams.speed_tier >= SpeedTier::kSquirrel) {
+    return do_transform(image, tr, wp_header, pool, force_jxlart);
+  }
+  float cost_before = EstimateCost(image);
+  bool did_it = do_transform(image, tr, wp_header, pool);
+  if (did_it) {
+    float cost_after = EstimateCost(image);
+    JXL_DEBUG_V(7, "Cost before: %f  cost after: %f", cost_before, cost_after);
+    if (cost_after > cost_before) {
+      Transform t = image.transform.back();
+      JXL_RETURN_IF_ERROR(t.Inverse(image, wp_header, pool));
+      image.transform.pop_back();
+      did_it = false;
+    }
+  }
+  return did_it;
+}
+
 }  // namespace
 
 ModularFrameEncoder::ModularFrameEncoder(const FrameHeader& frame_header,
@@ -385,20 +514,6 @@ ModularFrameEncoder::ModularFrameEncoder(const FrameHeader& frame_header,
   }
   stream_options_[0].histogram_params =
       HistogramParams::ForModular(cparams_, {}, streaming_mode);
-}
-
-bool do_transform(Image& image, const Transform& tr,
-                  const weighted::Header& wp_header,
-                  jxl::ThreadPool* pool = nullptr, bool force_jxlart = false) {
-  Transform t = tr;
-  bool did_it = true;
-  if (force_jxlart) {
-    if (!t.MetaApply(image)) return false;
-  } else {
-    did_it = TransformForward(t, image, wp_header, pool);
-  }
-  if (did_it) image.transform.push_back(t);
-  return did_it;
 }
 
 Status ModularFrameEncoder::ComputeEncodingData(
@@ -622,8 +737,8 @@ Status ModularFrameEncoder::ComputeEncodingData(
       }
       // TODO(veluca): use a custom weighted header if using the weighted
       // predictor.
-      do_transform(gi, maybe_palette, weighted::Header(), pool,
-                   cparams_.options.zero_tokens);
+      maybe_do_transform(gi, maybe_palette, cparams_, weighted::Header(), pool,
+                         cparams_.options.zero_tokens);
     }
     // all-minus-one-channel palette (RGB with separate alpha, or CMY with
     // separate K)
@@ -638,8 +753,8 @@ Status ModularFrameEncoder::ComputeEncodingData(
       if (maybe_palette_3.lossy_palette) {
         maybe_palette_3.predictor = delta_pred_;
       }
-      do_transform(gi, maybe_palette_3, weighted::Header(), pool,
-                   cparams_.options.zero_tokens);
+      maybe_do_transform(gi, maybe_palette_3, cparams_, weighted::Header(),
+                         pool, cparams_.options.zero_tokens);
     }
   }
 
@@ -669,7 +784,8 @@ Status ModularFrameEncoder::ComputeEncodingData(
           static_cast<int>(xsize * ysize / 16),
           static_cast<int>(cparams_.channel_colors_pre_transform_percent /
                            100. * colors));
-      if (do_transform(gi, maybe_palette_1, weighted::Header(), pool)) {
+      if (maybe_do_transform(gi, maybe_palette_1, cparams_, weighted::Header(),
+                             pool)) {
         // effective bit depth is lower, adjust quantization accordingly
         compute_minmax(gi.channel[gi.nb_meta_channels + i], &min, &max);
         if (max < maxval) maxval = max;
@@ -1157,100 +1273,6 @@ size_t ModularFrameEncoder::ComputeStreamingAbsoluteAcGroupId(
          (dc_group_y * 8 + ac_group_y) * frame_dim_.xsize_groups;
 }
 
-namespace {
-float EstimateWPCost(const Image& img, size_t i) {
-  size_t extra_bits = 0;
-  float histo_cost = 0;
-  HybridUintConfig config;
-  int32_t cutoffs[] = {-500, -392, -255, -191, -127, -95, -63, -47, -31,
-                       -23,  -15,  -11,  -7,   -4,   -3,  -1,  0,   1,
-                       3,    5,    7,    11,   15,   23,  31,  47,  63,
-                       95,   127,  191,  255,  392,  500};
-  constexpr size_t nc = sizeof(cutoffs) / sizeof(*cutoffs) + 1;
-  Histogram histo[nc] = {};
-  weighted::Header wp_header;
-  PredictorMode(i, &wp_header);
-  for (const Channel& ch : img.channel) {
-    const intptr_t onerow = ch.plane.PixelsPerRow();
-    weighted::State wp_state(wp_header, ch.w, ch.h);
-    Properties properties(1);
-    for (size_t y = 0; y < ch.h; y++) {
-      const pixel_type* JXL_RESTRICT r = ch.Row(y);
-      for (size_t x = 0; x < ch.w; x++) {
-        size_t offset = 0;
-        pixel_type_w left = (x ? r[x - 1] : y ? *(r + x - onerow) : 0);
-        pixel_type_w top = (y ? *(r + x - onerow) : left);
-        pixel_type_w topleft = (x && y ? *(r + x - 1 - onerow) : left);
-        pixel_type_w topright =
-            (x + 1 < ch.w && y ? *(r + x + 1 - onerow) : top);
-        pixel_type_w toptop = (y > 1 ? *(r + x - onerow - onerow) : top);
-        pixel_type guess = wp_state.Predict</*compute_properties=*/true>(
-            x, y, ch.w, top, left, topright, topleft, toptop, &properties,
-            offset);
-        size_t ctx = 0;
-        for (int c : cutoffs) {
-          ctx += c >= properties[0];
-        }
-        pixel_type res = r[x] - guess;
-        uint32_t token;
-        uint32_t nbits;
-        uint32_t bits;
-        config.Encode(PackSigned(res), &token, &nbits, &bits);
-        histo[ctx].Add(token);
-        extra_bits += nbits;
-        wp_state.UpdateErrors(r[x], x, y, ch.w);
-      }
-    }
-    for (size_t h = 0; h < nc; h++) {
-      histo_cost += histo[h].ShannonEntropy();
-      histo[h].Clear();
-    }
-  }
-  return histo_cost + extra_bits;
-}
-
-float EstimateCost(const Image& img) {
-  // TODO(veluca): consider SIMDfication of this code.
-  size_t extra_bits = 0;
-  float histo_cost = 0;
-  HybridUintConfig config;
-  uint32_t cutoffs[] = {0,  1,  3,  5,   7,   11,  15,  23, 31,
-                        47, 63, 95, 127, 191, 255, 392, 500};
-  constexpr size_t nc = sizeof(cutoffs) / sizeof(*cutoffs) + 1;
-  Histogram histo[nc] = {};
-  for (const Channel& ch : img.channel) {
-    const intptr_t onerow = ch.plane.PixelsPerRow();
-    for (size_t y = 0; y < ch.h; y++) {
-      const pixel_type* JXL_RESTRICT r = ch.Row(y);
-      for (size_t x = 0; x < ch.w; x++) {
-        pixel_type_w left = (x ? r[x - 1] : y ? *(r + x - onerow) : 0);
-        pixel_type_w top = (y ? *(r + x - onerow) : left);
-        pixel_type_w topleft = (x && y ? *(r + x - 1 - onerow) : left);
-        size_t maxdiff = std::max(std::max(left, top), topleft) -
-                         std::min(std::min(left, top), topleft);
-        size_t ctx = 0;
-        for (uint32_t c : cutoffs) {
-          ctx += c > maxdiff;
-        }
-        pixel_type res = r[x] - ClampedGradient(top, left, topleft);
-        uint32_t token;
-        uint32_t nbits;
-        uint32_t bits;
-        config.Encode(PackSigned(res), &token, &nbits, &bits);
-        histo[ctx].Add(token);
-        extra_bits += nbits;
-      }
-    }
-    for (size_t h = 0; h < nc; h++) {
-      histo_cost += histo[h].ShannonEntropy();
-      histo[h].Clear();
-    }
-  }
-  return histo_cost + extra_bits;
-}
-
-}  // namespace
-
 Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
                                                 const CompressParams& cparams_,
                                                 int minShift, int maxShift,
@@ -1304,7 +1326,7 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
         maybe_palette.num_c = gi.channel.size() - gi.nb_meta_channels;
         maybe_palette.nb_colors = std::abs(cparams_.palette_colors);
         maybe_palette.ordered_palette = cparams_.palette_colors >= 0;
-        do_transform(gi, maybe_palette, weighted::Header());
+        maybe_do_transform(gi, maybe_palette, cparams_, weighted::Header());
       }
       // all-minus-one-channel palette (RGB with separate alpha, or CMY with
       // separate K)
@@ -1318,7 +1340,7 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
         if (maybe_palette_3.lossy_palette) {
           maybe_palette_3.predictor = Predictor::Weighted;
         }
-        do_transform(gi, maybe_palette_3, weighted::Header());
+        maybe_do_transform(gi, maybe_palette_3, cparams_, weighted::Header());
       }
     }
 
@@ -1345,7 +1367,7 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
         maybe_palette_1.nb_colors = std::min(
             static_cast<int>(xsize * ysize * 0.8),
             static_cast<int>(cparams_.channel_colors_percent / 100. * colors));
-        do_transform(gi, maybe_palette_1, weighted::Header());
+        maybe_do_transform(gi, maybe_palette_1, cparams_, weighted::Header());
       }
     }
   }
