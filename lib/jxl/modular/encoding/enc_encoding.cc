@@ -642,16 +642,22 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
   }
 
   size_t image_width = 0;
+  size_t image_width_bug = 0;
   size_t total_tokens = 0;
   for (size_t i = 0; i < nb_channels; i++) {
-    if (i >= image.nb_meta_channels &&
-        (image.channel[i].w > options.max_chan_size ||
-         image.channel[i].h > options.max_chan_size)) {
-      break;
+    if (i >= image.nb_meta_channels) {
+      if (image.channel[i].w > options.max_chan_size ||
+          image.channel[i].h > options.max_chan_size) {
+        break;
+      }
+      if (image.channel[i].w > image_width) image_width = image.channel[i].w;
     }
-    if (image.channel[i].w > image_width) image_width = image.channel[i].w;
+    if (image.channel[i].w > image_width_bug)
+      image_width_bug = image.channel[i].w;
     total_tokens += image.channel[i].w * image.channel[i].h;
   }
+  if (image_width_bug != image_width) image_width = 0;
+
   if (options.zero_tokens) {
     tokens->resize(tokens->size() + total_tokens, {0, 0});
   } else {
