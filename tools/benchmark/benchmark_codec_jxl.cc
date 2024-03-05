@@ -296,8 +296,9 @@ class JxlCodec : public ImageCodec {
     dparams_.runner = pool->runner();
     dparams_.runner_opaque = pool->runner_opaque();
     JxlDataType data_type = uint8_ ? JXL_TYPE_UINT8 : JXL_TYPE_UINT16;
-    dparams_.accepted_formats = {{3, data_type, JXL_LITTLE_ENDIAN, 0},
-                                 {4, data_type, JXL_LITTLE_ENDIAN, 0}};
+    for (uint32_t c = 1; c <= 4; ++c) {
+      dparams_.accepted_formats.push_back({c, data_type, JXL_LITTLE_ENDIAN, 0});
+    }
     // By default, the decoder will undo exif orientation, giving an image
     // with identity exif rotation as result. However, the benchmark does
     // not undo exif orientation of the originals, and compares against the
