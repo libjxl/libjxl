@@ -480,7 +480,7 @@ Status EncodeJpeg(const PackedPixelFile& ppf, const JpegSettings& jpeg_settings,
         ToFloatRow(&pixels[y * image.stride], image.format, 3 * image.xsize,
                    src_buf);
         // convert to linear srgb
-        if (!c_transform.Run(0, src_buf, dst_buf)) {
+        if (!c_transform.Run(0, src_buf, dst_buf, image.xsize)) {
           return false;
         }
         // deinterleave channels
