@@ -1366,6 +1366,11 @@ Status EncodeGroups(const FrameHeader& frame_header,
         has_error = true;
         return;
       }
+      JXL_DEBUG_V(2,
+                  "AC group %u [abs %" PRIuS "] pass %" PRIuS
+                  " encoded size is %" PRIuS " bits",
+                  group_index, ac_group_id, i,
+                  ac_group_code(i, group_index)->BitsWritten());
     }
   };
   JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, num_groups, resize_aux_outs,
