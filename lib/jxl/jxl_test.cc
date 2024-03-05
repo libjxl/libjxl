@@ -1600,10 +1600,13 @@ struct StreamingTestParam {
   size_t xsize;
   size_t ysize;
   bool is_grey;
+  bool has_alpha;
   int effort;
   bool progressive;
 
-  size_t num_channels() const { return is_grey ? 1 : 3; }
+  size_t num_channels() const {
+    return (is_grey ? 1 : 3) + (has_alpha ? 1 : 0);
+  }
 
   float max_psnr() const { return is_grey ? 90 : 50; }
 
@@ -1611,12 +1614,13 @@ struct StreamingTestParam {
     std::vector<StreamingTestParam> params;
     for (int e : {1, 3, 4, 7}) {
       for (bool g : {false, true}) {
-        params.push_back(StreamingTestParam{357, 517, g, e, false});
-        params.push_back(StreamingTestParam{2247, 2357, g, e, false});
+        params.push_back(StreamingTestParam{357, 517, g, false, e, false});
+        params.push_back(StreamingTestParam{2247, 2357, g, false, e, false});
       }
     }
-    params.push_back(StreamingTestParam{2247, 2357, false, 1, true});
-    params.push_back(StreamingTestParam{2247, 2157, false, 5, false});
+    params.push_back(StreamingTestParam{2247, 2357, false, false, 1, true});
+    params.push_back(StreamingTestParam{2247, 2157, false, false, 5, false});
+    params.push_back(StreamingTestParam{2247, 2157, false, true, 5, false});
     return params;
   }
 };
