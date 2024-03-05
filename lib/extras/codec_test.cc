@@ -227,7 +227,7 @@ void CreateTestImage(const TestImageParams& params, PackedPixelFile* ppf) {
   ppf->info.exponent_bits_per_sample = params.bits_per_sample == 32 ? 8 : 0;
   ppf->info.num_color_channels = params.is_gray ? 1 : 3;
   ppf->info.alpha_bits = params.add_alpha ? params.bits_per_sample : 0;
-  ppf->info.alpha_premultiplied = (params.codec == Codec::kEXR);
+  ppf->info.alpha_premultiplied = TO_JXL_BOOL(params.codec == Codec::kEXR);
 
   JxlColorEncoding color_encoding = CreateTestColorEncoding(params.is_gray);
   ppf->icc = GenerateICC(color_encoding);

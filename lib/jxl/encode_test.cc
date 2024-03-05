@@ -84,8 +84,8 @@ TEST(EncodeTest, AddFrameAfterCloseInputTest) {
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetCodestreamLevel(enc.get(), 10));
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
   JxlColorEncoding color_encoding;
-  JxlColorEncodingSetToSRGB(&color_encoding,
-                            /*is_gray=*/pixel_format.num_channels < 3);
+  JXL_BOOL is_gray = TO_JXL_BOOL(pixel_format.num_channels < 3);
+  JxlColorEncodingSetToSRGB(&color_encoding, is_gray);
   EXPECT_EQ(JXL_ENC_SUCCESS,
             JxlEncoderSetColorEncoding(enc.get(), &color_encoding));
   JxlEncoderFrameSettings* frame_settings =
@@ -124,8 +124,8 @@ TEST(EncodeTest, AddFrameBeforeBasicInfoTest) {
       jxl::test::SomeTestImageToCodecInOut(pixels, 4, xsize, ysize);
 
   JxlColorEncoding color_encoding;
-  JxlColorEncodingSetToSRGB(&color_encoding,
-                            /*is_gray=*/pixel_format.num_channels < 3);
+  JXL_BOOL is_gray = TO_JXL_BOOL(pixel_format.num_channels < 3);
+  JxlColorEncodingSetToSRGB(&color_encoding, is_gray);
   EXPECT_EQ(JXL_ENC_ERROR,
             JxlEncoderSetColorEncoding(enc.get(), &color_encoding));
   JxlEncoderFrameSettings* frame_settings =
@@ -189,17 +189,17 @@ void VerifyFrameEncoding(size_t xsize, size_t ysize, JxlEncoder* enc,
   basic_info.xsize = xsize;
   basic_info.ysize = ysize;
   if (frame_settings->values.lossless || lossy_use_original_profile) {
-    basic_info.uses_original_profile = true;
+    basic_info.uses_original_profile = JXL_TRUE;
   } else {
-    basic_info.uses_original_profile = false;
+    basic_info.uses_original_profile = JXL_FALSE;
   }
   // 16-bit alpha means this requires level 10
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetCodestreamLevel(enc, 10));
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc, &basic_info));
   JxlColorEncoding color_encoding;
-  JxlColorEncodingSetToSRGB(&color_encoding, true);
+  JxlColorEncodingSetToSRGB(&color_encoding, JXL_TRUE);
   EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderSetColorEncoding(enc, &color_encoding));
-  JxlColorEncodingSetToSRGB(&color_encoding, false);
+  JxlColorEncodingSetToSRGB(&color_encoding, JXL_FALSE);
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetColorEncoding(enc, &color_encoding));
   pixel_format.num_channels = 1;
   EXPECT_EQ(JXL_ENC_ERROR,
@@ -296,7 +296,7 @@ TEST(EncodeTest, CmsTest) {
   JxlEncoderSetCms(enc.get(), cms);
   JxlEncoderFrameSettings* frame_settings =
       JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
-  JxlEncoderSetFrameLossless(frame_settings, false);
+  JxlEncoderSetFrameLossless(frame_settings, JXL_FALSE);
   ASSERT_EQ(JXL_ENC_SUCCESS,
             JxlEncoderFrameSettingsSetOption(frame_settings,
                                              JXL_ENC_FRAME_SETTING_EFFORT, 8));
@@ -801,12 +801,12 @@ TEST(EncodeTest, SingleFrameBoundedJXLCTest) {
   jxl::test::JxlBasicInfoSetFromPixelFormat(&basic_info, &pixel_format);
   basic_info.xsize = xsize;
   basic_info.ysize = ysize;
-  basic_info.uses_original_profile = false;
+  basic_info.uses_original_profile = JXL_FALSE;
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetCodestreamLevel(enc.get(), 10));
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
   JxlColorEncoding color_encoding;
   JxlColorEncodingSetToSRGB(&color_encoding,
-                            /*is_gray=*/false);
+                            /*is_gray=*/JXL_FALSE);
   EXPECT_EQ(JXL_ENC_SUCCESS,
             JxlEncoderSetColorEncoding(enc.get(), &color_encoding));
   EXPECT_EQ(JXL_ENC_SUCCESS,
@@ -878,8 +878,8 @@ TEST(EncodeTest, CodestreamLevelTest) {
 
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
   JxlColorEncoding color_encoding;
-  JxlColorEncodingSetToSRGB(&color_encoding,
-                            /*is_gray=*/pixel_format.num_channels < 3);
+  JXL_BOOL is_gray = TO_JXL_BOOL(pixel_format.num_channels < 3);
+  JxlColorEncodingSetToSRGB(&color_encoding, is_gray);
   EXPECT_EQ(JXL_ENC_SUCCESS,
             JxlEncoderSetColorEncoding(enc.get(), &color_encoding));
   EXPECT_EQ(JXL_ENC_SUCCESS,
@@ -918,7 +918,7 @@ TEST(EncodeTest, CodestreamLevelVerificationTest) {
   jxl::test::JxlBasicInfoSetFromPixelFormat(&basic_info, &pixel_format);
   basic_info.xsize = 64;
   basic_info.ysize = 64;
-  basic_info.uses_original_profile = false;
+  basic_info.uses_original_profile = JXL_FALSE;
 
   JxlEncoderPtr enc = JxlEncoderMake(nullptr);
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
@@ -1070,7 +1070,7 @@ TEST(EncodeTest, BasicInfoTest) {
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetCodestreamLevel(enc.get(), 10));
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
   JxlColorEncoding color_encoding;
-  JxlColorEncodingSetToSRGB(&color_encoding, /*is_gray=*/false);
+  JxlColorEncodingSetToSRGB(&color_encoding, /*is_gray=*/JXL_FALSE);
   EXPECT_EQ(JXL_ENC_SUCCESS,
             JxlEncoderSetColorEncoding(enc.get(), &color_encoding));
 
@@ -1167,14 +1167,14 @@ TEST(EncodeTest, AnimationHeaderTest) {
   jxl::test::JxlBasicInfoSetFromPixelFormat(&basic_info, &pixel_format);
   basic_info.xsize = xsize;
   basic_info.ysize = ysize;
-  basic_info.have_animation = true;
+  basic_info.have_animation = JXL_TRUE;
   basic_info.animation.tps_numerator = 1000;
   basic_info.animation.tps_denominator = 1;
   basic_info.animation.have_timecodes = JXL_TRUE;
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetCodestreamLevel(enc.get(), 10));
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
   JxlColorEncoding color_encoding;
-  JxlColorEncodingSetToSRGB(&color_encoding, /*is_gray=*/false);
+  JxlColorEncodingSetToSRGB(&color_encoding, /*is_gray=*/JXL_FALSE);
   EXPECT_EQ(JXL_ENC_SUCCESS,
             JxlEncoderSetColorEncoding(enc.get(), &color_encoding));
 
@@ -1276,7 +1276,7 @@ TEST(EncodeTest, CroppedFrameTest) {
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetCodestreamLevel(enc.get(), 10));
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
   JxlColorEncoding color_encoding;
-  JxlColorEncodingSetToSRGB(&color_encoding, /*is_gray=*/false);
+  JxlColorEncodingSetToSRGB(&color_encoding, /*is_gray=*/JXL_FALSE);
   EXPECT_EQ(JXL_ENC_SUCCESS,
             JxlEncoderSetColorEncoding(enc.get(), &color_encoding));
 
@@ -1370,12 +1370,12 @@ TEST_P(EncodeBoxTest, JXL_BOXES_TEST(BoxTest)) {
   jxl::test::JxlBasicInfoSetFromPixelFormat(&basic_info, &pixel_format);
   basic_info.xsize = xsize;
   basic_info.ysize = ysize;
-  basic_info.uses_original_profile = false;
+  basic_info.uses_original_profile = JXL_FALSE;
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetCodestreamLevel(enc.get(), 10));
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
   JxlColorEncoding color_encoding;
   JxlColorEncodingSetToSRGB(&color_encoding,
-                            /*is_gray=*/false);
+                            /*is_gray=*/JXL_FALSE);
   EXPECT_EQ(JXL_ENC_SUCCESS,
             JxlEncoderSetColorEncoding(enc.get(), &color_encoding));
 
@@ -1389,7 +1389,8 @@ TEST_P(EncodeBoxTest, JXL_BOXES_TEST(BoxTest)) {
   const uint8_t* exif_data = reinterpret_cast<const uint8_t*>(exif_test_string);
   // Skip the 4 zeroes for strlen
   const size_t exif_size = 4 + strlen(exif_test_string + 4);
-  JxlEncoderAddBox(enc.get(), "Exif", exif_data, exif_size, compress_box);
+  JxlEncoderAddBox(enc.get(), "Exif", exif_data, exif_size,
+                   TO_JXL_BOOL(compress_box));
 
   // Write to output
   ProcessEncoder(enc.get(), compressed, next_out, avail_out);
@@ -1408,7 +1409,8 @@ TEST_P(EncodeBoxTest, JXL_BOXES_TEST(BoxTest)) {
   constexpr const char* xml_test_string = "<some random xml data>";
   const uint8_t* xml_data = reinterpret_cast<const uint8_t*>(xml_test_string);
   size_t xml_size = strlen(xml_test_string);
-  JxlEncoderAddBox(enc.get(), "XML ", xml_data, xml_size, compress_box);
+  JxlEncoderAddBox(enc.get(), "XML ", xml_data, xml_size,
+                   TO_JXL_BOOL(compress_box));
 
   // Indicate this is the last box
   JxlEncoderCloseBoxes(enc.get());
@@ -1506,13 +1508,13 @@ TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGFrameTest)) {
         JxlEncoderInitBasicInfo(&basic_info);
         basic_info.xsize = orig_io.xsize();
         basic_info.ysize = orig_io.ysize();
-        basic_info.uses_original_profile = true;
+        basic_info.uses_original_profile = JXL_TRUE;
         EXPECT_EQ(JXL_ENC_SUCCESS,
                   JxlEncoderSetBasicInfo(enc.get(), &basic_info));
       }
       if (!skip_color_encoding) {
         JxlColorEncoding color_encoding;
-        JxlColorEncodingSetToSRGB(&color_encoding, /*is_gray=*/false);
+        JxlColorEncodingSetToSRGB(&color_encoding, /*is_gray=*/JXL_FALSE);
         EXPECT_EQ(JXL_ENC_SUCCESS,
                   JxlEncoderSetColorEncoding(enc.get(), &color_encoding));
       }
@@ -1699,14 +1701,16 @@ class JxlChunkedFrameInputSourceAdapter {
 
 struct StreamingTestParam {
   size_t bitmask;
-  bool use_container() const { return bitmask & 0x1; }
-  bool return_large_buffers() const { return bitmask & 0x2; }
-  bool multiple_frames() const { return bitmask & 0x4; }
-  bool fast_lossless() const { return bitmask & 0x8; }
-  bool can_seek() const { return bitmask & 0x10; }
-  bool with_extra_channels() const { return bitmask & 0x20; }
-  bool color_includes_alpha() const { return bitmask & 0x40; }
-  bool onegroup() const { return bitmask & 0x80; }
+  bool use_container() const { return static_cast<bool>(bitmask & 0x1); }
+  bool return_large_buffers() const { return static_cast<bool>(bitmask & 0x2); }
+  bool multiple_frames() const { return static_cast<bool>(bitmask & 0x4); }
+  bool fast_lossless() const { return static_cast<bool>(bitmask & 0x8); }
+  bool can_seek() const { return static_cast<bool>(bitmask & 0x10); }
+  bool with_extra_channels() const { return static_cast<bool>(bitmask & 0x20); }
+  bool color_includes_alpha() const {
+    return static_cast<bool>(bitmask & 0x40);
+  }
+  bool onegroup() const { return static_cast<bool>(bitmask & 0x80); }
 
   bool is_lossless() const { return fast_lossless(); }
 
@@ -1776,8 +1780,9 @@ class EncoderStreamingTest : public testing::TestWithParam<StreamingTestParam> {
                              bool include_alpha, bool is_lossless) {
     basic_info.xsize = xsize;
     basic_info.ysize = ysize;
-    basic_info.num_extra_channels = number_extra_channels + include_alpha;
-    basic_info.uses_original_profile = is_lossless;
+    basic_info.num_extra_channels =
+        number_extra_channels + (include_alpha ? 1 : 0);
+    basic_info.uses_original_profile = TO_JXL_BOOL(is_lossless);
   }
 
   static void SetupEncoder(JxlEncoderFrameSettings* frame_settings,
@@ -1794,7 +1799,7 @@ class EncoderStreamingTest : public testing::TestWithParam<StreamingTestParam> {
                     frame_settings, JXL_ENC_FRAME_SETTING_EFFORT, 1));
     }
     JxlColorEncoding color_encoding;
-    JxlColorEncodingSetToSRGB(&color_encoding, /*is_gray=*/false);
+    JxlColorEncodingSetToSRGB(&color_encoding, /*is_gray=*/JXL_FALSE);
     EXPECT_EQ(JXL_ENC_SUCCESS,
               JxlEncoderSetColorEncoding(enc, &color_encoding));
     EXPECT_EQ(JXL_ENC_SUCCESS,

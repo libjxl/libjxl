@@ -4025,7 +4025,7 @@ namespace default_implementation {
 #else  // FJXL_ENABLE_NEON
 
 namespace default_implementation {
-#include "lib/jxl/enc_fast_lossless.cc"
+#include "lib/jxl/enc_fast_lossless.cc"  // NOLINT
 }
 
 #if FJXL_ENABLE_AVX2
@@ -4044,7 +4044,7 @@ namespace default_implementation {
 
 namespace AVX2 {
 #define FJXL_AVX2
-#include "lib/jxl/enc_fast_lossless.cc"
+#include "lib/jxl/enc_fast_lossless.cc"  // NOLINT
 #undef FJXL_AVX2
 }  // namespace AVX2
 

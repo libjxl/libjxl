@@ -234,7 +234,7 @@ bool ProcessDHT(const uint8_t* data, const size_t len, JpegReadMode mode,
     JPEGHuffmanCode huff;
     huff.slot_id = ReadUint8(data, pos);
     int huffman_index = huff.slot_id;
-    int is_ac_table = (huff.slot_id & 0x10) != 0;
+    bool is_ac_table = ((huff.slot_id & 0x10) != 0);
     HuffmanTableEntry* huff_lut;
     if (is_ac_table) {
       huffman_index -= 0x10;

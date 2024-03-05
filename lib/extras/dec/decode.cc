@@ -99,7 +99,7 @@ Status DecodeBytes(const Span<const uint8_t> bytes,
   *ppf = extras::PackedPixelFile();
 
   // Default values when not set by decoders.
-  ppf->info.uses_original_profile = true;
+  ppf->info.uses_original_profile = JXL_TRUE;
   ppf->info.orientation = JXL_ORIENT_IDENTITY;
 
   const auto choose_codec = [&]() -> Codec {

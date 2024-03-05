@@ -234,14 +234,14 @@ std::ostream& operator<<(std::ostream& os, const CompressParams& jparams) {
   }
   if (!jparams.comp_ids.empty()) {
     os << "CID";
-    for (size_t i = 0; i < jparams.comp_ids.size(); ++i) {
-      os << jparams.comp_ids[i];
+    for (int cid : jparams.comp_ids) {
+      os << cid;
     }
   }
   if (!jparams.quant_indexes.empty()) {
     os << "QIDX";
-    for (size_t i = 0; i < jparams.quant_indexes.size(); ++i) {
-      os << jparams.quant_indexes[i];
+    for (int qi : jparams.quant_indexes) {
+      os << qi;
     }
     for (const auto& table : jparams.quant_tables) {
       os << "TABLE" << table.slot_idx << "T" << table.table_type << "F"
@@ -321,7 +321,7 @@ void RGBToYCbCr(float r, float g, float b, float* y, float* cb, float* cr) {
 void ConvertPixel(const uint8_t* input_rgb, uint8_t* out,
                   J_COLOR_SPACE colorspace, size_t num_channels,
                   JpegliDataType data_type = JPEGLI_TYPE_UINT8,
-                  bool swap_endianness = JPEGLI_NATIVE_ENDIAN) {
+                  JXL_BOOL swap_endianness = JPEGLI_NATIVE_ENDIAN) {
   const float kMul = 255.0f;
   float r = input_rgb[0] / kMul;
   float g = input_rgb[1] / kMul;
@@ -437,7 +437,8 @@ void GeneratePixels(TestImage* img) {
       size_t idx_out = iy * out_stride + ix * out_bytes_per_pixel;
       ConvertPixel(&pixels[idx_in], &img->pixels[idx_out],
                    static_cast<J_COLOR_SPACE>(img->color_space),
-                   img->components, img->data_type, swap_endianness);
+                   img->components, img->data_type,
+                   TO_JXL_BOOL(swap_endianness));
     }
   }
 }
@@ -540,7 +541,8 @@ void EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
         cinfo->quant_tbl_ptrs[table.slot_idx]->sent_table = FALSE;
       } else {
         jpegli_add_quant_table(cinfo, table.slot_idx, table.basic_table.data(),
-                               table.scale_factor, table.force_baseline);
+                               table.scale_factor,
+                               TO_JXL_BOOL(table.force_baseline));
       }
     }
   }
@@ -556,7 +558,8 @@ void EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
     jpegli_set_progressive_level(cinfo, jparams.progressive_mode);
   }
   jpegli_set_input_format(cinfo, input.data_type, input.endianness);
-  jpegli_enable_adaptive_quantization(cinfo, jparams.use_adaptive_quantization);
+  jpegli_enable_adaptive_quantization(
+      cinfo, TO_JXL_BOOL(jparams.use_adaptive_quantization));
   cinfo->restart_interval = jparams.restart_interval;
   cinfo->restart_in_rows = jparams.restart_in_rows;
   cinfo->smoothing_factor = jparams.smoothing_factor;
@@ -565,7 +568,7 @@ void EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
   } else if (jparams.optimize_coding == 0) {
     cinfo->optimize_coding = FALSE;
   }
-  cinfo->raw_data_in = !input.raw_data.empty();
+  cinfo->raw_data_in = TO_JXL_BOOL(!input.raw_data.empty());
   if (jparams.optimize_coding == 0 && jparams.use_flat_dc_luma_code) {
     JHUFF_TBL* tbl = cinfo->dc_huff_tbl_ptrs[0];
     memset(tbl, 0, sizeof(*tbl));
@@ -582,13 +585,13 @@ void EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
       cinfo->ac_huff_tbl_ptrs[0]->sent_table = TRUE;
       cinfo->ac_huff_tbl_ptrs[1]->sent_table = TRUE;
     }
-    jpegli_start_compress(cinfo, write_all_tables);
+    jpegli_start_compress(cinfo, TO_JXL_BOOL(write_all_tables));
     if (jparams.add_marker) {
       jpegli_write_marker(cinfo, kSpecialMarker0, kMarkerData,
                           sizeof(kMarkerData));
       jpegli_write_m_header(cinfo, kSpecialMarker1, sizeof(kMarkerData));
-      for (size_t p = 0; p < sizeof(kMarkerData); ++p) {
-        jpegli_write_m_byte(cinfo, kMarkerData[p]);
+      for (uint8_t c : kMarkerData) {
+        jpegli_write_m_byte(cinfo, c);
       }
       for (size_t i = 0; i < kMarkerSequenceLen; ++i) {
         jpegli_write_marker(cinfo, kMarkerSequence[i], kMarkerData,
@@ -640,15 +643,15 @@ void EncodeWithJpegli(const TestImage& input, const CompressParams& jparams,
       jpegli_write_marker(cinfo, kSpecialMarker0, kMarkerData,
                           sizeof(kMarkerData));
       jpegli_write_m_header(cinfo, kSpecialMarker1, sizeof(kMarkerData));
-      for (size_t p = 0; p < sizeof(kMarkerData); ++p) {
-        jpegli_write_m_byte(cinfo, kMarkerData[p]);
+      for (uint8_t c : kMarkerData) {
+        jpegli_write_m_byte(cinfo, c);
       }
     }
     for (int c = 0; c < cinfo->num_components; ++c) {
       jpeg_component_info* comp = &cinfo->comp_info[c];
       for (size_t by = 0; by < comp->height_in_blocks; ++by) {
         JBLOCKARRAY ba = (*cinfo->mem->access_virt_barray)(
-            comptr, coef_arrays[c], by, 1, true);
+            comptr, coef_arrays[c], by, 1, TRUE);
         size_t stride = comp->width_in_blocks * sizeof(JBLOCK);
         size_t offset = by * comp->width_in_blocks * DCTSIZE2;
         memcpy(ba[0], &input.coeffs[c][offset], stride);

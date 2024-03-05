@@ -552,7 +552,7 @@ void PredictSmooth(j_decompress_ptr cinfo, JBLOCKARRAY blocks, int component,
 void PrepareForOutput(j_decompress_ptr cinfo) {
   jpeg_decomp_master* m = cinfo->master;
   bool smoothing = do_smoothing(cinfo);
-  m->apply_smoothing = smoothing && cinfo->do_block_smoothing;
+  m->apply_smoothing = smoothing && FROM_JXL_BOOL(cinfo->do_block_smoothing);
   size_t coeffs_per_block = cinfo->num_components * DCTSIZE2;
   memset(m->nonzeros_, 0, coeffs_per_block * sizeof(m->nonzeros_[0]));
   memset(m->sumabs_, 0, coeffs_per_block * sizeof(m->sumabs_[0]));
@@ -585,7 +585,7 @@ void DecodeCurrentiMCURow(j_decompress_ptr cinfo) {
     int offset = m->streaming_mode_ ? 0 : by0;
     ba[c] = (*cinfo->mem->access_virt_barray)(
         reinterpret_cast<j_common_ptr>(cinfo), m->coef_arrays[c], offset,
-        max_block_rows, false);
+        max_block_rows, FALSE);
   }
   for (int c = 0; c < cinfo->num_components; ++c) {
     size_t k0 = c * DCTSIZE2;

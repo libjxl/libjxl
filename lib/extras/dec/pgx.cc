@@ -165,7 +165,7 @@ Status DecodeImagePGX(const Span<const uint8_t> bytes,
   // Original data is uint, so exponent_bits_per_sample = 0.
   ppf->info.bits_per_sample = header.bits_per_sample;
   ppf->info.exponent_bits_per_sample = 0;
-  ppf->info.uses_original_profile = true;
+  ppf->info.uses_original_profile = JXL_TRUE;
 
   // No alpha in PGX
   ppf->info.alpha_bits = 0;

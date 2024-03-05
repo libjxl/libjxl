@@ -249,7 +249,7 @@ TEST_P(InputSuspensionTestParam, InputOutputLockStepNonBuffered) {
       EXPECT_EQ(0, memcmp(markers_seen, kMarkerSequence, num_markers_seen));
     }
     VerifyHeader(config.jparams, &cinfo);
-    cinfo.raw_data_out = dparams.output_mode == RAW_DATA;
+    cinfo.raw_data_out = TO_JXL_BOOL(dparams.output_mode == RAW_DATA);
 
     if (dparams.output_mode == COEFFICIENTS) {
       jvirt_barray_ptr* coef_arrays;
@@ -303,7 +303,7 @@ TEST_P(InputSuspensionTestParam, InputOutputLockStepBuffered) {
     jpegli_set_output_format(&cinfo, dparams.data_type, dparams.endianness);
 
     cinfo.buffered_image = TRUE;
-    cinfo.raw_data_out = dparams.output_mode == RAW_DATA;
+    cinfo.raw_data_out = TO_JXL_BOOL(dparams.output_mode == RAW_DATA);
 
     EXPECT_TRUE(jpegli_start_decompress(&cinfo));
     EXPECT_FALSE(jpegli_input_complete(&cinfo));
@@ -380,8 +380,8 @@ TEST_P(InputSuspensionTestParam, PreConsumeInputBuffered) {
     }
     EXPECT_EQ(JPEG_REACHED_SOS, jpegli_consume_input(&cinfo));
     cinfo.buffered_image = TRUE;
-    cinfo.raw_data_out = dparams.output_mode == RAW_DATA;
-    cinfo.do_block_smoothing = dparams.do_block_smoothing;
+    cinfo.raw_data_out = TO_JXL_BOOL(dparams.output_mode == RAW_DATA);
+    cinfo.do_block_smoothing = TO_JXL_BOOL(dparams.do_block_smoothing);
 
     EXPECT_TRUE(jpegli_start_decompress(&cinfo));
     EXPECT_FALSE(jpegli_input_complete(&cinfo));
@@ -446,8 +446,8 @@ TEST_P(InputSuspensionTestParam, PreConsumeInputNonBuffered) {
       }
     }
     EXPECT_EQ(JPEG_REACHED_SOS, jpegli_consume_input(&cinfo));
-    cinfo.raw_data_out = dparams.output_mode == RAW_DATA;
-    cinfo.do_block_smoothing = dparams.do_block_smoothing;
+    cinfo.raw_data_out = TO_JXL_BOOL(dparams.output_mode == RAW_DATA);
+    cinfo.do_block_smoothing = TO_JXL_BOOL(dparams.do_block_smoothing);
 
     if (dparams.output_mode == COEFFICIENTS) {
       jpegli_read_coefficients(&cinfo);

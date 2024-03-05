@@ -260,7 +260,7 @@ class WebPCodec : public ImageCodec {
       return JXL_FAILURE("WebPConfigInit failed");
     }
     JXL_ASSERT(!lossless_ || !near_lossless_);  // can't have both
-    config.lossless = lossless_;
+    config.lossless = lossless_ ? 1 : 0;
     config.quality = quality;
     config.method = method_;
 #if WEBP_ENCODER_ABI_VERSION >= 0x020a
@@ -294,7 +294,7 @@ class WebPCodec : public ImageCodec {
 
     // WebP encoding may fail, for example, if the image is more than 16384
     // pixels high or wide.
-    bool ok = WebPEncode(&config, &pic);
+    bool ok = FROM_JXL_BOOL(WebPEncode(&config, &pic));
     WebPPictureFree(&pic);
     // Compressed image data is initialized by libwebp, which we are not
     // instrumenting with msan.

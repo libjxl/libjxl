@@ -236,7 +236,7 @@ void TokenizeCoefficients(const coeff_order_t* JXL_RESTRICT orders,
                                                 log2_covered_blocks, prev);
           uint32_t u_coeff = PackSigned(coeff);
           output->emplace_back(ctx, u_coeff);
-          prev = coeff != 0;
+          prev = (coeff != 0) ? 1 : 0;
           nzeros -= prev;
         }
         JXL_DASSERT(nzeros == 0);
