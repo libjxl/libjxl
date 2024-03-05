@@ -509,6 +509,9 @@ Status FrameDecoder::ProcessACGroup(size_t ac_group_id,
     JXL_DEBUG_V(2, "Decoding modular in group %d pass %d",
                 static_cast<int>(ac_group_id), static_cast<int>(i));
     if (i < pass0 + num_passes) {
+      JXL_DEBUG_V(2, "Bit reader position: %" PRIuS " / %" PRIuS,
+                  br[i - pass0]->TotalBitsConsumed(),
+                  br[i - pass0]->TotalBytes() * kBitsPerByte);
       JXL_RETURN_IF_ERROR(modular_frame_decoder_.DecodeGroup(
           frame_header_, mrect, br[i - pass0], minShift, maxShift,
           ModularStreamId::ModularAC(ac_group_id, i),
