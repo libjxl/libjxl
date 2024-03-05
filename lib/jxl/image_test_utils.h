@@ -6,10 +6,6 @@
 #ifndef LIB_JXL_IMAGE_TEST_UTILS_H_
 #define LIB_JXL_IMAGE_TEST_UTILS_H_
 
-#ifndef __STDC_FORMAT_MACROS
-#define __STDC_FORMAT_MACROS
-#endif
-
 #include <inttypes.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -67,7 +63,7 @@ bool VerifyRelativeError(const Plane<T>& expected, const Plane<T>& actual,
                          const double threshold_l1,
                          const double threshold_relative,
                          std::stringstream& failures, const intptr_t border = 0,
-                         const size_t c = 0) {
+                         const int c = 0) {
   JXL_CHECK(SameSize(expected, actual));
   const intptr_t xsize = expected.xsize();
   const intptr_t ysize = expected.ysize();
@@ -106,13 +102,11 @@ bool VerifyRelativeError(const Plane<T>& expected, const Plane<T>& actual,
   }
   // Never had a valid relative value, don't print it.
   if (max_relative < 0) {
-    fprintf(stderr, "c=%" PRIu64 ": max +/- %E exceeds +/- %.2E\n",
-            static_cast<uint64_t>(c), max_l1, threshold_l1);
+    fprintf(stderr, "c=%d: max +/- %E exceeds +/- %.2E\n", c, max_l1,
+            threshold_l1);
   } else {
-    fprintf(stderr,
-            "c=%" PRIu64 ": max +/- %E, x %E exceeds +/- %.2E, x %.2E\n",
-            static_cast<uint64_t>(c), max_l1, max_relative, threshold_l1,
-            threshold_relative);
+    fprintf(stderr, "c=%d: max +/- %E, x %E exceeds +/- %.2E, x %.2E\n", c,
+            max_l1, max_relative, threshold_l1, threshold_relative);
   }
   // Dump the expected image and actual image if the region is small enough.
   const intptr_t kMaxTestDumpSize = 16;
@@ -183,9 +177,9 @@ bool VerifyRelativeError(const Image3<T>& expected, const Image3<T>& actual,
                          std::stringstream& failures,
                          const intptr_t border = 0) {
   for (size_t c = 0; c < 3; ++c) {
-    bool ok =
-        VerifyRelativeError(expected.Plane(c), actual.Plane(c), threshold_l1,
-                            threshold_relative, failures, border, c);
+    bool ok = VerifyRelativeError(expected.Plane(c), actual.Plane(c),
+                                  threshold_l1, threshold_relative, failures,
+                                  border, static_cast<int>(c));
     if (!ok) {
       return false;
     }

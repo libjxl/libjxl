@@ -170,8 +170,8 @@ void GenerateMetadata(const PackedPixelFile& ppf, std::vector<uint8_t>* out) {
     auto* ebps = meta.AddEmpty<JSONArray>("exp_bits_per_sample");
     bps->Add(ppf.info.bits_per_sample);
     ebps->Add(ppf.info.exponent_bits_per_sample);
-    for (size_t i = 0; i < ppf.extra_channels_info.size(); i++) {
-      switch (ppf.extra_channels_info[i].ec_info.type) {
+    for (const auto& eci : ppf.extra_channels_info) {
+      switch (eci.ec_info.type) {
         case JXL_CHANNEL_ALPHA: {
           ectype->Add(std::string("Alpha"));
           break;
@@ -205,8 +205,8 @@ void GenerateMetadata(const PackedPixelFile& ppf, std::vector<uint8_t>* out) {
           break;
         }
       }
-      bps->Add(ppf.extra_channels_info[i].ec_info.bits_per_sample);
-      ebps->Add(ppf.extra_channels_info[i].ec_info.exponent_bits_per_sample);
+      bps->Add(eci.ec_info.bits_per_sample);
+      ebps->Add(eci.ec_info.exponent_bits_per_sample);
     }
   }
 

@@ -200,6 +200,8 @@ Status ReadICC(BitReader* JXL_RESTRICT reader,
 Status EncodeFile(const CompressParams& params, const CodecInOut* io,
                   std::vector<uint8_t>* compressed, ThreadPool* pool = nullptr);
 
+constexpr const char* BoolToCStr(bool b) { return b ? "true" : "false"; }
+
 }  // namespace test
 
 bool operator==(const jxl::Bytes& a, const jxl::Bytes& b);

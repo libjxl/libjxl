@@ -331,7 +331,7 @@ Status FrameDecoder::ProcessDCGroup(size_t dc_group_id, BitReader* br) {
   } else if (lf.epf_iters > 0) {
     FillImage(kInvSigmaNum / lf.epf_sigma_for_modular, &dec_state_->sigma);
   }
-  decoded_dc_groups_[dc_group_id] = uint8_t{true};
+  decoded_dc_groups_[dc_group_id] = JXL_TRUE;
   return true;
 }
 
@@ -566,7 +566,7 @@ void FrameDecoder::MarkSections(const SectionInfo* sections, size_t num,
   num_sections_done_ += num;
   for (size_t i = 0; i < num; i++) {
     if (section_status[i] != SectionStatus::kDone) {
-      processed_section_[sections[i].id] = false;
+      processed_section_[sections[i].id] = JXL_FALSE;
       num_sections_done_--;
     }
   }
@@ -590,8 +590,8 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
   if (single_section) {
     JXL_ASSERT(num == 1);
     JXL_ASSERT(sections[0].id == 0);
-    if (processed_section_[0] == false) {
-      processed_section_[0] = true;
+    if (processed_section_[0] == JXL_FALSE) {
+      processed_section_[0] = JXL_TRUE;
       ac_group_sec[0].resize(1);
       dc_global_sec = ac_global_sec = dc_group_sec[0] = ac_group_sec[0][0] = 0;
       desired_num_ac_passes[0] = 1;
@@ -621,7 +621,7 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
         }
         ac_group_sec[acg][acp] = i;
       }
-      processed_section_[sections[i].id] = true;
+      processed_section_[sections[i].id] = JXL_TRUE;
     }
     // Count number of new passes per group.
     for (size_t g = 0; g < ac_group_sec.size(); g++) {
@@ -666,8 +666,7 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
   }
   if (has_error) return JXL_FAILURE("Error in DC group");
 
-  if (*std::min_element(decoded_dc_groups_.begin(), decoded_dc_groups_.end()) &&
-      !finalized_dc_) {
+  if (!HasDcGroupToDecode() && !finalized_dc_) {
     PassesDecoderState::PipelineOptions pipeline_options;
     pipeline_options.use_slow_render_pipeline = use_slow_rendering_pipeline_;
     pipeline_options.coalescing = coalescing_;
@@ -825,9 +824,7 @@ int FrameDecoder::SavedAs(const FrameHeader& header) {
 bool FrameDecoder::HasEverything() const {
   if (!decoded_dc_global_) return false;
   if (!decoded_ac_global_) return false;
-  for (const auto& have_dc_group : decoded_dc_groups_) {
-    if (!have_dc_group) return false;
-  }
+  if (HasDcGroupToDecode()) return false;
   for (const auto& nb_passes : decoded_passes_per_ac_group_) {
     if (nb_passes < frame_header_.passes.num_passes) return false;
   }
@@ -850,9 +847,9 @@ int FrameDecoder::References() const {
       result |= (1 << frame_header_.blending_info.source);
     }
     const auto& extra = frame_header_.extra_channel_blending_info;
-    for (size_t i = 0; i < extra.size(); ++i) {
-      if (cropped || extra[i].mode != BlendMode::kReplace) {
-        result |= (1 << extra[i].source);
+    for (const auto& ecbi : extra) {
+      if (cropped || ecbi.mode != BlendMode::kReplace) {
+        result |= (1 << ecbi.source);
       }
     }
   }

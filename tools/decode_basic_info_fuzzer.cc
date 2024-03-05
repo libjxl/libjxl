@@ -23,7 +23,8 @@ int TestOneInput(const uint8_t* data, size_t size) {
   }
 
   JxlBasicInfo info;
-  bool have_basic_info = !JxlDecoderGetBasicInfo(dec, &info);
+  status = JxlDecoderGetBasicInfo(dec, &info);
+  bool have_basic_info = (status == JXL_DEC_SUCCESS);
 
   if (have_basic_info) {
     if (info.alpha_bits != 0) {

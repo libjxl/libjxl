@@ -96,7 +96,7 @@ jxl::CodecInOut ConvertTestImage(const std::vector<uint8_t>& buf,
   jxl::ColorEncoding color_encoding;
   if (!icc_profile.empty()) {
     jxl::IccBytes icc_profile_copy;
-    icc_profile.AppendTo(&icc_profile_copy);
+    icc_profile.AppendTo(icc_profile_copy);
     EXPECT_TRUE(
         color_encoding.SetICC(std::move(icc_profile_copy), JxlGetDefaultCms()));
   } else if (pixel_format.data_type == JXL_TYPE_FLOAT) {
@@ -467,8 +467,8 @@ TEST(RoundtripTest, FloatFrameRoundtripTest) {
                                {JXL_CHANNEL_CFA, "my cfa channel"},
                                {JXL_CHANNEL_OPTIONAL, "optional channel"}},
                               {{JXL_CHANNEL_DEPTH, "very deep"}}};
-  for (int use_container = 0; use_container < 2; use_container++) {
-    for (int lossless = 0; lossless < 2; lossless++) {
+  for (bool use_container : {false, true}) {
+    for (bool lossless : {false, true}) {
       for (uint32_t num_channels = 1; num_channels < 5; num_channels++) {
         for (auto& extra_channels : extra_channels_cases) {
           uint32_t has_alpha = static_cast<uint32_t>(num_channels % 2 == 0);
@@ -479,9 +479,8 @@ TEST(RoundtripTest, FloatFrameRoundtripTest) {
             JxlPixelFormat pixel_format = JxlPixelFormat{
                 num_channels, JXL_TYPE_FLOAT, JXL_NATIVE_ENDIAN, 0};
             VerifyRoundtripCompression<float>(
-                63, 129, pixel_format, pixel_format,
-                static_cast<bool>(lossless), static_cast<bool>(use_container),
-                1, false, extra_channels);
+                63, 129, pixel_format, pixel_format, lossless, use_container, 1,
+                false, extra_channels);
           }
         }
       }
@@ -591,21 +590,20 @@ TEST(RoundtripTest, ExtraBoxesTest) {
   jxl::test::JxlBasicInfoSetFromPixelFormat(&basic_info, &pixel_format);
   basic_info.xsize = xsize;
   basic_info.ysize = ysize;
-  basic_info.uses_original_profile = false;
+  basic_info.uses_original_profile = JXL_FALSE;
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetCodestreamLevel(enc, 10));
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc, &basic_info));
   JxlColorEncoding color_encoding;
+  JXL_BOOL is_gray = TO_JXL_BOOL(pixel_format.num_channels < 3);
   if (pixel_format.data_type == JXL_TYPE_FLOAT) {
-    JxlColorEncodingSetToLinearSRGB(&color_encoding,
-                                    /*is_gray=*/pixel_format.num_channels < 3);
+    JxlColorEncodingSetToLinearSRGB(&color_encoding, is_gray);
   } else {
-    JxlColorEncodingSetToSRGB(&color_encoding,
-                              /*is_gray=*/pixel_format.num_channels < 3);
+    JxlColorEncodingSetToSRGB(&color_encoding, is_gray);
   }
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetColorEncoding(enc, &color_encoding));
   JxlEncoderFrameSettings* frame_settings =
       JxlEncoderFrameSettingsCreate(enc, nullptr);
-  JxlEncoderSetFrameLossless(frame_settings, false);
+  JxlEncoderSetFrameLossless(frame_settings, JXL_FALSE);
   EXPECT_EQ(
       JXL_ENC_SUCCESS,
       JxlEncoderAddImageFrame(frame_settings, &pixel_format,
@@ -709,19 +707,17 @@ TEST(RoundtripTest, MultiFrameTest) {
 
     EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc, &basic_info));
     JxlColorEncoding color_encoding;
+    JXL_BOOL is_gray = TO_JXL_BOOL(pixel_format.num_channels < 3);
     if (pixel_format.data_type == JXL_TYPE_FLOAT) {
-      JxlColorEncodingSetToLinearSRGB(
-          &color_encoding,
-          /*is_gray=*/pixel_format.num_channels < 3);
+      JxlColorEncodingSetToLinearSRGB(&color_encoding, is_gray);
     } else {
-      JxlColorEncodingSetToSRGB(&color_encoding,
-                                /*is_gray=*/pixel_format.num_channels < 3);
+      JxlColorEncodingSetToSRGB(&color_encoding, is_gray);
     }
     EXPECT_EQ(JXL_ENC_SUCCESS,
               JxlEncoderSetColorEncoding(enc, &color_encoding));
     JxlEncoderFrameSettings* frame_settings =
         JxlEncoderFrameSettingsCreate(enc, nullptr);
-    JxlEncoderSetFrameLossless(frame_settings, false);
+    JxlEncoderSetFrameLossless(frame_settings, JXL_FALSE);
     if (index_frames == 1) {
       EXPECT_EQ(JXL_ENC_SUCCESS,
                 JxlEncoderFrameSettingsSetOption(frame_settings,

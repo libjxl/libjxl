@@ -428,7 +428,7 @@ Status FwdPaletteIteration(Image &input, uint32_t begin_c, uint32_t end_c,
         for (int diffusion_index = 0; diffusion_index < 2; ++diffusion_index) {
           for (size_t c = 0; c < nb; c++) {
             color_with_error[c] =
-                p_in[c][x] + palette_iteration_data.final_run *
+                p_in[c][x] + (palette_iteration_data.final_run ? 1 : 0) *
                                  kDiffusionMultiplier[diffusion_index] *
                                  error_row[0][c][x + 2];
             color[c] = Clamp1(lroundf(color_with_error[c]), 0l,

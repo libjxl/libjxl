@@ -98,17 +98,17 @@ Status ConvertPackedPixelFileToCodecInOut(const PackedPixelFile& ppf,
       ppf.info.exponent_bits_per_sample == 0 && ppf.info.bits_per_sample <= 12;
 
   io->metadata.m.SetAlphaBits(ppf.info.alpha_bits,
-                              ppf.info.alpha_premultiplied);
+                              FROM_JXL_BOOL(ppf.info.alpha_premultiplied));
   ExtraChannelInfo* alpha = io->metadata.m.Find(ExtraChannel::kAlpha);
   if (alpha) alpha->bit_depth = io->metadata.m.bit_depth;
 
-  io->metadata.m.xyb_encoded = !ppf.info.uses_original_profile;
+  io->metadata.m.xyb_encoded = !FROM_JXL_BOOL(ppf.info.uses_original_profile);
   JXL_ASSERT(ppf.info.orientation > 0 && ppf.info.orientation <= 8);
   io->metadata.m.orientation = ppf.info.orientation;
 
   // Convert animation metadata
   JXL_ASSERT(ppf.frames.size() == 1 || ppf.info.have_animation);
-  io->metadata.m.have_animation = ppf.info.have_animation;
+  io->metadata.m.have_animation = FROM_JXL_BOOL(ppf.info.have_animation);
   io->metadata.m.animation.tps_numerator = ppf.info.animation.tps_numerator;
   io->metadata.m.animation.tps_denominator = ppf.info.animation.tps_denominator;
   io->metadata.m.animation.num_loops = ppf.info.animation.num_loops;
@@ -243,7 +243,8 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
     ppf->info.alpha_bits = alpha_channel->bit_depth.bits_per_sample;
     ppf->info.alpha_exponent_bits =
         alpha_channel->bit_depth.exponent_bits_per_sample;
-    ppf->info.alpha_premultiplied = alpha_channel->alpha_associated;
+    ppf->info.alpha_premultiplied =
+        TO_JXL_BOOL(alpha_channel->alpha_associated);
   }
 
   // Convert the image metadata
@@ -258,9 +259,9 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
   ppf->info.linear_below = io.metadata.m.tone_mapping.linear_below;
   ppf->info.min_nits = io.metadata.m.tone_mapping.min_nits;
   ppf->info.relative_to_max_display =
-      io.metadata.m.tone_mapping.relative_to_max_display;
+      TO_JXL_BOOL(io.metadata.m.tone_mapping.relative_to_max_display);
 
-  ppf->info.uses_original_profile = !io.metadata.m.xyb_encoded;
+  ppf->info.uses_original_profile = TO_JXL_BOOL(!io.metadata.m.xyb_encoded);
   JXL_ASSERT(0 < io.metadata.m.orientation && io.metadata.m.orientation <= 8);
   ppf->info.orientation =
       static_cast<JxlOrientation>(io.metadata.m.orientation);
@@ -268,7 +269,7 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
 
   // Convert animation metadata
   JXL_ASSERT(io.frames.size() == 1 || io.metadata.m.have_animation);
-  ppf->info.have_animation = io.metadata.m.have_animation;
+  ppf->info.have_animation = TO_JXL_BOOL(io.metadata.m.have_animation);
   ppf->info.animation.tps_numerator = io.metadata.m.animation.tps_numerator;
   ppf->info.animation.tps_denominator = io.metadata.m.animation.tps_denominator;
   ppf->info.animation.num_loops = io.metadata.m.animation.num_loops;
@@ -293,8 +294,9 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
     JXL_ASSERT(frame.metadata()->bit_depth.bits_per_sample != 0);
     // It is ok for the frame.color().kNumPlanes to not match the
     // number of channels on the image.
+    const uint32_t alpha_channels = has_alpha ? 1 : 0;
     const uint32_t num_channels =
-        frame.metadata()->color_encoding.Channels() + has_alpha;
+        frame.metadata()->color_encoding.Channels() + alpha_channels;
     JxlPixelFormat format{/*num_channels=*/num_channels,
                           /*data_type=*/pixel_format.data_type,
                           /*endianness=*/pixel_format.endianness,

@@ -518,9 +518,8 @@ int processing_start(png_structp& png_ptr, png_infop& info_ptr, void* frame_ptr,
   png_process_data(png_ptr, info_ptr, chunkIHDR.data(), chunkIHDR.size());
 
   if (hasInfo) {
-    for (unsigned int i = 0; i < chunksInfo.size(); i++) {
-      png_process_data(png_ptr, info_ptr, chunksInfo[i].data(),
-                       chunksInfo[i].size());
+    for (auto& chunk : chunksInfo) {
+      png_process_data(png_ptr, info_ptr, chunk.data(), chunk.size());
     }
   }
   return 0;
@@ -603,7 +602,7 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
 
   // Make sure png memory is released in any case.
   auto scope_guard = MakeScopeGuard([&]() {
-    png_destroy_read_struct(&png_ptr, &info_ptr, 0);
+    png_destroy_read_struct(&png_ptr, &info_ptr, nullptr);
     // Just in case. Not all versions on libpng wipe-out the pointers.
     png_ptr = nullptr;
     info_ptr = nullptr;
@@ -660,7 +659,7 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
 
         if (id == kId_acTL && !hasInfo && !isAnimated) {
           isAnimated = true;
-          ppf->info.have_animation = true;
+          ppf->info.have_animation = JXL_TRUE;
           ppf->info.animation.tps_numerator = 1000;
           ppf->info.animation.tps_denominator = 1;
         } else if (id == kId_IEND ||
@@ -992,7 +991,7 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
         has_nontrivial_background && frame.dispose_op == DISPOSE_OP_BACKGROUND;
   }
   if (ppf->frames.empty()) return JXL_FAILURE("No frames decoded");
-  ppf->frames.back().frame_info.is_last = true;
+  ppf->frames.back().frame_info.is_last = JXL_TRUE;
 
   return true;
 #else

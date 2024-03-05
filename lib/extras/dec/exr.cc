@@ -188,7 +188,7 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, const ColorHints& color_hints,
   if (has_alpha) {
     ppf->info.alpha_bits = kExrAlphaBits;
     ppf->info.alpha_exponent_bits = ppf->info.exponent_bits_per_sample;
-    ppf->info.alpha_premultiplied = true;
+    ppf->info.alpha_premultiplied = JXL_TRUE;
   }
   ppf->info.intensity_target = intensity_target;
   return true;

@@ -7,6 +7,7 @@
 
 #include <jxl/encode.h>
 #include <jxl/encode_cxx.h>
+#include <jxl/types.h>
 
 #include <cmath>
 #include <utility>
@@ -229,7 +230,7 @@ bool JpegXlSaveGui::GuiOnChangeAdvancedMode(GtkWidget* toggle,
   gtk_widget_set_sensitive(self->frame_advanced, jxl_save_opts.advanced_mode);
 
   if (!jxl_save_opts.advanced_mode) {
-    jxl_save_opts.basic_info.uses_original_profile = false;
+    jxl_save_opts.basic_info.uses_original_profile = JXL_FALSE;
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->toggle_no_xyb), false);
 
     jxl_save_opts.use_container = true;
@@ -700,7 +701,7 @@ bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
 
   // treat layers as animation frames, for now
   if (nlayers > 1) {
-    jxl_save_opts.basic_info.have_animation = true;
+    jxl_save_opts.basic_info.have_animation = JXL_TRUE;
     jxl_save_opts.basic_info.animation.tps_numerator = 100;
   }
 
@@ -740,12 +741,12 @@ bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
       jxl_save_opts.icc_attached = true;
     } else {
       g_printerr(SAVE_PROC " Warning: JxlEncoderSetICCProfile failed.\n");
-      jxl_save_opts.basic_info.uses_original_profile = false;
+      jxl_save_opts.basic_info.uses_original_profile = JXL_FALSE;
       jxl_save_opts.lossless = false;
     }
   } else {
     g_printerr(SAVE_PROC " Warning: Using internal profile.\n");
-    jxl_save_opts.basic_info.uses_original_profile = false;
+    jxl_save_opts.basic_info.uses_original_profile = JXL_FALSE;
     jxl_save_opts.lossless = false;
   }
 
@@ -753,9 +754,11 @@ bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
   JxlColorEncoding color_encoding = {};
 
   if (jxl_save_opts.is_linear) {
-    JxlColorEncodingSetToLinearSRGB(&color_encoding, jxl_save_opts.is_gray);
+    JxlColorEncodingSetToLinearSRGB(&color_encoding,
+                                    TO_JXL_BOOL(jxl_save_opts.is_gray));
   } else {
-    JxlColorEncodingSetToSRGB(&color_encoding, jxl_save_opts.is_gray);
+    JxlColorEncodingSetToSRGB(&color_encoding,
+                              TO_JXL_BOOL(jxl_save_opts.is_gray));
   }
 
   if (JXL_ENC_SUCCESS !=
@@ -779,15 +782,15 @@ bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
       // lossless mode doesn't work well with floating point
       jxl_save_opts.distance = 0.01;
       jxl_save_opts.lossless = false;
-      JxlEncoderSetFrameLossless(frame_settings, false);
+      JxlEncoderSetFrameLossless(frame_settings, JXL_FALSE);
       JxlEncoderSetFrameDistance(frame_settings, 0.01);
     } else {
       JxlEncoderSetFrameDistance(frame_settings, 0);
-      JxlEncoderSetFrameLossless(frame_settings, true);
+      JxlEncoderSetFrameLossless(frame_settings, JXL_TRUE);
     }
   } else {
     jxl_save_opts.lossless = false;
-    JxlEncoderSetFrameLossless(frame_settings, false);
+    JxlEncoderSetFrameLossless(frame_settings, JXL_FALSE);
     JxlEncoderSetFrameDistance(frame_settings, jxl_save_opts.distance);
   }
 

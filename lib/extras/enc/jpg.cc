@@ -216,8 +216,8 @@ void WriteExif(jpeg_compress_struct* const cinfo,
   for (const unsigned char c : kExifSignature) {
     jpeg_write_m_byte(cinfo, c);
   }
-  for (size_t i = 0; i < exif.size(); ++i) {
-    jpeg_write_m_byte(cinfo, exif[i]);
+  for (uint8_t c : exif) {
+    jpeg_write_m_byte(cinfo, c);
   }
 }
 

@@ -92,11 +92,12 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
                                                      runner.get())) {
     return false;
   }
-  if (JXL_DEC_SUCCESS !=
-      JxlDecoderSetKeepOrientation(dec.get(), spec.keep_orientation)) {
+  if (JXL_DEC_SUCCESS != JxlDecoderSetKeepOrientation(
+                             dec.get(), TO_JXL_BOOL(spec.keep_orientation))) {
     abort();
   }
-  if (JXL_DEC_SUCCESS != JxlDecoderSetCoalescing(dec.get(), spec.coalescing)) {
+  if (JXL_DEC_SUCCESS !=
+      JxlDecoderSetCoalescing(dec.get(), TO_JXL_BOOL(spec.coalescing))) {
     abort();
   }
   JxlBasicInfo info;
@@ -528,22 +529,25 @@ int TestOneInput(const uint8_t* data, size_t size) {
     flags /= limit;
     return result % (max_value + 1);
   };
+  const auto getBoolFlag = [&getFlag]() -> bool {
+    return static_cast<bool>(getFlag(1));
+  };
 
   FuzzSpec spec;
   // Allows some different possible variations in the chunk sizes of the
   // streaming case
   spec.random_seed = flags ^ size;
-  spec.get_alpha = !!getFlag(1);
-  spec.get_grayscale = !!getFlag(1);
-  spec.use_streaming = !!getFlag(1);
-  spec.jpeg_to_pixels = !!getFlag(1);
-  spec.use_callback = !!getFlag(1);
-  spec.keep_orientation = !!getFlag(1);
-  spec.coalescing = !!getFlag(1);
+  spec.get_alpha = getBoolFlag();
+  spec.get_grayscale = getBoolFlag();
+  spec.use_streaming = getBoolFlag();
+  spec.jpeg_to_pixels = getBoolFlag();
+  spec.use_callback = getBoolFlag();
+  spec.keep_orientation = getBoolFlag();
+  spec.coalescing = getBoolFlag();
   spec.output_type = static_cast<JxlDataType>(getFlag(JXL_TYPE_FLOAT16));
   spec.output_endianness = static_cast<JxlEndianness>(getFlag(JXL_BIG_ENDIAN));
   spec.output_align = getFlag(16);
-  spec.decode_boxes = !!getFlag(1);
+  spec.decode_boxes = getBoolFlag();
 
   std::vector<uint8_t> pixels;
   std::vector<uint8_t> jpeg;

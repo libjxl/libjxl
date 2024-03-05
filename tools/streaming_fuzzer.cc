@@ -96,6 +96,7 @@ struct FuzzSpec {
       if (pos == len) return 0;
       return data[pos++];
     };
+    auto b1 = [&]() -> bool { return static_cast<bool>(u8() % 2); };
     auto u16 = [&]() -> uint16_t { return (uint16_t{u8()} << 8) | u8(); };
     FuzzSpec spec;
     spec.xsize = uint32_t{u16()} + 1;
@@ -104,8 +105,8 @@ struct FuzzSpec {
     if (spec.xsize * uint64_t{spec.ysize} > kMaxSize) {
       spec.ysize = kMaxSize / spec.xsize;
     }
-    spec.grayscale = u8() % 2;
-    spec.alpha = u8() % 2;
+    spec.grayscale = b1();
+    spec.alpha = b1();
     spec.bit_depth = u8() % 16 + 1;
     // constants chosen so to cover the entire 0.01 - 25 range.
     spec.distance = u8() % 2 ? 0.0 : 0.01 + 0.00038132 * u16();
@@ -173,7 +174,7 @@ std::vector<uint8_t> Encode(const FuzzSpec& spec, bool streaming) {
   basic_info.xsize = spec.xsize;
   basic_info.ysize = spec.ysize;
   basic_info.bits_per_sample = spec.bit_depth;
-  basic_info.uses_original_profile = false;
+  basic_info.uses_original_profile = JXL_FALSE;
   uint32_t nchan = basic_info.num_color_channels;
   if (spec.alpha) {
     nchan += 1;

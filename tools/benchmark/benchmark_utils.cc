@@ -24,7 +24,7 @@
 #include "lib/jxl/image_bundle.h"
 #include "tools/file_io.h"
 
-extern char** environ;
+extern char** environ;  // NOLINT
 
 namespace jpegxl {
 namespace tools {

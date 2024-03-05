@@ -522,7 +522,7 @@ std::ostream& operator<<(std::ostream& os,
     filename = c.input_path.substr(pos + 1);
   }
   std::replace_if(
-      filename.begin(), filename.end(), [](char c) { return !isalnum(c); },
+      filename.begin(), filename.end(), [](char c) { return isalnum(c) == 0; },
       '_');
   os << filename << "_" << (c.jpeg_transcode ? "JPEG_" : "") << c.xsize << "x"
      << c.ysize << "_" << c.cparams_descr;

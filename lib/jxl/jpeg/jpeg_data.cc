@@ -5,6 +5,8 @@
 
 #include "lib/jxl/jpeg/jpeg_data.h"
 
+#include <jxl/types.h>
+
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/common.h"  // kMaxNumPasses, JPEGXL_ENABLE_TRANSCODE_JPEG
@@ -214,7 +216,7 @@ Status JPEGData::VisitFields(Visitor* visitor) {
     huffman_code.resize(num_huff);
   }
   for (JPEGHuffmanCode& hc : huffman_code) {
-    bool is_ac = hc.slot_id >> 4;
+    bool is_ac = ((hc.slot_id >> 4) != 0);
     uint32_t id = hc.slot_id & 0xF;
     JXL_RETURN_IF_ERROR(visitor->Bool(false, &is_ac));
     JXL_RETURN_IF_ERROR(visitor->Bits(2, 0, &id));
@@ -362,13 +364,13 @@ Status JPEGData::VisitFields(Visitor* visitor) {
       for (uint32_t i = 0; i < nbit; i++) {
         bool bbit = false;
         JXL_RETURN_IF_ERROR(visitor->Bool(false, &bbit));
-        padding_bits.push_back(bbit);
+        padding_bits.push_back(TO_JXL_BOOL(bbit));
       }
     } else {
       for (uint8_t& bit : padding_bits) {
-        bool bbit = bit;
+        bool bbit = FROM_JXL_BOOL(bit);
         JXL_RETURN_IF_ERROR(visitor->Bool(false, &bbit));
-        bit = bbit;
+        bit = TO_JXL_BOOL(bbit);
       }
     }
   }

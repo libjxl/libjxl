@@ -854,7 +854,7 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
       timecode = 0;
     }
 
-    const bool last_frame = frames_closed && !num_queued_frames;
+    const bool last_frame = frames_closed && (num_queued_frames == 0);
 
     uint32_t max_bits_per_sample = metadata.m.bit_depth.bits_per_sample;
     for (const auto& info : metadata.m.extra_channel_info) {
@@ -909,8 +909,8 @@ jxl::Status JxlEncoderStruct::ProcessOneEnqueuedInput() {
       frame_info.save_as_reference = save_as_reference;
       frame_info.source =
           input_frame->option_values.header.layer_info.blend_info.source;
-      frame_info.clamp =
-          input_frame->option_values.header.layer_info.blend_info.clamp;
+      frame_info.clamp = FROM_JXL_BOOL(
+          input_frame->option_values.header.layer_info.blend_info.clamp);
       frame_info.alpha_channel =
           input_frame->option_values.header.layer_info.blend_info.alpha;
       frame_info.extra_channel_blending_info.resize(
@@ -1214,7 +1214,8 @@ JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
   enc->metadata.m.bit_depth.floating_point_sample =
       (info->exponent_bits_per_sample != 0u);
   enc->metadata.m.modular_16_bit_buffer_sufficient =
-      (!info->uses_original_profile || info->bits_per_sample <= 12) &&
+      (!FROM_JXL_BOOL(info->uses_original_profile) ||
+       info->bits_per_sample <= 12) &&
       info->alpha_bits <= 12;
   if ((info->intrinsic_xsize > 0 || info->intrinsic_ysize > 0) &&
       (info->intrinsic_xsize != info->xsize ||
@@ -1252,7 +1253,7 @@ JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
     }
   }
 
-  enc->metadata.m.xyb_encoded = !info->uses_original_profile;
+  enc->metadata.m.xyb_encoded = !FROM_JXL_BOOL(info->uses_original_profile);
   if (info->orientation > 0 && info->orientation <= 8) {
     enc->metadata.m.orientation = info->orientation;
   } else {
@@ -1275,12 +1276,12 @@ JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
   }
   enc->metadata.m.tone_mapping.min_nits = info->min_nits;
   enc->metadata.m.tone_mapping.relative_to_max_display =
-      info->relative_to_max_display;
+      FROM_JXL_BOOL(info->relative_to_max_display);
   enc->metadata.m.tone_mapping.linear_below = info->linear_below;
   enc->basic_info = *info;
   enc->basic_info_set = true;
 
-  enc->metadata.m.have_animation = info->have_animation;
+  enc->metadata.m.have_animation = FROM_JXL_BOOL(info->have_animation);
   if (info->have_animation) {
     if (info->animation.tps_denominator < 1) {
       return JXL_API_ERROR(
@@ -1294,7 +1295,8 @@ JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
     enc->metadata.m.animation.tps_numerator = info->animation.tps_numerator;
     enc->metadata.m.animation.tps_denominator = info->animation.tps_denominator;
     enc->metadata.m.animation.num_loops = info->animation.num_loops;
-    enc->metadata.m.animation.have_timecodes = info->animation.have_timecodes;
+    enc->metadata.m.animation.have_timecodes =
+        FROM_JXL_BOOL(info->animation.have_timecodes);
   }
   std::string level_message;
   int required_level = VerifyLevelSettings(enc, &level_message);
@@ -1457,7 +1459,7 @@ JxlEncoderStatus JxlEncoderSetFrameLossless(
         frame_settings->enc, JXL_ENC_ERR_API_USAGE,
         "Set uses_original_profile=true for lossless encoding");
   }
-  frame_settings->values.lossless = lossless;
+  frame_settings->values.lossless = FROM_JXL_BOOL(lossless);
   return JxlErrorOrStatus::Success();
 }
 
@@ -1940,7 +1942,7 @@ JxlEncoderStatus JxlEncoderUseContainer(JxlEncoder* enc,
     return JXL_API_ERROR(enc, JXL_ENC_ERR_API_USAGE,
                          "this setting can only be set at the beginning");
   }
-  enc->use_container = static_cast<bool>(use_container);
+  enc->use_container = FROM_JXL_BOOL(use_container);
   return JxlErrorOrStatus::Success();
 }
 
@@ -1950,7 +1952,7 @@ JxlEncoderStatus JxlEncoderStoreJPEGMetadata(JxlEncoder* enc,
     return JXL_API_ERROR(enc, JXL_ENC_ERR_API_USAGE,
                          "this setting can only be set at the beginning");
   }
-  enc->store_jpeg_metadata = static_cast<bool>(store_jpeg_metadata);
+  enc->store_jpeg_metadata = FROM_JXL_BOOL(store_jpeg_metadata);
   return JxlErrorOrStatus::Success();
 }
 
@@ -2040,7 +2042,7 @@ JxlEncoderStatus JxlEncoderAddJPEGFrame(
     JxlEncoderInitBasicInfo(&basic_info);
     basic_info.xsize = io.Main().jpeg_data->width;
     basic_info.ysize = io.Main().jpeg_data->height;
-    basic_info.uses_original_profile = true;
+    basic_info.uses_original_profile = JXL_TRUE;
     if (JxlEncoderSetBasicInfo(frame_settings->enc, &basic_info) !=
         JXL_ENC_SUCCESS) {
       return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_GENERIC,
@@ -2081,21 +2083,23 @@ JxlEncoderStatus JxlEncoderAddJPEGFrame(
     std::vector<uint8_t> exif(exif_size);
     memcpy(exif.data() + 4, io.blobs.exif.data(), io.blobs.exif.size());
     JxlEncoderUseBoxes(frame_settings->enc);
-    JxlEncoderAddBox(frame_settings->enc, "Exif", exif.data(), exif_size,
-                     frame_settings->values.cparams.jpeg_compress_boxes);
+    JxlEncoderAddBox(
+        frame_settings->enc, "Exif", exif.data(), exif_size,
+        TO_JXL_BOOL(frame_settings->values.cparams.jpeg_compress_boxes));
   }
   if (!io.blobs.xmp.empty() && frame_settings->values.cparams.jpeg_keep_xmp) {
     JxlEncoderUseBoxes(frame_settings->enc);
-    JxlEncoderAddBox(frame_settings->enc, "xml ", io.blobs.xmp.data(),
-                     io.blobs.xmp.size(),
-                     frame_settings->values.cparams.jpeg_compress_boxes);
+    JxlEncoderAddBox(
+        frame_settings->enc, "xml ", io.blobs.xmp.data(), io.blobs.xmp.size(),
+        TO_JXL_BOOL(frame_settings->values.cparams.jpeg_compress_boxes));
   }
   if (!io.blobs.jumbf.empty() &&
       frame_settings->values.cparams.jpeg_keep_jumbf) {
     JxlEncoderUseBoxes(frame_settings->enc);
-    JxlEncoderAddBox(frame_settings->enc, "jumb", io.blobs.jumbf.data(),
-                     io.blobs.jumbf.size(),
-                     frame_settings->values.cparams.jpeg_compress_boxes);
+    JxlEncoderAddBox(
+        frame_settings->enc, "jumb", io.blobs.jumbf.data(),
+        io.blobs.jumbf.size(),
+        TO_JXL_BOOL(frame_settings->values.cparams.jpeg_compress_boxes));
   }
   if (frame_settings->enc->store_jpeg_metadata) {
     if (!frame_settings->values.cparams.jpeg_keep_exif ||
@@ -2266,10 +2270,12 @@ JxlEncoderStatus JxlEncoderAddImageFrameInternal(
           pool, 0, count, jxl::ThreadPool::NoInit,
           [&](size_t i, size_t) { fun(opaque, i); }, "Encode fast lossless"));
     };
+    JXL_BOOL oneshot = TO_JXL_BOOL(!frame_data.StreamingInput());
     auto* frame_state = JxlFastLosslessPrepareFrame(
         frame_data.GetInputSource(), xsize, ysize, num_channels,
-        frame_settings->enc->metadata.m.bit_depth.bits_per_sample, big_endian,
-        /*effort=*/2, /*oneshot=*/!frame_data.StreamingInput());
+        frame_settings->enc->metadata.m.bit_depth.bits_per_sample,
+        TO_JXL_BOOL(big_endian),
+        /*effort=*/2, oneshot);
     if (!streaming) {
       JxlFastLosslessProcessFrame(frame_state, /*is_last=*/false,
                                   frame_settings->enc->thread_pool.get(),
@@ -2426,7 +2432,7 @@ JxlEncoderStatus JxlEncoderAddBox(JxlEncoder* enc, const JxlBoxType type,
 
   box->type = jxl::MakeBoxType(type);
   box->contents.assign(contents, contents + size);
-  box->compress_box = !!compress_box;
+  box->compress_box = FROM_JXL_BOOL(compress_box);
   QueueBox(enc, box);
   return JxlErrorOrStatus::Success();
 }
@@ -2597,12 +2603,14 @@ JxlEncoderStatus JxlEncoderSetFrameBitDepth(
 
 void JxlColorEncodingSetToSRGB(JxlColorEncoding* color_encoding,
                                JXL_BOOL is_gray) {
-  *color_encoding = jxl::ColorEncoding::SRGB(is_gray).ToExternal();
+  *color_encoding =
+      jxl::ColorEncoding::SRGB(FROM_JXL_BOOL(is_gray)).ToExternal();
 }
 
 void JxlColorEncodingSetToLinearSRGB(JxlColorEncoding* color_encoding,
                                      JXL_BOOL is_gray) {
-  *color_encoding = jxl::ColorEncoding::LinearSRGB(is_gray).ToExternal();
+  *color_encoding =
+      jxl::ColorEncoding::LinearSRGB(FROM_JXL_BOOL(is_gray)).ToExternal();
 }
 
 void JxlEncoderAllowExpertOptions(JxlEncoder* enc) {

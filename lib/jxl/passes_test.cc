@@ -268,7 +268,7 @@ TEST(PassesTest, ProgressiveDownsample2DegradesCorrectlyGrayscale) {
   CompressParams cparams;
   cparams.speed_tier = SpeedTier::kSquirrel;
   cparams.progressive_dc = 1;
-  cparams.responsive = true;
+  cparams.responsive = JXL_TRUE;
   cparams.qprogressive_mode = Override::kOn;
   cparams.butteraugli_distance = 1.0;
   ASSERT_TRUE(test::EncodeFile(cparams, &io, &compressed, &pool));
@@ -311,7 +311,7 @@ TEST(PassesTest, ProgressiveDownsample2DegradesCorrectly) {
   CompressParams cparams;
   cparams.speed_tier = SpeedTier::kSquirrel;
   cparams.progressive_dc = 1;
-  cparams.responsive = true;
+  cparams.responsive = JXL_TRUE;
   cparams.qprogressive_mode = Override::kOn;
   cparams.butteraugli_distance = 1.0;
   ASSERT_TRUE(test::EncodeFile(cparams, &io, &compressed, &pool));

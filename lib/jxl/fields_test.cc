@@ -320,12 +320,12 @@ struct NewBundle : public Fields {
         visitor->U32(Bits(7), Bits(12), Bits(16), Bits(32), 0, &old_large));
 
     JXL_QUIET_RETURN_IF_ERROR(visitor->BeginExtensions(&extensions));
-    if (visitor->Conditional(extensions & 1)) {
+    if (visitor->Conditional((extensions & 1) != 0)) {
       JXL_QUIET_RETURN_IF_ERROR(
           visitor->U32(Val(2), Bits(2), Bits(3), Bits(4), 2, &new_small));
       JXL_QUIET_RETURN_IF_ERROR(visitor->F16(-2.0f, &new_f));
     }
-    if (visitor->Conditional(extensions & 2)) {
+    if (visitor->Conditional((extensions & 2) != 0)) {
       JXL_QUIET_RETURN_IF_ERROR(
           visitor->U32(Bits(9), Bits(12), Bits(16), Bits(32), 0, &new_large));
     }

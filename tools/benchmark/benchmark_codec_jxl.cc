@@ -266,9 +266,9 @@ class JxlCodec : public ImageCodec {
     cparams_.AddOption(JXL_ENC_FRAME_SETTING_PATCHES,
                        static_cast<int>(jxlargs->patches));
     cparams_.AddOption(JXL_ENC_FRAME_SETTING_PROGRESSIVE_AC,
-                       jxlargs->progressive);
+                       TO_JXL_BOOL(jxlargs->progressive));
     cparams_.AddOption(JXL_ENC_FRAME_SETTING_QPROGRESSIVE_AC,
-                       jxlargs->qprogressive);
+                       TO_JXL_BOOL(jxlargs->qprogressive));
     cparams_.AddOption(JXL_ENC_FRAME_SETTING_PROGRESSIVE_DC,
                        jxlargs->progressive_dc);
     if (butteraugli_target_ > 0.f && modular_mode_ && !has_ctransform_) {

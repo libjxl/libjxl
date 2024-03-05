@@ -243,8 +243,8 @@ TEST(EncoderErrorHandlingTest, InvalidQuantValue) {
     jpegli_set_defaults(&cinfo);
     cinfo.quant_tbl_ptrs[0] =
         jpegli_alloc_quant_table(reinterpret_cast<j_common_ptr>(&cinfo));
-    for (size_t k = 0; k < DCTSIZE2; ++k) {
-      cinfo.quant_tbl_ptrs[0]->quantval[k] = 0;
+    for (UINT16& q : cinfo.quant_tbl_ptrs[0]->quantval) {
+      q = 0;
     }
     jpegli_start_compress(&cinfo, TRUE);
     JSAMPLE image[1] = {0};

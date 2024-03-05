@@ -170,6 +170,7 @@ int main(int argc, char** argv) {
     }
   }
 
-  return !RunButteraugli(argv[1], argv[2], distmap, raw_distmap, colorspace, p,
-                         intensity_target);
+  Status result = RunButteraugli(argv[1], argv[2], distmap, raw_distmap,
+                                 colorspace, p, intensity_target);
+  return result ? 1 : 0;
 }

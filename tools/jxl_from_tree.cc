@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file.
 
 #include <jxl/cms.h>
+#include <jxl/types.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -72,7 +73,7 @@ Splines SplinesFromSplineData(const SplineData& spline_data) {
 template <typename F>
 bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
                CompressParams& cparams, size_t& W, size_t& H, CodecInOut& io,
-               int& have_next, int& x0, int& y0) {
+               JXL_BOOL& have_next, int& x0, int& y0) {
   std::unordered_map<std::string, int> property_map = {
       {"c", 0},
       {"g", 1},
@@ -272,7 +273,7 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
       return false;
     }
   } else if (t == "NotLast") {
-    have_next = 1;
+    have_next = JXL_TRUE;
   } else if (t == "Upsample") {
     t = tok();
     size_t num = 0;
@@ -443,13 +444,13 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
   int x0 = 0;
   int y0 = 0;
   cparams.SetLossless();
-  cparams.responsive = false;
+  cparams.responsive = JXL_FALSE;
   cparams.resampling = 1;
   cparams.ec_resampling = 1;
   cparams.modular_group_size_shift = 3;
   cparams.colorspace = 0;
   CodecInOut io;
-  int have_next = 0;
+  int have_next = JXL_FALSE;
 
   std::istream* f = &std::cin;
   std::ifstream file;
@@ -517,7 +518,7 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
 
   while (true) {
     FrameInfo info;
-    info.is_last = !have_next;
+    info.is_last = !FROM_JXL_BOOL(have_next);
     if (!info.is_last) info.save_as_reference = 1;
 
     io.frames[0].origin.x0 = x0;
@@ -530,7 +531,7 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
     if (!have_next) break;
     tree.clear();
     spline_data.splines.clear();
-    have_next = 0;
+    have_next = JXL_FALSE;
     cparams.manual_noise.clear();
     if (!ParseNode(tok, tree, spline_data, cparams, width, height, io,
                    have_next, x0, y0)) {
