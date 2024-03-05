@@ -17,6 +17,7 @@
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/override.h"
+#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/random.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_cache.h"
@@ -586,7 +587,9 @@ Status FindBestPatchDictionary(const Image3F& opsin,
           state->cparams.dots,
           state->cparams.speed_tier <= SpeedTier::kSquirrel &&
               state->cparams.butteraugli_distance >= kMinButteraugliForDots)) {
-    JXL_ASSIGN_OR_RETURN(info, FindDotDictionary(state->cparams, opsin,
+    Rect rect(0, 0, state->shared.frame_dim.xsize,
+              state->shared.frame_dim.ysize);
+    JXL_ASSIGN_OR_RETURN(info, FindDotDictionary(state->cparams, opsin, rect,
                                                  state->shared.cmap, pool));
   }
 
@@ -716,6 +719,8 @@ Status FindBestPatchDictionary(const Image3F& opsin,
       }
     }
     for (const auto& pos : info[i].second) {
+      JXL_DEBUG_V(4, "Patch %" PRIuS "x%" PRIuS " at position %u,%u",
+                  ref_pos.xsize, ref_pos.ysize, pos.first, pos.second);
       positions.emplace_back(
           PatchPosition{pos.first, pos.second, pref_positions.size()});
       // Add blending for color channels, ignore other channels.
