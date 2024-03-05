@@ -963,7 +963,8 @@ Status ModularFrameEncoder::ComputeEncodingData(
         stream_options_[stream] = stream_options_[0];
         JXL_CHECK(PrepareStreamParams(
             stream_params_[i].rect, cparams_, stream_params_[i].minShift,
-            stream_params_[i].maxShift, stream_params_[i].id, do_color));
+            stream_params_[i].maxShift, stream_params_[i].id, do_color,
+            groupwise));
       },
       "ChooseParams"));
   {
@@ -1234,6 +1235,7 @@ Status ModularFrameEncoder::EncodeStream(BitWriter* writer, AuxOut* aux_out,
                                          const ModularStreamId& stream) {
   size_t stream_id = stream.ID(frame_dim_);
   if (stream_images_[stream_id].channel.empty()) {
+    JXL_DEBUG_V(10, "Modular stream %" PRIuS " is empty.", stream_id);
     return true;  // Image with no channels, header never gets decoded.
   }
   if (tokens_.empty()) {
@@ -1277,7 +1279,7 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
                                                 const CompressParams& cparams_,
                                                 int minShift, int maxShift,
                                                 const ModularStreamId& stream,
-                                                bool do_color) {
+                                                bool do_color, bool groupwise) {
   size_t stream_id = stream.ID(frame_dim_);
   Image& full_image = stream_images_[0];
   const size_t xsize = rect.xsize();
@@ -1288,9 +1290,11 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
                          Image::Create(xsize, ysize, full_image.bitdepth, 0));
     // start at the first bigger-than-frame_dim.group_dim non-metachannel
     size_t c = full_image.nb_meta_channels;
-    for (; c < full_image.channel.size(); c++) {
-      Channel& fc = full_image.channel[c];
-      if (fc.w > frame_dim_.group_dim || fc.h > frame_dim_.group_dim) break;
+    if (!groupwise) {
+      for (; c < full_image.channel.size(); c++) {
+        Channel& fc = full_image.channel[c];
+        if (fc.w > frame_dim_.group_dim || fc.h > frame_dim_.group_dim) break;
+      }
     }
     for (; c < full_image.channel.size(); c++) {
       Channel& fc = full_image.channel[c];
