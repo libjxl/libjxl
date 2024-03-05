@@ -182,8 +182,10 @@ class ColorManagementTest
     const size_t thread = 0;
     const ImageF& in = c.IsGray() ? g->in_gray : g->in_color;
     ImageF* JXL_RESTRICT out = c.IsGray() ? &g->out_gray : &g->out_color;
-    ASSERT_TRUE(xform_fwd.Run(thread, in.Row(0), xform_fwd.BufDst(thread)));
-    ASSERT_TRUE(xform_rev.Run(thread, xform_fwd.BufDst(thread), out->Row(0)));
+    ASSERT_TRUE(
+        xform_fwd.Run(thread, in.Row(0), xform_fwd.BufDst(thread), kWidth));
+    ASSERT_TRUE(
+        xform_rev.Run(thread, xform_fwd.BufDst(thread), out->Row(0), kWidth));
 
     // With lcms2, this value is lower: 5E-5
     double max_l1 = 7E-4;
@@ -267,7 +269,7 @@ TEST_F(ColorManagementTest, D2700ToSRGB) {
                              kDefaultIntensityTarget, 1, 1));
   const float sRGB_D2700_values[3] = {0.863, 0.737, 0.490};
   float sRGB_values[3];
-  ASSERT_TRUE(transform.Run(0, sRGB_D2700_values, sRGB_values));
+  ASSERT_TRUE(transform.Run(0, sRGB_D2700_values, sRGB_values, 1));
   EXPECT_THAT(sRGB_values,
               ElementsAre(FloatNear(0.914, 1e-3), FloatNear(0.745, 1e-3),
                           FloatNear(0.601, 1e-3)));
@@ -289,7 +291,7 @@ TEST_F(ColorManagementTest, P3HlgTo2020Hlg) {
   ASSERT_TRUE(transform.Init(p3_hlg, rec2020_hlg, 1000, 1, 1));
   const float p3_hlg_values[3] = {0., 0.75, 0.};
   float rec2020_hlg_values[3];
-  ASSERT_TRUE(transform.Run(0, p3_hlg_values, rec2020_hlg_values));
+  ASSERT_TRUE(transform.Run(0, p3_hlg_values, rec2020_hlg_values, 1));
   EXPECT_THAT(rec2020_hlg_values,
               ElementsAre(FloatNear(0.3973, 1e-4), FloatNear(0.7382, 1e-4),
                           FloatNear(0.1183, 1e-4)));
@@ -309,7 +311,7 @@ TEST_F(ColorManagementTest, HlgOotf) {
   // HDR reference white: https://www.itu.int/pub/R-REP-BT.2408-4-2021
   float p3_hlg_values[3] = {0.75, 0.75, 0.75};
   float linear_srgb_values[3];
-  ASSERT_TRUE(transform_to_1000.Run(0, p3_hlg_values, linear_srgb_values));
+  ASSERT_TRUE(transform_to_1000.Run(0, p3_hlg_values, linear_srgb_values, 1));
   // On a 1000-nit display, HDR reference white should be 203 cd/m² which is
   // 0.203 times the maximum.
   EXPECT_THAT(linear_srgb_values,
@@ -319,14 +321,14 @@ TEST_F(ColorManagementTest, HlgOotf) {
   ColorSpaceTransform transform_to_400(*JxlGetDefaultCms());
   ASSERT_TRUE(
       transform_to_400.Init(p3_hlg, ColorEncoding::LinearSRGB(), 400, 1, 1));
-  ASSERT_TRUE(transform_to_400.Run(0, p3_hlg_values, linear_srgb_values));
+  ASSERT_TRUE(transform_to_400.Run(0, p3_hlg_values, linear_srgb_values, 1));
   // On a 400-nit display, it should be 100 cd/m².
   EXPECT_THAT(linear_srgb_values,
               ElementsAre(FloatNear(0.250, 1e-3), FloatNear(0.250, 1e-3),
                           FloatNear(0.250, 1e-3)));
 
   p3_hlg_values[2] = 0.50;
-  ASSERT_TRUE(transform_to_1000.Run(0, p3_hlg_values, linear_srgb_values));
+  ASSERT_TRUE(transform_to_1000.Run(0, p3_hlg_values, linear_srgb_values, 1));
   EXPECT_THAT(linear_srgb_values,
               ElementsAre(FloatNear(0.201, 1e-3), FloatNear(0.201, 1e-3),
                           FloatNear(0.050, 1e-3)));
@@ -335,7 +337,7 @@ TEST_F(ColorManagementTest, HlgOotf) {
   ASSERT_TRUE(
       transform_from_400.Init(ColorEncoding::LinearSRGB(), p3_hlg, 400, 1, 1));
   linear_srgb_values[0] = linear_srgb_values[1] = linear_srgb_values[2] = 0.250;
-  ASSERT_TRUE(transform_from_400.Run(0, linear_srgb_values, p3_hlg_values));
+  ASSERT_TRUE(transform_from_400.Run(0, linear_srgb_values, p3_hlg_values, 1));
   EXPECT_THAT(p3_hlg_values,
               ElementsAre(FloatNear(0.75, 1e-3), FloatNear(0.75, 1e-3),
                           FloatNear(0.75, 1e-3)));
@@ -352,7 +354,7 @@ TEST_F(ColorManagementTest, HlgOotf) {
   const float grayscale_hlg_value = 0.75;
   float linear_grayscale_value;
   ASSERT_TRUE(grayscale_transform.Run(0, &grayscale_hlg_value,
-                                      &linear_grayscale_value));
+                                      &linear_grayscale_value, 1));
   EXPECT_THAT(linear_grayscale_value, FloatNear(0.203, 1e-3));
 }
 
@@ -401,7 +403,7 @@ TEST_F(ColorManagementTest, XYBProfile) {
   }
 
   float* dst = xform.BufDst(0);
-  ASSERT_TRUE(xform.Run(0, src, dst));
+  ASSERT_TRUE(xform.Run(0, src, dst, kNumColors));
 
   JXL_ASSIGN_OR_DIE(Image3F out, Image3F::Create(kNumColors, 1));
   for (size_t i = 0; i < kNumColors; ++i) {
