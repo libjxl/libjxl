@@ -5,6 +5,7 @@
 
 #include "lib/jxl/dec_huffman.h"
 
+#include <jxl/types.h>
 #include <string.h> /* for memset */
 
 #include <vector>
@@ -22,9 +23,9 @@ static const uint8_t kCodeLengthCodeOrder[kCodeLengthCodes] = {
 static const uint8_t kDefaultCodeLength = 8;
 static const uint8_t kCodeLengthRepeatCode = 16;
 
-int ReadHuffmanCodeLengths(const uint8_t* code_length_code_lengths,
-                           int num_symbols, uint8_t* code_lengths,
-                           BitReader* br) {
+JXL_BOOL ReadHuffmanCodeLengths(const uint8_t* code_length_code_lengths,
+                                int num_symbols, uint8_t* code_lengths,
+                                BitReader* br) {
   int symbol = 0;
   uint8_t prev_code_len = kDefaultCodeLength;
   int repeat = 0;
@@ -38,7 +39,7 @@ int ReadHuffmanCodeLengths(const uint8_t* code_length_code_lengths,
   }
   if (!BuildHuffmanTable(table, 5, code_length_code_lengths, kCodeLengthCodes,
                          &counts[0])) {
-    return 0;
+    return JXL_FALSE;
   }
 
   while (symbol < num_symbols && space > 0) {
@@ -86,10 +87,10 @@ int ReadHuffmanCodeLengths(const uint8_t* code_length_code_lengths,
     }
   }
   if (space != 0) {
-    return 0;
+    return JXL_FALSE;
   }
   memset(&code_lengths[symbol], 0, static_cast<size_t>(num_symbols - symbol));
-  return true;
+  return JXL_TRUE;
 }
 
 static JXL_INLINE bool ReadSimpleCode(size_t alphabet_size, BitReader* br,
@@ -220,9 +221,10 @@ bool HuffmanDecodingData::ReadFromBitStream(size_t alphabet_size,
       ++num_codes;
     }
   }
-  bool ok = (num_codes == 1 || space == 0) &&
-            ReadHuffmanCodeLengths(code_length_code_lengths, alphabet_size,
-                                   code_lengths.data(), br);
+  bool ok =
+      (num_codes == 1 || space == 0) &&
+      FROM_JXL_BOOL(ReadHuffmanCodeLengths(
+          code_length_code_lengths, alphabet_size, code_lengths.data(), br));
 
   if (!ok) return false;
   uint16_t counts[16] = {0};

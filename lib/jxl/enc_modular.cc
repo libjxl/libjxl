@@ -224,7 +224,7 @@ float EstimateWPCost(const Image& img, size_t i) {
             offset);
         size_t ctx = 0;
         for (int c : cutoffs) {
-          ctx += c >= properties[0];
+          ctx += (c >= properties[0]) ? 1 : 0;
         }
         pixel_type res = r[x] - guess;
         uint32_t token;
@@ -236,9 +236,9 @@ float EstimateWPCost(const Image& img, size_t i) {
         wp_state.UpdateErrors(r[x], x, y, ch.w);
       }
     }
-    for (size_t h = 0; h < nc; h++) {
-      histo_cost += histo[h].ShannonEntropy();
-      histo[h].Clear();
+    for (auto& h : histo) {
+      histo_cost += h.ShannonEntropy();
+      h.Clear();
     }
   }
   return histo_cost + extra_bits;
@@ -265,7 +265,7 @@ float EstimateCost(const Image& img) {
                          std::min(std::min(left, top), topleft);
         size_t ctx = 0;
         for (uint32_t c : cutoffs) {
-          ctx += c > maxdiff;
+          ctx += (c > maxdiff) ? 1 : 0;
         }
         pixel_type res = r[x] - ClampedGradient(top, left, topleft);
         uint32_t token;
@@ -276,9 +276,9 @@ float EstimateCost(const Image& img) {
         extra_bits += nbits;
       }
     }
-    for (size_t h = 0; h < nc; h++) {
-      histo_cost += histo[h].ShannonEntropy();
-      histo[h].Clear();
+    for (auto& h : histo) {
+      histo_cost += h.ShannonEntropy();
+      h.Clear();
     }
   }
   return histo_cost + extra_bits;
@@ -458,7 +458,7 @@ ModularFrameEncoder::ModularFrameEncoder(const FrameHeader& frame_header,
     // no explicit predictor(s) given, set a good default
     if ((cparams_.speed_tier <= SpeedTier::kGlacier ||
          cparams_.modular_mode == false) &&
-        cparams_.IsLossless() && cparams_.responsive == false) {
+        cparams_.IsLossless() && cparams_.responsive == JXL_FALSE) {
       // TODO(veluca): allow all predictors that don't break residual
       // multipliers in lossy mode.
       cparams_.options.predictor = Predictor::Variable;
@@ -1377,7 +1377,7 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
   if (cparams_.color_transform == ColorTransform::kNone &&
       cparams_.IsLossless() && cparams_.colorspace < 0 &&
       gi.channel.size() - gi.nb_meta_channels >= 3 &&
-      cparams_.responsive == false && do_color &&
+      cparams_.responsive == JXL_FALSE && do_color &&
       cparams_.speed_tier <= SpeedTier::kHare) {
     Transform sg(TransformId::kRCT);
     sg.begin_c = gi.nb_meta_channels;

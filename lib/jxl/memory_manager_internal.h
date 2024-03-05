@@ -36,11 +36,13 @@ static JXL_INLINE Status MemoryManagerInit(
   } else {
     memset(self, 0, sizeof(*self));
   }
-  if (!self->alloc != !self->free) {
+  bool is_default_alloc = (self->alloc == nullptr);
+  bool is_default_free = (self->free == nullptr);
+  if (is_default_alloc != is_default_free) {
     return false;
   }
-  if (!self->alloc) self->alloc = jxl::MemoryManagerDefaultAlloc;
-  if (!self->free) self->free = jxl::MemoryManagerDefaultFree;
+  if (is_default_alloc) self->alloc = jxl::MemoryManagerDefaultAlloc;
+  if (is_default_free) self->free = jxl::MemoryManagerDefaultFree;
 
   return true;
 }

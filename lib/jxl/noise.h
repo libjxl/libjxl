@@ -39,7 +39,7 @@ struct NoiseParams {
 static inline std::pair<int, float> IndexAndFrac(float x) {
   constexpr size_t kScaleNumerator = NoiseParams::kNumNoisePoints - 2;
   // TODO(user): instead of 1, this should be a proper Y range.
-  constexpr float kScale = kScaleNumerator / 1;
+  constexpr float kScale = kScaleNumerator / 1.0f;
   float scaled_x = std::max(0.f, x * kScale);
   float floor_x;
   float frac_x = std::modf(scaled_x, &floor_x);

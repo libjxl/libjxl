@@ -112,8 +112,8 @@ uint8_t* WrapPixelsToPng(size_t width, size_t height, size_t bit_depth,
   uint8_t* dst = output;
   *output_size = total_size;
 
-  for (size_t i = 0; i < kPngMagic.size(); ++i) {
-    *(dst++) = kPngMagic[i];
+  for (const uint32_t& c : kPngMagic) {
+    *(dst++) = c;
   }
 
   // IHDR

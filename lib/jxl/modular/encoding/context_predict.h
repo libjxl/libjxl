@@ -85,8 +85,8 @@ struct State {
   State(Header header, size_t xsize, size_t ysize) : header(header) {
     // Extra margin to avoid out-of-bounds writes.
     // All have space for two rows of data.
-    for (size_t i = 0; i < 4; i++) {
-      pred_errors[i].resize((xsize + 2) * 2);
+    for (auto &pred_error : pred_errors) {
+      pred_error.resize((xsize + 2) * 2);
     }
     error.resize((xsize + 2) * 2);
   }

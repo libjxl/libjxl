@@ -334,7 +334,7 @@ TEST_P(ModularTestParam, RoundtripLossless) {
   CodecInOut io2;
   size_t compressed_size;
   JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io2, _, &compressed_size));
-  EXPECT_LE(compressed_size, bitdepth * xsize * ysize / 3 * 1.1);
+  EXPECT_LE(compressed_size, bitdepth * xsize * ysize / 3.0 * 1.1);
   EXPECT_LE(0, ComputeDistance2(io.Main(), io2.Main(), *JxlGetDefaultCms()));
   size_t different = 0;
   for (size_t c = 0; c < 3; c++) {

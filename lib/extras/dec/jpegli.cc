@@ -218,7 +218,7 @@ Status DecodeJpeg(const std::vector<uint8_t>& compressed,
     } else {
       return failure("unsupported data type");
     }
-    ppf->info.uses_original_profile = true;
+    ppf->info.uses_original_profile = JXL_TRUE;
 
     // No alpha in JPG
     ppf->info.alpha_bits = 0;

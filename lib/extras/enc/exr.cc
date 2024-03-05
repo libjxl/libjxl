@@ -84,7 +84,7 @@ Status EncodeImageEXR(const PackedImage& image, const JxlBasicInfo& info,
   const size_t xsize = info.xsize;
   const size_t ysize = info.ysize;
   const bool has_alpha = info.alpha_bits > 0;
-  const bool alpha_is_premultiplied = info.alpha_premultiplied;
+  const bool alpha_is_premultiplied = FROM_JXL_BOOL(info.alpha_premultiplied);
 
   if (info.num_color_channels != 3 ||
       c_enc.color_space != JXL_COLOR_SPACE_RGB ||

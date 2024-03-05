@@ -344,7 +344,8 @@ class ColorSpaceTransform {
   }
 
   Status Run(const size_t thread, const float* buf_src, float* buf_dst) {
-    return cms_.run(cms_data_, thread, buf_src, buf_dst, xsize_);
+    // TODO(eustas): convert false to Status?
+    return FROM_JXL_BOOL(cms_.run(cms_data_, thread, buf_src, buf_dst, xsize_));
   }
 
  private:

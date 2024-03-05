@@ -113,8 +113,8 @@ void RoundtripRandomUnbalancedStream(int alphabet_size) {
   Rng rng(0);
   for (size_t i = 0; i < kReps; i++) {
     std::vector<int> distributions[kNumHistograms] = {};
-    for (int j = 0; j < kNumHistograms; j++) {
-      distributions[j].resize(kPrecision);
+    for (auto& distr : distributions) {
+      distr.resize(kPrecision);
       int symbol = 0;
       int remaining = 1;
       for (int k = 0; k < kPrecision; k++) {
@@ -126,7 +126,7 @@ void RoundtripRandomUnbalancedStream(int alphabet_size) {
           // sufficiently dissimilar.
           remaining = rng.UniformU(0, kPrecision - k + 1);
         }
-        distributions[j][k] = symbol;
+        distr[k] = symbol;
         remaining--;
       }
     }

@@ -186,7 +186,7 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
   }
   do_color = decode_color;
   size_t nb_extra = metadata.extra_channel_info.size();
-  bool has_tree = reader->ReadBits(1);
+  bool has_tree = static_cast<bool>(reader->ReadBits(1));
   if (!allow_truncated_group ||
       reader->TotalBitsConsumed() < reader->TotalBytes() * kBitsPerByte) {
     if (has_tree) {

@@ -5,6 +5,7 @@
 
 #include "lib/jxl/enc_patch_dictionary.h"
 
+#include <jxl/types.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <sys/types.h>
@@ -96,7 +97,7 @@ void PatchDictionaryEncoder::Encode(const PatchDictionary& pdic,
           add_num(kPatchAlphaChannelContext, info.alpha_channel);
         }
         if (UsesClamp(info.mode)) {
-          add_num(kPatchClampContext, info.clamp);
+          add_num(kPatchClampContext, TO_JXL_BOOL(info.clamp));
         }
       }
     }
@@ -675,7 +676,7 @@ Status FindBestPatchDictionary(const Image3F& opsin,
       ref_positions[patch] = {x0, y0};
       for (size_t y = y0; y < y0 + ysize; y++) {
         for (size_t x = x0; x < x0 + xsize; x++) {
-          occupied_rows[y * occupied_stride + x] = true;
+          occupied_rows[y * occupied_stride + x] = JXL_TRUE;
         }
       }
       max_y = std::max(max_y, y0 + ysize);

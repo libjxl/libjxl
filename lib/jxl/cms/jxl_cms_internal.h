@@ -502,9 +502,9 @@ static void CreateICCMlucTag(const std::string& text,
   WriteICCTag("enUS", tags->size(), tags);
   WriteICCUint32(text.size() * 2, tags->size(), tags);
   WriteICCUint32(28, tags->size(), tags);
-  for (size_t i = 0; i < text.size(); i++) {
+  for (char c : text) {
     tags->push_back(0);  // prepend 0 for UTF-16
-    tags->push_back(text[i]);
+    tags->push_back(c);
   }
 }
 
@@ -587,8 +587,8 @@ static Status CreateICCCurvParaTag(std::vector<float> params, size_t curve_type,
   WriteICCUint32(0, tags->size(), tags);
   WriteICCUint16(curve_type, tags->size(), tags);
   WriteICCUint16(0, tags->size(), tags);
-  for (size_t i = 0; i < params.size(); i++) {
-    JXL_RETURN_IF_ERROR(WriteICCS15Fixed16(params[i], tags->size(), tags));
+  for (float param : params) {
+    JXL_RETURN_IF_ERROR(WriteICCS15Fixed16(param, tags->size(), tags));
   }
   return true;
 }
@@ -663,8 +663,8 @@ static Status CreateICCLutAtoBTagForXYB(std::vector<uint8_t>* tags) {
                            -0.050022, 0.5683655,  -0.018344,
                            -1.387676, 1.1145555,  0.6857255};
   // 12 * 4 = 48 bytes
-  for (size_t i = 0; i < 9; ++i) {
-    JXL_RETURN_IF_ERROR(WriteICCS15Fixed16(matrix[i], tags->size(), tags));
+  for (double v : matrix) {
+    JXL_RETURN_IF_ERROR(WriteICCS15Fixed16(v, tags->size(), tags));
   }
   for (size_t i = 0; i < 3; ++i) {
     float intercept = 0;
@@ -1059,8 +1059,8 @@ static Status MaybeCreateProfileImpl(const JxlColorEncoding& c,
   WriteICCUint32(header.size() + tagtable.size() + tags.size(), 0, &header);
 
   *icc = header;
-  Bytes(tagtable).AppendTo(icc);
-  Bytes(tags).AppendTo(icc);
+  Bytes(tagtable).AppendTo(*icc);
+  Bytes(tags).AppendTo(*icc);
 
   // The MD5 checksum must be computed on the profile with profile flags,
   // rendering intent, and region of the checksum itself, set to 0.
