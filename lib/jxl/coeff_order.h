@@ -30,10 +30,9 @@ static constexpr std::array<size_t, 3 * kNumOrders + 1> kCoeffOrderOffset = {
     100,  108,  172,  236,  300,  332,  364,  396,  652,  908,
     1164, 1292, 1420, 1548, 2572, 3596, 4620, 5132, 5644, kCoeffOrderLimit};
 
-static JXL_MAYBE_UNUSED constexpr size_t CoeffOrderOffset(size_t order,
-                                                          size_t c) {
-  return kCoeffOrderOffset[3 * order + c] * kDCTBlockSize;
-}
+// TODO(eustas): rollback to constexpr once modern C++ becomes reuired.
+#define CoeffOrderOffset(O, C) \
+  (kCoeffOrderOffset[3 * (O) + (C)] * kDCTBlockSize)
 
 static JXL_MAYBE_UNUSED constexpr size_t kCoeffOrderMaxSize =
     kCoeffOrderLimit * kDCTBlockSize;
