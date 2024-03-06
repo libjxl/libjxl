@@ -16,6 +16,7 @@ MYDIR=$(dirname $(realpath "$0"))
 
 ### Environment parameters:
 TEST_STACK_LIMIT="${TEST_STACK_LIMIT:-256}"
+BENCHMARK_NUM_THREADS="${BENCHMARK_NUM_THREADS:-0}"
 CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:-RelWithDebInfo}
 CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH:-}
 CMAKE_C_COMPILER_LAUNCHER=${CMAKE_C_COMPILER_LAUNCHER:-}
@@ -128,17 +129,17 @@ if [[ "${BUILD_TARGET%%-*}" != "arm" ]]; then
   )
 fi
 
-CLANG_TIDY_BIN=$(which clang-tidy-6.0 clang-tidy-7 clang-tidy-8 clang-tidy | head -n 1)
+CLANG_TIDY_BIN=$(which clang-tidy-6.0 clang-tidy-7 clang-tidy-8 clang-tidy 2>/dev/null | head -n 1)
 # Default to "cat" if "colordiff" is not installed or if stdout is not a tty.
 if [[ -t 1 ]]; then
-  COLORDIFF_BIN=$(which colordiff cat | head -n 1)
+  COLORDIFF_BIN=$(which colordiff cat 2>/dev/null | head -n 1)
 else
   COLORDIFF_BIN="cat"
 fi
-FIND_BIN=$(which gfind find | head -n 1)
+FIND_BIN=$(which gfind find 2>/dev/null | head -n 1)
 # "false" will disable wine64 when not installed. This won't allow
 # cross-compiling.
-WINE_BIN=$(which wine64 false | head -n 1)
+WINE_BIN=$(which wine64 false 2>/dev/null | head -n 1)
 
 CLANG_VERSION="${CLANG_VERSION:-}"
 # Detect the clang version suffix and store it in CLANG_VERSION. For example,
@@ -791,9 +792,13 @@ cmd_ossfuzz_ninja() {
 
 cmd_fast_benchmark() {
   local small_corpus_tar="${BENCHMARK_CORPORA}/jyrki-full.tar"
+  local small_corpus_url="https://storage.googleapis.com/artifacts.jpegxl.appspot.com/corpora/jyrki-full.tar"
   mkdir -p "${BENCHMARK_CORPORA}"
-  curl --show-error -o "${small_corpus_tar}" -z "${small_corpus_tar}" \
-    "https://storage.googleapis.com/artifacts.jpegxl.appspot.com/corpora/jyrki-full.tar"
+  if [ -f "${small_corpus_tar}" ]; then
+    curl --show-error -o "${small_corpus_tar}" -z "${small_corpus_tar}" "${small_corpus_url}"
+  else
+    curl --show-error -o "${small_corpus_tar}" "${small_corpus_url}"
+  fi
 
   local tmpdir=$(mktemp -d)
   CLEANUP_FILES+=("${tmpdir}")
@@ -844,6 +849,8 @@ cmd_benchmark() {
 get_mem_available() {
   if [[ "${OS}" == "Darwin" ]]; then
     echo $(vm_stat | grep -F 'Pages free:' | awk '{print $3 * 4}')
+  elif [[ "${OS}" == MINGW* ]]; then
+    echo $(vmstat | tail -n 1 | awk '{print $4 * 4}')
   else
     echo $(grep -F MemAvailable: /proc/meminfo | awk '{print $2}')
   fi
@@ -856,6 +863,10 @@ run_benchmark() {
   local output_dir="${BUILD_DIR}/benchmark_results"
   mkdir -p "${output_dir}"
 
+  if [[ "${OS}" == MINGW* ]]; then
+    src_img_dir=`cygpath -w "${src_img_dir}"`
+  fi
+
   # The memory available at the beginning of the benchmark run in kB. The number
   # of threads depends on the available memory, and the passed memory per
   # thread. We also add a 2 GiB of constant memory.
@@ -867,12 +878,18 @@ run_benchmark() {
     num_threads=1
   fi
 
+  if [[ ${BENCHMARK_NUM_THREADS} -gt 0 ]]; then
+    num_threads=${BENCHMARK_NUM_THREADS}
+  fi
+
   local benchmark_args=(
     --input "${src_img_dir}/*.png"
     --codec=jpeg:yuv420:q85,webp:q80,jxl:d1:6,jxl:d1:6:downsampling=8,jxl:d5:6,jxl:d5:6:downsampling=8,jxl:m:d0:2,jxl:m:d0:3,jxl:m:d2:2
     --output_dir "${output_dir}"
     --show_progress
     --num_threads="${num_threads}"
+    --decode_reps=11
+    --encode_reps=11
   )
   if [[ "${STORE_IMAGES}" == "1" ]]; then
     benchmark_args+=(--save_decompressed --save_compressed)
@@ -885,8 +902,6 @@ run_benchmark() {
     # Check error code for benckmark_xl command. This will exit if not.
     return ${PIPESTATUS[0]}
   )
-
-
 }
 
 # Helper function to wait for the CPU temperature to cool down on ARM.

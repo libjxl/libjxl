@@ -38,6 +38,10 @@
 #define GLOB_TILDE 0
 #endif
 
+#if defined(__MINGW32__)
+extern "C" int _CRT_glob = 0;
+#endif
+
 namespace jpegxl {
 namespace tools {
 
