@@ -332,6 +332,8 @@ jobs:
     - name: Fast benchmark ${{ matrix.mode }}
       if: env.WILL_BENCH == 'true'
       run: |
+        cat /proc/cpuinfo | grep MHz | sort | uniq
+        lscpu
         BENCHMARK_NUM_THREADS=3 STORE_IMAGES=0 ./ci.sh fast_benchmark
 
     # Run gbench once, just to make sure it runs, not for actual benchmarking.
