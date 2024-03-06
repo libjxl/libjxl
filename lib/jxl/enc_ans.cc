@@ -1696,7 +1696,8 @@ size_t WriteTokens(const std::vector<Token>& tokens,
       //               codes.encoding_info[histo][tok].bits);
       // writer->Write(nbits, bits);
       uint64_t data = codes.encoding_info[histo][tok].bits;
-      data |= bits << codes.encoding_info[histo][tok].depth;
+      data |= static_cast<uint64_t>(bits)
+              << codes.encoding_info[histo][tok].depth;
       writer->Write(codes.encoding_info[histo][tok].depth + nbits, data);
       num_extra_bits += nbits;
     }

@@ -358,6 +358,30 @@ TEST(JxlTest, RoundtripLargeFast) {
   EXPECT_THAT(ComputeDistance2(t.ppf(), ppf_out), IsSlightlyBelow(78));
 }
 
+TEST(JxlTest, JXL_X86_64_TEST(RoundtripLargeEmptyModular)) {
+  ThreadPoolForTests pool(8);
+  TestImage t;
+  t.SetDimensions(8192, 8192).SetDataType(JXL_TYPE_UINT8).SetChannels(1);
+  TestImage::Frame frame = t.AddFrame();
+  frame.ZeroFill();
+  for (size_t y = 0; y < 513; y += 7) {
+    for (size_t x = 0; x < 513; x += 7) {
+      frame.SetValue(y, x, 0, 0.88);
+    }
+  }
+
+  JXLCompressParams cparams;
+  cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 1);
+  cparams.AddOption(JXL_ENC_FRAME_SETTING_MODULAR, 1);
+  cparams.AddOption(JXL_ENC_FRAME_SETTING_RESPONSIVE, 1);
+  cparams.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_GROUP_SIZE, 2);
+  cparams.AddOption(JXL_ENC_FRAME_SETTING_DECODING_SPEED, 2);
+
+  PackedPixelFile ppf_out;
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, &pool, &ppf_out), 110846, 10000);
+  EXPECT_THAT(ComputeDistance2(t.ppf(), ppf_out), IsSlightlyBelow(0.7));
+}
+
 TEST(JxlTest, RoundtripOutputColorSpace) {
   ThreadPoolForTests pool(8);
   const std::vector<uint8_t> orig = ReadTestData("jxl/flower/flower.png");
