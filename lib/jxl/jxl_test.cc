@@ -358,6 +358,23 @@ TEST(JxlTest, RoundtripLargeFast) {
   EXPECT_THAT(ComputeDistance2(t.ppf(), ppf_out), IsSlightlyBelow(78));
 }
 
+TEST(JxlTest, RoundtripOutputColorSpace) {
+  ThreadPoolForTests pool(8);
+  const std::vector<uint8_t> orig = ReadTestData("jxl/flower/flower.png");
+  TestImage t;
+  t.DecodeFromBytes(orig).ClearMetadata();
+
+  JXLCompressParams cparams;
+  cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 7);  // kSquirrel
+
+  JXLDecompressParams dparams;
+  dparams.color_space = "RGB_D65_DCI_Rel_709";
+  PackedPixelFile ppf_out;
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, dparams, &pool, &ppf_out), 503000,
+              12000);
+  EXPECT_THAT(ComputeDistance2(t.ppf(), ppf_out), IsSlightlyBelow(78));
+}
+
 TEST(JxlTest, RoundtripDotsForceEpf) {
   ThreadPoolForTests pool(8);
   const std::vector<uint8_t> orig =
