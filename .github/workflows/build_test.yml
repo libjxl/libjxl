@@ -332,7 +332,7 @@ jobs:
     - name: Fast benchmark ${{ matrix.mode }}
       if: env.WILL_BENCH == 'true'
       run: |
-        STORE_IMAGES=0 ./ci.sh fast_benchmark
+        BENCHMARK_NUM_THREADS=3 STORE_IMAGES=0 ./ci.sh fast_benchmark
 
     # Run gbench once, just to make sure it runs, not for actual benchmarking.
     # This doesn't work on MSAN because we use gbench library from the system
