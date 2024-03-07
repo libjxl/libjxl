@@ -297,10 +297,10 @@ void TestAPIBuffered(const CompressParams& jparams,
   SetDecompressParams(dparams, cinfo);
   jpegli_set_output_format(cinfo, dparams.data_type, dparams.endianness);
   VerifyHeader(jparams, cinfo);
+  bool has_multiple_scans = FROM_JXL_BOOL(jpegli_has_multiple_scans(cinfo));
   EXPECT_TRUE(jpegli_start_decompress(cinfo));
   // start decompress should not read the whole input in buffered image mode
   EXPECT_FALSE(jpegli_input_complete(cinfo));
-  bool has_multiple_scans = FROM_JXL_BOOL(jpegli_has_multiple_scans(cinfo));
   EXPECT_EQ(0, cinfo->output_scan_number);
   int sos_marker_cnt = 1;  // read_header reads the first SOS marker
   while (!jpegli_input_complete(cinfo)) {
