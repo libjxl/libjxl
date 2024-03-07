@@ -17,6 +17,7 @@ MYDIR=$(dirname $(realpath "$0"))
 ### Environment parameters:
 TEST_STACK_LIMIT="${TEST_STACK_LIMIT:-256}"
 BENCHMARK_NUM_THREADS="${BENCHMARK_NUM_THREADS:-0}"
+BUILD_CONFIG=${BUILD_CONFIG:-}
 CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:-RelWithDebInfo}
 CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH:-}
 CMAKE_C_COMPILER_LAUNCHER=${CMAKE_C_COMPILER_LAUNCHER:-}
@@ -78,6 +79,12 @@ fi
 if [[ "${ENABLE_WASM_SIMD}" -eq "2" ]]; then
   CMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS} -DHWY_WANT_WASM2"
   CMAKE_C_FLAGS="${CMAKE_C_FLAGS} -DHWY_WANT_WASM2"
+fi
+
+if [[ -z "${BUILD_CONFIG}" ]]; then
+  TOOLS_DIR="${BUILD_DIR}/tools"
+else
+  TOOLS_DIR="${BUILD_DIR}/tools/${BUILD_CONFIG}"
 fi
 
 if [[ ! -z "${HWY_BASELINE_TARGETS}" ]]; then
@@ -836,7 +843,7 @@ cmd_benchmark() {
     png_filename="${filename%.ppm}.png"
     png_filename=$(echo "${png_filename}" | tr '/' '_')
     sem --bg --id "${sem_id}" -j"${nprocs}" -- \
-      "${BUILD_DIR}/tools/decode_and_encode" \
+      "${TOOLS_DIR}/decode_and_encode" \
         "${tmpdir}/${filename}" "${mode}" "${tmpdir}/${png_filename}"
     images+=( "${png_filename}" )
   done < <(cd "${tmpdir}"; ${FIND_BIN} . -name '*.ppm' -type f)
@@ -867,19 +874,20 @@ run_benchmark() {
     src_img_dir=`cygpath -w "${src_img_dir}"`
   fi
 
-  # The memory available at the beginning of the benchmark run in kB. The number
-  # of threads depends on the available memory, and the passed memory per
-  # thread. We also add a 2 GiB of constant memory.
-  local mem_available="$(get_mem_available)"
-  # Check that we actually have a MemAvailable value.
-  [[ -n "${mem_available}" ]]
-  local num_threads=$(( (${mem_available} - 1048576) / ${mem_per_thread} ))
-  if [[ ${num_threads} -le 0 ]]; then
-    num_threads=1
-  fi
-
+  local num_threads=1
   if [[ ${BENCHMARK_NUM_THREADS} -gt 0 ]]; then
     num_threads=${BENCHMARK_NUM_THREADS}
+  else
+    # The memory available at the beginning of the benchmark run in kB. The number
+    # of threads depends on the available memory, and the passed memory per
+    # thread. We also add a 2 GiB of constant memory.
+    local mem_available="$(get_mem_available)"
+    # Check that we actually have a MemAvailable value.
+    [[ -n "${mem_available}" ]]
+    num_threads=$(( (${mem_available} - 1048576) / ${mem_per_thread} ))
+    if [[ ${num_threads} -le 0 ]]; then
+      num_threads=1
+    fi
   fi
 
   local benchmark_args=(
@@ -896,7 +904,7 @@ run_benchmark() {
   fi
   (
     [[ "${TEST_STACK_LIMIT}" == "none" ]] || ulimit -s "${TEST_STACK_LIMIT}"
-    "${BUILD_DIR}/tools/benchmark_xl" "${benchmark_args[@]}" | \
+    "${TOOLS_DIR}/benchmark_xl" "${benchmark_args[@]}" | \
        tee "${output_dir}/results.txt"
 
     # Check error code for benckmark_xl command. This will exit if not.
@@ -1042,7 +1050,7 @@ cmd_arm_benchmark() {
   local src_img
   for src_img in "${jpg_images[@]}" "${images[@]}"; do
     local src_img_hash=$(sha1sum "${src_img}" | cut -f 1 -d ' ')
-    local enc_binaries=("${BUILD_DIR}/tools/cjxl")
+    local enc_binaries=("${TOOLS_DIR}/cjxl")
     local src_ext="${src_img##*.}"
     for enc_binary in "${enc_binaries[@]}"; do
       local enc_binary_base=$(basename "${enc_binary}")
@@ -1091,7 +1099,7 @@ cmd_arm_benchmark() {
 
           local dec_output
           wait_for_temp
-          dec_output=$("${BUILD_DIR}/tools/djxl" "${enc_file}" \
+          dec_output=$("${TOOLS_DIR}/djxl" "${enc_file}" \
             --num_reps=5 --num_threads="${num_threads}" 2>&1 | tee /dev/stderr |
             grep -E "M[BP]/s \[")
           local img_size=$(echo "${dec_output}" | cut -f 1 -d ',')
@@ -1107,7 +1115,7 @@ cmd_arm_benchmark() {
           if [[ "${src_ext}" == "jpg" ]]; then
             wait_for_temp
             local dec_file="${BUILD_DIR}/arm_benchmark/${enc_file_hash}.jpg"
-            dec_output=$("${BUILD_DIR}/tools/djxl" "${enc_file}" \
+            dec_output=$("${TOOLS_DIR}/djxl" "${enc_file}" \
               "${dec_file}" --num_reps=5 --num_threads="${num_threads}" 2>&1 | \
                 tee /dev/stderr | grep -E "M[BP]/s \[")
             local jpeg_dec_mps_speed=$(_speed_from_output "${dec_output}")
@@ -1137,12 +1145,12 @@ cmd_fuzz() {
   local fuzzer_crash_dir=$(realpath "${BUILD_DIR}/fuzzer_crash")
   mkdir -p "${corpus_dir}" "${fuzzer_crash_dir}"
   # Generate step.
-  "${BUILD_DIR}/tools/fuzzer_corpus" "${corpus_dir}"
+  "${TOOLS_DIR}/fuzzer_corpus" "${corpus_dir}"
   # Run step:
   local nprocs=$(nproc --all || echo 1)
   (
-   cd "${BUILD_DIR}"
-   "tools/djxl_fuzzer" "${fuzzer_crash_dir}" "${corpus_dir}" \
+   cd "${TOOLS_DIR}"
+   djxl_fuzzer "${fuzzer_crash_dir}" "${corpus_dir}" \
      -max_total_time="${FUZZER_MAX_TIME}" -jobs=${nprocs} \
      -artifact_prefix="${fuzzer_crash_dir}/"
   )
