@@ -244,7 +244,7 @@ jobs:
 
   windows_build:
     name: Windows Build (vcpkg / ${{ matrix.triplet }})
-    runs-on: [windows-2019]
+    runs-on: [windows-2022]
     strategy:
       fail-fast: false
       matrix:
@@ -253,6 +253,7 @@ jobs:
             arch: '-A Win32'
           - triplet: x64-windows-static
             arch: '-A x64'
+            run_benchmark: true
           - triplet: x86-windows
             arch: '-A Win32'
             static: 'OFF'
@@ -312,6 +313,7 @@ jobs:
           libjpeg-turbo \
           libpng \
           libwebp \
+          pkgconf \
         #
 
     - name: Configure
@@ -353,6 +355,18 @@ jobs:
         cp third_party/highway/LICENSE prefix/bin/LICENSE.highway
         cp third_party/brotli/LICENSE prefix/bin/LICENSE.brotli
         cp LICENSE prefix/bin/LICENSE.libjxl
+
+    - name: Fast benchmark ${{ matrix.triplet }}
+      shell: 'bash'
+      if: matrix.run_benchmark && true
+      run: |
+        systeminfo | grep -A 1 Processor
+        wmic cpu get Name, NumberofCores, NumberOfLogicalProcessors, MaxClockSpeed
+        mkdir tmp
+        export TMPDIR=`pwd`/tmp
+        export PATH=$PATH:`pwd`/build/lib
+        BUILD_CONFIG=Release/ BENCHMARK_NUM_THREADS=2 STORE_IMAGES=0 ./ci.sh fast_benchmark
+
     - name: Upload artifacts
       uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3 # v4.3.1
       with:
