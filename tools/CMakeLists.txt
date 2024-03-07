@@ -299,7 +299,7 @@ if(JPEGXL_ENABLE_BENCHMARK AND JPEGXL_ENABLE_TOOLS)
   endif()
 
   pkg_check_modules(AVIF IMPORTED_TARGET libavif)
-  if(AVIF_FOUND)
+  if(AVIF_FOUND AND NOT JPEGXL_STATIC)
     target_sources(benchmark_xl PRIVATE
       "${CMAKE_CURRENT_LIST_DIR}/benchmark/benchmark_codec_avif.cc"
       "${CMAKE_CURRENT_LIST_DIR}/benchmark/benchmark_codec_avif.h"

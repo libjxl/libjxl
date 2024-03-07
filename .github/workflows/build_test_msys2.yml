@@ -25,7 +25,7 @@ concurrency:
 jobs:
   build_test:
     name: Windows MSYS2 / ${{ matrix.msystem }}
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
+    #if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
     runs-on: windows-latest
     continue-on-error: ${{ matrix.faulty || false }}
     strategy:
@@ -82,6 +82,8 @@ jobs:
         run: |
           cmake \
             -DCMAKE_BUILD_TYPE=Release \
+            -DJPEGXL_STATIC=ON \
+            -DCMAKE_INSTALL_PREFIX=`pwd`/prefix \
             -DJPEGXL_ENABLE_JNI=OFF \
             -DJPEGXL_ENABLE_MANPAGES=OFF \
             -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
@@ -92,6 +94,18 @@ jobs:
       - name: CMake build
         run: cmake --build build
 
+      - name: CMake Install
+        shell: 'bash'
+        run: |
+          set -x
+          cmake --build build --target install
+          # TODO(eustas): giflib libjpeg-turbo libpng libwebp zlib
+          cp third_party/sjpeg/COPYING prefix/bin/LICENSE.sjpeg
+          cp third_party/skcms/LICENSE prefix/bin/LICENSE.skcms
+          cp third_party/highway/LICENSE prefix/bin/LICENSE.highway
+          cp third_party/brotli/LICENSE prefix/bin/LICENSE.brotli
+          cp LICENSE prefix/bin/LICENSE.libjxl
+  
       - name: Test
         if: |
           github.event_name == 'push' ||
@@ -108,3 +122,11 @@ jobs:
           export TMPDIR=`pwd`/tmp
           export PATH=$PATH:`pwd`/build/lib
           BENCHMARK_NUM_THREADS=2 STORE_IMAGES=0 ./ci.sh fast_benchmark
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@1746f4ab65b179e0ea60a494b83293b640dd5bba # v4.3.2
+        with:
+          name: jxl-${{ matrix.msystem }}
+          path: |
+            prefix/bin/*
+            prefix/lib/*
