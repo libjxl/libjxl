@@ -58,7 +58,7 @@ ImageF DownsampledLuminances(const Image3F& image,
   JXL_ASSIGN_OR_DIE(ImageF result,
                     ImageF::Create(DivCeil(image.xsize(), kDownsampling),
                                    DivCeil(image.ysize(), kDownsampling)));
-  FillImage(kDefaultIntensityTarget, &result);
+  FillImage(.5f * kDefaultIntensityTarget, &result);
   for (size_t y = 0; y < image.ysize(); ++y) {
     const float* const JXL_RESTRICT rows[3] = {image.ConstPlaneRow(0, y),
                                                image.ConstPlaneRow(1, y),
@@ -143,35 +143,8 @@ ImageF Upsample(const ImageF& image, ThreadPool* pool) {
   return upsampled;
 }
 
-float ComputeOffset(const ImageF& original_luminances,
-                    const ImageF& upsampled_blurred_luminances) {
-  HWY_CAPPED(float, kDownsampling) df;
-  float max_difference = 0.f;
-  for (size_t y = 0; y < original_luminances.ysize(); ++y) {
-    const float* const JXL_RESTRICT original_row =
-        original_luminances.ConstRow(y);
-    for (size_t x = 0; x < original_luminances.xsize(); ++x) {
-      auto block_min = Set(df, std::numeric_limits<float>::infinity());
-      for (size_t ky = 0; ky < kDownsampling; ++ky) {
-        const float* const JXL_RESTRICT blurred_row =
-            upsampled_blurred_luminances.ConstRow(kDownsampling * y + ky);
-        for (size_t kx = 0; kx < kDownsampling; kx += Lanes(df)) {
-          block_min =
-              Min(block_min, Load(df, blurred_row + kDownsampling * x + kx));
-        }
-      }
-
-      const float difference =
-          original_row[x] - GetLane(MinOfLanes(df, block_min));
-      if (difference > max_difference) max_difference = difference;
-    }
-  }
-  return max_difference;
-}
-
 Status ApplyLocalToneMapping(const ImageF& blurred_luminances,
-                             const float intensity_target,
-                             const float max_difference, Image3F* color,
+                             const float intensity_target, Image3F* color,
                              ThreadPool* pool) {
   HWY_FULL(float) df;
 
@@ -189,11 +162,12 @@ Status ApplyLocalToneMapping(const ImageF& blurred_luminances,
 
         for (size_t x = 0; x < color->xsize(); x += Lanes(df)) {
           const auto log_local_max =
-              Add(Load(df, blurred_lum_row + x), Set(df, max_difference));
+              Add(Load(df, blurred_lum_row + x), Set(df, 1));
           const auto luminance =
               ComputeLuminance(intensity_target, Load(df, rows[0] + x),
                                Load(df, rows[1] + x), Load(df, rows[2] + x));
-          const auto log_luminance = FastLog2f(df, luminance);
+          const auto log_luminance =
+              Min(log_local_max, FastLog2f(df, luminance));
           const auto log_knee =
               Mul(log_default_intensity_target,
                   MulAdd(Set(df, -0.85f),
@@ -235,7 +209,6 @@ namespace {
 
 HWY_EXPORT(DownsampledLuminances);
 HWY_EXPORT(Upsample);
-HWY_EXPORT(ComputeOffset);
 HWY_EXPORT(ApplyLocalToneMapping);
 
 void Blur(ImageF* image) {
@@ -263,10 +236,6 @@ void ProcessFrame(CodecInOut* image, float preserve_saturation,
   Image3F color = std::move(*image->Main().color());
   ImageF subsampled_image =
       HWY_DYNAMIC_DISPATCH(DownsampledLuminances)(color, intensity_target);
-  JXL_ASSIGN_OR_DIE(
-      ImageF original_luminances,
-      ImageF::Create(subsampled_image.xsize(), subsampled_image.ysize()));
-  CopyImageTo(subsampled_image, &original_luminances);
 
   Blur(&subsampled_image);
   const auto& Upsample = HWY_DYNAMIC_DISPATCH(Upsample);
@@ -277,11 +246,8 @@ void ProcessFrame(CodecInOut* image, float preserve_saturation,
         Upsample(blurred_luminances, downsampling > 4 ? nullptr : pool);
   }
 
-  const float max_difference = HWY_DYNAMIC_DISPATCH(ComputeOffset)(
-      original_luminances, blurred_luminances);
-
   JXL_CHECK(HWY_DYNAMIC_DISPATCH(ApplyLocalToneMapping)(
-      blurred_luminances, intensity_target, max_difference, &color, pool));
+      blurred_luminances, intensity_target, &color, pool));
 
   image->SetFromImage(std::move(color), linear_rec2020);
   image->metadata.m.color_encoding = linear_rec2020;
