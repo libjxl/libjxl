@@ -361,12 +361,14 @@ TEST(JxlTest, RoundtripLargeFast) {
 TEST(JxlTest, JXL_X86_64_TEST(RoundtripLargeEmptyModular)) {
   ThreadPoolForTests pool(8);
   TestImage t;
-  t.SetDimensions(8192, 8192).SetDataType(JXL_TYPE_UINT8).SetChannels(1);
+  t.SetDimensions(4096, 4096).SetDataType(JXL_TYPE_UINT8).SetChannels(4);
   TestImage::Frame frame = t.AddFrame();
   frame.ZeroFill();
-  for (size_t y = 0; y < 513; y += 7) {
-    for (size_t x = 0; x < 513; x += 7) {
-      frame.SetValue(y, x, 0, 0.88);
+  for (size_t c = 0; c < 4; ++c) {
+    for (size_t y = 0; y < 1024; y += (c + 1)) {
+      for (size_t x = 0; x < 1024; x += ((y % 4) + 3)) {
+        frame.SetValue(y, x, c, 0.88);
+      }
     }
   }
 
@@ -374,12 +376,18 @@ TEST(JxlTest, JXL_X86_64_TEST(RoundtripLargeEmptyModular)) {
   cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 1);
   cparams.AddOption(JXL_ENC_FRAME_SETTING_MODULAR, 1);
   cparams.AddOption(JXL_ENC_FRAME_SETTING_RESPONSIVE, 1);
-  cparams.AddOption(JXL_ENC_FRAME_SETTING_MODULAR_GROUP_SIZE, 2);
   cparams.AddOption(JXL_ENC_FRAME_SETTING_DECODING_SPEED, 2);
 
   PackedPixelFile ppf_out;
-  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, &pool, &ppf_out), 110846, 10000);
-  EXPECT_THAT(ComputeDistance2(t.ppf(), ppf_out), IsSlightlyBelow(0.7));
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, &pool, &ppf_out), 3474795,
+              100000);
+  EXPECT_THAT(ComputeDistance2(t.ppf(), ppf_out), IsSlightlyBelow(
+#if JXL_HIGH_PRECISION
+                                                      2050
+#else
+                                                      12100
+#endif
+                                                      ));
 }
 
 TEST(JxlTest, RoundtripOutputColorSpace) {
