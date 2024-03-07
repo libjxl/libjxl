@@ -740,8 +740,11 @@ void jpegli_calc_output_dimensions(j_decompress_ptr cinfo) {
 }
 
 boolean jpegli_has_multiple_scans(j_decompress_ptr cinfo) {
-  if (cinfo->input_scan_number == 0) {
-    JPEGLI_ERROR("No SOS marker found.");
+  if (cinfo->global_state != jpegli::kDecHeaderDone &&
+      cinfo->global_state != jpegli::kDecProcessScan &&
+      cinfo->global_state != jpegli::kDecProcessMarkers) {
+    JPEGLI_ERROR("jpegli_has_multiple_scans: unexpected state %d",
+                 cinfo->global_state);
   }
   return TO_JXL_BOOL(cinfo->master->is_multiscan_);
 }
