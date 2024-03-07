@@ -16,6 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 
+## [0.10.2] - 2024-03-08
+
+### Fixed
+  - bugs in (lossless) encoding (#3367, #3359 and #3386)
+  - re-enable installation of MIME file (#3375)
+  - bugs in streaming mode (#3379 and #3380)
+
 ## [0.10.1] - 2024-02-28
 
 ### Fixed
