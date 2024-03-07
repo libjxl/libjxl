@@ -117,6 +117,7 @@ Status DecodeBytes(const Span<const uint8_t> bytes,
       dparams.accepted_formats.push_back(
           {num_channels, JXL_TYPE_FLOAT, JXL_LITTLE_ENDIAN, /*align=*/0});
     }
+    dparams.output_bitdepth.type = JXL_BIT_DEPTH_FROM_CODESTREAM;
     size_t decoded_bytes;
     if (DecodeImageJXL(bytes.data(), bytes.size(), dparams, &decoded_bytes,
                        ppf) &&
