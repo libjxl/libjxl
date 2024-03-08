@@ -1279,8 +1279,6 @@ void* JxlCmsInit(void* init_data, size_t num_threads, size_t xsize,
   // Not including alpha channel (copied separately).
   const size_t channels_src = (c_src.cmyk ? 4 : c_src.Channels());
   const size_t channels_dst = c_dst.Channels();
-  JXL_CHECK(channels_src == channels_dst ||
-            (channels_src == 4 && channels_dst == 3));
 #if JXL_CMS_VERBOSE
   printf("Channels: %" PRIuS "; Threads: %" PRIuS "\n", channels_src,
          num_threads);
