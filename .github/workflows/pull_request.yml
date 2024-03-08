@@ -9,7 +9,7 @@ name: PR
 on:
   merge_group:
   pull_request:
-    types: [opened, reopened, synchronize]
+    types: [opened, reopened, labeled, unlabeled, synchronize]
 
 permissions:
   contents: read
@@ -21,6 +21,7 @@ concurrency:
 jobs:
   # Checks that the AUTHORS files is updated with new contributors.
   authors:
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
     runs-on: [ubuntu-latest]
     steps:
     - name: Harden Runner
@@ -37,6 +38,7 @@ jobs:
         ./ci.sh authors
 
   format:
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
     runs-on: [ubuntu-latest]
     steps:
     - name: Harden Runner

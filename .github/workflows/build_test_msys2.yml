@@ -13,7 +13,7 @@ on:
       - main
       - v*.*.x
   pull_request:
-    types: [opened, reopened, labeled, synchronize]
+    types: [opened, reopened, labeled, unlabeled, synchronize]
 
 permissions:
   contents: read
@@ -25,6 +25,7 @@ concurrency:
 jobs:
   build_test:
     name: Windows MSYS2 / ${{ matrix.msystem }}
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
     runs-on: windows-latest
     continue-on-error: ${{ matrix.faulty || false }}
     strategy:
