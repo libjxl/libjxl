@@ -431,9 +431,22 @@ constexpr uint32_t kId_cHRM = 0x4D524863;
 constexpr uint32_t kId_eXIf = 0x66495865;
 
 struct APNGFrame {
-  std::vector<uint8_t> pixels;
+  APNGFrame() : pixels(nullptr, free) {}
+  std::unique_ptr<void, decltype(free)*> pixels;
+  size_t pixels_size = 0;
   std::vector<uint8_t*> rows;
   unsigned int w, h, delay_num, delay_den;
+  Status Resize(size_t new_size) {
+    if (new_size > pixels_size) {
+      pixels.reset(malloc(new_size));
+      if (!pixels.get()) {
+        // TODO(szabadka): use specialized OOM error code
+        return JXL_FAILURE("Failed to allocate memory for image buffer");
+      }
+      pixels_size = new_size;
+    }
+    return true;
+  }
 };
 
 struct Reader {
@@ -466,7 +479,7 @@ void row_fn(png_structp png_ptr, png_bytep new_row, png_uint_32 row_num,
       reinterpret_cast<APNGFrame*>(png_get_progressive_ptr(png_ptr));
   JXL_CHECK(frame);
   JXL_CHECK(row_num < frame->rows.size());
-  JXL_CHECK(frame->rows[row_num] < frame->pixels.data() + frame->pixels.size());
+  JXL_CHECK(frame->rows[row_num] < frame->rows[0] + frame->pixels_size);
   png_progressive_combine_row(png_ptr, frame->rows[row_num], new_row);
 }
 
@@ -787,12 +800,17 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
           }
           bytes_per_pixel =
               num_channels * (format.data_type == JXL_TYPE_UINT16 ? 2 : 1);
-          unsigned int rowbytes = w * bytes_per_pixel;
-          unsigned int imagesize = h * rowbytes;
-          frameRaw.pixels.resize(imagesize);
+          size_t rowbytes = w * bytes_per_pixel;
+          if (h > std::numeric_limits<size_t>::max() / rowbytes) {
+            return JXL_FAILURE("Image too big.");
+          }
+          size_t imagesize = h * rowbytes;
+          JXL_RETURN_IF_ERROR(frameRaw.Resize(imagesize));
           frameRaw.rows.resize(h);
-          for (unsigned int j = 0; j < h; j++) {
-            frameRaw.rows[j] = frameRaw.pixels.data() + j * rowbytes;
+          for (size_t j = 0; j < h; j++) {
+            frameRaw.rows[j] =
+                reinterpret_cast<uint8_t*>(frameRaw.pixels.get()) +
+                j * rowbytes;
           }
 
           if (processing_data(png_ptr, info_ptr, chunk.data(), chunk.size())) {
