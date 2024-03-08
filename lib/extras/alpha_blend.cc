@@ -20,7 +20,8 @@ void AlphaBlend(PackedFrame* frame, const float background[3]) {
     return;
   }
   --format.num_channels;
-  PackedImage blended(im.xsize, im.ysize, format);
+  JXL_ASSIGN_OR_DIE(PackedImage blended,
+                    PackedImage::Create(im.xsize, im.ysize, format));
   // TODO(szabadka) SIMDify this and make it work for float16.
   for (size_t y = 0; y < im.ysize; ++y) {
     for (size_t x = 0; x < im.xsize; ++x) {

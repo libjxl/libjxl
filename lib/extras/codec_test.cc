@@ -233,13 +233,17 @@ void CreateTestImage(const TestImageParams& params, PackedPixelFile* ppf) {
   ppf->icc = GenerateICC(color_encoding);
   ppf->color_encoding = color_encoding;
 
-  PackedFrame frame(params.xsize, params.ysize, params.PixelFormat());
+  JXL_ASSIGN_OR_DIE(
+      PackedFrame frame,
+      PackedFrame::Create(params.xsize, params.ysize, params.PixelFormat()));
   FillPackedImage(params.bits_per_sample, &frame.color);
   if (params.add_extra_channels) {
     for (size_t i = 0; i < 7; ++i) {
       JxlPixelFormat ec_format = params.PixelFormat();
       ec_format.num_channels = 1;
-      PackedImage ec(params.xsize, params.ysize, ec_format);
+      JXL_ASSIGN_OR_DIE(
+          PackedImage ec,
+          PackedImage::Create(params.xsize, params.ysize, ec_format));
       FillPackedImage(params.bits_per_sample, &ec);
       frame.extra_channels.emplace_back(std::move(ec));
       PackedExtraChannel pec;

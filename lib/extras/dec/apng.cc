@@ -586,7 +586,7 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
   bool seenFctl = false;
   APNGFrame frameRaw = {};
   uint32_t num_channels;
-  JxlPixelFormat format;
+  JxlPixelFormat format = {};
   unsigned int bytes_per_pixel = 0;
 
   struct FrameInfo {
@@ -668,8 +668,10 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
             if (!processing_finish(png_ptr, info_ptr, &ppf->metadata)) {
               // Allocates the frame buffer.
               uint32_t duration = delay_num * 1000 / delay_den;
-              frames.push_back(FrameInfo{PackedImage(w0, h0, format), duration,
-                                         x0, w0, y0, h0, dop, bop});
+              JXL_ASSIGN_OR_RETURN(PackedImage image,
+                                   PackedImage::Create(w0, h0, format));
+              frames.push_back(FrameInfo{std::move(image), duration, x0, w0, y0,
+                                         h0, dop, bop});
               auto& frame = frames.back().data;
               for (size_t y = 0; y < h0; ++y) {
                 memcpy(static_cast<uint8_t*>(frame.pixels()) + frame.stride * y,
@@ -929,7 +931,8 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
                  py0 + pys >= y0 + ysize && use_for_next_frame) {
         // If the new frame is contained within the old frame, we can pad the
         // new frame with zeros and not blend.
-        PackedImage new_data(pxs, pys, frame.data.format);
+        JXL_ASSIGN_OR_RETURN(PackedImage new_data,
+                             PackedImage::Create(pxs, pys, frame.data.format));
         memset(new_data.pixels(), 0, new_data.pixels_size);
         for (size_t y = 0; y < ysize; y++) {
           size_t bytes_per_pixel =
@@ -951,7 +954,8 @@ Status DecodeImageAPNG(const Span<const uint8_t> bytes,
         ppf->frames.emplace_back(std::move(new_data));
       } else {
         // If all else fails, insert a placeholder blank frame with kReplace.
-        PackedImage blank(pxs, pys, frame.data.format);
+        JXL_ASSIGN_OR_RETURN(PackedImage blank,
+                             PackedImage::Create(pxs, pys, frame.data.format));
         memset(blank.pixels(), 0, blank.pixels_size);
         ppf->frames.emplace_back(std::move(blank));
         auto& pframe = ppf->frames.back();

@@ -298,7 +298,8 @@ std::vector<uint8_t> CreateTestJXLCodestream(
     if (jxl::extras::CanDecode(jxl::extras::Codec::kJPG)) {
       std::vector<uint8_t> jpeg_bytes;
       extras::PackedPixelFile ppf;
-      extras::PackedFrame frame(xsize, ysize, format);
+      JXL_ASSIGN_OR_DIE(extras::PackedFrame frame,
+                        extras::PackedFrame::Create(xsize, ysize, format));
       JXL_ASSERT(frame.color.pixels_size == pixels.size());
       memcpy(frame.color.pixels(0, 0, 0), pixels.data(), pixels.size());
       ppf.frames.emplace_back(std::move(frame));
