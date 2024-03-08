@@ -19,7 +19,7 @@ on:
       - main
       - v*.*.x
   pull_request:
-    types: [opened, reopened, labeled, synchronize]
+    types: [opened, reopened, labeled, unlabeled, synchronize]
     paths-ignore:
       - '**.md'
       - 'AUTHORS'
@@ -37,6 +37,7 @@ concurrency:
 jobs:
   ubuntu_static_x86_64:
     name: Release linux x86_64 static
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
     runs-on: [ubuntu-latest]
     steps:
     - name: Harden Runner
@@ -114,6 +115,7 @@ jobs:
   # Build .deb packages Ubuntu/Debian
   release_ubuntu_pkg:
     name: .deb packages / ${{ matrix.os }}
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -244,6 +246,7 @@ jobs:
 
   windows_build:
     name: Windows Build (vcpkg / ${{ matrix.triplet }})
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
     runs-on: [windows-2022]
     strategy:
       fail-fast: false

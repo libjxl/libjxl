@@ -8,7 +8,7 @@
 name: Build/Test MD
 on:
   pull_request:
-    types: [opened, reopened, labeled, synchronize]
+    types: [opened, reopened, labeled, unlabeled, synchronize]
     paths:
       - '**.md'
 
@@ -22,6 +22,7 @@ concurrency:
 jobs:
   build_test:
     name: Ubuntu Build ${{ matrix.name }}
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
     # Include all names of required jobs here
     strategy:
       matrix:
@@ -44,6 +45,7 @@ jobs:
 
   windows_msys:
     name: Windows MSYS2 / ${{ matrix.msystem }}
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
     # Include all msystem of required jobs here
     strategy:
       matrix:

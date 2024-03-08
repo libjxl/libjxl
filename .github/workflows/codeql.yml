@@ -35,6 +35,7 @@ concurrency:
 jobs:
   analyze:
     name: Analyze
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
     runs-on: ubuntu-latest
     permissions:
       actions: read

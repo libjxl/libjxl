@@ -23,6 +23,7 @@ concurrency:
 
 jobs:
   dependency-review:
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
     runs-on: ubuntu-latest
     steps:
       - name: Harden Runner
