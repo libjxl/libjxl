@@ -194,13 +194,6 @@ jobs:
           dch -M --distribution unstable --release ''
         fi
 
-    - name: Install gmock-dev (debian:sid)
-      # gtest-dev cmake depends on gmock-dev, but it is not installed by the
-      # package.
-      if: matrix.os == 'debian:sid'
-      run: |
-        apt install -y libgmock-dev
-
     - name: Configure hwy
       if: ${{ github.event_name == 'schedule' || github.event_name == 'release' || contains(github.event.pull_request.labels.*.name, 'CI:full') }}
       run: |

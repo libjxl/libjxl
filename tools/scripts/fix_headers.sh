@@ -14,7 +14,7 @@ HERE=`pwd`
 CLANG_TIDY_CONFIG="{\
   Checks: '-*,misc-include-cleaner,readability-avoid-const-params-in-decls,misc-unused-using-decls,readability-container-size-empty',\
   CheckOptions: {\
-    'misc-include-cleaner.IgnoreHeaders': 'gtest/.*;gmock/.*;testing.h'\
+    'misc-include-cleaner.IgnoreHeaders': 'gtest/.*;testing.h'\
   }\
 }"
 
