@@ -40,12 +40,6 @@ using test::ThreadPoolForTests;
 namespace extras {
 namespace {
 
-using ::testing::AllOf;
-using ::testing::Contains;
-using ::testing::Field;
-using ::testing::IsEmpty;
-using ::testing::SizeIs;
-
 std::string ExtensionFromCodec(Codec codec, const bool is_gray,
                                const bool has_alpha,
                                const size_t bits_per_sample) {
@@ -432,15 +426,17 @@ TEST(CodecTest, EncodeToPNG) {
   ASSERT_TRUE(extras::DecodeBytes(Bytes(original_png), ColorHints(), &ppf));
 
   const JxlPixelFormat& format = ppf.frames.front().color.format;
-  ASSERT_THAT(
-      png_encoder->AcceptedFormats(),
-      Contains(AllOf(Field(&JxlPixelFormat::num_channels, format.num_channels),
-                     Field(&JxlPixelFormat::data_type, format.data_type),
-                     Field(&JxlPixelFormat::endianness, format.endianness))));
+  const auto& format_matcher = [&format](const JxlPixelFormat& candidate) {
+    return (candidate.num_channels == format.num_channels) &&
+           (candidate.data_type == format.data_type) &&
+           (candidate.endianness == format.endianness);
+  };
+  const auto formats = png_encoder->AcceptedFormats();
+  ASSERT_TRUE(std::any_of(formats.begin(), formats.end(), format_matcher));
   EncodedImage encoded_png;
   ASSERT_TRUE(png_encoder->Encode(ppf, &encoded_png, pool));
-  EXPECT_THAT(encoded_png.icc, IsEmpty());
-  ASSERT_THAT(encoded_png.bitstreams, SizeIs(1));
+  EXPECT_TRUE(encoded_png.icc.empty());
+  ASSERT_EQ(encoded_png.bitstreams.size(), 1);
 
   PackedPixelFile decoded_ppf;
   ASSERT_TRUE(extras::DecodeBytes(Bytes(encoded_png.bitstreams.front()),

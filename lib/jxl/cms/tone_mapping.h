@@ -17,8 +17,6 @@
 
 namespace jxl {
 
-typedef Vector3 Color;
-
 class Rec2408ToneMapperBase {
  public:
   explicit Rec2408ToneMapperBase(std::pair<float, float> source_range,
