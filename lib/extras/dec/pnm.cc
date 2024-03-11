@@ -391,8 +391,8 @@ StatusOr<ChunkedPNMDecoder> ChunkedPNMDecoder::Init(const char* path) {
   const size_t num_channels = dec.header_.is_gray ? 1 : 3;
   const size_t bytes_per_pixel = num_channels * bytes_per_channel;
   size_t row_size = dec.header_.xsize * bytes_per_pixel;
-  if (header.ysize * row_size + dec.data_start_ < size) {
-    return JXL_FAILURE("Invalid ppm");
+  if (size < header.ysize * row_size + dec.data_start_) {
+    return JXL_FAILURE("PNM file too small");
   }
   return dec;
 }
