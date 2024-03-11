@@ -545,6 +545,9 @@ Status DecodeImagePNM(const Span<const uint8_t> bytes,
       }
     }
   }
+  if (ppf->info.exponent_bits_per_sample == 0) {
+    ppf->input_bitdepth.type = JXL_BIT_DEPTH_FROM_CODESTREAM;
+  }
   return true;
 }
 

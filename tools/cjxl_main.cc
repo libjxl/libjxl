@@ -923,10 +923,6 @@ void ProcessFlags(const jxl::extras::Codec codec,
   params->premultiply = args->premultiply;
   params->compress_boxes = args->compress_boxes != jxl::Override::kOff;
   params->upsampling_mode = args->upsampling_mode;
-  if (codec == jxl::extras::Codec::kPNM &&
-      ppf.info.exponent_bits_per_sample == 0) {
-    params->input_bitdepth.type = JXL_BIT_DEPTH_FROM_CODESTREAM;
-  }
 
   // If a metadata field is set to an empty value, it is stripped.
   // Make sure we also strip it when the input image is read with AddJPEGFrame
