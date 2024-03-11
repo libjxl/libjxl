@@ -343,7 +343,8 @@ class JxlCodec : public ImageCodec {
       JXL_CHECK(encoder);
       PackedPixelFile debug_ppf;
       JxlPixelFormat format{3, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
-      PackedFrame frame(xsize, ysize, format);
+      JXL_ASSIGN_OR_DIE(PackedFrame frame,
+                        PackedFrame::Create(xsize, ysize, format));
       memcpy(frame.color.pixels(), pixels, 6 * xsize * ysize);
       debug_ppf.frames.emplace_back(std::move(frame));
       debug_ppf.info.xsize = xsize;

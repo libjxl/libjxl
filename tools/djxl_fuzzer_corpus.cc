@@ -234,7 +234,9 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
         span, spec.width, spec.height, io.metadata.m.color_encoding,
         io.metadata.m.bit_depth.bits_per_sample, format, nullptr, &ib));
     io.frames.push_back(std::move(ib));
-    jxl::extras::PackedFrame packed_frame(spec.width, spec.height, format);
+    JXL_ASSIGN_OR_RETURN(
+        jxl::extras::PackedFrame packed_frame,
+        jxl::extras::PackedFrame::Create(spec.width, spec.height, format));
     JXL_ASSERT(packed_frame.color.pixels_size == img_data.size());
     memcpy(packed_frame.color.pixels(0, 0, 0), img_data.data(),
            img_data.size());

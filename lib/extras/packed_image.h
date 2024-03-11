@@ -37,11 +37,18 @@ namespace extras {
 // Class representing an interleaved image with a bunch of channels.
 class PackedImage {
  public:
-  PackedImage(size_t xsize, size_t ysize, const JxlPixelFormat& format)
-      : PackedImage(xsize, ysize, format, CalcStride(format, xsize)) {}
+  static StatusOr<PackedImage> Create(size_t xsize, size_t ysize,
+                                      const JxlPixelFormat& format) {
+    PackedImage image(xsize, ysize, format, CalcStride(format, xsize));
+    if (!image.pixels()) {
+      // TODO(szabadka): use specialized OOM error code
+      return JXL_FAILURE("Failed to allocate memory for image");
+    }
+    return image;
+  }
 
   PackedImage Copy() const {
-    PackedImage copy(xsize, ysize, format);
+    PackedImage copy(xsize, ysize, format, CalcStride(format, xsize));
     memcpy(reinterpret_cast<uint8_t*>(copy.pixels()),
            reinterpret_cast<const uint8_t*>(pixels()), pixels_size);
     return copy;
@@ -169,11 +176,20 @@ class PackedImage {
 // as all other frames in the same image.
 class PackedFrame {
  public:
-  template <typename... Args>
-  explicit PackedFrame(Args&&... args) : color(std::forward<Args>(args)...) {}
+  explicit PackedFrame(PackedImage&& image) : color(std::move(image)) {}
 
-  PackedFrame Copy() const {
-    PackedFrame copy(color.xsize, color.ysize, color.format);
+  static StatusOr<PackedFrame> Create(size_t xsize, size_t ysize,
+                                      const JxlPixelFormat& format) {
+    JXL_ASSIGN_OR_RETURN(PackedImage image,
+                         PackedImage::Create(xsize, ysize, format));
+    PackedFrame frame(std::move(image));
+    return frame;
+  }
+
+  StatusOr<PackedFrame> Copy() const {
+    JXL_ASSIGN_OR_RETURN(
+        PackedFrame copy,
+        PackedFrame::Create(color.xsize, color.ysize, color.format));
     copy.frame_info = frame_info;
     copy.name = name;
     copy.color = color.Copy();
