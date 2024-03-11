@@ -1044,20 +1044,25 @@ int main(int argc, char** argv) {
   size_t input_bytes = 0;
   double decode_mps = 0;
   size_t pixels = 0;
+  bool try_non_streaming = true;
   jxl::extras::ChunkedPNMDecoder pnm_dec;
   if (args.streaming_input) {
     auto dec = jxl::extras::ChunkedPNMDecoder::Init(args.file_in);
     if (!dec.ok()) {
-      std::cerr << "PNM decoding failed." << std::endl;
-      exit(EXIT_FAILURE);
+      std::cerr << "Warning PPM/PGM streaming decoding failed, trying "
+                   "non-streaming mode."
+                << std::endl;
+    } else {
+      pnm_dec = std::move(dec).value();
+      JXL_RETURN_IF_ERROR(
+          pnm_dec.InitializePPF(args.color_hints_proxy.target, &ppf));
+      codec = jxl::extras::Codec::kPNM;
+      args.lossless_jpeg = JXL_FALSE;
+      pixels = ppf.info.xsize * ppf.info.ysize;
+      try_non_streaming = false;
     }
-    pnm_dec = std::move(dec).value();
-    JXL_RETURN_IF_ERROR(
-        pnm_dec.InitializePPF(args.color_hints_proxy.target, &ppf));
-    codec = jxl::extras::Codec::kPNM;
-    args.lossless_jpeg = JXL_FALSE;
-    pixels = ppf.info.xsize * ppf.info.ysize;
-  } else {
+  }
+  if (try_non_streaming) {
     // Loading the input.
     // Depending on flags-settings, we want to either load a JPEG and
     // faithfully convert it to JPEG XL, or load (JPEG or non-JPEG)
