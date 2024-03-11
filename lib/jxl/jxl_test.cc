@@ -1570,9 +1570,9 @@ TEST(JxlTest, RoundtripUnsignedCustomBitdepthLossless) {
         t.SetAllBitDepths(bitdepth).SetEndianness(endianness);
         TestImage::Frame frame = t.AddFrame();
         frame.RandomFill();
+        t.ppf().input_bitdepth.type = JXL_BIT_DEPTH_FROM_CODESTREAM;
 
         JXLCompressParams cparams = CompressParamsForLossless();
-        cparams.input_bitdepth.type = JXL_BIT_DEPTH_FROM_CODESTREAM;
 
         JXLDecompressParams dparams;
         dparams.accepted_formats.push_back(t.ppf().frames[0].color.format);
@@ -1604,7 +1604,6 @@ TEST(JxlTest, LosslessPNMRoundtrip) {
 
       JXLCompressParams cparams = CompressParamsForLossless();
       cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 1);  // kLightning
-      cparams.input_bitdepth.type = JXL_BIT_DEPTH_FROM_CODESTREAM;
 
       JXLDecompressParams dparams;
       dparams.accepted_formats.push_back(t.ppf().frames[0].color.format);

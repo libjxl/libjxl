@@ -22,15 +22,15 @@ namespace jxl {
 namespace extras {
 
 Status ConvertPackedFrameToImageBundle(const JxlBasicInfo& info,
+                                       const JxlBitDepth& input_bitdepth,
                                        const PackedFrame& frame,
                                        const CodecInOut& io, ThreadPool* pool,
                                        ImageBundle* bundle) {
   JXL_ASSERT(frame.color.pixels() != nullptr);
-  const bool float_in = frame.color.format.data_type == JXL_TYPE_FLOAT16 ||
-                        frame.color.format.data_type == JXL_TYPE_FLOAT;
   size_t frame_bits_per_sample =
-      float_in ? PackedImage::BitsPerChannel(frame.color.format.data_type)
-               : info.bits_per_sample;
+      input_bitdepth.type == JXL_BIT_DEPTH_FROM_PIXEL_FORMAT
+          ? PackedImage::BitsPerChannel(frame.color.format.data_type)
+          : info.bits_per_sample;
   JXL_ASSERT(frame_bits_per_sample != 0);
   // It is ok for the frame.color.format.num_channels to not match the
   // number of channels on the image.
@@ -171,15 +171,16 @@ Status ConvertPackedPixelFileToCodecInOut(const PackedPixelFile& ppf,
     JXL_RETURN_IF_ERROR(
         io->metadata.m.preview_size.Set(preview_xsize, preview_ysize));
     JXL_RETURN_IF_ERROR(ConvertPackedFrameToImageBundle(
-        ppf.info, *ppf.preview_frame, *io, pool, &io->preview_frame));
+        ppf.info, ppf.input_bitdepth, *ppf.preview_frame, *io, pool,
+        &io->preview_frame));
   }
 
   // Convert the pixels
   io->frames.clear();
   for (const auto& frame : ppf.frames) {
     ImageBundle bundle(&io->metadata.m);
-    JXL_RETURN_IF_ERROR(
-        ConvertPackedFrameToImageBundle(ppf.info, frame, *io, pool, &bundle));
+    JXL_RETURN_IF_ERROR(ConvertPackedFrameToImageBundle(
+        ppf.info, ppf.input_bitdepth, frame, *io, pool, &bundle));
     io->frames.push_back(std::move(bundle));
   }
 

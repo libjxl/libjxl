@@ -277,6 +277,8 @@ class PackedPixelFile {
   // The icc profile of the original image.
   std::vector<uint8_t> orig_icc;
 
+  JxlBitDepth input_bitdepth = {JXL_BIT_DEPTH_FROM_PIXEL_FORMAT, 0, 0};
+
   std::unique_ptr<PackedFrame> preview_frame;
   std::vector<PackedFrame> frames;
   mutable std::vector<ChunkedPackedFrame> chunked_frames;

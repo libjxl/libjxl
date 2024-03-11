@@ -245,7 +245,7 @@ bool EncodeImageJXL(const JXLCompressParams& params, const PackedPixelFile& ppf,
       return false;
     }
     if (JXL_ENC_SUCCESS !=
-        JxlEncoderSetFrameBitDepth(settings, &params.input_bitdepth)) {
+        JxlEncoderSetFrameBitDepth(settings, &ppf.input_bitdepth)) {
       fprintf(stderr, "JxlEncoderSetFrameBitDepth() failed.\n");
       return false;
     }
