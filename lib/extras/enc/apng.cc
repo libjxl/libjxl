@@ -300,7 +300,7 @@ Status APNGEncoder::EncodePackedPixelFileToAPNG(
       if (ppf.info.bits_per_sample < 8) {
         float mul = 255.0 / ((1u << ppf.info.bits_per_sample) - 1);
         for (size_t i = 0; i < num_samples; ++i) {
-          out[i] = static_cast<uint8_t>(in[i] * mul + 0.5);
+          out[i] = static_cast<uint8_t>(std::lroundf(in[i] * mul));
         }
       } else {
         memcpy(out.data(), in, out_size);
@@ -314,7 +314,7 @@ Status APNGEncoder::EncodePackedPixelFileToAPNG(
         for (size_t i = 0; i < num_samples; ++i, p_in += 2, p_out += 2) {
           uint32_t val = (format.endianness == JXL_BIG_ENDIAN ? LoadBE16(p_in)
                                                               : LoadLE16(p_in));
-          StoreBE16(static_cast<uint32_t>(val * mul + 0.5), p_out);
+          StoreBE16(static_cast<uint32_t>(std::lroundf(val * mul)), p_out);
         }
       } else {
         memcpy(out.data(), in, out_size);

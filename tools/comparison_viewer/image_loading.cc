@@ -72,7 +72,7 @@ QImage loadImage(const QString& filename, const QByteArray& targetIccProfile,
   if (!sourceColorSpaceHint.isEmpty()) {
     color_hints.Add("color_space", sourceColorSpaceHint.toStdString());
   }
-  if (!loadFromFile(filename, color_hints, &decoded, &pool)) {
+  if (!loadFromFile(filename, color_hints, &decoded, pool.get())) {
     return QImage();
   }
   decoded.metadata.m.SetIntensityTarget(intensityTarget);
@@ -93,7 +93,7 @@ QImage loadImage(const QString& filename, const QByteArray& targetIccProfile,
   }
   Image3F converted;
   if (!ib.CopyTo(Rect(ib), targetColorSpace, *JxlGetDefaultCms(), &converted,
-                 &pool)) {
+                 pool.get())) {
     return QImage();
   }
 

@@ -49,9 +49,9 @@ using ::jxl::Image3F;
 void ImageCodec::ParseParameters(const std::string& parameters) {
   params_ = parameters;
   std::vector<std::string> parts = SplitString(parameters, ':');
-  for (size_t i = 0; i < parts.size(); ++i) {
-    if (!ParseParam(parts[i])) {
-      JXL_ABORT("Invalid parameter %s", parts[i].c_str());
+  for (const auto& part : parts) {
+    if (!ParseParam(part)) {
+      JXL_ABORT("Invalid parameter %s", part.c_str());
     }
   }
 }

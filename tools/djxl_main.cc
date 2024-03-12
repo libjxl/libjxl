@@ -226,7 +226,7 @@ struct DecompressArgs {
 
   // Validate the passed arguments, checking whether all passed options are
   // compatible. Returns whether the validation was successful.
-  bool ValidateArgs(const CommandLineParser& cmdline) {
+  bool ValidateArgs(const CommandLineParser& cmdline) const {
     if (file_in == nullptr) {
       fprintf(stderr, "Missing INPUT filename.\n");
       return false;
@@ -457,8 +457,8 @@ int main(int argc, const char* argv[]) {
 
   if (!args.file_out && !args.disable_output) {
     std::cerr
-        << "No output file specified and --disable_output flag not passed."
-        << std::endl;
+        << "No output file specified and --disable_output flag not passed.\n"
+        << std::flush;
     return EXIT_FAILURE;
   }
 

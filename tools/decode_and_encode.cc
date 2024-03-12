@@ -52,7 +52,7 @@ int Convert(int argc, char** argv) {
   ppf.icc = internal.ICC();
 
   std::vector<uint8_t> encoded_out;
-  if (!jxl::Encode(ppf, pathname_out, &encoded_out, &pool)) {
+  if (!jxl::Encode(ppf, pathname_out, &encoded_out, pool.get())) {
     fprintf(stderr, "Failed to encode %s\n", pathname_out.c_str());
     return 1;
   }

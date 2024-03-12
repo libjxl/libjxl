@@ -159,11 +159,11 @@ class CommandLineParser {
   // A positional argument.
   class CmdOptionPositional : public CmdOptionInterface {
    public:
-    CmdOptionPositional(const char* name, const std::string& help_text,
+    CmdOptionPositional(const char* name, std::string help_text,
                         const char** storage, int verbosity_level,
                         bool required)
         : name_(name),
-          help_text_(help_text),
+          help_text_(std::move(help_text)),
           storage_(storage),
           verbosity_level_(verbosity_level),
           required_(required) {}

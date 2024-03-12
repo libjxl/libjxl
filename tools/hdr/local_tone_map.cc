@@ -187,8 +187,8 @@ Status ApplyLocalToneMapping(const ImageF& blurred_luminances,
           const auto ratio =
               Div(Mul(Set(df, intensity_target), new_luminance),
                   Mul(luminance, Set(df, kDefaultIntensityTarget)));
-          for (int c = 0; c < 3; ++c) {
-            Store(Mul(ratio, Load(df, rows[c] + x)), df, rows[c] + x);
+          for (float* row : rows) {
+            Store(Mul(ratio, Load(df, row + x)), df, row + x);
           }
         }
       },
@@ -305,16 +305,17 @@ int main(int argc, const char** argv) {
   color_hints.Add("color_space", "RGB_D65_202_Rel_PeQ");
   std::vector<uint8_t> encoded;
   JXL_CHECK(jpegxl::tools::ReadFile(input_filename, &encoded));
-  JXL_CHECK(jxl::SetFromBytes(jxl::Bytes(encoded), color_hints, &image, &pool));
+  JXL_CHECK(
+      jxl::SetFromBytes(jxl::Bytes(encoded), color_hints, &image, pool.get()));
 
-  jxl::ProcessFrame(&image, preserve_saturation, &pool);
+  jxl::ProcessFrame(&image, preserve_saturation, pool.get());
 
   JxlPixelFormat format = {3, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
   jxl::extras::PackedPixelFile ppf =
       jxl::extras::ConvertImage3FToPackedPixelFile(
           *image.Main().color(), image.metadata.m.color_encoding, format,
-          &pool);
-  JXL_CHECK(jxl::Encode(ppf, output_filename, &encoded, &pool));
+          pool.get());
+  JXL_CHECK(jxl::Encode(ppf, output_filename, &encoded, pool.get()));
   JXL_CHECK(jpegxl::tools::WriteFile(output_filename, encoded));
 }
 

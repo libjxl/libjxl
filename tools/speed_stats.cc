@@ -59,8 +59,8 @@ bool SpeedStats::GetSummary(SpeedStats::Summary* s) {
   std::sort(elapsed_.begin(), elapsed_.end());
   s->central_tendency = elapsed_[elapsed_.size() / 2];
   double stdev = 0;
-  for (size_t i = 0; i < elapsed_.size(); i++) {
-    double diff = elapsed_[i] - s->central_tendency;
+  for (double t : elapsed_) {
+    double diff = t - s->central_tendency;
     stdev += diff * diff;
   }
   s->variability = sqrt(stdev);
