@@ -14,6 +14,7 @@ add the following snippet in workflow .yml:
    # Or other condition that pin-points a single strategy matrix item
    if: failure()
    uses: mxschmitt/action-tmate@a283f9441d2d96eb62436dc46d7014f5d357ac22 # v3.17
+   timeout-minutes: 15
 ```
 
 When the plugin is executed it dumps to log a command to "ssh" to that instance.
