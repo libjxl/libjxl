@@ -14,7 +14,7 @@ bool error_msg(const char* message) {
   return false;
 }
 #define return_on_error(X) \
-  if (!X) return false;
+  if (!(X)) return false;
 
 size_t Log2(uint32_t value) { return 31 - __builtin_clz(value); }
 

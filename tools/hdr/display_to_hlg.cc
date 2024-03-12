@@ -70,11 +70,11 @@ int main(int argc, const char** argv) {
   JXL_CHECK(jpegxl::tools::ReadFile(input_filename, &encoded));
   jxl::CodecInOut image;
   JXL_CHECK(jxl::SetFromBytes(jxl::Bytes(encoded), jxl::extras::ColorHints(),
-                              &image, &pool));
+                              &image, pool.get()));
   image.metadata.m.SetIntensityTarget(max_nits);
   JXL_CHECK(jxl::HlgInverseOOTF(
-      &image.Main(), jxl::GetHlgGamma(max_nits, surround_nits), &pool));
-  JXL_CHECK(jxl::GamutMap(&image, preserve_saturation, &pool));
+      &image.Main(), jxl::GetHlgGamma(max_nits, surround_nits), pool.get()));
+  JXL_CHECK(jxl::GamutMap(&image, preserve_saturation, pool.get()));
   image.metadata.m.SetIntensityTarget(301);
 
   jxl::ColorEncoding hlg;
@@ -83,8 +83,9 @@ int main(int argc, const char** argv) {
   JXL_CHECK(hlg.SetWhitePointType(jxl::WhitePoint::kD65));
   hlg.Tf().SetTransferFunction(jxl::TransferFunction::kHLG);
   JXL_CHECK(hlg.CreateICC());
-  JXL_CHECK(jpegxl::tools::TransformCodecInOutTo(image, hlg, &pool));
+  JXL_CHECK(jpegxl::tools::TransformCodecInOutTo(image, hlg, pool.get()));
   image.metadata.m.color_encoding = hlg;
-  JXL_CHECK(jpegxl::tools::Encode(image, output_filename, &encoded, &pool));
+  JXL_CHECK(
+      jpegxl::tools::Encode(image, output_filename, &encoded, pool.get()));
   JXL_CHECK(jpegxl::tools::WriteFile(output_filename, encoded));
 }

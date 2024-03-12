@@ -127,8 +127,8 @@ int TestOneInput(const uint8_t* data, size_t size) {
   ModularOptions options;
   if (!ValidateChannelDimensions(image, options)) return 0;
 
-  for (size_t i = 0; i < image.channel.size(); ++i) {
-    FillChannel(image.channel[i], rng);
+  for (Channel& ch : image.channel) {
+    FillChannel(ch, rng);
   }
 
   image.undo_transforms(w_header);

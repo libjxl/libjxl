@@ -80,15 +80,15 @@ void TestLosslessGroups(size_t group_size_shift) {
 
 TEST(ModularTest, RoundtripLosslessGroups128) { TestLosslessGroups(0); }
 
-TEST(ModularTest, JXL_TSAN_SLOW_TEST(RoundtripLosslessGroups512)) {
+JXL_TSAN_SLOW_TEST(ModularTest, RoundtripLosslessGroups512) {
   TestLosslessGroups(2);
 }
 
-TEST(ModularTest, JXL_TSAN_SLOW_TEST(RoundtripLosslessGroups1024)) {
+JXL_TSAN_SLOW_TEST(ModularTest, RoundtripLosslessGroups1024) {
   TestLosslessGroups(3);
 }
 
-TEST(ModularTest, RoundtripLosslessCustomWP_PermuteRCT) {
+TEST(ModularTest, RoundtripLosslessCustomWpPermuteRCT) {
   const std::vector<uint8_t> orig =
       ReadTestData("external/wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   TestImage t;
@@ -346,8 +346,8 @@ TEST_P(ModularTestParam, RoundtripLossless) {
       const float* in = io.Main().color()->PlaneRow(c, y);
       const float* out = io2.Main().color()->PlaneRow(c, y);
       for (size_t x = 0; x < xsize; x++) {
-        uint32_t uin = in[x] * factor + 0.5;
-        uint32_t uout = out[x] * factor + 0.5;
+        uint32_t uin = std::lroundf(in[x] * factor);
+        uint32_t uout = std::lroundf(out[x] * factor);
         // check that the integer values are identical
         if (uin != uout) different++;
       }

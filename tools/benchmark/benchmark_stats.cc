@@ -329,9 +329,9 @@ std::string PrintAggregate(
     const std::vector<std::vector<ColumnValue>>& aggregate) {
   const auto& descriptors = GetColumnDescriptors(num_extra_metrics);
 
-  for (size_t i = 0; i < aggregate.size(); i++) {
+  for (const auto& column : aggregate) {
     // Check when statistics has wrong amount of column entries
-    JXL_CHECK(aggregate[i].size() == descriptors.size());
+    JXL_CHECK(column.size() == descriptors.size());
   }
 
   std::vector<ColumnValue> result(descriptors.size());
@@ -347,8 +347,8 @@ std::string PrintAggregate(
     }
     if (descriptors[i].type == TYPE_COUNT) {
       size_t sum = 0;
-      for (size_t j = 0; j < aggregate.size(); j++) {
-        sum += aggregate[j][i].i;
+      for (const auto& column : aggregate) {
+        sum += column[i].i;
       }
       result[i].i = sum;
       continue;
@@ -358,9 +358,8 @@ std::string PrintAggregate(
 
     double logsum = 0;
     size_t numvalid = 0;
-    for (size_t j = 0; j < aggregate.size(); j++) {
-      double value =
-          (type == TYPE_SIZE) ? aggregate[j][i].i : aggregate[j][i].f;
+    for (const auto& column : aggregate) {
+      double value = (type == TYPE_SIZE) ? column[i].i : column[i].f;
       if (value > 0) {
         numvalid++;
         logsum += std::log2(value);
@@ -369,7 +368,7 @@ std::string PrintAggregate(
     double geomean = numvalid ? std::exp2(logsum / numvalid) : 0.0;
 
     if (type == TYPE_SIZE || type == TYPE_COUNT) {
-      result[i].i = static_cast<size_t>(geomean + 0.5);
+      result[i].i = static_cast<size_t>(std::llround(geomean));
     } else if (type == TYPE_POSITIVE_FLOAT) {
       result[i].f = geomean;
     } else {
