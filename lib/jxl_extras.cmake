@@ -3,6 +3,8 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
+cmake_policy(SET CMP0074 NEW)
+
 include(jxl_lists.cmake)
 
 # Object library for those parts of extras that do not depend on jxl internals
@@ -77,7 +79,7 @@ if(JPEGXL_ENABLE_JPEGLI)
 endif()
 
 if(NOT JPEGXL_BUNDLE_LIBPNG)
-  find_package(PNG)
+  find_package(PNG REQUIRED)
 endif()
 if(PNG_FOUND)
   target_include_directories(jxl_extras_core-obj PRIVATE "${PNG_INCLUDE_DIRS}")

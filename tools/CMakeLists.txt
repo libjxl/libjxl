@@ -3,6 +3,8 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
+cmake_policy(SET CMP0074 NEW)
+
 # ICC detection library used by the comparison and viewer tools.
 if(JPEGXL_ENABLE_VIEWERS)
 if(WIN32)
@@ -258,7 +260,7 @@ if(JPEGXL_ENABLE_BENCHMARK AND JPEGXL_ENABLE_TOOLS)
   endif() # MINGW
 
   if(NOT JPEGXL_BUNDLE_LIBPNG)
-    find_package(PNG)
+    find_package(PNG REQUIRED)
   endif()
   if(PNG_FOUND)
     target_sources(benchmark_xl PRIVATE
