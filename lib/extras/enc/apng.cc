@@ -376,7 +376,7 @@ Status APNGEncoder::EncodePackedPixelFileToAPNG(
     png_set_IHDR(png_ptr, info_ptr, width, height, bit_depth, color_type,
                  PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_BASE,
                  PNG_FILTER_TYPE_BASE);
-    if (count == 0) {
+    if (count == 0 && !encode_extra_channels) {
       if (!MaybeAddSRGB(ppf.color_encoding, png_ptr, info_ptr)) {
         MaybeAddCICP(ppf.color_encoding, png_ptr, info_ptr);
         if (!ppf.icc.empty()) {
