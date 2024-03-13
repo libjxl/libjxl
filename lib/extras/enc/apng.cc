@@ -281,7 +281,13 @@ void MaybeAddCLLi(const JxlColorEncoding& c_enc, const float intensity_target,
 Status APNGEncoder::EncodePackedPixelFileToAPNG(
     const PackedPixelFile& ppf, ThreadPool* pool, std::vector<uint8_t>* bytes,
     bool encode_extra_channels, size_t extra_channel_index) const {
-  const auto& ec_info = ppf.extra_channels_info[extra_channel_index].ec_info;
+  JxlExtraChannelInfo ec_info{};
+  if (encode_extra_channels) {
+    if (ppf.extra_channels_info.size() <= extra_channel_index) {
+      return JXL_FAILURE("Invalid index for extra channel");
+    }
+    ec_info = ppf.extra_channels_info[extra_channel_index].ec_info;
+  }
 
   bool has_alpha = !encode_extra_channels && (ppf.info.alpha_bits != 0);
   bool is_gray = encode_extra_channels || (ppf.info.num_color_channels == 1);
@@ -295,11 +301,6 @@ Status APNGEncoder::EncodePackedPixelFileToAPNG(
 
   size_t count = 0;
   size_t anim_chunks = 0;
-
-  if (encode_extra_channels &&
-      (ppf.extra_channels_info.size() <= extra_channel_index)) {
-    return JXL_FAILURE("Invalid index for extra channel");
-  }
 
   for (const auto& frame : ppf.frames) {
     const PackedImage& color = encode_extra_channels
