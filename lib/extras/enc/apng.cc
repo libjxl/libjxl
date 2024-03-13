@@ -73,17 +73,36 @@ class APNGEncoder : public Encoder {
   }
   Status Encode(const PackedPixelFile& ppf, EncodedImage* encoded_image,
                 ThreadPool* pool) const override {
+    // Encode main image frames
     JXL_RETURN_IF_ERROR(VerifyBasicInfo(ppf.info));
     encoded_image->icc.clear();
     encoded_image->bitstreams.resize(1);
-    return EncodePackedPixelFileToAPNG(ppf, pool,
-                                       &encoded_image->bitstreams.front());
+    JXL_RETURN_IF_ERROR(EncodePackedPixelFileToAPNG(
+        ppf, pool, &encoded_image->bitstreams.front()));
+
+    // Encode extra channels
+    for (size_t i = 0; i < ppf.extra_channels_info.size(); ++i) {
+      const auto& ec_info = ppf.extra_channels_info[i].ec_info;
+      encoded_image->extra_channel_bitstreams.emplace_back();
+      auto& ec_bitstreams = encoded_image->extra_channel_bitstreams.back();
+      ec_bitstreams.reserve(ppf.frames.size());
+      for (const auto& frame : ppf.frames) {
+        ec_bitstreams.emplace_back();
+        JXL_RETURN_IF_ERROR(EncodeExtraChannelToPNG(frame.extra_channels[i],
+                                                    ec_info.bits_per_sample,
+                                                    &ec_bitstreams.back()));
+      }
+    }
+    return true;
   }
 
  private:
   Status EncodePackedPixelFileToAPNG(const PackedPixelFile& ppf,
                                      ThreadPool* pool,
                                      std::vector<uint8_t>* bytes) const;
+  Status EncodeExtraChannelToPNG(const PackedImage& image,
+                                 size_t bits_per_sample,
+                                 std::vector<uint8_t>* bytes) const;
 };
 
 void PngWrite(png_structp png_ptr, png_bytep data, png_size_t length) {
@@ -438,6 +457,26 @@ Status APNGEncoder::EncodePackedPixelFileToAPNG(
   }
 
   return true;
+}
+
+Status APNGEncoder::EncodeExtraChannelToPNG(const PackedImage& image,
+                                            size_t bits_per_sample,
+                                            std::vector<uint8_t>* bytes) const {
+  // Create a new PackedImage and move data from the original image
+  PackedImage moved_image(std::move(const_cast<PackedImage&>(image)));
+
+  // Create a PackedPixelFile with the moved image
+  PackedPixelFile ppf;
+  ppf.info.xsize = moved_image.xsize;
+  ppf.info.ysize = moved_image.ysize;
+  ppf.info.bits_per_sample = bits_per_sample;
+  ppf.info.num_color_channels = moved_image.format.num_channels;
+
+  // Move the image into a PackedFrame in the vector
+  ppf.frames.emplace_back(std::move(moved_image));
+
+  // Encode the PackedPixelFile as a PNG
+  return EncodePackedPixelFileToAPNG(ppf, /*pool=*/nullptr, bytes);
 }
 
 }  // namespace
