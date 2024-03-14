@@ -326,16 +326,20 @@ void try_palettes(Image& gi, int& max_bitdepth, int& maxval,
   float cost_before = 0.f;
   size_t did_palette = 0;
   float nb_pixels = gi.channel[0].w * gi.channel[0].h;
+  int nb_chans = gi.channel.size() - gi.nb_meta_channels;
+  // arbitrary estimate: 4.8 bpp for 8-bit RGB
+  float arbitrary_bpp_estimate = 0.2f * gi.bitdepth * nb_chans;
 
   if (cparams_.palette_colors != 0 || cparams_.lossy_palette) {
-    // when not estimating, assume 5 bpp (arbitrarily)
-    cost_before = cparams_.speed_tier <= SpeedTier::kSquirrel ? EstimateCost(gi)
-                                                              : nb_pixels * 5.f;
+    // when not estimating, assume some arbitrary bpp
+    cost_before = cparams_.speed_tier <= SpeedTier::kSquirrel
+                      ? EstimateCost(gi)
+                      : nb_pixels * arbitrary_bpp_estimate;
     // all-channel palette (e.g. RGBA)
-    if (gi.channel.size() - gi.nb_meta_channels > 1) {
+    if (nb_chans > 1) {
       Transform maybe_palette(TransformId::kPalette);
       maybe_palette.begin_c = gi.nb_meta_channels;
-      maybe_palette.num_c = gi.channel.size() - gi.nb_meta_channels;
+      maybe_palette.num_c = nb_chans;
       // Heuristic choice of max colors for a palette:
       // max_colors = nb_pixels * estimated_bpp_without_palette * 0.0005 +
       //              + nb_pixels / 128 + 128
@@ -361,10 +365,10 @@ void try_palettes(Image& gi, int& max_bitdepth, int& maxval,
     }
     // all-minus-one-channel palette (RGB with separate alpha, or CMY with
     // separate K)
-    if (!did_palette && gi.channel.size() - gi.nb_meta_channels > 3) {
+    if (!did_palette && nb_chans > 3) {
       Transform maybe_palette_3(TransformId::kPalette);
       maybe_palette_3.begin_c = gi.nb_meta_channels;
-      maybe_palette_3.num_c = gi.channel.size() - gi.nb_meta_channels - 1;
+      maybe_palette_3.num_c = nb_chans - 1;
       maybe_palette_3.nb_colors = std::min(
           static_cast<int>(cost_before * 0.0005f + nb_pixels / 128 + 128),
           std::abs(cparams_.palette_colors));
