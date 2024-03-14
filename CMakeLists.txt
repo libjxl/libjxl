@@ -211,10 +211,12 @@ if(JPEGXL_STATIC)
   # Clang developers say that in case to use "static" we have to build stdlib
   # ourselves; for real use case we don't care about stdlib, as it is "granted",
   # so just linking all other libraries is fine.
-  if (NOT MSVC AND NOT APPLE)
+  if (NOT MSVC)
+    string(APPEND CMAKE_EXE_LINKER_FLAGS " -static")
+  endif()
+  if ((NOT WIN32 AND NOT APPLE) OR CYGWIN OR MINGW)
     set(CMAKE_FIND_LIBRARY_SUFFIXES .a)
-    set(CMAKE_EXE_LINKER_FLAGS
-        "${CMAKE_EXE_LINKER_FLAGS} -static -static-libgcc -static-libstdc++")
+    string(APPEND CMAKE_EXE_LINKER_FLAGS " -static-libgcc -static-libstdc++")
   endif()
 endif()  # JPEGXL_STATIC
 
