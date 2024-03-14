@@ -6,6 +6,10 @@
 // This C++ example decodes a JPEG XL image progressively (input bytes are
 // passed in chunks). The example outputs the intermediate steps to PAM files.
 
+#ifndef __STDC_FORMAT_MACROS
+#define __STDC_FORMAT_MACROS
+#endif
+
 #include <inttypes.h>
 #include <jxl/decode.h>
 #include <jxl/decode_cxx.h>
