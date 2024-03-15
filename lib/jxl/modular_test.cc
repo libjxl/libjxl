@@ -144,6 +144,7 @@ TEST(ModularTest, RoundtripLossyDeltaPaletteWP) {
   cparams.SetLossless();
   cparams.lossy_palette = true;
   cparams.palette_colors = 0;
+  // TODO(jon): this is currently ignored, and Avg4 is always used instead
   cparams.options.predictor = jxl::Predictor::Weighted;
 
   CodecInOut io_out;
@@ -154,12 +155,12 @@ TEST(ModularTest, RoundtripLossyDeltaPaletteWP) {
 
   size_t compressed_size;
   JXL_EXPECT_OK(Roundtrip(&io, cparams, {}, &io_out, _, &compressed_size));
-  EXPECT_LE(compressed_size, 7000u);
+  EXPECT_LE(compressed_size, 6500u);
   EXPECT_SLIGHTLY_BELOW(
       ButteraugliDistance(io.frames, io_out.frames, ButteraugliParams(),
                           *JxlGetDefaultCms(),
                           /*distmap=*/nullptr),
-      10.1);
+      1.5);
 }
 
 TEST(ModularTest, RoundtripLossy) {
