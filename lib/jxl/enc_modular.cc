@@ -624,7 +624,6 @@ Status ModularFrameEncoder::ComputeEncodingData(
           pixel_type* const JXL_RESTRICT row_out = gi.channel[c_out].Row(y);
           pixel_type* const JXL_RESTRICT row_Y = gi.channel[0].Row(y);
           for (size_t x = 0; x < xsize; ++x) {
-            // TODO(eustas): check if std::roundf is appropriate
             row_out[x] = row_in[x] * factor + 0.5f;
             row_out[x] -= row_Y[x];
             // zero the lsb of B

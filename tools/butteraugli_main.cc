@@ -44,9 +44,9 @@ Status WriteImage(const Image3F& image, const std::string& filename) {
   JxlPixelFormat format = {3, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0};
   jxl::extras::PackedPixelFile ppf =
       jxl::extras::ConvertImage3FToPackedPixelFile(
-          image, jxl::ColorEncoding::SRGB(), format, pool.get());
+          image, jxl::ColorEncoding::SRGB(), format, &pool);
   std::vector<uint8_t> encoded;
-  return jxl::Encode(ppf, filename, &encoded, pool.get()) &&
+  return jxl::Encode(ppf, filename, &encoded, &pool) &&
          jpegxl::tools::WriteFile(filename, encoded);
 }
 
@@ -69,8 +69,7 @@ Status RunButteraugli(const char* pathname1, const char* pathname2,
       fprintf(stderr, "Failed to read image from %s\n", pathname[i]);
       return false;
     }
-    if (!jxl::SetFromBytes(jxl::Bytes(encoded), color_hints, &io[i],
-                           pool.get())) {
+    if (!jxl::SetFromBytes(jxl::Bytes(encoded), color_hints, &io[i], &pool)) {
       fprintf(stderr, "Failed to decode image from %s\n", pathname[i]);
       return false;
     }
@@ -98,7 +97,7 @@ Status RunButteraugli(const char* pathname1, const char* pathname2,
   JxlButteraugliComparator comparator(ba_params, cms);
   float distance;
   JXL_CHECK(ComputeScore(io1.Main(), io2.Main(), &comparator, cms, &distance,
-                         &distmap, pool.get(),
+                         &distmap, &pool,
                          /* ignore_alpha */ false));
   printf("%.10f\n", distance);
 

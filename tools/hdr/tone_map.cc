@@ -72,13 +72,12 @@ int main(int argc, const char** argv) {
   color_hints.Add("color_space", "RGB_D65_202_Rel_PeQ");
   std::vector<uint8_t> encoded;
   JXL_CHECK(jpegxl::tools::ReadFile(input_filename, &encoded));
-  JXL_CHECK(
-      jxl::SetFromBytes(jxl::Bytes(encoded), color_hints, &image, pool.get()));
+  JXL_CHECK(jxl::SetFromBytes(jxl::Bytes(encoded), color_hints, &image, &pool));
   if (max_nits > 0) {
     image.metadata.m.SetIntensityTarget(max_nits);
   }
-  JXL_CHECK(jxl::ToneMapTo({0, target_nits}, &image, pool.get()));
-  JXL_CHECK(jxl::GamutMap(&image, preserve_saturation, pool.get()));
+  JXL_CHECK(jxl::ToneMapTo({0, target_nits}, &image, &pool));
+  JXL_CHECK(jxl::GamutMap(&image, preserve_saturation, &pool));
 
   jxl::ColorEncoding c_out = image.metadata.m.color_encoding;
   jxl::cms::TransferFunction tf =
@@ -91,9 +90,8 @@ int main(int argc, const char** argv) {
   c_out.Tf().SetTransferFunction(tf);
 
   JXL_CHECK(c_out.CreateICC());
-  JXL_CHECK(jpegxl::tools::TransformCodecInOutTo(image, c_out, pool.get()));
+  JXL_CHECK(jpegxl::tools::TransformCodecInOutTo(image, c_out, &pool));
   image.metadata.m.color_encoding = c_out;
-  JXL_CHECK(
-      jpegxl::tools::Encode(image, output_filename, &encoded, pool.get()));
+  JXL_CHECK(jpegxl::tools::Encode(image, output_filename, &encoded, &pool));
   JXL_CHECK(jpegxl::tools::WriteFile(output_filename, encoded));
 }

@@ -3,8 +3,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <cmath>
 #include <cstdint>
-#include <cstdio>
 #include <vector>
 
 #include "lib/jpegli/decode.h"
@@ -78,8 +78,7 @@ class SourceManager {
     return TRUE;
   }
 
-  static void skip_input_data(j_decompress_ptr cinfo,
-                              long num_bytes /* NOLINT */) {
+  static void skip_input_data(j_decompress_ptr cinfo, long num_bytes) {
     auto* src = reinterpret_cast<SourceManager*>(cinfo->src);
     if (num_bytes <= 0) {
       return;
@@ -448,7 +447,7 @@ std::vector<TestConfig> GenerateBasicConfigs() {
 TEST(DecodeAPITest, ReuseCinfoSameMemSource) {
   std::vector<TestConfig> all_configs = GenerateBasicConfigs();
   uint8_t* buffer = nullptr;
-  unsigned long buffer_size = 0;  // NOLINT
+  unsigned long buffer_size = 0;
   {
     jpeg_compress_struct cinfo;
     const auto try_catch_block = [&]() -> bool {
@@ -503,7 +502,7 @@ TEST(DecodeAPITest, ReuseCinfoSameStdSource) {
     EXPECT_TRUE(try_catch_block());
     jpegli_destroy_compress(&cinfo);
   }
-  fseek(tmpf, 0, SEEK_SET);
+  rewind(tmpf);
   std::vector<TestImage> all_outputs(all_configs.size());
   {
     jpeg_decompress_struct cinfo;
@@ -528,9 +527,9 @@ TEST(DecodeAPITest, ReuseCinfoSameStdSource) {
 
 TEST(DecodeAPITest, AbbreviatedStreams) {
   uint8_t* table_stream = nullptr;
-  unsigned long table_stream_size = 0;  // NOLINT
+  unsigned long table_stream_size = 0;
   uint8_t* data_stream = nullptr;
-  unsigned long data_stream_size = 0;  // NOLINT
+  unsigned long data_stream_size = 0;
   {
     jpeg_compress_struct cinfo;
     const auto try_catch_block = [&]() -> bool {

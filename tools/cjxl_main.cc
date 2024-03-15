@@ -623,8 +623,7 @@ void ProcessFlag(
   std::string error = flag_check(flag_value);
   if (!error.empty()) {
     std::cerr << "Invalid flag value for --" << flag_name << ": " << error
-              << "\n"
-              << std::flush;
+              << std::endl;
     exit(EXIT_FAILURE);
   }
   params->options.emplace_back(
@@ -649,20 +648,19 @@ void SetDistanceFromFlags(CommandLineParser* cmdline, CompressArgs* args,
   bool quality_set = cmdline->GetOption(args->opt_quality_id)->matched();
   if ((distance_set && (args->distance != 0.0)) && args->lossless_jpeg) {
     std::cerr << "Must not set non-zero distance in combination with "
-                 "--lossless_jpeg=1, which is set by default.\n"
-              << std::flush;
+                 "--lossless_jpeg=1, which is set by default."
+              << std::endl;
     exit(EXIT_FAILURE);
   }
   if ((quality_set && (args->quality != 100)) && args->lossless_jpeg) {
     std::cerr << "Must not set quality below 100 in combination with "
-                 "--lossless_jpeg=1, which is set by default.\n"
-              << std::flush;
+                 "--lossless_jpeg=1, which is set by default"
+              << std::endl;
     exit(EXIT_FAILURE);
   }
   if (quality_set) {
     if (distance_set) {
-      std::cerr << "Must not set both --distance and --quality.\n"
-                << std::flush;
+      std::cerr << "Must not set both --distance and --quality." << std::endl;
       exit(EXIT_FAILURE);
     }
     args->distance = JxlEncoderDistanceFromQuality(args->quality);
@@ -703,14 +701,14 @@ void ProcessFlags(const jxl::extras::Codec codec,
       if (c == '1') {
         if (must_be_all_zeros) {
           std::cerr << "Invalid --frame_indexing. If the first character is "
-                       "'0', all must be '0'.\n"
-                    << std::flush;
+                       "'0', all must be '0'."
+                    << std::endl;
           exit(EXIT_FAILURE);
         }
       } else if (c != '0') {
         std::cerr << "Invalid --frame_indexing. Must match the pattern "
-                     "'^(0*|1[01]*)$'.\n"
-                  << std::flush;
+                     "'^(0*|1[01]*)$'."
+                  << std::endl;
         exit(EXIT_FAILURE);
       }
     }
@@ -768,8 +766,7 @@ void ProcessFlags(const jxl::extras::Codec codec,
   if (args->group_order != jxl::Override::kOn &&
       (args->center_x != -1 || args->center_y != -1)) {
     std::cerr << "Invalid flag combination. Setting --center_x or --center_y "
-              << "requires setting --group_order=1.\n"
-              << std::flush;
+              << "requires setting --group_order=1" << std::endl;
     exit(EXIT_FAILURE);
   }
   ProcessFlag("center_x", args->center_x,
@@ -898,8 +895,8 @@ void ProcessFlags(const jxl::extras::Codec codec,
 
   if (args->num_threads < -1) {
     std::cerr
-        << "Invalid flag value for --num_threads: must be -1, 0 or positive.\n"
-        << std::flush;
+        << "Invalid flag value for --num_threads: must be -1, 0 or positive."
+        << std::endl;
     exit(EXIT_FAILURE);
   }
   // JPEG specific options.
@@ -978,7 +975,7 @@ struct JxlOutputProcessor {
     output.clear();
   }
 
-  void Seek(uint64_t position) {  // NOLINT
+  void Seek(uint64_t position) {
     if (*outfile && fseek(*outfile, position, SEEK_SET) != 0) {
       JXL_WARNING("Failed to seek output.");
     }
@@ -1025,8 +1022,8 @@ int main(int argc, char** argv) {
 
   if (!args.file_out && !args.disable_output) {
     std::cerr
-        << "No output file specified and --disable_output flag not passed.\n"
-        << std::flush;
+        << "No output file specified and --disable_output flag not passed."
+        << std::endl;
     exit(EXIT_FAILURE);
   }
 
@@ -1049,8 +1046,8 @@ int main(int argc, char** argv) {
     auto dec = jxl::extras::ChunkedPNMDecoder::Init(args.file_in);
     if (!dec.ok()) {
       std::cerr << "Warning PPM/PGM streaming decoding failed, trying "
-                   "non-streaming mode.\n"
-                << std::flush;
+                   "non-streaming mode."
+                << std::endl;
     } else {
       pnm_dec = std::move(dec).value();
       JXL_RETURN_IF_ERROR(
@@ -1068,11 +1065,11 @@ int main(int argc, char** argv) {
     // pixel data.
     jpegxl::tools::FileWrapper f(args.file_in, "rb");
     if (!f) {
-      std::cerr << "Reading image data failed.\n" << std::flush;
+      std::cerr << "Reading image data failed." << std::endl;
       exit(EXIT_FAILURE);
     }
     if (!jpegxl::tools::ReadFile(f, &image_data)) {
-      std::cerr << "Reading image data failed.\n" << std::flush;
+      std::cerr << "Reading image data failed." << std::endl;
       exit(EXIT_FAILURE);
     }
     input_bytes = image_data.size();
@@ -1085,11 +1082,11 @@ int main(int argc, char** argv) {
           &codec);
 
       if (!status) {
-        std::cerr << "Getting pixel data failed.\n" << std::flush;
+        std::cerr << "Getting pixel data failed." << std::endl;
         exit(EXIT_FAILURE);
       }
       if (ppf.frames.empty()) {
-        std::cerr << "No frames on input file.\n" << std::flush;
+        std::cerr << "No frames on input file." << std::endl;
         exit(EXIT_FAILURE);
       }
       pixels = ppf.info.xsize * ppf.info.ysize;
@@ -1100,8 +1097,8 @@ int main(int argc, char** argv) {
     if (FROM_JXL_BOOL(args.lossless_jpeg) && jpegxl::tools::IsJPG(image_data)) {
       if (!cmdline.GetOption(args.opt_lossless_jpeg_id)->matched()) {
         std::cerr << "Note: Implicit-default for JPEG is lossless-transcoding. "
-                  << "To silence this message, set --lossless_jpeg=(1|0).\n"
-                  << std::flush;
+                  << "To silence this message, set --lossless_jpeg=(1|0)."
+                  << std::endl;
       }
       jpeg_bytes = &image_data;
       if (args.allow_jpeg_reconstruction) {
@@ -1114,8 +1111,8 @@ int main(int argc, char** argv) {
                   << "Cannot strip " << key
                   << " metadata, try setting --allow_jpeg_reconstruction=0. "
                      "Note that with that setting byte exact reconstruction "
-                     "of the JPEG file won't be possible.\n"
-                  << std::flush;
+                     "of the JPEG file won't be possible."
+                  << std::endl;
               exit(EXIT_FAILURE);
             }
           }
@@ -1199,7 +1196,7 @@ int main(int argc, char** argv) {
 
   if (!args.streaming_output && have_file_out && !args.disable_output) {
     if (!jpegxl::tools::WriteFile(args.file_out, compressed)) {
-      std::cerr << "Could not write jxl file.\n" << std::flush;
+      std::cerr << "Could not write jxl file." << std::endl;
       return EXIT_FAILURE;
     }
   }

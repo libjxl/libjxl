@@ -304,7 +304,7 @@ TEST(EncodeTest, CmsTest) {
   EXPECT_TRUE(cms_called);
 }
 
-TEST(EncodeTest, FrameSettingsTest) {
+TEST(EncodeTest, frame_settingsTest) {
   {
     JxlEncoderPtr enc = JxlEncoderMake(nullptr);
     EXPECT_NE(nullptr, enc.get());
@@ -838,20 +838,20 @@ TEST(EncodeTest, SingleFrameBoundedJXLCTest) {
   bool found_jxlc = false;
   bool found_jxlp = false;
   // The encoder is allowed to either emit a jxlc or one or more jxlp.
-  for (const auto& box : container.boxes) {
-    if (memcmp("jxlc", box.type, 4) == 0) {
+  for (size_t i = 0; i < container.boxes.size(); ++i) {
+    if (memcmp("jxlc", container.boxes[i].type, 4) == 0) {
       EXPECT_EQ(false, found_jxlc);  // Max 1 jxlc
       EXPECT_EQ(false, found_jxlp);  // Can't mix jxlc and jxlp
       found_jxlc = true;
     }
-    if (memcmp("jxlp", box.type, 4) == 0) {
+    if (memcmp("jxlp", container.boxes[i].type, 4) == 0) {
       EXPECT_EQ(false, found_jxlc);  // Can't mix jxlc and jxlp
       found_jxlp = true;
     }
     // The encoder shouldn't create an unbounded box in this case, with the
     // single frame it knows the full size in time, so can help make decoding
     // more efficient by giving the full box size of the final box.
-    EXPECT_EQ(true, box.data_size_given);
+    EXPECT_EQ(true, container.boxes[i].data_size_given);
   }
   EXPECT_EQ(true, found_jxlc || found_jxlp);
 }
@@ -940,7 +940,7 @@ TEST(EncodeTest, CodestreamLevelVerificationTest) {
   EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
 }
 
-JXL_TRANSCODE_JPEG_TEST(EncodeTest, JPEGReconstructionTest) {
+TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGReconstructionTest)) {
   const std::string jpeg_path = "jxl/flower/flower.png.im_q85_420.jpg";
   const std::vector<uint8_t> orig = jxl::test::ReadTestData(jpeg_path);
 
@@ -980,7 +980,7 @@ JXL_TRANSCODE_JPEG_TEST(EncodeTest, JPEGReconstructionTest) {
   EXPECT_EQ(0, memcmp(decoded_jpeg_bytes.data(), orig.data(), orig.size()));
 }
 
-JXL_TRANSCODE_JPEG_TEST(EncodeTest, ProgressiveJPEGReconstructionTest) {
+TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(ProgressiveJPEGReconstructionTest)) {
   const std::string jpeg_path = "jxl/flower/flower.png.im_q85_420.jpg";
   const std::vector<uint8_t> orig = jxl::test::ReadTestData(jpeg_path);
 
@@ -1345,7 +1345,7 @@ TEST(EncodeTest, CroppedFrameTest) {
 struct EncodeBoxTest : public testing::TestWithParam<std::tuple<bool, size_t>> {
 };
 
-JXL_BOXES_TEST_P(EncodeBoxTest, BoxTest) {
+TEST_P(EncodeBoxTest, JXL_BOXES_TEST(BoxTest)) {
   // Test with uncompressed boxes and with brob boxes
   bool compress_box = std::get<0>(GetParam());
   size_t xml_box_size = std::get<1>(GetParam());
@@ -1485,7 +1485,7 @@ JXL_GTEST_INSTANTIATE_TEST_SUITE_P(
                                      jxl::kLargeBoxContentSizeThreshold + 77)),
     nameBoxTest);
 
-JXL_TRANSCODE_JPEG_TEST(EncodeTest, JPEGFrameTest) {
+TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGFrameTest)) {
   TEST_LIBJPEG_SUPPORT();
   for (int skip_basic_info = 0; skip_basic_info < 2; skip_basic_info++) {
     for (int skip_color_encoding = 0; skip_color_encoding < 2;

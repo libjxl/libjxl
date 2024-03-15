@@ -43,7 +43,7 @@ int main(int argc, const char** argv) {
   JXL_ASSIGN_OR_RETURN(Image3F image, Image3F::Create(N * N, N));
   const float scale = 1.0 / (N - 1);
   JXL_CHECK(jxl::RunOnPool(
-      pool.get(), 0, N, jxl::ThreadPool::NoInit,
+      &pool, 0, N, jxl::ThreadPool::NoInit,
       [&](const uint32_t y, size_t /* thread */) {
         const float g = y * scale;
         float* const JXL_RESTRICT rows[3] = {
@@ -61,8 +61,8 @@ int main(int argc, const char** argv) {
   JxlPixelFormat format = {3, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
   jxl::extras::PackedPixelFile ppf =
       jxl::extras::ConvertImage3FToPackedPixelFile(
-          image, jxl::ColorEncoding::SRGB(), format, pool.get());
+          image, jxl::ColorEncoding::SRGB(), format, &pool);
   std::vector<uint8_t> encoded;
-  JXL_CHECK(jxl::Encode(ppf, output_filename, &encoded, pool.get()));
+  JXL_CHECK(jxl::Encode(ppf, output_filename, &encoded, &pool));
   JXL_CHECK(jpegxl::tools::WriteFile(output_filename, encoded));
 }

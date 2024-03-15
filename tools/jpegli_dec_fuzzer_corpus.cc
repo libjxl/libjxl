@@ -142,7 +142,7 @@ static_assert(sizeof(ImageSpec) % 4 == 0, "Add padding to ImageSpec.");
 bool EncodeWithJpegli(const ImageSpec& spec, const std::vector<uint8_t>& pixels,
                       std::vector<uint8_t>* compressed) {
   uint8_t* buffer = nullptr;
-  unsigned long buffer_size = 0;  // NOLINT
+  unsigned long buffer_size = 0;
   jpeg_compress_struct cinfo;
   const auto try_catch_block = [&]() -> bool {
     jpeg_error_mgr jerr;
@@ -218,8 +218,7 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
 
   if (!quiet) {
     std::unique_lock<std::mutex> lock(stderr_mutex);
-    std::cerr << "Generating " << spec << " as " << hash_str << "\n"
-              << std::flush;
+    std::cerr << "Generating " << spec << " as " << hash_str << std::endl;
   }
 
   uint8_t hash[16];
@@ -244,8 +243,7 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
   if (!quiet) {
     std::unique_lock<std::mutex> lock(stderr_mutex);
     std::cerr << "Stored " << output_fn << " size: " << compressed.size()
-              << "\n"
-              << std::flush;
+              << std::endl;
   }
 
   return true;
@@ -338,7 +336,7 @@ int main(int argc, const char** argv) {
                 spec.seed = mt() % 777777;
                 if (!spec.Validate()) {
                   if (!quiet) {
-                    std::cerr << "Skipping " << spec << "\n" << std::flush;
+                    std::cerr << "Skipping " << spec << std::endl;
                   }
                 } else {
                   specs.push_back(spec);
@@ -357,11 +355,11 @@ int main(int argc, const char** argv) {
     const ImageSpec& spec = specs[task];
     GenerateFile(dest_dir, spec, regenerate, quiet);
   };
-  if (!RunOnPool(pool.get(), 0, specs.size(), jxl::ThreadPool::NoInit, generate,
+  if (!RunOnPool(&pool, 0, specs.size(), jxl::ThreadPool::NoInit, generate,
                  "FuzzerCorpus")) {
-    std::cerr << "Error generating fuzzer corpus\n" << std::flush;
+    std::cerr << "Error generating fuzzer corpus" << std::endl;
     return 1;
   }
-  std::cerr << "Finished generating fuzzer corpus\n" << std::flush;
+  std::cerr << "Finished generating fuzzer corpus" << std::endl;
   return 0;
 }

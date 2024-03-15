@@ -35,7 +35,8 @@ class ThreadPoolInternal {
 
   ThreadPoolInternal(const ThreadPoolInternal&) = delete;
   ThreadPoolInternal& operator&(const ThreadPoolInternal&) = delete;
-  ThreadPool* get() { return pool_.get(); }
+  // TODO(eustas): avoid unary `&` overload?
+  ThreadPool* operator&() { return pool_.get(); }
 
  private:
   JxlThreadParallelRunnerPtr runner_;
