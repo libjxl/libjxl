@@ -332,6 +332,11 @@ foreach(BINARY IN LISTS TOOL_BINARIES)
     endif()
     set_target_properties(${BINARY} PROPERTIES LINK_FLAGS "${JXL_WASM_TOOLS_LINK_FLAGS}")
   endif()
+
+  # Attach manifest that tells Windows to use UTF8 for eg. fopen
+  if(MSVC)
+    target_sources(${BINARY} PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../cmake/windows_utf8.manifest"
+  endif()
 endforeach()
 
 install(TARGETS ${TOOL_BINARIES} RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
