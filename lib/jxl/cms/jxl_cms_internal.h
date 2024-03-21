@@ -405,7 +405,7 @@ static Status WriteICCS15Fixed16(float value, size_t pos,
   // Even the first value works well,...
   bool ok = (-32767.995f <= value) && (value <= 32767.995f);
   if (!ok) return JXL_FAILURE("ICC value is out of range / NaN");
-  int32_t i = value * 65536.0f + 0.5f;
+  int32_t i = static_cast<int32_t>(std::lround(value * 65536.0f));
   // Use two's complement
   uint32_t u = static_cast<uint32_t>(i);
   WriteICCUint32(u, pos, icc);
