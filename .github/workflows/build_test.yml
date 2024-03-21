@@ -271,6 +271,11 @@ jobs:
         SKIP_TEST: 1
         CMAKE_CXX_FLAGS: ${{ matrix.cxxflags }}
 
+    - name: Setup tmate session
+      if: failure()
+      uses: mxschmitt/action-tmate@a283f9441d2d96eb62436dc46d7014f5d357ac22 # v3.17
+      timeout-minutes: 15  
+
     - name: Build stats
       if: env.WILL_BUILD == 'true'
       run: |
