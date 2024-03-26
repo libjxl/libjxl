@@ -156,18 +156,16 @@ struct DecompressArgs {
                            "No output file will be written (for benchmarking)",
                            &disable_output, &SetBooleanTrue, 2);
 
-    cmdline->AddOptionFlag(
-        '\0', "output_extra_channels",
-        "If set, all extra channels will be written either "
-        "as part of the main output file (e.g. alpha "
-        "channel in png) or as separate output files with "
-        "suffix -ecN in their names. If not set, the "
-        "(first) alpha channel will only be written when "
-        "the output format supports alpha channels and all "
-        "other extra channels won't be decoded. Files are "
-        "concatenated when outputting to stdout. Only has an effect when "
-        "decoding to (A)PNG or PPM/PNM/PFM/PAM",
-        &output_extra_channels, &SetBooleanTrue, 2);
+    cmdline->AddOptionFlag('\0', "output_extra_channels",
+                           "If set, all extra channels will be written either "
+                           "as part of the main output file (e.g. alpha "
+                           "channel in png) or as separate output files with "
+                           "suffix -ecN in their names. If not set, the "
+                           "(first) alpha channel will only be written when "
+                           "the output format supports alpha channels and all "
+                           "other extra channels won't be decoded. Files are "
+                           "concatenated when outputting to stdout.",
+                           &output_extra_channels, &SetBooleanTrue, 2);
 
     cmdline->AddOptionFlag(
         '\0', "output_frames",
@@ -228,7 +226,7 @@ struct DecompressArgs {
 
   // Validate the passed arguments, checking whether all passed options are
   // compatible. Returns whether the validation was successful.
-  bool ValidateArgs(const CommandLineParser& cmdline) const {
+  bool ValidateArgs(const CommandLineParser& cmdline) {
     if (file_in == nullptr) {
       fprintf(stderr, "Missing INPUT filename.\n");
       return false;
@@ -459,8 +457,8 @@ int main(int argc, const char* argv[]) {
 
   if (!args.file_out && !args.disable_output) {
     std::cerr
-        << "No output file specified and --disable_output flag not passed.\n"
-        << std::flush;
+        << "No output file specified and --disable_output flag not passed."
+        << std::endl;
     return EXIT_FAILURE;
   }
 

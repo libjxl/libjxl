@@ -69,7 +69,7 @@ class TF_HLG : TF_HLG_Base {
 
 class TF_709 {
  public:
-  static JXL_INLINE double EncodedFromDisplay(const double d) {
+  JXL_INLINE double EncodedFromDisplay(const double d) const {
     if (d < kThresh) return kMulLow * d;
     return kMulHi * std::pow(d, kPowHi) + kSub;
   }

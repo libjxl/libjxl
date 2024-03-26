@@ -87,14 +87,14 @@ int main(int argc, const char** argv) {
 
   jxl::CodecInOut image;
   JXL_CHECK(
-      jxl::extras::ConvertPackedPixelFileToCodecInOut(ppf, pool.get(), &image));
+      jxl::extras::ConvertPackedPixelFileToCodecInOut(ppf, &pool, &image));
   image.metadata.m.bit_depth.exponent_bits_per_sample = 0;
   jxl::ColorEncoding linear_rec_2020 = image.Main().c_current();
   JXL_CHECK(linear_rec_2020.SetPrimariesType(jxl::Primaries::k2100));
   linear_rec_2020.Tf().SetTransferFunction(jxl::TransferFunction::kLinear);
   JXL_CHECK(linear_rec_2020.CreateICC());
   JXL_CHECK(
-      jpegxl::tools::TransformCodecInOutTo(image, linear_rec_2020, pool.get()));
+      jpegxl::tools::TransformCodecInOutTo(image, linear_rec_2020, &pool));
 
   jxl::Matrix3x3 primaries_xyz;
   const jxl::PrimariesCIExy p = image.Main().c_current().GetPrimaries();
@@ -158,16 +158,15 @@ int main(int argc, const char** argv) {
   jxl::ScaleImage(1.f / max_value, image.Main().color());
 
   if (needs_gamut_mapping) {
-    JXL_CHECK(jxl::GamutMap(&image, 0.f, pool.get()));
+    JXL_CHECK(jxl::GamutMap(&image, 0.f, &pool));
   }
 
   jxl::ColorEncoding pq = image.Main().c_current();
   pq.Tf().SetTransferFunction(jxl::TransferFunction::kPQ);
   JXL_CHECK(pq.CreateICC());
-  JXL_CHECK(jpegxl::tools::TransformCodecInOutTo(image, pq, pool.get()));
+  JXL_CHECK(jpegxl::tools::TransformCodecInOutTo(image, pq, &pool));
   image.metadata.m.color_encoding = pq;
   std::vector<uint8_t> encoded;
-  JXL_CHECK(
-      jpegxl::tools::Encode(image, output_filename, &encoded, pool.get()));
+  JXL_CHECK(jpegxl::tools::Encode(image, output_filename, &encoded, &pool));
   JXL_CHECK(jpegxl::tools::WriteFile(output_filename, encoded));
 }

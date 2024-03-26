@@ -288,7 +288,8 @@ TestImage& TestImage::SetAllBitDepths(uint32_t bits_per_sample,
     ppf_.info.alpha_bits = bits_per_sample;
     ppf_.info.alpha_exponent_bits = exponent_bits_per_sample;
   }
-  for (auto& ec : ppf_.extra_channels_info) {
+  for (size_t i = 0; i < ppf_.extra_channels_info.size(); ++i) {
+    extras::PackedExtraChannel& ec = ppf_.extra_channels_info[i];
     ec.ec_info.bits_per_sample = bits_per_sample;
     ec.ec_info.exponent_bits_per_sample = exponent_bits_per_sample;
   }

@@ -253,7 +253,7 @@ class WebPCodec : public ImageCodec {
   }
   Status CompressInternal(const std::vector<uint8_t>& srgb, size_t xsize,
                           size_t ysize, size_t num_chans, int quality,
-                          std::vector<uint8_t>* compressed) const {
+                          std::vector<uint8_t>* compressed) {
     compressed->clear();
     WebPConfig config;
     if (!WebPConfigInit(&config)) {

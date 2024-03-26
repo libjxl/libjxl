@@ -97,8 +97,7 @@ class SourceManager {
     return TRUE;
   }
 
-  static void skip_input_data(j_decompress_ptr cinfo,
-                              long num_bytes /* NOLINT */) {
+  static void skip_input_data(j_decompress_ptr cinfo, long num_bytes) {
     auto* src = reinterpret_cast<SourceManager*>(cinfo->src);
     if (num_bytes <= 0) {
       return;

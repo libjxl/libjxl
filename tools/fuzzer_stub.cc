@@ -18,7 +18,7 @@ void ProcessInput(const char* filename) {
   std::vector<char> contents((std::istreambuf_iterator<char>(ifs)),
                              std::istreambuf_iterator<char>());
   ifs.close();
-  std::cout << "Processing " << filename << "\n" std::flush;
+  std::cout << "Processing " << filename << std::endl;
   LLVMFuzzerTestOneInput(reinterpret_cast<uint8_t*>(contents.data()),
                          contents.size());
 }
