@@ -237,7 +237,7 @@ jobs:
         repo-token: ${{ secrets.GITHUB_TOKEN }}
 
 
-  windows_build:
+  windows_vcpkg_build:
     name: Windows Build (vcpkg / ${{ matrix.triplet }})
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
     runs-on: [windows-2022]
@@ -384,3 +384,90 @@ jobs:
       with:
         files: jxl-${{matrix.triplet}}.zip
         repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+  windows_cmake_build:
+    name: Windows CMake Build
+    runs-on: [windows-2022]
+    env:
+      CC: "clang"
+      CXX: "clang++"
+      PREFIX: "/c/Program\ Files"
+
+    steps:
+    - name: Harden Runner
+      uses: step-security/harden-runner@63c24ba6bd7ba022e95695ff85de572c04a18142 # v2.7.0
+      with:
+        egress-policy: audit
+
+    - name: Checkout the source
+      uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      with:
+        submodules: true
+
+    - name: Install packages
+      shell: 'bash'
+      run: |
+        choco install ninja pkgconfiglite
+
+    - name: Build zlib
+      shell: 'bash'
+      run: |
+        cd third_party/zlib
+        cmake \
+          -DCMAKE_BUILD_TYPE=Release \
+          -B build \
+          -G Ninja \
+          -DCMAKE_INSTALL_PREFIX="${PREFIX}/zlib"
+        cmake --build build
+        cmake --install build --prefix "${PREFIX}/zlib"
+
+    - name: Build libpng
+      shell: 'bash'
+      run: |
+        cd third_party/libpng
+        cmake \
+          -DCMAKE_BUILD_TYPE=Release \
+          -B build \
+          -G Ninja \
+          -DCMAKE_INSTALL_PREFIX="${PREFIX}/libpng" \
+          -DZLIB_ROOT="${PREFIX}/zlib" \
+          -DZLIB_USE_STATIC_LIBS=ON
+        cmake --build build
+        cmake --install build --prefix "${PREFIX}/libpng"
+
+    - name: Build gtest
+      shell: 'bash'
+      run: |
+        cd third_party/googletest
+        cmake \
+          -DCMAKE_BUILD_TYPE=Release \
+          -B build \
+          -G Ninja \
+          -DCMAKE_INSTALL_PREFIX="${PREFIX}/gtest"
+        cmake --build build
+        cmake --install build --prefix "${PREFIX}/gtest"
+
+    - name: CMake configure
+      shell: 'bash'
+      run: |
+        cmake \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DJPEGXL_STATIC=ON \
+          -DJPEGXL_ENABLE_JNI=OFF \
+          -DJPEGXL_ENABLE_MANPAGES=OFF \
+          -DJPEGXL_FORCE_SYSTEM_GTEST=ON \
+          -B build \
+          -DZLIB_USE_STATIC_LIBS=ON \
+          -DZLIB_ROOT="${PREFIX}/zlib" \
+          -G Ninja
+        # --trace --debug-output
+        # -DPNG_ROOT="${PREFIX}/libpng" \
+        # -DCMAKE_PREFIX_PATH="${PREFIX}/libpng":"${PREFIX}/gtest"
+
+    - name: CMake build
+      run: cmake --build build
+
+    - name: Setup tmate session
+      if: false
+      uses: mxschmitt/action-tmate@a283f9441d2d96eb62436dc46d7014f5d357ac22 # v3.17
+      timeout-minutes: 15

@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+cmake_policy(SET CMP0074 NEW)
+
 if((SANITIZER STREQUAL "asan") OR (SANITIZER STREQUAL "msan"))
   set(BUILD_TESTING OFF)
 endif()
@@ -154,7 +156,7 @@ elseif (JPEGXL_BUNDLE_LIBPNG)
                    ${PROJECT_BINARY_DIR}/LICENSE.libpng COPYONLY)
   endif()
 else()
-  find_package(PNG)
+  find_package(PNG REQUIRED)
   if(PNG_FOUND AND JPEGXL_DEP_LICENSE_DIR)
     configure_file("${JPEGXL_DEP_LICENSE_DIR}/zlib1g-dev/copyright"
                    ${PROJECT_BINARY_DIR}/LICENSE.zlib COPYONLY)
