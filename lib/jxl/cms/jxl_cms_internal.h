@@ -849,6 +849,20 @@ static std::string ToString(JxlRenderingIntent rendering_intent) {
 }
 
 static std::string ColorEncodingDescriptionImpl(const JxlColorEncoding& c) {
+  if (c.color_space == JXL_COLOR_SPACE_RGB &&
+      c.white_point == JXL_WHITE_POINT_D65) {
+    if (c.rendering_intent == JXL_RENDERING_INTENT_PERCEPTUAL &&
+        c.transfer_function == JXL_TRANSFER_FUNCTION_SRGB) {
+      if (c.primaries == JXL_PRIMARIES_SRGB) return "sRGB";
+      if (c.primaries == JXL_PRIMARIES_P3) return "DisplayP3";
+    }
+    if (c.rendering_intent == JXL_RENDERING_INTENT_RELATIVE &&
+        c.primaries == JXL_PRIMARIES_2100) {
+      if (c.transfer_function == JXL_TRANSFER_FUNCTION_PQ) return "Rec2100PQ";
+      if (c.transfer_function == JXL_TRANSFER_FUNCTION_HLG) return "Rec2100HLG";
+    }
+  }
+
   std::string d = ToString(c.color_space);
 
   bool explicit_wp_tf = (c.color_space != JXL_COLOR_SPACE_XYB);
