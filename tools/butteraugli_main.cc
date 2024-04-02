@@ -173,5 +173,5 @@ int main(int argc, char** argv) {
 
   Status result = RunButteraugli(argv[1], argv[2], distmap, raw_distmap,
                                  colorspace, p, intensity_target);
-  return result ? 1 : 0;
+  return result ? EXIT_SUCCESS : EXIT_FAILURE;
 }
