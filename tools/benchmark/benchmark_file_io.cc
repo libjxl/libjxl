@@ -8,6 +8,10 @@
 #include <sys/stat.h>
 
 #include <cstdio>
+#include <cstring>
+#include <string>
+
+#include "lib/jxl/base/status.h"
 
 #if defined(_WIN32) || defined(_WIN64)
 #include "third_party/dirent.h"

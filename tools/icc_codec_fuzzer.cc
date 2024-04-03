@@ -3,7 +3,19 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+
 #include "lib/jxl/enc_icc_codec.h"
+
+#ifdef JXL_ICC_FUZZER_SLOW_TEST
+#include "lib/jxl/base/span.h"
+#include "lib/jxl/dec_bit_reader.h"
+#endif
+
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/padded_bytes.h"
 
 namespace jxl {
 Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result);

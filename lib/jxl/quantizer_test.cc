@@ -5,8 +5,13 @@
 
 #include "lib/jxl/quantizer.h"
 
+#include <cstddef>
+#include <cstdint>
+
 #include "lib/jxl/dec_bit_reader.h"
+#include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_fields.h"
+#include "lib/jxl/image.h"
 #include "lib/jxl/image_test_utils.h"
 #include "lib/jxl/testing.h"
 

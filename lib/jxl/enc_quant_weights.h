@@ -8,6 +8,7 @@
 
 #include <cstddef>
 
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/quant_weights.h"
 
 namespace jxl {

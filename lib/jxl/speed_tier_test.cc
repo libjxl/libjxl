@@ -15,7 +15,6 @@
 
 #include "lib/extras/dec/jxl.h"
 #include "lib/extras/enc/jxl.h"
-#include "lib/jxl/enc_params.h"
 #include "lib/jxl/test_image.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"
