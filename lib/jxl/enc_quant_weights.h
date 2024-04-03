@@ -7,6 +7,7 @@
 #define LIB_JXL_ENC_QUANT_WEIGHTS_H_
 
 #include <cstddef>
+#include <vector>
 
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/quant_weights.h"

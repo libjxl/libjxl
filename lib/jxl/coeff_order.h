@@ -6,8 +6,9 @@
 #ifndef LIB_JXL_COEFF_ORDER_H_
 #define LIB_JXL_COEFF_ORDER_H_
 
-#include <stddef.h>
-#include <stdint.h>
+#include <array>
+#include <cstddef>
+#include <cstdint>
 
 #include "lib/jxl/ac_strategy.h"
 #include "lib/jxl/base/compiler_specific.h"

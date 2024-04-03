@@ -6,6 +6,8 @@
 #include "lib/jxl/enc_optimize.h"
 
 #include <cmath>
+#include <cstddef>
+#include <vector>
 
 #include "lib/jxl/testing.h"
 

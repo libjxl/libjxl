@@ -7,6 +7,7 @@
 #define LIB_JXL_RENDER_PIPELINE_STAGE_WRITE_H_
 
 #include <cstddef>
+#include <memory>
 #include <vector>
 
 #include "lib/jxl/dec_cache.h"

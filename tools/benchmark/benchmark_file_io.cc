@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <vector>
 
 #include "lib/jxl/base/status.h"
 

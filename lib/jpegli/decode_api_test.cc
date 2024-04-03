@@ -8,7 +8,12 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <ostream>
+#include <sstream>
+#include <string>
+#include <utility>
 #include <vector>
 
 #include "lib/jpegli/decode.h"
@@ -17,6 +22,7 @@
 #include "lib/jpegli/test_params.h"
 #include "lib/jpegli/test_utils.h"
 #include "lib/jpegli/testing.h"
+#include "lib/jpegli/types.h"
 #include "lib/jxl/base/status.h"
 
 namespace jpegli {

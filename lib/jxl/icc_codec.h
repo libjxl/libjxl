@@ -10,6 +10,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_ans.h"
