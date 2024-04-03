@@ -5,10 +5,10 @@
 
 #include "lib/jpegli/decode.h"
 #include "lib/jpegli/encode.h"
-#include "lib/jpegli/error.h"
+#include "lib/jpegli/libjpeg_test_util.h"
 #include "lib/jpegli/test_utils.h"
 #include "lib/jpegli/testing.h"
-#include "lib/jxl/sanitizers.h"
+#include "lib/jxl/base/status.h"
 
 namespace jpegli {
 namespace {

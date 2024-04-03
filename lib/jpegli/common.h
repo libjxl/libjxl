@@ -25,8 +25,6 @@
 #include <jpeglib.h>
 /* clang-format on */
 
-#include "lib/jpegli/types.h"
-
 #if defined(__cplusplus) || defined(c_plusplus)
 extern "C" {
 #endif

@@ -7,6 +7,8 @@
 #define LIB_JXL_ENC_AC_STRATEGY_H_
 
 #include <cstddef>
+#include <cstdint>
+#include <hwy/aligned_allocator.h>
 
 #include "lib/jxl/ac_strategy.h"
 #include "lib/jxl/base/compiler_specific.h"

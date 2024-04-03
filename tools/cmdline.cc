@@ -5,6 +5,7 @@
 
 #include "tools/cmdline.h"
 
+#include <cstdarg>
 #include <memory>
 #include <string>
 

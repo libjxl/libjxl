@@ -9,7 +9,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -19,9 +18,8 @@
 #include <setjmp.h>
 /* clang-format on */
 
-#include "lib/jpegli/common.h"
-#include "lib/jpegli/libjpeg_test_util.h"
 #include "lib/jpegli/test_params.h"
+#include "lib/jpegli/types.h"
 
 namespace jpegli {
 

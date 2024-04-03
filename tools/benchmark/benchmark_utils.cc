@@ -7,6 +7,11 @@
 
 #include "tools/benchmark/benchmark_utils.h"
 
+#include <string>
+#include <vector>
+
+#include "lib/jxl/base/status.h"
+
 // Not supported on Windows due to Linux-specific functions.
 // Not supported in Android NDK before API 28.
 #if !defined(_WIN32) && !defined(__EMSCRIPTEN__) && \
@@ -14,15 +19,13 @@
 
 #include <libgen.h>
 #include <spawn.h>
-#include <stdio.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
-#include <fstream>
-
-#include "lib/jxl/image_bundle.h"
-#include "tools/file_io.h"
+#include <cstdio>
+#include <cstdlib>
+#include <utility>
 
 extern char** environ;  // NOLINT
 

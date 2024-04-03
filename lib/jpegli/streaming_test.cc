@@ -3,6 +3,12 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <vector>
+
 #include "lib/jpegli/decode.h"
 #include "lib/jpegli/encode.h"
 #include "lib/jpegli/test_utils.h"
