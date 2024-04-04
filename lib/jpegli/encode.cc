@@ -283,14 +283,14 @@ void ProcessCompressionParams(j_compress_ptr cinfo) {
       JPEGLI_ERROR("Invalid sampling factor %d x %d", comp->h_samp_factor,
                    comp->v_samp_factor);
     }
+    if (cinfo->num_components == 1) {
+      // Force samp factors to 1x1 for single-component images.
+      comp->h_samp_factor = comp->v_samp_factor = 1;
+    }
     cinfo->max_h_samp_factor =
         std::max(comp->h_samp_factor, cinfo->max_h_samp_factor);
     cinfo->max_v_samp_factor =
         std::max(comp->v_samp_factor, cinfo->max_v_samp_factor);
-  }
-  if (cinfo->num_components == 1 &&
-      (cinfo->max_h_samp_factor != 1 || cinfo->max_v_samp_factor != 1)) {
-    JPEGLI_ERROR("Sampling is not supported for simgle component image.");
   }
   size_t iMCU_width = DCTSIZE * cinfo->max_h_samp_factor;
   size_t iMCU_height = DCTSIZE * cinfo->max_v_samp_factor;
