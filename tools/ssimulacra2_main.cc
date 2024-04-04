@@ -10,10 +10,9 @@
 #include <vector>
 
 #include "lib/extras/codec.h"
+#include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/codec_in_out.h"
-// TODO(eustas): we should, but we can't?
-// #include "lib/jxl/base/span.h"
 #include "tools/file_io.h"
 #include "tools/ssimulacra2.h"
 
