@@ -6,6 +6,8 @@
 #include "tools/cmdline.h"
 
 #include <cstdarg>
+#include <cstdio>
+#include <cstring>
 #include <memory>
 #include <string>
 

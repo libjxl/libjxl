@@ -6,6 +6,7 @@
 #ifndef LIB_JXL_RENDER_PIPELINE_RENDER_PIPELINE_H_
 #define LIB_JXL_RENDER_PIPELINE_RENDER_PIPELINE_H_
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -13,6 +14,7 @@
 #include <vector>
 
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/frame_dimensions.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/render_pipeline/render_pipeline_stage.h"
 
