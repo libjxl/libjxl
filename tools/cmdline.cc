@@ -5,6 +5,7 @@
 
 #include "tools/cmdline.h"
 
+#include <algorithm>
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>

@@ -6,15 +6,15 @@
 #ifndef TOOLS_FILE_IO_H_
 #define TOOLS_FILE_IO_H_
 
-#include <errno.h>
-#include <limits.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <string.h>
 #include <sys/stat.h>
 
+#include <cerrno>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
 #include <list>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "lib/jxl/base/compiler_specific.h"
