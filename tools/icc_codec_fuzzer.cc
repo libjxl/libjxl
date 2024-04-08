@@ -16,14 +16,14 @@
 
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/padded_bytes.h"
+#include "lib/jxl/test_utils.h"
 
 namespace jxl {
 Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result);
 Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result);
 }  // namespace jxl
 
-namespace jpegxl {
-namespace tools {
+namespace {
 
 using ::jxl::PaddedBytes;
 
@@ -32,7 +32,7 @@ using ::jxl::BitReader;
 using ::jxl::Span;
 #endif
 
-int TestOneInput(const uint8_t* data, size_t size) {
+int DoTestOneInput(const uint8_t* data, size_t size) {
 #if defined(JXL_ICC_FUZZER_ONLY_WRITE)
   bool read = false;
 #elif defined(JXL_ICC_FUZZER_ONLY_READ)
@@ -84,9 +84,14 @@ int TestOneInput(const uint8_t* data, size_t size) {
   return 0;
 }
 
-}  // namespace tools
-}  // namespace jpegxl
+}  // namespace
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
-  return jpegxl::tools::TestOneInput(data, size);
+  return DoTestOneInput(data, size);
 }
+
+void TestOneInput(const std::vector<uint8_t>& data) {
+  DoTestOneInput(data.data(), data.size());
+}
+
+FUZZ_TEST(IccCodecFuzzTest, TestOneInput);

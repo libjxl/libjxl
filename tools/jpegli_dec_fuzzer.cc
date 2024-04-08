@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "lib/jpegli/decode.h"
+#include "lib/jpegli/test_utils.h"
 
 namespace {
 
@@ -167,7 +168,7 @@ bool DecodeJpeg(const uint8_t* data, size_t size, size_t max_pixels,
   return success;
 }
 
-int TestOneInput(const uint8_t* data, size_t size) {
+int DoTestOneInput(const uint8_t* data, size_t size) {
   if (size < 4) return 0;
   uint32_t flags = 0;
   size_t used_flag_bits = 0;
@@ -210,5 +211,11 @@ int TestOneInput(const uint8_t* data, size_t size) {
 }  // namespace
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
-  return TestOneInput(data, size);
+  return DoTestOneInput(data, size);
 }
+
+void TestOneInput(const std::vector<uint8_t>& data) {
+  DoTestOneInput(data.data(), data.size());
+}
+
+FUZZ_TEST(JpegliDecFuzzTest, TestOneInput);
