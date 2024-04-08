@@ -10,9 +10,9 @@
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/modular/encoding/encoding.h"
 #include "lib/jxl/modular/transform/transform.h"
+#include "lib/jxl/test_utils.h"
 
-namespace jpegxl {
-namespace tools {
+namespace {
 
 using ::jxl::BitReader;
 using ::jxl::BitReaderScopedCloser;
@@ -27,7 +27,6 @@ using ::jxl::Status;
 using ::jxl::Transform;
 using ::jxl::weighted::Header;
 
-namespace {
 void FillChannel(Channel& ch, Rng& rng) {
   auto* p = &ch.plane;
   const size_t w = ch.w;
@@ -43,9 +42,8 @@ template <typename T>
 void AssertEq(T a, T b) {
   if (a != b) __builtin_trap();
 }
-}  // namespace
 
-int TestOneInput(const uint8_t* data, size_t size) {
+int DoTestOneInput(const uint8_t* data, size_t size) {
   static Status nevermind = true;
   BitReader reader(Bytes(data, size));
   BitReaderScopedCloser reader_closer(&reader, &nevermind);
@@ -159,9 +157,14 @@ int TestOneInput(const uint8_t* data, size_t size) {
   return 0;
 }
 
-}  // namespace tools
-}  // namespace jpegxl
+}  // namespace
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
-  return jpegxl::tools::TestOneInput(data, size);
+  return DoTestOneInput(data, size);
 }
+
+void TestOneInput(const std::vector<uint8_t>& data) {
+  DoTestOneInput(data.data(), data.size());
+}
+
+FUZZ_TEST(TransformsFuzzTest, TestOneInput);

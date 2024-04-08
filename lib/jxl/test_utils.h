@@ -210,4 +210,15 @@ bool operator!=(const jxl::Bytes& a, const jxl::Bytes& b);
 
 }  // namespace jxl
 
+#if !defined(FUZZ_TEST)
+struct FuzzTestSink {
+  template <typename F>
+  FuzzTestSink WithSeeds(F) {
+    return *this;
+  }
+};
+#define FUZZ_TEST(A, B) \
+  const JXL_MAYBE_UNUSED FuzzTestSink unused##A##B = FuzzTestSink()
+#endif
+
 #endif  // LIB_JXL_TEST_UTILS_H_
