@@ -20,6 +20,7 @@ libjxl_base_sources = [
     "jxl/base/fast_math-inl.h",
     "jxl/base/float.h",
     "jxl/base/iaca.h",
+    "jxl/base/include_jpeglib.h",
     "jxl/base/matrix_ops.h",
     "jxl/base/os_macros.h",
     "jxl/base/override.h",

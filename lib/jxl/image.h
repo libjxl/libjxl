@@ -10,7 +10,7 @@
 
 #if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
     defined(THREAD_SANITIZER)
-#include <inttypes.h>
+#include <cinttypes>  // PRIu64
 #endif
 
 #include <stddef.h>

@@ -6,7 +6,7 @@
 #include "lib/jxl/splines.h"
 
 #include <algorithm>
-#include <cinttypes>
+#include <cinttypes>  // PRIu64
 #include <cmath>
 #include <limits>
 
