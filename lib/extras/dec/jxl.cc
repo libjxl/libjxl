@@ -10,7 +10,7 @@
 #include <jxl/decode_cxx.h>
 #include <jxl/types.h>
 
-#include <cinttypes>
+#include <cinttypes>  // PRIu32
 
 #include "lib/extras/common.h"
 #include "lib/extras/dec/color_description.h"

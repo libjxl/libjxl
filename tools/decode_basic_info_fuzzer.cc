@@ -5,6 +5,7 @@
 
 #include <jxl/decode.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 

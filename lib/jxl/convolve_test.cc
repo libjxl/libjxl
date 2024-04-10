@@ -8,6 +8,8 @@
 #include <jxl/types.h>
 #include <time.h>
 
+#include <cinttypes>  // PRIx64
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/convolve_test.cc"
 #include <hwy/foreach_target.h>
