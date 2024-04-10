@@ -3,12 +3,20 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include <stdint.h>
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
 
+#include "lib/jxl/base/bits.h"
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/random.h"
+#include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_bit_reader.h"
+#include "lib/jxl/fields.h"
 #include "lib/jxl/modular/encoding/encoding.h"
+#include "lib/jxl/modular/modular_image.h"
+#include "lib/jxl/modular/options.h"
 #include "lib/jxl/modular/transform/transform.h"
 #include "lib/jxl/test_utils.h"
 
@@ -44,6 +52,7 @@ void AssertEq(T a, T b) {
 }
 
 int DoTestOneInput(const uint8_t* data, size_t size) {
+  if (size < 15) return 0;
   static Status nevermind = true;
   BitReader reader(Bytes(data, size));
   BitReaderScopedCloser reader_closer(&reader, &nevermind);

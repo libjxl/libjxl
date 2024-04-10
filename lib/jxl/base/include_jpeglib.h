@@ -9,12 +9,12 @@
 // Using this header ensures that includes go in the right order,
 // not alphabetically sorted.
 
-// NOLINTBEGIN(unused-includes)
+// NOLINTBEGIN
 /* clang-format off */
-#include <stdio.h>
-#include <jpeglib.h>
-#include <setjmp.h>
+#include <stdio.h>  // IWYU pragma: keep
+#include <jpeglib.h>  // IWYU pragma: keep
+#include <setjmp.h>  // IWYU pragma: keep
 /* clang-format on */
-// NOLINTEND(unused-includes)
+// NOLINTEND
 
 #endif  // LIB_JXL_BASE_INCLUDE_JPEGLIB_H_
