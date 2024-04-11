@@ -4,15 +4,18 @@
 // license that can be found in the LICENSE file.
 
 #include <setjmp.h>
-#include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
 
+#include <algorithm>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <hwy/targets.h>
 #include <vector>
 
+#include "lib/jpegli/common.h"
 #include "lib/jpegli/decode.h"
 #include "lib/jpegli/test_utils.h"
+#include "lib/jpegli/types.h"
 
 namespace {
 
