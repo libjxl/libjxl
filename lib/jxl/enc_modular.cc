@@ -994,11 +994,14 @@ Status ModularFrameEncoder::ComputeEncodingData(
   }
   gi_channel_.resize(stream_images_.size());
 
+  for (size_t i = 1; i < stream_params_.size(); ++i) {
+    size_t stream = stream_params_[i].id.ID(frame_dim_);
+    stream_options_[stream] = stream_options_[0];
+  }
+
   JXL_RETURN_IF_ERROR(RunOnPool(
       pool, 0, stream_params_.size(), ThreadPool::NoInit,
       [&](const uint32_t i, size_t /* thread */) {
-        size_t stream = stream_params_[i].id.ID(frame_dim_);
-        stream_options_[stream] = stream_options_[0];
         JXL_CHECK(PrepareStreamParams(
             stream_params_[i].rect, cparams_, stream_params_[i].minShift,
             stream_params_[i].maxShift, stream_params_[i].id, do_color,
