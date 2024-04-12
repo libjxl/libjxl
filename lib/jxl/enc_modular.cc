@@ -997,8 +997,8 @@ Status ModularFrameEncoder::ComputeEncodingData(
   JXL_RETURN_IF_ERROR(RunOnPool(
       pool, 0, stream_params_.size(), ThreadPool::NoInit,
       [&](const uint32_t i, size_t /* thread */) {
-        if (i != 0) {
-          size_t stream = stream_params_[i].id.ID(frame_dim_);
+        size_t stream = stream_params_[i].id.ID(frame_dim_);
+        if (stream != 0) {
           stream_options_[stream] = stream_options_[0];
         }
         JXL_CHECK(PrepareStreamParams(
