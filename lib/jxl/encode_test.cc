@@ -1888,7 +1888,7 @@ TEST_P(EncoderStreamingTest, OutputCallback) {
                  p.color_includes_alpha(), p.is_lossless());
 
   std::vector<uint8_t> compressed = std::vector<uint8_t>(64);
-  // without sreaming
+  // without streaming
   {
     JxlEncoderPtr enc = JxlEncoderMake(nullptr);
     ASSERT_NE(nullptr, enc.get());
