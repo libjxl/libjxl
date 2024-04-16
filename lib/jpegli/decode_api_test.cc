@@ -904,7 +904,9 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
     all_tests.push_back(config);
   }
   // Tests for color transforms.
-  for (J_COLOR_SPACE out_color_space : {JCS_RGB, JCS_GRAYSCALE}) {
+  for (J_COLOR_SPACE out_color_space :
+       {JCS_RGB, JCS_GRAYSCALE, JCS_EXT_RGB, JCS_EXT_BGR, JCS_EXT_RGBA,
+        JCS_EXT_BGRA, JCS_EXT_ARGB, JCS_EXT_ABGR}) {
     TestConfig config;
     config.input.xsize = config.input.ysize = 256;
     config.input.color_space = JCS_GRAYSCALE;
@@ -913,7 +915,9 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
     all_tests.push_back(config);
   }
   for (J_COLOR_SPACE jpeg_color_space : {JCS_RGB, JCS_YCbCr}) {
-    for (J_COLOR_SPACE out_color_space : {JCS_RGB, JCS_YCbCr, JCS_GRAYSCALE}) {
+    for (J_COLOR_SPACE out_color_space :
+         {JCS_RGB, JCS_YCbCr, JCS_GRAYSCALE, JCS_EXT_RGB, JCS_EXT_BGR,
+          JCS_EXT_RGBA, JCS_EXT_BGRA, JCS_EXT_ARGB, JCS_EXT_ABGR}) {
       if (jpeg_color_space == JCS_RGB && out_color_space == JCS_YCbCr) continue;
       TestConfig config;
       config.input.xsize = config.input.ysize = 256;
