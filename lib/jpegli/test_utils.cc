@@ -171,6 +171,18 @@ std::string ColorSpaceName(J_COLOR_SPACE colorspace) {
       return "CMYK";
     case JCS_YCCK:
       return "YCCK";
+    case JCS_EXT_RGB:
+      return "EXT_RGB";
+    case JCS_EXT_BGR:
+      return "EXT_BGR";
+    case JCS_EXT_RGBA:
+      return "EXT_RGBA";
+    case JCS_EXT_BGRA:
+      return "EXT_BGRA";
+    case JCS_EXT_ARGB:
+      return "EXT_ARGB";
+    case JCS_EXT_ABGR:
+      return "EXT_ABGR";
     default:
       return "";
   }

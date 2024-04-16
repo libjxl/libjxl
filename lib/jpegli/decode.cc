@@ -723,16 +723,36 @@ void jpegli_calc_output_dimensions(j_decompress_ptr cinfo) {
       }
     }
   }
-  if (cinfo->out_color_space == JCS_GRAYSCALE) {
-    cinfo->out_color_components = 1;
-  } else if (cinfo->out_color_space == JCS_RGB ||
-             cinfo->out_color_space == JCS_YCbCr) {
-    cinfo->out_color_components = 3;
-  } else if (cinfo->out_color_space == JCS_CMYK ||
-             cinfo->out_color_space == JCS_YCCK) {
-    cinfo->out_color_components = 4;
-  } else {
-    cinfo->out_color_components = cinfo->num_components;
+  switch (cinfo->out_color_space) {
+    case JCS_GRAYSCALE:
+      cinfo->out_color_components = 1;
+      break;
+    case JCS_RGB:
+    case JCS_YCbCr:
+#ifdef JCS_EXTENSIONS
+    case JCS_EXT_RGB:
+    case JCS_EXT_BGR:
+#endif
+      cinfo->out_color_components = 3;
+      break;
+    case JCS_CMYK:
+    case JCS_YCCK:
+#ifdef JCS_EXTENSIONS
+    case JCS_EXT_RGBX:
+    case JCS_EXT_BGRX:
+    case JCS_EXT_XBGR:
+    case JCS_EXT_XRGB:
+#endif
+#ifdef JCS_ALPHA_EXTENSIONS
+    case JCS_EXT_RGBA:
+    case JCS_EXT_BGRA:
+    case JCS_EXT_ABGR:
+    case JCS_EXT_ARGB:
+#endif
+      cinfo->out_color_components = 4;
+      break;
+    default:
+      cinfo->out_color_components = cinfo->num_components;
   }
   cinfo->output_components =
       cinfo->quantize_colors ? 1 : cinfo->out_color_components;
