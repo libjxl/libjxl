@@ -99,11 +99,15 @@ void YCCKToCMYK(float* row[kMaxComponents], size_t xsize) {
   }
 }
 
-void RGBToYCbCr(float* row[kMaxComponents], size_t xsize) {
+template <int kRed, int kGreen, int kBlue>
+void ExtRGBToYCbCr(float* row[kMaxComponents], size_t xsize) {
   const HWY_CAPPED(float, 8) df;
-  float* JXL_RESTRICT row0 = row[0];
-  float* JXL_RESTRICT row1 = row[1];
-  float* JXL_RESTRICT row2 = row[2];
+  const float* row_r = row[kRed];
+  const float* row_g = row[kGreen];
+  const float* row_b = row[kBlue];
+  float* row_y = row[0];
+  float* row_cb = row[1];
+  float* row_cr = row[2];
   // Full-range BT.601 as defined by JFIF Clause 7:
   // https://www.itu.int/rec/T-REC-T.871-201105-I/en
   const auto c128 = Set(df, 128.0f);
@@ -118,9 +122,9 @@ void RGBToYCbCr(float* row[kMaxComponents], size_t xsize) {
   const auto kNormB = Div(Set(df, 1.0f), (Add(kR, Add(kG, kAmpB))));
 
   for (size_t x = 0; x < xsize; x += Lanes(df)) {
-    const auto r = Load(df, row0 + x);
-    const auto g = Load(df, row1 + x);
-    const auto b = Load(df, row2 + x);
+    const auto r = Load(df, row_r + x);
+    const auto g = Load(df, row_g + x);
+    const auto b = Load(df, row_b + x);
     const auto r_base = Mul(r, kR);
     const auto r_diff = Mul(r, kDiffR);
     const auto g_base = Mul(g, kG);
@@ -129,10 +133,26 @@ void RGBToYCbCr(float* row[kMaxComponents], size_t xsize) {
     const auto y_base = Add(r_base, Add(g_base, b_base));
     const auto cb_vec = MulAdd(Sub(b_diff, y_base), kNormB, c128);
     const auto cr_vec = MulAdd(Sub(r_diff, y_base), kNormR, c128);
-    Store(y_base, df, row0 + x);
-    Store(cb_vec, df, row1 + x);
-    Store(cr_vec, df, row2 + x);
+    Store(y_base, df, row_y + x);
+    Store(cb_vec, df, row_cb + x);
+    Store(cr_vec, df, row_cr + x);
   }
+}
+
+void RGBToYCbCr(float* row[kMaxComponents], size_t xsize) {
+  ExtRGBToYCbCr<0, 1, 2>(row, xsize);
+}
+
+void BGRToYCbCr(float* row[kMaxComponents], size_t xsize) {
+  ExtRGBToYCbCr<2, 1, 0>(row, xsize);
+}
+
+void ARGBToYCbCr(float* row[kMaxComponents], size_t xsize) {
+  ExtRGBToYCbCr<1, 2, 3>(row, xsize);
+}
+
+void ABGRToYCbCr(float* row[kMaxComponents], size_t xsize) {
+  ExtRGBToYCbCr<3, 2, 1>(row, xsize);
 }
 
 void CMYKToYCCK(float* row[kMaxComponents], size_t xsize) {
@@ -166,6 +186,9 @@ HWY_EXPORT(YCbCrToBGRA);
 HWY_EXPORT(YCbCrToARGB);
 HWY_EXPORT(YCbCrToABGR);
 HWY_EXPORT(RGBToYCbCr);
+HWY_EXPORT(BGRToYCbCr);
+HWY_EXPORT(ARGBToYCbCr);
+HWY_EXPORT(ABGRToYCbCr);
 
 bool CheckColorSpaceComponents(int num_components, J_COLOR_SPACE colorspace) {
   switch (colorspace) {
@@ -318,6 +341,43 @@ void ChooseColorTransform(j_compress_ptr cinfo) {
   } else if (cinfo->jpeg_color_space == JCS_YCCK) {
     if (cinfo->in_color_space == JCS_CMYK) {
       m->color_transform = HWY_DYNAMIC_DISPATCH(CMYKToYCCK);
+    }
+  }
+
+  if (cinfo->jpeg_color_space == JCS_GRAYSCALE ||
+      cinfo->jpeg_color_space == JCS_YCbCr) {
+    switch (cinfo->in_color_space) {
+#ifdef JCS_EXTENSIONS
+      case JCS_EXT_RGB:
+      case JCS_EXT_RGBX:
+        m->color_transform = HWY_DYNAMIC_DISPATCH(RGBToYCbCr);
+        break;
+      case JCS_EXT_BGR:
+      case JCS_EXT_BGRX:
+        m->color_transform = HWY_DYNAMIC_DISPATCH(BGRToYCbCr);
+        break;
+      case JCS_EXT_XRGB:
+        m->color_transform = HWY_DYNAMIC_DISPATCH(ARGBToYCbCr);
+        break;
+      case JCS_EXT_XBGR:
+        m->color_transform = HWY_DYNAMIC_DISPATCH(ABGRToYCbCr);
+        break;
+#endif
+#ifdef JCS_ALPHA_EXTENSIONS
+      case JCS_EXT_RGBA:
+        m->color_transform = HWY_DYNAMIC_DISPATCH(RGBToYCbCr);
+        break;
+      case JCS_EXT_BGRA:
+        m->color_transform = HWY_DYNAMIC_DISPATCH(BGRToYCbCr);
+        break;
+      case JCS_EXT_ARGB:
+        m->color_transform = HWY_DYNAMIC_DISPATCH(ARGBToYCbCr);
+        break;
+      case JCS_EXT_ABGR:
+        m->color_transform = HWY_DYNAMIC_DISPATCH(ABGRToYCbCr);
+        break;
+#endif
+      default:;  // Nothing to do.
     }
   }
 

@@ -713,18 +713,31 @@ void jpegli_set_defaults(j_compress_ptr cinfo) {
 
 void jpegli_default_colorspace(j_compress_ptr cinfo) {
   CheckState(cinfo, jpegli::kEncStart);
+  if (cinfo->in_color_space == JCS_RGB && cinfo->master->xyb_mode) {
+    jpegli_set_colorspace(cinfo, JCS_RGB);
+    return;
+  }
   switch (cinfo->in_color_space) {
     case JCS_GRAYSCALE:
       jpegli_set_colorspace(cinfo, JCS_GRAYSCALE);
       break;
-    case JCS_RGB: {
-      if (cinfo->master->xyb_mode) {
-        jpegli_set_colorspace(cinfo, JCS_RGB);
-      } else {
-        jpegli_set_colorspace(cinfo, JCS_YCbCr);
-      }
+    case JCS_RGB:
+#ifdef JCS_EXTENSIONS
+    case JCS_EXT_RGB:
+    case JCS_EXT_BGR:
+    case JCS_EXT_RGBX:
+    case JCS_EXT_BGRX:
+    case JCS_EXT_XRGB:
+    case JCS_EXT_XBGR:
+#endif
+#if JCS_ALPHA_EXTENSIONS
+    case JCS_EXT_RGBA:
+    case JCS_EXT_BGRA:
+    case JCS_EXT_ARGB:
+    case JCS_EXT_ABGR:
+#endif
+      jpegli_set_colorspace(cinfo, JCS_YCbCr);
       break;
-    }
     case JCS_YCbCr:
       jpegli_set_colorspace(cinfo, JCS_YCbCr);
       break;
