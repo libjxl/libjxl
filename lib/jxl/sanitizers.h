@@ -19,6 +19,7 @@
 #include <string>
 #include <vector>
 
+#include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
 #include "sanitizer/msan_interface.h"
 #endif

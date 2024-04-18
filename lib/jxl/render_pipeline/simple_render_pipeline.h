@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/render_pipeline/render_pipeline.h"

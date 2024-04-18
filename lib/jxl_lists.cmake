@@ -24,6 +24,7 @@ set(JPEGXL_INTERNAL_BASE_SOURCES
   jxl/base/printf_macros.h
   jxl/base/random.h
   jxl/base/rational_polynomial-inl.h
+  jxl/base/rect.h
   jxl/base/sanitizer_definitions.h
   jxl/base/scope_guard.h
   jxl/base/span.h

@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_group_border.h"
 #include "lib/jxl/frame_header.h"
