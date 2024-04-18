@@ -32,7 +32,7 @@ jobs:
       matrix:
         # We have one job per "name" in the matrix. Attributes are set on the
         # specific job names.
-        name: [release, debug, asan, msan, scalar]
+        name: [release, debug, asan, msan, tsan, scalar]
         include:
           - name: release
             mode: release
@@ -70,6 +70,8 @@ jobs:
             cc: clang-15
             cxx: clang++-15
           - name: asan
+            skip_install: true
+          - name: tsan
             skip_install: true
           - name: coverage
             env_test_stack_size: 2048
