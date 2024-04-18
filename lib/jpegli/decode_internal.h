@@ -59,6 +59,7 @@ struct jpeg_decomp_master {
   bool found_soi_;
   bool found_dri_;
   bool found_sof_;
+  bool found_sos_;
   bool found_eoi_;
 
   // Whether this jpeg has multiple scans (progressive or non-interleaved

@@ -54,6 +54,7 @@ void InitializeImage(j_decompress_ptr cinfo) {
   m->found_soi_ = false;
   m->found_dri_ = false;
   m->found_sof_ = false;
+  m->found_sos_ = false;
   m->found_eoi_ = false;
   m->icc_index_ = 0;
   m->icc_total_ = 0;
@@ -243,10 +244,14 @@ void PrepareForScan(j_decompress_ptr cinfo) {
   // Copy quantization tables into comp_info.
   for (int i = 0; i < cinfo->comps_in_scan; ++i) {
     jpeg_component_info* comp = cinfo->cur_comp_info[i];
+    int quant_tbl_idx = comp->quant_tbl_no;
+    JQUANT_TBL* quant_table = cinfo->quant_tbl_ptrs[quant_tbl_idx];
+    if (!quant_table) {
+      JPEGLI_ERROR("Quantization table with index %d not found", quant_tbl_idx);
+    }
     if (comp->quant_table == nullptr) {
       comp->quant_table = Allocate<JQUANT_TBL>(cinfo, 1, JPOOL_IMAGE);
-      memcpy(comp->quant_table, cinfo->quant_tbl_ptrs[comp->quant_tbl_no],
-             sizeof(JQUANT_TBL));
+      memcpy(comp->quant_table, quant_table, sizeof(JQUANT_TBL));
     }
   }
   if (cinfo->comps_in_scan == 1) {
