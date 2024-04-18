@@ -141,6 +141,7 @@ TEST_P(OutputSuspensionTestParam, RawData) {
     cinfo.input_components = input.components;
     cinfo.in_color_space = JCS_YCbCr;
     jpegli_set_defaults(&cinfo);
+    cinfo.comp_info[0].h_samp_factor = config.jparams.h_sampling[0];
     cinfo.comp_info[0].v_samp_factor = config.jparams.v_sampling[0];
     jpegli_set_progressive_level(&cinfo, 0);
     cinfo.optimize_coding = FALSE;
