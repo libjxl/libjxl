@@ -819,6 +819,11 @@ void jpegli_set_colorspace(j_compress_ptr cinfo, J_COLOR_SPACE colorspace) {
     cinfo->comp_info[2].quant_tbl_no = 1;
     cinfo->comp_info[1].dc_tbl_no = cinfo->comp_info[1].ac_tbl_no = 1;
     cinfo->comp_info[2].dc_tbl_no = cinfo->comp_info[2].ac_tbl_no = 1;
+    // Use chroma subsampling by default
+    cinfo->comp_info[0].h_samp_factor = cinfo->comp_info[0].v_samp_factor = 2;
+    if (colorspace == JCS_YCCK) {
+      cinfo->comp_info[3].h_samp_factor = cinfo->comp_info[3].v_samp_factor = 2;
+    }
   }
 }
 

@@ -1122,6 +1122,8 @@ std::vector<TestConfig> GenerateTests(bool buffered) {
       TestConfig config;
       config.input.xsize = xsize;
       config.input.ysize = ysize;
+      config.jparams.h_sampling = {1, 1, 1};
+      config.jparams.v_sampling = {1, 1, 1};
       all_tests.push_back(config);
     }
   }
