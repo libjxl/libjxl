@@ -4,8 +4,8 @@
 // license that can be found in the LICENSE file.
 
 #include <jxl/cms.h>
-#include <stddef.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <future>
 #include <string>
@@ -16,6 +16,7 @@
 #include "lib/extras/dec/jxl.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/override.h"
+#include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/image.h"

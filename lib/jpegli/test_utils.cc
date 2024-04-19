@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstdint>
 #include <fstream>
+#include <sstream>
 
 #include "lib/jpegli/decode.h"
 #include "lib/jpegli/encode.h"

@@ -14,6 +14,7 @@
 
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/random.h"
+#include "lib/jxl/base/rect.h"
 #include "lib/jxl/image.h"
 
 namespace jxl {

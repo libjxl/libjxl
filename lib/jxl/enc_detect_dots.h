@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/enc_patch_dictionary.h"
 #include "lib/jxl/image.h"

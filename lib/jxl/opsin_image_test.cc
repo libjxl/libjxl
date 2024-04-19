@@ -10,6 +10,7 @@
 
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/matrix_ops.h"
+#include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/cms/opsin_params.h"
 #include "lib/jxl/dec_xyb.h"

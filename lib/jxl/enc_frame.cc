@@ -5,13 +5,12 @@
 
 #include "lib/jxl/enc_frame.h"
 
-#include <stddef.h>
-#include <stdint.h>
-
 #include <algorithm>
 #include <array>
 #include <atomic>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <numeric>
 #include <utility>
@@ -25,6 +24,7 @@
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/printf_macros.h"
+#include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/chroma_from_luma.h"
 #include "lib/jxl/coeff_order.h"

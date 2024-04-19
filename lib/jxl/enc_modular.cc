@@ -5,11 +5,9 @@
 
 #include "lib/jxl/enc_modular.h"
 
-#include <stddef.h>
-#include <stdint.h>
-
 #include <array>
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <utility>
@@ -17,6 +15,7 @@
 
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/printf_macros.h"
+#include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/compressed_dc.h"
 #include "lib/jxl/dec_ans.h"
