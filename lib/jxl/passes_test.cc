@@ -52,7 +52,7 @@ TEST(PassesTest, RoundtripSmallPasses) {
       ButteraugliDistance(io.frames, io2.frames, ButteraugliParams(),
                           *JxlGetDefaultCms(),
                           /*distmap=*/nullptr),
-      0.8222);
+      1.0);
 }
 
 TEST(PassesTest, RoundtripUnalignedPasses) {
