@@ -62,7 +62,7 @@ static JXL_INLINE size_t ZeroDensityContext(size_t nonzeros_left, size_t k,
                                             size_t covered_blocks,
                                             size_t log2_covered_blocks,
                                             size_t prev) {
-  JXL_DASSERT(((size_t)1 << log2_covered_blocks) == covered_blocks);
+  JXL_DASSERT((static_cast<size_t>(1) << log2_covered_blocks) == covered_blocks);
   nonzeros_left = (nonzeros_left + covered_blocks - 1) >> log2_covered_blocks;
   k >>= log2_covered_blocks;
   JXL_DASSERT(k > 0);
