@@ -13,8 +13,6 @@
 
 #include <memory>
 
-#include "lib/jxl/base/compiler_specific.h"
-
 namespace jxl {
 
 // Functions that depend on the cache line size.
@@ -49,7 +47,7 @@ class CacheAligned {
 // Avoids the need for a function pointer (deleter) in CacheAlignedUniquePtr.
 struct CacheAlignedDeleter {
   void operator()(uint8_t* aligned_pointer) const {
-    return CacheAligned::Free(aligned_pointer);
+    CacheAligned::Free(aligned_pointer);
   }
 };
 

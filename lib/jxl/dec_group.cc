@@ -5,10 +5,9 @@
 
 #include "lib/jxl/dec_group.h"
 
-#include <stdint.h>
-#include <string.h>
-
 #include <algorithm>
+#include <cstdint>
+#include <cstring>
 #include <memory>
 #include <utility>
 
@@ -24,16 +23,14 @@
 #include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/printf_macros.h"
+#include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/coeff_order.h"
 #include "lib/jxl/common.h"  // kMaxNumPasses
-#include "lib/jxl/convolve.h"
-#include "lib/jxl/dct_scales.h"
 #include "lib/jxl/dec_cache.h"
 #include "lib/jxl/dec_transforms-inl.h"
 #include "lib/jxl/dec_xyb.h"
 #include "lib/jxl/entropy_coder.h"
-#include "lib/jxl/epf.h"
 #include "lib/jxl/quant_weights.h"
 #include "lib/jxl/quantizer-inl.h"
 #include "lib/jxl/quantizer.h"
@@ -365,7 +362,7 @@ Status DecodeGroupImpl(const FrameHeader& frame_header,
             int16_t* JXL_RESTRICT jpeg_pos =
                 jpeg_row[c] + sbx[c] * kDCTBlockSize;
             // JPEG XL is transposed, JPEG is not.
-            auto transposed_dct = qblock[c].ptr32;
+            auto* transposed_dct = qblock[c].ptr32;
             Transpose8x8InPlace(transposed_dct);
             // No CfL - no need to store the y block converted to integers.
             if (!cs.Is444() ||
@@ -703,7 +700,7 @@ Status DecodeGroup(const FrameHeader& frame_header,
   }
 
   if (draw == kDraw && num_passes == 0 && first_pass == 0) {
-    group_dec_cache->InitDCBufferOnce();
+    JXL_RETURN_IF_ERROR(group_dec_cache->InitDCBufferOnce());
     const YCbCrChromaSubsampling& cs = frame_header.chroma_subsampling;
     for (size_t c : {0, 1, 2}) {
       size_t hs = cs.HShift(c);
@@ -746,7 +743,7 @@ Status DecodeGroup(const FrameHeader& frame_header,
            y++) {
         for (ssize_t iy = 0; iy < 5; iy++) {
           input_rows[0][iy] = group_dec_cache->dc_buffer.Row(
-              Mirror(ssize_t(y) + iy - 2,
+              Mirror(static_cast<ssize_t>(y) + iy - 2,
                      dec_state->shared->dc->Plane(c).ysize() >> vs) +
               2 - src_rect.y0());
         }
@@ -756,9 +753,9 @@ Status DecodeGroup(const FrameHeader& frame_header,
               kRenderPipelineXOffset;
         }
         // Arguments set to 0/nullptr are not used.
-        dec_state->upsampler8x->ProcessRow(input_rows, output_rows,
-                                           /*xextra=*/0, src_rect.xsize(), 0, 0,
-                                           thread);
+        JXL_RETURN_IF_ERROR(dec_state->upsampler8x->ProcessRow(
+            input_rows, output_rows,
+            /*xextra=*/0, src_rect.xsize(), 0, 0, thread));
       }
     }
     return true;
@@ -800,9 +797,9 @@ Status DecodeGroupForRoundtrip(const FrameHeader& frame_header,
                                ImageBundle* JXL_RESTRICT decoded,
                                AuxOut* aux_out) {
   GetBlockFromEncoder get_block(ac, group_idx, frame_header.passes.shift);
-  group_dec_cache->InitOnce(
+  JXL_RETURN_IF_ERROR(group_dec_cache->InitOnce(
       /*num_passes=*/0,
-      /*used_acs=*/(1u << AcStrategy::kNumValidStrategies) - 1);
+      /*used_acs=*/(1u << AcStrategy::kNumValidStrategies) - 1));
 
   return HWY_DYNAMIC_DISPATCH(DecodeGroupImpl)(
       frame_header, &get_block, group_dec_cache, dec_state, thread, group_idx,

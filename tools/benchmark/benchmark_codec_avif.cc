@@ -76,10 +76,12 @@ bool ParseChromaSubsampling(const char* arg, avifPixelFormat* subsampling) {
   return false;
 }
 
-void SetUpAvifColor(const ColorEncoding& color, avifImage* const image) {
+void SetUpAvifColor(const ColorEncoding& color, bool rgb,
+                    avifImage* const image) {
   bool need_icc = (color.GetWhitePointType() != WhitePoint::kD65);
 
-  image->matrixCoefficients = AVIF_MATRIX_COEFFICIENTS_BT709;
+  image->matrixCoefficients =
+      rgb ? AVIF_MATRIX_COEFFICIENTS_IDENTITY : AVIF_MATRIX_COEFFICIENTS_BT709;
   if (!color.HasPrimaries()) {
     need_icc = true;
   } else {
@@ -187,6 +189,10 @@ class AvifCodec : public ImageCodec {
       if (param.size() != 6) return false;
       return ParseChromaSubsampling(param.c_str() + 3, &chroma_subsampling_);
     }
+    if (param == "rgb") {
+      rgb_ = true;
+      return true;
+    }
     if (param.compare(0, 10, "log2_cols=") == 0) {
       log2_cols = strtol(param.c_str() + 10, nullptr, 10);
       return true;
@@ -259,6 +265,10 @@ class AvifCodec : public ImageCodec {
       // TODO(sboukortt): configure this separately.
       encoder->minQuantizer = 0;
       encoder->maxQuantizer = 63;
+#if AVIF_VERSION >= 1000300
+      encoder->quality = q_target_;
+      encoder->qualityAlpha = q_target_;
+#endif
       encoder->tileColsLog2 = log2_cols;
       encoder->tileRowsLog2 = log2_rows;
       encoder->speed = speed_;
@@ -286,7 +296,7 @@ class AvifCodec : public ImageCodec {
         image->width = ib.xsize();
         image->height = ib.ysize();
         image->depth = depth;
-        SetUpAvifColor(ib.c_current(), image.get());
+        SetUpAvifColor(ib.c_current(), rgb_, image.get());
         std::unique_ptr<avifRWData, void (*)(avifRWData*)> icc_freer(
             &image->icc, &avifRWDataFree);
         avifRGBImage rgb_image;
@@ -394,6 +404,7 @@ class AvifCodec : public ImageCodec {
   avifPixelFormat chroma_subsampling_;
   avifCodecChoice encoder_ = AVIF_CODEC_CHOICE_AUTO;
   avifCodecChoice decoder_ = AVIF_CODEC_CHOICE_AUTO;
+  bool rgb_ = false;
   int speed_ = AVIF_SPEED_DEFAULT;
   int log2_cols = 0;
   int log2_rows = 0;

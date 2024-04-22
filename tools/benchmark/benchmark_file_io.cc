@@ -8,6 +8,11 @@
 #include <sys/stat.h>
 
 #include <cstdio>
+#include <cstring>
+#include <string>
+#include <vector>
+
+#include "lib/jxl/base/status.h"
 
 #if defined(_WIN32) || defined(_WIN64)
 #include "third_party/dirent.h"
@@ -36,6 +41,10 @@
 // There is no "user" in embedded filesystems.
 #ifndef GLOB_TILDE
 #define GLOB_TILDE 0
+#endif
+
+#if defined(__MINGW32__)
+extern "C" int _CRT_glob = 0;
 #endif
 
 namespace jpegxl {
@@ -151,10 +160,10 @@ Status MatchFiles(const std::string& pattern, std::vector<std::string>* list) {
 #if HAS_GLOB
   glob_t g;
   memset(&g, 0, sizeof(g));
-  int error = glob(pattern.c_str(), GLOB_TILDE, NULL, &g);
+  int error = glob(pattern.c_str(), GLOB_TILDE, nullptr, &g);
   if (!error) {
     for (size_t i = 0; i < g.gl_pathc; ++i) {
-      list->push_back(g.gl_pathv[i]);
+      list->emplace_back(g.gl_pathv[i]);
     }
   }
   globfree(&g);

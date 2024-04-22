@@ -253,14 +253,14 @@ class WebPCodec : public ImageCodec {
   }
   Status CompressInternal(const std::vector<uint8_t>& srgb, size_t xsize,
                           size_t ysize, size_t num_chans, int quality,
-                          std::vector<uint8_t>* compressed) {
+                          std::vector<uint8_t>* compressed) const {
     compressed->clear();
     WebPConfig config;
     if (!WebPConfigInit(&config)) {
       return JXL_FAILURE("WebPConfigInit failed");
     }
     JXL_ASSERT(!lossless_ || !near_lossless_);  // can't have both
-    config.lossless = lossless_;
+    config.lossless = lossless_ ? 1 : 0;
     config.quality = quality;
     config.method = method_;
 #if WEBP_ENCODER_ABI_VERSION >= 0x020a
@@ -294,7 +294,7 @@ class WebPCodec : public ImageCodec {
 
     // WebP encoding may fail, for example, if the image is more than 16384
     // pixels high or wide.
-    bool ok = WebPEncode(&config, &pic);
+    bool ok = FROM_JXL_BOOL(WebPEncode(&config, &pic));
     WebPPictureFree(&pic);
     // Compressed image data is initialized by libwebp, which we are not
     // instrumenting with msan.
@@ -305,7 +305,7 @@ class WebPCodec : public ImageCodec {
   int quality_ = 90;
   bool lossless_ = false;
   bool near_lossless_ = false;
-  bool near_lossless_quality_ = 40;  // only used if near_lossless_
+  int near_lossless_quality_ = 40;   // only used if near_lossless_
   int method_ = 6;                   // smallest, some speed cost
 };
 

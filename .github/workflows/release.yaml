@@ -19,7 +19,7 @@ on:
       - main
       - v*.*.x
   pull_request:
-    types: [opened, reopened, labeled, synchronize]
+    types: [opened, reopened, labeled, unlabeled, synchronize]
     paths-ignore:
       - '**.md'
       - 'AUTHORS'
@@ -37,6 +37,7 @@ concurrency:
 jobs:
   ubuntu_static_x86_64:
     name: Release linux x86_64 static
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
     runs-on: [ubuntu-latest]
     steps:
     - name: Harden Runner
@@ -70,7 +71,7 @@ jobs:
         echo "CXX=clang++" >> $GITHUB_ENV
 
     - name: Checkout the source
-      uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633 # v4.1.2
       with:
         submodules: true
         fetch-depth: 1
@@ -98,14 +99,14 @@ jobs:
           ${{ runner.workspace }}/jxl-linux-x86_64-static-${{ github.event.release.tag_name }}.tar.gz
 
     - name: Upload artifacts
-      uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
+      uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3 # v4.3.1
       with:
         name: jxl-linux-x86_64-static
         path: ${{ runner.workspace }}/release_file.tar.gz
 
     - name: Upload binaries to release
       if: github.event_name == 'release'
-      uses: AButler/upload-release-assets@c94805dc72e4b20745f543da0f62eaee7722df7a # v2.0.2
+      uses: AButler/upload-release-assets@3d6774fae0ed91407dc5ae29d576b166536d1777 # v3.0
       with:
         files: ${{ runner.workspace }}/jxl-linux-x86_64-static-${{ github.event.release.tag_name }}.tar.gz
         repo-token: ${{ secrets.GITHUB_TOKEN }}
@@ -114,6 +115,7 @@ jobs:
   # Build .deb packages Ubuntu/Debian
   release_ubuntu_pkg:
     name: .deb packages / ${{ matrix.os }}
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -160,7 +162,7 @@ jobs:
         git config --global --add safe.directory /__w/libjxl/libjxl
 
     - name: Checkout the source
-      uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633 # v4.1.2
       with:
         submodules: true
         fetch-depth: 1
@@ -192,13 +194,6 @@ jobs:
           dch -M --distribution unstable --release ''
         fi
 
-    - name: Install gmock-dev (debian:sid)
-      # gtest-dev cmake depends on gmock-dev, but it is not installed by the
-      # package.
-      if: matrix.os == 'debian:sid'
-      run: |
-        apt install -y libgmock-dev
-
     - name: Configure hwy
       if: ${{ github.event_name == 'schedule' || github.event_name == 'release' || contains(github.event.pull_request.labels.*.name, 'CI:full') }}
       run: |
@@ -220,7 +215,7 @@ jobs:
         ./ci.sh debian_stats
 
     - name: Upload artifacts
-      uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
+      uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3 # v4.3.1
       with:
         name: ${{ steps.env.outputs.artifact_name }}
         path: |
@@ -236,7 +231,7 @@ jobs:
 
     - name: Upload binaries to release
       if: github.event_name == 'release'
-      uses: AButler/upload-release-assets@c94805dc72e4b20745f543da0f62eaee7722df7a # v2.0.2
+      uses: AButler/upload-release-assets@3d6774fae0ed91407dc5ae29d576b166536d1777 # v3.0
       with:
         files: ${{ steps.env.outputs.artifact_name }}-${{ github.event.release.tag_name }}.tar.gz
         repo-token: ${{ secrets.GITHUB_TOKEN }}
@@ -244,7 +239,8 @@ jobs:
 
   windows_build:
     name: Windows Build (vcpkg / ${{ matrix.triplet }})
-    runs-on: [windows-2019]
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
+    runs-on: [windows-2022]
     strategy:
       fail-fast: false
       matrix:
@@ -253,6 +249,7 @@ jobs:
             arch: '-A Win32'
           - triplet: x64-windows-static
             arch: '-A x64'
+            run_benchmark: true
           - triplet: x86-windows
             arch: '-A Win32'
             static: 'OFF'
@@ -274,12 +271,12 @@ jobs:
         egress-policy: audit
 
     - name: Checkout the source
-      uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633 # v4.1.2
       with:
         submodules: true
         fetch-depth: 2
 
-    - uses: actions/cache@13aacd865c20de90d75de3b17ebe84f7a17d57d2 # v4.0.0
+    - uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4.0.2
       id: cache-vcpkg
       with:
         path: vcpkg
@@ -312,6 +309,7 @@ jobs:
           libjpeg-turbo \
           libpng \
           libwebp \
+          pkgconf \
         #
 
     - name: Configure
@@ -353,8 +351,20 @@ jobs:
         cp third_party/highway/LICENSE prefix/bin/LICENSE.highway
         cp third_party/brotli/LICENSE prefix/bin/LICENSE.brotli
         cp LICENSE prefix/bin/LICENSE.libjxl
+
+    - name: Fast benchmark ${{ matrix.triplet }}
+      shell: 'bash'
+      if: matrix.run_benchmark && true
+      run: |
+        systeminfo | grep -A 1 Processor
+        wmic cpu get Name, NumberofCores, NumberOfLogicalProcessors, MaxClockSpeed
+        mkdir tmp
+        export TMPDIR=`pwd`/tmp
+        export PATH=$PATH:`pwd`/build/lib
+        BUILD_CONFIG=Release/ BENCHMARK_NUM_THREADS=2 STORE_IMAGES=0 ./ci.sh fast_benchmark
+
     - name: Upload artifacts
-      uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
+      uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3 # v4.3.1
       with:
         name: jxl-${{matrix.triplet}}
         path: |
@@ -370,7 +380,7 @@ jobs:
 
     - name: Upload binaries to release
       if: github.event_name == 'release'
-      uses: AButler/upload-release-assets@c94805dc72e4b20745f543da0f62eaee7722df7a # v2.0.2
+      uses: AButler/upload-release-assets@3d6774fae0ed91407dc5ae29d576b166536d1777 # v3.0
       with:
         files: jxl-${{matrix.triplet}}.zip
         repo-token: ${{ secrets.GITHUB_TOKEN }}

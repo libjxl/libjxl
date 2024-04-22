@@ -6,35 +6,24 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#include <cinttypes>
 #include <limits>
-#include <numeric>
 #include <queue>
-#include <set>
-#include <unordered_map>
-#include <unordered_set>
 
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/dec_ans.h"
-#include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/enc_ans.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_fields.h"
-#include "lib/jxl/entropy_coder.h"
 #include "lib/jxl/fields.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
-#include "lib/jxl/modular/encoding/enc_debug_tree.h"
 #include "lib/jxl/modular/encoding/enc_ma.h"
 #include "lib/jxl/modular/encoding/encoding.h"
 #include "lib/jxl/modular/encoding/ma_common.h"
 #include "lib/jxl/modular/options.h"
-#include "lib/jxl/modular/transform/transform.h"
 #include "lib/jxl/pack_signed.h"
-#include "lib/jxl/toc.h"
 
 namespace jxl {
 
@@ -61,7 +50,7 @@ inline std::array<uint8_t, 3> PredictorColor(Predictor p) {
       return {{255, 0, 255}};
     case Predictor::Weighted:
       return {{0, 255, 255}};
-      // TODO
+      // TODO(jon)
     default:
       return {{255, 255, 255}};
   };
@@ -101,17 +90,17 @@ Tree MakeFixedTree(int property, const std::vector<int32_t> &cutoffs,
 
 }  // namespace
 
-void GatherTreeData(const Image &image, pixel_type chan, size_t group_id,
-                    const weighted::Header &wp_header,
-                    const ModularOptions &options, TreeSamples &tree_samples,
-                    size_t *total_pixels) {
+Status GatherTreeData(const Image &image, pixel_type chan, size_t group_id,
+                      const weighted::Header &wp_header,
+                      const ModularOptions &options, TreeSamples &tree_samples,
+                      size_t *total_pixels) {
   const Channel &channel = image.channel[chan];
 
   JXL_DEBUG_V(7, "Learning %" PRIuS "x%" PRIuS " channel %d", channel.w,
               channel.h, chan);
 
   std::array<pixel_type, kNumStaticProperties> static_props = {
-      {chan, (int)group_id}};
+      {chan, static_cast<int>(group_id)}};
   Properties properties(kNumNonrefProperties +
                         kExtraPropsPerChannel * options.max_properties);
   double pixel_fraction = std::min(1.0f, options.nb_repeats);
@@ -137,7 +126,9 @@ void GatherTreeData(const Image &image, pixel_type chan, size_t group_id,
   };
 
   const intptr_t onerow = channel.plane.PixelsPerRow();
-  Channel references(properties.size() - kNumNonrefProperties, channel.w);
+  JXL_ASSIGN_OR_RETURN(
+      Channel references,
+      Channel::Create(properties.size() - kNumNonrefProperties, channel.w));
   weighted::State wp_state(wp_header, channel.w, channel.h);
   tree_samples.PrepareForSamples(pixel_fraction * channel.h * channel.w + 64);
   const bool multiple_predictors = tree_samples.NumPredictors() != 1;
@@ -198,6 +189,7 @@ void GatherTreeData(const Image &image, pixel_type chan, size_t group_id,
       }
     }
   }
+  return true;
 }
 
 Tree PredefinedTree(ModularOptions::TreeKind tree_kind, size_t total_pixels) {
@@ -316,7 +308,9 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
   JXL_ASSERT(channel.w != 0 && channel.h != 0);
 
   Image3F predictor_img;
-  if (kWantDebug) predictor_img = Image3F(channel.w, channel.h);
+  if (kWantDebug) {
+    JXL_ASSIGN_OR_RETURN(predictor_img, Image3F::Create(channel.w, channel.h));
+  }
 
   JXL_DEBUG_V(6,
               "Encoding %" PRIuS "x%" PRIuS
@@ -325,8 +319,9 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
               channel.w, channel.h, chan, channel.hshift, channel.vshift);
 
   std::array<pixel_type, kNumStaticProperties> static_props = {
-      {chan, (int)group_id}};
-  bool use_wp, is_wp_only;
+      {chan, static_cast<int>(group_id)}};
+  bool use_wp;
+  bool is_wp_only;
   bool is_gradient_only;
   size_t num_props;
   FlatTree tree = FilterTree(global_tree, static_props, &num_props, &use_wp,
@@ -439,7 +434,8 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
       FillImage(static_cast<float>(PredictorColor(tree[0].predictor)[c]),
                 &predictor_img.Plane(c));
     }
-    uint32_t mul_shift = FloorLog2Nonzero((uint32_t)tree[0].multiplier);
+    uint32_t mul_shift =
+        FloorLog2Nonzero(static_cast<uint32_t>(tree[0].multiplier));
     const intptr_t onerow = channel.plane.PixelsPerRow();
     for (size_t y = 0; y < channel.h; y++) {
       const pixel_type *JXL_RESTRICT r = channel.Row(y);
@@ -454,7 +450,9 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
 
   } else if (!use_wp && !skip_encoder_fast_path) {
     const intptr_t onerow = channel.plane.PixelsPerRow();
-    Channel references(properties.size() - kNumNonrefProperties, channel.w);
+    JXL_ASSIGN_OR_RETURN(
+        Channel references,
+        Channel::Create(properties.size() - kNumNonrefProperties, channel.w));
     for (size_t y = 0; y < channel.h; y++) {
       const pixel_type *JXL_RESTRICT p = channel.Row(y);
       PrecomputeReferences(channel, y, image, chan, &references);
@@ -481,7 +479,9 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
     }
   } else {
     const intptr_t onerow = channel.plane.PixelsPerRow();
-    Channel references(properties.size() - kNumNonrefProperties, channel.w);
+    JXL_ASSIGN_OR_RETURN(
+        Channel references,
+        Channel::Create(properties.size() - kNumNonrefProperties, channel.w));
     weighted::State wp_state(wp_header, channel.w, channel.h);
     for (size_t y = 0; y < channel.h; y++) {
       const pixel_type *JXL_RESTRICT p = channel.Row(y);
@@ -556,8 +556,20 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
   TreeSamples tree_samples_storage;
   size_t total_pixels_storage = 0;
   if (!total_pixels) total_pixels = &total_pixels_storage;
+  if (*total_pixels == 0) {
+    for (size_t i = 0; i < nb_channels; i++) {
+      if (i >= image.nb_meta_channels &&
+          (image.channel[i].w > options.max_chan_size ||
+           image.channel[i].h > options.max_chan_size)) {
+        break;
+      }
+      *total_pixels += image.channel[i].w * image.channel[i].h;
+    }
+    *total_pixels = std::max<size_t>(*total_pixels, 1);
+  }
   // If there's no tree, compute one (or gather data to).
-  if (tree == nullptr) {
+  if (tree == nullptr &&
+      options.tree_kind == ModularOptions::TreeKind::kLearn) {
     bool gather_data = tree_samples != nullptr;
     if (tree_samples == nullptr) {
       JXL_RETURN_IF_ERROR(tree_samples_storage.SetPredictor(
@@ -586,9 +598,9 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
            image.channel[i].h > options.max_chan_size)) {
         break;
       }
-      GatherTreeData(image, i, group_id, header->wp_header, options,
-                     gather_data ? *tree_samples : tree_samples_storage,
-                     total_pixels);
+      JXL_RETURN_IF_ERROR(GatherTreeData(
+          image, i, group_id, header->wp_header, options,
+          gather_data ? *tree_samples : tree_samples_storage, total_pixels));
     }
     if (gather_data) return true;
   }
@@ -609,10 +621,10 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
             ? LearnTree(std::move(tree_samples_storage), *total_pixels, options)
             : PredefinedTree(options.tree_kind, *total_pixels);
     tree = &tree_storage;
-    tokens = &tokens_storage[0];
+    tokens = tokens_storage.data();
 
     Tree decoded_tree;
-    TokenizeTree(*tree, &tree_tokens[0], &decoded_tree);
+    TokenizeTree(*tree, tree_tokens.data(), &decoded_tree);
     JXL_ASSERT(tree->size() == decoded_tree.size());
     tree_storage = std::move(decoded_tree);
 
@@ -622,9 +634,9 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
     } */
 
     // Write tree
-    BuildAndEncodeHistograms(HistogramParams(), kNumTreeContexts, tree_tokens,
-                             &code, &context_map, writer, kLayerModularTree,
-                             aux_out);
+    BuildAndEncodeHistograms(options.histogram_params, kNumTreeContexts,
+                             tree_tokens, &code, &context_map, writer,
+                             kLayerModularTree, aux_out);
     WriteTokens(tree_tokens[0], code, context_map, 0, writer, kLayerModularTree,
                 aux_out);
   }
@@ -669,7 +681,7 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
   if (!header->use_global_tree) {
     EntropyEncodingData code;
     std::vector<uint8_t> context_map;
-    HistogramParams histo_params;
+    HistogramParams histo_params = options.histogram_params;
     histo_params.image_widths.push_back(image_width);
     BuildAndEncodeHistograms(histo_params, (tree->size() + 1) / 2,
                              tokens_storage, &code, &context_map, writer, layer,
@@ -691,7 +703,7 @@ Status ModularGenericCompress(Image &image, const ModularOptions &opts,
   if (image.w == 0 || image.h == 0) return true;
   ModularOptions options = opts;  // Make a copy to modify it.
 
-  if (options.predictor == static_cast<Predictor>(-1)) {
+  if (options.predictor == kUndefinedPredictor) {
     options.predictor = Predictor::Gradient;
   }
 

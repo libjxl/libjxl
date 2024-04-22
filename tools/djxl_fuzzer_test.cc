@@ -8,7 +8,6 @@
 
 #include <cstdint>
 #include <sstream>
-#include <string>
 #include <vector>
 
 #include "lib/jxl/test_utils.h"

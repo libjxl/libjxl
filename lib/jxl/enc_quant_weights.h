@@ -7,7 +7,9 @@
 #define LIB_JXL_ENC_QUANT_WEIGHTS_H_
 
 #include <cstddef>
+#include <vector>
 
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/quant_weights.h"
 
 namespace jxl {
@@ -27,9 +29,9 @@ void DequantMatricesSetCustomDC(DequantMatrices* matrices, const float* dc);
 
 void DequantMatricesScaleDC(DequantMatrices* matrices, float scale);
 
-void DequantMatricesSetCustom(DequantMatrices* matrices,
-                              const std::vector<QuantEncoding>& encodings,
-                              ModularFrameEncoder* encoder);
+Status DequantMatricesSetCustom(DequantMatrices* matrices,
+                                const std::vector<QuantEncoding>& encodings,
+                                ModularFrameEncoder* encoder);
 
 // Roundtrip encode/decode the matrices to ensure same values as decoder.
 void DequantMatricesRoundtrip(DequantMatrices* matrices);

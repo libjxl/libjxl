@@ -8,13 +8,12 @@
 #ifndef LIB_JXL_ENC_CLUSTER_H_
 #define LIB_JXL_ENC_CLUSTER_H_
 
-#include <stddef.h>
-#include <stdint.h>
-#include <string.h>
-
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <vector>
 
-#include "lib/jxl/ans_params.h"
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/enc_ans_params.h"
 
 namespace jxl {
@@ -61,8 +60,9 @@ struct Histogram {
   static constexpr size_t kRounding = 8;
 };
 
-void ClusterHistograms(HistogramParams params, const std::vector<Histogram>& in,
-                       size_t max_histograms, std::vector<Histogram>* out,
+void ClusterHistograms(const HistogramParams& params,
+                       const std::vector<Histogram>& in, size_t max_histograms,
+                       std::vector<Histogram>* out,
                        std::vector<uint32_t>* histogram_symbols);
 }  // namespace jxl
 

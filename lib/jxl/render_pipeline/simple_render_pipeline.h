@@ -6,8 +6,13 @@
 #ifndef LIB_JXL_RENDER_PIPELINE_SIMPLE_RENDER_PIPELINE_H_
 #define LIB_JXL_RENDER_PIPELINE_SIMPLE_RENDER_PIPELINE_H_
 
-#include <stdint.h>
+#include <cstddef>
+#include <utility>
+#include <vector>
 
+#include "lib/jxl/base/rect.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/image.h"
 #include "lib/jxl/render_pipeline/render_pipeline.h"
 
 namespace jxl {
@@ -19,9 +24,9 @@ class SimpleRenderPipeline : public RenderPipeline {
   std::vector<std::pair<ImageF*, Rect>> PrepareBuffers(
       size_t group_id, size_t thread_id) override;
 
-  void ProcessBuffers(size_t group_id, size_t thread_id) override;
+  Status ProcessBuffers(size_t group_id, size_t thread_id) override;
 
-  void PrepareForThreadsInternal(size_t num, bool use_group_ids) override;
+  Status PrepareForThreadsInternal(size_t num, bool use_group_ids) override;
 
   // Full frame buffers. Both X and Y dimensions are padded by
   // kRenderPipelineXOffset.

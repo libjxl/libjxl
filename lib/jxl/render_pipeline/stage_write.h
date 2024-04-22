@@ -6,16 +6,21 @@
 #ifndef LIB_JXL_RENDER_PIPELINE_STAGE_WRITE_H_
 #define LIB_JXL_RENDER_PIPELINE_STAGE_WRITE_H_
 
-#include <functional>
+#include <cstddef>
+#include <memory>
+#include <vector>
 
 #include "lib/jxl/dec_cache.h"
+#include "lib/jxl/dec_xyb.h"
+#include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
+#include "lib/jxl/image_metadata.h"
 #include "lib/jxl/render_pipeline/render_pipeline_stage.h"
 
 namespace jxl {
 
 std::unique_ptr<RenderPipelineStage> GetWriteToImageBundleStage(
-    ImageBundle* image_bundle, ColorEncoding color_encoding);
+    ImageBundle* image_bundle, const OutputEncodingInfo& output_encoding_info);
 
 // Gets a stage to write color channels to an Image3F.
 std::unique_ptr<RenderPipelineStage> GetWriteToImage3FStage(Image3F* image);

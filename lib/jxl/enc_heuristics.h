@@ -9,9 +9,9 @@
 // Hook for custom encoder heuristics (VarDCT only for now).
 
 #include <jxl/cms_interface.h>
-#include <stddef.h>
 
 #include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/image.h"
@@ -38,8 +38,8 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
 
 void FindBestBlockEntropyModel(PassesEncoderState& enc_state);
 
-void DownsampleImage2_Iterative(Image3F* output);
-void DownsampleImage2_Sharper(Image3F* opsin);
+Status DownsampleImage2_Iterative(Image3F* opsin);
+Status DownsampleImage2_Sharper(Image3F* opsin);
 
 }  // namespace jxl
 

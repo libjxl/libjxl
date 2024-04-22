@@ -13,6 +13,8 @@
 #include <hwy/aligned_allocator.h>
 
 #include "lib/jxl/ac_strategy.h"
+#include "lib/jxl/base/rect.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/chroma_from_luma.h"
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/image.h"
@@ -29,7 +31,7 @@ void ColorCorrelationMapEncodeDC(const ColorCorrelationMap& map,
                                  AuxOut* aux_out);
 
 struct CfLHeuristics {
-  void Init(const Rect& rect);
+  Status Init(const Rect& rect);
 
   void PrepareForThreads(size_t num_threads) {
     mem = hwy::AllocateAligned<float>(num_threads * ItemsPerThread());

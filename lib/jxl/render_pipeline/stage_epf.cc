@@ -8,7 +8,6 @@
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/common.h"  // JXL_HIGH_PRECISION
 #include "lib/jxl/epf.h"
-#include "lib/jxl/sanitizers.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/render_pipeline/stage_epf.cc"
@@ -41,10 +40,10 @@ JXL_INLINE Vec<DF> Weight(Vec<DF> sad, Vec<DF> inv_sigma, Vec<DF> thres) {
 // this filter a 7x7 filter.
 class EPF0Stage : public RenderPipelineStage {
  public:
-  EPF0Stage(const LoopFilter& lf, const ImageF& sigma)
+  EPF0Stage(LoopFilter lf, const ImageF& sigma)
       : RenderPipelineStage(RenderPipelineStage::Settings::Symmetric(
             /*shift=*/0, /*border=*/3)),
-        lf_(lf),
+        lf_(std::move(lf)),
         sigma_(&sigma) {}
 
   template <bool aligned>
@@ -67,13 +66,13 @@ class EPF0Stage : public RenderPipelineStage {
     *B = MulAdd(weight, cb, *B);
   }
 
-  void ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
-                  size_t xextra, size_t xsize, size_t xpos, size_t ypos,
-                  size_t thread_id) const final {
+  Status ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
+                    size_t xextra, size_t xsize, size_t xpos, size_t ypos,
+                    size_t thread_id) const final {
     DF df;
 
     using V = decltype(Zero(df));
-    V t0, t1, t2, t3, t4, t5, t6, t7, t8, t9, tA, tB;
+    V t0, t1, t2, t3, t4, t5, t6, t7, t8, t9, tA, tB;  // NOLINT
     V* sads[12] = {&t0, &t1, &t2, &t3, &t4, &t5, &t6, &t7, &t8, &t9, &tA, &tB};
 
     xextra = RoundUpTo(xextra, Lanes(df));
@@ -115,7 +114,7 @@ class EPF0Stage : public RenderPipelineStage {
       const auto sm = Load(df, sad_mul + ix);
       const auto inv_sigma = Mul(Set(df, row_sigma[bx]), sm);
 
-      for (size_t i = 0; i < 12; i++) *sads[i] = Zero(df);
+      for (auto& sad : sads) *sad = Zero(df);
       constexpr std::array<int, 2> sads_off[12] = {
           {{-2, 0}}, {{-1, -1}}, {{-1, 0}}, {{-1, 1}}, {{0, -2}}, {{0, -1}},
           {{0, 1}},  {{0, 2}},   {{1, -1}}, {{1, 0}},  {{1, 1}},  {{2, 0}},
@@ -129,12 +128,10 @@ class EPF0Stage : public RenderPipelineStage {
           auto sad = Zero(df);
           constexpr std::array<int, 2> plus_off[] = {
               {{0, 0}}, {{-1, 0}}, {{0, -1}}, {{1, 0}}, {{0, 1}}};
-          for (size_t j = 0; j < 5; j++) {
-            const auto r11 =
-                LoadU(df, rows[c][3 + plus_off[j][0]] + x + plus_off[j][1]);
-            const auto c11 =
-                LoadU(df, rows[c][3 + sads_off[i][0] + plus_off[j][0]] + x +
-                              sads_off[i][1] + plus_off[j][1]);
+          for (const auto& off : plus_off) {
+            const auto r11 = LoadU(df, rows[c][3 + off[0]] + x + off[1]);
+            const auto c11 = LoadU(df, rows[c][3 + sads_off[i][0] + off[0]] +
+                                           x + sads_off[i][1] + off[1]);
             sad = Add(sad, AbsDiff(r11, c11));
           }
           *sads[i] = MulAdd(sad, scale, *sads[i]);
@@ -163,6 +160,7 @@ class EPF0Stage : public RenderPipelineStage {
       StoreU(Mul(Y, inv_w), df, GetOutputRow(output_rows, 1, 0) + x);
       StoreU(Mul(B, inv_w), df, GetOutputRow(output_rows, 2, 0) + x);
     }
+    return true;
   }
 
   RenderPipelineChannelMode GetChannelMode(size_t c) const final {
@@ -181,10 +179,10 @@ class EPF0Stage : public RenderPipelineStage {
 // makes this filter a 5x5 filter.
 class EPF1Stage : public RenderPipelineStage {
  public:
-  EPF1Stage(const LoopFilter& lf, const ImageF& sigma)
+  EPF1Stage(LoopFilter lf, const ImageF& sigma)
       : RenderPipelineStage(RenderPipelineStage::Settings::Symmetric(
             /*shift=*/0, /*border=*/2)),
-        lf_(lf),
+        lf_(std::move(lf)),
         sigma_(&sigma) {}
 
   template <bool aligned>
@@ -207,9 +205,9 @@ class EPF1Stage : public RenderPipelineStage {
     *B = MulAdd(weight, cb, *B);
   }
 
-  void ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
-                  size_t xextra, size_t xsize, size_t xpos, size_t ypos,
-                  size_t thread_id) const final {
+  Status ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
+                    size_t xextra, size_t xsize, size_t xpos, size_t ypos,
+                    size_t thread_id) const final {
     DF df;
     xextra = RoundUpTo(xextra, Lanes(df));
     const float* JXL_RESTRICT row_sigma =
@@ -343,6 +341,7 @@ class EPF1Stage : public RenderPipelineStage {
       Store(Mul(Y, inv_w), df, GetOutputRow(output_rows, 1, 0) + x);
       Store(Mul(B, inv_w), df, GetOutputRow(output_rows, 2, 0) + x);
     }
+    return true;
   }
 
   RenderPipelineChannelMode GetChannelMode(size_t c) const final {
@@ -361,10 +360,10 @@ class EPF1Stage : public RenderPipelineStage {
 // filter.
 class EPF2Stage : public RenderPipelineStage {
  public:
-  EPF2Stage(const LoopFilter& lf, const ImageF& sigma)
+  EPF2Stage(LoopFilter lf, const ImageF& sigma)
       : RenderPipelineStage(RenderPipelineStage::Settings::Symmetric(
             /*shift=*/0, /*border=*/1)),
-        lf_(lf),
+        lf_(std::move(lf)),
         sigma_(&sigma) {}
 
   template <bool aligned>
@@ -392,9 +391,9 @@ class EPF2Stage : public RenderPipelineStage {
     *B = MulAdd(weight, cb, *B);
   }
 
-  void ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
-                  size_t xextra, size_t xsize, size_t xpos, size_t ypos,
-                  size_t thread_id) const final {
+  Status ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
+                    size_t xextra, size_t xsize, size_t xpos, size_t ypos,
+                    size_t thread_id) const final {
     DF df;
     xextra = RoundUpTo(xextra, Lanes(df));
     const float* JXL_RESTRICT row_sigma =
@@ -465,6 +464,7 @@ class EPF2Stage : public RenderPipelineStage {
       Store(Mul(Y, inv_w), df, GetOutputRow(output_rows, 1, 0) + x);
       Store(Mul(B, inv_w), df, GetOutputRow(output_rows, 2, 0) + x);
     }
+    return true;
   }
 
   RenderPipelineChannelMode GetChannelMode(size_t c) const final {

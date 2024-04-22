@@ -6,18 +6,30 @@
 #ifndef LIB_JXL_ENC_MODULAR_H_
 #define LIB_JXL_ENC_MODULAR_H_
 
-#include <cstdint>
+#include <jxl/cms_interface.h>
 
+#include <cstddef>
+#include <cstdint>
+#include <vector>
+
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_modular.h"
+#include "lib/jxl/enc_ans.h"
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_params.h"
+#include "lib/jxl/frame_dimensions.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/image.h"
-#include "lib/jxl/image_bundle.h"
+#include "lib/jxl/image_metadata.h"
+#include "lib/jxl/modular/encoding/dec_ma.h"
 #include "lib/jxl/modular/encoding/encoding.h"
 #include "lib/jxl/modular/modular_image.h"
+#include "lib/jxl/modular/options.h"
+#include "lib/jxl/quant_weights.h"
 
 namespace jxl {
 
@@ -26,7 +38,7 @@ struct AuxOut;
 class ModularFrameEncoder {
  public:
   ModularFrameEncoder(const FrameHeader& frame_header,
-                      const CompressParams& cparams_orig);
+                      const CompressParams& cparams_orig, bool streaming_mode);
   Status ComputeEncodingData(
       const FrameHeader& frame_header, const ImageMetadata& metadata,
       Image3F* JXL_RESTRICT color, const std::vector<ImageF>& extra_channels,
@@ -54,23 +66,24 @@ class ModularFrameEncoder {
   // input DC image, not quantized; the group is specified by `group_index`, and
   // `nl_dc` decides whether to apply a near-lossless processing to the DC or
   // not.
-  void AddVarDCTDC(const FrameHeader& frame_header, const Image3F& dc,
-                   const Rect& r, size_t group_index, bool nl_dc,
-                   PassesEncoderState* enc_state, bool jpeg_transcode);
+  Status AddVarDCTDC(const FrameHeader& frame_header, const Image3F& dc,
+                     const Rect& r, size_t group_index, bool nl_dc,
+                     PassesEncoderState* enc_state, bool jpeg_transcode);
   // Creates a modular image for the AC metadata of the given group
   // (`group_index`).
-  void AddACMetadata(const Rect& r, size_t group_index, bool jpeg_transcode,
-                     PassesEncoderState* enc_state);
+  Status AddACMetadata(const Rect& r, size_t group_index, bool jpeg_transcode,
+                       PassesEncoderState* enc_state);
   // Encodes a RAW quantization table in `writer`. If `modular_frame_encoder` is
   // null, the quantization table in `encoding` is used, with dimensions `size_x
   // x size_y`. Otherwise, the table with ID `idx` is encoded from the given
   // `modular_frame_encoder`.
-  static void EncodeQuantTable(size_t size_x, size_t size_y, BitWriter* writer,
-                               const QuantEncoding& encoding, size_t idx,
-                               ModularFrameEncoder* modular_frame_encoder);
+  static Status EncodeQuantTable(size_t size_x, size_t size_y,
+                                 BitWriter* writer,
+                                 const QuantEncoding& encoding, size_t idx,
+                                 ModularFrameEncoder* modular_frame_encoder);
   // Stores a quantization table for future usage with `EncodeQuantTable`.
-  void AddQuantTable(size_t size_x, size_t size_y,
-                     const QuantEncoding& encoding, size_t idx);
+  Status AddQuantTable(size_t size_x, size_t size_y,
+                       const QuantEncoding& encoding, size_t idx);
 
   std::vector<size_t> ac_metadata_size;
   std::vector<uint8_t> extra_dc_precision;
@@ -78,7 +91,8 @@ class ModularFrameEncoder {
  private:
   Status PrepareStreamParams(const Rect& rect, const CompressParams& cparams,
                              int minShift, int maxShift,
-                             const ModularStreamId& stream, bool do_color);
+                             const ModularStreamId& stream, bool do_color,
+                             bool groupwise);
   std::vector<Image> stream_images_;
   std::vector<ModularOptions> stream_options_;
   std::vector<uint32_t> quants_;
@@ -94,7 +108,6 @@ class ModularFrameEncoder {
   std::vector<size_t> tree_splits_;
   std::vector<std::vector<uint32_t>> gi_channel_;
   std::vector<size_t> image_widths_;
-  Predictor delta_pred_ = Predictor::Average4;
 
   struct GroupParams {
     Rect rect;

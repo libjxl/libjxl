@@ -3,11 +3,16 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include <stdio.h>
+#include <algorithm>
+#include <cstdint>
+#include <cstdio>
+#include <utility>
+#include <vector>
 
 #include "lib/extras/codec.h"
-// TODO(eustas): we should, but we can't?
-// #include "lib/jxl/base/span.h"
+#include "lib/jxl/base/span.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/codec_in_out.h"
 #include "tools/file_io.h"
 #include "tools/ssimulacra2.h"
 
@@ -70,13 +75,31 @@ int main(int argc, char** argv) {
   }
 
   if (!io1.Main().HasAlpha()) {
-    Msssim msssim = ComputeSSIMULACRA2(io1.Main(), io2.Main());
+    jxl::StatusOr<Msssim> msssim_or =
+        ComputeSSIMULACRA2(io1.Main(), io2.Main());
+    if (!msssim_or.ok()) {
+      fprintf(stderr, "ComputeSSIMULACRA2 failed\n");
+      return 1;
+    }
+    Msssim msssim = std::move(msssim_or).value();
     printf("%.8f\n", msssim.Score());
   } else {
     // in case of alpha transparency: blend against dark and bright backgrounds
     // and return the worst of both scores
-    Msssim msssim0 = ComputeSSIMULACRA2(io1.Main(), io2.Main(), 0.1f);
-    Msssim msssim1 = ComputeSSIMULACRA2(io1.Main(), io2.Main(), 0.9f);
+    jxl::StatusOr<Msssim> msssim0_or =
+        ComputeSSIMULACRA2(io1.Main(), io2.Main(), 0.1f);
+    if (!msssim0_or.ok()) {
+      fprintf(stderr, "ComputeSSIMULACRA2 failed\n");
+      return 1;
+    }
+    Msssim msssim0 = std::move(msssim0_or).value();
+    jxl::StatusOr<Msssim> msssim1_or =
+        ComputeSSIMULACRA2(io1.Main(), io2.Main(), 0.9f);
+    if (!msssim1_or.ok()) {
+      fprintf(stderr, "ComputeSSIMULACRA2 failed\n");
+      return 1;
+    }
+    Msssim msssim1 = std::move(msssim1_or).value();
     printf("%.8f\n", std::min(msssim0.Score(), msssim1.Score()));
   }
   return 0;

@@ -111,7 +111,7 @@ TEST(RenderPipelineTest, Build) {
   frame_dimensions.Set(/*xsize=*/1024, /*ysize=*/1024, /*group_size_shift=*/0,
                        /*max_hshift=*/0, /*max_vshift=*/0,
                        /*modular_mode=*/false, /*upsampling=*/1);
-  std::move(builder).Finalize(frame_dimensions);
+  std::move(builder).Finalize(frame_dimensions).value();
 }
 
 TEST(RenderPipelineTest, CallAllGroups) {
@@ -124,14 +124,14 @@ TEST(RenderPipelineTest, CallAllGroups) {
   frame_dimensions.Set(/*xsize=*/1024, /*ysize=*/1024, /*group_size_shift=*/0,
                        /*max_hshift=*/0, /*max_vshift=*/0,
                        /*modular_mode=*/false, /*upsampling=*/1);
-  auto pipeline = std::move(builder).Finalize(frame_dimensions);
+  auto pipeline = std::move(builder).Finalize(frame_dimensions).value();
   ASSERT_TRUE(pipeline->PrepareForThreads(1, /*use_group_ids=*/false));
 
   for (size_t i = 0; i < frame_dimensions.num_groups; i++) {
     auto input_buffers = pipeline->GetInputBuffers(i, 0);
     FillPlane(0.0f, input_buffers.GetBuffer(0).first,
               input_buffers.GetBuffer(0).second);
-    input_buffers.Done();
+    JXL_CHECK(input_buffers.Done());
   }
 
   EXPECT_EQ(pipeline->PassesWithAllInput(), 1);
@@ -146,7 +146,7 @@ TEST(RenderPipelineTest, BuildFast) {
   frame_dimensions.Set(/*xsize=*/1024, /*ysize=*/1024, /*group_size_shift=*/0,
                        /*max_hshift=*/0, /*max_vshift=*/0,
                        /*modular_mode=*/false, /*upsampling=*/1);
-  std::move(builder).Finalize(frame_dimensions);
+  std::move(builder).Finalize(frame_dimensions).value();
 }
 
 TEST(RenderPipelineTest, CallAllGroupsFast) {
@@ -159,14 +159,14 @@ TEST(RenderPipelineTest, CallAllGroupsFast) {
   frame_dimensions.Set(/*xsize=*/1024, /*ysize=*/1024, /*group_size_shift=*/0,
                        /*max_hshift=*/0, /*max_vshift=*/0,
                        /*modular_mode=*/false, /*upsampling=*/1);
-  auto pipeline = std::move(builder).Finalize(frame_dimensions);
+  auto pipeline = std::move(builder).Finalize(frame_dimensions).value();
   ASSERT_TRUE(pipeline->PrepareForThreads(1, /*use_group_ids=*/false));
 
   for (size_t i = 0; i < frame_dimensions.num_groups; i++) {
     auto input_buffers = pipeline->GetInputBuffers(i, 0);
     FillPlane(0.0f, input_buffers.GetBuffer(0).first,
               input_buffers.GetBuffer(0).second);
-    input_buffers.Done();
+    JXL_CHECK(input_buffers.Done());
   }
 
   EXPECT_EQ(pipeline->PassesWithAllInput(), 1);
@@ -208,7 +208,7 @@ TEST_P(RenderPipelineTestParam, PipelineTest) {
   io.ShrinkTo(config.xsize, config.ysize);
 
   if (config.add_spot_color) {
-    jxl::ImageF spot(config.xsize, config.ysize);
+    JXL_ASSIGN_OR_DIE(ImageF spot, ImageF::Create(config.xsize, config.ysize));
     jxl::ZeroFillImage(&spot);
 
     for (size_t y = 0; y < config.ysize; y++) {
@@ -227,7 +227,7 @@ TEST_P(RenderPipelineTestParam, PipelineTest) {
     info.spot_color[3] = 0.5f;
 
     io.metadata.m.extra_channel_info.push_back(info);
-    std::vector<jxl::ImageF> ec;
+    std::vector<ImageF> ec;
     ec.push_back(std::move(spot));
     io.frames[0].SetExtraChannels(std::move(ec));
   }
@@ -267,11 +267,11 @@ Splines CreateTestSplines() {
   const ColorCorrelationMap cmap;
   std::vector<Spline::Point> control_points{{9, 54},  {118, 159}, {97, 3},
                                             {10, 40}, {150, 25},  {120, 300}};
-  const Spline spline{
-      control_points,
-      /*color_dct=*/
-      {{0.03125f, 0.00625f, 0.003125f}, {1.f, 0.321875f}, {1.f, 0.24375f}},
-      /*sigma_dct=*/{0.3125f, 0.f, 0.f, 0.0625f}};
+  const Spline spline{control_points,
+                      /*color_dct=*/
+                      {Dct32{0.03125f, 0.00625f, 0.003125f},
+                       Dct32{1.f, 0.321875f}, Dct32{1.f, 0.24375f}},
+                      /*sigma_dct=*/{0.3125f, 0.f, 0.f, 0.0625f}};
   std::vector<Spline> spline_data = {spline};
   std::vector<QuantizedSpline> quantized_splines;
   std::vector<Spline::Point> starting_points;
@@ -522,7 +522,7 @@ std::ostream& operator<<(std::ostream& os,
     filename = c.input_path.substr(pos + 1);
   }
   std::replace_if(
-      filename.begin(), filename.end(), [](char c) { return !isalnum(c); },
+      filename.begin(), filename.end(), [](char c) { return isalnum(c) == 0; },
       '_');
   os << filename << "_" << (c.jpeg_transcode ? "JPEG_" : "") << c.xsize << "x"
      << c.ysize << "_" << c.cparams_descr;

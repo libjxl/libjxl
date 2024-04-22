@@ -68,7 +68,7 @@ struct OpPq {
 };
 
 struct OpHlg {
-  explicit OpHlg(const float luminances[3], const float intensity_target)
+  explicit OpHlg(const Vector3& luminances, const float intensity_target)
       : hlg_ootf_(HlgOOTF::ToSceneLight(/*display_luminance=*/intensity_target,
                                         luminances)) {}
 
@@ -105,9 +105,9 @@ class FromLinearStage : public RenderPipelineStage {
       : RenderPipelineStage(RenderPipelineStage::Settings()),
         op_(std::move(op)) {}
 
-  void ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
-                  size_t xextra, size_t xsize, size_t xpos, size_t ypos,
-                  size_t thread_id) const final {
+  Status ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
+                    size_t xextra, size_t xsize, size_t xpos, size_t ypos,
+                    size_t thread_id) const final {
     const HWY_FULL(float) d;
     const size_t xsize_v = RoundUpTo(xsize, Lanes(d));
     float* JXL_RESTRICT row0 = GetInputRow(input_rows, 0, 0);
@@ -119,7 +119,8 @@ class FromLinearStage : public RenderPipelineStage {
     msan::UnpoisonMemory(row0 + xsize, sizeof(float) * (xsize_v - xsize));
     msan::UnpoisonMemory(row1 + xsize, sizeof(float) * (xsize_v - xsize));
     msan::UnpoisonMemory(row2 + xsize, sizeof(float) * (xsize_v - xsize));
-    for (ssize_t x = -xextra; x < (ssize_t)(xsize + xextra); x += Lanes(d)) {
+    for (ssize_t x = -xextra; x < static_cast<ssize_t>(xsize + xextra);
+         x += Lanes(d)) {
       auto r = LoadU(d, row0 + x);
       auto g = LoadU(d, row1 + x);
       auto b = LoadU(d, row2 + x);
@@ -131,6 +132,7 @@ class FromLinearStage : public RenderPipelineStage {
     msan::PoisonMemory(row0 + xsize, sizeof(float) * (xsize_v - xsize));
     msan::PoisonMemory(row1 + xsize, sizeof(float) * (xsize_v - xsize));
     msan::PoisonMemory(row2 + xsize, sizeof(float) * (xsize_v - xsize));
+    return true;
   }
 
   RenderPipelineChannelMode GetChannelMode(size_t c) const final {

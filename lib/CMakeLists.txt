@@ -5,7 +5,7 @@
 
 set(JPEGXL_MAJOR_VERSION 0)
 set(JPEGXL_MINOR_VERSION 10)
-set(JPEGXL_PATCH_VERSION 0)
+set(JPEGXL_PATCH_VERSION 2)
 set(JPEGXL_LIBRARY_VERSION
     "${JPEGXL_MAJOR_VERSION}.${JPEGXL_MINOR_VERSION}.${JPEGXL_PATCH_VERSION}")
 
@@ -147,6 +147,16 @@ if(IS_ABSOLUTE "${CMAKE_INSTALL_LIBDIR}")
     set(PKGCONFIG_TARGET_LIBS "${CMAKE_INSTALL_LIBDIR}")
 else()
     set(PKGCONFIG_TARGET_LIBS "\${exec_prefix}/${CMAKE_INSTALL_LIBDIR}")
+endif()
+
+include(CheckCXXSymbolExists)
+set(PKGCONFIG_CXX_LIB "")
+check_cxx_symbol_exists(__GLIBCXX__ iostream LIBSTDCXX)
+check_cxx_symbol_exists(_LIBCPP_VERSION iostream LIBCXX)
+if(LIBSTDCXX)
+  set(PKGCONFIG_CXX_LIB "-lstdc++")
+elseif(LIBCXX)
+  set(PKGCONFIG_CXX_LIB "-lc++")
 endif()
 
 # The jxl_cms library definition.

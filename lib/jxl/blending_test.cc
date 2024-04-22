@@ -20,8 +20,6 @@
 namespace jxl {
 namespace {
 
-using ::testing::SizeIs;
-
 TEST(BlendingTest, Crops) {
   const std::vector<uint8_t> compressed =
       jxl::test::ReadTestData("jxl/blending/cropped_traffic_light.jxl");
@@ -30,7 +28,7 @@ TEST(BlendingTest, Crops) {
   extras::PackedPixelFile decoded;
   ASSERT_TRUE(DecodeImageJXL(compressed.data(), compressed.size(), dparams,
                              /*decoded_bytes=*/nullptr, &decoded));
-  ASSERT_THAT(decoded.frames, SizeIs(4));
+  ASSERT_EQ(decoded.frames.size(), 4);
 
   int i = 0;
   for (auto&& decoded_frame : decoded.frames) {
@@ -40,8 +38,10 @@ TEST(BlendingTest, Crops) {
         jxl::test::ReadTestData(filename.str());
     extras::PackedPixelFile decoded_frame_ppf;
     decoded_frame_ppf.info = decoded.info;
-    decoded_frame_ppf.icc = decoded.icc;
+    decoded_frame_ppf.primary_color_representation =
+        decoded.primary_color_representation;
     decoded_frame_ppf.color_encoding = decoded.color_encoding;
+    decoded_frame_ppf.icc = decoded.icc;
     decoded_frame_ppf.extra_channels_info = decoded.extra_channels_info;
     decoded_frame_ppf.frames.emplace_back(std::move(decoded_frame));
     extras::PackedPixelFile expected_frame_ppf;

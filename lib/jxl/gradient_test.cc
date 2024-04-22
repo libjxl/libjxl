@@ -9,7 +9,6 @@
 #include <stdint.h>
 
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <utility>
 #include <vector>
@@ -45,10 +44,10 @@ double PointLineDist(double x0, double y0, double x1, double y1, double x,
 // angle in which the change direction happens.
 Image3F GenerateTestGradient(uint32_t color0, uint32_t color1, double angle,
                              size_t xsize, size_t ysize) {
-  Image3F image(xsize, ysize);
+  JXL_ASSIGN_OR_DIE(Image3F image, Image3F::Create(xsize, ysize));
 
-  double x0 = xsize / 2;
-  double y0 = ysize / 2;
+  double x0 = xsize / 2.0;
+  double y0 = ysize / 2.0;
   double x1 = x0 + std::sin(angle / 360.0 * 2.0 * kPi);
   double y1 = y0 + std::cos(angle / 360.0 * 2.0 * kPi);
 
@@ -78,10 +77,10 @@ Image3F GenerateTestGradient(uint32_t color0, uint32_t color1, double angle,
 // delta and right delta (top/bottom for vertical direction).
 // The radius over which the derivative is computed is only 1 pixel and it only
 // checks two angles (hor and ver), but this approximation works well enough.
-static Image3F Gradient2(const Image3F& image) {
+Image3F Gradient2(const Image3F& image) {
   size_t xsize = image.xsize();
   size_t ysize = image.ysize();
-  Image3F image2(xsize, ysize);
+  JXL_ASSIGN_OR_DIE(Image3F image2, Image3F::Create(xsize, ysize));
   for (size_t c = 0; c < 3; ++c) {
     for (size_t y = 1; y + 1 < ysize; y++) {
       const auto* JXL_RESTRICT row0 = image.ConstPlaneRow(c, y - 1);
@@ -170,28 +169,30 @@ void TestGradient(ThreadPool* pool, uint32_t color0, uint32_t color1,
     // butteraugli_distance).
     Image3F gradient2 = Gradient2(*io2.Main().color());
 
-    std::array<float, 3> image_max;
-    Image3Max(gradient2, &image_max);
-
     // TODO(jyrki): These values used to work with 0.2, 0.2, 0.2.
-    EXPECT_LE(image_max[0], 3.15);
-    EXPECT_LE(image_max[1], 1.72);
-    EXPECT_LE(image_max[2], 5.05);
+    float image_min;
+    float image_max;
+    ImageMinMax(gradient2.Plane(0), &image_min, &image_max);
+    EXPECT_LE(image_max, 3.15);
+    ImageMinMax(gradient2.Plane(1), &image_min, &image_max);
+    EXPECT_LE(image_max, 1.72);
+    ImageMinMax(gradient2.Plane(2), &image_min, &image_max);
+    EXPECT_LE(image_max, 5.05);
   }
 }
 
-static constexpr bool fast_mode = true;
+constexpr bool fast_mode = true;
 
 TEST(GradientTest, SteepGradient) {
   test::ThreadPoolForTests pool(8);
   // Relatively steep gradients, colors from the sky of stp.png
-  TestGradient(&pool, 0xd99d58, 0x889ab1, 512, 512, 90, fast_mode, 3.0);
+  TestGradient(pool.get(), 0xd99d58, 0x889ab1, 512, 512, 90, fast_mode, 3.0);
 }
 
 TEST(GradientTest, SubtleGradient) {
   test::ThreadPoolForTests pool(8);
   // Very subtle gradient
-  TestGradient(&pool, 0xb89b7b, 0xa89b8d, 512, 512, 90, fast_mode, 4.0);
+  TestGradient(pool.get(), 0xb89b7b, 0xa89b8d, 512, 512, 90, fast_mode, 4.0);
 }
 
 }  // namespace

@@ -35,7 +35,8 @@ std::string GetExtension(const std::string& path) {
 
 }  // namespace
 
-Codec CodecFromPath(std::string path, size_t* JXL_RESTRICT bits_per_sample,
+Codec CodecFromPath(const std::string& path,
+                    size_t* JXL_RESTRICT bits_per_sample,
                     std::string* extension) {
   std::string ext = GetExtension(path);
   if (extension) {
@@ -90,6 +91,15 @@ bool CanDecode(Codec codec) {
   }
 }
 
+std::string ListOfDecodeCodecs() {
+  std::string list_of_codecs("JXL, PPM, PNM, PFM, PAM, PGX");
+  if (CanDecode(Codec::kPNG)) list_of_codecs.append(", PNG, APNG");
+  if (CanDecode(Codec::kGIF)) list_of_codecs.append(", GIF");
+  if (CanDecode(Codec::kJPG)) list_of_codecs.append(", JPEG");
+  if (CanDecode(Codec::kEXR)) list_of_codecs.append(", EXR");
+  return list_of_codecs;
+}
+
 Status DecodeBytes(const Span<const uint8_t> bytes,
                    const ColorHints& color_hints, extras::PackedPixelFile* ppf,
                    const SizeConstraints* constraints, Codec* orig_codec) {
@@ -98,7 +108,7 @@ Status DecodeBytes(const Span<const uint8_t> bytes,
   *ppf = extras::PackedPixelFile();
 
   // Default values when not set by decoders.
-  ppf->info.uses_original_profile = true;
+  ppf->info.uses_original_profile = JXL_TRUE;
   ppf->info.orientation = JXL_ORIENT_IDENTITY;
 
   const auto choose_codec = [&]() -> Codec {
@@ -116,6 +126,7 @@ Status DecodeBytes(const Span<const uint8_t> bytes,
       dparams.accepted_formats.push_back(
           {num_channels, JXL_TYPE_FLOAT, JXL_LITTLE_ENDIAN, /*align=*/0});
     }
+    dparams.output_bitdepth.type = JXL_BIT_DEPTH_FROM_CODESTREAM;
     size_t decoded_bytes;
     if (DecodeImageJXL(bytes.data(), bytes.size(), dparams, &decoded_bytes,
                        ppf) &&

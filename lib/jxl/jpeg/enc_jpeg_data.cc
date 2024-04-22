@@ -8,7 +8,7 @@
 #include <brotli/encode.h>
 
 #include "lib/jxl/codec_in_out.h"
-#include "lib/jxl/enc_fields.h"
+#include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/jpeg/enc_jpeg_data_reader.h"
 #include "lib/jxl/luminance.h"
@@ -76,7 +76,8 @@ bool GetMarkerPayload(const uint8_t* data, size_t size, ByteSpan* payload) {
 
 Status DetectBlobs(jpeg::JPEGData& jpeg_data) {
   JXL_DASSERT(jpeg_data.app_data.size() == jpeg_data.app_marker_type.size());
-  bool have_exif = false, have_xmp = false;
+  bool have_exif = false;
+  bool have_xmp = false;
   for (size_t i = 0; i < jpeg_data.app_data.size(); i++) {
     auto& marker = jpeg_data.app_data[i];
     if (marker.empty() || marker[0] != kApp1) {
@@ -87,7 +88,7 @@ Status DetectBlobs(jpeg::JPEGData& jpeg_data) {
       // Something is wrong with this marker; does not care.
       continue;
     }
-    if (!have_exif && payload.size() >= sizeof kExifTag &&
+    if (!have_exif && payload.size() > sizeof kExifTag &&
         !memcmp(payload.data(), kExifTag, sizeof kExifTag)) {
       jpeg_data.app_marker_type[i] = AppMarkerType::kExif;
       have_exif = true;
@@ -165,15 +166,14 @@ Status ParseChunkedMarker(const jpeg::JPEGData& src, uint8_t marker_type,
     if (!presence[index]) {
       return JXL_FAILURE("Missing chunk.");
     }
-    chunks[index].AppendTo(output);
+    chunks[index].AppendTo(*output);
   }
 
   return true;
 }
 
 Status SetBlobsFromJpegData(const jpeg::JPEGData& jpeg_data, Blobs* blobs) {
-  for (size_t i = 0; i < jpeg_data.app_data.size(); i++) {
-    auto& marker = jpeg_data.app_data[i];
+  for (const auto& marker : jpeg_data.app_data) {
     if (marker.empty() || marker[0] != kApp1) {
       continue;
     }
@@ -210,7 +210,7 @@ Status SetBlobsFromJpegData(const jpeg::JPEGData& jpeg_data, Blobs* blobs) {
   return true;
 }
 
-static inline bool IsJPG(const Span<const uint8_t> bytes) {
+inline bool IsJPG(const Span<const uint8_t> bytes) {
   return bytes.size() >= 2 && bytes[0] == 0xFF && bytes[1] == 0xD8;
 }
 
@@ -239,14 +239,16 @@ Status SetChromaSubsamplingFromJpegData(const JPEGData& jpg,
     return JXL_FAILURE("Cannot recompress JPEGs with neither 1 nor 3 channels");
   }
   if (nbcomp == 3) {
-    uint8_t hsample[3], vsample[3];
+    uint8_t hsample[3];
+    uint8_t vsample[3];
     for (size_t i = 0; i < nbcomp; i++) {
       hsample[i] = jpg.components[i].h_samp_factor;
       vsample[i] = jpg.components[i].v_samp_factor;
     }
     JXL_RETURN_IF_ERROR(cs->Set(hsample, vsample));
   } else if (nbcomp == 1) {
-    uint8_t hsample[3], vsample[3];
+    uint8_t hsample[3];
+    uint8_t vsample[3];
     for (size_t i = 0; i < 3; i++) {
       hsample[i] = jpg.components[0].h_samp_factor;
       vsample[i] = jpg.components[0].v_samp_factor;
@@ -315,11 +317,11 @@ Status EncodeJPEGData(JPEGData& jpeg_data, std::vector<uint8_t>* bytes,
     }
     total_data += jpeg_data.app_data[i].size();
   }
-  for (size_t i = 0; i < jpeg_data.com_data.size(); i++) {
-    total_data += jpeg_data.com_data[i].size();
+  for (const auto& data : jpeg_data.com_data) {
+    total_data += data.size();
   }
-  for (size_t i = 0; i < jpeg_data.inter_marker_data.size(); i++) {
-    total_data += jpeg_data.inter_marker_data[i].size();
+  for (const auto& data : jpeg_data.inter_marker_data) {
+    total_data += data.size();
   }
   total_data += jpeg_data.tail_data.size();
   size_t brotli_capacity = BrotliEncoderMaxCompressedSize(total_data);
@@ -330,7 +332,7 @@ Status EncodeJPEGData(JPEGData& jpeg_data, std::vector<uint8_t>* bytes,
   {
     PaddedBytes serialized_jpeg_data = std::move(writer).TakeBytes();
     bytes->reserve(serialized_jpeg_data.size() + brotli_capacity);
-    Bytes(serialized_jpeg_data).AppendTo(bytes);
+    Bytes(serialized_jpeg_data).AppendTo(*bytes);
   }
 
   BrotliEncoderState* brotli_enc =
@@ -362,11 +364,11 @@ Status EncodeJPEGData(JPEGData& jpeg_data, std::vector<uint8_t>* bytes,
     }
     br_append(jpeg_data.app_data[i], /*last=*/false);
   }
-  for (size_t i = 0; i < jpeg_data.com_data.size(); i++) {
-    br_append(jpeg_data.com_data[i], /*last=*/false);
+  for (const auto& data : jpeg_data.com_data) {
+    br_append(data, /*last=*/false);
   }
-  for (size_t i = 0; i < jpeg_data.inter_marker_data.size(); i++) {
-    br_append(jpeg_data.inter_marker_data[i], /*last=*/false);
+  for (const auto& data : jpeg_data.inter_marker_data) {
+    br_append(data, /*last=*/false);
   }
   br_append(jpeg_data.tail_data, /*last=*/true);
   BrotliEncoderDestroyInstance(brotli_enc);
@@ -394,8 +396,9 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, CodecInOut* io) {
 
   io->metadata.m.SetIntensityTarget(kDefaultIntensityTarget);
   io->metadata.m.SetUintSamples(BITS_IN_JSAMPLE);
-  io->SetFromImage(Image3F(jpeg_data->width, jpeg_data->height),
-                   io->metadata.m.color_encoding);
+  JXL_ASSIGN_OR_RETURN(Image3F tmp,
+                       Image3F::Create(jpeg_data->width, jpeg_data->height));
+  io->SetFromImage(std::move(tmp), io->metadata.m.color_encoding);
   SetIntensityTarget(&io->metadata.m);
   return true;
 }

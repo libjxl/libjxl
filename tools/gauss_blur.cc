@@ -295,8 +295,8 @@ void VerticalBlock(const V& d1_1, const V& d1_3, const V& d1_5, const V& n2_1,
 // Reads/writes one block (kVectors full vectors) in each row.
 template <size_t kVectors>
 void VerticalStrip(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
-                   const size_t x, const size_t ysize, const GetConstRow in,
-                   const GetRow out) {
+                   const size_t x, const size_t ysize, const GetConstRow& in,
+                   const GetRow& out) {
   // We're iterating vertically, so use multiple full-length vectors (each lane
   // is one column of row n).
   using D = HWY_FULL(float);
@@ -373,7 +373,7 @@ void VerticalStrip(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
 // Not yet parallelized.
 void FastGaussianVertical(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
                           const size_t xsize, const size_t ysize,
-                          const GetConstRow in, const GetRow out,
+                          const GetConstRow& in, const GetRow& out,
                           ThreadPool* /* pool */) {
   const HWY_FULL(float) df;
   constexpr size_t kCacheLineLanes = 64 / sizeof(float);
@@ -404,8 +404,8 @@ HWY_EXPORT(FastGaussian1D);
 void FastGaussian1D(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
                     const size_t xsize, const float* JXL_RESTRICT in,
                     float* JXL_RESTRICT out) {
-  return HWY_DYNAMIC_DISPATCH(FastGaussian1D)(rg, static_cast<intptr_t>(xsize),
-                                              in, out);
+  HWY_DYNAMIC_DISPATCH(FastGaussian1D)
+  (rg, static_cast<intptr_t>(xsize), in, out);
 }
 
 HWY_EXPORT(FastGaussianVertical);  // Local function.
@@ -450,13 +450,12 @@ hwy::AlignedUniquePtr<RecursiveGaussian> CreateRecursiveGaussian(double sigma) {
   const double zeta_15 = D_35 * recip_d13;
   const double zeta_35 = D_51 * recip_d13;
 
-  double A[9] = {p_1,     p_3,     p_5,  //
-                 r_1,     r_3,     r_5,  //  (56)
-                 zeta_15, zeta_35, 1};
+  Matrix3x3d A{
+      {{p_1, p_3, p_5}, {r_1, r_3, r_5} /* (56) */, {zeta_15, zeta_35, 1}}};
   JXL_CHECK(Inv3x3Matrix(A));
-  const double gamma[3] = {1, radius * radius - sigma * sigma,  // (55)
-                           zeta_15 * rho[0] + zeta_35 * rho[1] + rho[2]};
-  double beta[3];
+  const Vector3d gamma{1, radius * radius - sigma * sigma,  // (55)
+                       zeta_15 * rho[0] + zeta_35 * rho[1] + rho[2]};
+  Vector3d beta;
   Mul3x3Vector(A, gamma, beta);  // (53)
 
   // Sanity check: correctly solved for beta (IIR filter weights are normalized)
@@ -509,7 +508,7 @@ namespace {
 // Apply 1D horizontal scan to each row.
 void FastGaussianHorizontal(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
                             const size_t xsize, const size_t ysize,
-                            const GetConstRow in, const GetRow out,
+                            const GetConstRow& in, const GetRow& out,
                             ThreadPool* pool) {
   const auto process_line = [&](const uint32_t task, size_t /*thread*/) {
     const size_t y = task;
@@ -523,8 +522,8 @@ void FastGaussianHorizontal(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
 }  // namespace
 
 void FastGaussian(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
-                  const size_t xsize, const size_t ysize, const GetConstRow in,
-                  const GetRow temp, const GetRow out, ThreadPool* pool) {
+                  const size_t xsize, const size_t ysize, const GetConstRow& in,
+                  const GetRow& temp, const GetRow& out, ThreadPool* pool) {
   FastGaussianHorizontal(rg, xsize, ysize, in, temp, pool);
   GetConstRow temp_in = [&](size_t y) { return temp(y); };
   HWY_DYNAMIC_DISPATCH(FastGaussianVertical)

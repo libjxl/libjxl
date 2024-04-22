@@ -35,7 +35,7 @@ class ThreadPoolInternal {
 
   ThreadPoolInternal(const ThreadPoolInternal&) = delete;
   ThreadPoolInternal& operator&(const ThreadPoolInternal&) = delete;
-  ThreadPool* operator&() { return pool_.get(); }
+  ThreadPool* get() { return pool_.get(); }
 
  private:
   JxlThreadParallelRunnerPtr runner_;

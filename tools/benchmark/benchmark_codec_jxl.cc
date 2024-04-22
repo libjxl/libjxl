@@ -259,13 +259,16 @@ class JxlCodec : public ImageCodec {
     cparams_.runner = pool->runner();
     cparams_.runner_opaque = pool->runner_opaque();
     cparams_.distance = butteraugli_target_;
-    cparams_.AddOption(JXL_ENC_FRAME_SETTING_NOISE, (int)jxlargs->noise);
-    cparams_.AddOption(JXL_ENC_FRAME_SETTING_DOTS, (int)jxlargs->dots);
-    cparams_.AddOption(JXL_ENC_FRAME_SETTING_PATCHES, (int)jxlargs->patches);
+    cparams_.AddOption(JXL_ENC_FRAME_SETTING_NOISE,
+                       static_cast<int>(jxlargs->noise));
+    cparams_.AddOption(JXL_ENC_FRAME_SETTING_DOTS,
+                       static_cast<int>(jxlargs->dots));
+    cparams_.AddOption(JXL_ENC_FRAME_SETTING_PATCHES,
+                       static_cast<int>(jxlargs->patches));
     cparams_.AddOption(JXL_ENC_FRAME_SETTING_PROGRESSIVE_AC,
-                       jxlargs->progressive);
+                       TO_JXL_BOOL(jxlargs->progressive));
     cparams_.AddOption(JXL_ENC_FRAME_SETTING_QPROGRESSIVE_AC,
-                       jxlargs->qprogressive);
+                       TO_JXL_BOOL(jxlargs->qprogressive));
     cparams_.AddOption(JXL_ENC_FRAME_SETTING_PROGRESSIVE_DC,
                        jxlargs->progressive_dc);
     if (butteraugli_target_ > 0.f && modular_mode_ && !has_ctransform_) {
@@ -293,8 +296,9 @@ class JxlCodec : public ImageCodec {
     dparams_.runner = pool->runner();
     dparams_.runner_opaque = pool->runner_opaque();
     JxlDataType data_type = uint8_ ? JXL_TYPE_UINT8 : JXL_TYPE_UINT16;
-    dparams_.accepted_formats = {{3, data_type, JXL_LITTLE_ENDIAN, 0},
-                                 {4, data_type, JXL_LITTLE_ENDIAN, 0}};
+    for (uint32_t c = 1; c <= 4; ++c) {
+      dparams_.accepted_formats.push_back({c, data_type, JXL_LITTLE_ENDIAN, 0});
+    }
     // By default, the decoder will undo exif orientation, giving an image
     // with identity exif rotation as result. However, the benchmark does
     // not undo exif orientation of the originals, and compares against the
@@ -339,7 +343,8 @@ class JxlCodec : public ImageCodec {
       JXL_CHECK(encoder);
       PackedPixelFile debug_ppf;
       JxlPixelFormat format{3, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
-      PackedFrame frame(xsize, ysize, format);
+      JXL_ASSIGN_OR_DIE(PackedFrame frame,
+                        PackedFrame::Create(xsize, ysize, format));
       memcpy(frame.color.pixels(), pixels, 6 * xsize * ysize);
       debug_ppf.frames.emplace_back(std::move(frame));
       debug_ppf.info.xsize = xsize;
@@ -348,7 +353,7 @@ class JxlCodec : public ImageCodec {
       debug_ppf.info.bits_per_sample = 16;
       debug_ppf.color_encoding = *color;
       EncodedImage encoded;
-      JXL_CHECK(encoder->Encode(debug_ppf, &encoded));
+      JXL_CHECK(encoder->Encode(debug_ppf, &encoded, nullptr));
       JXL_CHECK(!encoded.bitstreams.empty());
       std::string* debug_prefix = reinterpret_cast<std::string*>(opaque);
       std::string fn = *debug_prefix + std::string(label) + ".png";

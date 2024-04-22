@@ -20,12 +20,14 @@ libjxl_base_sources = [
     "jxl/base/fast_math-inl.h",
     "jxl/base/float.h",
     "jxl/base/iaca.h",
+    "jxl/base/include_jpeglib.h",
     "jxl/base/matrix_ops.h",
     "jxl/base/os_macros.h",
     "jxl/base/override.h",
     "jxl/base/printf_macros.h",
     "jxl/base/random.h",
     "jxl/base/rational_polynomial-inl.h",
+    "jxl/base/rect.h",
     "jxl/base/sanitizer_definitions.h",
     "jxl/base/scope_guard.h",
     "jxl/base/span.h",
@@ -188,8 +190,6 @@ libjxl_dec_sources = [
     "jxl/epf.cc",
     "jxl/epf.h",
     "jxl/fast_dct-inl.h",
-    "jxl/fast_dct.cc",
-    "jxl/fast_dct.h",
     "jxl/fast_dct128-inl.h",
     "jxl/fast_dct16-inl.h",
     "jxl/fast_dct256-inl.h",
@@ -216,6 +216,7 @@ libjxl_dec_sources = [
     "jxl/image_bundle.h",
     "jxl/image_metadata.cc",
     "jxl/image_metadata.h",
+    "jxl/image_ops.cc",
     "jxl/image_ops.h",
     "jxl/inverse_mtf-inl.h",
     "jxl/lehmer_code.h",
@@ -552,7 +553,7 @@ libjxl_major_version = 0
 
 libjxl_minor_version = 10
 
-libjxl_patch_version = 0
+libjxl_patch_version = 2
 
 libjxl_public_headers = [
     "include/jxl/cms.h",

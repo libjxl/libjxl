@@ -5,6 +5,7 @@
 
 #include "lib/jxl/dec_cache.h"
 
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/blending.h"
 #include "lib/jxl/common.h"  // JXL_HIGH_PRECISION
 #include "lib/jxl/render_pipeline/stage_blending.h"
@@ -124,8 +125,8 @@ Status PassesDecoderState::PreparePipeline(const FrameHeader& frame_header,
 
   if (frame_header.CanBeReferenced() &&
       frame_header.save_before_color_transform) {
-    builder.AddStage(GetWriteToImageBundleStage(
-        &frame_storage_for_referencing, output_encoding_info.color_encoding));
+    builder.AddStage(GetWriteToImageBundleStage(&frame_storage_for_referencing,
+                                                output_encoding_info));
   }
 
   bool has_alpha = false;
@@ -180,7 +181,7 @@ Status PassesDecoderState::PreparePipeline(const FrameHeader& frame_header,
         linear = false;
       }
       builder.AddStage(GetWriteToImageBundleStage(
-          &frame_storage_for_referencing, output_encoding_info.color_encoding));
+          &frame_storage_for_referencing, output_encoding_info));
     }
 
     if (options.render_spotcolors &&
@@ -227,7 +228,7 @@ Status PassesDecoderState::PreparePipeline(const FrameHeader& frame_header,
       if ((output_encoding_info.color_encoding_is_original) ||
           (!output_encoding_info.cms_set) || mixing_color_and_grey) {
         // in those cases we only need a linear stage in other cases we attempt
-        // to obtain an cms stage: the cases are
+        // to obtain a cms stage: the cases are
         // - output_encoding_info.color_encoding_is_original: no cms stage
         // needed because it would be a no-op
         // - !output_encoding_info.cms_set: can't use the cms, so no point in
@@ -247,17 +248,19 @@ Status PassesDecoderState::PreparePipeline(const FrameHeader& frame_header,
       }
       linear = false;
     }
+    (void)linear;
 
     if (main_output.callback.IsPresent() || main_output.buffer) {
       builder.AddStage(GetWriteToOutputStage(main_output, width, height,
                                              has_alpha, unpremul_alpha, alpha_c,
                                              undo_orientation, extra_output));
     } else {
-      builder.AddStage(GetWriteToImageBundleStage(
-          decoded, output_encoding_info.color_encoding));
+      builder.AddStage(
+          GetWriteToImageBundleStage(decoded, output_encoding_info));
     }
   }
-  render_pipeline = std::move(builder).Finalize(shared->frame_dim);
+  JXL_ASSIGN_OR_RETURN(render_pipeline,
+                       std::move(builder).Finalize(shared->frame_dim));
   return render_pipeline->IsInitialized();
 }
 

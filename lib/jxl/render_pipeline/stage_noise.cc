@@ -5,6 +5,8 @@
 
 #include "lib/jxl/render_pipeline/stage_noise.h"
 
+#include "lib/jxl/noise.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/render_pipeline/stage_noise.cc"
 #include <hwy/foreach_target.h>
@@ -61,9 +63,10 @@ class StrengthEvalLut {
 #endif
   {
 #if HWY_TARGET != HWY_SCALAR
-    uint32_t lut[8];
-    memcpy(lut, noise_params.lut, sizeof(lut));
-    for (size_t i = 0; i < 8; i++) {
+    uint32_t lut[NoiseParams::kNumNoisePoints];
+    memcpy(lut, noise_params.lut.data(),
+           NoiseParams::kNumNoisePoints * sizeof(uint32_t));
+    for (size_t i = 0; i < NoiseParams::kNumNoisePoints; i++) {
       low16_lut[2 * i] = (lut[i] >> 0) & 0xFF;
       low16_lut[2 * i + 1] = (lut[i] >> 8) & 0xFF;
       high16_lut[2 * i] = (lut[i] >> 16) & 0xFF;
@@ -161,10 +164,10 @@ class AddNoiseStage : public RenderPipelineStage {
         cmap_(cmap),
         first_c_(first_c) {}
 
-  void ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
-                  size_t xextra, size_t xsize, size_t xpos, size_t ypos,
-                  size_t thread_id) const final {
-    if (!noise_params_.HasAny()) return;
+  Status ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
+                    size_t xextra, size_t xsize, size_t xpos, size_t ypos,
+                    size_t thread_id) const final {
+    if (!noise_params_.HasAny()) return true;
     const StrengthEvalLut noise_model(noise_params_);
     D d;
     const auto half = Set(d, 0.5f);
@@ -212,6 +215,7 @@ class AddNoiseStage : public RenderPipelineStage {
     msan::PoisonMemory(row_x + xsize, (xsize_v - xsize) * sizeof(float));
     msan::PoisonMemory(row_y + xsize, (xsize_v - xsize) * sizeof(float));
     msan::PoisonMemory(row_b + xsize, (xsize_v - xsize) * sizeof(float));
+    return true;
   }
 
   RenderPipelineChannelMode GetChannelMode(size_t c) const final {
@@ -241,9 +245,9 @@ class ConvolveNoiseStage : public RenderPipelineStage {
             /*shift=*/0, /*border=*/2)),
         first_c_(first_c) {}
 
-  void ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
-                  size_t xextra, size_t xsize, size_t xpos, size_t ypos,
-                  size_t thread_id) const final {
+  Status ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
+                    size_t xextra, size_t xsize, size_t xpos, size_t ypos,
+                    size_t thread_id) const final {
     const HWY_FULL(float) d;
     for (size_t c = first_c_; c < first_c_ + 3; c++) {
       float* JXL_RESTRICT rows[5];
@@ -252,7 +256,7 @@ class ConvolveNoiseStage : public RenderPipelineStage {
       }
       float* JXL_RESTRICT row_out = GetOutputRow(output_rows, c, 0);
       for (ssize_t x = -RoundUpTo(xextra, Lanes(d));
-           x < (ssize_t)(xsize + xextra); x += Lanes(d)) {
+           x < static_cast<ssize_t>(xsize + xextra); x += Lanes(d)) {
         const auto p00 = LoadU(d, rows[2] + x);
         auto others = Zero(d);
         // TODO(eustas): sum loaded values to reduce the calculation chain
@@ -271,6 +275,7 @@ class ConvolveNoiseStage : public RenderPipelineStage {
         StoreU(pixels, d, row_out + x);
       }
     }
+    return true;
   }
 
   RenderPipelineChannelMode GetChannelMode(size_t c) const final {

@@ -182,7 +182,8 @@ class JPEGCodec : public ImageCodec {
       const std::string basename = GetBaseName(filename);
       TemporaryFile in_file(basename, "pnm");
       TemporaryFile encoded_file(basename, "jpg");
-      std::string in_filename, encoded_filename;
+      std::string in_filename;
+      std::string encoded_filename;
       JXL_RETURN_IF_ERROR(in_file.GetFileName(&in_filename));
       JXL_RETURN_IF_ERROR(encoded_file.GetFileName(&encoded_filename));
       std::vector<uint8_t> encoded;
@@ -190,19 +191,19 @@ class JPEGCodec : public ImageCodec {
       JXL_RETURN_IF_ERROR(WriteFile(in_filename, encoded));
       std::string compress_command = jpeg_encoder_;
       std::vector<std::string> arguments;
-      arguments.push_back("-outfile");
+      arguments.emplace_back("-outfile");
       arguments.push_back(encoded_filename);
-      arguments.push_back("-quality");
+      arguments.emplace_back("-quality");
       arguments.push_back(std::to_string(static_cast<int>(q_target_)));
-      arguments.push_back("-sample");
+      arguments.emplace_back("-sample");
       if (chroma_subsampling_ == "444") {
-        arguments.push_back("1x1");
+        arguments.emplace_back("1x1");
       } else if (chroma_subsampling_ == "420") {
-        arguments.push_back("2x2");
+        arguments.emplace_back("2x2");
       } else if (!chroma_subsampling_.empty()) {
         return JXL_FAILURE("Unsupported chroma subsampling");
       }
-      arguments.push_back("-optimize");
+      arguments.emplace_back("-optimize");
       arguments.push_back(in_filename);
       const double start = jxl::Now();
       JXL_RETURN_IF_ERROR(RunCommand(compress_command, arguments, false));

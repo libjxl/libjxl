@@ -26,6 +26,7 @@
 #include "lib/extras/enc/encode.h"
 #include "lib/extras/packed_image.h"
 #include "lib/jxl/base/byte_order.h"
+#include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/random.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
@@ -39,12 +40,6 @@ using test::ThreadPoolForTests;
 
 namespace extras {
 namespace {
-
-using ::testing::AllOf;
-using ::testing::Contains;
-using ::testing::Field;
-using ::testing::IsEmpty;
-using ::testing::SizeIs;
 
 std::string ExtensionFromCodec(Codec codec, const bool is_gray,
                                const bool has_alpha,
@@ -78,8 +73,8 @@ void VerifySameImage(const PackedImage& im0, size_t bits_per_sample0,
   };
   double factor0 = get_factor(im0.format, bits_per_sample0);
   double factor1 = get_factor(im1.format, bits_per_sample1);
-  auto pixels0 = static_cast<const uint8_t*>(im0.pixels());
-  auto pixels1 = static_cast<const uint8_t*>(im1.pixels());
+  const auto* pixels0 = static_cast<const uint8_t*>(im0.pixels());
+  const auto* pixels1 = static_cast<const uint8_t*>(im1.pixels());
   auto rgba0 =
       test::ConvertToRGBA32(pixels0, im0.xsize, im0.ysize, im0.format, factor0);
   auto rgba1 =
@@ -227,19 +222,23 @@ void CreateTestImage(const TestImageParams& params, PackedPixelFile* ppf) {
   ppf->info.exponent_bits_per_sample = params.bits_per_sample == 32 ? 8 : 0;
   ppf->info.num_color_channels = params.is_gray ? 1 : 3;
   ppf->info.alpha_bits = params.add_alpha ? params.bits_per_sample : 0;
-  ppf->info.alpha_premultiplied = (params.codec == Codec::kEXR);
+  ppf->info.alpha_premultiplied = TO_JXL_BOOL(params.codec == Codec::kEXR);
 
   JxlColorEncoding color_encoding = CreateTestColorEncoding(params.is_gray);
   ppf->icc = GenerateICC(color_encoding);
   ppf->color_encoding = color_encoding;
 
-  PackedFrame frame(params.xsize, params.ysize, params.PixelFormat());
+  JXL_ASSIGN_OR_DIE(
+      PackedFrame frame,
+      PackedFrame::Create(params.xsize, params.ysize, params.PixelFormat()));
   FillPackedImage(params.bits_per_sample, &frame.color);
   if (params.add_extra_channels) {
     for (size_t i = 0; i < 7; ++i) {
       JxlPixelFormat ec_format = params.PixelFormat();
       ec_format.num_channels = 1;
-      PackedImage ec(params.xsize, params.ysize, ec_format);
+      JXL_ASSIGN_OR_DIE(
+          PackedImage ec,
+          PackedImage::Create(params.xsize, params.ysize, ec_format));
       FillPackedImage(params.bits_per_sample, &ec);
       frame.extra_channels.emplace_back(std::move(ec));
       PackedExtraChannel pec;
@@ -335,10 +334,10 @@ TEST(CodecTest, TestRoundTrip) {
             params.add_alpha = add_alpha;
             params.big_endian = big_endian;
             params.add_extra_channels = false;
-            TestRoundTrip(params, &pool);
+            TestRoundTrip(params, pool.get());
             if (codec == Codec::kPNM && add_alpha) {
               params.add_extra_channels = true;
-              TestRoundTrip(params, &pool);
+              TestRoundTrip(params, pool.get());
             }
           }
         }
@@ -371,7 +370,7 @@ TEST(CodecTest, LosslessPNMRoundtrip) {
       EncodedImage encoded;
       auto encoder = Encoder::FromExtension(extension);
       ASSERT_TRUE(encoder.get());
-      ASSERT_TRUE(encoder->Encode(ppf, &encoded, &pool));
+      ASSERT_TRUE(encoder->Encode(ppf, &encoded, pool.get()));
       ASSERT_EQ(encoded.bitstreams.size(), 1);
       ASSERT_EQ(orig.size(), encoded.bitstreams[0].size());
       EXPECT_EQ(0,
@@ -432,15 +431,17 @@ TEST(CodecTest, EncodeToPNG) {
   ASSERT_TRUE(extras::DecodeBytes(Bytes(original_png), ColorHints(), &ppf));
 
   const JxlPixelFormat& format = ppf.frames.front().color.format;
-  ASSERT_THAT(
-      png_encoder->AcceptedFormats(),
-      Contains(AllOf(Field(&JxlPixelFormat::num_channels, format.num_channels),
-                     Field(&JxlPixelFormat::data_type, format.data_type),
-                     Field(&JxlPixelFormat::endianness, format.endianness))));
+  const auto& format_matcher = [&format](const JxlPixelFormat& candidate) {
+    return (candidate.num_channels == format.num_channels) &&
+           (candidate.data_type == format.data_type) &&
+           (candidate.endianness == format.endianness);
+  };
+  const auto formats = png_encoder->AcceptedFormats();
+  ASSERT_TRUE(std::any_of(formats.begin(), formats.end(), format_matcher));
   EncodedImage encoded_png;
   ASSERT_TRUE(png_encoder->Encode(ppf, &encoded_png, pool));
-  EXPECT_THAT(encoded_png.icc, IsEmpty());
-  ASSERT_THAT(encoded_png.bitstreams, SizeIs(1));
+  EXPECT_TRUE(encoded_png.icc.empty());
+  ASSERT_EQ(encoded_png.bitstreams.size(), 1);
 
   PackedPixelFile decoded_ppf;
   ASSERT_TRUE(extras::DecodeBytes(Bytes(encoded_png.bitstreams.front()),

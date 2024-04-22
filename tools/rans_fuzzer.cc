@@ -3,14 +3,17 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <cstddef>
+#include <cstdint>
+
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_ans.h"
 #include "lib/jxl/dec_bit_reader.h"
-#include "lib/jxl/entropy_coder.h"
+#include "lib/jxl/test_utils.h"
 
-namespace jpegxl {
-namespace tools {
+namespace {
 
 using ::jxl::ANSCode;
 using ::jxl::ANSSymbolReader;
@@ -19,7 +22,7 @@ using ::jxl::BitReaderScopedCloser;
 using ::jxl::Bytes;
 using ::jxl::Status;
 
-int TestOneInput(const uint8_t* data, size_t size) {
+int DoTestOneInput(const uint8_t* data, size_t size) {
   if (size < 2) return 0;
   size_t numContexts = data[0] * 256 * data[1] + 1;
   data += 2;
@@ -50,9 +53,14 @@ int TestOneInput(const uint8_t* data, size_t size) {
   return 0;
 }
 
-}  // namespace tools
-}  // namespace jpegxl
+}  // namespace
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
-  return jpegxl::tools::TestOneInput(data, size);
+  return DoTestOneInput(data, size);
 }
+
+void TestOneInput(const std::vector<uint8_t>& data) {
+  DoTestOneInput(data.data(), data.size());
+}
+
+FUZZ_TEST(RansFuzzTest, TestOneInput);

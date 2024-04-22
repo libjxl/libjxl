@@ -44,7 +44,7 @@ def CompareNPY(ref, ref_icc, dec, dec_icc, frame_idx, rmse_limit, peak_error):
     actual_rmses = [numpy.sqrt(numpy.mean(error_ch * error_ch)) for error_ch in error_by_channel]
     actual_rmse = max(actual_rmses)
 
-    print(f"RMSE: {actual_rmses}, peak error: {actual_peak_error}", flush=True)
+    print(f"RMSE: {actual_rmses}, actual peak: {actual_peak_error}", flush=True)
 
     if actual_rmse > rmse_limit:
         return Failure(f"RMSE too large: {actual_rmse} > {rmse_limit}")

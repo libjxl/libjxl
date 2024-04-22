@@ -78,6 +78,8 @@ def SplitLibFiles(repo_files):
   jpegli_srcs, srcs = Filter(srcs, HasPrefixFn('jpegli'))
   # TODO(eustas): move to tools?
   _, srcs = Filter(srcs, HasSuffixFn('gbench_main.cc'))
+  # This stub compilation unit is manually referenced in CMake buildfile.
+  _, srcs = Filter(srcs, HasSuffixFn('nothing.cc'))
 
   # First pick files scattered across directories.
   tests, srcs = Filter(srcs, HasSuffixFn('_test.cc'))

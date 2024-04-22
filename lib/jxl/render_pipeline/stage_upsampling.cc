@@ -46,9 +46,9 @@ class UpsamplingStage : public RenderPipelineStage {
     }
   }
 
-  void ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
-                  size_t xextra, size_t xsize, size_t xpos, size_t ypos,
-                  size_t thread_id) const final {
+  Status ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
+                    size_t xextra, size_t xsize, size_t xpos, size_t ypos,
+                    size_t thread_id) const final {
     static HWY_FULL(float) df;
     size_t shift = settings_.shift_x;
     size_t N = 1 << shift;
@@ -74,6 +74,7 @@ class UpsamplingStage : public RenderPipelineStage {
       msan::PoisonMemory(dst_row + xsize * N,
                          sizeof(float) * (xsize_v - xsize) * N);
     }
+    return true;
   }
 
   RenderPipelineChannelMode GetChannelMode(size_t c) const final {
@@ -109,7 +110,7 @@ class UpsamplingStage : public RenderPipelineStage {
                       ssize_t x0, ssize_t x1) const {
     static HWY_FULL(float) df;
     using V = hwy::HWY_NAMESPACE::Vec<HWY_FULL(float)>;
-    V ups0, ups1, ups2, ups3, ups4, ups5, ups6, ups7;
+    V ups0, ups1, ups2, ups3, ups4, ups5, ups6, ups7;  // NOLINT
     (void)ups2, (void)ups3, (void)ups4, (void)ups5, (void)ups6, (void)ups7;
     // Once we have C++17 available, change this back to `V* ups[N]` and
     // initialize using `if constexpr` below.

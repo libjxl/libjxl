@@ -30,6 +30,7 @@ Design:
 #include <algorithm>
 #include <cmath>
 #include <hwy/aligned_allocator.h>
+#include <utility>
 
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/printf_macros.h"
@@ -43,15 +44,17 @@ Design:
 namespace {
 
 using jxl::Image3F;
+using jxl::ImageBundle;
 using jxl::ImageF;
+using jxl::StatusOr;
 
-static const float kC2 = 0.0009f;
-static const int kNumScales = 6;
+const float kC2 = 0.0009f;
+const int kNumScales = 6;
 
-Image3F Downsample(const Image3F& in, size_t fx, size_t fy) {
+StatusOr<Image3F> Downsample(const Image3F& in, size_t fx, size_t fy) {
   const size_t out_xsize = (in.xsize() + fx - 1) / fx;
   const size_t out_ysize = (in.ysize() + fy - 1) / fy;
-  Image3F out(out_xsize, out_ysize);
+  JXL_ASSIGN_OR_RETURN(Image3F out, Image3F::Create(out_xsize, out_ysize));
   const float normalize = 1.0f / (fx * fy);
   for (size_t c = 0; c < 3; ++c) {
     for (size_t oy = 0; oy < out_ysize; ++oy) {
@@ -88,8 +91,11 @@ void Multiply(const Image3F& a, const Image3F& b, Image3F* mul) {
 // Temporary storage for Gaussian blur, reused for multiple images.
 class Blur {
  public:
-  Blur(const size_t xsize, const size_t ysize)
-      : rg_(jxl::CreateRecursiveGaussian(1.5)), temp_(xsize, ysize) {}
+  static StatusOr<Blur> Create(const size_t xsize, const size_t ysize) {
+    Blur result;
+    JXL_ASSIGN_OR_RETURN(result.temp_, ImageF::Create(xsize, ysize));
+    return result;
+  }
 
   void operator()(const ImageF& in, ImageF* JXL_RESTRICT out) {
     FastGaussian(
@@ -98,8 +104,8 @@ class Blur {
         [&](size_t y) { return out->Row(y); });
   }
 
-  Image3F operator()(const Image3F& in) {
-    Image3F out(in.xsize(), in.ysize());
+  StatusOr<Image3F> operator()(const Image3F& in) {
+    JXL_ASSIGN_OR_RETURN(Image3F out, Image3F::Create(in.xsize(), in.ysize()));
     operator()(in.Plane(0), &out.Plane(0));
     operator()(in.Plane(1), &out.Plane(1));
     operator()(in.Plane(2), &out.Plane(2));
@@ -112,6 +118,7 @@ class Blur {
   }
 
  private:
+  Blur() : rg_(jxl::CreateRecursiveGaussian(1.5)) {}
   hwy::AlignedUniquePtr<jxl::RecursiveGaussian> rg_;
   ImageF temp_;
 };
@@ -215,7 +222,7 @@ void EdgeDiffMap(const Image3F& img1, const Image3F& mu1, const Image3F& img2,
    The maximum pixel-wise difference has to be <= 1 for the ssim formula to make
    sense.
 */
-void MakePositiveXYB(jxl::Image3F& img) {
+void MakePositiveXYB(Image3F& img) {
   for (size_t y = 0; y < img.ysize(); ++y) {
     float* JXL_RESTRICT rowY = img.PlaneRow(1, y);
     float* JXL_RESTRICT rowB = img.PlaneRow(2, y);
@@ -228,7 +235,7 @@ void MakePositiveXYB(jxl::Image3F& img) {
   }
 }
 
-void AlphaBlend(jxl::ImageBundle& img, float bg) {
+void AlphaBlend(ImageBundle& img, float bg) {
   for (size_t y = 0; y < img.ysize(); ++y) {
     float* JXL_RESTRICT r = img.color()->PlaneRow(0, y);
     float* JXL_RESTRICT g = img.color()->PlaneRow(1, y);
@@ -427,15 +434,17 @@ double Msssim::Score() const {
   return ssim;
 }
 
-Msssim ComputeSSIMULACRA2(const jxl::ImageBundle& orig,
-                          const jxl::ImageBundle& dist, float bg) {
+StatusOr<Msssim> ComputeSSIMULACRA2(const ImageBundle& orig,
+                                    const ImageBundle& dist, float bg) {
   Msssim msssim;
 
-  jxl::Image3F img1(orig.xsize(), orig.ysize());
-  jxl::Image3F img2(img1.xsize(), img1.ysize());
+  JXL_ASSIGN_OR_RETURN(Image3F img1,
+                       Image3F::Create(orig.xsize(), orig.ysize()));
+  JXL_ASSIGN_OR_RETURN(Image3F img2,
+                       Image3F::Create(img1.xsize(), img1.ysize()));
 
-  jxl::ImageBundle orig2 = orig.Copy();
-  jxl::ImageBundle dist2 = dist.Copy();
+  JXL_ASSIGN_OR_RETURN(ImageBundle orig2, orig.Copy());
+  JXL_ASSIGN_OR_RETURN(ImageBundle dist2, dist.Copy());
 
   if (orig.HasAlpha()) AlphaBlend(orig2, bg);
   if (dist.HasAlpha()) AlphaBlend(dist2, bg);
@@ -447,27 +456,34 @@ Msssim ComputeSSIMULACRA2(const jxl::ImageBundle& orig,
   JXL_CHECK(dist2.TransformTo(jxl::ColorEncoding::LinearSRGB(dist2.IsGray()),
                               *JxlGetDefaultCms()));
 
-  jxl::ToXYB(orig2, nullptr, &img1, *JxlGetDefaultCms(), nullptr);
-  jxl::ToXYB(dist2, nullptr, &img2, *JxlGetDefaultCms(), nullptr);
+  JXL_RETURN_IF_ERROR(
+      jxl::ToXYB(orig2, nullptr, &img1, *JxlGetDefaultCms(), nullptr));
+  JXL_RETURN_IF_ERROR(
+      jxl::ToXYB(dist2, nullptr, &img2, *JxlGetDefaultCms(), nullptr));
   MakePositiveXYB(img1);
   MakePositiveXYB(img2);
 
-  Image3F mul(img1.xsize(), img1.ysize());
-  Blur blur(img1.xsize(), img1.ysize());
+  JXL_ASSIGN_OR_RETURN(Image3F mul,
+                       Image3F::Create(img1.xsize(), img1.ysize()));
+  JXL_ASSIGN_OR_RETURN(Blur blur, Blur::Create(img1.xsize(), img1.ysize()));
 
   for (int scale = 0; scale < kNumScales; scale++) {
     if (img1.xsize() < 8 || img1.ysize() < 8) {
       break;
     }
     if (scale) {
-      orig2.SetFromImage(Downsample(*orig2.color(), 2, 2),
+      JXL_ASSIGN_OR_RETURN(Image3F tmp, Downsample(*orig2.color(), 2, 2));
+      orig2.SetFromImage(std::move(tmp),
                          jxl::ColorEncoding::LinearSRGB(orig2.IsGray()));
-      dist2.SetFromImage(Downsample(*dist2.color(), 2, 2),
+      JXL_ASSIGN_OR_RETURN(tmp, Downsample(*dist2.color(), 2, 2));
+      dist2.SetFromImage(std::move(tmp),
                          jxl::ColorEncoding::LinearSRGB(dist2.IsGray()));
       img1.ShrinkTo(orig2.xsize(), orig2.ysize());
       img2.ShrinkTo(orig2.xsize(), orig2.ysize());
-      jxl::ToXYB(orig2, nullptr, &img1, *JxlGetDefaultCms(), nullptr);
-      jxl::ToXYB(dist2, nullptr, &img2, *JxlGetDefaultCms(), nullptr);
+      JXL_RETURN_IF_ERROR(
+          jxl::ToXYB(orig2, nullptr, &img1, *JxlGetDefaultCms(), nullptr));
+      JXL_RETURN_IF_ERROR(
+          jxl::ToXYB(dist2, nullptr, &img2, *JxlGetDefaultCms(), nullptr));
       MakePositiveXYB(img1);
       MakePositiveXYB(img2);
     }
@@ -475,16 +491,16 @@ Msssim ComputeSSIMULACRA2(const jxl::ImageBundle& orig,
     blur.ShrinkTo(img1.xsize(), img1.ysize());
 
     Multiply(img1, img1, &mul);
-    Image3F sigma1_sq = blur(mul);
+    JXL_ASSIGN_OR_RETURN(Image3F sigma1_sq, blur(mul));
 
     Multiply(img2, img2, &mul);
-    Image3F sigma2_sq = blur(mul);
+    JXL_ASSIGN_OR_RETURN(Image3F sigma2_sq, blur(mul));
 
     Multiply(img1, img2, &mul);
-    Image3F sigma12 = blur(mul);
+    JXL_ASSIGN_OR_RETURN(Image3F sigma12, blur(mul));
 
-    Image3F mu1 = blur(img1);
-    Image3F mu2 = blur(img2);
+    JXL_ASSIGN_OR_RETURN(Image3F mu1, blur(img1));
+    JXL_ASSIGN_OR_RETURN(Image3F mu2, blur(img2));
 
     MsssimScale sscale;
     SSIMMap(mu1, mu2, sigma1_sq, sigma2_sq, sigma12, sscale.avg_ssim);
@@ -494,7 +510,7 @@ Msssim ComputeSSIMULACRA2(const jxl::ImageBundle& orig,
   return msssim;
 }
 
-Msssim ComputeSSIMULACRA2(const jxl::ImageBundle& orig,
-                          const jxl::ImageBundle& distorted) {
+StatusOr<Msssim> ComputeSSIMULACRA2(const ImageBundle& orig,
+                                    const ImageBundle& distorted) {
   return ComputeSSIMULACRA2(orig, distorted, 0.5f);
 }

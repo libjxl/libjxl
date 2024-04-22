@@ -11,9 +11,12 @@
 
 #include <hwy/base.h>  // kMaxVectorSize
 
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/coeff_order_fwd.h"
 #include "lib/jxl/frame_dimensions.h"
+#include "lib/jxl/image.h"
 #include "lib/jxl/image_ops.h"
 
 // Defines the different kinds of transforms, and heuristics to choose between
@@ -144,7 +147,7 @@ class AcStrategy {
                                        8, 4, 8, 16, 8, 16, 32, 16, 32};
     static_assert(sizeof(kLut) / sizeof(*kLut) == kNumValidStrategies,
                   "Update LUT");
-    return kLut[size_t(strategy_)];
+    return kLut[static_cast<size_t>(strategy_)];
   }
 
   JXL_INLINE size_t covered_blocks_y() const {
@@ -153,7 +156,7 @@ class AcStrategy {
                                        8, 8, 4, 16, 16, 8, 32, 32, 16};
     static_assert(sizeof(kLut) / sizeof(*kLut) == kNumValidStrategies,
                   "Update LUT");
-    return kLut[size_t(strategy_)];
+    return kLut[static_cast<size_t>(strategy_)];
   }
 
   JXL_INLINE size_t log2_covered_blocks() const {
@@ -162,7 +165,7 @@ class AcStrategy {
                                        6, 5, 5, 8, 7, 7, 10, 9, 9};
     static_assert(sizeof(kLut) / sizeof(*kLut) == kNumValidStrategies,
                   "Update LUT");
-    return kLut[size_t(strategy_)];
+    return kLut[static_cast<size_t>(strategy_)];
   }
 
  private:
@@ -181,7 +184,9 @@ class AcStrategyRow {
  public:
   explicit AcStrategyRow(const uint8_t* row) : row_(row) {}
   AcStrategy operator[](size_t x) const {
-    return AcStrategy(static_cast<AcStrategy::Type>(row_[x] >> 1), row_[x] & 1);
+    AcStrategy::Type strategy = static_cast<AcStrategy::Type>(row_[x] >> 1);
+    bool is_first = static_cast<bool>(row_[x] & 1);
+    return AcStrategy(strategy, is_first);
   }
 
  private:
@@ -191,7 +196,8 @@ class AcStrategyRow {
 class AcStrategyImage {
  public:
   AcStrategyImage() = default;
-  AcStrategyImage(size_t xsize, size_t ysize);
+  static StatusOr<AcStrategyImage> Create(size_t xsize, size_t ysize);
+
   AcStrategyImage(AcStrategyImage&&) = default;
   AcStrategyImage& operator=(AcStrategyImage&&) = default;
 

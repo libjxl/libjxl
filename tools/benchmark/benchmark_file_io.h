@@ -13,7 +13,6 @@
 #include <vector>
 
 #include "lib/jxl/base/status.h"
-#include "tools/file_io.h"
 
 namespace jpegxl {
 namespace tools {

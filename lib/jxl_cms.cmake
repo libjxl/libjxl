@@ -23,7 +23,7 @@ target_include_directories(jxl_cms PRIVATE
 generate_export_header(jxl_cms
   BASE_NAME JXL_CMS
   EXPORT_FILE_NAME include/jxl/jxl_cms_export.h)
-target_include_directories(jxl_cms PUBLIC
+target_include_directories(jxl_cms BEFORE PUBLIC
   "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>")
 
 set(JPEGXL_CMS_LIBRARY_REQUIRES "")
@@ -62,8 +62,10 @@ install(TARGETS jxl_cms
 
 if (BUILD_SHARED_LIBS)
   set(JPEGXL_REQUIRES_TYPE "Requires.private")
+  set(JPEGXL_CMS_PRIVATE_LIBS "-lm ${PKGCONFIG_CXX_LIB}")
 else()
   set(JPEGXL_REQUIRES_TYPE "Requires")
+  set(JPEGXL_CMS_PRIVATE_LIBS "-lm ${PKGCONFIG_CXX_LIB}")
 endif()
 
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/jxl/libjxl_cms.pc.in"
