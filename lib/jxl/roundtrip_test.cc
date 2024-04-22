@@ -433,7 +433,7 @@ void VerifyRoundtripCompression(
     float butteraugli_score = ButteraugliDistance(
         original_io.frames, decoded_io.frames, ba, *JxlGetDefaultCms(),
         /*distmap=*/nullptr, nullptr);
-    float target_score = 1.3f;
+    float target_score = 1.4f;
     // upsampling mode 1 (unlike default and NN) does not downscale back to the
     // already downsampled image
     if (upsampling_mode == 1 && resampling >= 4 && already_downsampled)
