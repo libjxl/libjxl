@@ -8,7 +8,6 @@
 #include <jxl/thread_parallel_runner_cxx.h>
 #include <jxl/types.h>
 
-#include <climits>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -16,19 +15,18 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <vector>
 
 #include "lib/extras/alpha_blend.h"
-#include "lib/extras/codec.h"
 #include "lib/extras/dec/decode.h"
 #include "lib/extras/dec/jxl.h"
 #include "lib/extras/enc/apng.h"
 #include "lib/extras/enc/encode.h"
 #include "lib/extras/enc/exr.h"
 #include "lib/extras/enc/jpg.h"
-#include "lib/extras/enc/pnm.h"
 #include "lib/extras/packed_image.h"
 #include "lib/extras/time.h"
 #include "lib/jxl/base/printf_macros.h"
@@ -45,19 +43,12 @@ struct DecompressArgs {
 
   void AddCommandLineOptions(CommandLineParser* cmdline) {
     std::string output_help("The output format can be ");
-    if (jxl::extras::GetAPNGEncoder()) {
-      output_help.append("PNG, APNG, ");
-    }
-    if (jxl::extras::GetJPEGEncoder()) {
-      output_help.append("JPEG, ");
-    } else {
-      output_help.append("JPEG (lossless reconstruction only), ");
-    }
-    if (jxl::extras::GetEXREncoder()) {
-      output_help.append("EXR, ");
+    output_help.append(jxl::extras::ListOfEncodeCodecs());
+    if (!jxl::extras::GetJPEGEncoder()) {
+      output_help.append(", JPEG (lossless reconstruction only)");
     }
     output_help.append(
-        "PGM (for greyscale input), PPM (for color input), PNM, PFM, or PAM.\n"
+        "\n"
         "    To extract metadata, use output format EXIF, XMP, or JUMBF.\n"
         "    The format is selected based on extension ('filename.png') or can "
         "be overwritten by using --output_format.\n"
@@ -158,16 +149,18 @@ struct DecompressArgs {
                            "No output file will be written (for benchmarking)",
                            &disable_output, &SetBooleanTrue, 2);
 
-    cmdline->AddOptionFlag('\0', "output_extra_channels",
-                           "If set, all extra channels will be written either "
-                           "as part of the main output file (e.g. alpha "
-                           "channel in png) or as separate output files with "
-                           "suffix -ecN in their names. If not set, the "
-                           "(first) alpha channel will only be written when "
-                           "the output format supports alpha channels and all "
-                           "other extra channels won't be decoded. Files are "
-                           "concatenated when outputting to stdout.",
-                           &output_extra_channels, &SetBooleanTrue, 2);
+    cmdline->AddOptionFlag(
+        '\0', "output_extra_channels",
+        "If set, all extra channels will be written either "
+        "as part of the main output file (e.g. alpha "
+        "channel in png) or as separate output files with "
+        "suffix -ecN in their names. If not set, the "
+        "(first) alpha channel will only be written when "
+        "the output format supports alpha channels and all "
+        "other extra channels won't be decoded. Files are "
+        "concatenated when outputting to stdout. Only has an effect when "
+        "decoding to (A)PNG or PPM/PNM/PFM/PAM",
+        &output_extra_channels, &SetBooleanTrue, 2);
 
     cmdline->AddOptionFlag(
         '\0', "output_frames",
@@ -228,7 +221,7 @@ struct DecompressArgs {
 
   // Validate the passed arguments, checking whether all passed options are
   // compatible. Returns whether the validation was successful.
-  bool ValidateArgs(const CommandLineParser& cmdline) {
+  bool ValidateArgs(const CommandLineParser& cmdline) const {
     if (file_in == nullptr) {
       fprintf(stderr, "Missing INPUT filename.\n");
       return false;
@@ -315,7 +308,12 @@ std::string Filename(const std::string& filename, const std::string& extension,
 void AddFormatsWithAlphaChannel(std::vector<JxlPixelFormat>* formats) {
   auto add_format = [&](JxlPixelFormat format) {
     for (auto f : *formats) {
-      if (memcmp(&f, &format, sizeof(format)) == 0) return;
+      // NB: must reflect changes in JxlPixelFormat.
+      if (f.num_channels == format.num_channels &&
+          f.data_type == format.data_type &&
+          f.endianness == format.endianness && f.align == format.align) {
+        return;
+      }
     }
     formats->push_back(format);
   };
@@ -388,7 +386,6 @@ bool DecompressJxlToPackedPixelFile(
   dparams.runner = JxlThreadParallelRunner;
   dparams.runner_opaque = runner;
   dparams.allow_partial_input = args.allow_partial_files;
-  dparams.need_icc = !args.icc_out.empty();
   if (args.bits_per_sample == 0) {
     dparams.output_bitdepth.type = JXL_BIT_DEPTH_FROM_CODESTREAM;
   } else if (args.bits_per_sample > 0) {
@@ -455,8 +452,8 @@ int main(int argc, const char* argv[]) {
 
   if (!args.file_out && !args.disable_output) {
     std::cerr
-        << "No output file specified and --disable_output flag not passed."
-        << std::endl;
+        << "No output file specified and --disable_output flag not passed.\n"
+        << std::flush;
     return EXIT_FAILURE;
   }
 
@@ -552,6 +549,15 @@ int main(int argc, const char* argv[]) {
         AddFormatsWithAlphaChannel(&accepted_formats);
       }
     }
+    if (filename_out.empty()) {
+      // Decoding to pixels only, fill in float pixel formats
+      for (const uint32_t num_channels : {1, 2, 3, 4}) {
+        for (JxlEndianness endianness : {JXL_BIG_ENDIAN, JXL_LITTLE_ENDIAN}) {
+          accepted_formats.push_back(JxlPixelFormat{
+              num_channels, JXL_TYPE_FLOAT, endianness, /*align=*/0});
+        }
+      }
+    }
     jxl::extras::PackedPixelFile ppf;
     size_t decoded_bytes = 0;
     for (size_t i = 0; i < num_reps; ++i) {
@@ -585,7 +591,7 @@ int main(int argc, const char* argv[]) {
       }
       jxl::extras::EncodedImage encoded_image;
       if (!args.quiet) cmdline.VerbosePrintf(2, "Encoding decoded image\n");
-      if (!encoder->Encode(ppf, &encoded_image)) {
+      if (!encoder->Encode(ppf, &encoded_image, nullptr)) {
         fprintf(stderr, "Encode failed\n");
         return EXIT_FAILURE;
       }
@@ -600,7 +606,7 @@ int main(int argc, const char* argv[]) {
                       : encoded_image.extra_channel_bitstreams[i - 1][j]);
           std::string fn =
               Filename(filename_out, extension, i, j, nlayers, nframes);
-          if (!jpegxl::tools::WriteFile(fn.c_str(), bitstream)) {
+          if (!jpegxl::tools::WriteFile(fn, bitstream)) {
             return EXIT_FAILURE;
           }
           if (!args.quiet)

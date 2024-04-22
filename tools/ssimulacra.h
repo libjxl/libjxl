@@ -8,6 +8,7 @@
 
 #include <vector>
 
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/image.h"
 
 namespace ssimulacra {
@@ -28,8 +29,9 @@ struct Ssimulacra {
   void PrintDetails() const;
 };
 
-Ssimulacra ComputeDiff(const jxl::Image3F& orig, const jxl::Image3F& distorted,
-                       bool simple);
+jxl::StatusOr<Ssimulacra> ComputeDiff(const jxl::Image3F& orig,
+                                      const jxl::Image3F& distorted,
+                                      bool simple);
 
 }  // namespace ssimulacra
 

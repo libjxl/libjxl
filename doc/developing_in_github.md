@@ -17,7 +17,7 @@ After that "Life of a Pull Request" describes the common everyday workflows.
 
 ### Configure your SSH access
 
-The easiest way to configure access to your Github repository is to use SSH
+The easiest way to configure access to your GitHub repository is to use SSH
 keys. For that you need an SSH private and public key, ideally a strong one. You
 can use different keys for different sites if you want. In this example, we will
 create one for using in GitHub only.
@@ -93,7 +93,7 @@ fork. You can use any other name for your fork if you want. Use the following
 commands to set things up, replacing `{{USERNAME}}` with your GitHub username:
 
 ```bash
-git clone git https://github.com/libjxl/libjxl --recursive
+git clone https://github.com/libjxl/libjxl --recursive
 cd libjxl
 git remote set-url --push origin git@github.com:{{USERNAME}}/libjxl.git
 git remote add myfork git@github.com:{{USERNAME}}/libjxl.git

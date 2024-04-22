@@ -12,7 +12,8 @@ dependencies that need to be installed on your system first:
 
 ```bash
 sudo apt install cmake clang doxygen g++ extra-cmake-modules \
-  libgif-dev libjpeg-dev ninja-build libgoogle-perftools-dev
+  libgif-dev libjpeg-dev ninja-build libgoogle-perftools-dev \
+  graphviz
 ```
 
 Make sure your default `clang` compiler is at least version 6 by running
@@ -34,7 +35,7 @@ the following packages:
 
 ```bash
 sudo apt install qt6-base-dev libwebp-dev libgimp2.0-dev libopenexr-dev \
-  libgtest-dev libgmock-dev libbenchmark-dev libbenchmark-tools
+  libgtest-dev libbenchmark-dev libbenchmark-tools
 ```
 
 For the lint/coverage commands, you will also need additional packages:

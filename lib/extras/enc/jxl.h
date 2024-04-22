@@ -38,7 +38,7 @@ struct JXLCompressParams {
   std::vector<JXLOption> options;
   // Target butteraugli distance, 0.0 means lossless.
   float distance = 1.0f;
-  float alpha_distance = 1.0f;
+  float alpha_distance = 0.0f;
   // If set to true, forces container mode.
   bool use_container = false;
   // Whether to enable/disable byte-exact jpeg reconstruction for jpeg inputs.
@@ -57,8 +57,6 @@ struct JXLCompressParams {
   size_t override_bitdepth = 0;
   int32_t codestream_level = -1;
   int32_t premultiply = -1;
-  // Override input buffer interpretation.
-  JxlBitDepth input_bitdepth = {JXL_BIT_DEPTH_FROM_PIXEL_FORMAT, 0, 0};
   // If runner_opaque is set, the decoder uses this parallel runner.
   JxlParallelRunner runner = JxlThreadParallelRunner;
   void* runner_opaque = nullptr;
@@ -69,10 +67,10 @@ struct JXLCompressParams {
   bool allow_expert_options = false;
 
   void AddOption(JxlEncoderFrameSettingId id, int64_t val) {
-    options.emplace_back(JXLOption(id, val, 0));
+    options.emplace_back(id, val, 0);
   }
   void AddFloatOption(JxlEncoderFrameSettingId id, float val) {
-    options.emplace_back(JXLOption(id, val, 0));
+    options.emplace_back(id, val, 0);
   }
   bool HasOutputProcessor() const {
     return (output_processor.get_buffer != nullptr &&

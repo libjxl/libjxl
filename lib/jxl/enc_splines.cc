@@ -34,8 +34,8 @@ class QuantizedSplineEncoder {
         tokens->emplace_back(kDCTContext, PackSigned(dct[i]));
       }
     };
-    for (int c = 0; c < 3; ++c) {
-      encode_dct(spline.color_dct_[c]);
+    for (const auto& dct : spline.color_dct_) {
+      encode_dct(dct);
     }
     encode_dct(spline.sigma_dct_);
   }
@@ -73,13 +73,13 @@ void EncodeSplines(const Splines& splines, BitWriter* writer,
       splines.QuantizedSplines();
   std::vector<std::vector<Token>> tokens(1);
   tokens[0].emplace_back(kNumSplinesContext, quantized_splines.size() - 1);
-  EncodeAllStartingPoints(splines.StartingPoints(), &tokens[0]);
+  EncodeAllStartingPoints(splines.StartingPoints(), tokens.data());
 
   tokens[0].emplace_back(kQuantizationAdjustmentContext,
                          PackSigned(splines.GetQuantizationAdjustment()));
 
   for (const QuantizedSpline& spline : quantized_splines) {
-    QuantizedSplineEncoder::Tokenize(spline, &tokens[0]);
+    QuantizedSplineEncoder::Tokenize(spline, tokens.data());
   }
 
   EntropyEncodingData codes;

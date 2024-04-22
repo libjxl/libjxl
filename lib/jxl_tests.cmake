@@ -17,7 +17,6 @@ target_include_directories(jxl_testlib-internal PUBLIC
 )
 target_link_libraries(jxl_testlib-internal
   hwy
-  jxl_extras_nocodec-internal
   jxl-internal
   jxl_threads
 )
@@ -47,7 +46,7 @@ if (EMSCRIPTEN)
     -s EXIT_RUNTIME=1 \
     -s NODERAWFS=1 \
   ")
-  if (JPEGXL_ENABLE_WASM_TRHEADS)
+  if (JPEGXL_ENABLE_WASM_THREADS)
     set(JXL_WASM_TEST_LINK_FLAGS "${JXL_WASM_TEST_LINK_FLAGS} \
       -s PROXY_TO_PTHREAD \
       -s USE_PTHREADS=1 \
@@ -77,11 +76,10 @@ foreach (TESTFILE IN LISTS JPEGXL_INTERNAL_TESTS)
     ${JPEGXL_COVERAGE_FLAGS}
   )
   target_link_libraries(${TESTNAME}
-    gmock
     GTest::GTest
     GTest::Main
-    jxl_extras-internal
     jxl_testlib-internal
+    jxl_extras-internal
   )
   if(TESTFILE STREQUAL ../tools/gauss_blur_test.cc)
     target_link_libraries(${TESTNAME} jxl_gauss_blur)

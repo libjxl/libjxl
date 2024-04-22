@@ -5,6 +5,7 @@
 
 #include "lib/jxl/cache_aligned.h"
 
+#include <jxl/types.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -95,7 +96,7 @@ void* CacheAligned::Allocate(const size_t payload_size, size_t offset) {
   aligned &= ~(kAlias - 1);
 #endif
 
-#if 0
+#if JXL_FALSE
   // No effect.
   uintptr_t page_aligned = reinterpret_cast<uintptr_t>(allocated);
   page_aligned &= ~(4096 - 1);
@@ -127,11 +128,12 @@ void* CacheAligned::Allocate(const size_t payload_size, size_t offset) {
   const uintptr_t payload = aligned + offset;  // still aligned
 
   // Stash `allocated` and payload_size inside header for use by Free().
-  AllocationHeader* header = reinterpret_cast<AllocationHeader*>(payload) - 1;
+  AllocationHeader* header =
+      reinterpret_cast<AllocationHeader*>(payload) - 1;  // NOLINT
   header->allocated = allocated;
   header->allocated_size = allocated_size;
 
-  return JXL_ASSUME_ALIGNED(reinterpret_cast<void*>(payload), 64);
+  return JXL_ASSUME_ALIGNED(reinterpret_cast<void*>(payload), 64);  // NOLINT
 }
 
 void CacheAligned::Free(const void* aligned_pointer) {
@@ -141,7 +143,7 @@ void CacheAligned::Free(const void* aligned_pointer) {
   const uintptr_t payload = reinterpret_cast<uintptr_t>(aligned_pointer);
   JXL_ASSERT(payload % kAlignment == 0);
   const AllocationHeader* header =
-      reinterpret_cast<const AllocationHeader*>(payload) - 1;
+      reinterpret_cast<const AllocationHeader*>(payload) - 1;  // NOLINT
 
   // Subtract (2's complement negation).
   bytes_in_use.fetch_add(~header->allocated_size + 1,

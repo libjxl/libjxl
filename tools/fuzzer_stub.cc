@@ -18,7 +18,7 @@ void ProcessInput(const char* filename) {
   std::vector<char> contents((std::istreambuf_iterator<char>(ifs)),
                              std::istreambuf_iterator<char>());
   ifs.close();
-  std::cout << "Processing " << filename << std::endl;
+  std::cout << "Processing " << filename << "\n" << std::flush;
   LLVMFuzzerTestOneInput(reinterpret_cast<uint8_t*>(contents.data()),
                          contents.size());
 }
@@ -32,7 +32,7 @@ int main(int argc, const char* argv[]) {
     auto runner = JxlThreadParallelRunnerMake(
         nullptr, JxlThreadParallelRunnerDefaultNumWorkerThreads());
     return JxlThreadParallelRunner(
-        runner.get(), argv,
+        static_cast<void*>(runner.get()), reinterpret_cast<void*>(argv),
         /* init= */ +[](void*, size_t) -> JxlParallelRetCode { return 0; },
         /* func= */
         +[](void* opaque, uint32_t value, size_t) {

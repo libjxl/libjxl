@@ -8,24 +8,24 @@
 
 // Optional output images for debugging.
 
-#include <stddef.h>
-#include <stdint.h>
+#include <cstdint>
 
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/image.h"
 
 namespace jxl {
 
-void DumpImage(const CompressParams& cparams, const char* label,
-               const Image3<float>& image);
-void DumpImage(const CompressParams& cparams, const char* label,
-               const Image3<uint8_t>& image);
-void DumpXybImage(const CompressParams& cparams, const char* label,
-                  const Image3<float>& image);
-void DumpPlaneNormalized(const CompressParams& cparams, const char* label,
-                         const Plane<float>& image);
-void DumpPlaneNormalized(const CompressParams& cparams, const char* label,
-                         const Plane<uint8_t>& image);
+Status DumpImage(const CompressParams& cparams, const char* label,
+                 const Image3<float>& image);
+Status DumpImage(const CompressParams& cparams, const char* label,
+                 const Image3<uint8_t>& image);
+Status DumpXybImage(const CompressParams& cparams, const char* label,
+                    const Image3<float>& image);
+Status DumpPlaneNormalized(const CompressParams& cparams, const char* label,
+                           const Plane<float>& image);
+Status DumpPlaneNormalized(const CompressParams& cparams, const char* label,
+                           const Plane<uint8_t>& image);
 
 // Used to skip image creation if they won't be written to debug directory.
 static inline bool WantDebugOutput(const CompressParams& cparams) {

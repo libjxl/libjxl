@@ -109,8 +109,8 @@ IntersectionType BoxIntersects(StaticPropRange needle, StaticPropRange haystack,
 void SplitTreeSamples(TreeSamples &tree_samples, size_t begin, size_t pos,
                       size_t end, size_t prop) {
   auto cmp = [&](size_t a, size_t b) {
-    return int32_t(tree_samples.Property(prop, a)) -
-           int32_t(tree_samples.Property(prop, b));
+    return static_cast<int32_t>(tree_samples.Property(prop, a)) -
+           static_cast<int32_t>(tree_samples.Property(prop, b));
   };
   Rng rng(0);
   while (end > begin + 1) {
@@ -197,7 +197,7 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
       float rcost = std::numeric_limits<float>::max();
       Predictor lpred = Predictor::Zero;
       Predictor rpred = Predictor::Zero;
-      float Cost() { return lcost + rcost; }
+      float Cost() const { return lcost + rcost; }
     };
 
     SplitInfo best_split_static_constant;
@@ -242,13 +242,14 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
     // The multiplier ranges cut halfway through the current ranges of static
     // properties. We do this even if the current node is not a leaf, to
     // minimize the number of nodes in the resulting tree.
-    for (size_t i = 0; i < mul_info.size(); i++) {
-      uint32_t axis, val;
+    for (const auto &mmi : mul_info) {
+      uint32_t axis;
+      uint32_t val;
       IntersectionType t =
-          BoxIntersects(static_prop_range, mul_info[i].range, axis, val);
+          BoxIntersects(static_prop_range, mmi.range, axis, val);
       if (t == IntersectionType::kNone) continue;
       if (t == IntersectionType::kInside) {
-        (*tree)[pos].multiplier = mul_info[i].multiplier;
+        (*tree)[pos].multiplier = mmi.multiplier;
         break;
       }
       if (t == IntersectionType::kPartial) {
@@ -696,7 +697,11 @@ void TreeSamples::Swap(size_t a, size_t b) {
 }
 
 void TreeSamples::ThreeShuffle(size_t a, size_t b, size_t c) {
-  if (b == c) return Swap(a, b);
+  if (b == c) {
+    Swap(a, b);
+    return;
+  }
+
   for (auto &r : residuals) {
     auto tmp = r[a];
     r[a] = r[c];
@@ -966,7 +971,7 @@ void CollectPixelSamples(const Image &image, const ModularOptions &options,
     const pixel_type *row = image.channel[channel_ids[i]].Row(y);
     pixel_samples.push_back(row[x]);
     size_t xp = x == 0 ? 1 : x - 1;
-    diff_samples.push_back((int64_t)row[x] - row[xp]);
+    diff_samples.push_back(static_cast<int64_t>(row[x]) - row[xp]);
   }
 }
 

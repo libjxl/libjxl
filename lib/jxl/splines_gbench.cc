@@ -3,7 +3,13 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <cstddef>
+#include <vector>
+
 #include "benchmark/benchmark.h"
+#include "lib/jxl/base/rect.h"
+#include "lib/jxl/chroma_from_luma.h"
+#include "lib/jxl/image_ops.h"
 #include "lib/jxl/splines.h"
 
 namespace jxl {
@@ -17,12 +23,14 @@ const float kYToB = cmap->YtoBRatio(0);
 void BM_Splines(benchmark::State& state) {
   const size_t n = state.range();
 
-  std::vector<Spline> spline_data = {
-      {/*control_points=*/{
-           {9, 54}, {118, 159}, {97, 3}, {10, 40}, {150, 25}, {120, 300}},
-       /*color_dct=*/
-       {{0.03125f, 0.00625f, 0.003125f}, {1.f, 0.321875f}, {1.f, 0.24375f}},
-       /*sigma_dct=*/{0.3125f, 0.f, 0.f, 0.0625f}}};
+  Spline spline1{
+      /*control_points=*/{
+          {9, 54}, {118, 159}, {97, 3}, {10, 40}, {150, 25}, {120, 300}},
+      /*color_dct=*/
+      {Dct32{0.03125f, 0.00625f, 0.003125f}, Dct32{1.f, 0.321875f},
+       Dct32{1.f, 0.24375f}},
+      /*sigma_dct=*/{0.3125f, 0.f, 0.f, 0.0625f}};
+  std::vector<Spline> spline_data = {spline1};
   std::vector<QuantizedSpline> quantized_splines;
   std::vector<Spline::Point> starting_points;
   for (const Spline& spline : spline_data) {
@@ -33,7 +41,7 @@ void BM_Splines(benchmark::State& state) {
   Splines splines(kQuantizationAdjustment, std::move(quantized_splines),
                   std::move(starting_points));
 
-  Image3F drawing_area(320, 320);
+  JXL_ASSIGN_OR_DIE(Image3F drawing_area, Image3F::Create(320, 320));
   ZeroFillImage(&drawing_area);
   for (auto _ : state) {
     for (size_t i = 0; i < n; ++i) {

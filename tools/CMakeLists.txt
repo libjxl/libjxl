@@ -188,6 +188,7 @@ if(JPEGXL_ENABLE_DEVTOOLS)
     ssimulacra2
     xyb_range
     jxl_from_tree
+    icc_simplify
   )
 
   add_executable(ssimulacra_main ssimulacra_main.cc ssimulacra.cc)
@@ -208,12 +209,13 @@ if(JPEGXL_ENABLE_DEVTOOLS)
   add_executable(generate_lut_template hdr/generate_lut_template.cc)
   add_executable(xyb_range xyb_range.cc)
   add_executable(jxl_from_tree jxl_from_tree.cc)
+  add_executable(icc_simplify icc_simplify.cc)
 
   list(APPEND FUZZER_CORPUS_BINARIES djxl_fuzzer_corpus)
   add_executable(djxl_fuzzer_corpus djxl_fuzzer_corpus.cc)
   target_link_libraries(djxl_fuzzer_corpus
-    jxl_extras-internal
     jxl_testlib-internal
+    jxl_extras-internal
     jxl_tool
   )
   if(JPEGXL_ENABLE_JPEGLI)
@@ -324,7 +326,7 @@ foreach(BINARY IN LISTS TOOL_BINARIES)
       -s USE_LIBPNG=1 \
       -s ALLOW_MEMORY_GROWTH=1 \
     ")
-    if (JPEGXL_ENABLE_WASM_TRHEADS)
+    if (JPEGXL_ENABLE_WASM_THREADS)
       set(JXL_WASM_TOOLS_LINK_FLAGS "${JXL_WASM_TOOLS_LINK_FLAGS} \
         -s USE_PTHREADS=1 \
         -s PTHREAD_POOL_SIZE=16 \
@@ -344,6 +346,7 @@ if(JPEGXL_ENABLE_TOOLS)
     color_encoding_fuzzer
     decode_basic_info_fuzzer
     cjxl_fuzzer
+    streaming_fuzzer
     icc_codec_fuzzer
     fields_fuzzer
     rans_fuzzer
@@ -378,8 +381,8 @@ foreach(FUZZER IN LISTS FUZZER_BINARIES)
     target_link_libraries("${BINARY}" jpegli-static)
   else()
     target_link_libraries("${BINARY}"
-      jxl_extras_nocodec-internal
       jxl_testlib-internal
+      jxl_extras_nocodec-internal
       jxl_tool
     )
   endif()

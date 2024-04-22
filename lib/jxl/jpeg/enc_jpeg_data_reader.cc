@@ -23,7 +23,7 @@ namespace jxl {
 namespace jpeg {
 
 namespace {
-static const int kBrunsliMaxSampling = 15;
+const int kBrunsliMaxSampling = 15;
 
 // Macros for commonly used error conditions.
 
@@ -92,21 +92,21 @@ bool ProcessSOF(const uint8_t* data, const size_t len, JpegReadMode mode,
   std::vector<bool> ids_seen(256, false);
   int max_h_samp_factor = 1;
   int max_v_samp_factor = 1;
-  for (size_t i = 0; i < jpg->components.size(); ++i) {
+  for (auto& component : jpg->components) {
     const int id = ReadUint8(data, pos);
     if (ids_seen[id]) {  // (cf. section B.2.2, syntax of Ci)
       return JXL_FAILURE("Duplicate ID %d in SOF.", id);
     }
     ids_seen[id] = true;
-    jpg->components[i].id = id;
+    component.id = id;
     int factor = ReadUint8(data, pos);
     int h_samp_factor = factor >> 4;
     int v_samp_factor = factor & 0xf;
     JXL_JPEG_VERIFY_INPUT(h_samp_factor, 1, kBrunsliMaxSampling, SAMP_FACTOR);
     JXL_JPEG_VERIFY_INPUT(v_samp_factor, 1, kBrunsliMaxSampling, SAMP_FACTOR);
-    jpg->components[i].h_samp_factor = h_samp_factor;
-    jpg->components[i].v_samp_factor = v_samp_factor;
-    jpg->components[i].quant_idx = ReadUint8(data, pos);
+    component.h_samp_factor = h_samp_factor;
+    component.v_samp_factor = v_samp_factor;
+    component.quant_idx = ReadUint8(data, pos);
     max_h_samp_factor = std::max(max_h_samp_factor, h_samp_factor);
     max_v_samp_factor = std::max(max_v_samp_factor, v_samp_factor);
   }
@@ -116,18 +116,17 @@ bool ProcessSOF(const uint8_t* data, const size_t len, JpegReadMode mode,
   int MCU_rows = DivCeil(jpg->height, max_v_samp_factor * 8);
   int MCU_cols = DivCeil(jpg->width, max_h_samp_factor * 8);
   // Compute the block dimensions for each component.
-  for (size_t i = 0; i < jpg->components.size(); ++i) {
-    JPEGComponent* c = &jpg->components[i];
-    if (max_h_samp_factor % c->h_samp_factor != 0 ||
-        max_v_samp_factor % c->v_samp_factor != 0) {
+  for (JPEGComponent& c : jpg->components) {
+    if (max_h_samp_factor % c.h_samp_factor != 0 ||
+        max_v_samp_factor % c.v_samp_factor != 0) {
       return JXL_FAILURE("Non-integral subsampling ratios.");
     }
-    c->width_in_blocks = MCU_cols * c->h_samp_factor;
-    c->height_in_blocks = MCU_rows * c->v_samp_factor;
+    c.width_in_blocks = MCU_cols * c.h_samp_factor;
+    c.height_in_blocks = MCU_rows * c.v_samp_factor;
     const uint64_t num_blocks =
-        static_cast<uint64_t>(c->width_in_blocks) * c->height_in_blocks;
+        static_cast<uint64_t>(c.width_in_blocks) * c.height_in_blocks;
     if (mode == JpegReadMode::kReadAll) {
-      c->coeffs.resize(num_blocks * kDCTBlockSize);
+      c.coeffs.resize(num_blocks * kDCTBlockSize);
     }
   }
   JXL_JPEG_VERIFY_MARKER_END();
@@ -192,8 +191,8 @@ bool ProcessSOS(const uint8_t* data, const size_t len, size_t* pos,
   for (size_t i = 0; i < comps_in_scan; ++i) {
     bool found_dc_table = false;
     bool found_ac_table = false;
-    for (size_t j = 0; j < jpg->huffman_code.size(); ++j) {
-      uint32_t slot_id = jpg->huffman_code[j].slot_id;
+    for (const auto& code : jpg->huffman_code) {
+      uint32_t slot_id = code.slot_id;
       if (slot_id == scan_info.components[i].dc_tbl_idx) {
         found_dc_table = true;
       } else if (slot_id == scan_info.components[i].ac_tbl_idx + 16) {
@@ -234,7 +233,7 @@ bool ProcessDHT(const uint8_t* data, const size_t len, JpegReadMode mode,
     JPEGHuffmanCode huff;
     huff.slot_id = ReadUint8(data, pos);
     int huffman_index = huff.slot_id;
-    int is_ac_table = (huff.slot_id & 0x10) != 0;
+    bool is_ac_table = ((huff.slot_id & 0x10) != 0);
     HuffmanTableEntry* huff_lut;
     if (is_ac_table) {
       huffman_index -= 0x10;
@@ -292,7 +291,7 @@ bool ProcessDHT(const uint8_t* data, const size_t len, JpegReadMode mode,
     }
     huff.is_last = (*pos == start_pos + marker_len);
     if (mode == JpegReadMode::kReadAll) {
-      BuildJpegHuffmanTable(&huff.counts[0], &huff.values[0], huff_lut);
+      BuildJpegHuffmanTable(huff.counts.data(), huff.values.data(), huff_lut);
     }
     jpg->huffman_code.push_back(huff);
   }
@@ -419,7 +418,7 @@ struct BitReaderState {
     if (bits_left_ <= 16) {
       while (bits_left_ <= 56) {
         val_ <<= 8;
-        val_ |= (uint64_t)GetNextByte();
+        val_ |= static_cast<uint64_t>(GetNextByte());
         bits_left_ += 8;
       }
     }
@@ -757,11 +756,9 @@ bool ProcessScan(const uint8_t* data, const size_t len,
   bool is_interleaved = (scan_info->num_components > 1);
   int max_h_samp_factor = 1;
   int max_v_samp_factor = 1;
-  for (size_t i = 0; i < jpg->components.size(); ++i) {
-    max_h_samp_factor =
-        std::max(max_h_samp_factor, jpg->components[i].h_samp_factor);
-    max_v_samp_factor =
-        std::max(max_v_samp_factor, jpg->components[i].v_samp_factor);
+  for (const auto& component : jpg->components) {
+    max_h_samp_factor = std::max(max_h_samp_factor, component.h_samp_factor);
+    max_v_samp_factor = std::max(max_v_samp_factor, component.v_samp_factor);
   }
 
   int MCU_rows = DivCeil(jpg->height, max_v_samp_factor * 8);

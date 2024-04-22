@@ -6,23 +6,21 @@
 #ifndef TOOLS_FILE_IO_H_
 #define TOOLS_FILE_IO_H_
 
-#include <errno.h>
-#include <limits.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <string.h>
 #include <sys/stat.h>
 
+#include <cerrno>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
 #include <list>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "lib/jxl/base/compiler_specific.h"
 
 namespace jpegxl {
 namespace tools {
-
-namespace {
 
 // RAII, ensures files are closed even when returning early.
 class FileWrapper {
@@ -64,15 +62,13 @@ class FileWrapper {
   // NOLINTNEXTLINE(google-explicit-constructor)
   operator FILE*() const { return file_; }
 
-  int64_t size() { return size_; }
+  int64_t size() const { return size_; }
 
  private:
   FILE* const file_;
   bool close_on_delete_ = true;
   int64_t size_ = -1;
 };
-
-}  // namespace
 
 template <typename ContainerType>
 static inline bool ReadFile(FileWrapper& f, ContainerType* JXL_RESTRICT bytes) {

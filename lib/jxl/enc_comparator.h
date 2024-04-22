@@ -6,6 +6,8 @@
 #ifndef LIB_JXL_ENC_COMPARATOR_H_
 #define LIB_JXL_ENC_COMPARATOR_H_
 
+#include <jxl/cms_interface.h>
+
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/image.h"
@@ -43,10 +45,10 @@ class Comparator {
 
 // Computes the score given images in any RGB color model, optionally with
 // alpha channel.
-float ComputeScore(const ImageBundle& rgb0, const ImageBundle& rgb1,
-                   Comparator* comparator, const JxlCmsInterface& cms,
-                   ImageF* diffmap = nullptr, ThreadPool* pool = nullptr,
-                   bool ignore_alpha = false);
+Status ComputeScore(const ImageBundle& rgb0, const ImageBundle& rgb1,
+                    Comparator* comparator, const JxlCmsInterface& cms,
+                    float* score, ImageF* diffmap = nullptr,
+                    ThreadPool* pool = nullptr, bool ignore_alpha = false);
 
 }  // namespace jxl
 

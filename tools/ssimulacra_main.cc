@@ -3,13 +3,18 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include <stdio.h>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <vector>
 
 #include "lib/extras/codec.h"
 // TODO(eustas): we should, but we can't?
 // #include "lib/jxl/base/span.h"
 #include <jxl/cms.h>
 
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/image_bundle.h"
 #include "tools/file_io.h"
 #include "tools/ssimulacra.h"
@@ -25,7 +30,8 @@ int PrintUsage(char** argv) {
 int Run(int argc, char** argv) {
   if (argc < 2) return PrintUsage(argv);
 
-  bool verbose = false, simple = false;
+  bool verbose = false;
+  bool simple = false;
   int input_arg = 1;
   if (!strcmp(argv[input_arg], "-v")) {
     verbose = true;
@@ -61,7 +67,13 @@ int Run(int argc, char** argv) {
     return 1;
   }
 
-  Ssimulacra ssimulacra = ComputeDiff(img1, img2, simple);
+  jxl::StatusOr<Ssimulacra> ssimulacra_or = ComputeDiff(img1, img2, simple);
+  if (!ssimulacra_or.ok()) {
+    fprintf(stderr, "ComputeDiff failed\n");
+    return 1;
+  }
+
+  Ssimulacra ssimulacra = std::move(ssimulacra_or).value();
 
   if (verbose) {
     ssimulacra.PrintDetails();

@@ -5,16 +5,14 @@
 
 #include "lib/jxl/ac_strategy.h"
 
-#include <string.h>
-
-#include <cmath>
+#include <algorithm>
+#include <cstring>
 #include <hwy/aligned_allocator.h>
 #include <hwy/base.h>  // HWY_ALIGN_MAX
 #include <hwy/tests/hwy_gtest.h>
-#include <utility>
 
 #include "lib/jxl/base/random.h"
-#include "lib/jxl/dct_scales.h"
+#include "lib/jxl/coeff_order_fwd.h"
 #include "lib/jxl/dec_transforms_testonly.h"
 #include "lib/jxl/enc_transforms.h"
 #include "lib/jxl/simd_util.h"
@@ -81,7 +79,8 @@ class AcStrategyRoundtrip : public ::hwy::TestWithParamTargetAndT<int> {
 
 HWY_TARGET_INSTANTIATE_TEST_SUITE_P_T(
     AcStrategyRoundtrip,
-    ::testing::Range(0, int(AcStrategy::Type::kNumValidStrategies)));
+    ::testing::Range(0,
+                     static_cast<int>(AcStrategy::Type::kNumValidStrategies)));
 
 TEST_P(AcStrategyRoundtrip, Test) { Run(); }
 
@@ -141,7 +140,8 @@ class AcStrategyRoundtripDownsample
 
 HWY_TARGET_INSTANTIATE_TEST_SUITE_P_T(
     AcStrategyRoundtripDownsample,
-    ::testing::Range(0, int(AcStrategy::Type::kNumValidStrategies)));
+    ::testing::Range(0,
+                     static_cast<int>(AcStrategy::Type::kNumValidStrategies)));
 
 TEST_P(AcStrategyRoundtripDownsample, Test) { Run(); }
 
@@ -205,7 +205,8 @@ class AcStrategyDownsample : public ::hwy::TestWithParamTargetAndT<int> {
 
 HWY_TARGET_INSTANTIATE_TEST_SUITE_P_T(
     AcStrategyDownsample,
-    ::testing::Range(0, int(AcStrategy::Type::kNumValidStrategies)));
+    ::testing::Range(0,
+                     static_cast<int>(AcStrategy::Type::kNumValidStrategies)));
 
 TEST_P(AcStrategyDownsample, Test) { Run(); }
 

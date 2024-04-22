@@ -21,6 +21,7 @@
 #define LIB_JPEGLI_ENCODE_H_
 
 #include "lib/jpegli/common.h"
+#include "lib/jpegli/types.h"
 
 #if defined(__cplusplus) || defined(c_plusplus)
 extern "C" {
@@ -35,7 +36,7 @@ void jpegli_CreateCompress(j_compress_ptr cinfo, int version,
 void jpegli_stdio_dest(j_compress_ptr cinfo, FILE* outfile);
 
 void jpegli_mem_dest(j_compress_ptr cinfo, unsigned char** outbuffer,
-                     unsigned long* outsize);
+                     unsigned long* outsize /* NOLINT */);
 
 void jpegli_set_defaults(j_compress_ptr cinfo);
 

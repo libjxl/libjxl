@@ -13,7 +13,7 @@ on:
       - main
       - v*.*.x
   pull_request:
-    types: [opened, reopened, labeled, synchronize]
+    types: [opened, reopened, labeled, unlabeled, synchronize]
 
 permissions:
   contents: read
@@ -25,6 +25,7 @@ concurrency:
 jobs:
   build_test:
     name: Windows MSYS2 / ${{ matrix.msystem }}
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
     runs-on: windows-latest
     continue-on-error: ${{ matrix.faulty || false }}
     strategy:
@@ -37,22 +38,25 @@ jobs:
            disable_tests:
              - ButteraugliTest.Lossless
              - ButteraugliTest.Distmap
+           disable_benchmark: true
          - msystem: clang32
+           disable_benchmark: true
 
     defaults:
       run:
         shell: msys2 {0}
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
+        uses: step-security/harden-runner@63c24ba6bd7ba022e95695ff85de572c04a18142 # v2.7.0
         with:
           egress-policy: audit
 
       - name: Checkout the source
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633 # v4.1.2
         with:
           submodules: true
           fetch-depth: 1
+
       - uses: msys2/setup-msys2@07aeda7763550b267746a772dcea5e5ac3340b36 # v2
         with:
           msystem: ${{ matrix.msystem }}
@@ -61,6 +65,7 @@ jobs:
           install: >-
             base-devel
             git
+            procps
           pacboy: >-
             brotli:p
             cmake:p
@@ -83,11 +88,23 @@ jobs:
             -DJPEGXL_FORCE_SYSTEM_GTEST=ON \
             -B build \
             -G Ninja
+
       - name: CMake build
         run: cmake --build build
+
       - name: Test
         if: |
           github.event_name == 'push' ||
           (github.event_name == 'pull_request' &&
            contains(github.event.pull_request.labels.*.name, 'CI:full'))
         run: ctest --test-dir build --parallel 2 --output-on-failure -E "${{ join(matrix.disable_tests, '|') }}"
+
+      - name: Fast benchmark ${{ matrix.msystem }}
+        if: github.event_name != 'merge_group' && !(matrix.disable_benchmark || false)
+        run: |
+          systeminfo | grep -A 1 Processor
+          wmic cpu get Name, NumberofCores, NumberOfLogicalProcessors, MaxClockSpeed
+          mkdir tmp
+          export TMPDIR=`pwd`/tmp
+          export PATH=$PATH:`pwd`/build/lib
+          BENCHMARK_NUM_THREADS=2 STORE_IMAGES=0 ./ci.sh fast_benchmark

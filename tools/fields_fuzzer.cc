@@ -3,21 +3,26 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include <stdint.h>
+#include <cstddef>
+#include <cstdint>
 
+#include "lib/jxl/base/span.h"
+#include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/dec_ans.h"
 #include "lib/jxl/dec_bit_reader.h"
+#include "lib/jxl/fields.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/headers.h"
-#include "lib/jxl/image_bundle.h"
+#include "lib/jxl/image_metadata.h"
 #include "lib/jxl/jpeg/jpeg_data.h"
 #include "lib/jxl/loop_filter.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
 #include "lib/jxl/modular/encoding/encoding.h"
 #include "lib/jxl/modular/transform/transform.h"
+#include "lib/jxl/quantizer.h"
+#include "lib/jxl/test_utils.h"
 
-namespace jpegxl {
-namespace tools {
+namespace {
 
 using ::jxl::BitReader;
 using ::jxl::Bytes;
@@ -26,7 +31,7 @@ using ::jxl::CustomTransformData;
 using ::jxl::ImageMetadata;
 using ::jxl::SizeHeader;
 
-int TestOneInput(const uint8_t* data, size_t size) {
+int DoTestOneInput(const uint8_t* data, size_t size) {
   // Global parameters used by some headers.
   CodecMetadata codec_metadata;
 
@@ -87,9 +92,14 @@ int TestOneInput(const uint8_t* data, size_t size) {
   return 0;
 }
 
-}  // namespace tools
-}  // namespace jpegxl
+}  // namespace
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
-  return jpegxl::tools::TestOneInput(data, size);
+  return DoTestOneInput(data, size);
 }
+
+void TestOneInput(const std::vector<uint8_t>& data) {
+  DoTestOneInput(data.data(), data.size());
+}
+
+FUZZ_TEST(FieldsFuzzTest, TestOneInput);

@@ -7,19 +7,18 @@
 #include <jxl/encode_cxx.h>
 #include <jxl/thread_parallel_runner.h>
 #include <jxl/thread_parallel_runner_cxx.h>
-#include <limits.h>
-#include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
+#include <jxl/types.h>
 
 #include <algorithm>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <functional>
 #include <hwy/targets.h>
-#include <random>
 #include <vector>
 
-#include "lib/jxl/base/status.h"
 #include "lib/jxl/test_image.h"
+#include "lib/jxl/test_utils.h"
 
 namespace {
 
@@ -78,7 +77,7 @@ bool EncodeJpegXl(const FuzzSpec& spec) {
     basic_info.xsize = spec.xsize;
     basic_info.ysize = spec.ysize;
     basic_info.bits_per_sample = spec.bit_depth;
-    basic_info.uses_original_profile = spec.orig_profile;
+    basic_info.uses_original_profile = TO_JXL_BOOL(spec.orig_profile);
     if (spec.have_alpha) {
       basic_info.alpha_bits = spec.alpha_bit_depth;
       basic_info.num_extra_channels = 1;
@@ -101,7 +100,7 @@ bool EncodeJpegXl(const FuzzSpec& spec) {
         JxlExtraChannelInfo extra_channel_info;
         JxlEncoderInitExtraChannelInfo(JXL_CHANNEL_ALPHA, &extra_channel_info);
         TRY(JxlEncoderSetExtraChannelInfo(enc, 0, &extra_channel_info));
-        extra_channel_info.alpha_premultiplied = spec.premultiply;
+        extra_channel_info.alpha_premultiplied = TO_JXL_BOOL(spec.premultiply);
       }
       JxlPixelFormat pixelformat = {3, JXL_TYPE_UINT16, JXL_LITTLE_ENDIAN, 0};
       std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(
@@ -132,11 +131,12 @@ bool EncodeJpegXl(const FuzzSpec& spec) {
 }
 
 template <typename T>
-T Select(const std::vector<T>& vec, std::function<uint32_t(size_t)> get_index) {
+T Select(const std::vector<T>& vec,
+         const std::function<uint32_t(size_t)>& get_index) {
   return vec[get_index(vec.size() - 1)];
 }
 
-int TestOneInput(const uint8_t* data, size_t size) {
+int DoTestOneInput(const uint8_t* data, size_t size) {
   uint64_t flags = 0;
   size_t flag_bits = 0;
 
@@ -162,6 +162,9 @@ int TestOneInput(const uint8_t* data, size_t size) {
     uint32_t result = flags % limit;
     flags /= limit;
     return result % (max_value + 1);
+  };
+  const auto get_bool_flag = [&]() -> bool {
+    return get_flag(1) ? true : false;
   };
 
   std::vector<JxlColorSpace> colorspaces = {
@@ -198,12 +201,12 @@ int TestOneInput(const uint8_t* data, size_t size) {
 
   spec.xsize = get_flag(4095) + 1;
   spec.ysize = get_flag(4095) + 1;
-  spec.lossless = get_flag(1);
+  spec.lossless = get_bool_flag();
   if (!spec.lossless) {
-    spec.orig_profile = get_flag(1);
+    spec.orig_profile = get_bool_flag();
   }
-  spec.have_alpha = get_flag(1);
-  spec.premultiply = get_flag(1);
+  spec.have_alpha = get_bool_flag();
+  spec.premultiply = get_bool_flag();
   spec.pixels_seed = get_flag((1 << 16) - 1);
   spec.alpha_seed = get_flag((1 << 16) - 1);
   spec.bit_depth = get_flag(15) + 1;
@@ -226,5 +229,11 @@ int TestOneInput(const uint8_t* data, size_t size) {
 }  // namespace
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
-  return TestOneInput(data, size);
+  return DoTestOneInput(data, size);
 }
+
+void TestOneInput(const std::vector<uint8_t>& data) {
+  DoTestOneInput(data.data(), data.size());
+}
+
+FUZZ_TEST(CjxlFuzzTest, TestOneInput);

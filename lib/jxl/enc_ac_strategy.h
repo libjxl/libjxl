@@ -7,10 +7,17 @@
 #define LIB_JXL_ENC_AC_STRATEGY_H_
 
 #include <cstddef>
+#include <cstdint>
+#include <hwy/aligned_allocator.h>
 
+#include "lib/jxl/ac_strategy.h"
 #include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/chroma_from_luma.h"
 #include "lib/jxl/enc_cache.h"
+#include "lib/jxl/enc_params.h"
+#include "lib/jxl/frame_dimensions.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/quant_weights.h"
 
@@ -54,16 +61,22 @@ struct ACSConfig {
 };
 
 struct AcStrategyHeuristics {
-  AcStrategyHeuristics(const CompressParams& cparams) : cparams(cparams) {}
+  explicit AcStrategyHeuristics(const CompressParams& cparams)
+      : cparams(cparams), mem_per_thread(0), qmem_per_thread(0) {}
   void Init(const Image3F& src, const Rect& rect_in, const ImageF& quant_field,
             const ImageF& mask, const ImageF& mask1x1,
             DequantMatrices* matrices);
+  void PrepareForThreads(std::size_t num_threads);
   void ProcessRect(const Rect& rect, const ColorCorrelationMap& cmap,
-                   AcStrategyImage* ac_strategy);
-  void Finalize(const FrameDimensions& frame_dim,
-                const AcStrategyImage& ac_strategy, AuxOut* aux_out);
+                   AcStrategyImage* ac_strategy, size_t thread);
+  Status Finalize(const FrameDimensions& frame_dim,
+                  const AcStrategyImage& ac_strategy, AuxOut* aux_out);
   const CompressParams& cparams;
-  ACSConfig config;
+  ACSConfig config = {};
+  size_t mem_per_thread;
+  hwy::AlignedFreeUniquePtr<float[]> mem;
+  size_t qmem_per_thread;
+  hwy::AlignedFreeUniquePtr<uint32_t[]> qmem;
 };
 
 }  // namespace jxl

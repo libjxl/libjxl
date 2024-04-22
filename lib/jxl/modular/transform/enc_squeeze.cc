@@ -14,15 +14,20 @@
 
 namespace jxl {
 
-void FwdHSqueeze(Image &input, int c, int rc) {
+#define AVERAGE(X, Y) (((X) + (Y) + (((X) > (Y)) ? 1 : 0)) >> 1)
+
+Status FwdHSqueeze(Image &input, int c, int rc) {
   const Channel &chin = input.channel[c];
 
   JXL_DEBUG_V(4, "Doing horizontal squeeze of channel %i to new channel %i", c,
               rc);
 
-  Channel chout((chin.w + 1) / 2, chin.h, chin.hshift + 1, chin.vshift);
-  Channel chout_residual(chin.w - chout.w, chout.h, chin.hshift + 1,
-                         chin.vshift);
+  JXL_ASSIGN_OR_RETURN(
+      Channel chout,
+      Channel::Create((chin.w + 1) / 2, chin.h, chin.hshift + 1, chin.vshift));
+  JXL_ASSIGN_OR_RETURN(
+      Channel chout_residual,
+      Channel::Create(chin.w - chout.w, chout.h, chin.hshift + 1, chin.vshift));
 
   for (size_t y = 0; y < chout.h; y++) {
     const pixel_type *JXL_RESTRICT p_in = chin.Row(y);
@@ -31,18 +36,19 @@ void FwdHSqueeze(Image &input, int c, int rc) {
     for (size_t x = 0; x < chout_residual.w; x++) {
       pixel_type A = p_in[x * 2];
       pixel_type B = p_in[x * 2 + 1];
-      pixel_type avg = (A + B + (A > B)) >> 1;
+      pixel_type avg = AVERAGE(A, B);
       p_out[x] = avg;
 
       pixel_type diff = A - B;
 
       pixel_type next_avg = avg;
       if (x + 1 < chout_residual.w) {
-        next_avg = (p_in[x * 2 + 2] + p_in[x * 2 + 3] +
-                    (p_in[x * 2 + 2] > p_in[x * 2 + 3])) >>
-                   1;  // which will be chout.value(y,x+1)
-      } else if (chin.w & 1)
+        pixel_type C = p_in[x * 2 + 2];
+        pixel_type D = p_in[x * 2 + 3];
+        next_avg = AVERAGE(C, D);  // which will be chout.value(y,x+1)
+      } else if (chin.w & 1) {
         next_avg = p_in[x * 2 + 2];
+      }
       pixel_type left = (x > 0 ? p_in[x * 2 - 1] : avg);
       pixel_type tendency = SmoothTendency(left, avg, next_avg);
 
@@ -55,17 +61,21 @@ void FwdHSqueeze(Image &input, int c, int rc) {
   }
   input.channel[c] = std::move(chout);
   input.channel.insert(input.channel.begin() + rc, std::move(chout_residual));
+  return true;
 }
 
-void FwdVSqueeze(Image &input, int c, int rc) {
+Status FwdVSqueeze(Image &input, int c, int rc) {
   const Channel &chin = input.channel[c];
 
   JXL_DEBUG_V(4, "Doing vertical squeeze of channel %i to new channel %i", c,
               rc);
 
-  Channel chout(chin.w, (chin.h + 1) / 2, chin.hshift, chin.vshift + 1);
-  Channel chout_residual(chin.w, chin.h - chout.h, chin.hshift,
-                         chin.vshift + 1);
+  JXL_ASSIGN_OR_RETURN(
+      Channel chout,
+      Channel::Create(chin.w, (chin.h + 1) / 2, chin.hshift, chin.vshift + 1));
+  JXL_ASSIGN_OR_RETURN(
+      Channel chout_residual,
+      Channel::Create(chin.w, chin.h - chout.h, chin.hshift, chin.vshift + 1));
   intptr_t onerow_in = chin.plane.PixelsPerRow();
   for (size_t y = 0; y < chout_residual.h; y++) {
     const pixel_type *JXL_RESTRICT p_in = chin.Row(y * 2);
@@ -74,16 +84,16 @@ void FwdVSqueeze(Image &input, int c, int rc) {
     for (size_t x = 0; x < chout.w; x++) {
       pixel_type A = p_in[x];
       pixel_type B = p_in[x + onerow_in];
-      pixel_type avg = (A + B + (A > B)) >> 1;
+      pixel_type avg = AVERAGE(A, B);
       p_out[x] = avg;
 
       pixel_type diff = A - B;
 
       pixel_type next_avg = avg;
       if (y + 1 < chout_residual.h) {
-        next_avg = (p_in[x + 2 * onerow_in] + p_in[x + 3 * onerow_in] +
-                    (p_in[x + 2 * onerow_in] > p_in[x + 3 * onerow_in])) >>
-                   1;  // which will be chout.value(y+1,x)
+        pixel_type C = p_in[x + 2 * onerow_in];
+        pixel_type D = p_in[x + 3 * onerow_in];
+        next_avg = AVERAGE(C, D);  // which will be chout.value(y+1,x)
       } else if (chin.h & 1) {
         next_avg = p_in[x + 2 * onerow_in];
       }
@@ -104,6 +114,7 @@ void FwdVSqueeze(Image &input, int c, int rc) {
   }
   input.channel[c] = std::move(chout);
   input.channel.insert(input.channel.begin() + rc, std::move(chout_residual));
+  return true;
 }
 
 Status FwdSqueeze(Image &input, std::vector<SqueezeParams> parameters,
@@ -113,13 +124,13 @@ Status FwdSqueeze(Image &input, std::vector<SqueezeParams> parameters,
   }
   // if nothing to do, don't do squeeze
   if (parameters.empty()) return false;
-  for (size_t i = 0; i < parameters.size(); i++) {
+  for (auto &parameter : parameters) {
     JXL_RETURN_IF_ERROR(
-        CheckMetaSqueezeParams(parameters[i], input.channel.size()));
-    bool horizontal = parameters[i].horizontal;
-    bool in_place = parameters[i].in_place;
-    uint32_t beginc = parameters[i].begin_c;
-    uint32_t endc = parameters[i].begin_c + parameters[i].num_c - 1;
+        CheckMetaSqueezeParams(parameter, input.channel.size()));
+    bool horizontal = parameter.horizontal;
+    bool in_place = parameter.in_place;
+    uint32_t beginc = parameter.begin_c;
+    uint32_t endc = parameter.begin_c + parameter.num_c - 1;
     uint32_t offset;
     if (in_place) {
       offset = endc + 1;
@@ -128,9 +139,9 @@ Status FwdSqueeze(Image &input, std::vector<SqueezeParams> parameters,
     }
     for (uint32_t c = beginc; c <= endc; c++) {
       if (horizontal) {
-        FwdHSqueeze(input, c, offset + c - beginc);
+        JXL_RETURN_IF_ERROR(FwdHSqueeze(input, c, offset + c - beginc));
       } else {
-        FwdVSqueeze(input, c, offset + c - beginc);
+        JXL_RETURN_IF_ERROR(FwdVSqueeze(input, c, offset + c - beginc));
       }
     }
   }

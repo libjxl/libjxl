@@ -18,16 +18,17 @@ import subprocess
 import sys
 import tempfile
 
+COPYRIGHT = [
+  "Copyright (c) the JPEG XL Project Authors. All rights reserved.",
+  "",
+  "Use of this source code is governed by a BSD-style",
+  "license that can be found in the LICENSE file."
+]
 
-HEAD = """# Copyright (c) the JPEG XL Project Authors. All rights reserved.
-#
-# Use of this source code is governed by a BSD-style
-# license that can be found in the LICENSE file.
-
-# This file is generated, do not modify by manually.
-# Run `tools/scripts/build_cleaner.py --update` to regenerate it.
-"""
-
+DOC = [
+  "This file is generated, do not modify by manually.",
+  "Run `tools/scripts/build_cleaner.py --update` to regenerate it."
+]
 
 def RepoFiles(src_dir):
   """Return the list of files from the source git repository"""
@@ -77,6 +78,8 @@ def SplitLibFiles(repo_files):
   jpegli_srcs, srcs = Filter(srcs, HasPrefixFn('jpegli'))
   # TODO(eustas): move to tools?
   _, srcs = Filter(srcs, HasSuffixFn('gbench_main.cc'))
+  # This stub compilation unit is manually referenced in CMake buildfile.
+  _, srcs = Filter(srcs, HasSuffixFn('nothing.cc'))
 
   # First pick files scattered across directories.
   tests, srcs = Filter(srcs, HasSuffixFn('_test.cc'))
@@ -218,6 +221,10 @@ def GetJpegLibVersion(src_dir):
       version += "0"
     return version
 
+def ToHashComment(lines):
+  return [("# " + line).rstrip() for line in lines]
+def ToDocstringComment(lines):
+  return ["\"\"\""] + lines + ["\"\"\""]
 
 def BuildCleaner(args):
   repo_files = RepoFiles(args.src_dir)
@@ -237,20 +244,26 @@ def BuildCleaner(args):
 
   lists = SplitLibFiles(repo_files)
 
-  cmake_chunks = [HEAD]
+  cmake_chunks = ToHashComment(COPYRIGHT) + [""] + ToHashComment(DOC)
   cmake_parts = lists
   for var in sorted(cmake_parts):
     cmake_chunks.append(FormatCMakeVar(
         'JPEGXL_INTERNAL_' + var.upper(), cmake_parts[var]))
 
-  gni_chunks = [HEAD]
-  gni_parts = version | lists
-  for var in sorted(gni_parts):
-    gni_chunks.append(FormatGniVar('libjxl_' + var, gni_parts[var]))
+  gni_bzl_parts = version | lists
+  gni_bzl_chunks = []
+  for var in sorted(gni_bzl_parts):
+    gni_bzl_chunks.append(FormatGniVar('libjxl_' + var, gni_bzl_parts[var]))
+
+  bzl_chunks = ToHashComment(COPYRIGHT) + [""] + \
+      ToDocstringComment(DOC) + [""] + gni_bzl_chunks
+  gni_chunks = ToHashComment(COPYRIGHT) + [""] + \
+      ToHashComment(DOC) + [""] + gni_bzl_chunks
 
   okay = [
+    MaybeUpdateFile(args, 'lib/jxl_lists.bzl', '\n'.join(bzl_chunks)),
     MaybeUpdateFile(args, 'lib/jxl_lists.cmake', '\n'.join(cmake_chunks)),
-    MaybeUpdateFile(args, 'lib/jxl_lists.bzl', '\n'.join(gni_chunks)),
+    MaybeUpdateFile(args, 'lib/lib.gni', '\n'.join(gni_chunks)),
   ]
   return all(okay)
 

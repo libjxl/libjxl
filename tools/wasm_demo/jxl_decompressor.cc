@@ -71,7 +71,7 @@ DecompressorOutput* jxlDecompress(const uint8_t* input, size_t input_size) {
   auto report_error = [&](uint32_t code, const char* text) {
     fprintf(stderr, "%s\n", text);
     delete self;
-    return reinterpret_cast<DecompressorOutput*>(code);
+    return reinterpret_cast<DecompressorOutput*>(code);  // NOLINT
   };
 
   auto thread_pool = JxlThreadParallelRunnerMake(nullptr, 4);

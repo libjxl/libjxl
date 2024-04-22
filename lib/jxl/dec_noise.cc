@@ -5,11 +5,8 @@
 
 #include "lib/jxl/dec_noise.h"
 
-#include <stdint.h>
-#include <stdlib.h>
-
-#include <algorithm>
-#include <numeric>
+#include <cstdint>
+#include <cstdlib>
 #include <utility>
 
 #undef HWY_TARGET_INCLUDE
@@ -18,10 +15,10 @@
 #include <hwy/highway.h>
 
 #include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/chroma_from_luma.h"
-#include "lib/jxl/image_ops.h"
-#include "lib/jxl/sanitizers.h"
+#include "lib/jxl/base/rect.h"
+#include "lib/jxl/frame_dimensions.h"
 #include "lib/jxl/xorshift128plus-inl.h"
+
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
@@ -108,9 +105,8 @@ void Random3Planes(size_t visible_frame_index, size_t nonvisible_frame_index,
                    size_t x0, size_t y0, const std::pair<ImageF*, Rect>& plane0,
                    const std::pair<ImageF*, Rect>& plane1,
                    const std::pair<ImageF*, Rect>& plane2) {
-  return HWY_DYNAMIC_DISPATCH(Random3Planes)(visible_frame_index,
-                                             nonvisible_frame_index, x0, y0,
-                                             plane0, plane1, plane2);
+  HWY_DYNAMIC_DISPATCH(Random3Planes)
+  (visible_frame_index, nonvisible_frame_index, x0, y0, plane0, plane1, plane2);
 }
 
 void DecodeFloatParam(float precision, float* val, BitReader* br) {

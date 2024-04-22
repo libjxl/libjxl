@@ -6,35 +6,24 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#include <cinttypes>
 #include <limits>
-#include <numeric>
 #include <queue>
-#include <set>
-#include <unordered_map>
-#include <unordered_set>
 
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/dec_ans.h"
-#include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/enc_ans.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_fields.h"
-#include "lib/jxl/entropy_coder.h"
 #include "lib/jxl/fields.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
-#include "lib/jxl/modular/encoding/enc_debug_tree.h"
 #include "lib/jxl/modular/encoding/enc_ma.h"
 #include "lib/jxl/modular/encoding/encoding.h"
 #include "lib/jxl/modular/encoding/ma_common.h"
 #include "lib/jxl/modular/options.h"
-#include "lib/jxl/modular/transform/transform.h"
 #include "lib/jxl/pack_signed.h"
-#include "lib/jxl/toc.h"
 
 namespace jxl {
 
@@ -61,25 +50,57 @@ inline std::array<uint8_t, 3> PredictorColor(Predictor p) {
       return {{255, 0, 255}};
     case Predictor::Weighted:
       return {{0, 255, 255}};
-      // TODO
+      // TODO(jon)
     default:
       return {{255, 255, 255}};
   };
 }
 
+// `cutoffs` must be sorted.
+Tree MakeFixedTree(int property, const std::vector<int32_t> &cutoffs,
+                   Predictor pred, size_t num_pixels) {
+  size_t log_px = CeilLog2Nonzero(num_pixels);
+  size_t min_gap = 0;
+  // Reduce fixed tree height when encoding small images.
+  if (log_px < 14) {
+    min_gap = 8 * (14 - log_px);
+  }
+  Tree tree;
+  struct NodeInfo {
+    size_t begin, end, pos;
+  };
+  std::queue<NodeInfo> q;
+  // Leaf IDs will be set by roundtrip decoding the tree.
+  tree.push_back(PropertyDecisionNode::Leaf(pred));
+  q.push(NodeInfo{0, cutoffs.size(), 0});
+  while (!q.empty()) {
+    NodeInfo info = q.front();
+    q.pop();
+    if (info.begin + min_gap >= info.end) continue;
+    uint32_t split = (info.begin + info.end) / 2;
+    tree[info.pos] =
+        PropertyDecisionNode::Split(property, cutoffs[split], tree.size());
+    q.push(NodeInfo{split + 1, info.end, tree.size()});
+    tree.push_back(PropertyDecisionNode::Leaf(pred));
+    q.push(NodeInfo{info.begin, split, tree.size()});
+    tree.push_back(PropertyDecisionNode::Leaf(pred));
+  }
+  return tree;
+}
+
 }  // namespace
 
-void GatherTreeData(const Image &image, pixel_type chan, size_t group_id,
-                    const weighted::Header &wp_header,
-                    const ModularOptions &options, TreeSamples &tree_samples,
-                    size_t *total_pixels) {
+Status GatherTreeData(const Image &image, pixel_type chan, size_t group_id,
+                      const weighted::Header &wp_header,
+                      const ModularOptions &options, TreeSamples &tree_samples,
+                      size_t *total_pixels) {
   const Channel &channel = image.channel[chan];
 
   JXL_DEBUG_V(7, "Learning %" PRIuS "x%" PRIuS " channel %d", channel.w,
               channel.h, chan);
 
   std::array<pixel_type, kNumStaticProperties> static_props = {
-      {chan, (int)group_id}};
+      {chan, static_cast<int>(group_id)}};
   Properties properties(kNumNonrefProperties +
                         kExtraPropsPerChannel * options.max_properties);
   double pixel_fraction = std::min(1.0f, options.nb_repeats);
@@ -105,7 +126,9 @@ void GatherTreeData(const Image &image, pixel_type chan, size_t group_id,
   };
 
   const intptr_t onerow = channel.plane.PixelsPerRow();
-  Channel references(properties.size() - kNumNonrefProperties, channel.w);
+  JXL_ASSIGN_OR_RETURN(
+      Channel references,
+      Channel::Create(properties.size() - kNumNonrefProperties, channel.w));
   weighted::State wp_state(wp_header, channel.w, channel.h);
   tree_samples.PrepareForSamples(pixel_fraction * channel.h * channel.w + 64);
   const bool multiple_predictors = tree_samples.NumPredictors() != 1;
@@ -166,6 +189,84 @@ void GatherTreeData(const Image &image, pixel_type chan, size_t group_id,
       }
     }
   }
+  return true;
+}
+
+Tree PredefinedTree(ModularOptions::TreeKind tree_kind, size_t total_pixels) {
+  if (tree_kind == ModularOptions::TreeKind::kJpegTranscodeACMeta ||
+      tree_kind == ModularOptions::TreeKind::kTrivialTreeNoPredictor) {
+    // All the data is 0, so no need for a fancy tree.
+    return {PropertyDecisionNode::Leaf(Predictor::Zero)};
+  }
+  if (tree_kind == ModularOptions::TreeKind::kFalconACMeta) {
+    // All the data is 0 except the quant field. TODO(veluca): make that 0 too.
+    return {PropertyDecisionNode::Leaf(Predictor::Left)};
+  }
+  if (tree_kind == ModularOptions::TreeKind::kACMeta) {
+    // Small image.
+    if (total_pixels < 1024) {
+      return {PropertyDecisionNode::Leaf(Predictor::Left)};
+    }
+    Tree tree;
+    // 0: c > 1
+    tree.push_back(PropertyDecisionNode::Split(0, 1, 1));
+    // 1: c > 2
+    tree.push_back(PropertyDecisionNode::Split(0, 2, 3));
+    // 2: c > 0
+    tree.push_back(PropertyDecisionNode::Split(0, 0, 5));
+    // 3: EPF control field (all 0 or 4), top > 0
+    tree.push_back(PropertyDecisionNode::Split(6, 0, 21));
+    // 4: ACS+QF, y > 0
+    tree.push_back(PropertyDecisionNode::Split(2, 0, 7));
+    // 5: CfL x
+    tree.push_back(PropertyDecisionNode::Leaf(Predictor::Gradient));
+    // 6: CfL b
+    tree.push_back(PropertyDecisionNode::Leaf(Predictor::Gradient));
+    // 7: QF: split according to the left quant value.
+    tree.push_back(PropertyDecisionNode::Split(7, 5, 9));
+    // 8: ACS: split in 4 segments (8x8 from 0 to 3, large square 4-5, large
+    // rectangular 6-11, 8x8 12+), according to previous ACS value.
+    tree.push_back(PropertyDecisionNode::Split(7, 5, 15));
+    // QF
+    tree.push_back(PropertyDecisionNode::Split(7, 11, 11));
+    tree.push_back(PropertyDecisionNode::Split(7, 3, 13));
+    tree.push_back(PropertyDecisionNode::Leaf(Predictor::Left));
+    tree.push_back(PropertyDecisionNode::Leaf(Predictor::Left));
+    tree.push_back(PropertyDecisionNode::Leaf(Predictor::Left));
+    tree.push_back(PropertyDecisionNode::Leaf(Predictor::Left));
+    // ACS
+    tree.push_back(PropertyDecisionNode::Split(7, 11, 17));
+    tree.push_back(PropertyDecisionNode::Split(7, 3, 19));
+    tree.push_back(PropertyDecisionNode::Leaf(Predictor::Zero));
+    tree.push_back(PropertyDecisionNode::Leaf(Predictor::Zero));
+    tree.push_back(PropertyDecisionNode::Leaf(Predictor::Zero));
+    tree.push_back(PropertyDecisionNode::Leaf(Predictor::Zero));
+    // EPF, left > 0
+    tree.push_back(PropertyDecisionNode::Split(7, 0, 23));
+    tree.push_back(PropertyDecisionNode::Split(7, 0, 25));
+    tree.push_back(PropertyDecisionNode::Leaf(Predictor::Zero));
+    tree.push_back(PropertyDecisionNode::Leaf(Predictor::Zero));
+    tree.push_back(PropertyDecisionNode::Leaf(Predictor::Zero));
+    tree.push_back(PropertyDecisionNode::Leaf(Predictor::Zero));
+    return tree;
+  }
+  if (tree_kind == ModularOptions::TreeKind::kWPFixedDC) {
+    std::vector<int32_t> cutoffs = {
+        -500, -392, -255, -191, -127, -95, -63, -47, -31, -23, -15,
+        -11,  -7,   -4,   -3,   -1,   0,   1,   3,   5,   7,   11,
+        15,   23,   31,   47,   63,   95,  127, 191, 255, 392, 500};
+    return MakeFixedTree(kWPProp, cutoffs, Predictor::Weighted, total_pixels);
+  }
+  if (tree_kind == ModularOptions::TreeKind::kGradientFixedDC) {
+    std::vector<int32_t> cutoffs = {
+        -500, -392, -255, -191, -127, -95, -63, -47, -31, -23, -15,
+        -11,  -7,   -4,   -3,   -1,   0,   1,   3,   5,   7,   11,
+        15,   23,   31,   47,   63,   95,  127, 191, 255, 392, 500};
+    return MakeFixedTree(kGradientProp, cutoffs, Predictor::Gradient,
+                         total_pixels);
+  }
+  JXL_UNREACHABLE("Unreachable");
+  return {};
 }
 
 Tree LearnTree(TreeSamples &&tree_samples, size_t total_pixels,
@@ -207,7 +308,9 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
   JXL_ASSERT(channel.w != 0 && channel.h != 0);
 
   Image3F predictor_img;
-  if (kWantDebug) predictor_img = Image3F(channel.w, channel.h);
+  if (kWantDebug) {
+    JXL_ASSIGN_OR_RETURN(predictor_img, Image3F::Create(channel.w, channel.h));
+  }
 
   JXL_DEBUG_V(6,
               "Encoding %" PRIuS "x%" PRIuS
@@ -216,8 +319,9 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
               channel.w, channel.h, chan, channel.hshift, channel.vshift);
 
   std::array<pixel_type, kNumStaticProperties> static_props = {
-      {chan, (int)group_id}};
-  bool use_wp, is_wp_only;
+      {chan, static_cast<int>(group_id)}};
+  bool use_wp;
+  bool is_wp_only;
   bool is_gradient_only;
   size_t num_props;
   FlatTree tree = FilterTree(global_tree, static_props, &num_props, &use_wp,
@@ -330,7 +434,8 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
       FillImage(static_cast<float>(PredictorColor(tree[0].predictor)[c]),
                 &predictor_img.Plane(c));
     }
-    uint32_t mul_shift = FloorLog2Nonzero((uint32_t)tree[0].multiplier);
+    uint32_t mul_shift =
+        FloorLog2Nonzero(static_cast<uint32_t>(tree[0].multiplier));
     const intptr_t onerow = channel.plane.PixelsPerRow();
     for (size_t y = 0; y < channel.h; y++) {
       const pixel_type *JXL_RESTRICT r = channel.Row(y);
@@ -345,7 +450,9 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
 
   } else if (!use_wp && !skip_encoder_fast_path) {
     const intptr_t onerow = channel.plane.PixelsPerRow();
-    Channel references(properties.size() - kNumNonrefProperties, channel.w);
+    JXL_ASSIGN_OR_RETURN(
+        Channel references,
+        Channel::Create(properties.size() - kNumNonrefProperties, channel.w));
     for (size_t y = 0; y < channel.h; y++) {
       const pixel_type *JXL_RESTRICT p = channel.Row(y);
       PrecomputeReferences(channel, y, image, chan, &references);
@@ -372,7 +479,9 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
     }
   } else {
     const intptr_t onerow = channel.plane.PixelsPerRow();
-    Channel references(properties.size() - kNumNonrefProperties, channel.w);
+    JXL_ASSIGN_OR_RETURN(
+        Channel references,
+        Channel::Create(properties.size() - kNumNonrefProperties, channel.w));
     weighted::State wp_state(wp_header, channel.w, channel.h);
     for (size_t y = 0; y < channel.h; y++) {
       const pixel_type *JXL_RESTRICT p = channel.Row(y);
@@ -447,8 +556,20 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
   TreeSamples tree_samples_storage;
   size_t total_pixels_storage = 0;
   if (!total_pixels) total_pixels = &total_pixels_storage;
+  if (*total_pixels == 0) {
+    for (size_t i = 0; i < nb_channels; i++) {
+      if (i >= image.nb_meta_channels &&
+          (image.channel[i].w > options.max_chan_size ||
+           image.channel[i].h > options.max_chan_size)) {
+        break;
+      }
+      *total_pixels += image.channel[i].w * image.channel[i].h;
+    }
+    *total_pixels = std::max<size_t>(*total_pixels, 1);
+  }
   // If there's no tree, compute one (or gather data to).
-  if (tree == nullptr) {
+  if (tree == nullptr &&
+      options.tree_kind == ModularOptions::TreeKind::kLearn) {
     bool gather_data = tree_samples != nullptr;
     if (tree_samples == nullptr) {
       JXL_RETURN_IF_ERROR(tree_samples_storage.SetPredictor(
@@ -477,9 +598,9 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
            image.channel[i].h > options.max_chan_size)) {
         break;
       }
-      GatherTreeData(image, i, group_id, header->wp_header, options,
-                     gather_data ? *tree_samples : tree_samples_storage,
-                     total_pixels);
+      JXL_RETURN_IF_ERROR(GatherTreeData(
+          image, i, group_id, header->wp_header, options,
+          gather_data ? *tree_samples : tree_samples_storage, total_pixels));
     }
     if (gather_data) return true;
   }
@@ -494,13 +615,16 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
     std::vector<uint8_t> context_map;
 
     std::vector<std::vector<Token>> tree_tokens(1);
+
     tree_storage =
-        LearnTree(std::move(tree_samples_storage), *total_pixels, options);
+        options.tree_kind == ModularOptions::TreeKind::kLearn
+            ? LearnTree(std::move(tree_samples_storage), *total_pixels, options)
+            : PredefinedTree(options.tree_kind, *total_pixels);
     tree = &tree_storage;
-    tokens = &tokens_storage[0];
+    tokens = tokens_storage.data();
 
     Tree decoded_tree;
-    TokenizeTree(*tree, &tree_tokens[0], &decoded_tree);
+    TokenizeTree(*tree, tree_tokens.data(), &decoded_tree);
     JXL_ASSERT(tree->size() == decoded_tree.size());
     tree_storage = std::move(decoded_tree);
 
@@ -510,9 +634,9 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
     } */
 
     // Write tree
-    BuildAndEncodeHistograms(HistogramParams(), kNumTreeContexts, tree_tokens,
-                             &code, &context_map, writer, kLayerModularTree,
-                             aux_out);
+    BuildAndEncodeHistograms(options.histogram_params, kNumTreeContexts,
+                             tree_tokens, &code, &context_map, writer,
+                             kLayerModularTree, aux_out);
     WriteTokens(tree_tokens[0], code, context_map, 0, writer, kLayerModularTree,
                 aux_out);
   }
@@ -557,7 +681,7 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
   if (!header->use_global_tree) {
     EntropyEncodingData code;
     std::vector<uint8_t> context_map;
-    HistogramParams histo_params;
+    HistogramParams histo_params = options.histogram_params;
     histo_params.image_widths.push_back(image_width);
     BuildAndEncodeHistograms(histo_params, (tree->size() + 1) / 2,
                              tokens_storage, &code, &context_map, writer, layer,
@@ -579,7 +703,7 @@ Status ModularGenericCompress(Image &image, const ModularOptions &opts,
   if (image.w == 0 || image.h == 0) return true;
   ModularOptions options = opts;  // Make a copy to modify it.
 
-  if (options.predictor == static_cast<Predictor>(-1)) {
+  if (options.predictor == kUndefinedPredictor) {
     options.predictor = Predictor::Gradient;
   }
 

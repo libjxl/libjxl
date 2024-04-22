@@ -6,10 +6,12 @@
 #ifndef LIB_JXL_MODULAR_OPTIONS_H_
 #define LIB_JXL_MODULAR_OPTIONS_H_
 
-#include <stdint.h>
-
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <vector>
+
+#include "lib/jxl/enc_ans_params.h"
 
 namespace jxl {
 
@@ -36,6 +38,8 @@ enum class Predictor : uint32_t {
   Variable =
       15,  // Find the best decision tree for predictors/predictor per row
 };
+
+constexpr Predictor kUndefinedPredictor = static_cast<Predictor>(~0u);
 
 constexpr size_t kNumModularPredictors =
     static_cast<size_t>(Predictor::Average4) + 1;
@@ -80,7 +84,7 @@ struct ModularOptions {
   size_t max_property_values = 32;
 
   // Predictor to use for each channel.
-  Predictor predictor = static_cast<Predictor>(-1);
+  Predictor predictor = kUndefinedPredictor;
 
   int wp_mode = 0;
 
@@ -107,6 +111,8 @@ struct ModularOptions {
     kGradientFixedDC,
   };
   TreeKind tree_kind = TreeKind::kLearn;
+
+  HistogramParams histogram_params;
 
   // Ignore the image and just pretend all tokens are zeroes
   bool zero_tokens = false;

@@ -13,14 +13,14 @@ on:
       - main
       - v*.*.x
   pull_request:
-    types: [opened, reopened, labeled, synchronize]
+    types: [opened, reopened, labeled, unlabeled, synchronize]
 
 permissions:
   contents: read
 
 env:
-  CONFORMANCE_REPO_HASH: ee6008ef151489a5330cd886b422af8f6ed58881
-  LIBJXL_VERSION: "0.10.0"
+  CONFORMANCE_REPO_HASH: a3ee00672dd1b58c2b5a7d5e8b9e4a7b9e53ec1e
+  LIBJXL_VERSION: "0.10.2"
   LIBJXL_ABI_VERSION: "0.10"
 
 concurrency:
@@ -30,21 +30,22 @@ concurrency:
 jobs:
   warmup: # If necessary, fetch files just once, before tests are run.
     name: Warmup caches
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
     runs-on: ubuntu-latest
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
+      uses: step-security/harden-runner@63c24ba6bd7ba022e95695ff85de572c04a18142 # v2.7.0
       with:
         egress-policy: audit
 
     - name: Checkout the conformance source
-      uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633 # v4.1.2
       with:
         repository: libjxl/conformance
         ref: ${{ env.CONFORMANCE_REPO_HASH }}
         path: conformance
     - name: Cache
-      uses: actions/cache@e12d46a63a90f2fae62d114769bbf2a179198b5c # v3.3.3
+      uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4.0.2
       with:
         path: ${{ github.workspace }}/conformance/.objects
         key: conformance-refs
@@ -54,6 +55,7 @@ jobs:
 
   build:
     name: Conformance Build ${{ matrix.name }}
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -78,7 +80,7 @@ jobs:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
+      uses: step-security/harden-runner@63c24ba6bd7ba022e95695ff85de572c04a18142 # v2.7.0
       with:
         egress-policy: audit
 
@@ -111,7 +113,7 @@ jobs:
         echo "CC=clang" >> $GITHUB_ENV
         echo "CXX=clang++" >> $GITHUB_ENV
     - name: Checkout the jxl source
-      uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633 # v4.1.2
       with:
         submodules: true
         fetch-depth: 2
@@ -121,7 +123,7 @@ jobs:
         echo "parent=$(git rev-parse ${{ github.sha }}^)" >> $GITHUB_OUTPUT
       shell: bash
     - name: ccache
-      uses: actions/cache@e12d46a63a90f2fae62d114769bbf2a179198b5c # v3.3.3
+      uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4.0.2
       with:
         path: ${{ env.CCACHE_DIR }}
         # When the cache hits the key it is not updated, so if this is a rebuild
@@ -151,7 +153,7 @@ jobs:
         cp build/lib/libjxl_extras_codec.so.${{ env.LIBJXL_VERSION }} build/tools/conformance
       env:
         SKIP_TEST: 1
-    - uses: actions/upload-artifact@1eb3cb2b3e0f29609092a73eb033bb759a334595 # v4.1.0
+    - uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3 # v4.3.1
       with:
         name: conformance_binary-${{ matrix.name }}
         path: |
@@ -167,6 +169,7 @@ jobs:
 
   run:
     name: Conformance Test ${{ matrix.name }} on ${{ matrix.target }}
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
     needs: [warmup, build]
     runs-on: ubuntu-latest
     strategy:
@@ -176,7 +179,7 @@ jobs:
         target: [AVX3, AVX2, SSE4, SSSE3, EMU128, SCALAR, SCALAR_ASAN]
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
+      uses: step-security/harden-runner@63c24ba6bd7ba022e95695ff85de572c04a18142 # v2.7.0
       with:
         egress-policy: audit
 
@@ -184,20 +187,20 @@ jobs:
       run: |
         pip install numpy
     - name: Checkout the conformance source
-      uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633 # v4.1.2
       with:
         repository: libjxl/conformance
         ref: ${{ env.CONFORMANCE_REPO_HASH }}
         path: conformance
     - name: Cache
-      uses: actions/cache@e12d46a63a90f2fae62d114769bbf2a179198b5c # v3.3.3
+      uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4.0.2
       with:
         path: ${{ github.workspace }}/conformance/.objects
         key: conformance-refs
     - name: Download and link conformance files
       run: |
         ${{ github.workspace }}/conformance/scripts/download_and_symlink.sh
-    - uses: actions/download-artifact@6b208ae046db98c579e8a3aa621ab581ff575935 # v4.1.1
+    - uses: actions/download-artifact@c850b930e6ba138125429b7e5c93fc707a7f8427 # v4.1.4
       with:
         name: conformance_binary-${{ matrix.target }}
     - name: Run conformance tests

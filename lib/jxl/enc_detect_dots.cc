@@ -5,11 +5,10 @@
 
 #include "lib/jxl/enc_detect_dots.h"
 
-#include <stdint.h>
-
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <utility>
 #include <vector>
@@ -23,10 +22,10 @@
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/printf_macros.h"
+#include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/convolve.h"
 #include "lib/jxl/enc_linalg.h"
-#include "lib/jxl/enc_optimize.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_ops.h"
 
@@ -44,14 +43,16 @@ using hwy::HWY_NAMESPACE::Add;
 using hwy::HWY_NAMESPACE::Mul;
 using hwy::HWY_NAMESPACE::Sub;
 
-ImageF SumOfSquareDifferences(const Image3F& forig, const Image3F& smooth,
-                              ThreadPool* pool) {
+StatusOr<ImageF> SumOfSquareDifferences(const Image3F& forig,
+                                        const Image3F& smooth,
+                                        ThreadPool* pool) {
   const HWY_FULL(float) d;
   const auto color_coef0 = Set(d, 0.0f);
   const auto color_coef1 = Set(d, 10.0f);
   const auto color_coef2 = Set(d, 0.0f);
 
-  ImageF sum_of_squares(forig.xsize(), forig.ysize());
+  JXL_ASSIGN_OR_RETURN(ImageF sum_of_squares,
+                       ImageF::Create(forig.xsize(), forig.ysize()));
   JXL_CHECK(RunOnPool(
       pool, 0, forig.ysize(), ThreadPool::NoInit,
       [&](const uint32_t task, size_t thread) {
@@ -142,11 +143,12 @@ const WeightsSeparable5& WeightsSeparable5Gaussian3() {
   return weights;
 }
 
-ImageF ComputeEnergyImage(const Image3F& orig, Image3F* smooth,
-                          ThreadPool* pool) {
+StatusOr<ImageF> ComputeEnergyImage(const Image3F& orig, Image3F* smooth,
+                                    ThreadPool* pool) {
   // Prepare guidance images for dot selection.
-  Image3F forig(orig.xsize(), orig.ysize());
-  *smooth = Image3F(orig.xsize(), orig.ysize());
+  JXL_ASSIGN_OR_RETURN(Image3F forig,
+                       Image3F::Create(orig.xsize(), orig.ysize()));
+  JXL_ASSIGN_OR_RETURN(*smooth, Image3F::Create(orig.xsize(), orig.ysize()));
   Rect rect(orig);
 
   const auto& weights1 = WeightsSeparable5Gaussian0_65();
@@ -176,7 +178,7 @@ const size_t kMaxCCSize = 1000;
 
 // Extracts a connected component from a Binary image where seed is part
 // of the component
-bool ExtractComponent(ImageF* img, std::vector<Pixel>* pixels,
+bool ExtractComponent(const Rect& rect, ImageF* img, std::vector<Pixel>* pixels,
                       const Pixel& seed, double threshold) {
   static const std::vector<Pixel> neighbors{{1, -1}, {1, 0},   {1, 1},  {0, -1},
                                             {0, 1},  {-1, -1}, {-1, 1}, {1, 0}};
@@ -188,9 +190,9 @@ bool ExtractComponent(ImageF* img, std::vector<Pixel>* pixels,
     if (pixels->size() > kMaxCCSize) return false;
     for (const Pixel& delta : neighbors) {
       Pixel child = current + delta;
-      if (child.x >= 0 && static_cast<size_t>(child.x) < img->xsize() &&
-          child.y >= 0 && static_cast<size_t>(child.y) < img->ysize()) {
-        float* value = &img->Row(child.y)[child.x];
+      if (child.x >= 0 && static_cast<size_t>(child.x) < rect.xsize() &&
+          child.y >= 0 && static_cast<size_t>(child.y) < rect.ysize()) {
+        float* value = &rect.Row(img, child.y)[child.x];
         if (*value > threshold) {
           *value = 0.0;
           q.push_back(child);
@@ -221,7 +223,7 @@ struct ConnectedComponent {
   float score;
   Pixel mode;
 
-  void CompStats(const ImageF& energy, int extra) {
+  void CompStats(const ImageF& energy, const Rect& rect, int extra) {
     maxEnergy = 0.0;
     meanEnergy = 0.0;
     varEnergy = 0.0;
@@ -234,12 +236,12 @@ struct ConnectedComponent {
     for (int sy = -extra; sy < (static_cast<int>(bounds.ysize()) + extra);
          sy++) {
       int y = sy + static_cast<int>(bounds.y0());
-      if (y < 0 || static_cast<size_t>(y) >= energy.ysize()) continue;
-      const float* JXL_RESTRICT erow = energy.ConstRow(y);
+      if (y < 0 || static_cast<size_t>(y) >= rect.ysize()) continue;
+      const float* JXL_RESTRICT erow = rect.ConstRow(energy, y);
       for (int sx = -extra; sx < (static_cast<int>(bounds.xsize()) + extra);
            sx++) {
         int x = sx + static_cast<int>(bounds.x0());
-        if (x < 0 || static_cast<size_t>(x) >= energy.xsize()) continue;
+        if (x < 0 || static_cast<size_t>(x) >= rect.xsize()) continue;
         if (erow[x] > maxEnergy) {
           maxEnergy = erow[x];
           mode.x = x;
@@ -266,7 +268,10 @@ struct ConnectedComponent {
 
 Rect BoundingRectangle(const std::vector<Pixel>& pixels) {
   JXL_ASSERT(!pixels.empty());
-  int low_x, high_x, low_y, high_y;
+  int low_x;
+  int high_x;
+  int low_y;
+  int high_y;
   low_x = high_x = pixels[0].x;
   low_y = high_y = pixels[0].y;
   for (const Pixel& p : pixels) {
@@ -278,22 +283,25 @@ Rect BoundingRectangle(const std::vector<Pixel>& pixels) {
   return Rect(low_x, low_y, high_x - low_x + 1, high_y - low_y + 1);
 }
 
-std::vector<ConnectedComponent> FindCC(const ImageF& energy, double t_low,
-                                       double t_high, uint32_t maxWindow,
-                                       double minScore) {
+StatusOr<std::vector<ConnectedComponent>> FindCC(const ImageF& energy,
+                                                 const Rect& rect, double t_low,
+                                                 double t_high,
+                                                 uint32_t maxWindow,
+                                                 double minScore) {
   const int kExtraRect = 4;
-  ImageF img(energy.xsize(), energy.ysize());
+  JXL_ASSIGN_OR_RETURN(ImageF img,
+                       ImageF::Create(energy.xsize(), energy.ysize()));
   CopyImageTo(energy, &img);
   std::vector<ConnectedComponent> ans;
-  for (size_t y = 0; y < img.ysize(); y++) {
-    float* JXL_RESTRICT row = img.Row(y);
-    for (size_t x = 0; x < img.xsize(); x++) {
+  for (size_t y = 0; y < rect.ysize(); y++) {
+    float* JXL_RESTRICT row = rect.Row(&img, y);
+    for (size_t x = 0; x < rect.xsize(); x++) {
       if (row[x] > t_high) {
         std::vector<Pixel> pixels;
         row[x] = 0.0;
         bool success = ExtractComponent(
-            &img, &pixels, Pixel{static_cast<int>(x), static_cast<int>(y)},
-            t_low);
+            rect, &img, &pixels,
+            Pixel{static_cast<int>(x), static_cast<int>(y)}, t_low);
         if (!success) continue;
 #if JXL_DEBUG_DOT_DETECT
         for (size_t i = 0; i < pixels.size(); i++) {
@@ -304,7 +312,7 @@ std::vector<ConnectedComponent> FindCC(const ImageF& energy, double t_low,
         Rect bounds = BoundingRectangle(pixels);
         if (bounds.xsize() < maxWindow && bounds.ysize() < maxWindow) {
           ConnectedComponent cc{bounds, std::move(pixels)};
-          cc.CompStats(energy, kExtraRect);
+          cc.CompStats(energy, rect, kExtraRect);
           if (cc.score < minScore) continue;
           JXL_DEBUG(JXL_DEBUG_DOT_DETECT,
                     "cc mode: (%d,%d), max: %f, bgMean: %f bgVar: "
@@ -323,12 +331,14 @@ std::vector<ConnectedComponent> FindCC(const ImageF& energy, double t_low,
 // TODO(sggonzalez): Adapt this function for the different color spaces or
 // remove it if the color space with the best performance does not need it
 void ComputeDotLosses(GaussianEllipse* ellipse, const ConnectedComponent& cc,
-                      const Image3F& img, const Image3F& background) {
+                      const Rect& rect, const Image3F& img,
+                      const Image3F& background) {
   const int rectBounds = 2;
   const double kIntensityR = 0.0;   // 0.015;
   const double kSigmaR = 0.0;       // 0.01;
   const double kZeroEpsilon = 0.1;  // Tolerance to consider a value negative
-  double ct = cos(ellipse->angle), st = sin(ellipse->angle);
+  double ct = cos(ellipse->angle);
+  double st = sin(ellipse->angle);
   const std::array<double, 3> channelGains{{1.0, 1.0, 1.0}};
   int N = 0;
   ellipse->l1_loss = 0.0;
@@ -342,15 +352,15 @@ void ComputeDotLosses(GaussianEllipse* ellipse, const ConnectedComponent& cc,
     for (int sy = -rectBounds;
          sy < (static_cast<int>(cc.bounds.ysize()) + rectBounds); sy++) {
       int y = sy + cc.bounds.y0();
-      if (y < 0 || static_cast<size_t>(y) >= img.ysize()) continue;
-      const float* JXL_RESTRICT row = img.ConstPlaneRow(c, y);
+      if (y < 0 || static_cast<size_t>(y) >= rect.ysize()) continue;
+      const float* JXL_RESTRICT row = rect.ConstPlaneRow(img, c, y);
       // bgrow is only used if kOptimizeBackground is false.
       // NOLINTNEXTLINE(clang-analyzer-deadcode.DeadStores)
-      const float* JXL_RESTRICT bgrow = background.ConstPlaneRow(c, y);
+      const float* JXL_RESTRICT bgrow = rect.ConstPlaneRow(background, c, y);
       for (int sx = -rectBounds;
            sx < (static_cast<int>(cc.bounds.xsize()) + rectBounds); sx++) {
         int x = sx + cc.bounds.x0();
-        if (x < 0 || static_cast<size_t>(x) >= img.xsize()) continue;
+        if (x < 0 || static_cast<size_t>(x) >= rect.xsize()) continue;
         double target = row[x];
         double dotDelta = DotGaussianModel(
             x - ellipse->x, y - ellipse->y, ct, st, ellipse->sigma_x,
@@ -385,9 +395,8 @@ void ComputeDotLosses(GaussianEllipse* ellipse, const ConnectedComponent& cc,
   ellipse->ridge_loss = ellipse->l2_loss + ridgeTerm;
 }
 
-GaussianEllipse FitGaussianFast(const ConnectedComponent& cc,
-                                const ImageF& energy, const Image3F& img,
-                                const Image3F& background) {
+GaussianEllipse FitGaussianFast(const ConnectedComponent& cc, const Rect& rect,
+                                const Image3F& img, const Image3F& background) {
   constexpr bool leastSqIntensity = true;
   constexpr double kEpsilon = 1e-6;
   GaussianEllipse ans;
@@ -405,18 +414,18 @@ GaussianEllipse FitGaussianFast(const ConnectedComponent& cc,
             "%" PRIuS " %" PRIuS " %" PRIuS " %" PRIuS "\n", cc.bounds.x0(),
             cc.bounds.y0(), cc.bounds.xsize(), cc.bounds.ysize());
   for (int c = 0; c < 3; c++) {
-    color[c] = img.ConstPlaneRow(c, cc.mode.y)[cc.mode.x] -
-               background.ConstPlaneRow(c, cc.mode.y)[cc.mode.x];
+    color[c] = rect.ConstPlaneRow(img, c, cc.mode.y)[cc.mode.x] -
+               rect.ConstPlaneRow(background, c, cc.mode.y)[cc.mode.x];
   }
   double sign = (color[1] > 0) ? 1 : -1;
   for (int sy = -kRectBounds; sy <= kRectBounds; sy++) {
     int y = sy + cc.mode.y;
-    if (y < 0 || static_cast<size_t>(y) >= energy.ysize()) continue;
-    const float* JXL_RESTRICT row = img.ConstPlaneRow(1, y);
-    const float* JXL_RESTRICT bgrow = background.ConstPlaneRow(1, y);
+    if (y < 0 || static_cast<size_t>(y) >= rect.ysize()) continue;
+    const float* JXL_RESTRICT row = rect.ConstPlaneRow(img, 1, y);
+    const float* JXL_RESTRICT bgrow = rect.ConstPlaneRow(background, 1, y);
     for (int sx = -kRectBounds; sx <= kRectBounds; sx++) {
       int x = sx + cc.mode.x;
-      if (x < 0 || static_cast<size_t>(x) >= energy.xsize()) continue;
+      if (x < 0 || static_cast<size_t>(x) >= rect.xsize()) continue;
       double w = std::max(kEpsilon, sign * (row[x] - bgrow[x]));
       sum += w;
 
@@ -426,7 +435,7 @@ GaussianEllipse FitGaussianFast(const ConnectedComponent& cc,
       m2[1] += w * x * y;
       m2[2] += w * y * y;
       for (int c = 0; c < 3; c++) {
-        bgColor[c] += background.ConstPlaneRow(c, y)[x];
+        bgColor[c] += rect.ConstPlaneRow(background, c, y)[x];
       }
       N++;
     }
@@ -450,14 +459,16 @@ GaussianEllipse FitGaussianFast(const ConnectedComponent& cc,
     ans.intensity[j] = kScaleMult[j] * color[j];
   }
 
-  ImageD Sigma(2, 2), D(1, 2), U(2, 2);
-  Sigma.Row(0)[0] = m2[0] - m1[0] * m1[0];
-  Sigma.Row(1)[1] = m2[2] - m1[1] * m1[1];
-  Sigma.Row(0)[1] = Sigma.Row(1)[0] = m2[1] - m1[0] * m1[1];
-  ConvertToDiagonal(Sigma, &D, &U);
-  const double* JXL_RESTRICT d = D.ConstRow(0);
-  const double* JXL_RESTRICT u = U.ConstRow(1);
-  int p1 = 0, p2 = 1;
+  Matrix2x2 Sigma;
+  Vector2 d;
+  Matrix2x2 U;
+  Sigma[0][0] = m2[0] - m1[0] * m1[0];
+  Sigma[1][1] = m2[2] - m1[1] * m1[1];
+  Sigma[0][1] = Sigma[1][0] = m2[1] - m1[0] * m1[1];
+  ConvertToDiagonal(Sigma, d, U);
+  Vector2& u = U[1];
+  int p1 = 0;
+  int p2 = 1;
   if (d[0] < d[1]) std::swap(p1, p2);
   ans.sigma_x = kSigmaMult * d[p1];
   ans.sigma_y = kSigmaMult * d[p2];
@@ -466,7 +477,8 @@ GaussianEllipse FitGaussianFast(const ConnectedComponent& cc,
   ans.bgColor = bgColor;
   if (leastSqIntensity) {
     GaussianEllipse* ellipse = &ans;
-    double ct = cos(ans.angle), st = sin(ans.angle);
+    double ct = cos(ans.angle);
+    double st = sin(ans.angle);
     // Estimate intensity with least squares (fixed background)
     for (int c = 0; c < 3; c++) {
       double gg = 0.0;
@@ -474,11 +486,11 @@ GaussianEllipse FitGaussianFast(const ConnectedComponent& cc,
       int yc = static_cast<int>(cc.mode.y);
       int xc = static_cast<int>(cc.mode.x);
       for (int y = yc - kRectBounds; y <= yc + kRectBounds; y++) {
-        if (y < 0 || static_cast<size_t>(y) >= img.ysize()) continue;
-        const float* JXL_RESTRICT row = img.ConstPlaneRow(c, y);
-        const float* JXL_RESTRICT bgrow = background.ConstPlaneRow(c, y);
+        if (y < 0 || static_cast<size_t>(y) >= rect.ysize()) continue;
+        const float* JXL_RESTRICT row = rect.ConstPlaneRow(img, c, y);
+        const float* JXL_RESTRICT bgrow = rect.ConstPlaneRow(background, c, y);
         for (int x = xc - kRectBounds; x <= xc + kRectBounds; x++) {
-          if (x < 0 || static_cast<size_t>(x) >= img.xsize()) continue;
+          if (x < 0 || static_cast<size_t>(x) >= rect.xsize()) continue;
           double target = row[x] - bgrow[x];
           double gaussian =
               DotGaussianModel(x - ellipse->x, y - ellipse->y, ct, st,
@@ -490,13 +502,13 @@ GaussianEllipse FitGaussianFast(const ConnectedComponent& cc,
       ans.intensity[c] = gd / (gg + 1e-6);  // Regularized least squares
     }
   }
-  ComputeDotLosses(&ans, cc, img, background);
+  ComputeDotLosses(&ans, cc, rect, img, background);
   return ans;
 }
 
-GaussianEllipse FitGaussian(const ConnectedComponent& cc, const ImageF& energy,
+GaussianEllipse FitGaussian(const ConnectedComponent& cc, const Rect& rect,
                             const Image3F& img, const Image3F& background) {
-  auto ellipse = FitGaussianFast(cc, energy, img, background);
+  auto ellipse = FitGaussianFast(cc, rect, img, background);
   if (ellipse.sigma_x < ellipse.sigma_y) {
     std::swap(ellipse.sigma_x, ellipse.sigma_y);
     ellipse.angle += kPi / 2.0;
@@ -522,14 +534,16 @@ GaussianEllipse FitGaussian(const ConnectedComponent& cc, const ImageF& energy,
 
 }  // namespace
 
-std::vector<PatchInfo> DetectGaussianEllipses(
-    const Image3F& opsin, const GaussianDetectParams& params,
+StatusOr<std::vector<PatchInfo>> DetectGaussianEllipses(
+    const Image3F& opsin, const Rect& rect, const GaussianDetectParams& params,
     const EllipseQuantParams& qParams, ThreadPool* pool) {
   std::vector<PatchInfo> dots;
-  Image3F smooth(opsin.xsize(), opsin.ysize());
-  ImageF energy = ComputeEnergyImage(opsin, &smooth, pool);
-  std::vector<ConnectedComponent> components = FindCC(
-      energy, params.t_low, params.t_high, params.maxWinSize, params.minScore);
+  JXL_ASSIGN_OR_RETURN(Image3F smooth,
+                       Image3F::Create(opsin.xsize(), opsin.ysize()));
+  JXL_ASSIGN_OR_RETURN(ImageF energy, ComputeEnergyImage(opsin, &smooth, pool));
+  JXL_ASSIGN_OR_RETURN(std::vector<ConnectedComponent> components,
+                       FindCC(energy, rect, params.t_low, params.t_high,
+                              params.maxWinSize, params.minScore));
   size_t numCC =
       std::min(params.maxCC, (components.size() * params.percCC) / 100);
   if (components.size() > numCC) {
@@ -541,11 +555,11 @@ std::vector<PatchInfo> DetectGaussianEllipses(
     components.erase(components.begin() + numCC, components.end());
   }
   for (const auto& cc : components) {
-    GaussianEllipse ellipse = FitGaussian(cc, energy, opsin, smooth);
+    GaussianEllipse ellipse = FitGaussian(cc, rect, opsin, smooth);
     if (ellipse.x < 0.0 ||
-        std::ceil(ellipse.x) >= static_cast<double>(opsin.xsize()) ||
+        std::ceil(ellipse.x) >= static_cast<double>(rect.xsize()) ||
         ellipse.y < 0.0 ||
-        std::ceil(ellipse.y) >= static_cast<double>(opsin.ysize())) {
+        std::ceil(ellipse.y) >= static_cast<double>(rect.ysize())) {
       continue;
     }
     if (ellipse.neg_pixels > params.maxNegPixels) continue;
@@ -573,8 +587,8 @@ std::vector<PatchInfo> DetectGaussianEllipses(
         for (size_t x = 0; x < patch.xsize; x++) {
           for (size_t c = 0; c < 3; c++) {
             patch.fpixels[c][y * patch.xsize + x] =
-                opsin.ConstPlaneRow(c, y0 + y)[x0 + x] -
-                smooth.ConstPlaneRow(c, y0 + y)[x0 + x];
+                rect.ConstPlaneRow(opsin, c, y0 + y)[x0 + x] -
+                rect.ConstPlaneRow(smooth, c, y0 + y)[x0 + x];
           }
         }
       }

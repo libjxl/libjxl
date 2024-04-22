@@ -76,10 +76,12 @@ bool ParseChromaSubsampling(const char* arg, avifPixelFormat* subsampling) {
   return false;
 }
 
-void SetUpAvifColor(const ColorEncoding& color, avifImage* const image) {
+void SetUpAvifColor(const ColorEncoding& color, bool rgb,
+                    avifImage* const image) {
   bool need_icc = (color.GetWhitePointType() != WhitePoint::kD65);
 
-  image->matrixCoefficients = AVIF_MATRIX_COEFFICIENTS_BT709;
+  image->matrixCoefficients =
+      rgb ? AVIF_MATRIX_COEFFICIENTS_IDENTITY : AVIF_MATRIX_COEFFICIENTS_BT709;
   if (!color.HasPrimaries()) {
     need_icc = true;
   } else {
@@ -187,6 +189,10 @@ class AvifCodec : public ImageCodec {
       if (param.size() != 6) return false;
       return ParseChromaSubsampling(param.c_str() + 3, &chroma_subsampling_);
     }
+    if (param == "rgb") {
+      rgb_ = true;
+      return true;
+    }
     if (param.compare(0, 10, "log2_cols=") == 0) {
       log2_cols = strtol(param.c_str() + 10, nullptr, 10);
       return true;
@@ -235,9 +241,18 @@ class AvifCodec : public ImageCodec {
     return ImageCodec::ParseParam(param);
   }
 
+  Status Compress(const std::string& filename, const PackedPixelFile& ppf,
+                  ThreadPool* pool, std::vector<uint8_t>* compressed,
+                  jpegxl::tools::SpeedStats* speed_stats) override {
+    CodecInOut io;
+    JXL_RETURN_IF_ERROR(
+        jxl::extras::ConvertPackedPixelFileToCodecInOut(ppf, pool, &io));
+    return Compress(filename, &io, pool, compressed, speed_stats);
+  }
+
   Status Compress(const std::string& filename, const CodecInOut* io,
                   ThreadPool* pool, std::vector<uint8_t>* compressed,
-                  SpeedStats* speed_stats) override {
+                  SpeedStats* speed_stats) {
     double elapsed_convert_image = 0;
     size_t max_threads = GetNumThreads(pool);
     const double start = jxl::Now();
@@ -250,6 +265,10 @@ class AvifCodec : public ImageCodec {
       // TODO(sboukortt): configure this separately.
       encoder->minQuantizer = 0;
       encoder->maxQuantizer = 63;
+#if AVIF_VERSION >= 1000300
+      encoder->quality = q_target_;
+      encoder->qualityAlpha = q_target_;
+#endif
       encoder->tileColsLog2 = log2_cols;
       encoder->tileRowsLog2 = log2_rows;
       encoder->speed = speed_;
@@ -277,7 +296,7 @@ class AvifCodec : public ImageCodec {
         image->width = ib.xsize();
         image->height = ib.ysize();
         image->depth = depth;
-        SetUpAvifColor(ib.c_current(), image.get());
+        SetUpAvifColor(ib.c_current(), rgb_, image.get());
         std::unique_ptr<avifRWData, void (*)(avifRWData*)> icc_freer(
             &image->icc, &avifRWDataFree);
         avifRGBImage rgb_image;
@@ -312,7 +331,19 @@ class AvifCodec : public ImageCodec {
 
   Status Decompress(const std::string& filename,
                     const Span<const uint8_t> compressed, ThreadPool* pool,
-                    CodecInOut* io, SpeedStats* speed_stats) override {
+                    PackedPixelFile* ppf,
+                    jpegxl::tools::SpeedStats* speed_stats) override {
+    CodecInOut io;
+    JXL_RETURN_IF_ERROR(
+        Decompress(filename, compressed, pool, &io, speed_stats));
+    JxlPixelFormat format{0, JXL_TYPE_UINT8, JXL_NATIVE_ENDIAN, 0};
+    return jxl::extras::ConvertCodecInOutToPackedPixelFile(
+        io, format, io.Main().c_current(), pool, ppf);
+  };
+
+  Status Decompress(const std::string& filename,
+                    const Span<const uint8_t> compressed, ThreadPool* pool,
+                    CodecInOut* io, SpeedStats* speed_stats) {
     io->frames.clear();
     size_t max_threads = GetNumThreads(pool);
     double elapsed_convert_image = 0;
@@ -373,6 +404,7 @@ class AvifCodec : public ImageCodec {
   avifPixelFormat chroma_subsampling_;
   avifCodecChoice encoder_ = AVIF_CODEC_CHOICE_AUTO;
   avifCodecChoice decoder_ = AVIF_CODEC_CHOICE_AUTO;
+  bool rgb_ = false;
   int speed_ = AVIF_SPEED_DEFAULT;
   int log2_cols = 0;
   int log2_rows = 0;

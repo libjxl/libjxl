@@ -3,8 +3,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#ifndef LIB_JXL_EXIF_H_
-#define LIB_JXL_EXIF_H_
+#ifndef LIB_JXL_BASE_EXIF_H_
+#define LIB_JXL_BASE_EXIF_H_
 
 // Basic parsing of Exif (just enough for the render-impacting things
 // like orientation)
@@ -79,7 +79,6 @@ JXL_INLINE void InterpretExif(const std::vector<uint8_t>& exif,
     uint32_t count = (bigendian ? LoadBE32(t) : LoadLE32(t));
     t += 4;
     uint16_t value = (bigendian ? LoadBE16(t) : LoadLE16(t));
-    t += 4;
     if (type == 3 && count == 1 && value >= 1 && value <= 8) {
       *orientation = static_cast<JxlOrientation>(value);
     }
@@ -88,4 +87,4 @@ JXL_INLINE void InterpretExif(const std::vector<uint8_t>& exif,
 
 }  // namespace jxl
 
-#endif  // LIB_JXL_EXIF_H_
+#endif  // LIB_JXL_BASE_EXIF_H_

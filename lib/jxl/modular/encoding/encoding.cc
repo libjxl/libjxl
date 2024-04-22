@@ -14,6 +14,8 @@
 #include "lib/jxl/base/scope_guard.h"
 #include "lib/jxl/dec_ans.h"
 #include "lib/jxl/dec_bit_reader.h"
+#include "lib/jxl/frame_dimensions.h"
+#include "lib/jxl/image_ops.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
 #include "lib/jxl/modular/options.h"
 #include "lib/jxl/pack_signed.h"
@@ -111,7 +113,7 @@ FlatTree FilterTree(const Tree &global_tree,
       }
     }
 
-    for (size_t j = 0; j < 2; j++) mark_property(flat.properties[j]);
+    for (int16_t property : flat.properties) mark_property(property);
     mark_property(flat.property0);
     output.push_back(flat);
   }
@@ -141,7 +143,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
   Channel &channel = image->channel[chan];
 
   std::array<pixel_type, kNumStaticProperties> static_props = {
-      {chan, (int)group_id}};
+      {chan, static_cast<int>(group_id)}};
   // TODO(veluca): filter the tree according to static_props.
 
   // zero pixel channel? could happen
@@ -157,9 +159,9 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
 
   // From here on, tree lookup returns a *clustered* context ID.
   // This avoids an extra memory lookup after tree traversal.
-  for (size_t i = 0; i < tree.size(); i++) {
-    if (tree[i].property0 == -1) {
-      tree[i].childID = context_map[tree[i].childID];
+  for (auto &node : tree) {
+    if (node.property0 == -1) {
+      node.childID = context_map[node.childID];
     }
   }
 
@@ -376,7 +378,9 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
     MATreeLookup tree_lookup(tree);
     Properties properties = Properties(num_props);
     const intptr_t onerow = channel.plane.PixelsPerRow();
-    Channel references(properties.size() - kNumNonrefProperties, channel.w);
+    JXL_ASSIGN_OR_RETURN(
+        Channel references,
+        Channel::Create(properties.size() - kNumNonrefProperties, channel.w));
     for (size_t y = 0; y < channel.h; y++) {
       pixel_type *JXL_RESTRICT p = channel.Row(y);
       PrecomputeReferences(channel, y, *image, chan, &references);
@@ -422,7 +426,9 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
     MATreeLookup tree_lookup(tree);
     Properties properties = Properties(num_props);
     const intptr_t onerow = channel.plane.PixelsPerRow();
-    Channel references(properties.size() - kNumNonrefProperties, channel.w);
+    JXL_ASSIGN_OR_RETURN(
+        Channel references,
+        Channel::Create(properties.size() - kNumNonrefProperties, channel.w));
     weighted::State wp_state(wp_header, channel.w, channel.h);
     for (size_t y = 0; y < channel.h; y++) {
       pixel_type *JXL_RESTRICT p = channel.Row(y);
@@ -532,8 +538,8 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
     // Don't do/undo transforms if header is incomplete.
     header.transforms.clear();
     image.transform = header.transforms;
-    for (size_t c = 0; c < image.channel.size(); c++) {
-      ZeroFillImage(&image.channel[c].plane);
+    for (auto &ch : image.channel) {
+      ZeroFillImage(&ch.plane);
     }
     return Status(StatusCode::kNotEnoughBytes);
   }
