@@ -4,9 +4,11 @@
 // license that can be found in the LICENSE file.
 
 #include <jxl/cms.h>
-#include <stdio.h>
-#include <stdlib.h>
 
+#include <cstdio>
+#include <cstdlib>
+
+#include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
 #include "tools/file_io.h"
 

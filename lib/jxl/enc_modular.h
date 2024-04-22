@@ -14,6 +14,7 @@
 
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_modular.h"
 #include "lib/jxl/enc_ans.h"
@@ -107,7 +108,6 @@ class ModularFrameEncoder {
   std::vector<size_t> tree_splits_;
   std::vector<std::vector<uint32_t>> gi_channel_;
   std::vector<size_t> image_widths_;
-  Predictor delta_pred_ = Predictor::Average4;
 
   struct GroupParams {
     Rect rect;

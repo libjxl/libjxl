@@ -3,26 +3,23 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <jxl/codestream_header.h>
+#include <jxl/color_encoding.h>
 #include <jxl/decode.h>
 #include <jxl/decode_cxx.h>
 #include <jxl/encode.h>
 #include <jxl/encode_cxx.h>
 #include <jxl/thread_parallel_runner.h>
 #include <jxl/thread_parallel_runner_cxx.h>
-#include <limits.h>
-#include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
+#include <jxl/types.h>
 
-#include <algorithm>
 #include <cstdint>
-#include <functional>
-#include <hwy/targets.h>
-#include <random>
+#include <cstdlib>
+#include <cstring>
 #include <vector>
 
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/test_image.h"
+#include "lib/jxl/test_utils.h"
 
 namespace {
 
@@ -279,7 +276,7 @@ std::vector<float> Decode(const std::vector<uint8_t>& data) {
   }
 }
 
-int TestOneInput(const uint8_t* data, size_t size) {
+int DoTestOneInput(const uint8_t* data, size_t size) {
   auto spec = FuzzSpec::FromData(data, size);
   auto enc_default = Encode(spec, false);
   auto enc_streaming = Encode(spec, true);
@@ -294,5 +291,11 @@ int TestOneInput(const uint8_t* data, size_t size) {
 }  // namespace
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
-  return TestOneInput(data, size);
+  return DoTestOneInput(data, size);
 }
+
+void TestOneInput(const std::vector<uint8_t>& data) {
+  DoTestOneInput(data.data(), data.size());
+}
+
+FUZZ_TEST(StreamingFuzzTest, TestOneInput);

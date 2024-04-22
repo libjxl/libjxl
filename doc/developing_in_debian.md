@@ -12,7 +12,8 @@ dependencies that need to be installed on your system first:
 
 ```bash
 sudo apt install cmake clang doxygen g++ extra-cmake-modules \
-  libgif-dev libjpeg-dev ninja-build libgoogle-perftools-dev
+  libgif-dev libjpeg-dev ninja-build libgoogle-perftools-dev \
+  graphviz
 ```
 
 Make sure your default `clang` compiler is at least version 6 by running

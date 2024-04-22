@@ -18,6 +18,7 @@
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
+#include "lib/jxl/common.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/modular/options.h"

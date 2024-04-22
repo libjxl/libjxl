@@ -228,7 +228,7 @@ Status PassesDecoderState::PreparePipeline(const FrameHeader& frame_header,
       if ((output_encoding_info.color_encoding_is_original) ||
           (!output_encoding_info.cms_set) || mixing_color_and_grey) {
         // in those cases we only need a linear stage in other cases we attempt
-        // to obtain an cms stage: the cases are
+        // to obtain a cms stage: the cases are
         // - output_encoding_info.color_encoding_is_original: no cms stage
         // needed because it would be a no-op
         // - !output_encoding_info.cms_set: can't use the cms, so no point in

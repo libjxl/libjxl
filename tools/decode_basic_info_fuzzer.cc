@@ -4,12 +4,16 @@
 // license that can be found in the LICENSE file.
 
 #include <jxl/decode.h>
-#include <stdint.h>
 
-namespace jpegxl {
-namespace tools {
+#include <cstddef>
+#include <cstdint>
+#include <vector>
 
-int TestOneInput(const uint8_t* data, size_t size) {
+#include "lib/jxl/test_utils.h"
+
+namespace {
+
+int DoTestOneInput(const uint8_t* data, size_t size) {
   JxlDecoderStatus status;
   JxlDecoder* dec = JxlDecoderCreate(nullptr);
   JxlDecoderSubscribeEvents(dec, JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING);
@@ -51,9 +55,14 @@ int TestOneInput(const uint8_t* data, size_t size) {
   return 0;
 }
 
-}  // namespace tools
-}  // namespace jpegxl
+}  // namespace
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
-  return jpegxl::tools::TestOneInput(data, size);
+  return DoTestOneInput(data, size);
 }
+
+void TestOneInput(const std::vector<uint8_t>& data) {
+  DoTestOneInput(data.data(), data.size());
+}
+
+FUZZ_TEST(DecodeBasiInfoFuzzTest, TestOneInput);

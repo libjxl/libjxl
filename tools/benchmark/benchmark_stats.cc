@@ -5,13 +5,17 @@
 
 #include "tools/benchmark/benchmark_stats.h"
 
-#include <stdarg.h>
-#include <stddef.h>
-#include <stdio.h>
-#include <string.h>
+#include <jxl/stats.h>
 
 #include <algorithm>
 #include <cmath>
+#include <cstdarg>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <string>
+#include <vector>
 
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"

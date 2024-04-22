@@ -3,13 +3,16 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include <stdio.h>
-
+#include <algorithm>
+#include <cstdint>
+#include <cstdio>
 #include <utility>
+#include <vector>
 
 #include "lib/extras/codec.h"
-// TODO(eustas): we should, but we can't?
-// #include "lib/jxl/base/span.h"
+#include "lib/jxl/base/span.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/codec_in_out.h"
 #include "tools/file_io.h"
 #include "tools/ssimulacra2.h"
 

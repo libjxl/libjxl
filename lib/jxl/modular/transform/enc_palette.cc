@@ -170,6 +170,8 @@ Status FwdPaletteIteration(Image &input, uint32_t begin_c, uint32_t end_c,
 
   size_t w = input.channel[begin_c].w;
   size_t h = input.channel[begin_c].h;
+  if (input.bitdepth >= 32) return false;
+  if (!lossy && nb_colors < 2) return false;
 
   if (!lossy && nb == 1) {
     // Channel palette special case
@@ -320,6 +322,20 @@ Status FwdPaletteIteration(Image &input, uint32_t begin_c, uint32_t end_c,
     }
   }
 
+  std::map<std::vector<pixel_type>, bool> implicit_color;
+  std::vector<std::vector<pixel_type>> implicit_colors;
+  implicit_colors.reserve(palette_internal::kImplicitPaletteSize);
+  for (size_t k = 0; k < palette_internal::kImplicitPaletteSize; k++) {
+    for (size_t i = 0; i < nb; i++) {
+      color[i] = palette_internal::GetPaletteValue(nullptr, k, i, 0, 0,
+                                                   input.bitdepth);
+    }
+    implicit_color[color] = true;
+    implicit_colors.push_back(color);
+  }
+
+  std::map<std::vector<pixel_type>, size_t> color_freq_map;
+  uint32_t implicit_colors_used = 0;
   for (size_t y = 0; y < h; y++) {
     for (uint32_t c = 0; c < nb; c++) {
       p_in[c] = input.channel[begin_c + c].Row(y);
@@ -331,15 +347,39 @@ Status FwdPaletteIteration(Image &input, uint32_t begin_c, uint32_t end_c,
       }
       const bool new_color = candidate_palette.insert(color).second;
       if (new_color) {
-        candidate_palette_imageorder.push_back(color);
+        if (implicit_color[color]) {
+          implicit_colors_used++;
+        } else {
+          candidate_palette_imageorder.push_back(color);
+          if (candidate_palette_imageorder.size() > nb_colors) {
+            return false;  // too many colors
+          }
+        }
       }
-      if (candidate_palette.size() > nb_colors) {
-        return false;  // too many colors
-      }
+      color_freq_map[color] += 1;
     }
   }
 
-  nb_colors = nb_deltas + candidate_palette.size();
+  nb_colors = nb_deltas + candidate_palette_imageorder.size();
+
+  // not useful to make a single-color palette
+  if (!lossy && nb_colors + implicit_colors_used == 1) return false;
+  // TODO(jon): if this happens (e.g. solid white group), special-case it for
+  // faster encode
+
+  for (size_t k = 0; k < palette_internal::kImplicitPaletteSize; k++) {
+    color = implicit_colors[k];
+    // still add the color to the explicit palette if it is frequent enough
+    if (color_freq_map[color] > 10) {
+      nb_colors++;
+      candidate_palette_imageorder.push_back(color);
+    }
+  }
+  for (size_t k = 0; k < palette_internal::kImplicitPaletteSize; k++) {
+    color = implicit_colors[k];
+    inv_palette[color] = nb_colors + k;
+  }
+
   JXL_DEBUG_V(6, "Channels %i-%i can be represented using a %i-color palette.",
               begin_c, end_c, nb_colors);
 
@@ -359,25 +399,33 @@ Status FwdPaletteIteration(Image &input, uint32_t begin_c, uint32_t end_c,
       }
     }
   }
-
+  // Separate the palette in two buckets, first the common colors, then the
+  // rare colors.
+  // Within each bucket, the colors are sorted on luma (times alpha).
+  float freq_threshold = 4;  // arbitrary threshold
   int x = 0;
   if (ordered && nb >= 3) {
     JXL_DEBUG_V(7, "Palette of %i colors, using luma order", nb_colors);
     // sort on luma (multiplied by alpha if available)
     std::sort(candidate_palette_imageorder.begin(),
               candidate_palette_imageorder.end(),
-              [](std::vector<pixel_type> ap, std::vector<pixel_type> bp) {
+              [&](std::vector<pixel_type> ap, std::vector<pixel_type> bp) {
                 float ay;
                 float by;
                 ay = (0.299f * ap[0] + 0.587f * ap[1] + 0.114f * ap[2] + 0.1f);
                 if (ap.size() > 3) ay *= 1.f + ap[3];
                 by = (0.299f * bp[0] + 0.587f * bp[1] + 0.114f * bp[2] + 0.1f);
                 if (bp.size() > 3) by *= 1.f + bp[3];
+                // put common colors first, transparent dark to opaque bright,
+                // then rare colors, bright to dark
+                ay = color_freq_map[ap] > freq_threshold ? -ay : ay;
+                by = color_freq_map[bp] > freq_threshold ? -by : by;
                 return ay < by;
               });
   } else {
     JXL_DEBUG_V(7, "Palette of %i colors, using image order", nb_colors);
   }
+
   for (auto pcol : candidate_palette_imageorder) {
     JXL_DEBUG_V(9, "  Color %i :  ", x);
     for (size_t i = 0; i < nb; i++) {

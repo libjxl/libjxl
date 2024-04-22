@@ -451,7 +451,7 @@ TEST(EncodeTest, FrameSettingsTest) {
         JxlEncoderFrameSettingsCreate(enc.get(), nullptr);
     EXPECT_EQ(JXL_ENC_SUCCESS,
               JxlEncoderSetFrameLossless(frame_settings, JXL_TRUE));
-    VerifyFrameEncoding(63, 129, enc.get(), frame_settings, 3000, false);
+    VerifyFrameEncoding(63, 129, enc.get(), frame_settings, 3600, false);
     EXPECT_EQ(true, enc->last_used_cparams.IsLossless());
   }
 
@@ -1888,7 +1888,7 @@ TEST_P(EncoderStreamingTest, OutputCallback) {
                  p.color_includes_alpha(), p.is_lossless());
 
   std::vector<uint8_t> compressed = std::vector<uint8_t>(64);
-  // without sreaming
+  // without streaming
   {
     JxlEncoderPtr enc = JxlEncoderMake(nullptr);
     ASSERT_NE(nullptr, enc.get());

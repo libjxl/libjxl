@@ -5,6 +5,10 @@
 
 #include "lib/jxl/render_pipeline/render_pipeline.h"
 
+#include <memory>
+#include <utility>
+
+#include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/render_pipeline/low_memory_render_pipeline.h"
 #include "lib/jxl/render_pipeline/simple_render_pipeline.h"
@@ -20,7 +24,7 @@ void RenderPipeline::Builder::AddStage(
 StatusOr<std::unique_ptr<RenderPipeline>> RenderPipeline::Builder::Finalize(
     FrameDimensions frame_dimensions) && {
 #if JXL_ENABLE_ASSERT
-  // Check that the last stage is not an kInOut stage for any channel, and that
+  // Check that the last stage is not a kInOut stage for any channel, and that
   // there is at least one stage.
   JXL_ASSERT(!stages_.empty());
   for (size_t c = 0; c < num_c_; c++) {
