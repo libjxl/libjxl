@@ -155,7 +155,7 @@ Status PatchDictionary::Decode(BitReader* br, size_t xsize, size_t ysize,
           info.alpha_channel = 0;
         }
         if (UsesClamp(info.mode)) {
-          info.clamp = read_num(kPatchClampContext);
+          info.clamp = static_cast<bool>(read_num(kPatchClampContext));
         } else {
           info.clamp = false;
         }
@@ -177,8 +177,8 @@ Status PatchDictionary::Decode(BitReader* br, size_t xsize, size_t ysize,
 
 int PatchDictionary::GetReferences() const {
   int result = 0;
-  for (size_t i = 0; i < ref_positions_.size(); ++i) {
-    result |= (1 << static_cast<int>(ref_positions_[i].ref));
+  for (const auto& ref_pos : ref_positions_) {
+    result |= (1 << static_cast<int>(ref_pos.ref));
   }
   return result;
 }

@@ -5,8 +5,10 @@
 
 // This example prints information from the main codestream header.
 
-#include <inttypes.h>
 #include <jxl/decode.h>
+
+// NB: this is a .c file, C++ headers are not allowed.
+#include <inttypes.h>  // PRIu64
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>

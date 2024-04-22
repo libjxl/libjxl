@@ -10,17 +10,18 @@
 // decoding table from them.
 
 #include <jxl/types.h>
-#include <stddef.h>
-#include <stdint.h>
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <vector>
 
 #include "lib/jxl/ans_common.h"
 #include "lib/jxl/ans_params.h"
 #include "lib/jxl/base/bits.h"
-#include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/cache_aligned.h"
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/dec_huffman.h"
@@ -134,6 +135,11 @@ static constexpr int8_t kSpecialDistances[kNumSpecialDistances][2] = {
     {8, 0},  {4, 7},  {-4, 7}, {7, 4},  {-7, 4}, {8, 1},  {8, 2},  {6, 6},
     {-6, 6}, {8, 3},  {5, 7},  {-5, 7}, {7, 5},  {-7, 5}, {8, 4},  {6, 7},
     {-6, 7}, {7, 6},  {-7, 6}, {8, 5},  {7, 7},  {-7, 7}, {8, 6},  {8, 7}};
+static JXL_INLINE int SpecialDistance(size_t index, int multiplier) {
+  int dist = kSpecialDistances[index][0] +
+             static_cast<int>(multiplier) * kSpecialDistances[index][1];
+  return (dist > 1) ? dist : 1;
+}
 
 struct ANSCode {
   CacheAlignedUniquePtr alias_tables;
@@ -180,10 +186,7 @@ class ANSSymbolReader {
     num_special_distances_ =
         distance_multiplier == 0 ? 0 : kNumSpecialDistances;
     for (size_t i = 0; i < num_special_distances_; i++) {
-      int dist = static_cast<int>(kSpecialDistances[i][0]);
-      dist += static_cast<int>(distance_multiplier) * kSpecialDistances[i][1];
-      if (dist < 1) dist = 1;
-      special_distances_[i] = dist;
+      special_distances_[i] = SpecialDistance(i, distance_multiplier);
     }
   }
 

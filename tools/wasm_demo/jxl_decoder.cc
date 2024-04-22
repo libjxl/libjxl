@@ -53,7 +53,7 @@ DecoderInstance* jxlCreateInstance(bool want_sdr, uint32_t display_nits) {
   auto report_error = [&](uint32_t code, const char* text) {
     fprintf(stderr, "%s\n", text);
     delete self;
-    return reinterpret_cast<DecoderInstance*>(code);
+    return reinterpret_cast<DecoderInstance*>(code);  // NOLINT
   };
 
   self->thread_pool = JxlThreadParallelRunnerMake(nullptr, 4);

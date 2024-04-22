@@ -17,6 +17,7 @@
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/fast_math-inl.h"
+#include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/cms/opsin_params.h"
 #include "lib/jxl/cms/transfer_functions-inl.h"
@@ -245,7 +246,7 @@ StatusOr<Image3F> TransformToLinearRGB(const Image3F& in,
           }
         }
         float* JXL_RESTRICT dst_buf = c_transform.BufDst(thread);
-        if (!c_transform.Run(thread, src_buf, dst_buf)) {
+        if (!c_transform.Run(thread, src_buf, dst_buf, in.xsize())) {
           has_error = true;
           return;
         }

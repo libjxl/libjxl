@@ -5,9 +5,8 @@
 
 #include "lib/jxl/dec_modular.h"
 
-#include <stdint.h>
-
 #include <atomic>
+#include <cstdint>
 #include <vector>
 
 #include "lib/jxl/frame_header.h"
@@ -19,6 +18,7 @@
 
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/printf_macros.h"
+#include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/compressed_dc.h"
 #include "lib/jxl/epf.h"
@@ -186,7 +186,7 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
   }
   do_color = decode_color;
   size_t nb_extra = metadata.extra_channel_info.size();
-  bool has_tree = reader->ReadBits(1);
+  bool has_tree = static_cast<bool>(reader->ReadBits(1));
   if (!allow_truncated_group ||
       reader->TotalBitsConsumed() < reader->TotalBytes() * kBitsPerByte) {
     if (has_tree) {
@@ -362,7 +362,7 @@ Status ModularFrameDecoder::DecodeGroup(
   // Undo global transforms that have been pushed to the group level
   if (!use_full_image) {
     JXL_ASSERT(render_pipeline_input);
-    for (auto t : global_transform) {
+    for (const auto& t : global_transform) {
       JXL_RETURN_IF_ERROR(t.Inverse(gi, global_header.wp_header));
     }
     JXL_RETURN_IF_ERROR(ModularImageToDecodedRect(

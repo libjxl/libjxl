@@ -10,14 +10,21 @@
 #include <cmath>
 #include <hwy/base.h>  // HWY_ALIGN_MAX
 #include <hwy/tests/hwy_gtest.h>
+#include <iterator>
 #include <numeric>
+#include <vector>
 
+#include "lib/jxl/ac_strategy.h"
 #include "lib/jxl/base/random.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/dct_for_test.h"
 #include "lib/jxl/dec_transforms_testonly.h"
 #include "lib/jxl/enc_modular.h"
+#include "lib/jxl/enc_params.h"
 #include "lib/jxl/enc_quant_weights.h"
 #include "lib/jxl/enc_transforms.h"
+#include "lib/jxl/frame_header.h"
+#include "lib/jxl/image_metadata.h"
 #include "lib/jxl/testing.h"
 
 namespace jxl {
@@ -164,7 +171,7 @@ TEST(QuantWeightsTest, RAW) {
                                        QuantEncoding::Library(0));
   std::vector<int> matrix(3 * 32 * 32);
   Rng rng(0);
-  for (size_t i = 0; i < matrix.size(); i++) matrix[i] = rng.UniformI(1, 256);
+  for (int& v : matrix) v = rng.UniformI(1, 256);
   encodings[DequantMatrices::kQuantTable[AcStrategy::DCT32X32]] =
       QuantEncoding::RAW(matrix, 2);
   RoundtripMatrices(encodings);

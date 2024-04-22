@@ -5,11 +5,9 @@
 
 #include "lib/jxl/enc_modular.h"
 
-#include <stddef.h>
-#include <stdint.h>
-
 #include <array>
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <utility>
@@ -17,6 +15,7 @@
 
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/printf_macros.h"
+#include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/compressed_dc.h"
 #include "lib/jxl/dec_ans.h"
@@ -192,6 +191,238 @@ Status float_to_int(const float* const row_in, pixel_type* const row_out,
   }
   return true;
 }
+
+float EstimateWPCost(const Image& img, size_t i) {
+  size_t extra_bits = 0;
+  float histo_cost = 0;
+  HybridUintConfig config;
+  int32_t cutoffs[] = {-500, -392, -255, -191, -127, -95, -63, -47, -31,
+                       -23,  -15,  -11,  -7,   -4,   -3,  -1,  0,   1,
+                       3,    5,    7,    11,   15,   23,  31,  47,  63,
+                       95,   127,  191,  255,  392,  500};
+  constexpr size_t nc = sizeof(cutoffs) / sizeof(*cutoffs) + 1;
+  Histogram histo[nc] = {};
+  weighted::Header wp_header;
+  PredictorMode(i, &wp_header);
+  for (const Channel& ch : img.channel) {
+    const intptr_t onerow = ch.plane.PixelsPerRow();
+    weighted::State wp_state(wp_header, ch.w, ch.h);
+    Properties properties(1);
+    for (size_t y = 0; y < ch.h; y++) {
+      const pixel_type* JXL_RESTRICT r = ch.Row(y);
+      for (size_t x = 0; x < ch.w; x++) {
+        size_t offset = 0;
+        pixel_type_w left = (x ? r[x - 1] : y ? *(r + x - onerow) : 0);
+        pixel_type_w top = (y ? *(r + x - onerow) : left);
+        pixel_type_w topleft = (x && y ? *(r + x - 1 - onerow) : left);
+        pixel_type_w topright =
+            (x + 1 < ch.w && y ? *(r + x + 1 - onerow) : top);
+        pixel_type_w toptop = (y > 1 ? *(r + x - onerow - onerow) : top);
+        pixel_type guess = wp_state.Predict</*compute_properties=*/true>(
+            x, y, ch.w, top, left, topright, topleft, toptop, &properties,
+            offset);
+        size_t ctx = 0;
+        for (int c : cutoffs) {
+          ctx += (c >= properties[0]) ? 1 : 0;
+        }
+        pixel_type res = r[x] - guess;
+        uint32_t token;
+        uint32_t nbits;
+        uint32_t bits;
+        config.Encode(PackSigned(res), &token, &nbits, &bits);
+        histo[ctx].Add(token);
+        extra_bits += nbits;
+        wp_state.UpdateErrors(r[x], x, y, ch.w);
+      }
+    }
+    for (auto& h : histo) {
+      histo_cost += h.ShannonEntropy();
+      h.Clear();
+    }
+  }
+  return histo_cost + extra_bits;
+}
+
+float EstimateCost(const Image& img) {
+  // TODO(veluca): consider SIMDfication of this code.
+  size_t extra_bits = 0;
+  float histo_cost = 0;
+  HybridUintConfig config;
+  uint32_t cutoffs[] = {0,  1,  3,  5,   7,   11,  15,  23, 31,
+                        47, 63, 95, 127, 191, 255, 392, 500};
+  constexpr size_t nc = sizeof(cutoffs) / sizeof(*cutoffs) + 1;
+  Histogram histo[nc] = {};
+  for (const Channel& ch : img.channel) {
+    const intptr_t onerow = ch.plane.PixelsPerRow();
+    for (size_t y = 0; y < ch.h; y++) {
+      const pixel_type* JXL_RESTRICT r = ch.Row(y);
+      for (size_t x = 0; x < ch.w; x++) {
+        pixel_type_w left = (x ? r[x - 1] : y ? *(r + x - onerow) : 0);
+        pixel_type_w top = (y ? *(r + x - onerow) : left);
+        pixel_type_w topleft = (x && y ? *(r + x - 1 - onerow) : left);
+        size_t maxdiff = std::max(std::max(left, top), topleft) -
+                         std::min(std::min(left, top), topleft);
+        size_t ctx = 0;
+        for (uint32_t c : cutoffs) {
+          ctx += (c > maxdiff) ? 1 : 0;
+        }
+        pixel_type res = r[x] - ClampedGradient(top, left, topleft);
+        uint32_t token;
+        uint32_t nbits;
+        uint32_t bits;
+        config.Encode(PackSigned(res), &token, &nbits, &bits);
+        histo[ctx].Add(token);
+        extra_bits += nbits;
+      }
+    }
+    for (auto& h : histo) {
+      histo_cost += h.ShannonEntropy();
+      h.Clear();
+    }
+  }
+  return histo_cost + extra_bits;
+}
+
+bool do_transform(Image& image, const Transform& tr,
+                  const weighted::Header& wp_header,
+                  jxl::ThreadPool* pool = nullptr, bool force_jxlart = false) {
+  Transform t = tr;
+  bool did_it = true;
+  if (force_jxlart) {
+    if (!t.MetaApply(image)) return false;
+  } else {
+    did_it = TransformForward(t, image, wp_header, pool);
+  }
+  if (did_it) image.transform.push_back(t);
+  return did_it;
+}
+
+bool maybe_do_transform(Image& image, const Transform& tr,
+                        const CompressParams& cparams,
+                        const weighted::Header& wp_header, float cost_before,
+                        jxl::ThreadPool* pool = nullptr,
+                        bool force_jxlart = false) {
+  if (force_jxlart || cparams.speed_tier >= SpeedTier::kSquirrel) {
+    return do_transform(image, tr, wp_header, pool, force_jxlart);
+  }
+  bool did_it = do_transform(image, tr, wp_header, pool);
+  if (did_it) {
+    float cost_after = EstimateCost(image);
+    JXL_DEBUG_V(7, "Cost before: %f  cost after: %f", cost_before, cost_after);
+    if (cost_after > cost_before) {
+      Transform t = image.transform.back();
+      JXL_RETURN_IF_ERROR(t.Inverse(image, wp_header, pool));
+      image.transform.pop_back();
+      did_it = false;
+    }
+  }
+  return did_it;
+}
+
+void try_palettes(Image& gi, int& max_bitdepth, int& maxval,
+                  const CompressParams& cparams_, float channel_colors_percent,
+                  jxl::ThreadPool* pool = nullptr) {
+  float cost_before = 0.f;
+  size_t did_palette = 0;
+  float nb_pixels = gi.channel[0].w * gi.channel[0].h;
+  int nb_chans = gi.channel.size() - gi.nb_meta_channels;
+  // arbitrary estimate: 4.8 bpp for 8-bit RGB
+  float arbitrary_bpp_estimate = 0.2f * gi.bitdepth * nb_chans;
+
+  if (cparams_.palette_colors != 0 || cparams_.lossy_palette) {
+    // when not estimating, assume some arbitrary bpp
+    cost_before = cparams_.speed_tier <= SpeedTier::kSquirrel
+                      ? EstimateCost(gi)
+                      : nb_pixels * arbitrary_bpp_estimate;
+    // all-channel palette (e.g. RGBA)
+    if (nb_chans > 1) {
+      Transform maybe_palette(TransformId::kPalette);
+      maybe_palette.begin_c = gi.nb_meta_channels;
+      maybe_palette.num_c = nb_chans;
+      // Heuristic choice of max colors for a palette:
+      // max_colors = nb_pixels * estimated_bpp_without_palette * 0.0005 +
+      //              + nb_pixels / 128 + 128
+      //       (estimated_bpp_without_palette = cost_before / nb_pixels)
+      // Rationale: small image with large palette is not effective;
+      // also if the entropy (estimated bpp) is low (e.g. mostly solid/gradient
+      // areas), palette is less useful and may even be counterproductive.
+      maybe_palette.nb_colors = std::min(
+          static_cast<int>(cost_before * 0.0005f + nb_pixels / 128 + 128),
+          std::abs(cparams_.palette_colors));
+      maybe_palette.ordered_palette = cparams_.palette_colors >= 0;
+      maybe_palette.lossy_palette =
+          (cparams_.lossy_palette && maybe_palette.num_c == 3);
+      if (maybe_palette.lossy_palette) {
+        maybe_palette.predictor = Predictor::Average4;
+      }
+      // TODO(veluca): use a custom weighted header if using the weighted
+      // predictor.
+      if (maybe_do_transform(gi, maybe_palette, cparams_, weighted::Header(),
+                             cost_before, pool, cparams_.options.zero_tokens)) {
+        did_palette = 1;
+      };
+    }
+    // all-minus-one-channel palette (RGB with separate alpha, or CMY with
+    // separate K)
+    if (!did_palette && nb_chans > 3) {
+      Transform maybe_palette_3(TransformId::kPalette);
+      maybe_palette_3.begin_c = gi.nb_meta_channels;
+      maybe_palette_3.num_c = nb_chans - 1;
+      maybe_palette_3.nb_colors = std::min(
+          static_cast<int>(cost_before * 0.0005f + nb_pixels / 128 + 128),
+          std::abs(cparams_.palette_colors));
+      maybe_palette_3.ordered_palette = cparams_.palette_colors >= 0;
+      maybe_palette_3.lossy_palette = cparams_.lossy_palette;
+      if (maybe_palette_3.lossy_palette) {
+        maybe_palette_3.predictor = Predictor::Average4;
+      }
+      if (maybe_do_transform(gi, maybe_palette_3, cparams_, weighted::Header(),
+                             cost_before, pool, cparams_.options.zero_tokens)) {
+        did_palette = 1;
+      }
+    }
+  }
+
+  if (channel_colors_percent > 0) {
+    // single channel palette (like FLIF's ChannelCompact)
+    size_t nb_channels = gi.channel.size() - gi.nb_meta_channels - did_palette;
+    int orig_bitdepth = max_bitdepth;
+    max_bitdepth = 0;
+    if (nb_channels > 0 && (did_palette || cost_before == 0)) {
+      cost_before =
+          cparams_.speed_tier < SpeedTier::kSquirrel ? EstimateCost(gi) : 0;
+    }
+    for (size_t i = did_palette; i < nb_channels + did_palette; i++) {
+      int32_t min;
+      int32_t max;
+      compute_minmax(gi.channel[gi.nb_meta_channels + i], &min, &max);
+      int64_t colors = static_cast<int64_t>(max) - min + 1;
+      JXL_DEBUG_V(10, "Channel %" PRIuS ": range=%i..%i", i, min, max);
+      Transform maybe_palette_1(TransformId::kPalette);
+      maybe_palette_1.begin_c = i + gi.nb_meta_channels;
+      maybe_palette_1.num_c = 1;
+      // simple heuristic: if less than X percent of the values in the range
+      // actually occur, it is probably worth it to do a compaction
+      // (but only if the channel palette is less than 6% the size of the
+      // image itself)
+      maybe_palette_1.nb_colors =
+          std::min(static_cast<int>(nb_pixels / 16),
+                   static_cast<int>(channel_colors_percent / 100. * colors));
+      if (maybe_do_transform(gi, maybe_palette_1, cparams_, weighted::Header(),
+                             cost_before, pool)) {
+        // effective bit depth is lower, adjust quantization accordingly
+        compute_minmax(gi.channel[gi.nb_meta_channels + i], &min, &max);
+        if (max < maxval) maxval = max;
+        int ch_bitdepth =
+            (max > 0 ? CeilLog2Nonzero(static_cast<uint32_t>(max)) : 0);
+        if (ch_bitdepth > max_bitdepth) max_bitdepth = ch_bitdepth;
+      } else {
+        max_bitdepth = orig_bitdepth;
+      }
+    }
+  }
+}
+
 }  // namespace
 
 ModularFrameEncoder::ModularFrameEncoder(const FrameHeader& frame_header,
@@ -329,7 +560,7 @@ ModularFrameEncoder::ModularFrameEncoder(const FrameHeader& frame_header,
     // no explicit predictor(s) given, set a good default
     if ((cparams_.speed_tier <= SpeedTier::kGlacier ||
          cparams_.modular_mode == false) &&
-        cparams_.IsLossless() && cparams_.responsive == false) {
+        cparams_.IsLossless() && cparams_.responsive == JXL_FALSE) {
       // TODO(veluca): allow all predictors that don't break residual
       // multipliers in lossy mode.
       cparams_.options.predictor = Predictor::Variable;
@@ -350,7 +581,6 @@ ModularFrameEncoder::ModularFrameEncoder(const FrameHeader& frame_header,
       cparams_.options.predictor = Predictor::Gradient;
     }
   } else {
-    delta_pred_ = cparams_.options.predictor;
     if (cparams_.lossy_palette) cparams_.options.predictor = Predictor::Zero;
   }
   if (!cparams_.ModularPartIsLossless()) {
@@ -385,20 +615,6 @@ ModularFrameEncoder::ModularFrameEncoder(const FrameHeader& frame_header,
   }
   stream_options_[0].histogram_params =
       HistogramParams::ForModular(cparams_, {}, streaming_mode);
-}
-
-bool do_transform(Image& image, const Transform& tr,
-                  const weighted::Header& wp_header,
-                  jxl::ThreadPool* pool = nullptr, bool force_jxlart = false) {
-  Transform t = tr;
-  bool did_it = true;
-  if (force_jxlart) {
-    if (!t.MetaApply(image)) return false;
-  } else {
-    did_it = TransformForward(t, image, wp_header, pool);
-  }
-  if (did_it) image.transform.push_back(t);
-  return did_it;
 }
 
 Status ModularFrameEncoder::ComputeEncodingData(
@@ -509,6 +725,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
           pixel_type* const JXL_RESTRICT row_out = gi.channel[c_out].Row(y);
           pixel_type* const JXL_RESTRICT row_Y = gi.channel[0].Row(y);
           for (size_t x = 0; x < xsize; ++x) {
+            // TODO(eustas): check if std::roundf is appropriate
             row_out[x] = row_in[x] * factor + 0.5f;
             row_out[x] -= row_Y[x];
             // zero the lsb of B
@@ -605,80 +822,16 @@ Status ModularFrameEncoder::ComputeEncodingData(
     cparams_.lossy_palette = false;
   }
 
-  // Global palette
-  if ((cparams_.palette_colors != 0 || cparams_.lossy_palette) && !groupwise) {
-    // all-channel palette (e.g. RGBA)
-    if (gi.channel.size() - gi.nb_meta_channels > 1) {
-      Transform maybe_palette(TransformId::kPalette);
-      maybe_palette.begin_c = gi.nb_meta_channels;
-      maybe_palette.num_c = gi.channel.size() - gi.nb_meta_channels;
-      maybe_palette.nb_colors = std::min(static_cast<int>(xsize * ysize / 2),
-                                         std::abs(cparams_.palette_colors));
-      maybe_palette.ordered_palette = cparams_.palette_colors >= 0;
-      maybe_palette.lossy_palette =
-          (cparams_.lossy_palette && maybe_palette.num_c == 3);
-      if (maybe_palette.lossy_palette) {
-        maybe_palette.predictor = delta_pred_;
-      }
-      // TODO(veluca): use a custom weighted header if using the weighted
-      // predictor.
-      do_transform(gi, maybe_palette, weighted::Header(), pool,
-                   cparams_.options.zero_tokens);
-    }
-    // all-minus-one-channel palette (RGB with separate alpha, or CMY with
-    // separate K)
-    if (gi.channel.size() - gi.nb_meta_channels > 3) {
-      Transform maybe_palette_3(TransformId::kPalette);
-      maybe_palette_3.begin_c = gi.nb_meta_channels;
-      maybe_palette_3.num_c = gi.channel.size() - gi.nb_meta_channels - 1;
-      maybe_palette_3.nb_colors = std::min(static_cast<int>(xsize * ysize / 3),
-                                           std::abs(cparams_.palette_colors));
-      maybe_palette_3.ordered_palette = cparams_.palette_colors >= 0;
-      maybe_palette_3.lossy_palette = cparams_.lossy_palette;
-      if (maybe_palette_3.lossy_palette) {
-        maybe_palette_3.predictor = delta_pred_;
-      }
-      do_transform(gi, maybe_palette_3, weighted::Header(), pool,
-                   cparams_.options.zero_tokens);
-    }
-  }
-
-  // Global channel palette
-  if (!groupwise && cparams_.channel_colors_pre_transform_percent > 0 &&
-      !cparams_.lossy_palette &&
+  // Global palette transforms
+  float channel_colors_percent = 0;
+  if (!cparams_.lossy_palette &&
       (cparams_.speed_tier <= SpeedTier::kThunder ||
        (do_color && metadata.bit_depth.bits_per_sample > 8))) {
-    // single channel palette (like FLIF's ChannelCompact)
-    size_t nb_channels = gi.channel.size() - gi.nb_meta_channels;
-    int orig_bitdepth = max_bitdepth;
-    max_bitdepth = 0;
-    for (size_t i = 0; i < nb_channels; i++) {
-      int32_t min;
-      int32_t max;
-      compute_minmax(gi.channel[gi.nb_meta_channels + i], &min, &max);
-      int64_t colors = static_cast<int64_t>(max) - min + 1;
-      JXL_DEBUG_V(10, "Channel %" PRIuS ": range=%i..%i", i, min, max);
-      Transform maybe_palette_1(TransformId::kPalette);
-      maybe_palette_1.begin_c = i + gi.nb_meta_channels;
-      maybe_palette_1.num_c = 1;
-      // simple heuristic: if less than X percent of the values in the range
-      // actually occur, it is probably worth it to do a compaction
-      // (but only if the channel palette is less than 6% the size of the
-      // image itself)
-      maybe_palette_1.nb_colors = std::min(
-          static_cast<int>(xsize * ysize / 16),
-          static_cast<int>(cparams_.channel_colors_pre_transform_percent /
-                           100. * colors));
-      if (do_transform(gi, maybe_palette_1, weighted::Header(), pool)) {
-        // effective bit depth is lower, adjust quantization accordingly
-        compute_minmax(gi.channel[gi.nb_meta_channels + i], &min, &max);
-        if (max < maxval) maxval = max;
-        int ch_bitdepth =
-            (max > 0 ? CeilLog2Nonzero(static_cast<uint32_t>(max)) : 0);
-        if (ch_bitdepth > max_bitdepth) max_bitdepth = ch_bitdepth;
-      } else
-        max_bitdepth = orig_bitdepth;
-    }
+    channel_colors_percent = cparams_.channel_colors_pre_transform_percent;
+  }
+  if (!groupwise) {
+    try_palettes(gi, max_bitdepth, maxval, cparams_, channel_colors_percent,
+                 pool);
   }
 
   // don't do an RCT if we're short on bits
@@ -844,10 +997,13 @@ Status ModularFrameEncoder::ComputeEncodingData(
       pool, 0, stream_params_.size(), ThreadPool::NoInit,
       [&](const uint32_t i, size_t /* thread */) {
         size_t stream = stream_params_[i].id.ID(frame_dim_);
-        stream_options_[stream] = stream_options_[0];
+        if (stream != 0) {
+          stream_options_[stream] = stream_options_[0];
+        }
         JXL_CHECK(PrepareStreamParams(
             stream_params_[i].rect, cparams_, stream_params_[i].minShift,
-            stream_params_[i].maxShift, stream_params_[i].id, do_color));
+            stream_params_[i].maxShift, stream_params_[i].id, do_color,
+            groupwise));
       },
       "ChooseParams"));
   {
@@ -1118,6 +1274,7 @@ Status ModularFrameEncoder::EncodeStream(BitWriter* writer, AuxOut* aux_out,
                                          const ModularStreamId& stream) {
   size_t stream_id = stream.ID(frame_dim_);
   if (stream_images_[stream_id].channel.empty()) {
+    JXL_DEBUG_V(10, "Modular stream %" PRIuS " is empty.", stream_id);
     return true;  // Image with no channels, header never gets decoded.
   }
   if (tokens_.empty()) {
@@ -1157,105 +1314,11 @@ size_t ModularFrameEncoder::ComputeStreamingAbsoluteAcGroupId(
          (dc_group_y * 8 + ac_group_y) * frame_dim_.xsize_groups;
 }
 
-namespace {
-float EstimateWPCost(const Image& img, size_t i) {
-  size_t extra_bits = 0;
-  float histo_cost = 0;
-  HybridUintConfig config;
-  int32_t cutoffs[] = {-500, -392, -255, -191, -127, -95, -63, -47, -31,
-                       -23,  -15,  -11,  -7,   -4,   -3,  -1,  0,   1,
-                       3,    5,    7,    11,   15,   23,  31,  47,  63,
-                       95,   127,  191,  255,  392,  500};
-  constexpr size_t nc = sizeof(cutoffs) / sizeof(*cutoffs) + 1;
-  Histogram histo[nc] = {};
-  weighted::Header wp_header;
-  PredictorMode(i, &wp_header);
-  for (const Channel& ch : img.channel) {
-    const intptr_t onerow = ch.plane.PixelsPerRow();
-    weighted::State wp_state(wp_header, ch.w, ch.h);
-    Properties properties(1);
-    for (size_t y = 0; y < ch.h; y++) {
-      const pixel_type* JXL_RESTRICT r = ch.Row(y);
-      for (size_t x = 0; x < ch.w; x++) {
-        size_t offset = 0;
-        pixel_type_w left = (x ? r[x - 1] : y ? *(r + x - onerow) : 0);
-        pixel_type_w top = (y ? *(r + x - onerow) : left);
-        pixel_type_w topleft = (x && y ? *(r + x - 1 - onerow) : left);
-        pixel_type_w topright =
-            (x + 1 < ch.w && y ? *(r + x + 1 - onerow) : top);
-        pixel_type_w toptop = (y > 1 ? *(r + x - onerow - onerow) : top);
-        pixel_type guess = wp_state.Predict</*compute_properties=*/true>(
-            x, y, ch.w, top, left, topright, topleft, toptop, &properties,
-            offset);
-        size_t ctx = 0;
-        for (int c : cutoffs) {
-          ctx += c >= properties[0];
-        }
-        pixel_type res = r[x] - guess;
-        uint32_t token;
-        uint32_t nbits;
-        uint32_t bits;
-        config.Encode(PackSigned(res), &token, &nbits, &bits);
-        histo[ctx].Add(token);
-        extra_bits += nbits;
-        wp_state.UpdateErrors(r[x], x, y, ch.w);
-      }
-    }
-    for (size_t h = 0; h < nc; h++) {
-      histo_cost += histo[h].ShannonEntropy();
-      histo[h].Clear();
-    }
-  }
-  return histo_cost + extra_bits;
-}
-
-float EstimateCost(const Image& img) {
-  // TODO(veluca): consider SIMDfication of this code.
-  size_t extra_bits = 0;
-  float histo_cost = 0;
-  HybridUintConfig config;
-  uint32_t cutoffs[] = {0,  1,  3,  5,   7,   11,  15,  23, 31,
-                        47, 63, 95, 127, 191, 255, 392, 500};
-  constexpr size_t nc = sizeof(cutoffs) / sizeof(*cutoffs) + 1;
-  Histogram histo[nc] = {};
-  for (const Channel& ch : img.channel) {
-    const intptr_t onerow = ch.plane.PixelsPerRow();
-    for (size_t y = 0; y < ch.h; y++) {
-      const pixel_type* JXL_RESTRICT r = ch.Row(y);
-      for (size_t x = 0; x < ch.w; x++) {
-        pixel_type_w left = (x ? r[x - 1] : y ? *(r + x - onerow) : 0);
-        pixel_type_w top = (y ? *(r + x - onerow) : left);
-        pixel_type_w topleft = (x && y ? *(r + x - 1 - onerow) : left);
-        size_t maxdiff = std::max(std::max(left, top), topleft) -
-                         std::min(std::min(left, top), topleft);
-        size_t ctx = 0;
-        for (uint32_t c : cutoffs) {
-          ctx += c > maxdiff;
-        }
-        pixel_type res = r[x] - ClampedGradient(top, left, topleft);
-        uint32_t token;
-        uint32_t nbits;
-        uint32_t bits;
-        config.Encode(PackSigned(res), &token, &nbits, &bits);
-        histo[ctx].Add(token);
-        extra_bits += nbits;
-      }
-    }
-    for (size_t h = 0; h < nc; h++) {
-      histo_cost += histo[h].ShannonEntropy();
-      histo[h].Clear();
-    }
-  }
-  return histo_cost + extra_bits;
-}
-
-}  // namespace
-
 Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
                                                 const CompressParams& cparams_,
                                                 int minShift, int maxShift,
                                                 const ModularStreamId& stream,
-                                                bool do_color) {
+                                                bool do_color, bool groupwise) {
   size_t stream_id = stream.ID(frame_dim_);
   Image& full_image = stream_images_[0];
   const size_t xsize = rect.xsize();
@@ -1266,9 +1329,11 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
                          Image::Create(xsize, ysize, full_image.bitdepth, 0));
     // start at the first bigger-than-frame_dim.group_dim non-metachannel
     size_t c = full_image.nb_meta_channels;
-    for (; c < full_image.channel.size(); c++) {
-      Channel& fc = full_image.channel[c];
-      if (fc.w > frame_dim_.group_dim || fc.h > frame_dim_.group_dim) break;
+    if (!groupwise) {
+      for (; c < full_image.channel.size(); c++) {
+        Channel& fc = full_image.channel[c];
+        if (fc.w > frame_dim_.group_dim || fc.h > frame_dim_.group_dim) break;
+      }
     }
     for (; c < full_image.channel.size(); c++) {
       Channel& fc = full_image.channel[c];
@@ -1292,61 +1357,17 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
     if (gi.channel.empty()) return true;
     // Do some per-group transforms
 
-    // Local palette
+    // Local palette transforms
     // TODO(veluca): make this work with quantize-after-prediction in lossy
     // mode.
-    if (cparams_.butteraugli_distance == 0.f && cparams_.palette_colors != 0 &&
+    if (cparams_.butteraugli_distance == 0.f && !cparams_.lossy_palette &&
         cparams_.speed_tier < SpeedTier::kCheetah) {
-      // all-channel palette (e.g. RGBA)
-      if (gi.channel.size() - gi.nb_meta_channels > 1) {
-        Transform maybe_palette(TransformId::kPalette);
-        maybe_palette.begin_c = gi.nb_meta_channels;
-        maybe_palette.num_c = gi.channel.size() - gi.nb_meta_channels;
-        maybe_palette.nb_colors = std::abs(cparams_.palette_colors);
-        maybe_palette.ordered_palette = cparams_.palette_colors >= 0;
-        do_transform(gi, maybe_palette, weighted::Header());
+      int max_bitdepth = 0, maxval = 0;  // don't care about that here
+      float channel_color_percent = 0;
+      if (!(cparams_.responsive && cparams_.decoding_speed_tier >= 1)) {
+        channel_color_percent = cparams_.channel_colors_percent;
       }
-      // all-minus-one-channel palette (RGB with separate alpha, or CMY with
-      // separate K)
-      if (gi.channel.size() - gi.nb_meta_channels > 3) {
-        Transform maybe_palette_3(TransformId::kPalette);
-        maybe_palette_3.begin_c = gi.nb_meta_channels;
-        maybe_palette_3.num_c = gi.channel.size() - gi.nb_meta_channels - 1;
-        maybe_palette_3.nb_colors = std::abs(cparams_.palette_colors);
-        maybe_palette_3.ordered_palette = cparams_.palette_colors >= 0;
-        maybe_palette_3.lossy_palette = cparams_.lossy_palette;
-        if (maybe_palette_3.lossy_palette) {
-          maybe_palette_3.predictor = Predictor::Weighted;
-        }
-        do_transform(gi, maybe_palette_3, weighted::Header());
-      }
-    }
-
-    // Local channel palette
-    if (cparams_.channel_colors_percent > 0 &&
-        cparams_.butteraugli_distance == 0.f && !cparams_.lossy_palette &&
-        cparams_.speed_tier < SpeedTier::kCheetah &&
-        !(cparams_.responsive && cparams_.decoding_speed_tier >= 1)) {
-      // single channel palette (like FLIF's ChannelCompact)
-      size_t nb_channels = gi.channel.size() - gi.nb_meta_channels;
-      for (size_t i = 0; i < nb_channels; i++) {
-        int32_t min;
-        int32_t max;
-        compute_minmax(gi.channel[gi.nb_meta_channels + i], &min, &max);
-        int64_t colors = static_cast<int64_t>(max) - min + 1;
-        JXL_DEBUG_V(10, "Channel %" PRIuS ": range=%i..%i", i, min, max);
-        Transform maybe_palette_1(TransformId::kPalette);
-        maybe_palette_1.begin_c = i + gi.nb_meta_channels;
-        maybe_palette_1.num_c = 1;
-        // simple heuristic: if less than X percent of the values in the range
-        // actually occur, it is probably worth it to do a compaction
-        // (but only if the channel palette is less than 80% the size of the
-        // image itself)
-        maybe_palette_1.nb_colors = std::min(
-            static_cast<int>(xsize * ysize * 0.8),
-            static_cast<int>(cparams_.channel_colors_percent / 100. * colors));
-        do_transform(gi, maybe_palette_1, weighted::Header());
-      }
+      try_palettes(gi, max_bitdepth, maxval, cparams_, channel_color_percent);
     }
   }
 
@@ -1355,7 +1376,7 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
   if (cparams_.color_transform == ColorTransform::kNone &&
       cparams_.IsLossless() && cparams_.colorspace < 0 &&
       gi.channel.size() - gi.nb_meta_channels >= 3 &&
-      cparams_.responsive == false && do_color &&
+      cparams_.responsive == JXL_FALSE && do_color &&
       cparams_.speed_tier <= SpeedTier::kHare) {
     Transform sg(TransformId::kRCT);
     sg.begin_c = gi.nb_meta_channels;

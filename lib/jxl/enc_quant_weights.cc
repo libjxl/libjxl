@@ -5,6 +5,7 @@
 
 #include "lib/jxl/enc_quant_weights.h"
 
+#include <jxl/types.h>
 #include <stdlib.h>
 
 #include <cmath>
@@ -115,15 +116,15 @@ Status DequantMatricesEncode(const DequantMatrices& matrices, BitWriter* writer,
   bool all_default = true;
   const std::vector<QuantEncoding>& encodings = matrices.encodings();
 
-  for (size_t i = 0; i < encodings.size(); i++) {
-    if (encodings[i].mode != QuantEncoding::kQuantModeLibrary ||
-        encodings[i].predefined != 0) {
+  for (const auto& encoding : encodings) {
+    if (encoding.mode != QuantEncoding::kQuantModeLibrary ||
+        encoding.predefined != 0) {
       all_default = false;
     }
   }
   // TODO(janwas): better bound
   BitWriter::Allotment allotment(writer, 512 * 1024);
-  writer->Write(1, all_default);
+  writer->Write(1, TO_JXL_BOOL(all_default));
   if (!all_default) {
     for (size_t i = 0; i < encodings.size(); i++) {
       JXL_RETURN_IF_ERROR(EncodeQuant(
@@ -146,7 +147,7 @@ Status DequantMatricesEncodeDC(const DequantMatrices& matrices,
     }
   }
   BitWriter::Allotment allotment(writer, 1 + sizeof(float) * kBitsPerByte * 3);
-  writer->Write(1, all_default);
+  writer->Write(1, TO_JXL_BOOL(all_default));
   if (!all_default) {
     for (size_t c = 0; c < 3; c++) {
       JXL_RETURN_IF_ERROR(F16Coder::Write(dc_quant[c] * 128.0f, writer));

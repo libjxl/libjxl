@@ -7,9 +7,12 @@
 #define LIB_JXL_ENC_AC_STRATEGY_H_
 
 #include <cstddef>
+#include <cstdint>
+#include <hwy/aligned_allocator.h>
 
 #include "lib/jxl/ac_strategy.h"
 #include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/chroma_from_luma.h"
 #include "lib/jxl/enc_cache.h"
@@ -59,7 +62,7 @@ struct ACSConfig {
 
 struct AcStrategyHeuristics {
   explicit AcStrategyHeuristics(const CompressParams& cparams)
-      : cparams(cparams) {}
+      : cparams(cparams), mem_per_thread(0), qmem_per_thread(0) {}
   void Init(const Image3F& src, const Rect& rect_in, const ImageF& quant_field,
             const ImageF& mask, const ImageF& mask1x1,
             DequantMatrices* matrices);

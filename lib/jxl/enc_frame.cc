@@ -5,13 +5,12 @@
 
 #include "lib/jxl/enc_frame.h"
 
-#include <stddef.h>
-#include <stdint.h>
-
 #include <algorithm>
 #include <array>
 #include <atomic>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <numeric>
 #include <utility>
@@ -25,6 +24,7 @@
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/printf_macros.h"
+#include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/chroma_from_luma.h"
 #include "lib/jxl/coeff_order.h"
@@ -1233,10 +1233,13 @@ Status EncodeGroups(const FrameHeader& frame_header,
   const size_t num_groups = frame_dim.num_groups;
   const size_t num_passes = enc_state->progressive_splitter.GetNumPasses();
   const size_t global_ac_index = frame_dim.num_dc_groups + 1;
-  const bool is_small_image = frame_dim.num_groups == 1 && num_passes == 1;
-
-  group_codes->resize(
-      NumTocEntries(num_groups, frame_dim.num_dc_groups, num_passes));
+  const bool is_small_image =
+      !enc_state->streaming_mode && num_groups == 1 && num_passes == 1;
+  const size_t num_toc_entries =
+      is_small_image ? 1
+                     : AcGroupIndex(0, 0, num_groups, frame_dim.num_dc_groups) +
+                           num_groups * num_passes;
+  group_codes->resize(num_toc_entries);
 
   const auto get_output = [&](const size_t index) {
     return &(*group_codes)[is_small_image ? 0 : index];
@@ -1363,6 +1366,11 @@ Status EncodeGroups(const FrameHeader& frame_header,
         has_error = true;
         return;
       }
+      JXL_DEBUG_V(2,
+                  "AC group %u [abs %" PRIuS "] pass %" PRIuS
+                  " encoded size is %" PRIuS " bits",
+                  group_index, ac_group_id, i,
+                  ac_group_code(i, group_index)->BitsWritten());
     }
   };
   JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, num_groups, resize_aux_outs,
@@ -1778,8 +1786,8 @@ size_t TOCBucket(size_t group_size) {
 
 size_t TOCSize(const std::vector<size_t>& group_sizes) {
   size_t toc_bits = 0;
-  for (size_t i = 0; i < group_sizes.size(); i++) {
-    toc_bits += kTOCBits[TOCBucket(group_sizes[i])];
+  for (size_t group_size : group_sizes) {
+    toc_bits += kTOCBits[TOCBucket(group_size)];
   }
   return (toc_bits + 7) / 8;
 }
@@ -1787,8 +1795,8 @@ size_t TOCSize(const std::vector<size_t>& group_sizes) {
 PaddedBytes EncodeTOC(const std::vector<size_t>& group_sizes, AuxOut* aux_out) {
   BitWriter writer;
   BitWriter::Allotment allotment(&writer, 32 * group_sizes.size());
-  for (size_t i = 0; i < group_sizes.size(); i++) {
-    JXL_CHECK(U32Coder::Write(kTocDist, group_sizes[i], &writer));
+  for (size_t group_size : group_sizes) {
+    JXL_CHECK(U32Coder::Write(kTocDist, group_size, &writer));
   }
   writer.ZeroPadToByte();  // before first group
   allotment.ReclaimAndCharge(&writer, kLayerTOC, aux_out);
@@ -1846,13 +1854,13 @@ void RemoveUnusedHistograms(std::vector<uint8_t>& context_map,
                             EntropyEncodingData& codes) {
   std::vector<int> remap(256, -1);
   std::vector<uint8_t> inv_remap;
-  for (size_t i = 0; i < context_map.size(); ++i) {
-    const uint8_t histo_ix = context_map[i];
+  for (uint8_t& context : context_map) {
+    const uint8_t histo_ix = context;
     if (remap[histo_ix] == -1) {
       remap[histo_ix] = inv_remap.size();
       inv_remap.push_back(histo_ix);
     }
-    context_map[i] = remap[histo_ix];
+    context = remap[histo_ix];
   }
   EntropyEncodingData new_codes;
   new_codes.use_prefix_code = codes.use_prefix_code;

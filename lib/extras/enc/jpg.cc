@@ -6,18 +6,15 @@
 #include "lib/extras/enc/jpg.h"
 
 #if JPEGXL_ENABLE_JPEG
-#include <jpeglib.h>
-#include <setjmp.h>
+#include "lib/jxl/base/include_jpeglib.h"  // NOLINT
 #endif
-#include <stdint.h>
 
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <fstream>
-#include <iterator>
 #include <memory>
-#include <numeric>
 #include <sstream>
 #include <utility>
 #include <vector>
@@ -216,8 +213,8 @@ void WriteExif(jpeg_compress_struct* const cinfo,
   for (const unsigned char c : kExifSignature) {
     jpeg_write_m_byte(cinfo, c);
   }
-  for (size_t i = 0; i < exif.size(); ++i) {
-    jpeg_write_m_byte(cinfo, exif[i]);
+  for (uint8_t c : exif) {
+    jpeg_write_m_byte(cinfo, c);
   }
 }
 
@@ -276,7 +273,7 @@ Status EncodeWithLibJpeg(const PackedImage& image, const JxlBasicInfo& info,
   cinfo.err = jpeg_std_error(&jerr);
   jpeg_create_compress(&cinfo);
   unsigned char* buffer = nullptr;
-  unsigned long size = 0;
+  unsigned long size = 0;  // NOLINT
   jpeg_mem_dest(&cinfo, &buffer, &size);
   cinfo.image_width = image.xsize;
   cinfo.image_height = image.ysize;

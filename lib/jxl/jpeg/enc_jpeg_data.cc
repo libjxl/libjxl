@@ -88,7 +88,7 @@ Status DetectBlobs(jpeg::JPEGData& jpeg_data) {
       // Something is wrong with this marker; does not care.
       continue;
     }
-    if (!have_exif && payload.size() >= sizeof kExifTag &&
+    if (!have_exif && payload.size() > sizeof kExifTag &&
         !memcmp(payload.data(), kExifTag, sizeof kExifTag)) {
       jpeg_data.app_marker_type[i] = AppMarkerType::kExif;
       have_exif = true;
@@ -166,15 +166,14 @@ Status ParseChunkedMarker(const jpeg::JPEGData& src, uint8_t marker_type,
     if (!presence[index]) {
       return JXL_FAILURE("Missing chunk.");
     }
-    chunks[index].AppendTo(output);
+    chunks[index].AppendTo(*output);
   }
 
   return true;
 }
 
 Status SetBlobsFromJpegData(const jpeg::JPEGData& jpeg_data, Blobs* blobs) {
-  for (size_t i = 0; i < jpeg_data.app_data.size(); i++) {
-    const auto& marker = jpeg_data.app_data[i];
+  for (const auto& marker : jpeg_data.app_data) {
     if (marker.empty() || marker[0] != kApp1) {
       continue;
     }
@@ -318,11 +317,11 @@ Status EncodeJPEGData(JPEGData& jpeg_data, std::vector<uint8_t>* bytes,
     }
     total_data += jpeg_data.app_data[i].size();
   }
-  for (size_t i = 0; i < jpeg_data.com_data.size(); i++) {
-    total_data += jpeg_data.com_data[i].size();
+  for (const auto& data : jpeg_data.com_data) {
+    total_data += data.size();
   }
-  for (size_t i = 0; i < jpeg_data.inter_marker_data.size(); i++) {
-    total_data += jpeg_data.inter_marker_data[i].size();
+  for (const auto& data : jpeg_data.inter_marker_data) {
+    total_data += data.size();
   }
   total_data += jpeg_data.tail_data.size();
   size_t brotli_capacity = BrotliEncoderMaxCompressedSize(total_data);
@@ -333,7 +332,7 @@ Status EncodeJPEGData(JPEGData& jpeg_data, std::vector<uint8_t>* bytes,
   {
     PaddedBytes serialized_jpeg_data = std::move(writer).TakeBytes();
     bytes->reserve(serialized_jpeg_data.size() + brotli_capacity);
-    Bytes(serialized_jpeg_data).AppendTo(bytes);
+    Bytes(serialized_jpeg_data).AppendTo(*bytes);
   }
 
   BrotliEncoderState* brotli_enc =
@@ -365,11 +364,11 @@ Status EncodeJPEGData(JPEGData& jpeg_data, std::vector<uint8_t>* bytes,
     }
     br_append(jpeg_data.app_data[i], /*last=*/false);
   }
-  for (size_t i = 0; i < jpeg_data.com_data.size(); i++) {
-    br_append(jpeg_data.com_data[i], /*last=*/false);
+  for (const auto& data : jpeg_data.com_data) {
+    br_append(data, /*last=*/false);
   }
-  for (size_t i = 0; i < jpeg_data.inter_marker_data.size(); i++) {
-    br_append(jpeg_data.inter_marker_data[i], /*last=*/false);
+  for (const auto& data : jpeg_data.inter_marker_data) {
+    br_append(data, /*last=*/false);
   }
   br_append(jpeg_data.tail_data, /*last=*/true);
   BrotliEncoderDestroyInstance(brotli_enc);

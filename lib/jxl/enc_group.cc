@@ -6,7 +6,6 @@
 #include "lib/jxl/enc_group.h"
 
 #include <hwy/aligned_allocator.h>
-#include <utility>
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/enc_group.cc"
@@ -16,6 +15,7 @@
 #include "lib/jxl/ac_strategy.h"
 #include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/rect.h"
 #include "lib/jxl/common.h"  // kMaxNumPasses
 #include "lib/jxl/dct_util.h"
 #include "lib/jxl/dec_transforms-inl.h"
@@ -43,7 +43,7 @@ using hwy::HWY_NAMESPACE::Round;
 void QuantizeBlockAC(const Quantizer& quantizer, const bool error_diffusion,
                      size_t c, float qm_multiplier, size_t quant_kind,
                      size_t xsize, size_t ysize, float* thresholds,
-                     const float* JXL_RESTRICT block_in, int32_t* quant,
+                     const float* JXL_RESTRICT block_in, const int32_t* quant,
                      int32_t* JXL_RESTRICT block_out) {
   const float* JXL_RESTRICT qm = quantizer.InvDequantMatrix(quant_kind, c);
   float qac = quantizer.Scale() * (*quant);
@@ -322,10 +322,8 @@ void QuantizeRoundtripYBlockAC(PassesEncoderState* enc_state, const size_t size,
     int quant_orig = *quant;
     float val[3] = {enc_state->x_qm_multiplier, 1.0f,
                     enc_state->b_qm_multiplier};
-    int clut[3] = {1, 0, 2};
-    for (int ii = 0; ii < 3; ++ii) {
+    for (int c : {1, 0, 2}) {
       float thres[4] = {0.58f, 0.64f, 0.64f, 0.64f};
-      int c = clut[ii];
       *quant = quant_orig;
       AdjustQuantBlockAC(quantizer, c, val[c], quant_kind, xsize, ysize,
                          &thres[0], inout + c * size, quant);

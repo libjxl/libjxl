@@ -58,8 +58,8 @@ class ImageCodec {
                           jpegxl::tools::SpeedStats* speed_stats) = 0;
 
   virtual Status Decompress(const std::string& filename,
-                            const Span<const uint8_t> compressed,
-                            ThreadPool* pool, PackedPixelFile* ppf,
+                            Span<const uint8_t> compressed, ThreadPool* pool,
+                            PackedPixelFile* ppf,
                             jpegxl::tools::SpeedStats* speed_stats) = 0;
 
   virtual void GetMoreStats(BenchmarkStats* stats) {}

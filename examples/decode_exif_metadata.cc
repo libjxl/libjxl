@@ -56,8 +56,9 @@ bool DecodeJpegXlExif(const uint8_t* jxl, size_t size,
         return true;
       }
       JxlBoxType type;
-      if (JXL_DEC_SUCCESS !=
-          JxlDecoderGetBoxType(dec.get(), type, support_decompression)) {
+      status = JxlDecoderGetBoxType(dec.get(), type,
+                                    TO_JXL_BOOL(support_decompression));
+      if (JXL_DEC_SUCCESS != status) {
         fprintf(stderr, "Error, failed to get box type\n");
         return false;
       }
@@ -96,7 +97,7 @@ bool LoadFile(const char* filename, std::vector<uint8_t>* out) {
     return false;
   }
 
-  long size = ftell(file);
+  long size = ftell(file);  // NOLINT
   // Avoid invalid file or directory.
   if (size >= LONG_MAX || size < 0) {
     fclose(file);

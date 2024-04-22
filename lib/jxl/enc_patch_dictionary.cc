@@ -5,19 +5,22 @@
 
 #include "lib/jxl/enc_patch_dictionary.h"
 
-#include <stdint.h>
-#include <stdlib.h>
+#include <jxl/types.h>
 #include <sys/types.h>
 
 #include <algorithm>
 #include <atomic>
+#include <cstdint>
+#include <cstdlib>
 #include <utility>
 #include <vector>
 
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/override.h"
+#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/random.h"
+#include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_cache.h"
 #include "lib/jxl/dec_frame.h"
@@ -95,7 +98,7 @@ void PatchDictionaryEncoder::Encode(const PatchDictionary& pdic,
           add_num(kPatchAlphaChannelContext, info.alpha_channel);
         }
         if (UsesClamp(info.mode)) {
-          add_num(kPatchClampContext, info.clamp);
+          add_num(kPatchClampContext, TO_JXL_BOOL(info.clamp));
         }
       }
     }
@@ -235,9 +238,9 @@ StatusOr<std::vector<PatchInfo>> FindTextLikePatches(
 
   auto is_same = [&opsin_rows, opsin_stride](std::pair<uint32_t, uint32_t> p1,
                                              std::pair<uint32_t, uint32_t> p2) {
-    for (size_t c = 0; c < 3; c++) {
-      float v1 = opsin_rows[c][p1.second * opsin_stride + p1.first];
-      float v2 = opsin_rows[c][p2.second * opsin_stride + p2.first];
+    for (auto& opsin_row : opsin_rows) {
+      float v1 = opsin_row[p1.second * opsin_stride + p1.first];
+      float v2 = opsin_row[p2.second * opsin_stride + p2.first];
       if (std::fabs(v1 - v2) > 1e-4) {
         return false;
       }
@@ -554,8 +557,8 @@ StatusOr<std::vector<PatchInfo>> FindTextLikePatches(
 
   size_t max_patch_size = 0;
 
-  for (size_t i = 0; i < info.size(); i++) {
-    size_t pixels = info[i].first.xsize * info[i].first.ysize;
+  for (const auto& patch : info) {
+    size_t pixels = patch.first.xsize * patch.first.ysize;
     if (pixels > max_patch_size) max_patch_size = pixels;
   }
 
@@ -586,7 +589,9 @@ Status FindBestPatchDictionary(const Image3F& opsin,
           state->cparams.dots,
           state->cparams.speed_tier <= SpeedTier::kSquirrel &&
               state->cparams.butteraugli_distance >= kMinButteraugliForDots)) {
-    JXL_ASSIGN_OR_RETURN(info, FindDotDictionary(state->cparams, opsin,
+    Rect rect(0, 0, state->shared.frame_dim.xsize,
+              state->shared.frame_dim.ysize);
+    JXL_ASSIGN_OR_RETURN(info, FindDotDictionary(state->cparams, opsin, rect,
                                                  state->shared.cmap, pool));
   }
 
@@ -601,10 +606,10 @@ Status FindBestPatchDictionary(const Image3F& opsin,
   size_t max_y_size = 0;
   size_t total_pixels = 0;
 
-  for (size_t i = 0; i < info.size(); i++) {
-    size_t pixels = info[i].first.xsize * info[i].first.ysize;
-    if (max_x_size < info[i].first.xsize) max_x_size = info[i].first.xsize;
-    if (max_y_size < info[i].first.ysize) max_y_size = info[i].first.ysize;
+  for (const auto& patch : info) {
+    size_t pixels = patch.first.xsize * patch.first.ysize;
+    if (max_x_size < patch.first.xsize) max_x_size = patch.first.xsize;
+    if (max_y_size < patch.first.ysize) max_y_size = patch.first.ysize;
     total_pixels += pixels;
   }
 
@@ -672,7 +677,7 @@ Status FindBestPatchDictionary(const Image3F& opsin,
       ref_positions[patch] = {x0, y0};
       for (size_t y = y0; y < y0 + ysize; y++) {
         for (size_t x = x0; x < x0 + xsize; x++) {
-          occupied_rows[y * occupied_stride + x] = true;
+          occupied_rows[y * occupied_stride + x] = JXL_TRUE;
         }
       }
       max_y = std::max(max_y, y0 + ysize);
@@ -716,6 +721,8 @@ Status FindBestPatchDictionary(const Image3F& opsin,
       }
     }
     for (const auto& pos : info[i].second) {
+      JXL_DEBUG_V(4, "Patch %" PRIuS "x%" PRIuS " at position %u,%u",
+                  ref_pos.xsize, ref_pos.ysize, pos.first, pos.second);
       positions.emplace_back(
           PatchPosition{pos.first, pos.second, pref_positions.size()});
       // Add blending for color channels, ignore other channels.

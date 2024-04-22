@@ -8,6 +8,8 @@
 #include <jxl/types.h>
 #include <time.h>
 
+#include <cinttypes>  // PRIx64
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/convolve_test.cc"
 #include <hwy/foreach_target.h>
@@ -20,6 +22,7 @@
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/random.h"
+#include "lib/jxl/base/rect.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/image_test_utils.h"
 #include "lib/jxl/test_utils.h"
@@ -161,7 +164,7 @@ void TestConvolve() {
   test::ThreadPoolForTests pool(4);
   EXPECT_EQ(true,
             RunOnPool(
-                &pool, kConvolveMaxRadius, 40, ThreadPool::NoInit,
+                pool.get(), kConvolveMaxRadius, 40, ThreadPool::NoInit,
                 [](const uint32_t task, size_t /*thread*/) {
                   const size_t xsize = task;
                   Rng rng(129 + 13 * xsize);
@@ -176,15 +179,15 @@ void TestConvolve() {
 
                     JXL_DEBUG(JXL_DEBUG_CONVOLVE, "Sym3------------------");
                     VerifySymmetric3(xsize, ysize, null_pool, &rng);
-                    VerifySymmetric3(xsize, ysize, &pool3, &rng);
+                    VerifySymmetric3(xsize, ysize, pool3.get(), &rng);
 
                     JXL_DEBUG(JXL_DEBUG_CONVOLVE, "Sym5------------------");
                     VerifySymmetric5(xsize, ysize, null_pool, &rng);
-                    VerifySymmetric5(xsize, ysize, &pool3, &rng);
+                    VerifySymmetric5(xsize, ysize, pool3.get(), &rng);
 
                     JXL_DEBUG(JXL_DEBUG_CONVOLVE, "Sep5------------------");
                     VerifySeparable5(xsize, ysize, null_pool, &rng);
-                    VerifySeparable5(xsize, ysize, &pool3, &rng);
+                    VerifySeparable5(xsize, ysize, pool3.get(), &rng);
                   }
                 },
                 "TestConvolve"));

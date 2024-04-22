@@ -13,7 +13,7 @@ on:
       - main
       - v*.*.x
   pull_request:
-    types: [opened, reopened, labeled, synchronize]
+    types: [opened, reopened, labeled, unlabeled, synchronize]
 
 permissions:
   contents: read
@@ -25,6 +25,7 @@ concurrency:
 jobs:
   compile:
     name: Cross-compiling ${{ matrix.identifier }}
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
     runs-on: [ubuntu-latest]
     container:
       image: debian:bookworm
@@ -88,7 +89,7 @@ jobs:
         apt-get install -y ca-certificates debian-ports-archive-keyring git python3
 
     - name: Checkout the source
-      uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633 # v4.1.2
       with:
         submodules: true
         fetch-depth: 1
@@ -204,6 +205,7 @@ jobs:
 
   test:
     name: Testing ${{ matrix.identifier }} shard ${{ matrix.shard_number }}
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'CI:none') }}
     needs: compile
     runs-on: [ubuntu-latest]
     container:
@@ -248,7 +250,7 @@ jobs:
       with:
         egress-policy: audit
 
-    - uses: actions/download-artifact@eaceaf801fd36c7dee90939fad912460b18a1ffe # v4.1.2
+    - uses: actions/download-artifact@c850b930e6ba138125429b7e5c93fc707a7f8427 # v4.1.4
       if: (matrix.shard_number < env.LAST_SHARD) && (env.WILL_RUN_TESTS == 'true')
       with:
         name: cross_binary-${{ matrix.identifier }}

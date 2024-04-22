@@ -5,8 +5,14 @@
 
 #include "lib/jxl/render_pipeline/simple_render_pipeline.h"
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <hwy/base.h>
+#include <utility>
+#include <vector>
 
+#include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/render_pipeline/render_pipeline_stage.h"
@@ -22,12 +28,12 @@ Status SimpleRenderPipeline::PrepareForThreadsInternal(size_t num,
   auto ch_size = [](size_t frame_size, size_t shift) {
     return DivCeil(frame_size, 1 << shift) + kRenderPipelineXOffset * 2;
   };
-  for (size_t c = 0; c < channel_shifts_[0].size(); c++) {
+  for (auto& entry : channel_shifts_[0]) {
     JXL_ASSIGN_OR_RETURN(
-        ImageF ch, ImageF::Create(ch_size(frame_dimensions_.xsize_upsampled,
-                                          channel_shifts_[0][c].first),
-                                  ch_size(frame_dimensions_.ysize_upsampled,
-                                          channel_shifts_[0][c].second)));
+        ImageF ch,
+        ImageF::Create(
+            ch_size(frame_dimensions_.xsize_upsampled, entry.first),
+            ch_size(frame_dimensions_.ysize_upsampled, entry.second)));
     channel_data_.push_back(std::move(ch));
     msan::PoisonImage(channel_data_.back());
   }

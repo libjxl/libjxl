@@ -90,8 +90,8 @@ bool EncodeDQT(j_compress_ptr cinfo, bool write_all_tables) {
       JPEGLI_ERROR("Missing quant table %d", i);
     }
     int precision = 0;
-    for (size_t k = 0; k < DCTSIZE2; ++k) {
-      if (quant_table->quantval[k] > 255) {
+    for (UINT16 q : quant_table->quantval) {
+      if (q > 255) {
         precision = 1;
         is_baseline = false;
       }

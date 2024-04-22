@@ -5,12 +5,7 @@
 
 #include "lib/jpegli/libjpeg_test_util.h"
 
-/* clang-format off */
-#include <stdio.h>
-#include <jpeglib.h>
-#include <setjmp.h>
-/* clang-format on */
-
+#include "lib/jxl/base/include_jpeglib.h"  // NOLINT
 #include "lib/jxl/sanitizers.h"
 
 namespace jpegli {
@@ -37,12 +32,13 @@ void ReadOutputPass(j_decompress_ptr cinfo, const DecompressParams& dparams,
   output->ysize = ysize_cropped;
   output->components = cinfo->out_color_components;
   if (cinfo->quantize_colors) {
-    jxl::msan::UnpoisonMemory(cinfo->colormap, cinfo->out_color_components *
-                                                   sizeof(cinfo->colormap[0]));
+    JSAMPLE** colormap = cinfo->colormap;
+    jxl::msan::UnpoisonMemory(reinterpret_cast<void*>(colormap),
+                              cinfo->out_color_components * sizeof(JSAMPLE*));
     for (int c = 0; c < cinfo->out_color_components; ++c) {
       jxl::msan::UnpoisonMemory(
-          cinfo->colormap[c],
-          cinfo->actual_number_of_colors * sizeof(cinfo->colormap[c][0]));
+          reinterpret_cast<void*>(colormap[c]),
+          cinfo->actual_number_of_colors * sizeof(JSAMPLE));
     }
   }
   if (!cinfo->raw_data_out) {

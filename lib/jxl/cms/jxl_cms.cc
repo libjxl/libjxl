@@ -1005,11 +1005,11 @@ JXL_BOOL JxlCmsSetFieldsFromICC(void* user_data, const uint8_t* icc_data,
                 profile.CICP.matrix_coefficients,
                 profile.CICP.video_full_range_flag, &c_enc)) {
     *c = c_enc.ToExternal();
-    return true;
+    return JXL_TRUE;
   }
 
   c_enc.color_space = ColorSpaceFromProfile(profile);
-  *cmyk = (profile.data_color_space == skcms_Signature_CMYK);
+  *cmyk = TO_JXL_BOOL(profile.data_color_space == skcms_Signature_CMYK);
 
   CIExy wp_unadapted;
   JXL_RETURN_IF_ERROR(UnadaptedWhitePoint(profile, &wp_unadapted));
@@ -1045,14 +1045,14 @@ JXL_BOOL JxlCmsSetFieldsFromICC(void* user_data, const uint8_t* icc_data,
       ApplyCICP(cicp_buffer[8], cicp_buffer[9], cicp_buffer[10],
                 cicp_buffer[11], &c_enc)) {
     *c = c_enc.ToExternal();
-    return true;
+    return JXL_TRUE;
   }
 
   c_enc.color_space = ColorSpaceFromProfile(profile);
   if (cmsGetColorSpace(profile.get()) == cmsSigCmykData) {
     *cmyk = JXL_TRUE;
     *c = c_enc.ToExternal();
-    return true;
+    return JXL_TRUE;
   }
 
   const cmsCIEXYZ wp_unadapted = UnadaptedWhitePoint(context, profile, c_enc);
@@ -1068,7 +1068,7 @@ JXL_BOOL JxlCmsSetFieldsFromICC(void* user_data, const uint8_t* icc_data,
 #endif  // JPEGXL_ENABLE_SKCMS
 
   *c = c_enc.ToExternal();
-  return true;
+  return JXL_TRUE;
 }
 
 }  // namespace
@@ -1279,8 +1279,6 @@ void* JxlCmsInit(void* init_data, size_t num_threads, size_t xsize,
   // Not including alpha channel (copied separately).
   const size_t channels_src = (c_src.cmyk ? 4 : c_src.Channels());
   const size_t channels_dst = c_dst.Channels();
-  JXL_CHECK(channels_src == channels_dst ||
-            (channels_src == 4 && channels_dst == 3));
 #if JXL_CMS_VERBOSE
   printf("Channels: %" PRIuS "; Threads: %" PRIuS "\n", channels_src,
          num_threads);

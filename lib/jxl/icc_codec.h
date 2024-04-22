@@ -10,8 +10,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
-#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_ans.h"
 #include "lib/jxl/dec_bit_reader.h"
@@ -28,7 +28,7 @@ struct ICCReader {
   }
 
  private:
-  Status CheckEOI(BitReader* reader);
+  static Status CheckEOI(BitReader* reader);
   size_t i_ = 0;
   size_t bits_to_skip_ = 0;
   size_t used_bits_base_ = 0;

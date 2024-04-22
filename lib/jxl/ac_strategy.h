@@ -11,9 +11,12 @@
 
 #include <hwy/base.h>  // kMaxVectorSize
 
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/coeff_order_fwd.h"
 #include "lib/jxl/frame_dimensions.h"
+#include "lib/jxl/image.h"
 #include "lib/jxl/image_ops.h"
 
 // Defines the different kinds of transforms, and heuristics to choose between
@@ -181,7 +184,9 @@ class AcStrategyRow {
  public:
   explicit AcStrategyRow(const uint8_t* row) : row_(row) {}
   AcStrategy operator[](size_t x) const {
-    return AcStrategy(static_cast<AcStrategy::Type>(row_[x] >> 1), row_[x] & 1);
+    AcStrategy::Type strategy = static_cast<AcStrategy::Type>(row_[x] >> 1);
+    bool is_first = static_cast<bool>(row_[x] & 1);
+    return AcStrategy(strategy, is_first);
   }
 
  private:

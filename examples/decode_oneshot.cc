@@ -7,11 +7,6 @@
 // available at once). The example outputs the pixels and color information to a
 // floating point image and an ICC profile on disk.
 
-#ifndef __STDC_FORMAT_MACROS
-#define __STDC_FORMAT_MACROS
-#endif
-
-#include <inttypes.h>
 #include <jxl/codestream_header.h>
 #include <jxl/decode.h>
 #include <jxl/decode_cxx.h>
@@ -102,9 +97,9 @@ bool DecodeJpegXlOneShot(const uint8_t* jxl, size_t size,
         return false;
       }
       if (buffer_size != *xsize * *ysize * 16) {
-        fprintf(stderr, "Invalid out buffer size %" PRIu64 " %" PRIu64 "\n",
-                static_cast<uint64_t>(buffer_size),
-                static_cast<uint64_t>(*xsize * *ysize * 16));
+        fprintf(stderr, "Invalid out buffer size %d %d\n",
+                static_cast<int>(buffer_size),
+                static_cast<int>(*xsize * *ysize * 16));
         return false;
       }
       pixels->resize(*xsize * *ysize * 4);
@@ -174,7 +169,7 @@ bool LoadFile(const char* filename, std::vector<uint8_t>* out) {
     return false;
   }
 
-  long size = ftell(file);
+  long size = ftell(file);  // NOLINT
   // Avoid invalid file or directory.
   if (size >= LONG_MAX || size < 0) {
     fclose(file);

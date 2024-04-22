@@ -218,7 +218,7 @@ Status DecodeJpeg(const std::vector<uint8_t>& compressed,
     } else {
       return failure("unsupported data type");
     }
-    ppf->info.uses_original_profile = true;
+    ppf->info.uses_original_profile = JXL_TRUE;
 
     // No alpha in JPG
     ppf->info.alpha_bits = 0;
@@ -246,7 +246,12 @@ Status DecodeJpeg(const std::vector<uint8_t>& compressed,
     };
     ppf->frames.clear();
     // Allocates the frame buffer.
-    ppf->frames.emplace_back(cinfo.image_width, cinfo.image_height, format);
+    {
+      JXL_ASSIGN_OR_RETURN(
+          PackedFrame frame,
+          PackedFrame::Create(cinfo.image_width, cinfo.image_height, format));
+      ppf->frames.emplace_back(std::move(frame));
+    }
     const auto& frame = ppf->frames.back();
     JXL_ASSERT(sizeof(JSAMPLE) * cinfo.out_color_components *
                    cinfo.image_width <=

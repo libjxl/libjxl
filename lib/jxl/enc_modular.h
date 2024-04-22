@@ -14,6 +14,7 @@
 
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_modular.h"
 #include "lib/jxl/enc_ans.h"
@@ -90,7 +91,8 @@ class ModularFrameEncoder {
  private:
   Status PrepareStreamParams(const Rect& rect, const CompressParams& cparams,
                              int minShift, int maxShift,
-                             const ModularStreamId& stream, bool do_color);
+                             const ModularStreamId& stream, bool do_color,
+                             bool groupwise);
   std::vector<Image> stream_images_;
   std::vector<ModularOptions> stream_options_;
   std::vector<uint32_t> quants_;
@@ -106,7 +108,6 @@ class ModularFrameEncoder {
   std::vector<size_t> tree_splits_;
   std::vector<std::vector<uint32_t>> gi_channel_;
   std::vector<size_t> image_widths_;
-  Predictor delta_pred_ = Predictor::Average4;
 
   struct GroupParams {
     Rect rect;

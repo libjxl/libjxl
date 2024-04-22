@@ -3,8 +3,18 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <ostream>
+#include <sstream>
+#include <string>
+#include <vector>
+
 #include "lib/jpegli/decode.h"
 #include "lib/jpegli/encode.h"
+#include "lib/jpegli/test_params.h"
 #include "lib/jpegli/test_utils.h"
 #include "lib/jpegli/testing.h"
 
@@ -28,7 +38,8 @@ struct SourceManager {
 
   static void init_source(j_decompress_ptr cinfo) {}
   static boolean fill_input_buffer(j_decompress_ptr cinfo) { return FALSE; }
-  static void skip_input_data(j_decompress_ptr cinfo, long num_bytes) {}
+  static void skip_input_data(j_decompress_ptr cinfo,
+                              long num_bytes /* NOLINT */) {}
   static void term_source(j_decompress_ptr cinfo) {}
 };
 
@@ -69,7 +80,7 @@ struct DestinationManager {
     dst->bytes_in_buffer = dst_buf.size();
     src->next_output_byte = src_buf.data();
     src->free_in_buffer = src_buf.size();
-    return true;
+    return TRUE;
   }
 
   static void term_destination(j_compress_ptr cinfo) {

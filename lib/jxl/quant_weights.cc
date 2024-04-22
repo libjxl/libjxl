@@ -502,7 +502,7 @@ Status DequantMatrices::Decode(BitReader* br,
 }
 
 Status DequantMatrices::DecodeDC(BitReader* br) {
-  bool all_default = br->ReadBits(1);
+  bool all_default = static_cast<bool>(br->ReadBits(1));
   if (!br->AllReadsWithinBounds()) return JXL_FAILURE("EOS during DecodeDC");
   if (!all_default) {
     for (size_t c = 0; c < 3; c++) {

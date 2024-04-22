@@ -21,6 +21,7 @@
 #include "lib/extras/dec/jxl.h"
 #include "lib/extras/enc/jxl.h"
 #include "lib/extras/packed_image.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
@@ -180,8 +181,7 @@ class ThreadPoolForTests {
   }
   ThreadPoolForTests(const ThreadPoolForTests&) = delete;
   ThreadPoolForTests& operator&(const ThreadPoolForTests&) = delete;
-  // TODO(eustas): avoid unary `&` overload?
-  ThreadPool* operator&() { return pool_.get(); }
+  ThreadPool* get() { return pool_.get(); }
 
  private:
   JxlThreadParallelRunnerPtr runner_;
@@ -200,6 +200,8 @@ Status ReadICC(BitReader* JXL_RESTRICT reader,
 Status EncodeFile(const CompressParams& params, const CodecInOut* io,
                   std::vector<uint8_t>* compressed, ThreadPool* pool = nullptr);
 
+constexpr const char* BoolToCStr(bool b) { return b ? "true" : "false"; }
+
 }  // namespace test
 
 bool operator==(const jxl::Bytes& a, const jxl::Bytes& b);
@@ -208,5 +210,16 @@ bool operator==(const jxl::Bytes& a, const jxl::Bytes& b);
 bool operator!=(const jxl::Bytes& a, const jxl::Bytes& b);
 
 }  // namespace jxl
+
+#if !defined(FUZZ_TEST)
+struct FuzzTestSink {
+  template <typename F>
+  FuzzTestSink WithSeeds(F) {
+    return *this;
+  }
+};
+#define FUZZ_TEST(A, B) \
+  const JXL_MAYBE_UNUSED FuzzTestSink unused##A##B = FuzzTestSink()
+#endif
 
 #endif  // LIB_JXL_TEST_UTILS_H_

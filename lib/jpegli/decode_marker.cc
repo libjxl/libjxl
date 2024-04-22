@@ -5,6 +5,7 @@
 
 #include "lib/jpegli/decode_marker.h"
 
+#include <jxl/types.h>
 #include <string.h>
 
 #include "lib/jpegli/common.h"
@@ -59,7 +60,7 @@ void ProcessSOF(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
     JPEGLI_ERROR("Duplicate SOF marker.");
   }
   m->found_sof_ = true;
-  cinfo->progressive_mode = (cinfo->unread_marker == 0xc2);
+  cinfo->progressive_mode = TO_JXL_BOOL(cinfo->unread_marker == 0xc2);
   cinfo->arith_code = 0;
   size_t pos = 2;
   JPEG_VERIFY_LEN(6);
@@ -102,9 +103,6 @@ void ProcessSOF(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
     int quant_tbl_idx = ReadUint8(data, &pos);
     JPEG_VERIFY_INPUT(quant_tbl_idx, 0, NUM_QUANT_TBLS - 1);
     comp->quant_tbl_no = quant_tbl_idx;
-    if (cinfo->quant_tbl_ptrs[quant_tbl_idx] == nullptr) {
-      JPEGLI_ERROR("Quantization table with index %u not found", quant_tbl_idx);
-    }
     comp->quant_table = nullptr;  // will be allocated after SOS marker
   }
   JPEG_VERIFY_MARKER_END();
@@ -167,6 +165,7 @@ void ProcessSOS(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
   if (!m->found_sof_) {
     JPEGLI_ERROR("Unexpected SOS marker.");
   }
+  m->found_sos_ = true;
   size_t pos = 2;
   JPEG_VERIFY_LEN(1);
   cinfo->comps_in_scan = ReadUint8(data, &pos);
@@ -220,7 +219,7 @@ void ProcessSOS(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
 
   if (cinfo->input_scan_number == 0) {
     m->is_multiscan_ = (cinfo->comps_in_scan < cinfo->num_components ||
-                        cinfo->progressive_mode);
+                        FROM_JXL_BOOL(cinfo->progressive_mode));
   }
   if (cinfo->Ah != 0 && cinfo->Al != cinfo->Ah - 1) {
     // section G.1.1.1.2 : Successive approximation control only improves
@@ -291,7 +290,7 @@ void ProcessDHT(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
     // component Huffman codes, 0x10 is added to the index.
     int slot_id = ReadUint8(data, &pos);
     int huffman_index = slot_id;
-    int is_ac_table = (slot_id & 0x10) != 0;
+    bool is_ac_table = ((slot_id & 0x10) != 0);
     JHUFF_TBL** table;
     if (is_ac_table) {
       huffman_index -= 0x10;
@@ -336,7 +335,7 @@ void ProcessDHT(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
 
 void ProcessDQT(j_decompress_ptr cinfo, const uint8_t* data, size_t len) {
   jpeg_decomp_master* m = cinfo->master;
-  if (m->found_sof_) {
+  if (m->found_sos_) {
     JPEGLI_ERROR("Updating quant tables between scans is not supported.");
   }
   size_t pos = 2;

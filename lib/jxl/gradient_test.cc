@@ -46,8 +46,8 @@ Image3F GenerateTestGradient(uint32_t color0, uint32_t color1, double angle,
                              size_t xsize, size_t ysize) {
   JXL_ASSIGN_OR_DIE(Image3F image, Image3F::Create(xsize, ysize));
 
-  double x0 = xsize / 2;
-  double y0 = ysize / 2;
+  double x0 = xsize / 2.0;
+  double y0 = ysize / 2.0;
   double x1 = x0 + std::sin(angle / 360.0 * 2.0 * kPi);
   double y1 = y0 + std::cos(angle / 360.0 * 2.0 * kPi);
 
@@ -186,13 +186,13 @@ constexpr bool fast_mode = true;
 TEST(GradientTest, SteepGradient) {
   test::ThreadPoolForTests pool(8);
   // Relatively steep gradients, colors from the sky of stp.png
-  TestGradient(&pool, 0xd99d58, 0x889ab1, 512, 512, 90, fast_mode, 3.0);
+  TestGradient(pool.get(), 0xd99d58, 0x889ab1, 512, 512, 90, fast_mode, 3.0);
 }
 
 TEST(GradientTest, SubtleGradient) {
   test::ThreadPoolForTests pool(8);
   // Very subtle gradient
-  TestGradient(&pool, 0xb89b7b, 0xa89b8d, 512, 512, 90, fast_mode, 4.0);
+  TestGradient(pool.get(), 0xb89b7b, 0xa89b8d, 512, 512, 90, fast_mode, 4.0);
 }
 
 }  // namespace

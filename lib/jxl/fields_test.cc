@@ -5,18 +5,21 @@
 
 #include "lib/jxl/fields.h"
 
-#include <stddef.h>
-#include <stdint.h>
-
 #include <array>
-#include <utility>
+#include <cstddef>
+#include <cstdint>
 
 #include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/span.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_fields.h"
+#include "lib/jxl/field_encodings.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/headers.h"
+#include "lib/jxl/image_metadata.h"
 #include "lib/jxl/testing.h"
 
 namespace jxl {
@@ -320,12 +323,12 @@ struct NewBundle : public Fields {
         visitor->U32(Bits(7), Bits(12), Bits(16), Bits(32), 0, &old_large));
 
     JXL_QUIET_RETURN_IF_ERROR(visitor->BeginExtensions(&extensions));
-    if (visitor->Conditional(extensions & 1)) {
+    if (visitor->Conditional((extensions & 1) != 0)) {
       JXL_QUIET_RETURN_IF_ERROR(
           visitor->U32(Val(2), Bits(2), Bits(3), Bits(4), 2, &new_small));
       JXL_QUIET_RETURN_IF_ERROR(visitor->F16(-2.0f, &new_f));
     }
-    if (visitor->Conditional(extensions & 2)) {
+    if (visitor->Conditional((extensions & 2) != 0)) {
       JXL_QUIET_RETURN_IF_ERROR(
           visitor->U32(Bits(9), Bits(12), Bits(16), Bits(32), 0, &new_large));
     }

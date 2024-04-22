@@ -10,6 +10,7 @@
 #include <atomic>
 #include <utility>
 
+#include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/image_bundle.h"
@@ -72,7 +73,7 @@ Status ApplyColorTransform(const ColorEncoding& c_current,
           }
         }
         float* JXL_RESTRICT dst_buf = c_transform.BufDst(thread);
-        if (!c_transform.Run(thread, src_buf, dst_buf)) {
+        if (!c_transform.Run(thread, src_buf, dst_buf, rect.xsize())) {
           has_error = true;
           return;
         }

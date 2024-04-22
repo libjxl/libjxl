@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file.
 
 #include <jxl/cms.h>
+#include <jxl/cms_interface.h>
 #include <jxl/types.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -12,7 +13,6 @@
 #include <string>
 #include <vector>
 
-#include "jxl/cms_interface.h"
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/color_hints.h"
 #include "lib/extras/metrics.h"
@@ -25,6 +25,7 @@
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
+#include "lib/jxl/enc_comparator.h"
 #include "lib/jxl/image.h"
 #include "tools/file_io.h"
 #include "tools/thread_pool_internal.h"
@@ -44,9 +45,9 @@ Status WriteImage(const Image3F& image, const std::string& filename) {
   JxlPixelFormat format = {3, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0};
   jxl::extras::PackedPixelFile ppf =
       jxl::extras::ConvertImage3FToPackedPixelFile(
-          image, jxl::ColorEncoding::SRGB(), format, &pool);
+          image, jxl::ColorEncoding::SRGB(), format, pool.get());
   std::vector<uint8_t> encoded;
-  return jxl::Encode(ppf, filename, &encoded, &pool) &&
+  return jxl::Encode(ppf, filename, &encoded, pool.get()) &&
          jpegxl::tools::WriteFile(filename, encoded);
 }
 
@@ -69,7 +70,8 @@ Status RunButteraugli(const char* pathname1, const char* pathname2,
       fprintf(stderr, "Failed to read image from %s\n", pathname[i]);
       return false;
     }
-    if (!jxl::SetFromBytes(jxl::Bytes(encoded), color_hints, &io[i], &pool)) {
+    if (!jxl::SetFromBytes(jxl::Bytes(encoded), color_hints, &io[i],
+                           pool.get())) {
       fprintf(stderr, "Failed to decode image from %s\n", pathname[i]);
       return false;
     }
@@ -97,7 +99,7 @@ Status RunButteraugli(const char* pathname1, const char* pathname2,
   JxlButteraugliComparator comparator(ba_params, cms);
   float distance;
   JXL_CHECK(ComputeScore(io1.Main(), io2.Main(), &comparator, cms, &distance,
-                         &distmap, &pool,
+                         &distmap, pool.get(),
                          /* ignore_alpha */ false));
   printf("%.10f\n", distance);
 
@@ -170,6 +172,7 @@ int main(int argc, char** argv) {
     }
   }
 
-  return !RunButteraugli(argv[1], argv[2], distmap, raw_distmap, colorspace, p,
-                         intensity_target);
+  Status result = RunButteraugli(argv[1], argv[2], distmap, raw_distmap,
+                                 colorspace, p, intensity_target);
+  return result ? EXIT_SUCCESS : EXIT_FAILURE;
 }

@@ -6,8 +6,7 @@
 #include "lib/extras/dec/jpg.h"
 
 #if JPEGXL_ENABLE_JPEG
-#include <jpeglib.h>
-#include <setjmp.h>
+#include "lib/jxl/base/include_jpeglib.h"  // NOLINT
 #endif
 #include <stdint.h>
 
@@ -270,7 +269,7 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes,
     ppf->info.bits_per_sample = BITS_IN_JSAMPLE;
     JXL_ASSERT(BITS_IN_JSAMPLE == 8 || BITS_IN_JSAMPLE == 16);
     ppf->info.exponent_bits_per_sample = 0;
-    ppf->info.uses_original_profile = true;
+    ppf->info.uses_original_profile = JXL_TRUE;
 
     // No alpha in JPG
     ppf->info.alpha_bits = 0;
@@ -299,19 +298,25 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes,
     };
     ppf->frames.clear();
     // Allocates the frame buffer.
-    ppf->frames.emplace_back(cinfo.image_width, cinfo.image_height, format);
+    {
+      JXL_ASSIGN_OR_RETURN(
+          PackedFrame frame,
+          PackedFrame::Create(cinfo.image_width, cinfo.image_height, format));
+      ppf->frames.emplace_back(std::move(frame));
+    }
     const auto& frame = ppf->frames.back();
     JXL_ASSERT(sizeof(JSAMPLE) * cinfo.out_color_components *
                    cinfo.image_width <=
                frame.color.stride);
 
     if (cinfo.quantize_colors) {
-      jxl::msan::UnpoisonMemory(cinfo.colormap, cinfo.out_color_components *
-                                                    sizeof(cinfo.colormap[0]));
+      JSAMPLE** colormap = cinfo.colormap;
+      jxl::msan::UnpoisonMemory(reinterpret_cast<void*>(colormap),
+                                cinfo.out_color_components * sizeof(JSAMPLE*));
       for (int c = 0; c < cinfo.out_color_components; ++c) {
         jxl::msan::UnpoisonMemory(
-            cinfo.colormap[c],
-            cinfo.actual_number_of_colors * sizeof(cinfo.colormap[c][0]));
+            reinterpret_cast<void*>(colormap[c]),
+            cinfo.actual_number_of_colors * sizeof(JSAMPLE));
       }
     }
     for (size_t y = 0; y < cinfo.image_height; ++y) {

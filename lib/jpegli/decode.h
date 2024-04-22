@@ -21,6 +21,7 @@
 #define LIB_JPEGLI_DECODE_H_
 
 #include "lib/jpegli/common.h"
+#include "lib/jpegli/types.h"
 
 #if defined(__cplusplus) || defined(c_plusplus)
 extern "C" {
@@ -36,7 +37,7 @@ void jpegli_CreateDecompress(j_decompress_ptr cinfo, int version,
 void jpegli_stdio_src(j_decompress_ptr cinfo, FILE *infile);
 
 void jpegli_mem_src(j_decompress_ptr cinfo, const unsigned char *inbuffer,
-                    unsigned long insize);
+                    unsigned long insize /* NOLINT */);
 
 int jpegli_read_header(j_decompress_ptr cinfo, boolean require_image);
 
