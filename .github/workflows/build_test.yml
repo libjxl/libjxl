@@ -32,7 +32,7 @@ jobs:
       matrix:
         # We have one job per "name" in the matrix. Attributes are set on the
         # specific job names.
-        name: [release, debug, asan, msan, scalar]
+        name: [release, debug, asan, msan, tsan, scalar]
         include:
           - name: release
             mode: release
@@ -70,6 +70,8 @@ jobs:
             cc: clang-15
             cxx: clang++-15
           - name: asan
+            skip_install: true
+          - name: tsan
             skip_install: true
           - name: coverage
             env_test_stack_size: 2048
@@ -136,7 +138,9 @@ jobs:
       WILL_TEST: ${{  github.event_name == 'push' || (github.event_name == 'pull_request' && matrix.name != 'coverage' && (matrix.test_in_pr || contains(github.event.pull_request.labels.*.name, 'CI:full'))) }}
       WILL_BUILD: ${{ github.event_name == 'push' || (github.event_name == 'pull_request' && matrix.name != 'coverage') }}
       WILL_BENCH: ${{ github.event_name != 'merge_group' && matrix.run_bench }}
-      WILL_DOC: ${{ github.event_name != 'merge_group' && matrix.name == 'release' }}
+      # Temporarily disable doc-building, re-enable when sphinx is working again.
+      # WILL_DOC: ${{ github.event_name != 'merge_group' && matrix.name == 'release' }}
+      WILL_DOC: false
       WILL_COV: ${{ github.event_name == 'push' && matrix.name == 'coverage' }}
       JPEGXL_OPT_DBG: true
       FASTER_MSAN_BUILD: 1
@@ -187,7 +191,7 @@ jobs:
         brew install binutils ccache coreutils google-benchmark googletest ninja sdl2
 
     - name: Checkout the source
-      uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633 # v4.1.2
+      uses: actions/checkout@1d96c772d19495a3b5c517cd2bc0cb401ea0529f # v4.1.3
       with:
         submodules: true
         fetch-depth: 2
@@ -219,7 +223,7 @@ jobs:
 
     - name: Checkout the LLVM source
       if: matrix.name == 'msan' && env.WILL_BUILD == 'true'
-      uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633 # v4.1.2
+      uses: actions/checkout@1d96c772d19495a3b5c517cd2bc0cb401ea0529f # v4.1.3
       with:
         submodules: false
         repository: llvm/llvm-project
@@ -325,7 +329,7 @@ jobs:
 
     - name: Coverage upload to Codecov
       if: env.WILL_COV == 'true'
-      uses: codecov/codecov-action@54bcd8715eee62d40e33596ef5e8f0f48dbbccab # v4.1.0
+      uses: codecov/codecov-action@84508663e988701840491b86de86b666e8a86bed # v4.3.0
       with:
         flags: unittests
         files: build/coverage.xml

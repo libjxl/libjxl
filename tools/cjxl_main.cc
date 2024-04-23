@@ -77,21 +77,10 @@ struct CompressArgs {
   // CompressArgs() = default;
   void AddCommandLineOptions(CommandLineParser* cmdline) {
     std::string input_help("the input can be ");
-    if (jxl::extras::CanDecode(jxl::extras::Codec::kPNG)) {
-      input_help.append("PNG, APNG, ");
+    input_help.append(jxl::extras::ListOfDecodeCodecs());
+    if (!jxl::extras::CanDecode(jxl::extras::Codec::kJPG)) {
+      input_help.append(", JPEG (lossless recompression only)");
     }
-    if (jxl::extras::CanDecode(jxl::extras::Codec::kGIF)) {
-      input_help.append("GIF, ");
-    }
-    if (jxl::extras::CanDecode(jxl::extras::Codec::kJPG)) {
-      input_help.append("JPEG, ");
-    } else {
-      input_help.append("JPEG (lossless recompression only), ");
-    }
-    if (jxl::extras::CanDecode(jxl::extras::Codec::kEXR)) {
-      input_help.append("EXR, ");
-    }
-    input_help.append("PPM, PFM, PAM, PGX, or JXL");
     // Positional arguments.
     cmdline->AddPositionalOption("INPUT", /* required = */ true, input_help,
                                  &file_in);
@@ -229,6 +218,7 @@ struct CompressArgs {
         "rendering intent\n"
         "      -x color_space=RGB_D65_202_Rel_PeQ is Rec.2100 PQ with relative "
         "rendering intent\n"
+        "    Shorthands: sRGB, DisplayP3, Rec2100PQ, Rec2100HLG\n"
         "    The key 'icc_pathname' refers to a binary file containing an ICC "
         "profile.\n"
         "    The keys 'exif', 'xmp', and 'jumbf' refer to a binary file "

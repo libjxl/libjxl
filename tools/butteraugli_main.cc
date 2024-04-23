@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file.
 
 #include <jxl/cms.h>
+#include <jxl/cms_interface.h>
 #include <jxl/types.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -12,7 +13,6 @@
 #include <string>
 #include <vector>
 
-#include "jxl/cms_interface.h"
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/color_hints.h"
 #include "lib/extras/metrics.h"
@@ -25,6 +25,7 @@
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
+#include "lib/jxl/enc_comparator.h"
 #include "lib/jxl/image.h"
 #include "tools/file_io.h"
 #include "tools/thread_pool_internal.h"
@@ -173,5 +174,5 @@ int main(int argc, char** argv) {
 
   Status result = RunButteraugli(argv[1], argv[2], distmap, raw_distmap,
                                  colorspace, p, intensity_target);
-  return result ? 1 : 0;
+  return result ? EXIT_SUCCESS : EXIT_FAILURE;
 }

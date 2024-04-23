@@ -8,19 +8,17 @@
 #include <jxl/thread_parallel_runner.h>
 #include <jxl/thread_parallel_runner_cxx.h>
 #include <jxl/types.h>
-#include <limits.h>
-#include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
 
 #include <algorithm>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <functional>
 #include <hwy/targets.h>
-#include <random>
 #include <vector>
 
-#include "lib/jxl/base/status.h"
 #include "lib/jxl/test_image.h"
+#include "lib/jxl/test_utils.h"
 
 namespace {
 
@@ -138,7 +136,7 @@ T Select(const std::vector<T>& vec,
   return vec[get_index(vec.size() - 1)];
 }
 
-int TestOneInput(const uint8_t* data, size_t size) {
+int DoTestOneInput(const uint8_t* data, size_t size) {
   uint64_t flags = 0;
   size_t flag_bits = 0;
 
@@ -231,5 +229,11 @@ int TestOneInput(const uint8_t* data, size_t size) {
 }  // namespace
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
-  return TestOneInput(data, size);
+  return DoTestOneInput(data, size);
 }
+
+void TestOneInput(const std::vector<uint8_t>& data) {
+  DoTestOneInput(data.data(), data.size());
+}
+
+FUZZ_TEST(CjxlFuzzTest, TestOneInput);

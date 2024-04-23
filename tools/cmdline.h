@@ -6,13 +6,14 @@
 #ifndef TOOLS_CMDLINE_H_
 #define TOOLS_CMDLINE_H_
 
-#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 
 #include <cstdint>
+#include <cstdlib>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace jpegxl {

@@ -43,19 +43,12 @@ struct DecompressArgs {
 
   void AddCommandLineOptions(CommandLineParser* cmdline) {
     std::string output_help("The output format can be ");
-    if (jxl::extras::GetAPNGEncoder()) {
-      output_help.append("PNG, APNG, ");
-    }
-    if (jxl::extras::GetJPEGEncoder()) {
-      output_help.append("JPEG, ");
-    } else {
-      output_help.append("JPEG (lossless reconstruction only), ");
-    }
-    if (jxl::extras::GetEXREncoder()) {
-      output_help.append("EXR, ");
+    output_help.append(jxl::extras::ListOfEncodeCodecs());
+    if (!jxl::extras::GetJPEGEncoder()) {
+      output_help.append(", JPEG (lossless reconstruction only)");
     }
     output_help.append(
-        "PGM (for greyscale input), PPM (for color input), PNM, PFM, or PAM.\n"
+        "\n"
         "    To extract metadata, use output format EXIF, XMP, or JUMBF.\n"
         "    The format is selected based on extension ('filename.png') or can "
         "be overwritten by using --output_format.\n"
