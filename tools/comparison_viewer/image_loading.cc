@@ -12,9 +12,9 @@
 #include <cstdint>
 #include <vector>
 
-#include "lib/base/rect.h"
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/color_hints.h"
+#include "lib/jxl/base/rect.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_metadata.h"
 #include "tools/file_io.h"
