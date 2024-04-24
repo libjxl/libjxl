@@ -33,6 +33,31 @@
 
 namespace jxl {
 
+Status ComputeACMetadata(ThreadPool* pool, PassesEncoderState* enc_state,
+                         ModularFrameEncoder* modular_frame_encoder) {
+  PassesSharedState& shared = enc_state->shared;
+  std::atomic<bool> has_error{false};
+  auto compute_ac_meta = [&](int group_index, int /* thread */) {
+    const Rect r = shared.frame_dim.DCGroupRect(group_index);
+    int modular_group_index = group_index;
+    if (enc_state->streaming_mode) {
+      JXL_ASSERT(group_index == 0);
+      modular_group_index = enc_state->dc_group_index;
+    }
+    if (!modular_frame_encoder->AddACMetadata(r, modular_group_index,
+                                              /*jpeg_transcode=*/false,
+                                              enc_state)) {
+      has_error = true;
+      return;
+    }
+  };
+  JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, shared.frame_dim.num_dc_groups,
+                                ThreadPool::NoInit, compute_ac_meta,
+                                "Compute AC Metadata"));
+  if (has_error) return JXL_FAILURE("Compute AC Metadata failed");
+  return true;
+}
+
 Status InitializePassesEncoder(const FrameHeader& frame_header,
                                const Image3F& opsin, const Rect& rect,
                                const JxlCmsInterface& cms, ThreadPool* pool,
@@ -207,25 +232,6 @@ Status InitializePassesEncoder(const FrameHeader& frame_header,
                                               &shared.dc_storage, pool));
     }
   }
-  std::atomic<bool> has_error{false};
-  auto compute_ac_meta = [&](int group_index, int /* thread */) {
-    const Rect r = enc_state->shared.frame_dim.DCGroupRect(group_index);
-    int modular_group_index = group_index;
-    if (enc_state->streaming_mode) {
-      JXL_ASSERT(group_index == 0);
-      modular_group_index = enc_state->dc_group_index;
-    }
-    if (!modular_frame_encoder->AddACMetadata(r, modular_group_index,
-                                              /*jpeg_transcode=*/false,
-                                              enc_state)) {
-      has_error = true;
-      return;
-    }
-  };
-  JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, shared.frame_dim.num_dc_groups,
-                                ThreadPool::NoInit, compute_ac_meta,
-                                "Compute AC Metadata"));
-  if (has_error) return JXL_FAILURE("Compute AC Metadata failed");
   return true;
 }
 

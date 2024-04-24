@@ -811,7 +811,8 @@ StatusOr<ImageBundle> RoundtripImage(const FrameHeader& frame_header,
   // Same as frame_header.nonserialized_metadata->m
   const ImageMetadata& metadata = *decoded.metadata();
 
-  JXL_CHECK(dec_state->PreparePipeline(frame_header, &decoded, options));
+  JXL_CHECK(dec_state->PreparePipeline(
+      frame_header, &enc_state->shared.metadata->m, &decoded, options));
 
   hwy::AlignedUniquePtr<GroupDecCache[]> group_dec_caches;
   const auto allocate_storage = [&](const size_t num_threads) -> Status {
@@ -834,7 +835,7 @@ StatusOr<ImageBundle> RoundtripImage(const FrameHeader& frame_header,
         dec_state->render_pipeline->GetInputBuffers(group_index, thread);
     JXL_CHECK(DecodeGroupForRoundtrip(
         frame_header, enc_state->coeffs, group_index, dec_state.get(),
-        &group_dec_caches[thread], thread, input, &decoded, nullptr));
+        &group_dec_caches[thread], thread, input, nullptr, nullptr));
     for (size_t c = 0; c < metadata.num_extra_channels; c++) {
       std::pair<ImageF*, Rect> ri = input.GetBuffer(3 + c);
       FillPlane(0.0f, ri.first, ri.second);

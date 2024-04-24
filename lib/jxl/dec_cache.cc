@@ -28,6 +28,7 @@
 namespace jxl {
 
 Status PassesDecoderState::PreparePipeline(const FrameHeader& frame_header,
+                                           const ImageMetadata* metadata,
                                            ImageBundle* decoded,
                                            PipelineOptions options) {
   size_t num_c = 3 + frame_header.nonserialized_metadata->m.num_extra_channels;
@@ -37,7 +38,7 @@ Status PassesDecoderState::PreparePipeline(const FrameHeader& frame_header,
 
   if (frame_header.CanBeReferenced()) {
     // Necessary so that SetInputSizes() can allocate output buffers as needed.
-    frame_storage_for_referencing = ImageBundle(decoded->metadata());
+    frame_storage_for_referencing = ImageBundle(metadata);
   }
 
   RenderPipeline::Builder builder(num_c);
@@ -131,9 +132,8 @@ Status PassesDecoderState::PreparePipeline(const FrameHeader& frame_header,
 
   bool has_alpha = false;
   size_t alpha_c = 0;
-  for (size_t i = 0; i < decoded->metadata()->extra_channel_info.size(); i++) {
-    if (decoded->metadata()->extra_channel_info[i].type ==
-        ExtraChannel::kAlpha) {
+  for (size_t i = 0; i < metadata->extra_channel_info.size(); i++) {
+    if (metadata->extra_channel_info[i].type == ExtraChannel::kAlpha) {
       has_alpha = true;
       alpha_c = 3 + i;
       break;
@@ -146,7 +146,7 @@ Status PassesDecoderState::PreparePipeline(const FrameHeader& frame_header,
     JXL_ASSERT(!frame_header.CanBeReferenced() ||
                frame_header.save_before_color_transform);
     JXL_ASSERT(!options.render_spotcolors ||
-               !decoded->metadata()->Find(ExtraChannel::kSpotColor));
+               !metadata->Find(ExtraChannel::kSpotColor));
     bool is_rgba = (main_output.format.num_channels == 4);
     uint8_t* rgb_output = reinterpret_cast<uint8_t*>(main_output.buffer);
     builder.AddStage(GetFastXYBTosRGB8Stage(rgb_output, main_output.stride,
@@ -186,11 +186,9 @@ Status PassesDecoderState::PreparePipeline(const FrameHeader& frame_header,
 
     if (options.render_spotcolors &&
         frame_header.nonserialized_metadata->m.Find(ExtraChannel::kSpotColor)) {
-      for (size_t i = 0; i < decoded->metadata()->extra_channel_info.size();
-           i++) {
+      for (size_t i = 0; i < metadata->extra_channel_info.size(); i++) {
         // Don't use Find() because there may be multiple spot color channels.
-        const ExtraChannelInfo& eci =
-            decoded->metadata()->extra_channel_info[i];
+        const ExtraChannelInfo& eci = metadata->extra_channel_info[i];
         if (eci.type == ExtraChannel::kSpotColor) {
           builder.AddStage(GetSpotColorStage(3 + i, eci.spot_color));
         }

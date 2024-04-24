@@ -314,8 +314,6 @@ set(JPEGXL_INTERNAL_ENC_SOURCES
   jxl/enc_ans.cc
   jxl/enc_ans.h
   jxl/enc_ans_params.h
-  jxl/enc_ar_control_field.cc
-  jxl/enc_ar_control_field.h
   jxl/enc_aux_out.cc
   jxl/enc_aux_out.h
   jxl/enc_bit_writer.cc
