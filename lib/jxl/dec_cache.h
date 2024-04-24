@@ -144,7 +144,8 @@ struct PassesDecoderState {
     bool render_noise;
   };
 
-  Status PreparePipeline(const FrameHeader& frame_header, ImageBundle* decoded,
+  Status PreparePipeline(const FrameHeader& frame_header,
+                         const ImageMetadata* metadata, ImageBundle* decoded,
                          PipelineOptions options);
 
   // Information for colour conversions.

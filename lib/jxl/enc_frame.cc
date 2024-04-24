@@ -36,7 +36,6 @@
 #include "lib/jxl/enc_ac_strategy.h"
 #include "lib/jxl/enc_adaptive_quantization.h"
 #include "lib/jxl/enc_ans.h"
-#include "lib/jxl/enc_ar_control_field.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_cache.h"
@@ -1062,12 +1061,25 @@ Status ComputeVarDCTEncodingData(const FrameHeader& frame_header,
                                  AuxOut* aux_out) {
   JXL_ASSERT((rect.xsize() % kBlockDim) == 0 &&
              (rect.ysize() % kBlockDim) == 0);
+  // Save pre-Gaborish opsin for AR control field heuristics computation.
+  Image3F orig_opsin;
+  JXL_ASSIGN_OR_RETURN(orig_opsin, Image3F::Create(rect.xsize(), rect.ysize()));
+  CopyImageTo(rect, *opsin, Rect(orig_opsin), &orig_opsin);
+  orig_opsin.ShrinkTo(enc_state->shared.frame_dim.xsize,
+                      enc_state->shared.frame_dim.ysize);
+
   JXL_RETURN_IF_ERROR(LossyFrameHeuristics(frame_header, enc_state, enc_modular,
                                            linear, opsin, rect, cms, pool,
                                            aux_out));
 
   JXL_RETURN_IF_ERROR(InitializePassesEncoder(
       frame_header, *opsin, rect, cms, pool, enc_state, enc_modular, aux_out));
+
+  JXL_RETURN_IF_ERROR(
+      ComputeARHeuristics(frame_header, enc_state, orig_opsin, rect, pool));
+
+  JXL_RETURN_IF_ERROR(ComputeACMetadata(pool, enc_state, enc_modular));
+
   return true;
 }
 

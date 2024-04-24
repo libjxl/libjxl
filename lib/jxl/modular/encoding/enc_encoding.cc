@@ -214,8 +214,8 @@ Tree PredefinedTree(ModularOptions::TreeKind tree_kind, size_t total_pixels) {
     tree.push_back(PropertyDecisionNode::Split(0, 2, 3));
     // 2: c > 0
     tree.push_back(PropertyDecisionNode::Split(0, 0, 5));
-    // 3: EPF control field (all 0 or 4), top > 0
-    tree.push_back(PropertyDecisionNode::Split(6, 0, 21));
+    // 3: EPF control field (all 0 or 4), top > 3
+    tree.push_back(PropertyDecisionNode::Split(6, 3, 21));
     // 4: ACS+QF, y > 0
     tree.push_back(PropertyDecisionNode::Split(2, 0, 7));
     // 5: CfL x
@@ -241,9 +241,9 @@ Tree PredefinedTree(ModularOptions::TreeKind tree_kind, size_t total_pixels) {
     tree.push_back(PropertyDecisionNode::Leaf(Predictor::Zero));
     tree.push_back(PropertyDecisionNode::Leaf(Predictor::Zero));
     tree.push_back(PropertyDecisionNode::Leaf(Predictor::Zero));
-    // EPF, left > 0
-    tree.push_back(PropertyDecisionNode::Split(7, 0, 23));
-    tree.push_back(PropertyDecisionNode::Split(7, 0, 25));
+    // EPF, left > 3
+    tree.push_back(PropertyDecisionNode::Split(7, 3, 23));
+    tree.push_back(PropertyDecisionNode::Split(7, 3, 25));
     tree.push_back(PropertyDecisionNode::Leaf(Predictor::Zero));
     tree.push_back(PropertyDecisionNode::Leaf(Predictor::Zero));
     tree.push_back(PropertyDecisionNode::Leaf(Predictor::Zero));

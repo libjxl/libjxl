@@ -489,11 +489,11 @@ Status FrameDecoder::ProcessACGroup(size_t ac_group_id,
   if (frame_header_.encoding == FrameEncoding::kVarDCT) {
     JXL_RETURN_IF_ERROR(group_dec_caches_[thread].InitOnce(
         frame_header_.passes.num_passes, dec_state_->used_acs));
-    JXL_RETURN_IF_ERROR(DecodeGroup(frame_header_, br, num_passes, ac_group_id,
-                                    dec_state_, &group_dec_caches_[thread],
-                                    thread, render_pipeline_input, decoded_,
-                                    decoded_passes_per_ac_group_[ac_group_id],
-                                    force_draw, dc_only, &should_run_pipeline));
+    JXL_RETURN_IF_ERROR(DecodeGroup(
+        frame_header_, br, num_passes, ac_group_id, dec_state_,
+        &group_dec_caches_[thread], thread, render_pipeline_input,
+        decoded_->jpeg_data.get(), decoded_passes_per_ac_group_[ac_group_id],
+        force_draw, dc_only, &should_run_pipeline));
   }
 
   // don't limit to image dimensions here (is done in DecodeGroup)
@@ -676,8 +676,9 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
     pipeline_options.coalescing = coalescing_;
     pipeline_options.render_spotcolors = render_spotcolors_;
     pipeline_options.render_noise = true;
-    JXL_RETURN_IF_ERROR(
-        dec_state_->PreparePipeline(frame_header_, decoded_, pipeline_options));
+    JXL_RETURN_IF_ERROR(dec_state_->PreparePipeline(
+        frame_header_, &frame_header_.nonserialized_metadata->m, decoded_,
+        pipeline_options));
     JXL_RETURN_IF_ERROR(FinalizeDC());
     JXL_RETURN_IF_ERROR(AllocateOutput());
     if (progressive_detail_ >= JxlProgressiveDetail::kDC) {

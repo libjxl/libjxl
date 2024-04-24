@@ -66,6 +66,8 @@ struct PassesEncoderState {
   // Multiplier to be applied to the quant matrices of the x channel.
   float x_qm_multiplier = 1.0f;
   float b_qm_multiplier = 1.0f;
+
+  ImageF initial_quant_masking1x1;
 };
 
 // Initialize per-frame information.
@@ -76,6 +78,9 @@ Status InitializePassesEncoder(const FrameHeader& frame_header,
                                PassesEncoderState* passes_enc_state,
                                ModularFrameEncoder* modular_frame_encoder,
                                AuxOut* aux_out);
+
+Status ComputeACMetadata(ThreadPool* pool, PassesEncoderState* enc_state,
+                         ModularFrameEncoder* modular_frame_encoder);
 
 }  // namespace jxl
 
