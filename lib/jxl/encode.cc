@@ -1780,6 +1780,21 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetOption(
       frame_settings->values.cparams.use_full_image_heuristics =
           default_to_false(value);
       break;
+    case JXL_ENC_FRAME_SETTING_DISABLE_PERCEPTUAL_HEURISTICS:
+      if (value < 0 || value > 1) {
+        return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_NOT_SUPPORTED,
+                             "Option value has to be 0 or 1");
+      }
+      frame_settings->values.cparams.disable_percepeptual_optimizations =
+          default_to_false(value);
+      if (frame_settings->values.cparams.disable_percepeptual_optimizations &&
+          frame_settings->enc->basic_info_set &&
+          frame_settings->enc->metadata.m.xyb_encoded) {
+        return JXL_API_ERROR(
+            frame_settings->enc, JXL_ENC_ERR_API_USAGE,
+            "Set uses_original_profile=true for non-perceptual encoding");
+      }
+      break;
 
     default:
       return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_NOT_SUPPORTED,
@@ -2245,6 +2260,12 @@ JxlEncoderStatus JxlEncoderAddImageFrameInternal(
     return JXL_API_ERROR(
         frame_settings->enc, JXL_ENC_ERR_API_USAGE,
         "Set uses_original_profile=true for lossless encoding");
+  }
+  if (frame_settings->values.cparams.disable_percepeptual_optimizations &&
+      frame_settings->enc->metadata.m.xyb_encoded) {
+    return JXL_API_ERROR(
+        frame_settings->enc, JXL_ENC_ERR_API_USAGE,
+        "Set uses_original_profile=true for non-perceptual encoding");
   }
   if (JXL_ENC_SUCCESS !=
       VerifyInputBitDepth(frame_settings->values.image_bit_depth,

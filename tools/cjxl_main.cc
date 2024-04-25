@@ -384,6 +384,11 @@ struct CompressArgs {
                            "cost of a massive speed hit.",
                            &allow_expert_options, &SetBooleanTrue, 3);
 
+    cmdline->AddOptionFlag('\0', "disable_perceptual_optimizations",
+                           "Disable perceptual optimizations",
+                           &disable_perceptual_optimizations, &SetBooleanTrue,
+                           4);
+
     cmdline->AddHelpText("\nModular mode options:", 4);
 
     // modular mode options
@@ -506,6 +511,7 @@ struct CompressArgs {
   jxl::Override noise = jxl::Override::kDefault;
 
   bool allow_expert_options = false;
+  bool disable_perceptual_optimizations = false;
 
   size_t faster_decoding = 0;
   int64_t resampling = -1;
@@ -686,6 +692,9 @@ void ProcessFlags(const jxl::extras::Codec codec,
   ProcessBoolFlag(args->noise, JXL_ENC_FRAME_SETTING_NOISE, params);
 
   params->allow_expert_options = args->allow_expert_options;
+  if (args->disable_perceptual_optimizations) {
+    params->AddOption(JXL_ENC_FRAME_SETTING_DISABLE_PERCEPTUAL_HEURISTICS, 1);
+  }
 
   if (!args->frame_indexing.empty()) {
     bool must_be_all_zeros = args->frame_indexing[0] != '1';

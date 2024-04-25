@@ -1180,13 +1180,34 @@ TEST(JxlTest, RoundtripDots) {
             JXL_TRANSFER_FUNCTION_SRGB);
 
   JXLCompressParams cparams;
-  cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 7);  // kSkirrel
+  cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 7);  // kSquirrel
   cparams.AddOption(JXL_ENC_FRAME_SETTING_DOTS, 1);
   cparams.distance = 0.04;
 
   PackedPixelFile ppf_out;
   EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, pool, &ppf_out), 280333, 4000);
   EXPECT_SLIGHTLY_BELOW(ButteraugliDistance(t.ppf(), ppf_out), 0.35);
+}
+
+TEST(JxlTest, RoundtripDisablePerceptual) {
+  ThreadPool* pool = nullptr;
+  const std::vector<uint8_t> orig = ReadTestData("jxl/flower/flower.png");
+  TestImage t;
+  t.DecodeFromBytes(orig).ClearMetadata();
+  ASSERT_NE(t.ppf().info.xsize, 0);
+  EXPECT_EQ(t.ppf().info.bits_per_sample, 8);
+  EXPECT_EQ(t.ppf().color_encoding.transfer_function,
+            JXL_TRANSFER_FUNCTION_SRGB);
+
+  JXLCompressParams cparams;
+  cparams.AddOption(JXL_ENC_FRAME_SETTING_EFFORT, 7);  // kSquirrel
+  cparams.AddOption(JXL_ENC_FRAME_SETTING_DISABLE_PERCEPTUAL_HEURISTICS, 1);
+  cparams.distance = 1.0;
+
+  PackedPixelFile ppf_out;
+  EXPECT_NEAR(Roundtrip(t.ppf(), cparams, {}, pool, &ppf_out), 477778, 4000);
+  // TODO(veluca): figure out why we can't get below this value.
+  EXPECT_SLIGHTLY_BELOW(ButteraugliDistance(t.ppf(), ppf_out), 11.0);
 }
 
 TEST(JxlTest, RoundtripNoise) {
