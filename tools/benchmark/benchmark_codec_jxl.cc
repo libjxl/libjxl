@@ -247,6 +247,9 @@ class JxlCodec : public ImageCodec {
     } else if (param.substr(0, 16) == "faster_decoding=") {
       val = strtol(param.substr(16).c_str(), nullptr, 10);
       cparams_.AddOption(JXL_ENC_FRAME_SETTING_DECODING_SPEED, val);
+    } else if (param == "noperc") {
+      cparams_.AddOption(JXL_ENC_FRAME_SETTING_DISABLE_PERCEPTUAL_HEURISTICS,
+                         1);
     } else {
       return JXL_FAILURE("Unrecognized param");
     }

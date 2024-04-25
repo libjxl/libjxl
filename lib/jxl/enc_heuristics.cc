@@ -30,6 +30,7 @@
 #include "lib/jxl/chroma_from_luma.h"
 #include "lib/jxl/coeff_order.h"
 #include "lib/jxl/coeff_order_fwd.h"
+#include "lib/jxl/common.h"
 #include "lib/jxl/dec_group.h"
 #include "lib/jxl/dec_xyb.h"
 #include "lib/jxl/enc_ac_strategy.h"
@@ -200,19 +201,19 @@ Status FindBestDequantMatrices(const CompressParams& cparams,
   // TODO(veluca): quant matrices for no-gaborish.
   // TODO(veluca): heuristics for in-bitstream quant tables.
   *dequant_matrices = DequantMatrices();
-  if (cparams.max_error_mode) {
+  if (cparams.max_error_mode || cparams.disable_percepeptual_optimizations) {
+    constexpr float kMSEWeights[3] = {0.001, 0.001, 0.001};
+    const float* wp = cparams.disable_percepeptual_optimizations
+                          ? kMSEWeights
+                          : cparams.max_error;
     // Set numerators of all quantization matrices to constant values.
-    float weights[3][1] = {{1.0f / cparams.max_error[0]},
-                           {1.0f / cparams.max_error[1]},
-                           {1.0f / cparams.max_error[2]}};
+    float weights[3][1] = {{1.0f / wp[0]}, {1.0f / wp[1]}, {1.0f / wp[2]}};
     DctQuantWeightParams dct_params(weights);
     std::vector<QuantEncoding> encodings(DequantMatrices::kNum,
                                          QuantEncoding::DCT(dct_params));
     JXL_RETURN_IF_ERROR(DequantMatricesSetCustom(dequant_matrices, encodings,
                                                  modular_frame_encoder));
-    float dc_weights[3] = {1.0f / cparams.max_error[0],
-                           1.0f / cparams.max_error[1],
-                           1.0f / cparams.max_error[2]};
+    float dc_weights[3] = {1.0f / wp[0], 1.0f / wp[1], 1.0f / wp[2]};
     DequantMatricesSetCustomDC(dequant_matrices, dc_weights);
   }
   return true;
@@ -1003,7 +1004,8 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
   // Call InitialQuantField only in Hare mode or slower. Otherwise, rely
   // on simple heuristics in FindBestAcStrategy, or set a constant for Falcon
   // mode.
-  if (cparams.speed_tier > SpeedTier::kHare) {
+  if (cparams.speed_tier > SpeedTier::kHare ||
+      cparams.disable_percepeptual_optimizations) {
     JXL_ASSIGN_OR_RETURN(
         initial_quant_field,
         ImageF::Create(frame_dim.xsize_blocks, frame_dim.ysize_blocks));
@@ -1012,7 +1014,13 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
         ImageF::Create(frame_dim.xsize_blocks, frame_dim.ysize_blocks));
     float q = 0.79 / cparams.butteraugli_distance;
     FillImage(q, &initial_quant_field);
-    FillImage(1.0f / (q + 0.001f), &initial_quant_masking);
+    float masking = 1.0f / (q + 0.001f);
+    FillImage(masking, &initial_quant_masking);
+    if (cparams.disable_percepeptual_optimizations) {
+      JXL_ASSIGN_OR_RETURN(initial_quant_masking1x1,
+                           ImageF::Create(frame_dim.xsize, frame_dim.ysize));
+      FillImage(masking, &initial_quant_masking1x1);
+    }
     quantizer.ComputeGlobalScaleAndQuant(quant_dc, q, 0);
   } else {
     // Call this here, as it relies on pre-gaborish values.
@@ -1105,7 +1113,7 @@ Status LossyFrameHeuristics(const FrameHeader& frame_header,
   JXL_RETURN_IF_ERROR(acs_heuristics.Finalize(frame_dim, ac_strategy, aux_out));
 
   // Refine quantization levels.
-  if (!streaming_mode) {
+  if (!streaming_mode && !cparams.disable_percepeptual_optimizations) {
     ImageB& epf_sharpness = shared.epf_sharpness;
     FillPlane(static_cast<uint8_t>(4), &epf_sharpness, Rect(epf_sharpness));
     JXL_RETURN_IF_ERROR(FindBestQuantizer(frame_header, original_pixels, *opsin,

@@ -259,10 +259,14 @@ Status LoopFilterFromParams(const CompressParams& cparams, bool streaming_mode,
   loop_filter->gab = ApplyOverride(
       cparams.gaborish, cparams.speed_tier <= SpeedTier::kHare &&
                             frame_header->encoding == FrameEncoding::kVarDCT &&
-                            cparams.decoding_speed_tier < 4);
+                            cparams.decoding_speed_tier < 4 &&
+                            !cparams.disable_percepeptual_optimizations);
 
   if (cparams.epf != -1) {
     loop_filter->epf_iters = cparams.epf;
+  } else if (cparams.disable_percepeptual_optimizations) {
+    loop_filter->epf_iters = 0;
+    return true;
   } else {
     if (frame_header->encoding == FrameEncoding::kModular) {
       loop_filter->epf_iters = 0;
@@ -1513,7 +1517,8 @@ Status ComputeEncodingData(
     if (alpha && !alpha_eci->alpha_associated &&
         frame_header.frame_type == FrameType::kRegularFrame &&
         !ApplyOverride(cparams.keep_invisible, true) &&
-        cparams.ec_resampling == cparams.resampling) {
+        cparams.ec_resampling == cparams.resampling &&
+        !cparams.disable_percepeptual_optimizations) {
       // simplify invisible pixels
       SimplifyInvisible(&color, *alpha, lossless);
       if (linear) {
