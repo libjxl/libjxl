@@ -451,11 +451,11 @@ float EstimateEntropy(const AcStrategy& acs, float entropy_mul, size_t x,
         }
       }
       static const double kChannelMul[3] = {
-          10.2,
-          1.0,
-          1.03,
+          pow(10.2, 8.0),
+          pow(1.0, 8.0),
+          pow(1.03, 8.0),
       };
-      lossc = Mul(Set(df8, pow(kChannelMul[c], 8.0)), lossc);
+      lossc = Mul(Set(df8, kChannelMul[c]), lossc);
       loss = Add(loss, lossc);
     }
     entropy += config.cost_delta * GetLane(SumOfLanes(df, entropy_v));
@@ -846,7 +846,7 @@ void ProcessRectACS(const CompressParams& cparams, const ACSConfig& config,
     float entropy_mul;
   };
   // These numbers need to be figured out manually and looking at
-  // ringing next to sky etc. Optimization will find larger numbers
+  // ringing next to sky etc. Optimization will find smaller numbers
   // and produce more ringing than is ideal. Larger numbers will
   // help stop ringing.
   const float entropy_mul16X8 = 1.25;

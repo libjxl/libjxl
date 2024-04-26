@@ -853,10 +853,18 @@ Status ComputeARHeuristics(const FrameHeader& frame_header,
     return true;
   }
 
-  static constexpr size_t kNumEPFVals = 8;
-  static constexpr size_t kEPFStep = 3;  // try 0, 3, and 6
+  std::vector<uint8_t> epf_steps;
+  if (cparams.butteraugli_distance > 4.5f) {
+    epf_steps.push_back(0);
+    epf_steps.push_back(4);
+  } else {
+    epf_steps.push_back(0);
+    epf_steps.push_back(3);
+    epf_steps.push_back(7);
+  }
+  static const int kNumEPFVals = 8;
   std::array<ImageF, kNumEPFVals> error_images;
-  for (uint8_t val = 0; val < kNumEPFVals; val += kEPFStep) {
+  for (uint8_t val : epf_steps) {
     FillPlane(val, &epf_sharpness, Rect(epf_sharpness));
     JXL_ASSIGN_OR_RETURN(
         Image3F decoded,
@@ -884,14 +892,17 @@ Status ComputeARHeuristics(const FrameHeader& frame_header,
       uint8_t left_val = bx > 0 ? out_row[bx - 1] : 0;
       float top_error = error_images[top_val].Row(by)[bx];
       float left_error = error_images[left_val].Row(by)[bx];
-      for (uint8_t val = 0; val < kNumEPFVals; val += kEPFStep) {
+      for (uint8_t val : epf_steps) {
         float error = error_images[val].Row(by)[bx];
+        if (val == 0) {
+          error *= 0.97f;
+        }
         if (error < best_error) {
           best_val = val;
           best_error = error;
         }
       }
-      if (best_error < 0.9 * std::max(top_error, left_error)) {
+      if (best_error < 0.995 * std::min(top_error, left_error)) {
         out_row[bx] = best_val;
       } else if (top_error < left_error) {
         out_row[bx] = top_val;
@@ -903,7 +914,8 @@ Status ComputeARHeuristics(const FrameHeader& frame_header,
       ++totals[context];
     }
   }
-
+  const float context_weight =
+      0.14f + 0.007f * std::min(10.0f, cparams.butteraugli_distance);
   for (size_t by = 0; by < frame_dim.ysize_blocks; by++) {
     uint8_t* JXL_RESTRICT out_row = epf_sharpness.Row(by);
     uint8_t* JXL_RESTRICT prev_row = epf_sharpness.Row(by > 0 ? by - 1 : 0);
@@ -914,10 +926,10 @@ Status ComputeARHeuristics(const FrameHeader& frame_header,
       uint8_t left_val = bx > 0 ? out_row[bx - 1] : 0;
       int context = (top_val > 3) * 2 + (left_val > 3);
       const auto& ctx_histo = histo[context];
-      for (uint8_t val = 0; val < kNumEPFVals; val += kEPFStep) {
+      for (uint8_t val : epf_steps) {
         float error =
             error_images[val].Row(by)[bx] /
-            (1 + std::log(1 + ctx_histo[val] * 0.18f / totals[context]));
+            (1 + std::log1p(ctx_histo[val] * context_weight / totals[context]));
         if (val == 0) error *= 0.93f;
         if (error < best_error) {
           best_val = val;

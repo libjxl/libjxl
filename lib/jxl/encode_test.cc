@@ -259,7 +259,7 @@ TEST(EncodeTest, EncoderResetTest) {
   JxlEncoderPtr enc = JxlEncoderMake(nullptr);
   EXPECT_NE(nullptr, enc.get());
   VerifyFrameEncoding(50, 200, enc.get(),
-                      JxlEncoderFrameSettingsCreate(enc.get(), nullptr), 4570,
+                      JxlEncoderFrameSettingsCreate(enc.get(), nullptr), 4577,
                       false);
   // Encoder should become reusable for a new image from scratch after using
   // reset.
